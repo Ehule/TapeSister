@@ -14,13 +14,17 @@ static float bounded(float x, float lo, float hi, float fallback)
 
 void ts_prism_controls_default(TsPrismControls *p)
 {
-    if (p) *p = (TsPrismControls){0, TS_PRISM_SUPERSAW, TS_PRISM_BASE_LENSES,
-                                 .5f, .15f, 0, .8f, .5f, .8f, 0, {0}, {0}, {0}, 1, 0, 0, 0, 0, .5f};
+    if (p) *p = (TsPrismControls){.mode=TS_PRISM_SUPERSAW,.lenses=TS_PRISM_BASE_LENSES,
+        .spread=.5f,.drift=.15f,.stereo=.8f,.body=.5f,.mix=.8f,.dry_level=1,.color=.5f,
+        .drift_rate=.1f,.morph_seconds=5,.seq_rate=2};
 }
 
-void ts_prism_controls_sanitize(TsPrismControls *p)
+static void patch_sanitize(TsPrismPatch *p)
 {
     if (!p) return;
+    p->drift_rate = bounded(p->drift_rate, .005f, 40, .1f);
+    p->group_octave = p->group_octave < -3 ? -3 : p->group_octave > 3 ? 3 : p->group_octave;
+    if (p->snap < 0 || p->snap > 3) p->snap=0;
     p->enabled = !!p->enabled;
     if (p->mode < 0 || p->mode >= TS_PRISM_MODE_COUNT) p->mode = TS_PRISM_SUPERSAW;
     if (p->input_shape < 0 || p->input_shape >= TS_PRISM_SHAPE_COUNT) p->input_shape = TS_PRISM_BICONVEX;
@@ -39,10 +43,35 @@ void ts_prism_controls_sanitize(TsPrismControls *p)
     p->solo_mask &= (1 << TS_PRISM_LENSES) - 1;
     p->output_db = bounded(p->output_db, -12, 12, 0);
     for (int i = 0; i < TS_PRISM_LENSES; ++i) {
+        p->octave_offset[i] = p->octave_offset[i] < -3 ? -3 : p->octave_offset[i] > 3 ? 3 : p->octave_offset[i];
         p->trim_db[i] = bounded(p->trim_db[i], -24, 12, 0);
-        p->pitch_offset[i] = i ? bounded(p->pitch_offset[i], -1200, 1200, 0) : 0;
-        p->pan_offset[i] = i ? bounded(p->pan_offset[i], -2, 2, 0) : 0;
+        p->pitch_offset[i] = bounded(p->pitch_offset[i], -1200, 1200, 0);
+        p->pan_offset[i] = bounded(p->pan_offset[i], -2, 2, 0);
     }
+}
+
+void ts_prism_controls_sanitize(TsPrismControls *p)
+{
+    if (!p) return;
+    TsPrismPatch patch; memcpy(&patch,p,sizeof(patch)); patch_sanitize(&patch); memcpy(p,&patch,sizeof(patch));
+    p->captured &= 3;
+    if (p->captured & 1) patch_sanitize(&p->a);
+    if (p->captured & 2) patch_sanitize(&p->b);
+    p->morph_enabled = !!p->morph_enabled && p->captured == 3;
+    p->morph=bounded(p->morph,0,1,0);
+    p->morph_seconds=bounded(p->morph_seconds,.05f,120,5);
+    p->morph_target=!!p->morph_target;
+    p->seq_enabled=!!p->seq_enabled;
+    p->seq_rate=bounded(p->seq_rate,.05f,32,2);
+    if(p->seq_count<0)p->seq_count=0;
+    if(p->seq_count>TS_PRISM_LENSES)p->seq_count=TS_PRISM_LENSES;
+    unsigned seen=0; int count=0;
+    for(int i=0;i<p->seq_count;++i) {
+        int lens=p->sequence[i];
+        if(lens<0 || lens>=TS_PRISM_LENSES || (seen&(1u<<lens)))continue;
+        seen|=1u<<lens;p->sequence[count++]=lens;
+    }
+    p->seq_count=count;p->locks &= 63;
 }
 
 void ts_prism_reset_lenses(TsPrismControls *p)
@@ -51,12 +80,13 @@ void ts_prism_reset_lenses(TsPrismControls *p)
     memset(p->pitch_offset, 0, sizeof(p->pitch_offset));
     memset(p->pan_offset, 0, sizeof(p->pan_offset));
     memset(p->trim_db, 0, sizeof(p->trim_db));
+    memset(p->octave_offset, 0, sizeof(p->octave_offset));
     p->mute_mask = p->solo_mask = 0;
 }
 
 /* Keep manual faders and mute/solo outside the normalization reference. Their
    gain changes must remain audible even when only one lens is being heard. */
-static float lens_weight(const TsPrismControls *p, int i)
+static float lens_weight(const TsPrismPatch *p, int i)
 {
     return i >= p->lenses ? 0 : i == 0 ? 1 + 2 * p->body :
         (p->mode == TS_PRISM_SUPERSAW && ts_prism_unison_cents[i] < -1000) ? .3f + .7f * p->body : 1;
@@ -64,7 +94,8 @@ static float lens_weight(const TsPrismControls *p, int i)
 
 const char *ts_prism_mode_name(int mode)
 {
-    return mode == TS_PRISM_ENSEMBLE ? "ENSEMBLE" : "SUPERSAW";
+    static const char *const names[]={"SUPERSAW","ENSEMBLE","HARMONIC","FIFTHS","OCTAVES","CLUSTER","31-TET"};
+    return names[mode>=0 && mode<TS_PRISM_MODE_COUNT ? mode : 0];
 }
 
 const char *ts_prism_shape_name(int shape)
@@ -99,7 +130,7 @@ static float shape_map(float value, int shape)
 /* Stable lens identities: count changes never reassign the surviving pitches
    or pans. The original twelve retain FM's voicing; 23/24 add two body lenses. Focus
    contracts fine pitch/time differences, retaining intentional octave bands. */
-static TsPrismLensView geometry(const TsPrismControls *p, int i, double seconds)
+static TsPrismLensView geometry(const TsPrismPatch *p, int i, double seconds)
 {
     TsPrismLensView v = {0};
     float fine = ts_prism_unison_cents[i];
@@ -109,6 +140,16 @@ static TsPrismLensView geometry(const TsPrismControls *p, int i, double seconds)
         fine += 1200;
     } else if (p->mode == TS_PRISM_ENSEMBLE) {
         fine = i == 0 ? 0 : (i & 1 ? -1.f : 1.f) * (2.f + i * .65f);
+    }
+    if (p->mode >= TS_PRISM_HARMONIC) {
+        float sign=i&1 ? 1.f : -1.f;
+        int step=(i+1)/2;
+        fine=0;
+        if(p->mode==TS_PRISM_HARMONIC)octave=i ? sign*1200*log2f(1+step*.5f) : 0;
+        if(p->mode==TS_PRISM_FIFTHS)octave=i ? sign*(step%2 ? 701.955f : 1200)*(1+(step-1)/4) : 0;
+        if(p->mode==TS_PRISM_OCTAVES)octave=i ? sign*1200*(1+(step-1)%3) : 0;
+        if(p->mode==TS_PRISM_CLUSTER)fine=i ? sign*step*18 : 0;
+        if(p->mode==TS_PRISM_MICRO)octave=i ? sign*step*(1200.f/31) : 0;
     }
     float wander = i == 0 ? 0 : (float)(
         .7 * sin(seconds * (.29 + .031 * i) + 1.71 * i) +
@@ -122,7 +163,9 @@ static TsPrismLensView geometry(const TsPrismControls *p, int i, double seconds)
     float shaped_fine = shape_map(octave + fine * detune, p->input_shape) - shaped_octave;
     v.refraction_cents = shaped_octave + (shaped_fine + p->pitch_offset[i] +
                                            wander * drift_cents) * divergence;
-    v.cents = shape_map(v.refraction_cents, p->output_shape);
+    float transpose = 1200.f * (p->group_octave + p->octave_offset[i]);
+    v.cents = shape_map(v.refraction_cents, p->output_shape) + transpose;
+    v.refraction_cents += transpose;
     v.delay_ms = i == 0 ? 0 : (p->mode == TS_PRISM_ENSEMBLE ?
         2.f + i * .6f : .2f + (i % 5) * .3f) * divergence;
     v.pan = i == 0 ? 0 : (i & 1 ? -1.f : 1.f) *
@@ -141,13 +184,29 @@ static TsPrismLensView geometry(const TsPrismControls *p, int i, double seconds)
     return v;
 }
 
+static TsPrismPatch prism_patch(const TsPrismControls *c)
+{
+    TsPrismPatch p; memcpy(&p,c,sizeof(p)); return p;
+}
+static float lerp(float a,float b,float t) { return a+(b-a)*t; }
+static TsPrismLensView morph_geometry(const TsPrismPatch *a,const TsPrismPatch *b,int i,double time,float t)
+{
+    if(a==b)return geometry(a,i,time);
+    TsPrismLensView x=geometry(a,i,time),y=geometry(b,i,time);
+    x.cents=lerp(x.cents,y.cents,t);x.refraction_cents=lerp(x.refraction_cents,y.refraction_cents,t);
+    x.pan=lerp(x.pan,y.pan,t);x.refraction_pan=lerp(x.refraction_pan,y.refraction_pan,t);
+    x.delay_ms=lerp(x.delay_ms,y.delay_ms,t);x.level=lerp(x.level,y.level,t);
+    return x;
+}
+
 TsPrismView ts_prism_control_view(const TsPrismControls *controls)
 {
     TsPrismView v = {0};
     if (!controls) return v;
     TsPrismControls p = *controls;
     ts_prism_controls_sanitize(&p);
-    for (int i = 0; i < TS_PRISM_LENSES; ++i) v.lens[i] = geometry(&p, i, 0);
+    TsPrismPatch patch=prism_patch(&p);
+    for (int i = 0; i < TS_PRISM_LENSES; ++i) v.lens[i] = p.morph_enabled ? morph_geometry(&p.a,&p.b,i,0,p.morph) : geometry(&patch,i,0);
     v.wet = p.enabled ? p.mix : 0;
     v.dry = p.enabled ? (1 - p.mix) * p.dry_level : 1;
     return v;
@@ -339,7 +398,7 @@ TsStereoFrame ts_prism_process(TsPrism *p, TsStereoFrame input)
     if (!p || !p->history) return input;
     p->history[p->write] = input; /* Always prime: no stale audio on engagement. */
     const TsPrismControls *c = &p->controls;
-    float wet_target = c->enabled ? c->mix : 0;
+
     /* Analysis is scheduled at roughly 47 Hz, regardless of device buffer
        size. A fixed upper bound keeps both memory and callback work bounded. */
     unsigned analysis_hop = (p->sample_rate / 47 / TS_PRISM_HOP + 1) * TS_PRISM_HOP;
@@ -355,19 +414,51 @@ TsStereoFrame ts_prism_process(TsPrism *p, TsStereoFrame input)
     }
     if (p->window_fade < 1) p->window_fade = fminf(1, p->window_fade + p->window_fade_step);
     if ((p->clock % TS_PRISM_HOP) == 0) {
-        p->gain_target = powf(10, c->output_db / 20);
+        double hop=(double)TS_PRISM_HOP/p->sample_rate;
+        TsPrismPatch patch=prism_patch(c);
+        if(c->morph_trigger != p->morph_seen) {
+            p->morph_seen=c->morph_trigger;p->morph_start=p->morph_position;p->morph_elapsed=0;
+        }
+        if(c->morph_enabled) {
+            if(c->morph_trigger) {
+                p->morph_position=lerp(p->morph_start,(float)c->morph_target,
+                    fminf(1,p->morph_elapsed/c->morph_seconds));
+                p->morph_elapsed+=(float)hop;
+            } else p->morph_position=c->morph;
+        } else p->morph_position=c->morph;
+        float t=c->morph_enabled ? p->morph_position : 0;
+        const TsPrismPatch *a=c->morph_enabled ? &c->a : &patch;
+        const TsPrismPatch *b=c->morph_enabled ? &c->b : &patch;
+        p->wet_target=c->enabled ? lerp(a->mix,b->mix,t) : 0;
+        p->dry_target=c->enabled ? lerp((1-a->mix)*a->dry_level,(1-b->mix)*b->dry_level,t) : 1;
+        p->gain_target=powf(10,lerp(a->output_db,b->output_db,t)/20);
+        for(int stage=0;stage<2;++stage)for(int shape=1;shape<TS_PRISM_SHAPE_COUNT;++shape)
+            p->glass_target[stage][shape]=lerp((stage?a->output_shape:a->input_shape)==shape ? a->color : 0,
+                (stage?b->output_shape:b->input_shape)==shape ? b->color : 0,t);
+        if(p->seq_seen!=c->seq_reset) { p->seq_seen=c->seq_reset;p->sequence_phase=0; }
+        int eligible[TS_PRISM_LENSES],count=0;unsigned members=0;
+        for(int j=0;j<c->seq_count;++j) {
+            int i=c->sequence[j]; members|=1u<<i;
+            if(lerp(lens_weight(a,i),lens_weight(b,i),t)>.001f)eligible[count++]=i;
+        }
+        p->seq_lens=c->seq_enabled && count ? eligible[(unsigned long long)p->sequence_phase%count]+1 : 0;
         for (int i = 0; i < TS_PRISM_LENSES; ++i) {
-            TsPrismLensView v = geometry(c, i, (double)p->clock / p->sample_rate);
+            TsPrismLensView v=morph_geometry(a,b,i,p->drift_time,t);
+            if(c->seq_enabled && (members&(1u<<i)) && p->seq_lens!=i+1)v.level=0;
             p->lens[i].ratio_target = exp2f(v.cents / 1200.f);
             p->lens[i].refraction_ratio_target = exp2f(v.refraction_cents / 1200.f);
             p->lens[i].refraction_pan_target = v.refraction_pan;
             p->lens[i].delay_target = v.delay_ms * p->sample_rate / 1000;
             p->lens[i].level_target = v.level;
-            p->lens[i].weight_target = lens_weight(c, i);
+            p->lens[i].weight_target = lerp(lens_weight(a,i),lens_weight(b,i),t);
             p->lens[i].pan_target = v.pan;
         }
+        float rate=lerp(a->drift_rate,b->drift_rate,t);
+        p->pitch_smoothing=1-expf(-1.f/(p->sample_rate*fmaxf(.0005f,.02f/fmaxf(1,rate))));
+        p->drift_time+=hop*rate/.1;
+        if(c->seq_enabled)p->sequence_phase+=hop*c->seq_rate;
     }
-    float dry_target = c->enabled ? (1 - c->mix) * c->dry_level : 1;
+    float wet_target=p->wet_target, dry_target=p->dry_target;
     p->dry += p->smoothing * (dry_target - p->dry);
     if (fabs(p->dry - dry_target) < .000001) p->dry = dry_target;
     p->wet += p->smoothing * (wet_target - p->wet);
@@ -375,19 +466,22 @@ TsStereoFrame ts_prism_process(TsPrism *p, TsStereoFrame input)
     /* Gain target is cached at control rate; no pow in the voice loop. */
     p->gain += p->smoothing * (p->gain_target - p->gain);
     for (int stage = 0; stage < 2; ++stage) for (int shape = 1; shape < TS_PRISM_SHAPE_COUNT; ++shape) {
-        int selected = stage ? c->output_shape : c->input_shape;
-        float target = selected == shape ? c->color : 0;
+        float target = p->glass_target[stage][shape];
         float *mix = &p->glass_mix[stage][shape];
         *mix += p->smoothing * (target - *mix);
         if (fabsf(*mix - target) < .000001f) *mix = target;
     }
+    float body_target=fabs(p->lens[0].ratio_target-1)>.00001 ? 1 : 0;
+    p->body_shift+=p->smoothing*(body_target-p->body_shift);
     TsStereoFrame sum = {0};
     float energy_l = 0, energy_r = 0;
     for (int i = 0; i < TS_PRISM_LENSES; ++i) {
         TsPrismLens *v = &p->lens[i];
 #define SMOOTH(field) v->field += p->smoothing * (v->field##_target - v->field)
-        SMOOTH(ratio); SMOOTH(delay); SMOOTH(level); SMOOTH(pan); SMOOTH(weight);
-        SMOOTH(refraction_ratio); SMOOTH(refraction_pan);
+        v->ratio+=p->pitch_smoothing*(v->ratio_target-v->ratio);
+        SMOOTH(delay); SMOOTH(level); SMOOTH(pan); SMOOTH(weight);
+        v->refraction_ratio+=p->pitch_smoothing*(v->refraction_ratio_target-v->refraction_ratio);
+        SMOOTH(refraction_pan);
 #undef SMOOTH
         if (!v->level_target && v->level < .000001f) v->level = 0;
         if (!v->weight_target && v->weight < .000001f) v->weight = 0;
@@ -402,7 +496,7 @@ TsStereoFrame ts_prism_process(TsPrism *p, TsStereoFrame input)
         energy_r += reference_r * reference_r;
         if (p->wet == 0 || v->level == 0) continue;
         TsStereoFrame lens = input;
-        if (i != 0) {
+        if (i != 0 || p->body_shift > .000001f) {
             float base = 2 + p->sample_rate * .002f + v->delay;
             lens = read_lens(p, v->phase, p->window_frames, base);
             if (p->window_fade < 1) {
@@ -413,7 +507,8 @@ TsStereoFrame ts_prism_process(TsPrism *p, TsStereoFrame input)
             }
             /* Both pitch maps share this reader; the two glass colors then
                run in series on each shifted voice, before its trim and pan. */
-            for (int stage = 0; stage < 2; ++stage) {
+            if(i==0) { lens.l=lerp(input.l,lens.l,p->body_shift);lens.r=lerp(input.r,lens.r,p->body_shift); }
+            for (int stage = 0; i!=0 && stage < 2; ++stage) {
                 TsPrismGlass *g = &v->glass[stage];
                 lens.l = glass_channel(lens.l, &g->low.l, &g->allpass_memory.l, g, p->glass_mix[stage]);
                 lens.r = glass_channel(lens.r, &g->low.r, &g->allpass_memory.r, g, p->glass_mix[stage]);
@@ -446,6 +541,7 @@ TsPrismView ts_prism_view(const TsPrism *p)
     TsPrismView v = {0};
     if (!p || !p->history) return v;
     v.valid = 1;
+    v.morph=p->morph_position;v.seq_lens=p->seq_lens;
     v.wet = p->wet;
     v.dry = p->dry;
     for (int i = 0; i < TS_PRISM_LENSES; ++i) {

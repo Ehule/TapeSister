@@ -4577,6 +4577,7 @@ static int bank_slot_deep_clone(TsBankSlot *destination, const TsBankSlot *sourc
     for (int i = 0; i < source->patch_count; ++i) {
         copy.patches[i].generator = source->patches[i].generator;
         copy.patches[i].has_generator = source->patches[i].has_generator;
+        copy.patches[i].amplitude_source = source->patches[i].amplitude_source;
         if (!ts_sample_clone(&copy.patches[i].sample, &source->patches[i].sample,
                              error, error_size)) goto failed;
     }
@@ -5321,6 +5322,7 @@ static int append_audio_patch(TsInstrument *instrument, const TsSample *sample,
     patch = &slot->patches[slot->patch_count];
     ts_sample_init(&patch->sample);
     if (!ts_sample_clone(&patch->sample, sample, error, error_size)) return 0;
+    patch->amplitude_source = 0;
     patch->has_generator = generator != NULL;
     if (generator != NULL) patch->generator = *generator;
     else memset(&patch->generator, 0, sizeof(patch->generator));
@@ -9057,6 +9059,7 @@ static int amplitude_gesture_owns(const TsInstrument *instrument,
 static void amplitude_gesture_clear(TsAmplitudeGesture *gesture)
 {
     ts_sample_free(&gesture->original);
+    ts_sample_free(&gesture->source);
     memset(gesture, 0, sizeof(*gesture));
     ts_sample_init(&gesture->original);
 }
@@ -9066,14 +9069,42 @@ int ts_instrument_amplitude_gesture_begin(TsInstrument *instrument,
                                           char *error, size_t error_size)
 {
     if (instrument == NULL || gesture == NULL || gesture->active ||
-        instrument->current.data == NULL || instrument->current.frames == 0u) {
+        instrument->current.data == NULL || instrument->current.frames == 0u ||
+        instrument->selected_slot < 0 || instrument->selected_slot >= TS_BANK_SLOT_COUNT) {
         set_error(error, error_size, "Could not begin amplitude drawing");
         return 0;
     }
-    if (!ensure_edit_graph_capacity(instrument, 1, error, error_size)) return 0;
-    gesture->start = snapshot(instrument);
     if (!ts_sample_clone(&gesture->original, &instrument->current,
                          error, error_size)) return 0;
+    const TsSample *source = &instrument->current;
+    TsBankSlot *slot = &instrument->bank[instrument->selected_slot];
+    if (instrument->post_edit_count == 1 &&
+        instrument->post_edits[0].kind == TS_POST_MATERIAL_REPLACE) {
+        uint32_t index = instrument->post_edits[0].patch_index;
+        if (index < (uint32_t)slot->patch_count) {
+            TsAudioPatch *patch = &slot->patches[index];
+            if (patch->amplitude_source && patch->amplitude_source <= (uint32_t)slot->patch_count &&
+                ts_sample_hash(&patch->sample) == ts_sample_hash(&instrument->current)) {
+                const TsSample *candidate = &slot->patches[patch->amplitude_source - 1].sample;
+                if (candidate->frames == source->frames && candidate->channels == source->channels) {
+                    source = candidate;
+                    gesture->source_patch = patch->amplitude_source;
+                }
+            }
+        }
+    }
+    if (!ts_sample_clone(&gesture->source, source, error, error_size)) {
+        amplitude_gesture_clear(gesture);
+        return 0;
+    }
+    const float *parent_before=instrument->parent.data;
+    if (!ensure_edit_graph_capacity(instrument, 1, error, error_size) ||
+        (instrument->bank[instrument->selected_slot].patch_count > TS_AUDIO_PATCH_DEPTH - 2 &&
+         !compact_edit_graph(instrument,error,error_size))) {
+        amplitude_gesture_clear(gesture);return 0;
+    }
+    if(parent_before!=instrument->parent.data)gesture->source_patch=0;
+    gesture->start = snapshot(instrument);
     gesture->owner_parent_data = instrument->parent.data;
     gesture->owner_generation = instrument->generation;
     gesture->owner_slot = instrument->selected_slot;
@@ -9116,7 +9147,7 @@ int ts_instrument_amplitude_gesture_preview(TsInstrument *instrument,
         float gain = first_gain + (last_gain - first_gain) * phase;
         for (size_t channel = 0; channel < instrument->current.channels; ++channel) {
             size_t scalar = frame * instrument->current.channels + channel;
-            instrument->current.data[scalar] = gesture->original.data[scalar] * gain;
+            instrument->current.data[scalar] = gesture->source.data[scalar] * gain;
         }
     }
     ts_sample_touch(&instrument->current);
@@ -9196,9 +9227,16 @@ int ts_instrument_amplitude_gesture_commit(TsInstrument *instrument,
         return ts_instrument_amplitude_gesture_cancel(
             instrument, gesture, error, error_size);
     target = gesture->start;
+    uint32_t source_index = gesture->source_patch ? gesture->source_patch - 1 : 0;
+    int added_source = !gesture->source_patch;
+    if (added_source && !append_audio_patch(instrument, &gesture->source, NULL,
+                                            &source_index, error, error_size)) return 0;
     ok = commit_material_checkpoint(instrument, &instrument->current, &target,
                                     error, error_size);
+    if (!ok && added_source) discard_last_audio_patch(instrument, source_index);
     if (ok) {
+        TsBankSlot *slot = &instrument->bank[instrument->selected_slot];
+        slot->patches[instrument->post_edits[0].patch_index].amplitude_source = source_index + 1;
         amplitude_gesture_clear(gesture);
         set_error(error, error_size, "");
     }
@@ -9845,9 +9883,9 @@ static int snapshot_fits_tile(const TsEditSnapshot *state, const TsBankSlot *slo
            state->grid_snap < TS_GRID_SNAP_MODE_COUNT;
 }
 
-static int save_tsr30(const TsInstrument *instrument, FILE *f)
+static int save_tsr31(const TsInstrument *instrument, FILE *f)
 {
-    fwrite("TSR30\r\n\032", 1, 8, f);
+    fwrite("TSR31\r\n\032", 1, 8, f);
     put32(f, (uint32_t)instrument->selected_slot);
     put_float(f, instrument->family_mutation);
     put32(f, instrument->family_sequence);
@@ -9933,6 +9971,7 @@ static int save_tsr30(const TsInstrument *instrument, FILE *f)
             if (slot->patches[patch].has_generator)
                 put_generator_recipe(f, &slot->patches[patch].generator);
             if (!put_sample_block(f, &slot->patches[patch].sample)) return 0;
+            put32(f, slot->patches[patch].amplitude_source);
         }
         put_edit_snapshot(f, edit);
         put32(f, (uint32_t)undo_count);
@@ -10046,6 +10085,8 @@ static int load_tsr15_or_newer(FILE *f, int version, TsInstrument *instrument,
                                                  version);
                 if (sample_result < 0) goto out_of_memory;
                 if (!sample_result) goto malformed;
+                if (version >= 31 && (!get32(f, &slot->patches[patch].amplitude_source) ||
+                    slot->patches[patch].amplitude_source > (uint32_t)patch)) goto malformed;
             }
         }
         if (!get_edit_snapshot(f, &slot->edit, version)) goto malformed;
@@ -10114,10 +10155,10 @@ static int load_tsr15_or_newer(FILE *f, int version, TsInstrument *instrument,
     set_error(error, error_size, "");
     return 1;
 out_of_memory:
-    set_error(error, error_size, "Out of memory while loading TSR15-TSR30 project");
+    set_error(error, error_size, "Out of memory while loading TSR15-TSR31 project");
     goto failed;
 malformed:
-    set_error(error, error_size, "Malformed or unsupported TSR15-TSR30 project");
+    set_error(error, error_size, "Malformed or unsupported TSR15-TSR31 project");
 failed:
     ts_instrument_free(&loaded);
     return 0;
@@ -10136,13 +10177,13 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Could not create recipe file");
         return 0;
     }
-    if (!save_tsr30(instrument, f)) {
+    if (!save_tsr31(instrument, f)) {
         fclose(f);
-        set_error(error, error_size, "Could not write TSR30 project");
+        set_error(error, error_size, "Could not write TSR31 project");
         return 0;
     }
     if (fclose(f) != 0) {
-        set_error(error, error_size, "Could not finish TSR30 project");
+        set_error(error, error_size, "Could not finish TSR31 project");
         return 0;
     }
     set_error(error, error_size, "");
@@ -10177,7 +10218,8 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Truncated TSR project");
         return 0;
     }
-    if (memcmp(magic, "TSR30\r\n\032", 8) == 0 ||
+    if (memcmp(magic, "TSR31\r\n\032", 8) == 0 ||
+        memcmp(magic, "TSR30\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR29\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR28\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR27\r\n\032", 8) == 0 ||
@@ -10193,7 +10235,8 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         memcmp(magic, "TSR17\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR16\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR15\r\n\032", 8) == 0) {
-        int self_contained_version = memcmp(magic, "TSR30\r\n\032", 8) == 0 ? 30 :
+        int self_contained_version = memcmp(magic, "TSR31\r\n\032", 8) == 0 ? 31 :
+                                     memcmp(magic, "TSR30\r\n\032", 8) == 0 ? 30 :
                                      memcmp(magic, "TSR29\r\n\032", 8) == 0 ? 29 :
                                      memcmp(magic, "TSR28\r\n\032", 8) == 0 ? 28 :
                                      memcmp(magic, "TSR27\r\n\032", 8) == 0 ? 27 :
@@ -10227,7 +10270,7 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         fclose(f);
         ts_instrument_free(&loaded);
         set_error(error, error_size,
-                  "Not a self-contained TSR6-TSR30 project");
+                  "Not a self-contained TSR6-TSR31 project");
         return 0;
     }
 #define GET_U32(dst) do { if (!get32(f, &u32)) goto malformed; (dst) = u32; } while (0)
@@ -10508,7 +10551,7 @@ out_of_memory:
     set_error(error, error_size, "Out of memory while loading TSR project");
     goto failed;
 malformed:
-    set_error(error, error_size, "Malformed or unsupported TSR6-TSR30 project");
+    set_error(error, error_size, "Malformed or unsupported TSR6-TSR31 project");
 failed:
     fclose(f);
     ts_instrument_free(&loaded);

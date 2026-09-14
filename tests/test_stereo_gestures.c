@@ -216,11 +216,41 @@ static void test_material(void)
     }
     ts_instrument_free(&tape);
 }
+static void test_envelope_redraw(void)
+{
+    make_wave();setup();
+    TsAmplitudeGesture draw;ts_amplitude_gesture_init(&draw);
+    OK(ts_instrument_amplitude_gesture_begin(&tape,&draw,E));
+    OK(ts_instrument_amplitude_gesture_preview(&tape,&draw,0,0,4095,1,E));
+    OK(ts_instrument_amplitude_gesture_commit(&tape,&draw,E));
+    uint64_t ramp=ts_sample_hash(&tape.current);
+    OK(ts_instrument_save_recipe(&tape,"redraw.tsr",E));
+    ts_instrument_init(&reopened);OK(ts_instrument_load_recipe(&reopened,"redraw.tsr",E));
+    OK(ts_instrument_amplitude_gesture_begin(&reopened,&draw,E));
+    OK(ts_instrument_amplitude_gesture_preview(&reopened,&draw,0,.7f,4095,.7f,E));
+    OK(ts_instrument_amplitude_gesture_commit(&reopened,&draw,E));
+    for(size_t i=0;i<4096;++i)frame_is(&reopened.current,i,source.data[i*2]*.7f,source.data[i*2+1]*.7f);
+    OK(ts_instrument_undo(&reopened,E));assert(ts_sample_hash(&reopened.current)==ramp);
+    OK(ts_instrument_redo(&reopened,E));
+    /* A zeroed interval is recoverable, and untouched intervals retain their envelope. */
+    OK(ts_instrument_amplitude_gesture_begin(&reopened,&draw,E));
+    OK(ts_instrument_amplitude_gesture_preview(&reopened,&draw,400,0,600,0,E));
+    OK(ts_instrument_amplitude_gesture_commit(&reopened,&draw,E));
+    OK(ts_instrument_amplitude_gesture_begin(&reopened,&draw,E));
+    OK(ts_instrument_amplitude_gesture_preview(&reopened,&draw,400,1,600,1,E));
+    OK(ts_instrument_amplitude_gesture_commit(&reopened,&draw,E));
+    for(size_t i=0;i<4096;++i) {
+        float gain=i>=400 && i<=600 ? 1 : .7f;
+        frame_is(&reopened.current,i,source.data[i*2]*gain,source.data[i*2+1]*gain);
+    }
+    ts_instrument_free(&reopened);ts_instrument_free(&tape);remove("redraw.tsr");
+}
 int main(void)
 {
     ts_sample_init(&source);source.channels=2;source.frames=4096;source.sample_rate=48000;
     source.data=calloc(source.frames*2,sizeof(float));assert(source.data);
     snprintf(source.name,sizeof(source.name),"STEREO GESTURES");
+    test_envelope_redraw();
     test_placement();test_boundaries();test_edit_gestures();test_clipboard();test_material();
     ts_sample_free(&source);puts("Stereo canvas gesture tests passed");return 0;
 }

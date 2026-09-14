@@ -8193,6 +8193,7 @@ typedef struct {
     int fallout_preset_modified;
     int parameter_lock_gesture;
     TsUiPointerDrag parameter_drag;
+    TsPrismBank prism_presets;
     int prism_drag_lens, prism_drag_x, prism_drag_y, prism_node_y;
     float prism_drag_pitch, prism_drag_pan, prism_drag_divergence;
     TsPerformanceRecorder performance_recorder;
@@ -8491,6 +8492,9 @@ static void sister_set_parameter(TsSisterParameters *parameters,
         }
         return;
     }
+    if(parameters->prism.morph_enabled &&
+       ((parameter>=TS_SISTER_UI_PARAM_PRISM_LENSES && parameter<=TS_SISTER_UI_PARAM_PRISM_COLOR) ||
+        parameter==TS_SISTER_UI_PARAM_PRISM_RATE || parameter==TS_SISTER_UI_PARAM_PRISM_OCTAVE))return;
     switch ((TsSisterUiParameter)parameter) {
     case TS_SISTER_UI_PARAM_PRISM_LENSES: parameters->prism.lenses = 2 + (int)lrintf(amount * (TS_PRISM_LENSES - 2)); break;
     case TS_SISTER_UI_PARAM_PRISM_SPREAD: parameters->prism.spread = amount * 2; break;
@@ -8501,6 +8505,13 @@ static void sister_set_parameter(TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_PRISM_MIX: parameters->prism.mix = amount; break;
     case TS_SISTER_UI_PARAM_PRISM_DRY: parameters->prism.dry_level = amount * 2; break;
     case TS_SISTER_UI_PARAM_PRISM_COLOR: parameters->prism.color = amount; break;
+    case TS_SISTER_UI_PARAM_PRISM_RATE: parameters->prism.drift_rate=.005f*powf(8000,amount);break;
+    case TS_SISTER_UI_PARAM_PRISM_OCTAVE: parameters->prism.group_octave=(int)lrintf(amount*6)-3;break;
+    case TS_SISTER_UI_PARAM_PRISM_MORPH:
+        parameters->prism.morph=amount;parameters->prism.morph_trigger=0;
+        parameters->prism.morph_enabled=parameters->prism.captured==3;break;
+    case TS_SISTER_UI_PARAM_PRISM_TIME: parameters->prism.morph_seconds=.05f*powf(2400,amount);break;
+    case TS_SISTER_UI_PARAM_PRISM_SEQ_RATE: parameters->prism.seq_rate=.05f*powf(640,amount);break;
     case TS_SISTER_UI_PARAM_PRISM_OUTPUT: parameters->prism.output_db = -12 + amount * 24; break;
     case TS_SISTER_UI_PARAM_H1_LEVEL: parameters->head1_level = amount; break;
     case TS_SISTER_UI_PARAM_H1_TIME: parameters->head1_time_ms = amount * 4000.0f; break;
@@ -8635,6 +8646,11 @@ static float sister_parameter_normalized(const TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_PRISM_MIX: value = parameters->prism.mix; break;
     case TS_SISTER_UI_PARAM_PRISM_DRY: value = parameters->prism.dry_level / 2; break;
     case TS_SISTER_UI_PARAM_PRISM_COLOR: value = parameters->prism.color; break;
+    case TS_SISTER_UI_PARAM_PRISM_RATE: value=logf(parameters->prism.drift_rate/.005f)/logf(8000);break;
+    case TS_SISTER_UI_PARAM_PRISM_OCTAVE: value=(parameters->prism.group_octave+3)/6.f;break;
+    case TS_SISTER_UI_PARAM_PRISM_MORPH: value=parameters->prism.morph;break;
+    case TS_SISTER_UI_PARAM_PRISM_TIME: value=logf(parameters->prism.morph_seconds/.05f)/logf(2400);break;
+    case TS_SISTER_UI_PARAM_PRISM_SEQ_RATE: value=logf(parameters->prism.seq_rate/.05f)/logf(640);break;
     case TS_SISTER_UI_PARAM_PRISM_OUTPUT: value = (parameters->prism.output_db + 12) / 24.f; break;
     case TS_SISTER_UI_PARAM_H1_LEVEL: value = parameters->head1_level; break;
     case TS_SISTER_UI_PARAM_H1_TIME: value = parameters->head1_time_ms / 4000.0f; break;
@@ -8735,6 +8751,9 @@ static float sister_parameter_wheel_normalized(
     int value;
     if (parameters == NULL || wheel == 0) return 0.0f;
     switch ((TsSisterUiParameter)parameter) {
+    case TS_SISTER_UI_PARAM_PRISM_OCTAVE:
+        value=parameters->prism.group_octave+direction*steps;
+        return (SDL_clamp(value,-3,3)+3)/6.f;
     case TS_SISTER_UI_PARAM_PRISM_LENSES:
         value = parameters->prism.lenses + direction * steps;
         if (value < 2) value = 2;
@@ -8881,6 +8900,11 @@ static const char *sister_parameter_name(int parameter)
     case TS_SISTER_UI_PARAM_PRISM_MIX: return "PRISM MIX";
     case TS_SISTER_UI_PARAM_PRISM_DRY: return "PRISM DRY LEVEL";
     case TS_SISTER_UI_PARAM_PRISM_COLOR: return "PRISM COLOR";
+    case TS_SISTER_UI_PARAM_PRISM_RATE: return "PRISM DRIFT RATE";
+    case TS_SISTER_UI_PARAM_PRISM_OCTAVE: return "PRISM GROUP OCTAVE";
+    case TS_SISTER_UI_PARAM_PRISM_MORPH: return "PRISM A/B MORPH";
+    case TS_SISTER_UI_PARAM_PRISM_TIME: return "PRISM MORPH TIME";
+    case TS_SISTER_UI_PARAM_PRISM_SEQ_RATE: return "PRISM SEQUENCE RATE";
     case TS_SISTER_UI_PARAM_PRISM_OUTPUT: return "PRISM OUTPUT";
     case TS_SISTER_UI_PARAM_H1_LEVEL: return "H1 LEVEL";
     case TS_SISTER_UI_PARAM_H1_TIME: return "H1 TIME";
@@ -9036,16 +9060,23 @@ static void sister_preset_model_sync(SisterWindow *sister,
 /* Optical gestures update only their own lens under the existing device lock.
    Keep the original values so Escape can undo the entire drag. */
 enum { PRISM_POINT, PRISM_RESET, PRISM_MUTE, PRISM_SOLO, PRISM_TRIM, PRISM_RESET_ALL,
-       PRISM_INPUT_SHAPE, PRISM_OUTPUT_SHAPE };
+       PRISM_INPUT_SHAPE, PRISM_OUTPUT_SHAPE, PRISM_OCTAVE, PRISM_SEQUENCE };
 static void sister_prism_edit(SDL_AudioDeviceID device, AudioState *audio,
                               SisterWindow *sister, int lens, int action, float x, float y)
 {
     if (lens < 0 || lens >= TS_PRISM_LENSES) return;
     if (device) SDL_LockAudioDevice(device);
     TsSisterParameters p = audio->sister.parameters;
+    if(p.prism.morph_enabled && action!=PRISM_SEQUENCE) {
+        if(device)SDL_UnlockAudioDevice(device);
+        snprintf(sister->model.status,sizeof(sister->model.status),"MORPH ACTIVE: RIGHT CAP A/B TO RECALL BEFORE EDITING");return;
+    }
     switch (action) {
+    case PRISM_OCTAVE: p.prism.octave_offset[lens]+=(int)x;break;
+    case PRISM_SEQUENCE: ts_prism_sequence_toggle(&p.prism,lens);break;
     case PRISM_POINT: p.prism.pitch_offset[lens]=x; p.prism.pan_offset[lens]=y; break;
     case PRISM_RESET:
+        p.prism.octave_offset[lens]=0;
         p.prism.pitch_offset[lens]=p.prism.pan_offset[lens]=p.prism.trim_db[lens]=0;
         p.prism.mute_mask &= ~(1 << lens); p.prism.solo_mask &= ~(1 << lens); break;
     case PRISM_MUTE: p.prism.mute_mask ^= 1 << lens; break;
@@ -9077,6 +9108,8 @@ static void sister_prism_end_drag(SisterWindow *sister)
     SDL_CaptureMouse(SDL_FALSE);
 }
 
+#include "main_sdl_prism_performance.inc"
+
 static int sister_prism_event(SDL_AudioDeviceID device, AudioState *audio,
                                TsUiState *ui, SisterWindow *sister, const SDL_Event *event)
 {
@@ -9106,6 +9139,32 @@ static int sister_prism_event(SDL_AudioDeviceID device, AudioState *audio,
         sister_prism_end_drag(sister);
         return 1;
     }
+    if(event->type==SDL_KEYDOWN && !sister->prism_drag_lens && sister->model.prism_selected>0) {
+        int key=event->key.keysym.sym,lens=sister->model.prism_selected-1;
+        if(key==SDLK_UP || key==SDLK_DOWN || key==SDLK_LEFT || key==SDLK_RIGHT) {
+            if(event->key.keysym.mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI))return 0;
+            if(lens>=sister->model.parameters.prism.lenses)return 0;
+            if((event->key.keysym.mod&KMOD_SHIFT) && (key==SDLK_UP || key==SDLK_DOWN))
+                sister_prism_edit(device,audio,sister,lens,PRISM_OCTAVE,key==SDLK_UP?1:-1,0);
+            else {
+                TsPrismControls c=sister->model.parameters.prism;c.drift=0;
+                float pitch=c.pitch_offset[lens],pan=c.pan_offset[lens];
+                if(key==SDLK_UP || key==SDLK_DOWN) {
+                    if(c.focus>=.9999f) { snprintf(sister->model.status,sizeof(sister->model.status),"LOWER FOCUS FOR FINE PITCH / SHIFT ARROWS MOVE OCTAVES");return 1; }
+                    float target=ts_prism_control_view(&c).lens[lens].cents+(key==SDLK_UP?1:-1);
+                    pitch=sister_prism_pitch_offset(&c,lens,target);
+                } else {
+                    int inverted=c.output_shape>=TS_PRISM_BICONCAVE;
+                    pan+=(key==SDLK_RIGHT ? .01f : -.01f)*(inverted?-1:1);
+                }
+                sister_prism_set_point(device,audio,sister,lens,pitch,pan);
+            }
+            TsPrismControls c=sister->model.parameters.prism;c.drift=0;
+            TsPrismLensView ray=ts_prism_control_view(&c).lens[lens];
+            snprintf(sister->model.status,sizeof(sister->model.status),"LENS %02d: %+.1F CT / PAN %+.3F / OCT %d",lens+1,ray.cents,ray.pan,c.octave_offset[lens]);
+            return 1;
+        }
+    }
     int x, y;
     if (event->type == SDL_MOUSEWHEEL) {
         int raw_x, raw_y;
@@ -9131,6 +9190,7 @@ static int sister_prism_event(SDL_AudioDeviceID device, AudioState *audio,
     if (event->type == SDL_MOUSEBUTTONDOWN &&
         (event->button.button == SDL_BUTTON_LEFT || event->button.button == SDL_BUTTON_RIGHT)) {
         if (!sister_event_mouse(sister->window, event->button.x, event->button.y, &x, &y)) return 0;
+        if(sister_prism_performance_click(device,audio,sister,x,y,event->button.button==SDL_BUTTON_RIGHT,SDL_GetModState()))return 1;
         int optical_stage=-1;
         if((y>=108 && y<=224 && x>=128 && x<=168) || (y>=228 && y<=238 && x>=102 && x<194))optical_stage=0;
         if((y>=108 && y<=224 && x>=442 && x<=482) || (y>=228 && y<=238 && x>=416 && x<508))optical_stage=1;
@@ -9151,6 +9211,8 @@ static int sister_prism_event(SDL_AudioDeviceID device, AudioState *audio,
             return 1;
         }
         int lens = ts_sister_ui_prism_hit(&sister->model, x, y);
+        if(sister->model.prism_seq_edit && (SDL_GetModState()&KMOD_CTRL))
+            lens=ts_sister_ui_prism_strip_hit(x,y);
         if (lens < 0) return 0;
         sister->model.prism_selected = lens + 1;
         ts_ui_pointer_drag_cancel(&sister->parameter_drag);
@@ -9162,6 +9224,13 @@ static int sister_prism_event(SDL_AudioDeviceID device, AudioState *audio,
             return 1;
         }
         SDL_Keymod mod=SDL_GetModState();
+        if((mod&KMOD_CTRL) && sister->model.prism_seq_edit && ts_sister_ui_prism_strip_hit(x,y)>=0) {
+            sister_prism_edit(device,audio,sister,lens,PRISM_SEQUENCE,0,0);
+            char order[100]="";size_t used=0;
+            const TsPrismControls *c=&sister->model.parameters.prism;
+            for(int j=0;j<c->seq_count && used<sizeof(order);++j)used+=(size_t)snprintf(order+used,sizeof(order)-used,"%02d ",c->sequence[j]+1);
+            snprintf(sister->model.status,sizeof(sister->model.status),"SEQ ORDER: %s",order);return 1;
+        }
         if (mod & (KMOD_SHIFT | KMOD_CTRL)) {
             int action=(mod & KMOD_CTRL) ? PRISM_SOLO : PRISM_MUTE;
             sister_prism_end_drag(sister);
@@ -9170,10 +9239,6 @@ static int sister_prism_event(SDL_AudioDeviceID device, AudioState *audio,
                                           sister->model.parameters.prism.mute_mask;
             snprintf(sister->model.status,sizeof(sister->model.status),"LENS %02d %s %s",lens+1,
                      action==PRISM_SOLO ? "SOLO" : "MUTE",(active & (1 << lens)) ? "ON" : "OFF");
-            return 1;
-        }
-        if (lens==0) {
-            snprintf(sister->model.status,sizeof(sister->model.status),"01 WET BODY ANCHOR - DRY LEVEL CONTROLS THE SEPARATE DRY PATH");
             return 1;
         }
         if (ts_sister_ui_prism_strip_hit(x,y)>=0) {
@@ -9210,6 +9275,11 @@ static int sister_prism_event(SDL_AudioDeviceID device, AudioState *audio,
                       ts_sister_ui_prism_pitch_at_y(sister->prism_node_y);
         if (sister->prism_drag_divergence > .0001f) pitch += delta / sister->prism_drag_divergence;
         float pan = sister->prism_drag_pan + (x - sister->prism_drag_x) / 100.f;
+        if(sister->model.parameters.prism.snap && sister->prism_drag_divergence>.0001f) {
+            TsPrismControls target=sister->model.parameters.prism;target.drift=0;target.pitch_offset[lens]=pitch;
+            float cents=ts_prism_control_view(&target).lens[lens].cents;
+            pitch=sister_prism_pitch_offset(&target,lens,ts_prism_snap_pitch(cents,target.snap));
+        }
         sister_prism_set_point(device, audio, sister, lens, pitch, pan);
         const TsPrismControls *p = &sister->model.parameters.prism;
         if (sister->prism_drag_divergence <= .0001f)
@@ -10084,7 +10154,7 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
     case TS_SISTER_UI_ACTION_PRISM_MODE:
         if (hit.action == TS_SISTER_UI_ACTION_PRISM_TOGGLE)
             sister->model.parameters.prism.enabled = !sister->model.parameters.prism.enabled;
-        else
+        else if(!sister->model.parameters.prism.morph_enabled)
             sister->model.parameters.prism.mode = (sister->model.parameters.prism.mode + 1) % TS_PRISM_MODE_COUNT;
         ts_sister_runtime_set_parameters(&audio->sister, &sister->model.parameters);
         ts_sister_runtime_mark_selected_preset_modified(&audio->sister);
@@ -10667,8 +10737,11 @@ static float midi_target_current_value(const char *target,
         return ui->master_output.gain;
     if (strcmp(target, "main.tile_fade") == 0)
         return ts_ui_tile_fade_normalized(ui->config.tile_fade_ms);
-    if (sscanf(target, "sister.param.%d%c", &parameter, &trailing) == 1)
+    if (sscanf(target, "sister.param.%d%c", &parameter, &trailing) == 1) {
+        if(parameter==TS_SISTER_UI_PARAM_PRISM_MORPH && sister->model.parameters.prism.morph_enabled && sister->model.routing.prism.valid)
+            return sister->model.routing.prism.morph;
         return sister_parameter_normalized(&sister->model.parameters, parameter);
+    }
     return 0.0f;
 }
 
@@ -12304,6 +12377,10 @@ int main(int argc, char **argv)
     {
         char preset_path[TS_RUNTIME_PATH_MAX];
         char preset_error[160];
+        if(prism_presets_file_path(preset_path,sizeof(preset_path)) &&
+           !ts_prism_bank_load(&sister_window.prism_presets,preset_path,preset_error,sizeof(preset_error)))
+            fprintf(stderr,"TapeSister Prism presets: %s\n",preset_error);
+        sister_prism_bank_sync(&sister_window);
         ts_sister_preset_bank_init(&sister_window.presets, 48000u);
         sister_window.preset_index = SIZE_MAX;
         if (sister_presets_file_path(preset_path, sizeof(preset_path)) &&

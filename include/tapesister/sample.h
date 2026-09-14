@@ -351,6 +351,7 @@ typedef struct {
     TsSample sample;
     TsGeneratorRecipe generator;
     int has_generator;
+    uint32_t amplitude_source; /* One-based patch index; zero means baked material. */
 } TsAudioPatch;
 
 typedef enum {
@@ -543,6 +544,8 @@ typedef struct {
     size_t last_frame;
     int has_profile;
     int active;
+    TsSample source; /* Recoverable audio before the first envelope stroke. */
+    uint32_t source_patch;
 } TsAmplitudeGesture;
 
 typedef struct {

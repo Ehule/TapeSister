@@ -171,6 +171,11 @@ typedef enum {
     TS_SISTER_UI_PARAM_PRISM_OUTPUT,
     TS_SISTER_UI_PARAM_PRISM_DRY,
     TS_SISTER_UI_PARAM_PRISM_COLOR,
+    TS_SISTER_UI_PARAM_PRISM_RATE,
+    TS_SISTER_UI_PARAM_PRISM_OCTAVE,
+    TS_SISTER_UI_PARAM_PRISM_MORPH,
+    TS_SISTER_UI_PARAM_PRISM_TIME,
+    TS_SISTER_UI_PARAM_PRISM_SEQ_RATE,
     TS_SISTER_UI_PARAM_COUNT,
     /* These clocks are intentionally not preset-lock bits: the established
        63 lock indices remain stable in existing preset files. */
@@ -254,6 +259,8 @@ typedef struct {
     int preset_editing;
     int preset_confirmation;
     int fx_page;
+    int prism_panel, prism_seq_edit, prism_preset_index, prism_preset_count;
+    char prism_preset_name[32];
     int prism_selected; /* One-based lens identity; zero means no selection. */
     int fallout_lfo_open;
     int midi_learn_active;

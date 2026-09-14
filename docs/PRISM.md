@@ -33,10 +33,10 @@ Head-tap capture still selects the corresponding head; **REC FILE** uses final O
 
 | Control | Audio | Diagram |
 |---|---|---|
-| Mode | Supersaw or Ensemble; click to cycle | Wide fine-pitch fan plus octave body, or a tighter fan with more time displacement |
+| Mode | Seven pitch layouts; click to cycle | Fan, harmonic/octave bands, cluster or microtonal steps |
 | Lenses | 2–24, with fading entry/removal; wheel steps one lens | One ray per contributing lens; the numbered strip selects overlapping points |
 | Spread | 0–200%; 50 reproduces the voicing table at Focus 0; the full fan reaches ±248 cents at 100 and ±1798 cents at 200 | Angular separation follows the actual smoothed pitches |
-| Drift | Independent, deterministic slow pitch wandering, 0–200%; up to ±25 cents at 100 and ±190 cents at 200 before Focus; lower settings retain subtle movement | Rays wander with the audio; no separate animation clock |
+| Drift | Independent, deterministic pitch wandering, 0–200%; up to ±25 cents at 100 and ±190 cents at 200 before Focus; lower settings retain subtle movement | Rays wander with the audio; no separate animation clock |
 | Focus | Contracts fine pitch, hand-drawn pitch offsets and added time toward zero | Rays converge; intentional octave relationships remain |
 | Stereo | Per-lens stereo balance; body voices stay near center | The control points move laterally with the actual pan values |
 | Body | 0–300%; stronger wet body anchor and stronger octave-body lenses | The corresponding rays become more prominent |
@@ -57,7 +57,8 @@ position represents pan. Neither axis represents physical distance or device lat
 The **01–24 numbered strip** selects individual lenses even when their points
 overlap. Select a number, then drag its highlighted point; the selected point wins
 an exact overlap. Shift/Ctrl-click, wheel trim and right-click reset also work
-directly on the numbers. Numbers above the active count are dim and inactive.
+directly on the numbers. Numbers above the active count are dim; sequence-edit
+Ctrl-click can still remove them from the stored pattern.
 
 Grab a **hollow middle point** and drag **up/down for pitch**, **left/right for pan**.
 Each shifted lens accepts an independent ±1 octave offset around its mode/Spread
@@ -73,7 +74,7 @@ This distinction preserves existing patches and gives both paths independent gai
 **Shift-left-click mutes a lens**, **Ctrl-left-click solos it**. Solo is additive:
 Ctrl-click several lenses to hear them together. Mute wins if both are set; solos
 on lenses outside the current count do not silence the active lenses. The dry
-branch remains independent. Mute/solo and wheel trim also work on the fixed body
+branch remains independent. Mute/solo and wheel trim also work on the body
 anchor, lens 01. Muted and solo-excluded rays stay faint and clickable; **M/S**
 marks show explicit mute/solo states.
 
@@ -225,7 +226,7 @@ edits at 24 lenses produced internal peaks of 9.673; the existing limiter held b
 
 ## Latency and performance
 
-The dry path and central lens add **zero Prism buffering**. Other voices use
+The dry path and the stock, untransposed central lens add **zero Prism buffering**. Other voices use
 variable read ages: nominally a 40 ms window plus a 2 ms guard and small per-lens
 offsets. Detected periods can change the window, bounded to 60 ms. The oldest
 Ensemble read at 24 lenses is under approximately **78 ms** at normal audio rates; Supersaw
@@ -258,27 +259,133 @@ guarantee. Physical Windows and Linux interface tests at 256 frames remain part
 of live audition. Drawing the native 24-lens panel averaged **0.232 ms** over
 1,000 frames, excluding SDL presentation and the desktop compositor.
 
+## Presets and performance
+
+The diagram stays visible while **SOUND**, **PERFORM**, and **PRESETS** switch the
+controls below it. The renderer still uses crisp native pixels and live DSP motion.
+
+### Prism-only presets and dice
+
+**PRESETS** has its own 32-slot bank in `prism-presets.ini`, beside `tapesister.ini`.
+**SAVE NEW** stores the current refraction setup with a numbered mode/count name.
+**Shift-click SAVE NEW** replaces the selected entry. Use the arrows to recall
+entries; clicking the name recalls that entry again. These operations change
+Prism only: Sister's tape, heads, routing and other effects keep their settings.
+The existing bottom-row Sister preset bank still stores the complete Sister setup.
+
+**NEW** starts a fresh configuration with usable unity trims and no inherited
+mute/solo state. **VARY** makes small changes to the current configuration. Both
+respect the six lock buttons: **PITCH** (geometry, Spread, Focus, pitch offsets,
+individual/group octaves and snap), **MOTION** (Drift, Rate, Stereo and pan offsets),
+**GLASS** (both shapes and Color), **MIX** (Body, Wet, Dry, output, trims, mute/solo),
+**COUNT**, and **SEQ** (pattern and rate). Existing individual slider locks also
+protect their values when using New/Vary. New clears an unlocked sequence; Vary
+retains it. Captured A/B memories remain available until explicitly recaptured.
+Right-click the mode, Prism preset name, or bottom Sister preset name to restore
+stock per-lens offsets, trims, octaves and mute/solo.
+
+### Capture A/B and morph
+
+On **PERFORM**, set up a sound and click **CAP A**, change it, then click **CAP B**.
+The **A/B** fader moves between them. **TO A / TO B** starts an audio-clocked move
+from the current position over **TIME**, from 0.05 to 120 seconds. Moving the
+fader takes over from the timed move. The fader can use the normal MIDI learn
+and pickup system; pickup follows the actual position during a timed move.
+
+Morphing interpolates the resulting pitches, pans, delays, gains and glass colors.
+This allows different modes and counts at the endpoints: disappearing lenses fade,
+and the rays follow the live interpolated sound. The original dry path is mixed
+separately. Mutes and solos are included in the captured lens levels.
+
+While morphing, the Sound controls display the blend and are protected from edits.
+**Right-click CAP A or CAP B** recalls that endpoint and returns to direct editing.
+Capture buttons then replace their respective memories. The sequencer keeps its
+own pattern and clock while morphing. A Prism preset stores both endpoints and
+the current fader position; a saved timed transition is parked at that position.
+
+### Small lens sequences over a drone
+
+Click **EDIT** beside **SEQ** to enter sequence editing, then **Ctrl-click the
+numbered strip** in the desired order. The status line lists the order; an
+underline marks membership and a bright underline marks the sounding step.
+Ctrl-click again removes a member, including a currently excluded lens.
+
+Turn **SEQ ON** to step through just those lenses at **STEP**, from 0.05 to 32 steps
+per second. Other lenses keep sustaining, subject to their own mute/solo controls.
+For example, sequencing lenses 03, 08, and 05 leaves all other enabled lenses on.
+**RESET** restarts at the first eligible step. **CLEAR** empties the pattern.
+Reducing **LENSES** skips members above the count without erasing their positions;
+raising it brings those members back. The rate is free-running and MIDI-learnable.
+It is not tied to Mosaic transport. With EDIT off, Ctrl-click retains lens solo.
+
+### Pitch layouts and precise editing
+
+| Mode | Arrangement |
+| --- | --- |
+| Supersaw | Detuned fan with lower-octave body voices |
+| Ensemble | Narrow detunes with staggered delays |
+| Harmonic | Ascending/descending harmonic ratios |
+| Fifths | Fifth and octave bands |
+| Octaves | Positive and negative octave bands |
+| Cluster | Closely spaced offsets, expanded by Spread |
+| 31-TET | Steps of 1200/31 cents around the center |
+
+Glass shape maps still affect these intervals. Intentional harmonic/octave bands
+remain when Focus closes; fine detuning contracts. **SNAP** cycles Free, Semitone,
+50 Cent and 31-TET for mouse dragging. Snapping uses the final pitch after glass
+mapping and excludes the temporary Drift movement.
+
+Select a numbered lens or drag a point, then use **Up/Down** for one-cent tuning
+and **Left/Right** for fine panning. Up still raises pitch through concave glass.
+**Shift-Up/Down** transposes the selected lens by an octave, within ±3 octaves.
+**GROUP OCT** adds ±3 octaves to the whole wet lens group. Octave transpositions
+apply after the glass maps and survive Focus at 100%. Lens 01 is a clean wet body
+anchor at stock settings; explicitly tuning/transposing it engages its pitch
+reader. The separate dry lane remains at the original pitch.
+
+**RATE** controls the independent Drift motion from 0.005 to 40 Hz on a logarithmic
+scale. Each lens retains its own related rate and phase; the label is the common
+rate control, not a promise that all lenses oscillate at the same frequency.
+Slow movement opens out to rapid flutter and near-audio modulation at the top.
+Changing rate preserves motion phase, and the diagram follows the audio clock.
+
 ## MIDI and saved projects
 
-Use the existing **Ctrl+Shift+M** MIDI learn flow. Prism On/Off and Mode are
-trigger targets; all ten sliders, including Color, Dry Level, Focus and lens count, use the
-existing continuous mapping and pickup system. Lens count is rounded to 2–24;
-a learned hardware fader now spans that range, while saved counts are not rescaled.
-The sliders participate in the existing parameter-lock system. Individual points
-and the two shape selectors are mouse gestures; they do not repurpose the global sliders or their MIDI targets.
+Use **Ctrl+Shift+M** to learn Prism On/Off, Mode and the fifteen sliders, including
+A/B, Time, Step, Drift Rate and Group Octave. Count remains 2–24. Existing target
+IDs retain their meaning; new targets are appended. Shape, capture and pattern
+buttons are mouse actions. Arrow keys act only on a selected Prism lens in the
+Prism window, outside modal editing and MIDI learn.
 
-Project state version **17** and Sister user preset version **16** persist all
-Prism controls, both shapes, Color, dry level and all 24 lenses' pitch/pan/trim/mute/solo.
-Edits and mute/solo bits for lenses 13–24 survive reducing the count and reloading.
-Missing lens keys
-use zero offsets and trim with no mute/solo; missing Dry Level uses unity;
-missing shape keys use clear BI-CONVEX glass and missing Color uses 50%;
-files predating Prism initialize it **off**. The older FX-slot migrations
-retain their original version cutoffs, so PR99 slots and locks are not migrated
-again. The main TSR29 sample format is unchanged. Sister presets on this page
-are the existing full Sister presets, not a second Prism-only preset bank.
+Sister project version **18** and Sister preset version **17** store the new
+performance state alongside all previous Prism settings. Old files initialize
+Drift Rate at its original motion speed, with no sequence, octave offsets or A/B
+morphing. Missing lens keys remain neutral and projects predating Prism start
+with Prism off. The existing FX migration behavior is retained.
+
+The main TSR format is now **TSR31**, adding recoverable amplitude-drawing source
+references. Older TSR versions remain readable; new saves require this version
+of TapeSister. This change does not alter FM's twelve-voice Unison or genome 7.
+
+With 24 lenses, two colored glass stages, 40 Hz Drift Rate, A/B interpolation and
+an eight-lens sequence, the shared-server 48 kHz / 256-frame probe measured about
+**534 µs mean / 2,043 µs p99** for Prism, and **883 µs mean / 3,170 µs p99** including
+Sister and its limiter. Run `prism_probe --bench performance` to reproduce the
+configuration. Concurrent server work produced scheduling outliers; hardware
+Windows testing remains necessary for real-time buffer reliability.
 
 ## Verification and remaining listening work
+
+The expanded 79-test suite has 75 passes. The four existing failures remain
+`test_sister_routes`, `test_sister_source_mask`, `test_sister_recursion`, and the
+canvas grid assertion in `tapesister_canvas_tests`. Prism performance tests cover
+morph endpoints and midpoints, timed moves and manual takeover, hidden sequence
+members, octave/body transposition, fast Drift motion, deterministic New/Vary,
+locks, invalid bank input and all three persistence paths. Native SDL tests cover
+MIDI targets, gestures, sequence editing and Prism-only recall isolation. The
+modified DSP/state and envelope-source code also passes AddressSanitizer and
+UndefinedBehaviorSanitizer checks (leak detection disabled in this environment).
+
 
 - Shape tests stream all 36 combinations with 24 lenses at 8 Hz (stability edge case), 44.1,
   48 and 96 kHz with maximum ranges through the real final limiter. A spectral
