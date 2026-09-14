@@ -1582,6 +1582,8 @@ static void fm_render(TsFramebuffer *fb, const TsUiState *ui,
     mini_button(fb,178,42,78,"UNISON",ui->fm_patch.structure==TS_FM_STRUCTURE_UNISON);
     if (ts_fm_voice_count(&ui->fm_patch) > TS_FM_OPERATOR_COUNT)
         mini_button(fb,262,42,90,ui->fm_voice_bank?"VOICES 7-12":"VOICES 1-6",ui->fm_voice_bank);
+    if(ui->fm_preview_pending || ui->fm_preview_job)
+        text(fb,370,46,"UPDATING",PAL_MOUSE,1);
     text(fb, 474, 46, ui->fm_patch.structure == TS_FM_STRUCTURE_UNISON ?
          "12-VOICE UNISON" : "SIX-VOICE FM", PAL_EFFECT, 1);
     frame(fb, 20, 62, 600, 48, RGB(8, 8, 8), PAL_BUTTON);

@@ -3806,8 +3806,11 @@ static void begin_bank_audition(SDL_AudioDeviceID device, AudioState *audio,
 static int generate_family_candidate(SDL_AudioDeviceID device, AudioState *audio,
                                       TsUiState *ui, TsInstrument *instrument,
                                       TsFmSeedSequence *seed_sequence,
-                                      int vary, int unused_promote, int unused_radical, uint32_t *created_seed)
+                                      int vary, int basic, int unused_radical, uint32_t *created_seed)
 {
+    static const TsFmWaveform waves[] = {
+        TS_FM_WAVE_SINE, TS_FM_WAVE_SQUARE, TS_FM_WAVE_SAW, TS_FM_WAVE_TRIANGLE
+    };
     char error[160];
     int slot = instrument->selected_slot;
     int stamp = instrument->has_selection && instrument->current.data != NULL &&
@@ -3815,11 +3818,15 @@ static int generate_family_candidate(SDL_AudioDeviceID device, AudioState *audio
     size_t stamp_frames = stamp ? instrument->selection_last -
                                  instrument->selection_first : 0;
     int ok;uint32_t seed=0;
-    (void)unused_promote; (void)unused_radical;
+    (void)unused_radical;
+    basic = basic && !vary;
+    int basic_index = ui->basic_create_index % 4;
     if (ui->workbench_loop_active) stop_all(device, audio, ui);
     lock_edit(device, audio);
     audio->playing = 0; audio->bank_slot = -1;
-    if (stamp && vary && instrument->family_trajectory)
+    if (basic)
+        ok = ts_instrument_create_basic(instrument, waves[basic_index], error, sizeof(error));
+    else if (stamp && vary && instrument->family_trajectory)
         ok = ts_instrument_stamp_vary_chained(
             instrument, ui->config.chain_stamp_crossfade_ms,
             error, sizeof(error));
@@ -3868,52 +3875,29 @@ static int generate_family_candidate(SDL_AudioDeviceID device, AudioState *audio
                      "BANK %02d CREATED FRESH FM SOURCE - RIGHT-CLICK CREATE FOR CDP ROLLS", slot + 1);
     }
     if(created_seed)*created_seed=seed;
+    if (basic) {
+        ui->basic_create_index = (basic_index + 1) % 4;
+        snprintf(ui->status, sizeof(ui->status), "CREATED %s%s - SHIFT-CREATE NEXT: %s",
+                 ts_fm_waveform_name(waves[basic_index]), stamp ? " IN SELECTION" : " AT C4",
+                 ts_fm_waveform_name(waves[ui->basic_create_index]));
+    }
     return 1;
 }
 
-static int render_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
-                               TsUiState *ui, const TsInstrument *instrument,
-                               TsSample *preview)
-{
-    TsSample rendered;
-    char error[160];
-    const TsTuning unity = {TS_KEYBOARD_BASE_NOTE, 0.0f};
-    double root_frequency = ts_tuning_frequency(&unity);
-    uint32_t seed = instrument->generator.seed ^ 0x50524556u;
-    ts_sample_init(&rendered);
-    if (!ts_fm_render_sample(&rendered, &ui->fm_patch, TS_FM_LOGIC_SECONDS,
-                             (float)root_frequency, 44100u, seed,
-                             error, sizeof(error))) {
-        snprintf(ui->fm_message, sizeof(ui->fm_message),
-                 "FM PREVIEW FAILED: %.72s", error);
-        return 0;
-    }
-    if (device) SDL_LockAudioDevice(device);
-    {
-        TsSample old = *preview;
-        *preview = rendered;
-        rendered = old;
-    }
-    /* Voices retain the stable preview object address while its owned buffer is
-       atomically replaced. Re-map their progress/range before freeing old audio. */
-    ts_note_bank_replace_sample(&audio->notes, preview, preview,
-                                audio->output_rate);
-    ui->fm_preview_sample = preview;
-    if (device) SDL_UnlockAudioDevice(device);
-    ts_sample_free(&rendered);
-    ts_ui_waveform_cache_invalidate(ui,TS_UI_WAVEFORM_FM);
-    snprintf(ui->fm_message, sizeof(ui->fm_message),
-             "%s / %s  %d VOICE MASK",
-             ts_fm_structure_name(ui->fm_patch.structure),
-             ts_fm_interaction_name(ui->fm_patch.interaction),
-             (int)ui->fm_patch.active_mask);
-    return 1;
-}
+#include "main_sdl_fm_preview.inc"
 
 static TsGeneratorRecipe current_fm_workspace_recipe(
     const TsInstrument *instrument)
 {
     TsGeneratorRecipe recipe = instrument->generator;
+    /* An empty destination must not inherit a deleted tile's stored patch. */
+    if (instrument->selected_slot >= 0 && instrument->selected_slot < TS_BANK_SLOT_COUNT &&
+        !instrument->bank[instrument->selected_slot].occupied) {
+        recipe.has_fm_patch = 0;
+        return recipe;
+    }
+    /* Imported material does not own the last generated tile's FM genome. */
+    recipe.has_fm_patch = 0;
     if (instrument->selected_slot >= 0 &&
         instrument->selected_slot < TS_BANK_SLOT_COUNT &&
         instrument->bank[instrument->selected_slot].occupied &&
@@ -3926,7 +3910,9 @@ static TsGeneratorRecipe current_fm_workspace_recipe(
         for (int index = instrument->post_edit_count - 1; index >= 0; --index) {
             const TsPostEdit *operation = &instrument->post_edits[index];
             const TsAudioPatch *patch;
-            if (operation->kind != TS_POST_MATERIAL_REPLACE ||
+            if ((operation->kind != TS_POST_MATERIAL_REPLACE &&
+                 operation->kind != TS_POST_PATCH_FIT &&
+                 operation->kind != TS_POST_PATCH_REPLACE) ||
                 operation->patch_index >= (uint32_t)slot->patch_count)
                 continue;
             patch = &slot->patches[operation->patch_index];
@@ -3947,12 +3933,22 @@ static void begin_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
     TsGeneratorRecipe recipe = current_fm_workspace_recipe(instrument);
     recipe.kind = TS_GENERATOR_FM;
     ts_fm_patch_from_recipe(&recipe, &ui->fm_patch);
+    if (!recipe.has_fm_patch && instrument->current.data &&
+        ts_sample_peak(&instrument->current) == 0.0f) {
+        /* Silence with no stored sound is a blank synth. Enabling V1 gives a
+           clean sine; no random attack or modulation is hidden underneath. */
+        ts_fm_patch_basic(&ui->fm_patch, TS_FM_WAVE_SINE);
+        ui->fm_patch.active_mask = 0;
+    }
     ui->fm_open = 1;
     ui->fm_full_choice_open = 0;
     ui->fm_bank_choice_open = 0;
     ui->fm_output_dragging = 0;
     ui->fm_page = TS_FM_PAGE_PITCH;
     ui->fm_voice_bank = 0;
+    ui->fm_source_slot = instrument->selected_slot;
+    ui->fm_source_page = ui->sample_page;
+    ui->fm_source_hash = ts_sample_hash(&instrument->current);
     ui->fm_preview_sample = preview;
     (void)render_fm_workspace(device, audio, ui, instrument, preview);
 }
@@ -3960,6 +3956,7 @@ static void begin_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
 static void close_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
                                TsUiState *ui, TsSample *preview)
 {
+    discard_fm_preview_job(ui);
     if (device) SDL_LockAudioDevice(device);
     runtime_note_clear(audio);
     if (device) SDL_UnlockAudioDevice(device);
@@ -3990,10 +3987,8 @@ static int fm_control_disabled(const TsFmPatch *patch, TsFmPage page, int contro
     return !ts_fm_control_available(patch, page, control);
 }
 
-static void randomize_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
-                                   TsUiState *ui, const TsInstrument *instrument,
-                                   TsFmSeedSequence *seed_sequence,
-                                   TsSample *preview)
+static void randomize_fm_workspace(TsUiState *ui, const TsInstrument *instrument,
+                                   TsFmSeedSequence *seed_sequence)
 {
     TsFmPatch source = ui->fm_patch;
     TsFmPatch varied;
@@ -4005,7 +4000,7 @@ static void randomize_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
     ts_fm_patch_vary(&source, seed, distance, &varied);
     varied.mutation_mask = original_mask;
     ui->fm_patch = varied;
-    (void)render_fm_workspace(device, audio, ui, instrument, preview);
+    request_fm_preview(ui,instrument);
     snprintf(ui->fm_message, sizeof(ui->fm_message),
              "RANDOMIZED OTHER UNLOCKED DOMAINS - %s PROTECTED",
              ts_fm_page_name(ui->fm_page));
@@ -8292,6 +8287,10 @@ static int sister_window_ensure(SisterWindow *sister, const TsConfig *config)
     sister->texture = sister->renderer ? SDL_CreateTexture(
         sister->renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
         TS_SISTER_UI_WIDTH, TS_SISTER_UI_HEIGHT) : NULL;
+#if SDL_VERSION_ATLEAST(2, 0, 12)
+    /* The native UI is pixel art: enlargement must not blur its strokes. */
+    if (sister->texture) SDL_SetTextureScaleMode(sister->texture, SDL_ScaleModeNearest);
+#endif
     if (sister->window == NULL || sister->renderer == NULL || sister->texture == NULL) {
         if (sister->texture != NULL) SDL_DestroyTexture(sister->texture);
         if (sister->renderer != NULL) SDL_DestroyRenderer(sister->renderer);
@@ -8493,7 +8492,7 @@ static void sister_set_parameter(TsSisterParameters *parameters,
         return;
     }
     switch ((TsSisterUiParameter)parameter) {
-    case TS_SISTER_UI_PARAM_PRISM_LENSES: parameters->prism.lenses = 2 + (int)lrintf(amount * 10); break;
+    case TS_SISTER_UI_PARAM_PRISM_LENSES: parameters->prism.lenses = 2 + (int)lrintf(amount * (TS_PRISM_LENSES - 2)); break;
     case TS_SISTER_UI_PARAM_PRISM_SPREAD: parameters->prism.spread = amount * 2; break;
     case TS_SISTER_UI_PARAM_PRISM_DRIFT: parameters->prism.drift = amount * 2; break;
     case TS_SISTER_UI_PARAM_PRISM_FOCUS: parameters->prism.focus = amount; break;
@@ -8501,6 +8500,7 @@ static void sister_set_parameter(TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_PRISM_BODY: parameters->prism.body = amount * 3; break;
     case TS_SISTER_UI_PARAM_PRISM_MIX: parameters->prism.mix = amount; break;
     case TS_SISTER_UI_PARAM_PRISM_DRY: parameters->prism.dry_level = amount * 2; break;
+    case TS_SISTER_UI_PARAM_PRISM_COLOR: parameters->prism.color = amount; break;
     case TS_SISTER_UI_PARAM_PRISM_OUTPUT: parameters->prism.output_db = -12 + amount * 24; break;
     case TS_SISTER_UI_PARAM_H1_LEVEL: parameters->head1_level = amount; break;
     case TS_SISTER_UI_PARAM_H1_TIME: parameters->head1_time_ms = amount * 4000.0f; break;
@@ -8626,7 +8626,7 @@ static float sister_parameter_normalized(const TsSisterParameters *parameters,
         return value > 1.0f ? 1.0f : value;
     }
     switch ((TsSisterUiParameter)parameter) {
-    case TS_SISTER_UI_PARAM_PRISM_LENSES: value = (parameters->prism.lenses - 2) / 10.f; break;
+    case TS_SISTER_UI_PARAM_PRISM_LENSES: value = (parameters->prism.lenses - 2) / (float)(TS_PRISM_LENSES - 2); break;
     case TS_SISTER_UI_PARAM_PRISM_SPREAD: value = parameters->prism.spread / 2; break;
     case TS_SISTER_UI_PARAM_PRISM_DRIFT: value = parameters->prism.drift / 2; break;
     case TS_SISTER_UI_PARAM_PRISM_FOCUS: value = parameters->prism.focus; break;
@@ -8634,6 +8634,7 @@ static float sister_parameter_normalized(const TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_PRISM_BODY: value = parameters->prism.body / 3; break;
     case TS_SISTER_UI_PARAM_PRISM_MIX: value = parameters->prism.mix; break;
     case TS_SISTER_UI_PARAM_PRISM_DRY: value = parameters->prism.dry_level / 2; break;
+    case TS_SISTER_UI_PARAM_PRISM_COLOR: value = parameters->prism.color; break;
     case TS_SISTER_UI_PARAM_PRISM_OUTPUT: value = (parameters->prism.output_db + 12) / 24.f; break;
     case TS_SISTER_UI_PARAM_H1_LEVEL: value = parameters->head1_level; break;
     case TS_SISTER_UI_PARAM_H1_TIME: value = parameters->head1_time_ms / 4000.0f; break;
@@ -8738,7 +8739,7 @@ static float sister_parameter_wheel_normalized(
         value = parameters->prism.lenses + direction * steps;
         if (value < 2) value = 2;
         if (value > TS_PRISM_LENSES) value = TS_PRISM_LENSES;
-        return (value - 2) / 10.f;
+        return (value - 2) / (float)(TS_PRISM_LENSES - 2);
     case TS_SISTER_UI_PARAM_DECORRELATE:
         return direction > 0 ? 1.0f : 0.0f;
     case TS_SISTER_UI_PARAM_FILTER_TYPE:
@@ -8879,6 +8880,7 @@ static const char *sister_parameter_name(int parameter)
     case TS_SISTER_UI_PARAM_PRISM_BODY: return "PRISM BODY";
     case TS_SISTER_UI_PARAM_PRISM_MIX: return "PRISM MIX";
     case TS_SISTER_UI_PARAM_PRISM_DRY: return "PRISM DRY LEVEL";
+    case TS_SISTER_UI_PARAM_PRISM_COLOR: return "PRISM COLOR";
     case TS_SISTER_UI_PARAM_PRISM_OUTPUT: return "PRISM OUTPUT";
     case TS_SISTER_UI_PARAM_H1_LEVEL: return "H1 LEVEL";
     case TS_SISTER_UI_PARAM_H1_TIME: return "H1 TIME";
@@ -9033,7 +9035,8 @@ static void sister_preset_model_sync(SisterWindow *sister,
 
 /* Optical gestures update only their own lens under the existing device lock.
    Keep the original values so Escape can undo the entire drag. */
-enum { PRISM_POINT, PRISM_RESET, PRISM_MUTE, PRISM_SOLO, PRISM_TRIM, PRISM_RESET_ALL };
+enum { PRISM_POINT, PRISM_RESET, PRISM_MUTE, PRISM_SOLO, PRISM_TRIM, PRISM_RESET_ALL,
+       PRISM_INPUT_SHAPE, PRISM_OUTPUT_SHAPE };
 static void sister_prism_edit(SDL_AudioDeviceID device, AudioState *audio,
                               SisterWindow *sister, int lens, int action, float x, float y)
 {
@@ -9049,6 +9052,10 @@ static void sister_prism_edit(SDL_AudioDeviceID device, AudioState *audio,
     case PRISM_SOLO: p.prism.solo_mask ^= 1 << lens; break;
     case PRISM_TRIM: p.prism.trim_db[lens] += x; break;
     case PRISM_RESET_ALL: ts_prism_reset_lenses(&p.prism); break;
+    case PRISM_INPUT_SHAPE:
+        p.prism.input_shape=(p.prism.input_shape+(int)x+TS_PRISM_SHAPE_COUNT)%TS_PRISM_SHAPE_COUNT;break;
+    case PRISM_OUTPUT_SHAPE:
+        p.prism.output_shape=(p.prism.output_shape+(int)x+TS_PRISM_SHAPE_COUNT)%TS_PRISM_SHAPE_COUNT;break;
     }
     ts_sister_runtime_set_parameters(&audio->sister, &p);
     ts_sister_runtime_mark_selected_preset_modified(&audio->sister);
@@ -9124,6 +9131,18 @@ static int sister_prism_event(SDL_AudioDeviceID device, AudioState *audio,
     if (event->type == SDL_MOUSEBUTTONDOWN &&
         (event->button.button == SDL_BUTTON_LEFT || event->button.button == SDL_BUTTON_RIGHT)) {
         if (!sister_event_mouse(sister->window, event->button.x, event->button.y, &x, &y)) return 0;
+        int optical_stage=-1;
+        if((y>=108 && y<=224 && x>=128 && x<=168) || (y>=228 && y<=238 && x>=102 && x<194))optical_stage=0;
+        if((y>=108 && y<=224 && x>=442 && x<=482) || (y>=228 && y<=238 && x>=416 && x<508))optical_stage=1;
+        if(optical_stage>=0) {
+            sister_prism_end_drag(sister);
+            int direction=event->button.button==SDL_BUTTON_RIGHT ? -1 : 1;
+            sister_prism_edit(device,audio,sister,0,optical_stage ? PRISM_OUTPUT_SHAPE : PRISM_INPUT_SHAPE,direction,0);
+            int shape=optical_stage ? sister->model.parameters.prism.output_shape : sister->model.parameters.prism.input_shape;
+            snprintf(sister->model.status,sizeof(sister->model.status),"%s %s / %s - COLOR SETS TIMBRE DEPTH",
+                optical_stage ? "OUTPUT" : "INPUT",ts_prism_shape_name(shape),ts_prism_shape_color_name(shape));
+            return 1;
+        }
         if (event->button.button==SDL_BUTTON_RIGHT &&
             ((x>=122 && x<238 && y>=48 && y<70) || (x>=264 && x<394 && y>=370 && y<392))) {
             sister_prism_end_drag(sister);
@@ -9154,7 +9173,13 @@ static int sister_prism_event(SDL_AudioDeviceID device, AudioState *audio,
             return 1;
         }
         if (lens==0) {
-            snprintf(sister->model.status,sizeof(sister->model.status),"BODY ANCHOR: WHEEL TRIM / SHIFT MUTE / CTRL SOLO");
+            snprintf(sister->model.status,sizeof(sister->model.status),"01 WET BODY ANCHOR - DRY LEVEL CONTROLS THE SEPARATE DRY PATH");
+            return 1;
+        }
+        if (ts_sister_ui_prism_strip_hit(x,y)>=0) {
+            sister_prism_end_drag(sister);
+            snprintf(sister->model.status,sizeof(sister->model.status),"LENS %02d SELECTED - DRAG ITS POINT / WHEEL TRIM / SHIFT MUTE / CTRL SOLO",lens+1);
+            sister->rendered_model_valid=0;
             return 1;
         }
         TsPrismView view = sister->model.routing.prism.valid ? sister->model.routing.prism :
@@ -13454,8 +13479,7 @@ int main(int argc, char **argv)
                         apply_fm_workspace(device, &audio, &ui, &instrument,
                                            &sample_pages, 0);
                     } else if ((mod & KMOD_SHIFT) && key == SDLK_r) {
-                        randomize_fm_workspace(device, &audio, &ui, &instrument,
-                                               &fm_seed_sequence, &fm_preview);
+                        randomize_fm_workspace(&ui,&instrument,&fm_seed_sequence);
                     } else if ((mod & KMOD_SHIFT) && key == SDLK_b) {
                         ui.fm_bank_choice_open = 1;
                         snprintf(ui.fm_message, sizeof(ui.fm_message),
@@ -14163,8 +14187,7 @@ int main(int argc, char **argv)
                             wheel_y > 0 ? 1 : -1,
                             (SDL_GetModState() & KMOD_SHIFT) != 0);
                     if (changed)
-                        (void)render_fm_workspace(device, &audio, &ui,
-                                                  &instrument, &fm_preview);
+                        request_fm_preview(&ui,&instrument);
                 } else if (wheel_y != 0 && ts_ui_fm_range_contains(x, y)) {
                     float step = (SDL_GetModState() & KMOD_SHIFT) ? 0.01f : 0.05f;
                     instrument.family_mutation += wheel_y > 0 ? step : -step;
@@ -14914,34 +14937,20 @@ int main(int argc, char **argv)
                                      "CONTROL INACTIVE IN THIS SYNTH MODE");
                         else if (ts_fm_set_control_normalized(
                                      &ui.fm_patch, ui.fm_page, control, amount))
-                            (void)render_fm_workspace(device, &audio, &ui,
-                                                      &instrument, &fm_preview);
+                            request_fm_preview(&ui,&instrument);
                     } else if (voice >= 0) {
-                        ui.fm_patch.active_mask ^= 1u << voice;
-                        (void)render_fm_workspace(device, &audio, &ui,
-                                                  &instrument, &fm_preview);
+                        toggle_fm_voice_workspace(&ui,&instrument,voice);
                     } else if (mutation != 0u) {
                         ui.fm_patch.mutation_mask ^= mutation;
                         snprintf(ui.fm_message, sizeof(ui.fm_message),
                                  "MUTATION PERMISSIONS UPDATED");
                     } else if (fm_action == TS_UI_FM_ACTION_UNISON) {
-                        TsFmPatch previous = ui.fm_patch;
-                        int had_source = ui.fm_patch.has_unison_source;
-                        int enabled = ts_fm_toggle_unison(&ui.fm_patch);
-                        if (render_fm_workspace(device, &audio, &ui, &instrument, &fm_preview)) {
-                            ui.fm_voice_bank = 0;
-                            snprintf(ui.fm_message, sizeof(ui.fm_message),
-                                     enabled ? "UNISON ON - NINE VOICES + THREE LOWER VOICES" :
-                                     had_source ? "UNISON OFF - ORIGINAL SOUND RESTORED" :
-                                     "UNISON OFF - V1 SOURCE; OLDER TILE HAS NO ORIGINAL");
-                        } else ui.fm_patch = previous;
+                        toggle_fm_unison_workspace(&ui,&instrument);
                     } else if (fm_action == TS_UI_FM_ACTION_VOICE_BANK) {
                         if (ts_fm_voice_count(&ui.fm_patch) > TS_FM_OPERATOR_COUNT)
                             ui.fm_voice_bank = !ui.fm_voice_bank;
                     } else if (fm_action == TS_UI_FM_ACTION_RANDOMIZE) {
-                        randomize_fm_workspace(device, &audio, &ui,
-                                               &instrument, &fm_seed_sequence,
-                                               &fm_preview);
+                        randomize_fm_workspace(&ui,&instrument,&fm_seed_sequence);
                     } else if (fm_action == TS_UI_FM_ACTION_BANK_MAKER) {
                         ui.fm_bank_choice_open = 1;
                         snprintf(ui.fm_message, sizeof(ui.fm_message),
@@ -14967,8 +14976,7 @@ int main(int argc, char **argv)
                     } else if (ui.fm_page == TS_FM_PAGE_PITCH &&
                                fm_action == TS_UI_FM_ACTION_APPLY_PITCHES) {
                         int changed = ts_fm_apply_pitch_scale(&ui.fm_patch);
-                        (void)render_fm_workspace(device, &audio, &ui,
-                                                  &instrument, &fm_preview);
+                        request_fm_preview(&ui,&instrument);
                         if (changed > 0)
                             snprintf(ui.fm_message, sizeof(ui.fm_message),
                                      "APPLIED %s PITCHES TO %d ACTIVE VOICE%s",
@@ -14991,8 +14999,7 @@ int main(int argc, char **argv)
                     } else if (fm_action == TS_UI_FM_ACTION_DRONE) {
                         ui.fm_patch.drone_mode = !ui.fm_patch.drone_mode;
                         ts_fm_patch_sanitize(&ui.fm_patch);
-                        (void)render_fm_workspace(device, &audio, &ui,
-                                                  &instrument, &fm_preview);
+                        request_fm_preview(&ui,&instrument);
                         snprintf(ui.fm_message, sizeof(ui.fm_message),
                                  ui.fm_patch.drone_mode ?
                                  "DRONE ON - ENVELOPES BYPASSED, EDGES ZEROED" :
@@ -15000,8 +15007,7 @@ int main(int argc, char **argv)
                     } else if (fm_action == TS_UI_FM_ACTION_EXTREME) {
                         ui.fm_patch.extreme_mode = !ui.fm_patch.extreme_mode;
                         ts_fm_patch_sanitize(&ui.fm_patch);
-                        (void)render_fm_workspace(device, &audio, &ui,
-                                                  &instrument, &fm_preview);
+                        request_fm_preview(&ui,&instrument);
                         snprintf(ui.fm_message, sizeof(ui.fm_message),
                                  ui.fm_patch.extreme_mode ?
                                  "EXTREME ON - FULL SYNTH RANGE, LIMITER ACTIVE" :
@@ -16417,6 +16423,7 @@ int main(int argc, char **argv)
             snprintf(sister_window.model.status,
                      sizeof(sister_window.model.status), "ROLLING MEMORY CLEARED");
         }
+        poll_fm_preview(device,&audio,&ui,&fm_preview);
         poll_transform_worker(device, &audio, &ui, &instrument, &transform);
         mosaic_commit(device,&ui,&instrument,&mosaic);
         portal_poll(device,&audio,&ui,&instrument,&portal);
@@ -16675,6 +16682,7 @@ int main(int argc, char **argv)
     ts_sister_runtime_free(&audio.sister);
     ts_external_recorder_free(&external_input.recorder);
     ts_capture_free(&audio.capture);
+    discard_fm_preview_job(&ui);
     ts_sample_free(&fm_preview);
     ts_sample_free(&drone_preview);
     ts_sample_free(&pending_selection_load);

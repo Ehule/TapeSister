@@ -130,6 +130,8 @@ int ts_sister_project_state_apply(const TsSisterProjectState *state,
 
 static int write_parameters(FILE *file, const TsSisterParameters *p)
 {
+    if (fprintf(file, "PrismInputShape=%d\nPrismOutputShape=%d\nPrismColor=%.9g\n",
+        p->prism.input_shape, p->prism.output_shape, p->prism.color) < 0) return 0;
     if (fprintf(file, "PrismDryLevel=%.9g\nPrismMuteMask=%d\nPrismSoloMask=%d\n",
         p->prism.dry_level, p->prism.mute_mask, p->prism.solo_mask) < 0) return 0;
     if (fprintf(file, "PrismEnabled=%d\nPrismMode=%d\nPrismLenses=%d\nPrismSpread=%.9g\nPrismDrift=%.9g\nPrismFocus=%.9g\nPrismStereo=%.9g\nPrismBody=%.9g\nPrismMix=%.9g\nPrismOutputDb=%.9g\n",
@@ -399,6 +401,9 @@ static int assign_parameter(TsSisterParameters *p, const char *key,
     PF("PrismDryLevel", prism.dry_level);
     PI("PrismMuteMask", prism.mute_mask);
     PI("PrismSoloMask", prism.solo_mask);
+    PI("PrismInputShape", prism.input_shape);
+    PI("PrismOutputShape", prism.output_shape);
+    PF("PrismColor", prism.color);
     PI("PrismEnabled", prism.enabled);
     PI("PrismMode", prism.mode);
     PI("PrismLenses", prism.lenses);

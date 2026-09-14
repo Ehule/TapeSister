@@ -133,7 +133,7 @@ typedef struct {
 typedef struct {
     atomic_int prism_valid;
     atomic_uint_least32_t prism_wet, prism_dry;
-    atomic_uint_least32_t prism_lens[TS_PRISM_LENSES][4];
+    atomic_uint_least32_t prism_lens[TS_PRISM_LENSES][6];
     atomic_uint_least64_t revision;
     atomic_int enabled;
     atomic_int rolling;

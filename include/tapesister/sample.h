@@ -227,6 +227,13 @@ typedef enum {
     TS_FILTER_MODE_COUNT
 } TsFilterMode;
 
+/* FM's CLEAN output bypasses both the filter and its fixed coloration. The
+   ordinary sample-processing filters keep their existing three modes. */
+enum {
+    TS_FM_FILTER_CLEAN = TS_FILTER_MODE_COUNT,
+    TS_FM_FILTER_MODE_COUNT
+};
+
 typedef enum {
     TS_SHAPER_TAPE = 0,
     TS_SHAPER_CLIP,
@@ -798,6 +805,9 @@ const char *ts_fm_interaction_name(int interaction);
 const char *ts_fm_pitch_scale_name(int scale);
 const char *ts_fm_page_name(TsFmPage page);
 void ts_fm_patch_from_recipe(const TsGeneratorRecipe *recipe, TsFmPatch *patch);
+void ts_fm_patch_basic(TsFmPatch *patch, TsFmWaveform waveform);
+/* Independent Create palette; keep legacy seed-only recipes unchanged. */
+void ts_fm_patch_fresh(TsFmPatch *patch, uint32_t seed);
 void ts_fm_patch_vary(const TsFmPatch *source, uint32_t seed, float range,
                       TsFmPatch *varied);
 float ts_fm_patch_distance(const TsFmPatch *source, const TsFmPatch *varied);
@@ -823,6 +833,10 @@ int ts_fm_render_sample(TsSample *sample, const TsFmPatch *patch,
                         float seconds, float frequency, uint32_t sample_rate,
                         uint32_t seed, char *error, size_t error_size);
 int ts_fm_sample_is_usable(const TsSample *sample);
+/* Live editing accepts quiet/silent output; tile generation keeps its signal gate. */
+int ts_fm_render_preview(TsSample *sample, const TsFmPatch *patch,
+                         float seconds, float frequency, uint32_t sample_rate,
+                         uint32_t seed, char *error, size_t error_size);
 void ts_fm_seed_sequence_init(TsFmSeedSequence *sequence,
                               uint64_t session_root);
 uint32_t ts_fm_seed_sequence_next(TsFmSeedSequence *sequence);
@@ -911,6 +925,9 @@ int ts_instrument_select_bank(TsInstrument *instrument, int slot,
                               char *error, size_t error_size);
 int ts_instrument_create_selected(TsInstrument *instrument, uint32_t seed,
                                   char *error, size_t error_size);
+/* Create a clean oscillator, or stamp it into the current selection. */
+int ts_instrument_create_basic(TsInstrument *instrument, TsFmWaveform waveform,
+                               char *error, size_t error_size);
 int ts_instrument_create_selected_fresh(TsInstrument *instrument,
                                         TsFmSeedSequence *sequence,
                                         uint32_t *successful_seed,

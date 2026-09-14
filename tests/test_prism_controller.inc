@@ -81,17 +81,149 @@ static void test_prism_points(void)
         e.button.x=(preset?300:150)*2;e.button.y=(preset?380:55)*2;
         assert(sister_prism_event(0,a,&ui,panel,&e));
         assert(!a->sister.parameters.prism.mute_mask && !a->sister.parameters.prism.solo_mask);
-        for(int i=0;i<12;++i) assert(!a->sister.parameters.prism.pitch_offset[i] &&
+        for(int i=0;i<TS_PRISM_LENSES;++i) assert(!a->sister.parameters.prism.pitch_offset[i] &&
             !a->sister.parameters.prism.pan_offset[i] && !a->sister.parameters.prism.trim_db[i]);
     }
+    /* Each large optical element cycles independently; right-click reverses. */
+    for(int stage=0;stage<2;++stage) {
+        for(int shape=1;shape<=TS_PRISM_SHAPE_COUNT;++shape) {
+            e.type=SDL_MOUSEBUTTONDOWN;e.button.button=SDL_BUTTON_LEFT;
+            e.button.x=(stage?462:148)*2;e.button.y=180*2;
+            assert(sister_prism_event(0,a,&ui,panel,&e));
+            assert((stage?a->sister.parameters.prism.output_shape:a->sister.parameters.prism.input_shape)==shape%TS_PRISM_SHAPE_COUNT);
+            assert(!panel->prism_drag_lens);
+        }
+        e.button.button=SDL_BUTTON_RIGHT;
+        assert(sister_prism_event(0,a,&ui,panel,&e));
+        assert((stage?a->sister.parameters.prism.output_shape:a->sister.parameters.prism.input_shape)==TS_PRISM_MENISCUS_NEGATIVE);
+    }
+    /* Middle handles track the pre-output map, while the audible output can invert it. */
+    panel->model.parameters.prism.input_shape=0;
+    panel->model.parameters.prism.output_shape=TS_PRISM_BICONCAVE;
+    ts_sister_runtime_set_parameters(&a->sister,&panel->model.parameters);
+    for(int i=0;i<200;++i)audio_callback(a,(Uint8 *)w,sizeof(w));
+    assert(ts_sister_runtime_get_snapshot(&a->sister,&snapshot));
+    assert(snapshot.prism.lens[1].refraction_cents<0 && snapshot.prism.lens[1].cents>0);
+    assert(snapshot.prism.lens[1].refraction_pan<0 && snapshot.prism.lens[1].pan>0);
     panel->model.fx_page=0;
     assert(ts_sister_ui_prism_hit(&panel->model,308,167)==-1);
     SDL_DestroyWindow(panel->window); free(panel); routing_free(a);
 }
 
+/* Exercise the complete callback -> atomic snapshot -> UI model -> pixels
+   path. The reported patch must visibly move without mouse events; Drift zero
+   and full Focus must settle instead of acquiring a decorative animation. */
+static void test_prism_motion(void)
+{
+    static TsFramebuffer current,previous;
+    for(int powered=0;powered<2;++powered)for(int kind=0;kind<3;++kind) {
+        AudioState *a=routing_audio(powered);TsSisterUiModel model;
+        a->mosaic->events[0].looping=1;
+        ts_sister_ui_model_init(&model,&ui.config);model.fx_page=3;
+        TsSisterParameters p=a->sister.parameters;
+        p.prism.enabled=1;p.prism.spread=2;p.prism.drift=kind==1?0:2;
+        p.prism.focus=kind==2?1:.6f;p.prism.stereo=1;p.prism.body=.9f;p.prism.mix=1;
+        p.prism.input_shape=TS_PRISM_PLANO_CONVEX;p.prism.output_shape=TS_PRISM_MENISCUS_NEGATIVE;
+        p.prism.color=.95f;ts_sister_runtime_set_parameters(&a->sister,&p);
+        float lo[12],hi[12],samples[6400];int changed[2]={0};
+        for(int i=0;i<12;++i){lo[i]=1000;hi[i]=-1000;}
+        for(int frame=-30;frame<150;++frame) {
+            if(frame==75)a->mosaic->playing=0; /* Drift also advances in silence. */
+            audio_callback(a,(Uint8 *)samples,sizeof(samples));
+            if(frame==74) {
+                double energy=0;for(int i=0;i<6400;++i)energy+=samples[i]*samples[i];
+                assert(energy>1e-6); /* The first half really contains playback. */
+            }
+            TsSisterRoutingSnapshot snapshot;assert(ts_sister_runtime_get_snapshot(&a->sister,&snapshot));
+            assert(snapshot.prism.valid);
+            ts_sister_ui_model_update(&model,&snapshot,NULL,NULL,&p);
+            ts_sister_ui_render(&current,&model,&ui.palette);
+            if(frame>=0) {
+                for(int i=0;i<12;++i) {
+                    float x,y;ts_sister_ui_prism_point_f(model.routing.prism.lens[i],&x,&y);
+                    lo[i]=fminf(lo[i],y);hi[i]=fmaxf(hi[i],y);
+                }
+                if(frame && memcmp(current.pixels+100*640,previous.pixels+100*640,
+                                    150*640*sizeof(uint32_t)))++changed[frame>=75];
+            }
+            previous=current;
+        }
+        assert(hi[0]==lo[0]); /* Fixed body anchor. */
+        if(kind==0) {
+            for(int i=1;i<12;++i)assert(hi[i]-lo[i]>.5f);
+            assert(changed[0]>30 && changed[1]>30);
+        } else {
+            for(int i=1;i<12;++i)assert(hi[i]-lo[i]<.02f);
+            assert(!changed[0] && !changed[1]);
+        }
+        printf("Prism motion power=%d case=%d changed=%d/%d\n",powered,kind,changed[0],changed[1]);
+        routing_free(a);
+    }
+}
+
+static void test_prism_strip(void)
+{
+    AudioState *a=routing_audio(0);SisterWindow *panel=calloc(1,sizeof(*panel));assert(panel);
+    ts_sister_ui_model_init(&panel->model,&ui.config);panel->model.fx_page=3;
+    panel->window=SDL_CreateWindow("Prism strip",0,0,1280,800,SDL_WINDOW_HIDDEN);assert(panel->window);
+    panel->window_id=SDL_GetWindowID(panel->window);
+    TsSisterUiHit hit=ts_sister_ui_hit_test_model(&panel->model,159,288);
+    char target[80];assert(ts_sister_ui_midi_target(hit,target,sizeof(target)));
+    assert(midi_sister_hit_from_target(target,1,&hit));
+    sister_apply_action(0,a,&ui,&instrument,panel,NULL,NULL,hit,48000,2);
+    assert(a->sister.parameters.prism.lenses==24);
+    panel->model.parameters.prism.focus=1;panel->model.parameters.prism.stereo=0;
+    ts_sister_runtime_set_parameters(&a->sister,&panel->model.parameters);
+    SDL_Event e={0};e.type=SDL_MOUSEBUTTONDOWN;e.button.button=SDL_BUTTON_LEFT;
+    SDL_SetModState(KMOD_NONE);
+    for(int i=0;i<24;++i) {
+        e.button.x=(TS_PRISM_STRIP_X+i*TS_PRISM_STRIP_STEP+10)*2;
+        e.button.y=(TS_PRISM_STRIP_Y+5)*2;
+        assert(sister_prism_event(0,a,&ui,panel,&e));
+        assert(panel->model.prism_selected==i+1 && !panel->prism_drag_lens);
+    }
+    TsPrismView v=ts_prism_control_view(&panel->model.parameters.prism);int x,y;
+    ts_sister_ui_prism_point(v.lens[23],&x,&y);
+    assert(ts_sister_ui_prism_hit(&panel->model,x,y)==23); /* Selected overlapping point wins. */
+    SDL_SetModState(KMOD_SHIFT);assert(sister_prism_event(0,a,&ui,panel,&e));
+    assert(a->sister.parameters.prism.mute_mask==(1<<23));
+    SDL_SetModState(KMOD_CTRL);assert(sister_prism_event(0,a,&ui,panel,&e));
+    assert(a->sister.parameters.prism.solo_mask==(1<<23));
+    SDL_SetModState(KMOD_NONE);
+    int strip_x=e.button.x,strip_y=e.button.y;
+    e.type=SDL_MOUSEWHEEL;e.wheel.y=6;e.wheel.direction=SDL_MOUSEWHEEL_NORMAL;
+#if SDL_VERSION_ATLEAST(2, 26, 0)
+    e.wheel.mouseX=strip_x;e.wheel.mouseY=strip_y;
+#else
+    SDL_WarpMouseInWindow(panel->window,strip_x,strip_y);
+#endif
+    memset(&ui.wheel_guard,0,sizeof(ui.wheel_guard));assert(sister_prism_event(0,a,&ui,panel,&e));
+    assert(a->sister.parameters.prism.trim_db[23]==6);
+    e.type=SDL_MOUSEBUTTONDOWN;e.button.x=strip_x;e.button.y=strip_y;e.button.button=SDL_BUTTON_RIGHT;
+    assert(sister_prism_event(0,a,&ui,panel,&e));
+    assert(!a->sister.parameters.prism.mute_mask && !a->sister.parameters.prism.solo_mask && !a->sister.parameters.prism.trim_db[23]);
+    panel->model.parameters.prism.focus=0;
+    ts_sister_runtime_set_parameters(&a->sister,&panel->model.parameters);
+    v=ts_prism_control_view(&panel->model.parameters.prism);ts_sister_ui_prism_point(v.lens[23],&x,&y);
+    e.button.x=x*2;e.button.y=y*2;e.button.button=SDL_BUTTON_LEFT;
+    assert(sister_prism_event(0,a,&ui,panel,&e) && panel->prism_drag_lens==24);
+    e.type=SDL_MOUSEMOTION;e.motion.state=SDL_BUTTON_LMASK;e.motion.x=(x+30)*2;e.motion.y=(y-20)*2;
+    assert(sister_prism_event(0,a,&ui,panel,&e));
+    assert(a->sister.parameters.prism.pitch_offset[23]>0 && a->sister.parameters.prism.pan_offset[23]>.29f);
+    assert(!a->sister.parameters.prism.pitch_offset[11]);
+    e.type=SDL_MOUSEBUTTONUP;e.button.button=SDL_BUTTON_LEFT;assert(sister_prism_event(0,a,&ui,panel,&e));
+    float wheel=sister_parameter_wheel_normalized(&a->sister.parameters,TS_SISTER_UI_PARAM_PRISM_LENSES,1,0);
+    assert(wheel==1); /* Capped at 24. */
+    panel->model.parameters.prism.lenses=12;
+    assert(ts_sister_ui_prism_hit(&panel->model,strip_x/2,strip_y/2)==-1);
+    SDL_DestroyWindow(panel->window);free(panel);routing_free(a);
+}
+
 static void test_prism_controller(void)
 {
     test_prism_points();
+    test_prism_strip();
+    test_prism_motion();
     for (int powered=0; powered<2; ++powered) {
         AudioState *a=routing_audio(powered), *dry=routing_audio(powered);
         SisterWindow *panel=calloc(1,sizeof(*panel)); assert(panel);
@@ -131,10 +263,16 @@ static void test_prism_controller(void)
         assert(midi_sister_hit_from_target(target,.75f,&midi));
         sister_apply_action(0,a,&ui,&instrument,panel,NULL,NULL,midi,48000,2);
         assert(a->sister.parameters.prism.dry_level==1.5f);
-        assert(a->sister.parameters.prism.lenses==10);
+        hit=ts_sister_ui_hit_test_model(&panel->model,240,339);
+        assert(hit.action==TS_SISTER_UI_ACTION_PARAMETER && hit.index==TS_SISTER_UI_PARAM_PRISM_COLOR);
+        assert(ts_sister_ui_midi_target(hit,target,sizeof(target)));
+        assert(midi_sister_hit_from_target(target,.75f,&midi));
+        sister_apply_action(0,a,&ui,&instrument,panel,NULL,NULL,midi,48000,2);
+        assert(a->sister.parameters.prism.color==.75f);
+        assert(a->sister.parameters.prism.lenses==18);
         float wheel=sister_parameter_wheel_normalized(&a->sister.parameters,TS_SISTER_UI_PARAM_PRISM_LENSES,1,1);
         sister_set_parameter(&panel->model.parameters,TS_SISTER_UI_PARAM_PRISM_LENSES,wheel);
-        assert(panel->model.parameters.prism.lenses==11);
+        assert(panel->model.parameters.prism.lenses==19);
         hit=ts_sister_ui_hit_test_model(&panel->model,145,55);
         assert(hit.action==TS_SISTER_UI_ACTION_PRISM_MODE);
         assert(ts_sister_ui_midi_target(hit,target,sizeof(target)));

@@ -257,11 +257,41 @@ it deliberately before replacing or clearing it.
 
 1. Click an empty tile.
 2. Click **CREATE**.
-3. TapeSister renders a fresh six-voice FM sound into that tile.
+3. TapeSister rolls a fresh sound from its FM palette into that tile.
 4. Audition it with Space, the tile, the onscreen keyboard, QWERTY, or MIDI.
 
-Left-clicking Create always proposes a fresh FM source. It does not depend on another special Source
-tile.
+Ordinary left-clicking **CREATE** starts independently on every click, whether the
+tile is empty or already occupied. It draws from simple tones, layered drones,
+evolving drones, percussive sounds, softer filter openings, and wild FM. Drone and
+Extreme may therefore appear as part of a new roll. Each family has randomized
+settings; no family is held between clicks.
+
+The previous tile's waveform, Unison state, Drone/Extreme switches, pitch locks,
+mutation permissions, and render duration do not constrain a new Create. Use
+**VARY** to develop the current material and **VARY with CHAIN** to put a related
+child in another tile. **Shift-CREATE** is the direct route to basic waveforms.
+The same fresh palette applies when Create stamps into a waveform selection;
+the surrounding audio is preserved.
+
+### Simple oscillator sources
+
+**Shift-click CREATE** to cycle **Sine → Square → Saw → Triangle**, then back to
+Sine. The status line names the sound and the next choice. The cycle advances only
+when creation succeeds. Each preset starts with one steady C4 oscillator, eight
+seconds long, with the other voices off, no LFO, no attack noise, and no modulation.
+The FM Filter page shows **CLEAN**, which bypasses the filter and fixed output
+coloration. Select LOW, HIGH, or BAND to add that processing again. Clean sums use
+constant peak attenuation when needed, so stacking voices does not hard-clip them.
+
+These are editable FM sounds: open FM LOGIC to change the oscillator, add voices,
+or enable Unison. Disabling Unison restores the original single-oscillator patch.
+A waveform selection receives a stamp while the surrounding audio remains intact;
+Undo removes that stamp. The same Create gesture works inside a Mosaic event editor.
+
+An existing silent tile with no saved FM patch opens as a blank synth: all voices
+off and no hidden transient or modulation. Enable V1 for a clean sine. Disabling
+every voice in any FM patch silences its attack exciter too. This applies to the FM
+preview; Create/Apply still reject renders with no usable signal.
 
 ### CREATE and CDP variations
 
@@ -270,6 +300,7 @@ CREATE has two independent dice rolls and a way back to the clean sound:
 | Gesture on CREATE | Result |
 | --- | --- |
 | Left-click | Generate a fresh FM sound |
+| Shift-left-click | Cycle clean Sine → Square → Saw → Triangle sources |
 | Right-click | Render a random CDP variation of the retained clean waveform |
 | Middle-click | Cancel the pending CDP variation and restore the retained clean waveform |
 
@@ -345,7 +376,9 @@ temporary until **APPLY** is pressed.
 `grave` selects Mosaic; pressing it in Mosaic returns to the main canvas.
 `Shift+grave` selects FM; pressing it in FM returns to the main canvas (or active
 event editor). Switching between FM and Mosaic keeps the parked FM patch available
-for the next explicit `Shift+grave`. Visiting Sister with `Tab` preserves the
+for the next explicit `Shift+grave` on the same unchanged tile. Selecting a different
+tile or changing/deleting its source opens the newly selected sound; an empty
+destination starts a fresh FM patch. Visiting Sister with `Tab` preserves the
 current workspace and edited event. Sister fills the screen using a borderless
 window, avoiding SDL's forced minimization between two fullscreen windows.
 
@@ -376,6 +409,12 @@ Press **UNISON** again to restore the complete original patch. Edit that source
 and activate Unison again to build a new stack. **APPLY** stores both the active
 sound and original source, preserving the toggle after save/reopen. Switching
 off replaces edits made to the stack; the source is the next activation's basis.
+
+This remains reversible after editing voices 7–12 or restoring a quiet source.
+Sound edits update the full preview in the background; **UPDATING** appears while
+it catches up. Rapid edits coalesce, and only the newest result reaches the
+waveform and held notes. Quiet settings replace the previous preview with their
+actual output. Applying a tile still requires a usable signal.
 
 Unison enables Drone and Pitch Lock, protects Structure from randomization, and
 copies voice 1's waveform/LFO settings. Your global filter remains. For a saw
@@ -921,11 +960,15 @@ ordinary post effects, the global limiter, and the final OUT fader.
 ## Prism live refraction
 
 Open Sister Machine with **Tab**, then cycle its page button through FX and Fallout
-to **PRISM**. Prism splits incoming audio into 2–12 related lenses and recombines
-it. Choose **SUPERSAW** for detuned layers plus three optional octave-body voices,
+to **PRISM**. Prism splits incoming audio into 2–24 related lenses and recombines
+it. The default stays at twelve; at 24 there are 23 shifted lenses plus the clean
+body anchor. Existing patch counts and FM's twelve-voice Unison are preserved.
+Choose **SUPERSAW** for detuned layers plus up to five octave-body voices,
 or **ENSEMBLE** for closer pitches and more time displacement. The rays follow
 smoothed pitch, pan, level and Wet; Focus draws fine pitch/time differences
-back together. Drag hollow middle points up/down for individual pitch and
+back together. The **01–24 strip** selects lenses when their points overlap;
+its numbers also accept mute/solo, wheel trim and right-click reset. Numbers above
+the active count are dim and inactive. Drag hollow middle points up/down for individual pitch and
 left/right for pan. Wheel over any lens for −24 to +12 dB trim (Shift-wheel for
 fine steps); brightness follows its level. Shift-click mutes and Ctrl-click solos;
 muted handles remain clickable. Right-click resets one lens; right-click the mode
@@ -938,13 +981,27 @@ as lenses are added; manual trims remain effective even in solo. Output provides
 −12 to +12 dB through the existing final limiter.
 **REC FILE** records the final processed stereo output.
 
+The **01 BODY** label identifies the unshifted voice inside the wet sum. Its
+wheel trim and Body affect its gain; **Dry Level** instead controls the separately
+labeled original lane. Neither path receives glass coloration. Click either large
+lens or its name to cycle six shapes; right-click cycles backward. Convex glass
+preserves or narrows intervals, concave glass inverts them, and meniscus glass
+weights upper/lower intervals differently. The output shape also maps stereo pan.
+The **Color** slider blends per-voice warmth, phase coloration, saturation or
+high-pass filtering according to the two selected shapes. Color zero leaves just
+the pitch/pan mappings. Both BI-CONVEX shapes preserve the previous clear sound.
+The crisp curves display intermediate and final pitches as rays pass through
+the output glass. Solid strokes and nearest-neighbor enlargement retain the
+native pixel style. Drift movement follows the DSP even during silence; Drift
+zero and full Focus settle the movement.
+
 With Sister POWER off, Prism processes ordinary program audio and enabled external
 monitoring before the shared FX. With POWER on, select Sister sources and enable
 Monitor; Prism precedes the tape input and PRE slots. Sister DRY 100 / WET 0 gives
 a direct Prism performance without delayed heads. Prism WET controls the lens blend.
 
-Controls participate in the existing MIDI learn and saved Sister project/preset
-state. Old projects start with Prism off. See [Prism](PRISM.md) for the signal path,
+Sliders, On/Off and Mode participate in the existing MIDI learn; shape selectors
+use the mouse. All settings persist in Sister projects/presets. Old projects start with Prism off. See [Prism](PRISM.md) for the signal path,
 optical meanings, gain and latency behavior, measured CPU costs and test results.
 
 ## Sister Machine

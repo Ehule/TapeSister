@@ -1,6 +1,7 @@
 # Generative six-voice FM sound logic
 
-TapeSister's default Create source is a deterministic six-voice FM genome. Audio is
+TapeSister's default Create source is an independently rolled FM genome with up
+to six active voices. Audio is
 rendered offline into an ordinary tile or temporary performance buffer; the editor and
 realtime callback never depend on a separate synth runtime.
 
@@ -13,14 +14,15 @@ Each stored patch contains:
 - per-voice LFO type, rate, and depth with pitch, amplitude, index, filter, random,
   and stepped destinations;
 - voice enable mask, global depth, shape, bounded feedback, and transient mix;
-- low/high/band-pass filter mode, cutoff, resonance, envelope attack/release/amount;
+- CLEAN or low/high/band-pass filter mode, cutoff, resonance, envelope attack/release/amount;
 - eight pairwise interaction modes and an interaction mix;
 - stored Drone and Extreme performance/render modes.
 
-The renderer bounds feedback, applies a DC blocker and output saturation, and replaces
-non-finite samples with silence. A seed plus complete genome always produces the same
-audio. TSR29 stores the twelve voice settings, original Unison source, pitch-randomization
-rules, and tile protection. TSR6 through TSR28 remain loadable and derive safe defaults
+The renderer bounds feedback and replaces non-finite samples with silence. LOW,
+HIGH and BAND apply a DC blocker and output saturation; CLEAN bypasses that
+coloration. A seed plus complete genome always produces the same audio. TSR30
+adds the explicit CLEAN filter/output mode and stores the twelve voice settings,
+original Unison source, pitch-randomization rules, and tile protection. TSR6 through TSR29 remain loadable and derive safe defaults
 for fields that did not exist in those formats; formats before TSR27 load as mono.
 
 The [twelve-voice Unison toggle](FM_UNISON.md) copies voice 1 into nine detuned carriers plus three an octave below. The original ten FM routings and their seed sequences stay at six operators.
@@ -98,3 +100,52 @@ builds and project round trips reproducible.
 FM LOGIC, CDP/DSP Transform, and Drone Maker miniature waveforms draw the current
 audition position from the exact preview sample pointer, so each small playhead follows
 the sound that is actually running.
+
+## Clean sources and the all-off state
+
+Shift-Create cycles one-voice C4 Sine, Square, Saw, and Triangle patches. Their
+Drone flag removes the amplitude envelope; LFO depths, feedback, transient mix,
+and interaction mix start at zero. CLEAN on the Filter page bypasses the filter,
+fixed saturation, and DC blocker, preserving the sine spectrum. Stacked clean
+carriers use one peak-based attenuation over the offline render only when their
+sum would exceed 0.98. Existing LOW/HIGH/BAND patches retain their rendering path.
+TSR30/genome 7 serializes CLEAN, including an original patch saved by Unison;
+TSR29/genome 6 and earlier projects remain readable, and old values are unchanged.
+
+The transient exciter now requires at least one enabled voice in the current
+six- or twelve-voice bank. All-off previews are exact zero, including non-Drone
+patches with Attack at maximum. A silent imported/canvas tile without an FM genome
+opens with a clean, all-off patch instead of inventing seed-zero percussion.
+
+Native regression coverage checks the all-off state across every topology/filter,
+waveform harmonics at 44.1/48 kHz, Unison restoration, TSR30 save/reopen, selection
+stamping and Undo, and Shift-Create's actual controller route. On Windows, verify
+the supplied silent tile, V1 sine, voice toggles while held, the four Create choices,
+FM/Unison reopen, and Shift-Create inside a Mosaic event editor.
+
+## Independent Create rolls
+
+Ordinary Create builds a complete recipe from its new session seed and an empty
+state. A balanced six-family palette covers simple steady sources, related
+three-carrier drones, slowly evolving FM drones, articulated/percussive sounds,
+gentler amplitude decay with opening filters, and extended-range FM. Families
+and settings are rolled anew each time; no previous tile or waveform choice is
+used as a template. Both sustained and enveloped sounds are common; attack noise
+is optional.
+
+The palette has its own constructor. The legacy seed-to-FM decoder is unchanged,
+and new rolls store the complete genome, preserving old project regeneration and
+exact new-project reloads. Full-tile Create and selection Create share the palette;
+selection length still determines the stamp length. A failed Create restores the
+previous generator state. Existing tile locks and the usable-signal retry gate
+remain in force. Vary, Chain, exact FM Apply, and the Shift-Create cycle retain
+their separate jobs.
+
+Tests compare identical fresh seeds after poisoned pure-wave/Unison/all-off
+settings against a blank instrument, including repeated Create on the same tile,
+new tile creation, Chain enabled, saved regeneration, and selection stamping.
+Palette checks cover sustained and articulated output, basic and complex voices,
+all ten routings, waveforms and interaction modes. Windows audition: Shift-Create
+a sine, choose an empty tile, then repeatedly use ordinary Create; repeat after
+editing Unison, Drone, and mutation locks. Confirm Vary/Chain still develop the
+chosen material and Shift-Create still follows its four-waveform cycle.

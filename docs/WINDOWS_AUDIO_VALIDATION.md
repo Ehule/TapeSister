@@ -67,12 +67,31 @@ cannot be repaired inside TapeSister.
 
 ## Prism instrument audition
 
-- [ ] At 256 frames, audition 2, 4, 8 and 12 lenses with a physical mono synth.
-- [ ] Feed FM 12-voice Unison into all 12 Prism lenses. Compare level and bass
+- [ ] At 256 frames, audition 2, 4, 8, 12, 16, 20 and 24 lenses with a physical mono synth.
+- [ ] Feed FM 12-voice Unison into 12 and then 24 Prism lenses. Compare level and bass
   against bypass at Output 0 dB, then use Output while watching the existing LIM.
+- [ ] Select all 24 lenses from the numbered strip, including overlapping points
+  at full Focus / Stereo zero. Test mute/solo, wheel trim and reset on lens 24;
+  reduce to 12, save/reload, and return to 24 to check retained edits. Confirm
+  older twelve-lens patches keep their sound.
+- [ ] At 24 lenses, run MENISCUS + into MENISCUS − with Color 100 while recording
+  and moving controls. Check for device underruns at the normal buffer size.
 - [ ] Pull one hollow point wide and keep another narrow. Test pitch/pan, right-click
   reset, Escape during drag, focus contraction, count changes and saved recall.
 - [ ] Explore Spread/Drift through 200%, Body through 300%, and Dry Level 0–200%.
+- [ ] At Wet 100, confirm Dry Level does not change 01 BODY; wheel-trim or mute
+  01 instead. At Wet 50, Dry Level should change the separate labeled DRY lane.
+- [ ] Cycle each big glass lens forward/backward through all six silhouettes.
+  Try all 36 pairs with Color zero and then raised; check pitch inversion,
+  narrower fans, stereo remapping, warm/hollow filtering, phase color and drive.
+  Switch shapes during sustained notes; listen for clicks and assess high-frequency
+  saturation texture. Save and reopen a mixed-shape patch with hand-edited points.
+- [ ] Check crisp curves and solid handle borders at native and enlarged window
+  sizes; output inversion should bend rays across the center inside the output glass.
+  At Spread 200 / Drift 200 / Focus 60 with PLANO-CONVEX input and MENISCUS −
+  output, watch for independent ray movement with no mouse activity, both while
+  playing and after stopping. Repeat with tape POWER on/off. Drift zero and
+  Focus 100 should settle the motion.
 - [ ] Shift-click mute, Ctrl-click solo and wheel-trim each lens, including 01.
   Confirm muted handles remain clickable, trim changes brightness and audible level,
   and right-clicking either the mode button or preset name restores stock lenses.
@@ -92,7 +111,7 @@ cannot be repaired inside TapeSister.
 - [ ] Record using Prism's REC FILE button while playing and switching pages.
   Confirm recorded sound and final output agree.
 - [ ] Map On/Off, Mode, Lenses, Spread, Drift, Focus and Wet using the existing
-  MIDI learn flow. Reopen the project and confirm settings and mappings.
+  MIDI learn flow, including Color. Reopen the project and confirm settings and mappings.
 
 [Prism](PRISM.md) records the headless checks and server CPU measurements. Those
 measurements do not certify this Windows interface or its hardware latency.
@@ -101,3 +120,21 @@ measurements do not certify this Windows interface or its hardware latency.
   then play/stop the arrangement: the existing voices should continue. Release
   the held key over Mosaic and confirm it stops normally (unless latched or
   sustained). Switching views must not free a playing FM preview.
+
+## FM Unison and preview recovery
+
+- [ ] Enable Unison, edit pitches/waveforms on voices 7–12, then switch it off.
+  Confirm the original routing, voices, filter and modulation return. Repeat after
+  saving/reopening an applied Unison tile and with a silent original patch.
+- [ ] Toggle all Unison voices off while holding a note. The waveform and audio
+  should become silent after UPDATING clears; enable one voice and confirm both
+  return without retriggering the latch.
+- [ ] Quickly toggle voices and wheel several pitches while a preview is rendering.
+  Controls should respond immediately; only the final settings should become the
+  new waveform/audio. Check that there is no sequence of outdated renders afterward.
+- [ ] Park FM with Shift+grave and reopen the unchanged tile: retain its edits.
+  Then select another tile, clear the source tile, or create a replacement in that
+  slot and reopen FM: it should load the newly selected sound. An empty destination
+  should open a fresh six-voice patch.
+- [ ] Close FM or quit while UPDATING is visible. Reopen and check that no old job
+  replaces the new workspace. Check UPDATING visibility at native/enlarged sizes.

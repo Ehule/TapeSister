@@ -237,6 +237,8 @@ int ts_sister_preset_delete(TsSisterPresetBank *bank, size_t index,
 
 static int write_parameters(FILE *file, const TsSisterParameters *p)
 {
+    if (fprintf(file, "prism_input_shape=%d\nprism_output_shape=%d\nprism_color=%.9g\n",
+        p->prism.input_shape, p->prism.output_shape, p->prism.color) < 0) return 0;
     if (fprintf(file, "prism_dry_level=%.9g\nprism_mute_mask=%d\nprism_solo_mask=%d\n",
         p->prism.dry_level, p->prism.mute_mask, p->prism.solo_mask) < 0) return 0;
     if (fprintf(file, "prism_enabled=%d\nprism_mode=%d\nprism_lenses=%d\nprism_spread=%.9g\nprism_drift=%.9g\nprism_focus=%.9g\nprism_stereo=%.9g\nprism_body=%.9g\nprism_mix=%.9g\nprism_output_db=%.9g\n",
@@ -469,6 +471,9 @@ static int assign_field(TsSisterParameters *p, const char *key,
     FLOAT_FIELD("prism_dry_level", prism.dry_level);
     INT_FIELD("prism_mute_mask", prism.mute_mask);
     INT_FIELD("prism_solo_mask", prism.solo_mask);
+    INT_FIELD("prism_input_shape", prism.input_shape);
+    INT_FIELD("prism_output_shape", prism.output_shape);
+    FLOAT_FIELD("prism_color", prism.color);
     INT_FIELD("prism_enabled", prism.enabled);
     INT_FIELD("prism_mode", prism.mode);
     INT_FIELD("prism_lenses", prism.lenses);

@@ -47,7 +47,7 @@ static void check_stream(unsigned rate)
         if (n % 1379 == 0) {
             c.enabled = (n / 1379) % 3 != 0;
             c.mode = (n / 1379) % TS_PRISM_MODE_COUNT;
-            c.lenses = 2 + (n / 1379) % 11;
+            c.lenses = 2 + (n / 1379) % (TS_PRISM_LENSES - 1);
             c.spread = (n / 1379) % 10 / 9.f;
             c.pitch_offset[1] = (n / 1379) % 2 ? -1200 : 1200;
             c.pan_offset[1] = (n / 1379) % 2 ? -2 : 2;
@@ -75,14 +75,14 @@ static void check_stream(unsigned rate)
 static void check_pitch_and_focus(unsigned rate)
 {
     TsPrism p = {0}; TsPrismControls c = settings();
-    c.stereo = 0;
+    c.stereo = 0; c.lenses = TS_PRISM_LENSES;
     assert(ts_prism_prepare(&p, rate)); ts_prism_set_controls(&p, &c);
-    double re[12] = {0}, im[12] = {0};
+    double re[TS_PRISM_LENSES] = {0}, im[TS_PRISM_LENSES] = {0};
     for (unsigned n = 0; n < 5 * rate; ++n) {
         float in = .4f * (float)sin(6.283185307179586 * 880 * n / rate);
         TsStereoFrame out = ts_prism_process(&p, (TsStereoFrame){in, -in});
         assert(out.l == -out.r); /* Anti-phase stereo is retained, not folded. */
-        if (n >= rate) for (int i = 0; i < 12; ++i) {
+        if (n >= rate) for (int i = 0; i < TS_PRISM_LENSES; ++i) {
             double t = (double)(n - rate) / (4 * rate - 1);
             double window = .5 - .5 * cos(6.283185307179586 * t);
             double hz = 880 * exp2(ts_prism_unison_cents[i] / 1200);
@@ -92,7 +92,7 @@ static void check_pitch_and_focus(unsigned rate)
         }
     }
     TsPrismView v = ts_prism_view(&p);
-    for (int i = 0; i < 12; ++i) {
+    for (int i = 0; i < TS_PRISM_LENSES; ++i) {
         assert(fabsf(v.lens[i].cents - ts_prism_unison_cents[i]) < .06f);
         double amplitude = hypot(re[i], im[i]) / rate;
         printf("%u Hz: lens %d, %.1f cents, amplitude %.5f\n", rate, i + 1, v.lens[i].cents, amplitude);
@@ -102,8 +102,8 @@ static void check_pitch_and_focus(unsigned rate)
     ts_prism_set_controls(&p, &c);
     for (unsigned n = 0; n < rate; ++n) ts_prism_process(&p, (TsStereoFrame){0});
     v = ts_prism_view(&p);
-    for (int i = 0; i < 12; ++i) {
-        assert(fabsf(v.lens[i].cents - (i >= 9 ? -1200 : 0)) < .06f);
+    for (int i = 0; i < TS_PRISM_LENSES; ++i) {
+        assert(fabsf(v.lens[i].cents - (ts_prism_unison_cents[i] < -1000 ? -1200 : 0)) < .06f);
         assert(v.lens[i].delay_ms < .001f);
     }
     /* Settled controls do not produce unbounded phase or noise from silence. */
@@ -120,7 +120,7 @@ static void check_state(void)
     char error[160]; int present;
     ts_sister_project_state_init(&state, 48000);
     assert(!state.parameters.prism.enabled);
-    state.parameters.prism = (TsPrismControls){1,1,8,.21f,.77f,.62f,.3f,.8f,.66f,3,{0},{0},{0},1.4f,5,10};
+    state.parameters.prism = (TsPrismControls){1,1,8,.21f,.77f,.62f,.3f,.8f,.66f,3,{0},{0},{0},1.4f,5,10,2,5,.73f};
     for (int i=1; i<12; ++i) {
         state.parameters.prism.pitch_offset[i] = (i - 6) * 190.f;
         state.parameters.prism.pan_offset[i] = (i - 6) * .125f;
@@ -131,10 +131,28 @@ static void check_state(void)
     assert(ts_sister_project_state_save_file(&state,"prism-state.ini",error,sizeof(error)));
     assert(ts_sister_project_state_load_file(&loaded,"prism-state.ini",48000,&present,error,sizeof(error)));
     assert(present && !memcmp(&state.parameters.prism,&loaded.parameters.prism,sizeof(TsPrismControls)));
+    /* A populated PR100 patch keeps every existing setting when glass keys
+       are absent, rather than merely testing an empty legacy project. */
+    TsPrismControls old_controls=state.parameters.prism;
+    old_controls.input_shape=old_controls.output_shape=0;old_controls.color=.5f;
+    FILE *old=fopen("prism-old.ini","wb"),*current=fopen("prism-state.ini","rb");assert(old && current);
+    char line[2048];
+    while(fgets(line,sizeof(line),current)) {
+        int index;
+        if((sscanf(line,"PrismPitchOffset%d",&index)==1 || sscanf(line,"PrismPanOffset%d",&index)==1 ||
+            sscanf(line,"PrismTrimDb%d",&index)==1) && index>=TS_PRISM_BASE_LENSES)continue;
+        if(!strncmp(line,"PrismInputShape=",16) || !strncmp(line,"PrismOutputShape=",17) ||
+           !strncmp(line,"PrismColor=",11))continue;
+        fputs(!strncmp(line,"Version=",8)?"Version=15\n":line,old);
+    }
+    fclose(old);fclose(current);
+    assert(ts_sister_project_state_load_file(&loaded,"prism-old.ini",48000,&present,error,sizeof(error)));
+    assert(!memcmp(&old_controls,&loaded.parameters.prism,sizeof(old_controls)));
+    remove("prism-old.ini");
     /* Previous version's explicit slots must not be migrated as legacy FX. */
     FILE *f = fopen("prism-state.ini","r+b"); assert(f);
     char data[16384]; size_t size = fread(data,1,sizeof(data)-1,f); data[size]=0;
-    char *version=strstr(data,"Version=15"); assert(version); version[9]='2';
+    char *version=strstr(data,"Version=17"); assert(version); version[9]='2';
     rewind(f); assert(fwrite(data,1,size,f)==size); fclose(f);
     assert(ts_sister_project_state_load_file(&loaded,"prism-state.ini",48000,&present,error,sizeof(error)));
     assert(loaded.parameters.fx.slot[0].type == TS_SISTER_FX_GRAIN);
@@ -145,6 +163,8 @@ static void check_state(void)
     assert(!loaded.parameters.prism.enabled && loaded.parameters.prism.lenses == 12);
     for (int i=0; i<12; ++i) assert(!loaded.parameters.prism.pitch_offset[i] && !loaded.parameters.prism.pan_offset[i]);
     assert(loaded.parameters.prism.dry_level==1 && !loaded.parameters.prism.mute_mask && !loaded.parameters.prism.solo_mask);
+    assert(!loaded.parameters.prism.input_shape && !loaded.parameters.prism.output_shape);
+    assert(loaded.parameters.prism.color==.5f);
     remove("prism-state.ini");
     TsSisterPresetBank bank, restored;
     ts_sister_preset_bank_init(&bank,48000);
@@ -154,6 +174,20 @@ static void check_state(void)
     assert(ts_sister_preset_load(&restored,"prism-presets.ini",48000,error,sizeof(error)));
     assert(!memcmp(&bank.entries[bank.count-1].parameters.prism,
                    &restored.entries[restored.count-1].parameters.prism,sizeof(TsPrismControls)));
+    old=fopen("prism-old.ini","wb");current=fopen("prism-presets.ini","rb");assert(old && current);
+    while(fgets(line,sizeof(line),current)) {
+        int index;
+        if((sscanf(line,"prism_pitch_offset_%d",&index)==1 || sscanf(line,"prism_pan_offset_%d",&index)==1 ||
+            sscanf(line,"prism_trim_db_%d",&index)==1) && index>=TS_PRISM_BASE_LENSES)continue;
+        if(strstr(line,"prism_input_shape=")==line || strstr(line,"prism_output_shape=")==line ||
+           strstr(line,"prism_color=")==line)continue;
+        fputs(!strncmp(line,"Version=",8)?"Version=14\n":line,old);
+    }
+    fclose(old);fclose(current);
+    ts_sister_preset_bank_init(&restored,48000);
+    assert(ts_sister_preset_load(&restored,"prism-old.ini",48000,error,sizeof(error)));
+    assert(!memcmp(&old_controls,&restored.entries[restored.count-1].parameters.prism,sizeof(old_controls)));
+    remove("prism-old.ini");
     remove("prism-presets.ini");
 }
 
@@ -170,7 +204,7 @@ static void check_gain(void)
     TsSample fm={0}; char error[160];
     assert(ts_fm_render_sample(&fm,&patch,4,220,48000,345,error,sizeof(error)));
     for (int kind=0; kind<3; ++kind) for (int mode=0; mode<2; ++mode)
-    for (int count=2; count<=12; count+=2) {
+    for (int count=2; count<=TS_PRISM_LENSES; count+=2) {
         TsPrism p={0}; TsPrismControls c=settings(); c.mode=mode; c.lenses=count;
         assert(ts_prism_prepare(&p,48000)); ts_prism_set_controls(&p,&c);
         double input_energy=0, output_energy=0;
@@ -193,7 +227,7 @@ static void check_gain(void)
 
     /* Maximum output and correlated lenses may exceed unity internally;
        verify the actual linked output limiter catches them, including edits. */
-    TsPrism p={0}; TsPrismControls c=settings(); c.output_db=12; c.focus=1;
+    TsPrism p={0}; TsPrismControls c=settings(); c.output_db=12; c.focus=1; c.lenses=TS_PRISM_LENSES;
     TsSisterLimiter limiter; ts_sister_limiter_init(&limiter);
     assert(ts_prism_prepare(&p,48000) && ts_sister_limiter_reconfigure(&limiter,48000));
     ts_prism_set_controls(&p,&c);
@@ -291,22 +325,26 @@ static void check_lens_mixer(void)
         for(int n=0;n<rate/4+100;++n) {
             out=ts_prism_process(&p,(TsStereoFrame){.1f,-.1f});
             assert(isfinite(out.l) && isfinite(out.r));
-            for(int i=0;i<12;++i) assert(p.lens[i].phase>=0 && p.lens[i].phase<1);
+            for(int i=0;i<TS_PRISM_LENSES;++i) assert(p.lens[i].phase>=0 && p.lens[i].phase<1);
         }
     }
     ts_prism_reset_lenses(&c);
     assert(c.spread==2 && c.drift==2 && c.body==3 && !c.mute_mask && !c.solo_mask);
-    for(int i=0;i<12;++i) assert(!c.pitch_offset[i] && !c.pan_offset[i] && !c.trim_db[i]);
+    for(int i=0;i<TS_PRISM_LENSES;++i) assert(!c.pitch_offset[i] && !c.pan_offset[i] && !c.trim_db[i]);
     ts_prism_free(&p);
 }
+
+#include "test_prism_shapes.inc"
+#include "test_prism_capacity.inc"
 
 int main(void)
 {
     TsPrismControls c = settings(); c.spread=NAN; c.mix=INFINITY; c.mode=999; c.lenses=999;
-    ts_prism_controls_sanitize(&c); assert(isfinite(c.spread) && isfinite(c.mix) && c.mode==0 && c.lenses==12);
+    ts_prism_controls_sanitize(&c); assert(isfinite(c.spread) && isfinite(c.mix) && c.mode==0 && c.lenses==TS_PRISM_LENSES);
     check_stream(44100); check_stream(48000); check_stream(96000);
     check_pitch_and_focus(44100); check_pitch_and_focus(48000); check_state();
     check_gain(); check_manual_geometry(); check_lens_mixer();
+    check_optical_shapes(); check_glass_color(); check_extended_capacity();
     puts("Prism streaming, pitch, stereo, bypass and state checks passed.");
     return 0;
 }

@@ -255,6 +255,14 @@ Capture destination use separate visual marks.
 Precise-duration recipe: double-click empty tile → select desired time → CREATE → VARY
 as desired → CROP.
 
+Ordinary CREATE rolls independently each time: tones, drones, percussion, soft
+attacks and wild FM. Prior tiles and FM locks do not constrain it. Use VARY or
+VARY with CHAIN to develop related sounds.
+
+Shift-click CREATE to cycle clean Sine → Square → Saw → Triangle sources at C4.
+The next choice appears in the status line; a selection receives a stamp. Open
+FM LOGIC to edit the source or enable Unison.
+
 Right-click CREATE to roll a CDP variation of the retained clean waveform; repeated
 rolls use that same clean source without stacking results. Middle-click cancels a
 pending variation and restores the clean waveform. A right-click during processing
@@ -520,7 +528,10 @@ they draw a continuous line through the sample values.
 Open FM with **Shift+grave**, shape voice 1, then toggle **UNISON** on. Nine detuned
 voices and three lower voices sound together. **VOICES 1–6 / 7–12** switches controls;
 **Shift+wheel** adjusts pitch by one cent. Toggle off to restore the original source.
-APPLY saves the active sound and original source with the tile.
+APPLY saves the active sound and original source with the tile. Edits render in
+the background (**UPDATING**); quiet settings replace the old audio and waveform.
+Unison off restores even a silent original. A deleted or different source does
+not inherit the previous tile's parked FM patch.
 
 ### Mosaic volume lane
 
@@ -533,13 +544,20 @@ Ctrl+Z / Ctrl+Y undo/redo; Escape cancels the current stroke.
 
 - **Tab**, then page cycle: Tape → FX → Fallout → **Prism** → Tape.
 - **PRISM ON/OFF**: smoothed insert bypass. **Mode** cycles Supersaw / Ensemble.
-- **Lenses** 2–12; wheel changes one lens. Spread/Drift 0–200%, Body 0–300%,
-  Dry Level 0–200%; Focus, Stereo and Wet 0–100%. **Output** trims the wet sum from −12 to +12 dB.
+- **Lenses** 2–24 (default 12); wheel changes one lens. Spread/Drift 0–200%, Body 0–300%,
+  Dry Level 0–200%; Focus, Stereo, Wet and Color 0–100%. **Output** trims the wet sum from −12 to +12 dB.
+- Click a number in the **01–24 strip** to select an overlapping lens. Numbers
+  also accept mute/solo, wheel trim and right-click reset.
 - Drag hollow ray points up/down for individual pitch, left/right for pan.
   Wheel trims −24 to +12 dB (Shift-wheel: fine); brightness shows lens level.
   Shift-click mutes, Ctrl-click solos. Right-click resets one lens; right-click
   the mode/preset name restores all lenses to stock. Escape undoes a drag. Full Focus closes
   pitch spread, including hand edits; lens 01 remains the body anchor.
+- **01 BODY** is the clean anchor within the wet sum; wheel/Body control it.
+  **Dry Level** controls the separate original lane and reaches silence at Wet 100.
+- Click either large glass lens/name for the next shape; right-click for previous.
+  Convex/concave/meniscus combinations remap pitch; the output glass also remaps pan.
+  **Color** blends their filtering, phase or saturation into shifted voices.
 - Tape POWER off: ordinary sound and enabled external monitoring → Prism → FX.
 - Tape POWER on: selected sources → Prism → PRE FX → tape. DRY 100 / WET 0 monitors
   the direct Prism input; raise Sister WET for heads.

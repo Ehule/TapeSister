@@ -493,8 +493,14 @@ typedef struct {
     int fm_open;
     TsFmPage fm_page;
     int fm_voice_bank;
+    int basic_create_index; /* Next Shift-Create waveform, session-local. */
     TsFmPatch fm_patch;
     const TsSample *fm_preview_sample;
+    void *fm_preview_job; /* SDL worker owned and joined by the application. */
+    uint32_t fm_preview_serial, fm_preview_seed, fm_preview_due;
+    int fm_preview_pending;
+    int fm_source_slot, fm_source_page;
+    uint64_t fm_source_hash;
     int fm_held_notes;
     int keyboard_hold; /* Explicit session latch, shared by tile/FM keyboard. */
     int fm_full_choice_open;

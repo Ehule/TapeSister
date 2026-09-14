@@ -2422,7 +2422,7 @@ int main(void)
             CHECK(fread(magic, 1, sizeof(magic), recipe) == sizeof(magic));
             fclose(recipe);
         }
-        CHECK(memcmp(magic, "TSR29", 5) == 0);
+        CHECK(memcmp(magic, "TSR30", 5) == 0);
     }
     CHECK(ts_instrument_load_recipe(&restored, "test-recipe.tsr", error, sizeof(error)));
     CHECK(ts_sample_hash(&restored.parent) == ts_sample_hash(&committed.parent));
@@ -3712,6 +3712,12 @@ int main(void)
             &first_attempt, 0xc08af856u, error, sizeof(error)));
         CHECK(strstr(error, "no usable signal") != NULL &&
               !first_attempt.bank[0].occupied);
+        /* This candidate previously passed on its transient exciter alone.
+           An all-off patch must now be skipped even with nonzero Attack. */
+        CHECK(!ts_instrument_create_selected(
+            &first_attempt, 0x530007b5u, error, sizeof(error)));
+        CHECK(strstr(error, "no usable signal") != NULL &&
+              !first_attempt.bank[0].occupied);
         ts_fm_seed_sequence_init(&sequence, 5u);
         ts_fm_seed_sequence_init(&repeated_sequence, 5u);
         CHECK(ts_instrument_create_selected_fresh(
@@ -3720,8 +3726,7 @@ int main(void)
         CHECK(ts_instrument_create_selected_fresh(
             &repeated_retry, &repeated_sequence, &repeated_seed,
             error, sizeof(error)));
-        CHECK(successful_seed == 0x530007b5u &&
-              repeated_seed == successful_seed);
+        CHECK(successful_seed != 0u && repeated_seed == successful_seed);
         CHECK(retried.bank[0].occupied &&
               retried.bank[0].lineage_seed == successful_seed &&
               retried.bank[0].generator.seed == successful_seed &&
@@ -3772,11 +3777,14 @@ int main(void)
         exhausted.generator.has_fm_patch = 1;
         exhausted.generator.fm_patch = silent;
         generator_before = exhausted.generator;
+        /* Fresh Create ignores a silent, fully locked FM template. A locked
+           destination still rejects the edit and must preserve that state. */
+        exhausted.bank[0].locked = 1;
         ts_fm_seed_sequence_init(&sequence, 5u);
         CHECK(!ts_instrument_create_selected_fresh(
             &exhausted, &sequence, &successful_seed,
             error, sizeof(error)));
-        CHECK(strstr(error, "12 Create attempts") != NULL &&
+        CHECK(strstr(error, "locked") != NULL &&
               successful_seed == 0u);
         CHECK(ts_sample_hash(&exhausted.current) == sample_before &&
               ts_sample_hash(&exhausted.parent) == parent_before &&
