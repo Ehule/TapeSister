@@ -1028,6 +1028,13 @@ Hover controls for blue, two-line help above the bottom row. Compact **SUSTAIN**
 and **REC FILE** buttons sit together beside the gain-reduction readout. Sequencer
 RESET/CLEAR preserve A/B; bottom-row CAPTURE records audio from a Sister tap.
 
+Two small particle manifestations of **the same Zoya** appear near SOURCE and OUT.
+Turning **PRISM ON** while visible plays a brief materialize/refract/reconstruct
+introduction, then settles. Spread/Drift disperse the output figure; Focus gathers
+it; Body, Color and wet/dry affect density, color and prominence. Returning from
+another page/window does not replay the introduction. The figures leave the
+optics and controls in place and add no audio processing. See [Zoya in Prism](PRISM_ZOYA.md).
+
 ## Sister Machine
 
 ![Sister Machine recording a routed performance](images/manual/sister-machine.png)

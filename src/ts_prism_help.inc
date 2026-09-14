@@ -48,6 +48,8 @@ void ts_sister_ui_prism_help(const TsSisterUiModel *m,int x,int y,char *help,siz
     if(contains(x,y,16,250,78,22))TIP("SOUND: lens count, spread, motion, body, wet/dry and glass color. The live diagram stays visible.");
     if(contains(x,y,102,250,92,22))TIP("PERFORM: capture A/B, morph, ordered lens sequencer, drag snapping, Drift Rate and group octave.");
     if(contains(x,y,202,250,86,22))TIP("PRESETS: Prism-only bank, NEW / VARY and their lock groups. Sister tape and other FX stay as set.");
+    if((contains(x,y,18,108,104,117) || contains(x,y,510,108,112,117)) && m->prism_zoya.visible)
+        TIP("ZOYA: the same presence at both ends. Briefly refracts/rebuilds on activation; settled motion follows the live lens state.");
     if(m->prism_panel==1) {
         if(contains(x,y,16,280,66,22) || contains(x,y,88,280,66,22)) {
             int endpoint=x>=88;

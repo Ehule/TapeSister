@@ -141,6 +141,19 @@ measurements do not certify this Windows interface or its hardware latency.
 
 ## Prism performance and amplitude redraw
 
+- [ ] Switch PRISM off/on while its page is visible. Source Zoya forms, packets
+  traverse existing rays, and output Zoya reconstructs once, then settles.
+  Sound/Perform/Presets must retain the same continuous introduction. Verify
+  independent Sister tape POWER does not trigger it.
+- [ ] Hide/minimize Sister or leave Prism during the introduction; return to
+  settled figures without replay. Enable Prism from MIDI while hidden; opening
+  it must not queue an introduction. Repeat while recording audio.
+- [ ] Compare Spread/Drift/Focus/Body/Color/Wet changes and A/B morphing with all
+  24 lenses. Figures must not cover glass labels, selection handles or hover help.
+  Check a stopped audio engine: the settled figure must not keep wandering.
+- [ ] Compare visible/hidden Prism at the normal hardware buffer while recording
+  a dense scene. Confirm no new audio clicks/dropouts and acceptable display CPU.
+
 - [ ] Save two Prism-only presets, change tape/FX settings, and recall each Prism
   preset. Tape/FX must remain unchanged. Restart and recall the saved bank.
 - [ ] Compare New after a heavily edited patch with New after a simple source;

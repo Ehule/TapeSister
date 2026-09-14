@@ -147,13 +147,23 @@ borders, and the pitch diagram has 19% more vertical travel to expose subtle
 Drift changes. The inverse drag mapping uses the same expanded coordinates.
 All six glass silhouettes and sound mappings remain available.
 
-The displayed movement comes from the audio snapshot, including during silence;
-there is no UI animation oscillator. At Drift zero or full Focus it settles.
+Continuous ray movement comes from the audio snapshot, including during silence;
+there is no idle UI animation oscillator. At Drift zero or full Focus it settles.
+A brief Zoya activation cue can add packets along those same paths; this cue is
+a visual metaphor and does not represent processing latency.
 A 12-second native-frame sequence at Spread 200, Drift 200, Focus 60, Stereo 100,
 PLANO-CONVEX input and MENISCUS − output demonstrates the reported settings
 with all 24 lenses:
 
 ![Crisp Prism motion driven by live DSP snapshots](images/prism-drift.gif)
+
+Two sparse, full-body particle manifestations of **the same Zoya** now occupy
+the SOURCE/OUT margins. Switching Prism on while visible briefly materializes,
+refracts and reconstructs her; the introduction runs once, then settles. Spread,
+Drift, Focus, Body, Color and wet/dry state subtly shape her appearance. The
+optics and controls keep their existing layout and interaction. See the
+[Zoya proof of concept](PRISM_ZOYA.md) for native animation, visibility behavior,
+implementation limits and validation. This is entirely a UI layer.
 
 The **24-lens cap** adds ten fine-detuned voices and two lower-octave voices.
 The first twelve keep their original pitch, pan and weight definitions. New pan

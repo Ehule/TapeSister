@@ -808,3 +808,21 @@ int ts_sister_ui_midi_target(TsSisterUiHit hit, char *target,
 }
 
 #include "ts_prism_help.inc"
+
+void ts_sister_ui_prism_zoya_tick(TsPrismZoyaVisual *v,uint32_t now,int enabled,int visible)
+{
+    if(!v)return;
+    enabled=!!enabled;
+    int rising=enabled && (!v->initialized || !v->enabled);
+    v->initialized=1;v->enabled=enabled;v->visible=enabled && visible;
+    /* Hidden/minimized/page-away work never accumulates or queues an intro.
+       Returning to an already running Prism shows the settled manifestation. */
+    if(!v->visible) { v->introducing=0;v->elapsed_ms=TS_PRISM_ZOYA_INTRO_MS;return; }
+    if(rising) { v->introducing=1;v->started_ms=now; }
+    if(v->introducing) {
+        uint32_t elapsed=now-v->started_ms; /* SDL tick rollover is intentional. */
+        if(elapsed>=TS_PRISM_ZOYA_INTRO_MS) {
+            v->introducing=0;v->elapsed_ms=TS_PRISM_ZOYA_INTRO_MS;
+        } else v->elapsed_ms=(elapsed/33u)*33u;
+    }
+}
