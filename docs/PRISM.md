@@ -263,6 +263,15 @@ of live audition. Drawing the native 24-lens panel averaged **0.232 ms** over
 
 The diagram stays visible while **SOUND**, **PERFORM**, and **PRESETS** switch the
 controls below it. The renderer still uses crisp native pixels and live DSP motion.
+Hover any control for blue, two-line help above the bottom capture controls.
+The compact **SUSTAIN ON/OFF** and **REC FILE / STOP FILE** buttons sit together
+beside the gain-reduction readout. File recording retains its timer and continues
+across pages. The sequencer's **RESET** and **CLEAR** help explicitly identifies
+their effect on the pattern; neither changes captured A/B sounds.
+
+![Native Prism controls with uncaptured A edits and sequencer hover help](images/prism-performance-help.png)
+
+![Compact recording controls, timer and sequencer Clear help](images/prism-performance-recording.png)
 
 ### Prism-only presets and dice
 
@@ -303,6 +312,24 @@ Capture buttons then replace their respective memories. The sequencer keeps its
 own pattern and clock while morphing. A Prism preset stores both endpoints and
 the current fader position; a saved timed transition is parked at that position.
 
+Capture buttons show both text and color:
+
+| Button state | Meaning |
+| --- | --- |
+| Gray **EMPTY** | No endpoint stored yet; left-click captures it |
+| Green **READY** | Endpoint captured and available for performance |
+| Blue **EDIT** | Right-click recalled this endpoint for live editing |
+| Amber **CHANGED** | Live edits differ from the stored endpoint; click CAP to recapture |
+
+The status beside the page tabs distinguishes **LIVE EDIT**, **NOT CAPTURED**,
+and purple **A/B MORPH - SOUND LOCKED**. Capturing both endpoints makes morphing
+available; sound controls lock when the A/B fader or a timed move engages morphing.
+New/Vary and ordinary live edits leave existing A/B memories stored until recaptured.
+Sequence changes do not mark an endpoint dirty because the sequence is independent.
+Right-clicking an empty capture button reports that it must be captured first.
+
+![Empty, ready, editing, changed, and morphing capture states in the native renderer](images/prism-capture-states.png)
+
 ### Small lens sequences over a drone
 
 Click **EDIT** beside **SEQ** to enter sequence editing, then **Ctrl-click the
@@ -335,9 +362,20 @@ remain when Focus closes; fine detuning contracts. **SNAP** cycles Free, Semiton
 50 Cent and 31-TET for mouse dragging. Snapping uses the final pitch after glass
 mapping and excludes the temporary Drift movement.
 
-Select a numbered lens or drag a point, then use **Up/Down** for one-cent tuning
-and **Left/Right** for fine panning. Up still raises pitch through concave glass.
-**Shift-Up/Down** transposes the selected lens by an octave, within ±3 octaves.
+Select a numbered lens or drag a point, then use these keyboard steps:
+
+| Modifier | Up / Down | Left / Right |
+| --- | --- | --- |
+| None | ±1 cent | ±0.01 pan |
+| Shift | ±1 semitone (100 cents) | ±0.10 pan |
+| Ctrl+Shift | ±1 octave, within ±3 octave steps | Hard left / hard right |
+
+Pan is measured from −1 (left) to +1 (right). Keyboard steps target audible pitch
+and pan through the glass maps: Up raises pitch and Right moves sound right even
+with inverting glass. Explicit pan edits can reach the hard ends through narrowing
+glass; a subsequent fine step responds immediately. Stock automatic Stereo keeps
+its glass mapping. Cent/semitone tuning retains the existing fine-offset bounds
+and requires Focus below 100%; octave transposition remains available at full Focus.
 **GROUP OCT** adds ±3 octaves to the whole wet lens group. Octave transpositions
 apply after the glass maps and survive Focus at 100%. Lens 01 is a clean wet body
 anchor at stock settings; explicitly tuning/transposing it engages its pitch

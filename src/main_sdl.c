@@ -9113,6 +9113,13 @@ static void sister_prism_end_drag(SisterWindow *sister)
 static int sister_prism_event(SDL_AudioDeviceID device, AudioState *audio,
                                TsUiState *ui, SisterWindow *sister, const SDL_Event *event)
 {
+    if(event->type==SDL_MOUSEMOTION) {
+        sister->model.prism_hover_valid=sister_event_mouse(sister->window,
+            event->motion.x,event->motion.y,&sister->model.prism_hover_x,&sister->model.prism_hover_y);
+    } else if(event->type==SDL_WINDOWEVENT &&
+        (event->window.event==SDL_WINDOWEVENT_LEAVE || event->window.event==SDL_WINDOWEVENT_FOCUS_LOST ||
+         event->window.event==SDL_WINDOWEVENT_HIDDEN || event->window.event==SDL_WINDOWEVENT_MINIMIZED))
+        sister->model.prism_hover_valid=0;
     if (sister->model.fx_page != 3 || sister->model.preset_manage_open ||
         sister->model.midi_learn_active ||
         sister->prism_drag_lens > sister->model.parameters.prism.lenses) {
@@ -9142,20 +9149,26 @@ static int sister_prism_event(SDL_AudioDeviceID device, AudioState *audio,
     if(event->type==SDL_KEYDOWN && !sister->prism_drag_lens && sister->model.prism_selected>0) {
         int key=event->key.keysym.sym,lens=sister->model.prism_selected-1;
         if(key==SDLK_UP || key==SDLK_DOWN || key==SDLK_LEFT || key==SDLK_RIGHT) {
-            if(event->key.keysym.mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI))return 0;
+            SDL_Keymod mod=event->key.keysym.mod;
+            int shift=(mod&KMOD_SHIFT)!=0,control=(mod&KMOD_CTRL)!=0;
+            if((mod&(KMOD_ALT|KMOD_GUI)) || (control && !shift))return 0;
             if(lens>=sister->model.parameters.prism.lenses)return 0;
-            if((event->key.keysym.mod&KMOD_SHIFT) && (key==SDLK_UP || key==SDLK_DOWN))
+            if(sister->model.parameters.prism.morph_enabled) {
+                snprintf(sister->model.status,sizeof(sister->model.status),"MORPH LOCKED: RIGHT-CLICK CAP A/B TO EDIT");return 1;
+            }
+            if(control && shift && (key==SDLK_UP || key==SDLK_DOWN))
                 sister_prism_edit(device,audio,sister,lens,PRISM_OCTAVE,key==SDLK_UP?1:-1,0);
             else {
                 TsPrismControls c=sister->model.parameters.prism;c.drift=0;
                 float pitch=c.pitch_offset[lens],pan=c.pan_offset[lens];
                 if(key==SDLK_UP || key==SDLK_DOWN) {
-                    if(c.focus>=.9999f) { snprintf(sister->model.status,sizeof(sister->model.status),"LOWER FOCUS FOR FINE PITCH / SHIFT ARROWS MOVE OCTAVES");return 1; }
-                    float target=ts_prism_control_view(&c).lens[lens].cents+(key==SDLK_UP?1:-1);
+                    if(c.focus>=.9999f) { snprintf(sister->model.status,sizeof(sister->model.status),"LOWER FOCUS FOR CENT/SEMITONE TUNING; CTRL+SHIFT UP/DOWN: OCTAVE");return 1; }
+                    float target=ts_prism_control_view(&c).lens[lens].cents+(key==SDLK_UP?1:-1)*(shift?100:1);
                     pitch=sister_prism_pitch_offset(&c,lens,target);
                 } else {
-                    int inverted=c.output_shape>=TS_PRISM_BICONCAVE;
-                    pan+=(key==SDLK_RIGHT ? .01f : -.01f)*(inverted?-1:1);
+                    float direction=key==SDLK_RIGHT?1.f:-1.f;
+                    float target=control ? direction : ts_prism_control_view(&c).lens[lens].pan+direction*(shift?.10f:.01f);
+                    pan=sister_prism_pan_offset(&c,lens,SDL_clamp(target,-1.f,1.f));
                 }
                 sister_prism_set_point(device,audio,sister,lens,pitch,pan);
             }
@@ -12183,7 +12196,8 @@ static int keyboard_sustain_event(const SDL_Event *event,SDL_Window *window,
         int x,y;
         if(in_sister) {
             if(!sister_event_mouse(sister->window,event->button.x,event->button.y,&x,&y))return 0;
-            trigger=x>=356 && x<438 && y>=350 && y<367;
+            int sustain_x=sister->model.fx_page==3 ? TS_PRISM_SUSTAIN_X : 356;
+            trigger=x>=sustain_x && x<sustain_x+82 && y>=350 && y<367;
         } else {
             logical_mouse(window,event->button.x,event->button.y,&x,&y);
             if(ui->portal.open)trigger=x>=550 && x<582 && y>=308 && y<325;

@@ -46,11 +46,17 @@ static int sister_prism_performance_click(SDL_AudioDeviceID device,AudioState *a
             int which=x<82 ? 0 : x>=88 && x<154 ? 1 : x>=160 && x<226 ? 2 : x>=232 ? 3 : -1;
             if(which<0)return 0;
             if(which<2) {
-                if(right)ts_prism_recall(&c,which);
+                if(right) {
+                    if(!(c.captured&(1<<which))) {
+                        snprintf(s->model.status,sizeof(s->model.status),"%c IS EMPTY: LEFT-CLICK CAP %c TO CAPTURE FIRST",'A'+which,'A'+which);return 1;
+                    }
+                    ts_prism_recall(&c,which);s->model.prism_edit_endpoint=which+1;
+                }
                 else if(c.morph_enabled) {
                     snprintf(s->model.status,sizeof(s->model.status),"RIGHT CAP A/B TO RECALL BEFORE EDITING OR CAPTURING");return 1;
-                } else ts_prism_capture(&c,which);
+                } else { ts_prism_capture(&c,which);s->model.prism_edit_endpoint=0; }
             } else if(c.captured==3) {
+                s->model.prism_edit_endpoint=0;
                 c.morph_enabled=1;c.morph_target=which-2;++c.morph_trigger;
                 if(!c.morph_trigger)++c.morph_trigger;
             } else {
@@ -66,7 +72,7 @@ static int sister_prism_performance_click(SDL_AudioDeviceID device,AudioState *a
             snprintf(s->model.status,sizeof(s->model.status),"SEQ %s: %d STEPS / OTHER LENSES SUSTAIN",c.seq_enabled?"ON":"OFF",c.seq_count);
         } else if(y>=308 && y<330 && x>=472 && x<616) {
             c.snap=(c.snap+(right?3:1))%4;
-            snprintf(s->model.status,sizeof(s->model.status),"DRAG SNAP %s / ARROWS ALWAYS FINE",ts_prism_snap_name(c.snap));
+            snprintf(s->model.status,sizeof(s->model.status),"DRAG SNAP %s / ARROWS: CENT, SHIFT SEMITONE, CTRL+SHIFT OCTAVE",ts_prism_snap_name(c.snap));
         } else return 0;
     } else if(s->model.prism_panel==2) {
         if(y>=308 && y<330 && x>=16 && x<616) {
@@ -77,6 +83,7 @@ static int sister_prism_performance_click(SDL_AudioDeviceID device,AudioState *a
                 static uint32_t serial=0;
                 uint32_t seed=(uint32_t)SDL_GetPerformanceCounter() ^ (++serial*747796405u);
                 int vary=x>=516;TsPrismControls old=c;ts_prism_generate(&c,seed,vary);
+                s->model.prism_edit_endpoint=0;
                 sister_prism_preserve_parameter_locks(s,&old,&c);
                 snprintf(s->model.status,sizeof(s->model.status),"PRISM %s / LOCKED GROUPS PRESERVED",vary?"VARIED":"NEW");
             } else if(x>=314 && x<404) {
@@ -103,6 +110,7 @@ static int sister_prism_performance_click(SDL_AudioDeviceID device,AudioState *a
                     else if(x>=276)index=(index+1)%(int)s->prism_presets.count;
                     else if(x<52 || x>=270)return 0;
                     s->model.prism_preset_index=index;c=s->prism_presets.entries[index].controls;sister_prism_bank_sync(s);
+                    s->model.prism_edit_endpoint=0;
                     snprintf(s->model.status,sizeof(s->model.status),"PRISM RECALLED: %.31s",s->model.prism_preset_name);
                 } else return 1;
             } else return 0;
@@ -124,4 +132,23 @@ static float sister_prism_pitch_offset(const TsPrismControls *c,int lens,float t
         if((value<target)==(a<b))low=mid;else high=mid;
     }
     return (low+high)*.5f;
+}
+/* Solve audible pan too: narrowing/asymmetric glass changes the step size and
+   inverting glass changes its sign. The offset includes automatic Stereo. */
+static float sister_prism_pan_offset(const TsPrismControls *c,int lens,float target)
+{
+    TsPrismControls probe=*c;probe.morph_enabled=0;
+    float low=-4,high=4;
+    probe.pan_offset[lens]=low;float a=ts_prism_control_view(&probe).lens[lens].pan;
+    probe.pan_offset[lens]=high;float b=ts_prism_control_view(&probe).lens[lens].pan;
+    /* Avoid landing deep inside the hard-pan clamp, so the next fine step
+       responds immediately. */
+    float edge=target<=-1 ? -1.f : target>=1 ? 1.f : 0;
+    target=SDL_clamp(target,-.999999f,.999999f);
+    for(int j=0;j<24;++j) {
+        float mid=(low+high)*.5f;probe.pan_offset[lens]=mid;
+        float value=ts_prism_control_view(&probe).lens[lens].pan;
+        if((value<target)==(a<b))low=mid;else high=mid;
+    }
+    return (low+high)*.5f+edge*(a<b?1.f:-1.f)*.000004f;
 }

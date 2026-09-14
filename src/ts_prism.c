@@ -46,7 +46,7 @@ static void patch_sanitize(TsPrismPatch *p)
         p->octave_offset[i] = p->octave_offset[i] < -3 ? -3 : p->octave_offset[i] > 3 ? 3 : p->octave_offset[i];
         p->trim_db[i] = bounded(p->trim_db[i], -24, 12, 0);
         p->pitch_offset[i] = bounded(p->pitch_offset[i], -1200, 1200, 0);
-        p->pan_offset[i] = bounded(p->pan_offset[i], -2, 2, 0);
+        p->pan_offset[i] = bounded(p->pan_offset[i], -4, 4, 0);
     }
 }
 
@@ -175,8 +175,10 @@ static TsPrismLensView geometry(const TsPrismPatch *p, int i, double seconds)
         v.pan = (i & 1 ? 1.f : -1.f) *
             (.3f + .65f * (((i - TS_PRISM_BASE_LENSES) / 2) + .5f) / 6.f) * p->stereo;
     if (octave) v.pan *= .25f; /* Keep sub voices near the center. */
-    v.pan = bounded(v.pan + p->pan_offset[i], -1, 1, 0);
-    v.refraction_pan = v.pan;
+    /* Let explicit edits reach hard pan through narrowing glass. Stock pans
+       keep their mapping; clamp the audible result, not the glass input. */
+    v.pan += p->pan_offset[i];
+    v.refraction_pan = bounded(v.pan, -1, 1, 0);
     v.pan = bounded(shape_map(v.pan, p->output_shape), -1, 1, 0);
     int solo = p->solo_mask & ((1 << p->lenses) - 1);
     int audible = !(p->mute_mask & (1 << i)) && (!solo || (solo & (1 << i)));

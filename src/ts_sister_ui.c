@@ -439,8 +439,8 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
             hit.index = TS_SISTER_UI_PARAM_PRISM_COLOR;
             hit.normalized = (float)(x - 170) / 143;
         }
-        else if (contains(x, y, TS_SISTER_UI_FX_REC_X, TS_SISTER_UI_FX_REC_Y,
-                          TS_SISTER_UI_FX_REC_W, TS_SISTER_UI_FX_REC_H))
+        else if (contains(x, y, TS_PRISM_REC_X, TS_PRISM_FOOTER_Y,
+                          TS_PRISM_REC_W, TS_PRISM_FOOTER_H))
             hit.action = TS_SISTER_UI_ACTION_RECORD_FILE;
         else {
             for (int i = 0; model->prism_panel==0 && i < 8; ++i) {
@@ -806,3 +806,5 @@ int ts_sister_ui_midi_target(TsSisterUiHit hit, char *target,
     result = snprintf(target, target_size, "%s", name);
     return result > 0 && (size_t)result < target_size;
 }
+
+#include "ts_prism_help.inc"

@@ -10,6 +10,11 @@
 enum { TS_SISTER_UI_WIDTH = 640, TS_SISTER_UI_HEIGHT = 400 };
 enum { TS_SISTER_UI_FX_REC_X = 538, TS_SISTER_UI_FX_REC_Y = 328,
        TS_SISTER_UI_FX_REC_W = 92, TS_SISTER_UI_FX_REC_H = 22 };
+enum { TS_PRISM_SUSTAIN_X = 396, TS_PRISM_SUSTAIN_W = 82,
+       TS_PRISM_REC_X = 484, TS_PRISM_REC_W = 74,
+       TS_PRISM_FOOTER_Y = 350, TS_PRISM_FOOTER_H = 17 };
+typedef enum { TS_PRISM_CAPTURE_EMPTY, TS_PRISM_CAPTURE_READY,
+               TS_PRISM_CAPTURE_EDITING, TS_PRISM_CAPTURE_DIRTY } TsPrismCaptureVisual;
 
 typedef enum {
     TS_SISTER_UI_ACTION_NONE = 0,
@@ -262,6 +267,8 @@ typedef struct {
     int prism_panel, prism_seq_edit, prism_preset_index, prism_preset_count;
     char prism_preset_name[32];
     int prism_selected; /* One-based lens identity; zero means no selection. */
+    int prism_edit_endpoint; /* One-based recalled endpoint; UI only. */
+    int prism_hover_valid, prism_hover_x, prism_hover_y;
     int fallout_lfo_open;
     int midi_learn_active;
     int midi_activity;
@@ -280,6 +287,9 @@ void ts_sister_ui_prism_point_f(TsPrismLensView ray, float *x, float *y);
 float ts_sister_ui_prism_y(float cents);
 float ts_sister_ui_prism_pitch_at_y(float y);
 int ts_sister_ui_prism_hit(const TsSisterUiModel *model, int x, int y);
+TsPrismCaptureVisual ts_sister_ui_prism_capture_visual(const TsSisterUiModel *model, int endpoint);
+const char *ts_sister_ui_prism_edit_status(const TsSisterUiModel *model);
+void ts_sister_ui_prism_help(const TsSisterUiModel *model, int x, int y, char *help, size_t size);
 
 int ts_sister_ui_parameter_lockable(int parameter);
 int ts_sister_ui_parameter_locked(const TsSisterUiModel *model,

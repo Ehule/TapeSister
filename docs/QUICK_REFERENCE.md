@@ -572,8 +572,15 @@ Ctrl+Z / Ctrl+Y undo/redo; Escape cancels the current stroke.
   or by MIDI. TO A/B uses TIME; moving A/B takes over.
 - **SEQ EDIT + Ctrl-click strip**: append/remove ordered members. SEQ ON plays only
   those members in turn; nonmembers sustain. RESET restarts; CLEAR empties.
-- **Arrows**: fine pitch/pan on the selected lens. **Shift-Up/Down**: ±1 octave.
+- **Up/Down**: ±1 cent; **Shift-Up/Down**: ±1 semitone; **Ctrl+Shift-Up/Down**: ±1 octave.
+- **Left/Right**: ±0.01 audible pan; **Shift-Left/Right**: ±0.10;
+  **Ctrl+Shift-Left/Right**: hard left/right, including through narrowing glass.
   **GROUP OCT**: whole wet group ±3 octaves. **RATE**: 0.005–40 Hz drift control.
+- **CAP A/B colors**: gray EMPTY, green READY, blue EDIT, amber CHANGED (uncaptured edits).
+  Purple **A/B MORPH - SOUND LOCKED** marks performance; right-click CAP to edit.
+- **Hover help**: blue text above the bottom capture row explains each control.
+  Compact **SUSTAIN** and **REC FILE** sit beside the GR readout; RESET/CLEAR on
+  PERFORM affect the sequencer, preserving A/B.
 - **SNAP**: Free / Semitone / 50 Cent / 31-TET for mouse dragging.
 - **DRAW**: each stroke replaces the previous envelope in its drawn region,
   with recoverable zeroed sections and ordinary undo/redo. New saves use TSR31.

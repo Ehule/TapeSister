@@ -297,7 +297,7 @@ static void test_prism_controller(void)
         char folder[128],path[1200],error[160];
         snprintf(folder,sizeof(folder),"prism-record-%d-%u",powered,SDL_GetTicks());
         SDL_setenv("TAPESISTER_CAPTURES",folder,1);
-        hit=ts_sister_ui_hit_test_model(&panel->model,580,339);
+        hit=ts_sister_ui_hit_test_model(&panel->model,TS_PRISM_REC_X+8,TS_PRISM_FOOTER_Y+8);
         assert(hit.action==TS_SISTER_UI_ACTION_RECORD_FILE);
         sister_apply_action(0,a,&ui,&instrument,panel,NULL,NULL,hit,48000,2);
         assert(ts_performance_recorder_state(&panel->performance_recorder)==TS_PERFORMANCE_FILE_RECORDING);

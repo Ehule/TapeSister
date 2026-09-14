@@ -58,6 +58,19 @@ static void prism_value(TsFramebuffer *fb,int x,int y,int w,const char *label,fl
     rect(fb,x+2,y+2,w-4,11,RGB(24,23,25));text(fb,x+3,y+3,label,color,1);
 }
 
+static void prism_capture_button(TsFramebuffer *fb,const TsSisterUiModel *model,int endpoint)
+{
+    TsPrismCaptureVisual state=ts_sister_ui_prism_capture_visual(model,endpoint);
+    static const char *const names[]={"EMPTY","READY","EDIT","CHANGED"};
+    static const uint32_t inks[]={RGB(142,151,163),RGB(105,229,153),RGB(119,190,255),RGB(255,193,92)};
+    static const uint32_t fills[]={RGB(27,31,37),RGB(17,53,37),RGB(23,44,73),RGB(67,43,18)};
+    int x=endpoint?88:16;char label[8];
+    rect(fb,x,280,66,22,inks[state]);rect(fb,x+1,281,64,20,fills[state]);
+    snprintf(label,sizeof(label),"CAP %c",'A'+endpoint);
+    text(fb,x+18,283,label,inks[state],1);
+    text(fb,x+(66-(int)strlen(names[state])*6)/2,293,names[state],inks[state],1);
+}
+
 static void sister_prism_render(TsFramebuffer *fb,const TsSisterUiModel *model)
 {
     TsPrismControls shown=model->parameters.prism;
@@ -159,11 +172,14 @@ static void sister_prism_render(TsFramebuffer *fb,const TsSisterUiModel *model)
     button(fb,16,250,78,"SOUND",model->prism_panel==0);
     button(fb,102,250,92,"PERFORM",model->prism_panel==1);
     button(fb,202,250,86,"PRESETS",model->prism_panel==2);
-    text(fb,300,257,p->morph_enabled ? "MORPH: RECALL A/B TO EDIT" :
-         model->prism_seq_edit ? "SEQ EDIT: CTRL-CLICK STRIP" : "ARROWS: FINE / SHIFT: OCTAVE",ink,1);
+    const char *edit_status=ts_sister_ui_prism_edit_status(model);
+    uint32_t state_color=p->morph_enabled ? RGB(205,169,255) :
+        strstr(edit_status,"NOT CAPTURED") ? RGB(255,193,92) :
+        model->prism_edit_endpoint ? RGB(119,190,255) : RGB(105,229,153);
+    text(fb,300,257,edit_status,state_color,1);
     if(model->prism_panel==1) {
-        button(fb,16,280,66,"CAP A",p->captured&1);
-        button(fb,88,280,66,"CAP B",p->captured&2);
+        prism_capture_button(fb,model,0);
+        prism_capture_button(fb,model,1);
         button(fb,160,280,66,"TO A",p->morph_enabled && !p->morph_target);
         button(fb,232,280,66,"TO B",p->morph_enabled && p->morph_target);
         float morph=v.valid && p->morph_enabled ? v.morph : p->morph;
@@ -182,7 +198,7 @@ static void sister_prism_render(TsFramebuffer *fb,const TsSisterUiModel *model)
         prism_value(fb,16,332,144,label,logf(p->drift_rate/.005f)/logf(8000),colors[2]);
         snprintf(label,sizeof(label),"GROUP OCT %+.0F",(double)p->group_octave);
         prism_value(fb,170,332,144,label,(p->group_octave+3)/6.f,colors[4]);
-        text(fb,326,336,"RIGHT CAP: RECALL",ink,1);
+        text(fb,326,336,model->prism_seq_edit ? "SEQ EDIT: CTRL-CLICK NUMBERS" : "HOVER A CONTROL FOR HELP",RGB(119,190,255),1);
     } else if(model->prism_panel==2) {
         button(fb,16,280,30,"<",0);
         button(fb,52,280,218,model->prism_preset_count?model->prism_preset_name:"PRISM BANK EMPTY",0);
@@ -217,8 +233,4 @@ static void sister_prism_render(TsFramebuffer *fb,const TsSisterUiModel *model)
         p->morph_enabled || ts_sister_ui_parameter_locked(model,TS_SISTER_UI_PARAM_PRISM_COLOR));
     text(fb,326,338,model->routing.enabled ? "TO TAPE + FX" : "TO FX",ink,1);
     }
-    button(fb, TS_SISTER_UI_FX_REC_X, TS_SISTER_UI_FX_REC_Y, TS_SISTER_UI_FX_REC_W,
-        model->file_capture_state == TS_PERFORMANCE_FILE_STOPPING ? "FILE WAIT" :
-        model->file_capture_state == TS_PERFORMANCE_FILE_RECORDING ? "STOP FILE" : "REC FILE",
-        model->file_capture_state == TS_PERFORMANCE_FILE_RECORDING && model->text_cursor_visible);
 }

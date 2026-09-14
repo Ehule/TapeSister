@@ -153,8 +153,17 @@ measurements do not certify this Windows interface or its hardware latency.
   it again; order must survive. Remove an excluded member, reset, clear and stop.
   Change Step rate while audio continues through other workspaces.
 - [ ] Tune through concave glass using Up/Down and verify Up raises one cent.
-  Check pan arrows, interval snapping, group/individual octaves, and the body lens.
+  Shift-Up/Down moves one semitone; Ctrl+Shift-Up/Down moves an octave. Check
+  Left/Right for 0.01 pan, Shift for 0.10, and Ctrl+Shift for hard left/right
+  through all six output shapes. A fine step away from hard pan must respond
+  immediately. Check interval snapping, group/individual octaves, and the body lens.
   Confirm the original dry path is unaffected by octave changes.
+- [ ] Check gray EMPTY, green READY, blue EDIT after right-click recall, and amber
+  CHANGED after changes. Recapture returns READY; morphing shows SOUND LOCKED.
+  Sequence edits must not mark an endpoint dirty. Right-click an empty endpoint.
+- [ ] Hover buttons, faders, glass and lens numbers on all three pages. Blue help
+  must fit and distinguish sequencer RESET/CLEAR from CAP A/B and audio CAPTURE.
+  Test the compact Sustain/Rec File buttons, timer, stop and recording across pages.
 - [ ] Sweep Drift Rate from 0.005 to 40 Hz with 24 lenses, both colored glass stages
   and MIDI morphing. Audition at the normal hardware buffer for dropouts and CPU.
 - [ ] Draw a ramp on a drone, then a flat line. Draw a section to zero and restore
