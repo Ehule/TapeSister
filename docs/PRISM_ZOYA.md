@@ -4,6 +4,8 @@ Zoya appears at SOURCE and OUT as two manifestations of **the same entity**:
 one presence becomes many possibilities, then recombines. The mirrored figures
 share one precomputed cloud. Curled hair, a shaped waist, broad shoulders/arms,
 and heavy thighs/calves carry TapeSister's character through the abstraction.
+Both arms reach toward the lens with open hands; one leg braces behind her and
+the other plants forward, following the revised pose reference.
 They occupy the existing spaces at the two ends of the diagram. The lenses,
 ray geometry, numbered strip, editing handles, labels and controls keep their
 positions and behavior.
@@ -59,7 +61,7 @@ Hover either manifestation for a brief explanation.
 ## Implementation and cost
 
 - A hand-authored profile is baked by `scripts/generate-prism-zoya.py` into
-  `src/ts_prism_zoya_points.inc`: 1,244 points, 4,976 bytes of read-only point data.
+  `src/ts_prism_zoya_points.inc`: 1,501 points, 6,004 bytes of read-only point data.
   The generator is a development tool, not a runtime dependency.
 - Native point drawing and occasional two-pixel fragments; no bitmap loading,
   filled character texture, blur, GPU particle engine, animation rig or simulation.
@@ -75,17 +77,18 @@ Hover either manifestation for a brief explanation.
   UI rendering still consumes a small amount of shared CPU time.
 
 On a shared Linux server (Intel Xeon Platinum 8573C), a release-with-debug-info
-build measured 1,500 native framebuffer draws per case after 50 warmup draws:
+build measured the revised pose over 1,500 native framebuffer draws per case
+after 50 warmup draws:
 
 | Drawing case | Mean | p99 |
 | --- | ---: | ---: |
-| Existing optics, manifestations hidden | 0.332 ms | 0.791 ms |
-| Settled manifestations, 24 lenses | 0.487 ms | 0.903 ms |
-| Maximum Spread, Drift, Body and Color | 0.490 ms | 1.022 ms |
-| Introduction sampled across its duration | 0.413 ms | 0.899 ms |
+| Existing optics, manifestations hidden | 0.407 ms | 1.558 ms |
+| Settled manifestations, 24 lenses | 0.612 ms | 2.069 ms |
+| Maximum Spread, Drift, Body and Color | 0.690 ms | 3.096 ms |
+| Introduction sampled across its duration | 0.533 ms | 2.708 ms |
 
-The settled comparison adds about 0.155 ms per frame, equivalent to roughly
-0.47% of one CPU core at 30 FPS on that host. These are development drawing
+The settled comparison adds about 0.206 ms per frame, equivalent to roughly
+0.62% of one CPU core at 30 FPS on that host. These are development drawing
 measurements, excluding window presentation/compositor cost; physical
 Windows/audio/MIDI audition remains needed.
 
@@ -100,7 +103,9 @@ animation.
 
 The native application builds. `test_prism_zoya`, `test_prism`,
 `test_sister_ui_model` and `tapesister_mosaic_controller_tests` pass locally;
-the controller run used SDL's dummy video/audio drivers. The complete suite was
+the controller run used SDL's dummy video/audio drivers. After revising the pose,
+the native application was rebuilt and the focused Zoya test and render benchmark
+were rerun. The complete suite was
 not rerun for this visual change. The four previously documented baseline
 failures remain outside this work; this is not a claim that the whole suite or
 physical hardware validation is green.
