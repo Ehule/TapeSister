@@ -237,6 +237,7 @@ int ts_sister_preset_delete(TsSisterPresetBank *bank, size_t index,
 
 static int write_parameters(FILE *file, const TsSisterParameters *p)
 {
+    ts_prism_write_extensions(file, &p->prism);
     if (fprintf(file, "prism_input_shape=%d\nprism_output_shape=%d\nprism_color=%.9g\n",
         p->prism.input_shape, p->prism.output_shape, p->prism.color) < 0) return 0;
     if (fprintf(file, "prism_dry_level=%.9g\nprism_mute_mask=%d\nprism_solo_mask=%d\n",
@@ -459,6 +460,7 @@ static int assign_field(TsSisterParameters *p, const char *key,
             return parse_float(value, &slot->mix);
         return 1;
     }
+    if (!strncmp(key, "P2.", 3)) return ts_prism_read_field(&p->prism,key,value)>0;
     for (int i = 0; i < TS_PRISM_LENSES; ++i) {
         char lens_key[40];
         snprintf(lens_key, sizeof(lens_key), "prism_pitch_offset_%d", i);

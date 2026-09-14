@@ -42,6 +42,7 @@ static void benchmark(int colored)
     static double times[BLOCKS];
     const int counts[] = {0,2,4,6,8,12,16,20,24};
     for (int full=0; full<2; ++full) for (int k=0; k<(int)(sizeof(counts)/sizeof(counts[0])); ++k) {
+        if(colored==2 && counts[k]!=24)continue;
         TsSisterRuntime *r=calloc(1,sizeof(*r)); assert(r);
         ts_sister_runtime_init(r);
         char error[160];
@@ -50,6 +51,12 @@ static void benchmark(int colored)
         c.prism.enabled=counts[k]!=0; c.prism.lenses=counts[k]?counts[k]:12;
         c.prism.mix=1; c.prism.drift=1; c.monitor_dry=1; c.monitor_wet=0;
         if(colored) {c.prism.input_shape=TS_PRISM_MENISCUS_POSITIVE;c.prism.output_shape=TS_PRISM_MENISCUS_NEGATIVE;c.prism.color=1;}
+        if(colored==2) {
+            c.prism.drift_rate=40;ts_prism_capture(&c.prism,0);
+            c.prism.mode=TS_PRISM_HARMONIC;c.prism.group_octave=1;ts_prism_capture(&c.prism,1);
+            c.prism.morph_enabled=1;c.prism.morph=.5f;c.prism.seq_enabled=1;c.prism.seq_rate=16;
+            for(int i=0;i<8;++i)ts_prism_sequence_toggle(&c.prism,i*3);
+        }
         ts_sister_runtime_set_parameters(r,&c);
         ts_sister_runtime_set_sources(r,TS_SISTER_SOURCE_EXT);
         ts_sister_runtime_set_monitor(r,1);
@@ -124,7 +131,7 @@ static void motion_probe(const char *prefix,float drift,float focus,int lenses)
 int main(int argc,char **argv)
 {
     if(argc>1 && !strcmp(argv[1],"--signatures")){signatures();return 0;}
-    if (argc>1 && !strcmp(argv[1],"--bench")) {benchmark(argc>2);return 0;}
+    if (argc>1 && !strcmp(argv[1],"--bench")) {benchmark(argc>2 ? (!strcmp(argv[2],"performance") ? 2 : 1) : 0);return 0;}
     if (argc>1 && !strcmp(argv[1],"--motion")) {
         motion_probe(argc>2?argv[2]:NULL,argc>3?(float)atof(argv[3]):2,argc>4?(float)atof(argv[4]):.6f,argc>5?atoi(argv[5]):12);return 0;
     }

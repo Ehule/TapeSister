@@ -14,7 +14,7 @@ FetchContent_Declare(
   SOURCE_SUBDIR _tapesister_header_only)
 FetchContent_MakeAvailable(miniaudio)
 
-add_library(tapesister_core src/ts_sample.c src/ts_prism.c src/ts_fm.c src/ts_audition.c src/ts_note_bank.c
+add_library(tapesister_core src/ts_sample.c src/ts_prism.c src/ts_prism_performance.c src/ts_fm.c src/ts_audition.c src/ts_note_bank.c
              src/ts_mosaic.c src/ts_note_event.c src/ts_midi_map.c src/ts_performance.c src/ts_audio_mixer.c
              src/ts_audio_lifecycle.c
              src/ts_realtime_diagnostics.c
@@ -258,7 +258,7 @@ if(TAPESISTER_BUILD_SDL AND TAPESISTER_BUNDLE_CDP8)
             "${CMAKE_CURRENT_SOURCE_DIR}/assets/tapesister_welcome.wav")
 endif()
 
-foreach(stereo_test IN ITEMS audio_mixer note_bank_stereo performance_stereo
+foreach(stereo_test IN ITEMS stereo_gestures audio_mixer note_bank_stereo performance_stereo
                              capture_stereo performance_recorder
                              external_input_channels
                              input_ownership realtime_diagnostics)

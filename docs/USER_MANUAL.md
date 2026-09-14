@@ -1004,6 +1004,30 @@ Sliders, On/Off and Mode participate in the existing MIDI learn; shape selectors
 use the mouse. All settings persist in Sister projects/presets. Old projects start with Prism off. See [Prism](PRISM.md) for the signal path,
 optical meanings, gain and latency behavior, measured CPU costs and test results.
 
+### Prism performance controls
+
+Prism now has **SOUND**, **PERFORM**, and **PRESETS** control pages below its live
+lens diagram. The Prism-only bank saves refraction settings independently of the
+bottom-row full Sister presets. **NEW** rolls a fresh setup, **VARY** develops it,
+and six lock groups protect chosen settings. Capture **A/B**, then use the morph
+fader, MIDI, or a timed **TO A / TO B** move. Right-click a capture button to recall
+it for editing. See [Prism performance](PRISM.md#presets-and-performance).
+
+On PERFORM, enable sequence **EDIT** and Ctrl-click the numbered strip in order.
+Only those lenses sequence; the others sustain. Count changes retain hidden
+sequence members. Selected lenses use Up/Down for one cent, Shift-Up/Down for one
+semitone, and Ctrl+Shift-Up/Down for an octave. Left/Right moves audible pan by
+0.01, Shift-Left/Right by 0.10, and Ctrl+Shift-Left/Right goes hard left/right,
+including through narrowing/inverting glass. Drift has a Rate control, and Group Oct transposes
+the whole wet group. Mouse dragging optionally snaps to musical intervals.
+
+CAP A/B shows gray **EMPTY**, green **READY**, blue **EDIT**, or amber **CHANGED**
+for changes not yet captured. The purple **A/B MORPH - SOUND LOCKED** status makes
+the active morph lock explicit; right-click CAP recalls an endpoint for editing.
+Hover controls for blue, two-line help above the bottom row. Compact **SUSTAIN**
+and **REC FILE** buttons sit together beside the gain-reduction readout. Sequencer
+RESET/CLEAR preserve A/B; bottom-row CAPTURE records audio from a Sister tap.
+
 ## Sister Machine
 
 ![Sister Machine recording a routed performance](images/manual/sister-machine.png)
@@ -1516,6 +1540,19 @@ For Windows release validation, follow [WINDOWS_AUDIO_VALIDATION.md](WINDOWS_AUD
 
 The eight compact IN indicators distinguish unavailable channels, available silent
 channels, and current activity.
+
+## Redrawing amplitude envelopes
+
+Each DRAW stroke replaces the gain contour in the region you draw. Drawing a flat
+line after a ramp produces a flat gain contour against the recoverable source;
+it no longer multiplies the previous ramp. Sections drawn to zero can be restored
+by another stroke. Regions outside the new stroke retain their existing envelope.
+Cancel restores the previous audio, and each completed stroke is one undo step.
+The source is kept with tile edit history and survives TSR31 save/reopen and tile
+copying. A subsequent material-changing edit establishes new material to shape.
+Previously baked envelopes in older projects cannot recover already lost audio;
+the current sound becomes the source for the first new stroke.
+
 
 ## Performance safety and troubleshooting
 

@@ -543,7 +543,7 @@ Ctrl+Z / Ctrl+Y undo/redo; Escape cancels the current stroke.
 ### Prism
 
 - **Tab**, then page cycle: Tape → FX → Fallout → **Prism** → Tape.
-- **PRISM ON/OFF**: smoothed insert bypass. **Mode** cycles Supersaw / Ensemble.
+- **PRISM ON/OFF**: smoothed insert bypass. **Mode** cycles Supersaw, Ensemble, Harmonic, Fifths, Octaves, Cluster and 31-TET.
 - **Lenses** 2–24 (default 12); wheel changes one lens. Spread/Drift 0–200%, Body 0–300%,
   Dry Level 0–200%; Focus, Stereo, Wet and Color 0–100%. **Output** trims the wet sum from −12 to +12 dB.
 - Click a number in the **01–24 strip** to select an overlapping lens. Numbers
@@ -563,3 +563,24 @@ Ctrl+Z / Ctrl+Y undo/redo; Escape cancels the current stroke.
   the direct Prism input; raise Sister WET for heads.
 - **REC FILE** captures final stereo OUT. **Ctrl+Shift+M** learns controls.
 - [Prism guide and measured performance](PRISM.md).
+
+### Prism performance additions
+
+- **PRESETS**: Prism-only Save New; Shift-Save overwrites; arrows recall. New rolls
+  fresh; Vary develops; six lock buttons preserve groups.
+- **PERFORM**: CAP A/B stores endpoints; right-click recalls. A/B moves manually
+  or by MIDI. TO A/B uses TIME; moving A/B takes over.
+- **SEQ EDIT + Ctrl-click strip**: append/remove ordered members. SEQ ON plays only
+  those members in turn; nonmembers sustain. RESET restarts; CLEAR empties.
+- **Up/Down**: ±1 cent; **Shift-Up/Down**: ±1 semitone; **Ctrl+Shift-Up/Down**: ±1 octave.
+- **Left/Right**: ±0.01 audible pan; **Shift-Left/Right**: ±0.10;
+  **Ctrl+Shift-Left/Right**: hard left/right, including through narrowing glass.
+  **GROUP OCT**: whole wet group ±3 octaves. **RATE**: 0.005–40 Hz drift control.
+- **CAP A/B colors**: gray EMPTY, green READY, blue EDIT, amber CHANGED (uncaptured edits).
+  Purple **A/B MORPH - SOUND LOCKED** marks performance; right-click CAP to edit.
+- **Hover help**: blue text above the bottom capture row explains each control.
+  Compact **SUSTAIN** and **REC FILE** sit beside the GR readout; RESET/CLEAR on
+  PERFORM affect the sequencer, preserving A/B.
+- **SNAP**: Free / Semitone / 50 Cent / 31-TET for mouse dragging.
+- **DRAW**: each stroke replaces the previous envelope in its drawn region,
+  with recoverable zeroed sections and ordinary undo/redo. New saves use TSR31.

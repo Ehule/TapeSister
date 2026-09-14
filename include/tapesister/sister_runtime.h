@@ -131,8 +131,8 @@ typedef struct {
 } TsSisterRoutingSnapshot;
 
 typedef struct {
-    atomic_int prism_valid;
-    atomic_uint_least32_t prism_wet, prism_dry;
+    atomic_int prism_valid, prism_seq_lens;
+    atomic_uint_least32_t prism_wet, prism_dry, prism_morph;
     atomic_uint_least32_t prism_lens[TS_PRISM_LENSES][6];
     atomic_uint_least64_t revision;
     atomic_int enabled;

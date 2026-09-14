@@ -52,9 +52,39 @@ static void prism_lens_outline(TsFramebuffer *fb,int x,int shape,uint32_t color)
     prism_line(fb,x+pl,223,x+pr,223,color);
 }
 
+static void prism_value(TsFramebuffer *fb,int x,int y,int w,const char *label,float amount,uint32_t color)
+{
+    sister_percent_parameter_state(fb,x,y,w,"",amount,100,color,0);
+    rect(fb,x+2,y+2,w-4,11,RGB(24,23,25));text(fb,x+3,y+3,label,color,1);
+}
+
+static void prism_capture_button(TsFramebuffer *fb,const TsSisterUiModel *model,int endpoint)
+{
+    TsPrismCaptureVisual state=ts_sister_ui_prism_capture_visual(model,endpoint);
+    static const char *const names[]={"EMPTY","READY","EDIT","CHANGED"};
+    static const uint32_t inks[]={RGB(142,151,163),RGB(105,229,153),RGB(119,190,255),RGB(255,193,92)};
+    static const uint32_t fills[]={RGB(27,31,37),RGB(17,53,37),RGB(23,44,73),RGB(67,43,18)};
+    int x=endpoint?88:16;char label[8];
+    rect(fb,x,280,66,22,inks[state]);rect(fb,x+1,281,64,20,fills[state]);
+    snprintf(label,sizeof(label),"CAP %c",'A'+endpoint);
+    text(fb,x+18,283,label,inks[state],1);
+    text(fb,x+(66-(int)strlen(names[state])*6)/2,293,names[state],inks[state],1);
+}
+
 static void sister_prism_render(TsFramebuffer *fb,const TsSisterUiModel *model)
 {
-    const TsPrismControls *p=&model->parameters.prism;
+    TsPrismControls shown=model->parameters.prism;
+    const TsPrismControls *p=&shown;
+    if(p->morph_enabled && p->captured==3) {
+        float t=model->routing.prism.valid ? model->routing.prism.morph : p->morph;
+        shown.lenses=p->a.lenses>p->b.lenses ? p->a.lenses : p->b.lenses;
+#define BLEND(field) shown.field=p->a.field+(p->b.field-p->a.field)*t
+        BLEND(spread);BLEND(drift);BLEND(focus);BLEND(stereo);BLEND(body);BLEND(mix);
+        BLEND(output_db);BLEND(dry_level);BLEND(color);BLEND(drift_rate);
+#undef BLEND
+        shown.input_shape=t<.5f ? p->a.input_shape : p->b.input_shape;
+        shown.output_shape=t<.5f ? p->a.output_shape : p->b.output_shape;
+    }
     TsPrismView v=model->routing.prism.valid?model->routing.prism:ts_prism_control_view(p);
     const uint32_t background=RGB(7,11,15),ink=RGB(140,179,192),original=RGB(229,232,212);
     const uint32_t colors[12]={RGB(236,224,159),RGB(241,148,108),RGB(239,193,101),
@@ -63,8 +93,10 @@ static void sister_prism_render(TsFramebuffer *fb,const TsSisterUiModel *model)
     char label[96];
     rect(fb,10,40,620,232,background);
     button(fb,16,48,96,p->enabled?"PRISM ON":"PRISM OFF",p->enabled);
-    button(fb,122,48,116,ts_prism_mode_name(p->mode),1);
-    snprintf(label,sizeof(label),"%d SHIFTED + 01 BODY",p->lenses-1);text(fb,250,55,label,ink,1);
+    button(fb,122,48,116,p->morph_enabled?"A/B MORPH":ts_prism_mode_name(p->mode),1);
+    if(p->morph_enabled)snprintf(label,sizeof(label),"A%02d > B%02d  %03d%%",p->a.lenses,p->b.lenses,(int)lrintf(100*(v.valid?v.morph:p->morph)));
+    else snprintf(label,sizeof(label),"%d SHIFTED + 01 BODY",p->lenses-1);
+    text(fb,250,55,label,ink,1);
     text(fb,544,55,v.valid?"LIVE DSP":"SETTINGS",ink,1);
     for(int i=0;i<TS_PRISM_LENSES;++i) {
         int x=TS_PRISM_STRIP_X+i*TS_PRISM_STRIP_STEP;
@@ -72,6 +104,10 @@ static void sister_prism_render(TsFramebuffer *fb,const TsSisterUiModel *model)
         if(i>=p->lenses || v.lens[i].level<.001f)color=blend_color(background,color,28);
         if(model->prism_selected==i+1)rect(fb,x,TS_PRISM_STRIP_Y,TS_PRISM_STRIP_W,TS_PRISM_STRIP_H,RGB(55,18,64));
         snprintf(label,sizeof(label),"%02d",i+1);text(fb,x+5,TS_PRISM_STRIP_Y+2,label,color,1);
+        for(int j=0;j<p->seq_count;++j)if(p->sequence[j]==i) {
+            rect(fb,x+3,TS_PRISM_STRIP_Y+TS_PRISM_STRIP_H-1,16,1,
+                 v.seq_lens==i+1 ? RGB(255,255,230) : RGB(221,67,207));
+        }
     }
     text(fb,28,85,"SOURCE",ink,1);text(fb,118,85,"INPUT",ink,1);
     text(fb,290,85,"ALTER",ink,1);text(fb,440,85,"OUTPUT",ink,1);text(fb,574,85,"OUT",ink,1);
@@ -133,8 +169,47 @@ static void sister_prism_render(TsFramebuffer *fb,const TsSisterUiModel *model)
     }
     prism_line(fb,602,167,609,167,original);
     prism_line(fb,601,163,609,167,original);prism_line(fb,601,171,609,167,original);
-    text(fb,24,252,"DRAG: PITCH/PAN  WHEEL: TRIM  SHIFT MUTE / CTRL SOLO",ink,1);
-    text(fb,24,262,"BIG LENS: CLICK NEXT / RIGHT PREVIOUS  PRESET RIGHT: STOCK",ink,1);
+    button(fb,16,250,78,"SOUND",model->prism_panel==0);
+    button(fb,102,250,92,"PERFORM",model->prism_panel==1);
+    button(fb,202,250,86,"PRESETS",model->prism_panel==2);
+    const char *edit_status=ts_sister_ui_prism_edit_status(model);
+    uint32_t state_color=p->morph_enabled ? RGB(205,169,255) :
+        strstr(edit_status,"NOT CAPTURED") ? RGB(255,193,92) :
+        model->prism_edit_endpoint ? RGB(119,190,255) : RGB(105,229,153);
+    text(fb,300,257,edit_status,state_color,1);
+    if(model->prism_panel==1) {
+        prism_capture_button(fb,model,0);
+        prism_capture_button(fb,model,1);
+        button(fb,160,280,66,"TO A",p->morph_enabled && !p->morph_target);
+        button(fb,232,280,66,"TO B",p->morph_enabled && p->morph_target);
+        float morph=v.valid && p->morph_enabled ? v.morph : p->morph;
+        sister_percent_parameter_state(fb,308,280,154,"A/B",morph,100,colors[5],0);
+        snprintf(label,sizeof(label),"TIME %.2FS",p->morph_seconds);
+        prism_value(fb,472,280,144,label,logf(p->morph_seconds/.05f)/logf(2400),colors[6]);
+        button(fb,16,308,66,p->seq_enabled?"SEQ ON":"SEQ OFF",p->seq_enabled);
+        button(fb,88,308,66,"EDIT",model->prism_seq_edit);
+        button(fb,160,308,66,"RESET",0);
+        button(fb,232,308,66,"CLEAR",0);
+        snprintf(label,sizeof(label),"STEP %.2FHZ",p->seq_rate);
+        prism_value(fb,308,308,154,label,logf(p->seq_rate/.05f)/logf(640),colors[2]);
+        snprintf(label,sizeof(label),"SNAP %s",ts_prism_snap_name(p->snap));
+        button(fb,472,308,144,label,p->snap!=0);
+        snprintf(label,sizeof(label),"RATE %.3FHZ",p->drift_rate);
+        prism_value(fb,16,332,144,label,logf(p->drift_rate/.005f)/logf(8000),colors[2]);
+        snprintf(label,sizeof(label),"GROUP OCT %+.0F",(double)p->group_octave);
+        prism_value(fb,170,332,144,label,(p->group_octave+3)/6.f,colors[4]);
+        text(fb,326,336,model->prism_seq_edit ? "SEQ EDIT: CTRL-CLICK NUMBERS" : "HOVER A CONTROL FOR HELP",RGB(119,190,255),1);
+    } else if(model->prism_panel==2) {
+        button(fb,16,280,30,"<",0);
+        button(fb,52,280,218,model->prism_preset_count?model->prism_preset_name:"PRISM BANK EMPTY",0);
+        button(fb,276,280,30,">",0);
+        button(fb,314,280,90,"SAVE NEW",0);
+        button(fb,412,280,96,"NEW",0);
+        button(fb,516,280,100,"VARY",0);
+        static const char *const locks[]={"PITCH","MOTION","GLASS","MIX","COUNT","SEQ"};
+        for(int i=0;i<6;++i)button(fb,16+i*101,308,95,locks[i],(p->locks&(1u<<i))!=0);
+        text(fb,16,338,"LOCK GROUPS ABOVE / SHIFT SAVE: OVERWRITE",ink,1);
+    } else {
     static const char *const names[8] = {
         "LENSES", "SPREAD", "DRIFT", "FOCUS", "STEREO", "BODY", "WET", "OUTPUT"
     };
@@ -142,7 +217,7 @@ static void sister_prism_render(TsFramebuffer *fb,const TsSisterUiModel *model)
                         p->stereo, p->body / 3, p->mix, (p->output_db + 12) / 24};
     for (int i = 0; i < 8; ++i) {
         int x = 16 + (i % 4) * 154, y = 280 + (i / 4) * 28;
-        int locked = ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_PRISM_LENSES + i);
+        int locked = p->morph_enabled || ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_PRISM_LENSES + i);
         sister_percent_parameter_state(fb, x, y, 144, names[i], amounts[i],
                                        i==1 || i==2 ? 200 : i==5 ? 300 : 100, colors[i], locked);
         if (i == 0 || i == 7) {
@@ -153,12 +228,9 @@ static void sister_prism_render(TsFramebuffer *fb,const TsSisterUiModel *model)
         }
     }
     sister_percent_parameter_state(fb,16,332,144,"DRY LEVEL",p->dry_level/2,200,colors[0],
-        ts_sister_ui_parameter_locked(model,TS_SISTER_UI_PARAM_PRISM_DRY));
+        p->morph_enabled || ts_sister_ui_parameter_locked(model,TS_SISTER_UI_PARAM_PRISM_DRY));
     sister_percent_parameter_state(fb,170,332,144,"COLOR",p->color,100,colors[5],
-        ts_sister_ui_parameter_locked(model,TS_SISTER_UI_PARAM_PRISM_COLOR));
+        p->morph_enabled || ts_sister_ui_parameter_locked(model,TS_SISTER_UI_PARAM_PRISM_COLOR));
     text(fb,326,338,model->routing.enabled ? "TO TAPE + FX" : "TO FX",ink,1);
-    button(fb, TS_SISTER_UI_FX_REC_X, TS_SISTER_UI_FX_REC_Y, TS_SISTER_UI_FX_REC_W,
-        model->file_capture_state == TS_PERFORMANCE_FILE_STOPPING ? "FILE WAIT" :
-        model->file_capture_state == TS_PERFORMANCE_FILE_RECORDING ? "STOP FILE" : "REC FILE",
-        model->file_capture_state == TS_PERFORMANCE_FILE_RECORDING && model->text_cursor_visible);
+    }
 }

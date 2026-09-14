@@ -130,6 +130,7 @@ int ts_sister_project_state_apply(const TsSisterProjectState *state,
 
 static int write_parameters(FILE *file, const TsSisterParameters *p)
 {
+    ts_prism_write_extensions(file, &p->prism);
     if (fprintf(file, "PrismInputShape=%d\nPrismOutputShape=%d\nPrismColor=%.9g\n",
         p->prism.input_shape, p->prism.output_shape, p->prism.color) < 0) return 0;
     if (fprintf(file, "PrismDryLevel=%.9g\nPrismMuteMask=%d\nPrismSoloMask=%d\n",
@@ -389,6 +390,7 @@ static int assign_parameter(TsSisterParameters *p, const char *key,
             return parse_float_value(value, &slot->mix);
         return 1;
     }
+    if (!strncmp(key, "P2.", 3)) return ts_prism_read_field(&p->prism,key,value)>0;
     for (int i = 0; i < TS_PRISM_LENSES; ++i) {
         char lens_key[40];
         snprintf(lens_key, sizeof(lens_key), "PrismPitchOffset%d", i);

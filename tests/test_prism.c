@@ -121,6 +121,7 @@ static void check_state(void)
     ts_sister_project_state_init(&state, 48000);
     assert(!state.parameters.prism.enabled);
     state.parameters.prism = (TsPrismControls){1,1,8,.21f,.77f,.62f,.3f,.8f,.66f,3,{0},{0},{0},1.4f,5,10,2,5,.73f};
+    state.parameters.prism.drift_rate=.1f;state.parameters.prism.morph_seconds=5;state.parameters.prism.seq_rate=2;
     for (int i=1; i<12; ++i) {
         state.parameters.prism.pitch_offset[i] = (i - 6) * 190.f;
         state.parameters.prism.pan_offset[i] = (i - 6) * .125f;
@@ -152,7 +153,7 @@ static void check_state(void)
     /* Previous version's explicit slots must not be migrated as legacy FX. */
     FILE *f = fopen("prism-state.ini","r+b"); assert(f);
     char data[16384]; size_t size = fread(data,1,sizeof(data)-1,f); data[size]=0;
-    char *version=strstr(data,"Version=17"); assert(version); version[9]='2';
+    char *version=strstr(data,"Version=18"); assert(version); version[9]='2';
     rewind(f); assert(fwrite(data,1,size,f)==size); fclose(f);
     assert(ts_sister_project_state_load_file(&loaded,"prism-state.ini",48000,&present,error,sizeof(error)));
     assert(loaded.parameters.fx.slot[0].type == TS_SISTER_FX_GRAIN);
@@ -280,7 +281,7 @@ static void check_manual_geometry(void)
     v=ts_prism_control_view(&c); assert(v.lens[8].cents>180);
     c.pitch_offset[0]=999; c.pan_offset[0]=1; c.pitch_offset[2]=INFINITY;
     ts_prism_controls_sanitize(&c);
-    assert(!c.pitch_offset[0] && !c.pan_offset[0] && !c.pitch_offset[2]);
+    assert(c.pitch_offset[0]==999 && c.pan_offset[0]==1 && !c.pitch_offset[2]);
     ts_prism_free(&p);
 }
 
@@ -336,11 +337,13 @@ static void check_lens_mixer(void)
 
 #include "test_prism_shapes.inc"
 #include "test_prism_capacity.inc"
+#include "test_prism_performance.inc"
 
 int main(void)
 {
     TsPrismControls c = settings(); c.spread=NAN; c.mix=INFINITY; c.mode=999; c.lenses=999;
     ts_prism_controls_sanitize(&c); assert(isfinite(c.spread) && isfinite(c.mix) && c.mode==0 && c.lenses==TS_PRISM_LENSES);
+    check_prism_performance();
     check_stream(44100); check_stream(48000); check_stream(96000);
     check_pitch_and_focus(44100); check_pitch_and_focus(48000); check_state();
     check_gain(); check_manual_geometry(); check_lens_mixer();

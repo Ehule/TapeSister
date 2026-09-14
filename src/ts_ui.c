@@ -5532,9 +5532,28 @@ sister_footer:
                  "RECORDING - MONITOR LEVELS DO NOT CHANGE CAPTURE" :
                  model->status);
     }
-    line[56]='\0';
-    text(fb, 10, 355, line,
-         model->routing.source_target_conflict ? PAL_VOLUME : PAL_MOUSE, 1);
+    if(model->fx_page==3) {
+        char help[192]="",row[64];
+        if(model->prism_hover_valid)
+            ts_sister_ui_prism_help(model,model->prism_hover_x,model->prism_hover_y,help,sizeof(help));
+        if(!help[0])snprintf(help,sizeof(help),"%s",line);
+        const char *remaining=help;
+        for(int i=0;i<2 && *remaining;++i) {
+            size_t length=strlen(remaining);
+            if(length>63) {
+                length=63;
+                while(length && remaining[length]!=' ')--length;
+                if(!length)length=63;
+            }
+            memcpy(row,remaining,length);row[length]=0;
+            text(fb,10,351+i*9,row,RGB(119,190,255),1);
+            remaining+=length;while(*remaining==' ')++remaining;
+        }
+    } else {
+        line[56]='\0';
+        text(fb, 10, 355, line,
+             model->routing.source_target_conflict ? PAL_VOLUME : PAL_MOUSE, 1);
+    }
     {
         char output_info[24];
         int output_x;
@@ -5588,15 +5607,27 @@ sister_footer:
                      (unsigned)hours,
                      (unsigned long long)((seconds / 60u) % 60u),
                      (unsigned long long)(seconds % 60u));
-            rect(fb, 444, 351, 108, 15, PAL_DESKTOP);
-            text(fb, 450, 355, duration, PAL_INSTRUMENT, 1);
+            if(model->fx_page==3) {
+                rect(fb,326,332,304,17,PAL_DESKTOP);
+                text(fb,326,337,duration,PAL_INSTRUMENT,1);
+            } else {
+                rect(fb, 444, 351, 108, 15, PAL_DESKTOP);
+                text(fb, 450, 355, duration, PAL_INSTRUMENT, 1);
+            }
         }
         recording_button_outline(
             fb, capturing ? 450 : 538, 370, capturing ? 82 : 92, 22,
             (recording || file_recording) && model->text_cursor_visible);
     }
 
-    mini_button(fb,356,350,82,model->keyboard_sustain?"SUSTAIN ON":"SUSTAIN OFF",model->keyboard_sustain);
+    if(model->fx_page==3) {
+        mini_button(fb,TS_PRISM_SUSTAIN_X,TS_PRISM_FOOTER_Y,TS_PRISM_SUSTAIN_W,
+            model->keyboard_sustain?"SUSTAIN ON":"SUSTAIN OFF",model->keyboard_sustain);
+        mini_button(fb,TS_PRISM_REC_X,TS_PRISM_FOOTER_Y,TS_PRISM_REC_W,
+            model->file_capture_state==TS_PERFORMANCE_FILE_STOPPING ? "FILE WAIT" :
+            model->file_capture_state==TS_PERFORMANCE_FILE_RECORDING ? "STOP FILE" : "REC FILE",
+            model->file_capture_state==TS_PERFORMANCE_FILE_RECORDING && model->text_cursor_visible);
+    } else mini_button(fb,356,350,82,model->keyboard_sustain?"SUSTAIN ON":"SUSTAIN OFF",model->keyboard_sustain);
 
     if (model->fallout_lfo_open) {
         sister_fallout_lfo_dialog(fb, &model->parameters.fx.fallout);

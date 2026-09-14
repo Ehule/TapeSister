@@ -138,3 +138,33 @@ measurements do not certify this Windows interface or its hardware latency.
   should open a fresh six-voice patch.
 - [ ] Close FM or quit while UPDATING is visible. Reopen and check that no old job
   replaces the new workspace. Check UPDATING visibility at native/enlarged sizes.
+
+## Prism performance and amplitude redraw
+
+- [ ] Save two Prism-only presets, change tape/FX settings, and recall each Prism
+  preset. Tape/FX must remain unchanged. Restart and recall the saved bank.
+- [ ] Compare New after a heavily edited patch with New after a simple source;
+  neither should inherit unlocked settings. Vary should develop the current patch.
+  Test all six lock groups and individual locked sliders.
+- [ ] Capture different modes, counts, shapes and mute/solo states in A/B. Sweep
+  manually and by MIDI, then reverse timed moves mid-flight. Listen for clicks and
+  confirm rays/fades follow the sound. Right-click CAP A/B to edit an endpoint.
+- [ ] Sequence lenses 03, 08, 05 while others sustain. Lower count to 5 and raise
+  it again; order must survive. Remove an excluded member, reset, clear and stop.
+  Change Step rate while audio continues through other workspaces.
+- [ ] Tune through concave glass using Up/Down and verify Up raises one cent.
+  Shift-Up/Down moves one semitone; Ctrl+Shift-Up/Down moves an octave. Check
+  Left/Right for 0.01 pan, Shift for 0.10, and Ctrl+Shift for hard left/right
+  through all six output shapes. A fine step away from hard pan must respond
+  immediately. Check interval snapping, group/individual octaves, and the body lens.
+  Confirm the original dry path is unaffected by octave changes.
+- [ ] Check gray EMPTY, green READY, blue EDIT after right-click recall, and amber
+  CHANGED after changes. Recapture returns READY; morphing shows SOUND LOCKED.
+  Sequence edits must not mark an endpoint dirty. Right-click an empty endpoint.
+- [ ] Hover buttons, faders, glass and lens numbers on all three pages. Blue help
+  must fit and distinguish sequencer RESET/CLEAR from CAP A/B and audio CAPTURE.
+  Test the compact Sustain/Rec File buttons, timer, stop and recording across pages.
+- [ ] Sweep Drift Rate from 0.005 to 40 Hz with 24 lenses, both colored glass stages
+  and MIDI morphing. Audition at the normal hardware buffer for dropouts and CPU.
+- [ ] Draw a ramp on a drone, then a flat line. Draw a section to zero and restore
+  it. Check untouched regions, cancel, undo/redo, tile copying and TSR31 save/reopen.

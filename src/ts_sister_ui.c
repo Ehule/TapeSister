@@ -245,7 +245,7 @@ void ts_sister_ui_model_update(TsSisterUiModel *model,
 
 float ts_sister_ui_prism_y(float cents)
 {
-    return 167 - copysignf(68 * log1pf(fabsf(cents) / 12) / log1pf(6400.f / 12), cents);
+    return 167 - copysignf(fminf(68,68 * log1pf(fabsf(cents) / 12) / log1pf(6400.f / 12)), cents);
 }
 
 void ts_sister_ui_prism_point_f(TsPrismLensView ray, float *x, float *y)
@@ -413,23 +413,37 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
         return hit;
     }
     if (model != NULL && model->fx_page == 3) {
+        if(model->prism_panel==1) {
+            static const int sliders[][5]={
+                {308,280,154,TS_SISTER_UI_PARAM_PRISM_MORPH,18},
+                {472,280,144,TS_SISTER_UI_PARAM_PRISM_TIME,18},
+                {308,308,154,TS_SISTER_UI_PARAM_PRISM_SEQ_RATE,18},
+                {16,332,144,TS_SISTER_UI_PARAM_PRISM_RATE,18},
+                {170,332,144,TS_SISTER_UI_PARAM_PRISM_OCTAVE,18}};
+            for(unsigned i=0;i<sizeof(sliders)/sizeof(*sliders);++i) {
+                const int *s=sliders[i];
+                if(contains(x,y,s[0],s[1],s[2],s[4])) {
+                    hit.action=TS_SISTER_UI_ACTION_PARAMETER;hit.index=s[3];hit.normalized=(float)(x-s[0])/(s[2]-1);return hit;
+                }
+            }
+        }
         if (contains(x, y, 16, 48, 96, 22)) hit.action = TS_SISTER_UI_ACTION_PRISM_TOGGLE;
         else if (contains(x, y, 122, 48, 116, 22)) hit.action = TS_SISTER_UI_ACTION_PRISM_MODE;
-        else if (contains(x, y, 16, 332, 144, 18)) {
+        else if (model->prism_panel==0 && contains(x, y, 16, 332, 144, 18)) {
             hit.action = TS_SISTER_UI_ACTION_PARAMETER;
             hit.index = TS_SISTER_UI_PARAM_PRISM_DRY;
             hit.normalized = (float)(x - 16) / 143;
         }
-        else if (contains(x, y, 170, 332, 144, 18)) {
+        else if (model->prism_panel==0 && contains(x, y, 170, 332, 144, 18)) {
             hit.action = TS_SISTER_UI_ACTION_PARAMETER;
             hit.index = TS_SISTER_UI_PARAM_PRISM_COLOR;
             hit.normalized = (float)(x - 170) / 143;
         }
-        else if (contains(x, y, TS_SISTER_UI_FX_REC_X, TS_SISTER_UI_FX_REC_Y,
-                          TS_SISTER_UI_FX_REC_W, TS_SISTER_UI_FX_REC_H))
+        else if (contains(x, y, TS_PRISM_REC_X, TS_PRISM_FOOTER_Y,
+                          TS_PRISM_REC_W, TS_PRISM_FOOTER_H))
             hit.action = TS_SISTER_UI_ACTION_RECORD_FILE;
         else {
-            for (int i = 0; i < 8; ++i) {
+            for (int i = 0; model->prism_panel==0 && i < 8; ++i) {
                 int px = 16 + (i % 4) * 154, py = 280 + (i / 4) * 28;
                 if (contains(x, y, px, py, 144, 18)) {
                     hit.action = TS_SISTER_UI_ACTION_PARAMETER;
@@ -792,3 +806,5 @@ int ts_sister_ui_midi_target(TsSisterUiHit hit, char *target,
     result = snprintf(target, target_size, "%s", name);
     return result > 0 && (size_t)result < target_size;
 }
+
+#include "ts_prism_help.inc"
