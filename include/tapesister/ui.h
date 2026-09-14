@@ -493,6 +493,7 @@ typedef struct {
     int fm_open;
     TsFmPage fm_page;
     int fm_voice_bank;
+    int basic_create_index; /* Next Shift-Create waveform, session-local. */
     TsFmPatch fm_patch;
     const TsSample *fm_preview_sample;
     void *fm_preview_job; /* SDL worker owned and joined by the application. */

@@ -3806,8 +3806,11 @@ static void begin_bank_audition(SDL_AudioDeviceID device, AudioState *audio,
 static int generate_family_candidate(SDL_AudioDeviceID device, AudioState *audio,
                                       TsUiState *ui, TsInstrument *instrument,
                                       TsFmSeedSequence *seed_sequence,
-                                      int vary, int unused_promote, int unused_radical, uint32_t *created_seed)
+                                      int vary, int basic, int unused_radical, uint32_t *created_seed)
 {
+    static const TsFmWaveform waves[] = {
+        TS_FM_WAVE_SINE, TS_FM_WAVE_SQUARE, TS_FM_WAVE_SAW, TS_FM_WAVE_TRIANGLE
+    };
     char error[160];
     int slot = instrument->selected_slot;
     int stamp = instrument->has_selection && instrument->current.data != NULL &&
@@ -3815,11 +3818,15 @@ static int generate_family_candidate(SDL_AudioDeviceID device, AudioState *audio
     size_t stamp_frames = stamp ? instrument->selection_last -
                                  instrument->selection_first : 0;
     int ok;uint32_t seed=0;
-    (void)unused_promote; (void)unused_radical;
+    (void)unused_radical;
+    basic = basic && !vary;
+    int basic_index = ui->basic_create_index % 4;
     if (ui->workbench_loop_active) stop_all(device, audio, ui);
     lock_edit(device, audio);
     audio->playing = 0; audio->bank_slot = -1;
-    if (stamp && vary && instrument->family_trajectory)
+    if (basic)
+        ok = ts_instrument_create_basic(instrument, waves[basic_index], error, sizeof(error));
+    else if (stamp && vary && instrument->family_trajectory)
         ok = ts_instrument_stamp_vary_chained(
             instrument, ui->config.chain_stamp_crossfade_ms,
             error, sizeof(error));
@@ -3868,6 +3875,12 @@ static int generate_family_candidate(SDL_AudioDeviceID device, AudioState *audio
                      "BANK %02d CREATED FRESH FM SOURCE - RIGHT-CLICK CREATE FOR CDP ROLLS", slot + 1);
     }
     if(created_seed)*created_seed=seed;
+    if (basic) {
+        ui->basic_create_index = (basic_index + 1) % 4;
+        snprintf(ui->status, sizeof(ui->status), "CREATED %s%s - SHIFT-CREATE NEXT: %s",
+                 ts_fm_waveform_name(waves[basic_index]), stamp ? " IN SELECTION" : " AT C4",
+                 ts_fm_waveform_name(waves[ui->basic_create_index]));
+    }
     return 1;
 }
 
@@ -3883,6 +3896,8 @@ static TsGeneratorRecipe current_fm_workspace_recipe(
         recipe.has_fm_patch = 0;
         return recipe;
     }
+    /* Imported material does not own the last generated tile's FM genome. */
+    recipe.has_fm_patch = 0;
     if (instrument->selected_slot >= 0 &&
         instrument->selected_slot < TS_BANK_SLOT_COUNT &&
         instrument->bank[instrument->selected_slot].occupied &&
@@ -3895,7 +3910,9 @@ static TsGeneratorRecipe current_fm_workspace_recipe(
         for (int index = instrument->post_edit_count - 1; index >= 0; --index) {
             const TsPostEdit *operation = &instrument->post_edits[index];
             const TsAudioPatch *patch;
-            if (operation->kind != TS_POST_MATERIAL_REPLACE ||
+            if ((operation->kind != TS_POST_MATERIAL_REPLACE &&
+                 operation->kind != TS_POST_PATCH_FIT &&
+                 operation->kind != TS_POST_PATCH_REPLACE) ||
                 operation->patch_index >= (uint32_t)slot->patch_count)
                 continue;
             patch = &slot->patches[operation->patch_index];
@@ -3916,6 +3933,13 @@ static void begin_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
     TsGeneratorRecipe recipe = current_fm_workspace_recipe(instrument);
     recipe.kind = TS_GENERATOR_FM;
     ts_fm_patch_from_recipe(&recipe, &ui->fm_patch);
+    if (!recipe.has_fm_patch && instrument->current.data &&
+        ts_sample_peak(&instrument->current) == 0.0f) {
+        /* Silence with no stored sound is a blank synth. Enabling V1 gives a
+           clean sine; no random attack or modulation is hidden underneath. */
+        ts_fm_patch_basic(&ui->fm_patch, TS_FM_WAVE_SINE);
+        ui->fm_patch.active_mask = 0;
+    }
     ui->fm_open = 1;
     ui->fm_full_choice_open = 0;
     ui->fm_bank_choice_open = 0;

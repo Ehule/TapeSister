@@ -162,10 +162,12 @@ static void check_persistence(const char *legacy_path)
     }
     free(a);free(b);
 }
+#include "test_fm_basic.inc"
 int main(int argc,char **argv)
 {
     check_controls();check_toggle();check_audio(44100);check_audio(48000);check_quiet_preview();
     check_persistence(argc>1?argv[1]:NULL);
+    check_all_off_is_silent();check_basic_oscillators();check_basic_create();
     puts("Unison: twelve pitches and carriers, reversible toggling, editing, repeatability and saved patches passed");
     return 0;
 }

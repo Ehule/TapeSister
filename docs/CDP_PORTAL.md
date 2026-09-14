@@ -11,6 +11,7 @@ bank presets remain in use; personal recipes and pins have separate storage.
 The **CREATE** button has separate FM and CDP dice:
 
 - **Left-click:** generate a fresh FM waveform. Repeat until you find a source you like.
+- **Shift-left-click:** cycle clean Sine → Square → Saw → Triangle oscillator sources.
 - **Right-click:** roll a CDP variation of that source. Each reroll starts from the
   retained clean waveform, without stacking previous CDP results.
 - **Middle-click:** cancel pending CDP and restore the exact clean waveform.

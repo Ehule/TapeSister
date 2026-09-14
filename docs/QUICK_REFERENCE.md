@@ -255,6 +255,10 @@ Capture destination use separate visual marks.
 Precise-duration recipe: double-click empty tile → select desired time → CREATE → VARY
 as desired → CROP.
 
+Shift-click CREATE to cycle clean Sine → Square → Saw → Triangle sources at C4.
+The next choice appears in the status line; a selection receives a stamp. Open
+FM LOGIC to edit the source or enable Unison.
+
 Right-click CREATE to roll a CDP variation of the retained clean waveform; repeated
 rolls use that same clean source without stacking results. Middle-click cancels a
 pending variation and restores the clean waveform. A right-click during processing

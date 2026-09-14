@@ -64,8 +64,8 @@ Structure routing manually uses only the original six operators.
 
 ## Compatibility and checks
 
-New saves use **TSR29 / genome 6**, storing twelve voice settings and a bounded,
-nonrecursive copy of the original sound. TSR6–TSR28 projects remain readable.
+New saves use **TSR30 / genome 7**, storing twelve voice settings and a bounded,
+nonrecursive copy of the original sound. TSR6–TSR29 projects remain readable.
 Older nine-voice tiles retain their original sound with the three new voices off.
 They did not save a pre-Unison source: switching those old tiles off isolates
 voice 1, and the status message identifies that fallback. New activations save

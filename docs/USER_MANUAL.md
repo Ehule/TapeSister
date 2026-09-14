@@ -260,8 +260,28 @@ it deliberately before replacing or clearing it.
 3. TapeSister renders a fresh six-voice FM sound into that tile.
 4. Audition it with Space, the tile, the onscreen keyboard, QWERTY, or MIDI.
 
-Left-clicking Create always proposes a fresh FM source. It does not depend on another special Source
+Ordinary left-clicking Create proposes a fresh FM source. It does not depend on another special Source
 tile.
+
+### Simple oscillator sources
+
+**Shift-click CREATE** to cycle **Sine → Square → Saw → Triangle**, then back to
+Sine. The status line names the sound and the next choice. The cycle advances only
+when creation succeeds. Each preset starts with one steady C4 oscillator, eight
+seconds long, with the other voices off, no LFO, no attack noise, and no modulation.
+The FM Filter page shows **CLEAN**, which bypasses the filter and fixed output
+coloration. Select LOW, HIGH, or BAND to add that processing again. Clean sums use
+constant peak attenuation when needed, so stacking voices does not hard-clip them.
+
+These are editable FM sounds: open FM LOGIC to change the oscillator, add voices,
+or enable Unison. Disabling Unison restores the original single-oscillator patch.
+A waveform selection receives a stamp while the surrounding audio remains intact;
+Undo removes that stamp. The same Create gesture works inside a Mosaic event editor.
+
+An existing silent tile with no saved FM patch opens as a blank synth: all voices
+off and no hidden transient or modulation. Enable V1 for a clean sine. Disabling
+every voice in any FM patch silences its attack exciter too. This applies to the FM
+preview; Create/Apply still reject renders with no usable signal.
 
 ### CREATE and CDP variations
 
@@ -270,6 +290,7 @@ CREATE has two independent dice rolls and a way back to the clean sound:
 | Gesture on CREATE | Result |
 | --- | --- |
 | Left-click | Generate a fresh FM sound |
+| Shift-left-click | Cycle clean Sine → Square → Saw → Triangle sources |
 | Right-click | Render a random CDP variation of the retained clean waveform |
 | Middle-click | Cancel the pending CDP variation and restore the retained clean waveform |
 

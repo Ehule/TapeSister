@@ -1,5 +1,5 @@
-/* CREATE has independent dice: left rolls FM, right rolls CDP from the retained
-   clean waveform, middle returns to it. Workers still own immutable snapshots. */
+/* CREATE: left rolls FM, Shift-left cycles basic oscillators, right rolls CDP
+   from the retained clean waveform, middle returns to it. Workers own snapshots. */
 static int portal_create_matches(const PortalController *c,const TsUiState *ui,const TsInstrument *instrument)
 {
     if(!c->create_original.data || c->create_event!=ui->mosaic_editing)return 0;
@@ -82,9 +82,10 @@ static int portal_create_event(const SDL_Event *event,int x,int y,
     }
     if(button==SDL_BUTTON_LEFT) {
         if(!c->create_seeds)return 0;
-        if(generate_family_candidate(device,audio,ui,instrument,c->create_seeds,0,0,0,NULL)) {
+        int basic=(SDL_GetModState()&KMOD_SHIFT)!=0;
+        if(generate_family_candidate(device,audio,ui,instrument,c->create_seeds,0,basic,0,NULL)) {
             c->create_ready=0;ui->cdp_create=0;
-            if(portal_create_keep(c,ui,instrument))
+            if(portal_create_keep(c,ui,instrument) && !basic)
                 snprintf(ui->status,sizeof(ui->status),"FRESH FM - LEFT CREATE: NEW FM / RIGHT: CDP VARIATION / MIDDLE: RESTORE FM");
         }
         return 1;

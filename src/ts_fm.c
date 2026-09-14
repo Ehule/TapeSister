@@ -10,7 +10,7 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-#define TS_FM_GENOME_VERSION 6u
+#define TS_FM_GENOME_VERSION 7u
 _Static_assert(offsetof(TsFmPatch, has_unison_source) >= sizeof(TsFmSound),
                "FM sound snapshot must fit before its backup");
 #define TS_FM_MIN_USABLE_PEAK 1.0e-5f
@@ -192,6 +192,8 @@ int ts_fm_control_available(const TsFmPatch *patch, TsFmPage page, int control)
 {
     if (!patch || control < 0 || control >=
         (page <= TS_FM_PAGE_LFO_TYPE ? ts_fm_voice_count(patch) : TS_FM_OPERATOR_COUNT)) return 0;
+    if (patch->filter_mode == TS_FM_FILTER_CLEAN &&
+        page == TS_FM_PAGE_FILTER && control < 5) return 0;
     if (patch->drone_mode && ((page == TS_FM_PAGE_FILTER && (control == 2 || control == 3)) ||
         (page == TS_FM_PAGE_STRUCTURE && control == 5))) return 0;
     return !(patch->structure == TS_FM_STRUCTURE_UNISON && page == TS_FM_PAGE_STRUCTURE &&
@@ -357,7 +359,7 @@ void ts_fm_patch_sanitize(TsFmPatch *patch)
             patch->lfo_types[voice] = TS_FM_LFO_OFF;
     }
     if (patch->filter_mode < TS_FILTER_LOWPASS ||
-        patch->filter_mode >= TS_FILTER_MODE_COUNT)
+        patch->filter_mode >= TS_FM_FILTER_MODE_COUNT)
         patch->filter_mode = TS_FILTER_LOWPASS;
     patch->filter_cutoff_hz = clampf(isfinite(patch->filter_cutoff_hz) ?
                                      patch->filter_cutoff_hz : 16000.0f,
@@ -652,6 +654,28 @@ float ts_fm_patch_distance(const TsFmPatch *source, const TsFmPatch *varied)
     return distance;
 }
 
+void ts_fm_patch_basic(TsFmPatch *patch, TsFmWaveform waveform)
+{
+    if (!patch) return;
+    memset(patch, 0, sizeof(*patch));
+    patch->genome_version = TS_FM_GENOME_VERSION;
+    patch->active_mask = 1u;
+    patch->mutation_mask = TS_FM_MUTATE_ALL;
+    patch->pitch_lock = 1;
+    patch->drone_mode = 1;
+    patch->depth = 0.15f;
+    patch->filter_mode = TS_FM_FILTER_CLEAN;
+    patch->filter_cutoff_hz = 16000.0f;
+    patch->filter_attack_seconds = 0.001f;
+    patch->filter_release_seconds = 0.01f;
+    for (int voice = 0; voice < TS_FM_UNISON_VOICE_COUNT; ++voice) {
+        patch->ratios[voice] = 1.0f;
+        patch->waveforms[voice] = waveform;
+        patch->lfo_rates[voice] = 0.1f;
+    }
+    ts_fm_patch_sanitize(patch);
+}
+
 float ts_fm_control_normalized(const TsFmPatch *patch, TsFmPage page, int control)
 {
     TsFmPatch safe;
@@ -677,7 +701,7 @@ float ts_fm_control_normalized(const TsFmPatch *patch, TsFmPage page, int contro
             float maximum = filter_envelope_maximum(&safe);
             return (safe.filter_envelope_amount / maximum + 1.0f) * 0.5f;
         }
-        return categorical_normalized(safe.filter_mode, TS_FILTER_MODE_COUNT);
+        return categorical_normalized(safe.filter_mode, TS_FM_FILTER_MODE_COUNT);
     case TS_FM_PAGE_STRUCTURE:
         if (control == 0) return categorical_normalized(safe.structure, TS_FM_STRUCTURE_COUNT);
         if (control == 1) return categorical_normalized(safe.interaction, TS_FM_INTERACTION_COUNT);
@@ -721,7 +745,7 @@ int ts_fm_set_control_normalized(TsFmPatch *patch, TsFmPage page, int control,
             float maximum = filter_envelope_maximum(patch);
             patch->filter_envelope_amount = (normalized * 2.0f - 1.0f) * maximum;
         }
-        else patch->filter_mode = categorical(normalized, TS_FILTER_MODE_COUNT);
+        else patch->filter_mode = categorical(normalized, TS_FM_FILTER_MODE_COUNT);
         break;
     case TS_FM_PAGE_STRUCTURE:
         if (control == 0) patch->structure = categorical(normalized, TS_FM_STRUCTURE_COUNT);
@@ -756,7 +780,7 @@ int ts_fm_step_control(TsFmPatch *patch, TsFmPage page, int control,
         count = TS_FM_LFO_TYPE_COUNT;
     } else if (page == TS_FM_PAGE_FILTER && control == 5) {
         category = &patch->filter_mode;
-        count = TS_FILTER_MODE_COUNT;
+        count = TS_FM_FILTER_MODE_COUNT;
     } else if (page == TS_FM_PAGE_STRUCTURE && control == 0) {
         category = &patch->structure;
         count = TS_FM_STRUCTURE_COUNT;
@@ -854,7 +878,8 @@ void ts_fm_control_format(const TsFmPatch *patch, TsFmPage page, int control,
         else if (control == 2) snprintf(value, value_size, "%.3FS", safe.filter_attack_seconds);
         else if (control == 3) snprintf(value, value_size, "%.2FS", safe.filter_release_seconds);
         else if (control == 4) snprintf(value, value_size, "%+.0F%%", safe.filter_envelope_amount * 100.0f);
-        else snprintf(value, value_size, "%s", ts_filter_mode_name((TsFilterMode)safe.filter_mode));
+        else snprintf(value, value_size, "%s", safe.filter_mode == TS_FM_FILTER_CLEAN ?
+                      "CLEAN" : ts_filter_mode_name((TsFilterMode)safe.filter_mode));
         return;
     }
     {
@@ -1109,6 +1134,7 @@ static int render_sample(TsSample *sample, const TsFmPatch *patch,
     uint32_t voice_rng[TS_FM_UNISON_VOICE_COUNT];
     float low = 0.0f, band = 0.0f;
     float dc_x = 0.0f, dc_y = 0.0f;
+    float clean_peak = 0.0f;
     if (sample == NULL || patch == NULL || sample_rate == 0u ||
         !isfinite(seconds) || !isfinite(frequency)) {
         if (error != NULL && error_size > 0u) snprintf(error, error_size, "Invalid FM render request");
@@ -1235,9 +1261,18 @@ static int render_sample(TsSample *sample, const TsFmPatch *patch,
             float high;
             float damping;
             value *= amplitude_envelope;
-            if (!safe.drone_mode)
+            /* The attack exciter belongs to the enabled voices. Without this
+               gate a completely muted patch could still play a noise hit. */
+            if (!safe.drone_mode && first_active >= 0)
                 value += noise * expf(-t * (22.0f + safe.shape * 90.0f)) *
                          safe.transient_mix;
+            if (safe.filter_mode == TS_FM_FILTER_CLEAN) {
+                /* A linear path makes a single sine a sine. Preserve the
+                   existing colored output for all pre-CLEAN patches. */
+                data[frame] = isfinite(value) ? value * 0.72f : 0.0f;
+                clean_peak = fmaxf(clean_peak, fabsf(data[frame]));
+                continue;
+            }
             cutoff = clampf(cutoff, 20.0f, (float)sample_rate * 0.45f);
             coefficient = 2.0f * sinf((float)M_PI * cutoff / (float)sample_rate);
             coefficient = clampf(coefficient, 0.001f, 0.99f);
@@ -1259,6 +1294,12 @@ static int render_sample(TsSample *sample, const TsFmPatch *patch,
                 data[frame] = isfinite(blocked) ? clampf(blocked, -0.98f, 0.98f) : 0.0f;
             }
         }
+    }
+    /* Preserve the clean waveform when several carriers add up. The offline
+       peak is known, so use one constant attenuation instead of clipping. */
+    if (clean_peak > 0.98f) {
+        float gain = 0.98f / clean_peak;
+        for (size_t frame = 0; frame < frames; ++frame) data[frame] *= gain;
     }
     if (safe.drone_mode)
         trim_drone_to_zero_boundaries(data, &frames, sample_rate);

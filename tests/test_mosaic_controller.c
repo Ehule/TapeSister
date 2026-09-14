@@ -410,6 +410,7 @@ int main(void)
     test_workspace_playback(window);
     test_workspace_routes(window);
     test_fm_preview_updates();
+    test_basic_create_controller();
     test_mosaic_master_routes();
     test_play_on_select(window);
     test_prism_controller();
