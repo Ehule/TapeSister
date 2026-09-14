@@ -24,7 +24,7 @@ static void prism_zoya_figures(TsFramebuffer *fb,const TsSisterUiModel *m,
 {
     if(!m->prism_zoya.visible || !p->enabled)return;
     const uint32_t background=RGB(7,11,15);
-    const uint32_t tones[3]={RGB(101,211,228),RGB(215,115,201),RGB(230,189,117)};
+    const uint32_t tones[3]={RGB(108,211,236),RGB(226,122,212),RGB(246,198,139)};
     float focus=prism_zoya_unit(p->focus);
     float body=prism_zoya_unit(v->lens[0].level/3);
     float spread=prism_zoya_unit(p->spread*.5f)*(1-focus);
@@ -51,15 +51,15 @@ static void prism_zoya_figures(TsFramebuffer *fb,const TsSisterUiModel *m,
             prism_zoya_ease((time-.55f)/.3f)*(1-prism_zoya_ease((time-1.05f)/.6f));
         float density=(64+14*body+16*focus+22*coherent)*form;
         if(!side)density*=1-.48f*dissolve;
-        float strength=(side ? .23f+.22f*prism_zoya_unit(v->wet) :
-                                  .24f+.14f*prism_zoya_unit(v->dry))+.22f*coherent;
+        float strength=(side ? .31f+.20f*prism_zoya_unit(v->wet) :
+                                  .36f+.12f*prism_zoya_unit(v->dry))+.18f*coherent;
         int echoes=side && spread>.06f ? 2 : 0;
         /* Two decimated echoes maximum; never one character per lens. */
         for(int copy=echoes;copy>=0;--copy)for(int i=0;i<TS_PRISM_ZOYA_POINTS;++i) {
             const TsPrismZoyaPoint *point=&prism_zoya_points[i];
             uint32_t hash=sister_spirit_hash(point->x+137,point->y+31);
-            float keep=density+(point->importance==3?7:point->importance==1?-16:0);
-            if((hash%100u)>=keep || (copy && (hash&3u)))continue;
+            if((hash%100u)>=density || (copy && (hash&3u)))continue;
+            float mass=point->density/255.f;
             int lens=(point->region*3+(int)((hash>>9)%3u))%p->lenses;
             float wander=side ? motion[lens] : 0;
             float x=side ? 610-point->x : 22+point->x;
@@ -83,17 +83,18 @@ static void prism_zoya_figures(TsFramebuffer *fb,const TsSisterUiModel *m,
                     }
                 }
             }
-            int tone=side && ((hash>>18)%100u)<(unsigned)(prism_zoya_unit(p->color)*72) ?
-                1+(int)((hash>>25)&1u) : 0;
-            if(!side && point->region==0 && (hash&7u)==0)tone=2;
+            /* Warm dense matter, cool diffuse matter: volume, never contours.
+               Color adds chromatic variation to the transformed manifestation. */
+            int tone=mass>.57f ? 2 : 0;
+            if(((hash>>18)%100u)<(unsigned)(12+side*prism_zoya_unit(p->color)*60))
+                tone=1;
             if(copy)tone=copy==1?0:1;
-            float gain=strength*form*(copy ? .28f*spread : 1);
-            if(point->importance==1)gain*=.7f;
+            float gain=strength*form*(.18f+1.12f*mass)*(copy ? .28f*spread : 1);
+            /* Focus resolves the dense body by diminishing its diffuse fringe. */
+            gain*=1-focus*.75f*(1-prism_zoya_unit(mass*2));
+            gain*=.78f+.44f*((hash>>24)&255u)/255.f;
             uint32_t color=blend_color(background,tones[tone],(int)lrintf(100*gain));
             prism_zoya_pixel(fb,side,x,y,color);
-            /* A few tiny horizontal fragments imply broken wave traces. */
-            if(!copy && (hash%41u)==0)
-                prism_zoya_pixel(fb,side,x+1,y,color);
         }
     }
 }

@@ -1029,6 +1029,7 @@ and **REC FILE** buttons sit together beside the gain-reduction readout. Sequenc
 RESET/CLEAR preserve A/B; bottom-row CAPTURE records audio from a Sister tap.
 
 Two small particle manifestations of **the same Zoya** appear near SOURCE and OUT.
+Their volume comes from varying particle density, with diffuse edges and no traced contours.
 Turning **PRISM ON** while visible plays a brief materialize/refract/reconstruct
 introduction, then settles. Spread/Drift disperse the output figure; Focus gathers
 it; Body, Color and wet/dry affect density, color and prominence. Returning from

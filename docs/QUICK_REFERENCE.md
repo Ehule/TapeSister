@@ -583,6 +583,7 @@ Ctrl+Z / Ctrl+Y undo/redo; Escape cancels the current stroke.
   PERFORM affect the sequencer, preserving A/B.
 - **SNAP**: Free / Semitone / 50 Cent / 31-TET for mouse dragging.
 - **Zoya at SOURCE/OUT**: the same particle figure before/after refraction.
+  Varying density creates volume; sparse particles dissolve the edges.
   PRISM ON starts one brief introduction while visible; settled wandering follows
   the live lenses. Page/window return does not replay it. [Details](PRISM_ZOYA.md).
 - **DRAW**: each stroke replaces the previous envelope in its drawn region,

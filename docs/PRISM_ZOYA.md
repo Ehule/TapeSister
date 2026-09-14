@@ -2,10 +2,11 @@
 
 Zoya appears at SOURCE and OUT as two manifestations of **the same entity**:
 one presence becomes many possibilities, then recombines. The mirrored figures
-share one precomputed cloud. Curled hair, a shaped waist, broad shoulders/arms,
-and heavy thighs/calves carry TapeSister's character through the abstraction.
-Both arms reach toward the lens with open hands; one leg braces behind her and
-the other plants forward, following the revised pose reference.
+share one precomputed **field of particle density**. Denser regions suggest the
+head, powerful shoulders, shaped waist and heavy legs; sparse matter diffuses
+their edges into the surrounding space. There are no traced facial, garment,
+muscle or body contours. The latest reference guides an open stance: one palm
+reaches toward Prism and the rear arm falls back into the haze.
 They occupy the existing spaces at the two ends of the diagram. The lenses,
 ray geometry, numbered strip, editing handles, labels and controls keep their
 positions and behavior.
@@ -36,14 +37,16 @@ Sister's tape POWER is independent; **PRISM ON/OFF** controls this appearance.
 | --- | --- |
 | Spread | Up to two sparse, dim echoes around output Zoya |
 | Drift | Output points lose registration using the live lenses' pitch wandering |
-| Focus | Echoes and displacement converge; the figure becomes more coherent |
+| Focus | Echoes and displacement converge; diffuse fringes dim around the denser body |
 | Body | Body-anchor strength increases the retained point density |
-| Color | More output points take on magenta/amber alongside cyan |
+| Color | Adds chromatic variation to the output's warm dense/cool diffuse matter |
 | Wet / Dry | Changes the relative prominence of the transformed/original figures |
 | Lens count | Determines the sampled paths; introduction packets use at most six rays |
 
 The resting figure typically retains roughly two-thirds to four-fifths of its
-candidate points. High Focus and the brief formation peaks retain more. Trim/mute
+candidate points. Those candidates already follow a varying density field,
+with many more inside the body than in its fringe. High Focus and the brief
+formation peaks retain more. Trim/mute
 of the wet body anchor also influences the density derived from that anchor.
 The original source remains comparatively stable. The output uses the live
 smoothed lens snapshot, including during silence, for its wandering. A/B uses
@@ -60,10 +63,12 @@ Hover either manifestation for a brief explanation.
 
 ## Implementation and cost
 
-- A hand-authored profile is baked by `scripts/generate-prism-zoya.py` into
-  `src/ts_prism_zoya_points.inc`: 1,501 points, 6,004 bytes of read-only point data.
-  The generator is a development tool, not a runtime dependency.
-- Native point drawing and occasional two-pixel fragments; no bitmap loading,
+- Soft overlapping volumes and low-density wisps are sampled **offline** by
+  `scripts/generate-prism-zoya.py` into `src/ts_prism_zoya_points.inc`: 2,468 points,
+  9,872 bytes of read-only position/density/region data. No contour samples remain.
+  All field evaluation, erosion and sampling happen in the development generator;
+  the application only transforms and draws the cached points.
+- Crisp native single-pixel particles; no bitmap loading,
   filled character texture, blur, GPU particle engine, animation rig or simulation.
 - Two decimated output echoes maximum. Introduction packets use at most six
   existing rays and two packets per ray; handles are drawn over them.
@@ -77,18 +82,18 @@ Hover either manifestation for a brief explanation.
   UI rendering still consumes a small amount of shared CPU time.
 
 On a shared Linux server (Intel Xeon Platinum 8573C), a release-with-debug-info
-build measured the revised pose over 1,500 native framebuffer draws per case
+build measured the density-field revision over 1,500 native framebuffer draws per case
 after 50 warmup draws:
 
 | Drawing case | Mean | p99 |
 | --- | ---: | ---: |
-| Existing optics, manifestations hidden | 0.407 ms | 1.558 ms |
-| Settled manifestations, 24 lenses | 0.612 ms | 2.069 ms |
-| Maximum Spread, Drift, Body and Color | 0.690 ms | 3.096 ms |
-| Introduction sampled across its duration | 0.533 ms | 2.708 ms |
+| Existing optics, manifestations hidden | 0.455 ms | 2.383 ms |
+| Settled manifestations, 24 lenses | 0.746 ms | 2.699 ms |
+| Maximum Spread, Drift, Body and Color | 0.752 ms | 2.807 ms |
+| Introduction sampled across its duration | 0.562 ms | 2.027 ms |
 
-The settled comparison adds about 0.206 ms per frame, equivalent to roughly
-0.62% of one CPU core at 30 FPS on that host. These are development drawing
+The settled comparison adds about 0.292 ms per frame, equivalent to roughly
+0.88% of one CPU core at 30 FPS on that host. These are development drawing
 measurements, excluding window presentation/compositor cost; physical
 Windows/audio/MIDI audition remains needed.
 
@@ -103,7 +108,8 @@ animation.
 
 The native application builds. `test_prism_zoya`, `test_prism`,
 `test_sister_ui_model` and `tapesister_mosaic_controller_tests` pass locally;
-the controller run used SDL's dummy video/audio drivers. After revising the pose,
+the controller run used SDL's dummy video/audio drivers. After replacing the
+contours with the density field,
 the native application was rebuilt and the focused Zoya test and render benchmark
 were rerun. The complete suite was
 not rerun for this visual change. The four previously documented baseline

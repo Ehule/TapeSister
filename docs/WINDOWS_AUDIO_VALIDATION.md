@@ -150,6 +150,8 @@ measurements do not certify this Windows interface or its hardware latency.
   it must not queue an introduction. Repeat while recording audio.
 - [ ] Compare Spread/Drift/Focus/Body/Color/Wet changes and A/B morphing with all
   24 lenses. Figures must not cover glass labels, selection handles or hover help.
+  Check the density field at native/enlarged sizes: soft particle edges, visible
+  interior volume, and a more coherent core as Focus increases.
   Check a stopped audio engine: the settled figure must not keep wandering.
 - [ ] Compare visible/hidden Prism at the normal hardware buffer while recording
   a dense scene. Confirm no new audio clicks/dropouts and acceptable display CPU.

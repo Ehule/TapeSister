@@ -158,7 +158,8 @@ with all 24 lenses:
 ![Crisp Prism motion driven by live DSP snapshots](images/prism-drift.gif)
 
 Two sparse, full-body particle manifestations of **the same Zoya** now occupy
-the SOURCE/OUT margins. Switching Prism on while visible briefly materializes,
+the SOURCE/OUT margins. Varying density suggests body volume and diffused edges;
+the particles do not trace anatomical contours. Switching Prism on while visible briefly materializes,
 refracts and reconstructs her; the introduction runs once, then settles. Spread,
 Drift, Focus, Body, Color and wet/dry state subtly shape her appearance. The
 optics and controls keep their existing layout and interaction. See the
