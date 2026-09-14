@@ -4770,19 +4770,38 @@ int ts_instrument_create_selected(TsInstrument *instrument, uint32_t seed,
     return ts_instrument_select_bank(instrument, slot, error, error_size);
 }
 
+static TsGeneratorRecipe fresh_create_recipe(uint32_t seed)
+{
+    TsGeneratorRecipe recipe = {0};
+    uint32_t rng = seed ^ 0x44555241u;
+    recipe.kind = TS_GENERATOR_FM;
+    recipe.seed = seed;
+    recipe.frequency = 261.625565f;
+    recipe.has_fm_patch = 1;
+    ts_fm_patch_fresh(&recipe.fm_patch, seed);
+    recipe.seconds = recipe.fm_patch.drone_mode ? 2.0f + rng_unit(&rng) * 6.0f :
+                                               0.1f + rng_unit(&rng) * 7.9f;
+    return recipe;
+}
+
 int ts_instrument_create_selected_fresh(TsInstrument *instrument,
                                         TsFmSeedSequence *sequence,
                                         uint32_t *successful_seed,
                                         char *error, size_t error_size)
 {
     char attempt_error[160];
+    TsGeneratorRecipe previous_generator;
     if (successful_seed != NULL) *successful_seed = 0u;
-    if (sequence == NULL) {
+    if (instrument == NULL || sequence == NULL) {
         set_error(error, error_size, "FM Create session seed is unavailable");
         return 0;
     }
+    previous_generator = instrument->generator;
     for (int attempt = 0; attempt < TS_FM_CREATE_RETRY_LIMIT; ++attempt) {
         uint32_t seed = ts_fm_seed_sequence_next(sequence);
+        /* The exact-Apply helper can reuse a patch. An ordinary Create roll
+           must supply a whole new recipe, never a variation of that patch. */
+        instrument->generator = fresh_create_recipe(seed);
         if (ts_instrument_create_selected(instrument, seed,
                                           attempt_error,
                                           sizeof(attempt_error))) {
@@ -4790,6 +4809,7 @@ int ts_instrument_create_selected_fresh(TsInstrument *instrument,
             set_error(error, error_size, "");
             return 1;
         }
+        instrument->generator = previous_generator;
         if (!fm_candidate_was_unusable(attempt_error)) {
             set_error(error, error_size, attempt_error);
             return 0;
@@ -6950,7 +6970,6 @@ int ts_instrument_stamp_create(TsInstrument *instrument, uint32_t seed,
                                char *error, size_t error_size)
 {
     TsGeneratorRecipe recipe;
-    uint32_t rng = seed;
     if (instrument == NULL || instrument->current.sample_rate == 0 ||
         !instrument->has_selection || instrument->selection_last <= instrument->selection_first) {
         set_error(error, error_size, "Select a range before Create stamping");
@@ -6961,13 +6980,10 @@ int ts_instrument_stamp_create(TsInstrument *instrument, uint32_t seed,
                   "FM Create stamp cannot replace stereo material in this PR");
         return 0;
     }
-    memset(&recipe, 0, sizeof(recipe));
-    recipe.kind = TS_GENERATOR_FM;
-    recipe.seed = seed;
+    recipe = fresh_create_recipe(seed);
     recipe.seconds = clampf(
         (float)(instrument->selection_last - instrument->selection_first) /
         (float)instrument->current.sample_rate, 0.1f, 8.0f);
-    recipe.frequency = 30.0f * powf(2000.0f / 30.0f, rng_unit(&rng));
     if (!stamp_generated_patch(instrument, &recipe, 0u, 0,
                                error, error_size)) return 0;
     ++instrument->family_sequence;

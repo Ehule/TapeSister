@@ -1,6 +1,7 @@
 # Generative six-voice FM sound logic
 
-TapeSister's default Create source is a deterministic six-voice FM genome. Audio is
+TapeSister's default Create source is an independently rolled FM genome with up
+to six active voices. Audio is
 rendered offline into an ordinary tile or temporary performance buffer; the editor and
 realtime callback never depend on a separate synth runtime.
 
@@ -121,3 +122,30 @@ waveform harmonics at 44.1/48 kHz, Unison restoration, TSR30 save/reopen, select
 stamping and Undo, and Shift-Create's actual controller route. On Windows, verify
 the supplied silent tile, V1 sine, voice toggles while held, the four Create choices,
 FM/Unison reopen, and Shift-Create inside a Mosaic event editor.
+
+## Independent Create rolls
+
+Ordinary Create builds a complete recipe from its new session seed and an empty
+state. A balanced six-family palette covers simple steady sources, related
+three-carrier drones, slowly evolving FM drones, articulated/percussive sounds,
+gentler amplitude decay with opening filters, and extended-range FM. Families
+and settings are rolled anew each time; no previous tile or waveform choice is
+used as a template. Both sustained and enveloped sounds are common; attack noise
+is optional.
+
+The palette has its own constructor. The legacy seed-to-FM decoder is unchanged,
+and new rolls store the complete genome, preserving old project regeneration and
+exact new-project reloads. Full-tile Create and selection Create share the palette;
+selection length still determines the stamp length. A failed Create restores the
+previous generator state. Existing tile locks and the usable-signal retry gate
+remain in force. Vary, Chain, exact FM Apply, and the Shift-Create cycle retain
+their separate jobs.
+
+Tests compare identical fresh seeds after poisoned pure-wave/Unison/all-off
+settings against a blank instrument, including repeated Create on the same tile,
+new tile creation, Chain enabled, saved regeneration, and selection stamping.
+Palette checks cover sustained and articulated output, basic and complex voices,
+all ten routings, waveforms and interaction modes. Windows audition: Shift-Create
+a sine, choose an empty tile, then repeatedly use ordinary Create; repeat after
+editing Unison, Drone, and mutation locks. Confirm Vary/Chain still develop the
+chosen material and Shift-Create still follows its four-waveform cycle.

@@ -806,6 +806,8 @@ const char *ts_fm_pitch_scale_name(int scale);
 const char *ts_fm_page_name(TsFmPage page);
 void ts_fm_patch_from_recipe(const TsGeneratorRecipe *recipe, TsFmPatch *patch);
 void ts_fm_patch_basic(TsFmPatch *patch, TsFmWaveform waveform);
+/* Independent Create palette; keep legacy seed-only recipes unchanged. */
+void ts_fm_patch_fresh(TsFmPatch *patch, uint32_t seed);
 void ts_fm_patch_vary(const TsFmPatch *source, uint32_t seed, float range,
                       TsFmPatch *varied);
 float ts_fm_patch_distance(const TsFmPatch *source, const TsFmPatch *varied);

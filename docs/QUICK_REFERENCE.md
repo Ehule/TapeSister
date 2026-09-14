@@ -255,6 +255,10 @@ Capture destination use separate visual marks.
 Precise-duration recipe: double-click empty tile → select desired time → CREATE → VARY
 as desired → CROP.
 
+Ordinary CREATE rolls independently each time: tones, drones, percussion, soft
+attacks and wild FM. Prior tiles and FM locks do not constrain it. Use VARY or
+VARY with CHAIN to develop related sounds.
+
 Shift-click CREATE to cycle clean Sine → Square → Saw → Triangle sources at C4.
 The next choice appears in the status line; a selection receives a stamp. Open
 FM LOGIC to edit the source or enable Unison.

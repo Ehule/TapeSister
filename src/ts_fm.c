@@ -676,6 +676,73 @@ void ts_fm_patch_basic(TsFmPatch *patch, TsFmWaveform waveform)
     ts_fm_patch_sanitize(patch);
 }
 
+void ts_fm_patch_fresh(TsFmPatch *patch, uint32_t seed)
+{
+    TsGeneratorRecipe recipe = {0};
+    uint32_t rng = seed ^ 0x43524541u;
+    int family;
+    if (!patch) return;
+    recipe.kind = TS_GENERATOR_FM;
+    recipe.seed = seed;
+    ts_fm_patch_from_recipe(&recipe, patch);
+    family = (int)(rng_next(&rng) % 6u);
+    patch->transient_mix = 0.0f;
+    switch (family) {
+    case 0: /* Simple, steady source; Shift-Create remains the explicit choice. */
+        ts_fm_patch_basic(patch, (TsFmWaveform)(rng_next(&rng) % 4u));
+        patch->ratios[0] = exp2f((float)((int)(rng_next(&rng) % 4u) - 2));
+        break;
+    case 1: /* Three independent, related carriers with light detuning. */
+        patch->drone_mode = 1;
+        patch->structure = 3; /* PARALLEL: voices 1-3 are carriers. */
+        patch->active_mask = 7u;
+        patch->interaction_mix = patch->feedback = 0.0f;
+        patch->filter_mode = TS_FM_FILTER_CLEAN;
+        for (int voice = 0; voice < TS_FM_OPERATOR_COUNT; ++voice) {
+            static const float intervals[] = {1.0f, 0.5f, 2.0f, 1.5f};
+            patch->ratios[voice] = intervals[rng_next(&rng) % 4u] *
+                                  exp2f(rng_bipolar(&rng) * 18.0f / 1200.0f);
+            patch->waveforms[voice] = (int)(rng_next(&rng) % 4u);
+            patch->lfo_types[voice] = TS_FM_LFO_PITCH_SINE;
+            patch->lfo_rates[voice] = log_value(rng_unit(&rng), 0.03f, 1.0f);
+            patch->lfo_depths[voice] = rng_unit(&rng) * 0.008f;
+        }
+        break;
+    case 2: /* Sustained FM with slow independent movement. */
+        patch->drone_mode = 1;
+        patch->filter_envelope_amount = 0.0f;
+        for (int voice = 0; voice < TS_FM_OPERATOR_COUNT; ++voice) {
+            patch->lfo_rates[voice] = log_value(rng_unit(&rng), 0.03f, 2.0f);
+            patch->lfo_depths[voice] = 0.03f + rng_unit(&rng) * 0.5f;
+        }
+        break;
+    case 3: /* Shorter, articulated sounds; noise is optional. */
+        patch->shape = 0.3f + rng_unit(&rng) * 0.7f;
+        if (rng_next(&rng) & 1u) patch->transient_mix = rng_unit(&rng) * 0.5f;
+        break;
+    case 4: /* Gentle amplitude decay and a slowly opening filter. */
+        patch->shape = rng_unit(&rng) * 0.06f;
+        patch->filter_mode = TS_FILTER_LOWPASS;
+        patch->filter_cutoff_hz = log_value(rng_unit(&rng), 120.0f, 2200.0f);
+        patch->filter_attack_seconds = log_value(rng_unit(&rng), 0.3f, 3.0f);
+        patch->filter_envelope_amount = 0.2f + rng_unit(&rng) * 0.8f;
+        break;
+    default: /* The full interaction palette at extended modulation ranges. */
+        patch->extreme_mode = 1;
+        patch->drone_mode = (int)(rng_next(&rng) & 1u);
+        patch->active_mask = (1u << TS_FM_OPERATOR_COUNT) - 1u;
+        patch->depth = 8.0f + rng_unit(&rng) * 34.0f;
+        patch->feedback = 0.25f + rng_unit(&rng) * 0.7f;
+        patch->transient_mix = rng_unit(&rng) * 0.4f;
+        for (int voice = 0; voice < TS_FM_OPERATOR_COUNT; ++voice) {
+            patch->lfo_rates[voice] = log_value(rng_unit(&rng), 0.05f, 200.0f);
+            patch->lfo_depths[voice] = rng_unit(&rng) * 1.5f;
+        }
+        break;
+    }
+    ts_fm_patch_sanitize(patch);
+}
+
 float ts_fm_control_normalized(const TsFmPatch *patch, TsFmPage page, int control)
 {
     TsFmPatch safe;

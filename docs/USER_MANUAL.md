@@ -257,11 +257,21 @@ it deliberately before replacing or clearing it.
 
 1. Click an empty tile.
 2. Click **CREATE**.
-3. TapeSister renders a fresh six-voice FM sound into that tile.
+3. TapeSister rolls a fresh sound from its FM palette into that tile.
 4. Audition it with Space, the tile, the onscreen keyboard, QWERTY, or MIDI.
 
-Ordinary left-clicking Create proposes a fresh FM source. It does not depend on another special Source
-tile.
+Ordinary left-clicking **CREATE** starts independently on every click, whether the
+tile is empty or already occupied. It draws from simple tones, layered drones,
+evolving drones, percussive sounds, softer filter openings, and wild FM. Drone and
+Extreme may therefore appear as part of a new roll. Each family has randomized
+settings; no family is held between clicks.
+
+The previous tile's waveform, Unison state, Drone/Extreme switches, pitch locks,
+mutation permissions, and render duration do not constrain a new Create. Use
+**VARY** to develop the current material and **VARY with CHAIN** to put a related
+child in another tile. **Shift-CREATE** is the direct route to basic waveforms.
+The same fresh palette applies when Create stamps into a waveform selection;
+the surrounding audio is preserved.
 
 ### Simple oscillator sources
 

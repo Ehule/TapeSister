@@ -3777,11 +3777,14 @@ int main(void)
         exhausted.generator.has_fm_patch = 1;
         exhausted.generator.fm_patch = silent;
         generator_before = exhausted.generator;
+        /* Fresh Create ignores a silent, fully locked FM template. A locked
+           destination still rejects the edit and must preserve that state. */
+        exhausted.bank[0].locked = 1;
         ts_fm_seed_sequence_init(&sequence, 5u);
         CHECK(!ts_instrument_create_selected_fresh(
             &exhausted, &sequence, &successful_seed,
             error, sizeof(error)));
-        CHECK(strstr(error, "12 Create attempts") != NULL &&
+        CHECK(strstr(error, "locked") != NULL &&
               successful_seed == 0u);
         CHECK(ts_sample_hash(&exhausted.current) == sample_before &&
               ts_sample_hash(&exhausted.parent) == parent_before &&

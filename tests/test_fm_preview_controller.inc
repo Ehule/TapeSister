@@ -163,10 +163,20 @@ static void test_basic_create_controller(void)
     begin_fm_workspace(0,a,u,inst,&preview);
     assert(u->fm_patch.waveforms[0]==TS_FM_WAVE_SAW && u->fm_patch.filter_mode==TS_FM_FILTER_CLEAN);
     close_fm_workspace(0,a,u,&preview);
-    /* Ordinary Create stays on its existing FM path and leaves the cycle alone. */
+    /* A new tile after Shift-Create must get a whole fresh genome, not a
+       variation of the clean waveform. The explicit waveform cycle stays put. */
     SDL_SetModState(KMOD_NONE);inst->has_selection=0;next=u->basic_create_index;
+    assert(ts_instrument_select_bank(inst,4,error,sizeof(error)));
     assert(portal_create_event(&event,100,214,0,a,u,inst,portal,NULL));
     assert(u->basic_create_index==next && strstr(u->status,"FRESH FM"));
+    TsFmPatch fresh;ts_fm_patch_fresh(&fresh,inst->generator.seed);
+    assert(!memcmp(&fresh,&inst->generator.fm_patch,sizeof(fresh)));
+    /* Enabling Chain does not turn ordinary Create into a child operation. */
+    inst->family_trajectory=1;
+    assert(portal_create_event(&event,100,214,0,a,u,inst,portal,NULL));
+    ts_fm_patch_fresh(&fresh,inst->generator.seed);
+    assert(inst->selected_slot==4 && !memcmp(&fresh,&inst->generator.fm_patch,sizeof(fresh)));
+    assert(inst->bank[4].parent_slot==-1);
     /* The same gesture belongs to the open Mosaic event, and is committed
        through its existing explicit destination choice on returning. */
     MosaicController *mc=calloc(1,sizeof(*mc));assert(mc);portal->mosaic=mc;
