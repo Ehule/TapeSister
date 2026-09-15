@@ -19,9 +19,61 @@ static void snapshot(unsigned frames)
     for(unsigned i=0;i<frames;++i)ts_prism_process(&dsp,(TsStereoFrame){0,0});
     model.routing.prism=ts_prism_view(&dsp);
 }
-static void setup(void)
+static void config_checks(void)
+{
+    const char *path="test-prism-zoya.ini";
+    static TsConfig config,loaded,unchanged;
+    char error[256],line[256];
+    remove(path);
+    ts_config_init(&config);
+    assert(config.prism_zoya_pose==TS_PRISM_ZOYA_POSE_MEDITATION);
+    ts_sister_ui_model_init(&model,NULL);
+    assert(model.prism_zoya_pose==TS_PRISM_ZOYA_POSE_MEDITATION);
+    assert(ts_config_load(&loaded,path,error,sizeof(error)));
+    assert(loaded.prism_zoya_pose==TS_PRISM_ZOYA_POSE_MEDITATION);
+    FILE *f=fopen(path,"wb");assert(f);
+    fputs("[Sister Machine]\nsister_buffer_seconds=35\n",f);assert(!fclose(f));
+    assert(ts_config_load(&loaded,path,error,sizeof(error)));
+    assert(loaded.sister_buffer_seconds==35);
+    assert(loaded.prism_zoya_pose==TS_PRISM_ZOYA_POSE_MEDITATION);
+    for(int pose=TS_PRISM_ZOYA_POSE_MEDITATION;pose<=TS_PRISM_ZOYA_POSE_STANDING;++pose) {
+        config.prism_zoya_pose=(TsPrismZoyaPose)pose;
+        config.sister_buffer_seconds=45;
+        assert(ts_config_save(&config,path,error,sizeof(error)));
+        f=fopen(path,"rb");assert(f);int found=0;
+        while(fgets(line,sizeof(line),f))
+            if(strstr(line,pose==TS_PRISM_ZOYA_POSE_STANDING ?
+                      "prism_zoya_pose=standing" : "prism_zoya_pose=meditation"))found=1;
+        assert(!fclose(f));assert(found);
+        assert(ts_config_load(&loaded,path,error,sizeof(error)));
+        assert(loaded.prism_zoya_pose==(TsPrismZoyaPose)pose);
+        assert(loaded.sister_buffer_seconds==45);
+        ts_sister_ui_model_init(&model,&loaded);
+        assert(model.prism_zoya_pose==(TsPrismZoyaPose)pose);
+        /* Ordinary INI saves must retain the choice along with other settings. */
+        loaded.sister_buffer_seconds=50;
+        assert(ts_config_save(&loaded,path,error,sizeof(error)));
+        assert(ts_config_load(&loaded,path,error,sizeof(error)));
+        assert(loaded.prism_zoya_pose==(TsPrismZoyaPose)pose);
+        assert(loaded.sister_buffer_seconds==50);
+    }
+    f=fopen(path,"wb");assert(f);
+    fputs("[Prism]\n prism_zoya_pose = standing \n",f);assert(!fclose(f));
+    assert(ts_config_load(&loaded,path,error,sizeof(error)));
+    assert(loaded.prism_zoya_pose==TS_PRISM_ZOYA_POSE_STANDING);
+    unchanged=loaded;
+    f=fopen(path,"wb");assert(f);
+    fputs("[Prism]\nprism_zoya_pose=floating\n",f);assert(!fclose(f));
+    assert(!ts_config_load(&loaded,path,error,sizeof(error)));
+    assert(strstr(error,"meditation or standing"));
+    assert(!memcmp(&loaded,&unchanged,sizeof(loaded)));
+    remove(path);
+    puts("Zoya INI: meditation defaults, both saved poses, UI initialization, whitespace and invalid-value handling passed.");
+}
+static void setup(TsPrismZoyaPose pose)
 {
     TsConfig config;ts_config_init(&config);ts_palette_default(&palette);
+    config.prism_zoya_pose=pose;
     ts_sister_ui_model_init(&model,&config);model.fx_page=3;model.prism_panel=1;
     model.parameters.prism.enabled=1;model.parameters.prism.lenses=24;
     model.parameters.prism.spread=1.3f;model.parameters.prism.drift=.7f;
@@ -178,9 +230,18 @@ static void frames(const char *folder)
 }
 int main(int argc,char **argv)
 {
-    setup();
-    if(argc>1 && !strcmp(argv[1],"--bench"))benchmark();
-    else if(argc>2 && !strcmp(argv[1],"--frames"))frames(argv[2]);
-    else {clock_checks();render_checks();}
-    ts_prism_free(&dsp);return 0;
+    TsPrismZoyaPose pose=argc>1 && !strcmp(argv[argc-1],"--standing") ?
+        TS_PRISM_ZOYA_POSE_STANDING : TS_PRISM_ZOYA_POSE_MEDITATION;
+    if(argc>1 && !strcmp(argv[1],"--bench")) {
+        setup(pose);benchmark();ts_prism_free(&dsp);
+    } else if(argc>2 && !strcmp(argv[1],"--frames")) {
+        setup(pose);frames(argv[2]);ts_prism_free(&dsp);
+    } else {
+        config_checks();clock_checks();
+        for(int p=TS_PRISM_ZOYA_POSE_MEDITATION;p<=TS_PRISM_ZOYA_POSE_STANDING;++p) {
+            printf("Checking %s pose\n",p==TS_PRISM_ZOYA_POSE_STANDING?"standing":"meditation");
+            setup((TsPrismZoyaPose)p);render_checks();ts_prism_free(&dsp);
+        }
+    }
+    return 0;
 }

@@ -23,6 +23,11 @@ static void prism_zoya_figures(TsFramebuffer *fb,const TsSisterUiModel *m,
                                const TsPrismControls *p,const TsPrismView *v)
 {
     if(!m->prism_zoya.visible || !p->enabled)return;
+    int standing=m->prism_zoya_pose==TS_PRISM_ZOYA_POSE_STANDING;
+    const TsPrismZoyaPoint *points=standing ? prism_zoya_standing_points :
+                                           prism_zoya_meditation_points;
+    int point_count=standing ? TS_PRISM_ZOYA_STANDING_POINTS :
+                               TS_PRISM_ZOYA_MEDITATION_POINTS;
     const uint32_t background=RGB(7,11,15);
     const uint32_t tones[3]={RGB(108,211,236),RGB(226,122,212),RGB(246,198,139)};
     float focus=prism_zoya_unit(p->focus);
@@ -55,17 +60,17 @@ static void prism_zoya_figures(TsFramebuffer *fb,const TsSisterUiModel *m,
                                   .36f+.12f*prism_zoya_unit(v->dry))+.18f*coherent;
         int echoes=side && spread>.06f ? 2 : 0;
         /* Two decimated echoes maximum; never one character per lens. */
-        for(int copy=echoes;copy>=0;--copy)for(int i=0;i<TS_PRISM_ZOYA_POINTS;++i) {
-            const TsPrismZoyaPoint *point=&prism_zoya_points[i];
+        for(int copy=echoes;copy>=0;--copy)for(int i=0;i<point_count;++i) {
+            const TsPrismZoyaPoint *point=&points[i];
             uint32_t hash=sister_spirit_hash(point->x+137,point->y+31);
             if((hash%100u)>=density || (copy && (hash&3u)))continue;
             float mass=point->density/255.f;
             int lens=(point->region*3+(int)((hash>>9)%3u))%p->lenses;
             float wander=side ? motion[lens] : 0;
             float x=side ? 610-point->x : 22+point->x;
-            /* Same seated posture at both ends. A fixed, modest lift makes
+            /* In meditation, a fixed, modest lift makes
                OUT feel suspended without adding an idle bob or new clock. */
-            float y=110+point->y-(side?10:0);
+            float y=110+point->y-(side && !standing?10:0);
             x+=wander*((hash>>12)&1u?1:-1);
             y+=wander*.4f*((hash>>13)&1u?1:-1);
             if(copy) {

@@ -1030,8 +1030,12 @@ RESET/CLEAR preserve A/B; bottom-row CAPTURE records audio from a Sister tap.
 
 Two small particle manifestations of **the same Zoya** appear near SOURCE and OUT.
 Their volume comes from varying particle density, with diffuse edges and no traced contours.
-This meditation variation seats her with hands on her knees at SOURCE; at OUT she
+The default meditation pose seats her with hands on her knees at SOURCE; at OUT she
 holds the same posture slightly aloft, without an independent bobbing animation.
+Both poses are included. In `tapesister.ini`, `[Prism]` → `prism_zoya_pose=meditation`
+is the default; use `prism_zoya_pose=standing` for the reaching pose. Edit while
+TapeSister is closed, then restart. The preference is retained by INI saves and
+is independent of projects, sound presets and A/B states.
 Turning **PRISM ON** while visible plays a brief materialize/refract/reconstruct
 introduction, then settles. Spread/Drift disperse the output figure; Focus gathers
 it; Body, Color and wet/dry affect density, color and prominence. Returning from

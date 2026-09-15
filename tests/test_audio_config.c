@@ -113,6 +113,7 @@ static int test_roundtrip(void)
     saved.capture_channels = 2;
     saved.waveform_display_mode = TS_WAVEFORM_DISPLAY_RIGHT;
     saved.sister_waveform_display_mode = TS_WAVEFORM_DISPLAY_MONO_SUM;
+    saved.prism_zoya_pose = TS_PRISM_ZOYA_POSE_STANDING;
     saved.sister_buffer_seconds = 55;
     saved.sister_buffer_channels = 1;
     saved.sister_clear_ms = 33;
@@ -185,6 +186,8 @@ static int test_roundtrip(void)
                 "master output attenuation should roundtrip") &&
          expect(loaded.capture_auto_resize == 0,
                 "Capture auto resize should roundtrip") &&
+         expect(loaded.prism_zoya_pose == TS_PRISM_ZOYA_POSE_STANDING,
+                "Prism Zoya pose should survive audio-config saves") &&
          expect(loaded.waveform_display_mode == TS_WAVEFORM_DISPLAY_RIGHT &&
                 loaded.sister_waveform_display_mode == TS_WAVEFORM_DISPLAY_MONO_SUM,
                 "waveform display modes should roundtrip") &&

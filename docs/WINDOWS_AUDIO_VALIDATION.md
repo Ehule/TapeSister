@@ -141,10 +141,15 @@ measurements do not certify this Windows interface or its hardware latency.
 
 ## Prism performance and amplitude redraw
 
-- [ ] Meditation variation: check the cross-legged pose and hands resting on the
-  knees at SOURCE, with the same pose slightly suspended at OUT. Compare against
-  `feature/prism-zoya` after rebuilding each branch. Check clear arm/torso spacing
+- [ ] Close TapeSister and set `[Prism]` → `prism_zoya_pose=meditation` in the INI.
+  Relaunch and check the cross-legged pose, hands resting on the knees at SOURCE,
+  and the same pose slightly suspended at OUT. Repeat with `standing` and confirm
+  the original reaching pose. No rebuild is needed. Check clear arm/torso spacing
   at native size and no new idle bobbing, clipped head or overlap with labels.
+- [ ] Remove the pose entry from an older INI and relaunch: meditation is the
+  default. Select standing in the INI, change an audio setting in the application,
+  quit and relaunch: standing must persist. Loading projects or sound presets,
+  using New/Vary, and performing A/B must leave the configured pose in place.
 - [ ] Switch PRISM off/on while its page is visible. Source Zoya forms, packets
   traverse existing rays, and output Zoya reconstructs once, then settles.
   Sound/Perform/Presets must retain the same continuous introduction. Verify

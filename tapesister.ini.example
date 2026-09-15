@@ -81,6 +81,12 @@ capture_auto_resize=1
 ; Hard safety limit for an automatically resized Capture tile (1-600 seconds).
 capture_max_seconds=20
 
+[Prism]
+; Zoya pose: meditation (default) or standing. Edit while TapeSister is closed.
+; meditation = seated with hands on knees at SOURCE, suspended at OUT.
+; standing = the diffuse reaching pose at both ends.
+prism_zoya_pose=meditation
+
 [Sister Machine]
 ; Open the independent Sister Machine window maximized. Set to 0 for 640x400.
 sister_window_maximized=1

@@ -274,6 +274,7 @@ typedef struct {
     int prism_selected; /* One-based lens identity; zero means no selection. */
     int prism_edit_endpoint; /* One-based recalled endpoint; UI only. */
     int prism_hover_valid, prism_hover_x, prism_hover_y;
+    TsPrismZoyaPose prism_zoya_pose; /* INI preference; never sent to audio or saved in presets. */
     TsPrismZoyaVisual prism_zoya; /* Event-thread visual state, never saved or sent to audio. */
     int fallout_lfo_open;
     int midi_learn_active;

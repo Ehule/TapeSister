@@ -159,9 +159,11 @@ with all 24 lenses:
 
 Two sparse, full-body particle manifestations of **the same Zoya** now occupy
 the SOURCE/OUT margins. Varying density suggests body volume and diffused edges;
-the particles do not trace anatomical contours. In this meditation variation she
+the particles do not trace anatomical contours. By default she
 sits with crossed legs and hands on her knees at SOURCE; the same posture floats
-slightly higher at OUT. Switching Prism on while visible briefly materializes,
+slightly higher at OUT. Set `prism_zoya_pose=standing` in the `[Prism]` section
+of `tapesister.ini` while the app is closed to select the standing/reaching pose
+on the next launch. Switching Prism on while visible briefly materializes,
 refracts and reconstructs her; the introduction runs once, then settles. Spread,
 Drift, Focus, Body, Color and wet/dry state subtly shape her appearance. The
 optics and controls keep their existing layout and interaction. See the

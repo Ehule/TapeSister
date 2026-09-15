@@ -95,6 +95,11 @@ typedef enum {
     TS_CONFIG_CDP_BIN_PATH
 } TsConfigField;
 
+typedef enum {
+    TS_PRISM_ZOYA_POSE_MEDITATION = 0,
+    TS_PRISM_ZOYA_POSE_STANDING
+} TsPrismZoyaPose;
+
 typedef struct {
     char sample_path[TS_CONFIG_PATH_MAX];
     char fasttracker_path[TS_CONFIG_PATH_MAX];
@@ -132,6 +137,7 @@ typedef struct {
     int capture_channels;
     int waveform_display_mode;
     int sister_waveform_display_mode;
+    TsPrismZoyaPose prism_zoya_pose;
     int sister_buffer_seconds;
     int sister_buffer_channels;
     int sister_clear_ms;
