@@ -582,5 +582,13 @@ Ctrl+Z / Ctrl+Y undo/redo; Escape cancels the current stroke.
   Compact **SUSTAIN** and **REC FILE** sit beside the GR readout; RESET/CLEAR on
   PERFORM affect the sequencer, preserving A/B.
 - **SNAP**: Free / Semitone / 50 Cent / 31-TET for mouse dragging.
+- **Zoya at SOURCE/OUT**: the same particle figure before/after refraction.
+  Default meditation: seated with hands on knees at SOURCE, suspended at OUT.
+  INI `[Prism]`: `prism_zoya_pose=meditation`, `standing` or `off`; edit while closed,
+  then restart. Missing entries default to meditation. `off` hides Zoya and her
+  activation animation; Prism optics and audio remain active.
+  Varying density creates volume; sparse particles dissolve the edges.
+  PRISM ON starts one brief introduction while visible; settled wandering follows
+  the live lenses. Page/window return does not replay it. [Details](PRISM_ZOYA.md).
 - **DRAW**: each stroke replaces the previous envelope in its drawn region,
   with recoverable zeroed sections and ordinary undo/redo. New saves use TSR31.

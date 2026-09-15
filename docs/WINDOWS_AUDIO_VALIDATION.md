@@ -141,6 +141,35 @@ measurements do not certify this Windows interface or its hardware latency.
 
 ## Prism performance and amplitude redraw
 
+- [ ] Close TapeSister and set `[Prism]` → `prism_zoya_pose=meditation` in the INI.
+  Relaunch and check the cross-legged pose, hands resting on the knees at SOURCE,
+  and the same pose slightly suspended at OUT. Repeat with `standing` and confirm
+  the original reaching pose. No rebuild is needed. Check clear arm/torso spacing
+  at native size and no new idle bobbing, clipped head or overlap with labels.
+- [ ] Set `prism_zoya_pose=off` while closed, then relaunch. Neither Zoya figure,
+  activation packets nor Zoya hover help should appear when toggling Prism on,
+  returning from another page or reopening the window. The normal optical
+  diagram, controls and audio must still work. Change an audio setting, quit
+  and relaunch: off must persist.
+- [ ] Remove the pose entry from an older INI and relaunch: meditation is the
+  default. Select standing in the INI, change an audio setting in the application,
+  quit and relaunch: standing must persist. Loading projects or sound presets,
+  using New/Vary, and performing A/B must leave the configured pose in place.
+- [ ] Switch PRISM off/on while its page is visible. Source Zoya forms, packets
+  traverse existing rays, and output Zoya reconstructs once, then settles.
+  Sound/Perform/Presets must retain the same continuous introduction. Verify
+  independent Sister tape POWER does not trigger it.
+- [ ] Hide/minimize Sister or leave Prism during the introduction; return to
+  settled figures without replay. Enable Prism from MIDI while hidden; opening
+  it must not queue an introduction. Repeat while recording audio.
+- [ ] Compare Spread/Drift/Focus/Body/Color/Wet changes and A/B morphing with all
+  24 lenses. Figures must not cover glass labels, selection handles or hover help.
+  Check the density field at native/enlarged sizes: soft particle edges, visible
+  interior volume, and a more coherent core as Focus increases.
+  Check a stopped audio engine: the settled figure must not keep wandering.
+- [ ] Compare visible/hidden Prism at the normal hardware buffer while recording
+  a dense scene. Confirm no new audio clicks/dropouts and acceptable display CPU.
+
 - [ ] Save two Prism-only presets, change tape/FX settings, and recall each Prism
   preset. Tape/FX must remain unchanged. Restart and recall the saved bank.
 - [ ] Compare New after a heavily edited patch with New after a simple source;

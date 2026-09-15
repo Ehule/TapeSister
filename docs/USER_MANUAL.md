@@ -1028,6 +1028,22 @@ Hover controls for blue, two-line help above the bottom row. Compact **SUSTAIN**
 and **REC FILE** buttons sit together beside the gain-reduction readout. Sequencer
 RESET/CLEAR preserve A/B; bottom-row CAPTURE records audio from a Sister tap.
 
+Two small particle manifestations of **the same Zoya** appear near SOURCE and OUT.
+Their volume comes from varying particle density, with diffuse edges and no traced contours.
+The default meditation pose seats her with hands on her knees at SOURCE; at OUT she
+holds the same posture slightly aloft, without an independent bobbing animation.
+Both poses are included. In `tapesister.ini`, `[Prism]` → `prism_zoya_pose=meditation`
+is the default; use `prism_zoya_pose=standing` for the reaching pose, or
+`prism_zoya_pose=off` to hide Zoya and the activation animation. Prism optics and
+audio remain active when Zoya is off. Edit while
+TapeSister is closed, then restart. The preference is retained by INI saves and
+is independent of projects, sound presets and A/B states.
+Turning **PRISM ON** while visible plays a brief materialize/refract/reconstruct
+introduction, then settles. Spread/Drift disperse the output figure; Focus gathers
+it; Body, Color and wet/dry affect density, color and prominence. Returning from
+another page/window does not replay the introduction. The figures leave the
+optics and controls in place and add no audio processing. See [Zoya in Prism](PRISM_ZOYA.md).
+
 ## Sister Machine
 
 ![Sister Machine recording a routed performance](images/manual/sister-machine.png)

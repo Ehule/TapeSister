@@ -15,6 +15,11 @@ enum { TS_PRISM_SUSTAIN_X = 396, TS_PRISM_SUSTAIN_W = 82,
        TS_PRISM_FOOTER_Y = 350, TS_PRISM_FOOTER_H = 17 };
 typedef enum { TS_PRISM_CAPTURE_EMPTY, TS_PRISM_CAPTURE_READY,
                TS_PRISM_CAPTURE_EDITING, TS_PRISM_CAPTURE_DIRTY } TsPrismCaptureVisual;
+enum { TS_PRISM_ZOYA_INTRO_MS = 3600 };
+typedef struct {
+    uint32_t started_ms, elapsed_ms;
+    int initialized, enabled, visible, introducing;
+} TsPrismZoyaVisual;
 
 typedef enum {
     TS_SISTER_UI_ACTION_NONE = 0,
@@ -269,6 +274,8 @@ typedef struct {
     int prism_selected; /* One-based lens identity; zero means no selection. */
     int prism_edit_endpoint; /* One-based recalled endpoint; UI only. */
     int prism_hover_valid, prism_hover_x, prism_hover_y;
+    TsPrismZoyaPose prism_zoya_pose; /* INI preference; never sent to audio or saved in presets. */
+    TsPrismZoyaVisual prism_zoya; /* Event-thread visual state, never saved or sent to audio. */
     int fallout_lfo_open;
     int midi_learn_active;
     int midi_activity;
@@ -290,6 +297,7 @@ int ts_sister_ui_prism_hit(const TsSisterUiModel *model, int x, int y);
 TsPrismCaptureVisual ts_sister_ui_prism_capture_visual(const TsSisterUiModel *model, int endpoint);
 const char *ts_sister_ui_prism_edit_status(const TsSisterUiModel *model);
 void ts_sister_ui_prism_help(const TsSisterUiModel *model, int x, int y, char *help, size_t size);
+void ts_sister_ui_prism_zoya_tick(TsPrismZoyaVisual *visual, uint32_t now_ms, int enabled, int visible);
 
 int ts_sister_ui_parameter_lockable(int parameter);
 int ts_sister_ui_parameter_locked(const TsSisterUiModel *model,
