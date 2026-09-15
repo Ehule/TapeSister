@@ -36,14 +36,15 @@ static void config_checks(void)
     assert(ts_config_load(&loaded,path,error,sizeof(error)));
     assert(loaded.sister_buffer_seconds==35);
     assert(loaded.prism_zoya_pose==TS_PRISM_ZOYA_POSE_MEDITATION);
-    for(int pose=TS_PRISM_ZOYA_POSE_MEDITATION;pose<=TS_PRISM_ZOYA_POSE_STANDING;++pose) {
+    static const char *const pose_lines[]={"prism_zoya_pose=meditation",
+        "prism_zoya_pose=standing","prism_zoya_pose=off"};
+    for(int pose=TS_PRISM_ZOYA_POSE_MEDITATION;pose<=TS_PRISM_ZOYA_POSE_OFF;++pose) {
         config.prism_zoya_pose=(TsPrismZoyaPose)pose;
         config.sister_buffer_seconds=45;
         assert(ts_config_save(&config,path,error,sizeof(error)));
         f=fopen(path,"rb");assert(f);int found=0;
         while(fgets(line,sizeof(line),f))
-            if(strstr(line,pose==TS_PRISM_ZOYA_POSE_STANDING ?
-                      "prism_zoya_pose=standing" : "prism_zoya_pose=meditation"))found=1;
+            if(strstr(line,pose_lines[pose]))found=1;
         assert(!fclose(f));assert(found);
         assert(ts_config_load(&loaded,path,error,sizeof(error)));
         assert(loaded.prism_zoya_pose==(TsPrismZoyaPose)pose);
@@ -65,10 +66,10 @@ static void config_checks(void)
     f=fopen(path,"wb");assert(f);
     fputs("[Prism]\nprism_zoya_pose=floating\n",f);assert(!fclose(f));
     assert(!ts_config_load(&loaded,path,error,sizeof(error)));
-    assert(strstr(error,"meditation or standing"));
+    assert(strstr(error,"meditation, standing or off"));
     assert(!memcmp(&loaded,&unchanged,sizeof(loaded)));
     remove(path);
-    puts("Zoya INI: meditation defaults, both saved poses, UI initialization, whitespace and invalid-value handling passed.");
+    puts("Zoya INI: meditation defaults, all three saved options, UI initialization, whitespace and invalid-value handling passed.");
 }
 static void setup(TsPrismZoyaPose pose)
 {
@@ -173,6 +174,35 @@ static void render_checks(void)
     assert(!memcmp(&frame,&baseline,sizeof(frame)));
     puts("Zoya render: protected optics/controls, immutable model, stationary snapshots, silent DSP drift and bounded intro passed.");
 }
+static void off_checks(void)
+{
+    setup(TS_PRISM_ZOYA_POSE_OFF);
+    assert(model.prism_zoya_pose==TS_PRISM_ZOYA_POSE_OFF);
+    assert(model.parameters.prism.enabled);
+    ts_sister_ui_prism_zoya_tick(&model.prism_zoya,100,1,0);
+    assert(!model.prism_zoya.visible && !model.prism_zoya.introducing);
+    TsPrismZoyaVisual stopped=model.prism_zoya;
+    ts_sister_ui_prism_zoya_tick(&model.prism_zoya,999999,1,0);
+    assert(!memcmp(&stopped,&model.prism_zoya,sizeof(stopped)));
+    ts_sister_ui_render(&baseline,&model,&palette);
+    /* Off remains authoritative even with stale/forced introduction flags. */
+    model.prism_zoya.visible=1;model.prism_zoya.introducing=1;
+    for(unsigned t=0;t<TS_PRISM_ZOYA_INTRO_MS;t+=165) {
+        model.prism_zoya.elapsed_ms=t;
+        TsSisterUiModel unchanged=model;
+        ts_sister_ui_render(&frame,&model,&palette);
+        assert(!memcmp(&frame,&baseline,sizeof(frame)));
+        assert(!memcmp(&model,&unchanged,sizeof(model)));
+    }
+    model.prism_zoya.introducing=0;
+    ts_sister_ui_render(&frame,&model,&palette);
+    assert(!memcmp(&frame,&baseline,sizeof(frame)));
+    char help[192];ts_sister_ui_prism_help(&model,55,140,help,sizeof(help));
+    assert(!strstr(help,"ZOYA:"));
+    assert(model.parameters.prism.enabled);
+    ts_prism_free(&dsp);
+    puts("Zoya off: no figures, activation packets or Zoya hover help; original Prism framebuffer and enabled state preserved.");
+}
 static double now(void)
 {
     struct timespec t;timespec_get(&t,TIME_UTC);return t.tv_sec+t.tv_nsec*1e-9;
@@ -242,6 +272,7 @@ int main(int argc,char **argv)
             printf("Checking %s pose\n",p==TS_PRISM_ZOYA_POSE_STANDING?"standing":"meditation");
             setup((TsPrismZoyaPose)p);render_checks();ts_prism_free(&dsp);
         }
+        off_checks();
     }
     return 0;
 }

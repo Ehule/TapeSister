@@ -1,4 +1,4 @@
-# Zoya inside Prism — meditation and standing poses
+# Zoya inside Prism — meditation, standing or off
 
 Zoya appears at SOURCE and OUT as two manifestations of **the same entity**:
 one presence becomes many possibilities, then recombines. The mirrored figures
@@ -29,8 +29,10 @@ prism_zoya_pose=meditation
 | --- | --- |
 | `meditation` (default) | Cross-legged, hands on knees at SOURCE; the same pose suspended slightly higher at OUT. |
 | `standing` | The original diffuse standing/reaching figure at both ends. |
+| `off` | Hide both Zoya figures, the activation packets and Zoya hover help. Prism optics, controls and audio remain active. |
 
-Change the value to `standing` to use the standing pose. An older INI with no
+Change the value to `standing` to use the standing pose, or `off` to disable
+Zoya entirely. An older INI with no
 `prism_zoya_pose` entry uses meditation automatically. Normal configuration
 saves preserve the choice. Values are lowercase; any other value reports an
 invalid-pose configuration error. Edit while the application is closed so its
@@ -39,6 +41,7 @@ shutdown save does not overwrite your change.
 This is an application appearance preference. Projects, Sister presets, Prism
 presets, New/Vary and A/B transitions do not select or store a pose. Both poses
 use the same introduction, particle treatment, sound-driven motion and controls.
+`off` suppresses the visual introduction and drawing work without disabling Prism.
 
 ![Standing pose selected through the INI](images/prism-zoya-standing.png)
 
@@ -140,10 +143,13 @@ animation.
 
 The native application builds. `test_prism_zoya`, `tapesister_audio_config_tests` and
 `test_sister_ui_model` pass locally for the combined build. The Zoya test checks
-missing/legacy INI defaults, both values, normal save/load preservation, model
+missing/legacy INI defaults, all three values, normal save/load preservation, model
 initialization and invalid-value rejection. It exercises both poses through
 activation, protected regions, stationary snapshots and live DSP drift.
-The audio-config test checks that audio/device saves retain the selected pose.
+The off-mode check compares the full framebuffer with the original optics-only
+view throughout activation and at rest, including forced/stale introduction flags.
+It checks that no Zoya hover help appears and Prism remains enabled.
+The audio-config test checks that audio/device saves retain the off preference.
 Generated point data reproduces exactly, and rendered frames for both poses
 match the preceding standalone versions. The local SDL build used MIDI and CDP
 bundling disabled;

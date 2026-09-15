@@ -22,7 +22,8 @@ static void prism_zoya_pixel(TsFramebuffer *fb,int side,float x,float y,uint32_t
 static void prism_zoya_figures(TsFramebuffer *fb,const TsSisterUiModel *m,
                                const TsPrismControls *p,const TsPrismView *v)
 {
-    if(!m->prism_zoya.visible || !p->enabled)return;
+    if(m->prism_zoya_pose==TS_PRISM_ZOYA_POSE_OFF ||
+       !m->prism_zoya.visible || !p->enabled)return;
     int standing=m->prism_zoya_pose==TS_PRISM_ZOYA_POSE_STANDING;
     const TsPrismZoyaPoint *points=standing ? prism_zoya_standing_points :
                                            prism_zoya_meditation_points;
@@ -119,7 +120,8 @@ static void prism_zoya_bezier(float t,float x0,float y0,float x1,float y1,
 static void prism_zoya_ray(TsFramebuffer *fb,const TsSisterUiModel *m,int lens,int count,
                            float x,float y,float arrive_y,float exit_y,float join_x,uint32_t color)
 {
-    if(!m->prism_zoya.visible || !m->prism_zoya.introducing)return;
+    if(m->prism_zoya_pose==TS_PRISM_ZOYA_POSE_OFF ||
+       !m->prism_zoya.visible || !m->prism_zoya.introducing)return;
     int stride=(count+5)/6;
     if(stride<1)stride=1;
     if(lens%stride)return;

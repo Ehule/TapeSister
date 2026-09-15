@@ -97,7 +97,8 @@ typedef enum {
 
 typedef enum {
     TS_PRISM_ZOYA_POSE_MEDITATION = 0,
-    TS_PRISM_ZOYA_POSE_STANDING
+    TS_PRISM_ZOYA_POSE_STANDING,
+    TS_PRISM_ZOYA_POSE_OFF
 } TsPrismZoyaPose;
 
 typedef struct {

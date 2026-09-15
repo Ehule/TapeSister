@@ -144,8 +144,9 @@ void ts_sister_ui_model_init(TsSisterUiModel *model, const TsConfig *config)
     if (model == NULL) return;
     memset(model, 0, sizeof(*model));
     model->prism_zoya_pose = config != NULL &&
-        config->prism_zoya_pose == TS_PRISM_ZOYA_POSE_STANDING ?
-        TS_PRISM_ZOYA_POSE_STANDING : TS_PRISM_ZOYA_POSE_MEDITATION;
+        (config->prism_zoya_pose == TS_PRISM_ZOYA_POSE_STANDING ||
+         config->prism_zoya_pose == TS_PRISM_ZOYA_POSE_OFF) ?
+        config->prism_zoya_pose : TS_PRISM_ZOYA_POSE_MEDITATION;
     model->capture_channels = config != NULL ? config->capture_channels : 1;
     model->waveform_mode = ts_waveform_display_sanitize(
         config != NULL ? config->sister_waveform_display_mode : 0);

@@ -16645,6 +16645,7 @@ int main(int argc, char **argv)
                 routing.enabled ? 0u : (uint8_t)((now / 650u) & 7u);
             ts_sister_ui_prism_zoya_tick(&sister_window.model.prism_zoya,now,
                 audio.sister.parameters.prism.enabled,
+                sister_window.model.prism_zoya_pose!=TS_PRISM_ZOYA_POSE_OFF &&
                 sister_window.model.visible && !sister_window.minimized &&
                 sister_window.model.fx_page==3 && !sister_window.model.preset_manage_open &&
                 !sister_window.model.midi_learn_active);

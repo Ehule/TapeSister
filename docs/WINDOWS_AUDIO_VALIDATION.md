@@ -146,6 +146,11 @@ measurements do not certify this Windows interface or its hardware latency.
   and the same pose slightly suspended at OUT. Repeat with `standing` and confirm
   the original reaching pose. No rebuild is needed. Check clear arm/torso spacing
   at native size and no new idle bobbing, clipped head or overlap with labels.
+- [ ] Set `prism_zoya_pose=off` while closed, then relaunch. Neither Zoya figure,
+  activation packets nor Zoya hover help should appear when toggling Prism on,
+  returning from another page or reopening the window. The normal optical
+  diagram, controls and audio must still work. Change an audio setting, quit
+  and relaunch: off must persist.
 - [ ] Remove the pose entry from an older INI and relaunch: meditation is the
   default. Select standing in the INI, change an audio setting in the application,
   quit and relaunch: standing must persist. Loading projects or sound presets,
