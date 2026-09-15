@@ -23,8 +23,16 @@ static void test_mosaic_record_tile(SDL_Window *window,SDL_AudioDeviceID device)
     double start=u->mosaic->time;
     SDL_Event e={0};e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=SDL_GetWindowID(window);
     e.button.x=TS_MOSAIC_REC_TILE_X+10;e.button.y=45;e.button.button=SDL_BUTTON_RIGHT;
+    assert(u->mosaic_record_source==TS_RECORD_SOURCE_DRY);
     assert(mosaic_record_tile_event(&e,window,device,&input_device,a,input,u,&instrument));
-    assert(u->record_source==TS_RECORD_SOURCE_SYNTH);
+    assert(u->mosaic_record_source==TS_RECORD_SOURCE_OUTPUT && u->record_source==TS_RECORD_SOURCE_EXT);
+    assert(mosaic_record_tile_event(&e,window,device,&input_device,a,input,u,&instrument));
+    assert(u->mosaic_record_source==TS_RECORD_SOURCE_EXT);
+    assert(mosaic_record_tile_event(&e,window,device,&input_device,a,input,u,&instrument));
+    assert(u->mosaic_record_source==TS_RECORD_SOURCE_DRY);
+    /* Retain coverage of the legacy threshold-triggered synth recorder shared
+       with REC BANK; the Mosaic UI now offers DRY/OUT/EXT instead. */
+    u->mosaic_record_source=TS_RECORD_SOURCE_SYNTH;
     e.button.button=SDL_BUTTON_LEFT;
     u->config_open=1;
     assert(!mosaic_record_tile_event(&e,window,device,&input_device,a,input,u,&instrument));
@@ -87,7 +95,7 @@ static void test_mosaic_record_tile(SDL_Window *window,SDL_AudioDeviceID device)
     assert(!u->mosaic_recording && u->mosaic->revision==revision && !external_capture_busy(input));
     /* Stereo input uses its native rate/channels, completes on silence, and
        preserves an open editor's selection. No real capture device is needed. */
-    u->record_source=TS_RECORD_SOURCE_EXT;atomic_store(&input->record_source,TS_RECORD_SOURCE_EXT);
+    u->mosaic_record_source=TS_RECORD_SOURCE_EXT;atomic_store(&input->record_source,TS_RECORD_SOURCE_EXT);
     assert(ts_external_recorder_arm_channels(&input->recorder,0,44100,2,-24,0,1,0,2,error,sizeof(error)));
     input->mosaic_recording=u->mosaic_recording=1;input->mosaic_epoch=u->mosaic->epoch;
     input->mosaic_start=2;u->mosaic_editing=u->mosaic_selected=first_id;

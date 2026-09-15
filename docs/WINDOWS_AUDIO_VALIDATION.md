@@ -30,9 +30,13 @@ rates/buffers.
   factory/user/varied endpoints, save/reload, and test Shift-recall of a saved pair.
 - [ ] Middle-click Prism CAP A and CAP B, including during a timed morph. Confirm
   EMPTY states, canceled motion, unlocked sound editing, and successful fresh captures.
-- [ ] Mosaic REC TILE: record EXT while the arrangement plays, keep manually and
-  via silence detection, verify mono/stereo channels and WAV archive, then undo/redo.
-  Right-click to select SYNTH and verify the backing track is excluded. Test cancel,
+- [ ] Mosaic REC DRY: record QWERTY/MIDI on main, FM, Sister, and preview keyboards.
+  Verify immediate stereo recording, retained silence between notes, and exclusion
+  of Prism/FX and Mosaic's backing track. Right-click to REC OUT and compare with
+  REC FILE's final stereo signal, including effects, limiter and OUT gain.
+- [ ] Bounce Mosaic playback via REC OUT; the new card must appear only after
+  recording stops, with original cards intact. Check its WAV archive and undo/redo.
+- [ ] REC EXT retains threshold/silence behavior and input channels/rate. Test cancel,
   workspace navigation, shared input monitoring, scene replacement, and a full canvas.
 - [ ] TapeSister alone with backend WASAPI.
 - [ ] TapeSister alone with backend DirectSound.

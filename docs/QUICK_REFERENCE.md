@@ -55,8 +55,9 @@ does not switch the main bank. See the [Mosaic chapter](USER_MANUAL.md#mosaic).
 | Scroll time / sideways / zoom | Wheel / Shift+wheel / Ctrl+wheel |
 | Follow playhead / fit arrangement / repeat arrangement | FOLLOW / FIT ALL / REPEAT |
 | Record final stereo output | Header or footer REC FILE; Ctrl+Shift+F |
-| Record a new Mosaic card | REC TILE; click again to cancel while armed or keep while recording |
-| Choose tile recording source | Right-click REC TILE while idle: EXT input / internal SYNTH |
+| Record a dry keyboard performance to a card | REC DRY (default); click STOP TILE to keep |
+| Print Prism/effects or bounce Mosaic to a card | REC OUT; identical final signal to REC FILE |
+| Choose card recording source | Right-click while idle: REC DRY → REC OUT → REC EXT |
 | Discard an active Mosaic take | Escape in the arrangement after finishing any active gesture |
 
 Each event owns its one-to-five-note chord and **EVENT LOOP / EVENT ONCE** setting.

@@ -45,7 +45,9 @@ typedef enum {
 
 typedef enum {
     TS_RECORD_SOURCE_EXT = 0,
-    TS_RECORD_SOURCE_SYNTH
+    TS_RECORD_SOURCE_SYNTH,
+    TS_RECORD_SOURCE_OUTPUT,
+    TS_RECORD_SOURCE_DRY
 } TsRecordSource;
 
 typedef struct {
@@ -120,6 +122,9 @@ int ts_external_recorder_arm_channels(
     int pre_roll_ms, int silence_ms, int tail_ms, int max_seconds,
     char *error, size_t error_size);
 int ts_external_recorder_write_sample(TsExternalRecorder *recorder, float sample);
+/* Start an armed recorder immediately, keeping silence until manual stop or
+   capacity. Discards pre-roll; caller holds the recorder's audio-device lock. */
+int ts_external_recorder_start_manual(TsExternalRecorder *recorder);
 int ts_external_recorder_write_frame(TsExternalRecorder *recorder,
                                      TsStereoFrame sample);
 int ts_external_recorder_stop(TsExternalRecorder *recorder,

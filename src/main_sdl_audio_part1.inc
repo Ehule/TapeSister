@@ -330,6 +330,10 @@ static void runtime_note_render(AudioState *audio, TsAudioBuses *buses,
     ts_note_bank_read_buses(&audio->notes, &sample, &fm, &synth);
     performance = ts_performance_read_stereo(
         &audio->performance, &audio->performance_raw_mix);
+    /* QWERTY/MIDI notes only: keep backing cards, tile launchers and transport
+       preview out of the dry instrument recording. FM's own level is retained. */
+    audio->keyboard_dry=(TsStereoFrame){sample.l+performance.l+fm.l*audio->fm_output_gain,
+                                       sample.r+performance.r+fm.r*audio->fm_output_gain};
     launcher = audio->tile_launcher_active ?
         ts_performance_read_stereo(&audio->tile_launchers, NULL) :
         (TsStereoFrame){0.0f, 0.0f};

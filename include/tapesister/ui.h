@@ -392,6 +392,7 @@ typedef struct {
     int sample_page_count;
     int monitor_enabled;
     TsRecordSource record_source;
+    TsRecordSource mosaic_record_source;
     int input_meter_active;
     int input_clipping;
     float input_level;

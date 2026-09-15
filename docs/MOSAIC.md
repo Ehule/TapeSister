@@ -270,23 +270,39 @@ The older Transform workbench must finish its worker before leaving the event.
 
 ## Recording and projects
 
-**REC TILE**, beside REPEAT, records directly into a new Mosaic card. Left-click
-to arm; the button becomes **CANCEL** until sound crosses the configured threshold,
-then **STOP TILE**. Click STOP TILE to keep a short take, or let silence/max duration
-finish it automatically. Click CANCEL before sound starts, or press Escape in the
-idle arrangement during a take, to discard it. An active drag keeps first claim
-on Escape. Stopping the arrangement does not stop the recording.
+The recording button beside REPEAT defaults to **REC DRY**. Right-click it while
+idle to cycle **REC DRY → REC OUT → REC EXT**; the caption below PLAY identifies
+the selected source. These choices are independent of REC BANK's source selector.
 
-The source caption below PLAY shows **EXT** or **SYNTH**. Right-click REC TILE
-while idle to switch. EXT uses the configured recording input device/channel
-and preserves its sample rate and mono/stereo format. SYNTH records the internal
-synth signal used by REC BANK, excluding Mosaic's backing track. Threshold,
-preroll, silence, tail, and maximum duration use the existing Record settings.
-REC TILE and REC BANK share one input recorder; finish or cancel one take before
-arming another. The main sample bank and its selected tile remain intact.
+| Mode | Audio recorded into the new card | Start/stop behavior |
+| --- | --- | --- |
+| **REC DRY** | Live QWERTY/MIDI instrument: sample voices, selected-source chords, FM, and preview keyboard voices, before Prism, Sister tape, and global effects | Starts immediately; click STOP TILE to keep |
+| **REC OUT** | Final stereo output, identical to REC FILE's OUT signal: all audible sources, Prism, Sister/FX, limiter, and OUT fader | Starts immediately; click STOP TILE to keep |
+| **REC EXT** | Configured recording input device/channel, preserving its sample rate and mono/stereo format | Arms at the configured threshold; silence can finish the take |
+
+DRY and OUT require no external input device. They preserve stereo, start with the
+first output callback after the click, and retain leading silence and gaps between
+notes. They do not wait for a threshold or stop on silence. The existing Record
+maximum duration bounds all takes. EXT retains the existing threshold, preroll,
+silence, and tail settings. Click CANCEL before an EXT take triggers, or press
+Escape in the idle arrangement during a take, to discard it. Active gestures keep
+first claim on Escape. Stopping the arrangement does not stop recording.
+
+REC DRY excludes arrangement playback, transport audition, tile launchers, and
+external input; it follows the live keyboard instrument. FM's own output level is
+part of that instrument signal. To print Prism or other effects, choose REC OUT.
+
+**To bounce Mosaic**, choose REC OUT, start recording and play the arrangement,
+then click STOP TILE. The completed take becomes a new card only after recording
+has finished, so it cannot contribute to its own take. Existing cards remain
+intact; mute or stop those sources when you want to audition the bounce on its own.
+REC OUT can also combine the arrangement with a live keyboard performance.
+
+The recording button and REC BANK share one recorder; finish or cancel one take
+before starting another. The main sample bank and its selected tile remain intact.
 
 The finished take becomes a one-shot card at the playhead position where you
-armed recording, placed in a free horizontal space near the visible canvas.
+started/armed recording, placed in a free horizontal space near the visible canvas.
 It is available on the EVENTS source pages and can be edited, looped, copied,
 and undone/redone like other cards. Recording can continue across workspaces;
 return to Mosaic to stop or cancel it. Existing cards and playback keep running.

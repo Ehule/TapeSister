@@ -72,6 +72,7 @@ typedef struct {
     TsStereoFrame tap[TS_SISTER_TAP_COUNT];
     /* Complete Sister output: monitored dry input plus processed head MIX. */
     TsStereoFrame monitor_return;
+    TsStereoFrame keyboard_dry; /* Played sample voices before Prism/tape/FX. */
     /* Published for UI/backward compatibility; direct source buses are muted. */
     float dry_monitor_gain;
 } TsSisterRuntimeFrame;

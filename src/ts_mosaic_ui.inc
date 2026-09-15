@@ -241,7 +241,9 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
     mosaic_button(fb,274,39,44,"REPEAT",m && m->repeat,1);
     const char *tile_label=ui->mosaic_recording ?
         (ui->capture_state==TS_CAPTURE_RECORDING ? "STOP TILE" :
-         ui->capture_state==TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER ? "CANCEL" : "TILE WAIT") : "REC TILE";
+         ui->capture_state==TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER ? "CANCEL" : "TILE WAIT") :
+         ui->mosaic_record_source==TS_RECORD_SOURCE_OUTPUT ? "REC OUT" :
+         ui->mosaic_record_source==TS_RECORD_SOURCE_EXT ? "REC EXT" : "REC DRY";
     mosaic_button(fb,TS_MOSAIC_REC_TILE_X,TS_MOSAIC_REC_TILE_Y,TS_MOSAIC_REC_TILE_W,tile_label,ui->mosaic_recording,1);
     if(ui->mosaic_time<1000)snprintf(label,sizeof(label),"%06.2f s",ui->mosaic_time);
     else if(ui->mosaic_time<100000)snprintf(label,sizeof(label),"%6.1fs",ui->mosaic_time);
@@ -277,7 +279,8 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
     mosaic_button(fb,10,353,22,"<",0,1);mosaic_button(fb,86,353,22,">",0,1);
     snprintf(label,sizeof(label),"%02d/%02d",ui->mosaic_source_page+1,pages);text(fb,40,358,label,RGB(150,142,160),1);
     rect(fb,113,66,518,310,RGB(11,13,16));
-    const char *tile_source=ui->record_source==TS_RECORD_SOURCE_SYNTH?"SYNTH":"EXT";
+    const char *tile_source=ui->mosaic_record_source==TS_RECORD_SOURCE_OUTPUT?"OUTPUT":
+        ui->mosaic_record_source==TS_RECORD_SOURCE_DRY?"DRY":"EXT";
     if(ui->mosaic_recording)
         snprintf(label,sizeof(label),"TILE %s: %s / %.1F S",tile_source,
             ui->capture_state==TS_CAPTURE_RECORDING?"REC":
