@@ -288,6 +288,20 @@ silence, and tail settings. Click CANCEL before an EXT take triggers, or press
 Escape in the idle arrangement during a take, to discard it. Active gestures keep
 first claim on Escape. Stopping the arrangement does not stop recording.
 
+An outlined recording card appears immediately in the canvas, with the source
+name and elapsed time. It grows down the timeline and builds a live waveform as
+audio arrives; silence remains visible as a flat line. **STOP TILE** and the card
+border pulse red while recording, with the stop label readable in both phases.
+EXT shows an **ARMED** placeholder until the input triggers. With **FOLLOW** on,
+the canvas follows the growing take even when arrangement playback is stopped.
+Turn FOLLOW off to inspect an earlier part of the take. The preview retains the
+whole take at overview resolution, including stereo signals whose channels have
+opposite polarity. It disappears on cancellation and becomes a regular editable
+card when the take finishes. The preview itself never plays audio or enters the
+saved project.
+
+![A growing recording card with live waveform and flashing STOP TILE](images/mosaic-recording-live.png)
+
 REC DRY excludes arrangement playback, transport audition, tile launchers, and
 external input; it follows the live keyboard instrument. FM's own output level is
 part of that instrument signal. To print Prism or other effects, choose REC OUT.

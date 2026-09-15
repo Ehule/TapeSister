@@ -347,6 +347,15 @@ typedef struct {
     int suppress_until_quiet;
 } TsUiWheelGuard;
 
+/* UI-owned, bounded overview of an unfinished take; never a playable source. */
+#define TS_MOSAIC_RECORD_PEAKS 1024
+typedef struct {
+    uint64_t epoch;
+    double start, x;
+    size_t frames, frames_per_peak;
+    float peaks[TS_MOSAIC_RECORD_PEAKS];
+} TsMosaicRecordPreview;
+
 /* SDL motion events report a button mask, but that mask can outlive the
    window that received the corresponding button-down. Require an explicit
    local press before motion is allowed to edit a value. */
@@ -424,6 +433,7 @@ typedef struct {
     uint64_t mosaic_selected, mosaic_editing;
     uint64_t mosaic_selection[TS_MOSAIC_EVENTS];
     int mosaic_open, mosaic_playing, mosaic_recording;
+    TsMosaicRecordPreview mosaic_record_preview;
     int mosaic_edit_choice;
     int mosaic_follow, mosaic_box, mosaic_box_x, mosaic_box_y, mosaic_box_end_x, mosaic_box_end_y;
     int mosaic_ghost_count;

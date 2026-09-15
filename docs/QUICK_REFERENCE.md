@@ -58,6 +58,8 @@ does not switch the main bank. See the [Mosaic chapter](USER_MANUAL.md#mosaic).
 | Record a dry keyboard performance to a card | REC DRY (default); click STOP TILE to keep |
 | Print Prism/effects or bounce Mosaic to a card | REC OUT; identical final signal to REC FILE |
 | Choose card recording source | Right-click while idle: REC DRY → REC OUT → REC EXT |
+| Watch a card recording | Growing live waveform and elapsed time; STOP TILE flashes red |
+| Follow the growing take, including with playback stopped | Enable FOLLOW |
 | Discard an active Mosaic take | Escape in the arrangement after finishing any active gesture |
 
 Each event owns its one-to-five-note chord and **EVENT LOOP / EVENT ONCE** setting.

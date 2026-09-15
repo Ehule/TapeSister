@@ -797,7 +797,10 @@ Mosaic's recording button beside REPEAT defaults to **REC DRY**, capturing the
 live QWERTY/MIDI instrument before Prism and effects, including both sample voices
 and FM. Right-click while idle to choose **REC OUT** (the same final stereo signal
 as REC FILE) or **REC EXT** (configured external input). DRY and OUT start immediately
-and keep silence between notes; click **STOP TILE** to keep the take. EXT retains
+and keep silence between notes; click the flashing **STOP TILE** to keep the take.
+A temporary card grows with a live waveform and elapsed time while recording.
+FOLLOW tracks its growing edge even with playback stopped. Canceling removes the
+preview; it contributes no audio to its own take. EXT retains
 threshold/silence detection. The source appears below PLAY. Each completed take
 becomes a one-shot card at the starting playhead position, with an archived WAV in
 `Captures/`. Choose REC OUT to print Prism or bounce Mosaic's own playback into a

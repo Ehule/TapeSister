@@ -90,6 +90,7 @@ static void wait_render(void);
 #include "test_prism_capture_workflow.inc"
 #include "test_mosaic_record_tile.inc"
 #include "test_mosaic_record_routes.inc"
+#include "test_mosaic_record_preview.inc"
 #include "test_fm_preview_controller.inc"
 static void test_canvas_feedback(SDL_Window *window)
 {
@@ -422,6 +423,7 @@ int main(void)
     test_prism_capture_workflow();
     test_mosaic_record_tile(window,device);
     test_mosaic_record_routes(window,device);
+    test_mosaic_record_preview(device);
     ts_mosaic_volume_draw(ui.mosaic,0,.3f,1,.8f);
     test_record_file(window,580,389,0);
     test_record_file(window,240,45,0);

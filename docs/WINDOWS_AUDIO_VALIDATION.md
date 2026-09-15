@@ -36,6 +36,11 @@ rates/buffers.
   REC FILE's final stereo signal, including effects, limiter and OUT gain.
 - [ ] Bounce Mosaic playback via REC OUT; the new card must appear only after
   recording stops, with original cards intact. Check its WAV archive and undo/redo.
+- [ ] Mosaic live recording feedback: confirm an immediate card placeholder,
+  growing waveform and timer, and flashing red STOP TILE with a readable label.
+  Check EXT armed/triggered states, long takes, silence, stereo, cancel/restart,
+  switching workspaces, and resizing/maximizing. FOLLOW must track the take with
+  playback stopped; disabling FOLLOW must leave the view under manual control.
 - [ ] REC EXT retains threshold/silence behavior and input channels/rate. Test cancel,
   workspace navigation, shared input monitoring, scene replacement, and a full canvas.
 - [ ] TapeSister alone with backend WASAPI.

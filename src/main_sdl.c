@@ -11401,12 +11401,38 @@ static SDL_AudioDeviceID recorder_device(SDL_AudioDeviceID output_device,
                TS_RECORD_SOURCE_EXT ? output_device : input_device;
 }
 
+/* Incremental envelope work stays on the UI thread and shares the existing
+   bounded recorder snapshot. Pairwise compaction retains the entire take. */
+static void mosaic_record_preview_push(TsMosaicRecordPreview *p,
+                                       const float *data,size_t frames,int channels)
+{
+    if(!p->frames_per_peak || !data || (channels!=1 && channels!=2))return;
+    for(size_t i=0;i<frames;++i) {
+        if(p->frames/p->frames_per_peak>=TS_MOSAIC_RECORD_PEAKS) {
+            for(int bin=0;bin<TS_MOSAIC_RECORD_PEAKS/2;++bin)
+                p->peaks[bin]=fmaxf(p->peaks[bin*2],p->peaks[bin*2+1]);
+            memset(p->peaks+TS_MOSAIC_RECORD_PEAKS/2,0,sizeof(p->peaks)/2);
+            p->frames_per_peak*=2;
+        }
+        float peak=0;
+        for(int ch=0;ch<channels;++ch) {
+            float value=data[i*channels+ch];
+            if(isfinite(value))peak=fmaxf(peak,fabsf(value));
+        }
+        size_t bin=p->frames/p->frames_per_peak;
+        p->peaks[bin]=fmaxf(p->peaks[bin],peak);++p->frames;
+    }
+}
+
 static void sync_external_capture_ui(SDL_AudioDeviceID output_device,
                                      SDL_AudioDeviceID input_device,
                                      ExternalInputState *input,
                                      TsUiState *ui)
 {
     float callback_peak;
+    const float *preview_data=NULL;
+    size_t preview_frames=0;
+    int preview_channels=0;
     uint32_t now = SDL_GetTicks();
     SDL_AudioDeviceID source_device = recorder_device(output_device, input_device, input);
     if (source_device) SDL_LockAudioDevice(source_device);
@@ -11430,6 +11456,10 @@ static void sync_external_capture_ui(SDL_AudioDeviceID output_device,
             input->recorder.buffer +
                 input->waveform_consumed_frames * input->recorder.channels,
             available, input->recorder.channels);
+        if(input->mosaic_recording) {
+            preview_data=input->recorder.buffer+input->waveform_consumed_frames*input->recorder.channels;
+            preview_frames=available;preview_channels=input->recorder.channels;
+        }
         input->waveform_consumed_frames += available;
     }
     ui->input_wave_columns = ts_live_waveform_snapshot(
@@ -11437,6 +11467,9 @@ static void sync_external_capture_ui(SDL_AudioDeviceID output_device,
         ui->input_wave_maximum, TS_WAVE_W);
     ui->staged_notes = 0u;
     if (source_device) SDL_UnlockAudioDevice(source_device);
+    /* Recorded frames are immutable; the callback only appends and only this
+       event thread frees the buffer. Derive the preview after releasing audio. */
+    mosaic_record_preview_push(&ui->mosaic_record_preview,preview_data,preview_frames,preview_channels);
     ui->input_level = ts_input_monitor_level(&input->monitor);
     callback_peak = ts_input_monitor_take_peak(&input->monitor);
     if (callback_peak >= ui->input_peak) {
@@ -11571,6 +11604,14 @@ static int arm_external_capture_to(SDL_AudioDeviceID output_device,
         if (output_device) SDL_UnlockAudioDevice(output_device);
     }
     ts_live_waveform_init(&input->live_waveform, record_rate);
+    memset(&ui->mosaic_record_preview,0,sizeof(ui->mosaic_record_preview));
+    if(mosaic_target) {
+        ui->mosaic_record_preview.epoch=input->mosaic_epoch;
+        ui->mosaic_record_preview.start=input->mosaic_start;
+        ui->mosaic_record_preview.x=input->mosaic_x;
+        ui->mosaic_record_preview.frames_per_peak=record_rate/100u;
+        if(!ui->mosaic_record_preview.frames_per_peak)ui->mosaic_record_preview.frames_per_peak=1;
+    }
     input->waveform_consumed_frames = 0u;
     input->peak_hold_until_ms = 0u;
     input->clip_hold_until_ms = 0u;
