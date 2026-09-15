@@ -793,6 +793,16 @@ shared final stereo output recorder. It includes the live processing, limiter, a
 OUT fader, continues across windows, and saves completed takes in `Captures/`.
 Stopping the file does not stop the arrangement. See [Direct output recording](#direct-output-recording).
 
+**REC TILE** beside REPEAT records directly into a new Mosaic card while existing
+cards keep playing. Left-click to arm, cancel before sound starts, or stop and keep
+a recording; silence detection can finish it automatically. Right-click while idle
+selects **EXT** (the configured input) or internal **SYNTH**. The source is shown below
+PLAY. The take becomes a one-shot card at the playhead position where recording
+was armed, and a WAV is archived in `Captures/`. Undo removes the new card. REC TILE
+shares the REC BANK recorder without switching banks or changing the selected
+sample tile. See [Mosaic recording](MOSAIC.md#recording-and-projects) for settings,
+cancellation, and behavior when the scene changes during a take.
+
 SAVE preserves the events, notes, source regions, loop modes, positions, durations,
 mute/solo states, level/pan/fades, global speed, repeat setting, and shared source versions in the project folder.
 Transport position and arrangement/editor undo history are session state. Older
@@ -1011,7 +1021,12 @@ lens diagram. The Prism-only bank saves refraction settings independently of the
 bottom-row full Sister presets. **NEW** rolls a fresh setup, **VARY** develops it,
 and six lock groups protect chosen settings. Capture **A/B**, then use the morph
 fader, MIDI, or a timed **TO A / TO B** move. Right-click a capture button to recall
-it for editing. See [Prism performance](PRISM.md#presets-and-performance).
+it for editing. New/Vary and ordinary user-preset browsing preserve both captures
+and keep the recalled endpoint selected for editing. Return to PERFORM and
+left-click its CAP button to store a variation or a different preset there.
+Middle-click CAP A/B to empty either endpoint; clear both to start a fresh pair.
+Shift-click a user-preset arrow or name restores the complete saved Prism setup,
+including its captures. See [Prism performance](PRISM.md#presets-and-performance).
 
 On PERFORM, enable sequence **EDIT** and Ctrl-click the numbered strip in order.
 Only those lenses sequence; the others sustain. Count changes retain hidden

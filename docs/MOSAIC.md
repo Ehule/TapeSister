@@ -270,6 +270,31 @@ The older Transform workbench must finish its worker before leaving the event.
 
 ## Recording and projects
 
+**REC TILE**, beside REPEAT, records directly into a new Mosaic card. Left-click
+to arm; the button becomes **CANCEL** until sound crosses the configured threshold,
+then **STOP TILE**. Click STOP TILE to keep a short take, or let silence/max duration
+finish it automatically. Click CANCEL before sound starts, or press Escape in the
+idle arrangement during a take, to discard it. An active drag keeps first claim
+on Escape. Stopping the arrangement does not stop the recording.
+
+The source caption below PLAY shows **EXT** or **SYNTH**. Right-click REC TILE
+while idle to switch. EXT uses the configured recording input device/channel
+and preserves its sample rate and mono/stereo format. SYNTH records the internal
+synth signal used by REC BANK, excluding Mosaic's backing track. Threshold,
+preroll, silence, tail, and maximum duration use the existing Record settings.
+REC TILE and REC BANK share one input recorder; finish or cancel one take before
+arming another. The main sample bank and its selected tile remain intact.
+
+The finished take becomes a one-shot card at the playhead position where you
+armed recording, placed in a free horizontal space near the visible canvas.
+It is available on the EVENTS source pages and can be edited, looped, copied,
+and undone/redone like other cards. Recording can continue across workspaces;
+return to Mosaic to stop or cancel it. Existing cards and playback keep running.
+If an event editor is open at completion, its document and selection remain active.
+Every completed take also uses the existing timestamped WAV archive. If the scene
+changed or filled during recording, the WAV is archived without inserting into a
+different scene or overwriting a card; import the archived WAV when ready.
+
 The header and footer **REC FILE** buttons, or `Ctrl+Shift+F` in the main window,
 operate the same recorder. It writes the final stereo OUT signal, including global effects and
 master output controls, through the existing asynchronous WAV recorder. It

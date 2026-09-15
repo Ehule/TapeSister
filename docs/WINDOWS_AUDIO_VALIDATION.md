@@ -25,6 +25,15 @@ rates/buffers.
 
 ## Matrix
 
+- [ ] Prism: capture A/B, right-recall either, use New/Vary and user-preset arrows,
+  then recapture the amber endpoint. Its partner must remain unchanged. Compare
+  factory/user/varied endpoints, save/reload, and test Shift-recall of a saved pair.
+- [ ] Middle-click Prism CAP A and CAP B, including during a timed morph. Confirm
+  EMPTY states, canceled motion, unlocked sound editing, and successful fresh captures.
+- [ ] Mosaic REC TILE: record EXT while the arrangement plays, keep manually and
+  via silence detection, verify mono/stereo channels and WAV archive, then undo/redo.
+  Right-click to select SYNTH and verify the backing track is excluded. Test cancel,
+  workspace navigation, shared input monitoring, scene replacement, and a full canvas.
 - [ ] TapeSister alone with backend WASAPI.
 - [ ] TapeSister alone with backend DirectSound.
 - [ ] TapeSister alone with backend Auto.

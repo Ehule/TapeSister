@@ -57,8 +57,8 @@ void ts_sister_ui_prism_help(const TsSisterUiModel *m,int x,int y,char *help,siz
             static const char *const states[]={"EMPTY","CAPTURED","EDITING","EDITING - NOT CAPTURED"};
             const char *state=states[ts_sister_ui_prism_capture_visual(m,endpoint)];
             snprintf(help,size,"CAP %c: %s. %s",'A'+endpoint,state,
-                c->morph_enabled ? "SOUND LOCKED. Right-click to recall and edit, then left-click to recapture." :
-                "Left-click saves the live sound here. Right-click restores the stored sound for editing.");
+                c->morph_enabled ? "Right-click recalls for editing. Middle-click empties; morph stops." :
+                "Left-click saves. Right-click recalls for editing. Middle-click empties.");
             return;
         }
         if(contains(x,y,160,280,138,22))TIP("TO A / TO B: morph to the captured endpoint over TIME. Capture both first; moving A/B takes over.");
@@ -69,9 +69,9 @@ void ts_sister_ui_prism_help(const TsSisterUiModel *m,int x,int y,char *help,siz
         if(contains(x,y,472,308,144,22))TIP("DRAG SNAP: Free, Semitone, 50 Cent or 31-TET. Left/right-click cycles. Arrow-key step sizes stay independent.");
     }
     if(m->prism_panel==2) {
-        if(contains(x,y,16,280,30,22))TIP("PREVIOUS PRISM PRESET: recall refraction settings only. The bottom bank stores the full Sister setup.");
-        if(contains(x,y,276,280,30,22))TIP("NEXT PRISM PRESET: recall refraction settings only. Tape, routing and other effects stay as set.");
-        if(contains(x,y,52,280,218,22))TIP("PRISM PRESET: click to recall. Right-click resets individual lens edits while keeping global controls.");
+        if(contains(x,y,16,280,30,22))TIP("PREVIOUS PRISM PRESET: audition sound, keeping A/B. Shift-click recalls the full saved Prism setup, including A/B.");
+        if(contains(x,y,276,280,30,22))TIP("NEXT PRISM PRESET: audition sound, keeping A/B. Shift-click recalls the full saved Prism setup, including A/B.");
+        if(contains(x,y,52,280,218,22))TIP("PRESET: audition; A/B retained. Shift-click restores full setup. Right-click resets individual lens edits.");
         if(contains(x,y,314,280,90,22))TIP("SAVE NEW: store Prism in a new bank entry. Shift-click overwrites the selected entry. Includes A/B and sequence.");
         if(contains(x,y,412,280,96,22))TIP("NEW: fresh Prism sound. Unlocked trims return to unity; mute/solo and sequence clear. Captured A/B stay stored.");
         if(contains(x,y,516,280,100,22))TIP("VARY: develop the current sound with smaller changes. Respects group/slider locks and retains the sequence and A/B.");
