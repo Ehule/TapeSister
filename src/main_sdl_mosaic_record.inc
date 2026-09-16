@@ -1,11 +1,13 @@
-/* REC TILE shares the recorder with the REC bank, but owns a
-   destination in the arrangement. No bank swap or selected-tile mutation. */
+/* REC TILE publishes an arrangement card and an ordinary Sample tile without
+   swapping the active bank or changing the selected editor. */
 static int arm_external_capture_to(SDL_AudioDeviceID,SDL_AudioDeviceID *,AudioState *,
                                   ExternalInputState *,TsUiState *,TsInstrument *,int);
 static void cancel_external_capture(SDL_AudioDeviceID,SDL_AudioDeviceID,
                                     ExternalInputState *,TsUiState *);
 static void stop_external_capture_early(SDL_AudioDeviceID,SDL_AudioDeviceID,
                                         ExternalInputState *,TsUiState *);
+
+static TsBankSlot *mosaic_bank_destination(TsSamplePages *,TsInstrument *,int *,int *,int *,char *,size_t);
 
 static int mosaic_record_has_space(const TsMosaic *m)
 {
@@ -14,9 +16,10 @@ static int mosaic_record_has_space(const TsMosaic *m)
 }
 
 static int install_mosaic_take(SDL_AudioDeviceID device,TsUiState *ui,
+                               TsInstrument *instrument,TsSamplePages *pages,
                                const ExternalInputState *input,const float *data,
                                size_t frames,uint32_t rate,uint8_t channels,
-                               char *error,size_t size)
+                               int *bank_page,int *bank_slot,char *error,size_t size)
 {
     TsMosaic *m=ui->mosaic;
     if(!m || m->epoch!=input->mosaic_epoch) {
@@ -38,15 +41,35 @@ static int install_mosaic_take(SDL_AudioDeviceID device,TsUiState *ui,
        the event. The audio callback only traverses sources held by events. */
     TsMosaicSource *source=ts_mosaic_source(m,&sample,error,size);
     if(!source)return 0;
+    TsInstrument *staged=malloc(sizeof(*staged));
+    if(!staged){snprintf(error,size,"Not enough memory for the Sample tile");return 0;}
+    ts_instrument_init(staged);
+    if(!ts_instrument_import_sample(staged,&sample,0,0,0,TS_LOOP_FORWARD,error,size)) {
+        ts_instrument_free(staged);free(staged);return 0;
+    }
+    int fresh_bank=0;
+    TsBankSlot *destination=mosaic_bank_destination(pages,instrument,
+        bank_page,bank_slot,&fresh_bank,error,size);
+    if(!destination){ts_instrument_free(staged);free(staged);return 0;}
     if(device)SDL_LockAudioDevice(device);
     ts_mosaic_checkpoint(m);
     TsMosaicEvent *event=ts_mosaic_add(m,source,input->mosaic_start,input->mosaic_x);
     uint64_t id=event?event->id:0;
-    if(event)event->looping=0;
+    if(event) {
+        event->looping=0;
+        if(fresh_bank) {
+            *pages->pages[*bank_page]=*staged;ts_instrument_init(staged);
+        } else {
+            *destination=staged->bank[staged->selected_slot];
+            memset(&staged->bank[staged->selected_slot],0,sizeof(*destination));
+        }
+    }
     if(device)SDL_UnlockAudioDevice(device);
+    ts_instrument_free(staged);free(staged);
     if(!id) {snprintf(error,size,"Mosaic card could not be added");return 0;}
+    if(pages)ui->sample_page_count=(int)ts_sample_pages_count(pages);
     /* An open card editor keeps its selection and document. The new take is
-       still available in the arrangement and Events source pages. */
+       also available through the normal Sample pages. */
     if(!ui->mosaic_editing) {
         memset(ui->mosaic_selection,0,sizeof(ui->mosaic_selection));ui->mosaic_selected=id;
     }

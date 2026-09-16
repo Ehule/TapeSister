@@ -65,10 +65,13 @@ static void prism_capture_button(TsFramebuffer *fb,const TsSisterUiModel *model,
     static const uint32_t inks[]={RGB(142,151,163),RGB(105,229,153),RGB(119,190,255),RGB(255,193,92)};
     static const uint32_t fills[]={RGB(27,31,37),RGB(17,53,37),RGB(23,44,73),RGB(67,43,18)};
     int x=endpoint?88:16;char label[8];
-    rect(fb,x,280,66,22,inks[state]);rect(fb,x+1,281,64,20,fills[state]);
-    snprintf(label,sizeof(label),"CAP %c",'A'+endpoint);
+    int letter=ts_sister_ui_prism_state(model,endpoint);
+    int browsing=letter!=model->parameters.prism.endpoint[endpoint];
+    rect(fb,x,280,66,22,browsing?inks[3]:inks[state]);rect(fb,x+1,281,64,20,browsing?fills[3]:fills[state]);
+    snprintf(label,sizeof(label),"CAP %c",'A'+letter);
     text(fb,x+18,283,label,inks[state],1);
-    text(fb,x+(66-(int)strlen(names[state])*6)/2,293,names[state],inks[state],1);
+    const char *status=browsing?"CHOOSE":names[state];
+    text(fb,x+(66-(int)strlen(status)*6)/2,293,status,browsing?inks[3]:inks[state],1);
 }
 
 #include "ts_prism_zoya.inc"
@@ -77,15 +80,16 @@ static void sister_prism_render(TsFramebuffer *fb,const TsSisterUiModel *model)
 {
     TsPrismControls shown=model->parameters.prism;
     const TsPrismControls *p=&shown;
-    if(p->morph_enabled && p->captured==3) {
+    const TsPrismPatch *left=ts_prism_state_const(p,p->endpoint[0]),*right=ts_prism_state_const(p,p->endpoint[1]);
+    if(p->morph_enabled && ts_prism_pair_ready(p)) {
         float t=model->routing.prism.valid ? model->routing.prism.morph : p->morph;
-        shown.lenses=p->a.lenses>p->b.lenses ? p->a.lenses : p->b.lenses;
-#define BLEND(field) shown.field=p->a.field+(p->b.field-p->a.field)*t
+        shown.lenses=left->lenses>right->lenses ? left->lenses : right->lenses;
+#define BLEND(field) shown.field=left->field+(right->field-left->field)*t
         BLEND(spread);BLEND(drift);BLEND(focus);BLEND(stereo);BLEND(body);BLEND(mix);
         BLEND(output_db);BLEND(dry_level);BLEND(color);BLEND(drift_rate);
 #undef BLEND
-        shown.input_shape=t<.5f ? p->a.input_shape : p->b.input_shape;
-        shown.output_shape=t<.5f ? p->a.output_shape : p->b.output_shape;
+        shown.input_shape=t<.5f ? left->input_shape : right->input_shape;
+        shown.output_shape=t<.5f ? left->output_shape : right->output_shape;
     }
     TsPrismView v=model->routing.prism.valid?model->routing.prism:ts_prism_control_view(p);
     const uint32_t background=RGB(7,11,15),ink=RGB(140,179,192),original=RGB(229,232,212);
@@ -95,8 +99,9 @@ static void sister_prism_render(TsFramebuffer *fb,const TsSisterUiModel *model)
     char label[96];
     rect(fb,10,40,620,232,background);
     button(fb,16,48,96,p->enabled?"PRISM ON":"PRISM OFF",p->enabled);
-    button(fb,122,48,116,p->morph_enabled?"A/B MORPH":ts_prism_mode_name(p->mode),1);
-    if(p->morph_enabled)snprintf(label,sizeof(label),"A%02d > B%02d  %03d%%",p->a.lenses,p->b.lenses,(int)lrintf(100*(v.valid?v.morph:p->morph)));
+    snprintf(label,sizeof(label),"%c/%c MORPH",'A'+p->endpoint[0],'A'+p->endpoint[1]);
+    button(fb,122,48,116,p->morph_enabled?label:ts_prism_mode_name(p->mode),1);
+    if(p->morph_enabled)snprintf(label,sizeof(label),"%c%02d > %c%02d  %03d%%",'A'+p->endpoint[0],left->lenses,'A'+p->endpoint[1],right->lenses,(int)lrintf(100*(v.valid?v.morph:p->morph)));
     else snprintf(label,sizeof(label),"%d SHIFTED + 01 BODY",p->lenses-1);
     text(fb,250,55,label,ink,1);
     text(fb,544,55,v.valid?"LIVE DSP":"SETTINGS",ink,1);
@@ -184,10 +189,13 @@ static void sister_prism_render(TsFramebuffer *fb,const TsSisterUiModel *model)
     if(model->prism_panel==1) {
         prism_capture_button(fb,model,0);
         prism_capture_button(fb,model,1);
-        button(fb,160,280,66,"TO A",p->morph_enabled && !p->morph_target);
-        button(fb,232,280,66,"TO B",p->morph_enabled && p->morph_target);
+        for(int side=0;side<2;++side) {
+            snprintf(label,sizeof(label),"TO %c",'A'+ts_sister_ui_prism_state(model,side));
+            button(fb,160+72*side,280,66,label,p->morph_enabled && p->morph_target==side);
+        }
         float morph=v.valid && p->morph_enabled ? v.morph : p->morph;
-        sister_percent_parameter_state(fb,308,280,154,"A/B",morph,100,colors[5],0);
+        snprintf(label,sizeof(label),"%c/%c",'A'+p->endpoint[0],'A'+p->endpoint[1]);
+        sister_percent_parameter_state(fb,308,280,154,label,morph,100,colors[5],0);
         snprintf(label,sizeof(label),"TIME %.2FS",p->morph_seconds);
         prism_value(fb,472,280,144,label,logf(p->morph_seconds/.05f)/logf(2400),colors[6]);
         button(fb,16,308,66,p->seq_enabled?"SEQ ON":"SEQ OFF",p->seq_enabled);
@@ -202,7 +210,7 @@ static void sister_prism_render(TsFramebuffer *fb,const TsSisterUiModel *model)
         prism_value(fb,16,332,144,label,logf(p->drift_rate/.005f)/logf(8000),colors[2]);
         snprintf(label,sizeof(label),"GROUP OCT %+.0F",(double)p->group_octave);
         prism_value(fb,170,332,144,label,(p->group_octave+3)/6.f,colors[4]);
-        text(fb,326,336,model->prism_seq_edit ? "SEQ EDIT: CTRL-CLICK NUMBERS" : "HOVER A CONTROL FOR HELP",RGB(119,190,255),1);
+        text(fb,326,336,model->prism_seq_edit ? "SEQ EDIT: CTRL-CLICK NUMBERS" : "WHEEL CAP/TO: A-L / CLICK CONFIRMS",RGB(119,190,255),1);
     } else if(model->prism_panel==2) {
         button(fb,16,280,30,"<",0);
         button(fb,52,280,218,model->prism_preset_count?model->prism_preset_name:"PRISM BANK EMPTY",0);

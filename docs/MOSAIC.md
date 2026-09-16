@@ -313,12 +313,19 @@ intact; mute or stop those sources when you want to audition the bounce on its o
 REC OUT can also combine the arrangement with a live keyboard performance.
 
 The recording button and REC BANK share one recorder; finish or cancel one take
-before starting another. The main sample bank and its selected tile remain intact.
+before starting another. Existing sounds and the selected editor remain intact.
 
 The finished take becomes a one-shot card at the playhead position where you
 started/armed recording, placed in a free horizontal space near the visible canvas.
 It is available on the EVENTS source pages and can be edited, looped, copied,
-and undone/redone like other cards. Recording can continue across workspaces;
+and undone/redone like other cards. **The same take also becomes an ordinary tile
+on the main UI Sample pages**, so you can select it in the waveform editor, process
+it, play it or export it with the usual WAV controls. The completion status gives
+the Sample page and tile number. Recording uses a free unlocked, unselected slot;
+if every page is full, it adds a Sample page. This also works while an event editor
+has the main bank parked. Editing this independent Sample tile does not alter
+the recorded card, and undoing the card does not remove the Sample tile. Both
+the card and Sample tile persist in projects. Recording can continue across workspaces;
 return to Mosaic to stop or cancel it. Existing cards and playback keep running.
 If an event editor is open at completion, its document and selection remain active.
 Every completed take also uses the existing timestamped WAV archive. If the scene

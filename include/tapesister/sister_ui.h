@@ -272,7 +272,8 @@ typedef struct {
     int prism_panel, prism_seq_edit, prism_preset_index, prism_preset_count;
     char prism_preset_name[32];
     int prism_selected; /* One-based lens identity; zero means no selection. */
-    int prism_edit_endpoint; /* One-based recalled endpoint; UI only. */
+    int prism_edit_endpoint; /* One-based recalled A-L state; UI only. */
+    int prism_browse[2]; /* One-based pending letters; zero keeps the assigned end. */
     int prism_hover_valid, prism_hover_x, prism_hover_y;
     TsPrismZoyaPose prism_zoya_pose; /* INI preference; never sent to audio or saved in presets. */
     TsPrismZoyaVisual prism_zoya; /* Event-thread visual state, never saved or sent to audio. */
@@ -295,6 +296,7 @@ float ts_sister_ui_prism_y(float cents);
 float ts_sister_ui_prism_pitch_at_y(float y);
 int ts_sister_ui_prism_hit(const TsSisterUiModel *model, int x, int y);
 TsPrismCaptureVisual ts_sister_ui_prism_capture_visual(const TsSisterUiModel *model, int endpoint);
+int ts_sister_ui_prism_state(const TsSisterUiModel *model, int endpoint);
 const char *ts_sister_ui_prism_edit_status(const TsSisterUiModel *model);
 void ts_sister_ui_prism_help(const TsSisterUiModel *model, int x, int y, char *help, size_t size);
 void ts_sister_ui_prism_zoya_tick(TsPrismZoyaVisual *visual, uint32_t now_ms, int enabled, int visible);
