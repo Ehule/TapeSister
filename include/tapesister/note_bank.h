@@ -111,6 +111,8 @@ int ts_note_bank_start_staged_chord(TsNoteBank *bank,
                                     int output_rate);
 void ts_note_bank_release(TsNoteBank *bank, int note);
 void ts_note_bank_release_event(TsNoteBank *bank, const TsNoteEvent *event);
+/* Explicit latch toggle, independent of the currently selected sound source. */
+int ts_note_bank_release_latched_event(TsNoteBank *bank, const TsNoteEvent *event);
 void ts_note_bank_release_midi_channel(TsNoteBank *bank, int channel);
 void ts_note_bank_sync(TsNoteBank *bank, const TsInstrument *instrument, int output_rate);
 void ts_note_bank_sync_tuned(TsNoteBank *bank, const TsInstrument *instrument,

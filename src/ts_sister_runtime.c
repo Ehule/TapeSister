@@ -1206,6 +1206,16 @@ int ts_sister_runtime_note_on(TsSisterRuntime *runtime,
     return started;
 }
 
+int ts_sister_runtime_release_latched_note(TsSisterRuntime *runtime,
+                                           const TsNoteEvent *event)
+{
+    int released;
+    if (runtime == NULL) return 0;
+    released = ts_performance_release_latched_event(&runtime->performance, event);
+    if (released > 0) publish_snapshot(runtime);
+    return released;
+}
+
 void ts_sister_runtime_note_off(TsSisterRuntime *runtime,
                                 const TsNoteEvent *event)
 {

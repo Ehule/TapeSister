@@ -854,6 +854,8 @@ static int runtime_capture_stop(AudioState *audio, char *error,
                                 size_t error_size);
 static void runtime_scale_capture_if_needed(AudioState *audio);
 static int runtime_capture_write_frame(AudioState *audio, TsStereoFrame frame);
+static int runtime_note_toggle_latched_event(AudioState *audio,
+                                             const TsNoteEvent *event);
 static TsNoteStartResult runtime_note_start_event(
     AudioState *audio, const TsInstrument *instrument, const TsTuning *tuning,
     TsAuditionSource source, const TsNoteEvent *event, int latched,
@@ -1500,7 +1502,11 @@ static void refresh_workbench_loop(SDL_AudioDeviceID device, AudioState *audio,
         }
         return;
     }
-    if (ts_note_bank_count(&audio->notes) > 0 ||
+    /* Once played notes take over an ordinary loop, their final release must
+       leave it armed and silent. Only an explicitly locked loop may restart
+       the standalone audition after the keyboard chord has ended. */
+    if ((!ui->workbench_loop_persistent && !audio->playing) ||
+        ts_note_bank_count(&audio->notes) > 0 ||
         ts_performance_count(&audio->performance) > 0 ||
         ts_performance_count(&audio->sister.performance) > 0) {
         if (device) SDL_LockAudioDevice(device);
@@ -4038,11 +4044,15 @@ static void begin_fm_note_event(SDL_AudioDeviceID device, AudioState *audio,
     (void)instrument;
     if (!device || preview == NULL || preview->data == NULL || event == NULL) return;
     SDL_LockAudioDevice(device);
+    if (audio->capture.state != TS_CAPTURE_RECORDING)
+        audio->playing = 0;
+    audio->bank_slot = -1;
     ts_note_bank_set_attack_ms(&audio->notes, ui->config.voice_attack_ms);
     keyboard_loop_policy(audio, ui);
     latched = latched || ui->keyboard_hold;
-    result = ts_note_bank_start_sample_event(
-        &audio->notes, preview, &unity, event, latched, output_rate);
+    result = latched && runtime_note_toggle_latched_event(audio, event) ?
+        TS_NOTE_TOGGLED_OFF : ts_note_bank_start_sample_event(
+            &audio->notes, preview, &unity, event, latched, output_rate);
     if (result == TS_NOTE_STARTED &&
         audio->capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER) {
         char ignored[2];

@@ -223,6 +223,20 @@ static int runtime_capture_write_frame(AudioState *audio, TsStereoFrame frame)
     return completed;
 }
 
+/* A held note belongs to the trigger that started it, even after changing the
+   current tile, FM workspace or Sister source route. Do not dispatch an OFF
+   gesture as a new ON to whichever bank now owns new notes. */
+static int runtime_note_toggle_latched_event(AudioState *audio,
+                                             const TsNoteEvent *event)
+{
+    int released = ts_note_bank_release_latched_event(&audio->notes, event);
+    released += ts_performance_release_latched_event(&audio->performance, event);
+    released += ts_sister_runtime_release_latched_note(&audio->sister, event);
+    if (released > 0 && ts_performance_count(&audio->performance) == 0)
+        audio->capture_trigger_ready = 0;
+    return released;
+}
+
 static TsNoteStartResult runtime_note_start_event(
     AudioState *audio, const TsInstrument *instrument, const TsTuning *tuning,
     TsAuditionSource source, const TsNoteEvent *event, int latched,
@@ -234,6 +248,8 @@ static TsNoteStartResult runtime_note_start_event(
     int sister_after;
     TsNoteStartResult result;
     if (audio == NULL) return TS_NOTE_START_FAILED;
+    if (latched && runtime_note_toggle_latched_event(audio, event))
+        return TS_NOTE_TOGGLED_OFF;
     ts_performance_set_attack_ms(&audio->performance, audio->notes.attack_ms);
     sister_before = ts_performance_count(&audio->sister.performance);
     sister_started = ts_sister_runtime_note_on(

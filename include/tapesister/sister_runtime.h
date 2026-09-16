@@ -321,6 +321,8 @@ int ts_sister_runtime_note_on(TsSisterRuntime *runtime,
                               const TsInstrument *instrument,
                               const TsNoteEvent *event, int latched,
                               int output_rate);
+int ts_sister_runtime_release_latched_note(TsSisterRuntime *runtime,
+                                           const TsNoteEvent *event);
 void ts_sister_runtime_note_off(TsSisterRuntime *runtime,
                                 const TsNoteEvent *event);
 void ts_sister_runtime_release_midi_channel(TsSisterRuntime *runtime,

@@ -414,6 +414,23 @@ void ts_note_bank_release_event(TsNoteBank *bank,const TsNoteEvent *event)
     }
 }
 
+int ts_note_bank_release_latched_event(TsNoteBank *bank, const TsNoteEvent *event)
+{
+    int released = 0;
+    if (bank == NULL || event == NULL) return 0;
+    for (int i = 0; i < TS_NOTE_BANK_VOICE_CAPACITY; ++i) {
+        TsNoteVoice *voice = &bank->voices[i];
+        if (voice->active && voice->latched &&
+            voice->midi_note == event->midi_note &&
+            ts_note_event_same_trigger(event, voice->origin, voice->note,
+                                       voice->channel)) {
+            voice->active = 0;
+            ++released;
+        }
+    }
+    return released;
+}
+
 void ts_note_bank_release_midi_channel(TsNoteBank *bank, int channel)
 {
     if (bank == NULL || channel < 0 || channel > 15) return;
