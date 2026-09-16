@@ -771,6 +771,7 @@ typedef struct {
     _Atomic int *external_monitor_enabled;
     TsExternalRecorder *record_bank_recorder;
     _Atomic int *record_source;
+    TsStereoFrame keyboard_dry;
     double tune_reference_phase;
     double tune_reference_frequency;
     float tune_reference_level;
@@ -1019,6 +1020,13 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         sister_sources.tapehead = buses.tapehead;
         sister_frame = ts_sister_runtime_process_frame(&audio->sister,
                                                         &sister_sources);
+        if(audio->record_bank_recorder && audio->record_source &&
+           atomic_load_explicit(audio->record_source,memory_order_acquire)==TS_RECORD_SOURCE_DRY) {
+            TsStereoFrame dry={audio->keyboard_dry.l+sister_frame.keyboard_dry.l,
+                               audio->keyboard_dry.r+sister_frame.keyboard_dry.r};
+            (void)ts_external_recorder_write_frame(audio->record_bank_recorder,dry);
+            synth_block_peak=fmaxf(synth_block_peak,fmaxf(fabsf(dry.l),fabsf(dry.r)));
+        }
         buses.sister = sister_frame.monitor_return;
         buses.program.l = buses.legacy_preview.l +
                           buses.tile_performance.l + buses.fm.l +
@@ -1108,6 +1116,13 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         output = ts_audio_mixer_render_unclamped(&audio->mixer, &buses);
         output = audio_apply_topology_crossfade(audio, output);
         output = ts_sister_runtime_process_output(&audio->sister, output);
+        /* Mosaic OUTPUT records exactly the stereo speaker program, including
+           keyboard/sample voices, Prism, Sister/FX, limiter and OUT gain. */
+        if(audio->record_bank_recorder && audio->record_source &&
+           atomic_load_explicit(audio->record_source,memory_order_acquire)==TS_RECORD_SOURCE_OUTPUT) {
+            (void)ts_external_recorder_write_frame(audio->record_bank_recorder,output);
+            synth_block_peak=fmaxf(synth_block_peak,fmaxf(fabsf(output.l),fabsf(output.r)));
+        }
         /* FILE OUT captures the final audible program after ordinary or
            Sister POST effects, topology fades, the output limiter, and the
            global OUT fader. The optional H1/H2/H3 file stems retain their
@@ -1135,8 +1150,8 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
                               memory_order_release);
     }
     if (audio->input_monitor != NULL && audio->record_source != NULL &&
-        atomic_load_explicit(audio->record_source, memory_order_acquire) ==
-            TS_RECORD_SOURCE_SYNTH)
+        atomic_load_explicit(audio->record_source, memory_order_acquire) !=
+            TS_RECORD_SOURCE_EXT)
         ts_input_monitor_publish_level(audio->input_monitor, synth_block_peak);
     if (audio->realtime_diagnostics_enabled) {
         uint32_t configuration = 0u;
@@ -1964,6 +1979,10 @@ static void arm_capture(SDL_AudioDeviceID device, AudioState *audio,
     uint64_t automatic_capacity;
     int destination = instrument->selected_slot;
     int ok;
+    if (ui->mosaic_recording) {
+        snprintf(ui->status,sizeof(ui->status),"FINISH OR CANCEL MOSAIC REC TILE BEFORE ANOTHER TILE CAPTURE");
+        return;
+    }
     if (audio->capture.state != TS_CAPTURE_IDLE) {
         snprintf(ui->status, sizeof(ui->status),
                  audio->capture.state == TS_CAPTURE_RECORDING ?
@@ -9200,6 +9219,10 @@ static int sister_prism_event(SDL_AudioDeviceID device, AudioState *audio,
         }
         return 1;
     }
+    if(event->type==SDL_MOUSEBUTTONDOWN && event->button.button==SDL_BUTTON_MIDDLE) {
+        if(!sister_event_mouse(sister->window,event->button.x,event->button.y,&x,&y))return 0;
+        return sister_prism_clear_capture(device,audio,sister,x,y);
+    }
     if (event->type == SDL_MOUSEBUTTONDOWN &&
         (event->button.button == SDL_BUTTON_LEFT || event->button.button == SDL_BUTTON_RIGHT)) {
         if (!sister_event_mouse(sister->window, event->button.x, event->button.y, &x, &y)) return 0;
@@ -9665,6 +9688,10 @@ static int sister_begin_capture(SDL_AudioDeviceID device, AudioState *audio,
     int ok;
     if (audio == NULL || ui == NULL || instrument == NULL || sister == NULL ||
         sample_rate == 0u) return 0;
+    if (ui->mosaic_recording) {
+        snprintf(sister->model.status,sizeof(sister->model.status),"FINISH OR CANCEL MOSAIC REC TILE BEFORE ANOTHER TILE CAPTURE");
+        return 0;
+    }
     destination = instrument->selected_slot;
     if (sister->model.destination_mode == TS_SISTER_UI_DEST_NEXT_EMPTY)
         destination = ts_sister_runtime_find_destination(
@@ -11169,6 +11196,9 @@ static size_t bank_frame_from_x(const TsBankSlot *slot, int x)
 
 struct ExternalInputState {
     TsExternalRecorder recorder;
+    int mosaic_recording;
+    uint64_t mosaic_epoch;
+    double mosaic_start, mosaic_x;
     TsInputMonitor monitor;
     TsInputActivity activity;
     TsInputOwnership ownership;
@@ -11367,8 +11397,31 @@ static SDL_AudioDeviceID recorder_device(SDL_AudioDeviceID output_device,
                                          const ExternalInputState *input)
 {
     return input != NULL &&
-           atomic_load_explicit(&input->record_source, memory_order_acquire) ==
-               TS_RECORD_SOURCE_SYNTH ? output_device : input_device;
+           atomic_load_explicit(&input->record_source, memory_order_acquire) !=
+               TS_RECORD_SOURCE_EXT ? output_device : input_device;
+}
+
+/* Incremental envelope work stays on the UI thread and shares the existing
+   bounded recorder snapshot. Pairwise compaction retains the entire take. */
+static void mosaic_record_preview_push(TsMosaicRecordPreview *p,
+                                       const float *data,size_t frames,int channels)
+{
+    if(!p->frames_per_peak || !data || (channels!=1 && channels!=2))return;
+    for(size_t i=0;i<frames;++i) {
+        if(p->frames/p->frames_per_peak>=TS_MOSAIC_RECORD_PEAKS) {
+            for(int bin=0;bin<TS_MOSAIC_RECORD_PEAKS/2;++bin)
+                p->peaks[bin]=fmaxf(p->peaks[bin*2],p->peaks[bin*2+1]);
+            memset(p->peaks+TS_MOSAIC_RECORD_PEAKS/2,0,sizeof(p->peaks)/2);
+            p->frames_per_peak*=2;
+        }
+        float peak=0;
+        for(int ch=0;ch<channels;++ch) {
+            float value=data[i*channels+ch];
+            if(isfinite(value))peak=fmaxf(peak,fabsf(value));
+        }
+        size_t bin=p->frames/p->frames_per_peak;
+        p->peaks[bin]=fmaxf(p->peaks[bin],peak);++p->frames;
+    }
 }
 
 static void sync_external_capture_ui(SDL_AudioDeviceID output_device,
@@ -11377,6 +11430,9 @@ static void sync_external_capture_ui(SDL_AudioDeviceID output_device,
                                      TsUiState *ui)
 {
     float callback_peak;
+    const float *preview_data=NULL;
+    size_t preview_frames=0;
+    int preview_channels=0;
     uint32_t now = SDL_GetTicks();
     SDL_AudioDeviceID source_device = recorder_device(output_device, input_device, input);
     if (source_device) SDL_LockAudioDevice(source_device);
@@ -11400,6 +11456,10 @@ static void sync_external_capture_ui(SDL_AudioDeviceID output_device,
             input->recorder.buffer +
                 input->waveform_consumed_frames * input->recorder.channels,
             available, input->recorder.channels);
+        if(input->mosaic_recording) {
+            preview_data=input->recorder.buffer+input->waveform_consumed_frames*input->recorder.channels;
+            preview_frames=available;preview_channels=input->recorder.channels;
+        }
         input->waveform_consumed_frames += available;
     }
     ui->input_wave_columns = ts_live_waveform_snapshot(
@@ -11407,6 +11467,9 @@ static void sync_external_capture_ui(SDL_AudioDeviceID output_device,
         ui->input_wave_maximum, TS_WAVE_W);
     ui->staged_notes = 0u;
     if (source_device) SDL_UnlockAudioDevice(source_device);
+    /* Recorded frames are immutable; the callback only appends and only this
+       event thread frees the buffer. Derive the preview after releasing audio. */
+    mosaic_record_preview_push(&ui->mosaic_record_preview,preview_data,preview_frames,preview_channels);
     ui->input_level = ts_input_monitor_level(&input->monitor);
     callback_peak = ts_input_monitor_take_peak(&input->monitor);
     if (callback_peak >= ui->input_peak) {
@@ -11442,35 +11505,49 @@ static void sync_external_activity_ui(ExternalInputState *input,
                                 SDL_GetTicks(), available, active);
 }
 
-static int arm_external_capture(SDL_AudioDeviceID output_device,
+#include "main_sdl_mosaic_record.inc"
+
+static int arm_external_capture_to(SDL_AudioDeviceID output_device,
                                 SDL_AudioDeviceID *input_device,
                                 AudioState *audio, ExternalInputState *input,
-                                TsUiState *ui, TsInstrument *instrument)
+                                TsUiState *ui, TsInstrument *instrument,
+                                int mosaic_target)
 {
     char error[160];
-    int slot = instrument->selected_slot;
+    int slot = mosaic_target ? 0 : instrument->selected_slot;
     int ok;
-    int synth_source = ui->record_source == TS_RECORD_SOURCE_SYNTH;
+    int source = mosaic_target ? ui->mosaic_record_source : ui->record_source;
+    int internal_source = source != TS_RECORD_SOURCE_EXT;
+    int output_source = source == TS_RECORD_SOURCE_OUTPUT;
+    int manual_source = output_source || source == TS_RECORD_SOURCE_DRY;
     uint32_t record_rate;
     uint8_t record_channels;
+    if (external_capture_busy(input)) {
+        snprintf(ui->status, sizeof(ui->status), "FINISH OR CANCEL THE CURRENT REC TAKE FIRST");
+        return 0;
+    }
+    if (mosaic_target && (!ui->mosaic || !mosaic_record_has_space(ui->mosaic))) {
+        snprintf(ui->status, sizeof(ui->status), "MOSAIC FULL - REMOVE A CARD BEFORE RECORDING");
+        return 0;
+    }
     if (slot < 0 || slot >= TS_BANK_SLOT_COUNT) {
         snprintf(ui->status, sizeof(ui->status), "SELECT AN EMPTY REC TILE FIRST");
         return 0;
     }
-    if (instrument->bank[slot].occupied) {
+    if (!mosaic_target && instrument->bank[slot].occupied) {
         snprintf(ui->status, sizeof(ui->status),
                  "REC TILE %02d IS OCCUPIED - SELECT AN EMPTY TILE", slot + 1);
         return 0;
     }
-    if (synth_source && (output_device == 0 || audio->output_rate <= 0)) {
+    if (internal_source && (output_device == 0 || audio->output_rate <= 0)) {
         snprintf(ui->status, sizeof(ui->status),
-                 "SYNTH REC NEEDS AN AVAILABLE AUDIO OUTPUT");
+                 "INTERNAL REC NEEDS AN AVAILABLE AUDIO OUTPUT");
         return 0;
     }
-    if (!synth_source)
+    if (!internal_source)
         (void)ts_input_ownership_request(
             &input->ownership, TS_INPUT_CONSUMER_RECORD_ACTIVE);
-    if (!synth_source &&
+    if (!internal_source &&
         !sync_external_input_consumers(input_device, audio, input, &ui->config,
                                        error, sizeof(error))) {
         (void)ts_input_ownership_release(
@@ -11478,29 +11555,37 @@ static int arm_external_capture(SDL_AudioDeviceID output_device,
         snprintf(ui->status, sizeof(ui->status), "REC INPUT FAILED: %.140s", error);
         return 0;
     }
-    stop_all_force(output_device, audio, ui);
+    if (!mosaic_target) stop_all_force(output_device, audio, ui);
     /* The device lock is the ownership boundary for recorder-buffer changes.
        Do not pause a shared input stream: Record Monitor or Sister EXT may be
        consuming it while the recording transaction is armed. */
-    record_rate = synth_source ? (uint32_t)audio->output_rate : input->sample_rate;
-    record_channels = synth_source ? 1u :
+    record_rate = internal_source ? (uint32_t)audio->output_rate : input->sample_rate;
+    record_channels = manual_source ? 2u : internal_source ? 1u :
         ts_input_channel_record_channels(ui->config.record_input_channel);
-    atomic_store_explicit(&input->record_source, ui->record_source,
+    atomic_store_explicit(&input->record_source, source,
                           memory_order_release);
-    if (synth_source) SDL_LockAudioDevice(output_device);
+    if (internal_source) SDL_LockAudioDevice(output_device);
     else SDL_LockAudioDevice(*input_device);
     ok = ts_external_recorder_arm_channels(
         &input->recorder, slot, record_rate, record_channels,
         ui->config.record_threshold_db,
-        ui->config.record_preroll_ms,
+        manual_source ? 0 : ui->config.record_preroll_ms,
         ui->config.record_silence_ms,
         ui->config.record_tail_ms,
         ui->config.record_max_seconds,
         error, sizeof(error));
-    if (synth_source) SDL_UnlockAudioDevice(output_device);
+    if(ok && mosaic_target && internal_source) {
+        /* Snapshot the insertion time under the same output lock that starts
+           the take: a callback must not advance Mosaic between those steps. */
+        input->mosaic_epoch=ui->mosaic->epoch;
+        input->mosaic_start=ui->mosaic->time;
+        input->mosaic_x=ui->mosaic_xscroll;
+    }
+    if (ok && manual_source) ok=ts_external_recorder_start_manual(&input->recorder);
+    if (internal_source) SDL_UnlockAudioDevice(output_device);
     else SDL_UnlockAudioDevice(*input_device);
     if (!ok) {
-        if (!synth_source) {
+        if (!internal_source) {
             (void)ts_input_ownership_release(
                 &input->ownership, TS_INPUT_CONSUMER_RECORD_ACTIVE);
             (void)sync_external_input_consumers(
@@ -11510,22 +11595,44 @@ static int arm_external_capture(SDL_AudioDeviceID output_device,
         diagnostic_log("REC arm failed (nonfatal): %s", error);
         return 0;
     }
+    input->mosaic_recording = ui->mosaic_recording = mosaic_target;
+    if (mosaic_target && !internal_source) {
+        if (output_device) SDL_LockAudioDevice(output_device);
+        input->mosaic_epoch = ui->mosaic->epoch;
+        input->mosaic_start = ui->mosaic->time;
+        input->mosaic_x = ui->mosaic_xscroll;
+        if (output_device) SDL_UnlockAudioDevice(output_device);
+    }
     ts_live_waveform_init(&input->live_waveform, record_rate);
+    memset(&ui->mosaic_record_preview,0,sizeof(ui->mosaic_record_preview));
+    if(mosaic_target) {
+        ui->mosaic_record_preview.epoch=input->mosaic_epoch;
+        ui->mosaic_record_preview.start=input->mosaic_start;
+        ui->mosaic_record_preview.x=input->mosaic_x;
+        ui->mosaic_record_preview.frames_per_peak=record_rate/100u;
+        if(!ui->mosaic_record_preview.frames_per_peak)ui->mosaic_record_preview.frames_per_peak=1;
+    }
     input->waveform_consumed_frames = 0u;
     input->peak_hold_until_ms = 0u;
     input->clip_hold_until_ms = 0u;
     ts_input_monitor_reset_meter(&input->monitor);
     ui->input_peak = 0.0f;
     ui->input_clipping = 0;
-    if (!synth_source)
+    if (!internal_source)
         (void)sync_external_input_consumers(
             input_device, audio, input, &ui->config, error, sizeof(error));
     diagnostic_log("REC armed: slot=%d source=%s threshold=%d dB", slot + 1,
-                   synth_source ? "synth" : "external",
+                   output_source ? "output" : source==TS_RECORD_SOURCE_DRY ? "dry keyboard" : internal_source ? "synth" : "external",
                    ui->config.record_threshold_db);
     sync_external_capture_ui(output_device, *input_device, input, ui);
-    show_overlay(ui, "REC ARMED", 850u);
-    if (synth_source)
+    show_overlay(ui, manual_source ? "RECORDING" : "REC ARMED", 850u);
+    if (mosaic_target && manual_source)
+        snprintf(ui->status,sizeof(ui->status),"MOSAIC %s RECORDING / CLICK STOP TILE TO KEEP / ESC TO CANCEL",output_source?"OUTPUT":"DRY KEYBOARD");
+    else if (mosaic_target)
+        snprintf(ui->status, sizeof(ui->status),
+                 "MOSAIC ARMED: %s AT %.2F S / CLICK TO CANCEL / SILENCE AUTO STOPS",
+                 internal_source ? "SYNTH" : "EXT INPUT", input->mosaic_start);
+    else if (internal_source)
         snprintf(ui->status, sizeof(ui->status),
                  "REC %02d ARMED  SYNTH INTERNAL  THRESH %d DB - OPEN FM LOGIC",
                  slot + 1, ui->config.record_threshold_db);
@@ -11538,18 +11645,27 @@ static int arm_external_capture(SDL_AudioDeviceID output_device,
     return 1;
 }
 
+static int arm_external_capture(SDL_AudioDeviceID output_device,
+                                SDL_AudioDeviceID *input_device,
+                                AudioState *audio, ExternalInputState *input,
+                                TsUiState *ui, TsInstrument *instrument)
+{
+    return arm_external_capture_to(output_device,input_device,audio,input,ui,instrument,0);
+}
+
 static void cancel_external_capture(SDL_AudioDeviceID output_device,
                                     SDL_AudioDeviceID input_device,
                                     ExternalInputState *input, TsUiState *ui)
 {
     SDL_AudioDeviceID source_device = recorder_device(output_device, input_device, input);
-    if (input_device && ui->record_source == TS_RECORD_SOURCE_EXT &&
+    if (input_device && atomic_load_explicit(&input->record_source,memory_order_acquire)==TS_RECORD_SOURCE_EXT &&
         (input->ownership.requests & ~TS_INPUT_CONSUMER_RECORD_ACTIVE) == 0u)
         SDL_PauseAudioDevice(input_device, 1);
     if (source_device) SDL_LockAudioDevice(source_device);
     (void)ts_external_recorder_cancel(&input->recorder);
     ts_external_recorder_free(&input->recorder);
     if (source_device) SDL_UnlockAudioDevice(source_device);
+    input->mosaic_recording = ui->mosaic_recording = 0;
     (void)ts_input_ownership_release(
         &input->ownership, TS_INPUT_CONSUMER_RECORD_ACTIVE);
     if (input_device) SDL_PauseAudioDevice(
@@ -11559,7 +11675,7 @@ static void cancel_external_capture(SDL_AudioDeviceID output_device,
     sync_external_capture_ui(output_device, input_device, input, ui);
     show_overlay(ui, "REC CANCELLED", 700u);
     snprintf(ui->status, sizeof(ui->status), "%s RECORDING CANCELLED - TILE UNCHANGED",
-             ui->record_source == TS_RECORD_SOURCE_SYNTH ? "SYNTH" : "EXTERNAL");
+             atomic_load_explicit(&input->record_source,memory_order_acquire)==TS_RECORD_SOURCE_OUTPUT ? "OUTPUT" : "INPUT");
 }
 
 static void stop_external_capture_early(SDL_AudioDeviceID output_device,
@@ -11570,10 +11686,14 @@ static void stop_external_capture_early(SDL_AudioDeviceID output_device,
     char error[160];
     int ok;
     SDL_AudioDeviceID source_device = recorder_device(output_device, input_device, input);
-    if (input_device && ui->record_source == TS_RECORD_SOURCE_EXT &&
+    if (input_device && atomic_load_explicit(&input->record_source,memory_order_acquire)==TS_RECORD_SOURCE_EXT &&
         (input->ownership.requests & ~TS_INPUT_CONSUMER_RECORD_ACTIVE) == 0u)
         SDL_PauseAudioDevice(input_device, 1);
     if (source_device) SDL_LockAudioDevice(source_device);
+    if(input->recorder.state==TS_EXTERNAL_CAPTURE_RECORDING && !input->recorder.recorded_frames) {
+        if(source_device)SDL_UnlockAudioDevice(source_device);
+        cancel_external_capture(output_device,input_device,input,ui);return;
+    }
     ok = ts_external_recorder_stop(&input->recorder, error, sizeof(error));
     if (source_device) SDL_UnlockAudioDevice(source_device);
     if (!ok)
@@ -11685,14 +11805,14 @@ static void finalize_external_recording(SDL_AudioDeviceID output_device,
     int chain;
     int ok;
     int archived;
-    int synth_source;
+    int internal_source;
+    int source;
     SDL_AudioDeviceID source_device;
     if (input->recorder.state != TS_EXTERNAL_CAPTURE_COMPLETED) return;
-    synth_source = atomic_load_explicit(&input->record_source,
-                                        memory_order_acquire) ==
-                   TS_RECORD_SOURCE_SYNTH;
+    source = atomic_load_explicit(&input->record_source,memory_order_acquire);
+    internal_source = source != TS_RECORD_SOURCE_EXT;
     source_device = recorder_device(output_device, *input_device, input);
-    if (!synth_source && *input_device &&
+    if (!internal_source && *input_device &&
         (input->ownership.requests & ~TS_INPUT_CONSUMER_RECORD_ACTIVE) == 0u)
         SDL_PauseAudioDevice(*input_device, 1);
     if (source_device) SDL_LockAudioDevice(source_device);
@@ -11710,8 +11830,9 @@ static void finalize_external_recording(SDL_AudioDeviceID output_device,
         if (source_device) SDL_LockAudioDevice(source_device);
         ts_external_recorder_free(&input->recorder);
         if (source_device) SDL_UnlockAudioDevice(source_device);
+        input->mosaic_recording = ui->mosaic_recording = 0;
         sync_external_capture_ui(output_device, *input_device, input, ui);
-        if (!synth_source)
+        if (!internal_source)
             (void)ts_input_ownership_release(
                 &input->ownership, TS_INPUT_CONSUMER_RECORD_ACTIVE);
         if (*input_device) SDL_PauseAudioDevice(
@@ -11720,26 +11841,38 @@ static void finalize_external_recording(SDL_AudioDeviceID output_device,
         return;
     }
     archived = ts_capture_archive_write_channels(
-        capture_archive_directory(), synth_source ? TS_CAPTURE_ARCHIVE_SYNTH :
+        capture_archive_directory(), source==TS_RECORD_SOURCE_OUTPUT ? TS_CAPTURE_ARCHIVE_OUTPUT :
+                                    source==TS_RECORD_SOURCE_DRY ? TS_CAPTURE_ARCHIVE_INTERNAL :
+                                    source==TS_RECORD_SOURCE_SYNTH ? TS_CAPTURE_ARCHIVE_SYNTH :
                                                     TS_CAPTURE_ARCHIVE_INPUT,
         captured, frames, sample_rate, channels,
         archive_path, sizeof(archive_path),
         archive_error, sizeof(archive_error));
-    chain = instrument->family_trajectory;
-    ok = install_external_take(output_device, audio, ui, instrument, slot,
+    int mosaic_target = input->mosaic_recording;
+    chain = !mosaic_target && instrument->family_trajectory;
+    ok = mosaic_target ? install_mosaic_take(output_device,ui,input,
+                               captured,frames,sample_rate,channels,error,sizeof(error)) :
+         install_external_take(output_device, audio, ui, instrument, slot,
                                captured, frames, sample_rate, channels,
                                error, sizeof(error));
     free(captured);
     if (source_device) SDL_LockAudioDevice(source_device);
     ts_external_recorder_free(&input->recorder);
     if (source_device) SDL_UnlockAudioDevice(source_device);
-    if (!synth_source)
+    input->mosaic_recording = ui->mosaic_recording = 0;
+    if (!internal_source)
         (void)ts_input_ownership_release(
             &input->ownership, TS_INPUT_CONSUMER_RECORD_ACTIVE);
     if (*input_device) SDL_PauseAudioDevice(
         *input_device, input->ownership.requests == 0u ? 1 : 0);
     if (!ok) {
         sync_external_capture_ui(output_device, *input_device, input, ui);
+        if (mosaic_target) {
+            snprintf(ui->status,sizeof(ui->status),
+                     archived ? "TAKE ARCHIVED / %.140s" : "MOSAIC COMMIT + ARCHIVE FAILED: %.124s",
+                     archived ? error : archive_error);
+            return;
+        }
         snprintf(ui->status, sizeof(ui->status),
                  archived ? "INPUT ARCHIVED - REC TILE COMMIT FAILED: %.104s" :
                             "REC COMMIT AND ARCHIVE FAILED: %.102s",
@@ -11747,7 +11880,12 @@ static void finalize_external_recording(SDL_AudioDeviceID output_device,
         return;
     }
     show_overlay(ui, "REC TAKE KEPT", 850u);
-    if (chain) {
+    if (mosaic_target) {
+        sync_external_capture_ui(output_device, *input_device, input, ui);
+        snprintf(ui->status,sizeof(ui->status),archived ?
+            "MOSAIC TILE KEPT + ARCHIVED / %zu FRAMES AT %u HZ" :
+            "MOSAIC TILE KEPT / ARCHIVE FAILED / %zu FRAMES AT %u HZ",frames,sample_rate);
+    } else if (chain) {
         int next = ts_external_next_chain_slot(slot);
         if (next >= 0 && !instrument->bank[next].occupied) {
             lock_edit(output_device, audio);
@@ -12818,7 +12956,7 @@ int main(int argc, char **argv)
                                              external_input.sample_rate);
                 ts_input_activity_set_available(&external_input.activity, 0u);
                 ts_sister_runtime_input_available(&audio.sister, 0);
-                if (ui.record_source == TS_RECORD_SOURCE_EXT &&
+                if (atomic_load_explicit(&external_input.record_source,memory_order_acquire)==TS_RECORD_SOURCE_EXT &&
                     (external_input.recorder.state == TS_EXTERNAL_CAPTURE_ARMED ||
                      external_input.recorder.state == TS_EXTERNAL_CAPTURE_RECORDING))
                     cancel_external_capture(device, 0, &external_input, &ui);
@@ -12875,6 +13013,10 @@ int main(int argc, char **argv)
                 continue;
             }
             mosaic_commit(device,&ui,&instrument,&mosaic);
+            /* Finish an active pointer gesture before Escape can discard a take. */
+            if(!mosaic.drag && !mosaic.mix_drag && !mosaic.volume_drag &&
+               mosaic_record_tile_event(&event,window,device,&input_device,&audio,
+                                       &external_input,&ui,&instrument))continue;
             if(main_file_capture_event(&event,window,&audio,&ui,&sister_window,(uint32_t)obtained.freq))continue;
             if(sample_bank_play_select_event(&event,window,&ui))continue;
             if(workspace_event(&event,window,device,&audio,&ui,&instrument,&mosaic,
@@ -16468,16 +16610,18 @@ int main(int argc, char **argv)
             (void)sync_live_link(device, &audio, ui.status,
                                  sizeof(ui.status));
         }
-        if (record_bank_active &&
+        if ((record_bank_active || external_input.mosaic_recording) &&
             external_input.recorder.state == TS_EXTERNAL_CAPTURE_RECORDING &&
             ui.capture_state != TS_CAPTURE_RECORDING) {
             show_overlay(&ui, "REC STARTED", 650u);
             snprintf(ui.status, sizeof(ui.status),
+                     external_input.mosaic_recording ? "MOSAIC RECORDING - CLICK STOP TILE TO KEEP" :
                      "REC %02d RECORDING - SILENCE WILL AUTO STOP",
                      external_input.recorder.destination_slot + 1);
         }
-        if (record_bank_active &&
-            external_input.recorder.state == TS_EXTERNAL_CAPTURE_COMPLETED)
+        if (external_input.recorder.state == TS_EXTERNAL_CAPTURE_COMPLETED &&
+            (!external_input.mosaic_recording ||
+             (!mosaic.drag && !mosaic.mix_drag && !mosaic.volume_drag)))
             finalize_external_recording(device, &input_device, &audio,
                                         &external_input, &ui, &instrument);
         if (audio.capture.state == TS_CAPTURE_COMPLETED)
@@ -16518,7 +16662,7 @@ int main(int argc, char **argv)
         poll_transform_worker(device, &audio, &ui, &instrument, &transform);
         mosaic_commit(device,&ui,&instrument,&mosaic);
         portal_poll(device,&audio,&ui,&instrument,&portal);
-        if (record_bank_active)
+        if (record_bank_active || external_input.mosaic_recording)
             sync_external_capture_ui(device, input_device, &external_input, &ui);
         else
             sync_capture_ui(device, &audio, &ui);

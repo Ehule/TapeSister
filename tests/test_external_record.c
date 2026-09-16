@@ -69,6 +69,23 @@ static void test_manual_stop_cancel_and_chain(void)
     ts_external_recorder_free(&recorder);
 }
 
+static void test_immediate_recording(void)
+{
+    TsExternalRecorder r;char error[160];ts_external_recorder_init(&r);
+    CHECK(!ts_external_recorder_start_manual(&r));
+    CHECK(ts_external_recorder_arm_channels(&r,0,1000,2,-20,5,2,1,1,error,sizeof(error)));
+    CHECK(ts_external_recorder_start_manual(&r));
+    CHECK(r.state==TS_EXTERNAL_CAPTURE_RECORDING && !r.recorded_frames);
+    /* Leading/inter-note silence is retained, even beyond the trigger mode's
+       silence timeout. Capacity still bounds a manual take. */
+    for(int i=0;i<500;++i)CHECK(ts_external_recorder_write_frame(&r,(TsStereoFrame){0})==0);
+    for(int i=500;i<999;++i)CHECK(ts_external_recorder_write_frame(&r,(TsStereoFrame){.1f,-.2f})==0);
+    CHECK(ts_external_recorder_write_frame(&r,(TsStereoFrame){.1f,-.2f})==1);
+    CHECK(r.state==TS_EXTERNAL_CAPTURE_COMPLETED && r.recorded_frames==1000);
+    CHECK(r.buffer[998]==0 && r.buffer[999]==0 && r.buffer[1000]==.1f && r.buffer[1001]==-.2f);
+    CHECK(!ts_external_recorder_start_manual(&r));ts_external_recorder_free(&r);
+}
+
 static void test_config_defaults(void)
 {
     TsConfig config;
@@ -86,6 +103,7 @@ int main(void)
 {
     test_threshold_preroll_and_autostop();
     test_manual_stop_cancel_and_chain();
+    test_immediate_recording();
     test_config_defaults();
     if (failures != 0) {
         fprintf(stderr, "%d external recording test(s) failed\n", failures);

@@ -123,7 +123,9 @@ static void mosaic_card(TsFramebuffer *fb,const TsUiState *ui,const TsMosaicEven
     }
 }
 
+static void mosaic_recording_card(TsFramebuffer *,TsUiWaveformDetail *,const TsUiState *);
 #include "ts_mosaic_waveform_detail.inc"
+#include "ts_mosaic_record_preview.inc"
 
 static void mosaic_slider(TsFramebuffer *fb,int x,int y,int width,double amount,int center,int enabled)
 {
@@ -239,11 +241,28 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
     int rec=ui->file_record_state==TS_PERFORMANCE_FILE_RECORDING;
     mosaic_button(fb,206,39,64,rec?"STOP REC":"REC FILE",rec,1);
     mosaic_button(fb,274,39,44,"REPEAT",m && m->repeat,1);
-    snprintf(label,sizeof(label),"%06.2f s",ui->mosaic_time);text(fb,330,44,label,RGB(129,206,200),1);
-    rect(fb,408,42,10,10,RGB(112,105,122));rect(fb,409,43,8,8,RGB(26,26,33));
-    if(ui->mosaic_follow){rect(fb,411,45,4,4,RGB(129,206,200));}
-    text(fb,424,44,"FOLLOW",ui->mosaic_follow?RGB(129,206,200):RGB(166,155,178),1);
-    mosaic_button(fb,490,39,52,"FIT ALL",0,1);mosaic_button(fb,548,39,24,"-",0,1);mosaic_button(fb,578,39,24,"+",0,1);
+    const char *tile_label=ui->mosaic_recording ?
+        (ui->capture_state==TS_CAPTURE_RECORDING ? "STOP TILE" :
+         ui->capture_state==TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER ? "CANCEL" : "TILE WAIT") :
+         ui->mosaic_record_source==TS_RECORD_SOURCE_OUTPUT ? "REC OUT" :
+         ui->mosaic_record_source==TS_RECORD_SOURCE_EXT ? "REC EXT" : "REC DRY";
+    mosaic_button(fb,TS_MOSAIC_REC_TILE_X,TS_MOSAIC_REC_TILE_Y,TS_MOSAIC_REC_TILE_W,tile_label,ui->mosaic_recording,1);
+    if(ui->mosaic_recording && ui->capture_state==TS_CAPTURE_RECORDING) {
+        int x=TS_MOSAIC_REC_TILE_X,y=TS_MOSAIC_REC_TILE_Y,w=TS_MOSAIC_REC_TILE_W;
+        rect(fb,x,y,w,16,ui->text_cursor_visible?RGB(244,112,117):RGB(161,67,78));
+        rect(fb,x+2,y+2,w-4,12,ui->text_cursor_visible?RGB(112,35,48):RGB(59,28,37));
+        text(fb,x+(w-54)/2,y+4,"STOP TILE",RGB(255,229,225),1);
+    }
+    if(ui->mosaic_time<1000)snprintf(label,sizeof(label),"%06.2f s",ui->mosaic_time);
+    else if(ui->mosaic_time<100000)snprintf(label,sizeof(label),"%6.1fs",ui->mosaic_time);
+    else snprintf(label,sizeof(label),"%6.1fh",ui->mosaic_time/3600);
+    text(fb,392,44,label,RGB(129,206,200),1);
+    rect(fb,TS_MOSAIC_FOLLOW_X,42,10,10,RGB(112,105,122));rect(fb,TS_MOSAIC_FOLLOW_X+1,43,8,8,RGB(26,26,33));
+    if(ui->mosaic_follow){rect(fb,TS_MOSAIC_FOLLOW_X+3,45,4,4,RGB(129,206,200));}
+    text(fb,TS_MOSAIC_FOLLOW_X+16,44,"FOLLOW",ui->mosaic_follow?RGB(129,206,200):RGB(166,155,178),1);
+    mosaic_button(fb,TS_MOSAIC_FIT_X,39,TS_MOSAIC_FIT_W,"FIT ALL",0,1);
+    mosaic_button(fb,TS_MOSAIC_ZOOM_OUT_X,39,TS_MOSAIC_ZOOM_W,"-",0,1);
+    mosaic_button(fb,TS_MOSAIC_ZOOM_IN_X,39,TS_MOSAIC_ZOOM_W,"+",0,1);
     static TsWaveformCache source_cache[16];
     (void)instrument;
     for(int i=0;i<16;++i) {
@@ -268,7 +287,16 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
     mosaic_button(fb,10,353,22,"<",0,1);mosaic_button(fb,86,353,22,">",0,1);
     snprintf(label,sizeof(label),"%02d/%02d",ui->mosaic_source_page+1,pages);text(fb,40,358,label,RGB(150,142,160),1);
     rect(fb,113,66,518,310,RGB(11,13,16));
-    snprintf(label,sizeof(label),strlen(ui->status)>48?"%.45s...":"%s",ui->status);text(fb,118,58,label,RGB(133,127,141),1);
+    const char *tile_source=ui->mosaic_record_source==TS_RECORD_SOURCE_OUTPUT?"OUTPUT":
+        ui->mosaic_record_source==TS_RECORD_SOURCE_DRY?"DRY":"EXT";
+    if(ui->mosaic_recording)
+        snprintf(label,sizeof(label),"TILE %s: %s / %.1F S",tile_source,
+            ui->capture_state==TS_CAPTURE_RECORDING?"REC":
+            ui->capture_state==TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER?"ARMED":"FINISHING",
+            ui->input_sample_rate?(double)ui->capture_recorded_frames/ui->input_sample_rate:0);
+    else snprintf(label,sizeof(label),"%-5s / %.34s%s",tile_source,
+        ui->status[0]?ui->status:"RIGHT-CLICK REC TILE: SOURCE",strlen(ui->status)>34?"...":"");
+    text(fb,118,58,label,ui->mosaic_recording?RGB(230,138,100):RGB(133,127,141),1);
     snprintf(label,sizeof(label),"SPEED %.2fX",m?m->speed:1);text(fb,416,58,label,RGB(129,206,200),1);
     mosaic_slider(fb,TS_MOSAIC_SPEED_X,58,TS_MOSAIC_SPEED_W,(log2(m?m->speed:1)+1)*.5,1,1);
     double scale=ui->mosaic_scale>0?ui->mosaic_scale:24;
@@ -288,6 +316,7 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
             const TsMosaicEvent *e=&m->events[i];if(!e->id)continue;
             mosaic_card(fb,ui,e,e->id==ui->mosaic_selected || e->id==ui->mosaic_selection[i],e->muted || (any_solo && !e->solo),0);
         }
+        mosaic_recording_card(fb,NULL,ui);
     }
     mosaic_detail_sources(fb,ui,interval);
     if(ui->mosaic_box) {

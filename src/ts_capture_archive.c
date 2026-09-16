@@ -152,6 +152,7 @@ int ts_capture_archive_write_channels(
     char destination[1200];
     char temporary[1240];
     const char *prefix = kind == TS_CAPTURE_ARCHIVE_INTERNAL ? "CAPTURE" :
+                         kind == TS_CAPTURE_ARCHIVE_OUTPUT ? "OUTPUT" :
                          kind == TS_CAPTURE_ARCHIVE_SYNTH ? "SYNTH" : "INPUT";
     TsSample sample;
     if (written_path != NULL && written_path_size > 0u) written_path[0] = '\0';

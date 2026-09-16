@@ -7,7 +7,8 @@
 typedef enum {
     TS_CAPTURE_ARCHIVE_INPUT = 0,
     TS_CAPTURE_ARCHIVE_INTERNAL,
-    TS_CAPTURE_ARCHIVE_SYNTH
+    TS_CAPTURE_ARCHIVE_SYNTH,
+    TS_CAPTURE_ARCHIVE_OUTPUT
 } TsCaptureArchiveKind;
 
 int ts_capture_archive_unique_path(const char *directory, const char *prefix,

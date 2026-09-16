@@ -1279,6 +1279,7 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
        as a recorder tap even when Sister processing itself is bypassed. */
     frame.tap[TS_SISTER_TAP_TAPEHEAD] = source.tapehead;
     tile_bus = ts_performance_read_stereo(&runtime->performance, &tile_raw);
+    frame.keyboard_dry = tile_bus;
     tile_bus = frame_add(tile_bus, source.tiles);
     (void)tile_raw;
     if (!runtime->enabled || runtime->callback_failed) {

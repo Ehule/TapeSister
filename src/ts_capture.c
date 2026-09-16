@@ -473,6 +473,15 @@ int ts_external_recorder_arm_channels(
     return 1;
 }
 
+int ts_external_recorder_start_manual(TsExternalRecorder *recorder)
+{
+    if(!recorder || !recorder->buffer || recorder->state!=TS_EXTERNAL_CAPTURE_ARMED)return 0;
+    recorder->recorded_frames=recorder->pre_roll_count=recorder->pre_roll_write=0;
+    recorder->quiet_frames=recorder->silence_frames=recorder->tail_frames=0;
+    recorder->state=TS_EXTERNAL_CAPTURE_RECORDING;
+    return 1;
+}
+
 int ts_external_recorder_write_sample(TsExternalRecorder *recorder, float sample)
 {
     return ts_external_recorder_write_frame(
@@ -511,7 +520,8 @@ int ts_external_recorder_write_frame(TsExternalRecorder *recorder,
     if (level >= recorder->threshold_amplitude) recorder->quiet_frames = 0u;
     else ++recorder->quiet_frames;
     if (recorder->recorded_frames >= recorder->capacity_frames ||
-        recorder->quiet_frames >= recorder->silence_frames + recorder->tail_frames) {
+        (recorder->silence_frames &&
+         recorder->quiet_frames >= recorder->silence_frames + recorder->tail_frames)) {
         recorder->state = TS_EXTERNAL_CAPTURE_COMPLETED;
         recorder->stopped_early = recorder->recorded_frames < recorder->capacity_frames;
         return 1;

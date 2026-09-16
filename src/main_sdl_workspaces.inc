@@ -62,7 +62,8 @@ static int workspace_event(const SDL_Event *event,SDL_Window *window,
     if(ui_blocking_dialog_open_except_workspaces(ui) || ui->fm_bank_choice_open ||
        ui->fm_full_choice_open || sister->model.preset_manage_open ||
        (ui->portal.open && (ui->portal.manage_open || ui->portal.macro_edit || ui->portal.full_action)))return 1;
-    if(ui->external_record_bank || ui->capture_state!=TS_CAPTURE_IDLE || transform->worker || portal_edit_gesture_active(ui)) {
+    if(ui->external_record_bank || (ui->capture_state!=TS_CAPTURE_IDLE && !ui->mosaic_recording) ||
+       transform->worker || portal_edit_gesture_active(ui)) {
         snprintf(ui->status,sizeof(ui->status),"FINISH CAPTURE OR EDIT BEFORE CHANGING WORKSPACE");return 1;
     }
     if(to_portal) {

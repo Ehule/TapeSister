@@ -8,9 +8,23 @@ static void mosaic_poll(SDL_AudioDeviceID device,TsUiState *ui,
     if(device)SDL_UnlockAudioDevice(device);
     if(ui->mosaic_open && !c->active) {
         mosaic_sources_refresh(ui,instrument,c);
-        if(ui->mosaic_follow && ui->mosaic_playing && !c->drag && !c->volume_drag) {
-            double offset=(ui->mosaic_time-ui->mosaic_scroll)*ui->mosaic_scale;
-            if(offset>220 || offset<0)ui->mosaic_scroll=fmax(0,ui->mosaic_time-220/ui->mosaic_scale);
+        int recording=ui->mosaic_recording && ui->capture_state==TS_CAPTURE_RECORDING &&
+            ui->input_sample_rate && ui->mosaic_record_preview.epoch==ui->mosaic->epoch;
+        if(ui->mosaic_follow && (ui->mosaic_playing || recording) && !c->drag && !c->volume_drag) {
+            double target=recording?ui->mosaic_record_preview.start+
+                (double)ui->capture_recorded_frames/ui->input_sample_rate:ui->mosaic_time;
+            double offset=(target-ui->mosaic_scroll)*ui->mosaic_scale;
+            if(offset>220 || offset<0)ui->mosaic_scroll=fmax(0,target-220/ui->mosaic_scale);
+            if(recording) {
+                TsMosaicEvent placement={.start=ui->mosaic_record_preview.start,
+                    .duration=target-ui->mosaic_record_preview.start,.x=ui->mosaic_record_preview.x,.width=86};
+                ts_mosaic_space(ui->mosaic,&placement);
+                double horizontal=ui->mosaic_hscale>0?ui->mosaic_hscale:1;
+                double visible=(TS_MOSAIC_CANVAS_RIGHT-151)/horizontal;
+                if(placement.x+86>ui->mosaic_xscroll+visible)
+                    ui->mosaic_xscroll=fmax(0,placement.x+86-visible);
+                if(placement.x<ui->mosaic_xscroll)ui->mosaic_xscroll=placement.x;
+            }
         }
     }
     if(c->active) {
@@ -355,12 +369,12 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
             else if(x>=164 && x<202)mosaic_transport(device,ui,1);
             else if(x>=206 && x<270)main_file_capture_toggle(audio,ui,sister,(uint32_t)rate);
             else if(x>=274 && x<318) {if(device)SDL_LockAudioDevice(device);ts_mosaic_checkpoint(ui->mosaic);ts_mosaic_set_repeat(ui->mosaic,!ui->mosaic->repeat);if(device)SDL_UnlockAudioDevice(device);}
-            else if(x>=406 && x<480)ui->mosaic_follow=!ui->mosaic_follow;
-            else if(x>=490 && x<542){ui->mosaic_scale=fmin(1200,300/fmax(.25,ts_mosaic_end(ui->mosaic)));ui->mosaic_scroll=0;ui->mosaic_xscroll=0;
+            else if(x>=TS_MOSAIC_FOLLOW_X && x<TS_MOSAIC_FOLLOW_X+TS_MOSAIC_FOLLOW_W)ui->mosaic_follow=!ui->mosaic_follow;
+            else if(x>=TS_MOSAIC_FIT_X && x<TS_MOSAIC_FIT_X+TS_MOSAIC_FIT_W){ui->mosaic_scale=fmin(1200,300/fmax(.25,ts_mosaic_end(ui->mosaic)));ui->mosaic_scroll=0;ui->mosaic_xscroll=0;
                 double right=0;for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(ui->mosaic->events[i].id)right=fmax(right,ui->mosaic->events[i].x+ui->mosaic->events[i].width);
                 ui->mosaic_hscale=fmin(1,(TS_MOSAIC_CANVAS_RIGHT-151)/fmax(1,right));}
-            else if(x>=548 && x<572){ui->mosaic_scale=fmax(.003,ui->mosaic_scale/1.4);ui->mosaic_hscale=fmax(.02,horizontal/1.4);}
-            else if(x>=578 && x<604){ui->mosaic_scale=fmin(1200,ui->mosaic_scale*1.4);ui->mosaic_hscale=fmin(4,horizontal*1.4);}
+            else if(x>=TS_MOSAIC_ZOOM_OUT_X && x<TS_MOSAIC_ZOOM_OUT_X+TS_MOSAIC_ZOOM_W){ui->mosaic_scale=fmax(.003,ui->mosaic_scale/1.4);ui->mosaic_hscale=fmax(.02,horizontal/1.4);}
+            else if(x>=TS_MOSAIC_ZOOM_IN_X && x<TS_MOSAIC_ZOOM_IN_X+TS_MOSAIC_ZOOM_W){ui->mosaic_scale=fmin(1200,ui->mosaic_scale*1.4);ui->mosaic_hscale=fmin(4,horizontal*1.4);}
             return 1;
         }
         if(x>=10 && x<108 && y>=74 && y<346) {

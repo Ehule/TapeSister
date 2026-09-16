@@ -294,7 +294,10 @@ their effect on the pattern; neither changes captured A/B sounds.
 **PRESETS** has its own 32-slot bank in `prism-presets.ini`, beside `tapesister.ini`.
 **SAVE NEW** stores the current refraction setup with a numbered mode/count name.
 **Shift-click SAVE NEW** replaces the selected entry. Use the arrows to recall
-entries; clicking the name recalls that entry again. These operations change
+sounds without replacing your current A/B captures; clicking the name auditions
+that sound again. Browsing exits an active morph so the chosen sound can be captured.
+**Shift-click an arrow or preset name** restores the full saved Prism setup,
+including its A/B captures, sequence, and parked morph position. These operations change
 Prism only: Sister's tape, heads, routing and other effects keep their settings.
 The existing bottom-row Sister preset bank still stores the complete Sister setup.
 
@@ -305,7 +308,10 @@ individual/group octaves and snap), **MOTION** (Drift, Rate, Stereo and pan offs
 **GLASS** (both shapes and Color), **MIX** (Body, Wet, Dry, output, trims, mute/solo),
 **COUNT**, and **SEQ** (pattern and rate). Existing individual slider locks also
 protect their values when using New/Vary. New clears an unlocked sequence; Vary
-retains it. Captured A/B memories remain available until explicitly recaptured.
+retains it. Captured A/B memories remain available until explicitly recaptured or cleared.
+If you recalled A or B for editing, New/Vary and ordinary user-preset browsing
+keep that endpoint selected for editing. Its button turns amber when the sound
+changes; return to PERFORM and left-click CAP A/B to save the auditioned sound.
 Right-click the mode, Prism preset name, or bottom Sister preset name to restore
 stock per-lens offsets, trims, octaves and mute/solo.
 
@@ -328,6 +334,17 @@ Capture buttons then replace their respective memories. The sequencer keeps its
 own pattern and clock while morphing. A Prism preset stores both endpoints and
 the current fader position; a saved timed transition is parked at that position.
 
+**Middle-click CAP A or CAP B** empties that endpoint. Middle-click both buttons
+to clear the pair and start again. Clearing cancels the timed morph and unlocks
+sound editing; during a morph, the surviving endpoint becomes the live sound.
+Clearing the last endpoint leaves the live sound in place, with both captures empty.
+
+To morph between user presets, audition one on PRESETS, capture A on PERFORM,
+audition another, then capture B. The same workflow works with factory modes
+and New/Vary results. To revise just one endpoint, right-click its CAP button,
+audition changes, and left-click the same CAP button. A/B remains part of saved
+Prism presets and full Sister presets; use Shift-recall to restore saved Prism pairs.
+
 Capture buttons show both text and color:
 
 | Button state | Meaning |
@@ -340,8 +357,11 @@ Capture buttons show both text and color:
 The status beside the page tabs distinguishes **LIVE EDIT**, **NOT CAPTURED**,
 and purple **A/B MORPH - SOUND LOCKED**. Capturing both endpoints makes morphing
 available; sound controls lock when the A/B fader or a timed move engages morphing.
-New/Vary and ordinary live edits leave existing A/B memories stored until recaptured.
+New/Vary, ordinary preset browsing, and live edits leave existing A/B memories stored until recaptured or cleared.
 Sequence changes do not mark an endpoint dirty because the sequence is independent.
+
+A future performance bank of roughly 12 morph states is outlined in
+[the morph bank plan](PRISM_MORPH_BANK_PLAN.md); the current interface remains A/B.
 Right-clicking an empty capture button reports that it must be captured first.
 
 ![Empty, ready, editing, changed, and morphing capture states in the native renderer](images/prism-capture-states.png)

@@ -793,6 +793,20 @@ shared final stereo output recorder. It includes the live processing, limiter, a
 OUT fader, continues across windows, and saves completed takes in `Captures/`.
 Stopping the file does not stop the arrangement. See [Direct output recording](#direct-output-recording).
 
+Mosaic's recording button beside REPEAT defaults to **REC DRY**, capturing the
+live QWERTY/MIDI instrument before Prism and effects, including both sample voices
+and FM. Right-click while idle to choose **REC OUT** (the same final stereo signal
+as REC FILE) or **REC EXT** (configured external input). DRY and OUT start immediately
+and keep silence between notes; click the flashing **STOP TILE** to keep the take.
+A temporary card grows with a live waveform and elapsed time while recording.
+FOLLOW tracks its growing edge even with playback stopped. Canceling removes the
+preview; it contributes no audio to its own take. EXT retains
+threshold/silence detection. The source appears below PLAY. Each completed take
+becomes a one-shot card at the starting playhead position, with an archived WAV in
+`Captures/`. Choose REC OUT to print Prism or bounce Mosaic's own playback into a
+new card; the destination card is added only after recording ends. Existing cards
+and the sample bank remain intact. See [Mosaic recording](MOSAIC.md#recording-and-projects).
+
 SAVE preserves the events, notes, source regions, loop modes, positions, durations,
 mute/solo states, level/pan/fades, global speed, repeat setting, and shared source versions in the project folder.
 Transport position and arrangement/editor undo history are session state. Older
@@ -828,6 +842,9 @@ different purposes.
 | Main **OVERDUB** | final performance layered onto a tile | existing tile | `CAPTURE_` |
 | REC BANK **SRC EXT** | configured physical input | REC tile | `INPUT_` |
 | REC BANK **SRC SYNTH** | internal live FM voices only | REC tile | `SYNTH_` |
+| Mosaic **REC DRY** | live keyboard instrument before Prism/FX | Mosaic card | `CAPTURE_` |
+| Mosaic **REC OUT** | final audible stereo output, including Mosaic/Prism/FX | Mosaic card | `OUTPUT_` |
+| Mosaic **REC EXT** | configured external recording input | Mosaic card | `INPUT_` |
 | Sister **CAPTURE/OVERDUB** | selected H1/H2/H3/MIX tap | current or next tile | `CAPTURE_` |
 | Sister destination **FILE** | selected tap or final OUT | long WAV/RF64 file | `SISTER-` |
 
@@ -1011,7 +1028,12 @@ lens diagram. The Prism-only bank saves refraction settings independently of the
 bottom-row full Sister presets. **NEW** rolls a fresh setup, **VARY** develops it,
 and six lock groups protect chosen settings. Capture **A/B**, then use the morph
 fader, MIDI, or a timed **TO A / TO B** move. Right-click a capture button to recall
-it for editing. See [Prism performance](PRISM.md#presets-and-performance).
+it for editing. New/Vary and ordinary user-preset browsing preserve both captures
+and keep the recalled endpoint selected for editing. Return to PERFORM and
+left-click its CAP button to store a variation or a different preset there.
+Middle-click CAP A/B to empty either endpoint; clear both to start a fresh pair.
+Shift-click a user-preset arrow or name restores the complete saved Prism setup,
+including its captures. See [Prism performance](PRISM.md#presets-and-performance).
 
 On PERFORM, enable sequence **EDIT** and Ctrl-click the numbered strip in order.
 Only those lenses sequence; the others sustain. Count changes retain hidden

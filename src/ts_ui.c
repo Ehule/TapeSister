@@ -1865,6 +1865,7 @@ void ts_ui_init(TsUiState *ui)
     ui->capture_state = TS_CAPTURE_IDLE;
     ui->external_record_bank = 0;
     ui->record_source = TS_RECORD_SOURCE_EXT;
+    ui->mosaic_record_source = TS_RECORD_SOURCE_DRY;
     ui->master_output.gain = 1.0f;
     ui->master_output.limiter_ceiling_db = -1.0f;
     ui->renaming_bank_slot = -1;

@@ -87,6 +87,10 @@ static void wait_render(void);
 #include "test_mosaic_routing.inc"
 #include "test_prism_controller.inc"
 #include "test_prism_performance_controller.inc"
+#include "test_prism_capture_workflow.inc"
+#include "test_mosaic_record_tile.inc"
+#include "test_mosaic_record_routes.inc"
+#include "test_mosaic_record_preview.inc"
 #include "test_fm_preview_controller.inc"
 static void test_canvas_feedback(SDL_Window *window)
 {
@@ -122,10 +126,10 @@ static void test_canvas_feedback(SDL_Window *window)
     seek.button.button=SDL_BUTTON_MIDDLE;seek.button.x=190;seek.button.y=110;
     mosaic_event(&seek,window,0,&audio,&ui,&instrument,&mosaic,&portal,&sister,&transform,48000);
     assert(fabs(scene->time-44.0/24)<1e-9 && ui.mosaic_selected==obstacle->id);
-    click(window,430,46,1);assert(ui.mosaic_follow);scene->playing=1;scene->time=20;
+    click(window,TS_MOSAIC_FOLLOW_X+20,46,1);assert(ui.mosaic_follow);scene->playing=1;scene->time=20;
     mosaic_poll(0,&ui,&instrument,&mosaic);assert(fabs(ui.mosaic_scroll-(20-220.0/24))<1e-9);
     scene->time=0;mosaic_poll(0,&ui,&instrument,&mosaic);assert(ui.mosaic_scroll==0);
-    click(window,430,46,1);scene->time=20;mosaic_poll(0,&ui,&instrument,&mosaic);assert(ui.mosaic_scroll==0);
+    click(window,TS_MOSAIC_FOLLOW_X+20,46,1);scene->time=20;mosaic_poll(0,&ui,&instrument,&mosaic);assert(ui.mosaic_scroll==0);
     scene->playing=0;
     /* Edited source appears immediately, while the shared original stays. */
     assert(mosaic_enter(0,&audio,&ui,&instrument,&mosaic,a->id));
@@ -416,6 +420,10 @@ int main(void)
     test_play_on_select(window);
     test_prism_controller();
     test_prism_performance_ui();
+    test_prism_capture_workflow();
+    test_mosaic_record_tile(window,device);
+    test_mosaic_record_routes(window,device);
+    test_mosaic_record_preview(device);
     ts_mosaic_volume_draw(ui.mosaic,0,.3f,1,.8f);
     test_record_file(window,580,389,0);
     test_record_file(window,240,45,0);

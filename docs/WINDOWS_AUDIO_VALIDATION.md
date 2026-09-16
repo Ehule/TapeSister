@@ -25,6 +25,24 @@ rates/buffers.
 
 ## Matrix
 
+- [ ] Prism: capture A/B, right-recall either, use New/Vary and user-preset arrows,
+  then recapture the amber endpoint. Its partner must remain unchanged. Compare
+  factory/user/varied endpoints, save/reload, and test Shift-recall of a saved pair.
+- [ ] Middle-click Prism CAP A and CAP B, including during a timed morph. Confirm
+  EMPTY states, canceled motion, unlocked sound editing, and successful fresh captures.
+- [ ] Mosaic REC DRY: record QWERTY/MIDI on main, FM, Sister, and preview keyboards.
+  Verify immediate stereo recording, retained silence between notes, and exclusion
+  of Prism/FX and Mosaic's backing track. Right-click to REC OUT and compare with
+  REC FILE's final stereo signal, including effects, limiter and OUT gain.
+- [ ] Bounce Mosaic playback via REC OUT; the new card must appear only after
+  recording stops, with original cards intact. Check its WAV archive and undo/redo.
+- [ ] Mosaic live recording feedback: confirm an immediate card placeholder,
+  growing waveform and timer, and flashing red STOP TILE with a readable label.
+  Check EXT armed/triggered states, long takes, silence, stereo, cancel/restart,
+  switching workspaces, and resizing/maximizing. FOLLOW must track the take with
+  playback stopped; disabling FOLLOW must leave the view under manual control.
+- [ ] REC EXT retains threshold/silence behavior and input channels/rate. Test cancel,
+  workspace navigation, shared input monitoring, scene replacement, and a full canvas.
 - [ ] TapeSister alone with backend WASAPI.
 - [ ] TapeSister alone with backend DirectSound.
 - [ ] TapeSister alone with backend Auto.

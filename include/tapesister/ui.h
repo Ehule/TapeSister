@@ -347,6 +347,15 @@ typedef struct {
     int suppress_until_quiet;
 } TsUiWheelGuard;
 
+/* UI-owned, bounded overview of an unfinished take; never a playable source. */
+#define TS_MOSAIC_RECORD_PEAKS 1024
+typedef struct {
+    uint64_t epoch;
+    double start, x;
+    size_t frames, frames_per_peak;
+    float peaks[TS_MOSAIC_RECORD_PEAKS];
+} TsMosaicRecordPreview;
+
 /* SDL motion events report a button mask, but that mask can outlive the
    window that received the corresponding button-down. Require an explicit
    local press before motion is allowed to edit a value. */
@@ -392,6 +401,7 @@ typedef struct {
     int sample_page_count;
     int monitor_enabled;
     TsRecordSource record_source;
+    TsRecordSource mosaic_record_source;
     int input_meter_active;
     int input_clipping;
     float input_level;
@@ -422,7 +432,8 @@ typedef struct {
     TsMosaic *mosaic;
     uint64_t mosaic_selected, mosaic_editing;
     uint64_t mosaic_selection[TS_MOSAIC_EVENTS];
-    int mosaic_open, mosaic_playing;
+    int mosaic_open, mosaic_playing, mosaic_recording;
+    TsMosaicRecordPreview mosaic_record_preview;
     int mosaic_edit_choice;
     int mosaic_follow, mosaic_box, mosaic_box_x, mosaic_box_y, mosaic_box_end_x, mosaic_box_end_y;
     int mosaic_ghost_count;
@@ -669,7 +680,11 @@ enum {
     TS_MOSAIC_ENV_X = 568, TS_MOSAIC_ENV_RIGHT = 630,
     TS_MOSAIC_ENV_TOP = 86, TS_MOSAIC_ENV_BOTTOM = 355,
     TS_MOSAIC_ENV_PAD = 3,
-    TS_MOSAIC_MIX_Y = 380, TS_MOSAIC_SPEED_X = 500, TS_MOSAIC_SPEED_W = 128
+    TS_MOSAIC_MIX_Y = 380, TS_MOSAIC_SPEED_X = 500, TS_MOSAIC_SPEED_W = 128,
+    TS_MOSAIC_REC_TILE_X = 322, TS_MOSAIC_REC_TILE_Y = 39, TS_MOSAIC_REC_TILE_W = 64,
+    TS_MOSAIC_FOLLOW_X = 446, TS_MOSAIC_FOLLOW_W = 52,
+    TS_MOSAIC_FIT_X = 504, TS_MOSAIC_FIT_W = 52,
+    TS_MOSAIC_ZOOM_OUT_X = 560, TS_MOSAIC_ZOOM_IN_X = 588, TS_MOSAIC_ZOOM_W = 24
 };
 double ts_ui_mosaic_volume_y(const TsUiState *ui, double time);
 double ts_ui_mosaic_volume_time(const TsUiState *ui, double y);

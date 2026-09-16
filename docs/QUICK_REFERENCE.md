@@ -55,6 +55,12 @@ does not switch the main bank. See the [Mosaic chapter](USER_MANUAL.md#mosaic).
 | Scroll time / sideways / zoom | Wheel / Shift+wheel / Ctrl+wheel |
 | Follow playhead / fit arrangement / repeat arrangement | FOLLOW / FIT ALL / REPEAT |
 | Record final stereo output | Header or footer REC FILE; Ctrl+Shift+F |
+| Record a dry keyboard performance to a card | REC DRY (default); click STOP TILE to keep |
+| Print Prism/effects or bounce Mosaic to a card | REC OUT; identical final signal to REC FILE |
+| Choose card recording source | Right-click while idle: REC DRY → REC OUT → REC EXT |
+| Watch a card recording | Growing live waveform and elapsed time; STOP TILE flashes red |
+| Follow the growing take, including with playback stopped | Enable FOLLOW |
+| Discard an active Mosaic take | Escape in the arrangement after finishing any active gesture |
 
 Each event owns its one-to-five-note chord and **EVENT LOOP / EVENT ONCE** setting.
 C5 plays twice as fast as C4; C3 takes twice as long. Extending a loop allows more
@@ -566,9 +572,12 @@ Ctrl+Z / Ctrl+Y undo/redo; Escape cancels the current stroke.
 
 ### Prism performance additions
 
-- **PRESETS**: Prism-only Save New; Shift-Save overwrites; arrows recall. New rolls
-  fresh; Vary develops; six lock buttons preserve groups.
-- **PERFORM**: CAP A/B stores endpoints; right-click recalls. A/B moves manually
+- **PRESETS**: Prism-only Save New; Shift-Save overwrites; arrows audition sounds
+  while retaining A/B. Shift-click an arrow/name restores the full saved setup.
+  New rolls fresh; Vary develops; six lock buttons preserve groups. A recalled
+  endpoint remains editable through New/Vary and browsing; click CAP to save it.
+- **PERFORM**: CAP A/B stores endpoints; right-click recalls; middle-click empties
+  either endpoint and stops the morph. Middle-click both for a fresh pair. A/B moves manually
   or by MIDI. TO A/B uses TIME; moving A/B takes over.
 - **SEQ EDIT + Ctrl-click strip**: append/remove ordered members. SEQ ON plays only
   those members in turn; nonmembers sustain. RESET restarts; CLEAR empties.

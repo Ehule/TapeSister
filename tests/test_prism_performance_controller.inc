@@ -158,7 +158,7 @@ static void test_prism_performance_ui(void)
     ts_sister_runtime_set_parameters(&a->sister,&s->model.parameters);
     assert(sister_prism_performance_click(0,a,s,450,290,0,KMOD_NONE));
     assert(memcmp(&saved,&a->sister.parameters.prism,sizeof(saved)));
-    assert(sister_prism_performance_click(0,a,s,100,290,0,KMOD_NONE));
+    assert(sister_prism_performance_click(0,a,s,100,290,0,KMOD_SHIFT));
     assert(!memcmp(&saved,&a->sister.parameters.prism,sizeof(saved)));
     assert(a->sister.parameters.head1_level==.37f && a->sister.parameters.fx.slot[0].mix==.123f);
     char bank_path[TS_RUNTIME_PATH_MAX];assert(prism_presets_file_path(bank_path,sizeof(bank_path)));remove(bank_path);

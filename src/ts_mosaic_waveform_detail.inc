@@ -171,6 +171,7 @@ static int mosaic_detail_cards(TsFramebuffer *fb,const TsUiState *ui,int any_sol
         const TsMosaicEvent *e=&ui->mosaic->events[i];if(!e->id)continue;
         mosaic_detail_card(d,ui,e,e->id==ui->mosaic_selected || e->id==ui->mosaic_selection[i],e->muted || (any_solo && !e->solo),0);
     }
+    mosaic_recording_card(fb,d,ui);
     d->valid=1;detail_capture_slot(fb,0);return 1;
 }
 static int mosaic_detail_screen_x(const TsUiWaveformDetail *d,int x)

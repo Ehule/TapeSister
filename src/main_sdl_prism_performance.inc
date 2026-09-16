@@ -34,6 +34,24 @@ static void sister_prism_preserve_parameter_locks(const SisterWindow *s,const Ts
     KEEP(SEQ_RATE,seq_rate);KEEP(TIME,morph_seconds);
 #undef KEEP
 }
+static int sister_prism_clear_capture(SDL_AudioDeviceID device,AudioState *audio,SisterWindow *s,int x,int y)
+{
+    if(s->model.prism_panel!=1 || y<280 || y>=302)return 0;
+    int endpoint=x>=16 && x<82 ? 0 : x>=88 && x<154 ? 1 : -1;
+    if(endpoint<0)return 0;
+    TsPrismControls c=s->model.parameters.prism;
+    /* A running morph needs two endpoints. Audition the surviving endpoint
+       before removing its partner, then leave normal sound editing available. */
+    if(c.morph_enabled && (c.captured&(1<<(1-endpoint))))ts_prism_recall(&c,1-endpoint);
+    c.morph_enabled=0;c.morph_trigger=0;
+    c.captured&=~(1<<endpoint);
+    memset(endpoint ? &c.b : &c.a,0,sizeof(TsPrismPatch));
+    if(!c.captured)c.morph=0;
+    if(s->model.prism_edit_endpoint==endpoint+1)s->model.prism_edit_endpoint=0;
+    sister_prism_publish(device,audio,s,&c);
+    snprintf(s->model.status,sizeof(s->model.status),"CAP %c EMPTIED / MIDDLE-CLICK THE OTHER CAP TO CLEAR BOTH",'A'+endpoint);
+    return 1;
+}
 static int sister_prism_performance_click(SDL_AudioDeviceID device,AudioState *audio,SisterWindow *s,int x,int y,int right,SDL_Keymod mod)
 {
     if(y>=250 && y<272) {
@@ -83,7 +101,6 @@ static int sister_prism_performance_click(SDL_AudioDeviceID device,AudioState *a
                 static uint32_t serial=0;
                 uint32_t seed=(uint32_t)SDL_GetPerformanceCounter() ^ (++serial*747796405u);
                 int vary=x>=516;TsPrismControls old=c;ts_prism_generate(&c,seed,vary);
-                s->model.prism_edit_endpoint=0;
                 sister_prism_preserve_parameter_locks(s,&old,&c);
                 snprintf(s->model.status,sizeof(s->model.status),"PRISM %s / LOCKED GROUPS PRESERVED",vary?"VARIED":"NEW");
             } else if(x>=314 && x<404) {
@@ -109,9 +126,17 @@ static int sister_prism_performance_click(SDL_AudioDeviceID device,AudioState *a
                     if(x<46)index=(index+(int)s->prism_presets.count-1)%(int)s->prism_presets.count;
                     else if(x>=276)index=(index+1)%(int)s->prism_presets.count;
                     else if(x<52 || x>=270)return 0;
+                    TsPrismControls old=c;
                     s->model.prism_preset_index=index;c=s->prism_presets.entries[index].controls;sister_prism_bank_sync(s);
-                    s->model.prism_edit_endpoint=0;
-                    snprintf(s->model.status,sizeof(s->model.status),"PRISM RECALLED: %.31s",s->model.prism_preset_name);
+                    if(mod&KMOD_SHIFT)s->model.prism_edit_endpoint=0;
+                    else {
+                        /* Browsing is an audition: endpoints belong to the
+                           current performance, not to the next preset. */
+                        c.a=old.a;c.b=old.b;c.captured=old.captured;
+                        c.morph_enabled=0;c.morph_trigger=0;c.morph=old.morph;
+                        c.morph_seconds=old.morph_seconds;c.locks=old.locks;
+                    }
+                    snprintf(s->model.status,sizeof(s->model.status),"PRISM %s: %.31s",(mod&KMOD_SHIFT)?"FULL SETUP RECALLED":"SOUND / A+B RETAINED",s->model.prism_preset_name);
                 } else return 1;
             } else return 0;
         } else return 0;
