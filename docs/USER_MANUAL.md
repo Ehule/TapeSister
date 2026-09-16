@@ -805,7 +805,9 @@ threshold/silence detection. The source appears below PLAY. Each completed take
 becomes a one-shot card at the starting playhead position, with an archived WAV in
 `Captures/`. Choose REC OUT to print Prism or bounce Mosaic's own playback into a
 new card; the destination card is added only after recording ends. Existing cards
-and the sample bank remain intact. See [Mosaic recording](MOSAIC.md#recording-and-projects).
+remain intact. Each finished take also appears on a normal Sample page for
+waveform editing and WAV export; the status gives its page/tile number and a new
+page is added when existing pages are full. See [Mosaic recording](MOSAIC.md#recording-and-projects).
 
 SAVE preserves the events, notes, source regions, loop modes, positions, durations,
 mute/solo states, level/pan/fades, global speed, repeat setting, and shared source versions in the project folder.
@@ -842,9 +844,9 @@ different purposes.
 | Main **OVERDUB** | final performance layered onto a tile | existing tile | `CAPTURE_` |
 | REC BANK **SRC EXT** | configured physical input | REC tile | `INPUT_` |
 | REC BANK **SRC SYNTH** | internal live FM voices only | REC tile | `SYNTH_` |
-| Mosaic **REC DRY** | live keyboard instrument before Prism/FX | Mosaic card | `CAPTURE_` |
-| Mosaic **REC OUT** | final audible stereo output, including Mosaic/Prism/FX | Mosaic card | `OUTPUT_` |
-| Mosaic **REC EXT** | configured external recording input | Mosaic card | `INPUT_` |
+| Mosaic **REC DRY** | live keyboard instrument before Prism/FX | Mosaic card + Sample tile | `CAPTURE_` |
+| Mosaic **REC OUT** | final audible stereo output, including Mosaic/Prism/FX | Mosaic card + Sample tile | `OUTPUT_` |
+| Mosaic **REC EXT** | configured external recording input | Mosaic card + Sample tile | `INPUT_` |
 | Sister **CAPTURE/OVERDUB** | selected H1/H2/H3/MIX tap | current or next tile | `CAPTURE_` |
 | Sister destination **FILE** | selected tap or final OUT | long WAV/RF64 file | `SISTER-` |
 
@@ -1026,14 +1028,19 @@ optical meanings, gain and latency behavior, measured CPU costs and test results
 Prism now has **SOUND**, **PERFORM**, and **PRESETS** control pages below its live
 lens diagram. The Prism-only bank saves refraction settings independently of the
 bottom-row full Sister presets. **NEW** rolls a fresh setup, **VARY** develops it,
-and six lock groups protect chosen settings. Capture **A/B**, then use the morph
-fader, MIDI, or a timed **TO A / TO B** move. Right-click a capture button to recall
-it for editing. New/Vary and ordinary user-preset browsing preserve both captures
-and keep the recalled endpoint selected for editing. Return to PERFORM and
-left-click its CAP button to store a variation or a different preset there.
-Middle-click CAP A/B to empty either endpoint; clear both to start a fresh pair.
-Shift-click a user-preset arrow or name restores the complete saved Prism setup,
-including its captures. See [Prism performance](PRISM.md#presets-and-performance).
+and six lock groups protect chosen settings. Capture **A/B** to start, then use
+**twelve saved states A–L**: hover either CAP or TO button and wheel through the
+letters silently. Click an empty CAP to save the live sound. Browse a saved letter
+on the silent end and click to confirm and morph over TIME. The manual/MIDI fader
+and TO buttons follow the selected pair; moving the fader takes over a timed move.
+
+Right-click CAP to recall its displayed letter for editing, then left-click it to
+save changes. New/Vary and ordinary user-preset browsing preserve all twelve
+memories. Middle-click CAP clears only that letter and unlocks editing, including
+when it was a pending wheel choice. Right-clicking an empty CAP also unlocks it
+for editing; no preset recall is needed. Shift-click a user-preset arrow/name restores the full saved bank
+and selected pair. Projects and full Sister presets also retain the bank; old
+A/B files remain loadable. See [Prism performance](PRISM.md#presets-and-performance).
 
 On PERFORM, enable sequence **EDIT** and Ctrl-click the numbered strip in order.
 Only those lenses sequence; the others sustain. Count changes retain hidden
@@ -1043,12 +1050,12 @@ semitone, and Ctrl+Shift-Up/Down for an octave. Left/Right moves audible pan by
 including through narrowing/inverting glass. Drift has a Rate control, and Group Oct transposes
 the whole wet group. Mouse dragging optionally snaps to musical intervals.
 
-CAP A/B shows gray **EMPTY**, green **READY**, blue **EDIT**, or amber **CHANGED**
-for changes not yet captured. The purple **A/B MORPH - SOUND LOCKED** status makes
+CAP shows gray **EMPTY**, green **READY**, blue **EDIT**, or amber **CHANGED**
+for changes not yet captured. Amber **CHOOSE** marks a pending wheel choice. The purple **C/L MORPH - SOUND LOCKED** status (using the selected letters) makes
 the active morph lock explicit; right-click CAP recalls an endpoint for editing.
 Hover controls for blue, two-line help above the bottom row. Compact **SUSTAIN**
 and **REC FILE** buttons sit together beside the gain-reduction readout. Sequencer
-RESET/CLEAR preserve A/B; bottom-row CAPTURE records audio from a Sister tap.
+RESET/CLEAR preserve A–L; bottom-row CAPTURE records audio from a Sister tap.
 
 Two small particle manifestations of **the same Zoya** appear near SOURCE and OUT.
 Their volume comes from varying particle density, with diffuse edges and no traced contours.
@@ -1059,7 +1066,7 @@ is the default; use `prism_zoya_pose=standing` for the reaching pose, or
 `prism_zoya_pose=off` to hide Zoya and the activation animation. Prism optics and
 audio remain active when Zoya is off. Edit while
 TapeSister is closed, then restart. The preference is retained by INI saves and
-is independent of projects, sound presets and A/B states.
+is independent of projects, sound presets and A–L states.
 Turning **PRISM ON** while visible plays a brief materialize/refract/reconstruct
 introduction, then settles. Spread/Drift disperse the output figure; Focus gathers
 it; Body, Color and wet/dry affect density, color and prominence. Returning from

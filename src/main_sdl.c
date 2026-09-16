@@ -8528,7 +8528,7 @@ static void sister_set_parameter(TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_PRISM_OCTAVE: parameters->prism.group_octave=(int)lrintf(amount*6)-3;break;
     case TS_SISTER_UI_PARAM_PRISM_MORPH:
         parameters->prism.morph=amount;parameters->prism.morph_trigger=0;
-        parameters->prism.morph_enabled=parameters->prism.captured==3;break;
+        parameters->prism.morph_enabled=ts_prism_pair_ready(&parameters->prism);break;
     case TS_SISTER_UI_PARAM_PRISM_TIME: parameters->prism.morph_seconds=.05f*powf(2400,amount);break;
     case TS_SISTER_UI_PARAM_PRISM_SEQ_RATE: parameters->prism.seq_rate=.05f*powf(640,amount);break;
     case TS_SISTER_UI_PARAM_PRISM_OUTPUT: parameters->prism.output_db = -12 + amount * 24; break;
@@ -9160,6 +9160,12 @@ static int sister_prism_event(SDL_AudioDeviceID device, AudioState *audio,
         snprintf(sister->model.status, sizeof(sister->model.status), "LENS DRAG CANCELLED");
         return 1;
     }
+    if(event->type==SDL_KEYDOWN && event->key.keysym.sym==SDLK_ESCAPE &&
+       (sister->model.prism_browse[0] || sister->model.prism_browse[1])) {
+        memset(sister->model.prism_browse,0,sizeof(sister->model.prism_browse));
+        snprintf(sister->model.status,sizeof(sister->model.status),"STATE CHOICE CANCELLED / SOUND UNCHANGED");
+        sister->rendered_model_valid=0;return 1;
+    }
     if (event->type == SDL_MOUSEBUTTONUP && event->button.button == SDL_BUTTON_LEFT &&
         sister->prism_drag_lens) {
         sister_prism_end_drag(sister);
@@ -9173,7 +9179,7 @@ static int sister_prism_event(SDL_AudioDeviceID device, AudioState *audio,
             if((mod&(KMOD_ALT|KMOD_GUI)) || (control && !shift))return 0;
             if(lens>=sister->model.parameters.prism.lenses)return 0;
             if(sister->model.parameters.prism.morph_enabled) {
-                snprintf(sister->model.status,sizeof(sister->model.status),"MORPH LOCKED: RIGHT-CLICK CAP A/B TO EDIT");return 1;
+                snprintf(sister->model.status,sizeof(sister->model.status),"MORPH LOCKED: RIGHT-CLICK CAP TO EDIT");return 1;
             }
             if(control && shift && (key==SDLK_UP || key==SDLK_DOWN))
                 sister_prism_edit(device,audio,sister,lens,PRISM_OCTAVE,key==SDLK_UP?1:-1,0);
@@ -9206,9 +9212,15 @@ static int sister_prism_event(SDL_AudioDeviceID device, AudioState *audio,
         SDL_GetMouseState(&raw_x,&raw_y);
 #endif
         if (!sister_event_mouse(sister->window,raw_x,raw_y,&x,&y)) return 0;
+        int wheel=event->wheel.direction==SDL_MOUSEWHEEL_FLIPPED ? -event->wheel.y : event->wheel.y;
+        int endpoint=sister->model.prism_panel==1?sister_prism_endpoint_at(x,y):-1;
+        if(endpoint>=0) {
+            if(wheel && ts_ui_wheel_guard_accept(&ui->wheel_guard,WHEEL_TARGET_SISTER+0x240+endpoint,SDL_GetTicks()))
+                sister_prism_browse_state(sister,endpoint,wheel);
+            return 1;
+        }
         int lens=ts_sister_ui_prism_hit(&sister->model,x,y);
         if (lens<0) return 0;
-        int wheel=event->wheel.direction==SDL_MOUSEWHEEL_FLIPPED ? -event->wheel.y : event->wheel.y;
         if (wheel && ts_ui_wheel_guard_accept(&ui->wheel_guard,
                 WHEEL_TARGET_SISTER+0x200+lens,SDL_GetTicks())) {
             float step=(SDL_GetModState() & KMOD_SHIFT) ? .1f : 1;
@@ -10194,7 +10206,10 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
     case TS_SISTER_UI_ACTION_PRISM_MODE:
         if (hit.action == TS_SISTER_UI_ACTION_PRISM_TOGGLE)
             sister->model.parameters.prism.enabled = !sister->model.parameters.prism.enabled;
-        else if(!sister->model.parameters.prism.morph_enabled)
+        else if(sister->model.parameters.prism.morph_enabled) {
+            snprintf(sister->model.status,sizeof(sister->model.status),"MORPH LOCKED / RIGHT-CLICK CAP TO EDIT");
+            break;
+        } else
             sister->model.parameters.prism.mode = (sister->model.parameters.prism.mode + 1) % TS_PRISM_MODE_COUNT;
         ts_sister_runtime_set_parameters(&audio->sister, &sister->model.parameters);
         ts_sister_runtime_mark_selected_preset_modified(&audio->sister);
@@ -11791,7 +11806,7 @@ static void finalize_external_recording(SDL_AudioDeviceID output_device,
                                         AudioState *audio,
                                         ExternalInputState *input,
                                         TsUiState *ui,
-                                        TsInstrument *instrument)
+                                        TsInstrument *instrument,TsSamplePages *pages)
 {
     char error[160];
     char archive_error[160];
@@ -11849,9 +11864,10 @@ static void finalize_external_recording(SDL_AudioDeviceID output_device,
         archive_path, sizeof(archive_path),
         archive_error, sizeof(archive_error));
     int mosaic_target = input->mosaic_recording;
+    int bank_page=-1,bank_slot=-1;
     chain = !mosaic_target && instrument->family_trajectory;
-    ok = mosaic_target ? install_mosaic_take(output_device,ui,input,
-                               captured,frames,sample_rate,channels,error,sizeof(error)) :
+    ok = mosaic_target ? install_mosaic_take(output_device,ui,instrument,pages,input,
+                               captured,frames,sample_rate,channels,&bank_page,&bank_slot,error,sizeof(error)) :
          install_external_take(output_device, audio, ui, instrument, slot,
                                captured, frames, sample_rate, channels,
                                error, sizeof(error));
@@ -11883,8 +11899,9 @@ static void finalize_external_recording(SDL_AudioDeviceID output_device,
     if (mosaic_target) {
         sync_external_capture_ui(output_device, *input_device, input, ui);
         snprintf(ui->status,sizeof(ui->status),archived ?
-            "MOSAIC TILE KEPT + ARCHIVED / %zu FRAMES AT %u HZ" :
-            "MOSAIC TILE KEPT / ARCHIVE FAILED / %zu FRAMES AT %u HZ",frames,sample_rate);
+            "MOSAIC KEPT + ARCHIVED / SAMPLE PAGE %02d TILE %02d / %zu FRAMES" :
+            "MOSAIC KEPT / ARCHIVE FAILED / SAMPLE PAGE %02d TILE %02d / %zu FRAMES",
+            bank_page+1,bank_slot+1,frames);
     } else if (chain) {
         int next = ts_external_next_chain_slot(slot);
         if (next >= 0 && !instrument->bank[next].occupied) {
@@ -16623,7 +16640,7 @@ int main(int argc, char **argv)
             (!external_input.mosaic_recording ||
              (!mosaic.drag && !mosaic.mix_drag && !mosaic.volume_drag)))
             finalize_external_recording(device, &input_device, &audio,
-                                        &external_input, &ui, &instrument);
+                                        &external_input, &ui, &instrument, &sample_pages);
         if (audio.capture.state == TS_CAPTURE_COMPLETED)
             finalize_capture(device, &audio, &ui, &instrument);
         if (audio.sister.capture.state == TS_CAPTURE_COMPLETED) {

@@ -139,21 +139,21 @@ static TsInstrument *mosaic_stage_bank_tile(const TsInstrument *doc,char *error,
     slot->edit.tuning=slot->edit.audible_tuning=doc->tuning;slot->edit.loop_crossfade_ms=doc->loop_crossfade_ms;
     return staged;
 }
-static TsBankSlot *mosaic_bank_destination(MosaicController *c,TsInstrument *bank,int *page,int *slot,int *fresh_bank,char *error,size_t size)
+static TsBankSlot *mosaic_bank_destination(TsSamplePages *pages,TsInstrument *bank,int *page,int *slot,int *fresh_bank,char *error,size_t size)
 {
     *fresh_bank=0;
-    int banks=c->pages?(int)ts_sample_pages_count(c->pages):1;
+    int banks=pages?(int)ts_sample_pages_count(pages):1;
     for(int p=0;p<banks;++p) {
-        TsInstrument *b=c->pages?ts_sample_pages_page_mut(c->pages,bank,(size_t)p):bank;
+        TsInstrument *b=pages?ts_sample_pages_page_mut(pages,bank,(size_t)p):bank;
         if(!b)continue;
         for(int n=0;n<TS_BANK_SLOT_COUNT;++n)if(n!=b->selected_slot && !b->bank[n].occupied && !b->bank[n].locked) {
             *page=p;*slot=n;return &b->bank[n];
         }
     }
-    if(c->pages && ts_sample_pages_append(c->pages,error,size)) {
-        *fresh_bank=1;*page=banks;*slot=0;return &c->pages->pages[banks]->bank[0];
+    if(pages && ts_sample_pages_append(pages,error,size)) {
+        *fresh_bank=1;*page=banks;*slot=0;return &pages->pages[banks]->bank[0];
     }
-    snprintf(error,size,"No free Sample tile; make room before accepting this edit");return NULL;
+    snprintf(error,size,"No free Sample tile; make room before keeping this sound");return NULL;
 }
 static void mosaic_reveal_event(TsUiState *ui,const TsMosaicEvent *e)
 {
@@ -282,7 +282,7 @@ static int mosaic_resolve_edit(SDL_AudioDeviceID device,AudioState *audio,TsUiSt
     }
     int new_source=choice!=3 || !updates;
     TsInstrument *staged=new_source?mosaic_stage_bank_tile(instrument,error,sizeof(error)):NULL;
-    TsBankSlot *destination=staged?mosaic_bank_destination(c,c->bank,&bank_page,&bank_slot,&fresh_bank,error,sizeof(error)):NULL;
+    TsBankSlot *destination=staged?mosaic_bank_destination(c->pages,c->bank,&bank_page,&bank_slot,&fresh_bank,error,sizeof(error)):NULL;
     if(new_source && !destination) {
         if(staged){ts_instrument_free(staged);free(staged);}
         if(original_doc){ts_instrument_free(original_doc);free(original_doc);}

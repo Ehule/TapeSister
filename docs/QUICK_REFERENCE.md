@@ -57,6 +57,7 @@ does not switch the main bank. See the [Mosaic chapter](USER_MANUAL.md#mosaic).
 | Record final stereo output | Header or footer REC FILE; Ctrl+Shift+F |
 | Record a dry keyboard performance to a card | REC DRY (default); click STOP TILE to keep |
 | Print Prism/effects or bounce Mosaic to a card | REC OUT; identical final signal to REC FILE |
+| Edit/export a finished recording | Select its new main-UI Sample tile; status gives page/tile |
 | Choose card recording source | Right-click while idle: REC DRY → REC OUT → REC EXT |
 | Watch a card recording | Growing live waveform and elapsed time; STOP TILE flashes red |
 | Follow the growing take, including with playback stopped | Enable FOLLOW |
@@ -573,23 +574,26 @@ Ctrl+Z / Ctrl+Y undo/redo; Escape cancels the current stroke.
 ### Prism performance additions
 
 - **PRESETS**: Prism-only Save New; Shift-Save overwrites; arrows audition sounds
-  while retaining A/B. Shift-click an arrow/name restores the full saved setup.
+  while retaining A–L. Shift-click an arrow/name restores the full saved setup.
   New rolls fresh; Vary develops; six lock buttons preserve groups. A recalled
   endpoint remains editable through New/Vary and browsing; click CAP to save it.
-- **PERFORM**: CAP A/B stores endpoints; right-click recalls; middle-click empties
-  either endpoint and stops the morph. Middle-click both for a fresh pair. A/B moves manually
-  or by MIDI. TO A/B uses TIME; moving A/B takes over.
+- **PERFORM A–L**: hover CAP or TO and wheel to browse silently. Click an empty
+  CAP to capture; click a pending saved letter on the silent end to confirm/morph.
+  Escape cancels the choice. Right-click CAP recalls for editing; left-click that
+  CAP saves the edits. Middle-click clears its letter and unlocks editing, retaining
+  all others. Right-click an empty CAP to edit it without recalling a preset.
+  The fader/MIDI controls the selected pair; TO uses TIME; the fader takes over.
 - **SEQ EDIT + Ctrl-click strip**: append/remove ordered members. SEQ ON plays only
   those members in turn; nonmembers sustain. RESET restarts; CLEAR empties.
 - **Up/Down**: ±1 cent; **Shift-Up/Down**: ±1 semitone; **Ctrl+Shift-Up/Down**: ±1 octave.
 - **Left/Right**: ±0.01 audible pan; **Shift-Left/Right**: ±0.10;
   **Ctrl+Shift-Left/Right**: hard left/right, including through narrowing glass.
   **GROUP OCT**: whole wet group ±3 octaves. **RATE**: 0.005–40 Hz drift control.
-- **CAP A/B colors**: gray EMPTY, green READY, blue EDIT, amber CHANGED (uncaptured edits).
-  Purple **A/B MORPH - SOUND LOCKED** marks performance; right-click CAP to edit.
+- **CAP colors**: gray EMPTY, green READY, blue EDIT, amber CHANGED (uncaptured edits).
+  Amber **CHOOSE** awaits confirmation. Purple **C/L MORPH - SOUND LOCKED** marks performance; right-click CAP to edit.
 - **Hover help**: blue text above the bottom capture row explains each control.
   Compact **SUSTAIN** and **REC FILE** sit beside the GR readout; RESET/CLEAR on
-  PERFORM affect the sequencer, preserving A/B.
+  PERFORM affect the sequencer, preserving A–L.
 - **SNAP**: Free / Semitone / 50 Cent / 31-TET for mouse dragging.
 - **Zoya at SOURCE/OUT**: the same particle figure before/after refraction.
   Default meditation: seated with hands on knees at SOURCE, suspended at OUT.

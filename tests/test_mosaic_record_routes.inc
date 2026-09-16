@@ -111,10 +111,15 @@ static void test_mosaic_record_routes(SDL_Window *window,SDL_AudioDeviceID devic
     assert(input->recorder.recorded_frames==blocks*256 && a->mosaic->next_id==next);
     char folder[160],error[160];snprintf(folder,sizeof(folder),"mosaic-output-%lu",(unsigned long)SDL_GetTicks());
     SDL_setenv("TAPESISTER_CAPTURES",folder,1);
-    finalize_external_recording(device,&input_device,a,input,u,&instrument);
+    uint64_t current_hash=ts_sample_hash(&instrument.current);int current_slot=instrument.selected_slot;
+    finalize_external_recording(device,&input_device,a,input,u,&instrument,NULL);
     TsMosaicEvent *take=ts_mosaic_find(a->mosaic,u->mosaic_selected);assert(take && take->id==next);
     assert(take->source->sample.frames==blocks*256 && take->source->sample.channels==2 && !take->looping);
     assert(!memcmp(take->source->sample.data,expected,sizeof(expected)));
+    int published=0;
+    for(int i=0;i<TS_BANK_SLOT_COUNT;++i)if(instrument.bank[i].occupied &&
+        ts_sample_hash(&instrument.bank[i].sample)==take->source->hash)++published;
+    assert(published==1 && instrument.selected_slot==current_slot && ts_sample_hash(&instrument.current)==current_hash);
     assert(a->mosaic->playing && !u->mosaic_recording);
     TsBrowser *files=calloc(1,sizeof(*files));assert(files);ts_browser_init(files);
     files->mode=TS_BROWSER_LOAD_WAV;snprintf(files->directory,sizeof(files->directory),"%s",folder);

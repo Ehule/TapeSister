@@ -30,6 +30,21 @@ rates/buffers.
   factory/user/varied endpoints, save/reload, and test Shift-recall of a saved pair.
 - [ ] Middle-click Prism CAP A and CAP B, including during a timed morph. Confirm
   EMPTY states, canceled motion, unlocked sound editing, and successful fresh captures.
+- [ ] Prism A–L: capture twelve distinct sounds. Wheel over CAP/TO to preview
+  letters without changing audio, confirm the silent end, and traverse the bank.
+  Try confirming a different pair mid-morph: the choice waits without a jump.
+  Right-recall C, Vary, recapture it, then clear it; the other eleven stay intact.
+  Save/reload Prism/full Sister presets and a project; selected pair and all states
+  survive. Load an older A/B preset. Check MIDI pickup on a C/L timed morph.
+- [ ] During a G/D morph, wheel either CAP to C and middle-click. C must show
+  EMPTY without CHOOSE, sound editing must unlock, and the top factory-mode
+  selector must work immediately. Repeat at 0%, 100% and midway, with C already
+  empty or saved; repeat using right-click on empty C. Recapture and confirm the
+  other eleven states are unchanged.
+- [ ] Finish a Mosaic take: select its advertised main-UI Sample page/tile,
+  edit the waveform and export WAV. Repeat with a full bank and an open card
+  editor; a new page appears without replacing the editor. Save/reload the
+  project and verify both card and Sample tile.
 - [ ] Mosaic REC DRY: record QWERTY/MIDI on main, FM, Sister, and preview keyboards.
   Verify immediate stereo recording, retained silence between notes, and exclusion
   of Prism/FX and Mosaic's backing track. Right-click to REC OUT and compare with

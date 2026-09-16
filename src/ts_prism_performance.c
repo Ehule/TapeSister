@@ -8,17 +8,40 @@
 _Static_assert(sizeof(float)==4 && sizeof(int)==4,"Prism state uses 32-bit values");
 _Static_assert(offsetof(TsPrismControls,a)==sizeof(TsPrismPatch),"Prism patch prefix must match");
 
+TsPrismPatch *ts_prism_state(TsPrismControls *c,int state)
+{
+    if(!c || state<0 || state>=TS_PRISM_STATES)return NULL;
+    return state==0?&c->a:state==1?&c->b:&c->extra[state-2];
+}
+const TsPrismPatch *ts_prism_state_const(const TsPrismControls *c,int state)
+{
+    if(!c || state<0 || state>=TS_PRISM_STATES)return NULL;
+    return state==0?&c->a:state==1?&c->b:&c->extra[state-2];
+}
+int ts_prism_pair_ready(const TsPrismControls *c)
+{
+    if(!c || !ts_prism_state_const(c,c->endpoint[0]) || !ts_prism_state_const(c,c->endpoint[1]))return 0;
+    unsigned mask=(1u<<c->endpoint[0])|(1u<<c->endpoint[1]);
+    return c->endpoint[0]!=c->endpoint[1] && (c->captured&mask)==mask;
+}
+void ts_prism_copy_bank(TsPrismControls *to,const TsPrismControls *from)
+{
+    to->a=from->a;to->b=from->b;memcpy(to->extra,from->extra,sizeof(to->extra));
+    to->captured=from->captured;memcpy(to->endpoint,from->endpoint,sizeof(to->endpoint));
+}
+
 void ts_prism_capture(TsPrismControls *c,int endpoint)
 {
-    if(!c || endpoint<0 || endpoint>1)return;
-    memcpy(endpoint?&c->b:&c->a,c,sizeof(TsPrismPatch));
+    TsPrismPatch *patch=ts_prism_state(c,endpoint);if(!patch)return;
+    memcpy(patch,c,sizeof(TsPrismPatch));
     c->captured|=1<<endpoint;
 }
 void ts_prism_recall(TsPrismControls *c,int endpoint)
 {
-    if(!c || endpoint<0 || endpoint>1 || !(c->captured&(1<<endpoint)))return;
-    memcpy(c,endpoint?&c->b:&c->a,sizeof(TsPrismPatch));
-    c->morph_enabled=0;c->morph_trigger=0;c->morph=(float)endpoint;
+    const TsPrismPatch *patch=ts_prism_state_const(c,endpoint);
+    if(!patch || !(c->captured&(1<<endpoint)))return;
+    memcpy(c,patch,sizeof(TsPrismPatch));
+    c->morph_enabled=0;c->morph_trigger=0;c->morph=(float)(endpoint==c->endpoint[1]);
 }
 void ts_prism_sequence_toggle(TsPrismControls *c,int lens)
 {
@@ -100,7 +123,7 @@ void ts_prism_generate(TsPrismControls *c,uint32_t seed,int vary)
         memcpy(n.sequence,old.sequence,sizeof(n.sequence));n.seq_reset=old.seq_reset;
     }
     /* Captured endpoints are performance memories, never overwritten by dice. */
-    n.a=old.a;n.b=old.b;n.captured=old.captured;n.morph_seconds=old.morph_seconds;
+    ts_prism_copy_bank(&n,&old);n.morph=old.morph;n.morph_seconds=old.morph_seconds;
     ts_prism_controls_sanitize(&n);*c=n;
 }
 
@@ -120,11 +143,11 @@ static const Field performance_fields[]={I(captured),I(morph_enabled),F(morph),F
 #undef F
 #undef I
 #undef U
-static void write_fields(FILE *f,const char *prefix,const void *data,const Field *fields,size_t count)
+static void write_fields(FILE *f,const char *version,const char *prefix,const void *data,const Field *fields,size_t count)
 {
     for(size_t i=0;i<count;++i)for(int j=0;j<fields[i].count;++j) {
         const unsigned char *ptr=(const unsigned char *)data+fields[i].offset+j*4;
-        fprintf(f,"P2.%s.%s.%d=",prefix,fields[i].name,j);
+        fprintf(f,"%s.%s.%s.%d=",version,prefix,fields[i].name,j);
         if(fields[i].integer==1) { int x;memcpy(&x,ptr,4);fprintf(f,"%d\n",x); }
         else if(fields[i].integer==2) { uint32_t x;memcpy(&x,ptr,4);fprintf(f,"%u\n",x); }
         else { float x;memcpy(&x,ptr,4);fprintf(f,"%.9g\n",(double)x); }
@@ -132,27 +155,36 @@ static void write_fields(FILE *f,const char *prefix,const void *data,const Field
 }
 void ts_prism_write(FILE *f,const TsPrismControls *c)
 {
-    write_fields(f,"main",c,patch_fields,sizeof(patch_fields)/sizeof(*patch_fields));
+    write_fields(f,"P2","main",c,patch_fields,sizeof(patch_fields)/sizeof(*patch_fields));
     ts_prism_write_extensions(f,c);
 }
 void ts_prism_write_extensions(FILE *f,const TsPrismControls *c)
 {
     size_t first=0,count=sizeof(patch_fields)/sizeof(*patch_fields);
     while(first<count && strcmp(patch_fields[first].name,"drift_rate"))++first;
-    write_fields(f,"main",c,patch_fields+first,count-first);
-    write_fields(f,"A",&c->a,patch_fields,sizeof(patch_fields)/sizeof(*patch_fields));
-    write_fields(f,"B",&c->b,patch_fields,sizeof(patch_fields)/sizeof(*patch_fields));
-    write_fields(f,"perf",c,performance_fields,sizeof(performance_fields)/sizeof(*performance_fields));
+    write_fields(f,"P2","main",c,patch_fields+first,count-first);
+    write_fields(f,"P2","A",&c->a,patch_fields,sizeof(patch_fields)/sizeof(*patch_fields));
+    write_fields(f,"P2","B",&c->b,patch_fields,sizeof(patch_fields)/sizeof(*patch_fields));
+    write_fields(f,"P2","perf",c,performance_fields,sizeof(performance_fields)/sizeof(*performance_fields));
+    for(int state=2;state<TS_PRISM_STATES;++state) {
+        char group[2]={(char)('A'+state),0};
+        write_fields(f,"P3",group,ts_prism_state_const(c,state),patch_fields,count);
+    }
+    fprintf(f,"P3.bank.endpoint.0=%d\nP3.bank.endpoint.1=%d\n",c->endpoint[0],c->endpoint[1]);
 }
 int ts_prism_read_field(TsPrismControls *c,const char *key,const char *value)
 {
-    if(strncmp(key,"P2.",3))return 0;
+    if(strncmp(key,"P2.",3) && strncmp(key,"P3.",3))return 0;
     const Field *fields=patch_fields;size_t count=sizeof(patch_fields)/sizeof(*fields);
     char group[8],name[48],tail;int index;
-    if(sscanf(key,"P2.%7[^.].%47[^.].%d%c",group,name,&index,&tail)!=3)return -1;
+    if(sscanf(key+3,"%7[^.].%47[^.].%d%c",group,name,&index,&tail)!=3)return -1;
     void *data=c;
-    if(!strcmp(group,"A"))data=&c->a;
-    else if(!strcmp(group,"B"))data=&c->b;
+    if(strlen(group)==1 && group[0]>='A' && group[0]<'A'+TS_PRISM_STATES)
+        data=ts_prism_state(c,group[0]-'A');
+    else if(!strcmp(group,"bank")) {
+        static const Field bank_fields[]={{"endpoint",offsetof(TsPrismControls,endpoint),2,1}};
+        fields=bank_fields;count=1;
+    }
     else if(!strcmp(group,"perf")) { fields=performance_fields;count=sizeof(performance_fields)/sizeof(*fields); }
     else if(strcmp(group,"main"))return -1;
     for(size_t i=0;i<count;++i)if(!strcmp(name,fields[i].name)) {
@@ -175,7 +207,7 @@ int ts_prism_bank_save(const TsPrismBank *bank,const char *path,char *error,size
     char temp[4096];FILE *f=NULL;int ok=0;
     if(bank && bank->count<=TS_PRISM_PRESETS && snprintf(temp,sizeof(temp),"%s.tmp",path)>0 && strlen(path)+4<sizeof(temp))f=fopen(temp,"wb");
     if(f) {
-        fputs("TapeSister Prism Presets 1\n",f);
+        fputs("TapeSister Prism Presets 2\n",f);
         for(unsigned i=0;i<bank->count;++i) {
             fprintf(f,"Preset=%u\nName=%.31s\n",i,bank->entries[i].name);
             ts_prism_write(f,&bank->entries[i].controls);
@@ -204,7 +236,8 @@ int ts_prism_bank_load(TsPrismBank *bank,const char *path,char *error,size_t siz
 {
     FILE *f=fopen(path,"rb");
     if(!f) { if(errno==ENOENT)return 1; if(error && size)snprintf(error,size,"Could not open Prism presets");return 0; }
-    TsPrismBank *next=calloc(1,sizeof(*next));char line[256];int ok=next && fgets(line,sizeof(line),f) && !strcmp(line,"TapeSister Prism Presets 1\n");
+    TsPrismBank *next=calloc(1,sizeof(*next));char line[256];int ok=next && fgets(line,sizeof(line),f) &&
+        (!strcmp(line,"TapeSister Prism Presets 1\n") || !strcmp(line,"TapeSister Prism Presets 2\n"));
     int slot=-1;
     while(ok && fgets(line,sizeof(line),f)) {
         char *equals=strchr(line,'=');if(!equals){ok=0;break;}*equals++=0;
