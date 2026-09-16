@@ -118,6 +118,9 @@ void ts_performance_release(TsPerformanceBank *bank, int note);
 void ts_performance_release_event(TsPerformanceBank *bank,
                                   const TsNoteEvent *event);
 void ts_performance_release_midi_channel(TsPerformanceBank *bank, int channel);
+/* Release the whole held trigger even if its source mask has since changed. */
+int ts_performance_release_latched_event(TsPerformanceBank *bank,
+                                         const TsNoteEvent *event);
 void ts_performance_stop_sources(TsPerformanceBank *bank,
                                  uint16_t source_mask);
 TsPerformanceTileResult ts_performance_toggle_tile(

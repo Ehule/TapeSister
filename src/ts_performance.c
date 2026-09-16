@@ -474,6 +474,24 @@ void ts_performance_release_event(TsPerformanceBank *bank,const TsNoteEvent *eve
     }
 }
 
+int ts_performance_release_latched_event(TsPerformanceBank *bank,
+                                         const TsNoteEvent *event)
+{
+    int released = 0;
+    if (bank == NULL || event == NULL) return 0;
+    for (int i = 0; i < TS_PERFORMANCE_VOICE_LIMIT; ++i) {
+        TsPerformanceVoice *voice = &bank->voices[i];
+        if (voice->active && voice->latched && !voice->tile_launched &&
+            voice->midi_note == event->midi_note &&
+            ts_note_event_same_trigger(event, voice->origin, voice->note,
+                                       voice->channel)) {
+            voice_deactivate(voice);
+            ++released;
+        }
+    }
+    return released;
+}
+
 void ts_performance_release_midi_channel(TsPerformanceBank *bank, int channel)
 {
     if (bank == NULL || channel < 0 || channel > 15) return;

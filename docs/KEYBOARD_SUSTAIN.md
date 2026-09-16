@@ -49,12 +49,22 @@ repeats. Ordinary mouse notes now add/retrigger voices just like QWERTY/MIDI,
 instead of clearing other chord notes first. Mouse/key release remains effective
 when a dialog opens before release.
 
+With HOLD on, ordinary clicks and Shift-clicks both toggle a held note off;
+mixing the two does not create a second latch. The toggle finds the note in its
+original playback route even after changing the Sister TILES source or group.
+Other held pitches, MIDI channels, and independently launched tiles keep playing.
+
 The main **LOOP** supplies selection/whole-sample looping to played notes when there are
 no saved loop points. Starting notes takes over from the standalone audition;
 changing the loop while a chord plays never adds a separate C4 note. Saved loop
 points take priority. FM loops its rendered preview. Routed groups use each tile's
 saved loop or whole sample. HOLD uses the same fallback when no loop is defined.
 Changing FM parameters keeps the voice's latch/repeat state and preview ownership.
+
+Releasing the last played note leaves ordinary LOOP armed but silent; it does
+not restart a separate root-note audition. HOLD remains ready for the next chord.
+An explicitly locked **Shift+LOOP** still resumes its standalone loop until you
+release that lock with Shift+LOOP.
 
 Zoom/pan normally has no effect on playback, including HOLD notes started while
 zoomed in. Enable **PLAY VIEW** to make QWERTY, MIDI and onscreen canvas notes
