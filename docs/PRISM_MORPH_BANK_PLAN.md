@@ -1,20 +1,17 @@
-# Prism performance morph bank — future work
+# Prism performance bank and future Morph Matrix
 
-The intended next step is a performance bank of roughly 12 named Prism sound
-states that can be adjusted and morphed between throughout a set. This is a
-roadmap item, not a feature in the current A/B implementation.
+Prism now stores twelve independent sound states **A–L** with two selected morph
+ends. Wheel browsing is silent, a click confirms the next destination, right-click
+recalls a letter for editing, and middle-click clears only that letter. The same
+manual/MIDI fader and shared TIME control perform each transition. See the
+[bank controls](PRISM.md#twelve-captured-states-al-and-morph) for the full workflow.
 
-The bank should build on the current separation between auditioned sound,
-stored endpoints, and the live sequencer. Editing or browsing a sound must never
-silently replace another saved state. Each state needs explicit capture, recall,
-replace, and clear operations, with visible unsaved changes.
+Prism presets, full Sister presets and projects save all twelve states, selected
+ends and parked morph position. The versioned format still reads older A/B files.
+Transitions stay on the audio clock; UI choices are published only on confirmation.
+New/Vary and ordinary preset auditions preserve every stored state.
 
-Before implementation, settle how performers select source/destination states,
-whether transitions have per-state or shared times, and how manual fader movement
-interrupts a transition. Store the bank with a versioned preset format that can
-still read existing A/B presets. Keep interpolation on the audio clock, with
-bounded state publication from the UI; preset file I/O stays off the audio thread.
-
-Validate a complete set: load the bank, traverse all states, edit and replace
-one state, save/reload, and continue playing with predictable MIDI pickup and
-no changes to unrelated Sister routing or effects.
+The future Morph Matrix can build on these stable state identities to arrange
+routes or sequences through a performance bank. It still needs a separate design
+for route editing, per-transition timing, manual intervention and transport.
+Those automatic routes are not included in the twelve-state release.

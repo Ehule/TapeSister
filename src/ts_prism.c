@@ -16,7 +16,7 @@ void ts_prism_controls_default(TsPrismControls *p)
 {
     if (p) *p = (TsPrismControls){.mode=TS_PRISM_SUPERSAW,.lenses=TS_PRISM_BASE_LENSES,
         .spread=.5f,.drift=.15f,.stereo=.8f,.body=.5f,.mix=.8f,.dry_level=1,.color=.5f,
-        .drift_rate=.1f,.morph_seconds=5,.seq_rate=2};
+        .drift_rate=.1f,.morph_seconds=5,.seq_rate=2,.endpoint={0,1}};
 }
 
 static void patch_sanitize(TsPrismPatch *p)
@@ -54,10 +54,11 @@ void ts_prism_controls_sanitize(TsPrismControls *p)
 {
     if (!p) return;
     TsPrismPatch patch; memcpy(&patch,p,sizeof(patch)); patch_sanitize(&patch); memcpy(p,&patch,sizeof(patch));
-    p->captured &= 3;
-    if (p->captured & 1) patch_sanitize(&p->a);
-    if (p->captured & 2) patch_sanitize(&p->b);
-    p->morph_enabled = !!p->morph_enabled && p->captured == 3;
+    p->captured &= (1<<TS_PRISM_STATES)-1;
+    for(int i=0;i<TS_PRISM_STATES;++i)if(p->captured&(1<<i))patch_sanitize(ts_prism_state(p,i));
+    for(int i=0;i<2;++i)if(p->endpoint[i]<0 || p->endpoint[i]>=TS_PRISM_STATES)p->endpoint[i]=i;
+    if(p->endpoint[0]==p->endpoint[1])p->endpoint[1]=(p->endpoint[0]+1)%TS_PRISM_STATES;
+    p->morph_enabled = !!p->morph_enabled && ts_prism_pair_ready(p);
     p->morph=bounded(p->morph,0,1,0);
     p->morph_seconds=bounded(p->morph_seconds,.05f,120,5);
     p->morph_target=!!p->morph_target;
@@ -208,7 +209,8 @@ TsPrismView ts_prism_control_view(const TsPrismControls *controls)
     TsPrismControls p = *controls;
     ts_prism_controls_sanitize(&p);
     TsPrismPatch patch=prism_patch(&p);
-    for (int i = 0; i < TS_PRISM_LENSES; ++i) v.lens[i] = p.morph_enabled ? morph_geometry(&p.a,&p.b,i,0,p.morph) : geometry(&patch,i,0);
+    for (int i = 0; i < TS_PRISM_LENSES; ++i) v.lens[i] = p.morph_enabled ?
+        morph_geometry(ts_prism_state_const(&p,p.endpoint[0]),ts_prism_state_const(&p,p.endpoint[1]),i,0,p.morph) : geometry(&patch,i,0);
     v.wet = p.enabled ? p.mix : 0;
     v.dry = p.enabled ? (1 - p.mix) * p.dry_level : 1;
     return v;
@@ -264,8 +266,13 @@ void ts_prism_free(TsPrism *p)
 void ts_prism_set_controls(TsPrism *p, const TsPrismControls *controls)
 {
     if (!p || !controls) return;
+    int was_morphing=p->controls.morph_enabled;
     p->controls = *controls;
     ts_prism_controls_sanitize(&p->controls);
+    if(!p->controls.morph_enabled || !was_morphing) {
+        p->morph_position=p->controls.morph;
+        p->morph_start=p->morph_position;p->morph_elapsed=0;p->morph_seen=0;
+    }
 }
 
 static TsStereoFrame read_delay(const TsPrism *p, float delay)
@@ -429,8 +436,8 @@ TsStereoFrame ts_prism_process(TsPrism *p, TsStereoFrame input)
             } else p->morph_position=c->morph;
         } else p->morph_position=c->morph;
         float t=c->morph_enabled ? p->morph_position : 0;
-        const TsPrismPatch *a=c->morph_enabled ? &c->a : &patch;
-        const TsPrismPatch *b=c->morph_enabled ? &c->b : &patch;
+        const TsPrismPatch *a=c->morph_enabled ? ts_prism_state_const(c,c->endpoint[0]) : &patch;
+        const TsPrismPatch *b=c->morph_enabled ? ts_prism_state_const(c,c->endpoint[1]) : &patch;
         p->wet_target=c->enabled ? lerp(a->mix,b->mix,t) : 0;
         p->dry_target=c->enabled ? lerp((1-a->mix)*a->dry_level,(1-b->mix)*b->dry_level,t) : 1;
         p->gain_target=powf(10,lerp(a->output_db,b->output_db,t)/20);

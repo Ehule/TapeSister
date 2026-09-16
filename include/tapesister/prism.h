@@ -6,7 +6,8 @@
 #include <stdint.h>
 #include <stdio.h>
 
-enum { TS_PRISM_BASE_LENSES = 12, TS_PRISM_LENSES = 24, TS_PRISM_HOP = 64 };
+enum { TS_PRISM_BASE_LENSES = 12, TS_PRISM_LENSES = 24, TS_PRISM_HOP = 64,
+       TS_PRISM_STATES = 12 };
 typedef enum { TS_PRISM_SUPERSAW, TS_PRISM_ENSEMBLE, TS_PRISM_HARMONIC, TS_PRISM_FIFTHS,
     TS_PRISM_OCTAVES, TS_PRISM_CLUSTER, TS_PRISM_MICRO, TS_PRISM_MODE_COUNT } TsPrismMode;
 typedef enum {
@@ -37,12 +38,18 @@ typedef struct {
     int seq_enabled, seq_count, sequence[TS_PRISM_LENSES];
     float seq_rate;
     uint32_t seq_reset, locks;
+    TsPrismPatch extra[TS_PRISM_STATES-2]; /* C-L; legacy A/B fields stay intact. */
+    int endpoint[2]; /* Bank letters assigned to the two ends of the fader. */
 } TsPrismControls;
 #undef TS_PRISM_PATCH_FIELDS
 
 /* Capture/recall touches Prism only. Endpoint captures exclude the sequence. */
 void ts_prism_capture(TsPrismControls *controls, int endpoint);
 void ts_prism_recall(TsPrismControls *controls, int endpoint);
+TsPrismPatch *ts_prism_state(TsPrismControls *controls, int state);
+const TsPrismPatch *ts_prism_state_const(const TsPrismControls *controls, int state);
+int ts_prism_pair_ready(const TsPrismControls *controls);
+void ts_prism_copy_bank(TsPrismControls *destination, const TsPrismControls *source);
 void ts_prism_sequence_toggle(TsPrismControls *controls, int lens);
 void ts_prism_generate(TsPrismControls *controls, uint32_t seed, int vary);
 float ts_prism_snap_pitch(float cents, int snap);

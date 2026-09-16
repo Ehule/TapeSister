@@ -71,7 +71,7 @@ static void test_mosaic_record_tile(SDL_Window *window,SDL_AudioDeviceID device)
     SDL_setenv("TAPESISTER_CAPTURES",folder,1);
     assert(mosaic_record_tile_event(&e,window,device,&input_device,a,input,u,&instrument));
     assert(input->recorder.state==TS_EXTERNAL_CAPTURE_COMPLETED);
-    finalize_external_recording(device,&input_device,a,input,u,&instrument);
+    finalize_external_recording(device,&input_device,a,input,u,&instrument,NULL);
     assert(!input->mosaic_recording && !u->mosaic_recording && strstr(u->status,"ARCHIVED"));
     TsMosaicEvent *take=ts_mosaic_find(u->mosaic,u->mosaic_selected);assert(take && take->id!=first_id);
     uint64_t take_id=take->id;
@@ -102,7 +102,7 @@ static void test_mosaic_record_tile(SDL_Window *window,SDL_AudioDeviceID device)
     test_mosaic_record_feed(input,1);
     for(int i=0;i<100;++i)ts_external_recorder_write_frame(&input->recorder,(TsStereoFrame){0});
     assert(input->recorder.state==TS_EXTERNAL_CAPTURE_COMPLETED);
-    finalize_external_recording(device,&input_device,a,input,u,&instrument);
+    finalize_external_recording(device,&input_device,a,input,u,&instrument,NULL);
     take=ts_mosaic_find(u->mosaic,u->mosaic->next_id-1);assert(take && take->start==2);
     assert(take->source->sample.sample_rate==44100 && take->source->sample.channels==2);
     for(int i=0;i<1024;++i) {
@@ -119,7 +119,7 @@ static void test_mosaic_record_tile(SDL_Window *window,SDL_AudioDeviceID device)
         if(!full)++u->mosaic->epoch;
         else while(mosaic_record_has_space(u->mosaic))assert(ts_mosaic_add(u->mosaic,take->source,0,0));
         uint64_t next=u->mosaic->next_id;
-        finalize_external_recording(device,&input_device,a,input,u,&instrument);
+        finalize_external_recording(device,&input_device,a,input,u,&instrument,NULL);
         assert(!u->mosaic_recording && u->mosaic->next_id==next && strstr(u->status,"ARCHIVED"));
     }
     assert(!arm_external_capture_to(device,&input_device,a,input,u,&instrument,1));
