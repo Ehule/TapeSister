@@ -343,11 +343,14 @@ static void check_lens_mixer(void)
 #include "test_prism_morph_bank.inc"
 #include "test_prism_matrix.inc"
 
+#include "test_prism_factory.inc"
+
 int main(void)
 {
     TsPrismControls c = settings(); c.spread=NAN; c.mix=INFINITY; c.mode=999; c.lenses=999;
     ts_prism_controls_sanitize(&c); assert(isfinite(c.spread) && isfinite(c.mix) && c.mode==0 && c.lenses==TS_PRISM_LENSES);
     check_prism_performance();
+    check_factory_and_captured_octave();
     check_prism_morph_bank();
     check_prism_matrix();
     check_stream(44100); check_stream(48000); check_stream(96000);

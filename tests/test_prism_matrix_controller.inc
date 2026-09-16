@@ -67,6 +67,7 @@ static void test_prism_matrix_ui(void)
     assert(a->sister.prism.matrix.running && a->sister.prism.matrix.step==current);
     /* Ordinary mode edits remain locked; bank draft editing leaves audio alone. */
     TsSisterUiHit mode=ts_sister_ui_hit_test_model(&s->model,150,55);
+    s->model.routing.prism.matrix_active=0; /* UI snapshot may lag the audio clock. */
     sister_apply_action(0,a,&ui,&instrument,s,NULL,NULL,mode,48000,2);
     assert(a->sister.parameters.prism.mode==c.mode && strstr(s->model.status,"LOCKED"));
     matrix_ui_click(a,s,550,55,SDL_BUTTON_LEFT);
@@ -74,7 +75,7 @@ static void test_prism_matrix_ui(void)
     matrix_ui_click(a,s,25,325,SDL_BUTTON_LEFT);
     assert(s->model.prism_matrix_edit==1 && s->model.prism_panel==0 && a->sister.prism.matrix.running);
     sister_apply_action(0,a,&ui,&instrument,s,NULL,NULL,mode,48000,2);
-    assert(a->sister.parameters.prism.mode==(c.mode+1)%TS_PRISM_MODE_COUNT);
+    assert(ts_prism_factory_find(&a->sister.parameters.prism)==1); /* Ensemble draft. */
     assert(!memcmp(&frozen,&a->sister.prism.matrix.pair[1],sizeof(frozen)));
     /* Vary a draft while the sequence continues, retaining all cell references. */
     s->model.prism_panel=2;before=a->sister.parameters.prism;

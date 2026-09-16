@@ -8,6 +8,8 @@
 _Static_assert(sizeof(float)==4 && sizeof(int)==4,"Prism state uses 32-bit values");
 _Static_assert(offsetof(TsPrismControls,a)==sizeof(TsPrismPatch),"Prism patch prefix must match");
 
+#include "ts_prism_factory.inc"
+
 TsPrismPatch *ts_prism_state(TsPrismControls *c,int state)
 {
     if(!c || state<0 || state>=TS_PRISM_STATES)return NULL;

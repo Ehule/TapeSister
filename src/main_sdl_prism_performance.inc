@@ -35,6 +35,28 @@ static void sister_prism_preserve_parameter_locks(const SisterWindow *s,const Ts
     KEEP(SEQ_RATE,seq_rate);KEEP(TIME,morph_seconds);
 #undef KEEP
 }
+static void sister_prism_factory_cycle(SDL_AudioDeviceID device,AudioState *audio,
+                                        SisterWindow *s,int steps)
+{
+    TsPrismControls c=s->model.parameters.prism,old=c;
+    if(device)SDL_LockAudioDevice(device);
+    int matrix_active=audio->sister.prism.matrix.active;
+    if(device)SDL_UnlockAudioDevice(device);
+    if(c.morph_enabled || (matrix_active && !s->model.prism_matrix_edit)) {
+        snprintf(s->model.status,sizeof(s->model.status),"MORPH LOCKED / RIGHT-CLICK CAP TO EDIT");return;
+    }
+    int index=ts_prism_factory_find(&c);
+    if(index<0)index=s->model.prism_factory_index;
+    if(index<0 || index>=TS_PRISM_FACTORY_PRESETS)index=c.mode;
+    index=(index+steps%TS_PRISM_FACTORY_PRESETS+TS_PRISM_FACTORY_PRESETS)%TS_PRISM_FACTORY_PRESETS;
+    ts_prism_factory_apply(&c,index);
+    sister_prism_preserve_parameter_locks(s,&old,&c);
+    s->model.prism_factory_index=index;
+    sister_prism_publish(device,audio,s,&c);
+    sister_preset_model_sync(s,&audio->sister);
+    snprintf(s->model.status,sizeof(s->model.status),"FACTORY %02d/%02d: %s / GROUP OCT %+.0F / CAP TO KEEP",
+        index+1,TS_PRISM_FACTORY_PRESETS,ts_prism_factory_name(index),(double)c.group_octave);
+}
 static int sister_prism_endpoint_at(int x,int y)
 {
     if(y<280 || y>=302)return -1;

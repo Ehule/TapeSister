@@ -9225,6 +9225,11 @@ static int sister_prism_event(SDL_AudioDeviceID device, AudioState *audio,
 #endif
         if (!sister_event_mouse(sister->window,raw_x,raw_y,&x,&y)) return 0;
         int wheel=event->wheel.direction==SDL_MOUSEWHEEL_FLIPPED ? -event->wheel.y : event->wheel.y;
+        if(x>=122 && x<238 && y>=48 && y<70) {
+            if(wheel && ts_ui_wheel_guard_accept(&ui->wheel_guard,WHEEL_TARGET_SISTER+0x250,SDL_GetTicks()))
+                sister_prism_factory_cycle(device,audio,sister,wheel);
+            return 1;
+        }
         int endpoint=sister->model.prism_panel==1?sister_prism_endpoint_at(x,y):-1;
         if(endpoint>=0) {
             if(wheel && ts_ui_wheel_guard_accept(&ui->wheel_guard,WHEEL_TARGET_SISTER+0x240+endpoint,SDL_GetTicks()))
@@ -10109,10 +10114,11 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
             sister->model.power_visual = sister->power_visual;
             sister->model.power_visual_elapsed_ms = 0u;
             snprintf(sister->model.status, sizeof(sister->model.status),
-                     "ENABLED - SELECT SOURCES AND MONITOR WHEN READY");
+                     "POWER ON - PREPARED SETTINGS RETAINED");
         } else {
             snprintf(sister->model.status, sizeof(sister->model.status), "%s", error);
         }
+        keyboard_loop_policy(audio, ui);
         if (device) SDL_UnlockAudioDevice(device);
         if (sync_ext && input_device != NULL && external_input != NULL &&
             !sync_external_input_consumers(
@@ -10192,42 +10198,23 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
                      ts_sister_fallout_rise_mode_name(fallout->rise_mode));
         return;
     }
-    if (!audio->sister.enabled && hit.action != TS_SISTER_UI_ACTION_PRISM_TOGGLE &&
-        hit.action != TS_SISTER_UI_ACTION_PRISM_MODE && hit.action != TS_SISTER_UI_ACTION_WAVE_MODE &&
-        hit.action != TS_SISTER_UI_ACTION_FALLOUT_TOGGLE &&
-        hit.action != TS_SISTER_UI_ACTION_FX_TOGGLE &&
-        hit.action != TS_SISTER_UI_ACTION_LIMITER_TOGGLE &&
-        hit.action != TS_SISTER_UI_ACTION_MASTER_OUTPUT &&
-        hit.action != TS_SISTER_UI_ACTION_TAPEHEAD_SONG &&
-        hit.action != TS_SISTER_UI_ACTION_TAPEHEAD_PATTERN &&
-        hit.action != TS_SISTER_UI_ACTION_CAPTURE_FORMAT &&
-        hit.action != TS_SISTER_UI_ACTION_DESTINATION &&
-        hit.action != TS_SISTER_UI_ACTION_TAP &&
-        !(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
-          ((hit.index >= TS_SISTER_UI_PARAM_TILES_GAIN &&
-            hit.index <= TS_SISTER_UI_PARAM_FX_RETURN_GAIN) ||
-           hit.index >= TS_SISTER_UI_PARAM_REVERB_TYPE ||
-           hit.index == TS_SISTER_UI_PARAM_BUFFER_SECONDS)) &&
-        !(hit.action >= TS_SISTER_UI_ACTION_FX_SLOT_TOGGLE &&
-          hit.action <= TS_SISTER_UI_ACTION_FX_SLOT_MOVE) &&
-        !(hit.action == TS_SISTER_UI_ACTION_EFFECT_TARGET &&
-          (hit.index >> 8) != 0)) {
+    /* Knobs, source switches and transport settings can be prepared cold.
+       Only operations that consume the running tape require POWER. */
+    if (!audio->sister.enabled &&
+        (hit.action == TS_SISTER_UI_ACTION_CLEAR ||
+         hit.action == TS_SISTER_UI_ACTION_CAPTURE ||
+         hit.action == TS_SISTER_UI_ACTION_OVERDUB)) {
         snprintf(sister->model.status, sizeof(sister->model.status),
-                 "POWER IS OFF");
+                 "POWER ON TO CLEAR OR RECORD THE TAPE");
         return;
+    }
+    if(hit.action==TS_SISTER_UI_ACTION_PRISM_MODE) {
+        sister_prism_factory_cycle(device,audio,sister,1);return;
     }
     if (device) SDL_LockAudioDevice(device);
     switch (hit.action) {
     case TS_SISTER_UI_ACTION_PRISM_TOGGLE:
-    case TS_SISTER_UI_ACTION_PRISM_MODE:
-        if (hit.action == TS_SISTER_UI_ACTION_PRISM_TOGGLE)
-            sister->model.parameters.prism.enabled = !sister->model.parameters.prism.enabled;
-        else if(sister->model.parameters.prism.morph_enabled ||
-                (audio->sister.prism.matrix.active && !sister->model.prism_matrix_edit)) {
-            snprintf(sister->model.status,sizeof(sister->model.status),"MORPH LOCKED / RIGHT-CLICK CAP TO EDIT");
-            break;
-        } else
-            sister->model.parameters.prism.mode = (sister->model.parameters.prism.mode + 1) % TS_PRISM_MODE_COUNT;
+        sister->model.parameters.prism.enabled = !sister->model.parameters.prism.enabled;
         ts_sister_runtime_set_parameters(&audio->sister, &sister->model.parameters);
         ts_sister_runtime_mark_selected_preset_modified(&audio->sister);
         snprintf(sister->model.status, sizeof(sister->model.status), "PRISM %s - %s",
@@ -10256,7 +10243,7 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         ts_sister_runtime_set_sources(&audio->sister, sources);
         if (hit.action == TS_SISTER_UI_ACTION_SOURCE_EXT &&
             external_input != NULL) {
-            if ((sources & TS_SISTER_SOURCE_EXT) != 0u)
+            if (audio->sister.enabled && (sources & TS_SISTER_SOURCE_EXT) != 0u)
                 external_input_request(external_input,
                                        TS_INPUT_CONSUMER_SISTER_EXT, 1);
             else

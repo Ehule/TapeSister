@@ -160,6 +160,7 @@ static void snapshot_atomic_init(TsSisterRoutingSnapshotAtomic *snapshot)
     for(int i=0;i<10;++i)atomic_init(&snapshot->prism_matrix_int[i],0);
     for(int i=0;i<4;++i)atomic_init(&snapshot->prism_matrix_float[i],float_bits(0));
     atomic_init(&snapshot->prism_morph, float_bits(0));
+    atomic_init(&snapshot->prism_group_octave, float_bits(0));
     atomic_init(&snapshot->prism_wet, 0);
     atomic_init(&snapshot->prism_dry, float_bits(1));
     for (int i = 0; i < TS_PRISM_LENSES; ++i)
@@ -254,6 +255,7 @@ static void publish_snapshot(TsSisterRuntime *runtime)
     for(int i=0;i<4;++i)atomic_store_explicit(&snapshot->prism_matrix_float[i],float_bits(matrix_float[i]),memory_order_relaxed);
     atomic_store_explicit(&snapshot->prism_seq_lens, prism.seq_lens, memory_order_relaxed);
     atomic_store_explicit(&snapshot->prism_morph, float_bits(prism.morph), memory_order_relaxed);
+    atomic_store_explicit(&snapshot->prism_group_octave, float_bits(prism.group_octave), memory_order_relaxed);
     atomic_store_explicit(&snapshot->prism_valid, prism.valid, memory_order_relaxed);
     atomic_store_explicit(&snapshot->prism_wet, float_bits(prism.wet), memory_order_relaxed);
     atomic_store_explicit(&snapshot->prism_dry, float_bits(prism.dry), memory_order_relaxed);
@@ -1918,6 +1920,7 @@ int ts_sister_runtime_get_snapshot(const TsSisterRuntime *runtime,
         for(int i=0;i<10;++i)*matrix_int[i]=atomic_load_explicit(&source->prism_matrix_int[i],memory_order_relaxed);
         for(int i=0;i<4;++i)*matrix_float[i]=bits_float(atomic_load_explicit(&source->prism_matrix_float[i],memory_order_relaxed));
         snapshot->prism.morph = bits_float(atomic_load_explicit(&source->prism_morph,memory_order_relaxed));
+        snapshot->prism.group_octave = bits_float(atomic_load_explicit(&source->prism_group_octave,memory_order_relaxed));
         snapshot->prism.valid = atomic_load_explicit(&source->prism_valid, memory_order_relaxed);
         snapshot->prism.wet = bits_float(atomic_load_explicit(&source->prism_wet, memory_order_relaxed));
         snapshot->prism.dry = bits_float(atomic_load_explicit(&source->prism_dry, memory_order_relaxed));

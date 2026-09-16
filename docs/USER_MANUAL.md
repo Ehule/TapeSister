@@ -1096,6 +1096,15 @@ window is hidden according to their current state.
 Escape closes an active Sister subpanel first; otherwise it brings the main
 application window back. It does not minimize the application to the desktop.
 
+You can prepare Sister while **POWER is off**: choose sources, enable Monitor,
+set Roll/tape Hold, adjust heads and route effects before switching it on.
+These settings remain selected across power cycles. Keyboard HOLD is separate
+from tape Hold and is retained by the power controller. EXT requests the input
+device on power-on; the other recording/monitoring uses of that device keep
+their own ownership. Clearing or recording the tape still requires power.
+Power-on retains the existing output crossfade, but tape allocation and device
+startup can still cause a pause; this is not a guarantee of glitch-free startup.
+
 ### Source routing
 
 The five source switches are:

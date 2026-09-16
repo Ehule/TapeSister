@@ -65,6 +65,11 @@ char ts_prism_state_letter(int state);
 void ts_prism_copy_bank(TsPrismControls *destination, const TsPrismControls *source);
 void ts_prism_sequence_toggle(TsPrismControls *controls, int lens);
 void ts_prism_generate(TsPrismControls *controls, uint32_t seed, int vary);
+/* Factory patches replace only the live sound; captured states and transport stay. */
+enum { TS_PRISM_FACTORY_PRESETS = 28 };
+const char *ts_prism_factory_name(int preset);
+int ts_prism_factory_find(const TsPrismControls *controls);
+int ts_prism_factory_apply(TsPrismControls *controls, int preset);
 float ts_prism_snap_pitch(float cents, int snap);
 const char *ts_prism_snap_name(int snap);
 /* Shared versioned text fields for Prism banks and Sister project/preset files. */
@@ -91,7 +96,7 @@ typedef struct {
 } TsPrismLensView;
 typedef struct {
     TsPrismLensView lens[TS_PRISM_LENSES];
-    float wet, dry;
+    float wet, dry, group_octave; /* Audible register, fractional during a morph. */
     int valid;
     float morph;
     int seq_lens; /* One-based sounding step; zero means no eligible step. */

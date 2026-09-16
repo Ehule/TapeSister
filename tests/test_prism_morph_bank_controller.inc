@@ -138,9 +138,13 @@ static void test_prism_empty_state_edit(void)
         assert(cleared.seq_enabled && cleared.seq_count==2 && cleared.sequence[1]==3);
         for(int i=0;i<TS_PRISM_STATES;++i)if(i!=state)
             assert(!memcmp(ts_prism_state_const(&cleared,i),ts_prism_state_const(&bank,i),sizeof(TsPrismPatch)));
-        /* The top factory-mode control works immediately, without a preset-page detour. */
+        /* The factory control works immediately, without a preset-page detour.
+           An edited patch continues from the last browsed factory, or its mode. */
+        int factory=ts_prism_factory_find(&cleared);
+        if(factory<0)factory=s->model.prism_factory_index;
+        if(factory<0)factory=cleared.mode;
         sister_apply_action(0,a,&ui,&instrument,s,NULL,NULL,mode,48000,2);
-        assert(a->sister.parameters.prism.mode==(cleared.mode+1)%TS_PRISM_MODE_COUNT);
+        assert(ts_prism_factory_find(&a->sister.parameters.prism)==(factory+1)%TS_PRISM_FACTORY_PRESETS);
         e.button.button=SDL_BUTTON_LEFT;assert(sister_prism_event(0,a,&ui,s,&e));
         assert(a->sister.parameters.prism.captured==4095);
         assert(!memcmp(ts_prism_state_const(&a->sister.parameters.prism,state),&a->sister.parameters.prism,sizeof(TsPrismPatch)));
