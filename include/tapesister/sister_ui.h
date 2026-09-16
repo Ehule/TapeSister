@@ -13,6 +13,9 @@ enum { TS_SISTER_UI_FX_REC_X = 538, TS_SISTER_UI_FX_REC_Y = 328,
 enum { TS_PRISM_SUSTAIN_X = 396, TS_PRISM_SUSTAIN_W = 82,
        TS_PRISM_REC_X = 484, TS_PRISM_REC_W = 74,
        TS_PRISM_FOOTER_Y = 350, TS_PRISM_FOOTER_H = 17 };
+enum { TS_PRISM_MATRIX_X=16, TS_PRISM_MATRIX_Y=114,
+       TS_PRISM_MATRIX_DX=76, TS_PRISM_MATRIX_DY=25,
+       TS_PRISM_MATRIX_W=72, TS_PRISM_MATRIX_H=22 };
 typedef enum { TS_PRISM_CAPTURE_EMPTY, TS_PRISM_CAPTURE_READY,
                TS_PRISM_CAPTURE_EDITING, TS_PRISM_CAPTURE_DIRTY } TsPrismCaptureVisual;
 enum { TS_PRISM_ZOYA_INTRO_MS = 3600 };
@@ -270,6 +273,7 @@ typedef struct {
     int preset_confirmation;
     int fx_page;
     int prism_panel, prism_seq_edit, prism_preset_index, prism_preset_count;
+    int prism_matrix_previous_panel, prism_matrix_edit;
     char prism_preset_name[32];
     int prism_selected; /* One-based lens identity; zero means no selection. */
     int prism_edit_endpoint; /* One-based recalled A-L state; UI only. */
@@ -299,6 +303,8 @@ TsPrismCaptureVisual ts_sister_ui_prism_capture_visual(const TsSisterUiModel *mo
 int ts_sister_ui_prism_state(const TsSisterUiModel *model, int endpoint);
 const char *ts_sister_ui_prism_edit_status(const TsSisterUiModel *model);
 void ts_sister_ui_prism_help(const TsSisterUiModel *model, int x, int y, char *help, size_t size);
+int ts_sister_ui_prism_matrix_cell(int x,int y);
+int ts_sister_ui_prism_assigned(const TsSisterUiModel *model,int side);
 void ts_sister_ui_prism_zoya_tick(TsPrismZoyaVisual *visual, uint32_t now_ms, int enabled, int visible);
 
 int ts_sister_ui_parameter_lockable(int parameter);

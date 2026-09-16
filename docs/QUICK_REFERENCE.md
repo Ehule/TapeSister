@@ -571,6 +571,18 @@ Ctrl+Z / Ctrl+Y undo/redo; Escape cancels the current stroke.
 - **REC FILE** captures final stereo OUT. **Ctrl+Shift+M** learns controls.
 - [Prism guide and measured performance](PRISM.md).
 
+### Prism Morph Matrix
+
+- **MATRIX >**: 64 cells referencing the same A–L bank. Wheel/left/right-click
+  cycles a cell; middle clears to HOLD; Shift-click sets the sequence end.
+- **PLAY**, **STOP/RESET**, **LOOP**, **LENGTH**. STEP is seconds per cell;
+  MORPH uses existing Time, capped at STEP. Shorter morphs leave a hold.
+- Click a bank letter to edit a draft while playback continues. **SAVE letter**
+  updates its next visit; the current transition stays intact.
+- **< PRISM** returns without stopping. Manual fader/CAP takes over; STOP keeps
+  the exact blend. Blank or missing states hold. Saved setups load stopped.
+- [Controls, screenshot, persistence and validation](PRISM_MORPH_MATRIX.md).
+
 ### Prism performance additions
 
 - **PRESETS**: Prism-only Save New; Shift-Save overwrites; arrows audition sounds
