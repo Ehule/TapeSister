@@ -9086,7 +9086,7 @@ static void sister_prism_edit(SDL_AudioDeviceID device, AudioState *audio,
     if (lens < 0 || lens >= TS_PRISM_LENSES) return;
     if (device) SDL_LockAudioDevice(device);
     TsSisterParameters p = audio->sister.parameters;
-    if(p.prism.morph_enabled && action!=PRISM_SEQUENCE) {
+    if((p.prism.morph_enabled || (audio->sister.prism.matrix.active && !sister->model.prism_matrix_edit)) && action!=PRISM_SEQUENCE) {
         if(device)SDL_UnlockAudioDevice(device);
         snprintf(sister->model.status,sizeof(sister->model.status),"MORPH ACTIVE: RIGHT CAP A/B TO RECALL BEFORE EDITING");return;
     }
@@ -9160,6 +9160,8 @@ static int sister_prism_event(SDL_AudioDeviceID device, AudioState *audio,
         snprintf(sister->model.status, sizeof(sister->model.status), "LENS DRAG CANCELLED");
         return 1;
     }
+    if(sister_prism_matrix_event(device,audio,ui,sister,event))return 1;
+    if(sister->model.prism_panel==3)return 0;
     if(event->type==SDL_KEYDOWN && event->key.keysym.sym==SDLK_ESCAPE &&
        (sister->model.prism_browse[0] || sister->model.prism_browse[1])) {
         memset(sister->model.prism_browse,0,sizeof(sister->model.prism_browse));
@@ -9295,7 +9297,7 @@ static int sister_prism_event(SDL_AudioDeviceID device, AudioState *audio,
             sister->rendered_model_valid=0;
             return 1;
         }
-        TsPrismView view = sister->model.routing.prism.valid ? sister->model.routing.prism :
+        TsPrismView view = sister->model.routing.prism.valid && !sister->model.prism_matrix_edit ? sister->model.routing.prism :
             ts_prism_control_view(&sister->model.parameters.prism);
         int node_x;
         ts_sister_ui_prism_point(view.lens[lens], &node_x, &sister->prism_node_y);
@@ -9394,6 +9396,7 @@ static void sister_recall_preset(SDL_AudioDeviceID device,
     if (device) SDL_UnlockAudioDevice(device);
     sister->model.parameters = audio->sister.parameters;
     if (!fallout) {
+        sister->model.prism_matrix_edit=0;
         sister->model.parameter_locks = parameter_locks;
         sister->model.parameter_locks_high = parameter_locks_high;
     }
@@ -9985,6 +9988,9 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
             audio->sister.selected_preset_modified;
         TsSisterPresetBank updated_bank = *preset_bank;
         TsSisterParameters stored = audio->sister.parameters;
+        if(device)SDL_LockAudioDevice(device);
+        ts_prism_matrix_export(&audio->sister.prism,&stored.prism);
+        if(device)SDL_UnlockAudioDevice(device);
         if (fallout_preset_scope) {
             stored.fx.fallout.enabled = 0;
             stored.fx.fallout.rise_retrigger = 0u;
@@ -10206,7 +10212,8 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
     case TS_SISTER_UI_ACTION_PRISM_MODE:
         if (hit.action == TS_SISTER_UI_ACTION_PRISM_TOGGLE)
             sister->model.parameters.prism.enabled = !sister->model.parameters.prism.enabled;
-        else if(sister->model.parameters.prism.morph_enabled) {
+        else if(sister->model.parameters.prism.morph_enabled ||
+                (audio->sister.prism.matrix.active && !sister->model.prism_matrix_edit)) {
             snprintf(sister->model.status,sizeof(sister->model.status),"MORPH LOCKED / RIGHT-CLICK CAP TO EDIT");
             break;
         } else
@@ -10269,6 +10276,16 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
                      "%s LOCKED - SHIFT-CLICK TO UNLOCK",
                      sister_parameter_name(hit.index));
             break;
+        }
+        if(audio->sister.prism.matrix.active && !sister->model.prism_matrix_edit &&
+           ((hit.index>=TS_SISTER_UI_PARAM_PRISM_LENSES && hit.index<=TS_SISTER_UI_PARAM_PRISM_COLOR) ||
+            hit.index==TS_SISTER_UI_PARAM_PRISM_RATE || hit.index==TS_SISTER_UI_PARAM_PRISM_OCTAVE)) {
+            snprintf(sister->model.status,sizeof(sister->model.status),"MATRIX ACTIVE / OPEN A BANK LETTER TO EDIT ITS DRAFT");break;
+        }
+        if(hit.index==TS_SISTER_UI_PARAM_PRISM_MORPH) {
+            sister->model.prism_matrix_edit=0;
+            ts_prism_matrix_export(&audio->sister.prism,&sister->model.parameters.prism);
+            sister->model.parameters.prism.matrix_run=0;
         }
         sister_set_parameter(&sister->model.parameters, hit.index, hit.normalized);
         ts_sister_runtime_set_parameters(&audio->sister, &sister->model.parameters);
@@ -10793,6 +10810,8 @@ static float midi_target_current_value(const char *target,
     if (strcmp(target, "main.tile_fade") == 0)
         return ts_ui_tile_fade_normalized(ui->config.tile_fade_ms);
     if (sscanf(target, "sister.param.%d%c", &parameter, &trailing) == 1) {
+        if(parameter==TS_SISTER_UI_PARAM_PRISM_MORPH && sister->model.routing.prism.matrix_active)
+            return sister->model.routing.prism.matrix_morph;
         if(parameter==TS_SISTER_UI_PARAM_PRISM_MORPH && sister->model.parameters.prism.morph_enabled && sister->model.routing.prism.valid)
             return sister->model.routing.prism.morph;
         return sister_parameter_normalized(&sister->model.parameters, parameter);

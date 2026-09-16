@@ -25,6 +25,7 @@ static void sister_prism_publish(SDL_AudioDeviceID device,AudioState *audio,Sist
     if(device)SDL_UnlockAudioDevice(device);
     s->rendered_model_valid=0;
 }
+#include "main_sdl_prism_matrix.inc"
 static void sister_prism_preserve_parameter_locks(const SisterWindow *s,const TsPrismControls *old,TsPrismControls *c)
 {
 #define KEEP(id,field) if(ts_sister_ui_parameter_locked(&s->model,TS_SISTER_UI_PARAM_PRISM_##id))c->field=old->field
@@ -45,11 +46,12 @@ static void sister_prism_browse_state(SisterWindow *s,int side,int wheel)
 {
     int state=ts_sister_ui_prism_state(&s->model,side);
     int direction=wheel>0?1:-1,steps=wheel%(TS_PRISM_STATES-1);if(steps<0)steps=-steps;
+    if(state<0)state=direction>0?TS_PRISM_STATES-1:0;
     while(steps--) {
         do {state=(state+direction+TS_PRISM_STATES)%TS_PRISM_STATES;}
-        while(state==s->model.parameters.prism.endpoint[1-side]);
+        while(state==ts_sister_ui_prism_assigned(&s->model,1-side));
     }
-    s->model.prism_browse[side]=state==s->model.parameters.prism.endpoint[side]?0:state+1;
+    s->model.prism_browse[side]=state==ts_sister_ui_prism_assigned(&s->model,side)?0:state+1;
     snprintf(s->model.status,sizeof(s->model.status),"CHOOSE %c / %s / WHEEL DOES NOT CHANGE SOUND",'A'+state,
         s->model.parameters.prism.captured&(1<<state)?"CLICK TO MORPH; RIGHT-CLICK TO EDIT":
         s->model.parameters.prism.morph_enabled?"EMPTY: RIGHT-CLICK CAP TO EDIT":"EMPTY: CLICK CAP TO SAVE LIVE SOUND");
@@ -61,18 +63,21 @@ static void sister_prism_begin_empty_edit(SDL_AudioDeviceID device,AudioState *a
                                          SisterWindow *s,TsPrismControls *c,int side,int state)
 {
     if(c->morph_enabled) {
-        int source;
-        if(state==c->endpoint[0])source=c->endpoint[1];
-        else if(state==c->endpoint[1])source=c->endpoint[0];
+        int source_side;
+        if(state==c->endpoint[side])source_side=1-side;
+        else if(state==c->endpoint[1-side])source_side=side;
         else {
             if(device)SDL_LockAudioDevice(device);
             float position=audio->sister.prism.morph_position;
             if(device)SDL_UnlockAudioDevice(device);
-            source=c->endpoint[position>=.5f];
+            source_side=position>=.5f;
         }
-        ts_prism_recall(c,source);
+        if(c->active_pair_valid) {
+            TsPrismPatch live=*ts_prism_endpoint_patch(c,source_side);
+            memcpy(c,&live,sizeof(live));
+        } else ts_prism_recall(c,c->endpoint[source_side]);
     }
-    c->morph_enabled=0;c->morph_trigger=0;c->morph=(float)side;
+    c->active_pair_valid=0;c->morph_enabled=0;c->morph_trigger=0;c->morph=(float)side;
     /* Both buttons may have browsed to the same letter before one was confirmed. */
     if(state==c->endpoint[1-side])c->endpoint[1-side]=c->endpoint[side];
     c->endpoint[side]=state;
@@ -83,7 +88,14 @@ static int sister_prism_clear_capture(SDL_AudioDeviceID device,AudioState *audio
 {
     if(s->model.prism_panel!=1 || x>=154)return 0;
     int side=sister_prism_endpoint_at(x,y);if(side<0)return 0;
+    sister_prism_matrix_takeover(device,audio,s);
     TsPrismControls c=s->model.parameters.prism;int state=ts_sister_ui_prism_state(&s->model,side);
+    if(state<0) {
+        TsPrismPatch live=*ts_prism_endpoint_patch(&c,side);memcpy(&c,&live,sizeof(live));
+        c.active_pair_valid=0;c.morph_enabled=0;c.morph_trigger=0;
+        memset(s->model.prism_browse,0,sizeof(s->model.prism_browse));
+        sister_prism_publish(device,audio,s,&c);return 1;
+    }
     sister_prism_begin_empty_edit(device,audio,s,&c,side,state);
     c.captured&=~(1<<state);memset(ts_prism_state(&c,state),0,sizeof(TsPrismPatch));
     if(!c.captured)c.morph=0;
@@ -96,9 +108,23 @@ static int sister_prism_clear_capture(SDL_AudioDeviceID device,AudioState *audio
 static int sister_prism_state_click(SDL_AudioDeviceID device,AudioState *audio,SisterWindow *s,
                                     int which,int right)
 {
+    if(s->model.prism_matrix_edit && !right && which<2 &&
+       ts_sister_ui_prism_state(&s->model,which)==s->model.prism_matrix_edit-1) {
+        sister_prism_matrix_save(device,audio,s);return 1;
+    }
+    sister_prism_matrix_takeover(device,audio,s);
     TsPrismControls c=s->model.parameters.prism;
     int side=which%2,state=ts_sister_ui_prism_state(&s->model,side),pending=state!=c.endpoint[side];
-    if(state==c.endpoint[1-side]) {
+    if(state<0) {
+        if(right && which<2) {
+            TsPrismPatch live=*ts_prism_endpoint_patch(&c,side);memcpy(&c,&live,sizeof(live));
+            c.active_pair_valid=0;c.morph_enabled=0;c.morph_trigger=0;
+            sister_prism_publish(device,audio,s,&c);
+            snprintf(s->model.status,sizeof(s->model.status),"LIVE SOUND / WHEEL TO A-L AND CAPTURE");
+        } else snprintf(s->model.status,sizeof(s->model.status),"LIVE TRANSITION END / WHEEL TO A-L TO STORE A STATE");
+        return 1;
+    }
+    if(state==c.endpoint[1-side] && !(right && which<2 && !pending)) {
         snprintf(s->model.status,sizeof(s->model.status),"%c IS ALREADY ON THE OTHER END / CHOOSE A DIFFERENT LETTER",'A'+state);return 1;
     }
     int occupied=(c.captured&(1<<state))!=0;
@@ -113,7 +139,7 @@ static int sister_prism_state_click(SDL_AudioDeviceID device,AudioState *audio,S
             sister_prism_begin_empty_edit(device,audio,s,&c,side,state);
             snprintf(s->model.status,sizeof(s->model.status),"EDIT %c (EMPTY) / SOUND UNLOCKED / CLICK CAP %c TO SAVE",'A'+state,'A'+state);
         } else {
-            c.endpoint[side]=state;ts_prism_recall(&c,state);s->model.prism_edit_endpoint=state+1;
+            ts_prism_assign_endpoint(&c,side,state);ts_prism_recall(&c,state);s->model.prism_edit_endpoint=state+1;
             snprintf(s->model.status,sizeof(s->model.status),"RECALLED %c / EDIT THEN CLICK CAP %c TO SAVE",'A'+state,'A'+state);
         }
     } else if(which<2 && (!pending || !occupied)) {
@@ -130,7 +156,7 @@ static int sister_prism_state_click(SDL_AudioDeviceID device,AudioState *audio,S
         if(pending && ts_prism_pair_ready(&c) && fabsf(position-(1-side))>.000001f) {
             snprintf(s->model.status,sizeof(s->model.status),"CHOICE %c READY / FINISH MORPH OR CHOOSE THE OTHER, SILENT END",'A'+state);return 1;
         }
-        c.endpoint[side]=state;
+        ts_prism_assign_endpoint(&c,side,state);
         if(!ts_prism_pair_ready(&c)) {
             if(which>=2) {
                 snprintf(s->model.status,sizeof(s->model.status),"CAPTURE BOTH SELECTED LETTERS BEFORE MORPHING");return 1;
@@ -170,6 +196,10 @@ static int sister_prism_performance_click(SDL_AudioDeviceID device,AudioState *a
             snprintf(s->model.status,sizeof(s->model.status),"DRAG SNAP %s / ARROWS: CENT, SHIFT SEMITONE, CTRL+SHIFT OCTAVE",ts_prism_snap_name(c.snap));
         } else return 0;
     } else if(s->model.prism_panel==2) {
+        if(y>=280 && y<302 && (x<306 || x>=412) &&
+           (!s->model.prism_matrix_edit || ((mod&KMOD_SHIFT) && x<306))) {
+            sister_prism_matrix_takeover(device,audio,s);c=s->model.parameters.prism;
+        }
         if(y>=308 && y<330 && x>=16 && x<616) {
             int lock=(x-16)/101;if(lock>=6 || (x-16)%101>=95)return 0;
             c.locks^=1u<<lock;
@@ -178,6 +208,7 @@ static int sister_prism_performance_click(SDL_AudioDeviceID device,AudioState *a
                 static uint32_t serial=0;
                 uint32_t seed=(uint32_t)SDL_GetPerformanceCounter() ^ (++serial*747796405u);
                 int vary=x>=516;TsPrismControls old=c;ts_prism_generate(&c,seed,vary);
+                if(s->model.prism_matrix_edit) {c.enabled=old.enabled;c.matrix_run=old.matrix_run;c.matrix_restart=old.matrix_restart;}
                 sister_prism_preserve_parameter_locks(s,&old,&c);
                 snprintf(s->model.status,sizeof(s->model.status),"PRISM %s / LOCKED GROUPS PRESERVED",vary?"VARIED":"NEW");
             } else if(x>=314 && x<404) {
@@ -188,6 +219,9 @@ static int sister_prism_performance_click(SDL_AudioDeviceID device,AudioState *a
                 if(index>=TS_PRISM_PRESETS) { free(next);snprintf(s->model.status,sizeof(s->model.status),"PRISM BANK FULL / SHIFT SAVE OVERWRITES SELECTED");return 1; }
                 if(index==(int)next->count)++next->count;
                 if(c.morph_enabled && s->model.routing.prism.valid) { c.morph=s->model.routing.prism.morph;c.morph_trigger=0; }
+                if(device)SDL_LockAudioDevice(device);
+                ts_prism_matrix_export(&audio->sister.prism,&c);
+                if(device)SDL_UnlockAudioDevice(device);
                 next->entries[index].controls=c;
                 snprintf(next->entries[index].name,32,"%02d %s %02d",index+1,ts_prism_mode_name(c.mode),c.lenses);
                 char path[TS_RUNTIME_PATH_MAX],error[160];
@@ -210,6 +244,9 @@ static int sister_prism_performance_click(SDL_AudioDeviceID device,AudioState *a
                         /* Browsing is an audition: endpoints belong to the
                            current performance, not to the next preset. */
                         ts_prism_copy_bank(&c,&old);
+                        c.matrix=old.matrix;c.matrix_run=s->model.prism_matrix_edit?old.matrix_run:0;
+                        c.matrix_restart=old.matrix_restart;c.active_pair_valid=0;
+                        if(s->model.prism_matrix_edit)c.enabled=old.enabled;
                         c.morph_enabled=0;c.morph_trigger=0;c.morph=old.morph;
                         c.morph_seconds=old.morph_seconds;c.locks=old.locks;
                     }

@@ -91,6 +91,7 @@ void ts_sister_project_state_capture(TsSisterProjectState *state,
     memcpy(state->page_masks, runtime->page_source_masks,
            state->page_count * sizeof(state->page_masks[0]));
     state->parameters = runtime->parameters;
+    ts_prism_matrix_export(&runtime->prism,&state->parameters.prism);
     state->parameter_locks = runtime->parameter_locks;
     state->parameter_locks_high = runtime->parameter_locks_high;
     ts_sister_parameters_sanitize(&state->parameters,
@@ -390,7 +391,7 @@ static int assign_parameter(TsSisterParameters *p, const char *key,
             return parse_float_value(value, &slot->mix);
         return 1;
     }
-    if (!strncmp(key, "P2.", 3) || !strncmp(key, "P3.", 3)) return ts_prism_read_field(&p->prism,key,value)>0;
+    if (!strncmp(key, "P2.", 3) || !strncmp(key, "P3.", 3) || !strncmp(key, "P4.", 3)) return ts_prism_read_field(&p->prism,key,value)>0;
     for (int i = 0; i < TS_PRISM_LENSES; ++i) {
         char lens_key[40];
         snprintf(lens_key, sizeof(lens_key), "PrismPitchOffset%d", i);

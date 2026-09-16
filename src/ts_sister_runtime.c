@@ -157,6 +157,8 @@ static void snapshot_atomic_init(TsSisterRoutingSnapshotAtomic *snapshot)
     if (snapshot == NULL) return;
     atomic_init(&snapshot->prism_valid, 0);
     atomic_init(&snapshot->prism_seq_lens, 0);
+    for(int i=0;i<10;++i)atomic_init(&snapshot->prism_matrix_int[i],0);
+    for(int i=0;i<4;++i)atomic_init(&snapshot->prism_matrix_float[i],float_bits(0));
     atomic_init(&snapshot->prism_morph, float_bits(0));
     atomic_init(&snapshot->prism_wet, 0);
     atomic_init(&snapshot->prism_dry, float_bits(1));
@@ -244,6 +246,12 @@ static void publish_snapshot(TsSisterRuntime *runtime)
     atomic_store_explicit(&snapshot->revision, revision + 1u,
                           memory_order_release);
     TsPrismView prism = ts_prism_view(&runtime->prism);
+    int matrix_int[]={prism.matrix_active,prism.matrix_running,prism.matrix_step,prism.matrix_waiting,
+        prism.matrix_from,prism.matrix_to,prism.matrix_missing,
+        prism.matrix_lenses,prism.matrix_input_shape,prism.matrix_output_shape};
+    float matrix_float[]={prism.matrix_progress,prism.matrix_morph,prism.matrix_step_seconds,prism.matrix_morph_seconds};
+    for(int i=0;i<10;++i)atomic_store_explicit(&snapshot->prism_matrix_int[i],matrix_int[i],memory_order_relaxed);
+    for(int i=0;i<4;++i)atomic_store_explicit(&snapshot->prism_matrix_float[i],float_bits(matrix_float[i]),memory_order_relaxed);
     atomic_store_explicit(&snapshot->prism_seq_lens, prism.seq_lens, memory_order_relaxed);
     atomic_store_explicit(&snapshot->prism_morph, float_bits(prism.morph), memory_order_relaxed);
     atomic_store_explicit(&snapshot->prism_valid, prism.valid, memory_order_relaxed);
@@ -1892,6 +1900,13 @@ int ts_sister_runtime_get_snapshot(const TsSisterRuntime *runtime,
         before = atomic_load_explicit(&source->revision, memory_order_acquire);
         if ((before & 1u) != 0u) continue;
         snapshot->prism.seq_lens = atomic_load_explicit(&source->prism_seq_lens,memory_order_relaxed);
+        int *matrix_int[]={&snapshot->prism.matrix_active,&snapshot->prism.matrix_running,&snapshot->prism.matrix_step,
+            &snapshot->prism.matrix_waiting,&snapshot->prism.matrix_from,&snapshot->prism.matrix_to,&snapshot->prism.matrix_missing,
+            &snapshot->prism.matrix_lenses,&snapshot->prism.matrix_input_shape,&snapshot->prism.matrix_output_shape};
+        float *matrix_float[]={&snapshot->prism.matrix_progress,&snapshot->prism.matrix_morph,
+            &snapshot->prism.matrix_step_seconds,&snapshot->prism.matrix_morph_seconds};
+        for(int i=0;i<10;++i)*matrix_int[i]=atomic_load_explicit(&source->prism_matrix_int[i],memory_order_relaxed);
+        for(int i=0;i<4;++i)*matrix_float[i]=bits_float(atomic_load_explicit(&source->prism_matrix_float[i],memory_order_relaxed));
         snapshot->prism.morph = bits_float(atomic_load_explicit(&source->prism_morph,memory_order_relaxed));
         snapshot->prism.valid = atomic_load_explicit(&source->prism_valid, memory_order_relaxed);
         snapshot->prism.wet = bits_float(atomic_load_explicit(&source->prism_wet, memory_order_relaxed));

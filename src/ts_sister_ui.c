@@ -251,6 +251,13 @@ float ts_sister_ui_prism_y(float cents)
 {
     return 167 - copysignf(fminf(68,68 * log1pf(fabsf(cents) / 12) / log1pf(6400.f / 12)), cents);
 }
+int ts_sister_ui_prism_matrix_cell(int x,int y)
+{
+    x-=TS_PRISM_MATRIX_X;y-=TS_PRISM_MATRIX_Y;
+    if(x<0 || y<0 || x>=8*TS_PRISM_MATRIX_DX || y>=8*TS_PRISM_MATRIX_DY ||
+       x%TS_PRISM_MATRIX_DX>=TS_PRISM_MATRIX_W || y%TS_PRISM_MATRIX_DY>=TS_PRISM_MATRIX_H)return -1;
+    return y/TS_PRISM_MATRIX_DY*8+x/TS_PRISM_MATRIX_DX;
+}
 
 void ts_sister_ui_prism_point_f(TsPrismLensView ray, float *x, float *y)
 {
@@ -285,7 +292,7 @@ int ts_sister_ui_prism_hit(const TsSisterUiModel *model, int x, int y)
         model->midi_learn_active) return -1;
     int strip=ts_sister_ui_prism_strip_hit(x,y);
     if(strip>=0)return strip<model->parameters.prism.lenses ? strip : -1;
-    TsPrismView v = model->routing.prism.valid ? model->routing.prism :
+    TsPrismView v = model->routing.prism.valid && !model->prism_matrix_edit ? model->routing.prism :
         ts_prism_control_view(&model->parameters.prism);
     int best = -1, distance = 65;
     int selected=model->prism_selected-1;
@@ -417,6 +424,11 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
         return hit;
     }
     if (model != NULL && model->fx_page == 3) {
+        if(model->prism_panel==3 && contains(x,y,480,78,136,22)) {
+            hit.action=TS_SISTER_UI_ACTION_PARAMETER;hit.index=TS_SISTER_UI_PARAM_PRISM_TIME;
+            hit.normalized=(float)(x-480)/135;return hit;
+        }
+        if(model->prism_panel==3 && y>=40 && y<345)return hit;
         if(model->prism_panel==1) {
             static const int sliders[][5]={
                 {308,280,154,TS_SISTER_UI_PARAM_PRISM_MORPH,18},

@@ -16,7 +16,9 @@ void ts_prism_controls_default(TsPrismControls *p)
 {
     if (p) *p = (TsPrismControls){.mode=TS_PRISM_SUPERSAW,.lenses=TS_PRISM_BASE_LENSES,
         .spread=.5f,.drift=.15f,.stereo=.8f,.body=.5f,.mix=.8f,.dry_level=1,.color=.5f,
-        .drift_rate=.1f,.morph_seconds=5,.seq_rate=2,.endpoint={0,1}};
+        .drift_rate=.1f,.morph_seconds=5,.seq_rate=2,.endpoint={0,1},
+        .matrix={.length=16,.loop=1,.step_seconds=5}};
+    if(p)for(int i=0;i<TS_PRISM_MATRIX_STEPS;++i)p->matrix.step[i]=-1;
 }
 
 static void patch_sanitize(TsPrismPatch *p)
@@ -56,8 +58,17 @@ void ts_prism_controls_sanitize(TsPrismControls *p)
     TsPrismPatch patch; memcpy(&patch,p,sizeof(patch)); patch_sanitize(&patch); memcpy(p,&patch,sizeof(patch));
     p->captured &= (1<<TS_PRISM_STATES)-1;
     for(int i=0;i<TS_PRISM_STATES;++i)if(p->captured&(1<<i))patch_sanitize(ts_prism_state(p,i));
-    for(int i=0;i<2;++i)if(p->endpoint[i]<0 || p->endpoint[i]>=TS_PRISM_STATES)p->endpoint[i]=i;
-    if(p->endpoint[0]==p->endpoint[1])p->endpoint[1]=(p->endpoint[0]+1)%TS_PRISM_STATES;
+    p->active_pair_valid=!!p->active_pair_valid;
+    for(int i=0;i<2;++i) {
+        if(p->endpoint[i]<(p->active_pair_valid?-1:0) || p->endpoint[i]>=TS_PRISM_STATES)p->endpoint[i]=i;
+        if(p->active_pair_valid)patch_sanitize(&p->active_pair[i]);
+    }
+    if(!p->active_pair_valid && p->endpoint[0]==p->endpoint[1])p->endpoint[1]=(p->endpoint[0]+1)%TS_PRISM_STATES;
+    p->matrix.length=p->matrix.length<1?1:p->matrix.length>TS_PRISM_MATRIX_STEPS?TS_PRISM_MATRIX_STEPS:p->matrix.length;
+    p->matrix.loop=!!p->matrix.loop;p->matrix_run=!!p->matrix_run;
+    p->matrix.step_seconds=bounded(p->matrix.step_seconds,.05f,120,5);
+    for(int i=0;i<TS_PRISM_MATRIX_STEPS;++i)
+        if(p->matrix.step[i]<-1 || p->matrix.step[i]>=TS_PRISM_STATES)p->matrix.step[i]=-1;
     p->morph_enabled = !!p->morph_enabled && ts_prism_pair_ready(p);
     p->morph=bounded(p->morph,0,1,0);
     p->morph_seconds=bounded(p->morph_seconds,.05f,120,5);
@@ -210,7 +221,7 @@ TsPrismView ts_prism_control_view(const TsPrismControls *controls)
     ts_prism_controls_sanitize(&p);
     TsPrismPatch patch=prism_patch(&p);
     for (int i = 0; i < TS_PRISM_LENSES; ++i) v.lens[i] = p.morph_enabled ?
-        morph_geometry(ts_prism_state_const(&p,p.endpoint[0]),ts_prism_state_const(&p,p.endpoint[1]),i,0,p.morph) : geometry(&patch,i,0);
+        morph_geometry(ts_prism_endpoint_patch(&p,0),ts_prism_endpoint_patch(&p,1),i,0,p.morph) : geometry(&patch,i,0);
     v.wet = p.enabled ? p.mix : 0;
     v.dry = p.enabled ? (1 - p.mix) * p.dry_level : 1;
     return v;
@@ -266,14 +277,22 @@ void ts_prism_free(TsPrism *p)
 void ts_prism_set_controls(TsPrism *p, const TsPrismControls *controls)
 {
     if (!p || !controls) return;
+    int start=controls->matrix_run &&
+        (!p->controls.matrix_run || controls->matrix_restart!=p->controls.matrix_restart);
+    int release=p->matrix.active && !controls->matrix_run;
     int was_morphing=p->controls.morph_enabled;
     p->controls = *controls;
     ts_prism_controls_sanitize(&p->controls);
-    if(!p->controls.morph_enabled || !was_morphing) {
+    if(release)memset(&p->matrix,0,sizeof(p->matrix));
+    if(!p->controls.matrix_run)p->matrix.pending=0;
+    if(start)p->matrix.pending=1;
+    if(!p->controls.morph_enabled || !was_morphing || release) {
         p->morph_position=p->controls.morph;
         p->morph_start=p->morph_position;p->morph_elapsed=0;p->morph_seen=0;
     }
 }
+
+#include "ts_prism_matrix.inc"
 
 static TsStereoFrame read_delay(const TsPrism *p, float delay)
 {
@@ -425,19 +444,20 @@ TsStereoFrame ts_prism_process(TsPrism *p, TsStereoFrame input)
     if ((p->clock % TS_PRISM_HOP) == 0) {
         double hop=(double)TS_PRISM_HOP/p->sample_rate;
         TsPrismPatch patch=prism_patch(c);
-        if(c->morph_trigger != p->morph_seen) {
+        if(!p->matrix.active && c->morph_trigger != p->morph_seen) {
             p->morph_seen=c->morph_trigger;p->morph_start=p->morph_position;p->morph_elapsed=0;
         }
-        if(c->morph_enabled) {
+        if(!p->matrix.active && c->morph_enabled) {
             if(c->morph_trigger) {
-                p->morph_position=lerp(p->morph_start,(float)c->morph_target,
-                    fminf(1,p->morph_elapsed/c->morph_seconds));
+                p->morph_position=prism_timed_position(p->morph_start,(float)c->morph_target,p->morph_elapsed,c->morph_seconds);
                 p->morph_elapsed+=(float)hop;
             } else p->morph_position=c->morph;
-        } else p->morph_position=c->morph;
+        } else if(!p->matrix.active)p->morph_position=c->morph;
+        prism_matrix_tick(p,hop);
         float t=c->morph_enabled ? p->morph_position : 0;
-        const TsPrismPatch *a=c->morph_enabled ? ts_prism_state_const(c,c->endpoint[0]) : &patch;
-        const TsPrismPatch *b=c->morph_enabled ? ts_prism_state_const(c,c->endpoint[1]) : &patch;
+        const TsPrismPatch *a=c->morph_enabled ? ts_prism_endpoint_patch(c,0) : &patch;
+        const TsPrismPatch *b=c->morph_enabled ? ts_prism_endpoint_patch(c,1) : &patch;
+        if(p->matrix.active) {a=&p->matrix.pair[0];b=&p->matrix.pair[1];t=p->matrix.position;}
         p->wet_target=c->enabled ? lerp(a->mix,b->mix,t) : 0;
         p->dry_target=c->enabled ? lerp((1-a->mix)*a->dry_level,(1-b->mix)*b->dry_level,t) : 1;
         p->gain_target=powf(10,lerp(a->output_db,b->output_db,t)/20);
@@ -550,6 +570,17 @@ TsPrismView ts_prism_view(const TsPrism *p)
     TsPrismView v = {0};
     if (!p || !p->history) return v;
     v.valid = 1;
+    v.matrix_active=p->matrix.active;v.matrix_running=p->matrix.running;
+    v.matrix_step=p->matrix.step;v.matrix_waiting=p->matrix.waiting;v.matrix_missing=p->matrix.missing;
+    v.matrix_from=p->matrix.letter[0];v.matrix_to=p->matrix.letter[1];
+    v.matrix_morph=p->matrix.position;
+    if(p->matrix.active) {
+        const TsPrismPatch *a=&p->matrix.pair[0],*b=&p->matrix.pair[1],*shape=p->matrix.position<.5f?a:b;
+        v.matrix_lenses=a->lenses>b->lenses?a->lenses:b->lenses;
+        v.matrix_input_shape=shape->input_shape;v.matrix_output_shape=shape->output_shape;
+    }
+    v.matrix_progress=p->matrix.duration>0?(float)fmin(1,p->matrix.elapsed/p->matrix.duration):0;
+    v.matrix_step_seconds=(float)p->matrix.duration;v.matrix_morph_seconds=(float)p->matrix.morph_duration;
     v.morph=p->morph_position;v.seq_lens=p->seq_lens;
     v.wet = p->wet;
     v.dry = p->dry;

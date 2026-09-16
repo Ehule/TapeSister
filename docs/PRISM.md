@@ -384,9 +384,9 @@ Older A/B files load with A and B selected and C–L empty.
 
 The status beside the tabs identifies the letter being edited or selected, and
 shows the assigned pair while morphing, for example **C/L MORPH - SOUND LOCKED**.
-Sequence changes do not mark a sound state dirty. This bank is the foundation
-for the future [Morph Matrix](PRISM_MORPH_BANK_PLAN.md); automatic routes between
-states are not part of this release.
+Sequence changes do not mark a sound state dirty. **MATRIX >** opens the
+[64-step Morph Matrix](PRISM_MORPH_MATRIX.md), which sequences references to these
+same A–L states, with live draft editing, Play, Stop/Reset, Loop and step timing.
 
 ![Native Prism performance controls with L and C assigned from the twelve-state bank](images/prism-morph-bank.png)
 
@@ -455,8 +455,9 @@ IDs retain their meaning; new targets are appended. Shape, capture and pattern
 buttons are mouse actions. Arrow keys act only on a selected Prism lens in the
 Prism window, outside modal editing and MIDI learn.
 
-Sister project version **18** and Sister preset version **17** store the new
-performance state alongside all previous Prism settings. Old files initialize
+Sister project version **20**, Sister preset version **19**, and Prism bank
+version **3** store the performance bank, Matrix pattern and parked blend alongside
+all previous Prism settings. Matrix transport always reloads stopped. Old files initialize
 Drift Rate at its original motion speed, with no sequence, octave offsets or A/B
 morphing. Missing lens keys remain neutral and projects predating Prism start
 with Prism off. The existing FX migration behavior is retained.
@@ -474,7 +475,7 @@ Windows testing remains necessary for real-time buffer reliability.
 
 ## Verification and remaining listening work
 
-The expanded 79-test suite has 75 passes. The four existing failures remain
+The earlier, pre-Matrix 79-test suite had 75 passes. The four existing failures remain
 `test_sister_routes`, `test_sister_source_mask`, `test_sister_recursion`, and the
 canvas grid assertion in `tapesister_canvas_tests`. Prism performance tests cover
 morph endpoints and midpoints, timed moves and manual takeover, hidden sequence

@@ -133,6 +133,8 @@ typedef struct {
 
 typedef struct {
     atomic_int prism_valid, prism_seq_lens;
+    atomic_int prism_matrix_int[10];
+    atomic_uint_least32_t prism_matrix_float[4];
     atomic_uint_least32_t prism_wet, prism_dry, prism_morph;
     atomic_uint_least32_t prism_lens[TS_PRISM_LENSES][6];
     atomic_uint_least64_t revision;

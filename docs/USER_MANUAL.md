@@ -1025,7 +1025,12 @@ optical meanings, gain and latency behavior, measured CPU costs and test results
 
 ### Prism performance controls
 
-Prism now has **SOUND**, **PERFORM**, and **PRESETS** control pages below its live
+The **MATRIX >** button opens the [64-step Morph Matrix](PRISM_MORPH_MATRIX.md):
+sequence A–L destinations, adjust STEP and Morph Time, and use Play, Stop/Reset
+and Loop. Bank-letter drafts can be edited while it plays and saved for their
+next visit. Matrix patterns save with presets/projects and reload stopped.
+
+Prism has **SOUND**, **PERFORM**, and **PRESETS** control pages below its live
 lens diagram. The Prism-only bank saves refraction settings independently of the
 bottom-row full Sister presets. **NEW** rolls a fresh setup, **VARY** develops it,
 and six lock groups protect chosen settings. Capture **A/B** to start, then use

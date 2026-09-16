@@ -5525,6 +5525,8 @@ sister_footer:
         snprintf(line, sizeof(line), "FILE %s",
                  model->file_capture_state == TS_PERFORMANCE_FILE_STOPPING ?
                  "FINISHING WAV" : "RECORDING PERFORMANCE");
+    } else if(model->fx_page==3 && model->prism_panel==3 && model->routing.capture_state!=TS_CAPTURE_RECORDING) {
+        snprintf(line,sizeof(line),"%.100s",model->status);
     } else {
         snprintf(line, sizeof(line), "TARGET %s  %.80s",
                  model->destination_mode == TS_SISTER_UI_DEST_FILE ? "FILE" :

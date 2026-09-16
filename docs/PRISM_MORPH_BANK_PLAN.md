@@ -1,4 +1,4 @@
-# Prism performance bank and future Morph Matrix
+# Prism performance bank and Morph Matrix
 
 Prism now stores twelve independent sound states **A–L** with two selected morph
 ends. Wheel browsing is silent, a click confirms the next destination, right-click
@@ -11,7 +11,8 @@ ends and parked morph position. The versioned format still reads older A/B files
 Transitions stay on the audio clock; UI choices are published only on confirmation.
 New/Vary and ordinary preset auditions preserve every stored state.
 
-The future Morph Matrix can build on these stable state identities to arrange
-routes or sequences through a performance bank. It still needs a separate design
-for route editing, per-transition timing, manual intervention and transport.
-Those automatic routes are not included in the twelve-state release.
+The [64-step Morph Matrix](PRISM_MORPH_MATRIX.md) now uses these state identities
+as destinations. It adds one 8×8 pattern, step duration, Play, Stop/Reset and Loop.
+Bank drafts can be edited during playback and saved for the next occurrence.
+The current transition keeps two frozen endpoints, and manual takeover holds its
+exact blend without overwriting a bank letter.

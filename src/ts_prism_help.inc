@@ -13,17 +13,23 @@ static int prism_patch_matches(const TsPrismControls *c,const TsPrismPatch *p)
            !memcmp(c->octave_offset,p->octave_offset,sizeof(p->octave_offset));
 }
 
+int ts_sister_ui_prism_assigned(const TsSisterUiModel *m,int side)
+{
+    if(m->routing.prism.matrix_active && !m->prism_matrix_edit)return side?m->routing.prism.matrix_to:m->routing.prism.matrix_from;
+    return m->parameters.prism.endpoint[side];
+}
 int ts_sister_ui_prism_state(const TsSisterUiModel *m,int endpoint)
 {
     if(!m || endpoint<0 || endpoint>1)return 0;
     int pending=m->prism_browse[endpoint];
-    return pending>0 && pending<=TS_PRISM_STATES?pending-1:m->parameters.prism.endpoint[endpoint];
+    return pending>0 && pending<=TS_PRISM_STATES?pending-1:ts_sister_ui_prism_assigned(m,endpoint);
 }
 TsPrismCaptureVisual ts_sister_ui_prism_capture_visual(const TsSisterUiModel *m,int endpoint)
 {
     if(!m || endpoint<0 || endpoint>1)return TS_PRISM_CAPTURE_EMPTY;
     const TsPrismControls *c=&m->parameters.prism;
     int state=ts_sister_ui_prism_state(m,endpoint);
+    if(state<0)return TS_PRISM_CAPTURE_EMPTY;
     if(!(c->captured&(1<<state)))return TS_PRISM_CAPTURE_EMPTY;
     if(!c->morph_enabled && m->prism_edit_endpoint==state+1)
         return prism_patch_matches(c,ts_prism_state_const(c,state)) ? TS_PRISM_CAPTURE_EDITING : TS_PRISM_CAPTURE_DIRTY;
@@ -35,14 +41,18 @@ const char *ts_sister_ui_prism_edit_status(const TsSisterUiModel *m)
     static char label[64];const TsPrismControls *c=&m->parameters.prism;
     for(int side=0;side<2;++side) {
         int state=ts_sister_ui_prism_state(m,side);
-        if(state!=c->endpoint[side]) {
+        if(state!=ts_sister_ui_prism_assigned(m,side)) {
             snprintf(label,sizeof(label),"CHOOSE %c - %s",'A'+state,
                 c->captured&(1<<state)?"CLICK TO MORPH":
                 c->morph_enabled?"EMPTY / RIGHT-CLICK CAP TO EDIT":"EMPTY / CLICK CAP TO SAVE");return label;
         }
     }
+    if(m->prism_matrix_edit) {
+        snprintf(label,sizeof(label),"DRAFT %c / SAVE FOR NEXT VISIT",'A'+m->prism_matrix_edit-1);return label;
+    }
+    if(m->routing.prism.matrix_active)return "MATRIX / RIGHT CAP TO TAKE OVER";
     if(c->morph_enabled) {
-        snprintf(label,sizeof(label),"%c/%c MORPH - SOUND LOCKED",'A'+c->endpoint[0],'A'+c->endpoint[1]);return label;
+        snprintf(label,sizeof(label),"%c/%c MORPH - SOUND LOCKED",ts_prism_state_letter(c->endpoint[0]),ts_prism_state_letter(c->endpoint[1]));return label;
     }
     int edit=m->prism_edit_endpoint-1;
     const TsPrismPatch *patch=ts_prism_state_const(c,edit);
@@ -56,7 +66,7 @@ const char *ts_sister_ui_prism_edit_status(const TsSisterUiModel *m)
         if((c->captured&(1<<state)) && prism_patch_matches(c,ts_prism_state_const(c,state)))matches=1;
     if(!matches)return "LIVE EDIT - NOT CAPTURED";
     if(!ts_prism_pair_ready(c))return "LIVE EDIT / CAPTURE OTHER END";
-    snprintf(label,sizeof(label),"LIVE EDIT / %c+%c READY",'A'+c->endpoint[0],'A'+c->endpoint[1]);return label;
+    snprintf(label,sizeof(label),"LIVE EDIT / %c+%c READY",ts_prism_state_letter(c->endpoint[0]),ts_prism_state_letter(c->endpoint[1]));return label;
 }
 
 void ts_sister_ui_prism_help(const TsSisterUiModel *m,int x,int y,char *help,size_t size)
@@ -66,6 +76,21 @@ void ts_sister_ui_prism_help(const TsSisterUiModel *m,int x,int y,char *help,siz
     if(!m || m->fx_page!=3 || m->preset_manage_open || m->midi_learn_active)return;
     const TsPrismControls *c=&m->parameters.prism;
 #define TIP(message) do { snprintf(help,size,"%s",message);return; } while(0)
+    if(m->prism_panel==3) {
+        int cell=ts_sister_ui_prism_matrix_cell(x,y);
+        if(cell>=0)TIP("CELL: wheel/left/right cycles HOLD, A-L. Middle clears. Shift-click sets sequence length. Changes apply next visit.");
+        if(contains(x,y,16,48,70,22))TIP("BACK: return to Prism. Matrix keeps running across pages; playback keys and recording remain available.");
+        if(contains(x,y,16,78,62,22))TIP("PLAY: start at step 01. A current blend finishes toward its nearer end first; no abrupt preset recall.");
+        if(contains(x,y,86,78,90,22))TIP("STOP/RESET: hold the current sound and reset to step 01. The manual morph fader can take over this exact blend.");
+        if(contains(x,y,184,78,62,22))TIP("LOOP: repeat the active sequence. With Loop off, the final step completes and its sound stays held.");
+        if(contains(x,y,254,78,86,22))TIP("LENGTH: 1-64 cells, left to right then top to bottom. Wheel adjusts; Shift-click a cell sets the end.");
+        if(contains(x,y,348,78,124,22))TIP("STEP: seconds per cell. Morph reaches its destination, then holds for any remaining time. Changes apply next step.");
+        if(contains(x,y,480,78,136,22))TIP("MORPH: the existing Prism Time. Matrix caps it at STEP to avoid overlapping transitions; manual Time is unchanged.");
+        if(contains(x,y,16,318,600,22))TIP("BANK A-L: open a draft without stopping playback. SAVE updates that letter for its next visit; current morph stays intact.");
+        return;
+    }
+    if(m->prism_matrix_edit && contains(x,y,530,250,86,22))TIP("SAVE: capture this draft in its bank letter. Matrix uses it on the next visit, keeping the current transition intact.");
+    if(contains(x,y,534,48,82,22))TIP("MATRIX: 64 steps referencing A-L, with Play, Stop/Reset, Loop and independent step duration.");
     if(contains(x,y,16,250,78,22))TIP("SOUND: lens count, spread, motion, body, wet/dry and glass color. The live diagram stays visible.");
     if(contains(x,y,102,250,92,22))TIP("PERFORM: twelve captured states A-L, two morph ends, ordered lens sequencer, snapping, Drift Rate and group octave.");
     if(contains(x,y,202,250,86,22))TIP("PRESETS: Prism-only bank, NEW / VARY and their lock groups. Sister tape and other FX stay as set.");
@@ -77,7 +102,7 @@ void ts_sister_ui_prism_help(const TsSisterUiModel *m,int x,int y,char *help,siz
             int endpoint=x>=88;
             static const char *const states[]={"EMPTY","CAPTURED","EDITING","EDITING - NOT CAPTURED"};
             const char *state=states[ts_sister_ui_prism_capture_visual(m,endpoint)];
-            snprintf(help,size,"CAP %c: %s. %s",'A'+ts_sister_ui_prism_state(m,endpoint),state,
+            snprintf(help,size,"CAP %c: %s. %s",ts_prism_state_letter(ts_sister_ui_prism_state(m,endpoint)),state,
                 c->morph_enabled ? "Right-click edits (even empty). Middle-click clears and unlocks." :
                 "Wheel browses A-L; click confirms. Left-click saves edits; right recalls; middle clears.");
             return;

@@ -52,7 +52,7 @@ static void check_prism_morph_bank(void)
     FILE *current=fopen("prism-twelve.ini","rb"),*legacy=fopen("prism-two.ini","wb");assert(current && legacy);
     char line[512];
     while(fgets(line,sizeof(line),current)) {
-        if(!strncmp(line,"P3.",3))continue;
+        if(!strncmp(line,"P3.",3) || !strncmp(line,"P4.",3))continue;
         if(!strncmp(line,"TapeSister Prism Presets",23))fputs("TapeSister Prism Presets 1\n",legacy);
         else if(!strncmp(line,"P2.perf.captured.",17))fputs("P2.perf.captured.0=3\n",legacy);
         else fputs(line,legacy);

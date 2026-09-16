@@ -121,7 +121,7 @@ static void test_prism_performance_ui(void)
     assert(sister_prism_performance_click(0,a,s,25,290,1,KMOD_NONE));
 
     /* Shared sustain, exact recording hit area, and two-line hover help. */
-    for(int page=0;page<3;++page) {
+    for(int page=0;page<4;++page) {
         s->model.prism_panel=page;
         TsSisterUiHit rec=ts_sister_ui_hit_test_model(&s->model,TS_PRISM_REC_X+4,TS_PRISM_FOOTER_Y+4);
         assert(rec.action==TS_SISTER_UI_ACTION_RECORD_FILE);
