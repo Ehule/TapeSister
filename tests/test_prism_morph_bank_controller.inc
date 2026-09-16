@@ -91,3 +91,66 @@ static void test_prism_morph_bank_ui(void)
         assert(!memcmp(ts_prism_state_const(&bank,i),ts_prism_state_const(&a->sister.parameters.prism,i),sizeof(TsPrismPatch)));
     SDL_DestroyWindow(s->window);free(s);routing_free(a);
 }
+
+static void test_prism_empty_state_edit(void)
+{
+    AudioState *a=routing_audio(0);SisterWindow *s=calloc(1,sizeof(*s));assert(s);
+    ts_sister_ui_model_init(&s->model,&ui.config);s->model.fx_page=3;s->model.prism_panel=1;
+    s->window=SDL_CreateWindow("Prism clear/edit regression",0,0,1280,800,SDL_WINDOW_HIDDEN);assert(s->window);
+    s->window_id=SDL_GetWindowID(s->window);
+    TsPrismControls bank=a->sister.parameters.prism;
+    for(int i=0;i<TS_PRISM_STATES;++i) {
+        bank.enabled=1;bank.mode=i%TS_PRISM_MODE_COUNT;bank.lenses=i+2;
+        bank.spread=.07f*i;ts_prism_capture(&bank,i);
+    }
+    bank.endpoint[0]=6;bank.endpoint[1]=3; /* Screenshot: G/D with C browsed. */
+    bank.seq_enabled=1;bank.seq_count=2;bank.sequence[0]=1;bank.sequence[1]=3;
+    const float positions[]={0,.35f,1};
+    SDL_Event e={0};e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=s->window_id;e.button.y=580;
+    TsSisterUiHit mode=ts_sister_ui_hit_test_model(&s->model,170,58);
+    assert(mode.action==TS_SISTER_UI_ACTION_PRISM_MODE);
+    /* Both sides, stopped endpoints and mid-morph: clear an assigned state,
+       clear a browsed saved/empty state, or right-click a browsed empty state. */
+    for(int side=0;side<2;++side)for(int phase=0;phase<3;++phase)for(int action=0;action<4;++action) {
+        TsPrismControls c=bank;int state=action?2:c.endpoint[side];
+        if(action>=2)c.captured&=~(1<<state);
+        c.morph=positions[phase];c.morph_enabled=0;c.morph_trigger=0;
+        sister_prism_publish(0,a,s,&c);
+        c.morph_enabled=1;c.morph_target=1;c.morph_trigger=1;sister_prism_publish(0,a,s,&c);
+        memset(s->model.prism_browse,0,sizeof(s->model.prism_browse));
+        morph_bank_choose(s,side,state);
+        if(action) {
+            assert(strstr(ts_sister_ui_prism_edit_status(&s->model),"CHOOSE C"));
+            if(action>=2)assert(strstr(ts_sister_ui_prism_edit_status(&s->model),"RIGHT-CLICK CAP TO EDIT"));
+        }
+        sister_apply_action(0,a,&ui,&instrument,s,NULL,NULL,mode,48000,2);
+        assert(a->sister.parameters.prism.morph_enabled && strstr(s->model.status,"MORPH LOCKED"));
+        e.button.x=(25+75*side)*2;e.button.button=action==3?SDL_BUTTON_RIGHT:SDL_BUTTON_MIDDLE;
+        assert(sister_prism_event(0,a,&ui,s,&e));
+        TsPrismControls cleared=a->sister.parameters.prism;
+        assert(!cleared.morph_enabled && !cleared.morph_trigger && cleared.endpoint[side]==state);
+        assert(!s->model.prism_browse[0] && !s->model.prism_browse[1]);
+        assert(cleared.captured==(4095&~(1<<state)));
+        assert(ts_sister_ui_prism_capture_visual(&s->model,side)==TS_PRISM_CAPTURE_EMPTY);
+        assert(!strstr(ts_sister_ui_prism_edit_status(&s->model),"CHOOSE"));
+        int source=action?bank.endpoint[positions[phase]>=.5f]:bank.endpoint[1-side];
+        assert(!memcmp(&cleared,ts_prism_state_const(&bank,source),sizeof(TsPrismPatch)));
+        assert(cleared.seq_enabled && cleared.seq_count==2 && cleared.sequence[1]==3);
+        for(int i=0;i<TS_PRISM_STATES;++i)if(i!=state)
+            assert(!memcmp(ts_prism_state_const(&cleared,i),ts_prism_state_const(&bank,i),sizeof(TsPrismPatch)));
+        /* The top factory-mode control works immediately, without a preset-page detour. */
+        sister_apply_action(0,a,&ui,&instrument,s,NULL,NULL,mode,48000,2);
+        assert(a->sister.parameters.prism.mode==(cleared.mode+1)%TS_PRISM_MODE_COUNT);
+        e.button.button=SDL_BUTTON_LEFT;assert(sister_prism_event(0,a,&ui,s,&e));
+        assert(a->sister.parameters.prism.captured==4095);
+        assert(!memcmp(ts_prism_state_const(&a->sister.parameters.prism,state),&a->sister.parameters.prism,sizeof(TsPrismPatch)));
+    }
+    /* Clearing a stale candidate already bound by the other button must not
+       produce duplicate ends or let sanitization silently select another letter. */
+    TsPrismControls c=bank;c.endpoint[1]=2;sister_prism_publish(0,a,s,&c);
+    s->model.prism_browse[0]=3;
+    e.button.x=50;e.button.button=SDL_BUTTON_MIDDLE;assert(sister_prism_event(0,a,&ui,s,&e));
+    assert(a->sister.parameters.prism.endpoint[0]==2 && a->sister.parameters.prism.endpoint[1]==6);
+    assert(!s->model.prism_browse[0] && !a->sister.parameters.prism.morph_enabled);
+    SDL_DestroyWindow(s->window);free(s);routing_free(a);
+}

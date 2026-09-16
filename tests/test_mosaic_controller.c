@@ -424,6 +424,7 @@ int main(void)
     test_prism_performance_ui();
     test_prism_capture_workflow();
     test_prism_morph_bank_ui();
+    test_prism_empty_state_edit();
     test_mosaic_record_tile(window,device);
     test_mosaic_record_routes(window,device);
     test_mosaic_record_bank();

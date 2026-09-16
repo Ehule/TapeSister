@@ -325,6 +325,8 @@ its audio. Escape cancels pending choices. The letter assigned to the other end
 is skipped; each end uses a different state.
 
 To add a state, browse to an empty letter, set up the live sound, and click **CAP**.
+If a morph is active, **right-click the empty CAP** first to unlock editing.
+The empty letter becomes the edit destination without capturing anything yet.
 To use a saved state, browse to its letter on the **silent end**, then click that
 **CAP** or **TO** button. The choice is confirmed and a timed morph begins.
 For example: capture A and B, morph to B, browse the left end to C, and confirm
@@ -352,11 +354,19 @@ Other letters remain intact. Clicking an already assigned CAP saves the live
 sound when editing is unlocked; clicking a pending saved letter confirms/morphs.
 An empty TO cannot morph until its letter is captured.
 
-**Middle-click CAP** empties only its displayed letter. Clearing a selected end
-cancels the timed morph and unlocks editing; during a morph, the surviving end
-becomes the live sound. Clearing an unselected candidate leaves the sounding
-pair alone. Clear both selected letters to reset the pair; the rest of A–L stays
-stored until you explicitly clear or replace those letters.
+**Middle-click CAP** empties only its displayed letter, selects that letter on
+the clicked side, cancels pending wheel choices, and unlocks sound editing. This
+also works for a browsed letter that was not part of the sounding pair. Its button
+shows **EMPTY**, rather than staying amber with **CHOOSE**, and the top factory-mode
+selector works immediately. Other stored states stay intact.
+
+When clearing an assigned end during a morph, the surviving end becomes the live
+sound. When clearing or right-clicking an empty browsed letter, editing starts
+from the nearer end of the previous morph (the sounding state at 0% or 100%;
+otherwise the end contributing more, with the right end chosen at 50%). This is
+an explicit return to sound editing, not a capture of the interpolated blend.
+Edit and click CAP to save into the empty letter. Clear both selected letters to
+reset the pair; the rest of A–L stays stored until explicitly cleared or replaced.
 
 Ordinary preset browsing and New/Vary preserve all twelve memories. **SAVE NEW**
 stores the entire A–L bank, selected pair and parked fader position in a Prism

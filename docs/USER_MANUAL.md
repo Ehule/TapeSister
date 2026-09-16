@@ -1036,8 +1036,9 @@ and TO buttons follow the selected pair; moving the fader takes over a timed mov
 
 Right-click CAP to recall its displayed letter for editing, then left-click it to
 save changes. New/Vary and ordinary user-preset browsing preserve all twelve
-memories. Middle-click CAP clears only that letter; clearing an active end also
-stops the morph. Shift-click a user-preset arrow/name restores the full saved bank
+memories. Middle-click CAP clears only that letter and unlocks editing, including
+when it was a pending wheel choice. Right-clicking an empty CAP also unlocks it
+for editing; no preset recall is needed. Shift-click a user-preset arrow/name restores the full saved bank
 and selected pair. Projects and full Sister presets also retain the bank; old
 A/B files remain loadable. See [Prism performance](PRISM.md#presets-and-performance).
 

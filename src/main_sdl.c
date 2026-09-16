@@ -9179,7 +9179,7 @@ static int sister_prism_event(SDL_AudioDeviceID device, AudioState *audio,
             if((mod&(KMOD_ALT|KMOD_GUI)) || (control && !shift))return 0;
             if(lens>=sister->model.parameters.prism.lenses)return 0;
             if(sister->model.parameters.prism.morph_enabled) {
-                snprintf(sister->model.status,sizeof(sister->model.status),"MORPH LOCKED: RIGHT-CLICK CAP A/B TO EDIT");return 1;
+                snprintf(sister->model.status,sizeof(sister->model.status),"MORPH LOCKED: RIGHT-CLICK CAP TO EDIT");return 1;
             }
             if(control && shift && (key==SDLK_UP || key==SDLK_DOWN))
                 sister_prism_edit(device,audio,sister,lens,PRISM_OCTAVE,key==SDLK_UP?1:-1,0);
@@ -10206,7 +10206,10 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
     case TS_SISTER_UI_ACTION_PRISM_MODE:
         if (hit.action == TS_SISTER_UI_ACTION_PRISM_TOGGLE)
             sister->model.parameters.prism.enabled = !sister->model.parameters.prism.enabled;
-        else if(!sister->model.parameters.prism.morph_enabled)
+        else if(sister->model.parameters.prism.morph_enabled) {
+            snprintf(sister->model.status,sizeof(sister->model.status),"MORPH LOCKED / RIGHT-CLICK CAP TO EDIT");
+            break;
+        } else
             sister->model.parameters.prism.mode = (sister->model.parameters.prism.mode + 1) % TS_PRISM_MODE_COUNT;
         ts_sister_runtime_set_parameters(&audio->sister, &sister->model.parameters);
         ts_sister_runtime_mark_selected_preset_modified(&audio->sister);

@@ -51,24 +51,44 @@ static void sister_prism_browse_state(SisterWindow *s,int side,int wheel)
     }
     s->model.prism_browse[side]=state==s->model.parameters.prism.endpoint[side]?0:state+1;
     snprintf(s->model.status,sizeof(s->model.status),"CHOOSE %c / %s / WHEEL DOES NOT CHANGE SOUND",'A'+state,
-        s->model.parameters.prism.captured&(1<<state)?"CLICK TO MORPH; RIGHT-CLICK TO EDIT":"EMPTY: CLICK CAP TO SAVE LIVE SOUND");
+        s->model.parameters.prism.captured&(1<<state)?"CLICK TO MORPH; RIGHT-CLICK TO EDIT":
+        s->model.parameters.prism.morph_enabled?"EMPTY: RIGHT-CLICK CAP TO EDIT":"EMPTY: CLICK CAP TO SAVE LIVE SOUND");
     s->rendered_model_valid=0;
+}
+/* An explicit clear/empty recall leaves performance mode and assigns an editable
+   destination. Unlike wheel browsing, it must not retain a hidden locked pair. */
+static void sister_prism_begin_empty_edit(SDL_AudioDeviceID device,AudioState *audio,
+                                         SisterWindow *s,TsPrismControls *c,int side,int state)
+{
+    if(c->morph_enabled) {
+        int source;
+        if(state==c->endpoint[0])source=c->endpoint[1];
+        else if(state==c->endpoint[1])source=c->endpoint[0];
+        else {
+            if(device)SDL_LockAudioDevice(device);
+            float position=audio->sister.prism.morph_position;
+            if(device)SDL_UnlockAudioDevice(device);
+            source=c->endpoint[position>=.5f];
+        }
+        ts_prism_recall(c,source);
+    }
+    c->morph_enabled=0;c->morph_trigger=0;c->morph=(float)side;
+    /* Both buttons may have browsed to the same letter before one was confirmed. */
+    if(state==c->endpoint[1-side])c->endpoint[1-side]=c->endpoint[side];
+    c->endpoint[side]=state;
+    memset(s->model.prism_browse,0,sizeof(s->model.prism_browse));
+    s->model.prism_edit_endpoint=0;
 }
 static int sister_prism_clear_capture(SDL_AudioDeviceID device,AudioState *audio,SisterWindow *s,int x,int y)
 {
     if(s->model.prism_panel!=1 || x>=154)return 0;
     int side=sister_prism_endpoint_at(x,y);if(side<0)return 0;
     TsPrismControls c=s->model.parameters.prism;int state=ts_sister_ui_prism_state(&s->model,side);
-    if(c.endpoint[0]==state || c.endpoint[1]==state) {
-        int other=c.endpoint[c.endpoint[0]==state?1:0];
-        if(c.morph_enabled && (c.captured&(1<<other)))ts_prism_recall(&c,other);
-        c.morph_enabled=0;c.morph_trigger=0;
-    }
+    sister_prism_begin_empty_edit(device,audio,s,&c,side,state);
     c.captured&=~(1<<state);memset(ts_prism_state(&c,state),0,sizeof(TsPrismPatch));
     if(!c.captured)c.morph=0;
-    if(s->model.prism_edit_endpoint==state+1)s->model.prism_edit_endpoint=0;
     sister_prism_publish(device,audio,s,&c);
-    snprintf(s->model.status,sizeof(s->model.status),"STATE %c EMPTIED / OTHER A-L STATES KEPT",'A'+state);
+    snprintf(s->model.status,sizeof(s->model.status),"%c EMPTY / SOUND UNLOCKED / EDIT THEN CAP %c / OTHER STATES KEPT",'A'+state,'A'+state);
     return 1;
 }
 /* Wheel choices remain in the UI. Only a confirmed idle end changes the DSP
@@ -90,13 +110,15 @@ static int sister_prism_state_click(SDL_AudioDeviceID device,AudioState *audio,S
     }
     if(right && which<2) {
         if(!occupied) {
-            snprintf(s->model.status,sizeof(s->model.status),"%c IS EMPTY: LEFT-CLICK CAP %c TO CAPTURE FIRST",'A'+state,'A'+state);return 1;
+            sister_prism_begin_empty_edit(device,audio,s,&c,side,state);
+            snprintf(s->model.status,sizeof(s->model.status),"EDIT %c (EMPTY) / SOUND UNLOCKED / CLICK CAP %c TO SAVE",'A'+state,'A'+state);
+        } else {
+            c.endpoint[side]=state;ts_prism_recall(&c,state);s->model.prism_edit_endpoint=state+1;
+            snprintf(s->model.status,sizeof(s->model.status),"RECALLED %c / EDIT THEN CLICK CAP %c TO SAVE",'A'+state,'A'+state);
         }
-        c.endpoint[side]=state;ts_prism_recall(&c,state);s->model.prism_edit_endpoint=state+1;
-        snprintf(s->model.status,sizeof(s->model.status),"RECALLED %c / EDIT THEN CLICK CAP %c TO SAVE",'A'+state,'A'+state);
     } else if(which<2 && (!pending || !occupied)) {
         if(c.morph_enabled) {
-            snprintf(s->model.status,sizeof(s->model.status),"RIGHT-CLICK A CAPTURED LETTER TO RECALL BEFORE EDITING OR CAPTURING");return 1;
+            snprintf(s->model.status,sizeof(s->model.status),"MORPH LOCKED / RIGHT-CLICK CAP %c TO EDIT, THEN LEFT-CLICK TO SAVE",'A'+state);return 1;
         }
         c.endpoint[side]=state;ts_prism_capture(&c,state);c.morph=(float)side;
         s->model.prism_edit_endpoint=0;

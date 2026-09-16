@@ -37,7 +37,8 @@ const char *ts_sister_ui_prism_edit_status(const TsSisterUiModel *m)
         int state=ts_sister_ui_prism_state(m,side);
         if(state!=c->endpoint[side]) {
             snprintf(label,sizeof(label),"CHOOSE %c - %s",'A'+state,
-                c->captured&(1<<state)?"CLICK TO MORPH":"EMPTY / CLICK CAP TO SAVE");return label;
+                c->captured&(1<<state)?"CLICK TO MORPH":
+                c->morph_enabled?"EMPTY / RIGHT-CLICK CAP TO EDIT":"EMPTY / CLICK CAP TO SAVE");return label;
         }
     }
     if(c->morph_enabled) {
@@ -77,7 +78,7 @@ void ts_sister_ui_prism_help(const TsSisterUiModel *m,int x,int y,char *help,siz
             static const char *const states[]={"EMPTY","CAPTURED","EDITING","EDITING - NOT CAPTURED"};
             const char *state=states[ts_sister_ui_prism_capture_visual(m,endpoint)];
             snprintf(help,size,"CAP %c: %s. %s",'A'+ts_sister_ui_prism_state(m,endpoint),state,
-                c->morph_enabled ? "Right-click recalls for editing. Middle-click empties; morph stops." :
+                c->morph_enabled ? "Right-click edits (even empty). Middle-click clears and unlocks." :
                 "Wheel browses A-L; click confirms. Left-click saves edits; right recalls; middle clears.");
             return;
         }

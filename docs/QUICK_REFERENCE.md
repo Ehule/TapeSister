@@ -580,7 +580,8 @@ Ctrl+Z / Ctrl+Y undo/redo; Escape cancels the current stroke.
 - **PERFORM A–L**: hover CAP or TO and wheel to browse silently. Click an empty
   CAP to capture; click a pending saved letter on the silent end to confirm/morph.
   Escape cancels the choice. Right-click CAP recalls for editing; left-click that
-  CAP saves the edits. Middle-click clears its letter, retaining all others.
+  CAP saves the edits. Middle-click clears its letter and unlocks editing, retaining
+  all others. Right-click an empty CAP to edit it without recalling a preset.
   The fader/MIDI controls the selected pair; TO uses TIME; the fader takes over.
 - **SEQ EDIT + Ctrl-click strip**: append/remove ordered members. SEQ ON plays only
   those members in turn; nonmembers sustain. RESET restarts; CLEAR empties.
