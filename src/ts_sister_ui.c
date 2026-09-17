@@ -206,7 +206,8 @@ void ts_sister_ui_model_init(TsSisterUiModel *model, const TsConfig *config)
                 (float)config->sister_fallout_rise_seconds);
     }
     snprintf(model->status, sizeof(model->status),
-             "CLICK POWER TO ENABLE - WINDOW CLOSE HIDES ONLY");
+             "SET SOURCES, MONITOR AND CONTROLS, THEN POWER ON");
+    model->prism_factory_index=-1;
 }
 
 void ts_sister_ui_set_capture_channels(TsSisterUiModel *model,

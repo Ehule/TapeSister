@@ -213,6 +213,55 @@ static void test_route_change(void)
     }
 }
 
+static void test_sister_prepared_power(void)
+{
+    static SisterWindow panel;
+    static ExternalInputState external;
+    reset_route(0);
+    ts_sister_runtime_disable(&audio.sister);
+    ts_sister_ui_model_init(&panel.model,&ui.config);
+    ts_performance_recorder_init(&panel.performance_recorder);
+    ts_input_ownership_init(&external.ownership);
+    panel.model.parameters=audio.sister.parameters;
+    ui.config.sister_buffer_seconds=1;
+    toggle_fm_hold(device,&audio,&ui,&instrument);
+    click_note(0,0);click_note(4,1);
+    assert(ui.keyboard_hold && voices()==2);
+#define ACTION(action,index,value) sister_apply_action(device,&audio,&ui,&instrument,&panel,NULL,&external, \
+    (TsSisterUiHit){action,index,value},44100,2)
+    ACTION(TS_SISTER_UI_ACTION_SOURCE_TILES,0,0);
+    ACTION(TS_SISTER_UI_ACTION_SOURCE_FM,1,0);
+    ACTION(TS_SISTER_UI_ACTION_SOURCE_EXT,2,0);
+    ACTION(TS_SISTER_UI_ACTION_SOURCE_PREVIEW,3,0);
+    ACTION(TS_SISTER_UI_ACTION_SOURCE_TAPEHEAD,4,0);
+    assert(audio.sister.source_switches==31 && !external.ownership.requests);
+    ACTION(TS_SISTER_UI_ACTION_MONITOR,0,0);
+    ACTION(TS_SISTER_UI_ACTION_ROLL,0,0);
+    ACTION(TS_SISTER_UI_ACTION_HOLD,0,0);
+    assert(audio.sister.monitor_enabled && !audio.sister.rolling && audio.sister.held);
+    ACTION(TS_SISTER_UI_ACTION_PARAMETER,TS_SISTER_UI_PARAM_H1_LEVEL,.7f);
+    assert(fabsf(audio.sister.parameters.head1_level-.7f)<.001f);
+    TsSisterParameters prepared=audio.sister.parameters;
+    ACTION(TS_SISTER_UI_ACTION_POWER,0,0);
+    assert(audio.sister.enabled && ui.keyboard_hold && voices()==2);
+    assert(audio.sister.source_switches==31 && audio.sister.monitor_enabled);
+    assert(!audio.sister.rolling && audio.sister.held);
+    assert(audio.sister.parameters.head1_level==prepared.head1_level);
+    assert(external.ownership.requests & TS_INPUT_CONSUMER_SISTER_EXT);
+    assert(audio.notes.workbench_loop && audio.sister.performance.keyboard_loop);
+    TsSisterRoutingSnapshot snapshot;
+    assert(ts_sister_runtime_get_snapshot(&audio.sister,&snapshot));
+    assert(snapshot.source_switches==31 && snapshot.monitor_enabled);
+    /* Note ownership remains releasable after the power/routing handoff. */
+    click_note(4,0);click_note(0,1);assert(!voices() && ui.keyboard_hold);
+    ACTION(TS_SISTER_UI_ACTION_POWER,0,0);
+    assert(!audio.sister.enabled && ui.keyboard_hold && !external.ownership.requests);
+    assert(audio.sister.source_switches==31 && audio.sister.monitor_enabled && audio.sister.held);
+#undef ACTION
+}
+
+#include "test_keyboard_power.inc"
+
 int main(void)
 {
     SDL_SetMainReady();
@@ -229,6 +278,7 @@ int main(void)
     ts_note_bank_init(&audio.notes); ts_performance_init(&audio.performance);
     ts_performance_init(&audio.tile_launchers); ts_sister_runtime_init(&audio.sister);
     ts_capture_init(&audio.capture); audio.output_rate = 44100;
+    ts_audio_mixer_init(&audio.mixer);audio.fm_output_gain=1;
     char error[160];
     assert(ts_sister_runtime_enable(&audio.sister, 44100, 2, 2, 1.0, error, sizeof(error)));
     assert(ts_instrument_create_basic(&instrument, TS_FM_WAVE_SINE, error, sizeof(error)));
@@ -237,6 +287,8 @@ int main(void)
     test_route_change();
     test_trigger_identity();
     test_loop_transport();
+    test_sister_prepared_power();
+    test_keyboard_power_audio();
     stop_all_force(device, &audio, &ui);
     ts_sample_free(&fm); ts_instrument_free(&instrument);
     ts_performance_free(&audio.performance); ts_performance_free(&audio.tile_launchers);

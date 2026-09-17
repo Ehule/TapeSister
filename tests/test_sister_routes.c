@@ -136,8 +136,7 @@ int main(void)
     one_tile_peak = sister_peak(frame.input);
     CHECK(CLOSE(one_tile_peak / trimmed_tile_peak, 2.0f));
     ts_sister_runtime_note_off(&runtime, &note);
-    /* One-shots intentionally survive Note Off.  Clear that first generation
-       before measuring the two-tile group's linked normalization. */
+    /* Isolate the next group's linked normalization from the first trigger. */
     ts_sister_runtime_panic(&runtime);
     CHECK(ts_sister_runtime_set_source_slot(&runtime, &instrument, 1, 1));
     CHECK(ts_sister_runtime_note_on(&runtime, &instrument, &note, 0,
@@ -150,7 +149,9 @@ int main(void)
     CHECK(CLOSE(frame.input.l, frame.input.r));
     ts_sister_runtime_note_off(&runtime, &note);
     frame = ts_sister_runtime_process_frame(&runtime, NULL);
-    CHECK(sister_peak(frame.input) > 0.0f);
+    /* Sustain is off: the unified keyboard policy stops notes at key-up. */
+    CHECK(ts_performance_count(&runtime.performance) == 0);
+    CHECK(CLOSE(sister_peak(frame.input), 0.0f));
 
     /* A routed TILES performance bus is silent on the direct speaker path;
        Sister returns it exactly once. AUDITION/preview remains an independent

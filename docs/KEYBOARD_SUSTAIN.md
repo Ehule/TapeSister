@@ -43,6 +43,17 @@ Click it again to release the latched chord. Its label only changes when this
 explicit switch changes; Shift-click does not turn it on. Space/Stop clears HOLD.
 The Sister Machine transport's HOLD still controls writing to its tape buffer.
 
+Sister POWER is independent of keyboard HOLD. Sources, Monitor, Roll, tape Hold,
+head controls and effect settings can be prepared while power is off, then used
+when the tape machine is enabled. EXT opens its input only when powered on.
+Power transitions retain each note's voice, playback position and repeat
+policy. Notes started before power-on feed Sister's TILES input; notes started
+through Sister continue through the ordinary output when power is switched
+off. Select TILES for sample notes or FM for synth notes and enable Monitor to
+hear them through Sister. Tests render the actual audio callback across repeated
+power cycles, then release the held notes; they check sound as well as highlights.
+Hardware-specific device reconnects remain a separate playback lifecycle.
+
 **Shift-click / Shift+QWERTY** toggles an individual chord note. Without a loop it
 finishes once. With saved loop points, the main LOOP enabled, or HOLD enabled, it
 repeats. Ordinary mouse notes now add/retrigger voices just like QWERTY/MIDI,

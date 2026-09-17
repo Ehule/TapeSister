@@ -1096,6 +1096,21 @@ window is hidden according to their current state.
 Escape closes an active Sister subpanel first; otherwise it brings the main
 application window back. It does not minimize the application to the desktop.
 
+You can prepare Sister while **POWER is off**: choose sources, enable Monitor,
+set Roll/tape Hold, adjust heads and route effects before switching it on.
+These settings remain selected across power cycles. Keyboard HOLD is separate
+from tape Hold and is retained by the power controller. EXT requests the input
+device on power-on; the other recording/monitoring uses of that device keep
+their own ownership. Clearing or recording the tape still requires power.
+Held notes keep their playback position across power cycles. Existing sample
+notes enter the TILES input when Sister powers on; FM notes enter FM. Enable the
+appropriate source and Monitor to hear them. Notes played through Sister keep
+sounding through the ordinary output when it powers off.
+Tape storage is prepared and cleared before taking the audio lock, then
+exchanged with a short protected handoff. Old tape storage is freed after
+unlocking. The existing output crossfade remains; input-device startup timing
+still depends on the audio driver.
+
 ### Source routing
 
 The five source switches are:

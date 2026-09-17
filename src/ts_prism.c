@@ -220,6 +220,8 @@ TsPrismView ts_prism_control_view(const TsPrismControls *controls)
     TsPrismControls p = *controls;
     ts_prism_controls_sanitize(&p);
     TsPrismPatch patch=prism_patch(&p);
+    v.group_octave=p.morph_enabled ? lerp(ts_prism_endpoint_patch(&p,0)->group_octave,
+        ts_prism_endpoint_patch(&p,1)->group_octave,p.morph) : (float)p.group_octave;
     for (int i = 0; i < TS_PRISM_LENSES; ++i) v.lens[i] = p.morph_enabled ?
         morph_geometry(ts_prism_endpoint_patch(&p,0),ts_prism_endpoint_patch(&p,1),i,0,p.morph) : geometry(&patch,i,0);
     v.wet = p.enabled ? p.mix : 0;
@@ -582,6 +584,9 @@ TsPrismView ts_prism_view(const TsPrism *p)
     v.matrix_progress=p->matrix.duration>0?(float)fmin(1,p->matrix.elapsed/p->matrix.duration):0;
     v.matrix_step_seconds=(float)p->matrix.duration;v.matrix_morph_seconds=(float)p->matrix.morph_duration;
     v.morph=p->morph_position;v.seq_lens=p->seq_lens;
+    v.group_octave=p->matrix.active ? lerp(p->matrix.pair[0].group_octave,p->matrix.pair[1].group_octave,p->matrix.position) :
+        p->controls.morph_enabled ? lerp(ts_prism_endpoint_patch(&p->controls,0)->group_octave,
+            ts_prism_endpoint_patch(&p->controls,1)->group_octave,p->morph_position) : (float)p->controls.group_octave;
     v.wet = p->wet;
     v.dry = p->dry;
     for (int i = 0; i < TS_PRISM_LENSES; ++i) {

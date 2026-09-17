@@ -407,6 +407,39 @@ It is not tied to Mosaic transport. With EDIT off, Ctrl-click retains lens solo.
 
 ### Pitch layouts and precise editing
 
+The button next to **PRISM ON/OFF** now selects **28 factory sounds**. Click
+for the next sound or hover and wheel in either direction. The first seven
+retain the original mode order and default voicings. An asterisk indicates
+that the current sound has been edited. Right-click still resets individual
+lens edits. Factory selection keeps the A–L captures, Matrix pattern, timing,
+and sequence; capture the chosen sound into a letter when you want to keep it.
+During a morph, recall an endpoint for editing first; Matrix drafts can use
+factory sounds while their current transition continues.
+
+| Family | Additional factory sounds |
+| --- | --- |
+| Supersaw | Supersaw Low, Supersaw High, Supersaw Wide |
+| Ensemble | Ensemble Low, Ensemble High, Ensemble Wide |
+| Harmonic | Harmonic Low, Harmonic High, Harmonic Open |
+| Fifths | Fifths Low, Fifths High, Fifths Open |
+| Octaves | Octaves Low, Octaves High, Octaves Open |
+| Cluster | Cluster Low, Cluster High, Cluster Mist |
+| 31-TET | 31-TET Low, 31-TET High, 31-TET Halo |
+
+Low and High use group octave −1 and +1. Wide/Open/Mist/Halo stay at octave 0
+and broaden the lens count and stereo field. The variants also change Focus,
+Spread, Drift, drift rate, Body and wet level. Within a family, Low → Open/Wide
+→ High makes a useful register progression. Harmonic, Fifths and Octaves keep
+related interval bands; Cluster and 31-TET offer denser transitions. Results
+depend on the source material, especially when layering different families.
+
+**Group octave belongs to each captured A–L sound.** Right-click CAP to edit,
+set GROUP OCT, then click CAP to save. Manual morphs and Matrix interpolate
+between captured registers; the GROUP OCT readout now shows that changing
+value, including fractional octaves during a transition. This was already
+stored in presets/projects, so older captured octave settings remain usable.
+Dry audio stays at its original pitch.
+
 | Mode | Arrangement |
 | --- | --- |
 | Supersaw | Detuned fan with lower-octave body voices |

@@ -167,7 +167,7 @@ void ts_sister_ui_prism_help(const TsSisterUiModel *m,int x,int y,char *help,siz
         case TS_SISTER_UI_PARAM_PRISM_TIME: TIP("TIME: duration of TO A / TO B, 0.05-120 seconds. Timed morphing follows the audio clock.");
         case TS_SISTER_UI_PARAM_PRISM_SEQ_RATE: TIP("SEQUENCER STEP RATE: 0.05-32 steps/second. Runs independently of morphing and Mosaic transport.");
         case TS_SISTER_UI_PARAM_PRISM_RATE: TIP("DRIFT RATE: 0.005-40 Hz. Lenses have related independent rates/phases; changing speed preserves their motion phase.");
-        case TS_SISTER_UI_PARAM_PRISM_OCTAVE: TIP("GROUP OCTAVE: transpose every wet lens up/down three octaves after glass mapping, even at full Focus. DRY stays original.");
+        case TS_SISTER_UI_PARAM_PRISM_OCTAVE: TIP("GROUP OCTAVE: saved in A-L captures. Morph/Matrix glide between registers; the readout follows. DRY stays original.");
         case TS_SISTER_UI_PARAM_BUFFER_SECONDS: TIP("SISTER BUFFER: length of the rolling tape memory in seconds. Independent of Prism's refraction setup.");
         default: break;
         }
@@ -176,7 +176,7 @@ void ts_sister_ui_prism_help(const TsSisterUiModel *m,int x,int y,char *help,siz
     case TS_SISTER_UI_ACTION_PRISM_TOGGLE: TIP("PRISM ON/OFF: smoothly engage or bypass live refraction. The diagram shows settings even while bypassed.");
     case TS_SISTER_UI_ACTION_PRISM_MODE:
         if(c->morph_enabled)TIP("MORPH: sound controls are locked. On PERFORM, right-click either CAP to recall that letter for editing.");
-        TIP("MODE: cycle seven pitch geometries. Right-click restores individual lens edits to stock, keeping global controls.");
+        TIP("FACTORY: click next; wheel through 28 sounds. * = edited. LOW/HIGH vary register. Right-click resets lens edits.");
     case TS_SISTER_UI_ACTION_RECORD_FILE: TIP("REC FILE / STOP FILE: record final stereo output with Prism, FX, limiter and OUT gain. Recording continues across pages.");
     case TS_SISTER_UI_ACTION_CAPTURE: TIP("CAPTURE: record the selected Sister tap to the destination below. Separate from Prism CAP, which store Prism settings.");
     case TS_SISTER_UI_ACTION_OVERDUB: TIP("OVERDUB: record the selected Sister tap into the destination's existing material.");

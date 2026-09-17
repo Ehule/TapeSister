@@ -104,7 +104,10 @@ static void sister_prism_render(TsFramebuffer *fb,const TsSisterUiModel *model)
     button(fb,16,48,96,p->enabled?"PRISM ON":"PRISM OFF",p->enabled);
     snprintf(label,sizeof(label),"%c/%c MORPH",ts_prism_state_letter(p->endpoint[0]),ts_prism_state_letter(p->endpoint[1]));
     if(v.matrix_active)snprintf(label,sizeof(label),"%c/%c MATRIX",ts_prism_state_letter(v.matrix_from),ts_prism_state_letter(v.matrix_to));
-    button(fb,122,48,116,(p->morph_enabled || v.matrix_active)?label:ts_prism_mode_name(p->mode),1);
+    int factory=ts_prism_factory_find(p);
+    char factory_label[32];
+    snprintf(factory_label,sizeof(factory_label),"%s%s",factory>=0?ts_prism_factory_name(factory):ts_prism_mode_name(p->mode),factory>=0?"":" *");
+    button(fb,122,48,116,(p->morph_enabled || v.matrix_active)?label:factory_label,1);
     if(p->morph_enabled)snprintf(label,sizeof(label),"%c%02d > %c%02d  %03d%%",ts_prism_state_letter(p->endpoint[0]),left->lenses,ts_prism_state_letter(p->endpoint[1]),right->lenses,(int)lrintf(100*(v.valid?v.morph:p->morph)));
     else snprintf(label,sizeof(label),"%d SHIFTED + 01 BODY",p->lenses-1);
     if(v.matrix_active)snprintf(label,sizeof(label),"STEP %02d / %03d%%",v.matrix_step+1,(int)lrintf(100*v.matrix_morph));
@@ -216,8 +219,9 @@ static void sister_prism_render(TsFramebuffer *fb,const TsSisterUiModel *model)
         button(fb,472,308,144,label,p->snap!=0);
         snprintf(label,sizeof(label),"RATE %.3FHZ",p->drift_rate);
         prism_value(fb,16,332,144,label,logf(p->drift_rate/.005f)/logf(8000),colors[2]);
-        snprintf(label,sizeof(label),"GROUP OCT %+.0F",(double)p->group_octave);
-        prism_value(fb,170,332,144,label,(p->group_octave+3)/6.f,colors[4]);
+        float group=(p->morph_enabled || v.matrix_active)?v.group_octave:(float)p->group_octave;
+        snprintf(label,sizeof(label),"GROUP OCT %+.2F",(double)group);
+        prism_value(fb,170,332,144,label,(group+3)/6.f,colors[4]);
         text(fb,326,336,model->prism_seq_edit ? "SEQ EDIT: CTRL-CLICK NUMBERS" : "WHEEL CAP/TO: A-L / CLICK CONFIRMS",RGB(119,190,255),1);
     } else if(model->prism_panel==2) {
         button(fb,16,280,30,"<",0);
