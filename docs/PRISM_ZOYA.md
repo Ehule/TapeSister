@@ -15,8 +15,10 @@ Enabling **PRISM ON** while its page is visible starts one approximately
 3.6-second introduction: source matter coheres, casts through the first lens,
 travels along the existing refracted paths, and gathers into the output field.
 It is a visual metaphor, not a measurement of audio latency or signal amplitude.
-The settled fields have slow internal drift, density variation and sparse
-chromatic currents. They remain atmospheric behind the optical diagram.
+The settled fields have slow internal drift, density variation and chromatic
+currents. Transfer now has twice the original mote density and a visible,
+continuous source-to-output progression. A visual transit takes about 24 seconds;
+this timing is independent of audio. The field remains behind the optical diagram.
 
 ![Native activation preview, looping for inspection](images/prism-nebula-intro.gif)
 
@@ -27,6 +29,8 @@ Leaving Prism, opening Matrix or an overlay, hiding/minimizing Sister, or
 turning Prism off stops the animation work. Returning shows settled matter,
 without replaying or catching up hidden time. Enabling Prism while hidden does
 not queue an introduction.
+
+![Continuous native particle transfer](images/prism-nebula-flow.gif)
 
 ## Sound response
 
@@ -48,7 +52,10 @@ they do not modify captures, presets or DSP behavior.
 Zoya remains a rare, temporary suggestion within the output under unusually
 coherent conditions. There is no normal pose selector or added UI control. The
 appearance fades back into the field and cannot continuously repeat while the
-settings remain unchanged.
+settings remain unchanged. At its brief peak, interior particles gather around
+the head, shoulders and hands on the knees while diffuse cloud matter recedes.
+A small warm chest center and sparse spectral emanation borrow the reference's
+radiance. The reveal stays seated and transient. [Native peak frame](images/prism-zoya-apparition.png).
 
 ## Appearance preference
 
@@ -80,12 +87,15 @@ Existing `off` preferences survive audio settings saves and relaunches.
   fields stretch. There is no runtime noise evaluation, fluid simulation,
   convolution blur, texture allocation or GPU requirement.
 - Flow particles follow the same cubic geometry as the existing optics, with
-  at most six lanes of 66 points. All decoration draws before the glass, rays,
+  at most six lanes of 132 points (792 total). All decoration draws before the glass, rays,
   handles and text. Additional clear rectangles protect handle/readout space.
 - A UI-only clock updates at 33 ms granularity and pauses while hidden. Render
   input is immutable. No renderer work runs in the audio callback.
 - The small existing meditation point table is used only for the transient
-  output apparition. Its timer requires sustained coherence, fades both ways,
+  output apparition (2,594 points / 10,376 bytes). Overlapping soft interior
+  volumes improve posture readability without contour sampling. The spectral
+  emanation adds at most 192 motes during the apparition only. Its timer requires
+  sustained coherence, fades both ways,
   and must rearm before another appearance. No standing figure is drawn.
 - DSP algorithms, audio routing, voice state, gain, recording and project/preset
   formats are unchanged. The event thread reads seven scalar parameters and
@@ -96,7 +106,8 @@ Existing `off` preferences survive audio settings saves and relaunches.
 `test_prism_zoya` checks configuration migration/persistence, visible activation,
 hidden pause and rollover, bounded idle updates, manual/Matrix interpolation,
 temporary apparition timing/rearming, deterministic immutable rendering, the
-warm/cool/magenta palette, and exact preservation of existing optical and label
+warm/cool/magenta palette, continuous transfer against a fixed audio snapshot,
+and exact preservation of existing optical and label
 pixels. `off` is compared against the full original optics-only framebuffer,
 including forced stale animation flags.
 
@@ -108,14 +119,16 @@ mkdir -p /tmp/prism-nebula-frames
 ```
 
 The frame command runs the actual native renderer, including a silent DSP stream,
-at 30 FPS. It writes activation frames and settled/dispersed/focused/dry states.
+at 30 FPS. It writes activation and continuous-transfer frames plus
+settled/dispersed/focused/dry/peak-apparition states.
 The supplied preview is rendered from this build; it is not a concept mockup or
 a recording of physical audio hardware.
 
-The native application builds. The six targeted suites pass: `test_prism_zoya`,
+The original nebula implementation passed six targeted suites: `test_prism_zoya`,
 `test_prism`, `test_sister_ui_model`, `tapesister_audio_config_tests`,
 `tapesister_mosaic_controller_tests`, and `tapesister_keyboard_hold_tests`.
-The focused visual suite also passes AddressSanitizer/UndefinedBehaviorSanitizer
+This refinement rebuilds the native application and passes the focused visual
+suite, including AddressSanitizer/UndefinedBehaviorSanitizer
 with leak detection disabled in this environment. Cached field generation
 reproduces byte-for-byte.
 
@@ -124,12 +137,13 @@ warmups measured:
 
 | Drawing case | Mean | p99 |
 | --- | ---: | ---: |
-| Existing optics only | 0.191 ms | 0.370 ms |
-| Settled nebula, 24 lenses | 0.915 ms | 1.371 ms |
-| Maximum Spread, Drift, Body and Color | 0.903 ms | 1.200 ms |
-| Introduction sampled across its duration | 0.639 ms | 1.049 ms |
+| Existing optics only | 0.208 ms | 0.495 ms |
+| Settled nebula, 24 lenses | 1.013 ms | 1.453 ms |
+| Maximum Spread, Drift, Body and Color | 0.978 ms | 1.372 ms |
+| Introduction sampled across its duration | 0.661 ms | 1.132 ms |
+| Apparition at peak | 1.058 ms | 1.461 ms |
 
-The settled field adds approximately 0.725 ms per frame, or 2.2% of one CPU core
+The settled field adds approximately 0.805 ms per frame, or 2.4% of one CPU core
 at 30 FPS on this host. These are drawing measurements, excluding window
 presentation and compositor cost. They are not a physical Windows/audio/MIDI
 performance guarantee; audition at the normal device buffer remains necessary.

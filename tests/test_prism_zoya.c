@@ -160,6 +160,10 @@ static void render_checks(void)
     ts_sister_ui_render(&frame,&model,&palette);assert(!memcmp(&frame,&previous,sizeof(frame)));
     for(uint32_t t=4033;t<6200;t+=33)ts_sister_ui_prism_nebula_update(&model,t,1,NULL,0);
     ts_sister_ui_render(&frame,&model,&palette);assert(memcmp(&frame,&previous,sizeof(frame)));
+    int transfer_moved=0;
+    for(int y=108;y<229;++y)for(int x=175;x<435;++x)
+        transfer_moved+=frame.pixels[y*640+x]!=previous.pixels[y*640+x];
+    assert(transfer_moved>150);
     char help[192];ts_sister_ui_prism_help(&model,55,140,help,sizeof(help));
     assert(strstr(help,"NEBULA:"));
     size_t split=strlen(help)>63?63:strlen(help);
@@ -225,9 +229,9 @@ static int compare(const void *a,const void *b)
 static void benchmark(void)
 {
     enum { N=1500 };double times[N];
-    static const char *const names[]={"optics-only","settled","wide-drift-color","introduction"};
+    static const char *const names[]={"optics-only","settled","wide-drift-color","introduction","apparition"};
     model.prism_hover_valid=0;
-    for(int trial=0;trial<4;++trial) {
+    for(int trial=0;trial<5;++trial) {
         model.prism_zoya.visible=trial!=0;model.prism_zoya.introducing=trial==3;
         model.prism_zoya.elapsed_ms=2200;
         if(trial>=2) {
@@ -235,7 +239,14 @@ static void benchmark(void)
             model.parameters.prism.body=3;model.parameters.prism.color=1;
             ts_prism_set_controls(&dsp,&model.parameters.prism);snapshot(24000);
         }
+        if(trial==4) {
+            model.parameters.prism.focus=1;
+            model.parameters.prism.spread=model.parameters.prism.drift=0;
+            model.parameters.prism.dry_level=0;model.parameters.prism.mix=1;
+            ts_prism_set_controls(&dsp,&model.parameters.prism);snapshot(24000);
+        }
         ts_sister_ui_prism_nebula_update(&model,4000+trial*4000,1,NULL,0);
+        model.prism_zoya.apparition=trial==4?1:0;
         model.prism_zoya.visible=trial!=0;model.prism_zoya.introducing=trial==3;
         double total=0;
         for(int n=-50;n<N;++n) {
@@ -262,22 +273,27 @@ static void frames(const char *folder)
         char name[32];snprintf(name,sizeof(name),"intro-%03d",f);write_frame(folder,name);
     }
     write_frame(folder,"settled");
+    for(int f=0;f<120;++f) {
+        snapshot(1600);
+        ts_sister_ui_prism_nebula_update(&model,(uint32_t)(5000+f*1000/30),1,NULL,0);
+        char name[32];snprintf(name,sizeof(name),"flow-%03d",f);write_frame(folder,name);
+    }
     model.parameters.prism.spread=2;model.parameters.prism.drift=2;model.parameters.prism.color=1;
     ts_prism_set_controls(&dsp,&model.parameters.prism);snapshot(48000);
-    ts_sister_ui_prism_nebula_update(&model,5033,1,NULL,0);
+    ts_sister_ui_prism_nebula_update(&model,9033,1,NULL,0);
     write_frame(folder,"dispersed");
     model.parameters.prism.focus=1;
     ts_prism_set_controls(&dsp,&model.parameters.prism);snapshot(48000);
-    ts_sister_ui_prism_nebula_update(&model,5066,1,NULL,0);
+    ts_sister_ui_prism_nebula_update(&model,9066,1,NULL,0);
     write_frame(folder,"focused");
     model.parameters.prism.mix=0;
     ts_prism_set_controls(&dsp,&model.parameters.prism);snapshot(48000);
-    ts_sister_ui_prism_nebula_update(&model,5099,1,NULL,0);
+    ts_sister_ui_prism_nebula_update(&model,9099,1,NULL,0);
     write_frame(folder,"dry");
     model.parameters.prism.spread=model.parameters.prism.drift=0;
     model.parameters.prism.dry_level=0;model.parameters.prism.mix=1;
     ts_prism_set_controls(&dsp,&model.parameters.prism);snapshot(48000);
-    for(uint32_t t=5132;t<10150;t+=33)
+    for(uint32_t t=9132;t<14150;t+=33)
         ts_sister_ui_prism_nebula_update(&model,t,1,NULL,0);
     assert(model.prism_zoya.apparition>.99f);
     write_frame(folder,"apparition");

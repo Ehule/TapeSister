@@ -4,9 +4,9 @@
 Only this offline development tool evaluates soft volumes and diffuse wisps.
 The application reads a bounded cloud of native pixel positions, local density
 and region; it has no procedural anatomy, image decoder, RNG or field solver.
-Each pose shares one cloud between SOURCE and OUT. Meditation is the default:
-upright, crossed legs, hands resting on knees; its output is slightly aloft.
-Standing retains the original reaching pose. Both use the same density sampler.
+Meditation supplies the rare output apparition: upright, crossed legs, hands
+resting on knees. Its overlapping interior volumes make the posture legible
+briefly. Standing is preserved as legacy point data and is not rendered by Prism.
 Broad shoulders, a shaped waist and substantial thighs suggest her character.
 Facial, garment and muscle outlines are omitted.
 """
@@ -17,7 +17,7 @@ from pathlib import Path
 # soft masses carry volume only; none of their boundaries becomes a drawn path.
 meditation_volumes = [
     # Upright head, diffuse swept hair and a relaxed, centered neck.
-    (0,.92,46,26,5.7,7.6,0), (0,.70,46,36,3.0,4.5,0),
+    (0,.92,46,26,5.7,7.6,0), (0,.70,46,36,3.0,4.5,0), (0,.66,46,41,3.4,4.2,0),
     (0,.67,44,19,6.7,5.0,-8), (0,.57,39,25,4.5,6.8,8),
     (0,.45,53,23,3.8,5.4,-8), (0,.30,37,33,4.6,5.4,-15),
     # Level shoulders, upright chest, soft waist and seated pelvis.
@@ -102,25 +102,26 @@ def prepare(fields):
     return [(r,w,cx,cy,rx,ry,cos(radians(a)),sin(radians(a)))
             for r,w,cx,cy,rx,ry,a in fields]
 
-def field_at(x,y,fields):
-    best,region=0,0
+def field_at(x,y,fields,coherent=False):
+    best,region,total=0,0,0
     for r,w,cx,cy,rx,ry,c,s in fields:
         dx,dy=x-cx,y-cy
         q=((c*dx+s*dy)/rx)**2+((-s*dx+c*dy)/ry)**2
         if q>5:continue
         value=w*exp(-1.25*q)
+        total+=value
         if value>best:best,region=value,r
-    return best,region
+    return (max(best,1-exp(-total)) if coherent else best),region
 
-def sample_cloud(volumes,wisps):
+def sample_cloud(volumes,wisps,coherent=False):
     core,haze=prepare(volumes),prepare(wisps)
     points=[]
     for y in range(120):
         for x in range(94):
-            mass,region=field_at(x,y,core)
+            mass,region=field_at(x,y,core,coherent)
             halo,halo_region=field_at(x,y,haze)
             if halo>mass:region=halo_region
-            matter=max(mass,halo)*(.55+.70*noise(x,y))
+            matter=max(mass,halo)*((.75+.40*noise(x,y)) if coherent else (.55+.70*noise(x,y)))
             if matter<.008:continue
             # Probability fills the interior most densely and erodes the periphery.
             # Brightness also follows local mass; no preferred boundary samples.
@@ -134,7 +135,7 @@ out=['/* Generated density fields. Each pose is mirrored at OUT. No contour samp
      'typedef struct { uint8_t x, y, density, region; } TsPrismZoyaPoint;']
 for name,volumes,wisps in [('meditation',meditation_volumes,meditation_wisps),
                           ('standing',standing_volumes,standing_wisps)]:
-    points=sample_cloud(volumes,wisps)
+    points=sample_cloud(volumes,wisps,coherent=name=='meditation')
     out.append(f'static const TsPrismZoyaPoint prism_zoya_{name}_points[] = {{')
     out += [f'    {{{x},{y},{d},{r}}},' for x,y,d,r in points]
     out += ['};',f'enum {{ TS_PRISM_ZOYA_{name.upper()}_POINTS = {len(points)} }};','']

@@ -154,7 +154,7 @@ static void prism_zoya_figures(TsFramebuffer *fb,const TsSisterUiModel *m,
             }
             float density=(.38f+.8f*mass)*strength*(.97f+.03f*flow_x[side*4+1]*q->y/62.f);
             density*=1-focus*.68f*(1-prism_zoya_unit(mass*2));
-            if(side)density*=1-.62f*state->apparition;
+            if(side)density*=1-.80f*state->apparition;
             int spectrum=side ? (q->spectrum-82)*4 : q->density+25;
             if(side)spectrum+=(int)(8*flow_y[5]*(1-focus));
             if(spectrum<0)spectrum=0;
@@ -174,35 +174,64 @@ static void prism_zoya_figures(TsFramebuffer *fb,const TsSisterUiModel *m,
         ts_sister_ui_prism_point_f(ray,&x,&y);
         float ay=167+(y-167)*.7f,ey=167+(ts_sister_ui_prism_y(ray.cents)-167)*.7f;
         float join=548+16*ray.pan;
-        for(int j=0;j<66;++j) {
+        for(int j=0;j<132;++j) {
             uint32_t hash=sister_spirit_hash(j+37,lane+79);
-            float t=j/66.f+age/120;
+            float t=(j+((hash>>8)&255u)/255.f*.7f)/132.f+age/24;
             t-=floorf(t);
-            float intensity=.18f+.12f*wet;
+            float intensity=.30f+.19f*wet;
             if(state->introducing) {
                 float front=(time-1.05f)/1.6f;
                 float distance=front-t;
                 if(distance<0 || distance>.24f)continue;
-                intensity=(1-distance/.24f)*.9f;
+                intensity=(1-distance/.24f)*1.25f;
             }
             float px,py;prism_nebula_path(t,x,y,ay,ey,join,&px,&py);
             float fan=(.5f-fabsf(t-.5f))*2;
             py+=((int)((hash>>12)%19)-9)*fan*(.25f+.9f*spread)*(1-.8f*focus);
             px+=((int)((hash>>20)%5)-2)*fan;
-            int spectral=(lane*33+j*2)%256;
+            int spectral=(lane*33+j)%256;
             uint32_t tone=t<.1f ? palettes[0][190] : palettes[1][spectral];
             prism_nebula_mote(fb,&mask,(int)lrintf(px),(int)lrintf(py),tone,(int)(110*intensity),1);
         }
     }
     if(state->apparition>0) {
         float reveal=prism_zoya_ease(state->apparition);
+        float clarity=prism_zoya_ease((state->apparition-.45f)/.55f);
+        /* Sparse spectral emanation from the chest. It stays inside the output
+           field and under the seated matter, with no solid contour or light disc. */
+        for(int ray=0;ray<24;++ray) {
+            uint32_t hash=sister_spirit_hash(ray+131,73);
+            float angle=ray*(6.283185307f/24)+flow_x[4]*.025f;
+            float dx=cosf(angle),dy=sinf(angle);
+            float length=27+((hash>>8)%20u);
+            uint32_t tone=palettes[1][(ray*47)%256];
+            for(int mote=0;mote<8;++mote) {
+                float u=(mote+1)/9.f;
+                float radius=5+length*u;
+                float px=564+dx*radius,py=152+dy*radius;
+                prism_nebula_cloud(fb,&mask,px,py,tone,28*reveal*(1-u));
+            }
+        }
         for(int i=0;i<TS_PRISM_ZOYA_MEDITATION_POINTS;++i) {
             const TsPrismZoyaPoint *q=&prism_zoya_meditation_points[i];
             uint32_t hash=sister_spirit_hash(q->x+13,q->y+47);
-            if((hash&3u)==0)continue;
+            /* More of the cached interior gathers at the brief peak. Diffuse
+               fringe recedes so shoulders, forearms and knees retain space. */
+            float retained=(hash&3u)==0 ? clarity : 1;
+            if(retained<=0)continue;
             float mass=q->density/255.f;
-            uint32_t tone=blend_color(RGB(104,129,235),RGB(242,172,229),(unsigned)(mass*100));
-            prism_nebula_mote(fb,&mask,610-q->x,100+q->y,tone,(int)(115*reveal*(.2f+mass)),q->density>120);
+            int landmark=q->region==0 || (q->region==3 && q->y<57) ||
+                ((q->region==1 || q->region==2) && q->y>=85 && q->y<=96);
+            float gathered=mass+.12f*clarity*landmark;
+            float weight=1-clarity*.78f*(1-prism_zoya_unit(mass*2));
+            float chest_x=(q->x-46)/8.f,chest_y=(q->y-52)/10.f;
+            float heart=1/(1+chest_x*chest_x+chest_y*chest_y);
+            uint32_t tone=blend_color(RGB(112,149,231),RGB(237,162,225),(unsigned)(mass*100));
+            tone=blend_color(tone,RGB(255,229,164),(unsigned)(heart*clarity*75));
+            float loosen=(1-clarity)*1.4f;
+            float px=610-q->x+loosen*((int)((hash>>8)%5u)-2);
+            float py=100+q->y+loosen*((int)((hash>>12)%5u)-2);
+            prism_nebula_cloud(fb,&mask,px,py,tone,190*reveal*(.1f+gathered)*weight*retained);
         }
     }
 }
