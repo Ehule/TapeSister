@@ -174,32 +174,26 @@ measurements do not certify this Windows interface or its hardware latency.
 
 ## Prism performance and amplitude redraw
 
-- [ ] Close TapeSister and set `[Prism]` → `prism_zoya_pose=meditation` in the INI.
-  Relaunch and check the cross-legged pose, hands resting on the knees at SOURCE,
-  and the same pose slightly suspended at OUT. Repeat with `standing` and confirm
-  the original reaching pose. No rebuild is needed. Check clear arm/torso spacing
-  at native size and no new idle bobbing, clipped head or overlap with labels.
-- [ ] Set `prism_zoya_pose=off` while closed, then relaunch. Neither Zoya figure,
-  activation packets nor Zoya hover help should appear when toggling Prism on,
-  returning from another page or reopening the window. The normal optical
-  diagram, controls and audio must still work. Change an audio setting, quit
-  and relaunch: off must persist.
-- [ ] Remove the pose entry from an older INI and relaunch: meditation is the
-  default. Select standing in the INI, change an audio setting in the application,
-  quit and relaunch: standing must persist. Loading projects or sound presets,
-  using New/Vary, and performing A/B must leave the configured pose in place.
-- [ ] Switch PRISM off/on while its page is visible. Source Zoya forms, packets
-  traverse existing rays, and output Zoya reconstructs once, then settles.
-  Sound/Perform/Presets must retain the same continuous introduction. Verify
-  independent Sister tape POWER does not trigger it.
-- [ ] Hide/minimize Sister or leave Prism during the introduction; return to
-  settled figures without replay. Enable Prism from MIDI while hidden; opening
-  it must not queue an introduction. Repeat while recording audio.
-- [ ] Compare Spread/Drift/Focus/Body/Color/Wet changes and A/B morphing with all
-  24 lenses. Figures must not cover glass labels, selection handles or hover help.
-  Check the density field at native/enlarged sizes: soft particle edges, visible
-  interior volume, and a more coherent core as Focus increases.
-  Check a stopped audio engine: the settled figure must not keep wandering.
+- [ ] Close TapeSister and set `[Prism]` → `prism_zoya_pose=nebula` in the INI.
+  Relaunch: amber/gold source and blue/cyan/violet/magenta output should have
+  soft particle volume, a warm core and gentle internal motion. Check both
+  native and enlarged sizes; optical handles and labels must stay readable.
+- [ ] Set `prism_zoya_pose=off`, relaunch and toggle Prism. No field, activation,
+  apparition or nebula hover help should appear. Optics and audio still work.
+  Change an audio setting, quit and relaunch: off must persist.
+- [ ] Remove the key: nebula is the default. Repeat with legacy `meditation`
+  and `standing`: both load nebula and save the canonical value. Loading a
+  project, preset, or A–L state must leave this preference in place.
+- [ ] PRISM off/on while visible: source coheres, casts through the first lens,
+  disperses across existing paths and gathers through the output. One intro
+  only, then gentle idle. Sister POWER must not restart it.
+- [ ] Hide/minimize Sister, open Matrix/overlays or leave Prism during the intro.
+  Return to settled fields without replay or hidden-time catchup. Enable Prism
+  via MIDI while hidden and return: no queued intro. Repeat while recording.
+- [ ] Change Spread/Drift/Focus/Body/Color/Wet/Dry with 24 lenses. Repeat during
+  A–L morphing and Matrix playback; visuals should follow the actual transition
+  even when another stored state is edited. Rays remain driven by the DSP
+  snapshot; ambient cloud motion is deliberately independent of audio amplitude.
 - [ ] Compare visible/hidden Prism at the normal hardware buffer while recording
   a dense scene. Confirm no new audio clicks/dropouts and acceptable display CPU.
 

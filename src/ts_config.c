@@ -48,7 +48,7 @@ void ts_config_init(TsConfig *config)
         config->capture_channels = TS_CAPTURE_CHANNELS_DEFAULT;
         config->waveform_display_mode = TS_WAVEFORM_DISPLAY_STEREO;
         config->sister_waveform_display_mode = TS_WAVEFORM_DISPLAY_STEREO;
-        config->prism_zoya_pose = TS_PRISM_ZOYA_POSE_MEDITATION;
+        config->prism_zoya_pose = TS_PRISM_ZOYA_POSE_NEBULA;
         config->sister_buffer_seconds = 40;
         config->sister_buffer_channels = 2;
         config->sister_clear_ms = 20;
@@ -339,15 +339,14 @@ int ts_config_load(TsConfig *config, const char *path,
         } else if (strcmp(key, "sister_waveform_display_mode") == 0) {
             if (!parse_clamped_integer(value, 0, TS_WAVEFORM_DISPLAY_COUNT - 1, &loaded.sister_waveform_display_mode)) { snprintf(error, error_size, "Invalid Sister waveform mode on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "prism_zoya_pose") == 0) {
-            if (strcmp(value, "meditation") == 0)
-                loaded.prism_zoya_pose = TS_PRISM_ZOYA_POSE_MEDITATION;
-            else if (strcmp(value, "standing") == 0)
-                loaded.prism_zoya_pose = TS_PRISM_ZOYA_POSE_STANDING;
+            if (strcmp(value, "nebula") == 0 || strcmp(value, "meditation") == 0 ||
+                strcmp(value, "standing") == 0)
+                loaded.prism_zoya_pose = TS_PRISM_ZOYA_POSE_NEBULA;
             else if (strcmp(value, "off") == 0)
                 loaded.prism_zoya_pose = TS_PRISM_ZOYA_POSE_OFF;
             else {
                 snprintf(error, error_size,
-                         "Invalid Prism Zoya pose on config line %d: use meditation, standing or off",
+                         "Invalid Prism appearance on config line %d: use nebula or off",
                          line_number);
                 fclose(file);
                 return 0;
@@ -534,7 +533,7 @@ int ts_config_save(const TsConfig *config, const char *path,
                 "; Overdub always follows its target shape.\n"
                 "capture_channels=%d\n"
                 "\n[Prism]\n"
-                "; Zoya pose: meditation (default), standing or off. Restart after editing.\n"
+                "; Prism particles: nebula (default) or off. Legacy poses use nebula.\n"
                 "prism_zoya_pose=%s\n"
                 "\n[Sister Machine]\n"
                 "; Display modes: 0=STEREO, 1=LEFT, 2=RIGHT, 3=MONO SUM.\n"
@@ -613,9 +612,7 @@ int ts_config_save(const TsConfig *config, const char *path,
                 config->capture_auto_resize ? 1 : 0,
                 config->capture_max_seconds,
                 config->capture_channels,
-                config->prism_zoya_pose == TS_PRISM_ZOYA_POSE_OFF ? "off" :
-                    config->prism_zoya_pose == TS_PRISM_ZOYA_POSE_STANDING ?
-                    "standing" : "meditation",
+                config->prism_zoya_pose == TS_PRISM_ZOYA_POSE_OFF ? "off" : "nebula",
                 config->waveform_display_mode,
                 config->sister_waveform_display_mode,
                 config->sister_buffer_seconds,

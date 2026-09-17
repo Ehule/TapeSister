@@ -148,8 +148,8 @@ Drift changes. The inverse drag mapping uses the same expanded coordinates.
 All six glass silhouettes and sound mappings remain available.
 
 Continuous ray movement comes from the audio snapshot, including during silence;
-there is no idle UI animation oscillator. At Drift zero or full Focus it settles.
-A brief Zoya activation cue can add packets along those same paths; this cue is
+the optical rays themselves have no idle UI oscillator. At Drift zero or full Focus they settle.
+A separate nebula field adds gentle ambient motion and an activation cue along those paths; this cue is
 a visual metaphor and does not represent processing latency.
 A 12-second native-frame sequence at Spread 200, Drift 200, Focus 60, Stereo 100,
 PLANO-CONVEX input and MENISCUS − output demonstrates the reported settings
@@ -157,19 +157,18 @@ with all 24 lenses:
 
 ![Crisp Prism motion driven by live DSP snapshots](images/prism-drift.gif)
 
-Two sparse, full-body particle manifestations of **the same Zoya** now occupy
-the SOURCE/OUT margins. Varying density suggests body volume and diffused edges;
-the particles do not trace anatomical contours. By default she
-sits with crossed legs and hands on her knees at SOURCE; the same posture floats
-slightly higher at OUT. Set `prism_zoya_pose=standing` in the `[Prism]` section
-of `tapesister.ini` while the app is closed to select the standing/reaching pose
-on the next launch. Use `prism_zoya_pose=off` to hide Zoya and her activation
-animation while keeping Prism optics and audio active. Switching Prism on while visible briefly materializes,
-refracts and reconstructs her; the introduction runs once, then settles. Spread,
-Drift, Focus, Body, Color and wet/dry state subtly shape her appearance. The
-optics and controls keep their existing layout and interaction. See the
-[Zoya proof of concept](PRISM_ZOYA.md) for native animation, visibility behavior,
-implementation limits and validation. This is entirely a UI layer.
+Prism's source is an amber/gold nebula; its output is related, transformed
+blue/cyan/violet/magenta matter with a warm core. PRISM ON briefly coheres,
+casts, refracts and recombines the field, then leaves subtle ambient motion.
+Spread, Drift, Focus, Body, Color and Wet/Dry shape its appearance, including
+during A–L and Matrix transitions. Every optical line, handle and label remains
+in front of the atmosphere, with its existing interaction.
+
+INI `[Prism]` → `prism_zoya_pose=nebula` is the default; `off` restores optics
+without particles. Older `meditation` and `standing` values migrate to `nebula`.
+Edit while closed, then relaunch. No ordinary humanoid pose is displayed.
+See [Prism nebula fields](PRISM_ZOYA.md) for native previews, visibility behavior,
+implementation and validation. This is entirely a UI layer.
 
 The **24-lens cap** adds ten fine-detuned voices and two lower-octave voices.
 The first twelve keep their original pitch, pan and weight definitions. New pan

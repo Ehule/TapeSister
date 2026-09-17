@@ -21,6 +21,10 @@ typedef enum { TS_PRISM_CAPTURE_EMPTY, TS_PRISM_CAPTURE_READY,
 enum { TS_PRISM_ZOYA_INTRO_MS = 3600 };
 typedef struct {
     uint32_t started_ms, elapsed_ms;
+    uint32_t last_ms, ambient_ms, coherent_ms;
+    float apparition;
+    int apparition_spent;
+    float spread, drift, focus, body, color, mix, dry;
     int initialized, enabled, visible, introducing;
 } TsPrismZoyaVisual;
 
@@ -307,6 +311,8 @@ void ts_sister_ui_prism_help(const TsSisterUiModel *model, int x, int y, char *h
 int ts_sister_ui_prism_matrix_cell(int x,int y);
 int ts_sister_ui_prism_assigned(const TsSisterUiModel *model,int side);
 void ts_sister_ui_prism_zoya_tick(TsPrismZoyaVisual *visual, uint32_t now_ms, int enabled, int visible);
+void ts_sister_ui_prism_nebula_update(TsSisterUiModel *model, uint32_t now_ms,
+                                     int visible, const TsPrismPatch *matrix_pair, float matrix_morph);
 
 int ts_sister_ui_parameter_lockable(int parameter);
 int ts_sister_ui_parameter_locked(const TsSisterUiModel *model,

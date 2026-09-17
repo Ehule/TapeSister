@@ -159,7 +159,6 @@ static void sister_prism_render(TsFramebuffer *fb,const TsSisterUiModel *model)
         prism_line(fb,444,arrive_y,480,exit_y,color);
         prism_curve(fb,480,exit_y,501,exit_y,join_x-14,167,join_x,167,color);
         prism_line(fb,join_x,167,602,167,color);
-        prism_zoya_ray(fb,model,i,p->lenses,x,y,arrive_y,exit_y,join_x,colors[i%12]);
         if(i==0) {
             rect(fb,(int)lrintf(x)-2,(int)lrintf(y)-2,5,5,color);
             if(model->prism_selected!=1)text(fb,(int)x-20,(int)y+8,"01 BODY",color,1);

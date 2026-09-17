@@ -16795,6 +16795,14 @@ int main(int argc, char **argv)
                 ui.playhead_sample = NULL;
             }
         }
+        /* Read the frozen Matrix pair and its position together while the
+           existing voice/UI lock owns the audio state. No drawing happens here. */
+        ts_sister_ui_prism_nebula_update(&sister_window.model,SDL_GetTicks(),
+            sister_window.model.visible && !sister_window.minimized &&
+            sister_window.model.fx_page==3 && !sister_window.model.preset_manage_open &&
+            !sister_window.model.midi_learn_active && sister_window.model.prism_panel!=3,
+            audio.sister.prism.matrix.active && !sister_window.model.prism_matrix_edit ?
+                audio.sister.prism.matrix.pair : NULL, audio.sister.prism.matrix.position);
         if (device) SDL_UnlockAudioDevice(device);
         {
             TsSisterRoutingSnapshot routing = {0};
@@ -16840,12 +16848,6 @@ int main(int argc, char **argv)
             }
             sister_window.model.magnetic_phase =
                 routing.enabled ? 0u : (uint8_t)((now / 650u) & 7u);
-            ts_sister_ui_prism_zoya_tick(&sister_window.model.prism_zoya,now,
-                audio.sister.parameters.prism.enabled,
-                sister_window.model.prism_zoya_pose!=TS_PRISM_ZOYA_POSE_OFF &&
-                sister_window.model.visible && !sister_window.minimized &&
-                sister_window.model.fx_page==3 && !sister_window.model.preset_manage_open &&
-                !sister_window.model.midi_learn_active);
             ui.sister_enabled = routing.enabled;
             ui.sister_rolling = routing.rolling;
             ui.sister_held = routing.held;
