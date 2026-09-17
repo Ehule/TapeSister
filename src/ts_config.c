@@ -49,6 +49,10 @@ void ts_config_init(TsConfig *config)
         config->waveform_display_mode = TS_WAVEFORM_DISPLAY_STEREO;
         config->sister_waveform_display_mode = TS_WAVEFORM_DISPLAY_STEREO;
         config->prism_zoya_pose = TS_PRISM_ZOYA_POSE_NEBULA;
+        config->prism_morph_seconds = config->prism_step_seconds = 240.f;
+        config->mosaic_record_seconds = 0;
+        config->mosaic_silence_seconds = 120;
+        config->mosaic_silence_db = -60;
         config->sister_buffer_seconds = 40;
         config->sister_buffer_channels = 2;
         config->sister_clear_ms = 20;
@@ -327,6 +331,17 @@ int ts_config_load(TsConfig *config, const char *path,
             if (!parse_clamped_integer(value, TS_RECORD_TAIL_MS_MIN, TS_RECORD_TAIL_MS_MAX, &loaded.record_tail_ms)) { snprintf(error, error_size, "Invalid integer on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "record_max_seconds") == 0) {
             if (!parse_clamped_integer(value, TS_RECORD_MAX_SECONDS_MIN, TS_RECORD_MAX_SECONDS_MAX, &loaded.record_max_seconds)) { snprintf(error, error_size, "Invalid integer on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "prism_morph_seconds") == 0) {
+            if (!parse_clamped_float(value, .05f, 3600.f, &loaded.prism_morph_seconds)) { snprintf(error, error_size, "Invalid prism_morph_seconds on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "prism_step_seconds") == 0) {
+            if (!parse_clamped_float(value, .05f, 3600.f, &loaded.prism_step_seconds)) { snprintf(error, error_size, "Invalid prism_step_seconds on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "mosaic_record_seconds") == 0) {
+            if (!parse_clamped_integer(value, 0, 3600, &loaded.mosaic_record_seconds)) { snprintf(error, error_size, "Invalid mosaic_record_seconds on config line %d", line_number); fclose(file); return 0; }
+            if(loaded.mosaic_record_seconds>0 && loaded.mosaic_record_seconds<10)loaded.mosaic_record_seconds=10;
+        } else if (strcmp(key, "mosaic_silence_seconds") == 0) {
+            if (!parse_clamped_integer(value, 0, 3600, &loaded.mosaic_silence_seconds)) { snprintf(error, error_size, "Invalid mosaic_silence_seconds on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "mosaic_silence_db") == 0) {
+            if (!parse_clamped_integer(value, -90, 0, &loaded.mosaic_silence_db)) { snprintf(error, error_size, "Invalid mosaic_silence_db on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "capture_auto_resize") == 0) {
             if (!parse_boolean(value, &loaded.capture_auto_resize)) { snprintf(error, error_size, "Invalid boolean on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "capture_max_seconds") == 0) {
@@ -524,6 +539,13 @@ int ts_config_save(const TsConfig *config, const char *path,
                 "record_tail_ms=%d\n"
                 "; Safety limit for one captured tile.\n"
                 "record_max_seconds=%d\n"
+                "\n[Mosaic Recording]\n"
+                "; Independent card duration: 0=unlimited, otherwise 10..3600 seconds.\n"
+                "mosaic_record_seconds=%d\n"
+                "; Unlimited takes stop after this continuous quiet interval; 0 disables.\n"
+                "mosaic_silence_seconds=%d\n"
+                "; Quiet threshold in dBFS, -90..0. Finite takes keep their exact duration.\n"
+                "mosaic_silence_db=%d\n"
                 "\n[Internal Capture]\n"
                 "; Resize the armed blank tile to the completed Capture duration.\n"
                 "capture_auto_resize=%d\n"
@@ -535,6 +557,9 @@ int ts_config_save(const TsConfig *config, const char *path,
                 "\n[Prism]\n"
                 "; Prism particles: nebula (default) or off. Legacy poses use nebula.\n"
                 "prism_zoya_pose=%s\n"
+                "; Startup durations in seconds: 0.05..3600. Saved sounds retain their times.\n"
+                "prism_morph_seconds=%.9g\n"
+                "prism_step_seconds=%.9g\n"
                 "\n[Sister Machine]\n"
                 "; Display modes: 0=STEREO, 1=LEFT, 2=RIGHT, 3=MONO SUM.\n"
                 "waveform_display_mode=%d\n"
@@ -609,10 +634,15 @@ int ts_config_save(const TsConfig *config, const char *path,
                 config->record_silence_ms,
                 config->record_tail_ms,
                 config->record_max_seconds,
+                config->mosaic_record_seconds,
+                config->mosaic_silence_seconds,
+                config->mosaic_silence_db,
                 config->capture_auto_resize ? 1 : 0,
                 config->capture_max_seconds,
                 config->capture_channels,
                 config->prism_zoya_pose == TS_PRISM_ZOYA_POSE_OFF ? "off" : "nebula",
+                config->prism_morph_seconds,
+                config->prism_step_seconds,
                 config->waveform_display_mode,
                 config->sister_waveform_display_mode,
                 config->sister_buffer_seconds,
@@ -711,3 +741,8 @@ int ts_config_save(const TsConfig *config, const char *path,
     set_error(error, error_size, "");
     return 1;
 }
+
+float ts_mosaic_record_length_normalized(int seconds)
+{ return seconds<=0?1.f:.98f*logf(fmaxf(10,fminf(3600,seconds))/10.f)/logf(360.f); }
+int ts_mosaic_record_length_seconds(float amount)
+{ return amount>=.99f?0:(int)lroundf(10.f*powf(360.f,fmaxf(0,fminf(.98f,amount))/.98f)); }

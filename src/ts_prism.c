@@ -12,12 +12,23 @@ static float bounded(float x, float lo, float hi, float fallback)
     return !isfinite(x) ? fallback : x < lo ? lo : x > hi ? hi : x;
 }
 
+float ts_prism_time_from_normalized(float amount)
+{ return amount>=1?TS_PRISM_TIME_MAX:TS_PRISM_TIME_MIN*powf(TS_PRISM_TIME_MAX/TS_PRISM_TIME_MIN,bounded(amount,0,1,0)); }
+float ts_prism_time_normalized(float seconds)
+{ return logf(bounded(seconds,TS_PRISM_TIME_MIN,TS_PRISM_TIME_MAX,TS_PRISM_TIME_DEFAULT)/TS_PRISM_TIME_MIN)/logf(TS_PRISM_TIME_MAX/TS_PRISM_TIME_MIN); }
+void ts_prism_time_label(char *label,size_t size,float seconds)
+{
+    seconds=bounded(seconds,0,TS_PRISM_TIME_MAX,TS_PRISM_TIME_DEFAULT);
+    if(seconds<60)snprintf(label,size,"%.2FS",seconds);
+    else snprintf(label,size,"%02d:%02d",(int)lroundf(seconds)/60,(int)lroundf(seconds)%60);
+}
+
 void ts_prism_controls_default(TsPrismControls *p)
 {
     if (p) *p = (TsPrismControls){.mode=TS_PRISM_SUPERSAW,.lenses=TS_PRISM_BASE_LENSES,
         .spread=.5f,.drift=.15f,.stereo=.8f,.body=.5f,.mix=.8f,.dry_level=1,.color=.5f,
-        .drift_rate=.1f,.morph_seconds=5,.seq_rate=2,.endpoint={0,1},
-        .matrix={.length=16,.loop=1,.step_seconds=5}};
+        .drift_rate=.1f,.morph_seconds=TS_PRISM_TIME_DEFAULT,.seq_rate=2,.endpoint={0,1},
+        .matrix={.length=16,.loop=1,.step_seconds=TS_PRISM_TIME_DEFAULT}};
     if(p)for(int i=0;i<TS_PRISM_MATRIX_STEPS;++i)p->matrix.step[i]=-1;
 }
 
@@ -66,12 +77,12 @@ void ts_prism_controls_sanitize(TsPrismControls *p)
     if(!p->active_pair_valid && p->endpoint[0]==p->endpoint[1])p->endpoint[1]=(p->endpoint[0]+1)%TS_PRISM_STATES;
     p->matrix.length=p->matrix.length<1?1:p->matrix.length>TS_PRISM_MATRIX_STEPS?TS_PRISM_MATRIX_STEPS:p->matrix.length;
     p->matrix.loop=!!p->matrix.loop;p->matrix_run=!!p->matrix_run;
-    p->matrix.step_seconds=bounded(p->matrix.step_seconds,.05f,120,5);
+    p->matrix.step_seconds=bounded(p->matrix.step_seconds,TS_PRISM_TIME_MIN,TS_PRISM_TIME_MAX,TS_PRISM_TIME_DEFAULT);
     for(int i=0;i<TS_PRISM_MATRIX_STEPS;++i)
         if(p->matrix.step[i]<-1 || p->matrix.step[i]>=TS_PRISM_STATES)p->matrix.step[i]=-1;
     p->morph_enabled = !!p->morph_enabled && ts_prism_pair_ready(p);
     p->morph=bounded(p->morph,0,1,0);
-    p->morph_seconds=bounded(p->morph_seconds,.05f,120,5);
+    p->morph_seconds=bounded(p->morph_seconds,TS_PRISM_TIME_MIN,TS_PRISM_TIME_MAX,TS_PRISM_TIME_DEFAULT);
     p->morph_target=!!p->morph_target;
     p->seq_enabled=!!p->seq_enabled;
     p->seq_rate=bounded(p->seq_rate,.05f,32,2);
@@ -452,7 +463,7 @@ TsStereoFrame ts_prism_process(TsPrism *p, TsStereoFrame input)
         if(!p->matrix.active && c->morph_enabled) {
             if(c->morph_trigger) {
                 p->morph_position=prism_timed_position(p->morph_start,(float)c->morph_target,p->morph_elapsed,c->morph_seconds);
-                p->morph_elapsed+=(float)hop;
+                p->morph_elapsed+=hop;
             } else p->morph_position=c->morph;
         } else if(!p->matrix.active)p->morph_position=c->morph;
         prism_matrix_tick(p,hop);

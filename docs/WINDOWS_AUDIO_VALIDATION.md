@@ -53,10 +53,10 @@ rates/buffers.
   recording stops, with original cards intact. Check its WAV archive and undo/redo.
 - [ ] Mosaic live recording feedback: confirm an immediate card placeholder,
   growing waveform and timer, and flashing red STOP TILE with a readable label.
-  Check EXT armed/triggered states, long takes, silence, stereo, cancel/restart,
+  Check immediate EXT recording, long takes, silence, stereo, cancel/restart,
   switching workspaces, and resizing/maximizing. FOLLOW must track the take with
   playback stopped; disabling FOLLOW must leave the view under manual control.
-- [ ] REC EXT retains threshold/silence behavior and input channels/rate. Test cancel,
+- [ ] Mosaic REC EXT preserves input channels/rate and starts immediately. Test cancel,
   workspace navigation, shared input monitoring, scene replacement, and a full canvas.
 - [ ] TapeSister alone with backend WASAPI.
 - [ ] TapeSister alone with backend DirectSound.
@@ -224,3 +224,22 @@ measurements do not certify this Windows interface or its hardware latency.
   and MIDI morphing. Audition at the normal hardware buffer for dropouts and CPU.
 - [ ] Draw a ramp on a drone, then a flat line. Draw a section to zero and restore
   it. Check untouched regions, cancel, undo/redo, tile copying and TSR31 save/reopen.
+
+## Glacial Prism and independent Mosaic length
+
+- [ ] A fresh session displays Morph 04:00 and Matrix STEP 04:00. Set the two
+  `[Prism]` startup keys to 3600, relaunch and confirm 60:00. Load an old preset
+  and verify its saved short duration remains intact. Test MIDI Time and its lock.
+- [ ] Run a slow A–L morph and Matrix sequence; stop/manual takeover retains the
+  current blend, and shorter Morph Time leaves the remaining Step time held.
+- [ ] Set Mosaic LENGTH to 10s and record DRY, OUT and EXT twice each. Every
+  automatic take is exactly ten seconds at its recording rate, including silence.
+  Wheel/Shift-wheel set repeatable lengths; restarting retains the preference.
+- [ ] INF survives more than 20 seconds of performance. After 119 seconds below
+  the configured threshold, sound in either recorded channel restarts the full
+  timer. At 120 seconds of uninterrupted quiet, the take is kept with its tail.
+- [ ] Test quiet drones with a lower INI threshold and `mosaic_silence_seconds=0`.
+  Check live preview/FOLLOW, manual stop, cancel, REC FILE running alongside,
+  Sample-page publication, project reload and an archive retained after exit.
+- [ ] Record a long dense performance at the normal Windows buffer; check playback
+  continuity while recording and while the finished take is loaded into cards.

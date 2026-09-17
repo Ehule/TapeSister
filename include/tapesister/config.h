@@ -140,6 +140,9 @@ typedef struct {
     int waveform_display_mode;
     int sister_waveform_display_mode;
     TsPrismZoyaPose prism_zoya_pose;
+    float prism_morph_seconds, prism_step_seconds;
+    int mosaic_record_seconds; /* 0 = unlimited; otherwise 10..3600. */
+    int mosaic_silence_seconds, mosaic_silence_db;
     int sister_buffer_seconds;
     int sister_buffer_channels;
     int sister_clear_ms;
@@ -179,6 +182,8 @@ typedef struct {
     uint64_t cdp_factory_seed[TS_CDP_CATALOG_CAPACITY];
 } TsConfig;
 
+float ts_mosaic_record_length_normalized(int seconds);
+int ts_mosaic_record_length_seconds(float amount);
 void ts_config_init(TsConfig *config);
 int ts_config_load(TsConfig *config, const char *path,
                    char *error, size_t error_size);

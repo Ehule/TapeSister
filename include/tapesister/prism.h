@@ -8,6 +8,13 @@
 
 enum { TS_PRISM_BASE_LENSES = 12, TS_PRISM_LENSES = 24, TS_PRISM_HOP = 64,
        TS_PRISM_STATES = 12, TS_PRISM_MATRIX_STEPS = 64 };
+#define TS_PRISM_TIME_MIN .05f
+#define TS_PRISM_TIME_MAX 3600.f
+#define TS_PRISM_TIME_DEFAULT 240.f
+float ts_prism_time_from_normalized(float amount);
+float ts_prism_time_normalized(float seconds);
+void ts_prism_time_label(char *label, size_t size, float seconds);
+
 typedef enum { TS_PRISM_SUPERSAW, TS_PRISM_ENSEMBLE, TS_PRISM_HARMONIC, TS_PRISM_FIFTHS,
     TS_PRISM_OCTAVES, TS_PRISM_CLUSTER, TS_PRISM_MICRO, TS_PRISM_MODE_COUNT } TsPrismMode;
 typedef enum {
@@ -133,7 +140,8 @@ typedef struct {
     float smoothing, wet, gain, gain_target;
     double dry;
     double drift_time, sequence_phase;
-    float morph_position, morph_start, morph_elapsed;
+    float morph_position, morph_start;
+    double morph_elapsed; /* Hours of hop accumulation must not drift in float. */
     uint32_t morph_seen, seq_seen;
     int seq_lens;
     float body_shift, wet_target, dry_target, glass_target[2][TS_PRISM_SHAPE_COUNT];

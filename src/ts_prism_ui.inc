@@ -206,8 +206,9 @@ static void sister_prism_render(TsFramebuffer *fb,const TsSisterUiModel *model)
         float morph=v.matrix_active?v.matrix_morph:v.valid && p->morph_enabled ? v.morph : p->morph;
         snprintf(label,sizeof(label),"%c/%c",ts_prism_state_letter(ts_sister_ui_prism_assigned(model,0)),ts_prism_state_letter(ts_sister_ui_prism_assigned(model,1)));
         sister_percent_parameter_state(fb,308,280,154,label,morph,100,colors[5],0);
-        snprintf(label,sizeof(label),"TIME %.2FS",p->morph_seconds);
-        prism_value(fb,472,280,144,label,logf(p->morph_seconds/.05f)/logf(2400),colors[6]);
+        char duration[24];ts_prism_time_label(duration,sizeof(duration),p->morph_seconds);
+        snprintf(label,sizeof(label),"TIME %s",duration);
+        prism_value(fb,472,280,144,label,ts_prism_time_normalized(p->morph_seconds),colors[6]);
         button(fb,16,308,66,p->seq_enabled?"SEQ ON":"SEQ OFF",p->seq_enabled);
         button(fb,88,308,66,"EDIT",model->prism_seq_edit);
         button(fb,160,308,66,"RESET",0);

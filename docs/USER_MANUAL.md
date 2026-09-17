@@ -796,12 +796,17 @@ Stopping the file does not stop the arrangement. See [Direct output recording](#
 Mosaic's recording button beside REPEAT defaults to **REC DRY**, capturing the
 live QWERTY/MIDI instrument before Prism and effects, including both sample voices
 and FM. Right-click while idle to choose **REC OUT** (the same final stereo signal
-as REC FILE) or **REC EXT** (configured external input). DRY and OUT start immediately
+as REC FILE) or **REC EXT** (configured external input). All three start immediately
 and keep silence between notes; click the flashing **STOP TILE** to keep the take.
 A temporary card grows with a live waveform and elapsed time while recording.
 FOLLOW tracks its growing edge even with playback stopped. Canceling removes the
-preview; it contributes no audio to its own take. EXT retains
-threshold/silence detection. The source appears below PLAY. Each completed take
+preview; it contributes no audio to its own take. **LENGTH** selects 10 seconds
+to 60 minutes, or **INF** (default). Wheel adjusts ten seconds, Shift-wheel one
+second; right-click restores INF. Finite takes stop at the exact length. Unlimited
+takes stop after two continuous minutes below −60 dBFS; adjust the threshold or
+timeout under `[Mosaic Recording]` in the INI. Ordinary tile defaults stay at
+20 seconds. Recording streams to disk with a bounded queue; finished editable
+copies still require memory. Each completed take
 becomes a one-shot card at the starting playhead position, with an archived WAV in
 `Captures/`. Choose REC OUT to print Prism or bounce Mosaic's own playback into a
 new card; the destination card is added only after recording ends. Existing cards
@@ -1026,7 +1031,9 @@ optical meanings, gain and latency behavior, measured CPU costs and test results
 ### Prism performance controls
 
 The **MATRIX >** button opens the [64-step Morph Matrix](PRISM_MORPH_MATRIX.md):
-sequence A–L destinations, adjust STEP and Morph Time, and use Play, Stop/Reset
+sequence A–L destinations, adjust STEP and Morph Time (four-minute defaults,
+0.05 seconds–60 minutes; startup INI keys `prism_step_seconds` and
+`prism_morph_seconds`), and use Play, Stop/Reset
 and Loop. Bank-letter drafts can be edited while it plays and saved for their
 next visit. Matrix patterns save with presets/projects and reload stopped.
 

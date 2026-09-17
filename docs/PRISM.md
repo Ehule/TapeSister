@@ -335,7 +335,7 @@ held as a pending choice; finish the current morph or choose the silent end.
 Right-click recall is always available when you want to switch directly into editing.
 
 The fader label shows the assigned pair, such as **C/L**. **TO C / TO L** moves
-from the current position over **TIME**, from 0.05 to 120 seconds. Clicking an
+from the current position over **TIME**, from 0.05 seconds to 60 minutes (four-minute default). Clicking an
 already assigned TO button can reverse the transition. Moving the fader takes
 over from the timed move. Existing MIDI learn and pickup still control this same
 fader; pickup follows the actual position during a timed move.
@@ -388,6 +388,18 @@ Sequence changes do not mark a sound state dirty. **MATRIX >** opens the
 same A–L states, with live draft editing, Play, Stop/Reset, Loop and step timing.
 
 ![Native Prism performance controls with L and C assigned from the twelve-state bank](images/prism-morph-bank.png)
+
+
+### Glacial timing
+
+New sessions start with **Morph Time = 04:00** and **Matrix STEP = 04:00**.
+Both controls span 0.05 seconds to 60 minutes; minute-length values display
+`MM:SS`. The INI `[Prism]` keys `prism_morph_seconds=240` and
+`prism_step_seconds=240` set startup durations in seconds (maximum 3600).
+Close the app before editing. Existing presets/projects keep their saved times;
+New/Vary, factory browsing, captures, locks and manual takeover retain their
+established behavior. The lens sequencer's rate is independent of Matrix STEP.
+The audio clock accumulates manual morph and Matrix time in double precision.
 
 ### Small lens sequences over a drone
 
