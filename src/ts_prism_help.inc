@@ -96,7 +96,7 @@ void ts_sister_ui_prism_help(const TsSisterUiModel *m,int x,int y,char *help,siz
     if(contains(x,y,202,250,86,22))TIP("PRESETS: Prism-only bank, NEW / VARY and their lock groups. Sister tape and other FX stay as set.");
     if(m->prism_zoya_pose!=TS_PRISM_ZOYA_POSE_OFF &&
        (contains(x,y,18,108,104,117) || contains(x,y,510,108,112,117)) && m->prism_zoya.visible)
-        TIP("ZOYA: the same presence at both ends. Briefly refracts/rebuilds on activation; settled motion follows the live lens state.");
+        TIP("NEBULA: amber source / spectral output. Sound controls shape the field; Wet/Dry balance its presence.");
     if(m->prism_panel==1) {
         if(contains(x,y,16,280,66,22) || contains(x,y,88,280,66,22)) {
             int endpoint=x>=88;

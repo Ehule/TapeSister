@@ -1062,21 +1062,19 @@ Hover controls for blue, two-line help above the bottom row. Compact **SUSTAIN**
 and **REC FILE** buttons sit together beside the gain-reduction readout. Sequencer
 RESET/CLEAR preserve A–L; bottom-row CAPTURE records audio from a Sister tap.
 
-Two small particle manifestations of **the same Zoya** appear near SOURCE and OUT.
-Their volume comes from varying particle density, with diffuse edges and no traced contours.
-The default meditation pose seats her with hands on her knees at SOURCE; at OUT she
-holds the same posture slightly aloft, without an independent bobbing animation.
-Both poses are included. In `tapesister.ini`, `[Prism]` → `prism_zoya_pose=meditation`
-is the default; use `prism_zoya_pose=standing` for the reaching pose, or
-`prism_zoya_pose=off` to hide Zoya and the activation animation. Prism optics and
-audio remain active when Zoya is off. Edit while
-TapeSister is closed, then restart. The preference is retained by INI saves and
-is independent of projects, sound presets and A–L states.
-Turning **PRISM ON** while visible plays a brief materialize/refract/reconstruct
-introduction, then settles. Spread/Drift disperse the output figure; Focus gathers
-it; Body, Color and wet/dry affect density, color and prominence. Returning from
-another page/window does not replay the introduction. The figures leave the
-optics and controls in place and add no audio processing. See [Zoya in Prism](PRISM_ZOYA.md).
+Prism displays a coherent amber/gold nebula near SOURCE and a transformed
+blue/cyan/violet/magenta cloud near OUT. **PRISM ON** plays a brief
+cohere/cast/refract/recombine introduction, followed by gentle ambient motion.
+Spread, Drift, Focus, Body, Color and Wet/Dry shape the field, including during
+A–L and Matrix transitions. The particles remain behind the existing optics,
+editing handles, labels and controls. Returning from a hidden page/window does
+not replay the introduction.
+
+In `tapesister.ini`, `[Prism]` → `prism_zoya_pose=nebula` is the default.
+Use `off` to hide all particles and their animation while retaining Prism audio
+and optics. Older `meditation` and `standing` values migrate to `nebula`.
+Edit while TapeSister is closed, then restart. INI saves retain the preference;
+projects, sound presets and A–L do not change it. See [Prism nebula fields](PRISM_ZOYA.md).
 
 ## Sister Machine
 

@@ -143,10 +143,8 @@ void ts_sister_ui_model_init(TsSisterUiModel *model, const TsConfig *config)
 {
     if (model == NULL) return;
     memset(model, 0, sizeof(*model));
-    model->prism_zoya_pose = config != NULL &&
-        (config->prism_zoya_pose == TS_PRISM_ZOYA_POSE_STANDING ||
-         config->prism_zoya_pose == TS_PRISM_ZOYA_POSE_OFF) ?
-        config->prism_zoya_pose : TS_PRISM_ZOYA_POSE_MEDITATION;
+    model->prism_zoya_pose = config != NULL && config->prism_zoya_pose == TS_PRISM_ZOYA_POSE_OFF ?
+        TS_PRISM_ZOYA_POSE_OFF : TS_PRISM_ZOYA_POSE_NEBULA;
     model->capture_channels = config != NULL ? config->capture_channels : 1;
     model->waveform_mode = ts_waveform_display_sanitize(
         config != NULL ? config->sister_waveform_display_mode : 0);
@@ -830,16 +828,62 @@ void ts_sister_ui_prism_zoya_tick(TsPrismZoyaVisual *v,uint32_t now,int enabled,
 {
     if(!v)return;
     enabled=!!enabled;
+    int was_visible=v->visible;
     int rising=enabled && (!v->initialized || !v->enabled);
     v->initialized=1;v->enabled=enabled;v->visible=enabled && visible;
     /* Hidden/minimized/page-away work never accumulates or queues an intro.
        Returning to an already running Prism shows the settled manifestation. */
-    if(!v->visible) { v->introducing=0;v->elapsed_ms=TS_PRISM_ZOYA_INTRO_MS;return; }
+    if(!v->visible) {
+        v->introducing=0;v->elapsed_ms=TS_PRISM_ZOYA_INTRO_MS;v->last_ms=0;
+        if(v->apparition>0)v->apparition_spent=1;
+        v->apparition=0;v->coherent_ms=0;return;
+    }
+    uint32_t stamp=now-now%33u;
+    uint32_t delta=was_visible ? stamp-v->last_ms : 0;
+    v->last_ms=stamp;
+    if(delta>100u)delta=33u;
+    v->ambient_ms+=delta;
     if(rising) { v->introducing=1;v->started_ms=now; }
     if(v->introducing) {
         uint32_t elapsed=now-v->started_ms; /* SDL tick rollover is intentional. */
         if(elapsed>=TS_PRISM_ZOYA_INTRO_MS) {
             v->introducing=0;v->elapsed_ms=TS_PRISM_ZOYA_INTRO_MS;
         } else v->elapsed_ms=(elapsed/33u)*33u;
+    }
+}
+
+void ts_sister_ui_prism_nebula_update(TsSisterUiModel *m,uint32_t now,
+                                     int visible,const TsPrismPatch *matrix_pair,float matrix_morph)
+{
+    TsPrismZoyaVisual *v=&m->prism_zoya;
+    uint32_t previous=v->ambient_ms;
+    ts_sister_ui_prism_zoya_tick(v,now,m->parameters.prism.enabled,
+        visible && m->prism_zoya_pose!=TS_PRISM_ZOYA_POSE_OFF);
+    if(!v->visible)return;
+    const TsPrismControls *c=&m->parameters.prism;
+    TsPrismPatch live;memcpy(&live,c,sizeof(live));
+    const TsPrismPatch *a=&live,*b=a;
+    float t=0;
+    if(matrix_pair) {a=&matrix_pair[0];b=&matrix_pair[1];t=matrix_morph;}
+    else if(c->morph_enabled && ts_prism_pair_ready(c)) {
+        a=ts_prism_endpoint_patch(c,0);b=ts_prism_endpoint_patch(c,1);
+        t=m->routing.prism.valid?m->routing.prism.morph:c->morph;
+    }
+#define VISUAL(field) v->field=a->field+(b->field-a->field)*t
+    VISUAL(spread);VISUAL(drift);VISUAL(focus);VISUAL(body);VISUAL(color);VISUAL(mix);
+#undef VISUAL
+    v->dry=a->dry_level+(b->dry_level-a->dry_level)*t;
+    uint32_t delta=v->ambient_ms-previous;
+    int coherent=v->focus>=.995f && v->drift<=.002f && v->spread<=.005f &&
+        v->dry<=.005f && v->mix>=.95f && !v->introducing;
+    if(!coherent) {
+        v->coherent_ms=0;v->apparition_spent=0;
+        v->apparition=fmaxf(0,v->apparition-delta/800.f);
+    } else if(!v->apparition_spent) {
+        v->coherent_ms+=delta;
+        float appear=fminf(1,fmaxf(0,(v->coherent_ms-3000.f)/1500.f));
+        float depart=fminf(1,fmaxf(0,(v->coherent_ms-6500.f)/1800.f));
+        v->apparition=appear*(1-depart);
+        if(v->coherent_ms>=8300u){v->apparition=0;v->apparition_spent=1;}
     }
 }
