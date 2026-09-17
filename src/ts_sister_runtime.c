@@ -562,7 +562,6 @@ int ts_sister_runtime_enable(TsSisterRuntime *runtime, uint32_t sample_rate,
                              char *error, size_t error_size)
 {
     TsSisterMachine machine;
-    TsSisterParameters parameters;
     int cold_fx, cold_fallout;
     if (runtime == NULL || sample_rate == 0u || output_channels != 2u ||
         !ts_sample_valid_channels(buffer_channels) ||
@@ -615,27 +614,49 @@ int ts_sister_runtime_enable(TsSisterRuntime *runtime, uint32_t sample_rate,
                       "Could not allocate Sister rolling storage");
         return 0;
     }
-    parameters = runtime->parameters;
-    if (!runtime->parameters_published)
-        parameters.buffer_seconds = (float)duration_seconds;
-    ts_sister_machine_set_parameters(&machine, &parameters);
-    machine.fx_return_gain.current =
-        runtime->ordinary_fx_return_gain.current;
-    runtime_ramp_set(&machine.fx_return_gain, parameters.fx_return_gain,
-                     sample_rate);
-    ts_sister_machine_set_rolling(&machine, runtime->rolling);
-    ts_sister_machine_set_hold(&machine, runtime->held);
-    ts_sister_machine_free(&runtime->machine);
-    runtime->machine = machine;
-    runtime->parameters = machine.parameters;
-    /* These processors may already be playing the ordinary input. Only a
-       newly allocated engine needs cold synchronization; power must preserve
-       pedal settings, pending morphs, tails and Fallout modulation phase. */
     if (cold_fx)
         ts_sister_post_fx_sync_controls(&runtime->post_fx, &runtime->parameters.fx);
-    if (cold_fallout)
+    if (cold_fallout) {
         ts_sister_fallout_sync_controls(&runtime->fallout,
                                         &runtime->parameters.fx.fallout);
+        runtime->fallout_feedback_current = 0.0f;
+        runtime->fallout_feedback_previous = (TsStereoFrame){0.0f, 0.0f};
+    }
+    int activated=ts_sister_runtime_activate(runtime,&machine,output_channels,error,error_size);
+    ts_sister_machine_free(&machine);
+    return activated;
+}
+
+int ts_sister_runtime_activate(TsSisterRuntime *runtime,
+                               TsSisterMachine *prepared, uint8_t output_channels,
+                               char *error, size_t error_size)
+{
+    uint32_t sample_rate=prepared ? prepared->buffer.sample_rate : 0;
+    if (!runtime || !prepared || prepared==&runtime->machine || !prepared->buffer.data ||
+        !sample_rate || output_channels!=2 || !runtime->prism.history ||
+        runtime->prism.sample_rate!=sample_rate || !runtime->post_fx.ready ||
+        runtime->post_fx.sample_rate!=sample_rate || !runtime->fallout.ready ||
+        runtime->fallout.sample_rate!=sample_rate || !runtime->limiter.ready ||
+        runtime->limiter.sample_rate!=sample_rate) {
+        runtime_error(error,error_size,"Sister power requires prepared tape and matching audio engines");
+        return 0;
+    }
+    TsSisterParameters parameters;
+    parameters = runtime->parameters;
+    if (!runtime->parameters_published)
+        parameters.buffer_seconds = (float)((double)prepared->buffer.capacity_frames/sample_rate);
+    ts_sister_machine_set_parameters(prepared, &parameters);
+    prepared->fx_return_gain.current =
+        runtime->ordinary_fx_return_gain.current;
+    runtime_ramp_set(&prepared->fx_return_gain, parameters.fx_return_gain,
+                     sample_rate);
+    ts_sister_machine_set_rolling(prepared, runtime->rolling);
+    ts_sister_machine_set_hold(prepared, runtime->held);
+    TsSisterMachine previous=runtime->machine;
+    runtime->machine = *prepared;
+    *prepared=previous;
+    runtime->parameters = runtime->machine.parameters;
+    /* Global FX, Prism clocks, tails and keyboard generators keep running. */
     runtime->enabled = 1;
     runtime->output_channels = output_channels;
     runtime->callback_failed = 0;
@@ -646,10 +667,6 @@ int ts_sister_runtime_enable(TsSisterRuntime *runtime, uint32_t sample_rate,
     runtime->processed_frames = 0u;
     runtime->master_feedback_current = 0.0f;
     runtime->master_feedback_previous = (TsStereoFrame){0.0f, 0.0f};
-    if (cold_fallout) {
-        runtime->fallout_feedback_current = 0.0f;
-        runtime->fallout_feedback_previous = (TsStereoFrame){0.0f, 0.0f};
-    }
     memset(runtime->output_level, 0, sizeof(runtime->output_level));
     memset(runtime->output_peak_hold, 0, sizeof(runtime->output_peak_hold));
     memset(runtime->output_peak_hold_frames, 0,
@@ -667,8 +684,7 @@ int ts_sister_runtime_enable(TsSisterRuntime *runtime, uint32_t sample_rate,
     runtime_ramp_reset(&runtime->direct_tile_route,
                        runtime->rolling ? 1.0f : 0.0f);
     ts_capture_free(&runtime->capture);
-    ts_performance_clear(&runtime->performance);
-    ts_sister_wave_publisher_clear(&runtime->waveform, buffer_channels);
+    ts_sister_wave_publisher_clear(&runtime->waveform, runtime->machine.buffer.channels);
     runtime->waveform_capacity_frames = runtime->machine.buffer.capacity_frames;
     publish_snapshot(runtime);
     runtime_error(error, error_size, "");
@@ -677,8 +693,16 @@ int ts_sister_runtime_enable(TsSisterRuntime *runtime, uint32_t sample_rate,
 
 void ts_sister_runtime_disable(TsSisterRuntime *runtime)
 {
+    TsSisterMachine retired={0};
+    ts_sister_runtime_deactivate(runtime,&retired);
+    ts_sister_machine_free(&retired);
+}
+
+void ts_sister_runtime_deactivate(TsSisterRuntime *runtime,
+                                  TsSisterMachine *retired)
+{
     uint32_t sample_rate;
-    if (runtime == NULL) return;
+    if (runtime == NULL || retired == NULL || retired == &runtime->machine) return;
     sample_rate = runtime->machine.buffer.sample_rate != 0u ?
         runtime->machine.buffer.sample_rate :
         runtime->post_fx.ready ? runtime->post_fx.sample_rate : 48000u;
@@ -690,9 +714,9 @@ void ts_sister_runtime_disable(TsSisterRuntime *runtime)
     }
     runtime->enabled = 0;
     runtime->last_frame = (TsSisterRuntimeFrame){0};
-    ts_performance_clear(&runtime->performance);
     ts_capture_free(&runtime->capture);
-    ts_sister_machine_free(&runtime->machine);
+    *retired=runtime->machine;
+    memset(&runtime->machine,0,sizeof(runtime->machine));
     ts_sister_wave_publisher_clear(&runtime->waveform, 2u);
     runtime->waveform_capacity_frames = 0u;
     runtime->output_channels = 0u;

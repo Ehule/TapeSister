@@ -48,9 +48,32 @@ static void test_global_fx_survive_power(void)
     free(fx);ts_sister_runtime_free(&runtime);
 }
 
+static void test_prepared_power_storage(void)
+{
+    TsSisterRuntime runtime;TsSisterMachine prepared={0},retired={0};char error[160];
+    ts_sister_runtime_init(&runtime);
+    CHECK(ts_sister_machine_init(&prepared,1000,2,.1));
+    float *storage=prepared.buffer.data;
+    /* A rejected handoff must leave its storage owned by the caller. */
+    CHECK(!ts_sister_runtime_activate(&runtime,&prepared,2,error,sizeof(error)));
+    CHECK(prepared.buffer.data==storage && !runtime.enabled);
+    CHECK(ts_sister_runtime_reconfigure(&runtime,1000,2,error,sizeof(error)));
+    CHECK(ts_sister_runtime_activate(&runtime,&prepared,2,error,sizeof(error)));
+    CHECK(!prepared.buffer.data && runtime.machine.buffer.data==storage);
+    CHECK(ts_sister_machine_init(&prepared,2000,2,.1));
+    float *mismatched=prepared.buffer.data;
+    CHECK(!ts_sister_runtime_activate(&runtime,&prepared,2,error,sizeof(error)));
+    CHECK(runtime.enabled && runtime.machine.buffer.data==storage && prepared.buffer.data==mismatched);
+    ts_sister_runtime_deactivate(&runtime,&retired);
+    CHECK(!runtime.enabled && !runtime.machine.buffer.data && retired.buffer.data==storage);
+    ts_sister_machine_free(&prepared);ts_sister_machine_free(&retired);
+    ts_sister_runtime_free(&runtime);
+}
+
 int main(void)
 {
     test_global_fx_survive_power();
+    test_prepared_power_storage();
     TsSisterRuntime runtime;
     TsInstrument instrument;
     TsSisterSourceFrames source = {0};

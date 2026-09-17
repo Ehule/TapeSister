@@ -1102,8 +1102,14 @@ These settings remain selected across power cycles. Keyboard HOLD is separate
 from tape Hold and is retained by the power controller. EXT requests the input
 device on power-on; the other recording/monitoring uses of that device keep
 their own ownership. Clearing or recording the tape still requires power.
-Power-on retains the existing output crossfade, but tape allocation and device
-startup can still cause a pause; this is not a guarantee of glitch-free startup.
+Held notes keep their playback position across power cycles. Existing sample
+notes enter the TILES input when Sister powers on; FM notes enter FM. Enable the
+appropriate source and Monitor to hear them. Notes played through Sister keep
+sounding through the ordinary output when it powers off.
+Tape storage is prepared and cleared before taking the audio lock, then
+exchanged with a short protected handoff. Old tape storage is freed after
+unlocking. The existing output crossfade remains; input-device startup timing
+still depends on the audio driver.
 
 ### Source routing
 

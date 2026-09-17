@@ -255,6 +255,16 @@ int ts_sister_runtime_enable(TsSisterRuntime *runtime, uint32_t sample_rate,
                              double duration_seconds,
                              char *error, size_t error_size);
 void ts_sister_runtime_disable(TsSisterRuntime *runtime);
+/* Live power handoff: prepare tape storage away from the audio lock. Engines
+   must already be configured for the same output rate. Activate exchanges
+   the prepared machine for the old one; deactivate returns the old machine.
+   Exclude the callback during either handoff, then free the returned storage
+   after unlocking. Neither operation resets the independent keyboard voices. */
+int ts_sister_runtime_activate(TsSisterRuntime *runtime,
+                               TsSisterMachine *prepared, uint8_t output_channels,
+                               char *error, size_t error_size);
+void ts_sister_runtime_deactivate(TsSisterRuntime *runtime,
+                                  TsSisterMachine *retired);
 int ts_sister_runtime_reconfigure(TsSisterRuntime *runtime,
                                   uint32_t sample_rate,
                                   uint8_t output_channels,

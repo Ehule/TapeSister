@@ -260,6 +260,8 @@ static void test_sister_prepared_power(void)
 #undef ACTION
 }
 
+#include "test_keyboard_power.inc"
+
 int main(void)
 {
     SDL_SetMainReady();
@@ -276,6 +278,7 @@ int main(void)
     ts_note_bank_init(&audio.notes); ts_performance_init(&audio.performance);
     ts_performance_init(&audio.tile_launchers); ts_sister_runtime_init(&audio.sister);
     ts_capture_init(&audio.capture); audio.output_rate = 44100;
+    ts_audio_mixer_init(&audio.mixer);audio.fm_output_gain=1;
     char error[160];
     assert(ts_sister_runtime_enable(&audio.sister, 44100, 2, 2, 1.0, error, sizeof(error)));
     assert(ts_instrument_create_basic(&instrument, TS_FM_WAVE_SINE, error, sizeof(error)));
@@ -285,6 +288,7 @@ int main(void)
     test_trigger_identity();
     test_loop_transport();
     test_sister_prepared_power();
+    test_keyboard_power_audio();
     stop_all_force(device, &audio, &ui);
     ts_sample_free(&fm); ts_instrument_free(&instrument);
     ts_performance_free(&audio.performance); ts_performance_free(&audio.tile_launchers);

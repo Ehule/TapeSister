@@ -1016,12 +1016,19 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
                 audio->live_link_buffer[i + 1] : buses.tapehead.l;
         }
         sister_sources.fm = buses.fm;
-        sister_sources.tiles = audio->tile_launcher_mix;
+        /* Notes already sounding before POWER retain their original voice
+           bank and playback phase, but must feed the same TILES insert. */
+        sister_sources.tiles = buses.tile_performance;
         sister_sources.external = buses.external;
         sister_sources.preview = buses.legacy_preview;
         sister_sources.tapehead = buses.tapehead;
         sister_frame = ts_sister_runtime_process_frame(&audio->sister,
                                                         &sister_sources);
+        if(!audio->sister.enabled && !audio->sister.callback_failed) {
+            /* Sister group notes remain live input when its tape is bypassed. */
+            buses.tile_performance.l += sister_frame.keyboard_dry.l;
+            buses.tile_performance.r += sister_frame.keyboard_dry.r;
+        }
         if(audio->record_bank_recorder && audio->record_source &&
            atomic_load_explicit(audio->record_source,memory_order_acquire)==TS_RECORD_SOURCE_DRY) {
             TsStereoFrame dry={audio->keyboard_dry.l+sister_frame.keyboard_dry.l,
@@ -10076,6 +10083,18 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
                      "STOP RECORDING BEFORE CHANGING SISTER POWER");
             return;
         }
+        /* Allocate and zero the rolling tape while the current input keeps
+           playing. Only the prepared engine exchange excludes the callback. */
+        TsSisterMachine *exchange=calloc(1,sizeof(*exchange));
+        if (!exchange || (!audio->sister.enabled &&
+            !ts_sister_machine_init(exchange,sample_rate,
+                (uint8_t)ui->config.sister_buffer_channels,
+                (double)ui->config.sister_buffer_seconds))) {
+            free(exchange);
+            snprintf(sister->model.status,sizeof(sister->model.status),
+                     "COULD NOT PREPARE SISTER TAPE - INPUT CONTINUES");
+            return;
+        }
         if (device) SDL_LockAudioDevice(device);
         audio_begin_topology_crossfade(audio, sample_rate);
         if (audio->sister.enabled) {
@@ -10085,22 +10104,21 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
                                        TS_INPUT_CONSUMER_SISTER_EXT, 0);
                 sync_ext = 1;
             }
-            ts_sister_runtime_disable(&audio->sister);
+            ts_sister_runtime_deactivate(&audio->sister,exchange);
             sister->power_visual = TS_SISTER_UI_POWER_VISUAL_OFF;
             sister->power_visual_started_ms = visual_now;
             sister->model.power_visual = sister->power_visual;
             sister->model.power_visual_elapsed_ms = 0u;
             snprintf(sister->model.status, sizeof(sister->model.status),
                      "POWER OFF - ORDINARY TAPESISTER AUDIO CONTINUES");
-        } else if (ts_sister_runtime_enable(
-                       &audio->sister, sample_rate, output_channels,
-                       (uint8_t)ui->config.sister_buffer_channels,
-                       (double)ui->config.sister_buffer_seconds,
+        } else if (ts_sister_runtime_activate(
+                       &audio->sister, exchange, output_channels,
                        error, sizeof(error))) {
             TsSisterParameters parameters = audio->sister.parameters;
             parameters.clear_ms = (float)ui->config.sister_clear_ms;
             ts_sister_runtime_set_parameters(&audio->sister, &parameters);
-            (void)ts_sister_runtime_set_page(&audio->sister,
+            if(audio->sister.active_page!=(size_t)ui->sample_page)
+                (void)ts_sister_runtime_set_page(&audio->sister,
                                              (size_t)ui->sample_page,
                                              instrument);
             if ((audio->sister.source_switches & TS_SISTER_SOURCE_EXT) != 0u &&
@@ -10120,6 +10138,8 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         }
         keyboard_loop_policy(audio, ui);
         if (device) SDL_UnlockAudioDevice(device);
+        ts_sister_machine_free(exchange);
+        free(exchange);
         if (sync_ext && input_device != NULL && external_input != NULL &&
             !sync_external_input_consumers(
                 input_device, audio, external_input, &ui->config,
