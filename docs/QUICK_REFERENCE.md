@@ -412,11 +412,20 @@ Sample/Depth/Rate, Pitch Ratio/Ramp/Rate. `L` assigns LFO; `R` assigns Rise.
 
 ## Final output
 
-Final order: mix → linked limiter → OUT fader → L/R meter and FILE OUT.
+Final order: mix → Master EQ → linked limiter → OUT fader → L/R meter and FILE OUT.
+
+Click **LIM** in either window for Master / Room EQ and the limiter toggle.
+Five bands; Bell / Low Shelf / High Shelf / High Pass / Low Pass / Notch.
+Drag a node for frequency/gain; wheel for Q; Shift makes node edits finer.
+Selected-band sliders show exact values. Gain ±12 dB; Q 0.30–8.00; passes 12 dB/oct.
+Right-click a node for zero gain, middle-click for band bypass. Type cycles with
+left/right click. Global EQ bypass retains settings; RESET requires confirmation.
+QWERTY/ARP keep playing; Space stops, Escape closes. MIDI learn supports the three
+band sliders and EQ bypass. Project/session state includes EQ; sound presets preserve it.
 
 | Readout | Meaning |
 | --- | --- |
-| LIM | global limiter enabled |
+| LIM | opens Master / Room EQ; highlight follows limiter state |
 | GR 0.0 | no current gain reduction |
 | GR-x.x | limiter reducing by x.x dB |
 | LIM OFF | limiter bypassed |
@@ -504,7 +513,7 @@ characters where needed. You can edit the suggested name before saving.
 Recording continues through workspace changes and event editing. Click the active
 recording button again to finish the timestamped file in `Captures/`; Mosaic keeps
 playing. Stop the arrangement first and record its effects tails if desired. The
-file contains the final processing, limiter, and OUT level and requires no tile
+file contains the final processing, Master EQ, limiter, and OUT level and requires no tile
 destination or powered Sister engine.
 | **STOP FILE** in the recording footer | Finish the WAV and keep playback running |
 | QWERTY on the canvas | Up to five simultaneous notes; newest voice supplies the playhead |

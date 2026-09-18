@@ -112,7 +112,8 @@ int ts_midi_tile_target_slot(const char *target)
 int ts_midi_target_is_continuous(const char *target)
 {
     return target != NULL &&
-           (strncmp(target, "sister.param.", 13u) == 0 ||
+           (strncmp(target, "main.eq.band.", 13u) == 0 ||
+            strncmp(target, "sister.param.", 13u) == 0 ||
             strcmp(target, "main.master_output") == 0 ||
             strcmp(target, "main.tile_fade") == 0);
 }

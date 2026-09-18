@@ -101,7 +101,7 @@ The top row remains available across the main workspaces.
   and Sister Machine. Portal retains its own `Tab` source/result audition shortcut.
 - **SAVE** saves the complete active project.
 - **EXPORT** exports the selected tile or the complete sound collection.
-- **LIM** enables or bypasses the global output limiter.
+- **LIM** opens the Master / Room EQ page, including the limiter toggle.
 - **OUT** is the final speaker/file-output fader.
 - The two meter lanes show the final left and right output.
 
@@ -789,7 +789,7 @@ recorded into Sister's buffer retains its printed sound. See
 [FX transitions](#effect-and-master-transitions) and [Fallout](#fallout).
 
 Mosaic's header and footer **REC FILE** buttons, and `Ctrl+Shift+F`, operate the
-shared final stereo output recorder. It includes the live processing, limiter, and
+shared final stereo output recorder. It includes the live processing, Master EQ, limiter, and
 OUT fader, continues across windows, and saves completed takes in `Captures/`.
 Stopping the file does not stop the arrangement. See [Direct output recording](#direct-output-recording).
 
@@ -982,7 +982,7 @@ button. Portal's top CDP button stays CDP, so clicking again cannot start record
 `Ctrl+Shift+F` is the main-window shortcut,
 including while Mosaic or FM is open. These controls operate the same recorder.
 
-The file includes the global processing, limiter, and final OUT fader. Sister may
+The file includes the global processing, Master EQ, limiter, and final OUT fader. Sister may
 be powered off. Recording continues while you switch workspaces, edit an event, or
 stop an audition. Click the active recording button again to finish the file; it
 does not stop Mosaic playback. To capture the arrangement's effects tails, stop the
@@ -1474,9 +1474,37 @@ The global output strip appears on every main and Sister page.
 
 Signal order at the final boundary is:
 
-> completed TapeSister mix → global limiter → final OUT fader → meter / FILE OUT
+> completed TapeSister mix → Master EQ → global limiter → final OUT fader → meter / FILE OUT
 
-**LIM** toggles the linked-stereo look-ahead limiter. Its ceiling, look-ahead, and
+Click **LIM** in either window to open **Master / Room EQ**. This is a live
+room/system correction tool: remove excess bass, tame a resonance, or adjust an
+unfamiliar PA. It has five bands, each offering Bell, Low Shelf, High Shelf, High
+Pass, Low Pass, or Notch. Frequency is logarithmic (20 Hz to approximately 20 kHz,
+limited by the output sample rate), gain spans ±12 dB, and Q spans 0.30–8.00.
+High/low passes have a fixed 12 dB/octave slope; gain is inactive for passes and notch.
+
+Drag a numbered node horizontally for frequency and vertically for gain. Wheel a
+node to adjust Q. The selected band's sliders show exact values; wheel them for
+small changes, or Shift-wheel for finer changes. Shift-drag a node slows movement.
+Right-click a node to zero its gain; middle-click it to toggle that band. Click the
+type button to cycle forward, or right-click to cycle backward. Band buttons select
+without editing. The amber curve combines all active bands; in bypass, the remembered
+curve dims and the active response is flat.
+
+**EQ ON / EQ BYPASS** compares the processed and original master. There is no automatic
+loudness matching: boosts can increase limiter gain reduction. **RESET EQ** requires
+a second click on **CONFIRM RESET** and returns all five bands to flat, with EQ bypassed.
+It leaves the limiter and other settings alone. Escape or X closes the page. Physical
+QWERTY notes and the arpeggiator keep playing, and Space still stops transport.
+
+EQ state saves with the project and session settings. Older projects load flat and
+bypassed. Sister/FX/Fallout sound presets leave room EQ unchanged. Open the EQ page
+before entering MIDI learn to map a band's frequency, gain, Q, or global bypass.
+
+![Master / Room EQ](images/master-performance-eq.png)
+
+The page's **LIMITER ON / OFF** button toggles the linked-stereo look-ahead limiter.
+Its ceiling, look-ahead, and
 release defaults are configured in `tapesister.ini`. Linked gain reduction preserves
 stereo balance. `GR` in the footer shows gain reduction; `LIM OFF` confirms bypass.
 

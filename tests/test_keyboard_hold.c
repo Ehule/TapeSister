@@ -372,6 +372,7 @@ static void test_sister_prepared_power(void)
 
 #include "test_keyboard_power.inc"
 #include "test_keyboard_sequence_controller.inc"
+#include "test_master_eq_controller.inc"
 
 int main(void)
 {
@@ -406,6 +407,7 @@ int main(void)
     test_sister_prepared_power();
     test_keyboard_power_audio();
     test_keyboard_sequence_controller();
+    test_master_eq_controller();
     stop_all_force(device, &audio, &ui);
     ts_sample_free(&fm); ts_instrument_free(&instrument);
     ts_performance_free(&audio.performance); ts_performance_free(&audio.tile_launchers);

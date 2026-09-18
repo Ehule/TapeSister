@@ -432,6 +432,8 @@ typedef struct {
     int sister_portal_pressed;
     TsUiMasterOutputStatus master_output;
     int master_output_dragging;
+    int master_eq_open, master_eq_band, master_eq_drag, master_eq_reset_pending;
+    unsigned master_eq_rate;
     size_t capture_recorded_frames;
     size_t capture_capacity_frames;
     TsMosaic *mosaic;
@@ -714,6 +716,9 @@ size_t ts_ui_right_drag_playhead_frame(size_t anchor, size_t pointer,
 int ts_ui_keyboard_set_octave(TsUiState *ui, int octave);
 int ts_ui_keyboard_cycle_octave(TsUiState *ui, int amount);
 int ts_ui_keyboard_shift_semitone(TsUiState *ui, int amount);
+int ts_ui_master_eq_node(const TsUiState *ui,int x,int y);
+int ts_ui_master_eq_control(int x,int y);
+int ts_ui_master_eq_midi_target(const TsUiState *ui,int x,int y,char *target,size_t size);
 int ts_ui_master_limiter_contains(int x, int y);
 int ts_ui_master_output_contains(int x, int y);
 float ts_ui_master_output_normalized_from_x(int x);

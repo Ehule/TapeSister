@@ -4,6 +4,7 @@
 #include <stddef.h>
 
 #include "tapesister/audio_lifecycle.h"
+#include "tapesister/master_eq.h"
 #include "tapesister/audition.h"
 #include "tapesister/dsp_recipe.h"
 #include "tapesister/midi_map.h"
@@ -123,6 +124,7 @@ typedef struct {
     int reference_tone_volume;
     int fm_output_percent;
     int master_output_percent;
+    TsMasterEqControls master_eq;
     TsAudioBackend audio_backend;
     int audio_backend_invalid;
     int audio_buffer_frames;
