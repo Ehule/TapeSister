@@ -16,6 +16,9 @@ enum { TS_PRISM_SUSTAIN_X = 396, TS_PRISM_SUSTAIN_W = 82,
 enum { TS_PRISM_MATRIX_X=16, TS_PRISM_MATRIX_Y=114,
        TS_PRISM_MATRIX_DX=76, TS_PRISM_MATRIX_DY=25,
        TS_PRISM_MATRIX_W=72, TS_PRISM_MATRIX_H=22 };
+enum { TS_PRISM_BANK_X=16, TS_PRISM_BANK_Y=314, TS_PRISM_BANK_COLUMNS=13,
+       TS_PRISM_BANK_DX=46, TS_PRISM_BANK_DY=16,
+       TS_PRISM_BANK_W=44, TS_PRISM_BANK_H=14 };
 typedef enum { TS_PRISM_CAPTURE_EMPTY, TS_PRISM_CAPTURE_READY,
                TS_PRISM_CAPTURE_EDITING, TS_PRISM_CAPTURE_DIRTY } TsPrismCaptureVisual;
 enum { TS_PRISM_ZOYA_INTRO_MS = 3600 };
@@ -281,7 +284,7 @@ typedef struct {
     int prism_matrix_previous_panel, prism_matrix_edit;
     char prism_preset_name[32];
     int prism_selected; /* One-based lens identity; zero means no selection. */
-    int prism_edit_endpoint; /* One-based recalled A-L state; UI only. */
+    int prism_edit_endpoint; /* One-based recalled A-Z state; UI only. */
     int prism_browse[2]; /* One-based pending letters; zero keeps the assigned end. */
     int prism_hover_valid, prism_hover_x, prism_hover_y;
     TsPrismZoyaPose prism_zoya_pose; /* INI preference; never sent to audio or saved in presets. */
@@ -309,6 +312,7 @@ int ts_sister_ui_prism_state(const TsSisterUiModel *model, int endpoint);
 const char *ts_sister_ui_prism_edit_status(const TsSisterUiModel *model);
 void ts_sister_ui_prism_help(const TsSisterUiModel *model, int x, int y, char *help, size_t size);
 int ts_sister_ui_prism_matrix_cell(int x,int y);
+int ts_sister_ui_prism_matrix_bank_state(int x,int y);
 int ts_sister_ui_prism_assigned(const TsSisterUiModel *model,int side);
 void ts_sister_ui_prism_zoya_tick(TsPrismZoyaVisual *visual, uint32_t now_ms, int enabled, int visible);
 void ts_sister_ui_prism_nebula_update(TsSisterUiModel *model, uint32_t now_ms,

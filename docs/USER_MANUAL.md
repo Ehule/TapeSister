@@ -1031,23 +1031,29 @@ optical meanings, gain and latency behavior, measured CPU costs and test results
 ### Prism performance controls
 
 The **MATRIX >** button opens the [64-step Morph Matrix](PRISM_MORPH_MATRIX.md):
-sequence A–L destinations, adjust STEP and Morph Time (four-minute defaults,
-0.05 seconds–60 minutes; startup INI keys `prism_step_seconds` and
+sequence A–Z destinations, adjust STEP and Morph Time (four-minute defaults,
+Morph 0.05 seconds–60 minutes, Step 0–60 minutes; startup INI keys `prism_step_seconds` and
 `prism_morph_seconds`), and use Play, Stop/Reset
 and Loop. Bank-letter drafts can be edited while it plays and saved for their
-next visit. Matrix patterns save with presets/projects and reload stopped.
+next visit. MORPH is the full A-to-B travel time, then STEP is how long to stay
+at B before travelling to the next state. Morph 1 minute / Step 10 seconds gives
+a one-minute transition followed by a ten-second hold. Neither caps the other.
+Each timer updates its active phase immediately, without Reset. Step zero
+(right-click) gives continuous transitions. Older saves keep their numeric time
+settings, with STEP now interpreted as this separate hold. Matrix patterns save
+with presets/projects and reload stopped.
 
 Prism has **SOUND**, **PERFORM**, and **PRESETS** control pages below its live
 lens diagram. The Prism-only bank saves refraction settings independently of the
 bottom-row full Sister presets. **NEW** rolls a fresh setup, **VARY** develops it,
 and six lock groups protect chosen settings. Capture **A/B** to start, then use
-**twelve saved states A–L**: hover either CAP or TO button and wheel through the
+**26 saved states A–Z**: hover either CAP or TO button and wheel through the
 letters silently. Click an empty CAP to save the live sound. Browse a saved letter
 on the silent end and click to confirm and morph over TIME. The manual/MIDI fader
 and TO buttons follow the selected pair; moving the fader takes over a timed move.
 
 Right-click CAP to recall its displayed letter for editing, then left-click it to
-save changes. New/Vary and ordinary user-preset browsing preserve all twelve
+save changes. New/Vary and ordinary user-preset browsing preserve all 26
 memories. Middle-click CAP clears only that letter and unlocks editing, including
 when it was a pending wheel choice. Right-clicking an empty CAP also unlocks it
 for editing; no preset recall is needed. Shift-click a user-preset arrow/name restores the full saved bank
@@ -1067,13 +1073,13 @@ for changes not yet captured. Amber **CHOOSE** marks a pending wheel choice. The
 the active morph lock explicit; right-click CAP recalls an endpoint for editing.
 Hover controls for blue, two-line help above the bottom row. Compact **SUSTAIN**
 and **REC FILE** buttons sit together beside the gain-reduction readout. Sequencer
-RESET/CLEAR preserve A–L; bottom-row CAPTURE records audio from a Sister tap.
+RESET/CLEAR preserve A–Z; bottom-row CAPTURE records audio from a Sister tap.
 
 Prism displays a coherent amber/gold nebula near SOURCE and a transformed
 blue/cyan/violet/magenta cloud near OUT. **PRISM ON** plays a brief
 cohere/cast/refract/recombine introduction, followed by gentle ambient motion.
 Spread, Drift, Focus, Body, Color and Wet/Dry shape the field, including during
-A–L and Matrix transitions. The particles remain behind the existing optics,
+A–Z and Matrix transitions. The particles remain behind the existing optics,
 editing handles, labels and controls. Returning from a hidden page/window does
 not replay the introduction.
 
@@ -1081,7 +1087,7 @@ In `tapesister.ini`, `[Prism]` → `prism_zoya_pose=nebula` is the default.
 Use `off` to hide all particles and their animation while retaining Prism audio
 and optics. Older `meditation` and `standing` values migrate to `nebula`.
 Edit while TapeSister is closed, then restart. INI saves retain the preference;
-projects, sound presets and A–L do not change it. See [Prism nebula fields](PRISM_ZOYA.md).
+projects, sound presets and A–Z do not change it. See [Prism nebula fields](PRISM_ZOYA.md).
 
 ## Sister Machine
 

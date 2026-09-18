@@ -12518,7 +12518,9 @@ int main(int argc, char **argv)
     TsSamplePages sample_pages;
     TsInstrument *parked_instrument = NULL;
     TsUiState ui;
-    SisterWindow sister_window = {0};
+    /* Session-wide preset banks include all 26 Prism states. Keep this storage
+       off the main-thread stack, including on platforms with an 8 MiB limit. */
+    static SisterWindow sister_window;
     TapeCompanion companion_focus;
     TsFramebuffer framebuffer;
     uint32_t *frame_snapshot = NULL;

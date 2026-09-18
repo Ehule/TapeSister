@@ -8,14 +8,15 @@ static float prism_timed_position(float start,float target,double elapsed,double
 static void prism_matrix_step(TsPrism *p,int step)
 {
     TsPrismMatrix *m=&p->matrix;const TsPrismControls *c=&p->controls;
-    /* Every leg completes before another cell is visited. */
     if(m->position>=1) {m->pair[0]=m->pair[1];m->letter[0]=m->letter[1];}
     m->pair[1]=m->pair[0];m->letter[1]=m->letter[0];
     m->step=step;m->waiting=0;m->elapsed=0;m->position=m->start=0;m->target=1;
-    m->duration=c->matrix.step_seconds;m->morph_duration=fmin(c->morph_seconds,m->duration);
+    m->duration=c->matrix.step_seconds;m->morph_duration=c->morph_seconds;
     int state=c->matrix.step[step];
     m->missing=state>=0 && !(c->captured&(1<<state));
-    if(state>=0 && !m->missing) {m->pair[1]=*ts_prism_state_const(c,state);m->letter[1]=state;}
+    m->holding=state<0 || m->missing;
+    if(m->holding)m->position=1; /* Blank/missing cells just hold the current sound. */
+    else {m->pair[1]=*ts_prism_state_const(c,state);m->letter[1]=state;}
 }
 static void prism_matrix_tick(TsPrism *p,double hop)
 {
@@ -30,23 +31,36 @@ static void prism_matrix_tick(TsPrism *p,double hop)
                 m->pair[0]=m->pair[1]=prism_patch(c);m->letter[0]=m->letter[1]=-1;m->position=0;
             }
         }
-        m->active=m->running=1;m->step=-1;m->missing=0;
+        m->active=m->running=1;m->step=-1;m->missing=m->holding=0;
         if(m->position>0 && m->position<1) {
             m->waiting=1;m->start=m->position;m->target=m->position>=.5f?1:0;
-            m->elapsed=0;m->duration=m->morph_duration=fmin(c->morph_seconds,c->matrix.step_seconds);
+            m->elapsed=0;m->duration=c->matrix.step_seconds;m->morph_duration=c->morph_seconds;
         } else prism_matrix_step(p,0);
     }
     if(!m->active || !m->running)return;
-    if(m->elapsed>=m->duration) {
-        double remainder=m->elapsed-m->duration;
+    /* MORPH travels to the destination, then STEP stays there. Recalculate the
+       active phase from its elapsed time, like manual Morph Time. A newly
+       shortened phase finishes once, without spending its old elapsed time on
+       later phases/cells. A completed morph never rewinds during its hold. */
+    double old_duration=m->holding?m->duration:m->morph_duration;
+    m->duration=c->matrix.step_seconds;m->morph_duration=c->morph_seconds;
+    double duration=m->holding?m->duration:m->morph_duration;
+    if(duration!=old_duration && m->elapsed>duration)m->elapsed=duration;
+    if(!m->holding && m->elapsed>=m->morph_duration) {
+        double remainder=m->elapsed-m->morph_duration;
         m->position=m->target;
         if(m->waiting)prism_matrix_step(p,0);
-        else if(m->step+1<c->matrix.length)prism_matrix_step(p,m->step+1);
+        else m->holding=1;
+        m->elapsed=remainder;
+    }
+    if(m->holding && m->elapsed>=m->duration) {
+        double remainder=m->elapsed-m->duration;
+        if(m->step+1<c->matrix.length)prism_matrix_step(p,m->step+1);
         else if(c->matrix.loop)prism_matrix_step(p,0);
         else {m->running=0;return;}
         m->elapsed=remainder;
     }
-    m->position=prism_timed_position(m->start,m->target,m->elapsed,m->morph_duration);
+    if(!m->holding)m->position=prism_timed_position(m->start,m->target,m->elapsed,m->morph_duration);
     m->elapsed+=hop;
 }
 int ts_prism_matrix_export(const TsPrism *p,TsPrismControls *c)

@@ -30,17 +30,25 @@ rates/buffers.
   factory/user/varied endpoints, save/reload, and test Shift-recall of a saved pair.
 - [ ] Middle-click Prism CAP A and CAP B, including during a timed morph. Confirm
   EMPTY states, canceled motion, unlocked sound editing, and successful fresh captures.
-- [ ] Prism A–L: capture twelve distinct sounds. Wheel over CAP/TO to preview
+- [ ] Matrix timing: Morph 60s / Step 10s travels for 60s then stays for 10s;
+  Morph 10s / Step 60s reverses these phases. Adjust Morph during travel and Step
+  during a hold: progress updates immediately without Reset. Shortening a phase
+  past elapsed time finishes it once, without skipping cells. Step zero gives
+  continuous travel; Morph changes during a hold do not rewind the sound.
+- [ ] Matrix A–Z: all 26 bank buttons in two rows open the correct draft; cycle a
+  cell through Z and HOLD in both directions. Edit/save Z during playback and
+  confirm its next visit uses the edit while the current morph remains intact.
+- [ ] Prism A–Z: capture 26 distinct sounds. Wheel over CAP/TO to preview
   letters without changing audio, confirm the silent end, and traverse the bank.
   Try confirming a different pair mid-morph: the choice waits without a jump.
-  Right-recall C, Vary, recapture it, then clear it; the other eleven stay intact.
+  Right-recall C, Vary, recapture it, then clear it; the other 25 stay intact.
   Save/reload Prism/full Sister presets and a project; selected pair and all states
-  survive. Load an older A/B preset. Check MIDI pickup on a C/L timed morph.
+  survive. Load older A/B and A–L presets. Check MIDI pickup on a C/L timed morph.
 - [ ] During a G/D morph, wheel either CAP to C and middle-click. C must show
   EMPTY without CHOOSE, sound editing must unlock, and the top factory-mode
   selector must work immediately. Repeat at 0%, 100% and midway, with C already
   empty or saved; repeat using right-click on empty C. Recapture and confirm the
-  other eleven states are unchanged.
+  other 25 states are unchanged.
 - [ ] Finish a Mosaic take: select its advertised main-UI Sample page/tile,
   edit the waveform and export WAV. Repeat with a full bank and an open card
   editor; a new page appears without replacing the editor. Save/reload the
@@ -183,7 +191,7 @@ measurements do not certify this Windows interface or its hardware latency.
   Change an audio setting, quit and relaunch: off must persist.
 - [ ] Remove the key: nebula is the default. Repeat with legacy `meditation`
   and `standing`: both load nebula and save the canonical value. Loading a
-  project, preset, or A–L state must leave this preference in place.
+  project, preset, or A–Z state must leave this preference in place.
 - [ ] PRISM off/on while visible: source coheres, casts through the first lens,
   disperses across existing paths and gathers through the output. One intro
   only, then gentle idle. Sister POWER must not restart it.
@@ -191,7 +199,7 @@ measurements do not certify this Windows interface or its hardware latency.
   Return to settled fields without replay or hidden-time catchup. Enable Prism
   via MIDI while hidden and return: no queued intro. Repeat while recording.
 - [ ] Change Spread/Drift/Focus/Body/Color/Wet/Dry with 24 lenses. Repeat during
-  A–L morphing and Matrix playback; visuals should follow the actual transition
+  A–Z morphing and Matrix playback; visuals should follow the actual transition
   even when another stored state is edited. Rays remain driven by the DSP
   snapshot; ambient cloud motion is deliberately independent of audio amplitude.
 - [ ] Compare visible/hidden Prism at the normal hardware buffer while recording
@@ -230,8 +238,8 @@ measurements do not certify this Windows interface or its hardware latency.
 - [ ] A fresh session displays Morph 04:00 and Matrix STEP 04:00. Set the two
   `[Prism]` startup keys to 3600, relaunch and confirm 60:00. Load an old preset
   and verify its saved short duration remains intact. Test MIDI Time and its lock.
-- [ ] Run a slow A–L morph and Matrix sequence; stop/manual takeover retains the
-  current blend, and shorter Morph Time leaves the remaining Step time held.
+- [ ] Run a slow A–Z morph and Matrix sequence; stop/manual takeover retains the
+  current blend. Each completed morph must be followed by the full Step hold.
 - [ ] Set Mosaic LENGTH to 10s and record DRY, OUT and EXT twice each. Every
   automatic take is exactly ten seconds at its recording rate, including silence.
   Wheel/Shift-wheel set repeatable lengths; restarting retains the preference.

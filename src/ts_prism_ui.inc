@@ -222,7 +222,7 @@ static void sister_prism_render(TsFramebuffer *fb,const TsSisterUiModel *model)
         float group=(p->morph_enabled || v.matrix_active)?v.group_octave:(float)p->group_octave;
         snprintf(label,sizeof(label),"GROUP OCT %+.2F",(double)group);
         prism_value(fb,170,332,144,label,(group+3)/6.f,colors[4]);
-        text(fb,326,336,model->prism_seq_edit ? "SEQ EDIT: CTRL-CLICK NUMBERS" : "WHEEL CAP/TO: A-L / CLICK CONFIRMS",RGB(119,190,255),1);
+        text(fb,326,336,model->prism_seq_edit ? "SEQ EDIT: CTRL-CLICK NUMBERS" : "WHEEL CAP/TO: A-Z / CLICK CONFIRMS",RGB(119,190,255),1);
     } else if(model->prism_panel==2) {
         button(fb,16,280,30,"<",0);
         button(fb,52,280,218,model->prism_preset_count?model->prism_preset_name:"PRISM BANK EMPTY",0);

@@ -16,6 +16,10 @@ float ts_prism_time_from_normalized(float amount)
 { return amount>=1?TS_PRISM_TIME_MAX:TS_PRISM_TIME_MIN*powf(TS_PRISM_TIME_MAX/TS_PRISM_TIME_MIN,bounded(amount,0,1,0)); }
 float ts_prism_time_normalized(float seconds)
 { return logf(bounded(seconds,TS_PRISM_TIME_MIN,TS_PRISM_TIME_MAX,TS_PRISM_TIME_DEFAULT)/TS_PRISM_TIME_MIN)/logf(TS_PRISM_TIME_MAX/TS_PRISM_TIME_MIN); }
+float ts_prism_step_time_from_normalized(float amount)
+{ return amount<=0?0:ts_prism_time_from_normalized(amount); }
+float ts_prism_step_time_normalized(float seconds)
+{ return seconds<=0?0:ts_prism_time_normalized(seconds); }
 void ts_prism_time_label(char *label,size_t size,float seconds)
 {
     seconds=bounded(seconds,0,TS_PRISM_TIME_MAX,TS_PRISM_TIME_DEFAULT);
@@ -77,7 +81,7 @@ void ts_prism_controls_sanitize(TsPrismControls *p)
     if(!p->active_pair_valid && p->endpoint[0]==p->endpoint[1])p->endpoint[1]=(p->endpoint[0]+1)%TS_PRISM_STATES;
     p->matrix.length=p->matrix.length<1?1:p->matrix.length>TS_PRISM_MATRIX_STEPS?TS_PRISM_MATRIX_STEPS:p->matrix.length;
     p->matrix.loop=!!p->matrix.loop;p->matrix_run=!!p->matrix_run;
-    p->matrix.step_seconds=bounded(p->matrix.step_seconds,TS_PRISM_TIME_MIN,TS_PRISM_TIME_MAX,TS_PRISM_TIME_DEFAULT);
+    p->matrix.step_seconds=bounded(p->matrix.step_seconds,0,TS_PRISM_TIME_MAX,TS_PRISM_TIME_DEFAULT);
     for(int i=0;i<TS_PRISM_MATRIX_STEPS;++i)
         if(p->matrix.step[i]<-1 || p->matrix.step[i]>=TS_PRISM_STATES)p->matrix.step[i]=-1;
     p->morph_enabled = !!p->morph_enabled && ts_prism_pair_ready(p);
@@ -592,7 +596,8 @@ TsPrismView ts_prism_view(const TsPrism *p)
         v.matrix_lenses=a->lenses>b->lenses?a->lenses:b->lenses;
         v.matrix_input_shape=shape->input_shape;v.matrix_output_shape=shape->output_shape;
     }
-    v.matrix_progress=p->matrix.duration>0?(float)fmin(1,p->matrix.elapsed/p->matrix.duration):0;
+    double phase_duration=p->matrix.holding?p->matrix.duration:p->matrix.morph_duration;
+    v.matrix_progress=phase_duration>0?(float)fmin(1,p->matrix.elapsed/phase_duration):1;
     v.matrix_step_seconds=(float)p->matrix.duration;v.matrix_morph_seconds=(float)p->matrix.morph_duration;
     v.morph=p->morph_position;v.seq_lens=p->seq_lens;
     v.group_octave=p->matrix.active ? lerp(p->matrix.pair[0].group_octave,p->matrix.pair[1].group_octave,p->matrix.position) :

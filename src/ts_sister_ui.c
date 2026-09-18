@@ -253,6 +253,15 @@ float ts_sister_ui_prism_y(float cents)
 {
     return 167 - copysignf(fminf(68,68 * log1pf(fabsf(cents) / 12) / log1pf(6400.f / 12)), cents);
 }
+int ts_sister_ui_prism_matrix_bank_state(int x,int y)
+{
+    x-=TS_PRISM_BANK_X;y-=TS_PRISM_BANK_Y;
+    if(x<0 || y<0 || x>=TS_PRISM_BANK_COLUMNS*TS_PRISM_BANK_DX ||
+       y>=2*TS_PRISM_BANK_DY || x%TS_PRISM_BANK_DX>=TS_PRISM_BANK_W ||
+       y%TS_PRISM_BANK_DY>=TS_PRISM_BANK_H)return -1;
+    int state=y/TS_PRISM_BANK_DY*TS_PRISM_BANK_COLUMNS+x/TS_PRISM_BANK_DX;
+    return state<TS_PRISM_STATES?state:-1;
+}
 int ts_sister_ui_prism_matrix_cell(int x,int y)
 {
     x-=TS_PRISM_MATRIX_X;y-=TS_PRISM_MATRIX_Y;
