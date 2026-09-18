@@ -477,6 +477,35 @@ void ts_note_bank_set_source_tuned(TsNoteBank *bank,
             update_voice(&bank->voices[i], instrument, tuning, source, output_rate, bank);
 }
 
+TsStereoFrame ts_note_voice_read(TsNoteVoice *voice)
+{
+    TsStereoFrame value;
+    float gain;
+    if (!voice || !voice->active || voice->sample == NULL || voice->sample->data == NULL) return (TsStereoFrame){0};
+    if (voice->looping) {
+        value = ts_audition_loop_frame(
+            voice->sample, &voice->position, voice->range_first,
+            voice->range_last, voice->crossfade_frames, voice->loop_mode,
+            &voice->direction, &voice->loop_intro);
+    } else {
+        size_t at = voice->position > 0.0 ? (size_t)voice->position : 0;
+        if (at + 1u >= voice->range_last || at + 1u >= voice->sample->frames) {
+            voice->active = 0;
+            return (TsStereoFrame){0};
+        }
+        value = ts_audition_read_frame(
+            voice->sample, voice->position, voice->range_last);
+    }
+    gain = voice->gain * ts_audition_attack_gain(
+        voice->attack_frame, voice->attack_frames);
+    value.l *= gain;
+    value.r *= gain;
+    if (voice->attack_frame < voice->attack_frames)
+        ++voice->attack_frame;
+    voice->position += voice->step * voice->direction;
+    return value;
+}
+
 void ts_note_bank_read_buses(TsNoteBank *bank,
                              TsStereoFrame *sample_output,
                              TsStereoFrame *fm_output,
@@ -492,30 +521,9 @@ void ts_note_bank_read_buses(TsNoteBank *bank,
     if (bank == NULL) return;
     for (int i = 0; i < TS_NOTE_BANK_VOICE_CAPACITY; ++i) {
         TsNoteVoice *voice = &bank->voices[i];
-        TsStereoFrame value;
-        float gain;
-        if (!voice->active || voice->sample == NULL || voice->sample->data == NULL) continue;
-        if (voice->looping) {
-            value = ts_audition_loop_frame(
-                voice->sample, &voice->position, voice->range_first,
-                voice->range_last, voice->crossfade_frames, voice->loop_mode,
-                &voice->direction, &voice->loop_intro);
-        } else {
-            size_t at = voice->position > 0.0 ? (size_t)voice->position : 0;
-            if (at + 1u >= voice->range_last || at + 1u >= voice->sample->frames) {
-                voice->active = 0;
-                continue;
-            }
-            value = ts_audition_read_frame(
-                voice->sample, voice->position, voice->range_last);
-        }
-        gain = voice->gain * ts_audition_attack_gain(
-            voice->attack_frame, voice->attack_frames);
-        value.l *= gain;
-        value.r *= gain;
-        if (voice->attack_frame < voice->attack_frames)
-            ++voice->attack_frame;
-        voice->position += voice->step * voice->direction;
+        if (!voice->active || !voice->sample || !voice->sample->data) continue;
+        TsStereoFrame value = ts_note_voice_read(voice);
+        if (!voice->active) continue;
         if (voice->synth) {
             synth.l += value.l;
             synth.r += value.r;

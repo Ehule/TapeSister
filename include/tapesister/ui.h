@@ -9,6 +9,7 @@
 #include "tapesister/config.h"
 #include "tapesister/palette.h"
 #include "tapesister/performance.h"
+#include "tapesister/keyboard_sequence.h"
 #include "tapesister/performance_recorder.h"
 #include "tapesister/recipe.h"
 #include "tapesister/sample.h"
@@ -369,6 +370,10 @@ typedef struct {
     uint64_t waveform_revisions[TS_UI_WAVEFORM_COUNT];
     TsUiWheelGuard wheel_guard;
     uint32_t active_notes;
+    TsKeyboardSequenceSettings keyboard_sequence;
+    int keyboard_sequence_open, keyboard_sequence_edit, keyboard_sequence_drag;
+    int keyboard_sequence_running, keyboard_sequence_current, keyboard_sequence_step;
+    double keyboard_sequence_progress;
     uint16_t tile_launcher_mask;
     int play_on_select; /* Sample-bank click auditions; off selects for editing only. */
     int mouse_note;
@@ -693,6 +698,7 @@ double ts_ui_mosaic_volume_time(const TsUiState *ui, double y);
 void ts_ui_render_mosaic_choice(TsFramebuffer *fb, const TsUiState *ui);
 void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *instrument);
 int ts_ui_foreground_panel_open(const TsUiState *ui);
+int ts_ui_keyboard_sequence_visible(const TsUiState *ui);
 void ts_ui_draw_tile_state_borders(TsFramebuffer *fb, int slot,
                                    int active, int sister_source,
                                    const TsPalette *palette);

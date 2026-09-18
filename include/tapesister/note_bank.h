@@ -124,6 +124,8 @@ void ts_note_bank_set_source_tuned(TsNoteBank *bank,
                                    const TsTuning *tuning,
                                    TsAuditionSource source, int output_rate);
 float ts_note_bank_read(TsNoteBank *bank);
+/* Allocation-free single-voice reader, also used by the keyboard sequencer. */
+TsStereoFrame ts_note_voice_read(TsNoteVoice *voice);
 float ts_note_bank_read_split(TsNoteBank *bank, float *synth_output);
 /* Render one shared-phase stereo frame. sample_output excludes FM voices;
    fm_output contains their monitor contribution with the same total-voice

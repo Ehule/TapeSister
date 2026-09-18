@@ -1874,6 +1874,10 @@ void ts_ui_init(TsUiState *ui)
     ui->show_keyboard = 1;
     ui->keyboard_octave = 4;
     ui->keyboard_base_note = TS_KEYBOARD_BASE_NOTE;
+    ui->keyboard_sequence.seconds = .25;
+    ui->keyboard_sequence.gate = .8;
+    ui->keyboard_sequence.loop = 1;
+    ui->keyboard_sequence_current = -1;
     ui->tune_reference.root_note = TS_KEYBOARD_BASE_NOTE;
     ui->tune_reference.fine_tune_cents = 0.0f;
     ui->show_recipes = 0;
@@ -2889,6 +2893,7 @@ int ts_ui_foreground_panel_open(const TsUiState *ui)
 
 #include "ts_cdp_portal_ui.inc"
 #include "ts_mosaic_ui.inc"
+#include "ts_keyboard_sequence_ui.inc"
 
 void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *instrument)
 {
@@ -3600,10 +3605,11 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                                        base_note, sizeof(base_note)));
         else
             snprintf(keyboard_hint, sizeof(keyboard_hint),
-                     "KEY %s  F1-F8 OCT  SHIFT+CLICK CHORD  SHIFT+S SUS",
+                     "%s  CTRL+CLICK SEQ / SHIFT+CLICK HOLD",
                      ts_midi_note_name(ts_ui_keyboard_base_note(ui),
                                        base_note, sizeof(base_note)));
-        text(fb, 11, 318, keyboard_hint, RGB(184, 180, 184), 1);
+        mini_button(fb,10,313,46,"ARP",ui->keyboard_sequence_running || ui->keyboard_sequence_open);
+        text(fb, 62, 318, keyboard_hint, RGB(184, 180, 184), 1);
         mini_button(fb,380,313,74,
             ui->file_record_state==TS_PERFORMANCE_FILE_STOPPING?"FILE WAIT":
             ui->file_record_state==TS_PERFORMANCE_FILE_RECORDING?"STOP FILE":"REC FILE",
@@ -3625,7 +3631,16 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             rect(fb, TS_KEYBOARD_X + i * TS_KEYBOARD_WHITE_WIDTH,
                  TS_KEYBOARD_Y, TS_KEYBOARD_WHITE_WIDTH - 1,
                  TS_KEYBOARD_WHITE_HEIGHT,
-                 staged ? PAL_TUNING : active ? PAL_MOUSE : RGB(220, 216, 207));
+                 staged ? PAL_TUNING : keyboard_sequence_color(ui, keyboard_base_note + key, 0,
+                     active ? PAL_MOUSE : RGB(220, 216, 207)));
+            int ordinal = keyboard_sequence_ordinal(ui, keyboard_base_note + key);
+            if (ordinal) {
+                char number[8]; snprintf(number, sizeof(number), "%02d", ordinal);
+                text(fb, TS_KEYBOARD_X + i * TS_KEYBOARD_WHITE_WIDTH + 16, TS_KEYBOARD_Y + 25,
+                     number, RGB(16, 35, 41), 1);
+                if (active) rect(fb, TS_KEYBOARD_X + i * TS_KEYBOARD_WHITE_WIDTH + 4,
+                                 TS_KEYBOARD_Y + 45, TS_KEYBOARD_WHITE_WIDTH - 9, 2, PAL_MOUSE);
+            }
             ts_midi_note_name(keyboard_base_note + key, label, sizeof(label));
             label_x = TS_KEYBOARD_X + i * TS_KEYBOARD_WHITE_WIDTH +
                       (TS_KEYBOARD_WHITE_WIDTH - 1 -
@@ -3642,11 +3657,19 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             int staged = (ui->staged_notes & (1u << key)) != 0;
             rect(fb, left, TS_KEYBOARD_Y, TS_KEYBOARD_BLACK_WIDTH,
                  TS_KEYBOARD_BLACK_HEIGHT,
-                 staged ? PAL_TUNING : active ? PAL_VOLUME : RGB(18, 18, 18));
+                 staged ? PAL_TUNING : keyboard_sequence_color(ui, keyboard_base_note + key, 1,
+                     active ? PAL_VOLUME : RGB(18, 18, 18)));
+            int ordinal = keyboard_sequence_ordinal(ui, keyboard_base_note + key);
+            if (ordinal) {
+                char number[8]; snprintf(number, sizeof(number), "%02d", ordinal);
+                text(fb, left + 9, TS_KEYBOARD_Y + 5, number, RGB(218, 241, 238), 1);
+                if (active) rect(fb, left + 3, TS_KEYBOARD_Y + 28, TS_KEYBOARD_BLACK_WIDTH - 6, 2, PAL_VOLUME);
+            }
             ts_midi_note_name(keyboard_base_note + key, label, sizeof(label));
             label_x = left +
                       (TS_KEYBOARD_BLACK_WIDTH - (int)strlen(label) * 6) / 2;
             text(fb, label_x, TS_KEYBOARD_Y + 19, label,
+                 ui->keyboard_sequence_current == keyboard_base_note + key ? RGB(24, 24, 24) :
                  active || staged ? PAL_BLOCK_TEXT : RGB(220, 216, 207), 1);
         }
     } else if (ui->show_recipes) {
@@ -3970,6 +3993,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         text(fb, 172, 218, "C SELECTED  F FULL COLLECTION   ESC CANCEL", RGB(190, 185, 190), 1);
     }
 
+    keyboard_sequence_panel(fb, ui);
     if (ui->capture_state == TS_CAPTURE_RECORDING) {
         size_t capacity = ui->capture_capacity_frames;
         size_t recorded = ui->capture_recorded_frames;

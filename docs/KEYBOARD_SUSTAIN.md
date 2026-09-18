@@ -43,6 +43,10 @@ Click it again to release the latched chord. Its label only changes when this
 explicit switch changes; Shift-click does not turn it on. Space/Stop clears HOLD.
 The Sister Machine transport's HOLD still controls writing to its tape buffer.
 
+The keyboard's [ARP sequencer](KEYBOARD_SEQUENCE.md) has its own selected pitches
+and voices. ARP Stop releases its notes without clearing this manually held chord.
+EDIT OFF keeps normal HOLD gestures available while the sequence runs.
+
 Sister POWER is independent of keyboard HOLD. Sources, Monitor, Roll, tape Hold,
 head controls and effect settings can be prepared while power is off, then used
 when the tape machine is enabled. EXT opens its input only when powered on.

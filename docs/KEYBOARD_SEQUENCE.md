@@ -1,0 +1,80 @@
+# Keyboard arpeggio and sequencing
+
+Click **ARP** above the main or FM keyboard. With **EDIT ON**, click keys or press
+the QWERTY note keys to add/remove pitches, then press **PLAY**. **Ctrl-click**
+also changes the selection with the panel closed or EDIT off. Up to 24 pitches
+can be selected across different octaves; changing the visible octave does not
+transpose or lose them. Empty selections stay silent.
+
+![Keyboard arpeggiator with an ordered selection](images/keyboard-sequence.png)
+
+Selected keys are teal, and the current gated step is gold. Numbers show the
+order in which keys were selected. A small pink/red mark identifies a selected
+key that also has a manually played voice. Turn **EDIT OFF** to play normally
+alongside the sequence, including HOLD, Shift-click chords, and MIDI.
+
+| Control | Action |
+| --- | --- |
+| PLAY / STOP | Start from the first step / release the sequencer's voices only |
+| UP | Ascending pitch |
+| DOWN | Descending pitch |
+| UP/DOWN | Ascend then descend without repeating the end notes |
+| ORDER | Follow the numbered key selection, like Prism's lens sequence |
+| RANDOM | Pick a selected pitch each step; repeats are possible |
+| RESET | Restart at the beginning while playing; stay silent if stopped |
+| CLEAR | Empty the selection and stop the sequence |
+| FROM HELD | Copy the active QWERTY chord, sorted by pitch; the original notes keep playing |
+| EDIT ON/OFF | Switch ordinary key clicks/QWERTY presses between sequence editing and live playing |
+| LOOP / ONCE | Repeat, or stop after one traversal (one full up/down traversal in that mode) |
+| X | Close the controls; playback continues |
+
+Click the mode button to move forward, or right-click it to move backward.
+Removing then re-adding a key moves it to the end of ORDER. This is an ordered
+selection of unique pitches, rather than a grid of repeated notes or rests.
+RANDOM with ONCE makes as many choices as there are selected pitches.
+
+**STEP** is the interval between note starts: 30 ms to one hour, initially
+250 ms. **GATE** is how much of that interval sounds: 5–100%, initially 80%.
+For example, Step 1 second and Gate 50% gives half a second of sound followed by
+half a second of silence. The note restarts from its source range on each step.
+Saved loop modes, main LOOP, and keyboard HOLD determine whether that source
+repeats during a long gate; otherwise a short sample can finish before the gate.
+
+Drag either slider or use the wheel; Shift-wheel makes finer changes. Right-click
+restores its default. Both controls update during playback. Step retains elapsed
+time; shortening it past the elapsed duration advances once, without a burst of
+missed notes. Editing the selected keys preserves the current pitch and phase if
+it remains selected. Removing that pitch or changing mode starts a fresh step.
+
+The sequencer uses the current tile/Source choice, FM preview, or selected
+tile/Sister ensemble. Sound and routing changes are prepared outside the audio
+callback and swapped into playback. Existing manual notes retain their own
+ownership. If the source becomes unavailable, sequencing stops instead of
+continuing to trigger stale audio; press PLAY once a source is ready again.
+
+ARP STOP, CLEAR, and the end of ONCE release only sequence voices. They do not
+release a manually held chord, same-pitch MIDI notes, or click-launched tiles.
+Space/Stop retains its global stop behavior. A short 5 ms fade removes abrupt
+sequence boundaries. An explicitly locked main loop retains its established
+resume behavior after the sequence stops. Hiding the panel or moving to Sister
+does not itself stop the sequence. Actions that normally stop audition, such as
+closing FM, switching Sample pages, or clearing the active source, also stop ARP;
+the selection remains ready for PLAY. Capture staging keeps its Shift-click controls.
+
+Sequence audio follows the existing tile/FM buses through Sister, Prism, master
+effects, and recording. Mosaic REC DRY includes it; FM's SYNTH tap includes FM
+sequences. Normal source switches and monitoring still determine what is heard.
+The sequence selection and settings are session controls in this first version;
+they are not stored in project files or Prism presets. Portal and file-preview
+keyboards keep their existing audition behavior.
+
+## Verification
+
+`tapesister_keyboard_sequence_tests` covers ordering, bounce endpoints, Random,
+Once, stereo preservation, gates, live duration edits through one hour, removal
+of the active/last key, 24-note limits, source loss, and one-shot retriggering.
+The native keyboard HOLD suite also renders the audio callback across tile, FM,
+group, and Sister routes, checks the dry/FM recording buses, preserves manual
+and MIDI voices on ARP Stop, changes octave and source during playback, and
+checks ordinary/locked LOOP behavior. Physical Windows listening remains part
+of the release checklist.
