@@ -323,6 +323,7 @@ static void runtime_note_release_midi_channel(AudioState *audio, int channel)
 static void runtime_note_clear(AudioState *audio)
 {
     if (audio == NULL) return;
+    ts_keyboard_sequence_stop(&audio->keyboard_sequence);
     ts_note_bank_clear(&audio->notes);
     ts_sister_runtime_panic(&audio->sister);
     audio->capture_trigger_ready = 0;
@@ -346,6 +347,15 @@ static void runtime_note_render(AudioState *audio, TsAudioBuses *buses,
     ts_note_bank_read_buses(&audio->notes, &sample, &fm, &synth);
     performance = ts_performance_read_stereo(
         &audio->performance, &audio->performance_raw_mix);
+    TsStereoFrame sequence = ts_keyboard_sequence_read(&audio->keyboard_sequence, audio->output_rate);
+    if (audio->keyboard_sequence.source && audio->keyboard_sequence.source->fm) {
+        fm.l += sequence.l; fm.r += sequence.r;
+        synth.l += sequence.l; synth.r += sequence.r;
+    } else {
+        sample.l += sequence.l; sample.r += sequence.r;
+        audio->performance_raw_mix.l += sequence.l;
+        audio->performance_raw_mix.r += sequence.r;
+    }
     /* QWERTY/MIDI notes only: keep backing cards, tile launchers and transport
        preview out of the dry instrument recording. FM's own level is retained. */
     audio->keyboard_dry=(TsStereoFrame){sample.l+performance.l+fm.l*audio->fm_output_gain,

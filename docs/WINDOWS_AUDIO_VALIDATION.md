@@ -25,6 +25,15 @@ rates/buffers.
 
 ## Matrix
 
+- [ ] Keyboard ARP: select white/black keys with EDIT or Ctrl-click, try UP, DOWN,
+  UP/DOWN, ORDER, RANDOM, LOOP/ONCE, Reset, and Clear. Hear gate gaps and live rate
+  changes. Change octave, remove the current/last note, and switch tile/FM/Sister
+  sources while running. Stop must leave manual chords/MIDI/tile launchers intact;
+  Space must stop the keyboard performance. Test FROM HELD with EDIT off.
+- [ ] Record a keyboard sequence with Mosaic REC DRY, REC FILE, and tile Capture;
+  compare tile/FM/group sources, saved loop modes, short one-shots, and long gates.
+  Check source deletion/replacement, FM refresh, interface reconnect, and switching
+  windows. Verify selected/current colors and numbered keys at desktop scaling.
 - [ ] Keyboard HOLD: latch white and black notes, change octave/range, then click
   their new lit positions. Each click releases the intended pitch; no extra voice
   starts. Repeat with Shift-click latches, tile/FM/group/Sister routes, and route

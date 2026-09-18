@@ -910,6 +910,35 @@ their own launch/stop behavior; Sustain does not change the tile's loop setting.
 
 [Detailed behavior and checks](KEYBOARD_SUSTAIN.md).
 
+### Keyboard arpeggio and sequencing
+
+Click **ARP** above the main or FM keyboard. With **EDIT ON**, click keys or press
+the QWERTY note keys to select up to 24 pitches, then click **PLAY**. Ctrl-click
+also edits the selection when the panel is closed or EDIT is off. Selected keys
+are teal, the sounding step is gold, and numbers show selection order. Changing
+octave preserves the selected pitches.
+
+Choose **UP**, **DOWN**, **UP/DOWN**, **ORDER**, or **RANDOM**. ORDER follows your
+key selections like Prism's lens sequence; remove and re-add a note to put it
+last. **LOOP/ONCE** controls repetition. **FROM HELD** copies the current QWERTY
+chord without releasing it. This is a sequence of unique selected pitches;
+repeated-note cells and rests are not part of this control.
+
+**STEP** sets the interval between note starts, from 30 milliseconds to one hour
+(initially 250 ms). **GATE** sets its sounding portion, from 5–100% (initially
+80%). Both update live. This keyboard Step interval is independent of Prism
+Matrix's separate Morph travel and Step hold. Use the wheel, Shift-wheel for
+fine adjustments, or right-click to restore a control's default.
+
+With **EDIT OFF**, play manual HOLD chords and MIDI alongside the sequence.
+**ARP STOP**, **CLEAR**, and ONCE completion release only sequencer voices;
+Space keeps its global stop behavior. The sequence follows the current tile,
+FM preview, or selected ensemble through the existing effects and recording
+paths. Closing the ARP panel keeps playback running. Selection and settings
+last for this session and are not saved in projects or Prism presets.
+
+[Full controls, routing, and examples](KEYBOARD_SEQUENCE.md).
+
 ### Multi-tile performance sources
 
 Shift-click occupied tiles to build a source group. QWERTY and MIDI notes fan out across

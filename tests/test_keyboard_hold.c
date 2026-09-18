@@ -371,6 +371,7 @@ static void test_sister_prepared_power(void)
 }
 
 #include "test_keyboard_power.inc"
+#include "test_keyboard_sequence_controller.inc"
 
 int main(void)
 {
@@ -386,6 +387,7 @@ int main(void)
     assert(window);
     ts_ui_init(&ui); ts_instrument_init(&instrument);
     ts_note_bank_init(&audio.notes); ts_performance_init(&audio.performance);
+    ts_keyboard_sequence_init(&audio.keyboard_sequence);
     ts_performance_init(&audio.tile_launchers); ts_sister_runtime_init(&audio.sister);
     ts_capture_init(&audio.capture); audio.output_rate = 44100;
     ts_audio_mixer_init(&audio.mixer);audio.fm_output_gain=1;
@@ -403,6 +405,7 @@ int main(void)
     test_loop_transport();
     test_sister_prepared_power();
     test_keyboard_power_audio();
+    test_keyboard_sequence_controller();
     stop_all_force(device, &audio, &ui);
     ts_sample_free(&fm); ts_instrument_free(&instrument);
     ts_performance_free(&audio.performance); ts_performance_free(&audio.tile_launchers);

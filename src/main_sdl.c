@@ -756,6 +756,8 @@ typedef struct {
     size_t attack_frame;
     size_t attack_frames;
     TsNoteBank notes;
+    TsKeyboardSequence keyboard_sequence;
+    uint64_t keyboard_sequence_source_stamp;
     TsPerformanceBank performance;
     TsMosaic *mosaic;
     TsPerformanceBank tile_launchers;
@@ -1440,6 +1442,7 @@ static void toggle_workbench_loop(SDL_AudioDeviceID device, AudioState *audio,
 {
     if (!persistent && !ui->workbench_loop_persistent &&
         (ui->fm_open || ts_note_bank_count(&audio->notes) > 0 ||
+         audio->keyboard_sequence.running ||
          ts_performance_count(&audio->performance) > 0 ||
          ts_performance_count(&audio->sister.performance) > 0)) {
         if (device) SDL_LockAudioDevice(device);
@@ -1513,6 +1516,7 @@ static void refresh_workbench_loop(SDL_AudioDeviceID device, AudioState *audio,
        leave it armed and silent. Only an explicitly locked loop may restart
        the standalone audition after the keyboard chord has ended. */
     if ((!ui->workbench_loop_persistent && !audio->playing) ||
+        audio->keyboard_sequence.running ||
         ts_note_bank_count(&audio->notes) > 0 ||
         ts_performance_count(&audio->performance) > 0 ||
         ts_performance_count(&audio->sister.performance) > 0) {
@@ -12476,6 +12480,8 @@ static int keyboard_sustain_event(const SDL_Event *event,SDL_Window *window,
     return 1;
 }
 
+#include "main_sdl_keyboard_sequence.inc"
+
 /* One pointer route for the visible keyboard, regardless of its sound source.
    Releases still arrive after opening a dialog or moving focus within the UI. */
 static int keyboard_pointer_event(const SDL_Event *event, SDL_Window *window,
@@ -12679,6 +12685,7 @@ int main(int argc, char **argv)
                  sizeof(sister_window.model.preset_name), "CUSTOM");
     }
     ts_note_bank_init(&audio.notes);
+    ts_keyboard_sequence_init(&audio.keyboard_sequence);
     tapeLinkReaderInit(&audio.live_link);
     audio.live_link_available = -1;
     ts_performance_init(&audio.performance);
@@ -13162,6 +13169,7 @@ int main(int argc, char **argv)
                     continue;
                 }
             if (keyboard_sustain_event(&event,window,device,&audio,&ui,&sister_window,&instrument))continue;
+            if (keyboard_sequence_event(&event,window,device,&audio,&ui,&instrument,&fm_preview,obtained.freq))continue;
             if (event.type == SDL_KEYDOWN && !event.key.repeat) {
                 SDL_Keycode global_key = event.key.keysym.sym;
                 SDL_Keymod global_mod = (SDL_Keymod)event.key.keysym.mod;
@@ -16790,6 +16798,7 @@ int main(int argc, char **argv)
                      sizeof(sister_window.model.status), "ROLLING MEMORY CLEARED");
         }
         poll_fm_preview(device,&audio,&ui,&fm_preview);
+        keyboard_sequence_prepare(device,&audio,&ui,&instrument,&fm_preview,obtained.freq,0);
         poll_transform_worker(device, &audio, &ui, &instrument, &transform);
         mosaic_commit(device,&ui,&instrument,&mosaic);
         portal_poll(device,&audio,&ui,&instrument,&portal);
@@ -16827,10 +16836,13 @@ int main(int argc, char **argv)
                 &audio.notes, ts_ui_keyboard_base_note(&ui));
             ui.active_notes |= ts_performance_visible_mask(
                 &audio.sister.performance, ts_ui_keyboard_base_note(&ui));
+            ui.active_notes |= ts_performance_visible_mask(
+                &audio.performance, ts_ui_keyboard_base_note(&ui));
             ui.tile_launcher_mask = (uint16_t)atomic_load_explicit(
                 &audio.tile_launcher_mask, memory_order_acquire);
             ui.fm_held_notes = ts_note_bank_latched_synth_count(&audio.notes);
             ui.playback_active = audio.playing || voice != NULL ||
+                                 audio.keyboard_sequence.running ||
                                  sister_voice != NULL || tile_voice != NULL;
             if (audio.playing) {
                 ui.playhead_source = audio.source;
@@ -17052,6 +17064,7 @@ int main(int argc, char **argv)
     mosaic_controller_free(&mosaic);
     ts_mosaic_free(ui.mosaic);
     ts_performance_free(&audio.performance);
+    ts_keyboard_sequence_source_free(audio.keyboard_sequence.source);
     ts_performance_free(&audio.tile_launchers);
     ts_sister_runtime_free(&audio.sister);
     if(external_input.recorder.stream) {

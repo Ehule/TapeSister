@@ -131,6 +131,11 @@ release with the key or continue to their end (or keep looping). This setting is
 shared with FM, Portal, import preview, and Sister Machine; Portal and file previews
 now accept MIDI notes. See [Keyboard Sustain](docs/KEYBOARD_SUSTAIN.md).
 
+**ARP** adds keyboard arpeggios and custom note order, with 24 selected pitches,
+live step/gate controls, and separate selected/current-note colors. It plays
+tile, FM, or ensemble sources alongside manual chords and MIDI, and enters the
+existing recording and effects paths. See [Keyboard sequencing](docs/KEYBOARD_SEQUENCE.md).
+
 The main and Sister Machine **M/S** buttons mirror one capture-format setting:
 
 - **M** stores `0.5 × (L + R)` mono.

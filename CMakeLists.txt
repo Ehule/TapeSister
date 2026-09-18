@@ -14,7 +14,7 @@ FetchContent_Declare(
   SOURCE_SUBDIR _tapesister_header_only)
 FetchContent_MakeAvailable(miniaudio)
 
-add_library(tapesister_core src/ts_sample.c src/ts_prism.c src/ts_prism_performance.c src/ts_fm.c src/ts_audition.c src/ts_note_bank.c
+add_library(tapesister_core src/ts_sample.c src/ts_prism.c src/ts_prism_performance.c src/ts_fm.c src/ts_audition.c src/ts_note_bank.c src/ts_keyboard_sequence.c
              src/ts_mosaic.c src/ts_note_event.c src/ts_midi_map.c src/ts_performance.c src/ts_audio_mixer.c
              src/ts_audio_lifecycle.c
              src/ts_realtime_diagnostics.c
@@ -344,6 +344,10 @@ add_test(NAME tapesister_capture_tests COMMAND tapesister_capture_tests)
 add_executable(tapesister_performance_tests tests/test_performance.c)
 target_link_libraries(tapesister_performance_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_performance_tests COMMAND tapesister_performance_tests)
+
+add_executable(tapesister_keyboard_sequence_tests tests/test_keyboard_sequence.c)
+target_link_libraries(tapesister_keyboard_sequence_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_keyboard_sequence_tests COMMAND tapesister_keyboard_sequence_tests)
 
 add_executable(tapesister_midi_tests tests/test_midi.c src/ts_midi_input.c)
 target_link_libraries(tapesister_midi_tests PRIVATE tapesister_core)
