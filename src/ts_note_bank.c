@@ -421,9 +421,8 @@ int ts_note_bank_release_latched_event(TsNoteBank *bank, const TsNoteEvent *even
     for (int i = 0; i < TS_NOTE_BANK_VOICE_CAPACITY; ++i) {
         TsNoteVoice *voice = &bank->voices[i];
         if (voice->active && voice->latched &&
-            voice->midi_note == event->midi_note &&
-            ts_note_event_same_trigger(event, voice->origin, voice->note,
-                                       voice->channel)) {
+            ts_note_event_same_latched_pitch(event, voice->origin,
+                                             voice->midi_note, voice->channel)) {
             voice->active = 0;
             ++released;
         }

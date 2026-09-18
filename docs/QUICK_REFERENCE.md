@@ -525,6 +525,8 @@ The virtual keyboard shares **HOLD** between tile and FM playing. Arm HOLD befor
 playing to latch/repeat notes; click again or press Space to release. Ordinary
 clicks/QWERTY/MIDI never arm HOLD. Shift-click toggles one chord note. Sustain
 controls key-up; LOOP or saved loop points control repetition.
+After changing octave or keyboard range, release a held pitch by clicking its
+currently lit key. Held notes remain releasable when switching tile/FM/Sister routes.
 
 The loop MODE button now also offers **START FWD**, **START REV**, and
 **START P-P**: play from the sample beginning, then remain inside the saved loop.

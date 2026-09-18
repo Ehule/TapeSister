@@ -63,6 +63,10 @@ when a dialog opens before release.
 With HOLD on, ordinary clicks and Shift-clicks both toggle a held note off;
 mixing the two does not create a second latch. The toggle finds the note in its
 original playback route even after changing the Sister TILES source or group.
+After changing octave or shifting the keyboard range, click the lit key at its
+new position to release that pitch. Ordinary physical key-up still releases the
+key you originally pressed, even if its pitch label has since moved. Switching
+to FM does not block latch release while its preview is unavailable.
 Other held pitches, MIDI channels, and independently launched tiles keep playing.
 
 The main **LOOP** supplies selection/whole-sample looping to played notes when there are

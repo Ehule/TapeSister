@@ -33,28 +33,36 @@ static void tick(void)
     }
 }
 
-static void click_note(int note, int shifted)
+static void click_note_preview(int note, int shifted, const TsSample *preview)
 {
     SDL_Event event = {0};
     event.type = SDL_MOUSEBUTTONDOWN;
     event.button.button = SDL_BUTTON_LEFT;
     event.button.windowID = SDL_GetWindowID(window);
-    event.button.y = 368;
     /* Find the actual key hit area rather than assuming a white-key width. */
-    for (int x = 0; x < 640; ++x)
-        if (ts_ui_key_from_point_for_base(x, event.button.y,
+    int found = 0;
+    for (int y = 368; y >= 300 && !found; --y)
+    for (int x = 0; x < 640 && !found; ++x)
+        if (ts_ui_key_from_point_for_base(x, y,
                                          ts_ui_keyboard_base_note(&ui)) == note) {
             event.button.x = x;
-            break;
+            event.button.y = y;
+            found = 1;
         }
+    assert(found);
     SDL_SetModState(shifted ? KMOD_SHIFT : KMOD_NONE);
     assert(keyboard_pointer_event(&event, window, device, &audio, &ui,
-                                  &instrument, &fm, 44100));
+                                  &instrument, preview, 44100));
     tick();
     event.type = SDL_MOUSEBUTTONUP;
     (void)keyboard_pointer_event(&event, window, device, &audio, &ui,
-                                 &instrument, &fm, 44100);
+                                 &instrument, preview, 44100);
     tick();
+}
+
+static void click_note(int note, int shifted)
+{
+    click_note_preview(note, shifted, &fm);
 }
 
 static void reset_route(int route)
@@ -189,12 +197,11 @@ static void test_trigger_identity(void)
 
 static void test_route_change(void)
 {
-    const int routes[] = {0, 2, 3};
-    for (int from = 0; from < 3; ++from)
-    for (int to = 0; to < 3; ++to)
+    for (int from = 0; from < 4; ++from)
+    for (int to = 0; to < 4; ++to)
     for (int last = 0; last < 2; ++last) {
         if (from == to) continue;
-        reset_route(routes[from]);
+        reset_route(from);
         toggle_fm_hold(device, &audio, &ui, &instrument);
         click_note(0, 0);
         click_note(4, 1);
@@ -202,15 +209,118 @@ static void test_route_change(void)
         assert(voices() == 1);
         /* Changing TILES routing while a drone plays must not orphan its
            original owner. Turning Prism/Sister on can change this route. */
-        audio.performance_group_latched = routes[to] == 2;
-        audio.performance_source_mask = routes[to] == 2 ? 1u : 0u;
+        ui.fm_open = to == 1;
+        audio.performance_group_latched = to == 2;
+        audio.performance_source_mask = to == 2 ? 1u : 0u;
         ts_sister_runtime_set_sources(&audio.sister,
-                                       routes[to] == 3 ? TS_SISTER_SOURCE_TILES : 0u);
+                                       to == 3 ? TS_SISTER_SOURCE_TILES : 0u);
         click_note(last ? 4 : 0, 1);
         if (voices()) fprintf(stderr, "Orphaned latch: route=%d->%d last=%s voices=%d\n",
-                              routes[from], routes[to], last ? "E4" : "C4", voices());
+                              from, to, last ? "E4" : "C4", voices());
         assert(!voices() && !audio.playing);
     }
+}
+
+static void assert_keyboard_silent(void)
+{
+    assert(!voices());
+    for (int i = 0; i < 256; ++i) {
+        TsStereoFrame f = ts_note_bank_read_stereo(&audio.notes);
+        TsStereoFrame p = ts_performance_read_stereo(&audio.performance, NULL);
+        TsStereoFrame s = ts_performance_read_stereo(&audio.sister.performance, NULL);
+        assert(f.l == 0 && f.r == 0 && p.l == 0 && p.r == 0 && s.l == 0 && s.r == 0);
+    }
+}
+
+static void test_shifted_hold_release(void)
+{
+    const int shifts[] = {12, -12, 1, -1};
+    for (int route = 0; route < 4; ++route)
+    for (int held = 0; held < 2; ++held)
+    for (int move = 0; move < 4; ++move)
+    for (int note = 0; note < 24; ++note) {
+        int visible_note = note - shifts[move];
+        if (visible_note < 0 || visible_note >= 24) continue;
+        reset_route(route);
+        set_keyboard_octave(device, &audio, &ui, 4);
+        if (held) toggle_fm_hold(device, &audio, &ui, &instrument);
+        click_note(note, !held);
+        assert(voices() == 1);
+        if (move < 2) set_keyboard_octave(device, &audio, &ui, move ? 3 : 5);
+        else shift_keyboard_range(device, &audio, &ui, shifts[move]);
+        int base = ts_ui_keyboard_base_note(&ui);
+        uint32_t lit = ts_note_bank_visible_mask(&audio.notes, base) |
+                       ts_performance_visible_mask(&audio.performance, base) |
+                       ts_performance_visible_mask(&audio.sister.performance, base);
+        assert(lit == (1u << visible_note));
+        click_note(visible_note, !held);
+        if (voices()) fprintf(stderr, "Held pitch failed to release: route=%d shift=%d note=%d voices=%d\n",
+                              route, shifts[move], note, voices());
+        assert_keyboard_silent();
+    }
+    set_keyboard_octave(device, &audio, &ui, 4);
+}
+
+static void test_fm_release_without_preview(void)
+{
+    const TsSample empty = {0};
+    for (int route = 0; route < 4; ++route)
+    for (int missing = 0; missing < 2; ++missing) {
+        reset_route(route);
+        toggle_fm_hold(device, &audio, &ui, &instrument);
+        click_note(0, 0);
+        assert(voices() == 1);
+        ui.fm_open = 1;
+        click_note_preview(0, 0, missing ? NULL : &empty);
+        assert_keyboard_silent();
+        click_note_preview(4, 0, missing ? NULL : &empty);
+        assert_keyboard_silent(); /* An unavailable preview cannot start a note. */
+    }
+}
+
+static void test_shifted_hold_isolation(void)
+{
+    for (int route = 0; route < 4; ++route) {
+        reset_route(route);
+        set_keyboard_octave(device, &audio, &ui, 4);
+        toggle_fm_hold(device, &audio, &ui, &instrument);
+        click_note(12, 0); /* QWERTY C5 plus the same pitch on two MIDI channels. */
+        TsMidiEvent midi = {0};
+        midi.action = TS_MIDI_ACTION_NOTE_ON;
+        assert(ts_note_event_midi(&midi.note, 72, 100, 0));
+        handle_midi_event(device, &audio, &ui, &instrument, &fm, &midi, 44100);
+        assert(ts_note_event_midi(&midi.note, 72, 100, 1));
+        handle_midi_event(device, &audio, &ui, &instrument, &fm, &midi, 44100);
+        assert(voices() == 3);
+        set_keyboard_octave(device, &audio, &ui, 5);
+        click_note(12, 0); /* Original key position now starts C6. */
+        assert(voices() == 4);
+        click_note(0, 0); /* Only QWERTY C5 is released. */
+        assert(voices() == 3);
+        handle_midi_event(device, &audio, &ui, &instrument, &fm, &midi, 44100);
+        assert(voices() == 2);
+        assert(ts_note_event_midi(&midi.note, 72, 100, 0));
+        handle_midi_event(device, &audio, &ui, &instrument, &fm, &midi, 44100);
+        assert(voices() == 1);
+        click_note(12, 0); /* C6 remained held throughout. */
+        assert_keyboard_silent();
+    }
+    set_keyboard_octave(device, &audio, &ui, 4);
+}
+
+static void test_key_up_after_octave_change(void)
+{
+    for (int route = 0; route < 4; ++route) {
+        reset_route(route);
+        set_keyboard_octave(device, &audio, &ui, 4);
+        if (ui.fm_open) begin_fm_note(device, &audio, &ui, &instrument, &fm, 12, 44100, 0);
+        else begin_note(device, &audio, &ui, &instrument, 12, 44100, 0);
+        assert(voices() == 1);
+        set_keyboard_octave(device, &audio, &ui, 5);
+        release_note(device, &audio, &ui, 12); /* Release the original physical key. */
+        assert_keyboard_silent();
+    }
+    set_keyboard_octave(device, &audio, &ui, 4);
 }
 
 static void test_sister_prepared_power(void)
@@ -284,6 +394,10 @@ int main(void)
     assert(ts_instrument_create_basic(&instrument, TS_FM_WAVE_SINE, error, sizeof(error)));
     assert(ts_sample_clone(&fm, &instrument.current, error, sizeof(error)));
     test_chords();
+    test_fm_release_without_preview();
+    test_shifted_hold_release();
+    test_shifted_hold_isolation();
+    test_key_up_after_octave_change();
     test_route_change();
     test_trigger_identity();
     test_loop_transport();

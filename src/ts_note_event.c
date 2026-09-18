@@ -36,6 +36,15 @@ int ts_note_event_same_trigger(const TsNoteEvent *event,
     return origin != TS_NOTE_ORIGIN_MIDI || event->channel == channel;
 }
 
+int ts_note_event_same_latched_pitch(const TsNoteEvent *event,
+                                     TsNoteOrigin origin, int midi_note,
+                                     int channel)
+{
+    if (event == NULL || event->origin != origin || event->midi_note != midi_note)
+        return 0;
+    return origin != TS_NOTE_ORIGIN_MIDI || event->channel == channel;
+}
+
 float ts_note_event_gain(const TsNoteEvent *event)
 {
     if (event == NULL) return 1.0f;

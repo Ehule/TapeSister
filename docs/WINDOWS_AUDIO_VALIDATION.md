@@ -25,6 +25,14 @@ rates/buffers.
 
 ## Matrix
 
+- [ ] Keyboard HOLD: latch white and black notes, change octave/range, then click
+  their new lit positions. Each click releases the intended pitch; no extra voice
+  starts. Repeat with Shift-click latches, tile/FM/group/Sister routes, and route
+  changes while held. With HOLD off, change octave while physically holding a key;
+  releasing that original key must stop its note. Repeat with same-pitch MIDI notes
+  on two channels; releasing a QWERTY latch must leave both MIDI notes intact.
+- [ ] Switch to FM with a held chord while the preview is unavailable: clicking
+  its lit notes must still release them. Repeat during preview refresh.
 - [ ] Prism: capture A/B, right-recall either, use New/Vary and user-preset arrows,
   then recapture the amber endpoint. Its partner must remain unchanged. Compare
   factory/user/varied endpoints, save/reload, and test Shift-recall of a saved pair.
