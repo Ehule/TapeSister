@@ -2964,7 +2964,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
              TS_UI_INPUT_LED_W, TS_UI_INPUT_LED_H, color);
     }
     button(fb, TS_UI_MASTER_LIMITER_X, TS_UI_MASTER_LIMITER_Y,
-           TS_UI_MASTER_LIMITER_W, "LIM", ui->master_output.limiter_enabled);
+           TS_UI_MASTER_LIMITER_W, "EQ", ui->master_eq_open);
     master_output_fader(fb, ui->master_output.gain,
                         TS_UI_MASTER_OUTPUT_X, TS_UI_MASTER_OUTPUT_Y);
     master_output_meter(fb, &ui->master_output,
@@ -5091,7 +5091,7 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
            model->fx_page == 1 ? "FALL" :
            model->fx_page == 2 ? "PRISM" : "TAPE",
            model->fx_page != 0);
-    button(fb, 494, 8, 30, "LIM", model->routing.limiter_enabled);
+    button(fb, 494, 8, 30, "EQ", 0);
     master_output_fader(fb, model->routing.master_output_gain, 528, 8);
     master_output_meter(fb, &master_output, 580, 8);
     rect(fb, 576, 12, 3, 9,

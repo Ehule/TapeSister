@@ -73,7 +73,7 @@ Sister source.
    and choose **OMNI** or MIDI channel 1–16.
 4. Save the configuration.
 5. Confirm the global **OUT** fader is raised and the meter responds when a tile plays.
-6. Leave **LIM** on while learning the instrument. The limiter protects the output
+6. Leave the **limiter** on while learning the instrument. The limiter protects the output
    before the final OUT fader.
 
 TapeSister opens with usable defaults. Sister Machine is intentionally powered off at
@@ -101,7 +101,7 @@ The top row remains available across the main workspaces.
   and Sister Machine. Portal retains its own `Tab` source/result audition shortcut.
 - **SAVE** saves the complete active project.
 - **EXPORT** exports the selected tile or the complete sound collection.
-- **LIM** opens the Master / Room EQ page, including the limiter toggle.
+- **EQ** opens the Master / Room EQ page, including the limiter toggle.
 - **OUT** is the final speaker/file-output fader.
 - The two meter lanes show the final left and right output.
 
@@ -1476,7 +1476,7 @@ Signal order at the final boundary is:
 
 > completed TapeSister mix → Master EQ → global limiter → final OUT fader → meter / FILE OUT
 
-Click **LIM** in either window to open **Master / Room EQ**. This is a live
+Click **EQ** in either window to open **Master / Room EQ**. This is a live
 room/system correction tool: remove excess bass, tame a resonance, or adjust an
 unfamiliar PA. It has five bands, each offering Bell, Low Shelf, High Shelf, High
 Pass, Low Pass, or Notch. Frequency is logarithmic (20 Hz to approximately 20 kHz,
@@ -1697,7 +1697,7 @@ the current sound becomes the source for the first new stroke.
   Mosaic; from Sister it restores the main application window. The ordinary main
   canvas retains its exit confirmation.
 - Lower the final OUT fader if speaker level is unsafe.
-- Leave LIM enabled when exploring feedback and extreme synthesis.
+- Leave the limiter enabled when exploring feedback and extreme synthesis.
 - Use headphones for microphone monitoring.
 
 ### No sound from a Sister source

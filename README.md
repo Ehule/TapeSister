@@ -227,7 +227,7 @@ visible across the main and Sister windows. Final order is:
 
 > TapeSister mix → Master EQ → limiter → OUT fader → meter and FILE OUT.
 
-Click **LIM** in either window to open the native **Master / Room EQ** page.
+Click **EQ** in either window to open the native **Master / Room EQ** page.
 Five bands offer Bell, Low/High Shelf, High/Low Pass, and Notch, with frequency,
 ±12 dB gain, Q, band bypass, global bypass, and a confirmed flat reset. Drag the
 numbered nodes on the combined response curve; wheel a node for Q. The selected

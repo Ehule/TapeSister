@@ -414,7 +414,7 @@ Sample/Depth/Rate, Pitch Ratio/Ramp/Rate. `L` assigns LFO; `R` assigns Rise.
 
 Final order: mix → Master EQ → linked limiter → OUT fader → L/R meter and FILE OUT.
 
-Click **LIM** in either window for Master / Room EQ and the limiter toggle.
+Click **EQ** in either window for Master / Room EQ and the limiter toggle.
 Five bands; Bell / Low Shelf / High Shelf / High Pass / Low Pass / Notch.
 Drag a node for frequency/gain; wheel for Q; Shift makes node edits finer.
 Selected-band sliders show exact values. Gain ±12 dB; Q 0.30–8.00; passes 12 dB/oct.
@@ -425,7 +425,7 @@ band sliders and EQ bypass. Project/session state includes EQ; sound presets pre
 
 | Readout | Meaning |
 | --- | --- |
-| LIM | opens Master / Room EQ; highlight follows limiter state |
+| EQ | opens Master / Room EQ |
 | GR 0.0 | no current gain reduction |
 | GR-x.x | limiter reducing by x.x dB |
 | LIM OFF | limiter bypassed |
@@ -494,7 +494,7 @@ characters where needed. You can edit the suggested name before saving.
 - Space controls the active audition; in Mosaic it plays/pauses the arrangement.
 - Use Mosaic STOP or Escape in the idle arrangement to stop and rewind it.
 - Escape cancels the active gesture or dialog.
-- Keep LIM on during feedback and Extreme exploration.
+- Keep the limiter on during feedback and Extreme exploration.
 - Lower Sister/FX/Fallout levels before the limiter when GR is excessive.
 - Use headphones for microphone monitoring.
 - Sister Capture refuses a destination that is also a live Sister source.

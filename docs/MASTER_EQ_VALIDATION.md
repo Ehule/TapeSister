@@ -11,7 +11,7 @@ with dummy audio/video drivers for native controller fixtures.
   continuous filter/bypass transitions, silence decay, non-finite sanitization,
   rate changes, stacked +12 dB boosts into the limiter, OUT mute, project/INI
   round trips, legacy flat defaults, malformed data, and sound-preset isolation.
-- Native controller tests pass: LIM entry, confirmed reset, project dirty state,
+- Native controller tests pass: EQ entry, confirmed reset, project dirty state,
   scaled graph drag, modal ownership, existing MIDI pickup/dispatch, EQ edits during
   all four QWERTY/HOLD/ARP source routes, global stop, and FILE OUT/hardware equality.
 - AddressSanitizer + UndefinedBehaviorSanitizer pass the new DSP tests. LeakSanitizer

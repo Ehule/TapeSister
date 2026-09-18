@@ -2,7 +2,7 @@
 
 Master EQ adapts TapeSister to a room or sound system. Use it to remove excess low
 end, roll off subsonic material, tame a resonance or harsh range, or make a broad
-tonal adjustment. Click **LIM** in the main or Sister window to open the native
+tonal adjustment. Click **EQ** in the main or Sister window to open the native
 **Master / Room EQ** page. Opening the page does not change limiter state.
 
 ![Master / Room EQ](images/master-performance-eq.png)
@@ -41,7 +41,7 @@ boosts or using resonant Q can increase gain beyond one band's ±12 dB range.
 | Filter type button | Left-click forward; right-click backward |
 | EQ ON / EQ BYPASS | Compare EQ with the original master; settings are retained |
 | RESET EQ → CONFIRM RESET | Return all five bands to neutral bells and bypass EQ |
-| X / Escape / LIM again | Close the page |
+| X / Escape / EQ again | Close the page |
 | Space | Existing global stop |
 
 Frequency runs from 20 Hz to the lower of 20 kHz or 45% of the output sample rate.
