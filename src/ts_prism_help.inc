@@ -78,21 +78,21 @@ void ts_sister_ui_prism_help(const TsSisterUiModel *m,int x,int y,char *help,siz
 #define TIP(message) do { snprintf(help,size,"%s",message);return; } while(0)
     if(m->prism_panel==3) {
         int cell=ts_sister_ui_prism_matrix_cell(x,y);
-        if(cell>=0)TIP("CELL: wheel/left/right cycles HOLD, A-L. Middle clears. Shift-click sets sequence length. Changes apply next visit.");
+        if(cell>=0)TIP("CELL: wheel/left/right cycles HOLD, A-Z. Middle clears. Shift-click sets sequence length. Changes apply next visit.");
         if(contains(x,y,16,48,70,22))TIP("BACK: return to Prism. Matrix keeps running across pages; playback keys and recording remain available.");
         if(contains(x,y,16,78,62,22))TIP("PLAY: start at step 01. A current blend finishes toward its nearer end first; no abrupt preset recall.");
         if(contains(x,y,86,78,90,22))TIP("STOP/RESET: hold the current sound and reset to step 01. The manual morph fader can take over this exact blend.");
         if(contains(x,y,184,78,62,22))TIP("LOOP: repeat the active sequence. With Loop off, the final step completes and its sound stays held.");
         if(contains(x,y,254,78,86,22))TIP("LENGTH: 1-64 cells, left to right then top to bottom. Wheel adjusts; Shift-click a cell sets the end.");
-        if(contains(x,y,348,78,124,22))TIP("STEP: seconds per cell. Morph reaches its destination, then holds for any remaining time. Changes apply next step.");
-        if(contains(x,y,480,78,136,22))TIP("MORPH: the existing Prism Time. Matrix caps it at STEP to avoid overlapping transitions; manual Time is unchanged.");
-        if(contains(x,y,16,318,600,22))TIP("BANK A-L: open a draft without stopping playback. SAVE updates that letter for its next visit; current morph stays intact.");
+        if(contains(x,y,348,78,124,22))TIP("STEP: stay at the destination AFTER morphing, 0-60 minutes. Updates the active hold immediately. Right-click: zero hold.");
+        if(contains(x,y,480,78,136,22))TIP("MORPH: full A-to-B travel, then STEP hold. Edits update the current morph immediately. Neither time caps the other.");
+        if(ts_sister_ui_prism_matrix_bank_state(x,y)>=0)TIP("BANK A-Z: open a draft without stopping playback. SAVE updates that letter for its next visit; current morph stays intact.");
         return;
     }
     if(m->prism_matrix_edit && contains(x,y,530,250,86,22))TIP("SAVE: capture this draft in its bank letter. Matrix uses it on the next visit, keeping the current transition intact.");
-    if(contains(x,y,534,48,82,22))TIP("MATRIX: 64 steps referencing A-L, with Play, Stop/Reset, Loop and independent step duration.");
+    if(contains(x,y,534,48,82,22))TIP("MATRIX: 64 steps referencing A-Z, with Play, Stop/Reset, Loop and independent step duration.");
     if(contains(x,y,16,250,78,22))TIP("SOUND: lens count, spread, motion, body, wet/dry and glass color. The live diagram stays visible.");
-    if(contains(x,y,102,250,92,22))TIP("PERFORM: twelve captured states A-L, two morph ends, ordered lens sequencer, snapping, Drift Rate and group octave.");
+    if(contains(x,y,102,250,92,22))TIP("PERFORM: 26 captured states A-Z, two morph ends, ordered lens sequencer, snapping, Drift Rate and group octave.");
     if(contains(x,y,202,250,86,22))TIP("PRESETS: Prism-only bank, NEW / VARY and their lock groups. Sister tape and other FX stay as set.");
     if(m->prism_zoya_pose!=TS_PRISM_ZOYA_POSE_OFF &&
        (contains(x,y,18,108,104,117) || contains(x,y,510,108,112,117)) && m->prism_zoya.visible)
@@ -104,23 +104,23 @@ void ts_sister_ui_prism_help(const TsSisterUiModel *m,int x,int y,char *help,siz
             const char *state=states[ts_sister_ui_prism_capture_visual(m,endpoint)];
             snprintf(help,size,"CAP %c: %s. %s",ts_prism_state_letter(ts_sister_ui_prism_state(m,endpoint)),state,
                 c->morph_enabled ? "Right-click edits (even empty). Middle-click clears and unlocks." :
-                "Wheel browses A-L; click confirms. Left-click saves edits; right recalls; middle clears.");
+                "Wheel browses A-Z; click confirms. Left-click saves edits; right recalls; middle clears.");
             return;
         }
-        if(contains(x,y,160,280,138,22))TIP("TO: wheel browses A-L silently; click confirms/morphs over TIME. Change the silent end. The fader takes over.");
+        if(contains(x,y,160,280,138,22))TIP("TO: wheel browses A-Z silently; click confirms/morphs over TIME. Change the silent end. The fader takes over.");
         if(contains(x,y,16,308,66,22))TIP("SEQUENCER ON/OFF: ordered members step; other lenses sustain. Mute/solo still apply. Uses its own audio clock.");
         if(contains(x,y,88,308,66,22))TIP("SEQUENCER EDIT: Ctrl-click lens numbers to append/remove steps. With EDIT off, Ctrl-click is additive solo.");
-        if(contains(x,y,160,308,66,22))TIP("SEQUENCER RESET: restart at the first eligible step. Keeps the pattern and captured A-L sounds.");
-        if(contains(x,y,232,308,66,22))TIP("SEQUENCER CLEAR: empty the ordered pattern. Captured A-L sounds stay intact; lenses return to normal sustain.");
+        if(contains(x,y,160,308,66,22))TIP("SEQUENCER RESET: restart at the first eligible step. Keeps the pattern and captured A-Z sounds.");
+        if(contains(x,y,232,308,66,22))TIP("SEQUENCER CLEAR: empty the ordered pattern. Captured A-Z sounds stay intact; lenses return to normal sustain.");
         if(contains(x,y,472,308,144,22))TIP("DRAG SNAP: Free, Semitone, 50 Cent or 31-TET. Left/right-click cycles. Arrow-key step sizes stay independent.");
     }
     if(m->prism_panel==2) {
-        if(contains(x,y,16,280,30,22))TIP("PREVIOUS PRISM PRESET: audition sound, keeping A-L. Shift-click recalls the full saved Prism setup, including A-L.");
-        if(contains(x,y,276,280,30,22))TIP("NEXT PRISM PRESET: audition sound, keeping A-L. Shift-click recalls the full saved Prism setup, including A-L.");
-        if(contains(x,y,52,280,218,22))TIP("PRESET: audition; A-L retained. Shift-click restores full setup. Right-click resets individual lens edits.");
-        if(contains(x,y,314,280,90,22))TIP("SAVE NEW: store Prism in a new bank entry. Shift-click overwrites the selected entry. Includes A-L and sequence.");
-        if(contains(x,y,412,280,96,22))TIP("NEW: fresh Prism sound. Unlocked trims return to unity; mute/solo and sequence clear. Captured A-L stay stored.");
-        if(contains(x,y,516,280,100,22))TIP("VARY: develop the current sound with smaller changes. Respects group/slider locks and retains the sequence and A-L.");
+        if(contains(x,y,16,280,30,22))TIP("PREVIOUS PRISM PRESET: audition sound, keeping A-Z. Shift-click recalls the full saved Prism setup, including A-Z.");
+        if(contains(x,y,276,280,30,22))TIP("NEXT PRISM PRESET: audition sound, keeping A-Z. Shift-click recalls the full saved Prism setup, including A-Z.");
+        if(contains(x,y,52,280,218,22))TIP("PRESET: audition; A-Z retained. Shift-click restores full setup. Right-click resets individual lens edits.");
+        if(contains(x,y,314,280,90,22))TIP("SAVE NEW: store Prism in a new bank entry. Shift-click overwrites the selected entry. Includes A-Z and sequence.");
+        if(contains(x,y,412,280,96,22))TIP("NEW: fresh Prism sound. Unlocked trims return to unity; mute/solo and sequence clear. Captured A-Z stay stored.");
+        if(contains(x,y,516,280,100,22))TIP("VARY: develop the current sound with smaller changes. Respects group/slider locks and retains the sequence and A-Z.");
         if(y>=308 && y<330 && x>=16 && x<616) {
             static const char *const descriptions[]={
                 "PITCH LOCK: NEW/VARY retain mode, Spread, Focus, per-lens pitches/octaves, Group Octave and drag snap.",
@@ -167,7 +167,7 @@ void ts_sister_ui_prism_help(const TsSisterUiModel *m,int x,int y,char *help,siz
         case TS_SISTER_UI_PARAM_PRISM_TIME: TIP("TIME: duration of TO A / TO B, 0.05 seconds-60 minutes; default 4 minutes. Timed morphing follows the audio clock.");
         case TS_SISTER_UI_PARAM_PRISM_SEQ_RATE: TIP("SEQUENCER STEP RATE: 0.05-32 steps/second. Runs independently of morphing and Mosaic transport.");
         case TS_SISTER_UI_PARAM_PRISM_RATE: TIP("DRIFT RATE: 0.005-40 Hz. Lenses have related independent rates/phases; changing speed preserves their motion phase.");
-        case TS_SISTER_UI_PARAM_PRISM_OCTAVE: TIP("GROUP OCTAVE: saved in A-L captures. Morph/Matrix glide between registers; the readout follows. DRY stays original.");
+        case TS_SISTER_UI_PARAM_PRISM_OCTAVE: TIP("GROUP OCTAVE: saved in A-Z captures. Morph/Matrix glide between registers; the readout follows. DRY stays original.");
         case TS_SISTER_UI_PARAM_BUFFER_SECONDS: TIP("SISTER BUFFER: length of the rolling tape memory in seconds. Independent of Prism's refraction setup.");
         default: break;
         }
@@ -189,7 +189,7 @@ void ts_sister_ui_prism_help(const TsSisterUiModel *m,int x,int y,char *help,siz
     case TS_SISTER_UI_ACTION_POWER: TIP("SISTER POWER: enable the tape machine. With POWER off, Prism and ordinary FX can still process the direct program input.");
     case TS_SISTER_UI_ACTION_ROLL: TIP("SISTER ROLL: start/stop the rolling tape transport. Prism's sequencer runs independently.");
     case TS_SISTER_UI_ACTION_HOLD: TIP("SISTER HOLD: freeze writing into the rolling tape memory while its heads continue reading.");
-    case TS_SISTER_UI_ACTION_CLEAR: TIP("SISTER CLEAR: clear the rolling tape memory. Sequencer CLEAR is on PERFORM; A-L store Prism settings.");
+    case TS_SISTER_UI_ACTION_CLEAR: TIP("SISTER CLEAR: clear the rolling tape memory. Sequencer CLEAR is on PERFORM; A-Z store Prism settings.");
     case TS_SISTER_UI_ACTION_MONITOR: TIP("SISTER MONITOR: listen to the selected direct/tape-head mix when Sister POWER is on.");
     case TS_SISTER_UI_ACTION_PAGE: TIP("SISTER PAGE: cycle Tape, FX, Fallout and Prism. Playback and file recording continue.");
     case TS_SISTER_UI_ACTION_LIMITER_TOGGLE: TIP("FINAL LIMITER: toggle the linked stereo output limiter. GR shows its gain reduction; OUT meters show final output.");

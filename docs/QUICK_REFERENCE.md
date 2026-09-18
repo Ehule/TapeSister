@@ -525,6 +525,8 @@ The virtual keyboard shares **HOLD** between tile and FM playing. Arm HOLD befor
 playing to latch/repeat notes; click again or press Space to release. Ordinary
 clicks/QWERTY/MIDI never arm HOLD. Shift-click toggles one chord note. Sustain
 controls key-up; LOOP or saved loop points control repetition.
+After changing octave or keyboard range, release a held pitch by clicking its
+currently lit key. Held notes remain releasable when switching tile/FM/Sister routes.
 
 The loop MODE button now also offers **START FWD**, **START REV**, and
 **START P-P**: play from the sample beginning, then remain inside the saved loop.
@@ -575,11 +577,13 @@ Ctrl+Z / Ctrl+Y undo/redo; Escape cancels the current stroke.
 
 ### Prism Morph Matrix
 
-- **MATRIX >**: 64 cells referencing the same A–L bank. Wheel/left/right-click
+- **MATRIX >**: 64 cells referencing the same A–Z bank. Wheel/left/right-click
   cycles a cell; middle clears to HOLD; Shift-click sets the sequence end.
-- **PLAY**, **STOP/RESET**, **LOOP**, **LENGTH**. STEP is time per cell;
-  both STEP and MORPH default to four minutes and span 0.05s–60min;
-  MORPH uses existing Time, capped at STEP. Shorter morphs leave a hold.
+- **PLAY**, **STOP/RESET**, **LOOP**, **LENGTH**. STEP is the stay after reaching a state;
+  MORPH is the full A-to-B travel time. Both default to four minutes: eight
+  minutes total per populated cell. Morph spans 0.05s–60min; Step spans 0–60min
+  (right-click for no hold). Neither caps the other. Each timer updates its active
+  phase immediately; no Reset needed.
 - Click a bank letter to edit a draft while playback continues. **SAVE letter**
   updates its next visit; the current transition stays intact.
 - **< PRISM** returns without stopping. Manual fader/CAP takes over; STOP keeps
@@ -589,10 +593,10 @@ Ctrl+Z / Ctrl+Y undo/redo; Escape cancels the current stroke.
 ### Prism performance additions
 
 - **PRESETS**: Prism-only Save New; Shift-Save overwrites; arrows audition sounds
-  while retaining A–L. Shift-click an arrow/name restores the full saved setup.
+  while retaining A–Z. Shift-click an arrow/name restores the full saved setup.
   New rolls fresh; Vary develops; six lock buttons preserve groups. A recalled
   endpoint remains editable through New/Vary and browsing; click CAP to save it.
-- **PERFORM A–L**: hover CAP or TO and wheel to browse silently. Click an empty
+- **PERFORM A–Z**: hover CAP or TO and wheel to browse silently. Click an empty
   CAP to capture; click a pending saved letter on the silent end to confirm/morph.
   Escape cancels the choice. Right-click CAP recalls for editing; left-click that
   CAP saves the edits. Middle-click clears its letter and unlocks editing, retaining
@@ -608,11 +612,11 @@ Ctrl+Z / Ctrl+Y undo/redo; Escape cancels the current stroke.
   Amber **CHOOSE** awaits confirmation. Purple **C/L MORPH - SOUND LOCKED** marks performance; right-click CAP to edit.
 - **Hover help**: blue text above the bottom capture row explains each control.
   Compact **SUSTAIN** and **REC FILE** sit beside the GR readout; RESET/CLEAR on
-  PERFORM affect the sequencer, preserving A–L.
+  PERFORM affect the sequencer, preserving A–Z.
 - **SNAP**: Free / Semitone / 50 Cent / 31-TET for mouse dragging.
 - **Nebula at SOURCE/OUT**: coherent amber/gold input; dispersed blue/cyan/violet/magenta output.
   PRISM ON plays one brief transformation, then subtle ambient motion. Sound
-  controls and active A–L/Matrix transitions shape the field behind the optics.
+  controls and active A–Z/Matrix transitions shape the field behind the optics.
   INI `[Prism]`: `prism_zoya_pose=nebula` (default) or `off`; edit while closed,
   then restart. Legacy `meditation`/`standing` values migrate to `nebula`.
   `off` leaves audio and optical controls active. [Details](PRISM_ZOYA.md).

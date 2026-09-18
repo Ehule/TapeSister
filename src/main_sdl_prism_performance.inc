@@ -142,8 +142,8 @@ static int sister_prism_state_click(SDL_AudioDeviceID device,AudioState *audio,S
             TsPrismPatch live=*ts_prism_endpoint_patch(&c,side);memcpy(&c,&live,sizeof(live));
             c.active_pair_valid=0;c.morph_enabled=0;c.morph_trigger=0;
             sister_prism_publish(device,audio,s,&c);
-            snprintf(s->model.status,sizeof(s->model.status),"LIVE SOUND / WHEEL TO A-L AND CAPTURE");
-        } else snprintf(s->model.status,sizeof(s->model.status),"LIVE TRANSITION END / WHEEL TO A-L TO STORE A STATE");
+            snprintf(s->model.status,sizeof(s->model.status),"LIVE SOUND / WHEEL TO A-Z AND CAPTURE");
+        } else snprintf(s->model.status,sizeof(s->model.status),"LIVE TRANSITION END / WHEEL TO A-Z TO STORE A STATE");
         return 1;
     }
     if(state==c.endpoint[1-side] && !(right && which<2 && !pending)) {
@@ -170,7 +170,7 @@ static int sister_prism_state_click(SDL_AudioDeviceID device,AudioState *audio,S
         }
         c.endpoint[side]=state;ts_prism_capture(&c,state);c.morph=(float)side;
         s->model.prism_edit_endpoint=0;
-        snprintf(s->model.status,sizeof(s->model.status),"CAPTURED %c / A-L BANK KEPT",'A'+state);
+        snprintf(s->model.status,sizeof(s->model.status),"CAPTURED %c / A-Z BANK KEPT",'A'+state);
     } else {
         if(!occupied) {
             snprintf(s->model.status,sizeof(s->model.status),"%c IS EMPTY: CAPTURE IT BEFORE MORPHING",'A'+state);return 1;
@@ -272,7 +272,7 @@ static int sister_prism_performance_click(SDL_AudioDeviceID device,AudioState *a
                         c.morph_enabled=0;c.morph_trigger=0;c.morph=old.morph;
                         c.morph_seconds=old.morph_seconds;c.locks=old.locks;
                     }
-                    snprintf(s->model.status,sizeof(s->model.status),"PRISM %s: %.31s",(mod&KMOD_SHIFT)?"FULL SETUP RECALLED":"SOUND / A-L RETAINED",s->model.prism_preset_name);
+                    snprintf(s->model.status,sizeof(s->model.status),"PRISM %s: %.31s",(mod&KMOD_SHIFT)?"FULL SETUP RECALLED":"SOUND / A-Z RETAINED",s->model.prism_preset_name);
                 } else return 1;
             } else return 0;
         } else return 0;

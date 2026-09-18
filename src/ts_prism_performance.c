@@ -6,6 +6,7 @@
 #include <limits.h>
 
 _Static_assert(sizeof(float)==4 && sizeof(int)==4,"Prism state uses 32-bit values");
+_Static_assert(TS_PRISM_STATES<31,"Captured state bits must fit in a positive int");
 _Static_assert(offsetof(TsPrismControls,a)==sizeof(TsPrismPatch),"Prism patch prefix must match");
 
 #include "ts_prism_factory.inc"
@@ -241,7 +242,7 @@ int ts_prism_bank_save(const TsPrismBank *bank,const char *path,char *error,size
     char temp[4096];FILE *f=NULL;int ok=0;
     if(bank && bank->count<=TS_PRISM_PRESETS && snprintf(temp,sizeof(temp),"%s.tmp",path)>0 && strlen(path)+4<sizeof(temp))f=fopen(temp,"wb");
     if(f) {
-        fputs("TapeSister Prism Presets 3\n",f);
+        fputs("TapeSister Prism Presets 4\n",f);
         for(unsigned i=0;i<bank->count;++i) {
             fprintf(f,"Preset=%u\nName=%.31s\n",i,bank->entries[i].name);
             ts_prism_write(f,&bank->entries[i].controls);
@@ -271,7 +272,8 @@ int ts_prism_bank_load(TsPrismBank *bank,const char *path,char *error,size_t siz
     FILE *f=fopen(path,"rb");
     if(!f) { if(errno==ENOENT)return 1; if(error && size)snprintf(error,size,"Could not open Prism presets");return 0; }
     TsPrismBank *next=calloc(1,sizeof(*next));char line[256];int ok=next && fgets(line,sizeof(line),f) &&
-        (!strcmp(line,"TapeSister Prism Presets 1\n") || !strcmp(line,"TapeSister Prism Presets 2\n") || !strcmp(line,"TapeSister Prism Presets 3\n"));
+        (!strcmp(line,"TapeSister Prism Presets 1\n") || !strcmp(line,"TapeSister Prism Presets 2\n") ||
+         !strcmp(line,"TapeSister Prism Presets 3\n") || !strcmp(line,"TapeSister Prism Presets 4\n"));
     int slot=-1;
     while(ok && fgets(line,sizeof(line),f)) {
         char *equals=strchr(line,'=');if(!equals){ok=0;break;}*equals++=0;

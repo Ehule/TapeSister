@@ -96,7 +96,9 @@ capture_max_seconds=20
 ; off hides particles and their animation; optics and audio remain active.
 ; Legacy meditation/standing values migrate to nebula.
 prism_zoya_pose=nebula
-; Startup durations, in seconds: 0.05..3600 (one hour). 240 = four minutes.
+; Startup durations in seconds; 240 = four minutes, 3600 = one hour.
+; Morph is travel time (0.05..3600), then Step is a separate hold (0..3600).
+; Step 0 gives continuous transitions; neither timer limits the other.
 ; Saved projects and presets retain their own durations.
 prism_morph_seconds=240
 prism_step_seconds=240

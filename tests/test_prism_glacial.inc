@@ -11,7 +11,7 @@ static void check_prism_glacial(void)
         c=settings();c.lenses=2;c.focus=1;c.drift=0;ts_prism_capture(&c,0);
         c.spread=1;ts_prism_capture(&c,1);c.morph_seconds=c.matrix.step_seconds=3600;
         c.morph_enabled=1;c.morph=0;c.morph_target=1;c.morph_trigger=1;
-        if(matrix){c.matrix.length=1;c.matrix.loop=0;c.matrix.step[0]=1;c.matrix_run=1;c.matrix_restart=1;}
+        if(matrix){c.matrix.step_seconds=0;c.matrix.length=1;c.matrix.loop=0;c.matrix.step[0]=1;c.matrix_run=1;c.matrix_restart=1;}
         ts_prism_set_controls(&p,&c);performance_tick(&p,441*1800);
         TsPrismView v=ts_prism_view(&p);float midpoint=matrix?v.matrix_morph:v.morph;
         assert(fabsf(midpoint-.5f)<.0001f);
@@ -20,6 +20,7 @@ static void check_prism_glacial(void)
         if(matrix)assert(!v.matrix_running);
         ts_prism_free(&p);
     }
+    c.matrix.step_seconds=3600;
     TsPrismBank a={0},b={0};a.count=1;a.entries[0].controls=c;
     snprintf(a.entries[0].name,sizeof(a.entries[0].name),"GLACIAL");char error[160];
     assert(ts_prism_bank_save(&a,"test-prism-glacial.ini",error,sizeof(error)));

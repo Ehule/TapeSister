@@ -161,7 +161,7 @@ Prism's source is an amber/gold nebula; its output is related, transformed
 blue/cyan/violet/magenta matter with a warm core. PRISM ON briefly coheres,
 casts, refracts and recombines the field, then leaves subtle ambient motion.
 Spread, Drift, Focus, Body, Color and Wet/Dry shape its appearance, including
-during A–L and Matrix transitions. Every optical line, handle and label remains
+during A–Z and Matrix transitions. Every optical line, handle and label remains
 in front of the atmosphere, with its existing interaction.
 
 INI `[Prism]` → `prism_zoya_pose=nebula` is the default; `off` restores optics
@@ -282,7 +282,7 @@ Hover any control for blue, two-line help above the bottom capture controls.
 The compact **SUSTAIN ON/OFF** and **REC FILE / STOP FILE** buttons sit together
 beside the gain-reduction readout. File recording retains its timer and continues
 across pages. The sequencer's **RESET** and **CLEAR** help explicitly identifies
-their effect on the pattern; neither changes captured A–L sounds.
+their effect on the pattern; neither changes captured A–Z sounds.
 
 ![Native Prism controls with uncaptured A edits and sequencer hover help](images/prism-performance-help.png)
 
@@ -293,10 +293,10 @@ their effect on the pattern; neither changes captured A–L sounds.
 **PRESETS** has its own 32-slot bank in `prism-presets.ini`, beside `tapesister.ini`.
 **SAVE NEW** stores the current refraction setup with a numbered mode/count name.
 **Shift-click SAVE NEW** replaces the selected entry. Use the arrows to recall
-sounds without replacing your current A–L bank; clicking the name auditions
+sounds without replacing your current A–Z bank; clicking the name auditions
 that sound again. Browsing exits an active morph so the chosen sound can be captured.
 **Shift-click an arrow or preset name** restores the full saved Prism setup,
-including its A–L bank and selected pair, sequence, and parked morph position. These operations change
+including its A–Z bank and selected pair, sequence, and parked morph position. These operations change
 Prism only: Sister's tape, heads, routing and other effects keep their settings.
 The existing bottom-row Sister preset bank still stores the complete Sister setup.
 
@@ -307,18 +307,18 @@ individual/group octaves and snap), **MOTION** (Drift, Rate, Stereo and pan offs
 **GLASS** (both shapes and Color), **MIX** (Body, Wet, Dry, output, trims, mute/solo),
 **COUNT**, and **SEQ** (pattern and rate). Existing individual slider locks also
 protect their values when using New/Vary. New clears an unlocked sequence; Vary
-retains it. Captured A–L memories remain available until explicitly recaptured or cleared.
+retains it. Captured A–Z memories remain available until explicitly recaptured or cleared.
 If you recalled a letter for editing, New/Vary and ordinary user-preset browsing
 keep that endpoint selected for editing. Its button turns amber when the sound
 changes; return to PERFORM and left-click its CAP button to save the auditioned sound.
 Right-click the mode, Prism preset name, or bottom Sister preset name to restore
 stock per-lens offsets, trims, octaves and mute/solo.
 
-### Twelve captured states A–L and morph
+### 26 captured states A–Z and morph
 
 On **PERFORM**, set up a sound and click **CAP A**, change it, then click **CAP B**.
-A and B are the initial two ends of a twelve-state bank. Hover either **CAP** or
-**TO** button and turn the mouse wheel to browse **A–L**. Browsing is silent:
+A and B are the initial two ends of a 26-state bank. Hover either **CAP** or
+**TO** button and turn the mouse wheel to browse **A–Z**. Browsing is silent:
 an amber **CHOOSE** label previews a candidate without changing either end or
 its audio. Escape cancels pending choices. The letter assigned to the other end
 is skipped; each end uses a different state.
@@ -365,13 +365,13 @@ from the nearer end of the previous morph (the sounding state at 0% or 100%;
 otherwise the end contributing more, with the right end chosen at 50%). This is
 an explicit return to sound editing, not a capture of the interpolated blend.
 Edit and click CAP to save into the empty letter. Clear both selected letters to
-reset the pair; the rest of A–L stays stored until explicitly cleared or replaced.
+reset the pair; the rest of A–Z stays stored until explicitly cleared or replaced.
 
-Ordinary preset browsing and New/Vary preserve all twelve memories. **SAVE NEW**
-stores the entire A–L bank, selected pair and parked fader position in a Prism
+Ordinary preset browsing and New/Vary preserve all 26 memories. **SAVE NEW**
+stores the entire A–Z bank, selected pair and parked fader position in a Prism
 preset. **Shift-recall** restores that full setup; ordinary recall auditions only
 the preset's live sound. Full Sister presets and projects also store the bank.
-Older A/B files load with A and B selected and C–L empty.
+Older A/B files load with A and B selected and C–Z empty.
 
 | Button state | Meaning |
 | --- | --- |
@@ -385,18 +385,21 @@ The status beside the tabs identifies the letter being edited or selected, and
 shows the assigned pair while morphing, for example **C/L MORPH - SOUND LOCKED**.
 Sequence changes do not mark a sound state dirty. **MATRIX >** opens the
 [64-step Morph Matrix](PRISM_MORPH_MATRIX.md), which sequences references to these
-same A–L states, with live draft editing, Play, Stop/Reset, Loop and step timing.
+same A–Z states, with live draft editing, Play, Stop/Reset, Loop and step timing.
 
-![Native Prism performance controls with L and C assigned from the twelve-state bank](images/prism-morph-bank.png)
+![Native Prism performance controls with a selected pair from the 26-state bank](images/prism-alphabet-bank.png)
 
 
 ### Glacial timing
 
 New sessions start with **Morph Time = 04:00** and **Matrix STEP = 04:00**.
-Both controls span 0.05 seconds to 60 minutes; minute-length values display
+MORPH is travel time (0.05 seconds–60 minutes); STEP is the subsequent hold
+(0–60 minutes). At the defaults, each populated cell lasts eight minutes.
+Minute-length values display
 `MM:SS`. The INI `[Prism]` keys `prism_morph_seconds=240` and
 `prism_step_seconds=240` set startup durations in seconds (maximum 3600).
-Close the app before editing. Existing presets/projects keep their saved times;
+Close the app before editing. Saved numeric times are retained; STEP now means
+a hold after the morph. Both timers update their active phase live, without Reset.
 New/Vary, factory browsing, captures, locks and manual takeover retain their
 established behavior. The lens sequencer's rate is independent of Matrix STEP.
 The audio clock accumulates manual morph and Matrix time in double precision.
@@ -422,7 +425,7 @@ The button next to **PRISM ON/OFF** now selects **28 factory sounds**. Click
 for the next sound or hover and wheel in either direction. The first seven
 retain the original mode order and default voicings. An asterisk indicates
 that the current sound has been edited. Right-click still resets individual
-lens edits. Factory selection keeps the A–L captures, Matrix pattern, timing,
+lens edits. Factory selection keeps the A–Z captures, Matrix pattern, timing,
 and sequence; capture the chosen sound into a letter when you want to keep it.
 During a morph, recall an endpoint for editing first; Matrix drafts can use
 factory sounds while their current transition continues.
@@ -444,7 +447,7 @@ Spread, Drift, drift rate, Body and wet level. Within a family, Low → Open/Wid
 related interval bands; Cluster and 31-TET offer denser transitions. Results
 depend on the source material, especially when layering different families.
 
-**Group octave belongs to each captured A–L sound.** Right-click CAP to edit,
+**Group octave belongs to each captured A–Z sound.** Right-click CAP to edit,
 set GROUP OCT, then click CAP to save. Manual morphs and Matrix interpolate
 between captured registers; the GROUP OCT readout now shows that changing
 value, including fractional octaves during a transition. This was already
@@ -499,9 +502,11 @@ IDs retain their meaning; new targets are appended. Shape, capture and pattern
 buttons are mouse actions. Arrow keys act only on a selected Prism lens in the
 Prism window, outside modal editing and MIDI learn.
 
-Sister project version **20**, Sister preset version **19**, and Prism bank
-version **3** store the performance bank, Matrix pattern and parked blend alongside
-all previous Prism settings. Matrix transport always reloads stopped. Old files initialize
+Sister project version **21**, Sister preset version **20**, and Prism bank
+version **4** store the performance bank, Matrix pattern and parked blend alongside
+all previous Prism settings. Older A/B and A–L files still load, with M–Z empty.
+Numeric times are preserved, with STEP now a hold after MORPH; set STEP to zero
+for continuous transitions. Matrix transport always reloads stopped. Old files initialize
 Drift Rate at its original motion speed, with no sequence, octave offsets or A/B
 morphing. Missing lens keys remain neutral and projects predating Prism start
 with Prism off. The existing FX migration behavior is retained.

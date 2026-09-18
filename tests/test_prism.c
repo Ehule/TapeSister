@@ -155,7 +155,7 @@ static void check_state(void)
     /* Previous version's explicit slots must not be migrated as legacy FX. */
     FILE *f = fopen("prism-state.ini","r+b"); assert(f);
     char data[16384]; size_t size = fread(data,1,sizeof(data)-1,f); data[size]=0;
-    char *version=strstr(data,"Version=20"); assert(version); memcpy(version+8,"12",2);
+    char *version=strstr(data,"Version=21"); assert(version); memcpy(version+8,"12",2);
     rewind(f); assert(fwrite(data,1,size,f)==size); fclose(f);
     assert(ts_sister_project_state_load_file(&loaded,"prism-state.ini",48000,&present,error,sizeof(error)));
     assert(loaded.parameters.fx.slot[0].type == TS_SISTER_FX_GRAIN);
@@ -354,6 +354,7 @@ int main(void)
     check_factory_and_captured_octave();
     check_prism_morph_bank();
     check_prism_matrix();
+    check_prism_matrix_live_timing();
     check_prism_glacial();
     check_stream(44100); check_stream(48000); check_stream(96000);
     check_pitch_and_focus(44100); check_pitch_and_focus(48000); check_state();

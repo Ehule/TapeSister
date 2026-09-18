@@ -1,12 +1,12 @@
 # Prism Morph Matrix
 
-The Morph Matrix automates navigation through the existing twelve captured Prism
+The Morph Matrix automates navigation through the 26 captured Prism
 states. Open **MATRIX >** at the top right of Prism. Its 64 cells read left to
-right, then top to bottom. Every cell references a bank letter, A–L; there are no
+right, then top to bottom. Every cell references a bank letter, A–Z; there are no
 extra sound copies hidden inside cells. Ordinary manual morphing remains available
 on PERFORM.
 
-![Prism Morph Matrix running in the native SDL application](images/prism-glacial-matrix.png)
+![Prism Morph Matrix running in the native SDL application](images/prism-alphabet-matrix.png)
 
 ## Populate and play
 
@@ -16,7 +16,7 @@ including cells beyond the selected length.
 
 | Control | Action |
 | --- | --- |
-| Cell wheel or left-click | Cycle HOLD → A → … → L → HOLD |
+| Cell wheel or left-click | Cycle HOLD → A → … → Z → HOLD |
 | Cell right-click | Cycle backwards |
 | Cell middle-click | Clear this cell to HOLD; bank sound stays saved |
 | Shift-left-click a cell | Set that cell as the sequence end |
@@ -24,36 +24,61 @@ including cells beyond the selected length.
 | PLAY | Start again at step 01 |
 | STOP/RESET | Hold the current blend; next PLAY starts at 01 |
 | LOOP | Repeat the active sequence; off plays once and holds the final sound |
-| STEP | Time per cell, 0.05 seconds–60 minutes (four-minute default); click or wheel, Shift-wheel for fine changes |
-| MORPH | Existing Prism Morph Time; same slider/MIDI target and parameter lock |
+| STEP | Stay at the destination after the morph, 0–60 minutes (four-minute default); click or wheel, Shift-wheel for fine changes; right-click for zero hold |
+| MORPH | Full transition to the destination, 0.05 seconds–60 minutes; independent of STEP; same Prism Time MIDI target and lock |
 | < PRISM | Return to the previous Prism page while the Matrix continues |
 
-The cyan outline marks the current step; its underline shows elapsed step time.
+The cyan outline marks the current step; its underline shows progress through
+the current phase, **MORPH** or **STAY**.
 The small amber marker identifies the sequence end. Cells after it are dimmed.
 A dash is HOLD. An amber letter with **X** refers to an empty bank slot and also
-holds the previous sound. Neither case recalls a default patch or silences notes.
+holds the previous sound for STEP only, without an added morph. Neither case
+recalls a default patch or silences notes.
 An empty bank letter can be filled during playback.
 
 
 ### Glacial timing
 
 New sessions start with **Morph Time = 04:00** and **Matrix STEP = 04:00**.
-Both controls span 0.05 seconds to 60 minutes; minute-length values display
-`MM:SS`. The INI `[Prism]` keys `prism_morph_seconds=240` and
+MORPH is travel time (0.05 seconds–60 minutes); STEP is the subsequent hold
+(0–60 minutes). At the defaults, each populated cell lasts eight minutes.
+Minute-length values display `MM:SS`. The INI `[Prism]` keys
+`prism_morph_seconds=240` and
 `prism_step_seconds=240` set startup durations in seconds (maximum 3600).
-Close the app before editing. Existing presets/projects keep their saved times;
+Close the app before editing. Saved numeric times are retained; STEP now means
+a hold after the morph. Both timers update their active phase live, without Reset.
 New/Vary, factory browsing, captures, locks and manual takeover retain their
 established behavior. The lens sequencer's rate is independent of Matrix STEP.
 The audio clock accumulates manual morph and Matrix time in double precision.
 
 ## Timing and handoff
 
-For each cell, effective transition time is **min(Morph Time, STEP)**. A shorter
-Morph Time leaves a hold at the destination; equal times give continuous motion.
-Longer Morph Time is capped for that Matrix transition without changing the saved
-manual Time setting. The timing line displays that transition/hold relationship.
-Changes to cell assignment or timing take effect on the next cell visit; an active
-transition keeps its original destination and duration.
+Each populated cell has two consecutive phases: **MORPH travels to its state,
+then STEP stays there**. Only after the hold does the next cell begin. Neither
+time caps or overlaps the other.
+
+| MORPH | STEP | Result |
+| --- | --- | --- |
+| 10 seconds | 1 minute | Travel for 10 seconds, then stay for 1 minute |
+| 1 minute | 10 seconds | Travel for 1 minute, then stay for 10 seconds |
+| 4 minutes | 4 minutes | Travel for 4 minutes, then stay for 4 minutes |
+| 4 minutes | 0 | Continuous four-minute transitions, without a hold |
+
+Both controls are live: changing MORPH updates the current travel phase, and
+changing STEP updates the current hold. The other phase uses the latest value
+when it begins. No Reset is needed. Elapsed time within the active phase is
+retained and progress recalculated against its new duration, as with manual
+Prism Time. Lengthening an active morph can move the blend back along its path;
+changing Morph during a hold never reopens that completed transition.
+
+Shortening a phase past its elapsed time completes that phase once, starting the
+next phase with fresh timing instead of skipping through later cells. Normal
+phase boundaries carry fractional audio-tick time forward to prevent drift.
+MORPH also controls the JOINING lead-in; STEP cannot truncate it. Timing changes
+never restart a stopped or completed sequence.
+
+Cell assignments and saved bank edits take effect on the next visit. The current
+transition retains its original endpoint sounds.
 
 PLAY from a stopped endpoint or live sound begins morphing toward cell 01. If
 already partway through a manual or Matrix blend, PLAY first completes the current
@@ -74,7 +99,7 @@ The lens sequencer remains a separate, global performance control.
 
 ## Edit a bank sound while Matrix plays
 
-1. Click a letter in the Matrix's A–L strip to open its **draft** on SOUND.
+1. Click a letter in the Matrix's two bank rows, **A–M** and **N–Z**, to open its **draft** on SOUND.
 2. Adjust lenses, shapes or sound controls. PRESETS, New/Vary and locks also work
    on the draft. The diagram shows the draft; the audio continues through Matrix.
 3. Click **SAVE D**, for example, beside the tabs. This captures the draft into D
@@ -89,17 +114,20 @@ workflow. Prism On/Off and the lens sequencer remain global controls.
 
 ## Saving and compatibility
 
-Prism presets, full Sister presets and project sidecars save the A–L bank, all 64
+Prism presets, full Sister presets and project sidecars save the A–Z bank, all 64
 cell references, length, Loop, STEP, Morph Time and a parked current transition.
 Transport loads **stopped**, never starts unexpectedly. Use Prism **Shift-recall**
 to load an entire saved setup; normal Prism preset auditions preserve the current
 bank and Matrix pattern. Unsaved drafts are not separate bank entries: SAVE the
 letter before saving the performance.
 
-New format versions: Prism bank 3, Sister preset 19, Sister project sidecar 20.
-Older presets and projects remain readable, with a blank Matrix. Use this or a
-newer build to reopen files saved with Matrix data. The TSR/audio format is
-unchanged by this feature.
+Format versions: Prism bank 4, Sister preset 20, Sister project sidecar 21.
+Older A/B and A–L presets/projects remain readable; M–Z start empty. Existing
+Matrix patterns and numeric time settings are retained, while files
+predating Matrix get a blank pattern. **STEP now means a hold after the morph**,
+so an older setup's cycle becomes Morph + Step instead of Step alone. Set STEP
+to zero for continuous transitions. Use this or a newer build to reopen saves containing A–Z data.
+The TSR/audio format is unchanged by this feature.
 
 ## Implementation and validation
 
@@ -114,18 +142,13 @@ the audio scheduler does not mutate the UI's runtime parameter store.
 Core tests cover all 64 steps in order, loop and end, timing and hold, missing
 states, same-letter recapture, an unchanged in-flight transition, initial blend
 joining, immediate STOP, manual handoff, shared-DSP output comparison, and all
-three persistence formats. Native SDL controller tests address every cell and
-letter, check live draft editing/save, mode guards, Time locks, MIDI target
-identity, recording hit areas, bank retention and atomic progress publication.
+three persistence formats. Live timing tests cover shortening and extending a
+running step/morph, hold periods, joining, and completion without catch-up skips.
+Native SDL controller tests address every cell and all 26 letters, and check
+live draft editing/save, mode guards, Time locks, MIDI target identity, recording hit areas, bank retention and atomic progress publication.
 
-The Linux app and 20 of 21 selected regression targets pass. The remaining
-`test_sister_routes` assertion at line 153 fails identically on a fresh build of
-unchanged main (`7a4b8ad`); this PR does not change it. Other selected targets cover
-Prism/Zoya, Sister runtime/FX/Fallout, presets/projects, MIDI/performance, FM,
-Mosaic recording/ownership, sample pages, capture, external input and Portal
-controller behavior. Controller fixtures use SDL dummy devices. Actual Windows
-audio hardware, hardware MIDI input, and CDP processor listening are not certified
-by these tests.
+Controller fixtures use SDL dummy devices. Actual Windows audio hardware,
+hardware MIDI input, and CDP processor listening need a separate hardware check.
 
 The screenshot is captured from the native application, using test-only scripted
 SDL input and software rendering. The release binary has no screenshot driver.

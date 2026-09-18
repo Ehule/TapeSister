@@ -482,9 +482,8 @@ int ts_performance_release_latched_event(TsPerformanceBank *bank,
     for (int i = 0; i < TS_PERFORMANCE_VOICE_LIMIT; ++i) {
         TsPerformanceVoice *voice = &bank->voices[i];
         if (voice->active && voice->latched && !voice->tile_launched &&
-            voice->midi_note == event->midi_note &&
-            ts_note_event_same_trigger(event, voice->origin, voice->note,
-                                       voice->channel)) {
+            ts_note_event_same_latched_pitch(event, voice->origin,
+                                             voice->midi_note, voice->channel)) {
             voice_deactivate(voice);
             ++released;
         }

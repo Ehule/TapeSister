@@ -4049,16 +4049,24 @@ static void begin_fm_note_event(SDL_AudioDeviceID device, AudioState *audio,
     char note_name[8];
     int capture_started = 0;
     (void)instrument;
-    if (!device || preview == NULL || preview->data == NULL || event == NULL) return;
+    if (!device || event == NULL) return;
     SDL_LockAudioDevice(device);
+    latched = latched || ui->keyboard_hold;
+    /* Releasing an existing latch must work while the next FM preview is
+       unavailable, including notes owned by the previous tile/Sister route. */
+    result = latched && runtime_note_toggle_latched_event(audio, event) ?
+        TS_NOTE_TOGGLED_OFF : TS_NOTE_START_FAILED;
+    if (result != TS_NOTE_TOGGLED_OFF && (preview == NULL || preview->data == NULL)) {
+        SDL_UnlockAudioDevice(device);
+        return;
+    }
     if (audio->capture.state != TS_CAPTURE_RECORDING)
         audio->playing = 0;
     audio->bank_slot = -1;
     ts_note_bank_set_attack_ms(&audio->notes, ui->config.voice_attack_ms);
     keyboard_loop_policy(audio, ui);
-    latched = latched || ui->keyboard_hold;
-    result = latched && runtime_note_toggle_latched_event(audio, event) ?
-        TS_NOTE_TOGGLED_OFF : ts_note_bank_start_sample_event(
+    if (result != TS_NOTE_TOGGLED_OFF)
+        result = ts_note_bank_start_sample_event(
             &audio->notes, preview, &unity, event, latched, output_rate);
     if (result == TS_NOTE_STARTED &&
         audio->capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER) {
@@ -12518,7 +12526,9 @@ int main(int argc, char **argv)
     TsSamplePages sample_pages;
     TsInstrument *parked_instrument = NULL;
     TsUiState ui;
-    SisterWindow sister_window = {0};
+    /* Session-wide preset banks include all 26 Prism states. Keep this storage
+       off the main-thread stack, including on platforms with an 8 MiB limit. */
+    static SisterWindow sister_window;
     TapeCompanion companion_focus;
     TsFramebuffer framebuffer;
     uint32_t *frame_snapshot = NULL;

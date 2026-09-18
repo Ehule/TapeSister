@@ -23,7 +23,7 @@ this timing is independent of audio. The field remains behind the optical diagra
 ![Native activation preview, looping for inspection](images/prism-nebula-intro.gif)
 
 The GIF loops for inspection. The application's introduction only runs on a
-visible Prism off-to-on transition. A–L morphs, Matrix steps, note attacks,
+visible Prism off-to-on transition. A–Z morphs, Matrix steps, note attacks,
 Sound/Perform/Presets switching and Sister's tape POWER do not restart it.
 Leaving Prism, opening Matrix or an overlay, hiding/minimizing Sister, or
 turning Prism off stops the animation work. Returning shows settled matter,
@@ -74,7 +74,7 @@ prism_zoya_pose=nebula
 
 The historical key is retained for compatibility. Missing entries select
 `nebula`; invalid values report a configuration error. This preference belongs
-to the application and remains independent of sound presets, projects and A–L.
+to the application and remains independent of sound presets, projects and A–Z.
 Existing `off` preferences survive audio settings saves and relaunches.
 
 ## Implementation

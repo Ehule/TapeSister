@@ -334,7 +334,7 @@ int ts_config_load(TsConfig *config, const char *path,
         } else if (strcmp(key, "prism_morph_seconds") == 0) {
             if (!parse_clamped_float(value, .05f, 3600.f, &loaded.prism_morph_seconds)) { snprintf(error, error_size, "Invalid prism_morph_seconds on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "prism_step_seconds") == 0) {
-            if (!parse_clamped_float(value, .05f, 3600.f, &loaded.prism_step_seconds)) { snprintf(error, error_size, "Invalid prism_step_seconds on config line %d", line_number); fclose(file); return 0; }
+            if (!parse_clamped_float(value, 0, 3600.f, &loaded.prism_step_seconds)) { snprintf(error, error_size, "Invalid prism_step_seconds on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "mosaic_record_seconds") == 0) {
             if (!parse_clamped_integer(value, 0, 3600, &loaded.mosaic_record_seconds)) { snprintf(error, error_size, "Invalid mosaic_record_seconds on config line %d", line_number); fclose(file); return 0; }
             if(loaded.mosaic_record_seconds>0 && loaded.mosaic_record_seconds<10)loaded.mosaic_record_seconds=10;

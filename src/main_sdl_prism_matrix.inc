@@ -53,6 +53,7 @@ static int sister_prism_matrix_event(SDL_AudioDeviceID device,AudioState *audio,
     /* This existing parameter keeps its MIDI identity and drag behavior. */
     if(x>=480 && x<616 && y>=78 && y<100 && event->type==SDL_MOUSEBUTTONDOWN && event->button.button==SDL_BUTTON_LEFT)return 0;
     int cell=ts_sister_ui_prism_matrix_cell(x,y);
+    int bank_state=ts_sister_ui_prism_matrix_bank_state(x,y);
     if(event->type==SDL_MOUSEWHEEL && (!wheel || !ts_ui_wheel_guard_accept(&ui->wheel_guard,
         WHEEL_TARGET_SISTER+0x280+(cell>=0?cell:64),SDL_GetTicks())))return 1;
     int right=event->type==SDL_MOUSEBUTTONDOWN && event->button.button==SDL_BUTTON_RIGHT;
@@ -62,9 +63,12 @@ static int sister_prism_matrix_event(SDL_AudioDeviceID device,AudioState *audio,
     if(cell>=0) {
         if(event->type==SDL_MOUSEBUTTONDOWN && event->button.button==SDL_BUTTON_LEFT && (SDL_GetModState()&KMOD_SHIFT))c.matrix.length=cell+1;
         else if(middle)c.matrix.step[cell]=-1;
-        else c.matrix.step[cell]=((c.matrix.step[cell]+1+change%13+13)%13)-1;
+        else {
+            const int choices=TS_PRISM_STATES+1; /* HOLD plus A-Z. */
+            c.matrix.step[cell]=((c.matrix.step[cell]+1+change%choices+choices)%choices)-1;
+        }
         snprintf(s->model.status,sizeof(s->model.status),"MATRIX STEP %02d / %s / CHANGES APPLY ON NEXT VISIT",cell+1,
-            c.matrix.step[cell]<0?"HOLD":"A-L REFERENCE");
+            c.matrix.step[cell]<0?"HOLD":"A-Z REFERENCE");
     } else if(y>=48 && y<70 && x>=16 && x<86 && !wheel) {
         s->model.prism_panel=s->model.prism_matrix_previous_panel;s->rendered_model_valid=0;return 1;
     } else if(y>=78 && y<100) {
@@ -77,8 +81,12 @@ static int sister_prism_matrix_event(SDL_AudioDeviceID device,AudioState *audio,
         } else if(x>=184 && x<246 && !wheel)c.matrix.loop=!c.matrix.loop;
         else if(x>=254 && x<340)c.matrix.length=SDL_clamp(c.matrix.length+change,1,TS_PRISM_MATRIX_STEPS);
         else if(x>=348 && x<472) {
-            if(wheel)c.matrix.step_seconds*=powf((SDL_GetModState()&KMOD_SHIFT)?1.01f:1.1f,(float)wheel);
-            else c.matrix.step_seconds=ts_prism_time_from_normalized((x-348)/123.f);
+            if(wheel) {
+                float seconds=c.matrix.step_seconds>0?c.matrix.step_seconds:TS_PRISM_TIME_MIN;
+                seconds*=powf((SDL_GetModState()&KMOD_SHIFT)?1.01f:1.1f,(float)wheel);
+                c.matrix.step_seconds=seconds<TS_PRISM_TIME_MIN?0:seconds;
+            } else if(right)c.matrix.step_seconds=0;
+            else c.matrix.step_seconds=ts_prism_step_time_from_normalized((x-348)/123.f);
         } else if(x>=480 && x<616 && wheel) {
             if(ts_sister_ui_parameter_locked(&s->model,TS_SISTER_UI_PARAM_PRISM_TIME)) {
                 snprintf(s->model.status,sizeof(s->model.status),"MORPH TIME LOCKED / SHIFT-CLICK TO UNLOCK");return 1;
@@ -86,8 +94,8 @@ static int sister_prism_matrix_event(SDL_AudioDeviceID device,AudioState *audio,
             c.morph_seconds*=powf((SDL_GetModState()&KMOD_SHIFT)?1.01f:1.1f,(float)wheel);
         }
         else return 1;
-    } else if(y>=318 && y<340 && x>=16 && x<616 && (x-16)%50<46 && !wheel) {
-        int state=(x-16)/50;
+    } else if(bank_state>=0 && !wheel) {
+        int state=bank_state;
         /* The live patch prefix is an editor while Matrix owns its frozen pair.
            It reaches the bank only on SAVE; no audition interrupts playback. */
         int side=c.endpoint[0]==state?0:1;ts_prism_assign_endpoint(&c,side,state);

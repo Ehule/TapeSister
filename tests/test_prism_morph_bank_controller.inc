@@ -16,15 +16,15 @@ static void test_prism_morph_bank_ui(void)
     AudioState *a=routing_audio(0);SisterWindow *s=calloc(1,sizeof(*s));assert(s);
     ts_sister_ui_model_init(&s->model,&ui.config);s->model.parameters=a->sister.parameters;
     s->model.fx_page=3;s->model.prism_panel=1;
-    s->window=SDL_CreateWindow("Twelve Prism states",0,0,1280,800,SDL_WINDOW_HIDDEN);assert(s->window);
+    s->window=SDL_CreateWindow("26 Prism states",0,0,1280,800,SDL_WINDOW_HIDDEN);assert(s->window);
     s->window_id=SDL_GetWindowID(s->window);
     for(int state=0;state<TS_PRISM_STATES;++state) {
         int side=state?1:0;TsPrismControls c=a->sister.parameters.prism;
-        c.enabled=1;c.lenses=state+2;c.pitch_offset[3]=state*20;c.morph_seconds=.05f;
+        c.enabled=1;c.lenses=2+state%(TS_PRISM_LENSES-1);c.pitch_offset[3]=state*20;c.morph_seconds=.05f;
         sister_prism_publish(0,a,s,&c);morph_bank_choose(s,side,state);
         assert(sister_prism_performance_click(0,a,s,25+side*75,290,0,KMOD_NONE));
     }
-    TsPrismControls bank=a->sister.parameters.prism;assert(bank.captured==4095);
+    TsPrismControls bank=a->sister.parameters.prism;assert(bank.captured==((1<<TS_PRISM_STATES)-1));
     assert(sister_prism_performance_click(0,a,s,25,290,1,KMOD_NONE));
     TsPrismControls before=a->sister.parameters.prism;
     SDL_Event wheel={0};wheel.type=SDL_MOUSEWHEEL;wheel.wheel.windowID=s->window_id;wheel.wheel.y=2;
@@ -82,12 +82,18 @@ static void test_prism_morph_bank_ui(void)
     assert(a->sister.parameters.prism.morph_enabled && a->sister.parameters.prism.morph==.375f && !a->sister.parameters.prism.morph_trigger);
     const char *shot=getenv("TS_PRISM_BANK_SCREENSHOT");
     if(shot) {
-        TsPrismControls shown=a->sister.parameters.prism;shown.enabled=1;sister_prism_publish(0,a,s,&shown);
-        snprintf(s->model.status,sizeof(s->model.status),"12 STATES A-L / WHEEL TO CHOOSE / CLICK TO MORPH");
+        TsPrismControls shown=a->sister.parameters.prism;shown.enabled=1;shown.morph_seconds=240;
+        sister_prism_publish(0,a,s,&shown);
+        snprintf(s->model.status,sizeof(s->model.status),"26 STATES A-Z / WHEEL TO CHOOSE / CLICK TO MORPH");
         static TsFramebuffer fb;ts_sister_ui_render(&fb,&s->model,&ui.palette);assert(ts_ui_write_ppm(&fb,shot));}
     assert(sister_prism_clear_capture(0,a,s,25+side*75,290));
-    assert(a->sister.parameters.prism.captured==(4095&~4));
+    assert(a->sister.parameters.prism.captured==(((1<<TS_PRISM_STATES)-1)&~4));
     for(int i=0;i<TS_PRISM_STATES;++i)if(i!=2)
+        assert(!memcmp(ts_prism_state_const(&bank,i),ts_prism_state_const(&a->sister.parameters.prism,i),sizeof(TsPrismPatch)));
+    bank=a->sister.parameters.prism;side=bank.endpoint[0]==25?0:1;
+    morph_bank_choose(s,side,25);assert(sister_prism_clear_capture(0,a,s,25+side*75,290));
+    assert(a->sister.parameters.prism.captured==(bank.captured&~(1<<25)));
+    for(int i=0;i<25;++i)
         assert(!memcmp(ts_prism_state_const(&bank,i),ts_prism_state_const(&a->sister.parameters.prism,i),sizeof(TsPrismPatch)));
     SDL_DestroyWindow(s->window);free(s);routing_free(a);
 }
@@ -100,7 +106,7 @@ static void test_prism_empty_state_edit(void)
     s->window_id=SDL_GetWindowID(s->window);
     TsPrismControls bank=a->sister.parameters.prism;
     for(int i=0;i<TS_PRISM_STATES;++i) {
-        bank.enabled=1;bank.mode=i%TS_PRISM_MODE_COUNT;bank.lenses=i+2;
+        bank.enabled=1;bank.mode=i%TS_PRISM_MODE_COUNT;bank.lenses=2+i%(TS_PRISM_LENSES-1);
         bank.spread=.07f*i;ts_prism_capture(&bank,i);
     }
     bank.endpoint[0]=6;bank.endpoint[1]=3; /* Screenshot: G/D with C browsed. */
@@ -130,7 +136,7 @@ static void test_prism_empty_state_edit(void)
         TsPrismControls cleared=a->sister.parameters.prism;
         assert(!cleared.morph_enabled && !cleared.morph_trigger && cleared.endpoint[side]==state);
         assert(!s->model.prism_browse[0] && !s->model.prism_browse[1]);
-        assert(cleared.captured==(4095&~(1<<state)));
+        assert(cleared.captured==(((1<<TS_PRISM_STATES)-1)&~(1<<state)));
         assert(ts_sister_ui_prism_capture_visual(&s->model,side)==TS_PRISM_CAPTURE_EMPTY);
         assert(!strstr(ts_sister_ui_prism_edit_status(&s->model),"CHOOSE"));
         int source=action?bank.endpoint[positions[phase]>=.5f]:bank.endpoint[1-side];
@@ -146,7 +152,7 @@ static void test_prism_empty_state_edit(void)
         sister_apply_action(0,a,&ui,&instrument,s,NULL,NULL,mode,48000,2);
         assert(ts_prism_factory_find(&a->sister.parameters.prism)==(factory+1)%TS_PRISM_FACTORY_PRESETS);
         e.button.button=SDL_BUTTON_LEFT;assert(sister_prism_event(0,a,&ui,s,&e));
-        assert(a->sister.parameters.prism.captured==4095);
+        assert(a->sister.parameters.prism.captured==((1<<TS_PRISM_STATES)-1));
         assert(!memcmp(ts_prism_state_const(&a->sister.parameters.prism,state),&a->sister.parameters.prism,sizeof(TsPrismPatch)));
     }
     /* Clearing a stale candidate already bound by the other button must not

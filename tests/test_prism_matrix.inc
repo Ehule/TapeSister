@@ -4,11 +4,11 @@ static TsPrismControls matrix_settings(void)
 {
     TsPrismControls c=settings();
     for(int i=0;i<TS_PRISM_STATES;++i) {
-        c.lenses=2+i;c.spread=.08f*i;c.drift=0;c.pitch_offset[1]=i*13;
+        c.lenses=2+i%(TS_PRISM_LENSES-1);c.spread=.08f*i;c.drift=0;c.pitch_offset[1]=i*13;
         ts_prism_capture(&c,i);
     }
     ts_prism_recall(&c,0);c.matrix_run=1;c.matrix_restart=1;
-    c.matrix.step_seconds=.05f;c.morph_seconds=.05f;c.matrix.loop=0;
+    c.matrix.step_seconds=0;c.morph_seconds=.05f;c.matrix.loop=0;
     return c;
 }
 static void matrix_wait_step(TsPrism *p,int step)
@@ -21,18 +21,18 @@ static void matrix_wait_step(TsPrism *p,int step)
 static void check_prism_matrix(void)
 {
     TsPrism p={0};assert(ts_prism_prepare(&p,48000));
-    TsPrismControls c=matrix_settings();c.matrix.length=64;
-    for(int i=0;i<64;++i)c.matrix.step[i]=i%12;
+    TsPrismControls c=matrix_settings();c.matrix.length=64;c.matrix.step_seconds=.05f;
+    for(int i=0;i<64;++i)c.matrix.step[i]=i%TS_PRISM_STATES;
     ts_prism_set_controls(&p,&c);
     int last=-1,visited=0;
-    for(unsigned frame=0;frame<160000;++frame) {
+    for(unsigned frame=0;frame<320000;++frame) {
         TsStereoFrame out=ts_prism_process(&p,(TsStereoFrame){.1f,-.2f});
         assert(isfinite(out.l) && isfinite(out.r));
         TsPrismView v=ts_prism_view(&p);
         if(v.matrix_step!=last) {
-            assert(v.matrix_step==last+1 && v.matrix_to==v.matrix_step%12);
+            assert(v.matrix_step==last+1 && v.matrix_to==v.matrix_step%TS_PRISM_STATES);
             /* No accumulated hop-sized timing drift over 64 cells. */
-            assert(abs((int)frame-v.matrix_step*2400)<=64);
+            assert(abs((int)frame-v.matrix_step*4800)<=64);
             last=v.matrix_step;++visited;
         }
     }
@@ -49,12 +49,12 @@ static void check_prism_matrix(void)
        Uninitialized and blank destinations both hold rather than reset Prism. */
     memset(&p,0,sizeof(p));assert(ts_prism_prepare(&p,48000));
     c=matrix_settings();c.matrix.length=5;c.matrix.step_seconds=.1f;
-    c.matrix.step[0]=3;c.matrix.step[1]=-1;c.matrix.step[2]=11;c.matrix.step[3]=3;c.matrix.step[4]=3;
-    c.captured&=~(1<<11);ts_prism_set_controls(&p,&c);matrix_wait_step(&p,0);
+    c.matrix.step[0]=3;c.matrix.step[1]=-1;c.matrix.step[2]=25;c.matrix.step[3]=3;c.matrix.step[4]=3;
+    c.captured&=~(1<<25);ts_prism_set_controls(&p,&c);matrix_wait_step(&p,0);
     TsPrismPatch first=p.matrix.pair[1];
     c.pitch_offset[1]=733;ts_prism_capture(&c,3);ts_prism_set_controls(&p,&c);
     assert(!memcmp(&first,&p.matrix.pair[1],sizeof(first)));
-    performance_tick(&p,3000);assert(p.matrix.step==0 && p.matrix.position==1); /* Morph shorter than STEP: hold. */
+    performance_tick(&p,3000);assert(p.matrix.step==0 && p.matrix.position==1); /* Morph completed: the separate STEP hold is active. */
     matrix_wait_step(&p,1);assert(!p.matrix.missing && p.matrix.letter[1]==3);
     assert(!memcmp(&p.matrix.pair[0],&first,sizeof(first)));
     matrix_wait_step(&p,2);assert(p.matrix.missing && p.matrix.letter[1]==3);
@@ -94,7 +94,7 @@ static void check_prism_matrix(void)
     performance_tick(&p,64);assert(p.morph_position==position);
     held.morph=.8f;ts_prism_set_controls(&p,&held);performance_tick(&p,64);assert(p.morph_position==.8f);
     held.matrix_run=1;++held.matrix_restart;ts_prism_set_controls(&p,&held);matrix_wait_step(&p,0);
-    assert(p.matrix.morph_duration==p.matrix.duration); /* Long Morph Time capped only for Matrix. */
+    assert(p.matrix.morph_duration==c.morph_seconds && p.matrix.duration==c.matrix.step_seconds); /* Independent travel and stay. */
     assert(p.controls.morph_seconds==.7f);
     held.matrix_run=0;ts_prism_matrix_export(&p,&held);ts_prism_set_controls(&p,&held);
     held.matrix_run=1;++held.matrix_restart;ts_prism_set_controls(&p,&held);
@@ -104,7 +104,7 @@ static void check_prism_matrix(void)
 
     /* Config and parked transition round-trip, transport always loads stopped. */
     TsPrismBank *bank=calloc(1,sizeof(*bank)),*loaded=calloc(1,sizeof(*loaded));assert(bank && loaded);
-    c=held;for(int i=0;i<64;++i)c.matrix.step[i]=i%13-1;
+    c=held;for(int i=0;i<64;++i)c.matrix.step[i]=i%(TS_PRISM_STATES+1)-1;
     c.matrix.length=63;c.matrix.loop=1;c.matrix.step_seconds=3.75f;c.matrix_run=1;c.matrix_restart=99;
     bank->count=1;strcpy(bank->entries[0].name,"MATRIX");bank->entries[0].controls=c;
     TsPrismControls expected=c;expected.matrix_run=0;expected.matrix_restart=0;
@@ -124,4 +124,71 @@ static void check_prism_matrix(void)
     free(full);free(copy);free(bank);free(loaded);
     remove("matrix-prism.ini");remove("matrix-project.ini");remove("matrix-sister.ini");
     puts("Prism Matrix order, clocks, bank ownership, manual handoff, DSP parity and persistence passed.");
+}
+
+static void check_prism_matrix_live_timing(void)
+{
+    /* The two user examples each take 70 seconds, in opposite phase orders.
+       Low-rate input accelerates the test without replacing the real scheduler. */
+    for(int reverse=0;reverse<2;++reverse) {
+        TsPrism p={0};assert(ts_prism_prepare(&p,640));
+        TsPrismControls c=matrix_settings();c.matrix.length=2;c.matrix.step[0]=25;c.matrix.step[1]=12;
+        c.morph_seconds=reverse?10:60;c.matrix.step_seconds=reverse?60:10;
+        ts_prism_set_controls(&p,&c);performance_tick(&p,(unsigned)(640*c.morph_seconds));
+        assert(!p.matrix.holding && p.matrix.step==0 && p.matrix.position>.98f);
+        performance_tick(&p,128);
+        assert(p.matrix.holding && p.matrix.position==1 && p.matrix.step==0);
+        performance_tick(&p,(unsigned)(640*c.matrix.step_seconds)-192);
+        assert(p.matrix.step==0 && p.matrix.holding);
+        performance_tick(&p,192);assert(p.matrix.step==1 && !p.matrix.holding);
+        ts_prism_free(&p);
+    }
+    /* 64 frames = 10 ms. Change the actual four-minute defaults mid-phase. */
+    TsPrism p={0};assert(ts_prism_prepare(&p,6400));
+    TsPrismControls c=matrix_settings();c.matrix.length=3;
+    c.matrix.step[0]=25;c.matrix.step[1]=12;c.matrix.step[2]=0;
+    c.matrix.step_seconds=c.morph_seconds=240;
+    ts_prism_set_controls(&p,&c);performance_tick(&p,1280);
+    TsPrismPatch pair[2];memcpy(pair,p.matrix.pair,sizeof(pair));
+    c.morph_seconds=.4f;ts_prism_set_controls(&p,&c);performance_tick(&p,64);
+    assert(p.matrix.step==0 && fabsf(p.matrix.position-.5f)<.0001f);
+    c.morph_seconds=.8f;ts_prism_set_controls(&p,&c);performance_tick(&p,64);
+    assert(fabsf(p.matrix.position-.2625f)<.0001f); /* Elapsed/new travel time. */
+    c.matrix.step_seconds=.1f;ts_prism_set_controls(&p,&c);performance_tick(&p,64);
+    assert(!p.matrix.holding && fabsf(p.matrix.position-.275f)<.0001f); /* Step cannot cap Morph. */
+    c.morph_seconds=.05f;ts_prism_set_controls(&p,&c);performance_tick(&p,64);
+    assert(p.matrix.holding && p.matrix.position==1 && p.matrix.step==0);
+    assert(fabs(p.matrix.elapsed-.01)<.0001); /* Shortened morph starts a fresh hold. */
+    c.matrix.step_seconds=240;c.morph_seconds=3600;ts_prism_set_controls(&p,&c);performance_tick(&p,1280);
+    assert(p.matrix.holding && p.matrix.position==1 && p.matrix.step==0); /* No rewind during the hold. */
+    c.matrix.step_seconds=1;ts_prism_set_controls(&p,&c);performance_tick(&p,64);
+    assert(fabsf(ts_prism_view(&p).matrix_progress-.22f)<.0001f);
+    c.matrix.step_seconds=2;ts_prism_set_controls(&p,&c);performance_tick(&p,64);
+    assert(fabsf(ts_prism_view(&p).matrix_progress-.115f)<.0001f);
+    assert(!memcmp(pair,p.matrix.pair,sizeof(pair)));
+    c.matrix.step_seconds=.05f;ts_prism_set_controls(&p,&c);performance_tick(&p,64);
+    assert(p.matrix.step==1 && p.matrix.letter[0]==25 && p.matrix.letter[1]==12);
+    assert(p.matrix.position==0 && fabs(p.matrix.elapsed-.01)<.0001);
+    performance_tick(&p,64);assert(p.matrix.step==1 && p.matrix.position<.00001f); /* No catch-up skipping. */
+    c.matrix.step_seconds=0;c.morph_seconds=.05f;ts_prism_set_controls(&p,&c);
+    performance_tick(&p,1024);assert(!p.matrix.running && p.matrix.position==1);
+    c.matrix.step_seconds=240;ts_prism_set_controls(&p,&c);performance_tick(&p,128);
+    assert(!p.matrix.running && p.matrix.position==1); /* Timing cannot restart a completed pattern. */
+    ts_prism_free(&p);
+    /* JOINING is travel only. Step changes must not truncate it. */
+    for(int side=0;side<2;++side) {
+        memset(&p,0,sizeof(p));assert(ts_prism_prepare(&p,6400));
+        c=matrix_settings();c.matrix.step[0]=25;c.matrix_run=0;c.morph_enabled=1;c.morph=side?.7f:.3f;
+        c.morph_seconds=240;c.matrix.step_seconds=.05f;ts_prism_set_controls(&p,&c);performance_tick(&p,64);
+        c.matrix_run=1;ts_prism_set_controls(&p,&c);performance_tick(&p,1280);
+        assert(p.matrix.waiting && p.matrix.target==side);
+        c.morph_seconds=.4f;ts_prism_set_controls(&p,&c);performance_tick(&p,64);
+        assert(p.matrix.waiting && fabsf(p.matrix.position-(side?.85f:.15f))<.0001f);
+        c.matrix.step_seconds=0;ts_prism_set_controls(&p,&c);performance_tick(&p,64);
+        assert(p.matrix.waiting);
+        c.morph_seconds=.05f;ts_prism_set_controls(&p,&c);performance_tick(&p,64);
+        assert(!p.matrix.waiting && p.matrix.step==0 && p.matrix.position==0);
+        ts_prism_free(&p);
+    }
+    puts("Independent Matrix travel/stay, live phase timing, no skipped cells and joining passed.");
 }

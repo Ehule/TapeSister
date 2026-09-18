@@ -7,12 +7,14 @@
 #include <stdio.h>
 
 enum { TS_PRISM_BASE_LENSES = 12, TS_PRISM_LENSES = 24, TS_PRISM_HOP = 64,
-       TS_PRISM_STATES = 12, TS_PRISM_MATRIX_STEPS = 64 };
+       TS_PRISM_STATES = 26, TS_PRISM_MATRIX_STEPS = 64 };
 #define TS_PRISM_TIME_MIN .05f
 #define TS_PRISM_TIME_MAX 3600.f
 #define TS_PRISM_TIME_DEFAULT 240.f
 float ts_prism_time_from_normalized(float amount);
 float ts_prism_time_normalized(float seconds);
+float ts_prism_step_time_from_normalized(float amount);
+float ts_prism_step_time_normalized(float seconds);
 void ts_prism_time_label(char *label, size_t size, float seconds);
 
 typedef enum { TS_PRISM_SUPERSAW, TS_PRISM_ENSEMBLE, TS_PRISM_HARMONIC, TS_PRISM_FIFTHS,
@@ -36,9 +38,9 @@ typedef struct { TS_PRISM_PATCH_FIELDS } TsPrismPatch;
 enum { TS_PRISM_LOCK_PITCH=1, TS_PRISM_LOCK_MOTION=2, TS_PRISM_LOCK_GLASS=4,
        TS_PRISM_LOCK_MIX=8, TS_PRISM_LOCK_COUNT=16, TS_PRISM_LOCK_SEQUENCE=32 };
 typedef struct {
-    int step[TS_PRISM_MATRIX_STEPS]; /* -1 holds; otherwise an A-L bank reference. */
+    int step[TS_PRISM_MATRIX_STEPS]; /* -1 holds; otherwise an A-Z bank reference. */
     int length, loop;
-    float step_seconds;
+    float step_seconds; /* Hold after reaching the destination; independent of Morph. */
 } TsPrismMatrixControls;
 typedef struct {
     TS_PRISM_PATCH_FIELDS
@@ -50,7 +52,7 @@ typedef struct {
     int seq_enabled, seq_count, sequence[TS_PRISM_LENSES];
     float seq_rate;
     uint32_t seq_reset, locks;
-    TsPrismPatch extra[TS_PRISM_STATES-2]; /* C-L; legacy A/B fields stay intact. */
+    TsPrismPatch extra[TS_PRISM_STATES-2]; /* C-Z; legacy A/B fields stay intact. */
     int endpoint[2]; /* Bank letters assigned to the two ends of the fader. */
     TsPrismMatrixControls matrix;
     int matrix_run;
@@ -113,10 +115,10 @@ typedef struct {
     float matrix_progress, matrix_morph, matrix_step_seconds, matrix_morph_seconds;
 } TsPrismView;
 typedef struct {
-    int active, running, step, waiting, missing, pending;
+    int active, running, step, waiting, missing, pending, holding;
     int letter[2];
     TsPrismPatch pair[2];
-    double elapsed, duration, morph_duration;
+    double elapsed, duration, morph_duration; /* Phase elapsed, hold time, travel time. */
     float position, start, target;
 } TsPrismMatrix;
 typedef struct {
@@ -164,7 +166,7 @@ int ts_prism_prepare(TsPrism *prism, uint32_t sample_rate);
 void ts_prism_free(TsPrism *prism);
 void ts_prism_set_controls(TsPrism *prism, const TsPrismControls *controls);
 /* Audio owner / device lock required. Exports a parked transition without
-   changing transport or overwriting any A-L bank memory. */
+   changing transport or overwriting any A-Z bank memory. */
 int ts_prism_matrix_export(const TsPrism *prism, TsPrismControls *controls);
 TsStereoFrame ts_prism_process(TsPrism *prism, TsStereoFrame input);
 /* Audio owner only; the runtime publishes this through its atomic snapshot. */

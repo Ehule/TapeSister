@@ -162,7 +162,7 @@ static void test_long_config(void)
     FILE *f=fopen("test-glacial.ini","w");CHECK(f!=NULL);
     if(f){fputs("prism_morph_seconds=9000\nprism_step_seconds=-4\nmosaic_record_seconds=4\nmosaic_silence_db=-100\n",f);fclose(f);}
     CHECK(ts_config_load(&d,"test-glacial.ini",error,sizeof(error)));
-    CHECK(d.prism_morph_seconds==3600 && d.prism_step_seconds==.05f && d.mosaic_record_seconds==10 && d.mosaic_silence_db==-90);
+    CHECK(d.prism_morph_seconds==3600 && d.prism_step_seconds==0 && d.mosaic_record_seconds==10 && d.mosaic_silence_db==-90);
     remove("test-glacial.ini");
     for(int seconds=10;seconds<=3600;++seconds)CHECK(ts_mosaic_record_length_seconds(ts_mosaic_record_length_normalized(seconds))==seconds);
     CHECK(ts_mosaic_record_length_seconds(1)==0);

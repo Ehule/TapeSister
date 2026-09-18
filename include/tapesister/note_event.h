@@ -42,6 +42,11 @@ int ts_note_event_midi(TsNoteEvent *event, int midi_note, int velocity,
                        int channel);
 int ts_note_event_same_trigger(const TsNoteEvent *event,
                                TsNoteOrigin origin, int key, int channel);
+/* Explicit latch toggles follow the displayed pitch after the keyboard moves.
+   Ordinary key-up still follows the original physical trigger above. */
+int ts_note_event_same_latched_pitch(const TsNoteEvent *event,
+                                     TsNoteOrigin origin, int midi_note,
+                                     int channel);
 float ts_note_event_gain(const TsNoteEvent *event);
 int ts_midi_decode_short_message(uint8_t status, uint8_t data1, uint8_t data2,
                                  TsMidiEvent *event);
