@@ -74,6 +74,16 @@ record_tail_ms=180
 ; Hard safety limit for a single recorded tile.
 record_max_seconds=20
 
+[Mosaic Recording]
+; Independent card length: 0=unlimited, otherwise 10..3600 seconds.
+; LENGTH slider/wheel on Mosaic saves this preference. Does not change REC FILE.
+mosaic_record_seconds=0
+; Unlimited takes auto-stop after this many consecutive quiet seconds; 0 disables.
+; Finite takes retain their exact duration, including silence.
+mosaic_silence_seconds=120
+; Quiet threshold in dBFS (-90..0); lower it to preserve very quiet drones.
+mosaic_silence_db=-60
+
 [Internal Capture]
 ; Resize the armed blank tile to the completed Capture duration. Set to 0 to
 ; retain the blank canvas duration used when Capture is armed.
@@ -82,11 +92,14 @@ capture_auto_resize=1
 capture_max_seconds=20
 
 [Prism]
-; Zoya pose: meditation (default), standing or off. Edit while TapeSister is closed.
-; meditation = seated with hands on knees at SOURCE, suspended at OUT.
-; standing = the diffuse reaching pose at both ends.
-; off = no Zoya figures or activation animation; Prism optics and audio remain active.
-prism_zoya_pose=meditation
+; Prism particles: nebula (default) or off. Edit while TapeSister is closed.
+; off hides particles and their animation; optics and audio remain active.
+; Legacy meditation/standing values migrate to nebula.
+prism_zoya_pose=nebula
+; Startup durations, in seconds: 0.05..3600 (one hour). 240 = four minutes.
+; Saved projects and presets retain their own durations.
+prism_morph_seconds=240
+prism_step_seconds=240
 
 [Sister Machine]
 ; Open the independent Sister Machine window maximized. Set to 0 for 640x400.

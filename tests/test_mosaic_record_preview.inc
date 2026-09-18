@@ -24,7 +24,7 @@ static void test_mosaic_record_preview(SDL_AudioDeviceID device)
         float value=i<1000?.85f:i<2000?0:.25f;
         if(i>=4000)value=(.1f+.7f*fabsf(sinf((i-4000)*.002f)))*sinf(i*.067f);
         assert(!ts_external_recorder_write_frame(&input->recorder,(TsStereoFrame){value,-value}));
-        if(i%500==499)sync_external_capture_ui(device,0,input,u);
+        if(i%500==499){SDL_Delay(2);sync_external_capture_ui(device,0,input,u);}
         if(i==499) {
             ts_ui_render(&on,u,&instrument);int ink=0;
             for(int px=0;px<640*400;++px)ink+=on.pixels[px]==0xffee8b95u;

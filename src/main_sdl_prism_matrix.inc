@@ -78,7 +78,7 @@ static int sister_prism_matrix_event(SDL_AudioDeviceID device,AudioState *audio,
         else if(x>=254 && x<340)c.matrix.length=SDL_clamp(c.matrix.length+change,1,TS_PRISM_MATRIX_STEPS);
         else if(x>=348 && x<472) {
             if(wheel)c.matrix.step_seconds*=powf((SDL_GetModState()&KMOD_SHIFT)?1.01f:1.1f,(float)wheel);
-            else c.matrix.step_seconds=.05f*powf(2400,SDL_clamp((x-348)/123.f,0,1));
+            else c.matrix.step_seconds=ts_prism_time_from_normalized((x-348)/123.f);
         } else if(x>=480 && x<616 && wheel) {
             if(ts_sister_ui_parameter_locked(&s->model,TS_SISTER_UI_PARAM_PRISM_TIME)) {
                 snprintf(s->model.status,sizeof(s->model.status),"MORPH TIME LOCKED / SHIFT-CLICK TO UNLOCK");return 1;

@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 #include "tapesister/sample.h"
+#include "tapesister/performance_recorder.h"
 
 typedef enum {
     TS_CAPTURE_IDLE = 0,
@@ -67,6 +68,11 @@ typedef struct {
     int threshold_db;
     int destination_slot;
     int stopped_early;
+    /* Mosaic streams to disk; buffer is then only a bounded preview ring.
+       The owning controller must stop/join its writer before freeing. */
+    TsPerformanceRecorder *stream;
+    size_t preview_capacity;
+    int stream_overrun, silence_stopped;
     _Atomic TsExternalCaptureState state;
 } TsExternalRecorder;
 
@@ -121,6 +127,11 @@ int ts_external_recorder_arm_channels(
     uint32_t sample_rate, uint8_t channels, int threshold_db,
     int pre_roll_ms, int silence_ms, int tail_ms, int max_seconds,
     char *error, size_t error_size);
+/* Prepare off the audio thread. Starts immediately, independent of REC BANK.
+   seconds=0 has no duration cap; only unlimited takes use the silence timer. */
+int ts_external_recorder_arm_stream(TsExternalRecorder *recorder, const char *path,
+    uint32_t rate, uint8_t channels, int seconds, int silence_seconds, int silence_db,
+    char *error, size_t size);
 int ts_external_recorder_write_sample(TsExternalRecorder *recorder, float sample);
 /* Start an armed recorder immediately, keeping silence until manual stop or
    capacity. Discards pre-roll; caller holds the recorder's audio-device lock. */

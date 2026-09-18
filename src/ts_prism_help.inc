@@ -164,7 +164,7 @@ void ts_sister_ui_prism_help(const TsSisterUiModel *m,int x,int y,char *help,siz
         case TS_SISTER_UI_PARAM_PRISM_DRY: TIP("DRY LEVEL: original signal trim, up to 200%, before the Wet crossfade. At Wet 100% this branch is silent.");
         case TS_SISTER_UI_PARAM_PRISM_COLOR: TIP("COLOR: blend the input/output glass tone on shifted voices. Stock body and original dry remain clean.");
         case TS_SISTER_UI_PARAM_PRISM_MORPH: TIP("MORPH: blend selected letters; sound edits lock. Moving this fader takes over a timed move. MIDI learnable.");
-        case TS_SISTER_UI_PARAM_PRISM_TIME: TIP("TIME: duration of TO A / TO B, 0.05-120 seconds. Timed morphing follows the audio clock.");
+        case TS_SISTER_UI_PARAM_PRISM_TIME: TIP("TIME: duration of TO A / TO B, 0.05 seconds-60 minutes; default 4 minutes. Timed morphing follows the audio clock.");
         case TS_SISTER_UI_PARAM_PRISM_SEQ_RATE: TIP("SEQUENCER STEP RATE: 0.05-32 steps/second. Runs independently of morphing and Mosaic transport.");
         case TS_SISTER_UI_PARAM_PRISM_RATE: TIP("DRIFT RATE: 0.005-40 Hz. Lenses have related independent rates/phases; changing speed preserves their motion phase.");
         case TS_SISTER_UI_PARAM_PRISM_OCTAVE: TIP("GROUP OCTAVE: saved in A-L captures. Morph/Matrix glide between registers; the readout follows. DRY stays original.");

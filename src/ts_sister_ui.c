@@ -184,6 +184,9 @@ void ts_sister_ui_model_init(TsSisterUiModel *model, const TsConfig *config)
             (float)config->sister_erase_percent / 100.0f;
         model->parameters.ghost_tone =
             (float)config->sister_ghost_percent / 100.0f;
+        model->parameters.prism.morph_seconds = config->prism_morph_seconds;
+        model->parameters.prism.matrix.step_seconds = config->prism_step_seconds;
+        ts_prism_controls_sanitize(&model->parameters.prism);
         model->parameters.fx.fallout.transition =
             ts_sister_fallout_transition_normalized(
                 (float)config->sister_fallout_transition_ms);

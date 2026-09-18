@@ -99,12 +99,82 @@ static void test_config_defaults(void)
     CHECK(config.record_max_seconds == TS_RECORD_MAX_SECONDS_DEFAULT);
 }
 
+
+static void stream_feed(TsExternalRecorder *r,int frames,TsStereoFrame value)
+{
+    for(int i=0;i<frames;++i) {
+        ts_external_recorder_write_frame(r,value);
+        if(i%64==63)ts_performance_recorder_pump(r->stream,256);
+    }
+}
+static void stream_finish(TsExternalRecorder *r)
+{
+    ts_performance_recorder_request_stop(r->stream);
+    while(ts_performance_recorder_pump(r->stream,256)) {}
+}
+static void test_mosaic_stream(void)
+{
+    TsExternalRecorder r;char error[160];TsSample sample={0};ts_external_recorder_init(&r);
+    /* Exact finite durations include silence and are independent of the
+       unlimited timer. The preview ring is bounded even as the file grows. */
+    CHECK(ts_external_recorder_arm_stream(&r,"test-mosaic-stream.wav",1000,2,70,1,-60,error,sizeof(error)));
+    stream_feed(&r,69999,(TsStereoFrame){0});
+    CHECK(r.state==TS_EXTERNAL_CAPTURE_RECORDING && r.recorded_frames==69999 && r.preview_capacity==65536);
+    CHECK(ts_external_recorder_write_frame(&r,(TsStereoFrame){.25f,-.5f})==1);
+    CHECK(r.recorded_frames==70000 && !r.silence_stopped);
+    CHECK(!ts_external_recorder_write_sample(&r,1));stream_finish(&r);
+    CHECK(ts_performance_recorder_load(r.stream,&sample,error,sizeof(error)));
+    CHECK(sample.frames==70000 && sample.channels==2 && sample.data[139998]==.25f && sample.data[139999]==-.5f);
+    ts_sample_free(&sample);ts_external_recorder_free(&r);remove("test-mosaic-stream.wav");
+    /* Three minutes of a very quiet signal must survive; either stereo channel
+       resets the full two-minute silence timer. Leading silence is counted too. */
+    CHECK(ts_external_recorder_arm_stream(&r,"test-mosaic-stream.wav",100,2,0,120,-60,error,sizeof(error)));
+    stream_feed(&r,18000,(TsStereoFrame){0,.002f});
+    CHECK(r.state==TS_EXTERNAL_CAPTURE_RECORDING && r.quiet_frames==0);
+    stream_feed(&r,11999,(TsStereoFrame){0});CHECK(r.state==TS_EXTERNAL_CAPTURE_RECORDING);
+    stream_feed(&r,1,(TsStereoFrame){-.002f,0});CHECK(!r.quiet_frames);
+    stream_feed(&r,12000,(TsStereoFrame){0});
+    CHECK(r.state==TS_EXTERNAL_CAPTURE_COMPLETED && r.silence_stopped && r.recorded_frames==42000);
+    stream_finish(&r);CHECK(ts_performance_recorder_load(r.stream,&sample,error,sizeof(error)));
+    CHECK(sample.frames==42000);ts_sample_free(&sample);ts_external_recorder_free(&r);remove("test-mosaic-stream.wav");
+    CHECK(ts_external_recorder_arm_stream(&r,"test-mosaic-stream.wav",100,1,0,120,-60,error,sizeof(error)));
+    stream_feed(&r,12000,(TsStereoFrame){0});CHECK(r.silence_stopped && r.recorded_frames==12000);
+    stream_finish(&r);ts_external_recorder_free(&r);remove("test-mosaic-stream.wav");
+    /* Writer starvation stops at the first missing frame and retains the
+       contiguous prefix, never silently dropping frames from a live take. */
+    CHECK(ts_external_recorder_arm_stream(&r,"test-mosaic-stream.wav",100,2,0,0,-60,error,sizeof(error)));
+    for(int i=0;i<201;++i)ts_external_recorder_write_frame(&r,(TsStereoFrame){.1f,-.2f});
+    CHECK(r.state==TS_EXTERNAL_CAPTURE_COMPLETED && r.stream_overrun && r.recorded_frames==200);
+    stream_finish(&r);CHECK(ts_performance_recorder_load(r.stream,&sample,error,sizeof(error)));
+    CHECK(sample.frames==200);ts_sample_free(&sample);ts_external_recorder_free(&r);remove("test-mosaic-stream.wav");
+}
+static void test_long_config(void)
+{
+    TsConfig c,d;char error[160];ts_config_init(&c);
+    CHECK(c.prism_morph_seconds==240 && c.prism_step_seconds==240);
+    CHECK(c.mosaic_record_seconds==0 && c.mosaic_silence_seconds==120 && c.mosaic_silence_db==-60);
+    c.prism_morph_seconds=3600;c.prism_step_seconds=1854;c.mosaic_record_seconds=133;
+    c.mosaic_silence_db=-84;c.mosaic_silence_seconds=180;
+    CHECK(ts_config_save(&c,"test-glacial.ini",error,sizeof(error)));
+    CHECK(ts_config_load(&d,"test-glacial.ini",error,sizeof(error)));
+    CHECK(d.prism_morph_seconds==3600 && d.prism_step_seconds==1854 && d.mosaic_record_seconds==133);
+    CHECK(d.mosaic_silence_db==-84 && d.mosaic_silence_seconds==180 && d.record_max_seconds==20 && d.capture_max_seconds==20);
+    FILE *f=fopen("test-glacial.ini","w");CHECK(f!=NULL);
+    if(f){fputs("prism_morph_seconds=9000\nprism_step_seconds=-4\nmosaic_record_seconds=4\nmosaic_silence_db=-100\n",f);fclose(f);}
+    CHECK(ts_config_load(&d,"test-glacial.ini",error,sizeof(error)));
+    CHECK(d.prism_morph_seconds==3600 && d.prism_step_seconds==.05f && d.mosaic_record_seconds==10 && d.mosaic_silence_db==-90);
+    remove("test-glacial.ini");
+    for(int seconds=10;seconds<=3600;++seconds)CHECK(ts_mosaic_record_length_seconds(ts_mosaic_record_length_normalized(seconds))==seconds);
+    CHECK(ts_mosaic_record_length_seconds(1)==0);
+}
+
 int main(void)
 {
     test_threshold_preroll_and_autostop();
     test_manual_stop_cancel_and_chain();
     test_immediate_recording();
     test_config_defaults();
+    test_mosaic_stream();test_long_config();
     if (failures != 0) {
         fprintf(stderr, "%d external recording test(s) failed\n", failures);
         return 1;

@@ -6,7 +6,7 @@ right, then top to bottom. Every cell references a bank letter, A–L; there are
 extra sound copies hidden inside cells. Ordinary manual morphing remains available
 on PERFORM.
 
-![Prism Morph Matrix running in the native SDL application](images/prism-morph-matrix.png)
+![Prism Morph Matrix running in the native SDL application](images/prism-glacial-matrix.png)
 
 ## Populate and play
 
@@ -24,7 +24,7 @@ including cells beyond the selected length.
 | PLAY | Start again at step 01 |
 | STOP/RESET | Hold the current blend; next PLAY starts at 01 |
 | LOOP | Repeat the active sequence; off plays once and holds the final sound |
-| STEP | Time per cell, 0.05–120 seconds; click or wheel, Shift-wheel for fine changes |
+| STEP | Time per cell, 0.05 seconds–60 minutes (four-minute default); click or wheel, Shift-wheel for fine changes |
 | MORPH | Existing Prism Morph Time; same slider/MIDI target and parameter lock |
 | < PRISM | Return to the previous Prism page while the Matrix continues |
 
@@ -33,6 +33,18 @@ The small amber marker identifies the sequence end. Cells after it are dimmed.
 A dash is HOLD. An amber letter with **X** refers to an empty bank slot and also
 holds the previous sound. Neither case recalls a default patch or silences notes.
 An empty bank letter can be filled during playback.
+
+
+### Glacial timing
+
+New sessions start with **Morph Time = 04:00** and **Matrix STEP = 04:00**.
+Both controls span 0.05 seconds to 60 minutes; minute-length values display
+`MM:SS`. The INI `[Prism]` keys `prism_morph_seconds=240` and
+`prism_step_seconds=240` set startup durations in seconds (maximum 3600).
+Close the app before editing. Existing presets/projects keep their saved times;
+New/Vary, factory browsing, captures, locks and manual takeover retain their
+established behavior. The lens sequencer's rate is independent of Matrix STEP.
+The audio clock accumulates manual morph and Matrix time in double precision.
 
 ## Timing and handoff
 

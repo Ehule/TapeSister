@@ -271,36 +271,69 @@ The older Transform workbench must finish its worker before leaving the event.
 ## Recording and projects
 
 The recording button beside REPEAT defaults to **REC DRY**. Right-click it while
-idle to cycle **REC DRY → REC OUT → REC EXT**; the caption below PLAY identifies
+idle to cycle **REC DRY → REC OUT → REC EXT**; the button identifies
 the selected source. These choices are independent of REC BANK's source selector.
 
 | Mode | Audio recorded into the new card | Start/stop behavior |
 | --- | --- | --- |
 | **REC DRY** | Live QWERTY/MIDI instrument: sample voices, selected-source chords, FM, and preview keyboard voices, before Prism, Sister tape, and global effects | Starts immediately; click STOP TILE to keep |
 | **REC OUT** | Final stereo output, identical to REC FILE's OUT signal: all audible sources, Prism, Sister/FX, limiter, and OUT fader | Starts immediately; click STOP TILE to keep |
-| **REC EXT** | Configured recording input device/channel, preserving its sample rate and mono/stereo format | Arms at the configured threshold; silence can finish the take |
+| **REC EXT** | Configured recording input device/channel, preserving its sample rate and mono/stereo format | Starts immediately; uses the independent Mosaic length/silence settings |
 
-DRY and OUT require no external input device. They preserve stereo, start with the
-first output callback after the click, and retain leading silence and gaps between
-notes. They do not wait for a threshold or stop on silence. The existing Record
-maximum duration bounds all takes. EXT retains the existing threshold, preroll,
-silence, and tail settings. Click CANCEL before an EXT take triggers, or press
-Escape in the idle arrangement during a take, to discard it. Active gestures keep
-first claim on Escape. Stopping the arrangement does not stop recording.
+All three Mosaic modes start immediately and retain leading silence and gaps
+between notes. DRY and OUT require no external input device and preserve stereo.
+**LENGTH**, beneath the transport, is independent of `record_max_seconds` and
+`capture_max_seconds`; those ordinary tile defaults remain 20 seconds.
+
+![Independent Mosaic recording length](images/mosaic-length-control.png)
+
+- Drag LENGTH from **10 seconds to 60 minutes**, then **INF** at the right end.
+- Wheel changes by ten seconds; Shift-wheel changes by one second. Right-click
+  restores INF. The selected length persists in `mosaic_record_seconds`.
+- Finite lengths stop exactly at that many recorded frames, including silence,
+  for repeatable cards. Length is locked during a take. STOP TILE still keeps a
+  shorter take.
+- **INF** is the default: no programmed duration cap. After **120 continuous
+  seconds below −60 dBFS**, the take automatically stops and is kept. Either
+  recorded channel reaching the threshold resets the full countdown. This also
+  handles an unattended recording that starts in silence. The quiet tail is
+  retained, allowing later trimming.
+- INI `[Mosaic Recording]`: `mosaic_silence_seconds=120` (0 disables, maximum
+  3600) and `mosaic_silence_db=-60` (−90..0). Lower the threshold for exceptionally
+  quiet drones. The silence timer applies only to INF, preserving finite lengths.
+
+Press Escape in the idle arrangement during a take to discard it. Active
+gestures keep first claim on Escape. Stopping arrangement playback does not stop
+recording. REC BANK retains its separate threshold/preroll/tail behavior, and
+REC FILE remains the separate performance-file recorder.
+
+Mosaic writes a float WAV (RF64 when needed) in `Captures/` from the start, using
+a bounded two-second queue and a background writer. There is no whole-take
+allocation or disk I/O in the audio callback. Disk/queue failure stops the take,
+reports the interruption and preserves the contiguous recorded prefix when
+possible. Finishing loads the sound into a card and independent Sample tile;
+very long takes still need memory for those editable copies. If publication
+fails, the WAV remains available. Cancel removes the discarded take's WAV;
+normal application exit closes and retains an unfinished WAV for recovery.
+Losing the EXT input device stops and keeps the recorded prefix.
+The existing editable project WAV format still has its RIFF size limit; the
+RF64 recording archive remains available even when a take is too large to save
+as an editable project source.
 
 An outlined recording card appears immediately in the canvas, with the source
 name and elapsed time. It grows down the timeline and builds a live waveform as
 audio arrives; silence remains visible as a flat line. **STOP TILE** and the card
 border pulse red while recording, with the stop label readable in both phases.
-EXT shows an **ARMED** placeholder until the input triggers. With **FOLLOW** on,
+With **FOLLOW** on,
 the canvas follows the growing take even when arrangement playback is stopped.
 Turn FOLLOW off to inspect an earlier part of the take. The preview retains the
-whole take at overview resolution, including stereo signals whose channels have
+observed waveform at overview resolution (a UI stall can leave a visual gap,
+without interrupting the recording), including stereo signals whose channels have
 opposite polarity. It disappears on cancellation and becomes a regular editable
 card when the take finishes. The preview itself never plays audio or enters the
 saved project.
 
-![A growing recording card with live waveform and flashing STOP TILE](images/mosaic-recording-live.png)
+![A growing recording card with live waveform and flashing STOP TILE](images/mosaic-recording-length.png)
 
 REC DRY excludes arrangement playback, transport audition, tile launchers, and
 external input; it follows the live keyboard instrument. FM's own output level is

@@ -58,6 +58,8 @@ does not switch the main bank. See the [Mosaic chapter](USER_MANUAL.md#mosaic).
 | Record a dry keyboard performance to a card | REC DRY (default); click STOP TILE to keep |
 | Print Prism/effects or bounce Mosaic to a card | REC OUT; identical final signal to REC FILE |
 | Edit/export a finished recording | Select its new main-UI Sample tile; status gives page/tile |
+| Card recording length | LENGTH: 10s–60min / INF; wheel 10s, Shift-wheel 1s, right-click INF |
+| Unlimited card safety | Auto-stop after 120s below −60 dBFS; configurable in INI |
 | Choose card recording source | Right-click while idle: REC DRY → REC OUT → REC EXT |
 | Watch a card recording | Growing live waveform and elapsed time; STOP TILE flashes red |
 | Follow the growing take, including with playback stopped | Enable FOLLOW |
@@ -575,7 +577,8 @@ Ctrl+Z / Ctrl+Y undo/redo; Escape cancels the current stroke.
 
 - **MATRIX >**: 64 cells referencing the same A–L bank. Wheel/left/right-click
   cycles a cell; middle clears to HOLD; Shift-click sets the sequence end.
-- **PLAY**, **STOP/RESET**, **LOOP**, **LENGTH**. STEP is seconds per cell;
+- **PLAY**, **STOP/RESET**, **LOOP**, **LENGTH**. STEP is time per cell;
+  both STEP and MORPH default to four minutes and span 0.05s–60min;
   MORPH uses existing Time, capped at STEP. Shorter morphs leave a hold.
 - Click a bank letter to edit a draft while playback continues. **SAVE letter**
   updates its next visit; the current transition stays intact.

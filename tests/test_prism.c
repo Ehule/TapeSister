@@ -342,6 +342,7 @@ static void check_lens_mixer(void)
 #include "test_prism_performance.inc"
 #include "test_prism_morph_bank.inc"
 #include "test_prism_matrix.inc"
+#include "test_prism_glacial.inc"
 
 #include "test_prism_factory.inc"
 
@@ -353,6 +354,7 @@ int main(void)
     check_factory_and_captured_octave();
     check_prism_morph_bank();
     check_prism_matrix();
+    check_prism_glacial();
     check_stream(44100); check_stream(48000); check_stream(96000);
     check_pitch_and_focus(44100); check_pitch_and_focus(48000); check_state();
     check_gain(); check_manual_geometry(); check_lens_mixer();

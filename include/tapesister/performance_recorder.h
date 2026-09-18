@@ -54,6 +54,9 @@ uint64_t ts_performance_recorder_frames(
     const TsPerformanceRecorder *recorder);
 uint64_t ts_performance_recorder_dropped(
     const TsPerformanceRecorder *recorder);
+/* Load a finished writer-owned WAV/RF64, including a recoverable partial take. */
+int ts_performance_recorder_load(const TsPerformanceRecorder *recorder, TsSample *sample,
+                                 char *error, size_t error_size);
 int ts_performance_recorder_uses_rf64(uint64_t frames, uint8_t channels);
 
 #endif

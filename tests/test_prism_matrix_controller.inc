@@ -113,7 +113,7 @@ static void test_prism_matrix_ui(void)
     const char *shot=getenv("TS_PRISM_MATRIX_SCREENSHOT");
     if(shot) {
         c=a->sister.parameters.prism;c.morph_enabled=0;c.active_pair_valid=0;c.matrix_run=0;
-        c.matrix.length=48;c.matrix.loop=1;c.matrix.step_seconds=3.5f;c.morph_seconds=2.5f;
+        c.matrix.length=48;c.matrix.loop=1;c.matrix.step_seconds=240.f;c.morph_seconds=240.f;
         static const int melody[]={0,0,1,2,1,3,3,5,0,7,2,2,9,1,0,11};
         for(int i=0;i<64;++i)c.matrix.step[i]=melody[i%16];
         c.matrix.step[20]=-1;c.matrix.step[30]=-1;c.captured&=~(1<<9);

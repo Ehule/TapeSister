@@ -91,6 +91,9 @@ static void test_mosaic_record_routes(SDL_Window *window,SDL_AudioDeviceID devic
     TsSisterParameters p=a->sister.parameters;p.prism.enabled=1;p.prism.mix=.8f;p.prism.output_db=12;
     ts_sister_runtime_set_parameters(&a->sister,&p);ts_sister_runtime_set_master_output_gain(&a->sister,.45f);
     u->mosaic_record_source=TS_RECORD_SOURCE_OUTPUT;
+    char folder[160],error[160];snprintf(folder,sizeof(folder),"mosaic-output-%lu",(unsigned long)SDL_GetTicks());
+    SDL_setenv("TAPESISTER_CAPTURES",folder,1);
+
     SDL_Event click={0};click.type=SDL_MOUSEBUTTONDOWN;click.button.windowID=SDL_GetWindowID(window);
     click.button.button=SDL_BUTTON_LEFT;click.button.x=TS_MOSAIC_REC_TILE_X+10;click.button.y=45;
     assert(mosaic_record_tile_event(&click,window,device,&input_device,a,input,u,&instrument));
@@ -109,8 +112,6 @@ static void test_mosaic_record_routes(SDL_Window *window,SDL_AudioDeviceID devic
     assert(input->recorder.state==TS_EXTERNAL_CAPTURE_COMPLETED);
     float after[512];audio_callback(a,(Uint8 *)after,sizeof(after));
     assert(input->recorder.recorded_frames==blocks*256 && a->mosaic->next_id==next);
-    char folder[160],error[160];snprintf(folder,sizeof(folder),"mosaic-output-%lu",(unsigned long)SDL_GetTicks());
-    SDL_setenv("TAPESISTER_CAPTURES",folder,1);
     uint64_t current_hash=ts_sample_hash(&instrument.current);int current_slot=instrument.selected_slot;
     finalize_external_recording(device,&input_device,a,input,u,&instrument,NULL);
     TsMosaicEvent *take=ts_mosaic_find(a->mosaic,u->mosaic_selected);assert(take && take->id==next);

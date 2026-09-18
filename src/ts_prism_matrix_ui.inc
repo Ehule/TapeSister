@@ -14,12 +14,15 @@ static void sister_prism_matrix_render(TsFramebuffer *fb,const TsSisterUiModel *
     button(fb,86,78,90,"STOP/RESET",0);
     button(fb,184,78,62,"LOOP",c->matrix.loop);
     snprintf(label,sizeof(label),"LENGTH %02d",c->matrix.length);button(fb,254,78,86,label,0);
-    snprintf(label,sizeof(label),"STEP %.2FS",c->matrix.step_seconds);
-    prism_value(fb,348,78,124,label,logf(c->matrix.step_seconds/.05f)/logf(2400),colors[3]);
-    snprintf(label,sizeof(label),"MORPH %.2FS",c->morph_seconds);
-    prism_value(fb,480,78,136,label,logf(c->morph_seconds/.05f)/logf(2400),colors[6]);
-    snprintf(label,sizeof(label),"TRANSITION %.2FS + HOLD %.2FS / -: HOLD / X: MISSING - HOLD",
-        fminf(c->morph_seconds,c->matrix.step_seconds),fmaxf(0,c->matrix.step_seconds-c->morph_seconds));
+    char duration[24],hold[24];ts_prism_time_label(duration,sizeof(duration),c->matrix.step_seconds);
+    snprintf(label,sizeof(label),"STEP %s",duration);
+    prism_value(fb,348,78,124,label,ts_prism_time_normalized(c->matrix.step_seconds),colors[3]);
+    ts_prism_time_label(duration,sizeof(duration),c->morph_seconds);
+    snprintf(label,sizeof(label),"MORPH %s",duration);
+    prism_value(fb,480,78,136,label,ts_prism_time_normalized(c->morph_seconds),colors[6]);
+    ts_prism_time_label(duration,sizeof(duration),fminf(c->morph_seconds,c->matrix.step_seconds));
+    ts_prism_time_label(hold,sizeof(hold),fmaxf(0,c->matrix.step_seconds-c->morph_seconds));
+    snprintf(label,sizeof(label),"TRANSITION %.12s + HOLD %.12s / -: HOLD / X: MISSING - HOLD",duration,hold);
     text(fb,16,104,label,ink,1);
     for(int i=0;i<TS_PRISM_MATRIX_STEPS;++i) {
         int x=TS_PRISM_MATRIX_X+(i%8)*TS_PRISM_MATRIX_DX,y=TS_PRISM_MATRIX_Y+(i/8)*TS_PRISM_MATRIX_DY;

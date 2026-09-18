@@ -367,3 +367,34 @@ uint64_t ts_performance_recorder_dropped(
     return recorder != NULL ? atomic_load_explicit(
         &recorder->dropped_frames, memory_order_acquire) : 0u;
 }
+
+/* This reads our fixed 80-byte float WAV/RF64 layout, using the writer's
+   committed frame count. Never called concurrently with a live writer. */
+int ts_performance_recorder_load(const TsPerformanceRecorder *r,TsSample *sample,
+                                 char *error,size_t size)
+{
+    uint64_t frames=r?atomic_load_explicit(&r->written_frames,memory_order_acquire):0;
+    size_t bytes,scalars;
+    if(!r || !sample || r->file || frames<2 || frames>SIZE_MAX ||
+       !ts_sample_dimensions((size_t)frames,r->channels,&scalars,&bytes)) {
+        recorder_error(error,size,"No complete recording to load");return 0;
+    }
+    float *data=malloc(bytes);
+    if(!data) {recorder_error(error,size,"Not enough memory to load the take; WAV retained");return 0;}
+    FILE *file=fopen(r->path,"rb");
+    if(!file || !seek_file(file,80)) {if(file)fclose(file);free(data);recorder_error(error,size,"Cannot reopen recorded WAV");return 0;}
+    unsigned char block[4096];size_t at=0;
+    while(at<scalars) {
+        size_t count=scalars-at;if(count>sizeof(block)/4)count=sizeof(block)/4;
+        if(fread(block,4,count,file)!=count) {fclose(file);free(data);recorder_error(error,size,"Recorded WAV is incomplete");return 0;}
+        for(size_t i=0;i<count;++i) {
+            unsigned char *b=block+i*4;
+            uint32_t bits=(uint32_t)b[0]|(uint32_t)b[1]<<8|(uint32_t)b[2]<<16|(uint32_t)b[3]<<24;
+            memcpy(&data[at+i],&bits,4);
+        }
+        at+=count;
+    }
+    fclose(file);ts_sample_free(sample);
+    *sample=(TsSample){.data=data,.frames=(size_t)frames,.sample_rate=r->sample_rate,.channels=r->channels};
+    recorder_error(error,size,"");return 1;
+}

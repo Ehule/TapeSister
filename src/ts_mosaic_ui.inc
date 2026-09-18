@@ -225,9 +225,9 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
     clear(fb,RGB(15,16,19));
     rect(fb,0,0,640,32,RGB(12,12,12));sister_portal_render(fb,ui);
     text(fb,164,13,"MOSAIC",RGB(198,186,206),1);
-    mosaic_button(fb,214,4,46,"CFG",0,0);mosaic_button(fb,264,4,32,"FT2",0,0);
-    mosaic_button(fb,300,4,56,"CANVAS",0,0);mosaic_button(fb,360,4,38,"SAVE",0,0);
-    mosaic_button(fb,402,4,58,"EXPORT",0,0);mosaic_button(fb,464,4,28,"CDP",0,0);
+    mosaic_button(fb,214,4,46,"CFG",0,1);mosaic_button(fb,264,4,32,"FT2",0,1);
+    mosaic_button(fb,300,4,56,"CANVAS",0,1);mosaic_button(fb,360,4,38,"SAVE",0,1);
+    mosaic_button(fb,402,4,58,"EXPORT",0,1);mosaic_button(fb,464,4,28,"CDP",0,1);
     mosaic_button(fb,TS_UI_MASTER_LIMITER_X,TS_UI_MASTER_LIMITER_Y,TS_UI_MASTER_LIMITER_W,"LIM",ui->master_output.limiter_enabled,0);
     master_output_fader(fb,ui->master_output.gain,TS_UI_MASTER_OUTPUT_X,TS_UI_MASTER_OUTPUT_Y);
     master_output_meter(fb,&ui->master_output,TS_UI_MASTER_METER_X,TS_UI_MASTER_METER_Y);
@@ -287,16 +287,18 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
     mosaic_button(fb,10,353,22,"<",0,1);mosaic_button(fb,86,353,22,">",0,1);
     snprintf(label,sizeof(label),"%02d/%02d",ui->mosaic_source_page+1,pages);text(fb,40,358,label,RGB(150,142,160),1);
     rect(fb,113,66,518,310,RGB(11,13,16));
-    const char *tile_source=ui->mosaic_record_source==TS_RECORD_SOURCE_OUTPUT?"OUTPUT":
-        ui->mosaic_record_source==TS_RECORD_SOURCE_DRY?"DRY":"EXT";
-    if(ui->mosaic_recording)
-        snprintf(label,sizeof(label),"TILE %s: %s / %.1F S",tile_source,
-            ui->capture_state==TS_CAPTURE_RECORDING?"REC":
-            ui->capture_state==TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER?"ARMED":"FINISHING",
-            ui->input_sample_rate?(double)ui->capture_recorded_frames/ui->input_sample_rate:0);
-    else snprintf(label,sizeof(label),"%-5s / %.34s%s",tile_source,
-        ui->status[0]?ui->status:"RIGHT-CLICK REC TILE: SOURCE",strlen(ui->status)>34?"...":"");
-    text(fb,118,58,label,ui->mosaic_recording?RGB(230,138,100):RGB(133,127,141),1);
+    char length[24];
+    if(ui->config.mosaic_record_seconds)snprintf(length,sizeof(length),"%02d:%02d",ui->config.mosaic_record_seconds/60,ui->config.mosaic_record_seconds%60);
+    else snprintf(length,sizeof(length),"INF");
+    if(ui->mosaic_recording) {
+        size_t seconds=ui->input_sample_rate?ui->capture_recorded_frames/ui->input_sample_rate:0;
+        snprintf(label,sizeof(label),"%02zu:%02zu / %s",seconds/60,seconds%60,length);
+    } else snprintf(label,sizeof(label),"LENGTH %s",length);
+    text(fb,118,58,label,ui->mosaic_recording?RGB(230,138,100):RGB(167,154,179),1);
+    mosaic_slider(fb,TS_MOSAIC_LENGTH_X,58,TS_MOSAIC_LENGTH_W,
+        ts_mosaic_record_length_normalized(ui->config.mosaic_record_seconds),0,!ui->mosaic_recording);
+    snprintf(label,sizeof(label),"%.54s",ui->status[0]?ui->status:"LENGTH: 10S-60MIN / INF; WHEEL: 10S; SHIFT: 1S");
+    text(fb,164,24,label,RGB(160,149,172),1);
     snprintf(label,sizeof(label),"SPEED %.2fX",m?m->speed:1);text(fb,416,58,label,RGB(129,206,200),1);
     mosaic_slider(fb,TS_MOSAIC_SPEED_X,58,TS_MOSAIC_SPEED_W,(log2(m?m->speed:1)+1)*.5,1,1);
     double scale=ui->mosaic_scale>0?ui->mosaic_scale:24;

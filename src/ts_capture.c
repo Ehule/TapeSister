@@ -381,6 +381,8 @@ void ts_external_recorder_init(TsExternalRecorder *recorder)
     recorder->threshold_db = 0;
     recorder->destination_slot = -1;
     recorder->stopped_early = 0;
+    recorder->stream = NULL;recorder->preview_capacity=0;
+    recorder->stream_overrun=recorder->silence_stopped=0;
     atomic_init(&recorder->state, TS_EXTERNAL_CAPTURE_IDLE);
 }
 
@@ -389,6 +391,7 @@ void ts_external_recorder_free(TsExternalRecorder *recorder)
     if (recorder == NULL) return;
     free(recorder->buffer);
     free(recorder->pre_roll);
+    if(recorder->stream) {ts_performance_recorder_free(recorder->stream);free(recorder->stream);}
     ts_external_recorder_init(recorder);
 }
 
@@ -419,7 +422,7 @@ int ts_external_recorder_arm_channels(
     size_t pre_roll_frames;
     size_t capacity_scalars;
     size_t pre_roll_scalars;
-    if (recorder == NULL || destination_slot < 0 || destination_slot >= 16 ||
+    if (recorder == NULL || recorder->stream != NULL || destination_slot < 0 || destination_slot >= 16 ||
         sample_rate == 0u || threshold_db < -90 || threshold_db > 0 ||
         pre_roll_ms < 0 || silence_ms < 1 || tail_ms < 0 ||
         max_seconds < 1 || max_seconds > 600 ||
@@ -456,6 +459,7 @@ int ts_external_recorder_arm_channels(
     }
     free(recorder->buffer);
     free(recorder->pre_roll);
+    if(recorder->stream) {ts_performance_recorder_free(recorder->stream);free(recorder->stream);}
     ts_external_recorder_init(recorder);
     recorder->buffer = buffer;
     recorder->capacity_frames = capacity_frames;
@@ -470,6 +474,33 @@ int ts_external_recorder_arm_channels(
     recorder->destination_slot = destination_slot;
     recorder->state = TS_EXTERNAL_CAPTURE_ARMED;
     set_error(error, error_size, "");
+    return 1;
+}
+
+int ts_external_recorder_arm_stream(TsExternalRecorder *r,const char *path,
+    uint32_t rate,uint8_t channels,int seconds,int silence_seconds,int silence_db,
+    char *error,size_t size)
+{
+    if(!r || r->state!=TS_EXTERNAL_CAPTURE_IDLE || !rate ||
+       !ts_sample_valid_channels(channels) || seconds<0 || seconds>3600 ||
+       (seconds && seconds<10) || silence_seconds<0 || silence_seconds>3600 ||
+       silence_db< -90 || silence_db>0 || (uint64_t)rate*3600>SIZE_MAX) {
+        set_error(error,size,"Invalid Mosaic recording settings");return 0;
+    }
+    TsPerformanceRecorder *stream=malloc(sizeof(*stream));
+    float *preview=calloc(65536u*channels,sizeof(float));
+    if(!stream || !preview) {free(stream);free(preview);set_error(error,size,"Cannot prepare Mosaic recording");return 0;}
+    ts_performance_recorder_init(stream);
+    if(!ts_performance_recorder_start(stream,path,rate,channels,(size_t)rate*2,error,size)) {
+        free(stream);free(preview);return 0;
+    }
+    ts_external_recorder_free(r);
+    r->stream=stream;r->buffer=preview;r->preview_capacity=65536;
+    r->capacity_frames=seconds?(size_t)rate*seconds:SIZE_MAX;
+    r->sample_rate=rate;r->channels=channels;r->destination_slot=0;
+    r->threshold_db=silence_db;r->threshold_amplitude=powf(10.f,silence_db/20.f);
+    r->silence_frames=seconds?0:(size_t)rate*silence_seconds;
+    r->state=TS_EXTERNAL_CAPTURE_RECORDING;
     return 1;
 }
 
@@ -495,6 +526,24 @@ int ts_external_recorder_write_frame(TsExternalRecorder *recorder,
     if (recorder == NULL || recorder->buffer == NULL) return 0;
     sample = ts_stereo_frame_sanitize(sample);
     level = fmaxf(fabsf(sample.l), fabsf(sample.r));
+    if(recorder->stream) {
+        if(recorder->state!=TS_EXTERNAL_CAPTURE_RECORDING)return 0;
+        if(!ts_performance_recorder_push_frame(recorder->stream,sample)) {
+            recorder->stream_overrun=1;
+            ts_performance_recorder_request_stop(recorder->stream);
+            recorder->state=TS_EXTERNAL_CAPTURE_COMPLETED;return 1;
+        }
+        external_store_frame(recorder->buffer,recorder->recorded_frames%recorder->preview_capacity,recorder->channels,sample);
+        ++recorder->recorded_frames;
+        if(level>=recorder->threshold_amplitude)recorder->quiet_frames=0;
+        else if(recorder->quiet_frames<SIZE_MAX)++recorder->quiet_frames;
+        recorder->silence_stopped=recorder->silence_frames && recorder->quiet_frames>=recorder->silence_frames;
+        if(recorder->recorded_frames>=recorder->capacity_frames || recorder->silence_stopped) {
+            ts_performance_recorder_request_stop(recorder->stream);
+            recorder->state=TS_EXTERNAL_CAPTURE_COMPLETED;return 1;
+        }
+        return 0;
+    }
     if (recorder->state == TS_EXTERNAL_CAPTURE_ARMED) {
         int trigger_is_in_pre_roll;
         external_push_pre_roll(recorder, sample);
@@ -541,6 +590,7 @@ int ts_external_recorder_stop(TsExternalRecorder *recorder,
         return 0;
     }
     recorder->stopped_early = recorder->recorded_frames < recorder->capacity_frames;
+    if(recorder->stream)ts_performance_recorder_request_stop(recorder->stream);
     recorder->state = TS_EXTERNAL_CAPTURE_COMPLETED;
     set_error(error, error_size, "");
     return 1;
@@ -551,6 +601,7 @@ int ts_external_recorder_cancel(TsExternalRecorder *recorder)
     if (recorder == NULL ||
         (recorder->state != TS_EXTERNAL_CAPTURE_ARMED &&
          recorder->state != TS_EXTERNAL_CAPTURE_RECORDING)) return 0;
+    if(recorder->stream)ts_performance_recorder_request_stop(recorder->stream);
     recorder->state = TS_EXTERNAL_CAPTURE_CANCELED;
     return 1;
 }
