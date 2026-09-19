@@ -503,6 +503,7 @@ void ts_sister_runtime_init(TsSisterRuntime *runtime)
     ts_performance_init(&runtime->performance);
     ts_capture_init(&runtime->capture);
     ts_sister_limiter_init(&runtime->limiter);
+    ts_master_eq_init(&runtime->master_eq);
     runtime->rolling = 1;
     runtime->input_available = 1;
     runtime->live_link_available = 0;
@@ -580,6 +581,7 @@ int ts_sister_runtime_enable(TsSisterRuntime *runtime, uint32_t sample_rate,
         return 0;
     }
     ts_prism_set_controls(&runtime->prism, &runtime->parameters.prism);
+    ts_master_eq_prepare(&runtime->master_eq, sample_rate);
     memset(&machine, 0, sizeof(machine));
     cold_fx = !runtime->post_fx.ready || runtime->post_fx.sample_rate != sample_rate;
     cold_fallout = !runtime->fallout.ready || runtime->fallout.sample_rate != sample_rate;
@@ -748,6 +750,7 @@ int ts_sister_runtime_reconfigure(TsSisterRuntime *runtime,
         return 0;
     }
     ts_prism_set_controls(&runtime->prism, &runtime->parameters.prism);
+    ts_master_eq_prepare(&runtime->master_eq, sample_rate);
     if (!runtime->enabled) {
         if (sample_rate == 0u || output_channels != 2u) {
             runtime->warnings |= TS_SISTER_WARNING_DEVICE_CONTRACT;
@@ -1474,6 +1477,7 @@ TsStereoFrame ts_sister_runtime_process_output(TsSisterRuntime *runtime,
     TsStereoFrame output;
     float pre_peak = 0.0f;
     if (runtime == NULL) return ts_stereo_frame_sanitize(input);
+    input = ts_master_eq_process(&runtime->master_eq, input);
     output = ts_sister_limiter_process(&runtime->limiter, input,
                                        NULL, &pre_peak);
     /* The global OUT fader is the final audible gain stage. The VU and FILE

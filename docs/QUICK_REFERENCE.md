@@ -412,11 +412,23 @@ Sample/Depth/Rate, Pitch Ratio/Ramp/Rate. `L` assigns LFO; `R` assigns Rise.
 
 ## Final output
 
-Final order: mix → linked limiter → OUT fader → L/R meter and FILE OUT.
+Final order: mix → Master EQ → linked limiter → OUT fader → L/R meter and FILE OUT.
+
+Click **EQ** in either window for Master / Room EQ and the limiter toggle.
+Five bands; Bell / Low Shelf / High Shelf / High Pass / Low Pass / Notch.
+Drag a node for frequency/gain; wheel for Q; Shift makes node edits finer.
+Selected-band sliders show exact values. Gain ±12 dB; Q 0.30–8.00; passes 12 dB/oct.
+The five buttons toggle band bypass; Ctrl-click solos one band's EQ, repeat to
+restore previous bypass states. Nodes select the editor independently. ON / BYPASS /
+SOLO / SKIP distinguish saved bypass from bands temporarily excluded by solo.
+Right-click a node for zero gain, middle-click for band bypass. Type cycles with
+left/right click. Global EQ bypass retains settings; RESET requires confirmation.
+QWERTY/ARP keep playing; Space stops, Escape closes. MIDI learn supports the three
+band sliders and EQ bypass. Project/session state includes EQ; sound presets preserve it.
 
 | Readout | Meaning |
 | --- | --- |
-| LIM | global limiter enabled |
+| EQ | opens Master / Room EQ |
 | GR 0.0 | no current gain reduction |
 | GR-x.x | limiter reducing by x.x dB |
 | LIM OFF | limiter bypassed |
@@ -485,7 +497,7 @@ characters where needed. You can edit the suggested name before saving.
 - Space controls the active audition; in Mosaic it plays/pauses the arrangement.
 - Use Mosaic STOP or Escape in the idle arrangement to stop and rewind it.
 - Escape cancels the active gesture or dialog.
-- Keep LIM on during feedback and Extreme exploration.
+- Keep the limiter on during feedback and Extreme exploration.
 - Lower Sister/FX/Fallout levels before the limiter when GR is excessive.
 - Use headphones for microphone monitoring.
 - Sister Capture refuses a destination that is also a live Sister source.
@@ -504,7 +516,7 @@ characters where needed. You can edit the suggested name before saving.
 Recording continues through workspace changes and event editing. Click the active
 recording button again to finish the timestamped file in `Captures/`; Mosaic keeps
 playing. Stop the arrangement first and record its effects tails if desired. The
-file contains the final processing, limiter, and OUT level and requires no tile
+file contains the final processing, Master EQ, limiter, and OUT level and requires no tile
 destination or powered Sister engine.
 | **STOP FILE** in the recording footer | Finish the WAV and keep playback running |
 | QWERTY on the canvas | Up to five simultaneous notes; newest voice supplies the playhead |
@@ -524,8 +536,10 @@ This button leaves the tap, mono/stereo and tile-destination selectors unchanged
 **ARP** opens the keyboard arpeggiator: select up to 24 pitches with EDIT on or
 Ctrl-click, choose UP/DOWN/UP-DOWN/ORDER/RANDOM, then PLAY. Teal keys are selected;
 gold follows the current gated step. STEP spans 30 ms–1 hour; GATE spans 5–100%.
-Both update live. Turn EDIT off to play alongside it. ARP STOP releases only the
-sequence; FROM HELD copies the current QWERTY chord. Selection/settings last for
+Both update live. Turn EDIT off to play alongside it. **Shift+Space** starts/stops
+ARP even with the controls hidden; stopping releases only the sequence. Selecting
+a new tile keeps its notes and timing running with the new sound, without launching
+a separate tile layer. FROM HELD copies the current QWERTY chord. Selection/settings last for
 the session. See [Keyboard arpeggio and sequencing](KEYBOARD_SEQUENCE.md).
 
 The virtual keyboard shares **HOLD** between tile and FM playing. Arm HOLD before

@@ -39,6 +39,10 @@ enum {
 enum { TS_WAVE_X = 20, TS_WAVE_Y = 64, TS_WAVE_W = 600, TS_WAVE_H = 134 };
 enum { TS_MODAL_PANEL_X = 10, TS_MODAL_PANEL_Y = 40,
        TS_MODAL_PANEL_W = 620, TS_MODAL_PANEL_H = 164 };
+enum { TS_ARP_PANEL_X = 10, TS_ARP_PANEL_Y = 230,
+       TS_ARP_PANEL_W = 620, TS_ARP_PANEL_H = 81,
+       TS_ARP_PANEL_FM_Y = 218, TS_ARP_PANEL_FM_H = 95,
+       TS_ARP_PANEL_FM_OFFSET = -6 };
 enum { TS_DRONE_WAVE_X = 20, TS_DRONE_WAVE_Y = 77,
        TS_DRONE_WAVE_W = 600, TS_DRONE_WAVE_H = 70 };
 enum { TS_TRANSFORM_WAVE_X = 20, TS_TRANSFORM_WAVE_Y = 62,
@@ -432,6 +436,8 @@ typedef struct {
     int sister_portal_pressed;
     TsUiMasterOutputStatus master_output;
     int master_output_dragging;
+    int master_eq_open, master_eq_band, master_eq_drag, master_eq_reset_pending;
+    unsigned master_eq_rate;
     size_t capture_recorded_frames;
     size_t capture_capacity_frames;
     TsMosaic *mosaic;
@@ -714,6 +720,9 @@ size_t ts_ui_right_drag_playhead_frame(size_t anchor, size_t pointer,
 int ts_ui_keyboard_set_octave(TsUiState *ui, int octave);
 int ts_ui_keyboard_cycle_octave(TsUiState *ui, int amount);
 int ts_ui_keyboard_shift_semitone(TsUiState *ui, int amount);
+int ts_ui_master_eq_node(const TsUiState *ui,int x,int y);
+int ts_ui_master_eq_control(int x,int y);
+int ts_ui_master_eq_midi_target(const TsUiState *ui,int x,int y,char *target,size_t size);
 int ts_ui_master_limiter_contains(int x, int y);
 int ts_ui_master_output_contains(int x, int y);
 float ts_ui_master_output_normalized_from_x(int x);

@@ -107,6 +107,61 @@ static int keyboard_sequence_prepare(SDL_AudioDeviceID device, AudioState *audio
     return source != NULL;
 }
 
+/* The panel and shortcut share transport, including capture staging. */
+static void keyboard_sequence_toggle_playback(SDL_AudioDeviceID device, AudioState *audio,
+    TsUiState *ui, const TsInstrument *instrument, const TsSample *fm, int rate)
+{
+    if (device) SDL_LockAudioDevice(device);
+    keyboard_sequence_ui(audio, ui);
+    TsKeyboardSequence *s = &audio->keyboard_sequence;
+    int stopping = s->running;
+    if (stopping) ts_keyboard_sequence_stop(s);
+    keyboard_sequence_ui(audio, ui);
+    if (device) SDL_UnlockAudioDevice(device);
+    if (stopping) {
+        snprintf(ui->status, sizeof(ui->status), "ARP STOPPED / SHIFT+SPACE TO PLAY");
+        return;
+    }
+    if (!ui->keyboard_sequence.count) {
+        snprintf(ui->status, sizeof(ui->status), "ARP: SELECT KEYS OR COPY HELD NOTES FIRST");
+        return;
+    }
+    if (!keyboard_sequence_prepare(device, audio, ui, instrument, fm, rate, 1)) return;
+    SDL_LockAudioDevice(device);
+    ts_keyboard_sequence_play(s); keyboard_sequence_ui(audio, ui);
+    if (audio->capture.state != TS_CAPTURE_RECORDING) audio->playing = 0;
+    audio->bank_slot = -1;
+    if (audio->capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER) {
+        if (s->source->fm) {
+            (void)runtime_capture_set_source(audio, TS_CAPTURE_SOURCE_SYNTH, NULL, 0);
+            (void)runtime_capture_trigger(audio, NULL, 0);
+        } else if (runtime_capture_source_matches(audio, instrument->selected_slot)) {
+            if (audio->performance_group_latched) audio->capture_trigger_ready = 1;
+            (void)runtime_capture_trigger(audio, NULL, 0);
+        }
+    }
+    SDL_UnlockAudioDevice(device);
+    snprintf(ui->status, sizeof(ui->status), "ARP PLAYING / TEAL SELECTED, GOLD SOUNDING / STOP RELEASES ARP ONLY");
+}
+
+static int keyboard_sequence_transport_event(const SDL_Event *event, SDL_Window *window,
+    SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui, SisterWindow *sister,
+    const TsInstrument *instrument, const TsSample *fm, int rate)
+{
+    if (event->type != SDL_KEYDOWN || event->key.keysym.sym != SDLK_SPACE ||
+        !(event->key.keysym.mod & KMOD_SHIFT) ||
+        (event->key.keysym.mod & (KMOD_CTRL | KMOD_ALT | KMOD_GUI))) return 0;
+    if (event->key.windowID != SDL_GetWindowID(window) &&
+        !(sister->window && event->key.windowID == sister->window_id)) return 0;
+    if (!sister_performance_keys_allowed(ui) || ui->midi_learn_active ||
+        sister->model.preset_manage_open || sister->model.fallout_lfo_open) return 0;
+    if (event->key.repeat) return 1;
+    keyboard_sequence_toggle_playback(device, audio, ui, instrument, fm, rate);
+    snprintf(ui->fm_message, sizeof(ui->fm_message), "%.*s", (int)sizeof(ui->fm_message) - 1, ui->status);
+    snprintf(sister->model.status, sizeof(sister->model.status), "%.*s", (int)sizeof(sister->model.status) - 1, ui->status);
+    return 1;
+}
+
 static void keyboard_sequence_capture_held(AudioState *audio)
 {
     TsKeyboardSequenceSettings next = audio->keyboard_sequence.settings;
@@ -182,13 +237,18 @@ static int keyboard_sequence_event(const SDL_Event *event, SDL_Window *window,
         logical_mouse(window, event->motion.x, event->motion.y, &x, &y);
         slider = ui->keyboard_sequence_drag;
     } else return 0;
-    int panel = ui->keyboard_sequence_open && x >= 10 && x < 630 && y >= 234 && y < 311;
+    int panel_y = ui->fm_open ? TS_ARP_PANEL_FM_Y : TS_ARP_PANEL_Y;
+    int panel_h = ui->fm_open ? TS_ARP_PANEL_FM_H : TS_ARP_PANEL_H;
+    int panel = ui->keyboard_sequence_open && x >= TS_ARP_PANEL_X &&
+        x < TS_ARP_PANEL_X + TS_ARP_PANEL_W && y >= panel_y && y < panel_y + panel_h;
     if (note < 0 && !panel && !slider) return 0;
+    /* Controls share their main-view hit geometry after translating FM's inset. */
+    if (ui->fm_open) y -= TS_ARP_PANEL_FM_OFFSET;
     if (device) SDL_LockAudioDevice(device);
     keyboard_sequence_ui(audio, ui);
     TsKeyboardSequence *s = &audio->keyboard_sequence;
     TsKeyboardSequenceSettings next = s->settings;
-    int start = 0;
+    int toggle_playback = 0;
     if (note >= 0) {
         int ok = ts_keyboard_sequence_toggle(s, ts_ui_keyboard_base_note(ui) + note);
         snprintf(ui->status, sizeof(ui->status), ok ?
@@ -208,7 +268,7 @@ static int keyboard_sequence_event(const SDL_Event *event, SDL_Window *window,
             ts_keyboard_sequence_set(s, &next);
         } else if (event->type == SDL_MOUSEBUTTONDOWN && y >= 252 && y < 275) {
             if (x >= 20 && x < 84) {
-                if (s->running) ts_keyboard_sequence_stop(s); else start = 1;
+                toggle_playback = 1;
             } else if (x >= 90 && x < 190) {
                 next.mode = (next.mode + (event->button.button == SDL_BUTTON_RIGHT ? 4 : 1)) % TS_KEYBOARD_SEQUENCE_MODE_COUNT;
                 ts_keyboard_sequence_set(s, &next);
@@ -222,25 +282,6 @@ static int keyboard_sequence_event(const SDL_Event *event, SDL_Window *window,
     }
     keyboard_sequence_ui(audio, ui);
     if (device) SDL_UnlockAudioDevice(device);
-    if (start) {
-        if (!ui->keyboard_sequence.count) snprintf(ui->status, sizeof(ui->status), "ARP: SELECT KEYS OR COPY HELD NOTES FIRST");
-        else if (keyboard_sequence_prepare(device, audio, ui, instrument, fm, rate, 1)) {
-            SDL_LockAudioDevice(device);
-            ts_keyboard_sequence_play(s); keyboard_sequence_ui(audio, ui);
-            if (audio->capture.state != TS_CAPTURE_RECORDING) audio->playing = 0;
-            audio->bank_slot = -1;
-            if (audio->capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER) {
-                if (s->source->fm) {
-                    (void)runtime_capture_set_source(audio, TS_CAPTURE_SOURCE_SYNTH, NULL, 0);
-                    (void)runtime_capture_trigger(audio, NULL, 0);
-                } else if (runtime_capture_source_matches(audio, instrument->selected_slot)) {
-                    if (audio->performance_group_latched) audio->capture_trigger_ready = 1;
-                    (void)runtime_capture_trigger(audio, NULL, 0);
-                }
-            }
-            SDL_UnlockAudioDevice(device);
-            snprintf(ui->status, sizeof(ui->status), "ARP PLAYING / TEAL SELECTED, GOLD SOUNDING / STOP RELEASES ARP ONLY");
-        }
-    }
+    if (toggle_playback) keyboard_sequence_toggle_playback(device, audio, ui, instrument, fm, rate);
     return 1;
 }

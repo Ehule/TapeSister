@@ -22,6 +22,129 @@ static void sequence_select(int note)
     assert(found);
 }
 
+static void test_keyboard_sequence_transport(void)
+{
+    static SisterWindow sister;
+    ts_sister_ui_model_init(&sister.model, &ui.config);
+    sister.window = SDL_CreateWindow("ARP transport", 0, 0, 640, 400, 0);
+    assert(sister.window);
+    sister.window_id = SDL_GetWindowID(sister.window);
+    reset_route(0);
+    ui.keyboard_sequence_open = ui.keyboard_sequence_edit = 0;
+    TsKeyboardSequenceSettings settings = audio.keyboard_sequence.settings;
+    settings.count = 3; settings.notes[0] = 60; settings.notes[1] = 64; settings.notes[2] = 67;
+    settings.seconds = .04; settings.loop = 1;
+    ts_keyboard_sequence_set(&audio.keyboard_sequence, &settings);
+    SDL_Event key = {0}; key.type = SDL_KEYDOWN; key.key.keysym.sym = SDLK_SPACE;
+    key.key.windowID = SDL_GetWindowID(window); key.key.keysym.mod = KMOD_SHIFT;
+#define TRANSPORT() keyboard_sequence_transport_event(&key, window, device, &audio, &ui, \
+                                                      &sister, &instrument, &fm, 44100)
+    /* It works with the controls hidden and from every performance workspace. */
+    ui.show_keyboard = 0;
+    for (int surface = 0; surface < 5; ++surface) {
+        ui.master_eq_open = surface == 1; ui.mosaic_open = surface == 2;
+        ui.fm_open = surface == 3;
+        key.key.windowID = surface == 4 ? sister.window_id : SDL_GetWindowID(window);
+        assert(TRANSPORT() && audio.keyboard_sequence.running);
+        assert(audio.keyboard_sequence.source->fm == ui.fm_open);
+        assert(power_audio_energy() > .01);
+        key.key.repeat = 1;
+        assert(TRANSPORT() && audio.keyboard_sequence.running);
+        key.key.repeat = 0;
+        assert(TRANSPORT() && !audio.keyboard_sequence.running);
+    }
+    ui.master_eq_open = ui.mosaic_open = ui.fm_open = 0;
+    key.key.windowID = SDL_GetWindowID(window);
+    /* Plain Space, other chords, foreign windows and modal editing keep ownership. */
+    const SDL_Keymod modifiers[] = {KMOD_NONE, KMOD_SHIFT | KMOD_CTRL,
+                                   KMOD_SHIFT | KMOD_ALT, KMOD_SHIFT | KMOD_GUI};
+    for (size_t i = 0; i < sizeof(modifiers) / sizeof(*modifiers); ++i) {
+        key.key.keysym.mod = modifiers[i]; assert(!TRANSPORT());
+    }
+    key.key.keysym.mod = KMOD_SHIFT;
+    key.key.windowID = sister.window_id + 100; assert(!TRANSPORT());
+    key.key.windowID = SDL_GetWindowID(window);
+    int *blockers[] = {&ui.config_open, &ui.portal.open, &ui.import_preview_open,
+        &ui.mosaic_edit_choice, &ui.exit_confirm_open, &ui.file_busy, &ui.midi_learn_active,
+        &sister.model.preset_manage_open, &sister.model.fallout_lfo_open};
+    for (size_t i = 0; i < sizeof(blockers) / sizeof(*blockers); ++i) {
+        *blockers[i] = 1; assert(!TRANSPORT() && !audio.keyboard_sequence.running); *blockers[i] = 0;
+    }
+    ui.fm_open = ui.fm_bank_choice_open = 1; assert(!TRANSPORT());
+    ui.fm_bank_choice_open = 0; ui.fm_full_choice_open = 1; assert(!TRANSPORT());
+    ui.fm_open = ui.fm_full_choice_open = 0;
+    ui.renaming_bank_slot = 0; assert(!TRANSPORT()); ui.renaming_bank_slot = -1;
+    /* Shortcut Stop preserves manual HOLD and MIDI voices, just like the button. */
+    ui.show_keyboard = 1;
+    toggle_fm_hold(device, &audio, &ui, &instrument); click_note(0, 0);
+    TsMidiEvent midi = {0}; midi.action = TS_MIDI_ACTION_NOTE_ON;
+    assert(ts_note_event_midi(&midi.note, 67, 100, 2));
+    handle_midi_event(device, &audio, &ui, &instrument, &fm, &midi, 44100);
+    assert(voices() == 2);
+    assert(TRANSPORT() && audio.keyboard_sequence.running && voices() == 2);
+    assert(TRANSPORT() && !audio.keyboard_sequence.running && voices() == 2);
+    assert(power_audio_energy() > .01);
+    stop_all_force(device, &audio, &ui);
+    settings.count = 0; ts_keyboard_sequence_set(&audio.keyboard_sequence, &settings);
+    assert(TRANSPORT() && !audio.keyboard_sequence.running && !voices());
+    assert(strstr(ui.status, "SELECT KEYS"));
+    SDL_DestroyWindow(sister.window); sister.window = NULL;
+#undef TRANSPORT
+}
+
+static void test_keyboard_sequence_tile_change(void)
+{
+    char error[160];
+    reset_route(0);
+    assert(ts_instrument_copy_selected(&instrument, 1, error, sizeof(error)));
+    /* Give the second tile different audio, then return to the first. */
+    for (size_t i = 0; i < instrument.current.frames * instrument.current.channels; ++i)
+        instrument.current.data[i] *= .5f;
+    ++instrument.current.visual_revision;
+    assert(ts_instrument_select_bank(&instrument, 0, error, sizeof(error)));
+    TsKeyboardSequenceSettings settings = audio.keyboard_sequence.settings;
+    settings.count = 3; settings.notes[0] = 60; settings.notes[1] = 64; settings.notes[2] = 67;
+    settings.mode = TS_KEYBOARD_SEQUENCE_ORDER; settings.seconds = .04; settings.loop = 1;
+    ts_keyboard_sequence_set(&audio.keyboard_sequence, &settings);
+    int play_on_select = ui.play_on_select;
+    for (int loop = 0; loop < 3; ++loop)
+    for (int select = 0; select < 2; ++select) {
+        reset_route(0);
+        assert(ts_instrument_select_bank(&instrument, 0, error, sizeof(error)));
+        ui.play_on_select = select;
+        if (loop) toggle_workbench_loop(device, &audio, &ui, &instrument, 44100, loop == 2);
+        keyboard_sequence_toggle_playback(device, &audio, &ui, &instrument, &fm, 44100);
+        assert(power_audio_energy() > .01);
+        TsKeyboardSequence *s = &audio.keyboard_sequence;
+        int cursor = s->cursor, note = s->current_note;
+        double elapsed = s->elapsed;
+        uint64_t old_hash = ts_sample_hash(&s->source->sample);
+        ts_ui_select_panel(&ui, TS_UI_PANEL_SAMPLE_TILES);
+        lock_edit(device, &audio);
+        assert(ts_ui_execute_bank_action(&instrument, 1, TS_UI_BANK_ACTION_AUDITION, error, sizeof(error)));
+        unlock_edit(device, &audio, &ui, &instrument);
+        sample_bank_audition_selected(device, &audio, &ui, &instrument, 1, 44100);
+        refresh_workbench_loop(device, &audio, &ui, &instrument);
+        assert(s->running && !audio.playing && !audio.tile_launcher_active);
+        assert(ui.workbench_loop_active == (loop != 0));
+        assert(keyboard_sequence_prepare(device, &audio, &ui, &instrument, &fm, 44100, 0));
+        assert(s->cursor == cursor && s->current_note == note && s->elapsed == elapsed);
+        assert(!memcmp(&settings, &s->settings, sizeof(settings)));
+        assert(ts_sample_hash(&s->source->sample) != old_hash);
+        assert(ts_sample_hash(&s->source->sample) == ts_sample_hash(&instrument.current));
+        assert(power_audio_energy() > .01);
+        stop_all_force(device, &audio, &ui); assert(!s->running);
+    }
+    /* After ARP stops, the normal click-to-launch behavior returns. */
+    ui.play_on_select = 1;
+    sample_bank_audition_selected(device, &audio, &ui, &instrument, 1, 44100);
+    assert(audio.tile_launcher_active);
+    stop_all_force(device, &audio, &ui);
+    ui.play_on_select = play_on_select;
+    assert(ts_instrument_select_bank(&instrument, 0, error, sizeof(error)));
+    ui.show_keyboard = ui.keyboard_sequence_open = 1;
+}
+
 static void test_keyboard_sequence_controller(void)
 {
     for (int route = 0; route < 4; ++route) {
@@ -33,6 +156,9 @@ static void test_keyboard_sequence_controller(void)
         reset_route(route);
         set_keyboard_octave(device, &audio, &ui, 4);
         ui.keyboard_sequence_open = 1; ui.keyboard_sequence_edit = 0;
+        /* The newly covered row belongs to ARP, not the controls underneath. */
+        sequence_click(12, ui.fm_open ? TS_ARP_PANEL_FM_Y : TS_ARP_PANEL_Y, KMOD_NONE);
+        if (ui.fm_open) sequence_click(12, TS_ARP_PANEL_FM_Y + TS_ARP_PANEL_FM_H - 1, KMOD_NONE);
         TsKeyboardSequenceSettings settings = audio.keyboard_sequence.settings;
         settings.count = 0; settings.seconds = .04; settings.gate = .8;
         ts_keyboard_sequence_set(&audio.keyboard_sequence, &settings);
@@ -134,6 +260,8 @@ static void test_keyboard_sequence_controller(void)
     assert(!audio.keyboard_sequence.running && ts_performance_count(&audio.tile_launchers) == 1);
     assert(power_audio_energy() > .01);
     stop_all_force(device, &audio, &ui);
+    test_keyboard_sequence_transport();
+    test_keyboard_sequence_tile_change();
     /* Native UI capture with ordered white and black keys and a running step. */
     sequence_click(280, 260, KMOD_NONE);
     sequence_select(0); sequence_select(7); sequence_select(3); sequence_select(10);
@@ -145,7 +273,17 @@ static void test_keyboard_sequence_controller(void)
     const char *shot = getenv("TS_TEST_KEYBOARD_SEQUENCE_PPM");
     if (shot) {
         static TsFramebuffer fb;
+        size_t first = instrument.view_first, last = instrument.view_last;
+        instrument.view_first = 0; instrument.view_last = instrument.current.sample_rate / 20;
         ts_ui_render(&fb, &ui, &instrument); assert(ts_ui_write_ppm(&fb, shot));
+        instrument.view_first = first; instrument.view_last = last;
+    }
+    const char *fm_shot = getenv("TS_TEST_KEYBOARD_SEQUENCE_FM_PPM");
+    if (fm_shot) {
+        static TsFramebuffer fb;
+        ui.fm_open = 1; ui.fm_preview_sample = &fm;
+        ts_ui_render(&fb, &ui, &instrument); assert(ts_ui_write_ppm(&fb, fm_shot));
+        ui.fm_open = 0; ui.fm_preview_sample = NULL;
     }
     stop_all_force(device, &audio, &ui);
     ts_keyboard_sequence_source_free(ts_keyboard_sequence_source(&audio.keyboard_sequence, NULL));

@@ -134,7 +134,9 @@ now accept MIDI notes. See [Keyboard Sustain](docs/KEYBOARD_SUSTAIN.md).
 **ARP** adds keyboard arpeggios and custom note order, with 24 selected pitches,
 live step/gate controls, and separate selected/current-note colors. It plays
 tile, FM, or ensemble sources alongside manual chords and MIDI, and enters the
-existing recording and effects paths. See [Keyboard sequencing](docs/KEYBOARD_SEQUENCE.md).
+existing recording and effects paths. **Shift+Space** starts/stops ARP with its
+controls hidden, and tile selection changes the sound without restarting the
+sequence. See [Keyboard sequencing](docs/KEYBOARD_SEQUENCE.md).
 
 The main and Sister Machine **M/S** buttons mirror one capture-format setting:
 
@@ -220,12 +222,24 @@ Mix, Feedback, and Noise toward a formal climax.
 
 ![Fallout LFO and Rise routing](docs/images/manual/fallout-modulation.png)
 
-## Master output and limiter
+## Master performance EQ and limiter
 
 The linked-stereo limiter, final OUT fader, L/R meter, and gain-reduction readout remain
 visible across the main and Sister windows. Final order is:
 
-> TapeSister mix → limiter → OUT fader → meter and FILE OUT.
+> TapeSister mix → Master EQ → limiter → OUT fader → meter and FILE OUT.
+
+Click **EQ** in either window to open the native **Master / Room EQ** page.
+Five bands offer Bell, Low/High Shelf, High/Low Pass, and Notch, with frequency,
+±12 dB gain, Q, band bypass, global bypass, and a confirmed flat reset. Drag the
+numbered nodes on the combined response curve; wheel a node for Q. The five buttons
+toggle individual band bypass; Ctrl-click solos one band's EQ, and repeating restores
+the previous bypass states. The selected
+band has exact values below the graph. Frequency, gain, Q, and EQ bypass support
+existing MIDI learn. Room EQ stays in projects and session settings, separate
+from sound presets. See [Master Performance EQ](docs/MASTER_EQ.md).
+
+![Master / Room EQ and limiter](docs/images/master-performance-eq.png)
 
 The limiter is a safety boundary for extreme synthesis and feedback. Gain should still
 be managed at Sister INPUT/internal OUT, the source mixer, effect slots, and feedback

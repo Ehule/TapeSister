@@ -154,3 +154,13 @@ snapshots and never mutable circular audio.
 SUPPRESS, generic routing matrices, program-output recirculation, same-tile feedback,
 auto-arming captured tiles, live tape serialization, linked-channel CDP, TapeHead changes
 and hidden post-Sister effects remain excluded.
+
+## Master Performance EQ state
+
+Schema version 22 adds global `MasterEq.Enabled`, `MasterEq.SoloBand` (0 = none,
+1–5 = one band), and five explicit
+`MasterEq.Band.N=enabled,type,frequency,gain_db,q` rows. Missing EQ fields default
+to flat and bypassed with no solo, including legacy projects without a sidecar. EQ is captured
+with project/session state, but remains outside the Sister/FX/Fallout sound-preset
+parameter snapshot so preset recall preserves room correction. Filter memory and
+crossfade state are runtime-only. See [Master Performance EQ](MASTER_EQ.md).

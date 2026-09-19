@@ -639,6 +639,7 @@ static uint64_t paged_project_state_hash(const TsSamplePages *pages,
         state_hash_bytes(&hash, &record_hash, sizeof(record_hash));
     }
     if (sister != NULL) {
+        state_hash_bytes(&hash,&sister->master_eq.controls,sizeof(sister->master_eq.controls));
         uint8_t routes = sister->source_switches & TS_SISTER_SOURCE_ALL;
         state_hash_bytes(&hash, &routes, sizeof(routes));
         state_hash_bytes(&hash, sister->page_source_masks,
@@ -1128,14 +1129,14 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         output = audio_apply_topology_crossfade(audio, output);
         output = ts_sister_runtime_process_output(&audio->sister, output);
         /* Mosaic OUTPUT records exactly the stereo speaker program, including
-           keyboard/sample voices, Prism, Sister/FX, limiter and OUT gain. */
+           keyboard/sample voices, Prism, Sister/FX, Master EQ, limiter and OUT gain. */
         if(audio->record_bank_recorder && audio->record_source &&
            atomic_load_explicit(audio->record_source,memory_order_acquire)==TS_RECORD_SOURCE_OUTPUT) {
             (void)ts_external_recorder_write_frame(audio->record_bank_recorder,output);
             synth_block_peak=fmaxf(synth_block_peak,fmaxf(fabsf(output.l),fabsf(output.r)));
         }
         /* FILE OUT captures the final audible program after ordinary or
-           Sister POST effects, topology fades, the output limiter, and the
+           Sister POST effects, topology fades, Master EQ, the output limiter, and the
            global OUT fader. The optional H1/H2/H3 file stems retain their
            internal taps. Neither path writes to Sister's rolling memory. */
         if (audio->sister_file_recorder != NULL &&
@@ -1944,6 +1945,16 @@ static void sample_bank_audition_selected(SDL_AudioDeviceID device, AudioState *
     TsUiState *ui, TsInstrument *instrument, int bank_slot, int rate)
 {
     ui->audition_source=TS_AUDITION_CURRENT;ui->bank_view_slot=-1;
+    /* ARP follows the selected source on the next UI refresh. Selection must
+       neither stop its clock via LOOP nor add a separate unpitched launcher. */
+    if (device) SDL_LockAudioDevice(device);
+    int sequencing = audio->keyboard_sequence.running;
+    if (device) SDL_UnlockAudioDevice(device);
+    if (sequencing) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "TILE %02d SELECTED - ARP CONTINUES / SHIFT+SPACE TO STOP", bank_slot + 1);
+        return;
+    }
     if(!ui->play_on_select) {
         snprintf(ui->status,sizeof(ui->status),"TILE %02d SELECTED FOR EDITING - PLAY ON SEL OFF",bank_slot+1);
         return;
@@ -3802,6 +3813,8 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
                 (void)ts_sister_project_state_apply(
                     &sister_state, &audio->sister, instrument);
             } else {
+                TsMasterEqControls flat;ts_master_eq_default(&flat);
+                ts_master_eq_set(&audio->sister.master_eq,&flat);
                 ts_sister_runtime_set_sources(&audio->sister, 0u);
                 ts_sister_runtime_set_selected_preset(&audio->sister, "");
             }
@@ -10762,6 +10775,8 @@ static int midi_source_from_event(const TsMidiEvent *midi,
     return 1;
 }
 
+#include "main_sdl_master_eq.inc"
+
 static int midi_sister_hit_from_target(const char *target, float normalized,
                                        TsSisterUiHit *hit)
 {
@@ -10833,6 +10848,9 @@ static float midi_target_current_value(const char *target,
     int parameter;
     char trailing;
     if (target == NULL || ui == NULL || sister == NULL) return 0.0f;
+    int eq_band,eq_control;
+    if(master_eq_midi_band(target,&eq_band,&eq_control))
+        return ts_master_eq_normalized(&ui->config.master_eq.band[eq_band-1],eq_control,ui->master_eq_rate);
     if (strcmp(target, "main.master_output") == 0 ||
         strcmp(target, "sister.param.master_output") == 0)
         return ui->master_output.gain;
@@ -10875,8 +10893,15 @@ static int midi_apply_target(SDL_AudioDeviceID device, AudioState *audio,
                              const char *target, float normalized,
                              uint32_t sample_rate, uint8_t output_channels)
 {
-    int slot;
+    int slot,eq_band,eq_control;
     TsSisterUiHit hit;
+    if(!strcmp(target,"main.eq.bypass")) {
+        ui->config.master_eq.enabled=!ui->config.master_eq.enabled;master_eq_commit(device,audio,ui);return 1;
+    }
+    if(master_eq_midi_band(target,&eq_band,&eq_control)) {
+        ts_master_eq_set_normalized(&ui->config.master_eq.band[eq_band-1],eq_control,normalized,sample_rate);
+        master_eq_commit(device,audio,ui);return 1;
+    }
     slot = ts_midi_tile_target_slot(target);
     if (slot >= 0 && slot < TS_BANK_SLOT_COUNT) {
         toggle_tile_launcher(device, audio, ui, instrument, slot,
@@ -12701,6 +12726,7 @@ int main(int argc, char **argv)
         ui.config.sister_limiter_release_ms);
     ts_sister_runtime_set_master_output_gain(
         &audio.sister, (float)ui.config.master_output_percent / 100.0f);
+    ts_master_eq_set(&audio.sister.master_eq,&ui.config.master_eq);
     audio.sister_file_recorder = &sister_window.performance_recorder;
     atomic_init(&audio.sister_file_tap, TS_SISTER_TAP_MIX);
     ts_realtime_diagnostics_init(&audio.realtime_diagnostics);
@@ -13150,6 +13176,9 @@ int main(int argc, char **argv)
                 }
                 continue;
             }
+            if(keyboard_sequence_transport_event(&event,window,device,&audio,&ui,
+                &sister_window,&instrument,&fm_preview,obtained.freq))continue;
+            if(master_eq_event(&event,window,device,&audio,&ui,&sister_window))continue;
             mosaic_commit(device,&ui,&instrument,&mosaic);
             /* Finish an active pointer gesture before Escape can discard a take. */
             if(!mosaic.drag && !mosaic.mix_drag && !mosaic.volume_drag &&
@@ -13842,7 +13871,7 @@ int main(int argc, char **argv)
                         snprintf(ui.fm_message, sizeof(ui.fm_message),
                                  "%.95s", ui.status);
                     } else if (key == SDLK_SPACE) {
-                        if (ts_note_bank_count(&audio.notes) > 0)
+                        if (audio.keyboard_sequence.running || ts_note_bank_count(&audio.notes) > 0)
                             stop_all_force(device, &audio, &ui);
                         else begin_fm_note(device, &audio, &ui, &instrument,
                                            &fm_preview, 0, obtained.freq, 0);
@@ -14396,7 +14425,8 @@ int main(int argc, char **argv)
                                  "REC ARMED - MAKE SOUND OR ESC/CAPTURE TO CANCEL");
                     else if (audio.capture.state == TS_CAPTURE_RECORDING)
                         stop_capture_early(device, &audio, &ui);
-                    else if (audio.playing || ts_note_bank_count(&audio.notes) > 0 ||
+                    else if (audio.playing || audio.keyboard_sequence.running ||
+                        ts_note_bank_count(&audio.notes) > 0 ||
                         ui.tile_launcher_mask != 0u || ui.workbench_loop_active)
                         stop_all(device, &audio, &ui);
                     else {
@@ -16957,6 +16987,8 @@ int main(int argc, char **argv)
                 ui.master_output.clip[channel] =
                     routing.output_clip[channel];
             }
+            ui.config.master_eq = audio.sister.master_eq.controls;
+            ui.master_eq_rate = (unsigned)audio.output_rate;
             ui.master_output.limiter_enabled = routing.limiter_enabled;
             ui.master_output.limiter_ceiling_db =
                 routing.limiter_ceiling_db;

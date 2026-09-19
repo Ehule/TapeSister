@@ -71,6 +71,7 @@ void ts_sister_project_state_init(TsSisterProjectState *state,
     if (state == NULL) return;
     memset(state, 0, sizeof(*state));
     state->page_count = 1u;
+    ts_master_eq_default(&state->master_eq);
     ts_sister_parameters_default(&state->parameters, sample_rate);
 }
 
@@ -92,6 +93,7 @@ void ts_sister_project_state_capture(TsSisterProjectState *state,
            state->page_count * sizeof(state->page_masks[0]));
     state->parameters = runtime->parameters;
     ts_prism_matrix_export(&runtime->prism,&state->parameters.prism);
+    state->master_eq = runtime->master_eq.controls;
     state->parameter_locks = runtime->parameter_locks;
     state->parameter_locks_high = runtime->parameter_locks_high;
     ts_sister_parameters_sanitize(&state->parameters,
@@ -116,6 +118,7 @@ int ts_sister_project_state_apply(const TsSisterProjectState *state,
            state->page_count * sizeof(state->page_masks[0]));
     runtime->active_page = state->active_page;
     ts_sister_runtime_set_parameters(runtime, &state->parameters);
+    ts_master_eq_set(&runtime->master_eq,&state->master_eq);
     runtime->parameter_locks = state->parameter_locks;
     runtime->parameter_locks_high = state->parameter_locks_high;
     ts_sister_runtime_set_selected_preset(runtime, state->selected_preset);
@@ -269,6 +272,7 @@ int ts_sister_project_state_save_file(const TsSisterProjectState *state,
         failed = fprintf(file, "Mask.%zu=%04X\n", page,
                          state->page_masks[page]) < 0;
     if (!failed) failed = !write_parameters(file, &state->parameters);
+    if (!failed) failed = !ts_master_eq_write(file,&state->master_eq);
     if (fclose(file) != 0) failed = 1;
     if (!failed) {
 #ifdef _WIN32
@@ -605,6 +609,8 @@ int ts_sister_project_state_load_file(TsSisterProjectState *state,
             errno = 0; parsed_mask = strtoul(value, &end, 16);
             if (errno != 0 || end == value || *trim(end) != '\0' || parsed_mask > 0xffffu) goto malformed;
             loaded.page_masks[page] = (uint16_t)parsed_mask;
+        } else if (!strncmp(key,"MasterEq.",9)) {
+            if(ts_master_eq_read(&loaded.master_eq,key,value)<0)goto malformed;
         } else if (!assign_parameter(&loaded.parameters, key, value)) goto malformed;
     }
     if (ferror(file) || !header || !version || !have_pages ||

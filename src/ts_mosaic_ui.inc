@@ -228,7 +228,7 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
     mosaic_button(fb,214,4,46,"CFG",0,1);mosaic_button(fb,264,4,32,"FT2",0,1);
     mosaic_button(fb,300,4,56,"CANVAS",0,1);mosaic_button(fb,360,4,38,"SAVE",0,1);
     mosaic_button(fb,402,4,58,"EXPORT",0,1);mosaic_button(fb,464,4,28,"CDP",0,1);
-    mosaic_button(fb,TS_UI_MASTER_LIMITER_X,TS_UI_MASTER_LIMITER_Y,TS_UI_MASTER_LIMITER_W,"LIM",ui->master_output.limiter_enabled,0);
+    mosaic_button(fb,TS_UI_MASTER_LIMITER_X,TS_UI_MASTER_LIMITER_Y,TS_UI_MASTER_LIMITER_W,"EQ",ui->master_eq_open,0);
     master_output_fader(fb,ui->master_output.gain,TS_UI_MASTER_OUTPUT_X,TS_UI_MASTER_OUTPUT_Y);
     master_output_meter(fb,&ui->master_output,TS_UI_MASTER_METER_X,TS_UI_MASTER_METER_Y);
     text(fb,12,43,"SOURCES",RGB(198,186,206),1);

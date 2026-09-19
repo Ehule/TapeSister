@@ -32,6 +32,7 @@ void ts_config_init(TsConfig *config)
         config->reference_tone_volume = TS_REFERENCE_TONE_VOLUME_DEFAULT;
         config->fm_output_percent = TS_FM_OUTPUT_PERCENT_DEFAULT;
         config->master_output_percent = TS_MASTER_OUTPUT_PERCENT_DEFAULT;
+        ts_master_eq_default(&config->master_eq);
         config->audio_backend = TS_AUDIO_BACKEND_AUTO;
         config->audio_backend_invalid = 0;
         config->audio_buffer_frames = TS_AUDIO_BUFFER_FRAMES_DEFAULT;
@@ -283,7 +284,12 @@ int ts_config_load(TsConfig *config, const char *path,
         *equals = '\0';
         value = trim(equals + 1);
         key = trim(key);
-        if (strcmp(key, "SamplePath") == 0) {
+        if (!strncmp(key, "MasterEq.", 9)) {
+            if (ts_master_eq_read(&loaded.master_eq,key,value)<0) {
+                snprintf(error,error_size,"Invalid master EQ on config line %d",line_number);
+                fclose(file);return 0;
+            }
+        } else if (strcmp(key, "SamplePath") == 0) {
             if (!copy_value(loaded.sample_path, value, error, error_size)) { fclose(file); return 0; }
         } else if (strcmp(key, "FastTrackerPath") == 0) {
             if (!copy_value(loaded.fasttracker_path, value, error, error_size)) { fclose(file); return 0; }
@@ -733,6 +739,8 @@ int ts_config_save(const TsConfig *config, const char *path,
         write_failed = fprintf(file, "MidiMap.%s=%s\n", mapping->target,
                                source) < 0;
     }
+    if (!write_failed) write_failed = fprintf(file,"\n[Master EQ]\n") < 0 ||
+        !ts_master_eq_write(file,&config->master_eq);
     if (fclose(file) != 0) write_failed = 1;
     if (write_failed) {
         set_error(error, error_size, "Could not finish writing config");

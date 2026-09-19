@@ -5,6 +5,7 @@
 #include "tapesister/performance.h"
 #include "tapesister/sister_machine.h"
 #include "tapesister/sister_limiter.h"
+#include "tapesister/master_eq.h"
 #include "tapesister/sister_wave_snapshot.h"
 
 #include <stdatomic.h>
@@ -195,6 +196,7 @@ typedef struct {
     TsSisterFalloutEngine fallout;
     TsSisterPostFxEngine post_fx;
     TsSisterLimiter limiter;
+    TsMasterEq master_eq;
     TsSisterParameters parameters;
     TsPerformanceBank performance;
     TsCaptureRecorder capture;
