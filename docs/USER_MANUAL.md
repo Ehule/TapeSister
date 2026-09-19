@@ -1487,9 +1487,14 @@ Drag a numbered node horizontally for frequency and vertically for gain. Wheel a
 node to adjust Q. The selected band's sliders show exact values; wheel them for
 small changes, or Shift-wheel for finer changes. Shift-drag a node slows movement.
 Right-click a node to zero its gain; middle-click it to toggle that band. Click the
-type button to cycle forward, or right-click to cycle backward. Band buttons select
-without editing. The amber curve combines all active bands; in bypass, the remembered
-curve dims and the active response is flat.
+type button to cycle forward, or right-click to cycle backward. The five buttons
+below the graph now toggle each band's bypass; nodes select the band to edit.
+Ctrl-click a button to solo that band's EQ, temporarily skipping the other filters.
+Ctrl-click it again to restore the previous bypass states, or Ctrl-click another
+button to move solo. Solo can audition a bypassed band without changing its saved
+state. A plain bypass click exits solo; clicking the soloed band bypasses it.
+Buttons display ON / BYPASS / SOLO / SKIP. The amber curve follows the active filters;
+in global bypass, the remembered curve dims and the active response is flat.
 
 **EQ ON / EQ BYPASS** compares the processed and original master. There is no automatic
 loudness matching: boosts can increase limiter gain reduction. **RESET EQ** requires
@@ -1497,7 +1502,7 @@ a second click on **CONFIRM RESET** and returns all five bands to flat, with EQ 
 It leaves the limiter and other settings alone. Escape or X closes the page. Physical
 QWERTY notes and the arpeggiator keep playing, and Space still stops transport.
 
-EQ state saves with the project and session settings. Older projects load flat and
+EQ state, including band bypass and solo, saves with project/session settings. Older projects load flat and
 bypassed. Sister/FX/Fallout sound presets leave room EQ unchanged. Open the EQ page
 before entering MIDI learn to map a band's frequency, gain, Q, or global bypass.
 

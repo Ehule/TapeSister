@@ -230,7 +230,9 @@ visible across the main and Sister windows. Final order is:
 Click **EQ** in either window to open the native **Master / Room EQ** page.
 Five bands offer Bell, Low/High Shelf, High/Low Pass, and Notch, with frequency,
 ±12 dB gain, Q, band bypass, global bypass, and a confirmed flat reset. Drag the
-numbered nodes on the combined response curve; wheel a node for Q. The selected
+numbered nodes on the combined response curve; wheel a node for Q. The five buttons
+toggle individual band bypass; Ctrl-click solos one band's EQ, and repeating restores
+the previous bypass states. The selected
 band has exact values below the graph. Frequency, gain, Q, and EQ bypass support
 existing MIDI learn. Room EQ stays in projects and session settings, separate
 from sound presets. See [Master Performance EQ](docs/MASTER_EQ.md).

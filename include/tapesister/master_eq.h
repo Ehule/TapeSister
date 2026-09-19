@@ -11,7 +11,11 @@
 typedef enum { TS_EQ_BELL, TS_EQ_LOW_SHELF, TS_EQ_HIGH_SHELF,
     TS_EQ_HIGH_PASS, TS_EQ_LOW_PASS, TS_EQ_NOTCH, TS_EQ_TYPE_COUNT } TsEqType;
 typedef struct { int enabled, type; float frequency, gain_db, q; } TsEqBand;
-typedef struct { int enabled; TsEqBand band[TS_MASTER_EQ_BANDS]; } TsMasterEqControls;
+typedef struct {
+    int enabled;
+    TsEqBand band[TS_MASTER_EQ_BANDS];
+    int solo_band; /* 0: all enabled bands; 1..5: only that band, retaining bypass states. */
+} TsMasterEqControls;
 typedef struct { double b0,b1,b2,a1,a2; } TsEqCoefficients;
 typedef struct { TsEqCoefficients c; double z1[2],z2[2]; } TsEqFilter;
 typedef struct {
@@ -28,6 +32,8 @@ typedef struct {
 
 void ts_master_eq_default(TsMasterEqControls *c);
 void ts_master_eq_sanitize(TsMasterEqControls *c);
+int ts_master_eq_band_active(const TsMasterEqControls *c, int band);
+void ts_master_eq_toggle_band(TsMasterEqControls *c, int band);
 void ts_master_eq_init(TsMasterEq *eq);
 /* UI/device thread, with the output device locked. Never allocate. */
 void ts_master_eq_prepare(TsMasterEq *eq, unsigned rate);

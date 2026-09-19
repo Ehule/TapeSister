@@ -418,6 +418,9 @@ Click **EQ** in either window for Master / Room EQ and the limiter toggle.
 Five bands; Bell / Low Shelf / High Shelf / High Pass / Low Pass / Notch.
 Drag a node for frequency/gain; wheel for Q; Shift makes node edits finer.
 Selected-band sliders show exact values. Gain ±12 dB; Q 0.30–8.00; passes 12 dB/oct.
+The five buttons toggle band bypass; Ctrl-click solos one band's EQ, repeat to
+restore previous bypass states. Nodes select the editor independently. ON / BYPASS /
+SOLO / SKIP distinguish saved bypass from bands temporarily excluded by solo.
 Right-click a node for zero gain, middle-click for band bypass. Type cycles with
 left/right click. Global EQ bypass retains settings; RESET requires confirmation.
 QWERTY/ARP keep playing; Space stops, Escape closes. MIDI learn supports the three

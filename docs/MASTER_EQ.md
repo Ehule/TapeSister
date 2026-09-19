@@ -29,7 +29,9 @@ boosts or using resonant Q can increase gain beyond one band's ±12 dB range.
 
 | Control | Action |
 | --- | --- |
-| Five numbered graph nodes / band tabs | Select a band |
+| Numbered graph nodes | Select a band for editing |
+| Five numbered band buttons | Toggle that band's bypass without changing the selected editor |
+| Ctrl-click a band button | Solo that band's EQ; repeat to restore the previous bypass states |
 | Drag a node | Horizontal: frequency; vertical: gain |
 | Shift-drag a node | Fine frequency/gain changes |
 | Wheel over a node | Change Q; Shift makes changes finer |
@@ -37,7 +39,7 @@ boosts or using resonant Q can increase gain beyond one band's ±12 dB range.
 | Wheel over a slider | Fine value adjustment; Shift-wheel is finer |
 | Right-click a slider | Restore that parameter's neutral default |
 | Right-click a node | Set its gain to 0 dB |
-| Middle-click a node / BAND ON-OFF | Bypass that band |
+| Middle-click a node | Bypass that band |
 | Filter type button | Left-click forward; right-click backward |
 | EQ ON / EQ BYPASS | Compare EQ with the original master; settings are retained |
 | RESET EQ → CONFIRM RESET | Return all five bands to neutral bells and bypass EQ |
@@ -50,7 +52,17 @@ Gain spans −12 to +12 dB; ordinary wheel steps are 0.5 dB and Shift-wheel step
 Low Shelf, High Shelf, High Pass, Low Pass, and Notch. Passes are fixed at
 12 dB/octave. Gain does not apply to passes or notch; the UI shows `GAIN --`.
 
-The amber curve combines all enabled bands. It displays approximately ±17 dB;
+The buttons show `ON`, `BYPASS`, `SOLO`, or `SKIP` (temporarily excluded by solo).
+Solo applies only the chosen band's EQ to the master, bypassing the other filters;
+it does not isolate an audible frequency range. Solo can audition a bypassed band
+without overwriting its saved bypass state. Ctrl-click another button to move solo,
+or Ctrl-click the soloed button to restore the full EQ. A plain bypass click exits
+solo and toggles that band's saved state; clicking the soloed band bypasses it.
+The other bands retain their settings. Global EQ bypass still takes priority.
+
+![Band 3 soloed, band 2 bypassed, other bands temporarily skipped](images/master-eq-band-solo.png)
+
+The amber curve combines all active bands, including the current solo choice. It displays approximately ±17 dB;
 stronger cuts/boosts meet the graph boundary. Nodes show each band's frequency and
 gain, rather than its contribution after the other bands. When EQ is bypassed,
 the remembered curve dims and a flat amber line shows the active response.
@@ -65,13 +77,16 @@ primitives, controls, and palette rather than a separate UI toolkit.
 ## MIDI learn and saved state
 
 Open the page, then enter the existing MIDI-learn mode. Select a band and map its
-Frequency, Gain, or Q slider. EQ bypass, limiter, and OUT also use existing learn.
+Frequency, Gain, or Q slider. In learn mode the numbered row only selects the band,
+so learning never toggles its sound. EQ bypass, limiter, and OUT also use existing learn.
 Continuous parameters retain the existing controller pickup behavior. Target IDs
 are `main.eq.band.N.0` (frequency), `.1` (gain), `.2` (Q), for N=1–5, plus
 `main.eq.bypass` for the toggle. Frequency and Q mappings are logarithmic.
 
 Projects save the enabled state and all five bands in `sister-state.ini`, schema
-version 22. Session settings save the same explicit `MasterEq.*` keys in
+version 22. `MasterEq.SoloBand` stores 0 for no solo or 1–5 for the soloed band;
+older files without it default to no solo. Reset clears solo too. Session settings
+save the same explicit `MasterEq.*` keys in
 `tapesister.ini`. Older projects/configurations without those fields start flat
 and bypassed. EQ edits participate in the project's dirty-state check. Band states
 are control data only; filter histories and ramps are never serialized. Sister,
@@ -90,16 +105,17 @@ or look-ahead latency. Existing limiter latency remains unchanged.
 
 `test_master_eq.c` checks rendered and analytical responses for all six types at
 8/44.1/48/96 kHz, exact flat/bypass output, stereo matching, rapid extreme edits,
-transition continuity, finite output and silence decay, rate changes, limiter
+transition continuity, finite output and silence decay, rate changes, solo/restore, limiter
 protection, OUT mute, persistence, malformed state, and preset isolation.
 The native controller tests cover page interaction/scaling, modal ownership,
-MIDI pickup, project dirtiness, all four QWERTY/ARP routes, global stop, and equality
+MIDI pickup, band bypass/solo and independent selection, project dirtiness, all four QWERTY/ARP routes, global stop, and equality
 between FILE OUT's queued frames and hardware output.
 
 The screenshot is emitted by the native SDL controller fixture through the actual
 `ts_ui_render` framebuffer, using modest room-correction settings. Regenerate it
 with `TS_TEST_MASTER_EQ_PPM=/tmp/master-eq.ppm` when running
-`tapesister_keyboard_hold_tests`, then convert the PPM to PNG without resizing.
+`tapesister_keyboard_hold_tests`, then convert the PPM to PNG without resizing. Set `TS_TEST_MASTER_EQ_SOLO_PPM` to
+emit the solo example as well.
 
 Real-world validation still needs Windows/WASAPI and physical MIDI hardware,
 small-buffer device changes, sustained live manipulation, and listening on the

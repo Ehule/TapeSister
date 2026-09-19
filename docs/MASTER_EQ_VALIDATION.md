@@ -47,3 +47,19 @@ controller fixture, not a mockup. It shows a 40 Hz high pass, a −2.5 dB low sh
   what was heard. Confirm source captures/exports retain their intended dry taps.
 - Save/reopen a project, restart the session, and recall sound presets; inspect the
   page at the intended window scale and palette.
+
+## Band-button follow-up
+
+The numbered row now toggles bypass, with Ctrl-click exclusive solo, independent
+of graph-node selection. The duplicate selected-band bypass button is removed.
+New assertions cover preserved per-band settings and bypass masks, soloing a
+bypassed band, moving/clearing solo, inert inter-button gaps, MIDI-learn selection,
+reset, effective response at the output sample rate, global bypass, device
+reconfiguration, solo persistence/defaults, and malformed solo values. Rapid-edit
+stress now includes solo changes.
+
+The native app builds; the five targeted suites (EQ DSP, native keyboard/EQ
+controller, Sister runtime, project state, limiter) pass. ASan/UBSan validation
+uses the existing host limitation described above. The full-suite count above
+records the initial EQ validation; this follow-up checks the affected paths.
+Both normal and solo screenshots were refreshed through the native fixture.

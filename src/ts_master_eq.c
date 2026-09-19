@@ -21,6 +21,7 @@ void ts_master_eq_default(TsMasterEqControls *c)
 void ts_master_eq_sanitize(TsMasterEqControls *c)
 {
     c->enabled=c->enabled!=0;
+    if(c->solo_band<0 || c->solo_band>TS_MASTER_EQ_BANDS)c->solo_band=0;
     for(int i=0;i<TS_MASTER_EQ_BANDS;++i) {
         TsEqBand *b=&c->band[i]; b->enabled=b->enabled!=0;
         if(b->type<0 || b->type>=TS_EQ_TYPE_COUNT)b->type=TS_EQ_BELL;
@@ -28,6 +29,23 @@ void ts_master_eq_sanitize(TsMasterEqControls *c)
         b->gain_db=(float)clamp(b->gain_db,-12,12,0);
         b->q=(float)clamp(b->q,.3,8,.70710678);
     }
+}
+int ts_master_eq_band_active(const TsMasterEqControls *c,int band)
+{
+    if(band<0 || band>=TS_MASTER_EQ_BANDS)return 0;
+    return c->solo_band?c->solo_band==band+1:c->band[band].enabled;
+}
+void ts_master_eq_toggle_band(TsMasterEqControls *c,int band)
+{
+    if(band<0 || band>=TS_MASTER_EQ_BANDS)return;
+    /* A plain click on the soloed band bypasses it. Other clicks toggle the
+       remembered state. Both leave solo without disturbing the other bands. */
+    c->band[band].enabled=c->solo_band==band+1?0:!c->band[band].enabled;
+    c->solo_band=0;
+}
+static TsEqBand active_band(const TsMasterEqControls *c,int band)
+{
+    TsEqBand b=c->band[band];b.enabled=ts_master_eq_band_active(c,band);return b;
 }
 /* RBJ biquads, normalized a0; formula reference: https://www.w3.org/TR/audio-eq-cookbook/
    Coefficients are calculated by the control/device thread only. Each fading
@@ -63,14 +81,14 @@ void ts_master_eq_prepare(TsMasterEq *eq,unsigned rate)
     eq->mix=eq->controls.enabled;
     memset(eq->stage,0,sizeof(eq->stage));
     for(int i=0;i<TS_MASTER_EQ_BANDS;++i)
-        eq->stage[i].current.c=eq->stage[i].pending=ts_master_eq_coefficients(eq->controls.band[i],rate);
+        eq->stage[i].current.c=eq->stage[i].pending=ts_master_eq_coefficients(active_band(&eq->controls,i),rate);
 }
 void ts_master_eq_set(TsMasterEq *eq,const TsMasterEqControls *controls)
 {
     eq->controls=*controls;ts_master_eq_sanitize(&eq->controls);
     for(int i=0;i<TS_MASTER_EQ_BANDS;++i) {
         TsEqStage *s=&eq->stage[i];
-        TsEqCoefficients c=ts_master_eq_coefficients(eq->controls.band[i],eq->sample_rate);
+        TsEqCoefficients c=ts_master_eq_coefficients(active_band(&eq->controls,i),eq->sample_rate);
         if(memcmp(&s->pending,&c,sizeof(c))) { s->pending=c;s->dirty=1; }
     }
 }
@@ -115,7 +133,7 @@ double ts_master_eq_response_db(const TsMasterEqControls *c,unsigned rate,double
     if(!c->enabled || !rate)return 0;
     double w=6.283185307179586*fmin(hz,.499*rate)/rate,cs=cos(w),sn=sin(w),c2=cos(2*w),s2=sin(2*w),db=0;
     for(int i=0;i<TS_MASTER_EQ_BANDS;++i) {
-        TsEqCoefficients k=ts_master_eq_coefficients(c->band[i],rate);
+        TsEqCoefficients k=ts_master_eq_coefficients(active_band(c,i),rate);
         double nr=k.b0+k.b1*cs+k.b2*c2,ni=-k.b1*sn-k.b2*s2;
         double dr=1+k.a1*cs+k.a2*c2,di=-k.a1*sn-k.a2*s2;
         db+=10*log10(fmax(1e-24,(nr*nr+ni*ni)/fmax(1e-24,dr*dr+di*di)));
@@ -138,7 +156,7 @@ void ts_master_eq_set_normalized(TsEqBand *b,int control,float v,unsigned rate)
 int ts_master_eq_write(FILE *file,const TsMasterEqControls *controls)
 {
     TsMasterEqControls c=*controls;ts_master_eq_sanitize(&c);
-    if(fprintf(file,"MasterEq.Enabled=%d\n",c.enabled)<0)return 0;
+    if(fprintf(file,"MasterEq.Enabled=%d\nMasterEq.SoloBand=%d\n",c.enabled,c.solo_band)<0)return 0;
     for(int i=0;i<TS_MASTER_EQ_BANDS;++i) {
         TsEqBand b=c.band[i];
         if(fprintf(file,"MasterEq.Band.%d=%d,%d,%.9g,%.9g,%.9g\n",i+1,b.enabled,b.type,b.frequency,b.gain_db,b.q)<0)return 0;
@@ -152,6 +170,10 @@ int ts_master_eq_read(TsMasterEqControls *c,const char *key,const char *value)
     if(!strcmp(key,"MasterEq.Enabled")) {
         if(sscanf(value,"%d %c",&n,&extra)!=1 || (n!=0 && n!=1))return -1;
         c->enabled=n;return 1;
+    }
+    if(!strcmp(key,"MasterEq.SoloBand")) {
+        if(sscanf(value,"%d %c",&n,&extra)!=1 || n<0 || n>TS_MASTER_EQ_BANDS)return -1;
+        c->solo_band=n;return 1;
     }
     if(sscanf(key,"MasterEq.Band.%d%c",&n,&extra)!=1 || n<1 || n>5)return -1;
     TsEqBand b;

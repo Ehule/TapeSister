@@ -47,7 +47,9 @@ static void master_eq_render(TsFramebuffer *fb,const TsUiState *ui)
     char label[96];
     frame(fb,10,38,620,341,RGB(29,27,32),PAL_BUTTON);
     text(fb,20,48,"MASTER / ROOM EQ",amber,1);
-    text(fb,20,62,"FIVE BANDS  /  FINAL TONE",muted,1);
+    if(c->solo_band)snprintf(label,sizeof(label),"SOLO %02d / CTRL-CLICK TO RESTORE",c->solo_band);
+    else snprintf(label,sizeof(label),"BUTTONS: BYPASS / CTRL-CLICK: SOLO");
+    text(fb,20,62,label,c->solo_band?amber:muted,1);
     button(fb,354,44,92,c->enabled?"EQ ON":"EQ BYPASS",c->enabled);
     button(fb,452,44,116,ui->master_eq_reset_pending?"CONFIRM RESET":"RESET EQ",ui->master_eq_reset_pending);
     button(fb,574,44,46,"X",0);
@@ -79,15 +81,17 @@ static void master_eq_render(TsFramebuffer *fb,const TsUiState *ui)
     if(!c->enabled)rect(fb,44,155,552,1,amber);
     for(int i=0;i<5;++i) {
         int x=eq_node_x(ui,i),y=eq_node_y(ui,i),selected=i==ui->master_eq_band;
-        uint32_t color=!c->band[i].enabled?muted:selected?amber:teal;
+        uint32_t color=!ts_master_eq_band_active(c,i)?muted:selected?amber:teal;
         frame(fb,x-8,y-8,17,17,selected?RGB(70,57,35):RGB(26,32,37),color);
         snprintf(label,sizeof(label),"%d",i+1);text(fb,x-2,y-3,label,color,1);
-        snprintf(label,sizeof(label),"%02d %s",i+1,c->band[i].enabled?"ON":"OFF");
-        button(fb,20+i*122,252,112,label,selected);
+        int solo=c->solo_band==i+1;
+        snprintf(label,sizeof(label),"%02d %s",i+1,solo?"SOLO":
+            !c->band[i].enabled?"BYPASS":c->solo_band?"SKIP":"ON");
+        button(fb,20+i*122,252,112,label,ts_master_eq_band_active(c,i));
+        if(solo)rect(fb,20+i*122,274,112,2,amber);
     }
     snprintf(label,sizeof(label),"BAND %d",ui->master_eq_band+1);text(fb,20,284,label,teal,1);
-    button(fb,90,278,104,b->enabled?"BAND ON":"BAND OFF",b->enabled);
-    button(fb,202,278,124,ts_master_eq_type_name(b->type),0);
+    button(fb,90,278,236,ts_master_eq_type_name(b->type),0);
     text(fb,340,286,b->type==TS_EQ_HIGH_PASS || b->type==TS_EQ_LOW_PASS?"12 DB/OCT  /  Q: RESONANCE":
          b->type==TS_EQ_NOTCH?"Q: NOTCH WIDTH / GAIN FIXED":"Q: WIDTH / WHEEL NODE TO ADJUST",muted,1);
     snprintf(label,sizeof(label),"FREQ %.1F HZ",fminf(b->frequency,ts_master_eq_max_hz(rate)));

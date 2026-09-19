@@ -71,7 +71,7 @@ static void stability_tests(void)
             int n=(int)((seed>>8)%5);TsEqBand *b=&c.band[n];
             b->type=(seed>>12)%6;b->frequency=seed&1?20:20000;
             b->q=seed&2?.3f:8;b->gain_db=seed&4?12:-12;b->enabled=(seed>>6)&1;
-            c.enabled=(seed>>9)&1;ts_master_eq_set(&e,&c);
+            c.enabled=(seed>>9)&1;c.solo_band=(seed>>18)%6;ts_master_eq_set(&e,&c);
         }
         TsStereoFrame y=ts_master_eq_process(&e,(TsStereoFrame){.1f*sinf(i*.13f),.05f*cosf(i*.17f)});
         assert(isfinite(y.l) && isfinite(y.r));peak=fmax(peak,fmax(fabs(y.l),fabs(y.r)));
@@ -119,6 +119,37 @@ static void transition_tests(void)
     }
     assert(!memcmp(&previous,&in,sizeof(in)));
 }
+static void solo_tests(void)
+{
+    TsMasterEq eq;ts_master_eq_init(&eq);ts_master_eq_prepare(&eq,48000);
+    TsMasterEqControls c=eq.controls;c.enabled=1;
+    for(int i=0;i<TS_MASTER_EQ_BANDS;++i)c.band[i]=(TsEqBand){1,TS_EQ_BELL,1000,3+i,1};
+    c.band[1].enabled=0;
+    assert(fabs(ts_master_eq_response_db(&c,48000,1000)-21)<.001);
+    TsMasterEqControls remembered=c;
+    /* Solo can audition a bypassed band without losing the stored bypass mask. */
+    c.solo_band=2;ts_master_eq_set(&eq,&c);
+    for(int i=0;i<TS_MASTER_EQ_BANDS;++i)assert(ts_master_eq_band_active(&c,i)==(i==1));
+    assert(fabs(ts_master_eq_response_db(&c,48000,1000)-4)<.001);
+    assert(fabs(measure(&eq,48000,1000)-4)<.02);
+    assert(!memcmp(c.band,remembered.band,sizeof(c.band)));
+    c.solo_band=5;ts_master_eq_set(&eq,&c);
+    assert(fabs(measure(&eq,48000,1000)-7)<.02);
+    c.solo_band=0;ts_master_eq_set(&eq,&c);
+    assert(fabs(measure(&eq,48000,1000)-21)<.02);
+    assert(!memcmp(&c,&remembered,sizeof(c)));
+    /* Reconfiguration and bypass use the same active-band decision as the graph. */
+    c.solo_band=2;ts_master_eq_set(&eq,&c);ts_master_eq_prepare(&eq,44100);
+    assert(fabs(measure(&eq,44100,1000)-4)<.02);
+    c.enabled=0;ts_master_eq_set(&eq,&c);
+    assert(fabs(measure(&eq,44100,1000))<.001);
+    assert(ts_master_eq_response_db(&c,44100,1000)==0);
+    ts_master_eq_toggle_band(&c,1);assert(!c.solo_band && !c.band[1].enabled);
+    c.solo_band=3;ts_master_eq_toggle_band(&c,0);
+    assert(!c.solo_band && !c.band[0].enabled && c.band[2].enabled);
+    c.solo_band=99;ts_master_eq_sanitize(&c);assert(!c.solo_band);
+    assert(!ts_master_eq_band_active(&c,-1) && !ts_master_eq_band_active(&c,5));
+}
 static void output_tests(void)
 {
     static TsSisterRuntime r;ts_sister_runtime_init(&r);
@@ -142,7 +173,7 @@ static void output_tests(void)
 }
 static void persistence_tests(void)
 {
-    static TsConfig config,restored;ts_config_init(&config);config.master_eq.enabled=1;
+    static TsConfig config,restored;ts_config_init(&config);config.master_eq.enabled=1;config.master_eq.solo_band=3;
     for(int i=0;i<5;++i)config.master_eq.band[i]=(TsEqBand){i%2,i,30+1900*i,-12+6*i,.3f+i};
     char error[256];assert(ts_config_save(&config,"test-master-eq.ini",error,sizeof(error)));
     assert(ts_config_load(&restored,"test-master-eq.ini",error,sizeof(error)));
@@ -159,13 +190,15 @@ static void persistence_tests(void)
     FILE *f=fopen("test-master-eq.state","w");assert(f);
     fputs("TapeSister Sister Project State\nVersion=21\nPageCount=1\nActivePage=0\n",f);fclose(f);
     assert(ts_sister_project_state_load_file(&loaded,"test-master-eq.state",48000,&present,error,sizeof(error)));
-    assert(!loaded.master_eq.enabled);
+    assert(!loaded.master_eq.enabled && !loaded.master_eq.solo_band);
     for(int i=0;i<5;++i)assert(loaded.master_eq.band[i].gain_db==0);
     assert(ts_sister_project_state_apply(&loaded,&runtime,NULL));assert(!runtime.master_eq.controls.enabled);
     assert(ts_master_eq_read(&loaded.master_eq,"MasterEq.Band.1","1,0,nan,0,1")<0);
+    assert(ts_master_eq_read(&loaded.master_eq,"MasterEq.SoloBand","6")<0);
+    assert(ts_master_eq_read(&loaded.master_eq,"MasterEq.SoloBand","2junk")<0);
     assert(ts_master_eq_read(&loaded.master_eq,"MasterEq.Band.9","1,0,100,0,1")<0);
     assert(ts_master_eq_read(&loaded.master_eq,"MasterEq.Band.1","1,0,100,0,1junk")<0);
     remove("test-master-eq.state");ts_sister_runtime_free(&runtime);
 }
 int main(void)
-{ response_tests();stability_tests();transition_tests();output_tests();persistence_tests();puts("Master EQ response, stability, output protection and persistence passed.");return 0; }
+{ response_tests();stability_tests();transition_tests();solo_tests();output_tests();persistence_tests();puts("Master EQ response, stability, output protection and persistence passed.");return 0; }
