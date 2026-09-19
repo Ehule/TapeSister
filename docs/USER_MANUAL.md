@@ -931,10 +931,14 @@ Matrix's separate Morph travel and Step hold. Use the wheel, Shift-wheel for
 fine adjustments, or right-click to restore a control's default.
 
 With **EDIT OFF**, play manual HOLD chords and MIDI alongside the sequence.
-**ARP STOP**, **CLEAR**, and ONCE completion release only sequencer voices;
+**Shift+Space** starts/stops ARP even with its controls hidden, including from
+the tile bank, FM, Mosaic, EQ, and Sister Machine. **ARP STOP**, **Shift+Space**,
+**CLEAR**, and ONCE completion release only sequencer voices;
 Space keeps its global stop behavior. The sequence follows the current tile,
 FM preview, or selected ensemble through the existing effects and recording
-paths. Closing the ARP panel keeps playback running. Selection and settings
+paths. Selecting another tile keeps the notes, order, and timing running with
+the new sound; it does not start a separate tile layer while ARP is active.
+Closing the ARP panel keeps playback running. Selection and settings
 last for this session and are not saved in projects or Prism presets.
 
 [Full controls, routing, and examples](KEYBOARD_SEQUENCE.md).

@@ -6,6 +6,10 @@ also changes the selection with the panel closed or EDIT off. Up to 24 pitches
 can be selected across different octaves; changing the visible octave does not
 transpose or lose them. Empty selections stay silent.
 
+**Shift+Space** starts/stops ARP, including with the panel closed or the tile
+bank visible. It also works from FM, Mosaic, the EQ page, and Sister Machine.
+Text fields, dialogs, Portal, and file preview retain their existing key handling.
+
 ![Keyboard arpeggiator with an ordered selection](images/keyboard-sequence.png)
 
 Selected keys are teal, and the current gated step is gold. Numbers show the
@@ -16,6 +20,7 @@ alongside the sequence, including HOLD, Shift-click chords, and MIDI.
 | Control | Action |
 | --- | --- |
 | PLAY / STOP | Start from the first step / release the sequencer's voices only |
+| Shift+Space | The same ARP-only transport, even with its controls hidden |
 | UP | Ascending pitch |
 | DOWN | Descending pitch |
 | UP/DOWN | Ascend then descend without repeating the end notes |
@@ -52,7 +57,14 @@ callback and swapped into playback. Existing manual notes retain their own
 ownership. If the source becomes unavailable, sequencing stops instead of
 continuing to trigger stale audio; press PLAY once a source is ready again.
 
-ARP STOP, CLEAR, and the end of ONCE release only sequence voices. They do not
+Selecting another occupied tile keeps the selected pitches, order, current step,
+and timing running while the sound follows the new tile. An active tile/Sister
+ensemble keeps its group source. While ARP runs, a plain tile click selects its
+source without adding a separate click-launched layer, even with PLAY ON SEL or
+main LOOP enabled. Existing click-launched layers keep playing. Normal tile
+launching resumes after ARP stops.
+
+ARP STOP, Shift+Space, CLEAR, and the end of ONCE release only sequence voices. They do not
 release a manually held chord, same-pitch MIDI notes, or click-launched tiles.
 Space/Stop retains its global stop behavior. A short 5 ms fade removes abrupt
 sequence boundaries. An explicitly locked main loop retains its established
@@ -75,6 +87,8 @@ Once, stereo preservation, gates, live duration edits through one hour, removal
 of the active/last key, 24-note limits, source loss, and one-shot retriggering.
 The native keyboard HOLD suite also renders the audio callback across tile, FM,
 group, and Sister routes, checks the dry/FM recording buses, preserves manual
-and MIDI voices on ARP Stop, changes octave and source during playback, and
-checks ordinary/locked LOOP behavior. Physical Windows listening remains part
+and MIDI voices on ARP Stop, changes octave and source during playback, checks
+tile selection with ordinary/locked LOOP and PLAY ON SEL on/off, and verifies
+Shift+Space ownership, key-repeat suppression, and playback with hidden controls.
+Physical Windows listening remains part
 of the release checklist.

@@ -1945,6 +1945,16 @@ static void sample_bank_audition_selected(SDL_AudioDeviceID device, AudioState *
     TsUiState *ui, TsInstrument *instrument, int bank_slot, int rate)
 {
     ui->audition_source=TS_AUDITION_CURRENT;ui->bank_view_slot=-1;
+    /* ARP follows the selected source on the next UI refresh. Selection must
+       neither stop its clock via LOOP nor add a separate unpitched launcher. */
+    if (device) SDL_LockAudioDevice(device);
+    int sequencing = audio->keyboard_sequence.running;
+    if (device) SDL_UnlockAudioDevice(device);
+    if (sequencing) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "TILE %02d SELECTED - ARP CONTINUES / SHIFT+SPACE TO STOP", bank_slot + 1);
+        return;
+    }
     if(!ui->play_on_select) {
         snprintf(ui->status,sizeof(ui->status),"TILE %02d SELECTED FOR EDITING - PLAY ON SEL OFF",bank_slot+1);
         return;
@@ -13166,6 +13176,8 @@ int main(int argc, char **argv)
                 }
                 continue;
             }
+            if(keyboard_sequence_transport_event(&event,window,device,&audio,&ui,
+                &sister_window,&instrument,&fm_preview,obtained.freq))continue;
             if(master_eq_event(&event,window,device,&audio,&ui,&sister_window))continue;
             mosaic_commit(device,&ui,&instrument,&mosaic);
             /* Finish an active pointer gesture before Escape can discard a take. */
@@ -13859,7 +13871,7 @@ int main(int argc, char **argv)
                         snprintf(ui.fm_message, sizeof(ui.fm_message),
                                  "%.95s", ui.status);
                     } else if (key == SDLK_SPACE) {
-                        if (ts_note_bank_count(&audio.notes) > 0)
+                        if (audio.keyboard_sequence.running || ts_note_bank_count(&audio.notes) > 0)
                             stop_all_force(device, &audio, &ui);
                         else begin_fm_note(device, &audio, &ui, &instrument,
                                            &fm_preview, 0, obtained.freq, 0);
@@ -14413,7 +14425,8 @@ int main(int argc, char **argv)
                                  "REC ARMED - MAKE SOUND OR ESC/CAPTURE TO CANCEL");
                     else if (audio.capture.state == TS_CAPTURE_RECORDING)
                         stop_capture_early(device, &audio, &ui);
-                    else if (audio.playing || ts_note_bank_count(&audio.notes) > 0 ||
+                    else if (audio.playing || audio.keyboard_sequence.running ||
+                        ts_note_bank_count(&audio.notes) > 0 ||
                         ui.tile_launcher_mask != 0u || ui.workbench_loop_active)
                         stop_all(device, &audio, &ui);
                     else {

@@ -536,8 +536,10 @@ This button leaves the tap, mono/stereo and tile-destination selectors unchanged
 **ARP** opens the keyboard arpeggiator: select up to 24 pitches with EDIT on or
 Ctrl-click, choose UP/DOWN/UP-DOWN/ORDER/RANDOM, then PLAY. Teal keys are selected;
 gold follows the current gated step. STEP spans 30 ms–1 hour; GATE spans 5–100%.
-Both update live. Turn EDIT off to play alongside it. ARP STOP releases only the
-sequence; FROM HELD copies the current QWERTY chord. Selection/settings last for
+Both update live. Turn EDIT off to play alongside it. **Shift+Space** starts/stops
+ARP even with the controls hidden; stopping releases only the sequence. Selecting
+a new tile keeps its notes and timing running with the new sound, without launching
+a separate tile layer. FROM HELD copies the current QWERTY chord. Selection/settings last for
 the session. See [Keyboard arpeggio and sequencing](KEYBOARD_SEQUENCE.md).
 
 The virtual keyboard shares **HOLD** between tile and FM playing. Arm HOLD before

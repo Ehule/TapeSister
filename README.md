@@ -134,7 +134,9 @@ now accept MIDI notes. See [Keyboard Sustain](docs/KEYBOARD_SUSTAIN.md).
 **ARP** adds keyboard arpeggios and custom note order, with 24 selected pitches,
 live step/gate controls, and separate selected/current-note colors. It plays
 tile, FM, or ensemble sources alongside manual chords and MIDI, and enters the
-existing recording and effects paths. See [Keyboard sequencing](docs/KEYBOARD_SEQUENCE.md).
+existing recording and effects paths. **Shift+Space** starts/stops ARP with its
+controls hidden, and tile selection changes the sound without restarting the
+sequence. See [Keyboard sequencing](docs/KEYBOARD_SEQUENCE.md).
 
 The main and Sister Machine **M/S** buttons mirror one capture-format setting:
 
