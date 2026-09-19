@@ -489,6 +489,53 @@ static void ui_marker(TsFramebuffer *fb, int x, int y, uint32_t color)
 static const char *glyph(char c)
 {
     switch (c) {
+    case 'a': return "00000000000111000001011111000101111";
+    case 'b': return "10000100001011011001100011000111110";
+    case 'c': return "00000000000111110000100001000001111";
+    case 'd': return "00001000010110110011100011000101111";
+    case 'e': return "00000000000111010001111111000001111";
+    case 'f': return "00110010010100011100010000100001000";
+    case 'g': return "00000011111000110001011110000101110";
+    case 'h': return "10000100001011011001100011000110001";
+    case 'i': return "00100000000110000100001000010001110";
+    case 'j': return "00010000000011000010000101001001100";
+    case 'k': return "10000100001001010100110001010010010";
+    case 'l': return "01100001000010000100001000010001110";
+    case 'm': return "00000000001101010101101011010110101";
+    case 'n': return "00000000001011011001100011000110001";
+    case 'o': return "00000000000111010001100011000101110";
+    case 'p': return "00000111101000110001111101000010000";
+    case 'q': return "00000011111000110001011110000100001";
+    case 'r': return "00000000001011111000100001000010000";
+    case 's': return "00000000000111110000011100000111110";
+    case 't': return "01000010001110001000010000100100110";
+    case 'u': return "00000000001000110001100011001101101";
+    case 'v': return "00000000001000110001100010101000100";
+    case 'w': return "00000000001000110001101011010101010";
+    case 'x': return "00000000001000101010001000101010001";
+    case 'y': return "00000100011000110001011110000101110";
+    case 'z': return "00000000001111100010001000100011111";
+    case '!': return "00100001000010000100001000000000100";
+    case '"': return "01010010100101000000000000000000000";
+    case '$': return "00100011111010001110001011111000100";
+    case '%': return "11001110100010001000101100011000000";
+    case '&': return "01100100101010001000101011001001101";
+    case '\'': return "00100001000100000000000000000000000";
+    case '(': return "00010001000100001000010000010000010";
+    case ')': return "01000001000001000010000100010001000";
+    case '*': return "00000101010111011111011101010100000";
+    case ',': return "00000000000000000000001000010001000";
+    case ';': return "00000001000010000000001000010001000";
+    case '=': return "00000000001111100000111110000000000";
+    case '?': return "01110100010000100010001000000000100";
+    case '@': return "01110100011011110101101111000001110";
+    case '[': return "01110010000100001000010000100001110";
+    case ']': return "01110000100001000010000100001001110";
+    case '^': return "00100010101000100000000000000000000";
+    case '`': return "01000001000001000000000000000000000";
+    case '{': return "00010001000010001000001000010000010";
+    case '}': return "01000001000010000010001000010001000";
+    case '|': return "00100001000010000100001000010000100";
     case 'A': return "01110100011000111111100011000110001";
     case 'B': return "11110100011000111110100011000111110";
     case 'C': return "01111100001000010000100001000001111";
@@ -544,6 +591,18 @@ static void text(TsFramebuffer *fb, int x, int y, const char *value, uint32_t co
 {
     for (; *value; ++value, x += 6 * scale) {
         char c = *value >= 'a' && *value <= 'z' ? (char)(*value - 32) : *value;
+        const char *bits = glyph(c);
+        for (int gy = 0; gy < 7; ++gy)
+            for (int gx = 0; gx < 5; ++gx)
+                if (bits[gy * 5 + gx] == '1')
+                    rect(fb, x + gx * scale, y + gy * scale, scale, scale, color);
+    }
+}
+
+static void text_case(TsFramebuffer *fb, int x, int y, const char *value, uint32_t color, int scale)
+{
+    for (; *value; ++value, x += 6 * scale) {
+        char c = *value;
         const char *bits = glyph(c);
         for (int gy = 0; gy < 7; ++gy)
             for (int gx = 0; gx < 5; ++gx)
@@ -848,7 +907,7 @@ static void browser_render(TsFramebuffer *fb, const TsBrowser *browser,
     } else
         text(fb, 56, 45, ts_browser_mode_title(browser->mode), PAL_NOTE, 1);
     if (directory_length > 73) directory += directory_length - 73;
-    text(fb, 56, 70, directory, PAL_INSTRUMENT, 1);
+    text_case(fb, 56, 70, directory, PAL_INSTRUMENT, 1);
 
     rect(fb, TS_BROWSER_LIST_X, TS_BROWSER_LIST_Y, TS_BROWSER_LIST_W,
          TS_BROWSER_SCROLL_H, RGB(8, 8, 8));
@@ -861,7 +920,7 @@ static void browser_render(TsFramebuffer *fb, const TsBrowser *browser,
                  TS_BROWSER_ROW_H - 1, PAL_BLOCK);
         snprintf(shown, sizeof(shown), browser->entries[index].is_directory ?
                  "[DIR] %.72s" : "      %.72s", browser->entries[index].name);
-        text(fb, TS_BROWSER_LIST_X + 6, y + 6, shown,
+        text_case(fb, TS_BROWSER_LIST_X + 6, y + 6, shown,
              index == browser->selected ? PAL_BLOCK_TEXT :
              browser->entries[index].is_directory ? PAL_INSTRUMENT : PAL_TEXT, 1);
     }
@@ -897,13 +956,15 @@ static void browser_render(TsFramebuffer *fb, const TsBrowser *browser,
         if (cursor > first + 78) first = cursor - 78;
         filename += first;
         snprintf(shown, sizeof(shown), "%.78s", filename);
-        text(fb, 64, 303, shown, browser->filename_focus ? PAL_MOUSE : PAL_TEXT, 1);
+        text_case(fb, 64, 303, shown, browser->filename_focus ? PAL_MOUSE : PAL_TEXT, 1);
         if (browser->filename_focus && cursor_visible) {
             int cursor_x = 64 + (int)(cursor - first) * 6;
             if (cursor_x > 572) cursor_x = 572;
             rect(fb, cursor_x, 301, 2, 11, PAL_MOUSE);
         }
     } else if (browser->mode == TS_BROWSER_LOAD_WAV) {
+        text(fb, 58, 282, browser->preview_loading ? "LOADING PREVIEW - SPACE / ESC CANCELS" :
+             browser->preview_playing ? "PLAYING - SPACE STOPS PREVIEW" : "SPACE: PREVIEW SELECTED AUDIO", PAL_MOUSE, 1);
         text(fb, 58, 300,
              "AUDIO AUTO-DECODE; SHIFT+CLICK BYPASSES PREVIEW; OTHER FILES OPEN AS RAW",
              PAL_EFFECT, 1);
@@ -1084,7 +1145,7 @@ static void import_preview_render(TsFramebuffer *fb, const TsUiState *ui)
     rect(fb, 22, 36, 596, 28, RGB(12, 12, 12));
     button(fb, 34, 39, 108, "FILE BROWSER", 0);
     button(fb, 150, 39, 96, "PREVIEW", 1);
-    text(fb, 262, 45, ui->import_preview_name, PAL_EFFECT, 1);
+    text_case(fb, 262, 45, ui->import_preview_name, PAL_EFFECT, 1);
     snprintf(detail, sizeof(detail), "%s  %u HZ  %u CH  %.3F SEC",
              ts_audio_import_kind_name(ui->import_preview_kind),
              sample != NULL ? sample->sample_rate : 0u,
@@ -1186,7 +1247,7 @@ static void config_render(TsFramebuffer *fb, const TsUiState *ui)
              i == (int)ui->config_field ? PAL_EFFECT : RGB(190, 185, 190), 1);
         rect(fb, TS_CONFIG_FIELD_X, y,
              TS_CONFIG_FIELD_W, TS_CONFIG_FIELD_H, RGB(8, 8, 8));
-        text(fb, TS_CONFIG_FIELD_X + 6, y + 6, shown,
+        text_case(fb, TS_CONFIG_FIELD_X + 6, y + 6, shown,
              i == (int)ui->config_field ? PAL_MOUSE : PAL_INSTRUMENT, 1);
         if (i == (int)ui->config_field && ui->text_cursor_visible)
             rect(fb, TS_CONFIG_FIELD_X + 6 + (int)(cursor - first) * 6,
@@ -2897,6 +2958,7 @@ int ts_ui_foreground_panel_open(const TsUiState *ui)
 #include "ts_mosaic_ui.inc"
 #include "ts_keyboard_sequence_ui.inc"
 #include "ts_master_eq_ui.inc"
+#include "ts_performance_help.inc"
 
 void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *instrument)
 {
@@ -3836,18 +3898,21 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         char output_info[24];
         char diagnostic[48];
         int diagnostic_x;
-        snprintf(status_line, sizeof(status_line), "%.82s", ui->status);
+        snprintf(status_line, sizeof(status_line), "%.82s",
+                 ui->performance_tooltip[0] ? ui->performance_tooltip : ui->status);
         master_output_diagnostic(output_info, sizeof(output_info),
                                  &ui->master_output);
         snprintf(diagnostic, sizeof(diagnostic), "UNDO %02d/%02d  %s",
                  instrument->undo_count, TS_HISTORY_DEPTH, output_info);
         diagnostic_x = 536 - (int)strlen(diagnostic) * 6;
         text(fb, 8, 389, status_line, PAL_MOUSE, 1);
-        rect(fb, diagnostic_x - 6, 385,
-             TS_UI_WIDTH - diagnostic_x + 6, 15, PAL_DESKTOP);
-        text(fb, diagnostic_x, 389, diagnostic,
-             ui->master_output.limiter_gain_reduction_db > 0.05f ?
-             PAL_VOLUME : PAL_EFFECT, 1);
+        if(!ui->performance_tooltip[0]) {
+            rect(fb, diagnostic_x - 6, 385,
+                 TS_UI_WIDTH - diagnostic_x + 6, 15, PAL_DESKTOP);
+            text(fb, diagnostic_x, 389, diagnostic,
+                 ui->master_output.limiter_gain_reduction_db > 0.05f ?
+                 PAL_VOLUME : PAL_EFFECT, 1);
+        }
     }
 
     if (ui->exit_confirm_open) {
@@ -3971,7 +4036,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         snprintf(title, sizeof(title), "RENAME BANK %02d", ui->renaming_bank_slot + 1);
         text(fb, 116, 316, title, PAL_NOTE, 1);
         rect(fb, 116, 332, 408, 23, RGB(8, 8, 8));
-        text(fb, 122, 340, shown, PAL_MOUSE, 1);
+        text_case(fb, 122, 340, shown, PAL_MOUSE, 1);
         if (ui->text_cursor_visible)
             rect(fb, 122 + (int)(cursor - first) * 6, 338, 2, 11, PAL_MOUSE);
         text(fb, 116, 365, "ENTER ACCEPTS   ESC CANCELS", RGB(190, 185, 190), 1);
@@ -3984,7 +4049,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         snprintf(title, sizeof(title), "RENAME RECIPE %02d", ui->renaming_recipe_slot + 1);
         text(fb, 172, 316, title, PAL_NOTE, 1);
         rect(fb, 172, 332, 296, 23, RGB(8, 8, 8));
-        text(fb, 178, 340, ui->recipe_rename, PAL_MOUSE, 1);
+        text_case(fb, 178, 340, ui->recipe_rename, PAL_MOUSE, 1);
         if (ui->text_cursor_visible)
             rect(fb, 178 + (int)cursor * 6, 338, 2, 11, PAL_MOUSE);
         text(fb, 172, 365, "ENTER ACCEPTS   ESC CANCELS", RGB(190, 185, 190), 1);

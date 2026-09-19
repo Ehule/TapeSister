@@ -874,7 +874,7 @@ int ts_performance_prepare_sync(TsPerformanceBank *bank,
         TsBankSlot view;
         const TsBankSlot *slot;
         uint16_t bit;
-        if (!active->active || active->source_slot < 0 ||
+        if (!active->active || active->detached || active->source_slot < 0 ||
             active->source_slot >= TS_BANK_SLOT_COUNT) continue;
         bit = (uint16_t)(1u << active->source_slot);
         if ((prepared & bit) != 0u) continue;
@@ -898,6 +898,11 @@ void ts_performance_sync(TsPerformanceBank *bank,
         const TsBankSlot *slot;
         TsPerformanceGeneration *generation;
         size_t first, last, crossfade;
+        if(voice->active && voice->detached) {
+            double ratio=(double)voice->detached/output_rate;
+            voice->step*=ratio;voice->pending_step*=ratio;voice->transition_step*=ratio;
+            voice->detached=output_rate;continue;
+        }
         if (!voice->active || voice->source_slot < 0 ||
             voice->source_slot >= TS_BANK_SLOT_COUNT) continue;
         slot = source_slot_view(instrument, voice->source_slot, &view);

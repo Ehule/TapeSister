@@ -345,6 +345,9 @@ static void runtime_note_render(AudioState *audio, TsAudioBuses *buses,
     TsStereoFrame launcher;
     if (audio == NULL || buses == NULL) return;
     ts_note_bank_read_buses(&audio->notes, &sample, &fm, &synth);
+    TsStereoFrame browser = ts_note_voice_read(&audio->browser_voice);
+    buses->legacy_preview.l += browser.l;
+    buses->legacy_preview.r += browser.r;
     performance = ts_performance_read_stereo(
         &audio->performance, &audio->performance_raw_mix);
     TsStereoFrame sequence = ts_keyboard_sequence_read(&audio->keyboard_sequence, audio->output_rate);
@@ -378,11 +381,12 @@ static void runtime_note_sync(AudioState *audio,
 {
     if (audio == NULL) return;
     ts_note_bank_sync(&audio->notes, instrument, output_rate);
+    const TsInstrument *bank=audio->workspace_bank?audio->workspace_bank:instrument;
     if (ts_performance_count(&audio->performance) > 0)
-        ts_performance_sync(&audio->performance, instrument, output_rate);
+        ts_performance_sync(&audio->performance, bank, output_rate);
     if (ts_performance_count(&audio->tile_launchers) > 0)
-        ts_performance_sync(&audio->tile_launchers, instrument, output_rate);
-    ts_sister_runtime_sync_sources(&audio->sister, instrument, output_rate);
+        ts_performance_sync(&audio->tile_launchers, bank, output_rate);
+    ts_sister_runtime_sync_sources(&audio->sister, bank, output_rate);
 }
 enum {
     TS_AUDIO_CONFIG_PANEL_Y = 40,

@@ -40,6 +40,7 @@ typedef struct {
     int synth;
     /* Immutable preview owned by a workbench, never retargeted to Current. */
     int preview;
+    int detached; /* Immutable performance snapshot across workspace changes. */
     int active;
 } TsNoteVoice;
 

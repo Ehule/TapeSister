@@ -191,6 +191,7 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
             if(event->key.keysym.sym==SDLK_RETURN || event->key.keysym.sym==SDLK_n)choice=1;
             if(event->key.keysym.sym==SDLK_u)choice=2;
             if(event->key.keysym.sym==SDLK_a)choice=3;
+            if(event->key.keysym.sym==SDLK_c)choice=4;
         }
         if(down && event->button.button==SDL_BUTTON_LEFT) {
             if(y>=220 && y<244) {
@@ -198,7 +199,10 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
                 else if(x>=250 && x<364)choice=3;
                 else if(x>=372 && x<486)choice=1;
             }
-            if(y>=254 && y<278 && x>=256 && x<370)choice=0;
+            if(y>=254 && y<278) {
+                if(x>=154 && x<298)choice=4;
+                else if(x>=316 && x<460)choice=0;
+            }
         }
         if(choice>=0) {
             uint64_t owner=c->pending_id,revision=c->pending_revision,epoch=c->pending_epoch;

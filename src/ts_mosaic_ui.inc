@@ -355,5 +355,7 @@ void ts_ui_render_mosaic_choice(TsFramebuffer *fb,const TsUiState *ui)
     mosaic_button(fb,128,220,114,"UPDATE INSTANCE",0,0);
     mosaic_button(fb,250,220,114,"UPDATE ALL",0,0);
     mosaic_button(fb,372,220,114,"CREATE TILE",1,0);
-    mosaic_button(fb,256,254,114,"KEEP EDITING",0,0);
+    mosaic_button(fb,154,254,144,"CANCEL EDIT",0,0);
+    mosaic_button(fb,316,254,144,"KEEP EDITING",0,0);
+    text(fb,154,282,"C: DISCARD RESULT   ESC: KEEP EDITING",RGB(178,163,189),1);
 }

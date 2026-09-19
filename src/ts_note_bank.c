@@ -25,7 +25,11 @@ static void update_voice(TsNoteVoice *voice, const TsInstrument *instrument,
                          const TsTuning *tuning, TsAuditionSource source,
                          int output_rate, const TsNoteBank *bank)
 {
-    if(voice->preview || voice->synth)return; /* The workbench owns its immutable sample/range. */
+    if(voice->detached) {
+        if(voice->sample && output_rate>0)voice->step=(double)voice->sample->sample_rate/output_rate*voice->pitch;
+        return;
+    }
+    if(voice->preview || voice->synth)return; /* Immutable owned sample/range. */
     TsAuditionPlan plan;
     int looping = instrument->has_loop || bank->workbench_loop;
     size_t old_first = voice->range_first;

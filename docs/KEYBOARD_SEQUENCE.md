@@ -10,6 +10,11 @@ transpose or lose them. Empty selections stay silent.
 bank visible. It also works from FM, Mosaic, the EQ page, and Sister Machine.
 Text fields, dialogs, Portal, and file preview retain their existing key handling.
 
+Hover a button or slider for **600 ms** to see help and shortcuts in the bottom
+status line. Moving away restores the operation message; fresh messages get
+2.4 seconds before help returns over the same control. Dragging or typing into
+a dialog suppresses help.
+
 ![Keyboard arpeggiator with an ordered selection](images/keyboard-sequence.png)
 
 Selected keys are teal, and the current gated step is gold. Numbers show the

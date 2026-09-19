@@ -74,7 +74,7 @@ Waveforms, parameters and library entries also provide hints. Help disappears
 when you move away, press a key, click or drag; the operation message is retained.
 Rendering keeps its status visible, and fresh result/error messages receive
 2.4 seconds before help can return over the same control. Dialogs show help for
-their own controls. This first hover-help pass is scoped to the Portal.
+their own controls. ARP and Master EQ also provide delayed status-line help.
 
 ![Delayed help in the native Portal status line](images/cdp-portal-hover-help.png)
 
@@ -698,6 +698,8 @@ output validation, and the existing eight-million-frame limit still apply.
   completes the requested action; recording and page-limit restrictions are
   reported without losing the preview. If copying fails after page creation,
   the empty new page is removed and the previous page restored.
+- **NEW TILE** and **NEW+CONT** briefly highlight for about 0.7 seconds after a
+  successful copy. A failed or cancelled copy does not flash the button.
 - **MAIN: CTRL+Z** returns to Main, where Ctrl+Z undoes the last tile edit.
 
 ![Full-page prompt preserves the ready result while offering a new sample page](images/cdp-portal-full.png)

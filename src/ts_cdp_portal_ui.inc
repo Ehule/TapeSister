@@ -255,8 +255,8 @@ static void portal_render(TsFramebuffer *fb,const TsUiState *ui)
     portal_caption(fb,586,314,6,line,p->note_count?PAL_VOLUME:RGB(210,204,210));
     button(fb,150,332,76,p->busy?"CANCEL":"PREVIEW",p->busy);
     button(fb,230,332,64,"APPLY",p->valid);
-    button(fb,298,332,78,"NEW TILE",0);
-    button(fb,380,332,84,"NEW+CONT",0);
+    button(fb,298,332,78,"NEW TILE",p->applied_flash==1);
+    button(fb,380,332,84,"NEW+CONT",p->applied_flash==2);
     button(fb,478,332,148,p->chain_active?"PIN CHAIN TILE":"PIN PROCESS TILE",0);
     portal_mini(fb,8,360,54,p->chain_active?"SINGLE":"CHAIN",p->chain_active);
     for(int i=0;i<p->history_count;++i) {

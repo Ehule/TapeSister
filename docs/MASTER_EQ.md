@@ -5,6 +5,10 @@ end, roll off subsonic material, tame a resonance or harsh range, or make a broa
 tonal adjustment. Click **EQ** in the main or Sister window to open the native
 **Master / Room EQ** page. Opening the page does not change limiter state.
 
+Hover a button, graph node, or slider for **600 ms** to see help and shortcuts
+in the bottom status line. Moving away restores the operation message. Fresh
+messages take priority for 2.4 seconds over help for the same control.
+
 ![Master / Room EQ](images/master-performance-eq.png)
 
 ## Signal order

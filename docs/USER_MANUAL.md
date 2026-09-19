@@ -133,6 +133,19 @@ channel count, duration, and frame count. Recorder-oriented extensible, RF64, an
 multichannel WAV files use the general decoder when the sampler-metadata reader cannot
 open them; multichannel material is downmixed to stereo.
 
+In **FILE BROWSER**, highlight a recognized audio file and press `Space` to hear
+it at its original pitch; press `Space` again to stop. This does not import it
+or switch tabs. Changing selection or leaving the browser stops the audition.
+During loading or playback, `Escape` stops the audition first; another Escape
+closes the browser. Double-click or **OPEN** still opens the full import preview.
+Raw data needs that preview to choose its decoding settings. Spaces typed into
+a filename or folder-name field remain normal text.
+
+Filenames, paths, and filename entry fields display their actual uppercase and
+lowercase letters, so `Drone-Mix.wav` remains visibly different from `DRONE-MIX.WAV`.
+
+![Space auditions the highlighted file without importing it](images/file-browser-audition.png)
+
 QWERTY or MIDI plays the preview at different pitches, with up to five simultaneous
 notes. C4 plays at the file's original pitch; `F1`–`F8` choose the keyboard octave.
 With Sustain off, release a key to stop its note. With Sustain on, released
@@ -174,7 +187,8 @@ still open in Preview as raw data so their interpretation can be checked.
 `Escape`, **BACK TO FILES**, or the
 **FILE BROWSER** tab returns to the same directory and highlighted file without changing
 the destination; the cached preview remains available in the **PREVIEW** tab. Use
-`Escape` or **CANCEL** from the file browser to leave LOAD completely.
+**CANCEL** from the file browser to leave LOAD completely, or `Escape` after
+stopping any browser audition.
 
 Any non-project file can also become sound as **RAW DATA**. This mode interprets its
 bytes directly instead of requiring an audio container. Adjust the following while
@@ -722,6 +736,11 @@ keys to add or remove persistent chord notes, up to five; at least one remains.
 handles set the source region, direction, and crossfade. Without a defined loop,
 the selection or complete source provides the region.
 
+Opening a card or returning to Mosaic preserves already-playing QWERTY/MIDI
+notes, HOLD chords, and launched layers, even when the card uses another tile.
+Those voices retain their original sound while you edit; their normal release
+and stop controls still work.
+
 Loop/one-shot and chord changes apply to this event immediately. Copies retain their
 own settings. Sample audio is shared until you make an actual audio edit. Draw,
 Warp, Smear, CREATE, and CDP changes accumulate in this event's working editor;
@@ -735,6 +754,7 @@ When you return to Mosaic after changing the audio, one destination question app
 | **CREATE TILE** — Enter or N | Keep the original; add a new card and a regular Sample-bank source |
 | **UPDATE INSTANCE** — U | Replace this card; add a new source, leaving siblings and the original source alone |
 | **UPDATE ALL** — A | Replace all cards sharing the sound and update matching Sample-bank source tiles |
+| **CANCEL EDIT** — C | Discard the pending audio result and return to Mosaic without publishing it |
 | **KEEP EDITING** — Escape | Keep the working edits open without publishing them |
 
 ![Choosing the scope of an audio edit](images/mosaic-edit-choice.png)
@@ -742,6 +762,8 @@ When you return to Mosaic after changing the audio, one destination question app
 The question appears on leaving the editor, not after every processing operation.
 Leaving an unchanged event, or undoing all audio changes, needs no question. Saving,
 opening another project, or closing the main window also resolves pending edits first.
+Cancel Edit keeps the card's published audio and creates no card or bank tile.
+Immediate per-event changes already applied, such as chord notes, remain in place.
 
 A CDP render remembers the event that requested it even after you select another
 event or window. Results cannot overwrite the event that merely happens to be open.
@@ -911,6 +933,9 @@ their own launch/stop behavior; Sustain does not change the tile's loop setting.
 [Detailed behavior and checks](KEYBOARD_SUSTAIN.md).
 
 ### Keyboard arpeggio and sequencing
+
+Hover an ARP control for a brief explanation in the bottom status line. Help
+appears after 600 ms, and fresh operation messages take priority.
 
 Click **ARP** above the main or FM keyboard. With **EDIT ON**, click keys or press
 the QWERTY note keys to select up to 24 pitches, then click **PLAY**. Ctrl-click
@@ -1505,6 +1530,9 @@ loudness matching: boosts can increase limiter gain reduction. **RESET EQ** requ
 a second click on **CONFIRM RESET** and returns all five bands to flat, with EQ bypassed.
 It leaves the limiter and other settings alone. Escape or X closes the page. Physical
 QWERTY notes and the arpeggiator keep playing, and Space still stops transport.
+
+Hover an EQ button, graph node, or slider for 600 ms to see its controls and
+shortcuts in the bottom status line. Moving away restores the operation message.
 
 EQ state, including band bypass and solo, saves with project/session settings. Older projects load flat and
 bypassed. Sister/FX/Fallout sound presets leave room EQ unchanged. Open the EQ page
