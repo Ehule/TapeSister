@@ -412,6 +412,28 @@ or through the bounded ordinary playback return when Sister is off.
 MOD targets: Mix, Feedback, Noise, Drop Rate, Pan Rate, Skip Span/Rate, Bit
 Sample/Depth/Rate, Pitch Ratio/Ramp/Rate. `L` assigns LFO; `R` assigns Rise.
 
+## Global Router
+
+| Action | Control |
+| --- | --- |
+| Open/close Router | F9 from Main, FM, Mosaic or Sister; also EQ → GLOBAL ROUTER |
+| Reorder | Drag a module name/grip; release at the amber destination line |
+| Cancel drag / close | Escape |
+| Bypass | BYPASS on the module; retains its settings |
+| Solo | SOLO; click again to restore bypasses, or another Solo to move it |
+| Help | Hover for 600 ms |
+
+Default: **Prism → Sister → Fallout → Pedalboard**. Source and the final
+EQ/limiter/OUT are fixed. IN lights show audio reaching each position; OFF is the
+module's own power, separate from Router BYPASS/SKIP/SOLO. Solo does not power on
+an OFF module. QWERTY/MIDI/ARP remain playable.
+
+Pedalboard's POST slots move as one chain. Its PRE/head inserts stay local to
+Sister; Pedalboard bypass gates them too. Sister's DRY monitor joins at Master;
+use DRY zero to audition only the reordered wet chain. MASTER FX still gates
+Pedalboard and Fallout. Order/bypass/solo save with projects and configuration;
+sound presets preserve routing. [Full behavior](USER_MANUAL.md#global-router).
+
 ## Final output
 
 Final order: mix → Master EQ → linked limiter → OUT fader → L/R meter and FILE OUT.

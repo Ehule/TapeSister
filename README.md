@@ -181,6 +181,20 @@ boundary.
 
 ![Sister Machine during a routed capture](docs/images/manual/sister-machine.png)
 
+## Global Router
+
+**F9**, or **EQ → GLOBAL ROUTER**, opens the vertical signal path. Drag Prism,
+Sister Machine, Fallout and the Pedalboard into a different order, or use each
+module's Bypass/Solo controls while playing. Small activity lights show where audio
+is arriving, separately from whether a module is enabled. Source and final
+EQ/limiter/OUT stay fixed. Routing saves with projects and configuration.
+
+Pedalboard's stereo POST chain moves as one module; its existing PRE/head inserts
+stay inside Sister. Sister's DRY monitor keeps its separate return at Master.
+[Controls and routing details](docs/USER_MANUAL.md#global-router).
+
+![Native Global Router](docs/images/global-router.png)
+
 ## Four-slot FX pedalboard
 
 The pedalboard holds four independent instances of Reverb, Delay, Distortion, Grain,
@@ -189,7 +203,7 @@ placement:
 
 - PRE — newly arriving material before the tape write;
 - H1, H2, or H3 — one playback head and its recurrence;
-- POST — after Sister MIX and Fallout.
+- POST — the Router's Pedalboard position, initially after Sister MIX and Fallout.
 
 Each slot has Mix and ±12 dB Gain. Reverb reaches approximately two-minute decay,
 Delay spans about 8–2000 ms, and Grain ranges from isolated fragments to dense clouds.
@@ -207,9 +221,9 @@ require Sister. Turning Sister on preserves the shared effect setup.
 
 ## Fallout
 
-Fallout is a stereo deterioration instrument between Sister's completed MIX and the
-POST pedalboard location. With Sister off, it processes ordinary playback, including
-Mosaic, before POST effects. Drop, Pan, Skip, Bit, Pitch, colored Noise, and Feedback can
+Fallout is a stereo deterioration instrument initially between Sister's completed
+MIX and the POST pedalboard location; Global Router can move it. With Sister off,
+it processes ordinary playback, including Mosaic. Drop, Pan, Skip, Bit, Pitch, colored Noise, and Feedback can
 be combined or modulated.
 
 Its three independent transition clocks—Preset, Parts, and Master—each span 10 ms to

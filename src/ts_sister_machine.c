@@ -1219,7 +1219,7 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
                                       TsSisterFalloutEngine *fallout,
                                       TsSisterPostFxEngine *post_fx,
                                       TsStereoFrame causal_fx_return,
-                                      TsSisterOutput *result);
+                                      TsSisterOutput *result, float router_head_gate);
 
 int ts_sister_machine_clear_offline(TsSisterMachine *machine)
 {
@@ -1230,11 +1230,11 @@ int ts_sister_machine_clear_offline(TsSisterMachine *machine)
     if (!ts_sister_machine_request_clear(machine)) return 0;
     maximum = (size_t)machine->buffer.sample_rate + 16u;
     while (!ts_sister_machine_can_clear(machine) && guard++ < maximum)
-        process_internal(machine, silence, silence, NULL, NULL, silence, &ignored);
+        process_internal(machine, silence, silence, NULL, NULL, silence, &ignored, -1);
     if (!ts_sister_machine_perform_clear(machine)) return 0;
     guard = 0u;
     while (machine->clear_state != TS_SISTER_CLEAR_IDLE && guard++ < maximum)
-        process_internal(machine, silence, silence, NULL, NULL, silence, &ignored);
+        process_internal(machine, silence, silence, NULL, NULL, silence, &ignored, -1);
     publish_snapshot(machine);
     return machine->clear_state == TS_SISTER_CLEAR_IDLE;
 }
@@ -1686,7 +1686,7 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
                                       TsSisterFalloutEngine *fallout,
                                       TsSisterPostFxEngine *post_fx,
                                       TsStereoFrame causal_fx_return,
-                                      TsSisterOutput *result)
+                                      TsSisterOutput *result, float router_head_gate)
 {
     TsSisterOutput output;
     TsStereoFrame raw[TS_SISTER_HEAD_COUNT];
@@ -1753,6 +1753,7 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
     stereo_width = ramp_advance(&machine->width);
     headroom = ramp_advance(&machine->headroom);
     fx_return = ramp_advance(&machine->fx_return_gain);
+    if(router_head_gate>=0)fx_return*=router_head_gate;
     input = frame_scale(input, input_gain);
     duck_sidechain = frame_scale(duck_sidechain, input_gain);
     output.input = input;
@@ -1839,7 +1840,8 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
     for (size_t head = 0u; head < TS_SISTER_HEAD_COUNT; ++head) {
         TsStereoFrame dry = raw[head];
         TsStereoFrame processed = ts_sister_post_fx_process(
-            post_fx, head, dry, machine->buffer.channels == 1u);
+            post_fx, head, router_head_gate==0?(TsStereoFrame){0,0}:dry,
+            machine->buffer.channels == 1u);
         raw[head] = frame_effect_return(dry, processed, fx_return);
     }
 
@@ -1923,7 +1925,7 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
         sum = frame_effect_return(sum, fallout_result.output, master);
         output.fallout_wet = fallout_result.wet;
     }
-    {
+    if(router_head_gate<0) {
         TsStereoFrame dry = sum;
         TsStereoFrame processed = ts_sister_post_fx_process(
             post_fx, TS_SISTER_HEAD_COUNT, dry,
@@ -1934,7 +1936,8 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
     output.head[1] = frame_scale(output.head[1], clear_gain);
     output.head[2] = frame_scale(output.head[2], clear_gain);
     output.post_fx = frame_scale(sum, clear_gain);
-    output.mix = final_safety(machine, output.post_fx);
+    output.mix = router_head_gate < 0 ? final_safety(machine, output.post_fx) :
+                                       output.post_fx;
 
     ++machine->master_clock;
     /* The logical age is authoritative. The physical phase is derived only
@@ -1967,7 +1970,7 @@ TsSisterOutput ts_sister_machine_process_frame(TsSisterMachine *machine,
 {
     TsSisterOutput result;
     process_internal(machine, input, duck_sidechain, NULL, NULL,
-                     (TsStereoFrame){0.0f, 0.0f}, &result);
+                     (TsStereoFrame){0.0f, 0.0f}, &result, -1);
     publish_frame_snapshot(machine);
     return result;
 }
@@ -1979,7 +1982,7 @@ TsSisterOutput ts_sister_machine_process_frame_with_fx(
 {
     TsSisterOutput result;
     process_internal(machine, input, duck_sidechain, NULL, post_fx,
-                     causal_fx_return, &result);
+                     causal_fx_return, &result, -1);
     publish_frame_snapshot(machine);
     return result;
 }
@@ -1991,9 +1994,27 @@ TsSisterOutput ts_sister_machine_process_frame_with_insert_fx(
 {
     TsSisterOutput result;
     process_internal(machine, input, duck_sidechain, fallout, post_fx,
-                     causal_fx_return, &result);
+                     causal_fx_return, &result, -1);
     publish_frame_snapshot(machine);
     return result;
+}
+
+TsSisterOutput ts_sister_machine_process_router(TsSisterMachine *machine,
+    TsSisterPostFxEngine *head_fx, float head_gate, TsStereoFrame input,
+    TsStereoFrame causal_return)
+{
+    TsSisterOutput result;
+    process_internal(machine,input,input,NULL,head_fx,causal_return,&result,head_gate);
+    return result;
+}
+
+TsStereoFrame ts_sister_machine_finish_router(TsSisterMachine *machine,
+    TsStereoFrame routed_mix)
+{
+    TsStereoFrame mix = final_safety(machine, routed_mix);
+    machine->last_output.mix = mix;
+    publish_frame_snapshot(machine);
+    return mix;
 }
 
 void ts_sister_machine_process_block(TsSisterMachine *machine,
@@ -2010,7 +2031,7 @@ void ts_sister_machine_process_block(TsSisterMachine *machine,
         TsStereoFrame side = duck_sidechain != NULL ? duck_sidechain[i] : silence;
         TsSisterOutput frame_output;
         process_internal(machine, source, side, NULL, NULL,
-                         (TsStereoFrame){0.0f, 0.0f}, &frame_output);
+                         (TsStereoFrame){0.0f, 0.0f}, &frame_output, -1);
         if (output != NULL) output[i] = frame_output;
     }
     if (machine->buffer.data != NULL) publish_snapshot(machine);

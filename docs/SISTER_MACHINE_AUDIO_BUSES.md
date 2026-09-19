@@ -91,6 +91,44 @@ post-OUT, immediately before linked safety, and has no return to rolling memory.
 continues to consume the published taps. See `SISTER_MACHINE_SOAK_BLEED.md` for the
 complete audited order, mappings and mono contract.
 
+## Current Global Router boundary
+
+`TsRouter` traverses a validated permutation of stable processor IDs. The
+runtime adapter supplies Prism, Sister, Fallout and Pedalboard DSP. Source
+selection, voice ownership and pre-FX recording taps remain upstream. The
+ordinary entry receives the existing normalized/clamped program plus monitored
+input; powered Sister retains its existing source switches and trim normalization.
+
+Sister owns PRE/head inserts, tape operations and isolated head taps. Its completed
+wet output becomes the serial stage result; its DRY monitor still joins at the
+fixed Master endpoint. Pedalboard's global POST chain is a single movable stage.
+Router bypass also gates PRE/head insert returns without changing their slot
+settings. Master FX retains its existing independent gate over Pedalboard/Fallout.
+Powered Sister's linked MIX safety remains at the end of the complete routed wet
+chain, before MIX capture and monitor gains, including when its Router block is
+bypassed. It does not clip the Sister contribution before downstream processors.
+
+The current sample snapshots both feedback returns before traversal. FX feedback
+observes the wet Pedalboard output if encountered after Sister, otherwise Sister's
+wet output (upstream effects have already reached the tape input). Dry monitoring
+cannot create immediate recursion. Fallout feedback retains its bounded previous
+frame state. No graph feedback edge can be created by dragging.
+
+Order handoff fades out for 5 ms, swaps the permutation at zero, then fades in for
+5 ms. Bypass/solo ramp each stage's insert mix over 10 ms; inactive processors tick
+on silence. No duplicate DSP graph, allocation, locks or UI polling is added to the
+callback. Activity envelopes publish through the existing once-per-block atomic
+snapshot. EQ, limiter, OUT and FILE OUT remain at the final endpoint.
+
+`TsRouterControls` contains order, bypass mask and single solo ID. The manual
+editing APIs do not depend on the UI. Project-state v23 and INI Router keys persist
+that state; missing keys default to Prism/Sister/Fallout/Pedalboard. Sound presets
+do not own it. Adding a future processor needs a stable ID, an adapter, UI metadata
+and persistence migration. External insert will additionally need asynchronous
+I/O and latency policy; neither that I/O nor timed routing automation exists yet.
+
+The following PR9/PR10 sections describe the earlier fixed positions.
+
 ## PR9 post-effects bus
 
 `post_fx` is derived from a named musical branch, never by mutating the hardware

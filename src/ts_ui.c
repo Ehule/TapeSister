@@ -2944,7 +2944,7 @@ static void live_input_render(TsFramebuffer *fb, const TsUiState *ui)
 int ts_ui_foreground_panel_open(const TsUiState *ui)
 {
     if (ui == NULL) return 0;
-    return ui->master_eq_open || ui->mosaic_edit_choice || ui->portal.open || ui->exit_confirm_open || ui->project_overwrite_confirm_open ||
+    return ui->router_open || ui->master_eq_open || ui->mosaic_edit_choice || ui->portal.open || ui->exit_confirm_open || ui->project_overwrite_confirm_open ||
            ui->overdub_confirm_open || ui->fm_open ||
            ui->transform_open || ui->drone_open || ui->import_preview_open ||
            ui->exchange_dialog != TS_UI_EXCHANGE_NONE ||
@@ -2958,13 +2958,14 @@ int ts_ui_foreground_panel_open(const TsUiState *ui)
 #include "ts_mosaic_ui.inc"
 #include "ts_keyboard_sequence_ui.inc"
 #include "ts_master_eq_ui.inc"
+#include "ts_router_ui.inc"
 #include "ts_performance_help.inc"
 
 void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *instrument)
 {
     render_palette = &ui->palette;
     if(ui->portal.open) { portal_render(fb,ui); return; }
-    if(ui->mosaic_open && ui->mosaic) {mosaic_render(fb,ui,instrument);master_eq_render(fb,ui);return;}
+    if(ui->mosaic_open && ui->mosaic) {mosaic_render(fb,ui,instrument);master_eq_render(fb,ui);router_render(fb,ui);return;}
     const TsTuning *display_tuning = &ui->tune_reference;
     int showing_bank = ui->bank_view_slot >= 0 && ui->bank_view_slot < TS_BANK_SLOT_COUNT;
     int showing_parent = !showing_bank && ui->audition_source == TS_AUDITION_PARENT;
@@ -4110,6 +4111,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     }
     if (!ui->exit_confirm_open && !ui->project_overwrite_confirm_open && !ui->file_busy &&
         ui->browser.mode==TS_BROWSER_CLOSED) master_eq_render(fb,ui);
+    router_render(fb,ui);
     main_midi_learn_overlay(fb, ui);
 }
 

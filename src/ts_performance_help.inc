@@ -2,7 +2,9 @@
 static const char *performance_help(const TsUiState *ui,int x,int y)
 {
 #define H(X,Y,W,H,T) if(x>=(X) && x<(X)+(W) && y>=(Y) && y<(Y)+(H))return (T)
+    if(ui->router_open)return router_help(ui,x,y);
     if(ui->master_eq_open) {
+        H(310,356,310,25,"OPEN GLOBAL ROUTER: DRAG STAGES, BYPASS OR SOLO; F9 ALSO OPENS IT");
         H(354,44,92,24,"BYPASS ALL EQ BANDS FOR COMPARISON; YOUR SETTINGS ARE RETAINED");
         H(452,44,116,24,"RESET EQ: CLICK TWICE TO RESTORE FLAT BANDS AND BYPASS; LIMITER/OUT STAY SET");
         H(574,44,46,24,"CLOSE EQ; PROCESSING AND PLAYBACK CONTINUE");

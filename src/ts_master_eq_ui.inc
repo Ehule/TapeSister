@@ -108,7 +108,7 @@ static void master_eq_render(TsFramebuffer *fb,const TsUiState *ui)
     snprintf(label,sizeof(label),"OUT %.0F%%",ui->master_output.gain*100);
     slider(fb,414,338,202,label,ui->master_output.gain,amber);
     text(fb,20,366,"MASTER > EQ > LIMITER > OUT",muted,1);
-    text(fb,310,366,"DRAG FREQ/GAIN  WHEEL Q  SHIFT: FINE",muted,1);
+    button(fb,310,356,310,"GLOBAL ROUTER   F9",0);
     if(ui->midi_learn_active) {
         char target[TS_MIDI_TARGET_ID_MAX];
         for(int i=0;i<3;++i) {
