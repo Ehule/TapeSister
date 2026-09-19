@@ -373,6 +373,8 @@ typedef struct {
 typedef struct {
     uint64_t waveform_revisions[TS_UI_WAVEFORM_COUNT];
     TsUiWheelGuard wheel_guard;
+    char performance_tooltip[160], performance_hover[160], performance_hover_status[160];
+    uint32_t performance_hover_due;
     uint32_t active_notes;
     TsKeyboardSequenceSettings keyboard_sequence;
     int keyboard_sequence_open, keyboard_sequence_edit, keyboard_sequence_drag;
@@ -821,6 +823,7 @@ int ts_ui_zoom_parent_view(TsUiState *ui, size_t frames, size_t anchor,
 int ts_ui_pan_parent_view(TsUiState *ui, size_t frames, ptrdiff_t amount);
 size_t ts_ui_parent_frame_from_x(const TsUiState *ui, size_t frames, int x, int width);
 void ts_ui_reset_import_view(TsUiState *ui, size_t frames);
+void ts_ui_performance_hover(TsUiState *ui, int x, int y, uint32_t now, int blocked);
 int ts_ui_zoom_import_view(TsUiState *ui, size_t frames, size_t anchor,
                            float anchor_ratio, float scale);
 int ts_ui_pan_import_view(TsUiState *ui, size_t frames, ptrdiff_t amount);

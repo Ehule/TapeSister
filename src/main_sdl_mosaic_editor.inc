@@ -253,6 +253,34 @@ static int mosaic_resolve_edit(SDL_AudioDeviceID device,AudioState *audio,TsUiSt
         snprintf(ui->status,sizeof(ui->status),"EDIT OWNER CHANGED - RESULT KEPT IN THE EDITOR");return 0;
     }
     char error[160]={0};
+    if(choice==4) {
+        /* Discard the pending editor result; never publish it or create a bank
+           tile. Rebuild the document from the still-authoritative card. */
+        TsInstrument *restored=malloc(sizeof(*restored));
+        if(!restored){snprintf(ui->status,sizeof(ui->status),"EDIT RETAINED - OUT OF MEMORY");return 0;}
+        ts_instrument_init(restored);
+        if(!ts_instrument_import_sample(restored,&owner->source->sample,1,owner->first,owner->last,
+                                        owner->mode,error,sizeof(error))) {
+            ts_instrument_free(restored);free(restored);
+            snprintf(ui->status,sizeof(ui->status),"EDIT RETAINED: %.140s",error);return 0;
+        }
+        restored->tuning=owner->tuning;
+        restored->loop_crossfade_ms=(float)(1000.0*owner->crossfade/owner->source->sample.sample_rate);
+        snprintf(restored->current.name,sizeof(restored->current.name),"%s",owner->name);
+        if(!runtime_note_preserve_workspace(device,audio,ui)) {
+            ts_instrument_free(restored);free(restored);return 0;
+        }
+        if(device)SDL_LockAudioDevice(device);
+        TsInstrument old=*instrument;*instrument=*restored;*restored=old;
+        if(device)SDL_UnlockAudioDevice(device);
+        ts_instrument_free(restored);free(restored);
+        c->seen_data=instrument->current.data;c->seen_revision=instrument->current.visual_revision;
+        c->seen_frames=instrument->current.frames;c->audio_dirty=0;c->pending_id=0;
+        c->resume_exit=c->fm_edit_exit=c->fm_parked=0;ui->mosaic_edit_choice=0;
+        int result=mosaic_leave(device,audio,ui,instrument,c);
+        if(result)snprintf(ui->status,sizeof(ui->status),"EDIT CANCELLED - ORIGINAL CARD KEPT; BACK IN MOSAIC");
+        return result;
+    }
     if(choice<1 || choice>3)return 0;
     TsMosaicSource *previous_source=owner->source;
     TsMosaicSource *source=ts_mosaic_source(ui->mosaic,&instrument->current,error,sizeof(error));
@@ -366,12 +394,13 @@ static int mosaic_leave(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui
     if(c->audio_dirty) {
         TsMosaicEvent *owner=ts_mosaic_find(ui->mosaic,c->active);if(!owner)return 0;
         ui->mosaic_edit_choice=1;c->pending_id=owner->id;c->pending_revision=owner->revision;c->pending_epoch=ui->mosaic->epoch;
-        snprintf(ui->status,sizeof(ui->status),"RETURN TO MOSAIC - CREATE TILE, UPDATE INSTANCE, OR UPDATE ALL");return 0;
+        snprintf(ui->status,sizeof(ui->status),"RETURN TO MOSAIC - UPDATE, CREATE TILE, OR CANCEL EDIT");return 0;
     }
     int i=mosaic_document_index(c,c->active);
-    stop_all_force(device,audio,ui);
+    if(!runtime_note_preserve_workspace(device,audio,ui))return 0;
     if(device)SDL_LockAudioDevice(device);
     *c->documents[i]=*instrument;*instrument=*c->bank;ts_instrument_init(c->bank);
+    audio->workspace_bank=NULL;
     if(c->pages)c->pages->mosaic_bank=NULL;
     c->active=ui->mosaic_editing=0;ui->mosaic_open=1;ui->bank_view_slot=-1;
     runtime_note_sync(audio,instrument,audio->output_rate);
@@ -401,9 +430,10 @@ static int mosaic_enter(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui
     doc->has_loop=1;doc->loop_first=e->first;doc->loop_last=e->last;
     doc->loop_mode=e->mode;doc->loop_crossfade_ms=(float)(1000.0*e->crossfade/e->source->sample.sample_rate);doc->tuning=e->tuning;
     c->document_ids[i]=id;c->document_epochs[i]=ui->mosaic->epoch;
-    stop_all_force(device,audio,ui);
+    if(!runtime_note_preserve_workspace(device,audio,ui))return 0;
     if(device)SDL_LockAudioDevice(device);
     *c->bank=*instrument;*instrument=*doc;ts_instrument_init(doc);
+    audio->workspace_bank=c->bank;
     if(c->pages)c->pages->mosaic_bank=c->bank;
     c->active=ui->mosaic_editing=id;ui->mosaic_open=0;c->audio_dirty=0;
     runtime_note_sync(audio,instrument,audio->output_rate);

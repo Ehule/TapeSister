@@ -69,6 +69,8 @@ typedef struct {
 typedef struct {
     int open, busy, valid, playing, listen_result, loop;
     int auto_preview;
+    int applied_flash; /* 1 NEW TILE, 2 NEW+CONT; UI-only success feedback. */
+    uint32_t applied_flash_until;
     int tab, scroll, search_focus, name_focus, exact_pin, pin_slot, macro_view;
     int parameter_scroll, dragging_parameter, dragging_wave, drag_x;
     int number_focus, wave_dragged;

@@ -122,6 +122,9 @@ static void test_selection_workflow(SDL_Window *window,SDL_AudioDeviceID device)
     portal_preview(device,&audio,&ui,&c);wait_portal(&audio,&ui,&instrument,&c);
     const float *source_data=p->source->data;uint64_t source_hash=c.source_hash;int source_slot=c.source_slot;
     assert(portal_apply(device,&audio,&ui,&instrument,&c,1));
+    assert(p->applied_flash==1);
+    portal_hover_poll(p,&c,-1,-1,p->applied_flash_until-1,0);assert(p->applied_flash==1);
+    portal_hover_poll(p,&c,-1,-1,p->applied_flash_until,0);assert(!p->applied_flash);
     assert(p->source->data==source_data && c.source_hash==source_hash && c.source_slot==source_slot);
     /* A full page preserves everything until the user chooses New Page. */
     for(int i=0;i<TS_BANK_SLOT_COUNT;++i)if(!instrument.bank[i].occupied)

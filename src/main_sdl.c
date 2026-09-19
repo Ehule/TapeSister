@@ -757,6 +757,9 @@ typedef struct {
     size_t attack_frame;
     size_t attack_frames;
     TsNoteBank notes;
+    TsNoteVoice browser_voice;
+    TsSample note_snapshots[TS_NOTE_BANK_VOICE_CAPACITY];
+    const TsInstrument *workspace_bank; /* Parked Sample bank while editing a Mosaic card. */
     TsKeyboardSequence keyboard_sequence;
     uint64_t keyboard_sequence_source_stamp;
     TsPerformanceBank performance;
@@ -1877,6 +1880,7 @@ static void fade_all_tile_launchers(SDL_AudioDeviceID device,
 static void stop_all_force(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui)
 {
     if (device) SDL_LockAudioDevice(device);
+    audio->browser_voice.active = 0;
     ui->keyboard_hold = 0;
     ui->workbench_loop_active = 0;
     keyboard_loop_policy(audio, ui);
@@ -7975,6 +7979,8 @@ static void begin_active_project_save(TsUiState *ui)
              "CONFIRM OVERWRITE OF ACTIVE TSR PROJECT");
 }
 
+#include "main_sdl_browser_audition.inc"
+
 static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
                            TsInstrument *instrument, TsSample *pending_selection_load,
                            TsSamplePages *sample_pages,
@@ -12433,6 +12439,7 @@ static void keep_record_bank(SDL_AudioDeviceID output_device,
                  copied, first_page, last_page);
 }
 
+#include "main_sdl_note_snapshots.inc"
 #include "main_sdl_mosaic_editor.inc"
 #include "main_sdl_portal.inc"
 #include "main_sdl_mosaic.inc"
@@ -12572,6 +12579,7 @@ int main(int argc, char **argv)
     TsExchangeOffer exchange_offer;
     TransformController transform;
     ImportController import_controller;
+    BrowserAudition browser_audition={0};
     PortalController portal;
     MosaicController mosaic = {0};
     PendingFileOperation pending_file = {0};
@@ -13024,6 +13032,7 @@ int main(int argc, char **argv)
         ts_performance_collect_retired(&audio.performance);
         ts_performance_collect_retired(&audio.tile_launchers);
         ts_performance_collect_retired(&audio.sister.performance);
+        runtime_note_collect_snapshots(device,&audio);
         poll_import_worker(device, &audio, &ui, &instrument,
                            &pending_selection_load, &import_controller);
         if (pending_file.active && pending_file.presented)
@@ -13519,6 +13528,8 @@ int main(int argc, char **argv)
             }
             if (portal_event(&event,window,device,&audio,&ui,&instrument,
                              &portal,&sister_window,obtained.freq,&transform)) continue;
+            if (browser_audition_event(&event,window,device,&audio,&ui,
+                                       &browser_audition,obtained.freq)) continue;
             if (import_preview_event(&event,device,&audio,&ui,&instrument,
                                       &pending_selection_load,&import_controller,obtained.freq)) continue;
             if (keyboard_pointer_event(&event,window,device,&audio,&ui,&instrument,
@@ -16999,6 +17010,7 @@ int main(int argc, char **argv)
         ui.text_cursor_visible = ((SDL_GetTicks() / 500u) & 1u) == 0u;
         sister_window.model.text_cursor_visible = ui.text_cursor_visible;
         poll_import_playback(device,&audio,&ui,&import_controller);
+        browser_audition_poll(device,&audio,&ui,&browser_audition,obtained.freq);
         if (ui.file_busy)
             ui.file_busy_phase = (int)((SDL_GetTicks() / 180u) % 4u);
         {
@@ -17014,6 +17026,8 @@ int main(int argc, char **argv)
             }
             portal_hover_poll(&ui.portal,&portal,x,y,SDL_GetTicks(),
                 buttons!=0 || ui.master_output_dragging);
+            ts_ui_performance_hover(&ui,x,y,SDL_GetTicks(),
+                buttons!=0 || !sister_performance_keys_allowed(&ui));
             ui.sister_portal_hovered = hovered;
             ui.sister_portal_pressed =
                 hovered && (buttons & SDL_BUTTON_LMASK) != 0u;
@@ -17091,11 +17105,13 @@ int main(int argc, char **argv)
     tapeLinkReaderClose(&audio.live_link);
     free(audio.live_link_buffer);
     audio.live_link_buffer = NULL;
+    browser_audition_stop(device,&audio,&ui,&browser_audition,1);
     if (device) SDL_CloseAudioDevice(device);
     portal_free(&portal);
     mosaic_controller_free(&mosaic);
     ts_mosaic_free(ui.mosaic);
     ts_performance_free(&audio.performance);
+    for(int i=0;i<TS_NOTE_BANK_VOICE_CAPACITY;++i)ts_sample_free(&audio.note_snapshots[i]);
     ts_keyboard_sequence_source_free(audio.keyboard_sequence.source);
     ts_performance_free(&audio.tile_launchers);
     ts_sister_runtime_free(&audio.sister);

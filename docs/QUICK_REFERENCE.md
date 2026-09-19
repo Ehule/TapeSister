@@ -70,13 +70,15 @@ C5 plays twice as fast as C4; C3 takes twice as long. Extending a loop allows mo
 repetitions at the same pitches. One-shots play once, ending at their own completion
 or the event's bottom. Shared source audio does not mean shared playback settings.
 
-Double-click to edit; audio changes accumulate until returning to Mosaic:
+Double-click to edit; already-playing notes and HOLD chords keep their sound,
+even when opening a different card. Audio changes accumulate until returning to Mosaic:
 
 | Exit choice | Result |
 | --- | --- |
 | CREATE TILE — Enter or N | Keep original; add a card and a regular Sample-bank source |
 | UPDATE INSTANCE — U | Replace this card and add a new source |
 | UPDATE ALL — A | Replace all cards using this source and update matching Sample-bank tiles |
+| CANCEL EDIT — C | Discard the pending audio result and return to Mosaic; create nothing |
 | KEEP EDITING — Escape | Continue working without publishing the audio |
 
 Speed changes pitch and arrangement timing together. Its wheel moves by semitones;
@@ -415,6 +417,7 @@ Sample/Depth/Rate, Pitch Ratio/Ramp/Rate. `L` assigns LFO; `R` assigns Rise.
 Final order: mix → Master EQ → linked limiter → OUT fader → L/R meter and FILE OUT.
 
 Click **EQ** in either window for Master / Room EQ and the limiter toggle.
+Hover its controls for 600 ms to see help in the bottom status line.
 Five bands; Bell / Low Shelf / High Shelf / High Pass / Low Pass / Notch.
 Drag a node for frequency/gain; wheel for Q; Shift makes node edits finer.
 Selected-band sliders show exact values. Gain ±12 dB; Q 0.30–8.00; passes 12 dB/oct.
@@ -480,11 +483,17 @@ Saving `Name.tsr` creates the movable folder `Name/`. Share or back up that whol
 | Page Up/Page Down | Move by page |
 | Home/End | First/last entry |
 | Enter/double-click | Open/accept |
+| Space in LOAD's file list | Start/stop auditioning the selected audio file without importing it |
 | Backspace | Parent directory when file list owns focus |
-| Escape | Cancel current browser action |
+| Escape | Stop a browser audition/decode first; otherwise cancel the current browser action |
 
 Save and Export append the proper extension. Replacing a file requires a deliberate
 confirmation.
+
+Filenames and paths display their actual letter case. Filename and folder-name
+fields accept spaces normally. Browser audition supports recognized audio;
+double-click raw data to configure it in Preview. Changing selection or leaving
+the browser stops the audition.
 
 **Export selected WAV** starts with the selected tile's name, including a custom
 tile rename. It keeps a single `.wav` extension and substitutes filename-safe
@@ -541,6 +550,7 @@ ARP even with the controls hidden; stopping releases only the sequence. Selectin
 a new tile keeps its notes and timing running with the new sound, without launching
 a separate tile layer. FROM HELD copies the current QWERTY chord. Selection/settings last for
 the session. See [Keyboard arpeggio and sequencing](KEYBOARD_SEQUENCE.md).
+Hover ARP controls for 600 ms to see their help in the bottom status line.
 
 The virtual keyboard shares **HOLD** between tile and FM playing. Arm HOLD before
 playing to latch/repeat notes; click again or press Space to release. Ordinary

@@ -122,6 +122,7 @@ static void portal_hover_reset(TsPortalUi *p,PortalController *c)
 static void portal_hover_poll(TsPortalUi *p,PortalController *c,int x,int y,Uint32 now,int blocked)
 {
     char buffer[160];
+    if(p->applied_flash && SDL_TICKS_PASSED(now,p->applied_flash_until))p->applied_flash=0;
     if(!p->open || blocked || p->busy || p->dragging_parameter>=0 || p->dragging_wave>=0) {
         portal_hover_reset(p,c);return;
     }

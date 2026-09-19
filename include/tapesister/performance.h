@@ -88,6 +88,7 @@ typedef struct {
     int key_down; /* Physical trigger state, independent of explicit latch. */
     int releasing;
     int tile_launched;
+    int detached; /* Output rate while this voice retains its workspace generation. */
     int previous_frame_valid;
     int active;
 } TsPerformanceVoice;

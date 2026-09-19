@@ -195,6 +195,10 @@ retriggering the sound. Each note can finish at a different time.
 editor, CDP Portal or Sister window is open. Sample editing uses the event's
 own document. Copies share source audio; on leaving, choose whether the edited
 sound belongs to this instance, all instances using that source, or a new card.
+Already-playing QWERTY/MIDI notes, HOLD chords and launched layers also survive
+opening and leaving an editor, whether the card matches the selected tile or
+uses another sound. They retain their original source while you edit and still
+respond to their usual release/stop controls.
 Make as many drawing or processing edits as you like, including Warp, Smear
 and CDP. The working waveform stays in this event's editor. The destination
 prompt appears **once when returning to Mosaic**, only if its audio has changed:
@@ -214,6 +218,10 @@ prompt appears **once when returning to Mosaic**, only if its audio has changed:
   length changes. The edited card takes its working region/tuning. Custom names
   on other cards remain intact. A legacy source without a regular bank tile gets
   one. A locked matching bank tile prevents the update before anything changes.
+- **CANCEL EDIT** (C) discards the pending audio result and returns to Mosaic.
+  The card keeps its published sound; no card or Sample-bank tile is created.
+  Immediate per-event changes already applied, such as chord notes, remain.
+  This also cancels a save/open/quit action that was waiting on the decision.
 - **KEEP EDITING** (Escape) closes the question and retains all working edits.
 
 CREATE TILE and UPDATE INSTANCE use free bank slots. Arrangement Undo restores
@@ -404,8 +412,11 @@ processing simultaneously. DISTSHIFT and further CDP expansion are unchanged.
 - On a long loop choose C4, E4 and C5. Listen for independent repeating gestures;
   extend the event while it plays and check that the phases continue.
 - Open a copy, set EVENT ONCE and make audio edits. Try CREATE TILE, UPDATE INSTANCE,
-  UPDATE ALL and KEEP EDITING separately; verify the stated card/source scope and
+  UPDATE ALL, CANCEL EDIT and KEEP EDITING separately; verify the stated card/source scope and
   that UPDATE ALL preserves each card's timing, notes and mix settings.
+- Play a held chord, open both a matching and a different card, edit audio and
+  cancel back to Mosaic. Check that the chord keeps playing its original sound,
+  HOLD remains armed, and Cancel Edit creates no card or bank tile.
 - Create a new full bank from FM while the welcome sample remains on the first
   bank. Browse both banks in Mosaic and place a sample from each; confirm that
   the main editor stays on its original active bank.

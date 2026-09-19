@@ -707,6 +707,7 @@ static int portal_apply(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui
     unlock_edit(device,audio,ui,instrument);
     if(ok) {
         ui->bank_view_slot=-1;p->valid=0;
+        if(new_tile) {p->applied_flash=new_tile;p->applied_flash_until=SDL_GetTicks()+700u;}
         if(promote) {
             portal_invalidate(device,audio,p,c);portal_clear_history(c,p);
             ts_sample_free(&c->source);c->source=promoted;ts_sample_init(&promoted);

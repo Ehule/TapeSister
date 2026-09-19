@@ -90,11 +90,14 @@ as its different loop lengths move in and out of alignment.
 
 ![Mosaic's free canvas with independent pitched events](docs/images/mosaic.png)
 
-Double-click an event to use the familiar waveform editor. Audio edits accumulate
-until you return to Mosaic, then **NEW TILE** preserves the original or **UPDATE
-TILE** changes only that event. NEW TILE reveals the new card and also stores a
-reusable copy in the regular Sample banks. Copies share source audio until an edit creates a
-new version. Sources browses all Sample banks and the event audio versions.
+Double-click an event to use the familiar waveform editor; existing keyboard
+notes and HOLD chords keep playing. Audio edits accumulate until you return to
+Mosaic. **CREATE TILE** preserves the original and adds a card and Sample-bank
+source; **UPDATE INSTANCE** changes one card; **UPDATE ALL** changes every card
+sharing that sound and the matching Sample-bank tiles. **CANCEL EDIT** discards
+the pending audio result and returns to Mosaic, while **KEEP EDITING** leaves it
+open. Copies share source audio until an edit creates a new version. Sources
+browses all Sample banks and the event audio versions.
 
 Shift-drag a box to select a group; drag to move it or Shift-drag a selected tile to
 copy the group. M/S mutes or solos, middle-click seeks, and FOLLOW scrolls with the

@@ -44,6 +44,7 @@ typedef struct {
     char saved_filename[TS_BROWSER_NAME_MAX + 1];
     int overwrite_armed;
     int dragging_scrollbar;
+    int preview_loading, preview_playing;
     int scrollbar_drag_offset;
     char message[160];
 } TsBrowser;

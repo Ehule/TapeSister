@@ -271,6 +271,8 @@ static void test_portal_keyboard(SDL_Window *window,SDL_AudioDeviceID device,Aud
 #undef SEND
 }
 
+#include "test_browser_audition.inc"
+
 int main(void)
 {
     static AudioState audio;static TsUiState ui;static TsInstrument instrument;
@@ -346,6 +348,7 @@ int main(void)
     assert(ts_sample_hash(&c.source)==hash && ts_sample_hash(&c.history[0].output)==hash);
     test_import(device,&audio,&ui,&c.source,1);
     test_import(device,&audio,&ui,&c.source,2);
+    test_browser_audition(window,device,&audio,&ui,&instrument,&c.source);
     portal_free(&c);ts_instrument_free(&instrument);
     ts_performance_free(&audio.performance);ts_performance_free(&audio.tile_launchers);
     ts_sister_runtime_free(&audio.sister);ts_capture_free(&audio.capture);
