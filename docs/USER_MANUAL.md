@@ -1294,6 +1294,69 @@ Sister becomes most expressive when its controls are treated as relationships:
 The instrument is deliberately recursive, but same-tile live capture is blocked. Each
 generation remains explicit and recoverable.
 
+## Global Router
+
+Press **F9** from Main, FM, Mosaic, or Sister, or open **EQ → GLOBAL ROUTER**.
+The Router shows the serial processing path from top to bottom. Opening or closing
+it leaves playback running; physical QWERTY/MIDI notes and Shift+Space ARP transport
+remain available. Escape closes the page, or cancels an active drag first. File
+browsers, text fields, and confirmation dialogs retain their keys.
+
+![Global Router with Sister placed before Prism](images/global-router.png)
+
+The default order is **Source → Prism → Sister → Fallout → Pedalboard → Master**.
+Drag a module by its name or grip to change its position. The amber line shows
+where it will land; release to apply, or Escape to cancel. Source and Master are
+fixed. All 24 orders of the four processors are available. The order changes the
+audio: moving Prism below Sister refracts the tape's output, while placing it above
+Sister prints the refraction into newly arriving tape material.
+
+| Control or indication | Meaning |
+| --- | --- |
+| BYPASS | Pass the stage's input onward while retaining its controls |
+| SOLO | Hear this optional stage alone; click again to restore previous bypasses |
+| Another SOLO | Move solo to that stage; only one is soloed at a time |
+| BYPASS during solo | Leave solo and change the chosen stage's bypass; clicking the soloed stage bypasses it |
+| ON / OFF | The subsystem's own power state; Router controls do not change it |
+| BYPASS / SKIP / SOLO | Saved bypass, temporary exclusion by solo, or the soloed stage |
+| IN lights and lit connectors | Audio reaching this position, independent of the processor's switch state |
+
+An OFF processor passes its input through. Solo does not power on an OFF subsystem.
+An IN indicator can therefore glow on an OFF or bypassed module: audio is passing
+that point. Hover controls for delayed help. Source selection still belongs to the
+existing workspaces: powered Sister uses its source switches and trims; with Sister
+off, the ordinary tile/FM/Mosaic/Live Link/monitored-input mix supplies the chain.
+
+**Pedalboard remains one module.** Its stereo POST slots move together, keeping their
+internal slot order, duplicates, mixes, gains and transitions. PRE and H1/H2/H3 are
+local Sister inserts and remain at those named locations. Router Pedalboard bypass
+also gates those inserts. They require Sister; a soloed Pedalboard auditions its POST
+chain, while a soloed Sister excludes Pedalboard inserts. **MASTER FX** continues
+to gate the Pedalboard and Fallout independently of Router controls.
+
+**Sister's DRY monitor remains a separate return to Master**, as indicated on the
+page; WET monitors the serial wet path. Set Sister DRY to zero when comparing pure
+Sister-to-Prism or Sister-to-Pedalboard processing. Sister's internal tape/feedback
+controls remain local. The bounded FX-feedback return uses the processed wet tap
+when Pedalboard is downstream of Sister; upstream effects are already printed into
+Sister's input. Dry monitoring never feeds that loop. H1/H2/H3 captures remain
+internal head taps; MIX follows the routed wet result with linked peak safety.
+FILE OUT and Mosaic OUTPUT
+record the final audible result, including dry monitoring, EQ, limiter, and OUT.
+
+Order changes fade down and back up over about **10 ms**. Bypass/solo crossfade
+over about **10 ms**. These are short safety transitions, not performance timers.
+Processor histories are not reset: bypassed stages continue ticking with silence
+so tails and modulation advance. Bypassing Sister does not turn its POWER off.
+The final EQ, limiter and OUT fader remain after the Router in every configuration;
+the tuning reference retains its existing direct path to Master.
+
+Order, saved bypasses and solo persist in the project/session and configuration.
+Older files with no Router keys load the default order with no Router bypass or
+solo. Sound presets do not overwrite routing. Audio-device recovery preserves it.
+This release implements serial manual routing; external insert and timed routing
+performance are later additions.
+
 ## The four-slot FX pedalboard
 
 ![Four independently placed effects with a long topology transition](images/manual/fx-pedalboard.png)
@@ -1332,7 +1395,7 @@ combination are valid. Every slot owns independent state and history.
 - **H1**, **H2**, or **H3** processes that head immediately after its read and before
   the head's later character/level path. On H1/H2, the processed result also participates
   in that head's feedback.
-- **POST** processes the completed MIX after Fallout.
+- **POST** processes the Router's Pedalboard input, initially after Sister MIX and Fallout.
 
 Only one placement is active for each slot. If several slots share a placement, their
 slot numbers determine their order at that point.
@@ -1363,8 +1426,10 @@ continues from the current gain instead of jumping back to an endpoint.
 
 ### FX Feedback
 
-FX FEEDBACK returns the pedalboard's completed effect contribution into Sister's rolling
-write. Its visible range reaches 135%. It is intentionally capable of self-building
+FX FEEDBACK returns Sister's completed wet contribution into its rolling write.
+With Pedalboard downstream, this includes its POST processing; with Pedalboard
+upstream, that processing has already entered the tape input. Its visible range
+reaches 135%. It is intentionally capable of self-building
 behavior, but the return is delayed by one sample, bounded, saturated, and processed by
 the tape write safety path.
 
@@ -1386,11 +1451,12 @@ passes, especially with long reverb, delay, low ERASE, or additional H1/H2 feedb
 
 ![Fallout's deterioration controls, independent transition times, and phase displays](images/manual/fallout.png)
 
-Fallout sits after Sister's completed MIX and before the POST pedalboard location. It is
-a stereo deterioration and instability instrument with its own 20-second history.
+By default, Fallout sits after Sister's completed MIX and before the POST pedalboard
+location. Global Router can move it. It is a stereo deterioration and instability
+instrument with its own 20-second history.
 
-It also works with Sister powered off, processing ordinary playback and Mosaic before
-POST slots. Its own FALLOUT switch enables the insert, while **MASTER FX** controls
+It also works with Sister powered off, processing ordinary playback and Mosaic at
+its Router position. Its own FALLOUT switch enables the insert, while **MASTER FX** controls
 the combined Fallout/pedalboard bypass. Master FX bypass preserves Fallout's settings
 and modulation phase; turning the FALLOUT insert itself off clears its history after
 the transition so a later re-enable starts cleanly.

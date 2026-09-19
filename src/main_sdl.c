@@ -640,6 +640,7 @@ static uint64_t paged_project_state_hash(const TsSamplePages *pages,
     }
     if (sister != NULL) {
         state_hash_bytes(&hash,&sister->master_eq.controls,sizeof(sister->master_eq.controls));
+        state_hash_bytes(&hash,&sister->router.controls,sizeof(sister->router.controls));
         uint8_t routes = sister->source_switches & TS_SISTER_SOURCE_ALL;
         state_hash_bytes(&hash, &routes, sizeof(routes));
         state_hash_bytes(&hash, sister->page_source_masks,
@@ -3819,6 +3820,8 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
             } else {
                 TsMasterEqControls flat;ts_master_eq_default(&flat);
                 ts_master_eq_set(&audio->sister.master_eq,&flat);
+                TsRouterControls defaults;ts_router_default(&defaults);
+                ts_sister_runtime_set_router(&audio->sister,&defaults);
                 ts_sister_runtime_set_sources(&audio->sister, 0u);
                 ts_sister_runtime_set_selected_preset(&audio->sister, "");
             }
@@ -10782,6 +10785,7 @@ static int midi_source_from_event(const TsMidiEvent *midi,
 }
 
 #include "main_sdl_master_eq.inc"
+#include "main_sdl_router.inc"
 
 static int midi_sister_hit_from_target(const char *target, float normalized,
                                        TsSisterUiHit *hit)
@@ -12735,6 +12739,7 @@ int main(int argc, char **argv)
     ts_sister_runtime_set_master_output_gain(
         &audio.sister, (float)ui.config.master_output_percent / 100.0f);
     ts_master_eq_set(&audio.sister.master_eq,&ui.config.master_eq);
+    ts_sister_runtime_set_router(&audio.sister,&ui.config.router);
     audio.sister_file_recorder = &sister_window.performance_recorder;
     atomic_init(&audio.sister_file_tap, TS_SISTER_TAP_MIX);
     ts_realtime_diagnostics_init(&audio.realtime_diagnostics);
@@ -13187,6 +13192,7 @@ int main(int argc, char **argv)
             }
             if(keyboard_sequence_transport_event(&event,window,device,&audio,&ui,
                 &sister_window,&instrument,&fm_preview,obtained.freq))continue;
+            if(router_event(&event,window,device,&audio,&ui,&sister_window))continue;
             if(master_eq_event(&event,window,device,&audio,&ui,&sister_window))continue;
             mosaic_commit(device,&ui,&instrument,&mosaic);
             /* Finish an active pointer gesture before Escape can discard a take. */
@@ -16999,6 +17005,9 @@ int main(int argc, char **argv)
                     routing.output_clip[channel];
             }
             ui.config.master_eq = audio.sister.master_eq.controls;
+            ui.config.router = routing.router;
+            ui.router_enabled = routing.router_enabled;ui.router_transition=routing.router_transition;
+            memcpy(ui.router_peaks,routing.router_peaks,sizeof(ui.router_peaks));
             ui.master_eq_rate = (unsigned)audio.output_rate;
             ui.master_output.limiter_enabled = routing.limiter_enabled;
             ui.master_output.limiter_ceiling_db =

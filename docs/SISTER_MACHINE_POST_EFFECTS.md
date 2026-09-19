@@ -12,6 +12,13 @@ changes preserve their settings and transitions. See [Mosaic](MOSAIC.md) and
 [Fallout](SISTER_MACHINE_FALLOUT.md) for those current paths; the fixed-chain design
 below is retained as historical context.
 
+The [Global Router](USER_MANUAL.md#global-router) now places the stereo POST
+chain as one movable block. PRE and head slots remain local Sister inserts;
+Router Pedalboard bypass also gates those inserts. Sister's DRY monitoring return
+stays outside the serial wet chain. The current FX-feedback tap follows the wet
+Pedalboard result when that block is downstream of Sister, otherwise Sister's wet
+output; the immediate dry monitor is never fed back.
+
 The earlier compact fixed chain was **DISTORTION → GRAIN → DELAY → REVERB**, with one
 explicit Master FX Feedback return. Those effects shared PR8's generic target bits;
 there was no second routing language and no per-head parameter copy.

@@ -225,7 +225,7 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
     }
     /* Workspace keys are dispatched before panel input. */
     if(mosaic_toggle_key(event))return 0;
-    if(ui_dialog_open(ui) || ui->master_output_dragging)return 0;
+    if(ui->router_open || ui_dialog_open(ui) || ui->master_output_dragging)return 0;
     if(c->active) {
         if(!ui->show_recipes && !ui->show_ingredients)ui->show_keyboard=1;
         if((key && event->key.keysym.sym==SDLK_ESCAPE) ||

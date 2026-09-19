@@ -1,6 +1,6 @@
 int ts_ui_keyboard_sequence_visible(const TsUiState *ui)
 {
-    return ui && !ui->master_eq_open && ui->show_keyboard && !ui->mosaic_open && !ui->mosaic_edit_choice &&
+    return ui && !ui->router_open && !ui->master_eq_open && ui->show_keyboard && !ui->mosaic_open && !ui->mosaic_edit_choice &&
         !ui->portal.open && !ui->exit_confirm_open && !ui->project_overwrite_confirm_open &&
         !ui->overdub_confirm_open && !ui->transform_open && !ui->drone_open &&
         !ui->import_preview_open && ui->exchange_dialog == TS_UI_EXCHANGE_NONE &&

@@ -328,6 +328,14 @@ TsSisterOutput ts_sister_machine_process_frame_with_insert_fx(
     TsSisterMachine *machine, TsSisterFalloutEngine *fallout,
     TsSisterPostFxEngine *post_fx, TsStereoFrame input,
     TsStereoFrame duck_sidechain, TsStereoFrame causal_fx_return);
+/* Serial-router adapter: PRE/head inserts stay local; global processors are external. */
+TsSisterOutput ts_sister_machine_process_router(TsSisterMachine *machine,
+    TsSisterPostFxEngine *head_fx,float head_gate,TsStereoFrame input,TsStereoFrame causal_return);
+/* Complete the routed wet MIX with the same linked safety as the legacy path,
+   after all movable processors and before capture / monitoring. */
+TsStereoFrame ts_sister_machine_finish_router(TsSisterMachine *machine,
+    TsStereoFrame routed_mix);
+
 void ts_sister_machine_process_block(TsSisterMachine *machine,
                                      const TsStereoFrame *input,
                                      const TsStereoFrame *duck_sidechain,

@@ -1,7 +1,8 @@
 # Sister Machine Fallout
 
-Fallout is a stereo deterioration instrument inserted after Sister Machine's completed
-MIX and before pedalboard slots placed at POST:
+Fallout is a stereo deterioration instrument. The default order places it after
+Sister Machine's completed MIX and before pedalboard slots placed at POST.
+**F9** opens the [Global Router](USER_MANUAL.md#global-router) to change its position:
 
 `Sister MIX -> Fallout -> POST slots in 1-2-3-4 order -> linked safety -> global limiter -> master OUT`
 
