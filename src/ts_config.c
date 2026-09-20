@@ -313,6 +313,10 @@ int ts_config_load(TsConfig *config, const char *path,
             if (!copy_value(loaded.cdp_bin_path, value, error, error_size)) { fclose(file); return 0; }
         } else if (strcmp(key, "record_input_device") == 0) {
             if (!copy_value(loaded.record_input_device, value, error, error_size)) { fclose(file); return 0; }
+        } else if (strcmp(key, "insert_send_device") == 0) {
+            if (!copy_value(loaded.insert_send_device, value, error, error_size)) { fclose(file); return 0; }
+        } else if (strcmp(key, "insert_return_device") == 0) {
+            if (!copy_value(loaded.insert_return_device, value, error, error_size)) { fclose(file); return 0; }
         } else if (strcmp(key, "startup_welcome_sample") == 0) {
             if (!parse_boolean(value, &loaded.startup_welcome_sample)) { snprintf(error, error_size, "Invalid boolean on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "startup_welcome_autoplay") == 0) {
@@ -758,6 +762,8 @@ int ts_config_save(const TsConfig *config, const char *path,
         !ts_master_eq_write(file,&config->master_eq);
     if(!write_failed)write_failed=!ts_router_write(file,&config->router);
     if(!write_failed)write_failed=!ts_insert_write(file,&config->insert);
+    if(!write_failed)write_failed=fprintf(file,"insert_send_device=%s\ninsert_return_device=%s\n",
+        config->insert_send_device,config->insert_return_device)<0;
     if (fclose(file) != 0) write_failed = 1;
     if (write_failed) {
         set_error(error, error_size, "Could not finish writing config");

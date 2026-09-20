@@ -58,5 +58,4 @@ static void ts_audio_commit_output_layout(AudioState *audio, const SDL_AudioSpec
     ts_input_monitor_discard(&audio->sister.insert.return_monitor);
 }
 
-static int ts_audio_insert_apply_output(char *error, size_t size)
-{ return ts_switch_output_for_config(error, size); }
+#include "main_sdl_insert_devices.inc"

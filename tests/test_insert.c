@@ -34,16 +34,26 @@ static void prepare(TsInsert *s,unsigned rate)
 }
 static void loop_return(TsInsert *s)
 {
+    if(s->separate_send) {
+        float sent[2];ts_insert_render_send(s,sent,1,2,s->sample_rate);
+        TsStereoFrame returned=external((TsStereoFrame){sent[0],sent[1]});
+        float input[2]={returned.l,returned.r};ts_insert_capture_from(s,input,1,2,1);return;
+    }
     TsStereoFrame x=external(s->send);
     float input[8]={.8f,-.8f,x.l,x.r,.5f,-.5f,.4f,-.4f};
     ts_insert_capture(s,input,1,8);
 }
 
-static void all_orders(void)
+static void all_orders(int separate)
 {
     TsRouterControls c;ts_router_default(&c);c.bypass_mask=0;int count=0;
     do {
         Loop loop;prepare(&loop.insert,8000);ts_router_init(&loop.router);ts_router_prepare(&loop.router,8000);
+        if(separate) {
+            TsInsertControls ports={1,0,0,0};ts_insert_set(&loop.insert,&ports);
+            ts_insert_io_mode(&loop.insert,1,1);ts_insert_send_prepare(&loop.insert,2,8000,32);
+            ts_insert_capture_prepare_from(&loop.insert,2,8000,32,1);
+        }
         ts_router_set(&loop.router,&c);TsStereoFrame out={0},source={.06f,-.04f};
         for(int i=0;i<1800;++i) {
             loop_return(&loop.insert);
@@ -51,7 +61,7 @@ static void all_orders(void)
             assert(isfinite(out.l+out.r));
             float physical[8];ts_insert_write_output(&loop.insert,physical,8,out);
             close_frame((TsStereoFrame){physical[0],physical[1]},out);
-            close_frame((TsStereoFrame){physical[2],physical[3]},loop.insert.send);
+            close_frame((TsStereoFrame){physical[2],physical[3]},separate?(TsStereoFrame){0,0}:loop.insert.send);
             for(int j=4;j<8;++j)assert(physical[j]==0);
         }
         TsStereoFrame expected=source;
@@ -105,6 +115,35 @@ static void levels_failures_and_solo(void)
     }
 }
 
+static void independent_clocks(void)
+{
+    TsInsert s;ts_insert_init(&s);ts_insert_prepare(&s,44100);
+    ts_insert_io_mode(&s,1,1);
+    TsInsertControls c={4,0,0,0};ts_insert_set(&s,&c);
+    ts_insert_send_prepare(&s,8,44100,480);
+    ts_insert_capture_prepare_from(&s,2,32000,320,1);
+    float returned[640],sent[480*8],master[2];TsStereoFrame out={0};
+    for(int i=0;i<320;++i){returned[i*2]=-.15f;returned[i*2+1]=.2f;}
+    for(int block=0;block<300;++block) {
+        ts_insert_capture_from(&s,returned,320,2,1);
+        for(int i=0;i<441;++i) {
+            out=ts_insert_process(&s,(TsStereoFrame){.3f,-.1f},1);
+            ts_insert_write_output(&s,master,2,out);
+        }
+        ts_insert_render_send(&s,sent,480,8,48000);
+        for(int i=0;i<480;++i) {
+            for(int ch=0;ch<6;++ch)assert(sent[i*8+ch]==0);
+            if(block>100)close_frame((TsStereoFrame){sent[i*8+6],sent[i*8+7]},(TsStereoFrame){.3f,-.1f});
+        }
+        if(block>100)close_frame(out,(TsStereoFrame){-.15f,.2f});
+    }
+    /* Reassignment discards the queued old send before using the new pair. */
+    c.send_pair=1;ts_insert_set(&s,&c);
+    ts_insert_render_send(&s,sent,480,8,48000);
+    for(int i=0;i<480*8;++i)assert(sent[i]==0);
+    assert(atomic_load(&s.send_monitor.dropped_frame_count)==0);
+}
+
 static void isolation_and_persistence(void)
 {
     TsInsert insert;prepare(&insert,8000);
@@ -114,11 +153,15 @@ static void isolation_and_persistence(void)
     TsInsertControls c={1,0,0,0};ts_insert_set(&insert,&c);
     close_frame(ts_insert_external_frame(&insert,input,4,TS_INPUT_CHANNEL_LEFT),(TsStereoFrame){0,0});
     close_frame(ts_insert_external_frame(&insert,input,4,TS_INPUT_CHANNEL_STEREO),(TsStereoFrame){1,-1});
-    TsConfig config,loaded;ts_config_init(&config);config.insert=(TsInsertControls){3,2,-4.5f,2.25f};
+    TsConfig config,loaded;ts_config_init(&config);config.insert=(TsInsertControls){4,2,-4.5f,2.25f};
+    snprintf(config.insert_send_device,sizeof(config.insert_send_device),"Out 3-4 (MOTU M Series)");
+    snprintf(config.insert_return_device,sizeof(config.insert_return_device),"In 5-6 (MOTU M Series)");
     ts_router_move(&config.router,4,1);config.router.bypass_mask=0;config.router.solo=5;
     char error[160];assert(ts_config_save(&config,"test-insert.ini",error,sizeof(error)));
     assert(ts_config_load(&loaded,"test-insert.ini",error,sizeof(error)));
     assert(!memcmp(&loaded.insert,&config.insert,sizeof(config.insert)) && !memcmp(&loaded.router,&config.router,sizeof(config.router)));
+    assert(!strcmp(loaded.insert_send_device,config.insert_send_device));
+    assert(!strcmp(loaded.insert_return_device,config.insert_return_device));
     TsSisterProjectState state,read;ts_sister_project_state_init(&state,8000);state.insert=config.insert;state.router=config.router;
     assert(ts_sister_project_state_save_file(&state,"test-insert-project.ini",error,sizeof(error)));int present;
     assert(ts_sister_project_state_load_file(&read,"test-insert-project.ini",8000,&present,error,sizeof(error)));
@@ -126,6 +169,7 @@ static void isolation_and_persistence(void)
     FILE *f=fopen("test-insert.ini","wb");assert(f);fputs("Router.Order=3,2,1,0\nRouter.Bypass=0\nRouter.Solo=2\n",f);fclose(f);
     assert(ts_config_load(&loaded,"test-insert.ini",error,sizeof(error)));
     assert(loaded.router.order[4]==TS_ROUTER_INSERT && loaded.router.bypass_mask==16 && loaded.router.solo==2 && !loaded.insert.send_pair);
+    assert(!loaded.insert_send_device[0] && !loaded.insert_return_device[0]);
     f=fopen("test-insert-project.ini","wb");assert(f);
     fputs("TapeSister Sister Project State\nVersion=23\nPageCount=1\nActivePage=0\nRouter.Bypass=0\nRouter.Order=3,2,1,0\n",f);fclose(f);
     assert(ts_sister_project_state_load_file(&read,"test-insert-project.ini",8000,&present,error,sizeof(error)));
@@ -171,6 +215,6 @@ static void sister_serial_monitor(void)
 
 int main(void)
 {
-    all_orders();levels_failures_and_solo();isolation_and_persistence();sister_serial_monitor();
+    all_orders(0);all_orders(1);levels_failures_and_solo();independent_clocks();isolation_and_persistence();sister_serial_monitor();
     puts("Insert I/O boundary, safety, monitor isolation and compatibility passed");return 0;
 }

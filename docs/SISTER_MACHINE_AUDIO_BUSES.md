@@ -131,23 +131,34 @@ persist that state. Older four-stage permutations append a bypassed, unassigned
 Insert. Sound presets do not own it. Future processors need a stable ID, adapter,
 UI metadata and persistence migration. Timed routing remains a later phase.
 
-The physical output callback writes the stereo Master on stream channels 1/2,
-the current Insert SEND on its selected spare pair, and zero on unused channels.
-The internal DSP contract remains stereo. SDL's advertised native layout is used
-only within 2–8 channels and native channel negotiation prevents hidden SEND
-downmix. The existing endpoint owns device opening, fallback and recovery; no
-independent SEND stream or callback was added. Temporary Master fallback mutes
-SEND until the configured endpoint returns.
+The physical Master callback writes stereo Master on stream channels 1/2 and
+zeroes unused channels. Shared-device SEND uses a spare pair in that callback.
+A separate named SEND receives stereo frames through its own `TsInputMonitor`
+SPSC FIFO; its callback resamples into the selected local pair and zeroes all
+others. Internal DSP and recording taps remain stereo. Native SDL negotiation
+supports exposed 2–8-channel layouts without hidden SEND downmix onto Master.
 
-The existing capture callback publishes the reserved pair into a dedicated
-`TsInputMonitor` FIFO. Its SPSC queue, rate conversion and clock servo bridge the
-independent capture/playback clocks. SEND adds no FIFO; RETURN primes four capture
-blocks (bounded 128–4096 frames). Port-generation acknowledgement precedes consumer
-discard, so old-pair samples cannot survive a channel change. Producer indices
-are never reset concurrently. Layout changes use atomics while capture is stopped.
-Configured RETURN channels are removed from ordinary EXT monitor/source selection;
-playback gates EXT until queued pre-reservation frames have been discarded under
-the existing device locks. Raw EXT recording remains a separate earlier tap.
+Auxiliary SEND/RETURN endpoints use `TsAudioEndpoint` lifecycle state on the
+control thread. Master/device/rate changes join auxiliary callbacks before FIFO
+reconfiguration. Hotplug/APPLY retries explicit names; failures never substitute
+another endpoint. A separate SEND matching Master is rejected. Shared SEND stays
+muted during temporary Master fallback. Device names belong to global CFG, while
+project v24 owns Insert pairs, levels and Router state.
+
+RETURN may share the ordinary capture stream or use a named independent capture
+callback. An identical named CFG/RETURN endpoint reuses shared capture. Only the
+selected producer publishes to the return FIFO; independent RETURN leaves the
+ordinary input and EXT source intact. Shared RETURN is reserved from ordinary
+EXT selection, with playback gated until queued pre-reservation samples are
+flushed under device locks. Raw EXT recording remains an earlier source tap.
+
+Both FIFOs reuse stereo rate conversion and clock-drift correction. Separate
+SEND primes twice the larger Master-configured/SEND-obtained buffer in Master-rate
+frames; RETURN primes four capture blocks (each bounded 128–4096 frames). Return
+port-generation acknowledgement precedes consumer discard. SEND's consumer
+similarly discards old queued frames on reassignment. FIFO index resets require
+their producer and consumer callbacks excluded; no callback allocates or opens
+devices. Playback may continue during atomic return-layout invalidation.
 
 Insert bypass/solo uses the same controls as every macro stage. Gain changes slew
 over 10 ms; send/return are finite-sanitized and linked peak-bounded. An active

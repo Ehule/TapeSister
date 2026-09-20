@@ -250,7 +250,8 @@ static void publish_snapshot(TsSisterRuntime *runtime)
     atomic_store_explicit(&snapshot->revision, revision + 1u,
                           memory_order_release);
     int insert_ports[]={runtime->insert.controls.send_pair,runtime->insert.controls.return_pair,
-        (int)atomic_load_explicit(&runtime->insert.input_channels,memory_order_acquire),(int)runtime->insert.output_channels};
+        (int)atomic_load_explicit(&runtime->insert.input_channels,memory_order_acquire),
+        (int)(runtime->insert.separate_send ? runtime->insert.send_channels : runtime->insert.output_channels)};
     float insert_values[]={runtime->insert.controls.send_db,runtime->insert.controls.return_db,
         runtime->insert.send_peak,runtime->insert.return_peak};
     for(int i=0;i<4;++i){atomic_store_explicit(&snapshot->insert_ports[i],insert_ports[i],memory_order_relaxed);

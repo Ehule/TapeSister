@@ -3,7 +3,9 @@ static void insert_panel_open(TsUiState *ui)
     ui->insert_open=1;ui->insert_drag=0;ui->router_drag=0;
     ui->insert_send_choice=ui->config.insert.send_pair;
     ui->insert_return_choice=ui->config.insert.return_pair;
-    ui->insert_offered_outputs=ts_audio_insert_offered_channels();
+    snprintf(ui->insert_send_device,sizeof(ui->insert_send_device),"%s",ui->config.insert_send_device);
+    snprintf(ui->insert_return_device,sizeof(ui->insert_return_device),"%s",ui->config.insert_return_device);
+    ui->insert_offered_outputs=ts_audio_insert_choice_channels(ui,0);
 }
 
 static int insert_panel_mouse(const SDL_Event *e,int x,int y,
@@ -16,12 +18,15 @@ static int insert_panel_mouse(const SDL_Event *e,int x,int y,
         if(x>=546 && x<616 && y>=43 && y<67){ui->insert_open=0;return 1;}
         int side=x>=332,origin=36+side*310;
         int direction=e->button.button==SDL_BUTTON_RIGHT?-1:1;
-        if(x>=origin && x<origin+188 && y>=150 && y<174) {
-            unsigned channels=side?ui->insert_inputs:ui->insert_offered_outputs;
+        if(x>=origin && x<origin+256 && y>=110 && y<134) {
+            ts_audio_insert_cycle_device(ui,side,direction);
+        } else if(x>=origin && x<origin+188 && y>=150 && y<174) {
+            unsigned channels=ts_audio_insert_choice_channels(ui,side);
             if(channels>TS_INSERT_MAX_CHANNELS)channels=0;
             int count=(int)channels/2;
+            if(!side && ui->insert_send_device[0] && count)++count;
             int *choice=side?&ui->insert_return_choice:&ui->insert_send_choice;
-            if(count>0)*choice=(*choice+direction+count)%count;
+            if(count>(side?0:1))*choice=(*choice+direction+count)%count;
             else snprintf(ui->status,sizeof(ui->status),"NO EXPOSED %s PAIRS; SELECT A DEVICE IN CFG",side?"INPUT":"SPARE OUTPUT");
         } else if(x>=origin && x<origin+256 && y>=219 && y<260) {
             if(e->button.button==SDL_BUTTON_RIGHT) {

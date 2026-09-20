@@ -1024,7 +1024,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
                                         (uint32_t)audio->output_rate) :
             (TsStereoFrame){0.0f, 0.0f};
         if(atomic_load_explicit(&audio->sister.insert.monitor_port_ack,memory_order_acquire)!=
-           (atomic_load_explicit(&audio->sister.insert.port_request,memory_order_acquire)&7u))
+           ts_insert_reserved_port(&audio->sister.insert))
             buses.external=(TsStereoFrame){0,0};
         if (live_link_block_valid) {
             buses.tapehead.l = audio->live_link_buffer[i];
@@ -13130,6 +13130,7 @@ int main(int argc, char **argv)
                    next window until the stream has gone quiet. */
                 ts_ui_wheel_guard_interrupt(&ui.wheel_guard, SDL_GetTicks());
             }
+            ts_audio_insert_device_event(&event);
             if (event.type == SDL_AUDIODEVICEREMOVED &&
                 ts_audio_device_event_matches(
                     event.adevice.iscapture != 0, event.adevice.which)) {

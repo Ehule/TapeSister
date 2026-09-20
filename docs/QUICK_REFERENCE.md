@@ -438,18 +438,20 @@ sound presets preserve routing. [Full behavior](USER_MANUAL.md#global-router).
 ### External Insert
 
 - **SETUP** on INSERT opens its panel; Escape returns to Router.
-- Choose global devices/backend in **CFG**. SEND uses a spare native output pair
-  on the Master device; Master remains on 1/2. RETURN reserves one input pair.
-- Click pair buttons to cycle; right-click reverses; **APPLY PORTS** commits.
-  Finish recording before changing ports. Gains remain adjustable while playing.
+- Master output/backend stay in **CFG**. SEND can use **MASTER DEVICE SPARES**
+  or a separate output device; RETURN can use **SHARED CFG INPUT** or its own input.
+- Click device/pair buttons to cycle; right-click reverses; **APPLY PORTS** commits.
+  **SAVE CONFIG** remembers device names. Finish recording before changing ports.
+- Pair numbers are local to the selected device. M6 `Out 3-4` and `In 5-6`
+  endpoints each use **DEVICE CH 1/2**. Master can remain on `Out 1-2`.
 - SEND/RETURN levels span −24 to +12 dB; right-click restores 0 dB.
 - **100% returned audio, no Mix control.** BYPASS restores the internal path.
   SOLO uses the existing Router solo. S/R lights distinguish outgoing/incoming activity.
-- Missing return stays silent while active. The reserved pair is excluded from
-  ordinary EXT monitoring; raw EXT recording keeps its existing tap.
-- Requires an exposed spare pair within a 2–8-channel output endpoint. A stereo
-  endpoint cannot provide a separate SEND; no separate SEND device or ASIO host
-  is added. Return buffering primes four capture blocks; no latency compensation.
+- Missing return stays silent while active. A shared RETURN pair is excluded from
+  ordinary EXT monitoring; a separate RETURN leaves CFG's input available.
+- Stereo pairs within exposed 2–8-channel endpoints; one backend, no ASIO host.
+  Separate SEND primes two buffers; RETURN primes four capture buffers. No latency
+  compensation. Device names persist across loss/recovery without fallback.
 - FILE OUT and Mosaic REC OUT include the returned signal. Earlier source/head
   taps retain their named position. [Setup and limits](USER_MANUAL.md#external-insert).
 

@@ -1372,49 +1372,65 @@ leaves TapeSister, passes through an external application or hardware processor,
 and returns to the following stage. The returned signal replaces the input;
 there is no dry/wet control and TapeSister does not host plugins.
 
-Open **F9 → INSERT → SETUP**. Select the global playback and recording devices
-in **CFG**, then choose SEND and RETURN pairs in the Insert panel and click
-**APPLY PORTS**. Left-click cycles forward; right-click cycles backward. Pair
-choices reflect the channels exposed by the device/backend. Saved unavailable
-pairs remain visible; they are not silently reassigned. Port changes are refused
-during a recording. Levels, Router bypass and solo remain available while playing.
+Open **F9 → INSERT → SETUP**. Master output and the audio backend stay in
+**CFG**. The Insert panel has independent SEND and RETURN device selectors, then
+channel-pair selectors for each device. Left-click cycles forward; right-click
+cycles backward. Click **APPLY PORTS**, and use **CFG → SAVE CONFIG** to remember
+device choices. Changes are refused during recording; levels, bypass and solo
+remain available while playing. Saved unavailable choices are never reassigned
+silently. **CHANNELS OPEN** reports the applied stream, not the pending choice.
 
 ![External Insert ports and levels](images/external-insert.png)
 
 | Setting | Behavior |
 | --- | --- |
-| SEND | Unassigned, or an exposed spare pair: output 3/4, 5/6 or 7/8 |
-| Master output | Fixed on 1/2 of the same output device; SEND cannot use it |
-| RETURN | One exposed stereo input pair: 1/2, 3/4, 5/6 or 7/8 |
+| SEND device | **MASTER DEVICE SPARES**, or a separate named playback endpoint |
+| SEND pair | Unassigned, or exposed channels: shared Master offers 3/4, 5/6, 7/8; a separate device also offers 1/2 |
+| Master output | Fixed on 1/2 of the CFG output; a separate SEND cannot select that same endpoint |
+| RETURN device | **SHARED CFG INPUT**, or a separate named capture endpoint |
+| RETURN pair | One exposed stereo pair within the selected device: 1/2, 3/4, 5/6 or 7/8 |
 | SEND / RETURN level | −24 to +12 dB; 0 dB is unity; right-click resets; changes are smoothed |
 | BYPASS | Internal path; SEND fades to zero and RETURN is ignored |
 | SOLO | Existing Router solo: audition INSERT with the other optional stages bypassed |
 | S / R lights | Independent outgoing and incoming signal activity |
 | BACK / Escape | Return to Router; playback continues |
 
-SEND and Master share one playback callback and clock. The selected RETURN pair
-uses the existing capture device through a separate return buffer. **The return
-pair is reserved from ordinary EXT monitoring and Sister's EXT source** while
-SEND is assigned, even during bypass. This prevents an implicit second route
-from RETURN back into SEND. Other input channels remain available; explicit raw
-EXT recording retains its existing source tap. Selecting SEND UNASSIGNED releases
-the reservation.
+**Channel numbers are local to the named device.** A Windows endpoint called
+`Out 3-4 (MOTU M Series)` has local channels 1/2, representing physical sockets
+3/4. It does not need four channels open. For the M6 stereo-endpoint layout:
 
-For example: **Router upstream → output 3/4 → external processor → input 3/4 →
-Router downstream → EQ/limiter → Master output 1/2**. For hardware, connect those
-interface sockets to the processor. For software, expose suitable multichannel
-virtual or interface loopback channels, route SEND into the other application's
-processor, and route its output into RETURN. Set the external processor to the
-desired processing; TapeSister itself provides no parallel dry path at INSERT.
-Channel numbers describe the exposed stream; confirm their physical/virtual
-mapping in the interface or routing software.
+| Role | Device | Pair |
+| --- | --- | --- |
+| Master in CFG | `Out 1-2 (MOTU M Series)` | 1/2 |
+| Insert SEND | `Out 3-4 (MOTU M Series)` | DEVICE CH 1/2 |
+| Insert RETURN | `In 5-6 (MOTU M Series)` | DEVICE CH 1/2 |
+
+Connect physical outputs 3/4 to the processor and its output to inputs 5/6, apply
+the choices, then unbypass Insert. CFG's ordinary input can remain a different
+endpoint. An input shown as **CLOSED** means no current consumer has opened it;
+TapeSister does not use cable detection to decide which channels exist.
+
+With **SHARED CFG INPUT**, the RETURN pair is reserved from ordinary EXT
+monitoring and Sister's EXT source while SEND is assigned, even during bypass.
+Other input channels remain available; raw EXT recording retains its source tap.
+SEND UNASSIGNED releases this reservation. A separate RETURN leaves CFG's input
+available for normal live sources. Choosing the same capture endpoint by name
+reuses the shared stream and its reservation rather than opening it twice.
+
+For software processing, select a virtual playback endpoint for SEND, route it
+through the other application's processor, and select that application's virtual
+capture endpoint for RETURN. Master can stay on speakers or the interface.
+Two-channel endpoints work when SEND has its own device. Confirm the physical or
+virtual mapping in the driver/routing software; TapeSister supplies no parallel
+dry mix at INSERT.
 
 **No return means silence while INSERT is active.** A stopped external app,
 disconnected cable or intentionally silent processor can look identical to the
 activity detector. The panel distinguishes unavailable ports from no signal
 activity, but cannot diagnose the external application. Use BYPASS to hear the
-internal path. Loss/recovery never clears the saved port choices. A temporary
-Master-output fallback does not authorize SEND on that substitute device.
+internal path. Named SEND/RETURN failures preserve the choices and never open a
+substitute device. Reconnection or APPLY retries them. A shared SEND stays disabled
+on temporary Master fallback; a separate SEND remains tied to its explicit name.
 
 **Sister monitoring:** when a configured INSERT follows powered Sister, DRY and WET
 join just before INSERT, including when INSERT is bypassed. Downstream processors then hear
@@ -1423,31 +1439,31 @@ returned material. Existing tape/head feedback remains local. The macro FX and
 Fallout feedback taps are held upstream of the monitor merge/external loop;
 this feature does not create an external feedback return.
 
-**Latency:** SEND adds no separate queue. RETURN reuses the input monitor's stereo
-rate conversion and clock-drift handling, with four capture blocks of priming
-(minimum 128, maximum 4096 frames). At 48 kHz, 256/512/1024-frame capture buffers
-therefore prime about 21/43/85 ms, in addition to device and external processing
-latency. Reconfiguration discards stale returns and reprimes. There is no automatic
-round-trip compensation. Bypass crossfades over about 10 ms; its brief transition
-can blend paths with different delays. Steady active INSERT is entirely returned
-audio. Reordering retains the Router's short fade through zero.
+**Latency:** shared-device SEND adds no separate queue. A separate SEND uses a
+stereo FIFO with rate conversion and clock-drift handling; it primes twice the
+larger of the configured Master and obtained SEND buffer sizes, measured in
+Master-rate frames (bounded 128–4096). RETURN uses the same rate-conversion and
+clock-drift machinery, with four capture blocks of priming (also 128–4096 frames).
+At 48 kHz with matching 256/512/1024-frame buffers, separate SEND primes about
+11/21/43 ms and RETURN about 21/43/85 ms, in addition to device and external
+processing latency. Reconfiguration discards stale audio and reprimes. There is
+no automatic round-trip compensation. Bypass crossfades over about 10 ms; its
+brief transition can blend paths with different delays. Steady active INSERT is
+entirely returned audio. Reordering retains the Router's short fade through zero.
 
-**Backend limits:** this implementation supports one playback device and one
-shared capture device, stereo pairs within exposed 2–8-channel layouts. It does
-not open an additional independent SEND device. A stereo-only endpoint, including
-a two-channel virtual cable, cannot carry both Master 1/2 and a separate SEND.
-If SDL cannot report a spare native pair, it remains unavailable. The application
-allows native channel negotiation so an unsupported SEND cannot be silently
-downmixed into Master. See [SDL audio negotiation](https://wiki.libsdl.org/SDL2/SDL_OpenAudioDevice).
+**Backend limits:** Master, a separate SEND, the ordinary CFG input and a separate
+RETURN can use different endpoints within the selected SDL backend. Insert
+supports stereo pairs in exposed 2–8-channel layouts. Devices must be available
+for simultaneous use; unsupported layouts stay unavailable. Native channel
+negotiation prevents an unsupported SEND from being silently downmixed onto
+Master. See [SDL audio negotiation](https://wiki.libsdl.org/SDL2/SDL_OpenAudioDevice).
 
-Windows uses the existing Auto/WASAPI/DirectSound choices; TapeSister has no ASIO
-or exclusive-mode selector. SDL2's WASAPI path uses shared mode and the Windows
-endpoint's mix layout. Driver settings may expose an interface as several stereo
-endpoints rather than one multichannel endpoint; those endpoints cannot be combined
-by this Insert. Another application using ASIO/exclusive access can still prevent
-the driver from sharing the device. Use a compatible driver/virtual multichannel
-route; existing explicit fallback/recovery behavior is retained. On Linux, the
-selected SDL backend and sound-server/device profile determine the exposed layout.
+Windows retains Auto/WASAPI/DirectSound; there is no ASIO or exclusive-mode
+selector. Separate stereo endpoints exposed by the M6 or virtual audio drivers
+can be selected independently. Another application using ASIO/exclusive access
+can still prevent a driver from sharing an endpoint. On Linux, the selected SDL
+backend and sound-server/device profile determine the available devices and
+channels. This does not aggregate drivers into a new system-wide audio device.
 
 | Recording path | Relationship to INSERT |
 | --- | --- |
@@ -1461,7 +1477,7 @@ selected SDL backend and sound-server/device profile determine the exposed layou
 Mosaic output bounce is a real-time REC OUT operation, so the external processor
 must remain connected during the take. Configuration saves the global device
 names, Insert pairs and levels. Project state v24 saves Insert pairs/levels and
-Router state; it uses the currently configured global devices. Sound presets leave
+Router state; it uses the currently configured Master, SEND and RETURN devices. Sound presets leave
 Insert setup alone. SEND/RETURN are linked peak-bounded and sanitized, but external
 hardware/software routing remains under your control.
 

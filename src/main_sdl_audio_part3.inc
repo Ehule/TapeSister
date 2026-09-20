@@ -2,6 +2,7 @@
 
     SDL_zero(obtained);
     desired = ts_output_desired;
+    ts_audio_insert_devices_suspend();
     desired.samples = (Uint16)ts_live_config->audio_buffer_frames;
     ts_audio_endpoint_configure(&ts_output_endpoint,
                                 wanted != NULL ? wanted : "");
@@ -112,6 +113,13 @@ static SDL_AudioDeviceID ts_audio_open_capture_widest(
     if (desired == NULL) {
         SDL_SetError("Capture format is missing");
         return 0;
+    }
+    if(insert_endpoints[1].device) {
+        char capture_name[TS_CONFIG_PATH_MAX];
+        ts_audio_active_device_name(capture_name,sizeof(capture_name),device,1);
+        if(!strcmp(capture_name,insert_endpoints[1].endpoint.active_name)) {
+            insert_endpoint_close(1);insert_devices_dirty=1;
+        }
     }
     maximum = desired->channels;
     if (maximum == 0u || maximum > TS_INPUT_DEVICE_CHANNEL_MAX)
@@ -269,6 +277,7 @@ static int ts_audio_open_approved_default_output(char *error,
     desired.samples = (Uint16)ts_live_config->audio_buffer_frames;
     SDL_zero(obtained);
     ts_audio_endpoint_begin_open(&ts_output_endpoint, 1);
+    ts_audio_insert_devices_suspend();
     replacement = ts_audio_open_output_native(NULL, &desired, &obtained,
                                       ts_output_allowed_changes);
     if (replacement == 0) {
@@ -368,6 +377,7 @@ static int ts_audio_resolve_output_failure(SDL_Window *window)
 
 static void ts_audio_close_device(SDL_AudioDeviceID device)
 {
+    if(device==TS_AUDIO_LOGICAL_OUTPUT)ts_audio_insert_devices_suspend();
     SDL_AudioDeviceID real;
     ts_audio_endpoints_init();
     if (device == TS_AUDIO_LOGICAL_OUTPUT)

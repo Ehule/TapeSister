@@ -677,6 +677,7 @@ static int ts_audio_device_event_matches(int is_capture,
 
 static void ts_audio_handle_removed(int is_capture, const char *error)
 {
+    if(!is_capture)ts_audio_insert_devices_suspend();
     TsAudioEndpoint *endpoint;
     SDL_AudioDeviceID real;
     ts_audio_endpoints_init();

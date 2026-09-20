@@ -28,13 +28,22 @@ rates/buffers.
 - [ ] External Insert: choose a native multichannel output in CFG. Confirm Master
   is only on 1/2, SEND only on the chosen spare pair, and unused channels silent.
   Verify exposed channel indices against actual interface sockets/virtual ports.
+- [ ] M6/WASAPI separate endpoints: CFG Master `Out 1-2`, Insert SEND `Out 3-4`,
+  RETURN `In 5-6`, both local CH 1/2. Apply and check physical sockets. Keep CFG
+  input on a different endpoint and verify its ordinary EXT source still works.
+- [ ] Separate stereo virtual SEND/RETURN with Master on the interface/speakers:
+  verify routing through another application. Select the CFG input as RETURN and
+  confirm reuse; attempt SEND on the Master endpoint and confirm rejection.
+- [ ] Remove/reconnect each separate endpoint during playback. Confirm no automatic
+  substitution, silence on an unavailable active path, and APPLY/hotplug recovery.
+  Save/restart and check device names, including their case, survive.
 - [ ] Loop SEND 3/4 through hardware or a separate audio application into RETURN
   3/4. Exercise all five Insert positions, Router bypass/solo, ±gain changes and
   right-click unity. Set Sister DRY 100/WET 0; active Insert must still be serial.
 - [ ] Disconnect RETURN or stop the external app: an active Insert stays silent
   and reports missing activity. Manual bypass restores the internal path. Remove
   capture, reconnect, and verify stale return samples do not replay.
-- [ ] Open a stereo-only endpoint or load unavailable saved pairs. Confirm there
+- [ ] Use shared SEND on a stereo-only Master or load unavailable saved pairs. Confirm there
   is no hidden SEND downmix onto Master. Temporary Master fallback must not start
   sending the loop on substitute sockets. Reconnect the configured endpoint.
 - [ ] Enable EXT monitoring while RETURN is assigned. The reserved pair must not
@@ -45,8 +54,8 @@ rates/buffers.
   MIX/head taps. Check their documented positions. Apply Ports must be refused
   during a take; bypass/solo and gain adjustments remain usable.
 - [ ] Measure/listen to the external round trip at 256/512/1024 buffers, with matching
-  and mismatched capture/playback rates. RETURN adds four capture blocks of priming;
-  there is no automatic latency compensation or separate ASIO backend.
+  and mismatched capture/playback rates. RETURN adds four capture blocks of priming; independent SEND adds two buffers.
+  There is no automatic latency compensation or separate ASIO backend.
 - [ ] Inspect compact EQ and Insert panels at normal/maximized/high-DPI sizes.
   EQ OUT/Router controls must not overlap; REC and IN must not be drawn together;
   file-recording time and STOP FILE must remain readable across workspaces.

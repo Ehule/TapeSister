@@ -443,6 +443,8 @@ typedef struct {
     int router_open, router_drag, router_drop, router_transition;
     int insert_open, insert_drag, insert_apply_pending, insert_send_choice, insert_return_choice;
     unsigned insert_inputs, insert_outputs, insert_offered_outputs;
+    char insert_send_device[TS_CONFIG_PATH_MAX], insert_return_device[TS_CONFIG_PATH_MAX];
+    char insert_device_status[160];
     float insert_send_peak, insert_return_peak;
     unsigned router_enabled;
     float router_peaks[TS_ROUTER_COUNT*2+2];

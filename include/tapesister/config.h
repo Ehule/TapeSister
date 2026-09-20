@@ -112,6 +112,9 @@ typedef struct {
     char cdp_bin_path[TS_CONFIG_PATH_MAX];
     char record_input_device[TS_CONFIG_PATH_MAX];
     char audio_output_device[TS_CONFIG_PATH_MAX];
+    /* Empty uses Master spare channels / the shared CFG capture device. */
+    char insert_send_device[TS_CONFIG_PATH_MAX];
+    char insert_return_device[TS_CONFIG_PATH_MAX];
     char midi_input_device[TS_CONFIG_PATH_MAX];
     int startup_welcome_sample;
     int startup_welcome_autoplay;

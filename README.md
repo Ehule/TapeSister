@@ -191,19 +191,20 @@ EQ/limiter/OUT stay fixed. Routing saves with projects and configuration.
 
 Pedalboard's stereo POST chain moves as one module; its existing PRE/head inserts
 stay inside Sister. INSERT adds a movable, 100%-wet external send/return loop using
-spare output pairs and a reserved input pair. **SETUP** on its Router row opens
-port and level controls. New and older projects start with INSERT bypassed.
+spare output pairs or independent SEND/RETURN devices. **SETUP** on its Router
+row opens device, channel and level controls. New and older projects start with INSERT bypassed.
 [Controls and routing details](docs/USER_MANUAL.md#global-router).
 
 ![Native Global Router](docs/images/global-router.png)
 
 ![External Insert setup](docs/images/external-insert.png)
 
-Master uses output 1/2; SEND uses an exposed spare pair on that same output
-device. Device/backend selection remains in CFG. A stereo-only endpoint cannot
-provide a separate send; use a multichannel interface/virtual endpoint exposed
-by the driver. An active Insert with a missing return stays silent until you
-bypass it. [Hardware/software loops, buffering and limitations](docs/USER_MANUAL.md#external-insert).
+Master stays on output 1/2 of the CFG device. SEND can use its spare native
+channels or a separate playback device; RETURN can share CFG's input or use a
+separate capture device. This supports interfaces exposed as separate stereo
+endpoints: for an M6, choose SEND `Out 3-4` and RETURN `In 5-6`, each using its
+local **DEVICE CH 1/2**. An active Insert with a missing return stays silent until
+you bypass it. [Setup, buffering and limits](docs/USER_MANUAL.md#external-insert).
 
 ## Four-slot FX pedalboard
 

@@ -6,8 +6,8 @@
 
 enum { TS_INSERT_MAX_CHANNELS = 8 };
 typedef struct {
-    int send_pair;   /* 0 = unassigned; 1 = outputs 3/4, through 3 = 7/8.
-                       Master owns outputs 1/2 exclusively. */
+    int send_pair;   /* 0 = unassigned. Shared Master: 1 = 3/4, 3 = 7/8.
+                       Separate SEND device: 1 = 1/2, 4 = 7/8. */
     int return_pair; /* 0 = inputs 1/2, through 3 = 7/8. */
     float send_db, return_db;
 } TsInsertControls;
@@ -15,6 +15,11 @@ typedef struct {
 typedef struct {
     TsInsertControls controls;
     TsInputMonitor return_monitor;
+    TsInputMonitor send_monitor;
+    _Atomic unsigned send_request;
+    _Atomic int dedicated_return;
+    unsigned send_seen, send_channels;
+    int separate_send;
     /* Capture acknowledges a new port before playback discards old samples.
        Only the consumer advances its read cursor; no concurrent FIFO reset. */
     _Atomic unsigned port_request, port_ack, monitor_port_ack, input_channels;
@@ -43,8 +48,21 @@ int ts_insert_send_available(const TsInsert *insert);
 int ts_insert_return_available(const TsInsert *insert);
 TsStereoFrame ts_insert_process(TsInsert *insert, TsStereoFrame input,
                                 float route_gain);
-void ts_insert_write_output(const TsInsert *insert, float *frame,
+void ts_insert_write_output(TsInsert *insert, float *frame,
                              unsigned channels, TsStereoFrame master);
+/* I/O reconfiguration requires Master, SEND and both capture callbacks excluded. */
+void ts_insert_io_mode(TsInsert *insert, int separate_send, int dedicated_return);
+/* Master and SEND callbacks excluded; channels=0 disables a separate SEND. */
+void ts_insert_send_prepare(TsInsert *insert, unsigned channels,
+                            unsigned producer_rate, unsigned buffer_frames);
+/* Separate SEND callback: drains/resamples the bounded stereo FIFO. */
+void ts_insert_render_send(TsInsert *insert, float *output, size_t frames,
+                           unsigned channels, unsigned output_rate);
+void ts_insert_capture_prepare_from(TsInsert *insert, unsigned channels,
+    unsigned rate, unsigned buffer_frames, int dedicated);
+void ts_insert_capture_from(TsInsert *insert, const float *input, size_t frames,
+                            unsigned channels, int dedicated);
+unsigned ts_insert_reserved_port(const TsInsert *insert);
 int ts_insert_write(FILE *file, const TsInsertControls *controls);
 int ts_insert_read(TsInsertControls *controls, const char *key, const char *value);
 

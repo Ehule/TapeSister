@@ -1,5 +1,5 @@
-/* Control-thread coordination reuses the shared capture consumer and the
-   existing output device lifecycle. No device opens occur in a callback. */
+/* Control-thread coordination of shared capture and named auxiliary endpoints.
+   No device opens occur in a callback. */
 static void insert_sync(SDL_AudioDeviceID device,SDL_AudioDeviceID *capture_device,
     AudioState *audio,ExternalInputState *input,TsUiState *ui)
 {
@@ -16,20 +16,22 @@ static void insert_sync(SDL_AudioDeviceID device,SDL_AudioDeviceID *capture_devi
         } else {
             TsInsertControls c=ui->config.insert;
             c.send_pair=ui->insert_send_choice;c.return_pair=ui->insert_return_choice;
+            snprintf(ui->config.insert_send_device,sizeof(ui->config.insert_send_device),"%s",ui->insert_send_device);
+            snprintf(ui->config.insert_return_device,sizeof(ui->config.insert_return_device),"%s",ui->insert_return_device);
             if(device)SDL_LockAudioDevice(device);
             ts_sister_runtime_set_insert(&audio->sister,&c);
             ui->config.insert=audio->sister.insert.controls;
             if(device)SDL_UnlockAudioDevice(device);
-            char error[160];
-            if(!ts_audio_insert_apply_output(error,sizeof(error)))
-                snprintf(ui->status,sizeof(ui->status),"INSERT OUTPUT: %.120s",error);
-            else snprintf(ui->status,sizeof(ui->status),"INSERT PORTS APPLIED; USE ROUTER BYPASS TO CONNECT / AUDITION");
+            snprintf(ui->status,sizeof(ui->status),"INSERT PORTS APPLIED; USE ROUTER BYPASS TO CONNECT / AUDITION");
         }
     }
+    ts_audio_insert_devices_sync(audio,&ui->config,apply,ui->insert_device_status,sizeof(ui->insert_device_status));
+    if(apply && ui->insert_device_status[0])snprintf(ui->status,sizeof(ui->status),"%s",ui->insert_device_status);
     if(device)SDL_LockAudioDevice(device);
-    int wanted=audio->sister.insert.controls.send_pair!=0 || ui->insert_open;
+    int wanted=!atomic_load(&audio->sister.insert.dedicated_return) &&
+        (audio->sister.insert.controls.send_pair!=0 || ui->insert_open);
     if(device)SDL_UnlockAudioDevice(device);
-    unsigned reserved=atomic_load_explicit(&audio->sister.insert.port_request,memory_order_acquire)&7u;
+    unsigned reserved=ts_insert_reserved_port(&audio->sister.insert);
     if(atomic_load_explicit(&audio->sister.insert.monitor_port_ack,memory_order_acquire)!=reserved) {
         /* Discard EXT frames queued before reservation. Playback gates EXT
            until this completes, including after a project load. */
