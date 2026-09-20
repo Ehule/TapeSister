@@ -440,6 +440,9 @@ typedef struct {
     int master_output_dragging;
     int master_eq_open, master_eq_band, master_eq_drag, master_eq_reset_pending;
     unsigned master_eq_rate;
+    int router_open, router_drag, router_drop, router_transition;
+    unsigned router_enabled;
+    float router_peaks[TS_ROUTER_COUNT*2+2];
     size_t capture_recorded_frames;
     size_t capture_capacity_frames;
     TsMosaic *mosaic;

@@ -33,6 +33,7 @@ void ts_config_init(TsConfig *config)
         config->fm_output_percent = TS_FM_OUTPUT_PERCENT_DEFAULT;
         config->master_output_percent = TS_MASTER_OUTPUT_PERCENT_DEFAULT;
         ts_master_eq_default(&config->master_eq);
+        ts_router_default(&config->router);
         config->audio_backend = TS_AUDIO_BACKEND_AUTO;
         config->audio_backend_invalid = 0;
         config->audio_buffer_frames = TS_AUDIO_BUFFER_FRAMES_DEFAULT;
@@ -284,7 +285,12 @@ int ts_config_load(TsConfig *config, const char *path,
         *equals = '\0';
         value = trim(equals + 1);
         key = trim(key);
-        if (!strncmp(key, "MasterEq.", 9)) {
+        if (!strncmp(key,"Router.",7)) {
+            if(ts_router_read(&loaded.router,key,value)<0) {
+                snprintf(error,error_size,"Invalid router on config line %d",line_number);
+                fclose(file);return 0;
+            }
+        } else if (!strncmp(key, "MasterEq.", 9)) {
             if (ts_master_eq_read(&loaded.master_eq,key,value)<0) {
                 snprintf(error,error_size,"Invalid master EQ on config line %d",line_number);
                 fclose(file);return 0;
@@ -741,6 +747,7 @@ int ts_config_save(const TsConfig *config, const char *path,
     }
     if (!write_failed) write_failed = fprintf(file,"\n[Master EQ]\n") < 0 ||
         !ts_master_eq_write(file,&config->master_eq);
+    if(!write_failed)write_failed=!ts_router_write(file,&config->router);
     if (fclose(file) != 0) write_failed = 1;
     if (write_failed) {
         set_error(error, error_size, "Could not finish writing config");

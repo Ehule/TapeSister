@@ -155,6 +155,8 @@ static float bits_float(uint32_t bits)
 static void snapshot_atomic_init(TsSisterRoutingSnapshotAtomic *snapshot)
 {
     if (snapshot == NULL) return;
+    for(int i=0;i<TS_ROUTER_COUNT+4;++i)atomic_init(&snapshot->router_state[i],0);
+    for(int i=0;i<TS_ROUTER_COUNT*2+2;++i)atomic_init(&snapshot->router_peaks[i],float_bits(0));
     atomic_init(&snapshot->prism_valid, 0);
     atomic_init(&snapshot->prism_seq_lens, 0);
     for(int i=0;i<10;++i)atomic_init(&snapshot->prism_matrix_int[i],0);
@@ -246,6 +248,19 @@ static void publish_snapshot(TsSisterRuntime *runtime)
     if ((revision & 1u) != 0u) ++revision;
     atomic_store_explicit(&snapshot->revision, revision + 1u,
                           memory_order_release);
+    unsigned router_enabled=(runtime->parameters.prism.enabled?1u<<TS_ROUTER_PRISM:0)|
+        (runtime->enabled?1u<<TS_ROUTER_SISTER:0)|
+        (runtime->parameters.fx.enabled && runtime->parameters.fx.fallout.enabled?1u<<TS_ROUTER_FALLOUT:0)|
+        (runtime->parameters.fx.enabled?1u<<TS_ROUTER_PEDALBOARD:0);
+    for(int i=0;i<TS_ROUTER_COUNT;++i) {
+        atomic_store_explicit(&snapshot->router_state[i],runtime->router.controls.order[i],memory_order_relaxed);
+        atomic_store_explicit(&snapshot->router_peaks[i*2],float_bits(runtime->router.input_peak[i]),memory_order_relaxed);
+        atomic_store_explicit(&snapshot->router_peaks[i*2+1],float_bits(runtime->router.output_peak[i]),memory_order_relaxed);
+    }
+    int router_state[]={runtime->router.controls.bypass_mask,runtime->router.controls.solo,(int)router_enabled,runtime->router.handoff!=0};
+    for(int i=0;i<4;++i)atomic_store_explicit(&snapshot->router_state[TS_ROUTER_COUNT+i],router_state[i],memory_order_relaxed);
+    atomic_store_explicit(&snapshot->router_peaks[TS_ROUTER_COUNT*2],float_bits(runtime->router.source_peak),memory_order_relaxed);
+    atomic_store_explicit(&snapshot->router_peaks[TS_ROUTER_COUNT*2+1],float_bits(runtime->router.master_peak),memory_order_relaxed);
     TsPrismView prism = ts_prism_view(&runtime->prism);
     int matrix_int[]={prism.matrix_active,prism.matrix_running,prism.matrix_step,prism.matrix_waiting,
         prism.matrix_from,prism.matrix_to,prism.matrix_missing,
@@ -432,6 +447,12 @@ void ts_sister_runtime_begin_audio_block(TsSisterRuntime *runtime)
     ts_sister_machine_begin_audio_block(&runtime->machine);
 }
 
+void ts_sister_runtime_set_router(TsSisterRuntime *runtime,const TsRouterControls *controls)
+{
+    if(!runtime || !controls)return;
+    ts_router_set(&runtime->router,controls);publish_snapshot(runtime);
+}
+
 void ts_sister_runtime_end_audio_block(TsSisterRuntime *runtime)
 {
     if (runtime == NULL || runtime->snapshot_batch_depth == 0u) return;
@@ -504,6 +525,7 @@ void ts_sister_runtime_init(TsSisterRuntime *runtime)
     ts_capture_init(&runtime->capture);
     ts_sister_limiter_init(&runtime->limiter);
     ts_master_eq_init(&runtime->master_eq);
+    ts_router_init(&runtime->router);
     runtime->rolling = 1;
     runtime->input_available = 1;
     runtime->live_link_available = 0;
@@ -582,6 +604,7 @@ int ts_sister_runtime_enable(TsSisterRuntime *runtime, uint32_t sample_rate,
     }
     ts_prism_set_controls(&runtime->prism, &runtime->parameters.prism);
     ts_master_eq_prepare(&runtime->master_eq, sample_rate);
+    ts_router_prepare(&runtime->router, sample_rate);
     memset(&machine, 0, sizeof(machine));
     cold_fx = !runtime->post_fx.ready || runtime->post_fx.sample_rate != sample_rate;
     cold_fallout = !runtime->fallout.ready || runtime->fallout.sample_rate != sample_rate;
@@ -751,6 +774,7 @@ int ts_sister_runtime_reconfigure(TsSisterRuntime *runtime,
     }
     ts_prism_set_controls(&runtime->prism, &runtime->parameters.prism);
     ts_master_eq_prepare(&runtime->master_eq, sample_rate);
+    ts_router_prepare(&runtime->router, sample_rate);
     if (!runtime->enabled) {
         if (sample_rate == 0u || output_channels != 2u) {
             runtime->warnings |= TS_SISTER_WARNING_DEVICE_CONTRACT;
@@ -1298,6 +1322,8 @@ static void runtime_fallout_feedback(TsSisterRuntime *runtime, TsStereoFrame wet
     }
 }
 
+#include "ts_sister_router.inc"
+
 TsSisterRuntimeFrame ts_sister_runtime_process_frame(
     TsSisterRuntime *runtime, const TsSisterSourceFrames *sources)
 {
@@ -1306,14 +1332,9 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
     TsStereoFrame tile_raw;
     TsStereoFrame tile_bus;
     TsStereoFrame input = {0.0f, 0.0f};
-    TsSisterOutput output;
-    TsStereoFrame causal_return;
     float source_gain[TS_SISTER_SOURCE_COUNT];
     float source_route[TS_SISTER_SOURCE_COUNT];
     float route_energy = 0.0f;
-    float monitor_route;
-    float master_fx_gate;
-    float fallout_gate;
     frame.dry_monitor_gain = 1.0f;
     if (runtime == NULL) return frame;
     if (sources != NULL) source = *sources;
@@ -1362,113 +1383,32 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
         source.tapehead, source_gain[4] * source_route[4]));
     if (route_energy > 1.0f)
         input = frame_scale(input, 1.0f / sqrtf(route_energy));
-    /* PRE slots touch only newly arriving source material. They run before
-       Sister's input trim, rolling write, Duck detector, and head feedback;
-       material already resident in the tape buffer is never processed again. */
-    input = ts_prism_process(&runtime->prism, input);
-    input = ts_sister_post_fx_process_pre(&runtime->post_fx, input, 0);
-    monitor_route = runtime_ramp_advance(&runtime->monitor_route);
+    RouterFrameContext context={.runtime=runtime,.frame=&frame};
+    runtime_router_begin(&context);
+    frame.monitor_return=ts_router_process(&runtime->router,input,runtime_router_stage,&context);
+    frame.monitor_return=ts_sister_machine_finish_router(&runtime->machine,frame.monitor_return);
+    frame.tap[TS_SISTER_TAP_MIX]=frame.monitor_return;
+    float sister_wet=runtime->router.wet[TS_ROUTER_SISTER];
+    /* DRY/WET are the existing monitoring returns, not input to the next
+       processor. Preserve the dry monitor outside the serial wet chain. */
+    frame.monitor_return=frame_add(
+        frame_scale(frame.monitor_return,1+sister_wet*(runtime->monitor_wet_current-1)),
+        frame_scale(context.dry_monitor,sister_wet*runtime->router.gain));
+    frame.monitor_return=frame_scale(frame.monitor_return,runtime_ramp_advance(&runtime->monitor_route));
     (void)runtime_ramp_advance(&runtime->direct_tile_route);
-    master_fx_gate = ts_sister_post_fx_master_engage(&runtime->post_fx);
-    fallout_gate = ts_sister_fallout_engage(&runtime->fallout) * master_fx_gate;
-    causal_return = frame_add(
-        master_fx_gate > 0.0f ? runtime->master_feedback_previous :
-                               (TsStereoFrame){0.0f, 0.0f},
-        fallout_gate > 0.0f ? runtime->fallout_feedback_previous :
-                              (TsStereoFrame){0.0f, 0.0f});
-    {
-        float peak = fmaxf(fabsf(causal_return.l), fabsf(causal_return.r));
-        if (!isfinite(peak)) causal_return = (TsStereoFrame){0.0f, 0.0f};
-        else if (peak > 1.5f)
-            causal_return = frame_scale(causal_return, 1.5f / peak);
-    }
-    output = ts_sister_machine_process_frame_with_insert_fx(
-        &runtime->machine, &runtime->fallout, &runtime->post_fx,
-        input, input, causal_return);
-    if (runtime->waveform_capacity_frames !=
-        runtime->machine.buffer.capacity_frames) {
-        ts_sister_wave_publisher_resize(
-            &runtime->waveform, runtime->waveform_capacity_frames,
-            runtime->machine.buffer.capacity_frames,
-            runtime->machine.master_clock == 0u ? 0u :
-            runtime->machine.master_clock - 1u);
-        runtime->waveform_capacity_frames =
-            runtime->machine.buffer.capacity_frames;
-    }
-    master_fx_gate = ts_sister_post_fx_master_engage(&runtime->post_fx);
-    if (master_fx_gate <= 0.0f) {
-        runtime->master_feedback_current = 0.0f;
-        runtime->master_feedback_previous = (TsStereoFrame){0.0f, 0.0f};
-    } else {
-        runtime->master_feedback_current = monitor_approach(
-            runtime->master_feedback_current,
-            runtime->parameters.fx.master_feedback * 1.35f * master_fx_gate,
-            runtime->machine.buffer.sample_rate);
-        if (runtime->parameters.fx.master_feedback <= 0.0f &&
-            runtime->master_feedback_current < 0.000001f)
-            runtime->master_feedback_current = 0.0f;
-        TsStereoFrame feedback = frame_scale(
-            ts_stereo_frame_sanitize(output.post_fx),
-            runtime->master_feedback_current);
-        /* Linked, bounded conditioning retains intentional self-oscillation
-           without allowing a broken sample to poison rolling memory. */
-        float peak = fmaxf(fabsf(feedback.l), fabsf(feedback.r));
-        if (!isfinite(peak)) feedback = (TsStereoFrame){0.0f, 0.0f};
-        else if (peak > 1.5f) feedback = frame_scale(feedback, 1.5f / peak);
-        feedback.l = tanhf(feedback.l);
-        feedback.r = tanhf(feedback.r);
-        runtime->master_feedback_previous = ts_stereo_frame_sanitize(feedback);
-    }
-    runtime_fallout_feedback(runtime, output.fallout_wet);
-    frame.input = ts_stereo_frame_sanitize(output.input);
-    frame.duck_sidechain = frame.input;
-    ts_sister_wave_publisher_push(&runtime->waveform, output.write,
-                                  output.write_position,
-                                  runtime->machine.buffer.capacity_frames,
-                                  runtime->machine.buffer.channels,
-                                  output.wrote);
-    frame.tap[TS_SISTER_TAP_MIX] = ts_stereo_frame_sanitize(output.mix);
-    frame.tap[TS_SISTER_TAP_H1] = ts_stereo_frame_sanitize(output.head[0]);
-    frame.tap[TS_SISTER_TAP_H2] = ts_stereo_frame_sanitize(output.head[1]);
-    frame.tap[TS_SISTER_TAP_H3] = ts_stereo_frame_sanitize(output.head[2]);
-    if (atomic_load_explicit(&runtime->capture.state, memory_order_relaxed) ==
-        TS_CAPTURE_RECORDING)
-        (void)ts_capture_write_frame(
-            &runtime->capture, selected_tap(&frame, runtime->selected_tap));
-    frame.monitor_return = frame_scale(frame_add(
-        frame_scale(frame.input, runtime->monitor_dry_current),
-        frame_scale(frame.tap[TS_SISTER_TAP_MIX],
-                    runtime->monitor_wet_current)), monitor_route);
-    runtime->last_frame = frame;
-    ++runtime->processed_frames;
-    publish_frame_snapshot(runtime);
-    return frame;
+    runtime_router_finish(&context);
+    if(atomic_load_explicit(&runtime->capture.state,memory_order_relaxed)==TS_CAPTURE_RECORDING)
+        (void)ts_capture_write_frame(&runtime->capture,selected_tap(&frame,runtime->selected_tap));
+    runtime->last_frame=frame;++runtime->processed_frames;
+    publish_frame_snapshot(runtime);return frame;
 }
 
-TsStereoFrame ts_sister_runtime_process_ordinary_post_fx(
-    TsSisterRuntime *runtime, TsStereoFrame input)
+TsStereoFrame ts_sister_runtime_process_ordinary_post_fx(TsSisterRuntime *runtime,TsStereoFrame input)
 {
-    TsStereoFrame output;
-    float return_gain;
-    if (runtime == NULL || !runtime->post_fx.ready)
-        return ts_stereo_frame_sanitize(input);
-    input = ts_prism_process(&runtime->prism, input);
-    publish_frame_snapshot(runtime);
-    if (runtime->fallout.ready) {
-        float master = ts_sister_post_fx_master_engage(&runtime->post_fx);
-        TsStereoFrame incoming = input;
-        if (master > 0.0f && ts_sister_fallout_engage(&runtime->fallout) > 0.0f)
-            incoming = frame_add(incoming, runtime->fallout_feedback_previous);
-        TsSisterFalloutResult fallout = ts_sister_fallout_process(&runtime->fallout, incoming);
-        /* Master bypass also closes Fallout's return, without resetting its
-           controls or modulation clocks. At zero the original input is exact. */
-        input = frame_effect_return(input, fallout.output, master);
-        runtime_fallout_feedback(runtime, fallout.wet);
-    }
-    output = ts_sister_post_fx_process(&runtime->post_fx,
-        TS_SISTER_HEAD_COUNT, input, 0);
-    return_gain = runtime_ramp_advance(&runtime->ordinary_fx_return_gain);
-    return frame_effect_return(input, output, return_gain);
+    if(!runtime || !runtime->post_fx.ready)return ts_stereo_frame_sanitize(input);
+    RouterFrameContext context={.runtime=runtime};runtime_router_begin(&context);
+    TsStereoFrame output=ts_router_process(&runtime->router,input,runtime_router_stage,&context);
+    runtime_router_finish(&context);publish_frame_snapshot(runtime);return output;
 }
 
 TsStereoFrame ts_sister_runtime_process_output(TsSisterRuntime *runtime,
@@ -2004,6 +1944,12 @@ int ts_sister_runtime_get_snapshot(const TsSisterRuntime *runtime,
             snapshot->output_clip[channel] = atomic_load_explicit(
                 &source->output_clip[channel], memory_order_relaxed);
         }
+        for(int i=0;i<TS_ROUTER_COUNT;++i)snapshot->router.order[i]=atomic_load_explicit(&source->router_state[i],memory_order_relaxed);
+        snapshot->router.bypass_mask=atomic_load_explicit(&source->router_state[TS_ROUTER_COUNT],memory_order_relaxed);
+        snapshot->router.solo=atomic_load_explicit(&source->router_state[TS_ROUTER_COUNT+1],memory_order_relaxed);
+        snapshot->router_enabled=atomic_load_explicit(&source->router_state[TS_ROUTER_COUNT+2],memory_order_relaxed);
+        snapshot->router_transition=atomic_load_explicit(&source->router_state[TS_ROUTER_COUNT+3],memory_order_relaxed);
+        for(int i=0;i<TS_ROUTER_COUNT*2+2;++i)snapshot->router_peaks[i]=bits_float(atomic_load_explicit(&source->router_peaks[i],memory_order_relaxed));
         snapshot->limiter_enabled = atomic_load_explicit(
             &source->limiter_enabled, memory_order_relaxed);
         snapshot->limiter_ceiling_db = bits_float(atomic_load_explicit(

@@ -11,6 +11,11 @@ is involved. The existing FM Unison remains available.
 
 ## Play it
 
+The following describes the default routing order. **F9** opens the
+[Global Router](USER_MANUAL.md#global-router), where Prism can also process the
+output of Sister, Fallout, or the Pedalboard. Morph states and Matrix keep their
+own controls and clock when Prism moves or is bypassed.
+
 1. Open Sister Machine with **Tab**. Its page button cycles **Tape → FX → Fallout → Prism → Tape**.
 2. For a direct pedal, leave **POWER off**. Play a tile, FM, Mosaic or TapeHead, or
    enable the main window's external input monitor for a physical instrument.

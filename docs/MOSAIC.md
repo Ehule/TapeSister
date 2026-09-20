@@ -252,6 +252,10 @@ recorded sound. Sister power preserves the shared pedal settings, transitions,
 tails and Fallout modulation state; it only changes the rolling-machine route. A single rendering of each
 voice supplies those routes.
 
+**F9** opens the [Global Router](USER_MANUAL.md#global-router) while Mosaic keeps
+playing. Its order, bypass and solo affect the live processing path; REC DRY stays
+before those stages and REC OUT/REC FILE capture the final routed output.
+
 Workspace switching and audition stop leave Mosaic playback running. The toolbar
 MOSAIC button stays highlighted while it plays, and stopping an audition reports
 **AUDITION STOPPED - MOSAIC CONTINUES**. Stop the arrangement with its STOP control
