@@ -73,6 +73,7 @@ void ts_sister_project_state_init(TsSisterProjectState *state,
     state->page_count = 1u;
     ts_master_eq_default(&state->master_eq);
     ts_router_default(&state->router);
+    ts_insert_default(&state->insert);
     ts_sister_parameters_default(&state->parameters, sample_rate);
 }
 
@@ -96,6 +97,7 @@ void ts_sister_project_state_capture(TsSisterProjectState *state,
     ts_prism_matrix_export(&runtime->prism,&state->parameters.prism);
     state->master_eq = runtime->master_eq.controls;
     state->router = runtime->router.controls;
+    state->insert = runtime->insert.controls;
     state->parameter_locks = runtime->parameter_locks;
     state->parameter_locks_high = runtime->parameter_locks_high;
     ts_sister_parameters_sanitize(&state->parameters,
@@ -122,6 +124,7 @@ int ts_sister_project_state_apply(const TsSisterProjectState *state,
     ts_sister_runtime_set_parameters(runtime, &state->parameters);
     ts_master_eq_set(&runtime->master_eq,&state->master_eq);
     ts_sister_runtime_set_router(runtime,&state->router);
+    ts_sister_runtime_set_insert(runtime,&state->insert);
     runtime->parameter_locks = state->parameter_locks;
     runtime->parameter_locks_high = state->parameter_locks_high;
     ts_sister_runtime_set_selected_preset(runtime, state->selected_preset);
@@ -277,6 +280,7 @@ int ts_sister_project_state_save_file(const TsSisterProjectState *state,
     if (!failed) failed = !write_parameters(file, &state->parameters);
     if (!failed) failed = !ts_master_eq_write(file,&state->master_eq);
     if (!failed) failed = !ts_router_write(file,&state->router);
+    if (!failed) failed = !ts_insert_write(file,&state->insert);
     if (fclose(file) != 0) failed = 1;
     if (!failed) {
 #ifdef _WIN32
@@ -613,6 +617,8 @@ int ts_sister_project_state_load_file(TsSisterProjectState *state,
             errno = 0; parsed_mask = strtoul(value, &end, 16);
             if (errno != 0 || end == value || *trim(end) != '\0' || parsed_mask > 0xffffu) goto malformed;
             loaded.page_masks[page] = (uint16_t)parsed_mask;
+        } else if (!strncmp(key,"Insert.",7)) {
+            if(ts_insert_read(&loaded.insert,key,value)<0)goto malformed;
         } else if (!strncmp(key,"Router.",7)) {
             if(ts_router_read(&loaded.router,key,value)<0)goto malformed;
         } else if (!strncmp(key,"MasterEq.",9)) {
@@ -628,6 +634,7 @@ int ts_sister_project_state_load_file(TsSisterProjectState *state,
             &loaded.parameter_locks, &loaded.parameter_locks_high);
     }
     ts_sister_parameters_sanitize(&loaded.parameters, sample_rate);
+    if(version<24)loaded.router.bypass_mask |= 1u<<TS_ROUTER_INSERT;
     *state = loaded;
     if (present != NULL) *present = 1;
     state_error(error, error_size, "");

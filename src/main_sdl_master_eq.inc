@@ -89,8 +89,8 @@ static int master_eq_event(const SDL_Event *event,SDL_Window *window,
     if(y>=382 && !ui->master_eq_drag)return 0; /* Global file recorder remains visible. */
     int node=ts_ui_master_eq_node(ui,x,y),control=ts_ui_master_eq_control(x,y);
     int selected=-1;
-    if(event->type==SDL_MOUSEBUTTONDOWN && y>=252 && y<276 && x>=20 && x<620 &&
-       (x-20)%122<112)selected=(x-20)/122;
+    if(event->type==SDL_MOUSEBUTTONDOWN && y>=252 && y<276 && x>=20 && x<448 &&
+       (x-20)%88<76)selected=(x-20)/88;
     if(selected>=0 && selected<TS_MASTER_EQ_BANDS) {
         ui->master_eq_reset_pending=0;
         if(ui->midi_learn_active)ui->master_eq_band=selected;
@@ -115,14 +115,14 @@ static int master_eq_event(const SDL_Event *event,SDL_Window *window,
     int fine=(SDL_GetModState()&KMOD_SHIFT)!=0;
     if(event->type==SDL_MOUSEBUTTONDOWN) {
         if(y>=44 && y<68) {
-            if(x>=574){ui->master_eq_open=0;ui->master_eq_drag=0;return 1;}
-            if(x>=452 && x<568) {
+            if(x>=596){ui->master_eq_open=0;ui->master_eq_drag=0;return 1;}
+            if(x>=484 && x<580) {
                 if(ui->master_eq_reset_pending){ts_master_eq_default(&ui->config.master_eq);changed=1;ui->master_eq_reset_pending=0;}
                 else ui->master_eq_reset_pending=1;
                 if(changed)master_eq_commit(device,audio,ui);
                 return 1;
             }
-            if(x>=354 && x<446){ui->config.master_eq.enabled=!ui->config.master_eq.enabled;changed=1;}
+            if(x>=396 && x<474){ui->config.master_eq.enabled=!ui->config.master_eq.enabled;changed=1;}
         }
         ui->master_eq_reset_pending=0;
         if(node>=0) {
@@ -131,7 +131,7 @@ static int master_eq_event(const SDL_Event *event,SDL_Window *window,
             else if(button==SDL_BUTTON_MIDDLE){ts_master_eq_toggle_band(&ui->config.master_eq,node);changed=1;}
             else if(button==SDL_BUTTON_LEFT)ui->master_eq_drag=4;
         } else if(y>=278 && y<299) {
-            if(x>=90 && x<326){b->type=(b->type+(button==SDL_BUTTON_RIGHT?TS_EQ_TYPE_COUNT-1:1))%TS_EQ_TYPE_COUNT;changed=1;}
+            if(x>=90 && x<202){b->type=(b->type+(button==SDL_BUTTON_RIGHT?TS_EQ_TYPE_COUNT-1:1))%TS_EQ_TYPE_COUNT;changed=1;}
         } else if(control>=0) {
             if(control!=1 || ts_master_eq_has_gain(b->type)) {
                 if(button==SDL_BUTTON_RIGHT) {
@@ -140,9 +140,9 @@ static int master_eq_event(const SDL_Event *event,SDL_Window *window,
                     ts_master_eq_set_normalized(b,control,n,rate);changed=1;
                 } else if(button==SDL_BUTTON_LEFT)ui->master_eq_drag=control+1;
             }
-        } else if(y>=337 && y<362) {
-            if(x>=20 && x<136)set_output_limiter_enabled(device,audio,ui,sister,!audio->sister.limiter.enabled);
-            else if(x>=414 && x<620)ui->master_eq_drag=5;
+        } else if(y>=337 && y<367) {
+            if(x>=20 && x<124)set_output_limiter_enabled(device,audio,ui,sister,!audio->sister.limiter.enabled);
+            else if(x>=328 && x<510)ui->master_eq_drag=5;
         }
     }
     if(wheel) {
@@ -166,7 +166,7 @@ static int master_eq_event(const SDL_Event *event,SDL_Window *window,
                 if(ts_master_eq_has_gain(b->type))b->gain_db-=event->motion.yrel*TS_UI_HEIGHT/fmaxf(1,wh)/4.5f*(fine?.15f:1);
                 changed=1;
             }
-        } else if(d==5)set_master_output_gain(device,audio,ui,sister,(x-414)/202.f);
+        } else if(d==5)set_master_output_gain(device,audio,ui,sister,(x-328)/182.f);
         else {ts_master_eq_set_normalized(b,d-1,(x-(20+(d-1)*204))/188.f,rate);changed=1;}
     }
     if(changed)master_eq_commit(device,audio,ui);

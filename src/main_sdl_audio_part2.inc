@@ -140,6 +140,7 @@ static int ts_reopen_capture_for_config(void)
     replacement = ts_audio_open_capture_widest(
         wanted, &desired, &obtained, ts_capture_allowed_changes);
     if (replacement == 0) {
+        if(input->insert)atomic_store_explicit(&input->insert->input_channels,0,memory_order_release);
         if (audio != NULL && ts_real_capture == 0)
             ts_sister_runtime_input_available(&audio->sister, 0);
         snprintf(ts_capture_reconfigure_error,
@@ -160,6 +161,7 @@ static int ts_reopen_capture_for_config(void)
         return 0;
     }
     input->channels = obtained.channels;
+    if(input->insert)ts_insert_capture_prepare(input->insert,obtained.channels,(unsigned)obtained.freq,obtained.samples);
     input->sample_rate = (uint32_t)obtained.freq;
     ts_input_monitor_set_prime_frames(
         &input->monitor,

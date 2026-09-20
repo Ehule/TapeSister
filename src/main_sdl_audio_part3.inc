@@ -6,9 +6,10 @@
     ts_audio_endpoint_configure(&ts_output_endpoint,
                                 wanted != NULL ? wanted : "");
     ts_audio_endpoint_begin_open(&ts_output_endpoint, 0);
-    replacement = SDL_OpenAudioDevice(
-        wanted, 0, &desired, &obtained, ts_output_allowed_changes);
+    replacement = ts_audio_open_output_native(
+        wanted, &desired, &obtained, ts_output_allowed_changes);
     if (replacement == 0) {
+        if(audio){ts_audio_lock_device(TS_AUDIO_LOGICAL_OUTPUT);audio->sister.insert.output_channels=0;ts_audio_unlock_device(TS_AUDIO_LOGICAL_OUTPUT);}
         snprintf(error, error_size, "%.120s", SDL_GetError());
         if (old != 0) {
             ts_output_endpoint = previous;
@@ -29,6 +30,7 @@
         stop_all_force(TS_AUDIO_LOGICAL_OUTPUT, audio, ts_live_ui);
     if (old != 0) SDL_PauseAudioDevice(old, 1);
     ts_real_output = replacement;
+    ts_audio_commit_output_layout(audio,&obtained);
     ts_audio_active_device_name(active_name, sizeof(active_name), wanted, 0);
     ts_audio_endpoint_opened(
         &ts_output_endpoint, (uint32_t)replacement,
@@ -211,8 +213,9 @@ static SDL_AudioDeviceID ts_audio_open_device(const char *device, int iscapture,
         ts_audio_endpoint_configure(&ts_output_endpoint,
                                     wanted != NULL ? wanted : "");
         ts_audio_endpoint_begin_open(&ts_output_endpoint, 0);
-        real = SDL_OpenAudioDevice(wanted, 0, desired, obtained, allowed_changes);
+        real = ts_audio_open_output_native(wanted, desired, obtained, allowed_changes);
         if (real != 0) {
+            ts_audio_commit_output_layout((AudioState *)ts_output_userdata,obtained);
             ts_copy_name(ts_active_output, sizeof(ts_active_output),
                          wanted != NULL ? wanted : "");
             ts_audio_active_device_name(active_name, sizeof(active_name),
@@ -266,7 +269,7 @@ static int ts_audio_open_approved_default_output(char *error,
     desired.samples = (Uint16)ts_live_config->audio_buffer_frames;
     SDL_zero(obtained);
     ts_audio_endpoint_begin_open(&ts_output_endpoint, 1);
-    replacement = SDL_OpenAudioDevice(NULL, 0, &desired, &obtained,
+    replacement = ts_audio_open_output_native(NULL, &desired, &obtained,
                                       ts_output_allowed_changes);
     if (replacement == 0) {
         snprintf(error, error_size, "%.150s", SDL_GetError());
@@ -275,6 +278,7 @@ static int ts_audio_open_approved_default_output(char *error,
         return 0;
     }
     ts_real_output = replacement;
+    ts_audio_commit_output_layout(audio,&obtained);
     ts_output_desired = desired;
     if (ts_output_obtained_target != NULL)
         *ts_output_obtained_target = obtained;
@@ -283,6 +287,9 @@ static int ts_audio_open_approved_default_output(char *error,
         ts_audio_reconfigure_sister_if_needed(audio, &obtained);
     }
     ts_active_output[0] = '\0';
+    /* Approval to hear Master on a temporary device is not approval to send
+       an external loop to that device's spare sockets. */
+    if(audio)audio->sister.insert.output_channels=0;
     ts_audio_active_device_name(active_name, sizeof(active_name), NULL, 0);
     ts_audio_endpoint_opened(
         &ts_output_endpoint, (uint32_t)replacement, active_name, 1,

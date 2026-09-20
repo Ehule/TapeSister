@@ -94,14 +94,17 @@ complete audited order, mappings and mono contract.
 ## Current Global Router boundary
 
 `TsRouter` traverses a validated permutation of stable processor IDs. The
-runtime adapter supplies Prism, Sister, Fallout and Pedalboard DSP. Source
+runtime adapter supplies Prism, Sister, Fallout, Pedalboard and External Insert. Source
 selection, voice ownership and pre-FX recording taps remain upstream. The
 ordinary entry receives the existing normalized/clamped program plus monitored
 input; powered Sister retains its existing source switches and trim normalization.
 
 Sister owns PRE/head inserts, tape operations and isolated head taps. Its completed
-wet output becomes the serial stage result; its DRY monitor still joins at the
-fixed Master endpoint. Pedalboard's global POST chain is a single movable stage.
+wet output becomes the serial stage result; its DRY monitor normally joins at the
+fixed Master endpoint. A configured downstream Insert uses the router's generic
+pre-stage boundary callback to merge DRY/WET before the bypass crossfade. This
+keeps a serial external return from acquiring a parallel undelayed dry path.
+The merge remains while configured Insert is bypassed. Pedalboard's global POST chain is a single movable stage.
 Router bypass also gates PRE/head insert returns without changing their slot
 settings. Master FX retains its existing independent gate over Pedalboard/Fallout.
 Powered Sister's linked MIX safety remains at the end of the complete routed wet
@@ -111,8 +114,10 @@ bypassed. It does not clip the Sister contribution before downstream processors.
 The current sample snapshots both feedback returns before traversal. FX feedback
 observes the wet Pedalboard output if encountered after Sister, otherwise Sister's
 wet output (upstream effects have already reached the tape input). Dry monitoring
-cannot create immediate recursion. Fallout feedback retains its bounded previous
-frame state. No graph feedback edge can be created by dragging.
+cannot create immediate recursion. With a downstream Insert, FX/Fallout feedback
+observations stop at the monitor merge; the external return is not implicitly
+recirculated. Fallout feedback retains its bounded previous-frame state. No graph
+feedback edge can be created by dragging.
 
 Order handoff fades out for 5 ms, swaps the permutation at zero, then fades in for
 5 ms. Bypass/solo ramp each stage's insert mix over 10 ms; inactive processors tick
@@ -121,11 +126,34 @@ callback. Activity envelopes publish through the existing once-per-block atomic
 snapshot. EQ, limiter, OUT and FILE OUT remain at the final endpoint.
 
 `TsRouterControls` contains order, bypass mask and single solo ID. The manual
-editing APIs do not depend on the UI. Project-state v23 and INI Router keys persist
-that state; missing keys default to Prism/Sister/Fallout/Pedalboard. Sound presets
-do not own it. Adding a future processor needs a stable ID, an adapter, UI metadata
-and persistence migration. External insert will additionally need asynchronous
-I/O and latency policy; neither that I/O nor timed routing automation exists yet.
+editing APIs do not depend on the UI. Project-state v24 and INI Router/Insert keys
+persist that state. Older four-stage permutations append a bypassed, unassigned
+Insert. Sound presets do not own it. Future processors need a stable ID, adapter,
+UI metadata and persistence migration. Timed routing remains a later phase.
+
+The physical output callback writes the stereo Master on stream channels 1/2,
+the current Insert SEND on its selected spare pair, and zero on unused channels.
+The internal DSP contract remains stereo. SDL's advertised native layout is used
+only within 2–8 channels and native channel negotiation prevents hidden SEND
+downmix. The existing endpoint owns device opening, fallback and recovery; no
+independent SEND stream or callback was added. Temporary Master fallback mutes
+SEND until the configured endpoint returns.
+
+The existing capture callback publishes the reserved pair into a dedicated
+`TsInputMonitor` FIFO. Its SPSC queue, rate conversion and clock servo bridge the
+independent capture/playback clocks. SEND adds no FIFO; RETURN primes four capture
+blocks (bounded 128–4096 frames). Port-generation acknowledgement precedes consumer
+discard, so old-pair samples cannot survive a channel change. Producer indices
+are never reset concurrently. Layout changes use atomics while capture is stopped.
+Configured RETURN channels are removed from ordinary EXT monitor/source selection;
+playback gates EXT until queued pre-reservation frames have been discarded under
+the existing device locks. Raw EXT recording remains a separate earlier tap.
+
+Insert bypass/solo uses the same controls as every macro stage. Gain changes slew
+over 10 ms; send/return are finite-sanitized and linked peak-bounded. An active
+missing path emits silence. No callback queries devices, opens files, allocates,
+or waits for external processing. See [External Insert](USER_MANUAL.md#external-insert)
+for recording taps and host limitations.
 
 The following PR9/PR10 sections describe the earlier fixed positions.
 

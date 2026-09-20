@@ -63,3 +63,18 @@ controller, Sister runtime, project state, limiter) pass. ASan/UBSan validation
 uses the existing host limitation described above. The full-suite count above
 records the initial EQ validation; this follow-up checks the affected paths.
 Both normal and solo screenshots were refreshed through the native fixture.
+
+## Insert and layout follow-up
+
+The EQ buttons now fit their labels, with separate hit areas for OUT and ROUTER.
+The recording header uses one REC indicator instead of overlapping REC and IN
+labels. The native controller suite exercises the new coordinates and renders
+normal EQ, band solo, and active file-recording views at 640 × 400.
+
+![EQ during file recording](images/master-eq-recording.png)
+
+The Insert controller fixture also compares FILE OUT and Mosaic REC OUT samples
+against Master channels 1/2 while simulated stereo SEND/RETURN runs on channels
+3/4, Router order/bypass/solo change, and held notes, ARP and Mosaic continue.
+These are headless I/O tests; physical channel mapping and round-trip listening
+remain in [Windows audio validation](WINDOWS_AUDIO_VALIDATION.md).

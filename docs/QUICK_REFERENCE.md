@@ -423,16 +423,35 @@ Sample/Depth/Rate, Pitch Ratio/Ramp/Rate. `L` assigns LFO; `R` assigns Rise.
 | Solo | SOLO; click again to restore bypasses, or another Solo to move it |
 | Help | Hover for 600 ms |
 
-Default: **Prism → Sister → Fallout → Pedalboard**. Source and the final
+Default: **Prism → Sister → Fallout → Pedalboard → INSERT (bypassed)**. Source and the final
 EQ/limiter/OUT are fixed. IN lights show audio reaching each position; OFF is the
 module's own power, separate from Router BYPASS/SKIP/SOLO. Solo does not power on
 an OFF module. QWERTY/MIDI/ARP remain playable.
 
 Pedalboard's POST slots move as one chain. Its PRE/head inserts stay local to
-Sister; Pedalboard bypass gates them too. Sister's DRY monitor joins at Master;
-use DRY zero to audition only the reordered wet chain. MASTER FX still gates
+Sister; Pedalboard bypass gates them too. Sister's DRY monitor normally joins at
+Master; a configured downstream INSERT merges it before the external loop.
+MASTER FX still gates
 Pedalboard and Fallout. Order/bypass/solo save with projects and configuration;
 sound presets preserve routing. [Full behavior](USER_MANUAL.md#global-router).
+
+### External Insert
+
+- **SETUP** on INSERT opens its panel; Escape returns to Router.
+- Choose global devices/backend in **CFG**. SEND uses a spare native output pair
+  on the Master device; Master remains on 1/2. RETURN reserves one input pair.
+- Click pair buttons to cycle; right-click reverses; **APPLY PORTS** commits.
+  Finish recording before changing ports. Gains remain adjustable while playing.
+- SEND/RETURN levels span −24 to +12 dB; right-click restores 0 dB.
+- **100% returned audio, no Mix control.** BYPASS restores the internal path.
+  SOLO uses the existing Router solo. S/R lights distinguish outgoing/incoming activity.
+- Missing return stays silent while active. The reserved pair is excluded from
+  ordinary EXT monitoring; raw EXT recording keeps its existing tap.
+- Requires an exposed spare pair within a 2–8-channel output endpoint. A stereo
+  endpoint cannot provide a separate SEND; no separate SEND device or ASIO host
+  is added. Return buffering primes four capture blocks; no latency compensation.
+- FILE OUT and Mosaic REC OUT include the returned signal. Earlier source/head
+  taps retain their named position. [Setup and limits](USER_MANUAL.md#external-insert).
 
 ## Final output
 

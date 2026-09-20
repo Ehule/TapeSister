@@ -155,6 +155,7 @@ static float bits_float(uint32_t bits)
 static void snapshot_atomic_init(TsSisterRoutingSnapshotAtomic *snapshot)
 {
     if (snapshot == NULL) return;
+    for(int i=0;i<4;++i){atomic_init(&snapshot->insert_ports[i],0);atomic_init(&snapshot->insert_values[i],0);}
     for(int i=0;i<TS_ROUTER_COUNT+4;++i)atomic_init(&snapshot->router_state[i],0);
     for(int i=0;i<TS_ROUTER_COUNT*2+2;++i)atomic_init(&snapshot->router_peaks[i],float_bits(0));
     atomic_init(&snapshot->prism_valid, 0);
@@ -248,7 +249,13 @@ static void publish_snapshot(TsSisterRuntime *runtime)
     if ((revision & 1u) != 0u) ++revision;
     atomic_store_explicit(&snapshot->revision, revision + 1u,
                           memory_order_release);
-    unsigned router_enabled=(runtime->parameters.prism.enabled?1u<<TS_ROUTER_PRISM:0)|
+    int insert_ports[]={runtime->insert.controls.send_pair,runtime->insert.controls.return_pair,
+        (int)atomic_load_explicit(&runtime->insert.input_channels,memory_order_acquire),(int)runtime->insert.output_channels};
+    float insert_values[]={runtime->insert.controls.send_db,runtime->insert.controls.return_db,
+        runtime->insert.send_peak,runtime->insert.return_peak};
+    for(int i=0;i<4;++i){atomic_store_explicit(&snapshot->insert_ports[i],insert_ports[i],memory_order_relaxed);
+        atomic_store_explicit(&snapshot->insert_values[i],float_bits(insert_values[i]),memory_order_relaxed);}
+    unsigned router_enabled=(1u<<TS_ROUTER_INSERT)|(runtime->parameters.prism.enabled?1u<<TS_ROUTER_PRISM:0)|
         (runtime->enabled?1u<<TS_ROUTER_SISTER:0)|
         (runtime->parameters.fx.enabled && runtime->parameters.fx.fallout.enabled?1u<<TS_ROUTER_FALLOUT:0)|
         (runtime->parameters.fx.enabled?1u<<TS_ROUTER_PEDALBOARD:0);
@@ -447,6 +454,12 @@ void ts_sister_runtime_begin_audio_block(TsSisterRuntime *runtime)
     ts_sister_machine_begin_audio_block(&runtime->machine);
 }
 
+void ts_sister_runtime_set_insert(TsSisterRuntime *runtime,const TsInsertControls *controls)
+{
+    if(!runtime || !controls)return;
+    ts_insert_set(&runtime->insert,controls);publish_snapshot(runtime);
+}
+
 void ts_sister_runtime_set_router(TsSisterRuntime *runtime,const TsRouterControls *controls)
 {
     if(!runtime || !controls)return;
@@ -526,6 +539,7 @@ void ts_sister_runtime_init(TsSisterRuntime *runtime)
     ts_sister_limiter_init(&runtime->limiter);
     ts_master_eq_init(&runtime->master_eq);
     ts_router_init(&runtime->router);
+    ts_insert_init(&runtime->insert);
     runtime->rolling = 1;
     runtime->input_available = 1;
     runtime->live_link_available = 0;
@@ -605,6 +619,7 @@ int ts_sister_runtime_enable(TsSisterRuntime *runtime, uint32_t sample_rate,
     ts_prism_set_controls(&runtime->prism, &runtime->parameters.prism);
     ts_master_eq_prepare(&runtime->master_eq, sample_rate);
     ts_router_prepare(&runtime->router, sample_rate);
+    ts_insert_prepare(&runtime->insert, sample_rate);
     memset(&machine, 0, sizeof(machine));
     cold_fx = !runtime->post_fx.ready || runtime->post_fx.sample_rate != sample_rate;
     cold_fallout = !runtime->fallout.ready || runtime->fallout.sample_rate != sample_rate;
@@ -775,6 +790,7 @@ int ts_sister_runtime_reconfigure(TsSisterRuntime *runtime,
     ts_prism_set_controls(&runtime->prism, &runtime->parameters.prism);
     ts_master_eq_prepare(&runtime->master_eq, sample_rate);
     ts_router_prepare(&runtime->router, sample_rate);
+    ts_insert_prepare(&runtime->insert, sample_rate);
     if (!runtime->enabled) {
         if (sample_rate == 0u || output_channels != 2u) {
             runtime->warnings |= TS_SISTER_WARNING_DEVICE_CONTRACT;
@@ -1385,13 +1401,13 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
         input = frame_scale(input, 1.0f / sqrtf(route_energy));
     RouterFrameContext context={.runtime=runtime,.frame=&frame};
     runtime_router_begin(&context);
-    frame.monitor_return=ts_router_process(&runtime->router,input,runtime_router_stage,&context);
+    frame.monitor_return=ts_router_process_with_prepare(&runtime->router,input,runtime_router_stage,runtime_router_prepare_stage,&context);
     frame.monitor_return=ts_sister_machine_finish_router(&runtime->machine,frame.monitor_return);
     frame.tap[TS_SISTER_TAP_MIX]=frame.monitor_return;
     float sister_wet=runtime->router.wet[TS_ROUTER_SISTER];
     /* DRY/WET are the existing monitoring returns, not input to the next
        processor. Preserve the dry monitor outside the serial wet chain. */
-    frame.monitor_return=frame_add(
+    if(!context.monitor_merged)frame.monitor_return=frame_add(
         frame_scale(frame.monitor_return,1+sister_wet*(runtime->monitor_wet_current-1)),
         frame_scale(context.dry_monitor,sister_wet*runtime->router.gain));
     frame.monitor_return=frame_scale(frame.monitor_return,runtime_ramp_advance(&runtime->monitor_route));
@@ -1407,7 +1423,7 @@ TsStereoFrame ts_sister_runtime_process_ordinary_post_fx(TsSisterRuntime *runtim
 {
     if(!runtime || !runtime->post_fx.ready)return ts_stereo_frame_sanitize(input);
     RouterFrameContext context={.runtime=runtime};runtime_router_begin(&context);
-    TsStereoFrame output=ts_router_process(&runtime->router,input,runtime_router_stage,&context);
+    TsStereoFrame output=ts_router_process_with_prepare(&runtime->router,input,runtime_router_stage,runtime_router_prepare_stage,&context);
     runtime_router_finish(&context);publish_frame_snapshot(runtime);return output;
 }
 
@@ -1944,6 +1960,14 @@ int ts_sister_runtime_get_snapshot(const TsSisterRuntime *runtime,
             snapshot->output_clip[channel] = atomic_load_explicit(
                 &source->output_clip[channel], memory_order_relaxed);
         }
+        snapshot->insert.send_pair=atomic_load_explicit(&source->insert_ports[0],memory_order_relaxed);
+        snapshot->insert.return_pair=atomic_load_explicit(&source->insert_ports[1],memory_order_relaxed);
+        snapshot->insert_inputs=atomic_load_explicit(&source->insert_ports[2],memory_order_relaxed);
+        snapshot->insert_outputs=atomic_load_explicit(&source->insert_ports[3],memory_order_relaxed);
+        snapshot->insert.send_db=bits_float(atomic_load_explicit(&source->insert_values[0],memory_order_relaxed));
+        snapshot->insert.return_db=bits_float(atomic_load_explicit(&source->insert_values[1],memory_order_relaxed));
+        snapshot->insert_send_peak=bits_float(atomic_load_explicit(&source->insert_values[2],memory_order_relaxed));
+        snapshot->insert_return_peak=bits_float(atomic_load_explicit(&source->insert_values[3],memory_order_relaxed));
         for(int i=0;i<TS_ROUTER_COUNT;++i)snapshot->router.order[i]=atomic_load_explicit(&source->router_state[i],memory_order_relaxed);
         snapshot->router.bypass_mask=atomic_load_explicit(&source->router_state[TS_ROUTER_COUNT],memory_order_relaxed);
         snapshot->router.solo=atomic_load_explicit(&source->router_state[TS_ROUTER_COUNT+1],memory_order_relaxed);

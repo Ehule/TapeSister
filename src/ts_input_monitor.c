@@ -49,6 +49,12 @@ int ts_input_capture_probe_accepts(uint8_t requested, uint8_t obtained)
 TsStereoFrame ts_input_channel_select(const float *device_frame,
                                        size_t device_channels, int mode)
 {
+    return ts_input_channel_select_excluding(device_frame, device_channels, mode, 0);
+}
+
+TsStereoFrame ts_input_channel_select_excluding(const float *device_frame,
+    size_t device_channels, int mode, unsigned excluded)
+{
     TsStereoFrame result = {0.0f, 0.0f};
     float mono = 0.0f;
     if (device_frame == NULL || device_channels == 0u ||
@@ -60,13 +66,14 @@ TsStereoFrame ts_input_channel_select(const float *device_frame,
     if (mode == TS_INPUT_CHANNEL_STEREO) {
         size_t left_count = 0u;
         size_t right_count = 0u;
-        if (device_channels == 1u)
+        if (device_channels == 1u && !(excluded & 1u))
             return ts_stereo_frame_from_mono(
                 isfinite(device_frame[0]) ? device_frame[0] : 0.0f);
         /* Preserve hardware stereo pairs: 1/2, 3/4, ... . Averaging each
            side gives deterministic headroom and leaves ordinary stereo at
            unity gain. */
         for (size_t channel = 0u; channel < device_channels; ++channel) {
+            if (excluded & (1u << channel)) continue;
             float value = isfinite(device_frame[channel]) ?
                           device_frame[channel] : 0.0f;
             if ((channel & 1u) == 0u) {
@@ -82,17 +89,20 @@ TsStereoFrame ts_input_channel_select(const float *device_frame,
         return ts_stereo_frame_sanitize(result);
     }
     if (mode == TS_INPUT_CHANNEL_MIX) {
+        size_t count = 0;
         for (size_t channel = 0u; channel < device_channels; ++channel) {
+            if (excluded & (1u << channel)) continue;
             float value = isfinite(device_frame[channel]) ?
                           device_frame[channel] : 0.0f;
             mono += value;
+            ++count;
         }
-        mono /= (float)device_channels;
+        if (count) mono /= (float)count;
     } else if (mode == TS_INPUT_CHANNEL_RIGHT) {
         size_t channel = device_channels > 1u ? 1u : 0u;
-        mono = device_frame[channel];
+        mono = excluded & (1u << channel) ? 0 : device_frame[channel];
     } else {
-        mono = device_frame[0];
+        mono = excluded & 1u ? 0 : device_frame[0];
     }
     return ts_stereo_frame_from_mono(mono);
 }
@@ -344,6 +354,20 @@ static int monitor_pop(TsInputMonitor *monitor, TsStereoFrame *sample)
     atomic_store_explicit(&monitor->read_index, read_at + 1u,
                           memory_order_release);
     return 1;
+}
+
+void ts_input_monitor_discard(TsInputMonitor *monitor)
+{
+    unsigned write_at = atomic_load_explicit(&monitor->write_index, memory_order_acquire);
+    atomic_store_explicit(&monitor->read_index, write_at, memory_order_release);
+    monitor->consumer_phase = 0;
+    monitor->consumer_ratio = 1;
+    monitor->consumer_sample = monitor->consumer_next_sample =
+        monitor->consumer_last_sample = (TsStereoFrame){0, 0};
+    monitor->consumer_servo_countdown = 0;
+    monitor->consumer_occupancy_average = monitor->consumer_servo_integral = 0;
+    monitor->consumer_gain = 0;
+    monitor->consumer_has_sample = monitor->consumer_has_next_sample = monitor->consumer_primed = 0;
 }
 
 TsStereoFrame ts_input_monitor_read_frame(TsInputMonitor *monitor,

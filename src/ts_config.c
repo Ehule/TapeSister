@@ -34,6 +34,7 @@ void ts_config_init(TsConfig *config)
         config->master_output_percent = TS_MASTER_OUTPUT_PERCENT_DEFAULT;
         ts_master_eq_default(&config->master_eq);
         ts_router_default(&config->router);
+        ts_insert_default(&config->insert);
         config->audio_backend = TS_AUDIO_BACKEND_AUTO;
         config->audio_backend_invalid = 0;
         config->audio_buffer_frames = TS_AUDIO_BUFFER_FRAMES_DEFAULT;
@@ -249,6 +250,7 @@ int ts_config_load(TsConfig *config, const char *path,
     char line[TS_CONFIG_PATH_MAX + 80];
     TsConfig loaded;
     int line_number = 0;
+    int saw_insert = 0;
     int saw_fx_effect_transition = 0;
     int saw_fallout_master_transition = 0;
     int saw_capture_channels = 0;
@@ -285,7 +287,13 @@ int ts_config_load(TsConfig *config, const char *path,
         *equals = '\0';
         value = trim(equals + 1);
         key = trim(key);
-        if (!strncmp(key,"Router.",7)) {
+        if (!strncmp(key,"Insert.",7)) {
+            saw_insert=1;
+            if(ts_insert_read(&loaded.insert,key,value)<0) {
+                snprintf(error,error_size,"Invalid Insert on config line %d",line_number);
+                fclose(file);return 0;
+            }
+        } else if (!strncmp(key,"Router.",7)) {
             if(ts_router_read(&loaded.router,key,value)<0) {
                 snprintf(error,error_size,"Invalid router on config line %d",line_number);
                 fclose(file);return 0;
@@ -490,6 +498,7 @@ int ts_config_load(TsConfig *config, const char *path,
     if (!saw_capture_channels && saw_sister_capture_channels)
         loaded.capture_channels = loaded.sister_capture_channels;
     loaded.sister_capture_channels = loaded.capture_channels;
+    if(!saw_insert)loaded.router.bypass_mask |= 1u<<TS_ROUTER_INSERT;
     *config = loaded;
     set_error(error, error_size, "");
     return 1;
@@ -748,6 +757,7 @@ int ts_config_save(const TsConfig *config, const char *path,
     if (!write_failed) write_failed = fprintf(file,"\n[Master EQ]\n") < 0 ||
         !ts_master_eq_write(file,&config->master_eq);
     if(!write_failed)write_failed=!ts_router_write(file,&config->router);
+    if(!write_failed)write_failed=!ts_insert_write(file,&config->insert);
     if (fclose(file) != 0) write_failed = 1;
     if (write_failed) {
         set_error(error, error_size, "Could not finish writing config");

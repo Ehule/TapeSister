@@ -1302,12 +1302,13 @@ it leaves playback running; physical QWERTY/MIDI notes and Shift+Space ARP trans
 remain available. Escape closes the page, or cancels an active drag first. File
 browsers, text fields, and confirmation dialogs retain their keys.
 
-![Global Router with Sister placed before Prism](images/global-router.png)
+![Global Router with Insert between Sister and Fallout](images/global-router.png)
 
-The default order is **Source → Prism → Sister → Fallout → Pedalboard → Master**.
+The default order is **Source → Prism → Sister → Fallout → Pedalboard → INSERT → Master**,
+with INSERT initially bypassed and unassigned.
 Drag a module by its name or grip to change its position. The amber line shows
 where it will land; release to apply, or Escape to cancel. Source and Master are
-fixed. All 24 orders of the four processors are available. The order changes the
+fixed. All 120 orders of the five processors are available. The order changes the
 audio: moving Prism below Sister refracts the tape's output, while placing it above
 Sister prints the refraction into newly arriving tape material.
 
@@ -1320,8 +1321,11 @@ Sister prints the refraction into newly arriving tape material.
 | ON / OFF | The subsystem's own power state; Router controls do not change it |
 | BYPASS / SKIP / SOLO | Saved bypass, temporary exclusion by solo, or the soloed stage |
 | IN lights and lit connectors | Audio reaching this position, independent of the processor's switch state |
+| INSERT S / R lights | Separate SEND and RETURN activity; SETUP opens ports, levels and status |
 
 An OFF processor passes its input through. Solo does not power on an OFF subsystem.
+INSERT has no separate power switch: unbypassing or soloing it selects the external
+return, including silence when its ports are unavailable.
 An IN indicator can therefore glow on an OFF or bypassed module: audio is passing
 that point. Hover controls for delayed help. Source selection still belongs to the
 existing workspaces: powered Sister uses its source switches and trims; with Sister
@@ -1334,12 +1338,16 @@ also gates those inserts. They require Sister; a soloed Pedalboard auditions its
 chain, while a soloed Sister excludes Pedalboard inserts. **MASTER FX** continues
 to gate the Pedalboard and Fallout independently of Router controls.
 
-**Sister's DRY monitor remains a separate return to Master**, as indicated on the
-page; WET monitors the serial wet path. Set Sister DRY to zero when comparing pure
+**Sister's DRY monitor normally returns separately to Master**; WET monitors the
+serial wet path. Set Sister DRY to zero when comparing pure
 Sister-to-Prism or Sister-to-Pedalboard processing. Sister's internal tape/feedback
 controls remain local. The bounded FX-feedback return uses the processed wet tap
 when Pedalboard is downstream of Sister; upstream effects are already printed into
-Sister's input. Dry monitoring never feeds that loop. H1/H2/H3 captures remain
+Sister's input. A configured downstream INSERT merges the monitoring returns
+immediately before its position, so no undelayed dry signal can bypass the external
+loop. That merge remains in place while INSERT is bypassed for consistent A/B.
+FX/Fallout feedback taps stay before that merge and do not automatically recirculate
+the external return. H1/H2/H3 captures remain
 internal head taps; MIX follows the routed wet result with linked peak safety.
 FILE OUT and Mosaic OUTPUT
 record the final audible result, including dry monitoring, EQ, limiter, and OUT.
@@ -1352,10 +1360,110 @@ The final EQ, limiter and OUT fader remain after the Router in every configurati
 the tuning reference retains its existing direct path to Master.
 
 Order, saved bypasses and solo persist in the project/session and configuration.
-Older files with no Router keys load the default order with no Router bypass or
-solo. Sound presets do not overwrite routing. Audio-device recovery preserves it.
-This release implements serial manual routing; external insert and timed routing
-performance are later additions.
+Older files with no Router keys load the default order with only INSERT bypassed
+and no solo. Four-stage Router files retain their previous order/bypasses/solo and
+append the bypassed INSERT. Sound presets do not overwrite routing. Audio-device
+recovery preserves it. Timed routing performance is a later addition.
+
+## External Insert
+
+**INSERT is a serial, 100%-wet send/return point.** Audio at its Router position
+leaves TapeSister, passes through an external application or hardware processor,
+and returns to the following stage. The returned signal replaces the input;
+there is no dry/wet control and TapeSister does not host plugins.
+
+Open **F9 → INSERT → SETUP**. Select the global playback and recording devices
+in **CFG**, then choose SEND and RETURN pairs in the Insert panel and click
+**APPLY PORTS**. Left-click cycles forward; right-click cycles backward. Pair
+choices reflect the channels exposed by the device/backend. Saved unavailable
+pairs remain visible; they are not silently reassigned. Port changes are refused
+during a recording. Levels, Router bypass and solo remain available while playing.
+
+![External Insert ports and levels](images/external-insert.png)
+
+| Setting | Behavior |
+| --- | --- |
+| SEND | Unassigned, or an exposed spare pair: output 3/4, 5/6 or 7/8 |
+| Master output | Fixed on 1/2 of the same output device; SEND cannot use it |
+| RETURN | One exposed stereo input pair: 1/2, 3/4, 5/6 or 7/8 |
+| SEND / RETURN level | −24 to +12 dB; 0 dB is unity; right-click resets; changes are smoothed |
+| BYPASS | Internal path; SEND fades to zero and RETURN is ignored |
+| SOLO | Existing Router solo: audition INSERT with the other optional stages bypassed |
+| S / R lights | Independent outgoing and incoming signal activity |
+| BACK / Escape | Return to Router; playback continues |
+
+SEND and Master share one playback callback and clock. The selected RETURN pair
+uses the existing capture device through a separate return buffer. **The return
+pair is reserved from ordinary EXT monitoring and Sister's EXT source** while
+SEND is assigned, even during bypass. This prevents an implicit second route
+from RETURN back into SEND. Other input channels remain available; explicit raw
+EXT recording retains its existing source tap. Selecting SEND UNASSIGNED releases
+the reservation.
+
+For example: **Router upstream → output 3/4 → external processor → input 3/4 →
+Router downstream → EQ/limiter → Master output 1/2**. For hardware, connect those
+interface sockets to the processor. For software, expose suitable multichannel
+virtual or interface loopback channels, route SEND into the other application's
+processor, and route its output into RETURN. Set the external processor to the
+desired processing; TapeSister itself provides no parallel dry path at INSERT.
+Channel numbers describe the exposed stream; confirm their physical/virtual
+mapping in the interface or routing software.
+
+**No return means silence while INSERT is active.** A stopped external app,
+disconnected cable or intentionally silent processor can look identical to the
+activity detector. The panel distinguishes unavailable ports from no signal
+activity, but cannot diagnose the external application. Use BYPASS to hear the
+internal path. Loss/recovery never clears the saved port choices. A temporary
+Master-output fallback does not authorize SEND on that substitute device.
+
+**Sister monitoring:** when a configured INSERT follows powered Sister, DRY and WET
+join just before INSERT, including when INSERT is bypassed. Downstream processors then hear
+that complete monitor result. When INSERT precedes Sister, Sister receives the
+returned material. Existing tape/head feedback remains local. The macro FX and
+Fallout feedback taps are held upstream of the monitor merge/external loop;
+this feature does not create an external feedback return.
+
+**Latency:** SEND adds no separate queue. RETURN reuses the input monitor's stereo
+rate conversion and clock-drift handling, with four capture blocks of priming
+(minimum 128, maximum 4096 frames). At 48 kHz, 256/512/1024-frame capture buffers
+therefore prime about 21/43/85 ms, in addition to device and external processing
+latency. Reconfiguration discards stale returns and reprimes. There is no automatic
+round-trip compensation. Bypass crossfades over about 10 ms; its brief transition
+can blend paths with different delays. Steady active INSERT is entirely returned
+audio. Reordering retains the Router's short fade through zero.
+
+**Backend limits:** this implementation supports one playback device and one
+shared capture device, stereo pairs within exposed 2–8-channel layouts. It does
+not open an additional independent SEND device. A stereo-only endpoint, including
+a two-channel virtual cable, cannot carry both Master 1/2 and a separate SEND.
+If SDL cannot report a spare native pair, it remains unavailable. The application
+allows native channel negotiation so an unsupported SEND cannot be silently
+downmixed into Master. See [SDL audio negotiation](https://wiki.libsdl.org/SDL2/SDL_OpenAudioDevice).
+
+Windows uses the existing Auto/WASAPI/DirectSound choices; TapeSister has no ASIO
+or exclusive-mode selector. SDL2's WASAPI path uses shared mode and the Windows
+endpoint's mix layout. Driver settings may expose an interface as several stereo
+endpoints rather than one multichannel endpoint; those endpoints cannot be combined
+by this Insert. Another application using ASIO/exclusive access can still prevent
+the driver from sharing the device. Use a compatible driver/virtual multichannel
+route; existing explicit fallback/recovery behavior is retained. On Linux, the
+selected SDL backend and sound-server/device profile determine the exposed layout.
+
+| Recording path | Relationship to INSERT |
+| --- | --- |
+| FILE OUT; Mosaic REC OUT / output bounce | Final audible result, after INSERT, remaining stages, EQ, limiter and OUT |
+| Sister MIX capture | Complete routed result with linked peak safety; includes returned audio where applicable |
+| Sister H1/H2/H3 capture/stems | Named head tap; includes INSERT only if it precedes Sister |
+| Ordinary tile/group Capture; REC DRY/SYNTH | Existing earlier source taps; no downstream INSERT print |
+| REC EXT; Live Link source capture | Existing raw source tap; independent of downstream routing |
+| Sample export/transform | Existing sample data; does not run an external processor offline |
+
+Mosaic output bounce is a real-time REC OUT operation, so the external processor
+must remain connected during the take. Configuration saves the global device
+names, Insert pairs and levels. Project state v24 saves Insert pairs/levels and
+Router state; it uses the currently configured global devices. Sound presets leave
+Insert setup alone. SEND/RETURN are linked peak-bounded and sanitized, but external
+hardware/software routing remains under your control.
 
 ## The four-slot FX pedalboard
 

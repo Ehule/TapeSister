@@ -1,0 +1,171 @@
+#include "tapesister/insert.h"
+#include <errno.h>
+#include <math.h>
+#include <stdlib.h>
+#include <string.h>
+
+void ts_insert_default(TsInsertControls *c)
+{ memset(c, 0, sizeof(*c)); }
+
+int ts_insert_valid(const TsInsertControls *c)
+{
+    return c && c->send_pair >= 0 && c->send_pair <= 3 &&
+        c->return_pair >= 0 && c->return_pair <= 3 &&
+        isfinite(c->send_db) && c->send_db >= -24 && c->send_db <= 12 &&
+        isfinite(c->return_db) && c->return_db >= -24 && c->return_db <= 12;
+}
+
+void ts_insert_init(TsInsert *s)
+{
+    memset(s, 0, sizeof(*s));
+    ts_insert_default(&s->controls);
+    ts_input_monitor_init(&s->return_monitor);
+    atomic_init(&s->port_request, 0);
+    atomic_init(&s->port_ack, 0);
+    atomic_init(&s->monitor_port_ack, 0);
+    atomic_init(&s->input_channels, 0);
+    s->send_gain = s->return_gain = s->send_target = s->return_target = 1;
+    ts_insert_prepare(s, 48000);
+}
+
+void ts_insert_prepare(TsInsert *s, unsigned rate)
+{
+    if (!rate) return;
+    s->sample_rate = rate;
+    s->decay = expf(-1.0f / (rate * .15f));
+    s->slew = 1.0f - expf(-1.0f / (rate * .01f));
+}
+
+void ts_insert_set(TsInsert *s, const TsInsertControls *c)
+{
+    TsInsertControls next = *c;
+    if (!ts_insert_valid(&next)) ts_insert_default(&next);
+    if (next.return_pair != s->controls.return_pair ||
+        next.send_pair != s->controls.send_pair) {
+        unsigned generation = (atomic_load(&s->port_request) & ~7u) + 8u;
+        unsigned port = next.send_pair ? (unsigned)next.return_pair + 1u : 0u;
+        atomic_store_explicit(&s->port_request, generation | port, memory_order_release);
+    }
+    s->controls = next;
+    s->send_target = powf(10, next.send_db / 20);
+    s->return_target = powf(10, next.return_db / 20);
+}
+
+void ts_insert_capture_prepare(TsInsert *s, unsigned channels,
+                               unsigned rate, unsigned buffer_frames)
+{
+    if (channels > TS_INSERT_MAX_CHANNELS) channels = 0;
+    atomic_store_explicit(&s->input_channels, 0, memory_order_release);
+    atomic_store_explicit(&s->return_monitor.enabled, 0, memory_order_release);
+    atomic_store_explicit(&s->return_monitor.input_rate, rate, memory_order_release);
+    ts_input_monitor_set_prime_frames(&s->return_monitor,
+        ts_input_monitor_recommended_prime_frames(buffer_frames));
+    unsigned request=atomic_load_explicit(&s->port_request,memory_order_relaxed);
+    atomic_store_explicit(&s->port_request,request+8u,memory_order_release);
+    atomic_store_explicit(&s->return_monitor.enabled, channels >= 2, memory_order_release);
+    atomic_store_explicit(&s->input_channels, channels, memory_order_release);
+}
+
+void ts_insert_capture(TsInsert *s, const float *input, size_t frames,
+                       unsigned channels)
+{
+    if (!s || !input || channels < 2 || channels > TS_INSERT_MAX_CHANNELS) return;
+    if(atomic_load_explicit(&s->input_channels,memory_order_acquire)!=channels)return;
+    unsigned request = atomic_load_explicit(&s->port_request, memory_order_acquire);
+    unsigned port = request & 7u;
+    atomic_store_explicit(&s->port_ack, request, memory_order_release);
+    if (!port || port * 2u > channels) return;
+    unsigned first = (port - 1u) * 2u;
+    ts_input_monitor_note_capture_block(&s->return_monitor, (uint32_t)frames);
+    for (size_t i = 0; i < frames; ++i) {
+        TsStereoFrame sample = {input[i * channels + first], input[i * channels + first + 1]};
+        ts_input_monitor_push_frame(&s->return_monitor, sample);
+    }
+}
+
+TsStereoFrame ts_insert_external_frame(const TsInsert *s,
+    const float *frame, unsigned channels, int mode)
+{
+    if (!s) return ts_input_channel_select(frame, channels, mode);
+    unsigned port = atomic_load_explicit(&s->port_request, memory_order_acquire) & 7u;
+    if (!port) return ts_input_channel_select(frame, channels, mode);
+    return ts_input_channel_select_excluding(frame, channels, mode, 3u << ((port - 1u) * 2u));
+}
+
+int ts_insert_send_available(const TsInsert *s)
+{
+    return s->controls.send_pair > 0 && s->output_channels <= TS_INSERT_MAX_CHANNELS &&
+        (unsigned)(s->controls.send_pair + 1) * 2u <= s->output_channels;
+}
+
+int ts_insert_return_available(const TsInsert *s)
+{
+    return s->controls.send_pair > 0 &&
+        (unsigned)(s->controls.return_pair + 1) * 2u <= atomic_load_explicit(&s->input_channels, memory_order_acquire);
+}
+
+static TsStereoFrame bounded(TsStereoFrame f, float gain)
+{
+    f = ts_stereo_frame_sanitize(f);
+    f.l *= gain; f.r *= gain;
+    float peak = fmaxf(fabsf(f.l), fabsf(f.r));
+    if (!isfinite(peak)) return (TsStereoFrame){0, 0};
+    if (peak > 1) { f.l /= peak; f.r /= peak; }
+    return f;
+}
+
+TsStereoFrame ts_insert_process(TsInsert *s, TsStereoFrame input, float route_gain)
+{
+    s->send_gain += (s->send_target - s->send_gain) * s->slew;
+    s->return_gain += (s->return_target - s->return_gain) * s->slew;
+    s->send = ts_insert_send_available(s) ? bounded(input, s->send_gain * route_gain) : (TsStereoFrame){0, 0};
+    s->send_peak = fmaxf(fmaxf(fabsf(s->send.l), fabsf(s->send.r)), s->send_peak * s->decay);
+    unsigned request = atomic_load_explicit(&s->port_request, memory_order_acquire);
+    TsStereoFrame result = {0, 0};
+    if (s->port_seen != request) {
+        unsigned acknowledged=atomic_load_explicit(&s->port_ack,memory_order_acquire);
+        ts_input_monitor_discard(&s->return_monitor);
+        if (acknowledged == request) s->port_seen = request;
+    } else if (ts_insert_return_available(s)) {
+        result = bounded(ts_input_monitor_read_frame(&s->return_monitor, s->sample_rate), s->return_gain);
+    }
+    s->return_peak = fmaxf(fmaxf(fabsf(result.l), fabsf(result.r)), s->return_peak * s->decay);
+    /* An active but unavailable Insert is silent. Never substitute dry here. */
+    if (!ts_insert_send_available(s)) result = (TsStereoFrame){0, 0};
+    return result;
+}
+
+void ts_insert_write_output(const TsInsert *s, float *frame, unsigned channels, TsStereoFrame master)
+{
+    for (unsigned i = 0; i < channels; ++i) frame[i] = 0;
+    if (channels < 2) return;
+    frame[0] = master.l; frame[1] = master.r;
+    if (ts_insert_send_available(s) && (unsigned)(s->controls.send_pair + 1) * 2u <= channels) {
+        unsigned first = (unsigned)s->controls.send_pair * 2u;
+        frame[first] = s->send.l; frame[first + 1] = s->send.r;
+    }
+}
+
+int ts_insert_write(FILE *f, const TsInsertControls *controls)
+{
+    TsInsertControls c = *controls;
+    if (!ts_insert_valid(&c)) ts_insert_default(&c);
+    return fprintf(f, "Insert.SendPair=%d\nInsert.ReturnPair=%d\nInsert.SendDb=%.9g\nInsert.ReturnDb=%.9g\n",
+                   c.send_pair, c.return_pair, c.send_db, c.return_db) >= 0;
+}
+
+int ts_insert_read(TsInsertControls *c, const char *key, const char *value)
+{
+    char *end; errno = 0; double n = strtod(value, &end);
+    if (errno || end == value || *end || !isfinite(n)) return -1;
+    TsInsertControls next = *c;
+    if (!strcmp(key, "Insert.SendPair") || !strcmp(key, "Insert.ReturnPair")) {
+        if (n < 0 || n > 3 || n != floor(n)) return -1;
+        if (!strcmp(key, "Insert.SendPair")) next.send_pair = (int)n;
+        else next.return_pair = (int)n;
+    } else if (!strcmp(key, "Insert.SendDb")) next.send_db = (float)n;
+    else if (!strcmp(key, "Insert.ReturnDb")) next.return_db = (float)n;
+    else return 0;
+    if (!ts_insert_valid(&next)) return -1;
+    *c = next; return 1;
+}

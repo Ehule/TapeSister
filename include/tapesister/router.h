@@ -7,7 +7,7 @@
 
 /* Stable IDs: add future serial processors here, never persist row indices. */
 enum { TS_ROUTER_PRISM, TS_ROUTER_SISTER, TS_ROUTER_FALLOUT,
-       TS_ROUTER_PEDALBOARD, TS_ROUTER_COUNT };
+       TS_ROUTER_PEDALBOARD, TS_ROUTER_INSERT, TS_ROUTER_COUNT };
 typedef struct {
     int order[TS_ROUTER_COUNT];
     unsigned bypass_mask;
@@ -37,6 +37,9 @@ void ts_router_prepare(TsRouter *router,unsigned sample_rate);
 void ts_router_set(TsRouter *router,const TsRouterControls *controls);
 TsStereoFrame ts_router_process(TsRouter *router,TsStereoFrame input,
                                 TsRouterProcess process,void *context);
+/* Optional boundary preparation occurs before a stage's bypass crossfade. */
+TsStereoFrame ts_router_process_with_prepare(TsRouter *router,TsStereoFrame input,
+    TsRouterProcess process,TsRouterProcess prepare,void *context);
 int ts_router_write(FILE *file,const TsRouterControls *controls);
 int ts_router_read(TsRouterControls *controls,const char *key,const char *value);
 

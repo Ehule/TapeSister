@@ -6,12 +6,12 @@
 #include <stdio.h>
 #include <string.h>
 
-static int next_order(int *p)
+static int next_order(int *p,int length)
 {
-    int i=TS_ROUTER_COUNT-2;while(i>=0 && p[i]>p[i+1])--i;if(i<0)return 0;
-    int j=TS_ROUTER_COUNT-1;while(p[j]<p[i])--j;
+    int i=length-2;while(i>=0 && p[i]>p[i+1])--i;if(i<0)return 0;
+    int j=length-1;while(p[j]<p[i])--j;
     int v=p[i];p[i]=p[j];p[j]=v;
-    for(int a=i+1,b=TS_ROUTER_COUNT-1;a<b;++a,--b){v=p[a];p[a]=p[b];p[b]=v;}
+    for(int a=i+1,b=length-1;a<b;++a,--b){v=p[a];p[a]=p[b];p[b]=v;}
     return 1;
 }
 typedef struct {int seen[TS_ROUTER_COUNT],count;} Trace;
@@ -30,7 +30,7 @@ static TsStereoFrame effect(void *ctx,int s,TsStereoFrame in)
 static void engine_tests(void)
 {
     TsRouter r;ts_router_init(&r);ts_router_prepare(&r,48000);
-    TsRouterControls c=r.controls;Trace trace={0};int combinations=0;
+    TsRouterControls c=r.controls;c.bypass_mask=0;Trace trace={0};int combinations=0;
     TsStereoFrame in={.1f,-.07f},last={0},out;
     do {
         ts_router_set(&r,&c);
@@ -39,16 +39,16 @@ static void engine_tests(void)
         TsStereoFrame expected=in;
         for(int i=0;i<TS_ROUTER_COUNT;++i){assert(trace.seen[i]==c.order[i]);expected=effect(NULL,c.order[i],expected);}
         assert(fabsf(expected.l-out.l)<1e-6f && fabsf(expected.r-out.r)<1e-6f);++combinations;
-    }while(next_order(c.order));
-    assert(combinations==24);
-    c.bypass_mask=15;ts_router_set(&r,&c);
+    }while(next_order(c.order,TS_ROUTER_COUNT));
+    assert(combinations==120);
+    c.bypass_mask=31;ts_router_set(&r,&c);
     for(int n=0;n<600;++n)out=ts_router_process(&r,in,effect,NULL);
     assert(!memcmp(&out,&in,sizeof(in)));
     for(int s=0;s<TS_ROUTER_COUNT;++s) {
-        ts_router_toggle_solo(&c,s);assert(c.bypass_mask==15);ts_router_set(&r,&c);
+        ts_router_toggle_solo(&c,s);assert(c.bypass_mask==31);ts_router_set(&r,&c);
         for(int n=0;n<600;++n)out=ts_router_process(&r,in,effect,NULL);
         TsStereoFrame expected=effect(NULL,s,in);assert(fabsf(expected.l-out.l)<1e-6f);
-        ts_router_toggle_solo(&c,s);assert(!c.solo && c.bypass_mask==15);
+        ts_router_toggle_solo(&c,s);assert(!c.solo && c.bypass_mask==31);
     }
     /* Constant input isolates discontinuities caused by rapid graph changes. */
     ts_router_default(&c);ts_router_set(&r,&c);
@@ -89,7 +89,7 @@ static void persistence_tests(void)
     assert(ts_config_load(&loaded,"test-router-config.ini",error,sizeof(error)));
     assert(!memcmp(&loaded.router,&defaults,sizeof(defaults)));
     assert(ts_router_read(&defaults,"Router.Order","0,0,2,3")==-1);
-    assert(ts_router_read(&defaults,"Router.Bypass","16")==-1);
+    assert(ts_router_read(&defaults,"Router.Bypass","32")==-1);
     assert(ts_router_read(&defaults,"Router.Solo","-1")==-1);
     assert(ts_router_read(&defaults,"Router.Order","3,2,1,0 junk")==-1);
     remove("test-router-config.ini");remove("test-router-project.ini");
@@ -124,7 +124,7 @@ static void real_dsp_orders(void)
         TsSisterRoutingSnapshot snap;assert(ts_sister_runtime_get_snapshot(&r,&snap));
         for(int i=0;i<TS_ROUTER_COUNT;++i)assert(snap.router_peaks[i*2]>.0001f);
         assert(!memcmp(&snap.router,&route,sizeof(route)));ts_sister_runtime_free(&r);
-    }while(next_order(route.order));
+    }while(next_order(route.order,4));
     assert(count==24);
     for(int i=1;i<count;++i)for(int j=0;j<i;++j)assert(fabs(fingerprints[j]-fingerprints[i])>1e-4);
     puts("All 24 real DSP routing orders produce finite, audible, distinct output");

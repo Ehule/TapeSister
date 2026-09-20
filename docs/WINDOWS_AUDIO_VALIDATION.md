@@ -25,6 +25,31 @@ rates/buffers.
 
 ## Matrix
 
+- [ ] External Insert: choose a native multichannel output in CFG. Confirm Master
+  is only on 1/2, SEND only on the chosen spare pair, and unused channels silent.
+  Verify exposed channel indices against actual interface sockets/virtual ports.
+- [ ] Loop SEND 3/4 through hardware or a separate audio application into RETURN
+  3/4. Exercise all five Insert positions, Router bypass/solo, ±gain changes and
+  right-click unity. Set Sister DRY 100/WET 0; active Insert must still be serial.
+- [ ] Disconnect RETURN or stop the external app: an active Insert stays silent
+  and reports missing activity. Manual bypass restores the internal path. Remove
+  capture, reconnect, and verify stale return samples do not replay.
+- [ ] Open a stereo-only endpoint or load unavailable saved pairs. Confirm there
+  is no hidden SEND downmix onto Master. Temporary Master fallback must not start
+  sending the loop on substitute sockets. Reconnect the configured endpoint.
+- [ ] Enable EXT monitoring while RETURN is assigned. The reserved pair must not
+  re-enter the internal source; other channels and explicit raw EXT recording
+  remain usable. Change pair/reload a project with sustained input and verify
+  old queued EXT samples cannot make a brief self-return loop.
+- [ ] Record through INSERT using FILE OUT, Mosaic REC OUT/output bounce and Sister
+  MIX/head taps. Check their documented positions. Apply Ports must be refused
+  during a take; bypass/solo and gain adjustments remain usable.
+- [ ] Measure/listen to the external round trip at 256/512/1024 buffers, with matching
+  and mismatched capture/playback rates. RETURN adds four capture blocks of priming;
+  there is no automatic latency compensation or separate ASIO backend.
+- [ ] Inspect compact EQ and Insert panels at normal/maximized/high-DPI sizes.
+  EQ OUT/Router controls must not overlap; REC and IN must not be drawn together;
+  file-recording time and STOP FILE must remain readable across workspaces.
 - [ ] Keyboard ARP: select white/black keys with EDIT or Ctrl-click, try UP, DOWN,
   UP/DOWN, ORDER, RANDOM, LOOP/ONCE, Reset, and Clear. Hear gate gaps and live rate
   changes. Change octave, remove the current/last note, and switch tile/FM/Sister

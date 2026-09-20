@@ -375,6 +375,7 @@ static void test_sister_prepared_power(void)
 #include "test_master_eq_controller.inc"
 #include "test_performance_polish.inc"
 #include "test_router_controller.inc"
+#include "test_insert_controller.inc"
 
 int main(void)
 {
@@ -411,6 +412,7 @@ int main(void)
     test_keyboard_sequence_controller();
     test_performance_polish();
     test_router_controller();
+    test_insert_controller();
     test_master_eq_controller();
     stop_all_force(device, &audio, &ui);
     ts_sample_free(&fm); ts_instrument_free(&instrument);

@@ -4,7 +4,7 @@ typedef struct {
     TsSisterRuntime *runtime;
     TsSisterRuntimeFrame *frame;
     TsStereoFrame causal, sister_feedback, fallout_wet, dry_monitor;
-    int passed_sister;
+    int passed_sister, monitor_merged;
 } RouterFrameContext;
 
 static void runtime_router_begin(RouterFrameContext *c)
@@ -27,6 +27,9 @@ static TsStereoFrame runtime_router_stage(void *context,int stage,TsStereoFrame 
 {
     RouterFrameContext *c=context;TsSisterRuntime *r=c->runtime;
     switch(stage) {
+    case TS_ROUTER_INSERT:
+        return ts_insert_process(&r->insert,input,
+            r->router.wet[TS_ROUTER_INSERT]*r->router.gain);
     case TS_ROUTER_PRISM:
         return ts_prism_process(&r->prism,input);
     case TS_ROUTER_SISTER: {
@@ -58,17 +61,34 @@ static TsStereoFrame runtime_router_stage(void *context,int stage,TsStereoFrame 
         if(!r->enabled && master>0 && r->router.wet[stage]>0 && ts_sister_fallout_engage(&r->fallout)>0)
             incoming=frame_add(incoming,r->fallout_feedback_previous);
         TsSisterFalloutResult f=ts_sister_fallout_process(&r->fallout,incoming);
-        c->fallout_wet=f.wet;
+        if(!c->monitor_merged)c->fallout_wet=f.wet;
         return frame_effect_return(input,f.output,master);
     }
     case TS_ROUTER_PEDALBOARD: {
         TsStereoFrame out=ts_sister_post_fx_process(&r->post_fx,TS_SISTER_HEAD_COUNT,input,0);
         out=frame_effect_return(input,out,runtime_ramp_advance(&r->ordinary_fx_return_gain));
-        if(c->passed_sister)c->sister_feedback=out;
+        if(c->passed_sister && !c->monitor_merged)c->sister_feedback=out;
         return out;
     }
     default:return input;
     }
+}
+
+static TsStereoFrame runtime_router_prepare_stage(void *context,int stage,TsStereoFrame input)
+{
+    RouterFrameContext *c=context;TsSisterRuntime *r=c->runtime;
+    if(stage==TS_ROUTER_INSERT && c->passed_sister &&
+       (r->insert.controls.send_pair || r->router.wet[TS_ROUTER_INSERT]>0 ||
+        ts_router_active(&r->router.controls,TS_ROUTER_INSERT))) {
+        float sister=r->router.wet[TS_ROUTER_SISTER];
+        /* A serial external loop must also receive the monitor return. Merge
+           here, before bypass, so A/B never mixes undelayed dry at Master.
+           Keep feedback taps upstream of this merge and the external loop. */
+        input=frame_add(frame_scale(input,1+sister*(r->monitor_wet_current-1)),
+                        frame_scale(c->dry_monitor,sister));
+        c->dry_monitor=(TsStereoFrame){0,0};c->monitor_merged=1;
+    }
+    return input;
 }
 
 static void runtime_router_finish(RouterFrameContext *c)

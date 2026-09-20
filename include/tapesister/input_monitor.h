@@ -91,6 +91,8 @@ typedef struct {
 } TsLiveWaveform;
 
 void ts_input_monitor_init(TsInputMonitor *monitor);
+/* Playback-consumer only: discard queued audio without resetting the producer. */
+void ts_input_monitor_discard(TsInputMonitor *monitor);
 void ts_input_monitor_set_enabled(TsInputMonitor *monitor, int enabled,
                                   uint32_t input_rate);
 uint32_t ts_input_monitor_recommended_prime_frames(
@@ -119,6 +121,8 @@ uint8_t ts_input_capture_probe_request(uint8_t maximum, uint8_t attempt);
 int ts_input_capture_probe_accepts(uint8_t requested, uint8_t obtained);
 TsStereoFrame ts_input_channel_select(const float *device_frame,
                                        size_t device_channels, int mode);
+TsStereoFrame ts_input_channel_select_excluding(const float *device_frame,
+    size_t device_channels, int mode, unsigned excluded);
 uint32_t ts_input_activity_detect_frame(const float *device_frame,
                                         size_t device_channels);
 void ts_input_activity_init(TsInputActivity *activity);

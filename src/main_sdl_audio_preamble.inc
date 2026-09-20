@@ -32,6 +32,8 @@ static int ts_audio_endpoint_should_retry_output(void);
 static int ts_audio_endpoint_should_retry_capture(void);
 static int ts_audio_retry_capture_for_event(char *error, size_t error_size);
 static int ts_audio_output_is_available(void);
+static unsigned ts_audio_insert_offered_channels(void);
+static int ts_audio_insert_apply_output(char *error,size_t size);
 static int ts_audio_resolve_output_failure(SDL_Window *window);
 static int ts_switch_output_for_config(char *error, size_t error_size);
 static void ts_audio_catalog_refresh(void);

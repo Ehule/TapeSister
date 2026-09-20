@@ -506,10 +506,10 @@ static void ts_audio_reconfigure_sister_if_needed(AudioState *audio,
     if (audio == NULL || spec == NULL || spec->freq <= 0) return;
     if (audio->sister.enabled &&
         audio->sister.machine.buffer.sample_rate == (uint32_t)spec->freq &&
-        audio->sister.output_channels == spec->channels)
+        audio->sister.output_channels == 2)
         return;
     (void)ts_sister_runtime_reconfigure(
-        &audio->sister, (uint32_t)spec->freq, spec->channels, NULL, 0u);
+        &audio->sister, (uint32_t)spec->freq, 2, NULL, 0u);
 }
 
 static void ts_cycle_audio_backend(int direction)
@@ -604,6 +604,8 @@ static const char *ts_configured_input_name(void)
            ts_live_config->record_input_device : NULL;
 }
 
+#include "main_sdl_insert_audio.inc"
+
 static SDL_AudioDeviceID ts_audio_real_id(SDL_AudioDeviceID logical)
 {
     if (logical == TS_AUDIO_LOGICAL_OUTPUT) return ts_real_output;
@@ -688,7 +690,7 @@ static void ts_audio_handle_removed(int is_capture, const char *error)
         ts_real_output = 0;
         if (ts_output_obtained_target != NULL)
             SDL_zero(*ts_output_obtained_target);
-        if (audio != NULL) audio->output_rate = 0;
+        if (audio != NULL) {audio->output_rate = 0;audio->sister.insert.output_channels=0;}
     }
     ts_audio_log_endpoint(endpoint);
 }

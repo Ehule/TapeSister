@@ -19,7 +19,7 @@ add_library(tapesister_core src/ts_sample.c src/ts_prism.c src/ts_prism_performa
              src/ts_audio_lifecycle.c
              src/ts_realtime_diagnostics.c
              src/ts_sister_effects.c src/ts_sister_fallout.c src/ts_sister_post_fx.c
-             src/ts_sister_limiter.c src/ts_master_eq.c src/ts_router.c
+             src/ts_sister_limiter.c src/ts_master_eq.c src/ts_router.c src/ts_insert.c
              src/ts_sister_machine.c src/ts_sister_wave_snapshot.c
              src/ts_sister_runtime.c src/ts_sister_ui.c
              src/ts_sister_preset.c src/ts_sister_project_state.c
@@ -472,3 +472,6 @@ add_test(NAME tapesister_master_eq_tests COMMAND tapesister_master_eq_tests)
 add_executable(tapesister_router_tests tests/test_router.c)
 target_link_libraries(tapesister_router_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_router_tests COMMAND tapesister_router_tests)
+add_executable(tapesister_insert_tests tests/test_insert.c)
+target_link_libraries(tapesister_insert_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_insert_tests COMMAND tapesister_insert_tests)

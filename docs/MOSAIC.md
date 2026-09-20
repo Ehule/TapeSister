@@ -456,3 +456,12 @@ undo/redo, geometry, project transactions, background native CDP completion,
 and sample-for-sample output WAV capture. Set `TS_TEST_CDP_BIN` to the bundled
 `cdp/bin` directory for the native CDP checks. Hardware listening and interaction
 on the target machine remain part of acceptance.
+
+## External Insert and recording
+
+The Router's INSERT stage processes Mosaic through its actual position in the
+serial chain. **REC OUT** / output bounce and **FILE OUT** capture the returned
+audio and remaining processing in real time. Keep the external processor running
+during the take. REC DRY, SYNTH and raw EXT retain their earlier source taps.
+Missing RETURN stays silent while INSERT is active; use Router BYPASS to return
+to internal processing. [Setup and channel limits](USER_MANUAL.md#external-insert).
