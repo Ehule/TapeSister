@@ -976,6 +976,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
                                  live_link_frames,
                                  (uint32_t)audio->output_rate);
     ts_sister_runtime_begin_audio_block(&audio->sister);
+    ts_insert_begin_output_block(&audio->sister.insert, (unsigned)frames);
     for (int i = 0; i < values; i += 2) {
         audio->sister.insert.send=(TsStereoFrame){0,0};
         TsAudioBuses buses;
@@ -13108,6 +13109,7 @@ int main(int argc, char **argv)
                     input_snapshot.captured_frame_count,
                     input_snapshot.largest_capture_block_frames,
                     input_snapshot.correction_ppm);
+            ts_audio_insert_diagnostics(&audio,&ui,1);
             last_audio_diagnostic_log = SDL_GetTicks();
         }
         while (SDL_PollEvent(&event)) {
@@ -17041,6 +17043,7 @@ int main(int argc, char **argv)
                 routing.limiter_gain_reduction_db;
             ui.master_output.gain = routing.master_output_gain;
         }
+        if(ui.insert_open)ts_audio_insert_diagnostics(&audio,&ui,0);
         ui.text_cursor_visible = ((SDL_GetTicks() / 500u) & 1u) == 0u;
         sister_window.model.text_cursor_visible = ui.text_cursor_visible;
         poll_import_playback(device,&audio,&ui,&import_controller);

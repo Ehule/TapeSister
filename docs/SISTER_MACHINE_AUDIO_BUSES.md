@@ -153,8 +153,13 @@ EXT selection, with playback gated until queued pre-reservation samples are
 flushed under device locks. Raw EXT recording remains an earlier source tap.
 
 Both FIFOs reuse stereo rate conversion and clock-drift correction. Separate
-SEND primes twice the larger Master-configured/SEND-obtained buffer in Master-rate
-frames; RETURN primes four capture blocks (each bounded 128–4096 frames). Return
+SEND and RETURN target twice the larger producer/consumer callback duration,
+converted to producer-rate frames (bounded 128–4096). The Master callback
+publishes its actual burst size; RETURN tracks capture bursts, and the SEND
+callback accounts for its own obtained rate and actual frame count. This avoids
+repeated starvation when capture blocks are smaller than playback blocks.
+The Insert panel reports applied stream rates/buffers, queue targets and
+underrun/overflow counters; `--diagnostic-audio` logs both FIFO diagnostics. Return
 port-generation acknowledgement precedes consumer discard. SEND's consumer
 similarly discards old queued frames on reassignment. FIFO index resets require
 their producer and consumer callbacks excluded; no callback allocates or opens

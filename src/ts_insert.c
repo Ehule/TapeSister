@@ -27,6 +27,8 @@ void ts_insert_init(TsInsert *s)
     atomic_init(&s->port_ack, 0);
     atomic_init(&s->monitor_port_ack, 0);
     atomic_init(&s->input_channels, 0);
+    atomic_init(&s->return_buffer_frames, 0);
+    atomic_init(&s->output_buffer_frames, 0);
     s->send_gain = s->return_gain = s->send_target = s->return_target = 1;
     ts_insert_prepare(s, 48000);
 }
@@ -37,6 +39,30 @@ void ts_insert_prepare(TsInsert *s, unsigned rate)
     s->sample_rate = rate;
     s->decay = expf(-1.0f / (rate * .15f));
     s->slew = 1.0f - expf(-1.0f / (rate * .01f));
+}
+
+static unsigned bridge_prime(unsigned producer_frames, unsigned consumer_frames,
+                             unsigned producer_rate, unsigned consumer_rate)
+{
+    /* The ring is measured at the producer rate. Either callback may be the
+       larger burst, regardless of the requested buffer size. Two bursts cover
+       their scheduling phase and one late delivery without four-block latency. */
+    uint64_t demand = consumer_rate ?
+        ((uint64_t)consumer_frames * producer_rate + consumer_rate - 1u) / consumer_rate : 0;
+    uint64_t burst = producer_frames > demand ? producer_frames : demand;
+    return burst > TS_INPUT_MONITOR_MAX_PRIME_FRAMES / 2u ?
+        TS_INPUT_MONITOR_MAX_PRIME_FRAMES : (unsigned)burst * 2u;
+}
+
+void ts_insert_begin_output_block(TsInsert *s, unsigned frames)
+{
+    atomic_store_explicit(&s->output_buffer_frames, frames, memory_order_release);
+    unsigned rate = atomic_load_explicit(&s->return_monitor.input_rate, memory_order_acquire);
+    unsigned capture = atomic_load_explicit(&s->return_buffer_frames, memory_order_acquire);
+    ts_input_monitor_set_prime_frames(&s->return_monitor,
+        bridge_prime(capture, frames, rate, s->sample_rate));
+    if (s->separate_send && s->send_channels)
+        ts_input_monitor_note_capture_block(&s->send_monitor, frames);
 }
 
 void ts_insert_set(TsInsert *s, const TsInsertControls *c)
@@ -68,8 +94,15 @@ void ts_insert_capture_prepare_from(TsInsert *s, unsigned channels,
     atomic_store_explicit(&s->input_channels, 0, memory_order_release);
     atomic_store_explicit(&s->return_monitor.enabled, 0, memory_order_release);
     atomic_store_explicit(&s->return_monitor.input_rate, rate, memory_order_release);
+    atomic_store_explicit(&s->return_buffer_frames, buffer_frames, memory_order_release);
     ts_input_monitor_set_prime_frames(&s->return_monitor,
-        ts_input_monitor_recommended_prime_frames(buffer_frames));
+        bridge_prime(buffer_frames, atomic_load_explicit(&s->output_buffer_frames,
+            memory_order_acquire), rate, s->sample_rate));
+    atomic_store(&s->return_monitor.underrun_count, 0);
+    atomic_store(&s->return_monitor.dropped_frame_count, 0);
+    atomic_store(&s->return_monitor.capture_callback_count, 0);
+    atomic_store(&s->return_monitor.captured_frame_count, 0);
+    atomic_store(&s->return_monitor.largest_capture_block_frames, 0);
     unsigned request=atomic_load_explicit(&s->port_request,memory_order_relaxed);
     atomic_store_explicit(&s->port_request,request+8u,memory_order_release);
     atomic_store_explicit(&s->return_monitor.enabled, channels >= 2, memory_order_release);
@@ -91,6 +124,8 @@ void ts_insert_capture_from(TsInsert *s, const float *input, size_t frames,
     atomic_store_explicit(&s->port_ack, request, memory_order_release);
     if (!port || port * 2u > channels) return;
     unsigned first = (port - 1u) * 2u;
+    if (frames > atomic_load_explicit(&s->return_buffer_frames, memory_order_relaxed))
+        atomic_store_explicit(&s->return_buffer_frames, (unsigned)frames, memory_order_release);
     ts_input_monitor_note_capture_block(&s->return_monitor, (uint32_t)frames);
     for (size_t i = 0; i < frames; ++i) {
         TsStereoFrame sample = {input[i * channels + first], input[i * channels + first + 1]};
@@ -186,9 +221,9 @@ void ts_insert_send_prepare(TsInsert *s, unsigned channels, unsigned rate, unsig
 {
     s->send_channels = channels >= 2 && channels <= TS_INSERT_MAX_CHANNELS ? channels : 0;
     ts_input_monitor_set_enabled(&s->send_monitor, s->send_channels != 0, rate);
-    unsigned prime = buffer_frames > TS_INPUT_MONITOR_MAX_PRIME_FRAMES / 2 ?
-        TS_INPUT_MONITOR_MAX_PRIME_FRAMES : buffer_frames * 2;
-    ts_input_monitor_set_prime_frames(&s->send_monitor, prime);
+    atomic_store_explicit(&s->output_buffer_frames, buffer_frames, memory_order_release);
+    ts_input_monitor_set_prime_frames(&s->send_monitor,
+        bridge_prime(buffer_frames, 0, rate, rate));
     ts_input_monitor_discard(&s->send_monitor);
     unsigned generation = (atomic_load(&s->send_request) & ~7u) + 8u;
     atomic_store_explicit(&s->send_request, generation | (unsigned)s->controls.send_pair, memory_order_release);
@@ -197,6 +232,10 @@ void ts_insert_send_prepare(TsInsert *s, unsigned channels, unsigned rate, unsig
 void ts_insert_render_send(TsInsert *s, float *out, size_t frames, unsigned channels, unsigned rate)
 {
     memset(out, 0, frames * channels * sizeof(*out));
+    unsigned producer_rate = atomic_load_explicit(&s->send_monitor.input_rate, memory_order_acquire);
+    unsigned producer_frames = atomic_load_explicit(&s->output_buffer_frames, memory_order_acquire);
+    ts_input_monitor_set_prime_frames(&s->send_monitor,
+        bridge_prime(producer_frames, (unsigned)frames, producer_rate, rate));
     unsigned request = atomic_load_explicit(&s->send_request, memory_order_acquire);
     if (request != s->send_seen) {
         ts_input_monitor_discard(&s->send_monitor);

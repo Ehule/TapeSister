@@ -23,6 +23,7 @@ typedef struct {
     /* Capture acknowledges a new port before playback discards old samples.
        Only the consumer advances its read cursor; no concurrent FIFO reset. */
     _Atomic unsigned port_request, port_ack, monitor_port_ack, input_channels;
+    _Atomic unsigned return_buffer_frames, output_buffer_frames;
     unsigned port_seen, output_channels, sample_rate;
     float send_gain, return_gain, send_target, return_target, slew;
     float send_peak, return_peak, decay;
@@ -33,6 +34,9 @@ void ts_insert_default(TsInsertControls *controls);
 int ts_insert_valid(const TsInsertControls *controls);
 void ts_insert_init(TsInsert *insert);
 void ts_insert_prepare(TsInsert *insert, unsigned sample_rate);
+/* Master callback, before processing its frames. Sizes the RETURN bridge in
+   capture-rate frames and publishes the producer burst size for separate SEND. */
+void ts_insert_begin_output_block(TsInsert *insert, unsigned frames);
 /* Control changes require the playback callback to be excluded. */
 void ts_insert_set(TsInsert *insert, const TsInsertControls *controls);
 /* Control thread, with the capture producer stopped/excluded. Playback may run. */

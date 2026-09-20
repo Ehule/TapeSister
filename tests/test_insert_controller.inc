@@ -23,6 +23,7 @@ static void insert_controller_shot(const char *key)
     ui.config.router=s.router;ui.config.insert=s.insert;ui.router_enabled=s.router_enabled;
     ui.insert_send_peak=s.insert_send_peak;ui.insert_return_peak=s.insert_return_peak;
     ui.insert_inputs=s.insert_inputs;ui.insert_outputs=s.insert_outputs;
+    ts_audio_insert_diagnostics(&audio,&ui,0);
     memcpy(ui.router_peaks,s.router_peaks,sizeof(ui.router_peaks));ui.performance_tooltip[0]=0;
     snprintf(ui.status,sizeof(ui.status),"INSERT: SERIAL SEND / RETURN - ROUTER ORDER IS LIVE");
     const char *path=getenv(key);if(!path)return;

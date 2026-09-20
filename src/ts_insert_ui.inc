@@ -5,6 +5,8 @@ static const char *insert_help(int x,int y)
         "SEND: CHANNELS WITHIN THE SELECTED DEVICE; MASTER SPARES SKIPS MASTER 1/2":
         "RETURN: CHANNELS WITHIN SELECTED DEVICE; IN 5-6 DEVICE USES ITS LOCAL CH 1/2";
     if(y>=219 && y<260)return "LEVEL: -24 TO +12 DB; RIGHT-CLICK RESETS TO UNITY; CHANGES ARE SMOOTHED";
+    if(y>=180 && y<198)return "APPLIED STREAM: CHANNELS / SAMPLE RATE / DEVICE BUFFER IN FRAMES; TILES CAN HAVE A DIFFERENT RATE";
+    if(y>=308 && y<324)return "QUEUE: PRIMING TARGET, NOT ROUND-TRIP LATENCY; GAPS: UNDERRUNS; DROP: OVERFLOW FRAMES; S / R";
     if(y>=326 && y<350)return x>=420?
         "APPLY DEVICE AND CHANNEL CHOICES; FINISH RECORDING FIRST; MASTER / BACKEND STAY IN CFG":
         "ROUTER BYPASS / SOLO; ACTIVE INSERT IS 100% RETURN; MISSING RETURN STAYS SILENT";
@@ -36,7 +38,9 @@ static void insert_render(TsFramebuffer *fb,const TsUiState *ui)
         }
         button(fb,x+14,150,188,label,0);
         unsigned channels=side?ui->insert_inputs:ui->insert_outputs;
-        snprintf(label,sizeof(label),"%u CHANNELS OPEN",channels);text(fb,x+14,184,label,muted,1);
+        if(ui->insert_rates[side])snprintf(label,sizeof(label),"%u CH / %u HZ / %u FR",channels,ui->insert_rates[side],ui->insert_buffers[side]);
+        else snprintf(label,sizeof(label),"%u CHANNELS OPEN",channels);
+        text(fb,x+14,184,label,muted,1);
         const char *applied=side?ui->config.insert_return_device:ui->config.insert_send_device;
         if(!applied[0])applied=side?ui->config.record_input_device:ui->config.audio_output_device;
         snprintf(label,sizeof(label),"APPLIED: %.33s",applied[0]?applied:"SYSTEM DEFAULT");
@@ -53,10 +57,13 @@ static void insert_render(TsFramebuffer *fb,const TsUiState *ui)
     const char *status=!active?"BYPASSED / INTERNAL PATH":!send?"SEND UNAVAILABLE / INSERT SILENT":
         !ret?"RETURN UNAVAILABLE / INSERT SILENT":ui->insert_return_peak<.0001f?"NO RETURN ACTIVITY / CHECK EXTERNAL PATH":"SEND / RETURN CONNECTED";
     text(fb,22,278,status,active?amber:teal,1);
-    const char *detail=ui->insert_device_status[0]?ui->insert_device_status:
-        "DEVICE CH 1/2 MEANS THE FIRST PAIR OF THE NAMED DEVICE";
-    snprintf(label,sizeof(label),"%.98s",detail);text(fb,22,296,label,muted,1);
-    text(fb,22,311,"MASTER STAYS IN CFG; NO DRY FALLBACK; BYPASS TO AUDITION",muted,1);
+    if(ui->insert_device_status[0])snprintf(label,sizeof(label),"%.98s",ui->insert_device_status);
+    else snprintf(label,sizeof(label),"MASTER %u HZ / %u FR; DEVICE CH 1/2 = FIRST PAIR OF NAMED DEVICE",
+        ui->insert_master_rate,ui->insert_master_buffer);
+    text(fb,22,296,label,muted,1);
+    snprintf(label,sizeof(label),"QUEUE S/R %.1F/%.1F MS   GAPS %u/%u   DROP %u/%u",
+        ui->insert_queue_ms[0],ui->insert_queue_ms[1],ui->insert_gaps[0],ui->insert_gaps[1],ui->insert_drops[0],ui->insert_drops[1]);
+    text(fb,22,311,label,muted,1);
     button(fb,22,326,92,"BYPASS",(ui->config.router.bypass_mask&(1u<<TS_ROUTER_INSERT))!=0);
     button(fb,128,326,70,"SOLO",ui->config.router.solo==TS_ROUTER_INSERT+1);
     button(fb,420,326,196,"APPLY PORTS",ui->insert_apply_pending);

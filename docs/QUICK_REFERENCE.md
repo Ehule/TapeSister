@@ -450,7 +450,8 @@ sound presets preserve routing. [Full behavior](USER_MANUAL.md#global-router).
 - Missing return stays silent while active. A shared RETURN pair is excluded from
   ordinary EXT monitoring; a separate RETURN leaves CFG's input available.
 - Stereo pairs within exposed 2–8-channel endpoints; one backend, no ASIO host.
-  Separate SEND primes two buffers; RETURN primes four capture buffers. No latency
+  Separate SEND and RETURN target two of their larger producer/consumer bursts,
+  converted to each queue's source rate. Live HZ/FR and GAPS/DROP help diagnose I/O. No latency
   compensation. Device names persist across loss/recovery without fallback.
 - FILE OUT and Mosaic REC OUT include the returned signal. Earlier source/head
   taps retain their named position. [Setup and limits](USER_MANUAL.md#external-insert).

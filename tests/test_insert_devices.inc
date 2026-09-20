@@ -3,6 +3,7 @@
 static const char *mock_insert_names[2][3]={{"Out 1-2 (MOTU M Series)","Out 3-4 (MOTU M Series)","Virtual 8"},
     {"In 1-2 (MOTU M Series)","In 5-6 (MOTU M Series)","Virtual 8 Return"}};
 static SDL_AudioSpec mock_insert_specs[2];
+static unsigned mock_insert_rate[2],mock_insert_buffer[2];
 static int mock_insert_open_count[2],mock_insert_close_count[2],mock_insert_fail[2];
 static int mock_insert_count(int capture){(void)capture;return 3;}
 static const char *mock_insert_name(int index,int capture){return mock_insert_names[capture][index];}
@@ -13,7 +14,10 @@ static SDL_AudioDeviceID mock_insert_open(const char *name,int capture,const SDL
     assert(name && *name);assert(flags&SDL_AUDIO_ALLOW_CHANNELS_CHANGE);
     ++mock_insert_open_count[capture];
     if(mock_insert_fail[capture]){SDL_SetError("simulated endpoint unavailable");return 0;}
-    *got=*wanted;mock_insert_specs[capture]=*wanted;return (SDL_AudioDeviceID)(101+capture);
+    *got=*wanted;
+    if(mock_insert_rate[capture])got->freq=(int)mock_insert_rate[capture];
+    if(mock_insert_buffer[capture])got->samples=(Uint16)mock_insert_buffer[capture];
+    mock_insert_specs[capture]=*got;return (SDL_AudioDeviceID)(101+capture);
 }
 static void mock_insert_close(SDL_AudioDeviceID id){assert(id==101 || id==102);++mock_insert_close_count[id-101];}
 static void mock_insert_pause(SDL_AudioDeviceID id,int paused){assert(id==101 || id==102);assert(!paused);}
@@ -66,6 +70,13 @@ static void test_insert_devices(void)
         for(int i=0;i<512;++i){assert(isfinite(master[i]) && isfinite(sent[i]));energy+=fabs(master[i]);}
     }
     assert(energy>.01);
+    /* The callback's actual burst size, not CFG's request, sizes both bridges. */
+    assert(atomic_load(&audio.sister.insert.output_buffer_frames)==256);
+    assert(atomic_load(&audio.sister.insert.return_monitor.prime_frames)==512);
+    ts_audio_insert_diagnostics(&audio,&ui,0);
+    assert(ui.insert_rates[0]==(unsigned)mock_insert_specs[0].freq);
+    assert(ui.insert_rates[1]==(unsigned)mock_insert_specs[1].freq);
+    assert(ui.insert_buffers[1]==mock_insert_specs[1].samples);
     insert_controller_shot("TS_TEST_INSERT_DEVICES_PPM");
     int opens=mock_insert_open_count[0]+mock_insert_open_count[1];
     ts_audio_insert_devices_sync(&audio,&ui.config,0,error,sizeof(error));
@@ -95,6 +106,17 @@ static void test_insert_devices(void)
     snprintf(ui.config.insert_return_device,sizeof(ui.config.insert_return_device),"%s",ui.config.record_input_device);
     ts_audio_insert_devices_sync(&audio,&ui.config,1,error,sizeof(error));
     assert(!insert_endpoints[1].device && !atomic_load(&audio.sister.insert.dedicated_return));
+    /* Negotiated rates/buffers can differ from the request and each other. */
+    snprintf(ui.config.insert_send_device,sizeof(ui.config.insert_send_device),"%s",mock_insert_names[0][1]);
+    snprintf(ui.config.insert_return_device,sizeof(ui.config.insert_return_device),"%s",mock_insert_names[1][1]);
+    mock_insert_rate[0]=48000;mock_insert_rate[1]=96000;
+    mock_insert_buffer[0]=128;mock_insert_buffer[1]=256;
+    ts_audio_insert_devices_sync(&audio,&ui.config,1,error,sizeof(error));assert(!error[0]);
+    ts_audio_insert_diagnostics(&audio,&ui,1);
+    assert(ui.insert_rates[0]==48000 && ui.insert_rates[1]==96000);
+    assert(ui.insert_buffers[0]==128 && ui.insert_buffers[1]==256);
+    assert(!ui.insert_gaps[0] && !ui.insert_gaps[1]);
+    memset(mock_insert_rate,0,sizeof(mock_insert_rate));memset(mock_insert_buffer,0,sizeof(mock_insert_buffer));
     ts_audio_insert_devices_suspend();insert_audio_owner=NULL;insert_device_api=saved_api;
     ts_output_endpoint=saved_output;snprintf(ts_active_output,sizeof(ts_active_output),"%s",saved_active);
     ts_live_ui=saved_ui;ui.config=saved_config;ui.insert_device_status[0]=0;

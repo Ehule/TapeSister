@@ -102,10 +102,10 @@ static int insert_endpoint_open(int side,AudioState *audio,const char *name,unsi
     if(ts_real_output)SDL_LockAudioDevice(ts_real_output);
     if(side)ts_insert_capture_prepare_from(e->insert,e->spec.channels,(unsigned)e->spec.freq,e->spec.samples,1);
     else ts_insert_send_prepare(e->insert,e->spec.channels,(unsigned)audio->output_rate,
-                               e->spec.samples>buffer?e->spec.samples:buffer);
+                               ts_output_endpoint.buffer_frames?ts_output_endpoint.buffer_frames:buffer);
     if(ts_real_output)SDL_UnlockAudioDevice(ts_real_output);
     ts_audio_endpoint_opened(&e->endpoint,e->device,name,0,(unsigned)e->spec.freq,e->spec.channels,e->spec.samples,"F32");
-    diagnostic_log("INSERT %s: %s / %u channels / %d Hz",side?"RETURN":"SEND",name,e->spec.channels,e->spec.freq);
+    diagnostic_log("INSERT %s: %s / %u channels / %d Hz / %u frames",side?"RETURN":"SEND",name,e->spec.channels,e->spec.freq,e->spec.samples);
     insert_device_api.pause(e->device,0);
     return 1;
 }
@@ -185,4 +185,35 @@ static void ts_audio_insert_cycle_device(TsUiState *ui,int side,int direction)
     if(side)ui->insert_return_choice=0;
     else ui->insert_send_choice=index?1:0;
     ui->insert_offered_outputs=ts_audio_insert_choice_channels(ui,0);
+}
+
+static void ts_audio_insert_diagnostics(void *state,TsUiState *ui,int log)
+{
+    AudioState *audio=state;
+    ui->insert_master_rate=ts_real_output?ts_output_endpoint.sample_rate:0;
+    ui->insert_master_buffer=ts_real_output?ts_output_endpoint.buffer_frames:0;
+    for(int side=0;side<2;++side) {
+        int separate=side?atomic_load(&audio->sister.insert.dedicated_return):
+            ui->config.insert_send_device[0]!=0;
+        const TsAudioEndpoint *endpoint=separate?&insert_endpoints[side].endpoint:
+            (side?&ts_capture_endpoint:&ts_output_endpoint);
+        int open=separate?insert_endpoints[side].device!=0:
+            (side?ts_real_capture!=0:ts_real_output!=0);
+        const TsInputMonitor *monitor=side?&audio->sister.insert.return_monitor:
+            &audio->sister.insert.send_monitor;
+        TsInputMonitorDiagnostics d={0};
+        unsigned rate=atomic_load(&monitor->input_rate);
+        ui->insert_rates[side]=open?endpoint->sample_rate:0;
+        ui->insert_buffers[side]=open?endpoint->buffer_frames:0;
+        if(open && (side || separate))ts_input_monitor_get_diagnostics(monitor,&d);
+        ui->insert_queue_ms[side]=rate?1000.0f*d.prime_frames/rate:0;
+        ui->insert_gaps[side]=d.underrun_count;ui->insert_drops[side]=d.dropped_frame_count;
+        if(log)diagnostic_log(
+            "INSERT %s rate=%u buffer=%u ring_rate=%u target_ms=%.2f occupancy=%u "
+            "prime=%u underruns=%u dropped=%u callbacks=%u frames=%u max_block=%u correction_ppm=%d",
+            side?"RETURN":"SEND",ui->insert_rates[side],ui->insert_buffers[side],rate,
+            ui->insert_queue_ms[side],d.occupancy_frames,d.prime_frames,d.underrun_count,
+            d.dropped_frame_count,d.capture_callback_count,d.captured_frame_count,
+            d.largest_capture_block_frames,d.correction_ppm);
+    }
 }

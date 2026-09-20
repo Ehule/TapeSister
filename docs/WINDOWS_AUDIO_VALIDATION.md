@@ -54,7 +54,11 @@ rates/buffers.
   MIX/head taps. Check their documented positions. Apply Ports must be refused
   during a take; bypass/solo and gain adjustments remain usable.
 - [ ] Measure/listen to the external round trip at 256/512/1024 buffers, with matching
-  and mismatched capture/playback rates. RETURN adds four capture blocks of priming; independent SEND adds two buffers.
+  and mismatched capture/playback rates. RETURN and independent SEND each target
+  two of the larger callback bursts, converted to their FIFO's source rate.
+  Check the applied HZ/FR and QUEUE S/R readouts; monitor GAPS/DROP for increases.
+  Compare a direct SEND-to-RETURN cable loop with the SunVox loop at explicit
+  48 kHz, and record the actual SunVox driver (Auto alone does not identify it).
   There is no automatic latency compensation or separate ASIO backend.
 - [ ] Inspect compact EQ and Insert panels at normal/maximized/high-DPI sizes.
   EQ OUT/Router controls must not overlap; REC and IN must not be drawn together;

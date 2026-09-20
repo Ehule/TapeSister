@@ -144,6 +144,85 @@ static void independent_clocks(void)
     assert(atomic_load(&s.send_monitor.dropped_frame_count)==0);
 }
 
+/* Schedule real-sized callback bursts on independent clocks. A constant/DC
+   source hides dropouts: two different tones let us check continuity, stereo
+   isolation and sustained energy as well as the FIFO's underrun counters. */
+static double callback_time(unsigned index,unsigned frames,unsigned rate,double drift)
+{
+    double late=index%97==40?.75:0; /* one late block followed by catch-up */
+    return (index+late)*frames/(rate*drift);
+}
+
+static void check_tone(TsStereoFrame f,TsStereoFrame *last,double time)
+{
+    assert(isfinite(f.l) && isfinite(f.r));
+    if(time>1) {
+        assert(fabsf(f.l-last->l)<.025f && fabsf(f.r-last->r)<.035f);
+        /* The source channels are opposite polarity; resampling keeps them so. */
+        assert(fabsf(f.l+f.r)<.0001f);
+    }
+    *last=f;
+}
+
+static void callback_bursts(void)
+{
+    const unsigned cases[][6]={
+        {48000,1024,48000,128,48000,128},
+        {48000,512,48000,512,48000,512},
+        {48000,1024,48000,1024,48000,1024},
+        {48000,512,44100,128,96000,1024},
+        {44100,256,48000,512,32000,128}
+    };
+    for(unsigned test=0;test<sizeof(cases)/sizeof(cases[0]);++test) {
+        const unsigned *c=cases[test];TsInsert s;ts_insert_init(&s);ts_insert_prepare(&s,c[0]);
+        ts_insert_io_mode(&s,1,1);TsInsertControls ports={1,0,0,0};ts_insert_set(&s,&ports);
+        ts_insert_send_prepare(&s,2,c[0],c[1]);ts_insert_capture_prepare_from(&s,2,c[4],c[5],1);
+        unsigned blocks[3]={0},produced[2]={0};float returned[2048],sent[2048],master[2];
+        TsStereoFrame previous_return={0},previous_send={0};
+        for(;;) {
+            double times[]={blocks[0]*(double)c[1]/c[0],
+                callback_time(blocks[1],c[3],c[2],1.0003),
+                callback_time(blocks[2],c[5],c[4],.9997)};
+            int side=times[1]<times[0]?1:0;if(times[2]<times[side])side=2;
+            double time=times[side];if(time>12)break;++blocks[side];
+            double energy=0;
+            if(side==0) {
+                ts_insert_begin_output_block(&s,c[1]);
+                for(unsigned i=0;i<c[1];++i) {
+                    float v=.3f*sinf(6.2831853f*220*produced[0]++/c[0]);
+                    TsStereoFrame f=ts_insert_process(&s,(TsStereoFrame){v,-v},1);
+                    ts_insert_write_output(&s,master,2,f);
+                    check_tone(f,&previous_return,time);energy+=f.l*f.l;
+                }
+                if(time>1)assert(energy/c[1]>.015);
+            } else if(side==1) {
+                ts_insert_render_send(&s,sent,c[3],2,c[2]);
+                for(unsigned i=0;i<c[3];++i) {
+                    TsStereoFrame f={sent[i*2],sent[i*2+1]};
+                    check_tone(f,&previous_send,time);energy+=f.l*f.l;
+                }
+                if(time>1)assert(energy/c[3]>.015);
+            } else {
+                for(unsigned i=0;i<c[5];++i) {
+                    returned[i*2]=.3f*sinf(6.2831853f*331*produced[1]++/c[4]);
+                    returned[i*2+1]=-returned[i*2];
+                }
+                ts_insert_capture_from(&s,returned,c[5],2,1);
+            }
+        }
+        TsInputMonitorDiagnostics send,ret;
+        ts_input_monitor_get_diagnostics(&s.send_monitor,&send);
+        ts_input_monitor_get_diagnostics(&s.return_monitor,&ret);
+        printf("callback bursts: Master %u/%u SEND %u/%u RETURN %u/%u; gaps %u/%u drops %u/%u\n",
+            c[0],c[1],c[2],c[3],c[4],c[5],send.underrun_count,ret.underrun_count,
+            send.dropped_frame_count,ret.dropped_frame_count);
+        assert(!send.underrun_count && !ret.underrun_count);
+        assert(!send.dropped_frame_count && !ret.dropped_frame_count);
+        /* Matching streams now need two blocks, not four capture blocks. */
+        if(test==1 || test==2)assert(ret.prime_frames==2*c[1]);
+    }
+}
+
 static void isolation_and_persistence(void)
 {
     TsInsert insert;prepare(&insert,8000);
@@ -215,6 +294,6 @@ static void sister_serial_monitor(void)
 
 int main(void)
 {
-    all_orders(0);all_orders(1);levels_failures_and_solo();independent_clocks();isolation_and_persistence();sister_serial_monitor();
+    all_orders(0);all_orders(1);levels_failures_and_solo();independent_clocks();callback_bursts();isolation_and_persistence();sister_serial_monitor();
     puts("Insert I/O boundary, safety, monitor isolation and compatibility passed");return 0;
 }

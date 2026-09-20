@@ -1378,7 +1378,9 @@ channel-pair selectors for each device. Left-click cycles forward; right-click
 cycles backward. Click **APPLY PORTS**, and use **CFG → SAVE CONFIG** to remember
 device choices. Changes are refused during recording; levels, bypass and solo
 remain available while playing. Saved unavailable choices are never reassigned
-silently. **CHANNELS OPEN** reports the applied stream, not the pending choice.
+silently. **CH / HZ / FR** reports the applied channel count, sample rate and
+device buffer in frames, not the pending choice. Master's active rate and buffer
+appear below the connection status.
 
 ![External Insert ports and levels](images/external-insert.png)
 
@@ -1440,16 +1442,41 @@ Fallout feedback taps are held upstream of the monitor merge/external loop;
 this feature does not create an external feedback return.
 
 **Latency:** shared-device SEND adds no separate queue. A separate SEND uses a
-stereo FIFO with rate conversion and clock-drift handling; it primes twice the
-larger of the configured Master and obtained SEND buffer sizes, measured in
-Master-rate frames (bounded 128–4096). RETURN uses the same rate-conversion and
-clock-drift machinery, with four capture blocks of priming (also 128–4096 frames).
-At 48 kHz with matching 256/512/1024-frame buffers, separate SEND primes about
-11/21/43 ms and RETURN about 21/43/85 ms, in addition to device and external
-processing latency. Reconfiguration discards stale audio and reprimes. There is
+stereo FIFO with rate conversion and clock-drift handling. Both SEND and RETURN
+target two of the larger producer/consumer callback bursts, converting their
+durations to the FIFO's source sample rate (bounded 128–4096 frames). RETURN
+accounts for Master's actual callback size even if the capture driver delivers
+smaller blocks; SEND likewise accounts for the actual auxiliary output callback.
+At 48 kHz with matching 256/512/1024-frame buffers, each queue targets about
+11/21/43 ms, in addition to device and external processing latency. **QUEUE S/R**
+shows those priming targets, not a measured round-trip delay. Reconfiguration
+discards stale audio and reprimes. There is
 no automatic round-trip compensation. Bypass crossfades over about 10 ms; its
 brief transition can blend paths with different delays. Steady active INSERT is
 entirely returned audio. Reordering retains the Router's short fade through zero.
+
+**Troubleshooting delayed or crackling returns:**
+
+- A tile marked **44100 HZ** describes its sample data. TapeSister requests
+  **48000 Hz** playback and resamples tiles to the obtained stream rate. Check
+  the Insert panel's live rates before changing the interface clock. For an
+  interface already running at 48 kHz, start with the external app explicitly
+  set to 48 kHz too.
+- **GAPS S/R** counts queue underruns; **DROP S/R** counts discarded overflow
+  frames. Watch for increases while listening. Applying/reopening devices resets
+  these counters. They diagnose TapeSister's bridges, not every driver or external
+  app dropout. `--diagnostic-audio` adds detailed SEND/RETURN queue measurements
+  to `tapesister-diagnostic.log` every five seconds.
+- Test one direct physical cable loop from TapeSister SEND to RETURN, bypassing
+  the external application. If that is clean, restore the application's loop
+  with its effects bypassed, then enable processing. This separates TapeSister's
+  I/O path from the extra application's buffers and processing.
+- Monitor only the final Master path while testing. Keep return inputs out of
+  direct-monitor mixes feeding the send; watch levels for clipping. Larger
+  buffers add latency and cannot correct routing feedback or a rate/driver issue.
+- In the external app, Auto does not identify the actual driver. If choosing
+  MOTU ASIO there, first verify that the driver permits it alongside TapeSister's
+  Windows backend. TapeSister itself currently has no ASIO selector.
 
 **Backend limits:** Master, a separate SEND, the ordinary CFG input and a separate
 RETURN can use different endpoints within the selected SDL backend. Insert

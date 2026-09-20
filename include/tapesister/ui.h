@@ -446,6 +446,9 @@ typedef struct {
     char insert_send_device[TS_CONFIG_PATH_MAX], insert_return_device[TS_CONFIG_PATH_MAX];
     char insert_device_status[160];
     float insert_send_peak, insert_return_peak;
+    unsigned insert_rates[2], insert_buffers[2], insert_gaps[2], insert_drops[2];
+    float insert_queue_ms[2];
+    unsigned insert_master_rate, insert_master_buffer;
     unsigned router_enabled;
     float router_peaks[TS_ROUTER_COUNT*2+2];
     size_t capture_recorded_frames;
