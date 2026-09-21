@@ -32,7 +32,7 @@
         cfg_frame(fb, TS_AUDIO_CONFIG_CHANNEL_X, TS_AUDIO_CONFIG_BACKEND_Y,
                   TS_AUDIO_CONFIG_CHANNEL_W, TS_AUDIO_CONFIG_ROW_H, row, edge);
         cfg_text(fb, TS_AUDIO_CONFIG_CHANNEL_X + 5,
-                 TS_AUDIO_CONFIG_BACKEND_Y + 5, "ACTIVE", effect_color);
+                 TS_AUDIO_CONFIG_BACKEND_Y + 5, "SCAN", effect_color);
         snprintf(shown, sizeof(shown), "%.17s",
                  active_backend != NULL ? active_backend : "NONE");
         cfg_text(fb, TS_AUDIO_CONFIG_CHANNEL_X + 52,
@@ -289,6 +289,12 @@ static int ts_audio_config_field_from_point(int x, int y)
             return field;
     }
 
+    if (y >= TS_AUDIO_CONFIG_BACKEND_Y &&
+        y < TS_AUDIO_CONFIG_BACKEND_Y + TS_AUDIO_CONFIG_ROW_H &&
+        x >= TS_AUDIO_CONFIG_CHANNEL_X && x < 620) {
+        ts_audio_catalog_refresh();
+        return -1;
+    }
     if (y >= TS_AUDIO_CONFIG_BACKEND_Y &&
         y < TS_AUDIO_CONFIG_BACKEND_Y + TS_AUDIO_CONFIG_ROW_H &&
         x >= 20 && x < 20 + TS_AUDIO_CONFIG_INPUT_W) {

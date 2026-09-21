@@ -27,10 +27,8 @@ static void insert_sync(SDL_AudioDeviceID device,SDL_AudioDeviceID *capture_devi
     }
     ts_audio_insert_devices_sync(audio,&ui->config,apply,ui->insert_device_status,sizeof(ui->insert_device_status));
     if(apply && ui->insert_device_status[0])snprintf(ui->status,sizeof(ui->status),"%s",ui->insert_device_status);
-    if(device)SDL_LockAudioDevice(device);
     int wanted=!atomic_load(&audio->sister.insert.dedicated_return) &&
         (audio->sister.insert.controls.send_pair!=0 || ui->insert_open);
-    if(device)SDL_UnlockAudioDevice(device);
     unsigned reserved=ts_insert_reserved_port(&audio->sister.insert);
     if(atomic_load_explicit(&audio->sister.insert.monitor_port_ack,memory_order_acquire)!=reserved) {
         /* Discard EXT frames queued before reservation. Playback gates EXT

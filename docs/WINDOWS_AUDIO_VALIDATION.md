@@ -306,3 +306,17 @@ measurements do not certify this Windows interface or its hardware latency.
   Sample-page publication, project reload and an archive retained after exit.
 - [ ] Record a long dense performance at the normal Windows buffer; check playback
   continuity while recording and while the finished take is loaded into cards.
+
+## PR117 backend/discovery and both-direction follow-up
+
+- [ ] Test MOTU Ultralite mk3 at a common 48 kHz in TapeSister and REAPER, then SunVox.
+- [ ] Audition/record SEND independently; separately drive RETURN with a clean tone.
+- [ ] Compare 128/256/512 requests and the actual HZ/FR readouts. Record GAPS/DROP
+      changes and a `--diagnostic-audio` log for each failing path.
+- [ ] Rescan CFG/Insert during playback; verify it does not reopen streams.
+- [ ] Test a virtual endpoint with no pre-open format metadata and a wider interface;
+      first-eight-channel selection must retain the correct native stride.
+- [ ] Confirm stale-backlog recovery shortens delay after a scheduling stall without
+      allowing feedback or dry signal to bypass an active Insert.
+
+This follow-up does not claim measured MOTU latency or Windows listening results.

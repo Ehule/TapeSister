@@ -449,7 +449,7 @@ sound presets preserve routing. [Full behavior](USER_MANUAL.md#global-router).
   SOLO uses the existing Router solo. S/R lights distinguish outgoing/incoming activity.
 - Missing return stays silent while active. A shared RETURN pair is excluded from
   ordinary EXT monitoring; a separate RETURN leaves CFG's input available.
-- Stereo pairs within exposed 2–8-channel endpoints; one backend, no ASIO host.
+- Stereo pairs in the first eight negotiated channels; wider devices accepted; no ASIO host.
   Separate SEND and RETURN target two of their larger producer/consumer bursts,
   converted to each queue's source rate. Live HZ/FR and GAPS/DROP help diagnose I/O. No latency
   compensation. Device names persist across loss/recovery without fallback.
@@ -697,3 +697,9 @@ Ctrl+Z / Ctrl+Y undo/redo; Escape cancels the current stroke.
   `off` leaves audio and optical controls active. [Details](PRISM_ZOYA.md).
 - **DRAW**: each stroke replaces the previous envelope in its drawn region,
   with recoverable zeroed sections and ordinary undo/redo. New saves use TSR31.
+
+### JACK and device discovery
+
+- Linux: CFG → BACKEND → JACK, save/restart; select TapeSister Master/Input in CFG and TapeSister Insert Send/Return in Insert. Connect ports in the JACK patchbay.
+- CFG SCAN / Insert RESCAN refresh device lists. General buffers include 128 frames; JACK follows its server.
+- [Full setup and diagnostics](JACK_AUDIO.md), including REAPER/SunVox and both sides of Insert.

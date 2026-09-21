@@ -12,6 +12,10 @@
 #include "tapesister/midi_input.h"
 #include "tapesister/performance.h"
 
+static const char *ts_native_current_driver(void);
+static void ts_jack_poll(void);
+#define SDL_GetCurrentAudioDriver ts_native_current_driver
+
 static SDL_AudioDeviceID ts_audio_open_device(const char *device, int iscapture,
                                                const SDL_AudioSpec *desired,
                                                SDL_AudioSpec *obtained,

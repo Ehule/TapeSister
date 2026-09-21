@@ -205,6 +205,9 @@ separate capture device. This supports interfaces exposed as separate stereo
 endpoints: for an M6, choose SEND `Out 3-4` and RETURN `In 5-6`, each using its
 local **DEVICE CH 1/2**. An active Insert with a missing return stays silent until
 you bypass it. [Setup, buffering and limits](docs/USER_MANUAL.md#external-insert).
+Linux now offers native JACK with named Master/Input and Insert Send/Return ports,
+independent of SDL's JACK support. CFG/Insert rescan devices; opaque and wider
+layouts are accepted. [JACK setup and both-side diagnostics](docs/JACK_AUDIO.md).
 The panel shows actual stream rates/buffers, queue targets, and SEND/RETURN
 dropout counters. Tile sample rates can differ from the live device rate.
 

@@ -3,18 +3,20 @@
 static const char *mock_insert_names[2][3]={{"Out 1-2 (MOTU M Series)","Out 3-4 (MOTU M Series)","Virtual 8"},
     {"In 1-2 (MOTU M Series)","In 5-6 (MOTU M Series)","Virtual 8 Return"}};
 static SDL_AudioSpec mock_insert_specs[2];
-static unsigned mock_insert_rate[2],mock_insert_buffer[2];
+static unsigned mock_insert_rate[2],mock_insert_buffer[2],mock_insert_channels;
+static int mock_insert_no_metadata, mock_insert_no_enumeration;
 static int mock_insert_open_count[2],mock_insert_close_count[2],mock_insert_fail[2];
-static int mock_insert_count(int capture){(void)capture;return 3;}
+static int mock_insert_count(int capture){(void)capture;return mock_insert_no_enumeration?-1:3;}
 static const char *mock_insert_name(int index,int capture){return mock_insert_names[capture][index];}
 static int mock_insert_spec(int index,int capture,SDL_AudioSpec *spec)
-{(void)capture;SDL_zero(*spec);spec->channels=index==2?8:2;spec->freq=44100;spec->format=AUDIO_F32SYS;return 0;}
+{(void)capture;if(mock_insert_no_metadata)return -1;SDL_zero(*spec);spec->channels=index==2?8:2;spec->freq=44100;spec->format=AUDIO_F32SYS;return 0;}
 static SDL_AudioDeviceID mock_insert_open(const char *name,int capture,const SDL_AudioSpec *wanted,SDL_AudioSpec *got,int flags)
 {
     assert(name && *name);assert(flags&SDL_AUDIO_ALLOW_CHANNELS_CHANGE);
     ++mock_insert_open_count[capture];
     if(mock_insert_fail[capture]){SDL_SetError("simulated endpoint unavailable");return 0;}
     *got=*wanted;
+    if(mock_insert_channels)got->channels=(Uint8)mock_insert_channels;
     if(mock_insert_rate[capture])got->freq=(int)mock_insert_rate[capture];
     if(mock_insert_buffer[capture])got->samples=(Uint16)mock_insert_buffer[capture];
     mock_insert_specs[capture]=*got;return (SDL_AudioDeviceID)(101+capture);
@@ -106,6 +108,21 @@ static void test_insert_devices(void)
     snprintf(ui.config.insert_return_device,sizeof(ui.config.insert_return_device),"%s",ui.config.record_input_device);
     ts_audio_insert_devices_sync(&audio,&ui.config,1,error,sizeof(error));
     assert(!insert_endpoints[1].device && !atomic_load(&audio.sister.insert.dedicated_return));
+    /* Missing/unsupported pre-open metadata must not block a valid endpoint. */
+    snprintf(ui.config.insert_send_device,sizeof(ui.config.insert_send_device),"%s",mock_insert_names[0][1]);
+    snprintf(ui.config.insert_return_device,sizeof(ui.config.insert_return_device),"%s",mock_insert_names[1][1]);
+    mock_insert_no_metadata=1;
+    ts_audio_insert_devices_sync(&audio,&ui.config,1,error,sizeof(error));
+    assert(!error[0] && insert_endpoints[0].device && insert_endpoints[1].device);
+    mock_insert_no_metadata=0;mock_insert_channels=16;
+    ts_audio_insert_devices_sync(&audio,&ui.config,1,error,sizeof(error));
+    assert(!error[0] && audio.sister.insert.send_channels==16);
+    assert(atomic_load(&audio.sister.insert.input_channels)==16);
+    snprintf(ui.insert_return_device,sizeof(ui.insert_return_device),"%s",mock_insert_names[1][1]);
+    assert(ts_audio_insert_choice_channels(&ui,1)==8);
+    mock_insert_channels=0;mock_insert_no_enumeration=1;
+    ts_audio_insert_cycle_device(&ui,0,1);assert(!ui.insert_send_device[0]);
+    mock_insert_no_enumeration=0;
     /* Negotiated rates/buffers can differ from the request and each other. */
     snprintf(ui.config.insert_send_device,sizeof(ui.config.insert_send_device),"%s",mock_insert_names[0][1]);
     snprintf(ui.config.insert_return_device,sizeof(ui.config.insert_return_device),"%s",mock_insert_names[1][1]);

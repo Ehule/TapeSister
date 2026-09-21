@@ -128,6 +128,7 @@ static int show_splash(SDL_Renderer *renderer)
         int output_width;
         int output_height;
         SDL_Rect destination;
+        ts_jack_poll();
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_QUIT) {
                 SDL_DestroyTexture(splash);
@@ -11415,10 +11416,9 @@ static int ensure_external_input_open(SDL_AudioDeviceID *input_device,
         return 0;
     }
     if (obtained.format != AUDIO_F32SYS || obtained.freq <= 0 ||
-        obtained.channels == 0 ||
-        obtained.channels > TS_INPUT_DEVICE_CHANNEL_MAX) {
+        obtained.channels == 0) {
         snprintf(error, error_size,
-                 "Recording input must provide float audio with 1-8 channels");
+                 "Recording input must provide float audio with at least one channel");
         SDL_CloseAudioDevice(*input_device);
         *input_device = 0;
         ts_input_activity_set_available(&input->activity, 0u);
@@ -13112,6 +13112,7 @@ int main(int argc, char **argv)
             ts_audio_insert_diagnostics(&audio,&ui,1);
             last_audio_diagnostic_log = SDL_GetTicks();
         }
+        ts_jack_poll();
         while (SDL_PollEvent(&event)) {
             uint32_t event_id = event_window_id(&event);
             if (event.type == SDL_WINDOWEVENT &&
@@ -17215,6 +17216,18 @@ int main(int argc, char **argv)
 #undef ts_ui_config_field_from_point
 #undef ts_ui_config_cursor_from_point
 
+#undef SDL_GetCurrentAudioDriver
+#include "main_sdl_jack.inc"
+#define SDL_GetCurrentAudioDriver ts_native_current_driver
+#define SDL_GetNumAudioDevices ts_native_device_count
+#define SDL_GetAudioDeviceName ts_native_device_name
+#define SDL_GetAudioDeviceSpec ts_native_device_spec
+#define SDL_GetDefaultAudioInfo ts_native_default_info
+#define SDL_OpenAudioDevice ts_native_open
+#define SDL_CloseAudioDevice ts_native_close
+#define SDL_LockAudioDevice ts_native_lock
+#define SDL_UnlockAudioDevice ts_native_unlock
+#define SDL_PauseAudioDevice ts_native_pause
 #include "main_sdl_audio_part1.inc"
 #include "main_sdl_audio_part2.inc"
 #include "main_sdl_audio_part3.inc"

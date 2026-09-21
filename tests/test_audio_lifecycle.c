@@ -24,6 +24,14 @@ int main(void)
     CHECK(strcmp(ts_audio_backend_sdl_driver(backend), "wasapi") == 0);
     CHECK(ts_audio_backend_parse("directsound", &backend));
     CHECK(backend == TS_AUDIO_BACKEND_DIRECTSOUND);
+    for (int i=0;i<TS_AUDIO_BACKEND_COUNT;++i) {
+        CHECK(ts_audio_backend_parse(ts_audio_backend_name((TsAudioBackend)i), &backend));
+        CHECK(backend==(TsAudioBackend)i);
+        if (i) {
+            CHECK(ts_audio_backend_parse(ts_audio_backend_sdl_driver((TsAudioBackend)i), &backend));
+            CHECK(backend==(TsAudioBackend)i);
+        }
+    }
     CHECK(!ts_audio_backend_parse("ASIO", &backend));
     CHECK(backend == TS_AUDIO_BACKEND_AUTO);
     CHECK(ts_audio_backend_sdl_driver(backend) == NULL);

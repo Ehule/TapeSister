@@ -132,8 +132,9 @@ static SDL_AudioDeviceID ts_audio_open_capture_widest(
      * Start with the selected device's advertised layout. This matters on
      * PipeWire/PulseAudio, where asking for eight channels can create an
      * artificial remixed stream instead of exposing the node's physical
-     * channel count. Older/opaque backends fall back to a descending exact
-     * probe. Rate and buffer-size negotiation remain enabled. This is a
+     * channel count. Older/opaque backends fall back to descending requests,
+     * accepting the first valid negotiated layout. Rate, channel and buffer-size
+     * negotiation remain enabled. This is a
      * control-thread device-open path; no probing reaches either callback.
      */
     for (uint8_t probe = 0u; ; ++probe) {
@@ -143,15 +144,14 @@ static SDL_AudioDeviceID ts_audio_open_capture_widest(
         attempt.channels = channels;
         SDL_zero(candidate_spec);
         candidate = SDL_OpenAudioDevice(
-            device, 1, &attempt, &candidate_spec, allowed_changes);
+            device, 1, &attempt, &candidate_spec, allowed_changes | SDL_AUDIO_ALLOW_CHANNELS_CHANGE);
         if (candidate == 0) {
             snprintf(open_error, sizeof(open_error), "%s", SDL_GetError());
             continue;
         }
         if (candidate_spec.format == attempt.format &&
             candidate_spec.freq > 0 && candidate_spec.samples > 0 &&
-            ts_input_capture_probe_accepts(attempt.channels,
-                                           candidate_spec.channels)) {
+            candidate_spec.channels >= 1) {
             if (old != 0) SDL_CloseAudioDevice(old);
             ts_real_capture = candidate;
             ts_audio_active_device_name(active_name, sizeof(active_name),
@@ -426,6 +426,11 @@ static void ts_audio_pause_device(SDL_AudioDeviceID device, int pause_on)
 
 static void ts_audio_quit(void)
 {
+#if defined(__linux__)
+    for (int i=0;i<TS_JACK_SLOTS;++i) ts_jack_close(&ts_jack_endpoints[i]);
+    if (ts_jack_library) SDL_UnloadObject(ts_jack_library);
+    ts_jack_library=NULL;ts_jack_selected=0;
+#endif
     ts_audio_catalog_free();
     ts_midi_input_destroy(ts_midi_input);
     ts_midi_input = NULL;

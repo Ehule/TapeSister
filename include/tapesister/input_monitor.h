@@ -8,9 +8,9 @@
 #include "tapesister/sample.h"
 
 enum {
-    TS_INPUT_MONITOR_RING_FRAMES = 16384,
+    TS_INPUT_MONITOR_RING_FRAMES = 32768,
     TS_INPUT_MONITOR_PRIME_FRAMES = 128,
-    TS_INPUT_MONITOR_MAX_PRIME_FRAMES = 4096,
+    TS_INPUT_MONITOR_MAX_PRIME_FRAMES = 8192,
     TS_INPUT_MONITOR_PRIME_DEVICE_BUFFERS = 4,
     TS_INPUT_MONITOR_FADE_FRAMES = 32,
     TS_INPUT_MONITOR_SERVO_INTERVAL_FRAMES = 64,
@@ -53,6 +53,8 @@ typedef struct {
     uint32_t consumer_servo_countdown;
     double consumer_occupancy_average;
     double consumer_servo_integral;
+    TsStereoFrame consumer_recovery_tail;
+    unsigned consumer_recovery_frames;
     float consumer_gain;
     int consumer_has_sample;
     int consumer_has_next_sample;
@@ -93,6 +95,8 @@ typedef struct {
 void ts_input_monitor_init(TsInputMonitor *monitor);
 /* Playback-consumer only: discard queued audio without resetting the producer. */
 void ts_input_monitor_discard(TsInputMonitor *monitor);
+/* Insert consumer only, once per block. Bounds stale latency after a stall. */
+void ts_input_monitor_recover_backlog(TsInputMonitor *monitor);
 void ts_input_monitor_set_enabled(TsInputMonitor *monitor, int enabled,
                                   uint32_t input_rate);
 uint32_t ts_input_monitor_recommended_prime_frames(

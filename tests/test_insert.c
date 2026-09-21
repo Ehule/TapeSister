@@ -171,13 +171,15 @@ static void callback_bursts(void)
         {48000,512,48000,512,48000,512},
         {48000,1024,48000,1024,48000,1024},
         {48000,512,44100,128,96000,1024},
-        {44100,256,48000,512,32000,128}
+        {44100,256,48000,512,32000,128},
+        {48000,512,48000,4096,48000,4096},
+        {48000,128,48000,128,48000,128}
     };
     for(unsigned test=0;test<sizeof(cases)/sizeof(cases[0]);++test) {
         const unsigned *c=cases[test];TsInsert s;ts_insert_init(&s);ts_insert_prepare(&s,c[0]);
         ts_insert_io_mode(&s,1,1);TsInsertControls ports={1,0,0,0};ts_insert_set(&s,&ports);
         ts_insert_send_prepare(&s,2,c[0],c[1]);ts_insert_capture_prepare_from(&s,2,c[4],c[5],1);
-        unsigned blocks[3]={0},produced[2]={0};float returned[2048],sent[2048],master[2];
+        unsigned blocks[3]={0},produced[2]={0};float returned[8192],sent[8192],master[2];
         TsStereoFrame previous_return={0},previous_send={0};
         for(;;) {
             double times[]={blocks[0]*(double)c[1]/c[0],
@@ -292,8 +294,44 @@ static void sister_serial_monitor(void)
     }
 }
 
+static void stalled_bridges_and_wide_devices(void)
+{
+    TsInsert s;ts_insert_init(&s);ts_insert_prepare(&s,48000);
+    ts_insert_io_mode(&s,1,1);TsInsertControls ports={1,0,0,0};ts_insert_set(&s,&ports);
+    ts_insert_send_prepare(&s,16,48000,128);
+    ts_insert_capture_prepare_from(&s,16,48000,128,1);
+    float frame[16]={0},out[16*128];
+    for (int i=0;i<4;++i) {
+        ts_insert_begin_output_block(&s,128);
+        for (int j=0;j<128;++j) {
+            frame[0]=.25f;frame[1]=-.25f;frame[15]=.9f;
+            ts_insert_capture_from(&s,frame,1,16,1);
+            TsStereoFrame ret=ts_insert_process(&s,(TsStereoFrame){.25f,-.25f},1);
+            ts_insert_write_output(&s,out,16,ret);
+            assert(out[15]==0); /* spare native channels stay silent */
+        }
+        ts_insert_render_send(&s,out,128,16,48000);
+    }
+    assert(ts_insert_send_available(&s) && ts_insert_return_available(&s));
+    /* Simulate UI/driver stalls in both consumers. They must recover to fresh
+       audio, rather than drain hundreds of milliseconds of stale queued data. */
+    for (unsigned i=0;i<TS_INPUT_MONITOR_RING_FRAMES;++i) {
+        ts_input_monitor_push_frame(&s.send_monitor,(TsStereoFrame){.1f,-.1f});
+        ts_input_monitor_push_frame(&s.return_monitor,(TsStereoFrame){.1f,-.1f});
+    }
+    ts_insert_begin_output_block(&s,128);ts_insert_render_send(&s,out,128,16,48000);
+    TsInputMonitorDiagnostics send,ret;
+    ts_input_monitor_get_diagnostics(&s.send_monitor,&send);
+    ts_input_monitor_get_diagnostics(&s.return_monitor,&ret);
+    assert(send.occupancy_frames<=send.prime_frames && ret.occupancy_frames<=ret.prime_frames);
+    assert(send.dropped_frame_count>10000 && ret.dropped_frame_count>10000);
+    for (int i=0;i<128*16;++i) assert(isfinite(out[i]));
+    puts("Both stalled bridges recovered to bounded latency; 16-channel stride stayed isolated");
+}
+
 int main(void)
 {
+    stalled_bridges_and_wide_devices();
     all_orders(0);all_orders(1);levels_failures_and_solo();independent_clocks();callback_bursts();isolation_and_persistence();sister_serial_monitor();
     puts("Insert I/O boundary, safety, monitor isolation and compatibility passed");return 0;
 }

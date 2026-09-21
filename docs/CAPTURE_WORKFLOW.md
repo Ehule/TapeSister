@@ -93,7 +93,7 @@ fix the Linux device profile before troubleshooting Sister. No JACK graph is req
 Playback and capture share the saved 256/512/1024-frame request selected beside
 OUTPUT in Configuration; 512 frames is the conservative default. SDL may still
 negotiate a different capture size when required by the device. The EXT monitor
-ring primes four actual capture buffers (bounded to 128–4096 frames). At the
+ring primes four actual capture buffers (bounded to 128–8192 frames). At the
 default 512-frame device size this is a 2048-frame/42.7 ms reserve. A smoothed
 proportional-integral occupancy controller corrects independent device clocks and
 bursty capture delivery by at most +/-1.25%. Fractional reads use linked-stereo

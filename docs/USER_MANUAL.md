@@ -1444,7 +1444,7 @@ this feature does not create an external feedback return.
 **Latency:** shared-device SEND adds no separate queue. A separate SEND uses a
 stereo FIFO with rate conversion and clock-drift handling. Both SEND and RETURN
 target two of the larger producer/consumer callback bursts, converting their
-durations to the FIFO's source sample rate (bounded 128–4096 frames). RETURN
+durations to the FIFO's source sample rate (bounded 128–8192 frames). RETURN
 accounts for Master's actual callback size even if the capture driver delivers
 smaller blocks; SEND likewise accounts for the actual auxiliary output callback.
 At 48 kHz with matching 256/512/1024-frame buffers, each queue targets about
@@ -1462,7 +1462,7 @@ entirely returned audio. Reordering retains the Router's short fade through zero
   the Insert panel's live rates before changing the interface clock. For an
   interface already running at 48 kHz, start with the external app explicitly
   set to 48 kHz too.
-- **GAPS S/R** counts queue underruns; **DROP S/R** counts discarded overflow
+- **GAPS S/R** counts queue underruns; **DROP S/R** counts discarded overflow and stale-backlog
   frames. Watch for increases while listening. Applying/reopening devices resets
   these counters. They diagnose TapeSister's bridges, not every driver or external
   app dropout. `--diagnostic-audio` adds detailed SEND/RETURN queue measurements
@@ -1479,16 +1479,16 @@ entirely returned audio. Reordering retains the Router's short fade through zero
   Windows backend. TapeSister itself currently has no ASIO selector.
 
 **Backend limits:** Master, a separate SEND, the ordinary CFG input and a separate
-RETURN can use different endpoints within the selected SDL backend. Insert
-supports stereo pairs in exposed 2–8-channel layouts. Devices must be available
+RETURN can use different endpoints within the selected backend (SDL or native Linux JACK). Insert
+supports stereo pairs in the first eight channels of negotiated layouts, including wider interfaces. Devices must be available
 for simultaneous use; unsupported layouts stay unavailable. Native channel
 negotiation prevents an unsupported SEND from being silently downmixed onto
 Master. See [SDL audio negotiation](https://wiki.libsdl.org/SDL2/SDL_OpenAudioDevice).
 
-Windows retains Auto/WASAPI/DirectSound; there is no ASIO or exclusive-mode
+Windows offers installed SDL backends, including Auto/WASAPI/DirectSound and WinMM; there is no ASIO or exclusive-mode
 selector. Separate stereo endpoints exposed by the M6 or virtual audio drivers
 can be selected independently. Another application using ASIO/exclusive access
-can still prevent a driver from sharing an endpoint. On Linux, the selected SDL
+can still prevent a driver from sharing an endpoint. On Linux, the selected
 backend and sound-server/device profile determine the available devices and
 channels. This does not aggregate drivers into a new system-wide audio device.
 
@@ -1880,9 +1880,21 @@ identity. **SAVE SHARED** stores the six entries in `palette.pal`; **CANCEL** re
 the palette from before editing. Older palettes use defaults for omitted Mosaic
 entries. See [Universal palette](UNIVERSAL_PALETTE.md).
 
+### Audio backends and device discovery
+
+Linux includes **native JACK**, even when the installed SDL library omits JACK.
+CFG also offers the normal audio backends compiled into SDL. Use CFG **SCAN** or
+Insert **RESCAN** to refresh devices without reopening active streams. Device
+choices belong to the active backend; switching backend requires save/restart.
+See [JACK setup, endpoint mapping, buffering and tests](JACK_AUDIO.md).
+
+CFG buffer requests are **128, 256, 512, or 1024** frames. JACK uses its server's
+actual rate/period. Insert supports metadata-free device opening and wider native
+layouts while retaining its first-eight-channel selectors.
+
 ### Windows backend and device policy
 
-The persistent `audio_backend` choices are:
+The principal Windows `audio_backend` choices are:
 
 - **Auto** — default and recommended; SDL chooses its preferred Windows backend;
 - **WASAPI** — recommended when deliberately standardizing TapeSister, TapeHead,

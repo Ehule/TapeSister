@@ -50,6 +50,9 @@ if(TAPESISTER_BUNDLE_CDP8)
 endif()
 if(TAPESISTER_BUILD_SDL)
   find_package(SDL2 REQUIRED)
+  add_executable(tapesister_jack_backend_tests tests/test_jack_backend.c)
+  target_link_libraries(tapesister_jack_backend_tests PRIVATE SDL2::SDL2)
+
   # main_sdl.c is the one canonical callback/application translation unit.
   add_executable(tapesister src/main_sdl.c src/tape_link.c
                             src/tape_companion.c src/ts_startup_diag.c
@@ -215,6 +218,9 @@ if(TAPESISTER_BUILD_SDL)
 endif()
 
 enable_testing()
+if(TAPESISTER_BUILD_SDL)
+  add_test(NAME tapesister_jack_backend_tests COMMAND tapesister_jack_backend_tests)
+endif()
 add_executable(tapesister_core_tests tests/test_core.c)
 target_link_libraries(tapesister_core_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_core_tests COMMAND tapesister_core_tests)

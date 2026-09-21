@@ -136,7 +136,7 @@ zeroes unused channels. Shared-device SEND uses a spare pair in that callback.
 A separate named SEND receives stereo frames through its own `TsInputMonitor`
 SPSC FIFO; its callback resamples into the selected local pair and zeroes all
 others. Internal DSP and recording taps remain stereo. Native SDL negotiation
-supports exposed 2–8-channel layouts without hidden SEND downmix onto Master.
+addresses the first eight channels of negotiated layouts without hidden SEND downmix onto Master.
 
 Auxiliary SEND/RETURN endpoints use `TsAudioEndpoint` lifecycle state on the
 control thread. Master/device/rate changes join auxiliary callbacks before FIFO
@@ -154,7 +154,7 @@ flushed under device locks. Raw EXT recording remains an earlier source tap.
 
 Both FIFOs reuse stereo rate conversion and clock-drift correction. Separate
 SEND and RETURN target twice the larger producer/consumer callback duration,
-converted to producer-rate frames (bounded 128–4096). The Master callback
+converted to producer-rate frames (bounded 128–8192). The Master callback
 publishes its actual burst size; RETURN tracks capture bursts, and the SEND
 callback accounts for its own obtained rate and actual frame count. This avoids
 repeated starvation when capture blocks are smaller than playback blocks.
@@ -214,3 +214,5 @@ opens rolling storage. All five controls default to exact unity and smooth over 
 - Listen for new clicks at note starts and loop boundaries.
 
 No SDL hardware validation is implied by the headless test suite.
+
+Native Linux JACK exposes four independent application endpoints; see [JACK_AUDIO.md](JACK_AUDIO.md). Its deadline callback only copies bounded blocks and wakes an SDL worker. Existing DSP/UI exclusion stays on that worker, so UI access cannot block JACK. Insert consumers trim stale backlogs above twice their target with a 32-sample crossfade.

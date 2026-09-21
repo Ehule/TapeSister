@@ -84,18 +84,17 @@ static int insert_endpoint_open(int side,AudioState *audio,const char *name,unsi
     unsigned channels=insert_device_channels(name,side);
     ts_audio_endpoint_configure(&e->endpoint,name);
     ts_audio_endpoint_begin_open(&e->endpoint,0);
-    if(channels<2 || channels>TS_INSERT_MAX_CHANNELS) {
-        snprintf(error,size,"INSERT %s: DEVICE UNAVAILABLE OR NO 2-8 CHANNEL LAYOUT",side?"RETURN":"SEND");
-        ts_audio_endpoint_open_failed(&e->endpoint,error);return 0;
-    }
+    /* Metadata is optional (JACK/ALSA/virtual endpoints may omit it). The
+       successful open is authoritative; never replace an explicit name. */
+    if (!channels) channels=2;
     SDL_AudioSpec wanted;SDL_zero(wanted);SDL_zero(e->spec);
     wanted.freq=audio->output_rate;wanted.channels=(Uint8)channels;wanted.format=AUDIO_F32SYS;
     wanted.samples=(Uint16)buffer;wanted.callback=insert_endpoint_callback;wanted.userdata=e;e->insert=&audio->sister.insert;
     e->device=insert_device_api.open(name,side,&wanted,&e->spec,
         SDL_AUDIO_ALLOW_FREQUENCY_CHANGE|SDL_AUDIO_ALLOW_SAMPLES_CHANGE|SDL_AUDIO_ALLOW_CHANNELS_CHANGE);
-    if(!e->device || e->spec.format!=AUDIO_F32SYS || e->spec.channels<2 || e->spec.channels>8 || e->spec.freq<=0) {
+    if(!e->device || e->spec.format!=AUDIO_F32SYS || e->spec.channels<2 || e->spec.samples==0 || e->spec.freq<=0) {
         snprintf(error,size,"INSERT %s: %.120s",side?"RETURN":"SEND",
-            e->device?"DEVICE MUST PROVIDE 2-8 FLOAT CHANNELS":SDL_GetError());
+            e->device?"DEVICE MUST PROVIDE STEREO FLOAT AUDIO":SDL_GetError());
         if(e->device)insert_device_api.close(e->device);
         e->device=0;ts_audio_endpoint_open_failed(&e->endpoint,error);return 0;
     }
@@ -165,16 +164,26 @@ static void ts_audio_insert_devices_sync(void *state,const TsConfig *config,int 
 static unsigned ts_audio_insert_choice_channels(const TsUiState *ui,int side)
 {
     const char *name=side?ui->insert_return_device:ui->insert_send_device;
-    if(name[0])return insert_device_channels(name,side);
+    if(name[0]) {
+        const InsertEndpoint *e=&insert_endpoints[side];
+        unsigned n=e->device && !strcmp(name,e->endpoint.configured_name)?
+            e->spec.channels:insert_device_channels(name,side);
+        if (!n) n=2; /* Allow first-pair selection and an explicit open attempt. */
+        return n>TS_INSERT_MAX_CHANNELS?TS_INSERT_MAX_CHANNELS:n;
+    }
     if(!side)return ts_audio_insert_offered_channels();
     const char *shared=ts_configured_input_name();
-    return shared?insert_device_channels(shared,1):ts_audio_capture_preferred_channels(NULL);
+    unsigned n=ts_real_capture?ts_capture_endpoint.channels:
+        (shared?insert_device_channels(shared,1):ts_audio_capture_preferred_channels(NULL));
+    if (!n) n=2;
+    return n>TS_INSERT_MAX_CHANNELS?TS_INSERT_MAX_CHANNELS:n;
 }
 
 static void ts_audio_insert_cycle_device(TsUiState *ui,int side,int direction)
 {
     char *choice=side?ui->insert_return_device:ui->insert_send_device;
     int count=insert_device_api.count(side),index=0;
+    if (count<0) count=0;
     for(int i=0;i<count;++i) {
         const char *name=insert_device_api.name(i,side);
         if(name && !strcmp(choice,name))index=i+1;
@@ -192,6 +201,8 @@ static void ts_audio_insert_diagnostics(void *state,TsUiState *ui,int log)
     AudioState *audio=state;
     ui->insert_master_rate=ts_real_output?ts_output_endpoint.sample_rate:0;
     ui->insert_master_buffer=ts_real_output?ts_output_endpoint.buffer_frames:0;
+    if(log && ts_jack_selected) diagnostic_log("JACK Master worker_xruns=%u Input worker_xruns=%u",
+        ts_native_worker_xruns(ts_real_output),ts_native_worker_xruns(ts_real_capture));
     for(int side=0;side<2;++side) {
         int separate=side?atomic_load(&audio->sister.insert.dedicated_return):
             ui->config.insert_send_device[0]!=0;
@@ -210,10 +221,11 @@ static void ts_audio_insert_diagnostics(void *state,TsUiState *ui,int log)
         ui->insert_gaps[side]=d.underrun_count;ui->insert_drops[side]=d.dropped_frame_count;
         if(log)diagnostic_log(
             "INSERT %s rate=%u buffer=%u ring_rate=%u target_ms=%.2f occupancy=%u "
-            "prime=%u underruns=%u dropped=%u callbacks=%u frames=%u max_block=%u correction_ppm=%d",
+            "prime=%u underruns=%u dropped=%u callbacks=%u frames=%u max_block=%u correction_ppm=%d jack_worker_xruns=%u",
             side?"RETURN":"SEND",ui->insert_rates[side],ui->insert_buffers[side],rate,
             ui->insert_queue_ms[side],d.occupancy_frames,d.prime_frames,d.underrun_count,
             d.dropped_frame_count,d.capture_callback_count,d.captured_frame_count,
-            d.largest_capture_block_frames,d.correction_ppm);
+            d.largest_capture_block_frames,d.correction_ppm,
+            ts_native_worker_xruns(separate?insert_endpoints[side].device:(side?ts_real_capture:ts_real_output)));
     }
 }

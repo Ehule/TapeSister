@@ -66,6 +66,7 @@ static void insert_render(TsFramebuffer *fb,const TsUiState *ui)
     text(fb,22,311,label,muted,1);
     button(fb,22,326,92,"BYPASS",(ui->config.router.bypass_mask&(1u<<TS_ROUTER_INSERT))!=0);
     button(fb,128,326,70,"SOLO",ui->config.router.solo==TS_ROUTER_INSERT+1);
+    button(fb,210,326,96,"RESCAN",0);
     button(fb,420,326,196,"APPLY PORTS",ui->insert_apply_pending);
     const char *help=ui->performance_tooltip[0]?ui->performance_tooltip:"PORT CHANGES: APPLY   LEVEL RESET: RIGHT-CLICK   ESC: ROUTER";
     snprintf(label,sizeof(label),"%.98s",help);text(fb,22,364,label,muted,1);

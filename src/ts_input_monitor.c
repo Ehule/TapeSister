@@ -133,7 +133,7 @@ void ts_input_activity_set_available(TsInputActivity *activity,
                                      uint32_t channels)
 {
     if (activity == NULL) return;
-    if (channels > TS_INPUT_DEVICE_CHANNEL_MAX) channels = 0u;
+    if (channels > TS_INPUT_DEVICE_CHANNEL_MAX) channels = TS_INPUT_DEVICE_CHANNEL_MAX;
     atomic_store_explicit(&activity->pending_activity_mask, 0u,
                           memory_order_release);
     atomic_store_explicit(&activity->available_channels, channels,
@@ -195,6 +195,8 @@ void ts_input_monitor_init(TsInputMonitor *monitor)
     monitor->consumer_servo_countdown = 0u;
     monitor->consumer_occupancy_average = 0.0;
     monitor->consumer_servo_integral = 0.0;
+    monitor->consumer_recovery_tail = (TsStereoFrame){0, 0};
+    monitor->consumer_recovery_frames = 0;
     monitor->consumer_gain = 0.0f;
     monitor->consumer_has_sample = 0;
     monitor->consumer_has_next_sample = 0;
@@ -366,8 +368,33 @@ void ts_input_monitor_discard(TsInputMonitor *monitor)
         monitor->consumer_last_sample = (TsStereoFrame){0, 0};
     monitor->consumer_servo_countdown = 0;
     monitor->consumer_occupancy_average = monitor->consumer_servo_integral = 0;
+    monitor->consumer_recovery_tail = (TsStereoFrame){0, 0};
+    monitor->consumer_recovery_frames = 0;
     monitor->consumer_gain = 0;
     monitor->consumer_has_sample = monitor->consumer_has_next_sample = monitor->consumer_primed = 0;
+}
+
+void ts_input_monitor_recover_backlog(TsInputMonitor *monitor)
+{
+    uint32_t read_at=atomic_load_explicit(&monitor->read_index,memory_order_relaxed);
+    uint32_t write_at=atomic_load_explicit(&monitor->write_index,memory_order_acquire);
+    uint32_t target=atomic_load_explicit(&monitor->prime_frames,memory_order_acquire);
+    uint32_t occupancy=write_at-read_at;
+    /* A healthy burst can exceed target. Only recover beyond two targets,
+       including when the producer has filled the ring during a consumer stall.
+       Only this consumer advances read_index; the producer never overwrites. */
+    if (!target || occupancy <= target*2u) return;
+    TsStereoFrame tail={monitor->consumer_last_sample.l*monitor->consumer_gain,
+                        monitor->consumer_last_sample.r*monitor->consumer_gain};
+    atomic_store_explicit(&monitor->read_index,write_at-target,memory_order_release);
+    atomic_fetch_add_explicit(&monitor->dropped_frame_count,occupancy-target,memory_order_relaxed);
+    monitor->consumer_phase=0;
+    monitor->consumer_has_sample=monitor->consumer_has_next_sample=0;
+    monitor->consumer_primed=0;monitor->consumer_gain=0;
+    monitor->consumer_servo_countdown=0;monitor->consumer_servo_integral=0;
+    monitor->consumer_occupancy_average=target;
+    monitor->consumer_recovery_tail=tail;
+    monitor->consumer_recovery_frames=TS_INPUT_MONITOR_FADE_FRAMES;
 }
 
 TsStereoFrame ts_input_monitor_read_frame(TsInputMonitor *monitor,
@@ -394,6 +421,7 @@ TsStereoFrame ts_input_monitor_read_frame(TsInputMonitor *monitor,
         monitor->consumer_servo_countdown = 0u;
         monitor->consumer_occupancy_average = 0.0;
         monitor->consumer_servo_integral = 0.0;
+        monitor->consumer_recovery_frames = 0;
         monitor->consumer_gain = 0.0f;
         monitor->consumer_has_sample = 0;
         monitor->consumer_has_next_sample = 0;
@@ -503,6 +531,11 @@ TsStereoFrame ts_input_monitor_read_frame(TsInputMonitor *monitor,
                                       memory_order_relaxed);
             break;
         }
+    }
+    if (monitor->consumer_recovery_frames) {
+        float tail=(float)--monitor->consumer_recovery_frames / TS_INPUT_MONITOR_FADE_FRAMES;
+        output.l += monitor->consumer_recovery_tail.l*tail;
+        output.r += monitor->consumer_recovery_tail.r*tail;
     }
     return ts_stereo_frame_sanitize(output);
 }

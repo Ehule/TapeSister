@@ -61,6 +61,7 @@ void ts_insert_begin_output_block(TsInsert *s, unsigned frames)
     unsigned capture = atomic_load_explicit(&s->return_buffer_frames, memory_order_acquire);
     ts_input_monitor_set_prime_frames(&s->return_monitor,
         bridge_prime(capture, frames, rate, s->sample_rate));
+    ts_input_monitor_recover_backlog(&s->return_monitor);
     if (s->separate_send && s->send_channels)
         ts_input_monitor_note_capture_block(&s->send_monitor, frames);
 }
@@ -90,7 +91,7 @@ void ts_insert_capture_prepare_from(TsInsert *s, unsigned channels,
     unsigned rate, unsigned buffer_frames, int dedicated)
 {
     if (atomic_load_explicit(&s->dedicated_return, memory_order_acquire) != dedicated) return;
-    if (channels > TS_INSERT_MAX_CHANNELS) channels = 0;
+    if (channels > 255) channels = 0;
     atomic_store_explicit(&s->input_channels, 0, memory_order_release);
     atomic_store_explicit(&s->return_monitor.enabled, 0, memory_order_release);
     atomic_store_explicit(&s->return_monitor.input_rate, rate, memory_order_release);
@@ -116,7 +117,7 @@ void ts_insert_capture(TsInsert *s, const float *input, size_t frames,
 void ts_insert_capture_from(TsInsert *s, const float *input, size_t frames,
                             unsigned channels, int dedicated)
 {
-    if (!s || !input || channels < 2 || channels > TS_INSERT_MAX_CHANNELS) return;
+    if (!s || !input || channels < 2 || channels > 255) return;
     if (atomic_load_explicit(&s->dedicated_return, memory_order_acquire) != dedicated) return;
     if(atomic_load_explicit(&s->input_channels,memory_order_acquire)!=channels)return;
     unsigned request = atomic_load_explicit(&s->port_request, memory_order_acquire);
@@ -145,9 +146,9 @@ TsStereoFrame ts_insert_external_frame(const TsInsert *s,
 int ts_insert_send_available(const TsInsert *s)
 {
     if (s->separate_send) return s->controls.send_pair > 0 &&
-        s->send_channels <= TS_INSERT_MAX_CHANNELS &&
+        s->send_channels <= 255 &&
         (unsigned)s->controls.send_pair * 2u <= s->send_channels;
-    return s->controls.send_pair > 0 && s->output_channels <= TS_INSERT_MAX_CHANNELS &&
+    return s->controls.send_pair > 0 && s->output_channels <= 255 &&
         (unsigned)(s->controls.send_pair + 1) * 2u <= s->output_channels;
 }
 
@@ -191,6 +192,7 @@ TsStereoFrame ts_insert_process(TsInsert *s, TsStereoFrame input, float route_ga
 void ts_insert_write_output(TsInsert *s, float *frame, unsigned channels, TsStereoFrame master)
 {
     for (unsigned i = 0; i < channels; ++i) frame[i] = 0;
+    if (channels == 1) frame[0] = ts_stereo_frame_fold_mono(master);
     if (channels < 2) return;
     frame[0] = master.l; frame[1] = master.r;
     if (s->separate_send) {
@@ -219,7 +221,7 @@ void ts_insert_io_mode(TsInsert *s, int separate_send, int dedicated_return)
 
 void ts_insert_send_prepare(TsInsert *s, unsigned channels, unsigned rate, unsigned buffer_frames)
 {
-    s->send_channels = channels >= 2 && channels <= TS_INSERT_MAX_CHANNELS ? channels : 0;
+    s->send_channels = channels >= 2 && channels <= 255 ? channels : 0;
     ts_input_monitor_set_enabled(&s->send_monitor, s->send_channels != 0, rate);
     atomic_store_explicit(&s->output_buffer_frames, buffer_frames, memory_order_release);
     ts_input_monitor_set_prime_frames(&s->send_monitor,
@@ -245,6 +247,7 @@ void ts_insert_render_send(TsInsert *s, float *out, size_t frames, unsigned chan
     unsigned pair = request & 7u;
     if (!pair || pair * 2u > channels) return;
     unsigned first = (pair - 1u) * 2u;
+    ts_input_monitor_recover_backlog(&s->send_monitor);
     for (size_t i = 0; i < frames; ++i) {
         TsStereoFrame f = ts_input_monitor_read_frame(&s->send_monitor, rate);
         out[i * channels + first] = f.l;

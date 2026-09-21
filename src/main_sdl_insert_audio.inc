@@ -26,7 +26,13 @@ static unsigned ts_audio_output_channels_for(const char *device)
 }
 
 static unsigned ts_audio_insert_offered_channels(void)
-{ return ts_audio_output_channels_for(ts_configured_output_name()); }
+{
+    if (ts_real_output && ts_output_endpoint.channels)
+        return ts_output_endpoint.channels > TS_INSERT_MAX_CHANNELS ?
+               TS_INSERT_MAX_CHANNELS : ts_output_endpoint.channels;
+    unsigned n=ts_audio_output_channels_for(ts_configured_output_name());
+    return n>TS_INSERT_MAX_CHANNELS?TS_INSERT_MAX_CHANNELS:n;
+}
 
 static SDL_AudioDeviceID ts_audio_open_output_native(const char *device,
     const SDL_AudioSpec *desired, SDL_AudioSpec *obtained, int allowed)
@@ -34,17 +40,18 @@ static SDL_AudioDeviceID ts_audio_open_output_native(const char *device,
     SDL_AudioSpec request = *desired;
     {
         unsigned channels = ts_audio_output_channels_for(device);
-        if (channels >= 4 && channels <= TS_INSERT_MAX_CHANNELS) {
+        if (channels >= 2 && channels <= 255) {
             request.channels = (Uint8)channels;
             /* Without this flag SDL may silently downmix SEND into Master. */
             allowed |= SDL_AUDIO_ALLOW_CHANNELS_CHANGE;
         }
     }
+    allowed |= SDL_AUDIO_ALLOW_CHANNELS_CHANGE;
     SDL_AudioDeviceID result = SDL_OpenAudioDevice(device, 0, &request, obtained, allowed);
-    if (result && (obtained->channels < 2 || obtained->channels > TS_INSERT_MAX_CHANNELS ||
+    if (result && (obtained->channels < 1 || obtained->freq <= 0 || obtained->samples == 0 ||
                    obtained->format != AUDIO_F32SYS)) {
         SDL_CloseAudioDevice(result);
-        SDL_SetError("Output must expose 2-8 float channels");
+        SDL_SetError("Output must expose float audio at a valid rate and buffer size");
         return 0;
     }
     return result;
