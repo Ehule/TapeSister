@@ -1,4 +1,7 @@
 /* Native JACK ABI/lifecycle tests; --live additionally exercises a real server. */
+#ifndef SDL_MAIN_HANDLED
+#define SDL_MAIN_HANDLED
+#endif
 #include <SDL2/SDL.h>
 #include <stdatomic.h>
 #include <stdint.h>
@@ -124,6 +127,7 @@ static void mocked(void)
 #endif
 int main(int argc,char **argv)
 {
+    SDL_SetMainReady();
     SDL_SetHint(SDL_HINT_AUDIODRIVER,"dummy");assert(!SDL_Init(SDL_INIT_AUDIO|SDL_INIT_EVENTS));
 #if defined(__linux__)
     if (argc>1 && !strcmp(argv[1],"--live")) return live();
