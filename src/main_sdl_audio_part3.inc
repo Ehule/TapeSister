@@ -426,6 +426,9 @@ static void ts_audio_pause_device(SDL_AudioDeviceID device, int pause_on)
 
 static void ts_audio_quit(void)
 {
+#if defined(TAPESISTER_HAS_ASIO)
+    ts_asio_quit();
+#endif
 #if defined(__linux__)
     for (int i=0;i<TS_JACK_SLOTS;++i) ts_jack_close(&ts_jack_endpoints[i]);
     if (ts_jack_library) SDL_UnloadObject(ts_jack_library);
@@ -479,8 +482,27 @@ static int ts_audio_main_config_save(const TsConfig *config, const char *path,
     char midi_error[160];
     char switch_error[160];
     int output_changed;
+    /* Backend catalogs and ASIO drivers cannot be switched by reopening just
+       one endpoint. Persist the request, keep current streams intact and make
+       the required restart explicit. Do not reopen old-backend device names. */
+    int backend_changed = config->audio_backend != ts_started_backend;
+    if (backend_changed && ts_live_ui && config == &ts_live_ui->config) {
+        TsConfig *editable = &ts_live_ui->config;
+        editable->audio_output_device[0] = 0;
+        editable->record_input_device[0] = 0;
+        editable->insert_send_device[0] = 0;
+        editable->insert_return_device[0] = 0;
+    }
     if (!ts_audio_main_config_write(config, path, error, error_size)) return 0;
     ts_live_config = (TsConfig *)config;
+    if (backend_changed || (ts_asio_selected &&
+        (ts_output_desired.samples != (Uint16)config->audio_buffer_frames ||
+         strcmp(config->audio_output_device, ts_active_output)))) {
+        snprintf(ts_pending_notice, sizeof(ts_pending_notice),
+                 "CONFIG SAVED - RESTART REQUIRED FOR %s DRIVER / BUFFER",
+                 ts_audio_backend_name(config->audio_backend));
+        return 1;
+    }
 
     output_changed = ts_real_output == 0 ||
         ts_output_desired.samples != (Uint16)config->audio_buffer_frames ||

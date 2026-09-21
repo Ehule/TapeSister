@@ -359,11 +359,13 @@ diagnostics.
 ### Windows audio coexistence
 
 TapeSister defaults to `audio_backend=Auto`. On Windows, CONFIG can also select
-WASAPI or DirectSound; save and restart after changing the backend. Auto/WASAPI
-shared mode is the recommended starting point when TapeSister must coexist with
-TapeHead, REAPER, or VB-CABLE. TapeSister does not provide native ASIO: running
-beside REAPER/ASIO is an interoperability case and still depends on the interface
-driver's sharing and exclusivity rules.
+ASIO, WASAPI or DirectSound; save and restart after changing the backend. The
+CFG `ON:` label identifies the backend actually running. Native ASIO puts Master,
+ordinary input and Insert Send/Return on one multichannel duplex driver clock,
+without the independent Insert queues. See [ASIO setup](docs/ASIO_AUDIO.md) for
+MOTU and VB-Audio Matrix routing. ASIO driver/buffer changes also require restart.
+Auto/WASAPI shared mode remains available for TapeHead, REAPER or VB-CABLE;
+hardware-driver sharing and exclusivity rules still apply.
 
 Configured and active devices are tracked separately. A named output or input is
 never silently replaced with the system default. If a named output fails at startup,

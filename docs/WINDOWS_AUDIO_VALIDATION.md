@@ -59,7 +59,8 @@ rates/buffers.
   Check the applied HZ/FR and QUEUE S/R readouts; monitor GAPS/DROP for increases.
   Compare a direct SEND-to-RETURN cable loop with the SunVox loop at explicit
   48 kHz, and record the actual SunVox driver (Auto alone does not identify it).
-  There is no automatic latency compensation or separate ASIO backend.
+  There is no automatic latency compensation. The [ASIO backend](ASIO_AUDIO.md)
+  uses a single duplex stream without these independent queues.
 - [ ] Inspect compact EQ and Insert panels at normal/maximized/high-DPI sizes.
   EQ OUT/Router controls must not overlap; REC and IN must not be drawn together;
   file-recording time and STOP FILE must remain readable across workspaces.
@@ -129,7 +130,7 @@ rates/buffers.
 - [ ] Tapehead → VB-CABLE → TapeSister; test both launch orders.
 - [ ] TapeSister while REAPER uses WASAPI shared mode; test both launch orders.
 - [ ] TapeSister while REAPER uses ASIO; test both launch orders and record any
-  hardware-driver exclusivity rather than describing ASIO as a TapeSister backend.
+  hardware-driver exclusivity. Also repeat with TapeSister using native ASIO.
 - [ ] Remove capture during EXT playback, then reconnect it. Internal tiles, FM,
   audition, and Sister sources must continue; stale ring audio must not replay.
 - [ ] Remove output during playback, then reconnect it. The UI must remain responsive,
@@ -157,8 +158,8 @@ rates/buffers.
 - Healthy-device audio, smoothing, pedalboard behavior, Sister processing, recording,
   limiter behavior, and MIDI remain unchanged.
 
-WASAPI shared mode is the recommended coexistence baseline. Native ASIO is not
-implemented by TapeSister, and an ASIO driver's exclusive or single-client limitation
+WASAPI shared mode is one coexistence baseline. TapeSister also implements native
+ASIO; an ASIO driver's exclusive or single-client limitation
 cannot be repaired inside TapeSister.
 
 ## Prism instrument audition

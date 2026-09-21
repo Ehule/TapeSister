@@ -138,6 +138,9 @@ static void ts_audio_insert_devices_sync(void *state,const TsConfig *config,int 
         ts_copy_name(master,sizeof(master),ts_output_endpoint.active_name);
     else ts_audio_active_device_name(master,sizeof(master),ts_active_output[0]?ts_active_output:NULL,0);
     int separate=config->insert_send_device[0]!=0;
+    if (ts_asio_selected && (separate || config->insert_return_device[0])) {
+        snprintf(error,size,"ASIO: SELECT MASTER SPARES AND SHARED CFG INPUT, THEN APPLY");
+    }
     int dedicated=config->insert_return_device[0] && strcmp(config->insert_return_device,shared_input);
     if(ts_real_output)SDL_LockAudioDevice(ts_real_output);
     if(ts_real_capture)SDL_LockAudioDevice(ts_real_capture);
@@ -182,6 +185,12 @@ static unsigned ts_audio_insert_choice_channels(const TsUiState *ui,int side)
 static void ts_audio_insert_cycle_device(TsUiState *ui,int side,int direction)
 {
     char *choice=side?ui->insert_return_device:ui->insert_send_device;
+    if (ts_asio_selected) {
+        choice[0]=0;
+        snprintf(ui->status,sizeof(ui->status),"ASIO USES CFG DRIVER CHANNELS FOR BOTH SEND AND RETURN");
+        ui->insert_offered_outputs=ts_audio_insert_offered_channels();
+        return;
+    }
     int count=insert_device_api.count(side),index=0;
     if (count<0) count=0;
     for(int i=0;i<count;++i) {
@@ -217,6 +226,7 @@ static void ts_audio_insert_diagnostics(void *state,TsUiState *ui,int log)
         ui->insert_rates[side]=open?endpoint->sample_rate:0;
         ui->insert_buffers[side]=open?endpoint->buffer_frames:0;
         if(open && (side || separate))ts_input_monitor_get_diagnostics(monitor,&d);
+        if (ts_asio_selected) { memset(&d,0,sizeof(d)); d.underrun_count=ts_native_worker_xruns(ts_real_output); }
         ui->insert_queue_ms[side]=rate?1000.0f*d.prime_frames/rate:0;
         ui->insert_gaps[side]=d.underrun_count;ui->insert_drops[side]=d.dropped_frame_count;
         if(log)diagnostic_log(

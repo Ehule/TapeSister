@@ -57,6 +57,7 @@ static unsigned bridge_prime(unsigned producer_frames, unsigned consumer_frames,
 void ts_insert_begin_output_block(TsInsert *s, unsigned frames)
 {
     atomic_store_explicit(&s->output_buffer_frames, frames, memory_order_release);
+    if (s->duplex) return;
     unsigned rate = atomic_load_explicit(&s->return_monitor.input_rate, memory_order_acquire);
     unsigned capture = atomic_load_explicit(&s->return_buffer_frames, memory_order_acquire);
     ts_input_monitor_set_prime_frames(&s->return_monitor,
@@ -64,6 +65,16 @@ void ts_insert_begin_output_block(TsInsert *s, unsigned frames)
     ts_input_monitor_recover_backlog(&s->return_monitor);
     if (s->separate_send && s->send_channels)
         ts_input_monitor_note_capture_block(&s->send_monitor, frames);
+}
+
+void ts_insert_duplex_block(TsInsert *s, int enabled, const float *input,
+                            size_t frames, unsigned channels)
+{
+    s->duplex = enabled;
+    s->duplex_input = input;
+    s->duplex_frames = frames;
+    s->duplex_channels = channels;
+    s->duplex_position = 0;
 }
 
 void ts_insert_set(TsInsert *s, const TsInsertControls *c)
@@ -118,6 +129,7 @@ void ts_insert_capture_from(TsInsert *s, const float *input, size_t frames,
                             unsigned channels, int dedicated)
 {
     if (!s || !input || channels < 2 || channels > 255) return;
+    if (s->duplex) return;
     if (atomic_load_explicit(&s->dedicated_return, memory_order_acquire) != dedicated) return;
     if(atomic_load_explicit(&s->input_channels,memory_order_acquire)!=channels)return;
     unsigned request = atomic_load_explicit(&s->port_request, memory_order_acquire);
@@ -176,7 +188,14 @@ TsStereoFrame ts_insert_process(TsInsert *s, TsStereoFrame input, float route_ga
     s->send_peak = fmaxf(fmaxf(fabsf(s->send.l), fabsf(s->send.r)), s->send_peak * s->decay);
     unsigned request = atomic_load_explicit(&s->port_request, memory_order_acquire);
     TsStereoFrame result = {0, 0};
-    if (s->port_seen != request) {
+    if (s->duplex) {
+        unsigned first = (unsigned)s->controls.return_pair * 2u;
+        if (s->duplex_input && s->duplex_position < s->duplex_frames &&
+            first + 1 < s->duplex_channels && ts_insert_return_available(s)) {
+            const float *f = s->duplex_input + s->duplex_position * s->duplex_channels + first;
+            result = bounded((TsStereoFrame){f[0], f[1]}, s->return_gain);
+        }
+    } else if (s->port_seen != request) {
         unsigned acknowledged=atomic_load_explicit(&s->port_ack,memory_order_acquire);
         ts_input_monitor_discard(&s->return_monitor);
         if (acknowledged == request) s->port_seen = request;
@@ -191,6 +210,9 @@ TsStereoFrame ts_insert_process(TsInsert *s, TsStereoFrame input, float route_ga
 
 void ts_insert_write_output(TsInsert *s, float *frame, unsigned channels, TsStereoFrame master)
 {
+    /* Advance even when INSERT is bypassed, so route changes never replay
+       earlier samples from this driver block. */
+    if (s->duplex) ++s->duplex_position;
     for (unsigned i = 0; i < channels; ++i) frame[i] = 0;
     if (channels == 1) frame[0] = ts_stereo_frame_fold_mono(master);
     if (channels < 2) return;

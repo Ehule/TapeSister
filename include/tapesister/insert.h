@@ -28,6 +28,12 @@ typedef struct {
     float send_gain, return_gain, send_target, return_target, slew;
     float send_peak, return_peak, decay;
     TsStereoFrame send;
+    /* Synchronous duplex backend: borrowed input valid only during one output
+       callback. Its clock is already identical; no FIFO or resampling. */
+    const float *duplex_input;
+    size_t duplex_frames, duplex_position;
+    unsigned duplex_channels;
+    int duplex;
 } TsInsert;
 
 void ts_insert_default(TsInsertControls *controls);
@@ -37,6 +43,8 @@ void ts_insert_prepare(TsInsert *insert, unsigned sample_rate);
 /* Master callback, before processing its frames. Sizes the RETURN bridge in
    capture-rate frames and publishes the producer burst size for separate SEND. */
 void ts_insert_begin_output_block(TsInsert *insert, unsigned frames);
+void ts_insert_duplex_block(TsInsert *insert, int enabled, const float *input,
+                            size_t frames, unsigned channels);
 /* Control changes require the playback callback to be excluded. */
 void ts_insert_set(TsInsert *insert, const TsInsertControls *controls);
 /* Control thread, with the capture producer stopped/excluded. Playback may run. */

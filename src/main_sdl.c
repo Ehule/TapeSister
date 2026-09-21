@@ -129,6 +129,9 @@ static int show_splash(SDL_Renderer *renderer)
         int output_height;
         SDL_Rect destination;
         ts_jack_poll();
+#if defined(TAPESISTER_HAS_ASIO)
+        ts_asio_poll();
+#endif
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_QUIT) {
                 SDL_DestroyTexture(splash);
@@ -13113,6 +13116,9 @@ int main(int argc, char **argv)
             last_audio_diagnostic_log = SDL_GetTicks();
         }
         ts_jack_poll();
+#if defined(TAPESISTER_HAS_ASIO)
+        ts_asio_poll();
+#endif
         while (SDL_PollEvent(&event)) {
             uint32_t event_id = event_window_id(&event);
             if (event.type == SDL_WINDOWEVENT &&

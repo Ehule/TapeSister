@@ -33,7 +33,7 @@
                   TS_AUDIO_CONFIG_CHANNEL_W, TS_AUDIO_CONFIG_ROW_H, row, edge);
         cfg_text(fb, TS_AUDIO_CONFIG_CHANNEL_X + 5,
                  TS_AUDIO_CONFIG_BACKEND_Y + 5, "SCAN", effect_color);
-        snprintf(shown, sizeof(shown), "%.17s",
+        snprintf(shown, sizeof(shown), "ON:%.14s",
                  active_backend != NULL ? active_backend : "NONE");
         cfg_text(fb, TS_AUDIO_CONFIG_CHANNEL_X + 52,
                  TS_AUDIO_CONFIG_BACKEND_Y + 5, shown, text_color);

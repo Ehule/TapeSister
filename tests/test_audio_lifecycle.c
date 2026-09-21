@@ -32,7 +32,9 @@ int main(void)
             CHECK(backend==(TsAudioBackend)i);
         }
     }
-    CHECK(!ts_audio_backend_parse("ASIO", &backend));
+    CHECK(ts_audio_backend_parse("ASIO", &backend));
+    CHECK(backend == TS_AUDIO_BACKEND_ASIO);
+    CHECK(!ts_audio_backend_parse("InvalidBackend", &backend));
     CHECK(backend == TS_AUDIO_BACKEND_AUTO);
     CHECK(ts_audio_backend_sdl_driver(backend) == NULL);
 

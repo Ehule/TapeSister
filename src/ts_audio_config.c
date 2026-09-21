@@ -148,7 +148,7 @@ int ts_audio_config_save(const TsConfig *config, const char *path,
     }
     if (fprintf(file,
                 "\n[Audio]\n"
-                "; Backend: Auto, JACK (Linux), PipeWire, PulseAudio, ALSA, WASAPI, DirectSound, etc.\n"
+                "; Backend: Auto, ASIO (Windows), JACK (Linux), PipeWire, PulseAudio, ALSA, WASAPI, DirectSound, etc.\n"
                 "audio_backend=%s\n"
                 "; Blank uses the operating system default stereo playback device.\n"
                 "audio_output_device=%s\n"

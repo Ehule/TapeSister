@@ -56,7 +56,8 @@ The backend selector offers native JACK on Linux plus supported SDL backends
 present in the installed SDL build (for example PipeWire, PulseAudio, ALSA,
 WASAPI, DirectSound, WinMM, and CoreAudio). Availability in the selector does
 not guarantee a running server, accessible device, or driver sharing support.
-Only devices exposed by the active backend can be opened. There is no ASIO host.
+Only devices exposed by the active backend can be opened. Windows also has a
+[native ASIO backend](ASIO_AUDIO.md) with one shared duplex driver.
 
 Insert now attempts explicit devices even when SDL cannot report their channel
 layout before opening. General capture accepts the first valid negotiated layout

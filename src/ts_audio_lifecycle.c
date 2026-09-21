@@ -25,11 +25,11 @@ static void copy_text(char *destination, size_t size, const char *source)
 
 static const char *const backend_names[] = {
     "Auto", "WASAPI", "DirectSound", "JACK", "PipeWire", "PulseAudio", "ALSA",
-    "CoreAudio", "WinMM", "OSS", "sndio", "NetBSD", "AAudio", "OpenSL ES"
+    "CoreAudio", "WinMM", "OSS", "sndio", "NetBSD", "AAudio", "OpenSL ES", "ASIO"
 };
 static const char *const backend_drivers[] = {
     NULL, "wasapi", "directsound", "jack", "pipewire", "pulseaudio", "alsa",
-    "coreaudio", "winmm", "dsp", "sndio", "netbsd", "aaudio", "openslES"
+    "coreaudio", "winmm", "dsp", "sndio", "netbsd", "aaudio", "openslES", "asio"
 };
 
 int ts_audio_backend_parse(const char *text, TsAudioBackend *backend)

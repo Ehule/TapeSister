@@ -112,3 +112,40 @@ static void test_insert_controller(void)
     ts_router_default(&ui.config.router);router_commit(device,&audio,&ui);
     ts_sister_runtime_set_parameters(&audio.sister,&saved);ts_external_recorder_free(&insert_input.recorder);
 }
+
+/* Exercise the actual mixer/Router callback at unity with a one-period cable
+   loop. Compare steady sine energy to bypass, independent of oscillator phase. */
+static void test_duplex_callback_unity(void)
+{
+    TsSisterParameters saved=audio.sister.parameters;
+    reset_route(0);ts_sister_runtime_disable(&audio.sister);
+    TsSisterParameters p=saved;p.prism.enabled=0;p.fx.enabled=0;
+    ts_sister_runtime_set_parameters(&audio.sister,&p);
+    audio.output_device_channels=8;audio.sister.insert.output_channels=8;
+    TsInsertControls ports={1,1,0,0};ts_sister_runtime_set_insert(&audio.sister,&ports);
+    ts_insert_capture_prepare(&audio.sister.insert,8,44100,256);
+    toggle_fm_hold(device,&audio,&ui,&instrument);click_note(0,0);
+    static float block[256*8],input[256*8];memset(block,0,sizeof(block));
+    double energy[2]={0,0};
+    for(int active=0;active<2;++active) {
+        ts_router_default(&ui.config.router);
+        ui.config.router.bypass_mask=(1u<<TS_ROUTER_COUNT)-1;
+        if(active)ui.config.router.bypass_mask&=~(1u<<TS_ROUTER_INSERT);
+        router_commit(device,&audio,&ui);
+        for(int n=0;n<220;++n) {
+            for(int i=0;i<256;++i){input[i*8+2]=block[i*8+2];input[i*8+3]=block[i*8+3];}
+            ts_insert_duplex_block(&audio.sister.insert,1,input,256,8);
+            audio_callback(&audio,(Uint8 *)block,sizeof(block));
+            if(n>=20)for(int i=0;i<256;++i)
+                energy[active]+=block[i*8]*block[i*8]+block[i*8+1]*block[i*8+1];
+        }
+    }
+    assert(energy[0]>.01 && fabs(energy[1]/energy[0]-1)<.015);
+    printf("Actual audio callback unity Insert/bypass energy ratio %.6f\n",energy[1]/energy[0]);
+    ts_insert_duplex_block(&audio.sister.insert,0,NULL,0,0);
+    reset_route(0);audio.output_device_channels=2;audio.sister.insert.output_channels=2;
+    ts_insert_capture_prepare(&audio.sister.insert,0,44100,0);
+    ts_insert_default(&ui.config.insert);ts_sister_runtime_set_insert(&audio.sister,&ui.config.insert);
+    ts_router_default(&ui.config.router);router_commit(device,&audio,&ui);
+    ts_sister_runtime_set_parameters(&audio.sister,&saved);
+}

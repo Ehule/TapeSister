@@ -1,5 +1,8 @@
 static void ts_audio_catalog_refresh(void)
 {
+#if defined(TAPESISTER_HAS_ASIO)
+    if (ts_asio_selected) ts_asio_rescan();
+#endif
     char midi_error[160];
     int input_ok = ts_audio_name_list_refresh(
         1, &ts_device_catalog.input_names, &ts_device_catalog.input_count);

@@ -422,7 +422,7 @@ static int test_invalid_backend_falls_back_to_auto(void)
     FILE *file = fopen(path, "wb");
     int ok;
     if (file == NULL) return 0;
-    fputs("[Audio]\naudio_backend=ASIO\n", file);
+    fputs("[Audio]\naudio_backend=InvalidBackend\n", file);
     fclose(file);
     ok = expect(ts_audio_config_load(&loaded, path, error, sizeof(error)),
                 "invalid backend should not prevent startup") &&

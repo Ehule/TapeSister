@@ -14,6 +14,9 @@
 
 static const char *ts_native_current_driver(void);
 static void ts_jack_poll(void);
+#if defined(TAPESISTER_HAS_ASIO)
+#include "tapesister/asio_backend.h"
+#endif
 #define SDL_GetCurrentAudioDriver ts_native_current_driver
 
 static SDL_AudioDeviceID ts_audio_open_device(const char *device, int iscapture,

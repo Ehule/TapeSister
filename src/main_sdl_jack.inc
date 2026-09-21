@@ -237,13 +237,26 @@ static int ts_jack_selected;
 static void ts_jack_poll(void) {}
 #endif
 
+#if defined(TAPESISTER_HAS_ASIO)
+#include "tapesister/asio_backend.h"
+#endif
+static int ts_asio_selected;
+
 /* Uniform endpoint API for the existing main/capture/Insert lifecycle. */
 static const char *ts_native_current_driver(void)
-{ return ts_jack_selected?"jack":SDL_GetCurrentAudioDriver(); }
+{ return ts_asio_selected?"asio":ts_jack_selected?"jack":SDL_GetCurrentAudioDriver(); }
 static int ts_native_device_count(int capture)
-{ return ts_jack_selected?2:SDL_GetNumAudioDevices(capture); }
+{
+#if defined(TAPESISTER_HAS_ASIO)
+    if (ts_asio_selected) return ts_asio_count(capture);
+#endif
+    return ts_jack_selected?2:SDL_GetNumAudioDevices(capture);
+}
 static const char *ts_native_device_name(int index,int capture)
 {
+#if defined(TAPESISTER_HAS_ASIO)
+    if (ts_asio_selected) return ts_asio_name(index,capture);
+#endif
 #if defined(__linux__)
     if (ts_jack_selected) return index>=0 && index<2?ts_jack_names[capture!=0][index]:NULL;
 #endif
@@ -251,6 +264,9 @@ static const char *ts_native_device_name(int index,int capture)
 }
 static int ts_native_device_spec(int index,int capture,SDL_AudioSpec *spec)
 {
+#if defined(TAPESISTER_HAS_ASIO)
+    if (ts_asio_selected) return ts_asio_spec(index,capture,spec);
+#endif
 #if defined(__linux__)
     if (ts_jack_selected) {
         if (index<0 || index>1) return SDL_SetError("Invalid JACK device");
@@ -266,6 +282,11 @@ static int ts_native_device_spec(int index,int capture,SDL_AudioSpec *spec)
 }
 static int ts_native_default_info(char **name,SDL_AudioSpec *spec,int capture)
 {
+#if defined(TAPESISTER_HAS_ASIO)
+    if (ts_asio_selected) {
+        return ts_asio_default_info(name,spec,capture);
+    }
+#endif
 #if defined(__linux__)
     if (ts_jack_selected) {
         if (name) *name=SDL_strdup(ts_jack_names[capture!=0][0]);
@@ -282,6 +303,9 @@ static int ts_native_default_info(char **name,SDL_AudioSpec *spec,int capture)
 static SDL_AudioDeviceID ts_native_open(const char *name,int capture,
     const SDL_AudioSpec *wanted,SDL_AudioSpec *got,int flags)
 {
+#if defined(TAPESISTER_HAS_ASIO)
+    if (ts_asio_selected) return ts_asio_open(name,capture,wanted,got);
+#endif
 #if defined(__linux__)
     if (ts_jack_selected) return ts_jack_open(name,capture!=0,wanted,got);
 #endif
@@ -289,6 +313,9 @@ static SDL_AudioDeviceID ts_native_open(const char *name,int capture,
 }
 static void ts_native_close(SDL_AudioDeviceID id)
 {
+#if defined(TAPESISTER_HAS_ASIO)
+    if (ts_asio_owns(id)) {ts_asio_close(id);return;}
+#endif
 #if defined(__linux__)
     TsJackEndpoint *e=ts_jack_endpoint(id);if (e) {ts_jack_close(e);return;}
 #endif
@@ -296,6 +323,9 @@ static void ts_native_close(SDL_AudioDeviceID id)
 }
 static void ts_native_lock(SDL_AudioDeviceID id)
 {
+#if defined(TAPESISTER_HAS_ASIO)
+    if (ts_asio_owns(id)) {ts_asio_lock();return;}
+#endif
 #if defined(__linux__)
     TsJackEndpoint *e=ts_jack_endpoint(id);if (e) {ts_jack_lock(e);return;}
 #endif
@@ -303,6 +333,9 @@ static void ts_native_lock(SDL_AudioDeviceID id)
 }
 static void ts_native_unlock(SDL_AudioDeviceID id)
 {
+#if defined(TAPESISTER_HAS_ASIO)
+    if (ts_asio_owns(id)) {ts_asio_unlock();return;}
+#endif
 #if defined(__linux__)
     TsJackEndpoint *e=ts_jack_endpoint(id);if (e) {SDL_UnlockMutex(e->mutex);return;}
 #endif
@@ -310,6 +343,9 @@ static void ts_native_unlock(SDL_AudioDeviceID id)
 }
 static void ts_native_pause(SDL_AudioDeviceID id,int paused)
 {
+#if defined(TAPESISTER_HAS_ASIO)
+    if (ts_asio_owns(id)) {ts_asio_pause(id,paused);return;}
+#endif
 #if defined(__linux__)
     TsJackEndpoint *e=ts_jack_endpoint(id);
     if (e) {
@@ -323,6 +359,9 @@ static void ts_native_pause(SDL_AudioDeviceID id,int paused)
 
 static unsigned ts_native_worker_xruns(SDL_AudioDeviceID id)
 {
+#if defined(TAPESISTER_HAS_ASIO)
+    if (ts_asio_owns(id)) return ts_asio_xruns();
+#endif
 #if defined(__linux__)
     TsJackEndpoint *e=ts_jack_endpoint(id);
     if (e && e->client) return atomic_load(&e->xruns);

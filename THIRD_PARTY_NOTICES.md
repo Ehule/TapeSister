@@ -35,3 +35,10 @@ TapeSister uses miniaudio 0.11.22, pinned at commit
 miniaudio is copyright David Reid and is available under either the public domain or
 MIT No Attribution license. Its bundled `stb_vorbis` decoder provides Ogg Vorbis
 support and is likewise available under either the public domain or MIT license.
+
+Windows ASIO support uses RtAudio, copyright 2001–2023 Gary P. Scavone, pinned at
+`c0a533d7bb16e8ca0d96cdb2e3fcfb6d1d095df4`. Its permissive license is retained in
+`third_party/rtaudio/LICENSE` and included in Windows bundles. The upstream ASIO
+interface/loader files carry Steinberg's notices; see
+`third_party/rtaudio/include/asioinfo.txt`. ASIO is a trademark of Steinberg Media
+Technologies GmbH. A local RtAudio change reads the current ASIO sample rate.

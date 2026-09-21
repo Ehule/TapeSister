@@ -514,6 +514,9 @@ static void ts_audio_reconfigure_sister_if_needed(AudioState *audio,
 
 static int ts_audio_backend_compiled(TsAudioBackend backend)
 {
+#if defined(TAPESISTER_HAS_ASIO)
+    if (backend == TS_AUDIO_BACKEND_ASIO) return 1;
+#endif
 #if defined(__linux__)
     if (backend == TS_AUDIO_BACKEND_JACK) return 1;
 #endif
@@ -635,6 +638,10 @@ static int ts_audio_apply_backend_before_sdl(TsAudioBackend backend)
     const char *driver = ts_audio_backend_sdl_driver(backend);
     ts_audio_endpoints_init();
     ts_started_backend = backend;
+#if defined(TAPESISTER_HAS_ASIO)
+    ts_asio_selected = backend == TS_AUDIO_BACKEND_ASIO;
+    if (ts_asio_selected) driver = "dummy";
+#endif
 #if defined(__linux__)
     ts_jack_selected = backend == TS_AUDIO_BACKEND_JACK;
     /* SDL still owns video/timers; native JACK owns every audio endpoint. */

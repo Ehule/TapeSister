@@ -34,10 +34,29 @@ static unsigned ts_audio_insert_offered_channels(void)
     return n>TS_INSERT_MAX_CHANNELS?TS_INSERT_MAX_CHANNELS:n;
 }
 
+#if defined(TAPESISTER_HAS_ASIO)
+static SDL_AudioSpec ts_asio_master_callback;
+static void ts_asio_render_master(void *userdata, Uint8 *stream, int bytes)
+{
+    AudioState *audio=userdata;
+    unsigned frames=0, channels=0;
+    const float *input=ts_asio_input_block(&frames,&channels);
+    ts_insert_duplex_block(&audio->sister.insert,1,input,frames,channels);
+    ts_asio_master_callback.callback(ts_asio_master_callback.userdata,stream,bytes);
+    ts_insert_duplex_block(&audio->sister.insert,1,NULL,0,0);
+}
+#endif
+
 static SDL_AudioDeviceID ts_audio_open_output_native(const char *device,
     const SDL_AudioSpec *desired, SDL_AudioSpec *obtained, int allowed)
 {
     SDL_AudioSpec request = *desired;
+#if defined(TAPESISTER_HAS_ASIO)
+    if (ts_asio_selected) {
+        ts_asio_master_callback=*desired;
+        request.callback=ts_asio_render_master;
+    }
+#endif
     {
         unsigned channels = ts_audio_output_channels_for(device);
         if (channels >= 2 && channels <= 255) {
@@ -60,6 +79,7 @@ static SDL_AudioDeviceID ts_audio_open_output_native(const char *device,
 static void ts_audio_commit_output_layout(AudioState *audio, const SDL_AudioSpec *spec)
 {
     if (!audio) return;
+    ts_insert_duplex_block(&audio->sister.insert,ts_asio_selected,NULL,0,0);
     audio->output_device_channels = spec->channels;
     audio->sister.insert.output_channels = spec->channels;
     ts_input_monitor_discard(&audio->sister.insert.return_monitor);

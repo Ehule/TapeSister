@@ -1,3 +1,6 @@
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include "tapesister/sister_project_state.h"
 #include "tapesister/config.h"
 #include <assert.h>
@@ -329,8 +332,37 @@ static void stalled_bridges_and_wide_devices(void)
     puts("Both stalled bridges recovered to bounded latency; 16-channel stride stayed isolated");
 }
 
+static void synchronous_unity(void)
+{
+    static TsInsert s;prepare(&s,48000);
+    float input[128*16]={0},output[16];
+    for(unsigned i=0;i<128;++i) {input[i*16+2]=.25f;input[i*16+3]=-.4f;}
+    ts_insert_capture_prepare(&s,16,48000,128);
+    s.output_channels=16;
+    for(int block=0;block<300;++block) {
+        ts_insert_duplex_block(&s,1,input,128,16);
+        ts_insert_capture(&s,input,128,16);
+        ts_insert_begin_output_block(&s,128);
+        for(unsigned i=0;i<128;++i) {
+            TsStereoFrame source={.25f,-.4f};
+            TsStereoFrame returned=ts_insert_process(&s,source,1);
+            close_frame(returned,source); /* unity bypass reference */
+            ts_insert_write_output(&s,output,16,returned);
+            assert(output[2]==source.l && output[3]==source.r);
+            for(unsigned ch=4;ch<16;++ch)assert(output[ch]==0);
+        }
+        ts_insert_duplex_block(&s,1,NULL,0,0);
+        close_frame(ts_insert_process(&s,(TsStereoFrame){.2f,.3f},1),(TsStereoFrame){0,0});
+    }
+    assert(atomic_load(&s.return_monitor.captured_frame_count)==0);
+    assert(atomic_load(&s.return_monitor.underrun_count)==0);
+    assert(atomic_load(&s.send_monitor.captured_frame_count)==0);
+    puts("Synchronous Insert: unity level equals bypass, no bridge queues, no stale return, 16-channel isolation");
+}
+
 int main(void)
 {
+    synchronous_unity();
     stalled_bridges_and_wide_devices();
     all_orders(0);all_orders(1);levels_failures_and_solo();independent_clocks();callback_bursts();isolation_and_persistence();sister_serial_monitor();
     puts("Insert I/O boundary, safety, monitor isolation and compatibility passed");return 0;

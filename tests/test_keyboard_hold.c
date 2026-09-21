@@ -414,6 +414,7 @@ int main(void)
     test_performance_polish();
     test_router_controller();
     test_insert_controller();
+    test_duplex_callback_unity();
     test_insert_devices();
     test_master_eq_controller();
     stop_all_force(device, &audio, &ui);
