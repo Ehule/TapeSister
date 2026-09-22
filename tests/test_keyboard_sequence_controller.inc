@@ -1,6 +1,6 @@
 static void sequence_click(int x, int y, SDL_Keymod modifiers)
 {
-    SDL_Event event = {0};
+    SDL_Event event;SDL_zero(event);
     event.type = SDL_MOUSEBUTTONDOWN; event.button.button = SDL_BUTTON_LEFT;
     event.button.windowID = SDL_GetWindowID(window);
     event.button.x = x; event.button.y = y;
@@ -35,7 +35,7 @@ static void test_keyboard_sequence_transport(void)
     settings.count = 3; settings.notes[0] = 60; settings.notes[1] = 64; settings.notes[2] = 67;
     settings.seconds = .04; settings.loop = 1;
     ts_keyboard_sequence_set(&audio.keyboard_sequence, &settings);
-    SDL_Event key = {0}; key.type = SDL_KEYDOWN; key.key.keysym.sym = SDLK_SPACE;
+    SDL_Event key;SDL_zero(key); key.type = SDL_KEYDOWN; key.key.keysym.sym = SDLK_SPACE;
     key.key.windowID = SDL_GetWindowID(window); key.key.keysym.mod = KMOD_SHIFT;
 #define TRANSPORT() keyboard_sequence_transport_event(&key, window, device, &audio, &ui, \
                                                       &sister, &instrument, &fm, 44100)
@@ -234,7 +234,7 @@ static void test_keyboard_sequence_controller(void)
        capture staging retain their original event ownership. */
     ui.keyboard_sequence_edit = 1;
     sequence_click(280, 260, KMOD_NONE);
-    SDL_Event key = {0};
+    SDL_Event key;SDL_zero(key);
     key.type = SDL_KEYDOWN; key.key.windowID = SDL_GetWindowID(window);
     key.key.keysym.sym = SDLK_z;
     assert(keyboard_sequence_event(&key, window, device, &audio, &ui, &instrument, &fm, 44100));

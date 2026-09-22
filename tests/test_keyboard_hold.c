@@ -35,7 +35,7 @@ static void tick(void)
 
 static void click_note_preview(int note, int shifted, const TsSample *preview)
 {
-    SDL_Event event = {0};
+    SDL_Event event;SDL_zero(event);
     event.type = SDL_MOUSEBUTTONDOWN;
     event.button.button = SDL_BUTTON_LEFT;
     event.button.windowID = SDL_GetWindowID(window);
@@ -104,7 +104,7 @@ static void test_chords(void)
             portal_init(&portal, &ui.portal);
             ts_fm_seed_sequence_init(&seeds, 999);
             portal.create_seeds = &seeds;
-            SDL_Event create = {0};
+            SDL_Event create;SDL_zero(create);
             create.type = SDL_MOUSEBUTTONDOWN;
             create.button.button = SDL_BUTTON_LEFT;
             for (int wave = 0; wave < 4; ++wave) {

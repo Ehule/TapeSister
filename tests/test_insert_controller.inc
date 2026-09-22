@@ -116,7 +116,7 @@ static void test_insert_controller(void)
         assert(audio.sister.insert.controls.send_pair==1 && strstr(ui.status,"FINISH RECORDING"));
         ui.insert_send_choice=1;assert(router_mouse(SDL_MOUSEBUTTONDOWN,36,236));assert(router_mouse(SDL_MOUSEBUTTONUP,36,236));
         assert(audio.sister.insert.controls.send_db==-24);
-        SDL_Event right={0};right.type=SDL_MOUSEBUTTONDOWN;right.button.windowID=SDL_GetWindowID(window);
+        SDL_Event right;SDL_zero(right);right.type=SDL_MOUSEBUTTONDOWN;right.button.windowID=SDL_GetWindowID(window);
         right.button.button=SDL_BUTTON_RIGHT;right.button.x=80;right.button.y=236;
         assert(router_event(&right,window,device,&audio,&ui,&router_panel));assert(audio.sister.insert.controls.send_db==0);
         audio.sister_file_recorder=NULL;ts_performance_recorder_request_stop(&recorder);

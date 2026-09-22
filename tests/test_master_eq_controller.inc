@@ -1,7 +1,7 @@
 static SisterWindow eq_panel;
 static int eq_click(int x,int y,int button)
 {
-    SDL_Event e={0};e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=SDL_GetWindowID(window);
+    SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=SDL_GetWindowID(window);
     e.button.button=button;e.button.x=x;e.button.y=y;
     int result=master_eq_event(&e,window,device,&audio,&ui,&eq_panel);
     e.type=SDL_MOUSEBUTTONUP;master_eq_event(&e,window,device,&audio,&ui,&eq_panel);
@@ -60,7 +60,7 @@ static void test_master_eq_controller(void)
     /* Drag a node while scaled 2x; the absolute musical pitch is irrelevant. */
     int nx=44+(int)lrintf(552*ts_master_eq_normalized(&ui.config.master_eq.band[0],0,44100));
     SDL_SetWindowSize(window,1280,800);
-    SDL_Event e={0};e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=SDL_GetWindowID(window);
+    SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=SDL_GetWindowID(window);
     e.button.button=SDL_BUTTON_LEFT;e.button.x=nx*2;e.button.y=310;
     assert(master_eq_event(&e,window,device,&audio,&ui,&eq_panel));assert(ui.master_eq_drag==4);
     float old_hz=ui.config.master_eq.band[0].frequency;
@@ -104,7 +104,7 @@ static void test_master_eq_controller(void)
         ui.config.master_eq.enabled=1;master_eq_commit(device,&audio,&ui);
         assert(voices()==1 && audio.keyboard_sequence.running);
         assert(power_audio_energy()>.01);
-        e=(SDL_Event){0};e.type=SDL_KEYUP;e.key.windowID=SDL_GetWindowID(window);e.key.keysym.sym=SDLK_z;
+        SDL_zero(e);e.type=SDL_KEYUP;e.key.windowID=SDL_GetWindowID(window);e.key.keysym.sym=SDLK_z;
         assert(!master_eq_event(&e,window,device,&audio,&ui,&eq_panel));
         e.type=SDL_KEYDOWN;e.key.keysym.sym=SDLK_SPACE;
         assert(master_eq_event(&e,window,device,&audio,&ui,&eq_panel));
