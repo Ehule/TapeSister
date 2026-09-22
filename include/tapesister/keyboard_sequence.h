@@ -7,6 +7,7 @@
 #define TS_KEYBOARD_SEQUENCE_NOTES 24
 #define TS_KEYBOARD_SEQUENCE_MIN_SECONDS 0.03
 #define TS_KEYBOARD_SEQUENCE_MAX_SECONDS 3600.0
+#define TS_KEYBOARD_SEQUENCE_LFO_MIN_SECONDS 0.05
 
 typedef enum {
     TS_KEYBOARD_SEQUENCE_UP, TS_KEYBOARD_SEQUENCE_DOWN,
@@ -18,6 +19,8 @@ typedef struct {
     int notes[TS_KEYBOARD_SEQUENCE_NOTES]; /* Absolute MIDI pitches, in click order. */
     int count, mode, loop;
     double seconds, gate;
+    double volume, lfo_seconds, lfo_depth; /* ARP-only gain, cycle time, attenuation. */
+    int lfo_enabled;
 } TsKeyboardSequenceSettings;
 
 /* Prepared on the UI thread, immutable while published to the audio thread. */
@@ -38,6 +41,8 @@ typedef struct {
     uint32_t random;
     TsStereoFrame last, fade_from;
     unsigned fade_remaining, fade_frames;
+    double gain_current, lfo_phase;
+    float effective_gain;
 } TsKeyboardSequence;
 
 void ts_keyboard_sequence_init(TsKeyboardSequence *sequence);

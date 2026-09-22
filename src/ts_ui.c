@@ -1940,6 +1940,9 @@ void ts_ui_init(TsUiState *ui)
     ui->keyboard_sequence.seconds = .25;
     ui->keyboard_sequence.gate = .8;
     ui->keyboard_sequence.loop = 1;
+    ui->keyboard_sequence.volume = ui->keyboard_sequence_level = 1;
+    ui->keyboard_sequence.lfo_seconds = 4;
+    ui->keyboard_sequence.lfo_depth = .5;
     ui->keyboard_sequence_current = -1;
     ui->tune_reference.root_note = TS_KEYBOARD_BASE_NOTE;
     ui->tune_reference.fine_tune_cents = 0.0f;

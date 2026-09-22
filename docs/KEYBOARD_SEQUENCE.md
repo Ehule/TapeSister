@@ -34,6 +34,10 @@ alongside the sequence, including HOLD, Shift-click chords, and MIDI.
 | RESET | Restart at the beginning while playing; stay silent if stopped |
 | CLEAR | Empty the selection and stop the sequence |
 | FROM HELD | Copy the active QWERTY chord, sorted by pitch; the original notes keep playing |
+| ARP VOL | Independent sequence level: 0–200%, initially 100%; 0% mutes audio while the clock keeps running |
+| LFO ON/OFF | Enable a sine volume LFO affecting only ARP; initially off |
+| CYCLE | Duration of one LFO cycle, 50 ms to one hour; initially 4 seconds |
+| DEPTH | How far the LFO lowers ARP below the volume fader; initially 50% |
 | EDIT ON/OFF | Switch ordinary key clicks/QWERTY presses between sequence editing and live playing |
 | LOOP / ONCE | Repeat, or stop after one traversal (one full up/down traversal in that mode) |
 | X | Close the controls; playback continues |
@@ -55,6 +59,28 @@ restores its default. Both controls update during playback. Step retains elapsed
 time; shortening it past the elapsed duration advances once, without a burst of
 missed notes. Editing the selected keys preserves the current pitch and phase if
 it remains selected. Removing that pitch or changing mode starts a fresh step.
+
+**ARP VOL** balances the pattern against manually held drones, MIDI notes and
+other sources. It changes the sequence's audio level before it joins those
+sources, without changing note velocity or retriggering the pattern. Shared
+downstream effects and dynamics still respond to the combined signal. Drag or
+wheel the fader; Shift-wheel changes it in 1% increments, and right-click restores
+100%. At 200% the ARP is twice its original amplitude (about +6 dB).
+
+The optional **LFO** creates volume swells or tremolo. The fader sets the peak:
+at 50% depth the LFO moves between half that level and the full level; at 100%
+depth it reaches silence. **CYCLE** is independent of note STEP time and continues
+across note changes and while the panel is hidden. PLAY and RESET start the cycle
+at its peak. STOP freezes it. Volume, depth, enable and phase-reset changes have
+a short gain ramp (at most 5 ms for a full-range change). The gold marker under
+the volume fader displays the current modulated gain, while the fader retains its
+base position. Wheel/Shift-wheel and right-click defaults work on CYCLE and DEPTH.
+
+For example: hold a low C drone, select C/G/E-flat/B-flat for ARP, switch EDIT off,
+and set ARP VOL to 40%. Enable LFO with an 8-second cycle and 75% depth to let the
+pattern rise from 10% to 40% of its original level over the steady drone.
+
+![The same ARP volume and LFO controls in FM](images/keyboard-sequence-fm.png)
 
 The sequencer uses the current tile/Source choice, FM preview, or selected
 tile/Sister ensemble. Sound and routing changes are prepared outside the audio
@@ -90,6 +116,10 @@ keyboards keep their existing audition behavior.
 `tapesister_keyboard_sequence_tests` covers ordering, bounce endpoints, Random,
 Once, stereo preservation, gates, live duration edits through one hour, removal
 of the active/last key, 24-note limits, source loss, and one-shot retriggering.
+It also checks volume ratios, exact mute, gain-ramp bounds, LFO extrema and depth,
+rate changes, long cycles, live edits and malformed control values. The native
+controller tests compare held-note samples with ARP muted, exercise the controls
+in both main/FM panel positions, and check hidden-panel modulation continuity.
 The native keyboard HOLD suite also renders the audio callback across tile, FM,
 group, and Sister routes, checks the dry/FM recording buses, preserves manual
 and MIDI voices on ARP Stop, changes octave and source during playback, checks

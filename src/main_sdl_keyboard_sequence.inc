@@ -8,6 +8,7 @@ static void keyboard_sequence_ui(AudioState *audio, TsUiState *ui)
     ui->keyboard_sequence_current = s->running && s->elapsed < s->settings.seconds * s->settings.gate ? s->current_note : -1;
     ui->keyboard_sequence_step = s->cursor + 1;
     ui->keyboard_sequence_progress = s->running ? fmin(1, s->elapsed / s->settings.seconds) : 0;
+    ui->keyboard_sequence_level = s->effective_gain;
 }
 
 static void keyboard_sequence_sample_stamp(uint64_t *hash, const TsSample *sample)
@@ -185,11 +186,17 @@ static void keyboard_sequence_capture_held(AudioState *audio)
 
 static void keyboard_sequence_slider(TsKeyboardSequenceSettings *s, int slider, int x)
 {
-    double amount = slider == 1 ? (x - 20) / 248.0 : (x - 282) / 136.0;
+    double amount = slider == 1 ? (x - 20) / 248.0 : slider == 2 ? (x - 282) / 136.0 :
+                    slider == 3 ? (x - 20) / 188.0 : slider == 4 ? (x - 296) / 164.0 :
+                    (x - 476) / 144.0;
     amount = fmax(0, fmin(1, amount));
     if (slider == 1) s->seconds = TS_KEYBOARD_SEQUENCE_MIN_SECONDS *
         pow(TS_KEYBOARD_SEQUENCE_MAX_SECONDS / TS_KEYBOARD_SEQUENCE_MIN_SECONDS, amount);
-    else s->gate = .05 + .95 * amount;
+    else if (slider == 2) s->gate = .05 + .95 * amount;
+    else if (slider == 3) s->volume = 2 * amount;
+    else if (slider == 4) s->lfo_seconds = TS_KEYBOARD_SEQUENCE_LFO_MIN_SECONDS *
+        pow(TS_KEYBOARD_SEQUENCE_MAX_SECONDS / TS_KEYBOARD_SEQUENCE_LFO_MIN_SECONDS, amount);
+    else s->lfo_depth = amount;
 }
 
 static int keyboard_sequence_event(const SDL_Event *event, SDL_Window *window,
@@ -255,16 +262,28 @@ static int keyboard_sequence_event(const SDL_Event *event, SDL_Window *window,
             "ARP: %d NOTES / CTRL+CLICK OR EDIT KEYS TO CHANGE ORDER" : "ARP: %d NOTE LIMIT", s->settings.count);
     } else if (panel || slider) {
         if (!slider && y >= 281 && y < 307) slider = x >= 20 && x < 268 ? 1 : x >= 282 && x < 418 ? 2 : 0;
+        if (!slider && y >= 220 && y < 246) slider = x >= 20 && x < 208 ? 3 :
+            x >= 296 && x < 460 ? 4 : x >= 476 && x < 620 ? 5 : 0;
         if (slider) {
             if (wheel) {
                 if (slider == 1) next.seconds *= pow((mod & KMOD_SHIFT) ? 1.01 : 1.1, -wheel);
-                else next.gate += wheel * ((mod & KMOD_SHIFT) ? .01 : .05);
+                else if (slider == 2) next.gate += wheel * ((mod & KMOD_SHIFT) ? .01 : .05);
+                else if (slider == 3) next.volume += wheel * ((mod & KMOD_SHIFT) ? .01 : .05);
+                else if (slider == 4) next.lfo_seconds *= pow((mod & KMOD_SHIFT) ? 1.01 : 1.1, -wheel);
+                else next.lfo_depth += wheel * ((mod & KMOD_SHIFT) ? .01 : .05);
             } else if (event->type == SDL_MOUSEBUTTONDOWN && event->button.button == SDL_BUTTON_RIGHT) {
-                if (slider == 1) next.seconds = .25; else next.gate = .8;
+                if (slider == 1) next.seconds = .25;
+                else if (slider == 2) next.gate = .8;
+                else if (slider == 3) next.volume = 1;
+                else if (slider == 4) next.lfo_seconds = 4;
+                else next.lfo_depth = .5;
             } else {
                 keyboard_sequence_slider(&next, slider, x);
                 ui->keyboard_sequence_drag = slider;
             }
+            ts_keyboard_sequence_set(s, &next);
+        } else if (event->type == SDL_MOUSEBUTTONDOWN && y >= 220 && y < 243 && x >= 220 && x < 284) {
+            next.lfo_enabled = !next.lfo_enabled;
             ts_keyboard_sequence_set(s, &next);
         } else if (event->type == SDL_MOUSEBUTTONDOWN && y >= 252 && y < 275) {
             if (x >= 20 && x < 84) {

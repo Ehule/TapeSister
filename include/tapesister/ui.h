@@ -39,9 +39,9 @@ enum {
 enum { TS_WAVE_X = 20, TS_WAVE_Y = 64, TS_WAVE_W = 600, TS_WAVE_H = 134 };
 enum { TS_MODAL_PANEL_X = 10, TS_MODAL_PANEL_Y = 40,
        TS_MODAL_PANEL_W = 620, TS_MODAL_PANEL_H = 164 };
-enum { TS_ARP_PANEL_X = 10, TS_ARP_PANEL_Y = 230,
-       TS_ARP_PANEL_W = 620, TS_ARP_PANEL_H = 81,
-       TS_ARP_PANEL_FM_Y = 218, TS_ARP_PANEL_FM_H = 95,
+enum { TS_ARP_PANEL_X = 10, TS_ARP_PANEL_Y = 198,
+       TS_ARP_PANEL_W = 620, TS_ARP_PANEL_H = 113,
+       TS_ARP_PANEL_FM_Y = 192, TS_ARP_PANEL_FM_H = 121,
        TS_ARP_PANEL_FM_OFFSET = -6 };
 enum { TS_DRONE_WAVE_X = 20, TS_DRONE_WAVE_Y = 77,
        TS_DRONE_WAVE_W = 600, TS_DRONE_WAVE_H = 70 };
@@ -380,6 +380,7 @@ typedef struct {
     int keyboard_sequence_open, keyboard_sequence_edit, keyboard_sequence_drag;
     int keyboard_sequence_running, keyboard_sequence_current, keyboard_sequence_step;
     double keyboard_sequence_progress;
+    float keyboard_sequence_level;
     uint16_t tile_launcher_mask;
     int play_on_select; /* Sample-bank click auditions; off selects for editing only. */
     int mouse_note;

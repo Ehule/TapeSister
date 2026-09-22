@@ -14,6 +14,8 @@ void ts_keyboard_sequence_init(TsKeyboardSequence *s)
 {
     memset(s, 0, sizeof(*s));
     s->settings.seconds = .25; s->settings.gate = .8; s->settings.loop = 1;
+    s->settings.volume = s->gain_current = s->effective_gain = 1;
+    s->settings.lfo_seconds = 4; s->settings.lfo_depth = .5;
     s->current_note = -1; s->random = 0x5a17b3u;
 }
 
@@ -64,6 +66,7 @@ int ts_keyboard_sequence_play(TsKeyboardSequence *s)
 {
     if (!s->order_count || !s->source || !s->source->count) return 0;
     s->running = 1; s->cursor = 0; s->elapsed = 0; s->fresh = 1;
+    s->lfo_phase = 0;
     s->current_note = -1;
     return 1;
 }
@@ -71,6 +74,7 @@ int ts_keyboard_sequence_play(TsKeyboardSequence *s)
 void ts_keyboard_sequence_reset(TsKeyboardSequence *s)
 {
     s->cursor = 0; s->elapsed = 0;
+    s->lfo_phase = 0;
     if (s->running) { release_voices(s); s->fresh = 1; }
 }
 
@@ -83,6 +87,14 @@ void ts_keyboard_sequence_set(TsKeyboardSequence *s, const TsKeyboardSequenceSet
     if (!isfinite(next.gate)) next.gate = .8;
     if (next.gate < .05) next.gate = .05;
     if (next.gate > 1) next.gate = 1;
+    if (!isfinite(next.volume)) next.volume = 1;
+    next.volume = fmax(0, fmin(2, next.volume));
+    if (!isfinite(next.lfo_seconds)) next.lfo_seconds = 4;
+    next.lfo_seconds = fmax(TS_KEYBOARD_SEQUENCE_LFO_MIN_SECONDS,
+                            fmin(TS_KEYBOARD_SEQUENCE_MAX_SECONDS, next.lfo_seconds));
+    if (!isfinite(next.lfo_depth)) next.lfo_depth = .5;
+    next.lfo_depth = fmax(0, fmin(1, next.lfo_depth));
+    next.lfo_enabled = next.lfo_enabled != 0;
     if (next.mode < 0 || next.mode >= TS_KEYBOARD_SEQUENCE_MODE_COUNT) next.mode = 0;
     next.loop = next.loop != 0;
     int count = 0;
@@ -175,7 +187,22 @@ fade:
         --s->fade_remaining;
     }
     s->last = ts_stereo_frame_sanitize(out);
-    return s->last;
+    /* Keep boundary history unscaled: applying gain before that history would
+       attenuate it repeatedly at note changes. This stage owns only ARP voices. */
+    double slew = 2.0 / (.005 * rate);
+    double depth = s->settings.lfo_enabled ? s->settings.lfo_depth : 0;
+    double gain = s->settings.volume;
+    if (depth > 0) gain *= 1 - depth * (.5 - .5 * cos(6.283185307179586 * s->lfo_phase));
+    /* Also smooth LFO enable/depth/reset, without slowing ordinary sine motion. */
+    s->gain_current += fmax(-slew, fmin(slew, gain - s->gain_current));
+    s->effective_gain = (float)s->gain_current;
+    if (s->running) {
+        s->lfo_phase += 1.0 / (rate * s->settings.lfo_seconds);
+        s->lfo_phase -= floor(s->lfo_phase);
+    }
+    out.l = s->last.l * s->effective_gain;
+    out.r = s->last.r * s->effective_gain;
+    return ts_stereo_frame_sanitize(out);
 }
 
 uint32_t ts_keyboard_sequence_mask(const TsKeyboardSequenceSettings *settings, int base)

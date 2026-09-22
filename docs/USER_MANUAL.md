@@ -955,6 +955,16 @@ repeated-note cells and rests are not part of this control.
 Matrix's separate Morph travel and Step hold. Use the wheel, Shift-wheel for
 fine adjustments, or right-click to restore a control's default.
 
+**ARP VOL** sets the pattern's own volume from 0–200% (default 100%), so a held
+drone keeps its level while you adjust the ARP. Zero mutes ARP without stopping
+its clock. **LFO ON** adds sine volume modulation: **CYCLE** sets one full cycle
+(50 ms to one hour, default 4 seconds), and **DEPTH** sets the reduction below
+the fader's level (default 50%; 100% reaches silence). PLAY/RESET starts the LFO
+at its peak; it continues across notes and with the panel closed. The gold marker
+under ARP VOL shows the modulated level. Live changes are briefly smoothed.
+These controls affect ARP before it joins the other sources and shared effects.
+Use drag/wheel, Shift-wheel for fine control, or right-click for defaults.
+
 With **EDIT OFF**, play manual HOLD chords and MIDI alongside the sequence.
 **Shift+Space** starts/stops ARP even with its controls hidden, including from
 the tile bank, FM, Mosaic, EQ, and Sister Machine. **ARP STOP**, **Shift+Space**,

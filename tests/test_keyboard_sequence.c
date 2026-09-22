@@ -34,6 +34,60 @@ static void prepare(int mode)
     assert(ts_keyboard_sequence_play(&sequence));
 }
 
+static void test_volume_lfo(void)
+{
+    prepare(TS_KEYBOARD_SEQUENCE_UP);
+    TsKeyboardSequenceSettings s = sequence.settings;
+    s.count = 1; s.notes[0] = 60; s.seconds = 10;
+    ts_keyboard_sequence_set(&sequence, &s);
+    render(10);
+    assert(fabs(ts_keyboard_sequence_read(&sequence, 1000).l - .3) < .00001);
+    double elapsed = sequence.elapsed;
+    s.volume = .25; ts_keyboard_sequence_set(&sequence, &s);
+    assert(sequence.elapsed == elapsed && sequence.running && sequence.current_note == 60);
+    render(10);
+    assert(fabs(ts_keyboard_sequence_read(&sequence, 1000).l - .075) < .00001);
+    /* Full-range edits, including mute, ramp for at most 5 ms at any rate. */
+    s.volume = 2; ts_keyboard_sequence_set(&sequence, &s);
+    float previous = sequence.effective_gain;
+    for (int i = 0; i < 240; ++i) {
+        ts_keyboard_sequence_read(&sequence, 48000);
+        assert(fabs(sequence.effective_gain - previous) <= 2.0 / 240 + .00001);
+        previous = sequence.effective_gain;
+    }
+    assert(fabs(previous - 2) < .00001);
+    assert(fabs(ts_keyboard_sequence_read(&sequence, 48000).l - .6) < .00001);
+    s.volume = 0; ts_keyboard_sequence_set(&sequence, &s);
+    render(6); assert(render(100) == 0 && sequence.running);
+    s.volume = 1; s.lfo_enabled = 1; s.lfo_depth = 1; s.lfo_seconds = 4;
+    ts_keyboard_sequence_set(&sequence, &s); ts_keyboard_sequence_reset(&sequence);
+    /* Audio-clock sine: peak at start, silence halfway, no dependence on steps. */
+    render(2000); render(1); assert(sequence.effective_gain < .00001);
+    elapsed = sequence.elapsed;
+    s.lfo_depth = .5; ts_keyboard_sequence_set(&sequence, &s);
+    assert(sequence.elapsed == elapsed && sequence.lfo_phase > .5);
+    render(6); assert(fabs(sequence.effective_gain - .5) < .0001);
+    s.lfo_enabled = 0; ts_keyboard_sequence_set(&sequence, &s);
+    render(6); assert(sequence.effective_gain == 1);
+    s.lfo_enabled = 1; s.lfo_depth = 1; ts_keyboard_sequence_set(&sequence, &s);
+    render(6); ts_keyboard_sequence_reset(&sequence);
+    previous = sequence.effective_gain;
+    ts_keyboard_sequence_read(&sequence, 48000);
+    assert(fabs(sequence.effective_gain - previous) <= 2.0 / 240 + .00001);
+    /* Changing device rate preserves phase; long cycles stay well resolved. */
+    double phase = sequence.lfo_phase;
+    s.lfo_seconds = 3600; ts_keyboard_sequence_set(&sequence, &s);
+    ts_keyboard_sequence_read(&sequence, 192000);
+    assert(fabs(sequence.lfo_phase - phase - 1.0 / (3600 * 192000)) < 1e-12);
+    s.volume = NAN; s.lfo_depth = INFINITY; s.lfo_seconds = NAN;
+    ts_keyboard_sequence_set(&sequence, &s);
+    assert(sequence.settings.volume == 1 && sequence.settings.lfo_depth == .5 && sequence.settings.lfo_seconds == 4);
+    s.volume = -1; s.lfo_depth = 2; s.lfo_seconds = 0;
+    ts_keyboard_sequence_set(&sequence, &s);
+    assert(sequence.settings.volume == 0 && sequence.settings.lfo_depth == 1 && sequence.settings.lfo_seconds == .05);
+    render(10); assert(render(40) == 0);
+}
+
 int main(void)
 {
     for (int i = 0; i < 256; ++i) { data[2*i] = .3f; data[2*i+1] = -.3f; }
@@ -41,6 +95,7 @@ int main(void)
     source.count = 1;
     source.voices[0] = (TsNoteVoice){.sample=&source.sample, .range_last=256,
         .step=1, .gain=1, .active=1, .looping=1, .direction=1};
+    test_volume_lfo();
     const int expected[][8] = {
         {60,64,67,60,64,67,60,64}, {67,64,60,67,64,60,67,64},
         {60,64,67,64,60,64,67,64}, {67,60,64,67,60,64,67,60}

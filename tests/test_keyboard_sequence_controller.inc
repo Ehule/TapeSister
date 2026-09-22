@@ -178,6 +178,39 @@ static void test_keyboard_sequence_controller(void)
         assert(power_audio_energy() > .01); /* Manual HOLD survives ARP Stop. */
         sequence_click(36, 260, KMOD_NONE);
         assert(audio.keyboard_sequence.running && voices() == 2);
+        /* ARP mute leaves the held drone's actual samples and voice ownership
+           unchanged, including FM's dry/SYNTH paths and ensemble sources. */
+        int offset = ui.fm_open ? TS_ARP_PANEL_FM_OFFSET : 0;
+        sequence_click(20, 230 + offset, KMOD_NONE);
+        assert(audio.keyboard_sequence.settings.volume == 0 && audio.keyboard_sequence.running);
+        assert(power_audio_energy() > .01 && voices() == 2);
+        static TsNoteBank reference_notes;
+        static TsPerformanceBank reference_performance;
+        reference_notes = audio.notes; reference_performance = audio.performance;
+        for (int i = 0; i < 256; ++i) {
+            TsStereoFrame sample = {0}, synth = {0}, f = {0};
+            ts_note_bank_read_buses(&reference_notes, &sample, &f, &synth);
+            TsStereoFrame p = ts_performance_read_stereo(&reference_performance, NULL);
+            TsAudioBuses buses = {0}; TsStereoFrame capture = {0};
+            runtime_note_render(&audio, &buses, &capture);
+            assert(fabs(audio.keyboard_dry.l - (sample.l + p.l + f.l * audio.fm_output_gain)) < .000001);
+            assert(fabs(audio.keyboard_dry.r - (sample.r + p.r + f.r * audio.fm_output_gain)) < .000001);
+            assert(capture.l == synth.l && capture.r == synth.r);
+        }
+        double elapsed = audio.keyboard_sequence.elapsed;
+        sequence_click(67, 230 + offset, KMOD_NONE);
+        assert(audio.keyboard_sequence.settings.volume == .5 && audio.keyboard_sequence.elapsed == elapsed);
+        sequence_click(240, 230 + offset, KMOD_NONE);
+        sequence_click(548, 230 + offset, KMOD_NONE);
+        assert(audio.keyboard_sequence.settings.lfo_enabled && audio.keyboard_sequence.settings.lfo_depth == .5);
+        assert(audio.keyboard_sequence.elapsed == elapsed && voices() == 2);
+        ui.keyboard_sequence_open = 0;
+        double phase = audio.keyboard_sequence.lfo_phase;
+        assert(power_audio_energy() > .01 && audio.keyboard_sequence.lfo_phase != phase);
+        ui.keyboard_sequence_open = 1;
+        sequence_click(240, 230 + offset, KMOD_NONE);
+        sequence_click(114, 230 + offset, KMOD_NONE);
+        assert(audio.keyboard_sequence.settings.volume == 1 && !audio.keyboard_sequence.settings.lfo_enabled);
         click_note(0, 0); click_note(4, 0); assert(!voices());
         double energy = power_audio_energy();
         if (energy <= .01) fprintf(stderr, "Silent sequence route=%d\n", route);
@@ -267,6 +300,10 @@ static void test_keyboard_sequence_controller(void)
     sequence_select(0); sequence_select(7); sequence_select(3); sequence_select(10);
     audio.keyboard_sequence.settings.mode = TS_KEYBOARD_SEQUENCE_ORDER;
     audio.keyboard_sequence.settings.seconds = .25;
+    audio.keyboard_sequence.settings.volume = .65;
+    audio.keyboard_sequence.settings.lfo_enabled = 1;
+    audio.keyboard_sequence.settings.lfo_seconds = 4;
+    audio.keyboard_sequence.settings.lfo_depth = .6;
     ts_keyboard_sequence_set(&audio.keyboard_sequence, &audio.keyboard_sequence.settings);
     sequence_click(36, 260, KMOD_NONE); assert(power_audio_energy() > .01);
     keyboard_sequence_ui(&audio, &ui); ui.keyboard_sequence_edit = 1;
@@ -286,6 +323,9 @@ static void test_keyboard_sequence_controller(void)
         ui.fm_open = 0; ui.fm_preview_sample = NULL;
     }
     stop_all_force(device, &audio, &ui);
+    audio.keyboard_sequence.settings.volume = 1;
+    audio.keyboard_sequence.settings.lfo_enabled = 0;
+    ts_keyboard_sequence_set(&audio.keyboard_sequence, &audio.keyboard_sequence.settings);
     ts_keyboard_sequence_source_free(ts_keyboard_sequence_source(&audio.keyboard_sequence, NULL));
     ui.keyboard_sequence_open = 0; ui.keyboard_sequence_edit = 0;
 }
