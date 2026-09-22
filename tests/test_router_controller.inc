@@ -8,7 +8,7 @@ static void router_commit(SDL_AudioDeviceID device,AudioState *audio,TsUiState *
 static SisterWindow router_panel;
 static int router_mouse(int type,int x,int y)
 {
-    SDL_Event e={0};e.type=type;
+    SDL_Event e;SDL_zero(e);e.type=type;
     if(type==SDL_MOUSEMOTION){e.motion.windowID=SDL_GetWindowID(window);e.motion.x=x;e.motion.y=y;e.motion.state=SDL_BUTTON_LMASK;}
     else {e.button.windowID=SDL_GetWindowID(window);e.button.button=SDL_BUTTON_LEFT;e.button.x=x;e.button.y=y;}
     return router_event(&e,window,device,&audio,&ui,&router_panel);
@@ -40,7 +40,7 @@ static void test_router_controller(void)
         ts_keyboard_sequence_set(&audio.keyboard_sequence,&seq);
         assert(keyboard_sequence_prepare(device,&audio,&ui,&instrument,&fm,44100,1));assert(ts_keyboard_sequence_play(&audio.keyboard_sequence));
         assert(power_audio_energy()>.01);
-        SDL_Event key={0};key.type=SDL_KEYDOWN;key.key.windowID=SDL_GetWindowID(window);key.key.keysym.sym=SDLK_F9;
+        SDL_Event key;SDL_zero(key);key.type=SDL_KEYDOWN;key.key.windowID=SDL_GetWindowID(window);key.key.keysym.sym=SDLK_F9;
         assert(router_event(&key,window,device,&audio,&ui,&router_panel) && ui.router_open);
         assert(voices()==1 && audio.keyboard_sequence.running);
         key.type=SDL_KEYUP;key.key.keysym.sym=SDLK_z;
@@ -82,7 +82,7 @@ static void test_router_controller(void)
         key.key.keysym.sym=SDLK_F9;assert(router_event(&key,window,device,&audio,&ui,&router_panel) && !ui.router_open);
     }
     /* Browser text and modal confirmations retain F9/Space ownership. */
-    SDL_Event key={0};key.type=SDL_KEYDOWN;key.key.windowID=SDL_GetWindowID(window);key.key.keysym.sym=SDLK_F9;
+    SDL_Event key;SDL_zero(key);key.type=SDL_KEYDOWN;key.key.windowID=SDL_GetWindowID(window);key.key.keysym.sym=SDLK_F9;
     ui.browser.mode=TS_BROWSER_LOAD_WAV;assert(!router_event(&key,window,device,&audio,&ui,&router_panel));ts_browser_close(&ui.browser);
     ui.exit_confirm_open=1;assert(!router_event(&key,window,device,&audio,&ui,&router_panel));ui.exit_confirm_open=0;
     ui.fm_open=0;ui.master_eq_open=1;
@@ -94,7 +94,7 @@ static void test_router_controller(void)
 
 static int router_right(int x,int y)
 {
-    SDL_Event e={0};e.type=SDL_MOUSEBUTTONDOWN;e.button.button=SDL_BUTTON_RIGHT;
+    SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.button=SDL_BUTTON_RIGHT;
     e.button.windowID=SDL_GetWindowID(window);e.button.x=x;e.button.y=y;
     return router_event(&e,window,device,&audio,&ui,&router_panel);
 }
@@ -177,7 +177,7 @@ static void test_router_performance_controller(void)
         ts_performance_recorder_free(&recorder);remove("test-router-performance-output.wav");
         /* Closing a view does not stop the transport or consume key releases. */
         assert(router_mouse(SDL_MOUSEBUTTONDOWN,40,172));
-        SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.windowID=SDL_GetWindowID(window);e.key.keysym.sym=SDLK_F9;
+        SDL_Event e;SDL_zero(e);e.type=SDL_KEYDOWN;e.key.windowID=SDL_GetWindowID(window);e.key.keysym.sym=SDLK_F9;
         assert(router_event(&e,window,device,&audio,&ui,&router_panel));assert(!ui.router_open && audio.sister.router.transport.running);
         assert(router_event(&e,window,device,&audio,&ui,&router_panel));
         e.key.keysym.sym=SDLK_SPACE;assert(router_event(&e,window,device,&audio,&ui,&router_panel));
