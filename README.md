@@ -184,16 +184,32 @@ boundary.
 ## Global Router
 
 **F9**, or **EQ → GLOBAL ROUTER**, opens the vertical signal path. Drag Prism,
-Sister Machine, Fallout and the Pedalboard into a different order, or use each
+Sister Machine, Fallout, Pedalboard and INSERT into a different order, or use each
 module's Bypass/Solo controls while playing. Small activity lights show where audio
 is arriving, separately from whether a module is enabled. Source and final
 EQ/limiter/OUT stay fixed. Routing saves with projects and configuration.
 
 Pedalboard's stereo POST chain moves as one module; its existing PRE/head inserts
-stay inside Sister. Sister's DRY monitor keeps its separate return at Master.
+stay inside Sister. INSERT adds a movable, 100%-wet external send/return loop using
+spare output pairs or independent SEND/RETURN devices. **SETUP** on its Router
+row opens device, channel and level controls. New and older projects start with INSERT bypassed.
 [Controls and routing details](docs/USER_MANUAL.md#global-router).
 
 ![Native Global Router](docs/images/global-router.png)
+
+![External Insert setup](docs/images/external-insert.png)
+
+Master stays on output 1/2 of the CFG device. SEND can use its spare native
+channels or a separate playback device; RETURN can share CFG's input or use a
+separate capture device. This supports interfaces exposed as separate stereo
+endpoints: for an M6, choose SEND `Out 3-4` and RETURN `In 5-6`, each using its
+local **DEVICE CH 1/2**. An active Insert with a missing return stays silent until
+you bypass it. [Setup, buffering and limits](docs/USER_MANUAL.md#external-insert).
+Linux now offers native JACK with named Master/Input and Insert Send/Return ports,
+independent of SDL's JACK support. CFG/Insert rescan devices; opaque and wider
+layouts are accepted. [JACK setup and both-side diagnostics](docs/JACK_AUDIO.md).
+The panel shows actual stream rates/buffers, queue targets, and SEND/RETURN
+dropout counters. Tile sample rates can differ from the live device rate.
 
 ## Four-slot FX pedalboard
 
@@ -343,11 +359,13 @@ diagnostics.
 ### Windows audio coexistence
 
 TapeSister defaults to `audio_backend=Auto`. On Windows, CONFIG can also select
-WASAPI or DirectSound; save and restart after changing the backend. Auto/WASAPI
-shared mode is the recommended starting point when TapeSister must coexist with
-TapeHead, REAPER, or VB-CABLE. TapeSister does not provide native ASIO: running
-beside REAPER/ASIO is an interoperability case and still depends on the interface
-driver's sharing and exclusivity rules.
+ASIO, WASAPI or DirectSound; save and restart after changing the backend. The
+CFG `ON:` label identifies the backend actually running. Native ASIO puts Master,
+ordinary input and Insert Send/Return on one multichannel duplex driver clock,
+without the independent Insert queues. See [ASIO setup](docs/ASIO_AUDIO.md) for
+MOTU and VB-Audio Matrix routing. ASIO driver/buffer changes also require restart.
+Auto/WASAPI shared mode remains available for TapeHead, REAPER or VB-CABLE;
+hardware-driver sharing and exclusivity rules still apply.
 
 Configured and active devices are tracked separately. A named output or input is
 never silently replaced with the system default. If a named output fails at startup,

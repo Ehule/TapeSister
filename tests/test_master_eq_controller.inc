@@ -15,7 +15,7 @@ static void test_master_eq_controller(void)
     assert(eq_click(TS_UI_MASTER_LIMITER_X+5,10,SDL_BUTTON_LEFT));
     assert(ui.master_eq_open);
     assert(audio.sister.limiter.enabled==lim);
-    eq_click(360,55,SDL_BUTTON_LEFT);assert(audio.sister.master_eq.controls.enabled);
+    eq_click(412,55,SDL_BUTTON_LEFT);assert(audio.sister.master_eq.controls.enabled);
     uint64_t hash=paged_project_state_hash(NULL,&instrument,NULL,&audio.sister);
     eq_click(330,311,SDL_BUTTON_LEFT);
     assert(audio.sister.master_eq.controls.band[0].gain_db>0);
@@ -29,20 +29,20 @@ static void test_master_eq_controller(void)
         assert(!memcmp(&expected,&ui.config.master_eq.band[i],sizeof(expected)));
     }
     saved=ui.config.master_eq;
-    eq_click(135,260,SDL_BUTTON_LEFT); /* Gap between buttons is inert. */
+    eq_click(100,260,SDL_BUTTON_LEFT); /* Gap between buttons is inert. */
     assert(!memcmp(&saved,&ui.config.master_eq,sizeof(saved)));
     SDL_SetModState(KMOD_CTRL);eq_click(160,260,SDL_BUTTON_LEFT);
     assert(audio.sister.master_eq.controls.solo_band==2 && ui.master_eq_band==0);
     assert(!ui.config.master_eq.band[1].enabled && ts_master_eq_band_active(&ui.config.master_eq,1));
     eq_click(160,260,SDL_BUTTON_LEFT);
     assert(!memcmp(&saved,&ui.config.master_eq,sizeof(saved)));
-    eq_click(285,260,SDL_BUTTON_LEFT);eq_click(405,260,SDL_BUTTON_LEFT);
+    eq_click(222,260,SDL_BUTTON_LEFT);eq_click(310,260,SDL_BUTTON_LEFT);
     assert(audio.sister.master_eq.controls.solo_band==4);
-    SDL_SetModState(KMOD_NONE);eq_click(405,260,SDL_BUTTON_LEFT);
+    SDL_SetModState(KMOD_NONE);eq_click(310,260,SDL_BUTTON_LEFT);
     assert(!ui.config.master_eq.solo_band && !ui.config.master_eq.band[3].enabled);
     /* Learn selection never changes the sound. */
     saved=ui.config.master_eq;ui.midi_learn_active=1;
-    eq_click(285,260,SDL_BUTTON_LEFT);
+    eq_click(222,260,SDL_BUTTON_LEFT);
     assert(ui.master_eq_band==2 && !memcmp(&saved,&ui.config.master_eq,sizeof(saved)));
     ui.midi_learn_active=0;ui.master_eq_band=0;
     /* Reset clears solo along with the bands. */
@@ -54,7 +54,7 @@ static void test_master_eq_controller(void)
     for(int i=0;i<5;++i)assert(audio.sister.master_eq.controls.band[i].gain_db==0);
     /* Modal dialogs own their mouse/key input; no edits pass through. */
     ui.project_overwrite_confirm_open=1;
-    assert(!eq_click(360,55,SDL_BUTTON_LEFT));assert(!audio.sister.master_eq.controls.enabled);
+    assert(!eq_click(412,55,SDL_BUTTON_LEFT));assert(!audio.sister.master_eq.controls.enabled);
     ui.project_overwrite_confirm_open=0;
     assert(!ui.master_eq_open);master_eq_open(device,&audio,&ui);
     /* Drag a node while scaled 2x; the absolute musical pitch is irrelevant. */
@@ -135,6 +135,14 @@ static void test_master_eq_controller(void)
     ui.master_output.limiter_ceiling_db=-1;ui.master_output.limiter_gain_reduction_db=0;ui.master_output.gain=1;
     const char *shot=getenv("TS_TEST_MASTER_EQ_PPM");
     if(shot){static TsFramebuffer fb;ts_ui_render(&fb,&ui,&instrument);assert(ts_ui_write_ppm(&fb,shot));}
+    const char *record_shot=getenv("TS_TEST_EQ_RECORDING_PPM");
+    if(record_shot) {
+        ui.file_record_state=TS_PERFORMANCE_FILE_RECORDING;ui.file_record_rate=44100;
+        ui.file_record_frames=44100u*147u;ui.sister_capture_active=1;ui.text_cursor_visible=1;
+        static TsFramebuffer fb;ts_ui_render(&fb,&ui,&instrument);ts_ui_render_file_recording(&fb,&ui);
+        assert(ts_ui_write_ppm(&fb,record_shot));
+        ui.file_record_state=TS_PERFORMANCE_FILE_IDLE;ui.sister_capture_active=0;
+    }
     const char *solo_shot=getenv("TS_TEST_MASTER_EQ_SOLO_PPM");
     if(solo_shot) {
         ui.config.master_eq.band[1].enabled=0;ui.config.master_eq.solo_band=3;

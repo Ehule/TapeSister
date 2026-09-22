@@ -1,0 +1,35 @@
+name: JACK audio
+on:
+  pull_request:
+    paths:
+      - 'src/main_sdl_jack.inc'
+      - 'tests/test_jack_backend.c'
+      - '.github/workflows/jack-audio.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  jack-loop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      JACK_NO_AUDIO_RESERVATION: '1'
+      SDL_AUDIODRIVER: dummy
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install audio test dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libsdl2-dev jackd2
+      - name: Compile and test native endpoint lifecycle
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror $(sdl2-config --cflags) tests/test_jack_backend.c -o /tmp/test-jack $(sdl2-config --libs)
+          /tmp/test-jack
+      - name: Route stereo Send into Return through JACK
+        run: |
+          jackd --no-realtime -d dummy -r 48000 -p 128 > /tmp/jack.log 2>&1 &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true; cat /tmp/jack.log' EXIT
+          for attempt in $(seq 1 50); do
+            if jack_lsp >/dev/null 2>&1; then break; fi
+            sleep 0.1
+          done
+          /tmp/test-jack --live

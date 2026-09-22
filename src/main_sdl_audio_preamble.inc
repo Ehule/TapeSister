@@ -12,6 +12,13 @@
 #include "tapesister/midi_input.h"
 #include "tapesister/performance.h"
 
+static const char *ts_native_current_driver(void);
+static void ts_jack_poll(void);
+#if defined(TAPESISTER_HAS_ASIO)
+#include "tapesister/asio_backend.h"
+#endif
+#define SDL_GetCurrentAudioDriver ts_native_current_driver
+
 static SDL_AudioDeviceID ts_audio_open_device(const char *device, int iscapture,
                                                const SDL_AudioSpec *desired,
                                                SDL_AudioSpec *obtained,
@@ -32,6 +39,14 @@ static int ts_audio_endpoint_should_retry_output(void);
 static int ts_audio_endpoint_should_retry_capture(void);
 static int ts_audio_retry_capture_for_event(char *error, size_t error_size);
 static int ts_audio_output_is_available(void);
+static unsigned ts_audio_insert_offered_channels(void);
+static uint8_t ts_audio_capture_preferred_channels(const char *device);
+static void ts_audio_insert_devices_sync(void *audio,const TsConfig *config,int force,char *error,size_t size);
+static void ts_audio_insert_devices_suspend(void);
+static void ts_audio_insert_device_event(const SDL_Event *event);
+static void ts_audio_insert_cycle_device(TsUiState *ui,int side,int direction);
+static unsigned ts_audio_insert_choice_channels(const TsUiState *ui,int side);
+static void ts_audio_insert_diagnostics(void *audio,TsUiState *ui,int log);
 static int ts_audio_resolve_output_failure(SDL_Window *window);
 static int ts_switch_output_for_config(char *error, size_t error_size);
 static void ts_audio_catalog_refresh(void);

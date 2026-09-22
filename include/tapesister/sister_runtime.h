@@ -7,6 +7,7 @@
 #include "tapesister/sister_limiter.h"
 #include "tapesister/master_eq.h"
 #include "tapesister/router.h"
+#include "tapesister/insert.h"
 #include "tapesister/sister_wave_snapshot.h"
 
 #include <stdatomic.h>
@@ -132,6 +133,9 @@ typedef struct {
     uint64_t revision;
     TsPrismView prism;
     TsRouterControls router;
+    TsInsertControls insert;
+    float insert_send_peak, insert_return_peak;
+    unsigned insert_inputs, insert_outputs;
     float router_peaks[TS_ROUTER_COUNT*2+2];
     unsigned router_enabled;
     int router_transition;
@@ -139,6 +143,8 @@ typedef struct {
 
 typedef struct {
     atomic_int prism_valid, prism_seq_lens;
+    atomic_int insert_ports[4];
+    atomic_uint_least32_t insert_values[4];
     atomic_int router_state[TS_ROUTER_COUNT+4];
     atomic_uint_least32_t router_peaks[TS_ROUTER_COUNT*2+2];
     atomic_int prism_matrix_int[10];
@@ -205,6 +211,7 @@ typedef struct {
     TsSisterLimiter limiter;
     TsMasterEq master_eq;
     TsRouter router;
+    TsInsert insert;
     TsSisterParameters parameters;
     TsPerformanceBank performance;
     TsCaptureRecorder capture;
@@ -295,6 +302,7 @@ void ts_sister_runtime_set_parameters(TsSisterRuntime *runtime,
                                       const TsSisterParameters *parameters);
 /* Exclude the callback while editing, as for parameters. Publishes UI state
    immediately even when the output device is stopped or unavailable. */
+void ts_sister_runtime_set_insert(TsSisterRuntime *runtime,const TsInsertControls *controls);
 void ts_sister_runtime_set_router(TsSisterRuntime *runtime,const TsRouterControls *controls);
 void ts_sister_runtime_recall_fallout_preset(
     TsSisterRuntime *runtime, const TsSisterFalloutControls *controls);

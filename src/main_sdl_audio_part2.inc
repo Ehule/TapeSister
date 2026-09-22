@@ -1,5 +1,8 @@
 static void ts_audio_catalog_refresh(void)
 {
+#if defined(TAPESISTER_HAS_ASIO)
+    if (ts_asio_selected) ts_asio_rescan();
+#endif
     char midi_error[160];
     int input_ok = ts_audio_name_list_refresh(
         1, &ts_device_catalog.input_names, &ts_device_catalog.input_count);
@@ -7,6 +10,7 @@ static void ts_audio_catalog_refresh(void)
         0, &ts_device_catalog.output_names, &ts_device_catalog.output_count);
     int midi_ok = ts_midi_input != NULL &&
         ts_midi_input_rescan(ts_midi_input, midi_error, sizeof(midi_error));
+    if (ts_midi_input == NULL) midi_ok=1;
     if (ts_live_ui != NULL) {
         if (input_ok && output_ok && midi_ok)
             snprintf(ts_live_ui->status, sizeof(ts_live_ui->status),
@@ -140,6 +144,7 @@ static int ts_reopen_capture_for_config(void)
     replacement = ts_audio_open_capture_widest(
         wanted, &desired, &obtained, ts_capture_allowed_changes);
     if (replacement == 0) {
+        if(input->insert)ts_insert_capture_prepare(input->insert,0,0,0);
         if (audio != NULL && ts_real_capture == 0)
             ts_sister_runtime_input_available(&audio->sister, 0);
         snprintf(ts_capture_reconfigure_error,
@@ -149,17 +154,17 @@ static int ts_reopen_capture_for_config(void)
         return 0;
     }
     if (obtained.format != AUDIO_F32SYS || obtained.freq <= 0 ||
-        obtained.channels == 0 ||
-        obtained.channels > TS_INPUT_DEVICE_CHANNEL_MAX) {
+        obtained.channels == 0) {
         ts_audio_close_device(replacement);
         if (audio != NULL && ts_real_capture == 0)
             ts_sister_runtime_input_available(&audio->sister, 0);
         snprintf(ts_capture_reconfigure_error,
                  sizeof(ts_capture_reconfigure_error),
-                 "Configured recording input must provide float audio with 1-8 channels");
+                 "Configured recording input must provide float audio with at least one channel");
         return 0;
     }
     input->channels = obtained.channels;
+    if(input->insert)ts_insert_capture_prepare(input->insert,obtained.channels,(unsigned)obtained.freq,obtained.samples);
     input->sample_rate = (uint32_t)obtained.freq;
     ts_input_monitor_set_prime_frames(
         &input->monitor,

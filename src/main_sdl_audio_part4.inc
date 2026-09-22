@@ -130,7 +130,9 @@ static void ts_audio_render_config(TsFramebuffer *fb, const TsUiState *ui)
     cfg_frame(fb, 10, TS_AUDIO_CONFIG_PANEL_Y, 620,
               TS_AUDIO_CONFIG_PANEL_H, panel, mouse_color);
     cfg_text(fb, 20, 45, "CONFIGURATION", instrument_color);
-    cfg_text(fb, 320, 45, "AUDIO/MIDI < OR >   SAVE APPLIES", effect_color);
+    cfg_text(fb, 300, 45,
+        ui->config.audio_backend != ts_started_backend ? "BACKEND: SAVE THEN RESTART" :
+        ts_asio_selected ? "ASIO DRIVER/BUF: SAVE+RESTART" : "BACKEND CHANGE NEEDS RESTART", effect_color);
 
     for (int field = 0; field < TS_CONFIG_FIELD_COUNT; ++field) {
         const char *value = ts_config_field_const(&ui->config, (TsConfigField)field);

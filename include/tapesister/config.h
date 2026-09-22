@@ -6,6 +6,7 @@
 #include "tapesister/audio_lifecycle.h"
 #include "tapesister/master_eq.h"
 #include "tapesister/router.h"
+#include "tapesister/insert.h"
 #include "tapesister/audition.h"
 #include "tapesister/dsp_recipe.h"
 #include "tapesister/midi_map.h"
@@ -111,6 +112,9 @@ typedef struct {
     char cdp_bin_path[TS_CONFIG_PATH_MAX];
     char record_input_device[TS_CONFIG_PATH_MAX];
     char audio_output_device[TS_CONFIG_PATH_MAX];
+    /* Empty uses Master spare channels / the shared CFG capture device. */
+    char insert_send_device[TS_CONFIG_PATH_MAX];
+    char insert_return_device[TS_CONFIG_PATH_MAX];
     char midi_input_device[TS_CONFIG_PATH_MAX];
     int startup_welcome_sample;
     int startup_welcome_autoplay;
@@ -127,6 +131,7 @@ typedef struct {
     int master_output_percent;
     TsMasterEqControls master_eq;
     TsRouterControls router;
+    TsInsertControls insert;
     TsAudioBackend audio_backend;
     int audio_backend_invalid;
     int audio_buffer_frames;

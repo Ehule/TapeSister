@@ -24,7 +24,7 @@ static char *trim(char *text)
 
 int ts_audio_buffer_frames_valid(int frames)
 {
-    return frames == 256 || frames == 512 || frames == 1024;
+    return frames == 128 || frames == 256 || frames == 512 || frames == 1024;
 }
 
 static int load_device_settings(TsConfig *config, const char *path,
@@ -74,7 +74,7 @@ static int load_device_settings(TsConfig *config, const char *path,
                 !ts_audio_buffer_frames_valid((int)frames)) {
                 fclose(file);
                 set_error(error, error_size,
-                          "Configured audio buffer must be 256, 512, or 1024 frames");
+                          "Configured audio buffer must be 128, 256, 512, or 1024 frames");
                 return 0;
             }
             config->audio_buffer_frames = (int)frames;
@@ -148,11 +148,11 @@ int ts_audio_config_save(const TsConfig *config, const char *path,
     }
     if (fprintf(file,
                 "\n[Audio]\n"
-                "; Auto is recommended. Windows also supports WASAPI and DirectSound.\n"
+                "; Backend: Auto, ASIO (Windows), JACK (Linux), PipeWire, PulseAudio, ALSA, WASAPI, DirectSound, etc.\n"
                 "audio_backend=%s\n"
                 "; Blank uses the operating system default stereo playback device.\n"
                 "audio_output_device=%s\n"
-                "; Shared playback/capture callback size: 256, 512, or 1024 frames.\n"
+                "; Shared playback/capture callback size: 128, 256, 512, or 1024 frames.\n"
                 "audio_buffer_frames=%d\n"
                 "\n[MIDI]\n"
                 "; Blank automatically opens the first input; OFF disables MIDI.\n"

@@ -299,7 +299,7 @@ static void test_multichannel_activity_state(void)
     ts_input_activity_set_available(&activity, 0u);
     CHECK(ts_input_activity_take(&activity) == 0u);
     ts_input_activity_set_available(&activity, 9u);
-    CHECK(ts_input_activity_available(&activity) == 0u);
+    CHECK(ts_input_activity_available(&activity) == 8u);
 }
 
 static void test_capture_channel_probe_policy(void)

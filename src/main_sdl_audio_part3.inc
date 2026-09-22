@@ -2,13 +2,15 @@
 
     SDL_zero(obtained);
     desired = ts_output_desired;
+    ts_audio_insert_devices_suspend();
     desired.samples = (Uint16)ts_live_config->audio_buffer_frames;
     ts_audio_endpoint_configure(&ts_output_endpoint,
                                 wanted != NULL ? wanted : "");
     ts_audio_endpoint_begin_open(&ts_output_endpoint, 0);
-    replacement = SDL_OpenAudioDevice(
-        wanted, 0, &desired, &obtained, ts_output_allowed_changes);
+    replacement = ts_audio_open_output_native(
+        wanted, &desired, &obtained, ts_output_allowed_changes);
     if (replacement == 0) {
+        if(audio){ts_audio_lock_device(TS_AUDIO_LOGICAL_OUTPUT);audio->sister.insert.output_channels=0;ts_audio_unlock_device(TS_AUDIO_LOGICAL_OUTPUT);}
         snprintf(error, error_size, "%.120s", SDL_GetError());
         if (old != 0) {
             ts_output_endpoint = previous;
@@ -29,6 +31,7 @@
         stop_all_force(TS_AUDIO_LOGICAL_OUTPUT, audio, ts_live_ui);
     if (old != 0) SDL_PauseAudioDevice(old, 1);
     ts_real_output = replacement;
+    ts_audio_commit_output_layout(audio,&obtained);
     ts_audio_active_device_name(active_name, sizeof(active_name), wanted, 0);
     ts_audio_endpoint_opened(
         &ts_output_endpoint, (uint32_t)replacement,
@@ -111,6 +114,13 @@ static SDL_AudioDeviceID ts_audio_open_capture_widest(
         SDL_SetError("Capture format is missing");
         return 0;
     }
+    if(insert_endpoints[1].device) {
+        char capture_name[TS_CONFIG_PATH_MAX];
+        ts_audio_active_device_name(capture_name,sizeof(capture_name),device,1);
+        if(!strcmp(capture_name,insert_endpoints[1].endpoint.active_name)) {
+            insert_endpoint_close(1);insert_devices_dirty=1;
+        }
+    }
     maximum = desired->channels;
     if (maximum == 0u || maximum > TS_INPUT_DEVICE_CHANNEL_MAX)
         maximum = TS_INPUT_DEVICE_CHANNEL_MAX;
@@ -122,8 +132,9 @@ static SDL_AudioDeviceID ts_audio_open_capture_widest(
      * Start with the selected device's advertised layout. This matters on
      * PipeWire/PulseAudio, where asking for eight channels can create an
      * artificial remixed stream instead of exposing the node's physical
-     * channel count. Older/opaque backends fall back to a descending exact
-     * probe. Rate and buffer-size negotiation remain enabled. This is a
+     * channel count. Older/opaque backends fall back to descending requests,
+     * accepting the first valid negotiated layout. Rate, channel and buffer-size
+     * negotiation remain enabled. This is a
      * control-thread device-open path; no probing reaches either callback.
      */
     for (uint8_t probe = 0u; ; ++probe) {
@@ -133,15 +144,14 @@ static SDL_AudioDeviceID ts_audio_open_capture_widest(
         attempt.channels = channels;
         SDL_zero(candidate_spec);
         candidate = SDL_OpenAudioDevice(
-            device, 1, &attempt, &candidate_spec, allowed_changes);
+            device, 1, &attempt, &candidate_spec, allowed_changes | SDL_AUDIO_ALLOW_CHANNELS_CHANGE);
         if (candidate == 0) {
             snprintf(open_error, sizeof(open_error), "%s", SDL_GetError());
             continue;
         }
         if (candidate_spec.format == attempt.format &&
             candidate_spec.freq > 0 && candidate_spec.samples > 0 &&
-            ts_input_capture_probe_accepts(attempt.channels,
-                                           candidate_spec.channels)) {
+            candidate_spec.channels >= 1) {
             if (old != 0) SDL_CloseAudioDevice(old);
             ts_real_capture = candidate;
             ts_audio_active_device_name(active_name, sizeof(active_name),
@@ -211,8 +221,9 @@ static SDL_AudioDeviceID ts_audio_open_device(const char *device, int iscapture,
         ts_audio_endpoint_configure(&ts_output_endpoint,
                                     wanted != NULL ? wanted : "");
         ts_audio_endpoint_begin_open(&ts_output_endpoint, 0);
-        real = SDL_OpenAudioDevice(wanted, 0, desired, obtained, allowed_changes);
+        real = ts_audio_open_output_native(wanted, desired, obtained, allowed_changes);
         if (real != 0) {
+            ts_audio_commit_output_layout((AudioState *)ts_output_userdata,obtained);
             ts_copy_name(ts_active_output, sizeof(ts_active_output),
                          wanted != NULL ? wanted : "");
             ts_audio_active_device_name(active_name, sizeof(active_name),
@@ -266,7 +277,8 @@ static int ts_audio_open_approved_default_output(char *error,
     desired.samples = (Uint16)ts_live_config->audio_buffer_frames;
     SDL_zero(obtained);
     ts_audio_endpoint_begin_open(&ts_output_endpoint, 1);
-    replacement = SDL_OpenAudioDevice(NULL, 0, &desired, &obtained,
+    ts_audio_insert_devices_suspend();
+    replacement = ts_audio_open_output_native(NULL, &desired, &obtained,
                                       ts_output_allowed_changes);
     if (replacement == 0) {
         snprintf(error, error_size, "%.150s", SDL_GetError());
@@ -275,6 +287,7 @@ static int ts_audio_open_approved_default_output(char *error,
         return 0;
     }
     ts_real_output = replacement;
+    ts_audio_commit_output_layout(audio,&obtained);
     ts_output_desired = desired;
     if (ts_output_obtained_target != NULL)
         *ts_output_obtained_target = obtained;
@@ -283,6 +296,9 @@ static int ts_audio_open_approved_default_output(char *error,
         ts_audio_reconfigure_sister_if_needed(audio, &obtained);
     }
     ts_active_output[0] = '\0';
+    /* Approval to hear Master on a temporary device is not approval to send
+       an external loop to that device's spare sockets. */
+    if(audio)audio->sister.insert.output_channels=0;
     ts_audio_active_device_name(active_name, sizeof(active_name), NULL, 0);
     ts_audio_endpoint_opened(
         &ts_output_endpoint, (uint32_t)replacement, active_name, 1,
@@ -361,6 +377,7 @@ static int ts_audio_resolve_output_failure(SDL_Window *window)
 
 static void ts_audio_close_device(SDL_AudioDeviceID device)
 {
+    if(device==TS_AUDIO_LOGICAL_OUTPUT)ts_audio_insert_devices_suspend();
     SDL_AudioDeviceID real;
     ts_audio_endpoints_init();
     if (device == TS_AUDIO_LOGICAL_OUTPUT)
@@ -409,6 +426,14 @@ static void ts_audio_pause_device(SDL_AudioDeviceID device, int pause_on)
 
 static void ts_audio_quit(void)
 {
+#if defined(TAPESISTER_HAS_ASIO)
+    ts_asio_quit();
+#endif
+#if defined(__linux__)
+    for (int i=0;i<TS_JACK_SLOTS;++i) ts_jack_close(&ts_jack_endpoints[i]);
+    if (ts_jack_library) SDL_UnloadObject(ts_jack_library);
+    ts_jack_library=NULL;ts_jack_selected=0;
+#endif
     ts_audio_catalog_free();
     ts_midi_input_destroy(ts_midi_input);
     ts_midi_input = NULL;
@@ -457,8 +482,27 @@ static int ts_audio_main_config_save(const TsConfig *config, const char *path,
     char midi_error[160];
     char switch_error[160];
     int output_changed;
+    /* Backend catalogs and ASIO drivers cannot be switched by reopening just
+       one endpoint. Persist the request, keep current streams intact and make
+       the required restart explicit. Do not reopen old-backend device names. */
+    int backend_changed = config->audio_backend != ts_started_backend;
+    if (backend_changed && ts_live_ui && config == &ts_live_ui->config) {
+        TsConfig *editable = &ts_live_ui->config;
+        editable->audio_output_device[0] = 0;
+        editable->record_input_device[0] = 0;
+        editable->insert_send_device[0] = 0;
+        editable->insert_return_device[0] = 0;
+    }
     if (!ts_audio_main_config_write(config, path, error, error_size)) return 0;
     ts_live_config = (TsConfig *)config;
+    if (backend_changed || (ts_asio_selected &&
+        (ts_output_desired.samples != (Uint16)config->audio_buffer_frames ||
+         strcmp(config->audio_output_device, ts_active_output)))) {
+        snprintf(ts_pending_notice, sizeof(ts_pending_notice),
+                 "CONFIG SAVED - RESTART REQUIRED FOR %s DRIVER / BUFFER",
+                 ts_audio_backend_name(config->audio_backend));
+        return 1;
+    }
 
     output_changed = ts_real_output == 0 ||
         ts_output_desired.samples != (Uint16)config->audio_buffer_frames ||

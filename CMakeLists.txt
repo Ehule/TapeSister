@@ -19,7 +19,7 @@ add_library(tapesister_core src/ts_sample.c src/ts_prism.c src/ts_prism_performa
              src/ts_audio_lifecycle.c
              src/ts_realtime_diagnostics.c
              src/ts_sister_effects.c src/ts_sister_fallout.c src/ts_sister_post_fx.c
-             src/ts_sister_limiter.c src/ts_master_eq.c src/ts_router.c
+             src/ts_sister_limiter.c src/ts_master_eq.c src/ts_router.c src/ts_insert.c
              src/ts_sister_machine.c src/ts_sister_wave_snapshot.c
              src/ts_sister_runtime.c src/ts_sister_ui.c
              src/ts_sister_preset.c src/ts_sister_project_state.c
@@ -50,6 +50,17 @@ if(TAPESISTER_BUNDLE_CDP8)
 endif()
 if(TAPESISTER_BUILD_SDL)
   find_package(SDL2 REQUIRED)
+  enable_language(CXX)
+  add_executable(tapesister_asio_adapter_tests tests/test_asio_backend.cpp src/ts_asio_backend.cpp)
+  target_compile_features(tapesister_asio_adapter_tests PRIVATE cxx_std_11)
+  target_include_directories(tapesister_asio_adapter_tests PRIVATE tests/asio_fixture include)
+  target_link_libraries(tapesister_asio_adapter_tests PRIVATE SDL2::SDL2)
+  if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(tapesister_asio_adapter_tests PRIVATE -UNDEBUG -Wall -Wextra)
+  endif()
+  add_executable(tapesister_jack_backend_tests tests/test_jack_backend.c)
+  target_link_libraries(tapesister_jack_backend_tests PRIVATE SDL2::SDL2)
+
   # main_sdl.c is the one canonical callback/application translation unit.
   add_executable(tapesister src/main_sdl.c src/tape_link.c
                             src/tape_companion.c src/ts_startup_diag.c
@@ -66,6 +77,29 @@ if(TAPESISTER_BUILD_SDL)
   endif()
   target_include_directories(tapesister PRIVATE third_party)
   target_link_libraries(tapesister PRIVATE tapesister_core SDL2::SDL2)
+  if(WIN32)
+    enable_language(CXX)
+    add_library(tapesister_asio STATIC src/ts_asio_backend.cpp
+      third_party/rtaudio/RtAudio.cpp
+      third_party/rtaudio/include/asio.cpp
+      third_party/rtaudio/include/asiodrivers.cpp
+      third_party/rtaudio/include/asiolist.cpp
+      third_party/rtaudio/include/iasiothiscallresolver.cpp)
+    target_compile_features(tapesister_asio PRIVATE cxx_std_11)
+    target_include_directories(tapesister_asio PUBLIC include PRIVATE
+      third_party/rtaudio third_party/rtaudio/include)
+    target_compile_definitions(tapesister_asio PRIVATE __WINDOWS_ASIO__)
+    target_link_libraries(tapesister_asio PUBLIC SDL2::SDL2 PRIVATE ole32 winmm uuid)
+    target_compile_definitions(tapesister PRIVATE TAPESISTER_HAS_ASIO)
+    target_link_libraries(tapesister PRIVATE tapesister_asio)
+    add_custom_command(TARGET tapesister POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:tapesister>/licenses/rtaudio"
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/rtaudio/LICENSE"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/rtaudio/UPSTREAM.md"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/rtaudio/include/asioinfo.txt"
+        "$<TARGET_FILE_DIR:tapesister>/licenses/rtaudio")
+  endif()
   if(UNIX AND NOT APPLE)
     target_link_libraries(tapesister PRIVATE rt)
   endif()
@@ -118,7 +152,7 @@ if(TAPESISTER_BUILD_SDL)
     # beside it after every link.  In particular, RtMidi enables C++ and adds
     # libstdc++ to an application that was previously C-only.
     set(TAPESISTER_MINGW_RUNTIME_COMPILER "${CMAKE_C_COMPILER}")
-    if(TAPESISTER_MIDI_AVAILABLE)
+    if(TAPESISTER_MIDI_AVAILABLE OR WIN32)
       set(TAPESISTER_MINGW_RUNTIME_COMPILER "${CMAKE_CXX_COMPILER}")
     endif()
     get_filename_component(TAPESISTER_MINGW_BIN_DIR
@@ -170,7 +204,7 @@ if(TAPESISTER_BUILD_SDL)
           set(TAPESISTER_MINGW_GCC_RUNTIME_FOUND ON)
         endif()
       elseif(runtime_name STREQUAL "SDL2.dll" OR
-             (TAPESISTER_MIDI_AVAILABLE AND
+             ((TAPESISTER_MIDI_AVAILABLE OR WIN32) AND
               (runtime_name STREQUAL "libstdc++-6.dll" OR
                runtime_name STREQUAL "libwinpthread-1.dll")))
         message(FATAL_ERROR
@@ -215,6 +249,10 @@ if(TAPESISTER_BUILD_SDL)
 endif()
 
 enable_testing()
+if(TAPESISTER_BUILD_SDL)
+  add_test(NAME tapesister_asio_adapter_tests COMMAND tapesister_asio_adapter_tests)
+  add_test(NAME tapesister_jack_backend_tests COMMAND tapesister_jack_backend_tests)
+endif()
 add_executable(tapesister_core_tests tests/test_core.c)
 target_link_libraries(tapesister_core_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_core_tests COMMAND tapesister_core_tests)
@@ -472,3 +510,6 @@ add_test(NAME tapesister_master_eq_tests COMMAND tapesister_master_eq_tests)
 add_executable(tapesister_router_tests tests/test_router.c)
 target_link_libraries(tapesister_router_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_router_tests COMMAND tapesister_router_tests)
+add_executable(tapesister_insert_tests tests/test_insert.c)
+target_link_libraries(tapesister_insert_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_insert_tests COMMAND tapesister_insert_tests)

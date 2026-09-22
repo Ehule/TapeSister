@@ -5,12 +5,16 @@ end, roll off subsonic material, tame a resonance or harsh range, or make a broa
 tonal adjustment. Click **EQ** in the main or Sister window to open the native
 **Master / Room EQ** page. Opening the page does not change limiter state.
 
-**GLOBAL ROUTER / F9** opens the serial macro-routing page. EQ, limiter and OUT
+The compact **ROUTER F9** button beside OUT opens the serial macro-routing page. EQ, limiter and OUT
 always remain after its movable stages. See the [Global Router controls](USER_MANUAL.md#global-router).
 
 Hover a button, graph node, or slider for **600 ms** to see help and shortcuts
 in the bottom status line. Moving away restores the operation message. Fresh
 messages take priority for 2.4 seconds over help for the same control.
+
+Band/type buttons use compact widths. Limiter, OUT and Router have separate hit
+areas on the bottom row. File recording uses one REC label in the header and its
+persistent footer; it does not draw REC over the input-channel count or logo.
 
 ![Master / Room EQ](images/master-performance-eq.png)
 

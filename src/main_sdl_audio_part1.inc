@@ -506,18 +506,38 @@ static void ts_audio_reconfigure_sister_if_needed(AudioState *audio,
     if (audio == NULL || spec == NULL || spec->freq <= 0) return;
     if (audio->sister.enabled &&
         audio->sister.machine.buffer.sample_rate == (uint32_t)spec->freq &&
-        audio->sister.output_channels == spec->channels)
+        audio->sister.output_channels == 2)
         return;
     (void)ts_sister_runtime_reconfigure(
-        &audio->sister, (uint32_t)spec->freq, spec->channels, NULL, 0u);
+        &audio->sister, (uint32_t)spec->freq, 2, NULL, 0u);
+}
+
+static int ts_audio_backend_compiled(TsAudioBackend backend)
+{
+#if defined(TAPESISTER_HAS_ASIO)
+    if (backend == TS_AUDIO_BACKEND_ASIO) return 1;
+#endif
+#if defined(__linux__)
+    if (backend == TS_AUDIO_BACKEND_JACK) return 1;
+#endif
+    const char *wanted = ts_audio_backend_sdl_driver(backend);
+    if (!wanted) return backend == TS_AUDIO_BACKEND_AUTO;
+    for (int i = 0; i < SDL_GetNumAudioDrivers(); ++i) {
+        const char *name = SDL_GetAudioDriver(i);
+        if (name && !strcmp(name, wanted)) return 1;
+    }
+    return 0;
 }
 
 static void ts_cycle_audio_backend(int direction)
 {
-    int backend;
     if (ts_live_config == NULL) return;
-    backend = (int)ts_live_config->audio_backend;
-    backend = (backend + (direction >= 0 ? 1 : 2)) % 3;
+    int backend = (int)ts_live_config->audio_backend;
+    for (int i = 0; i < TS_AUDIO_BACKEND_COUNT; ++i) {
+        backend = (backend + (direction >= 0 ? 1 : TS_AUDIO_BACKEND_COUNT - 1)) %
+                  TS_AUDIO_BACKEND_COUNT;
+        if (ts_audio_backend_compiled((TsAudioBackend)backend)) break;
+    }
     ts_live_config->audio_backend = (TsAudioBackend)backend;
     ts_live_config->audio_backend_invalid = 0;
 }
@@ -569,15 +589,15 @@ static void ts_cycle_midi_channel(int direction)
 
 static void ts_cycle_audio_buffer(int direction)
 {
-    static const int frames[] = {256, 512, 1024};
-    int current = 1;
+    static const int frames[] = {128, 256, 512, 1024};
+    int current = 2;
     if (ts_live_config == NULL) return;
-    for (int index = 0; index < 3; ++index)
+    for (int index = 0; index < 4; ++index)
         if (ts_live_config->audio_buffer_frames == frames[index]) {
             current = index;
             break;
         }
-    current = (current + (direction >= 0 ? 1 : 2)) % 3;
+    current = (current + (direction >= 0 ? 1 : 3)) % 4;
     ts_live_config->audio_buffer_frames = frames[current];
 }
 
@@ -604,6 +624,8 @@ static const char *ts_configured_input_name(void)
            ts_live_config->record_input_device : NULL;
 }
 
+#include "main_sdl_insert_audio.inc"
+
 static SDL_AudioDeviceID ts_audio_real_id(SDL_AudioDeviceID logical)
 {
     if (logical == TS_AUDIO_LOGICAL_OUTPUT) return ts_real_output;
@@ -616,7 +638,27 @@ static int ts_audio_apply_backend_before_sdl(TsAudioBackend backend)
     const char *driver = ts_audio_backend_sdl_driver(backend);
     ts_audio_endpoints_init();
     ts_started_backend = backend;
-#ifdef _WIN32
+#if defined(TAPESISTER_HAS_ASIO)
+    ts_asio_selected = backend == TS_AUDIO_BACKEND_ASIO;
+    if (ts_asio_selected) driver = "dummy";
+#endif
+#if defined(__linux__)
+    ts_jack_selected = backend == TS_AUDIO_BACKEND_JACK;
+    /* SDL still owns video/timers; native JACK owns every audio endpoint. */
+    if (ts_jack_selected) driver = "dummy";
+#endif
+    SDL_SetHint("SDL_AUDIO_DEVICE_APP_NAME", "TapeSister");
+    SDL_SetHint("SDL_AUDIO_DEVICE_STREAM_NAME", "TapeSister");
+    /* Include monitor/loopback sources offered by PulseAudio/PipeWire. */
+    SDL_SetHint("SDL_AUDIO_INCLUDE_MONITORS", "1");
+    for (int i = 0; i < SDL_GetNumAudioDrivers(); ++i)
+        diagnostic_log("compiled SDL audio backend: %s", SDL_GetAudioDriver(i));
+    if (!ts_audio_backend_compiled(backend)) {
+        SDL_SetError("Backend %s is not included in this SDL build; select Auto or install an SDL build with that backend",
+                     ts_audio_backend_name(backend));
+        fprintf(stderr, "TapeSister audio: %s\n", SDL_GetError());
+        return 0;
+    }
     if (driver != NULL &&
         !SDL_SetHintWithPriority(SDL_HINT_AUDIODRIVER, driver,
                                  SDL_HINT_OVERRIDE)) {
@@ -625,12 +667,6 @@ static int ts_audio_apply_backend_before_sdl(TsAudioBackend backend)
                 ts_audio_backend_name(backend));
         return 0;
     }
-#else
-    if (driver != NULL)
-        fprintf(stderr,
-                "TapeSister audio: backend %s is Windows-only; using Auto here\n",
-                ts_audio_backend_name(backend));
-#endif
     fprintf(stderr, "TapeSister audio: configured backend=%s\n",
             ts_audio_backend_name(backend));
     return 1;
@@ -640,9 +676,6 @@ static int ts_audio_log_active_backend(TsAudioBackend backend)
 {
     const char *active = SDL_GetCurrentAudioDriver();
     const char *requested = ts_audio_backend_sdl_driver(backend);
-#ifndef _WIN32
-    requested = NULL;
-#endif
     fprintf(stderr,
             "TapeSister audio: configured backend=%s active SDL backend=%s\n",
             ts_audio_backend_name(backend),
@@ -675,6 +708,7 @@ static int ts_audio_device_event_matches(int is_capture,
 
 static void ts_audio_handle_removed(int is_capture, const char *error)
 {
+    if(!is_capture)ts_audio_insert_devices_suspend();
     TsAudioEndpoint *endpoint;
     SDL_AudioDeviceID real;
     ts_audio_endpoints_init();
@@ -688,7 +722,7 @@ static void ts_audio_handle_removed(int is_capture, const char *error)
         ts_real_output = 0;
         if (ts_output_obtained_target != NULL)
             SDL_zero(*ts_output_obtained_target);
-        if (audio != NULL) audio->output_rate = 0;
+        if (audio != NULL) {audio->output_rate = 0;audio->sister.insert.output_channels=0;}
     }
     ts_audio_log_endpoint(endpoint);
 }

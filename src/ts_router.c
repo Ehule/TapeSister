@@ -7,7 +7,10 @@
 #include <string.h>
 
 void ts_router_default(TsRouterControls *c)
-{ memset(c,0,sizeof(*c));for(int i=0;i<TS_ROUTER_COUNT;++i)c->order[i]=i; }
+{
+    memset(c,0,sizeof(*c));for(int i=0;i<TS_ROUTER_COUNT;++i)c->order[i]=i;
+    c->bypass_mask=1u<<TS_ROUTER_INSERT;
+}
 int ts_router_valid(const TsRouterControls *c)
 {
     unsigned seen=0;
@@ -41,12 +44,12 @@ void ts_router_toggle_bypass(TsRouterControls *c,int s)
 void ts_router_toggle_solo(TsRouterControls *c,int s)
 { if(c && s>=0 && s<TS_ROUTER_COUNT)c->solo=c->solo==s+1?0:s+1; }
 const char *ts_router_name(int s)
-{ static const char *names[]={"PRISM","SISTER MACHINE","FALLOUT","PEDALBOARD"};return s>=0 && s<TS_ROUTER_COUNT?names[s]:"UNKNOWN"; }
+{ static const char *names[]={"PRISM","SISTER MACHINE","FALLOUT","PEDALBOARD","INSERT"};return s>=0 && s<TS_ROUTER_COUNT?names[s]:"UNKNOWN"; }
 void ts_router_init(TsRouter *r)
 {
     memset(r,0,sizeof(*r));ts_router_default(&r->controls);
     memcpy(r->order,r->controls.order,sizeof(r->order));r->gain=1;
-    for(int i=0;i<TS_ROUTER_COUNT;++i)r->wet[i]=1;
+    for(int i=0;i<TS_ROUTER_COUNT;++i)r->wet[i]=ts_router_active(&r->controls,i)?1:0;
     ts_router_prepare(r,48000);
 }
 void ts_router_prepare(TsRouter *r,unsigned rate)
@@ -64,6 +67,10 @@ void ts_router_set(TsRouter *r,const TsRouterControls *c)
 }
 static float peak(TsStereoFrame f) {return fmaxf(fabsf(f.l),fabsf(f.r));}
 TsStereoFrame ts_router_process(TsRouter *r,TsStereoFrame in,TsRouterProcess fn,void *context)
+{ return ts_router_process_with_prepare(r,in,fn,NULL,context); }
+
+TsStereoFrame ts_router_process_with_prepare(TsRouter *r,TsStereoFrame in,
+    TsRouterProcess fn,TsRouterProcess prepare,void *context)
 {
     in=ts_stereo_frame_sanitize(in);
     if(!r || !fn)return in;
@@ -80,6 +87,7 @@ TsStereoFrame ts_router_process(TsRouter *r,TsStereoFrame in,TsRouterProcess fn,
         int s=r->order[i];float target=ts_router_active(&r->controls,s)?1:0;
         float *wet=&r->wet[s],step=r->step*.5f;
         *wet=target>*wet?fminf(target,*wet+step):fmaxf(target,*wet-step);
+        if(prepare)in=ts_stereo_frame_sanitize(prepare(context,s,in));
         r->input_peak[s]=fmaxf(peak(in),r->input_peak[s]*r->decay);
         TsStereoFrame out=ts_stereo_frame_sanitize(fn(context,s,*wet>0?in:(TsStereoFrame){0,0}));
         in=(TsStereoFrame){in.l+(out.l-in.l)*(*wet),in.r+(out.r-in.r)*(*wet)};
@@ -109,8 +117,16 @@ int ts_router_read(TsRouterControls *c,const char *key,const char *value)
     TsRouterControls next=*c;int n;
     if(!strcmp(key,"Router.Order")) {
         for(int i=0;i<TS_ROUTER_COUNT;++i) {
+            /* v23 saved four stable IDs. Append the new, safely bypassed Insert. */
+            if(i==TS_ROUTER_INSERT && !*value) {
+                next.order[i]=TS_ROUTER_INSERT;next.bypass_mask|=1u<<TS_ROUTER_INSERT;break;
+            }
             if(!read_integer(&value,&next.order[i]))return -1;
-            if(i+1<TS_ROUTER_COUNT){if(*value!=',')return -1;++value;}
+            if(i+1<TS_ROUTER_COUNT){
+                if(i==TS_ROUTER_INSERT-1 && !*value)continue;
+                if(*value!=',')return -1;
+                ++value;
+            }
         }
     } else if(!strcmp(key,"Router.Bypass")) {
         if(!read_integer(&value,&n) || n<0)return -1;

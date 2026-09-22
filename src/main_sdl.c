@@ -128,6 +128,10 @@ static int show_splash(SDL_Renderer *renderer)
         int output_width;
         int output_height;
         SDL_Rect destination;
+        ts_jack_poll();
+#if defined(TAPESISTER_HAS_ASIO)
+        ts_asio_poll();
+#endif
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_QUIT) {
                 SDL_DestroyTexture(splash);
@@ -641,6 +645,7 @@ static uint64_t paged_project_state_hash(const TsSamplePages *pages,
     if (sister != NULL) {
         state_hash_bytes(&hash,&sister->master_eq.controls,sizeof(sister->master_eq.controls));
         state_hash_bytes(&hash,&sister->router.controls,sizeof(sister->router.controls));
+        state_hash_bytes(&hash,&sister->insert.controls,sizeof(sister->insert.controls));
         uint8_t routes = sister->source_switches & TS_SISTER_SOURCE_ALL;
         state_hash_bytes(&hash, &routes, sizeof(routes));
         state_hash_bytes(&hash, sister->page_source_masks,
@@ -754,6 +759,7 @@ typedef struct {
     int loop_intro;
     int playing;
     int output_rate;
+    unsigned output_device_channels;
     int bank_slot;
     size_t attack_frame;
     size_t attack_frames;
@@ -957,7 +963,10 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
 {
     AudioState *audio = (AudioState *)userdata;
     float *out = (float *)stream;
-    int values = bytes / (int)sizeof(float);
+    unsigned device_channels=audio->output_device_channels?audio->output_device_channels:2u;
+    int frames=bytes/(int)(sizeof(float)*device_channels);
+    int values=frames*2;
+    memset(stream,0,(size_t)bytes);
     float synth_block_peak = 0.0f;
     size_t live_link_frames = values > 0 ? (size_t)values / 2u : 0u;
     int live_link_block_valid = audio->live_link_buffer != NULL &&
@@ -971,7 +980,9 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
                                  live_link_frames,
                                  (uint32_t)audio->output_rate);
     ts_sister_runtime_begin_audio_block(&audio->sister);
+    ts_insert_begin_output_block(&audio->sister.insert, (unsigned)frames);
     for (int i = 0; i < values; i += 2) {
+        audio->sister.insert.send=(TsStereoFrame){0,0};
         TsAudioBuses buses;
         TsSisterSourceFrames sister_sources = {0};
         TsSisterRuntimeFrame sister_frame;
@@ -1017,6 +1028,9 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             ts_input_monitor_read_frame(audio->input_monitor,
                                         (uint32_t)audio->output_rate) :
             (TsStereoFrame){0.0f, 0.0f};
+        if(atomic_load_explicit(&audio->sister.insert.monitor_port_ack,memory_order_acquire)!=
+           ts_insert_reserved_port(&audio->sister.insert))
+            buses.external=(TsStereoFrame){0,0};
         if (live_link_block_valid) {
             buses.tapehead.l = audio->live_link_buffer[i];
             buses.tapehead.r = i + 1 < values ?
@@ -1155,8 +1169,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         }
         audio->last_output = output;
         audio->mixer.buses.output = output;
-        out[i] = output.l;
-        if (i + 1 < values) out[i + 1] = output.r;
+        ts_insert_write_output(&audio->sister.insert,out+(i/2)*device_channels,device_channels,output);
     }
     ts_sister_runtime_end_audio_block(&audio->sister);
     {
@@ -3822,6 +3835,8 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
                 ts_master_eq_set(&audio->sister.master_eq,&flat);
                 TsRouterControls defaults;ts_router_default(&defaults);
                 ts_sister_runtime_set_router(&audio->sister,&defaults);
+                TsInsertControls disconnected;ts_insert_default(&disconnected);
+                ts_sister_runtime_set_insert(&audio->sister,&disconnected);
                 ts_sister_runtime_set_sources(&audio->sister, 0u);
                 ts_sister_runtime_set_selected_preset(&audio->sister, "");
             }
@@ -11301,6 +11316,7 @@ struct ExternalInputState {
     TsInputMonitor monitor;
     TsInputActivity activity;
     TsInputOwnership ownership;
+    TsInsert *insert;
     _Atomic int direct_monitor;
     _Atomic int record_source;
     TsLiveWaveform live_waveform;
@@ -11348,6 +11364,7 @@ static void external_input_callback(void *userdata, Uint8 *stream, int bytes)
     float block_peak = 0.0f;
     uint32_t block_activity = 0u;
     if (input == NULL) return;
+    if(input->insert)ts_insert_capture(input->insert,samples,(size_t)(values/channels),(unsigned)channels);
     ts_input_monitor_note_capture_block(
         &input->monitor, (uint32_t)(values / channels));
     for (int frame = 0; frame + channels <= values; frame += channels) {
@@ -11357,7 +11374,8 @@ static void external_input_callback(void *userdata, Uint8 *stream, int bytes)
             samples + frame, (size_t)channels, input->input_channel);
         if (fabsf(selected.l) > block_peak) block_peak = fabsf(selected.l);
         if (fabsf(selected.r) > block_peak) block_peak = fabsf(selected.r);
-        ts_input_monitor_push_frame(&input->monitor, selected);
+        TsStereoFrame monitored=ts_insert_external_frame(input->insert,samples+frame,(unsigned)channels,input->input_channel);
+        ts_input_monitor_push_frame(&input->monitor, monitored);
         if (atomic_load_explicit(&input->record_source, memory_order_acquire) ==
             TS_RECORD_SOURCE_EXT)
             (void)ts_external_recorder_write_frame(&input->recorder, selected);
@@ -11401,10 +11419,9 @@ static int ensure_external_input_open(SDL_AudioDeviceID *input_device,
         return 0;
     }
     if (obtained.format != AUDIO_F32SYS || obtained.freq <= 0 ||
-        obtained.channels == 0 ||
-        obtained.channels > TS_INPUT_DEVICE_CHANNEL_MAX) {
+        obtained.channels == 0) {
         snprintf(error, error_size,
-                 "Recording input must provide float audio with 1-8 channels");
+                 "Recording input must provide float audio with at least one channel");
         SDL_CloseAudioDevice(*input_device);
         *input_device = 0;
         ts_input_activity_set_available(&input->activity, 0u);
@@ -11422,6 +11439,7 @@ static int ensure_external_input_open(SDL_AudioDeviceID *input_device,
         return 0;
     }
     input->channels = obtained.channels;
+    if(input->insert)ts_insert_capture_prepare(input->insert,obtained.channels,(unsigned)obtained.freq,obtained.samples);
     input->input_channel = config->record_input_channel;
     input->sample_rate = (uint32_t)obtained.freq;
     ts_input_monitor_set_prime_frames(
@@ -11456,6 +11474,7 @@ static int sync_external_input_consumers(SDL_AudioDeviceID *input_device,
             *input_device = 0;
         }
         ts_input_ownership_set_device(&input->ownership, 0, 0);
+        if(input->insert)ts_insert_capture_prepare(input->insert,0,input->sample_rate,0);
         ts_input_activity_set_available(&input->activity, 0u);
         if (audio != NULL) ts_sister_runtime_input_available(&audio->sister, 0);
         if (error != NULL && error_size > 0u) error[0] = '\0';
@@ -11481,6 +11500,8 @@ static int sync_external_input_consumers(SDL_AudioDeviceID *input_device,
     if (error != NULL && error_size > 0u) error[0] = '\0';
     return 1;
 }
+
+#include "main_sdl_insert_sync.inc"
 
 static TsCaptureState external_ui_state(TsExternalCaptureState state)
 {
@@ -12740,6 +12761,7 @@ int main(int argc, char **argv)
         &audio.sister, (float)ui.config.master_output_percent / 100.0f);
     ts_master_eq_set(&audio.sister.master_eq,&ui.config.master_eq);
     ts_sister_runtime_set_router(&audio.sister,&ui.config.router);
+    ts_sister_runtime_set_insert(&audio.sister,&ui.config.insert);
     audio.sister_file_recorder = &sister_window.performance_recorder;
     atomic_init(&audio.sister_file_tap, TS_SISTER_TAP_MIX);
     ts_realtime_diagnostics_init(&audio.realtime_diagnostics);
@@ -12793,6 +12815,7 @@ int main(int argc, char **argv)
     ts_sister_runtime_input_available(&audio.sister, 0);
     ts_capture_init(&audio.capture);
     audio.input_monitor = &external_input.monitor;
+    external_input.insert = &audio.sister.insert;
     audio.external_monitor_enabled = &external_input.direct_monitor;
     audio.record_bank_recorder = &external_input.recorder;
     audio.record_source = &external_input.record_source;
@@ -12932,7 +12955,7 @@ int main(int argc, char **argv)
     }
     if (ts_audio_output_is_available() && obtained.freq > 0)
         (void)ts_sister_runtime_reconfigure(
-            &audio.sister, (uint32_t)obtained.freq, obtained.channels,
+            &audio.sister, (uint32_t)obtained.freq, 2,
             NULL, 0u);
     if (!ts_audio_output_is_available()) {
         int recovery = ts_audio_resolve_output_failure(window);
@@ -13029,6 +13052,7 @@ int main(int argc, char **argv)
     }
 
     while (running) {
+        insert_sync(device,&input_device,&audio,&external_input,&ui);
         SDL_Event event;
         Uint64 frame_started = SDL_GetPerformanceCounter();
         (void)tapeCompanionPump(&companion_focus);
@@ -13088,8 +13112,13 @@ int main(int argc, char **argv)
                     input_snapshot.captured_frame_count,
                     input_snapshot.largest_capture_block_frames,
                     input_snapshot.correction_ppm);
+            ts_audio_insert_diagnostics(&audio,&ui,1);
             last_audio_diagnostic_log = SDL_GetTicks();
         }
+        ts_jack_poll();
+#if defined(TAPESISTER_HAS_ASIO)
+        ts_asio_poll();
+#endif
         while (SDL_PollEvent(&event)) {
             uint32_t event_id = event_window_id(&event);
             if (event.type == SDL_WINDOWEVENT &&
@@ -13110,6 +13139,7 @@ int main(int argc, char **argv)
                    next window until the stream has gone quiet. */
                 ts_ui_wheel_guard_interrupt(&ui.wheel_guard, SDL_GetTicks());
             }
+            ts_audio_insert_device_event(&event);
             if (event.type == SDL_AUDIODEVICEREMOVED &&
                 ts_audio_device_event_matches(
                     event.adevice.iscapture != 0, event.adevice.which)) {
@@ -13126,6 +13156,7 @@ int main(int argc, char **argv)
                 }
                 ts_audio_handle_removed(1, "SDL reported capture removal");
                 input_device = 0;
+                ts_insert_capture_prepare(&audio.sister.insert,0,external_input.sample_rate,0);
                 ts_input_ownership_set_device(&external_input.ownership, 0, 0);
                 ts_input_monitor_set_enabled(&external_input.monitor, 0,
                                              external_input.sample_rate);
@@ -13375,7 +13406,7 @@ int main(int argc, char **argv)
                         device, &audio, &ui, &instrument, &sister_window,
                         &input_device, &external_input,
                         (TsSisterUiHit){TS_SISTER_UI_ACTION_PRESET_CONFIRM, 0, 0.0f},
-                        (uint32_t)obtained.freq, obtained.channels);
+                        (uint32_t)obtained.freq, 2);
                 } else if (event.type == SDL_KEYDOWN && !event.key.repeat &&
                            sister_window.model.preset_manage_open &&
                            !sister_window.model.preset_editing &&
@@ -13390,7 +13421,7 @@ int main(int argc, char **argv)
                                 TS_SISTER_UI_ACTION_PRESET_PREVIOUS :
                                 TS_SISTER_UI_ACTION_PRESET_NEXT,
                             0, 0.0f},
-                        (uint32_t)obtained.freq, obtained.channels);
+                        (uint32_t)obtained.freq, 2);
                 } else if (event.type == SDL_KEYDOWN && !event.key.repeat &&
                            sister_performance_keys_allowed(&ui) &&
                            !sister_window.model.preset_manage_open) {
@@ -13461,7 +13492,7 @@ int main(int argc, char **argv)
                             device, &audio, &ui, &instrument, &sister_window,
                             &input_device, &external_input,
                             hit,
-                            (uint32_t)obtained.freq, obtained.channels);
+                            (uint32_t)obtained.freq, 2);
                         }
                     }
                 } else if (event.type == SDL_MOUSEBUTTONUP &&
@@ -13491,7 +13522,7 @@ int main(int argc, char **argv)
                                             &sister_window, &input_device,
                                             &external_input, hit,
                                             (uint32_t)obtained.freq,
-                                            obtained.channels);
+                                            2);
                 } else if (event.type == SDL_MOUSEWHEEL) {
                     int raw_x, raw_y, x, y;
                     int wheel = event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED ?
@@ -13527,7 +13558,7 @@ int main(int argc, char **argv)
                                             &sister_window, &input_device,
                                             &external_input, hit,
                                             (uint32_t)obtained.freq,
-                                            obtained.channels);
+                                            2);
                     }
                 }
                 continue;
@@ -16746,7 +16777,7 @@ int main(int argc, char **argv)
                 if (!handle_midi_mapping(
                         device, &audio, &ui, &instrument, &sister_window,
                         &input_device, &external_input, &midi,
-                        (uint32_t)obtained.freq, obtained.channels))
+                        (uint32_t)obtained.freq, 2))
                     handle_midi_event(device, &audio, &ui, &instrument,
                                       &fm_preview, &midi, obtained.freq);
             }
@@ -17006,6 +17037,9 @@ int main(int argc, char **argv)
             }
             ui.config.master_eq = audio.sister.master_eq.controls;
             ui.config.router = routing.router;
+            ui.config.insert = routing.insert;
+            ui.insert_send_peak=routing.insert_send_peak;ui.insert_return_peak=routing.insert_return_peak;
+            ui.insert_inputs=routing.insert_inputs;ui.insert_outputs=routing.insert_outputs;
             ui.router_enabled = routing.router_enabled;ui.router_transition=routing.router_transition;
             memcpy(ui.router_peaks,routing.router_peaks,sizeof(ui.router_peaks));
             ui.master_eq_rate = (unsigned)audio.output_rate;
@@ -17016,6 +17050,7 @@ int main(int argc, char **argv)
                 routing.limiter_gain_reduction_db;
             ui.master_output.gain = routing.master_output_gain;
         }
+        if(ui.insert_open)ts_audio_insert_diagnostics(&audio,&ui,0);
         ui.text_cursor_visible = ((SDL_GetTicks() / 500u) & 1u) == 0u;
         sister_window.model.text_cursor_visible = ui.text_cursor_visible;
         poll_import_playback(device,&audio,&ui,&import_controller);
@@ -17187,6 +17222,18 @@ int main(int argc, char **argv)
 #undef ts_ui_config_field_from_point
 #undef ts_ui_config_cursor_from_point
 
+#undef SDL_GetCurrentAudioDriver
+#include "main_sdl_jack.inc"
+#define SDL_GetCurrentAudioDriver ts_native_current_driver
+#define SDL_GetNumAudioDevices ts_native_device_count
+#define SDL_GetAudioDeviceName ts_native_device_name
+#define SDL_GetAudioDeviceSpec ts_native_device_spec
+#define SDL_GetDefaultAudioInfo ts_native_default_info
+#define SDL_OpenAudioDevice ts_native_open
+#define SDL_CloseAudioDevice ts_native_close
+#define SDL_LockAudioDevice ts_native_lock
+#define SDL_UnlockAudioDevice ts_native_unlock
+#define SDL_PauseAudioDevice ts_native_pause
 #include "main_sdl_audio_part1.inc"
 #include "main_sdl_audio_part2.inc"
 #include "main_sdl_audio_part3.inc"

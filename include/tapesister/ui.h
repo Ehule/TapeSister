@@ -441,6 +441,14 @@ typedef struct {
     int master_eq_open, master_eq_band, master_eq_drag, master_eq_reset_pending;
     unsigned master_eq_rate;
     int router_open, router_drag, router_drop, router_transition;
+    int insert_open, insert_drag, insert_apply_pending, insert_send_choice, insert_return_choice;
+    unsigned insert_inputs, insert_outputs, insert_offered_outputs;
+    char insert_send_device[TS_CONFIG_PATH_MAX], insert_return_device[TS_CONFIG_PATH_MAX];
+    char insert_device_status[160];
+    float insert_send_peak, insert_return_peak;
+    unsigned insert_rates[2], insert_buffers[2], insert_gaps[2], insert_drops[2];
+    float insert_queue_ms[2];
+    unsigned insert_master_rate, insert_master_buffer;
     unsigned router_enabled;
     float router_peaks[TS_ROUTER_COUNT*2+2];
     size_t capture_recorded_frames;

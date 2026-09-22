@@ -475,3 +475,8 @@ tapesister_mosaic_tests: tests/test_mosaic.c tests/test_mosaic_volume.inc $(CORE
 
 tapesister_mosaic_controller_tests: tests/test_mosaic_controller.c tests/test_mosaic_volume_controls.inc $(CORE) src/main_sdl.c src/main_sdl_mosaic.inc src/main_sdl_mosaic_editor.inc src/main_sdl_mosaic_source_update.inc src/main_sdl_mosaic_volume.inc src/main_sdl_portal.inc src/tape_link.c src/tape_companion.c $(DIAG) $(MIDI_C)
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(shell sdl2-config --cflags) tests/test_mosaic_controller.c $(CORE) src/tape_link.c src/tape_companion.c $(DIAG) $(MIDI_C) -o $@ $(shell sdl2-config --libs) -lm $(LIVE_LINK_LDFLAGS)
+
+# Native JACK backend tests also work when SDL itself omits JACK.
+tapesister tapesister_keyboard_hold_tests tapesister_keyboard_sustain_tests tapesister_portal_controller_tests: src/main_sdl_jack.inc
+tapesister_jack_backend_tests: tests/test_jack_backend.c src/main_sdl_jack.inc
+	$(CC) $(CFLAGS) $(shell sdl2-config --cflags) $< -o $@ $(shell sdl2-config --libs)

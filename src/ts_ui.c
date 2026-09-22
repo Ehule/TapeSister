@@ -3003,19 +3003,12 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
 
     rect(fb, 0, 0, TS_UI_WIDTH, 32, RGB(12, 12, 12));
     sister_portal_render(fb, ui);
-    if (ui->sister_capture_active) {
-        rect(fb, 4, 3, 150, 2, PAL_VOLUME);
-        rect(fb, 4, 28, 150, 2, PAL_VOLUME);
-        rect(fb, 4, 3, 2, 27, PAL_VOLUME);
-        rect(fb, 152, 3, 2, 27, PAL_VOLUME);
-        text(fb, 160, 13, "REC", PAL_VOLUME, 1);
-    }
     {
         uint8_t channels = ui->input_available_channels <=
                            TS_INPUT_DEVICE_CHANNEL_MAX ?
                            ui->input_available_channels : 0u;
         char input_label[4] = {'I', 'N', (char)('0' + channels), '\0'};
-        text(fb, 160, 13, input_label, PAL_TEXT, 1);
+        text(fb,160,13,ui->sister_capture_active?"REC":input_label,ui->sister_capture_active?PAL_VOLUME:PAL_TEXT,1);
     }
     for (int channel = 0; channel < TS_INPUT_DEVICE_CHANNEL_MAX; ++channel) {
         int x = TS_UI_INPUT_LED_X + channel * TS_UI_INPUT_LED_STEP_X;

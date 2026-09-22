@@ -25,9 +25,9 @@ int ts_ui_master_eq_midi_target(const TsUiState *ui,int x,int y,char *target,siz
     int c=ts_ui_master_eq_control(x,y);
     if(c>=0 && (c!=1 || ts_master_eq_has_gain(ui->config.master_eq.band[ui->master_eq_band].type)))
         snprintf(target,size,"main.eq.band.%d.%d",ui->master_eq_band+1,c);
-    else if(x>=354 && x<446 && y>=44 && y<68)snprintf(target,size,"main.eq.bypass");
-    else if(x>=20 && x<136 && y>=337 && y<361)snprintf(target,size,"sister.limiter");
-    else if(x>=414 && x<620 && y>=337 && y<361)snprintf(target,size,"main.master_output");
+    else if(x>=396 && x<474 && y>=44 && y<68)snprintf(target,size,"main.eq.bypass");
+    else if(x>=20 && x<124 && y>=340 && y<366)snprintf(target,size,"sister.limiter");
+    else if(x>=328 && x<510 && y>=337 && y<366)snprintf(target,size,"main.master_output");
     else return 0;
     return 1;
 }
@@ -50,9 +50,9 @@ static void master_eq_render(TsFramebuffer *fb,const TsUiState *ui)
     if(c->solo_band)snprintf(label,sizeof(label),"SOLO %02d / CTRL-CLICK TO RESTORE",c->solo_band);
     else snprintf(label,sizeof(label),"BUTTONS: BYPASS / CTRL-CLICK: SOLO");
     text(fb,20,62,label,c->solo_band?amber:muted,1);
-    button(fb,354,44,92,c->enabled?"EQ ON":"EQ BYPASS",c->enabled);
-    button(fb,452,44,116,ui->master_eq_reset_pending?"CONFIRM RESET":"RESET EQ",ui->master_eq_reset_pending);
-    button(fb,574,44,46,"X",0);
+    button(fb,396,44,78,c->enabled?"EQ ON":"EQ BYPASS",c->enabled);
+    button(fb,484,44,96,ui->master_eq_reset_pending?"CONFIRM RESET":"RESET EQ",ui->master_eq_reset_pending);
+    button(fb,596,44,24,"X",0);
     frame(fb,43,78,555,156,RGB(10,12,15),RGB(61,59,66));
     const int hz[]={20,50,100,200,500,1000,2000,5000,10000,20000};
     for(int i=0;i<10;++i) {
@@ -87,12 +87,13 @@ static void master_eq_render(TsFramebuffer *fb,const TsUiState *ui)
         int solo=c->solo_band==i+1;
         snprintf(label,sizeof(label),"%02d %s",i+1,solo?"SOLO":
             !c->band[i].enabled?"BYPASS":c->solo_band?"SKIP":"ON");
-        button(fb,20+i*122,252,112,label,ts_master_eq_band_active(c,i));
-        if(solo)rect(fb,20+i*122,274,112,2,amber);
+        button(fb,20+i*88,252,76,label,ts_master_eq_band_active(c,i));
+        if(solo)rect(fb,20+i*88,274,76,2,amber);
     }
+    text(fb,476,261,"CLICK: BYPASS",muted,1);
     snprintf(label,sizeof(label),"BAND %d",ui->master_eq_band+1);text(fb,20,284,label,teal,1);
-    button(fb,90,278,236,ts_master_eq_type_name(b->type),0);
-    text(fb,340,286,b->type==TS_EQ_HIGH_PASS || b->type==TS_EQ_LOW_PASS?"12 DB/OCT  /  Q: RESONANCE":
+    button(fb,90,278,112,ts_master_eq_type_name(b->type),0);
+    text(fb,224,286,b->type==TS_EQ_HIGH_PASS || b->type==TS_EQ_LOW_PASS?"12 DB/OCT  /  Q: RESONANCE":
          b->type==TS_EQ_NOTCH?"Q: NOTCH WIDTH / GAIN FIXED":"Q: WIDTH / WHEEL NODE TO ADJUST",muted,1);
     snprintf(label,sizeof(label),"FREQ %.1F HZ",fminf(b->frequency,ts_master_eq_max_hz(rate)));
     slider(fb,20,303,188,label,ts_master_eq_normalized(b,0,rate),teal);
@@ -102,13 +103,13 @@ static void master_eq_render(TsFramebuffer *fb,const TsUiState *ui)
     snprintf(label,sizeof(label),"Q %.2F",b->q);
     slider(fb,428,303,188,label,ts_master_eq_normalized(b,2,rate),teal);
     rect(fb,20,331,600,1,PAL_BUTTON);
-    button(fb,20,338,116,ui->master_output.limiter_enabled?"LIMITER ON":"LIMITER OFF",ui->master_output.limiter_enabled);
+    button(fb,20,341,104,ui->master_output.limiter_enabled?"LIMITER ON":"LIMITER OFF",ui->master_output.limiter_enabled);
     snprintf(label,sizeof(label),"CEIL %+.1F  GR %.1F DB",ui->master_output.limiter_ceiling_db,ui->master_output.limiter_gain_reduction_db);
-    text(fb,146,347,label,ui->master_output.limiter_gain_reduction_db>.1?amber:muted,1);
+    text(fb,138,349,label,ui->master_output.limiter_gain_reduction_db>.1?amber:muted,1);
     snprintf(label,sizeof(label),"OUT %.0F%%",ui->master_output.gain*100);
-    slider(fb,414,338,202,label,ui->master_output.gain,amber);
-    text(fb,20,366,"MASTER > EQ > LIMITER > OUT",muted,1);
-    button(fb,310,356,310,"GLOBAL ROUTER   F9",0);
+    slider(fb,328,340,182,label,ui->master_output.gain,amber);
+    text(fb,20,369,"MASTER > EQ > LIMITER > OUT",muted,1);
+    button(fb,528,341,88,"ROUTER F9",0);
     if(ui->midi_learn_active) {
         char target[TS_MIDI_TARGET_ID_MAX];
         for(int i=0;i<3;++i) {
@@ -116,8 +117,8 @@ static void master_eq_render(TsFramebuffer *fb,const TsUiState *ui)
             snprintf(target,sizeof(target),"main.eq.band.%d.%d",ui->master_eq_band+1,i);
             midi_learn_tint(fb,20+i*204,300,188,28,midi_learn_target_state(&ui->config.midi_map,ui->midi_learn_pending,target));
         }
-        midi_learn_tint(fb,354,44,92,24,midi_learn_target_state(&ui->config.midi_map,ui->midi_learn_pending,"main.eq.bypass"));
-        midi_learn_tint(fb,20,337,116,24,midi_learn_target_state(&ui->config.midi_map,ui->midi_learn_pending,"sister.limiter"));
-        midi_learn_tint(fb,414,337,206,24,midi_learn_target_state(&ui->config.midi_map,ui->midi_learn_pending,"main.master_output"));
+        midi_learn_tint(fb,396,44,78,24,midi_learn_target_state(&ui->config.midi_map,ui->midi_learn_pending,"main.eq.bypass"));
+        midi_learn_tint(fb,20,340,104,26,midi_learn_target_state(&ui->config.midi_map,ui->midi_learn_pending,"sister.limiter"));
+        midi_learn_tint(fb,328,337,182,29,midi_learn_target_state(&ui->config.midi_map,ui->midi_learn_pending,"main.master_output"));
     }
 }

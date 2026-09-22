@@ -25,6 +25,45 @@ rates/buffers.
 
 ## Matrix
 
+- [ ] External Insert: choose a native multichannel output in CFG. Confirm Master
+  is only on 1/2, SEND only on the chosen spare pair, and unused channels silent.
+  Verify exposed channel indices against actual interface sockets/virtual ports.
+- [ ] M6/WASAPI separate endpoints: CFG Master `Out 1-2`, Insert SEND `Out 3-4`,
+  RETURN `In 5-6`, both local CH 1/2. Apply and check physical sockets. Keep CFG
+  input on a different endpoint and verify its ordinary EXT source still works.
+- [ ] Separate stereo virtual SEND/RETURN with Master on the interface/speakers:
+  verify routing through another application. Select the CFG input as RETURN and
+  confirm reuse; attempt SEND on the Master endpoint and confirm rejection.
+- [ ] Remove/reconnect each separate endpoint during playback. Confirm no automatic
+  substitution, silence on an unavailable active path, and APPLY/hotplug recovery.
+  Save/restart and check device names, including their case, survive.
+- [ ] Loop SEND 3/4 through hardware or a separate audio application into RETURN
+  3/4. Exercise all five Insert positions, Router bypass/solo, ±gain changes and
+  right-click unity. Set Sister DRY 100/WET 0; active Insert must still be serial.
+- [ ] Disconnect RETURN or stop the external app: an active Insert stays silent
+  and reports missing activity. Manual bypass restores the internal path. Remove
+  capture, reconnect, and verify stale return samples do not replay.
+- [ ] Use shared SEND on a stereo-only Master or load unavailable saved pairs. Confirm there
+  is no hidden SEND downmix onto Master. Temporary Master fallback must not start
+  sending the loop on substitute sockets. Reconnect the configured endpoint.
+- [ ] Enable EXT monitoring while RETURN is assigned. The reserved pair must not
+  re-enter the internal source; other channels and explicit raw EXT recording
+  remain usable. Change pair/reload a project with sustained input and verify
+  old queued EXT samples cannot make a brief self-return loop.
+- [ ] Record through INSERT using FILE OUT, Mosaic REC OUT/output bounce and Sister
+  MIX/head taps. Check their documented positions. Apply Ports must be refused
+  during a take; bypass/solo and gain adjustments remain usable.
+- [ ] Measure/listen to the external round trip at 256/512/1024 buffers, with matching
+  and mismatched capture/playback rates. RETURN and independent SEND each target
+  two of the larger callback bursts, converted to their FIFO's source rate.
+  Check the applied HZ/FR and QUEUE S/R readouts; monitor GAPS/DROP for increases.
+  Compare a direct SEND-to-RETURN cable loop with the SunVox loop at explicit
+  48 kHz, and record the actual SunVox driver (Auto alone does not identify it).
+  There is no automatic latency compensation. The [ASIO backend](ASIO_AUDIO.md)
+  uses a single duplex stream without these independent queues.
+- [ ] Inspect compact EQ and Insert panels at normal/maximized/high-DPI sizes.
+  EQ OUT/Router controls must not overlap; REC and IN must not be drawn together;
+  file-recording time and STOP FILE must remain readable across workspaces.
 - [ ] Keyboard ARP: select white/black keys with EDIT or Ctrl-click, try UP, DOWN,
   UP/DOWN, ORDER, RANDOM, LOOP/ONCE, Reset, and Clear. Hear gate gaps and live rate
   changes. Change octave, remove the current/last note, and switch tile/FM/Sister
@@ -91,7 +130,7 @@ rates/buffers.
 - [ ] Tapehead → VB-CABLE → TapeSister; test both launch orders.
 - [ ] TapeSister while REAPER uses WASAPI shared mode; test both launch orders.
 - [ ] TapeSister while REAPER uses ASIO; test both launch orders and record any
-  hardware-driver exclusivity rather than describing ASIO as a TapeSister backend.
+  hardware-driver exclusivity. Also repeat with TapeSister using native ASIO.
 - [ ] Remove capture during EXT playback, then reconnect it. Internal tiles, FM,
   audition, and Sister sources must continue; stale ring audio must not replay.
 - [ ] Remove output during playback, then reconnect it. The UI must remain responsive,
@@ -119,8 +158,8 @@ rates/buffers.
 - Healthy-device audio, smoothing, pedalboard behavior, Sister processing, recording,
   limiter behavior, and MIDI remain unchanged.
 
-WASAPI shared mode is the recommended coexistence baseline. Native ASIO is not
-implemented by TapeSister, and an ASIO driver's exclusive or single-client limitation
+WASAPI shared mode is one coexistence baseline. TapeSister also implements native
+ASIO; an ASIO driver's exclusive or single-client limitation
 cannot be repaired inside TapeSister.
 
 ## Prism instrument audition
@@ -268,3 +307,17 @@ measurements do not certify this Windows interface or its hardware latency.
   Sample-page publication, project reload and an archive retained after exit.
 - [ ] Record a long dense performance at the normal Windows buffer; check playback
   continuity while recording and while the finished take is loaded into cards.
+
+## PR117 backend/discovery and both-direction follow-up
+
+- [ ] Test MOTU Ultralite mk3 at a common 48 kHz in TapeSister and REAPER, then SunVox.
+- [ ] Audition/record SEND independently; separately drive RETURN with a clean tone.
+- [ ] Compare 128/256/512 requests and the actual HZ/FR readouts. Record GAPS/DROP
+      changes and a `--diagnostic-audio` log for each failing path.
+- [ ] Rescan CFG/Insert during playback; verify it does not reopen streams.
+- [ ] Test a virtual endpoint with no pre-open format metadata and a wider interface;
+      first-eight-channel selection must retain the correct native stride.
+- [ ] Confirm stale-backlog recovery shortens delay after a scheduling stall without
+      allowing feedback or dry signal to bypass an active Insert.
+
+This follow-up does not claim measured MOTU latency or Windows listening results.

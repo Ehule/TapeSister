@@ -102,9 +102,9 @@ static int test_roundtrip(void)
              "Test Playback Device");
     snprintf(saved.midi_input_device, sizeof(saved.midi_input_device),
              "Test MIDI Keyboard");
-    saved.audio_backend = TS_AUDIO_BACKEND_WASAPI;
+    saved.audio_backend = TS_AUDIO_BACKEND_JACK;
     saved.record_input_channel = 3;
-    saved.audio_buffer_frames = 1024;
+    saved.audio_buffer_frames = 128;
     saved.fm_output_percent = 37;
     saved.master_output_percent = 63;
     saved.midi_input_channel = 7;
@@ -169,16 +169,16 @@ static int test_roundtrip(void)
                 "named input device should roundtrip") &&
          expect(strcmp(loaded.audio_output_device, "Test Playback Device") == 0,
                 "named output device should roundtrip") &&
-         expect(loaded.audio_backend == TS_AUDIO_BACKEND_WASAPI &&
+         expect(loaded.audio_backend == TS_AUDIO_BACKEND_JACK &&
                 loaded.audio_backend_invalid == 0,
-                "WASAPI backend should roundtrip") &&
+                "JACK backend should roundtrip") &&
          expect(strcmp(loaded.midi_input_device, "Test MIDI Keyboard") == 0,
                 "named MIDI input should roundtrip") &&
          expect(loaded.midi_input_channel == 7,
                 "MIDI input channel should roundtrip") &&
          expect(loaded.record_input_channel == 3,
                 "stereo input mode should roundtrip") &&
-         expect(loaded.audio_buffer_frames == 1024,
+         expect(loaded.audio_buffer_frames == 128,
                 "audio buffer size should roundtrip") &&
          expect(loaded.fm_output_percent == 37,
                 "FM output trim should roundtrip") &&
@@ -422,7 +422,7 @@ static int test_invalid_backend_falls_back_to_auto(void)
     FILE *file = fopen(path, "wb");
     int ok;
     if (file == NULL) return 0;
-    fputs("[Audio]\naudio_backend=ASIO\n", file);
+    fputs("[Audio]\naudio_backend=InvalidBackend\n", file);
     fclose(file);
     ok = expect(ts_audio_config_load(&loaded, path, error, sizeof(error)),
                 "invalid backend should not prevent startup") &&

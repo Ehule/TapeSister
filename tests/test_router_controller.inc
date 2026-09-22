@@ -42,15 +42,15 @@ static void test_router_controller(void)
         assert(audio.sister.router.controls.order[0]==TS_ROUTER_PRISM);
         key.type=SDL_KEYDOWN;key.key.keysym.sym=SDLK_ESCAPE;
         assert(router_event(&key,window,device,&audio,&ui,&router_panel) && !ui.router_drag && ui.router_open);
-        assert(router_mouse(SDL_MOUSEBUTTONDOWN,160,135));assert(router_mouse(SDL_MOUSEMOTION,160,184));
+        assert(router_mouse(SDL_MOUSEBUTTONDOWN,160,135));assert(router_mouse(SDL_MOUSEMOTION,160,164));
         if(route==3)router_shot("TS_TEST_ROUTER_DRAG_PPM");
-        assert(router_mouse(SDL_MOUSEBUTTONUP,160,184));
+        assert(router_mouse(SDL_MOUSEBUTTONUP,160,164));
         assert(audio.sister.router.controls.order[0]==TS_ROUTER_SISTER && ui.config.router.order[1]==TS_ROUTER_PRISM);
         TsPerformanceRecorder recorder;ts_performance_recorder_init(&recorder);
         assert(ts_performance_recorder_start(&recorder,"test-router-output.wav",44100,2,16384,error,sizeof(error)));
         audio.sister_file_recorder=&recorder;atomic_store(&audio.sister_file_tap,TS_SISTER_TAP_MIX);
         for(int action=0;action<12;++action) {
-            int row=action%4,y=136+48*row,x=action%2?540:440;
+            int row=action%4,y=122+42*row,x=action%2?540:440;
             assert(router_mouse(SDL_MOUSEBUTTONDOWN,x,y));assert(router_mouse(SDL_MOUSEBUTTONUP,x,y));
             float block[512];size_t before=atomic_load(&recorder.write_cursor);
             audio_callback(&audio,(Uint8*)block,sizeof(block));
@@ -64,7 +64,7 @@ static void test_router_controller(void)
         audio.sister_file_recorder=NULL;ts_performance_recorder_request_stop(&recorder);
         while(ts_performance_recorder_pump(&recorder,16384)){}
         ts_performance_recorder_free(&recorder);remove("test-router-output.wav");
-        ui.config.router.bypass_mask=0;ui.config.router.solo=0;router_commit(device,&audio,&ui);
+        ui.config.router.bypass_mask=1u<<TS_ROUTER_INSERT;ui.config.router.solo=0;router_commit(device,&audio,&ui);
         assert(power_audio_energy()>.01);
         ts_ui_performance_hover(&ui,180,180,100,0);ts_ui_performance_hover(&ui,180,180,700,0);
         assert(strstr(ui.performance_tooltip,"DRAG"));ui.performance_tooltip[0]=0;
@@ -78,7 +78,7 @@ static void test_router_controller(void)
     ui.browser.mode=TS_BROWSER_LOAD_WAV;assert(!router_event(&key,window,device,&audio,&ui,&router_panel));ts_browser_close(&ui.browser);
     ui.exit_confirm_open=1;assert(!router_event(&key,window,device,&audio,&ui,&router_panel));ui.exit_confirm_open=0;
     ui.fm_open=0;ui.master_eq_open=1;
-    assert(router_mouse(SDL_MOUSEBUTTONDOWN,390,370) && ui.router_open && !ui.master_eq_open);ui.router_open=0;
+    assert(router_mouse(SDL_MOUSEBUTTONDOWN,565,350) && ui.router_open && !ui.master_eq_open);ui.router_open=0;
     ts_mosaic_free(ui.mosaic);ui.mosaic=audio.mosaic=NULL;
     ts_sister_runtime_set_parameters(&audio.sister,&saved);ts_router_default(&ui.config.router);router_commit(device,&audio,&ui);
     reset_route(0);

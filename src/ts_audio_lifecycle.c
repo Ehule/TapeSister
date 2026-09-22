@@ -23,35 +23,40 @@ static void copy_text(char *destination, size_t size, const char *source)
     snprintf(destination, size, "%s", source);
 }
 
+static const char *const backend_names[] = {
+    "Auto", "WASAPI", "DirectSound", "JACK", "PipeWire", "PulseAudio", "ALSA",
+    "CoreAudio", "WinMM", "OSS", "sndio", "NetBSD", "AAudio", "OpenSL ES", "ASIO"
+};
+static const char *const backend_drivers[] = {
+    NULL, "wasapi", "directsound", "jack", "pipewire", "pulseaudio", "alsa",
+    "coreaudio", "winmm", "dsp", "sndio", "netbsd", "aaudio", "openslES", "asio"
+};
+
 int ts_audio_backend_parse(const char *text, TsAudioBackend *backend)
 {
     if (backend == NULL) return 0;
     *backend = TS_AUDIO_BACKEND_AUTO;
-    if (text == NULL || text[0] == '\0' || text_equal_ci(text, "auto"))
-        return 1;
-    if (text_equal_ci(text, "wasapi")) {
-        *backend = TS_AUDIO_BACKEND_WASAPI;
-        return 1;
-    }
-    if (text_equal_ci(text, "directsound")) {
-        *backend = TS_AUDIO_BACKEND_DIRECTSOUND;
-        return 1;
+    if (text == NULL || text[0] == '\0') return 1;
+    for (int i = 0; i < TS_AUDIO_BACKEND_COUNT; ++i) {
+        if (text_equal_ci(text, backend_names[i]) ||
+            text_equal_ci(text, backend_drivers[i])) {
+            *backend = (TsAudioBackend)i;
+            return 1;
+        }
     }
     return 0;
 }
 
 const char *ts_audio_backend_name(TsAudioBackend backend)
 {
-    if (backend == TS_AUDIO_BACKEND_WASAPI) return "WASAPI";
-    if (backend == TS_AUDIO_BACKEND_DIRECTSOUND) return "DirectSound";
-    return "Auto";
+    return backend >= 0 && backend < TS_AUDIO_BACKEND_COUNT ?
+        backend_names[backend] : "Auto";
 }
 
 const char *ts_audio_backend_sdl_driver(TsAudioBackend backend)
 {
-    if (backend == TS_AUDIO_BACKEND_WASAPI) return "wasapi";
-    if (backend == TS_AUDIO_BACKEND_DIRECTSOUND) return "directsound";
-    return NULL;
+    return backend >= 0 && backend < TS_AUDIO_BACKEND_COUNT ?
+        backend_drivers[backend] : NULL;
 }
 
 void ts_audio_endpoint_init(TsAudioEndpoint *endpoint,

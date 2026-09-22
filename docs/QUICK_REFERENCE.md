@@ -423,16 +423,38 @@ Sample/Depth/Rate, Pitch Ratio/Ramp/Rate. `L` assigns LFO; `R` assigns Rise.
 | Solo | SOLO; click again to restore bypasses, or another Solo to move it |
 | Help | Hover for 600 ms |
 
-Default: **Prism → Sister → Fallout → Pedalboard**. Source and the final
+Default: **Prism → Sister → Fallout → Pedalboard → INSERT (bypassed)**. Source and the final
 EQ/limiter/OUT are fixed. IN lights show audio reaching each position; OFF is the
 module's own power, separate from Router BYPASS/SKIP/SOLO. Solo does not power on
 an OFF module. QWERTY/MIDI/ARP remain playable.
 
 Pedalboard's POST slots move as one chain. Its PRE/head inserts stay local to
-Sister; Pedalboard bypass gates them too. Sister's DRY monitor joins at Master;
-use DRY zero to audition only the reordered wet chain. MASTER FX still gates
+Sister; Pedalboard bypass gates them too. Sister's DRY monitor normally joins at
+Master; a configured downstream INSERT merges it before the external loop.
+MASTER FX still gates
 Pedalboard and Fallout. Order/bypass/solo save with projects and configuration;
 sound presets preserve routing. [Full behavior](USER_MANUAL.md#global-router).
+
+### External Insert
+
+- **SETUP** on INSERT opens its panel; Escape returns to Router.
+- Master output/backend stay in **CFG**. SEND can use **MASTER DEVICE SPARES**
+  or a separate output device; RETURN can use **SHARED CFG INPUT** or its own input.
+- Click device/pair buttons to cycle; right-click reverses; **APPLY PORTS** commits.
+  **SAVE CONFIG** remembers device names. Finish recording before changing ports.
+- Pair numbers are local to the selected device. M6 `Out 3-4` and `In 5-6`
+  endpoints each use **DEVICE CH 1/2**. Master can remain on `Out 1-2`.
+- SEND/RETURN levels span −24 to +12 dB; right-click restores 0 dB.
+- **100% returned audio, no Mix control.** BYPASS restores the internal path.
+  SOLO uses the existing Router solo. S/R lights distinguish outgoing/incoming activity.
+- Missing return stays silent while active. A shared RETURN pair is excluded from
+  ordinary EXT monitoring; a separate RETURN leaves CFG's input available.
+- Stereo pairs in the first eight negotiated channels; wider devices accepted; no ASIO host.
+  Separate SEND and RETURN target two of their larger producer/consumer bursts,
+  converted to each queue's source rate. Live HZ/FR and GAPS/DROP help diagnose I/O. No latency
+  compensation. Device names persist across loss/recovery without fallback.
+- FILE OUT and Mosaic REC OUT include the returned signal. Earlier source/head
+  taps retain their named position. [Setup and limits](USER_MANUAL.md#external-insert).
 
 ## Final output
 
@@ -675,3 +697,9 @@ Ctrl+Z / Ctrl+Y undo/redo; Escape cancels the current stroke.
   `off` leaves audio and optical controls active. [Details](PRISM_ZOYA.md).
 - **DRAW**: each stroke replaces the previous envelope in its drawn region,
   with recoverable zeroed sections and ordinary undo/redo. New saves use TSR31.
+
+### JACK and device discovery
+
+- Linux: CFG → BACKEND → JACK, save/restart; select TapeSister Master/Input in CFG and TapeSister Insert Send/Return in Insert. Connect ports in the JACK patchbay.
+- CFG SCAN / Insert RESCAN refresh device lists. General buffers include 128 frames; JACK follows its server.
+- [Full setup and diagnostics](JACK_AUDIO.md), including REAPER/SunVox and both sides of Insert.
