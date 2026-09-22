@@ -1363,7 +1363,20 @@ Order, saved bypasses and solo persist in the project/session and configuration.
 Older files with no Router keys load the default order with only INSERT bypassed
 and no solo. Four-stage Router files retain their previous order/bypasses/solo and
 append the bypassed INSERT. Sound presets do not overwrite routing. Audio-device
-recovery preserves it. Timed routing performance is a later addition.
+recovery preserves it.
+
+### Router Performance
+
+**F9 → PERFORMANCE** adds A–Z participation states, 64 steps with individual
+STEP TIME, FOR/AFTER Bypass/Solo timers, live countdowns and MIDI-learn commands.
+Manual participation changes keep the sequence running and last until the next
+step. Timers layer over the current sequence; expiration reveals the current
+underlying state. STOP holds that state; RESTORE explicitly returns to the manual
+state captured before PLAY. Stage order is locked during playback. Projects save
+configuration and manual base, never active timers or a run flag.
+
+See [Router Performance](ROUTER_PERFORMANCE.md) for controls, precedence, persistence,
+Insert/recording behavior, screenshots and a practical four-step example.
 
 ## External Insert
 

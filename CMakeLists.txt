@@ -19,7 +19,7 @@ add_library(tapesister_core src/ts_sample.c src/ts_prism.c src/ts_prism_performa
              src/ts_audio_lifecycle.c
              src/ts_realtime_diagnostics.c
              src/ts_sister_effects.c src/ts_sister_fallout.c src/ts_sister_post_fx.c
-             src/ts_sister_limiter.c src/ts_master_eq.c src/ts_router.c src/ts_insert.c
+             src/ts_sister_limiter.c src/ts_master_eq.c src/ts_router.c src/ts_router_performance.c src/ts_insert.c
              src/ts_sister_machine.c src/ts_sister_wave_snapshot.c
              src/ts_sister_runtime.c src/ts_sister_ui.c
              src/ts_sister_preset.c src/ts_sister_project_state.c
@@ -59,7 +59,7 @@ if(TAPESISTER_BUILD_SDL)
     target_compile_options(tapesister_asio_adapter_tests PRIVATE -UNDEBUG -Wall -Wextra)
   endif()
   add_executable(tapesister_jack_backend_tests tests/test_jack_backend.c)
-  target_link_libraries(tapesister_jack_backend_tests PRIVATE SDL2::SDL2)
+  target_link_libraries(tapesister_jack_backend_tests PRIVATE SDL2::SDL2 tapesister_core)
 
   # main_sdl.c is the one canonical callback/application translation unit.
   add_executable(tapesister src/main_sdl.c src/tape_link.c
@@ -507,6 +507,10 @@ add_test(NAME test_prism_zoya COMMAND test_prism_zoya)
 add_executable(tapesister_master_eq_tests tests/test_master_eq.c)
 target_link_libraries(tapesister_master_eq_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_master_eq_tests COMMAND tapesister_master_eq_tests)
+add_executable(tapesister_router_performance_tests tests/test_router_performance.c)
+target_link_libraries(tapesister_router_performance_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_router_performance_tests COMMAND tapesister_router_performance_tests)
+
 add_executable(tapesister_router_tests tests/test_router.c)
 target_link_libraries(tapesister_router_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_router_tests COMMAND tapesister_router_tests)

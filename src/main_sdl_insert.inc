@@ -37,8 +37,8 @@ static int insert_panel_mouse(const SDL_Event *e,int x,int y,
                 if(device)SDL_UnlockAudioDevice(device);
             } else if(e->button.button==SDL_BUTTON_LEFT)ui->insert_drag=side+1;
         } else if(y>=326 && y<350) {
-            if(x>=22 && x<114){ts_router_toggle_bypass(&ui->config.router,TS_ROUTER_INSERT);router_commit(device,audio,ui);}
-            else if(x>=128 && x<198){ts_router_toggle_solo(&ui->config.router,TS_ROUTER_INSERT);router_commit(device,audio,ui);}
+            if(x>=22 && x<114){router_manual(device,audio,ui,TS_ROUTER_INSERT,0);}
+            else if(x>=128 && x<198){router_manual(device,audio,ui,TS_ROUTER_INSERT,1);}
             else if(x>=210 && x<306)ts_audio_catalog_refresh();
             else if(x>=420 && x<616)ui->insert_apply_pending=1;
         }

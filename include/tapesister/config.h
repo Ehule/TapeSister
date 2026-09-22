@@ -131,6 +131,7 @@ typedef struct {
     int master_output_percent;
     TsMasterEqControls master_eq;
     TsRouterControls router;
+    TsRouterPerformance router_performance;
     TsInsertControls insert;
     TsAudioBackend audio_backend;
     int audio_backend_invalid;

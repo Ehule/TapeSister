@@ -441,6 +441,9 @@ typedef struct {
     int master_eq_open, master_eq_band, master_eq_drag, master_eq_reset_pending;
     unsigned master_eq_rate;
     int router_open, router_drag, router_drop, router_transition;
+    int router_performance_open, router_slot, router_step, router_timer_stage;
+    TsRouterControls router_live;
+    TsRouterView router_view;
     int insert_open, insert_drag, insert_apply_pending, insert_send_choice, insert_return_choice;
     unsigned insert_inputs, insert_outputs, insert_offered_outputs;
     char insert_send_device[TS_CONFIG_PATH_MAX], insert_return_device[TS_CONFIG_PATH_MAX];

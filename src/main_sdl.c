@@ -644,7 +644,9 @@ static uint64_t paged_project_state_hash(const TsSamplePages *pages,
     }
     if (sister != NULL) {
         state_hash_bytes(&hash,&sister->master_eq.controls,sizeof(sister->master_eq.controls));
-        state_hash_bytes(&hash,&sister->router.controls,sizeof(sister->router.controls));
+        TsRouterControls saved_router=ts_router_export(&sister->router);
+        state_hash_bytes(&hash,&saved_router,sizeof(saved_router));
+        state_hash_bytes(&hash,&sister->router.performance,sizeof(sister->router.performance));
         state_hash_bytes(&hash,&sister->insert.controls,sizeof(sister->insert.controls));
         uint8_t routes = sister->source_switches & TS_SISTER_SOURCE_ALL;
         state_hash_bytes(&hash, &routes, sizeof(routes));
@@ -3835,6 +3837,8 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
                 ts_master_eq_set(&audio->sister.master_eq,&flat);
                 TsRouterControls defaults;ts_router_default(&defaults);
                 ts_sister_runtime_set_router(&audio->sister,&defaults);
+                audio->sister.router.transport.restore_valid=0;
+                ts_router_performance_default(&audio->sister.router.performance);
                 TsInsertControls disconnected;ts_insert_default(&disconnected);
                 ts_sister_runtime_set_insert(&audio->sister,&disconnected);
                 ts_sister_runtime_set_sources(&audio->sister, 0u);
@@ -10918,6 +10922,7 @@ static int midi_apply_target(SDL_AudioDeviceID device, AudioState *audio,
                              const char *target, float normalized,
                              uint32_t sample_rate, uint8_t output_channels)
 {
+    if(router_midi_command(device,audio,ui,target))return 1;
     int slot,eq_band,eq_control;
     TsSisterUiHit hit;
     if(!strcmp(target,"main.eq.bypass")) {
@@ -12761,6 +12766,7 @@ int main(int argc, char **argv)
         &audio.sister, (float)ui.config.master_output_percent / 100.0f);
     ts_master_eq_set(&audio.sister.master_eq,&ui.config.master_eq);
     ts_sister_runtime_set_router(&audio.sister,&ui.config.router);
+    ts_router_performance_set(&audio.sister.router,&ui.config.router_performance);
     ts_sister_runtime_set_insert(&audio.sister,&ui.config.insert);
     audio.sister_file_recorder = &sister_window.performance_recorder;
     atomic_init(&audio.sister_file_tap, TS_SISTER_TAP_MIX);
@@ -17036,7 +17042,10 @@ int main(int argc, char **argv)
                     routing.output_clip[channel];
             }
             ui.config.master_eq = audio.sister.master_eq.controls;
-            ui.config.router = routing.router;
+            ui.config.router = routing.router_saved;
+            ui.router_live = routing.router;ui.router_view=routing.router_view;
+            /* Settings are UI-owned; only transport/countdowns mutate on audio. */
+            ui.config.router_performance=audio.sister.router.performance;
             ui.config.insert = routing.insert;
             ui.insert_send_peak=routing.insert_send_peak;ui.insert_return_peak=routing.insert_return_peak;
             ui.insert_inputs=routing.insert_inputs;ui.insert_outputs=routing.insert_outputs;

@@ -34,6 +34,7 @@ void ts_config_init(TsConfig *config)
         config->master_output_percent = TS_MASTER_OUTPUT_PERCENT_DEFAULT;
         ts_master_eq_default(&config->master_eq);
         ts_router_default(&config->router);
+        ts_router_performance_default(&config->router_performance);
         ts_insert_default(&config->insert);
         config->audio_backend = TS_AUDIO_BACKEND_AUTO;
         config->audio_backend_invalid = 0;
@@ -291,6 +292,11 @@ int ts_config_load(TsConfig *config, const char *path,
             saw_insert=1;
             if(ts_insert_read(&loaded.insert,key,value)<0) {
                 snprintf(error,error_size,"Invalid Insert on config line %d",line_number);
+                fclose(file);return 0;
+            }
+        } else if (!strncmp(key,"RouterPerf.",11)) {
+            if(ts_router_performance_read(&loaded.router_performance,key,value)<0) {
+                snprintf(error,error_size,"Invalid Router performance on config line %d",line_number);
                 fclose(file);return 0;
             }
         } else if (!strncmp(key,"Router.",7)) {
@@ -761,6 +767,7 @@ int ts_config_save(const TsConfig *config, const char *path,
     if (!write_failed) write_failed = fprintf(file,"\n[Master EQ]\n") < 0 ||
         !ts_master_eq_write(file,&config->master_eq);
     if(!write_failed)write_failed=!ts_router_write(file,&config->router);
+    if(!write_failed)write_failed=!ts_router_performance_write(file,&config->router_performance);
     if(!write_failed)write_failed=!ts_insert_write(file,&config->insert);
     if(!write_failed)write_failed=fprintf(file,"insert_send_device=%s\ninsert_return_device=%s\n",
         config->insert_send_device,config->insert_return_device)<0;

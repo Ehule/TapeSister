@@ -173,3 +173,13 @@ CdpProcess.granulate=1
 ; Missing rows keep factory defaults. Presets follow the recipe even when the
 ; visible process selection changes. Example for GLISTEN:
 ; CdpPreset.glisten=8,8,3,0.28,1,1
+
+# Router Performance: A-Z participation states and 64 timed steps.
+# Saved automatically by SAVE CONFIG; execution never resumes on load.
+# Lower this UI/settings ceiling if desired (0.05 through 3600 seconds).
+RouterPerf.MaxSeconds=3600
+RouterPerf.Length=16
+RouterPerf.Loop=1
+# RouterPerf.State.A=16,0  # bypass mask, solo (stable stage ID + 1; 0 = none)
+# RouterPerf.Step.1=0,30  # state index (A=0, HOLD=-1), Step Time in seconds
+# RouterPerf.Timer.0=0,8  # AFTER=1 / FOR=0, seconds; stage 0 is Prism

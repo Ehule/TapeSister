@@ -1,3 +1,6 @@
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include "tapesister/router.h"
 #include "tapesister/config.h"
 #include "tapesister/sister_project_state.h"

@@ -195,6 +195,13 @@ spare output pairs or independent SEND/RETURN devices. **SETUP** on its Router
 row opens device, channel and level controls. New and older projects start with INSERT bypassed.
 [Controls and routing details](docs/USER_MANUAL.md#global-router).
 
+**F9 → PERFORMANCE** adds timed Bypass/Solo, A–Z Router States and up to 64
+steps with individual hold times. Manual gestures override until the next step;
+STOP holds the state and RESTORE returns to the manual state captured before PLAY.
+[Router Performance controls, MIDI and examples](docs/ROUTER_PERFORMANCE.md).
+
+![Router Performance](docs/images/router-performance-playing.png)
+
 ![Native Global Router](docs/images/global-router.png)
 
 ![External Insert setup](docs/images/external-insert.png)

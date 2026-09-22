@@ -5,18 +5,22 @@ static void router_activity(TsFramebuffer *fb,int x,int y,float peak)
 }
 
 #include "ts_insert_ui.inc"
+#include "ts_router_performance_ui.inc"
 
 static const char *router_help(const TsUiState *ui,int x,int y)
 {
     if(ui->insert_open)return insert_help(x,y);
+    if(ui->router_performance_open)return router_performance_help(x,y);
+    if(x>=442 && x<566 && y>=42 && y<65)return "ROUTER PERFORMANCE: A-Z STATES / 64 STEPS / TIMED BYPASS AND SOLO";
     if(x>=574 && y>=42 && y<66)return "CLOSE ROUTER; AUDIO KEEPS PLAYING; F9 ALSO OPENS/CLOSES";
     if(y>=74 && y<96)return "FIXED SOURCE: CURRENT MIX; POWERED SISTER KEEPS ITS EXISTING INPUT SELECTION";
     if(y>=108 && y<318) {
         int stage=ui->config.router.order[(y-108)/42];
         if(stage==TS_ROUTER_INSERT && x>=252 && x<330)return "INSERT SETUP: SELECT SEND / RETURN PAIRS AND LEVELS";
-        if(x>=512)return "SOLO ONE STAGE; CLICK AGAIN TO RESTORE EVERY PREVIOUS BYPASS SETTING";
-        if(x>=414)return "BYPASS THIS STAGE; SETTINGS STAY INTACT; A PLAIN BYPASS CLICK EXITS SOLO";
+        if(x>=512)return "SOLO ONE STAGE / RIGHT-CLICK: TIMED SOLO / LEFT-CLICK: OVERRIDE UNTIL NEXT STEP";
+        if(x>=414)return "BYPASS THIS STAGE / RIGHT-CLICK: TIMED BYPASS / LEFT-CLICK: OVERRIDE UNTIL NEXT STEP";
         if(x>=344)return "SIGNAL AT THIS POINT; LIGHTS CAN GLOW WHILE A PROCESSOR IS BYPASSED OR OFF";
+        if(ui->router_view.running)return "STOP ROUTER SEQUENCE TO REORDER STAGES; BYPASS/SOLO REMAIN AVAILABLE";
         int row=(y-108)/42;
         if(ui->config.router.order[row]==TS_ROUTER_PEDALBOARD)
             return "DRAG POST CHAIN AS ONE BLOCK; PRE/HEAD INSERTS STAY IN SISTER; BYPASS GATES ALL";
@@ -33,16 +37,23 @@ static void router_render(TsFramebuffer *fb,const TsUiState *ui)
        ui->import_preview_open || ui->load_selection_choice_open || ui->overdub_confirm_open ||
        ui->export_choice_open || ui->fm_bank_choice_open || ui->fm_full_choice_open ||
        ui->renaming_bank_slot>=0 || ui->renaming_recipe_slot>=0 || ui->exchange_dialog!=TS_UI_EXCHANGE_NONE)return;
-    if(ui->insert_open){insert_render(fb,ui);return;}
+    if(ui->insert_open){insert_render(fb,ui);router_learn_overlay(fb,ui);return;}
+    if(ui->router_performance_open){router_performance_render(fb,ui);router_learn_overlay(fb,ui);return;}
     uint32_t teal=RGB(107,176,182),amber=RGB(247,196,91),muted=RGB(123,127,133);
     rect(fb,10,38,620,344,RGB(29,29,35));rect(fb,10,38,620,2,teal);
     text(fb,22,48,"GLOBAL ROUTER",amber,1);
-    text(fb,250,48,ui->router_transition?"CHANGING ORDER":"SERIAL SIGNAL PATH",teal,1);
+    char playback[32];
+    if(ui->router_view.running) {
+        char time[16];router_time_label(time,sizeof(time),ui->router_view.remaining);
+        snprintf(playback,sizeof(playback),"STEP %02d / %c / %.8s",ui->router_view.step+1,
+            ui->router_view.state<0?'-':'A'+ui->router_view.state,time);
+    } else snprintf(playback,sizeof(playback),"%s",ui->router_transition?"CHANGING ORDER":"SERIAL SIGNAL PATH");
+    text(fb,228,48,playback,teal,1);button(fb,442,42,124,"PERFORMANCE",0);
     button(fb,574,42,44,"X",0);
     rect(fb,154,74,336,22,RGB(17,21,24));text(fb,170,82,"SOURCE / INPUT",teal,1);
     router_activity(fb,422,83,ui->router_peaks[TS_ROUTER_COUNT*2]);
-    text(fb,500,82,"FIXED",muted,1);
-    const TsRouterControls *c=&ui->config.router;
+    text(fb,500,82,ui->router_view.running?"LOCKED":"FIXED",muted,1);
+    const TsRouterControls *c=&ui->router_live;
     const char *detail[]={"LENSES / MORPH / MATRIX","TAPE / PRE + HEAD INSERTS",
         "GLOBAL TEXTURE / MASTER FX","STEREO POST / SLOT ORDER","100% WET / EXTERNAL LOOP"};
     for(int row=0;row<TS_ROUTER_COUNT;++row) {
@@ -54,7 +65,11 @@ static void router_render(TsFramebuffer *fb,const TsUiState *ui)
         rect(fb,64,y,3,36,c->solo==stage+1?amber:color);
         for(int n=0;n<3;++n){rect(fb,77,y+13+n*5,3,2,color);rect(fb,83,y+13+n*5,3,2,color);}
         text(fb,99,y+8,ts_router_name(stage),color,1);
-        text(fb,99,y+23,detail[stage],muted,1);
+        if(ui->router_view.timer_kind[stage]) {
+            char timer[48],time[16];router_time_label(time,sizeof(time),ui->router_view.timer_remaining[stage]);
+            snprintf(timer,sizeof(timer),"%s %s %s",ui->router_view.timer_kind[stage]==TS_ROUTER_TIMER_SOLO?"SOLO":"BYP",
+                ui->router_view.timer_after[stage]?"IN":"FOR",time);text(fb,99,y+23,timer,amber,1);
+        } else text(fb,99,y+23,detail[stage],muted,1);
         const char *state=!active?(c->solo?"SKIP":"BYPASS"):!available?"OFF":c->solo==stage+1?"SOLO":"ON";
         if(stage==TS_ROUTER_INSERT) {
             button(fb,252,y+6,76,"SETUP",0);
@@ -75,6 +90,7 @@ static void router_render(TsFramebuffer *fb,const TsUiState *ui)
     text(fb,116,339,"MASTER / EQ > LIMITER > OUT",amber,1);
     router_activity(fb,456,341,ui->router_peaks[TS_ROUTER_COUNT*2+1]);text(fb,518,339,"FIXED",muted,1);
     const char *help=ui->performance_tooltip[0]?ui->performance_tooltip:
-        "DRAG: ORDER   BYPASS / SOLO: AUDITION   OFF: MODULE POWER   F9: CLOSE";
+        "DRAG: ORDER / RIGHT-CLICK BYPASS/SOLO: TIMER / PERFORMANCE: STATES / F9: CLOSE";
+    router_learn_overlay(fb,ui);
     char line[99];snprintf(line,sizeof(line),"%.98s",help);text(fb,22,364,line,ui->performance_tooltip[0]?amber:muted,1);
 }

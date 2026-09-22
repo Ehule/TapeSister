@@ -716,7 +716,7 @@ static void main_midi_learn_overlay(TsFramebuffer *fb, const TsUiState *ui)
     char target[TS_MIDI_TARGET_ID_MAX];
     int state;
     if (fb == NULL || ui == NULL || !ui->midi_learn_active) return;
-    if(ui->master_eq_open)goto learn_footer;
+    if(ui->master_eq_open || ui->router_open)goto learn_footer;
     state = midi_learn_target_state(&ui->config.midi_map,
                                     ui->midi_learn_pending,
                                     "main.master_output");
@@ -1948,6 +1948,7 @@ void ts_ui_init(TsUiState *ui)
     ui->dsp_page = 0;
     ts_browser_init(&ui->browser);
     ts_config_init(&ui->config);
+    ui->router_live=ui->config.router;
     ts_ui_refresh_cdp_catalog(ui);
     ts_palette_default(&ui->palette);
     ui->palette_entry = TS_PALETTE_PATTERN_TEXT;
@@ -2965,7 +2966,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
 {
     render_palette = &ui->palette;
     if(ui->portal.open) { portal_render(fb,ui); return; }
-    if(ui->mosaic_open && ui->mosaic) {mosaic_render(fb,ui,instrument);master_eq_render(fb,ui);router_render(fb,ui);return;}
+    if(ui->mosaic_open && ui->mosaic) {mosaic_render(fb,ui,instrument);master_eq_render(fb,ui);router_render(fb,ui);main_midi_learn_overlay(fb,ui);return;}
     const TsTuning *display_tuning = &ui->tune_reference;
     int showing_bank = ui->bank_view_slot >= 0 && ui->bank_view_slot < TS_BANK_SLOT_COUNT;
     int showing_parent = !showing_bank && ui->audition_source == TS_AUDITION_PARENT;
@@ -4210,6 +4211,7 @@ int ts_ui_midi_target_from_point(const TsUiState *ui, int x, int y,
     int result;
     if (ui == NULL || target == NULL || target_size == 0u) return 0;
     target[0] = '\0';
+    if(ui->router_open)return router_midi_target(ui,x,y,target,target_size);
     if(ui->master_eq_open)return ts_ui_master_eq_midi_target(ui,x,y,target,target_size);
     slot = !ui->show_keyboard && !ui->show_recipes && !ui->show_ingredients ?
            ts_ui_bank_slot_from_point(x, y) : -1;

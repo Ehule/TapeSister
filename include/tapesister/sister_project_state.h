@@ -7,7 +7,7 @@
 #include "tapesister/sister_runtime.h"
 
 enum {
-    TS_SISTER_PROJECT_STATE_VERSION = 24,
+    TS_SISTER_PROJECT_STATE_VERSION = 25,
     TS_SISTER_PROJECT_PRESET_NAME_MAX = 47
 };
 
@@ -19,6 +19,7 @@ typedef struct {
     TsSisterParameters parameters;
     TsMasterEqControls master_eq;
     TsRouterControls router;
+    TsRouterPerformance router_performance;
     TsInsertControls insert;
     uint64_t parameter_locks;
     uint64_t parameter_locks_high;

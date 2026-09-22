@@ -49,6 +49,8 @@ static void test_insert_controller(void)
         else ts_sister_runtime_disable(&audio.sister);
         TsSisterParameters p=audio.sister.parameters;p.prism.enabled=1;p.prism.lenses=24;
         p.fx.enabled=1;p.fx.fallout.enabled=1;p.fx.fallout.mix=.2f;
+        p.fx.slot[0]=(TsSisterFxSlotControls){TS_SISTER_FX_DELAY,1,TS_SISTER_FX_PLACE_POST,0,.3f,.6f,.5f,.3f};
+        p.fx.slot[1]=(TsSisterFxSlotControls){TS_SISTER_FX_REVERB,1,TS_SISTER_FX_PLACE_POST,0,.5f,.5f,.5f,.3f};
         ts_sister_runtime_set_parameters(&audio.sister,&p);
         ui.mosaic=audio.mosaic=ts_mosaic_create();assert(ui.mosaic);
         TsMosaicSource *source=ts_mosaic_source(ui.mosaic,&instrument.current,error,sizeof(error));assert(source);
@@ -84,6 +86,29 @@ static void test_insert_controller(void)
             for(int i=0;i<256;++i)assert(recorder.ring[before+i].l==block[i*8] && recorder.ring[before+i].r==block[i*8+1]);
             for(int i=0;i<256;++i)assert(mosaic_take.buffer[(before+i)*2]==block[i*8] && mosaic_take.buffer[(before+i)*2+1]==block[i*8+1]);
         }
+        /* Automated participation under combined Prism/Sister/FX/Mosaic/ARP/
+           Insert load must reach both final-output recorder paths unchanged. */
+        TsRouter *r=&audio.sister.router;ts_router_performance_default(&r->performance);
+        r->performance.length=3;r->performance.occupied=7;
+        r->performance.state[0]=(TsRouterState){0,0};
+        r->performance.state[1]=(TsRouterState){1u<<TS_ROUTER_INSERT,0};
+        r->performance.state[2]=(TsRouterState){0,TS_ROUTER_INSERT+1};
+        for(int i=0;i<3;++i)r->performance.step[i]=(TsRouterStep){i,.05f};
+        r->performance.timer_seconds[TS_ROUTER_PRISM]=.12f;
+        ts_router_sequence_play(r);ts_router_timer_start(r,TS_ROUTER_PRISM,TS_ROUTER_TIMER_SOLO);
+        TsInsertControls assigned=audio.sister.insert.controls;
+        for(int n=0;n<40;++n) {
+            size_t start=atomic_load(&recorder.write_cursor);insert_callback_block(block);
+            assert(voices()==1 && audio.keyboard_sequence.running && ui.mosaic->playing);
+            assert(atomic_load(&recorder.write_cursor)==start+256);
+            for(int i=0;i<256;++i) {
+                assert(recorder.ring[start+i].l==block[i*8] && recorder.ring[start+i].r==block[i*8+1]);
+                assert(mosaic_take.buffer[(start+i)*2]==block[i*8] && mosaic_take.buffer[(start+i)*2+1]==block[i*8+1]);
+            }
+        }
+        assert(r->transport.running && r->transport.step==1 && r->transport.frames==785 && !r->transport.timer_mask);
+        assert(!memcmp(&assigned,&audio.sister.insert.controls,sizeof(assigned)));
+        ts_router_sequence_restore(r);ts_router_performance_default(&r->performance);router_sync(&audio,&ui);
         /* Apply is deferred and refused during recording; gain reset remains usable. */
         ui.router_open=1;insert_panel_open(&ui);ui.insert_offered_outputs=8;ui.insert_inputs=8;
         ui.insert_send_choice=3;ui.insert_apply_pending=1;SDL_AudioDeviceID capture_device=0;
