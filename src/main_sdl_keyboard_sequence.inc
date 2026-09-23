@@ -3,13 +3,17 @@ static void keyboard_sequence_ui(AudioState *audio, TsUiState *ui)
 {
     TsKeyboardSequence *s = &audio->keyboard_sequence;
     if (s->settings.seconds == 0) ts_keyboard_sequence_init(s);
+    ts_keyboard_sequence_set_slot_policy(s, ui->config.arp_slot_min_full_pattern);
     ui->keyboard_sequence = s->settings;
-    ui->keyboard_sequence_running = s->running;
+    ui->keyboard_sequence_running = ts_keyboard_sequence_active(s);
     ui->keyboard_sequence_current = s->running && s->elapsed < s->settings.seconds * s->settings.gate ? s->current_note : -1;
-    ui->keyboard_sequence_step = s->cursor + 1;
+    ui->keyboard_sequence_step = s->running ? s->cursor + 1 : 0;
     ui->keyboard_sequence_progress = s->running ? fmin(1, s->elapsed / s->settings.seconds) : 0;
     ui->keyboard_sequence_level = s->effective_gain;
-    ui->keyboard_sequence_slot = s->bank.selected;
+    ui->keyboard_sequence_slot = s->active_slot;
+    ui->keyboard_slot_sequence = s->bank.sequence;
+    ui->keyboard_slot_running = s->slot_running;
+    ui->keyboard_slot_remaining = s->slot_running ? fmax(0, s->slot_duration - s->slot_elapsed) : 0;
     ui->keyboard_sequence_occupied = 0;
     for (int i = 0; i < TS_KEYBOARD_SEQUENCE_SLOTS; ++i)
         if (s->bank.slot[i].count) ui->keyboard_sequence_occupied |= (uint16_t)(1u << i);
@@ -30,7 +34,7 @@ static int keyboard_sequence_prepare(SDL_AudioDeviceID device, AudioState *audio
     int running;
     if (device) SDL_LockAudioDevice(device);
     keyboard_sequence_ui(audio, ui);
-    running = audio->keyboard_sequence.running;
+    running = ts_keyboard_sequence_active(&audio->keyboard_sequence);
     if (!ui->fm_open && audio->sister.enabled &&
         (audio->sister.source_switches & TS_SISTER_SOURCE_TILES))
         mask = ts_sister_runtime_source_mask(&audio->sister);
@@ -119,7 +123,7 @@ static void keyboard_sequence_toggle_playback(SDL_AudioDeviceID device, AudioSta
     if (device) SDL_LockAudioDevice(device);
     keyboard_sequence_ui(audio, ui);
     TsKeyboardSequence *s = &audio->keyboard_sequence;
-    int stopping = s->running;
+    int stopping = ts_keyboard_sequence_active(s);
     if (stopping) ts_keyboard_sequence_stop(s);
     keyboard_sequence_ui(audio, ui);
     if (device) SDL_UnlockAudioDevice(device);
@@ -268,9 +272,37 @@ static int keyboard_sequence_event(const SDL_Event *event, SDL_Window *window,
         if (event->type == SDL_MOUSEBUTTONDOWN && event->button.button == SDL_BUTTON_LEFT &&
             y >= 198 && y < 215 && x >= 20 && x < 612) {
             int slot = (x - 20) / 37;
-            if ((x - 20) % 37 < 34 && ts_keyboard_sequence_select_slot(s, slot))
-                snprintf(ui->status, sizeof(ui->status), "ARP %02d / %s / EDITS SAVED WITH PROJECT", slot + 1,
-                         s->running ? "PLAYING" : s->settings.count ? "READY - PLAY TO START" : "EMPTY - SELECT NOTES THEN PLAY");
+            int copied = slot != s->active_slot && !s->bank.slot[slot].count &&
+                         ts_keyboard_sequence_active(s) && s->settings.count;
+            if ((x - 20) % 37 < 34 && ts_keyboard_sequence_select_slot(s, slot)) {
+                if (copied || !s->settings.count) ui->keyboard_sequence_edit = 1;
+                snprintf(ui->status, sizeof(ui->status), "ARP %02d / %s / SAVE PROJECT TO KEEP", slot + 1,
+                         copied ? "COPIED LIVE - EDIT YOUR VARIATION" :
+                         ts_keyboard_sequence_active(s) ? "PLAYING" : s->settings.count ? "READY - PLAY TO START" : "EMPTY - SELECT NOTES THEN PLAY");
+            }
+            keyboard_sequence_ui(audio, ui);
+            if (device) SDL_UnlockAudioDevice(device);
+            return 1;
+        }
+        if ((!slider && y >= 164 && y < 190) || slider == 6) {
+            TsKeyboardSlotSequence q = s->bank.sequence;
+            double maximum = fmax(q.seconds, fmax(1, ui->config.arp_slot_max_seconds));
+            if (slider == 6 || (x >= 226 && x < 426)) {
+                if (wheel) q.seconds *= pow((mod & KMOD_SHIFT) ? 1.01 : 1.1, -wheel);
+                else if (event->type == SDL_MOUSEBUTTONDOWN && event->button.button == SDL_BUTTON_RIGHT) q.seconds = 10;
+                else {
+                    double amount = fmax(0, fmin(1, (x - 226) / 200.0));
+                    q.seconds = TS_KEYBOARD_SLOT_MIN_SECONDS * pow(maximum / TS_KEYBOARD_SLOT_MIN_SECONDS, amount);
+                    ui->keyboard_sequence_drag = 6;
+                }
+                q.seconds = fmax(TS_KEYBOARD_SLOT_MIN_SECONDS, fmin(maximum, q.seconds));
+            } else if (event->type == SDL_MOUSEBUTTONDOWN) {
+                if (x >= 20 && x < 110) q.enabled = !q.enabled;
+                else if (x >= 116 && x < 216)
+                    q.mode = (q.mode + (event->button.button == SDL_BUTTON_RIGHT ? 4 : 1)) % TS_KEYBOARD_SEQUENCE_MODE_COUNT;
+                else if (x >= 436 && x < 516) q.loop = !q.loop;
+            }
+            ts_keyboard_sequence_set_slot_sequence(s, &q);
             keyboard_sequence_ui(audio, ui);
             if (device) SDL_UnlockAudioDevice(device);
             return 1;

@@ -144,6 +144,8 @@ typedef struct {
     int record_silence_ms;
     int record_tail_ms;
     int record_max_seconds;
+    int arp_slot_min_full_pattern;
+    int arp_slot_max_seconds; /* UI range ceiling, default 240; up to four hours. */
     int capture_auto_resize;
     int capture_max_seconds;
     int capture_channels;

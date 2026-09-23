@@ -943,12 +943,28 @@ also edits the selection when the panel is closed or EDIT is off. Selected keys
 are teal, the sounding step is gold, and numbers show selection order. Changing
 octave preserves the selected pitches.
 
-The numbered **01–16** row selects independent ARP sequences. Each slot retains
-its notes, mode, Loop, Step, Gate, volume and LFO settings as you edit. A dot marks
-slots containing notes. During playback, clicking another populated slot starts
-it immediately from its first note; while stopped, selection stays stopped.
-An empty slot stops ARP until you add notes and press PLAY. CLEAR affects only
-the selected slot, and clicking its number again does not restart the clock.
+The numbered **01–16** row selects independent ARP patterns. Each remembers notes,
+mode, timing, volume and LFO. While playing, selecting an empty slot copies the
+current pattern **without retriggering** and opens EDIT, so you can build a new
+variation. Existing populated slots recall their own patterns. While stopped,
+empty slots start silent with default settings. CLEAR affects this slot only.
+
+The new top **SLOT SEQ** row sequences those patterns: UP, DOWN, UP/DOWN, ORDER
+(first-populated order), or RANDOM (shuffle each pass). **SLOT TIME** sets how long
+each slot holds; empty slots are skipped. **LOOP ON** repeats; OFF stops after one
+pass. Note LOOP/ONCE remains independent. Turning SLOT SEQ off leaves the current
+pattern playing; STOP stops both clocks. Manual slot selection starts a fresh
+outer hold from that slot. Clocks continue with the panel hidden, and the active
+slot/countdown update when reopened.
+
+Slot Time ranges from 50 ms to 4 minutes by default. In `tapesister.ini`, set
+`arp_slot_max_seconds=1200` for a 20-minute ceiling (maximum 14400). Fast outer
+steps may intentionally truncate inner patterns. Set `arp_slot_min_full_pattern=1`
+to hold each slot for at least one complete inner cycle; default 0 permits
+truncation. Main SAVE retains patterns and static outer sequencing settings;
+SAVE CONFIG retains these timing preferences. Projects always reload stopped.
+See [Keyboard sequencing](KEYBOARD_SEQUENCE.md) for timing/edit semantics and a
+live variation example.
 
 Choose **UP**, **DOWN**, **UP/DOWN**, **ORDER**, or **RANDOM**. ORDER follows your
 key selections like Prism's lens sequence; remove and re-add a note to put it
@@ -981,9 +997,10 @@ FM preview, or selected ensemble through the existing effects and recording
 paths. Selecting another tile keeps the notes, order, and timing running with
 the new sound; it does not start a separate tile layer while ARP is active.
 Closing the ARP panel keeps playback running. Main **SAVE** stores all 16 ARP
-slots and the selected slot in the `.tsr` project. Reload restores the bank
-stopped, with no old countdown, LFO phase or sounding notes. Older projects get
-an empty/default bank. ARP edits trigger the unsaved-changes warning; the bank
+slots, their creation order, the last manually selected slot and static outer
+sequence settings in the `.tsr` project. Reload restores the bank stopped, with
+no old countdown, LFO phase or sounding notes. Older ARP banks remain intact with
+the outer sequencer off; projects without ARP data get an empty/default bank. ARP edits trigger the unsaved-changes warning; the bank
 is separate from Prism presets and global SAVE CONFIG preferences.
 
 [Full controls, routing, and examples](KEYBOARD_SEQUENCE.md).

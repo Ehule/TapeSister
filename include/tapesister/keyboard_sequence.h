@@ -11,6 +11,8 @@
 #define TS_KEYBOARD_SEQUENCE_MIN_SECONDS 0.03
 #define TS_KEYBOARD_SEQUENCE_MAX_SECONDS 3600.0
 #define TS_KEYBOARD_SEQUENCE_LFO_MIN_SECONDS 0.05
+#define TS_KEYBOARD_SLOT_MIN_SECONDS 0.05
+#define TS_KEYBOARD_SLOT_MAX_SECONDS 14400.0
 
 typedef enum {
     TS_KEYBOARD_SEQUENCE_UP, TS_KEYBOARD_SEQUENCE_DOWN,
@@ -27,8 +29,15 @@ typedef struct {
 } TsKeyboardSequenceSettings;
 
 typedef struct {
+    int enabled, mode, loop;
+    double seconds;
+} TsKeyboardSlotSequence;
+
+typedef struct {
     TsKeyboardSequenceSettings slot[TS_KEYBOARD_SEQUENCE_SLOTS];
-    int selected;
+    int selected; /* Last manual selection; automatic playback never writes it. */
+    int order[TS_KEYBOARD_SEQUENCE_SLOTS], order_count; /* First-populated order. */
+    TsKeyboardSlotSequence sequence;
 } TsKeyboardSequenceBank;
 
 /* Prepared on the UI thread, immutable while published to the audio thread. */
@@ -52,6 +61,12 @@ typedef struct {
     unsigned fade_remaining, fade_frames;
     double gain_current, lfo_phase;
     float effective_gain;
+    int active_slot, slot_running, slot_cursor, slot_count;
+    int slot_path[TS_KEYBOARD_SEQUENCE_SLOTS * 2 - 2];
+    double slot_elapsed, slot_duration;
+    uint32_t slot_random;
+    int slot_rate;
+    int slot_min_full_pattern; /* INI policy; does not belong to an individual slot. */
 } TsKeyboardSequence;
 
 void ts_keyboard_sequence_init(TsKeyboardSequence *sequence);
@@ -63,6 +78,10 @@ TsKeyboardSequenceBank ts_keyboard_sequence_export(const TsKeyboardSequence *seq
 /* Replaces configuration and clears playback; source ownership is unchanged. */
 void ts_keyboard_sequence_set_bank(TsKeyboardSequence *sequence, const TsKeyboardSequenceBank *bank);
 int ts_keyboard_sequence_select_slot(TsKeyboardSequence *sequence, int slot);
+void ts_keyboard_sequence_set_slot_sequence(TsKeyboardSequence *sequence,
+                                            const TsKeyboardSlotSequence *settings);
+int ts_keyboard_sequence_active(const TsKeyboardSequence *sequence);
+void ts_keyboard_sequence_set_slot_policy(TsKeyboardSequence *sequence, int minimum_full_pattern);
 /* Static project configuration only; no source pointers or transport state. */
 int ts_keyboard_sequence_bank_write(FILE *file, const TsKeyboardSequenceBank *bank);
 /* 1 = recognized, 0 = unknown key, -1 = malformed value. */

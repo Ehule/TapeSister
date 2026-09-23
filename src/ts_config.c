@@ -47,6 +47,8 @@ void ts_config_init(TsConfig *config)
         config->record_silence_ms = TS_RECORD_SILENCE_MS_DEFAULT;
         config->record_tail_ms = TS_RECORD_TAIL_MS_DEFAULT;
         config->record_max_seconds = TS_RECORD_MAX_SECONDS_DEFAULT;
+        config->arp_slot_max_seconds = 240;
+        config->arp_slot_min_full_pattern = 0;
         config->capture_auto_resize = 1;
         config->capture_max_seconds = TS_CAPTURE_MAX_SECONDS_DEFAULT;
         config->capture_channels = TS_CAPTURE_CHANNELS_DEFAULT;
@@ -359,6 +361,10 @@ int ts_config_load(TsConfig *config, const char *path,
             if (!parse_clamped_integer(value, TS_RECORD_SILENCE_MS_MIN, TS_RECORD_SILENCE_MS_MAX, &loaded.record_silence_ms)) { snprintf(error, error_size, "Invalid integer on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "record_tail_ms") == 0) {
             if (!parse_clamped_integer(value, TS_RECORD_TAIL_MS_MIN, TS_RECORD_TAIL_MS_MAX, &loaded.record_tail_ms)) { snprintf(error, error_size, "Invalid integer on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "arp_slot_min_full_pattern") == 0) {
+            if (!parse_boolean(value, &loaded.arp_slot_min_full_pattern)) { snprintf(error, error_size, "Invalid arp_slot_min_full_pattern on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "arp_slot_max_seconds") == 0) {
+            if (!parse_clamped_integer(value, 1, 14400, &loaded.arp_slot_max_seconds)) { snprintf(error, error_size, "Invalid arp_slot_max_seconds on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "record_max_seconds") == 0) {
             if (!parse_clamped_integer(value, TS_RECORD_MAX_SECONDS_MIN, TS_RECORD_MAX_SECONDS_MAX, &loaded.record_max_seconds)) { snprintf(error, error_size, "Invalid integer on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "prism_morph_seconds") == 0) {
@@ -570,6 +576,11 @@ int ts_config_save(const TsConfig *config, const char *path,
                 "record_tail_ms=%d\n"
                 "; Safety limit for one captured tile.\n"
                 "record_max_seconds=%d\n"
+                "\n[ARP Slot Sequencing]\n"
+                "; Slot-time fader ceiling; 1200 allows 20 minutes, up to 14400.\n"
+                "arp_slot_max_seconds=%d\n"
+                "; 1 requires a full inner pattern before each outer change.\n"
+                "arp_slot_min_full_pattern=%d\n"
                 "\n[Mosaic Recording]\n"
                 "; Independent card duration: 0=unlimited, otherwise 10..3600 seconds.\n"
                 "mosaic_record_seconds=%d\n"
@@ -665,6 +676,8 @@ int ts_config_save(const TsConfig *config, const char *path,
                 config->record_silence_ms,
                 config->record_tail_ms,
                 config->record_max_seconds,
+                config->arp_slot_max_seconds,
+                config->arp_slot_min_full_pattern,
                 config->mosaic_record_seconds,
                 config->mosaic_silence_seconds,
                 config->mosaic_silence_db,

@@ -35,10 +35,25 @@ static void keyboard_sequence_panel(TsFramebuffer *fb, const TsUiState *ui)
     char label[80];
     frame(fb, TS_ARP_PANEL_X, y, TS_ARP_PANEL_W, h,
           RGB(24, 29, 36), RGB(91, 161, 167));
-    text(fb, 20, 186 + offset, "ARP / KEYBOARD SEQUENCE", RGB(137, 210, 211), 1);
+    text(fb, 20, 150 + offset, "ARP / KEYBOARD SEQUENCE", RGB(137, 210, 211), 1);
     snprintf(label, sizeof(label), "%02d NOTES   %s %02d", s->count,
-             ui->keyboard_sequence_running ? "STEP" : "READY", ui->keyboard_sequence_running ? ui->keyboard_sequence_step : 0);
-    text(fb, 356, 186 + offset, label, RGB(247, 196, 91), 1);
+             ui->keyboard_sequence_step ? "STEP" : ui->keyboard_slot_running ? "WAIT" : "READY", ui->keyboard_sequence_running ? ui->keyboard_sequence_step : 0);
+    text(fb, 356, 150 + offset, label, RGB(247, 196, 91), 1);
+    const TsKeyboardSlotSequence *q = &ui->keyboard_slot_sequence;
+    button(fb, 20, 164 + offset, 90, q->enabled ? "SLOT SEQ ON" : "SLOT SEQ OFF", q->enabled);
+    button(fb, 116, 164 + offset, 100, ts_keyboard_sequence_mode_name(q->mode), 0);
+    if (q->seconds >= 60) snprintf(label, sizeof(label), "SLOT TIME %.2F MIN", q->seconds / 60);
+    else snprintf(label, sizeof(label), "SLOT TIME %.2F SEC", q->seconds);
+    double slot_max = fmax(q->seconds, fmax(1, ui->config.arp_slot_max_seconds));
+    double slot_amount = log(fmax(TS_KEYBOARD_SLOT_MIN_SECONDS, q->seconds) / TS_KEYBOARD_SLOT_MIN_SECONDS) /
+                         log(slot_max / TS_KEYBOARD_SLOT_MIN_SECONDS);
+    slider(fb, 226, 164 + offset, 200, label, (float)slot_amount, RGB(91, 161, 167));
+    button(fb, 436, 164 + offset, 80, q->loop ? "LOOP ON" : "LOOP OFF", q->loop);
+    if (ui->keyboard_slot_running) {
+        int seconds = (int)ceil(ui->keyboard_slot_remaining);
+        snprintf(label, sizeof(label), "%02d:%02d LEFT", seconds / 60, seconds % 60);
+    } else snprintf(label, sizeof(label), "%s", q->enabled ? "ARMED" : "MANUAL");
+    text(fb, 530, 172 + offset, label, RGB(247, 196, 91), 1);
     for (int i = 0; i < TS_KEYBOARD_SEQUENCE_SLOTS; ++i) {
         snprintf(label, sizeof(label), "%02d", i + 1);
         mini_button(fb, 20 + i * 37, 198 + offset, 34, label, ui->keyboard_sequence_slot == i);

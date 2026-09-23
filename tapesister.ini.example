@@ -74,6 +74,14 @@ record_tail_ms=180
 ; Hard safety limit for a single recorded tile.
 record_max_seconds=20
 
+[ARP Slot Sequencing]
+; ARP slot-time range: 50 ms to 4 minutes by default.
+; Set 1200 for 20 minutes; maximum 14400 (four hours).
+arp_slot_max_seconds=240
+; 0 allows deliberately truncated patterns; 1 holds each slot for at least
+; its full note cycle (including the return leg of UP/DOWN).
+arp_slot_min_full_pattern=0
+
 [Mosaic Recording]
 ; Independent card length: 0=unlimited, otherwise 10..3600 seconds.
 ; LENGTH slider/wheel on Mosaic saves this preference. Does not change REC FILE.

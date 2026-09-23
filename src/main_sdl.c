@@ -630,6 +630,12 @@ static uint64_t paged_project_state_hash(const TsSamplePages *pages,
     if (sequence) {
         TsKeyboardSequenceBank bank = ts_keyboard_sequence_export(sequence);
         state_hash_bytes(&hash, &bank.selected, sizeof(bank.selected));
+        state_hash_bytes(&hash, &bank.order_count, sizeof(bank.order_count));
+        state_hash_bytes(&hash, bank.order, sizeof(bank.order));
+        state_hash_bytes(&hash, &bank.sequence.enabled, sizeof(bank.sequence.enabled));
+        state_hash_bytes(&hash, &bank.sequence.mode, sizeof(bank.sequence.mode));
+        state_hash_bytes(&hash, &bank.sequence.loop, sizeof(bank.sequence.loop));
+        state_hash_bytes(&hash, &bank.sequence.seconds, sizeof(bank.sequence.seconds));
         for (int i = 0; i < TS_KEYBOARD_SEQUENCE_SLOTS; ++i) {
             const TsKeyboardSequenceSettings *s = &bank.slot[i];
 #define ARP_HASH(field) state_hash_bytes(&hash, &s->field, sizeof(s->field))
@@ -1476,7 +1482,7 @@ static void toggle_workbench_loop(SDL_AudioDeviceID device, AudioState *audio,
 {
     if (!persistent && !ui->workbench_loop_persistent &&
         (ui->fm_open || ts_note_bank_count(&audio->notes) > 0 ||
-         audio->keyboard_sequence.running ||
+         ts_keyboard_sequence_active(&audio->keyboard_sequence) ||
          ts_performance_count(&audio->performance) > 0 ||
          ts_performance_count(&audio->sister.performance) > 0)) {
         if (device) SDL_LockAudioDevice(device);
@@ -1550,7 +1556,7 @@ static void refresh_workbench_loop(SDL_AudioDeviceID device, AudioState *audio,
        leave it armed and silent. Only an explicitly locked loop may restart
        the standalone audition after the keyboard chord has ended. */
     if ((!ui->workbench_loop_persistent && !audio->playing) ||
-        audio->keyboard_sequence.running ||
+        ts_keyboard_sequence_active(&audio->keyboard_sequence) ||
         ts_note_bank_count(&audio->notes) > 0 ||
         ts_performance_count(&audio->performance) > 0 ||
         ts_performance_count(&audio->sister.performance) > 0) {
@@ -1982,7 +1988,7 @@ static void sample_bank_audition_selected(SDL_AudioDeviceID device, AudioState *
     /* ARP follows the selected source on the next UI refresh. Selection must
        neither stop its clock via LOOP nor add a separate unpitched launcher. */
     if (device) SDL_LockAudioDevice(device);
-    int sequencing = audio->keyboard_sequence.running;
+    int sequencing = ts_keyboard_sequence_active(&audio->keyboard_sequence);
     if (device) SDL_UnlockAudioDevice(device);
     if (sequencing) {
         snprintf(ui->status, sizeof(ui->status),
@@ -13949,7 +13955,7 @@ int main(int argc, char **argv)
                         snprintf(ui.fm_message, sizeof(ui.fm_message),
                                  "%.95s", ui.status);
                     } else if (key == SDLK_SPACE) {
-                        if (audio.keyboard_sequence.running || ts_note_bank_count(&audio.notes) > 0)
+                        if (ts_keyboard_sequence_active(&audio.keyboard_sequence) || ts_note_bank_count(&audio.notes) > 0)
                             stop_all_force(device, &audio, &ui);
                         else begin_fm_note(device, &audio, &ui, &instrument,
                                            &fm_preview, 0, obtained.freq, 0);
@@ -14503,7 +14509,7 @@ int main(int argc, char **argv)
                                  "REC ARMED - MAKE SOUND OR ESC/CAPTURE TO CANCEL");
                     else if (audio.capture.state == TS_CAPTURE_RECORDING)
                         stop_capture_early(device, &audio, &ui);
-                    else if (audio.playing || audio.keyboard_sequence.running ||
+                    else if (audio.playing || ts_keyboard_sequence_active(&audio.keyboard_sequence) ||
                         ts_note_bank_count(&audio.notes) > 0 ||
                         ui.tile_launcher_mask != 0u || ui.workbench_loop_active)
                         stop_all(device, &audio, &ui);
@@ -16950,7 +16956,7 @@ int main(int argc, char **argv)
                 &audio.tile_launcher_mask, memory_order_acquire);
             ui.fm_held_notes = ts_note_bank_latched_synth_count(&audio.notes);
             ui.playback_active = audio.playing || voice != NULL ||
-                                 audio.keyboard_sequence.running ||
+                                 ts_keyboard_sequence_active(&audio.keyboard_sequence) ||
                                  sister_voice != NULL || tile_voice != NULL;
             if (audio.playing) {
                 ui.playhead_source = audio.source;

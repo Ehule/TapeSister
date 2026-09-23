@@ -94,7 +94,9 @@ static void test_slots_and_projects(void)
     prepare(TS_KEYBOARD_SEQUENCE_ORDER); render(12);
     TsKeyboardSequenceSettings first = sequence.settings;
     assert(ts_keyboard_sequence_select_slot(&sequence, 15));
-    assert(!sequence.running && sequence.settings.count == 0); /* Empty stops. */
+    assert(sequence.running && !memcmp(&sequence.settings, &first, sizeof(first)));
+    assert(fabs(sequence.elapsed - .012) < 1e-12);
+    ts_keyboard_sequence_stop(&sequence);
     TsKeyboardSequenceSettings last = sequence.settings;
     last.count = 3; last.notes[0] = 72; last.notes[1] = 65; last.notes[2] = 69;
     last.mode = TS_KEYBOARD_SEQUENCE_ORDER; last.seconds = 1.234567890123;
@@ -162,6 +164,8 @@ static void test_slots_and_projects(void)
     remove(path);
 }
 
+#include "test_keyboard_slot_sequence.inc"
+
 int main(void)
 {
     for (int i = 0; i < 256; ++i) { data[2*i] = .3f; data[2*i+1] = -.3f; }
@@ -171,6 +175,7 @@ int main(void)
         .step=1, .gain=1, .active=1, .looping=1, .direction=1};
     test_volume_lfo();
     test_slots_and_projects();
+    test_slot_sequence();
     const int expected[][8] = {
         {60,64,67,60,64,67,60,64}, {67,64,60,67,64,60,67,64},
         {60,64,67,64,60,64,67,64}, {67,60,64,67,60,64,67,60}
