@@ -153,7 +153,7 @@ selects the internal path. Backend streams, JACK clients/ports and device settin
 stay open and unchanged across steps. Windows backend troubleshooting remains
 separate from this feature.
 
-Project v25 and configuration persist state slots, all 64 step definitions, length,
+Projects (v25 and later) and configuration persist state slots, all 64 step definitions, length,
 Loop, timer defaults and the persistent manual base. Saving during sequence/timer
 execution does not store an incidental solo, live override, countdown or run flag.
 Reload starts stopped with no timers or restore point. Older projects/configs get

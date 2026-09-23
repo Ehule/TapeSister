@@ -6,6 +6,26 @@ also changes the selection with the panel closed or EDIT off. Up to 24 pitches
 can be selected across different octaves; changing the visible octave does not
 transpose or lose them. Empty selections stay silent.
 
+The **01–16** row holds 16 independent ARP sequences. Click a number, then choose
+its notes and controls. Edits are retained automatically in that slot; no Store
+button is needed. A teal dot marks a slot containing notes, and the highlighted
+number is selected. Each slot remembers note selection/order, mode, Loop/Once,
+Step, Gate, volume, and all volume-LFO settings. CLEAR empties only the selected
+slot's notes.
+
+If ARP is **playing**, choosing another populated slot starts that sequence at
+its first note, with a short transition and a fresh LFO cycle. If ARP is stopped,
+selecting a slot keeps it stopped until PLAY. An empty slot stops ARP; add notes
+and press PLAY when ready. Clicking the already selected number leaves its clock
+alone; RESET explicitly restarts it. Held QWERTY/MIDI notes remain independent.
+
+Use the main **SAVE** command to retain all 16 slots in the `.tsr` project,
+including the selected slot. Loading the project restores the bank **stopped**:
+no previously sounding note, elapsed step, LFO phase or source buffer resumes.
+PLAY uses the loaded project's current tile/FM/ensemble source. Loading an older
+project without ARP data gives an empty bank with default settings. ARP edits
+also count toward the unsaved-changes warning.
+
 **Shift+Space** starts/stops ARP, including with the panel closed or the tile
 bank visible. It also works from FM, Mosaic, the EQ page, and Sister Machine.
 Text fields, dialogs, Portal, and file preview retain their existing key handling.
@@ -24,6 +44,7 @@ alongside the sequence, including HOLD, Shift-click chords, and MIDI.
 
 | Control | Action |
 | --- | --- |
+| 01–16 | Select a retained sequence; switch immediately when playing |
 | PLAY / STOP | Start from the first step / release the sequencer's voices only |
 | Shift+Space | The same ARP-only transport, even with its controls hidden |
 | UP | Ascending pitch |
@@ -107,9 +128,10 @@ the selection remains ready for PLAY. Capture staging keeps its Shift-click cont
 Sequence audio follows the existing tile/FM buses through Sister, Prism, master
 effects, and recording. Mosaic REC DRY includes it; FM's SYNTH tap includes FM
 sequences. Normal source switches and monitoring still determine what is heard.
-The sequence selection and settings are session controls in this first version;
-they are not stored in project files or Prism presets. Portal and file-preview
-keyboards keep their existing audition behavior.
+The sequence bank is saved with the project, independently of Prism presets and
+the global SAVE CONFIG preferences. It does not snapshot tiles, FM patches or
+processor settings. Portal and file-preview keyboards keep their existing
+audition behavior.
 
 ## Verification
 
@@ -120,6 +142,11 @@ It also checks volume ratios, exact mute, gain-ramp bounds, LFO extrema and dept
 rate changes, long cycles, live edits and malformed control values. The native
 controller tests compare held-note samples with ARP muted, exercise the controls
 in both main/FM panel positions, and check hidden-panel modulation continuity.
+Slot tests cover live/stopped/empty selection, retained independent settings,
+same-slot clock continuity and CLEAR isolation. Project tests exercise the actual
+Save/Open controller, all 16 slots, exact numeric round trips, unsaved-change
+tracking, saving during playback, stopped reload, old/missing sidecars and
+malformed input.
 The native keyboard HOLD suite also renders the audio callback across tile, FM,
 group, and Sister routes, checks the dry/FM recording buses, preserves manual
 and MIDI voices on ARP Stop, changes octave and source during playback, checks

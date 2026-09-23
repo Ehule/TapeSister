@@ -35,10 +35,16 @@ static void keyboard_sequence_panel(TsFramebuffer *fb, const TsUiState *ui)
     char label[80];
     frame(fb, TS_ARP_PANEL_X, y, TS_ARP_PANEL_W, h,
           RGB(24, 29, 36), RGB(91, 161, 167));
-    text(fb, 20, 208 + offset, "ARP / KEYBOARD SEQUENCE", RGB(137, 210, 211), 1);
+    text(fb, 20, 186 + offset, "ARP / KEYBOARD SEQUENCE", RGB(137, 210, 211), 1);
     snprintf(label, sizeof(label), "%02d NOTES   %s %02d", s->count,
              ui->keyboard_sequence_running ? "STEP" : "READY", ui->keyboard_sequence_running ? ui->keyboard_sequence_step : 0);
-    text(fb, 356, 208 + offset, label, RGB(247, 196, 91), 1);
+    text(fb, 356, 186 + offset, label, RGB(247, 196, 91), 1);
+    for (int i = 0; i < TS_KEYBOARD_SEQUENCE_SLOTS; ++i) {
+        snprintf(label, sizeof(label), "%02d", i + 1);
+        mini_button(fb, 20 + i * 37, 198 + offset, 34, label, ui->keyboard_sequence_slot == i);
+        if (ui->keyboard_sequence_occupied & (1u << i))
+            rect(fb, 47 + i * 37, 209 + offset, 3, 3, RGB(91, 161, 167));
+    }
     snprintf(label, sizeof(label), "ARP VOL %.0F%%", s->volume * 100);
     slider(fb, 20, 220 + offset, 188, label, (float)(s->volume / 2), RGB(91, 161, 167));
     /* Gold marker shows the modulated gain; the fader keeps its base position. */

@@ -943,6 +943,13 @@ also edits the selection when the panel is closed or EDIT is off. Selected keys
 are teal, the sounding step is gold, and numbers show selection order. Changing
 octave preserves the selected pitches.
 
+The numbered **01–16** row selects independent ARP sequences. Each slot retains
+its notes, mode, Loop, Step, Gate, volume and LFO settings as you edit. A dot marks
+slots containing notes. During playback, clicking another populated slot starts
+it immediately from its first note; while stopped, selection stays stopped.
+An empty slot stops ARP until you add notes and press PLAY. CLEAR affects only
+the selected slot, and clicking its number again does not restart the clock.
+
 Choose **UP**, **DOWN**, **UP/DOWN**, **ORDER**, or **RANDOM**. ORDER follows your
 key selections like Prism's lens sequence; remove and re-add a note to put it
 last. **LOOP/ONCE** controls repetition. **FROM HELD** copies the current QWERTY
@@ -973,8 +980,11 @@ Space keeps its global stop behavior. The sequence follows the current tile,
 FM preview, or selected ensemble through the existing effects and recording
 paths. Selecting another tile keeps the notes, order, and timing running with
 the new sound; it does not start a separate tile layer while ARP is active.
-Closing the ARP panel keeps playback running. Selection and settings
-last for this session and are not saved in projects or Prism presets.
+Closing the ARP panel keeps playback running. Main **SAVE** stores all 16 ARP
+slots and the selected slot in the `.tsr` project. Reload restores the bank
+stopped, with no old countdown, LFO phase or sounding notes. Older projects get
+an empty/default bank. ARP edits trigger the unsaved-changes warning; the bank
+is separate from Prism presets and global SAVE CONFIG preferences.
 
 [Full controls, routing, and examples](KEYBOARD_SEQUENCE.md).
 

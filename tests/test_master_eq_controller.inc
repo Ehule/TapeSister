@@ -16,10 +16,10 @@ static void test_master_eq_controller(void)
     assert(ui.master_eq_open);
     assert(audio.sister.limiter.enabled==lim);
     eq_click(412,55,SDL_BUTTON_LEFT);assert(audio.sister.master_eq.controls.enabled);
-    uint64_t hash=paged_project_state_hash(NULL,&instrument,NULL,&audio.sister);
+    uint64_t hash=paged_project_state_hash(NULL,&instrument,NULL,&audio.sister,&audio.keyboard_sequence);
     eq_click(330,311,SDL_BUTTON_LEFT);
     assert(audio.sister.master_eq.controls.band[0].gain_db>0);
-    assert(paged_project_state_hash(NULL,&instrument,NULL,&audio.sister)!=hash);
+    assert(paged_project_state_hash(NULL,&instrument,NULL,&audio.sister,&audio.keyboard_sequence)!=hash);
     /* The row changes audible state; graph selection remains independent. */
     TsMasterEqControls saved=ui.config.master_eq;
     eq_click(160,260,SDL_BUTTON_LEFT);

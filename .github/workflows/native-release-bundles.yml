@@ -29,7 +29,7 @@ jobs:
       - name: Build TapeSister, tests, and CDP8
         run: cmake --build build
       - name: Run audio backend, Insert and Router performance regression tests
-        run: ctest --test-dir build --output-on-failure -R 'asio|audio_lifecycle|audio_config|insert_tests|router|keyboard_hold|keyboard_sequence'
+        run: ctest --test-dir build --output-on-failure -R 'asio|audio_lifecycle|audio_config|insert_tests|router|keyboard_hold|keyboard_sequence|sample_pages|sister_project_state'
       - name: Run package regression guard
         if: github.event_name == 'pull_request'
         run: ctest --test-dir build --output-on-failure -R test_identity_packaging
@@ -66,7 +66,7 @@ jobs:
         run: cmake --build build
       - name: Run audio backend, Insert and Router performance regression tests
         shell: msys2 {0}
-        run: ctest --test-dir build --output-on-failure -R 'asio|audio_lifecycle|audio_config|insert_tests|router|keyboard_hold|keyboard_sequence'
+        run: ctest --test-dir build --output-on-failure -R 'asio|audio_lifecycle|audio_config|insert_tests|router|keyboard_hold|keyboard_sequence|sample_pages|sister_project_state'
       - name: Run package regression guard
         if: github.event_name == 'pull_request'
         shell: msys2 {0}

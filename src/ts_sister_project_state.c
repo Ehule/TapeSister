@@ -74,6 +74,7 @@ void ts_sister_project_state_init(TsSisterProjectState *state,
     ts_master_eq_default(&state->master_eq);
     ts_router_default(&state->router);
     ts_router_performance_default(&state->router_performance);
+    ts_keyboard_sequence_bank_default(&state->keyboard_sequence);
     ts_insert_default(&state->insert);
     ts_sister_parameters_default(&state->parameters, sample_rate);
 }
@@ -285,6 +286,7 @@ int ts_sister_project_state_save_file(const TsSisterProjectState *state,
     if (!failed) failed = !ts_master_eq_write(file,&state->master_eq);
     if (!failed) failed = !ts_router_write(file,&state->router);
     if (!failed) failed = !ts_router_performance_write(file,&state->router_performance);
+    if (!failed) failed = !ts_keyboard_sequence_bank_write(file,&state->keyboard_sequence);
     if (!failed) failed = !ts_insert_write(file,&state->insert);
     if (fclose(file) != 0) failed = 1;
     if (!failed) {
@@ -622,6 +624,8 @@ int ts_sister_project_state_load_file(TsSisterProjectState *state,
             errno = 0; parsed_mask = strtoul(value, &end, 16);
             if (errno != 0 || end == value || *trim(end) != '\0' || parsed_mask > 0xffffu) goto malformed;
             loaded.page_masks[page] = (uint16_t)parsed_mask;
+        } else if (!strncmp(key,"Arp.",4)) {
+            if(ts_keyboard_sequence_bank_read(&loaded.keyboard_sequence,key,value)<0)goto malformed;
         } else if (!strncmp(key,"Insert.",7)) {
             if(ts_insert_read(&loaded.insert,key,value)<0)goto malformed;
         } else if (!strncmp(key,"RouterPerf.",11)) {
@@ -641,6 +645,7 @@ int ts_sister_project_state_load_file(TsSisterProjectState *state,
             &loaded.parameter_locks, &loaded.parameter_locks_high);
     }
     ts_sister_parameters_sanitize(&loaded.parameters, sample_rate);
+    ts_keyboard_sequence_bank_sanitize(&loaded.keyboard_sequence);
     if(version<24)loaded.router.bypass_mask |= 1u<<TS_ROUTER_INSERT;
     *state = loaded;
     if (present != NULL) *present = 1;

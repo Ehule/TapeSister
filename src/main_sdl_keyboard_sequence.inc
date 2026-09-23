@@ -9,6 +9,10 @@ static void keyboard_sequence_ui(AudioState *audio, TsUiState *ui)
     ui->keyboard_sequence_step = s->cursor + 1;
     ui->keyboard_sequence_progress = s->running ? fmin(1, s->elapsed / s->settings.seconds) : 0;
     ui->keyboard_sequence_level = s->effective_gain;
+    ui->keyboard_sequence_slot = s->bank.selected;
+    ui->keyboard_sequence_occupied = 0;
+    for (int i = 0; i < TS_KEYBOARD_SEQUENCE_SLOTS; ++i)
+        if (s->bank.slot[i].count) ui->keyboard_sequence_occupied |= (uint16_t)(1u << i);
 }
 
 static void keyboard_sequence_sample_stamp(uint64_t *hash, const TsSample *sample)
@@ -261,6 +265,16 @@ static int keyboard_sequence_event(const SDL_Event *event, SDL_Window *window,
         snprintf(ui->status, sizeof(ui->status), ok ?
             "ARP: %d NOTES / CTRL+CLICK OR EDIT KEYS TO CHANGE ORDER" : "ARP: %d NOTE LIMIT", s->settings.count);
     } else if (panel || slider) {
+        if (event->type == SDL_MOUSEBUTTONDOWN && event->button.button == SDL_BUTTON_LEFT &&
+            y >= 198 && y < 215 && x >= 20 && x < 612) {
+            int slot = (x - 20) / 37;
+            if ((x - 20) % 37 < 34 && ts_keyboard_sequence_select_slot(s, slot))
+                snprintf(ui->status, sizeof(ui->status), "ARP %02d / %s / EDITS SAVED WITH PROJECT", slot + 1,
+                         s->running ? "PLAYING" : s->settings.count ? "READY - PLAY TO START" : "EMPTY - SELECT NOTES THEN PLAY");
+            keyboard_sequence_ui(audio, ui);
+            if (device) SDL_UnlockAudioDevice(device);
+            return 1;
+        }
         if (!slider && y >= 281 && y < 307) slider = x >= 20 && x < 268 ? 1 : x >= 282 && x < 418 ? 2 : 0;
         if (!slider && y >= 220 && y < 246) slider = x >= 20 && x < 208 ? 3 :
             x >= 296 && x < 460 ? 4 : x >= 476 && x < 620 ? 5 : 0;

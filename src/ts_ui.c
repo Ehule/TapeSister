@@ -1937,12 +1937,8 @@ void ts_ui_init(TsUiState *ui)
     ui->show_keyboard = 1;
     ui->keyboard_octave = 4;
     ui->keyboard_base_note = TS_KEYBOARD_BASE_NOTE;
-    ui->keyboard_sequence.seconds = .25;
-    ui->keyboard_sequence.gate = .8;
-    ui->keyboard_sequence.loop = 1;
-    ui->keyboard_sequence.volume = ui->keyboard_sequence_level = 1;
-    ui->keyboard_sequence.lfo_seconds = 4;
-    ui->keyboard_sequence.lfo_depth = .5;
+    ts_keyboard_sequence_settings_default(&ui->keyboard_sequence);
+    ui->keyboard_sequence_level = 1;
     ui->keyboard_sequence_current = -1;
     ui->tune_reference.root_note = TS_KEYBOARD_BASE_NOTE;
     ui->tune_reference.fine_tune_cents = 0.0f;

@@ -145,6 +145,75 @@ static void test_keyboard_sequence_tile_change(void)
     ui.show_keyboard = ui.keyboard_sequence_open = 1;
 }
 
+static void test_keyboard_sequence_projects(void)
+{
+    reset_route(0); ui.keyboard_sequence_open = 1; ui.keyboard_sequence_edit = 0;
+    TsKeyboardSequence *s = &audio.keyboard_sequence;
+    TsKeyboardSequenceBank original = ts_keyboard_sequence_export(s), bank;
+    ts_keyboard_sequence_bank_default(&bank); ts_keyboard_sequence_set_bank(s, &bank);
+    TsSamplePages pages; TsInstrument record; char error[160];
+    assert(ts_sample_pages_init(&pages, error, sizeof(error))); ts_instrument_init(&record);
+    const char *path = "test-arp-slots/test-arp-slots.tsr";
+    for (int slot = 0; slot < TS_KEYBOARD_SEQUENCE_SLOTS; ++slot) {
+        sequence_click(25 + slot * 37, 205, KMOD_NONE);
+        assert(s->bank.selected == slot && !s->running);
+        TsKeyboardSequenceSettings settings = s->settings;
+        settings.count = 3; settings.notes[0] = 60 + slot; settings.notes[1] = 48 + slot; settings.notes[2] = 72 + slot;
+        settings.mode = slot % TS_KEYBOARD_SEQUENCE_MODE_COUNT; settings.loop = slot % 2;
+        settings.seconds = .23 + slot; settings.gate = .25 + slot / 32.;
+        settings.volume = slot / 10.; settings.lfo_enabled = slot % 2;
+        settings.lfo_seconds = 7 + slot; settings.lfo_depth = slot / 16.;
+        ts_keyboard_sequence_set(s, &settings);
+    }
+    bank = ts_keyboard_sequence_export(s);
+    keyboard_sequence_toggle_playback(device, &audio, &ui, &instrument, &fm, 44100);
+    assert(s->running && power_audio_energy() > .01);
+    PendingFileOperation pending = {0}; pending.active = 1; pending.mode = TS_BROWSER_SAVE_RECIPE;
+    snprintf(pending.path, sizeof(pending.path), "%s", path);
+    run_pending_file_operation(device, &audio, &ui, &instrument, NULL, NULL, &pages, &record, 0, &pending);
+    assert(!pending.active && s->running && !strcmp(ui.project_path, path));
+    assert(strstr(ui.status, "SAVED TSR PROJECT"));
+    uint64_t saved = paged_project_state_hash(&pages, &instrument, &record, &audio.sister, s);
+    assert(saved == ui.saved_state_hash);
+    for (int i = 0; i < 100; ++i) ts_keyboard_sequence_read(s, 44100);
+    assert(paged_project_state_hash(&pages, &instrument, &record, &audio.sister, s) == saved);
+    /* Live selection immediately restarts the chosen slot without stealing HOLD. */
+    toggle_fm_hold(device, &audio, &ui, &instrument); click_note(0, 0); assert(voices() == 1);
+    for (int fm_view = 0; fm_view < 2; ++fm_view) {
+        ui.fm_open = fm_view;
+        sequence_click(25 + (fm_view + 2) * 37, 205 + (fm_view ? TS_ARP_PANEL_FM_OFFSET : 0), KMOD_NONE);
+        assert(s->running && s->bank.selected == fm_view + 2 && s->elapsed == 0 && voices() == 1);
+        ts_keyboard_sequence_read(s, 44100); assert(s->current_note >= 0);
+    }
+    ui.fm_open = 0;
+    TsKeyboardSequenceSettings changed = s->settings; changed.volume = 1.91;
+    ts_keyboard_sequence_set(s, &changed);
+    assert(paged_project_state_hash(&pages, &instrument, &record, &audio.sister, s) != saved);
+    assert(load_instrument(device, &audio, &ui, &instrument, &pages, &record, 0, path));
+    assert(!s->running && s->source == NULL && s->elapsed == 0 && s->current_note == -1);
+    assert(s->bank.selected == 15 && ui.keyboard_sequence_slot == 15 && ui.keyboard_sequence_occupied == 0xffff);
+    for (int i = 0; i < TS_KEYBOARD_SEQUENCE_SLOTS; ++i) {
+        const TsKeyboardSequenceSettings *a = &s->bank.slot[i], *b = &bank.slot[i];
+        assert(a->count == b->count && !memcmp(a->notes, b->notes, sizeof(a->notes)));
+        assert(a->mode == b->mode && a->loop == b->loop && a->seconds == b->seconds && a->gate == b->gate);
+        assert(a->volume == b->volume && a->lfo_enabled == b->lfo_enabled && a->lfo_seconds == b->lfo_seconds && a->lfo_depth == b->lfo_depth);
+    }
+    assert(paged_project_state_hash(&pages, &instrument, &record, &audio.sister, s) == ui.saved_state_hash);
+    keyboard_sequence_toggle_playback(device, &audio, &ui, &instrument, &fm, 44100);
+    assert(s->running && power_audio_energy() > .01); /* Fresh source prepared on explicit PLAY. */
+    FILE *file = fopen("test-arp-slots/sister-state.ini", "wb"); assert(file);
+    fputs("TapeSister Sister Project State\nVersion=25\nPageCount=1\nActivePage=0\n", file); fclose(file);
+    assert(load_instrument(device, &audio, &ui, &instrument, &pages, &record, 0, path));
+    assert(!s->running && !s->settings.count && s->settings.volume == 1 && s->bank.selected == 0);
+    for (int i = 0; i < TS_KEYBOARD_SEQUENCE_SLOTS; ++i) assert(!s->bank.slot[i].count);
+    /* Missing sidecar also restores defaults, never the prior project's bank. */
+    ts_keyboard_sequence_set_bank(s, &bank); remove("test-arp-slots/sister-state.ini");
+    assert(load_instrument(device, &audio, &ui, &instrument, &pages, &record, 0, path));
+    assert(!s->settings.count && s->bank.selected == 0);
+    ts_keyboard_sequence_set_bank(s, &original); keyboard_sequence_ui(&audio, &ui);
+    ts_sample_pages_free(&pages); ts_instrument_free(&record);
+}
+
 static void test_keyboard_sequence_controller(void)
 {
     for (int route = 0; route < 4; ++route) {
@@ -295,6 +364,7 @@ static void test_keyboard_sequence_controller(void)
     stop_all_force(device, &audio, &ui);
     test_keyboard_sequence_transport();
     test_keyboard_sequence_tile_change();
+    test_keyboard_sequence_projects();
     /* Native UI capture with ordered white and black keys and a running step. */
     sequence_click(280, 260, KMOD_NONE);
     sequence_select(0); sequence_select(7); sequence_select(3); sequence_select(10);
@@ -305,8 +375,18 @@ static void test_keyboard_sequence_controller(void)
     audio.keyboard_sequence.settings.lfo_seconds = 4;
     audio.keyboard_sequence.settings.lfo_depth = .6;
     ts_keyboard_sequence_set(&audio.keyboard_sequence, &audio.keyboard_sequence.settings);
+    /* Populate a few independent slots in the native screenshot. */
+    for (int i = 1; i <= 3; ++i) {
+        ts_keyboard_sequence_select_slot(&audio.keyboard_sequence, i);
+        TsKeyboardSequenceSettings slot = audio.keyboard_sequence.settings;
+        slot.count = 3; slot.notes[0] = 60 + i; slot.notes[1] = 67 + i; slot.notes[2] = 72 + i;
+        slot.mode = i; slot.seconds = .25 * (i + 1);
+        ts_keyboard_sequence_set(&audio.keyboard_sequence, &slot);
+    }
+    ts_keyboard_sequence_select_slot(&audio.keyboard_sequence, 0);
     sequence_click(36, 260, KMOD_NONE); assert(power_audio_energy() > .01);
     keyboard_sequence_ui(&audio, &ui); ui.keyboard_sequence_edit = 1;
+    ui.overlay[0] = 0; /* The normal event loop expires the earlier Save overlay. */
     const char *shot = getenv("TS_TEST_KEYBOARD_SEQUENCE_PPM");
     if (shot) {
         static TsFramebuffer fb;

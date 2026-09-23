@@ -3,6 +3,9 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
+#include <errno.h>
+#include <limits.h>
 
 const char *ts_keyboard_sequence_mode_name(int mode)
 {
@@ -10,12 +13,19 @@ const char *ts_keyboard_sequence_mode_name(int mode)
     return names[mode >= 0 && mode < TS_KEYBOARD_SEQUENCE_MODE_COUNT ? mode : 0];
 }
 
+void ts_keyboard_sequence_settings_default(TsKeyboardSequenceSettings *s)
+{
+    memset(s, 0, sizeof(*s));
+    s->seconds = .25; s->gate = .8; s->loop = 1;
+    s->volume = 1; s->lfo_seconds = 4; s->lfo_depth = .5;
+}
+
 void ts_keyboard_sequence_init(TsKeyboardSequence *s)
 {
     memset(s, 0, sizeof(*s));
-    s->settings.seconds = .25; s->settings.gate = .8; s->settings.loop = 1;
-    s->settings.volume = s->gain_current = s->effective_gain = 1;
-    s->settings.lfo_seconds = 4; s->settings.lfo_depth = .5;
+    ts_keyboard_sequence_bank_default(&s->bank);
+    s->settings = s->bank.slot[0];
+    s->gain_current = s->effective_gain = 1;
     s->current_note = -1; s->random = 0x5a17b3u;
 }
 
@@ -78,7 +88,7 @@ void ts_keyboard_sequence_reset(TsKeyboardSequence *s)
     if (s->running) { release_voices(s); s->fresh = 1; }
 }
 
-void ts_keyboard_sequence_set(TsKeyboardSequence *s, const TsKeyboardSequenceSettings *settings)
+void ts_keyboard_sequence_settings_sanitize(TsKeyboardSequenceSettings *settings)
 {
     TsKeyboardSequenceSettings next = *settings;
     if (!isfinite(next.seconds)) next.seconds = .25;
@@ -106,10 +116,19 @@ void ts_keyboard_sequence_set(TsKeyboardSequence *s, const TsKeyboardSequenceSet
     }
     next.count = count;
     memset(next.notes + count, 0, (TS_KEYBOARD_SEQUENCE_NOTES - count) * sizeof(int));
+    *settings = next;
+}
+
+void ts_keyboard_sequence_set(TsKeyboardSequence *s, const TsKeyboardSequenceSettings *settings)
+{
+    TsKeyboardSequenceSettings next = *settings;
+    ts_keyboard_sequence_settings_sanitize(&next);
+    int count = next.count;
     int changed_mode = next.mode != s->settings.mode;
     int old_count = s->order_count;
     int descending = s->settings.mode == TS_KEYBOARD_SEQUENCE_UP_DOWN && s->cursor >= old_count;
     s->settings = next; s->order_count = count;
+    s->bank.slot[s->bank.selected] = next;
     memcpy(s->order, next.notes, sizeof(s->order));
     if (next.mode != TS_KEYBOARD_SEQUENCE_ORDER && next.mode != TS_KEYBOARD_SEQUENCE_RANDOM)
         for (int i = 1; i < count; ++i)
@@ -125,6 +144,145 @@ void ts_keyboard_sequence_set(TsKeyboardSequence *s, const TsKeyboardSequenceSet
         s->cursor = descending && current > 0 && current < count - 1 ?
             2 * count - 2 - current : current;
     } else if (s->cursor >= cycle_length(s)) s->cursor = 0;
+}
+
+static int write_settings(FILE *file, const TsKeyboardSequenceSettings *settings, const char *prefix)
+{
+    TsKeyboardSequenceSettings s = *settings;
+    ts_keyboard_sequence_settings_sanitize(&s);
+    if (fprintf(file, "%sMode=%d\n%sLoop=%d\n%sStepSeconds=%.17g\n%sGate=%.17g\n"
+        "%sVolume=%.17g\n%sLfoEnabled=%d\n%sLfoSeconds=%.17g\n%sLfoDepth=%.17g\n%sNotes=",
+        prefix, s.mode, prefix, s.loop, prefix, s.seconds, prefix, s.gate, prefix, s.volume,
+        prefix, s.lfo_enabled, prefix, s.lfo_seconds, prefix, s.lfo_depth, prefix) < 0) return 0;
+    for (int i = 0; i < s.count; ++i)
+        if (fprintf(file, "%s%d", i ? "," : "", s.notes[i]) < 0) return 0;
+    return fputc('\n', file) != EOF;
+}
+
+static int read_settings(TsKeyboardSequenceSettings *s, const char *key, const char *value)
+{
+    if (!strcmp(key, "Arp.Notes")) {
+        int notes[TS_KEYBOARD_SEQUENCE_NOTES] = {0}, count = 0;
+        const char *cursor = value;
+        while (isspace((unsigned char)*cursor)) ++cursor;
+        while (*cursor) {
+            char *end;
+            errno = 0;
+            long note = strtol(cursor, &end, 10);
+            if (errno || end == cursor || note < 0 || note > 127 || count == TS_KEYBOARD_SEQUENCE_NOTES) return -1;
+            notes[count++] = (int)note;
+            while (isspace((unsigned char)*end)) ++end;
+            if (!*end) break;
+            if (*end != ',') return -1;
+            cursor = end + 1;
+            while (isspace((unsigned char)*cursor)) ++cursor;
+            if (!*cursor) return -1;
+        }
+        memcpy(s->notes, notes, sizeof(notes)); s->count = count;
+        return 1;
+    }
+    int *integer = !strcmp(key, "Arp.Mode") ? &s->mode :
+        !strcmp(key, "Arp.Loop") ? &s->loop : !strcmp(key, "Arp.LfoEnabled") ? &s->lfo_enabled : NULL;
+    double *number = !strcmp(key, "Arp.StepSeconds") ? &s->seconds :
+        !strcmp(key, "Arp.Gate") ? &s->gate : !strcmp(key, "Arp.Volume") ? &s->volume :
+        !strcmp(key, "Arp.LfoSeconds") ? &s->lfo_seconds : !strcmp(key, "Arp.LfoDepth") ? &s->lfo_depth : NULL;
+    if (!integer && !number) return 0;
+    char *end;
+    errno = 0;
+    if (integer) {
+        long parsed = strtol(value, &end, 10);
+        if (errno || end == value || parsed < INT_MIN || parsed > INT_MAX) return -1;
+        while (isspace((unsigned char)*end)) ++end;
+        if (*end) return -1;
+        *integer = (int)parsed;
+    } else {
+        double parsed = strtod(value, &end);
+        if (errno || end == value || !isfinite(parsed)) return -1;
+        while (isspace((unsigned char)*end)) ++end;
+        if (*end) return -1;
+        *number = parsed;
+    }
+    return 1;
+}
+
+void ts_keyboard_sequence_bank_default(TsKeyboardSequenceBank *bank)
+{
+    memset(bank, 0, sizeof(*bank));
+    for (int i = 0; i < TS_KEYBOARD_SEQUENCE_SLOTS; ++i)
+        ts_keyboard_sequence_settings_default(&bank->slot[i]);
+}
+
+void ts_keyboard_sequence_bank_sanitize(TsKeyboardSequenceBank *bank)
+{
+    if (bank->selected < 0 || bank->selected >= TS_KEYBOARD_SEQUENCE_SLOTS) bank->selected = 0;
+    for (int i = 0; i < TS_KEYBOARD_SEQUENCE_SLOTS; ++i)
+        ts_keyboard_sequence_settings_sanitize(&bank->slot[i]);
+}
+
+TsKeyboardSequenceBank ts_keyboard_sequence_export(const TsKeyboardSequence *s)
+{
+    TsKeyboardSequenceBank bank = s->bank;
+    bank.slot[bank.selected] = s->settings;
+    return bank;
+}
+
+void ts_keyboard_sequence_set_bank(TsKeyboardSequence *s, const TsKeyboardSequenceBank *bank)
+{
+    TsKeyboardSequenceBank next = *bank;
+    ts_keyboard_sequence_bank_sanitize(&next);
+    ts_keyboard_sequence_stop(s);
+    s->bank = next;
+    ts_keyboard_sequence_set(s, &next.slot[next.selected]);
+    s->cursor = 0; s->lfo_phase = 0; s->fade_remaining = 0;
+    s->last = s->fade_from = (TsStereoFrame){0};
+    s->gain_current = s->effective_gain = (float)s->settings.volume;
+}
+
+int ts_keyboard_sequence_select_slot(TsKeyboardSequence *s, int slot)
+{
+    if (slot < 0 || slot >= TS_KEYBOARD_SEQUENCE_SLOTS) return 0;
+    if (slot == s->bank.selected) return 1;
+    int playing = s->running;
+    s->bank.slot[s->bank.selected] = s->settings;
+    TsKeyboardSequenceSettings next = s->bank.slot[slot];
+    ts_keyboard_sequence_stop(s);
+    s->bank.selected = slot;
+    s->cursor = 0; s->lfo_phase = 0;
+    ts_keyboard_sequence_set(s, &next);
+    if (playing) ts_keyboard_sequence_play(s);
+    return 1;
+}
+
+int ts_keyboard_sequence_bank_write(FILE *file, const TsKeyboardSequenceBank *bank)
+{
+    TsKeyboardSequenceBank b = *bank;
+    ts_keyboard_sequence_bank_sanitize(&b);
+    if (fprintf(file, "Arp.SelectedSlot=%d\n", b.selected) < 0) return 0;
+    for (int i = 0; i < TS_KEYBOARD_SEQUENCE_SLOTS; ++i) {
+        char prefix[32]; snprintf(prefix, sizeof(prefix), "Arp.Slot.%d.", i);
+        if (!write_settings(file, &b.slot[i], prefix)) return 0;
+    }
+    return 1;
+}
+
+int ts_keyboard_sequence_bank_read(TsKeyboardSequenceBank *bank, const char *key, const char *value)
+{
+    if (!strcmp(key, "Arp.SelectedSlot")) {
+        TsKeyboardSequenceSettings parsed = {0};
+        int result = read_settings(&parsed, "Arp.Mode", value);
+        if (result == 1) bank->selected = parsed.mode;
+        return result;
+    }
+    if (!strncmp(key, "Arp.Slot.", 9)) {
+        char *end; errno = 0;
+        long slot = strtol(key + 9, &end, 10);
+        if (errno || end == key + 9 || *end != '.' || slot < 0) return -1;
+        if (slot >= TS_KEYBOARD_SEQUENCE_SLOTS) return 0; /* Future extra slots. */
+        char setting[96];
+        if (snprintf(setting, sizeof(setting), "Arp.%s", end + 1) >= (int)sizeof(setting)) return -1;
+        return read_settings(&bank->slot[slot], setting, value);
+    }
+    return read_settings(&bank->slot[0], key, value);
 }
 
 int ts_keyboard_sequence_toggle(TsKeyboardSequence *s, int note)

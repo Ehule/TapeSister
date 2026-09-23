@@ -5,9 +5,10 @@
 #include <stdint.h>
 
 #include "tapesister/sister_runtime.h"
+#include "tapesister/keyboard_sequence.h"
 
 enum {
-    TS_SISTER_PROJECT_STATE_VERSION = 25,
+    TS_SISTER_PROJECT_STATE_VERSION = 26,
     TS_SISTER_PROJECT_PRESET_NAME_MAX = 47
 };
 
@@ -20,6 +21,7 @@ typedef struct {
     TsMasterEqControls master_eq;
     TsRouterControls router;
     TsRouterPerformance router_performance;
+    TsKeyboardSequenceBank keyboard_sequence;
     TsInsertControls insert;
     uint64_t parameter_locks;
     uint64_t parameter_locks_high;

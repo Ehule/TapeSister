@@ -621,11 +621,24 @@ static int fm_bank_history_move(FmBankHistory *history,
 static uint64_t paged_project_state_hash(const TsSamplePages *pages,
                                          const TsInstrument *active_sample,
                                          const TsInstrument *record_bank,
-                                         const TsSisterRuntime *sister)
+                                         const TsSisterRuntime *sister,
+                                         const TsKeyboardSequence *sequence)
 {
     uint64_t hash = 1469598103934665603ull;
     uint64_t mosaic_hash = ts_mosaic_hash(pages ? pages->mosaic : NULL);
     state_hash_bytes(&hash, &mosaic_hash, sizeof(mosaic_hash));
+    if (sequence) {
+        TsKeyboardSequenceBank bank = ts_keyboard_sequence_export(sequence);
+        state_hash_bytes(&hash, &bank.selected, sizeof(bank.selected));
+        for (int i = 0; i < TS_KEYBOARD_SEQUENCE_SLOTS; ++i) {
+            const TsKeyboardSequenceSettings *s = &bank.slot[i];
+#define ARP_HASH(field) state_hash_bytes(&hash, &s->field, sizeof(s->field))
+            ARP_HASH(count); ARP_HASH(notes); ARP_HASH(mode); ARP_HASH(loop);
+            ARP_HASH(seconds); ARP_HASH(gate); ARP_HASH(volume);
+            ARP_HASH(lfo_enabled); ARP_HASH(lfo_seconds); ARP_HASH(lfo_depth);
+#undef ARP_HASH
+        }
+    }
     size_t count = ts_sample_pages_count(pages);
     size_t active = ts_sample_pages_active(pages);
     state_hash_bytes(&hash, &count, sizeof(count));
@@ -672,11 +685,12 @@ static uint64_t runtime_project_state_hash(const TsSamplePages *pages,
                                            const TsInstrument *instrument,
                                            const TsInstrument *parked_record,
                                            int record_bank_active,
-                                           const TsSisterRuntime *sister)
+                                           const TsSisterRuntime *sister,
+                                           const TsKeyboardSequence *sequence)
 {
     return paged_project_state_hash(
         pages, record_bank_active ? NULL : instrument,
-        record_bank_active ? instrument : parked_record, sister);
+        record_bank_active ? instrument : parked_record, sister, sequence);
 }
 
 static int launch_program(const char *path, char *error, size_t error_size)
@@ -2362,7 +2376,7 @@ static void begin_exit_confirmation(SDL_AudioDeviceID device, AudioState *audio,
     sync_capture_ui(device, audio, ui);
     ui->exit_has_unsaved = runtime_project_state_hash(
         sample_pages, instrument, parked_record,
-        record_bank_active, &audio->sister) != ui->saved_state_hash;
+        record_bank_active, &audio->sister, &audio->keyboard_sequence) != ui->saved_state_hash;
     ui->exit_confirm_open = 1;
     ui->exit_choice = ui->exit_has_unsaved ? 2 : 1;
     ui->exit_after_save = 0;
@@ -3735,6 +3749,8 @@ static void commit_drone(SDL_AudioDeviceID device, AudioState *audio,
     }
 }
 
+static void keyboard_sequence_ui(AudioState *audio, TsUiState *ui);
+
 static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
                            TsInstrument *instrument,
                            TsSamplePages *sample_pages,
@@ -3744,6 +3760,7 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
 {
     char error[160];
     TsSisterProjectState sister_state;
+    TsKeyboardSequenceSource *previous_sequence_source = NULL;
     int sister_state_present = 0;
     int recipe = path_is_tsr(path);
     int preset = path_is_tsp(path);
@@ -3825,6 +3842,11 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
             ok = 0;
         }
         if (ok) {
+            previous_sequence_source = ts_keyboard_sequence_source(&audio->keyboard_sequence, NULL);
+            ts_keyboard_sequence_set_bank(&audio->keyboard_sequence, &sister_state.keyboard_sequence);
+            audio->keyboard_sequence_source_stamp = 0;
+            ui->keyboard_sequence_drag = 0;
+            keyboard_sequence_ui(audio, ui);
             ui->sample_page = (int)ts_sample_pages_active(sample_pages);
             ui->sample_page_count = (int)ts_sample_pages_count(sample_pages);
             (void)ts_sister_runtime_set_page(
@@ -3855,6 +3877,7 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
              ts_instrument_load_wav(instrument, path, error, sizeof(error));
     }
     unlock_edit(device, audio, ui, instrument);
+    ts_keyboard_sequence_source_free(previous_sequence_source);
     if (ok) ts_ui_reset_parent_view(ui, instrument->parent.frames);
     if (ok && recipe) {
         snprintf(ui->project_path, sizeof(ui->project_path), "%s", path);
@@ -3869,7 +3892,7 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     else snprintf(ui->status, sizeof(ui->status), "LOAD FAILED: %.135s", error);
     if (ok && recipe)
         ui->saved_state_hash = paged_project_state_hash(
-            sample_pages, instrument, record_bank, &audio->sister);
+            sample_pages, instrument, record_bank, &audio->sister, &audio->keyboard_sequence);
     return ok;
 }
 
@@ -8166,12 +8189,13 @@ static void run_pending_file_operation(SDL_AudioDeviceID device,
         ts_sister_project_state_capture(
             &sister_state, &audio->sister,
             ts_sample_pages_count(sample_pages), NULL);
+        sister_state.keyboard_sequence = ts_keyboard_sequence_export(&audio->keyboard_sequence);
         ok = ts_sample_pages_save_project(sample_pages, active_sample, record_bank,
                                           &sister_state, pending->path,
                                           error, sizeof(error));
         if (ok)
             ui->saved_state_hash = paged_project_state_hash(
-                sample_pages, active_sample, record_bank, &audio->sister);
+                sample_pages, active_sample, record_bank, &audio->sister, &audio->keyboard_sequence);
         snprintf(ui->status, sizeof(ui->status), ok ? "SAVED TSR PROJECT %.104s" :
                  "SAVE FAILED: %.135s", ok ? pending->path : error);
     } else if (pending->mode == TS_BROWSER_SAVE_PRESET) {
@@ -13004,7 +13028,7 @@ int main(int argc, char **argv)
     }
     ui.saved_state_hash = runtime_project_state_hash(
         &sample_pages, &instrument, parked_instrument, record_bank_active,
-        &audio.sister);
+        &audio.sister, &audio.keyboard_sequence);
     last_exchange_poll = SDL_GetTicks();
     last_live_link_poll = last_exchange_poll;
     (void)ts_exchange_presence_touch(exchange_directory(&ui), "tapesister");

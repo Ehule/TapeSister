@@ -136,7 +136,9 @@ now accept MIDI notes. See [Keyboard Sustain](docs/KEYBOARD_SUSTAIN.md).
 
 **ARP** adds keyboard arpeggios and custom note order, with 24 selected pitches,
 live step/gate controls, an independent volume fader with optional sine LFO,
-and separate selected/current-note colors. It plays
+16 numbered sequence slots saved with the project, and separate
+selected/current-note colors. Selecting a different slot during playback starts
+its sequence immediately; projects reopen with ARP stopped. It plays
 tile, FM, or ensemble sources alongside manual chords and MIDI, and enters the
 existing recording and effects paths. **Shift+Space** starts/stops ARP with its
 controls hidden, and tile selection changes the sound without restarting the
