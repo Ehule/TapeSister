@@ -50,7 +50,7 @@ static void insert_render(TsFramebuffer *fb,const TsUiState *ui)
         slider(fb,x+14,225,256,label,(db+24)/36,amber);
         int unity=x+14+(int)(256*24/36.0f);rect(fb,unity,252,1,5,teal);
     }
-    int active=ts_router_active(&ui->config.router,TS_ROUTER_INSERT);
+    int active=ts_router_active(&ui->router_live,TS_ROUTER_INSERT);
     int send=ui->config.insert.send_pair>0 &&
         (unsigned)(ui->config.insert.send_pair+(ui->config.insert_send_device[0]?0:1))*2<=ui->insert_outputs;
     int ret=(unsigned)(ui->config.insert.return_pair+1)*2<=ui->insert_inputs;
@@ -64,8 +64,8 @@ static void insert_render(TsFramebuffer *fb,const TsUiState *ui)
     snprintf(label,sizeof(label),"QUEUE S/R %.1F/%.1F MS   GAPS %u/%u   DROP %u/%u",
         ui->insert_queue_ms[0],ui->insert_queue_ms[1],ui->insert_gaps[0],ui->insert_gaps[1],ui->insert_drops[0],ui->insert_drops[1]);
     text(fb,22,311,label,muted,1);
-    button(fb,22,326,92,"BYPASS",(ui->config.router.bypass_mask&(1u<<TS_ROUTER_INSERT))!=0);
-    button(fb,128,326,70,"SOLO",ui->config.router.solo==TS_ROUTER_INSERT+1);
+    button(fb,22,326,92,"BYPASS",(ui->router_live.bypass_mask&(1u<<TS_ROUTER_INSERT))!=0);
+    button(fb,128,326,70,"SOLO",ui->router_live.solo==TS_ROUTER_INSERT+1);
     button(fb,210,326,96,"RESCAN",0);
     button(fb,420,326,196,"APPLY PORTS",ui->insert_apply_pending);
     const char *help=ui->performance_tooltip[0]?ui->performance_tooltip:"PORT CHANGES: APPLY   LEVEL RESET: RIGHT-CLICK   ESC: ROUTER";

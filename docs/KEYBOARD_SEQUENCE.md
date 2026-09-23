@@ -6,6 +6,84 @@ also changes the selection with the panel closed or EDIT off. Up to 24 pitches
 can be selected across different octaves; changing the visible octave does not
 transpose or lose them. Empty selections stay silent.
 
+The **01–16** row holds 16 independent ARP sequences. Click a number, then choose
+its notes and controls. Edits are retained automatically in that slot; no Store
+button is needed. A teal dot marks a slot containing notes, and the highlighted
+number is selected. Each slot remembers note selection/order, mode, Loop/Once,
+Step, Gate, volume, and all volume-LFO settings. CLEAR empties only the selected
+slot's notes.
+
+While ARP is **playing**, click an **empty** slot to copy the current pattern,
+including all settings, and turn **EDIT ON**. The sounding note, gate, LFO phase
+and note clock continue without a restart. Change the new slot's notes or
+controls to make a variation; the original slot remains intact. Clicking an
+already populated slot recalls its own pattern from the first note with the
+existing short fade. While stopped, a new empty slot opens with default settings
+and stays silent. Existing patterns are always retained. Clicking the active
+slot again leaves its clock alone; RESET explicitly restarts it.
+
+The top **SLOT SEQ ON/OFF** row sequences the patterns themselves. Turn it on,
+choose a mode and **SLOT TIME**, then PLAY. Enabling it during playback starts
+its clock immediately; turning it off leaves the current inner pattern playing.
+Empty slots are skipped and never automatically filled by sequencing.
+
+- **UP / DOWN:** increasing / decreasing slot number.
+- **UP/DOWN:** increasing then decreasing, without repeating either endpoint.
+- **ORDER:** the order in which slots first received notes. Clearing then filling
+  a slot moves it to the end. Older projects begin with numerical order.
+- **RANDOM:** shuffle the populated slots for each pass, visiting each once.
+
+A pass begins at the manually selected slot and wraps through the chosen order.
+**LOOP ON** repeats; **LOOP OFF** stops ARP after the last slot has held for its
+full duration. The inner pattern's LOOP/ONCE is separate: an inner ONCE can finish
+and wait silently until the next outer slot. STOP/Shift+Space stops both clocks
+without releasing manual notes or Sister Machine's held memory. RESET restarts
+the current pattern and a fresh outer pass. Manual slot selection starts a new
+outer hold/pass from that slot; an empty live copy still preserves inner phase.
+
+**SLOT TIME** is initially 10 seconds, with a default range of **50 ms–4 minutes**.
+Drag/wheel to adjust, Shift-wheel for fine changes, right-click for 10 seconds.
+Timing edits apply at the next slot; mode changes start a new pass from the
+current slot. New/deleted slots enter the next pass; deleted references in the
+current pass are skipped. The highlighted slot and live **LEFT** countdown follow
+the audio clock even with the window hidden. ARMED means the outer sequence is
+enabled but transport is stopped. PLAY starts it again.
+
+To extend the fader to **20 minutes**, set this in `tapesister.ini`:
+
+```ini
+arp_slot_max_seconds=1200
+arp_slot_min_full_pattern=0
+```
+
+The maximum configurable ceiling is 14400 seconds (four hours). A project with
+a longer saved slot time keeps it even on a machine with a smaller local fader
+range. These two preferences are retained by SAVE CONFIG; the pattern bank,
+sequence mode, Loop and Slot Time are saved by the main project SAVE.
+
+The two clocks are intentionally independent. With a 50 ms outer hold and
+10-second inner notes, only the first note of each pattern sounds before the
+next slot starts. This can create rapid pitch/timbre changes instead of complete
+phrases. To ensure at least one full inner traversal per slot, set
+`arp_slot_min_full_pattern=1`. The effective hold is then the greater of Slot Time
+and note STEP multiplied by the inner cycle length (including the return leg of
+UP/DOWN). Gate length does not shorten that cycle. The countdown shows the actual
+hold. This minimum does not quantize longer holds to whole cycles. Editing notes,
+mode or note timing under this policy extends the current deadline to allow a
+full edited cycle; volume/gate/LFO edits do not postpone it.
+
+For example, play G/B/D in slot 05. Click empty 06 while it plays: the phrase
+continues into an editable copy. Change its gate and volume LFO; copy again into
+07 and change the notes. Enable SLOT SEQ, UP, 10 seconds and LOOP ON to perform
+05 → 06 → 07 repeatedly. Sister Machine can hold earlier material underneath.
+
+Main **SAVE** retains all slots, their creation order, the last manually selected
+slot and outer sequence settings in the `.tsr` project (v27). Loading restores
+them **stopped**: no elapsed clock, sounding note, LFO phase or prepared source
+resumes. Automatic slot changes never dirty the project or change its saved
+manual selection. Older projects get the outer sequencer disabled; projects
+without ARP data get an empty default bank. Edits trigger the unsaved warning.
+
 **Shift+Space** starts/stops ARP, including with the panel closed or the tile
 bank visible. It also works from FM, Mosaic, the EQ page, and Sister Machine.
 Text fields, dialogs, Portal, and file preview retain their existing key handling.
@@ -24,6 +102,8 @@ alongside the sequence, including HOLD, Shift-click chords, and MIDI.
 
 | Control | Action |
 | --- | --- |
+| 01–16 | Recall a saved pattern, or copy into an empty slot during playback |
+| SLOT SEQ / mode / SLOT TIME / LOOP | Sequence populated slots independently of their note patterns |
 | PLAY / STOP | Start from the first step / release the sequencer's voices only |
 | Shift+Space | The same ARP-only transport, even with its controls hidden |
 | UP | Ascending pitch |
@@ -32,8 +112,12 @@ alongside the sequence, including HOLD, Shift-click chords, and MIDI.
 | ORDER | Follow the numbered key selection, like Prism's lens sequence |
 | RANDOM | Pick a selected pitch each step; repeats are possible |
 | RESET | Restart at the beginning while playing; stay silent if stopped |
-| CLEAR | Empty the selection and stop the sequence |
+| CLEAR | Empty this pattern; an active outer sequencer continues to the next populated slot |
 | FROM HELD | Copy the active QWERTY chord, sorted by pitch; the original notes keep playing |
+| ARP VOL | Independent sequence level: 0–200%, initially 100%; 0% mutes audio while the clock keeps running |
+| LFO ON/OFF | Enable a sine volume LFO affecting only ARP; initially off |
+| CYCLE | Duration of one LFO cycle, 50 ms to one hour; initially 4 seconds |
+| DEPTH | How far the LFO lowers ARP below the volume fader; initially 50% |
 | EDIT ON/OFF | Switch ordinary key clicks/QWERTY presses between sequence editing and live playing |
 | LOOP / ONCE | Repeat, or stop after one traversal (one full up/down traversal in that mode) |
 | X | Close the controls; playback continues |
@@ -56,6 +140,28 @@ time; shortening it past the elapsed duration advances once, without a burst of
 missed notes. Editing the selected keys preserves the current pitch and phase if
 it remains selected. Removing that pitch or changing mode starts a fresh step.
 
+**ARP VOL** balances the pattern against manually held drones, MIDI notes and
+other sources. It changes the sequence's audio level before it joins those
+sources, without changing note velocity or retriggering the pattern. Shared
+downstream effects and dynamics still respond to the combined signal. Drag or
+wheel the fader; Shift-wheel changes it in 1% increments, and right-click restores
+100%. At 200% the ARP is twice its original amplitude (about +6 dB).
+
+The optional **LFO** creates volume swells or tremolo. The fader sets the peak:
+at 50% depth the LFO moves between half that level and the full level; at 100%
+depth it reaches silence. **CYCLE** is independent of note STEP time and continues
+across note changes and while the panel is hidden. PLAY and RESET start the cycle
+at its peak. STOP freezes it. Volume, depth, enable and phase-reset changes have
+a short gain ramp (at most 5 ms for a full-range change). The gold marker under
+the volume fader displays the current modulated gain, while the fader retains its
+base position. Wheel/Shift-wheel and right-click defaults work on CYCLE and DEPTH.
+
+For example: hold a low C drone, select C/G/E-flat/B-flat for ARP, switch EDIT off,
+and set ARP VOL to 40%. Enable LFO with an 8-second cycle and 75% depth to let the
+pattern rise from 10% to 40% of its original level over the steady drone.
+
+![The same ARP volume and LFO controls in FM](images/keyboard-sequence-fm.png)
+
 The sequencer uses the current tile/Source choice, FM preview, or selected
 tile/Sister ensemble. Sound and routing changes are prepared outside the audio
 callback and swapped into playback. Existing manual notes retain their own
@@ -69,7 +175,8 @@ source without adding a separate click-launched layer, even with PLAY ON SEL or
 main LOOP enabled. Existing click-launched layers keep playing. Normal tile
 launching resumes after ARP stops.
 
-ARP STOP, Shift+Space, CLEAR, and the end of ONCE release only sequence voices. They do not
+ARP STOP, Shift+Space, CLEAR, and the end of ONCE release only sequence voices.
+CLEAR or inner ONCE leaves an active outer clock waiting for its next slot. They do not
 release a manually held chord, same-pitch MIDI notes, or click-launched tiles.
 Space/Stop retains its global stop behavior. A short 5 ms fade removes abrupt
 sequence boundaries. An explicitly locked main loop retains its established
@@ -81,15 +188,29 @@ the selection remains ready for PLAY. Capture staging keeps its Shift-click cont
 Sequence audio follows the existing tile/FM buses through Sister, Prism, master
 effects, and recording. Mosaic REC DRY includes it; FM's SYNTH tap includes FM
 sequences. Normal source switches and monitoring still determine what is heard.
-The sequence selection and settings are session controls in this first version;
-they are not stored in project files or Prism presets. Portal and file-preview
-keyboards keep their existing audition behavior.
+The sequence bank is saved with the project, independently of Prism presets and
+the global SAVE CONFIG preferences. It does not snapshot tiles, FM patches or
+processor settings. Portal and file-preview keyboards keep their existing
+audition behavior.
 
 ## Verification
 
 `tapesister_keyboard_sequence_tests` covers ordering, bounce endpoints, Random,
 Once, stereo preservation, gates, live duration edits through one hour, removal
 of the active/last key, 24-note limits, source loss, and one-shot retriggering.
+It also checks volume ratios, exact mute, gain-ramp bounds, LFO extrema and depth,
+rate changes, long cycles, live edits and malformed control values. The native
+controller tests compare held-note samples with ARP muted, exercise the controls
+in both main/FM panel positions, and check hidden-panel modulation continuity.
+Slot tests cover live/stopped/empty selection, retained independent settings,
+same-slot clock continuity and CLEAR isolation. Outer tests cover all five modes,
+Loop/Once, manual copy continuity sample-for-sample, hidden-panel clocks, live
+edits, empty slots, fractional timing, rate changes, 20-minute holds, short outer
+versus hour-long inner steps, bounded waveform/gain transitions, and the optional
+minimum-full-pattern policy. Project tests exercise the actual
+Save/Open controller, all 16 slots, exact numeric round trips, unsaved-change
+tracking, saving during playback, stopped reload, old/missing sidecars and
+malformed input.
 The native keyboard HOLD suite also renders the audio callback across tile, FM,
 group, and Sister routes, checks the dry/FM recording buses, preserves manual
 and MIDI voices on ARP Stop, changes octave and source during playback, checks

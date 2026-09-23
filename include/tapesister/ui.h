@@ -39,9 +39,9 @@ enum {
 enum { TS_WAVE_X = 20, TS_WAVE_Y = 64, TS_WAVE_W = 600, TS_WAVE_H = 134 };
 enum { TS_MODAL_PANEL_X = 10, TS_MODAL_PANEL_Y = 40,
        TS_MODAL_PANEL_W = 620, TS_MODAL_PANEL_H = 164 };
-enum { TS_ARP_PANEL_X = 10, TS_ARP_PANEL_Y = 230,
-       TS_ARP_PANEL_W = 620, TS_ARP_PANEL_H = 81,
-       TS_ARP_PANEL_FM_Y = 218, TS_ARP_PANEL_FM_H = 95,
+enum { TS_ARP_PANEL_X = 10, TS_ARP_PANEL_Y = 140,
+       TS_ARP_PANEL_W = 620, TS_ARP_PANEL_H = 171,
+       TS_ARP_PANEL_FM_Y = 134, TS_ARP_PANEL_FM_H = 179,
        TS_ARP_PANEL_FM_OFFSET = -6 };
 enum { TS_DRONE_WAVE_X = 20, TS_DRONE_WAVE_Y = 77,
        TS_DRONE_WAVE_W = 600, TS_DRONE_WAVE_H = 70 };
@@ -380,6 +380,12 @@ typedef struct {
     int keyboard_sequence_open, keyboard_sequence_edit, keyboard_sequence_drag;
     int keyboard_sequence_running, keyboard_sequence_current, keyboard_sequence_step;
     double keyboard_sequence_progress;
+    float keyboard_sequence_level;
+    int keyboard_sequence_slot;
+    TsKeyboardSlotSequence keyboard_slot_sequence;
+    int keyboard_slot_running;
+    double keyboard_slot_remaining;
+    uint16_t keyboard_sequence_occupied;
     uint16_t tile_launcher_mask;
     int play_on_select; /* Sample-bank click auditions; off selects for editing only. */
     int mouse_note;
@@ -441,6 +447,9 @@ typedef struct {
     int master_eq_open, master_eq_band, master_eq_drag, master_eq_reset_pending;
     unsigned master_eq_rate;
     int router_open, router_drag, router_drop, router_transition;
+    int router_performance_open, router_slot, router_step, router_timer_stage;
+    TsRouterControls router_live;
+    TsRouterView router_view;
     int insert_open, insert_drag, insert_apply_pending, insert_send_choice, insert_return_choice;
     unsigned insert_inputs, insert_outputs, insert_offered_outputs;
     char insert_send_device[TS_CONFIG_PATH_MAX], insert_return_device[TS_CONFIG_PATH_MAX];

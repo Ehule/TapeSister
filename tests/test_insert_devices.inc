@@ -84,7 +84,7 @@ static void test_insert_devices(void)
     ts_audio_insert_devices_sync(&audio,&ui.config,0,error,sizeof(error));
     assert(mock_insert_open_count[0]+mock_insert_open_count[1]==opens);
     /* Unplug SEND: active Insert goes silent, choices persist, no default retry. */
-    SDL_Event event={0};event.type=SDL_AUDIODEVICEREMOVED;event.adevice.which=101;
+    SDL_Event event;SDL_zero(event);event.type=SDL_AUDIODEVICEREMOVED;event.adevice.which=101;
     ts_audio_insert_device_event(&event);assert(!ts_insert_send_available(&audio.sister.insert));
     assert(ts_real_output==device && ui.config.insert_send_device[0]);
     ts_audio_insert_devices_sync(&audio,&ui.config,0,error,sizeof(error));

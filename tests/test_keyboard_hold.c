@@ -35,7 +35,7 @@ static void tick(void)
 
 static void click_note_preview(int note, int shifted, const TsSample *preview)
 {
-    SDL_Event event = {0};
+    SDL_Event event;SDL_zero(event);
     event.type = SDL_MOUSEBUTTONDOWN;
     event.button.button = SDL_BUTTON_LEFT;
     event.button.windowID = SDL_GetWindowID(window);
@@ -104,7 +104,7 @@ static void test_chords(void)
             portal_init(&portal, &ui.portal);
             ts_fm_seed_sequence_init(&seeds, 999);
             portal.create_seeds = &seeds;
-            SDL_Event create = {0};
+            SDL_Event create;SDL_zero(create);
             create.type = SDL_MOUSEBUTTONDOWN;
             create.button.button = SDL_BUTTON_LEFT;
             for (int wave = 0; wave < 4; ++wave) {
@@ -377,6 +377,7 @@ static void test_sister_prepared_power(void)
 #include "test_router_controller.inc"
 #include "test_insert_controller.inc"
 #include "test_insert_devices.inc"
+#include "test_router_performance_shots.inc"
 
 int main(void)
 {
@@ -413,10 +414,12 @@ int main(void)
     test_keyboard_sequence_controller();
     test_performance_polish();
     test_router_controller();
+    test_router_performance_controller();
     test_insert_controller();
     test_duplex_callback_unity();
     test_insert_devices();
     test_master_eq_controller();
+    router_performance_screenshots();
     stop_all_force(device, &audio, &ui);
     ts_sample_free(&fm); ts_instrument_free(&instrument);
     ts_performance_free(&audio.performance); ts_performance_free(&audio.tile_launchers);

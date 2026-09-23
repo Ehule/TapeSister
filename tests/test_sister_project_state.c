@@ -1,3 +1,6 @@
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include "sister_test_helpers.h"
 #include "tapesister/sister_project_state.h"
 #include "tapesister/sister_ui.h"

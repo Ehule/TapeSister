@@ -1,4 +1,9 @@
 /* Native JACK ABI/lifecycle tests; --live additionally exercises a real server. */
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
+#include "tapesister/router.h"
+#include "tapesister/insert.h"
 #ifndef SDL_MAIN_HANDLED
 #define SDL_MAIN_HANDLED
 #endif
@@ -29,6 +34,7 @@ static SDL_AudioSpec desired(int capture)
     SDL_AudioSpec s;SDL_zero(s);s.freq=44100;s.samples=512;s.channels=2;
     s.format=AUDIO_F32SYS;s.callback=audio;s.userdata=(void *)(intptr_t)capture;return s;
 }
+#include "test_jack_router.inc"
 static int live(void)
 {
     ts_jack_selected=1;
@@ -65,6 +71,7 @@ static int live(void)
     ts_native_pause(send,1);before=atomic_load(&se->write_block);SDL_Delay(30);
     assert(atomic_load(&se->write_block)==before);
     assert(atomic_load(&ie->read_block)>0 && atomic_load(&re->read_block)>0);
+    live_performance(master,send,ret);
     ts_native_close(send);ts_native_close(ret);ts_native_close(master);ts_native_close(input);
     printf("Live JACK stereo SEND -> RETURN passed at %d Hz / %u frames\n",send_spec.freq,send_spec.samples);
     return 0;

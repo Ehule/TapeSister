@@ -35,10 +35,46 @@ static void keyboard_sequence_panel(TsFramebuffer *fb, const TsUiState *ui)
     char label[80];
     frame(fb, TS_ARP_PANEL_X, y, TS_ARP_PANEL_W, h,
           RGB(24, 29, 36), RGB(91, 161, 167));
-    text(fb, 20, 240 + offset, "ARP / KEYBOARD SEQUENCE", RGB(137, 210, 211), 1);
+    text(fb, 20, 150 + offset, "ARP / KEYBOARD SEQUENCE", RGB(137, 210, 211), 1);
     snprintf(label, sizeof(label), "%02d NOTES   %s %02d", s->count,
-             ui->keyboard_sequence_running ? "STEP" : "READY", ui->keyboard_sequence_running ? ui->keyboard_sequence_step : 0);
-    text(fb, 356, 240 + offset, label, RGB(247, 196, 91), 1);
+             ui->keyboard_sequence_step ? "STEP" : ui->keyboard_slot_running ? "WAIT" : "READY", ui->keyboard_sequence_running ? ui->keyboard_sequence_step : 0);
+    text(fb, 356, 150 + offset, label, RGB(247, 196, 91), 1);
+    const TsKeyboardSlotSequence *q = &ui->keyboard_slot_sequence;
+    button(fb, 20, 164 + offset, 90, q->enabled ? "SLOT SEQ ON" : "SLOT SEQ OFF", q->enabled);
+    button(fb, 116, 164 + offset, 100, ts_keyboard_sequence_mode_name(q->mode), 0);
+    if (q->seconds >= 60) snprintf(label, sizeof(label), "SLOT TIME %.2F MIN", q->seconds / 60);
+    else snprintf(label, sizeof(label), "SLOT TIME %.2F SEC", q->seconds);
+    double slot_max = fmax(q->seconds, fmax(1, ui->config.arp_slot_max_seconds));
+    double slot_amount = log(fmax(TS_KEYBOARD_SLOT_MIN_SECONDS, q->seconds) / TS_KEYBOARD_SLOT_MIN_SECONDS) /
+                         log(slot_max / TS_KEYBOARD_SLOT_MIN_SECONDS);
+    slider(fb, 226, 164 + offset, 200, label, (float)slot_amount, RGB(91, 161, 167));
+    button(fb, 436, 164 + offset, 80, q->loop ? "LOOP ON" : "LOOP OFF", q->loop);
+    if (ui->keyboard_slot_running) {
+        int seconds = (int)ceil(ui->keyboard_slot_remaining);
+        snprintf(label, sizeof(label), "%02d:%02d LEFT", seconds / 60, seconds % 60);
+    } else snprintf(label, sizeof(label), "%s", q->enabled ? "ARMED" : "MANUAL");
+    text(fb, 530, 172 + offset, label, RGB(247, 196, 91), 1);
+    for (int i = 0; i < TS_KEYBOARD_SEQUENCE_SLOTS; ++i) {
+        snprintf(label, sizeof(label), "%02d", i + 1);
+        mini_button(fb, 20 + i * 37, 198 + offset, 34, label, ui->keyboard_sequence_slot == i);
+        if (ui->keyboard_sequence_occupied & (1u << i))
+            rect(fb, 47 + i * 37, 209 + offset, 3, 3, RGB(91, 161, 167));
+    }
+    snprintf(label, sizeof(label), "ARP VOL %.0F%%", s->volume * 100);
+    slider(fb, 20, 220 + offset, 188, label, (float)(s->volume / 2), RGB(91, 161, 167));
+    /* Gold marker shows the modulated gain; the fader keeps its base position. */
+    if (ui->keyboard_sequence_running)
+        rect(fb, 20 + (int)(182 * fmin(1, fmax(0, ui->keyboard_sequence_level / 2))),
+             242 + offset, 6, 2, RGB(247, 196, 91));
+    button(fb, 220, 220 + offset, 64, s->lfo_enabled ? "LFO ON" : "LFO OFF", s->lfo_enabled);
+    if (s->lfo_seconds >= 60) snprintf(label, sizeof(label), "CYCLE %.2F MIN", s->lfo_seconds / 60);
+    else snprintf(label, sizeof(label), "CYCLE %.2F SEC", s->lfo_seconds);
+    double cycle = log(fmax(TS_KEYBOARD_SEQUENCE_LFO_MIN_SECONDS, s->lfo_seconds) /
+                       TS_KEYBOARD_SEQUENCE_LFO_MIN_SECONDS) /
+                   log(TS_KEYBOARD_SEQUENCE_MAX_SECONDS / TS_KEYBOARD_SEQUENCE_LFO_MIN_SECONDS);
+    slider(fb, 296, 220 + offset, 164, label, (float)cycle, RGB(91, 161, 167));
+    snprintf(label, sizeof(label), "DEPTH %.0F%%", s->lfo_depth * 100);
+    slider(fb, 476, 220 + offset, 144, label, (float)s->lfo_depth, RGB(247, 196, 91));
     button(fb, 20, 252 + offset, 64, ui->keyboard_sequence_running ? "STOP" : "PLAY", ui->keyboard_sequence_running);
     button(fb, 90, 252 + offset, 100, ts_keyboard_sequence_mode_name(s->mode), 0);
     button(fb, 196, 252 + offset, 58, "RESET", 0);

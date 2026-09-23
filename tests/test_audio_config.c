@@ -18,7 +18,9 @@ static int test_defaults(void)
 {
     TsConfig config;
     ts_config_init(&config);
-    return expect(config.record_input_device[0] == '\0',
+    return expect(config.arp_slot_max_seconds == 240 && !config.arp_slot_min_full_pattern,
+                  "ARP slot range and truncation policy defaults") &&
+           expect(config.record_input_device[0] == '\0',
                   "default input device should be system default") &&
            expect(config.audio_output_device[0] == '\0',
                   "default output device should be system default") &&
@@ -110,6 +112,7 @@ static int test_roundtrip(void)
     saved.midi_input_channel = 7;
     saved.capture_auto_resize = 0;
     saved.capture_max_seconds = 47;
+    saved.arp_slot_max_seconds = 1200; saved.arp_slot_min_full_pattern = 1;
     saved.capture_channels = 2;
     saved.waveform_display_mode = TS_WAVEFORM_DISPLAY_RIGHT;
     saved.sister_waveform_display_mode = TS_WAVEFORM_DISPLAY_MONO_SUM;
@@ -224,6 +227,8 @@ static int test_roundtrip(void)
          expect(loaded.sister_window_maximized == 0 &&
                 loaded.sister_window_x == 123 && loaded.sister_window_y == 456,
                 "Sister window startup state and position should roundtrip") &&
+         expect(loaded.arp_slot_max_seconds == 1200 && loaded.arp_slot_min_full_pattern == 1,
+                "ARP extended slot range and full-pattern policy roundtrip") &&
          expect(loaded.capture_max_seconds == 47,
                 "Capture duration limit should roundtrip") &&
          expect(loaded.capture_channels == 2,

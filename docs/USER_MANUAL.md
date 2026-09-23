@@ -943,6 +943,29 @@ also edits the selection when the panel is closed or EDIT is off. Selected keys
 are teal, the sounding step is gold, and numbers show selection order. Changing
 octave preserves the selected pitches.
 
+The numbered **01–16** row selects independent ARP patterns. Each remembers notes,
+mode, timing, volume and LFO. While playing, selecting an empty slot copies the
+current pattern **without retriggering** and opens EDIT, so you can build a new
+variation. Existing populated slots recall their own patterns. While stopped,
+empty slots start silent with default settings. CLEAR affects this slot only.
+
+The new top **SLOT SEQ** row sequences those patterns: UP, DOWN, UP/DOWN, ORDER
+(first-populated order), or RANDOM (shuffle each pass). **SLOT TIME** sets how long
+each slot holds; empty slots are skipped. **LOOP ON** repeats; OFF stops after one
+pass. Note LOOP/ONCE remains independent. Turning SLOT SEQ off leaves the current
+pattern playing; STOP stops both clocks. Manual slot selection starts a fresh
+outer hold from that slot. Clocks continue with the panel hidden, and the active
+slot/countdown update when reopened.
+
+Slot Time ranges from 50 ms to 4 minutes by default. In `tapesister.ini`, set
+`arp_slot_max_seconds=1200` for a 20-minute ceiling (maximum 14400). Fast outer
+steps may intentionally truncate inner patterns. Set `arp_slot_min_full_pattern=1`
+to hold each slot for at least one complete inner cycle; default 0 permits
+truncation. Main SAVE retains patterns and static outer sequencing settings;
+SAVE CONFIG retains these timing preferences. Projects always reload stopped.
+See [Keyboard sequencing](KEYBOARD_SEQUENCE.md) for timing/edit semantics and a
+live variation example.
+
 Choose **UP**, **DOWN**, **UP/DOWN**, **ORDER**, or **RANDOM**. ORDER follows your
 key selections like Prism's lens sequence; remove and re-add a note to put it
 last. **LOOP/ONCE** controls repetition. **FROM HELD** copies the current QWERTY
@@ -955,6 +978,16 @@ repeated-note cells and rests are not part of this control.
 Matrix's separate Morph travel and Step hold. Use the wheel, Shift-wheel for
 fine adjustments, or right-click to restore a control's default.
 
+**ARP VOL** sets the pattern's own volume from 0–200% (default 100%), so a held
+drone keeps its level while you adjust the ARP. Zero mutes ARP without stopping
+its clock. **LFO ON** adds sine volume modulation: **CYCLE** sets one full cycle
+(50 ms to one hour, default 4 seconds), and **DEPTH** sets the reduction below
+the fader's level (default 50%; 100% reaches silence). PLAY/RESET starts the LFO
+at its peak; it continues across notes and with the panel closed. The gold marker
+under ARP VOL shows the modulated level. Live changes are briefly smoothed.
+These controls affect ARP before it joins the other sources and shared effects.
+Use drag/wheel, Shift-wheel for fine control, or right-click for defaults.
+
 With **EDIT OFF**, play manual HOLD chords and MIDI alongside the sequence.
 **Shift+Space** starts/stops ARP even with its controls hidden, including from
 the tile bank, FM, Mosaic, EQ, and Sister Machine. **ARP STOP**, **Shift+Space**,
@@ -963,8 +996,12 @@ Space keeps its global stop behavior. The sequence follows the current tile,
 FM preview, or selected ensemble through the existing effects and recording
 paths. Selecting another tile keeps the notes, order, and timing running with
 the new sound; it does not start a separate tile layer while ARP is active.
-Closing the ARP panel keeps playback running. Selection and settings
-last for this session and are not saved in projects or Prism presets.
+Closing the ARP panel keeps playback running. Main **SAVE** stores all 16 ARP
+slots, their creation order, the last manually selected slot and static outer
+sequence settings in the `.tsr` project. Reload restores the bank stopped, with
+no old countdown, LFO phase or sounding notes. Older ARP banks remain intact with
+the outer sequencer off; projects without ARP data get an empty/default bank. ARP edits trigger the unsaved-changes warning; the bank
+is separate from Prism presets and global SAVE CONFIG preferences.
 
 [Full controls, routing, and examples](KEYBOARD_SEQUENCE.md).
 
@@ -1363,7 +1400,20 @@ Order, saved bypasses and solo persist in the project/session and configuration.
 Older files with no Router keys load the default order with only INSERT bypassed
 and no solo. Four-stage Router files retain their previous order/bypasses/solo and
 append the bypassed INSERT. Sound presets do not overwrite routing. Audio-device
-recovery preserves it. Timed routing performance is a later addition.
+recovery preserves it.
+
+### Router Performance
+
+**F9 → PERFORMANCE** adds A–Z participation states, 64 steps with individual
+STEP TIME, FOR/AFTER Bypass/Solo timers, live countdowns and MIDI-learn commands.
+Manual participation changes keep the sequence running and last until the next
+step. Timers layer over the current sequence; expiration reveals the current
+underlying state. STOP holds that state; RESTORE explicitly returns to the manual
+state captured before PLAY. Stage order is locked during playback. Projects save
+configuration and manual base, never active timers or a run flag.
+
+See [Router Performance](ROUTER_PERFORMANCE.md) for controls, precedence, persistence,
+Insert/recording behavior, screenshots and a practical four-step example.
 
 ## External Insert
 

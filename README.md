@@ -135,7 +135,13 @@ shared with FM, Portal, import preview, and Sister Machine; Portal and file prev
 now accept MIDI notes. See [Keyboard Sustain](docs/KEYBOARD_SUSTAIN.md).
 
 **ARP** adds keyboard arpeggios and custom note order, with 24 selected pitches,
-live step/gate controls, and separate selected/current-note colors. It plays
+live step/gate controls, an independent volume fader with optional sine LFO,
+16 numbered sequence slots saved with the project, and separate
+selected/current-note colors. Playing into an empty slot copies the current
+pattern without restarting it, ready for live variation. The outer SLOT SEQ
+cycles populated slots by Up/Down/Bounce/Order/Random, with independent Slot Time
+and Loop. An optional INI guard holds each slot for a complete inner pattern;
+short holds can otherwise truncate it. Projects reopen with ARP stopped. It plays
 tile, FM, or ensemble sources alongside manual chords and MIDI, and enters the
 existing recording and effects paths. **Shift+Space** starts/stops ARP with its
 controls hidden, and tile selection changes the sound without restarting the
@@ -194,6 +200,13 @@ stay inside Sister. INSERT adds a movable, 100%-wet external send/return loop us
 spare output pairs or independent SEND/RETURN devices. **SETUP** on its Router
 row opens device, channel and level controls. New and older projects start with INSERT bypassed.
 [Controls and routing details](docs/USER_MANUAL.md#global-router).
+
+**F9 → PERFORMANCE** adds timed Bypass/Solo, A–Z Router States and up to 64
+steps with individual hold times. Manual gestures override until the next step;
+STOP holds the state and RESTORE returns to the manual state captured before PLAY.
+[Router Performance controls, MIDI and examples](docs/ROUTER_PERFORMANCE.md).
+
+![Router Performance](docs/images/router-performance-playing.png)
 
 ![Native Global Router](docs/images/global-router.png)
 

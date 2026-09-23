@@ -158,6 +158,8 @@ static void snapshot_atomic_init(TsSisterRoutingSnapshotAtomic *snapshot)
     for(int i=0;i<4;++i){atomic_init(&snapshot->insert_ports[i],0);atomic_init(&snapshot->insert_values[i],0);}
     for(int i=0;i<TS_ROUTER_COUNT+4;++i)atomic_init(&snapshot->router_state[i],0);
     for(int i=0;i<TS_ROUTER_COUNT*2+2;++i)atomic_init(&snapshot->router_peaks[i],float_bits(0));
+    for(int i=0;i<8+TS_ROUTER_COUNT*2;++i)atomic_init(&snapshot->router_perf_int[i],0);
+    for(int i=0;i<1+TS_ROUTER_COUNT;++i)atomic_init(&snapshot->router_perf_float[i],0);
     atomic_init(&snapshot->prism_valid, 0);
     atomic_init(&snapshot->prism_seq_lens, 0);
     for(int i=0;i<10;++i)atomic_init(&snapshot->prism_matrix_int[i],0);
@@ -269,6 +271,16 @@ static void publish_snapshot(TsSisterRuntime *runtime)
     for(int i=0;i<4;++i)atomic_store_explicit(&snapshot->router_state[TS_ROUTER_COUNT+i],router_state[i],memory_order_relaxed);
     atomic_store_explicit(&snapshot->router_peaks[TS_ROUTER_COUNT*2],float_bits(runtime->router.source_peak),memory_order_relaxed);
     atomic_store_explicit(&snapshot->router_peaks[TS_ROUTER_COUNT*2+1],float_bits(runtime->router.master_peak),memory_order_relaxed);
+    TsRouterView rv=ts_router_view(&runtime->router);
+    int ri[]={rv.running,rv.step,rv.state,rv.missing,rv.restore_valid,
+        (int)runtime->router.transport.base.bypass_mask,runtime->router.transport.base.solo,rv.manual_override};
+    for(int i=0;i<8;++i)atomic_store_explicit(&snapshot->router_perf_int[i],ri[i],memory_order_relaxed);
+    atomic_store_explicit(&snapshot->router_perf_float[0],float_bits(rv.remaining),memory_order_relaxed);
+    for(int i=0;i<TS_ROUTER_COUNT;++i) {
+        atomic_store_explicit(&snapshot->router_perf_int[8+i*2],rv.timer_kind[i],memory_order_relaxed);
+        atomic_store_explicit(&snapshot->router_perf_int[9+i*2],rv.timer_after[i],memory_order_relaxed);
+        atomic_store_explicit(&snapshot->router_perf_float[1+i],float_bits(rv.timer_remaining[i]),memory_order_relaxed);
+    }
     TsPrismView prism = ts_prism_view(&runtime->prism);
     int matrix_int[]={prism.matrix_active,prism.matrix_running,prism.matrix_step,prism.matrix_waiting,
         prism.matrix_from,prism.matrix_to,prism.matrix_missing,
@@ -460,6 +472,9 @@ void ts_sister_runtime_set_insert(TsSisterRuntime *runtime,const TsInsertControl
     if(!runtime || !controls)return;
     ts_insert_set(&runtime->insert,controls);publish_snapshot(runtime);
 }
+
+void ts_sister_runtime_publish_router(TsSisterRuntime *runtime)
+{ publish_snapshot(runtime); }
 
 void ts_sister_runtime_set_router(TsSisterRuntime *runtime,const TsRouterControls *controls)
 {
@@ -1974,6 +1989,19 @@ int ts_sister_runtime_get_snapshot(const TsSisterRuntime *runtime,
         snapshot->router.solo=atomic_load_explicit(&source->router_state[TS_ROUTER_COUNT+1],memory_order_relaxed);
         snapshot->router_enabled=atomic_load_explicit(&source->router_state[TS_ROUTER_COUNT+2],memory_order_relaxed);
         snapshot->router_transition=atomic_load_explicit(&source->router_state[TS_ROUTER_COUNT+3],memory_order_relaxed);
+        TsRouterView *rv=&snapshot->router_view;
+        int *ri[]={&rv->running,&rv->step,&rv->state,&rv->missing,&rv->restore_valid};
+        for(int i=0;i<5;++i)*ri[i]=atomic_load_explicit(&source->router_perf_int[i],memory_order_relaxed);
+        snapshot->router_saved=snapshot->router;
+        snapshot->router_saved.bypass_mask=atomic_load_explicit(&source->router_perf_int[5],memory_order_relaxed);
+        snapshot->router_saved.solo=atomic_load_explicit(&source->router_perf_int[6],memory_order_relaxed);
+        rv->manual_override=atomic_load_explicit(&source->router_perf_int[7],memory_order_relaxed);
+        rv->remaining=bits_float(atomic_load_explicit(&source->router_perf_float[0],memory_order_relaxed));
+        for(int i=0;i<TS_ROUTER_COUNT;++i) {
+            rv->timer_kind[i]=atomic_load_explicit(&source->router_perf_int[8+i*2],memory_order_relaxed);
+            rv->timer_after[i]=atomic_load_explicit(&source->router_perf_int[9+i*2],memory_order_relaxed);
+            rv->timer_remaining[i]=bits_float(atomic_load_explicit(&source->router_perf_float[1+i],memory_order_relaxed));
+        }
         for(int i=0;i<TS_ROUTER_COUNT*2+2;++i)snapshot->router_peaks[i]=bits_float(atomic_load_explicit(&source->router_peaks[i],memory_order_relaxed));
         snapshot->limiter_enabled = atomic_load_explicit(
             &source->limiter_enabled, memory_order_relaxed);

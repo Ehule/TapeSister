@@ -2,6 +2,7 @@
 #undef NDEBUG
 #endif
 #include "tapesister/keyboard_sequence.h"
+#include "tapesister/sister_project_state.h"
 #include <assert.h>
 #include <math.h>
 #include <stdio.h>
@@ -34,6 +35,137 @@ static void prepare(int mode)
     assert(ts_keyboard_sequence_play(&sequence));
 }
 
+static void test_volume_lfo(void)
+{
+    prepare(TS_KEYBOARD_SEQUENCE_UP);
+    TsKeyboardSequenceSettings s = sequence.settings;
+    s.count = 1; s.notes[0] = 60; s.seconds = 10;
+    ts_keyboard_sequence_set(&sequence, &s);
+    render(10);
+    assert(fabs(ts_keyboard_sequence_read(&sequence, 1000).l - .3) < .00001);
+    double elapsed = sequence.elapsed;
+    s.volume = .25; ts_keyboard_sequence_set(&sequence, &s);
+    assert(sequence.elapsed == elapsed && sequence.running && sequence.current_note == 60);
+    render(10);
+    assert(fabs(ts_keyboard_sequence_read(&sequence, 1000).l - .075) < .00001);
+    /* Full-range edits, including mute, ramp for at most 5 ms at any rate. */
+    s.volume = 2; ts_keyboard_sequence_set(&sequence, &s);
+    float previous = sequence.effective_gain;
+    for (int i = 0; i < 240; ++i) {
+        ts_keyboard_sequence_read(&sequence, 48000);
+        assert(fabs(sequence.effective_gain - previous) <= 2.0 / 240 + .00001);
+        previous = sequence.effective_gain;
+    }
+    assert(fabs(previous - 2) < .00001);
+    assert(fabs(ts_keyboard_sequence_read(&sequence, 48000).l - .6) < .00001);
+    s.volume = 0; ts_keyboard_sequence_set(&sequence, &s);
+    render(6); assert(render(100) == 0 && sequence.running);
+    s.volume = 1; s.lfo_enabled = 1; s.lfo_depth = 1; s.lfo_seconds = 4;
+    ts_keyboard_sequence_set(&sequence, &s); ts_keyboard_sequence_reset(&sequence);
+    /* Audio-clock sine: peak at start, silence halfway, no dependence on steps. */
+    render(2000); render(1); assert(sequence.effective_gain < .00001);
+    elapsed = sequence.elapsed;
+    s.lfo_depth = .5; ts_keyboard_sequence_set(&sequence, &s);
+    assert(sequence.elapsed == elapsed && sequence.lfo_phase > .5);
+    render(6); assert(fabs(sequence.effective_gain - .5) < .0001);
+    s.lfo_enabled = 0; ts_keyboard_sequence_set(&sequence, &s);
+    render(6); assert(sequence.effective_gain == 1);
+    s.lfo_enabled = 1; s.lfo_depth = 1; ts_keyboard_sequence_set(&sequence, &s);
+    render(6); ts_keyboard_sequence_reset(&sequence);
+    previous = sequence.effective_gain;
+    ts_keyboard_sequence_read(&sequence, 48000);
+    assert(fabs(sequence.effective_gain - previous) <= 2.0 / 240 + .00001);
+    /* Changing device rate preserves phase; long cycles stay well resolved. */
+    double phase = sequence.lfo_phase;
+    s.lfo_seconds = 3600; ts_keyboard_sequence_set(&sequence, &s);
+    ts_keyboard_sequence_read(&sequence, 192000);
+    assert(fabs(sequence.lfo_phase - phase - 1.0 / (3600 * 192000)) < 1e-12);
+    s.volume = NAN; s.lfo_depth = INFINITY; s.lfo_seconds = NAN;
+    ts_keyboard_sequence_set(&sequence, &s);
+    assert(sequence.settings.volume == 1 && sequence.settings.lfo_depth == .5 && sequence.settings.lfo_seconds == 4);
+    s.volume = -1; s.lfo_depth = 2; s.lfo_seconds = 0;
+    ts_keyboard_sequence_set(&sequence, &s);
+    assert(sequence.settings.volume == 0 && sequence.settings.lfo_depth == 1 && sequence.settings.lfo_seconds == .05);
+    render(10); assert(render(40) == 0);
+}
+
+static void test_slots_and_projects(void)
+{
+    prepare(TS_KEYBOARD_SEQUENCE_ORDER); render(12);
+    TsKeyboardSequenceSettings first = sequence.settings;
+    assert(ts_keyboard_sequence_select_slot(&sequence, 15));
+    assert(sequence.running && !memcmp(&sequence.settings, &first, sizeof(first)));
+    assert(fabs(sequence.elapsed - .012) < 1e-12);
+    ts_keyboard_sequence_stop(&sequence);
+    TsKeyboardSequenceSettings last = sequence.settings;
+    last.count = 3; last.notes[0] = 72; last.notes[1] = 65; last.notes[2] = 69;
+    last.mode = TS_KEYBOARD_SEQUENCE_ORDER; last.seconds = 1.234567890123;
+    last.gate = .31; last.loop = 0; last.volume = .42;
+    last.lfo_enabled = 1; last.lfo_seconds = 17.5; last.lfo_depth = .75;
+    ts_keyboard_sequence_set(&sequence, &last);
+    assert(!sequence.running && ts_keyboard_sequence_play(&sequence)); render(10);
+    assert(sequence.current_note == 72);
+    assert(ts_keyboard_sequence_select_slot(&sequence, 0) && sequence.running); render(1);
+    assert(sequence.current_note == 67 && sequence.elapsed < .002);
+    assert(!memcmp(&sequence.settings, &first, sizeof(first)));
+    double elapsed = sequence.elapsed;
+    assert(ts_keyboard_sequence_select_slot(&sequence, 0) && sequence.elapsed == elapsed);
+    assert(!ts_keyboard_sequence_select_slot(&sequence, 16) && sequence.running);
+    assert(ts_keyboard_sequence_select_slot(&sequence, 15) && sequence.running); render(1);
+    assert(sequence.current_note == 72 && sequence.lfo_phase < .001);
+    assert(!memcmp(&sequence.settings, &last, sizeof(last)));
+
+    TsSisterProjectState saved, loaded;
+    ts_sister_project_state_init(&saved, 1000);
+    saved.keyboard_sequence = ts_keyboard_sequence_export(&sequence);
+    char error[160]; int present = 0;
+    const char *path = "test-arp-state.ini";
+    assert(ts_sister_project_state_save_file(&saved, path, error, sizeof(error)));
+    assert(sequence.running); /* Saving does not affect execution. */
+    assert(ts_sister_project_state_load_file(&loaded, path, 48000, &present, error, sizeof(error)) && present);
+    assert(saved.keyboard_sequence.selected == loaded.keyboard_sequence.selected);
+    for (int i = 0; i < TS_KEYBOARD_SEQUENCE_SLOTS; ++i) {
+        const TsKeyboardSequenceSettings *a = &saved.keyboard_sequence.slot[i], *b = &loaded.keyboard_sequence.slot[i];
+        assert(a->count == b->count && !memcmp(a->notes, b->notes, sizeof(a->notes)));
+        assert(a->mode == b->mode && a->loop == b->loop && a->seconds == b->seconds && a->gate == b->gate);
+        assert(a->volume == b->volume && a->lfo_enabled == b->lfo_enabled && a->lfo_seconds == b->lfo_seconds && a->lfo_depth == b->lfo_depth);
+    }
+    ts_keyboard_sequence_set_bank(&sequence, &loaded.keyboard_sequence);
+    assert(!sequence.running && sequence.current_note == -1 && sequence.elapsed == 0 && sequence.lfo_phase == 0);
+    assert(render(30) == 0 && sequence.bank.selected == 15);
+    assert(ts_keyboard_sequence_select_slot(&sequence, 0) && !sequence.running);
+    assert(!memcmp(&sequence.settings, &first, sizeof(first)));
+    /* CLEAR affects only the current slot. */
+    TsKeyboardSequenceSettings empty = sequence.settings; empty.count = 0;
+    ts_keyboard_sequence_set(&sequence, &empty);
+    assert(sequence.bank.slot[0].count == 0 && sequence.bank.slot[15].count == 3);
+
+    FILE *file = fopen(path, "wb"); assert(file);
+    fputs("TapeSister Sister Project State\nVersion=25\nPageCount=1\nActivePage=0\n", file); fclose(file);
+    assert(ts_sister_project_state_load_file(&loaded, path, 48000, &present, error, sizeof(error)));
+    for (int i = 0; i < TS_KEYBOARD_SEQUENCE_SLOTS; ++i)
+        assert(loaded.keyboard_sequence.slot[i].count == 0 && loaded.keyboard_sequence.slot[i].volume == 1);
+    assert(loaded.keyboard_sequence.selected == 0);
+    const char *bad[] = {"Arp.Slot.0.Notes=60,", "Arp.Slot.2.Volume=nan", "Arp.Slot.0.Notes=99999999999999999999",
+                         "Arp.Slot.0.Gate=.5garbage", "Arp.SelectedSlot=999999999999999999999999"};
+    for (size_t i = 0; i < sizeof(bad)/sizeof(*bad); ++i) {
+        file = fopen(path, "wb"); assert(file);
+        fprintf(file, "TapeSister Sister Project State\nVersion=26\nPageCount=1\n%s\n", bad[i]); fclose(file);
+        assert(!ts_sister_project_state_load_file(&loaded, path, 48000, &present, error, sizeof(error)));
+    }
+    TsKeyboardSequenceBank bank; ts_keyboard_sequence_bank_default(&bank);
+    assert(ts_keyboard_sequence_bank_read(&bank, "Arp.Slot.0.Notes", "67,60,67,64") == 1);
+    assert(ts_keyboard_sequence_bank_read(&bank, "Arp.Slot.0.StepSeconds", "0") == 1);
+    assert(ts_keyboard_sequence_bank_read(&bank, "Arp.SelectedSlot", "99") == 1);
+    assert(ts_keyboard_sequence_bank_read(&bank, "Arp.Slot.20.Notes", "60") == 0);
+    ts_keyboard_sequence_bank_sanitize(&bank);
+    assert(bank.selected == 0 && bank.slot[0].count == 3 && bank.slot[0].notes[1] == 60);
+    assert(bank.slot[0].seconds == TS_KEYBOARD_SEQUENCE_MIN_SECONDS);
+    remove(path);
+}
+
+#include "test_keyboard_slot_sequence.inc"
+
 int main(void)
 {
     for (int i = 0; i < 256; ++i) { data[2*i] = .3f; data[2*i+1] = -.3f; }
@@ -41,6 +173,9 @@ int main(void)
     source.count = 1;
     source.voices[0] = (TsNoteVoice){.sample=&source.sample, .range_last=256,
         .step=1, .gain=1, .active=1, .looping=1, .direction=1};
+    test_volume_lfo();
+    test_slots_and_projects();
+    test_slot_sequence();
     const int expected[][8] = {
         {60,64,67,60,64,67,60,64}, {67,64,60,67,64,60,67,64},
         {60,64,67,64,60,64,67,64}, {67,60,64,67,60,64,67,60}

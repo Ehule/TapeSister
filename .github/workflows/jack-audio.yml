@@ -4,6 +4,9 @@ on:
     paths:
       - 'src/main_sdl_jack.inc'
       - 'tests/test_jack_backend.c'
+      - 'tests/test_jack_router.inc'
+      - 'src/*router*'
+      - 'include/tapesister/router.h'
       - '.github/workflows/jack-audio.yml'
   workflow_dispatch:
 permissions:
@@ -21,8 +24,9 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libsdl2-dev jackd2
       - name: Compile and test native endpoint lifecycle
         run: |
-          cc -std=c11 -O2 -Wall -Wextra -Werror $(sdl2-config --cflags) tests/test_jack_backend.c -o /tmp/test-jack $(sdl2-config --libs)
-          /tmp/test-jack
+          cmake -S . -B build-jack -DCMAKE_BUILD_TYPE=Release -DTAPESISTER_BUNDLE_CDP8=OFF -DTAPESISTER_ENABLE_MIDI=OFF
+          cmake --build build-jack --target tapesister_jack_backend_tests -j 2
+          build-jack/tapesister_jack_backend_tests
       - name: Route stereo Send into Return through JACK
         run: |
           jackd --no-realtime -d dummy -r 48000 -p 128 > /tmp/jack.log 2>&1 &
@@ -32,4 +36,4 @@ jobs:
             if jack_lsp >/dev/null 2>&1; then break; fi
             sleep 0.1
           done
-          /tmp/test-jack --live
+          build-jack/tapesister_jack_backend_tests --live

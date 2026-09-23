@@ -50,18 +50,21 @@ void ts_router_init(TsRouter *r)
     memset(r,0,sizeof(*r));ts_router_default(&r->controls);
     memcpy(r->order,r->controls.order,sizeof(r->order));r->gain=1;
     for(int i=0;i<TS_ROUTER_COUNT;++i)r->wet[i]=ts_router_active(&r->controls,i)?1:0;
-    ts_router_prepare(r,48000);
+    ts_router_performance_default(&r->performance);
+    r->transport.base=(TsRouterState){r->controls.bypass_mask,r->controls.solo};
+    r->transport.state=-1;ts_router_prepare(r,48000);
 }
 void ts_router_prepare(TsRouter *r,unsigned rate)
 {
     if(!rate)return;
-    r->sample_rate=rate;r->step=1.0f/(rate*.005f);
+    ts_router_performance_rate(r,rate);r->sample_rate=rate;r->step=1.0f/(rate*.005f);
     r->decay=expf(-1.0f/(rate*.15f));
 }
 void ts_router_set(TsRouter *r,const TsRouterControls *c)
 {
     if(!r || !c)return;
     r->controls=*c;ts_router_sanitize(&r->controls);
+    ts_router_takeover(r);
     if(memcmp(r->order,r->controls.order,sizeof(r->order)))r->handoff=-1;
     else if(r->handoff<0)r->handoff=1;
 }
@@ -96,6 +99,7 @@ TsStereoFrame ts_router_process_with_prepare(TsRouter *r,TsStereoFrame in,
     }
     in.l*=r->gain;in.r*=r->gain;
     r->master_peak=fmaxf(peak(in),r->master_peak*r->decay);
+    ts_router_performance_advance(r,1);
     return in;
 }
 int ts_router_write(FILE *file,const TsRouterControls *controls)

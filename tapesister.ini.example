@@ -74,6 +74,14 @@ record_tail_ms=180
 ; Hard safety limit for a single recorded tile.
 record_max_seconds=20
 
+[ARP Slot Sequencing]
+; ARP slot-time range: 50 ms to 4 minutes by default.
+; Set 1200 for 20 minutes; maximum 14400 (four hours).
+arp_slot_max_seconds=240
+; 0 allows deliberately truncated patterns; 1 holds each slot for at least
+; its full note cycle (including the return leg of UP/DOWN).
+arp_slot_min_full_pattern=0
+
 [Mosaic Recording]
 ; Independent card length: 0=unlimited, otherwise 10..3600 seconds.
 ; LENGTH slider/wheel on Mosaic saves this preference. Does not change REC FILE.
@@ -173,3 +181,13 @@ CdpProcess.granulate=1
 ; Missing rows keep factory defaults. Presets follow the recipe even when the
 ; visible process selection changes. Example for GLISTEN:
 ; CdpPreset.glisten=8,8,3,0.28,1,1
+
+# Router Performance: A-Z participation states and 64 timed steps.
+# Saved automatically by SAVE CONFIG; execution never resumes on load.
+# Lower this UI/settings ceiling if desired (0.05 through 3600 seconds).
+RouterPerf.MaxSeconds=3600
+RouterPerf.Length=16
+RouterPerf.Loop=1
+# RouterPerf.State.A=16,0  # bypass mask, solo (stable stage ID + 1; 0 = none)
+# RouterPerf.Step.1=0,30  # state index (A=0, HOLD=-1), Step Time in seconds
+# RouterPerf.Timer.0=0,8  # AFTER=1 / FOR=0, seconds; stage 0 is Prism
