@@ -39,9 +39,9 @@ enum {
 enum { TS_WAVE_X = 20, TS_WAVE_Y = 64, TS_WAVE_W = 600, TS_WAVE_H = 134 };
 enum { TS_MODAL_PANEL_X = 10, TS_MODAL_PANEL_Y = 40,
        TS_MODAL_PANEL_W = 620, TS_MODAL_PANEL_H = 164 };
-enum { TS_ARP_PANEL_X = 10, TS_ARP_PANEL_Y = 140,
-       TS_ARP_PANEL_W = 620, TS_ARP_PANEL_H = 171,
-       TS_ARP_PANEL_FM_Y = 134, TS_ARP_PANEL_FM_H = 179,
+enum { TS_ARP_PANEL_X = 10, TS_ARP_PANEL_Y = 112,
+       TS_ARP_PANEL_W = 620, TS_ARP_PANEL_H = 199,
+       TS_ARP_PANEL_FM_Y = 106, TS_ARP_PANEL_FM_H = 207,
        TS_ARP_PANEL_FM_OFFSET = -6 };
 enum { TS_DRONE_WAVE_X = 20, TS_DRONE_WAVE_Y = 77,
        TS_DRONE_WAVE_W = 600, TS_DRONE_WAVE_H = 70 };
@@ -377,6 +377,9 @@ typedef struct {
     uint32_t performance_hover_due;
     uint32_t active_notes;
     TsKeyboardSequenceSettings keyboard_sequence;
+    TsKeyboardSequenceSettings keyboard_sequence_clipboard;
+    int keyboard_sequence_clipboard_valid;
+    uint32_t keyboard_sequence_clear_deadline;
     int keyboard_sequence_open, keyboard_sequence_edit, keyboard_sequence_drag;
     int keyboard_sequence_running, keyboard_sequence_current, keyboard_sequence_step;
     double keyboard_sequence_progress;

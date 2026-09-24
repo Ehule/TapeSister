@@ -989,6 +989,16 @@ These controls affect ARP before it joins the other sources and shared effects.
 Use drag/wheel, Shift-wheel for fine control, or right-click for defaults.
 
 With **EDIT OFF**, play manual HOLD chords and MIDI alongside the sequence.
+### ARP bank editing
+
+The ARP panel’s **COPY / PASTE** buttons transfer a highlighted slot’s notes and
+all pattern settings. PASTE replaces the destination and enables EDIT; live
+playback restarts that pattern and its outer hold, while stopped playback stays
+stopped. **CLEAR ALL** requires a second click within three seconds, resets all
+16 slots and stops ARP. Held notes and Sister memory remain intact. The clipboard
+survives clearing; outer mode, time and Loop remain configured. The lower CLEAR
+button still clears only one slot. See [ARP controls](KEYBOARD_SEQUENCE.md).
+
 **Shift+Space** starts/stops ARP even with its controls hidden, including from
 the tile bank, FM, Mosaic, EQ, and Sister Machine. **ARP STOP**, **Shift+Space**,
 **CLEAR**, and ONCE completion release only sequencer voices;

@@ -1,6 +1,9 @@
 /* UI preparation owns allocations; only bounded voices and the clock run in the callback. */
 static void keyboard_sequence_ui(AudioState *audio, TsUiState *ui)
 {
+    if (ui->keyboard_sequence_clear_deadline &&
+        (int32_t)(SDL_GetTicks() - ui->keyboard_sequence_clear_deadline) >= 0)
+        ui->keyboard_sequence_clear_deadline = 0;
     TsKeyboardSequence *s = &audio->keyboard_sequence;
     if (s->settings.seconds == 0) ts_keyboard_sequence_init(s);
     ts_keyboard_sequence_set_slot_policy(s, ui->config.arp_slot_min_full_pattern);
@@ -215,6 +218,7 @@ static int keyboard_sequence_event(const SDL_Event *event, SDL_Window *window,
         ui->keyboard_sequence_drag = 0; return 1;
     }
     if (!ts_ui_keyboard_sequence_visible(ui) || !sister_performance_keys_allowed(ui)) {
+        ui->keyboard_sequence_clear_deadline = 0;
         ui->keyboard_sequence_drag = 0; return 0;
     }
     Uint32 id = event->type == SDL_KEYDOWN ? event->key.windowID :
@@ -233,6 +237,7 @@ static int keyboard_sequence_event(const SDL_Event *event, SDL_Window *window,
     } else if (event->type == SDL_MOUSEBUTTONDOWN) {
         logical_mouse(window, event->button.x, event->button.y, &x, &y);
         if (x >= 10 && x < 56 && y >= 313 && y < 330) {
+            ui->keyboard_sequence_clear_deadline = 0;
             ui->keyboard_sequence_open = !ui->keyboard_sequence_open;
             if (ui->keyboard_sequence_open) ui->keyboard_sequence_edit = 1;
             return 1;
@@ -259,6 +264,10 @@ static int keyboard_sequence_event(const SDL_Event *event, SDL_Window *window,
     if (note < 0 && !panel && !slider) return 0;
     /* Controls share their main-view hit geometry after translating FM's inset. */
     if (ui->fm_open) y -= TS_ARP_PANEL_FM_OFFSET;
+    int clear_click = panel && event->type == SDL_MOUSEBUTTONDOWN &&
+        event->button.button == SDL_BUTTON_LEFT && y >= 134 && y < 157 && x >= 164 && x < 264;
+    if (!clear_click && (event->type == SDL_MOUSEBUTTONDOWN || event->type == SDL_KEYDOWN ||
+                         event->type == SDL_MOUSEWHEEL)) ui->keyboard_sequence_clear_deadline = 0;
     if (device) SDL_LockAudioDevice(device);
     keyboard_sequence_ui(audio, ui);
     TsKeyboardSequence *s = &audio->keyboard_sequence;
@@ -269,6 +278,33 @@ static int keyboard_sequence_event(const SDL_Event *event, SDL_Window *window,
         snprintf(ui->status, sizeof(ui->status), ok ?
             "ARP: %d NOTES / CTRL+CLICK OR EDIT KEYS TO CHANGE ORDER" : "ARP: %d NOTE LIMIT", s->settings.count);
     } else if (panel || slider) {
+        if (!slider && event->type == SDL_MOUSEBUTTONDOWN &&
+            event->button.button == SDL_BUTTON_LEFT && y >= 134 && y < 157) {
+            if (x >= 20 && x < 84) {
+                ui->keyboard_sequence_clipboard = s->settings;
+                ui->keyboard_sequence_clipboard_valid = 1;
+                snprintf(ui->status, sizeof(ui->status), "COPIED ARP %02d NOTES AND SETTINGS", s->active_slot + 1);
+            } else if (x >= 90 && x < 154) {
+                if (ui->keyboard_sequence_clipboard_valid) {
+                    ts_keyboard_sequence_paste(s, &ui->keyboard_sequence_clipboard);
+                    ui->keyboard_sequence_edit = 1;
+                    snprintf(ui->status, sizeof(ui->status), "PASTED INTO ARP %02d / EDIT ON", s->active_slot + 1);
+                } else snprintf(ui->status, sizeof(ui->status), "ARP CLIPBOARD EMPTY - COPY A SLOT FIRST");
+            } else if (clear_click) {
+                if (ui->keyboard_sequence_clear_deadline) {
+                    ts_keyboard_sequence_clear_all(s);
+                    ui->keyboard_sequence_clear_deadline = 0;
+                    ui->keyboard_sequence_edit = 1;
+                    snprintf(ui->status, sizeof(ui->status), "ALL 16 ARP SLOTS CLEARED / ARP STOPPED / CLIPBOARD KEPT");
+                } else {
+                    ui->keyboard_sequence_clear_deadline = SDL_GetTicks() + 3000;
+                    snprintf(ui->status, sizeof(ui->status), "CLICK CONFIRM WITHIN 3 SECONDS TO CLEAR ALL 16 ARP SLOTS");
+                }
+            }
+            keyboard_sequence_ui(audio, ui);
+            if (device) SDL_UnlockAudioDevice(device);
+            return 1;
+        }
         if (event->type == SDL_MOUSEBUTTONDOWN && event->button.button == SDL_BUTTON_LEFT &&
             y >= 198 && y < 215 && x >= 20 && x < 612) {
             int slot = (x - 20) / 37;

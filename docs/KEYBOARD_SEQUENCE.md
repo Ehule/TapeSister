@@ -22,6 +22,23 @@ existing short fade. While stopped, a new empty slot opens with default settings
 and stays silent. Existing patterns are always retained. Clicking the active
 slot again leaves its clock alone; RESET explicitly restarts it.
 
+**COPY** captures the highlighted slot's notes and all its pattern settings without
+interrupting playback. Select a destination and **PASTE** to replace its pattern
+and enable EDIT. During playback, PASTE targets the currently highlighted slot,
+restarts its first note/LFO and outer hold with the existing short fade, and keeps
+playing. When stopped, it stays stopped. Other slots and outer mode/time/Loop
+settings are unchanged. Copying an empty slot is allowed; pasting it clears the
+destination's notes. The clipboard is temporary, shared between main/FM views,
+and is not saved in the project.
+
+**CLEAR ALL** empties and resets all 16 patterns, selects 01, stops both ARP clocks
+and switches SLOT SEQ OFF. Click its **CONFIRM** button within three seconds to
+commit; using another ARP control cancels confirmation. Outer mode, Slot Time and
+Loop are retained. Manual/MIDI notes, Sister Machine's held memory and the copied
+pattern are untouched, so you can paste that pattern back after clearing the bank.
+The lower **CLEAR** button still affects only the current slot's notes. Save the
+project to retain pasted patterns or the cleared bank.
+
 The top **SLOT SEQ ON/OFF** row sequences the patterns themselves. Turn it on,
 choose a mode and **SLOT TIME**, then PLAY. Enabling it during playback starts
 its clock immediately; turning it off leaves the current inner pattern playing.
@@ -102,6 +119,8 @@ alongside the sequence, including HOLD, Shift-click chords, and MIDI.
 
 | Control | Action |
 | --- | --- |
+| COPY / PASTE | Copy all pattern settings / replace the highlighted slot; stopped stays stopped |
+| CLEAR ALL | Confirm within three seconds to empty all slots and stop ARP; clipboard retained |
 | 01–16 | Recall a saved pattern, or copy into an empty slot during playback |
 | SLOT SEQ / mode / SLOT TIME / LOOP | Sequence populated slots independently of their note patterns |
 | PLAY / STOP | Start from the first step / release the sequencer's voices only |

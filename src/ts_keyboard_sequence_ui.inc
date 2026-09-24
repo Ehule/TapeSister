@@ -35,10 +35,18 @@ static void keyboard_sequence_panel(TsFramebuffer *fb, const TsUiState *ui)
     char label[80];
     frame(fb, TS_ARP_PANEL_X, y, TS_ARP_PANEL_W, h,
           RGB(24, 29, 36), RGB(91, 161, 167));
-    text(fb, 20, 150 + offset, "ARP / KEYBOARD SEQUENCE", RGB(137, 210, 211), 1);
+    text(fb, 20, 122 + offset, "ARP / KEYBOARD SEQUENCE", RGB(137, 210, 211), 1);
     snprintf(label, sizeof(label), "%02d NOTES   %s %02d", s->count,
              ui->keyboard_sequence_step ? "STEP" : ui->keyboard_slot_running ? "WAIT" : "READY", ui->keyboard_sequence_running ? ui->keyboard_sequence_step : 0);
-    text(fb, 356, 150 + offset, label, RGB(247, 196, 91), 1);
+    text(fb, 356, 122 + offset, label, RGB(247, 196, 91), 1);
+    button(fb, 20, 134 + offset, 64, "COPY", 0);
+    button(fb, 90, 134 + offset, 64, "PASTE", ui->keyboard_sequence_clipboard_valid);
+    button(fb, 164, 134 + offset, 100,
+           ui->keyboard_sequence_clear_deadline ? "CONFIRM" : "CLEAR ALL",
+           ui->keyboard_sequence_clear_deadline != 0);
+    text(fb, 278, 142 + offset, ui->keyboard_sequence_clear_deadline ?
+         "CLEAR ALL 16 SLOTS?" : ui->keyboard_sequence_clipboard_valid ?
+         "PATTERN COPIED / PASTE INTO SLOT" : "COPY / PASTE NOTES + SETTINGS", RGB(180, 201, 204), 1);
     const TsKeyboardSlotSequence *q = &ui->keyboard_slot_sequence;
     button(fb, 20, 164 + offset, 90, q->enabled ? "SLOT SEQ ON" : "SLOT SEQ OFF", q->enabled);
     button(fb, 116, 164 + offset, 100, ts_keyboard_sequence_mode_name(q->mode), 0);
