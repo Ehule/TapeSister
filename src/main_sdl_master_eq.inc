@@ -30,7 +30,8 @@ static int master_eq_event(const SDL_Event *event,SDL_Window *window,
     if(event->type==SDL_WINDOWEVENT && event->window.event==SDL_WINDOWEVENT_FOCUS_LOST) {
         ui->master_eq_drag=0;return 0;
     }
-    int x=-1,y=-1,wheel=0,button=0;
+    int x=-1,y=-1,button=0;
+    double wheel=0;
     if(event->type==SDL_MOUSEBUTTONDOWN || event->type==SDL_MOUSEBUTTONUP) {
         if(id==SDL_GetWindowID(window))logical_mouse(window,event->button.x,event->button.y,&x,&y);
         else if(sister->window && id==sister->window_id && event->type==SDL_MOUSEBUTTONDOWN &&
@@ -79,8 +80,8 @@ static int master_eq_event(const SDL_Event *event,SDL_Window *window,
         if(!(event->motion.state&SDL_BUTTON_LMASK))ui->master_eq_drag=0;
         logical_mouse(window,event->motion.x,event->motion.y,&x,&y);
     } else if(event->type==SDL_MOUSEWHEEL) {
-        int rx,ry;SDL_GetMouseState(&rx,&ry);logical_mouse(window,rx,ry,&x,&y);
-        wheel=event->wheel.direction==SDL_MOUSEWHEEL_FLIPPED?-event->wheel.y:event->wheel.y;
+        int rx,ry;wheel_event_mouse(event,&rx,&ry);logical_mouse(window,rx,ry,&x,&y);
+        wheel=wheel_event_delta(event,0);
     } else if(event->type!=SDL_MOUSEBUTTONDOWN)return 0;
     if(event->type==SDL_MOUSEBUTTONDOWN && y<32) {
         if(ts_ui_master_limiter_contains(x,y)){ui->master_eq_open=0;return 1;}

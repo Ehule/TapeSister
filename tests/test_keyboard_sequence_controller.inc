@@ -219,6 +219,126 @@ static void test_keyboard_sequence_projects(void)
     ts_sample_pages_free(&pages); ts_instrument_free(&record);
 }
 
+static void test_keyboard_sequence_wheel(void)
+{
+    reset_route(0); ui.keyboard_sequence_open = 1;
+    TsKeyboardSequence *s = &audio.keyboard_sequence;
+    TsKeyboardSequenceBank original = ts_keyboard_sequence_export(s);
+    const int xs[] = {40, 300, 40, 320, 500, 250};
+    const int ys[] = {290, 290, 230, 230, 230, 174};
+    for (int view = 0; view < 2; ++view) for (int slider = 0; slider < 6; ++slider) {
+        ui.fm_open = view;
+        TsKeyboardSequenceSettings settings; ts_keyboard_sequence_settings_default(&settings);
+        ts_keyboard_sequence_set(s, &settings);
+        TsKeyboardSlotSequence outer = {0, 0, 1, 10};
+        ts_keyboard_sequence_set_slot_sequence(s, &outer);
+        double *value = slider == 0 ? &s->settings.seconds : slider == 1 ? &s->settings.gate :
+            slider == 2 ? &s->settings.volume : slider == 3 ? &s->settings.lfo_seconds :
+            slider == 4 ? &s->settings.lfo_depth : &s->bank.sequence.seconds;
+        double initial = *value;
+        SDL_Event e; SDL_zero(e); e.type = SDL_MOUSEWHEEL;
+        e.wheel.windowID = SDL_GetWindowID(window);
+        int x = xs[slider], y = ys[slider] + (view ? TS_ARP_PANEL_FM_OFFSET : 0);
+        SDL_WarpMouseInWindow(window, x, y);
+#if SDL_VERSION_ATLEAST(2, 26, 0)
+        e.wheel.mouseX = x; e.wheel.mouseY = y;
+#endif
+        /* Zero vertical and horizontal-only events must never act as clicks. */
+        assert(keyboard_sequence_event(&e, window, device, &audio, &ui, &instrument, &fm, 44100));
+        assert(*value == initial && !ui.keyboard_sequence_drag);
+        e.wheel.x = 1;
+        assert(keyboard_sequence_event(&e, window, device, &audio, &ui, &instrument, &fm, 44100));
+        assert(*value == initial && !ui.keyboard_sequence_drag);
+        e.wheel.x = 0; e.wheel.y = 1;
+        assert(keyboard_sequence_event(&e, window, device, &audio, &ui, &instrument, &fm, 44100));
+        int timing = slider == 0 || slider == 3 || slider == 5;
+        double expected = timing ? initial / 1.1 : initial + .05;
+        assert(fabs(*value - expected) < 1e-10 && !ui.keyboard_sequence_drag);
+        e.wheel.direction = SDL_MOUSEWHEEL_FLIPPED;
+        assert(keyboard_sequence_event(&e, window, device, &audio, &ui, &instrument, &fm, 44100));
+        assert(fabs(*value - initial) < 1e-10);
+#if SDL_VERSION_ATLEAST(2, 0, 18)
+        e.wheel.direction = SDL_MOUSEWHEEL_NORMAL; e.wheel.y = 0; e.wheel.preciseY = .25f;
+        SDL_SetModState(KMOD_SHIFT);
+        assert(keyboard_sequence_event(&e, window, device, &audio, &ui, &instrument, &fm, 44100));
+        expected = timing ? initial * pow(1.01, -.25) : initial + .0025;
+        assert(fabs(*value - expected) < 1e-10 && !ui.keyboard_sequence_drag);
+        e.wheel.preciseY = -.25f;
+        assert(keyboard_sequence_event(&e, window, device, &audio, &ui, &instrument, &fm, 44100));
+        assert(fabs(*value - initial) < 1e-10);
+        SDL_SetModState(KMOD_NONE);
+#endif
+        /* A wheel event must not leave a drag for subsequent pointer motion. */
+        SDL_zero(e); e.type = SDL_MOUSEMOTION; e.motion.windowID = SDL_GetWindowID(window);
+        e.motion.x = x + 10; e.motion.y = y;
+        assert(!keyboard_sequence_event(&e, window, device, &audio, &ui, &instrument, &fm, 44100));
+        assert(fabs(*value - initial) < 1e-10 && !ui.keyboard_sequence_drag);
+    }
+    ui.fm_open = 0;
+    ts_keyboard_sequence_set_bank(s, &original); keyboard_sequence_ui(&audio, &ui);
+}
+
+static void test_keyboard_bank_editing(void)
+{
+    reset_route(0); ui.keyboard_sequence_open = 1;
+    toggle_fm_hold(device, &audio, &ui, &instrument); click_note(0, 0); assert(voices() == 1);
+    TsKeyboardSequence *s = &audio.keyboard_sequence;
+    TsKeyboardSequenceBank original = ts_keyboard_sequence_export(s), empty;
+    ts_keyboard_sequence_bank_default(&empty);
+    for (int view = 0; view < 2; ++view) {
+        ts_keyboard_sequence_set_bank(s, &empty);
+        ui.fm_open = view; int dy = view ? TS_ARP_PANEL_FM_OFFSET : 0;
+        ui.keyboard_sequence_clipboard_valid = 0;
+        sequence_click(100, 144 + dy, KMOD_NONE); assert(!s->settings.count);
+        TsKeyboardSequenceSettings pattern = s->settings;
+        pattern.count = 3; pattern.notes[0] = 67; pattern.notes[1] = 59; pattern.notes[2] = 74;
+        pattern.mode = TS_KEYBOARD_SEQUENCE_ORDER; pattern.seconds = .31; pattern.gate = .42;
+        pattern.volume = .63; pattern.lfo_enabled = 1; pattern.lfo_seconds = 7; pattern.lfo_depth = .81;
+        ts_keyboard_sequence_set(s, &pattern);
+        sequence_click(30, 144 + dy, KMOD_NONE);
+        assert(ui.keyboard_sequence_clipboard_valid && !ts_keyboard_sequence_active(s));
+        sequence_click(62, 205 + dy, KMOD_NONE);
+        sequence_click(100, 144 + dy, KMOD_NONE);
+        assert(!ts_keyboard_sequence_active(s) && ui.keyboard_sequence_edit);
+        assert(!memcmp(&s->settings, &pattern, sizeof(pattern)));
+        pattern.notes[0] = 65; ts_keyboard_sequence_set(s, &pattern);
+        assert(s->bank.slot[0].notes[0] == 67 && ui.keyboard_sequence_clipboard.notes[0] == 67);
+        keyboard_sequence_toggle_playback(device, &audio, &ui, &instrument, &fm, 44100);
+        TsKeyboardSlotSequence chain = {1, TS_KEYBOARD_SEQUENCE_UP, 1, .05};
+        ts_keyboard_sequence_set_slot_sequence(s, &chain);
+        for (int i = 0; i < 3000; ++i) ts_keyboard_sequence_read(s, 44100);
+        int destination = s->active_slot;
+        assert(destination != s->bank.selected); /* Paste targets the live highlight. */
+        sequence_click(100, 144 + dy, KMOD_NONE);
+        assert(s->running && s->slot_running && s->active_slot == destination);
+        assert(s->elapsed == 0 && s->slot_elapsed == 0 && s->lfo_phase == 0);
+        assert(s->settings.notes[0] == 67 && s->bank.selected == destination);
+        int manual_voices = voices();
+        sequence_click(180, 144 + dy, KMOD_NONE);
+        assert(ui.keyboard_sequence_clear_deadline && s->running && s->bank.order_count == 2);
+        sequence_click(30, 144 + dy, KMOD_NONE); /* Another control cancels confirmation. */
+        assert(!ui.keyboard_sequence_clear_deadline && s->bank.order_count == 2);
+        sequence_click(180, 144 + dy, KMOD_NONE);
+        ui.keyboard_sequence_clear_deadline = SDL_GetTicks() - 1;
+        sequence_click(180, 144 + dy, KMOD_NONE); /* Expired click only re-arms. */
+        assert(s->bank.order_count == 2);
+        sequence_click(180, 144 + dy, KMOD_NONE);
+        assert(!ts_keyboard_sequence_active(s) && !s->bank.sequence.enabled);
+        assert(!s->bank.order_count && !s->settings.count && s->active_slot == 0);
+        assert(s->bank.sequence.seconds == .05 && s->bank.sequence.loop == 1);
+        assert(voices() == manual_voices && ui.keyboard_sequence_clipboard_valid);
+        for (int i = 0; i < 16; ++i) assert(!s->bank.slot[i].count && s->bank.slot[i].volume == 1);
+        for (int i = 0; i < 500; ++i) ts_keyboard_sequence_read(s, 44100);
+        assert(!s->running && !s->slot_running && !s->last.l && !s->last.r);
+        sequence_click(100, 144 + dy, KMOD_NONE); /* Clipboard survives CLEAR ALL. */
+        assert(s->settings.count == 3 && !ts_keyboard_sequence_active(s));
+        assert(s->bank.order_count == 1 && s->bank.order[0] == 0);
+    }
+    stop_all_force(device, &audio, &ui);
+    ui.fm_open = 0;
+    ts_keyboard_sequence_set_bank(s, &original); keyboard_sequence_ui(&audio, &ui);
+}
+
 static void test_keyboard_slot_controls(void)
 {
     reset_route(0); ui.keyboard_sequence_open = 1; ui.keyboard_sequence_edit = 0;
@@ -415,6 +535,8 @@ static void test_keyboard_sequence_controller(void)
     test_keyboard_sequence_tile_change();
     test_keyboard_sequence_projects();
     test_keyboard_slot_controls();
+    test_keyboard_bank_editing();
+    test_keyboard_sequence_wheel();
     /* Native UI capture with ordered white and black keys and a running step. */
     sequence_click(280, 260, KMOD_NONE);
     sequence_select(0); sequence_select(7); sequence_select(3); sequence_select(10);

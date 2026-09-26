@@ -373,6 +373,7 @@ static void test_sister_prepared_power(void)
 #include "test_keyboard_power.inc"
 #include "test_keyboard_sequence_controller.inc"
 #include "test_master_eq_controller.inc"
+#include "test_wheel_controller.inc"
 #include "test_performance_polish.inc"
 #include "test_router_controller.inc"
 #include "test_insert_controller.inc"
@@ -419,6 +420,7 @@ int main(void)
     test_duplex_callback_unity();
     test_insert_devices();
     test_master_eq_controller();
+    test_wheel_pipeline();
     router_performance_screenshots();
     stop_all_force(device, &audio, &ui);
     ts_sample_free(&fm); ts_instrument_free(&instrument);

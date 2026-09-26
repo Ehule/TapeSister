@@ -1,6 +1,9 @@
 /* UI preparation owns allocations; only bounded voices and the clock run in the callback. */
 static void keyboard_sequence_ui(AudioState *audio, TsUiState *ui)
 {
+    if (ui->keyboard_sequence_clear_deadline &&
+        (int32_t)(SDL_GetTicks() - ui->keyboard_sequence_clear_deadline) >= 0)
+        ui->keyboard_sequence_clear_deadline = 0;
     TsKeyboardSequence *s = &audio->keyboard_sequence;
     if (s->settings.seconds == 0) ts_keyboard_sequence_init(s);
     ts_keyboard_sequence_set_slot_policy(s, ui->config.arp_slot_min_full_pattern);
@@ -215,13 +218,15 @@ static int keyboard_sequence_event(const SDL_Event *event, SDL_Window *window,
         ui->keyboard_sequence_drag = 0; return 1;
     }
     if (!ts_ui_keyboard_sequence_visible(ui) || !sister_performance_keys_allowed(ui)) {
+        ui->keyboard_sequence_clear_deadline = 0;
         ui->keyboard_sequence_drag = 0; return 0;
     }
     Uint32 id = event->type == SDL_KEYDOWN ? event->key.windowID :
         event->type == SDL_MOUSEWHEEL ? event->wheel.windowID :
         event->type == SDL_MOUSEMOTION ? event->motion.windowID : event->button.windowID;
     if (id != SDL_GetWindowID(window)) return 0;
-    int x = -1, y = -1, note = -1, slider = 0, wheel = 0;
+    int x = -1, y = -1, note = -1, slider = 0;
+    double wheel = 0;
     SDL_Keymod mod = SDL_GetModState();
     if (event->type == SDL_KEYDOWN) {
         if (!ui->keyboard_sequence_open || !ui->keyboard_sequence_edit ||
@@ -233,6 +238,7 @@ static int keyboard_sequence_event(const SDL_Event *event, SDL_Window *window,
     } else if (event->type == SDL_MOUSEBUTTONDOWN) {
         logical_mouse(window, event->button.x, event->button.y, &x, &y);
         if (x >= 10 && x < 56 && y >= 313 && y < 330) {
+            ui->keyboard_sequence_clear_deadline = 0;
             ui->keyboard_sequence_open = !ui->keyboard_sequence_open;
             if (ui->keyboard_sequence_open) ui->keyboard_sequence_edit = 1;
             return 1;
@@ -244,9 +250,9 @@ static int keyboard_sequence_event(const SDL_Event *event, SDL_Window *window,
             if (audio->capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER) return 0;
         } else note = -1;
     } else if (event->type == SDL_MOUSEWHEEL) {
-        int raw_x, raw_y; SDL_GetMouseState(&raw_x, &raw_y);
+        int raw_x, raw_y; wheel_event_mouse(event, &raw_x, &raw_y);
         logical_mouse(window, raw_x, raw_y, &x, &y);
-        wheel = event->wheel.direction == SDL_MOUSEWHEEL_FLIPPED ? -event->wheel.y : event->wheel.y;
+        wheel = wheel_event_delta(event, 0);
     } else if (event->type == SDL_MOUSEMOTION && ui->keyboard_sequence_drag) {
         if (!(event->motion.state & SDL_BUTTON_LMASK)) { ui->keyboard_sequence_drag = 0; return 0; }
         logical_mouse(window, event->motion.x, event->motion.y, &x, &y);
@@ -257,8 +263,14 @@ static int keyboard_sequence_event(const SDL_Event *event, SDL_Window *window,
     int panel = ui->keyboard_sequence_open && x >= TS_ARP_PANEL_X &&
         x < TS_ARP_PANEL_X + TS_ARP_PANEL_W && y >= panel_y && y < panel_y + panel_h;
     if (note < 0 && !panel && !slider) return 0;
+    /* Horizontal/zero wheel events are not pointer clicks and cannot arm a drag. */
+    if (event->type == SDL_MOUSEWHEEL && wheel == 0) return 1;
     /* Controls share their main-view hit geometry after translating FM's inset. */
     if (ui->fm_open) y -= TS_ARP_PANEL_FM_OFFSET;
+    int clear_click = panel && event->type == SDL_MOUSEBUTTONDOWN &&
+        event->button.button == SDL_BUTTON_LEFT && y >= 134 && y < 157 && x >= 164 && x < 264;
+    if (!clear_click && (event->type == SDL_MOUSEBUTTONDOWN || event->type == SDL_KEYDOWN ||
+                         event->type == SDL_MOUSEWHEEL)) ui->keyboard_sequence_clear_deadline = 0;
     if (device) SDL_LockAudioDevice(device);
     keyboard_sequence_ui(audio, ui);
     TsKeyboardSequence *s = &audio->keyboard_sequence;
@@ -269,6 +281,33 @@ static int keyboard_sequence_event(const SDL_Event *event, SDL_Window *window,
         snprintf(ui->status, sizeof(ui->status), ok ?
             "ARP: %d NOTES / CTRL+CLICK OR EDIT KEYS TO CHANGE ORDER" : "ARP: %d NOTE LIMIT", s->settings.count);
     } else if (panel || slider) {
+        if (!slider && event->type == SDL_MOUSEBUTTONDOWN &&
+            event->button.button == SDL_BUTTON_LEFT && y >= 134 && y < 157) {
+            if (x >= 20 && x < 84) {
+                ui->keyboard_sequence_clipboard = s->settings;
+                ui->keyboard_sequence_clipboard_valid = 1;
+                snprintf(ui->status, sizeof(ui->status), "COPIED ARP %02d NOTES AND SETTINGS", s->active_slot + 1);
+            } else if (x >= 90 && x < 154) {
+                if (ui->keyboard_sequence_clipboard_valid) {
+                    ts_keyboard_sequence_paste(s, &ui->keyboard_sequence_clipboard);
+                    ui->keyboard_sequence_edit = 1;
+                    snprintf(ui->status, sizeof(ui->status), "PASTED INTO ARP %02d / EDIT ON", s->active_slot + 1);
+                } else snprintf(ui->status, sizeof(ui->status), "ARP CLIPBOARD EMPTY - COPY A SLOT FIRST");
+            } else if (clear_click) {
+                if (ui->keyboard_sequence_clear_deadline) {
+                    ts_keyboard_sequence_clear_all(s);
+                    ui->keyboard_sequence_clear_deadline = 0;
+                    ui->keyboard_sequence_edit = 1;
+                    snprintf(ui->status, sizeof(ui->status), "ALL 16 ARP SLOTS CLEARED / ARP STOPPED / CLIPBOARD KEPT");
+                } else {
+                    ui->keyboard_sequence_clear_deadline = SDL_GetTicks() + 3000;
+                    snprintf(ui->status, sizeof(ui->status), "CLICK CONFIRM WITHIN 3 SECONDS TO CLEAR ALL 16 ARP SLOTS");
+                }
+            }
+            keyboard_sequence_ui(audio, ui);
+            if (device) SDL_UnlockAudioDevice(device);
+            return 1;
+        }
         if (event->type == SDL_MOUSEBUTTONDOWN && event->button.button == SDL_BUTTON_LEFT &&
             y >= 198 && y < 215 && x >= 20 && x < 612) {
             int slot = (x - 20) / 37;
@@ -288,9 +327,10 @@ static int keyboard_sequence_event(const SDL_Event *event, SDL_Window *window,
             TsKeyboardSlotSequence q = s->bank.sequence;
             double maximum = fmax(q.seconds, fmax(1, ui->config.arp_slot_max_seconds));
             if (slider == 6 || (x >= 226 && x < 426)) {
-                if (wheel) q.seconds *= pow((mod & KMOD_SHIFT) ? 1.01 : 1.1, -wheel);
+                if (event->type == SDL_MOUSEWHEEL) q.seconds *= pow((mod & KMOD_SHIFT) ? 1.01 : 1.1, -wheel);
                 else if (event->type == SDL_MOUSEBUTTONDOWN && event->button.button == SDL_BUTTON_RIGHT) q.seconds = 10;
-                else {
+                else if (event->type == SDL_MOUSEMOTION ||
+                         (event->type == SDL_MOUSEBUTTONDOWN && event->button.button == SDL_BUTTON_LEFT)) {
                     double amount = fmax(0, fmin(1, (x - 226) / 200.0));
                     q.seconds = TS_KEYBOARD_SLOT_MIN_SECONDS * pow(maximum / TS_KEYBOARD_SLOT_MIN_SECONDS, amount);
                     ui->keyboard_sequence_drag = 6;
@@ -311,7 +351,7 @@ static int keyboard_sequence_event(const SDL_Event *event, SDL_Window *window,
         if (!slider && y >= 220 && y < 246) slider = x >= 20 && x < 208 ? 3 :
             x >= 296 && x < 460 ? 4 : x >= 476 && x < 620 ? 5 : 0;
         if (slider) {
-            if (wheel) {
+            if (event->type == SDL_MOUSEWHEEL) {
                 if (slider == 1) next.seconds *= pow((mod & KMOD_SHIFT) ? 1.01 : 1.1, -wheel);
                 else if (slider == 2) next.gate += wheel * ((mod & KMOD_SHIFT) ? .01 : .05);
                 else if (slider == 3) next.volume += wheel * ((mod & KMOD_SHIFT) ? .01 : .05);
@@ -323,7 +363,8 @@ static int keyboard_sequence_event(const SDL_Event *event, SDL_Window *window,
                 else if (slider == 3) next.volume = 1;
                 else if (slider == 4) next.lfo_seconds = 4;
                 else next.lfo_depth = .5;
-            } else {
+            } else if (event->type == SDL_MOUSEMOTION ||
+                       (event->type == SDL_MOUSEBUTTONDOWN && event->button.button == SDL_BUTTON_LEFT)) {
                 keyboard_sequence_slider(&next, slider, x);
                 ui->keyboard_sequence_drag = slider;
             }

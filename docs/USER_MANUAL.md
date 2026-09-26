@@ -14,6 +14,23 @@ in [TapeSister and TapeHead exchange](#tapesister-and-tapehead-exchange).
 For a compact list of keys, gestures, ranges, and file types, see the
 [Quick Reference](QUICK_REFERENCE.md).
 
+## Mouse wheel behavior
+
+Wheel input supports fractional/high-resolution scrolling. Discrete controls
+(such as keyboard range, lists and mode choices) use the whole increments
+already accumulated by SDL. TapeSister preserves those increments while batching
+input, including during slow scrolling or small pointer movements. Canvas zoom (current, parent and import-preview waveforms), ARP, EQ and
+Mosaic continuous controls use the fractional amount directly. Canvas zoom
+responds to each movement packet while keeping the pointer position anchored.
+
+**Shift+wheel over the QWERTY keyboard** moves its range in semitones in both the
+main and FM views while preserving held chords. Existing modifier meanings for
+other controls remain unchanged. Compatible queued wheel packets are combined
+without crossing pointer, key or button events. On current SDL builds, controls
+use the pointer position recorded with the wheel event. Moving to another
+parameter has a brief 120 ms handoff protection, without requiring an indefinite
+pause; leaving a window retains the existing quiet-period protection.
+
 ## Contents
 
 - [The instrument at a glance](#the-instrument-at-a-glance)
@@ -989,6 +1006,16 @@ These controls affect ARP before it joins the other sources and shared effects.
 Use drag/wheel, Shift-wheel for fine control, or right-click for defaults.
 
 With **EDIT OFF**, play manual HOLD chords and MIDI alongside the sequence.
+### ARP bank editing
+
+The ARP panel’s **COPY / PASTE** buttons transfer a highlighted slot’s notes and
+all pattern settings. PASTE replaces the destination and enables EDIT; live
+playback restarts that pattern and its outer hold, while stopped playback stays
+stopped. **CLEAR ALL** requires a second click within three seconds, resets all
+16 slots and stops ARP. Held notes and Sister memory remain intact. The clipboard
+survives clearing; outer mode, time and Loop remain configured. The lower CLEAR
+button still clears only one slot. See [ARP controls](KEYBOARD_SEQUENCE.md).
+
 **Shift+Space** starts/stops ARP even with its controls hidden, including from
 the tile bank, FM, Mosaic, EQ, and Sister Machine. **ARP STOP**, **Shift+Space**,
 **CLEAR**, and ONCE completion release only sequencer voices;

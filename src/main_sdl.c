@@ -52,6 +52,8 @@
 #include <unistd.h>
 #endif
 
+#include "main_sdl_wheel.inc"
+
 enum { TS_SPLASH_MILLISECONDS = 5000 };
 
 static uint64_t fm_session_seed_root(void)
@@ -7624,6 +7626,41 @@ static int refresh_import_waveform_view(TsUiState *ui,
     return ui->import_preview_waveform_ready;
 }
 
+/* View navigation is continuous; note/selection edits retain discrete detents. */
+static int canvas_zoom_wheel(const SDL_Event *event, TsUiState *ui,
+                              TsInstrument *instrument,
+                              const ImportController *import, int x)
+{
+    if (event->type != SDL_MOUSEWHEEL) return 0;
+    SDL_Keymod modifiers = SDL_GetModState();
+    if ((modifiers & (KMOD_SHIFT | KMOD_ALT)) ||
+        (!import && (modifiers & KMOD_CTRL)) || event->wheel.x != 0) return 0;
+    double amount = wheel_event_delta(event, 0);
+    if (amount == 0) return 0;
+    float scale = (float)pow(0.75, amount);
+    int changed;
+    if (import) {
+        size_t frames = import->decoded.sample.frames;
+        size_t anchor = ts_ui_import_frame_from_view_x(ui, frames, x);
+        float ratio = (float)(x - 36) / TS_IMPORT_PREVIEW_COLUMNS;
+        changed = ts_ui_zoom_import_view(ui, frames, anchor, ratio, scale);
+        if (changed) (void)refresh_import_waveform_view(ui, import);
+        snprintf(ui->import_preview_message, sizeof(ui->import_preview_message),
+                 changed ? "MOUSE ZOOM - POINTER ANCHORED" : "ZOOM LIMIT");
+    } else {
+        size_t anchor = ui->audition_source == TS_AUDITION_PARENT ?
+            ts_ui_parent_frame_from_x(ui, instrument->parent.frames, x - TS_WAVE_X, TS_WAVE_W) :
+            ts_instrument_frame_from_view_x(instrument, x - TS_WAVE_X, TS_WAVE_W);
+        float ratio = (float)(x - TS_WAVE_X) / TS_WAVE_W;
+        changed = ui->audition_source == TS_AUDITION_PARENT ?
+            ts_ui_zoom_parent_view(ui, instrument->parent.frames, anchor, ratio, scale) :
+            ts_instrument_zoom_view(instrument, anchor, ratio, scale);
+        snprintf(ui->status, sizeof(ui->status),
+                 changed ? "MOUSE ZOOM - POINTER ANCHORED" : "ZOOM LIMIT");
+    }
+    return 1;
+}
+
 static int pan_import_preview(TsUiState *ui,
                               const ImportController *controller,
                               ptrdiff_t amount)
@@ -12590,6 +12627,21 @@ static int keyboard_pointer_event(const SDL_Event *event, SDL_Window *window,
         release_note(device,audio,ui,ui->mouse_note);ui->mouse_note=-1;
         return 1;
     }
+    if (event->type == SDL_MOUSEWHEEL && event->wheel.windowID == SDL_GetWindowID(window) &&
+        ui->show_keyboard && sister_performance_keys_allowed(ui) && (SDL_GetModState() & KMOD_SHIFT)) {
+        int rx, ry, x, y; wheel_event_mouse(event, &rx, &ry);
+        logical_mouse(window, rx, ry, &x, &y);
+        if (x >= 10 && x < 622 && y >= 318 && y < 379) {
+            int amount = event->wheel.direction == SDL_MOUSEWHEEL_FLIPPED ? -event->wheel.y : event->wheel.y;
+            if (amount) {
+                char note_name[8];
+                int base_note = shift_keyboard_range(device, audio, ui, amount);
+                snprintf(ui->status, sizeof(ui->status), "KEYBOARD START %s - HELD CHORD PRESERVED",
+                         ts_midi_note_name(base_note, note_name, sizeof(note_name)));
+            }
+            return 1;
+        }
+    }
     if (event->type != SDL_MOUSEBUTTONDOWN || event->button.button != SDL_BUTTON_LEFT ||
         event->button.windowID != SDL_GetWindowID(window) || !ui->show_keyboard ||
         !sister_performance_keys_allowed(ui)) return 0;
@@ -13156,6 +13208,8 @@ int main(int argc, char **argv)
         ts_asio_poll();
 #endif
         while (SDL_PollEvent(&event)) {
+            wheel_event_coalesce(&event);
+            if (!wheel_event_prepare(&event)) continue;
             uint32_t event_id = event_window_id(&event);
             if (event.type == SDL_WINDOWEVENT &&
                 event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) {
@@ -13564,7 +13618,7 @@ int main(int argc, char **argv)
                     int wheel = event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED ?
                                 -event.wheel.y : event.wheel.y;
                     TsSisterUiHit hit;
-                    SDL_GetMouseState(&raw_x, &raw_y);
+                    wheel_event_mouse(&event, &raw_x, &raw_y);
                     if (!sister_window_mouse(sister_window.window,
                                              sister_window.renderer,
                                              raw_x, raw_y, &x, &y))
@@ -14593,7 +14647,7 @@ int main(int argc, char **argv)
                 int wheel_y = event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED ?
                               -event.wheel.y : event.wheel.y;
                 int channel;
-                SDL_GetMouseState(&raw_x, &raw_y);
+                wheel_event_mouse(&event, &raw_x, &raw_y);
                 logical_mouse(window, raw_x, raw_y, &x, &y);
                 channel = ts_ui_palette_channel_from_point(x, y, &ignored);
                 if (channel >= 0 && wheel_y != 0) {
@@ -14611,7 +14665,7 @@ int main(int argc, char **argv)
                 int wheel_y = event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED ?
                               -event.wheel.y : event.wheel.y;
                 int control;
-                SDL_GetMouseState(&raw_x, &raw_y);
+                wheel_event_mouse(&event, &raw_x, &raw_y);
                 logical_mouse(window, raw_x, raw_y, &x, &y);
                 if (ui.fm_bank_choice_open) {
                     snprintf(ui.fm_message, sizeof(ui.fm_message),
@@ -14676,7 +14730,7 @@ int main(int argc, char **argv)
                         request_fm_preview(&ui,&instrument);
                 } else if (wheel_y != 0 && ts_ui_fm_range_contains(x, y)) {
                     float step = (SDL_GetModState() & KMOD_SHIFT) ? 0.01f : 0.05f;
-                    instrument.family_mutation += wheel_y > 0 ? step : -step;
+                    instrument.family_mutation += wheel_y * step;
                     if (instrument.family_mutation < 0.0f)
                         instrument.family_mutation = 0.0f;
                     if (instrument.family_mutation > 1.0f)
@@ -14690,7 +14744,7 @@ int main(int argc, char **argv)
                     set_fm_output_trim(
                         device, &audio, &ui,
                         (float)ui.config.fm_output_percent / 100.0f +
-                            (wheel_y > 0 ? step : -step),
+                            (wheel_y * step),
                         1);
                 } else snprintf(ui.fm_message, sizeof(ui.fm_message),
                                 "HOVER AN FM CONTROL OR RANGE TO USE THE WHEEL");
@@ -14699,7 +14753,7 @@ int main(int argc, char **argv)
                 int wheel_y = event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED ?
                               -event.wheel.y : event.wheel.y;
                 int control;
-                SDL_GetMouseState(&raw_x, &raw_y);
+                wheel_event_mouse(&event, &raw_x, &raw_y);
                 logical_mouse(window, raw_x, raw_y, &x, &y);
                 control = ts_ui_transform_control_from_point(x, y);
                 if (wheel_y != 0 &&
@@ -14732,7 +14786,7 @@ int main(int argc, char **argv)
                                  recipe->display_name);
                     } else {
                         float step = (SDL_GetModState() & KMOD_SHIFT) ? 0.01f : 0.05f;
-                        ui.transform_values.mix += wheel_y > 0 ? step : -step;
+                        ui.transform_values.mix += wheel_y * step;
                         if (ui.transform_values.mix < 0.0f) ui.transform_values.mix = 0.0f;
                         if (ui.transform_values.mix > 1.0f) ui.transform_values.mix = 1.0f;
                         mark_transform_stale(device, &audio, &ui, &transform,
@@ -14747,7 +14801,7 @@ int main(int argc, char **argv)
                 int raw_x, raw_y, x, y;
                 int wheel_y = event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED ?
                               -event.wheel.y : event.wheel.y;
-                SDL_GetMouseState(&raw_x, &raw_y);
+                wheel_event_mouse(&event, &raw_x, &raw_y);
                 logical_mouse(window, raw_x, raw_y, &x, &y);
                 if (wheel_y != 0 && ts_ui_drone_waveform_contains(x, y)) {
                     int handle = ts_ui_drone_crossfade_handle_from_point(&ui, x, y);
@@ -14786,7 +14840,7 @@ int main(int argc, char **argv)
                 int wheel_x = event.wheel.x;
                 SDL_Keymod mod = SDL_GetModState();
                 const TsSample *sample = &import_controller.decoded.sample;
-                SDL_GetMouseState(&raw_x, &raw_y);
+                wheel_event_mouse(&event, &raw_x, &raw_y);
                 logical_mouse(window, raw_x, raw_y, &x, &y);
                 if (event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED) {
                     wheel_y = -wheel_y;
@@ -14813,20 +14867,8 @@ int main(int argc, char **argv)
                              sizeof(ui.import_preview_message),
                              pan_import_preview(&ui, &import_controller, amount) ?
                              "MOUSE PANNED WAVEFORM VIEW" : "PAN LIMIT");
-                } else if (wheel_y != 0) {
-                    size_t anchor = ts_ui_import_frame_from_view_x(
-                        &ui, sample->frames, x);
-                    float ratio = (float)(x - 36) /
-                                  (float)TS_IMPORT_PREVIEW_COLUMNS;
-                    float scale = powf(0.75f, (float)wheel_y);
-                    int changed = ts_ui_zoom_import_view(
-                        &ui, sample->frames, anchor, ratio, scale);
-                    if (changed) (void)refresh_import_waveform_view(
-                        &ui, &import_controller);
-                    snprintf(ui.import_preview_message,
-                             sizeof(ui.import_preview_message),
-                             changed ? "MOUSE ZOOM - POINTER ANCHORED" :
-                                       "ZOOM LIMIT");
+                } else {
+                    (void)canvas_zoom_wheel(&event, &ui, &instrument, &import_controller, x);
                 }
             } else if (event.type == SDL_MOUSEWHEEL &&
                        (ui.renaming_bank_slot >= 0 || ui.renaming_recipe_slot >= 0 ||
@@ -14850,7 +14892,7 @@ int main(int argc, char **argv)
                 int wheel_x = event.wheel.x;
                 SDL_Keymod mod = SDL_GetModState();
                 TsUiSlider hovered_slider;
-                SDL_GetMouseState(&raw_x, &raw_y);
+                wheel_event_mouse(&event, &raw_x, &raw_y);
                 logical_mouse(window, raw_x, raw_y, &x, &y);
                 hovered_slider = ts_ui_slider_from_point(&ui, x, y);
                 if (event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED) {
@@ -14862,15 +14904,7 @@ int main(int argc, char **argv)
                     end_stretch_gesture(device, &audio, &ui, &instrument, 0);
                     continue;
                 }
-                if (ui.show_keyboard && (mod & KMOD_SHIFT) && wheel_y != 0 &&
-                    x >= 10 && x < 622 && y >= 318 && y < 379) {
-                    char note_name[8];
-                    int base_note = shift_keyboard_range(
-                        device, &audio, &ui, wheel_y);
-                    snprintf(ui.status, sizeof(ui.status),
-                             "KEYBOARD START %s - HELD CHORD PRESERVED",
-                             ts_midi_note_name(base_note, note_name, sizeof(note_name)));
-                } else if ((mod & KMOD_CTRL) && wheel_y != 0 &&
+                if ((mod & KMOD_CTRL) && wheel_y != 0 &&
                     x >= 407 && x < 500 && y >= 205 && y < 229) {
                     if (!ts_ui_wheel_guard_accept(
                             &ui.wheel_guard, WHEEL_TARGET_MAIN + 0x100,
@@ -15010,22 +15044,8 @@ int main(int argc, char **argv)
                                   ts_ui_pan_parent_view(&ui, instrument.parent.frames, amount) :
                                   ts_instrument_pan_view(&instrument, amount)) ?
                                  "MOUSE PANNED WAVEFORM VIEW" : "PAN LIMIT");
-                    } else if (wheel_y != 0) {
-                        size_t anchor = ui.audition_source == TS_AUDITION_PARENT ?
-                                        ts_ui_parent_frame_from_x(
-                                            &ui, instrument.parent.frames,
-                                            x - TS_WAVE_X, TS_WAVE_W) :
-                                        ts_instrument_frame_from_view_x(
-                                            &instrument, x - TS_WAVE_X, TS_WAVE_W);
-                        float ratio = (float)(x - TS_WAVE_X) / (float)TS_WAVE_W;
-                        float scale = powf(0.75f, (float)wheel_y);
-                        snprintf(ui.status, sizeof(ui.status),
-                                 (ui.audition_source == TS_AUDITION_PARENT ?
-                                  ts_ui_zoom_parent_view(&ui, instrument.parent.frames,
-                                                         anchor, ratio, scale) :
-                                  ts_instrument_zoom_view(
-                                      &instrument, anchor, ratio, scale)) ?
-                                 "MOUSE ZOOM - POINTER ANCHORED" : "ZOOM LIMIT");
+                    } else {
+                        (void)canvas_zoom_wheel(&event, &ui, &instrument, NULL, x);
                     }
                 }
             } else if (event.type == SDL_MOUSEMOTION &&

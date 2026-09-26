@@ -1255,9 +1255,12 @@ void ts_portal_wave_zoom(TsPortalWave *w,const TsSample *s,int x,int direction)
 void ts_portal_wave_pan(TsPortalWave *w,const TsSample *s,int direction)
 {
     if(!s || !s->frames)return;
+    if (!direction) return;
     size_t span=w->last-w->first,step=span/8+1;
+    uint64_t turns=direction<0?-(int64_t)direction:direction;
+    step=turns>SIZE_MAX/step?SIZE_MAX:step*(size_t)turns;
     if(direction<0)w->first=w->first>step?w->first-step:0;
-    else w->first+=step;
+    else w->first=step>s->frames-span-w->first?s->frames-span:w->first+step;
     if(w->first>s->frames-span)w->first=s->frames-span;
     w->last=w->first+span;ts_portal_wave_refresh(w,s);
 }

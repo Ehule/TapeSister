@@ -10,6 +10,16 @@ on:
       - "cmake/**"
       - "scripts/**"
       - "src/tapesister.rc.in"
+      - "src/*keyboard_sequence*"
+      - "src/main_sdl.c"
+      - "src/main_sdl_wheel.inc"
+      - "src/ts_ui.c"
+      - "tests/test_wheel_controller.inc"
+      - "tests/test_core.c"
+      - "src/ts_performance_help.inc"
+      - "include/tapesister/keyboard_sequence.h"
+      - "include/tapesister/ui.h"
+      - "tests/*keyboard*"
       - "assets/**"
       - "release/**"
       - "third_party/**"
@@ -29,7 +39,7 @@ jobs:
       - name: Build TapeSister, tests, and CDP8
         run: cmake --build build
       - name: Run audio backend, Insert and Router performance regression tests
-        run: ctest --test-dir build --output-on-failure -R 'asio|audio_lifecycle|audio_config|insert_tests|router|keyboard_hold|keyboard_sequence|sample_pages|sister_project_state'
+        run: ctest --test-dir build --output-on-failure -R 'asio|audio_lifecycle|audio_config|insert_tests|router|keyboard_hold|keyboard_sequence|sample_pages|sister_project_state|core_tests'
       - name: Run package regression guard
         if: github.event_name == 'pull_request'
         run: ctest --test-dir build --output-on-failure -R test_identity_packaging
@@ -66,7 +76,7 @@ jobs:
         run: cmake --build build
       - name: Run audio backend, Insert and Router performance regression tests
         shell: msys2 {0}
-        run: ctest --test-dir build --output-on-failure -R 'asio|audio_lifecycle|audio_config|insert_tests|router|keyboard_hold|keyboard_sequence|sample_pages|sister_project_state'
+        run: ctest --test-dir build --output-on-failure -R 'asio|audio_lifecycle|audio_config|insert_tests|router|keyboard_hold|keyboard_sequence|sample_pages|sister_project_state|core_tests'
       - name: Run package regression guard
         if: github.event_name == 'pull_request'
         shell: msys2 {0}
