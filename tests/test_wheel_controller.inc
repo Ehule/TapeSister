@@ -61,6 +61,59 @@ static void test_wheel_pipeline(void)
         assert(SDL_PeepEvents(&next,1,SDL_GETEVENT,SDL_FIRSTEVENT,SDL_LASTEVENT) == 1);
     }
 #endif
+    /* Each fifth-detent packet must move the canvas immediately, including
+       the first four packets for which SDL's integer count is still zero. */
+#if SDL_VERSION_ATLEAST(2, 0, 18)
+    SDL_SetModState(KMOD_NONE);
+    ImportController canvas_import = {0};
+    canvas_import.decoded.sample = instrument.current; /* Read-only borrowed sample. */
+    for (int source = 0; source < 3; ++source)
+    for (int direction = -1; direction <= 1; direction += 2) {
+        ui.audition_source = source == 1 ? TS_AUDITION_PARENT : TS_AUDITION_CURRENT;
+        const ImportController *import = source == 2 ? &canvas_import : NULL;
+        size_t frames = source == 1 ? instrument.parent.frames : instrument.current.frames;
+        assert(frames > 1000);
+        size_t *first = source == 1 ? &ui.parent_view_first : source == 2 ?
+            &ui.import_preview_view_first : &instrument.view_first;
+        size_t *last = source == 1 ? &ui.parent_view_last : source == 2 ?
+            &ui.import_preview_view_last : &instrument.view_last;
+        *first = frames / 4; *last = frames * 3 / 4;
+        size_t initial = *last - *first;
+        for (int i = 0; i < 5; ++i) {
+            size_t before = *last - *first;
+            e = wheel_fixture(.2, 320, 120); e.wheel.y = i == 4;
+            if (direction < 0) e.wheel.direction = SDL_MOUSEWHEEL_FLIPPED;
+            wheel_event_coalesce(&e); wheel_event_prepare(&e);
+            assert(canvas_zoom_wheel(&e, &ui, &instrument, import, 320));
+            assert(direction > 0 ? *last - *first < before : *last - *first > before);
+            /* Cursor anchor stays fixed within frame rounding. */
+            double ratio = source == 2 ? (320.0 - 36) / TS_IMPORT_PREVIEW_COLUMNS : .5;
+            double anchor = frames / 4 + initial * ratio;
+            assert(fabs((*first + (*last - *first) * ratio) - anchor) < 5);
+        }
+        size_t fractional_span = *last - *first;
+        *first = frames / 4; *last = frames * 3 / 4;
+        e = wheel_fixture(direction, 320, 120);
+        wheel_event_prepare(&e);
+        assert(canvas_zoom_wheel(&e, &ui, &instrument, import, 320));
+        assert(fabs((double)(*last - *first) - fractional_span) < 5);
+        /* Fine packets must not turn pan/selection gestures into zoom. */
+        for (int modifier = 0; modifier < 3; ++modifier) {
+            SDL_SetModState(modifier == 0 ? KMOD_SHIFT : modifier == 1 ? KMOD_ALT : KMOD_CTRL);
+            e = wheel_fixture(.2, 320, 120);
+            if (modifier == 2 && import) continue; /* Import retains Ctrl+zoom. */
+            size_t before = *last - *first;
+            assert(!canvas_zoom_wheel(&e, &ui, &instrument, import, 320));
+            assert(*last - *first == before);
+        }
+        SDL_SetModState(KMOD_NONE);
+        e = wheel_fixture(0, 320, 120);
+        assert(!canvas_zoom_wheel(&e, &ui, &instrument, import, 320));
+        e.wheel.x = 1; e.wheel.preciseX = 1;
+        assert(!canvas_zoom_wheel(&e, &ui, &instrument, import, 320));
+    }
+    ui.audition_source = TS_AUDITION_CURRENT;
+#endif
     reset_route(0); ui.keyboard_sequence_open = 0;
     toggle_fm_hold(device, &audio, &ui, &instrument); click_note(0, 0); assert(voices() == 1);
     for (int view = 0; view < 2; ++view) {

@@ -7626,6 +7626,41 @@ static int refresh_import_waveform_view(TsUiState *ui,
     return ui->import_preview_waveform_ready;
 }
 
+/* View navigation is continuous; note/selection edits retain discrete detents. */
+static int canvas_zoom_wheel(const SDL_Event *event, TsUiState *ui,
+                              TsInstrument *instrument,
+                              const ImportController *import, int x)
+{
+    if (event->type != SDL_MOUSEWHEEL) return 0;
+    SDL_Keymod modifiers = SDL_GetModState();
+    if ((modifiers & (KMOD_SHIFT | KMOD_ALT)) ||
+        (!import && (modifiers & KMOD_CTRL)) || event->wheel.x != 0) return 0;
+    double amount = wheel_event_delta(event, 0);
+    if (amount == 0) return 0;
+    float scale = (float)pow(0.75, amount);
+    int changed;
+    if (import) {
+        size_t frames = import->decoded.sample.frames;
+        size_t anchor = ts_ui_import_frame_from_view_x(ui, frames, x);
+        float ratio = (float)(x - 36) / TS_IMPORT_PREVIEW_COLUMNS;
+        changed = ts_ui_zoom_import_view(ui, frames, anchor, ratio, scale);
+        if (changed) (void)refresh_import_waveform_view(ui, import);
+        snprintf(ui->import_preview_message, sizeof(ui->import_preview_message),
+                 changed ? "MOUSE ZOOM - POINTER ANCHORED" : "ZOOM LIMIT");
+    } else {
+        size_t anchor = ui->audition_source == TS_AUDITION_PARENT ?
+            ts_ui_parent_frame_from_x(ui, instrument->parent.frames, x - TS_WAVE_X, TS_WAVE_W) :
+            ts_instrument_frame_from_view_x(instrument, x - TS_WAVE_X, TS_WAVE_W);
+        float ratio = (float)(x - TS_WAVE_X) / TS_WAVE_W;
+        changed = ui->audition_source == TS_AUDITION_PARENT ?
+            ts_ui_zoom_parent_view(ui, instrument->parent.frames, anchor, ratio, scale) :
+            ts_instrument_zoom_view(instrument, anchor, ratio, scale);
+        snprintf(ui->status, sizeof(ui->status),
+                 changed ? "MOUSE ZOOM - POINTER ANCHORED" : "ZOOM LIMIT");
+    }
+    return 1;
+}
+
 static int pan_import_preview(TsUiState *ui,
                               const ImportController *controller,
                               ptrdiff_t amount)
@@ -14832,20 +14867,8 @@ int main(int argc, char **argv)
                              sizeof(ui.import_preview_message),
                              pan_import_preview(&ui, &import_controller, amount) ?
                              "MOUSE PANNED WAVEFORM VIEW" : "PAN LIMIT");
-                } else if (wheel_y != 0) {
-                    size_t anchor = ts_ui_import_frame_from_view_x(
-                        &ui, sample->frames, x);
-                    float ratio = (float)(x - 36) /
-                                  (float)TS_IMPORT_PREVIEW_COLUMNS;
-                    float scale = powf(0.75f, (float)wheel_y);
-                    int changed = ts_ui_zoom_import_view(
-                        &ui, sample->frames, anchor, ratio, scale);
-                    if (changed) (void)refresh_import_waveform_view(
-                        &ui, &import_controller);
-                    snprintf(ui.import_preview_message,
-                             sizeof(ui.import_preview_message),
-                             changed ? "MOUSE ZOOM - POINTER ANCHORED" :
-                                       "ZOOM LIMIT");
+                } else {
+                    (void)canvas_zoom_wheel(&event, &ui, &instrument, &import_controller, x);
                 }
             } else if (event.type == SDL_MOUSEWHEEL &&
                        (ui.renaming_bank_slot >= 0 || ui.renaming_recipe_slot >= 0 ||
@@ -15021,22 +15044,8 @@ int main(int argc, char **argv)
                                   ts_ui_pan_parent_view(&ui, instrument.parent.frames, amount) :
                                   ts_instrument_pan_view(&instrument, amount)) ?
                                  "MOUSE PANNED WAVEFORM VIEW" : "PAN LIMIT");
-                    } else if (wheel_y != 0) {
-                        size_t anchor = ui.audition_source == TS_AUDITION_PARENT ?
-                                        ts_ui_parent_frame_from_x(
-                                            &ui, instrument.parent.frames,
-                                            x - TS_WAVE_X, TS_WAVE_W) :
-                                        ts_instrument_frame_from_view_x(
-                                            &instrument, x - TS_WAVE_X, TS_WAVE_W);
-                        float ratio = (float)(x - TS_WAVE_X) / (float)TS_WAVE_W;
-                        float scale = powf(0.75f, (float)wheel_y);
-                        snprintf(ui.status, sizeof(ui.status),
-                                 (ui.audition_source == TS_AUDITION_PARENT ?
-                                  ts_ui_zoom_parent_view(&ui, instrument.parent.frames,
-                                                         anchor, ratio, scale) :
-                                  ts_instrument_zoom_view(
-                                      &instrument, anchor, ratio, scale)) ?
-                                 "MOUSE ZOOM - POINTER ANCHORED" : "ZOOM LIMIT");
+                    } else {
+                        (void)canvas_zoom_wheel(&event, &ui, &instrument, NULL, x);
                     }
                 }
             } else if (event.type == SDL_MOUSEMOTION &&

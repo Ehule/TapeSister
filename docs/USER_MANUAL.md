@@ -19,8 +19,9 @@ For a compact list of keys, gestures, ranges, and file types, see the
 Wheel input supports fractional/high-resolution scrolling. Discrete controls
 (such as keyboard range, lists and mode choices) use the whole increments
 already accumulated by SDL. TapeSister preserves those increments while batching
-input, including during slow scrolling or small pointer movements. ARP, EQ and
-Mosaic continuous controls use the fractional amount directly.
+input, including during slow scrolling or small pointer movements. Canvas zoom (current, parent and import-preview waveforms), ARP, EQ and
+Mosaic continuous controls use the fractional amount directly. Canvas zoom
+responds to each movement packet while keeping the pointer position anchored.
 
 **Shift+wheel over the QWERTY keyboard** moves its range in semitones in both the
 main and FM views while preserving held chords. Existing modifier meanings for
