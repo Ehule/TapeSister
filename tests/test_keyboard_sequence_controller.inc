@@ -219,6 +219,65 @@ static void test_keyboard_sequence_projects(void)
     ts_sample_pages_free(&pages); ts_instrument_free(&record);
 }
 
+static void test_keyboard_sequence_wheel(void)
+{
+    reset_route(0); ui.keyboard_sequence_open = 1;
+    TsKeyboardSequence *s = &audio.keyboard_sequence;
+    TsKeyboardSequenceBank original = ts_keyboard_sequence_export(s);
+    const int xs[] = {40, 300, 40, 320, 500, 250};
+    const int ys[] = {290, 290, 230, 230, 230, 174};
+    for (int view = 0; view < 2; ++view) for (int slider = 0; slider < 6; ++slider) {
+        ui.fm_open = view;
+        TsKeyboardSequenceSettings settings; ts_keyboard_sequence_settings_default(&settings);
+        ts_keyboard_sequence_set(s, &settings);
+        TsKeyboardSlotSequence outer = {0, 0, 1, 10};
+        ts_keyboard_sequence_set_slot_sequence(s, &outer);
+        double *value = slider == 0 ? &s->settings.seconds : slider == 1 ? &s->settings.gate :
+            slider == 2 ? &s->settings.volume : slider == 3 ? &s->settings.lfo_seconds :
+            slider == 4 ? &s->settings.lfo_depth : &s->bank.sequence.seconds;
+        double initial = *value;
+        SDL_Event e; SDL_zero(e); e.type = SDL_MOUSEWHEEL;
+        e.wheel.windowID = SDL_GetWindowID(window);
+        int x = xs[slider], y = ys[slider] + (view ? TS_ARP_PANEL_FM_OFFSET : 0);
+        SDL_WarpMouseInWindow(window, x, y);
+#if SDL_VERSION_ATLEAST(2, 26, 0)
+        e.wheel.mouseX = x; e.wheel.mouseY = y;
+#endif
+        /* Zero vertical and horizontal-only events must never act as clicks. */
+        assert(keyboard_sequence_event(&e, window, device, &audio, &ui, &instrument, &fm, 44100));
+        assert(*value == initial && !ui.keyboard_sequence_drag);
+        e.wheel.x = 1;
+        assert(keyboard_sequence_event(&e, window, device, &audio, &ui, &instrument, &fm, 44100));
+        assert(*value == initial && !ui.keyboard_sequence_drag);
+        e.wheel.x = 0; e.wheel.y = 1;
+        assert(keyboard_sequence_event(&e, window, device, &audio, &ui, &instrument, &fm, 44100));
+        int timing = slider == 0 || slider == 3 || slider == 5;
+        double expected = timing ? initial / 1.1 : initial + .05;
+        assert(fabs(*value - expected) < 1e-10 && !ui.keyboard_sequence_drag);
+        e.wheel.direction = SDL_MOUSEWHEEL_FLIPPED;
+        assert(keyboard_sequence_event(&e, window, device, &audio, &ui, &instrument, &fm, 44100));
+        assert(fabs(*value - initial) < 1e-10);
+#if SDL_VERSION_ATLEAST(2, 0, 18)
+        e.wheel.direction = SDL_MOUSEWHEEL_NORMAL; e.wheel.y = 0; e.wheel.preciseY = .25f;
+        SDL_SetModState(KMOD_SHIFT);
+        assert(keyboard_sequence_event(&e, window, device, &audio, &ui, &instrument, &fm, 44100));
+        expected = timing ? initial * pow(1.01, -.25) : initial + .0025;
+        assert(fabs(*value - expected) < 1e-10 && !ui.keyboard_sequence_drag);
+        e.wheel.preciseY = -.25f;
+        assert(keyboard_sequence_event(&e, window, device, &audio, &ui, &instrument, &fm, 44100));
+        assert(fabs(*value - initial) < 1e-10);
+        SDL_SetModState(KMOD_NONE);
+#endif
+        /* A wheel event must not leave a drag for subsequent pointer motion. */
+        SDL_zero(e); e.type = SDL_MOUSEMOTION; e.motion.windowID = SDL_GetWindowID(window);
+        e.motion.x = x + 10; e.motion.y = y;
+        assert(!keyboard_sequence_event(&e, window, device, &audio, &ui, &instrument, &fm, 44100));
+        assert(fabs(*value - initial) < 1e-10 && !ui.keyboard_sequence_drag);
+    }
+    ui.fm_open = 0;
+    ts_keyboard_sequence_set_bank(s, &original); keyboard_sequence_ui(&audio, &ui);
+}
+
 static void test_keyboard_bank_editing(void)
 {
     reset_route(0); ui.keyboard_sequence_open = 1;
@@ -477,6 +536,7 @@ static void test_keyboard_sequence_controller(void)
     test_keyboard_sequence_projects();
     test_keyboard_slot_controls();
     test_keyboard_bank_editing();
+    test_keyboard_sequence_wheel();
     /* Native UI capture with ordered white and black keys and a running step. */
     sequence_click(280, 260, KMOD_NONE);
     sequence_select(0); sequence_select(7); sequence_select(3); sequence_select(10);

@@ -225,7 +225,8 @@ static int keyboard_sequence_event(const SDL_Event *event, SDL_Window *window,
         event->type == SDL_MOUSEWHEEL ? event->wheel.windowID :
         event->type == SDL_MOUSEMOTION ? event->motion.windowID : event->button.windowID;
     if (id != SDL_GetWindowID(window)) return 0;
-    int x = -1, y = -1, note = -1, slider = 0, wheel = 0;
+    int x = -1, y = -1, note = -1, slider = 0;
+    double wheel = 0;
     SDL_Keymod mod = SDL_GetModState();
     if (event->type == SDL_KEYDOWN) {
         if (!ui->keyboard_sequence_open || !ui->keyboard_sequence_edit ||
@@ -249,9 +250,19 @@ static int keyboard_sequence_event(const SDL_Event *event, SDL_Window *window,
             if (audio->capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER) return 0;
         } else note = -1;
     } else if (event->type == SDL_MOUSEWHEEL) {
-        int raw_x, raw_y; SDL_GetMouseState(&raw_x, &raw_y);
+        int raw_x, raw_y;
+#if SDL_VERSION_ATLEAST(2, 26, 0)
+        raw_x = event->wheel.mouseX; raw_y = event->wheel.mouseY;
+#else
+        SDL_GetMouseState(&raw_x, &raw_y);
+#endif
         logical_mouse(window, raw_x, raw_y, &x, &y);
-        wheel = event->wheel.direction == SDL_MOUSEWHEEL_FLIPPED ? -event->wheel.y : event->wheel.y;
+        wheel = event->wheel.y;
+#if SDL_VERSION_ATLEAST(2, 0, 18)
+        if (isfinite(event->wheel.preciseY) && event->wheel.preciseY != 0)
+            wheel = event->wheel.preciseY;
+#endif
+        if (event->wheel.direction == SDL_MOUSEWHEEL_FLIPPED) wheel = -wheel;
     } else if (event->type == SDL_MOUSEMOTION && ui->keyboard_sequence_drag) {
         if (!(event->motion.state & SDL_BUTTON_LMASK)) { ui->keyboard_sequence_drag = 0; return 0; }
         logical_mouse(window, event->motion.x, event->motion.y, &x, &y);
@@ -262,6 +273,8 @@ static int keyboard_sequence_event(const SDL_Event *event, SDL_Window *window,
     int panel = ui->keyboard_sequence_open && x >= TS_ARP_PANEL_X &&
         x < TS_ARP_PANEL_X + TS_ARP_PANEL_W && y >= panel_y && y < panel_y + panel_h;
     if (note < 0 && !panel && !slider) return 0;
+    /* Horizontal/zero wheel events are not pointer clicks and cannot arm a drag. */
+    if (event->type == SDL_MOUSEWHEEL && wheel == 0) return 1;
     /* Controls share their main-view hit geometry after translating FM's inset. */
     if (ui->fm_open) y -= TS_ARP_PANEL_FM_OFFSET;
     int clear_click = panel && event->type == SDL_MOUSEBUTTONDOWN &&
@@ -324,9 +337,10 @@ static int keyboard_sequence_event(const SDL_Event *event, SDL_Window *window,
             TsKeyboardSlotSequence q = s->bank.sequence;
             double maximum = fmax(q.seconds, fmax(1, ui->config.arp_slot_max_seconds));
             if (slider == 6 || (x >= 226 && x < 426)) {
-                if (wheel) q.seconds *= pow((mod & KMOD_SHIFT) ? 1.01 : 1.1, -wheel);
+                if (event->type == SDL_MOUSEWHEEL) q.seconds *= pow((mod & KMOD_SHIFT) ? 1.01 : 1.1, -wheel);
                 else if (event->type == SDL_MOUSEBUTTONDOWN && event->button.button == SDL_BUTTON_RIGHT) q.seconds = 10;
-                else {
+                else if (event->type == SDL_MOUSEMOTION ||
+                         (event->type == SDL_MOUSEBUTTONDOWN && event->button.button == SDL_BUTTON_LEFT)) {
                     double amount = fmax(0, fmin(1, (x - 226) / 200.0));
                     q.seconds = TS_KEYBOARD_SLOT_MIN_SECONDS * pow(maximum / TS_KEYBOARD_SLOT_MIN_SECONDS, amount);
                     ui->keyboard_sequence_drag = 6;
@@ -347,7 +361,7 @@ static int keyboard_sequence_event(const SDL_Event *event, SDL_Window *window,
         if (!slider && y >= 220 && y < 246) slider = x >= 20 && x < 208 ? 3 :
             x >= 296 && x < 460 ? 4 : x >= 476 && x < 620 ? 5 : 0;
         if (slider) {
-            if (wheel) {
+            if (event->type == SDL_MOUSEWHEEL) {
                 if (slider == 1) next.seconds *= pow((mod & KMOD_SHIFT) ? 1.01 : 1.1, -wheel);
                 else if (slider == 2) next.gate += wheel * ((mod & KMOD_SHIFT) ? .01 : .05);
                 else if (slider == 3) next.volume += wheel * ((mod & KMOD_SHIFT) ? .01 : .05);
@@ -359,7 +373,8 @@ static int keyboard_sequence_event(const SDL_Event *event, SDL_Window *window,
                 else if (slider == 3) next.volume = 1;
                 else if (slider == 4) next.lfo_seconds = 4;
                 else next.lfo_depth = .5;
-            } else {
+            } else if (event->type == SDL_MOUSEMOTION ||
+                       (event->type == SDL_MOUSEBUTTONDOWN && event->button.button == SDL_BUTTON_LEFT)) {
                 keyboard_sequence_slider(&next, slider, x);
                 ui->keyboard_sequence_drag = slider;
             }

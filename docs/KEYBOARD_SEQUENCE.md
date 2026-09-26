@@ -60,6 +60,9 @@ outer hold/pass from that slot; an empty live copy still preserves inner phase.
 
 **SLOT TIME** is initially 10 seconds, with a default range of **50 ms–4 minutes**.
 Drag/wheel to adjust, Shift-wheel for fine changes, right-click for 10 seconds.
+All ARP faders accept fractional wheel movement (including high-resolution
+Windows scrolling). Wheel adjustments are relative to the current value; they
+never jump to the pointer or begin a drag. Horizontal-only scrolling is ignored.
 Timing edits apply at the next slot; mode changes start a new pass from the
 current slot. New/deleted slots enter the next pass; deleted references in the
 current pass are skipped. The highlighted slot and live **LEFT** countdown follow
