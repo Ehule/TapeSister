@@ -16,50 +16,40 @@ static SDL_Event wheel_fixture(double amount, int x, int y)
 
 static void test_wheel_pipeline(void)
 {
-    WheelAccumulator state = {0}; SDL_Event e;
+    SDL_Event e;
 #if SDL_VERSION_ATLEAST(2, 0, 18)
     for (int i = 0; i < 4; ++i) {
         e = wheel_fixture(.25, 40, 340);
-        assert(wheel_event_prepare(&state, &e, KMOD_SHIFT));
+        e.wheel.y = i == 3; /* Integer delta supplied by SDL's accumulator. */
+        assert(wheel_event_prepare(&e));
         assert(e.wheel.y == (i == 3));
         assert(wheel_event_delta(&e, 0) == .25);
     }
-    /* A partial turn cannot leak to a different pointer/window/modifier. */
-    e = wheel_fixture(.75, 40, 340); wheel_event_prepare(&state, &e, KMOD_SHIFT);
-    e = wheel_fixture(.25, 40, 340); ++e.wheel.windowID;
-    wheel_event_prepare(&state, &e, KMOD_SHIFT); assert(!e.wheel.y);
-    e = wheel_fixture(.75, 40, 340); wheel_event_prepare(&state, &e, KMOD_NONE); assert(!e.wheel.y);
-    e = wheel_fixture(-.25, 40, 340); wheel_event_prepare(&state, &e, KMOD_NONE); assert(!e.wheel.y);
-    assert(state.y == -.25); /* Reversal discards old-direction remainder. */
-    e = wheel_fixture(.75, 40, 340); e.wheel.timestamp = 1000;
-    wheel_event_prepare(&state, &e, KMOD_NONE); assert(!e.wheel.y);
-    e = wheel_fixture(.25, 40, 340); e.wheel.timestamp = 2000;
-    wheel_event_prepare(&state, &e, KMOD_NONE); assert(!e.wheel.y);
 #endif
     e = wheel_fixture(3, 40, 340); e.wheel.direction = SDL_MOUSEWHEEL_FLIPPED;
-    memset(&state, 0, sizeof(state)); assert(wheel_event_prepare(&state, &e, 0));
+    assert(wheel_event_prepare(&e));
     assert(e.wheel.y == -3 && e.wheel.direction == SDL_MOUSEWHEEL_NORMAL);
-    e = wheel_fixture(0, 40, 340); assert(!wheel_event_prepare(&state, &e, 0));
+    e = wheel_fixture(0, 40, 340); assert(!wheel_event_prepare(&e));
 #if SDL_VERSION_ATLEAST(2, 26, 0)
     SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
     e = wheel_fixture(.25, 40, 340);
-    for (int i = 0; i < 7; ++i) { SDL_Event next = e; assert(SDL_PushEvent(&next) == 1); }
+    for (int i = 0; i < 7; ++i) { SDL_Event next = e; next.wheel.y = (i + 2) % 4 == 0; assert(SDL_PushEvent(&next) == 1); }
     SDL_Event key = {0}; key.type = SDL_KEYUP; key.key.windowID = SDL_GetWindowID(window);
     assert(SDL_PushEvent(&key) == 1);
     SDL_Event next = e; assert(SDL_PushEvent(&next) == 1);
     wheel_event_coalesce(&e);
-    assert(wheel_event_delta(&e, 0) == 2);
+    assert(wheel_event_delta(&e, 0) == 2 && e.wheel.y == 2);
     assert(SDL_PeepEvents(&next,1,SDL_GETEVENT,SDL_FIRSTEVENT,SDL_LASTEVENT) == 1 && next.type == SDL_KEYUP);
     assert(SDL_PeepEvents(&next,1,SDL_GETEVENT,SDL_FIRSTEVENT,SDL_LASTEVENT) == 1 && next.type == SDL_MOUSEWHEEL);
     /* A burst preserves all movement with bounded work per dispatch. */
     for (int i = 0; i < 1000; ++i) {
-        next = wheel_fixture(.25, 40, 340); assert(SDL_PushEvent(&next) == 1);
+        next = wheel_fixture(.25, 40, 340); next.wheel.y = (i + 1) % 4 == 0; assert(SDL_PushEvent(&next) == 1);
     }
-    int batches = 0; double movement = 0;
+    int batches = 0, detents = 0; double movement = 0;
     while (SDL_PeepEvents(&e,1,SDL_GETEVENT,SDL_FIRSTEVENT,SDL_LASTEVENT) == 1) {
-        wheel_event_coalesce(&e); movement += wheel_event_delta(&e,0); ++batches;
+        wheel_event_coalesce(&e); movement += wheel_event_delta(&e,0); detents += e.wheel.y; ++batches;
     }
-    assert(batches == 32 && movement == 250);
+    assert(batches == 32 && movement == 250 && detents == 250);
     /* Never merge opposite directions, different positions, or different windows. */
     for (int variation = 0; variation < 3; ++variation) {
         e = wheel_fixture(1, 40, 340); next = e;
@@ -74,7 +64,7 @@ static void test_wheel_pipeline(void)
     reset_route(0); ui.keyboard_sequence_open = 0;
     toggle_fm_hold(device, &audio, &ui, &instrument); click_note(0, 0); assert(voices() == 1);
     for (int view = 0; view < 2; ++view) {
-        ui.fm_open = view; memset(&state, 0, sizeof(state));
+        ui.fm_open = view;
         int base = ts_ui_keyboard_base_note(&ui);
         SDL_SetModState(KMOD_SHIFT);
         for (int i = 0; i < 4; ++i) {
@@ -83,15 +73,41 @@ static void test_wheel_pipeline(void)
 #else
             e = wheel_fixture(i == 3, 40, 340);
 #endif
-            wheel_event_prepare(&state, &e, KMOD_SHIFT);
+            e.wheel.y = i == 3;
+            wheel_event_prepare(&e);
             assert(keyboard_pointer_event(&e,window,device,&audio,&ui,&instrument,&fm,44100));
             assert(ts_ui_keyboard_base_note(&ui) == base + (i == 3));
             assert(voices() == 1);
         }
-        e = wheel_fixture(-1, 40, 340); wheel_event_prepare(&state, &e, KMOD_SHIFT);
+        e = wheel_fixture(-1, 40, 340); wheel_event_prepare(&e);
         assert(keyboard_pointer_event(&e,window,device,&audio,&ui,&instrument,&fm,44100));
         assert(ts_ui_keyboard_base_note(&ui) == base && voices() == 1);
     }
+    /* SDL already accumulates high-resolution packets into integer detents.
+       Keep scrolling after the first note, even while the pointer trembles
+       within the keyboard or individual packets arrive slowly. */
+    for (int view = 0; view < 2; ++view) for (int arp = 0; arp < 2; ++arp)
+    for (int direction = -1; direction <= 1; direction += 2)
+    for (int scale = 1; scale <= 2; ++scale) {
+        ui.fm_open = view; ui.keyboard_sequence_open = arp;
+        SDL_SetModState(KMOD_SHIFT);
+        SDL_SetWindowSize(window, 640 * scale, 400 * scale);
+        set_keyboard_octave(device, &audio, &ui, 4);
+        int base = ts_ui_keyboard_base_note(&ui);
+        for (int i = 0; i <= 24; ++i) {
+            e = wheel_fixture(direction * (i ? .25 : 1), (40 + i % 2) * scale, 340 * scale);
+            e.wheel.y = direction * (!i || i % 4 == 0);
+            e.wheel.timestamp = 100 + i * 600;
+            wheel_event_coalesce(&e);
+            wheel_event_prepare(&e);
+            assert(!keyboard_sequence_event(&e,window,device,&audio,&ui,&instrument,&fm,44100));
+            assert(keyboard_pointer_event(&e,window,device,&audio,&ui,&instrument,&fm,44100));
+            assert(ts_ui_keyboard_base_note(&ui) == base + direction * (1 + i / 4));
+            assert(voices() == 1);
+        }
+    }
+    SDL_SetWindowSize(window, 640, 400);
+    ui.keyboard_sequence_open = 0;
     SDL_SetModState(KMOD_NONE); stop_all_force(device, &audio, &ui); ui.fm_open = 0;
     /* EQ also uses fractional delta and the queued position, not live cursor. */
     master_eq_open(device, &audio, &ui);
@@ -100,7 +116,7 @@ static void test_wheel_pipeline(void)
 #if SDL_VERSION_ATLEAST(2, 26, 0)
     SDL_WarpMouseInWindow(window, 610, 390);
 #endif
-    memset(&state, 0, sizeof(state)); wheel_event_prepare(&state, &e, 0);
+    wheel_event_prepare(&e);
     assert(master_eq_event(&e,window,device,&audio,&ui,&eq_panel));
 #if SDL_VERSION_ATLEAST(2, 0, 18)
     assert(fabs(ui.config.master_eq.band[ui.master_eq_band].frequency - before * pow(2,.25*.05)) < .001);

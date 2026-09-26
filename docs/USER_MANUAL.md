@@ -17,10 +17,10 @@ For a compact list of keys, gestures, ranges, and file types, see the
 ## Mouse wheel behavior
 
 Wheel input supports fractional/high-resolution scrolling. Discrete controls
-(such as keyboard range, lists and mode choices) accumulate partial turns until
-one full increment is reached. ARP, EQ and Mosaic continuous controls use the
-fractional amount directly. Direction reversal, pointer/owner changes and a
-pause clear pending fractions so they do not leak into another control.
+(such as keyboard range, lists and mode choices) use the whole increments
+already accumulated by SDL. TapeSister preserves those increments while batching
+input, including during slow scrolling or small pointer movements. ARP, EQ and
+Mosaic continuous controls use the fractional amount directly.
 
 **Shift+wheel over the QWERTY keyboard** moves its range in semitones in both the
 main and FM views while preserving held chords. Existing modifier meanings for

@@ -12678,7 +12678,6 @@ int main(int argc, char **argv)
     int window_minimized = 0;
     int renderer_vsync = 0;
     int running = 1;
-    WheelAccumulator wheel_accumulator = {0};
     uint32_t last_audio_diagnostic_log = 0u;
 
     initialize_runtime_paths(argc > 0 ? argv[0] : NULL);
@@ -13175,7 +13174,7 @@ int main(int argc, char **argv)
 #endif
         while (SDL_PollEvent(&event)) {
             wheel_event_coalesce(&event);
-            if (!wheel_event_prepare(&wheel_accumulator, &event, SDL_GetModState())) continue;
+            if (!wheel_event_prepare(&event)) continue;
             uint32_t event_id = event_window_id(&event);
             if (event.type == SDL_WINDOWEVENT &&
                 event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) {

@@ -1,11 +1,5 @@
-/* UI-thread wheel decoding. Continuous controls use precise deltas; legacy
-   discrete controls receive accumulated detents without losing partial turns. */
-typedef struct {
-    double x, y;
-    Uint32 window, device, timestamp;
-    int mouse_x, mouse_y, modifiers, valid;
-} WheelAccumulator;
-
+/* UI-thread wheel decoding. SDL owns fractional-to-integer accumulation.
+   Keep its detents independent of precise deltas used by continuous controls. */
 static void wheel_event_mouse(const SDL_Event *e, int *x, int *y)
 {
 #if SDL_VERSION_ATLEAST(2, 26, 0)
@@ -26,35 +20,20 @@ static double wheel_event_delta(const SDL_Event *e, int horizontal)
     return e->wheel.direction == SDL_MOUSEWHEEL_FLIPPED ? -value : value;
 }
 
-static int wheel_detents(double *remainder, double delta)
+static int wheel_event_detents(const SDL_Event *e, int horizontal)
 {
-    if ((*remainder < 0 && delta > 0) || (*remainder > 0 && delta < 0)) *remainder = 0;
-    *remainder += delta;
-    int whole = (int)trunc(*remainder);
-    *remainder -= whole;
-    return whole;
+    int value = horizontal ? e->wheel.x : e->wheel.y;
+    value = SDL_clamp(value, -128, 128);
+    return e->wheel.direction == SDL_MOUSEWHEEL_FLIPPED ? -value : value;
 }
 
-static int wheel_event_prepare(WheelAccumulator *state, SDL_Event *e, int modifiers)
+static int wheel_event_prepare(SDL_Event *e)
 {
-    if (e->type != SDL_MOUSEWHEEL) {
-        /* Do not transfer a partial turn across clicks, keys, focus changes. */
-        if (e->type == SDL_MOUSEBUTTONDOWN || e->type == SDL_KEYDOWN ||
-            e->type == SDL_KEYUP || e->type == SDL_WINDOWEVENT)
-            state->valid = 0;
-        return 1;
-    }
+    if (e->type != SDL_MOUSEWHEEL) return 1;
     double dx = wheel_event_delta(e, 1), dy = wheel_event_delta(e, 0);
-    if (dx == 0 && dy == 0) return 0;
-    int x, y; wheel_event_mouse(e, &x, &y);
-    if (!state->valid || state->window != e->wheel.windowID || state->device != e->wheel.which ||
-        state->mouse_x != x || state->mouse_y != y || state->modifiers != modifiers ||
-        e->wheel.timestamp - state->timestamp > 500) state->x = state->y = 0;
-    state->valid = 1; state->window = e->wheel.windowID; state->device = e->wheel.which;
-    state->mouse_x = x; state->mouse_y = y; state->modifiers = modifiers;
-    state->timestamp = e->wheel.timestamp;
-    e->wheel.x = wheel_detents(&state->x, dx);
-    e->wheel.y = wheel_detents(&state->y, dy);
+    int ix = wheel_event_detents(e, 1), iy = wheel_event_detents(e, 0);
+    if (dx == 0 && dy == 0 && ix == 0 && iy == 0) return 0;
+    e->wheel.x = ix; e->wheel.y = iy;
     e->wheel.direction = SDL_MOUSEWHEEL_NORMAL;
 #if SDL_VERSION_ATLEAST(2, 0, 18)
     e->wheel.preciseX = (float)dx; e->wheel.preciseY = (float)dy;
@@ -70,6 +49,7 @@ static void wheel_event_coalesce(SDL_Event *e)
 #if SDL_VERSION_ATLEAST(2, 26, 0)
     if (e->type != SDL_MOUSEWHEEL) return;
     double dx = wheel_event_delta(e, 1), dy = wheel_event_delta(e, 0);
+    int ix = wheel_event_detents(e, 1), iy = wheel_event_detents(e, 0);
     for (int i = 1; i < 32; ++i) {
         SDL_Event next;
         if (SDL_PeepEvents(&next, 1, SDL_PEEKEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT) != 1 ||
@@ -78,12 +58,15 @@ static void wheel_event_coalesce(SDL_Event *e)
             next.wheel.mouseY != e->wheel.mouseY || next.wheel.direction != e->wheel.direction)
             break;
         double nx = wheel_event_delta(&next, 1), ny = wheel_event_delta(&next, 0);
+        int nix = wheel_event_detents(&next, 1), niy = wheel_event_detents(&next, 0);
+        if (abs(ix + nix) > 128 || abs(iy + niy) > 128) break;
         if (dx * nx < 0 || dy * ny < 0 || fabs(dx + nx) > 128 || fabs(dy + ny) > 128) break;
         if (SDL_PeepEvents(&next, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT) != 1) break;
+        ix += nix; iy += niy;
         dx += nx; dy += ny; e->wheel.timestamp = next.wheel.timestamp;
     }
     e->wheel.direction = SDL_MOUSEWHEEL_NORMAL;
-    e->wheel.x = (int)dx; e->wheel.y = (int)dy;
+    e->wheel.x = ix; e->wheel.y = iy;
     e->wheel.preciseX = (float)dx; e->wheel.preciseY = (float)dy;
 #else
     (void)e;
