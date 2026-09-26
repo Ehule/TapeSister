@@ -14,6 +14,22 @@ in [TapeSister and TapeHead exchange](#tapesister-and-tapehead-exchange).
 For a compact list of keys, gestures, ranges, and file types, see the
 [Quick Reference](QUICK_REFERENCE.md).
 
+## Mouse wheel behavior
+
+Wheel input supports fractional/high-resolution scrolling. Discrete controls
+(such as keyboard range, lists and mode choices) accumulate partial turns until
+one full increment is reached. ARP, EQ and Mosaic continuous controls use the
+fractional amount directly. Direction reversal, pointer/owner changes and a
+pause clear pending fractions so they do not leak into another control.
+
+**Shift+wheel over the QWERTY keyboard** moves its range in semitones in both the
+main and FM views while preserving held chords. Existing modifier meanings for
+other controls remain unchanged. Compatible queued wheel packets are combined
+without crossing pointer, key or button events. On current SDL builds, controls
+use the pointer position recorded with the wheel event. Moving to another
+parameter has a brief 120 ms handoff protection, without requiring an indefinite
+pause; leaving a window retains the existing quiet-period protection.
+
 ## Contents
 
 - [The instrument at a glance](#the-instrument-at-a-glance)

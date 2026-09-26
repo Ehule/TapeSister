@@ -219,8 +219,8 @@ int ts_ui_wheel_guard_accept(TsUiWheelGuard *guard, int target,
         guard->suppress_until_quiet = 0;
     }
     if (target != guard->target && elapsed < TS_UI_WHEEL_HANDOFF_QUIET_MS) {
-        /* Ongoing inertial events keep extending the required quiet period. */
-        guard->last_event_ms = now_ms;
+        /* Briefly protect the previous control, but do not let rejected
+           events prolong the handoff forever while the performer scrolls. */
         return 0;
     }
     guard->target = target;

@@ -1,0 +1,110 @@
+static SDL_Event wheel_fixture(double amount, int x, int y)
+{
+    SDL_Event e; SDL_zero(e); e.type = SDL_MOUSEWHEEL;
+    e.wheel.windowID = SDL_GetWindowID(window); e.wheel.y = (int)amount;
+    e.wheel.timestamp = 100;
+#if SDL_VERSION_ATLEAST(2, 0, 18)
+    e.wheel.preciseY = (float)amount;
+#endif
+#if SDL_VERSION_ATLEAST(2, 26, 0)
+    e.wheel.mouseX = x; e.wheel.mouseY = y;
+#else
+    SDL_WarpMouseInWindow(window, x, y);
+#endif
+    return e;
+}
+
+static void test_wheel_pipeline(void)
+{
+    WheelAccumulator state = {0}; SDL_Event e;
+#if SDL_VERSION_ATLEAST(2, 0, 18)
+    for (int i = 0; i < 4; ++i) {
+        e = wheel_fixture(.25, 40, 340);
+        assert(wheel_event_prepare(&state, &e, KMOD_SHIFT));
+        assert(e.wheel.y == (i == 3));
+        assert(wheel_event_delta(&e, 0) == .25);
+    }
+    /* A partial turn cannot leak to a different pointer/window/modifier. */
+    e = wheel_fixture(.75, 40, 340); wheel_event_prepare(&state, &e, KMOD_SHIFT);
+    e = wheel_fixture(.25, 40, 340); ++e.wheel.windowID;
+    wheel_event_prepare(&state, &e, KMOD_SHIFT); assert(!e.wheel.y);
+    e = wheel_fixture(.75, 40, 340); wheel_event_prepare(&state, &e, KMOD_NONE); assert(!e.wheel.y);
+    e = wheel_fixture(-.25, 40, 340); wheel_event_prepare(&state, &e, KMOD_NONE); assert(!e.wheel.y);
+    assert(state.y == -.25); /* Reversal discards old-direction remainder. */
+    e = wheel_fixture(.75, 40, 340); e.wheel.timestamp = 1000;
+    wheel_event_prepare(&state, &e, KMOD_NONE); assert(!e.wheel.y);
+    e = wheel_fixture(.25, 40, 340); e.wheel.timestamp = 2000;
+    wheel_event_prepare(&state, &e, KMOD_NONE); assert(!e.wheel.y);
+#endif
+    e = wheel_fixture(3, 40, 340); e.wheel.direction = SDL_MOUSEWHEEL_FLIPPED;
+    memset(&state, 0, sizeof(state)); assert(wheel_event_prepare(&state, &e, 0));
+    assert(e.wheel.y == -3 && e.wheel.direction == SDL_MOUSEWHEEL_NORMAL);
+    e = wheel_fixture(0, 40, 340); assert(!wheel_event_prepare(&state, &e, 0));
+#if SDL_VERSION_ATLEAST(2, 26, 0)
+    SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
+    e = wheel_fixture(.25, 40, 340);
+    for (int i = 0; i < 7; ++i) { SDL_Event next = e; assert(SDL_PushEvent(&next) == 1); }
+    SDL_Event key = {0}; key.type = SDL_KEYUP; key.key.windowID = SDL_GetWindowID(window);
+    assert(SDL_PushEvent(&key) == 1);
+    SDL_Event next = e; assert(SDL_PushEvent(&next) == 1);
+    wheel_event_coalesce(&e);
+    assert(wheel_event_delta(&e, 0) == 2);
+    assert(SDL_PeepEvents(&next,1,SDL_GETEVENT,SDL_FIRSTEVENT,SDL_LASTEVENT) == 1 && next.type == SDL_KEYUP);
+    assert(SDL_PeepEvents(&next,1,SDL_GETEVENT,SDL_FIRSTEVENT,SDL_LASTEVENT) == 1 && next.type == SDL_MOUSEWHEEL);
+    /* A burst preserves all movement with bounded work per dispatch. */
+    for (int i = 0; i < 1000; ++i) {
+        next = wheel_fixture(.25, 40, 340); assert(SDL_PushEvent(&next) == 1);
+    }
+    int batches = 0; double movement = 0;
+    while (SDL_PeepEvents(&e,1,SDL_GETEVENT,SDL_FIRSTEVENT,SDL_LASTEVENT) == 1) {
+        wheel_event_coalesce(&e); movement += wheel_event_delta(&e,0); ++batches;
+    }
+    assert(batches == 32 && movement == 250);
+    /* Never merge opposite directions, different positions, or different windows. */
+    for (int variation = 0; variation < 3; ++variation) {
+        e = wheel_fixture(1, 40, 340); next = e;
+        if (!variation) { next.wheel.y = -1; next.wheel.preciseY = -1; }
+        else if (variation == 1) ++next.wheel.mouseX;
+        else ++next.wheel.windowID;
+        assert(SDL_PushEvent(&next) == 1); wheel_event_coalesce(&e);
+        assert(wheel_event_delta(&e, 0) == 1);
+        assert(SDL_PeepEvents(&next,1,SDL_GETEVENT,SDL_FIRSTEVENT,SDL_LASTEVENT) == 1);
+    }
+#endif
+    reset_route(0); ui.keyboard_sequence_open = 0;
+    toggle_fm_hold(device, &audio, &ui, &instrument); click_note(0, 0); assert(voices() == 1);
+    for (int view = 0; view < 2; ++view) {
+        ui.fm_open = view; memset(&state, 0, sizeof(state));
+        int base = ts_ui_keyboard_base_note(&ui);
+        SDL_SetModState(KMOD_SHIFT);
+        for (int i = 0; i < 4; ++i) {
+#if SDL_VERSION_ATLEAST(2, 0, 18)
+            e = wheel_fixture(.25, 40, 340);
+#else
+            e = wheel_fixture(i == 3, 40, 340);
+#endif
+            wheel_event_prepare(&state, &e, KMOD_SHIFT);
+            assert(keyboard_pointer_event(&e,window,device,&audio,&ui,&instrument,&fm,44100));
+            assert(ts_ui_keyboard_base_note(&ui) == base + (i == 3));
+            assert(voices() == 1);
+        }
+        e = wheel_fixture(-1, 40, 340); wheel_event_prepare(&state, &e, KMOD_SHIFT);
+        assert(keyboard_pointer_event(&e,window,device,&audio,&ui,&instrument,&fm,44100));
+        assert(ts_ui_keyboard_base_note(&ui) == base && voices() == 1);
+    }
+    SDL_SetModState(KMOD_NONE); stop_all_force(device, &audio, &ui); ui.fm_open = 0;
+    /* EQ also uses fractional delta and the queued position, not live cursor. */
+    master_eq_open(device, &audio, &ui);
+    float before = ui.config.master_eq.band[ui.master_eq_band].frequency;
+    e = wheel_fixture(.25, 40, 310);
+#if SDL_VERSION_ATLEAST(2, 26, 0)
+    SDL_WarpMouseInWindow(window, 610, 390);
+#endif
+    memset(&state, 0, sizeof(state)); wheel_event_prepare(&state, &e, 0);
+    assert(master_eq_event(&e,window,device,&audio,&ui,&eq_panel));
+#if SDL_VERSION_ATLEAST(2, 0, 18)
+    assert(fabs(ui.config.master_eq.band[ui.master_eq_band].frequency - before * pow(2,.25*.05)) < .001);
+#endif
+    assert(!ui.master_eq_drag); ui.master_eq_open = 0;
+    SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
+}

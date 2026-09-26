@@ -250,19 +250,9 @@ static int keyboard_sequence_event(const SDL_Event *event, SDL_Window *window,
             if (audio->capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER) return 0;
         } else note = -1;
     } else if (event->type == SDL_MOUSEWHEEL) {
-        int raw_x, raw_y;
-#if SDL_VERSION_ATLEAST(2, 26, 0)
-        raw_x = event->wheel.mouseX; raw_y = event->wheel.mouseY;
-#else
-        SDL_GetMouseState(&raw_x, &raw_y);
-#endif
+        int raw_x, raw_y; wheel_event_mouse(event, &raw_x, &raw_y);
         logical_mouse(window, raw_x, raw_y, &x, &y);
-        wheel = event->wheel.y;
-#if SDL_VERSION_ATLEAST(2, 0, 18)
-        if (isfinite(event->wheel.preciseY) && event->wheel.preciseY != 0)
-            wheel = event->wheel.preciseY;
-#endif
-        if (event->wheel.direction == SDL_MOUSEWHEEL_FLIPPED) wheel = -wheel;
+        wheel = wheel_event_delta(event, 0);
     } else if (event->type == SDL_MOUSEMOTION && ui->keyboard_sequence_drag) {
         if (!(event->motion.state & SDL_BUTTON_LMASK)) { ui->keyboard_sequence_drag = 0; return 0; }
         logical_mouse(window, event->motion.x, event->motion.y, &x, &y);

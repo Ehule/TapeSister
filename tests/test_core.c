@@ -255,6 +255,14 @@ int main(void)
         &ui.wheel_guard, 11, 1100u + TS_UI_WHEEL_HANDOFF_QUIET_MS));
     CHECK(ts_ui_wheel_guard_accept(&ui.wheel_guard, 11, 1101u +
                                     TS_UI_WHEEL_HANDOFF_QUIET_MS));
+    {
+        TsUiWheelGuard continuous = {0};
+        CHECK(ts_ui_wheel_guard_accept(&continuous, 1, 100u));
+        for (uint32_t t = 110; t < 220; t += 10)
+            CHECK(!ts_ui_wheel_guard_accept(&continuous, 2, t));
+        CHECK(ts_ui_wheel_guard_accept(&continuous, 2, 220u));
+        CHECK(ts_ui_wheel_guard_accept(&continuous, 2, 221u));
+    }
     ts_ui_wheel_guard_interrupt(&ui.wheel_guard, 1300u);
     CHECK(!ts_ui_wheel_guard_accept(&ui.wheel_guard, 11, 1310u));
     CHECK(!ts_ui_wheel_guard_accept(&ui.wheel_guard, 12, 1400u));

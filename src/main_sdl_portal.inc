@@ -919,7 +919,7 @@ static int portal_manage_event(SDL_Event *e,SDL_Window *window,TsPortalUi *p,Por
             p->manage_name_focus=0;p->manage_action=TS_PORTAL_RENAME;
         }
     } else if(e->type==SDL_MOUSEWHEEL && !p->manage_action) {
-        int rx,ry;SDL_GetMouseState(&rx,&ry);logical_mouse(window,rx,ry,&x,&y);
+        int rx,ry;wheel_event_mouse(e,&rx,&ry);logical_mouse(window,rx,ry,&x,&y);
         if(x>=94 && x<295 && y>=107 && y<260) {
             int d=e->wheel.direction==SDL_MOUSEWHEEL_FLIPPED?-e->wheel.y:e->wheel.y;
             p->manage_scroll-=d;if(p->manage_scroll<0)p->manage_scroll=0;
@@ -1321,7 +1321,7 @@ static int portal_event(SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID de
         p->dragging_parameter=-1;p->dragging_wave=-1;ui->master_output_dragging=0;return 0;
     }
     if(event->type==SDL_MOUSEWHEEL) {
-        int rx,ry;SDL_GetMouseState(&rx,&ry);logical_mouse(window,rx,ry,&x,&y);
+        int rx,ry;wheel_event_mouse(event,&rx,&ry);logical_mouse(window,rx,ry,&x,&y);
         int d=event->wheel.direction==SDL_MOUSEWHEEL_FLIPPED?-event->wheel.y:event->wheel.y;
         if(!d)return 1;
         if(x<144) {
@@ -1333,7 +1333,7 @@ static int portal_event(SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID de
         else if(x>=154 && x<464 && ((y>=60 && y<122) || (y>=152 && y<214))) {
             int which=y>=152;const TsSample *s=which?p->result:p->source;
             if(SDL_GetModState()&KMOD_ALT) {portal_resize_selection(device,audio,ui,which,x,d);if(!which)portal_selection_changed(p,c);}
-            else if(SDL_GetModState()&KMOD_SHIFT)ts_portal_wave_pan(&p->waves[which],s,d>0?-1:1);
+            else if(SDL_GetModState()&KMOD_SHIFT)ts_portal_wave_pan(&p->waves[which],s,-d);
             else ts_portal_wave_zoom(&p->waves[which],s,x-154,d);
         } else if(x>=148 && x<466 && y>=245 && y<327) {
             int i=(y>=265 && y<322 && x>=253)?portal_parameter_at(p,(y-265)/19):-1;
