@@ -10,7 +10,9 @@ static void test_browser_audition(SDL_Window *window,SDL_AudioDeviceID device,
     snprintf(ui->browser.directory,sizeof(ui->browser.directory),".");
     snprintf(ui->browser.entries[0].name,sizeof(ui->browser.entries[0].name),"%s",name);
     ui->browser.entry_count=1;ui->browser.selected=0;ui->browser.filename_focus=0;
-    SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.windowID=SDL_GetWindowID(window);e.key.keysym.sym=SDLK_SPACE;
+    /* SDL_Event is a union: clear all bytes, including the keyboard fields
+       outside its first member, on every platform/optimization level. */
+    SDL_Event e;SDL_zero(e);e.type=SDL_KEYDOWN;e.key.windowID=SDL_GetWindowID(window);e.key.keysym.sym=SDLK_SPACE;
 #define BROWSER_KEY() browser_audition_event(&e,window,device,audio,ui,&c,44100)
     int handled=BROWSER_KEY();
     if(!handled || !ui->browser.preview_loading || ui->file_busy) {
@@ -19,6 +21,10 @@ static void test_browser_audition(SDL_Window *window,SDL_AudioDeviceID device,
         fprintf(stderr,"Browser preview start: handled=%d loading=%d busy=%d path=%s kind=%d message=%s SDL=%s\n",
             handled,ui->browser.preview_loading,ui->file_busy,selected,
             (int)ts_audio_import_detect_kind(selected),ui->browser.message,SDL_GetError());
+        fprintf(stderr,"Browser gate: type=%u window=%u/%u key=%d mod=%u repeat=%u mode=%d text=%d mkdir=%d exit=%d overwrite=%d\n",
+            e.type,e.key.windowID,SDL_GetWindowID(window),e.key.keysym.sym,
+            e.key.keysym.mod,e.key.repeat,ui->browser.mode,ui->browser.filename_focus,
+            ui->browser.creating_directory,ui->exit_confirm_open,ui->project_overwrite_confirm_open);
     }
     assert(handled && ui->browser.preview_loading && !ui->file_busy);
     e.key.repeat=1;assert(BROWSER_KEY() && c.loader.worker);e.key.repeat=0;
