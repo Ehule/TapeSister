@@ -12,7 +12,15 @@ static void test_browser_audition(SDL_Window *window,SDL_AudioDeviceID device,
     ui->browser.entry_count=1;ui->browser.selected=0;ui->browser.filename_focus=0;
     SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.windowID=SDL_GetWindowID(window);e.key.keysym.sym=SDLK_SPACE;
 #define BROWSER_KEY() browser_audition_event(&e,window,device,audio,ui,&c,44100)
-    assert(BROWSER_KEY() && ui->browser.preview_loading && !ui->file_busy);
+    int handled=BROWSER_KEY();
+    if(!handled || !ui->browser.preview_loading || ui->file_busy) {
+        char selected[TS_BROWSER_PATH_MAX]={0};
+        ts_browser_selected_path(&ui->browser,selected,sizeof(selected));
+        fprintf(stderr,"Browser preview start: handled=%d loading=%d busy=%d path=%s kind=%d message=%s SDL=%s\n",
+            handled,ui->browser.preview_loading,ui->file_busy,selected,
+            (int)ts_audio_import_detect_kind(selected),ui->browser.message,SDL_GetError());
+    }
+    assert(handled && ui->browser.preview_loading && !ui->file_busy);
     e.key.repeat=1;assert(BROWSER_KEY() && c.loader.worker);e.key.repeat=0;
     for(int n=0;n<5000 && c.loader.worker;++n) {
         SDL_Delay(1);browser_audition_poll(device,audio,ui,&c,44100);
