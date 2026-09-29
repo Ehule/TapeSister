@@ -119,9 +119,29 @@ its slot empty; other slots keep their numbers.
 
 ## QWERTY note keyboard
 
-Lower row: `Z S X D C V G B H N J M`
+| Row | Keys, ascending by semitone | Default pitches |
+| --- | --- | --- |
+| Lower | `Z S X D C V G B H N J M , L . ; /` | C4–E5 |
+| Upper | `Q 2 W 3 E R 5 T 6 Y 7 U I 9 O 0 P [ = ] Enter` | C5–G♯6 |
 
-Upper row: `Q 2 W 3 E R 5 T 6 Y 7 U`
+The visible piano covers **33 semitones**. The overlapping keys (for example,
+comma and Q) release independently. Small labels show the primary physical key;
+ARP note-order numbers take their place when editing a sequence.
+
+**Click and drag** across the piano to play successive notes. Leaving the piano
+releases the mouse note; dragging back in plays again. Releasing outside or
+losing focus ends the gesture. Held keyboard/MIDI notes keep their own ownership.
+Shift-click and HOLD keep deliberate chord toggling; ARP EDIT keeps note selection.
+SUSTAIN retains its usual release behavior, including during a sweep.
+
+With the main/FM piano visible, `2`, `3`, `0`, `=` and Enter play notes. Hide the
+piano to use the ordinary panel/view shortcuts. FM **APPLY** / `A` still prints a
+sound; dialogs, text fields and Ctrl/Alt shortcuts retain their existing controls.
+Preview workspaces retain their own shortcuts (such as Enter to import).
+`F1`–`F8` and Shift+wheel retain octave/range selection. At the top of the MIDI
+range, unavailable keys show `--` and do not play.
+
+See [Extended keyboard and dragging](KEYBOARD_SUSTAIN.md#extended-keyboard-and-dragging).
 
 MIDI note 60/C4 is unity for created FM material. MIDI velocity controls sample voice
 level. MIDI All Notes Off is honored.

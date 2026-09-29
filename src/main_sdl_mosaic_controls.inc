@@ -77,14 +77,14 @@ static int mosaic_controls_event(const SDL_Event *event,SDL_Window *window,SDL_A
     }
     int wheel=event->type==SDL_MOUSEWHEEL,down=event->type==SDL_MOUSEBUTTONDOWN;
     if(!wheel && !down)return 0;
-    if(wheel){int mx,my;SDL_GetMouseState(&mx,&my);logical_mouse(window,mx,my,&x,&y);}
+    if(wheel){int mx,my;wheel_event_mouse(event,&mx,&my);logical_mouse(window,mx,my,&x,&y);}
     int field=mosaic_control_hit(x,y);
     if(!field)return 0;
     TsMosaicEvent *selected=ts_mosaic_find(ui->mosaic,ui->mosaic_selected);
     if(field!=5 && !selected)return 1;
     mosaic_drag_end(ui,c);c->mix_changed=0;c->mix_epoch=ui->mosaic->epoch;
     if(wheel) {
-        double delta=event->wheel.y*((mod&KMOD_SHIFT)?.1:1),value;
+        double delta=wheel_event_delta(event,0)*((mod&KMOD_SHIFT)?.1:1),value;
         if(field==5)value=ui->mosaic->speed*exp2(delta/12);
         else {
             value=mosaic_control_value(selected,field);

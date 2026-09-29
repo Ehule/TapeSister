@@ -238,9 +238,9 @@ static void test_shifted_hold_release(void)
     for (int route = 0; route < 4; ++route)
     for (int held = 0; held < 2; ++held)
     for (int move = 0; move < 4; ++move)
-    for (int note = 0; note < 24; ++note) {
+    for (int note = 0; note < TS_KEYBOARD_NOTE_COUNT; ++note) {
         int visible_note = note - shifts[move];
-        if (visible_note < 0 || visible_note >= 24) continue;
+        if (visible_note < 0 || visible_note >= TS_KEYBOARD_NOTE_COUNT) continue;
         reset_route(route);
         set_keyboard_octave(device, &audio, &ui, 4);
         if (held) toggle_fm_hold(device, &audio, &ui, &instrument);
@@ -249,10 +249,10 @@ static void test_shifted_hold_release(void)
         if (move < 2) set_keyboard_octave(device, &audio, &ui, move ? 3 : 5);
         else shift_keyboard_range(device, &audio, &ui, shifts[move]);
         int base = ts_ui_keyboard_base_note(&ui);
-        uint32_t lit = ts_note_bank_visible_mask(&audio.notes, base) |
+        TsKeyboardMask lit = ts_note_bank_visible_mask(&audio.notes, base) |
                        ts_performance_visible_mask(&audio.performance, base) |
                        ts_performance_visible_mask(&audio.sister.performance, base);
-        assert(lit == (1u << visible_note));
+        assert(lit == (UINT64_C(1) << visible_note));
         click_note(visible_note, !held);
         if (voices()) fprintf(stderr, "Held pitch failed to release: route=%d shift=%d note=%d voices=%d\n",
                               route, shifts[move], note, voices());
@@ -370,9 +370,11 @@ static void test_sister_prepared_power(void)
 #undef ACTION
 }
 
+#include "test_keyboard_extended.inc"
 #include "test_keyboard_power.inc"
 #include "test_keyboard_sequence_controller.inc"
 #include "test_master_eq_controller.inc"
+#include "test_wheel_controller.inc"
 #include "test_performance_polish.inc"
 #include "test_router_controller.inc"
 #include "test_insert_controller.inc"
@@ -401,6 +403,7 @@ int main(void)
     assert(ts_sister_runtime_enable(&audio.sister, 44100, 2, 2, 1.0, error, sizeof(error)));
     assert(ts_instrument_create_basic(&instrument, TS_FM_WAVE_SINE, error, sizeof(error)));
     assert(ts_sample_clone(&fm, &instrument.current, error, sizeof(error)));
+    test_extended_keyboard();
     test_chords();
     test_fm_release_without_preview();
     test_shifted_hold_release();
@@ -419,6 +422,7 @@ int main(void)
     test_duplex_callback_unity();
     test_insert_devices();
     test_master_eq_controller();
+    test_wheel_pipeline();
     router_performance_screenshots();
     stop_all_force(device, &audio, &ui);
     ts_sample_free(&fm); ts_instrument_free(&instrument);

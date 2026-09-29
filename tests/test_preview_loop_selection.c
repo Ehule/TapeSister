@@ -1,3 +1,6 @@
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 /* Actual application controllers and callback; dummy SDL never plays hardware. */
 #ifndef SDL_MAIN_HANDLED
 #define SDL_MAIN_HANDLED
@@ -308,6 +311,10 @@ int main(void)
         SDL_WarpMouseInWindow(window,154+15,which?180:80);SDL_SetModState(KMOD_ALT);
         SDL_Event event={0};event.type=SDL_MOUSEWHEEL;event.wheel.windowID=SDL_GetWindowID(window);
         event.wheel.y=1;
+#if SDL_VERSION_ATLEAST(2, 26, 0)
+        /* Real SDL wheel packets carry the pointer position at event time. */
+        event.wheel.mouseX=154+15;event.wheel.mouseY=which?180:80;
+#endif
         assert(portal_event(&event,window,device,&audio,&ui,&instrument,&c,&sister,44100,&transform));
         assert(w->selection_first<1000 && w->first==0 && w->last==44100);
         assert(audio.range_start==w->selection_first && audio.position==4000 && audio.attack_frame==123);

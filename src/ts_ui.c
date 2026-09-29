@@ -31,15 +31,13 @@ static void master_output_diagnostic(char *label, size_t label_size,
                                      const TsUiMasterOutputStatus *output);
 
 enum {
-    TS_KEYBOARD_NOTE_COUNT = 24,
-    TS_KEYBOARD_WHITE_COUNT = 14,
-    TS_KEYBOARD_BLACK_COUNT = 10,
+    TS_KEYBOARD_WHITE_COUNT = 20,
+    TS_KEYBOARD_BLACK_COUNT = 14,
     TS_KEYBOARD_X = 10,
     TS_KEYBOARD_Y = 330,
     TS_KEYBOARD_RIGHT = 622,
-    TS_KEYBOARD_WHITE_WIDTH = 43,
     TS_KEYBOARD_WHITE_HEIGHT = 49,
-    TS_KEYBOARD_BLACK_WIDTH = 31,
+    TS_KEYBOARD_BLACK_WIDTH = 22,
     TS_KEYBOARD_BLACK_HEIGHT = 31
 };
 
@@ -47,9 +45,17 @@ typedef struct TsKeyboardLayout {
     int white_notes[TS_KEYBOARD_WHITE_COUNT];
     int black_notes[TS_KEYBOARD_BLACK_COUNT];
     int black_left[TS_KEYBOARD_BLACK_COUNT];
+    int white_width;
     int white_count;
     int black_count;
 } TsKeyboardLayout;
+
+/* The lower-row overlap (, L . ; /) is documented in Quick Reference. */
+static const char *const keyboard_key_labels[TS_KEYBOARD_NOTE_COUNT] = {
+    "Z","S","X","D","C","V","G","B","H","N","J","M",
+    "Q","2","W","3","E","R","5","T","6","Y","7","U",
+    "I","9","O","0","P","[","=","]","ENT"
+};
 
 static int keyboard_note_is_black(int midi_note)
 {
@@ -61,26 +67,21 @@ static int keyboard_note_is_black(int midi_note)
 
 static void keyboard_layout(int keyboard_base_note, TsKeyboardLayout *layout)
 {
-    int note;
     if (layout == NULL) return;
     memset(layout, 0, sizeof(*layout));
-    for (note = 0; note < TS_KEYBOARD_NOTE_COUNT; ++note) {
+    int whites = 0;
+    for (int note = 0; note < TS_KEYBOARD_NOTE_COUNT; ++note)
+        whites += !keyboard_note_is_black(keyboard_base_note + note);
+    layout->white_width = (TS_KEYBOARD_RIGHT - TS_KEYBOARD_X) / whites;
+    for (int note = 0; note < TS_KEYBOARD_NOTE_COUNT; ++note) {
         if (keyboard_note_is_black(keyboard_base_note + note)) {
-            int white_before = layout->white_count;
-            int left = TS_KEYBOARD_X +
-                       white_before * TS_KEYBOARD_WHITE_WIDTH -
-                       TS_KEYBOARD_BLACK_WIDTH / 2;
+            int left = TS_KEYBOARD_X + layout->white_count * layout->white_width - TS_KEYBOARD_BLACK_WIDTH / 2;
             if (left < TS_KEYBOARD_X) left = TS_KEYBOARD_X;
             if (left + TS_KEYBOARD_BLACK_WIDTH > TS_KEYBOARD_RIGHT)
                 left = TS_KEYBOARD_RIGHT - TS_KEYBOARD_BLACK_WIDTH;
-            if (layout->black_count < TS_KEYBOARD_BLACK_COUNT) {
-                layout->black_notes[layout->black_count] = note;
-                layout->black_left[layout->black_count] = left;
-                ++layout->black_count;
-            }
-        } else if (layout->white_count < TS_KEYBOARD_WHITE_COUNT) {
-            layout->white_notes[layout->white_count++] = note;
-        }
+            layout->black_notes[layout->black_count] = note;
+            layout->black_left[layout->black_count++] = left;
+        } else layout->white_notes[layout->white_count++] = note;
     }
 }
 
@@ -219,8 +220,8 @@ int ts_ui_wheel_guard_accept(TsUiWheelGuard *guard, int target,
         guard->suppress_until_quiet = 0;
     }
     if (target != guard->target && elapsed < TS_UI_WHEEL_HANDOFF_QUIET_MS) {
-        /* Ongoing inertial events keep extending the required quiet period. */
-        guard->last_event_ms = now_ms;
+        /* Briefly protect the previous control, but do not let rejected
+           events prolong the handoff forever while the performer scrolls. */
         return 0;
     }
     guard->target = target;
@@ -3685,26 +3686,33 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             char label[8];
             int label_x;
             int key = layout.white_notes[i];
-            int active = (ui->active_notes & (1u << key)) != 0;
-            int staged = (ui->staged_notes & (1u << key)) != 0;
-            rect(fb, TS_KEYBOARD_X + i * TS_KEYBOARD_WHITE_WIDTH,
-                 TS_KEYBOARD_Y, TS_KEYBOARD_WHITE_WIDTH - 1,
+            int active = (ui->active_notes & (UINT64_C(1) << key)) != 0;
+            int staged = (ui->staged_notes & (UINT64_C(1) << key)) != 0;
+            rect(fb, TS_KEYBOARD_X + i * layout.white_width,
+                 TS_KEYBOARD_Y, layout.white_width - 1,
                  TS_KEYBOARD_WHITE_HEIGHT,
                  staged ? PAL_TUNING : keyboard_sequence_color(ui, keyboard_base_note + key, 0,
                      active ? PAL_MOUSE : RGB(220, 216, 207)));
             int ordinal = keyboard_sequence_ordinal(ui, keyboard_base_note + key);
             if (ordinal) {
                 char number[8]; snprintf(number, sizeof(number), "%02d", ordinal);
-                text(fb, TS_KEYBOARD_X + i * TS_KEYBOARD_WHITE_WIDTH + 16, TS_KEYBOARD_Y + 25,
+                text(fb, TS_KEYBOARD_X + i * layout.white_width + (layout.white_width - 12) / 2, TS_KEYBOARD_Y + 25,
                      number, RGB(16, 35, 41), 1);
-                if (active) rect(fb, TS_KEYBOARD_X + i * TS_KEYBOARD_WHITE_WIDTH + 4,
-                                 TS_KEYBOARD_Y + 45, TS_KEYBOARD_WHITE_WIDTH - 9, 2, PAL_MOUSE);
+                if (active) rect(fb, TS_KEYBOARD_X + i * layout.white_width + 4,
+                                 TS_KEYBOARD_Y + 45, layout.white_width - 9, 2, PAL_MOUSE);
             }
-            ts_midi_note_name(keyboard_base_note + key, label, sizeof(label));
-            label_x = TS_KEYBOARD_X + i * TS_KEYBOARD_WHITE_WIDTH +
-                      (TS_KEYBOARD_WHITE_WIDTH - 1 -
+            if (!ordinal && keyboard_base_note + key <= 127) {
+                const char *hint = keyboard_key_labels[key];
+                text(fb, TS_KEYBOARD_X + i * layout.white_width +
+                     (layout.white_width - (int)strlen(hint) * 6) / 2,
+                     TS_KEYBOARD_Y + 32, hint, RGB(72, 68, 72), 1);
+            }
+            if (keyboard_base_note + key > 127) snprintf(label, sizeof(label), "--");
+            else ts_midi_note_name(keyboard_base_note + key, label, sizeof(label));
+            label_x = TS_KEYBOARD_X + i * layout.white_width +
+                      (layout.white_width - 1 -
                        (int)strlen(label) * 6) / 2;
-            text(fb, label_x, TS_KEYBOARD_Y + 36, label,
+            text(fb, label_x, TS_KEYBOARD_Y + 41, label,
                  RGB(24, 24, 24), 1);
         }
         for (int i = 0; i < layout.black_count; ++i) {
@@ -3712,8 +3720,8 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             int left = layout.black_left[i];
             int label_x;
             int key = layout.black_notes[i];
-            int active = (ui->active_notes & (1u << key)) != 0;
-            int staged = (ui->staged_notes & (1u << key)) != 0;
+            int active = (ui->active_notes & (UINT64_C(1) << key)) != 0;
+            int staged = (ui->staged_notes & (UINT64_C(1) << key)) != 0;
             rect(fb, left, TS_KEYBOARD_Y, TS_KEYBOARD_BLACK_WIDTH,
                  TS_KEYBOARD_BLACK_HEIGHT,
                  staged ? PAL_TUNING : keyboard_sequence_color(ui, keyboard_base_note + key, 1,
@@ -3721,10 +3729,16 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             int ordinal = keyboard_sequence_ordinal(ui, keyboard_base_note + key);
             if (ordinal) {
                 char number[8]; snprintf(number, sizeof(number), "%02d", ordinal);
-                text(fb, left + 9, TS_KEYBOARD_Y + 5, number, RGB(218, 241, 238), 1);
+                text(fb, left + (TS_KEYBOARD_BLACK_WIDTH - 12) / 2, TS_KEYBOARD_Y + 5, number, RGB(218, 241, 238), 1);
                 if (active) rect(fb, left + 3, TS_KEYBOARD_Y + 28, TS_KEYBOARD_BLACK_WIDTH - 6, 2, PAL_VOLUME);
             }
-            ts_midi_note_name(keyboard_base_note + key, label, sizeof(label));
+            if (!ordinal && keyboard_base_note + key <= 127) {
+                const char *hint = keyboard_key_labels[key];
+                text(fb, left + (TS_KEYBOARD_BLACK_WIDTH - (int)strlen(hint) * 6) / 2,
+                     TS_KEYBOARD_Y + 5, hint, RGB(150, 146, 150), 1);
+            }
+            if (keyboard_base_note + key > 127) snprintf(label, sizeof(label), "--");
+            else ts_midi_note_name(keyboard_base_note + key, label, sizeof(label));
             label_x = left +
                       (TS_KEYBOARD_BLACK_WIDTH - (int)strlen(label) * 6) / 2;
             text(fb, label_x, TS_KEYBOARD_Y + 19, label,
@@ -4171,12 +4185,12 @@ int ts_ui_key_from_point_for_base(int x, int y, int keyboard_base_note)
         for (int i = 0; i < layout.black_count; ++i) {
             int left = layout.black_left[i];
             if (x >= left && x < left + TS_KEYBOARD_BLACK_WIDTH)
-                return layout.black_notes[i];
+                return keyboard_base_note + layout.black_notes[i] <= 127 ? layout.black_notes[i] : -1;
         }
     }
-    index = (x - TS_KEYBOARD_X) / TS_KEYBOARD_WHITE_WIDTH;
-    return index >= 0 && index < layout.white_count ?
-           layout.white_notes[index] : -1;
+    index = (x - TS_KEYBOARD_X) / layout.white_width;
+    return index >= 0 && index < layout.white_count &&
+           keyboard_base_note + layout.white_notes[index] <= 127 ? layout.white_notes[index] : -1;
 }
 
 size_t ts_ui_right_drag_playhead_frame(size_t anchor, size_t pointer,

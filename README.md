@@ -134,6 +134,10 @@ release with the key or continue to their end (or keep looping). This setting is
 shared with FM, Portal, import preview, and Sister Machine; Portal and file previews
 now accept MIDI notes. See [Keyboard Sustain](docs/KEYBOARD_SUSTAIN.md).
 
+The note keyboard spans 33 semitones with extended SunVox-style key rows and
+click-drag playing. Shift-click/HOLD retain chord selection; ARP EDIT retains
+sequence editing. See the [key map](docs/QUICK_REFERENCE.md#qwerty-note-keyboard).
+
 **ARP** adds keyboard arpeggios and custom note order, with 24 selected pitches,
 live step/gate controls, an independent volume fader with optional sine LFO,
 16 numbered sequence slots saved with the project, and separate

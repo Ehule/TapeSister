@@ -149,7 +149,7 @@ int ts_performance_trigger_group_event(TsPerformanceBank *bank,
 int ts_performance_trigger_staged(TsPerformanceBank *bank,
                                   const TsInstrument *instrument,
                                   uint16_t source_mask,
-                                  uint32_t staged_notes,
+                                  TsKeyboardMask staged_notes,
                                   int keyboard_base_note,
                                   int output_rate);
 float ts_performance_read(TsPerformanceBank *bank, float *raw_mix);
@@ -161,7 +161,7 @@ void ts_performance_sync(TsPerformanceBank *bank,
 int ts_performance_prepare_sync(TsPerformanceBank *bank,
                                 const TsInstrument *instrument);
 int ts_performance_count(const TsPerformanceBank *bank);
-uint32_t ts_performance_visible_mask(const TsPerformanceBank *bank,
+TsKeyboardMask ts_performance_visible_mask(const TsPerformanceBank *bank,
                                      int keyboard_base_note);
 int ts_performance_source_count(uint16_t source_mask);
 float ts_performance_peak_scale(float *samples, size_t frames, float safe_peak);

@@ -370,7 +370,7 @@ int ts_note_bank_start_staged_chord(TsNoteBank *bank,
                                     const TsInstrument *instrument,
                                     const TsTuning *tuning,
                                     TsAuditionSource source,
-                                    uint32_t staged_notes,
+                                    TsKeyboardMask staged_notes,
                                     int keyboard_base_note,
                                     int output_rate)
 {
@@ -378,8 +378,8 @@ int ts_note_bank_start_staged_chord(TsNoteBank *bank,
     if (bank == NULL || instrument == NULL || tuning == NULL ||
         staged_notes == 0u) return 0;
     ts_note_bank_clear(bank);
-    for (int note = 0; note < 24; ++note) {
-        if ((staged_notes & (1u << note)) == 0u) continue;
+    for (int note = 0; note < TS_KEYBOARD_NOTE_COUNT; ++note) {
+        if ((staged_notes & (UINT64_C(1) << note)) == 0u) continue;
         if (started >= TS_NOTE_VOICE_LIMIT ||
             ts_note_bank_start_tuned_at(bank, instrument, tuning, source,
                                         note, keyboard_base_note, 1,
@@ -610,30 +610,30 @@ int ts_note_bank_latched_synth_count(const TsNoteBank *bank)
     return count;
 }
 
-uint32_t ts_note_bank_mask(const TsNoteBank *bank)
+TsKeyboardMask ts_note_bank_mask(const TsNoteBank *bank)
 {
-    uint32_t mask = 0;
+    TsKeyboardMask mask = 0;
     if (bank == NULL) return 0;
-    for (int i = 0; i < TS_NOTE_BANK_VOICE_CAPACITY; ++i)
-        if (bank->voices[i].active &&
-            bank->voices[i].origin == TS_NOTE_ORIGIN_QWERTY &&
-            bank->voices[i].note >= 0 && bank->voices[i].note < 24)
-            mask |= 1u << bank->voices[i].note;
+    for (int i = 0; i < TS_NOTE_BANK_VOICE_CAPACITY; ++i) {
+        int offset = ts_keyboard_trigger_offset(bank->voices[i].note);
+        if (bank->voices[i].active && bank->voices[i].origin == TS_NOTE_ORIGIN_QWERTY && offset >= 0)
+            mask |= UINT64_C(1) << offset;
+    }
     return mask;
 }
 
-uint32_t ts_note_bank_visible_mask(const TsNoteBank *bank,
+TsKeyboardMask ts_note_bank_visible_mask(const TsNoteBank *bank,
                                    int keyboard_base_note)
 {
-    uint32_t mask = 0;
+    TsKeyboardMask mask = 0;
     if (bank == NULL) return 0;
     for (int i = 0; i < TS_NOTE_BANK_VOICE_CAPACITY; ++i) {
         const TsNoteVoice *voice = &bank->voices[i];
         int visible_note;
         if (!voice->active) continue;
         visible_note = voice->midi_note - keyboard_base_note;
-        if (visible_note >= 0 && visible_note < 24)
-            mask |= 1u << visible_note;
+        if (visible_note >= 0 && visible_note < TS_KEYBOARD_NOTE_COUNT)
+            mask |= UINT64_C(1) << visible_note;
     }
     return mask;
 }

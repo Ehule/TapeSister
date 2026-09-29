@@ -630,7 +630,7 @@ int ts_performance_trigger_group_event(TsPerformanceBank *bank,
 int ts_performance_trigger_staged(TsPerformanceBank *bank,
                                   const TsInstrument *instrument,
                                   uint16_t source_mask,
-                                  uint32_t staged_notes,
+                                  TsKeyboardMask staged_notes,
                                   int keyboard_base_note,
                                   int output_rate)
 {
@@ -638,8 +638,8 @@ int ts_performance_trigger_staged(TsPerformanceBank *bank,
     if (bank == NULL || instrument == NULL || source_mask == 0u ||
         staged_notes == 0u) return 0;
     ts_performance_clear(bank);
-    for (int note = 0; note < 24; ++note) {
-        if ((staged_notes & (1u << note)) == 0u) continue;
+    for (int note = 0; note < TS_KEYBOARD_NOTE_COUNT; ++note) {
+        if ((staged_notes & (UINT64_C(1) << note)) == 0u) continue;
         started += ts_performance_trigger_group(bank, instrument, source_mask,
                                                 note, keyboard_base_note, 1,
                                                 output_rate);
@@ -977,18 +977,18 @@ int ts_performance_count(const TsPerformanceBank *bank)
     return count;
 }
 
-uint32_t ts_performance_visible_mask(const TsPerformanceBank *bank,
+TsKeyboardMask ts_performance_visible_mask(const TsPerformanceBank *bank,
                                      int keyboard_base_note)
 {
-    uint32_t mask = 0u;
+    TsKeyboardMask mask = 0u;
     if (bank == NULL) return 0u;
     for (int i = 0; i < TS_PERFORMANCE_VOICE_LIMIT; ++i) {
         const TsPerformanceVoice *voice = &bank->voices[i];
         int visible_note;
         if (!voice->active) continue;
         visible_note = voice->midi_note - keyboard_base_note;
-        if (visible_note >= 0 && visible_note < 24)
-            mask |= 1u << visible_note;
+        if (visible_note >= 0 && visible_note < TS_KEYBOARD_NOTE_COUNT)
+            mask |= UINT64_C(1) << visible_note;
     }
     return mask;
 }

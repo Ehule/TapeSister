@@ -283,7 +283,7 @@ static int runtime_staged_start(AudioState *audio,
                                 const TsInstrument *instrument,
                                 const TsTuning *tuning,
                                 TsAuditionSource source,
-                                uint32_t staged_notes,
+                                TsKeyboardMask staged_notes,
                                 int keyboard_base_note, int output_rate)
 {
     if (audio == NULL) return 0;

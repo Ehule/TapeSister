@@ -411,6 +411,31 @@ int ts_keyboard_sequence_select_slot(TsKeyboardSequence *s, int slot)
     return 1;
 }
 
+void ts_keyboard_sequence_clear_all(TsKeyboardSequence *s)
+{
+    TsKeyboardSlotSequence outer = s->bank.sequence;
+    ts_keyboard_sequence_stop(s); /* Keep the existing short release fade. */
+    ts_keyboard_sequence_bank_default(&s->bank);
+    outer.enabled = 0;
+    s->bank.sequence = outer;
+    s->active_slot = 0;
+    apply_settings(s, &s->bank.slot[0]);
+    s->cursor = s->slot_cursor = s->slot_count = 0;
+    s->slot_duration = s->lfo_phase = 0;
+}
+
+void ts_keyboard_sequence_paste(TsKeyboardSequence *s, const TsKeyboardSequenceSettings *settings)
+{
+    TsKeyboardSequenceSettings next = *settings;
+    int playing = ts_keyboard_sequence_active(s), chaining = s->slot_running;
+    stop_notes(s);
+    s->bank.selected = s->active_slot;
+    s->cursor = 0; s->lfo_phase = 0;
+    ts_keyboard_sequence_set(s, &next);
+    if (playing) play_notes(s);
+    if (chaining) start_slot_cycle(s, s->active_slot);
+}
+
 int ts_keyboard_sequence_bank_write(FILE *file, const TsKeyboardSequenceBank *bank)
 {
     TsKeyboardSequenceBank b = *bank;

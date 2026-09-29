@@ -2,14 +2,24 @@
 
 #include <string.h>
 
+int ts_keyboard_trigger_offset(int trigger)
+{
+    if (trigger >= 0 && trigger < TS_KEYBOARD_NOTE_COUNT) return trigger;
+    if (trigger >= TS_KEYBOARD_ALIAS_FIRST && trigger < TS_KEYBOARD_ALIAS_FIRST + 5)
+        return 12 + trigger - TS_KEYBOARD_ALIAS_FIRST;
+    if (trigger >= TS_KEYBOARD_POINTER_FIRST && trigger < TS_KEYBOARD_POINTER_FIRST + TS_KEYBOARD_NOTE_COUNT)
+        return trigger - TS_KEYBOARD_POINTER_FIRST;
+    return -1;
+}
+
 int ts_note_event_qwerty(TsNoteEvent *event, int key, int keyboard_base_note)
 {
-    if (event == NULL || key < 0 || key >= 24 || keyboard_base_note < 0 ||
-        keyboard_base_note + key > 127)
-        return 0;
+    int offset = ts_keyboard_trigger_offset(key);
+    if (event == NULL || offset < 0 || keyboard_base_note < 0 ||
+        keyboard_base_note > 127 - offset) return 0;
     event->origin = TS_NOTE_ORIGIN_QWERTY;
     event->key = key;
-    event->midi_note = keyboard_base_note + key;
+    event->midi_note = keyboard_base_note + offset;
     event->velocity = 127;
     event->channel = -1;
     return 1;

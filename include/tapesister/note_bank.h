@@ -107,7 +107,7 @@ int ts_note_bank_start_staged_chord(TsNoteBank *bank,
                                     const TsInstrument *instrument,
                                     const TsTuning *tuning,
                                     TsAuditionSource source,
-                                    uint32_t staged_notes,
+                                    TsKeyboardMask staged_notes,
                                     int keyboard_base_note,
                                     int output_rate);
 void ts_note_bank_release(TsNoteBank *bank, int note);
@@ -139,8 +139,8 @@ TsStereoFrame ts_note_bank_read_stereo(TsNoteBank *bank);
 int ts_note_bank_count(const TsNoteBank *bank);
 int ts_note_bank_synth_count(const TsNoteBank *bank);
 int ts_note_bank_latched_synth_count(const TsNoteBank *bank);
-uint32_t ts_note_bank_mask(const TsNoteBank *bank);
-uint32_t ts_note_bank_visible_mask(const TsNoteBank *bank,
+TsKeyboardMask ts_note_bank_mask(const TsNoteBank *bank);
+TsKeyboardMask ts_note_bank_visible_mask(const TsNoteBank *bank,
                                    int keyboard_base_note);
 const TsNoteVoice *ts_note_bank_display_voice(const TsNoteBank *bank);
 

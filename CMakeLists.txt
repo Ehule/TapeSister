@@ -518,13 +518,18 @@ add_executable(tapesister_insert_tests tests/test_insert.c)
 target_link_libraries(tapesister_insert_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_insert_tests COMMAND tapesister_insert_tests)
 
-# These project round-trip fixtures keep multiple instruments/runtimes alive
+# These core/project fixtures keep multiple instruments/runtimes alive
 # while calling the real Save/Open path. Match the application's Windows stack
 # reserve; MinGW's default 2 MiB is too small for these nested controller calls.
 if(MINGW)
-  foreach(project_test IN ITEMS test_sister_project_state
+  foreach(project_test IN ITEMS tapesister_core_tests
+                               test_sister_project_state
                                tapesister_sample_pages_tests
-                               tapesister_keyboard_hold_tests)
+                               tapesister_keyboard_hold_tests
+                               tapesister_capture_tests
+                               tapesister_midi_tests
+                               tapesister_performance_tests
+                               tapesister_preview_loop_tests)
     if(TARGET ${project_test})
       target_link_options(${project_test} PRIVATE "-Wl,--stack,16777216")
     endif()

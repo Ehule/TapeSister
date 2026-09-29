@@ -77,6 +77,9 @@ void ts_keyboard_sequence_bank_sanitize(TsKeyboardSequenceBank *bank);
 TsKeyboardSequenceBank ts_keyboard_sequence_export(const TsKeyboardSequence *sequence);
 /* Replaces configuration and clears playback; source ownership is unchanged. */
 void ts_keyboard_sequence_set_bank(TsKeyboardSequence *sequence, const TsKeyboardSequenceBank *bank);
+/* Bank editing: preserves source ownership; paste follows live recall semantics. */
+void ts_keyboard_sequence_clear_all(TsKeyboardSequence *sequence);
+void ts_keyboard_sequence_paste(TsKeyboardSequence *sequence, const TsKeyboardSequenceSettings *settings);
 int ts_keyboard_sequence_select_slot(TsKeyboardSequence *sequence, int slot);
 void ts_keyboard_sequence_set_slot_sequence(TsKeyboardSequence *sequence,
                                             const TsKeyboardSlotSequence *settings);

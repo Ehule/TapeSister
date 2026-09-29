@@ -13,7 +13,7 @@ static void set_error(char *error, size_t error_size, const char *message)
         snprintf(error, error_size, "%s", message != NULL ? message : "");
 }
 
-static int bit_count(uint32_t value)
+static int bit_count(TsKeyboardMask value)
 {
     int count = 0;
     while (value != 0u) {
@@ -166,16 +166,16 @@ int ts_capture_set_source(TsCaptureRecorder *recorder, int source_slot,
 int ts_capture_toggle_staged_note(TsCaptureRecorder *recorder, int note,
                                   char *error, size_t error_size)
 {
-    uint32_t bit;
+    TsKeyboardMask bit;
     if (recorder == NULL || recorder->state != TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER) {
         set_error(error, error_size, "Arm Capture before staging a chord");
         return 0;
     }
-    if (note < 0 || note >= 24) {
+    if (note < 0 || note >= TS_KEYBOARD_NOTE_COUNT) {
         set_error(error, error_size, "Invalid staged keyboard note");
         return 0;
     }
-    bit = 1u << note;
+    bit = UINT64_C(1) << note;
     if ((recorder->staged_notes & bit) != 0u) {
         recorder->staged_notes &= ~bit;
         set_error(error, error_size, "");
@@ -190,12 +190,12 @@ int ts_capture_toggle_staged_note(TsCaptureRecorder *recorder, int note,
     return 1;
 }
 
-uint32_t ts_capture_shift_staged_notes(TsCaptureRecorder *recorder,
+TsKeyboardMask ts_capture_shift_staged_notes(TsCaptureRecorder *recorder,
                                        int keyboard_base_delta)
 {
-    const uint32_t visible_notes = UINT32_C(0x00ffffff);
+    const TsKeyboardMask visible_notes = (UINT64_C(1) << TS_KEYBOARD_NOTE_COUNT) - 1;
     if (recorder == NULL) return 0u;
-    if (keyboard_base_delta >= 24 || keyboard_base_delta <= -24)
+    if (keyboard_base_delta >= TS_KEYBOARD_NOTE_COUNT || keyboard_base_delta <= -TS_KEYBOARD_NOTE_COUNT)
         recorder->staged_notes = 0u;
     else if (keyboard_base_delta > 0)
         recorder->staged_notes >>= keyboard_base_delta;

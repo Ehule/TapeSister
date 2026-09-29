@@ -39,9 +39,9 @@ enum {
 enum { TS_WAVE_X = 20, TS_WAVE_Y = 64, TS_WAVE_W = 600, TS_WAVE_H = 134 };
 enum { TS_MODAL_PANEL_X = 10, TS_MODAL_PANEL_Y = 40,
        TS_MODAL_PANEL_W = 620, TS_MODAL_PANEL_H = 164 };
-enum { TS_ARP_PANEL_X = 10, TS_ARP_PANEL_Y = 140,
-       TS_ARP_PANEL_W = 620, TS_ARP_PANEL_H = 171,
-       TS_ARP_PANEL_FM_Y = 134, TS_ARP_PANEL_FM_H = 179,
+enum { TS_ARP_PANEL_X = 10, TS_ARP_PANEL_Y = 112,
+       TS_ARP_PANEL_W = 620, TS_ARP_PANEL_H = 199,
+       TS_ARP_PANEL_FM_Y = 106, TS_ARP_PANEL_FM_H = 207,
        TS_ARP_PANEL_FM_OFFSET = -6 };
 enum { TS_DRONE_WAVE_X = 20, TS_DRONE_WAVE_Y = 77,
        TS_DRONE_WAVE_W = 600, TS_DRONE_WAVE_H = 70 };
@@ -375,8 +375,11 @@ typedef struct {
     TsUiWheelGuard wheel_guard;
     char performance_tooltip[160], performance_hover[160], performance_hover_status[160];
     uint32_t performance_hover_due;
-    uint32_t active_notes;
+    TsKeyboardMask active_notes;
     TsKeyboardSequenceSettings keyboard_sequence;
+    TsKeyboardSequenceSettings keyboard_sequence_clipboard;
+    int keyboard_sequence_clipboard_valid;
+    uint32_t keyboard_sequence_clear_deadline;
     int keyboard_sequence_open, keyboard_sequence_edit, keyboard_sequence_drag;
     int keyboard_sequence_running, keyboard_sequence_current, keyboard_sequence_step;
     double keyboard_sequence_progress;
@@ -389,6 +392,7 @@ typedef struct {
     uint16_t tile_launcher_mask;
     int play_on_select; /* Sample-bank click auditions; off selects for editing only. */
     int mouse_note;
+    int keyboard_pointer_drag;
     int selecting;
     int bank_clear_armed;
     int playback_active;
@@ -482,7 +486,7 @@ typedef struct {
     int mosaic_source_count, mosaic_source_page, mosaic_source_selected;
     int mosaic_bank_count, mosaic_source_pages, mosaic_source_offset;
     double mosaic_time, mosaic_scroll, mosaic_xscroll, mosaic_scale, mosaic_hscale;
-    uint32_t staged_notes;
+    TsKeyboardMask staged_notes;
     uint32_t overlay_until_ms;
     int workbench_loop_active;
     int workbench_loop_persistent;
