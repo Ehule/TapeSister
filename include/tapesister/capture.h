@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 #include "tapesister/sample.h"
+#include "tapesister/note_event.h"
 #include "tapesister/performance_recorder.h"
 
 typedef enum {
@@ -26,7 +27,7 @@ typedef struct {
     uint32_t overdub_base_rate;
     uint8_t channels;
     uint8_t overdub_base_channels;
-    uint32_t staged_notes;
+    TsKeyboardMask staged_notes;
     int destination_slot;
     int source_slot;
     int provenance_slot;
@@ -98,7 +99,7 @@ int ts_capture_set_source(TsCaptureRecorder *recorder, int source_slot,
                           char *error, size_t error_size);
 int ts_capture_toggle_staged_note(TsCaptureRecorder *recorder, int note,
                                   char *error, size_t error_size);
-uint32_t ts_capture_shift_staged_notes(TsCaptureRecorder *recorder,
+TsKeyboardMask ts_capture_shift_staged_notes(TsCaptureRecorder *recorder,
                                        int keyboard_base_delta);
 void ts_capture_clear_staged_notes(TsCaptureRecorder *recorder);
 int ts_capture_trigger(TsCaptureRecorder *recorder,

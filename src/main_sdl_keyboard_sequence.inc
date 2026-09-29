@@ -232,9 +232,9 @@ static int keyboard_sequence_event(const SDL_Event *event, SDL_Window *window,
         if (!ui->keyboard_sequence_open || !ui->keyboard_sequence_edit ||
             (event->key.keysym.mod & (KMOD_CTRL | KMOD_ALT | KMOD_GUI))) return 0;
         if (audio->capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER) return 0;
-        note = note_for_key(event->key.keysym.sym);
+        note = ts_keyboard_trigger_offset(note_for_key(event->key.keysym.sym));
         if (note < 0) return 0;
-        if (event->key.repeat) return 1;
+        if (event->key.repeat || ts_ui_keyboard_base_note(ui) + note > 127) return 1;
     } else if (event->type == SDL_MOUSEBUTTONDOWN) {
         logical_mouse(window, event->button.x, event->button.y, &x, &y);
         if (x >= 10 && x < 56 && y >= 313 && y < 330) {

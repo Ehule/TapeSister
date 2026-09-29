@@ -901,7 +901,7 @@ static int runtime_staged_start(AudioState *audio,
                                 const TsInstrument *instrument,
                                 const TsTuning *tuning,
                                 TsAuditionSource source,
-                                uint32_t staged_notes,
+                                TsKeyboardMask staged_notes,
                                 int keyboard_base_note, int output_rate);
 static void runtime_note_release_event(AudioState *audio,
                                        const TsNoteEvent *event);
@@ -1304,7 +1304,9 @@ static int note_for_key(SDL_Keycode key)
 {
     const SDL_Keycode keys[] = {
         SDLK_z, SDLK_s, SDLK_x, SDLK_d, SDLK_c, SDLK_v, SDLK_g, SDLK_b, SDLK_h, SDLK_n, SDLK_j, SDLK_m,
-        SDLK_q, SDLK_2, SDLK_w, SDLK_3, SDLK_e, SDLK_r, SDLK_5, SDLK_t, SDLK_6, SDLK_y, SDLK_7, SDLK_u
+        SDLK_q, SDLK_2, SDLK_w, SDLK_3, SDLK_e, SDLK_r, SDLK_5, SDLK_t, SDLK_6, SDLK_y, SDLK_7, SDLK_u,
+        SDLK_i, SDLK_9, SDLK_o, SDLK_0, SDLK_p, SDLK_LEFTBRACKET, SDLK_EQUALS, SDLK_RIGHTBRACKET, SDLK_RETURN,
+        SDLK_COMMA, SDLK_l, SDLK_PERIOD, SDLK_SEMICOLON, SDLK_SLASH
     };
     for (int i = 0; i < (int)(sizeof(keys) / sizeof(keys[0])); ++i)
         if (key == keys[i]) return i;
@@ -1642,7 +1644,7 @@ static void begin_note_event(SDL_AudioDeviceID device, AudioState *audio,
     TsNoteStartResult result;
     char note_name[8];
     int voice_count;
-    uint32_t visible_notes;
+    TsKeyboardMask visible_notes;
     int capture_started = 0;
     ui->bank_view_slot = -1;
     if (!device || !ts_audio_output_is_available() || output_rate <= 0 || event == NULL) {
@@ -1726,14 +1728,14 @@ static void stage_capture_note(SDL_AudioDeviceID device, AudioState *audio,
     char error[160];
     int count;
     if (device) SDL_LockAudioDevice(device);
-    if (!ts_capture_toggle_staged_note(&audio->capture, note,
+    if (!ts_capture_toggle_staged_note(&audio->capture, ts_keyboard_trigger_offset(note),
                                        error, sizeof(error))) {
         if (device) SDL_UnlockAudioDevice(device);
         snprintf(ui->status, sizeof(ui->status), "STAGE FAILED: %.140s", error);
         return;
     }
     count = 0;
-    for (uint32_t mask = audio->capture.staged_notes; mask != 0u; mask >>= 1u)
+    for (TsKeyboardMask mask = audio->capture.staged_notes; mask != 0u; mask >>= 1u)
         count += (int)(mask & 1u);
     if (device) SDL_UnlockAudioDevice(device);
     snprintf(ui->status, sizeof(ui->status),
@@ -1745,13 +1747,14 @@ static void launch_staged_capture(SDL_AudioDeviceID device, AudioState *audio,
                                   TsUiState *ui, const TsInstrument *instrument,
                                   int note, int output_rate)
 {
-    uint32_t staged;
+    TsKeyboardMask staged;
     int started = 0;
-    if (!device || output_rate <= 0) return;
+    int offset = ts_keyboard_trigger_offset(note);
+    if (!device || output_rate <= 0 || offset < 0) return;
     SDL_LockAudioDevice(device);
     staged = audio->capture.staged_notes;
     if (audio->capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER &&
-        (staged & (1u << note)) != 0u &&
+        (staged & (UINT64_C(1) << offset)) != 0u &&
         runtime_capture_source_matches(audio, instrument->selected_slot)) {
         audio->playing = 0;
         audio->bank_slot = -1;
@@ -1811,7 +1814,12 @@ static void release_note(SDL_AudioDeviceID device, AudioState *audio,
                          TsUiState *ui, int note)
 {
     TsNoteEvent event;
-    if (!ts_note_event_qwerty(&event, note, ts_ui_keyboard_base_note(ui))) return;
+    int offset = ts_keyboard_trigger_offset(note);
+    if (offset < 0) return;
+    /* Release by physical identity even if a range move put its new pitch
+       above MIDI 127. The voice retains the pitch it started with. */
+    event = (TsNoteEvent){TS_NOTE_ORIGIN_QWERTY, note,
+        ts_ui_keyboard_base_note(ui) + offset, 127, -1};
     release_note_event(device, audio, ui, &event);
 }
 
@@ -1829,12 +1837,19 @@ static void preserve_staged_notes_after_keyboard_move(
     if (device) SDL_UnlockAudioDevice(device);
 }
 
+static void keyboard_pointer_clear(TsUiState *ui)
+{
+    if (ui->keyboard_pointer_drag) SDL_CaptureMouse(SDL_FALSE);
+    ui->keyboard_pointer_drag = 0;
+    ui->mouse_note = -1;
+}
+
 static void release_mouse_note_before_keyboard_move(
     SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui)
 {
-    if (ui == NULL || ui->mouse_note < 0) return;
-    release_note(device, audio, ui, ui->mouse_note);
-    ui->mouse_note = -1;
+    if (ui == NULL) return;
+    if (ui->mouse_note >= 0) release_note(device, audio, ui, ui->mouse_note);
+    keyboard_pointer_clear(ui);
 }
 
 static int set_keyboard_octave(SDL_AudioDeviceID device, AudioState *audio,
@@ -1933,7 +1948,7 @@ static void stop_all_force(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     if (device) SDL_UnlockAudioDevice(device);
     ui->active_notes = 0;
     ui->tile_launcher_mask = 0u;
-    ui->mouse_note = -1;
+    keyboard_pointer_clear(ui);
     ui->tape_dragging = 0;
     ui->tape_drag_button = 0;
     ui->selecting = 0;
@@ -1965,7 +1980,7 @@ static void stop_all(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui)
         if (device) SDL_UnlockAudioDevice(device);
         ui->active_notes = 0;
         ui->tile_launcher_mask = 0u;
-        ui->mouse_note = -1;
+        keyboard_pointer_clear(ui);
         ui->tape_dragging = 0;
         ui->tape_drag_button = 0;
         ui->selecting = 0;
@@ -2324,7 +2339,7 @@ static void finalize_capture(SDL_AudioDeviceID device, AudioState *audio, TsUiSt
     ui->workbench_loop_active = 0;
     ui->workbench_loop_persistent = 0;
     ui->active_notes = 0u;
-    ui->mouse_note = -1;
+    keyboard_pointer_clear(ui);
     if (ok) {
         ui->bank_view_slot = -1;
         ui->audition_source = TS_AUDITION_CURRENT;
@@ -12623,8 +12638,38 @@ static int keyboard_pointer_event(const SDL_Event *event, SDL_Window *window,
         return 1;
     }
     if (event->type == SDL_MOUSEBUTTONUP && event->button.button == SDL_BUTTON_LEFT &&
-        ui->mouse_note >= 0) {
-        release_note(device,audio,ui,ui->mouse_note);ui->mouse_note=-1;
+        (ui->mouse_note >= 0 || ui->keyboard_pointer_drag)) {
+        release_mouse_note_before_keyboard_move(device, audio, ui);
+        return 1;
+    }
+    if (ui->keyboard_pointer_drag && event->type == SDL_WINDOWEVENT &&
+        event->window.windowID == SDL_GetWindowID(window) &&
+        (event->window.event == SDL_WINDOWEVENT_FOCUS_LOST ||
+         event->window.event == SDL_WINDOWEVENT_HIDDEN ||
+         event->window.event == SDL_WINDOWEVENT_CLOSE)) {
+        release_mouse_note_before_keyboard_move(device, audio, ui);
+        return 0; /* Let normal window cleanup run too. */
+    }
+    if (ui->keyboard_pointer_drag && event->type == SDL_MOUSEMOTION) {
+        if (!(event->motion.state & SDL_BUTTON_LMASK) || !ui->show_keyboard ||
+            !sister_performance_keys_allowed(ui) || ui->keyboard_hold ||
+            (ui->keyboard_sequence_open && ui->keyboard_sequence_edit)) {
+            release_mouse_note_before_keyboard_move(device, audio, ui);
+            return 1;
+        }
+        int x, y, note = -1;
+        if (event->motion.windowID == SDL_GetWindowID(window)) {
+            logical_mouse(window, event->motion.x, event->motion.y, &x, &y);
+            note = ts_ui_key_from_point_for_base(x, y, ts_ui_keyboard_base_note(ui));
+        }
+        int trigger = note < 0 ? -1 : TS_KEYBOARD_POINTER_FIRST + note;
+        if (trigger == ui->mouse_note) return 1;
+        if (ui->mouse_note >= 0) release_note(device, audio, ui, ui->mouse_note);
+        ui->mouse_note = trigger;
+        if (trigger >= 0) {
+            if (ui->fm_open) begin_fm_note(device,audio,ui,instrument,fm_preview,trigger,rate,0);
+            else begin_note(device,audio,ui,instrument,trigger,rate,0);
+        }
         return 1;
     }
     if (event->type == SDL_MOUSEWHEEL && event->wheel.windowID == SDL_GetWindowID(window) &&
@@ -12654,10 +12699,36 @@ static int keyboard_pointer_event(const SDL_Event *event, SDL_Window *window,
     } else if (audio->capture.state==TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER && audio->capture.staged_notes) {
         ui->mouse_note=-1;launch_staged_capture(device,audio,ui,instrument,note,rate);
     } else {
-        ui->mouse_note=shifted?-1:note;
-        if (ui->fm_open) begin_fm_note(device,audio,ui,instrument,fm_preview,note,rate,shifted);
-        else begin_note(device,audio,ui,instrument,note,rate,shifted);
+        int trigger = TS_KEYBOARD_POINTER_FIRST + note;
+        ui->mouse_note = shifted ? -1 : trigger;
+        ui->keyboard_pointer_drag = !shifted && !ui->keyboard_hold;
+        if (ui->keyboard_pointer_drag) SDL_CaptureMouse(SDL_TRUE);
+        if (ui->fm_open) begin_fm_note(device,audio,ui,instrument,fm_preview,trigger,rate,shifted);
+        else begin_note(device,audio,ui,instrument,trigger,rate,shifted);
     }
+    return 1;
+}
+
+
+static int keyboard_note_key_event(const SDL_Event *event, SDL_Window *window,
+    SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
+    const TsInstrument *instrument, const TsSample *fm_preview, int rate)
+{
+    if (event->type != SDL_KEYDOWN || event->key.windowID != SDL_GetWindowID(window) ||
+        !ui->show_keyboard || !sister_performance_keys_allowed(ui) || ui->midi_learn_active ||
+        ui->amplitude_gesture.active || ui->canvas_gesture.active ||
+        ui->material_macro_gesture.active || ui->stretch_gesture.active ||
+        ui->tear_gesture.active || ui->smear_gesture.active || ui->warp_gesture.active ||
+        (event->key.keysym.mod & (KMOD_CTRL | KMOD_ALT | KMOD_GUI))) return 0;
+    int trigger = note_for_key(event->key.keysym.sym);
+    if (trigger < 0) return 0;
+    /* Keep FM's explicit Shift+R randomize and Shift+B bank commands. */
+    if (ui->fm_open && (event->key.keysym.mod & KMOD_SHIFT) &&
+        (event->key.keysym.sym == SDLK_r || event->key.keysym.sym == SDLK_b)) return 0;
+    if (event->key.repeat) return 1;
+    if (ui->fm_open) begin_fm_note(device, audio, ui, instrument, fm_preview, trigger,
+                                  rate, (event->key.keysym.mod & KMOD_SHIFT) != 0);
+    else (void)canvas_qwerty_event(event, device, audio, ui, instrument, rate);
     return 1;
 }
 
@@ -13229,6 +13300,10 @@ int main(int argc, char **argv)
                    next window until the stream has gone quiet. */
                 ts_ui_wheel_guard_interrupt(&ui.wheel_guard, SDL_GetTicks());
             }
+            /* A piano sweep owns motion/release until it ends, even outside
+               the piano or across the ARP controls. */
+            if (ui.keyboard_pointer_drag && keyboard_pointer_event(&event,window,
+                device,&audio,&ui,&instrument,&fm_preview,obtained.freq)) continue;
             ts_audio_insert_device_event(&event);
             if (event.type == SDL_AUDIODEVICEREMOVED &&
                 ts_audio_device_event_matches(
@@ -13661,6 +13736,8 @@ int main(int argc, char **argv)
                                       &pending_selection_load,&import_controller,obtained.freq)) continue;
             if (keyboard_pointer_event(&event,window,device,&audio,&ui,&instrument,
                                         &fm_preview,obtained.freq)) continue;
+            if (keyboard_note_key_event(&event,window,device,&audio,&ui,&instrument,
+                                         &fm_preview,obtained.freq)) continue;
             if (event.type == SDL_MOUSEBUTTONDOWN &&
                 event.button.button == SDL_BUTTON_LEFT &&
                 event.button.windowID == SDL_GetWindowID(window) &&

@@ -98,6 +98,41 @@ See [Playback and loop modes](PLAYBACK_LOOPS.md) for attack-first modes and exch
 
 ![Recording and Hold on the virtual keyboard](images/keyboard-playback-controls.png)
 
+## Extended keyboard and dragging
+
+The piano now displays 33 semitones, with the extended SunVox-style note rows
+listed in [Quick Reference](QUICK_REFERENCE.md#qwerty-note-keyboard). At the default
+C4 base it spans C4–G♯6. This expands the playable range, not the five-note voice
+limit. ARP still supports up to 24 selected pitches, chosen anywhere in MIDI range.
+
+Press a piano key and keep the left button down while moving across other keys.
+Each new key releases the previous mouse note and starts the next; remaining on
+one key does not retrigger it. Leaving the key area releases the mouse note, and
+returning while pressed resumes the sweep. Button release, focus loss, Stop and
+range changes end the gesture. Ordinary Sustain still applies to note releases.
+
+This works in the main and FM piano with tile, group and Sister routing. Physical
+keys, aliases in the overlapping rows, and the mouse have separate trigger IDs,
+so releasing one does not cut off another. Shift-click and HOLD remain chord
+selectors; dragging does not collect extra latch notes. ARP EDIT/Ctrl-click and
+armed capture staging keep their existing selection gestures.
+
+For example, latch a C4/G4 drone with Shift-click, then sweep the higher piano
+keys with an ordinary drag. The drone continues as you play the higher notes.
+Use **SUSTAIN OFF** if you want each swept note to stop when you leave it.
+
+Main/FM `0`, `=`, Enter, `2` and `3` are note keys when the piano is visible.
+FM Apply remains available from **APPLY**, `A`, or keypad Enter. Modal Enter,
+text entry, Ctrl shortcuts, Alt+Enter and FM Shift+R/Shift+B retain their controls.
+
+![Extended piano with physical-key labels](images/keyboard-extended.png)
+
+The controller regression injects SDL presses, moves, releases and focus loss
+across all 33 notes in tile/FM/group/Sister routes, including overlapping physical
+keys, independent mouse ownership, ARP editing, high-bit capture staging, and
+release after octave changes. Core tests hit-test every legal keyboard base.
+These are headless tests; physical mouse feel and listening remain user checks.
+
 ## MIDI in previews
 
 CDP Portal now receives MIDI notes for the selected **Source** or **Result**,

@@ -26,6 +26,11 @@ static const char *performance_help(const TsUiState *ui,int x,int y)
     }
     if(!ts_ui_keyboard_sequence_visible(ui))return "";
     H(10,313,46,17,"SHOW/HIDE ARP CONTROLS; SHIFT+SPACE STARTS/STOPS ARP EVEN WITH THE PANEL CLOSED");
+    if(ui->show_keyboard) {
+        H(10,330,612,49,ui->keyboard_sequence_open && ui->keyboard_sequence_edit ?
+          "EDIT: CLICK OR TYPE TO SELECT ARP NOTES; TURN EDIT OFF TO PLAY / DRAG ACROSS KEYS" :
+          "DRAG TO PLAY ACROSS KEYS; SHIFT-CLICK/HOLD: CHORD; SHIFT-WHEEL: MOVE RANGE; CTRL-CLICK: ARP");
+    }
     if(!ui->keyboard_sequence_open)return "";
     if(ui->fm_open)y-=TS_ARP_PANEL_FM_OFFSET;
     H(20,134,64,23,"COPY THE HIGHLIGHTED SLOT'S NOTES, ORDER, TIMING, GATE, VOLUME AND LFO; PLAYBACK CONTINUES");

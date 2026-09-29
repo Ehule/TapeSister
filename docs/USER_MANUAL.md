@@ -483,7 +483,14 @@ per-voice LFO ranges. It does not disable safety: finite checks, DC rejection,
 saturation, and bounded output remain active. Extreme is most useful when treated as
 an invitation to find unstable material and then sculpt it into something playable.
 
-QWERTY and MIDI can play the live FM preview. **HOLD** latches or releases the current
+The visible piano now spans 33 semitones with extended SunVox-style physical
+note rows. Hold the mouse button and drag across it to play successive notes;
+Shift-click/HOLD and ARP EDIT keep their chord/selection behavior. See the
+[full key map](QUICK_REFERENCE.md#qwerty-note-keyboard) and
+[dragging guide](KEYBOARD_SUSTAIN.md#extended-keyboard-and-dragging).
+
+QWERTY and MIDI can play the live FM preview. With the piano visible, Enter plays
+a note; use **APPLY**, `A`, or keypad Enter to print the preview. **HOLD** latches or releases the current
 synth chord. FM can also be recorded directly through REC BANK **SRC SYNTH** without an
 external input or operating-system loopback.
 

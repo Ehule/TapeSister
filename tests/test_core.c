@@ -3474,12 +3474,12 @@ int main(void)
     ui.audition_source = TS_AUDITION_CURRENT;
     ui.active_notes = (1u << 0) | (1u << 1);
     ts_ui_render(&fb, &ui, &imported);
-    CHECK(fb.pixels[340 * TS_UI_WIDTH + 20] == 0xffcc830bu);
-    CHECK(fb.pixels[340 * TS_UI_WIDTH + 50] == 0xffff47e7u);
+    CHECK(fb.pixels[340 * TS_UI_WIDTH + 16] == 0xffcc830bu);
+    CHECK(fb.pixels[340 * TS_UI_WIDTH + 40] == 0xffff47e7u);
     ui.active_notes = 1u << 4;
     ts_ui_render(&fb, &ui, &imported);
-    CHECK(fb.pixels[370 * TS_UI_WIDTH + 116] == 0xffcc830bu);
-    CHECK(fb.pixels[370 * TS_UI_WIDTH + 73] == 0xffdcd8cfu);
+    CHECK(fb.pixels[363 * TS_UI_WIDTH + 76] == 0xffcc830bu);
+    CHECK(fb.pixels[363 * TS_UI_WIDTH + 51] == 0xffdcd8cfu);
     ui.active_notes = 0;
     ui.playback_active = 0;
     ui.audition_source = TS_AUDITION_CURRENT;
@@ -3523,30 +3523,26 @@ int main(void)
     CHECK(fb.pixels[301 * TS_UI_WIDTH + 64 + 10 * 6] != 0xffcc830bu);
     ts_browser_close(&ui.browser);
     CHECK(ts_ui_key_from_point(20, 370) == 0);
-    CHECK(ts_ui_key_from_point(50, 340) == 1);
+    CHECK(ts_ui_key_from_point(40, 340) == 1);
     {
-        const int white_semitones[14] = {0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19, 21, 23};
-        const int black_after[10] = {0, 1, 3, 4, 5, 7, 8, 10, 11, 12};
-        const int black_semitones[10] = {1, 3, 6, 8, 10, 13, 15, 18, 20, 22};
-        for (int i = 0; i < 14; ++i)
-            CHECK(ts_ui_key_from_point(10 + i * 43 + 21, 370) == white_semitones[i]);
-        for (int i = 0; i < 10; ++i)
-            CHECK(ts_ui_key_from_point(10 + (black_after[i] + 1) * 43, 345) ==
-                  black_semitones[i]);
+        const int white_semitones[19] = {0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19, 21, 23, 24, 26, 28, 29, 31};
+        for (int i = 0; i < 19; ++i)
+            CHECK(ts_ui_key_from_point(10 + i * 32 + 16, 370) == white_semitones[i]);
     }
     CHECK(ts_ui_key_from_point(0, 0) == -1);
     {
-        for (int base_note = 60; base_note < 72; ++base_note) {
-            uint32_t reachable = 0u;
+        for (int base_note = 0; base_note <= 104; ++base_note) {
+            TsKeyboardMask reachable = 0u;
             for (int y = 330; y < 379; ++y) {
                 for (int x = 10; x < 622; ++x) {
                     int note = ts_ui_key_from_point_for_base(
                         x, y, base_note);
-                    if (note >= 0) reachable |= UINT32_C(1) << note;
+                    if (note >= 0) reachable |= UINT64_C(1) << note;
                 }
             }
-            CHECK(reachable == UINT32_C(0x00ffffff));
-            for (int note = 0; note < 24; ++note) {
+            int count = 128 - base_note < TS_KEYBOARD_NOTE_COUNT ? 128 - base_note : TS_KEYBOARD_NOTE_COUNT;
+            CHECK(reachable == (UINT64_C(1) << count) - 1);
+            for (int note = 0; note < count; ++note) {
                 int pitch_class = (base_note + note) % 12;
                 int black = pitch_class == 1 || pitch_class == 3 ||
                             pitch_class == 6 || pitch_class == 8 ||
@@ -3563,7 +3559,7 @@ int main(void)
            G2 is white, and C4 remains a selectable white key. */
         CHECK(ts_ui_key_from_point_for_base(10, 345, 42) == 0);
         CHECK(ts_ui_key_from_point_for_base(20, 370, 42) == 1);
-        CHECK(ts_ui_key_from_point_for_base(461, 370, 42) == 18);
+        CHECK(ts_ui_key_from_point_for_base(345, 370, 42) == 18);
     }
 
     ui.fx_page = TS_FX_FAMILY;

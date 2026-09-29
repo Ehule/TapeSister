@@ -1,3 +1,6 @@
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include "tapesister/performance.h"
 
 #include <assert.h>

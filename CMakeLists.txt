@@ -525,7 +525,11 @@ if(MINGW)
   foreach(project_test IN ITEMS tapesister_core_tests
                                test_sister_project_state
                                tapesister_sample_pages_tests
-                               tapesister_keyboard_hold_tests)
+                               tapesister_keyboard_hold_tests
+                               tapesister_capture_tests
+                               tapesister_midi_tests
+                               tapesister_performance_tests
+                               tapesister_preview_loop_tests)
     if(TARGET ${project_test})
       target_link_options(${project_test} PRIVATE "-Wl,--stack,16777216")
     endif()

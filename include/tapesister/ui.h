@@ -375,7 +375,7 @@ typedef struct {
     TsUiWheelGuard wheel_guard;
     char performance_tooltip[160], performance_hover[160], performance_hover_status[160];
     uint32_t performance_hover_due;
-    uint32_t active_notes;
+    TsKeyboardMask active_notes;
     TsKeyboardSequenceSettings keyboard_sequence;
     TsKeyboardSequenceSettings keyboard_sequence_clipboard;
     int keyboard_sequence_clipboard_valid;
@@ -392,6 +392,7 @@ typedef struct {
     uint16_t tile_launcher_mask;
     int play_on_select; /* Sample-bank click auditions; off selects for editing only. */
     int mouse_note;
+    int keyboard_pointer_drag;
     int selecting;
     int bank_clear_armed;
     int playback_active;
@@ -485,7 +486,7 @@ typedef struct {
     int mosaic_source_count, mosaic_source_page, mosaic_source_selected;
     int mosaic_bank_count, mosaic_source_pages, mosaic_source_offset;
     double mosaic_time, mosaic_scroll, mosaic_xscroll, mosaic_scale, mosaic_hscale;
-    uint32_t staged_notes;
+    TsKeyboardMask staged_notes;
     uint32_t overlay_until_ms;
     int workbench_loop_active;
     int workbench_loop_persistent;

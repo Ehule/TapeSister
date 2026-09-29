@@ -6,6 +6,16 @@
 
 #include "tapesister/midi_map.h"
 
+enum {
+    TS_KEYBOARD_NOTE_COUNT = 33,
+    TS_KEYBOARD_ALIAS_FIRST = 33, /* comma, L, period, semicolon, slash */
+    TS_KEYBOARD_POINTER_FIRST = 64
+};
+typedef uint64_t TsKeyboardMask;
+/* Trigger identity is separate from pitch: overlapping rows and mouse notes
+   must release independently, including after a keyboard-range change. */
+int ts_keyboard_trigger_offset(int trigger);
+
 typedef enum {
     TS_NOTE_ORIGIN_QWERTY = 0,
     TS_NOTE_ORIGIN_MIDI

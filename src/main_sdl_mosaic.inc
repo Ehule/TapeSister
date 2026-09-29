@@ -31,7 +31,7 @@ static void mosaic_poll(SDL_AudioDeviceID device,TsUiState *ui,
         if(!ui->show_recipes && !ui->show_ingredients)ui->show_keyboard=1;
         TsMosaicEvent *e=ts_mosaic_find(ui->mosaic,c->active);ui->staged_notes=0;
         if(e)for(int n=0;n<e->note_count;++n) {
-            int k=e->notes[n]-ts_ui_keyboard_base_note(ui);if(k>=0 && k<24)ui->staged_notes|=1u<<k;
+            int k=e->notes[n]-ts_ui_keyboard_base_note(ui);if(k>=0 && k<TS_KEYBOARD_NOTE_COUNT)ui->staged_notes|=UINT64_C(1)<<k;
         }
         (void)instrument;
     }

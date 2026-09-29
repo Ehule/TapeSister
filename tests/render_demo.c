@@ -261,6 +261,10 @@ int main(int argc, char **argv)
             (float)before;
         snprintf(ui.status, sizeof(ui.status),
                  "PLAYHEAD-ANCHORED TAPE EXPANSION - UNDOABLE");
+    } else if (argc > 2 && strcmp(argv[2], "keyboard-extended") == 0) {
+        ui.show_keyboard = 1;
+        ui.active_notes = (UINT64_C(1) << 0) | (UINT64_C(1) << 7) | (UINT64_C(1) << 32);
+        snprintf(ui.status, sizeof(ui.status), "33 NOTES / DRAG ACROSS KEYS / SHIFT-CLICK HOLDS A CHORD");
     } else if (argc > 2 && strcmp(argv[2], "keyboard-shift") == 0) {
         ts_ui_keyboard_shift_semitone(&ui, 1);
         ui.active_notes = (1u << 0) | (1u << 4) | (1u << 7);
