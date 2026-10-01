@@ -70,6 +70,9 @@ installed voice. Core edit regressions and the Mosaic controller pass with
 AddressSanitizer/UndefinedBehaviorSanitizer (leak checking disabled because this
 execution environment cannot run LeakSanitizer). Native Windows/Linux release CI
 includes the new regressions and relevant DSP/keyboard/capture tests.
+The modulation and post-FX regression files explicitly retain assertions in
+Release builds: their existing fixtures perform initialization inside assertions,
+so `NDEBUG` previously removed both setup and validation.
 
 ## Repeatable callback benchmark
 

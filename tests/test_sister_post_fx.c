@@ -1,3 +1,7 @@
+/* These regression checks (including fixture setup) must run in Release CI. */
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include "tapesister/sister_post_fx.h"
 #include "tapesister/sister_runtime.h"
 

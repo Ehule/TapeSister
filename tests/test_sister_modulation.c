@@ -1,3 +1,7 @@
+/* These regression checks (including fixture setup) must run in Release CI. */
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include "sister_test_helpers.h"
 
 #include <stdio.h>
