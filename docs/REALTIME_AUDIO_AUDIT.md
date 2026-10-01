@@ -73,6 +73,9 @@ includes the new regressions and relevant DSP/keyboard/capture tests.
 The modulation and post-FX regression files explicitly retain assertions in
 Release builds: their existing fixtures perform initialization inside assertions,
 so `NDEBUG` previously removed both setup and validation.
+The post-FX fixture also needs the same Windows stack reserve as the application:
+one existing three-runtime test uses over 2.5 MB, beyond MinGW's default 2 MB.
+Its crash reproduces locally with a 2 MB stack and passes with the larger reserve.
 
 ## Repeatable callback benchmark
 
