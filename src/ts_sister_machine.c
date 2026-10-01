@@ -119,6 +119,7 @@ static void ramp_set(TsSisterRamp *ramp, float target, uint32_t frames)
 {
     if (ramp == NULL) return;
     if (!isfinite(target)) target = 0.0f;
+    if (frames != 0u && target == ramp->target) return;
     ramp->target = target;
     if (frames == 0u || fabsf(target - ramp->current) <= FLT_EPSILON) {
         ramp->current = target;
@@ -805,6 +806,14 @@ static void reset_runtime_state(TsSisterMachine *machine, int clear_buffer,
     machine->wow_next_event_clock = 0u;
     machine->wow_target = 0.0f;
     machine->wow_state = 0.0f;
+    float rate = (float)machine->buffer.sample_rate;
+    machine->wow_coefficient = 1.0f - expf((float)(-2.0 * M_PI * 2.0) / rate);
+    machine->decorrelation_coefficient = 1.0f - expf((float)(-2.0 * M_PI * 2000.0) / rate);
+    machine->dc_radius = expf((float)(-2.0 * M_PI * 5.0) / rate);
+    machine->duck_energy_coefficient = 1.0f - expf(-1.0f / (0.45f * rate));
+    machine->duck_attack_coefficient = 1.0f - expf(-1.0f / (0.010f * rate));
+    machine->duck_release_coefficient = 1.0f - expf(-1.0f / (0.050f * rate));
+    machine->delay_follow_coefficient = 1.0f - expf(-1.0f / (0.020f * rate));
     machine->duck_energy = 0.0f;
     machine->duck_gain = 1.0f;
     memset(machine->dc_input_x1, 0, sizeof(machine->dc_input_x1));
@@ -1106,18 +1115,23 @@ void ts_sister_machine_set_parameters(TsSisterMachine *machine,
                             ts_sister_effect_target_enabled(
                                 next.soak_targets, target_bit));
     }
-    target = calculate_biquad(&next, machine->buffer.sample_rate);
-    machine->filter_target = target;
+    if (next.filter_type != machine->applied_parameters.filter_type ||
+        next.filter_cutoff_hz != machine->applied_parameters.filter_cutoff_hz ||
+        next.filter_q != machine->applied_parameters.filter_q ||
+        next.filter_gain_db != machine->applied_parameters.filter_gain_db) {
+        target = calculate_biquad(&next, machine->buffer.sample_rate);
+        machine->filter_target = target;
 #define SET_FILTER_STEP(field) \
-    machine->filter_step.field = (target.field - machine->filter_current.field) / \
-                                 (float)filter_frames
-    SET_FILTER_STEP(b0);
-    SET_FILTER_STEP(b1);
-    SET_FILTER_STEP(b2);
-    SET_FILTER_STEP(a1);
-    SET_FILTER_STEP(a2);
+        machine->filter_step.field = (target.field - machine->filter_current.field) / \
+                                     (float)filter_frames
+        SET_FILTER_STEP(b0);
+        SET_FILTER_STEP(b1);
+        SET_FILTER_STEP(b2);
+        SET_FILTER_STEP(a1);
+        SET_FILTER_STEP(a2);
 #undef SET_FILTER_STEP
-    machine->filter_ramp_remaining = filter_frames;
+        machine->filter_ramp_remaining = filter_frames;
+    }
     machine->parameters = next;
     machine->applied_parameters = next;
 }
@@ -1291,8 +1305,7 @@ static float update_wow(TsSisterMachine *machine, float wow_amount)
         machine->wow_target = prng_signed(&machine->wow_prng);
         machine->wow_next_event_clock = machine->master_clock + interval;
     }
-    coefficient = 1.0f - expf((float)(-2.0 * M_PI * 2.0) /
-                              (float)machine->buffer.sample_rate);
+    coefficient = machine->wow_coefficient;
     machine->wow_state += (machine->wow_target - machine->wow_state) * coefficient;
     amount = wow_amount / 10.0f;
     return machine->wow_state * amount * 0.004f;
@@ -1337,8 +1350,7 @@ static TsStereoFrame apply_decorrelation(TsSisterMachine *machine, size_t head,
     TsStereoFrame decorated;
     float mid;
     input = ts_stereo_frame_sanitize(input);
-    coefficient = 1.0f - expf((float)(-2.0 * M_PI * 2000.0) /
-                              (float)machine->buffer.sample_rate);
+    coefficient = machine->decorrelation_coefficient;
     decor->lowpass_state += (input.r - decor->lowpass_state) * coefficient;
     delayed = decor->delay[decor->write_index];
     decor->delay[decor->write_index] = decor->lowpass_state;
@@ -1414,8 +1426,7 @@ static float soft_saturate(float value)
 
 static float dc_block(TsSisterMachine *machine, size_t channel, float input)
 {
-    float radius = expf((float)(-2.0 * M_PI * 5.0) /
-                        (float)machine->buffer.sample_rate);
+    float radius = machine->dc_radius;
     float output;
     if (!isfinite(input)) input = 0.0f;
     output = input - machine->dc_input_x1[channel] +
@@ -1432,7 +1443,6 @@ static float update_duck(TsSisterMachine *machine, TsStereoFrame sidechain,
     float energy_coefficient;
     float envelope;
     float desired;
-    float time_seconds;
     float coefficient;
     sidechain = ts_stereo_frame_sanitize(sidechain);
     if (!machine->parameters.duck_enabled) {
@@ -1446,8 +1456,7 @@ static float update_duck(TsSisterMachine *machine, TsStereoFrame sidechain,
     }
     instant = 0.5f * (sidechain.l * sidechain.l + sidechain.r * sidechain.r);
     if (!isfinite(instant)) instant = 0.0f;
-    energy_coefficient = 1.0f - expf(-1.0f /
-        (0.45f * (float)machine->buffer.sample_rate));
+    energy_coefficient = machine->duck_energy_coefficient;
     machine->duck_energy += (instant - machine->duck_energy) * energy_coefficient;
     if (!isfinite(machine->duck_energy) || machine->duck_energy < 0.0f)
         machine->duck_energy = 0.0f;
@@ -1460,9 +1469,8 @@ static float update_duck(TsSisterMachine *machine, TsStereoFrame sidechain,
         desired = envelope <= threshold || envelope <= FLT_EPSILON
                     ? 1.0f : clampf(threshold / envelope, 0.0f, 1.0f);
     }
-    time_seconds = desired < machine->duck_gain ? 0.010f : 0.050f;
-    coefficient = 1.0f - expf(-1.0f /
-        (time_seconds * (float)machine->buffer.sample_rate));
+    coefficient = desired < machine->duck_gain ? machine->duck_attack_coefficient :
+                                                  machine->duck_release_coefficient;
     machine->duck_gain += (desired - machine->duck_gain) * coefficient;
     if (!isfinite(machine->duck_gain)) machine->duck_gain = 1.0f;
     return clampf(machine->duck_gain, 0.0f, 1.0f);
@@ -1788,8 +1796,7 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
         raw[0] = frame_lerp(old_read, new_read, amount);
         --machine->head[0].jump_remaining;
     } else {
-        float coefficient = 1.0f - expf(-1.0f /
-            (0.020f * (float)machine->buffer.sample_rate));
+        float coefficient = machine->delay_follow_coefficient;
         machine->head[0].current_delay_frames +=
             (machine->head[0].target_delay_frames -
              machine->head[0].current_delay_frames) * coefficient;

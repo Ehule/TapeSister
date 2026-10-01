@@ -24,6 +24,7 @@ static void prepare_voice(TsNoteBank *bank, const TsSample *sample,
     voice->direction = step < 0.0 ? -1 : 1;
     voice->gain = 1.0f;
     voice->active = 1;
+    bank->render_limit = 1; /* This low-level fixture installs its voice directly. */
 }
 
 int main(void)

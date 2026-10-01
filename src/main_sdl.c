@@ -826,6 +826,7 @@ typedef struct {
     uint64_t realtime_counter_frequency;
     TsRealtimeDiagnostics realtime_diagnostics;
     float fm_output_gain;
+    float fm_output_target;
     TapeLinkReader live_link;
     float *live_link_buffer;
     size_t live_link_buffer_frames;
@@ -1043,6 +1044,10 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         if (audio->playing && audio->attack_frame < audio->attack_frames)
             ++audio->attack_frame;
 
+        /* Five-ms trim slew, shared by monitor and all dry capture taps. */
+        float fm_slew = audio->output_rate > 0 ? 1.0f / (0.005f * audio->output_rate) : 1.0f;
+        audio->fm_output_gain += fmaxf(-fm_slew,
+            fminf(fm_slew, audio->fm_output_target - audio->fm_output_gain));
         runtime_note_render(audio, &buses, &synth_capture);
         buses.fm.l *= audio->fm_output_gain;
         buses.fm.r *= audio->fm_output_gain;
@@ -4654,7 +4659,7 @@ static void set_fm_output_trim(SDL_AudioDeviceID device, AudioState *audio,
     percent = (int)lrintf(amount * 100.0f);
     ui->config.fm_output_percent = percent;
     if (device) SDL_LockAudioDevice(device);
-    audio->fm_output_gain = (float)percent / 100.0f;
+    audio->fm_output_target = (float)percent / 100.0f;
     if (device) SDL_UnlockAudioDevice(device);
     if (persist && !ts_config_save(&ui->config, config_file_path(),
                                    error, sizeof(error))) {
@@ -12908,7 +12913,7 @@ int main(int argc, char **argv)
     ts_performance_init(&audio.tile_launchers);
     atomic_init(&audio.tile_launcher_mask, 0u);
     ts_audio_mixer_init(&audio.mixer);
-    audio.fm_output_gain = (float)ui.config.fm_output_percent / 100.0f;
+    audio.fm_output_gain = audio.fm_output_target = (float)ui.config.fm_output_percent / 100.0f;
     ts_sister_runtime_init(&audio.sister);
     ts_sister_runtime_configure_limiter(
         &audio.sister, ui.config.sister_limiter_enabled,

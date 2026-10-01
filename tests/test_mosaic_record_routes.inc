@@ -5,7 +5,7 @@ static ExternalInputState *mosaic_record_input_fixture(AudioState *a)
     ts_input_activity_init(&input->activity);ts_input_ownership_init(&input->ownership);
     atomic_init(&input->record_source,TS_RECORD_SOURCE_EXT);
     a->record_bank_recorder=&input->recorder;a->record_source=&input->record_source;
-    a->fm_output_gain=1;
+    a->fm_output_gain=a->fm_output_target=1;
     return input;
 }
 

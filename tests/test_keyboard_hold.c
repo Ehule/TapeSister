@@ -398,7 +398,7 @@ int main(void)
     ts_keyboard_sequence_init(&audio.keyboard_sequence);
     ts_performance_init(&audio.tile_launchers); ts_sister_runtime_init(&audio.sister);
     ts_capture_init(&audio.capture); audio.output_rate = 44100;
-    ts_audio_mixer_init(&audio.mixer);audio.fm_output_gain=1;
+    ts_audio_mixer_init(&audio.mixer);audio.fm_output_gain=audio.fm_output_target=1;
     char error[160];
     assert(ts_sister_runtime_enable(&audio.sister, 44100, 2, 2, 1.0, error, sizeof(error)));
     assert(ts_instrument_create_basic(&instrument, TS_FM_WAVE_SINE, error, sizeof(error)));

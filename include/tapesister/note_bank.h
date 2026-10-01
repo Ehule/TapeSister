@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "tapesister/audition.h"
+#include "tapesister/voice_handoff.h"
 #include "tapesister/note_event.h"
 
 /* Preserve the established five-voice QWERTY/FM bank while giving sample MIDI
@@ -47,6 +48,12 @@ typedef struct {
 typedef struct {
     TsNoteVoice voices[TS_NOTE_BANK_VOICE_CAPACITY];
     uint64_t next_serial;
+    int render_limit; /* One past the highest live or not-yet-observed release. */
+    uint64_t rendered_serial[TS_NOTE_BANK_VOICE_CAPACITY];
+    TsVoiceHandoff sample_handoff, fm_handoff, capture_handoff;
+    uint32_t handoff_frames;
+    int normalization_count, normalization_synth_count;
+    float normalization_gain, normalization_capture_gain;
     int attack_ms;
     int sustain;
     int workbench_loop; /* Session-only selection/whole-sample loop for played notes. */

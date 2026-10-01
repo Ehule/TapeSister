@@ -100,6 +100,7 @@ static void trigger(TsKeyboardSequence *s, int note)
 {
     release_voices(s);
     s->current_note = note;
+    s->gate_current = 1;
     if (!s->source) return;
     double ratio = exp2((note - TS_KEYBOARD_BASE_NOTE) / 12.0);
     for (int i = 0; i < s->source->count; ++i) {
@@ -547,8 +548,11 @@ TsStereoFrame ts_keyboard_sequence_read(TsKeyboardSequence *s, int rate)
             s->elapsed = 0; trigger(s, note_at(s));
         }
         double remaining = s->settings.seconds * s->settings.gate - s->elapsed;
-        if (remaining > 0 && s->source) {
-            float gate = (float)fmin(1.0, remaining / .005);
+        double target_gate = fmax(0.0, fmin(1.0, remaining / .005));
+        double gate_slew = 1.0 / (.005 * rate);
+        s->gate_current += fmax(-gate_slew, fmin(gate_slew, target_gate - s->gate_current));
+        if (s->gate_current > 0 && s->source) {
+            float gate = (float)s->gate_current;
             for (int i = 0; i < s->source->count; ++i) {
                 TsStereoFrame frame = ts_note_voice_read(&s->voices[i]);
                 out.l += frame.l * gate; out.r += frame.r * gate;
