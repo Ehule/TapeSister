@@ -192,6 +192,7 @@ static void test_project_transaction(void)
     remove("mosaic-project-test/mosaic-project-test.tsr");remove("mosaic-project-test/manifest.txt");
     remove("mosaic-project-test/samples/page-001/01_PHASE-BLOOM.wav");
     RMDIR("mosaic-project-test/samples/page-001");RMDIR("mosaic-project-test/samples");
+    remove("mosaic-project-test/project-data/sister-tracker.tst");
     RMDIR("mosaic-project-test/project-data");RMDIR("mosaic-project-test");
 }
 #include "test_mosaic_volume.inc"

@@ -17,6 +17,7 @@ For explanations and complete workflows, see the [User Manual](USER_MANUAL.md).
 | `Ctrl+Shift+P` | Reach CDP Portal from main, FM, Mosaic, or Sister |
 | `4` | Show native DSP; press again to cycle DSP pages |
 | `F1`–`F8` | Select keyboard octave |
+| `F10` | Open/close the [SisterTracker pattern editor](SISTERTRACKER_PLAYBACK.md); playback continues when closed |
 | `F12` or CFG → AUDIO HEALTH | Open/close the [Audio Health monitor](AUDIO_HEALTH.md); Reset counters and Copy Report for a crackle investigation |
 | `Space` | Main: play/stop audition. Mosaic: play/pause arrangement |
 | `Ctrl+Shift+M` | Enter or leave MIDI Learn in either window |
@@ -717,7 +718,7 @@ Ctrl+Z / Ctrl+Y undo/redo; Escape cancels the current stroke.
   then restart. Legacy `meditation`/`standing` values migrate to `nebula`.
   `off` leaves audio and optical controls active. [Details](PRISM_ZOYA.md).
 - **DRAW**: each stroke replaces the previous envelope in its drawn region,
-  with recoverable zeroed sections and ordinary undo/redo. New saves use TSR31.
+  with recoverable zeroed sections and ordinary undo/redo. New saves use TSR32.
 
 ### JACK and device discovery
 

@@ -657,9 +657,9 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
         return hit;
     }
     {
-        static const int source_left[5] = {10, 58, 90, 128, 170};
-        static const int source_width[5] = {44, 28, 34, 38, 48};
-        for (int source = 0; source < 5; ++source) {
+        static const int source_left[6] = {10, 58, 90, 128, 170, 334};
+        static const int source_width[6] = {44, 28, 34, 38, 48, 44};
+        for (int source = 0; source < TS_SISTER_SOURCE_COUNT; ++source) {
             if (!contains(x, y, source_left[source], 172,
                           source_width[source], 20)) continue;
             hit.action = (TsSisterUiAction)(TS_SISTER_UI_ACTION_SOURCE_TILES + source);
@@ -803,9 +803,9 @@ int ts_sister_ui_midi_target(TsSisterUiHit hit, char *target,
     else if (hit.action == TS_SISTER_UI_ACTION_LIMITER_TOGGLE)
         name = "sister.limiter";
     else if (hit.action >= TS_SISTER_UI_ACTION_SOURCE_TILES &&
-             hit.action <= TS_SISTER_UI_ACTION_SOURCE_TAPEHEAD) {
-        static const char *const sources[5] = {
-            "tiles", "fm", "external", "preview", "tapehead"
+             hit.action <= TS_SISTER_UI_ACTION_SOURCE_TRACK) {
+        static const char *const sources[6] = {
+            "tiles", "fm", "external", "preview", "tapehead", "tracker"
         };
         result = snprintf(target, target_size, "sister.source.%s",
                           sources[hit.action - TS_SISTER_UI_ACTION_SOURCE_TILES]);

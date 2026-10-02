@@ -2957,6 +2957,7 @@ int ts_ui_foreground_panel_open(const TsUiState *ui)
 
 #include "ts_cdp_portal_ui.inc"
 #include "ts_mosaic_ui.inc"
+#include "ts_tracker_ui.inc"
 #include "ts_keyboard_sequence_ui.inc"
 #include "ts_master_eq_ui.inc"
 #include "ts_router_ui.inc"
@@ -2966,6 +2967,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
 {
     render_palette = &ui->palette;
     if(ui->portal.open) { portal_render(fb,ui); return; }
+    if(ui->tracker_open && ui->tracker) {tracker_render(fb,ui,instrument);master_eq_render(fb,ui);router_render(fb,ui);main_midi_learn_overlay(fb,ui);return;}
     if(ui->mosaic_open && ui->mosaic) {mosaic_render(fb,ui,instrument);master_eq_render(fb,ui);router_render(fb,ui);main_midi_learn_overlay(fb,ui);return;}
     const TsTuning *display_tuning = &ui->tune_reference;
     int showing_bank = ui->bank_view_slot >= 0 && ui->bank_view_slot < TS_BANK_SLOT_COUNT;
@@ -5485,12 +5487,13 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
            model->routing.source_switches & TS_SISTER_SOURCE_TAPEHEAD);
     button(fb, 222, 172, 52, "TH SONG", model->tapehead_song_playing);
     button(fb, 278, 172, 52, "TH PATT", model->tapehead_pattern_playing);
-    snprintf(line, sizeof(line), "%s MASK%04X V%02d IN%.2F M%.2F",
+    button(fb, 334, 172, 44, "TRACK",
+           model->routing.source_switches & TS_SISTER_SOURCE_TRACK);
+    snprintf(line, sizeof(line), "%s %04X V%02d IN%.2F",
              model->routing.live_link_available ? "LINK" : "WAIT",
              model->routing.source_mask, model->routing.active_source_voices,
-             model->routing.source_input_peak,
-             model->routing.tap_peak[TS_SISTER_TAP_MIX]);
-    text(fb, 336, 179, line,
+             model->routing.source_input_peak);
+    text(fb, 382, 179, line,
          model->routing.warnings ? PAL_VOLUME : PAL_MOUSE, 1);
     overload_display = model->routing.overload_count > 9999u ?
         9999u : (unsigned long long)model->routing.overload_count;

@@ -6,6 +6,7 @@
 #include "tapesister/input_ownership.h"
 #include "tapesister/note_bank.h"
 #include "tapesister/sample_pages.h"
+#include "tapesister/tracker_playback.h"
 #include "tapesister/realtime_diagnostics.h"
 #include "tapesister/sister_runtime.h"
 #include "tapesister/sister_preset.h"
@@ -795,6 +796,7 @@ typedef struct {
     TsSample note_snapshots[TS_NOTE_BANK_VOICE_CAPACITY];
     const TsInstrument *workspace_bank; /* Parked Sample bank while editing a Mosaic card. */
     TsKeyboardSequence keyboard_sequence;
+    TsTrackerPlayback tracker;
     uint64_t keyboard_sequence_source_stamp;
     TsPerformanceBank performance;
     TsMosaic *mosaic;
@@ -1070,6 +1072,8 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             buses.tapehead.r = i + 1 < values ?
                 audio->live_link_buffer[i + 1] : buses.tapehead.l;
         }
+        buses.tracker = ts_tracker_playback_read(&audio->tracker, audio->output_rate);
+        sister_sources.tracker = buses.tracker;
         sister_sources.fm = buses.fm;
         /* Notes already sounding before POWER retain their original voice
            bank and playback phase, but must feed the same TILES insert. */
@@ -1094,10 +1098,10 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         buses.sister = sister_frame.monitor_return;
         buses.program.l = buses.legacy_preview.l +
                           buses.tile_performance.l + buses.fm.l +
-                          buses.tapehead.l;
+                          buses.tapehead.l + buses.tracker.l;
         buses.program.r = buses.legacy_preview.r +
                           buses.tile_performance.r + buses.fm.r +
-                          buses.tapehead.r;
+                          buses.tapehead.r + buses.tracker.r;
         buses.program = ts_stereo_frame_sanitize(buses.program);
         if (buses.program.l > 1.0f) buses.program.l = 1.0f;
         if (buses.program.l < -1.0f) buses.program.l = -1.0f;
@@ -1128,6 +1132,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             buses.tile_performance = (TsStereoFrame){0.0f, 0.0f};
             buses.fm = (TsStereoFrame){0.0f, 0.0f};
             buses.tapehead = (TsStereoFrame){0.0f, 0.0f};
+            buses.tracker = (TsStereoFrame){0.0f, 0.0f};
             buses.monitor = (TsStereoFrame){0.0f, 0.0f};
         }
         /* Sister is a closed insert, not an extra parallel audition bus. When
@@ -1205,6 +1210,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         audio->mixer.buses.output = output;
         ts_insert_write_output(&audio->sister.insert,out+(i/2)*device_channels,device_channels,output);
     }
+    ts_tracker_playback_end_block(&audio->tracker);
     ts_sister_runtime_end_audio_block(&audio->sister);
     {
         uint16_t mask = ts_performance_tile_mask(&audio->tile_launchers);
@@ -1231,6 +1237,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             configuration |= TS_RT_CONFIG_PREVIEW;
         if ((sources & TS_SISTER_SOURCE_TAPEHEAD) != 0u)
             configuration |= TS_RT_CONFIG_TAPEHEAD;
+        if (audio->tracker.running) configuration |= TS_RT_CONFIG_TRACK;
         if (p->head1_level > 0.0f) configuration |= TS_RT_CONFIG_H1;
         if (p->head2_level > 0.0f) configuration |= TS_RT_CONFIG_H2;
         if (p->head3_level > 0.0f) configuration |= TS_RT_CONFIG_H3;
@@ -1943,6 +1950,7 @@ static void fade_all_tile_launchers(SDL_AudioDeviceID device,
 static void stop_all_force(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui)
 {
     if (device) SDL_LockAudioDevice(device);
+    ts_tracker_playback_stop(&audio->tracker);
     audio->browser_voice.active = 0;
     ui->keyboard_hold = 0;
     ui->workbench_loop_active = 0;
@@ -3864,6 +3872,8 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
         audio->bank_slot = -1;
     }
     if (recipe) {
+        ts_tracker_playback_stop(&audio->tracker);
+        ui->tracker_solo=0;ts_tracker_playback_solo(&audio->tracker,0);
         ts_sister_runtime_project_close(&audio->sister);
         ok = ts_sample_pages_load_project(sample_pages, instrument, record_bank,
                                           path, error, sizeof(error));
@@ -10414,6 +10424,7 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
     case TS_SISTER_UI_ACTION_SOURCE_EXT:
     case TS_SISTER_UI_ACTION_SOURCE_PREVIEW:
     case TS_SISTER_UI_ACTION_SOURCE_TAPEHEAD:
+    case TS_SISTER_UI_ACTION_SOURCE_TRACK:
         sources = ts_sister_runtime_sources(&audio->sister);
         sources ^= (uint8_t)(1u << hit.index);
         ts_sister_runtime_set_sources(&audio->sister, sources);
@@ -10949,6 +10960,10 @@ static int midi_sister_hit_from_target(const char *target, float normalized,
         hit->action = TS_SISTER_UI_ACTION_SOURCE_PREVIEW;
     else if (strcmp(target, "sister.source.tapehead") == 0)
         hit->action = TS_SISTER_UI_ACTION_SOURCE_TAPEHEAD;
+    else if (strcmp(target, "sister.source.tracker") == 0) {
+        hit->action = TS_SISTER_UI_ACTION_SOURCE_TRACK;
+        hit->index = 5;
+    }
     else if (strcmp(target, "sister.tapehead.song") == 0)
         hit->action = TS_SISTER_UI_ACTION_TAPEHEAD_SONG;
     else if (strcmp(target, "sister.tapehead.pattern") == 0)
@@ -12646,6 +12661,7 @@ static int keyboard_sustain_event(const SDL_Event *event,SDL_Window *window,
 }
 
 #include "main_sdl_keyboard_sequence.inc"
+#include "main_sdl_tracker.inc"
 
 /* One pointer route for the visible keyboard, regardless of its sound source.
    Releases still arrive after opening a dialog or moving focus within the UI. */
@@ -12923,6 +12939,8 @@ int main(int argc, char **argv)
     }
     ts_note_bank_init(&audio.notes);
     ts_keyboard_sequence_init(&audio.keyboard_sequence);
+    ts_tracker_playback_init(&audio.tracker);
+    ui.tracker = &sample_pages.tracker;
     tapeLinkReaderInit(&audio.live_link);
     audio.live_link_available = -1;
     ts_performance_init(&audio.performance);
@@ -13409,10 +13427,11 @@ int main(int argc, char **argv)
                 continue;
             }
             if (ts_audio_health_event(&event, window, &audio, &ui)) continue;
-            if(keyboard_sequence_transport_event(&event,window,device,&audio,&ui,
+            if((!ui.tracker_open || event_id!=SDL_GetWindowID(window)) && keyboard_sequence_transport_event(&event,window,device,&audio,&ui,
                 &sister_window,&instrument,&fm_preview,obtained.freq))continue;
             if(router_event(&event,window,device,&audio,&ui,&sister_window))continue;
             if(master_eq_event(&event,window,device,&audio,&ui,&sister_window))continue;
+            if(tracker_event(&event,window,device,&audio,&ui,&sample_pages,&instrument,obtained.freq))continue;
             mosaic_commit(device,&ui,&instrument,&mosaic);
             /* Finish an active pointer gesture before Escape can discard a take. */
             if(!mosaic.drag && !mosaic.mix_drag && !mosaic.volume_drag &&
@@ -17032,6 +17051,7 @@ int main(int argc, char **argv)
                      sizeof(sister_window.model.status), "ROLLING MEMORY CLEARED");
         }
         poll_fm_preview(device,&audio,&ui,&fm_preview);
+        tracker_refresh(device,&audio,&ui,&sample_pages,&instrument,obtained.freq);
         keyboard_sequence_prepare(device,&audio,&ui,&instrument,&fm_preview,obtained.freq,0);
         poll_transform_worker(device, &audio, &ui, &instrument, &transform);
         mosaic_commit(device,&ui,&instrument,&mosaic);
@@ -17047,6 +17067,7 @@ int main(int argc, char **argv)
         refresh_workbench_loop(device, &audio, &ui, &instrument);
         mosaic_poll(device,&ui,&instrument,&mosaic);
         if(ui_dialog_open(&ui) && !ui.portal.open)ui.mosaic_open=0;
+        if(ui_dialog_open(&ui))ui.tracker_open=0;
         Uint32 health_setup_now = SDL_GetTicks();
         if (device) SDL_LockAudioDevice(device);
         {
@@ -17316,6 +17337,7 @@ int main(int argc, char **argv)
     portal_free(&portal);
     mosaic_controller_free(&mosaic);
     ts_mosaic_free(ui.mosaic);
+    ts_tracker_playback_free(&audio.tracker);
     ts_performance_free(&audio.performance);
     for(int i=0;i<TS_NOTE_BANK_VOICE_CAPACITY;++i)ts_sample_free(&audio.note_snapshots[i]);
     ts_keyboard_sequence_source_free(audio.keyboard_sequence.source);

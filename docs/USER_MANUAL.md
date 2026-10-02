@@ -14,6 +14,13 @@ in [TapeSister and TapeHead exchange](#tapesister-and-tapehead-exchange).
 For a compact list of keys, gestures, ranges, and file types, see the
 [Quick Reference](QUICK_REFERENCE.md).
 
+## SisterTracker pattern playback
+
+Press F10 from the Sample workspace for the eight-lane pattern editor. Select a
+Sample tile, use USE TILE, enter QWERTY notes and click Play. Space pauses/resumes;
+Stop releases tracker voices only. See the [SisterTracker playback guide](SISTERTRACKER_PLAYBACK.md)
+for entry, routing, recording and the features scheduled for later stages.
+
 ## Mouse wheel behavior
 
 Wheel input supports fractional/high-resolution scrolling. Discrete controls

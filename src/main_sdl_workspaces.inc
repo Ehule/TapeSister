@@ -66,6 +66,7 @@ static int workspace_event(const SDL_Event *event,SDL_Window *window,
        transform->worker || portal_edit_gesture_active(ui)) {
         snprintf(ui->status,sizeof(ui->status),"FINISH CAPTURE OR EDIT BEFORE CHANGING WORKSPACE");return 1;
     }
+    ui->tracker_open=0;
     if(to_portal) {
         if(ui->portal.open) {
             if(!from_sister) {
