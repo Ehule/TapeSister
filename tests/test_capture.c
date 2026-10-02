@@ -241,8 +241,8 @@ static void test_staging_and_live_note_timing(void)
     }
 
     ts_note_bank_clear(&notes);
-    /* This timing test predates the configurable onset envelope and exercises
-       exact voice-join arithmetic with that envelope explicitly disabled. */
+    /* Disable onset for exact first-note timing. Later voice joins still
+       remove the normalization discontinuity in the captured mix. */
     ts_note_bank_set_attack_ms(&notes, 0);
     ts_capture_init(&recorder);
     CHECK(ts_capture_arm(&recorder, 1, 8, 48000, error, sizeof(error)));
@@ -262,7 +262,10 @@ static void test_staging_and_live_note_timing(void)
         (void)ts_capture_write_sample(&recorder, ts_note_bank_read(&notes));
     CHECK(fabsf(recorder.buffer[0] - 0.5f) < 0.0001f);
     CHECK(fabsf(recorder.buffer[2] - 0.5f) < 0.0001f);
-    CHECK(recorder.buffer[3] > 0.70f);
+    CHECK(fabsf(recorder.buffer[3] - recorder.buffer[2]) < 0.0001f);
+    CHECK(recorder.buffer[7] > recorder.buffer[3]);
+    for (int frame = 0; frame < 256; ++frame) (void)ts_note_bank_read(&notes);
+    CHECK(fabsf(ts_note_bank_read(&notes) - sqrtf(0.5f)) < 0.0001f);
     CHECK(recorder.state == TS_CAPTURE_COMPLETED);
     ts_capture_free(&recorder);
     ts_instrument_free(&instrument);

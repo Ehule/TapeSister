@@ -61,6 +61,7 @@ typedef struct {
     unsigned fade_remaining, fade_frames;
     double gain_current, lfo_phase;
     float effective_gain;
+    double gate_current;
     int active_slot, slot_running, slot_cursor, slot_count;
     int slot_path[TS_KEYBOARD_SEQUENCE_SLOTS * 2 - 2];
     double slot_elapsed, slot_duration;

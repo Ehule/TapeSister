@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 #include "tapesister/audition.h"
+#include "tapesister/voice_handoff.h"
 #include "tapesister/note_event.h"
 #include "tapesister/sample.h"
 
@@ -99,6 +100,10 @@ typedef struct {
     TsPerformanceGeneration *retired_generations;
     uint64_t next_generation_id;
     uint64_t next_group_id;
+    int render_limit; /* One past the highest live or not-yet-observed release. */
+    uint64_t rendered_group[TS_PERFORMANCE_VOICE_LIMIT];
+    TsVoiceHandoff output_handoff, raw_handoff;
+    uint32_t handoff_frames;
     int attack_ms;
     int sustain;
     int keyboard_loop; /* Whole sample fallback for notes without saved loops. */

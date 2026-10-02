@@ -129,6 +129,7 @@ typedef struct {
     float decay_current;
     float gain_current;
     float gain_target;
+    float gain_db_cached;
     float route_current;
     float modulation_sin[TS_SISTER_REVERB_LINES];
     float modulation_cos[TS_SISTER_REVERB_LINES];
@@ -137,6 +138,9 @@ typedef struct {
     uint32_t modulation_renormalize;
     int has_history;
     TsSisterFxReadHandoff read_handoff;
+    float feedback_gain[TS_SISTER_REVERB_LINES];
+    float feedback_decay_cached, feedback_size_cached;
+    int feedback_valid;
 } TsSisterReverbState;
 
 typedef struct {
@@ -164,6 +168,7 @@ typedef struct {
     float mix_current;
     float gain_current;
     float gain_target;
+    float gain_db_cached;
     float route_current;
     int has_history;
 } TsSisterDelayState;
@@ -178,7 +183,10 @@ typedef struct {
     float mix_current;
     float gain_current;
     float gain_target;
+    float gain_db_cached;
     float route_current;
+    float drive_cached, tone_cached, drive_gain, tone_coefficient;
+    int coefficients_valid;
 } TsSisterDistortionState;
 
 typedef struct {
@@ -205,10 +213,12 @@ typedef struct {
     float density_current;
     float density_hz_current;
     float density_hz_target;
+    float density_cached;
     float pitch_current;
     float mix_current;
     float gain_current;
     float gain_target;
+    float gain_db_cached;
     float route_current;
 } TsSisterGrainState;
 
@@ -266,6 +276,10 @@ typedef struct {
         distortion[TS_SISTER_FX_SLOT_COUNT][TS_SISTER_FX_LOCATION_COUNT];
     TsSisterGrainState
         grain[TS_SISTER_FX_SLOT_COUNT][TS_SISTER_FX_LOCATION_COUNT];
+    /* Prepared on init/reconfigure, never recomputed per audio sample. */
+    float smooth_12ms, smooth_18ms, smooth_20ms, smooth_24ms;
+    float smooth_30ms, smooth_35ms, smooth_55ms;
+    uint32_t transition_frames;
     TsSisterFxControls controls;
     TsSisterFxSlotState slot[TS_SISTER_FX_SLOT_COUNT];
     TsSisterFxRamp master_engage;

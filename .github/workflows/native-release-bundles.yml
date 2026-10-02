@@ -11,6 +11,17 @@ on:
       - "scripts/**"
       - "src/tapesister.rc.in"
       - "src/*keyboard_sequence*"
+      - "src/ts_note_bank.c"
+      - "src/ts_performance.c"
+      - "src/ts_sister_*.c"
+      - "include/tapesister/voice_handoff.h"
+      - "include/tapesister/note_bank.h"
+      - "include/tapesister/performance.h"
+      - "include/tapesister/sister_*.h"
+      - "tests/*realtime*"
+      - "tests/test_sister_*.c"
+      - "tests/test_note_bank_stereo.c"
+      - "tests/test_performance_stereo.c"
       - "src/main_sdl.c"
       - "src/main_sdl_wheel.inc"
       - "src/ts_ui.c"
@@ -39,7 +50,7 @@ jobs:
       - name: Build TapeSister, tests, and CDP8
         run: cmake --build build
       - name: Run audio, keyboard, Insert and Router regression tests
-        run: ctest --test-dir build --output-on-failure -R 'asio|audio_lifecycle|audio_config|insert_tests|router|keyboard_hold|keyboard_sequence|sample_pages|sister_project_state|core_tests|capture_tests|midi_tests|performance_tests|preview_loop'
+        run: ctest --test-dir build --output-on-failure -R 'asio|audio_lifecycle|audio_config|insert_tests|router|keyboard_hold|keyboard_sequence|sample_pages|sister_project_state|core_tests|capture_tests|midi_tests|performance_tests|preview_loop|realtime_edits|realtime_controller|sister_post_fx|sister_modulation|sister_routes|note_bank_stereo|performance_stereo'
       - name: Run package regression guard
         if: github.event_name == 'pull_request'
         run: ctest --test-dir build --output-on-failure -R test_identity_packaging
@@ -76,7 +87,7 @@ jobs:
         run: cmake --build build
       - name: Run audio, keyboard, Insert and Router regression tests
         shell: msys2 {0}
-        run: ctest --test-dir build --output-on-failure -R 'asio|audio_lifecycle|audio_config|insert_tests|router|keyboard_hold|keyboard_sequence|sample_pages|sister_project_state|core_tests|capture_tests|midi_tests|performance_tests|preview_loop'
+        run: ctest --test-dir build --output-on-failure -R 'asio|audio_lifecycle|audio_config|insert_tests|router|keyboard_hold|keyboard_sequence|sample_pages|sister_project_state|core_tests|capture_tests|midi_tests|performance_tests|preview_loop|realtime_edits|realtime_controller|sister_post_fx|sister_modulation|sister_routes|note_bank_stereo|performance_stereo'
       - name: Run package regression guard
         if: github.event_name == 'pull_request'
         shell: msys2 {0}

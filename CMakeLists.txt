@@ -330,6 +330,10 @@ add_custom_target(stress-sister
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
   COMMENT "Running deterministic two-hour Sister certification soak")
 
+add_executable(test_realtime_edits tests/test_realtime_edits.c)
+target_link_libraries(test_realtime_edits PRIVATE tapesister_core)
+add_test(NAME test_realtime_edits COMMAND test_realtime_edits)
+
 add_executable(benchmark_sister_callback EXCLUDE_FROM_ALL
                tests/benchmark_sister_callback.c)
 target_link_libraries(benchmark_sister_callback PRIVATE tapesister_core)
@@ -445,6 +449,14 @@ if(TAPESISTER_BUILD_SDL)
     target_link_libraries(tapesister_preview_loop_tests PRIVATE rt)
   endif()
   add_test(NAME tapesister_preview_loop_tests COMMAND tapesister_preview_loop_tests)
+  add_executable(tapesister_realtime_controller_tests tests/test_realtime_controller.c
+                 src/tape_link.c src/tape_companion.c src/ts_startup_diag.c src/ts_midi_input.c)
+  target_include_directories(tapesister_realtime_controller_tests PRIVATE third_party)
+  target_link_libraries(tapesister_realtime_controller_tests PRIVATE tapesister_core SDL2::SDL2)
+  if(UNIX AND NOT APPLE)
+    target_link_libraries(tapesister_realtime_controller_tests PRIVATE rt)
+  endif()
+  add_test(NAME tapesister_realtime_controller_tests COMMAND tapesister_realtime_controller_tests)
   add_executable(tapesister_keyboard_hold_tests tests/test_keyboard_hold.c
                  src/tape_link.c src/tape_companion.c src/ts_startup_diag.c src/ts_midi_input.c)
   target_include_directories(tapesister_keyboard_hold_tests PRIVATE third_party)
@@ -518,11 +530,13 @@ add_executable(tapesister_insert_tests tests/test_insert.c)
 target_link_libraries(tapesister_insert_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_insert_tests COMMAND tapesister_insert_tests)
 
-# These core/project fixtures keep multiple instruments/runtimes alive
-# while calling the real Save/Open path. Match the application's Windows stack
-# reserve; MinGW's default 2 MiB is too small for these nested controller calls.
+# These DSP/core/project fixtures keep multiple instruments/runtimes alive
+# while processing or calling the real Save/Open path. Match the application's
+# Windows stack reserve; MinGW's default 2 MiB is too small for these fixtures.
 if(MINGW)
-  foreach(project_test IN ITEMS tapesister_core_tests
+  foreach(project_test IN ITEMS test_sister_post_fx
+                               tapesister_realtime_controller_tests
+                               tapesister_core_tests
                                test_sister_project_state
                                tapesister_sample_pages_tests
                                tapesister_keyboard_hold_tests

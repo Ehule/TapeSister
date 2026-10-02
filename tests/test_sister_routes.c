@@ -149,8 +149,10 @@ int main(void)
     CHECK(CLOSE(frame.input.l, frame.input.r));
     ts_sister_runtime_note_off(&runtime, &note);
     frame = ts_sister_runtime_process_frame(&runtime, NULL);
-    /* Sustain is off: the unified keyboard policy stops notes at key-up. */
+    /* Key ownership stops at key-up; the residual de-click settles in 5 ms. */
     CHECK(ts_performance_count(&runtime.performance) == 0);
+    CHECK(sister_peak(frame.input) > 0.0f);
+    for (int i = 0; i < 6; ++i) frame = ts_sister_runtime_process_frame(&runtime, NULL);
     CHECK(CLOSE(sister_peak(frame.input), 0.0f));
 
     /* A routed TILES performance bus is silent on the direct speaker path;

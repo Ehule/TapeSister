@@ -264,6 +264,9 @@ typedef struct {
     uint64_t wow_next_event_clock;
     float wow_target;
     float wow_state;
+    float wow_coefficient, decorrelation_coefficient, dc_radius;
+    float duck_energy_coefficient, duck_attack_coefficient, duck_release_coefficient;
+    float delay_follow_coefficient;
     float duck_energy;
     float duck_gain;
     float dc_input_x1[2];

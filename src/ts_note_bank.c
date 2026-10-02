@@ -211,6 +211,8 @@ TsNoteStartResult ts_note_bank_start_tuned_event(
     if (free_voice < 0) return TS_NOTE_LIMIT_REACHED;
     {
         TsNoteVoice *voice = &bank->voices[free_voice];
+        bank->handoff_frames = (uint32_t)(output_rate / 200);
+        if (!bank->handoff_frames) bank->handoff_frames = 1;
         memset(voice, 0, sizeof(*voice));
         voice->sample = plan.sample;
         voice->position = (double)plan.first;
@@ -239,6 +241,7 @@ TsNoteStartResult ts_note_bank_start_tuned_event(
                                   ts_audition_crossfade_frames(
                                       &plan, instrument->loop_crossfade_ms) : 0;
         voice->active = 1;
+        if (bank->render_limit < free_voice + 1) bank->render_limit = free_voice + 1;
     }
     return TS_NOTE_STARTED;
 }
@@ -289,6 +292,8 @@ static TsNoteStartResult start_sample_event(
     if (free_voice < 0) return TS_NOTE_LIMIT_REACHED;
     {
         TsNoteVoice *voice = &bank->voices[free_voice];
+        bank->handoff_frames = (uint32_t)(output_rate / 200);
+        if (!bank->handoff_frames) bank->handoff_frames = 1;
         memset(voice, 0, sizeof(*voice));
         voice->sample = sample;
         voice->range_first = first;
@@ -318,6 +323,7 @@ static TsNoteStartResult start_sample_event(
         voice->synth = !preview;
         voice->preview = preview;
         voice->active = 1;
+        if (bank->render_limit < free_voice + 1) bank->render_limit = free_voice + 1;
     }
     return TS_NOTE_STARTED;
 }
@@ -456,6 +462,7 @@ void ts_note_bank_sync_tuned(TsNoteBank *bank, const TsInstrument *instrument,
                              const TsTuning *tuning, int output_rate)
 {
     if (bank == NULL || instrument == NULL || tuning == NULL) return;
+    if (output_rate > 0) bank->handoff_frames = (uint32_t)(output_rate / 200);
     for (int i = 0; i < TS_NOTE_BANK_VOICE_CAPACITY; ++i)
         if (bank->voices[i].active)
             update_voice(&bank->voices[i], instrument, tuning,
@@ -476,6 +483,7 @@ void ts_note_bank_set_source_tuned(TsNoteBank *bank,
                                    TsAuditionSource source, int output_rate)
 {
     if (bank == NULL || instrument == NULL || tuning == NULL) return;
+    if (output_rate > 0) bank->handoff_frames = (uint32_t)(output_rate / 200);
     for (int i = 0; i < TS_NOTE_BANK_VOICE_CAPACITY; ++i)
         if (bank->voices[i].active)
             update_voice(&bank->voices[i], instrument, tuning, source, output_rate, bank);
@@ -519,15 +527,18 @@ void ts_note_bank_read_buses(TsNoteBank *bank,
     TsStereoFrame synth = {0.0f, 0.0f};
     int count = 0;
     int synth_count = 0;
+    int changed = 0;
     if (sample_output != NULL) *sample_output = (TsStereoFrame){0.0f, 0.0f};
     if (fm_output != NULL) *fm_output = (TsStereoFrame){0.0f, 0.0f};
     if (synth_capture != NULL) *synth_capture = (TsStereoFrame){0.0f, 0.0f};
     if (bank == NULL) return;
-    for (int i = 0; i < TS_NOTE_BANK_VOICE_CAPACITY; ++i) {
+    for (int i = 0; i < bank->render_limit; ++i) {
         TsNoteVoice *voice = &bank->voices[i];
+        TsStereoFrame value = voice->active ? ts_note_voice_read(voice) : (TsStereoFrame){0};
+        uint64_t serial = voice->active && voice->sample && voice->sample->data ? voice->serial : 0;
+        changed |= serial != bank->rendered_serial[i];
+        bank->rendered_serial[i] = serial;
         if (!voice->active || !voice->sample || !voice->sample->data) continue;
-        TsStereoFrame value = ts_note_voice_read(voice);
-        if (!voice->active) continue;
         if (voice->synth) {
             synth.l += value.l;
             synth.r += value.r;
@@ -538,20 +549,30 @@ void ts_note_bank_read_buses(TsNoteBank *bank,
         }
         ++count;
     }
+    while (bank->render_limit > 0 && !bank->voices[bank->render_limit - 1].active)
+        --bank->render_limit;
+    /* Normalize only when the voice counts change. The handoffs below also
+       remove the old one-sample level jump in the other held notes. */
+    if (count != bank->normalization_count || synth_count != bank->normalization_synth_count) {
+        bank->normalization_count = count;
+        bank->normalization_synth_count = synth_count;
+        bank->normalization_gain = count > 0 ? 1.0f / sqrtf((float)count) : 1.0f;
+        bank->normalization_capture_gain = synth_count > 0 ?
+            (count > 0 ? sqrtf((float)count) : 1.0f) / sqrtf((float)synth_count) : 0.0f;
+    }
     if (count > 0) {
-        float gain = 1.0f / sqrtf((float)count);
+        float gain = bank->normalization_gain;
         sample.l *= gain; sample.r *= gain;
         synth.l *= gain; synth.r *= gain;
     }
-    if (sample_output != NULL) *sample_output = ts_stereo_frame_sanitize(sample);
-    if (fm_output != NULL) *fm_output = ts_stereo_frame_sanitize(synth);
-    if (synth_capture != NULL && synth_count > 0) {
-        float monitor_gain = count > 0 ? sqrtf((float)count) : 1.0f;
-        float capture_gain = monitor_gain / sqrtf((float)synth_count);
-        synth_capture->l = synth.l * capture_gain;
-        synth_capture->r = synth.r * capture_gain;
-        *synth_capture = ts_stereo_frame_sanitize(*synth_capture);
-    }
+    TsStereoFrame capture = {synth.l * bank->normalization_capture_gain,
+                              synth.r * bank->normalization_capture_gain};
+    sample = ts_voice_handoff_process(&bank->sample_handoff, sample, changed, bank->handoff_frames);
+    synth = ts_voice_handoff_process(&bank->fm_handoff, synth, changed, bank->handoff_frames);
+    capture = ts_voice_handoff_process(&bank->capture_handoff, capture, changed, bank->handoff_frames);
+    if (sample_output != NULL) *sample_output = sample;
+    if (fm_output != NULL) *fm_output = synth;
+    if (synth_capture != NULL) *synth_capture = capture;
 }
 
 TsStereoFrame ts_note_bank_read_stereo(TsNoteBank *bank)

@@ -160,6 +160,8 @@ static int start_slot_event(TsPerformanceBank *bank, const TsBankSlot *slot,
         generation == NULL ||
         !voice_range_from_slot(slot, &first, &last, &crossfade))
         return 0;
+    bank->handoff_frames = (uint32_t)(output_rate / 200);
+    if (!bank->handoff_frames) bank->handoff_frames = 1;
     index = find_voice(bank, source_slot, event, latched);
     if (index < 0) return 0;
     voice = &bank->voices[index];
@@ -196,6 +198,7 @@ static int start_slot_event(TsPerformanceBank *bank, const TsBankSlot *slot,
     voice->latched = latched != 0;
     voice->key_down = 1;
     voice->active = 1;
+    if (bank->render_limit < index + 1) bank->render_limit = index + 1;
     return 1;
 }
 
@@ -300,6 +303,7 @@ TsPerformanceTileResult ts_performance_toggle_tile(
     voice->tile_gain = voice->tile_fade_frames > 0u ? 0.0f : 1.0f;
     tile_ramp(voice, 1.0f);
     voice->active = 1;
+    if (bank->render_limit < free_voice + 1) bank->render_limit = free_voice + 1;
     return TS_PERFORMANCE_TILE_STARTED;
 }
 
@@ -377,6 +381,10 @@ void ts_performance_clear(TsPerformanceBank *bank)
     for (int voice = 0; voice < TS_PERFORMANCE_VOICE_LIMIT; ++voice)
         voice_deactivate(&bank->voices[voice]);
     ts_performance_collect_retired(bank);
+    bank->render_limit = 0;
+    memset(bank->rendered_group, 0, sizeof(bank->rendered_group));
+    memset(&bank->output_handoff, 0, sizeof(bank->output_handoff));
+    memset(&bank->raw_handoff, 0, sizeof(bank->raw_handoff));
 }
 
 void ts_performance_collect_retired(TsPerformanceBank *bank)
@@ -748,19 +756,20 @@ static TsStereoFrame transition_old_frame(TsPerformanceVoice *voice)
 TsStereoFrame ts_performance_read_stereo(TsPerformanceBank *bank,
                                          TsStereoFrame *raw_mix)
 {
-    TsStereoFrame mixed = {0.0f, 0.0f};
+    TsStereoFrame mixed = {0.0f, 0.0f}, raw = {0.0f, 0.0f};
+    int changed = 0;
     if (raw_mix != NULL) *raw_mix = (TsStereoFrame){0.0f, 0.0f};
     if (bank == NULL) return mixed;
-    for (int i = 0; i < TS_PERFORMANCE_VOICE_LIMIT; ++i) {
+    for (int i = 0; i < bank->render_limit; ++i) {
         TsPerformanceVoice *voice = &bank->voices[i];
         TsStereoFrame value;
         float gain;
-        if (!voice->active) continue;
+        if (!voice->active) goto voice_done;
         if (voice->generation == NULL || voice->sample == NULL ||
             voice->sample->data == NULL ||
             voice->sample->frames < 2u) {
             voice_deactivate(voice);
-            continue;
+            goto voice_done;
         }
         if (voice->looping) {
             int direction_before = voice->direction;
@@ -782,12 +791,12 @@ TsStereoFrame ts_performance_read_stereo(TsPerformanceBank *bank,
                 (voice->direction < 0 &&
                  voice->position <= (double)voice->range_first)) {
                 voice_deactivate(voice);
-                continue;
+                goto voice_done;
             }
             at = voice->position > 0.0 ? (size_t)voice->position : 0u;
             if (at + 1u >= voice->sample->frames) {
                 voice_deactivate(voice);
-                continue;
+                goto voice_done;
             }
             value = ts_audition_read_frame(
                 voice->sample, voice->position, voice->range_last);
@@ -803,7 +812,7 @@ TsStereoFrame ts_performance_read_stereo(TsPerformanceBank *bank,
             }
             if (voice->releasing && voice->tile_gain <= 0.000001f) {
                 voice_deactivate(voice);
-                continue;
+                goto voice_done;
             }
             gain = voice->gain * voice->tile_gain;
             if (!voice->looping && voice->tile_fade_frames > 0u) {
@@ -842,17 +851,26 @@ TsStereoFrame ts_performance_read_stereo(TsPerformanceBank *bank,
             voice->attack_frame < voice->attack_frames)
             ++voice->attack_frame;
         voice->position += voice->step * voice->direction;
-        if (raw_mix != NULL) {
-            raw_mix->l += value.l;
-            raw_mix->r += value.r;
-        }
+        raw.l += value.l;
+        raw.r += value.r;
         mixed.l += value.l * voice->group_gain;
         mixed.r += value.r * voice->group_gain;
+voice_done: {
+        /* Tile launchers already own attack/release ramps. */
+        uint64_t group = voice->active && !voice->tile_launched ? voice->group_id : 0;
+        changed |= group != bank->rendered_group[i];
+        bank->rendered_group[i] = group;
     }
+    }
+    while (bank->render_limit > 0 && !bank->voices[bank->render_limit - 1].active)
+        --bank->render_limit;
     /* Each logical trigger receives a fixed 1/sqrt(group members) gain. A
        short layer ending therefore cannot make its longer siblings jump in
        level, and overlapping retriggers remain independently normalized. */
-    return ts_stereo_frame_sanitize(mixed);
+    raw = ts_voice_handoff_process(&bank->raw_handoff, raw, changed, bank->handoff_frames);
+    mixed = ts_voice_handoff_process(&bank->output_handoff, mixed, changed, bank->handoff_frames);
+    if (raw_mix != NULL) *raw_mix = raw;
+    return mixed;
 }
 
 float ts_performance_read(TsPerformanceBank *bank, float *raw_mix)
@@ -892,6 +910,7 @@ void ts_performance_sync(TsPerformanceBank *bank,
                          int output_rate)
 {
     if (bank == NULL || instrument == NULL || output_rate <= 0) return;
+    bank->handoff_frames = (uint32_t)(output_rate / 200);
     for (int i = 0; i < TS_PERFORMANCE_VOICE_LIMIT; ++i) {
         TsPerformanceVoice *voice = &bank->voices[i];
         TsBankSlot view;

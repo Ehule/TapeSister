@@ -118,6 +118,7 @@ static void runtime_ramp_set(TsSisterRamp *ramp, float target,
     if (ramp == NULL) return;
     if (!isfinite(target)) target = 0.0f;
     frames = sample_rate > 0u ? (uint32_t)ceilf(sample_rate * 0.020f) : 0u;
+    if (frames != 0u && target == ramp->target) return;
     ramp->target = target;
     if (frames == 0u || fabsf(target - ramp->current) <= FLT_EPSILON) {
         runtime_ramp_reset(ramp, target);
@@ -1384,7 +1385,7 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
     (void)tile_raw;
     if (!runtime->enabled || runtime->callback_failed) {
         runtime->last_frame = frame;
-        publish_snapshot(runtime);
+        publish_frame_snapshot(runtime);
         return frame;
     }
     runtime->monitor_dry_current = monitor_approach(
