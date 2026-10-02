@@ -262,6 +262,12 @@ static int ts_audio_health_event(const SDL_Event *event, SDL_Window *main_window
         }
     }
     if (!own) return 0;
+    /* A key pressed in the instrument may be released after F12 moves focus.
+       Preserve normal release/sustain semantics without starting notes here. */
+    if (event->type == SDL_KEYUP && note_for_key(event->key.keysym.sym) >= 0) {
+        release_note(TS_AUDIO_LOGICAL_OUTPUT, audio, ui, note_for_key(event->key.keysym.sym));
+        return 1;
+    }
     if ((event->type == SDL_WINDOWEVENT && event->window.event == SDL_WINDOWEVENT_CLOSE) ||
         (event->type == SDL_KEYDOWN && event->key.keysym.sym == SDLK_ESCAPE)) {
         ts_health.visible = 0; SDL_HideWindow(ts_health.window);
@@ -282,7 +288,7 @@ static int ts_audio_health_event(const SDL_Event *event, SDL_Window *main_window
     } else if (event->type == SDL_WINDOWEVENT && event->window.event == SDL_WINDOWEVENT_EXPOSED)
         ts_health.last_update = 0;
     else if (event->type == SDL_DROPFILE || event->type == SDL_DROPTEXT) SDL_free(event->drop.file);
-    /* Mouse/wheel/keyboard events in this window never edit the instrument. */
+    /* Remaining input in this window never edits or triggers the instrument. */
     return 1;
 }
 

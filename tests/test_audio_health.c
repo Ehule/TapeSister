@@ -77,6 +77,21 @@ int main(int argc, char **argv)
     assert(ts_audio_health_event(&e, main_window, a, ui));
     e.type = SDL_KEYDOWN; e.key.windowID = ts_health.window_id; e.key.keysym.sym = SDLK_z;
     assert(ts_audio_health_event(&e, main_window, a, ui));
+    ts_note_bank_init(&a->notes);
+    TsSample sample; ts_sample_init(&sample);
+    sample.frames = 128; sample.channels = 1; sample.sample_rate = 48000;
+    sample.data = calloc(sample.frames, sizeof(float)); assert(sample.data);
+    TsTuning tuning = {60, 0}; TsNoteEvent note;
+    assert(ts_note_event_qwerty(&note, note_for_key(SDLK_z), 60));
+    assert(ts_note_bank_start_sample_event(&a->notes, &sample, &tuning, &note, 0, 48000) == TS_NOTE_STARTED);
+    e.type = SDL_KEYUP;
+    assert(ts_audio_health_event(&e, main_window, a, ui));
+    assert(ts_note_bank_count(&a->notes) == 0); /* No stuck key across focus. */
+    ts_note_bank_set_sustain(&a->notes, 1);
+    assert(ts_note_bank_start_sample_event(&a->notes, &sample, &tuning, &note, 0, 48000) == TS_NOTE_STARTED);
+    assert(ts_audio_health_event(&e, main_window, a, ui));
+    assert(ts_note_bank_count(&a->notes) == 1); /* HOLD remains intentional. */
+    ts_note_bank_clear(&a->notes); ts_sample_free(&sample);
     e.type = SDL_DROPFILE; e.drop.windowID = ts_health.window_id; e.drop.file = SDL_strdup("test.wav");
     assert(ts_audio_health_event(&e, main_window, a, ui));
     if (argc > 1) {
