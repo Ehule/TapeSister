@@ -3873,6 +3873,9 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     }
     if (recipe) {
         ts_tracker_playback_stop(&audio->tracker);
+        ts_tracker_edit_reset(ui->tracker_edit);
+        ui->tracker_repeat_control=ui->tracker_follow_hold=ui->tracker_hex_digit=0;
+        ui->tracker_scroll=0;
         ui->tracker_solo=0;ts_tracker_playback_solo(&audio->tracker,0);
         ts_sister_runtime_project_close(&audio->sister);
         ok = ts_sample_pages_load_project(sample_pages, instrument, record_bank,
@@ -17338,6 +17341,7 @@ int main(int argc, char **argv)
     mosaic_controller_free(&mosaic);
     ts_mosaic_free(ui.mosaic);
     ts_tracker_playback_free(&audio.tracker);
+    ts_tracker_edit_free(ui.tracker_edit);
     ts_performance_free(&audio.performance);
     for(int i=0;i<TS_NOTE_BANK_VOICE_CAPACITY;++i)ts_sample_free(&audio.note_snapshots[i]);
     ts_keyboard_sequence_source_free(audio.keyboard_sequence.source);

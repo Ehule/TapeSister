@@ -21,7 +21,8 @@ static void tracker_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrum
     button(fb,216,4,50,"PAUSE",ui->tracker_running==2);
     button(fb,270,4,42,"STOP",!ui->tracker_running);
     button(fb,316,4,42,"BACK",0);button(fb,362,4,44,"SAVE",0);
-    button(fb,410,4,56,"FOLLOW",t->follow);
+    button(fb,410,4,56,"FOLLOW",t->follow && !ui->tracker_follow_hold);
+    button(fb,466,4,24,"FX",0);
     button(fb,494,5,28,"EQ",ui->master_eq_open);
     master_output_fader(fb,ui->master_output.gain,528,5);
     master_output_meter(fb,&ui->master_output,580,8);
@@ -43,6 +44,7 @@ static void tracker_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrum
         snprintf(line,sizeof(line),"%.1f",t->lanes[lane].trim);text(fb,x+49,70,line,PAL_VOLUME,1);
         text(fb,x+3,85,"NTE TI VL",PAL_TEXT,1);
     }
+    TsTrackerRegion selection=ts_tracker_edit_region(ui->tracker_edit,t);
     if(p)for(int visible=0;visible<18;++visible) {
         int row=ui->tracker_scroll+visible,y=96+visible*12;
         if(row>=p->rows)break;
@@ -51,9 +53,19 @@ static void tracker_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrum
         snprintf(line,sizeof(line),"%03d",row);text(fb,10,y+2,line,heard?PAL_NOTE:PAL_TEXT,1);
         for(int lane=0;lane<TS_TRACKER_LANES;++lane) {
             const TsTrackerCell *c=&p->cells[row][lane];int x=34+lane*74;
+            if(ui->tracker_edit && ui->tracker_edit->selected && row>=selection.row0 && row<=selection.row1 &&
+               lane>=selection.lane0 && lane<=selection.lane1)rect(fb,x,y,72,12,RGB(48,57,85));
             if(row==t->editor_row && lane==t->editor_lane) {
                 int offsets[]={2,30,50},widths[]={25,18,18};
-                rect(fb,x+offsets[ui->tracker_field],y,widths[ui->tracker_field],12,RGB(75,59,84));
+                int start=x+offsets[ui->tracker_field],width=widths[ui->tracker_field];
+                rect(fb,start,y,width,12,RGB(75,59,84));
+                rect(fb,start,y,width,1,RGB(232,208,255));
+                rect(fb,start,y,1,12,RGB(232,208,255));
+                rect(fb,start+width-1,y,1,12,RGB(232,208,255));
+                if(ui->tracker_cursor_visible) {
+                    int caret=ui->tracker_field==0?x+3:x+(ui->tracker_field==1?31:51)+ui->tracker_hex_digit*6;
+                    rect(fb,caret,y+10,ui->tracker_field==0?18:5,2,RGB(255,245,164));
+                }
             }
             char note[8],tile[8],volume[8];tracker_note_text(note,sizeof(note),c);
             unsigned alias=tracker_alias(t,c->tile_id);
@@ -80,9 +92,30 @@ static void tracker_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrum
     mosaic_button(fb,424,332,46,"NOTE",ui->tracker_field==0,0);
     mosaic_button(fb,474,332,46,"TILE",ui->tracker_field==1,0);
     mosaic_button(fb,524,332,46,"VOL",ui->tracker_field==2,0);
-    snprintf(line,sizeof(line),"USE TILE: %02d %.31s",instrument->selected_slot+1,
+    mosaic_button(fb,578,332,52,"EDIT",ui->tracker_edit && ui->tracker_edit->tools_open,0);
+    TsTileId inherited=0;
+    if(p)for(int row=0;row<=t->editor_row;++row)if(p->cells[row][t->editor_lane].tile_id)inherited=p->cells[row][t->editor_lane].tile_id;
+    snprintf(line,sizeof(line),"CELL TILE %02X %s | USE TILE: SAMPLE %02X %.30s",tracker_alias(t,inherited),
+        c && c->tile_id?"EXPLICIT":"INHERITED",instrument->selected_slot+1,
         instrument->selected_slot>=0?instrument->current.name:"SELECT A SAMPLE FIRST");
     text(fb,10,361,line,PAL_INSTRUMENT,1);
-    text(fb,10,373,"QWERTY NOTES / HEX TILE+VOL / ARROWS / TAB / SPACE PAUSE / F10 BACK",PAL_TEXT,1);
+    text(fb,10,373,"SHIFT+ARROWS SELECT / CTRL C X V / CTRL Z Y / TAB FX / F9 ROUTER / F10 SAMPLE",PAL_TEXT,1);
     text(fb,10,387,ui->status,PAL_TEXT,1);
+    if(ui->tracker_edit && ui->tracker_edit->tools_open) {
+        const TsTrackerEdit *e=ui->tracker_edit;
+        static const char *labels[]={"COPY","CUT","PASTE","MIX PASTE","UNDO","REDO",
+            "INSERT ROW","DELETE ROW","NOTE -1","NOTE +1","NOTE -12","NOTE +12",
+            "VOL RAMP","FILL DOWN","REVERSE","REPEAT BLOCK","SELECT LANE","SELECT ALL","CLONE PAT"};
+        static const char *masks[]={"NOTE","TILE","VOLUME","TUNE","FX"};
+        rect(fb,18,106,604,216,RGB(9,11,17));rect(fb,18,106,604,2,RGB(232,208,255));
+        text(fb,28,116,"PATTERN EDITING",PAL_NOTE,1);mosaic_button(fb,536,111,76,"CLOSE",0,1);
+        for(int i=0;i<19;++i)mosaic_button(fb,28+(i%6)*98,138+(i/6)*22,94,labels[i],0,1);
+        text(fb,28,231,"FIELDS FOR CLIPBOARD / CLEAR BLOCK / FILL / REVERSE:",PAL_TEXT,1);
+        for(int i=0;i<5;++i)mosaic_button(fb,28+i*98,245,94,masks[i],!!(e->mask&(1u<<i)),1);
+        snprintf(line,sizeof(line),"BLOCK ROWS %03d-%03d LANES %d-%d | CLIPBOARD %u X %u",selection.row0,selection.row1,
+            selection.lane0+1,selection.lane1+1,e->clipboard_rows,e->clipboard_lanes);text(fb,28,272,line,PAL_TEXT,1);
+        text(fb,28,286,"SHIFT/CTRL/ALT + F3 F4 F5: CUT COPY PASTE LANE / PATTERN / BLOCK",PAL_TEXT,1);
+        text(fb,28,299,"CTRL+SHIFT+V VOL RAMP / SHIFT+INSERT OR BACKSPACE: ALL LANES",PAL_TEXT,1);
+        text(fb,28,312,"TRANSPOSE: CTRL+UP/DOWN (+SHIFT FOR OCTAVE) / ESC CLOSE",PAL_TEXT,1);
+    }
 }

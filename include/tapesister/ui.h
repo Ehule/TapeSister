@@ -15,6 +15,7 @@
 #include "tapesister/sample.h"
 #include "tapesister/mosaic.h"
 #include "tapesister/sister_tracker.h"
+#include "tapesister/tracker_edit.h"
 #include "tapesister/transform.h"
 #include "tapesister/dsp_recipe.h"
 #include "tapesister/exchange.h"
@@ -468,7 +469,11 @@ typedef struct {
     size_t capture_recorded_frames;
     size_t capture_capacity_frames;
     TsSisterTracker *tracker;
+    TsTrackerEdit *tracker_edit;
     int tracker_open, tracker_field, tracker_scroll, tracker_hex_digit, tracker_hex_value;
+    int tracker_repeat_control, tracker_repeat_delta, tracker_repeat_button, tracker_follow_hold;
+    uint32_t tracker_repeat_next, tracker_cursor_epoch;
+    int tracker_cursor_visible;
     unsigned tracker_running, tracker_row, tracker_heard_pattern, tracker_missing;
     uint8_t tracker_solo;
     TsMosaic *mosaic;

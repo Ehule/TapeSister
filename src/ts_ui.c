@@ -723,6 +723,7 @@ static void main_midi_learn_overlay(TsFramebuffer *fb, const TsUiState *ui)
                                     "main.master_output");
     midi_learn_tint(fb, TS_UI_MASTER_OUTPUT_X, TS_UI_MASTER_OUTPUT_Y,
                     TS_UI_MASTER_OUTPUT_W, 22, state);
+    if(ui->tracker_open)goto learn_footer;
     state = midi_learn_target_state(&ui->config.midi_map,
                                     ui->midi_learn_pending,
                                     "main.tile_fade");
@@ -4228,6 +4229,11 @@ int ts_ui_midi_target_from_point(const TsUiState *ui, int x, int y,
     target[0] = '\0';
     if(ui->router_open)return router_midi_target(ui,x,y,target,target_size);
     if(ui->master_eq_open)return ts_ui_master_eq_midi_target(ui,x,y,target,target_size);
+    if(ui->tracker_open) {
+        if(!ts_ui_master_output_contains(x,y))return 0;
+        result=snprintf(target,target_size,"main.master_output");
+        return result>0 && (size_t)result<target_size;
+    }
     slot = !ui->show_keyboard && !ui->show_recipes && !ui->show_ingredients ?
            ts_ui_bank_slot_from_point(x, y) : -1;
     if (slot >= 0) {

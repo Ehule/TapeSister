@@ -28,7 +28,7 @@ add_library(tapesister_core src/ts_sample.c src/ts_prism.c src/ts_prism_performa
              src/ts_input_monitor.c
              src/ts_input_ownership.c
              src/ts_sample_pages.c
-             src/ts_tile_id.c src/ts_sister_tracker.c src/ts_sister_tracker_project.c src/ts_tracker_playback.c
+             src/ts_tile_id.c src/ts_sister_tracker.c src/ts_sister_tracker_project.c src/ts_tracker_playback.c src/ts_tracker_edit.c
              src/ts_browser.c src/ts_config.c src/ts_audio_config.c
              src/ts_recipe.c src/ts_dsp_recipe.c
              src/ts_palette.c
@@ -414,6 +414,9 @@ add_test(NAME tapesister_sample_pages_tests COMMAND tapesister_sample_pages_test
 add_executable(tapesister_tracker_playback_tests tests/test_tracker_playback.c)
 target_link_libraries(tapesister_tracker_playback_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_tracker_playback_tests COMMAND tapesister_tracker_playback_tests)
+add_executable(tapesister_tracker_edit_tests tests/test_tracker_edit.c)
+target_link_libraries(tapesister_tracker_edit_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_tracker_edit_tests COMMAND tapesister_tracker_edit_tests)
 
 add_executable(tapesister_sister_tracker_tests tests/test_sister_tracker.c)
 target_link_libraries(tapesister_sister_tracker_tests PRIVATE tapesister_core)

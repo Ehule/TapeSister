@@ -419,7 +419,8 @@ For an ordinary developer build without creating the ZIP, continue to use
 ## Technical documentation
 
 - [SisterTracker playback](docs/SISTERTRACKER_PLAYBACK.md) — F10 pattern editor,
-  eight-lane Standard transport, Sister TRACK and final Main recording.
+  Tapehead editing shortcuts, block clipboard and undo, eight-lane Standard
+  transport, Sister TRACK and final Main recording.
 - [SisterTracker foundation](docs/SISTERTRACKER_FOUNDATION.md) — stage 1 song model,
   stable tile identity, native persistence, and migration.
 - [Realtime Capture](docs/CAPTURE_WORKFLOW.md)
