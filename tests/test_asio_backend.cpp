@@ -36,10 +36,14 @@ int main() {
  assert(captures==200 && plays==200 && ts_asio_xruns()==0);
  SDL_sem *sem=SDL_CreateSemaphore(0);SDL_Thread *thread=SDL_CreateThread(hold,"hold",sem);SDL_SemWait(sem);
  RtAudio::instance->tick(output,input);assert(ts_asio_xruns()==1);for(float x:output)assert(x==0);SDL_WaitThread(thread,nullptr);SDL_DestroySemaphore(sem);
+ assert(ts_asio_control_skips()==1 && ts_asio_driver_xruns()==0);
  RtAudio::instance->tick(output,input);assert(plays==201);
+ RtAudio::instance->tick(output,input,128,1);
+ assert(ts_asio_xruns()==2 && ts_asio_control_skips()==1 && ts_asio_driver_xruns()==1);
  RtAudio::instance->running=false;ts_asio_poll();SDL_Event e;unsigned removed=0;while(SDL_PollEvent(&e))if(e.type==SDL_AUDIODEVICEREMOVED){++removed;ts_asio_close(e.adevice.which);}assert(removed==2 && RtAudio::closes==1);
  ts_asio_rescan();assert(RtAudio::probes>probes);
  w.callback=playback;auto next=ts_asio_open(nullptr,0,&w,&got);assert(next && next!=out);
+ assert(!ts_asio_xruns() && !ts_asio_control_skips() && !ts_asio_driver_xruns());
  ts_asio_close(out);assert(RtAudio::instance->isStreamOpen());
  RtAudio::failStart=true;ts_asio_pause(next,0);ts_asio_poll();removed=0;while(SDL_PollEvent(&e))if(e.type==SDL_AUDIODEVICEREMOVED){++removed;ts_asio_close(e.adevice.which);}assert(removed==1);
  ts_asio_quit();SDL_Quit();puts("ASIO adapter: one clock, native stride, exact unity, callback order, stalls, reset, start failure and stale handles passed");

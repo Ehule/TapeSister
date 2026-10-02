@@ -15,6 +15,8 @@ Its basic creative loop is simple:
 
 - [Complete User Manual](docs/USER_MANUAL.md) — workflows, every major instrument,
   recording, routing, saving, and performance techniques.
+- [Audio Health](docs/AUDIO_HEALTH.md) — live callback load, timing gaps, control stalls,
+  and a copyable diagnostic report (F12 or CFG → AUDIO HEALTH).
 - [Quick Reference](docs/QUICK_REFERENCE.md) — keys, mouse gestures, control ranges,
   capture modes, signal placement, and file types.
 - [Mosaic](docs/MOSAIC.md) — free event placement, independent pitched loops,

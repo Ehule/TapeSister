@@ -242,7 +242,7 @@ static void ts_audio_ui_render(TsFramebuffer *fb, const TsUiState *ui,
     if (audio != NULL && audio->capture.state == TS_CAPTURE_IDLE &&
         audio->performance_group_latched)
         runtime_clear_group(audio);
-    ts_audio_lock_device(TS_AUDIO_LOGICAL_OUTPUT);
+    ts_audio_lock_device_at(TS_AUDIO_LOGICAL_OUTPUT, __func__);
     runtime_prune_sources(audio, instrument);
 
     if (mutable_ui != NULL && !mutable_ui->config_open &&

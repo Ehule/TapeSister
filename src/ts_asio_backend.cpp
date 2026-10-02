@@ -15,7 +15,7 @@ struct Endpoint { SDL_AudioSpec spec{}; SDL_AudioDeviceID id{}; bool paused{true
 std::unique_ptr<RtAudio> driver;
 std::vector<RtAudio::DeviceInfo> devices;
 SDL_mutex *mutex;
-std::atomic<unsigned> xruns{0};
+std::atomic<unsigned> xruns{0}, driverXruns{0}, controlSkips{0};
 std::atomic<bool> lost{false};
 bool started, notified;
 unsigned inputs, outputs, frames, rate, serial;
@@ -36,11 +36,11 @@ void initialize()
 int process(void *out, void *in, unsigned n, double, RtAudioStreamStatus status, void *)
 {
     if (out) std::memset(out, 0, size_t(n) * outputs * sizeof(float));
-    if (status) ++xruns;
+    if (status) { ++xruns; ++driverXruns; }
     if (lost.load() || n != frames) { lost.store(true); return 0; }
     /* The application has existing UI/DSP exclusion. Never wait for it on the
        driver deadline: output silence and count a missed period instead. */
-    if (SDL_TryLockMutex(mutex)) { ++xruns; return 0; }
+    if (SDL_TryLockMutex(mutex)) { ++xruns; ++controlSkips; return 0; }
     Endpoint &capture = endpoints[1], &playback = endpoints[0];
     currentInput = capture.id && !capture.paused ? static_cast<float *>(in) : nullptr;
     if (currentInput && capture.spec.callback)
@@ -144,6 +144,7 @@ SDL_AudioDeviceID ts_asio_open(const char *name, int capture,
             op.nChannels = outputs; ip.nChannels = inputs;
             RtAudio::StreamOptions options; options.streamName = "TapeSister";
             lost.store(false); notified = false; xruns.store(0);
+            driverXruns.store(0); controlSkips.store(0);
             if (driver->openStream(&op, inputs ? &ip : nullptr, RTAUDIO_FLOAT32, rate,
                                    &frames, process, nullptr, &options) != RTAUDIO_NO_ERROR) {
                 closeStream(); SDL_SetError("ASIO open failed; check driver availability, rate and control panel"); return 0;
@@ -199,6 +200,8 @@ void ts_asio_poll(void)
     }
 }
 unsigned ts_asio_xruns(void) { return xruns.load(); }
+unsigned ts_asio_driver_xruns(void) { return driverXruns.load(); }
+unsigned ts_asio_control_skips(void) { return controlSkips.load(); }
 const float *ts_asio_input_block(unsigned *n, unsigned *ch)
 { *n = frames; *ch = inputs; return currentInput; }
 void ts_asio_quit(void)

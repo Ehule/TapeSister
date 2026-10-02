@@ -17,6 +17,7 @@ For explanations and complete workflows, see the [User Manual](USER_MANUAL.md).
 | `Ctrl+Shift+P` | Reach CDP Portal from main, FM, Mosaic, or Sister |
 | `4` | Show native DSP; press again to cycle DSP pages |
 | `F1`–`F8` | Select keyboard octave |
+| `F12` or CFG → AUDIO HEALTH | Open/close the [Audio Health monitor](AUDIO_HEALTH.md); Reset counters and Copy Report for a crackle investigation |
 | `Space` | Main: play/stop audition. Mosaic: play/pause arrangement |
 | `Ctrl+Shift+M` | Enter or leave MIDI Learn in either window |
 | `Escape` | Cancel active gesture/dialog first; event editor → Mosaic, Sister → main application, idle Mosaic → stop/rewind, ordinary main canvas → exit question |

@@ -21,6 +21,8 @@ void ts_asio_pause(SDL_AudioDeviceID id, int paused);
 void ts_asio_poll(void);
 void ts_asio_quit(void);
 unsigned ts_asio_xruns(void);
+unsigned ts_asio_driver_xruns(void);
+unsigned ts_asio_control_skips(void);
 const float *ts_asio_input_block(unsigned *frames, unsigned *channels);
 #ifdef __cplusplus
 }

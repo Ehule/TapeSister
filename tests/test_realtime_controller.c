@@ -11,7 +11,7 @@
 #include <assert.h>
 
 /* The actual callback, without an audio device or insert. This executable also
-   provides an opt-in timing run: --benchmark <0 dry/1 board/2 Sister> [blocks]. */
+   provides an opt-in timing run: --benchmark <0 dry/1 board/2 Sister> [blocks] [telemetry 0/1]. */
 int main(int argc,char **argv)
 {
     int benchmark=argc>1 && !strcmp(argv[1],"--benchmark");
@@ -20,6 +20,9 @@ int main(int argc,char **argv)
     if(blocks<1 || scenario<0 || scenario>2)return 2;
     AudioState *a=calloc(1,sizeof(*a));TsUiState *u=calloc(1,sizeof(*u));
     assert(a && u);ts_ui_init(u);
+    ts_realtime_diagnostics_init(&a->realtime_diagnostics);
+    a->realtime_counter_frequency=SDL_GetPerformanceFrequency();
+    a->realtime_diagnostics_enabled=argc>4?atoi(argv[4]):!benchmark;
     a->output_rate=48000;a->output_device_channels=2;
     a->fm_output_gain=1;set_fm_output_trim(0,a,u,1,0);
     ts_note_bank_init(&a->notes);a->notes.workbench_loop=1;
@@ -72,15 +75,19 @@ int main(int argc,char **argv)
     if(benchmark) {
         Uint64 frequency=SDL_GetPerformanceFrequency(),total=0,worst=0;
         double checksum=0;
+        uint64_t hash=14695981039346656037ull;
         for(int b=0;b<blocks;++b) {
             Uint64 begin=SDL_GetPerformanceCounter();
             audio_callback(a,(Uint8*)block,sizeof(block));
             Uint64 elapsed=SDL_GetPerformanceCounter()-begin;
             total+=elapsed;if(elapsed>worst)worst=elapsed;
             for(int i=0;i<512;++i){assert(isfinite(block[i]));checksum+=block[i];}
+            const unsigned char *bytes=(const unsigned char *)block;
+            for(size_t i=0;i<sizeof(block);++i){hash^=bytes[i];hash*=1099511628211ull;}
         }
         printf("callback scenario=%d blocks=%d block=256 avg_us=%.3f worst_us=%.3f ns_per_frame=%.3f checksum=%.12f\n",
             scenario,blocks,1e6*total/frequency/blocks,1e6*worst/frequency,1e9*total/frequency/blocks/256,checksum);
+        printf("telemetry=%d audio_hash=%016llx\n",a->realtime_diagnostics_enabled,(unsigned long long)hash);
     } else {
         /* FM trim reaches every dry/capture/monitor tap through one ramp. */
         float previous=a->keyboard_dry.l,largest=0;
