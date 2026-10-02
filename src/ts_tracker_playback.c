@@ -63,6 +63,7 @@ void ts_tracker_playback_init(TsTrackerPlayback *rt)
     memset(rt, 0, sizeof(*rt));
     atomic_init(&rt->display_running, 0); atomic_init(&rt->display_row, 0);
     atomic_init(&rt->display_pattern, 0); atomic_init(&rt->display_missing, 0);
+    atomic_init(&rt->display_block,0);atomic_init(&rt->display_block_rows,0);atomic_init(&rt->display_block_lanes,0);
     for (int i = 0; i < TS_TRACKER_LANES; ++i) rt->lanes[i].volume = 0x40;
 }
 
@@ -98,6 +99,7 @@ void ts_tracker_playback_stop(TsTrackerPlayback *rt)
 {
     if (!rt) return;
     rt->running = rt->paused = 0;
+    rt->block_active=rt->block_pending=rt->loop_seam=0;
     rt->tail_active = 1;
     for (int i = 0; i < TS_TRACKER_LANES; ++i) stop_lane(&rt->lanes[i]);
     ts_tracker_playback_end_block(rt);
@@ -230,12 +232,13 @@ TsTrackerPrepared *ts_tracker_playback_publish(TsTrackerPlayback *rt, TsTrackerP
     TsTrackerPrepared *old = rt->prepared;
     rt->prepared = p;
     if (!p) { ts_tracker_playback_stop(rt); return old; }
+    if(rt->running && old && old->pattern.id!=p->pattern.id)ts_tracker_playback_stop(rt);
     if (rt->running) {
         double next = (double)rt->rate * 2.5 / p->bpm;
         if (rt->tick_frames > 0) rt->until_tick *= next / rt->tick_frames;
         rt->tick_frames = next;
         if (rt->tick >= p->ticks_per_line) rt->tick = p->ticks_per_line - 1;
-        if (rt->row >= p->pattern.rows) rt->row = p->pattern.rows - 1;
+        if (!rt->block_active && rt->row >= p->pattern.rows) rt->row = p->pattern.rows - 1;
     }
     for (int i = 0; i < TS_TRACKER_LANES; ++i) {
         TsTrackerLanePlayback *l = &rt->lanes[i];
@@ -265,9 +268,54 @@ int ts_tracker_playback_start(TsTrackerPlayback *rt)
     rt->row = -1; rt->tick = rt->prepared->ticks_per_line - 1;
     rt->until_tick = 0; rt->tick_frames = (double)rt->rate * 2.5 / rt->prepared->bpm;
     rt->elapsed_frames = 0; rt->missing_mask = 0;
+    rt->loop_cycles=0;rt->loop_seam=0;
     rt->running = 1; rt->paused = 0;
     ts_tracker_playback_end_block(rt);
     return 1;
+}
+
+static int valid_block(const TsTrackerPlayback *rt,TsTrackerBlock b)
+{
+    return rt && rt->prepared && b.pattern==rt->prepared->pattern.id &&
+        b.row0>=0 && b.row0<=b.row1 && b.row1<rt->prepared->pattern.rows &&
+        b.lane0>=0 && b.lane0<=b.lane1 && b.lane1<TS_TRACKER_LANES;
+}
+static void inherit_before(TsTrackerPlayback *rt,int lane,int row)
+{
+    TsTrackerLanePlayback *l=&rt->lanes[lane];l->default_tile=0;l->volume=0x40;
+    for(int y=0;y<row;++y) {
+        const TsTrackerCell *c=&rt->prepared->pattern.cells[y][lane];
+        if(c->tile_id)l->default_tile=c->tile_id;
+        if(c->has_volume)l->volume=c->volume;
+    }
+}
+int ts_tracker_playback_start_block(TsTrackerPlayback *rt,TsTrackerBlock b)
+{
+    if(!valid_block(rt,b) || !ts_tracker_playback_start(rt))return 0;
+    rt->block=b;rt->block_active=1;rt->row=b.row0-1;
+    for(int lane=b.lane0;lane<=b.lane1;++lane)inherit_before(rt,lane,b.row0);
+    ts_tracker_playback_end_block(rt);return 1;
+}
+int ts_tracker_playback_queue_block(TsTrackerPlayback *rt,TsTrackerBlock b)
+{
+    if(!rt || !rt->block_active || !valid_block(rt,b))return 0;
+    rt->pending_block=b;rt->block_pending=1;return 1;
+}
+/* Tapehead's pending-bounds contract: the current cycle always finishes before
+   a new rectangle is adopted. Resized patterns clamp safely at that boundary. */
+static void block_seam(TsTrackerPlayback *rt)
+{
+    TsTrackerBlock old=rt->block,b=rt->block_pending?rt->pending_block:old;
+    int last=rt->prepared->pattern.rows-1;
+    if(b.row0>last)b.row0=last;
+    if(b.row1>last)b.row1=last;
+    rt->block=b;rt->block_pending=0;rt->row=b.row0;
+    for(int lane=0;lane<TS_TRACKER_LANES;++lane) {
+        if(lane<b.lane0 || lane>b.lane1) {
+            stop_lane(&rt->lanes[lane]);rt->missing_mask&=(uint8_t)~(1u<<lane);
+        } else if(lane<old.lane0 || lane>old.lane1)inherit_before(rt,lane,b.row0);
+    }
+    ++rt->loop_cycles;rt->loop_seam=1;
 }
 
 void ts_tracker_playback_pause(TsTrackerPlayback *rt, int paused)
@@ -283,6 +331,7 @@ void ts_tracker_playback_solo(TsTrackerPlayback *rt, uint8_t mask) { if (rt) rt-
 static void execute_row(TsTrackerPlayback *rt)
 {
     for (int i = 0; i < TS_TRACKER_LANES; ++i) {
+        if(rt->block_active && (i<rt->block.lane0 || i>rt->block.lane1))continue;
         TsTrackerLanePlayback *l = &rt->lanes[i];
         const TsTrackerCell *c = &rt->prepared->pattern.cells[rt->row][i];
         if (c->tile_id) l->default_tile = c->tile_id;
@@ -313,6 +362,7 @@ static void execute_row(TsTrackerPlayback *rt)
 TsStereoFrame ts_tracker_playback_read(TsTrackerPlayback *rt, int rate)
 {
     TsStereoFrame output = {0};
+    if(rt)rt->loop_seam=0;
     if (!rt || rate < 1000) return output;
     if (!rt->running && !rt->tail_active) return output;
     if (rt->rate && rt->rate != rate) {
@@ -330,7 +380,11 @@ TsStereoFrame ts_tracker_playback_read(TsTrackerPlayback *rt, int rate)
         if (rt->until_tick <= 1e-9) {
             if (++rt->tick >= rt->prepared->ticks_per_line) {
                 rt->tick = 0;
-                if (++rt->row >= rt->prepared->pattern.rows) {
+                ++rt->row;
+                if(rt->block_active) {
+                    if(rt->row>rt->block.row1 || rt->row>=rt->prepared->pattern.rows)block_seam(rt);
+                    else if(!rt->elapsed_frames)rt->loop_seam=1;
+                } else if (rt->row >= rt->prepared->pattern.rows) {
                     if (rt->prepared->loop) rt->row = 0;
                     else ts_tracker_playback_stop(rt);
                 }
@@ -369,4 +423,7 @@ void ts_tracker_playback_end_block(TsTrackerPlayback *rt)
     atomic_store_explicit(&rt->display_row, rt->row < 0 ? 0 : (unsigned)rt->row, memory_order_relaxed);
     atomic_store_explicit(&rt->display_pattern, rt->prepared ? rt->prepared->pattern.id : 0, memory_order_relaxed);
     atomic_store_explicit(&rt->display_missing, rt->missing_mask, memory_order_release);
+    atomic_store_explicit(&rt->display_block_rows,(unsigned)rt->block.row0|((unsigned)rt->block.row1<<8),memory_order_relaxed);
+    atomic_store_explicit(&rt->display_block_lanes,(unsigned)rt->block.lane0|((unsigned)rt->block.lane1<<8),memory_order_relaxed);
+    atomic_store_explicit(&rt->display_block,rt->block_active,memory_order_release);
 }

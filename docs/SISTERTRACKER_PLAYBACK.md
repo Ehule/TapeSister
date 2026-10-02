@@ -19,7 +19,7 @@ normalization. The Sample tile's audio, tuning and loop settings remain editable
    an alias and puts it in the cell; an existing alias is reused. New aliases
    prefer the Sample slot number when that alias is free.
 3. Click the NOTE column and enter a QWERTY note such as Z. The cursor advances
-   by STEP, initially one row. Use F1–F8 or OCT to select the keyboard octave.
+   by STEP, initially one row. Use F1–F7 or OCT to select the keyboard octave.
 4. Enter later notes with an empty TILE field to inherit this lane's last
    explicit tile. You can enter two hex digits in TILE or use the alias arrows.
    An unbound 01–10 can also bind an occupied Sample tile on the current page
@@ -40,8 +40,9 @@ Each lane has Tapehead's separate two-row header: **LEN OFF** or **LEN1–256**
 on the top strip, and its saved **FT ratio** on the second strip. The ratio
 bank follows Tapehead's 17 entries, from 1:2 through neutral 1:1 to 5:1.
 The suffix is `-` for Standard, `P` for Pattern, or `S` for Song; the eject symbol
-in the LEN strip identifies a saved CONTROL lane. Names and mute/solo/trim sit underneath.
-These are read-only saved-setup displays in this stage. The footer explicitly
+in the LEN strip identifies a saved CONTROL lane. Compact M/S switches and trim sit underneath. Default TRACK 1–8 names are
+omitted; a name strip appears only when at least one lane has a custom name.
+The LEN and FT strips are read-only saved-setup displays in this stage. The footer explicitly
 marks LEN/FT readouts inactive: playback still uses one Standard clock and the
 physical pattern row count. Private LEN/Fast Tracks clocks remain the next
 playback stage. Clicking a header selects its lane and explains this limitation.
@@ -60,8 +61,8 @@ footer labels command audio inactive alongside LEN and Fast Tracks.
 
 | Control | Action |
 | --- | --- |
-| Click grid / arrows | Select NOTE, TILE, VOL, tuning command/value, or FX command/value; arrows wrap through all seven positions across eight lanes |
-| Shift+arrows / Shift+click / left drag | Select a rectangular block of complete cells |
+| Click grid / arrows | Move the edit cursor independently of the marked block; select NOTE, TILE, VOL, tuning command/value, or FX command/value; arrows wrap through all seven positions across eight lanes |
+| Shift+arrows / Shift+click / left drag | Mark a rectangle of complete cells; Shift+arrows moves the stored active corner even after ordinary cursor navigation |
 | Tab / visible FX button | Open Sister/FX; Tab there returns to the main workspace |
 | F9 / F10 / F12 | Router / Tracker–Sample / Audio Health |
 | QWERTY in NOTE | Silent note entry, using the normal keyboard pitch layout |
@@ -91,7 +92,13 @@ footer labels command audio inactive alongside LEN and Fast Tracks.
 | --- | --- |
 | Ctrl+C / Ctrl+X / Ctrl+V | Copy / cut / paste the selected block or current cell |
 | Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z | Undo / redo pattern edits (32 gestures) |
-| Ctrl+A / Ctrl+L | Select the whole pattern / current lane |
+| Ctrl+A / Alt+C | Mark the whole pattern / current lane without moving the edit cursor |
+| Ctrl+L | Start/stop literal block looping; replaces the old select-lane binding |
+| F8 outside Block Loop | Extract the marked rectangle into a new pattern without changing focus or clipboard |
+| F7 / F8 in Block Loop | Arm/stop live performance capture / capture one live cycle at loop seams |
+| Ctrl+Alt+Backspace | Expand/restore the pattern view; transport shortcuts remain available |
+| Ctrl+E | Open/close EDIT tools, including in expanded view |
+| EXPAND X2 / SHRINK /2 in EDIT | Double row spacing / keep even rows and halve length; undo restores all original cells |
 | Shift+F3 / F4 / F5 | Cut / copy / paste the current lane |
 | Ctrl+F3 / F4 / F5 | Cut / copy / paste the whole pattern |
 | Alt+F3 / F4 / F5 | Cut / copy / paste the selected block |
@@ -110,13 +117,18 @@ displayed and editable; its command audio execution remains a later stage.
 Normal paste includes empty fields; mix paste keeps destination fields where
 the source is empty. Paste clips at the active pattern/lane boundaries; it
 never modifies hidden rows. Lane/pattern F5 pastes begin at row 000; ordinary
-paste begins at the selection's top-left cell or current cursor.
+paste begins at the edit cursor, even while a separate source block is marked.
+Alt+F5 also pastes at the cursor. This lets you copy a block, move freely and
+paste elsewhere without losing the source mark.
 
 Clipboard cells hold stable tile IDs, not Sample slot numbers. Clipboard and
 undo history are internal to the current project and clear on project load.
 Undo/redo restores pattern cells and row count, including hidden rows; it leaves
 transport, voice phase, manual held notes, tile aliases and global tempo alone.
-Creating or cloning a pattern is outside pattern-edit undo. One held ROWS
+Block extraction is creation-aware: undo removes the new pattern; redo restores
+the same stable pattern ID and complete contents. A referenced pattern is not
+removed if doing so would change the order list. NEW and CLONE remain outside
+pattern-edit undo. One held ROWS
 gesture makes one undo step. New edits discard redo history.
 
 A bright outline always marks the current field. A blinking underline shows
@@ -140,6 +152,65 @@ missing/deleted tiles release only the affected tracker lanes. Moving a tile
 keeps its stable reference. No tile lookup, allocation, free, file I/O or pitch
 exponentiation occurs in the per-frame tracker reader.
 
+## Independent marks, block playback and extraction
+
+A mark stores its own pattern ID and both corners. Plain arrows, clicks, note
+entry, digit entry and automatic advancement never resize or clear it. Escape
+closes EDIT first, then clears the current pattern's mark, then returns to Sample.
+Switching editor patterns hides a mark belonging to another pattern. Switching
+back restores it unless you deliberately marked a replacement elsewhere. Marks
+and block transport are transient and reset on project load.
+
+**Ctrl+L** starts the selected literal rows and lanes under the Standard clock.
+It does not change user mute/solo/trim settings or claim manual/ARP/Mosaic voices.
+A second Ctrl+L stops tracker playback. Space pauses/resumes with the exact tick
+countdown and sample phase; Enter/PLAY starts ordinary full-pattern playback.
+The pattern LOOP switch does not disable a running block loop.
+
+Ordinary navigation leaves the loop alone. Deliberate marking gestures on its
+playing pattern queue the latest rectangle, which becomes audible at the next
+loop seam. Shift+arrows operates from the mark's stored moving corner, not an
+unrelated cursor position. An amber lane-edge rail shows the active audible
+bounds, selection fill shows the edited bounds, the playback row has a separate
+line, and the edit field retains its cyan outline and blinking digit underline.
+Clearing the mark with Escape does not stop the running loop. Marking another
+editor pattern cannot retarget the playing loop.
+
+At block start, selected lanes inherit their last explicit TILE and VOL from
+rows before the start, without executing any earlier notes. With no earlier
+values they start with no tile and volume 40. An unresolved explicit tile remains
+missing. Within repeated cycles, inherited values carry forward. Newly included
+lanes are seeded from the rows before the new start; removed lanes release their
+voices with the existing short handoff. Live row edits never replay the current
+row. Shortening a playing pattern lets the current row finish, then clamps the
+loop to valid rows at its next boundary; shortening does not erase hidden cells.
+
+**F8 outside Block Loop** copies the entire marked rectangle, including tuning
+and FX, into a newly allocated pattern. It rebases rows to zero and keeps the
+original lane positions; other lanes stay empty. Clipboard masks do not filter
+extraction. An empty block or full pattern bank is rejected. The source pattern,
+mark, cursor, clipboard and order list stay unchanged. Unlike Tapehead's numeric
+slot bank, TapeSister allocates a fresh stable ID; redo recreates that exact ID.
+
+**EXPAND X2** inserts empty rows between all active rows and doubles the length,
+up to 256. **SHRINK /2** keeps rows 0, 2, 4, ... and halves the length (rounded
+down); discarded odd-row events can be restored with Undo. Rows outside the
+operation's destination remain stored. These edits do not reposition audio.
+
+## Compact and expanded views
+
+The default eight-lane layout shows 19 rows, or 18 with custom lane names.
+**Ctrl+Alt+Backspace** expands to 29 rows, or 28 with names. It hides the transport
+and lower editing buttons; Enter, Space, Ctrl+L, F7/F8, Ctrl+E, Tab, F9 and F10
+remain available. The renderer, row paging, follow scrolling and mouse hit tests
+use one shared geometry calculation. Hidden BPM/ROWS/OUT/EQ controls cannot
+receive clicks or wheel/MIDI-learn input in expanded mode.
+
+Field labels are explained in bottom contextual help instead of repeated across
+every lane. Hover a field, compact mix switch or LEN/FT header for its meaning.
+The expanded view keeps recording feedback in its footer instead of overlaying
+the grid with the ordinary FILE OUT display.
+
 ## Sister and recording
 
 Tracker Main goes through the existing ordinary program/FX/EQ/limiter/output
@@ -153,6 +224,29 @@ Sister. TRACK is also available to native MIDI learn as `sister.source.tracker`.
 tap the final audible program. Dry keyboard/Synth taps retain their existing
 source-specific meaning. Audio Health (F12) reports tracker state, row and voice
 count separately, and includes Tracker in Sister's source-switch list.
+
+### Seam-quantized block capture
+
+Plain **F7** arms the existing streaming WAV recorder at the next block seam.
+Press F7 again before that seam to disarm, or after recording begins to finish at
+the next seam. Resizing the block during a take is included in the performance.
+Plain **F8** during Block Loop records from the next seam to the following seam.
+Both leave block playback running and save automatically to the normal Captures
+folder (`TAPESISTER_CAPTURES` overrides it), with BlockPerformance or BlockCycle
+in the filename. A busy file/tile recorder must finish first.
+
+These are **live final-output captures**: they include Sister/FX/EQ/output gain
+and any other audible native sources, including pauses and effect tails within
+the take. This intentionally adapts Tapehead's offline F8 rendering to
+TapeSister's live processing and external inserts. It does not reset effects or
+append post-cycle tails. Arm while paused waits for the next seam after resume;
+an already active take continues recording the actual output while paused.
+Stopping tracker playback ends the take at the stop, which can produce a partial
+cycle. Ctrl+Shift+F offers an immediate file stop through the existing recorder.
+
+Boundaries are gated per output frame in the callback. File creation, WAV/RF64
+writing and finalization stay on the controller/writer thread; no allocation,
+freeing, file I/O or mutable editor access was added to the callback.
 
 ## Scope and checks
 
@@ -171,4 +265,13 @@ The editor test covers stable identity, masks, explicit zeros, clipped/mix paste
 row shifts, hidden-row preservation, transpose, interpolation and bounded undo.
 The controller also exercises selection/clipboard/history during playback,
 Tab/FX navigation, held-button repeat and wheel ownership/direction/FOLLOW.
-All tests execute their setup and checks in Release builds.
+Additional checks cover independent marks through navigation and entry,
+block starts partway through patterns, selected-lane execution, fractional seam
+timing, pending resize through pause, shortening past the heard row, extraction
+identity/order/clipboard preservation, creation undo/redo, expand/shrink hidden
+rows, expanded hit testing and final-output frame-exact captures. Actual F7/F8
+controller dispatch and the streaming writer are exercised, including busy-file
+ownership. All tracker tests execute their setup and checks in Release builds.
+
+See [Tapehead parity inventory](SISTERTRACKER_PARITY.md) for inherited operations,
+intentional adaptations and the remaining implementation stages.

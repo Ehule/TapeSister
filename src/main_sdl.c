@@ -807,6 +807,9 @@ typedef struct {
     TsAudioMixer mixer;
     TsSisterRuntime sister;
     TsPerformanceRecorder *sister_file_recorder;
+    /* 0 ordinary FILE OUT; 1/2/3 perf armed/active/stop; 4/5 one-cycle armed/active. */
+    atomic_uint tracker_capture;
+
     _Atomic int sister_file_tap;
     TsCaptureRecorder capture;
     TsInputMonitor *input_monitor;
@@ -989,6 +992,32 @@ static int path_is_tsp(const char *path)
            tolower((unsigned char)extension[1]) == 't' &&
            tolower((unsigned char)extension[2]) == 's' &&
            tolower((unsigned char)extension[3]) == 'p';
+}
+
+/* Final-output capture is gated at the exact tracker frame, not UI polling.
+   Recorder queue/writer owns storage; callback only pushes or requests stop. */
+static int tracker_capture_frame_allowed(AudioState *audio)
+{
+    unsigned capture=atomic_load_explicit(&audio->tracker_capture,memory_order_acquire);
+    if(!capture)return 1;
+    TsTrackerPlayback *rt=&audio->tracker;
+    if(!rt->running || !rt->block_active) {
+        ts_performance_recorder_request_stop(audio->sister_file_recorder);
+        atomic_store(&audio->tracker_capture,0);return 0;
+    }
+    /* Once started, a live take includes pauses, release tails and other
+       audible sources. Only the loop clock waits for resume. */
+    if(rt->paused)return capture==2 || capture==3 || capture==5;
+    if(rt->loop_seam) {
+        if(capture==3 || capture==5) {
+            ts_performance_recorder_request_stop(audio->sister_file_recorder);
+            atomic_store(&audio->tracker_capture,0);return 0;
+        }
+        if(capture==1 || capture==4) {
+            ++capture;atomic_store_explicit(&audio->tracker_capture,capture,memory_order_release);
+        }
+    }
+    return capture==2 || capture==3 || capture==5;
 }
 
 static void audio_callback(void *userdata, Uint8 *stream, int bytes)
@@ -1198,7 +1227,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
            internal taps. Neither path writes to Sister's rolling memory. */
         if (audio->sister_file_recorder != NULL &&
             ts_performance_recorder_state(audio->sister_file_recorder) ==
-                TS_PERFORMANCE_FILE_RECORDING) {
+                TS_PERFORMANCE_FILE_RECORDING && tracker_capture_frame_allowed(audio)) {
             int tap = atomic_load_explicit(&audio->sister_file_tap,
                                            memory_order_relaxed);
             TsStereoFrame capture_frame = ts_sister_runtime_file_capture_frame(
@@ -9679,8 +9708,8 @@ static int sister_performance_writer_main(void *userdata)
     return 0;
 }
 
-static int begin_file_capture(AudioState *audio, SisterWindow *sister,
-                               uint32_t sample_rate, TsSisterTap tap, int channels)
+static int begin_file_capture_kind(AudioState *audio, SisterWindow *sister,
+                               uint32_t sample_rate, TsSisterTap tap, int channels,unsigned tracker_capture)
 {
     char path[1200];
     char prefix[40];
@@ -9715,7 +9744,9 @@ static int begin_file_capture(AudioState *audio, SisterWindow *sister,
                  "FINISH THE TILE CAPTURE BEFORE RECORDING A FILE");
         return 0;
     }
-    if (tap == TS_SISTER_TAP_MIX)
+    if(tracker_capture)
+        snprintf(prefix,sizeof(prefix),tracker_capture==4?"SISTER-BlockCycle":"SISTER-BlockPerformance");
+    else if (tap == TS_SISTER_TAP_MIX)
         snprintf(prefix, sizeof(prefix), "TAPESISTER-OUT");
     else if (tap == TS_SISTER_TAP_TAPEHEAD)
         snprintf(prefix, sizeof(prefix), "TAPEHEAD-RAW");
@@ -9732,6 +9763,7 @@ static int begin_file_capture(AudioState *audio, SisterWindow *sister,
     queue_frames = (size_t)sample_rate * 10u;
     atomic_store_explicit(&audio->sister_file_tap,
                           tap, memory_order_relaxed);
+    atomic_store_explicit(&audio->tracker_capture,tracker_capture,memory_order_release);
     if (!ts_performance_recorder_start(
             &sister->performance_recorder, path, sample_rate,
             (uint8_t)channels, queue_frames,
@@ -9756,6 +9788,53 @@ static int begin_file_capture(AudioState *audio, SisterWindow *sister,
     sister->model.capture_overdub = 0;
     snprintf(sister->model.status, sizeof(sister->model.status),
              "FILE RECORDING - PRESS CAPTURE AGAIN TO STOP");
+    return 1;
+}
+
+static int begin_file_capture(AudioState *audio,SisterWindow *sister,
+    uint32_t sample_rate,TsSisterTap tap,int channels)
+{ return begin_file_capture_kind(audio,sister,sample_rate,tap,channels,0); }
+
+/* Plain F7/F8 belong to the running block even when another pattern is edited. */
+static int tracker_capture_event(const SDL_Event *event,SDL_Window *window,
+    SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,SisterWindow *sister,uint32_t rate)
+{
+    if(!ui->tracker_open || ui_dialog_open(ui) || ui->midi_learn_active ||
+       event->type!=SDL_KEYDOWN || event->key.windowID!=SDL_GetWindowID(window) ||
+       (event->key.keysym.mod&(KMOD_CTRL|KMOD_ALT|KMOD_SHIFT|KMOD_GUI)) ||
+       (event->key.keysym.sym!=SDLK_F7 && event->key.keysym.sym!=SDLK_F8))return 0;
+    if(device)SDL_LockAudioDevice(device);
+    int active=audio->tracker.block_active;
+    unsigned capture=atomic_load(&audio->tracker_capture);
+    TsPerformanceFileState state=ts_performance_recorder_state(&sister->performance_recorder);
+    if(active && !event->key.repeat && event->key.keysym.sym==SDLK_F7 &&
+       state==TS_PERFORMANCE_FILE_RECORDING && capture>=1 && capture<=3) {
+        if(capture==1) {
+            ts_performance_recorder_request_stop(&sister->performance_recorder);
+            atomic_store(&audio->tracker_capture,0);
+            snprintf(ui->status,sizeof(ui->status),"BLOCK CAPTURE DISARMED");
+        } else {
+            atomic_store(&audio->tracker_capture,3);
+            snprintf(ui->status,sizeof(ui->status),"BLOCK CAPTURE STOPS AT NEXT SEAM - LOOP CONTINUES");
+        }
+        if(device)SDL_UnlockAudioDevice(device);return 1;
+    }
+    if(device)SDL_UnlockAudioDevice(device);
+    if(!active)return 0;
+    if(event->key.repeat)return 1;
+    if(state!=TS_PERFORMANCE_FILE_IDLE || sister->performance_writer) {
+        snprintf(ui->status,sizeof(ui->status),"FINISH CURRENT FILE CAPTURE BEFORE STARTING ANOTHER");return 1;
+    }
+    if(ui->capture_state!=TS_CAPTURE_IDLE) {
+        snprintf(ui->status,sizeof(ui->status),"FINISH TILE CAPTURE BEFORE RECORDING A FILE");return 1;
+    }
+    unsigned mode=event->key.keysym.sym==SDLK_F8?4:1;
+    if(begin_file_capture_kind(audio,sister,rate,TS_SISTER_TAP_MIX,2,mode))
+        snprintf(ui->status,sizeof(ui->status),mode==4?"ONE CYCLE ARMED FOR NEXT SEAM - FINAL OUTPUT WAV":"PERFORMANCE ARMED FOR NEXT SEAM - F7 TO END AT SEAM");
+    else {
+        atomic_store(&audio->tracker_capture,0);
+        snprintf(ui->status,sizeof(ui->status),"%s",sister->model.status);
+    }
     return 1;
 }
 
@@ -12965,6 +13044,7 @@ int main(int argc, char **argv)
     ts_sister_runtime_set_insert(&audio.sister,&ui.config.insert);
     audio.sister_file_recorder = &sister_window.performance_recorder;
     atomic_init(&audio.sister_file_tap, TS_SISTER_TAP_MIX);
+    atomic_init(&audio.tracker_capture,0);
     ts_realtime_diagnostics_init(&audio.realtime_diagnostics);
     audio.realtime_diagnostics_enabled =
         ts_realtime_diagnostics_is_lock_free(&audio.realtime_diagnostics);
@@ -13434,6 +13514,7 @@ int main(int argc, char **argv)
                 &sister_window,&instrument,&fm_preview,obtained.freq))continue;
             if(router_event(&event,window,device,&audio,&ui,&sister_window))continue;
             if(master_eq_event(&event,window,device,&audio,&ui,&sister_window))continue;
+            if(tracker_capture_event(&event,window,device,&audio,&ui,&sister_window,(uint32_t)obtained.freq))continue;
             if(tracker_event(&event,window,device,&audio,&ui,&sample_pages,&instrument,obtained.freq))continue;
             mosaic_commit(device,&ui,&instrument,&mosaic);
             /* Finish an active pointer gesture before Escape can discard a take. */

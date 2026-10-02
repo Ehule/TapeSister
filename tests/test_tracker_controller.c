@@ -169,6 +169,119 @@ static void tapehead_columns_and_overlay(void)
     t->editor_row=0;t->editor_lane=0;ui->tracker_field=1;ui->tracker_hex_digit=0;
     ts_tracker_edit_anchor(ui->tracker_edit,t);
 }
+static void independent_marks_and_layout(void)
+{
+    TsSisterTracker *t=ui->tracker;TsTrackerEdit *e=ui->tracker_edit;
+    TsTrackerPattern *p=ts_sister_tracker_pattern(t,t->editor_pattern);
+    ts_tracker_playback_stop(&a->tracker);ui->tracker_scroll=0;t->editor_row=2;t->editor_lane=2;
+    ts_tracker_edit_anchor(e,t);modified(SDLK_DOWN,KMOD_SHIFT);modified(SDLK_RIGHT,KMOD_SHIFT);
+    TsTrackerRegion expected=ts_tracker_edit_region(e,t);assert(expected.row0==2 && expected.row1==3 && expected.lane0==2 && expected.lane1==3);
+    key(SDLK_UP);key(SDLK_RIGHT);click(38,TS_TRACKER_GRID_Y+8*12+2);key(SDLK_z);
+    TsTrackerRegion actual=ts_tracker_edit_region(e,t);assert(!memcmp(&actual,&expected,sizeof(actual)));
+    assert(t->editor_row==9 && !t->editor_lane); /* Plain click, entry and auto-advance keep marks. */
+    p->cells[2][2].tile_id=t->aliases[1];p->cells[2][2].note_kind=TS_TRACKER_NOTE_PITCH;p->cells[2][2].note=60;
+    modified(SDLK_c,KMOD_CTRL);modified(SDLK_v,KMOD_CTRL);assert(p->cells[9][0].tile_id==t->aliases[1]);
+    unsigned count=t->pattern_count;TsPatternId source=t->editor_pattern;key(SDLK_F8);
+    assert(t->pattern_count==count+1 && t->editor_pattern==source && t->editor_row==9);
+    TsPatternId made=t->patterns[t->pattern_count-1]->id;modified(SDLK_z,KMOD_CTRL);assert(!ts_sister_tracker_pattern(t,made));
+    modified(SDLK_y,KMOD_CTRL);assert(ts_sister_tracker_pattern(t,made));
+    modified(SDLK_l,KMOD_CTRL);assert(a->tracker.block_active && a->tracker.block.row0==2 && a->tracker.block.row1==3);
+    float block[2];audio_callback(a,(Uint8*)block,sizeof(block));assert(a->tracker.row==2);
+    key(SDLK_HOME);key(SDLK_RIGHT);assert(!a->tracker.block_pending);
+    modified(SDLK_DOWN,KMOD_SHIFT);assert(e->end_row==4 && a->tracker.block_pending && a->tracker.block.row1==3);
+    TsPatternId other=t->patterns[t->pattern_count-1]->id;t->editor_pattern=other;
+    assert(!ts_tracker_edit_selected(e,t));tracker_refresh(0,a,ui,pages,instrument,48000);
+    assert(a->tracker.prepared->pattern.id==source);
+    t->editor_row=0;t->editor_lane=0;modified(SDLK_DOWN,KMOD_SHIFT);
+    assert(a->tracker.pending_block.pattern==source && a->tracker.pending_block.row1==4);
+    t->editor_pattern=source;t->editor_row=0;ui->tracker_scroll=0;
+    modified(SDLK_l,KMOD_CTRL);assert(!a->tracker.running);
+    modified(SDLK_c,KMOD_ALT);actual=ts_tracker_edit_region(e,t);assert(actual.row0==0 && actual.row1==p->rows-1 && actual.lane0==0 && actual.lane1==0);
+    key(SDLK_ESCAPE);assert(!e->selected && ui->tracker_open);
+    TsTrackerLayout normal=ts_tracker_layout(t,0);assert(normal.rows==19);
+    modified(SDLK_BACKSPACE,KMOD_CTRL|KMOD_ALT);assert(ui->tracker_expanded);
+    TsTrackerLayout full=ts_tracker_layout(t,1);assert(full.rows==29 && full.grid_y<normal.grid_y);
+    unsigned bpm=t->bpm;click(230,40);assert(t->bpm==bpm && t->editor_row==0); /* Old BPM coordinate is grid now. */
+    click(TS_TRACKER_LANE_X+3+7*TS_TRACKER_LANE_WIDTH,full.grid_y+(full.rows-1)*12+2);
+    assert(t->editor_row==28 && t->editor_lane==7);
+    click(TS_TRACKER_LANE_X+3,full.mix_y+3);assert(t->lanes[0].muted);click(TS_TRACKER_LANE_X+3,full.mix_y+3);
+    click(TS_TRACKER_LANE_X+15,full.mix_y+3);assert(ui->tracker_solo&1);click(TS_TRACKER_LANE_X+15,full.mix_y+3);
+    char target[96];assert(!ts_ui_midi_target_from_point(ui,540,15,target,sizeof(target)));
+    SisterWindow *sister=calloc(1,sizeof(*sister));assert(sister);SDL_Event ev;SDL_zero(ev);
+    ev.type=SDL_MOUSEBUTTONDOWN;ev.button.windowID=SDL_GetWindowID(window);ev.button.button=SDL_BUTTON_LEFT;ev.button.x=505;ev.button.y=15;
+    assert(!master_eq_event(&ev,window,0,a,ui,sister) && !ui->master_eq_open);free(sister);
+    snprintf(t->lanes[3].name,sizeof(t->lanes[3].name),"BELL CLOUD");TsTrackerLayout named=ts_tracker_layout(t,1);
+    assert(named.name_y>=0 && named.grid_y==full.grid_y+10 && named.rows==28);
+    click(TS_TRACKER_LANE_X+27+3*TS_TRACKER_LANE_WIDTH,named.grid_y+12+2);assert(t->editor_row==1 && t->editor_lane==3 && ui->tracker_field==1);
+    snprintf(t->lanes[3].name,sizeof(t->lanes[3].name),"TRACK 4");
+    modified(SDLK_e,KMOD_CTRL);assert(e->tools_open);key(SDLK_ESCAPE);assert(!e->tools_open && ui->tracker_expanded);
+    modified(SDLK_BACKSPACE,KMOD_CTRL|KMOD_ALT);assert(!ui->tracker_expanded);
+    ui->tracker_scroll=0;t->editor_row=0;t->editor_lane=0;ui->tracker_field=1;
+}
+static void block_capture_frames(void)
+{
+    TsSisterTracker *t=ui->tracker;TsTrackerPattern *p=ts_sister_tracker_pattern(t,t->editor_pattern);
+    t->bpm=125;t->ticks_per_line=1;t->editor_row=2;t->editor_lane=2;
+    p->cells[0][2].tile_id=t->aliases[1];p->cells[2][2]=(TsTrackerCell){.note_kind=TS_TRACKER_NOTE_PITCH,.note=60};
+    ts_tracker_edit_anchor(ui->tracker_edit,t);ts_tracker_edit_mark(ui->tracker_edit,t,3,2);
+    modified(SDLK_l,KMOD_CTRL);assert(a->tracker.block_active);
+    float frame[2];for(int i=0;i<317;++i)audio_callback(a,(Uint8*)frame,sizeof(frame));
+    TsPerformanceRecorder recorder;ts_performance_recorder_init(&recorder);char error[128];
+    assert(ts_performance_recorder_start(&recorder,"tracker-cycle.wav",48000,2,5000,error,sizeof(error)));
+    a->sister_file_recorder=&recorder;atomic_store(&a->tracker_capture,4);
+    for(int i=317;i<1920;++i)audio_callback(a,(Uint8*)frame,sizeof(frame));
+    assert(!atomic_load(&recorder.accepted_frames)); /* Mid-cycle arming waits for the seam. */
+    for(int i=0;i<1920;++i) {
+        audio_callback(a,(Uint8*)frame,sizeof(frame));
+        assert(recorder.ring[i].l==frame[0] && recorder.ring[i].r==frame[1]);
+    }
+    assert(atomic_load(&recorder.accepted_frames)==1920 && a->tracker.running);
+    audio_callback(a,(Uint8*)frame,sizeof(frame));assert(ts_performance_recorder_state(&recorder)==TS_PERFORMANCE_FILE_STOPPING);
+    assert(a->tracker.running && a->tracker.block_active && !atomic_load(&a->tracker_capture));
+    while(ts_performance_recorder_pump(&recorder,8192)){}
+    ts_performance_recorder_free(&recorder);remove("tracker-cycle.wav");
+    assert(ts_performance_recorder_start(&recorder,"tracker-performance.wav",48000,2,6000,error,sizeof(error)));
+    atomic_store(&a->tracker_capture,1);
+    while(a->tracker.loop_cycles<3)audio_callback(a,(Uint8*)frame,sizeof(frame));
+    assert(atomic_load(&recorder.accepted_frames)==1);
+    for(int i=1;i<800;++i)audio_callback(a,(Uint8*)frame,sizeof(frame));
+    ts_tracker_playback_pause(&a->tracker,1);
+    for(int i=0;i<2000;++i)audio_callback(a,(Uint8*)frame,sizeof(frame));
+    assert(atomic_load(&recorder.accepted_frames)==2800);ts_tracker_playback_pause(&a->tracker,0);
+    /* Shrink next cycle to one row; F7 stop must follow its actual seam. */
+    assert(ts_tracker_playback_queue_block(&a->tracker,(TsTrackerBlock){p->id,3,3,2,2}));
+    while(a->tracker.loop_cycles<4)audio_callback(a,(Uint8*)frame,sizeof(frame));
+    assert(atomic_load(&recorder.accepted_frames)==3921);atomic_store(&a->tracker_capture,3);
+    while(ts_performance_recorder_state(&recorder)==TS_PERFORMANCE_FILE_RECORDING)audio_callback(a,(Uint8*)frame,sizeof(frame));
+    assert(atomic_load(&recorder.accepted_frames)==4880 && a->tracker.running);
+    while(ts_performance_recorder_pump(&recorder,8192)){}
+    ts_performance_recorder_free(&recorder);remove("tracker-performance.wav");a->sister_file_recorder=NULL;
+    /* Exercise actual F7/F8 dispatch, busy-recorder ownership and writer setup. */
+    SisterWindow *sister=calloc(1,sizeof(*sister));assert(sister);
+    ts_performance_recorder_init(&sister->performance_recorder);a->sister_file_recorder=&sister->performance_recorder;
+    SDL_AudioDeviceID saved_output=ts_real_output;ts_real_output=1;
+    SDL_setenv("TAPESISTER_CAPTURES","tracker-capture-test",1);
+    SDL_Event event;SDL_zero(event);event.type=SDL_KEYDOWN;event.key.windowID=SDL_GetWindowID(window);event.key.keysym.sym=SDLK_F7;
+    assert(tracker_capture_event(&event,window,0,a,ui,sister,48000));assert(atomic_load(&a->tracker_capture)==1);
+    char path[1200];snprintf(path,sizeof(path),"%s",sister->performance_recorder.path);
+    event.key.keysym.sym=SDLK_F8;assert(tracker_capture_event(&event,window,0,a,ui,sister,48000));
+    assert(atomic_load(&a->tracker_capture)==1 && strstr(ui->status,"FINISH CURRENT"));
+    event.key.keysym.sym=SDLK_F7;assert(tracker_capture_event(&event,window,0,a,ui,sister,48000));
+    assert(!atomic_load(&a->tracker_capture));SDL_WaitThread(sister->performance_writer,NULL);sister->performance_writer=NULL;
+    sister_poll_file_capture(sister);remove(path);
+    event.key.keysym.sym=SDLK_F8;assert(tracker_capture_event(&event,window,0,a,ui,sister,48000));
+    assert(atomic_load(&a->tracker_capture)==4);
+    snprintf(path,sizeof(path),"%s",sister->performance_recorder.path);
+    for(int i=0;i<1920;++i)audio_callback(a,(Uint8*)frame,sizeof(frame));
+    assert(atomic_load(&sister->performance_recorder.accepted_frames)==960);
+    SDL_WaitThread(sister->performance_writer,NULL);sister->performance_writer=NULL;
+    TsSample captured;ts_sample_init(&captured);
+    assert(ts_performance_recorder_load(&sister->performance_recorder,&captured,error,sizeof(error)));
+    assert(captured.frames==960 && captured.channels==2);ts_sample_free(&captured);
+    sister_poll_file_capture(sister);remove(path);a->sister_file_recorder=NULL;free(sister);ts_real_output=saved_output;
+    SDL_setenv("TAPESISTER_CAPTURES","",1);
+    ts_tracker_playback_stop(&a->tracker);t->editor_row=0;t->editor_lane=0;ts_tracker_edit_anchor(ui->tracker_edit,t);
+}
 int main(int argc,char **argv)
 {
     SDL_setenv("SDL_VIDEODRIVER","dummy",1);assert(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER));
@@ -252,11 +365,19 @@ int main(int argc,char **argv)
     tracker_refresh(0,a,ui,pages,instrument,48000);
     editor_controls();
     tapehead_columns_and_overlay();
+    independent_marks_and_layout();
+    block_capture_frames();
     if(argc>1) {
+        TsSisterTracker *t=ui->tracker;t->editor_row=2;t->editor_lane=2;
+        ts_tracker_edit_anchor(ui->tracker_edit,t);ts_tracker_edit_mark(ui->tracker_edit,t,5,3);
+        modified(SDLK_l,KMOD_CTRL);float frame[2];audio_callback(a,(Uint8*)frame,sizeof(frame));
+        t->editor_row=0;t->editor_lane=0;ui->tracker_field=1;tracker_refresh(0,a,ui,pages,instrument,48000);
+        ui->tracker_cursor_visible=1;ui->tracker_hover_y=0;
         TsFramebuffer *fb=malloc(sizeof(*fb));assert(fb);ts_ui_render(fb,ui,instrument);
         SDL_Surface *s=SDL_CreateRGBSurfaceFrom(fb->pixels,640,400,32,640*4,0xff0000,0xff00,0xff,0xff000000);
         assert(s && !SDL_SaveBMP(s,argv[1]));
-        if(argc>2){ui->tracker_edit->tools_open=1;ts_ui_render(fb,ui,instrument);assert(!SDL_SaveBMP(s,argv[2]));}
+        if(argc>2){ui->tracker_edit->tools_open=1;ts_ui_render(fb,ui,instrument);assert(!SDL_SaveBMP(s,argv[2]));ui->tracker_edit->tools_open=0;}
+        if(argc>3){ui->tracker_expanded=1;ts_ui_render(fb,ui,instrument);assert(!SDL_SaveBMP(s,argv[3]));ui->tracker_expanded=0;}
         SDL_FreeSurface(s);free(fb);
     }
     stop_all_force(0,a,ui);assert(!a->tracker.running && !ts_note_bank_count(&a->notes));

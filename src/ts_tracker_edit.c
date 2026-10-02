@@ -1,6 +1,7 @@
 #include "tapesister/tracker_edit.h"
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 static void discard(TsTrackerUndo *u)
 { free(u->before);free(u->after);memset(u,0,sizeof(*u)); }
@@ -15,12 +16,21 @@ void ts_tracker_edit_reset(TsTrackerEdit *e)
 void ts_tracker_edit_free(TsTrackerEdit *e)
 { if(e){ts_tracker_edit_reset(e);free(e);} }
 void ts_tracker_edit_anchor(TsTrackerEdit *e,const TsSisterTracker *t)
-{ e->anchor_row=t->editor_row;e->anchor_lane=t->editor_lane;e->selected=0; }
+{ e->selected_pattern=t->editor_pattern;e->anchor_row=e->end_row=t->editor_row;
+  e->anchor_lane=e->end_lane=t->editor_lane;e->selected=0; }
+int ts_tracker_edit_selected(const TsTrackerEdit *e,const TsSisterTracker *t)
+{ return e && e->selected && e->selected_pattern==t->editor_pattern; }
+void ts_tracker_edit_mark(TsTrackerEdit *e,const TsSisterTracker *t,int row,int lane)
+{
+    if(!ts_tracker_edit_selected(e,t))ts_tracker_edit_anchor(e,t);
+    e->end_row=row;e->end_lane=lane;e->selected=1;
+}
 TsTrackerRegion ts_tracker_edit_region(const TsTrackerEdit *e,const TsSisterTracker *t)
 {
     const TsTrackerPattern *p=ts_sister_tracker_pattern_const(t,t->editor_pattern);
-    int row=t->editor_row,lane=t->editor_lane;
-    int a=e && e->selected?e->anchor_row:row,b=e && e->selected?e->anchor_lane:lane;
+    int selected=ts_tracker_edit_selected(e,t);
+    int row=selected?e->end_row:t->editor_row,lane=selected?e->end_lane:t->editor_lane;
+    int a=selected?e->anchor_row:row,b=selected?e->anchor_lane:lane;
     TsTrackerRegion r={a<row?a:row,a>row?a:row,b<lane?b:lane,b>lane?b:lane};
     int max=p?p->rows-1:0;
     if(r.row0<0)r.row0=0;
@@ -38,13 +48,8 @@ int ts_tracker_edit_begin(TsTrackerEdit *e,const TsTrackerPattern *p)
     if(!e->pending.before || !e->pending.after){discard(&e->pending);return 0;}
     *e->pending.before=*p;return 1;
 }
-void ts_tracker_edit_commit(TsTrackerEdit *e,const TsTrackerPattern *p)
+static void push_history(TsTrackerEdit *e)
 {
-    if(!e || !e->pending.before)return;
-    if(!p || e->pending.before->id!=p->id || !memcmp(e->pending.before,p,sizeof(*p))) {
-        discard(&e->pending);return;
-    }
-    *e->pending.after=*p;
     for(unsigned i=e->position;i<e->count;++i)discard(&e->history[i]);
     e->count=e->position;
     if(e->count==TS_TRACKER_UNDO_LIMIT) {
@@ -53,15 +58,76 @@ void ts_tracker_edit_commit(TsTrackerEdit *e,const TsTrackerPattern *p)
     }
     e->history[e->count++]=e->pending;memset(&e->pending,0,sizeof(e->pending));e->position=e->count;
 }
+void ts_tracker_edit_commit(TsTrackerEdit *e,const TsTrackerPattern *p)
+{
+    if(!e || !e->pending.before)return;
+    if(!p || e->pending.before->id!=p->id || !memcmp(e->pending.before,p,sizeof(*p))) {
+        discard(&e->pending);return;
+    }
+    *e->pending.after=*p;push_history(e);
+}
 int ts_tracker_edit_undo(TsTrackerEdit *e,TsSisterTracker *t,int redo)
 {
     if(!e || e->pending.before || (redo?e->position==e->count:!e->position))return 0;
     TsTrackerUndo *u=&e->history[redo?e->position:e->position-1];
+    if(!u->before) { /* Pattern creation: preserve source focus and marks. */
+        if(redo) {
+            if(t->pattern_count==TS_TRACKER_PATTERNS || ts_sister_tracker_pattern(t,u->after->id))return 0;
+            TsTrackerPattern *made=malloc(sizeof(*made));if(!made)return 0;
+            *made=*u->after;t->patterns[t->pattern_count++]=made;
+        } else if(!ts_sister_tracker_remove_pattern(t,u->after->id,NULL,0))return 0;
+        e->position+=redo?1:-1;return 1;
+    }
     const TsTrackerPattern *saved=redo?u->after:u->before;
     TsTrackerPattern *p=ts_sister_tracker_pattern(t,saved->id);if(!p)return 0;
     *p=*saved;e->position+=redo?1:-1;t->editor_pattern=p->id;
     if(t->editor_row>=p->rows)t->editor_row=p->rows-1;
-    ts_tracker_edit_anchor(e,t);return 1;
+    return 1;
+}
+/* Adapted from Tapehead extractBlockToPattern: literal cells, original lanes,
+   independent clipboard/focus, and an undoable new pattern identity. */
+int ts_tracker_edit_extract(TsTrackerEdit *e,TsSisterTracker *t,TsPatternId *created,char *error,size_t size)
+{
+    if(created)*created=0;
+    const TsTrackerPattern *source=ts_sister_tracker_pattern_const(t,t->editor_pattern);
+    if(!source || !ts_tracker_edit_selected(e,t) || e->pending.before) {
+        if(error && size)snprintf(error,size,"SELECT A BLOCK FIRST");
+        return 0;
+    }
+    TsTrackerRegion r=ts_tracker_edit_region(e,t);int material=0;
+    for(int y=r.row0;y<=r.row1;++y)for(int x=r.lane0;x<=r.lane1;++x) {
+        const TsTrackerCell *c=&source->cells[y][x];
+        material|=c->note_kind || c->tile_id || c->has_volume || c->tune_command || c->fx_command;
+    }
+    if(!material){if(error && size)snprintf(error,size,"SELECTED BLOCK IS EMPTY");return 0;}
+    TsTrackerPattern *snapshot=malloc(sizeof(*snapshot));
+    if(!snapshot){if(error && size)snprintf(error,size,"OUT OF MEMORY CREATING UNDO");return 0;}
+    TsPatternId id;
+    if(!ts_sister_tracker_add_pattern(t,r.row1-r.row0+1,&id,error,size)){free(snapshot);return 0;}
+    TsTrackerPattern *p=ts_sister_tracker_pattern(t,id);
+    for(int y=r.row0;y<=r.row1;++y)for(int x=r.lane0;x<=r.lane1;++x)p->cells[y-r.row0][x]=source->cells[y][x];
+    *snapshot=*p;e->pending.after=snapshot;push_history(e);
+    if(created)*created=id;
+    return 1;
+}
+/* Tapehead's even-row expand/shrink, bounded to physical rows. Hidden rows
+   outside the destination are retained; the caller records the whole pattern. */
+int ts_tracker_edit_scale(TsTrackerPattern *p,int expand)
+{
+    int rows=p->rows;
+    if(expand) {
+        if(rows>TS_TRACKER_ROWS/2)return 0;
+        for(int y=rows-1;y>=0;--y) {
+            memcpy(p->cells[y*2],p->cells[y],sizeof(p->cells[y]));
+            memset(p->cells[y*2+1],0,sizeof(p->cells[y]));
+        }
+        p->rows=rows*2;
+    } else {
+        if(rows<2)return 0;
+        for(int y=0;y<rows/2;++y)memcpy(p->cells[y],p->cells[y*2],sizeof(p->cells[y]));
+        p->rows=rows/2;
+    }
+    return 1;
 }
 static void assign(TsTrackerCell *to,const TsTrackerCell *from,unsigned mask,int mix)
 {

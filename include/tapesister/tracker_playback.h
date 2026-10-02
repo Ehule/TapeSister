@@ -47,6 +47,11 @@ typedef struct {
 } TsTrackerLanePlayback;
 
 typedef struct {
+    TsPatternId pattern;
+    int row0,row1,lane0,lane1; /* Inclusive literal bounds, never editor pointers. */
+} TsTrackerBlock;
+
+typedef struct {
     TsTrackerPrepared *prepared;
     TsTrackerSource *sources; /* Control-thread cache, never traversed by audio. */
     TsTrackerLanePlayback lanes[TS_TRACKER_LANES];
@@ -54,7 +59,12 @@ typedef struct {
     uint8_t missing_mask, solo_mask;
     double until_tick, tick_frames;
     uint64_t elapsed_frames;
+    TsTrackerBlock block,pending_block;
+    int block_active,block_pending;
+    uint64_t loop_cycles;
+    int loop_seam; /* True for exactly the first audio frame of a cycle. */
     atomic_uint display_running, display_row, display_pattern, display_missing;
+    atomic_uint display_block,display_block_rows,display_block_lanes;
 } TsTrackerPlayback;
 
 void ts_tracker_playback_init(TsTrackerPlayback *playback);
@@ -72,6 +82,8 @@ void ts_tracker_playback_collect(TsTrackerPlayback *playback);
 TsTrackerPrepared *ts_tracker_playback_publish(TsTrackerPlayback *playback,
                                               TsTrackerPrepared *prepared);
 int ts_tracker_playback_start(TsTrackerPlayback *playback);
+int ts_tracker_playback_start_block(TsTrackerPlayback *playback,TsTrackerBlock block);
+int ts_tracker_playback_queue_block(TsTrackerPlayback *playback,TsTrackerBlock block);
 void ts_tracker_playback_stop(TsTrackerPlayback *playback);
 void ts_tracker_playback_pause(TsTrackerPlayback *playback, int paused);
 void ts_tracker_playback_solo(TsTrackerPlayback *playback, uint8_t mask);

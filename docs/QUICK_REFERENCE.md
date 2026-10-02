@@ -34,7 +34,14 @@ Use arrows for fields and rows, Shift+arrows or drag for block selection, and
 Tab or the visible FX button for Sister/FX. Ctrl+C/X/V copies, cuts and pastes;
 Ctrl+Z/Y undoes and redoes. Shift/Ctrl/Alt+F3/F4/F5 edits a lane, pattern or
 block using Tapehead's cut/copy/paste shortcuts. The EDIT button also exposes
-transpose, field masks, mix paste, fill, repeat, reverse and volume interpolation.
+transpose, field masks, mix paste, fill, repeat, reverse, volume interpolation
+and pattern expand/shrink. Plain navigation and entry preserve the marked block.
+Ctrl+L starts/stops block looping; Shift+arrows changes its bounds at the next
+seam. Alt+C marks a lane. F8 extracts a block outside looping; in Block Loop,
+F7 captures a live performance and F8 captures one live cycle to WAV.
+Ctrl+Alt+Backspace expands/restores the pattern view. Ctrl+E opens EDIT in either
+view. F7/F8 take priority over octave selection in those contexts; OCT remains
+available in the ordinary view.
 Hold left/right mouse on BPM, TPL or ROWS to increase/decrease continuously.
 See the [full editing reference](SISTERTRACKER_PLAYBACK.md#editing-and-mixing).
 

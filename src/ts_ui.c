@@ -717,7 +717,7 @@ static void main_midi_learn_overlay(TsFramebuffer *fb, const TsUiState *ui)
     char target[TS_MIDI_TARGET_ID_MAX];
     int state;
     if (fb == NULL || ui == NULL || !ui->midi_learn_active) return;
-    if(ui->master_eq_open || ui->router_open)goto learn_footer;
+    if(ui->master_eq_open || ui->router_open || (ui->tracker_open && ui->tracker_expanded))goto learn_footer;
     state = midi_learn_target_state(&ui->config.midi_map,
                                     ui->midi_learn_pending,
                                     "main.master_output");
@@ -4130,6 +4130,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
 void ts_ui_render_file_recording(TsFramebuffer *fb, const TsUiState *ui)
 {
     if(!fb || !ui)return;
+    if(ui->tracker_open && ui->tracker_expanded)return; /* Tracker owns every grid row. */
     render_palette=&ui->palette;
     if(ui->file_record_state!=TS_PERFORMANCE_FILE_RECORDING &&
        ui->file_record_state!=TS_PERFORMANCE_FILE_STOPPING) {
@@ -4230,7 +4231,7 @@ int ts_ui_midi_target_from_point(const TsUiState *ui, int x, int y,
     if(ui->router_open)return router_midi_target(ui,x,y,target,target_size);
     if(ui->master_eq_open)return ts_ui_master_eq_midi_target(ui,x,y,target,target_size);
     if(ui->tracker_open) {
-        if(!ts_ui_master_output_contains(x,y))return 0;
+        if(ui->tracker_expanded || !ts_ui_master_output_contains(x,y))return 0;
         result=snprintf(target,target_size,"main.master_output");
         return result>0 && (size_t)result<target_size;
     }

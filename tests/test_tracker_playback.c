@@ -149,5 +149,43 @@ static void native_reader_metadata(void)
     render(59521,96000);CHECK(rt.lanes[0].last_note_frame==59520);
     cleanup();
 }
+static void block_loop(void)
+{
+    fixture(8);pages->tracker.ticks_per_line=1;
+    for(int y=0;y<8;++y)for(int x=0;x<8;++x)pattern->cells[y][x]=note(0,60+y);
+    for(int x=0;x<8;++x)pattern->cells[0][x]=(TsTrackerCell){.tile_id=tile,.has_volume=1,.volume=32};
+    prepare(48000);TsTrackerBlock b={pattern->id,2,3,2,3};
+    CHECK(ts_tracker_playback_start_block(&rt,b));render(1,48000);
+    CHECK(rt.row==2 && rt.loop_seam && rt.lanes[2].default_tile==tile && rt.lanes[2].volume==32);
+    for(int x=0;x<8;++x)CHECK(rt.lanes[x].notes_started==(unsigned)(x==2 || x==3));
+    render(400,48000);double until=rt.until_tick,phase=rt.lanes[2].voice.position;
+    pattern->cells[2][2].note=90;prepare(48000);
+    CHECK(rt.lanes[2].voice.position==phase && rt.lanes[2].notes_started==1);
+    b.row0=4;b.row1=6;b.lane0=3;b.lane1=4;CHECK(ts_tracker_playback_queue_block(&rt,b));
+    CHECK(rt.row==2 && rt.block.row0==2 && rt.until_tick==until);
+    ts_tracker_playback_pause(&rt,1);render(5000,48000);CHECK(rt.until_tick==until && !rt.loop_cycles);
+    ts_tracker_playback_pause(&rt,0);render(1519,48000);CHECK(rt.row==3 && !rt.loop_cycles);
+    render(1,48000);CHECK(rt.row==4 && rt.loop_cycles==1 && rt.block.lane0==3 && rt.block.lane1==4);
+    CHECK(!rt.lanes[2].voice.active && rt.lanes[4].default_tile==tile && rt.lanes[4].volume==32);
+    CHECK(rt.lanes[4].last_note_frame==1920 && rt.lanes[3].notes_started==3);
+    /* Shortening past the current row is safe and does not replay a row. */
+    uint64_t notes=rt.lanes[3].notes_started;CHECK(ts_sister_tracker_set_rows(&pages->tracker,pattern->id,2));
+    prepare(48000);CHECK(rt.row==4 && rt.lanes[3].notes_started==notes);
+    render(960,48000);CHECK(rt.row==1 && rt.block.row0==1 && rt.block.row1==1 && rt.lanes[3].notes_started==notes+1);
+    CHECK(!ts_tracker_playback_queue_block(&rt,(TsTrackerBlock){pattern->id,0,2,0,0}));
+    CHECK(ts_sister_tracker_set_rows(&pages->tracker,pattern->id,8));
+    pages->tracker.bpm=137;pages->tracker.ticks_per_line=3;prepare(44100);
+    b=(TsTrackerBlock){pattern->id,2,4,2,2};CHECK(ts_tracker_playback_start_block(&rt,b));
+    uint64_t last=0;int seams=0;
+    for(int frame=0;seams<100;++frame) {
+        render(1,44100);
+        if(rt.loop_seam) {
+            uint64_t expected=(uint64_t)ceil(seams*3*44100.0*2.5/137*3-1e-7);
+            CHECK((uint64_t)frame==expected && rt.row==2);last=expected;++seams;
+        }
+    }
+    CHECK(last>0 && rt.loop_cycles==99);
+    ts_tracker_playback_stop(&rt);CHECK(!rt.block_active);cleanup();
+}
 int main(void)
-{timing();pause_rate_and_stop();inheritance_and_ownership();missing_and_live_edits();native_reader_metadata();puts("SisterTracker playback checks passed");return 0;}
+{block_loop();timing();pause_rate_and_stop();inheritance_and_ownership();missing_and_live_edits();native_reader_metadata();puts("SisterTracker playback checks passed");return 0;}

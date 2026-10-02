@@ -47,6 +47,7 @@ static int master_eq_event(const SDL_Event *event,SDL_Window *window,
     }
     if(id!=SDL_GetWindowID(window))return 0;
     if(!ui->master_eq_open) {
+        if(ui->tracker_open && ui->tracker_expanded)return 0;
         if(event->type==SDL_MOUSEBUTTONDOWN && button==SDL_BUTTON_LEFT &&
            ts_ui_master_limiter_contains(x,y) && !ui->midi_learn_active &&
            !ui_blocking_dialog_open_except_fm(ui) && !ui->fm_bank_choice_open && !ui->fm_full_choice_open) {

@@ -18,7 +18,11 @@ For a compact list of keys, gestures, ranges, and file types, see the
 
 Press F10 from the Sample workspace for the eight-lane pattern editor. Select a
 Sample tile, use USE TILE, enter QWERTY notes and click Play. Space pauses/resumes;
-Stop releases tracker voices only. See the [SisterTracker playback guide](SISTERTRACKER_PLAYBACK.md)
+Stop releases tracker voices only. Marks remain independent of the edit cursor.
+Ctrl+L loops a marked rectangle; Shift+arrows resizes at its next seam. F7/F8
+capture a running block, and F8 outside looping extracts a new pattern with
+undo/redo. Ctrl+Alt+Backspace expands the pattern view.
+See the [SisterTracker playback guide](SISTERTRACKER_PLAYBACK.md)
 for entry, routing, recording and the features scheduled for later stages.
 
 ## Mouse wheel behavior
