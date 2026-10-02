@@ -99,6 +99,7 @@ static void remove_project(const char *path, size_t pages, int record)
         }
         snprintf(made, sizeof(made), "%s/manifest.txt", directory); remove(made);
         snprintf(made, sizeof(made), "%s/sister-state.ini", directory); remove(made);
+        snprintf(made, sizeof(made), "%s/project-data/sister-tracker.tst", directory); remove(made);
         snprintf(made, sizeof(made), "%s/project-data", directory); TS_RMDIR(made);
         snprintf(made, sizeof(made), "%s/samples", directory); TS_RMDIR(made);
         TS_RMDIR(directory);

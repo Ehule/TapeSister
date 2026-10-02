@@ -67,6 +67,7 @@ int ts_sample_pages_init(TsSamplePages *pages,
         return 0;
     }
     memset(pages, 0, sizeof(*pages));
+    ts_sister_tracker_init(&pages->tracker);
     pages->pages = (TsInstrument **)calloc(1u, sizeof(*pages->pages));
     if (pages->pages == NULL) {
         pages_error(error, error_size, "Out of memory creating Sample pages");
@@ -89,6 +90,7 @@ int ts_sample_pages_init(TsSamplePages *pages,
 void ts_sample_pages_free(TsSamplePages *pages)
 {
     if (pages == NULL) return;
+    ts_sister_tracker_free(&pages->tracker);
     if (pages->pages != NULL) {
         for (size_t page = 0; page < pages->page_count; ++page) {
             if (pages->pages[page] == NULL) continue;
@@ -123,6 +125,115 @@ TsInstrument *ts_sample_pages_page_mut(TsSamplePages *pages,
                                        TsInstrument *active, size_t page)
 {
     return (TsInstrument *)ts_sample_pages_page(pages, active, page);
+}
+
+const TsBankSlot *ts_sample_pages_find_tile(const TsSamplePages *pages,
+                                           const TsInstrument *active,
+                                           TsTileId id, TsTileLocation *location)
+{
+    if (!pages || !ts_tile_id_valid(id)) return NULL;
+    for (size_t page = 0; page < pages->page_count; ++page) {
+        const TsInstrument *bank = ts_sample_pages_page(pages, active, page);
+        if (!bank) continue;
+        for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot)
+            if (bank->bank[slot].occupied && bank->bank[slot].tile_id == id) {
+                if (location) { location->page = page; location->slot = slot; }
+                return &bank->bank[slot];
+            }
+    }
+    return NULL;
+}
+
+static int compare_tile_ids(const void *a, const void *b)
+{
+    TsTileId left = *(const TsTileId *)a, right = *(const TsTileId *)b;
+    return (left > right) - (left < right);
+}
+
+int ts_sample_pages_validate_tile_ids(const TsSamplePages *pages,
+                                      const TsInstrument *active,
+                                      char *error, size_t error_size)
+{
+    TsTileId *ids;
+    size_t count = 0;
+    if (!pages || !pages->page_count || pages->page_count > TS_PROJECT_PAGE_LIMIT ||
+        pages->active_page >= pages->page_count) {
+        pages_error(error, error_size, "Invalid Sample page registry"); return 0;
+    }
+    ids = malloc(pages->page_count * TS_BANK_SLOT_COUNT * sizeof(*ids));
+    if (!ids) { pages_error(error, error_size, "Out of memory validating tile IDs"); return 0; }
+    for (size_t page = 0; page < pages->page_count; ++page) {
+        const TsInstrument *bank = ts_sample_pages_page(pages, active, page);
+        if (!bank) goto invalid;
+        for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot) {
+            if (!bank->bank[slot].occupied) continue;
+            if (!ts_tile_id_valid(bank->bank[slot].tile_id)) goto invalid;
+            ids[count++] = bank->bank[slot].tile_id;
+        }
+    }
+    qsort(ids, count, sizeof(*ids), compare_tile_ids);
+    for (size_t i = 1; i < count; ++i) if (ids[i] == ids[i - 1]) goto invalid;
+    free(ids);
+    return 1;
+invalid:
+    free(ids);
+    pages_error(error, error_size, "Invalid or duplicate project tile ID");
+    return 0;
+}
+
+int ts_sample_pages_move_tile(TsSamplePages *pages, TsInstrument *active,
+                              TsTileLocation source, TsTileLocation destination,
+                              char *error, size_t error_size)
+{
+    TsInstrument *from, *to, *a = NULL, *b = NULL;
+    TsBankSlot moved;
+    int ok = 0;
+    if (!pages || pages->mosaic_bank || source.slot < 0 || destination.slot < 0 ||
+        source.slot >= TS_BANK_SLOT_COUNT || destination.slot >= TS_BANK_SLOT_COUNT ||
+        !(from = ts_sample_pages_page_mut(pages, active, source.page)) ||
+        !(to = ts_sample_pages_page_mut(pages, active, destination.page)) ||
+        !from->bank[source.slot].occupied || from->bank[source.slot].locked ||
+        to->bank[destination.slot].occupied || to->bank[destination.slot].locked) {
+        pages_error(error, error_size, "Move needs an unlocked tile and empty destination"); return 0;
+    }
+    a = new_page(error, error_size);
+    if (!a || !ts_instrument_clone(a, from, error, error_size)) goto done;
+    b = from == to ? a : new_page(error, error_size);
+    if (!b || (b != a && !ts_instrument_clone(b, to, error, error_size))) goto done;
+    if (b != a && !ts_instrument_sync_selected(b, error, error_size)) goto done;
+    /* Selecting the original slot flushes its live editor before moving it. */
+    if (!ts_instrument_sync_selected(a, error, error_size) ||
+        !ts_instrument_select_bank(a, source.slot, error, error_size)) goto done;
+    moved = a->bank[source.slot];
+    a->bank[source.slot] = b->bank[destination.slot];
+    b->bank[destination.slot] = moved;
+    int selected_a = from->selected_slot == source.slot && a == b ?
+                     destination.slot : from->selected_slot;
+    /* Slot-local lineage cannot point into another bank. */
+    if (a != b) b->bank[destination.slot].parent_slot = -1;
+    for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i) {
+        if (a->bank[i].parent_slot == source.slot)
+            a->bank[i].parent_slot = a == b ? destination.slot : -1;
+    }
+    if (a->family_anchor_slot == source.slot)
+        a->family_anchor_slot = a == b ? destination.slot : selected_a;
+    if (a->family_last_slot == source.slot)
+        a->family_last_slot = a == b ? destination.slot : -1;
+    /* Do not flush the old live editor back into a slot now holding another tile. */
+    a->selected_slot = -1;
+    if (!ts_instrument_select_bank(a, selected_a, error, error_size)) goto done;
+    if (a != b) {
+        int selected_b = to->selected_slot;
+        b->selected_slot = -1;
+        if (!ts_instrument_select_bank(b, selected_b, error, error_size)) goto done;
+    }
+    swap_instruments(from, a);
+    if (a != b) swap_instruments(to, b);
+    ok = 1;
+done:
+    if (b && b != a) { ts_instrument_free(b); free(b); }
+    if (a) { ts_instrument_free(a); free(a); }
+    return ok;
 }
 
 int ts_sample_pages_append(TsSamplePages *pages, char *error, size_t error_size)
@@ -793,6 +904,8 @@ int ts_sample_pages_save_project(const TsSamplePages *pages,
         pages_error(error, error_size, "No paged project to save");
         return 0;
     }
+    if (!ts_sample_pages_validate_tile_ids(pages, active_sample, error, error_size) ||
+        !ts_sister_tracker_validate(&pages->tracker, error, error_size)) return 0;
     if (!path_directory(path, directory, sizeof(directory)) ||
         !project_stem(path, stem, sizeof(stem)) ||
         (!path_component_equal(path_name(directory), stem) &&
@@ -855,6 +968,16 @@ int ts_sample_pages_save_project(const TsSamplePages *pages,
             !validate_saved_instrument(destination, error, error_size)) goto failed;
     }
     if (!ts_mosaic_save(pages->mosaic, project_data, error, error_size)) goto failed;
+    if (snprintf(destination, sizeof(destination), "%s/sister-tracker.tst", project_data) < 0 ||
+        strlen(project_data) + 20u >= sizeof(destination) ||
+        !ts_sister_tracker_save_file(&pages->tracker, destination, error, error_size)) goto failed;
+    {
+        TsSisterTracker check;
+        ts_sister_tracker_init(&check);
+        int valid = ts_sister_tracker_load_file(&check, destination, error, error_size);
+        ts_sister_tracker_free(&check);
+        if (!valid) goto failed;
+    }
     record_present = record_bank != NULL && ts_instrument_bank_count(record_bank) > 0;
     if (record_present) {
         if (snprintf(destination, sizeof(destination), "%s/record-bank.tsr",
@@ -925,7 +1048,7 @@ int ts_sample_pages_save_project(const TsSamplePages *pages,
     if (fprintf(file,
                 "TAPESISTER_PROJECT 2\nproject=%s\npage_count=%zu\n"
                 "active_page=%zu\nrecord_bank=%d\n"
-                "sister_state=%d\nsample_format=WAV_PCM16\nsample_count=%zu\nmosaic=%d\n",
+                "sister_state=%d\nsample_format=WAV_PCM16\nsample_count=%zu\nmosaic=%d\nsister_tracker=1\n",
                 project_name, pages->page_count, pages->active_page,
                 record_present, sister_state != NULL, sample_count, pages->mosaic != NULL) < 0)
         goto manifest_failed;
@@ -975,6 +1098,7 @@ static int read_manifest(const char *project, char *directory,
                          size_t directory_size, int *layout,
                          size_t *page_count, size_t *active_page,
                          int *record_present, int *found, int *mosaic_present,
+                         int *tracker_present,
                          char *error, size_t error_size)
 {
     char path[TS_PROJECT_PATH_MAX];
@@ -982,6 +1106,7 @@ static int read_manifest(const char *project, char *directory,
     char line[1024];
     FILE *file;
     int version;
+    int tracker_seen = 0;
     if (!path_directory(project, directory, directory_size) ||
         snprintf(path, sizeof(path), "%s/manifest.txt", directory) < 0 ||
         strlen(directory) + 14u >= sizeof(path)) {
@@ -1026,6 +1151,14 @@ static int read_manifest(const char *project, char *directory,
                 return 0;
             }
             while(fgets(line,sizeof(line),file)) {
+                if (strncmp(line, "sister_tracker=", 15) == 0) {
+                    char trailing;
+                    line[strcspn(line, "\r\n")] = '\0';
+                    if (tracker_seen++ || sscanf(line, "sister_tracker=%d%c", tracker_present, &trailing) != 1 ||
+                        (*tracker_present != 0 && *tracker_present != 1)) {
+                        fclose(file); pages_error(error, error_size, "Unsupported SisterTracker manifest entry"); return 0;
+                    }
+                }
                 if(strncmp(line,"mosaic=",7)==0) {
                     if(sscanf(line,"mosaic=%d",mosaic_present)!=1 || (*mosaic_present!=0 && *mosaic_present!=1)) {
                         fclose(file);pages_error(error,error_size,"Malformed Mosaic manifest entry");return 0;
@@ -1094,6 +1227,7 @@ int ts_sample_pages_load_project(TsSamplePages *pages,
     size_t active_page = 0u;
     int record_present = 0;
     int manifest_found = 0, mosaic_present = 0;
+    int tracker_present = 0;
     int layout = 0;
     int loaded_ready = 0;
     if (pages == NULL || active_sample == NULL || record_bank == NULL ||
@@ -1111,7 +1245,7 @@ int ts_sample_pages_load_project(TsSamplePages *pages,
         goto failed;
     if (!read_manifest(path, directory, sizeof(directory), &layout,
                        &page_count, &active_page, &record_present,
-                       &manifest_found, &mosaic_present, error, error_size)) goto failed;
+                       &manifest_found, &mosaic_present, &tracker_present, error, error_size)) goto failed;
     if (manifest_found) {
         while (loaded.page_count < page_count)
             if (!ts_sample_pages_append(&loaded, error, error_size)) goto failed;
@@ -1142,6 +1276,20 @@ int ts_sample_pages_load_project(TsSamplePages *pages,
                                            error, error_size)) goto failed;
         }
     }
+    if (layout == 2) {
+        if (snprintf(page_path, sizeof(page_path), "%s/project-data/sister-tracker.tst", directory) < 0 ||
+            strlen(directory) + 33u >= sizeof(page_path)) {
+            pages_error(error, error_size, "SisterTracker path is too long"); goto failed;
+        }
+        FILE *check = fopen(page_path, "rb");
+        if (check) {
+            fclose(check);
+            if (!ts_sister_tracker_load_file(&loaded.tracker, page_path, error, error_size)) goto failed;
+        } else if (tracker_present || errno != ENOENT) {
+            pages_error(error, error_size, "SisterTracker data is missing or unreadable"); goto failed;
+        }
+    }
+    if (!ts_sample_pages_validate_tile_ids(&loaded, NULL, error, error_size)) goto failed;
     if(mosaic_present) {
         if(strlen(directory)+25 >= sizeof(page_path))goto failed;
         strcpy(page_path,directory);strcat(page_path,"/project-data/mosaic.tsm");

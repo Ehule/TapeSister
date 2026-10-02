@@ -28,6 +28,7 @@ add_library(tapesister_core src/ts_sample.c src/ts_prism.c src/ts_prism_performa
              src/ts_input_monitor.c
              src/ts_input_ownership.c
              src/ts_sample_pages.c
+             src/ts_tile_id.c src/ts_sister_tracker.c src/ts_sister_tracker_project.c
              src/ts_browser.c src/ts_config.c src/ts_audio_config.c
              src/ts_recipe.c src/ts_dsp_recipe.c
              src/ts_palette.c
@@ -410,6 +411,12 @@ add_test(NAME tapesister_capture_archive_tests COMMAND tapesister_capture_archiv
 add_executable(tapesister_sample_pages_tests tests/test_sample_pages.c)
 target_link_libraries(tapesister_sample_pages_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_sample_pages_tests COMMAND tapesister_sample_pages_tests)
+add_executable(tapesister_sister_tracker_tests tests/test_sister_tracker.c)
+target_link_libraries(tapesister_sister_tracker_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_sister_tracker_tests COMMAND tapesister_sister_tracker_tests)
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/sistertracker-fixtures")
+set_tests_properties(tapesister_sister_tracker_tests PROPERTIES
+                    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/sistertracker-fixtures")
 
 add_executable(tapesister_audio_config_tests tests/test_audio_config.c)
 target_link_libraries(tapesister_audio_config_tests PRIVATE tapesister_core)

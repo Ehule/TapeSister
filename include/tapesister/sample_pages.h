@@ -3,6 +3,7 @@
 
 #include "tapesister/sample.h"
 #include "tapesister/sister_project_state.h"
+#include "tapesister/sister_tracker.h"
 
 #include <stddef.h>
 
@@ -15,7 +16,21 @@ typedef struct {
     int active_live;
     const TsInstrument *mosaic_bank; /* Parked bank while the main view edits an event. */
     struct TsMosaic *mosaic; /* Non-owning, optional arrangement in this project. */
+    TsSisterTracker tracker; /* Owned definitions; never starts playback on load. */
 } TsSamplePages;
+
+typedef struct { size_t page; int slot; } TsTileLocation;
+/* Control-thread lookup. Uses the parked bank when Mosaic edits an event. */
+const TsBankSlot *ts_sample_pages_find_tile(const TsSamplePages *pages,
+                                           const TsInstrument *active,
+                                           TsTileId id, TsTileLocation *location);
+int ts_sample_pages_validate_tile_ids(const TsSamplePages *pages,
+                                      const TsInstrument *active,
+                                      char *error, size_t error_size);
+/* Transactionally move into an empty slot; identity and editor state follow. */
+int ts_sample_pages_move_tile(TsSamplePages *pages, TsInstrument *active,
+                              TsTileLocation source, TsTileLocation destination,
+                              char *error, size_t error_size);
 
 int ts_sample_pages_init(TsSamplePages *pages,
                          char *error, size_t error_size);

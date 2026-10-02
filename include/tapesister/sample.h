@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "tapesister/tile_id.h"
 
 enum {
     TS_HISTORY_DEPTH = 20,
@@ -416,6 +417,7 @@ typedef struct {
 typedef struct {
     TsSample sample;
     TsSample edit_parent;
+    TsTileId tile_id;
     TsTuning tuning;
     TsTuning audible_tuning;
     size_t loop_first;
