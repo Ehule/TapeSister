@@ -106,7 +106,7 @@ footer labels command audio inactive alongside LEN and Fast Tracks.
 
 The EDIT field mask independently enables NOTE, TILE, VOL, TUNE and FX for
 clipboard operations, block clearing, fill and reverse. Stored TUNE/FX data is
-preserved even though it is not displayed/executed by this playback stage.
+displayed and editable; its command audio execution remains a later stage.
 Normal paste includes empty fields; mix paste keeps destination fields where
 the source is empty. Paste clips at the active pattern/lane boundaries; it
 never modifies hidden rows. Lane/pattern F5 pastes begin at row 000; ordinary
@@ -157,7 +157,7 @@ count separately, and includes Tracker in Sister's source-switch list.
 ## Scope and checks
 
 This is pattern playback, not Song/order playback yet. The grid edits NOTE,
-TILE and VOL. LEN/CONTROL, private Fast Tracks, ratios/directions, overlap,
+TILE, VOL, M/N and FX definitions. LEN/CONTROL, private Fast Tracks, ratios/directions, overlap,
 M/N and FX execution, direct output lanes, MIDI recording and cross-project
 clipboard remapping remain later stages. Their existing saved definitions are preserved;
 this runtime uses Standard forward timing, one voice per lane and Main routing.
