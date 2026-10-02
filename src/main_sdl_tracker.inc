@@ -316,7 +316,7 @@ static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevi
         SDL_Keycode sym=event->key.keysym.sym;tracker_repeat_end(ui);edit->dragging=0;
         ui->tracker_cursor_epoch=SDL_GetTicks();
         if(sym==SDLK_BACKSPACE && (mod&(KMOD_CTRL|KMOD_ALT))==(KMOD_CTRL|KMOD_ALT)) {
-            if(!event->key.repeat){ui->tracker_expanded=!ui->tracker_expanded;tracker_visible(ui);}
+            if(!event->key.repeat){ui->master_output_dragging=0;ui->tracker_expanded=!ui->tracker_expanded;tracker_visible(ui);}
             return 1;
         }
         if(sym==SDLK_c && (mod&KMOD_ALT) && !(mod&(KMOD_CTRL|KMOD_GUI))) {

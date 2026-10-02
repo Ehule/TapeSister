@@ -206,7 +206,8 @@ static void independent_marks_and_layout(void)
     modified(SDLK_c,KMOD_ALT);actual=ts_tracker_edit_region(e,t);assert(actual.row0==0 && actual.row1==p->rows-1 && actual.lane0==0 && actual.lane1==0);
     key(SDLK_ESCAPE);assert(!e->selected && ui->tracker_open);
     TsTrackerLayout normal=ts_tracker_layout(t,0);assert(normal.rows==19);
-    modified(SDLK_BACKSPACE,KMOD_CTRL|KMOD_ALT);assert(ui->tracker_expanded);
+    ui->master_output_dragging=1;
+    modified(SDLK_BACKSPACE,KMOD_CTRL|KMOD_ALT);assert(ui->tracker_expanded && !ui->master_output_dragging);
     TsTrackerLayout full=ts_tracker_layout(t,1);assert(full.rows==29 && full.grid_y<normal.grid_y);
     unsigned bpm=t->bpm;click(230,40);assert(t->bpm==bpm && t->editor_row==0); /* Old BPM coordinate is grid now. */
     click(TS_TRACKER_LANE_X+3+7*TS_TRACKER_LANE_WIDTH,full.grid_y+(full.rows-1)*12+2);
