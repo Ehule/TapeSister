@@ -36,6 +36,16 @@ normalization. The Sample tile's audio, tuning and loop settings remain editable
 
 ## Editing and mixing
 
+Each lane has Tapehead's separate two-row header: **LEN OFF** or **LEN1–256**
+on the top strip, and its saved **FT ratio** on the second strip. The ratio
+bank follows Tapehead's 17 entries, from 1:2 through neutral 1:1 to 5:1.
+The suffix is `-` for Standard, `P` for Pattern, or `S` for Song; `C` in the LEN
+strip identifies a saved CONTROL lane. Names and mute/solo/trim sit underneath.
+These are read-only saved-setup displays in this stage. The footer explicitly
+marks LEN/FT readouts inactive: playback still uses one Standard clock and the
+physical pattern row count. Private LEN/Fast Tracks clocks remain the next
+playback stage. Clicking a header selects its lane and explains this limitation.
+
 | Control | Action |
 | --- | --- |
 | Click grid / arrows | Select a cell and its NOTE, TILE or VOL field |

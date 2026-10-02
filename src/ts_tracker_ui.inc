@@ -38,15 +38,29 @@ static void tracker_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrum
     text(fb,494,39,line,ui->tracker_running?PAL_NOTE:PAL_TEXT,1);
     for(int lane=0;lane<TS_TRACKER_LANES;++lane) {
         int x=34+lane*74;
-        snprintf(line,sizeof(line),"%d %.9s",lane+1,t->lanes[lane].name);text(fb,x+2,54,line,PAL_TEXT,1);
-        mosaic_button(fb,x+2,65,20,"M",t->lanes[lane].muted,1);
-        mosaic_button(fb,x+24,65,20,"S",ui->tracker_solo&(1u<<lane),1);
-        snprintf(line,sizeof(line),"%.1f",t->lanes[lane].trim);text(fb,x+49,70,line,PAL_VOLUME,1);
-        text(fb,x+3,85,"NTE TI VL",PAL_TEXT,1);
+        /* Tapehead's separate LEN and Fast Tracks strips. These show saved
+           definitions; this stage's playback still uses the Standard clock. */
+        static const char *ratios[TS_TRACKER_RATIOS]={"1:2","2:3","3:4","4:5","5:6","7:8","15:16",
+            "1:1","17:16","8:7","6:5","5:4","4:3","3:2","2:1","3:1","5:1"};
+        const TsTrackerLane *definition=&t->lanes[lane];
+        rect(fb,x,TS_TRACKER_LEN_Y-1,72,11,RGB(27,27,34));
+        rect(fb,x,TS_TRACKER_RATIO_Y-1,72,11,RGB(20,25,31));
+        if(definition->length)snprintf(line,sizeof(line),"LEN%u",definition->length);
+        else snprintf(line,sizeof(line),"LEN OFF");
+        text(fb,x+3,TS_TRACKER_LEN_Y,line,RGB(174,174,182),1);
+        if(t->control_lane==lane)text(fb,x+63,TS_TRACKER_LEN_Y,"C",RGB(174,174,182),1);
+        snprintf(line,sizeof(line),"FT %s %c",ratios[definition->ratio<TS_TRACKER_RATIOS?definition->ratio:7],
+            definition->mode==TS_TRACKER_PATTERN?'P':definition->mode==TS_TRACKER_SONG?'S':'-');
+        text(fb,x+3,TS_TRACKER_RATIO_Y,line,RGB(149,171,185),1);
+        snprintf(line,sizeof(line),"%d %.9s",lane+1,definition->name);text(fb,x+2,TS_TRACKER_NAME_Y,line,PAL_TEXT,1);
+        mosaic_button(fb,x+2,TS_TRACKER_MIX_Y,20,"M",definition->muted,1);
+        mosaic_button(fb,x+24,TS_TRACKER_MIX_Y,20,"S",ui->tracker_solo&(1u<<lane),1);
+        snprintf(line,sizeof(line),"%.1f",definition->trim);text(fb,x+49,TS_TRACKER_MIX_Y+5,line,PAL_VOLUME,1);
+        text(fb,x+3,TS_TRACKER_FIELDS_Y,"NTE TI VL",PAL_TEXT,1);
     }
     TsTrackerRegion selection=ts_tracker_edit_region(ui->tracker_edit,t);
-    if(p)for(int visible=0;visible<18;++visible) {
-        int row=ui->tracker_scroll+visible,y=96+visible*12;
+    if(p)for(int visible=0;visible<TS_TRACKER_VISIBLE_ROWS;++visible) {
+        int row=ui->tracker_scroll+visible,y=TS_TRACKER_GRID_Y+visible*TS_TRACKER_ROW_HEIGHT;
         if(row>=p->rows)break;
         int heard=ui->tracker_running && ui->tracker_heard_pattern==p->id && ui->tracker_row==(unsigned)row;
         rect(fb,6,y,624,12,heard?RGB(42,63,61):(row%4?RGB(22,21,25):RGB(31,29,35)));
@@ -82,7 +96,7 @@ static void tracker_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrum
     const TsTrackerCell *c=p?&p->cells[t->editor_row][t->editor_lane]:NULL;
     snprintf(line,sizeof(line),"ROW %03u LANE %u  %s  TILE %02X  %s",t->editor_row,t->editor_lane+1,
         ui->tracker_field==0?"NOTE":ui->tracker_field==1?"TILE":"VOLUME",c?tracker_alias(t,c->tile_id):0,
-        ui->tracker_missing?"MISSING TILE IN PLAYBACK":"STANDARD CLOCK / MAIN OUTPUT");
+        ui->tracker_missing?"MISSING TILE IN PLAYBACK":"STANDARD CLOCK; LEN/FT READOUTS INACTIVE");
     text(fb,10,317,line,ui->tracker_missing?PAL_VOLUME:PAL_TEXT,1);
     mosaic_button(fb,10,332,74,"USE TILE",0,0);mosaic_button(fb,88,332,24,"<",0,0);
     mosaic_button(fb,116,332,24,">",0,0);mosaic_button(fb,146,332,32,"OFF",0,0);

@@ -33,9 +33,9 @@ static void tracker_refresh(SDL_AudioDeviceID device,AudioState *audio,TsUiState
         if(pages->tracker.editor_row>=p->rows)pages->tracker.editor_row=p->rows-1;
         if(pages->tracker.follow && !ui->tracker_follow_hold && ui->tracker_running && ui->tracker_heard_pattern==p->id) {
             int row=(int)ui->tracker_row;
-            if(row<ui->tracker_scroll || row>=ui->tracker_scroll+18)ui->tracker_scroll=row;
+            if(row<ui->tracker_scroll || row>=ui->tracker_scroll+TS_TRACKER_VISIBLE_ROWS)ui->tracker_scroll=row;
         }
-        int maximum=p->rows>18?p->rows-18:0;
+        int maximum=p->rows>TS_TRACKER_VISIBLE_ROWS?p->rows-TS_TRACKER_VISIBLE_ROWS:0;
         if(ui->tracker_scroll>maximum)ui->tracker_scroll=maximum;
     }
 }
@@ -60,7 +60,7 @@ static void tracker_visible(TsUiState *ui)
     if(!p)return;
     int row=ui->tracker->editor_row;
     if(row<ui->tracker_scroll)ui->tracker_scroll=row;
-    if(row>=ui->tracker_scroll+18)ui->tracker_scroll=row-17;
+    if(row>=ui->tracker_scroll+TS_TRACKER_VISIBLE_ROWS)ui->tracker_scroll=row-TS_TRACKER_VISIBLE_ROWS+1;
 }
 static void tracker_advance(TsUiState *ui)
 {
@@ -214,7 +214,7 @@ static int tracker_control_at(int x,int y)
 }
 static void tracker_fx(SDL_Window *window)
 {
-    SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.windowID=SDL_GetWindowID(window);
+    SDL_Event e;SDL_zero(e);e.type=SDL_KEYDOWN;e.key.windowID=SDL_GetWindowID(window);
     e.key.keysym.sym=SDLK_TAB;SDL_PushEvent(&e);
 }
 static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID device,
@@ -291,10 +291,16 @@ static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevi
         }
         if(sym==SDLK_SPACE || sym==SDLK_RETURN || sym==SDLK_KP_ENTER) {
             if(!event->key.repeat) {
-                unsigned state=atomic_load_explicit(&audio->tracker.display_running,memory_order_acquire);
-                if(!state || sym!=SDLK_SPACE)tracker_play(device,audio,ui,pages,instrument,rate);
-                else {if(device)SDL_LockAudioDevice(device);ts_tracker_playback_pause(&audio->tracker,state==1);
-                    if(device)SDL_UnlockAudioDevice(device);}
+                if(sym!=SDLK_SPACE)tracker_play(device,audio,ui,pages,instrument,rate);
+                else {
+                    /* Transport decisions use current callback-owned state,
+                       not a possibly stale display snapshot. */
+                    if(device)SDL_LockAudioDevice(device);
+                    int running=audio->tracker.running;
+                    if(running)ts_tracker_playback_pause(&audio->tracker,!audio->tracker.paused);
+                    if(device)SDL_UnlockAudioDevice(device);
+                    if(!running)tracker_play(device,audio,ui,pages,instrument,rate);
+                }
             }return 1;
         }
         if(sym>=SDLK_F1 && sym<=SDLK_F8){ts_ui_keyboard_set_octave(ui,(int)(sym-SDLK_F1));return 1;}
@@ -317,7 +323,7 @@ static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevi
             else if(sym==SDLK_LEFT || sym==SDLK_RIGHT) {
                 if(mod&KMOD_SHIFT)t->editor_lane=SDL_clamp((int)t->editor_lane+(sym==SDLK_LEFT?-1:1),0,7);
                 else {int f=t->editor_lane*3+ui->tracker_field;f=(f+(sym==SDLK_LEFT?-1:1)+24)%24;t->editor_lane=f/3;ui->tracker_field=f%3;}
-            } else if(sym==SDLK_PAGEUP || sym==SDLK_PAGEDOWN)t->editor_row=SDL_clamp((int)t->editor_row+(sym==SDLK_PAGEUP?-18:18),0,p->rows-1);
+            } else if(sym==SDLK_PAGEUP || sym==SDLK_PAGEDOWN)t->editor_row=SDL_clamp((int)t->editor_row+(sym==SDLK_PAGEUP?-TS_TRACKER_VISIBLE_ROWS:TS_TRACKER_VISIBLE_ROWS),0,p->rows-1);
             else t->editor_row=sym==SDLK_HOME?0:p->rows-1;
             ui->tracker_hex_digit=0;ui->tracker_follow_hold=1;tracker_visible(ui);return 1;
         }
@@ -342,8 +348,8 @@ static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevi
     if(event->type==SDL_MOUSEWHEEL) {
         tracker_repeat_end(ui);int rawx,rawy,x,y;wheel_event_mouse(event,&rawx,&rawy);logical_mouse(window,rawx,rawy,&x,&y);
         int control=tracker_control_at(x,y),detents=wheel_event_detents(event,0);
-        int lane=y>=65 && y<81 && x>=34 && x<626 && (x-34)%74>=49?(x-34)/74:-1;
-        int grid=y>=96 && y<312 && x>=6 && x<630;
+        int lane=y>=TS_TRACKER_MIX_Y && y<TS_TRACKER_MIX_Y+16 && x>=34 && x<626 && (x-34)%74>=49?(x-34)/74:-1;
+        int grid=y>=TS_TRACKER_GRID_Y && y<TS_TRACKER_GRID_BOTTOM && x>=6 && x<630;
         int output=ts_ui_master_output_contains(x,y);
         int target=control?0x700+control:lane>=0?0x710+lane:grid?0x720:output?0x730:-1;
         if(target<0 || edit->tools_open || !ts_ui_wheel_guard_accept(&ui->wheel_guard,target,SDL_GetTicks()))return 1;
@@ -356,7 +362,7 @@ static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevi
             }
         } else if(lane>=0)t->lanes[lane].trim=fmaxf(0,fminf(2,t->lanes[lane].trim+.1f*(float)wheel_event_delta(event,0)));
         else if(grid && detents) {
-            ui->tracker_scroll=SDL_clamp(ui->tracker_scroll-detents,0,p->rows>18?p->rows-18:0);
+            ui->tracker_scroll=SDL_clamp(ui->tracker_scroll-detents,0,p->rows>TS_TRACKER_VISIBLE_ROWS?p->rows-TS_TRACKER_VISIBLE_ROWS:0);
             ui->tracker_follow_hold=1;
         }return 1;
     }
@@ -369,8 +375,8 @@ static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevi
         int x,y;logical_mouse(window,event->motion.x,event->motion.y,&x,&y);
         if(ui->tracker_repeat_control && tracker_control_at(x,y)!=ui->tracker_repeat_control)tracker_repeat_end(ui);
         if(edit->dragging && (event->motion.state&SDL_BUTTON_LMASK)) {
-            if(x>=34 && x<626 && y>=96 && y<312) {
-                int row=SDL_clamp(ui->tracker_scroll+(y-96)/12,0,p->rows-1),lane=(x-34)/74;
+            if(x>=34 && x<626 && y>=TS_TRACKER_GRID_Y && y<TS_TRACKER_GRID_BOTTOM) {
+                int row=SDL_clamp(ui->tracker_scroll+(y-TS_TRACKER_GRID_Y)/TS_TRACKER_ROW_HEIGHT,0,p->rows-1),lane=(x-34)/74;
                 if(row!=t->editor_row || lane!=t->editor_lane){edit->selected=1;t->editor_row=row;t->editor_lane=lane;}
             }
         } else edit->dragging=0;
@@ -391,7 +397,7 @@ static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevi
             ts_tracker_playback_stop(&audio->tracker);if(device)SDL_UnlockAudioDevice(device);}
         else if(x>=316 && x<358)ui->tracker_open=0;
         else if(x>=362 && x<406) {
-            SDL_Event save={0};save.type=SDL_KEYDOWN;save.key.windowID=SDL_GetWindowID(window);
+            SDL_Event save;SDL_zero(save);save.type=SDL_KEYDOWN;save.key.windowID=SDL_GetWindowID(window);
             save.key.keysym.sym=SDLK_s;save.key.keysym.mod=KMOD_CTRL;SDL_PushEvent(&save);
         } else if(x>=410 && x<466){t->follow=ui->tracker_follow_hold?1:!t->follow;ui->tracker_follow_hold=0;}
         else if(x>=466 && x<490)tracker_fx(window);
@@ -405,6 +411,12 @@ static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevi
         } else if(y>=245 && y<263 && x>=28 && x<518) {
             int col=(x-28)/98;if((x-28)%98<94)edit->mask^=1u<<col;
         }return 1;
+    }
+    if(y>=TS_TRACKER_LEN_Y-1 && y<TS_TRACKER_RATIO_Y+10 && x>=34 && x<626) {
+        t->editor_lane=(x-34)/74;
+        ts_tracker_edit_anchor(edit,t);
+        snprintf(ui->status,sizeof(ui->status),"LEN/FT SHOW SAVED SETUP; LENGTH AND RATIO PLAYBACK IS NOT ENABLED YET");
+        return 1;
     }
     if(y>=34 && y<50) {
         int control=tracker_control_at(x,y);
@@ -421,14 +433,14 @@ static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevi
                 t->editor_row=0;ui->tracker_scroll=0;ts_tracker_edit_anchor(edit,t);
             }
         } else if(x>=430 && x<486)t->loop=!t->loop;
-    } else if(y>=65 && y<81 && x>=34 && x<626) {
+    } else if(y>=TS_TRACKER_MIX_Y && y<TS_TRACKER_MIX_Y+16 && x>=34 && x<626) {
         int lane=(x-34)/74,local=(x-34)%74;
         if(local>=2 && local<23)t->lanes[lane].muted=!t->lanes[lane].muted;
         else if(local>=24 && local<45){ui->tracker_solo^=(uint8_t)(1u<<lane);if(device)SDL_LockAudioDevice(device);
             ts_tracker_playback_solo(&audio->tracker,ui->tracker_solo);if(device)SDL_UnlockAudioDevice(device);}
         else if(local>=49){float trim=t->lanes[lane].trim+delta*.1f;t->lanes[lane].trim=fmaxf(0,fminf(2,trim));}
-    } else if(y>=96 && y<312 && x>=34 && x<626) {
-        int row=ui->tracker_scroll+(y-96)/12;
+    } else if(y>=TS_TRACKER_GRID_Y && y<TS_TRACKER_GRID_BOTTOM && x>=34 && x<626) {
+        int row=ui->tracker_scroll+(y-TS_TRACKER_GRID_Y)/TS_TRACKER_ROW_HEIGHT;
         if(row<p->rows) {
             if(mod&KMOD_SHIFT){if(!edit->selected)ts_tracker_edit_anchor(edit,t);edit->selected=1;}
             else ts_tracker_edit_anchor(edit,t);
