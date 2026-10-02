@@ -25,6 +25,10 @@ int main(int argc, char **argv)
 {
     SDL_setenv("SDL_VIDEODRIVER", "dummy", 1);
     SDL_setenv("SDL_AUDIODRIVER", "dummy", 1);
+    /* Dummy windows have no native GPU surface. Keep both the renderer and its
+       backing framebuffer in software, independent of the CI host's drivers. */
+    assert(SDL_SetHintWithPriority(SDL_HINT_RENDER_DRIVER, "software", SDL_HINT_OVERRIDE));
+    assert(SDL_SetHintWithPriority(SDL_HINT_FRAMEBUFFER_ACCELERATION, "0", SDL_HINT_OVERRIDE));
     assert(!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER));
     AudioState *a = calloc(1, sizeof(*a));
     TsUiState *ui = calloc(1, sizeof(*ui)); assert(a && ui);
@@ -58,7 +62,13 @@ int main(int argc, char **argv)
 
     SDL_Event e = {0}; e.type = SDL_KEYDOWN;
     e.key.windowID = SDL_GetWindowID(main_window); e.key.keysym.sym = SDLK_F12;
-    assert(ts_audio_health_event(&e, main_window, a, ui) && ts_health.visible);
+    int handled = ts_audio_health_event(&e, main_window, a, ui);
+    if (!ts_health.visible)
+        fprintf(stderr, "Audio Health open failed: %s; SDL: %s\n", ui->status, SDL_GetError());
+    assert(handled && ts_health.visible);
+    SDL_RendererInfo renderer_info;
+    assert(!SDL_GetRendererInfo(ts_health.renderer, &renderer_info));
+    assert(renderer_info.flags & SDL_RENDERER_SOFTWARE);
     for (unsigned i = 0; i < 25; ++i)
         ts_realtime_diagnostics_record_timed(&a->realtime_diagnostics, i * 10000u,
             2500, 1000000, 48000, 480, 0);
