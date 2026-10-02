@@ -825,6 +825,8 @@ typedef struct {
     int realtime_diagnostics_enabled;
     uint64_t realtime_counter_frequency;
     TsRealtimeDiagnostics realtime_diagnostics;
+    uint32_t audio_health_generation; /* UI-owned output device epoch. */
+    Uint32 audio_health_started; /* UI-owned measurement epoch. */
     float fm_output_gain;
     float fm_output_target;
     TapeLinkReader live_link;
@@ -1245,8 +1247,8 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             ts_performance_recorder_state(audio->sister_file_recorder) ==
                 TS_PERFORMANCE_FILE_RECORDING)
             configuration |= TS_RT_CONFIG_FILE_CAPTURE;
-        ts_realtime_diagnostics_record(
-            &audio->realtime_diagnostics,
+        ts_realtime_diagnostics_record_timed(
+            &audio->realtime_diagnostics, diagnostic_started,
             SDL_GetPerformanceCounter() - diagnostic_started,
             audio->realtime_counter_frequency,
             audio->output_rate > 0 ? (uint32_t)audio->output_rate : 0u,
@@ -8404,6 +8406,13 @@ static int sync_external_input_consumers(SDL_AudioDeviceID *input_device,
                                          const TsConfig *config,
                                          char *error, size_t error_size);
 
+static int ts_audio_health_event(const SDL_Event *event, SDL_Window *main_window,
+                                  AudioState *audio, TsUiState *ui);
+static void ts_audio_health_update(AudioState *audio, const TsUiState *ui);
+static void ts_audio_health_close(void);
+static void ts_audio_health_capture_setup(const AudioState *audio,
+                                         const TsUiState *ui, Uint32 now);
+
 static uint32_t event_window_id(const SDL_Event *event)
 {
     if (event == NULL) return 0u;
@@ -8416,6 +8425,10 @@ static uint32_t event_window_id(const SDL_Event *event)
     case SDL_MOUSEBUTTONDOWN:
     case SDL_MOUSEBUTTONUP: return event->button.windowID;
     case SDL_MOUSEWHEEL: return event->wheel.windowID;
+    case SDL_DROPFILE:
+    case SDL_DROPTEXT:
+    case SDL_DROPBEGIN:
+    case SDL_DROPCOMPLETE: return event->drop.windowID;
     default: return 0u;
     }
 }
@@ -12929,7 +12942,7 @@ int main(int argc, char **argv)
     audio.sister_file_recorder = &sister_window.performance_recorder;
     atomic_init(&audio.sister_file_tap, TS_SISTER_TAP_MIX);
     ts_realtime_diagnostics_init(&audio.realtime_diagnostics);
-    audio.realtime_diagnostics_enabled = diagnostic_audio &&
+    audio.realtime_diagnostics_enabled =
         ts_realtime_diagnostics_is_lock_free(&audio.realtime_diagnostics);
     if (diagnostic_audio && !audio.realtime_diagnostics_enabled)
         diagnostic_log("audio diagnostics disabled: atomics are not lock-free");
@@ -13008,6 +13021,7 @@ int main(int argc, char **argv)
     }
     ts_fm_seed_sequence_init(&fm_seed_sequence, fm_session_seed_root());
     audio.realtime_counter_frequency = SDL_GetPerformanceFrequency();
+    audio.audio_health_started = SDL_GetTicks();
     {
         char midi_error[160];
         ts_midi_input = ts_midi_input_create();
@@ -13391,6 +13405,7 @@ int main(int argc, char **argv)
                 }
                 continue;
             }
+            if (ts_audio_health_event(&event, window, &audio, &ui)) continue;
             if(keyboard_sequence_transport_event(&event,window,device,&audio,&ui,
                 &sister_window,&instrument,&fm_preview,obtained.freq))continue;
             if(router_event(&event,window,device,&audio,&ui,&sister_window))continue;
@@ -17029,6 +17044,7 @@ int main(int argc, char **argv)
         refresh_workbench_loop(device, &audio, &ui, &instrument);
         mosaic_poll(device,&ui,&instrument,&mosaic);
         if(ui_dialog_open(&ui) && !ui.portal.open)ui.mosaic_open=0;
+        Uint32 health_setup_now = SDL_GetTicks();
         if (device) SDL_LockAudioDevice(device);
         {
             const TsNoteVoice *voice = ts_note_bank_display_voice(&audio.notes);
@@ -17101,6 +17117,7 @@ int main(int argc, char **argv)
                 ui.playhead_sample = NULL;
             }
         }
+        ts_audio_health_capture_setup(&audio, &ui, health_setup_now);
         /* Read the frozen Matrix pair and its position together while the
            existing voice/UI lock owns the audio state. No drawing happens here. */
         ts_sister_ui_prism_nebula_update(&sister_window.model,SDL_GetTicks(),
@@ -17252,6 +17269,7 @@ int main(int argc, char **argv)
                 sister_window.last_present_ms = SDL_GetTicks();
             }
         }
+        ts_audio_health_update(&audio, &ui);
         if (pending_file.active && !pending_file.presented)
             pending_file.presented = 1;
         if (window_minimized || !renderer_vsync || !frame_snapshot_valid)
@@ -17341,6 +17359,7 @@ int main(int argc, char **argv)
     if (sister_window.texture) SDL_DestroyTexture(sister_window.texture);
     if (sister_window.renderer) SDL_DestroyRenderer(sister_window.renderer);
     if (sister_window.window) SDL_DestroyWindow(sister_window.window);
+    ts_audio_health_close();
     if (texture) SDL_DestroyTexture(texture);
     if (renderer) SDL_DestroyRenderer(renderer);
     if (window) SDL_DestroyWindow(window);
@@ -17380,3 +17399,5 @@ int main(int argc, char **argv)
 #include "main_sdl_audio_part3.inc"
 #include "main_sdl_audio_part4.inc"
 #include "main_sdl_audio_part5.inc"
+
+#include "main_sdl_audio_health.inc"

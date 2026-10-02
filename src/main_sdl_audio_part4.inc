@@ -85,6 +85,7 @@ static const char *cfg_glyph(char c)
     case '+': return "00000001000010011111001000010000000";
     case '<': return "00001000100100010000010000001000001";
     case '>': return "10000010000001000001000100100010000";
+    case '%': return "11001110100001000100010001001110011";
     case '#': return "01010010101111101010111110101000000";
     case '/': return "00001000100001000100010001000010000";
     case '\\': return "10000010000010000100000100000100001";
@@ -130,6 +131,8 @@ static void ts_audio_render_config(TsFramebuffer *fb, const TsUiState *ui)
     cfg_frame(fb, 10, TS_AUDIO_CONFIG_PANEL_Y, 620,
               TS_AUDIO_CONFIG_PANEL_H, panel, mouse_color);
     cfg_text(fb, 20, 45, "CONFIGURATION", instrument_color);
+    cfg_frame(fb, 166, 42, 118, 14, row, edge);
+    cfg_text(fb, 188, 46, "AUDIO HEALTH", mouse_color);
     cfg_text(fb, 300, 45,
         ui->config.audio_backend != ts_started_backend ? "BACKEND: SAVE THEN RESTART" :
         ts_asio_selected ? "ASIO DRIVER/BUF: SAVE+RESTART" : "BACKEND CHANGE NEEDS RESTART", effect_color);

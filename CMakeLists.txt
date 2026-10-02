@@ -457,6 +457,14 @@ if(TAPESISTER_BUILD_SDL)
     target_link_libraries(tapesister_realtime_controller_tests PRIVATE rt)
   endif()
   add_test(NAME tapesister_realtime_controller_tests COMMAND tapesister_realtime_controller_tests)
+  add_executable(tapesister_audio_health_tests tests/test_audio_health.c
+                 src/tape_link.c src/tape_companion.c src/ts_startup_diag.c src/ts_midi_input.c)
+  target_include_directories(tapesister_audio_health_tests PRIVATE third_party)
+  target_link_libraries(tapesister_audio_health_tests PRIVATE tapesister_core SDL2::SDL2)
+  if(UNIX AND NOT APPLE)
+    target_link_libraries(tapesister_audio_health_tests PRIVATE rt)
+  endif()
+  add_test(NAME tapesister_audio_health_tests COMMAND tapesister_audio_health_tests)
   add_executable(tapesister_keyboard_hold_tests tests/test_keyboard_hold.c
                  src/tape_link.c src/tape_companion.c src/ts_startup_diag.c src/ts_midi_input.c)
   target_include_directories(tapesister_keyboard_hold_tests PRIVATE third_party)
@@ -536,6 +544,7 @@ add_test(NAME tapesister_insert_tests COMMAND tapesister_insert_tests)
 if(MINGW)
   foreach(project_test IN ITEMS test_sister_post_fx
                                tapesister_realtime_controller_tests
+                               tapesister_audio_health_tests
                                tapesister_core_tests
                                test_sister_project_state
                                tapesister_sample_pages_tests

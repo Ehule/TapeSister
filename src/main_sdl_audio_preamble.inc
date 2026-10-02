@@ -28,6 +28,7 @@ static SDL_AudioDeviceID ts_audio_open_capture_widest(
     int allowed_changes);
 static void ts_audio_close_device(SDL_AudioDeviceID device);
 static void ts_audio_lock_device(SDL_AudioDeviceID device);
+static void ts_audio_lock_device_at(SDL_AudioDeviceID device, const char *site);
 static void ts_audio_unlock_device(SDL_AudioDeviceID device);
 static void ts_audio_pause_device(SDL_AudioDeviceID device, int pause_on);
 static int ts_audio_apply_backend_before_sdl(TsAudioBackend backend);
@@ -66,7 +67,7 @@ static TsMidiInput *ts_midi_input;
 
 #define SDL_OpenAudioDevice ts_audio_open_device
 #define SDL_CloseAudioDevice ts_audio_close_device
-#define SDL_LockAudioDevice ts_audio_lock_device
+#define SDL_LockAudioDevice(device) ts_audio_lock_device_at((device), __func__)
 #define SDL_UnlockAudioDevice ts_audio_unlock_device
 #define SDL_PauseAudioDevice ts_audio_pause_device
 #define SDL_Quit ts_audio_quit

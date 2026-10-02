@@ -79,6 +79,9 @@ static SDL_AudioDeviceID ts_audio_open_output_native(const char *device,
 static void ts_audio_commit_output_layout(AudioState *audio, const SDL_AudioSpec *spec)
 {
     if (!audio) return;
+    ++audio->audio_health_generation;
+    if (audio->realtime_diagnostics_enabled)
+        ts_realtime_diagnostics_discontinuity(&audio->realtime_diagnostics);
     ts_insert_duplex_block(&audio->sister.insert,ts_asio_selected,NULL,0,0);
     audio->output_device_channels = spec->channels;
     audio->sister.insert.output_channels = spec->channels;

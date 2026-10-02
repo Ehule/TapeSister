@@ -377,6 +377,9 @@ static int ts_audio_resolve_output_failure(SDL_Window *window)
 
 static void ts_audio_close_device(SDL_AudioDeviceID device)
 {
+    AudioState *timed_audio = (AudioState *)ts_output_userdata;
+    if (device == TS_AUDIO_LOGICAL_OUTPUT && timed_audio && timed_audio->realtime_diagnostics_enabled)
+        ts_realtime_diagnostics_discontinuity(&timed_audio->realtime_diagnostics);
     if(device==TS_AUDIO_LOGICAL_OUTPUT)ts_audio_insert_devices_suspend();
     SDL_AudioDeviceID real;
     ts_audio_endpoints_init();
@@ -398,20 +401,65 @@ static void ts_audio_close_device(SDL_AudioDeviceID device)
     }
 }
 
-static void ts_audio_lock_device(SDL_AudioDeviceID device)
+/* UI-side timing, serialized by the device's existing lock. No new lock is
+   introduced. ASIO capture and output share the same exclusion mutex. */
+static _Thread_local struct {
+    AudioState *audio;
+    unsigned depth;
+    uint64_t acquired, wait;
+    const char *site;
+} ts_control_timing;
+
+static int ts_audio_lock_affects_output(SDL_AudioDeviceID real)
+{
+    if (!real) return 0;
+#if defined(TAPESISTER_HAS_ASIO)
+    if (ts_asio_owns(real) && ts_asio_owns(ts_real_output)) return 1;
+#endif
+    return real == ts_real_output;
+}
+
+static void ts_audio_lock_device_at(SDL_AudioDeviceID device, const char *site)
 {
     SDL_AudioDeviceID real = ts_audio_real_id(device);
+    AudioState *audio = (AudioState *)ts_output_userdata;
+    int timed = audio && audio->realtime_diagnostics_enabled &&
+                ts_audio_lock_affects_output(real);
+    uint64_t before = timed && !ts_control_timing.depth ? SDL_GetPerformanceCounter() : 0;
     if (real != 0) SDL_LockAudioDevice(real);
+    if (timed && ts_control_timing.depth++ == 0) {
+        ts_control_timing.audio = audio;
+        ts_control_timing.acquired = SDL_GetPerformanceCounter();
+        ts_control_timing.wait = ts_control_timing.acquired - before;
+        ts_control_timing.site = site;
+    }
+}
+
+static void ts_audio_lock_device(SDL_AudioDeviceID device)
+{
+    ts_audio_lock_device_at(device, "device/UI synchronization");
 }
 
 static void ts_audio_unlock_device(SDL_AudioDeviceID device)
 {
     SDL_AudioDeviceID real = ts_audio_real_id(device);
+    if (ts_control_timing.depth && ts_audio_lock_affects_output(real) &&
+        --ts_control_timing.depth == 0) {
+        AudioState *audio = ts_control_timing.audio;
+        ts_realtime_diagnostics_record_control(&audio->realtime_diagnostics,
+            SDL_GetPerformanceCounter() - ts_control_timing.acquired,
+            ts_control_timing.wait, audio->realtime_counter_frequency,
+            ts_control_timing.site);
+        ts_control_timing.audio = NULL;
+    }
     if (real != 0) SDL_UnlockAudioDevice(real);
 }
 
 static void ts_audio_pause_device(SDL_AudioDeviceID device, int pause_on)
 {
+    AudioState *timed_audio = (AudioState *)ts_output_userdata;
+    if (device == TS_AUDIO_LOGICAL_OUTPUT && timed_audio && timed_audio->realtime_diagnostics_enabled)
+        ts_realtime_diagnostics_discontinuity(&timed_audio->realtime_diagnostics);
     if (device == TS_AUDIO_LOGICAL_CAPTURE && pause_on &&
         ts_capture_reconfigure_pending) {
         SDL_AudioDeviceID old = ts_real_capture;
