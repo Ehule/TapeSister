@@ -418,6 +418,8 @@ For an ordinary developer build without creating the ZIP, continue to use
 
 ## Technical documentation
 
+- [SisterTracker foundation](docs/SISTERTRACKER_FOUNDATION.md) — stage 1 song model,
+  stable tile identity, native persistence, and migration; playback/UI follows.
 - [Realtime Capture](docs/CAPTURE_WORKFLOW.md)
 - [FM Source Model](docs/FM_SOURCE_PLAN.md)
 - [Native DSP Transform](docs/DSP_TRANSFORM.md)

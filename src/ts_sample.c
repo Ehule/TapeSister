@@ -2955,6 +2955,14 @@ static void bank_slot_free(TsBankSlot *slot)
     bank_slot_init(slot);
 }
 
+static int bank_identity_valid(TsBankSlot *slot, char *error, size_t error_size)
+{
+    if (ts_tile_id_valid(slot->tile_id)) return 1;
+    bank_slot_free(slot);
+    set_error(error, error_size, "Tile identity space is exhausted");
+    return 0;
+}
+
 static void bank_free(TsInstrument *instrument)
 {
     for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i) bank_slot_free(&instrument->bank[i]);
@@ -2972,6 +2980,8 @@ static int bank_root_clone(TsBankSlot *slot, const TsSample *parent,
     slot->tuning = tuning_valid(tuning) ? *tuning : default_tuning();
     slot->audible_tuning = slot->tuning;
     slot->occupied = 1;
+    slot->tile_id = ts_tile_id_new();
+    if (!bank_identity_valid(slot, error, error_size)) return 0;
     return 1;
 }
 
@@ -3155,6 +3165,9 @@ int ts_instrument_import_sample(TsInstrument *instrument, const TsSample *sample
        playback contract. Loop metadata remains intact. */
     tuning = default_tuning();
     imported.occupied = 1;
+    imported.tile_id = instrument->bank[slot].occupied ?
+                       instrument->bank[slot].tile_id : ts_tile_id_new();
+    if (!bank_identity_valid(&imported, error, error_size)) return 0;
     imported.capture_kind = TS_BANK_CAPTURE_CURRENT;
     imported.relation = TS_FAMILY_CAPTURED;
     imported.parent_slot = -1;
@@ -4761,6 +4774,9 @@ int ts_instrument_create_selected(TsInstrument *instrument, uint32_t seed,
         bank_slot_free(&made); return 0;
     }
     made.occupied = 1; made.capture_kind = TS_BANK_CAPTURE_CURRENT;
+    made.tile_id = instrument->bank[slot].occupied ?
+                   instrument->bank[slot].tile_id : ts_tile_id_new();
+    if (!bank_identity_valid(&made, error, error_size)) return 0;
     made.relation = TS_FAMILY_ROOT; made.parent_slot = -1;
     made.generator = recipe; made.has_generator = 1; made.lineage_seed = seed;
     made.lineage_mutation = instrument->family_mutation;
@@ -5006,6 +5022,8 @@ int ts_instrument_activate_silence_channels(TsInstrument *instrument,
         return 0;
     }
     made.occupied = 1;
+    made.tile_id = ts_tile_id_new();
+    if (!bank_identity_valid(&made, error, error_size)) return 0;
     made.capture_kind = TS_BANK_CAPTURE_CURRENT;
     made.relation = TS_FAMILY_CAPTURED;
     made.parent_slot = -1;
@@ -5024,6 +5042,7 @@ int ts_instrument_copy_selected(TsInstrument *instrument, int destination_slot,
                                 char *error, size_t error_size)
 {
     int source;
+    TsTileId new_id;
     if (instrument == NULL || destination_slot < 0 || destination_slot >= TS_BANK_SLOT_COUNT ||
         instrument->bank[destination_slot].occupied) {
         set_error(error, error_size, "Clone needs an empty destination tile"); return 0;
@@ -5032,11 +5051,14 @@ int ts_instrument_copy_selected(TsInstrument *instrument, int destination_slot,
     if (source < 0 || source >= TS_BANK_SLOT_COUNT || !instrument->bank[source].occupied) {
         set_error(error, error_size, "Select an occupied tile before Clone"); return 0;
     }
+    new_id = ts_tile_id_new();
+    if (!new_id) { set_error(error, error_size, "Tile identity space is exhausted"); return 0; }
     if (!ts_instrument_select_bank(instrument, source, error, error_size) ||
         !bank_sync_selected(instrument, error, error_size)) return 0;
     if (!bank_slot_deep_clone(&instrument->bank[destination_slot], &instrument->bank[source],
                               error, error_size)) return 0;
     instrument->bank[destination_slot].locked = 0;
+    instrument->bank[destination_slot].tile_id = new_id;
     instrument->bank[destination_slot].parent_slot = source;
     return ts_instrument_select_bank(instrument, destination_slot, error, error_size);
 }
@@ -5047,6 +5069,7 @@ int ts_instrument_copy_bank_slot_from(TsInstrument *destination,
                                       char *error, size_t error_size)
 {
     TsBankSlot *copied;
+    TsTileId new_id;
     if (destination == NULL || source == NULL ||
         destination_slot < 0 || destination_slot >= TS_BANK_SLOT_COUNT ||
         source_slot < 0 || source_slot >= TS_BANK_SLOT_COUNT ||
@@ -5056,12 +5079,15 @@ int ts_instrument_copy_bank_slot_from(TsInstrument *destination,
                   "Copy needs an occupied source and empty destination tile");
         return 0;
     }
+    new_id = ts_tile_id_new();
+    if (!new_id) { set_error(error, error_size, "Tile identity space is exhausted"); return 0; }
     if (!ts_instrument_select_bank(source, source_slot, error, error_size) ||
         !bank_sync_selected(source, error, error_size) ||
         !bank_slot_deep_clone(&destination->bank[destination_slot],
                               &source->bank[source_slot], error, error_size))
         return 0;
     copied = &destination->bank[destination_slot];
+    copied->tile_id = new_id;
     if (destination != source) copied->parent_slot = -1;
     return ts_instrument_select_bank(destination, destination_slot,
                                      error, error_size);
@@ -7301,6 +7327,8 @@ int ts_instrument_vary_selected(TsInstrument *instrument, int chain,
         made.tuning = instrument->tuning;
         made.audible_tuning = instrument->audible_tuning;
         made.occupied = 1;
+        made.tile_id = ts_tile_id_new();
+        if (!bank_identity_valid(&made, error, error_size)) return 0;
         family_copy_or_vary_loop(&made, anchor, seed);
         made.edit.crop_first = 0u;
         made.edit.crop_last = made.sample.frames;
@@ -7458,6 +7486,8 @@ int ts_instrument_generate_family_candidate(TsInstrument *instrument,
     candidate.audible_tuning = candidate.tuning;
     family_copy_or_vary_loop(&candidate, anchor, seed);
     candidate.occupied = 1;
+    candidate.tile_id = ts_tile_id_new();
+    if (!bank_identity_valid(&candidate, error, error_size)) return 0;
     instrument->bank[slot] = candidate;
     instrument->family_last_slot = slot;
     instrument->family_anchor_slot = instrument->family_trajectory ? slot : anchor_slot;
@@ -7527,6 +7557,8 @@ int ts_instrument_bank_capture(TsInstrument *instrument, int slot,
     captured.audible_tuning = captured.tuning;
     captured.loop_mode = instrument->loop_mode;
     captured.occupied = 1;
+    captured.tile_id = ts_tile_id_new();
+    if (!bank_identity_valid(&captured, error, error_size)) return 0;
     captured.loop_crossfade_ms = instrument->loop_crossfade_ms;
     if (kind == TS_BANK_CAPTURE_LOOP) {
         captured.has_loop = 1;
@@ -9883,9 +9915,9 @@ static int snapshot_fits_tile(const TsEditSnapshot *state, const TsBankSlot *slo
            state->grid_snap < TS_GRID_SNAP_MODE_COUNT;
 }
 
-static int save_tsr31(const TsInstrument *instrument, FILE *f)
+static int save_tsr32(const TsInstrument *instrument, FILE *f)
 {
-    fwrite("TSR31\r\n\032", 1, 8, f);
+    fwrite("TSR32\r\n\032", 1, 8, f);
     put32(f, (uint32_t)instrument->selected_slot);
     put_float(f, instrument->family_mutation);
     put32(f, instrument->family_sequence);
@@ -9911,6 +9943,11 @@ static int save_tsr31(const TsInstrument *instrument, FILE *f)
         int redo_count;
         put32(f, (uint32_t)slot->occupied);
         if (!slot->occupied) continue;
+        if (!ts_tile_id_valid(slot->tile_id)) return 0;
+        for (int previous = 0; previous < i; ++previous)
+            if (instrument->bank[previous].occupied &&
+                instrument->bank[previous].tile_id == slot->tile_id) return 0;
+        put64(f, slot->tile_id);
         put32(f, (uint32_t)slot->locked);
         audio = &slot->sample;
         baseline = slot->edit_parent.data != NULL ? &slot->edit_parent : &slot->sample;
@@ -10033,6 +10070,13 @@ static int load_tsr15_or_newer(FILE *f, int version, TsInstrument *instrument,
         if (!get32(f, &value) || value > 1u) goto malformed;
         slot->occupied = (int)value;
         if (!slot->occupied) continue;
+        if (version >= 32) {
+            if (!get64(f, &slot->tile_id) || !ts_tile_id_valid(slot->tile_id)) goto malformed;
+            for (int previous = 0; previous < i; ++previous)
+                if (loaded.bank[previous].occupied &&
+                    loaded.bank[previous].tile_id == slot->tile_id) goto malformed;
+        } else slot->tile_id = ts_tile_id_new();
+        if (!ts_tile_id_valid(slot->tile_id)) goto malformed;
         if (version >= 25) {
             if (!get32(f, &value) || value > 1u) goto malformed;
             slot->locked = (int)value;
@@ -10150,15 +10194,17 @@ static int load_tsr15_or_newer(FILE *f, int version, TsInstrument *instrument,
     if (fgetc(f) != EOF) goto malformed;
     loaded.selected_slot = selected;
     if (!ts_instrument_select_bank(&loaded, selected, error, error_size)) goto failed;
+    for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i)
+        if (loaded.bank[i].occupied) ts_tile_id_reserve(loaded.bank[i].tile_id);
     ts_instrument_free(instrument);
     *instrument = loaded;
     set_error(error, error_size, "");
     return 1;
 out_of_memory:
-    set_error(error, error_size, "Out of memory while loading TSR15-TSR31 project");
+    set_error(error, error_size, "Out of memory while loading TSR15-TSR32 project");
     goto failed;
 malformed:
-    set_error(error, error_size, "Malformed or unsupported TSR15-TSR31 project");
+    set_error(error, error_size, "Malformed or unsupported TSR15-TSR32 project");
 failed:
     ts_instrument_free(&loaded);
     return 0;
@@ -10177,13 +10223,13 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Could not create recipe file");
         return 0;
     }
-    if (!save_tsr31(instrument, f)) {
+    if (!save_tsr32(instrument, f)) {
         fclose(f);
-        set_error(error, error_size, "Could not write TSR31 project");
+        set_error(error, error_size, "Could not write TSR32 project");
         return 0;
     }
     if (fclose(f) != 0) {
-        set_error(error, error_size, "Could not finish TSR31 project");
+        set_error(error, error_size, "Could not finish TSR32 project");
         return 0;
     }
     set_error(error, error_size, "");
@@ -10218,7 +10264,8 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Truncated TSR project");
         return 0;
     }
-    if (memcmp(magic, "TSR31\r\n\032", 8) == 0 ||
+    if (memcmp(magic, "TSR32\r\n\032", 8) == 0 ||
+        memcmp(magic, "TSR31\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR30\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR29\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR28\r\n\032", 8) == 0 ||
@@ -10235,7 +10282,8 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         memcmp(magic, "TSR17\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR16\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR15\r\n\032", 8) == 0) {
-        int self_contained_version = memcmp(magic, "TSR31\r\n\032", 8) == 0 ? 31 :
+        int self_contained_version = memcmp(magic, "TSR32\r\n\032", 8) == 0 ? 32 :
+                                     memcmp(magic, "TSR31\r\n\032", 8) == 0 ? 31 :
                                      memcmp(magic, "TSR30\r\n\032", 8) == 0 ? 30 :
                                      memcmp(magic, "TSR29\r\n\032", 8) == 0 ? 29 :
                                      memcmp(magic, "TSR28\r\n\032", 8) == 0 ? 28 :
@@ -10270,7 +10318,7 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         fclose(f);
         ts_instrument_free(&loaded);
         set_error(error, error_size,
-                  "Not a self-contained TSR6-TSR31 project");
+                  "Not a self-contained TSR6-TSR32 project");
         return 0;
     }
 #define GET_U32(dst) do { if (!get32(f, &u32)) goto malformed; (dst) = u32; } while (0)
@@ -10422,6 +10470,8 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
             GET_U32(slot->occupied);
             if (slot->occupied != 0 && slot->occupied != 1) goto malformed;
             if (!slot->occupied) continue;
+            slot->tile_id = ts_tile_id_new();
+            if (!ts_tile_id_valid(slot->tile_id)) goto malformed;
             GET_U32(slot->capture_kind);
             if (version >= 11) {
                 GET_U32(slot->relation);
@@ -10551,7 +10601,7 @@ out_of_memory:
     set_error(error, error_size, "Out of memory while loading TSR project");
     goto failed;
 malformed:
-    set_error(error, error_size, "Malformed or unsupported TSR6-TSR31 project");
+    set_error(error, error_size, "Malformed or unsupported TSR6-TSR32 project");
 failed:
     fclose(f);
     ts_instrument_free(&loaded);

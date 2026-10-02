@@ -526,6 +526,7 @@ static uint64_t instrument_state_hash(const TsInstrument *instrument)
         const TsBankSlot *bank = &instrument->bank[slot];
         state_hash_bytes(&hash, &bank->occupied, sizeof(bank->occupied));
         if (!bank->occupied) continue;
+        state_hash_bytes(&hash, &bank->tile_id, sizeof(bank->tile_id));
         state_hash_bytes(&hash, &bank->locked, sizeof(bank->locked));
         state_hash_sample(&hash, &bank->sample);
         state_hash_bytes(&hash, &bank->tuning, sizeof(bank->tuning));
@@ -629,6 +630,8 @@ static uint64_t paged_project_state_hash(const TsSamplePages *pages,
     uint64_t hash = 1469598103934665603ull;
     uint64_t mosaic_hash = ts_mosaic_hash(pages ? pages->mosaic : NULL);
     state_hash_bytes(&hash, &mosaic_hash, sizeof(mosaic_hash));
+    uint64_t tracker_hash = pages ? ts_sister_tracker_hash(&pages->tracker) : 0;
+    state_hash_bytes(&hash, &tracker_hash, sizeof(tracker_hash));
     if (sequence) {
         TsKeyboardSequenceBank bank = ts_keyboard_sequence_export(sequence);
         state_hash_bytes(&hash, &bank.selected, sizeof(bank.selected));
