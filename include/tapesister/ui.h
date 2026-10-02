@@ -25,8 +25,25 @@
 enum { TS_UI_WIDTH = 640, TS_UI_HEIGHT = 400 };
 enum { TS_TRACKER_LEN_Y=54, TS_TRACKER_RATIO_Y=66, TS_TRACKER_NAME_Y=78,
        TS_TRACKER_MIX_Y=88, TS_TRACKER_FIELDS_Y=109, TS_TRACKER_GRID_Y=120,
+       TS_TRACKER_LANE_X=32, TS_TRACKER_LANE_WIDTH=72,
+       TS_TRACKER_LANE_RIGHT=TS_TRACKER_LANE_X+TS_TRACKER_LANES*TS_TRACKER_LANE_WIDTH,
+       TS_TRACKER_FIELD_COUNT=7,
        TS_TRACKER_ROW_HEIGHT=12, TS_TRACKER_VISIBLE_ROWS=16,
        TS_TRACKER_GRID_BOTTOM=TS_TRACKER_GRID_Y+TS_TRACKER_VISIBLE_ROWS*TS_TRACKER_ROW_HEIGHT };
+/* Tapehead-style five groups, with separate command/parameter focus. */
+static inline int ts_tracker_field_offset(int field)
+{
+    const int offsets[TS_TRACKER_FIELD_COUNT]={2,27,36,45,49,58,62};
+    return offsets[field>=0 && field<TS_TRACKER_FIELD_COUNT?field:0];
+}
+static inline int ts_tracker_field_width(int field)
+{
+    return field==0?24:field==3 || field==5?4:8;
+}
+static inline int ts_tracker_field_at(int local)
+{
+    return local<27?0:local<36?1:local<45?2:local<49?3:local<58?4:local<62?5:6;
+}
 enum { TS_IMPORT_PREVIEW_COLUMNS = 568 };
 enum { TS_UI_INPUT_LED_X = 184, TS_UI_INPUT_LED_Y = 12,
        TS_UI_INPUT_LED_W = 2, TS_UI_INPUT_LED_H = 9,

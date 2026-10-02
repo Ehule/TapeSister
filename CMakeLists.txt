@@ -78,6 +78,11 @@ if(TAPESISTER_BUILD_SDL)
   endif()
   target_include_directories(tapesister PRIVATE third_party)
   target_link_libraries(tapesister PRIVATE tapesister_core SDL2::SDL2)
+  add_custom_command(TARGET tapesister POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:tapesister>/licenses/tapehead"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+      "${CMAKE_CURRENT_SOURCE_DIR}/third_party/tapehead"
+      "$<TARGET_FILE_DIR:tapesister>/licenses/tapehead")
   if(WIN32)
     enable_language(CXX)
     add_library(tapesister_asio STATIC src/ts_asio_backend.cpp

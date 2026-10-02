@@ -119,7 +119,11 @@ static void tracker_clear(TsUiState *ui,TsTrackerCell *c,int whole)
     if(whole)memset(c,0,sizeof(*c));
     else if(ui->tracker_field==0){c->note_kind=TS_TRACKER_NOTE_NONE;c->note=0;}
     else if(ui->tracker_field==1)c->tile_id=0;
-    else {c->has_volume=0;c->volume=0;}
+    else if(ui->tracker_field==2){c->has_volume=0;c->volume=0;}
+    else if(ui->tracker_field==3){c->tune_command=0;c->tune_value=0;}
+    else if(ui->tracker_field==4)c->tune_value=0;
+    else if(ui->tracker_field==5){c->fx_command=0;c->fx_value=0;}
+    else c->fx_value=0;
     ui->tracker_hex_digit=0;
 }
 /* Prefer the visible Sample slot number for a new alias; never retarget a bound
@@ -139,6 +143,12 @@ static int tracker_enter_value(TsUiState *ui,TsInstrument *instrument,unsigned v
     TsSisterTracker *t=ui->tracker;
     TsTrackerPattern *p=ts_sister_tracker_pattern(t,t->editor_pattern);
     TsTrackerCell *c=&p->cells[t->editor_row][t->editor_lane];
+    if((ui->tracker_field==4 && !c->tune_command) || (ui->tracker_field==6 && !c->fx_command)) {
+        snprintf(ui->status,sizeof(ui->status),"ENTER THE TUNING M/N OR FX COMMAND FIRST");return 0;
+    }
+    if(ui->tracker_field==4 && c->tune_command=='M' && value>127) {
+        snprintf(ui->status,sizeof(ui->status),"M ROOT NOTE MUST BE 00-7F (MIDI 0-127)");return 0;
+    }
     if(ui->tracker_field==1 && value && !t->aliases[value]) {
         unsigned alias=value<=TS_BANK_SLOT_COUNT?tracker_bind_sample(ui,instrument,(int)value-1):0;
         if(!alias) {snprintf(ui->status,sizeof(ui->status),"TILE %02X IS UNBOUND; SELECT A SAMPLE AND USE TILE",value);return 0;}
@@ -147,7 +157,9 @@ static int tracker_enter_value(TsUiState *ui,TsInstrument *instrument,unsigned v
     }
     if(!tracker_begin(ui,p))return 0;
     if(ui->tracker_field==1)c->tile_id=t->aliases[value];
-    else {c->has_volume=1;c->volume=value>0x40?0x40:value;}
+    else if(ui->tracker_field==2){c->has_volume=1;c->volume=value>0x40?0x40:value;}
+    else if(ui->tracker_field==4)c->tune_value=value;
+    else if(ui->tracker_field==6)c->fx_value=value;
     ts_tracker_edit_commit(ui->tracker_edit,p);tracker_advance(ui);return 1;
 }
 enum { TRACKER_COPY,TRACKER_CUT,TRACKER_PASTE,TRACKER_MIX,TRACKER_UNDO,TRACKER_REDO,
@@ -322,12 +334,30 @@ static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevi
             if(sym==SDLK_UP || sym==SDLK_DOWN)t->editor_row=SDL_clamp((int)t->editor_row+(sym==SDLK_UP?-1:1),0,p->rows-1);
             else if(sym==SDLK_LEFT || sym==SDLK_RIGHT) {
                 if(mod&KMOD_SHIFT)t->editor_lane=SDL_clamp((int)t->editor_lane+(sym==SDLK_LEFT?-1:1),0,7);
-                else {int f=t->editor_lane*3+ui->tracker_field;f=(f+(sym==SDLK_LEFT?-1:1)+24)%24;t->editor_lane=f/3;ui->tracker_field=f%3;}
+                else {int count=TS_TRACKER_LANES*TS_TRACKER_FIELD_COUNT,f=t->editor_lane*TS_TRACKER_FIELD_COUNT+ui->tracker_field;
+                    f=(f+(sym==SDLK_LEFT?-1:1)+count)%count;t->editor_lane=f/TS_TRACKER_FIELD_COUNT;ui->tracker_field=f%TS_TRACKER_FIELD_COUNT;}
             } else if(sym==SDLK_PAGEUP || sym==SDLK_PAGEDOWN)t->editor_row=SDL_clamp((int)t->editor_row+(sym==SDLK_PAGEUP?-TS_TRACKER_VISIBLE_ROWS:TS_TRACKER_VISIBLE_ROWS),0,p->rows-1);
             else t->editor_row=sym==SDLK_HOME?0:p->rows-1;
             ui->tracker_hex_digit=0;ui->tracker_follow_hold=1;tracker_visible(ui);return 1;
         }
         if(edit->tools_open)return 1;
+        if(ui->tracker_field==3 || ui->tracker_field==5) {
+            if(event->key.repeat)return 1;
+            int command=0;
+            if(ui->tracker_field==3 && (sym==SDLK_m || sym==SDLK_n))command=sym-SDLK_a+'A';
+            if(ui->tracker_field==5) {
+                if(sym>=SDLK_a && sym<=SDLK_z)command=sym-SDLK_a+'A';
+                else if(sym>=SDLK_0 && sym<=SDLK_9)command=sym-SDLK_0+'0';
+                else if(sym>=SDLK_KP_1 && sym<=SDLK_KP_9)command=sym-SDLK_KP_1+'1';
+                else if(sym==SDLK_KP_0)command='0';
+            }
+            if(command && tracker_begin(ui,p)) {
+                if(ui->tracker_field==3){c->tune_command=command;if(command=='M' && c->tune_value>127)c->tune_value=127;}
+                else c->fx_command=command;
+                ts_tracker_edit_commit(edit,p);++ui->tracker_field;ui->tracker_hex_digit=0;
+                snprintf(ui->status,sizeof(ui->status),"TUNING / FX DEFINITIONS SAVED; COMMAND AUDIO EXECUTION IS NOT ENABLED YET");
+            }return 1;
+        }
         if(ui->tracker_field==0 && note_for_key(sym)>=0) {
             int note=ui->keyboard_base_note+note_for_key(sym);
             if(note<=127 && tracker_begin(ui,p)) {
@@ -335,7 +365,7 @@ static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevi
             }return 1;
         }
         int digit=tracker_hex(sym);
-        if(ui->tracker_field!=0 && digit>=0) {
+        if((ui->tracker_field==1 || ui->tracker_field==2 || ui->tracker_field==4 || ui->tracker_field==6) && digit>=0) {
             if(event->key.repeat)return 1;
             if(!ui->tracker_hex_digit) {ui->tracker_hex_value=digit<<4;ui->tracker_hex_digit=1;return 1;}
             unsigned value=(unsigned)ui->tracker_hex_value|digit;ui->tracker_hex_digit=0;
@@ -348,7 +378,7 @@ static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevi
     if(event->type==SDL_MOUSEWHEEL) {
         tracker_repeat_end(ui);int rawx,rawy,x,y;wheel_event_mouse(event,&rawx,&rawy);logical_mouse(window,rawx,rawy,&x,&y);
         int control=tracker_control_at(x,y),detents=wheel_event_detents(event,0);
-        int lane=y>=TS_TRACKER_MIX_Y && y<TS_TRACKER_MIX_Y+16 && x>=34 && x<626 && (x-34)%74>=49?(x-34)/74:-1;
+        int lane=y>=TS_TRACKER_MIX_Y && y<TS_TRACKER_MIX_Y+16 && x>=TS_TRACKER_LANE_X && x<TS_TRACKER_LANE_RIGHT && (x-TS_TRACKER_LANE_X)%TS_TRACKER_LANE_WIDTH>=49?(x-TS_TRACKER_LANE_X)/TS_TRACKER_LANE_WIDTH:-1;
         int grid=y>=TS_TRACKER_GRID_Y && y<TS_TRACKER_GRID_BOTTOM && x>=6 && x<630;
         int output=ts_ui_master_output_contains(x,y);
         int target=control?0x700+control:lane>=0?0x710+lane:grid?0x720:output?0x730:-1;
@@ -375,8 +405,8 @@ static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevi
         int x,y;logical_mouse(window,event->motion.x,event->motion.y,&x,&y);
         if(ui->tracker_repeat_control && tracker_control_at(x,y)!=ui->tracker_repeat_control)tracker_repeat_end(ui);
         if(edit->dragging && (event->motion.state&SDL_BUTTON_LMASK)) {
-            if(x>=34 && x<626 && y>=TS_TRACKER_GRID_Y && y<TS_TRACKER_GRID_BOTTOM) {
-                int row=SDL_clamp(ui->tracker_scroll+(y-TS_TRACKER_GRID_Y)/TS_TRACKER_ROW_HEIGHT,0,p->rows-1),lane=(x-34)/74;
+            if(x>=TS_TRACKER_LANE_X && x<TS_TRACKER_LANE_RIGHT && y>=TS_TRACKER_GRID_Y && y<TS_TRACKER_GRID_BOTTOM) {
+                int row=SDL_clamp(ui->tracker_scroll+(y-TS_TRACKER_GRID_Y)/TS_TRACKER_ROW_HEIGHT,0,p->rows-1),lane=(x-TS_TRACKER_LANE_X)/TS_TRACKER_LANE_WIDTH;
                 if(row!=t->editor_row || lane!=t->editor_lane){edit->selected=1;t->editor_row=row;t->editor_lane=lane;}
             }
         } else edit->dragging=0;
@@ -412,8 +442,8 @@ static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevi
             int col=(x-28)/98;if((x-28)%98<94)edit->mask^=1u<<col;
         }return 1;
     }
-    if(y>=TS_TRACKER_LEN_Y-1 && y<TS_TRACKER_RATIO_Y+10 && x>=34 && x<626) {
-        t->editor_lane=(x-34)/74;
+    if(y>=TS_TRACKER_LEN_Y-1 && y<TS_TRACKER_RATIO_Y+10 && x>=TS_TRACKER_LANE_X && x<TS_TRACKER_LANE_RIGHT) {
+        t->editor_lane=(x-TS_TRACKER_LANE_X)/TS_TRACKER_LANE_WIDTH;
         ts_tracker_edit_anchor(edit,t);
         snprintf(ui->status,sizeof(ui->status),"LEN/FT SHOW SAVED SETUP; LENGTH AND RATIO PLAYBACK IS NOT ENABLED YET");
         return 1;
@@ -433,20 +463,20 @@ static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevi
                 t->editor_row=0;ui->tracker_scroll=0;ts_tracker_edit_anchor(edit,t);
             }
         } else if(x>=430 && x<486)t->loop=!t->loop;
-    } else if(y>=TS_TRACKER_MIX_Y && y<TS_TRACKER_MIX_Y+16 && x>=34 && x<626) {
-        int lane=(x-34)/74,local=(x-34)%74;
+    } else if(y>=TS_TRACKER_MIX_Y && y<TS_TRACKER_MIX_Y+16 && x>=TS_TRACKER_LANE_X && x<TS_TRACKER_LANE_RIGHT) {
+        int lane=(x-TS_TRACKER_LANE_X)/TS_TRACKER_LANE_WIDTH,local=(x-TS_TRACKER_LANE_X)%TS_TRACKER_LANE_WIDTH;
         if(local>=2 && local<23)t->lanes[lane].muted=!t->lanes[lane].muted;
         else if(local>=24 && local<45){ui->tracker_solo^=(uint8_t)(1u<<lane);if(device)SDL_LockAudioDevice(device);
             ts_tracker_playback_solo(&audio->tracker,ui->tracker_solo);if(device)SDL_UnlockAudioDevice(device);}
         else if(local>=49){float trim=t->lanes[lane].trim+delta*.1f;t->lanes[lane].trim=fmaxf(0,fminf(2,trim));}
-    } else if(y>=TS_TRACKER_GRID_Y && y<TS_TRACKER_GRID_BOTTOM && x>=34 && x<626) {
+    } else if(y>=TS_TRACKER_GRID_Y && y<TS_TRACKER_GRID_BOTTOM && x>=TS_TRACKER_LANE_X && x<TS_TRACKER_LANE_RIGHT) {
         int row=ui->tracker_scroll+(y-TS_TRACKER_GRID_Y)/TS_TRACKER_ROW_HEIGHT;
         if(row<p->rows) {
             if(mod&KMOD_SHIFT){if(!edit->selected)ts_tracker_edit_anchor(edit,t);edit->selected=1;}
             else ts_tracker_edit_anchor(edit,t);
-            t->editor_row=row;t->editor_lane=(x-34)/74;
+            t->editor_row=row;t->editor_lane=(x-TS_TRACKER_LANE_X)/TS_TRACKER_LANE_WIDTH;
             if(!(mod&KMOD_SHIFT))ts_tracker_edit_anchor(edit,t);
-            int local=(x-34)%74;ui->tracker_field=local<30?0:local<50?1:2;
+            int local=(x-TS_TRACKER_LANE_X)%TS_TRACKER_LANE_WIDTH;ui->tracker_field=ts_tracker_field_at(local);
             edit->dragging=left;ui->tracker_follow_hold=1;
         }
     } else if(y>=332 && y<356) {
@@ -468,7 +498,9 @@ static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevi
         } else if(x>=218 && x<266){if(tracker_begin(ui,p)){tracker_clear(ui,c,1);ts_tracker_edit_commit(edit,p);}}
         else if(x>=270 && x<336)t->edit_step=(t->edit_step+delta+17)%17;
         else if(x>=340 && x<412)ts_ui_keyboard_set_octave(ui,ui->keyboard_octave+delta);
-        else if(x>=424 && x<570)ui->tracker_field=(x-424)/50;
+        else if(x>=418 && x<574) {
+            int group=(x-418)/32;ui->tracker_field=group<3?group:group==3?3:5;
+        }
         else if(x>=578 && x<630)edit->tools_open=1;
     }
     /* Scrolling does not move the cursor or snap the viewport back to it. */

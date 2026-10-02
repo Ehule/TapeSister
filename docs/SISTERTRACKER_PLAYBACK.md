@@ -39,16 +39,28 @@ normalization. The Sample tile's audio, tuning and loop settings remain editable
 Each lane has Tapehead's separate two-row header: **LEN OFF** or **LEN1–256**
 on the top strip, and its saved **FT ratio** on the second strip. The ratio
 bank follows Tapehead's 17 entries, from 1:2 through neutral 1:1 to 5:1.
-The suffix is `-` for Standard, `P` for Pattern, or `S` for Song; `C` in the LEN
-strip identifies a saved CONTROL lane. Names and mute/solo/trim sit underneath.
+The suffix is `-` for Standard, `P` for Pattern, or `S` for Song; the eject symbol
+in the LEN strip identifies a saved CONTROL lane. Names and mute/solo/trim sit underneath.
 These are read-only saved-setup displays in this stage. The footer explicitly
 marks LEN/FT readouts inactive: playback still uses one Standard clock and the
 physical pattern row count. Private LEN/Fast Tracks clocks remain the next
 playback stage. Clicking a header selects its lane and explains this limitation.
 
+The pattern view reuses Tapehead's original normal, tiny and pattern pixel fonts,
+recessed black lane panels, hex row numbers on both sides, current-row band,
+colored field groups and CONTROL symbol. It honors the shared palette, including
+PatternEmpty for empty dots. Sample selection, Sister routing outlines, locked
+tile dimming and performance source borders are suppressed in the final audio UI
+overlay while Tracker is visible. They continue to render in the Sample workspace.
+
+All five stored groups are visible: NOTE, TILE, VOL, M/N and FX. Tuning and FX
+have separate command and two-digit parameter cursor positions. These definitions
+save, copy, paste and undo, but their commands do not yet execute in audio. The
+footer labels command audio inactive alongside LEN and Fast Tracks.
+
 | Control | Action |
 | --- | --- |
-| Click grid / arrows | Select a cell and its NOTE, TILE or VOL field |
+| Click grid / arrows | Select NOTE, TILE, VOL, tuning command/value, or FX command/value; arrows wrap through all seven positions across eight lanes |
 | Shift+arrows / Shift+click / left drag | Select a rectangular block of complete cells |
 | Tab / visible FX button | Open Sister/FX; Tab there returns to the main workspace |
 | F9 / F10 / F12 | Router / Tracker–Sample / Audio Health |
@@ -56,6 +68,8 @@ playback stage. Clicking a header selects its lane and explains this limitation.
 | Two hex digits in TILE | Assign a stable 01–FF alias; 00 clears to inheritance; unbound 01–10 may bind the corresponding occupied current-page Sample slot |
 | Numpad digits / Enter after one digit | Enter hex digits / commit a single digit as 01–0F |
 | Two hex digits in VOL | Set inherited event volume 00–40; larger inputs clamp to 40 |
+| M or N in the tuning command | Store root or fine tuning and move to its parameter; M accepts 00–7F, N accepts 00–FF |
+| 0–9 / A–Z in the FX command | Store the command and move to its 00–FF parameter; explicit 000 and Z00 are preserved |
 | Delete / Shift+Delete / CLEAR | Clear the selected field / complete cell; a selected block uses the field mask, or all fields with Shift |
 | Insert / Backspace | Insert / remove a row in the current lane, keeping the pattern length |
 | Shift+Insert / Shift+Backspace | Insert / remove a row across all eight lanes |

@@ -1,5 +1,11 @@
 # Third-party runtime notices
 
+SisterTracker reuses the original Tapehead/FT2 bitmap fonts by Magnus "Vogue"
+Hogdahl, edited by Olav Sorensen, under CC BY-NC-SA 4.0. Packed font pixels
+retain the original artwork. Font width tables and adapted glyph drawing are
+under Olav Sorensen's BSD 3-Clause license. Source attribution and both license
+texts are retained in `third_party/tapehead/` and `licenses/tapehead/` in bundles.
+
 TapeSister release builds execute a curated subset of programs from the Composers
 Desktop Project (CDP): `blur`, `distmore`, `distort`, `distshift`, `extend`, `filter`,
 `glisten`, `grain`, `hover`, `modify`, `motor`, `pvoc`, `scramble`, `sorter`,

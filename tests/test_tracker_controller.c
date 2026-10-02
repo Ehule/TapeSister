@@ -60,19 +60,19 @@ static void editor_controls(void)
     assert(SDL_PeepEvents(&e,1,SDL_GETEVENT,SDL_KEYDOWN,SDL_KEYDOWN)==1 && e.key.keysym.sym==SDLK_TAB);
     /* Fresh aliases can be entered directly, including keypad digits. */
     assert(ts_instrument_copy_selected(instrument,1,ui->status,sizeof(ui->status)));
-    assert(!t->aliases[2]);click(67,TS_TRACKER_GRID_Y+TS_TRACKER_ROW_HEIGHT*0+2);key(SDLK_KP_0);key(SDLK_KP_2);
+    assert(!t->aliases[2]);click(TS_TRACKER_LANE_X+29,TS_TRACKER_GRID_Y+TS_TRACKER_ROW_HEIGHT*0+2);key(SDLK_KP_0);key(SDLK_KP_2);
     assert(p->cells[0][0].tile_id==instrument->bank[1].tile_id && t->aliases[2]==instrument->bank[1].tile_id);
     /* A stale/missing alias must never be rebound to a red Sample selection. */
-    TsTileId missing=ts_tile_id_new();t->aliases[3]=missing;click(67,TS_TRACKER_GRID_Y+TS_TRACKER_ROW_HEIGHT*1+2);key(SDLK_0);key(SDLK_3);
+    TsTileId missing=ts_tile_id_new();t->aliases[3]=missing;click(TS_TRACKER_LANE_X+29,TS_TRACKER_GRID_Y+TS_TRACKER_ROW_HEIGHT*1+2);key(SDLK_0);key(SDLK_3);
     assert(p->cells[1][0].tile_id==missing && t->aliases[3]==missing);
-    click(67,TS_TRACKER_GRID_Y+TS_TRACKER_ROW_HEIGHT*2+2);key(SDLK_KP_2);key(SDLK_KP_ENTER);assert(p->cells[2][0].tile_id==t->aliases[2]);
+    click(TS_TRACKER_LANE_X+29,TS_TRACKER_GRID_Y+TS_TRACKER_ROW_HEIGHT*2+2);key(SDLK_KP_2);key(SDLK_KP_ENTER);assert(p->cells[2][0].tile_id==t->aliases[2]);
     /* Silent edits, clipboard and history cannot stop or reposition audio. */
     tracker_play(0,a,ui,pages,instrument,48000);float block[1024];audio_callback(a,(Uint8*)block,sizeof(block));
     double phase=a->tracker.lanes[0].voice.position;unsigned row=a->tracker.row;
     click(38,TS_TRACKER_GRID_Y+TS_TRACKER_ROW_HEIGHT*0+2);modified(SDLK_DOWN,KMOD_SHIFT);modified(SDLK_RIGHT,KMOD_SHIFT);
     assert(edit->selected && t->editor_row==1 && t->editor_lane==1);
     modified(SDLK_c,KMOD_CTRL);assert(edit->clipboard_rows==2 && edit->clipboard_lanes==2);
-    click(38+74*2,TS_TRACKER_GRID_Y+TS_TRACKER_ROW_HEIGHT*4+2);modified(SDLK_v,KMOD_CTRL);
+    click(TS_TRACKER_LANE_X+4+TS_TRACKER_LANE_WIDTH*2,TS_TRACKER_GRID_Y+TS_TRACKER_ROW_HEIGHT*4+2);modified(SDLK_v,KMOD_CTRL);
     assert(p->cells[4][2].tile_id==p->cells[0][0].tile_id);
     modified(SDLK_z,KMOD_CTRL);assert(!p->cells[4][2].tile_id);
     modified(SDLK_y,KMOD_CTRL);assert(p->cells[4][2].tile_id==p->cells[0][0].tile_id);
@@ -85,7 +85,7 @@ static void editor_controls(void)
     key(SDLK_BACKSPACE);assert(p->cells[4][2].note==61 && !p->cells[5][2].note_kind);
     /* Drag selection owns motion and release even over hidden Sample tiles. */
     click(38,TS_TRACKER_GRID_Y+TS_TRACKER_ROW_HEIGHT*0+2);SDL_zero(e);e.type=SDL_MOUSEMOTION;e.motion.windowID=SDL_GetWindowID(window);
-    e.motion.x=38+74;e.motion.y=TS_TRACKER_GRID_Y+TS_TRACKER_ROW_HEIGHT*3+2;e.motion.state=SDL_BUTTON_LMASK;
+    e.motion.x=TS_TRACKER_LANE_X+4+TS_TRACKER_LANE_WIDTH;e.motion.y=TS_TRACKER_GRID_Y+TS_TRACKER_ROW_HEIGHT*3+2;e.motion.state=SDL_BUTTON_LMASK;
     assert(tracker_event(&e,window,0,a,ui,pages,instrument,48000));assert(edit->selected && t->editor_row==3 && t->editor_lane==1);
     e.type=SDL_MOUSEBUTTONUP;e.button.windowID=SDL_GetWindowID(window);e.button.button=SDL_BUTTON_LEFT;
     assert(tracker_event(&e,window,0,a,ui,pages,instrument,48000) && !edit->dragging);
@@ -125,6 +125,50 @@ static void editor_controls(void)
     click(545,118);assert(!edit->tools_open);ui->tracker_scroll=0;t->editor_row=0;t->editor_lane=0;ui->tracker_field=1;
     ui->tracker_hex_digit=1;ui->tracker_hex_value=0x20;ui->tracker_cursor_visible=1;
 }
+static void tapehead_columns_and_overlay(void)
+{
+    TsSisterTracker *t=ui->tracker;TsTrackerPattern *p=ts_sister_tracker_pattern(t,t->editor_pattern);
+    ui->tracker_scroll=0;t->editor_row=0;t->editor_lane=0;ui->tracker_hex_digit=0;
+    ts_tracker_edit_anchor(ui->tracker_edit,t);
+    click(TS_TRACKER_LANE_X+46,TS_TRACKER_GRID_Y+2);assert(ui->tracker_field==3);
+    key(SDLK_m);assert(ui->tracker_field==4 && p->cells[0][0].tune_command=='M');
+    key(SDLK_3);assert(ui->tracker_hex_digit==1);key(SDLK_c);
+    assert(p->cells[0][0].tune_value==60 && t->editor_row==1);
+    key(SDLK_f);key(SDLK_f);assert(!p->cells[1][0].tune_command && t->editor_row==1);
+    click(TS_TRACKER_LANE_X+46,TS_TRACKER_GRID_Y+TS_TRACKER_ROW_HEIGHT+2);key(SDLK_m);key(SDLK_f);key(SDLK_f);
+    assert(p->cells[1][0].tune_value==0 && t->editor_row==1); /* M range survives project validation. */
+    key(SDLK_LEFT);key(SDLK_n);key(SDLK_f);key(SDLK_f);
+    assert(p->cells[1][0].tune_command=='N' && p->cells[1][0].tune_value==255 && t->editor_row==2);
+    click(TS_TRACKER_LANE_X+59,TS_TRACKER_GRID_Y+2);key(SDLK_z);key(SDLK_0);key(SDLK_0);
+    assert(p->cells[0][0].fx_command=='Z' && p->cells[0][0].fx_value==0);
+    click(TS_TRACKER_LANE_X+59,TS_TRACKER_GRID_Y+TS_TRACKER_ROW_HEIGHT+2);key(SDLK_KP_0);key(SDLK_KP_0);key(SDLK_KP_0);
+    assert(p->cells[1][0].fx_command=='0' && p->cells[1][0].fx_value==0); /* Explicit 000 is not empty. */
+    modified(SDLK_z,KMOD_CTRL);assert(!p->cells[1][0].fx_command); /* Unchanged 00 parameter adds no history. */
+    modified(SDLK_y,KMOD_CTRL);assert(p->cells[1][0].fx_command=='0');
+    ui->tracker_field=6;t->editor_lane=7;key(SDLK_RIGHT);assert(t->editor_lane==0 && ui->tracker_field==0);
+    key(SDLK_LEFT);assert(t->editor_lane==7 && ui->tracker_field==6);
+    click(TS_TRACKER_LANE_X+TS_TRACKER_LANE_WIDTH*7+63,TS_TRACKER_GRID_Y+2);
+    assert(t->editor_lane==7 && ui->tracker_field==6);
+    char error[128];assert(ts_sister_tracker_validate(t,error,sizeof(error)));
+    /* Exercise the late native audio UI overlay: selected red border, Sister
+       routing outlines, locked dimming and performance-source borders. */
+    TsFramebuffer *fb=malloc(sizeof(*fb)),*before=malloc(sizeof(*before));assert(fb && before);
+    ui->show_keyboard=ui->show_recipes=ui->show_ingredients=0;
+    ui->sister_source_mask=15;instrument->bank[0].locked=1;
+    int old_dim=ts_locked_tile_dim_percent;ts_locked_tile_dim_percent=50;
+    void *old_output=ts_output_userdata;ts_output_userdata=a;
+    a->performance_group_latched=1;a->performance_source_mask=3;
+    ts_ui_render(fb,ui,instrument);memcpy(before,fb,sizeof(*fb));
+    a->performance_group_latched=1;a->performance_source_mask=3;
+    ts_overlay_tile_states(fb,ui,instrument);assert(!memcmp(before,fb,sizeof(*fb)));
+    /* Sample still draws its visible identity and routing state. */
+    ui->tracker_open=0;ts_overlay_tile_states(fb,ui,instrument);assert(memcmp(before,fb,sizeof(*fb)));
+    ui->tracker_open=1;ui->sister_source_mask=0;instrument->bank[0].locked=0;
+    a->performance_group_latched=0;a->performance_source_mask=0;ts_locked_tile_dim_percent=old_dim;ts_output_userdata=old_output;
+    free(before);free(fb);
+    t->editor_row=0;t->editor_lane=0;ui->tracker_field=1;ui->tracker_hex_digit=0;
+    ts_tracker_edit_anchor(ui->tracker_edit,t);
+}
 int main(int argc,char **argv)
 {
     SDL_setenv("SDL_VIDEODRIVER","dummy",1);assert(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER));
@@ -150,9 +194,9 @@ int main(int argc,char **argv)
     assert(pages->tracker.editor_row==1 && !ts_note_bank_count(&a->notes));
     /* Two hex digits must retain the high nibble even for an unbound prefix. */
     pages->tracker.aliases[0x12]=pages->tracker.aliases[1];pages->tracker.aliases[1]=0;
-    click(67,TS_TRACKER_GRID_Y+TS_TRACKER_ROW_HEIGHT*1+2);assert(ui->tracker_field==1);key(SDLK_1);key(SDLK_2);
+    click(TS_TRACKER_LANE_X+29,TS_TRACKER_GRID_Y+TS_TRACKER_ROW_HEIGHT*1+2);assert(ui->tracker_field==1);key(SDLK_1);key(SDLK_2);
     assert(p->cells[1][0].tile_id==instrument->bank[0].tile_id);
-    click(88,TS_TRACKER_GRID_Y+TS_TRACKER_ROW_HEIGHT*2+2);assert(ui->tracker_field==2);key(SDLK_2);key(SDLK_0);
+    click(TS_TRACKER_LANE_X+38,TS_TRACKER_GRID_Y+TS_TRACKER_ROW_HEIGHT*2+2);assert(ui->tracker_field==2);key(SDLK_2);key(SDLK_0);
     assert(p->cells[2][0].has_volume && p->cells[2][0].volume==0x20);
     click(38,TS_TRACKER_GRID_Y+TS_TRACKER_ROW_HEIGHT*3+2);click(150,342);assert(p->cells[3][0].note_kind==TS_TRACKER_NOTE_OFF);
     click(38,TS_TRACKER_GRID_Y+TS_TRACKER_ROW_HEIGHT*4+2);click(186,342);assert(p->cells[4][0].note_kind==TS_TRACKER_NOTE_CUT);
@@ -207,6 +251,7 @@ int main(int argc,char **argv)
     pages->tracker.editor_pattern=heard;ui->tracker_scroll=0;
     tracker_refresh(0,a,ui,pages,instrument,48000);
     editor_controls();
+    tapehead_columns_and_overlay();
     if(argc>1) {
         TsFramebuffer *fb=malloc(sizeof(*fb));assert(fb);ts_ui_render(fb,ui,instrument);
         SDL_Surface *s=SDL_CreateRGBSurfaceFrom(fb->pixels,640,400,32,640*4,0xff0000,0xff00,0xff,0xff000000);
