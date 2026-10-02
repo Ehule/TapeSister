@@ -1,8 +1,9 @@
 # Audio Health
 
 Press **F12** or click **CFG → AUDIO HEALTH** to open a separate, resizable
-monitor. Keep it beside the instrument while playing. F12, Escape or the window
-close button hides it; playback continues. Counters continue while it is hidden.
+monitor. It stays on top while you adjust controls in the instrument, so the
+readings remain visible. F12, Escape or the window close button hides it;
+playback continues. Counters continue while it is hidden.
 
 To investigate a crackle, get the notes, ARP and effects running, press **RESET**,
 then repeat the parameter edit or keyboard drag. **COPY REPORT** puts the current

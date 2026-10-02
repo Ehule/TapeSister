@@ -215,7 +215,7 @@ static int ts_audio_health_show(TsUiState *ui)
     if (!ts_health.window) {
         ts_health.window = SDL_CreateWindow("TapeSister - Audio Health",
             SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 800, 500,
-            SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+            SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_ALWAYS_ON_TOP);
         if (ts_health.window) {
             SDL_SetWindowMinimumSize(ts_health.window, 640, 400);
             ts_health.renderer = SDL_CreateRenderer(ts_health.window, -1, SDL_RENDERER_ACCELERATED);
