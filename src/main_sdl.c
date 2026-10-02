@@ -8410,6 +8410,8 @@ static int ts_audio_health_event(const SDL_Event *event, SDL_Window *main_window
                                   AudioState *audio, TsUiState *ui);
 static void ts_audio_health_update(AudioState *audio, const TsUiState *ui);
 static void ts_audio_health_close(void);
+static void ts_audio_health_capture_setup(const AudioState *audio,
+                                         const TsUiState *ui, Uint32 now);
 
 static uint32_t event_window_id(const SDL_Event *event)
 {
@@ -17042,6 +17044,7 @@ int main(int argc, char **argv)
         refresh_workbench_loop(device, &audio, &ui, &instrument);
         mosaic_poll(device,&ui,&instrument,&mosaic);
         if(ui_dialog_open(&ui) && !ui.portal.open)ui.mosaic_open=0;
+        Uint32 health_setup_now = SDL_GetTicks();
         if (device) SDL_LockAudioDevice(device);
         {
             const TsNoteVoice *voice = ts_note_bank_display_voice(&audio.notes);
@@ -17114,6 +17117,7 @@ int main(int argc, char **argv)
                 ui.playhead_sample = NULL;
             }
         }
+        ts_audio_health_capture_setup(&audio, &ui, health_setup_now);
         /* Read the frozen Matrix pair and its position together while the
            existing voice/UI lock owns the audio state. No drawing happens here. */
         ts_sister_ui_prism_nebula_update(&sister_window.model,SDL_GetTicks(),

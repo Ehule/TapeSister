@@ -1,6 +1,22 @@
 /* Modeless, low-refresh-rate audio health window. All formatting, drawing and
    clipboard operations stay on the UI thread; the reader never locks audio. */
 typedef struct {
+    int valid;
+    Uint32 captured;
+    int hold, keyboard_voices, held_voices, tile_voices;
+    int arp, outer_arp, arp_slot, audition, mosaic;
+    int sister, rolling, tape_hold, monitor;
+    unsigned sources;
+    int board, fallout;
+    float fallout_mix;
+    TsSisterFxSlotControls slot[TS_SISTER_FX_SLOT_COUNT];
+    int prism, prism_mode, prism_lenses, prism_sequence, prism_matrix;
+    int send_assigned, send_available, return_available, router_sequence;
+    TsRouterControls router;
+    float router_wet[TS_ROUTER_COUNT];
+} TsAudioHealthSetup;
+
+typedef struct {
     SDL_Window *window;
     SDL_Renderer *renderer;
     SDL_Texture *texture;
@@ -12,9 +28,139 @@ typedef struct {
     unsigned driver_reports, control_skips, worker_gaps;
     int visible, native_kind;
     TsRealtimeDiagnosticsSnapshot snapshot;
+    TsAudioHealthSetup setup;
     char message[80];
 } TsAudioHealthWindow;
 static TsAudioHealthWindow ts_health;
+
+/* Called on the UI thread while its existing voice-state lock is held. Copy
+   small state only, at most 4 Hz while visible. No new audio-callback work, lock,
+   allocation, formatting or source ownership is introduced. */
+static void ts_audio_health_capture_setup(const AudioState *audio,
+                                         const TsUiState *ui, Uint32 now)
+{
+    TsAudioHealthSetup *s = &ts_health.setup;
+    if (!ts_health.visible || (s->valid && now - s->captured < 250u)) return;
+    const TsSisterRuntime *r = &audio->sister;
+    const TsSisterParameters *p = &r->parameters;
+    s->hold = ui->keyboard_hold;
+    s->keyboard_voices = s->held_voices = s->tile_voices = 0;
+    for (int i = 0; i < audio->notes.render_limit; ++i) {
+        const TsNoteVoice *v = &audio->notes.voices[i];
+        if (!v->active) continue;
+        ++s->keyboard_voices;
+        if (v->latched || audio->notes.sustain) ++s->held_voices;
+    }
+    const TsPerformanceBank *banks[] = {&audio->performance, &r->performance, &audio->tile_launchers};
+    for (unsigned b = 0; b < sizeof(banks) / sizeof(banks[0]); ++b) {
+        const TsPerformanceBank *bank = banks[b];
+        for (int i = 0; i < bank->render_limit; ++i) {
+            const TsPerformanceVoice *v = &bank->voices[i];
+            if (!v->active) continue;
+            if (v->tile_launched) ++s->tile_voices;
+            else {
+                ++s->keyboard_voices;
+                if (v->latched || bank->sustain) ++s->held_voices;
+            }
+        }
+    }
+    s->arp = audio->keyboard_sequence.running;
+    s->outer_arp = audio->keyboard_sequence.slot_running;
+    s->arp_slot = audio->keyboard_sequence.active_slot;
+    s->audition = audio->playing;
+    s->mosaic = audio->mosaic && audio->mosaic->playing;
+    s->sister = r->enabled; s->rolling = r->rolling; s->tape_hold = r->held;
+    s->monitor = r->monitor_enabled; s->sources = r->source_switches;
+    s->board = p->fx.enabled; s->fallout = p->fx.fallout.enabled;
+    s->fallout_mix = p->fx.fallout.mix;
+    memcpy(s->slot, p->fx.slot, sizeof(s->slot));
+    s->prism = p->prism.enabled; s->prism_mode = p->prism.mode;
+    s->prism_lenses = p->prism.lenses;
+    s->prism_sequence = p->prism.seq_enabled;
+    s->prism_matrix = r->prism.matrix.running;
+    s->send_assigned = r->insert.controls.send_pair > 0;
+    s->send_available = ts_insert_send_available(&r->insert);
+    s->return_available = ts_insert_return_available(&r->insert);
+    s->router = r->router.controls;
+    memcpy(s->router.order, r->router.order, sizeof(s->router.order));
+    memcpy(s->router_wet, r->router.wet, sizeof(s->router_wet));
+    s->router_sequence = r->router.transport.running;
+    s->captured = now; s->valid = 1;
+}
+
+static const char *health_on(int enabled) { return enabled ? "ON" : "OFF"; }
+static const char *health_running(int running) { return running ? "RUNNING" : "STOPPED"; }
+static const char *health_route(const TsAudioHealthSetup *s, int stage)
+{
+    int active = ts_router_active(&s->router, stage);
+    float wet = s->router_wet[stage];
+    if (active && wet < .99999f) return "routing in";
+    if (!active && wet > .00001f) return "bypassing";
+    return active ? "routed" : "bypassed";
+}
+
+static void ts_audio_health_setup_report(char *text, size_t size, Uint32 now)
+{
+    if (!size) return;
+    const TsAudioHealthSetup *s = &ts_health.setup;
+    if (!s->valid) {
+        snprintf(text, size, "Active setup: awaiting UI snapshot\n");
+        return;
+    }
+    char source[96] = "";
+    const char *names[] = {"Tiles", "FM", "EXT", "Preview", "TapeHead"};
+    for (int i = 0; i < TS_SISTER_SOURCE_COUNT; ++i) if (s->sources & (1u << i)) {
+        size_t used = strlen(source);
+        snprintf(source + used, sizeof(source) - used, "%s%s", used ? ", " : "", names[i]);
+    }
+    unsigned enabled_slots = 0;
+    for (int i = 0; i < TS_SISTER_FX_SLOT_COUNT; ++i)
+        if (s->slot[i].type != TS_SISTER_FX_EMPTY && s->slot[i].enabled) ++enabled_slots;
+    snprintf(text, size,
+        "Active setup (UI snapshot %.3f s old; not the setup at a retained maximum):\n"
+        "  Keyboard HOLD: %s; keyboard voice instances: %d; latched/sustained: %d\n"
+        "  ARP: %s; outer ARP: %s; active slot: %d\n"
+        "  Audition: %s; tile voice instances: %d; Mosaic: %s\n"
+        "  Sister Machine: %s, %s; rolling: %s; tape HOLD: %s; monitor: %s\n"
+        "  Sister source switches: %s\n"
+        "  Fallout: %s, %s; FX master: %s; mix: %.1f%%\n"
+        "  Prism: %s, %s; base mode: %s; base lenses: %d; lens sequence: %s; Matrix: %s\n"
+        "  Insert: %s; send assigned: %s; send available: %s; return available: %s\n"
+        "  Router order: %s > %s > %s > %s > %s; sequencer: %s\n"
+        "  Pedalboard master: %s, %s; enabled slots: %u/4\n",
+        (now - s->captured) / 1000.0, health_on(s->hold), s->keyboard_voices, s->held_voices,
+        health_running(s->arp), health_running(s->outer_arp),
+        s->arp || s->outer_arp ? s->arp_slot + 1 : 0,
+        health_running(s->audition), s->tile_voices, health_running(s->mosaic),
+        health_on(s->sister), health_route(s, TS_ROUTER_SISTER), health_on(s->rolling),
+        health_on(s->tape_hold), health_on(s->monitor), source[0] ? source : "none",
+        health_on(s->fallout), health_route(s, TS_ROUTER_FALLOUT), health_on(s->board), s->fallout_mix * 100,
+        health_on(s->prism), health_route(s, TS_ROUTER_PRISM), ts_prism_mode_name(s->prism_mode),
+        s->prism_lenses, health_on(s->prism_sequence), health_running(s->prism_matrix),
+        health_route(s, TS_ROUTER_INSERT), health_on(s->send_assigned),
+        health_on(s->send_available), health_on(s->return_available),
+        ts_router_name(s->router.order[0]), ts_router_name(s->router.order[1]),
+        ts_router_name(s->router.order[2]), ts_router_name(s->router.order[3]),
+        ts_router_name(s->router.order[4]), health_running(s->router_sequence),
+        health_on(s->board), health_route(s, TS_ROUTER_PEDALBOARD), enabled_slots);
+    for (int i = 0; i < TS_SISTER_FX_SLOT_COUNT; ++i) {
+        const TsSisterFxSlotControls *slot = &s->slot[i];
+        char places[48] = "";
+        const char *labels[] = {"PRE", "H1", "H2", "H3", "POST"};
+        for (int b = 0; b < TS_SISTER_FX_LOCATION_COUNT; ++b) if (slot->placement & (1u << b)) {
+            size_t used = strlen(places);
+            snprintf(places + used, sizeof(places) - used, "%s%s", used ? "+" : "", labels[b]);
+        }
+        size_t used = strlen(text);
+        snprintf(text + used, size - used, "    Slot %d: %s; %s; mix %.1f%%; placement %s\n",
+            i + 1, ts_sister_fx_type_name(slot->type),
+            slot->type == TS_SISTER_FX_EMPTY ? "EMPTY" : health_on(slot->enabled),
+            slot->mix * 100, places[0] ? places : "none");
+    }
+    size_t used = strlen(text);
+    snprintf(text + used, size - used,
+        "  States describe transport, switches and routing, not detected sound; fades/tails may continue.\n");
+}
 
 static unsigned health_count(uint64_t value)
 { return value > 999999u ? 999999u : (unsigned)value; }
@@ -83,11 +229,14 @@ static void ts_audio_health_report(AudioState *audio, char *report, size_t size)
     ts_audio_health_sample(audio, SDL_GetTicks());
     const TsRealtimeDiagnosticsSnapshot *s = &ts_health.snapshot;
     const char *driver = ts_native_current_driver();
+    char setup[3072];
+    ts_audio_health_setup_report(setup, sizeof(setup), SDL_GetTicks());
     snprintf(report, size,
         "TapeSister Audio Health\n"
         "Backend: %s\nOutput: %s\nConnection: %s\n"
         "Actual output: %u Hz, %u frames, %u channels\n"
         "Buffer duration: %.3f ms (not round-trip latency)\n"
+        "%s"
         "Measurement age: %.1f s; telemetry: %s\n"
         "Callbacks: %llu; frames: %llu\n"
         "Recent processing: %.2f%%; average %.3f ms; peak %.3f ms\n"
@@ -108,6 +257,7 @@ static void ts_audio_health_report(AudioState *audio, char *report, size_t size)
         ts_output_endpoint.channels,
         ts_output_endpoint.sample_rate ? 1000.0 * ts_output_endpoint.buffer_frames /
             ts_output_endpoint.sample_rate : 0,
+        setup,
         (SDL_GetTicks() - audio->audio_health_started) / 1000.0,
         audio->realtime_diagnostics_enabled ? "enabled" : "unavailable",
         (unsigned long long)s->callback_count, (unsigned long long)s->frame_count,
@@ -276,7 +426,7 @@ static int ts_audio_health_event(const SDL_Event *event, SDL_Window *main_window
         if (y >= 367 && y < 386) {
             if (x >= 20 && x < 140) ts_audio_health_reset(audio);
             else if (x >= 150 && x < 300) {
-                char report[4096]; ts_audio_health_report(audio, report, sizeof(report));
+                char report[8192]; ts_audio_health_report(audio, report, sizeof(report));
                 snprintf(ts_health.message, sizeof(ts_health.message), "%s",
                     SDL_SetClipboardText(report) == 0 ? "AUDIO REPORT COPIED" : "COULD NOT COPY REPORT");
                 ts_health.message_until = SDL_GetTicks() + 2500u;

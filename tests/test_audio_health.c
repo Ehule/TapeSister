@@ -68,6 +68,7 @@ int main(int argc, char **argv)
     assert(strstr(report, "not exposed by this backend"));
     assert(strstr(report, "Recent processing: 25.00%"));
     assert(strstr(report, "not round-trip latency"));
+    assert(strstr(report, "Active setup: awaiting UI snapshot"));
     /* Copy uses the same scaled coordinate mapping as the resizable window. */
     e.type = SDL_MOUSEBUTTONDOWN; e.button.windowID = ts_health.window_id;
     e.button.button = SDL_BUTTON_LEFT; e.button.x = 250; e.button.y = 470;
@@ -91,6 +92,61 @@ int main(int argc, char **argv)
     assert(ts_note_bank_start_sample_event(&a->notes, &sample, &tuning, &note, 0, 48000) == TS_NOTE_STARTED);
     assert(ts_audio_health_event(&e, main_window, a, ui));
     assert(ts_note_bank_count(&a->notes) == 1); /* HOLD remains intentional. */
+    /* Reports describe simultaneous workload and effective Router bypass,
+       including processors missing from the old callback bitfield. */
+    ui->keyboard_hold = 1;
+    a->keyboard_sequence.running = a->keyboard_sequence.slot_running = 1;
+    a->keyboard_sequence.active_slot = 4;
+    a->sister.enabled = a->sister.rolling = a->sister.monitor_enabled = 1;
+    a->sister.source_switches = TS_SISTER_SOURCE_TILES | TS_SISTER_SOURCE_FM;
+    ts_router_init(&a->sister.router);
+    for (int i = 0; i < TS_ROUTER_COUNT; ++i) a->sister.router.wet[i] = 1;
+    ts_sister_fx_controls_default(&a->sister.parameters.fx);
+    a->sister.parameters.fx.enabled = a->sister.parameters.fx.fallout.enabled = 1;
+    a->sister.parameters.fx.slot[0] = (TsSisterFxSlotControls){
+        .type = TS_SISTER_FX_DELAY, .enabled = 1,
+        .placement = TS_SISTER_FX_PLACE_H1 | TS_SISTER_FX_PLACE_POST, .mix = .4f};
+    a->sister.parameters.fx.slot[1] = (TsSisterFxSlotControls){
+        .type = TS_SISTER_FX_REVERB, .enabled = 0, .placement = TS_SISTER_FX_PLACE_POST};
+    a->sister.parameters.prism.enabled = 1;
+    a->sister.parameters.prism.lenses = 12;
+    a->sister.prism.matrix.running = 1;
+    ts_audio_health_capture_setup(a, ui, 1000);
+    char setup[3072]; ts_audio_health_setup_report(setup, sizeof(setup), 1020);
+    assert(strstr(setup, "Keyboard HOLD: ON; keyboard voice instances: 1; latched/sustained: 1"));
+    assert(strstr(setup, "ARP: RUNNING; outer ARP: RUNNING; active slot: 5"));
+    assert(strstr(setup, "Sister Machine: ON, routed"));
+    assert(strstr(setup, "Sister source switches: Tiles, FM"));
+    assert(strstr(setup, "Fallout: ON, routed; FX master: ON"));
+    assert(strstr(setup, "Prism: ON, routed") && strstr(setup, "base lenses: 12"));
+    assert(strstr(setup, "Matrix: RUNNING"));
+    assert(strstr(setup, "mix 40.0%; placement H1+POST"));
+    assert(strstr(setup, "Slot 2: REVERB; OFF"));
+    assert(strstr(setup, "send assigned: OFF; send available: OFF"));
+    a->sister.router.controls.bypass_mask = 1u << TS_ROUTER_PRISM;
+    a->sister.router.wet[TS_ROUTER_PRISM] = 0;
+    a->sister.parameters.fx.enabled = 0;
+    ts_audio_health_capture_setup(a, ui, 1100); /* Bounded refresh; no live-state reads in report. */
+    ts_audio_health_setup_report(setup, sizeof(setup), 1100);
+    assert(strstr(setup, "Prism: ON, routed"));
+    ts_audio_health_capture_setup(a, ui, 1250);
+    ts_audio_health_setup_report(setup, sizeof(setup), 1250);
+    assert(strstr(setup, "Prism: ON, bypassed"));
+    assert(strstr(setup, "Fallout: ON, routed; FX master: OFF"));
+    assert(strstr(setup, "Pedalboard master: OFF"));
+    ts_audio_health_report(a, report, sizeof(report));
+    assert(strstr(report, "Slot 4:") && strstr(report, "Native counters cover"));
+    a->keyboard_sequence.running = a->keyboard_sequence.slot_running = 0;
+    a->sister.enabled = a->sister.parameters.prism.enabled = 0;
+    a->sister.prism.matrix.running = 0;
+    ts_audio_health_capture_setup(a, ui, 1500);
+    ts_audio_health_setup_report(setup, sizeof(setup), 1500);
+    assert(strstr(setup, "ARP: STOPPED; outer ARP: STOPPED; active slot: 0"));
+    assert(strstr(setup, "Sister Machine: OFF") && strstr(setup, "Prism: OFF"));
+    assert(strstr(setup, "Matrix: STOPPED"));
+    char short_report[17]; memset(short_report, 'x', sizeof(short_report));
+    ts_audio_health_setup_report(short_report, sizeof(short_report) - 1, 1250);
+    assert(short_report[15] == '\0' && short_report[16] == 'x');
     ts_note_bank_clear(&a->notes); ts_sample_free(&sample);
     e.type = SDL_DROPFILE; e.drop.windowID = ts_health.window_id; e.drop.file = SDL_strdup("test.wav");
     assert(ts_audio_health_event(&e, main_window, a, ui));
