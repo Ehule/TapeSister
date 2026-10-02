@@ -475,7 +475,7 @@ static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevi
         if(edit->dragging && (event->motion.state&SDL_BUTTON_LMASK)) {
             if(x>=TS_TRACKER_LANE_X && x<TS_TRACKER_LANE_RIGHT && y>=g.grid_y && y<g.bottom) {
                 int row=SDL_clamp(ui->tracker_scroll+(y-g.grid_y)/TS_TRACKER_ROW_HEIGHT,0,p->rows-1),lane=(x-TS_TRACKER_LANE_X)/TS_TRACKER_LANE_WIDTH;
-                if(row!=edit->drag_row || lane!=edit->drag_lane) {
+                if(edit->dragging==2 || row!=edit->drag_row || lane!=edit->drag_lane) {
                     if(edit->dragging==1){edit->anchor_row=edit->drag_row;edit->anchor_lane=edit->drag_lane;edit->selected_pattern=p->id;edit->selected=1;edit->dragging=2;}
                     ts_tracker_edit_mark(edit,t,row,lane);t->editor_row=row;t->editor_lane=lane;
                     tracker_queue_selection(device,audio,ui);

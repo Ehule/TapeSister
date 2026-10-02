@@ -87,6 +87,13 @@ static void editor_controls(void)
     click(38,TS_TRACKER_GRID_Y+TS_TRACKER_ROW_HEIGHT*0+2);SDL_zero(e);e.type=SDL_MOUSEMOTION;e.motion.windowID=SDL_GetWindowID(window);
     e.motion.x=TS_TRACKER_LANE_X+4+TS_TRACKER_LANE_WIDTH;e.motion.y=TS_TRACKER_GRID_Y+TS_TRACKER_ROW_HEIGHT*3+2;e.motion.state=SDL_BUTTON_LMASK;
     assert(tracker_event(&e,window,0,a,ui,pages,instrument,48000));assert(edit->selected && t->editor_row==3 && t->editor_lane==1);
+    /* Dragging back to the starting cell must shrink the mark again. */
+    e.motion.x=38;e.motion.y=TS_TRACKER_GRID_Y+2;
+    assert(tracker_event(&e,window,0,a,ui,pages,instrument,48000));
+    TsTrackerRegion returned=ts_tracker_edit_region(edit,t);
+    assert(returned.row0==0 && returned.row1==0 && returned.lane0==0 && returned.lane1==0);
+    e.motion.x=TS_TRACKER_LANE_X+4+TS_TRACKER_LANE_WIDTH;e.motion.y=TS_TRACKER_GRID_Y+3*TS_TRACKER_ROW_HEIGHT+2;
+    assert(tracker_event(&e,window,0,a,ui,pages,instrument,48000));
     e.type=SDL_MOUSEBUTTONUP;e.button.windowID=SDL_GetWindowID(window);e.button.button=SDL_BUTTON_LEFT;
     assert(tracker_event(&e,window,0,a,ui,pages,instrument,48000) && !edit->dragging);
     /* One held ROWS gesture makes one undo step and stops on release/leave. */
