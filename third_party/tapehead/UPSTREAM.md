@@ -20,6 +20,9 @@ Compiled source
   `ft2_transport_visuals.h` colon wrapper, unchanged.
 * `transport_visuals.h`: the original independent-transport predicate and
   page-start function, unchanged. Both input mapping and drawing call them.
+* `edit_controls.h`: the original Grave / Shift+Grave edit-skip branch from
+  `ft2_keyboard.c`, with global operands turned into parameters and the FT2 UI
+  redraw hook omitted. STEP's click and wheel actions share this 0–16 wrap logic.
 * `ft2_fasttracks_core.c` / `.h`: complete files, byte-for-byte unchanged.
   The audio path calls their rational clock, shared-boundary decision and
   blank-extension predicate. The former local clock loop has been removed.
@@ -35,6 +38,9 @@ The importer extracts the named upstream functions and tables, then applies
 `pattern_draw.patch` with zero fuzz. Omitting `--check` regenerates the compiled
 files. The local patch is the complete, reviewable difference from the extracted
 source. Builds use the committed files and need neither Python nor Tapehead.
+The edit-skip extraction uses only the documented operand substitutions; it does
+not apply the drawing patch. The manifest also pins the reference editing source
+and ini used to audit Backspace behavior.
 
 Host boundary
 -------------
@@ -81,3 +87,10 @@ marking, Alt+C, Ctrl+L, pending loop-seam bounds and F7/F8 interactions follow
 `ft2_keyboard.c` / `ft2_replayer.c`. Those editing operations are native
 adaptations, not claimed as direct source transplants. See
 `docs/SISTERTRACKER_PARITY.md` for remaining differences.
+
+Keyboard and mouse dispatch have not been transplanted wholesale. Backspace's
+native default honors `release/other/tapehead.ini`'s
+`PatternBackspacePullUp=false` preference without loading that ini. At the user's
+request it clears the current track cell before moving up; Tapehead's
+`clearPreviousPatternEntry` moves up before clearing. STEP/OCT wheel targets are
+native bindings on visible controls, not extracted `ft2_mouse.c` behavior.

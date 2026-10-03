@@ -136,7 +136,7 @@ static void editor_controls(void)
     p->cells[4][2].note_kind=TS_TRACKER_NOTE_PITCH;p->cells[4][2].note=60;
     modified(SDLK_F2,KMOD_SHIFT);assert(p->cells[4][2].note==61);
     key(SDLK_INSERT);assert(!p->cells[4][2].note_kind && p->cells[5][2].note==61);
-    key(SDLK_BACKSPACE);assert(p->cells[4][2].note==61 && !p->cells[5][2].note_kind);
+    tracker_command(ui,TRACKER_DELETE_ROW,0,0);assert(p->cells[4][2].note==61 && !p->cells[5][2].note_kind);
     /* Drag selection owns motion and release even over hidden Sample tiles. */
     click(38,TS_TRACKER_GRID_Y+TS_TRACKER_ROW_HEIGHT*0+2);SDL_zero(e);e.type=SDL_MOUSEMOTION;e.motion.windowID=SDL_GetWindowID(window);
     e.motion.x=TS_TRACKER_LANE_X+4+TS_TRACKER_LANE_WIDTH;e.motion.y=TS_TRACKER_GRID_Y+TS_TRACKER_ROW_HEIGHT*3+2;e.motion.state=SDL_BUTTON_LMASK;
@@ -185,6 +185,76 @@ static void editor_controls(void)
     click(600,342);assert(edit->tools_open);click(425,146);assert(edit->position==history-1);
     click(545,118);assert(!edit->tools_open);ui->tracker_scroll=0;t->editor_row=0;t->editor_lane=0;ui->tracker_field=1;
     ui->tracker_hex_digit=1;ui->tracker_hex_value=0x20;
+}
+static void preferred_edit_controls(void)
+{
+    TsSisterTracker *t=ui->tracker,saved_tracker=*t;
+    TsTrackerPattern *p=ts_sister_tracker_pattern(t,t->editor_pattern);
+    TsTrackerPattern *saved=malloc(sizeof(*saved)),*expected=malloc(sizeof(*expected));
+    TsUiState *saved_ui=malloc(sizeof(*saved_ui));
+    TsTrackerEdit *edit=ts_tracker_edit_new();assert(saved && expected && saved_ui && edit);
+    *saved=*p;*saved_ui=*ui;ui->tracker_edit=edit;ui->tracker_expanded=0;ui->tracker_scroll=0;
+    ui->tracker_repeat_control=0;SDL_SetModState(KMOD_NONE);
+    p->rows=8;
+    for(int row=0;row<TS_TRACKER_ROWS;++row)for(int lane=0;lane<TS_TRACKER_LANES;++lane)
+        p->cells[row][lane]=(TsTrackerCell){.tile_id=100+row*8+lane,.note_kind=TS_TRACKER_NOTE_PITCH,
+            .note=48+row%60,.has_volume=1,.volume=0,.tune_command='M',.tune_value=60,
+            .fx_command='Z',.fx_value=0};
+    t->editor_row=1;t->editor_lane=6;ts_tracker_edit_anchor(edit,t);ts_tracker_edit_mark(edit,t,2,7);
+    TsTrackerRegion mark=ts_tracker_edit_region(edit,t);ts_tracker_edit_copy(edit,p,mark);
+    TsTrackerCell clipboard=edit->clipboard[0][0];edit->mask=TS_TRACKER_EDIT_NOTE;
+    t->editor_row=5;t->editor_lane=2;t->edit_step=7;ui->tracker_field=6;ui->tracker_hex_digit=1;
+    unsigned heard=a->tracker.row;double phase=a->tracker.lanes[0].voice.position;
+    *expected=*p;memset(&expected->cells[5][2],0,sizeof(TsTrackerCell));
+    key(SDLK_BACKSPACE);
+    assert(!memcmp(p,expected,sizeof(*p)) && t->editor_row==4 && t->editor_lane==2);
+    assert(ui->tracker_follow_hold && !ui->tracker_hex_digit && edit->position==1);
+    TsTrackerRegion after=ts_tracker_edit_region(edit,t);assert(!memcmp(&mark,&after,sizeof(mark)));
+    assert(edit->clipboard_rows==2 && edit->clipboard_lanes==2 && !memcmp(&clipboard,&edit->clipboard[0][0],sizeof(clipboard)));
+    modified(SDLK_z,KMOD_CTRL);assert(p->cells[5][2].fx_command=='Z' && p->cells[5][2].has_volume);
+    modified(SDLK_y,KMOD_CTRL);assert(!memcmp(p,expected,sizeof(*p)) && t->editor_row==4);
+    /* Repeat clears each current row before moving, irrespective of STEP. */
+    t->edit_step=0;memset(&expected->cells[4][2],0,sizeof(TsTrackerCell));
+    SDL_Event e;SDL_zero(e);e.type=SDL_KEYDOWN;e.key.windowID=SDL_GetWindowID(window);
+    e.key.keysym.sym=SDLK_BACKSPACE;e.key.repeat=1;
+    assert(tracker_event(&e,window,0,a,ui,pages,instrument,48000));
+    assert(!memcmp(p,expected,sizeof(*p)) && t->editor_row==3);
+    t->editor_row=0;memset(&expected->cells[0][2],0,sizeof(TsTrackerCell));key(SDLK_BACKSPACE);
+    assert(!memcmp(p,expected,sizeof(*p)) && t->editor_row==0);
+    t->editor_row=7;memset(&expected->cells[7][2],0,sizeof(TsTrackerCell));key(SDLK_BACKSPACE);
+    assert(!memcmp(p,expected,sizeof(*p)) && t->editor_row==6); /* Hidden rows untouched. */
+    /* Shift+Backspace remains an explicit structural deletion across lanes. */
+    t->editor_row=3;ts_tracker_edit_shift_rows(expected,3,2,1,0);modified(SDLK_BACKSPACE,KMOD_SHIFT);
+    assert(!memcmp(p,expected,sizeof(*p)) && t->editor_row==3);
+    unsigned history=edit->position;int scroll=ui->tracker_scroll;
+    t->edit_step=0;key(SDLK_BACKQUOTE);assert(t->edit_step==1);
+    modified(SDLK_BACKQUOTE,KMOD_SHIFT);assert(t->edit_step==0);
+    modified(SDLK_BACKQUOTE,KMOD_SHIFT);assert(t->edit_step==16);
+    key(SDLK_BACKQUOTE);assert(t->edit_step==0);
+    /* Physical Grave works with another layout's keysym, including repeat. */
+    e.key.keysym.sym=SDLK_UNKNOWN;e.key.keysym.scancode=SDL_SCANCODE_GRAVE;
+    assert(tracker_event(&e,window,0,a,ui,pages,instrument,48000) && t->edit_step==1);
+    modified(SDLK_BACKQUOTE,KMOD_CTRL);modified(SDLK_BACKQUOTE,KMOD_ALT);assert(t->edit_step==1);
+    edit->tools_open=1;key(SDLK_BACKQUOTE);wheel(300,344,1,0,1);assert(t->edit_step==1);edit->tools_open=0;
+    ui->tracker_expanded=1;key(SDLK_BACKQUOTE);assert(t->edit_step==2);ui->tracker_expanded=0;
+    t->edit_step=16;ui->wheel_guard=(TsUiWheelGuard){0};wheel(300,344,1,0,1);assert(t->edit_step==0);
+    wheel(300,344,-1,0,-1);assert(t->edit_step==16);
+    wheel(300,344,3,0,3);assert(t->edit_step==2);
+    wheel(300,344,2,1,2);assert(t->edit_step==0);
+    wheel(300,344,0,0,.4f);assert(t->edit_step==0);
+    ts_ui_keyboard_set_octave(ui,3);wheel(370,344,1,0,1);assert(ui->keyboard_octave==3); /* Wheel owner guard. */
+    ui->wheel_guard=(TsUiWheelGuard){0};wheel(370,344,2,0,2);assert(ui->keyboard_octave==5 && ui->keyboard_base_note==72);
+    wheel(370,344,2,1,2);assert(ui->keyboard_octave==3);
+    wheel(370,344,20,0,20);assert(ui->keyboard_octave==7 && ui->keyboard_base_note==96);
+    wheel(370,344,-20,0,-20);assert(ui->keyboard_octave==0 && ui->keyboard_base_note==12);
+    wheel(370,344,0,0,.4f);assert(ui->keyboard_octave==0);
+    edit->tools_open=1;wheel(370,344,1,0,1);assert(ui->keyboard_octave==0);edit->tools_open=0;
+    assert(t->editor_row==3 && t->editor_lane==2 && ui->tracker_scroll==scroll && edit->position==history);
+    ui->tracker_expanded=1;ui->wheel_guard=(TsUiWheelGuard){0};wheel(300,344,1,0,1);wheel(370,344,1,0,1);
+    assert(t->edit_step==0 && ui->keyboard_octave==0); /* Hidden footer is not interactive. */
+    assert(a->tracker.row==heard && a->tracker.lanes[0].voice.position==phase);
+    assert(!memcmp(p,expected,sizeof(*p)));
+    *p=*saved;*t=saved_tracker;*ui=*saved_ui;ts_tracker_edit_free(edit);free(saved);free(expected);free(saved_ui);
 }
 static void tapehead_columns_and_overlay(void)
 {
@@ -588,6 +658,7 @@ int main(int argc,char **argv)
     pages->tracker.editor_pattern=heard;ui->tracker_scroll=0;
     tracker_refresh(0,a,ui,pages,instrument,48000);
     editor_controls();
+    preferred_edit_controls();
     tapehead_columns_and_overlay();
     independent_marks_and_layout();
     block_capture_frames();

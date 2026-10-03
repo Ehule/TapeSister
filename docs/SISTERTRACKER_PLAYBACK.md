@@ -148,10 +148,12 @@ directions. These controls remain editable during a block, for the next normal P
 | M or N in the tuning command | Store root or fine tuning and move to its parameter; M accepts 00–7F, N accepts 00–FF |
 | 0–9 / A–Z in the FX command | Store the command and move to its 00–FF parameter; explicit 000 and Z00 are preserved |
 | Delete / Shift+Delete / CLEAR | Clear the selected field / complete cell; a selected block uses the field mask, or all fields with Shift |
-| Insert / Backspace | Insert / remove a row in the current lane, keeping the pattern length |
+| Backspace | Clear every field in the current lane's current row, then move up one row; at row zero, clear and stay. Other rows, marks and clipboard stay in place; STEP and field masks do not affect this action |
+| Insert / DELETE ROW in EDIT | Insert / remove a row in the current lane, shifting later active rows and keeping the pattern length |
 | Shift+Insert / Shift+Backspace | Insert / remove a row across all eight lanes |
 | OFF / CUT | Fade this lane's voice / immediately cut this lane; manual Sustain/HOLD does not apply |
-| STEP / OCT | Advance after entry by 0–16 rows / keyboard octave; right click decreases |
+| STEP / OCT | Advance after entry by 0–16 rows / keyboard octave 0–7; click or wheel up increases, right click or wheel down decreases; STEP wraps and OCT clamps |
+| Grave / Shift+Grave | Increase / decrease STEP with 0–16 wrapping, including expanded view; uses the physical key below Escape |
 | Wheel over grid | One row per SDL wheel detent, respecting reversed scrolling; manual scrolling suspends FOLLOW until re-enabled or Play |
 | Wheel over BPM / TPL / ROWS / lane trim / OUT | Adjust the hovered visible control; fractional wheel deltas apply to continuous trim/output controls |
 | Page Up / Page Down / Home / End | Navigate rows; manual navigation suspends FOLLOW |
@@ -161,6 +163,14 @@ directions. These controls remain editable during a block, for the next normal P
 | M / S / lane trim | Mute / temporary solo / independent trim from 0 to 2; clocks and heads continue |
 | FOLLOW | Re-enable keeping the heard row visible when it belongs to the selected editor pattern |
 | EDIT | Visible editing tools and clipboard field masks |
+
+Backspace follows the no-pull-up preference in Tapehead's reference ini
+(`PatternBackspacePullUp=false`). SisterTracker clears the current row **before**
+moving up, as requested; the reference's `clearPreviousPatternEntry` moves up
+first. This is a native default, not an imported ini loader. Grave's STEP action
+is extracted from Tapehead's keyboard source; STEP/OCT wheel hit targets are native
+bindings on their visible controls. The EDIT overlay owns those controls while
+open, and the hidden footer has no wheel targets in expanded view.
 
 ### Tapehead editing tools
 

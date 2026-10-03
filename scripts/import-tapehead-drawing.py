@@ -10,6 +10,7 @@ import json
 import re
 import subprocess
 import tempfile
+import textwrap
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -69,7 +70,21 @@ def extract(root):
     transport = '#pragma once\n#include <stdbool.h>\n#include <stdint.h>\n\n' + '\n\n'.join(
         function(transport, name) for name in [
             'tapeheadTrackUsesIndependentTransportVisual', 'tapeheadTransportVisualPageStart']) + '\n'
+    keyboard = (root / 'src/ft2_keyboard.c').read_text()
+    start = keyboard.index('\t\tcase SDL_SCANCODE_GRAVE: // "key below esc"')
+    start = keyboard.index('\n\t\t{\n', start) + len('\n\t\t{\n')
+    end = keyboard.index('\n\n\t\t\tif (!ui.nibblesShown', start)
+    # Original key action, with its two global operands made explicit inputs.
+    step_body = textwrap.dedent(keyboard[start:end]).replace(
+        'keyb.leftShiftPressed', 'shiftPressed').replace('editor.editRowSkip', 'editRowSkip')
+    controls = ('/* Extracted from ft2_keyboard.c, Tapehead f053d96 (BSD-3-Clause).\n'
+                ' * Only global operands and the UI redraw hook are adapted.\n'
+                ' * Regenerate with scripts/import-tapehead-drawing.py. */\n'
+                '#pragma once\n#include <stdbool.h>\n#include <stdint.h>\n\n'
+                'static inline uint8_t tapeheadChangeEditSkip(uint8_t editRowSkip, bool shiftPressed)\n'
+                '{\n' + textwrap.indent(step_body, '\t') + '\n\treturn editRowSkip;\n}\n')
     return {'pattern_draw.inc': '\n\n'.join(pieces) + '\n',
+            'edit_controls.h': controls,
             'tiny_draw.inc': tiny,
             'transport_visuals.h': transport,
             **{name: (root / 'src' / name).read_text()

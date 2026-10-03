@@ -22,6 +22,9 @@ Stop releases tracker voices only. Marks remain independent of the edit cursor.
 Ctrl+L loops a marked rectangle; Shift+arrows resizes at its next seam. F7/F8
 capture a running block, and F8 outside looping extracts a new pattern with
 undo/redo. Ctrl+Alt+Backspace expands the pattern view.
+Backspace clears the current track row's contents, then moves up one row without
+pulling later rows up. Grave / Shift+grave increases/decreases STEP with 0–16
+wrapping. Wheel over STEP or OCT adjusts that control; octave stays within 0–7.
 LEN and Pattern FastTracks are active: adjust LEN with the header wheel, click
 FT to enable a private lane clock, and change its ratio or direction. CONTROL
 sets the shared cycle boundary. FOLLOW uses Tapehead's fixed master band for

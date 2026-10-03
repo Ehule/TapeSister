@@ -8,6 +8,8 @@ README Block Loop, CONFIGURATION extraction, PATTERN_INTERPOLATION, the embedded
 This inventory describes working behavior. Saved controls alone are not audio
 implementation. TapeSister retains its own tile engine, stable IDs, Sister,
 recording, FX and transport ownership.
+“Implemented” does not mean source-transplanted: most editing and SDL event
+dispatch are native adaptations. The exact source boundary is listed below.
 
 | Operation | Status in this PR | Adaptation / remaining work |
 | --- | --- | --- |
@@ -27,7 +29,10 @@ recording, FX and transport ownership.
 | Pause/resume, mute/solo/trim | Implemented | Retains native voices/tick time and independent non-tracker transports |
 | F7 live performance capture | Implemented this batch | Seam-quantized existing final-output WAV/RF64 writer |
 | F8 one-cycle capture during looping | Implemented this batch | Live final output between seams; Tapehead's offline rendering/resume is intentionally not ported |
-| Insert/delete rows, lane/all lanes | Implemented | Insert/Backspace, Shift for all lanes; preserves rows beyond active length |
+| Backspace without pull-up | Native adaptation of the ini preference | Clear current full cell, then up one row (user-requested order); ignores STEP/masks/marks; reference clears after moving up |
+| Insert/delete rows, lane/all lanes | Implemented | Insert / EDIT DELETE ROW; Shift+Insert/Backspace for all lanes; preserves rows beyond active length |
+| Grave / Shift+Grave edit step | Source action extracted and compiled | Original 0–16 wrap branch, native SDL dispatch; compact and expanded views |
+| STEP/OCT wheel | Native binding | Hover the visible footer control; STEP wraps 0–16, OCT clamps 0–7; SDL wheel direction/detents and ownership guard |
 | Expand/shrink pattern | Implemented this batch | EDIT controls; even-row transformation, bounds, full undo, hidden-row preservation |
 | Transpose all tiles in lane/pattern/block | Implemented | Shift/Ctrl/Alt+F1/F2; Ctrl+Up/Down and Shift for octave |
 | Transpose only current tile | Outstanding | Tapehead modified F7/F8 variants need inherited stable-tile matching |
@@ -67,6 +72,12 @@ The previous native grid/glyph/dimming/outline/LED/cursor recreation and clock
 loop have been removed. See `third_party/tapehead/UPSTREAM.md`, `SOURCES.json`
 and `pattern_draw.patch` for exact provenance and host adaptations; the importer
 reproduces the extraction against checked source hashes.
+`edit_controls.h` now also compiles the original Grave/Shift+Grave STEP branch,
+with its global operands passed as arguments. This is one action, not a wholesale
+port of `ft2_keyboard.c` or `ft2_mouse.c`. STEP/OCT wheel support is a new native
+binding. The reference ini's `PatternBackspacePullUp=false` guides Backspace's
+default; SisterTracker does not load Tapehead's ini, and follows the requested
+current-row-clear-then-up order.
 
 The native window chrome, stable tile model, RGBA selection representation,
 MIDI range/CUT, sample engine, recording and editing operations remain host
@@ -81,6 +92,10 @@ fractional tick lengths, 1:1 alignment across shared loops, every crossing at
 live phase changes, pause/rate changes and literal block isolation. Controller
 tests check real header/keyboard/wheel input, both layouts, overlay ownership,
 immutable publication and per-lane heard positions.
+Control regression cases cover full-cell Backspace at first/last rows, repeat,
+hidden-row/mark/clipboard preservation, undo/redo, unchanged audio phase,
+physical Grave dispatch and 0/16 wrapping, visible STEP/OCT wheel targets,
+octave bounds, flipped/fractional wheel events and overlay ownership.
 
 Core tests exercise exact integer/fractional onsets and 100 loop seams, pause,
 pending lane/row changes, partial-pattern inheritance, hidden rows, edits during

@@ -27,6 +27,7 @@ For explanations and complete workflows, see the [User Manual](USER_MANUAL.md).
 From Sister, Shift+grave and grave bring FM and Mosaic forward even if already open
 behind it. Active dialogs keep focus until resolved. Number-key lower-panel shortcuts
 apply to the main canvas. Navigation and audition stop leave Mosaic playback running.
+While SisterTracker owns focus, grave / Shift+grave adjust STEP instead.
 
 ## SisterTracker
 
@@ -42,6 +43,11 @@ F7 captures a live performance and F8 captures one live cycle to WAV.
 Ctrl+Alt+Backspace expands/restores the pattern view. Ctrl+E opens EDIT in either
 view. F7/F8 take priority over octave selection in those contexts; OCT remains
 available in the ordinary view.
+Backspace clears all fields in the current track row and moves up one row without
+shifting any contents. Insert and EDIT's DELETE ROW remain structural row edits;
+Shift+Insert/Backspace applies them across all tracks. Grave / Shift+grave
+increases/decreases STEP, wrapping 0–16. Wheel over STEP or OCT adjusts the hovered
+control; octave clamps to 0–7.
 Hold left/right mouse on BPM, TPL or ROWS to increase/decrease continuously.
 LEN click/wheel adjusts 0–256 (Shift: 8; Ctrl: OFF). The eject symbol assigns
 CONTROL. Click FT to enable Pattern; click its LED bank to return to Standard. Click/wheel the ratio;

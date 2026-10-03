@@ -1,3 +1,4 @@
+#include "../third_party/tapehead/edit_controls.h"
 static void tracker_repeat_poll(TsUiState *ui,Uint32 now,Uint32 buttons);
 static unsigned tracker_alias(const TsSisterTracker *t,TsTileId id)
 {
@@ -141,6 +142,15 @@ static void tracker_adjust(TsUiState *ui,int control,int delta)
     if(control==1)t->bpm=SDL_clamp((int)t->bpm+delta,32,999);
     else if(control==2)t->ticks_per_line=SDL_clamp((int)t->ticks_per_line+delta,1,31);
     else if(control==3 && p)ts_sister_tracker_set_rows(t,p->id,SDL_clamp((int)p->rows+delta,1,256));
+    else if(control==4) {
+        /* Mouse/button deltas use the same original 0..16 wrapping action. */
+        int steps=delta%17;
+        for(int i=0;i<abs(steps);++i)t->edit_step=tapeheadChangeEditSkip(t->edit_step,steps<0);
+        snprintf(ui->status,sizeof(ui->status),"STEP %02u - GRAVE + / SHIFT GRAVE - / WHEEL",t->edit_step);
+    } else if(control==5) {
+        ts_ui_keyboard_set_octave(ui,ui->keyboard_octave+delta);
+        snprintf(ui->status,sizeof(ui->status),"OCTAVE %d - CLICK OR WHEEL",ui->keyboard_octave);
+    }
 }
 static void tracker_repeat_poll(TsUiState *ui,Uint32 now,Uint32 buttons)
 {
@@ -271,7 +281,9 @@ static void tracker_command(TsUiState *ui,int command,int scope,int whole)
 }
 static int tracker_control_at(int x,int y,int expanded)
 {
-    if(expanded || y<34 || y>=50)return 0;
+    if(expanded)return 0;
+    if(y>=332 && y<356)return x>=270 && x<336?4:x>=340 && x<412?5:0;
+    if(y<34 || y>=50)return 0;
     return x>=212 && x<290?1:x>=294 && x<350?2:x>=354 && x<426?3:0;
 }
 static void tracker_lane_length(TsUiState *ui,int lane,int delta,SDL_Keymod mod)
@@ -409,6 +421,23 @@ static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevi
             }return 1;
         }
         if(sym>=SDLK_F1 && sym<=SDLK_F8){ts_ui_keyboard_set_octave(ui,(int)(sym-SDLK_F1));return 1;}
+        if(event->key.keysym.scancode==SDL_SCANCODE_GRAVE || sym==SDLK_BACKQUOTE) {
+            if(!edit->tools_open)tracker_adjust(ui,4,(mod&KMOD_SHIFT)?-1:1);
+            return 1;
+        }
+        if(sym==SDLK_BACKSPACE && !(mod&KMOD_SHIFT)) {
+            /* PatternBackspacePullUp=false preference: never compact rows.
+               User-requested ordering is current cell first, then cursor up
+               (Tapehead's clearPreviousPatternEntry moves first). */
+            if(tracker_begin(ui,p)) {
+                tracker_clear(ui,c,1);
+                ts_tracker_edit_commit(edit,p);
+                if(t->editor_row>0)--t->editor_row;
+                ui->tracker_follow_hold=1;tracker_visible(ui);
+                snprintf(ui->status,sizeof(ui->status),"CLEARED TRACK ROW - CURSOR UP / ROWS STAY IN PLACE");
+            }
+            return 1;
+        }
         if(sym==SDLK_INSERT || sym==SDLK_BACKSPACE) {
             tracker_command(ui,sym==SDLK_INSERT?TRACKER_INSERT:TRACKER_DELETE_ROW,0,!!(mod&KMOD_SHIFT));return 1;
         }
@@ -631,8 +660,8 @@ static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevi
         } else if((x>=146 && x<178) || (x>=182 && x<214)) {
             if(tracker_begin(ui,p)){c->note_kind=x<178?TS_TRACKER_NOTE_OFF:TS_TRACKER_NOTE_CUT;ts_tracker_edit_commit(edit,p);tracker_advance(ui);}
         } else if(x>=218 && x<266){if(tracker_begin(ui,p)){tracker_clear(ui,c,1);ts_tracker_edit_commit(edit,p);}}
-        else if(x>=270 && x<336)t->edit_step=(t->edit_step+delta+17)%17;
-        else if(x>=340 && x<412)ts_ui_keyboard_set_octave(ui,ui->keyboard_octave+delta);
+        else if(x>=270 && x<336)tracker_adjust(ui,4,delta);
+        else if(x>=340 && x<412)tracker_adjust(ui,5,delta);
         else if(x>=418 && x<574) {
             int group=(x-418)/32;ui->tracker_field=group<3?group:group==3?3:5;
         }
