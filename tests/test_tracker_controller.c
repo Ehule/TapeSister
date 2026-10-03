@@ -43,6 +43,60 @@ static void wheel(int x,int y,int detents,int flipped,float precise)
 #endif
     assert(tracker_event(&e,window,0,a,ui,pages,instrument,48000));
 }
+static void fasttracks_controls(void)
+{
+    TsSisterTracker *t=ui->tracker;TsTrackerEdit *edit=ui->tracker_edit;
+    TsTrackerPattern *p=ts_sister_tracker_pattern(t,t->editor_pattern);
+    TsTrackerPattern saved=*p;
+    TsTrackerLane lanes[8];memcpy(lanes,t->lanes,sizeof(lanes));
+    int control=t->control_lane,uses=t->fasttracks_uses_length,bypass=t->length_bypass;
+    int tpl=t->ticks_per_line,bpm=t->bpm,expanded=ui->tracker_expanded;
+    ts_tracker_playback_stop(&a->tracker);edit->tools_open=0;
+    for(int view=0;view<2;++view) {
+        ui->tracker_expanded=view;TsTrackerLayout g=ts_tracker_layout(t,view);
+        t->lanes[0].length=0;t->lanes[0].mode=TS_TRACKER_STANDARD;t->lanes[0].ratio=7;t->lanes[0].direction=TS_TRACKER_FORWARD;
+        unsigned row=t->editor_row,lane=t->editor_lane;
+        click(TS_TRACKER_LANE_X+20,g.len_y+2);assert(t->lanes[0].length==1);
+        SDL_SetModState(KMOD_SHIFT);ui->wheel_guard=(TsUiWheelGuard){0};
+        wheel(TS_TRACKER_LANE_X+20,g.len_y+2,2,0,2);assert(t->lanes[0].length==17);
+        SDL_SetModState(KMOD_CTRL);wheel(TS_TRACKER_LANE_X+20,g.len_y+2,-1,0,-1);assert(!t->lanes[0].length);
+        SDL_SetModState(KMOD_NONE);t->lanes[0].length=255;
+        wheel(TS_TRACKER_LANE_X+20,g.len_y+2,4,0,4);assert(t->lanes[0].length==256);
+        t->control_lane=-1;click(TS_TRACKER_LANE_X+65,g.len_y+2);assert(t->control_lane==0);
+        click(TS_TRACKER_LANE_X+65,g.len_y+2);assert(t->control_lane==-1);
+        click(TS_TRACKER_LANE_X+3,g.ratio_y+2);assert(t->lanes[0].mode==TS_TRACKER_PATTERN);
+        ui->wheel_guard=(TsUiWheelGuard){0};wheel(TS_TRACKER_LANE_X+23,g.ratio_y+2,-1,1,-1);assert(t->lanes[0].ratio==8);
+        click(TS_TRACKER_LANE_X+64,g.ratio_y+2);assert(t->lanes[0].direction==TS_TRACKER_REVERSE);
+        SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=SDL_GetWindowID(window);
+        e.button.button=SDL_BUTTON_RIGHT;e.button.x=TS_TRACKER_LANE_X+23;e.button.y=g.ratio_y+2;
+        assert(tracker_event(&e,window,0,a,ui,pages,instrument,48000));assert(t->lanes[0].direction==TS_TRACKER_PING_PONG);
+        modified(SDLK_1,KMOD_CTRL|KMOD_SHIFT);assert(t->lanes[0].mode==TS_TRACKER_STANDARD);
+        modified(SDLK_1,KMOD_ALT|KMOD_SHIFT);assert(t->lanes[0].ratio==9);
+        assert(t->editor_row==row && t->editor_lane==lane); /* Header controls preserve edit focus. */
+        t->length_bypass=0;click(8,g.len_y+2);assert(t->length_bypass);
+        t->fasttracks_uses_length=1;click(8,g.ratio_y+2);assert(!t->fasttracks_uses_length);
+        edit->tools_open=1;click(TS_TRACKER_LANE_X+3,g.ratio_y+2);
+        modified(SDLK_1,KMOD_CTRL|KMOD_SHIFT);assert(t->lanes[0].mode==TS_TRACKER_STANDARD);edit->tools_open=0;
+    }
+    memset(p->cells,0,sizeof(p->cells));p->rows=8;t->ticks_per_line=1;t->bpm=125;t->control_lane=-1;t->length_bypass=0;
+    for(int i=0;i<8;++i){t->lanes[i].length=0;t->lanes[i].mode=TS_TRACKER_STANDARD;}
+    unsigned alias=tracker_bind_sample(ui,instrument,instrument->selected_slot);assert(alias);
+    for(int row=0;row<8;++row)p->cells[row][0]=(TsTrackerCell){.tile_id=t->aliases[alias],.note_kind=TS_TRACKER_NOTE_PITCH,.note=60+row};
+    t->lanes[0].mode=TS_TRACKER_PATTERN;t->lanes[0].ratio=14;t->lanes[0].direction=TS_TRACKER_FORWARD;
+    tracker_play(0,a,ui,pages,instrument,48000);
+    for(int frame=0;frame<961;++frame)(void)ts_tracker_playback_read(&a->tracker,48000);
+    ts_tracker_playback_end_block(&a->tracker);tracker_refresh(0,a,ui,pages,instrument,48000);
+    assert(ui->tracker_lane_row[0]==2 && ui->tracker_lane_row[1]==1 && a->tracker.lanes[0].notes_started==3);
+    uint64_t count=a->tracker.lanes[0].notes_started;double position=a->tracker.lanes[0].voice.position;
+    t->control_lane=0;t->fasttracks_uses_length=1;t->length_bypass=1;
+    tracker_refresh(0,a,ui,pages,instrument,48000);
+    assert(a->tracker.prepared->control_lane==0 && a->tracker.prepared->fasttracks_uses_length && a->tracker.prepared->length_bypass);
+    assert(a->tracker.lanes[0].notes_started==count && a->tracker.lanes[0].voice.position==position);
+    ts_tracker_playback_stop(&a->tracker);*p=saved;memcpy(t->lanes,lanes,sizeof(lanes));
+    t->control_lane=control;t->fasttracks_uses_length=uses;t->length_bypass=bypass;t->ticks_per_line=tpl;t->bpm=bpm;
+    ui->tracker_expanded=expanded;SDL_SetModState(KMOD_NONE);ui->wheel_guard=(TsUiWheelGuard){0};
+    tracker_refresh(0,a,ui,pages,instrument,48000);
+}
 static void editor_controls(void)
 {
     TsSisterTracker *t=&pages->tracker;TsTrackerEdit *edit=ui->tracker_edit;
@@ -375,6 +429,7 @@ int main(int argc,char **argv)
     tapehead_columns_and_overlay();
     independent_marks_and_layout();
     block_capture_frames();
+    fasttracks_controls();
     if(argc>1) {
         TsSisterTracker *t=ui->tracker;t->editor_row=2;t->editor_lane=2;
         ts_tracker_edit_anchor(ui->tracker_edit,t);ts_tracker_edit_mark(ui->tracker_edit,t,5,3);
@@ -386,6 +441,25 @@ int main(int argc,char **argv)
         assert(s && !SDL_SaveBMP(s,argv[1]));
         if(argc>2){ui->tracker_edit->tools_open=1;ts_ui_render(fb,ui,instrument);assert(!SDL_SaveBMP(s,argv[2]));ui->tracker_edit->tools_open=0;}
         if(argc>3){ui->tracker_expanded=1;ts_ui_render(fb,ui,instrument);assert(!SDL_SaveBMP(s,argv[3]));ui->tracker_expanded=0;}
+        if(argc>4) {
+            TsTrackerPattern *p=ts_sister_tracker_pattern(t,t->editor_pattern);
+            unsigned alias=tracker_bind_sample(ui,instrument,instrument->selected_slot);assert(alias);
+            static const unsigned lengths[]={3,5,7,16,0,9,11,4},ratios[]={7,14,0,12,7,16,6,3};
+            memset(p->cells,0,sizeof(p->cells));p->rows=16;
+            for(int lane=0;lane<8;++lane) {
+                t->lanes[lane].length=lengths[lane];t->lanes[lane].ratio=ratios[lane];
+                t->lanes[lane].mode=lane==3 || lane==4?TS_TRACKER_STANDARD:TS_TRACKER_PATTERN;
+                t->lanes[lane].direction=lane==1?TS_TRACKER_REVERSE:lane==6?TS_TRACKER_PING_PONG:TS_TRACKER_FORWARD;
+                for(int row=0;row<16;row+=2)p->cells[row][lane]=(TsTrackerCell){.tile_id=row?0:t->aliases[alias],.note_kind=TS_TRACKER_NOTE_PITCH,.note=48+lane+row};
+            }
+            t->ticks_per_line=3;t->bpm=125;t->control_lane=2;t->fasttracks_uses_length=1;t->length_bypass=0;
+            t->editor_row=0;t->editor_lane=0;ts_tracker_edit_anchor(ui->tracker_edit,t);
+            tracker_play(0,a,ui,pages,instrument,48000);
+            for(int frame=0;frame<24001;++frame)(void)ts_tracker_playback_read(&a->tracker,48000);
+            ts_tracker_playback_end_block(&a->tracker);tracker_refresh(0,a,ui,pages,instrument,48000);
+            ui->tracker_hover_y=0;ui->tracker_field=0;
+            ts_ui_render(fb,ui,instrument);assert(!SDL_SaveBMP(s,argv[4]));
+        }
         SDL_FreeSurface(s);free(fb);
     }
     stop_all_force(0,a,ui);assert(!a->tracker.running && !ts_note_bank_count(&a->notes));

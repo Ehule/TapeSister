@@ -1,12 +1,12 @@
-# SisterTracker: stage 2 pattern playback
+# SisterTracker: pattern playback, LEN and FastTracks
 
 Press **F10** in the main Sample workspace to open SisterTracker. The first
 opening creates a blank 64-row pattern; it stays stopped until Play. F10, Back
 or Escape returns to Sample; tracker playback continues in the background.
 Return from FM, a Mosaic event edit or an open dialog before opening Tracker.
 
-This stage implements the eight-lane **Standard** pattern clock and Main audio
-path. Each lane has one independent sample voice. Notes use TapeSister's pitch
+Playback supports eight **Standard** or private **Pattern FastTracks** clocks,
+song-wide LEN/CONTROL and the Main audio path. Each lane has one independent sample voice. Notes use TapeSister's pitch
 convention: MIDI 60 is C4. They reuse the native note reader, tile tuning,
 interpolation and loop modes. Two lanes can play the same tile at different
 pitches and positions; their volume and lane trims add without lane-count
@@ -39,13 +39,16 @@ normalization. The Sample tile's audio, tuning and loop settings remain editable
 Each lane has Tapehead's separate two-row header: **LEN OFF** or **LEN1–256**
 on the top strip, and its saved **FT ratio** on the second strip. The ratio
 bank follows Tapehead's 17 entries, from 1:2 through neutral 1:1 to 5:1.
-The suffix is `-` for Standard, `P` for Pattern, or `S` for Song; the eject symbol
-in the LEN strip identifies a saved CONTROL lane. Compact M/S switches and trim sit underneath. Default TRACK 1–8 names are
+The suffix is `-` for Standard, `P` for Pattern, or `S` for a saved Song assignment;
+Song assignments still play Standard until order playback is implemented. Click
+FT or the mode letter to toggle Standard/Pattern. The final letter is direction:
+`F` forward, `R` reverse, `B` ping-pong. The eject symbol selects CONTROL.
+Compact M/S switches, the current source row in hex, and trim sit underneath. Default TRACK 1–8 names are
 omitted; a name strip appears only when at least one lane has a custom name.
-The LEN and FT strips are read-only saved-setup displays in this stage. The footer explicitly
-marks LEN/FT readouts inactive: playback still uses one Standard clock and the
-physical pattern row count. Private LEN/Fast Tracks clocks remain the next
-playback stage. Clicking a header selects its lane and explains this limitation.
+Each lane has its own playback underline. The shared outline and FOLLOW use
+CONTROL's heard row when assigned. Editing and block selection remain independent
+of these heads. A logical row beyond the physical pattern is blank: its header
+row remains visible, while its underline is outside the editable grid.
 
 The pattern view reuses Tapehead's original normal, tiny and pattern pixel fonts,
 recessed black lane panels, hex row numbers on both sides, current-row band,
@@ -57,7 +60,52 @@ overlay while Tracker is visible. They continue to render in the Sample workspac
 All five stored groups are visible: NOTE, TILE, VOL, M/N and FX. Tuning and FX
 have separate command and two-digit parameter cursor positions. These definitions
 save, copy, paste and undo, but their commands do not yet execute in audio. The
-footer labels command audio inactive alongside LEN and Fast Tracks.
+footer labels command audio inactive.
+
+### LEN, CONTROL and private clocks
+
+| Control | Action |
+| --- | --- |
+| LEN click left/right or wheel | Increase/decrease 0–256; Shift steps by 8; Ctrl sets OFF |
+| Eject symbol | Assign/unassign the one CONTROL lane |
+| FT or mode letter | Toggle Standard/Pattern; preserves the stored ratio/direction |
+| Ratio click / wheel | Next ratio / either direction through all 17 ratios |
+| Right-click FT strip or click direction | Cycle forward, reverse, ping-pong |
+| Ctrl+Shift+1–8 | Toggle the corresponding Pattern FastTrack |
+| Alt+Shift+1–8 | Cycle the corresponding ratio |
+| Left-margin LEN/OFF | Bypass/restore all LEN and CONTROL without erasing settings |
+| Left-margin FTL/PAT | Private tracks use lane LEN / physical pattern rows |
+
+Standard lanes advance once per master row. Explicit LEN loops that lane over
+its own domain. Without CONTROL, the longest explicit LEN sets the shared cycle;
+if all LENs are OFF, physical pattern length sets it. CONTROL selects that lane's
+LEN instead; CONTROL with LEN OFF selects physical pattern length. Thus a shared
+cycle can be shorter or longer than the pattern container. Extension rows are
+blank and never play retained hidden data or stop a sustaining sample by themselves.
+
+Pattern FastTracks use Tapehead's rational accumulator on every shared audio
+tick, including 1:1. Ratios mean source rows per master row. All crossed events
+execute in order, even when 5:1 at TPL 1 crosses five rows in one tick. Private
+heads keep their position and phase across shared loops. Reverse starts at row
+zero and moves backward with wrap. Native ping-pong visits both endpoints once
+per turn; LEN 1 remains a repeating one-row clock.
+
+A private CONTROL finishes a cycle after its row domain's number of crossings
+(a full out-and-back traversal for ping-pong), and requests the next audio tick
+as the shared boundary, matching Tapehead's replayer boundary handoff. A slow
+CONTROL can keep the master running across physical wraps. LEN-OFF Standard
+lanes follow those physical wraps unless the shared domain extends beyond the
+container, in which case the extension remains blank. Muting/soloing CONTROL
+does not change its timing authority. LOOP off stops at the shared boundary.
+
+Live ratio and TPL edits preserve normalized fractional row phase with Tapehead's
+integer rounding. Direction edits preserve position and phase. Enabling a
+Pattern clock aligns it with the current master phase; disabling returns to
+Standard on the next master row. LEN changes apply at the next row/crossing and
+reset cycle counters without replaying the current cell. Tempo/rate changes
+preserve remaining tick time. Pause freezes all clocks and sample heads.
+Ctrl+L always auditions literal block rows and ignores LEN, CONTROL, ratios and
+directions. These controls remain editable during a block, for the next normal Play.
 
 | Control | Action |
 | --- | --- |
@@ -81,7 +129,7 @@ footer labels command audio inactive alongside LEN and Fast Tracks.
 | Page Up / Page Down / Home / End | Navigate rows; manual navigation suspends FOLLOW |
 | Pattern arrows / NEW / CLONE PAT in EDIT | Select / create / duplicate a pattern; selection alone does not switch the heard pattern |
 | BPM / TPL / ROWS | Hold left mouse button to increase, right to decrease; Shift changes ROWS by 16 |
-| LOOP | Wrap this pattern or stop after its final row duration |
+| LOOP | Wrap or stop at the shared LEN/CONTROL boundary |
 | M / S / lane trim | Mute / temporary solo / independent trim from 0 to 2; clocks and heads continue |
 | FOLLOW | Re-enable keeping the heard row visible when it belongs to the selected editor pattern |
 | EDIT | Visible editing tools and clipboard field masks |
@@ -251,10 +299,19 @@ freeing, file I/O or mutable editor access was added to the callback.
 ## Scope and checks
 
 This is pattern playback, not Song/order playback yet. The grid edits NOTE,
-TILE, VOL, M/N and FX definitions. LEN/CONTROL, private Fast Tracks, ratios/directions, overlap,
-M/N and FX execution, direct output lanes, MIDI recording and cross-project
-clipboard remapping remain later stages. Their existing saved definitions are preserved;
-this runtime uses Standard forward timing, one voice per lane and Main routing.
+TILE, VOL, M/N and FX definitions. Song transport, overlap, M/N and FX execution
+(including Z commands), direct output lanes, MIDI recording and cross-project
+clipboard remapping remain later stages. FastTracks master suspend, sync,
+clutches and randomization are not provided by this batch. Saved Song definitions
+are preserved and clearly identified; this runtime treats them as Standard.
+There is one sample voice per lane with Main routing.
+
+Clock regressions cover every ratio at TPL 1/2/6/31 and integer/fractional sample
+timing; Standard/1:1 alignment through many shared loops; multiple crossings,
+reverse/ping-pong, LEN 1/256, short/long domains, hidden-data exclusion, CONTROL,
+bypass/use-LEN options, live changes and pause/rate preservation. SDL tests drive
+actual header clicks, wheel modifiers, shortcuts, overlay ownership, both views,
+live publication and per-lane display rows.
 
 The core test traces exact onsets at integer and fractional tick durations,
 pause/rate changes, loop/end behavior, inheritance, OFF/CUT, two lanes sharing

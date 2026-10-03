@@ -519,6 +519,7 @@ typedef struct {
     int tracker_expanded,tracker_hover_x,tracker_hover_y;
     unsigned tracker_block,tracker_block_rows,tracker_block_lanes;
     unsigned tracker_running, tracker_row, tracker_heard_pattern, tracker_missing;
+    unsigned tracker_lane_row[TS_TRACKER_LANES];
     uint8_t tracker_solo;
     TsMosaic *mosaic;
     uint64_t mosaic_selected, mosaic_editing;

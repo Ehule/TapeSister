@@ -3,7 +3,9 @@
 SisterTracker is the native eight-lane tracker planned for TapeSister. This first
 implementation provides the song model, stable tile references, and project
 persistence. [Stage 2](SISTERTRACKER_PLAYBACK.md) now adds the pattern editor,
-Standard transport and first audible path on these definitions.
+Standard transport and first audible path on these definitions. LEN/CONTROL
+and Pattern FastTracks now execute as described in SISTERTRACKER_PLAYBACK.md;
+Song/order transport and M/N/FX execution remain pending.
 
 ## Model
 

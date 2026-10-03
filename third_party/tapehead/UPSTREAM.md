@@ -19,3 +19,12 @@ marking, Alt+C, Ctrl+L, pending loop-seam bounds and F7/F8 interactions follow
 ft2_keyboard.c/ft2_replayer.c and the Tapehead manual. Native stable IDs,
 immutable sample generations and the live final-output WAV recorder remain
 TapeSister implementations. See docs/SISTERTRACKER_PARITY.md for differences.
+
+LEN/CONTROL domain resolution and Pattern FastTracks rational clock arithmetic
+adapt ft2_fasttracks_core.c, ft2_fasttracks.c and ft2_replayer.c from f053d96
+under CODE-LICENSE.txt. The 17 ratios, normalized phase changes, traversal,
+multi-crossing execution and deferred private-CONTROL boundary follow that
+reference. Native ping-pong and a starting-row event are explicit adaptations;
+Song/order transport, clutches and Z commands are not included. The user-supplied
+feature-tapehead-app-icon archive has identical FastTracks/core sources; its
+older replayer lacks the newer block-loop implementation retained here.

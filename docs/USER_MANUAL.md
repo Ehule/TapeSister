@@ -22,6 +22,11 @@ Stop releases tracker voices only. Marks remain independent of the edit cursor.
 Ctrl+L loops a marked rectangle; Shift+arrows resizes at its next seam. F7/F8
 capture a running block, and F8 outside looping extracts a new pattern with
 undo/redo. Ctrl+Alt+Backspace expands the pattern view.
+LEN and Pattern FastTracks are active: adjust LEN with the header wheel, click
+FT to enable a private lane clock, and change its ratio or direction. CONTROL
+sets the shared cycle boundary. Each lane shows its actual source row; ratio
+changes preserve phase, and pause freezes all clocks. Ctrl+L bypasses these
+settings for literal block audition. Song/order and tuning/FX execution remain pending.
 See the [SisterTracker playback guide](SISTERTRACKER_PLAYBACK.md)
 for entry, routing, recording and the features scheduled for later stages.
 

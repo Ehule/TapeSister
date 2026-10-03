@@ -43,6 +43,13 @@ Ctrl+Alt+Backspace expands/restores the pattern view. Ctrl+E opens EDIT in eithe
 view. F7/F8 take priority over octave selection in those contexts; OCT remains
 available in the ordinary view.
 Hold left/right mouse on BPM, TPL or ROWS to increase/decrease continuously.
+LEN click/wheel adjusts 0–256 (Shift: 8; Ctrl: OFF). The eject symbol assigns
+CONTROL. Click FT or its mode letter for Standard/Pattern; click/wheel the ratio;
+right-click the FT strip for forward/reverse/ping-pong. Ctrl+Shift+1–8 toggles
+Pattern clocks; Alt+Shift+1–8 cycles ratios. Left-margin LEN/OFF bypasses all
+LEN/CONTROL; FTL/PAT chooses lane lengths or physical rows for private clocks.
+Header hex numbers and lane underlines show actual source rows. Ctrl+L remains
+literal block audition. Song and tuning/FX command playback remain pending.
 See the [full editing reference](SISTERTRACKER_PLAYBACK.md#editing-and-mixing).
 
 ## Mosaic

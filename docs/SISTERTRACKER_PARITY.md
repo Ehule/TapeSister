@@ -40,7 +40,9 @@ recording, FX and transport ownership.
 | Ctrl+Alt+Backspace expanded pattern | Implemented this batch | Shared geometry; 19/29 rows without names; Ctrl+E opens tools in both modes |
 | Compact M/S, contextual field help | Implemented this batch | Default names and repeated field-label strips removed; custom names retained |
 | Pattern clock and Main output | Implemented | Native sample readers, Sister TRACK, final-output recording |
-| LEN/FastTracks private clocks, ratios/directions | Definitions only | Audio scheduling is a separate next stage; CONTROL semantics also pending |
+| LEN/CONTROL and Pattern FastTracks | Implemented | Shared tick, 17 rational ratios, phase-preserving live changes, forward/reverse, per-lane heads; native ping-pong extension |
+| LEN bypass / FastTracks uses LEN | Implemented | Saved switches, logical blank extension, physical rows never expose hidden data |
+| FastTracks master/clutches/sync/randomize | Outstanding | Not part of the saved lane-clock activation batch; Z execution also pending |
 | M/N tuning and FX command execution | Definitions only | Native semantics differ from Tapehead microtuning/drift; requires explicit DSP design |
 | Song/order playback | Outstanding | Order definitions save; no order transport yet |
 | MIDI note recording / direct lane outputs / overlap | Outstanding | Preserve current native input/routing ownership until implemented |
@@ -48,11 +50,20 @@ recording, FX and transport ownership.
 
 The next coherent editing batch is current-tile transpose plus non-destructive
 interpolation previews and Melodic Walk, with explicit shortcut conflict
-resolution. The next audio batch is LEN/FastTracks scheduling, followed by
-command execution and Song/order playback. None is represented as complete by
-the existing saved headers or cell definitions.
+resolution. The next audio batches are command execution and Song/order
+playback. Saved Song assignments are displayed as pending and currently use
+Standard playback. Native Pattern FastTracks execute row zero once on Play;
+the rest of the accumulator and CONTROL handoff follow Tapehead. Ping-pong
+is a native extension with no repeated endpoints.
 
 ## Verification
+
+The lane-clock suite checks all 17 ratios at TPL 1/2/6/31 with integer and
+fractional tick lengths, 1:1 alignment across shared loops, every crossing at
+5:1, reverse/ping-pong, LEN 1/256, blank extensions, natural/CONTROL boundaries,
+live phase changes, pause/rate changes and literal block isolation. Controller
+tests check real header/keyboard/wheel input, both layouts, overlay ownership,
+immutable publication and per-lane heard positions.
 
 Core tests exercise exact integer/fractional onsets and 100 loop seams, pause,
 pending lane/row changes, partial-pattern inheritance, hidden rows, edits during

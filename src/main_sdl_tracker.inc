@@ -18,6 +18,8 @@ static void tracker_refresh(SDL_AudioDeviceID device,AudioState *audio,TsUiState
     ui->tracker_block=atomic_load_explicit(&rt->display_block,memory_order_acquire);
     ui->tracker_block_rows=atomic_load_explicit(&rt->display_block_rows,memory_order_relaxed);
     ui->tracker_block_lanes=atomic_load_explicit(&rt->display_block_lanes,memory_order_relaxed);
+    for(int lane=0;lane<TS_TRACKER_LANES;++lane)
+        ui->tracker_lane_row[lane]=atomic_load_explicit(&rt->display_lane_row[lane],memory_order_relaxed);
     TsTrackerLayout g=ts_tracker_layout(&pages->tracker,ui->tracker_expanded);
     if(!ui->tracker_open && !ui->tracker_running && !rt->prepared) {ts_tracker_playback_collect(rt);return;}
     TsPatternId id=ui->tracker_running?ui->tracker_heard_pattern:pages->tracker.editor_pattern;
@@ -56,7 +58,7 @@ static void tracker_play(SDL_AudioDeviceID device,AudioState *audio,TsUiState *u
     ts_tracker_playback_start(&audio->tracker);
     if(device)SDL_UnlockAudioDevice(device);
     ts_tracker_prepared_free(old);ts_tracker_playback_collect(&audio->tracker);
-    snprintf(ui->status,sizeof(ui->status),"PLAYING PATTERN %u - STANDARD CLOCK",pages->tracker.editor_pattern);
+    snprintf(ui->status,sizeof(ui->status),"PLAYING PATTERN %u - LEN / PATTERN FASTTRACKS ACTIVE",pages->tracker.editor_pattern);
 }
 /* Mark updates pass a value under callback exclusion, never editor storage. */
 static void tracker_queue_selection(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui)
@@ -272,6 +274,25 @@ static int tracker_control_at(int x,int y,int expanded)
     if(expanded || y<34 || y>=50)return 0;
     return x>=212 && x<290?1:x>=294 && x<350?2:x>=354 && x<426?3:0;
 }
+static void tracker_lane_length(TsUiState *ui,int lane,int delta,SDL_Keymod mod)
+{
+    TsTrackerLane *l=&ui->tracker->lanes[lane];
+    l->length=mod&KMOD_CTRL?0:SDL_clamp((int)l->length+delta*((mod&KMOD_SHIFT)?8:1),0,TS_TRACKER_ROWS);
+    snprintf(ui->status,sizeof(ui->status),"LANE %d LEN %u - 0 IS OFF / SHIFT STEPS 8 / CTRL OFF",lane+1,l->length);
+}
+static void tracker_lane_mode(TsUiState *ui,int lane)
+{
+    TsTrackerLane *l=&ui->tracker->lanes[lane];
+    l->mode=l->mode==TS_TRACKER_PATTERN?TS_TRACKER_STANDARD:TS_TRACKER_PATTERN;
+    snprintf(ui->status,sizeof(ui->status),"LANE %d %s CLOCK",lane+1,l->mode==TS_TRACKER_PATTERN?"PRIVATE PATTERN":"STANDARD");
+}
+static void tracker_lane_ratio(TsUiState *ui,int lane,int delta)
+{
+    TsTrackerLane *l=&ui->tracker->lanes[lane];
+    l->ratio=(uint8_t)(((int)l->ratio+delta%TS_TRACKER_RATIOS+TS_TRACKER_RATIOS)%TS_TRACKER_RATIOS);
+    snprintf(ui->status,sizeof(ui->status),"LANE %d RATIO CHANGED - %s",lane+1,
+        l->mode==TS_TRACKER_PATTERN?"POSITION AND PHASE PRESERVED":"CLICK FT TO ENABLE PATTERN CLOCK");
+}
 static void tracker_fx(SDL_Window *window)
 {
     SDL_Event e;SDL_zero(e);e.type=SDL_KEYDOWN;e.key.windowID=SDL_GetWindowID(window);
@@ -315,6 +336,14 @@ static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevi
     if(key) {
         SDL_Keycode sym=event->key.keysym.sym;tracker_repeat_end(ui);edit->dragging=0;
         ui->tracker_cursor_epoch=SDL_GetTicks();
+        if(sym>=SDLK_1 && sym<=SDLK_8 && (mod&KMOD_SHIFT) && !(mod&KMOD_GUI) &&
+           (!!(mod&KMOD_CTRL)!=!!(mod&KMOD_ALT))) {
+            if(!event->key.repeat && !edit->tools_open) {
+                if(mod&KMOD_CTRL)tracker_lane_mode(ui,(int)(sym-SDLK_1));
+                else tracker_lane_ratio(ui,(int)(sym-SDLK_1),1);
+            }
+            return 1;
+        }
         if(sym==SDLK_BACKSPACE && (mod&(KMOD_CTRL|KMOD_ALT))==(KMOD_CTRL|KMOD_ALT)) {
             if(!event->key.repeat){ui->master_output_dragging=0;ui->tracker_expanded=!ui->tracker_expanded;tracker_visible(ui);}
             return 1;
@@ -445,12 +474,18 @@ static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevi
     if(event->type==SDL_MOUSEWHEEL) {
         tracker_repeat_end(ui);int rawx,rawy,x,y;wheel_event_mouse(event,&rawx,&rawy);logical_mouse(window,rawx,rawy,&x,&y);
         int control=tracker_control_at(x,y,ui->tracker_expanded),detents=wheel_event_detents(event,0);
+        int header_lane=x>=TS_TRACKER_LANE_X && x<TS_TRACKER_LANE_RIGHT?(x-TS_TRACKER_LANE_X)/TS_TRACKER_LANE_WIDTH:-1;
+        int header_local=header_lane>=0?(x-TS_TRACKER_LANE_X)%TS_TRACKER_LANE_WIDTH:-1;
+        int length=header_lane>=0 && header_local>=10 && header_local<TS_TRACKER_LANE_WIDTH-12 && y>=g.len_y-1 && y<g.ratio_y-1;
+        int ratio=header_lane>=0 && y>=g.ratio_y-1 && y<g.ratio_y+9;
         int lane=y>=g.mix_y && y<g.mix_y+10 && x>=TS_TRACKER_LANE_X && x<TS_TRACKER_LANE_RIGHT && (x-TS_TRACKER_LANE_X)%TS_TRACKER_LANE_WIDTH>=49?(x-TS_TRACKER_LANE_X)/TS_TRACKER_LANE_WIDTH:-1;
         int grid=y>=g.grid_y && y<g.bottom && x>=6 && x<630;
         int output=!g.expanded && ts_ui_master_output_contains(x,y);
-        int target=control?0x700+control:lane>=0?0x710+lane:grid?0x720:output?0x730:-1;
+        int target=length?0x740+header_lane:ratio?0x750+header_lane:control?0x700+control:lane>=0?0x710+lane:grid?0x720:output?0x730:-1;
         if(target<0 || edit->tools_open || !ts_ui_wheel_guard_accept(&ui->wheel_guard,target,SDL_GetTicks()))return 1;
-        if(output)set_master_output_gain(device,audio,ui,NULL,ui->master_output.gain+
+        if(length && detents)tracker_lane_length(ui,header_lane,detents,mod);
+        else if(ratio && detents)tracker_lane_ratio(ui,header_lane,detents);
+        else if(output)set_master_output_gain(device,audio,ui,NULL,ui->master_output.gain+
             ((mod&KMOD_SHIFT)?.01f:.05f)*(float)wheel_event_delta(event,0));
         else if(control && detents) {
             if(control!=3 || tracker_begin(ui,p)) {
@@ -515,9 +550,31 @@ static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevi
             int col=(x-28)/98;if((x-28)%98<94)edit->mask^=1u<<col;
         }return 1;
     }
-    if(y>=g.len_y-1 && y<g.ratio_y+10 && x>=TS_TRACKER_LANE_X && x<TS_TRACKER_LANE_RIGHT) {
-        t->editor_lane=(x-TS_TRACKER_LANE_X)/TS_TRACKER_LANE_WIDTH;
-        snprintf(ui->status,sizeof(ui->status),"LEN/FT SHOW SAVED SETUP; LENGTH AND RATIO PLAYBACK IS NOT ENABLED YET");
+    if(x>=4 && x<TS_TRACKER_LANE_X-2 && y>=g.len_y-1 && y<g.ratio_y+9) {
+        if(y<g.ratio_y-1) {
+            t->length_bypass=!t->length_bypass;
+            snprintf(ui->status,sizeof(ui->status),"LEN / CONTROL %s",t->length_bypass?"BYPASSED":"ACTIVE");
+        } else {
+            t->fasttracks_uses_length=!t->fasttracks_uses_length;
+            snprintf(ui->status,sizeof(ui->status),"FASTTRACKS USE %s",t->fasttracks_uses_length?"LANE LEN":"PHYSICAL PATTERN ROWS");
+        }
+        return 1;
+    }
+    if(y>=g.len_y-1 && y<g.ratio_y+9 && x>=TS_TRACKER_LANE_X && x<TS_TRACKER_LANE_RIGHT) {
+        int lane=(x-TS_TRACKER_LANE_X)/TS_TRACKER_LANE_WIDTH,local=(x-TS_TRACKER_LANE_X)%TS_TRACKER_LANE_WIDTH;
+        TsTrackerLane *l=&t->lanes[lane];
+        if(y<g.ratio_y-1) {
+            if(local>=TS_TRACKER_LANE_WIDTH-12) {
+                t->control_lane=t->control_lane==lane?-1:lane;
+                snprintf(ui->status,sizeof(ui->status),"CONTROL %s - DEFINES THE SHARED CYCLE",t->control_lane<0?"OFF":"ASSIGNED");
+            } else if(local>=10)tracker_lane_length(ui,lane,delta,mod);
+            else t->editor_lane=lane;
+        } else if(right || local>=60) {
+            l->direction=(l->direction+1)%3;
+            snprintf(ui->status,sizeof(ui->status),"LANE %d %s - PATTERN FASTTRACKS DIRECTION",lane+1,
+                (const char*[]){"FORWARD","REVERSE","PING PONG"}[l->direction]);
+        } else if(local<14 || local>=46)tracker_lane_mode(ui,lane);
+        else tracker_lane_ratio(ui,lane,1);
         return 1;
     }
     if(!g.expanded && y>=34 && y<50) {

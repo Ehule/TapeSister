@@ -106,10 +106,11 @@ static void tracker_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrum
     snprintf(line,sizeof(line),"HEARD %03u %03u",ui->tracker_heard_pattern,ui->tracker_row);
     text(fb,494,39,line,ui->tracker_running?PAL_NOTE:PAL_TEXT,1);
     }
+    tracker_tiny(fb,5,g.len_y,t->length_bypass?"OFF":"LEN",t->length_bypass?PAL_TEXT:PAL_NOTE);
+    tracker_tiny(fb,5,g.ratio_y,t->fasttracks_uses_length?"FTL":"PAT",PAL_TEXT);
     for(int lane=0;lane<TS_TRACKER_LANES;++lane) {
         int x=TS_TRACKER_LANE_X+lane*TS_TRACKER_LANE_WIDTH;
-        /* Tapehead's separate LEN and Fast Tracks strips. These show saved
-           definitions; this stage's playback still uses the Standard clock. */
+        /* Tapehead's separate LEN and Fast Tracks strips, with live heads. */
         static const char *ratios[TS_TRACKER_RATIOS]={"1:2","2:3","3:4","4:5","5:6","7:8","15:16",
             "1:1","17:16","8:7","6:5","5:4","4:3","3:2","2:1","3:1","5:1"};
         const TsTrackerLane *definition=&t->lanes[lane];
@@ -119,17 +120,26 @@ static void tracker_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrum
         snprintf(line,sizeof(line),"%d",lane+1);tracker_tiny(fb,x+2,g.len_y,line,PAL_MOUSE);
         if(definition->length)snprintf(line,sizeof(line),"LEN%u",definition->length);
         else snprintf(line,sizeof(line),"LEN OFF");
-        tracker_tiny(fb,x+10,g.len_y,line,header_color);
+        tracker_tiny(fb,x+10,g.len_y,line,t->length_bypass?PAL_TEXT:header_color);
         tracker_eject(fb,x+TS_TRACKER_LANE_WIDTH-11,g.len_y,
             t->control_lane==lane?PAL_BLOCK_TEXT:header_color);
-        snprintf(line,sizeof(line),"FT %s %c",ratios[definition->ratio<TS_TRACKER_RATIOS?definition->ratio:7],
-            definition->mode==TS_TRACKER_PATTERN?'P':definition->mode==TS_TRACKER_SONG?'S':'-');
-        tracker_tiny(fb,x+2,g.ratio_y,line,header_color);
+        tracker_tiny(fb,x+2,g.ratio_y,"FT",definition->mode==TS_TRACKER_PATTERN?PAL_NOTE:PAL_TEXT);
+        tracker_tiny(fb,x+14,g.ratio_y,ratios[definition->ratio<TS_TRACKER_RATIOS?definition->ratio:7],header_color);
+        snprintf(line,sizeof(line),"%c",definition->mode==TS_TRACKER_PATTERN?'P':definition->mode==TS_TRACKER_SONG?'S':'-');
+        tracker_tiny(fb,x+48,g.ratio_y,line,definition->mode==TS_TRACKER_SONG?PAL_VOLUME:header_color);
+        tracker_tiny(fb,x+63,g.ratio_y,(const char*[]){"F","R","B"}[definition->direction<=TS_TRACKER_PING_PONG?definition->direction:0],header_color);
         if(g.name_y>=0 && ts_tracker_custom_name(definition,lane)) {
             snprintf(line,sizeof(line),"%.16s",definition->name);tracker_tiny(fb,x+2,g.name_y,line,PAL_MOUSE);
         }
         tracker_switch(fb,x+2,g.mix_y,"M",definition->muted);
         tracker_switch(fb,x+14,g.mix_y,"S",ui->tracker_solo&(1u<<lane));
+        if(ui->tracker_running && ui->tracker_heard_pattern==(p?p->id:0) &&
+           (!ui->tracker_block || (lane>=(int)(ui->tracker_block_lanes&255) && lane<=(int)(ui->tracker_block_lanes>>8)))) {
+            unsigned head=ui->tracker_lane_row[lane];
+            if(head<TS_TRACKER_ROWS)snprintf(line,sizeof(line),"%02X",head);
+            else snprintf(line,sizeof(line),"--");
+            tracker_tiny(fb,x+31,g.mix_y+1,line,head<(p?p->rows:0)?PAL_NOTE:PAL_TEXT);
+        }
         snprintf(line,sizeof(line),"%.1f",definition->trim);tracker_tiny(fb,x+49,g.mix_y+1,line,PAL_VOLUME);
     }
     TsTrackerRegion selection=ts_tracker_edit_region(ui->tracker_edit,t);
@@ -155,7 +165,9 @@ static void tracker_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrum
             if(ui->tracker_block && ui->tracker_heard_pattern==p->id &&
                row>=(int)(ui->tracker_block_rows&255) && row<=(int)(ui->tracker_block_rows>>8) &&
                lane>=(int)(ui->tracker_block_lanes&255) && lane<=(int)(ui->tracker_block_lanes>>8))rect(fb,x,y,1,12,PAL_VOLUME);
-            if(heard)rect(fb,x+1,y+11,TS_TRACKER_LANE_WIDTH-3,1,PAL_NOTE);
+            int lane_heard=ui->tracker_running && ui->tracker_heard_pattern==p->id && ui->tracker_lane_row[lane]==(unsigned)row &&
+                (!ui->tracker_block || (lane>=(int)(ui->tracker_block_lanes&255) && lane<=(int)(ui->tracker_block_lanes>>8)));
+            if(lane_heard)rect(fb,x+1,y+10,TS_TRACKER_LANE_WIDTH-3,2,PAL_NOTE);
             if(row==t->editor_row && lane==t->editor_lane) {
                 int start=x+ts_tracker_field_offset(ui->tracker_field),width=ts_tracker_field_width(ui->tracker_field);
                 uint32_t focus=ui->tracker_hex_digit?RGB(255,224,32):RGB(40,224,255);
@@ -194,13 +206,21 @@ static void tracker_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrum
     const TsTrackerCell *c=p?&p->cells[t->editor_row][t->editor_lane]:NULL;
     snprintf(line,sizeof(line),"ROW %03u LANE %u  %s  TILE %02X  %s",t->editor_row,t->editor_lane+1,
         (const char*[]){"NOTE","TILE","VOLUME","TUNE COMMAND","TUNE VALUE","FX COMMAND","FX VALUE"}[ui->tracker_field],c?tracker_alias(t,c->tile_id):0,
-        ui->tracker_missing?"MISSING TILE IN PLAYBACK":"STANDARD; LEN / FT / COMMAND AUDIO INACTIVE");
+        ui->tracker_missing?"MISSING TILE IN PLAYBACK":t->lanes[t->editor_lane].mode==TS_TRACKER_SONG?
+            "SONG SAVED ONLY: PLAYS STANDARD":"LEN / PATTERN FT ACTIVE; TUNE / FX STORED ONLY");
     if(ui->tracker_hover_x>=TS_TRACKER_LANE_X && ui->tracker_hover_x<TS_TRACKER_LANE_RIGHT &&
        ui->tracker_hover_y>=g.len_y && ui->tracker_hover_y<g.grid_y) {
         int lane=(ui->tracker_hover_x-TS_TRACKER_LANE_X)/TS_TRACKER_LANE_WIDTH;
         if(ui->tracker_hover_y>=g.mix_y && ui->tracker_hover_y<g.mix_y+10)
             snprintf(line,sizeof(line),"LANE %d %.31s - M MUTE / S SOLO / RIGHT NUMBER: TRIM 0-2 - CLICK OR WHEEL",lane+1,t->lanes[lane].name);
-        else snprintf(line,sizeof(line),"LANE %d %.31s - LEN / FASTTRACKS SHOW SAVED SETUP; AUDIO USES STANDARD CLOCK",lane+1,t->lanes[lane].name);
+        else if(ui->tracker_hover_y<g.ratio_y-1)
+            snprintf(line,sizeof(line),"LEN: CLICK +/- OR WHEEL / SHIFT 8 / CTRL OFF / EJECT SYMBOL SETS CONTROL");
+        else snprintf(line,sizeof(line),"FT OR P: ENABLE / RATIO: CLICK OR WHEEL / RIGHT CLICK: F FORWARD R REVERSE B BOUNCE");
+    } else if(ui->tracker_hover_x>=4 && ui->tracker_hover_x<TS_TRACKER_LANE_X-2 &&
+              ui->tracker_hover_y>=g.len_y-1 && ui->tracker_hover_y<g.ratio_y+9) {
+        snprintf(line,sizeof(line),ui->tracker_hover_y<g.ratio_y-1?
+            "LEN: BYPASS / RESTORE ALL LEN AND CONTROL - SAVED LENGTHS RETAINED":
+            "FTL: FASTTRACKS USE LANE LENGTHS / PAT: FASTTRACKS USE PHYSICAL PATTERN ROWS");
     } else if(ui->tracker_hover_y>=g.grid_y && ui->tracker_hover_y<g.bottom &&
               ui->tracker_hover_x>=TS_TRACKER_LANE_X && ui->tracker_hover_x<TS_TRACKER_LANE_RIGHT) {
         static const char *help[]={"NOTE: QWERTY ENTRY / OFF OR CUT", "TILE: TWO HEX DIGITS / 00 INHERITS", "VOLUME: 00-40 HEX / EMPTY INHERITS",
