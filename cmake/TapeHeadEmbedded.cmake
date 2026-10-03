@@ -19,6 +19,8 @@ if(UNIX AND NOT APPLE)
   target_link_libraries(tapesister_tapehead PRIVATE rt dl)
 endif()
 if(WIN32)
+  # TapeHead uses the CRT math constants even when the host requests strict C11.
+  target_compile_definitions(tapesister_tapehead PRIVATE _USE_MATH_DEFINES)
   target_link_libraries(tapesister_tapehead PRIVATE shlwapi shell32)
 endif()
 
