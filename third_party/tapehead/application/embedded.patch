@@ -1,0 +1,641 @@
+--- a/src/ft2_audio.c
++++ b/src/ft2_audio.c
+@@ -503,6 +503,19 @@
+ 	}
+ 
+ 	v->mixFuncOffset = ((int32_t)sample16Bit * 15) + (audio.interpolationType * 3) + loopType;
++#ifdef TAPEHEAD_EMBEDDED
++	v->tileData = s->tileData;
++	v->tileChannels = s->tileChannels;
++	v->tilePosition = v->position;
++	v->tileDirection = 1;
++	v->tileIntro = 0;
++	v->tileFrames = s->length;
++	v->tileLoopMode = s->tileLoopMode;
++	v->tileCrossfade = s->tileCrossfade;
++	v->tileRateCorrection = s->tileRateCorrection;
++	if (s->tileData && loopType != LOOP_DISABLED && position == 0)
++		v->tilePosition = ts_tapehead_tile_begin(v);
++#endif
+ 	v->active = true;
+ }
+ 
+@@ -594,6 +607,11 @@
+ 	v->position = 0;
+ 	v->positionFrac = 0;
+ 	v->samplingBackwards = reverse;
++#ifdef TAPEHEAD_EMBEDDED
++	v->tilePosition = reverse ? s->length-1 : 0;
++	v->tileDirection = reverse ? -1 : 1;
++	v->tileIntro = 0;
++#endif
+ 	v->loopType = reverse ? LOOP_PINGPONG : LOOP_DISABLED;
+ 	if (sample16Bit)
+ 		v->revBase16 = &v->base16[s->length];
+@@ -759,6 +777,9 @@
+ {
+ 	if (v->active)
+ 	{
++#ifdef TAPEHEAD_EMBEDDED
++		if (v->tileData) { ts_tapehead_mix_tile(v, bufferPosition, samplesToMix); goto fade_voice; }
++#endif
+ 		const bool volRampFlag = (v->volumeRampLength > 0);
+ 		const bool silent = audio.monoOutputMode
+ 			? v->fCurrVolumeMono == 0.0f
+@@ -770,6 +791,12 @@
+ 				v, bufferPosition, samplesToMix);
+ 	}
+ 
++
++#ifdef TAPEHEAD_EMBEDDED
++fade_voice:
++	if (r->active && r->tileData) ts_tapehead_mix_tile(r, bufferPosition, samplesToMix);
++	else
++#endif
+ 	if (r->active) // volume ramp fadeout-voice
+ 		mixFuncTab[mixOffsetBias + r->mixFuncOffset](r, bufferPosition, samplesToMix);
+ }
+@@ -1465,6 +1492,11 @@
+ 
+ void lockAudio(void)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	ts_tapehead_host_lock();
++	audio.locked = true;
++	return;
++#endif
+ 	if (tapeheadLiveLinkIsOpen())
+ 		tapeheadLiveLinkLock();
+ 	else if (tapeheadJackIsOpen())
+@@ -1477,6 +1509,11 @@
+ 
+ void unlockAudio(void)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	audio.locked = false;
++	ts_tapehead_host_unlock();
++	return;
++#endif
+ 	if (tapeheadLiveLinkIsOpen())
+ 		tapeheadLiveLinkUnlock();
+ 	else if (tapeheadJackIsOpen())
+@@ -1682,6 +1719,10 @@
+ 		const bool blockSeam = audio.tickSampleCounter == 0 &&
+ 			tapeheadBlockLoopIsActive() && !tapeheadBlockLoopIsOffline() &&
+ 			tapeheadBlockLoopCycleCompleted();
++#ifdef TAPEHEAD_EMBEDDED
++		ts_tapehead_audio_span(bufferPosition,samplesToMix,0);
++		if(blockSeam)ts_tapehead_audio_span(bufferPosition+samplesToMix,0,1);
++#endif
+ 		const float captureNormalizeMultiplier =
+ 			(config.specialFlags & BITDEPTH_16)
+ 			? fAudioNormalizeMul / 32768.0f : fAudioNormalizeMul;
+@@ -2075,6 +2116,10 @@
+ 
+ bool setupAudio(bool showErrorMsg)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	(void)showErrorMsg;
++	return false; /* Only TapeSister may open a hardware audio device. */
++#endif
+ 	SDL_AudioSpec want, have;
+ 
+ 	closeAudio();
+@@ -2427,3 +2472,41 @@
+ 			updateWindowTitle(true);
+ 	}
+ }
++
++#ifdef TAPEHEAD_EMBEDDED
++bool tapeheadEmbeddedAudioPrepare(uint32_t rate, uint32_t frames)
++{
++    freeAudioBuffers();
++    if(!setupAudioBuffers(frames)) { freeAudioBuffers(); return false; }
++    audio.freq = audio.haveFreq = config.audioFreq = rate;
++    audio.haveSamples = frames; audio.outputChannels = 2; audio.outputBusCount = 1;
++    audio.outputFormat = AUDIO_F32; audio.bytesPerFrame = 2*sizeof(float);
++    config.specialFlags &= ~BITDEPTH_16; config.specialFlags |= BITDEPTH_32;
++    initializeChannelOutputRouting();
++    calcAudioLatencyVars(0,rate);
++    setAudioAmp(config.boostLevel, config.masterVol, true);
++    calcReplayerVars(FT2_REF_AUDIO_RATE,rate);
++    setMixerBPM(song.BPM ? song.BPM : 125);
++    audio.tickSampleCounter = 0; audio.tickSampleCounterFrac = 0;
++    audio.resetSyncTickTimeFlag = true;
++    return true;
++}
++void tapeheadEmbeddedAudioRender(float *out,uint32_t frames)
++{
++    renderAudioFrames(frames,1);
++    sendSamples32BitFloat(out,frames,1);
++    audio.callbackOngoing=false;
++}
++#endif
++
++#ifdef TAPEHEAD_EMBEDDED
++bool tapeheadEmbeddedTileInUse(const float *data)
++{
++    if (!data) return false;
++    for (int i=0; i<MAX_CHANNELS*2; ++i)
++        if (voice[i].active && voice[i].tileData==data) return true;
++    for (int i=0; i<SAMPLE_LAUNCHER_AUDIO_VOICES; ++i)
++        if (sampleLauncherVoice[i].active && sampleLauncherVoice[i].tileData==data) return true;
++    return diskOpPreviewVoice.active && diskOpPreviewVoice.tileData==data;
++}
++#endif
+--- a/src/ft2_audio.h
++++ b/src/ft2_audio.h
+@@ -78,6 +78,16 @@
+ 
+ typedef struct
+ {
++
++#ifdef TAPEHEAD_EMBEDDED
++	const float *tileData;
++	uint8_t tileChannels;
++	double tilePosition;
++	int tileDirection, tileIntro;
++	uint8_t tileLoopMode;
++	uint32_t tileFrames, tileCrossfade;
++	double tileRateCorrection;
++#endif
+ 	const int8_t *base8, *revBase8;
+ 	const int16_t *base16, *revBase16;
+ 	bool active, samplingBackwards, isFadeOutVoice, hasLooped, oneShot, reverseLoop;
+--- a/src/ft2_config.c
++++ b/src/ft2_config.c
+@@ -227,6 +227,8 @@
+ 	loadConfigFromBuffer(true);
+ }
+ 
++void tapeheadEmbeddedConfigDefaults(void) { setDefaultConfigSettings(); }
++
+ static void updateImageStretchAndPixelFilter(uint8_t oldWindowFlags, uint8_t oldSpecialFlags2)
+ {
+ 	bool didFullscreenUpdate = false;
+@@ -393,6 +395,9 @@
+ 
+ bool saveConfig(bool showErrorFlag)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	return false;
++#endif
+ 	if (editor.configFileLocationU == NULL)
+ 	{
+ 		if (showErrorFlag)
+@@ -448,6 +453,9 @@
+ 
+ void saveTapeheadPatternColorMode(void)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	return;
++#endif
+ 	UNICHAR *filePathU = getFullTapeheadConfigPathU();
+ 	if (filePathU == NULL) return;
+ 	const size_t pathLen = UNICHAR_STRLEN(filePathU);
+@@ -518,6 +526,9 @@
+ 
+ void saveTapeheadBakerPatternRows(void)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	return;
++#endif
+ 	UNICHAR *filePathU = getFullTapeheadConfigPathU();
+ 	if (filePathU == NULL) return;
+ 	FILE *f = UNICHAR_FOPEN(filePathU, "a");
+@@ -533,6 +544,9 @@
+ 
+ void saveTapeSisterConfigPaths(void)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	return;
++#endif
+ 	UNICHAR *filePathU = getFullTapeheadConfigPathU();
+ 	if (filePathU == NULL) return;
+ 
+@@ -1035,6 +1049,10 @@
+ 	for (int32_t i = 0; i < MAX_CHANNELS; i++)
+ 		tapeheadConfig.midiDubTrackChannels[i] = (uint8_t)(i & 15);
+ 	tapeheadMidiMapReset();
++#ifdef TAPEHEAD_EMBEDDED
++	tapeheadConfig.showSplashScreen = false;
++	return; /* The embedded workspace never reads or writes standalone FT2 config. */
++#endif
+ 
+ 	UNICHAR *filePathU = getFullTapeheadConfigPathU();
+ 	if (filePathU == NULL)
+@@ -2166,6 +2184,10 @@
+ 
+ void showConfigScreen(void)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	ts_tapehead_request(3);
++	return;
++#endif
+ 	if (ui.extendedPatternEditor)
+ 		exitPatternEditorExtended();
+ 
+--- a/src/ft2_diskop.c
++++ b/src/ft2_diskop.c
+@@ -3146,6 +3146,9 @@
+ 
+ void showDiskOpScreen(void)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	ts_tapehead_request(2);return;
++#endif
+ 	// if first time opening Disk Op., set initial directory
+ 	if (firstTimeOpeningDiskOp)
+ 	{
+@@ -3429,6 +3432,10 @@
+ 
+ void toggleDiskOpScreen(void)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	ts_tapehead_request(2);
++	return;
++#endif
+ 	if (ui.diskOpShown)
+ 		exitDiskOpScreen();
+ 	else
+--- a/src/ft2_edit.c
++++ b/src/ft2_edit.c
+@@ -216,6 +216,9 @@
+ 		case CURSOR_INST2:
+ 		{
+ 			p->instr = (p->instr & 0xF0) | i;
++#ifdef TAPEHEAD_EMBEDDED
++			if (p->instr > MAX_INST) p->instr=MAX_INST;
++#endif
+ 
+ 		}
+ 		break;
+@@ -866,11 +869,13 @@
+ 	if (!editmode && playMode != PLAYMODE_RECPATT && playMode != PLAYMODE_RECSONG)
+ 		return;
+ 
++
++#ifndef TAPEHEAD_EMBEDDED
+ 	if (row <= 0)
+ 		return;
+-
+ 	row--;
+ 	editor.row = song.row = row;
++#endif
+ 
+ 	note_t *p = pattern[curPattern];
+ 	if (p != NULL)
+@@ -882,6 +887,10 @@
+ 		undoPatternCommit();
+ 	}
+ 
++
++#ifdef TAPEHEAD_EMBEDDED
++	editor.row = song.row = row > 0 ? row - 1 : 0;
++#endif
+ 	ui.updatePatternEditor = true;
+ }
+ 
+@@ -2764,3 +2773,13 @@
+ void toggleTranspMask2(void) { editor.transpMask[2] ^= 1; };
+ void toggleTranspMask3(void) { editor.transpMask[3] ^= 1; };
+ void toggleTranspMask4(void) { editor.transpMask[4] ^= 1; };
++
++#ifdef TAPEHEAD_EMBEDDED
++void tapeheadEmbeddedClearClipboard(void)
++{
++    blockCopied=false;ptnBufLen=trkBufLen=0;markXSize=markYSize=0;
++    memset(blkCopyBuff,0,sizeof(blkCopyBuff));
++    memset(ptnCopyBuff,0,sizeof(ptnCopyBuff));
++    memset(trackCopyBuff,0,sizeof(trackCopyBuff));
++}
++#endif
+--- a/src/ft2_header.h
++++ b/src/ft2_header.h
+@@ -13,6 +13,15 @@
+ #include <limits.h> // also has PATH_MAX
+ #endif
+ #include "ft2_replayer.h"
++#ifdef TAPEHEAD_EMBEDDED
++void ts_tapehead_host_lock(void);
++void ts_tapehead_host_unlock(void);
++void ts_tapehead_host_present(void);
++void ts_tapehead_request(int action);
++void ts_tapehead_mix_tile(void *voice, unsigned offset, unsigned frames);
++double ts_tapehead_tile_begin(void *voice);
++void ts_tapehead_audio_span(unsigned offset,unsigned frames,int seam);
++#endif
+ 
+ #define PROG_VER_STR "2.21"
+ 
+@@ -40,7 +49,11 @@
+ ** branchless in the inner channel mixer loop.
+ ** Warning: Do not change this!
+ */
++#ifdef TAPEHEAD_EMBEDDED
++#define SMP_DAT_OFFSET ((MAX_LEFT_TAPS*2)+2) /* align 16-bit scope/reference reads */
++#else
+ #define SMP_DAT_OFFSET ((MAX_LEFT_TAPS*2)+1)
++#endif
+ #define SAMPLE_PAD_LENGTH (SMP_DAT_OFFSET+(MAX_RIGHT_TAPS*2))
+ 
+ #ifndef _WIN32
+--- a/src/ft2_help.c
++++ b/src/ft2_help.c
+@@ -137,18 +137,18 @@
+ 				continue;
+ 			}
+ 
+-			if (*(uint16_t *)s == 0x4C40) // @L - "big font"
++			if (s[0] == '@' && s[1] == 'L') // @L - "big font"
+ 			{
+ 				addText(&tempText[textLine], currColumn, currColor, s2);
+ 				s += 2;
+ 
+-				if (*(uint16_t *)s == 0x5840) // @X - "change X position"
++				if (s[0] == '@' && s[1] == 'X') // @X - "change X position"
+ 				{
+ 					currColumn = controlCodeToNum(&s[2]);
+ 					s += 5;
+ 				}
+ 
+-				if (*(uint16_t *)s == 0x4340) // @C - "change color
++				if (s[0] == '@' && s[1] == 'C') // @C - "change color
+ 				{
+ 					currColor = (uint8_t)controlCodeToNum(&s[2]);
+ 					currColor = (currColor < 2) ? PAL_FORGRND : PAL_BUTTONS;
+@@ -175,13 +175,13 @@
+ 					s++;
+ 				}
+ 
+-				if (*(uint16_t *)s == 0x5840) // @X - "set X position (relative to help X start)"
++				if (s[0] == '@' && s[1] == 'X') // @X - "set X position (relative to help X start)"
+ 				{
+ 					currColumn = controlCodeToNum(&s[2]);
+ 					s += 5;
+ 				}
+ 
+-				if (*(uint16_t *)s == 0x4340) // @C - "change color"
++				if (s[0] == '@' && s[1] == 'C') // @C - "change color"
+ 				{
+ 					currColor = (uint8_t)controlCodeToNum(&s[2]);
+ 					currColor = (currColor < 2) ? PAL_FORGRND : PAL_BUTTONS;
+@@ -208,7 +208,7 @@
+ 					while (s[i] != ' ' && i < sLen) i++;
+ 					i++;
+ 
+-					if (*(uint16_t *)s == 0x5440) // @T - "set absolute X position (in the middle of text)"
++					if (s[0] == '@' && s[1] == 'T') // @T - "set absolute X position (in the middle of text)"
+ 					{
+ 						k = controlCodeToNum(&s[2]);
+ 						s += 5; sLen -= 5;
+--- a/src/ft2_inst_ed.c
++++ b/src/ft2_inst_ed.c
+@@ -2278,6 +2278,9 @@
+ 
+ void showInstEditor(void)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	ts_tapehead_request(1);return;
++#endif
+ 	if (ui.extendedPatternEditor) exitPatternEditorExtended();
+ 	if (ui.sampleEditorShown) hideSampleEditor();
+ 	if (ui.sampleEditorExtShown) hideSampleEditorExt();
+@@ -2397,6 +2400,10 @@
+ 
+ void toggleInstEditor(void)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	ts_tapehead_request(1);
++	return;
++#endif
+ 	if (ui.sampleEditorShown)
+ 		hideSampleEditor();
+ 
+@@ -2686,6 +2693,9 @@
+ 
+ void showInstEditorExt(void)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	ts_tapehead_request(1);return;
++#endif
+ 	if (ui.extendedPatternEditor)
+ 		exitPatternEditorExtended();
+ 
+@@ -2718,6 +2728,10 @@
+ 
+ void toggleInstEditorExt(void)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	ts_tapehead_request(1);
++	return;
++#endif
+ 	if (ui.instEditorExtShown)
+ 		hideInstEditorExt();
+ 	else
+--- a/src/ft2_keyboard.c
++++ b/src/ft2_keyboard.c
+@@ -862,6 +862,11 @@
+ 			**   Alt+Backspace      = Expanded Pattern Editor
+ 			**   Shift+Alt+Backspace = Pattern-Only performance/projection view
+ 			** Undo/redo use the standard Ctrl+Z / Ctrl+Y shortcuts. */
++
++#ifdef TAPEHEAD_EMBEDDED
++			if (keyb.leftCtrlPressed && keyb.leftAltPressed && !keyb.leftShiftPressed)
++			{ togglePatternEditorOnly(); break; }
++#endif
+ 			if (keyb.leftShiftPressed && keyb.leftAltPressed && !keyb.leftCtrlPressed)
+ 			{
+ 				togglePatternEditorOnly();
+--- a/src/ft2_nibbles.c
++++ b/src/ft2_nibbles.c
+@@ -736,6 +736,9 @@
+ 
+ void showNibblesScreen(void)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	ts_tapehead_request(1); return;
++#endif
+ 	if (ui.extendedPatternEditor)
+ 		exitPatternEditorExtended();
+ 
+--- a/src/ft2_palette.c
++++ b/src/ft2_palette.c
+@@ -878,6 +878,9 @@
+ 
+ void configPalSaveShared(void)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	return;
++#endif
+ 	UNICHAR *filePathU = getCanonicalPalettePathU();
+ 	if (filePathU == NULL)
+ 	{
+--- a/src/ft2_replayer.h
++++ b/src/ft2_replayer.h
+@@ -228,6 +228,12 @@
+ typedef struct sample_t
+ {
+ 	char name[22+1];
++#ifdef TAPEHEAD_EMBEDDED
++	float *tileData;
++	uint8_t tileChannels, tileLoopMode;
++	uint32_t tileCrossfade;
++	double tileRateCorrection;
++#endif
+ 	bool isFixed;
+ 	int8_t finetune, relativeNote, *dataPtr, *origDataPtr;
+ 	uint8_t volume, flags, panning;
+--- a/src/ft2_sample_ed.c
++++ b/src/ft2_sample_ed.c
+@@ -3647,6 +3647,9 @@
+ 
+ void showSampleEditor(void)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	ts_tapehead_request(1);return;
++#endif
+ 	if (ui.extendedPatternEditor)
+ 		exitPatternEditorExtended();
+ 
+@@ -3720,6 +3723,10 @@
+ 
+ void toggleSampleEditor(void)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	ts_tapehead_request(1);
++	return;
++#endif
+ 	hideInstEditor();
+ 
+ 	if (ui.sampleEditorShown)
+@@ -4237,6 +4244,9 @@
+ 
+ void showSampleEditorExt(void)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	ts_tapehead_request(1);return;
++#endif
+ 	hideTopScreen();
+ 	showTopScreen(DONT_RESTORE_SCREENS);
+ 
+@@ -4274,6 +4284,10 @@
+ 
+ void toggleSampleEditorExt(void)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	ts_tapehead_request(1);
++	return;
++#endif
+ 	if (ui.sampleEditorExtShown)
+ 		hideSampleEditorExt();
+ 	else
+--- a/src/ft2_splash.c
++++ b/src/ft2_splash.c
+@@ -4,6 +4,7 @@
+ #include <SDL2/SDL.h>
+ 
+ #define STB_IMAGE_IMPLEMENTATION
++#define STB_IMAGE_STATIC
+ #define STBI_ONLY_PNG
+ #define STBI_NO_HDR
+ #define STBI_NO_LINEAR
+--- a/src/ft2_trim.c
++++ b/src/ft2_trim.c
+@@ -1134,6 +1134,9 @@
+ 
+ void showTrimScreen(void)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	ts_tapehead_request(1); return;
++#endif
+ 	if (ui.extendedPatternEditor)
+ 		exitPatternEditorExtended();
+ 
+@@ -1148,6 +1151,9 @@
+ 
+ void toggleTrimScreen(void)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	ts_tapehead_request(1); return;
++#endif
+ 	if (ui.trimScreenShown)
+ 		hideTrimScreen();
+ 	else
+--- a/src/ft2_video.c
++++ b/src/ft2_video.c
+@@ -563,6 +563,10 @@
+ 
+ void flipFrame(void)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	ts_tapehead_host_present();
++	return;
++#endif
+ 	const uint32_t windowFlags = SDL_GetWindowFlags(video.window);
+ 	bool minimized = (windowFlags & SDL_WINDOW_MINIMIZED) ? true : false;
+ 
+@@ -749,6 +753,9 @@
+ 
+ void toggleFullscreen(void)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	return;
++#endif
+ 	video.fullscreen ^= 1;
+ 
+ 	if (video.fullscreen)
+@@ -1195,6 +1202,10 @@
+ 
+ void setWindowSizeFromConfig(bool updateRenderer)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	(void)updateRenderer;
++	return;
++#endif
+ #define MAX_UPSCALE_FACTOR 16 // 10112x6400 - ought to be good enough for many years to come
+ 
+ 	uint8_t i;
+@@ -1271,6 +1282,10 @@
+ 
+ void updateWindowTitle(bool forceUpdate)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	(void)forceUpdate;
++	return;
++#endif
+ 	if (!forceUpdate && songIsModified == song.isModified)
+ 		return; // window title is already set to the same
+ 
+--- a/src/ft2_wav_renderer.c
++++ b/src/ft2_wav_renderer.c
+@@ -164,6 +164,9 @@
+ 
+ void showWavRenderer(void)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	ts_tapehead_request(1); return;
++#endif
+ 	if (ui.extendedPatternEditor)
+ 		exitPatternEditorExtended();
+ 
+--- a/src/scopes/ft2_scopes.c
++++ b/src/scopes/ft2_scopes.c
+@@ -808,6 +808,9 @@
+ 
+ bool initScopes(void)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	return true;
++#endif
+ 	scopeThread = SDL_CreateThread(scopeThreadFunc, "scope thread", NULL);
+ 	if (scopeThread == NULL)
+ 	{
+@@ -818,3 +821,7 @@
+ 	SDL_DetachThread(scopeThread);
+ 	return true;
+ }
++
++#ifdef TAPEHEAD_EMBEDDED
++void tapeheadEmbeddedScopeTick(void) { updateScopes(); }
++#endif

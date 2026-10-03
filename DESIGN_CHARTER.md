@@ -1,13 +1,13 @@
 # TapeSister Design Charter
 
-**Status:** Approved v0.1  
+**Status:** Approved v0.1, amended for embedded SisterTracker on 2026-10-03
 **Date:** 2026-08-12
 
 ## The instrument
 
 TapeSister is a standalone sample-instrument forge for making strange, tactile, musically useful sounds quickly. It combines deterministic sound generation, destructive sample shaping, and direct audition in one compact instrument.
 
-It is not a tracker panel, a general-purpose modular synthesizer, or a reduced copy of FT2. It should feel like a purpose-built instrument: immediate enough to play by ear, deep enough to produce sounds that would be difficult to plan in a conventional sampler, and exact enough that a saved recipe can reproduce a result.
+The canvas remains the primary sound-making surface. F10 opens SisterTracker, an embedded TapeHead workspace that sequences the canvas tiles and sends its output through the existing router. The user approved transplanting the original tracker application rather than recreating its commands individually. The instrument should remain immediate to play and exact enough to recall a saved result.
 
 ## The experience
 
@@ -46,24 +46,22 @@ A processing Recipe is a reusable procedure applied to material. It is not the i
 
 Anything TapeSister records from realtime activity—external input or an internal CAPTURE performance—gets a human-readable immutable original in `Captures/`. Working tiles remain freely destructive, and ordinary edits, renders, previews, generators, and history states do not create archive files. The REC BANK is a reusable capture buffer; KEEP explicitly graduates its current tiles into available Sample-page slots without overwriting existing sounds.
 
-## Raw material, not inherited architecture
+## Approved embedded tracker boundary
 
-The archived prototype and FT2/Tapehead source are salvage shelves.
+TapeSister lives in its own repository, build, tests, releases and issue history.
 
-- Reuse DSP, renderer, waveform, audition, file-format, or UI code only when it serves the new design.
-- Import components deliberately, with provenance and focused tests.
-- Do not carry over the prototype's screen structure merely because it already exists.
-- Do not rebuild the previous generic TapeSister shell and then decorate it with FT2-like controls.
-- FT2's sampler and sample editor are references for proven interaction ideas, not an obligation to reproduce the whole tracker interface.
-
-## Hard boundary around Tapehead
-
-TapeSister lives in its own repository, build, tests, releases, and issue history.
-
-- TapeSister work must never modify FT2 Tapehead Edition.
-- TapeSister must not depend on Tapehead's tracker-wide globals or runtime state.
-- Any future Tapehead handoff must use an explicit file or interchange boundary.
-- The current TapeSister prototype remains preserved on `archive/prototype-v1`; it is not the design authority for `main`.
+- TapeSister work must never modify FT2 TapeHead Edition's repository.
+- Vendored TapeHead application code may run as an isolated subsystem inside
+  TapeSister. Keep its pinned source, licenses and reviewable local patch.
+- TapeSister owns SDL/window lifetime, the audio and MIDI devices, project files,
+  stable tile identities and the routing/recording chain.
+- SisterTracker reuses original editing and transport globals behind an explicit
+  host adapter. Standalone disk/sample/configuration workflows are replaced by
+  host tile, canvas and audio actions.
+- Tracker sample slots are bindings to host tiles, not a second sample library.
+  Sounding generations remain immutable; missing identities never resolve by a
+  reused slot number.
+- The archived prototype remains preserved on `archive/prototype-v1`.
 
 ## First visible checkpoint
 
@@ -84,7 +82,8 @@ The checkpoint is accepted only after it is compiled and handled on the X220. A 
 
 ## Explicitly later
 
-The first checkpoint does not include:
+The original first checkpoint did not include the following. Later work has
+added several of them, including the explicitly approved SisterTracker transplant:
 
 - tracker or Tapehead integration;
 - XM or XI export;
@@ -97,7 +96,7 @@ The first checkpoint does not include:
 - broad UI extraction from FT2; or
 - preserving every prototype feature.
 
-These may follow only after the core instrument is visibly and audibly convincing.
+These are historical checkpoint boundaries, not prohibitions on subsequently approved work.
 
 ## Development agreement
 

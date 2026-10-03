@@ -2968,7 +2968,14 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
 {
     render_palette = &ui->palette;
     if(ui->portal.open) { portal_render(fb,ui); return; }
-    if(ui->tracker_open && ui->tracker) {tracker_render(fb,ui,instrument);master_eq_render(fb,ui);router_render(fb,ui);main_midi_learn_overlay(fb,ui);return;}
+    if(ui->tracker_open && ui->tracker) {
+        if(ui->tracker_embedded_frame) {
+            memset(fb->pixels,0,sizeof(fb->pixels));
+            for(int y=0;y<400;++y)for(int x=0;x<632;++x)
+                fb->pixels[y*TS_UI_WIDTH+x+4]=ui->tracker_embedded_frame[y*632+x]|0xff000000u;
+        } else tracker_render(fb,ui,instrument);
+        master_eq_render(fb,ui);router_render(fb,ui);main_midi_learn_overlay(fb,ui);return;
+    }
     if(ui->mosaic_open && ui->mosaic) {mosaic_render(fb,ui,instrument);master_eq_render(fb,ui);router_render(fb,ui);main_midi_learn_overlay(fb,ui);return;}
     const TsTuning *display_tuning = &ui->tune_reference;
     int showing_bank = ui->bank_view_slot >= 0 && ui->bank_view_slot < TS_BANK_SLOT_COUNT;

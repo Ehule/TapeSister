@@ -1,3 +1,4 @@
+#include "../third_party/tapehead/ft2_fasttracks_core.h"
 #include "tapesister/tracker_playback.h"
 
 #include <math.h>
@@ -37,6 +38,7 @@ uint64_t ts_tracker_playback_stamp(const TsSamplePages *pages,
 #define HASH(value) hash_bytes(&hash, &(value), sizeof(value))
     HASH(rate); HASH(p->id); HASH(p->rows); HASH(p->cells);
     HASH(t->bpm); HASH(t->ticks_per_line); HASH(t->loop); HASH(t->lanes); HASH(t->aliases);
+    HASH(t->control_lane); HASH(t->fasttracks_uses_length); HASH(t->length_bypass);
     for (int i = 1; i < TS_TRACKER_ALIASES; ++i) if (t->aliases[i]) {
         const TsInstrument *bank = NULL;
         const TsSample *sample = NULL;
@@ -63,8 +65,13 @@ void ts_tracker_playback_init(TsTrackerPlayback *rt)
     memset(rt, 0, sizeof(*rt));
     atomic_init(&rt->display_running, 0); atomic_init(&rt->display_row, 0);
     atomic_init(&rt->display_pattern, 0); atomic_init(&rt->display_missing, 0);
+    atomic_init(&rt->display_master_row, 0);
     atomic_init(&rt->display_block,0);atomic_init(&rt->display_block_rows,0);atomic_init(&rt->display_block_lanes,0);
-    for (int i = 0; i < TS_TRACKER_LANES; ++i) rt->lanes[i].volume = 0x40;
+    for (int i = 0; i < TS_TRACKER_LANES; ++i) {
+        rt->lanes[i].volume = 0x40;
+        atomic_init(&rt->display_lane_row[i], 0);
+        atomic_init(&rt->display_lane_phase[i], 0);
+    }
 }
 
 void ts_tracker_prepared_free(TsTrackerPrepared *p)
@@ -129,6 +136,9 @@ TsTrackerPrepared *ts_tracker_playback_prepare(TsTrackerPlayback *rt,
     memcpy(prepared->lanes, pages->tracker.lanes, sizeof(prepared->lanes));
     prepared->bpm = pages->tracker.bpm; prepared->ticks_per_line = pages->tracker.ticks_per_line;
     prepared->loop = pages->tracker.loop; prepared->rate = rate;
+    prepared->control_lane = pages->tracker.control_lane;
+    prepared->fasttracks_uses_length = pages->tracker.fasttracks_uses_length;
+    prepared->length_bypass = pages->tracker.length_bypass;
     prepared->stamp = ts_tracker_playback_stamp(pages, active, pattern, rate);
     for (int i = 1; i < TS_TRACKER_ALIASES; ++i) if (pages->tracker.aliases[i]) {
         TsTrackerBinding *b = &prepared->bindings[i];
@@ -227,6 +237,52 @@ static void configure_voice(TsTrackerPlayback *rt, TsTrackerLanePlayback *lane,
     lane->changed = 1;
 }
 
+/* ft2_fasttracks_core.c is compiled unchanged from Tapehead (BSD-3-Clause).
+   Native LEN domain and voice adapters follow ft2_fasttracks.c/ft2_replayer.c.
+   See third_party/tapehead/CODE-LICENSE.txt. Private rows are independent of
+   the physical pattern container; extension rows must never read hidden data. */
+static const uint8_t ratio_numerator[TS_TRACKER_RATIOS] =
+    {1,2,3,4,5,7,15,1,17,8,6,5,4,3,2,3,5};
+static const uint8_t ratio_denominator[TS_TRACKER_RATIOS] =
+    {2,3,4,5,6,8,16,1,16,7,5,4,3,2,1,1,1};
+
+static int private_lane(const TsTrackerPrepared *p, int lane)
+{
+    /* Saved Song assignments remain Standard until order playback exists. */
+    return p->lanes[lane].mode == TS_TRACKER_PATTERN;
+}
+static unsigned shared_length(const TsTrackerPrepared *p)
+{
+    if (p->length_bypass) return p->pattern.rows;
+    if (p->control_lane >= 0) {
+        unsigned length = p->lanes[p->control_lane].length;
+        return length ? length : p->pattern.rows;
+    }
+    unsigned longest = 0;
+    for (int i = 0; i < TS_TRACKER_LANES; ++i)
+        if (p->lanes[i].length > longest) longest = p->lanes[i].length;
+    return longest ? longest : p->pattern.rows;
+}
+static unsigned private_length(const TsTrackerPrepared *p, int lane)
+{
+    if (p->length_bypass || !p->fasttracks_uses_length) return p->pattern.rows;
+    return p->lanes[lane].length ? p->lanes[lane].length : shared_length(p);
+}
+static uint32_t master_source_row(const TsTrackerPlayback *rt, int lane)
+{
+    const TsTrackerPrepared *p = rt->prepared;
+    if (p->length_bypass) return (unsigned)rt->row;
+    if (p->lanes[lane].length) return rt->master_row % p->lanes[lane].length;
+    /* Tapehead's LEN-OFF master stream wraps its physical container under a
+       slow private CONTROL, except when the shared domain has a blank tail. */
+    return fastTracksSharedCycleUsesBlankRow(p->length_bypass,(uint16_t)shared_length(p),
+        p->pattern.rows,rt->master_row)?rt->master_row:(unsigned)rt->row;
+}
+static int private_control(const TsTrackerPrepared *p)
+{
+    return !p->length_bypass && p->control_lane >= 0 && private_lane(p, p->control_lane);
+}
+
 TsTrackerPrepared *ts_tracker_playback_publish(TsTrackerPlayback *rt, TsTrackerPrepared *p)
 {
     TsTrackerPrepared *old = rt->prepared;
@@ -237,8 +293,38 @@ TsTrackerPrepared *ts_tracker_playback_publish(TsTrackerPlayback *rt, TsTrackerP
         double next = (double)rt->rate * 2.5 / p->bpm;
         if (rt->tick_frames > 0) rt->until_tick *= next / rt->tick_frames;
         rt->tick_frames = next;
-        if (rt->tick >= p->ticks_per_line) rt->tick = p->ticks_per_line - 1;
-        if (!rt->block_active && rt->row >= p->pattern.rows) rt->row = p->pattern.rows - 1;
+        if (old && old->ticks_per_line != p->ticks_per_line)
+            rt->tick = rt->tick * p->ticks_per_line / old->ticks_per_line;
+        /* Row-domain edits take effect at the next tick/row, never replaying
+           the event that was already heard. */
+        if (old && !rt->block_active) {
+            int topology_changed = old->control_lane != p->control_lane ||
+                old->length_bypass != p->length_bypass ||
+                old->fasttracks_uses_length != p->fasttracks_uses_length;
+            for (int i = 0; i < TS_TRACKER_LANES; ++i)
+                topology_changed |= old->lanes[i].length != p->lanes[i].length;
+            if (topology_changed) rt->control_pending = 0;
+            for (int i = 0; i < TS_TRACKER_LANES; ++i) {
+                TsTrackerLanePlayback *l = &rt->lanes[i];
+                int old_threshold = ratio_denominator[old->lanes[i].ratio] * old->ticks_per_line;
+                int threshold = ratio_denominator[p->lanes[i].ratio] * p->ticks_per_line;
+                l->accumulator = (int32_t)((int64_t)l->accumulator * threshold / old_threshold);
+                /* Publish rescales ratio and TPL together under callback exclusion. */
+                l->clock_tpl=p->ticks_per_line;
+                if (private_lane(p, i) && !private_lane(old, i)) {
+                    l->source_row = master_source_row(rt, i) % private_length(p, i);
+                    l->clock_started=rt->transport_started!=0;
+                    l->accumulator = ratio_denominator[p->lanes[i].ratio] * rt->tick;
+                }
+                if (topology_changed || old->lanes[i].mode != p->lanes[i].mode ||
+                    old->lanes[i].direction != p->lanes[i].direction) {
+                    l->cycle_steps = 0;
+                    if (i == p->control_lane) rt->control_pending = 0;
+                }
+                if (old->lanes[i].direction != p->lanes[i].direction)
+                    l->ping_direction = p->lanes[i].direction == TS_TRACKER_REVERSE ? -1 : 1;
+            }
+        }
     }
     for (int i = 0; i < TS_TRACKER_LANES; ++i) {
         TsTrackerLanePlayback *l = &rt->lanes[i];
@@ -261,6 +347,9 @@ int ts_tracker_playback_start(TsTrackerPlayback *rt)
     for (int i = 0; i < TS_TRACKER_LANES; ++i) {
         TsTrackerLanePlayback *l = &rt->lanes[i];
         l->default_tile = 0; l->volume = 0x40; l->notes_started = 0;
+        l->source_row = 0; l->accumulator = 0; l->cycle_steps = 0;
+        l->clock_started=false;l->clock_tpl=rt->prepared->ticks_per_line;
+        l->ping_direction = rt->prepared->lanes[i].direction == TS_TRACKER_REVERSE ? -1 : 1;
         l->gain = rt->prepared->lanes[i].muted || (rt->solo_mask && !(rt->solo_mask & (1u << i))) ?
                   0 : rt->prepared->lanes[i].trim;
     }
@@ -268,6 +357,7 @@ int ts_tracker_playback_start(TsTrackerPlayback *rt)
     rt->row = -1; rt->tick = rt->prepared->ticks_per_line - 1;
     rt->until_tick = 0; rt->tick_frames = (double)rt->rate * 2.5 / rt->prepared->bpm;
     rt->elapsed_frames = 0; rt->missing_mask = 0;
+    rt->master_row = 0; rt->transport_started = rt->control_pending = 0;
     rt->loop_cycles=0;rt->loop_seam=0;
     rt->running = 1; rt->paused = 0;
     ts_tracker_playback_end_block(rt);
@@ -328,12 +418,12 @@ void ts_tracker_playback_pause(TsTrackerPlayback *rt, int paused)
 }
 void ts_tracker_playback_solo(TsTrackerPlayback *rt, uint8_t mask) { if (rt) rt->solo_mask = mask; }
 
-static void execute_row(TsTrackerPlayback *rt)
+static void execute_lane(TsTrackerPlayback *rt, int i, uint32_t row)
 {
-    for (int i = 0; i < TS_TRACKER_LANES; ++i) {
-        if(rt->block_active && (i<rt->block.lane0 || i>rt->block.lane1))continue;
+        rt->lanes[i].source_row = row;
+        if (row >= rt->prepared->pattern.rows) return; /* Logical blank tail. */
         TsTrackerLanePlayback *l = &rt->lanes[i];
-        const TsTrackerCell *c = &rt->prepared->pattern.cells[rt->row][i];
+        const TsTrackerCell *c = &rt->prepared->pattern.cells[row][i];
         if (c->tile_id) l->default_tile = c->tile_id;
         if (c->has_volume) l->volume = c->volume;
         if (c->note_kind == TS_TRACKER_NOTE_OFF) stop_lane(l);
@@ -356,6 +446,86 @@ static void execute_row(TsTrackerPlayback *rt)
                 l->last_note_frame = rt->elapsed_frames; ++l->notes_started;
             }
         }
+}
+
+static void execute_block_row(TsTrackerPlayback *rt)
+{
+    for (int i = rt->block.lane0; i <= rt->block.lane1; ++i)
+        execute_lane(rt, i, (unsigned)rt->row);
+}
+
+static void advance_private(TsTrackerPlayback *rt, int lane)
+{
+    const TsTrackerLane *definition = &rt->prepared->lanes[lane];
+    TsTrackerLanePlayback *l = &rt->lanes[lane];
+    unsigned length = private_length(rt->prepared, lane);
+    unsigned row = l->source_row % length;
+    unsigned cycle = length;
+    if (definition->direction == TS_TRACKER_PING_PONG) {
+        /* Native extension: no repeated endpoints, and LEN 1 still clocks. */
+        cycle = length > 1 ? 2 * (length - 1) : 1;
+        if (length == 1) row = 0;
+        else {
+            if (!row) l->ping_direction = 1;
+            else if (row == length - 1) l->ping_direction = -1;
+            row = (unsigned)((int)row + l->ping_direction);
+        }
+    } else if (definition->direction == TS_TRACKER_REVERSE)
+        row = row ? row - 1 : length - 1;
+    else row = (row + 1) % length;
+    if (++l->cycle_steps >= cycle) {
+        l->cycle_steps = 0;
+        if (private_control(rt->prepared) && lane == rt->prepared->control_lane)
+            rt->control_pending = 1;
+    }
+    execute_lane(rt, lane, row);
+}
+
+static void transport_tick(TsTrackerPlayback *rt)
+{
+    const TsTrackerPrepared *p = rt->prepared;
+    if (!rt->transport_started) {
+        rt->transport_started = 1;
+        rt->tick = rt->row = 0;
+        for (int i = 0; i < TS_TRACKER_LANES; ++i) {
+            TsTrackerLanePlayback *l=&rt->lanes[i];
+            if(private_lane(p,i)) {
+                unsigned ratio=p->lanes[i].ratio;
+                (void)fastTracksClockTick(&l->clock_started,&l->accumulator,&l->clock_tpl,
+                    ratio_numerator[ratio],ratio_denominator[ratio],p->ticks_per_line);
+            }
+            execute_lane(rt,i,0);
+        }
+        return;
+    }
+    int row_advanced = ++rt->tick >= p->ticks_per_line;
+    if (row_advanced) {
+        rt->tick = 0;
+        ++rt->master_row;
+    }
+    /* Like Tapehead's replayer, a private CONTROL crossing requests the next
+       tick-zero boundary. All lanes finish the current tick before it applies. */
+    int boundary = fastTracksResolveSharedBoundary(!p->length_bypass,private_control(p),
+        row_advanced,rt->master_row,(uint16_t)shared_length(p),rt->row+row_advanced,
+        p->pattern.rows,false,private_control(p) && rt->control_pending)==
+        FAST_TRACKS_SHARED_BOUNDARY_TRANSITION;
+    if (boundary) {
+        if (!p->loop) { ts_tracker_playback_stop(rt); return; }
+        rt->master_row = 0; rt->tick = 0; rt->control_pending = 0;
+        row_advanced = 1;
+        ++rt->loop_cycles;
+        for (int i = 0; i < TS_TRACKER_LANES; ++i) rt->lanes[i].cycle_steps = 0;
+    }
+    rt->row = (int)(rt->master_row % p->pattern.rows);
+    for (int i = 0; i < TS_TRACKER_LANES; ++i) {
+        if (private_lane(p, i)) {
+            TsTrackerLanePlayback *l = &rt->lanes[i];
+            unsigned ratio = p->lanes[i].ratio;
+            int crossings=fastTracksClockTick(&l->clock_started,&l->accumulator,&l->clock_tpl,
+                ratio_numerator[ratio],ratio_denominator[ratio],p->ticks_per_line);
+            /* Execute every event returned by the original rational clock. */
+            for(int crossing=0;crossing<crossings;++crossing)advance_private(rt,i);
+        } else if (row_advanced) execute_lane(rt, i, master_source_row(rt, i));
     }
 }
 
@@ -378,17 +548,13 @@ TsStereoFrame ts_tracker_playback_read(TsTrackerPlayback *rt, int rate)
     rt->rate = rate;
     if (rt->running && !rt->paused && rt->prepared) {
         if (rt->until_tick <= 1e-9) {
-            if (++rt->tick >= rt->prepared->ticks_per_line) {
+            if (!rt->block_active) transport_tick(rt);
+            else if (++rt->tick >= rt->prepared->ticks_per_line) {
                 rt->tick = 0;
                 ++rt->row;
-                if(rt->block_active) {
-                    if(rt->row>rt->block.row1 || rt->row>=rt->prepared->pattern.rows)block_seam(rt);
-                    else if(!rt->elapsed_frames)rt->loop_seam=1;
-                } else if (rt->row >= rt->prepared->pattern.rows) {
-                    if (rt->prepared->loop) rt->row = 0;
-                    else ts_tracker_playback_stop(rt);
-                }
-                if (rt->running) execute_row(rt);
+                if(rt->row>rt->block.row1 || rt->row>=rt->prepared->pattern.rows)block_seam(rt);
+                else if(!rt->elapsed_frames)rt->loop_seam=1;
+                execute_block_row(rt);
             }
             rt->until_tick += rt->tick_frames;
         }
@@ -420,10 +586,34 @@ TsStereoFrame ts_tracker_playback_read(TsTrackerPlayback *rt, int rate)
 void ts_tracker_playback_end_block(TsTrackerPlayback *rt)
 {
     atomic_store_explicit(&rt->display_running, rt->running ? (rt->paused ? 2 : 1) : 0, memory_order_relaxed);
-    atomic_store_explicit(&rt->display_row, rt->row < 0 ? 0 : (unsigned)rt->row, memory_order_relaxed);
+    unsigned display_row = rt->row < 0 ? 0 : (unsigned)rt->row;
+    unsigned master_row=display_row;
+    if(rt->prepared && !rt->block_active && shared_length(rt->prepared)>rt->prepared->pattern.rows)
+        master_row=rt->master_row;
+    atomic_store_explicit(&rt->display_master_row,master_row,memory_order_relaxed);
+    if (rt->prepared && !rt->block_active && !rt->prepared->length_bypass && rt->prepared->control_lane >= 0)
+        display_row = rt->lanes[rt->prepared->control_lane].source_row;
+    atomic_store_explicit(&rt->display_row, display_row, memory_order_relaxed);
     atomic_store_explicit(&rt->display_pattern, rt->prepared ? rt->prepared->pattern.id : 0, memory_order_relaxed);
     atomic_store_explicit(&rt->display_missing, rt->missing_mask, memory_order_release);
     atomic_store_explicit(&rt->display_block_rows,(unsigned)rt->block.row0|((unsigned)rt->block.row1<<8),memory_order_relaxed);
     atomic_store_explicit(&rt->display_block_lanes,(unsigned)rt->block.lane0|((unsigned)rt->block.lane1<<8),memory_order_relaxed);
     atomic_store_explicit(&rt->display_block,rt->block_active,memory_order_release);
+    for (int i = 0; i < TS_TRACKER_LANES; ++i) {
+        atomic_store_explicit(&rt->display_lane_row[i], rt->lanes[i].source_row, memory_order_relaxed);
+        unsigned phase=0;
+        if(rt->prepared && rt->running && !rt->block_active && private_lane(rt->prepared,i)) {
+            const TsTrackerLanePlayback *l=&rt->lanes[i];
+            int length=(int)private_length(rt->prepared,i);
+            int expected=ratio_denominator[rt->prepared->lanes[i].ratio]*rt->tick;
+            if(l->source_row==master_row%(unsigned)length && l->accumulator==expected)phase=2;
+            else {
+                int offset=((int)l->source_row-(int)master_row)%length;
+                if(offset<0)offset+=length;
+                if(offset>length/2)offset-=length;
+                phase=offset<0?1:offset>0?4:5;
+            }
+        }
+        atomic_store_explicit(&rt->display_lane_phase[i],phase,memory_order_relaxed);
+    }
 }

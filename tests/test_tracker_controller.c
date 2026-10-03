@@ -43,6 +43,60 @@ static void wheel(int x,int y,int detents,int flipped,float precise)
 #endif
     assert(tracker_event(&e,window,0,a,ui,pages,instrument,48000));
 }
+static void fasttracks_controls(void)
+{
+    TsSisterTracker *t=ui->tracker;TsTrackerEdit *edit=ui->tracker_edit;
+    TsTrackerPattern *p=ts_sister_tracker_pattern(t,t->editor_pattern);
+    TsTrackerPattern saved=*p;
+    TsTrackerLane lanes[8];memcpy(lanes,t->lanes,sizeof(lanes));
+    int control=t->control_lane,uses=t->fasttracks_uses_length,bypass=t->length_bypass;
+    int tpl=t->ticks_per_line,bpm=t->bpm,expanded=ui->tracker_expanded;
+    ts_tracker_playback_stop(&a->tracker);edit->tools_open=0;
+    for(int view=0;view<2;++view) {
+        ui->tracker_expanded=view;TsTrackerLayout g=ts_tracker_layout(t,view);
+        t->lanes[0].length=0;t->lanes[0].mode=TS_TRACKER_STANDARD;t->lanes[0].ratio=7;t->lanes[0].direction=TS_TRACKER_FORWARD;
+        unsigned row=t->editor_row,lane=t->editor_lane;
+        click(TS_TRACKER_LANE_X+20,g.len_y+2);assert(t->lanes[0].length==1);
+        SDL_SetModState(KMOD_SHIFT);ui->wheel_guard=(TsUiWheelGuard){0};
+        wheel(TS_TRACKER_LANE_X+20,g.len_y+2,2,0,2);assert(t->lanes[0].length==17);
+        SDL_SetModState(KMOD_CTRL);wheel(TS_TRACKER_LANE_X+20,g.len_y+2,-1,0,-1);assert(!t->lanes[0].length);
+        SDL_SetModState(KMOD_NONE);t->lanes[0].length=255;
+        wheel(TS_TRACKER_LANE_X+20,g.len_y+2,4,0,4);assert(t->lanes[0].length==256);
+        t->control_lane=-1;click(TS_TRACKER_LANE_X+65,g.len_y+2);assert(t->control_lane==0);
+        click(TS_TRACKER_LANE_X+65,g.len_y+2);assert(t->control_lane==-1);
+        click(TS_TRACKER_LANE_X+3,g.ratio_y+2);assert(t->lanes[0].mode==TS_TRACKER_PATTERN);
+        ui->wheel_guard=(TsUiWheelGuard){0};wheel(TS_TRACKER_LANE_X+23,g.ratio_y+2,-1,1,-1);assert(t->lanes[0].ratio==8);
+        click(TS_TRACKER_LANE_X+ts_tracker_direction_x(t->lanes[0].ratio)+1,g.ratio_y+2);assert(t->lanes[0].direction==TS_TRACKER_REVERSE);
+        SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=SDL_GetWindowID(window);
+        e.button.button=SDL_BUTTON_RIGHT;e.button.x=TS_TRACKER_LANE_X+23;e.button.y=g.ratio_y+2;
+        assert(tracker_event(&e,window,0,a,ui,pages,instrument,48000));assert(t->lanes[0].direction==TS_TRACKER_PING_PONG);
+        modified(SDLK_1,KMOD_CTRL|KMOD_SHIFT);assert(t->lanes[0].mode==TS_TRACKER_STANDARD);
+        modified(SDLK_1,KMOD_ALT|KMOD_SHIFT);assert(t->lanes[0].ratio==9);
+        assert(t->editor_row==row && t->editor_lane==lane); /* Header controls preserve edit focus. */
+        t->length_bypass=0;click(8,g.len_y+2);assert(t->length_bypass);
+        t->fasttracks_uses_length=1;click(8,g.ratio_y+2);assert(!t->fasttracks_uses_length);
+        edit->tools_open=1;click(TS_TRACKER_LANE_X+3,g.ratio_y+2);
+        modified(SDLK_1,KMOD_CTRL|KMOD_SHIFT);assert(t->lanes[0].mode==TS_TRACKER_STANDARD);edit->tools_open=0;
+    }
+    memset(p->cells,0,sizeof(p->cells));p->rows=8;t->ticks_per_line=1;t->bpm=125;t->control_lane=-1;t->length_bypass=0;
+    for(int i=0;i<8;++i){t->lanes[i].length=0;t->lanes[i].mode=TS_TRACKER_STANDARD;}
+    unsigned alias=tracker_bind_sample(ui,instrument,instrument->selected_slot);assert(alias);
+    for(int row=0;row<8;++row)p->cells[row][0]=(TsTrackerCell){.tile_id=t->aliases[alias],.note_kind=TS_TRACKER_NOTE_PITCH,.note=60+row};
+    t->lanes[0].mode=TS_TRACKER_PATTERN;t->lanes[0].ratio=14;t->lanes[0].direction=TS_TRACKER_FORWARD;
+    tracker_play(0,a,ui,pages,instrument,48000);
+    for(int frame=0;frame<961;++frame)(void)ts_tracker_playback_read(&a->tracker,48000);
+    ts_tracker_playback_end_block(&a->tracker);tracker_refresh(0,a,ui,pages,instrument,48000);
+    assert(ui->tracker_lane_row[0]==2 && ui->tracker_lane_row[1]==1 && a->tracker.lanes[0].notes_started==3);
+    uint64_t count=a->tracker.lanes[0].notes_started;double position=a->tracker.lanes[0].voice.position;
+    t->control_lane=0;t->fasttracks_uses_length=1;t->length_bypass=1;
+    tracker_refresh(0,a,ui,pages,instrument,48000);
+    assert(a->tracker.prepared->control_lane==0 && a->tracker.prepared->fasttracks_uses_length && a->tracker.prepared->length_bypass);
+    assert(a->tracker.lanes[0].notes_started==count && a->tracker.lanes[0].voice.position==position);
+    ts_tracker_playback_stop(&a->tracker);*p=saved;memcpy(t->lanes,lanes,sizeof(lanes));
+    t->control_lane=control;t->fasttracks_uses_length=uses;t->length_bypass=bypass;t->ticks_per_line=tpl;t->bpm=bpm;
+    ui->tracker_expanded=expanded;SDL_SetModState(KMOD_NONE);ui->wheel_guard=(TsUiWheelGuard){0};
+    tracker_refresh(0,a,ui,pages,instrument,48000);
+}
 static void editor_controls(void)
 {
     TsSisterTracker *t=&pages->tracker;TsTrackerEdit *edit=ui->tracker_edit;
@@ -82,7 +136,7 @@ static void editor_controls(void)
     p->cells[4][2].note_kind=TS_TRACKER_NOTE_PITCH;p->cells[4][2].note=60;
     modified(SDLK_F2,KMOD_SHIFT);assert(p->cells[4][2].note==61);
     key(SDLK_INSERT);assert(!p->cells[4][2].note_kind && p->cells[5][2].note==61);
-    key(SDLK_BACKSPACE);assert(p->cells[4][2].note==61 && !p->cells[5][2].note_kind);
+    tracker_command(ui,TRACKER_DELETE_ROW,0,0);assert(p->cells[4][2].note==61 && !p->cells[5][2].note_kind);
     /* Drag selection owns motion and release even over hidden Sample tiles. */
     click(38,TS_TRACKER_GRID_Y+TS_TRACKER_ROW_HEIGHT*0+2);SDL_zero(e);e.type=SDL_MOUSEMOTION;e.motion.windowID=SDL_GetWindowID(window);
     e.motion.x=TS_TRACKER_LANE_X+4+TS_TRACKER_LANE_WIDTH;e.motion.y=TS_TRACKER_GRID_Y+TS_TRACKER_ROW_HEIGHT*3+2;e.motion.state=SDL_BUTTON_LMASK;
@@ -130,10 +184,81 @@ static void editor_controls(void)
     /* Visible editing panel uses the same operations as keyboard shortcuts. */
     click(600,342);assert(edit->tools_open);click(425,146);assert(edit->position==history-1);
     click(545,118);assert(!edit->tools_open);ui->tracker_scroll=0;t->editor_row=0;t->editor_lane=0;ui->tracker_field=1;
-    ui->tracker_hex_digit=1;ui->tracker_hex_value=0x20;ui->tracker_cursor_visible=1;
+    ui->tracker_hex_digit=1;ui->tracker_hex_value=0x20;
+}
+static void preferred_edit_controls(void)
+{
+    TsSisterTracker *t=ui->tracker,saved_tracker=*t;
+    TsTrackerPattern *p=ts_sister_tracker_pattern(t,t->editor_pattern);
+    TsTrackerPattern *saved=malloc(sizeof(*saved)),*expected=malloc(sizeof(*expected));
+    TsUiState *saved_ui=malloc(sizeof(*saved_ui));
+    TsTrackerEdit *edit=ts_tracker_edit_new();assert(saved && expected && saved_ui && edit);
+    *saved=*p;*saved_ui=*ui;ui->tracker_edit=edit;ui->tracker_expanded=0;ui->tracker_scroll=0;
+    ui->tracker_repeat_control=0;SDL_SetModState(KMOD_NONE);
+    p->rows=8;
+    for(int row=0;row<TS_TRACKER_ROWS;++row)for(int lane=0;lane<TS_TRACKER_LANES;++lane)
+        p->cells[row][lane]=(TsTrackerCell){.tile_id=100+row*8+lane,.note_kind=TS_TRACKER_NOTE_PITCH,
+            .note=48+row%60,.has_volume=1,.volume=0,.tune_command='M',.tune_value=60,
+            .fx_command='Z',.fx_value=0};
+    t->editor_row=1;t->editor_lane=6;ts_tracker_edit_anchor(edit,t);ts_tracker_edit_mark(edit,t,2,7);
+    TsTrackerRegion mark=ts_tracker_edit_region(edit,t);ts_tracker_edit_copy(edit,p,mark);
+    TsTrackerCell clipboard=edit->clipboard[0][0];edit->mask=TS_TRACKER_EDIT_NOTE;
+    t->editor_row=5;t->editor_lane=2;t->edit_step=7;ui->tracker_field=6;ui->tracker_hex_digit=1;
+    unsigned heard=a->tracker.row;double phase=a->tracker.lanes[0].voice.position;
+    *expected=*p;memset(&expected->cells[5][2],0,sizeof(TsTrackerCell));
+    key(SDLK_BACKSPACE);
+    assert(!memcmp(p,expected,sizeof(*p)) && t->editor_row==4 && t->editor_lane==2);
+    assert(ui->tracker_follow_hold && !ui->tracker_hex_digit && edit->position==1);
+    TsTrackerRegion after=ts_tracker_edit_region(edit,t);assert(!memcmp(&mark,&after,sizeof(mark)));
+    assert(edit->clipboard_rows==2 && edit->clipboard_lanes==2 && !memcmp(&clipboard,&edit->clipboard[0][0],sizeof(clipboard)));
+    modified(SDLK_z,KMOD_CTRL);assert(p->cells[5][2].fx_command=='Z' && p->cells[5][2].has_volume);
+    modified(SDLK_y,KMOD_CTRL);assert(!memcmp(p,expected,sizeof(*p)) && t->editor_row==4);
+    /* Repeat clears each current row before moving, irrespective of STEP. */
+    t->edit_step=0;memset(&expected->cells[4][2],0,sizeof(TsTrackerCell));
+    SDL_Event e;SDL_zero(e);e.type=SDL_KEYDOWN;e.key.windowID=SDL_GetWindowID(window);
+    e.key.keysym.sym=SDLK_BACKSPACE;e.key.repeat=1;
+    assert(tracker_event(&e,window,0,a,ui,pages,instrument,48000));
+    assert(!memcmp(p,expected,sizeof(*p)) && t->editor_row==3);
+    t->editor_row=0;memset(&expected->cells[0][2],0,sizeof(TsTrackerCell));key(SDLK_BACKSPACE);
+    assert(!memcmp(p,expected,sizeof(*p)) && t->editor_row==0);
+    t->editor_row=7;memset(&expected->cells[7][2],0,sizeof(TsTrackerCell));key(SDLK_BACKSPACE);
+    assert(!memcmp(p,expected,sizeof(*p)) && t->editor_row==6); /* Hidden rows untouched. */
+    /* Shift+Backspace remains an explicit structural deletion across lanes. */
+    t->editor_row=3;ts_tracker_edit_shift_rows(expected,3,2,1,0);modified(SDLK_BACKSPACE,KMOD_SHIFT);
+    assert(!memcmp(p,expected,sizeof(*p)) && t->editor_row==3);
+    unsigned history=edit->position;int scroll=ui->tracker_scroll;
+    t->edit_step=0;key(SDLK_BACKQUOTE);assert(t->edit_step==1);
+    modified(SDLK_BACKQUOTE,KMOD_SHIFT);assert(t->edit_step==0);
+    modified(SDLK_BACKQUOTE,KMOD_SHIFT);assert(t->edit_step==16);
+    key(SDLK_BACKQUOTE);assert(t->edit_step==0);
+    /* Physical Grave works with another layout's keysym, including repeat. */
+    e.key.keysym.sym=SDLK_UNKNOWN;e.key.keysym.scancode=SDL_SCANCODE_GRAVE;
+    assert(tracker_event(&e,window,0,a,ui,pages,instrument,48000) && t->edit_step==1);
+    modified(SDLK_BACKQUOTE,KMOD_CTRL);modified(SDLK_BACKQUOTE,KMOD_ALT);assert(t->edit_step==1);
+    edit->tools_open=1;key(SDLK_BACKQUOTE);wheel(300,344,1,0,1);assert(t->edit_step==1);edit->tools_open=0;
+    ui->tracker_expanded=1;key(SDLK_BACKQUOTE);assert(t->edit_step==2);ui->tracker_expanded=0;
+    t->edit_step=16;ui->wheel_guard=(TsUiWheelGuard){0};wheel(300,344,1,0,1);assert(t->edit_step==0);
+    wheel(300,344,-1,0,-1);assert(t->edit_step==16);
+    wheel(300,344,3,0,3);assert(t->edit_step==2);
+    wheel(300,344,2,1,2);assert(t->edit_step==0);
+    wheel(300,344,0,0,.4f);assert(t->edit_step==0);
+    ts_ui_keyboard_set_octave(ui,3);wheel(370,344,1,0,1);assert(ui->keyboard_octave==3); /* Wheel owner guard. */
+    ui->wheel_guard=(TsUiWheelGuard){0};wheel(370,344,2,0,2);assert(ui->keyboard_octave==5 && ui->keyboard_base_note==72);
+    wheel(370,344,2,1,2);assert(ui->keyboard_octave==3);
+    wheel(370,344,20,0,20);assert(ui->keyboard_octave==7 && ui->keyboard_base_note==96);
+    wheel(370,344,-20,0,-20);assert(ui->keyboard_octave==0 && ui->keyboard_base_note==12);
+    wheel(370,344,0,0,.4f);assert(ui->keyboard_octave==0);
+    edit->tools_open=1;wheel(370,344,1,0,1);assert(ui->keyboard_octave==0);edit->tools_open=0;
+    assert(t->editor_row==3 && t->editor_lane==2 && ui->tracker_scroll==scroll && edit->position==history);
+    ui->tracker_expanded=1;ui->wheel_guard=(TsUiWheelGuard){0};wheel(300,344,1,0,1);wheel(370,344,1,0,1);
+    assert(t->edit_step==0 && ui->keyboard_octave==0); /* Hidden footer is not interactive. */
+    assert(a->tracker.row==heard && a->tracker.lanes[0].voice.position==phase);
+    assert(!memcmp(p,expected,sizeof(*p)));
+    *p=*saved;*t=saved_tracker;*ui=*saved_ui;ts_tracker_edit_free(edit);free(saved);free(expected);free(saved_ui);
 }
 static void tapehead_columns_and_overlay(void)
 {
+    ui->tracker_follow_hold=1; /* This fixture edits a manually scrolled grid. */
     TsSisterTracker *t=ui->tracker;TsTrackerPattern *p=ts_sister_tracker_pattern(t,t->editor_pattern);
     ui->tracker_scroll=0;t->editor_row=0;t->editor_lane=0;ui->tracker_hex_digit=0;
     ts_tracker_edit_anchor(ui->tracker_edit,t);
@@ -180,7 +305,7 @@ static void independent_marks_and_layout(void)
 {
     TsSisterTracker *t=ui->tracker;TsTrackerEdit *e=ui->tracker_edit;
     TsTrackerPattern *p=ts_sister_tracker_pattern(t,t->editor_pattern);
-    ts_tracker_playback_stop(&a->tracker);ui->tracker_scroll=0;t->editor_row=2;t->editor_lane=2;
+    ts_tracker_playback_stop(&a->tracker);tracker_refresh(0,a,ui,pages,instrument,48000);ui->tracker_scroll=0;t->editor_row=2;t->editor_lane=2;
     ts_tracker_edit_anchor(e,t);modified(SDLK_DOWN,KMOD_SHIFT);modified(SDLK_RIGHT,KMOD_SHIFT);
     TsTrackerRegion expected=ts_tracker_edit_region(e,t);assert(expected.row0==2 && expected.row1==3 && expected.lane0==2 && expected.lane1==3);
     key(SDLK_UP);key(SDLK_RIGHT);click(38,TS_TRACKER_GRID_Y+8*12+2);key(SDLK_z);
@@ -202,7 +327,7 @@ static void independent_marks_and_layout(void)
     t->editor_row=0;t->editor_lane=0;modified(SDLK_DOWN,KMOD_SHIFT);
     assert(a->tracker.pending_block.pattern==source && a->tracker.pending_block.row1==4);
     t->editor_pattern=source;t->editor_row=0;ui->tracker_scroll=0;
-    modified(SDLK_l,KMOD_CTRL);assert(!a->tracker.running);
+    modified(SDLK_l,KMOD_CTRL);assert(!a->tracker.running);tracker_refresh(0,a,ui,pages,instrument,48000);
     modified(SDLK_c,KMOD_ALT);actual=ts_tracker_edit_region(e,t);assert(actual.row0==0 && actual.row1==p->rows-1 && actual.lane0==0 && actual.lane1==0);
     key(SDLK_ESCAPE);assert(!e->selected && ui->tracker_open);
     TsTrackerLayout normal=ts_tracker_layout(t,0);assert(normal.rows==19);
@@ -225,6 +350,167 @@ static void independent_marks_and_layout(void)
     modified(SDLK_e,KMOD_CTRL);assert(e->tools_open);key(SDLK_ESCAPE);assert(!e->tools_open && ui->tracker_expanded);
     modified(SDLK_BACKSPACE,KMOD_CTRL|KMOD_ALT);assert(!ui->tracker_expanded);
     ui->tracker_scroll=0;t->editor_row=0;t->editor_lane=0;ui->tracker_field=1;
+}
+static int pixels_of_color(const TsFramebuffer *fb,int x,int y,int w,int h,uint32_t color)
+{
+    int count=0;
+    for(int yy=y;yy<y+h;++yy)for(int xx=x;xx<x+w;++xx)count+=fb->pixels[yy*640+xx]==color;
+    return count;
+}
+static void tapehead_transport_visuals(void)
+{
+    ts_tracker_playback_stop(&a->tracker);tracker_refresh(0,a,ui,pages,instrument,48000);
+    TsSisterTracker *t=ui->tracker,saved_tracker=*t;
+    TsTrackerPattern *p=ts_sister_tracker_pattern(t,t->editor_pattern),saved_pattern=*p;
+    TsUiState *saved_ui=malloc(sizeof(*ui));TsFramebuffer *fb=malloc(sizeof(*fb));assert(saved_ui && fb);
+    *saved_ui=*ui;
+    ui->tracker_edit->tools_open=0;ts_tracker_edit_anchor(ui->tracker_edit,t);
+    p->rows=64;memset(p->cells,0,sizeof(p->cells));
+    for(int lane=0;lane<8;++lane) {
+        t->lanes[lane].length=0;t->lanes[lane].mode=TS_TRACKER_STANDARD;t->lanes[lane].muted=0;
+        for(int row=0;row<64;++row)p->cells[row][lane]=(TsTrackerCell){.note_kind=TS_TRACKER_NOTE_PITCH,.note=60,.has_volume=1,.volume=32};
+    }
+    t->follow=1;t->control_lane=3;t->length_bypass=0;t->fasttracks_uses_length=1;
+    t->lanes[1].length=4;t->lanes[2].mode=TS_TRACKER_PATTERN;
+    t->lanes[3].length=64;t->lanes[3].mode=TS_TRACKER_PATTERN;
+    t->lanes[4].length=6;t->lanes[4].mode=TS_TRACKER_PATTERN;
+    ui->tracker_running=1;ui->tracker_heard_pattern=p->id;ui->tracker_block=0;ui->tracker_follow_hold=0;
+    ui->tracker_master_row=12;ui->tracker_row=2; /* CONTROL must not move the master band. */
+    ui->tracker_breathe_frame=0;ui->tracker_hex_digit=0;
+    t->editor_row=60;t->editor_lane=7;
+    ui->tracker_lane_row[0]=12;ui->tracker_lane_row[1]=1;ui->tracker_lane_row[2]=3;
+    ui->tracker_lane_row[3]=2;ui->tracker_lane_row[4]=2;
+    for(int expanded=0;expanded<2;++expanded) {
+        ui->tracker_expanded=expanded;TsTrackerLayout g=ts_tracker_layout(t,expanded);
+        ts_ui_render(fb,ui,instrument);
+        int band_y=g.grid_y+(g.rows/2)*TS_TRACKER_ROW_HEIGHT;
+        assert(fb->pixels[band_y*640+5]==ui->palette.colors[TS_PALETTE_DESKTOP]);
+        const TsPaletteColor heads[]={TS_PALETTE_TRACK_LENGTH_PLAYHEAD,TS_PALETTE_FASTTRACKS_PLAYHEAD,
+            TS_PALETTE_CONTROL_PLAYHEAD,TS_PALETTE_FASTTRACKS_LENGTH_PLAYHEAD};
+        const int rows[]={1,3,2,2};
+        for(int i=0;i<4;++i) {
+            int x=TS_TRACKER_LANE_X+(i+1)*TS_TRACKER_LANE_WIDTH+1,y=g.grid_y+rows[i]*TS_TRACKER_ROW_HEIGHT;
+            uint32_t color=ui->palette.colors[heads[i]];
+            assert(fb->pixels[y*640+x]==color);
+            assert(fb->pixels[(y+TS_TRACKER_ROW_HEIGHT-1)*640+x+TS_TRACKER_LANE_WIDTH-3]==color);
+        }
+        /* The same screen slot is row 3 in a private lane, but follows master
+           row 12 in the normal lane. Click and drag must use those sources. */
+        click(TS_TRACKER_LANE_X+2*TS_TRACKER_LANE_WIDTH+10,g.grid_y+5*TS_TRACKER_ROW_HEIGHT+2);
+        assert(t->editor_row==5 && t->editor_lane==2 && !ui->tracker_follow_hold);
+        SDL_Event motion;SDL_zero(motion);motion.type=SDL_MOUSEMOTION;
+        motion.motion.windowID=SDL_GetWindowID(window);motion.motion.state=SDL_BUTTON_LMASK;
+        motion.motion.x=TS_TRACKER_LANE_X+TS_TRACKER_LANE_WIDTH+10;
+        motion.motion.y=g.grid_y+2*TS_TRACKER_ROW_HEIGHT+2;
+        assert(tracker_event(&motion,window,0,a,ui,pages,instrument,48000));
+        TsTrackerRegion dragged=ts_tracker_edit_region(ui->tracker_edit,t);
+        assert(dragged.row0==2 && dragged.row1==5 && dragged.lane0==1 && dragged.lane1==2);
+        ts_tracker_edit_anchor(ui->tracker_edit,t);
+        click(TS_TRACKER_LANE_X+10,band_y+2);assert(t->editor_row==12 && !ui->tracker_follow_hold);
+        SDL_SetModState(KMOD_SHIFT);
+        click(TS_TRACKER_LANE_X+TS_TRACKER_LANE_WIDTH+10,g.grid_y+2*TS_TRACKER_ROW_HEIGHT+2);
+        SDL_SetModState(KMOD_NONE);
+        TsTrackerRegion mark=ts_tracker_edit_region(ui->tracker_edit,t);
+        assert(mark.row0==2 && mark.row1==12 && mark.lane0==0 && mark.lane1==1);
+        ts_tracker_edit_anchor(ui->tracker_edit,t);
+        t->editor_row=60;t->editor_lane=7;
+        /* Private text stays put through master movement; it pages only when
+           that lane's source head crosses the next page boundary. */
+        ui->tracker_master_row=13;
+        click(TS_TRACKER_LANE_X+TS_TRACKER_LANE_WIDTH+10,g.grid_y+2*TS_TRACKER_ROW_HEIGHT+2);
+        assert(t->editor_row==2);
+        ui->tracker_lane_row[2]=g.rows;
+        click(TS_TRACKER_LANE_X+2*TS_TRACKER_LANE_WIDTH+10,g.grid_y+2);
+        assert(t->editor_row==(unsigned)g.rows);
+        t->editor_row=60;t->editor_lane=7;
+        ts_ui_render(fb,ui,instrument);
+        int head_x=TS_TRACKER_LANE_X+2*TS_TRACKER_LANE_WIDTH+1;
+        assert(fb->pixels[g.grid_y*640+head_x]==ui->palette.colors[TS_PALETTE_FASTTRACKS_PLAYHEAD]);
+        /* A live LEN shrink can arrive before the next audio snapshot. Both
+           the source renderer and pointer mapping normalize that stale head. */
+        t->lanes[2].length=3;
+        ts_ui_render(fb,ui,instrument);
+        int normalized=(g.rows%3)*TS_TRACKER_ROW_HEIGHT;
+        assert(fb->pixels[(g.grid_y+normalized)*640+head_x]==ui->palette.colors[TS_PALETTE_FASTTRACKS_LENGTH_PLAYHEAD]);
+        click(head_x+9,g.grid_y+2);assert(t->editor_row==0);
+        t->lanes[2].length=0;
+        ui->tracker_lane_row[2]=3;ui->tracker_master_row=12;
+    }
+    ui->tracker_expanded=0;TsTrackerLayout g=ts_tracker_layout(t,0);
+    t->editor_row=60;t->editor_lane=7;ts_tracker_edit_anchor(ui->tracker_edit,t);
+    ts_ui_render(fb,ui,instrument);
+    int x=TS_TRACKER_LANE_X+TS_TRACKER_LANE_WIDTH;
+    /* Exact default-palette dim: (orange + 2*desktop)/3 = 106,79,31. */
+    assert(pixels_of_color(fb,x+2,g.grid_y+2*12+2,24,8,0xffffae20u)>0);
+    assert(pixels_of_color(fb,x+2,g.grid_y+5*12+2,24,8,0xff6a4f1fu)>0);
+    x=TS_TRACKER_LANE_X+4*TS_TRACKER_LANE_WIDTH;
+    assert(pixels_of_color(fb,x+2,g.grid_y+8*12+2,24,8,0xff154a60u)>0); /* Dim FT text. */
+    t->fasttracks_uses_length=0;ts_ui_render(fb,ui,instrument);
+    assert(pixels_of_color(fb,x+2,g.grid_y+8*12+2,24,8,ui->palette.colors[TS_PALETTE_TEXT_ON_BLOCK])>0);
+    assert(fb->pixels[(g.grid_y+2*12)*640+x+1]==ui->palette.colors[TS_PALETTE_FASTTRACKS_PLAYHEAD]);
+    /* Bypass restores normal scrolling and full field colors for LEN lanes. */
+    t->length_bypass=1;ts_ui_render(fb,ui,instrument);
+    x=TS_TRACKER_LANE_X+TS_TRACKER_LANE_WIDTH;
+    assert(pixels_of_color(fb,x+2,g.grid_y+5*12+2,24,8,0xffffae20u)>0);
+    t->length_bypass=0;t->fasttracks_uses_length=1;
+    /* A manually scrolled view and another edited pattern use ordinary cells. */
+    ui->tracker_follow_hold=1;ui->tracker_scroll=20;
+    click(TS_TRACKER_LANE_X+2*TS_TRACKER_LANE_WIDTH+10,g.grid_y+2);assert(t->editor_row==20);
+    ui->tracker_follow_hold=0;ui->tracker_heard_pattern=p->id+100;
+    click(TS_TRACKER_LANE_X+2*TS_TRACKER_LANE_WIDTH+10,g.grid_y+2);assert(t->editor_row==20);
+    ui->tracker_heard_pattern=p->id;
+    /* Literal block audition has no inactive-LEN shading or private pages. */
+    ui->tracker_block=1;ui->tracker_block_rows=2|(5<<8);ui->tracker_block_lanes=0|(7<<8);
+    ui->tracker_master_row=3;
+    click(TS_TRACKER_LANE_X+2*TS_TRACKER_LANE_WIDTH+10,g.grid_y+(g.rows/2)*12+2);
+    assert(t->editor_row==3);ui->tracker_block=0;
+    /* Extended blank rows can be displayed but never edit retained hidden data. */
+    p->rows=4;t->lanes[2].length=64;ui->tracker_lane_row[2]=25;
+    unsigned before=t->editor_row;
+    click(TS_TRACKER_LANE_X+2*TS_TRACKER_LANE_WIDTH+10,g.grid_y+2);
+    assert(t->editor_row==before);
+    ui->tracker_edit->dragging=0;*p=saved_pattern;*t=saved_tracker;*ui=*saved_ui;
+    ts_tracker_edit_anchor(ui->tracker_edit,t);free(saved_ui);free(fb);
+}
+static void tapehead_cell_adapter(void)
+{
+    TsSisterTracker *t=ui->tracker,saved_tracker=*t;
+    TsTrackerPattern *p=ts_sister_tracker_pattern(t,t->editor_pattern),saved_pattern=*p;
+    TsUiState *saved_ui=malloc(sizeof(*ui));TsFramebuffer *fb=malloc(sizeof(*fb));assert(saved_ui && fb);
+    *saved_ui=*ui;ui->tracker_edit->tools_open=0;ui->tracker_running=0;ui->tracker_block=0;
+    ui->tracker_follow_hold=1;ui->tracker_scroll=0;ui->tracker_expanded=0;ui->tracker_hex_digit=0;
+    for(int lane=0;lane<8;++lane){t->lanes[lane].length=0;t->lanes[lane].mode=TS_TRACKER_STANDARD;t->lanes[lane].muted=0;}
+    t->editor_row=30;t->editor_lane=7;ts_tracker_edit_anchor(ui->tracker_edit,t);
+    p->rows=64;memset(p->cells,0,sizeof(p->cells));
+    p->cells[0][0]=(TsTrackerCell){.note_kind=TS_TRACKER_NOTE_PITCH,.note=0,.tile_id=UINT64_MAX,.has_volume=1,.volume=0,.fx_command='0'};
+    p->cells[1][0]=(TsTrackerCell){.note_kind=TS_TRACKER_NOTE_PITCH,.note=127,.tune_command='N',.tune_value=255};
+    p->cells[2][0]=(TsTrackerCell){.note_kind=TS_TRACKER_NOTE_CUT};
+    TsTrackerLayout g=ts_tracker_layout(t,0);int x=TS_TRACKER_LANE_X,y=g.grid_y+1;
+    ts_ui_render(fb,ui,instrument);
+    for(int row=0;row<3;++row)
+        assert(pixels_of_color(fb,x+3,y+row*12,24,8,ui->palette.colors[TS_PALETTE_PATTERN_NOTE])>3);
+    assert(pixels_of_color(fb,x+27,y,8,7,ui->palette.colors[TS_PALETTE_PATTERN_INSTRUMENT])>3); /* Missing alias ?? */
+    assert(pixels_of_color(fb,x+35,y,8,7,ui->palette.colors[TS_PALETTE_PATTERN_VOLUME])>2); /* Explicit 00 */
+    assert(pixels_of_color(fb,x+55,y,12,7,ui->palette.colors[TS_PALETTE_PATTERN_EFFECT])>3); /* Explicit 000 */
+    assert(pixels_of_color(fb,x+55,y+12,12,7,ui->palette.colors[TS_PALETTE_PATTERN_EMPTY])==3); /* Empty FX */
+    /* Hit the original glyph centers: native command and parameter entry must
+       still address the exact fields that the imported cell routine draws. */
+    const int centers[7]={15,29,37,45,49,57,61};
+    for(int field=0;field<7;++field){click(x+centers[field],g.grid_y+2);assert(ui->tracker_field==field);}
+    /* The original locator follows the second digit. Pending F in VOL must
+       remain visible even though a completed event volume clamps to 0x40. */
+    ui->tracker_field=2;ui->tracker_hex_digit=1;ui->tracker_hex_value=0xf0;ui->tracker_breathe_frame=0;
+    ts_ui_render(fb,ui,instrument);
+    assert(pixels_of_color(fb,x+35,y,4,7,ui->palette.colors[TS_PALETTE_PATTERN_VOLUME])>3);
+    assert(fb->pixels[g.grid_y*640+x+39]==0xffffe020u);
+    /* Original 120-frame triangular breath: exact middle-of-cycle RGB. */
+    ui->tracker_breathe_frame=60;ts_ui_render(fb,ui,instrument);
+    uint32_t bg=ui->palette.colors[TS_PALETTE_DESKTOP];
+    uint32_t dim=0xff000000u|(((255*140+((bg>>16)&255)*115)/255)<<16)|
+        (((224*140+((bg>>8)&255)*115)/255)<<8)|((32*140+(bg&255)*115)/255);
+    assert(fb->pixels[g.grid_y*640+x+39]==dim);
+    *p=saved_pattern;*t=saved_tracker;*ui=*saved_ui;ts_tracker_edit_anchor(ui->tracker_edit,t);
+    free(saved_ui);free(fb);
 }
 static void block_capture_frames(void)
 {
@@ -372,20 +658,44 @@ int main(int argc,char **argv)
     pages->tracker.editor_pattern=heard;ui->tracker_scroll=0;
     tracker_refresh(0,a,ui,pages,instrument,48000);
     editor_controls();
+    preferred_edit_controls();
     tapehead_columns_and_overlay();
     independent_marks_and_layout();
     block_capture_frames();
+    fasttracks_controls();
+    tapehead_transport_visuals();
+    tapehead_cell_adapter();
     if(argc>1) {
         TsSisterTracker *t=ui->tracker;t->editor_row=2;t->editor_lane=2;
         ts_tracker_edit_anchor(ui->tracker_edit,t);ts_tracker_edit_mark(ui->tracker_edit,t,5,3);
         modified(SDLK_l,KMOD_CTRL);float frame[2];audio_callback(a,(Uint8*)frame,sizeof(frame));
         t->editor_row=0;t->editor_lane=0;ui->tracker_field=1;tracker_refresh(0,a,ui,pages,instrument,48000);
-        ui->tracker_cursor_visible=1;ui->tracker_hover_y=0;
+        ui->tracker_hover_y=0;
         TsFramebuffer *fb=malloc(sizeof(*fb));assert(fb);ts_ui_render(fb,ui,instrument);
         SDL_Surface *s=SDL_CreateRGBSurfaceFrom(fb->pixels,640,400,32,640*4,0xff0000,0xff00,0xff,0xff000000);
         assert(s && !SDL_SaveBMP(s,argv[1]));
         if(argc>2){ui->tracker_edit->tools_open=1;ts_ui_render(fb,ui,instrument);assert(!SDL_SaveBMP(s,argv[2]));ui->tracker_edit->tools_open=0;}
         if(argc>3){ui->tracker_expanded=1;ts_ui_render(fb,ui,instrument);assert(!SDL_SaveBMP(s,argv[3]));ui->tracker_expanded=0;}
+        if(argc>4) {
+            TsTrackerPattern *p=ts_sister_tracker_pattern(t,t->editor_pattern);
+            unsigned alias=tracker_bind_sample(ui,instrument,instrument->selected_slot);assert(alias);
+            static const unsigned lengths[]={3,5,7,16,0,9,11,4},ratios[]={7,14,0,12,7,16,6,3};
+            memset(p->cells,0,sizeof(p->cells));p->rows=16;
+            for(int lane=0;lane<8;++lane) {
+                t->lanes[lane].length=lengths[lane];t->lanes[lane].ratio=ratios[lane];
+                t->lanes[lane].mode=lane==3 || lane==4?TS_TRACKER_STANDARD:TS_TRACKER_PATTERN;
+                t->lanes[lane].direction=lane==1?TS_TRACKER_REVERSE:lane==6?TS_TRACKER_PING_PONG:TS_TRACKER_FORWARD;
+                for(int row=0;row<16;row+=2)p->cells[row][lane]=(TsTrackerCell){.tile_id=row?0:t->aliases[alias],.note_kind=TS_TRACKER_NOTE_PITCH,.note=48+lane+row};
+            }
+            t->ticks_per_line=3;t->bpm=125;t->control_lane=2;t->fasttracks_uses_length=1;t->length_bypass=0;
+            t->editor_row=0;t->editor_lane=0;ts_tracker_edit_anchor(ui->tracker_edit,t);
+            tracker_play(0,a,ui,pages,instrument,48000);
+            for(int frame=0;frame<24001;++frame)(void)ts_tracker_playback_read(&a->tracker,48000);
+            ts_tracker_playback_end_block(&a->tracker);tracker_refresh(0,a,ui,pages,instrument,48000);
+            ui->tracker_hover_y=0;ui->tracker_field=0;
+            ts_ui_render(fb,ui,instrument);assert(!SDL_SaveBMP(s,argv[4]));
+            if(argc>5){ui->tracker_expanded=1;ts_ui_render(fb,ui,instrument);assert(!SDL_SaveBMP(s,argv[5]));ui->tracker_expanded=0;}
+        }
         SDL_FreeSurface(s);free(fb);
     }
     stop_all_force(0,a,ui);assert(!a->tracker.running && !ts_note_bank_count(&a->notes));
