@@ -28,7 +28,7 @@ add_library(tapesister_core src/ts_sample.c src/ts_prism.c src/ts_prism_performa
              src/ts_input_monitor.c
              src/ts_input_ownership.c
              src/ts_sample_pages.c
-             src/ts_tile_id.c src/ts_sister_tracker.c src/ts_sister_tracker_project.c
+             src/ts_tile_id.c src/ts_sister_tracker.c src/ts_sister_tracker_project.c src/ts_tracker_playback.c src/ts_tracker_edit.c
              src/ts_browser.c src/ts_config.c src/ts_audio_config.c
              src/ts_recipe.c src/ts_dsp_recipe.c
              src/ts_palette.c
@@ -78,6 +78,11 @@ if(TAPESISTER_BUILD_SDL)
   endif()
   target_include_directories(tapesister PRIVATE third_party)
   target_link_libraries(tapesister PRIVATE tapesister_core SDL2::SDL2)
+  add_custom_command(TARGET tapesister POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:tapesister>/licenses/tapehead"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+      "${CMAKE_CURRENT_SOURCE_DIR}/third_party/tapehead"
+      "$<TARGET_FILE_DIR:tapesister>/licenses/tapehead")
   if(WIN32)
     enable_language(CXX)
     add_library(tapesister_asio STATIC src/ts_asio_backend.cpp
@@ -411,6 +416,13 @@ add_test(NAME tapesister_capture_archive_tests COMMAND tapesister_capture_archiv
 add_executable(tapesister_sample_pages_tests tests/test_sample_pages.c)
 target_link_libraries(tapesister_sample_pages_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_sample_pages_tests COMMAND tapesister_sample_pages_tests)
+add_executable(tapesister_tracker_playback_tests tests/test_tracker_playback.c)
+target_link_libraries(tapesister_tracker_playback_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_tracker_playback_tests COMMAND tapesister_tracker_playback_tests)
+add_executable(tapesister_tracker_edit_tests tests/test_tracker_edit.c)
+target_link_libraries(tapesister_tracker_edit_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_tracker_edit_tests COMMAND tapesister_tracker_edit_tests)
+
 add_executable(tapesister_sister_tracker_tests tests/test_sister_tracker.c)
 target_link_libraries(tapesister_sister_tracker_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_sister_tracker_tests COMMAND tapesister_sister_tracker_tests)
@@ -464,6 +476,14 @@ if(TAPESISTER_BUILD_SDL)
     target_link_libraries(tapesister_realtime_controller_tests PRIVATE rt)
   endif()
   add_test(NAME tapesister_realtime_controller_tests COMMAND tapesister_realtime_controller_tests)
+  add_executable(tapesister_tracker_controller_tests tests/test_tracker_controller.c
+                 src/tape_link.c src/tape_companion.c src/ts_startup_diag.c src/ts_midi_input.c)
+  target_include_directories(tapesister_tracker_controller_tests PRIVATE third_party)
+  target_link_libraries(tapesister_tracker_controller_tests PRIVATE tapesister_core SDL2::SDL2)
+  if(UNIX AND NOT APPLE)
+    target_link_libraries(tapesister_tracker_controller_tests PRIVATE rt)
+  endif()
+  add_test(NAME tapesister_tracker_controller_tests COMMAND tapesister_tracker_controller_tests)
   add_executable(tapesister_audio_health_tests tests/test_audio_health.c
                  src/tape_link.c src/tape_companion.c src/ts_startup_diag.c src/ts_midi_input.c)
   target_include_directories(tapesister_audio_health_tests PRIVATE third_party)
@@ -552,6 +572,7 @@ if(MINGW)
   foreach(project_test IN ITEMS test_sister_post_fx
                                tapesister_realtime_controller_tests
                                tapesister_audio_health_tests
+                               tapesister_tracker_controller_tests
                                tapesister_core_tests
                                test_sister_project_state
                                tapesister_sample_pages_tests

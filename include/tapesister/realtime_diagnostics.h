@@ -21,7 +21,8 @@ enum {
     TS_RT_CONFIG_FX_FEEDBACK = 1u << 12,
     TS_RT_CONFIG_FALLOUT = 1u << 13,
     TS_RT_CONFIG_FILE_CAPTURE = 1u << 14,
-    TS_RT_CONFIG_TAPEHEAD = 1u << 15
+    TS_RT_CONFIG_TAPEHEAD = 1u << 15,
+    TS_RT_CONFIG_TRACK = 1u << 16
 };
 
 typedef struct {

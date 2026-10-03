@@ -14,6 +14,8 @@
 #include "tapesister/recipe.h"
 #include "tapesister/sample.h"
 #include "tapesister/mosaic.h"
+#include "tapesister/sister_tracker.h"
+#include "tapesister/tracker_edit.h"
 #include "tapesister/transform.h"
 #include "tapesister/dsp_recipe.h"
 #include "tapesister/exchange.h"
@@ -21,6 +23,48 @@
 #include "tapesister/waveform_cache.h"
 
 enum { TS_UI_WIDTH = 640, TS_UI_HEIGHT = 400 };
+enum { TS_TRACKER_LEN_Y=54, TS_TRACKER_RATIO_Y=64,
+       TS_TRACKER_MIX_Y=74, TS_TRACKER_GRID_Y=88,
+       TS_TRACKER_LANE_X=32, TS_TRACKER_LANE_WIDTH=72,
+       TS_TRACKER_LANE_RIGHT=TS_TRACKER_LANE_X+TS_TRACKER_LANES*TS_TRACKER_LANE_WIDTH,
+       TS_TRACKER_FIELD_COUNT=7,
+       TS_TRACKER_ROW_HEIGHT=12, TS_TRACKER_VISIBLE_ROWS=19,
+       TS_TRACKER_GRID_BOTTOM=TS_TRACKER_GRID_Y+TS_TRACKER_VISIBLE_ROWS*TS_TRACKER_ROW_HEIGHT };
+typedef struct {
+    int len_y,ratio_y,mix_y,name_y,grid_y,rows,bottom,help_y,expanded;
+} TsTrackerLayout;
+/* One layout for drawing, pointer ownership, scrolling and keyboard paging. */
+static inline int ts_tracker_custom_name(const TsTrackerLane *lane,int index)
+{
+    const char *n=lane->name;
+    return n[0] && !(n[0]=='T' && n[1]=='R' && n[2]=='A' && n[3]=='C' &&
+        n[4]=='K' && n[5]==' ' && n[6]=='1'+index && !n[7]);
+}
+static inline TsTrackerLayout ts_tracker_layout(const TsSisterTracker *t,int expanded)
+{
+    int names=0;
+    if(t)for(int i=0;i<TS_TRACKER_LANES;++i)names|=ts_tracker_custom_name(&t->lanes[i],i);
+    int top=expanded?4:TS_TRACKER_LEN_Y;
+    TsTrackerLayout g={.len_y=top,.ratio_y=top+10,.mix_y=top+20,
+        .name_y=names?top+32:-1,.grid_y=top+34+(names?10:0),.expanded=expanded};
+    g.rows=((expanded?386:TS_TRACKER_GRID_BOTTOM)-g.grid_y)/TS_TRACKER_ROW_HEIGHT;
+    g.bottom=g.grid_y+g.rows*TS_TRACKER_ROW_HEIGHT;g.help_y=expanded?389:319;
+    return g;
+}
+/* Tapehead-style five groups, with separate command/parameter focus. */
+static inline int ts_tracker_field_offset(int field)
+{
+    const int offsets[TS_TRACKER_FIELD_COUNT]={2,27,36,45,49,58,62};
+    return offsets[field>=0 && field<TS_TRACKER_FIELD_COUNT?field:0];
+}
+static inline int ts_tracker_field_width(int field)
+{
+    return field==0?24:field==3 || field==5?4:8;
+}
+static inline int ts_tracker_field_at(int local)
+{
+    return local<27?0:local<36?1:local<45?2:local<49?3:local<58?4:local<62?5:6;
+}
 enum { TS_IMPORT_PREVIEW_COLUMNS = 568 };
 enum { TS_UI_INPUT_LED_X = 184, TS_UI_INPUT_LED_Y = 12,
        TS_UI_INPUT_LED_W = 2, TS_UI_INPUT_LED_H = 9,
@@ -466,6 +510,16 @@ typedef struct {
     float router_peaks[TS_ROUTER_COUNT*2+2];
     size_t capture_recorded_frames;
     size_t capture_capacity_frames;
+    TsSisterTracker *tracker;
+    TsTrackerEdit *tracker_edit;
+    int tracker_open, tracker_field, tracker_scroll, tracker_hex_digit, tracker_hex_value;
+    int tracker_repeat_control, tracker_repeat_delta, tracker_repeat_button, tracker_follow_hold;
+    uint32_t tracker_repeat_next, tracker_cursor_epoch;
+    int tracker_cursor_visible;
+    int tracker_expanded,tracker_hover_x,tracker_hover_y;
+    unsigned tracker_block,tracker_block_rows,tracker_block_lanes;
+    unsigned tracker_running, tracker_row, tracker_heard_pattern, tracker_missing;
+    uint8_t tracker_solo;
     TsMosaic *mosaic;
     uint64_t mosaic_selected, mosaic_editing;
     uint64_t mosaic_selection[TS_MOSAIC_EVENTS];

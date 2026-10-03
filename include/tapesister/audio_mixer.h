@@ -10,6 +10,7 @@ typedef struct {
     TsStereoFrame legacy_preview;
     TsStereoFrame tile_performance;
     TsStereoFrame fm;
+    TsStereoFrame tracker;
     TsStereoFrame external;
     TsStereoFrame tapehead;
     TsStereoFrame reference;

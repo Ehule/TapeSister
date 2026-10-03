@@ -501,7 +501,7 @@ static uint8_t source_bit(int source_index)
     static const uint8_t bits[TS_SISTER_SOURCE_COUNT] = {
         TS_SISTER_SOURCE_TILES, TS_SISTER_SOURCE_FM,
         TS_SISTER_SOURCE_EXT, TS_SISTER_SOURCE_PREVIEW,
-        TS_SISTER_SOURCE_TAPEHEAD
+        TS_SISTER_SOURCE_TAPEHEAD, TS_SISTER_SOURCE_TRACK
     };
     return source_index >= 0 && source_index < TS_SISTER_SOURCE_COUNT ?
            bits[source_index] : 0u;
@@ -572,6 +572,7 @@ void ts_sister_runtime_init(TsSisterRuntime *runtime)
                        runtime->parameters.preview_gain);
     runtime_ramp_reset(&runtime->source_gain[4],
                        runtime->parameters.tapehead_gain);
+    runtime_ramp_reset(&runtime->source_gain[5], 1.0f);
     for (int source_index = 0; source_index < TS_SISTER_SOURCE_COUNT;
          ++source_index)
         runtime_ramp_reset(&runtime->source_route[source_index], 0.0f);
@@ -1376,6 +1377,7 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
     source.external = ts_stereo_frame_sanitize(source.external);
     source.preview = ts_stereo_frame_sanitize(source.preview);
     source.tapehead = ts_stereo_frame_sanitize(source.tapehead);
+    source.tracker = ts_stereo_frame_sanitize(source.tracker);
     /* This is the untrimmed, pre-Sister Live Link stream. It remains available
        as a recorder tap even when Sister processing itself is bypassed. */
     frame.tap[TS_SISTER_TAP_TAPEHEAD] = source.tapehead;
@@ -1414,6 +1416,8 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
         source.preview, source_gain[3] * source_route[3]));
     input = frame_add(input, frame_scale(
         source.tapehead, source_gain[4] * source_route[4]));
+    input = frame_add(input, frame_scale(
+        source.tracker, source_gain[5] * source_route[5]));
     if (route_energy > 1.0f)
         input = frame_scale(input, 1.0f / sqrtf(route_energy));
     RouterFrameContext context={.runtime=runtime,.frame=&frame};

@@ -21,10 +21,11 @@ enum {
     TS_SISTER_SOURCE_EXT = 1u << 2,
     TS_SISTER_SOURCE_PREVIEW = 1u << 3,
     TS_SISTER_SOURCE_TAPEHEAD = 1u << 4,
-    TS_SISTER_SOURCE_COUNT = 5,
+    TS_SISTER_SOURCE_TRACK = 1u << 5,
+    TS_SISTER_SOURCE_COUNT = 6,
     TS_SISTER_SOURCE_ALL = TS_SISTER_SOURCE_TILES | TS_SISTER_SOURCE_FM |
                            TS_SISTER_SOURCE_EXT | TS_SISTER_SOURCE_PREVIEW |
-                           TS_SISTER_SOURCE_TAPEHEAD
+                           TS_SISTER_SOURCE_TAPEHEAD | TS_SISTER_SOURCE_TRACK
 };
 
 typedef enum {
@@ -67,6 +68,7 @@ typedef struct {
     TsStereoFrame external;
     TsStereoFrame preview;
     TsStereoFrame tapehead;
+    TsStereoFrame tracker;
 } TsSisterSourceFrames;
 
 typedef struct {

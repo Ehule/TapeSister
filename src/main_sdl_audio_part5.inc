@@ -194,7 +194,7 @@ static void ts_overlay_tile_states(TsFramebuffer *fb, const TsUiState *ui,
 {
     const AudioState *audio = (const AudioState *)ts_output_userdata;
     uint32_t source_color;
-    if (fb == NULL || ui == NULL || instrument == NULL || ui->mosaic_open || ui->show_keyboard ||
+    if (fb == NULL || ui == NULL || instrument == NULL || ui->tracker_open || ui->mosaic_open || ui->show_keyboard ||
         ui->show_recipes || ui->show_ingredients ||
         ts_ui_foreground_panel_open(ui)) return;
     ts_discover_tile_bounds();

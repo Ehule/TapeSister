@@ -5,6 +5,7 @@ typedef struct {
     Uint32 captured;
     int hold, keyboard_voices, held_voices, tile_voices;
     int arp, outer_arp, arp_slot, audition, mosaic;
+    int tracker, tracker_voices, tracker_row;
     int sister, rolling, tape_hold, monitor;
     unsigned sources;
     int board, fallout;
@@ -69,6 +70,9 @@ static void ts_audio_health_capture_setup(const AudioState *audio,
     s->arp_slot = audio->keyboard_sequence.active_slot;
     s->audition = audio->playing;
     s->mosaic = audio->mosaic && audio->mosaic->playing;
+    s->tracker=audio->tracker.running?(audio->tracker.paused?2:1):0;
+    s->tracker_row=audio->tracker.row<0?0:audio->tracker.row;
+    for(int i=0;i<TS_TRACKER_LANES;++i)s->tracker_voices+=audio->tracker.lanes[i].voice.active;
     s->sister = r->enabled; s->rolling = r->rolling; s->tape_hold = r->held;
     s->monitor = r->monitor_enabled; s->sources = r->source_switches;
     s->board = p->fx.enabled; s->fallout = p->fx.fallout.enabled;
@@ -108,7 +112,7 @@ static void ts_audio_health_setup_report(char *text, size_t size, Uint32 now)
         return;
     }
     char source[96] = "";
-    const char *names[] = {"Tiles", "FM", "EXT", "Preview", "TapeHead"};
+    const char *names[] = {"Tiles", "FM", "EXT", "Preview", "TapeHead", "Tracker"};
     for (int i = 0; i < TS_SISTER_SOURCE_COUNT; ++i) if (s->sources & (1u << i)) {
         size_t used = strlen(source);
         snprintf(source + used, sizeof(source) - used, "%s%s", used ? ", " : "", names[i]);
@@ -121,6 +125,7 @@ static void ts_audio_health_setup_report(char *text, size_t size, Uint32 now)
         "  Keyboard HOLD: %s; keyboard voice instances: %d; latched/sustained: %d\n"
         "  ARP: %s; outer ARP: %s; active slot: %d\n"
         "  Audition: %s; tile voice instances: %d; Mosaic: %s\n"
+        "  SisterTracker: %s; row: %d; voice instances: %d\n"
         "  Sister Machine: %s, %s; rolling: %s; tape HOLD: %s; monitor: %s\n"
         "  Sister source switches: %s\n"
         "  Fallout: %s, %s; FX master: %s; mix: %.1f%%\n"
@@ -132,6 +137,7 @@ static void ts_audio_health_setup_report(char *text, size_t size, Uint32 now)
         health_running(s->arp), health_running(s->outer_arp),
         s->arp || s->outer_arp ? s->arp_slot + 1 : 0,
         health_running(s->audition), s->tile_voices, health_running(s->mosaic),
+        s->tracker==2?"paused":health_running(s->tracker),s->tracker_row,s->tracker_voices,
         health_on(s->sister), health_route(s, TS_ROUTER_SISTER), health_on(s->rolling),
         health_on(s->tape_hold), health_on(s->monitor), source[0] ? source : "none",
         health_on(s->fallout), health_route(s, TS_ROUTER_FALLOUT), health_on(s->board), s->fallout_mix * 100,

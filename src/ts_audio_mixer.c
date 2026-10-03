@@ -94,7 +94,8 @@ void ts_audio_buses_apply_source_insert(TsAudioBuses *buses,
 void ts_audio_buses_apply_sister_ownership(TsAudioBuses *buses,
                                            int sister_active)
 {
-    if (!sister_active) return;
+    if (!sister_active || !buses) return;
+    buses->tracker = (TsStereoFrame){0};
     ts_audio_buses_apply_source_insert(buses, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f);
 }
 
@@ -113,6 +114,7 @@ TsStereoFrame ts_audio_mixer_render_unclamped(TsAudioMixer *mixer,
     program = add_frame(buses.legacy_preview, buses.tile_performance);
     program = add_frame(program, buses.fm);
     program = add_frame(program, buses.tapehead);
+    program = add_frame(program, buses.tracker);
     program = clamp_frame(program);
     output = scale_frame(program, mixer->program_gain);
     output = add_frame(output, buses.sister);

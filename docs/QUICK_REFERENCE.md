@@ -17,6 +17,8 @@ For explanations and complete workflows, see the [User Manual](USER_MANUAL.md).
 | `Ctrl+Shift+P` | Reach CDP Portal from main, FM, Mosaic, or Sister |
 | `4` | Show native DSP; press again to cycle DSP pages |
 | `F1`–`F8` | Select keyboard octave |
+| `F10` | Open/close the [SisterTracker pattern editor](SISTERTRACKER_PLAYBACK.md); playback continues when closed |
+| `F9` | Open/close the Router, including from SisterTracker |
 | `F12` or CFG → AUDIO HEALTH | Open/close the [Audio Health monitor](AUDIO_HEALTH.md); Reset counters and Copy Report for a crackle investigation |
 | `Space` | Main: play/stop audition. Mosaic: play/pause arrangement |
 | `Ctrl+Shift+M` | Enter or leave MIDI Learn in either window |
@@ -25,6 +27,23 @@ For explanations and complete workflows, see the [User Manual](USER_MANUAL.md).
 From Sister, Shift+grave and grave bring FM and Mosaic forward even if already open
 behind it. Active dialogs keep focus until resolved. Number-key lower-panel shortcuts
 apply to the main canvas. Navigation and audition stop leave Mosaic playback running.
+
+## SisterTracker
+
+Use arrows for fields and rows, Shift+arrows or drag for block selection, and
+Tab or the visible FX button for Sister/FX. Ctrl+C/X/V copies, cuts and pastes;
+Ctrl+Z/Y undoes and redoes. Shift/Ctrl/Alt+F3/F4/F5 edits a lane, pattern or
+block using Tapehead's cut/copy/paste shortcuts. The EDIT button also exposes
+transpose, field masks, mix paste, fill, repeat, reverse, volume interpolation
+and pattern expand/shrink. Plain navigation and entry preserve the marked block.
+Ctrl+L starts/stops block looping; Shift+arrows changes its bounds at the next
+seam. Alt+C marks a lane. F8 extracts a block outside looping; in Block Loop,
+F7 captures a live performance and F8 captures one live cycle to WAV.
+Ctrl+Alt+Backspace expands/restores the pattern view. Ctrl+E opens EDIT in either
+view. F7/F8 take priority over octave selection in those contexts; OCT remains
+available in the ordinary view.
+Hold left/right mouse on BPM, TPL or ROWS to increase/decrease continuously.
+See the [full editing reference](SISTERTRACKER_PLAYBACK.md#editing-and-mixing).
 
 ## Mosaic
 
@@ -717,7 +736,7 @@ Ctrl+Z / Ctrl+Y undo/redo; Escape cancels the current stroke.
   then restart. Legacy `meditation`/`standing` values migrate to `nebula`.
   `off` leaves audio and optical controls active. [Details](PRISM_ZOYA.md).
 - **DRAW**: each stroke replaces the previous envelope in its drawn region,
-  with recoverable zeroed sections and ordinary undo/redo. New saves use TSR31.
+  with recoverable zeroed sections and ordinary undo/redo. New saves use TSR32.
 
 ### JACK and device discovery
 

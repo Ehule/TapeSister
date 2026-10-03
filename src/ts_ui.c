@@ -717,12 +717,13 @@ static void main_midi_learn_overlay(TsFramebuffer *fb, const TsUiState *ui)
     char target[TS_MIDI_TARGET_ID_MAX];
     int state;
     if (fb == NULL || ui == NULL || !ui->midi_learn_active) return;
-    if(ui->master_eq_open || ui->router_open)goto learn_footer;
+    if(ui->master_eq_open || ui->router_open || (ui->tracker_open && ui->tracker_expanded))goto learn_footer;
     state = midi_learn_target_state(&ui->config.midi_map,
                                     ui->midi_learn_pending,
                                     "main.master_output");
     midi_learn_tint(fb, TS_UI_MASTER_OUTPUT_X, TS_UI_MASTER_OUTPUT_Y,
                     TS_UI_MASTER_OUTPUT_W, 22, state);
+    if(ui->tracker_open)goto learn_footer;
     state = midi_learn_target_state(&ui->config.midi_map,
                                     ui->midi_learn_pending,
                                     "main.tile_fade");
@@ -2957,6 +2958,7 @@ int ts_ui_foreground_panel_open(const TsUiState *ui)
 
 #include "ts_cdp_portal_ui.inc"
 #include "ts_mosaic_ui.inc"
+#include "ts_tracker_ui.inc"
 #include "ts_keyboard_sequence_ui.inc"
 #include "ts_master_eq_ui.inc"
 #include "ts_router_ui.inc"
@@ -2966,6 +2968,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
 {
     render_palette = &ui->palette;
     if(ui->portal.open) { portal_render(fb,ui); return; }
+    if(ui->tracker_open && ui->tracker) {tracker_render(fb,ui,instrument);master_eq_render(fb,ui);router_render(fb,ui);main_midi_learn_overlay(fb,ui);return;}
     if(ui->mosaic_open && ui->mosaic) {mosaic_render(fb,ui,instrument);master_eq_render(fb,ui);router_render(fb,ui);main_midi_learn_overlay(fb,ui);return;}
     const TsTuning *display_tuning = &ui->tune_reference;
     int showing_bank = ui->bank_view_slot >= 0 && ui->bank_view_slot < TS_BANK_SLOT_COUNT;
@@ -4127,6 +4130,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
 void ts_ui_render_file_recording(TsFramebuffer *fb, const TsUiState *ui)
 {
     if(!fb || !ui)return;
+    if(ui->tracker_open && ui->tracker_expanded)return; /* Tracker owns every grid row. */
     render_palette=&ui->palette;
     if(ui->file_record_state!=TS_PERFORMANCE_FILE_RECORDING &&
        ui->file_record_state!=TS_PERFORMANCE_FILE_STOPPING) {
@@ -4226,6 +4230,11 @@ int ts_ui_midi_target_from_point(const TsUiState *ui, int x, int y,
     target[0] = '\0';
     if(ui->router_open)return router_midi_target(ui,x,y,target,target_size);
     if(ui->master_eq_open)return ts_ui_master_eq_midi_target(ui,x,y,target,target_size);
+    if(ui->tracker_open) {
+        if(ui->tracker_expanded || !ts_ui_master_output_contains(x,y))return 0;
+        result=snprintf(target,target_size,"main.master_output");
+        return result>0 && (size_t)result<target_size;
+    }
     slot = !ui->show_keyboard && !ui->show_recipes && !ui->show_ingredients ?
            ts_ui_bank_slot_from_point(x, y) : -1;
     if (slot >= 0) {
@@ -5485,12 +5494,13 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
            model->routing.source_switches & TS_SISTER_SOURCE_TAPEHEAD);
     button(fb, 222, 172, 52, "TH SONG", model->tapehead_song_playing);
     button(fb, 278, 172, 52, "TH PATT", model->tapehead_pattern_playing);
-    snprintf(line, sizeof(line), "%s MASK%04X V%02d IN%.2F M%.2F",
+    button(fb, 334, 172, 44, "TRACK",
+           model->routing.source_switches & TS_SISTER_SOURCE_TRACK);
+    snprintf(line, sizeof(line), "%s %04X V%02d IN%.2F",
              model->routing.live_link_available ? "LINK" : "WAIT",
              model->routing.source_mask, model->routing.active_source_voices,
-             model->routing.source_input_peak,
-             model->routing.tap_peak[TS_SISTER_TAP_MIX]);
-    text(fb, 336, 179, line,
+             model->routing.source_input_peak);
+    text(fb, 382, 179, line,
          model->routing.warnings ? PAL_VOLUME : PAL_MOUSE, 1);
     overload_display = model->routing.overload_count > 9999u ?
         9999u : (unsigned long long)model->routing.overload_count;
