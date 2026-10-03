@@ -24,7 +24,11 @@ capture a running block, and F8 outside looping extracts a new pattern with
 undo/redo. Ctrl+Alt+Backspace expands the pattern view.
 LEN and Pattern FastTracks are active: adjust LEN with the header wheel, click
 FT to enable a private lane clock, and change its ratio or direction. CONTROL
-sets the shared cycle boundary. Each lane shows its actual source row; ratio
+sets the shared cycle boundary. FOLLOW uses Tapehead's fixed master band for
+normal scrolling and stationary pages for LEN/FT tracks. Their outlined heads
+have separate LEN, FT, combined FT+LEN and CONTROL colors, and rows past active
+LEN are dimmed. FT fields and phase LEDs follow the shared palette. Pointer
+editing maps to the actual displayed lane row. Each lane shows its source row; ratio
 changes preserve phase, and pause freezes all clocks. Ctrl+L bypasses these
 settings for literal block audition. Song/order and tuning/FX execution remain pending.
 See the [SisterTracker playback guide](SISTERTRACKER_PLAYBACK.md)

@@ -516,10 +516,13 @@ typedef struct {
     int tracker_repeat_control, tracker_repeat_delta, tracker_repeat_button, tracker_follow_hold;
     uint32_t tracker_repeat_next, tracker_cursor_epoch;
     int tracker_cursor_visible;
+    unsigned tracker_breathe; /* Tapehead's 255 -> 140 -> 255 locator pulse. */
     int tracker_expanded,tracker_hover_x,tracker_hover_y;
     unsigned tracker_block,tracker_block_rows,tracker_block_lanes;
     unsigned tracker_running, tracker_row, tracker_heard_pattern, tracker_missing;
+    unsigned tracker_master_row;
     unsigned tracker_lane_row[TS_TRACKER_LANES];
+    unsigned tracker_lane_phase[TS_TRACKER_LANES]; /* lag/sync/lead LED bits */
     uint8_t tracker_solo;
     TsMosaic *mosaic;
     uint64_t mosaic_selected, mosaic_editing;
@@ -751,6 +754,45 @@ typedef struct {
     char overlay[80];
     char status[160];
 } TsUiState;
+
+/* Tapehead ft2_pattern_draw.c / ft2_transport_visuals.h (BSD-3-Clause).
+   One source-row mapping for drawing, marks, cursor and pointer editing.
+   Normal lanes scroll through the master band. LEN/FT lanes remain on a page
+   until their actual audio head crosses the viewport boundary. */
+typedef struct {
+    int playing, following, master_row, master_top, extent;
+    int top[TS_TRACKER_LANES];
+    uint8_t independent[TS_TRACKER_LANES], fast[TS_TRACKER_LANES];
+} TsTrackerView;
+static inline TsTrackerView ts_tracker_view(const TsUiState *ui,const TsTrackerPattern *p)
+{
+    const TsSisterTracker *t=ui->tracker;
+    TsTrackerLayout g=ts_tracker_layout(t,ui->tracker_expanded);
+    TsTrackerView v={0};
+    if(!p || !t)return v;
+    v.playing=ui->tracker_running && ui->tracker_heard_pattern==p->id;
+    v.following=v.playing && t->follow && !ui->tracker_follow_hold;
+    v.master_row=v.playing?(int)ui->tracker_master_row:t->editor_row;
+    v.master_top=v.following?v.master_row-g.rows/2:ui->tracker_scroll;
+    v.extent=p->rows;
+    for(int lane=0;lane<TS_TRACKER_LANES;++lane) {
+        const TsTrackerLane *l=&t->lanes[lane];
+        if(!t->length_bypass && l->length>v.extent)v.extent=l->length;
+        v.fast[lane]=l->mode==TS_TRACKER_PATTERN && !ui->tracker_block;
+        v.independent[lane]=v.following && !ui->tracker_block &&
+            (v.fast[lane] || (!t->length_bypass && l->length));
+        v.top[lane]=v.independent[lane]?
+            ((int)ui->tracker_lane_row[lane]/g.rows)*g.rows:v.master_top;
+    }
+    return v;
+}
+static inline int ts_tracker_view_row(const TsUiState *ui,const TsTrackerPattern *p,int lane,int y)
+{
+    TsTrackerLayout g=ts_tracker_layout(ui->tracker,ui->tracker_expanded);
+    if(lane<0 || lane>=TS_TRACKER_LANES || y<g.grid_y || y>=g.bottom)return -1;
+    TsTrackerView v=ts_tracker_view(ui,p);
+    return v.top[lane]+(y-g.grid_y)/TS_TRACKER_ROW_HEIGHT;
+}
 
 void ts_ui_init(TsUiState *ui);
 void ts_ui_update_input_activity(TsUiState *ui,

@@ -44,11 +44,15 @@ view. F7/F8 take priority over octave selection in those contexts; OCT remains
 available in the ordinary view.
 Hold left/right mouse on BPM, TPL or ROWS to increase/decrease continuously.
 LEN click/wheel adjusts 0–256 (Shift: 8; Ctrl: OFF). The eject symbol assigns
-CONTROL. Click FT or its mode letter for Standard/Pattern; click/wheel the ratio;
+CONTROL. Click FT to enable Pattern; click its LED bank to return to Standard. Click/wheel the ratio;
 right-click the FT strip for forward/reverse/ping-pong. Ctrl+Shift+1–8 toggles
 Pattern clocks; Alt+Shift+1–8 cycles ratios. Left-margin LEN/OFF bypasses all
 LEN/CONTROL; FTL/PAT chooses lane lengths or physical rows for private clocks.
-Header hex numbers and lane underlines show actual source rows. Ctrl+L remains
+FOLLOW scrolls normal lanes through a fixed master band; LEN/FT lanes stay on
+stationary pages with their own outlines. Default colors: LEN cyan, FT amber,
+FT+LEN violet, CONTROL red. Rows past LEN dim; populated FT fields turn blue.
+Lag/sync/lead LEDs use the audio phase. Pointer edits preserve the running
+coordinate model; wheel/keyboard browsing suspends FOLLOW. Ctrl+L remains
 literal block audition. Song and tuning/FX command playback remain pending.
 See the [full editing reference](SISTERTRACKER_PLAYBACK.md#editing-and-mixing).
 

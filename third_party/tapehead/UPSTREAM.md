@@ -28,3 +28,12 @@ reference. Native ping-pong and a starting-row event are explicit adaptations;
 Song/order transport, clutches and Z commands are not included. The user-supplied
 feature-tapehead-app-icon archive has identical FastTracks/core sources; its
 older replayer lacks the newer block-loop implementation retained here.
+
+Transport drawing is adapted directly from ft2_pattern_draw.c and
+ft2_transport_visuals.h at f053d96 under CODE-LICENSE.txt: master scrolling,
+stationary private pages, logical source-row mapping, dimPatternColor,
+breatheColorToward, four playhead palette roles, FT populated-field colors,
+CONTROL symbol and lag/sync/lead status LEDs. Native compact/expanded geometry,
+M/S/trim controls, logical edit cursor and blank-extension write guards remain
+TapeSister adaptations. Song/clutch/jog/punch visuals await those transports;
+this port does not represent unavailable audio modes as active.

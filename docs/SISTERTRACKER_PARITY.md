@@ -12,6 +12,8 @@ recording, FX and transport ownership.
 | Operation | Status in this PR | Adaptation / remaining work |
 | --- | --- | --- |
 | Pixel font, recessed lanes, LEN + FastTracks header | Implemented | Original fonts/attribution retained; native palette and dimensions |
+| Hybrid transport drawing / FOLLOW | Ported | Master-centered normal scrolling, stationary per-lane pages, source-mapped input/marks/cursor; compact/expanded native geometry |
+| LEN dimming / private lane colors / phase LEDs | Ported | Exact Tapehead dim formula, FT text, LEN/FT/hybrid/CONTROL palette outlines, audio-derived lag/sync/lead |
 | Independent rectangle, cursor, heard row | Corrected | Pattern-bound stored corners; ordinary navigation/entry preserve marks |
 | Mark lane / whole pattern | Implemented | Tapehead Alt+C / native Ctrl+A; cursor does not move |
 | Mouse marking / Shift navigation | Implemented | Drag starts a fresh mark; Shift extends its independent active corner |

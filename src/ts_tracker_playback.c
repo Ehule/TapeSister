@@ -64,10 +64,12 @@ void ts_tracker_playback_init(TsTrackerPlayback *rt)
     memset(rt, 0, sizeof(*rt));
     atomic_init(&rt->display_running, 0); atomic_init(&rt->display_row, 0);
     atomic_init(&rt->display_pattern, 0); atomic_init(&rt->display_missing, 0);
+    atomic_init(&rt->display_master_row, 0);
     atomic_init(&rt->display_block,0);atomic_init(&rt->display_block_rows,0);atomic_init(&rt->display_block_lanes,0);
     for (int i = 0; i < TS_TRACKER_LANES; ++i) {
         rt->lanes[i].volume = 0x40;
         atomic_init(&rt->display_lane_row[i], 0);
+        atomic_init(&rt->display_lane_phase[i], 0);
     }
 }
 
@@ -573,6 +575,10 @@ void ts_tracker_playback_end_block(TsTrackerPlayback *rt)
 {
     atomic_store_explicit(&rt->display_running, rt->running ? (rt->paused ? 2 : 1) : 0, memory_order_relaxed);
     unsigned display_row = rt->row < 0 ? 0 : (unsigned)rt->row;
+    unsigned master_row=display_row;
+    if(rt->prepared && !rt->block_active && shared_length(rt->prepared)>rt->prepared->pattern.rows)
+        master_row=rt->master_row;
+    atomic_store_explicit(&rt->display_master_row,master_row,memory_order_relaxed);
     if (rt->prepared && !rt->block_active && !rt->prepared->length_bypass && rt->prepared->control_lane >= 0)
         display_row = rt->lanes[rt->prepared->control_lane].source_row;
     atomic_store_explicit(&rt->display_row, display_row, memory_order_relaxed);
@@ -581,6 +587,21 @@ void ts_tracker_playback_end_block(TsTrackerPlayback *rt)
     atomic_store_explicit(&rt->display_block_rows,(unsigned)rt->block.row0|((unsigned)rt->block.row1<<8),memory_order_relaxed);
     atomic_store_explicit(&rt->display_block_lanes,(unsigned)rt->block.lane0|((unsigned)rt->block.lane1<<8),memory_order_relaxed);
     atomic_store_explicit(&rt->display_block,rt->block_active,memory_order_release);
-    for (int i = 0; i < TS_TRACKER_LANES; ++i)
+    for (int i = 0; i < TS_TRACKER_LANES; ++i) {
         atomic_store_explicit(&rt->display_lane_row[i], rt->lanes[i].source_row, memory_order_relaxed);
+        unsigned phase=0;
+        if(rt->prepared && rt->running && !rt->block_active && private_lane(rt->prepared,i)) {
+            const TsTrackerLanePlayback *l=&rt->lanes[i];
+            int length=(int)private_length(rt->prepared,i);
+            int expected=ratio_denominator[rt->prepared->lanes[i].ratio]*rt->tick;
+            if(l->source_row==master_row%(unsigned)length && l->accumulator==expected)phase=2;
+            else {
+                int offset=((int)l->source_row-(int)master_row)%length;
+                if(offset<0)offset+=length;
+                if(offset>length/2)offset-=length;
+                phase=offset<0?1:offset>0?4:5;
+            }
+        }
+        atomic_store_explicit(&rt->display_lane_phase[i],phase,memory_order_relaxed);
+    }
 }

@@ -74,6 +74,7 @@ typedef struct {
     atomic_uint display_running, display_row, display_pattern, display_missing;
     atomic_uint display_block,display_block_rows,display_block_lanes;
     atomic_uint display_lane_row[TS_TRACKER_LANES];
+    atomic_uint display_master_row, display_lane_phase[TS_TRACKER_LANES];
 } TsTrackerPlayback;
 
 void ts_tracker_playback_init(TsTrackerPlayback *playback);

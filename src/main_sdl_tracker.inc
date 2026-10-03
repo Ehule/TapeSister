@@ -9,17 +9,23 @@ static void tracker_refresh(SDL_AudioDeviceID device,AudioState *audio,TsUiState
                             TsSamplePages *pages,const TsInstrument *instrument,int rate)
 {
     ui->tracker_cursor_visible=(((SDL_GetTicks()-ui->tracker_cursor_epoch)/450u)&1u)==0;
+    unsigned pulse=(SDL_GetTicks()-ui->tracker_cursor_epoch)%2000u;
+    if(pulse>1000u)pulse=2000u-pulse;
+    ui->tracker_breathe=255u-pulse*115u/1000u;
     tracker_repeat_poll(ui,SDL_GetTicks(),SDL_GetMouseState(NULL,NULL));
     TsTrackerPlayback *rt=&audio->tracker;
     ui->tracker_running=atomic_load_explicit(&rt->display_running,memory_order_acquire);
     ui->tracker_row=atomic_load_explicit(&rt->display_row,memory_order_relaxed);
+    ui->tracker_master_row=atomic_load_explicit(&rt->display_master_row,memory_order_relaxed);
     ui->tracker_heard_pattern=atomic_load_explicit(&rt->display_pattern,memory_order_relaxed);
     ui->tracker_missing=atomic_load_explicit(&rt->display_missing,memory_order_acquire);
     ui->tracker_block=atomic_load_explicit(&rt->display_block,memory_order_acquire);
     ui->tracker_block_rows=atomic_load_explicit(&rt->display_block_rows,memory_order_relaxed);
     ui->tracker_block_lanes=atomic_load_explicit(&rt->display_block_lanes,memory_order_relaxed);
-    for(int lane=0;lane<TS_TRACKER_LANES;++lane)
+    for(int lane=0;lane<TS_TRACKER_LANES;++lane) {
         ui->tracker_lane_row[lane]=atomic_load_explicit(&rt->display_lane_row[lane],memory_order_relaxed);
+        ui->tracker_lane_phase[lane]=atomic_load_explicit(&rt->display_lane_phase[lane],memory_order_relaxed);
+    }
     TsTrackerLayout g=ts_tracker_layout(&pages->tracker,ui->tracker_expanded);
     if(!ui->tracker_open && !ui->tracker_running && !rt->prepared) {ts_tracker_playback_collect(rt);return;}
     TsPatternId id=ui->tracker_running?ui->tracker_heard_pattern:pages->tracker.editor_pattern;
@@ -37,12 +43,9 @@ static void tracker_refresh(SDL_AudioDeviceID device,AudioState *audio,TsUiState
     const TsTrackerPattern *p=ts_sister_tracker_pattern_const(&pages->tracker,pages->tracker.editor_pattern);
     if(p) {
         if(pages->tracker.editor_row>=p->rows)pages->tracker.editor_row=p->rows-1;
-        if(pages->tracker.follow && !ui->tracker_follow_hold && ui->tracker_running && ui->tracker_heard_pattern==p->id) {
-            int row=(int)ui->tracker_row;
-            if(row<ui->tracker_scroll || row>=ui->tracker_scroll+g.rows)ui->tracker_scroll=row;
-        }
-        int maximum=p->rows>g.rows?p->rows-g.rows:0;
-        if(ui->tracker_scroll>maximum)ui->tracker_scroll=maximum;
+        TsTrackerView view=ts_tracker_view(ui,p);
+        if(view.following)ui->tracker_scroll=view.master_top;
+        else ui->tracker_scroll=SDL_clamp(ui->tracker_scroll,0,view.extent>g.rows?view.extent-g.rows:0);
     }
 }
 static void tracker_play(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,
@@ -494,7 +497,8 @@ static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevi
             }
         } else if(lane>=0)t->lanes[lane].trim=fmaxf(0,fminf(2,t->lanes[lane].trim+.1f*(float)wheel_event_delta(event,0)));
         else if(grid && detents) {
-            ui->tracker_scroll=SDL_clamp(ui->tracker_scroll-detents,0,p->rows>g.rows?p->rows-g.rows:0);
+            TsTrackerView view=ts_tracker_view(ui,p);
+            ui->tracker_scroll=SDL_clamp(ui->tracker_scroll-detents,0,view.extent>g.rows?view.extent-g.rows:0);
             ui->tracker_follow_hold=1;
         }return 1;
     }
@@ -509,7 +513,9 @@ static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevi
         if(ui->tracker_repeat_control && tracker_control_at(x,y,ui->tracker_expanded)!=ui->tracker_repeat_control)tracker_repeat_end(ui);
         if(edit->dragging && (event->motion.state&SDL_BUTTON_LMASK)) {
             if(x>=TS_TRACKER_LANE_X && x<TS_TRACKER_LANE_RIGHT && y>=g.grid_y && y<g.bottom) {
-                int row=SDL_clamp(ui->tracker_scroll+(y-g.grid_y)/TS_TRACKER_ROW_HEIGHT,0,p->rows-1),lane=(x-TS_TRACKER_LANE_X)/TS_TRACKER_LANE_WIDTH;
+                int lane=(x-TS_TRACKER_LANE_X)/TS_TRACKER_LANE_WIDTH;
+                int row=ts_tracker_view_row(ui,p,lane,y);
+                if(row<0 || row>=p->rows)return 1; /* Blank extension is not hidden editable data. */
                 if(edit->dragging==2 || row!=edit->drag_row || lane!=edit->drag_lane) {
                     if(edit->dragging==1){edit->anchor_row=edit->drag_row;edit->anchor_lane=edit->drag_lane;edit->selected_pattern=p->id;edit->selected=1;edit->dragging=2;}
                     ts_tracker_edit_mark(edit,t,row,lane);t->editor_row=row;t->editor_lane=lane;
@@ -569,11 +575,11 @@ static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevi
                 snprintf(ui->status,sizeof(ui->status),"CONTROL %s - DEFINES THE SHARED CYCLE",t->control_lane<0?"OFF":"ASSIGNED");
             } else if(local>=10)tracker_lane_length(ui,lane,delta,mod);
             else t->editor_lane=lane;
-        } else if(right || local>=60) {
+        } else if(right || (l->mode==TS_TRACKER_PATTERN && local>=28 && local<46)) {
             l->direction=(l->direction+1)%3;
             snprintf(ui->status,sizeof(ui->status),"LANE %d %s - PATTERN FASTTRACKS DIRECTION",lane+1,
                 (const char*[]){"FORWARD","REVERSE","PING PONG"}[l->direction]);
-        } else if(local<14 || local>=46)tracker_lane_mode(ui,lane);
+        } else if(l->mode!=TS_TRACKER_PATTERN || local>=46)tracker_lane_mode(ui,lane);
         else tracker_lane_ratio(ui,lane,1);
         return 1;
     }
@@ -599,8 +605,9 @@ static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevi
             ts_tracker_playback_solo(&audio->tracker,ui->tracker_solo);if(device)SDL_UnlockAudioDevice(device);}
         else if(local>=49){float trim=t->lanes[lane].trim+delta*.1f;t->lanes[lane].trim=fmaxf(0,fminf(2,trim));}
     } else if(y>=g.grid_y && y<g.bottom && x>=TS_TRACKER_LANE_X && x<TS_TRACKER_LANE_RIGHT) {
-        int row=ui->tracker_scroll+(y-g.grid_y)/TS_TRACKER_ROW_HEIGHT;
-        if(row<p->rows) {
+        int lane=(x-TS_TRACKER_LANE_X)/TS_TRACKER_LANE_WIDTH;
+        int row=ts_tracker_view_row(ui,p,lane,y);
+        if(row>=0 && row<p->rows) {
             if(mod&KMOD_SHIFT) {
                 ts_tracker_edit_mark(edit,t,row,(x-TS_TRACKER_LANE_X)/TS_TRACKER_LANE_WIDTH);
                 tracker_queue_selection(device,audio,ui);
@@ -608,7 +615,7 @@ static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevi
             t->editor_row=row;t->editor_lane=(x-TS_TRACKER_LANE_X)/TS_TRACKER_LANE_WIDTH;
             edit->drag_row=row;edit->drag_lane=t->editor_lane;
             int local=(x-TS_TRACKER_LANE_X)%TS_TRACKER_LANE_WIDTH;ui->tracker_field=ts_tracker_field_at(local);
-            edit->dragging=left?((mod&KMOD_SHIFT)?2:1):0;ui->tracker_follow_hold=1;
+            edit->dragging=left?((mod&KMOD_SHIFT)?2:1):0;
         }
     } else if(!g.expanded && y>=332 && y<356) {
         if(x>=10 && x<84) {

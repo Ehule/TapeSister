@@ -341,5 +341,25 @@ static void control_clocks(void)
     prepare(1000);CHECK(ts_tracker_playback_start(&rt));to_tick(8,1000,125);CHECK(rt.loop_cycles==1);
     cleanup();
 }
+static void transport_visual_telemetry(void)
+{
+    fixture(16);pages->tracker.ticks_per_line=4;pages->tracker.control_lane=1;
+    for(int lane=0;lane<3;++lane)pages->tracker.lanes[lane].mode=TS_TRACKER_PATTERN;
+    pages->tracker.lanes[0].ratio=7;pages->tracker.lanes[1].ratio=14;pages->tracker.lanes[2].ratio=0;
+    prepare(1000);CHECK(ts_tracker_playback_start(&rt));to_tick(1,1000,125);
+    ts_tracker_playback_end_block(&rt);
+    CHECK(atomic_load(&rt.display_lane_phase[0])==2); /* 1:1 is exactly in phase. */
+    CHECK(atomic_load(&rt.display_lane_phase[1])==5); /* Same row, different subrow phase. */
+    CHECK(atomic_load(&rt.display_lane_phase[2])==5);
+    to_tick(4,1000,125);ts_tracker_playback_end_block(&rt);
+    CHECK(atomic_load(&rt.display_master_row)==1 && atomic_load(&rt.display_row)==2);
+    CHECK(atomic_load(&rt.display_lane_phase[0])==2);
+    CHECK(atomic_load(&rt.display_lane_phase[1])==4 && atomic_load(&rt.display_lane_phase[2])==1);
+    ts_tracker_playback_pause(&rt,1);render(200,1000);ts_tracker_playback_end_block(&rt);
+    CHECK(atomic_load(&rt.display_master_row)==1 && atomic_load(&rt.display_lane_row[1])==2);
+    ts_tracker_playback_stop(&rt);ts_tracker_playback_end_block(&rt);
+    CHECK(!atomic_load(&rt.display_lane_phase[1]));
+    cleanup();
+}
 int main(void)
-{rational_clocks();length_domains();directions_and_crossings();live_clock_changes();control_clocks();block_loop();timing();pause_rate_and_stop();inheritance_and_ownership();missing_and_live_edits();native_reader_metadata();puts("SisterTracker playback checks passed");return 0;}
+{transport_visual_telemetry();rational_clocks();length_domains();directions_and_crossings();live_clock_changes();control_clocks();block_loop();timing();pause_rate_and_stop();inheritance_and_ownership();missing_and_live_edits();native_reader_metadata();puts("SisterTracker playback checks passed");return 0;}

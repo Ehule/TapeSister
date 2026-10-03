@@ -36,19 +36,43 @@ normalization. The Sample tile's audio, tuning and loop settings remain editable
 
 ## Editing and mixing
 
-Each lane has Tapehead's separate two-row header: **LEN OFF** or **LEN1–256**
-on the top strip, and its saved **FT ratio** on the second strip. The ratio
-bank follows Tapehead's 17 entries, from 1:2 through neutral 1:1 to 5:1.
-The suffix is `-` for Standard, `P` for Pattern, or `S` for a saved Song assignment;
-Song assignments still play Standard until order playback is implemented. Click
-FT or the mode letter to toggle Standard/Pattern. The final letter is direction:
-`F` forward, `R` reverse, `B` ping-pong. The eject symbol selects CONTROL.
-Compact M/S switches, the current source row in hex, and trim sit underneath. Default TRACK 1–8 names are
-omitted; a name strip appears only when at least one lane has a custom name.
-Each lane has its own playback underline. The shared outline and FOLLOW use
-CONTROL's heard row when assigned. Editing and block selection remain independent
-of these heads. A logical row beyond the physical pattern is blank: its header
-row remains visible, while its underline is outside the editable grid.
+Each lane has Tapehead's two-row header: **LEN OFF** or **LEN1–256** on
+the top strip, and **FT** when Standard or the active ratio when Pattern
+FastTracks is enabled. The 17 ratios range from 1:2 through 1:1 to 5:1.
+Click FT to enable, click/wheel the ratio to change it, and click the three-LED
+bank to return to Standard. Right-click the strip, or click the direction area
+between the ratio and LEDs, for forward/reverse/ping-pong; only reverse **R** or
+ping-pong **B** needs a badge. A saved Song assignment has an **S** badge but
+continues playing Standard until order playback is implemented.
+The LEDs show lag / exact synchronization / lead from the audio clock. Both
+outer LEDs light when rows match but fractional phases differ. The eject
+symbol selects CONTROL. Its red color comes from the CONTROL palette entry.
+Compact M/S switches, the source row in hex and trim sit underneath. Default
+TRACK 1–8 names are omitted; custom names add one strip.
+
+With FOLLOW on, **normal lanes scroll through a fixed master-row band**.
+**LEN and Pattern FastTracks lanes stay stationary**, with their own outlined
+playheads moving over the data. Long private lanes change page only when their
+actual source head crosses a viewport boundary. CONTROL sets the cycle timing;
+it does not replace the master row used by normal lanes or the side numbers.
+Pause freezes this view along with the audio clocks.
+
+The shared Tapehead palette supplies distinct outlines: **LEN cyan**, **FT
+amber**, **FT + LEN violet**, and **CONTROL red** by default. Populated FT
+fields use TextOnBlock; empty fields retain PatternEmpty. Rows beyond an active
+explicit LEN dim toward Desktop using Tapehead's exact `(color + 2*Desktop)/3`
+rule, including empty fields. PAT mode removes LEN dimming from private tracks;
+LEN bypass restores ordinary scrolling to LEN-only tracks and dims the FT
+outlines and LEN/CONTROL header colors. The normal master band uses Desktop with white row
+numbers rather than an extra colored outline across every lane.
+
+Clicks, drags, marks and the edit locator use each lane's displayed source rows.
+Pointer editing does not switch the running coordinate model or suspend FOLLOW.
+Keyboard navigation or manual wheel scrolling suspends FOLLOW for an ordinary
+shared editing view; FOLLOW or Play restores transport following. Editing a
+different pattern also uses that ordinary view. Blank extension rows can be
+shown, but cannot expose or edit retained hidden data. Literal Ctrl+L block
+playback uses the shared row model without LEN dimming or private FT pages.
 
 The pattern view reuses Tapehead's original normal, tiny and pattern pixel fonts,
 recessed black lane panels, hex row numbers on both sides, current-row band,
@@ -68,9 +92,9 @@ footer labels command audio inactive.
 | --- | --- |
 | LEN click left/right or wheel | Increase/decrease 0–256; Shift steps by 8; Ctrl sets OFF |
 | Eject symbol | Assign/unassign the one CONTROL lane |
-| FT or mode letter | Toggle Standard/Pattern; preserves the stored ratio/direction |
+| FT / active LED bank | Enable Pattern / return to Standard; preserves the stored ratio/direction |
 | Ratio click / wheel | Next ratio / either direction through all 17 ratios |
-| Right-click FT strip or click direction | Cycle forward, reverse, ping-pong |
+| Right-click FT strip or click direction area | Cycle forward, reverse, ping-pong |
 | Ctrl+Shift+1–8 | Toggle the corresponding Pattern FastTrack |
 | Alt+Shift+1–8 | Cycle the corresponding ratio |
 | Left-margin LEN/OFF | Bypass/restore all LEN and CONTROL without erasing settings |
@@ -179,7 +203,7 @@ removed if doing so would change the order list. NEW and CLONE remain outside
 pattern-edit undo. One held ROWS
 gesture makes one undo step. New edits discard redo history.
 
-A bright outline always marks the current field. A blinking underline shows
+A breathing outline marks the logical current field without painting over its text. A blinking underline shows
 the current hex digit; the first digit remains visible while the second is
 pending. The footer shows the effective explicit/inherited alias and the
 Sample tile that USE TILE will assign. Bound aliases are never silently
@@ -219,8 +243,8 @@ Ordinary navigation leaves the loop alone. Deliberate marking gestures on its
 playing pattern queue the latest rectangle, which becomes audible at the next
 loop seam. Shift+arrows operates from the mark's stored moving corner, not an
 unrelated cursor position. An amber lane-edge rail shows the active audible
-bounds, selection fill shows the edited bounds, the playback row has a separate
-line, and the edit field retains its cyan outline and blinking digit underline.
+bounds, selection fill shows the edited bounds, the normal playback band follows the master row, and the edit field retains its
+own breathing outline and blinking digit underline.
 Clearing the mark with Escape does not stop the running loop. Marking another
 editor pattern cannot retarget the playing loop.
 
