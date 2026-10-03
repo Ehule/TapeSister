@@ -1,0 +1,461 @@
+--- pattern_draw.inc
++++ pattern_draw.inc
+@@ -8,7 +8,7 @@
+ 
+ static note_t emptyPattern[MAX_CHANNELS * MAX_PATT_LEN];
+ 
+-static const uint8_t *font4Ptr, *font5Ptr;
++static const uint8_t *font4Ptr;
+ 
+ typedef struct pattLayout_t
+ {
+@@ -19,23 +19,9 @@
+ 
+ static const uint8_t vol2charTab2[16] = { 42, 0, 1, 2, 3, 4, 36, 37, 38, 39, 28, 31, 25, 40, 41, 22 };
+ 
+-static const uint8_t columnModeTab[12] = { 0, 0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 3 };
+-
+-static const pattLayout_t pattLayouts[2][4] =
+-{
+-	{ // volume hidden: 4, 6, 8 and 12 visible channels
+-		{{ 3, 59, 67,  0,  0, 83, 91, 99,115,123,131}, {48,8,8,0,0,8,8,8,8,8,8}, FONT_TYPE4, 8, 2},
+-		{{ 3, 31, 35,  0,  0, 43, 47, 51, 59, 63, 67}, {24,4,4,0,0,4,4,4,4,4,4}, FONT_TYPE3, 4, 1},
+-		{{ 3, 27, 31,  0,  0, 39, 43, 47, 55, 59, 63}, {24,4,4,0,0,4,4,4,4,4,4}, FONT_TYPE3, 4, 1},
+-		{{ 2, 20, 23,  0,  0, 27, 30, 33, 37, 40, 43}, {18,3,3,0,0,3,3,3,3,3,3}, FONT_TYPE3, 3, 0}
+-	},
+-	{ // volume shown: 4, 6 and 8 visible channels (mode 3 aliases mode 2)
+-		{{ 3, 55, 63, 75, 83, 95,103,111,119,127,135}, {48,8,8,8,8,8,8,8,8,8,8}, FONT_TYPE4, 8, 2},
+-		{{ 3, 27, 31, 39, 43, 51, 55, 59, 67, 71, 75}, {24,4,4,4,4,4,4,4,4,4,4}, FONT_TYPE3, 4, 1},
+-		{{ 3, 27, 31, 35, 39, 43, 47, 51, 55, 59, 63}, {24,4,4,4,4,4,4,4,4,4,4}, FONT_TYPE3, 4, 1},
+-		{{ 3, 27, 31, 35, 39, 43, 47, 51, 55, 59, 63}, {24,4,4,4,4,4,4,4,4,4,4}, FONT_TYPE3, 4, 1}
+-	}
+-};
++/* Tapehead's eight-channel layout, volume visible. Other width modes removed. */
++static const pattLayout_t patternLayout =
++    {{3,27,31,35,39,43,47,51,55,59,63}, {24,4,4,4,4,4,4,4,4,4,4}, FONT_TYPE3,4,1};
+ 
+ static const uint8_t sharpNote1Char_med[12] = { 12*8, 12*8, 13*8, 13*8, 14*8, 15*8, 15*8, 16*8, 16*8, 10*8, 10*8, 11*8 };
+ 
+@@ -185,8 +171,7 @@
+ 
+ static const pattLayout_t *getPatternLayout(void)
+ {
+-	const uint8_t mode = columnModeTab[ui.numChannelsShown-1];
+-	return &pattLayouts[config.ptnShowVolColumn != 0][mode];
++	return &patternLayout;
+ }
+ 
+ uint8_t patternXToCursorObject(int32_t x)
+@@ -214,8 +199,11 @@
+ 
+ static void writeCursor(void)
+ {
++	if (editor.ptnCursorY < host.layout.grid_y ||
++		editor.ptnCursorY + TS_TRACKER_ROW_HEIGHT > host.layout.bottom)
++		return;
+ 	const pattLayout_t *layout = getPatternLayout();
+-	int32_t xPos = 29 + layout->x[cursor.object];
++	int32_t xPos = TS_TRACKER_LANE_X + layout->x[cursor.object];
+ 	const int32_t width = layout->width[cursor.object];
+ 
+ 	ASSERT(editor.ptnCursorY > 0 && xPos > 0 && width > 0);
+@@ -234,14 +222,14 @@
+ 	cursorColor = breatheColorToward(cursorColor, video.palette[PAL_DESKTOP]);
+ 
+ 	uint32_t *topPtr = &video.frameBuffer[(editor.ptnCursorY * SCREEN_W) + xPos];
+-	uint32_t *bottomPtr = topPtr + (8 * SCREEN_W);
++	uint32_t *bottomPtr = topPtr + ((TS_TRACKER_ROW_HEIGHT - 1) * SCREEN_W);
+ 	for (int32_t x = 0; x < width; x++)
+ 	{
+ 		topPtr[x] = cursorColor;
+ 		bottomPtr[x] = cursorColor;
+ 	}
+ 
+-	for (int32_t y = 1; y < 8; y++)
++	for (int32_t y = 1; y < TS_TRACKER_ROW_HEIGHT - 1; y++)
+ 	{
+ 		uint32_t *rowPtr = topPtr + (y * SCREEN_W);
+ 		rowPtr[0] = cursorColor;
+@@ -253,6 +241,16 @@
+ static void pattLayoutCharOut(uint32_t x, uint32_t y, uint8_t chr,
+ 	const pattLayout_t *layout, uint32_t color)
+ {
++	if (chr == HOST_PLACEHOLDER)
++	{
++		pattLayoutPlaceholderOut(x, y, layout, color);
++		return;
++	}
++	if (chr == HOST_MISSING_ALIAS)
++	{
++		hostQuestionMark(x, y, color);
++		return;
++	}
+ 	if (layout->charW != 3)
+ 	{
+ 		pattCharOut(x, y, chr, layout->fontType, color);
+@@ -293,28 +291,16 @@
+ 	const pattLayout_t *layout = getPatternLayout();
+ 	const uint8_t *px = layout->x;
+ 
+-	if (layout->noteSize == 2)
+-	{
+-		if (n->note == NOTE_OFF) drawKeyOffBig(x + px[0], y, noteColor);
+-		else if (n->note > 0 && n->note <= 96) drawNoteBig(x + px[0], y, n->note, noteColor);
+-		else drawEmptyNoteBig(x + px[0], y, noteColor);
+-	}
+-	else if (layout->noteSize == 1)
++	if (!hostDrawExtendedNote(x + px[0], y, n, noteColor))
+ 	{
+ 		if (n->note == NOTE_OFF) drawKeyOffMedium(x + px[0], y, noteColor);
+ 		else if (n->note > 0 && n->note <= 96) drawNoteMedium(x + px[0], y, n->note, noteColor);
+ 		else drawEmptyNoteMedium(x + px[0], y, noteColor);
+ 	}
+-	else
+-	{
+-		if (n->note == NOTE_OFF) drawKeyOffSmall(x + px[0], y, noteColor);
+-		else if (n->note > 0 && n->note <= 96) drawNoteSmall(x + px[0], y, n->note, noteColor);
+-		else drawEmptyNoteSmall(x + px[0], y, noteColor);
+-	}
+ 
+ 	/* Empty instrument numbers intentionally retain FT2's 00 convention. */
+-	pattLayoutCharOut(x + px[1], y, n->instr >> 4, layout, instrColor);
+-	pattLayoutCharOut(x + px[2], y, n->instr & 15, layout, instrColor);
++	pattLayoutCharOut(x + px[1], y, hostCellChar(n, 1, n->instr >> 4), layout, instrColor);
++	pattLayoutCharOut(x + px[2], y, hostCellChar(n, 2, n->instr & 15), layout, instrColor);
+ 
+ 	if (config.ptnShowVolColumn)
+ 	{
+@@ -327,39 +313,39 @@
+ 		{
+ 			const uint8_t vol1 = layout->fontType == FONT_TYPE3 ?
+ 				vol2charTab2[n->vol >> 4] : vol2charTab1[n->vol >> 4];
+-			pattLayoutCharOut(x + px[3], y, vol1, layout, volColor);
+-			pattLayoutCharOut(x + px[4], y, n->vol & 15, layout, volColor);
+-		}
+-	}
+-
+-	if (n->tuneType == 0)
++			pattLayoutCharOut(x + px[3], y, hostCellChar(n, 3, vol1), layout, volColor);
++			pattLayoutCharOut(x + px[4], y, hostCellChar(n, 4, n->vol & 15), layout, volColor);
++		}
++	}
++
++	if (n->tuneType == 0 && n->pendingObject != CURSOR_TUNE2)
+ 	{
+ 		for (int32_t i = 5; i <= 7; i++)
+ 			pattLayoutPlaceholderOut(x + px[i], y, layout, tuneColor);
+ 	}
+ 	else
+ 	{
+-		pattLayoutCharOut(x + px[5], y, n->tuneType, layout, tuneColor);
+-		pattLayoutCharOut(x + px[6], y, n->tuneData >> 4, layout, tuneColor);
+-		pattLayoutCharOut(x + px[7], y, n->tuneData & 15, layout, tuneColor);
+-	}
+-
+-	if (n->efx == 0 && n->efxData == 0)
++		pattLayoutCharOut(x + px[5], y, hostCellChar(n, 5, n->tuneType), layout, tuneColor);
++		pattLayoutCharOut(x + px[6], y, hostCellChar(n, 6, n->tuneData >> 4), layout, tuneColor);
++		pattLayoutCharOut(x + px[7], y, hostCellChar(n, 7, n->tuneData & 15), layout, tuneColor);
++	}
++
++	if (!n->hasEffect && n->pendingObject != CURSOR_EFX2)
+ 	{
+ 		for (int32_t i = 8; i <= 10; i++)
+ 			pattLayoutPlaceholderOut(x + px[i], y, layout, effectColor);
+ 	}
+ 	else
+ 	{
+-		pattLayoutCharOut(x + px[8], y, n->efx, layout, effectColor);
+-		pattLayoutCharOut(x + px[9], y, n->efxData >> 4, layout, effectColor);
+-		pattLayoutCharOut(x + px[10], y, n->efxData & 15, layout, effectColor);
++		pattLayoutCharOut(x + px[8], y, hostCellChar(n, 8, n->efx), layout, effectColor);
++		pattLayoutCharOut(x + px[9], y, hostCellChar(n, 9, n->efxData >> 4), layout, effectColor);
++		pattLayoutCharOut(x + px[10], y, hostCellChar(n, 10, n->efxData & 15), layout, effectColor);
+ 	}
+ }
+ 
+ static void drawChannelNumbering(uint16_t yPos)
+ {
+-	uint16_t xPos = 30;
++	uint16_t xPos = TS_TRACKER_LANE_X;
+ 	uint8_t ch = ui.channelOffset + 1;
+ 
+ 	for (uint8_t i = 0; i < ui.numChannelsShown; i++)
+@@ -376,8 +362,8 @@
+ 
+ static void drawRowNums(int32_t yPos, uint8_t row, bool selectedRowFlag)
+ {
+-#define LEFT_ROW_XPOS 8
+-#define RIGHT_ROW_XPOS 608
++#define LEFT_ROW_XPOS 9
++#define RIGHT_ROW_XPOS (TS_TRACKER_LANE_RIGHT + 7)
+ 
+ 	uint32_t pixVal;
+ 
+@@ -447,7 +433,7 @@
+ 		if (channelIndex < 0 || channelIndex >= song.numChannels)
+ 			continue;
+ 
+-		const uint16_t xPos = (uint16_t)(30 +
++		const uint16_t xPos = (uint16_t)(TS_TRACKER_LANE_X +
+ 			(visibleChannel * ui.patternChannelWidth));
+ 		const uint16_t panelWidth = (uint16_t)(ui.patternChannelWidth - 2);
+ 		fillRect(xPos, yPos, panelWidth, 8, PAL_DESKTOP);
+@@ -469,7 +455,7 @@
+ 			continue;
+ 
+ 		const int32_t visibleChannel = fastTrackChannel - ui.channelOffset;
+-		const int32_t xPos = 30 + (visibleChannel * ui.patternChannelWidth);
++		const int32_t xPos = TS_TRACKER_LANE_X + (visibleChannel * ui.patternChannelWidth);
+ 		const uint8_t numerator = track->ratioNumerator;
+ 		const uint8_t denominator = track->ratioDenominator;
+ 		const int32_t sourceRow = track->sourceRow;
+@@ -494,7 +480,7 @@
+ 		if (reversed)
+ 		{
+ 			fillRect((uint16_t)statusX, yPos, 5, 8, PAL_BLCKMRK);
+-			textOutTiny(statusX + 1, yPos + 1, "R",
++			textOutTiny(statusX + 1, yPos + 1, hostDirectionBadge(fastTrackChannel),
+ 				video.palette[PAL_FASTTRACKS_PHASE]);
+ 			statusX += 6;
+ 		}
+@@ -542,6 +528,8 @@
+ 				video.palette[PAL_FASTTRACKS_SONG]);
+ 		}
+ 
++		if (!songPlaying)
++			continue;
+ 		const bool masterAligned = track->masterAligned;
+ 		if (masterAligned)
+ 		{
+@@ -628,7 +616,7 @@
+ 		if (channelIndex < 0 || channelIndex >= song.numChannels)
+ 			continue;
+ 
+-		const int32_t xPos = 30 + (visibleChannel * ui.patternChannelWidth);
++		const int32_t xPos = TS_TRACKER_LANE_X + (visibleChannel * ui.patternChannelWidth);
+ 		const uint16_t panelWidth = (uint16_t)(ui.patternChannelWidth - 2);
+ 		const uint16_t storedLength =
+ 			fastTracksPOCGetTrackLength(patternNumber, channelIndex);
+@@ -700,11 +688,8 @@
+ 	const uint32_t chanWidth = chanWidths[(chans / 2) - 1];
+ 	ui.patternChannelWidth = (uint16_t)(chanWidth + 3);
+ 
+-	const uint32_t rowHeight = config.ptnStretch ? 11 : 8;
+-	const pattCoord_t *pattCoord = &pattCoordTable[config.ptnStretch][ui.pattChanScrollShown][getPatternEditorView()];
+-	const pattCoord2_t *pattCoord2 = &pattCoord2Table[config.ptnStretch][ui.pattChanScrollShown][getPatternEditorView()];
+-	const int32_t midRowTextY = pattCoord->midRowTextY;
+-	const int32_t lowerRowsTextY = pattCoord->lowerRowsTextY;
++	const uint32_t rowHeight = TS_TRACKER_ROW_HEIGHT;
++	const pattCoord_t *pattCoord = &host.coordinates;
+ 	const int32_t rowsOnScreen = pattCoord->numUpperRows + 1 + pattCoord->numLowerRows;
+ 	const int32_t numChannels = ui.numChannelsShown;
+ 	const int32_t numRows = fastTracksPOCGetExtendedPatternLength((uint16_t)currPattern);
+@@ -713,22 +698,16 @@
+ 	const bool lengthTopologyBypassed =
+ 		fastTracksPOCLengthTopologyIsBypassed();
+ 
+-	/* Playback never lets pointer gestures in the tracker body change the
+-	** coordinate model. Recording retains the original FT2 view for write
+-	** safety; ordinary stopped editing remains unchanged. */
+-	const bool hybridVisuals = songPlaying && playMode != PLAYMODE_RECPATT &&
+-		playMode != PLAYMODE_RECSONG;
+-	const int32_t visualMasterRow = hybridVisuals ? song.row : currRow;
+-	int32_t row = visualMasterRow - pattCoord->numUpperRows;
++	/* Native FOLLOW/manual-scroll selects the view; pointer gestures do not
++	** alter it. Source-row resolution below is the Tapehead pattern pass. */
++	const bool hybridVisuals = host.view.following;
++	const int32_t visualMasterRow = host.view.master_row;
++	int32_t row = host.view.master_top;
+ 	int32_t textY = pattCoord->upperRowsTextY;
+-	const int32_t afterMasterRow = visualMasterRow + 1;
+ 
+ 	fastTracksSnapshot_t fastTracksSnapshot;
+ 	fastTracksPOCGetSnapshot(&fastTracksSnapshot);
+ 
+-	uint16_t jogPattern = 0, jogRow = 0;
+-	const bool jogVisualActive = hybridVisuals &&
+-		tapeheadActionPatternJogGetVisualPosition(&jogPattern, &jogRow);
+ 
+ 	noteTextColors[0] = video.palette[PAL_PATTEXT];
+ 	noteTextColors[1] = video.palette[PAL_FORGRND];
+@@ -742,7 +721,7 @@
+ 
+ 		const int32_t xWidth = ui.patternChannelWidth;
+ 		const uint32_t selectedColor = noteTextColors[selectedRowFlag];
+-		int32_t xPos = 29;
++		int32_t xPos = TS_TRACKER_LANE_X;
+ 		for (int32_t j = 0; j < numChannels; j++, xPos += xWidth)
+ 		{
+ 			const int32_t absoluteChannel = ui.channelOffset + j;
+@@ -774,26 +753,13 @@
+ 			const bool independentVisual =
+ 				tapeheadTrackUsesIndependentTransportVisual(hybridVisuals,
+ 					fastTrackVisible, trackLengthVisualActive,
+-					tapeheadActionTransportPunchIsFrozen());
++					false);
+ 
+ 			if (!masterRowValid && !independentVisual)
+ 				continue;
+ 
+ 			int32_t playheadRow = -1;
+-			bool jogOverridesPrivateHead = false;
+-			if (independentVisual && jogVisualActive &&
+-				tapeheadActionPatternJogTrackParticipates(absoluteChannel))
+-			{
+-				/* Pattern Jog/strum is a deliberate manual read of the ordinary
+-				** pattern. While the gesture is live, show that real source rather
+-				** than pretending the private FastTracks head produced the note. */
+-				displayedPattern = jogPattern < MAX_PATTERNS ? jogPattern : currPattern;
+-				storedLength = fastTracksPOCGetTrackLength(
+-					(uint16_t)displayedPattern, absoluteChannel);
+-				playheadRow = jogRow;
+-				jogOverridesPrivateHead = true;
+-			}
+-			else if (independentVisual && fastTrackVisible)
++			if (independentVisual && fastTrackVisible)
+ 			{
+ 				playheadRow = fastTrack->sourceRow;
+ 			}
+@@ -812,12 +778,7 @@
+ 			if (independentVisual)
+ 			{
+ 				int32_t transportRows;
+-				if (jogOverridesPrivateHead)
+-				{
+-					transportRows = fastTracksPOCGetExtendedPatternLength(
+-						(uint16_t)displayedPattern);
+-				}
+-				else if (fastTrackVisible)
++				if (fastTrackVisible)
+ 				{
+ 					transportRows = fastTracksPOCGetFastTrackLength(
+ 						(uint16_t)displayedPattern, absoluteChannel);
+@@ -837,7 +798,7 @@
+ 					transportRows = 1;
+ 				if (playheadRow < 0)
+ 					playheadRow = 0;
+-				if (playheadRow >= transportRows && !jogOverridesPrivateHead)
++				if (playheadRow >= transportRows)
+ 					playheadRow %= transportRows;
+ 
+ 				/* A private lane never scrolls one row per tick. For patterns taller
+@@ -862,7 +823,7 @@
+ 			uint32_t volColor = patternFieldColor(2, drawPtr->vol >= 0x10);
+ 			uint32_t tuneColor = patternFieldColor(3, drawPtr->tuneType != 0);
+ 			uint32_t efxColor = patternFieldColor(4,
+-				drawPtr->efx != 0 || drawPtr->efxData != 0);
++				drawPtr->hasEffect);
+ 
+ 			/* Only the row that is logically selected receives selected-row text
+ 			** emphasis. A stationary private lane must not imply that its screen
+@@ -882,10 +843,15 @@
+ 				if (drawPtr->note != 0) noteColor = fastTrackColor;
+ 				if (drawPtr->instr != 0) instColor = fastTrackColor;
+ 				if (drawPtr->vol != 0) volColor = fastTrackColor;
+-				if (drawPtr->efx != 0 || drawPtr->efxData != 0)
++				if (drawPtr->hasEffect)
+ 					efxColor = fastTrackColor;
+ 				if (drawPtr->tuneType != 0) tuneColor = fastTrackColor;
+ 			}
++
++			/* Native RGBA selections and literal block markers are supplied at
++			** the data boundary, before the original LEN shading and glyph pass. */
++			hostCellSelection(absoluteChannel, displayedRow, xPos, textY,
++				&noteColor, &instColor, &volColor, &tuneColor, &efxColor);
+ 
+ 			const bool lenOwnsFastTrack = lengthTopologyActive && fastTrackVisible &&
+ 				(fastTracksPOCUsesTrackLengths() || fastTrack->clutched);
+@@ -902,8 +868,12 @@
+ 				efxColor = dimPatternColor(efxColor);
+ 			}
+ 
+-			drawAdaptiveCell(xPos, textY, drawPtr, noteColor, instColor,
+-				volColor, tuneColor, efxColor);
++			drawAdaptiveCell(xPos, textY, drawPtr,
++				hostMuteColor(absoluteChannel, noteColor),
++				hostMuteColor(absoluteChannel, instColor),
++				hostMuteColor(absoluteChannel, volColor),
++				hostMuteColor(absoluteChannel, tuneColor),
++				hostMuteColor(absoluteChannel, efxColor));
+ 
+ 			bool drawPlayhead = independentVisual && displayedRow == playheadRow;
+ 			if (!independentVisual && !hybridVisuals)
+@@ -943,36 +913,20 @@
+ 			}
+ 		}
+ 
+-		if (++row >= numRows && !hybridVisuals)
+-			break;
+-
+-		if (row == visualMasterRow)
+-			textY = midRowTextY;
+-		else if (row == afterMasterRow)
+-			textY = lowerRowsTextY;
+-		else
+-			textY += rowHeight;
++		row++;
++		textY += rowHeight;
+ 	}
+ 
+ 	writeCursor();
+ 
+-	if (pattMark.markY1 != pattMark.markY2)
+-	{
+-		/* The pattern body follows song.row during playback. Map the selection
+-		** through that same visual row so its first line does not appear to fall
+-		** out of the block when Block Loop starts. */
+-		writePatternBlockMark(visualMasterRow, rowHeight, pattCoord);
+-	}
+-
+-	const uint16_t lengthHeaderY = (uint16_t)(pattCoord2->upperRowsY + 2);
+-	drawFastTracksPOCStatus((uint16_t)(lengthHeaderY + 8),
++	const uint16_t lengthHeaderY = (uint16_t)(host.layout.len_y - 1);
++	drawFastTracksPOCStatus((uint16_t)(host.layout.ratio_y - 1),
+ 		&fastTracksSnapshot);
+ 	drawTrackLengthStatus(lengthHeaderY, (uint16_t)currPattern);
+ 
+ 	if (config.ptnChnNumbers)
+ 		drawChannelNumbering(lengthHeaderY);
+ 
+-	drawPatternNavPopup();
+ }
+ 
+ void pattTwoHexOut(uint32_t xPos, uint32_t yPos, uint8_t val, uint32_t color)
+@@ -1029,36 +983,6 @@
+ 			}
+ 
+ 			srcPtr += FONT4_WIDTH;
+-			dstPtr += SCREEN_W;
+-		}
+-	}
+-	else if (fontType == FONT_TYPE5)
+-	{
+-		srcPtr = &font5Ptr[chr * FONT5_CHAR_W];
+-		for (y = 0; y < FONT5_CHAR_H; y++)
+-		{
+-			for (x = 0; x < FONT5_CHAR_W; x++)
+-			{
+-				if (srcPtr[x] != 0)
+-					dstPtr[x] = color;
+-			}
+-
+-			srcPtr += FONT5_WIDTH;
+-			dstPtr += SCREEN_W;
+-		}
+-	}
+-	else
+-	{
+-		srcPtr = &bmp.font7[chr * FONT7_CHAR_W];
+-		for (y = 0; y < FONT7_CHAR_H; y++)
+-		{
+-			for (x = 0; x < FONT7_CHAR_W; x++)
+-			{
+-				if (srcPtr[x] != 0)
+-					dstPtr[x] = color;
+-			}
+-
+-			srcPtr += FONT7_WIDTH;
+ 			dstPtr += SCREEN_W;
+ 		}
+ 	}

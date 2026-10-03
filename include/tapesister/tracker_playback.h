@@ -4,6 +4,7 @@
 #include "tapesister/sample_pages.h"
 #include "tapesister/note_bank.h"
 #include <stdatomic.h>
+#include <stdbool.h>
 
 /* Immutable audio generations. Only reference counts change in the callback;
    allocation, cloning and destruction are control-thread work. */
@@ -48,6 +49,8 @@ typedef struct {
     uint64_t last_note_frame, notes_started;
     uint32_t source_row;
     int32_t accumulator;
+    bool clock_started;
+    uint16_t clock_tpl;
     uint16_t cycle_steps;
     int ping_direction;
 } TsTrackerLanePlayback;

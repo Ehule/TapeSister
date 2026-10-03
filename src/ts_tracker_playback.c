@@ -1,3 +1,4 @@
+#include "../third_party/tapehead/ft2_fasttracks_core.h"
 #include "tapesister/tracker_playback.h"
 
 #include <math.h>
@@ -236,8 +237,8 @@ static void configure_voice(TsTrackerPlayback *rt, TsTrackerLanePlayback *lane,
     lane->changed = 1;
 }
 
-/* Rational clock and LEN/CONTROL rules adapted from Tapehead f053d96:
-   ft2_fasttracks_core.c, ft2_fasttracks.c and ft2_replayer.c (BSD-3-Clause).
+/* ft2_fasttracks_core.c is compiled unchanged from Tapehead (BSD-3-Clause).
+   Native LEN domain and voice adapters follow ft2_fasttracks.c/ft2_replayer.c.
    See third_party/tapehead/CODE-LICENSE.txt. Private rows are independent of
    the physical pattern container; extension rows must never read hidden data. */
 static const uint8_t ratio_numerator[TS_TRACKER_RATIOS] =
@@ -274,7 +275,8 @@ static uint32_t master_source_row(const TsTrackerPlayback *rt, int lane)
     if (p->lanes[lane].length) return rt->master_row % p->lanes[lane].length;
     /* Tapehead's LEN-OFF master stream wraps its physical container under a
        slow private CONTROL, except when the shared domain has a blank tail. */
-    return shared_length(p) > p->pattern.rows ? rt->master_row : (unsigned)rt->row;
+    return fastTracksSharedCycleUsesBlankRow(p->length_bypass,(uint16_t)shared_length(p),
+        p->pattern.rows,rt->master_row)?rt->master_row:(unsigned)rt->row;
 }
 static int private_control(const TsTrackerPrepared *p)
 {
@@ -307,8 +309,11 @@ TsTrackerPrepared *ts_tracker_playback_publish(TsTrackerPlayback *rt, TsTrackerP
                 int old_threshold = ratio_denominator[old->lanes[i].ratio] * old->ticks_per_line;
                 int threshold = ratio_denominator[p->lanes[i].ratio] * p->ticks_per_line;
                 l->accumulator = (int32_t)((int64_t)l->accumulator * threshold / old_threshold);
+                /* Publish rescales ratio and TPL together under callback exclusion. */
+                l->clock_tpl=p->ticks_per_line;
                 if (private_lane(p, i) && !private_lane(old, i)) {
                     l->source_row = master_source_row(rt, i) % private_length(p, i);
+                    l->clock_started=rt->transport_started!=0;
                     l->accumulator = ratio_denominator[p->lanes[i].ratio] * rt->tick;
                 }
                 if (topology_changed || old->lanes[i].mode != p->lanes[i].mode ||
@@ -343,6 +348,7 @@ int ts_tracker_playback_start(TsTrackerPlayback *rt)
         TsTrackerLanePlayback *l = &rt->lanes[i];
         l->default_tile = 0; l->volume = 0x40; l->notes_started = 0;
         l->source_row = 0; l->accumulator = 0; l->cycle_steps = 0;
+        l->clock_started=false;l->clock_tpl=rt->prepared->ticks_per_line;
         l->ping_direction = rt->prepared->lanes[i].direction == TS_TRACKER_REVERSE ? -1 : 1;
         l->gain = rt->prepared->lanes[i].muted || (rt->solo_mask && !(rt->solo_mask & (1u << i))) ?
                   0 : rt->prepared->lanes[i].trim;
@@ -481,7 +487,15 @@ static void transport_tick(TsTrackerPlayback *rt)
     if (!rt->transport_started) {
         rt->transport_started = 1;
         rt->tick = rt->row = 0;
-        for (int i = 0; i < TS_TRACKER_LANES; ++i) execute_lane(rt, i, 0);
+        for (int i = 0; i < TS_TRACKER_LANES; ++i) {
+            TsTrackerLanePlayback *l=&rt->lanes[i];
+            if(private_lane(p,i)) {
+                unsigned ratio=p->lanes[i].ratio;
+                (void)fastTracksClockTick(&l->clock_started,&l->accumulator,&l->clock_tpl,
+                    ratio_numerator[ratio],ratio_denominator[ratio],p->ticks_per_line);
+            }
+            execute_lane(rt,i,0);
+        }
         return;
     }
     int row_advanced = ++rt->tick >= p->ticks_per_line;
@@ -491,8 +505,10 @@ static void transport_tick(TsTrackerPlayback *rt)
     }
     /* Like Tapehead's replayer, a private CONTROL crossing requests the next
        tick-zero boundary. All lanes finish the current tick before it applies. */
-    int boundary = private_control(p) ? rt->control_pending :
-                   row_advanced && rt->master_row >= shared_length(p);
+    int boundary = fastTracksResolveSharedBoundary(!p->length_bypass,private_control(p),
+        row_advanced,rt->master_row,(uint16_t)shared_length(p),rt->row+row_advanced,
+        p->pattern.rows,false,private_control(p) && rt->control_pending)==
+        FAST_TRACKS_SHARED_BOUNDARY_TRANSITION;
     if (boundary) {
         if (!p->loop) { ts_tracker_playback_stop(rt); return; }
         rt->master_row = 0; rt->tick = 0; rt->control_pending = 0;
@@ -505,14 +521,10 @@ static void transport_tick(TsTrackerPlayback *rt)
         if (private_lane(p, i)) {
             TsTrackerLanePlayback *l = &rt->lanes[i];
             unsigned ratio = p->lanes[i].ratio;
-            int threshold = ratio_denominator[ratio] * p->ticks_per_line;
-            l->accumulator += ratio_numerator[ratio];
-            /* All crossings matter: a 5:1 track at TPL 1 can encounter five
-               tile/volume/OFF/CUT/note events in one mixer tick. */
-            while (l->accumulator >= threshold) {
-                l->accumulator -= threshold;
-                advance_private(rt, i);
-            }
+            int crossings=fastTracksClockTick(&l->clock_started,&l->accumulator,&l->clock_tpl,
+                ratio_numerator[ratio],ratio_denominator[ratio],p->ticks_per_line);
+            /* Execute every event returned by the original rational clock. */
+            for(int crossing=0;crossing<crossings;++crossing)advance_private(rt,i);
         } else if (row_advanced) execute_lane(rt, i, master_source_row(rt, i));
     }
 }

@@ -41,7 +41,7 @@ the top strip, and **FT** when Standard or the active ratio when Pattern
 FastTracks is enabled. The 17 ratios range from 1:2 through 1:1 to 5:1.
 Click FT to enable, click/wheel the ratio to change it, and click the three-LED
 bank to return to Standard. Right-click the strip, or click the direction area
-between the ratio and LEDs, for forward/reverse/ping-pong; only reverse **R** or
+immediately after the ratio, for forward/reverse/ping-pong; only reverse **R** or
 ping-pong **B** needs a badge. A saved Song assignment has an **S** badge but
 continues playing Standard until order playback is implemented.
 The LEDs show lag / exact synchronization / lead from the audio clock. Both
@@ -74,7 +74,8 @@ different pattern also uses that ordinary view. Blank extension rows can be
 shown, but cannot expose or edit retained hidden data. Literal Ctrl+L block
 playback uses the shared row model without LEN dimming or private FT pages.
 
-The pattern view reuses Tapehead's original normal, tiny and pattern pixel fonts,
+The pattern view compiles Tapehead's extracted pattern and tiny-font drawing
+routines, including its original normal, tiny and pattern pixel fonts,
 recessed black lane panels, hex row numbers on both sides, current-row band,
 colored field groups and CONTROL symbol. It honors the shared palette, including
 PatternEmpty for empty dots. Sample selection, Sister routing outlines, locked
@@ -84,7 +85,9 @@ overlay while Tracker is visible. They continue to render in the Sample workspac
 All five stored groups are visible: NOTE, TILE, VOL, M/N and FX. Tuning and FX
 have separate command and two-digit parameter cursor positions. These definitions
 save, copy, paste and undo, but their commands do not yet execute in audio. The
-footer labels command audio inactive.
+footer labels command audio inactive. The original breathing outline locates the
+active character; during two-digit entry it moves to the second digit. The old
+extra blinking underline has been removed.
 
 ### LEN, CONTROL and private clocks
 
@@ -107,8 +110,9 @@ LEN instead; CONTROL with LEN OFF selects physical pattern length. Thus a shared
 cycle can be shorter or longer than the pattern container. Extension rows are
 blank and never play retained hidden data or stop a sustaining sample by themselves.
 
-Pattern FastTracks use Tapehead's rational accumulator on every shared audio
-tick, including 1:1. Ratios mean source rows per master row. All crossed events
+Pattern FastTracks call Tapehead's unchanged `fastTracksClockTick` core on every
+shared audio tick, including 1:1. The shared-boundary and blank-extension helpers
+also come directly from that source. Ratios mean source rows per master row. All crossed events
 execute in order, even when 5:1 at TPL 1 crosses five rows in one tick. Private
 heads keep their position and phase across shared loops. Reverse starts at row
 zero and moves backward with wrap. Native ping-pong visits both endpoints once
@@ -203,9 +207,9 @@ removed if doing so would change the order list. NEW and CLONE remain outside
 pattern-edit undo. One held ROWS
 gesture makes one undo step. New edits discard redo history.
 
-A breathing outline marks the logical current field without painting over its text. A blinking underline shows
-the current hex digit; the first digit remains visible while the second is
-pending. The footer shows the effective explicit/inherited alias and the
+A breathing outline from Tapehead's original cursor routine marks the active
+character. It moves to the second hex digit while the first remains visible.
+The footer shows the effective explicit/inherited alias and the
 Sample tile that USE TILE will assign. Bound aliases are never silently
 retargeted, including missing tile references. If a typed Sample slot is already
 bound to another alias, that existing alias is used and reported in the status.
@@ -243,8 +247,8 @@ Ordinary navigation leaves the loop alone. Deliberate marking gestures on its
 playing pattern queue the latest rectangle, which becomes audible at the next
 loop seam. Shift+arrows operates from the mark's stored moving corner, not an
 unrelated cursor position. An amber lane-edge rail shows the active audible
-bounds, selection fill shows the edited bounds, the normal playback band follows the master row, and the edit field retains its
-own breathing outline and blinking digit underline.
+bounds, selection fill shows the edited bounds, and the normal playback band
+follows the master row. The edit character retains its own breathing outline.
 Clearing the mark with Escape does not stop the running loop. Marking another
 editor pattern cannot retarget the playing loop.
 

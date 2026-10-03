@@ -21,6 +21,7 @@
 #include "tapesister/exchange.h"
 #include "tapesister/cdp_portal.h"
 #include "tapesister/waveform_cache.h"
+#include "../../third_party/tapehead/transport_visuals.h"
 
 enum { TS_UI_WIDTH = 640, TS_UI_HEIGHT = 400 };
 enum { TS_TRACKER_LEN_Y=54, TS_TRACKER_RATIO_Y=64,
@@ -51,19 +52,15 @@ static inline TsTrackerLayout ts_tracker_layout(const TsSisterTracker *t,int exp
     g.bottom=g.grid_y+g.rows*TS_TRACKER_ROW_HEIGHT;g.help_y=expanded?389:319;
     return g;
 }
-/* Tapehead-style five groups, with separate command/parameter focus. */
-static inline int ts_tracker_field_offset(int field)
-{
-    const int offsets[TS_TRACKER_FIELD_COUNT]={2,27,36,45,49,58,62};
-    return offsets[field>=0 && field<TS_TRACKER_FIELD_COUNT?field:0];
-}
-static inline int ts_tracker_field_width(int field)
-{
-    return field==0?24:field==3 || field==5?4:8;
-}
+/* The extracted renderer owns glyph geometry and pointer hit testing. */
+int ts_tracker_tapehead_field_at(int local);
 static inline int ts_tracker_field_at(int local)
 {
-    return local<27?0:local<36?1:local<45?2:local<49?3:local<58?4:local<62?5:6;
+    return ts_tracker_tapehead_field_at(local);
+}
+static inline int ts_tracker_direction_x(unsigned ratio)
+{
+    return 2+((ratio==6 || ratio==8)?5:3)*4+2;
 }
 enum { TS_IMPORT_PREVIEW_COLUMNS = 568 };
 enum { TS_UI_INPUT_LED_X = 184, TS_UI_INPUT_LED_Y = 12,
@@ -515,8 +512,7 @@ typedef struct {
     int tracker_open, tracker_field, tracker_scroll, tracker_hex_digit, tracker_hex_value;
     int tracker_repeat_control, tracker_repeat_delta, tracker_repeat_button, tracker_follow_hold;
     uint32_t tracker_repeat_next, tracker_cursor_epoch;
-    int tracker_cursor_visible;
-    unsigned tracker_breathe; /* Tapehead's 255 -> 140 -> 255 locator pulse. */
+    unsigned tracker_breathe_frame; /* Tapehead's original 120-frame breathing cycle. */
     int tracker_expanded,tracker_hover_x,tracker_hover_y;
     unsigned tracker_block,tracker_block_rows,tracker_block_lanes;
     unsigned tracker_running, tracker_row, tracker_heard_pattern, tracker_missing;
@@ -761,7 +757,7 @@ typedef struct {
    until their actual audio head crosses the viewport boundary. */
 typedef struct {
     int playing, following, master_row, master_top, extent;
-    int top[TS_TRACKER_LANES];
+    int top[TS_TRACKER_LANES], transport_rows[TS_TRACKER_LANES];
     uint8_t independent[TS_TRACKER_LANES], fast[TS_TRACKER_LANES];
 } TsTrackerView;
 static inline TsTrackerView ts_tracker_view(const TsUiState *ui,const TsTrackerPattern *p)
@@ -775,14 +771,24 @@ static inline TsTrackerView ts_tracker_view(const TsUiState *ui,const TsTrackerP
     v.master_row=v.playing?(int)ui->tracker_master_row:t->editor_row;
     v.master_top=v.following?v.master_row-g.rows/2:ui->tracker_scroll;
     v.extent=p->rows;
+    int longest=0,shared=p->rows;
+    if(!t->length_bypass && !ui->tracker_block) {
+        for(int lane=0;lane<TS_TRACKER_LANES;++lane)
+            if(t->lanes[lane].length>longest)longest=t->lanes[lane].length;
+        if(longest>v.extent)v.extent=longest;
+        shared=t->control_lane>=0?t->lanes[t->control_lane].length:longest;
+        if(!shared)shared=p->rows;
+    }
     for(int lane=0;lane<TS_TRACKER_LANES;++lane) {
         const TsTrackerLane *l=&t->lanes[lane];
-        if(!t->length_bypass && l->length>v.extent)v.extent=l->length;
         v.fast[lane]=l->mode==TS_TRACKER_PATTERN && !ui->tracker_block;
-        v.independent[lane]=v.following && !ui->tracker_block &&
-            (v.fast[lane] || (!t->length_bypass && l->length));
+        v.independent[lane]=!ui->tracker_block && tapeheadTrackUsesIndependentTransportVisual(
+            v.following,v.fast[lane],!t->length_bypass && l->length,false);
+        int rows=t->length_bypass || ui->tracker_block || (v.fast[lane] && !t->fasttracks_uses_length)?
+            p->rows:l->length?l->length:shared;
+        v.transport_rows[lane]=rows>0?rows:1;
         v.top[lane]=v.independent[lane]?
-            ((int)ui->tracker_lane_row[lane]/g.rows)*g.rows:v.master_top;
+            tapeheadTransportVisualPageStart((int)(ui->tracker_lane_row[lane]%(unsigned)v.transport_rows[lane]),g.rows):v.master_top;
     }
     return v;
 }
@@ -794,6 +800,7 @@ static inline int ts_tracker_view_row(const TsUiState *ui,const TsTrackerPattern
     return v.top[lane]+(y-g.grid_y)/TS_TRACKER_ROW_HEIGHT;
 }
 
+void ts_tracker_tapehead_render(TsFramebuffer *fb,const TsUiState *ui);
 void ts_ui_init(TsUiState *ui);
 void ts_ui_update_input_activity(TsUiState *ui,
                                  uint32_t hold_until_ms[8],

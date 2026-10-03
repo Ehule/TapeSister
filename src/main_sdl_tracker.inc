@@ -8,10 +8,7 @@ static unsigned tracker_alias(const TsSisterTracker *t,TsTileId id)
 static void tracker_refresh(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,
                             TsSamplePages *pages,const TsInstrument *instrument,int rate)
 {
-    ui->tracker_cursor_visible=(((SDL_GetTicks()-ui->tracker_cursor_epoch)/450u)&1u)==0;
-    unsigned pulse=(SDL_GetTicks()-ui->tracker_cursor_epoch)%2000u;
-    if(pulse>1000u)pulse=2000u-pulse;
-    ui->tracker_breathe=255u-pulse*115u/1000u;
+    ui->tracker_breathe_frame=((SDL_GetTicks()-ui->tracker_cursor_epoch)%2000u)*60u/1000u;
     tracker_repeat_poll(ui,SDL_GetTicks(),SDL_GetMouseState(NULL,NULL));
     TsTrackerPlayback *rt=&audio->tracker;
     ui->tracker_running=atomic_load_explicit(&rt->display_running,memory_order_acquire);
@@ -575,11 +572,11 @@ static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevi
                 snprintf(ui->status,sizeof(ui->status),"CONTROL %s - DEFINES THE SHARED CYCLE",t->control_lane<0?"OFF":"ASSIGNED");
             } else if(local>=10)tracker_lane_length(ui,lane,delta,mod);
             else t->editor_lane=lane;
-        } else if(right || (l->mode==TS_TRACKER_PATTERN && local>=28 && local<46)) {
+        } else if(right || (l->mode==TS_TRACKER_PATTERN && local>=ts_tracker_direction_x(l->ratio) && local<ts_tracker_direction_x(l->ratio)+6)) {
             l->direction=(l->direction+1)%3;
             snprintf(ui->status,sizeof(ui->status),"LANE %d %s - PATTERN FASTTRACKS DIRECTION",lane+1,
                 (const char*[]){"FORWARD","REVERSE","PING PONG"}[l->direction]);
-        } else if(l->mode!=TS_TRACKER_PATTERN || local>=46)tracker_lane_mode(ui,lane);
+        } else if(l->mode!=TS_TRACKER_PATTERN || local>=TS_TRACKER_LANE_WIDTH-17)tracker_lane_mode(ui,lane);
         else tracker_lane_ratio(ui,lane,1);
         return 1;
     }

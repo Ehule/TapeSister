@@ -12,8 +12,8 @@ recording, FX and transport ownership.
 | Operation | Status in this PR | Adaptation / remaining work |
 | --- | --- | --- |
 | Pixel font, recessed lanes, LEN + FastTracks header | Implemented | Original fonts/attribution retained; native palette and dimensions |
-| Hybrid transport drawing / FOLLOW | Ported | Master-centered normal scrolling, stationary per-lane pages, source-mapped input/marks/cursor; compact/expanded native geometry |
-| LEN dimming / private lane colors / phase LEDs | Ported | Exact Tapehead dim formula, FT text, LEN/FT/hybrid/CONTROL palette outlines, audio-derived lag/sync/lead |
+| Hybrid transport drawing / FOLLOW | Source extracted and compiled | Master-centered normal scrolling, stationary per-lane pages, source-mapped input/marks/cursor; compact/expanded native geometry |
+| LEN dimming / private lane colors / phase LEDs | Source extracted and compiled | Exact Tapehead dim formula, FT text, LEN/FT/hybrid/CONTROL palette outlines, audio-derived lag/sync/lead |
 | Independent rectangle, cursor, heard row | Corrected | Pattern-bound stored corners; ordinary navigation/entry preserve marks |
 | Mark lane / whole pattern | Implemented | Tapehead Alt+C / native Ctrl+A; cursor does not move |
 | Mouse marking / Shift navigation | Implemented | Drag starts a fresh mark; Shift extends its independent active corner |
@@ -35,14 +35,14 @@ recording, FX and transport ownership.
 | FX and M/N interpolation | Outstanding | Tapehead Ctrl+Shift+B/T; preserve separate native command meanings |
 | Melodic Walk / scales / live spacing preview | Outstanding | Do not reuse Ctrl+Shift+M, which belongs to TapeSister MIDI Learn |
 | Fill, reverse, repeat block | Implemented | Masks for fill/reverse; repeated block clips to active rows |
-| Numeric tile/volume/tune/FX entry | Implemented | Hex/keypad, visible blinking digit; commands stored, not audio-executed |
+| Numeric tile/volume/tune/FX entry | Implemented | Hex/keypad, original breathing digit locator; commands stored, not audio-executed |
 | Arrows, Home/End, PageUp/Down | Implemented | Page size follows visible layout; seven fields per lane |
 | Tab, F9–F12, saved row bookmarks | Intentional differences / outstanding | Tab remains Sister/FX, F9 Router, F10 Tracker, F12 Audio Health; Tapehead row bookmarks need alternate bindings |
 | Alt+track-jump keys / extra delete masks | Outstanding | Current masks and explicit field navigation remain available |
 | Ctrl+Alt+Backspace expanded pattern | Implemented this batch | Shared geometry; 19/29 rows without names; Ctrl+E opens tools in both modes |
 | Compact M/S, contextual field help | Implemented this batch | Default names and repeated field-label strips removed; custom names retained |
 | Pattern clock and Main output | Implemented | Native sample readers, Sister TRACK, final-output recording |
-| LEN/CONTROL and Pattern FastTracks | Implemented | Shared tick, 17 rational ratios, phase-preserving live changes, forward/reverse, per-lane heads; native ping-pong extension |
+| LEN/CONTROL and Pattern FastTracks | Upstream clock core compiled unchanged | Shared tick, 17 rational ratios, phase-preserving live changes, forward/reverse, per-lane heads; native ping-pong extension |
 | LEN bypass / FastTracks uses LEN | Implemented | Saved switches, logical blank extension, physical rows never expose hidden data |
 | FastTracks master/clutches/sync/randomize | Outstanding | Not part of the saved lane-clock activation batch; Z execution also pending |
 | M/N tuning and FX command execution | Definitions only | Native semantics differ from Tapehead microtuning/drift; requires explicit DSP design |
@@ -57,6 +57,21 @@ playback. Saved Song assignments are displayed as pending and currently use
 Standard playback. Native Pattern FastTracks execute row zero once on Play;
 the rest of the accumulator and CONTROL handoff follow Tapehead. Ping-pong
 is a native extension with no repeated endpoints.
+
+## Source boundary
+
+The drawing pass now compiles functions extracted from Tapehead's
+`ft2_pattern_draw.c`, plus its tiny-font and transport-visual helpers. The
+standalone `ft2_fasttracks_core.c/.h` files are compiled byte-for-byte unchanged.
+The previous native grid/glyph/dimming/outline/LED/cursor recreation and clock
+loop have been removed. See `third_party/tapehead/UPSTREAM.md`, `SOURCES.json`
+and `pattern_draw.patch` for exact provenance and host adaptations; the importer
+reproduces the extraction against checked source hashes.
+
+The native window chrome, stable tile model, RGBA selection representation,
+MIDI range/CUT, sample engine, recording and editing operations remain host
+code. Song, clutch, Jog and Punch are still absent audio capabilities; retaining
+upstream status structures does not make those transports implemented.
 
 ## Verification
 

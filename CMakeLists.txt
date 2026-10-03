@@ -35,7 +35,8 @@ add_library(tapesister_core src/ts_sample.c src/ts_prism.c src/ts_prism_performa
              src/ts_render_damage.c src/ts_waveform_cache.c
              src/ts_cdp_recipe.c src/ts_cdp_adapter.c src/ts_cdp_portal.c src/ts_transform.c
              src/ts_dsp_transform.c src/ts_exchange.c src/ts_waveform_display.c
-             src/ts_audio_import.c src/ts_ui.c)
+             src/ts_audio_import.c src/ts_ui.c src/ts_tracker_tapehead.c
+             third_party/tapehead/ft2_fasttracks_core.c)
 target_include_directories(tapesister_core PUBLIC include PRIVATE ${miniaudio_SOURCE_DIR})
 target_link_libraries(tapesister_core PUBLIC m)
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
