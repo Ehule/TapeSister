@@ -1,11 +1,11 @@
 # SisterTracker: stage 1 foundation
 
-SisterTracker is the native eight-lane tracker planned for TapeSister. This first
-implementation provides the song model, stable tile references, and project
-persistence. [Stage 2](SISTERTRACKER_PLAYBACK.md) now adds the pattern editor,
-Standard transport and first audible path on these definitions. LEN/CONTROL
-and Pattern FastTracks now execute as described in SISTERTRACKER_PLAYBACK.md;
-Song/order transport and M/N/FX execution remain pending.
+This document describes the original native score/identity foundation. F10 now
+uses the embedded TapeHead application described in
+[SisterTracker playback](SISTERTRACKER_PLAYBACK.md). The stable model remains the
+host project boundary; a version-2 extension retains the original tracker bytes.
+The earlier notes about pending Song/M/N/FX execution are superseded by the
+embedded replayer.
 
 ## Model
 

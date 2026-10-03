@@ -1,3 +1,12 @@
+Current F10 workspace
+====================
+
+F10 now uses the full vendored application in `application/`, with the explicit
+host boundary described in `application/README.md`. The drawing-only extraction
+below is retained for the legacy controller regression fixture and the shared
+standalone clock core. Its descriptions of native editing/playback ownership
+are historical and do not describe the active F10 workspace.
+
 Tapehead source extraction
 ==========================
 

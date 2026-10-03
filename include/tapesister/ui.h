@@ -510,6 +510,7 @@ typedef struct {
     TsSisterTracker *tracker;
     TsTrackerEdit *tracker_edit;
     int tracker_open, tracker_field, tracker_scroll, tracker_hex_digit, tracker_hex_value;
+    const uint32_t *tracker_embedded_frame; /* 632x400 host-owned embedded workspace. */
     int tracker_repeat_control, tracker_repeat_delta, tracker_repeat_button, tracker_follow_hold;
     uint32_t tracker_repeat_next, tracker_cursor_epoch;
     unsigned tracker_breathe_frame; /* Tapehead's original 120-frame breathing cycle. */

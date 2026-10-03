@@ -1,0 +1,3556 @@
+// for finding memory leaks in debug mode with Visual Studio
+#if defined _DEBUG && defined _MSC_VER
+#include <crtdbg.h>
+#endif
+
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+#include <math.h>
+#include <ctype.h>
+#include <errno.h>
+#ifndef _WIN32
+#include <strings.h>
+#endif
+#ifdef _WIN32
+#define _WIN32_IE 0x0500
+#define WIN32_MEAN_AND_LEAN
+#include <windows.h>
+#include <shlobj.h>
+#include <direct.h>
+#else
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
+#include "ft2_header.h"
+#include "ft2_video.h"
+#include "ft2_audio.h"
+#include "ft2_config.h"
+#include "ft2_gui.h"
+#include "ft2_pattern_ed.h"
+#include "ft2_mouse.h"
+#include "ft2_wav_renderer.h"
+#include "ft2_sampling.h"
+#include "ft2_audioselector.h"
+#include "ft2_midi.h"
+#include "ft2_midi_map.h"
+#ifdef HAS_MIDI
+#include "ft2_apc40_mk2.h"
+#endif
+#include "ft2_palette.h"
+#include "ft2_pattern_draw.h"
+#include "ft2_fasttracks.h"
+#include "ft2_tables.h"
+#include "ft2_bmp.h"
+#include "ft2_structs.h"
+
+static char *trimText(char *s);
+#include "ft2_multichannel.h"
+#include "scopes/ft2_scopes.h"
+
+config_t config; // globalized
+tapeheadConfig_t tapeheadConfig;
+
+#ifdef _MSC_VER // hide POSIX warnings
+#pragma warning(disable: 4996)
+#endif
+
+static uint8_t configBuffer[CONFIG_FILE_SIZE];
+static UNICHAR *getFullTapeheadConfigPathU(void);
+
+static void xorConfigBuffer(uint8_t *ptr8)
+{
+	for (int32_t i = 0; i < CONFIG_FILE_SIZE; i++)
+		ptr8[i] ^= (uint8_t)(i*7);
+}
+
+static int32_t calcChecksum(const uint8_t *p, uint16_t len) // for Nibbles highscore data
+{
+	if (len == 0)
+		return 0;
+
+	uint16_t data = 0;
+	uint32_t checksum = 0;
+
+	for (uint16_t i = len; i > 0; i--)
+	{
+		data = ((data | *p++) + i) ^ i;
+		checksum += data;
+		data <<= 8;
+	}
+
+	return checksum;
+}
+
+static void loadConfigFromBuffer(bool defaults)
+{
+	lockMixerCallback();
+
+	ASSERT(sizeof(config) == CONFIG_FILE_SIZE);
+	memcpy(&config, configBuffer, CONFIG_FILE_SIZE);
+
+	if (defaults)
+		config.audioFreq = DEFAULT_AUDIO_FREQ;
+
+	if (config.audioFreq > MAX_AUDIO_FREQ)
+		config.audioFreq = MAX_AUDIO_FREQ;
+
+	// if Nibbles highscore checksum is incorrect, load default highscores instead
+	const int32_t newChecksum = calcChecksum((uint8_t *)&config.NI_HighScore, sizeof (config.NI_HighScore));
+	if (newChecksum != config.NI_HighScoreChecksum)
+		memcpy(&config.NI_HighScore, &defConfigData[636], sizeof (config.NI_HighScore));
+
+	// sanitize Nibbles highscore names
+	for (int32_t i = 0; i < 10; i++)
+	{
+		config.NI_HighScore[i].name[21] = '\0';
+		if (config.NI_HighScore[i].nameLen > 21)
+			config.NI_HighScore[i].nameLen = 21;
+	}
+
+	// clamp user palette values
+	for (int32_t i = 0; i < 16; i++)
+	{
+		if (config.userPal->r > 63) config.userPal->r = 63;
+		if (config.userPal->g > 63) config.userPal->g = 63;
+		if (config.userPal->b > 63) config.userPal->b = 63;
+	}
+
+	// copy over user palette
+	memcpy(palTable[11], config.userPal, sizeof (pal16) * 16);
+
+	// sanitize certain values
+
+	config.modulesPath[80-1] = '\0';
+	config.instrPath[80-1] = '\0';
+	config.samplesPath[80-1] = '\0';
+	config.patternsPath[80-1] = '\0';
+	config.tracksPath[80-1] = '\0';
+
+	// clear data after the actual Pascal string length. FT2 can save garbage in that area.
+
+	if (config.modulesPathLen < 80)
+		memset(&config.modulesPath[config.modulesPathLen], 0, 80-config.modulesPathLen);
+
+	if (config.instrPathLen < 80)
+		memset(&config.instrPath[config.instrPathLen], 0, 80-config.instrPathLen);
+
+	if (config.samplesPathLen < 80)
+		memset(&config.samplesPath[config.samplesPathLen], 0, 80-config.samplesPathLen);
+
+	if (config.patternsPathLen < 80)
+		memset(&config.patternsPath[config.patternsPathLen], 0, 80-config.patternsPathLen);
+
+	if (config.tracksPathLen < 80)
+		memset(&config.tracksPath[config.tracksPathLen], 0, 80-config.tracksPathLen);
+
+	config.boostLevel = CLAMP(config.boostLevel, 1, 32);
+	config.masterVol = CLAMP(config.masterVol, 0, 256);
+	config.ptnMaxChannels = CLAMP(config.ptnMaxChannels, 0, 3);
+	config.ptnFont = CLAMP(config.ptnFont, 0, 3);
+	config.mouseType = CLAMP(config.mouseType, 0, 3);
+	config.cfg_StdPalNum = CLAMP(config.cfg_StdPalNum, 0, 11);
+	config.cfg_SortPriority = CLAMP(config.cfg_SortPriority, 0, 1);
+	config.NI_NumPlayers = CLAMP(config.NI_NumPlayers, 0, 1);
+	config.NI_Speed = CLAMP(config.NI_Speed, 0, 3);
+	config.recMIDIVolSens = CLAMP(config.recMIDIVolSens, 0, 200);
+	config.recMIDIChn  = CLAMP(config.recMIDIChn, 1, 16);
+
+	if (config.interpolation >= NUM_INTERPOLATORS)
+		config.interpolation = INTERPOLATION_SINC8; // default (sinc, 8 point)
+
+	if (config.recTrueInsert > 1)
+		config.recTrueInsert = 1;
+
+	if (config.mouseAnimType != 0 && config.mouseAnimType != 2)
+		config.mouseAnimType = 0;
+
+	if (config.recQuantRes != 1 && config.recQuantRes != 2 && config.recQuantRes != 4 &&
+		config.recQuantRes != 8 && config.recQuantRes != 16)
+	{
+		config.recQuantRes = 16;
+	}
+
+	if (config.audioFreq != 44100 && config.audioFreq != 48000 && config.audioFreq != 96000)
+		config.audioFreq = DEFAULT_AUDIO_FREQ;
+
+	if (config.audioInputFreq <= 1) // default value from FT2 (this was cdr_Sync) - set defaults
+		config.audioInputFreq = INPUT_FREQ_48KHZ;
+
+	/*
+	** specialFlags bit 64 was historically used for the deprecated
+	** 4096-byte audio-buffer option. This fork now assigns that bit
+	** to INHERIT_PATT_LEN, so it must not be migrated or cleared.
+	*/
+
+	if (config.windowFlags == 0) // default value from FT2 (this was ptnDefaultLen byte #2) - set defaults
+		config.windowFlags = WINSIZE_AUTO;
+
+	// audio bit depth - remove 32-bit flag if both are enabled
+	if ((config.specialFlags & BITDEPTH_16) && (config.specialFlags & BITDEPTH_32))
+		config.specialFlags &= ~BITDEPTH_32;
+
+	if (audio.dev != 0)
+		setNewAudioSettings();
+
+	audioSetInterpolationType(config.interpolation);
+	audioSetVolRamp((config.specialFlags & NO_VOLRAMP_FLAG) ? false : true);
+	setAudioAmp(config.boostLevel, config.masterVol, !!(config.specialFlags & BITDEPTH_32));
+	setMouseShape(config.mouseType);
+	changeLogoType(config.id_FastLogo);
+	changeBadgeType(config.id_TritonProd);
+	ui.maxVisibleChannels = (uint8_t)(2 + ((config.ptnMaxChannels + 1) * 2));
+	setPalette(palTable[config.cfg_StdPalNum], REDRAW_SCREEN);
+	updatePattFontPtrs();
+
+	unlockMixerCallback();
+}
+
+static void configDrawAmp(void)
+{
+	char str[8];
+	sprintf(str, "%02d", config.boostLevel);
+	textOutFixed(607, 105, PAL_FORGRND, PAL_DESKTOP, str);
+}
+
+static void configDrawMasterVol(void)
+{
+	char str[9];
+	sprintf(str, "%3d", config.masterVol);
+	fillRect(607, 133, 20, 8, PAL_DESKTOP);
+	textOutFixed(607, 133, PAL_FORGRND, PAL_DESKTOP, str);
+}
+
+static void setDefaultConfigSettings(void)
+{
+	memcpy(configBuffer, defConfigData, CONFIG_FILE_SIZE);
+	loadConfigFromBuffer(true);
+}
+
+void tapeheadEmbeddedConfigDefaults(void) { setDefaultConfigSettings(); }
+
+static void updateImageStretchAndPixelFilter(uint8_t oldWindowFlags, uint8_t oldSpecialFlags2)
+{
+	bool didFullscreenUpdate = false;
+
+	// handle pixel filter change
+	if ((oldWindowFlags & PIXEL_FILTER) != (config.windowFlags & PIXEL_FILTER))
+	{
+		recreateTexture();
+		if (video.fullscreen) // force an update if in fullscreen mode
+		{
+			leaveFullscreen();
+			enterFullscreen();
+			didFullscreenUpdate = true;
+		}
+	}
+
+	// handle image stretch change
+	if ((oldSpecialFlags2 & STRETCH_IMAGE) != (config.specialFlags2 & STRETCH_IMAGE))
+	{
+		if (video.fullscreen && !didFullscreenUpdate) // force an update if in fullscreen mode
+		{
+			leaveFullscreen();
+			enterFullscreen();
+		}
+	}
+}
+
+void resetConfig(void)
+{
+	if (okBox(2, "System request", "Are you sure you want to reset your FT2 configuration?", NULL) != 1)
+		return;
+
+	const uint8_t oldWindowFlags = config.windowFlags;
+	const uint8_t oldSpecialFlags2 = config.specialFlags2;
+
+	setDefaultConfigSettings();
+	setToDefaultAudioOutputDevice();
+	setToDefaultAudioInputDevice();
+
+	saveConfig(false);
+
+	// redraw new changes
+	showTopScreen(DONT_RESTORE_SCREENS);
+	showBottomScreen();
+
+	setWindowSizeFromConfig(true);
+	updateImageStretchAndPixelFilter(oldWindowFlags, oldSpecialFlags2);
+
+	if (config.specialFlags2 & HARDWARE_MOUSE)
+		SDL_ShowCursor(SDL_TRUE);
+	else
+		SDL_ShowCursor(SDL_FALSE);
+}
+
+bool loadConfig(bool showErrorFlag)
+{
+	// this routine can be called at any time, so make sure we free these first...
+
+	if (audio.currOutputDevice != NULL)
+	{
+		free(audio.currOutputDevice);
+		audio.currOutputDevice = NULL;
+	}
+
+	if (audio.currInputDevice != NULL)
+	{
+		free(audio.currInputDevice);
+		audio.currInputDevice = NULL;
+	}
+
+	// now we can get the audio devices from audiodev.ini
+
+	audio.currOutputDevice = getAudioOutputDeviceFromConfig();
+	audio.currInputDevice = getAudioInputDeviceFromConfig();
+
+#ifdef HAS_MIDI
+	if (midi.initThreadDone)
+	{
+		setMidiInputDeviceFromConfig();
+		if (ui.configScreenShown && editor.currConfigScreen == CONFIG_SCREEN_MIDI_INPUT)
+			drawMidiInputList();
+	}
+#endif
+
+	if (editor.configFileLocationU == NULL)
+	{
+		if (showErrorFlag)
+			okBox(0, "System message", "Error opening config file for reading!", NULL);
+
+		return false;
+	}
+
+	FILE *f = UNICHAR_FOPEN(editor.configFileLocationU, "rb");
+	if (f == NULL)
+	{
+		if (showErrorFlag)
+			okBox(0, "System message", "Error opening config file for reading!", NULL);
+
+		return false;
+	}
+
+	fseek(f, 0, SEEK_END);
+	const size_t fileSize = ftell(f);
+	rewind(f);
+
+	// check if it's a valid FT2 config file (FT2.CFG filesize varies depending on version)
+	if (fileSize < 1732 || fileSize > CONFIG_FILE_SIZE)
+	{
+		fclose(f);
+		if (showErrorFlag)
+			okBox(0, "System message", "Error loading config: the config file is not valid!", NULL);
+
+		return false;
+	}
+
+	if (fileSize < CONFIG_FILE_SIZE) // old version, make sure unloaded entries are zeroed out
+		memset(configBuffer, 0, CONFIG_FILE_SIZE);
+
+	// read to config buffer and close file handle
+	if (fread(configBuffer, fileSize, 1, f) != 1)
+	{
+		fclose(f);
+		if (showErrorFlag)
+			okBox(0, "System message", "Error opening config file for reading!", NULL);
+
+		return false;
+	}
+
+	fclose(f);
+
+	xorConfigBuffer(configBuffer); // decrypt config buffer
+
+	if (memcmp(&configBuffer[0], CFG_ID_STR, 35) != 0)
+	{
+		if (showErrorFlag)
+			okBox(0, "System message", "Error loading config: the config file is not valid!", NULL);
+
+		return false;
+	}
+
+	loadConfigFromBuffer(false);
+	return true;
+}
+
+void loadConfig2(void) // called by "Load config" button
+{
+	const uint8_t oldWindowFlags = config.windowFlags;
+	const uint8_t oldSpecialFlags2 = config.specialFlags2;
+
+	loadConfig(CONFIG_SHOW_ERRORS);
+
+	// redraw new changes
+	showTopScreen(DONT_RESTORE_SCREENS);
+	showBottomScreen();
+
+	setWindowSizeFromConfig(true);
+	updateImageStretchAndPixelFilter(oldWindowFlags, oldSpecialFlags2);
+
+	if (config.specialFlags2 & HARDWARE_MOUSE)
+		SDL_ShowCursor(SDL_TRUE);
+	else
+		SDL_ShowCursor(SDL_FALSE);
+}
+
+bool saveConfig(bool showErrorFlag)
+{
+#ifdef TAPEHEAD_EMBEDDED
+	return false;
+#endif
+	if (editor.configFileLocationU == NULL)
+	{
+		if (showErrorFlag)
+			okBox(0, "System message", "General I/O error during saving! Is the file in use?", NULL);
+
+		return false;
+	}
+
+	saveAudioDevicesToConfig(audio.currOutputDevice, audio.currInputDevice);
+#ifdef HAS_MIDI
+	saveMidiInputDeviceToConfig();
+#endif
+
+	FILE *f = UNICHAR_FOPEN(editor.configFileLocationU, "wb");
+	if (f == NULL)
+	{
+		if (showErrorFlag)
+			okBox(0, "System message", "General I/O error during config saving! Is the file in use?", NULL);
+
+		return false;
+	}
+
+	config.NI_HighScoreChecksum = calcChecksum((uint8_t *)config.NI_HighScore, sizeof (config.NI_HighScore));
+
+	// set default path lengths (Pascal strings)
+	config.modulesPathLen = (uint8_t)strlen(config.modulesPath);
+	config.instrPathLen = (uint8_t)strlen(config.instrPath);
+	config.samplesPathLen = (uint8_t)strlen(config.samplesPath);
+	config.patternsPathLen = (uint8_t)strlen(config.patternsPath);
+	config.tracksPathLen = (uint8_t)strlen(config.tracksPath);
+
+	// copy over user palette
+	memcpy(config.userPal, palTable[11], sizeof (pal16) * 16);
+
+	// copy config to buffer and encrypt it
+	memcpy(configBuffer, &config, CONFIG_FILE_SIZE);
+	xorConfigBuffer(configBuffer);
+
+	if (fwrite(configBuffer, 1, CONFIG_FILE_SIZE, f) != CONFIG_FILE_SIZE)
+	{
+		fclose(f);
+
+		if (showErrorFlag)
+			okBox(0, "System message", "General I/O error during config saving! Is the file in use?", NULL);
+
+		return false;
+	}
+
+	fclose(f);
+	saveTapeheadPatternColorMode();
+	return true;
+}
+
+void saveTapeheadPatternColorMode(void)
+{
+#ifdef TAPEHEAD_EMBEDDED
+	return;
+#endif
+	UNICHAR *filePathU = getFullTapeheadConfigPathU();
+	if (filePathU == NULL) return;
+	const size_t pathLen = UNICHAR_STRLEN(filePathU);
+	UNICHAR *tempPathU = (UNICHAR *)malloc((pathLen + 5) * sizeof (UNICHAR));
+	if (tempPathU == NULL) { free(filePathU); return; }
+	UNICHAR_STRCPY(tempPathU, filePathU);
+#ifdef _WIN32
+	UNICHAR_STRCAT(tempPathU, L".tmp");
+#else
+	UNICHAR_STRCAT(tempPathU, ".tmp");
+#endif
+	FILE *in = UNICHAR_FOPEN(filePathU, "r");
+	FILE *f = UNICHAR_FOPEN(tempPathU, "w");
+	if (f == NULL) { if (in != NULL) fclose(in); free(tempPathU); free(filePathU); return; }
+	static const char *names[3] = { "edit", "always", "mono" };
+	static const char *colorKeys[TAPEHEAD_CUSTOM_COLOR_COUNT] =
+	{
+		"PatternNoteColor", "PatternInstrumentColor", "PatternVolumeColor",
+		"PatternTuningColor", "PatternEffectColor", "PatternEmptyColor",
+		"WaveSelectionColor",
+		"TrackLengthPlayheadColor", "FastTracksPlayheadColor",
+		"ControlPlayheadColor", "FastTracksSyncColor",
+		"FastTracksPhaseColor", "FastTracksSongColor",
+		"FastTracksLengthPlayheadColor"
+	};
+	uint32_t colors[TAPEHEAD_CUSTOM_COLOR_COUNT]; getUserPatternColors(colors);
+	bool inPattern = false;
+	char patternExtras[8192] = { 0 };
+	char line[512];
+	while (in != NULL && fgets(line, sizeof (line), in) != NULL)
+	{
+		char copy[512]; snprintf(copy, sizeof copy, "%s", line);
+		char *text = trimText(copy);
+		if (text[0] == '[')
+		{
+			inPattern = !_stricmp(text, "[Pattern]");
+			if (inPattern) continue;
+		}
+		bool owned = inPattern && !_strnicmp(text, "PatternColorMode=", 17);
+		if (!owned)
+			owned = inPattern && !_strnicmp(text, "FastTracksUseTrackLengths=", 26);
+		if (!owned)
+			owned = inPattern && !_strnicmp(text, "TrackLengthControlMax=", 22);
+		for (int32_t i = 0; i < TAPEHEAD_CUSTOM_COLOR_COUNT && !owned; i++)
+			owned = inPattern && !_strnicmp(text, colorKeys[i], strlen(colorKeys[i])) && text[strlen(colorKeys[i])] == '=';
+		if (inPattern)
+		{
+			if (!owned && strlen(patternExtras) + strlen(line) < sizeof patternExtras - 1)
+				strcat(patternExtras, line); /* retain comments and custom Pattern keys */
+		}
+		else if (!owned) fputs(line, f);
+	}
+	if (in != NULL) fclose(in);
+	fputs("\n[Pattern]\n", f);
+	fprintf(f, "PatternColorMode=%s\n", names[MIN(tapeheadConfig.patternColorMode, 2)]);
+	fprintf(f, "FastTracksUseTrackLengths=%s\n",
+		tapeheadConfig.fastTracksUseTrackLengths ? "true" : "false");
+	fprintf(f, "TrackLengthControlMax=%u\n",
+		tapeheadConfig.trackLengthControlMax);
+	for (int32_t i = 0; i < TAPEHEAD_CUSTOM_COLOR_COUNT; i++)
+		fprintf(f, "%s=#%06X\n", colorKeys[i], colors[i] & 0xFFFFFF);
+	fputs(patternExtras, f);
+	const bool ok = fclose(f) == 0;
+	if (ok) { UNICHAR_REMOVE(filePathU); UNICHAR_RENAME(tempPathU, filePathU); }
+	else UNICHAR_REMOVE(tempPathU);
+	free(tempPathU); free(filePathU);
+}
+
+void saveTapeheadBakerPatternRows(void)
+{
+#ifdef TAPEHEAD_EMBEDDED
+	return;
+#endif
+	UNICHAR *filePathU = getFullTapeheadConfigPathU();
+	if (filePathU == NULL) return;
+	FILE *f = UNICHAR_FOPEN(filePathU, "a");
+	if (f != NULL)
+	{
+		/* Readers intentionally accept repeated sections and the last value wins,
+		** preserving unknown keys used by newer or older Tapehead builds. */
+		fprintf(f, "\n[Baker]\nPatternRows=%u\n", tapeheadConfig.bakerPatternRows);
+		fclose(f);
+	}
+	free(filePathU);
+}
+
+void saveTapeSisterConfigPaths(void)
+{
+#ifdef TAPEHEAD_EMBEDDED
+	return;
+#endif
+	UNICHAR *filePathU = getFullTapeheadConfigPathU();
+	if (filePathU == NULL) return;
+
+	const size_t pathLen = UNICHAR_STRLEN(filePathU);
+	UNICHAR *tempPathU = (UNICHAR *)malloc((pathLen + 5) * sizeof (UNICHAR));
+	if (tempPathU == NULL) { free(filePathU); return; }
+	UNICHAR_STRCPY(tempPathU, filePathU);
+#ifdef _WIN32
+	UNICHAR_STRCAT(tempPathU, L".tmp");
+#else
+	UNICHAR_STRCAT(tempPathU, ".tmp");
+#endif
+
+	FILE *in = UNICHAR_FOPEN(filePathU, "r");
+	FILE *out = UNICHAR_FOPEN(tempPathU, "w");
+	if (out == NULL)
+	{
+		if (in != NULL) fclose(in);
+		free(tempPathU);
+		free(filePathU);
+		return;
+	}
+
+	bool inTapeSister = false, sawTapeSister = false, wrotePaths = false;
+	char line[TAPEHEAD_CONFIG_PATH_CAPACITY + 128];
+	while (in != NULL && fgets(line, sizeof (line), in) != NULL)
+	{
+		char copy[TAPEHEAD_CONFIG_PATH_CAPACITY + 128];
+		snprintf(copy, sizeof copy, "%s", line);
+		char *text = trimText(copy);
+		if (text[0] == '[')
+		{
+			if (inTapeSister && !wrotePaths)
+			{
+				fprintf(out, "ExchangePath=%s\n", tapeheadConfig.tapeSisterExchangePath);
+				fprintf(out, "ExecutablePath=%s\n", tapeheadConfig.tapeSisterExecutablePath);
+				wrotePaths = true;
+			}
+			inTapeSister = !_stricmp(text, "[TapeSister]");
+			if (inTapeSister)
+				sawTapeSister = true;
+		}
+
+		const bool owned = inTapeSister &&
+			(!_strnicmp(text, "ExchangePath=", 13) || !_strnicmp(text, "ExecutablePath=", 15));
+		if (!owned)
+			fputs(line, out);
+	}
+	if (in != NULL) fclose(in);
+
+	if (inTapeSister && !wrotePaths)
+	{
+		fprintf(out, "ExchangePath=%s\n", tapeheadConfig.tapeSisterExchangePath);
+		fprintf(out, "ExecutablePath=%s\n", tapeheadConfig.tapeSisterExecutablePath);
+		wrotePaths = true;
+	}
+	if (!sawTapeSister)
+	{
+		fputs("\n[TapeSister]\n", out);
+		fprintf(out, "ExchangePath=%s\n", tapeheadConfig.tapeSisterExchangePath);
+		fprintf(out, "ExecutablePath=%s\n", tapeheadConfig.tapeSisterExecutablePath);
+	}
+
+	bool ok = fclose(out) == 0;
+	if (ok)
+	{
+#ifdef _WIN32
+		ok = MoveFileExW(tempPathU, filePathU,
+			MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
+#else
+		ok = UNICHAR_RENAME(tempPathU, filePathU) == 0;
+#endif
+	}
+	if (!ok)
+		UNICHAR_REMOVE(tempPathU);
+
+	free(tempPathU);
+	free(filePathU);
+}
+
+void saveConfig2(void) // called by "Save config" button
+{
+	saveConfig(CONFIG_SHOW_ERRORS);
+}
+
+static UNICHAR *getFullAudDevConfigPathU(void) // kinda hackish
+{
+	int32_t audiodevDotIniStrLen, ft2DotCfgStrLen;
+
+	if (editor.configFileLocationU == NULL)
+		return NULL;
+
+	const int32_t ft2ConfPathLen = (int32_t)UNICHAR_STRLEN(editor.configFileLocationU);
+
+#ifdef _WIN32
+	audiodevDotIniStrLen = (int32_t)UNICHAR_STRLEN(L"audiodev.ini");
+	ft2DotCfgStrLen = (int32_t)UNICHAR_STRLEN(L"FT2.CFG");
+#else
+	audiodevDotIniStrLen = (int32_t)UNICHAR_STRLEN("audiodev.ini");
+	ft2DotCfgStrLen = (int32_t)UNICHAR_STRLEN("FT2.CFG");
+#endif
+
+	UNICHAR *filePathU = (UNICHAR *)malloc((ft2ConfPathLen + audiodevDotIniStrLen + 1) * sizeof (UNICHAR));
+	filePathU[0] = 0;
+
+	UNICHAR_STRCPY(filePathU, editor.configFileLocationU);
+	filePathU[ft2ConfPathLen-ft2DotCfgStrLen] = 0;
+
+#ifdef _WIN32
+	UNICHAR_STRCAT(filePathU, L"audiodev.ini");
+#else
+	UNICHAR_STRCAT(filePathU, "audiodev.ini");
+#endif
+
+	return filePathU;
+}
+
+#ifdef HAS_MIDI
+static UNICHAR *getFullMidiDevConfigPathU(void) // kinda hackish
+{
+	int32_t mididevDotIniStrLen, ft2DotCfgStrLen;
+
+	if (editor.configFileLocationU == NULL)
+		return NULL;
+
+	const int32_t ft2ConfPathLen = (int32_t)UNICHAR_STRLEN(editor.configFileLocationU);
+
+#ifdef _WIN32
+	mididevDotIniStrLen = (int32_t)UNICHAR_STRLEN(L"mididev.ini");
+	ft2DotCfgStrLen = (int32_t)UNICHAR_STRLEN(L"FT2.CFG");
+#else
+	mididevDotIniStrLen = (int32_t)UNICHAR_STRLEN("mididev.ini");
+	ft2DotCfgStrLen = (int32_t)UNICHAR_STRLEN("FT2.CFG");
+#endif
+
+	UNICHAR *filePathU = (UNICHAR *)malloc((ft2ConfPathLen + mididevDotIniStrLen + 1) * sizeof (UNICHAR));
+	filePathU[0] = 0;
+
+	UNICHAR_STRCPY(filePathU, editor.configFileLocationU);
+	filePathU[ft2ConfPathLen-ft2DotCfgStrLen] = 0;
+
+#ifdef _WIN32
+	UNICHAR_STRCAT(filePathU, L"mididev.ini");
+#else
+	UNICHAR_STRCAT(filePathU, "mididev.ini");
+#endif
+
+	return filePathU;
+}
+#endif
+
+
+static UNICHAR *getFullTapeheadConfigPathU(void)
+{
+	int32_t tapeheadIniStrLen, ft2DotCfgStrLen;
+
+	if (editor.configFileLocationU == NULL)
+		return NULL;
+
+	const int32_t ft2ConfPathLen = (int32_t)UNICHAR_STRLEN(editor.configFileLocationU);
+
+#ifdef _WIN32
+	tapeheadIniStrLen = (int32_t)UNICHAR_STRLEN(L"tapehead.ini");
+	ft2DotCfgStrLen = (int32_t)UNICHAR_STRLEN(L"FT2.CFG");
+#else
+	tapeheadIniStrLen = (int32_t)UNICHAR_STRLEN("tapehead.ini");
+	ft2DotCfgStrLen = (int32_t)UNICHAR_STRLEN("FT2.CFG");
+#endif
+
+	UNICHAR *filePathU = (UNICHAR *)malloc((ft2ConfPathLen + tapeheadIniStrLen + 1) * sizeof (UNICHAR));
+	if (filePathU == NULL)
+		return NULL;
+
+	UNICHAR_STRCPY(filePathU, editor.configFileLocationU);
+	filePathU[ft2ConfPathLen-ft2DotCfgStrLen] = 0;
+
+#ifdef _WIN32
+	UNICHAR_STRCAT(filePathU, L"tapehead.ini");
+#else
+	UNICHAR_STRCAT(filePathU, "tapehead.ini");
+#endif
+
+	return filePathU;
+}
+
+static char *trimText(char *s)
+{
+	while (isspace((unsigned char)*s)) s++;
+	char *end = s + strlen(s);
+	while (end > s && isspace((unsigned char)end[-1])) end--;
+	*end = '\0';
+	return s;
+}
+
+static bool parseBoolValue(const char *s, bool *value)
+{
+	char buf[16];
+	size_t i = 0;
+	while (s[i] != '\0' && i < sizeof (buf)-1)
+	{
+		buf[i] = (char)tolower((unsigned char)s[i]);
+		i++;
+	}
+	buf[i] = '\0';
+
+	if (!strcmp(buf, "true") || !strcmp(buf, "yes") || !strcmp(buf, "on") || !strcmp(buf, "1"))
+	{
+		*value = true;
+		return true;
+	}
+	if (!strcmp(buf, "false") || !strcmp(buf, "no") || !strcmp(buf, "off") || !strcmp(buf, "0"))
+	{
+		*value = false;
+		return true;
+	}
+	return false;
+}
+
+static bool parseUInt32Value(const char *s, uint32_t *value)
+{
+	char *end;
+	errno = 0;
+	const unsigned long parsed = strtoul(s, &end, 10);
+	if (s == end || errno == ERANGE || parsed > UINT32_MAX)
+		return false;
+
+	while (isspace((unsigned char)*end)) end++;
+	if (*end != '\0')
+		return false;
+
+	*value = (uint32_t)parsed;
+	return true;
+}
+
+uint8_t tapeheadParseAudioBackend(const char *value)
+{
+	if (value != NULL && !_stricmp(value, "WASAPI"))
+		return TAPEHEAD_AUDIO_BACKEND_WASAPI;
+	if (value != NULL && !_stricmp(value, "DirectSound"))
+		return TAPEHEAD_AUDIO_BACKEND_DIRECTSOUND;
+	return TAPEHEAD_AUDIO_BACKEND_AUTO;
+}
+
+const char *tapeheadAudioBackendName(uint8_t backend)
+{
+	switch (backend)
+	{
+		case TAPEHEAD_AUDIO_BACKEND_WASAPI: return "WASAPI";
+		case TAPEHEAD_AUDIO_BACKEND_DIRECTSOUND: return "DirectSound";
+		default: return "Auto";
+	}
+}
+
+static int32_t parseMidiDubTrackKey(const char *key)
+{
+	if (_strnicmp(key, "Track", 5) != 0 || key[5] == '\0')
+		return -1;
+
+	for (const char *p = key + 5; *p != '\0'; p++)
+	{
+		if (!isdigit((unsigned char)*p))
+			return -1;
+	}
+
+	uint32_t trackNumber;
+	if (!parseUInt32Value(key + 5, &trackNumber) ||
+		trackNumber < 1 || trackNumber > MAX_CHANNELS)
+	{
+		return -1;
+	}
+
+	return (int32_t)trackNumber - 1;
+}
+
+static void writeDefaultAPC40Map(FILE *f)
+{
+	fputs("[APC40MK2_MAP]\n\n", f);
+	fputs("; Human-readable APC40 mkII profile. Use None to disable a control.\n", f);
+	fputs("; Shift reveals Sample banks and FastTracks Song Mode status.\n", f);
+	for (int32_t i = 0; i < 32; i++)
+		fprintf(f, "GridSlot%02d=MatrixSlotTrigger:%d\n", i + 1, i + 1);
+	for (int32_t i = 0; i < 8; i++)
+		fprintf(f, "GridTopPad%02d=MatrixSequenceColumn:%d\n", i + 1, i + 1);
+	fputc('\n', f);
+	for (int32_t i = 0; i < 8; i++)
+	{
+		fprintf(f, "RecordArm%02d=FastTrackClutchToggle:%d\n", i + 1, i + 1);
+		fprintf(f, "Solo%02d=TrackPerformanceSoloToggle:%d\n", i + 1, i + 1);
+		fprintf(f, "Activator%02d=MatrixLayerBankSelect:%d\n", i + 1, i + 1);
+		fprintf(f, "TrackSelect%02d=FastTrackDirectionOrSongMode:%d\n", i + 1, i + 1);
+		fprintf(f, "ClipStop%02d=TrackPerformanceMuteToggle:%d\n", i + 1, i + 1);
+		fprintf(f, "CrossfaderAB%02d=FastTrackToggle:%d\n", i + 1, i + 1);
+		fprintf(f, "TrackFader%02d=TrackTrim:%d\n", i + 1, i + 1);
+		fprintf(f, "TrackControl%02d=FastTrackRatio:%d\n", i + 1, i + 1);
+		fprintf(f, "DeviceKnob%02d=SampleMorphSelect:%d\n", i + 1, i + 1);
+	}
+	fputs("\nDeviceLeft=SampleMorphAllPrevious\n", f);
+	fputs("DeviceRight=SampleMorphAllNext\n", f);
+	fputs("BankLeft=FastTrackRatioAllOrMatrixBankPrevious\n", f);
+	fputs("BankRight=FastTrackRatioAllOrMatrixBankNext\n", f);
+	fputs("DeviceOnOff=SampleMorphArmToggle\n", f);
+	fputs("DeviceLock=FastTrackResetAll\n", f);
+	fputs("ClipDeviceView=FastTrackTransmissionClutchToggle\n", f);
+	fputs("DetailView=FastTrackMasterToggle\n", f);
+	fputs("Master=PerformanceMuteMaster\n", f);
+	fputs("StopAllClips=TransportStopDeck\n", f);
+	fputs("SceneLaunch1=MatrixSequenceBank\n", f);
+	for (int32_t i = 1; i <= 4; i++)
+		fprintf(f, "SceneLaunch%d=MatrixSequenceRow:%d\n", i + 1, i);
+	fputs("Pan=MatrixModePattern\nSends=MatrixModeSample\n", f);
+	fputs("User=MatrixVisibilityToggle\n", f);
+	fputs("Metronome=FastTrackGlobalReverseToggle\n", f);
+	fputs("Play=TransportPlaySongToggle\n", f);
+	fputs("Record=TransportPlayPatternToggle\n", f);
+	fputs("Up=SongOrderPrevious\nDown=SongOrderNext\n", f);
+	fputs("Right=TrackLengthControlNext\nLeft=TrackLengthControlPrevious\n", f);
+	fputs("Shift=ShiftModifier\nTapTempo=FastTrackGlobalModeToggle\n", f);
+	fputs("NudgeMinus=SpeedDown\nNudgePlus=SpeedUp\n", f);
+	fputs("Session=MatrixGridModeToggle\nBank=TransportStopSelectedDeck\n", f);
+	fputs("TempoEncoder=TempoRelative\nMasterFader=MasterVolume\n", f);
+	fputs("Crossfader=PatternJogAbsolute\n", f);
+	fputs("CueLevel=PatternJogRelative\n", f);
+	fputs("Footswitch=TransportPunch\n\n", f);
+}
+
+static void writeDefaultTapeheadConfig(const UNICHAR *filePathU)
+{
+	FILE *f = UNICHAR_FOPEN(filePathU, "w");
+	if (f == NULL)
+		return;
+
+	fputs("; Tapehead Edition advanced configuration\n", f);
+	fputs("; Changes are loaded when the program starts.\n", f);
+	fputs("; Invalid or missing values use the safe built-in defaults.\n\n", f);
+	fputs("[Video]\n\n", f);
+	fputs("; Show the Tapehead artwork for up to five seconds at startup.\n", f);
+	fputs("; Press any key or mouse button to dismiss it immediately.\n", f);
+	fputs("showSplashScreen=true\n\n", f);
+	fputs("; Experimental crisp HD renderer. The layout and mouse map stay exactly\n", f);
+	fputs("; 632x400, but the final image is rebuilt at 2x or 3x resolution.\n", f);
+	fputs("; Disable this here if the HD window is unsuitable for the current display.\n", f);
+	fputs("HDMode=false\n\n", f);
+	fputs("; Accepted values: 2 or 3. The window is safely reduced if it cannot fit.\n", f);
+	fputs("HDScale=3\n\n", f);
+	fputs("; crisp keeps square geometry; round restores the softer HD v1 filter.\n", f);
+	fputs("; The old sharp name is accepted as an alias for crisp.\n", f);
+	fputs("; Accepted values: crisp, sharp or round.\n", f);
+	fputs("HDStyle=crisp\n\n", f);
+	fputs("[Pattern]\n\n", f);
+	fputs("; Pattern field colors: edit (only while editing), always, or mono.\n", f);
+	fputs("PatternColorMode=edit\n", f);
+	fputs("; When true, private FastTracks transports wrap inside each track's LEN.\n", f);
+	fputs("; When false, FastTracks uses the complete source-pattern length.\n", f);
+	fputs("FastTracksUseTrackLengths=true\n", f);
+	fputs("; Maximum reached by mouse/APC LEN controls. Stored song-wide LEN values\n", f);
+	fputs("; remain valid up to 256 even when this control ceiling is lowered.\n", f);
+	fputs("TrackLengthControlMax=256\n\n", f);
+	fputs("[Launcher]\n\n", f);
+	fputs("; Startup window. Accepted values: tracker or deck_matrix.\n", f);
+	fputs("; Older Enabled/Standalone keys are still accepted when this is absent.\n", f);
+	fputs("StartWindow=tracker\n\n", f);
+	fputs("[DiskOp]\n\n", f);
+	fputs("; Format shown in the middle Sample save slot. Accepted values: EXS or IFF.\n", f);
+	fputs("SampleExportSlot=EXS\n\n", f);
+	fputs("[TapeSister]\n\n", f);
+	fputs("; Shared folder used for atomic TapeSister/Tapehead transfers.\n", f);
+	fputs("ExchangePath=\n", f);
+	fputs("; TapeSister executable. Blank still permits publishing transfers.\n", f);
+	fputs("ExecutablePath=\n\n", f);
+	fputs("[Capture]\n\n", f);
+	fputs("; Ordinary WAV renders. Blank creates Captures beside FT2.CFG.\n", f);
+	fputs("Folder=\n\n", f);
+	fputs("[Baker]\n\n", f);
+	fputs("; Rows per flattened loop pattern: 16, 32, 64, 128 or 256.\n", f);
+	fputs("PatternRows=256\n\n", f);
+	fputs("[Keyboard]\n\n", f);
+	fputs("; Backspace navigates to the parent directory while Disk Op is open.\n", f);
+	fputs("DiskOpBackspaceParent=false\n\n", f);
+	fputs("; Backspace deletes the current note row and pulls later notes upward.\n", f);
+	fputs("PatternBackspacePullUp=false\n\n", f);
+	fputs("; Plain F8 extracts the selected Pattern Editor block to a new Matrix pattern.\n", f);
+	fputs("; Set false to restore the original duplicate octave-6 command.\n", f);
+	fputs("F8ExtractBlock=true\n\n", f);
+	fputs("[Audio]\n\n", f);
+	fputs("; Windows audio backend: Auto, WASAPI or DirectSound. Auto lets SDL\n", f);
+	fputs("; choose its preferred available backend and is recommended. DirectSound\n", f);
+	fputs("; remains available for older devices that specifically require it.\n", f);
+	fputs("Backend=Auto\n\n", f);
+	fputs("; Logical stereo output buses requested from the selected audio device or\n", f);
+	fputs("; exposed as separate ports by \"Tapehead JACK Virtual Outputs\" on Linux.\n", f);
+	fputs("; 1 is ordinary stereo; accepted range is 1-16 (2-32 output channels).\n", f);
+	fputs("; Unsupported multichannel modes safely fall back to stereo.\n", f);
+	fputs("OutputBuses=1\n\n", f);
+	fputs("; Route each tracker lane to one physical mono output instead of a stereo bus.\n", f);
+	fputs("; The Config -> Audio checkbox can also change this while FT2 is running.\n", f);
+	fputs("MonoOutputs=false\n\n", f);
+	fputs("[MIDI]\n\n", f);
+	fputs("; Enables device-independent MIDI performance mappings below.\n", f);
+	fputs("; The dedicated surface ports are separate from Config > MIDI Input and\n", f);
+	fputs("; MIDI Dub, so the musical keyboard remains available at the same time.\n", f);
+	fputs("PerformanceControl=false\n", f);
+	fputs("; APC40MK2 enables the built-in Akai profile, Mode 2 and feedback.\n", f);
+	fputs("Profile=None\n", f);
+	fputs("; Exact device names are preferred. A unique partial name is also accepted.\n", f);
+	fputs("ControlInput=\n", f);
+	fputs("ControlOutput=\n", f);
+	fputs("; Brightness of the APC40 mkII's 40 RGB pads (accepted range: 0-100).\n", f);
+	fputs("APC40RGBBrightness=100\n", f);
+	fputs("; Per-track trim ceiling in percent (accepted range: 100-200).\n", f);
+	fputs("TrackTrimMaxPercent=200\n", f);
+	fputs("; Scope trim-indicator width in logical pixels (accepted range: 0-8; 0 disables).\n", f);
+	fputs("TrackTrimDisplayWidth=2\n", f);
+	fputs("; APC Left/Right choose the LEN CONTROL track. With no current CONTROL,\n", f);
+	fputs("; LeftStart/RightStart select their first track (accepted range: 1-8).\n", f);
+	fputs("ControlTrackLeftStart=1\n", f);
+	fputs("ControlTrackRightStart=8\n", f);
+	fputs("; When false, navigation stops at tracks 1 and 8 instead of wrapping.\n", f);
+	fputs("ControlTrackNavigationWrap=true\n", f);
+	fputs("; Cue Level/Crossfader strum: Latched, Momentary, ManualPingPong or Off.\n", f);
+	fputs("PatternJogAudition=Latched\n", f);
+	fputs("; FastTracks channels during Cue Level/Crossfader strumming: Ignore or Include.\n", f);
+	fputs("PatternJogFastTracks=Ignore\n", f);
+	fputs("; APC footswitch Transport Punch: Sustain or Cut existing audio.\n", f);
+	fputs("TransportFreezeAudio=Sustain\n", f);
+	fputs("; Toggle shares one latch with Shift+Space; Hold freezes while depressed.\n", f);
+	fputs("; Plain Space clears Freeze, and the next playback begins unfrozen.\n", f);
+	fputs("TransportFreezePedalMode=Toggle\n", f);
+	fputs("; Frozen Up/Down relocation: Silent or Audition the destination row.\n", f);
+	fputs("TransportFreezeNavigation=Silent\n", f);
+	fputs("; Resume after an untouched freeze: Next or Retrigger the frozen row.\n", f);
+	fputs("TransportFreezeResume=Next\n\n", f);
+	fputs("[MIDI_MAP]\n\n", f);
+	fputs("; Format: Message.MIDIChannel.Number=Action[:Argument]\n", f);
+	fputs("; MIDI channels, tracker tracks, Matrix banks and slots are all 1-based.\n", f);
+	fputs("; Uncomment examples and enable PerformanceControl to try them.\n", f);
+	fputs(";NoteOn.1.48=TrackPerformanceMuteToggle:1\n", f);
+	fputs(";NoteOn.1.49=PerformanceUnmuteNext\n", f);
+	fputs(";NoteOn.1.50=PerformanceMutePrevious\n", f);
+	fputs(";NoteOn.1.51=MatrixModeToggle\n", f);
+	fputs(";NoteOn.1.52=MatrixBankNext\n", f);
+	fputs(";NoteOn.1.53=MatrixSlotTrigger:1\n", f);
+	fputs(";CC.1.7=TrackTrim:1\n", f);
+	fputs(";CC.1.48=FastTrackRatio:1\n\n", f);
+	writeDefaultAPC40Map(f);
+	fputs("[MIDIDub]\n\n", f);
+	fputs("; Outgoing MIDI channel for each tracker track (accepted values: 1-16).\n", f);
+	fputs("; Tracks may share a MIDI channel. Invalid or missing entries keep the\n", f);
+	fputs("; default mapping: tracks 1-16 use channels 1-16, then repeat.\n", f);
+	for (int32_t i = 0; i < MAX_CHANNELS; i++)
+		fprintf(f, "Track%02d=%d\n", i + 1, (i & 15) + 1);
+	fputc('\n', f);
+	fputs("[Undo]\n\n", f);
+	fputs("; Undo history memory ceiling in megabytes (accepted range: 4-1024).\n", f);
+	fputs("UndoMemoryMB=32\n", f);
+	fclose(f);
+}
+
+void loadTapeheadConfig(void)
+{
+	tapeheadConfig.diskOpBackspaceParent = false;
+	tapeheadConfig.patternBackspacePullUp = false;
+	tapeheadConfig.f8ExtractBlock = true;
+	tapeheadConfig.monoOutputs = false;
+	tapeheadConfig.midiPerformanceControl = false;
+	tapeheadConfig.fastTracksUseTrackLengths = true;
+	tapeheadConfig.trackLengthControlMax = MAX_PATT_LEN;
+	/* Compatibility default for tapehead.ini files created before the splash. */
+	tapeheadConfig.showSplashScreen = true;
+	tapeheadConfig.midiProfile = TAPEHEAD_MIDI_PROFILE_NONE;
+	tapeheadConfig.apc40RGBBrightness = 100;
+	tapeheadConfig.trackTrimMaxPercent = 200;
+	tapeheadConfig.trackTrimDisplayWidth = 2;
+	tapeheadConfig.controlTrackLeftStart = 1;
+	tapeheadConfig.controlTrackRightStart = 8;
+	tapeheadConfig.controlTrackNavigationWrap = true;
+	tapeheadConfig.patternJogAudition = TAPEHEAD_PATTERN_JOG_AUDITION_LATCHED;
+	tapeheadConfig.patternJogIncludeFastTracks = false;
+	tapeheadConfig.transportFreezeAudioCut = false;
+	tapeheadConfig.transportFreezePedalHold = false;
+	tapeheadConfig.transportFreezeNavigationAudition = false;
+	tapeheadConfig.transportFreezeResumeRetrigger = false;
+	tapeheadConfig.midiControlInput[0] = '\0';
+	tapeheadConfig.midiControlOutput[0] = '\0';
+	tapeheadConfig.tapeSisterExchangePath[0] = '\0';
+	tapeheadConfig.tapeSisterExecutablePath[0] = '\0';
+	tapeheadConfig.captureFolder[0] = '\0';
+	tapeheadConfig.hdMode = false;
+	tapeheadConfig.launcherMode = false;
+	tapeheadConfig.launcherStandalone = false;
+	tapeheadConfig.sampleExportEXS = true;
+	tapeheadConfig.startWindow = TAPEHEAD_START_USE_LEGACY;
+	tapeheadConfig.outputBuses = 1;
+	tapeheadConfig.audioBackend = TAPEHEAD_AUDIO_BACKEND_AUTO;
+	tapeheadConfig.hdScale = 3;
+	tapeheadConfig.hdStyle = TAPEHEAD_HD_STYLE_CRISP;
+	/* Compatibility default for an older tapehead.ini without this key. */
+	tapeheadConfig.patternColorMode = PATTERN_COLOR_MONO;
+	tapeheadConfig.bakerPatternRows = 256;
+	tapeheadConfig.undoMemoryMB = 32;
+	for (int32_t i = 0; i < MAX_CHANNELS; i++)
+		tapeheadConfig.midiDubTrackChannels[i] = (uint8_t)(i & 15);
+	tapeheadMidiMapReset();
+#ifdef TAPEHEAD_EMBEDDED
+	tapeheadConfig.showSplashScreen = false;
+	return; /* The embedded workspace never reads or writes standalone FT2 config. */
+#endif
+
+	UNICHAR *filePathU = getFullTapeheadConfigPathU();
+	if (filePathU == NULL)
+		return;
+
+	FILE *f = UNICHAR_FOPEN(filePathU, "r");
+	if (f == NULL)
+	{
+		writeDefaultTapeheadConfig(filePathU);
+		free(filePathU);
+		return;
+	}
+
+	char line[TAPEHEAD_CONFIG_PATH_CAPACITY + 128];
+	enum
+	{
+		TAPEHEAD_SECTION_NONE,
+		TAPEHEAD_SECTION_VIDEO,
+		TAPEHEAD_SECTION_PATTERN,
+		TAPEHEAD_SECTION_LAUNCHER,
+		TAPEHEAD_SECTION_DISKOP,
+		TAPEHEAD_SECTION_TAPESISTER,
+		TAPEHEAD_SECTION_CAPTURE,
+		TAPEHEAD_SECTION_BAKER,
+		TAPEHEAD_SECTION_KEYBOARD,
+		TAPEHEAD_SECTION_AUDIO,
+		TAPEHEAD_SECTION_MIDI,
+		TAPEHEAD_SECTION_MIDI_MAP,
+		TAPEHEAD_SECTION_APC40_MK2_MAP,
+		TAPEHEAD_SECTION_MIDI_DUB,
+		TAPEHEAD_SECTION_UNDO
+	} section = TAPEHEAD_SECTION_NONE;
+
+	while (fgets(line, sizeof (line), f) != NULL)
+	{
+		char *text = trimText(line);
+		if (*text == '\0' || *text == ';' || *text == '#')
+			continue;
+
+		if (*text == '[')
+		{
+			char *close = strchr(text, ']');
+			if (close != NULL) *close = '\0';
+			if (!_stricmp(text + 1, "Video"))
+				section = TAPEHEAD_SECTION_VIDEO;
+			else if (!_stricmp(text + 1, "Pattern"))
+				section = TAPEHEAD_SECTION_PATTERN;
+			else if (!_stricmp(text + 1, "Launcher"))
+				section = TAPEHEAD_SECTION_LAUNCHER;
+			else if (!_stricmp(text + 1, "DiskOp"))
+				section = TAPEHEAD_SECTION_DISKOP;
+			else if (!_stricmp(text + 1, "TapeSister"))
+				section = TAPEHEAD_SECTION_TAPESISTER;
+			else if (!_stricmp(text + 1, "Capture"))
+				section = TAPEHEAD_SECTION_CAPTURE;
+			else if (!_stricmp(text + 1, "Baker"))
+				section = TAPEHEAD_SECTION_BAKER;
+			else if (!_stricmp(text + 1, "Keyboard"))
+				section = TAPEHEAD_SECTION_KEYBOARD;
+			else if (!_stricmp(text + 1, "Audio"))
+				section = TAPEHEAD_SECTION_AUDIO;
+			else if (!_stricmp(text + 1, "MIDI"))
+				section = TAPEHEAD_SECTION_MIDI;
+			else if (!_stricmp(text + 1, "MIDI_MAP"))
+				section = TAPEHEAD_SECTION_MIDI_MAP;
+			else if (!_stricmp(text + 1, "APC40MK2_MAP"))
+				section = TAPEHEAD_SECTION_APC40_MK2_MAP;
+			else if (!_stricmp(text + 1, "MIDIDub"))
+				section = TAPEHEAD_SECTION_MIDI_DUB;
+			else if (!_stricmp(text + 1, "Undo"))
+				section = TAPEHEAD_SECTION_UNDO;
+			else
+				section = TAPEHEAD_SECTION_NONE;
+			continue;
+		}
+
+		if (section == TAPEHEAD_SECTION_NONE)
+			continue;
+
+		char *equals = strchr(text, '=');
+		if (equals == NULL)
+			continue;
+		*equals = '\0';
+		char *key = trimText(text);
+		char *value = trimText(equals + 1);
+
+		if (section == TAPEHEAD_SECTION_VIDEO)
+		{
+			if (!_stricmp(key, "showSplashScreen"))
+			{
+				parseBoolValue(value, &tapeheadConfig.showSplashScreen);
+			}
+			else if (!_stricmp(key, "HDMode"))
+			{
+				parseBoolValue(value, &tapeheadConfig.hdMode);
+			}
+			else if (!_stricmp(key, "HDScale"))
+			{
+				uint32_t hdScale;
+				if (parseUInt32Value(value, &hdScale) && hdScale >= 2 && hdScale <= 3)
+					tapeheadConfig.hdScale = (uint8_t)hdScale;
+			}
+			else if (!_stricmp(key, "HDStyle"))
+			{
+				if (!_stricmp(value, "round"))
+					tapeheadConfig.hdStyle = TAPEHEAD_HD_STYLE_ROUND;
+				else if (!_stricmp(value, "crisp") || !_stricmp(value, "sharp"))
+					tapeheadConfig.hdStyle = TAPEHEAD_HD_STYLE_CRISP;
+			}
+		}
+		else if (section == TAPEHEAD_SECTION_PATTERN)
+		{
+			if (!_stricmp(key, "PatternColorMode"))
+			{
+				if (!_stricmp(value, "edit")) tapeheadConfig.patternColorMode = PATTERN_COLOR_EDIT;
+				else if (!_stricmp(value, "always")) tapeheadConfig.patternColorMode = PATTERN_COLOR_ALWAYS;
+				else if (!_stricmp(value, "mono")) tapeheadConfig.patternColorMode = PATTERN_COLOR_MONO;
+			}
+			else if (!_stricmp(key, "FastTracksUseTrackLengths"))
+			{
+				parseBoolValue(value, &tapeheadConfig.fastTracksUseTrackLengths);
+			}
+			else if (!_stricmp(key, "TrackLengthControlMax"))
+			{
+				uint32_t maximum;
+				if (parseUInt32Value(value, &maximum) && maximum > 0)
+					tapeheadConfig.trackLengthControlMax =
+						(uint16_t)MIN(maximum, MAX_PATT_LEN);
+			}
+			else
+			{
+				static const char *colorKeys[TAPEHEAD_CUSTOM_COLOR_COUNT] =
+				{
+					"PatternNoteColor", "PatternInstrumentColor",
+					"PatternVolumeColor", "PatternTuningColor",
+					"PatternEffectColor", "PatternEmptyColor",
+					"WaveSelectionColor",
+					"TrackLengthPlayheadColor", "FastTracksPlayheadColor",
+					"ControlPlayheadColor", "FastTracksSyncColor",
+					"FastTracksPhaseColor", "FastTracksSongColor",
+					"FastTracksLengthPlayheadColor"
+				};
+				for (uint8_t i = 0; i < TAPEHEAD_CUSTOM_COLOR_COUNT; i++)
+				{
+					if (!_stricmp(key, colorKeys[i]))
+					{
+						const char *hex = value[0] == '#' ? value + 1 : value;
+						char *end;
+						const unsigned long rgb = strtoul(hex, &end, 16);
+						if (strlen(hex) == 6 && *end == '\0' && rgb <= 0xFFFFFF)
+							setUserPatternColor(i, (uint32_t)rgb);
+						break;
+					}
+				}
+			}
+		}
+		else if (section == TAPEHEAD_SECTION_LAUNCHER &&
+			!_stricmp(key, "StartWindow"))
+		{
+			if (!_stricmp(value, "tracker"))
+				tapeheadConfig.startWindow = TAPEHEAD_START_TRACKER;
+			else if (!_stricmp(value, "deck_matrix") ||
+				!_stricmp(value, "deck-matrix") || !_stricmp(value, "deckmatrix") ||
+				!_stricmp(value, "deck"))
+			{
+				tapeheadConfig.startWindow = TAPEHEAD_START_DECK_MATRIX;
+			}
+		}
+		else if (section == TAPEHEAD_SECTION_LAUNCHER &&
+			!_stricmp(key, "Enabled"))
+		{
+			parseBoolValue(value, &tapeheadConfig.launcherMode);
+		}
+		else if (section == TAPEHEAD_SECTION_LAUNCHER &&
+			!_stricmp(key, "Standalone"))
+		{
+			parseBoolValue(value, &tapeheadConfig.launcherStandalone);
+		}
+		else if (section == TAPEHEAD_SECTION_DISKOP &&
+			!_stricmp(key, "SampleExportSlot"))
+		{
+			if (!_stricmp(value, "EXS"))
+				tapeheadConfig.sampleExportEXS = true;
+			else if (!_stricmp(value, "IFF"))
+				tapeheadConfig.sampleExportEXS = false;
+		}
+		else if (section == TAPEHEAD_SECTION_TAPESISTER &&
+			!_stricmp(key, "ExchangePath"))
+		{
+			snprintf(tapeheadConfig.tapeSisterExchangePath,
+				sizeof (tapeheadConfig.tapeSisterExchangePath), "%s", value);
+		}
+		else if (section == TAPEHEAD_SECTION_TAPESISTER &&
+			!_stricmp(key, "ExecutablePath"))
+		{
+			snprintf(tapeheadConfig.tapeSisterExecutablePath,
+				sizeof (tapeheadConfig.tapeSisterExecutablePath), "%s", value);
+		}
+		else if (section == TAPEHEAD_SECTION_CAPTURE &&
+			!_stricmp(key, "Folder"))
+		{
+			snprintf(tapeheadConfig.captureFolder,
+				sizeof (tapeheadConfig.captureFolder), "%s", value);
+		}
+		else if (section == TAPEHEAD_SECTION_BAKER && !_stricmp(key, "PatternRows"))
+		{
+			uint32_t rows;
+			if (parseUInt32Value(value, &rows) &&
+				(rows == 16 || rows == 32 || rows == 64 || rows == 128 || rows == 256))
+			{
+				tapeheadConfig.bakerPatternRows = (uint16_t)rows;
+			}
+		}
+		else if (section == TAPEHEAD_SECTION_KEYBOARD)
+		{
+			if (!_stricmp(key, "DiskOpBackspaceParent"))
+				parseBoolValue(value, &tapeheadConfig.diskOpBackspaceParent);
+			else if (!_stricmp(key, "PatternBackspacePullUp"))
+				parseBoolValue(value, &tapeheadConfig.patternBackspacePullUp);
+			else if (!_stricmp(key, "F8ExtractBlock"))
+				parseBoolValue(value, &tapeheadConfig.f8ExtractBlock);
+		}
+		else if (section == TAPEHEAD_SECTION_AUDIO && !_stricmp(key, "Backend"))
+		{
+			tapeheadConfig.audioBackend = tapeheadParseAudioBackend(value);
+		}
+		else if (section == TAPEHEAD_SECTION_AUDIO && !_stricmp(key, "OutputBuses"))
+		{
+			uint32_t outputBuses;
+			if (parseUInt32Value(value, &outputBuses) &&
+				outputBuses >= 1 && outputBuses <= 16)
+			{
+				tapeheadConfig.outputBuses = (uint8_t)outputBuses;
+			}
+		}
+		else if (section == TAPEHEAD_SECTION_AUDIO && !_stricmp(key, "MonoOutputs"))
+		{
+			parseBoolValue(value, &tapeheadConfig.monoOutputs);
+		}
+		else if (section == TAPEHEAD_SECTION_MIDI &&
+			!_stricmp(key, "PerformanceControl"))
+		{
+			parseBoolValue(value, &tapeheadConfig.midiPerformanceControl);
+		}
+		else if (section == TAPEHEAD_SECTION_MIDI &&
+			!_stricmp(key, "ControlInput"))
+		{
+			snprintf(tapeheadConfig.midiControlInput,
+				sizeof (tapeheadConfig.midiControlInput), "%s", value);
+		}
+		else if (section == TAPEHEAD_SECTION_MIDI &&
+			!_stricmp(key, "Profile"))
+		{
+			if (!_stricmp(value, "APC40MK2") ||
+				!_stricmp(value, "APC40 MKII"))
+			{
+				tapeheadConfig.midiProfile = TAPEHEAD_MIDI_PROFILE_APC40_MK2;
+			}
+			else if (!_stricmp(value, "None") || *value == '\0')
+			{
+				tapeheadConfig.midiProfile = TAPEHEAD_MIDI_PROFILE_NONE;
+			}
+		}
+		else if (section == TAPEHEAD_SECTION_MIDI &&
+			!_stricmp(key, "ControlOutput"))
+		{
+			snprintf(tapeheadConfig.midiControlOutput,
+				sizeof (tapeheadConfig.midiControlOutput), "%s", value);
+		}
+		else if (section == TAPEHEAD_SECTION_MIDI &&
+			!_stricmp(key, "APC40RGBBrightness"))
+		{
+			char *end;
+			errno = 0;
+			const long brightness = strtol(value, &end, 10);
+			while (isspace((unsigned char)*end)) end++;
+			if (value != end && *end == '\0')
+			{
+				tapeheadConfig.apc40RGBBrightness = (uint8_t)
+					(errno == ERANGE ? (*value == '-' ? 0 : 100) :
+					brightness < 0 ? 0 : brightness > 100 ? 100 : brightness);
+			}
+		}
+		else if (section == TAPEHEAD_SECTION_MIDI &&
+			!_stricmp(key, "TrackTrimMaxPercent"))
+		{
+			char *end;
+			errno = 0;
+			const long percent = strtol(value, &end, 10);
+			while (isspace((unsigned char)*end)) end++;
+			if (value != end && *end == '\0')
+				tapeheadConfig.trackTrimMaxPercent = (uint8_t)
+					(errno == ERANGE ? (*value == '-' ? 100 : 200) :
+					percent < 100 ? 100 : percent > 200 ? 200 : percent);
+		}
+		else if (section == TAPEHEAD_SECTION_MIDI &&
+			!_stricmp(key, "TrackTrimDisplayWidth"))
+		{
+			char *end;
+			errno = 0;
+			const long width = strtol(value, &end, 10);
+			while (isspace((unsigned char)*end)) end++;
+			if (value != end && *end == '\0')
+				tapeheadConfig.trackTrimDisplayWidth = (uint8_t)
+					(errno == ERANGE ? (*value == '-' ? 0 : 8) :
+					width < 0 ? 0 : width > 8 ? 8 : width);
+		}
+		else if (section == TAPEHEAD_SECTION_MIDI &&
+			!_stricmp(key, "ControlTrackLeftStart"))
+		{
+			uint32_t track;
+			if (parseUInt32Value(value, &track) && track >= 1 && track <= 8)
+				tapeheadConfig.controlTrackLeftStart = (uint8_t)track;
+		}
+		else if (section == TAPEHEAD_SECTION_MIDI &&
+			!_stricmp(key, "ControlTrackRightStart"))
+		{
+			uint32_t track;
+			if (parseUInt32Value(value, &track) && track >= 1 && track <= 8)
+				tapeheadConfig.controlTrackRightStart = (uint8_t)track;
+		}
+		else if (section == TAPEHEAD_SECTION_MIDI &&
+			!_stricmp(key, "ControlTrackNavigationWrap"))
+		{
+			parseBoolValue(value, &tapeheadConfig.controlTrackNavigationWrap);
+		}
+		else if (section == TAPEHEAD_SECTION_MIDI &&
+			!_stricmp(key, "PatternJogAudition"))
+		{
+			if (!_stricmp(value, "Off"))
+				tapeheadConfig.patternJogAudition = TAPEHEAD_PATTERN_JOG_AUDITION_OFF;
+			else if (!_stricmp(value, "Momentary"))
+				tapeheadConfig.patternJogAudition = TAPEHEAD_PATTERN_JOG_AUDITION_MOMENTARY;
+			else if (!_stricmp(value, "Latched"))
+				tapeheadConfig.patternJogAudition = TAPEHEAD_PATTERN_JOG_AUDITION_LATCHED;
+			else if (!_stricmp(value, "ManualPingPong") ||
+				!_stricmp(value, "Manual_PingPong"))
+			{
+				tapeheadConfig.patternJogAudition =
+					TAPEHEAD_PATTERN_JOG_AUDITION_MANUAL_PINGPONG;
+			}
+		}
+		else if (section == TAPEHEAD_SECTION_MIDI &&
+			!_stricmp(key, "PatternJogFastTracks"))
+		{
+			if (!_stricmp(value, "Include"))
+				tapeheadConfig.patternJogIncludeFastTracks = true;
+			else if (!_stricmp(value, "Ignore"))
+				tapeheadConfig.patternJogIncludeFastTracks = false;
+		}
+		else if (section == TAPEHEAD_SECTION_MIDI &&
+			!_stricmp(key, "TransportFreezeAudio"))
+		{
+			if (!_stricmp(value, "Cut"))
+				tapeheadConfig.transportFreezeAudioCut = true;
+			else if (!_stricmp(value, "Sustain"))
+				tapeheadConfig.transportFreezeAudioCut = false;
+		}
+		else if (section == TAPEHEAD_SECTION_MIDI &&
+			!_stricmp(key, "TransportFreezePedalMode"))
+		{
+			if (!_stricmp(value, "Hold"))
+				tapeheadConfig.transportFreezePedalHold = true;
+			else if (!_stricmp(value, "Toggle"))
+				tapeheadConfig.transportFreezePedalHold = false;
+		}
+		else if (section == TAPEHEAD_SECTION_MIDI &&
+			!_stricmp(key, "TransportFreezeNavigation"))
+		{
+			if (!_stricmp(value, "Audition"))
+				tapeheadConfig.transportFreezeNavigationAudition = true;
+			else if (!_stricmp(value, "Silent"))
+				tapeheadConfig.transportFreezeNavigationAudition = false;
+		}
+		else if (section == TAPEHEAD_SECTION_MIDI &&
+			!_stricmp(key, "TransportFreezeResume"))
+		{
+			if (!_stricmp(value, "Retrigger"))
+				tapeheadConfig.transportFreezeResumeRetrigger = true;
+			else if (!_stricmp(value, "Next"))
+				tapeheadConfig.transportFreezeResumeRetrigger = false;
+		}
+		else if (section == TAPEHEAD_SECTION_MIDI_MAP)
+		{
+			tapeheadMidiMapAddBinding(key, value);
+		}
+		else if (section == TAPEHEAD_SECTION_APC40_MK2_MAP)
+		{
+#ifdef HAS_MIDI
+			tapeheadAPC40Mk2AddNamedMapping(key, value);
+#endif
+		}
+		else if (section == TAPEHEAD_SECTION_MIDI_DUB)
+		{
+			const int32_t trackIndex = parseMidiDubTrackKey(key);
+			uint32_t midiChannel;
+			if (trackIndex >= 0 && parseUInt32Value(value, &midiChannel) &&
+				midiChannel >= 1 && midiChannel <= 16)
+			{
+				tapeheadConfig.midiDubTrackChannels[trackIndex] =
+					(uint8_t)(midiChannel - 1);
+			}
+		}
+		else if (section == TAPEHEAD_SECTION_UNDO && !_stricmp(key, "UndoMemoryMB"))
+		{
+			parseUInt32Value(value, &tapeheadConfig.undoMemoryMB);
+		}
+	}
+
+	fclose(f);
+	free(filePathU);
+	tapeheadMidiMapSetEnabled(tapeheadConfig.midiPerformanceControl);
+}
+
+static bool setPortableConfigFileLocation(void)
+{
+#ifndef _WIN32
+	/* AppImage's mounted filesystem is read-only. Its AppRun wrapper points this
+	** variable at the writable Tapehead-data directory beside the AppImage.
+	*/
+	const char *portableDirectory = getenv("TAPEHEAD_PORTABLE_DIR");
+	if (portableDirectory != NULL && portableDirectory[0] != '\0')
+	{
+		const size_t directoryLength = strlen(portableDirectory);
+		const bool hasSeparator = portableDirectory[directoryLength-1] == '/';
+		const size_t pathLength = directoryLength +
+			(hasSeparator ? 0 : 1) + strlen("FT2.CFG") + 1;
+		UNICHAR *filePathU = (UNICHAR *)malloc(pathLength);
+		if (filePathU != NULL)
+		{
+			snprintf(filePathU, pathLength, hasSeparator ? "%sFT2.CFG" :
+				"%s/FT2.CFG", portableDirectory);
+
+			FILE *f = UNICHAR_FOPEN(filePathU, "rb");
+			if (f != NULL)
+			{
+				fclose(f);
+				editor.configFileLocationU = filePathU;
+				return true;
+			}
+			free(filePathU);
+		}
+	}
+#endif
+
+	char *basePath = SDL_GetBasePath();
+	if (basePath == NULL)
+		return false;
+
+#ifdef _WIN32
+	const int32_t basePathLen = MultiByteToWideChar(CP_UTF8, 0, basePath, -1, NULL, 0);
+	if (basePathLen <= 0)
+	{
+		SDL_free(basePath);
+		return false;
+	}
+
+	const int32_t ft2DotCfgStrLen = (int32_t)UNICHAR_STRLEN(L"FT2.CFG");
+	UNICHAR *filePathU = (UNICHAR *)malloc((basePathLen + ft2DotCfgStrLen) * sizeof (UNICHAR));
+	if (filePathU == NULL)
+	{
+		SDL_free(basePath);
+		return false;
+	}
+
+	if (MultiByteToWideChar(CP_UTF8, 0, basePath, -1, filePathU, basePathLen) <= 0)
+	{
+		free(filePathU);
+		SDL_free(basePath);
+		return false;
+	}
+
+	UNICHAR_STRCAT(filePathU, L"FT2.CFG");
+#else
+	const int32_t basePathLen = (int32_t)strlen(basePath);
+	const int32_t ft2DotCfgStrLen = (int32_t)UNICHAR_STRLEN("FT2.CFG");
+	UNICHAR *filePathU = (UNICHAR *)malloc((basePathLen + ft2DotCfgStrLen + 1) * sizeof (UNICHAR));
+	if (filePathU == NULL)
+	{
+		SDL_free(basePath);
+		return false;
+	}
+
+	UNICHAR_STRCPY(filePathU, basePath);
+	UNICHAR_STRCAT(filePathU, "FT2.CFG");
+#endif
+
+	SDL_free(basePath);
+
+	FILE *f = UNICHAR_FOPEN(filePathU, "rb");
+	if (f == NULL)
+	{
+		free(filePathU);
+		return false;
+	}
+
+	fclose(f);
+	editor.configFileLocationU = filePathU;
+	return true;
+}
+
+static void setConfigFileLocation(void) // kinda hackish
+{
+	/* A config beside the executable enables portable mode. FT2.CFG,
+	** audiodev.ini and mididev.ini will then all be read/written there.
+	*/
+	if (setPortableConfigFileLocation())
+	{
+#ifdef HAS_MIDI
+		editor.midiConfigFileLocationU = getFullMidiDevConfigPathU();
+#endif
+		editor.audioDevConfigFileLocationU = getFullAudDevConfigPathU();
+		return;
+	}
+	// Windows
+#ifdef _WIN32
+	int32_t ft2DotCfgStrLen = (int32_t)UNICHAR_STRLEN(L"FT2.CFG");
+
+	UNICHAR *oldPathU = (UNICHAR *)malloc((PATH_MAX + 8 + 1) * sizeof (UNICHAR));
+	UNICHAR *tmpPathU = (UNICHAR *)malloc((PATH_MAX + 8 + 1) * sizeof (UNICHAR));
+	editor.configFileLocationU = (UNICHAR *)malloc((PATH_MAX + ft2DotCfgStrLen + 1) * sizeof (UNICHAR));
+
+	if (oldPathU == NULL || tmpPathU == NULL || editor.configFileLocationU == NULL)
+	{
+		if (oldPathU != NULL) free(oldPathU);
+		if (tmpPathU != NULL) free(tmpPathU);
+		if (editor.configFileLocationU != NULL) free(editor.configFileLocationU);
+
+		editor.configFileLocationU = NULL;
+		showErrorMsgBox("Error: Couldn't set config file location. You can't load/save the config!");
+		return;
+	}
+
+	oldPathU[0] = tmpPathU[0] = (UNICHAR)0;
+
+	if (GetCurrentDirectoryW(PATH_MAX - ft2DotCfgStrLen - 1, oldPathU) == 0)
+	{
+		free(oldPathU);
+		free(tmpPathU);
+		free(editor.configFileLocationU);
+
+		editor.configFileLocationU = NULL;
+		showErrorMsgBox("Error: Couldn't set config file location. You can't load/save the config!");
+		return;
+	}
+
+	UNICHAR_STRCPY(editor.configFileLocationU, oldPathU);
+
+	FILE *f = fopen("FT2.CFG", "rb");
+	if (f == NULL) // FT2.CFG not found in current dir, try default config dir
+	{
+		int32_t result = SHGetFolderPathW(NULL, CSIDL_APPDATA, NULL, SHGFP_TYPE_CURRENT, tmpPathU);
+		if (result == S_OK)
+		{
+			if (SetCurrentDirectoryW(tmpPathU) != 0)
+			{
+				result = chdir("FT2 clone");
+				if (result != 0)
+				{
+					_mkdir("FT2 clone");
+					result = chdir("FT2 clone");
+				}
+
+				if (result == 0)
+					GetCurrentDirectoryW(PATH_MAX - ft2DotCfgStrLen - 1, editor.configFileLocationU); // we can, set it
+			}
+		}
+	}
+	else
+	{
+		fclose(f);
+	}
+
+	free(tmpPathU);
+	SetCurrentDirectoryW(oldPathU);
+	free(oldPathU);
+
+	UNICHAR_STRCAT(editor.configFileLocationU, L"\\FT2.CFG");
+
+	// OS X / macOS
+#elif defined __APPLE__
+	int32_t ft2DotCfgStrLen = (int32_t)UNICHAR_STRLEN("FT2.CFG");
+
+	editor.configFileLocationU = (UNICHAR *)malloc((PATH_MAX + ft2DotCfgStrLen + 1) * sizeof (UNICHAR));
+	if (editor.configFileLocationU == NULL)
+	{
+		showErrorMsgBox("Error: Couldn't set config file location. You can't load/save the config!");
+		return;
+	}
+
+	editor.configFileLocationU[0] = 0;
+
+	if (getcwd(editor.configFileLocationU, PATH_MAX - ft2DotCfgStrLen - 1) == NULL)
+	{
+		free(editor.configFileLocationU);
+		editor.configFileLocationU = NULL;
+		showErrorMsgBox("Error: Couldn't set config file location. You can't load/save the config!");
+		return;
+	}
+
+	FILE *f = fopen("FT2.CFG", "rb");
+	if (f == NULL) // FT2.CFG not found in current dir, try default config dir
+	{
+		if (chdir(getenv("HOME")) == 0)
+		{
+			int32_t result = chdir("Library/Application Support");
+			if (result == 0)
+			{
+				result = chdir("FT2 clone");
+				if (result != 0)
+				{
+					mkdir("FT2 clone", S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
+					result = chdir("FT2 clone");
+				}
+
+				if (result == 0)
+					getcwd(editor.configFileLocationU, PATH_MAX - ft2DotCfgStrLen - 1);
+			}
+		}
+	}
+	else
+	{
+		fclose(f);
+	}
+
+	strcat(editor.configFileLocationU, "/FT2.CFG");
+
+	// Linux etc
+#else
+	int32_t ft2DotCfgStrLen = (int32_t)UNICHAR_STRLEN("FT2.CFG");
+
+	editor.configFileLocationU = (UNICHAR *)malloc((PATH_MAX + ft2DotCfgStrLen + 1) * sizeof (UNICHAR));
+	if (editor.configFileLocationU == NULL)
+	{
+		showErrorMsgBox("Error: Couldn't set config file location. You can't load/save the config!");
+		return;
+	}
+
+	editor.configFileLocationU[0] = 0;
+
+	if (getcwd(editor.configFileLocationU, PATH_MAX - ft2DotCfgStrLen - 1) == NULL)
+	{
+		free(editor.configFileLocationU);
+		editor.configFileLocationU = NULL;
+		showErrorMsgBox("Error: Couldn't set config file location. You can't load/save the config!");
+		return;
+	}
+
+	FILE *f = fopen("FT2.CFG", "rb");
+	if (f == NULL) // FT2.CFG not found in current dir, try default config dir
+	{
+		int32_t result = -1;
+
+		// try to use $XDG_CONFIG_HOME first. If not set, use $HOME
+		const char *xdgConfigHome = getenv("XDG_CONFIG_HOME");
+		const char *home = getenv("HOME");
+
+		if (xdgConfigHome != NULL)
+			result = chdir(xdgConfigHome);
+		else if (home != NULL && chdir(home) == 0)
+			result = chdir(".config");
+
+		if (result == 0)
+		{
+			result = chdir("FT2 clone");
+			if (result != 0)
+			{
+				mkdir("FT2 clone", S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
+				result = chdir("FT2 clone");
+			}
+
+			if (result == 0)
+				getcwd(editor.configFileLocationU, PATH_MAX - ft2DotCfgStrLen - 1);
+		}
+	}
+	else
+	{
+		fclose(f);
+	}
+
+	strcat(editor.configFileLocationU, "/FT2.CFG");
+#endif
+
+#ifdef HAS_MIDI
+	editor.midiConfigFileLocationU = getFullMidiDevConfigPathU();
+#endif
+	editor.audioDevConfigFileLocationU = getFullAudDevConfigPathU();
+}
+
+void loadConfigOrSetDefaults(void)
+{
+	setConfigFileLocation();
+	if (editor.configFileLocationU == NULL)
+	{
+		setDefaultConfigSettings();
+		return;
+	}
+
+	FILE *f = UNICHAR_FOPEN(editor.configFileLocationU, "rb");
+	if (f == NULL)
+	{
+		setDefaultConfigSettings();
+		return;
+	}
+
+	fseek(f, 0, SEEK_END);
+	const size_t fileSize = ftell(f);
+	rewind(f);
+
+	// not a valid FT2 config file (FT2.CFG filesize varies depending on version)
+	if (fileSize < 1732 || fileSize > CONFIG_FILE_SIZE)
+	{
+		fclose(f);
+		setDefaultConfigSettings();
+		showErrorMsgBox("The configuration file (FT2.CFG) was corrupt, default settings were loaded.");
+		return;
+	}
+
+	if (fileSize < CONFIG_FILE_SIZE)
+		memset(configBuffer, 0, CONFIG_FILE_SIZE);
+
+	if (fread(configBuffer, fileSize, 1, f) != 1)
+	{
+		fclose(f);
+		setDefaultConfigSettings();
+		showErrorMsgBox("I/O error while reading FT2.CFG, default settings were loaded.");
+		return;
+	}
+
+	fclose(f);
+
+	// decrypt config buffer
+	xorConfigBuffer(configBuffer);
+
+	if (memcmp(&configBuffer[0], CFG_ID_STR, 35) != 0)
+	{
+		setDefaultConfigSettings();
+		showErrorMsgBox("The configuration file (FT2.CFG) was corrupt, default settings were loaded.");
+		return;
+	}
+
+	loadConfigFromBuffer(false);
+}
+
+// GUI-related code
+
+static void drawQuantValue(void)
+{
+	char str[8];
+	sprintf(str, "%02d", config.recQuantRes);
+	textOutFixed(354, 122, PAL_FORGRND, PAL_DESKTOP, str);
+}
+
+static void drawMIDIChanValue(void)
+{
+	char str[8];
+	sprintf(str, "%02d", config.recMIDIChn);
+	textOutFixed(578, 109, PAL_FORGRND, PAL_DESKTOP, str);
+}
+
+static void drawMIDITransp(void)
+{
+	fillRect(571, 123, 20, 8, PAL_DESKTOP);
+
+	const char sign = (config.recMIDITranspVal < 0) ? '-' : '+';
+
+	const int8_t val = (int8_t)(ABS(config.recMIDITranspVal));
+	if (val >= 10)
+	{
+		charOut(571, 123, PAL_FORGRND, sign);
+		charOut(578, 123, PAL_FORGRND, '0' + ((val / 10) % 10));
+		charOut(585, 123, PAL_FORGRND, '0' + (val % 10));
+	}
+	else
+	{
+		if (val > 0)
+			charOut(578, 123, PAL_FORGRND, sign);
+
+		charOut(585, 123, PAL_FORGRND, '0' + (val % 10));
+	}
+}
+
+static void drawMIDISens(void)
+{
+	char str[8];
+	sprintf(str, "%03d", config.recMIDIVolSens);
+	textOutFixed(525, 160, PAL_FORGRND, PAL_DESKTOP, str);
+}
+
+static void setConfigRadioButtonStates(void)
+{
+	uint16_t tmpID;
+
+
+
+	uncheckRadioButtonGroup(RB_GROUP_CONFIG_SELECT);
+	switch (editor.currConfigScreen)
+	{
+		default:
+		case CONFIG_SCREEN_AUDIO:         tmpID = RB_CONFIG_AUDIO;         break;
+		case CONFIG_SCREEN_LAYOUT:        tmpID = RB_CONFIG_LAYOUT;        break;
+		case CONFIG_SCREEN_MISCELLANEOUS: tmpID = RB_CONFIG_MISCELLANEOUS; break;
+#ifdef HAS_MIDI
+		case CONFIG_SCREEN_MIDI_INPUT:    tmpID = RB_CONFIG_MIDI_INPUT;    break;
+#endif
+	}
+	radioButtons[tmpID].state = RADIOBUTTON_CHECKED;
+
+	showRadioButtonGroup(RB_GROUP_CONFIG_SELECT);
+}
+
+void setConfigAudioRadioButtonStates(void) // accessed by other .c files
+{
+	uint16_t tmpID;
+
+	// AUDIO BUFFER SIZE
+	uncheckRadioButtonGroup(RB_GROUP_CONFIG_SOUND_BUFF_SIZE);
+
+	tmpID = RB_CONFIG_SBS_1024;
+	if (config.specialFlags & BUFFSIZE_512)
+		tmpID = RB_CONFIG_SBS_512;
+	else if (config.specialFlags & BUFFSIZE_2048)
+		tmpID = RB_CONFIG_SBS_2048;
+
+	radioButtons[tmpID].state = RADIOBUTTON_CHECKED;
+
+	// AUDIO BIT DEPTH
+	uncheckRadioButtonGroup(RB_GROUP_CONFIG_AUDIO_BIT_DEPTH);
+
+	tmpID = RB_CONFIG_AUDIO_16BIT;
+	if (config.specialFlags & BITDEPTH_32)
+		tmpID = RB_CONFIG_AUDIO_24BIT;
+
+	radioButtons[tmpID].state = RADIOBUTTON_CHECKED;
+
+	// AUDIO INTERPOLATION
+	uncheckRadioButtonGroup(RB_GROUP_CONFIG_AUDIO_INTERPOLATION);
+
+	if (config.interpolation == INTERPOLATION_DISABLED)
+		tmpID = RB_CONFIG_AUDIO_INTRP_DISABLED;
+	else if (config.interpolation == INTERPOLATION_LINEAR)
+		tmpID = RB_CONFIG_AUDIO_INTRP_LINEAR;
+	else if (config.interpolation == INTERPOLATION_SINC16)
+		tmpID = RB_CONFIG_AUDIO_INTRP_SINC16;
+	else if (config.interpolation == INTERPOLATION_CUBIC)
+		tmpID = RB_CONFIG_AUDIO_INTRP_CUBIC;
+	else
+		tmpID = RB_CONFIG_AUDIO_INTRP_SINC8; // default case
+
+	radioButtons[tmpID].state = RADIOBUTTON_CHECKED;
+
+	// AUDIO FREQUENCY
+	uncheckRadioButtonGroup(RB_GROUP_CONFIG_AUDIO_FREQ);
+	switch (config.audioFreq)
+	{
+		         case 44100:  tmpID = RB_CONFIG_AUDIO_44KHZ;  break;
+		default: case 48000:  tmpID = RB_CONFIG_AUDIO_48KHZ;  break;
+		         case 96000:  tmpID = RB_CONFIG_AUDIO_96KHZ;  break;
+	}
+	radioButtons[tmpID].state = RADIOBUTTON_CHECKED;
+
+	// AUDIO INPUT FREQUENCY
+	uncheckRadioButtonGroup(RB_GROUP_CONFIG_AUDIO_INPUT_FREQ);
+	switch (config.audioInputFreq)
+	{
+		         case INPUT_FREQ_44KHZ: tmpID = RB_CONFIG_AUDIO_INPUT_44KHZ; break;
+		default: case INPUT_FREQ_48KHZ: tmpID = RB_CONFIG_AUDIO_INPUT_48KHZ; break;
+		         case INPUT_FREQ_96KHZ: tmpID = RB_CONFIG_AUDIO_INPUT_96KHZ; break;
+	}
+	radioButtons[tmpID].state = RADIOBUTTON_CHECKED;
+
+	// FREQUENCY SLIDES
+	uncheckRadioButtonGroup(RB_GROUP_CONFIG_FREQ_SLIDES);
+	tmpID = audio.linearPeriodsFlag ? RB_CONFIG_FREQ_SLIDES_LINEAR : RB_CONFIG_FREQ_SLIDES_AMIGA;
+	radioButtons[tmpID].state = RADIOBUTTON_CHECKED;
+
+	// show result
+
+	showRadioButtonGroup(RB_GROUP_CONFIG_SOUND_BUFF_SIZE);
+	showRadioButtonGroup(RB_GROUP_CONFIG_AUDIO_BIT_DEPTH);
+	showRadioButtonGroup(RB_GROUP_CONFIG_AUDIO_INTERPOLATION);
+	showRadioButtonGroup(RB_GROUP_CONFIG_AUDIO_FREQ);
+	showRadioButtonGroup(RB_GROUP_CONFIG_AUDIO_INPUT_FREQ);
+	showRadioButtonGroup(RB_GROUP_CONFIG_FREQ_SLIDES);
+}
+
+static void setConfigAudioCheckButtonStates(void)
+{
+	checkBoxes[CB_CONF_PRECISE_BPM].checked = (config.specialFlags2 & PRECISE_BPM) ? true : false;
+	showCheckBox(CB_CONF_PRECISE_BPM);
+
+	checkBoxes[CB_CONF_VOL_RAMP].checked = (config.specialFlags & NO_VOLRAMP_FLAG) ? false : true;
+	showCheckBox(CB_CONF_VOL_RAMP);
+
+	checkBoxes[CB_CONF_MONO_OUTPUTS].checked = tapeheadConfig.monoOutputs;
+	showCheckBox(CB_CONF_MONO_OUTPUTS);
+}
+
+static void setConfigLayoutCheckButtonStates(void)
+{
+	checkBoxes[CB_CONF_PATTSTRETCH].checked = config.ptnStretch;
+	checkBoxes[CB_CONF_HEXCOUNT].checked = config.ptnHex;
+	checkBoxes[CB_CONF_ACCIDENTAL].checked = config.ptnAcc ? true : false;
+	checkBoxes[CB_CONF_SHOWZEROES].checked = config.ptnInstrZero;
+	checkBoxes[CB_CONF_FRAMEWORK].checked = config.ptnFrmWrk;
+	checkBoxes[CB_CONF_LINECOLORS].checked = config.ptnLineLight;
+	checkBoxes[CB_CONF_CHANNUMS].checked = config.ptnChnNumbers;
+	checkBoxes[CB_CONF_SHOW_VOLCOL].checked = config.ptnShowVolColumn;
+	checkBoxes[CB_CONF_ENABLE_CUSTOM_POINTER].checked = (config.specialFlags2 & USE_OS_MOUSE_POINTER) ? false : true;
+	checkBoxes[CB_CONF_SOFTWARE_MOUSE].checked = (config.specialFlags2 & HARDWARE_MOUSE) ? false : true;
+
+	showCheckBox(CB_CONF_PATTSTRETCH);
+	showCheckBox(CB_CONF_HEXCOUNT);
+	showCheckBox(CB_CONF_ACCIDENTAL);
+	showCheckBox(CB_CONF_SHOWZEROES);
+	showCheckBox(CB_CONF_FRAMEWORK);
+	showCheckBox(CB_CONF_LINECOLORS);
+	showCheckBox(CB_CONF_CHANNUMS);
+	showCheckBox(CB_CONF_SHOW_VOLCOL);
+	showCheckBox(CB_CONF_ENABLE_CUSTOM_POINTER);
+	showCheckBox(CB_CONF_SOFTWARE_MOUSE);
+}
+
+static void setConfigLayoutRadioButtonStates(void)
+{
+	uint16_t tmpID;
+
+	// MOUSE SHAPE
+	uncheckRadioButtonGroup(RB_GROUP_CONFIG_MOUSE);
+	switch (config.mouseType)
+	{
+		default:
+		case MOUSE_IDLE_SHAPE_NICE:   tmpID = RB_CONFIG_MOUSE_NICE;    break;
+		case MOUSE_IDLE_SHAPE_UGLY:   tmpID = RB_CONFIG_MOUSE_UGLY;    break;
+		case MOUSE_IDLE_SHAPE_AWFUL:  tmpID = RB_CONFIG_MOUSE_AWFUL;   break;
+		case MOUSE_IDLE_SHAPE_USABLE: tmpID = RB_CONFIG_MOUSE_USABLE;  break;
+	}
+	radioButtons[tmpID].state = RADIOBUTTON_CHECKED;
+
+	// MOUSE BUSY SHAPE
+	uncheckRadioButtonGroup(RB_GROUP_CONFIG_MOUSE_BUSY);
+	switch (config.mouseAnimType)
+	{
+		default:
+		case MOUSE_BUSY_SHAPE_CLOCK: tmpID = RB_CONFIG_MOUSE_BUSY_CLOCK; break;
+		case MOUSE_BUSY_SHAPE_GLASS: tmpID = RB_CONFIG_MOUSE_BUSY_GLASS; break;
+	}
+	radioButtons[tmpID].state = RADIOBUTTON_CHECKED;
+
+	// SCOPE STYLE
+	uncheckRadioButtonGroup(RB_GROUP_CONFIG_SCOPE);
+	tmpID = RB_CONFIG_SCOPE_NORMAL;
+	if (config.specialFlags & LINED_SCOPES) tmpID = RB_CONFIG_SCOPE_LINED;
+	radioButtons[tmpID].state = RADIOBUTTON_CHECKED;
+
+	switch (config.mouseType)
+	{
+		default:
+		case MOUSE_IDLE_SHAPE_NICE:    tmpID = RB_CONFIG_MOUSE_NICE;    break;
+		case MOUSE_IDLE_SHAPE_UGLY:    tmpID = RB_CONFIG_MOUSE_UGLY;    break;
+		case MOUSE_IDLE_SHAPE_AWFUL:   tmpID = RB_CONFIG_MOUSE_AWFUL;   break;
+		case MOUSE_IDLE_SHAPE_USABLE:  tmpID = RB_CONFIG_MOUSE_USABLE;  break;
+	}
+	radioButtons[tmpID].state = RADIOBUTTON_CHECKED;
+
+	// MAX VISIBLE CHANNELS
+	uncheckRadioButtonGroup(RB_GROUP_CONFIG_PATTERN_CHANS);
+	switch (config.ptnMaxChannels)
+	{
+		default:
+		case MAX_CHANS_SHOWN_4:  tmpID = RB_CONFIG_MAXCHAN_4;  break;
+		case MAX_CHANS_SHOWN_6:  tmpID = RB_CONFIG_MAXCHAN_6;  break;
+		case MAX_CHANS_SHOWN_8:  tmpID = RB_CONFIG_MAXCHAN_8;  break;
+		case MAX_CHANS_SHOWN_12: tmpID = RB_CONFIG_MAXCHAN_12; break;
+	}
+	radioButtons[tmpID].state = RADIOBUTTON_CHECKED;
+
+	// PATTERN FONT
+	uncheckRadioButtonGroup(RB_GROUP_CONFIG_FONT);
+	switch (config.ptnFont)
+	{
+		default:
+		case PATT_FONT_CAPITALS:  tmpID = RB_CONFIG_FONT_CAPITALS;  break;
+		case PATT_FONT_LOWERCASE: tmpID = RB_CONFIG_FONT_LOWERCASE; break;
+		case PATT_FONT_FUTURE:    tmpID = RB_CONFIG_FONT_FUTURE;    break;
+		case PATT_FONT_BOLD:      tmpID = RB_CONFIG_FONT_BOLD;      break;
+	}
+	radioButtons[tmpID].state = RADIOBUTTON_CHECKED;
+
+	// PALETTE PRESET
+	uncheckRadioButtonGroup(RB_GROUP_CONFIG_PAL_PRESET);
+	switch (config.cfg_StdPalNum)
+	{
+		default:
+		case PAL_ARCTIC:          tmpID = RB_CONFIG_PAL_ARCTIC;          break;
+		case PAL_AURORA_BOREALIS: tmpID = RB_CONFIG_PAL_AURORA_BOREALIS; break;
+		case PAL_BLUES:           tmpID = RB_CONFIG_PAL_BLUES;           break;
+		case PAL_GOLD:            tmpID = RB_CONFIG_PAL_GOLD;            break;
+		case PAL_HEAVY_METAL:     tmpID = RB_CONFIG_PAL_HEAVY_METAL;     break;
+		case PAL_JUNGLE:          tmpID = RB_CONFIG_PAL_JUNGLE;          break;
+		case PAL_LITHE_DARK:      tmpID = RB_CONFIG_PAL_LITHE_DARK;      break;
+		case PAL_ROSE:            tmpID = RB_CONFIG_PAL_ROSE;            break;
+		case PAL_DARK_MODE:       tmpID = RB_CONFIG_PAL_DARK_MODE;       break;
+		case PAL_VIOLENT:         tmpID = RB_CONFIG_PAL_VIOLENT;         break;
+		case PAL_WHY_COLORS:      tmpID = RB_CONFIG_PAL_WHY_COLORS;      break;
+		case PAL_USER_DEFINED:    tmpID = RB_CONFIG_PAL_USER_DEFINED;    break;
+	}
+	radioButtons[tmpID].state = RADIOBUTTON_CHECKED;
+
+	// show result
+
+	showRadioButtonGroup(RB_GROUP_CONFIG_MOUSE);
+	showRadioButtonGroup(RB_GROUP_CONFIG_MOUSE_BUSY);
+	showRadioButtonGroup(RB_GROUP_CONFIG_SCOPE);
+	showRadioButtonGroup(RB_GROUP_CONFIG_PATTERN_CHANS);
+	showRadioButtonGroup(RB_GROUP_CONFIG_FONT);
+	/* Palette presets are exposed by the compact cycling selector. */
+}
+
+static void setConfigMiscCheckButtonStates(void)
+{
+	checkBoxes[CB_CONF_SAMP_CUT_TO_BUF].checked = config.smpCutToBuffer;
+	checkBoxes[CB_CONF_PATT_CUT_TO_BUF].checked = config.ptnCutToBuffer;
+	checkBoxes[CB_CONF_KILL_NOTES_AT_STOP].checked = config.killNotesOnStopPlay;
+	checkBoxes[CB_CONF_FILE_OVERWRITE_WARN].checked = config.cfg_OverwriteWarning;
+	checkBoxes[CB_CONF_SILENT_REC_ENTRY].checked =
+		(config.specialFlags2 & SILENT_REC_ENTRY) != 0;
+	checkBoxes[CB_CONF_INHERIT_PATT_LEN].checked =
+		(config.specialFlags & INHERIT_PATT_LEN) != 0;
+	checkBoxes[CB_CONF_INP_MODE].checked =
+		(config.specialFlags2 & INP_MODE) != 0;
+	checkBoxes[CB_CONF_AUTO_PATT_GEN].checked =
+		(config.specialFlags2 & AUTO_PATT_GEN) != 0;
+	checkBoxes[CB_CONF_MULTICHAN_REC].checked = config.multiRec;
+	checkBoxes[CB_CONF_MULTICHAN_JAZZ].checked = config.multiKeyJazz;
+	checkBoxes[CB_CONF_MULTICHAN_EDIT].checked = config.multiEdit;
+	checkBoxes[CB_CONF_REC_KEYOFF].checked = config.recRelease;
+	checkBoxes[CB_CONF_QUANTIZATION].checked = config.recQuant;
+	checkBoxes[CB_CONF_CHANGE_PATTLEN_INS_DEL].checked = config.recTrueInsert;
+	checkBoxes[CB_CONF_ORIG_FT2_PATT_LAYOUT].checked = !config.ptnAlternativeLayout;
+#ifdef HAS_MIDI
+	checkBoxes[CB_CONF_MIDI_ENABLE].checked = midi.enable;
+	checkBoxes[CB_CONF_MIDI_DUB_ENABLE].checked = midi.dubEnable;
+#else
+	checkBoxes[CB_CONF_MIDI_ENABLE].checked = false;
+	checkBoxes[CB_CONF_MIDI_DUB_ENABLE].checked = false;
+#endif
+	checkBoxes[CB_CONF_MIDI_REC_ALL].checked = config.recMIDIAllChn;
+	checkBoxes[CB_CONF_MIDI_REC_TRANS].checked = config.recMIDITransp;
+	checkBoxes[CB_CONF_MIDI_REC_VELOC].checked = config.recMIDIVelocity;
+	checkBoxes[CB_CONF_MIDI_REC_AFTERTOUCH].checked = config.recMIDIAftert;
+	checkBoxes[CB_CONF_FORCE_VSYNC_OFF].checked = (config.windowFlags & FORCE_VSYNC_OFF) ? true : false;
+	checkBoxes[CB_CONF_START_IN_FULLSCREEN].checked = (config.windowFlags & START_IN_FULLSCR) ? true : false;
+	checkBoxes[CB_CONF_PIXEL_FILTER].checked = (config.windowFlags & PIXEL_FILTER) ? true : false;
+	checkBoxes[CB_CONF_STRETCH_IMAGE].checked = (config.specialFlags2 & STRETCH_IMAGE) ? true : false;
+
+	showCheckBox(CB_CONF_SAMP_CUT_TO_BUF);
+	showCheckBox(CB_CONF_PATT_CUT_TO_BUF);
+	showCheckBox(CB_CONF_KILL_NOTES_AT_STOP);
+	showCheckBox(CB_CONF_FILE_OVERWRITE_WARN);
+	showCheckBox(CB_CONF_SILENT_REC_ENTRY);
+	showCheckBox(CB_CONF_INHERIT_PATT_LEN);
+	showCheckBox(CB_CONF_INP_MODE);
+
+	if (config.specialFlags2 & INP_MODE)
+		showCheckBox(CB_CONF_AUTO_PATT_GEN);
+	else
+		hideCheckBox(CB_CONF_AUTO_PATT_GEN);
+
+	showCheckBox(CB_CONF_MULTICHAN_REC);
+	showCheckBox(CB_CONF_MULTICHAN_JAZZ);
+	showCheckBox(CB_CONF_MULTICHAN_EDIT);
+	showCheckBox(CB_CONF_REC_KEYOFF);
+	showCheckBox(CB_CONF_QUANTIZATION);
+	showCheckBox(CB_CONF_CHANGE_PATTLEN_INS_DEL);
+	showCheckBox(CB_CONF_ORIG_FT2_PATT_LAYOUT);
+	showCheckBox(CB_CONF_MIDI_ENABLE);
+	showCheckBox(CB_CONF_MIDI_REC_ALL);
+	showCheckBox(CB_CONF_MIDI_REC_TRANS);
+	showCheckBox(CB_CONF_MIDI_REC_VELOC);
+	showCheckBox(CB_CONF_MIDI_REC_AFTERTOUCH);
+	showCheckBox(CB_CONF_FORCE_VSYNC_OFF);
+	showCheckBox(CB_CONF_START_IN_FULLSCREEN);
+	showCheckBox(CB_CONF_PIXEL_FILTER);
+	showCheckBox(CB_CONF_STRETCH_IMAGE);
+}
+
+static void setConfigMiscRadioButtonStates(void)
+{
+	uint16_t tmpID;
+
+	// FILE SORTING
+	uncheckRadioButtonGroup(RB_GROUP_CONFIG_FILESORT);
+	switch (config.cfg_SortPriority)
+	{
+		default:
+		case FILESORT_EXT:  tmpID = RB_CONFIG_FILESORT_EXT;  break;
+		case FILESORT_NAME: tmpID = RB_CONFIG_FILESORT_NAME; break;
+	}
+	radioButtons[tmpID].state = RADIOBUTTON_CHECKED;
+
+	// WINDOW SIZE
+	uncheckRadioButtonGroup(RB_GROUP_CONFIG_WIN_SIZE);
+
+	     if (config.windowFlags & WINSIZE_AUTO) tmpID = RB_CONFIG_WIN_SIZE_AUTO;
+	else if (config.windowFlags & WINSIZE_1X) tmpID = RB_CONFIG_WIN_SIZE_1X;
+	else if (config.windowFlags & WINSIZE_2X) tmpID = RB_CONFIG_WIN_SIZE_2X;
+	else if (config.windowFlags & WINSIZE_3X) tmpID = RB_CONFIG_WIN_SIZE_3X;
+	else if (config.windowFlags & WINSIZE_4X) tmpID = RB_CONFIG_WIN_SIZE_4X;
+
+	radioButtons[tmpID].state = RADIOBUTTON_CHECKED;
+
+	// show result
+
+	showRadioButtonGroup(RB_GROUP_CONFIG_FILESORT);
+	showRadioButtonGroup(RB_GROUP_CONFIG_WIN_SIZE);
+
+	// PATTERN VERTICAL NAVIGATION
+	uncheckRadioButtonGroup(RB_GROUP_CONFIG_PATTNAV);
+	switch (config.dontShowAgainFlags & PATT_NAV_MODE_MASK)
+	{
+		default:
+		case PATT_NAV_WRAP: tmpID = RB_CONFIG_PATTNAV_WRAP; break;
+		case PATT_NAV_STOP: tmpID = RB_CONFIG_PATTNAV_STOP; break;
+		case PATT_NAV_SONG: tmpID = RB_CONFIG_PATTNAV_SONG; break;
+	}
+	radioButtons[tmpID].state = RADIOBUTTON_CHECKED;
+}
+
+void showConfigScreen(void)
+{
+#ifdef TAPEHEAD_EMBEDDED
+	ts_tapehead_request(3);
+	return;
+#endif
+	if (ui.extendedPatternEditor)
+		exitPatternEditorExtended();
+
+	hideTopScreen();
+	ui.configScreenShown = true;
+
+	drawFramework(0, 0, 110, 173, FRAMEWORK_TYPE1);
+
+	setConfigRadioButtonStates();
+
+	checkBoxes[CB_CONF_FASTTRACKS_USE_LEN].checked =
+		tapeheadConfig.fastTracksUseTrackLengths;
+	showCheckBox(CB_CONF_FASTTRACKS_USE_LEN);
+	checkBoxes[CB_CONF_AUTOSAVE].checked = config.cfg_AutoSave;
+	showCheckBox(CB_CONF_AUTOSAVE);
+
+	showPushButton(PB_CONFIG_RESET);
+	showPushButton(PB_CONFIG_LOAD);
+	showPushButton(PB_CONFIG_SAVE);
+	showPushButton(PB_CONFIG_EXIT);
+
+	textOutShadow(4,   4, PAL_FORGRND, PAL_DSKTOP2, "Configuration:");
+	textOutShadow(21, 19, PAL_FORGRND, PAL_DSKTOP2, "Audio");
+	textOutShadow(21, 35, PAL_FORGRND, PAL_DSKTOP2, "Layout");
+	textOutShadow(21, 51, PAL_FORGRND, PAL_DSKTOP2, "Miscellaneous");
+#ifdef HAS_MIDI
+	textOutShadow(21, 67, PAL_FORGRND, PAL_DSKTOP2, "MIDI");
+#endif
+	textOutShadow(20, 80, PAL_FORGRND, PAL_DSKTOP2, "FT uses LEN");
+	textOutShadow(20, 93, PAL_FORGRND, PAL_DSKTOP2, "Auto save");
+
+	switch (editor.currConfigScreen)
+	{
+		default:
+		case CONFIG_SCREEN_AUDIO:
+		{
+			drawFramework(110,   0, 276, 87, FRAMEWORK_TYPE1);
+			drawFramework(110,  87, 276, 86, FRAMEWORK_TYPE1);
+
+			drawFramework(386,   0, 123, 58, FRAMEWORK_TYPE1);
+			drawFramework(386,  58, 123, 29, FRAMEWORK_TYPE1);
+			drawFramework(386,  87, 123, 86, FRAMEWORK_TYPE1);
+
+			drawFramework(509,   0, 123, 58, FRAMEWORK_TYPE1);
+			drawFramework(509, 102, 123, 71, FRAMEWORK_TYPE1);
+			drawFramework(509,  58, 123, 44, FRAMEWORK_TYPE1);
+
+			drawFramework(112,  16, AUDIO_SELECTORS_BOX_WIDTH+4, 69, FRAMEWORK_TYPE2);
+			drawFramework(112, 103, AUDIO_SELECTORS_BOX_WIDTH+4, 47, FRAMEWORK_TYPE2);
+
+			drawAudioOutputList();
+			drawAudioInputList();
+
+			if (audio.rescanAudioDevicesSupported)
+				showPushButton(PB_CONFIG_AUDIO_RESCAN);
+
+			showPushButton(PB_CONFIG_AUDIO_OUTPUT_DOWN);
+			showPushButton(PB_CONFIG_AUDIO_OUTPUT_UP);
+			showPushButton(PB_CONFIG_AUDIO_INPUT_DOWN);
+			showPushButton(PB_CONFIG_AUDIO_INPUT_UP);
+			showPushButton(PB_CONFIG_AMP_DOWN);
+			showPushButton(PB_CONFIG_AMP_UP);
+			showPushButton(PB_CONFIG_MASTVOL_DOWN);
+			showPushButton(PB_CONFIG_MASTVOL_UP);
+
+			textOutShadow(114,   4, PAL_FORGRND, PAL_DSKTOP2, "Audio output devices:");
+			textOutShadow(289,   4, PAL_FORGRND, PAL_DSKTOP2, "Mono");
+			textOutShadow(114,  91, PAL_FORGRND, PAL_DSKTOP2, "Audio input devices (sampling):");
+
+			textOutShadow(114, 157, PAL_FORGRND, PAL_DSKTOP2, "Input rate:");
+			textOutShadow(194, 157, PAL_FORGRND, PAL_DSKTOP2, "44.1kHz");
+			textOutShadow(265, 157, PAL_FORGRND, PAL_DSKTOP2, "48.0kHz");
+			textOutShadow(336, 157, PAL_FORGRND, PAL_DSKTOP2, "96.0kHz");
+
+			textOutShadow(390,   3, PAL_FORGRND, PAL_DSKTOP2, "Audio buffer size:");
+			textOutShadow(405,  17, PAL_FORGRND, PAL_DSKTOP2, "Small");
+			textOutShadow(405,  31, PAL_FORGRND, PAL_DSKTOP2, "Medium (default)");
+			textOutShadow(405,  45, PAL_FORGRND, PAL_DSKTOP2, "Large");
+
+			textOutShadow(390,  61, PAL_FORGRND, PAL_DSKTOP2, "Audio bit depth:");
+			textOutShadow(405,  74, PAL_FORGRND, PAL_DSKTOP2, "16-bit");
+			textOutShadow(468,  74, PAL_FORGRND, PAL_DSKTOP2, "32-bit");
+
+			textOutShadow(405,  90, PAL_FORGRND, PAL_DSKTOP2, "No interpolation");
+			textOutShadow(405, 104, PAL_FORGRND, PAL_DSKTOP2, "Linear (FT2)");
+			textOutShadow(405, 118, PAL_FORGRND, PAL_DSKTOP2, "Cubic spline");
+			textOutShadow(405, 132, PAL_FORGRND, PAL_DSKTOP2, "Sinc (8 point)");
+			textOutShadow(405, 146, PAL_FORGRND, PAL_DSKTOP2, "Sinc (16 point)");
+			textOutShadow(405, 160, PAL_FORGRND, PAL_DSKTOP2, "Precise BPM");
+
+			textOutShadow(513,   3, PAL_FORGRND, PAL_DSKTOP2, "Audio output rate:");
+			textOutShadow(528,  17, PAL_FORGRND, PAL_DSKTOP2, "44100Hz");
+			textOutShadow(528,  31, PAL_FORGRND, PAL_DSKTOP2, "48000Hz");
+			textOutShadow(528,  45, PAL_FORGRND, PAL_DSKTOP2, "96000Hz");
+
+			textOutShadow(513,  61, PAL_FORGRND, PAL_DSKTOP2, "Frequency slides:");
+			textOutShadow(528,  75, PAL_FORGRND, PAL_DSKTOP2, "Amiga");
+			textOutShadow(528,  89, PAL_FORGRND, PAL_DSKTOP2, "Linear (default)");
+
+			textOutShadow(513, 105, PAL_FORGRND, PAL_DSKTOP2, "Amplification:");
+			charOutShadow(621, 105, PAL_FORGRND, PAL_DSKTOP2, 'x');
+			textOutShadow(513, 133, PAL_FORGRND, PAL_DSKTOP2, "Master volume:");
+			textOutShadow(529, 160, PAL_FORGRND, PAL_DSKTOP2, "Volume ramping");
+
+			setConfigAudioRadioButtonStates();
+			setConfigAudioCheckButtonStates();
+
+			configDrawAmp();
+			configDrawMasterVol();
+
+			setScrollBarPos(SB_AMP_SCROLL,       config.boostLevel - 1, DONT_TRIGGER_CALLBACK);
+			setScrollBarPos(SB_MASTERVOL_SCROLL, config.masterVol,      DONT_TRIGGER_CALLBACK);
+
+			showScrollBar(SB_AUDIO_INPUT_SCROLL);
+			showScrollBar(SB_AUDIO_OUTPUT_SCROLL);
+			showScrollBar(SB_AMP_SCROLL);
+			showScrollBar(SB_MASTERVOL_SCROLL);
+		}
+		break;
+
+		case CONFIG_SCREEN_LAYOUT:
+		{
+			drawFramework(110,   0, 142, 106, FRAMEWORK_TYPE1);
+			drawFramework(252,   0, 142,  98, FRAMEWORK_TYPE1);
+			drawFramework(394,   0, 238,  86, FRAMEWORK_TYPE1);
+			drawFramework(110, 106, 142,  67, FRAMEWORK_TYPE1);
+			drawFramework(252,  98, 142,  45, FRAMEWORK_TYPE1);
+			drawFramework(394,  86, 238, 87, FRAMEWORK_TYPE1);
+
+			drawFramework(252, 143, 142,  30, FRAMEWORK_TYPE1);
+
+			textOutShadow(114, 109, PAL_FORGRND, PAL_DSKTOP2, "Mouse shape:");
+			textOutShadow(130, 121, PAL_FORGRND, PAL_DSKTOP2, "Nice");
+			textOutShadow(194, 121, PAL_FORGRND, PAL_DSKTOP2, "Ugly");
+			textOutShadow(130, 135, PAL_FORGRND, PAL_DSKTOP2, "Awful");
+			textOutShadow(194, 135, PAL_FORGRND, PAL_DSKTOP2, "Usable");
+			textOutShadow(114, 148, PAL_FORGRND, PAL_DSKTOP2, "Mouse busy shape:");
+			textOutShadow(130, 160, PAL_FORGRND, PAL_DSKTOP2, "Vogue");
+			textOutShadow(194, 160, PAL_FORGRND, PAL_DSKTOP2, "Mr. H");
+
+			textOutShadow(114,   3, PAL_FORGRND, PAL_DSKTOP2, "Pattern layout:");
+			textOutShadow(130,  16, PAL_FORGRND, PAL_DSKTOP2, "Pattern stretch");
+			textOutShadow(130,  29, PAL_FORGRND, PAL_DSKTOP2, "Hex line numbers");
+			textOutShadow(130,  42, PAL_FORGRND, PAL_DSKTOP2, "Accidential");
+			textOutShadow(130,  55, PAL_FORGRND, PAL_DSKTOP2, "Show zeroes");
+			textOutShadow(130,  68, PAL_FORGRND, PAL_DSKTOP2, "Framework");
+			textOutShadow(130,  81, PAL_FORGRND, PAL_DSKTOP2, "Line number colors");
+			textOutShadow(130,  94, PAL_FORGRND, PAL_DSKTOP2, "Channel numbering");
+
+			textOutShadow(256,   3, PAL_FORGRND, PAL_DSKTOP2, "Pattern modes:");
+			textOutShadow(271,  16, PAL_FORGRND, PAL_DSKTOP2, "Show volume column");
+			textOutShadow(256,  30, PAL_FORGRND, PAL_DSKTOP2, "Maximum visible chn.:");
+			textOutShadow(272,  43, PAL_FORGRND, PAL_DSKTOP2, "4 channels");
+			textOutShadow(272,  57, PAL_FORGRND, PAL_DSKTOP2, "6 channels");
+			textOutShadow(272,  71, PAL_FORGRND, PAL_DSKTOP2, "8 channels");
+			textOutShadow(272,  85, PAL_FORGRND, PAL_DSKTOP2, "12 channels");
+
+			textOutShadow(257, 101, PAL_FORGRND, PAL_DSKTOP2, "Pattern font:");
+			textOutShadow(272, 115, PAL_FORGRND, PAL_DSKTOP2, "Capitals");
+			textOutShadow(338, 114, PAL_FORGRND, PAL_DSKTOP2, "Lower-c.");
+			textOutShadow(272, 130, PAL_FORGRND, PAL_DSKTOP2, "Future");
+			textOutShadow(338, 129, PAL_FORGRND, PAL_DSKTOP2, "Bold");
+
+			textOutShadow(256, 146, PAL_FORGRND, PAL_DSKTOP2, "Scopes:");
+			textOutShadow(319, 146, PAL_FORGRND, PAL_DSKTOP2, "FT2");
+			textOutShadow(360, 146, PAL_FORGRND, PAL_DSKTOP2, "Lined");
+
+			textOutShadow(272, 160, PAL_FORGRND, PAL_DSKTOP2, "Software mouse");
+
+			textOutShadow(414,   3, PAL_FORGRND, PAL_DSKTOP2, "Pattern text");
+			textOutShadow(414,  17, PAL_FORGRND, PAL_DSKTOP2, "Block mark");
+			textOutShadow(414,  31, PAL_FORGRND, PAL_DSKTOP2, "Text on block");
+			textOutShadow(414,  45, PAL_FORGRND, PAL_DSKTOP2, "Mouse");
+			textOutShadow(414,  59, PAL_FORGRND, PAL_DSKTOP2, "Desktop");
+			textOutShadow(414,  73, PAL_FORGRND, PAL_DSKTOP2, "Buttons");
+
+			textOutShadow(414,  90, PAL_FORGRND, PAL_DSKTOP2, "Arctic");
+			textOutShadow(528,  90, PAL_FORGRND, PAL_DSKTOP2, "LiTHe dark");
+			textOutShadow(414, 104, PAL_FORGRND, PAL_DSKTOP2, "Aurora Borealis");
+			textOutShadow(528, 104, PAL_FORGRND, PAL_DSKTOP2, "Rose");
+			textOutShadow(414, 118, PAL_FORGRND, PAL_DSKTOP2, "Blues");
+			textOutShadow(528, 118, PAL_FORGRND, PAL_DSKTOP2, "Dark mode");
+			textOutShadow(414, 132, PAL_FORGRND, PAL_DSKTOP2, "Gold");
+			textOutShadow(528, 132, PAL_FORGRND, PAL_DSKTOP2, "Violent");
+			textOutShadow(414, 146, PAL_FORGRND, PAL_DSKTOP2, "Heavy Metal");
+			textOutShadow(528, 146, PAL_FORGRND, PAL_DSKTOP2, "Why colors?");
+			textOutShadow(414, 160, PAL_FORGRND, PAL_DSKTOP2, "Jungle");
+			textOutShadow(528, 160, PAL_FORGRND, PAL_DSKTOP2, "User defined");
+
+			showPaletteEditor();
+
+			setConfigLayoutCheckButtonStates();
+			setConfigLayoutRadioButtonStates();
+		}
+		break;
+
+		case CONFIG_SCREEN_MISCELLANEOUS:
+		{
+			drawFramework(110,   0,  99,  43, FRAMEWORK_TYPE1);
+			drawFramework(209,   0, 199,  55, FRAMEWORK_TYPE1);
+			drawFramework(408,   0, 224,  91, FRAMEWORK_TYPE1);
+
+			drawFramework(110,  43,  99,  57, FRAMEWORK_TYPE1);
+			drawFramework(209,  55, 199, 118-16, FRAMEWORK_TYPE1);
+			drawFramework(408,  91, 224,  82, FRAMEWORK_TYPE1);
+
+			drawFramework(110, 100,  99,  73, FRAMEWORK_TYPE1);
+
+			drawFramework(209, 157,  199, 16, FRAMEWORK_TYPE1);
+
+			// text boxes
+			drawFramework(485,  15, 145,  14, FRAMEWORK_TYPE2);
+			drawFramework(485,  30, 145,  14, FRAMEWORK_TYPE2);
+			drawFramework(485,  45, 145,  14, FRAMEWORK_TYPE2);
+			drawFramework(485,  60, 145,  14, FRAMEWORK_TYPE2);
+			drawFramework(485,  75, 145,  14, FRAMEWORK_TYPE2);
+
+			textOutShadow(114,   3, PAL_FORGRND, PAL_DSKTOP2, "Dir. sorting pri.:");
+			textOutShadow(130,  16, PAL_FORGRND, PAL_DSKTOP2, "Extension");
+			textOutShadow(130,  30, PAL_FORGRND, PAL_DSKTOP2, "Filename");
+
+			textOutShadow(228,   4, PAL_FORGRND, PAL_DSKTOP2, "Sample \"cut to buffer\"");
+			textOutShadow(228,  17, PAL_FORGRND, PAL_DSKTOP2, "Pattern \"cut to buffer\"");
+			textOutShadow(228,  30, PAL_FORGRND, PAL_DSKTOP2, "Kill voices at music stop");
+			textOutShadow(228,  43, PAL_FORGRND, PAL_DSKTOP2, "File-overwrite warning");
+
+			textOutShadow(464,   3, PAL_FORGRND, PAL_DSKTOP2, "Default directories:");
+			textOutShadow(413,  17, PAL_FORGRND, PAL_DSKTOP2, "Modules");
+			textOutShadow(413,  32, PAL_FORGRND, PAL_DSKTOP2, "Instruments");
+			textOutShadow(413,  47, PAL_FORGRND, PAL_DSKTOP2, "Samples");
+			textOutShadow(413,  62, PAL_FORGRND, PAL_DSKTOP2, "Patterns");
+			textOutShadow(413,  77, PAL_FORGRND, PAL_DSKTOP2, "Tracks");
+			textOutShadow(516,  95, PAL_FORGRND, PAL_DSKTOP2, "Silent record");
+			textOutShadow(576, 147, PAL_FORGRND, PAL_DSKTOP2, "IPL");
+			textOutShadow(611, 147, PAL_FORGRND, PAL_DSKTOP2, "INP");
+			textOutShadow(576, 134, PAL_FORGRND, PAL_DSKTOP2, "APG");
+
+			textOutShadow(114,  46, PAL_FORGRND, PAL_DSKTOP2, "Window size:");
+			textOutShadow(130,  59, PAL_FORGRND, PAL_DSKTOP2, "Auto fit");
+			textOutShadow(130,  73, PAL_FORGRND, PAL_DSKTOP2, "1x");
+			textOutShadow(172,  73, PAL_FORGRND, PAL_DSKTOP2, "3x");
+			textOutShadow(130,  87, PAL_FORGRND, PAL_DSKTOP2, "2x");
+			textOutShadow(172,  87, PAL_FORGRND, PAL_DSKTOP2, "4x");
+			textOutShadow(114, 103, PAL_FORGRND, PAL_DSKTOP2, "Video settings:");
+			textOutShadow(130, 117, PAL_FORGRND, PAL_DSKTOP2, "VSync off");
+			textOutShadow(130, 130, PAL_FORGRND, PAL_DSKTOP2, "Fullscreen");
+			textOutShadow(130, 143, PAL_FORGRND, PAL_DSKTOP2, "Stretched");
+			textOutShadow(130, 156, PAL_FORGRND, PAL_DSKTOP2, "Pixel filter");
+
+			textOutShadow(213,  57, PAL_FORGRND, PAL_DSKTOP2, "Rec./Edit/Play:");
+			textOutShadow(228,  70, PAL_FORGRND, PAL_DSKTOP2, "Multichannel record");
+			textOutShadow(228,  83, PAL_FORGRND, PAL_DSKTOP2, "Multichannel \"key jazz\"");
+			textOutShadow(228,  96, PAL_FORGRND, PAL_DSKTOP2, "Multichannel edit");
+			textOutShadow(228, 109, PAL_FORGRND, PAL_DSKTOP2, "Record key-off notes");
+			textOutShadow(228, 122, PAL_FORGRND, PAL_DSKTOP2, "Quantization");
+			textOutShadow(338, 122, PAL_FORGRND, PAL_DSKTOP2, "1/");
+			textOutShadow(228, 135, PAL_FORGRND, PAL_DSKTOP2, "Change pattern length when");
+			textOutShadow(228, 146, PAL_FORGRND, PAL_DSKTOP2, "inserting/deleting line.");
+			textOutShadow(228, 161, PAL_FORGRND, PAL_DSKTOP2, "Original FT2 pattern layout");
+
+			textOutShadow(428,  95, PAL_FORGRND, PAL_DSKTOP2, "Enable MIDI");
+			textOutShadow(412, 108, PAL_FORGRND, PAL_DSKTOP2, "Record MIDI chn.");
+			charOutShadow(523, 108, PAL_FORGRND, PAL_DSKTOP2, '(');
+			textOutShadow(546, 108, PAL_FORGRND, PAL_DSKTOP2, "all )");
+			textOutShadow(428, 121, PAL_FORGRND, PAL_DSKTOP2, "Record transpose");
+			textOutShadow(428, 134, PAL_FORGRND, PAL_DSKTOP2, "Record velocity");
+			textOutShadow(428, 147, PAL_FORGRND, PAL_DSKTOP2, "Record aftertouch");
+			textOutShadow(412, 160, PAL_FORGRND, PAL_DSKTOP2, "Vel./A.t. senstvty.");
+			charOutShadow(547, 160, PAL_FORGRND, PAL_DSKTOP2, '%');
+
+			setConfigMiscCheckButtonStates();
+			setConfigMiscRadioButtonStates();
+
+			drawQuantValue();
+			drawMIDIChanValue();
+			drawMIDITransp();
+			drawMIDISens();
+
+			showPushButton(PB_CONFIG_QUANTIZE_UP);
+			showPushButton(PB_CONFIG_QUANTIZE_DOWN);
+			showPushButton(PB_CONFIG_MIDICHN_UP);
+			showPushButton(PB_CONFIG_MIDICHN_DOWN);
+			showPushButton(PB_CONFIG_MIDITRANS_UP);
+			showPushButton(PB_CONFIG_MIDITRANS_DOWN);
+			showPushButton(PB_CONFIG_MIDISENS_DOWN);
+			showPushButton(PB_CONFIG_MIDISENS_UP);
+
+			showTextBox(TB_CONF_DEF_MODS_DIR);
+			showTextBox(TB_CONF_DEF_INSTRS_DIR);
+			showTextBox(TB_CONF_DEF_SAMPS_DIR);
+			showTextBox(TB_CONF_DEF_PATTS_DIR);
+			showTextBox(TB_CONF_DEF_TRACKS_DIR);
+			drawTextBox(TB_CONF_DEF_MODS_DIR);
+			drawTextBox(TB_CONF_DEF_INSTRS_DIR);
+			drawTextBox(TB_CONF_DEF_SAMPS_DIR);
+			drawTextBox(TB_CONF_DEF_PATTS_DIR);
+			drawTextBox(TB_CONF_DEF_TRACKS_DIR);
+
+			setScrollBarPos(SB_MIDI_SENS, config.recMIDIVolSens, DONT_TRIGGER_CALLBACK);
+			showScrollBar(SB_MIDI_SENS);
+		}
+		break;
+
+#ifdef HAS_MIDI
+		case CONFIG_SCREEN_MIDI_INPUT:
+		{
+			drawFramework(110, 0, 394, 173, FRAMEWORK_TYPE1);
+			drawFramework(112, 15, 369, 70, FRAMEWORK_TYPE2);
+			drawFramework(112,102, 369, 69, FRAMEWORK_TYPE2);
+			drawFramework(504, 0, 128, 173, FRAMEWORK_TYPE1);
+
+			textOutShadow(114,   4, PAL_FORGRND, PAL_DSKTOP2, "MIDI input devices:");
+			textOutShadow(114,  91, PAL_FORGRND, PAL_DSKTOP2, "MIDI output devices:");
+			textOutShadow(528, 112, PAL_FORGRND, PAL_DSKTOP2, "MIDI Devices");
+			textOutShadow(528, 131, PAL_FORGRND, PAL_DSKTOP2, "MIDI Panic");
+
+			blitFast(517, 51, bmp.midiLogo, 103, 55);
+			checkBoxes[CB_CONF_MIDI_DUB_ENABLE].checked = midi.dubEnable;
+			showCheckBox(CB_CONF_MIDI_DUB_ENABLE);
+
+			showPushButton(PB_CONFIG_MIDI_INPUT_DOWN);
+			showPushButton(PB_CONFIG_MIDI_INPUT_UP);
+			showPushButton(PB_CONFIG_MIDI_OUTPUT_DOWN);
+			showPushButton(PB_CONFIG_MIDI_OUTPUT_UP);
+			rescanMidiInputDevices();
+			rescanMidiOutputDevices();
+			drawMidiInputList();
+			drawMidiOutputList();
+			showScrollBar(SB_MIDI_INPUT_SCROLL);
+			showScrollBar(SB_MIDI_OUTPUT_SCROLL);
+		}
+		break;
+#endif
+	}
+}
+
+void hideConfigScreen(void)
+{
+	// CONFIG LEFT SIDE
+	hideRadioButtonGroup(RB_GROUP_CONFIG_SELECT);
+	hideCheckBox(CB_CONF_FASTTRACKS_USE_LEN);
+	hideCheckBox(CB_CONF_AUTOSAVE);
+	hidePushButton(PB_CONFIG_RESET);
+	hidePushButton(PB_CONFIG_LOAD);
+	hidePushButton(PB_CONFIG_SAVE);
+	hidePushButton(PB_CONFIG_EXIT);
+
+	// CONFIG AUDIO
+	hideRadioButtonGroup(RB_GROUP_CONFIG_SOUND_BUFF_SIZE);
+	hideRadioButtonGroup(RB_GROUP_CONFIG_AUDIO_BIT_DEPTH);
+	hideRadioButtonGroup(RB_GROUP_CONFIG_AUDIO_INTERPOLATION);
+	hideRadioButtonGroup(RB_GROUP_CONFIG_AUDIO_FREQ);
+	hideRadioButtonGroup(RB_GROUP_CONFIG_AUDIO_INPUT_FREQ);
+	hideRadioButtonGroup(RB_GROUP_CONFIG_FREQ_SLIDES);
+	hideCheckBox(CB_CONF_PRECISE_BPM);
+	hideCheckBox(CB_CONF_VOL_RAMP);
+	hideCheckBox(CB_CONF_MONO_OUTPUTS);
+	hidePushButton(PB_CONFIG_AUDIO_RESCAN);
+	hidePushButton(PB_CONFIG_AUDIO_OUTPUT_DOWN);
+	hidePushButton(PB_CONFIG_AUDIO_OUTPUT_UP);
+	hidePushButton(PB_CONFIG_AUDIO_INPUT_DOWN);
+	hidePushButton(PB_CONFIG_AUDIO_INPUT_UP);
+	hidePushButton(PB_CONFIG_AMP_DOWN);
+	hidePushButton(PB_CONFIG_AMP_UP);
+	hidePushButton(PB_CONFIG_MASTVOL_DOWN);
+	hidePushButton(PB_CONFIG_MASTVOL_UP);
+	hideScrollBar(SB_AUDIO_INPUT_SCROLL);
+	hideScrollBar(SB_AUDIO_OUTPUT_SCROLL);
+	hideScrollBar(SB_AMP_SCROLL);
+	hideScrollBar(SB_MASTERVOL_SCROLL);
+
+	// CONFIG LAYOUT
+	hideRadioButtonGroup(RB_GROUP_CONFIG_MOUSE);
+	hideRadioButtonGroup(RB_GROUP_CONFIG_MOUSE_BUSY);
+	hideRadioButtonGroup(RB_GROUP_CONFIG_SCOPE);
+	hideRadioButtonGroup(RB_GROUP_CONFIG_PATTERN_CHANS);
+	hideRadioButtonGroup(RB_GROUP_CONFIG_FONT);
+	hideRadioButtonGroup(RB_GROUP_CONFIG_PAL_ENTRIES);
+	hideRadioButtonGroup(RB_GROUP_CONFIG_PAL_PRESET);
+	hideCheckBox(CB_CONF_PATTSTRETCH);
+	hideCheckBox(CB_CONF_HEXCOUNT);
+	hideCheckBox(CB_CONF_ACCIDENTAL);
+	hideCheckBox(CB_CONF_SHOWZEROES);
+	hideCheckBox(CB_CONF_FRAMEWORK);
+	hideCheckBox(CB_CONF_LINECOLORS);
+	hideCheckBox(CB_CONF_CHANNUMS);
+	hideCheckBox(CB_CONF_SHOW_VOLCOL);
+	hideCheckBox(CB_CONF_ENABLE_CUSTOM_POINTER);
+	hideCheckBox(CB_CONF_SOFTWARE_MOUSE);
+	hidePushButton(PB_CONFIG_PAL_R_DOWN);
+	hidePushButton(PB_CONFIG_PAL_R_UP);
+	hidePushButton(PB_CONFIG_PAL_G_DOWN);
+	hidePushButton(PB_CONFIG_PAL_G_UP);
+	hidePushButton(PB_CONFIG_PAL_B_DOWN);
+	hidePushButton(PB_CONFIG_PAL_B_UP);
+	hidePushButton(PB_CONFIG_PAL_CONT_DOWN);
+	hidePushButton(PB_CONFIG_PAL_CONT_UP);
+	hidePushButton(PB_CONFIG_PAL_IMPORT);
+	hidePushButton(PB_CONFIG_PAL_EXPORT);
+	hidePushButton(PB_CONFIG_PAL_PRESET);
+	hidePushButton(PB_CONFIG_PAL_COLOR_MODE);
+	hideTextBox(TB_CONF_TAPESISTER_EXCHANGE);
+	hideTextBox(TB_CONF_TAPESISTER_EXECUTABLE);
+	hideScrollBar(SB_PAL_R);
+	hideScrollBar(SB_PAL_G);
+	hideScrollBar(SB_PAL_B);
+	hideScrollBar(SB_PAL_CONTRAST);
+	hideScrollBar(SB_PAL_LIST);
+
+	// CONFIG MISCELLANEOUS
+	hideRadioButtonGroup(RB_GROUP_CONFIG_FILESORT);
+	hideRadioButtonGroup(RB_GROUP_CONFIG_WIN_SIZE);
+	hideRadioButtonGroup(RB_GROUP_CONFIG_PATTNAV);
+	hidePushButton(PB_CONFIG_QUANTIZE_UP);
+	hidePushButton(PB_CONFIG_QUANTIZE_DOWN);
+	hidePushButton(PB_CONFIG_MIDICHN_UP);
+	hidePushButton(PB_CONFIG_MIDICHN_DOWN);
+	hidePushButton(PB_CONFIG_MIDITRANS_UP);
+	hidePushButton(PB_CONFIG_MIDITRANS_DOWN);
+	hidePushButton(PB_CONFIG_MIDISENS_DOWN);
+	hidePushButton(PB_CONFIG_MIDISENS_UP);
+	hideCheckBox(CB_CONF_FORCE_VSYNC_OFF);
+	hideCheckBox(CB_CONF_START_IN_FULLSCREEN);
+	hideCheckBox(CB_CONF_PIXEL_FILTER);
+	hideCheckBox(CB_CONF_STRETCH_IMAGE);
+	hideCheckBox(CB_CONF_SAMP_CUT_TO_BUF);
+	hideCheckBox(CB_CONF_PATT_CUT_TO_BUF);
+	hideCheckBox(CB_CONF_KILL_NOTES_AT_STOP);
+	hideCheckBox(CB_CONF_FILE_OVERWRITE_WARN);
+	hideCheckBox(CB_CONF_SILENT_REC_ENTRY);
+	hideCheckBox(CB_CONF_INHERIT_PATT_LEN);
+	hideCheckBox(CB_CONF_INP_MODE);
+	hideCheckBox(CB_CONF_AUTO_PATT_GEN);
+	hideCheckBox(CB_CONF_MULTICHAN_REC);
+	hideCheckBox(CB_CONF_MULTICHAN_JAZZ);
+	hideCheckBox(CB_CONF_MULTICHAN_EDIT);
+	hideCheckBox(CB_CONF_REC_KEYOFF);
+	hideCheckBox(CB_CONF_QUANTIZATION);
+	hideCheckBox(CB_CONF_CHANGE_PATTLEN_INS_DEL);
+	hideCheckBox(CB_CONF_ORIG_FT2_PATT_LAYOUT);
+	hideCheckBox(CB_CONF_MIDI_ENABLE);
+	hideCheckBox(CB_CONF_MIDI_DUB_ENABLE);
+	hideCheckBox(CB_CONF_MIDI_REC_ALL);
+	hideCheckBox(CB_CONF_MIDI_REC_TRANS);
+	hideCheckBox(CB_CONF_MIDI_REC_VELOC);
+	hideCheckBox(CB_CONF_MIDI_REC_AFTERTOUCH);
+	hideTextBox(TB_CONF_DEF_MODS_DIR);
+	hideTextBox(TB_CONF_DEF_INSTRS_DIR);
+	hideTextBox(TB_CONF_DEF_SAMPS_DIR);
+	hideTextBox(TB_CONF_DEF_PATTS_DIR);
+	hideTextBox(TB_CONF_DEF_TRACKS_DIR);
+	hideScrollBar(SB_MIDI_SENS);
+
+#ifdef HAS_MIDI
+	// CONFIG MIDI
+	hidePushButton(PB_CONFIG_MIDI_INPUT_DOWN);
+	hidePushButton(PB_CONFIG_MIDI_INPUT_UP);
+	hidePushButton(PB_CONFIG_MIDI_OUTPUT_DOWN);
+	hidePushButton(PB_CONFIG_MIDI_OUTPUT_UP);
+	hideScrollBar(SB_MIDI_INPUT_SCROLL);
+	hideScrollBar(SB_MIDI_OUTPUT_SCROLL);
+#endif
+
+	ui.configScreenShown = false;
+}
+
+void exitConfigScreen(void)
+{
+	hideConfigScreen();
+	showTopScreen(RESTORE_SCREENS);
+}
+
+// CONFIG AUDIO
+
+void configToggleImportWarning(void)
+{
+	config.dontShowAgainFlags ^= DONT_SHOW_IMPORT_WARNING_FLAG;
+}
+
+void configToggleNotYetAppliedWarning(void)
+{
+	config.dontShowAgainFlags ^= DONT_SHOW_NOT_YET_APPLIED_WARNING_FLAG;
+}
+
+void rbConfigAudio(void)
+{
+	checkRadioButton(RB_CONFIG_AUDIO);
+	editor.currConfigScreen = CONFIG_SCREEN_AUDIO;
+
+	hideConfigScreen();
+	showConfigScreen();
+}
+
+void rbConfigLayout(void)
+{
+	checkRadioButton(RB_CONFIG_LAYOUT);
+	editor.currConfigScreen = CONFIG_SCREEN_LAYOUT;
+
+	hideConfigScreen();
+	showConfigScreen();
+}
+
+void rbConfigPattNavWrap(void)
+{
+	config.dontShowAgainFlags = (config.dontShowAgainFlags & ~PATT_NAV_MODE_MASK) | PATT_NAV_WRAP;
+	checkRadioButton(RB_CONFIG_PATTNAV_WRAP);
+}
+
+void rbConfigPattNavStop(void)
+{
+	config.dontShowAgainFlags = (config.dontShowAgainFlags & ~PATT_NAV_MODE_MASK) | PATT_NAV_STOP;
+	checkRadioButton(RB_CONFIG_PATTNAV_STOP);
+}
+
+void rbConfigPattNavSong(void)
+{
+	config.dontShowAgainFlags = (config.dontShowAgainFlags & ~PATT_NAV_MODE_MASK) | PATT_NAV_SONG;
+	checkRadioButton(RB_CONFIG_PATTNAV_SONG);
+}
+
+void rbConfigMiscellaneous(void)
+{
+	checkRadioButton(RB_CONFIG_MISCELLANEOUS);
+	editor.currConfigScreen = CONFIG_SCREEN_MISCELLANEOUS;
+
+	hideConfigScreen();
+	showConfigScreen();
+}
+
+#ifdef HAS_MIDI
+void rbConfigMidiInput(void)
+{
+	checkRadioButton(RB_CONFIG_MIDI_INPUT);
+	editor.currConfigScreen = CONFIG_SCREEN_MIDI_INPUT;
+
+	hideConfigScreen();
+	showConfigScreen();
+}
+#endif
+
+void rbConfigAudioBuffSmall(void)
+{
+	config.specialFlags &= ~(BUFFSIZE_1024 + BUFFSIZE_2048);
+	config.specialFlags |= BUFFSIZE_512;
+
+	setNewAudioSettings();
+}
+
+void rbConfigAudioBuffMedium(void)
+{
+	config.specialFlags &= ~(BUFFSIZE_512 + BUFFSIZE_2048);
+	config.specialFlags |= BUFFSIZE_1024;
+
+	setNewAudioSettings();
+}
+
+void rbConfigAudioBuffLarge(void)
+{
+	config.specialFlags &= ~(BUFFSIZE_512 + BUFFSIZE_1024);
+	config.specialFlags |= BUFFSIZE_2048;
+
+	setNewAudioSettings();
+}
+
+void rbConfigAudio16Bit(void)
+{
+	config.specialFlags &= ~BITDEPTH_32;
+	config.specialFlags |=  BITDEPTH_16;
+
+	setNewAudioSettings();
+}
+
+void rbConfigAudio32BitFloat(void)
+{
+	config.specialFlags &= ~BITDEPTH_16;
+	config.specialFlags |=  BITDEPTH_32;
+
+	setNewAudioSettings();
+}
+
+void rbConfigAudioIntrpDisabled(void)
+{
+	config.interpolation = INTERPOLATION_DISABLED;
+	audioSetInterpolationType(config.interpolation);
+	checkRadioButton(RB_CONFIG_AUDIO_INTRP_DISABLED);
+}
+
+void rbConfigAudioIntrpLinear(void)
+{
+	config.interpolation = INTERPOLATION_LINEAR;
+	audioSetInterpolationType(config.interpolation);
+	checkRadioButton(RB_CONFIG_AUDIO_INTRP_LINEAR);
+}
+void rbConfigAudioIntrpCubic(void)
+{
+	config.interpolation = INTERPOLATION_CUBIC;
+	audioSetInterpolationType(config.interpolation);
+	checkRadioButton(RB_CONFIG_AUDIO_INTRP_CUBIC);
+}
+
+void rbConfigAudioIntrpSinc8(void)
+{
+	config.interpolation = INTERPOLATION_SINC8;
+	audioSetInterpolationType(config.interpolation);
+	checkRadioButton(RB_CONFIG_AUDIO_INTRP_SINC8);
+}
+
+void rbConfigAudioIntrpSinc16(void)
+{
+	config.interpolation = INTERPOLATION_SINC16;
+	audioSetInterpolationType(config.interpolation);
+	checkRadioButton(RB_CONFIG_AUDIO_INTRP_SINC16);
+}
+
+void rbConfigAudio44kHz(void)
+{
+	config.audioFreq = 44100;
+	setNewAudioSettings();
+}
+
+void rbConfigAudio48kHz(void)
+{
+	config.audioFreq = 48000;
+	setNewAudioSettings();
+}
+
+void rbConfigAudio96kHz(void)
+{
+	config.audioFreq = 96000;
+	setNewAudioSettings();
+}
+
+void rbConfigAudioInput44kHz(void)
+{
+	config.audioInputFreq = INPUT_FREQ_44KHZ;
+	checkRadioButton(RB_CONFIG_AUDIO_INPUT_44KHZ);
+}
+
+void rbConfigAudioInput48kHz(void)
+{
+	config.audioInputFreq = INPUT_FREQ_48KHZ;
+	checkRadioButton(RB_CONFIG_AUDIO_INPUT_48KHZ);
+}
+
+void rbConfigAudioInput96kHz(void)
+{
+	config.audioInputFreq = INPUT_FREQ_96KHZ;
+	checkRadioButton(RB_CONFIG_AUDIO_INPUT_96KHZ);
+}
+
+void rbConfigFreqSlidesAmiga(void)
+{
+	lockMixerCallback();
+	setLinearPeriods(false);
+	unlockMixerCallback();
+}
+
+void rbConfigFreqSlidesLinear(void)
+{
+	lockMixerCallback();
+	setLinearPeriods(true);
+	unlockMixerCallback();
+}
+
+void cbToggleAutoSaveConfig(void)
+{
+	config.cfg_AutoSave ^= 1;
+}
+
+void cbFastTracksUseLEN(void)
+{
+	const bool audioWasntLocked = !audio.locked;
+	if (audioWasntLocked)
+		lockAudio();
+	fastTracksPOCSetUsesTrackLengths(
+		checkBoxes[CB_CONF_FASTTRACKS_USE_LEN].checked);
+	if (audioWasntLocked)
+		unlockAudio();
+
+	ui.updatePatternEditor = true;
+}
+
+void cbPreciseBPM(void)
+{
+	config.specialFlags2 ^= PRECISE_BPM;
+
+	if (config.specialFlags2 & PRECISE_BPM)
+		checkBoxes[CB_CONF_PRECISE_BPM].checked = true;
+	else
+		checkBoxes[CB_CONF_PRECISE_BPM].checked = false;
+
+	drawCheckBox(CB_CONF_PRECISE_BPM);
+
+	lockMixerCallback();
+	calcReplayerVars(FT2_REF_AUDIO_RATE, audio.freq);
+	unlockMixerCallback();
+}
+
+void cbConfigVolRamp(void)
+{
+	config.specialFlags ^= NO_VOLRAMP_FLAG;
+	audioSetVolRamp((config.specialFlags & NO_VOLRAMP_FLAG) ? false : true);
+}
+
+void cbMonoOutputs(void)
+{
+	const uint8_t physicalOutputCount = (uint8_t)MIN(
+		audio.outputChannels != 0 ? audio.outputChannels : tapeheadConfig.outputBuses * 2,
+		TAPEHEAD_MAX_OUTPUT_BUSES);
+
+	initializeMonoChannelOutputRouting(physicalOutputCount);
+
+	const bool audioWasntLocked = !audio.locked;
+	if (audioWasntLocked)
+		lockAudio();
+	tapeheadConfig.monoOutputs = checkBoxes[CB_CONF_MONO_OUTPUTS].checked;
+	audio.monoOutputMode = tapeheadConfig.monoOutputs;
+
+	/* Refresh both gain banks smoothly when switching modes during playback. */
+	for (int32_t i = 0; i < song.numChannels; i++)
+		channel[i].status |= CS_UPDATE_VOL | CS_USE_QUICK_VOLRAMP;
+	if (audioWasntLocked)
+		unlockAudio();
+
+	if (ui.scopesShown)
+		drawScopes();
+}
+
+// CONFIG LAYOUT
+
+static void redrawPatternEditor(void) // called after changing some pattern editor settings in config
+{
+	// if the cursor was on the volume column while we turned volume column off, move it to effect type slot
+	if (!config.ptnShowVolColumn && (cursor.object == CURSOR_VOL1 || cursor.object == CURSOR_VOL2))
+		cursor.object = CURSOR_EFX0;
+
+	updateChanNums();
+	ui.updatePatternEditor = true;
+}
+
+void cbConfigPattStretch(void)
+{
+	config.ptnStretch ^= 1;
+	redrawPatternEditor();
+}
+
+void cbConfigHexCount(void)
+{
+	config.ptnHex ^= 1;
+	redrawPatternEditor();
+}
+
+void cbConfigAccidential(void)
+{
+	config.ptnAcc ^= 1;
+	showCheckBox(CB_CONF_ACCIDENTAL);
+	redrawPatternEditor();
+}
+
+void cbConfigShowZeroes(void)
+{
+	config.ptnInstrZero ^= 1;
+	redrawPatternEditor();
+}
+
+void cbConfigFramework(void)
+{
+	config.ptnFrmWrk ^= 1;
+	redrawPatternEditor();
+}
+
+void cbConfigLineColors(void)
+{
+	config.ptnLineLight ^= 1;
+	redrawPatternEditor();
+}
+
+void cbConfigChanNums(void)
+{
+	config.ptnChnNumbers ^= 1;
+	redrawPatternEditor();
+}
+
+void cbConfigShowVolCol(void)
+{
+	config.ptnShowVolColumn ^= 1;
+	redrawPatternEditor();
+}
+
+void cbEnableCustomPointer(void)
+{
+	config.specialFlags2 ^= USE_OS_MOUSE_POINTER;
+
+	if (config.specialFlags2 & USE_OS_MOUSE_POINTER)
+	{
+		checkBoxes[CB_CONF_ENABLE_CUSTOM_POINTER].checked = false;
+		drawCheckBox(CB_CONF_ENABLE_CUSTOM_POINTER);
+	}
+	else
+	{
+		checkBoxes[CB_CONF_ENABLE_CUSTOM_POINTER].checked = true;
+		drawCheckBox(CB_CONF_ENABLE_CUSTOM_POINTER);
+	}
+
+	if (config.specialFlags2 & HARDWARE_MOUSE)
+		SDL_ShowCursor(SDL_TRUE);
+	else
+		SDL_ShowCursor(SDL_FALSE);
+
+	createMouseCursors();
+}
+
+void cbSoftwareMouse(void)
+{
+	config.specialFlags2 ^= HARDWARE_MOUSE;
+	if (!createMouseCursors())
+		okBox(0, "System message", "Error: Couldn't create/show mouse cursor!", NULL);
+
+	if (config.specialFlags2 & HARDWARE_MOUSE)
+		checkBoxes[CB_CONF_SOFTWARE_MOUSE].checked = false;
+	else
+		checkBoxes[CB_CONF_SOFTWARE_MOUSE].checked = true;
+
+	drawCheckBox(CB_CONF_SOFTWARE_MOUSE);
+
+	if (config.specialFlags2 & HARDWARE_MOUSE)
+		SDL_ShowCursor(SDL_TRUE);
+	else
+		SDL_ShowCursor(SDL_FALSE);
+}
+
+void rbConfigMouseNice(void)
+{
+	config.mouseType = MOUSE_IDLE_SHAPE_NICE;
+	checkRadioButton(RB_CONFIG_MOUSE_NICE);
+	createMouseCursors();
+	setMouseShape(config.mouseType);
+}
+
+void rbConfigMouseUgly(void)
+{
+	config.mouseType = MOUSE_IDLE_SHAPE_UGLY;
+	checkRadioButton(RB_CONFIG_MOUSE_UGLY);
+	createMouseCursors();
+	setMouseShape(config.mouseType);
+}
+
+void rbConfigMouseAwful(void)
+{
+	config.mouseType = MOUSE_IDLE_SHAPE_AWFUL;
+	checkRadioButton(RB_CONFIG_MOUSE_AWFUL);
+	createMouseCursors();
+	setMouseShape(config.mouseType);
+}
+
+void rbConfigMouseUsable(void)
+{
+	config.mouseType = MOUSE_IDLE_SHAPE_USABLE;
+	checkRadioButton(RB_CONFIG_MOUSE_USABLE);
+	createMouseCursors();
+	setMouseShape(config.mouseType);
+}
+
+void rbConfigMouseBusyVogue(void)
+{
+	config.mouseAnimType = MOUSE_BUSY_SHAPE_GLASS;
+	checkRadioButton(RB_CONFIG_MOUSE_BUSY_GLASS);
+	resetMouseBusyAnimation();
+}
+
+void rbConfigMouseBusyMrH(void)
+{
+	config.mouseAnimType = MOUSE_BUSY_SHAPE_CLOCK;
+	checkRadioButton(RB_CONFIG_MOUSE_BUSY_CLOCK);
+	resetMouseBusyAnimation();
+}
+
+void rbConfigScopeStandard(void)
+{
+	config.specialFlags &= ~LINED_SCOPES;
+	checkRadioButton(RB_CONFIG_SCOPE_NORMAL);
+}
+
+void rbConfigScopeLined(void)
+{
+	config.specialFlags |= LINED_SCOPES;
+	checkRadioButton(RB_CONFIG_SCOPE_LINED);
+}
+
+void rbConfigPatt4Chans(void)
+{
+	config.ptnMaxChannels = MAX_CHANS_SHOWN_4;
+	checkRadioButton(RB_CONFIG_MAXCHAN_4);
+	ui.maxVisibleChannels = 2 + (((uint8_t)config.ptnMaxChannels + 1) * 2);
+	redrawPatternEditor();
+}
+
+void rbConfigPatt6Chans(void)
+{
+	config.ptnMaxChannels = MAX_CHANS_SHOWN_6;
+	checkRadioButton(RB_CONFIG_MAXCHAN_6);
+	ui.maxVisibleChannels = 2 + (((uint8_t)config.ptnMaxChannels + 1) * 2);
+	redrawPatternEditor();
+}
+
+void rbConfigPatt8Chans(void)
+{
+	config.ptnMaxChannels = MAX_CHANS_SHOWN_8;
+	checkRadioButton(RB_CONFIG_MAXCHAN_8);
+	ui.maxVisibleChannels = 2 + (((uint8_t)config.ptnMaxChannels + 1) * 2);
+	redrawPatternEditor();
+}
+
+void rbConfigPatt12Chans(void)
+{
+	config.ptnMaxChannels = MAX_CHANS_SHOWN_12;
+	checkRadioButton(RB_CONFIG_MAXCHAN_12);
+	ui.maxVisibleChannels = 2 + (((uint8_t)config.ptnMaxChannels + 1) * 2);
+	redrawPatternEditor();
+}
+
+void rbConfigFontCapitals(void)
+{
+	config.ptnFont = PATT_FONT_CAPITALS;
+	checkRadioButton(RB_CONFIG_FONT_CAPITALS);
+	updatePattFontPtrs();
+	redrawPatternEditor();
+}
+
+void rbConfigFontLowerCase(void)
+{
+	config.ptnFont = PATT_FONT_LOWERCASE;
+	checkRadioButton(RB_CONFIG_FONT_LOWERCASE);
+	updatePattFontPtrs();
+	redrawPatternEditor();
+}
+
+void rbConfigFontFuture(void)
+{
+	config.ptnFont = PATT_FONT_FUTURE;
+	checkRadioButton(RB_CONFIG_FONT_FUTURE);
+	updatePattFontPtrs();
+	redrawPatternEditor();
+}
+
+void rbConfigFontBold(void)
+{
+	config.ptnFont = PATT_FONT_BOLD;
+	checkRadioButton(RB_CONFIG_FONT_BOLD);
+	updatePattFontPtrs();
+	redrawPatternEditor();
+}
+
+void rbFileSortExt(void)
+{
+	config.cfg_SortPriority = FILESORT_EXT;
+	checkRadioButton(RB_CONFIG_FILESORT_EXT);
+	editor.diskOpReadOnOpen = true;
+}
+
+void rbFileSortName(void)
+{
+	config.cfg_SortPriority = FILESORT_NAME;
+	checkRadioButton(RB_CONFIG_FILESORT_NAME);
+	editor.diskOpReadOnOpen = true;
+}
+
+void rbWinSizeAuto(void)
+{
+	if (video.fullscreen)
+	{
+		okBox(0, "System message", "You can't change the window size while in fullscreen mode!", NULL);
+		return;
+	}
+
+	config.windowFlags &= ~(WINSIZE_1X + WINSIZE_2X + WINSIZE_3X + WINSIZE_4X);
+	config.windowFlags |= WINSIZE_AUTO;
+	setWindowSizeFromConfig(true);
+	checkRadioButton(RB_CONFIG_WIN_SIZE_AUTO);
+}
+
+void rbWinSize1x(void)
+{
+	if (video.fullscreen)
+	{
+		okBox(0, "System message", "You can't change the window size while in fullscreen mode!", NULL);
+		return;
+	}
+
+	config.windowFlags &= ~(WINSIZE_AUTO + WINSIZE_2X + WINSIZE_3X + WINSIZE_4X);
+	config.windowFlags |= WINSIZE_1X;
+	setWindowSizeFromConfig(true);
+	checkRadioButton(RB_CONFIG_WIN_SIZE_1X);
+}
+
+void rbWinSize2x(void)
+{
+	if (video.fullscreen)
+	{
+		okBox(0, "System message", "You can't change the window size while in fullscreen mode!", NULL);
+		return;
+	}
+
+	config.windowFlags &= ~(WINSIZE_AUTO + WINSIZE_1X + WINSIZE_3X + WINSIZE_4X);
+	config.windowFlags |= WINSIZE_2X;
+	setWindowSizeFromConfig(true);
+	checkRadioButton(RB_CONFIG_WIN_SIZE_2X);
+}
+
+void rbWinSize3x(void)
+{
+	if (video.fullscreen)
+	{
+		okBox(0, "System message", "You can't change the window size while in fullscreen mode!", NULL);
+		return;
+	}
+
+	config.windowFlags &= ~(WINSIZE_AUTO + WINSIZE_1X + WINSIZE_2X + WINSIZE_4X);
+	config.windowFlags |= WINSIZE_3X;
+	setWindowSizeFromConfig(true);
+	checkRadioButton(RB_CONFIG_WIN_SIZE_3X);
+}
+
+void rbWinSize4x(void)
+{
+	if (video.fullscreen)
+	{
+		okBox(0, "System message", "You can't change the window size while in fullscreen mode!", NULL);
+		return;
+	}
+
+	config.windowFlags &= ~(WINSIZE_AUTO + WINSIZE_1X + WINSIZE_2X + WINSIZE_3X);
+	config.windowFlags |= WINSIZE_4X;
+	setWindowSizeFromConfig(true);
+	checkRadioButton(RB_CONFIG_WIN_SIZE_4X);
+}
+
+void cbSampCutToBuff(void)
+{
+	config.smpCutToBuffer ^= 1;
+}
+
+void cbPattCutToBuff(void)
+{
+	config.ptnCutToBuffer ^= 1;
+}
+
+void cbKillNotesAtStop(void)
+{
+	config.killNotesOnStopPlay ^= 1;
+}
+
+void cbFileOverwriteWarn(void)
+{
+	config.cfg_OverwriteWarning ^= 1;
+}
+void cbSilentRecEntry(void)
+{
+    config.specialFlags2 ^= SILENT_REC_ENTRY;
+
+    checkBoxes[CB_CONF_SILENT_REC_ENTRY].checked =
+        (config.specialFlags2 & SILENT_REC_ENTRY) != 0;
+
+    if (ui.configScreenShown &&
+        editor.currConfigScreen == CONFIG_SCREEN_MISCELLANEOUS)
+    {
+        drawCheckBox(CB_CONF_SILENT_REC_ENTRY);
+    }
+    ui.updatePosSections = true;
+}
+void cbInheritPattLen(void)
+{
+	config.specialFlags ^= INHERIT_PATT_LEN;
+
+	checkBoxes[CB_CONF_INHERIT_PATT_LEN].checked =
+		(config.specialFlags & INHERIT_PATT_LEN) != 0;
+
+	if (ui.configScreenShown &&
+		editor.currConfigScreen == CONFIG_SCREEN_MISCELLANEOUS)
+	{
+		drawCheckBox(CB_CONF_INHERIT_PATT_LEN);
+	}
+}
+
+void cbInpMode(void)
+{
+	config.specialFlags2 ^= INP_MODE;
+
+	/*
+	** APG depends on INP. Turning INP off must also disarm APG.
+	*/
+	if (!(config.specialFlags2 & INP_MODE))
+		config.specialFlags2 &= ~AUTO_PATT_GEN;
+
+	checkBoxes[CB_CONF_INP_MODE].checked =
+		(config.specialFlags2 & INP_MODE) != 0;
+	checkBoxes[CB_CONF_AUTO_PATT_GEN].checked =
+		(config.specialFlags2 & AUTO_PATT_GEN) != 0;
+
+	if (ui.configScreenShown &&
+		editor.currConfigScreen == CONFIG_SCREEN_MISCELLANEOUS)
+	{
+		drawCheckBox(CB_CONF_INP_MODE);
+
+		if (config.specialFlags2 & INP_MODE)
+			showCheckBox(CB_CONF_AUTO_PATT_GEN);
+		else
+			hideCheckBox(CB_CONF_AUTO_PATT_GEN);
+	}
+
+	drawPushButton(PB_POSED_INS);
+	drawPushButton(PB_RECORD_SONG);
+}
+
+void cbAutoPattGen(void)
+{
+	if (!(config.specialFlags2 & INP_MODE))
+		return;
+
+	config.specialFlags2 ^= AUTO_PATT_GEN;
+
+	checkBoxes[CB_CONF_AUTO_PATT_GEN].checked =
+		(config.specialFlags2 & AUTO_PATT_GEN) != 0;
+
+	if (ui.configScreenShown &&
+		editor.currConfigScreen == CONFIG_SCREEN_MISCELLANEOUS)
+	{
+		drawCheckBox(CB_CONF_AUTO_PATT_GEN);
+	}
+
+	drawPushButton(PB_RECORD_SONG);
+}
+
+void cbMultiChanRec(void)
+{
+	config.multiRec ^= 1;
+}
+
+void cbMultiChanKeyJazz(void)
+{
+	config.multiKeyJazz ^= 1;
+}
+
+void cbMultiChanEdit(void)
+{
+	config.multiEdit ^= 1;
+}
+
+void cbRecKeyOff(void)
+{
+	config.recRelease ^= 1;
+}
+
+void cbQuantization(void)
+{
+	config.recQuant ^= 1;
+}
+
+void cbChangePattLenInsDel(void)
+{
+	config.recTrueInsert ^= 1;
+}
+
+void cbAltPatternLayout(void)
+{
+	config.ptnAlternativeLayout ^= 1;
+	redrawPatternEditor();
+}
+
+void cbMIDIEnable(void)
+{
+#ifdef HAS_MIDI
+	midi.enable ^= 1;
+#else
+	checkBoxes[CB_CONF_MIDI_ENABLE].checked = false;
+	drawCheckBox(CB_CONF_MIDI_ENABLE);
+
+	okBox(0, "System message", "This program was not compiled with MIDI functionality!", NULL);
+#endif
+}
+
+void cbMIDIDubEnable(void)
+{
+#ifdef HAS_MIDI
+	if (midi.dubEnable)
+		midiDubPanic();
+
+	midi.dubEnable ^= 1;
+#else
+	checkBoxes[CB_CONF_MIDI_DUB_ENABLE].checked = false;
+	drawCheckBox(CB_CONF_MIDI_DUB_ENABLE);
+
+	okBox(0, "System message", "This program was not compiled with MIDI functionality!", NULL);
+#endif
+}
+
+void cbMIDIRecTransp(void)
+{
+	config.recMIDITransp ^= 1;
+}
+
+void cbMIDIRecAllChn(void)
+{
+	config.recMIDIAllChn ^= 1;
+}
+
+void cbMIDIRecVelocity(void)
+{
+	config.recMIDIVelocity ^= 1;
+}
+
+void cbMIDIRecAftert(void)
+{
+	config.recMIDIAftert ^= 1;
+}
+
+void cbVsyncOff(void)
+{
+	config.windowFlags ^= FORCE_VSYNC_OFF;
+
+	if (!(config.dontShowAgainFlags & DONT_SHOW_NOT_YET_APPLIED_WARNING_FLAG))
+		okBox(0, "System message", "This setting is not applied until you close and reopen the program.", configToggleNotYetAppliedWarning);
+}
+
+void cbFullScreen(void)
+{
+	config.windowFlags ^= START_IN_FULLSCR;
+
+	if (!(config.dontShowAgainFlags & DONT_SHOW_NOT_YET_APPLIED_WARNING_FLAG))
+		okBox(0, "System message", "This setting is not applied until you close and reopen the program.", configToggleNotYetAppliedWarning);
+}
+
+void cbPixelFilter(void)
+{
+	config.windowFlags ^= PIXEL_FILTER;
+
+	recreateTexture();
+	if (video.fullscreen)
+	{
+		leaveFullscreen();
+		enterFullscreen();
+	}
+}
+
+void cbStretchImage(void)
+{
+	config.specialFlags2 ^= STRETCH_IMAGE;
+
+	if (video.fullscreen)
+	{
+		leaveFullscreen();
+		enterFullscreen();
+	}
+}
+
+void configQuantizeUp(void)
+{
+	if (config.recQuantRes <= 8)
+	{
+		config.recQuantRes *= 2;
+		drawQuantValue();
+	}
+}
+
+void configQuantizeDown(void)
+{
+	if (config.recQuantRes > 1)
+	{
+		config.recQuantRes /= 2;
+		drawQuantValue();
+	}
+}
+
+void configMIDIChnUp(void)
+{
+	config.recMIDIChn++;
+	config.recMIDIChn = ((config.recMIDIChn - 1) & 15) + 1;
+
+	drawMIDIChanValue();
+}
+
+void configMIDIChnDown(void)
+{
+	config.recMIDIChn--;
+	config.recMIDIChn = (((uint16_t)(config.recMIDIChn - 1)) & 15) + 1;
+
+	drawMIDIChanValue();
+}
+
+void configMIDITransUp(void)
+{
+	if (config.recMIDITranspVal < 72)
+	{
+		config.recMIDITranspVal++;
+		drawMIDITransp();
+	}
+}
+
+void configMIDITransDown(void)
+{
+	if (config.recMIDITranspVal > -72)
+	{
+		config.recMIDITranspVal--;
+		drawMIDITransp();
+	}
+}
+
+void configMIDISensDown(void)
+{
+	scrollBarScrollLeft(SB_MIDI_SENS, 1);
+}
+
+void configMIDISensUp(void)
+{
+	scrollBarScrollRight(SB_MIDI_SENS, 1);
+}
+
+void sbMIDISens(uint32_t pos)
+{
+	if (config.recMIDIVolSens != (int16_t)pos)
+	{
+		config.recMIDIVolSens = (int16_t)pos;
+		drawMIDISens();
+	}
+}
+
+void sbAmp(uint32_t pos)
+{
+	if (config.boostLevel != (int8_t)pos + 1)
+	{
+		config.boostLevel = (int8_t)pos + 1;
+		setAudioAmp(config.boostLevel, config.masterVol, !!(config.specialFlags & BITDEPTH_32));
+		configDrawAmp();
+		updateWavRendererSettings();
+	}
+}
+
+void configAmpDown(void)
+{
+	scrollBarScrollLeft(SB_AMP_SCROLL, 1);
+}
+
+void configAmpUp(void)
+{
+	scrollBarScrollRight(SB_AMP_SCROLL, 1);
+}
+
+void sbMasterVol(uint32_t pos)
+{
+	if (config.masterVol != (int16_t)pos)
+	{
+		config.masterVol = (int16_t)pos;
+		setAudioAmp(config.boostLevel, config.masterVol, !!(config.specialFlags & BITDEPTH_32));
+		configDrawMasterVol();
+	}
+}
+
+void configMasterVolDown(void)
+{
+	scrollBarScrollLeft(SB_MASTERVOL_SCROLL, 1);
+}
+
+void configMasterVolUp(void)
+{
+	scrollBarScrollRight(SB_MASTERVOL_SCROLL, 1);
+}
