@@ -19,16 +19,21 @@ Its upstream repository is unchanged. The imported source is pinned to
    a stable instrument alias; the TILE selector lists its name.
 3. Use **Play ptn.**, **Play sng.**, **Rec. ptn.** or **Rec. sng.**. Space stops
    playback and switches between idle and editing, following TapeHead.
-4. F10, Escape, Back or Canvas returns to the canvas. Playback continues when
+4. F10, Escape or Canvas returns to the canvas. Playback continues when
    the workspace is hidden. F10 returns to the same score and transport.
 5. F9 opens the existing Router. Enable TRACK as a Sister source to feed the
    tracker into the routed processing chain. F12 opens Audio Health.
 6. Ctrl+S / Ctrl+O use TapeSister's project save/open flow.
 
+**FX**, **Prism**, **Sister** and **Fallout** open the corresponding existing
+Sister Machine pages. **Canvas** returns to the tile canvas. These buttons
+release held manual notes while tracker transport continues; Escape in the
+Sister window returns to the tracker.
+
 The former Disk Op button is **Tiles**, which returns to the canvas for tile
-selection. Instrument/sample editor buttons return to **Canvas**. Configuration
-opens the host's **Audio** panel. Trim, Zap and Nibbles are replaced by Router,
-Tiles and Back. Independent sample editing and file operations are unavailable.
+selection. Configuration opens the host's **Audio** panel and Trim opens
+**Router**. The redundant Zap shortcut is hidden. Independent sample editing
+and file operations are unavailable.
 The sample-list area displays host status and capture state.
 
 ## Tiles and audio
@@ -59,7 +64,7 @@ bindings differ from the earlier native editor's Ctrl+C/X/V shortcuts.
 
 | Control | Action |
 | --- | --- |
-| F10 / Escape / Back / Canvas | Return to canvas; transport continues |
+| F10 / Escape / Canvas | Return to canvas; transport continues |
 | Play ptn. / Right Alt | Play the current pattern |
 | Play sng. / Right Ctrl | Play the song orders |
 | Rec. ptn. / Right Shift | Record into pattern playback |

@@ -140,23 +140,27 @@ static void collect_tiles(void) {
 void ts_tapehead_status(const char *message,unsigned capture) {
     snprintf(embed.status,sizeof(embed.status),"%s",message?message:"");embed.capture=capture;
 }
+static void fx_button(void) {ts_tapehead_request(TS_TH_FX);}
+static void prism_button(void) {ts_tapehead_request(TS_TH_PRISM);}
+static void sister_button(void) {ts_tapehead_request(TS_TH_SISTER);}
+static void fallout_button(void) {ts_tapehead_request(TS_TH_FALLOUT);}
 static void canvas_button(void) {ts_tapehead_request(TS_TH_CANVAS);}
-static void tiles_button(void) {ts_tapehead_request(TS_TH_TILES);}
 static void router_button(void) {ts_tapehead_request(TS_TH_ROUTER);}
 static void menu(void) {
     pushButtons[PB_DISK_OP].caption="Tiles";
-    pushButtons[PB_INST_ED].caption="Canvas";
-    pushButtons[PB_SMP_ED].caption="Canvas";
+    pushButtons[PB_INST_ED].caption="FX";pushButtons[PB_INST_ED].callbackFuncOnUp=fx_button;
+    pushButtons[PB_SMP_ED].caption="Prism";pushButtons[PB_SMP_ED].callbackFuncOnUp=prism_button;
     pushButtons[PB_CONFIG].caption="Audio";
-    pushButtons[PB_INST_ED_EXT].caption="Canvas";
-    pushButtons[PB_SMP_ED_EXT].caption="Canvas";
+    pushButtons[PB_INST_ED_EXT].caption="Sister";pushButtons[PB_INST_ED_EXT].callbackFuncOnUp=sister_button;
+    pushButtons[PB_SMP_ED_EXT].caption="Canvas";pushButtons[PB_SMP_ED_EXT].callbackFuncOnUp=canvas_button;
     /* These mutate an independent sample library; tiles belong to the host. */
     hidePushButton(PB_ADD_CHANNELS);hidePushButton(PB_SUB_CHANNELS);
-    pushButtons[PB_NIBBLES].caption="Back";pushButtons[PB_NIBBLES].callbackFuncOnUp=canvas_button;
-    pushButtons[PB_ZAP].caption="Tiles";pushButtons[PB_ZAP].callbackFuncOnUp=tiles_button;
+    pushButtons[PB_NIBBLES].caption="Fallout";pushButtons[PB_NIBBLES].callbackFuncOnUp=fallout_button;
+    hidePushButton(PB_ZAP); /* Tiles already has its own destination button. */
     pushButtons[PB_TRIM].caption="Router";pushButtons[PB_TRIM].callbackFuncOnUp=router_button;
     if(ui.scopesShown && !ui.extendedPatternEditor && !ui.patternEditorOnly) {
-        drawPushButton(PB_NIBBLES);drawPushButton(PB_ZAP);drawPushButton(PB_TRIM);
+        drawPushButton(PB_NIBBLES);drawPushButton(PB_TRIM);
+        fillRect(294,36,59,16,PAL_DESKTOP);
         drawFramework(112,0,154,32,FRAMEWORK_TYPE1);textOut(132,10,PAL_FORGRND,"SisterTracker");
         hidePushButton(PB_SAMPLE_LIST_UP);hidePushButton(PB_SAMPLE_LIST_DOWN);
         drawFramework(424,97,164,74,FRAMEWORK_TYPE1);fillRect(427,100,158,68,PAL_DESKTOP);

@@ -37,7 +37,7 @@ static int embedded_open(SDL_Window *window,SDL_AudioDeviceID device,AudioState 
     ui->tracker_embedded_frame=ts_tapehead_frame();return 1;
 }
 static void tracker_refresh(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,
-                             TsSamplePages *pages,const TsInstrument *instrument,int rate) {
+                             TsSamplePages *pages,const TsInstrument *instrument,int rate,SisterWindow *sister) {
 #ifdef TAPESISTER_LEGACY_TRACKER_FIXTURE
     tracker_native_refresh(device,audio,ui,pages,instrument,rate);return;
 #endif
@@ -54,6 +54,17 @@ static void tracker_refresh(SDL_AudioDeviceID device,AudioState *audio,TsUiState
         ts_tapehead_focus_lost();ui->tracker_open=0;
         snprintf(ui->status,sizeof(ui->status),action==TS_TH_TILES?
             "SELECT A TILE ON THE CANVAS - F10 RETURNS TO SISTERTRACKER":"CANVAS - SISTERTRACKER CONTINUES / F10 RETURNS");
+    }
+    if(action==TS_TH_FX || action==TS_TH_PRISM || action==TS_TH_SISTER || action==TS_TH_FALLOUT) {
+        if(sister_window_ensure(sister,&ui->config)) {
+            ts_tapehead_focus_lost();
+            sister->model.fx_page=action==TS_TH_FX?1:action==TS_TH_PRISM?3:action==TS_TH_FALLOUT?2:0;
+            sister->model.fallout_lfo_open=0;
+            sister->model.preset_manage_open=sister->model.preset_editing=sister->model.preset_confirmation=0;
+            snprintf(sister->model.status,sizeof(sister->model.status),"%s - SISTERTRACKER CONTINUES",
+                action==TS_TH_FX?"FX PEDALBOARD":action==TS_TH_PRISM?"PRISM":action==TS_TH_FALLOUT?"FALLOUT":"SISTER MACHINE");
+            sister_window_show(sister,&ui->palette);
+        } else snprintf(ui->status,sizeof(ui->status),"SISTER WINDOW UNAVAILABLE: %.112s",SDL_GetError());
     }
     if(action==TS_TH_AUDIO)ts_audio_health_show(ui);
     if(action==TS_TH_ROUTER) {

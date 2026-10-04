@@ -85,17 +85,17 @@ static void fasttracks_controls(void)
     t->lanes[0].mode=TS_TRACKER_PATTERN;t->lanes[0].ratio=14;t->lanes[0].direction=TS_TRACKER_FORWARD;
     tracker_play(0,a,ui,pages,instrument,48000);
     for(int frame=0;frame<961;++frame)(void)ts_tracker_playback_read(&a->tracker,48000);
-    ts_tracker_playback_end_block(&a->tracker);tracker_refresh(0,a,ui,pages,instrument,48000);
+    ts_tracker_playback_end_block(&a->tracker);tracker_refresh(0,a,ui,pages,instrument,48000,NULL);
     assert(ui->tracker_lane_row[0]==2 && ui->tracker_lane_row[1]==1 && a->tracker.lanes[0].notes_started==3);
     uint64_t count=a->tracker.lanes[0].notes_started;double position=a->tracker.lanes[0].voice.position;
     t->control_lane=0;t->fasttracks_uses_length=1;t->length_bypass=1;
-    tracker_refresh(0,a,ui,pages,instrument,48000);
+    tracker_refresh(0,a,ui,pages,instrument,48000,NULL);
     assert(a->tracker.prepared->control_lane==0 && a->tracker.prepared->fasttracks_uses_length && a->tracker.prepared->length_bypass);
     assert(a->tracker.lanes[0].notes_started==count && a->tracker.lanes[0].voice.position==position);
     ts_tracker_playback_stop(&a->tracker);*p=saved;memcpy(t->lanes,lanes,sizeof(lanes));
     t->control_lane=control;t->fasttracks_uses_length=uses;t->length_bypass=bypass;t->ticks_per_line=tpl;t->bpm=bpm;
     ui->tracker_expanded=expanded;SDL_SetModState(KMOD_NONE);ui->wheel_guard=(TsUiWheelGuard){0};
-    tracker_refresh(0,a,ui,pages,instrument,48000);
+    tracker_refresh(0,a,ui,pages,instrument,48000,NULL);
 }
 static void editor_controls(void)
 {
@@ -168,7 +168,7 @@ static void editor_controls(void)
     /* Wheel follows hover, SDL direction and detents; FOLLOW cannot snap back. */
     ui->wheel_guard=(TsUiWheelGuard){0};ui->tracker_scroll=10;t->follow=1;
     wheel(50,150,2,0,2);assert(ui->tracker_scroll==8 && ui->tracker_follow_hold);
-    tracker_refresh(0,a,ui,pages,instrument,48000);assert(ui->tracker_scroll==8);
+    tracker_refresh(0,a,ui,pages,instrument,48000,NULL);assert(ui->tracker_scroll==8);
     wheel(50,150,2,1,2);assert(ui->tracker_scroll==10);
     wheel(50,150,0,0,.3f);assert(ui->tracker_scroll==10); /* SDL accumulates fractional detents. */
     unsigned bpm=t->bpm;wheel(230,40,-1,0,-1);assert(t->bpm==bpm); /* Protect previous wheel owner. */
@@ -305,7 +305,7 @@ static void independent_marks_and_layout(void)
 {
     TsSisterTracker *t=ui->tracker;TsTrackerEdit *e=ui->tracker_edit;
     TsTrackerPattern *p=ts_sister_tracker_pattern(t,t->editor_pattern);
-    ts_tracker_playback_stop(&a->tracker);tracker_refresh(0,a,ui,pages,instrument,48000);ui->tracker_scroll=0;t->editor_row=2;t->editor_lane=2;
+    ts_tracker_playback_stop(&a->tracker);tracker_refresh(0,a,ui,pages,instrument,48000,NULL);ui->tracker_scroll=0;t->editor_row=2;t->editor_lane=2;
     ts_tracker_edit_anchor(e,t);modified(SDLK_DOWN,KMOD_SHIFT);modified(SDLK_RIGHT,KMOD_SHIFT);
     TsTrackerRegion expected=ts_tracker_edit_region(e,t);assert(expected.row0==2 && expected.row1==3 && expected.lane0==2 && expected.lane1==3);
     key(SDLK_UP);key(SDLK_RIGHT);click(38,TS_TRACKER_GRID_Y+8*12+2);key(SDLK_z);
@@ -322,12 +322,12 @@ static void independent_marks_and_layout(void)
     key(SDLK_HOME);key(SDLK_RIGHT);assert(!a->tracker.block_pending);
     modified(SDLK_DOWN,KMOD_SHIFT);assert(e->end_row==4 && a->tracker.block_pending && a->tracker.block.row1==3);
     TsPatternId other=t->patterns[t->pattern_count-1]->id;t->editor_pattern=other;
-    assert(!ts_tracker_edit_selected(e,t));tracker_refresh(0,a,ui,pages,instrument,48000);
+    assert(!ts_tracker_edit_selected(e,t));tracker_refresh(0,a,ui,pages,instrument,48000,NULL);
     assert(a->tracker.prepared->pattern.id==source);
     t->editor_row=0;t->editor_lane=0;modified(SDLK_DOWN,KMOD_SHIFT);
     assert(a->tracker.pending_block.pattern==source && a->tracker.pending_block.row1==4);
     t->editor_pattern=source;t->editor_row=0;ui->tracker_scroll=0;
-    modified(SDLK_l,KMOD_CTRL);assert(!a->tracker.running);tracker_refresh(0,a,ui,pages,instrument,48000);
+    modified(SDLK_l,KMOD_CTRL);assert(!a->tracker.running);tracker_refresh(0,a,ui,pages,instrument,48000,NULL);
     modified(SDLK_c,KMOD_ALT);actual=ts_tracker_edit_region(e,t);assert(actual.row0==0 && actual.row1==p->rows-1 && actual.lane0==0 && actual.lane1==0);
     key(SDLK_ESCAPE);assert(!e->selected && ui->tracker_open);
     TsTrackerLayout normal=ts_tracker_layout(t,0);assert(normal.rows==19);
@@ -359,7 +359,7 @@ static int pixels_of_color(const TsFramebuffer *fb,int x,int y,int w,int h,uint3
 }
 static void tapehead_transport_visuals(void)
 {
-    ts_tracker_playback_stop(&a->tracker);tracker_refresh(0,a,ui,pages,instrument,48000);
+    ts_tracker_playback_stop(&a->tracker);tracker_refresh(0,a,ui,pages,instrument,48000,NULL);
     TsSisterTracker *t=ui->tracker,saved_tracker=*t;
     TsTrackerPattern *p=ts_sister_tracker_pattern(t,t->editor_pattern),saved_pattern=*p;
     TsUiState *saved_ui=malloc(sizeof(*ui));TsFramebuffer *fb=malloc(sizeof(*fb));assert(saved_ui && fb);
@@ -652,11 +652,11 @@ int main(int argc,char **argv)
     /* A different editor pattern cannot switch the heard pattern until Play. */
     TsPatternId heard=a->tracker.prepared->pattern.id,new_id;
     assert(ts_sister_tracker_add_pattern(&pages->tracker,64,&new_id,error,sizeof(error)));
-    pages->tracker.editor_pattern=new_id;ui->tracker_open=1;tracker_refresh(0,a,ui,pages,instrument,48000);
+    pages->tracker.editor_pattern=new_id;ui->tracker_open=1;tracker_refresh(0,a,ui,pages,instrument,48000,NULL);
     assert(a->tracker.prepared->pattern.id==heard);
     tracker_play(0,a,ui,pages,instrument,48000);assert(a->tracker.prepared->pattern.id==new_id);
     pages->tracker.editor_pattern=heard;ui->tracker_scroll=0;
-    tracker_refresh(0,a,ui,pages,instrument,48000);
+    tracker_refresh(0,a,ui,pages,instrument,48000,NULL);
     editor_controls();
     preferred_edit_controls();
     tapehead_columns_and_overlay();
@@ -669,7 +669,7 @@ int main(int argc,char **argv)
         TsSisterTracker *t=ui->tracker;t->editor_row=2;t->editor_lane=2;
         ts_tracker_edit_anchor(ui->tracker_edit,t);ts_tracker_edit_mark(ui->tracker_edit,t,5,3);
         modified(SDLK_l,KMOD_CTRL);float frame[2];audio_callback(a,(Uint8*)frame,sizeof(frame));
-        t->editor_row=0;t->editor_lane=0;ui->tracker_field=1;tracker_refresh(0,a,ui,pages,instrument,48000);
+        t->editor_row=0;t->editor_lane=0;ui->tracker_field=1;tracker_refresh(0,a,ui,pages,instrument,48000,NULL);
         ui->tracker_hover_y=0;
         TsFramebuffer *fb=malloc(sizeof(*fb));assert(fb);ts_ui_render(fb,ui,instrument);
         SDL_Surface *s=SDL_CreateRGBSurfaceFrom(fb->pixels,640,400,32,640*4,0xff0000,0xff00,0xff,0xff000000);
@@ -691,7 +691,7 @@ int main(int argc,char **argv)
             t->editor_row=0;t->editor_lane=0;ts_tracker_edit_anchor(ui->tracker_edit,t);
             tracker_play(0,a,ui,pages,instrument,48000);
             for(int frame=0;frame<24001;++frame)(void)ts_tracker_playback_read(&a->tracker,48000);
-            ts_tracker_playback_end_block(&a->tracker);tracker_refresh(0,a,ui,pages,instrument,48000);
+            ts_tracker_playback_end_block(&a->tracker);tracker_refresh(0,a,ui,pages,instrument,48000,NULL);
             ui->tracker_hover_y=0;ui->tracker_field=0;
             ts_ui_render(fb,ui,instrument);assert(!SDL_SaveBMP(s,argv[4]));
             if(argc>5){ui->tracker_expanded=1;ts_ui_render(fb,ui,instrument);assert(!SDL_SaveBMP(s,argv[5]));ui->tracker_expanded=0;}

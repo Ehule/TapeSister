@@ -69,6 +69,31 @@ static void click(int x,int y) {
     assert(tracker_event(&event,test_window,0,test_audio,test_ui,test_pages,test_bank,48000));
     event.type=SDL_MOUSEBUTTONUP;assert(tracker_event(&event,test_window,0,test_audio,test_ui,test_pages,test_bank,48000));
 }
+static void workspace_buttons(void) {
+    static SisterWindow sister;
+    ts_sister_ui_model_init(&sister.model,&test_ui->config);
+    const int buttons[][3]={{390,110,1},{390,128,3},{325,110,0},{325,25,2}};
+    for(unsigned i=0;i<sizeof(buttons)/sizeof(buttons[0]);++i) {
+        TsMidiEvent midi={0};midi.action=TS_MIDI_ACTION_NOTE_ON;
+        midi.note.channel=0;midi.note.midi_note=72;midi.note.velocity=100;
+        assert(ts_tapehead_midi(&midi,1));
+        click(buttons[i][0],buttons[i][1]);
+        uint64_t score_hash=ts_sister_tracker_hash(&test_pages->tracker);
+        tracker_refresh(0,test_audio,test_ui,test_pages,test_bank,48000,&sister);
+        assert(sister.window && sister.renderer && sister.texture && sister.model.visible);
+        assert(sister.model.fx_page==buttons[i][2]);
+        assert(SDL_GetWindowFlags(sister.window)&SDL_WINDOW_SHOWN);
+        assert(ts_tapehead_running() && ts_tapehead_block_active());
+        assert(ts_sister_tracker_hash(&test_pages->tracker)==score_hash);
+        midi.action=TS_MIDI_ACTION_NOTE_OFF;assert(!ts_tapehead_midi(&midi,0));
+        application_window_focus(test_window,&sister);
+        assert(!sister.model.visible && test_ui->tracker_open);
+    }
+    click(325,128);tracker_refresh(0,test_audio,test_ui,test_pages,test_bank,48000,&sister);
+    assert(!test_ui->tracker_open && ts_tapehead_running() && ts_tapehead_block_active());
+    press(SDLK_F10,SDL_SCANCODE_F10,KMOD_NONE);assert(test_ui->tracker_open);
+    SDL_DestroyTexture(sister.texture);SDL_DestroyRenderer(sister.renderer);SDL_DestroyWindow(sister.window);
+}
 static void replayer_commands(void) {
     TsSisterTracker *t=&test_pages->tracker;const unsigned record_size=7+256*8*7;
     ts_tapehead_stop();
@@ -184,7 +209,7 @@ int main(int argc,char **argv) {
     score=test_pages->tracker.embedded_data;record=score+52+80+256;
     assert(score[52]==3 && score[62]==5 && score[51]==2);
     raw=record+7+(200*8+3)*7;assert(raw[2]==0xa5&&raw[3]==25&&raw[4]==0x33&&raw[5]==0x16&&raw[6]==0xff);
-    if(argc>2) {tracker_refresh(0,test_audio,test_ui,test_pages,test_bank,48000);snapshot(argv[2]);}
+    if(argc>2) {tracker_refresh(0,test_audio,test_ui,test_pages,test_bank,48000,NULL);snapshot(argv[2]);}
     /* Original marking and Ctrl+L block transport. */
     press(SDLK_HOME,SDL_SCANCODE_HOME,KMOD_NONE);
     press(SDLK_DOWN,SDL_SCANCODE_DOWN,KMOD_ALT);
@@ -194,6 +219,7 @@ int main(int argc,char **argv) {
     float left=0,right=0;for(int i=0;i<512;++i){left+=rendered[i*2];right+=rendered[i*2+1];}
     assert(left>0.01f && right<-.01f);
     exact_cycle_capture();
+    workspace_buttons();
     /* A changed generation retains immutable sounding audio until retrigger. */
     for(size_t i=0;i<test_bank->current.frames;++i){test_bank->current.data[i*2]=-.321f;test_bank->current.data[i*2+1]=.432f;}
     ++test_bank->generation;
@@ -208,7 +234,7 @@ int main(int argc,char **argv) {
     press(SDLK_F10,SDL_SCANCODE_F10,KMOD_NONE);assert(test_ui->tracker_open&&ts_tapehead_block_active());
     press(SDLK_l,SDL_SCANCODE_L,KMOD_CTRL);assert(!ts_tapehead_block_active());
     press(SDLK_BACKSPACE,SDL_SCANCODE_BACKSPACE,KMOD_CTRL|KMOD_ALT);
-    tracker_refresh(0,test_audio,test_ui,test_pages,test_bank,48000);
+    tracker_refresh(0,test_audio,test_ui,test_pages,test_bank,48000,NULL);
     assert(test_pages->tracker.embedded_data[27] || test_pages->tracker.embedded_data[28]);
     /* Host overlays own input and do not change upstream STEP. */
     step=test_pages->tracker.edit_step;test_ui->router_open=1;

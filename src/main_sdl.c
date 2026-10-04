@@ -17186,7 +17186,7 @@ int main(int argc, char **argv)
                      sizeof(sister_window.model.status), "ROLLING MEMORY CLEARED");
         }
         poll_fm_preview(device,&audio,&ui,&fm_preview);
-        tracker_refresh(device,&audio,&ui,&sample_pages,&instrument,obtained.freq);
+        tracker_refresh(device,&audio,&ui,&sample_pages,&instrument,obtained.freq,&sister_window);
         keyboard_sequence_prepare(device,&audio,&ui,&instrument,&fm_preview,obtained.freq,0);
         poll_transform_worker(device, &audio, &ui, &instrument, &transform);
         mosaic_commit(device,&ui,&instrument,&mosaic);

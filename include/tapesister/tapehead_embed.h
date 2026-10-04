@@ -5,7 +5,7 @@
 #include "tapesister/ui.h"
 #include "tapesister/note_event.h"
 
-enum { TS_TH_NONE, TS_TH_CANVAS, TS_TH_TILES, TS_TH_AUDIO, TS_TH_CAPTURE, TS_TH_CYCLE_CAPTURE, TS_TH_ROUTER };
+enum { TS_TH_NONE, TS_TH_CANVAS, TS_TH_TILES, TS_TH_AUDIO, TS_TH_CAPTURE, TS_TH_CYCLE_CAPTURE, TS_TH_ROUTER, TS_TH_FX, TS_TH_PRISM, TS_TH_SISTER, TS_TH_FALLOUT };
 typedef struct {
     SDL_Window *window;
     void *context;
