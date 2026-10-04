@@ -737,7 +737,7 @@ NoMove:
 void showNibblesScreen(void)
 {
 #ifdef TAPEHEAD_EMBEDDED
-	ts_tapehead_request(1); return;
+	ts_tapehead_request(TS_TH_FALLOUT); return;
 #endif
 	if (ui.extendedPatternEditor)
 		exitPatternEditorExtended();

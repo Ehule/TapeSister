@@ -60,7 +60,7 @@ static const uint8_t scaleOrder[3] = { 8, 4, 9 };
 static const char *paletteEntryNames[TAPEHEAD_PALETTE_EDIT_COUNT] =
 {
 	"PAT Text", "Block Mark", "Block Text", "Mouse", "Desktop", "Buttons",
-	"Note / Wave", "PAT Inst.", "PAT Volume", "PAT Tuning", "PAT Effect",
+	"Note / Wave", "PAT Tile", "PAT Volume", "PAT Tuning", "PAT Effect",
 	"PAT Empty", "Wave Select", "LEN Head", "FT Head", "CONTROL Head", "FT Sync LED",
 	"FT Phase LED", "FT Song Badge", "FT+LEN Head"
 };
@@ -594,6 +594,9 @@ static void drawTrueColorRect(int32_t x, int32_t y, int32_t width,
 
 static void drawTapeSisterSwatches(void)
 {
+#ifdef TAPEHEAD_EMBEDDED
+	return;
+#endif
 	initializeUniversalPalette();
 	textOutShadow(400, 159, PAL_FORGRND, PAL_DSKTOP2, "TS:");
 	for (int32_t swatch = 0;
@@ -627,6 +630,9 @@ static void drawTapeSisterSwatches(void)
 
 static int32_t tapeSisterSwatchFromPoint(int32_t x, int32_t y)
 {
+#ifdef TAPEHEAD_EMBEDDED
+	return -1;
+#endif
 	if (x < TAPESISTER_SWATCH_X || y < TAPESISTER_SWATCH_Y ||
 		y >= TAPESISTER_SWATCH_Y + TAPESISTER_SWATCH_H)
 	{
@@ -687,6 +693,9 @@ static void sampleTapeSisterSwatch(int32_t swatch)
 
 static void paletteDragMoved(void)
 {
+#ifdef TAPEHEAD_EMBEDDED
+	if (config.cfg_StdPalNum != PAL_USER_DEFINED) promotePaletteToUserDefined();
+#endif
 	if (config.cfg_StdPalNum != PAL_USER_DEFINED)
 	{
 		updatePaletteEditor(); // resets colors/contrast vars
@@ -767,6 +776,9 @@ void sbPalContrastPos(uint32_t pos)
 
 void configPalRDown(void)
 {
+#ifdef TAPEHEAD_EMBEDDED
+	if(config.cfg_StdPalNum!=PAL_USER_DEFINED)promotePaletteToUserDefined();
+#endif
 	if (config.cfg_StdPalNum != PAL_USER_DEFINED)
 		showColorErrorMsg();
 	else if ((config.specialFlags2 & HARDWARE_MOUSE) && cfg_ColorNum == 3)
@@ -777,6 +789,9 @@ void configPalRDown(void)
 
 void configPalRUp(void)
 {
+#ifdef TAPEHEAD_EMBEDDED
+	if(config.cfg_StdPalNum!=PAL_USER_DEFINED)promotePaletteToUserDefined();
+#endif
 	if (config.cfg_StdPalNum != PAL_USER_DEFINED)
 		showColorErrorMsg();
 	else if ((config.specialFlags2 & HARDWARE_MOUSE) && cfg_ColorNum == 3)
@@ -787,6 +802,9 @@ void configPalRUp(void)
 
 void configPalGDown(void)
 {
+#ifdef TAPEHEAD_EMBEDDED
+	if(config.cfg_StdPalNum!=PAL_USER_DEFINED)promotePaletteToUserDefined();
+#endif
 	if (config.cfg_StdPalNum != PAL_USER_DEFINED)
 		showColorErrorMsg();
 	else if ((config.specialFlags2 & HARDWARE_MOUSE) && cfg_ColorNum == 3)
@@ -797,6 +815,9 @@ void configPalGDown(void)
 
 void configPalGUp(void)
 {
+#ifdef TAPEHEAD_EMBEDDED
+	if(config.cfg_StdPalNum!=PAL_USER_DEFINED)promotePaletteToUserDefined();
+#endif
 	if (config.cfg_StdPalNum != PAL_USER_DEFINED)
 		showColorErrorMsg();
 	else if ((config.specialFlags2 & HARDWARE_MOUSE) && cfg_ColorNum == 3)
@@ -807,6 +828,9 @@ void configPalGUp(void)
 
 void configPalBDown(void)
 {
+#ifdef TAPEHEAD_EMBEDDED
+	if(config.cfg_StdPalNum!=PAL_USER_DEFINED)promotePaletteToUserDefined();
+#endif
 	if (config.cfg_StdPalNum != PAL_USER_DEFINED)
 		showColorErrorMsg();
 	else if ((config.specialFlags2 & HARDWARE_MOUSE) && cfg_ColorNum == 3)
@@ -817,6 +841,9 @@ void configPalBDown(void)
 
 void configPalBUp(void)
 {
+#ifdef TAPEHEAD_EMBEDDED
+	if(config.cfg_StdPalNum!=PAL_USER_DEFINED)promotePaletteToUserDefined();
+#endif
 	if (config.cfg_StdPalNum != PAL_USER_DEFINED)
 		showColorErrorMsg();
 	else if ((config.specialFlags2 & HARDWARE_MOUSE) && cfg_ColorNum == 3)
@@ -827,6 +854,9 @@ void configPalBUp(void)
 
 void configPalContDown(void)
 {
+#ifdef TAPEHEAD_EMBEDDED
+	if(config.cfg_StdPalNum!=PAL_USER_DEFINED)promotePaletteToUserDefined();
+#endif
 	if (config.cfg_StdPalNum != PAL_USER_DEFINED)
 		showColorErrorMsg();
 	else if ((config.specialFlags2 & HARDWARE_MOUSE) && cfg_ColorNum == 3)
@@ -837,6 +867,9 @@ void configPalContDown(void)
 
 void configPalContUp(void)
 {
+#ifdef TAPEHEAD_EMBEDDED
+	if(config.cfg_StdPalNum!=PAL_USER_DEFINED)promotePaletteToUserDefined();
+#endif
 	if (config.cfg_StdPalNum != PAL_USER_DEFINED)
 		showColorErrorMsg();
 	else if ((config.specialFlags2 & HARDWARE_MOUSE) && cfg_ColorNum == 3)
@@ -933,6 +966,10 @@ void showPaletteEditor(void)
 	static const char *modeNames[3] = { "Edit", "Always", "Mono" };
 	textOutShadow(400,  92, PAL_FORGRND, PAL_DSKTOP2, "Preset:");
 	textOutShadow(400, 109, PAL_FORGRND, PAL_DSKTOP2, "PAT Colors:");
+#ifdef TAPEHEAD_EMBEDDED
+	textOutTiny(400,128,"COLORS SAVE WITH THE PROJECT",video.palette[PAL_FORGRND]);
+	textOutTiny(400,140,"SAVE DEFAULTS FOR NEW PROJECTS",video.palette[PAL_FORGRND]);
+#else
 	textOutShadow(400, 126, PAL_FORGRND, PAL_DSKTOP2, "Exchange:");
 	textOutShadow(400, 143, PAL_FORGRND, PAL_DSKTOP2, "Program:");
 	drawFramework(474, 122, 156, 14, FRAMEWORK_TYPE2);
@@ -942,6 +979,7 @@ void showPaletteEditor(void)
 	drawTextBox(TB_CONF_TAPESISTER_EXCHANGE);
 	drawTextBox(TB_CONF_TAPESISTER_EXECUTABLE);
 	drawTapeSisterSwatches();
+#endif
 	pushButtons[PB_CONFIG_PAL_PRESET].caption = (char *)presetNames[config.cfg_StdPalNum];
 	pushButtons[PB_CONFIG_PAL_COLOR_MODE].caption = (char *)modeNames[MIN(tapeheadConfig.patternColorMode, 2)];
 	charOutShadow(503, 17, PAL_FORGRND, PAL_DSKTOP2, 'R');
@@ -967,8 +1005,10 @@ void showPaletteEditor(void)
 	showScrollBar(SB_PAL_CONTRAST);
 	showPushButton(PB_CONFIG_PAL_CONT_DOWN);
 	showPushButton(PB_CONFIG_PAL_CONT_UP);
+#ifndef TAPEHEAD_EMBEDDED
 	showPushButton(PB_CONFIG_PAL_IMPORT);
 	showPushButton(PB_CONFIG_PAL_EXPORT);
+#endif
 
 	updatePaletteEditor();
 }
@@ -1135,7 +1175,13 @@ uint32_t patternFieldColor(uint8_t field, bool populated)
 
 bool paletteListMouseWheel(bool directionUp, int32_t x, int32_t y)
 {
-	if (!ui.configScreenShown || editor.currConfigScreen != CONFIG_SCREEN_LAYOUT ||
+	if (!ui.configScreenShown ||
+#ifndef TAPEHEAD_EMBEDDED
+        editor.currConfigScreen != CONFIG_SCREEN_LAYOUT
+#else
+        false
+#endif
+ ||
 		x < PAL_LIST_X || x >= 501 || y < PAL_LIST_Y || y >= PAL_LIST_Y + (PAL_LIST_ROW_H * PAL_LIST_VISIBLE_ROWS))
 		return false;
 
@@ -1149,7 +1195,13 @@ bool paletteListMouseWheel(bool directionUp, int32_t x, int32_t y)
 
 bool paletteListMouseDown(int32_t x, int32_t y)
 {
-	if (!ui.configScreenShown || editor.currConfigScreen != CONFIG_SCREEN_LAYOUT)
+	if (!ui.configScreenShown ||
+#ifndef TAPEHEAD_EMBEDDED
+        editor.currConfigScreen != CONFIG_SCREEN_LAYOUT
+#else
+        false
+#endif
+)
 		return false;
 	const int32_t swatch = tapeSisterSwatchFromPoint(x, y);
 	if (swatch >= 0)
@@ -1208,3 +1260,27 @@ void setUserPatternColor(uint8_t field, uint32_t rgb)
 	patternColors[PAL_USER_DEFINED][field].g = color8To6(RGB32_G(rgb));
 	patternColors[PAL_USER_DEFINED][field].b = color8To6(RGB32_B(rgb));
 }
+
+#ifdef TAPEHEAD_EMBEDDED
+/* Portable six-bit user palette, including all tracker field/playhead colors. */
+void tapeheadEmbeddedPaletteGet(uint8_t *bytes)
+{
+    initPatternColors();
+    for (int i=0;i<TAPEHEAD_PALETTE_EDIT_COUNT;++i) {
+        pal16 c=i<6?palTable[PAL_USER_DEFINED][FTC_EditOrder[i]]:patternColors[PAL_USER_DEFINED][i-6];
+        *bytes++=c.r;*bytes++=c.g;*bytes++=c.b;
+    }
+    *bytes++=palContrast[PAL_USER_DEFINED][0];*bytes=palContrast[PAL_USER_DEFINED][1];
+}
+void tapeheadEmbeddedPaletteSet(const uint8_t *bytes)
+{
+    initPatternColors();
+    for (int i=0;i<TAPEHEAD_PALETTE_EDIT_COUNT;++i) {
+        pal16 *c=i<6?&palTable[PAL_USER_DEFINED][FTC_EditOrder[i]]:&patternColors[PAL_USER_DEFINED][i-6];
+        c->r=*bytes++;c->g=*bytes++;c->b=*bytes++;
+    }
+    applyPaletteContrast(PAL_USER_DEFINED,4,bytes[0]);
+    applyPaletteContrast(PAL_USER_DEFINED,5,bytes[1]);
+    setPalette(palTable[config.cfg_StdPalNum],REDRAW_SCREEN);
+}
+#endif

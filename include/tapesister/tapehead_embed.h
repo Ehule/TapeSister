@@ -5,7 +5,7 @@
 #include "tapesister/ui.h"
 #include "tapesister/note_event.h"
 
-enum { TS_TH_NONE, TS_TH_CANVAS, TS_TH_TILES, TS_TH_AUDIO, TS_TH_CAPTURE, TS_TH_CYCLE_CAPTURE, TS_TH_ROUTER, TS_TH_FX, TS_TH_PRISM, TS_TH_SISTER, TS_TH_FALLOUT };
+#include "tapesister/tapehead_actions.h"
 typedef struct {
     SDL_Window *window;
     void *context;
@@ -36,4 +36,8 @@ void ts_tapehead_host_lock(void);
 void ts_tapehead_host_unlock(void);
 void ts_tapehead_host_present(void);
 void ts_tapehead_request(int action);
+void ts_tapehead_show_config(void);
+int ts_tapehead_config_visible(void);
+int ts_tapehead_preferences_load(const char *path,char *error,size_t size);
+int ts_tapehead_preferences_save(const char *path,char *error,size_t size);
 #endif

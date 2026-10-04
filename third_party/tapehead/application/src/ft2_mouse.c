@@ -508,7 +508,7 @@ static bool handleTrackLengthHeaderWheel(bool directionUp)
 		const uint16_t step = (modifiers & KMOD_SHIFT) ? 8 : 1;
 		const uint16_t controlMax = CLAMP(
 			tapeheadConfig.trackLengthControlMax, 1, MAX_PATT_LEN);
-		if (directionUp && oldLength < controlMax)
+		if (directionUp)
 			newLength = (uint16_t)MIN((int32_t)controlMax,
 				(int32_t)oldLength + step);
 		else if (oldLength <= step)
@@ -998,8 +998,12 @@ void mouseButtonDownHandler(uint8_t mouseButton)
 	// mouse 0,0 = open exit dialog (also make sure the test always works in fullscreen mode)
 	if ((mouse.x == 0 && mouse.y == 0) || (video.fullscreen && (video.renderX > 0 || video.renderY > 0) && (mouse.rawX == 0 && mouse.rawY == 0)))
 	{
+#ifdef TAPEHEAD_EMBEDDED
+		ts_tapehead_request(TS_TH_CANVAS);
+#else
 		if (quitBox(false) == 1)
 			editor.throwExit = true;
+#endif
 
 		// release button presses from okBox()
 		mouse.leftButtonPressed = false;

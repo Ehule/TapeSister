@@ -3147,7 +3147,7 @@ static void drawDiskOpScreen(void)
 void showDiskOpScreen(void)
 {
 #ifdef TAPEHEAD_EMBEDDED
-	ts_tapehead_request(2);return;
+	ts_tapehead_request(TS_TH_OPEN_PROJECT);return;
 #endif
 	// if first time opening Disk Op., set initial directory
 	if (firstTimeOpeningDiskOp)
@@ -3433,7 +3433,7 @@ void exitDiskOpScreen(void)
 void toggleDiskOpScreen(void)
 {
 #ifdef TAPEHEAD_EMBEDDED
-	ts_tapehead_request(2);
+	ts_tapehead_request(TS_TH_OPEN_PROJECT);
 	return;
 #endif
 	if (ui.diskOpShown)

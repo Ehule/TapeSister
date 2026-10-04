@@ -14,10 +14,12 @@
 #endif
 #include "ft2_replayer.h"
 #ifdef TAPEHEAD_EMBEDDED
+#include "tapesister/tapehead_actions.h"
 void ts_tapehead_host_lock(void);
 void ts_tapehead_host_unlock(void);
 void ts_tapehead_host_present(void);
 void ts_tapehead_request(int action);
+void ts_tapehead_show_config(void);
 void ts_tapehead_mix_tile(void *voice, unsigned offset, unsigned frames);
 double ts_tapehead_tile_begin(void *voice);
 void ts_tapehead_audio_span(unsigned offset,unsigned frames,int seam);

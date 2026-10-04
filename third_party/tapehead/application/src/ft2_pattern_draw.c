@@ -1087,10 +1087,9 @@ static void drawFastTracksPOCStatus(uint16_t yPos, const fastTracksSnapshot_t *s
 		textOutTiny(ratioX, yPos + 1, ratioText, ratioColor);
 
 		int32_t statusX = ratioX + ratioWidth + 2;
-		if (reversed)
-		{
+		{ /* Saved playhead direction: F, R, or B (bounce). */
 			fillRect((uint16_t)statusX, yPos, 5, 8, PAL_BLCKMRK);
-			textOutTiny(statusX + 1, yPos + 1, "R",
+			textOutTiny(statusX + 1, yPos + 1, track->bounce?"B":reversed?"R":"F",
 				video.palette[PAL_FASTTRACKS_PHASE]);
 			statusX += 6;
 		}

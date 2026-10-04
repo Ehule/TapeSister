@@ -3648,7 +3648,7 @@ void exitSampleEditor(void)
 void showSampleEditor(void)
 {
 #ifdef TAPEHEAD_EMBEDDED
-	ts_tapehead_request(1);return;
+	ts_tapehead_request(TS_TH_CANVAS);return;
 #endif
 	if (ui.extendedPatternEditor)
 		exitPatternEditorExtended();
@@ -3724,7 +3724,7 @@ void showSampleEditor(void)
 void toggleSampleEditor(void)
 {
 #ifdef TAPEHEAD_EMBEDDED
-	ts_tapehead_request(1);
+	ts_tapehead_request(TS_TH_CANVAS);
 	return;
 #endif
 	hideInstEditor();
@@ -4245,7 +4245,7 @@ void drawSampleEditorExt(void)
 void showSampleEditorExt(void)
 {
 #ifdef TAPEHEAD_EMBEDDED
-	ts_tapehead_request(1);return;
+	ts_tapehead_request(TS_TH_CANVAS);return;
 #endif
 	hideTopScreen();
 	showTopScreen(DONT_RESTORE_SCREENS);
@@ -4285,7 +4285,7 @@ void hideSampleEditorExt(void)
 void toggleSampleEditorExt(void)
 {
 #ifdef TAPEHEAD_EMBEDDED
-	ts_tapehead_request(1);
+	ts_tapehead_request(TS_TH_CANVAS);
 	return;
 #endif
 	if (ui.sampleEditorExtShown)

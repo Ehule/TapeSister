@@ -9,9 +9,13 @@
 #include "ft2_audio.h"
 #include "ft2_bmp.h"
 #include "ft2_config.h"
+#include "ft2_palette.h"
+#include "ft2_checkboxes.h"
+#include "ft2_tables.h"
 #include "ft2_keyboard.h"
 #include "ft2_mouse.h"
 #include "ft2_pattern_ed.h"
+#include "ft2_pattern_draw.h"
 #include "ft2_edit.h"
 #include "ft2_sample_ed.h"
 #include "ft2_pushbuttons.h"
@@ -55,6 +59,8 @@ static struct {
     TsPatternId ids[256];
     TsTileId selected_tile;
     uint64_t tile_stamp[129];
+    TsTileLocation tile_location[129];
+    unsigned tile_rate[129];
     float *tile_data[129];
     RetiredTile *retired;
     uint8_t midi_held[16][128];
@@ -64,6 +70,7 @@ static struct {
     int capture_seam_pending;
     unsigned rate;
     double wheel_fraction;
+    int wheel_target;
     char status[160];
     unsigned capture;
 } embed;
@@ -140,38 +147,65 @@ static void collect_tiles(void) {
 void ts_tapehead_status(const char *message,unsigned capture) {
     snprintf(embed.status,sizeof(embed.status),"%s",message?message:"");embed.capture=capture;
 }
+
+#include "ts_tapehead_settings.inc"
+
 static void fx_button(void) {ts_tapehead_request(TS_TH_FX);}
 static void prism_button(void) {ts_tapehead_request(TS_TH_PRISM);}
 static void sister_button(void) {ts_tapehead_request(TS_TH_SISTER);}
 static void fallout_button(void) {ts_tapehead_request(TS_TH_FALLOUT);}
 static void canvas_button(void) {ts_tapehead_request(TS_TH_CANVAS);}
 static void router_button(void) {ts_tapehead_request(TS_TH_ROUTER);}
+static void project_save_button(void) {ts_tapehead_request(TS_TH_SAVE_PROJECT);}
+static void project_open_button(void) {ts_tapehead_request(TS_TH_OPEN_PROJECT);}
+static void length_bypass_button(void) {fastTracksPOCSetLengthTopologyBypassed(!fastTracksPOCLengthTopologyIsBypassed());}
+static int main_panel_visible(void) {
+    return !ui.extendedPatternEditor && !ui.patternEditorOnly && !ui.configScreenShown &&
+           !ui.helpScreenShown && !ui.aboutScreenShown && !ui.nibblesShown;
+}
 static void menu(void) {
-    pushButtons[PB_DISK_OP].caption="Tiles";
+    if(ui.configScreenShown) {textOutClipX(400,157,PAL_FORGRND,preferences_message,628);return;}
+    pushButtons[PB_DISK_OP].caption="Open";pushButtons[PB_DISK_OP].callbackFuncOnUp=project_open_button;
     pushButtons[PB_INST_ED].caption="FX";pushButtons[PB_INST_ED].callbackFuncOnUp=fx_button;
     pushButtons[PB_SMP_ED].caption="Prism";pushButtons[PB_SMP_ED].callbackFuncOnUp=prism_button;
-    pushButtons[PB_CONFIG].caption="Audio";
+    pushButtons[PB_CONFIG].caption="Config";
     pushButtons[PB_INST_ED_EXT].caption="Sister";pushButtons[PB_INST_ED_EXT].callbackFuncOnUp=sister_button;
     pushButtons[PB_SMP_ED_EXT].caption="Canvas";pushButtons[PB_SMP_ED_EXT].callbackFuncOnUp=canvas_button;
     /* These mutate an independent sample library; tiles belong to the host. */
     hidePushButton(PB_ADD_CHANNELS);hidePushButton(PB_SUB_CHANNELS);
     pushButtons[PB_NIBBLES].caption="Fallout";pushButtons[PB_NIBBLES].callbackFuncOnUp=fallout_button;
-    hidePushButton(PB_ZAP); /* Tiles already has its own destination button. */
+    pushButtons[PB_ZAP].caption="Save";pushButtons[PB_ZAP].callbackFuncOnUp=project_save_button;
     pushButtons[PB_TRIM].caption="Router";pushButtons[PB_TRIM].callbackFuncOnUp=router_button;
-    if(ui.scopesShown && !ui.extendedPatternEditor && !ui.patternEditorOnly) {
-        drawPushButton(PB_NIBBLES);drawPushButton(PB_TRIM);
-        fillRect(294,36,59,16,PAL_DESKTOP);
-        drawFramework(112,0,154,32,FRAMEWORK_TYPE1);textOut(132,10,PAL_FORGRND,"SisterTracker");
+    if(main_panel_visible()) {
+        drawPushButton(PB_NIBBLES);drawPushButton(PB_TRIM);drawPushButton(PB_CONFIG);
+        showPushButton(PB_ZAP);
+        if(ui.scopesShown) {
+            drawFramework(112,0,154,32,FRAMEWORK_TYPE1);textOut(132,5,PAL_FORGRND,"TrackSister");
+            textOutTiny(126,20,fastTracksPOCMasterIsEnabled()?"FASTRACKS ON":"FASTRACKS OFF",video.palette[PAL_FORGRND]);
+            if(embed.capture)textOutTiny(213,20,"CAPTURE",video.palette[PAL_FORGRND]);
+            pushButtons[PB_BADGE].bitmapFlag=pushButtons[PB_BADGE].bitmap32Flag=false;
+            pushButtons[PB_BADGE].caption="LEN";pushButtons[PB_BADGE].caption2=fastTracksPOCLengthTopologyIsBypassed()?"OFF":"ON";
+            pushButtons[PB_BADGE].callbackFuncOnUp=length_bypass_button;drawPushButton(PB_BADGE);
+        }
         hidePushButton(PB_SAMPLE_LIST_UP);hidePushButton(PB_SAMPLE_LIST_DOWN);
         drawFramework(424,97,164,74,FRAMEWORK_TYPE1);fillRect(427,100,158,68,PAL_DESKTOP);
-        textOutTiny(431,104,"TILES / F10 CANVAS",video.palette[PAL_FORGRND]);
-        textOutTiny(431,112,"F9 ROUTER / F12 AUDIO",video.palette[PAL_FORGRND]);
-        textOutTiny(431,120,embed.capture?"FILE CAPTURE ACTIVE":tapeheadBlockLoopIsActive()?"BLOCK LOOP":songPlaying?"PLAYING":"EDITING",video.palette[PAL_FORGRND]);
-        for(int line=0;line<4;++line) {
-            size_t start=(size_t)line*32, length=strlen(embed.status);char message[33];
-            if(start>=length)break;
-            snprintf(message,sizeof(message),"%.32s",embed.status+start);textOutTiny(431,135+line*8,message,video.palette[PAL_FORGRND]);
+        int a=editor.curInstr;sample_t *sample=a && instr[a]?&instr[a]->smp[0]:NULL;
+        char line[80];
+        snprintf(line,sizeof(line),"TILE %02X",a);textOutTiny(431,103,line,video.palette[PAL_FORGRND]);
+        textOutClipX(431,114,PAL_FORGRND,a?song.instrName[a]:"NO TILE",582);
+        if(sample && sample->tileData) {
+            TsTileLocation location=embed.tile_location[a];
+            snprintf(line,sizeof(line),"PAGE %u / SLOT %02u",(unsigned)location.page+1,(unsigned)location.slot+1);
+            textOutTiny(431,128,line,video.palette[PAL_FORGRND]);
+            snprintf(line,sizeof(line),"%u HZ  %u CH  %.2f SEC",embed.tile_rate[a],sample->tileChannels,
+                embed.tile_rate[a]?(double)sample->length/embed.tile_rate[a]:0);
+            textOutTiny(431,139,line,video.palette[PAL_FORGRND]);
+            static const char *loops[]={"FORWARD","REVERSE","BOUNCE","INTRO / FORWARD","INTRO / REVERSE","INTRO / BOUNCE"};
+            snprintf(line,sizeof(line),"%s",sample->loopLength?loops[MIN(sample->tileLoopMode,5)]:"ONE SHOT");
+            textOutTiny(431,146,line,video.palette[PAL_FORGRND]);
         }
+        textOutTiny(430,159,"SONG",video.palette[PAL_FORGRND]);
+        drawFramework(450,155,136,16,FRAMEWORK_TYPE2);drawTextBox(TB_SONG_NAME);
         char octave[12];snprintf(octave,sizeof(octave),"OCT %u",editor.curOctave);
         drawFramework(294,155,59,16,FRAMEWORK_TYPE1);textOut(300,159,PAL_FORGRND,octave);
     }
@@ -207,10 +241,13 @@ int ts_tapehead_init(const TsTapeHeadHost *host,unsigned rate,char *error,size_t
     config.cfg_AutoSave=false;config.specialFlags2|=HARDWARE_MOUSE;
     if(embed.host_cursor)SDL_SetCursor(embed.host_cursor);
     SDL_ShowCursor(embed.host_cursor_visible);
-    config.ptnMaxChannels=3;ui.maxVisibleChannels=8;
+    config.ptnMaxChannels=2;ui.maxVisibleChannels=8;
     if(!setupReplayer() || !tapeheadEmbeddedAudioPrepare(embed.rate,TH_FRAMES) || !setupGUI())goto bad;
+    textBoxes[TB_SONG_NAME].x=452;textBoxes[TB_SONG_NAME].y=157;
+    textBoxes[TB_SONG_NAME].w=132;textBoxes[TB_SONG_NAME].renderW=128;
     undoInit();undoLoadConfig();
     playMode=PLAYMODE_EDIT;audio.locked=false;
+    preferences_get(default_preferences);
     menu();drawGUIOnRunTime();menu();
     return 1;
 bad:
@@ -282,11 +319,25 @@ void ts_tapehead_tick(void) {
     tapeheadEmbeddedScopeTick();handleRedrawing();menu();
     ++editor.framesPassed;renderSprites();
 }
+static int fasttracks_header_lane(int x,int y) {
+    if(!ui.patternEditorShown || !fastTracksPOCMasterIsEnabled() || x<30 || !ui.patternChannelWidth)return -1;
+    const pattCoord2_t *p=&pattCoord2Table[config.ptnStretch][ui.pattChanScrollShown][getPatternEditorView()];
+    if(y<p->upperRowsY+10 || y>=p->upperRowsY+18)return -1;
+    int visible=(x-30)/ui.patternChannelWidth,lane=visible+ui.channelOffset;
+    return visible<ui.numChannelsShown && lane<song.numChannels?lane:-1;
+}
+static void ratio_adjust(int lane,int delta) {
+    if(!fastTracksPOCIsSelected(lane))fastTracksPOCSetMode(lane,FAST_TRACKS_MODE_PATTERN);
+    int count=fastTracksPOCGetRatioCount();
+    fastTracksPOCSetRatioIndex(lane,(fastTracksPOCGetRatioIndex(lane)+count+delta)%count);
+    setSongModifiedFlag();
+}
 int ts_tapehead_event(const SDL_Event *event,int x,int y) {
     if(!embed.initialized)return 0;
     mouse.x=mouse.rawX=x;mouse.y=mouse.rawY=y;
     switch(event->type) {
     case SDL_KEYDOWN:
+        if(event->key.keysym.sym==SDLK_ESCAPE && ui.configScreenShown) {exitConfigScreen();return 1;}
         /* MIDI and project commands belong to the host. Instrument destructive
            shortcuts cannot modify the host's tile registry. */
         if(event->key.keysym.scancode==SDL_SCANCODE_KP_PERIOD)return 1;
@@ -315,22 +366,53 @@ int ts_tapehead_event(const SDL_Event *event,int x,int y) {
         if(note)recordNote(note,0);
         return 1;
     }
-    case SDL_MOUSEBUTTONDOWN:
-        if(ui.scopesShown && !ui.extendedPatternEditor && !ui.patternEditorOnly && x>=424 && x<588 && y>=97 && y<171)return 1;
-        if(!ui.extendedPatternEditor && !ui.patternEditorOnly && x>=294 && x<353 && y>=155 && y<171) {
+    case SDL_MOUSEBUTTONDOWN: {
+        readKeyModifiers();
+        int lane=fasttracks_header_lane(x,y);
+        if(lane>=0 && !ui.sysReqShown && !editor.editTextFlag &&
+           (event->button.button==SDL_BUTTON_LEFT || event->button.button==SDL_BUTTON_RIGHT)) {
+            int local=(x-30)%ui.patternChannelWidth;
+            int ratio_width=fastTracksPOCGetRatioNumerator(lane)>=10 || fastTracksPOCGetRatioDenominator(lane)>=10?16:12;
+            if(SDL_GetModState()&KMOD_SHIFT || (event->button.button==SDL_BUTTON_LEFT && local>=ui.patternChannelWidth-17))
+                fastTracksPOCSetMode(lane,(fastTracksPOCGetMode(lane)+1)%3);
+            else if(event->button.button==SDL_BUTTON_RIGHT || (local>=ratio_width+4 && local<ratio_width+10)) {
+                if(!fastTracksPOCIsSelected(lane))fastTracksPOCSetMode(lane,FAST_TRACKS_MODE_PATTERN);
+                fastTracksPOCSetDirection(lane,(fastTracksPOCGetDirection(lane)+1)%3);
+            } else if(!fastTracksPOCIsSelected(lane))fastTracksPOCSetMode(lane,FAST_TRACKS_MODE_PATTERN);
+            else ratio_adjust(lane,1);
+            setSongModifiedFlag();return 1;
+        }
+        if(main_panel_visible() && x>=424 && x<588 && y>=97 && y<155)return 1;
+        if(main_panel_visible() && x>=294 && x<353 && y>=155 && y<171) {
             editor.curOctave=CLAMP(editor.curOctave+(event->button.button==SDL_BUTTON_RIGHT?-1:1),0,7);return 1;
         }
         mouse.buttonState|=SDL_BUTTON(event->button.button);mouseButtonDownHandler(event->button.button);return 1;
+    }
     case SDL_MOUSEBUTTONUP:mouse.buttonState&=~SDL_BUTTON(event->button.button);mouseButtonUpHandler(event->button.button);return 1;
     case SDL_MOUSEMOTION:return 1;
     case SDL_MOUSEWHEEL: {
+        readKeyModifiers();
         double d=event->wheel.preciseY?event->wheel.preciseY:event->wheel.y;
         if(event->wheel.direction==SDL_MOUSEWHEEL_FLIPPED)d=-d;
-        embed.wheel_fraction+=d;
+        int lane_target=fasttracks_header_lane(x,y),target=400;
+        if(lane_target>=0)target=100+lane_target;
+        else if(ui.patternEditorShown && x>=30 && ui.patternChannelWidth) {
+            const pattCoord2_t *p=&pattCoord2Table[config.ptnStretch][ui.pattChanScrollShown][getPatternEditorView()];
+            if(y>=p->upperRowsY+2 && y<p->upperRowsY+10)target=200+(x-30)/ui.patternChannelWidth;
+        }
+        if(main_panel_visible() && x>=125 && x<168 && y>=62 && y<78)target=300;
+        if(main_panel_visible() && x>=294 && x<353 && y>=155 && y<171)target=301;
+        if(ui.configScreenShown)target=500;
+        if(target!=embed.wheel_target || d*embed.wheel_fraction<0)embed.wheel_fraction=0;
+        embed.wheel_target=target;embed.wheel_fraction+=d;
         int ticks=(int)embed.wheel_fraction;embed.wheel_fraction-=ticks;
         for(int i=0;i<abs(ticks);++i) {
-            if(x>=125 && x<168 && y>=62 && y<78) {if(ticks>0)pbIncAdd();else pbDecAdd();}
-            else if(!ui.extendedPatternEditor && !ui.patternEditorOnly && x>=294 && x<353 && y>=155 && y<171)
+            int lane=fasttracks_header_lane(x,y);
+            if(ui.sysReqShown || editor.editTextFlag)break;
+            if(lane>=0)ratio_adjust(lane,ticks>0?1:-1);
+            else if(main_panel_visible() && x>=424 && x<588 && y>=97 && y<171)break;
+            else if(main_panel_visible() && x>=125 && x<168 && y>=62 && y<78) {if(ticks>0)pbIncAdd();else pbDecAdd();}
+            else if(main_panel_visible() && x>=294 && x<353 && y>=155 && y<171)
                 editor.curOctave=CLAMP(editor.curOctave+(ticks>0?1:-1),0,7);
             else mouseWheelHandler(ticks>0?MOUSE_WHEEL_UP:MOUSE_WHEEL_DOWN);
         }
@@ -374,6 +456,7 @@ static int bind_tiles(TsSamplePages *pages,const TsInstrument *active,char *e,si
         TsLoopMode mode=slot?(live?bank->loop_mode:slot->loop_mode):TS_LOOP_FORWARD;
         uint64_t h=UINT64_C(14695981039346656037);HASH(t->aliases[a]);HASH(src);HASH(tuning.root_note);HASH(tuning.fine_tune_cents);HASH(loop);HASH(first);HASH(last);HASH(mode);HASH(fade_ms);
         if(src){HASH(src->name);HASH(src->data);HASH(src->visual_revision);HASH(src->frames);HASH(src->channels);HASH(src->sample_rate);if(live)HASH(bank->generation);}
+        embed.tile_location[a]=loc;embed.tile_rate[a]=src?src->sample_rate:0;
         if(h==embed.tile_stamp[a])continue;
         sample_t prepared={0};float *data=NULL;
         if(src && src->data && src->frames>0) {
@@ -469,11 +552,12 @@ static int native_import(TsSisterTracker *t,char *e,size_t n) {
     for(int lane=0;lane<8;++lane) {
         TsTrackerLane *l=&t->lanes[lane];fastTracksPOCSetTrackLength(0,lane,l->length);
         fastTracksPOCSetMode(lane,(fastTracksMode_t)l->mode);fastTracksPOCSetRatioIndex(lane,l->ratio);
-        if((l->direction==TS_TRACKER_REVERSE)!=fastTracksPOCIsReversed(lane))fastTracksPOCToggleDirection(lane);
+        fastTracksPOCSetDirection(lane,l->direction);
         channelVolumeTrim[lane]=(uint16_t)lrintf(l->trim*256);setChannelMute(lane,l->muted);
     }
     fastTracksPOCSetControlTrack(0,t->control_lane);playMode=PLAYMODE_EDIT;
     song.row=editor.row;song.pattNum=editor.editPattern;song.currNumRows=patternNumRows[editor.editPattern];
+    fastTracksPOCResetForLoadedModule();fastTracksPOCSetLengthTopologyBypassed(t->length_bypass);
     ui.updatePatternEditor=ui.updatePosSections=true;return 1;
 allocation_failed:
     fail(e,n,"Unable to import tracker pattern");
@@ -488,9 +572,9 @@ int ts_tapehead_export(TsSisterTracker *t,char *e,size_t n) {
     used[editor.editPattern]=1;
     for(int i=0;i<song.songLength;++i)used[song.orders[i]]=1;
     for(int i=0;i<256;++i)if(pattern[i]||embed.ids[i]||used[i])++count;
-    size_t size=TH_HEADER+8*TH_LANE_BYTES+256+(size_t)count*TH_PATTERN_BYTES;
+    size_t size=TH_HEADER+8*TH_LANE_BYTES+256+(size_t)count*TH_PATTERN_BYTES+TH_PREFS_BYTES;
     uint8_t *bytes=calloc(1,size);if(!bytes)return fail(e,n,"Unable to save embedded tracker score");
-    uint8_t *p=bytes;memcpy(p,"STH1\0\0\0\0",8);p+=8;
+    uint8_t *p=bytes;memcpy(p,"STH2\0\0\0\0",8);p+=8;
     put(&p,count,2);put(&p,editor.BPM,2);put(&p,editor.speed,1);put(&p,editor.globalVolume,1);
     put(&p,song.songLength,2);put(&p,song.songLoopStart,2);put(&p,editor.editPattern,1);put(&p,editor.row,2);
     put(&p,editor.curOctave,1);put(&p,editor.curInstr,1);put(&p,editor.editRowSkip,1);
@@ -499,7 +583,7 @@ int ts_tapehead_export(TsSisterTracker *t,char *e,size_t n) {
     memcpy(p,song.name,21);p+=21;put(&p,fastTracksPOCGetControlTrack(0)+1,1);
     for(int lane=0;lane<8;++lane) {
         put(&p,fastTracksPOCGetTrackLength(0,lane),2);put(&p,fastTracksPOCGetMode(lane),1);
-        put(&p,fastTracksPOCGetRatioIndex(lane),1);put(&p,fastTracksPOCIsReversed(lane),1);
+        put(&p,fastTracksPOCGetRatioIndex(lane),1);put(&p,fastTracksPOCGetDirection(lane),1);
         put(&p,fastTracksPOCIsSelected(lane),1);put(&p,editor.channelMuted[lane],1);
         put(&p,channelVolumeTrim[lane],2);put(&p,0,1);
     }
@@ -526,6 +610,7 @@ int ts_tapehead_export(TsSisterTracker *t,char *e,size_t n) {
             if(c.efx||c.efxData){d->fx_command=c.efx<10?'0'+c.efx:'A'+c.efx-10;d->fx_value=c.efxData;}
         }
     }
+    preferences_get(bytes+size-TH_PREFS_BYTES);
     t->bpm=editor.BPM;t->ticks_per_line=editor.speed;t->order_count=song.songLength;t->restart_order=song.songLoopStart;
     for(int i=0;i<song.songLength;++i)t->orders[i]=embed.ids[song.orders[i]];
     t->editor_pattern=embed.ids[editor.editPattern];t->editor_row=editor.row;t->editor_lane=cursor.ch;t->edit_step=editor.editRowSkip;
@@ -533,7 +618,7 @@ int ts_tapehead_export(TsSisterTracker *t,char *e,size_t n) {
     for(int lane=0;lane<8;++lane) {
         TsTrackerLane *l=&t->lanes[lane];l->length=fastTracksPOCGetTrackLength(0,lane);
         l->mode=fastTracksPOCGetMode(lane);l->ratio=fastTracksPOCGetRatioIndex(lane);
-        l->direction=fastTracksPOCIsReversed(lane)?TS_TRACKER_REVERSE:TS_TRACKER_FORWARD;
+        l->direction=fastTracksPOCGetDirection(lane);
         l->trim=channelVolumeTrim[lane]/256.f;l->muted=editor.channelMuted[lane];
     }
     uint8_t *previous=t->embedded_data;uint32_t previous_size=t->embedded_size;
@@ -546,7 +631,7 @@ int ts_tapehead_export(TsSisterTracker *t,char *e,size_t n) {
 }
 
 static int score_import(TsSisterTracker *t,char *e,size_t n) {
-    if(!t->embedded_size)return native_import(t,e,n);
+    if(!t->embedded_size) {preferences_apply(default_preferences);return native_import(t,e,n);}
     if(!ts_tracker_embedded_validate(t->embedded_data,t->embedded_size))return fail(e,n,"Invalid embedded tracker score");
     note_t *prepared[256]={0};
     const uint8_t *records=t->embedded_data+TH_HEADER+8*TH_LANE_BYTES+256;
@@ -566,14 +651,14 @@ static int score_import(TsSisterTracker *t,char *e,size_t n) {
     editor.BPM=song.BPM=get(&p,2);editor.speed=song.speed=get(&p,1);song.initialSpeed=MAX(song.speed,1);
     editor.globalVolume=song.globalVolume=get(&p,1);song.songLength=get(&p,2);song.songLoopStart=get(&p,2);
     editor.editPattern=get(&p,1);editor.row=get(&p,2);editor.curOctave=get(&p,1);editor.curInstr=get(&p,1);editor.editRowSkip=get(&p,1);
-    int master=get(&p,1),uses=get(&p,1),bypass=get(&p,1),only=get(&p,1),expanded=get(&p,1);tapeheadConfig.patternColorMode=get(&p,1);
+    int master=get(&p,1),uses=get(&p,1),bypass=get(&p,1),only=get(&p,1),expanded=get(&p,1),color=get(&p,1);
     memcpy(song.name,p,21);p+=21;int control=(int)get(&p,1)-1;
     fastTracksPOCResetForLoadedModule();fastTracksPOCSetMasterEnabled(master);
     fastTracksPOCSetUsesTrackLengths(uses);fastTracksPOCSetLengthTopologyBypassed(bypass);
     for(int lane=0;lane<8;++lane) {
         unsigned len=get(&p,2),mode=get(&p,1),ratio=get(&p,1),reverse=get(&p,1),selected=get(&p,1),muted=get(&p,1),trim=get(&p,2);get(&p,1);
         fastTracksPOCSetTrackLength(0,lane,len);fastTracksPOCSetMode(lane,mode);fastTracksPOCSetRatioIndex(lane,ratio);
-        if(reverse!=fastTracksPOCIsReversed(lane))fastTracksPOCToggleDirection(lane);
+        fastTracksPOCSetDirection(lane,reverse);
         if(selected!=fastTracksPOCIsSelected(lane))fastTracksPOCToggle(lane);
         channelVolumeTrim[lane]=trim;setChannelMute(lane,muted);
     }
@@ -586,9 +671,13 @@ static int score_import(TsSisterTracker *t,char *e,size_t n) {
             c->note=get(&p,1);c->instr=get(&p,1);c->vol=get(&p,1);c->efx=get(&p,1);c->efxData=get(&p,1);c->tuneType=get(&p,1);c->tuneData=get(&p,1);
         }
     }
+    preferences_apply(t->embedded_data[3]=='2'?t->embedded_data+t->embedded_size-TH_PREFS_BYTES:default_preferences);
+    /* STH1 already stored these two settings, before the preferences tail. */
+    fastTracksPOCSetUsesTrackLengths(uses);tapeheadConfig.patternColorMode=color;
     cursor.ch=t->editor_lane;
     setMixerBPM(song.BPM);song.numChannels=8;playMode=PLAYMODE_EDIT;
     song.pattNum=editor.editPattern;song.row=editor.row;song.currNumRows=patternNumRows[editor.editPattern];
+    fastTracksPOCResetForLoadedModule();fastTracksPOCSetLengthTopologyBypassed(bypass);
     if(ui.patternEditorOnly)togglePatternEditorOnly();
     if(ui.extendedPatternEditor)togglePatternEditorExtended();
     if(only)togglePatternEditorOnly();else if(expanded)togglePatternEditorExtended();

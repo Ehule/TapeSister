@@ -41,7 +41,7 @@ typedef struct fastTracksPatternMetadata_t
 typedef struct fastTracksTrackSnapshot_t
 {
 	fastTracksMode_t mode;
-	bool enabled, selected, clutched, reversed, masterAligned;
+	bool enabled, selected, clutched, reversed, masterAligned, bounce;
 	int16_t sourceOrder;
 	int16_t sourcePattern;
 	int32_t sourceRow;
@@ -59,10 +59,11 @@ typedef struct fastTracksSnapshot_t
 typedef struct fastTracksRuntimeTrack_t
 {
 	fastTracksMode_t mode;
-	bool clutchHeld, reversed, transportStarted;
+	bool clutchHeld, reversed, transportStarted, bounce;
 	int16_t sourceOrder;
 	int32_t sourceRow, tickAccumulator;
-	uint16_t lastTPL, cycleStepCounter;
+	uint16_t lastTPL;
+	uint32_t cycleStepCounter;
 	uint8_t ratioIndex;
 } fastTracksRuntimeTrack_t;
 
@@ -80,6 +81,8 @@ fastTracksMode_t fastTracksPOCGetMode(int32_t channelIndex);
 bool fastTracksPOCIsEnabled(int32_t channelIndex);
 bool fastTracksPOCIsClutched(int32_t channelIndex);
 bool fastTracksPOCIsReversed(int32_t channelIndex);
+uint8_t fastTracksPOCGetDirection(int32_t channelIndex);
+void fastTracksPOCSetDirection(int32_t channelIndex,uint8_t direction);
 bool fastTracksPOCTransmissionClutchIsLatched(void);
 bool fastTracksPOCAnyEnabled(void);
 int32_t fastTracksPOCGetSourceRow(int32_t channelIndex);

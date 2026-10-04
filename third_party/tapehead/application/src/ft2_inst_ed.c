@@ -2279,7 +2279,7 @@ void updateInstEditor(void)
 void showInstEditor(void)
 {
 #ifdef TAPEHEAD_EMBEDDED
-	ts_tapehead_request(1);return;
+	ts_tapehead_request(TS_TH_FX);return;
 #endif
 	if (ui.extendedPatternEditor) exitPatternEditorExtended();
 	if (ui.sampleEditorShown) hideSampleEditor();
@@ -2401,7 +2401,7 @@ void showInstEditor(void)
 void toggleInstEditor(void)
 {
 #ifdef TAPEHEAD_EMBEDDED
-	ts_tapehead_request(1);
+	ts_tapehead_request(TS_TH_FX);
 	return;
 #endif
 	if (ui.sampleEditorShown)
@@ -2694,7 +2694,7 @@ void drawInstEditorExt(void)
 void showInstEditorExt(void)
 {
 #ifdef TAPEHEAD_EMBEDDED
-	ts_tapehead_request(1);return;
+	ts_tapehead_request(TS_TH_SISTER);return;
 #endif
 	if (ui.extendedPatternEditor)
 		exitPatternEditorExtended();
@@ -2729,7 +2729,7 @@ void hideInstEditorExt(void)
 void toggleInstEditorExt(void)
 {
 #ifdef TAPEHEAD_EMBEDDED
-	ts_tapehead_request(1);
+	ts_tapehead_request(TS_TH_SISTER);
 	return;
 #endif
 	if (ui.instEditorExtShown)
@@ -2866,6 +2866,9 @@ static bool testInstrSwitcherNormal(void) // Welcome to the Jungle
 */
 static void clearSampleFromSwitcher(int16_t smpNum)
 {
+#ifdef TAPEHEAD_EMBEDDED
+	ts_tapehead_request(TS_TH_CANVAS); return;
+#endif
 	if (editor.curInstr <= 0 || editor.curInstr > MAX_INST ||
 		smpNum < 0 || smpNum >= MAX_SMP_PER_INST || instr[editor.curInstr] == NULL)
 	{
@@ -2905,6 +2908,9 @@ static void clearSampleFromSwitcher(int16_t smpNum)
 */
 static void clearInstrumentFromSwitcher(int16_t insNum)
 {
+#ifdef TAPEHEAD_EMBEDDED
+	ts_tapehead_request(TS_TH_CANVAS); return;
+#endif
 	if (insNum <= 0 || insNum > MAX_INST)
 		return;
 

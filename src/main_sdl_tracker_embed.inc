@@ -16,6 +16,12 @@ static void embedded_present(void *context,const uint32_t *pixels) {
     SDL_RenderCopy(embedded_host.renderer,embedded_host.texture,NULL,&rect);
     SDL_RenderPresent(embedded_host.renderer);
 }
+static int embedded_preferences_path(char *path,size_t size) {
+    char directory[TS_RUNTIME_PATH_MAX];
+    return runtime_path_parent(config_file_path(),directory,sizeof(directory))?
+        runtime_join_path(path,size,directory,"sistertracker.cfg"):
+        snprintf(path,size,"sistertracker.cfg")>0;
+}
 static int embedded_open(SDL_Window *window,SDL_AudioDeviceID device,AudioState *audio,
                          TsUiState *ui,TsSamplePages *pages,const TsInstrument *instrument,int rate) {
     if(!ts_tapehead_frame()) {
@@ -25,6 +31,8 @@ static int embedded_open(SDL_Window *window,SDL_AudioDeviceID device,AudioState 
             SDL_PIXELFORMAT_ARGB8888,SDL_TEXTUREACCESS_STREAMING,632,400);
         TsTapeHeadHost host={window,NULL,embedded_lock,embedded_unlock,embedded_present};
         if(!ts_tapehead_init(&host,rate,ui->status,sizeof(ui->status)))return 0;
+        char path[TS_RUNTIME_PATH_MAX];
+        if(embedded_preferences_path(path,sizeof(path)))ts_tapehead_preferences_load(path,ui->status,sizeof(ui->status));
     }
     if(device)SDL_LockAudioDevice(device);
     ts_tracker_playback_stop(&audio->tracker);
@@ -46,7 +54,9 @@ static void tracker_refresh(SDL_AudioDeviceID device,AudioState *audio,TsUiState
     if(!ts_tapehead_sync(pages,instrument,rate,ui->status,sizeof(ui->status))) {
         ui->tracker_open=0;ui->tracker_embedded_frame=NULL;return;
     }
-    ts_tapehead_status(ui->status,atomic_load(&audio->tracker_capture));
+    unsigned capturing=atomic_load(&audio->tracker_capture);
+    if(sister && ts_performance_recorder_state(&sister->performance_recorder)==TS_PERFORMANCE_FILE_RECORDING)capturing=1;
+    ts_tapehead_status(ui->status,capturing);
     ts_tapehead_tick();
     ui->tracker_running=ts_tapehead_running();
     int action=ts_tapehead_action();
@@ -65,6 +75,21 @@ static void tracker_refresh(SDL_AudioDeviceID device,AudioState *audio,TsUiState
                 action==TS_TH_FX?"FX PEDALBOARD":action==TS_TH_PRISM?"PRISM":action==TS_TH_FALLOUT?"FALLOUT":"SISTER MACHINE");
             sister_window_show(sister,&ui->palette);
         } else snprintf(ui->status,sizeof(ui->status),"SISTER WINDOW UNAVAILABLE: %.112s",SDL_GetError());
+    }
+    if(action==TS_TH_SAVE_PROJECT || action==TS_TH_OPEN_PROJECT) {
+        SDL_Event key;SDL_zero(key);key.type=SDL_KEYDOWN;key.key.windowID=SDL_GetWindowID(embedded_host.window);
+        key.key.keysym.sym=action==TS_TH_SAVE_PROJECT?SDLK_s:SDLK_o;key.key.keysym.mod=KMOD_CTRL;
+        SDL_PushEvent(&key);
+    }
+    if(action==TS_TH_CAPTURE && sister) {
+        if(ts_performance_recorder_state(&sister->performance_recorder)==TS_PERFORMANCE_FILE_RECORDING)
+            ts_performance_recorder_request_stop(&sister->performance_recorder);
+        else begin_file_capture(audio,sister,(uint32_t)rate,TS_SISTER_TAP_MIX,2);
+    }
+    if(action==TS_TH_SAVE_DEFAULTS) {
+        char path[TS_RUNTIME_PATH_MAX];
+        if(embedded_preferences_path(path,sizeof(path)) && ts_tapehead_preferences_save(path,ui->status,sizeof(ui->status)))
+            snprintf(ui->status,sizeof(ui->status),"TRACKER DEFAULTS SAVED");
     }
     if(action==TS_TH_AUDIO)ts_audio_health_show(ui);
     if(action==TS_TH_ROUTER) {
@@ -98,7 +123,7 @@ static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevi
     }
     if(!ui->tracker_open || !ui->tracker_embedded_frame || ui_dialog_open(ui) ||
        ui->router_open || ui->master_eq_open || ui->midi_learn_active)return 0;
-    if(key && event->key.keysym.sym==SDLK_ESCAPE) {
+    if(key && event->key.keysym.sym==SDLK_ESCAPE && !ts_tapehead_config_visible()) {
         ts_tapehead_focus_lost();ui->tracker_open=0;return 1;
     }
     if(key && event->key.keysym.sym==SDLK_TAB && (mod&KMOD_CTRL))return 0;

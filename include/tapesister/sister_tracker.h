@@ -115,4 +115,6 @@ int ts_sister_tracker_save_file(const TsSisterTracker *tracker, const char *path
 int ts_sister_tracker_load_file(TsSisterTracker *tracker, const char *path,
                                 char *error, size_t error_size);
 
+/* Portable embedded tracker preferences shared by projects and saved defaults. */
+int ts_tracker_preferences_validate(const uint8_t *p,uint32_t size);
 #endif

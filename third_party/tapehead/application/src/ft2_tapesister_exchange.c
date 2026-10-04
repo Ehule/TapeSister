@@ -1539,6 +1539,9 @@ void tapeSisterExchangePoll(bool manualRequest)
 
 void tapeSisterExchangeOpenMenu(void)
 {
+#ifdef TAPEHEAD_EMBEDDED
+	ts_tapehead_request(TS_TH_CANVAS);return;
+#endif
 	const int16_t choice = okBox(SYSREQ_TYPE_TAPESISTER_MENU,
 		"TapeSister Exchange",
 		"Send samples or rendered audio, check the shared inbox, or open the exchange folder.",

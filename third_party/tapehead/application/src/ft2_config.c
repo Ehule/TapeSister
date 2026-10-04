@@ -2185,7 +2185,7 @@ static void setConfigMiscRadioButtonStates(void)
 void showConfigScreen(void)
 {
 #ifdef TAPEHEAD_EMBEDDED
-	ts_tapehead_request(3);
+	ts_tapehead_show_config();
 	return;
 #endif
 	if (ui.extendedPatternEditor)
@@ -3300,12 +3300,18 @@ void cbInpMode(void)
 
 	drawPushButton(PB_POSED_INS);
 	drawPushButton(PB_RECORD_SONG);
+#ifdef TAPEHEAD_EMBEDDED
+	if(ui.configScreenShown)ts_tapehead_show_config();
+#endif
 }
 
 void cbAutoPattGen(void)
 {
-	if (!(config.specialFlags2 & INP_MODE))
+	if (!(config.specialFlags2 & INP_MODE)) {
+		checkBoxes[CB_CONF_AUTO_PATT_GEN].checked=false;
+		drawCheckBox(CB_CONF_AUTO_PATT_GEN);
 		return;
+	}
 
 	config.specialFlags2 ^= AUTO_PATT_GEN;
 

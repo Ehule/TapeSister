@@ -11,6 +11,9 @@ that legacy implementation as a separate fixture.
 | Editing, clipboard, extraction and undo | Original `ft2_edit.c`, pattern editor and undo | Actual note input, current-cell Backspace, undo/redo, Alt+F4/F5 and F8 extraction |
 | Song/Pattern transport, LEN/CONTROL, FastTracks, commands | Original replayer and FastTracks | Integrated playback and representative command checks; broad original modes are compiled, not individually reimplemented |
 | MIDI recording | Host input feeds original `recordNote` | Note pitch, velocity, tile identity and undo through the actual host MIDI handler |
+| Recording preferences | Original callbacks and recording paths, embedded Config | Silent Record writes notes with silent monitored output; IPL/INP/Shift-copy and REC+ create correctly sized patterns |
+| Layout and palette | Original layout callbacks and palette editor, portable preferences | Both Config pages, preset/RGB/field colors, layout/font changes, defaults and project roundtrip |
+| Ratio/LEN wheels and direction | Embedded hit tests plus original private clocks with Bounce extension | Fractional wheel events, bounds, compact/full view, direction cycling; callback bounce sequence and all five crossings at 5:1 |
 | Audible sample reads | Host float stereo reader under original voices | Opposite-polarity stereo, tuning/loops, tile generation lifetime and output-rate changes |
 | Source identity | Stable host tile IDs mapped to original aliases | Move, delete and slot reuse do not retarget an existing alias |
 | Router and capture | Existing TRACK source and final-output writer | Audible callback output, exact live cycle boundaries and recorded-frame equality |
@@ -26,7 +29,8 @@ event loop and callback. The complete source delta is recorded in
 input hashes. Builds use committed sources and do not fetch TapeHead.
 
 Local source changes replace hardware/window ownership, suppress standalone
-configuration writes, redirect sampler/disk/config screens, provide float tile
+configuration writes, redirect sampler/disk screens, restore tracker configuration,
+add portable preferences and Bounce, provide float tile
 voice reads and tick spans, run scopes on the host UI thread, fix unaligned help
 parser reads, and adapt Backspace/full-view controls. Shared duplicate symbols
 are namespaced at compile time. The standalone `main`, MIDI device backend,
@@ -47,3 +51,6 @@ The old full suite has three independently reproduced baseline failures:
 `test_sister_source_mask`, `test_sister_recursion` and `tapesister_canvas_tests`.
 They also fail on the unchanged PR head. They are unrelated to the transplant
 and have not been hidden or changed to make this PR appear green.
+
+See [PR124 audit and verification limits](PR124_AUDIT.md) for the follow-up
+findings and the distinction between restored controls and exercised behavior.

@@ -1740,6 +1740,9 @@ bool patternLauncherHandleStandaloneSpace(void)
 
 void patternLauncherSetStandaloneShown(bool shown)
 {
+#ifdef TAPEHEAD_EMBEDDED
+	if (shown) { ts_tapehead_request(TS_TH_CANVAS); return; }
+#endif
 	if (shown == patternLauncherStandaloneShown)
 	{
 		if (shown)
@@ -1854,6 +1857,9 @@ void handlePatternLauncherPanelRefresh(void)
 
 void patternLauncherSetPanelShown(bool shown)
 {
+#ifdef TAPEHEAD_EMBEDDED
+	if (shown) { ts_tapehead_request(TS_TH_CANVAS); return; }
+#endif
 	patternLauncherPanelShown = shown;
 	if (shown)
 		sampleLauncherDeckShown = false;

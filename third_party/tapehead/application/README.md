@@ -40,13 +40,16 @@ Float stereo tile snapshots feed original voices, envelopes, effects and pan
 through the host's interpolation/loop reader. Sounding snapshots remain alive
 until the original voices release them; replacements become available on the
 next trigger. Tile tuning compensates for original instrument tuning
-quantization. The audio callback renders fixed-size spans without allocation,
-and its TRACK source goes through the existing Router and final output chain.
+quantization. The adapter mixes fixed-size spans without allocating its audio
+buffers in the callback. The original REC+ path can allocate a newly generated
+pattern during replay; this inherited path is not claimed to be allocation-free.
+The TRACK source goes through the existing Router and final output chain.
 Capture uses that audible host output and original block-loop tick boundaries.
 
-Disk operations and destructive sample-library screens redirect to tile
-selection/the canvas. Configuration redirects to host Audio Health; Trim
-becomes Router. The original sampler and independent module/audio storage are
+Disk operations redirect to host project Open/Save; sample-library screens
+redirect to the canvas. Configuration retains tracker recording/layout options
+and the original palette editor, with host Audio Health as a separate action.
+Trim becomes Router. Standalone sampler, hardware and module/audio storage are
 not exposed. A future buffer tile can use the same host tile boundary.
 
 ## Saved score
@@ -55,6 +58,10 @@ The version-2 host tracker codec retains raw original note, instrument, volume,
 FX and tuning fields for all 256 rows, including hidden rows. The bounded wire
 extension also stores pattern identities/order, editor position, song-wide
 LEN/CONTROL, FastTracks state, mute/trim, STEP/octave, colors and view choice.
+The `STH2` payload adds Forward/Reverse/Bounce directions and a validated
+128-byte preference tail containing recording/layout options and the custom
+palette. Older `STH1` payloads load without that tail. Explicit Save defaults
+persists the same preference representation in the host configuration folder.
 It stores no pointers, tile audio or running voices. It is validated before
 import and matched against stable native pattern identities. Version-1 native
 scores migrate when their pitches, tempo and aliases fit original limits.
@@ -73,7 +80,10 @@ for source completeness even when their screens are inaccessible.
 F10, original editing/undo, block clipboard/extraction, MIDI, STEP/octave,
 Song/Pattern transport, volume/FX commands, LEN/CONTROL, float stereo, exact
 live-cycle capture, tile replacement/move/deletion, rate changes and project
-roundtrip. See `docs/SISTERTRACKER_PARITY.md` for verification scope.
+roundtrip. Follow-up coverage exercises visible Config, palette edits, persisted
+defaults, Silent Record audio, IPL/INP/REC+, ratio/LEN wheels and Bounce through
+the callback. See `docs/PR124_AUDIT.md` and `docs/SISTERTRACKER_PARITY.md` for
+verification scope.
 
 Code is BSD-3-Clause (see `LICENSE` and `src/LICENSE.txt`). Font artwork retains
 its original CC BY-NC-SA 4.0 terms in the parent `FONTS-LICENSE.txt`. Other

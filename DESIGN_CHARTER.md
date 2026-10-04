@@ -56,8 +56,9 @@ TapeSister lives in its own repository, build, tests, releases and issue history
 - TapeSister owns SDL/window lifetime, the audio and MIDI devices, project files,
   stable tile identities and the routing/recording chain.
 - SisterTracker reuses original editing and transport globals behind an explicit
-  host adapter. Standalone disk/sample/configuration workflows are replaced by
-  host tile, canvas and audio actions.
+  host adapter. Standalone disk/sample/hardware workflows are replaced by
+  host project, tile, canvas and audio actions. Tracker recording, layout and
+  palette preferences remain available in the embedded Config menu.
 - Tracker sample slots are bindings to host tiles, not a second sample library.
   Sounding generations remain immutable; missing identities never resolve by a
   reused slot number.

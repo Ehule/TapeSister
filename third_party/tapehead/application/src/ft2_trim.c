@@ -1135,7 +1135,7 @@ void hideTrimScreen(void)
 void showTrimScreen(void)
 {
 #ifdef TAPEHEAD_EMBEDDED
-	ts_tapehead_request(1); return;
+	ts_tapehead_request(TS_TH_ROUTER); return;
 #endif
 	if (ui.extendedPatternEditor)
 		exitPatternEditorExtended();
@@ -1152,7 +1152,7 @@ void showTrimScreen(void)
 void toggleTrimScreen(void)
 {
 #ifdef TAPEHEAD_EMBEDDED
-	ts_tapehead_request(1); return;
+	ts_tapehead_request(TS_TH_ROUTER); return;
 #endif
 	if (ui.trimScreenShown)
 		hideTrimScreen();

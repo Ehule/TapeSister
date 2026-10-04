@@ -229,11 +229,31 @@
  void showConfigScreen(void)
  {
 +#ifdef TAPEHEAD_EMBEDDED
-+	ts_tapehead_request(3);
++	ts_tapehead_show_config();
 +	return;
 +#endif
  	if (ui.extendedPatternEditor)
  		exitPatternEditorExtended();
+ 
+@@ -3278,12 +3300,18 @@
+ 
+ 	drawPushButton(PB_POSED_INS);
+ 	drawPushButton(PB_RECORD_SONG);
++#ifdef TAPEHEAD_EMBEDDED
++	if(ui.configScreenShown)ts_tapehead_show_config();
++#endif
+ }
+ 
+ void cbAutoPattGen(void)
+ {
+-	if (!(config.specialFlags2 & INP_MODE))
++	if (!(config.specialFlags2 & INP_MODE)) {
++		checkBoxes[CB_CONF_AUTO_PATT_GEN].checked=false;
++		drawCheckBox(CB_CONF_AUTO_PATT_GEN);
+ 		return;
++	}
+ 
+ 	config.specialFlags2 ^= AUTO_PATT_GEN;
  
 --- a/src/ft2_diskop.c
 +++ b/src/ft2_diskop.c
@@ -242,7 +262,7 @@
  void showDiskOpScreen(void)
  {
 +#ifdef TAPEHEAD_EMBEDDED
-+	ts_tapehead_request(2);return;
++	ts_tapehead_request(TS_TH_OPEN_PROJECT);return;
 +#endif
  	// if first time opening Disk Op., set initial directory
  	if (firstTimeOpeningDiskOp)
@@ -252,7 +272,7 @@
  void toggleDiskOpScreen(void)
  {
 +#ifdef TAPEHEAD_EMBEDDED
-+	ts_tapehead_request(2);
++	ts_tapehead_request(TS_TH_OPEN_PROJECT);
 +	return;
 +#endif
  	if (ui.diskOpShown)
@@ -310,17 +330,172 @@
 +    memset(trackCopyBuff,0,sizeof(trackCopyBuff));
 +}
 +#endif
+--- a/src/ft2_fasttracks.c
++++ b/src/ft2_fasttracks.c
+@@ -104,15 +104,17 @@
+ 	int16_t sourceOrder;
+ 	int32_t sourceRow;
+ 	int32_t tickAccumulator;
+-	uint16_t lastTPL, cycleStepCounter;
++	uint16_t lastTPL;
++	uint32_t cycleStepCounter;
+ 	bool transportStarted;
+ 	uint8_t ratioIndex;
++	bool bounce;
+ } fastTracksChannelState_t;
+ 
+ #define FAST_TRACKS_MAX_CROSSINGS_PER_TICK 8
+ 
+ #define FAST_TRACKS_DEFAULT_CHANNEL_STATE \
+-	{ FAST_TRACKS_MODE_STANDARD, false, false, 0, 0, 0, 0, 0, false, FAST_TRACKS_DEFAULT_RATIO_INDEX }
++	{ FAST_TRACKS_MODE_STANDARD, false, false, 0, 0, 0, 0, 0, false, FAST_TRACKS_DEFAULT_RATIO_INDEX, false }
+ 
+ static volatile fastTracksChannelState_t fastTracksPOCChannels[FAST_TRACKS_MAX_CHANNELS] =
+ {
+@@ -154,6 +156,7 @@
+ 		dst->mode = src->mode;
+ 		dst->clutchHeld = src->clutchHeld;
+ 		dst->reversed = src->reversed;
++		dst->bounce = src->bounce;
+ 		dst->sourceOrder = src->sourceOrder;
+ 		dst->sourceRow = src->sourceRow;
+ 		dst->tickAccumulator = src->tickAccumulator;
+@@ -180,6 +183,7 @@
+ 		dst->mode = src->mode;
+ 		dst->clutchHeld = src->clutchHeld;
+ 		dst->reversed = src->reversed;
++		dst->bounce = src->bounce;
+ 		dst->sourceOrder = src->sourceOrder;
+ 		dst->sourceRow = src->sourceRow;
+ 		dst->tickAccumulator = src->tickAccumulator;
+@@ -550,6 +554,12 @@
+ 		fastTracksPOCGetFastTrackLength(song.pattNum, sourceChannel);
+ 	const int32_t previousRow = wrapFastTracksPOCRow(state->sourceRow,
+ 		song.pattNum, sourceChannel);
++	if (state->bounce) {
++		if (rowCount <= 1) {state->sourceRow=0;state->reversed=false;return true;}
++		if (previousRow == 0) state->reversed=false;
++		else if (previousRow == rowCount-1) state->reversed=true;
++		rowDirection=state->reversed?-1:1;
++	}
+ 	int32_t nextRow = previousRow + rowDirection;
+ 	if (nextRow >= rowCount)
+ 		nextRow = 0;
+@@ -601,6 +611,14 @@
+ 	if (!resolveFastTracksPOCSongOrder(state->sourceOrder, sourceChannel, NULL,
+ 		&patternLength))
+ 		return false;
++	if (state->bounce) {
++		const int32_t lastOrder=getFastTracksPOCSongLength()-1;
++		if (state->sourceOrder==0 && state->sourceRow<=0) state->reversed=false;
++		else if (state->sourceOrder==lastOrder && state->sourceRow>=patternLength-1) state->reversed=true;
++		rowDirection=state->reversed?-1:1;
++		/* The complete song may consist of a single row. */
++		if (!lastOrder && patternLength<=1) {state->sourceRow=0;return true;}
++	}
+ 	if (rowDirection >= 0)
+ 	{
+ 		state->sourceRow++;
+@@ -734,8 +752,15 @@
+ 		** one Boolean/final-row event. The present ratio bank needs at most five
+ 		** entries at TPL=1; the larger fixed bound leaves safe expansion room. */
+ 		const int32_t rowDirection = state->reversed ? -1 : 1;
+-		const int32_t cycleLength =
+-			getFastTracksPOCCycleLength(state, sourceChannel);
++		int32_t cycleLength = getFastTracksPOCCycleLength(state, sourceChannel);
++		if (state->bounce) {
++			if (state->mode==FAST_TRACKS_MODE_SONG) {
++				cycleLength=0;
++				for(int order=0;order<song.songLength;++order)
++					cycleLength+=fastTracksPOCGetFastTrackLength(song.orders[order],sourceChannel);
++			}
++			cycleLength=MAX(1,2*(cycleLength-1));
++		}
+ 		if (advanceFastTracksPOCSourcePosition(state, sourceChannel, rowDirection))
+ 		{
+ 			state->cycleStepCounter++;
+@@ -915,6 +940,7 @@
+ 		track->enabled = fastTracksPOCMasterEnabled && track->selected;
+ 		track->clutched = state->clutchHeld || fastTracksPOCTransmissionClutchLatched;
+ 		track->reversed = state->reversed;
++		track->bounce = state->bounce;
+ 		track->sourceRow = track->clutched
+ 			? fastTracksPOCResolveMasterSourceRow(song.pattNum, i, song.row)
+ 			: state->sourceRow;
+@@ -1269,6 +1295,7 @@
+ 	if (audioWasntLocked)
+ 		lockAudio();
+ 
++	state->bounce = false;
+ 	state->reversed = !state->reversed;
+ 	state->cycleStepCounter = 0;
+ 
+@@ -1612,3 +1639,18 @@
+ 	}
+ 	pendingFastTracksMetadataValid = false;
+ }
++
++uint8_t fastTracksPOCGetDirection(int32_t channelIndex)
++{
++    const volatile fastTracksChannelState_t *s=getFastTracksPOCChannelState(channelIndex);
++    return s?(s->bounce?2:s->reversed?1:0):0;
++}
++void fastTracksPOCSetDirection(int32_t channelIndex,uint8_t direction)
++{
++    volatile fastTracksChannelState_t *s=getFastTracksPOCChannelState(channelIndex);
++    if(!s || direction>2)return;
++    const bool unlocked=!audio.locked;if(unlocked)lockAudio();
++    s->bounce=direction==2;s->reversed=direction==1;s->cycleStepCounter=0;
++    if(unlocked)unlockAudio();
++    ui.updatePatternEditor=true;
++}
+--- a/src/ft2_fasttracks.h
++++ b/src/ft2_fasttracks.h
+@@ -41,7 +41,7 @@
+ typedef struct fastTracksTrackSnapshot_t
+ {
+ 	fastTracksMode_t mode;
+-	bool enabled, selected, clutched, reversed, masterAligned;
++	bool enabled, selected, clutched, reversed, masterAligned, bounce;
+ 	int16_t sourceOrder;
+ 	int16_t sourcePattern;
+ 	int32_t sourceRow;
+@@ -59,10 +59,11 @@
+ typedef struct fastTracksRuntimeTrack_t
+ {
+ 	fastTracksMode_t mode;
+-	bool clutchHeld, reversed, transportStarted;
++	bool clutchHeld, reversed, transportStarted, bounce;
+ 	int16_t sourceOrder;
+ 	int32_t sourceRow, tickAccumulator;
+-	uint16_t lastTPL, cycleStepCounter;
++	uint16_t lastTPL;
++	uint32_t cycleStepCounter;
+ 	uint8_t ratioIndex;
+ } fastTracksRuntimeTrack_t;
+ 
+@@ -80,6 +81,8 @@
+ bool fastTracksPOCIsEnabled(int32_t channelIndex);
+ bool fastTracksPOCIsClutched(int32_t channelIndex);
+ bool fastTracksPOCIsReversed(int32_t channelIndex);
++uint8_t fastTracksPOCGetDirection(int32_t channelIndex);
++void fastTracksPOCSetDirection(int32_t channelIndex,uint8_t direction);
+ bool fastTracksPOCTransmissionClutchIsLatched(void);
+ bool fastTracksPOCAnyEnabled(void);
+ int32_t fastTracksPOCGetSourceRow(int32_t channelIndex);
 --- a/src/ft2_header.h
 +++ b/src/ft2_header.h
-@@ -13,6 +13,15 @@
+@@ -13,6 +13,17 @@
  #include <limits.h> // also has PATH_MAX
  #endif
  #include "ft2_replayer.h"
 +#ifdef TAPEHEAD_EMBEDDED
++#include "tapesister/tapehead_actions.h"
 +void ts_tapehead_host_lock(void);
 +void ts_tapehead_host_unlock(void);
 +void ts_tapehead_host_present(void);
 +void ts_tapehead_request(int action);
++void ts_tapehead_show_config(void);
 +void ts_tapehead_mix_tile(void *voice, unsigned offset, unsigned frames);
 +double ts_tapehead_tile_begin(void *voice);
 +void ts_tapehead_audio_span(unsigned offset,unsigned frames,int seam);
@@ -328,7 +503,7 @@
  
  #define PROG_VER_STR "2.21"
  
-@@ -40,7 +49,11 @@
+@@ -40,7 +51,11 @@
  ** branchless in the inner channel mixer loop.
  ** Warning: Do not change this!
  */
@@ -396,7 +571,7 @@
  void showInstEditor(void)
  {
 +#ifdef TAPEHEAD_EMBEDDED
-+	ts_tapehead_request(1);return;
++	ts_tapehead_request(TS_TH_FX);return;
 +#endif
  	if (ui.extendedPatternEditor) exitPatternEditorExtended();
  	if (ui.sampleEditorShown) hideSampleEditor();
@@ -406,7 +581,7 @@
  void toggleInstEditor(void)
  {
 +#ifdef TAPEHEAD_EMBEDDED
-+	ts_tapehead_request(1);
++	ts_tapehead_request(TS_TH_FX);
 +	return;
 +#endif
  	if (ui.sampleEditorShown)
@@ -417,7 +592,7 @@
  void showInstEditorExt(void)
  {
 +#ifdef TAPEHEAD_EMBEDDED
-+	ts_tapehead_request(1);return;
++	ts_tapehead_request(TS_TH_SISTER);return;
 +#endif
  	if (ui.extendedPatternEditor)
  		exitPatternEditorExtended();
@@ -427,12 +602,32 @@
  void toggleInstEditorExt(void)
  {
 +#ifdef TAPEHEAD_EMBEDDED
-+	ts_tapehead_request(1);
++	ts_tapehead_request(TS_TH_SISTER);
 +	return;
 +#endif
  	if (ui.instEditorExtShown)
  		hideInstEditorExt();
  	else
+@@ -2852,6 +2866,9 @@
+ */
+ static void clearSampleFromSwitcher(int16_t smpNum)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	ts_tapehead_request(TS_TH_CANVAS); return;
++#endif
+ 	if (editor.curInstr <= 0 || editor.curInstr > MAX_INST ||
+ 		smpNum < 0 || smpNum >= MAX_SMP_PER_INST || instr[editor.curInstr] == NULL)
+ 	{
+@@ -2891,6 +2908,9 @@
+ */
+ static void clearInstrumentFromSwitcher(int16_t insNum)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	ts_tapehead_request(TS_TH_CANVAS); return;
++#endif
+ 	if (insNum <= 0 || insNum > MAX_INST)
+ 		return;
+ 
 --- a/src/ft2_keyboard.c
 +++ b/src/ft2_keyboard.c
 @@ -862,6 +862,11 @@
@@ -447,6 +642,30 @@
  			if (keyb.leftShiftPressed && keyb.leftAltPressed && !keyb.leftCtrlPressed)
  			{
  				togglePatternEditorOnly();
+--- a/src/ft2_mouse.c
++++ b/src/ft2_mouse.c
+@@ -508,7 +508,7 @@
+ 		const uint16_t step = (modifiers & KMOD_SHIFT) ? 8 : 1;
+ 		const uint16_t controlMax = CLAMP(
+ 			tapeheadConfig.trackLengthControlMax, 1, MAX_PATT_LEN);
+-		if (directionUp && oldLength < controlMax)
++		if (directionUp)
+ 			newLength = (uint16_t)MIN((int32_t)controlMax,
+ 				(int32_t)oldLength + step);
+ 		else if (oldLength <= step)
+@@ -998,8 +998,12 @@
+ 	// mouse 0,0 = open exit dialog (also make sure the test always works in fullscreen mode)
+ 	if ((mouse.x == 0 && mouse.y == 0) || (video.fullscreen && (video.renderX > 0 || video.renderY > 0) && (mouse.rawX == 0 && mouse.rawY == 0)))
+ 	{
++#ifdef TAPEHEAD_EMBEDDED
++		ts_tapehead_request(TS_TH_CANVAS);
++#else
+ 		if (quitBox(false) == 1)
+ 			editor.throwExit = true;
++#endif
+ 
+ 		// release button presses from okBox()
+ 		mouse.leftButtonPressed = false;
 --- a/src/ft2_nibbles.c
 +++ b/src/ft2_nibbles.c
 @@ -736,6 +736,9 @@
@@ -454,14 +673,133 @@
  void showNibblesScreen(void)
  {
 +#ifdef TAPEHEAD_EMBEDDED
-+	ts_tapehead_request(1); return;
++	ts_tapehead_request(TS_TH_FALLOUT); return;
 +#endif
  	if (ui.extendedPatternEditor)
  		exitPatternEditorExtended();
  
 --- a/src/ft2_palette.c
 +++ b/src/ft2_palette.c
-@@ -878,6 +878,9 @@
+@@ -60,7 +60,7 @@
+ static const char *paletteEntryNames[TAPEHEAD_PALETTE_EDIT_COUNT] =
+ {
+ 	"PAT Text", "Block Mark", "Block Text", "Mouse", "Desktop", "Buttons",
+-	"Note / Wave", "PAT Inst.", "PAT Volume", "PAT Tuning", "PAT Effect",
++	"Note / Wave", "PAT Tile", "PAT Volume", "PAT Tuning", "PAT Effect",
+ 	"PAT Empty", "Wave Select", "LEN Head", "FT Head", "CONTROL Head", "FT Sync LED",
+ 	"FT Phase LED", "FT Song Badge", "FT+LEN Head"
+ };
+@@ -594,6 +594,9 @@
+ 
+ static void drawTapeSisterSwatches(void)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	return;
++#endif
+ 	initializeUniversalPalette();
+ 	textOutShadow(400, 159, PAL_FORGRND, PAL_DSKTOP2, "TS:");
+ 	for (int32_t swatch = 0;
+@@ -627,6 +630,9 @@
+ 
+ static int32_t tapeSisterSwatchFromPoint(int32_t x, int32_t y)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	return -1;
++#endif
+ 	if (x < TAPESISTER_SWATCH_X || y < TAPESISTER_SWATCH_Y ||
+ 		y >= TAPESISTER_SWATCH_Y + TAPESISTER_SWATCH_H)
+ 	{
+@@ -687,6 +693,9 @@
+ 
+ static void paletteDragMoved(void)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	if (config.cfg_StdPalNum != PAL_USER_DEFINED) promotePaletteToUserDefined();
++#endif
+ 	if (config.cfg_StdPalNum != PAL_USER_DEFINED)
+ 	{
+ 		updatePaletteEditor(); // resets colors/contrast vars
+@@ -767,6 +776,9 @@
+ 
+ void configPalRDown(void)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	if(config.cfg_StdPalNum!=PAL_USER_DEFINED)promotePaletteToUserDefined();
++#endif
+ 	if (config.cfg_StdPalNum != PAL_USER_DEFINED)
+ 		showColorErrorMsg();
+ 	else if ((config.specialFlags2 & HARDWARE_MOUSE) && cfg_ColorNum == 3)
+@@ -777,6 +789,9 @@
+ 
+ void configPalRUp(void)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	if(config.cfg_StdPalNum!=PAL_USER_DEFINED)promotePaletteToUserDefined();
++#endif
+ 	if (config.cfg_StdPalNum != PAL_USER_DEFINED)
+ 		showColorErrorMsg();
+ 	else if ((config.specialFlags2 & HARDWARE_MOUSE) && cfg_ColorNum == 3)
+@@ -787,6 +802,9 @@
+ 
+ void configPalGDown(void)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	if(config.cfg_StdPalNum!=PAL_USER_DEFINED)promotePaletteToUserDefined();
++#endif
+ 	if (config.cfg_StdPalNum != PAL_USER_DEFINED)
+ 		showColorErrorMsg();
+ 	else if ((config.specialFlags2 & HARDWARE_MOUSE) && cfg_ColorNum == 3)
+@@ -797,6 +815,9 @@
+ 
+ void configPalGUp(void)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	if(config.cfg_StdPalNum!=PAL_USER_DEFINED)promotePaletteToUserDefined();
++#endif
+ 	if (config.cfg_StdPalNum != PAL_USER_DEFINED)
+ 		showColorErrorMsg();
+ 	else if ((config.specialFlags2 & HARDWARE_MOUSE) && cfg_ColorNum == 3)
+@@ -807,6 +828,9 @@
+ 
+ void configPalBDown(void)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	if(config.cfg_StdPalNum!=PAL_USER_DEFINED)promotePaletteToUserDefined();
++#endif
+ 	if (config.cfg_StdPalNum != PAL_USER_DEFINED)
+ 		showColorErrorMsg();
+ 	else if ((config.specialFlags2 & HARDWARE_MOUSE) && cfg_ColorNum == 3)
+@@ -817,6 +841,9 @@
+ 
+ void configPalBUp(void)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	if(config.cfg_StdPalNum!=PAL_USER_DEFINED)promotePaletteToUserDefined();
++#endif
+ 	if (config.cfg_StdPalNum != PAL_USER_DEFINED)
+ 		showColorErrorMsg();
+ 	else if ((config.specialFlags2 & HARDWARE_MOUSE) && cfg_ColorNum == 3)
+@@ -827,6 +854,9 @@
+ 
+ void configPalContDown(void)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	if(config.cfg_StdPalNum!=PAL_USER_DEFINED)promotePaletteToUserDefined();
++#endif
+ 	if (config.cfg_StdPalNum != PAL_USER_DEFINED)
+ 		showColorErrorMsg();
+ 	else if ((config.specialFlags2 & HARDWARE_MOUSE) && cfg_ColorNum == 3)
+@@ -837,6 +867,9 @@
+ 
+ void configPalContUp(void)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	if(config.cfg_StdPalNum!=PAL_USER_DEFINED)promotePaletteToUserDefined();
++#endif
+ 	if (config.cfg_StdPalNum != PAL_USER_DEFINED)
+ 		showColorErrorMsg();
+ 	else if ((config.specialFlags2 & HARDWARE_MOUSE) && cfg_ColorNum == 3)
+@@ -878,6 +911,9 @@
  
  void configPalSaveShared(void)
  {
@@ -471,6 +809,131 @@
  	UNICHAR *filePathU = getCanonicalPalettePathU();
  	if (filePathU == NULL)
  	{
+@@ -930,6 +966,10 @@
+ 	static const char *modeNames[3] = { "Edit", "Always", "Mono" };
+ 	textOutShadow(400,  92, PAL_FORGRND, PAL_DSKTOP2, "Preset:");
+ 	textOutShadow(400, 109, PAL_FORGRND, PAL_DSKTOP2, "PAT Colors:");
++#ifdef TAPEHEAD_EMBEDDED
++	textOutTiny(400,128,"COLORS SAVE WITH THE PROJECT",video.palette[PAL_FORGRND]);
++	textOutTiny(400,140,"SAVE DEFAULTS FOR NEW PROJECTS",video.palette[PAL_FORGRND]);
++#else
+ 	textOutShadow(400, 126, PAL_FORGRND, PAL_DSKTOP2, "Exchange:");
+ 	textOutShadow(400, 143, PAL_FORGRND, PAL_DSKTOP2, "Program:");
+ 	drawFramework(474, 122, 156, 14, FRAMEWORK_TYPE2);
+@@ -939,6 +979,7 @@
+ 	drawTextBox(TB_CONF_TAPESISTER_EXCHANGE);
+ 	drawTextBox(TB_CONF_TAPESISTER_EXECUTABLE);
+ 	drawTapeSisterSwatches();
++#endif
+ 	pushButtons[PB_CONFIG_PAL_PRESET].caption = (char *)presetNames[config.cfg_StdPalNum];
+ 	pushButtons[PB_CONFIG_PAL_COLOR_MODE].caption = (char *)modeNames[MIN(tapeheadConfig.patternColorMode, 2)];
+ 	charOutShadow(503, 17, PAL_FORGRND, PAL_DSKTOP2, 'R');
+@@ -964,8 +1005,10 @@
+ 	showScrollBar(SB_PAL_CONTRAST);
+ 	showPushButton(PB_CONFIG_PAL_CONT_DOWN);
+ 	showPushButton(PB_CONFIG_PAL_CONT_UP);
++#ifndef TAPEHEAD_EMBEDDED
+ 	showPushButton(PB_CONFIG_PAL_IMPORT);
+ 	showPushButton(PB_CONFIG_PAL_EXPORT);
++#endif
+ 
+ 	updatePaletteEditor();
+ }
+@@ -1132,7 +1175,13 @@
+ 
+ bool paletteListMouseWheel(bool directionUp, int32_t x, int32_t y)
+ {
+-	if (!ui.configScreenShown || editor.currConfigScreen != CONFIG_SCREEN_LAYOUT ||
++	if (!ui.configScreenShown ||
++#ifndef TAPEHEAD_EMBEDDED
++        editor.currConfigScreen != CONFIG_SCREEN_LAYOUT
++#else
++        false
++#endif
++ ||
+ 		x < PAL_LIST_X || x >= 501 || y < PAL_LIST_Y || y >= PAL_LIST_Y + (PAL_LIST_ROW_H * PAL_LIST_VISIBLE_ROWS))
+ 		return false;
+ 
+@@ -1146,7 +1195,13 @@
+ 
+ bool paletteListMouseDown(int32_t x, int32_t y)
+ {
+-	if (!ui.configScreenShown || editor.currConfigScreen != CONFIG_SCREEN_LAYOUT)
++	if (!ui.configScreenShown ||
++#ifndef TAPEHEAD_EMBEDDED
++        editor.currConfigScreen != CONFIG_SCREEN_LAYOUT
++#else
++        false
++#endif
++)
+ 		return false;
+ 	const int32_t swatch = tapeSisterSwatchFromPoint(x, y);
+ 	if (swatch >= 0)
+@@ -1205,3 +1260,27 @@
+ 	patternColors[PAL_USER_DEFINED][field].g = color8To6(RGB32_G(rgb));
+ 	patternColors[PAL_USER_DEFINED][field].b = color8To6(RGB32_B(rgb));
+ }
++
++#ifdef TAPEHEAD_EMBEDDED
++/* Portable six-bit user palette, including all tracker field/playhead colors. */
++void tapeheadEmbeddedPaletteGet(uint8_t *bytes)
++{
++    initPatternColors();
++    for (int i=0;i<TAPEHEAD_PALETTE_EDIT_COUNT;++i) {
++        pal16 c=i<6?palTable[PAL_USER_DEFINED][FTC_EditOrder[i]]:patternColors[PAL_USER_DEFINED][i-6];
++        *bytes++=c.r;*bytes++=c.g;*bytes++=c.b;
++    }
++    *bytes++=palContrast[PAL_USER_DEFINED][0];*bytes=palContrast[PAL_USER_DEFINED][1];
++}
++void tapeheadEmbeddedPaletteSet(const uint8_t *bytes)
++{
++    initPatternColors();
++    for (int i=0;i<TAPEHEAD_PALETTE_EDIT_COUNT;++i) {
++        pal16 *c=i<6?&palTable[PAL_USER_DEFINED][FTC_EditOrder[i]]:&patternColors[PAL_USER_DEFINED][i-6];
++        c->r=*bytes++;c->g=*bytes++;c->b=*bytes++;
++    }
++    applyPaletteContrast(PAL_USER_DEFINED,4,bytes[0]);
++    applyPaletteContrast(PAL_USER_DEFINED,5,bytes[1]);
++    setPalette(palTable[config.cfg_StdPalNum],REDRAW_SCREEN);
++}
++#endif
+--- a/src/ft2_pattern_draw.c
++++ b/src/ft2_pattern_draw.c
+@@ -1087,10 +1087,9 @@
+ 		textOutTiny(ratioX, yPos + 1, ratioText, ratioColor);
+ 
+ 		int32_t statusX = ratioX + ratioWidth + 2;
+-		if (reversed)
+-		{
++		{ /* Saved playhead direction: F, R, or B (bounce). */
+ 			fillRect((uint16_t)statusX, yPos, 5, 8, PAL_BLCKMRK);
+-			textOutTiny(statusX + 1, yPos + 1, "R",
++			textOutTiny(statusX + 1, yPos + 1, track->bounce?"B":reversed?"R":"F",
+ 				video.palette[PAL_FASTTRACKS_PHASE]);
+ 			statusX += 6;
+ 		}
+--- a/src/ft2_pattern_launcher_ui.c
++++ b/src/ft2_pattern_launcher_ui.c
+@@ -1740,6 +1740,9 @@
+ 
+ void patternLauncherSetStandaloneShown(bool shown)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	if (shown) { ts_tapehead_request(TS_TH_CANVAS); return; }
++#endif
+ 	if (shown == patternLauncherStandaloneShown)
+ 	{
+ 		if (shown)
+@@ -1854,6 +1857,9 @@
+ 
+ void patternLauncherSetPanelShown(bool shown)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	if (shown) { ts_tapehead_request(TS_TH_CANVAS); return; }
++#endif
+ 	patternLauncherPanelShown = shown;
+ 	if (shown)
+ 		sampleLauncherDeckShown = false;
 --- a/src/ft2_replayer.h
 +++ b/src/ft2_replayer.h
 @@ -228,6 +228,12 @@
@@ -493,7 +956,7 @@
  void showSampleEditor(void)
  {
 +#ifdef TAPEHEAD_EMBEDDED
-+	ts_tapehead_request(1);return;
++	ts_tapehead_request(TS_TH_CANVAS);return;
 +#endif
  	if (ui.extendedPatternEditor)
  		exitPatternEditorExtended();
@@ -503,7 +966,7 @@
  void toggleSampleEditor(void)
  {
 +#ifdef TAPEHEAD_EMBEDDED
-+	ts_tapehead_request(1);
++	ts_tapehead_request(TS_TH_CANVAS);
 +	return;
 +#endif
  	hideInstEditor();
@@ -514,7 +977,7 @@
  void showSampleEditorExt(void)
  {
 +#ifdef TAPEHEAD_EMBEDDED
-+	ts_tapehead_request(1);return;
++	ts_tapehead_request(TS_TH_CANVAS);return;
 +#endif
  	hideTopScreen();
  	showTopScreen(DONT_RESTORE_SCREENS);
@@ -524,7 +987,7 @@
  void toggleSampleEditorExt(void)
  {
 +#ifdef TAPEHEAD_EMBEDDED
-+	ts_tapehead_request(1);
++	ts_tapehead_request(TS_TH_CANVAS);
 +	return;
 +#endif
  	if (ui.sampleEditorExtShown)
@@ -540,6 +1003,18 @@
  #define STBI_ONLY_PNG
  #define STBI_NO_HDR
  #define STBI_NO_LINEAR
+--- a/src/ft2_tapesister_exchange.c
++++ b/src/ft2_tapesister_exchange.c
+@@ -1539,6 +1539,9 @@
+ 
+ void tapeSisterExchangeOpenMenu(void)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	ts_tapehead_request(TS_TH_CANVAS);return;
++#endif
+ 	const int16_t choice = okBox(SYSREQ_TYPE_TAPESISTER_MENU,
+ 		"TapeSister Exchange",
+ 		"Send samples or rendered audio, check the shared inbox, or open the exchange folder.",
 --- a/src/ft2_trim.c
 +++ b/src/ft2_trim.c
 @@ -1134,6 +1134,9 @@
@@ -547,7 +1022,7 @@
  void showTrimScreen(void)
  {
 +#ifdef TAPEHEAD_EMBEDDED
-+	ts_tapehead_request(1); return;
++	ts_tapehead_request(TS_TH_ROUTER); return;
 +#endif
  	if (ui.extendedPatternEditor)
  		exitPatternEditorExtended();
@@ -557,7 +1032,7 @@
  void toggleTrimScreen(void)
  {
 +#ifdef TAPEHEAD_EMBEDDED
-+	ts_tapehead_request(1); return;
++	ts_tapehead_request(TS_TH_ROUTER); return;
 +#endif
  	if (ui.trimScreenShown)
  		hideTrimScreen();
@@ -614,7 +1089,7 @@
  void showWavRenderer(void)
  {
 +#ifdef TAPEHEAD_EMBEDDED
-+	ts_tapehead_request(1); return;
++	ts_tapehead_request(TS_TH_CAPTURE); return;
 +#endif
  	if (ui.extendedPatternEditor)
  		exitPatternEditorExtended();

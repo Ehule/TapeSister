@@ -30,11 +30,36 @@ Sister Machine pages. **Canvas** returns to the tile canvas. These buttons
 release held manual notes while tracker transport continues; Escape in the
 Sister window returns to the tracker.
 
-The former Disk Op button is **Tiles**, which returns to the canvas for tile
-selection. Configuration opens the host's **Audio** panel and Trim opens
-**Router**. The redundant Zap shortcut is hidden. Independent sample editing
-and file operations are unavailable.
-The sample-list area displays host status and capture state.
+**Open** and **Save** use host project dialogs. **Config** opens tracker
+preferences; **Router** and Config's **Audio health** open the host panels.
+The tile details show the selected alias, name, page/slot, source sample rate,
+channels, duration and loop mode. The song title beneath them remains editable.
+The title is **TrackSister** and the old badge is a functional **LEN ON/OFF**
+bypass button. Output capture is indicated beside the FasTracks master status.
+
+## Tracker configuration
+
+**Config** / Ctrl+C opens two pages with the palette editor always available:
+
+- **Recording**: Silent Record, Inherit Pattern Length (IPL), Insert New Pattern
+  (INP), Auto Pattern Generation (APG), multichannel recording/key jazz/editing,
+  recorded key-offs, quantization, cut/insert/delete behavior, kill voices at
+  stop and whether FasTracks uses LEN.
+- **Layout**: pattern stretch, row numbering, sharps/flats, zeroes, framework,
+  row colors, channel numbers, volume column, blank fields and pattern font.
+- **Palette**: select a preset or edit RGB/contrast and individual field/head
+  colors. Wheel the color list to reach additional entries. Editing a preset
+  creates a User defined palette. Pattern color mode is separately selectable.
+
+IPL gives new patterns the current pattern's length. INP inserts a new pattern
+at the next order position using the **Ins.** button; Shift+Ins. copies the
+current pattern. Enable INP before APG: **Rec. sng.** becomes **REC+**, creating
+patterns as song recording reaches the end. Disabling INP also disables APG.
+Silent Record still enters notes while suppressing live monitoring.
+
+Projects retain these preferences and colors. **Save defaults** explicitly
+stores defaults for future/legacy scores in `sistertracker.cfg` beside the host
+configuration. **Done** or Escape closes Config and stays in the tracker.
 
 ## Tiles and audio
 
@@ -82,7 +107,8 @@ bindings differ from the earlier native editor's Ctrl+C/X/V shortcuts.
 | Shift/Ctrl/Alt + F1/F2 | Transpose track/pattern/block down/up |
 | Shift/Ctrl/Alt + F7/F8 | Transpose only the current tile in that scope |
 | Ctrl+Shift+V/B/T/M | Original volume/FX/tuning/note interpolation previews |
-| Ctrl+Grave | Silent record entry |
+| Ctrl+Grave | Toggle Silent Record |
+| Config / Ctrl+C | Tracker recording, layout and palette preferences |
 | Grave / Shift+Grave | Increase/decrease STEP, wrapping 0–16 |
 | STEP arrows / STEP wheel | Original edit step |
 | OCT click/right click/wheel | Increase/decrease octave, clamped 0–7 |
@@ -94,8 +120,7 @@ bindings differ from the earlier native editor's Ctrl+C/X/V shortcuts.
 
 F10 reserves the host workspace toggle, so the original plain F10 row bookmark
 is unavailable. Modified F10 bindings remain with TapeHead. Plain F7 belongs to
-host capture; use OCT for octave 6/7. Ctrl+C opens host Audio through TapeHead's
-original configuration command. Ctrl+D selects Tiles through Disk Op; Ctrl+E
+host capture; use OCT for octave 6/7. Ctrl+D opens host projects through Disk Op; Ctrl+E
 returns to Canvas through the original extended sample editor command.
 
 Backspace's clear-before-move order and the additional Ctrl+Alt+Backspace alias
@@ -113,8 +138,22 @@ LEN and CONTROL are **song-wide**, following the pinned TapeHead source.
 Standard, Pattern and Song modes, all 17 ratios, master toggle, direction,
 selection, clutches, sync, randomization, Jog/Punch and Z-command behavior use
 the original implementation. The logo toggles the FastTracks master; its
-Ctrl/Ctrl+Shift actions remain available. This supersedes the previous native
-implementation's pending Song mode and custom lane ping-pong traversal.
+Ctrl/Ctrl+Shift actions remain available. Forward, Reverse and Bounce traversal
+are available for private playheads, including Song mode across the order list.
+Bounce reflects without repeating endpoint rows; a one-row loop stays put.
+
+| Header gesture | Action |
+| --- | --- |
+| Wheel over FasTracks ratio | Previous/next of 17 ratios; enables a Pattern head if needed |
+| Right-click ratio or click F/R/B badge | Cycle Forward, Reverse, Bounce |
+| Shift-click ratio or click its mode badge | Cycle Standard, Pattern, Song |
+| Wheel over LEN | Adjust length, clamped at 256 |
+| Shift+wheel over LEN | Adjust by eight rows |
+| Ctrl+wheel over LEN | Clear the length override |
+
+These gestures follow the header in compact, extended and pattern-only views.
+Precise wheels accumulate partial detents independently when moving between
+controls. Original keyboard gestures remain available.
 
 Literal Ctrl+L block transport ignores LEN/private clocks and auditions only
 its marked rows and lanes. F7/F8 capture the live final host output at exact
@@ -125,7 +164,10 @@ loop seams, rather than running TapeHead's separate offline WAV renderer.
 The host project owns both the stable pattern/tile model and a versioned score
 extension. The extension retains original note/instrument/volume/effect/tuning
 bytes, hidden rows, orders, song name, global volume, FastTracks state, mute/trim,
-editor position, octave/STEP, color mode and expanded-view choice. It contains
+editor position, octave/STEP, recording/layout preferences, full custom palette,
+Forward/Reverse/Bounce choices and expanded-view choice. Its `STH2` payload
+also reads earlier `STH1` embedded scores; those retain their stored color mode
+and LEN policy and receive defaults for newly stored preferences. It contains
 no pointers, copied tile audio, active voices or running transport. Loading a
 project starts stopped and clears the original clipboard and undo history.
 
@@ -140,5 +182,5 @@ extension does not change that format or make project audio storage lossless.
 Buffer tiles/external-input tile bindings are a later extension of the host
 boundary and are not implemented here.
 
-See [source boundary and validation](SISTERTRACKER_PARITY.md) and
+See the [PR124 audit](PR124_AUDIT.md), [source boundary and validation](SISTERTRACKER_PARITY.md) and
 [reproducible import](../third_party/tapehead/application/README.md).
