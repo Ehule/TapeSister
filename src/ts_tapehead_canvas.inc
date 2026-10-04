@@ -53,7 +53,7 @@ static void canvas_draw(void) {
     hideScrollBar(SB_SAMPLE_LIST);
     drawFramework(424,0,208,173,FRAMEWORK_TYPE1);
     char line[80];
-    snprintf(line,sizeof(line),"CANVAS  %u / %u",(unsigned)embed.canvas_page+1,
+    snprintf(line,sizeof(line),"CANVAS  %u OF %u",(unsigned)embed.canvas_page+1,
              embed.pages?(unsigned)embed.pages->page_count:1);
     textOutTiny(429,8,line,video.palette[PAL_FORGRND]);
     drawFramework(578,3,22,16,FRAMEWORK_TYPE1);textOut(585,7,PAL_FORGRND,"<");
@@ -91,9 +91,9 @@ static void canvas_draw(void) {
         textOutTiny(429,143,line,video.palette[PAL_FORGRND]);
     } else if(sample && sample->tileData) {
         TsTileLocation loc=embed.tile_location[a];
-        snprintf(line,sizeof(line),"P%u.%02u  %u HZ  %u CH  %.2fs",(unsigned)loc.page+1,
+        snprintf(line,sizeof(line),"P%u S%02u  %uHZ %uCH %uMS",(unsigned)loc.page+1,
                  (unsigned)loc.slot+1,embed.tile_rate[a],sample->tileChannels,
-                 embed.tile_rate[a]?(double)sample->length/embed.tile_rate[a]:0);
+                 embed.tile_rate[a]?(unsigned)((uint64_t)sample->length*1000/embed.tile_rate[a]):0);
         textOutTiny(429,143,line,video.palette[PAL_FORGRND]);
     }
     textOutTiny(430,159,"SONG",video.palette[PAL_FORGRND]);
