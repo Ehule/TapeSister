@@ -967,8 +967,7 @@ void showPaletteEditor(void)
 	textOutShadow(400,  92, PAL_FORGRND, PAL_DSKTOP2, "Preset:");
 	textOutShadow(400, 109, PAL_FORGRND, PAL_DSKTOP2, "PAT Colors:");
 #ifdef TAPEHEAD_EMBEDDED
-	textOutTiny(400,128,"COLORS SAVE WITH THE PROJECT",video.palette[PAL_FORGRND]);
-	textOutTiny(400,140,"SAVE DEFAULTS FOR NEW PROJECTS",video.palette[PAL_FORGRND]);
+	textOutTiny(400,149,"PALETTE SAVES WITH PROJECT / DEFAULTS",video.palette[PAL_FORGRND]);
 #else
 	textOutShadow(400, 126, PAL_FORGRND, PAL_DSKTOP2, "Exchange:");
 	textOutShadow(400, 143, PAL_FORGRND, PAL_DSKTOP2, "Program:");
@@ -1263,6 +1262,16 @@ void setUserPatternColor(uint8_t field, uint32_t rgb)
 
 #ifdef TAPEHEAD_EMBEDDED
 /* Portable six-bit user palette, including all tracker field/playhead colors. */
+void tapeheadEmbeddedPaletteCurrent(uint8_t *bytes)
+{
+    initPatternColors();
+    int preset=config.cfg_StdPalNum;
+    for(int i=0;i<TAPEHEAD_PALETTE_EDIT_COUNT;++i) {
+        pal16 c=i<6?palTable[preset][FTC_EditOrder[i]]:patternColors[preset][i-6];
+        *bytes++=c.r;*bytes++=c.g;*bytes++=c.b;
+    }
+    *bytes++=palContrast[preset][0];*bytes=palContrast[preset][1];
+}
 void tapeheadEmbeddedPaletteGet(uint8_t *bytes)
 {
     initPatternColors();

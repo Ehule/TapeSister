@@ -970,6 +970,8 @@ static void browser_render(TsFramebuffer *fb, const TsBrowser *browser,
         text(fb, 58, 300,
              "AUDIO AUTO-DECODE; SHIFT+CLICK BYPASSES PREVIEW; OTHER FILES OPEN AS RAW",
              PAL_EFFECT, 1);
+    } else if (browser->mode == TS_BROWSER_TRACKER_PALETTE_IMPORT) {
+        text(fb, 58, 300, "SELECT A SHARED TAPEHEAD / TAPESISTER .PAL FILE", PAL_EFFECT, 1);
     } else if (ts_browser_mode_selects_directory(browser->mode)) {
         text(fb, 58, 300, "NAVIGATE, THEN USE THIS FOLDER", PAL_EFFECT, 1);
     } else {
@@ -987,6 +989,7 @@ static void browser_render(TsFramebuffer *fb, const TsBrowser *browser,
            browser->creating_directory ? "CREATE" :
            ts_browser_mode_selects_directory(browser->mode) ? "USE FOLDER" :
            browser->mode == TS_BROWSER_SELECT_FASTTRACKER_EXECUTABLE ? "USE FILE" :
+           browser->mode == TS_BROWSER_TRACKER_PALETTE_IMPORT ? "IMPORT" :
            browser->mode == TS_BROWSER_LOAD_WAV ? "OPEN" :
            (browser->mode == TS_BROWSER_SAVE_RECIPE ||
             browser->mode == TS_BROWSER_SAVE_PRESET) ? "SAVE" : "EXPORT",
@@ -2974,6 +2977,8 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             for(int y=0;y<400;++y)for(int x=0;x<632;++x)
                 fb->pixels[y*TS_UI_WIDTH+x+4]=ui->tracker_embedded_frame[y*632+x]|0xff000000u;
         } else tracker_render(fb,ui,instrument);
+        if(ui->browser.mode!=TS_BROWSER_CLOSED)
+            browser_render(fb,&ui->browser,ui->text_cursor_visible,ui->file_busy,0);
         master_eq_render(fb,ui);router_render(fb,ui);main_midi_learn_overlay(fb,ui);return;
     }
     if(ui->mosaic_open && ui->mosaic) {mosaic_render(fb,ui,instrument);master_eq_render(fb,ui);router_render(fb,ui);main_midi_learn_overlay(fb,ui);return;}
@@ -4137,7 +4142,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
 void ts_ui_render_file_recording(TsFramebuffer *fb, const TsUiState *ui)
 {
     if(!fb || !ui)return;
-    if(ui->tracker_open && ui->tracker_expanded)return; /* Tracker owns every grid row. */
+    if(ui->tracker_open && (ui->tracker_embedded_frame || ui->tracker_expanded))return; /* Tracker has its own Rec file control. */
     render_palette=&ui->palette;
     if(ui->file_record_state!=TS_PERFORMANCE_FILE_RECORDING &&
        ui->file_record_state!=TS_PERFORMANCE_FILE_STOPPING) {

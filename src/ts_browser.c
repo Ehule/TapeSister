@@ -44,6 +44,7 @@ static int ends_with_case(const char *value, const char *suffix)
 
 const char *ts_browser_mode_extension(TsBrowserMode mode)
 {
+    if (mode == TS_BROWSER_TRACKER_PALETTE_IMPORT || mode == TS_BROWSER_TRACKER_PALETTE_EXPORT) return ".pal";
     if (mode == TS_BROWSER_SAVE_RECIPE) return ".tsr";
     if (mode == TS_BROWSER_SAVE_PRESET) return ".tsp";
     if (mode == TS_BROWSER_EXPORT_BANK) return "";
@@ -53,6 +54,8 @@ const char *ts_browser_mode_extension(TsBrowserMode mode)
 
 const char *ts_browser_mode_title(TsBrowserMode mode)
 {
+    if (mode == TS_BROWSER_TRACKER_PALETTE_IMPORT) return "IMPORT TRACKSISTER / TAPEHEAD PALETTE";
+    if (mode == TS_BROWSER_TRACKER_PALETTE_EXPORT) return "EXPORT TRACKSISTER / TAPEHEAD PALETTE";
     if (mode == TS_BROWSER_LOAD_WAV) return "LOAD AUDIO, RAW DATA, TSR, OR TSP";
     if (mode == TS_BROWSER_SAVE_RECIPE) return "SAVE TSR PROJECT";
     if (mode == TS_BROWSER_SAVE_PRESET) return "SAVE PROCESS RECIPE";
@@ -68,6 +71,7 @@ const char *ts_browser_mode_title(TsBrowserMode mode)
 
 int ts_browser_mode_edits_filename(TsBrowserMode mode)
 {
+    if (mode == TS_BROWSER_TRACKER_PALETTE_EXPORT) return 1;
     return mode == TS_BROWSER_SAVE_RECIPE || mode == TS_BROWSER_SAVE_PRESET ||
            mode == TS_BROWSER_EXPORT_WAV || mode == TS_BROWSER_EXPORT_BANK;
 }
@@ -95,6 +99,7 @@ int ts_browser_mode_selects_directory(TsBrowserMode mode)
 
 int ts_browser_mode_allows_create_directory(TsBrowserMode mode)
 {
+    if (mode == TS_BROWSER_TRACKER_PALETTE_EXPORT) return 1;
     return mode == TS_BROWSER_SAVE_RECIPE || mode == TS_BROWSER_SAVE_PRESET ||
            mode == TS_BROWSER_EXPORT_WAV || mode == TS_BROWSER_EXPORT_BANK;
 }
@@ -490,11 +495,7 @@ int ts_browser_destination_path(const TsBrowser *browser, char *path, size_t pat
     char name[TS_BROWSER_NAME_MAX + 1];
     const char *extension;
     int written;
-    if (browser->mode != TS_BROWSER_SAVE_RECIPE &&
-        browser->mode != TS_BROWSER_SAVE_PRESET &&
-        browser->mode != TS_BROWSER_EXPORT_WAV &&
-        browser->mode != TS_BROWSER_EXPORT_BANK)
-        return 0;
+    if (!ts_browser_mode_edits_filename(browser->mode)) return 0;
     if (browser->filename[0] == '\0') return 0;
     extension = ts_browser_mode_extension(browser->mode);
     if (extension[0] == '\0')

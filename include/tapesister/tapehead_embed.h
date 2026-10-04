@@ -38,6 +38,9 @@ void ts_tapehead_host_present(void);
 void ts_tapehead_request(int action);
 void ts_tapehead_show_config(void);
 int ts_tapehead_config_visible(void);
+int ts_tapehead_interpolation_active(void);
 int ts_tapehead_preferences_load(const char *path,char *error,size_t size);
 int ts_tapehead_preferences_save(const char *path,char *error,size_t size);
+int ts_tapehead_palette_import(const char *path,char *error,size_t size);
+int ts_tapehead_palette_export(const char *path,char *error,size_t size);
 #endif

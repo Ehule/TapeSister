@@ -16,7 +16,8 @@ Its upstream repository is unchanged. The imported source is pinned to
 
 1. Select an occupied tile on the canvas, then press F10.
 2. Enter notes with the original tracker keyboard. The selected tile is assigned
-   a stable instrument alias; the TILE selector lists its name.
+   a stable instrument alias. Click a populated mini-canvas tile to select another
+   instrument; use its arrows or wheel to browse Sample pages.
 3. Use **Play ptn.**, **Play sng.**, **Rec. ptn.** or **Rec. sng.**. Space stops
    playback and switches between idle and editing, following TapeHead.
 4. F10, Escape or Canvas returns to the canvas. Playback continues when
@@ -30,12 +31,15 @@ Sister Machine pages. **Canvas** returns to the tile canvas. These buttons
 release held manual notes while tracker transport continues; Escape in the
 Sister window returns to the tracker.
 
-**Open** and **Save** use host project dialogs. **Config** opens tracker
+**Load** opens the normal host load page (audio, raw, TSR or TSP); **Save**
+opens the host project save page. **Config** opens tracker
 preferences; **Router** and Config's **Audio health** open the host panels.
-The tile details show the selected alias, name, page/slot, source sample rate,
-channels, duration and loop mode. The song title beneath them remains editable.
+The 4×4 mini canvas replaces the instrument/sample lists and bank buttons.
+Its tiles show waveform previews; the selected tile supplies the current
+instrument for note entry. Empty tiles do not change the instrument. Below it,
+the selected alias, name, page/slot, source rate, channels and duration are shown. The song title beneath them remains editable.
 The title is **TrackSister** and the old badge is a functional **LEN ON/OFF**
-bypass button. Output capture is indicated beside the FasTracks master status.
+bypass button. **Rec file**, below **Rec. ptn.**, starts/stops final-output recording.
 
 ## Tracker configuration
 
@@ -50,6 +54,13 @@ bypass button. Output capture is indicated beside the FasTracks master status.
 - **Palette**: select a preset or edit RGB/contrast and individual field/head
   colors. Wheel the color list to reach additional entries. Editing a preset
   creates a User defined palette. Pattern color mode is separately selectable.
+  **Import** and **Export** use the host file browser for shared `.pal` files.
+  **Default** restores the supplied TapeHead palette, also bundled as
+  `assets/tracksister.pal` and compiled in for first use. Saved project/default
+  preferences take precedence. The original tracker stores RGB at six-bit
+  precision, so imported/exported channels may round by up to two.
+  Extra host palette keys survive an import/export session; the project stores
+  the tracker colors and contrasts.
 
 IPL gives new patterns the current pattern's length. INP inserts a new pattern
 at the next order position using the **Ins.** button; Shift+Ins. copies the
@@ -106,7 +117,10 @@ bindings differ from the earlier native editor's Ctrl+C/X/V shortcuts.
 | F7 outside block looping | Start/stop final-output file recording |
 | Shift/Ctrl/Alt + F1/F2 | Transpose track/pattern/block down/up |
 | Shift/Ctrl/Alt + F7/F8 | Transpose only the current tile in that scope |
-| Ctrl+Shift+V/B/T/M | Original volume/FX/tuning/note interpolation previews |
+| Ctrl+Shift+I | Note interpolation preview; 1–0 selects scale/repeat, repeated key reverses direction |
+| Ctrl+Shift+V/B/T | Original volume/FX/tuning interpolation previews |
+| Enter / Escape during interpolation | Apply as one undo step / cancel while staying in TrackSister |
+| Ctrl+Shift+M | Host MIDI Learn |
 | Ctrl+Grave | Toggle Silent Record |
 | Config / Ctrl+C | Tracker recording, layout and palette preferences |
 | Grave / Shift+Grave | Increase/decrease STEP, wrapping 0–16 |
@@ -115,7 +129,7 @@ bindings differ from the earlier native editor's Ctrl+C/X/V shortcuts.
 | Backspace | Clear the current full cell, then move up; clamp at row zero |
 | Shift+Backspace | Original structural row deletion |
 | Ctrl+Alt+Backspace | Pattern-only view |
-| Alt+Backspace / Extend | Original extended view |
+| Alt+Backspace | Original extended view |
 | F9 / F12 | Host Router / Audio Health |
 
 F10 reserves the host workspace toggle, so the original plain F10 row bookmark

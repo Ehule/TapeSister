@@ -72,8 +72,14 @@ static int32_t fastTracksChannelFromScancode(SDL_Scancode scancode)
 
 	for (int32_t i = 0; i < MAX_CHANNELS; i++)
 	{
-		if (trackKeys[i] == scancode)
-			return i;
+        if (trackKeys[i] == scancode) {
+#ifdef TAPEHEAD_EMBEDDED
+            /* Hidden channels must not steal Ctrl+Shift+I/T interpolation. */
+            return i<song.numChannels?i:-1;
+#else
+            return i;
+#endif
+        }
 	}
 
 	return -1;
@@ -1249,6 +1255,10 @@ static bool checkModifiedKeys(SDL_Keycode keycode)
 
 		case SDLK_i:
 		{
+#ifdef TAPEHEAD_EMBEDDED
+            if(keyb.leftCtrlPressed && keyb.leftShiftPressed)
+                return interpolationBegin(INTERPOLATE_NOTES);
+#endif
 			if (keyb.leftAltPressed)
 			{
 				jumpToChannel(7);
@@ -1284,8 +1294,10 @@ static bool checkModifiedKeys(SDL_Keycode keycode)
 
 		case SDLK_m:
 		{
-			if (keyb.leftCtrlPressed && keyb.leftShiftPressed)
-				return interpolationBegin(INTERPOLATE_NOTES);
+#ifndef TAPEHEAD_EMBEDDED
+            if (keyb.leftCtrlPressed && keyb.leftShiftPressed)
+                return interpolationBegin(INTERPOLATE_NOTES);
+#endif
 
 			if (keyb.leftCtrlPressed)
 			{

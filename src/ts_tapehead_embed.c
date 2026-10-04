@@ -2,6 +2,9 @@
    editing, undo, selection, timing, effects and transport stay upstream. */
 #include "tapesister/tapehead_embed.h"
 #include "tapesister/audition.h"
+#include "tapesister/palette.h"
+#include "ft2_scrollbars.h"
+#include "ft2_interpolation.h"
 #include "ft2_header.h"
 #include "ft2_structs.h"
 #include "ft2_video.h"
@@ -58,6 +61,9 @@ static struct {
     uint64_t model_hash;
     TsPatternId ids[256];
     TsTileId selected_tile;
+    TsSamplePages *pages;
+    const TsInstrument *active;
+    size_t canvas_page,host_page;
     uint64_t tile_stamp[129];
     TsTileLocation tile_location[129];
     unsigned tile_rate[129];
@@ -71,7 +77,7 @@ static struct {
     unsigned rate;
     double wheel_fraction;
     int wheel_target;
-    char status[160];
+    char status[160],canvas_message[80];
     unsigned capture;
 } embed;
 
@@ -87,6 +93,7 @@ void ts_tapehead_host_present(void) {
 }
 void ts_tapehead_request(int action) { embed.action=action; }
 int ts_tapehead_action(void) { int a=embed.action;embed.action=0;return a; }
+int ts_tapehead_interpolation_active(void) {return embed.initialized && interpolationPreviewActive();}
 int ts_tapehead_running(void) { return atomic_load(&embed.ready)&&songPlaying; }
 int ts_tapehead_block_active(void) { return embed.initialized&&tapeheadBlockLoopIsActive(); }
 unsigned ts_tapehead_capture_flags(unsigned frame) {return frame<TH_FRAMES?embed.capture_flags[frame]:0;}
@@ -158,14 +165,21 @@ static void canvas_button(void) {ts_tapehead_request(TS_TH_CANVAS);}
 static void router_button(void) {ts_tapehead_request(TS_TH_ROUTER);}
 static void project_save_button(void) {ts_tapehead_request(TS_TH_SAVE_PROJECT);}
 static void project_open_button(void) {ts_tapehead_request(TS_TH_OPEN_PROJECT);}
+static void capture_button(void) {ts_tapehead_request(TS_TH_CAPTURE);}
+#include "ts_tapehead_canvas.inc"
 static void length_bypass_button(void) {fastTracksPOCSetLengthTopologyBypassed(!fastTracksPOCLengthTopologyIsBypassed());}
 static int main_panel_visible(void) {
     return !ui.extendedPatternEditor && !ui.patternEditorOnly && !ui.configScreenShown &&
            !ui.helpScreenShown && !ui.aboutScreenShown && !ui.nibblesShown;
 }
 static void menu(void) {
-    if(ui.configScreenShown) {textOutClipX(400,157,PAL_FORGRND,preferences_message,628);return;}
-    pushButtons[PB_DISK_OP].caption="Open";pushButtons[PB_DISK_OP].callbackFuncOnUp=project_open_button;
+    if(ui.configScreenShown) {palette_buttons();textOutClipX(400,157,PAL_FORGRND,preferences_message,628);return;}
+    pushButtons[PB_DISK_OP].x=294;pushButtons[PB_DISK_OP].y=36;
+    pushButtons[PB_ZAP].y=53;pushButtons[PB_TRIM].y=70;
+    pushButtons[PB_EXTEND_VIEW].x=359;pushButtons[PB_EXTEND_VIEW].y=87;
+    pushButtons[PB_EXTEND_VIEW].caption=embed.capture?"Stop file":"Rec file";
+    pushButtons[PB_EXTEND_VIEW].callbackFuncOnUp=capture_button;
+    pushButtons[PB_DISK_OP].caption="Load";pushButtons[PB_DISK_OP].callbackFuncOnUp=project_open_button;
     pushButtons[PB_INST_ED].caption="FX";pushButtons[PB_INST_ED].callbackFuncOnUp=fx_button;
     pushButtons[PB_SMP_ED].caption="Prism";pushButtons[PB_SMP_ED].callbackFuncOnUp=prism_button;
     pushButtons[PB_CONFIG].caption="Config";
@@ -178,34 +192,16 @@ static void menu(void) {
     pushButtons[PB_TRIM].caption="Router";pushButtons[PB_TRIM].callbackFuncOnUp=router_button;
     if(main_panel_visible()) {
         drawPushButton(PB_NIBBLES);drawPushButton(PB_TRIM);drawPushButton(PB_CONFIG);
-        showPushButton(PB_ZAP);
+        showPushButton(PB_ZAP);drawPushButton(PB_DISK_OP);drawPushButton(PB_EXTEND_VIEW);
         if(ui.scopesShown) {
-            drawFramework(112,0,154,32,FRAMEWORK_TYPE1);textOut(132,5,PAL_FORGRND,"TrackSister");
-            textOutTiny(126,20,fastTracksPOCMasterIsEnabled()?"FASTRACKS ON":"FASTRACKS OFF",video.palette[PAL_FORGRND]);
-            if(embed.capture)textOutTiny(213,20,"CAPTURE",video.palette[PAL_FORGRND]);
+            tracker_logo();
             pushButtons[PB_BADGE].bitmapFlag=pushButtons[PB_BADGE].bitmap32Flag=false;
-            pushButtons[PB_BADGE].caption="LEN";pushButtons[PB_BADGE].caption2=fastTracksPOCLengthTopologyIsBypassed()?"OFF":"ON";
+            pushButtons[PB_BADGE].caption=pushButtons[PB_BADGE].caption2=NULL;
             pushButtons[PB_BADGE].callbackFuncOnUp=length_bypass_button;drawPushButton(PB_BADGE);
+            textOutTiny(273,7,"LEN",video.palette[PAL_FORGRND]);
+            textOutTiny(273,20,fastTracksPOCLengthTopologyIsBypassed()?"OFF":"ON",video.palette[PAL_FORGRND]);
         }
-        hidePushButton(PB_SAMPLE_LIST_UP);hidePushButton(PB_SAMPLE_LIST_DOWN);
-        drawFramework(424,97,164,74,FRAMEWORK_TYPE1);fillRect(427,100,158,68,PAL_DESKTOP);
-        int a=editor.curInstr;sample_t *sample=a && instr[a]?&instr[a]->smp[0]:NULL;
-        char line[80];
-        snprintf(line,sizeof(line),"TILE %02X",a);textOutTiny(431,103,line,video.palette[PAL_FORGRND]);
-        textOutClipX(431,114,PAL_FORGRND,a?song.instrName[a]:"NO TILE",582);
-        if(sample && sample->tileData) {
-            TsTileLocation location=embed.tile_location[a];
-            snprintf(line,sizeof(line),"PAGE %u / SLOT %02u",(unsigned)location.page+1,(unsigned)location.slot+1);
-            textOutTiny(431,128,line,video.palette[PAL_FORGRND]);
-            snprintf(line,sizeof(line),"%u HZ  %u CH  %.2f SEC",embed.tile_rate[a],sample->tileChannels,
-                embed.tile_rate[a]?(double)sample->length/embed.tile_rate[a]:0);
-            textOutTiny(431,139,line,video.palette[PAL_FORGRND]);
-            static const char *loops[]={"FORWARD","REVERSE","BOUNCE","INTRO / FORWARD","INTRO / REVERSE","INTRO / BOUNCE"};
-            snprintf(line,sizeof(line),"%s",sample->loopLength?loops[MIN(sample->tileLoopMode,5)]:"ONE SHOT");
-            textOutTiny(431,146,line,video.palette[PAL_FORGRND]);
-        }
-        textOutTiny(430,159,"SONG",video.palette[PAL_FORGRND]);
-        drawFramework(450,155,136,16,FRAMEWORK_TYPE2);drawTextBox(TB_SONG_NAME);
+        canvas_draw();
         char octave[12];snprintf(octave,sizeof(octave),"OCT %u",editor.curOctave);
         drawFramework(294,155,59,16,FRAMEWORK_TYPE1);textOut(300,159,PAL_FORGRND,octave);
     }
@@ -244,10 +240,10 @@ int ts_tapehead_init(const TsTapeHeadHost *host,unsigned rate,char *error,size_t
     config.ptnMaxChannels=2;ui.maxVisibleChannels=8;
     if(!setupReplayer() || !tapeheadEmbeddedAudioPrepare(embed.rate,TH_FRAMES) || !setupGUI())goto bad;
     textBoxes[TB_SONG_NAME].x=452;textBoxes[TB_SONG_NAME].y=157;
-    textBoxes[TB_SONG_NAME].w=132;textBoxes[TB_SONG_NAME].renderW=128;
+    textBoxes[TB_SONG_NAME].w=176;textBoxes[TB_SONG_NAME].renderW=172;
     undoInit();undoLoadConfig();
     playMode=PLAYMODE_EDIT;audio.locked=false;
-    preferences_get(default_preferences);
+    palette_default();preferences_get(default_preferences);
     menu();drawGUIOnRunTime();menu();
     return 1;
 bad:
@@ -382,7 +378,10 @@ int ts_tapehead_event(const SDL_Event *event,int x,int y) {
             else ratio_adjust(lane,1);
             setSongModifiedFlag();return 1;
         }
-        if(main_panel_visible() && x>=424 && x<588 && y>=97 && y<155)return 1;
+        if(main_panel_visible() && x>=424 && x<632 && y<155) {
+            if(!ui.sysReqShown && !editor.editTextFlag && event->button.button==SDL_BUTTON_LEFT)canvas_click(x,y);
+            return 1;
+        }
         if(main_panel_visible() && x>=294 && x<353 && y>=155 && y<171) {
             editor.curOctave=CLAMP(editor.curOctave+(event->button.button==SDL_BUTTON_RIGHT?-1:1),0,7);return 1;
         }
@@ -402,6 +401,7 @@ int ts_tapehead_event(const SDL_Event *event,int x,int y) {
         }
         if(main_panel_visible() && x>=125 && x<168 && y>=62 && y<78)target=300;
         if(main_panel_visible() && x>=294 && x<353 && y>=155 && y<171)target=301;
+        if(main_panel_visible() && x>=424 && x<632 && y<173)target=600;
         if(ui.configScreenShown)target=500;
         if(target!=embed.wheel_target || d*embed.wheel_fraction<0)embed.wheel_fraction=0;
         embed.wheel_target=target;embed.wheel_fraction+=d;
@@ -410,7 +410,7 @@ int ts_tapehead_event(const SDL_Event *event,int x,int y) {
             int lane=fasttracks_header_lane(x,y);
             if(ui.sysReqShown || editor.editTextFlag)break;
             if(lane>=0)ratio_adjust(lane,ticks>0?1:-1);
-            else if(main_panel_visible() && x>=424 && x<588 && y>=97 && y<171)break;
+            else if(target==600)canvas_page_step(ticks>0?-1:1);
             else if(main_panel_visible() && x>=125 && x<168 && y>=62 && y<78) {if(ticks>0)pbIncAdd();else pbDecAdd();}
             else if(main_panel_visible() && x>=294 && x<353 && y>=155 && y<171)
                 editor.curOctave=CLAMP(editor.curOctave+(ticks>0?1:-1),0,7);
@@ -437,12 +437,16 @@ static int bind_tiles(TsSamplePages *pages,const TsInstrument *active,char *e,si
     TsSisterTracker *t=&pages->tracker;
     /* Register the selected tile and populated visible page without reassigning
        existing aliases. A missing/deleted tile never resolves by slot number. */
-    for(int slot=0;slot<TS_BANK_SLOT_COUNT;++slot)if(active->bank[slot].occupied) {
-        TsTileId id=active->bank[slot].tile_id;int a=1;
+    for(int pass=0;pass<2;++pass) {
+    const TsInstrument *bank=pass?ts_sample_pages_page(pages,active,embed.canvas_page):active;
+    if(!bank)continue;
+    for(int slot=0;slot<TS_BANK_SLOT_COUNT;++slot)if(bank->bank[slot].occupied) {
+        TsTileId id=bank->bank[slot].tile_id;int a=1;
         for(;a<=128 && t->aliases[a]!=id;++a);
         if(a>128){for(a=1;a<=128 && t->aliases[a];++a);if(a<=128)t->aliases[a]=id;}
-        if(a>128 && slot==active->selected_slot)return fail(e,size,"Tracker's 128 tile aliases are occupied");
-        if(a<=128 && slot==active->selected_slot && embed.selected_tile!=id) {editor.curInstr=a;embed.selected_tile=id;ui.updatePosSections=true;updateInstrumentSwitcher();}
+        if(a>128 && !pass && slot==active->selected_slot)return fail(e,size,"Tracker's 128 tile aliases are occupied");
+        if(a<=128 && !pass && slot==active->selected_slot && embed.selected_tile!=id) {editor.curInstr=a;embed.selected_tile=id;ui.updatePosSections=true;updateInstrumentSwitcher();}
+    }
     }
     for(int a=1;a<=128;++a) {
         TsTileLocation loc={0};const TsBankSlot *slot=t->aliases[a]?ts_sample_pages_find_tile(pages,active,t->aliases[a],&loc):NULL;
@@ -697,6 +701,9 @@ int ts_tapehead_sync(TsSamplePages *pages,const TsInstrument *active,unsigned ra
         int ok=tapeheadEmbeddedAudioPrepare(rate,TH_FRAMES);embed.rate=rate;ts_tapehead_host_unlock();
         if(!ok)return fail(e,n,"Unable to prepare tracker audio rate");
     }
+    if(embed.pages!=pages || embed.host_page!=pages->active_page)embed.canvas_page=pages->active_page;
+    embed.pages=pages;embed.active=active;embed.host_page=pages->active_page;
+    if(embed.canvas_page>=pages->page_count)embed.canvas_page=pages->active_page;
     if(!bind_tiles(pages,active,e,n))return 0;
     embed.model_hash=ts_sister_tracker_hash(t);atomic_store_explicit(&embed.ready,1,memory_order_release);
     return 1;

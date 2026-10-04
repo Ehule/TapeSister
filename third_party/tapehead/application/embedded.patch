@@ -564,6 +564,18 @@
  					{
  						k = controlCodeToNum(&s[2]);
  						s += 5; sLen -= 5;
+@@ -411,6 +411,11 @@
+ 	textOutShadow(21, 67, PAL_FORGRND, PAL_DSKTOP2, "How to use FT2");
+ 	textOutShadow(21, 83, PAL_FORGRND, PAL_DSKTOP2, "Problems/FAQ");
+ 	textOutShadow(21, 99, PAL_FORGRND, PAL_DSKTOP2, "Known bugs");
++#ifdef TAPEHEAD_EMBEDDED
++    textOutTiny(5,116,"CTRL SHIFT I: NOTE INTERPOLATE",video.palette[PAL_FORGRND]);
++    textOutTiny(5,126,"ENTER: APPLY   ESC: CANCEL",video.palette[PAL_FORGRND]);
++    textOutTiny(5,136,"CTRL SHIFT M: MIDI LEARN",video.palette[PAL_FORGRND]);
++#endif
+ 
+ 	writeHelp();
+ }
 --- a/src/ft2_inst_ed.c
 +++ b/src/ft2_inst_ed.c
 @@ -2278,6 +2278,9 @@
@@ -630,7 +642,24 @@
  
 --- a/src/ft2_keyboard.c
 +++ b/src/ft2_keyboard.c
-@@ -862,6 +862,11 @@
+@@ -72,8 +72,14 @@
+ 
+ 	for (int32_t i = 0; i < MAX_CHANNELS; i++)
+ 	{
+-		if (trackKeys[i] == scancode)
+-			return i;
++        if (trackKeys[i] == scancode) {
++#ifdef TAPEHEAD_EMBEDDED
++            /* Hidden channels must not steal Ctrl+Shift+I/T interpolation. */
++            return i<song.numChannels?i:-1;
++#else
++            return i;
++#endif
++        }
+ 	}
+ 
+ 	return -1;
+@@ -862,6 +868,11 @@
  			**   Alt+Backspace      = Expanded Pattern Editor
  			**   Shift+Alt+Backspace = Pattern-Only performance/projection view
  			** Undo/redo use the standard Ctrl+Z / Ctrl+Y shortcuts. */
@@ -642,6 +671,30 @@
  			if (keyb.leftShiftPressed && keyb.leftAltPressed && !keyb.leftCtrlPressed)
  			{
  				togglePatternEditorOnly();
+@@ -1244,6 +1255,10 @@
+ 
+ 		case SDLK_i:
+ 		{
++#ifdef TAPEHEAD_EMBEDDED
++            if(keyb.leftCtrlPressed && keyb.leftShiftPressed)
++                return interpolationBegin(INTERPOLATE_NOTES);
++#endif
+ 			if (keyb.leftAltPressed)
+ 			{
+ 				jumpToChannel(7);
+@@ -1279,8 +1294,10 @@
+ 
+ 		case SDLK_m:
+ 		{
+-			if (keyb.leftCtrlPressed && keyb.leftShiftPressed)
+-				return interpolationBegin(INTERPOLATE_NOTES);
++#ifndef TAPEHEAD_EMBEDDED
++            if (keyb.leftCtrlPressed && keyb.leftShiftPressed)
++                return interpolationBegin(INTERPOLATE_NOTES);
++#endif
+ 
+ 			if (keyb.leftCtrlPressed)
+ 			{
 --- a/src/ft2_mouse.c
 +++ b/src/ft2_mouse.c
 @@ -508,7 +508,7 @@
@@ -809,18 +862,17 @@
  	UNICHAR *filePathU = getCanonicalPalettePathU();
  	if (filePathU == NULL)
  	{
-@@ -930,6 +966,10 @@
+@@ -930,6 +966,9 @@
  	static const char *modeNames[3] = { "Edit", "Always", "Mono" };
  	textOutShadow(400,  92, PAL_FORGRND, PAL_DSKTOP2, "Preset:");
  	textOutShadow(400, 109, PAL_FORGRND, PAL_DSKTOP2, "PAT Colors:");
 +#ifdef TAPEHEAD_EMBEDDED
-+	textOutTiny(400,128,"COLORS SAVE WITH THE PROJECT",video.palette[PAL_FORGRND]);
-+	textOutTiny(400,140,"SAVE DEFAULTS FOR NEW PROJECTS",video.palette[PAL_FORGRND]);
++	textOutTiny(400,149,"PALETTE SAVES WITH PROJECT / DEFAULTS",video.palette[PAL_FORGRND]);
 +#else
  	textOutShadow(400, 126, PAL_FORGRND, PAL_DSKTOP2, "Exchange:");
  	textOutShadow(400, 143, PAL_FORGRND, PAL_DSKTOP2, "Program:");
  	drawFramework(474, 122, 156, 14, FRAMEWORK_TYPE2);
-@@ -939,6 +979,7 @@
+@@ -939,6 +978,7 @@
  	drawTextBox(TB_CONF_TAPESISTER_EXCHANGE);
  	drawTextBox(TB_CONF_TAPESISTER_EXECUTABLE);
  	drawTapeSisterSwatches();
@@ -828,7 +880,7 @@
  	pushButtons[PB_CONFIG_PAL_PRESET].caption = (char *)presetNames[config.cfg_StdPalNum];
  	pushButtons[PB_CONFIG_PAL_COLOR_MODE].caption = (char *)modeNames[MIN(tapeheadConfig.patternColorMode, 2)];
  	charOutShadow(503, 17, PAL_FORGRND, PAL_DSKTOP2, 'R');
-@@ -964,8 +1005,10 @@
+@@ -964,8 +1004,10 @@
  	showScrollBar(SB_PAL_CONTRAST);
  	showPushButton(PB_CONFIG_PAL_CONT_DOWN);
  	showPushButton(PB_CONFIG_PAL_CONT_UP);
@@ -839,7 +891,7 @@
  
  	updatePaletteEditor();
  }
-@@ -1132,7 +1175,13 @@
+@@ -1132,7 +1174,13 @@
  
  bool paletteListMouseWheel(bool directionUp, int32_t x, int32_t y)
  {
@@ -854,7 +906,7 @@
  		x < PAL_LIST_X || x >= 501 || y < PAL_LIST_Y || y >= PAL_LIST_Y + (PAL_LIST_ROW_H * PAL_LIST_VISIBLE_ROWS))
  		return false;
  
-@@ -1146,7 +1195,13 @@
+@@ -1146,7 +1194,13 @@
  
  bool paletteListMouseDown(int32_t x, int32_t y)
  {
@@ -869,13 +921,23 @@
  		return false;
  	const int32_t swatch = tapeSisterSwatchFromPoint(x, y);
  	if (swatch >= 0)
-@@ -1205,3 +1260,27 @@
+@@ -1205,3 +1259,37 @@
  	patternColors[PAL_USER_DEFINED][field].g = color8To6(RGB32_G(rgb));
  	patternColors[PAL_USER_DEFINED][field].b = color8To6(RGB32_B(rgb));
  }
 +
 +#ifdef TAPEHEAD_EMBEDDED
 +/* Portable six-bit user palette, including all tracker field/playhead colors. */
++void tapeheadEmbeddedPaletteCurrent(uint8_t *bytes)
++{
++    initPatternColors();
++    int preset=config.cfg_StdPalNum;
++    for(int i=0;i<TAPEHEAD_PALETTE_EDIT_COUNT;++i) {
++        pal16 c=i<6?palTable[preset][FTC_EditOrder[i]]:patternColors[preset][i-6];
++        *bytes++=c.r;*bytes++=c.g;*bytes++=c.b;
++    }
++    *bytes++=palContrast[preset][0];*bytes=palContrast[preset][1];
++}
 +void tapeheadEmbeddedPaletteGet(uint8_t *bytes)
 +{
 +    initPatternColors();

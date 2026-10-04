@@ -6464,6 +6464,7 @@ static unsigned bank_modifiers(SDL_Keymod mod)
 static void browser_open(TsUiState *ui, TsBrowserMode mode)
 {
     const char *filename = mode == TS_BROWSER_SAVE_RECIPE ? "tapesister-recipe.tsr" :
+                           mode == TS_BROWSER_TRACKER_PALETTE_EXPORT ? "tracksister.pal" :
                            mode == TS_BROWSER_SAVE_PRESET ? "my-process.tsp" :
                            mode == TS_BROWSER_EXPORT_WAV ? "tapesister-export.wav" : "";
     SDL_StopTextInput();
@@ -8190,6 +8191,24 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
             !ts_browser_edits_text(browser))
             SDL_StopTextInput();
         return;
+    }
+    if (browser->mode==TS_BROWSER_TRACKER_PALETTE_IMPORT || browser->mode==TS_BROWSER_TRACKER_PALETTE_EXPORT) {
+        int importing=browser->mode==TS_BROWSER_TRACKER_PALETTE_IMPORT;
+        if(importing && browser->selected>=0 && browser->selected<browser->entry_count && browser->entries[browser->selected].is_directory) {
+            ts_browser_enter_selected_directory(browser);return;
+        }
+        if(!(importing?ts_browser_selected_path(browser,path,sizeof(path)):ts_browser_destination_path(browser,path,sizeof(path)))) {
+            snprintf(browser->message,sizeof(browser->message),importing?"SELECT A PALETTE FILE":"ENTER A PALETTE FILENAME");return;
+        }
+        if(!importing && ts_browser_path_exists(path) && !browser->overwrite_armed) {
+            browser->overwrite_armed=1;snprintf(browser->message,sizeof(browser->message),"CONFIRM PALETTE OVERWRITE");return;
+        }
+        int ok=importing?ts_tapehead_palette_import(path,browser->message,sizeof(browser->message)):
+                         ts_tapehead_palette_export(path,browser->message,sizeof(browser->message));
+        if(!ok)return;
+        ts_tapehead_host_lock();ts_tapehead_export(&sample_pages->tracker,ui->status,sizeof(ui->status));ts_tapehead_host_unlock();
+        ts_browser_close(browser);SDL_StopTextInput();
+        snprintf(ui->status,sizeof(ui->status),importing?"TRACKER PALETTE IMPORTED":"TRACKER PALETTE EXPORTED");return;
     }
     if (ts_browser_mode_selects_config(browser->mode)) {
         TsBrowserMode mode = browser->mode;
@@ -9970,7 +9989,7 @@ static int main_file_capture_event(const SDL_Event *event, SDL_Window *window,
        event->button.windowID==SDL_GetWindowID(window)) {
         if(ui->midi_learn_active)return 0;
         int x,y;logical_mouse(window,event->button.x,event->button.y,&x,&y);
-        if(x>=544 && x<630 && y>=382 && y<398)trigger=1;
+        if(!(ui->tracker_open && ui->tracker_embedded_frame) && x>=544 && x<630 && y>=382 && y<398)trigger=1;
         else if(ui->mosaic_open && !ui_dialog_open(ui))
             trigger=x>=206 && x<270 && y>=39 && y<58;
         else if(sister_performance_keys_allowed(ui) && ui->show_keyboard &&

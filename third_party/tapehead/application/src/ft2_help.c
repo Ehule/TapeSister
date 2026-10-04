@@ -411,6 +411,11 @@ void showHelpScreen(void)
 	textOutShadow(21, 67, PAL_FORGRND, PAL_DSKTOP2, "How to use FT2");
 	textOutShadow(21, 83, PAL_FORGRND, PAL_DSKTOP2, "Problems/FAQ");
 	textOutShadow(21, 99, PAL_FORGRND, PAL_DSKTOP2, "Known bugs");
+#ifdef TAPEHEAD_EMBEDDED
+    textOutTiny(5,116,"CTRL SHIFT I: NOTE INTERPOLATE",video.palette[PAL_FORGRND]);
+    textOutTiny(5,126,"ENTER: APPLY   ESC: CANCEL",video.palette[PAL_FORGRND]);
+    textOutTiny(5,136,"CTRL SHIFT M: MIDI LEARN",video.palette[PAL_FORGRND]);
+#endif
 
 	writeHelp();
 }

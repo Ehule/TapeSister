@@ -244,13 +244,9 @@ static void audit_controls(const char *config_image,const char *record_image) {
     assert(tracker_event(&text,test_window,0,test_audio,test_ui,test_pages,test_bank,48000));
     press(SDLK_RETURN,SDL_SCANCODE_RETURN,KMOD_NONE);
     assert(!memcmp(test_pages->tracker.embedded_data+30,"Audit score",11));
-    click(325,44);assert(ts_tapehead_action()==TS_TH_SAVE_PROJECT);
-    click(390,95);assert(ts_tapehead_action()==TS_TH_OPEN_PROJECT);
-    /* Matrix stays outside the host boundary, including its alternate entry. */
-    SDL_SetModState(KMOD_CTRL|KMOD_ALT);click(610,157);SDL_SetModState(KMOD_NONE);
-    assert(ts_tapehead_action()==TS_TH_CANVAS);
-    SDL_SetModState(KMOD_SHIFT);mouse_click(480,10,SDL_BUTTON_RIGHT);SDL_SetModState(KMOD_NONE);
-    assert(ts_tapehead_action()==TS_TH_CANVAS); /* Bound tiles cannot be cleared as standalone instruments. */
+    click(325,61);assert(ts_tapehead_action()==TS_TH_SAVE_PROJECT);
+    click(325,44);assert(ts_tapehead_action()==TS_TH_OPEN_PROJECT);
+    click(390,95);assert(ts_tapehead_action()==TS_TH_CAPTURE);
     /* Ratio wheel selects a usable private head. LEN wheel clamps at maximum. */
     wheel(45,187,1);assert(test_pages->tracker.lanes[0].mode==TS_TRACKER_PATTERN);
     unsigned ratio=test_pages->tracker.lanes[0].ratio;wheel(45,187,-1);
@@ -323,6 +319,133 @@ static void audit_controls(const char *config_image,const char *record_image) {
     assert(prefs()[29]==0 && prefs()[28]==2); /* STH1 retains its own LEN and colors. */
     ts_sister_tracker_free(&test_pages->tracker);test_pages->tracker=saved;
     assert(ts_tapehead_sync(test_pages,test_bank,48000,test_error,sizeof(test_error)));export_score();
+}
+
+static void followup_interpolation(void) {
+    audit_blank_song(16);
+    uint8_t *record=test_pages->tracker.embedded_data+52+80+256+7;
+    record[0]=49;record[1]=1;record[8*8*7]=61;record[8*8*7+1]=1;
+    assert(ts_tapehead_sync(test_pages,test_bank,48000,test_error,sizeof(test_error)));export_score();
+    press(SDLK_HOME,SDL_SCANCODE_HOME,KMOD_NONE);
+    for(int i=0;i<9;++i)press(SDLK_DOWN,SDL_SCANCODE_DOWN,KMOD_ALT);
+    press(SDLK_i,SDL_SCANCODE_I,KMOD_CTRL|KMOD_SHIFT);
+    assert(ts_tapehead_interpolation_active());
+    assert(pat()->cells[4][0].note_kind==TS_TRACKER_NOTE_PITCH);
+    press(SDLK_ESCAPE,SDL_SCANCODE_ESCAPE,KMOD_NONE);
+    assert(test_ui->tracker_open && !ts_tapehead_interpolation_active());
+    assert(pat()->cells[4][0].note_kind==TS_TRACKER_NOTE_NONE);
+    press(SDLK_i,SDL_SCANCODE_I,KMOD_CTRL|KMOD_SHIFT);
+    press(SDLK_2,SDL_SCANCODE_2,KMOD_NONE); /* Major scale preview. */
+    press(SDLK_RETURN,SDL_SCANCODE_RETURN,KMOD_NONE);
+    assert(!ts_tapehead_interpolation_active() && pat()->cells[4][0].note_kind==TS_TRACKER_NOTE_PITCH);
+    TsTrackerCell accepted=pat()->cells[4][0];
+    press(SDLK_z,SDL_SCANCODE_Z,KMOD_CTRL);assert(pat()->cells[4][0].note_kind==TS_TRACKER_NOTE_NONE);
+    press(SDLK_y,SDL_SCANCODE_Y,KMOD_CTRL);assert(!memcmp(&accepted,&pat()->cells[4][0],sizeof(accepted)));
+    /* Volume, panning effect and tuning previews retain their original chords. */
+    const SDL_Keycode keys[]={SDLK_v,SDLK_b,SDLK_t};
+    const SDL_Scancode scans[]={SDL_SCANCODE_V,SDL_SCANCODE_B,SDL_SCANCODE_T};
+    for(int kind=0;kind<3;++kind) {
+        audit_blank_song(9);uint8_t *raw=test_pages->tracker.embedded_data+52+80+256+7;
+        if(kind==0) {raw[2]=0x10;raw[8*8*7+2]=0x50;}
+        else if(kind==1) {raw[3]=raw[8*8*7+3]=8;raw[4]=0;raw[8*8*7+4]=255;}
+        else {raw[5]=raw[8*8*7+5]=0x16;raw[6]=0;raw[8*8*7+6]=255;}
+        assert(ts_tapehead_sync(test_pages,test_bank,48000,test_error,sizeof(test_error)));export_score();
+        press(SDLK_HOME,SDL_SCANCODE_HOME,KMOD_NONE);
+        for(int i=0;i<9;++i)press(SDLK_DOWN,SDL_SCANCODE_DOWN,KMOD_ALT);
+        press(keys[kind],scans[kind],KMOD_CTRL|KMOD_SHIFT);assert(ts_tapehead_interpolation_active());
+        press(SDLK_RETURN,SDL_SCANCODE_RETURN,KMOD_NONE);assert(!ts_tapehead_interpolation_active());
+        raw=test_pages->tracker.embedded_data+52+80+256+7;
+        assert(raw[4*8*7+(kind==0?2:kind==1?4:6)]==(kind==0?0x30:128));
+        press(SDLK_z,SDL_SCANCODE_Z,KMOD_CTRL);
+        raw=test_pages->tracker.embedded_data+52+80+256+7;assert(!raw[4*8*7+(kind==0?2:kind==1?4:6)]);
+    }
+    SDL_Event midi;SDL_zero(midi);midi.type=SDL_KEYDOWN;midi.key.windowID=SDL_GetWindowID(test_window);
+    midi.key.keysym.sym=SDLK_m;midi.key.keysym.mod=KMOD_CTRL|KMOD_SHIFT;
+    assert(!tracker_event(&midi,test_window,0,test_audio,test_ui,test_pages,test_bank,48000));
+    assert(!ts_tapehead_interpolation_active());
+}
+static void followup_canvas_palette(const char *image,const char *config_image,const char *browser_image) {
+    remove("followup-out.pal");
+    export_score();
+    if(test_pages->tracker.embedded_data[28])press(SDLK_BACKSPACE,SDL_SCANCODE_BACKSPACE,KMOD_CTRL|KMOD_ALT);
+    else if(test_pages->tracker.embedded_data[27])press(SDLK_BACKSPACE,SDL_SCANCODE_BACKSPACE,KMOD_ALT);
+    ts_tapehead_tick();
+    /* Load opens the actual host load page; the previous synthetic key was unreliable. */
+    click(325,44);tracker_refresh(0,test_audio,test_ui,test_pages,test_bank,48000,NULL);
+    assert(!test_ui->tracker_open && test_ui->browser.mode==TS_BROWSER_LOAD_WAV);
+    ts_browser_close(&test_ui->browser);press(SDLK_F10,SDL_SCANCODE_F10,KMOD_NONE);
+    click(390,146);assert(ts_tapehead_config_visible());click(590,136);export_score();
+    assert(prefs()[27]==11 && prefs()[32]==63 && prefs()[33]==7 && prefs()[92]==52 && prefs()[93]==57);
+    TsPalette p;assert(ts_tapehead_palette_export("followup.pal",test_error,sizeof(test_error)));
+    assert(ts_palette_load(&p,"followup.pal",test_error,sizeof(test_error)));
+    p.colors[TS_PALETTE_PATTERN_NOTE]=0x336699;p.colors[TS_PALETTE_ACTIVE_TILE]=0x123456;
+    assert(ts_palette_save(&p,"followup.pal",test_error,sizeof(test_error)));
+    snprintf(test_ui->browser.directory,sizeof(test_ui->browser.directory),".");
+    click(440,136);tracker_refresh(0,test_audio,test_ui,test_pages,test_bank,48000,NULL);
+    assert(test_ui->tracker_open && test_ui->browser.mode==TS_BROWSER_TRACKER_PALETTE_IMPORT);
+    if(browser_image)snapshot(browser_image);
+    int entry=-1;for(int i=0;i<test_ui->browser.entry_count;++i)
+        if(!strcmp(test_ui->browser.entries[i].name,"followup.pal"))entry=i;
+    assert(entry>=0);ts_browser_select(&test_ui->browser,entry);
+    PendingFileOperation *pending=calloc(1,sizeof(*pending));assert(pending);
+    browser_action(0,test_audio,test_ui,test_bank,NULL,test_pages,NULL,0,pending,0);
+    assert(test_ui->browser.mode==TS_BROWSER_CLOSED && ts_tapehead_config_visible());
+    assert(prefs()[50]==13 && prefs()[51]==25 && prefs()[52]==38);
+    click(517,136);tracker_refresh(0,test_audio,test_ui,test_pages,test_bank,48000,NULL);
+    assert(test_ui->browser.mode==TS_BROWSER_TRACKER_PALETTE_EXPORT);
+    ts_browser_set_filename(&test_ui->browser,"followup-out.pal");
+    browser_action(0,test_audio,test_ui,test_bank,NULL,test_pages,NULL,0,pending,0);
+    assert(test_ui->browser.mode==TS_BROWSER_CLOSED);
+    assert(ts_palette_load(&p,"followup-out.pal",test_error,sizeof(test_error)));
+    assert(p.colors[TS_PALETTE_ACTIVE_TILE]==0xff123456u && p.colors[TS_PALETTE_PATTERN_NOTE]==0xff35659au);
+    uint8_t previous[62];memcpy(previous,prefs()+32,62);
+    FILE *bad=fopen("followup-bad.pal","wb");assert(bad);fputs("[Palette]\nPatternNote=oops\n",bad);fclose(bad);
+    assert(!ts_tapehead_palette_import("followup-bad.pal",test_error,sizeof(test_error)));export_score();
+    assert(!memcmp(previous,prefs()+32,62));
+    remove("followup.pal");remove("followup-out.pal");remove("followup-bad.pal");free(pending);
+    click(590,136);if(config_image){ts_tapehead_tick();snapshot(config_image);}
+    press(SDLK_ESCAPE,SDL_SCANCODE_ESCAPE,KMOD_NONE);
+    const char *names[]={"KICK","SNARE","HAT","BASS","PAD","CHORD","BELL","VOICE"};
+    for(int i=0;i<8;++i) {
+        assert(ts_instrument_select_bank(test_bank,i,test_error,sizeof(test_error)));
+        if(!test_bank->current.data)assert(ts_instrument_activate_silence(test_bank,2048,48000,test_error,sizeof(test_error)));
+        snprintf(test_bank->current.name,sizeof(test_bank->current.name),"%s",names[i]);
+        for(size_t f=0;f<test_bank->current.frames;++f)for(unsigned c=0;c<test_bank->current.channels;++c)
+            test_bank->current.data[f*test_bank->current.channels+c]=.8f*sinf((float)f*.1f*(i+1))*expf(-3.f*f/test_bank->current.frames);
+        ++test_bank->generation;assert(ts_instrument_sync_selected(test_bank,test_error,sizeof(test_error)));
+    }
+    assert(ts_tapehead_sync(test_pages,test_bank,48000,test_error,sizeof(test_error)));ts_tapehead_tick();
+    click(488,34);unsigned alias=test_pages->tracker.embedded_data[22];
+    assert(test_pages->tracker.aliases[alias]==test_bank->bank[1].tile_id);
+    assert(ts_tapehead_sync(test_pages,test_bank,48000,test_error,sizeof(test_error)));export_score();
+    assert(test_pages->tracker.embedded_data[22]==alias); /* Host selection did not silently override it. */
+    click(590,112);assert(test_pages->tracker.embedded_data[22]==alias); /* Empty tile is inert. */
+    audit_blank_song(16);press(SDLK_HOME,SDL_SCANCODE_HOME,KMOD_NONE);press(SDLK_z,SDL_SCANCODE_Z,KMOD_NONE);
+    assert(pat()->cells[0][0].tile_id==test_bank->bank[1].tile_id);
+    assert(ts_sample_pages_append(test_pages,test_error,sizeof(test_error)));
+    TsInstrument *other=ts_sample_pages_page_mut(test_pages,test_bank,1);assert(other);
+    assert(ts_instrument_select_bank(other,2,test_error,sizeof(test_error)));
+    assert(ts_instrument_activate_silence(other,1024,48000,test_error,sizeof(test_error)));
+    assert(ts_instrument_sync_selected(other,test_error,sizeof(test_error)));
+    click(618,10);click(540,34);alias=test_pages->tracker.embedded_data[22];
+    assert(test_pages->tracker.aliases[alias]==other->bank[2].tile_id);
+    press(SDLK_z,SDL_SCANCODE_Z,KMOD_NONE);assert(pat()->cells[1][0].tile_id==other->bank[2].tile_id);
+    wheel(510,100,1);click(488,34);
+    assert(test_pages->tracker.aliases[test_pages->tracker.embedded_data[22]]==test_bank->bank[1].tile_id);
+    followup_interpolation();
+    if(image) {
+        audit_blank_song(32);uint8_t *raw=test_pages->tracker.embedded_data+52+80+256+7;
+        const int slots[]={0,1,2,3};
+        for(int lane=0;lane<4;++lane)for(int row=lane;row<32;row+=lane==2?2:4) {
+            int a=1;while(a<=128 && test_pages->tracker.aliases[a]!=test_bank->bank[slots[lane]].tile_id)++a;
+            uint8_t *cell=raw+(row*8+lane)*7;cell[0]=lane==3?37+(row/4)%5:49;cell[1]=a;cell[2]=0x30+row%16;
+        }
+        assert(ts_tapehead_sync(test_pages,test_bank,48000,test_error,sizeof(test_error)));
+        fastTracksPOCSetMode(2,FAST_TRACKS_MODE_PATTERN);fastTracksPOCSetRatioIndex(2,8);
+        fastTracksPOCSetMode(3,FAST_TRACKS_MODE_PATTERN);fastTracksPOCSetDirection(3,2);fastTracksPOCSetTrackLength(0,3,13);
+        press(SDLK_DOWN,SDL_SCANCODE_DOWN,KMOD_NONE);press(SDLK_DOWN,SDL_SCANCODE_DOWN,KMOD_NONE);
+        ts_tapehead_tick();snapshot(image);
+    }
 }
 
 int main(int argc,char **argv) {
@@ -465,6 +588,7 @@ int main(int argc,char **argv) {
     assert(ts_tapehead_sync(test_pages,test_bank,44100,test_error,sizeof(test_error)));
     assert(ts_tapehead_render(512,44100));assert(!ts_tapehead_render(512,48000));
     stop_all_force(0,test_audio,test_ui);assert(!ts_tapehead_running());
+    followup_canvas_palette(argc>2?argv[2]:NULL,argc>3?argv[3]:NULL,argc>5?argv[5]:NULL);
     ts_tapehead_close();ts_tracker_playback_free(&test_audio->tracker);ts_sister_runtime_free(&test_audio->sister);
     ts_tracker_edit_free(test_ui->tracker_edit);
     ts_sample_pages_free(test_pages);ts_instrument_free(test_bank);

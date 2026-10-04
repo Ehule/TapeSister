@@ -22,14 +22,38 @@ The source import remains reproducible against 271 original files. All local
 vendored changes are included in `embedded.patch`; the upstream checkout is
 unchanged. The separate pinned drawing import remains reproducible as well.
 
+## Requested UI follow-up
+
+- Replaced the instrument/sample lists and bank buttons with a selectable 4×4
+  host-tile canvas, waveform previews and Sample-page navigation. Stable aliases
+  remain selected across sync; empty cells do not select phantom instruments.
+- Added shared `.pal` Import/Export and Default controls. The supplied palette
+  is compiled in and bundled as `assets/tracksister.pal`; saved project and
+  user defaults retain precedence. Tracker RGB uses the upstream six-bit format.
+- Removed the Extend button, placed Rec file below Rec. ptn., and put Load
+  above Save. Load directly opens the normal host browser. The old bottom
+  capture overlay and hidden click target no longer cover the pattern grid.
+- Added a code-native TrackSister emblem using the Sister Machine silhouette
+  and the supplied concept's colored tracker steps. Shrunk LEN text to fit.
+- Moved note interpolation to Ctrl+Shift+I, preserving Ctrl+Shift+M for host
+  MIDI Learn. Escape cancels previews without leaving TrackSister. Tests cover
+  preview, scale selection, acceptance, cancellation and original undo/redo.
+  Hidden channels no longer swallow I/T; volume, effect and tuning previews
+  also pass through real host keyboard dispatch.
+
+The integration fixture exercises actual Load and palette browser actions,
+malformed imports, shared-key roundtrips, mini-canvas note entry and cross-page
+selection. Import/export retains extra host palette keys during that session;
+STH2 project preferences persist tracker colors and contrasts.
+
 ## Interface
 
 The compact workspace keeps the eight lanes and original editing controls.
-Open/Save, Config and the existing FX/Prism/Sister/Fallout destinations have
+Load/Save, Config and the existing FX/Prism/Sister/Fallout destinations have
 distinct purposes. The old Triton badge is replaced; upstream copyright and
 license notices remain in the source and distribution.
 
-![Compact tracker with selected tile details](images/pr124-tracker.png)
+![Compact tracker with selectable mini canvas](images/pr124-tracker.png)
 
 Recording options and palette controls are available together. Layout changes
 and the custom palette save with the project. Save defaults is an explicit
@@ -37,6 +61,8 @@ action for later new/legacy scores; loading an existing project restores that
 project's settings.
 
 ![Recording and palette configuration](images/pr124-recording.png)
+
+![Palette import, export and default controls](images/pr124-palette.png)
 
 Wheel a FasTracks ratio to adjust it. Right-click it, or click its F/R/B badge,
 to cycle direction. Shift-click the ratio or click its mode badge to cycle

@@ -77,14 +77,17 @@ static void tracker_refresh(SDL_AudioDeviceID device,AudioState *audio,TsUiState
         } else snprintf(ui->status,sizeof(ui->status),"SISTER WINDOW UNAVAILABLE: %.112s",SDL_GetError());
     }
     if(action==TS_TH_SAVE_PROJECT || action==TS_TH_OPEN_PROJECT) {
-        SDL_Event key;SDL_zero(key);key.type=SDL_KEYDOWN;key.key.windowID=SDL_GetWindowID(embedded_host.window);
-        key.key.keysym.sym=action==TS_TH_SAVE_PROJECT?SDLK_s:SDLK_o;key.key.keysym.mod=KMOD_CTRL;
-        SDL_PushEvent(&key);
+        ts_tapehead_focus_lost();
+        ui->tracker_open=0; /* Show the normal host load/save page. Transport continues. */
+        ui->load_bank_slot=instrument->selected_slot;
+        browser_open(ui,action==TS_TH_SAVE_PROJECT?TS_BROWSER_SAVE_RECIPE:TS_BROWSER_LOAD_WAV);
     }
     if(action==TS_TH_CAPTURE && sister) {
-        if(ts_performance_recorder_state(&sister->performance_recorder)==TS_PERFORMANCE_FILE_RECORDING)
-            ts_performance_recorder_request_stop(&sister->performance_recorder);
-        else begin_file_capture(audio,sister,(uint32_t)rate,TS_SISTER_TAP_MIX,2);
+        main_file_capture_toggle(audio,ui,sister,(uint32_t)rate);
+    }
+    if(action==TS_TH_PALETTE_IMPORT || action==TS_TH_PALETTE_EXPORT) {
+        ts_tapehead_focus_lost();
+        browser_open(ui,action==TS_TH_PALETTE_IMPORT?TS_BROWSER_TRACKER_PALETTE_IMPORT:TS_BROWSER_TRACKER_PALETTE_EXPORT);
     }
     if(action==TS_TH_SAVE_DEFAULTS) {
         char path[TS_RUNTIME_PATH_MAX];
@@ -123,9 +126,10 @@ static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevi
     }
     if(!ui->tracker_open || !ui->tracker_embedded_frame || ui_dialog_open(ui) ||
        ui->router_open || ui->master_eq_open || ui->midi_learn_active)return 0;
-    if(key && event->key.keysym.sym==SDLK_ESCAPE && !ts_tapehead_config_visible()) {
+    if(key && event->key.keysym.sym==SDLK_ESCAPE && !ts_tapehead_config_visible() && !ts_tapehead_interpolation_active()) {
         ts_tapehead_focus_lost();ui->tracker_open=0;return 1;
     }
+    if(key && event->key.keysym.sym==SDLK_m && (mod&KMOD_CTRL) && (mod&KMOD_SHIFT))return 0;
     if(key && event->key.keysym.sym==SDLK_TAB && (mod&KMOD_CTRL))return 0;
     if(key && (mod&KMOD_CTRL) && (event->key.keysym.sym==SDLK_s || event->key.keysym.sym==SDLK_o)) {
         ts_tapehead_host_lock();ts_tapehead_export(&pages->tracker,ui->status,sizeof(ui->status));ts_tapehead_host_unlock();

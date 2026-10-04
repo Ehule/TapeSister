@@ -6,6 +6,58 @@ extern void tapeheadEmbeddedPaletteSet(const uint8_t *bytes);
 static uint8_t default_preferences[TH_PREFS_BYTES];
 static char preferences_message[96];
 
+extern void tapeheadEmbeddedPaletteCurrent(uint8_t *bytes);
+static TsPalette tracker_palette;
+static const TsPaletteColor tracker_colors[20]={
+    TS_PALETTE_PATTERN_TEXT,TS_PALETTE_BLOCK_MARK,TS_PALETTE_TEXT_ON_BLOCK,TS_PALETTE_MOUSE,
+    TS_PALETTE_DESKTOP,TS_PALETTE_BUTTONS,TS_PALETTE_PATTERN_NOTE,TS_PALETTE_PATTERN_INSTRUMENT,
+    TS_PALETTE_PATTERN_VOLUME,TS_PALETTE_PATTERN_TUNING,TS_PALETTE_PATTERN_EFFECT,TS_PALETTE_PATTERN_EMPTY,
+    TS_PALETTE_WAVE_SELECTION,TS_PALETTE_TRACK_LENGTH_PLAYHEAD,TS_PALETTE_FASTTRACKS_PLAYHEAD,
+    TS_PALETTE_CONTROL_PLAYHEAD,TS_PALETTE_FASTTRACKS_SYNC,TS_PALETTE_FASTTRACKS_PHASE,
+    TS_PALETTE_FASTTRACKS_SONG,TS_PALETTE_FASTTRACKS_LENGTH_PLAYHEAD
+};
+static void palette_apply(const TsPalette *p) {
+    uint8_t bytes[62];
+    for(int i=0;i<20;++i)for(int c=0;c<3;++c)
+        bytes[i*3+c]=(((p->colors[tracker_colors[i]]>>(16-c*8))&255)*63+127)/255;
+    bytes[60]=p->desktop_contrast;bytes[61]=p->buttons_contrast;
+    tracker_palette=*p;config.cfg_StdPalNum=11;tapeheadEmbeddedPaletteSet(bytes);
+}
+static void palette_default(void) {
+    /* assets/tracksister.pal: compiled in so new projects need no external file. */
+    static const uint32_t colors[20]={0xFF1C00,0x2D0039,0x009EE3,0xFFD265,0x1C1C1C,0x5D555D,
+        0xFFE700,0x18FF00,0xFF1CE7,0x147DFF,0x35FFFF,0x5900FF,0x2D0039,0x41D7FF,
+        0xFFAE20,0xFF3131,0x00CE41,0xFF3131,0xFFAE20,0xD061FF};
+    TsPalette p;ts_palette_default(&p);
+    for(int i=0;i<20;++i)p.colors[tracker_colors[i]]=colors[i];
+    p.colors[TS_PALETTE_ACTIVE_TILE]=0xFFD265;p.desktop_contrast=52;p.buttons_contrast=57;
+    palette_apply(&p);
+}
+int ts_tapehead_palette_import(const char *path,char *error,size_t size) {
+    TsPalette p;if(!embed.initialized)return fail(error,size,"Tracker is not open");
+    if(!ts_palette_load(&p,path,error,size))return 0;
+    palette_apply(&p);snprintf(preferences_message,sizeof(preferences_message),"Palette imported");
+    if(ui.configScreenShown)ts_tapehead_show_config();
+    return 1;
+}
+int ts_tapehead_palette_export(const char *path,char *error,size_t size) {
+    if(!embed.initialized)return fail(error,size,"Tracker is not open");
+    uint8_t bytes[62];tapeheadEmbeddedPaletteCurrent(bytes);
+    TsPalette p=tracker_palette;
+    for(int i=0;i<20;++i) {
+        uint32_t rgb=0;for(int c=0;c<3;++c)rgb=(rgb<<8)|((bytes[i*3+c]*255+31)/63);
+        p.colors[tracker_colors[i]]=rgb;
+    }
+    p.desktop_contrast=bytes[60];p.buttons_contrast=bytes[61];
+    if(!ts_palette_save(&p,path,error,size))return 0;
+    snprintf(preferences_message,sizeof(preferences_message),"Palette exported");return 1;
+}
+static void palette_import_button(void) {ts_tapehead_request(TS_TH_PALETTE_IMPORT);}
+static void palette_export_button(void) {ts_tapehead_request(TS_TH_PALETTE_EXPORT);}
+static void palette_default_button(void) {
+    palette_default();snprintf(preferences_message,sizeof(preferences_message),"Default palette restored");
+    ts_tapehead_show_config();
+}
 static void preferences_get(uint8_t p[TH_PREFS_BYTES]) {
     memset(p,0,TH_PREFS_BYTES);memcpy(p,"TPF1",4);
     p[4]=!!(config.specialFlags2&SILENT_REC_ENTRY);p[5]=!!(config.specialFlags&INHERIT_PATT_LEN);
@@ -87,6 +139,11 @@ static void settings_checkbox(int id,int x,int y,const char *label,int value) {
     checkBox_t *c=&checkBoxes[id];c->x=x;c->y=y;c->clickAreaWidth=184;c->clickAreaHeight=12;
     c->checked=!!value;showCheckBox(id);textOut(x+16,y+2,PAL_FORGRND,label);
 }
+static void palette_buttons(void) {
+    settings_button(PB_CONFIG_PAL_IMPORT,400,128,73,"Import",palette_import_button);
+    settings_button(PB_CONFIG_PAL_EXPORT,477,128,73,"Export",palette_export_button);
+    settings_button(PB_CONFIG_AUDIO_OUTPUT_UP,554,128,73,"Default",palette_default_button);
+}
 int ts_tapehead_config_visible(void) {return embed.initialized && ui.configScreenShown;}
 void ts_tapehead_show_config(void) {
     if(ui.extendedPatternEditor)exitPatternEditorExtended();
@@ -138,6 +195,6 @@ void ts_tapehead_show_config(void) {
     }
     /* The palette editor is available on both pages. Its own events are gated
        on configScreenShown; its list coordinates remain upstream's. */
-    showPaletteEditor();
+    showPaletteEditor();palette_buttons();
     textOutClipX(400,157,PAL_FORGRND,preferences_message,628);
 }
