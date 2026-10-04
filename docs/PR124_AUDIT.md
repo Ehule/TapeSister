@@ -15,7 +15,7 @@ but several useful features had become inaccessible or lost their settings.
 | Native Bounce disappeared in the transplant | Add Forward/Reverse/Bounce to the original private playheads and preserve native migration | Direction clicks and persistence; real callback visits 0,1,2,3,2,1,0,1; 5:1 emits every crossing; one-row loops remain at zero; Song Bounce crosses unequal patterns |
 | FasTracks ratio wheel was missing; LEN could decrement when wheeled upward at its maximum | Restore ratio wheel, correct LEN clamping, retain modifier gestures and fractional wheel input | SDL wheel events in compact/full views, four quarter-detents, target changes, maximum LEN, Ctrl-clear and Shift-eight |
 | Import could initialize private heads from the previous score's row | Reset private positions after applying the loaded song position | Callback starts from the newly loaded row, including the bounce traversal check |
-| Old branding and an arbitrary shortcut list occupied useful screen area | TrackSister title; functional LEN badge; selected tile identity, location and audio details; editable song name | Compact/expanded framebuffer inspection; song-name input and shielded tile-panel wheel test |
+| Old branding and an arbitrary shortcut list occupied useful screen area | TrackSister title; functional LEN badge; selectable mini canvas (expanded below) | Compact/expanded framebuffer inspection and shielded tile-panel wheel test |
 | Buttons and alternate shortcuts could enter inappropriate standalone screens | Open/Save use host projects; sample/instrument/exchange/trim/capture entry points use host destinations | Source-level entry-point audit, action checks and existing workspace/focus integration assertions |
 
 The source import remains reproducible against 271 original files. All local
@@ -24,8 +24,8 @@ unchanged. The separate pinned drawing import remains reproducible as well.
 
 ## Requested UI follow-up
 
-- Replaced the instrument/sample lists and bank buttons with a selectable 4×4
-  host-tile canvas, waveform previews and Sample-page navigation. Stable aliases
+- Replaced the instrument/sample lists and bank buttons with a selectable 4×6
+  host-tile canvas, waveform previews and navigation across Sample pages. Stable aliases
   remain selected across sync; empty cells do not select phantom instruments.
 - Added shared `.pal` Import/Export and Default controls. The supplied palette
   is compiled in and bundled as `assets/tracksister.pal`; saved project and
@@ -47,6 +47,24 @@ The integration fixture exercises actual Load and palette browser actions,
 malformed imports, shared-key roundtrips, mini-canvas note entry and cross-page
 selection. Import/export retains extra host palette keys during that session;
 STH2 project preferences persist tracker colors and contrasts.
+
+## Directory navigation and tile layout follow-up
+
+- Reproduced the reported path growth: a failed directory change committed the
+  new path but kept the old listing, so retries appended the same child again.
+  Navigation now rolls back the path on failure, preserving its matching listing.
+- Fixed root-path joining (the old `/` case discarded the child's name), use
+  native Windows separators for directory searches, and accept empty Windows
+  directories. Host actions retain the filesystem error instead of masking it.
+- Removed the metadata/song-title strip and aligned the panel with the adjacent
+  controls. Six rows expose 24 tiles per view, spanning host Sample pages.
+  Buttons use the configured button colors, bevels, waveform wells and a selected
+  outline; their labels show the actual instrument aliases.
+- Added regressions for repeated failed navigation and recovery, empty folders,
+  spaces, root-path joins, cross-page selection in the extra rows, viewport
+  navigation, inert gutters/empty cells and the removed song-title hit target.
+  The full local Release build and all four targeted checks (core, embedded host,
+  browser/preview and packaging) passed; the compact render was inspected.
 
 ## Interface
 
@@ -71,7 +89,7 @@ to cycle direction. Shift-click the ratio or click its mode badge to cycle
 Standard/Pattern/Song. LEN retains Shift-wheel and Ctrl-wheel gestures.
 See the [playback guide](SISTERTRACKER_PLAYBACK.md) for the full control table.
 
-## Verification and limits
+## Initial feature-restoration verification and limits
 
 - Complete local Release build, with assertions enabled, passed.
 - All 29 selected native regression tests and the packaging guard passed.

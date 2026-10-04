@@ -120,6 +120,58 @@ static int browser_find(const TsBrowser *browser, const char *name)
     return -1;
 }
 
+static void browser_navigation_regressions(TsBrowser *browser)
+{
+    char original[TS_BROWSER_PATH_MAX], path[TS_BROWSER_PATH_MAX];
+    CHECK(test_mkdir("test-browser-nav") == 0);
+    CHECK(test_mkdir("test-browser-nav/child with spaces") == 0);
+    ts_browser_init(browser);
+    CHECK(ts_browser_open(browser, TS_BROWSER_LOAD_WAV, NULL));
+    ts_browser_select(browser, browser_find(browser, "test-browser-nav"));
+    CHECK(ts_browser_enter_selected_directory(browser));
+    snprintf(original, sizeof(original), "%s", browser->directory);
+    ts_browser_select(browser, browser_find(browser, "child with spaces"));
+    CHECK(ts_browser_selected_path(browser, path, sizeof(path)));
+#ifdef _WIN32
+    CHECK(strchr(path, '/') == NULL);
+#endif
+    CHECK(ts_browser_enter_selected_directory(browser));
+    CHECK(browser->entry_count == 0 && browser->selected == -1);
+    CHECK(ts_browser_parent(browser));
+    CHECK(strcmp(browser->directory, original) == 0);
+
+    /* A stale listing must never produce /child/child/child after a failure. */
+    ts_browser_select(browser, browser_find(browser, "child with spaces"));
+    int selected = browser->selected, count = browser->entry_count;
+    CHECK(rmdir("test-browser-nav/child with spaces") == 0);
+    for (int retry = 0; retry < 3; ++retry) {
+        CHECK(!ts_browser_enter_selected_directory(browser));
+        CHECK(strcmp(browser->directory, original) == 0);
+        CHECK(browser->selected == selected && browser->entry_count == count);
+        CHECK(strstr(browser->message, "COULD NOT OPEN DIRECTORY") != NULL);
+    }
+    CHECK(test_mkdir("test-browser-nav/child with spaces") == 0);
+    CHECK(ts_browser_enter_selected_directory(browser));
+    CHECK(ts_browser_parent(browser));
+    CHECK(ts_browser_parent(browser));
+    CHECK(rmdir("test-browser-nav/child with spaces") == 0);
+    CHECK(rmdir("test-browser-nav") == 0);
+
+    browser->entry_count = 1; browser->selected = 0;
+    snprintf(browser->entries[0].name, sizeof(browser->entries[0].name), "child");
+#ifdef _WIN32
+    snprintf(browser->directory, sizeof(browser->directory), "C:/");
+    CHECK(ts_browser_selected_path(browser, path, sizeof(path)) && !strcmp(path, "C:\\child"));
+    snprintf(browser->directory, sizeof(browser->directory), "//server/share/");
+    CHECK(ts_browser_selected_path(browser, path, sizeof(path)) && !strcmp(path, "\\\\server\\share\\child"));
+#else
+    snprintf(browser->directory, sizeof(browser->directory), "/");
+    CHECK(ts_browser_selected_path(browser, path, sizeof(path)) && !strcmp(path, "/child"));
+#endif
+    CHECK(!ts_browser_selected_path(browser, path, 2));
+    ts_browser_init(browser);
+}
+
 int main(void)
 {
     TsSample a, b, loaded, copy, dry, effected, repeated;
@@ -2973,6 +3025,7 @@ int main(void)
         remove("test-browser-process.tsp");
         remove("test-browser-ignore.txt");
         rmdir("test-browser-dir");
+        browser_navigation_regressions(&browser);
     }
 
     ts_ui_init(&ui);

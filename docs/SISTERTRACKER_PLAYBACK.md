@@ -34,10 +34,12 @@ Sister window returns to the tracker.
 **Load** opens the normal host load page (audio, raw, TSR or TSP); **Save**
 opens the host project save page. **Config** opens tracker
 preferences; **Router** and Config's **Audio health** open the host panels.
-The 4×4 mini canvas replaces the instrument/sample lists and bank buttons.
-Its tiles show waveform previews; the selected tile supplies the current
-instrument for note entry. Empty tiles do not change the instrument. Below it,
-the selected alias, name, page/slot, source rate, channels and duration are shown. The song title beneath them remains editable.
+The 4×6 mini canvas replaces the instrument/sample lists and bank buttons.
+Its 24 beveled tile buttons show instrument aliases, names and waveform previews;
+the highlighted tile supplies the current instrument for note entry. Each view
+spans host Sample pages as needed. The arrows and mouse wheel move through views
+of 24 slots. Empty slots and the gutters do not change the instrument. The
+metadata and song-title strip has been removed to give those rows to the tiles.
 The title is **TrackSister** and the old badge is a functional **LEN ON/OFF**
 bypass button. **Rec file**, below **Rec. ptn.**, starts/stops final-output recording.
 

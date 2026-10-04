@@ -63,7 +63,7 @@ static struct {
     TsTileId selected_tile;
     TsSamplePages *pages;
     const TsInstrument *active;
-    size_t canvas_page,host_page;
+    size_t canvas_page,host_page; /* 24-tile viewport; 16-tile host Sample page. */
     uint64_t tile_stamp[129];
     TsTileLocation tile_location[129];
     unsigned tile_rate[129];
@@ -239,8 +239,6 @@ int ts_tapehead_init(const TsTapeHeadHost *host,unsigned rate,char *error,size_t
     SDL_ShowCursor(embed.host_cursor_visible);
     config.ptnMaxChannels=2;ui.maxVisibleChannels=8;
     if(!setupReplayer() || !tapeheadEmbeddedAudioPrepare(embed.rate,TH_FRAMES) || !setupGUI())goto bad;
-    textBoxes[TB_SONG_NAME].x=452;textBoxes[TB_SONG_NAME].y=157;
-    textBoxes[TB_SONG_NAME].w=176;textBoxes[TB_SONG_NAME].renderW=172;
     undoInit();undoLoadConfig();
     playMode=PLAYMODE_EDIT;audio.locked=false;
     palette_default();preferences_get(default_preferences);
@@ -378,7 +376,7 @@ int ts_tapehead_event(const SDL_Event *event,int x,int y) {
             else ratio_adjust(lane,1);
             setSongModifiedFlag();return 1;
         }
-        if(main_panel_visible() && x>=424 && x<632 && y<155) {
+        if(main_panel_visible() && x>=421 && x<632 && y<173) {
             if(!ui.sysReqShown && !editor.editTextFlag && event->button.button==SDL_BUTTON_LEFT)canvas_click(x,y);
             return 1;
         }
@@ -401,7 +399,7 @@ int ts_tapehead_event(const SDL_Event *event,int x,int y) {
         }
         if(main_panel_visible() && x>=125 && x<168 && y>=62 && y<78)target=300;
         if(main_panel_visible() && x>=294 && x<353 && y>=155 && y<171)target=301;
-        if(main_panel_visible() && x>=424 && x<632 && y<173)target=600;
+        if(main_panel_visible() && x>=421 && x<632 && y<173)target=600;
         if(ui.configScreenShown)target=500;
         if(target!=embed.wheel_target || d*embed.wheel_fraction<0)embed.wheel_fraction=0;
         embed.wheel_target=target;embed.wheel_fraction+=d;
@@ -435,17 +433,20 @@ static uint64_t hash_bytes(uint64_t h,const void *p,size_t n) {const uint8_t *b=
 #define HASH(v) h=hash_bytes(h,&(v),sizeof(v))
 static int bind_tiles(TsSamplePages *pages,const TsInstrument *active,char *e,size_t size) {
     TsSisterTracker *t=&pages->tracker;
-    /* Register the selected tile and populated visible page without reassigning
+    /* Register the active bank and populated visible tiles without reassigning
        existing aliases. A missing/deleted tile never resolves by slot number. */
     for(int pass=0;pass<2;++pass) {
-    const TsInstrument *bank=pass?ts_sample_pages_page(pages,active,embed.canvas_page):active;
+    for(int cell=0;cell<(pass?CANVAS_TILES:TS_BANK_SLOT_COUNT);++cell) {
+    int slot=cell;
+    const TsInstrument *bank=pass?canvas_bank_at(cell,&slot):active;
     if(!bank)continue;
-    for(int slot=0;slot<TS_BANK_SLOT_COUNT;++slot)if(bank->bank[slot].occupied) {
+    if(bank->bank[slot].occupied) {
         TsTileId id=bank->bank[slot].tile_id;int a=1;
         for(;a<=128 && t->aliases[a]!=id;++a);
         if(a>128){for(a=1;a<=128 && t->aliases[a];++a);if(a<=128)t->aliases[a]=id;}
         if(a>128 && !pass && slot==active->selected_slot)return fail(e,size,"Tracker's 128 tile aliases are occupied");
         if(a<=128 && !pass && slot==active->selected_slot && embed.selected_tile!=id) {editor.curInstr=a;embed.selected_tile=id;ui.updatePosSections=true;updateInstrumentSwitcher();}
+    }
     }
     }
     for(int a=1;a<=128;++a) {
@@ -701,9 +702,13 @@ int ts_tapehead_sync(TsSamplePages *pages,const TsInstrument *active,unsigned ra
         int ok=tapeheadEmbeddedAudioPrepare(rate,TH_FRAMES);embed.rate=rate;ts_tapehead_host_unlock();
         if(!ok)return fail(e,n,"Unable to prepare tracker audio rate");
     }
-    if(embed.pages!=pages || embed.host_page!=pages->active_page)embed.canvas_page=pages->active_page;
+    int selected=active->selected_slot;
+    if(embed.pages!=pages || embed.host_page!=pages->active_page ||
+       (selected>=0 && selected<TS_BANK_SLOT_COUNT && active->bank[selected].occupied &&
+        active->bank[selected].tile_id!=embed.selected_tile))
+        embed.canvas_page=(pages->active_page*TS_BANK_SLOT_COUNT+(selected>=0?(size_t)selected:0))/CANVAS_TILES;
     embed.pages=pages;embed.active=active;embed.host_page=pages->active_page;
-    if(embed.canvas_page>=pages->page_count)embed.canvas_page=pages->active_page;
+    if(embed.canvas_page>=canvas_view_count())embed.canvas_page=canvas_view_count()-1;
     if(!bind_tiles(pages,active,e,n))return 0;
     embed.model_hash=ts_sister_tracker_hash(t);atomic_store_explicit(&embed.ready,1,memory_order_release);
     return 1;

@@ -8217,9 +8217,7 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
         if (mode == TS_BROWSER_SELECT_FASTTRACKER_EXECUTABLE) {
             if (browser->selected >= 0 && browser->selected < browser->entry_count &&
                 browser->entries[browser->selected].is_directory) {
-                if (!ts_browser_enter_selected_directory(browser))
-                    snprintf(browser->message, sizeof(browser->message),
-                             "COULD NOT ENTER DIRECTORY");
+                ts_browser_enter_selected_directory(browser);
                 return;
             }
             if (!ts_browser_selected_path(browser, path, sizeof(path))) {
@@ -8246,8 +8244,7 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     if (browser->mode == TS_BROWSER_LOAD_WAV && browser->selected >= 0 &&
         browser->selected < browser->entry_count &&
         browser->entries[browser->selected].is_directory) {
-        if (!ts_browser_enter_selected_directory(browser))
-            snprintf(browser->message, sizeof(browser->message), "COULD NOT ENTER DIRECTORY");
+        ts_browser_enter_selected_directory(browser);
         return;
     }
     if (browser->mode == TS_BROWSER_LOAD_WAV) {
@@ -8429,8 +8426,7 @@ static void browser_activate_selection(SDL_AudioDeviceID device, AudioState *aud
     TsBrowser *browser = &ui->browser;
     if (browser->selected >= 0 && browser->selected < browser->entry_count &&
         browser->entries[browser->selected].is_directory && !browser->filename_focus) {
-        if (!ts_browser_enter_selected_directory(browser))
-            snprintf(browser->message, sizeof(browser->message), "COULD NOT ENTER DIRECTORY");
+        ts_browser_enter_selected_directory(browser);
         return;
     }
     browser_action(device, audio, ui, instrument, pending_selection_load,

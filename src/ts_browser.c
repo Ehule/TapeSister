@@ -108,8 +108,17 @@ static int join_path(const char *directory, const char *name, char *path, size_t
 {
     int written;
     if (directory == NULL || name == NULL || path == NULL || path_size == 0) return 0;
-    written = snprintf(path, path_size, strcmp(directory, "/") == 0 ? "/%s" : "%s/%s",
-                       directory, name);
+    size_t length = strlen(directory);
+    int has_separator = length > 0 && directory[length - 1] == '/';
+#ifdef _WIN32
+    has_separator = has_separator || (length > 0 && directory[length - 1] == '\\');
+#endif
+    written = snprintf(path, path_size, "%s%s%s", directory,
+                       length == 0 || has_separator ? "" : "/", name);
+#ifdef _WIN32
+    /* FindFirstFile needs a native search path, including at drive/share roots. */
+    for (char *at = path; *at; ++at) if (*at == '/') *at = '\\';
+#endif
     return written >= 0 && (size_t)written < path_size;
 }
 
@@ -186,18 +195,22 @@ int ts_browser_refresh(TsBrowser *browser)
         WIN32_FIND_DATAA item;
         HANDLE search;
         char pattern[TS_BROWSER_PATH_MAX + 4];
-        int written = snprintf(pattern, sizeof(pattern), "%s/*", browser->directory);
-        if (written < 0 || (size_t)written >= sizeof(pattern)) {
+        if (!join_path(browser->directory, "*", pattern, sizeof(pattern))) {
             snprintf(browser->message, sizeof(browser->message), "DIRECTORY PATH IS TOO LONG");
             return 0;
         }
         search = FindFirstFileA(pattern, &item);
         if (search == INVALID_HANDLE_VALUE) {
-            snprintf(browser->message, sizeof(browser->message), "COULD NOT OPEN DIRECTORY");
-            return 0;
+            DWORD error = GetLastError();
+            /* An accessible empty directory is a successful navigation. */
+            if (error != ERROR_FILE_NOT_FOUND || !path_is_directory(browser->directory)) {
+                snprintf(browser->message, sizeof(browser->message),
+                         "COULD NOT OPEN DIRECTORY (WINDOWS %lu)", (unsigned long)error);
+                return 0;
+            }
         }
         browser->entry_count = 0;
-        do {
+        if (search != INVALID_HANDLE_VALUE) do {
             TsBrowserEntry *entry;
             int is_directory;
             if (item.cFileName[0] == '.' || (item.dwFileAttributes & FILE_ATTRIBUTE_HIDDEN))
@@ -213,7 +226,7 @@ int ts_browser_refresh(TsBrowser *browser)
             }
             entry->is_directory = is_directory;
         } while (browser->entry_count < TS_BROWSER_MAX_ENTRIES && FindNextFileA(search, &item));
-        FindClose(search);
+        if (search != INVALID_HANDLE_VALUE) FindClose(search);
     }
 #else
     {
@@ -249,6 +262,18 @@ int ts_browser_refresh(TsBrowser *browser)
     browser->overwrite_armed = 0;
     snprintf(browser->message, sizeof(browser->message), "%d ITEMS", browser->entry_count);
     return 1;
+}
+
+/* Keep the path and listing together. Failed navigation must not leave stale
+   entries under a new path, appending the same child on every retry. */
+static int change_directory(TsBrowser *browser, const char *path)
+{
+    char previous[TS_BROWSER_PATH_MAX];
+    snprintf(previous, sizeof(previous), "%s", browser->directory);
+    snprintf(browser->directory, sizeof(browser->directory), "%s", path);
+    if (ts_browser_refresh(browser)) return 1;
+    snprintf(browser->directory, sizeof(browser->directory), "%s", previous);
+    return 0;
 }
 
 int ts_browser_open(TsBrowser *browser, TsBrowserMode mode, const char *default_filename)
@@ -349,10 +374,9 @@ int ts_browser_create_directory(TsBrowser *browser)
         return 0;
     }
     snprintf(saved, sizeof(saved), "%s", browser->saved_filename);
-    snprintf(browser->directory, sizeof(browser->directory), "%s", path);
+    if (!change_directory(browser, path)) return 0;
     browser->creating_directory = 0;
     browser->saved_filename[0] = '\0';
-    if (!ts_browser_refresh(browser)) return 0;
     snprintf(browser->filename, sizeof(browser->filename), "%s", saved);
     browser->filename_cursor = strlen(browser->filename);
     browser->filename_focus = ts_browser_mode_edits_filename(browser->mode);
@@ -399,10 +423,12 @@ int ts_browser_enter_selected_directory(TsBrowser *browser)
 {
     char path[TS_BROWSER_PATH_MAX];
     if (browser->selected < 0 || browser->selected >= browser->entry_count ||
-        !browser->entries[browser->selected].is_directory ||
-        !ts_browser_selected_path(browser, path, sizeof(path))) return 0;
-    snprintf(browser->directory, sizeof(browser->directory), "%s", path);
-    return ts_browser_refresh(browser);
+        !browser->entries[browser->selected].is_directory) return 0;
+    if (!ts_browser_selected_path(browser, path, sizeof(path))) {
+        snprintf(browser->message, sizeof(browser->message), "DIRECTORY PATH IS TOO LONG");
+        return 0;
+    }
+    return change_directory(browser, path);
 }
 
 int ts_browser_parent(TsBrowser *browser)
@@ -422,8 +448,7 @@ int ts_browser_parent(TsBrowser *browser)
     else if (slash == parent + 2 && parent[1] == ':') slash[1] = '\0';
     else *slash = '\0';
     if (!path_is_directory(parent)) return 0;
-    snprintf(browser->directory, sizeof(browser->directory), "%s", parent);
-    return ts_browser_refresh(browser);
+    return change_directory(browser, parent);
 }
 
 void ts_browser_set_filename(TsBrowser *browser, const char *filename)

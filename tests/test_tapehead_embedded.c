@@ -236,14 +236,14 @@ static void audit_controls(const char *config_image,const char *record_image) {
     assert(!memcmp(prefs(),expected,sizeof(expected)));remove("audit-defaults.cfg");
     /* Escape closes Config without leaving the tracker or prompting to quit. */
     press(SDLK_ESCAPE,SDL_SCANCODE_ESCAPE,KMOD_NONE);assert(test_ui->tracker_open&&!ts_tapehead_config_visible());
-    /* Hovering the tile details cannot change the invisible sample slot. */
+    /* Hovering the tile panel cannot change the invisible sample slot. */
     unsigned alias=test_pages->tracker.embedded_data[22];wheel(490,132,-1);assert(test_pages->tracker.embedded_data[22]==alias);
-    /* The song title remains editable after replacing the old sample panel. */
+    /* The removed song-name hit target must not capture typing over the tiles. */
+    uint8_t old_title[21];memcpy(old_title,test_pages->tracker.embedded_data+30,sizeof(old_title));
     click(475,162);SDL_Event text;SDL_zero(text);text.type=SDL_TEXTINPUT;text.text.windowID=SDL_GetWindowID(test_window);
     snprintf(text.text.text,sizeof(text.text.text),"Audit score");
     assert(tracker_event(&text,test_window,0,test_audio,test_ui,test_pages,test_bank,48000));
-    press(SDLK_RETURN,SDL_SCANCODE_RETURN,KMOD_NONE);
-    assert(!memcmp(test_pages->tracker.embedded_data+30,"Audit score",11));
+    assert(!memcmp(test_pages->tracker.embedded_data+30,old_title,sizeof(old_title)));
     click(325,61);assert(ts_tapehead_action()==TS_TH_SAVE_PROJECT);
     click(325,44);assert(ts_tapehead_action()==TS_TH_OPEN_PROJECT);
     click(390,95);assert(ts_tapehead_action()==TS_TH_CAPTURE);
@@ -427,9 +427,23 @@ static void followup_canvas_palette(const char *image,const char *config_image,c
     assert(ts_instrument_select_bank(other,2,test_error,sizeof(test_error)));
     assert(ts_instrument_activate_silence(other,1024,48000,test_error,sizeof(test_error)));
     assert(ts_instrument_sync_selected(other,test_error,sizeof(test_error)));
-    click(618,10);click(540,34);alias=test_pages->tracker.embedded_data[22];
+    assert(ts_tapehead_sync(test_pages,test_bank,48000,test_error,sizeof(test_error)));ts_tapehead_tick();
+    click(540,133);alias=test_pages->tracker.embedded_data[22]; /* Fifth row spans the next host page. */
     assert(test_pages->tracker.aliases[alias]==other->bank[2].tile_id);
     press(SDLK_z,SDL_SCANCODE_Z,KMOD_NONE);assert(pat()->cells[1][0].tile_id==other->bank[2].tile_id);
+    assert(ts_instrument_select_bank(other,7,test_error,sizeof(test_error)));
+    assert(ts_instrument_activate_silence(other,1024,48000,test_error,sizeof(test_error)));
+    assert(ts_instrument_sync_selected(other,test_error,sizeof(test_error)));
+    assert(ts_instrument_select_bank(other,15,test_error,sizeof(test_error)));
+    assert(ts_instrument_activate_silence(other,1024,48000,test_error,sizeof(test_error)));
+    assert(ts_instrument_sync_selected(other,test_error,sizeof(test_error)));
+    assert(ts_tapehead_sync(test_pages,test_bank,48000,test_error,sizeof(test_error)));ts_tapehead_tick();
+    click(590,158);alias=test_pages->tracker.embedded_data[22]; /* Last button uses the old title area. */
+    assert(test_pages->tracker.aliases[alias]==other->bank[7].tile_id);
+    click(577,158);assert(test_pages->tracker.embedded_data[22]==alias); /* Gutter is inert. */
+    click(618,10);click(590,58);alias=test_pages->tracker.embedded_data[22];
+    assert(test_pages->tracker.aliases[alias]==other->bank[15].tile_id);
+    click(590,158);assert(test_pages->tracker.embedded_data[22]==alias); /* Past the last host page. */
     wheel(510,100,1);click(488,34);
     assert(test_pages->tracker.aliases[test_pages->tracker.embedded_data[22]]==test_bank->bank[1].tile_id);
     followup_interpolation();
