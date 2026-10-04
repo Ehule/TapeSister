@@ -17,7 +17,7 @@ static void test_canvas_play_view(SDL_Window *window,SDL_AudioDeviceID device)
     TsMidiEvent midi={0};midi.action=TS_MIDI_ACTION_NOTE_ON;
     assert(ts_note_event_midi(&midi.note,60,127,1));
     SDL_SetModState(KMOD_NONE);
-#define VIEW_NOTE(ORIGIN) do {if((ORIGIN)==0)begin_note(device,&audio,&ui,&instrument,0,44100,0);else if((ORIGIN)==1)handle_midi_event(device,&audio,&ui,&instrument,NULL,&midi,44100);else assert(keyboard_pointer_event(&pointer,window,device,&audio,&ui,&instrument,NULL,44100));}while(0)
+#define VIEW_NOTE(ORIGIN) do {if((ORIGIN)==0)begin_note(device,&audio,&ui,&instrument,0,44100,0);else if((ORIGIN)==1)handle_midi_event(device,&audio,&ui,&instrument,NULL,&midi,44100,1);else assert(keyboard_pointer_event(&pointer,window,device,&audio,&ui,&instrument,NULL,44100));}while(0)
     for(int hold=0;hold<2;++hold)for(int zoomed=0;zoomed<2;++zoomed)for(int selection=0;selection<2;++selection)for(int origin=0;origin<3;++origin) {
         stop_all_force(device,&audio,&ui);ui.play_view=0;instrument.has_loop=0;
         ts_instrument_show_all(&instrument);instrument.has_selection=selection;

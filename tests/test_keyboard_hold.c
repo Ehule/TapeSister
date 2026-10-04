@@ -179,16 +179,16 @@ static void test_trigger_identity(void)
         TsMidiEvent midi = {0};
         midi.action = TS_MIDI_ACTION_NOTE_ON;
         assert(ts_note_event_midi(&midi.note, 60, 100, 0));
-        handle_midi_event(device, &audio, &ui, &instrument, &fm, &midi, 44100);
+        handle_midi_event(device, &audio, &ui, &instrument, &fm, &midi, 44100,1);
         assert(ts_note_event_midi(&midi.note, 60, 100, 1));
-        handle_midi_event(device, &audio, &ui, &instrument, &fm, &midi, 44100);
+        handle_midi_event(device, &audio, &ui, &instrument, &fm, &midi, 44100,1);
         assert(voices() == 4);
         click_note(0, 1);
         assert(voices() == 3); /* Same-pitch MIDI notes belong to other triggers. */
-        handle_midi_event(device, &audio, &ui, &instrument, &fm, &midi, 44100);
+        handle_midi_event(device, &audio, &ui, &instrument, &fm, &midi, 44100,1);
         assert(voices() == 2); /* Channel 0 is still held. */
         assert(ts_note_event_midi(&midi.note, 60, 100, 0));
-        handle_midi_event(device, &audio, &ui, &instrument, &fm, &midi, 44100);
+        handle_midi_event(device, &audio, &ui, &instrument, &fm, &midi, 44100,1);
         assert(voices() == 1);
         click_note(4, 0);
         assert(!voices() && !audio.playing);
@@ -288,19 +288,19 @@ static void test_shifted_hold_isolation(void)
         TsMidiEvent midi = {0};
         midi.action = TS_MIDI_ACTION_NOTE_ON;
         assert(ts_note_event_midi(&midi.note, 72, 100, 0));
-        handle_midi_event(device, &audio, &ui, &instrument, &fm, &midi, 44100);
+        handle_midi_event(device, &audio, &ui, &instrument, &fm, &midi, 44100,1);
         assert(ts_note_event_midi(&midi.note, 72, 100, 1));
-        handle_midi_event(device, &audio, &ui, &instrument, &fm, &midi, 44100);
+        handle_midi_event(device, &audio, &ui, &instrument, &fm, &midi, 44100,1);
         assert(voices() == 3);
         set_keyboard_octave(device, &audio, &ui, 5);
         click_note(12, 0); /* Original key position now starts C6. */
         assert(voices() == 4);
         click_note(0, 0); /* Only QWERTY C5 is released. */
         assert(voices() == 3);
-        handle_midi_event(device, &audio, &ui, &instrument, &fm, &midi, 44100);
+        handle_midi_event(device, &audio, &ui, &instrument, &fm, &midi, 44100,1);
         assert(voices() == 2);
         assert(ts_note_event_midi(&midi.note, 72, 100, 0));
-        handle_midi_event(device, &audio, &ui, &instrument, &fm, &midi, 44100);
+        handle_midi_event(device, &audio, &ui, &instrument, &fm, &midi, 44100,1);
         assert(voices() == 1);
         click_note(12, 0); /* C6 remained held throughout. */
         assert_keyboard_silent();

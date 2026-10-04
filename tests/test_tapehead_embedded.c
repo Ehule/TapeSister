@@ -86,8 +86,20 @@ static void workspace_buttons(void) {
         assert(ts_tapehead_running() && ts_tapehead_block_active());
         assert(ts_sister_tracker_hash(&test_pages->tracker)==score_hash);
         midi.action=TS_MIDI_ACTION_NOTE_OFF;assert(!ts_tapehead_midi(&midi,0));
+        /* MIDI belongs to the host while the Sister window covers the tracker. */
+        midi.action=TS_MIDI_ACTION_NOTE_ON;midi.note.midi_note=74;
+        handle_midi_event(0,test_audio,test_ui,test_bank,NULL,&midi,48000,!sister.model.visible);
+        assert(ts_note_bank_count(&test_audio->notes)==1);
+        assert(ts_sister_tracker_hash(&test_pages->tracker)==score_hash);
+        midi.action=TS_MIDI_ACTION_NOTE_OFF;
+        handle_midi_event(0,test_audio,test_ui,test_bank,NULL,&midi,48000,!sister.model.visible);
+        assert(!ts_note_bank_count(&test_audio->notes));
         application_window_focus(test_window,&sister);
         assert(!sister.model.visible && test_ui->tracker_open);
+        midi.action=TS_MIDI_ACTION_NOTE_ON;
+        handle_midi_event(0,test_audio,test_ui,test_bank,NULL,&midi,48000,!sister.model.visible);
+        assert(!ts_note_bank_count(&test_audio->notes));
+        midi.action=TS_MIDI_ACTION_NOTE_OFF;assert(ts_tapehead_midi(&midi,0));
     }
     click(325,128);tracker_refresh(0,test_audio,test_ui,test_pages,test_bank,48000,&sister);
     assert(!test_ui->tracker_open && ts_tapehead_running() && ts_tapehead_block_active());
@@ -182,10 +194,10 @@ int main(int argc,char **argv) {
     /* MIDI uses upstream note entry and velocity, not a parallel canvas voice. */
     TsMidiEvent midi;assert(ts_midi_decode_short_message(0x92,67,100,&midi));
     unsigned midi_row=test_pages->tracker.editor_row;TsTrackerCell before_midi=pat()->cells[midi_row][0];
-    handle_midi_event(0,test_audio,test_ui,test_bank,NULL,&midi,48000);
+    handle_midi_event(0,test_audio,test_ui,test_bank,NULL,&midi,48000,1);
     assert(pat()->cells[midi_row][0].note==67 && pat()->cells[midi_row][0].tile_id==tile);
     assert(pat()->cells[midi_row][0].has_volume && !ts_note_bank_count(&test_audio->notes));
-    assert(ts_midi_decode_short_message(0x82,67,0,&midi));handle_midi_event(0,test_audio,test_ui,test_bank,NULL,&midi,48000);
+    assert(ts_midi_decode_short_message(0x82,67,0,&midi));handle_midi_event(0,test_audio,test_ui,test_bank,NULL,&midi,48000,1);
     press(SDLK_z,SDL_SCANCODE_Z,KMOD_CTRL);assert(!memcmp(&pat()->cells[midi_row][0],&before_midi,sizeof(before_midi)));
     /* Original block clipboard and pattern extraction are retained. */
     press(SDLK_HOME,SDL_SCANCODE_HOME,KMOD_NONE);press(SDLK_DOWN,SDL_SCANCODE_DOWN,KMOD_ALT);

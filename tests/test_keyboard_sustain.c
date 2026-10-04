@@ -138,13 +138,13 @@ int main(void)
     /* Main tile and FM MIDI routes obey the same setting as QWERTY. */
     for(int fm=0;fm<2;++fm) {
         ui.fm_open=fm;
-        midi.action=TS_MIDI_ACTION_NOTE_ON;handle_midi_event(device,&audio,&ui,&instrument,&sample,&midi,44100);
+        midi.action=TS_MIDI_ACTION_NOTE_ON;handle_midi_event(device,&audio,&ui,&instrument,&sample,&midi,44100,1);
         assert(ts_note_bank_count(&audio.notes)==1);
-        midi.action=TS_MIDI_ACTION_NOTE_OFF;handle_midi_event(device,&audio,&ui,&instrument,&sample,&midi,44100);
+        midi.action=TS_MIDI_ACTION_NOTE_OFF;handle_midi_event(device,&audio,&ui,&instrument,&sample,&midi,44100,1);
         assert(ts_note_bank_count(&audio.notes)==1);
         keyboard_sustain_toggle(device,&audio,&ui,&sister);assert(!ts_note_bank_count(&audio.notes));
-        midi.action=TS_MIDI_ACTION_NOTE_ON;handle_midi_event(device,&audio,&ui,&instrument,&sample,&midi,44100);
-        midi.action=TS_MIDI_ACTION_NOTE_OFF;handle_midi_event(device,&audio,&ui,&instrument,&sample,&midi,44100);
+        midi.action=TS_MIDI_ACTION_NOTE_ON;handle_midi_event(device,&audio,&ui,&instrument,&sample,&midi,44100,1);
+        midi.action=TS_MIDI_ACTION_NOTE_OFF;handle_midi_event(device,&audio,&ui,&instrument,&sample,&midi,44100,1);
         assert(!ts_note_bank_count(&audio.notes));keyboard_sustain_toggle(device,&audio,&ui,&sister);
     }
     ui.fm_open=0;midi.action=TS_MIDI_ACTION_NOTE_ON;
@@ -152,21 +152,21 @@ int main(void)
     PortalController c;portal_init(&c,&ui.portal);ui.portal.open=1;
     assert(portal_source(device,&audio,&ui,&instrument,&c));
     ui.portal.waves[0].has_selection=1;ui.portal.waves[0].selection_first=100;ui.portal.waves[0].selection_last=1000;ui.portal.loop=1;
-    handle_midi_event(device,&audio,&ui,&instrument,NULL,&midi,44100);
+    handle_midi_event(device,&audio,&ui,&instrument,NULL,&midi,44100,1);
     assert(ts_note_bank_count(&audio.notes)==1);
     const TsNoteVoice *v=ts_note_bank_display_voice(&audio.notes);
     assert(v->sample==ui.portal.source && v->range_first==100 && v->range_last==1000 && v->looping);
-    midi.action=TS_MIDI_ACTION_NOTE_OFF;handle_midi_event(device,&audio,&ui,&instrument,NULL,&midi,44100);
+    midi.action=TS_MIDI_ACTION_NOTE_OFF;handle_midi_event(device,&audio,&ui,&instrument,NULL,&midi,44100,1);
     assert(ts_note_bank_count(&audio.notes)==1);
     ui.portal.name_focus=1;assert(!keyboard_sustain_event(&key,window,device,&audio,&ui,&sister,&instrument));
-    midi.action=TS_MIDI_ACTION_NOTE_ON;midi.note=b;handle_midi_event(device,&audio,&ui,&instrument,NULL,&midi,44100);assert(ts_note_bank_count(&audio.notes)==1);
+    midi.action=TS_MIDI_ACTION_NOTE_ON;midi.note=b;handle_midi_event(device,&audio,&ui,&instrument,NULL,&midi,44100,1);assert(ts_note_bank_count(&audio.notes)==1);
     ui.portal.name_focus=0;ui.portal.number_focus=0;assert(!keyboard_sustain_event(&key,window,device,&audio,&ui,&sister,&instrument));ui.portal.number_focus=-1;
     shot("sustain-portal",&ui,&instrument);
     portal_clear_notes(&audio,&ui.portal,&c);assert(!ts_note_bank_count(&audio.notes));
     ui.portal.result=&sample;ui.portal.listen_result=1;ui.portal.loop=0;
-    handle_midi_event(device,&audio,&ui,&instrument,NULL,&midi,44100);
+    handle_midi_event(device,&audio,&ui,&instrument,NULL,&midi,44100,1);
     v=ts_note_bank_display_voice(&audio.notes);assert(v && v->sample==&sample && v->midi_note==64 && v->step>1 && !v->looping);
-    midi.action=TS_MIDI_ACTION_PANIC;midi.channel=1;handle_midi_event(device,&audio,&ui,&instrument,NULL,&midi,44100);assert(!ts_note_bank_count(&audio.notes));
+    midi.action=TS_MIDI_ACTION_PANIC;midi.channel=1;handle_midi_event(device,&audio,&ui,&instrument,NULL,&midi,44100,1);assert(!ts_note_bank_count(&audio.notes));
     portal_close(device,&audio,&ui,&c);portal_free(&c);
     /* File preview supports stereo MIDI and both note-release modes. */
     TsSample stereo;ts_sample_init(&stereo);stereo.frames=sample.frames;stereo.sample_rate=44100;stereo.channels=2;
@@ -174,16 +174,16 @@ int main(void)
     for(size_t i=0;i<stereo.frames;++i) {stereo.data[2*i]=sample.data[i];stereo.data[2*i+1]=-sample.data[i];}
     ui.import_preview_open=1;ui.import_preview_sample=&stereo;ui.import_preview_loop=1;
     midi.action=TS_MIDI_ACTION_NOTE_ON;midi.note=a;
-    handle_midi_event(device,&audio,&ui,&instrument,NULL,&midi,44100);assert(ts_note_bank_count(&audio.notes)==1);
-    midi.action=TS_MIDI_ACTION_NOTE_OFF;handle_midi_event(device,&audio,&ui,&instrument,NULL,&midi,44100);assert(ts_note_bank_count(&audio.notes)==1);
+    handle_midi_event(device,&audio,&ui,&instrument,NULL,&midi,44100,1);assert(ts_note_bank_count(&audio.notes)==1);
+    midi.action=TS_MIDI_ACTION_NOTE_OFF;handle_midi_event(device,&audio,&ui,&instrument,NULL,&midi,44100,1);assert(ts_note_bank_count(&audio.notes)==1);
     TsStereoFrame heard={0};for(int i=0;i<200;++i)heard=ts_note_bank_read_stereo(&audio.notes);
     assert(fabsf(heard.l)>.001 && fabsf(heard.l+heard.r)<.00001);
     shot("sustain-import",&ui,&instrument);
     SDL_Event click={0};click.type=SDL_MOUSEBUTTONDOWN;click.button.windowID=SDL_GetWindowID(window);
     click.button.button=SDL_BUTTON_LEFT;click.button.x=550;click.button.y=320;
     assert(keyboard_sustain_event(&click,window,device,&audio,&ui,&sister,&instrument));assert(!ui.keyboard_sustain && !ts_note_bank_count(&audio.notes));
-    midi.action=TS_MIDI_ACTION_NOTE_ON;handle_midi_event(device,&audio,&ui,&instrument,NULL,&midi,44100);
-    midi.action=TS_MIDI_ACTION_NOTE_OFF;handle_midi_event(device,&audio,&ui,&instrument,NULL,&midi,44100);assert(!ts_note_bank_count(&audio.notes));
+    midi.action=TS_MIDI_ACTION_NOTE_ON;handle_midi_event(device,&audio,&ui,&instrument,NULL,&midi,44100,1);
+    midi.action=TS_MIDI_ACTION_NOTE_OFF;handle_midi_event(device,&audio,&ui,&instrument,NULL,&midi,44100,1);assert(!ts_note_bank_count(&audio.notes));
     ui.import_preview_open=0;
     /* Canvas and Portal buttons are actual click targets; hidden keyboard is not. */
     ui.show_keyboard=0;assert(!keyboard_sustain_event(&click,window,device,&audio,&ui,&sister,&instrument));

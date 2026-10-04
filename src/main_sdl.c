@@ -6719,10 +6719,10 @@ static void preview_midi_note(SDL_AudioDeviceID device, AudioState *audio,
 static void handle_midi_event(SDL_AudioDeviceID device, AudioState *audio,
                               TsUiState *ui, const TsInstrument *instrument,
                               const TsSample *fm_preview,
-                              const TsMidiEvent *midi, int output_rate)
+                              const TsMidiEvent *midi, int output_rate, int tracker_input_allowed)
 {
     if (audio == NULL || ui == NULL || instrument == NULL || midi == NULL) return;
-    int tracker_focus=ui->tracker_open && ui->tracker_embedded_frame && !ui_dialog_open(ui) &&
+    int tracker_focus=tracker_input_allowed && ui->tracker_open && ui->tracker_embedded_frame && !ui_dialog_open(ui) &&
                       !ui->router_open && !ui->master_eq_open && !ui->midi_learn_active;
     if(ts_tapehead_midi(midi,tracker_focus)) {
         ts_tapehead_host_lock();ts_tapehead_export(ui->tracker,ui->status,sizeof(ui->status));ts_tapehead_host_unlock();
@@ -17089,7 +17089,7 @@ int main(int argc, char **argv)
                         &input_device, &external_input, &midi,
                         (uint32_t)obtained.freq, 2))
                     handle_midi_event(device, &audio, &ui, &instrument,
-                                      &fm_preview, &midi, obtained.freq);
+                                      &fm_preview, &midi, obtained.freq, !sister_window.model.visible);
             }
         }
         if (ui.midi_activity_until_ms != 0u &&
