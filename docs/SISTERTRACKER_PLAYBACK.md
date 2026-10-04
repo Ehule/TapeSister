@@ -93,6 +93,41 @@ Master EQ, limiter, OUT gain and final-output recording remain host operations.
 This version supplies one stereo tracker bus; per-lane hardware outputs are not
 part of this transplant.
 
+## Where TrackSister enters the Router
+
+TrackSister is a stereo source at the Router input. Its eight lanes are mixed
+by the embedded replayer before joining the host. Current source grouping is:
+
+| Playback | Source group |
+| --- | --- |
+| Sample ARP, QWERTY/MIDI sample voices, tile launchers and Mosaic | TILES |
+| FM ARP and FM keyboard voices | FM |
+| All eight TrackSister lanes | TRACK |
+| Separate TapeHead application's Live Link | TAPEHEAD |
+
+With Sister Machine POWER off, the ordinary program sums these playing sources,
+clamps that program, applies its existing 0.8 gain, adds monitored external input,
+and enters the shared Router. With POWER on, Sister's source switches and trims
+select the input first; enabled source groups are normalized together and then
+enter the same Router. TRACK must be enabled there to hear TrackSister. An
+unselected source is silent while Sister owns the program, including when its
+Router stage is bypassed. There is no per-source FX chain or per-lane Router send.
+
+The default movable order is Prism → Sister Machine → Fallout → Pedalboard →
+External Insert (Insert starts bypassed). F9 shows the saved order, which may
+have been rearranged. Sister's PRE/head inserts stay local to its tape/head
+processing; Pedalboard's global POST processing is the movable Router stage.
+
+Sister's DRY monitor branches from its input (including effects preceding
+Sister). It normally rejoins the routed wet result just before the fixed Master
+endpoint, so effects after Sister ordinarily process the wet path. A configured
+External Insert after Sister merges dry/wet before that external loop, even
+while that Insert is bypassed, to avoid a parallel undelayed dry signal.
+
+Master EQ → limiter → global OUT follows the shared result. Final-output file
+recording observes that result. This explanation describes the existing audio
+path; the full-logo correction does not change routing.
+
 ## Controls
 
 The tracker uses TapeHead's original controls. In particular, its clipboard

@@ -5,15 +5,15 @@ static void tracker_logo(void) {
     drawFramework(112,0,154,32,FRAMEWORK_TYPE1);
     for(int y=0;y<28;++y)for(int x=0;x<42;++x) {
         size_t bit=(size_t)y*42+x;
-        /* Keep the Sister Machine silhouette; replace the wave at her hands with tracker steps. */
-        if(x<25 && (ts_sister_portal_mask[bit>>3]&(0x80u>>(bit&7))))
+        /* Keep the complete figure, including both hands and the right profile. */
+        if(ts_sister_portal_mask[bit>>3]&(0x80u>>(bit&7)))
             video.frameBuffer[(y+2)*SCREEN_W+x+116]=video.palette[PAL_MOUSEPT];
     }
     const int colors[]={PAL_PATTERN_INSTRUMENT,PAL_PATTERN_NOTE,PAL_PATTERN_EFFECT};
-    for(int lane=0;lane<3;++lane)for(int x=0;x<19;++x) {
-        int y=12+lane*4-(x/5)%2;
-        video.frameBuffer[y*SCREEN_W+139+x]=video.palette[colors[lane]];
-        if(x%5==0)video.frameBuffer[(y-1)*SCREEN_W+139+x]=video.palette[colors[lane]];
+    for(int lane=0;lane<3;++lane)for(int x=0;x<36;++x) {
+        int y=15+lane*2-(x/6)%2;
+        video.frameBuffer[y*SCREEN_W+119+x]=video.palette[colors[lane]];
+        if(x%6==0)video.frameBuffer[(y-1)*SCREEN_W+119+x]=video.palette[colors[lane]];
     }
     textOut(161,5,PAL_FORGRND,"TrackSister");
     textOutTiny(162,21,fastTracksPOCMasterIsEnabled()?"FASTRACKS ON":"FASTRACKS OFF",video.palette[PAL_FORGRND]);

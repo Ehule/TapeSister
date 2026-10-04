@@ -34,7 +34,9 @@ unchanged. The separate pinned drawing import remains reproducible as well.
   above Save. Load directly opens the normal host browser. The old bottom
   capture overlay and hidden click target no longer cover the pattern grid.
 - Added a code-native TrackSister emblem using the Sister Machine silhouette
-  and the supplied concept's colored tracker steps. Shrunk LEN text to fit.
+  and the supplied concept's colored tracker steps. The complete silhouette,
+  including both arms and its right-facing profile, now fits the header without
+  clipping. Shrunk LEN text to fit.
 - Moved note interpolation to Ctrl+Shift+I, preserving Ctrl+Shift+M for host
   MIDI Learn. Escape cancels previews without leaving TrackSister. Tests cover
   preview, scale selection, acceptance, cancellation and original undo/redo.
