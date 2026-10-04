@@ -71,11 +71,14 @@ static void click(int x,int y) {
 }
 static void workspace_buttons(void) {
     static SisterWindow sister;
+    SDL_setenv("SDL_AUDIODRIVER","dummy",1);assert(!SDL_InitSubSystem(SDL_INIT_AUDIO));
+    SDL_AudioSpec spec={0};spec.freq=48000;spec.channels=2;spec.format=AUDIO_F32SYS;spec.samples=256;
+    SDL_AudioDeviceID device=SDL_OpenAudioDevice(NULL,0,&spec,NULL,0);assert(device);
+    ts_real_output=device;
     ts_sister_ui_model_init(&sister.model,&test_ui->config);
     const int buttons[][3]={{390,110,1},{390,128,3},{325,110,0},{325,25,2}};
     for(unsigned i=0;i<sizeof(buttons)/sizeof(buttons[0]);++i) {
-        TsMidiEvent midi={0};midi.action=TS_MIDI_ACTION_NOTE_ON;
-        midi.note.channel=0;midi.note.midi_note=72;midi.note.velocity=100;
+        TsMidiEvent midi={0};assert(ts_midi_decode_short_message(0x90,72,100,&midi));
         assert(ts_tapehead_midi(&midi,1));
         click(buttons[i][0],buttons[i][1]);
         uint64_t score_hash=ts_sister_tracker_hash(&test_pages->tracker);
@@ -87,17 +90,17 @@ static void workspace_buttons(void) {
         assert(ts_sister_tracker_hash(&test_pages->tracker)==score_hash);
         midi.action=TS_MIDI_ACTION_NOTE_OFF;assert(!ts_tapehead_midi(&midi,0));
         /* MIDI belongs to the host while the Sister window covers the tracker. */
-        midi.action=TS_MIDI_ACTION_NOTE_ON;midi.note.midi_note=74;
-        handle_midi_event(0,test_audio,test_ui,test_bank,NULL,&midi,48000,!sister.model.visible);
+        assert(ts_midi_decode_short_message(0x90,74,100,&midi));
+        handle_midi_event(device,test_audio,test_ui,test_bank,NULL,&midi,48000,!sister.model.visible);
         assert(ts_note_bank_count(&test_audio->notes)==1);
         assert(ts_sister_tracker_hash(&test_pages->tracker)==score_hash);
         midi.action=TS_MIDI_ACTION_NOTE_OFF;
-        handle_midi_event(0,test_audio,test_ui,test_bank,NULL,&midi,48000,!sister.model.visible);
+        handle_midi_event(device,test_audio,test_ui,test_bank,NULL,&midi,48000,!sister.model.visible);
         assert(!ts_note_bank_count(&test_audio->notes));
         application_window_focus(test_window,&sister);
         assert(!sister.model.visible && test_ui->tracker_open);
         midi.action=TS_MIDI_ACTION_NOTE_ON;
-        handle_midi_event(0,test_audio,test_ui,test_bank,NULL,&midi,48000,!sister.model.visible);
+        handle_midi_event(device,test_audio,test_ui,test_bank,NULL,&midi,48000,!sister.model.visible);
         assert(!ts_note_bank_count(&test_audio->notes));
         midi.action=TS_MIDI_ACTION_NOTE_OFF;assert(ts_tapehead_midi(&midi,0));
     }
@@ -105,6 +108,7 @@ static void workspace_buttons(void) {
     assert(!test_ui->tracker_open && ts_tapehead_running() && ts_tapehead_block_active());
     press(SDLK_F10,SDL_SCANCODE_F10,KMOD_NONE);assert(test_ui->tracker_open);
     SDL_DestroyTexture(sister.texture);SDL_DestroyRenderer(sister.renderer);SDL_DestroyWindow(sister.window);
+    ts_real_output=0;SDL_CloseAudioDevice(device);
 }
 static void replayer_commands(void) {
     TsSisterTracker *t=&test_pages->tracker;const unsigned record_size=7+256*8*7;
