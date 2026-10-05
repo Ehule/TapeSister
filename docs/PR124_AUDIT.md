@@ -87,6 +87,28 @@ STH2 project preferences persist tracker colors and contrasts.
 
 ![Shrink confirmation in a resized host window](images/pr124-shrink.png)
 
+## File-recording feedback and Sister Machine spacing
+
+- TrackSister's Rec file flashes a pink outline while recording. The window
+  border flashes with the same host recording color, including pattern-only
+  view. Feedback clears when the file finishes; playback continues.
+- The mini-canvas header shows `FILE REC HH:MM:SS` from the recorder's accepted
+  audio frames. Finishing shows `FILE WAIT`; the button reads `File wait` until
+  the writer is done. No recording footer covers pattern rows.
+- Sister Machine's source and head diagnostics occupy two compact rows to the
+  right of TRACK, clear of its button and the vertical mixer. Source controls
+  retain their existing positions and hit targets.
+- Release application build and four targeted checks passed: embedded tracker
+  integration, Sister source UI, Sister capture UI and packaging. The recording
+  test starts/stops the actual writer through Rec file, advances recorded audio,
+  checks the visible timer and both flash phases, and keeps transport running.
+  Both UI renders were inspected. The previously documented canvas boundary
+  baseline failure is unchanged.
+
+![TrackSister file-recording feedback](images/pr124-file-recording.png)
+
+![Sister Machine source controls and diagnostics](images/pr124-sister-spacing.png)
+
 ## Interface
 
 The compact workspace keeps the eight lanes and original editing controls.

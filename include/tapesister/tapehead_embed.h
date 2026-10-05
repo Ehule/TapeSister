@@ -19,7 +19,7 @@ int ts_tapehead_sync(TsSamplePages *pages, const TsInstrument *active, unsigned 
                      char *error, size_t size);
 int ts_tapehead_event(const SDL_Event *event, int x, int y);
 void ts_tapehead_tick(void);
-void ts_tapehead_status(const char *message,unsigned capture);
+void ts_tapehead_status(const TsUiState *host_ui,unsigned capture);
 void ts_tapehead_focus_lost(void);
 int ts_tapehead_midi(const TsMidiEvent *event,int allow_note_on);
 void ts_tapehead_stop(void);

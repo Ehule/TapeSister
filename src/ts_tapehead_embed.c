@@ -79,6 +79,10 @@ static struct {
     int wheel_target;
     char status[160],canvas_message[80];
     unsigned capture;
+    TsPerformanceFileState file_state;
+    uint64_t file_seconds;
+    uint32_t record_color;
+    int record_flash;
 } embed;
 
 static int fail(char *e,size_t n,const char *s) { if(e&&n)snprintf(e,n,"%s",s);return 0; }
@@ -179,8 +183,23 @@ static void collect_tiles(void) {
     }
 }
 
-void ts_tapehead_status(const char *message,unsigned capture) {
-    snprintf(embed.status,sizeof(embed.status),"%s",message?message:"");embed.capture=capture;
+void ts_tapehead_status(const TsUiState *host_ui,unsigned capture) {
+    snprintf(embed.status,sizeof(embed.status),"%s",host_ui->status);embed.capture=capture;
+    embed.file_state=host_ui->file_record_state;
+    embed.file_seconds=host_ui->file_record_rate?host_ui->file_record_frames/host_ui->file_record_rate:0;
+    embed.record_color=host_ui->palette.colors[TS_PALETTE_PATTERN_VOLUME]|0xff000000u;
+    embed.record_flash=host_ui->text_cursor_visible;
+}
+static int file_recording(void) {
+    return embed.file_state==TS_PERFORMANCE_FILE_RECORDING || embed.file_state==TS_PERFORMANCE_FILE_STOPPING;
+}
+static void record_outline(int x,int y,int w,int h) {
+    if(!file_recording() || !embed.record_flash)return;
+    /* Use the host's pink file-recording color; stay inside the tightly
+       spaced tracker button so adjacent recording controls remain legible. */
+    for(int row=0;row<h;++row)for(int col=0;col<w;++col)
+        if(row<2 || row>=h-2 || col<2 || col>=w-2)
+            video.frameBuffer[(y+row)*SCREEN_W+x+col]=embed.record_color;
 }
 
 #include "ts_tapehead_settings.inc"
@@ -205,7 +224,8 @@ static void menu(void) {
     pushButtons[PB_DISK_OP].x=294;pushButtons[PB_DISK_OP].y=36;
     pushButtons[PB_ZAP].y=53;pushButtons[PB_TRIM].y=70;
     pushButtons[PB_EXTEND_VIEW].x=359;pushButtons[PB_EXTEND_VIEW].y=87;
-    pushButtons[PB_EXTEND_VIEW].caption=embed.capture?"Stop file":"Rec file";
+    pushButtons[PB_EXTEND_VIEW].caption=embed.file_state==TS_PERFORMANCE_FILE_STOPPING?"File wait":
+        embed.capture || file_recording()?"Stop file":"Rec file";
     pushButtons[PB_EXTEND_VIEW].callbackFuncOnUp=capture_button;
     pushButtons[PB_DISK_OP].caption="Load";pushButtons[PB_DISK_OP].callbackFuncOnUp=project_open_button;
     pushButtons[PB_INST_ED].caption="FX";pushButtons[PB_INST_ED].callbackFuncOnUp=fx_button;
@@ -221,6 +241,7 @@ static void menu(void) {
     if(main_panel_visible()) {
         drawPushButton(PB_NIBBLES);drawPushButton(PB_TRIM);drawPushButton(PB_CONFIG);
         showPushButton(PB_ZAP);drawPushButton(PB_DISK_OP);drawPushButton(PB_EXTEND_VIEW);
+        record_outline(359,87,59,16);
         if(ui.scopesShown) {
             tracker_logo();
             pushButtons[PB_BADGE].bitmapFlag=pushButtons[PB_BADGE].bitmap32Flag=false;

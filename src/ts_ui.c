@@ -4142,8 +4142,18 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
 void ts_ui_render_file_recording(TsFramebuffer *fb, const TsUiState *ui)
 {
     if(!fb || !ui)return;
-    if(ui->tracker_open && (ui->tracker_embedded_frame || ui->tracker_expanded))return; /* Tracker has its own Rec file control. */
     render_palette=&ui->palette;
+    if(ui->tracker_open && ui->tracker_embedded_frame) {
+        /* Keep the full pattern grid visible. The embedded panel owns its
+           button/timer, while this shared border survives pattern-only view. */
+        if((ui->file_record_state==TS_PERFORMANCE_FILE_RECORDING ||
+            ui->file_record_state==TS_PERFORMANCE_FILE_STOPPING) && ui->text_cursor_visible) {
+            rect(fb,0,0,640,2,PAL_VOLUME);rect(fb,0,398,640,2,PAL_VOLUME);
+            rect(fb,0,0,2,400,PAL_VOLUME);rect(fb,638,0,2,400,PAL_VOLUME);
+        }
+        return;
+    }
+    if(ui->tracker_open && ui->tracker_expanded)return;
     if(ui->file_record_state!=TS_PERFORMANCE_FILE_RECORDING &&
        ui->file_record_state!=TS_PERFORMANCE_FILE_STOPPING) {
         mini_button(fb,544,382,86,"REC FILE",0);
@@ -5508,22 +5518,25 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     button(fb, 278, 172, 52, "TH PATT", model->tapehead_pattern_playing);
     button(fb, 334, 172, 44, "TRACK",
            model->routing.source_switches & TS_SISTER_SOURCE_TRACK);
-    snprintf(line, sizeof(line), "%s %04X V%02d IN%.2F",
+    /* Diagnostics share a bounded two-line well beside the source buttons.
+       The TRACK switch occupies the old head-meter text position. */
+    char source_status[35];
+    snprintf(source_status, sizeof(source_status), "%s %04X V%02d IN%.2F",
              model->routing.live_link_available ? "LINK" : "WAIT",
              model->routing.source_mask, model->routing.active_source_voices,
              model->routing.source_input_peak);
-    text(fb, 382, 179, line,
-         model->routing.warnings ? PAL_VOLUME : PAL_MOUSE, 1);
+    tracker_tiny(fb, 384, 175, source_status,
+         model->routing.warnings ? PAL_VOLUME : PAL_MOUSE);
     overload_display = model->routing.overload_count > 9999u ?
         9999u : (unsigned long long)model->routing.overload_count;
-    snprintf(line, sizeof(line), "H1%.2F H2%.2F H3%.2F O%04llu%s",
+    snprintf(source_status, sizeof(source_status), "H1%.2F H2%.2F H3%.2F O%04llu%s",
              model->routing.tap_peak[TS_SISTER_TAP_H1],
              model->routing.tap_peak[TS_SISTER_TAP_H2],
              model->routing.tap_peak[TS_SISTER_TAP_H3],
              overload_display,
              model->routing.overload_count > 9999u ? "+" : "");
-    text(fb, 336, 190, line,
-         model->routing.overload_count != 0u ? PAL_VOLUME : PAL_TUNING, 1);
+    tracker_tiny(fb, 384, 186, source_status,
+         model->routing.overload_count != 0u ? PAL_VOLUME : PAL_TUNING);
     sister_vertical_mixer(fb, 526, 172, model);
 
     text(fb, 10, 207, "H1", PAL_NOTE, 1);

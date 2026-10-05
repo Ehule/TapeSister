@@ -74,7 +74,18 @@ static void canvas_draw(void) {
     drawFramework(421,0,211,173,FRAMEWORK_TYPE1);
     char line[80];
     snprintf(line,sizeof(line),"CANVAS %u OF %u",(unsigned)embed.canvas_page+1,(unsigned)canvas_view_count());
-    textOutTiny(426,8,embed.canvas_message[0]?embed.canvas_message:line,video.palette[PAL_FORGRND]);
+    if(file_recording()) {
+        unsigned hours=(unsigned)(embed.file_seconds/3600>9999?9999:embed.file_seconds/3600);
+        snprintf(line,sizeof(line),"FILE %s %02u:%02u:%02u",
+            embed.file_state==TS_PERFORMANCE_FILE_STOPPING?"WAIT":"REC",hours,
+            (unsigned)(embed.file_seconds/60%60),(unsigned)(embed.file_seconds%60));
+        textOutTiny(426,8,line,embed.record_color);
+        /* The original tiny alphabet skips punctuation. Draw clock colons. */
+        for(int i=0;line[i];++i)if(line[i]==':') {
+            video.frameBuffer[10*SCREEN_W+427+i*4]=embed.record_color;
+            video.frameBuffer[12*SCREEN_W+427+i*4]=embed.record_color;
+        }
+    } else textOutTiny(426,8,embed.canvas_message[0]?embed.canvas_message:line,video.palette[PAL_FORGRND]);
     int previous=embed.canvas_page>0,next=embed.canvas_page+1<canvas_view_count();
     canvas_tile_button(577,3,24,16,0,previous);textOut(585,7,previous?PAL_BTNTEXT:PAL_BUTTON2,"<");
     canvas_tile_button(603,3,24,16,0,next);textOut(611,7,next?PAL_BTNTEXT:PAL_BUTTON2,">");

@@ -120,6 +120,54 @@ static double transport_audio_energy(void) {
     for(int i=0;i<1024;++i)energy+=fabsf(out[i]);
     return energy;
 }
+static void file_recording_feedback(void) {
+    static SisterWindow sister;
+    audit_blank_song(64);ts_sister_ui_model_init(&sister.model,&test_ui->config);
+    ts_performance_recorder_init(&sister.performance_recorder);
+    SDL_setenv("SDL_AUDIODRIVER","dummy",1);SDL_setenv("TAPESISTER_CAPTURES","tracker-recording-fixture",1);
+    assert(!SDL_InitSubSystem(SDL_INIT_AUDIO));
+    SDL_AudioSpec spec={0};spec.freq=48000;spec.channels=2;spec.format=AUDIO_F32SYS;spec.samples=512;
+    SDL_AudioDeviceID device=SDL_OpenAudioDevice(NULL,0,&spec,NULL,0);assert(device);ts_real_output=device;
+    test_audio->sister_file_recorder=&sister.performance_recorder;
+    click(390,27);assert(ts_tapehead_running());
+    click(390,95);tracker_refresh(0,test_audio,test_ui,test_pages,test_bank,48000,&sister);
+    assert(test_ui->file_record_state==TS_PERFORMANCE_FILE_RECORDING);
+    char path[1200];snprintf(path,sizeof(path),"%s",sister.performance_recorder.path);
+    test_ui->text_cursor_visible=1;
+    tracker_refresh(0,test_audio,test_ui,test_pages,test_bank,48000,&sister);
+    uint32_t pink=test_ui->palette.colors[TS_PALETTE_PATTERN_VOLUME]|0xff000000u;
+    assert(ts_tapehead_frame()[87*632+359]==pink);
+    uint32_t header[140*12];
+    for(int y=0;y<12;++y)memcpy(header+y*140,ts_tapehead_frame()+(y+3)*632+425,140*4);
+    float out[1024];for(int i=0;i<96;++i)audio_callback(test_audio,(Uint8*)out,sizeof(out));
+    poll_file_capture_ui(test_ui,&sister);
+    assert(test_ui->file_record_frames==49152 && test_ui->file_record_rate==48000);
+    tracker_refresh(0,test_audio,test_ui,test_pages,test_bank,48000,&sister);
+    int changed=0;for(int y=0;y<12;++y)changed|=memcmp(header+y*140,ts_tapehead_frame()+(y+3)*632+425,140*4)!=0;
+    assert(changed); /* The visible timer advanced with recorded audio frames. */
+    TsFramebuffer *fb=malloc(sizeof(*fb));assert(fb);
+    ts_ui_render(fb,test_ui,test_bank);ts_ui_render_file_recording(fb,test_ui);
+    assert(fb->pixels[0]==pink && fb->pixels[399*640+639]==pink);
+    assert(ts_ui_write_ppm(fb,"embedded-file-recording.ppm"));
+    test_ui->text_cursor_visible=0;
+    tracker_refresh(0,test_audio,test_ui,test_pages,test_bank,48000,&sister);
+    ts_ui_render(fb,test_ui,test_bank);ts_ui_render_file_recording(fb,test_ui);
+    assert(ts_tapehead_frame()[87*632+359]!=pink && fb->pixels[0]!=pink);
+    press(SDLK_BACKSPACE,SDL_SCANCODE_BACKSPACE,KMOD_CTRL|KMOD_ALT);
+    test_ui->text_cursor_visible=1;tracker_refresh(0,test_audio,test_ui,test_pages,test_bank,48000,&sister);
+    ts_ui_render(fb,test_ui,test_bank);ts_ui_render_file_recording(fb,test_ui);
+    assert(fb->pixels[0]==pink && ts_tapehead_running());
+    press(SDLK_BACKSPACE,SDL_SCANCODE_BACKSPACE,KMOD_CTRL|KMOD_ALT);
+    click(390,95);tracker_refresh(0,test_audio,test_ui,test_pages,test_bank,48000,&sister);
+    Uint32 start=SDL_GetTicks();
+    while(ts_performance_recorder_state(&sister.performance_recorder)==TS_PERFORMANCE_FILE_STOPPING && SDL_GetTicks()-start<1000)SDL_Delay(1);
+    poll_file_capture_ui(test_ui,&sister);assert(test_ui->file_record_state==TS_PERFORMANCE_FILE_IDLE);
+    tracker_refresh(0,test_audio,test_ui,test_pages,test_bank,48000,&sister);
+    ts_ui_render(fb,test_ui,test_bank);ts_ui_render_file_recording(fb,test_ui);
+    assert(fb->pixels[0]!=pink && ts_tapehead_frame()[87*632+359]!=pink && ts_tapehead_running());
+    free(fb);click(390,44);test_audio->sister_file_recorder=NULL;
+    ts_real_output=0;SDL_CloseAudioDevice(device);remove(path);
+}
 typedef struct {SDL_Event click;atomic_int timed_out;} ModalInput;
 static ModalInput *modal_pending;
 static SDL_Surface *modal_capture;
@@ -735,6 +783,7 @@ int main(int argc,char **argv) {
     followup_canvas_palette(argc>2?argv[2]:NULL,argc>3?argv[3]:NULL,argc>5?argv[5]:NULL);
     pattern_transport_controls(0);
     pattern_transport_controls(1);
+    file_recording_feedback();
     shrink_dialog();
     ts_tapehead_close();ts_tracker_playback_free(&test_audio->tracker);ts_sister_runtime_free(&test_audio->sister);
     ts_tracker_edit_free(test_ui->tracker_edit);

@@ -64,7 +64,7 @@ static void tracker_refresh(SDL_AudioDeviceID device,AudioState *audio,TsUiState
     }
     unsigned capturing=atomic_load(&audio->tracker_capture);
     if(sister && ts_performance_recorder_state(&sister->performance_recorder)==TS_PERFORMANCE_FILE_RECORDING)capturing=1;
-    ts_tapehead_status(ui->status,capturing);
+    ts_tapehead_status(ui,capturing);
     ts_tapehead_tick();
     ui->tracker_running=ts_tapehead_running();
     int action=ts_tapehead_action();
