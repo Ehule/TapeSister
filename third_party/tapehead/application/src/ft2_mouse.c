@@ -1146,6 +1146,9 @@ void updateMouseScaling(void)
 
 void readMouseXY(void)
 {
+#ifdef TAPEHEAD_EMBEDDED
+	ts_tapehead_host_mouse(NULL);
+#else
 	int32_t mx, my, windowX, windowY;
 
 	if (mouse.setPosFlag)
@@ -1226,6 +1229,7 @@ void readMouseXY(void)
 	// multiply coords by video upscaling factors
 	mouse.x = (int32_t)floor(mx * video.dMouseXMul);
 	mouse.y = (int32_t)floor(my * video.dMouseYMul);
+#endif
 
 	if (config.specialFlags2 & HARDWARE_MOUSE)
 	{

@@ -91,6 +91,34 @@ void ts_tapehead_host_unlock(void) {
 void ts_tapehead_host_present(void) {
     if(embed.host.present)embed.host.present(embed.host.context,video.frameBuffer);
 }
+void ts_tapehead_host_mouse(const SDL_Event *event) {
+    int x,y,width,height;
+    if(!embed.host.window)return;
+    SDL_GetWindowSize(embed.host.window,&width,&height);
+    if(width<=0 || height<=0)return;
+    if(event) {
+        Uint32 window=SDL_GetWindowID(embed.host.window);
+        if(event->type==SDL_MOUSEMOTION && event->motion.windowID==window) {
+            x=event->motion.x;y=event->motion.y;
+        } else if((event->type==SDL_MOUSEBUTTONDOWN || event->type==SDL_MOUSEBUTTONUP) &&
+                  event->button.windowID==window) {
+            x=event->button.x;y=event->button.y;
+        } else return;
+    } else {
+        if(mouse.setPosFlag) {
+            SDL_WarpMouseInWindow(embed.host.window,(mouse.setPosX+4)*width/640,mouse.setPosY*height/400);
+            mouse.setPosFlag=false;
+        }
+        int window_x,window_y;
+        mouse.buttonState=SDL_GetGlobalMouseState(&x,&y);
+        mouse.absX=x;mouse.absY=y;
+        SDL_GetWindowPosition(embed.host.window,&window_x,&window_y);
+        x-=window_x;y-=window_y;
+    }
+    mouse.rawX=x;mouse.rawY=y;
+    mouse.x=(int)floor((double)x*640/width)-4;
+    mouse.y=(int)floor((double)y*400/height);
+}
 void ts_tapehead_request(int action) { embed.action=action; }
 int ts_tapehead_action(void) { int a=embed.action;embed.action=0;return a; }
 int ts_tapehead_interpolation_active(void) {return embed.initialized && interpolationPreviewActive();}
@@ -206,6 +234,7 @@ static void menu(void) {
         drawFramework(294,155,59,16,FRAMEWORK_TYPE1);textOut(300,159,PAL_FORGRND,octave);
     }
 }
+void ts_tapehead_host_redraw(void) {menu();}
 
 int ts_tapehead_init(const TsTapeHeadHost *host,unsigned rate,char *error,size_t size) {
     if(embed.initialized)return 1;

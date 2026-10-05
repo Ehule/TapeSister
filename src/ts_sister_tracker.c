@@ -253,8 +253,11 @@ int ts_sister_tracker_validate(const TsSisterTracker *t, char *error, size_t siz
     for (int i = 0; i < t->order_count; ++i)
         REQUIRE(ts_sister_tracker_pattern_const(t, t->orders[i]), "SisterTracker order references a missing pattern");
     const TsTrackerPattern *editor = ts_sister_tracker_pattern_const(t, t->editor_pattern);
+    unsigned editor_rows = editor ? editor->rows : 0;
+    if (t->embedded_size) for (int lane = 0; lane < TS_TRACKER_LANES; ++lane)
+        if (t->lanes[lane].length > editor_rows) editor_rows = t->lanes[lane].length;
     REQUIRE(((!t->pattern_count && !t->editor_pattern && !t->editor_row) ||
-             (editor && t->editor_row < editor->rows)) &&
+             (editor && t->editor_row < editor_rows)) &&
             t->editor_lane < TS_TRACKER_LANES && t->edit_step <= 16 && boolean(t->follow),
             "Invalid SisterTracker editor position");
     REQUIRE(ts_tracker_embedded_matches(t),"Embedded SisterTracker pattern identity mismatch");

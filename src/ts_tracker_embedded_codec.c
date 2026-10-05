@@ -40,7 +40,11 @@ int ts_tracker_embedded_validate(const uint8_t *p,uint32_t size) {
             if(v[0]>97 || v[1]>128 || v[3]>35 || (v[5] && v[5]!=0x16 && v[5]!=0x17))return 0;
         }
     }
-    if(!seen[p[18]] || u16(p+19)>=rows[p[18]])return 0;
+    /* TapeHead's editor follows a CONTROL head across the extended LEN
+       surface, even when the physical pattern contains fewer rows. */
+    unsigned editor_rows=rows[p[18]];
+    for(int lane=0;lane<8;++lane)if(u16(lanes+lane*10)>editor_rows)editor_rows=u16(lanes+lane*10);
+    if(!seen[p[18]] || u16(p+19)>=editor_rows)return 0;
     for(unsigned i=0;i<orders;++i)if(!seen[sequence[i]])return 0;
     return 1;
 }

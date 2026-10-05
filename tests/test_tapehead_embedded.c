@@ -70,7 +70,7 @@ static void click(int x,int y) {
     assert(tracker_event(&event,test_window,0,test_audio,test_ui,test_pages,test_bank,48000));
     event.type=SDL_MOUSEBUTTONUP;assert(tracker_event(&event,test_window,0,test_audio,test_ui,test_pages,test_bank,48000));
 }
-static void workspace_buttons(void) {
+static void workspace_buttons(int block_loop) {
     static SisterWindow sister;
     SDL_setenv("SDL_AUDIODRIVER","dummy",1);assert(!SDL_InitSubSystem(SDL_INIT_AUDIO));
     SDL_AudioSpec spec={0};spec.freq=48000;spec.channels=2;spec.format=AUDIO_F32SYS;spec.samples=256;
@@ -87,7 +87,7 @@ static void workspace_buttons(void) {
         assert(sister.window && sister.renderer && sister.texture && sister.model.visible);
         assert(sister.model.fx_page==buttons[i][2]);
         assert(SDL_GetWindowFlags(sister.window)&SDL_WINDOW_SHOWN);
-        assert(ts_tapehead_running() && ts_tapehead_block_active());
+        assert(ts_tapehead_running() && ts_tapehead_block_active()==block_loop);
         assert(ts_sister_tracker_hash(&test_pages->tracker)==score_hash);
         midi.action=TS_MIDI_ACTION_NOTE_OFF;assert(!ts_tapehead_midi(&midi,0));
         /* MIDI belongs to the host while the Sister window covers the tracker. */
@@ -106,10 +106,139 @@ static void workspace_buttons(void) {
         midi.action=TS_MIDI_ACTION_NOTE_OFF;assert(ts_tapehead_midi(&midi,0));
     }
     click(325,128);tracker_refresh(0,test_audio,test_ui,test_pages,test_bank,48000,&sister);
-    assert(!test_ui->tracker_open && ts_tapehead_running() && ts_tapehead_block_active());
+    assert(!test_ui->tracker_open && ts_tapehead_running() && ts_tapehead_block_active()==block_loop);
     press(SDLK_F10,SDL_SCANCODE_F10,KMOD_NONE);assert(test_ui->tracker_open);
     SDL_DestroyTexture(sister.texture);SDL_DestroyRenderer(sister.renderer);SDL_DestroyWindow(sister.window);
+    memset(&sister,0,sizeof(sister));
     ts_real_output=0;SDL_CloseAudioDevice(device);
+}
+static void audit_blank_song(unsigned rows);
+static void project_roundtrip(void);
+static double transport_audio_energy(void) {
+    float out[1024];double energy=0;
+    audio_callback(test_audio,(Uint8*)out,sizeof(out));
+    for(int i=0;i<1024;++i)energy+=fabsf(out[i]);
+    return energy;
+}
+typedef struct {SDL_Event click;atomic_int timed_out;} ModalInput;
+static ModalInput *modal_pending;
+static SDL_Surface *modal_capture;
+static void modal_present(void *context,const uint32_t *pixels) {
+    embedded_present(context,pixels);
+    assert(!SDL_RenderReadPixels(embedded_host.renderer,NULL,modal_capture->format->format,
+                                modal_capture->pixels,modal_capture->pitch));
+    /* Respond only after the dialog is visible. Both clicks share one batch. */
+    if(modal_pending) {
+        assert(SDL_PushEvent(&modal_pending->click)==1);
+        modal_pending->click.type=SDL_MOUSEBUTTONUP;
+        assert(SDL_PushEvent(&modal_pending->click)==1);modal_pending=NULL;
+    }
+}
+static Uint32 modal_input(Uint32 interval,void *context) {
+    (void)interval;ModalInput *input=context;
+    atomic_store(&input->timed_out,1);
+    SDL_Event event;SDL_zero(event);event.type=SDL_KEYDOWN;
+    event.key.keysym.sym=SDLK_ESCAPE;SDL_PushEvent(&event);return 0;
+}
+static void shrink_dialog(void) {
+    audit_blank_song(64);
+    ts_tapehead_close();
+    TsTapeHeadHost host={test_window,NULL,embedded_lock,embedded_unlock,modal_present};
+    assert(ts_tapehead_init(&host,48000,test_error,sizeof(test_error)));
+    assert(ts_tapehead_sync(test_pages,test_bank,48000,test_error,sizeof(test_error)));
+    test_ui->tracker_embedded_frame=ts_tapehead_frame();
+    SDL_SetWindowSize(test_window,1400,900);
+    embedded_host.renderer=SDL_CreateRenderer(test_window,-1,SDL_RENDERER_SOFTWARE);
+    assert(embedded_host.renderer);
+    embedded_host.texture=SDL_CreateTexture(embedded_host.renderer,SDL_PIXELFORMAT_ARGB8888,
+                                            SDL_TEXTUREACCESS_STREAMING,632,400);
+    assert(embedded_host.texture);
+    uint32_t *pixels=malloc(632*400*4);assert(pixels);
+    for(int y=0;y<400;++y)for(int x=0;x<632;++x)
+        pixels[y*632+x]=x<316?0xff112233:0xff445566;
+    embedded_present(NULL,pixels);free(pixels);
+    SDL_Surface *surface=SDL_CreateRGBSurfaceWithFormat(0,1400,900,32,SDL_PIXELFORMAT_ARGB8888);
+    modal_capture=surface;
+    assert(surface && !SDL_RenderReadPixels(embedded_host.renderer,NULL,surface->format->format,surface->pixels,surface->pitch));
+    uint32_t *row=(uint32_t*)((Uint8*)surface->pixels+899*surface->pitch);
+    assert((row[0]&0xffffff)==0 && (row[1399]&0xffffff)==0);
+    assert(row[100]==0xff112233 && row[1300]==0xff445566);
+    for(int confirm=0;confirm<2;++confirm) {
+        /* Raw window coordinates, delivered in one event batch. */
+        SDL_Event event;SDL_zero(event);event.type=SDL_MOUSEBUTTONDOWN;
+        event.button.windowID=SDL_GetWindowID(test_window);event.button.button=SDL_BUTTON_LEFT;
+        event.button.x=(confirm?254:354)*1400/640;event.button.y=299*900/400;
+        ModalInput input={0};input.click=event;atomic_init(&input.timed_out,0);
+        modal_pending=&input;
+        SDL_TimerID timeout=SDL_AddTimer(1000,modal_input,&input);assert(timeout);
+        click(265*1400/640,68*900/400);SDL_RemoveTimer(timeout);
+        assert(!atomic_load(&input.timed_out) && !modal_pending);
+        assert(pat()->rows==(confirm?32:64));
+        assert(ts_sister_tracker_validate(&test_pages->tracker,test_error,sizeof(test_error)));
+    }
+    assert(!SDL_SaveBMP(surface,"embedded-shrink-dialog.bmp"));SDL_FreeSurface(surface);
+    modal_capture=NULL;
+    press(SDLK_z,SDL_SCANCODE_Z,KMOD_CTRL);assert(pat()->rows==64);
+    SDL_DestroyTexture(embedded_host.texture);SDL_DestroyRenderer(embedded_host.renderer);
+    embedded_host.texture=NULL;embedded_host.renderer=NULL;
+    SDL_SetWindowSize(test_window,640,400);
+}
+static void pattern_transport_controls(int extended_length) {
+    float out[1024];
+    audit_blank_song(extended_length?2:64);
+    if(extended_length) {
+        /* A LEN control head can display rows beyond the physical pattern. */
+        uint8_t *score=test_pages->tracker.embedded_data;
+        score[51]=1;score[52]=16;score[54]=1;score[57]=1;
+        test_pages->tracker.control_lane=0;test_pages->tracker.lanes[0].length=16;
+        test_pages->tracker.lanes[0].mode=TS_TRACKER_PATTERN;
+    } else {test_pages->tracker.embedded_data[12]=6;test_pages->tracker.ticks_per_line=6;}
+    assert(ts_instrument_select_bank(test_bank,1,test_error,sizeof(test_error)));
+    test_bank->has_loop=1;test_bank->loop_first=0;test_bank->loop_last=test_bank->current.frames;
+    ++test_bank->generation;assert(ts_instrument_sync_selected(test_bank,test_error,sizeof(test_error)));
+    assert(ts_tapehead_sync(test_pages,test_bank,48000,test_error,sizeof(test_error)));
+    press(SDLK_z,SDL_SCANCODE_Z,KMOD_NONE);
+    SDL_setenv("SDL_AUDIODRIVER","dummy",1);assert(!SDL_InitSubSystem(SDL_INIT_AUDIO));
+    SDL_AudioSpec spec={0};spec.freq=48000;spec.channels=2;spec.format=AUDIO_F32SYS;spec.samples=512;
+    spec.callback=audio_callback;spec.userdata=test_audio;
+    SDL_AudioDeviceID device=SDL_OpenAudioDevice(NULL,0,&spec,NULL,0);assert(device);
+    ts_real_output=device;embedded_host.device=&device;
+    click(390,27);assert(ts_tapehead_running() && !ts_tapehead_block_active());
+    for(int n=0;n<24;++n) {
+        audio_callback(test_audio,(Uint8*)out,sizeof(out));
+        SDL_Delay(11); /* Drain the same timestamped row updates as a live device. */
+        tracker_refresh(0,test_audio,test_ui,test_pages,test_bank,48000,NULL);
+    }
+    if(!extended_length)assert(transport_audio_energy()>.01);
+    SDL_Event e;SDL_zero(e);e.type=SDL_KEYDOWN;e.key.windowID=SDL_GetWindowID(test_window);
+    SDL_PauseAudioDevice(device,0);SDL_Delay(150);
+    e.key.keysym.sym=SDLK_LCTRL;e.key.keysym.scancode=SDL_SCANCODE_LCTRL;e.key.keysym.mod=KMOD_LCTRL;
+    SDL_SetModState(KMOD_LCTRL);
+    assert(tracker_event(&e,test_window,0,test_audio,test_ui,test_pages,test_bank,48000));
+    assert(ts_sister_tracker_validate(&test_pages->tracker,test_error,sizeof(test_error)));
+    if(extended_length)assert(test_pages->tracker.editor_row>=pat()->rows);
+    assert(ts_tapehead_running());
+    tracker_refresh(0,test_audio,test_ui,test_pages,test_bank,48000,NULL);
+    assert(ts_tapehead_running());
+    e.type=SDL_KEYUP;e.key.keysym.mod=KMOD_NONE;SDL_SetModState(KMOD_NONE);
+    assert(tracker_event(&e,test_window,0,test_audio,test_ui,test_pages,test_bank,48000));
+    tracker_refresh(0,test_audio,test_ui,test_pages,test_bank,48000,NULL);
+    assert(ts_tapehead_running());
+    SDL_PauseAudioDevice(device,1);
+    if(!extended_length)assert(transport_audio_energy()>.01);
+    SDL_CloseAudioDevice(device);ts_real_output=0;embedded_host.device=NULL;
+    if(extended_length) {
+        project_roundtrip(); /* Extended editor positions also survive disk persistence. */
+        TsSisterTracker *t=&test_pages->tracker;unsigned row=t->editor_row;
+        uint8_t saved=t->embedded_data[19];
+        t->embedded_data[19]=16;t->editor_row=16;
+        assert(!ts_sister_tracker_validate(t,test_error,sizeof(test_error)));
+        t->embedded_data[19]=saved;t->editor_row=row;
+        assert(ts_sister_tracker_validate(t,test_error,sizeof(test_error)));
+    }
+    workspace_buttons(0);
+    if(!extended_length)assert(transport_audio_energy()>.01);
+    click(390,44);assert(!ts_tapehead_running());
 }
 static void replayer_commands(void) {
     TsSisterTracker *t=&test_pages->tracker;const unsigned record_size=7+256*8*7;
@@ -152,6 +281,7 @@ static void project_roundtrip(void) {
     TsSamplePages *pages=malloc(sizeof(*pages));assert(record&&restored&&pages);
     ts_instrument_init(record);ts_instrument_init(restored);assert(ts_sample_pages_init(pages,test_error,sizeof(test_error)));
     TsSisterProjectState state;ts_sister_project_state_init(&state,48000);
+    state.page_count=test_pages->page_count;state.active_page=test_pages->active_page;
     assert(ts_sample_pages_save_project(test_pages,test_bank,record,&state,"embedded-project/embedded-project.tsr",test_error,sizeof(test_error)));
     assert(ts_sample_pages_load_project(pages,restored,record,"embedded-project/embedded-project.tsr",test_error,sizeof(test_error)));
     assert(ts_sister_tracker_hash(&pages->tracker)==ts_sister_tracker_hash(&test_pages->tracker));
@@ -541,7 +671,7 @@ int main(int argc,char **argv) {
     float left=0,right=0;for(int i=0;i<512;++i){left+=rendered[i*2];right+=rendered[i*2+1];}
     assert(left>0.01f && right<-.01f);
     exact_cycle_capture();
-    workspace_buttons();
+    workspace_buttons(1);
     /* A changed generation retains immutable sounding audio until retrigger. */
     for(size_t i=0;i<test_bank->current.frames;++i){test_bank->current.data[i*2]=-.321f;test_bank->current.data[i*2+1]=.432f;}
     ++test_bank->generation;
@@ -603,6 +733,9 @@ int main(int argc,char **argv) {
     assert(ts_tapehead_render(512,44100));assert(!ts_tapehead_render(512,48000));
     stop_all_force(0,test_audio,test_ui);assert(!ts_tapehead_running());
     followup_canvas_palette(argc>2?argv[2]:NULL,argc>3?argv[3]:NULL,argc>5?argv[5]:NULL);
+    pattern_transport_controls(0);
+    pattern_transport_controls(1);
+    shrink_dialog();
     ts_tapehead_close();ts_tracker_playback_free(&test_audio->tracker);ts_sister_runtime_free(&test_audio->sister);
     ts_tracker_edit_free(test_ui->tracker_edit);
     ts_sample_pages_free(test_pages);ts_instrument_free(test_bank);

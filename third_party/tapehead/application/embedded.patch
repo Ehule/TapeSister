@@ -485,7 +485,7 @@
  int32_t fastTracksPOCGetSourceRow(int32_t channelIndex);
 --- a/src/ft2_header.h
 +++ b/src/ft2_header.h
-@@ -13,6 +13,17 @@
+@@ -13,6 +13,19 @@
  #include <limits.h> // also has PATH_MAX
  #endif
  #include "ft2_replayer.h"
@@ -494,6 +494,8 @@
 +void ts_tapehead_host_lock(void);
 +void ts_tapehead_host_unlock(void);
 +void ts_tapehead_host_present(void);
++void ts_tapehead_host_mouse(const SDL_Event *event);
++void ts_tapehead_host_redraw(void);
 +void ts_tapehead_request(int action);
 +void ts_tapehead_show_config(void);
 +void ts_tapehead_mix_tile(void *voice, unsigned offset, unsigned frames);
@@ -503,7 +505,7 @@
  
  #define PROG_VER_STR "2.21"
  
-@@ -40,7 +51,11 @@
+@@ -40,7 +53,11 @@
  ** branchless in the inner channel mixer loop.
  ** Warning: Do not change this!
  */
@@ -719,6 +721,24 @@
  
  		// release button presses from okBox()
  		mouse.leftButtonPressed = false;
+@@ -1142,6 +1146,9 @@
+ 
+ void readMouseXY(void)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	ts_tapehead_host_mouse(NULL);
++#else
+ 	int32_t mx, my, windowX, windowY;
+ 
+ 	if (mouse.setPosFlag)
+@@ -1222,6 +1229,7 @@
+ 	// multiply coords by video upscaling factors
+ 	mouse.x = (int32_t)floor(mx * video.dMouseXMul);
+ 	mouse.y = (int32_t)floor(my * video.dMouseYMul);
++#endif
+ 
+ 	if (config.specialFlags2 & HARDWARE_MOUSE)
+ 	{
 --- a/src/ft2_nibbles.c
 +++ b/src/ft2_nibbles.c
 @@ -736,6 +736,9 @@
@@ -1065,6 +1085,48 @@
  #define STBI_ONLY_PNG
  #define STBI_NO_HDR
  #define STBI_NO_LINEAR
+--- a/src/ft2_sysreqs.c
++++ b/src/ft2_sysreqs.c
+@@ -484,6 +484,9 @@
+ 		while (SDL_PollEvent(&inputEvent))
+ 		{
+ 			handleWaitVblQuirk(&inputEvent);
++#ifdef TAPEHEAD_EMBEDDED
++			ts_tapehead_host_mouse(&inputEvent);
++#endif
+ 
+ 			if (inputEvent.type == SDL_KEYDOWN)
+ 			{
+@@ -566,6 +569,9 @@
+ 			break;
+ 
+ 		handleRedrawing();
++#ifdef TAPEHEAD_EMBEDDED
++		ts_tapehead_host_redraw();
++#endif
+ 
+ 		// draw OK box
+ 		drawWindowAt(wlen, dialogHeight, y);
+@@ -779,6 +785,9 @@
+ 		while (SDL_PollEvent(&inputEvent))
+ 		{
+ 			handleWaitVblQuirk(&inputEvent);
++#ifdef TAPEHEAD_EMBEDDED
++			ts_tapehead_host_mouse(&inputEvent);
++#endif
+ 
+ 			if (inputEvent.type == SDL_TEXTINPUT)
+ 			{
+@@ -886,6 +895,9 @@
+ 			break;
+ 
+ 		handleRedrawing();
++#ifdef TAPEHEAD_EMBEDDED
++		ts_tapehead_host_redraw();
++#endif
+ 
+ 		// draw input box
+ 		drawWindow(wlen, SYSTEM_REQUEST_H);
 --- a/src/ft2_tapesister_exchange.c
 +++ b/src/ft2_tapesister_exchange.c
 @@ -1539,6 +1539,9 @@

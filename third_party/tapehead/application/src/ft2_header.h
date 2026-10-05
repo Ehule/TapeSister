@@ -18,6 +18,8 @@
 void ts_tapehead_host_lock(void);
 void ts_tapehead_host_unlock(void);
 void ts_tapehead_host_present(void);
+void ts_tapehead_host_mouse(const SDL_Event *event);
+void ts_tapehead_host_redraw(void);
 void ts_tapehead_request(int action);
 void ts_tapehead_show_config(void);
 void ts_tapehead_mix_tile(void *voice, unsigned offset, unsigned frames);

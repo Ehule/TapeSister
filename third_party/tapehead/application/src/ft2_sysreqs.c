@@ -484,6 +484,9 @@ static int16_t okBoxInternal(int16_t type, const char *headline, const char *tex
 		while (SDL_PollEvent(&inputEvent))
 		{
 			handleWaitVblQuirk(&inputEvent);
+#ifdef TAPEHEAD_EMBEDDED
+			ts_tapehead_host_mouse(&inputEvent);
+#endif
 
 			if (inputEvent.type == SDL_KEYDOWN)
 			{
@@ -566,6 +569,9 @@ static int16_t okBoxInternal(int16_t type, const char *headline, const char *tex
 			break;
 
 		handleRedrawing();
+#ifdef TAPEHEAD_EMBEDDED
+		ts_tapehead_host_redraw();
+#endif
 
 		// draw OK box
 		drawWindowAt(wlen, dialogHeight, y);
@@ -779,6 +785,9 @@ int16_t inputBox(int16_t type, const char *headline, char *edText, uint16_t maxS
 		while (SDL_PollEvent(&inputEvent))
 		{
 			handleWaitVblQuirk(&inputEvent);
+#ifdef TAPEHEAD_EMBEDDED
+			ts_tapehead_host_mouse(&inputEvent);
+#endif
 
 			if (inputEvent.type == SDL_TEXTINPUT)
 			{
@@ -886,6 +895,9 @@ int16_t inputBox(int16_t type, const char *headline, char *edText, uint16_t maxS
 			break;
 
 		handleRedrawing();
+#ifdef TAPEHEAD_EMBEDDED
+		ts_tapehead_host_redraw();
+#endif
 
 		// draw input box
 		drawWindow(wlen, SYSTEM_REQUEST_H);

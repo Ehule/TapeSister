@@ -12,7 +12,15 @@ static void embedded_present(void *context,const uint32_t *pixels) {
     (void)context;
     if(!embedded_host.renderer || !embedded_host.texture)return;
     SDL_UpdateTexture(embedded_host.texture,NULL,pixels,632*(int)sizeof(uint32_t));
-    SDL_Rect rect={4,0,632,400};
+    /* Dialogs run the imported event loop. Present its framebuffer with the
+       same 640x400 host transform as the normal workspace, including margins. */
+    int width,height;
+    if(SDL_GetRendererOutputSize(embedded_host.renderer,&width,&height))return;
+    SDL_Rect rect={width*4/640,0,0,height};rect.w=width*636/640-rect.x;
+    Uint8 r,g,b,a;SDL_GetRenderDrawColor(embedded_host.renderer,&r,&g,&b,&a);
+    SDL_SetRenderDrawColor(embedded_host.renderer,0,0,0,255);
+    SDL_RenderClear(embedded_host.renderer);
+    SDL_SetRenderDrawColor(embedded_host.renderer,r,g,b,a);
     SDL_RenderCopy(embedded_host.renderer,embedded_host.texture,NULL,&rect);
     SDL_RenderPresent(embedded_host.renderer);
 }

@@ -66,6 +66,27 @@ STH2 project preferences persist tracker colors and contrasts.
   The full local Release build and all four targeted checks (core, embedded host,
   browser/preview and packaging) passed; the compact render was inspected.
 
+## Playback and shrink-dialog follow-up
+
+- Reproduced the Ctrl/workspace-click stop with a 2-row physical pattern and a
+  16-row FastTracks CONTROL lane. The original editor follows the longer head;
+  the port rejected that valid editor position during export. Its next sync
+  reimported the score and stopped playback. Both score validators now accept
+  positions within the actual extended LEN surface, retaining bounds checks.
+- Ordinary pattern playback and extended CONTROL playback now have integration
+  checks for Left Ctrl down/up, FX/Prism/Sister/Fallout, Canvas and returning to
+  TrackSister. Tests exercise real SDL audio callbacks, ordinary-pattern audio
+  output, and project persistence of the extended editor position.
+- Shrink confirmations now use the host window's scale and margins for both
+  drawing and mouse input. The same fix covers other original system requests
+  and text-input dialogs. Dialog redraws retain the TrackSister logo and tiles.
+- Confirm, Cancel and shrink undo pass at 1400×900, with queued pointer events
+  mapped from window coordinates. The rendered dialog was visually inspected.
+  The application Release build, embedded integration, core, tracker persistence
+  and packaging checks passed. The 271-file pinned import remains reproducible.
+
+![Shrink confirmation in a resized host window](images/pr124-shrink.png)
+
 ## Interface
 
 The compact workspace keeps the eight lanes and original editing controls.
