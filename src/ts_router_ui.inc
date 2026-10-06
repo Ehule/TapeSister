@@ -26,7 +26,7 @@ static const char *router_help(const TsUiState *ui,int x,int y)
             return "DRAG POST CHAIN AS ONE BLOCK; PRE/HEAD INSERTS STAY IN SISTER; BYPASS GATES ALL";
         return "DRAG UP/DOWN TO REORDER THE REAL AUDIO PATH; ESC CANCELS THE DRAG";
     }
-    if(y>=331 && y<353)return "FIXED MASTER: EQ, LIMITER AND OUT FOLLOW ALL ROUTING; FILE OUT RECORDS THIS";
+    if(y>=331 && y<353)return "FINAL OUTPUT: EQ / LIMITER > AMBISONICS / STEREO PAIR; FILE OUT IS PRE-SPATIAL STEREO";
     return "";
 }
 static void router_render(TsFramebuffer *fb,const TsUiState *ui)
@@ -87,8 +87,9 @@ static void router_render(TsFramebuffer *fb,const TsUiState *ui)
     }
     rect(fb,319,318,2,13,ui->router_peaks[TS_ROUTER_COUNT*2+1]>.0001f?teal:RGB(50,53,58));
     rect(fb,100,331,470,22,RGB(17,21,24));
-    text(fb,116,339,"MASTER / EQ > LIMITER > OUT",amber,1);
-    router_activity(fb,456,341,ui->router_peaks[TS_ROUTER_COUNT*2+1]);text(fb,518,339,"FIXED",muted,1);
+    text(fb,116,339,"MASTER / EQ > LIMITER",amber,1);
+    button(fb,426,331,140,"AMBISONICS",ui->config.spatial.enabled);
+    router_activity(fb,382,341,ui->router_peaks[TS_ROUTER_COUNT*2+1]);
     const char *help=ui->performance_tooltip[0]?ui->performance_tooltip:
         "DRAG: ORDER / RIGHT-CLICK BYPASS/SOLO: TIMER / PERFORMANCE: STATES / F9: CLOSE";
     router_learn_overlay(fb,ui);

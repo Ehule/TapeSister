@@ -73,6 +73,7 @@ static int router_event(const SDL_Event *e,SDL_Window *window,SDL_AudioDeviceID 
     if(ui->router_drag){ui->router_drop=row;return 1;}
     if(e->type==SDL_MOUSEBUTTONDOWN) {
         if(y<32){ui->router_open=0;return 0;}
+        if(x>=426&&x<566&&y>=331&&y<354){spatial_show(device,audio,ui);return 1;}
         if(x>=574 && y>=42 && y<66){ui->router_open=0;return 1;}
         if(x>=442 && x<566 && y>=42 && y<65){ui->router_performance_open=1;ui->router_drag=0;return 1;}
         if(row>=0 && x>=414 && x<616 && e->button.button==SDL_BUTTON_RIGHT) {

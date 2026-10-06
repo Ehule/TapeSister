@@ -14,7 +14,7 @@ FetchContent_Declare(
   SOURCE_SUBDIR _tapesister_header_only)
 FetchContent_MakeAvailable(miniaudio)
 
-add_library(tapesister_core src/ts_sample.c src/ts_prism.c src/ts_prism_performance.c src/ts_fm.c src/ts_audition.c src/ts_note_bank.c src/ts_keyboard_sequence.c
+add_library(tapesister_core src/ts_spatial.c src/ts_sample.c src/ts_prism.c src/ts_prism_performance.c src/ts_fm.c src/ts_audition.c src/ts_note_bank.c src/ts_keyboard_sequence.c
              src/ts_mosaic.c src/ts_note_event.c src/ts_midi_map.c src/ts_performance.c src/ts_audio_mixer.c
              src/ts_audio_lifecycle.c
              src/ts_realtime_diagnostics.c
@@ -95,6 +95,14 @@ if(TAPESISTER_BUILD_SDL)
       "${CMAKE_CURRENT_SOURCE_DIR}/third_party/tapehead/application/README.md"
       "${CMAKE_CURRENT_SOURCE_DIR}/third_party/tapehead/application/embedded.patch"
       "$<TARGET_FILE_DIR:tapesister>/licenses/tapehead/application")
+  add_custom_command(TARGET tapesister POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:tapesister>/licenses/atk"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      "${CMAKE_CURRENT_SOURCE_DIR}/third_party/atk/COPYING"
+      "${CMAKE_CURRENT_SOURCE_DIR}/third_party/atk/COPYING.LESSER"
+      "${CMAKE_CURRENT_SOURCE_DIR}/third_party/atk/foa_transform.h"
+      "${CMAKE_CURRENT_SOURCE_DIR}/third_party/atk/UPSTREAM.md"
+      "$<TARGET_FILE_DIR:tapesister>/licenses/atk")
   if(WIN32)
     enable_language(CXX)
     add_library(tapesister_asio STATIC src/ts_asio_backend.cpp
@@ -461,6 +469,19 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(tapesister_fm_directions_tests PRIVATE -UNDEBUG)
 endif()
 add_test(NAME tapesister_fm_directions_tests COMMAND tapesister_fm_directions_tests)
+add_executable(tapesister_spatial_tests tests/test_spatial.c)
+target_link_libraries(tapesister_spatial_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_spatial_tests COMMAND tapesister_spatial_tests)
+if(TAPESISTER_BUILD_SDL)
+  add_executable(tapesister_spatial_controller_tests tests/test_spatial_controller.c
+    src/tape_link.c src/tape_companion.c src/ts_startup_diag.c src/ts_midi_input.c)
+  target_include_directories(tapesister_spatial_controller_tests PRIVATE third_party)
+  target_link_libraries(tapesister_spatial_controller_tests PRIVATE tapesister_core tapesister_tapehead SDL2::SDL2)
+  if(UNIX AND NOT APPLE)
+    target_link_libraries(tapesister_spatial_controller_tests PRIVATE rt)
+  endif()
+  add_test(NAME tapesister_spatial_controller_tests COMMAND tapesister_spatial_controller_tests)
+endif()
 add_executable(tapesister_fm_unison_tests tests/test_fm_unison.c)
 target_link_libraries(tapesister_fm_unison_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_fm_unison_tests COMMAND tapesister_fm_unison_tests)

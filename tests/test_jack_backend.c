@@ -57,7 +57,7 @@ static int live(void)
     SDL_AudioSpec master_spec,input_spec;want=desired(0);
     SDL_AudioDeviceID master=ts_native_open(ts_jack_names[0][0],0,&want,&master_spec,0);
     want=desired(1);SDL_AudioDeviceID input=ts_native_open(ts_jack_names[1][0],1,&want,&input_spec,0);
-    assert(master && input && master_spec.channels==8 && input_spec.channels==8);
+    assert(master && input && master_spec.channels==16 && input_spec.channels==8);
     TsJackEndpoint *me=ts_jack_endpoint(master),*ie=ts_jack_endpoint(input);
     for (int ch=0;ch<8;++ch)
         assert(!connect_ports(me->client,port_name(me->ports[ch]),port_name(ie->ports[ch])));
@@ -99,7 +99,7 @@ static void mocked(void)
     assert(!strcmp(ts_native_current_driver(),"jack"));
     assert(!strcmp(ts_native_device_name(1,1),"TapeSister Insert Return"));
     SDL_AudioSpec spec;char *name=NULL;
-    assert(!ts_native_default_info(&name,&spec,0) && spec.channels==8);SDL_free(name);
+    assert(!ts_native_default_info(&name,&spec,0) && spec.channels==16);SDL_free(name);
     SDL_AudioSpec want=desired(0),got;
     assert(!ts_native_open("Missing device",0,&want,&got,0));
     SDL_AudioDeviceID send=ts_native_open(ts_jack_names[0][1],0,&want,&got,0);
@@ -127,9 +127,16 @@ static void mocked(void)
     assert(removed==1);ts_jack_poll();assert(!SDL_PollEvent(&ev));
     ts_jack_buffer_changed(256,r);assert(atomic_load(&r->lost));
     ts_jack_shutdown(r);assert(atomic_load(&r->lost));
-    ts_native_close(send);ts_native_close(ret);assert(closed==2);
+    /* All 16 master ports are rendered and deinterleaved, including port 16. */
+    want=desired(0);SDL_AudioDeviceID master=ts_native_open(ts_jack_names[0][0],0,&want,&got,0);
+    TsJackEndpoint *m=ts_jack_endpoint(master);assert(master && got.channels==16 && nports==20);
+    ts_native_pause(master,0);
+    for(int i=0;i<100 && !atomic_load(&m->write_block);++i)SDL_Delay(1);
+    ts_native_lock(master);ts_jack_process(128,m);
+    assert(buffers[4][0]==.25f && buffers[19][127]==-.5f);ts_native_unlock(master);
+    ts_native_close(master);ts_native_close(send);ts_native_close(ret);assert(closed==3);
     ts_jack_library=NULL;memset(&ts_jack,0,sizeof(ts_jack));ts_jack_selected=0;
-    puts("JACK endpoints: enumeration, negotiated timing, stereo ports, pause/lock, server changes and close passed");
+    puts("JACK endpoints: enumeration, negotiated timing, 16-channel master, stereo Insert ports, pause/lock, server changes and close passed");
 }
 #endif
 int main(int argc,char **argv)
