@@ -28,6 +28,7 @@ int main(int argc, char **argv)
     if (argc > 2 && (strcmp(argv[2], "fm") == 0 ||
                      strcmp(argv[2], "fm-pitch") == 0 ||
                      strcmp(argv[2], "fm-bank") == 0 ||
+                     strcmp(argv[2], "fm-directions") == 0 ||
                      strncmp(argv[2], "fm-unison", 9) == 0)) {
         TsGeneratorRecipe recipe = instrument.generator;
         recipe.kind = TS_GENERATOR_FM;
@@ -45,6 +46,10 @@ int main(int argc, char **argv)
             ui.fm_patch.extreme_mode = 0;
             ts_fm_patch_unison(&ui.fm_patch);
             ui.fm_voice_bank = strcmp(argv[2], "fm-unison-extra") == 0;
+        }
+        if (strcmp(argv[2], "fm-directions") == 0) {
+            ts_fm_patch_directed(&ui.fm_patch, 27, TS_FM_DIRECTION_DRONE | TS_FM_DIRECTION_PERC | TS_FM_DIRECTION_MELODIC);
+            ui.config.fm_bank_count = 8;
         }
         if (!ts_fm_render_sample(&drone_preview, &ui.fm_patch, 2.0f, 130.8128f,
                                  44100u, 0x50524556u,
@@ -67,6 +72,8 @@ int main(int argc, char **argv)
         if (strncmp(argv[2], "fm-unison", 9) == 0) {
             snprintf(ui.fm_message, sizeof(ui.fm_message),
                      "UNISON ON - NINE VOICES + THREE LOWER VOICES");
+        } else if (strcmp(argv[2], "fm-directions") == 0) {
+            snprintf(ui.fm_message, sizeof(ui.fm_message), "PULSED TONAL LOOP - COUNT 8 MAKES THE PATCH + 7 RELATIVES");
         } else if (strcmp(argv[2], "fm-bank") == 0) {
             ui.fm_bank_choice_open = 1;
             snprintf(ui.fm_message, sizeof(ui.fm_message),
@@ -82,6 +89,13 @@ int main(int argc, char **argv)
                      "DRONE EDGES ZEROED - HELD CHORD CONTINUES UNDER THE WINDOW");
         snprintf(ui.status, sizeof(ui.status),
                  "FM LOGIC PREVIEW - APPLY PRINTS THE GENOME TO THE ACTIVE TILE");
+    } else if (argc > 2 && strcmp(argv[2], "directions") == 0) {
+        TsFmSeedSequence sequence; ts_fm_seed_sequence_init(&sequence, 8181);
+        ui.config.create_directions = TS_FM_DIRECTION_PERC | TS_FM_DIRECTION_MELODIC;
+        instrument.has_selection = 0;
+        if (!ts_instrument_create_directed(&instrument, &sequence, ui.config.create_directions, NULL, error, sizeof(error))) return 1;
+        snprintf(ui.status, sizeof(ui.status), "PERC + MELODIC - CREATE NEW SOUNDS; VARY DEVELOPS THIS ONE");
+        ui.fx_page = TS_FX_FAMILY;
     } else if (argc > 2 && strcmp(argv[2], "mosaic-volume") == 0) {
         ui.mosaic=ts_mosaic_create();ui.mosaic_open=1;ui.mosaic_scale=13;
         TsMosaicSource *source=ts_mosaic_source(ui.mosaic,&instrument.current,error,sizeof(error));

@@ -31,6 +31,7 @@ void ts_config_init(TsConfig *config)
         config->ripple_cut_crop_canvas = 0;
         config->reference_tone_volume = TS_REFERENCE_TONE_VOLUME_DEFAULT;
         config->fm_output_percent = TS_FM_OUTPUT_PERCENT_DEFAULT;
+        config->fm_bank_count = 16;
         config->master_output_percent = TS_MASTER_OUTPUT_PERCENT_DEFAULT;
         ts_master_eq_default(&config->master_eq);
         ts_router_default(&config->router);
@@ -350,6 +351,10 @@ int ts_config_load(TsConfig *config, const char *path,
             if (!parse_boolean(value, &loaded.ripple_cut_crop_canvas)) { snprintf(error, error_size, "Invalid boolean on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "reference_tone_volume") == 0) {
             if (!parse_clamped_integer(value, TS_REFERENCE_TONE_VOLUME_MIN, TS_REFERENCE_TONE_VOLUME_MAX, &loaded.reference_tone_volume)) { snprintf(error, error_size, "Invalid integer on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "create_directions") == 0) {
+            if (!parse_clamped_integer(value, 0, 15, &loaded.create_directions)) { snprintf(error, error_size, "Invalid Create directions on line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "fm_bank_count") == 0) {
+            if (!parse_clamped_integer(value, 1, 16, &loaded.fm_bank_count)) { snprintf(error, error_size, "Invalid FM bank count on line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "fm_output_percent") == 0) {
             if (!parse_clamped_integer(value, TS_FM_OUTPUT_PERCENT_MIN, TS_FM_OUTPUT_PERCENT_MAX, &loaded.fm_output_percent)) { snprintf(error, error_size, "Invalid FM output level on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "master_output_percent") == 0) {
@@ -565,6 +570,8 @@ int ts_config_save(const TsConfig *config, const char *path,
                 "\n[Audition]\n"
                 "; FM LOGIC output trim applied to monitoring, Sister FM, and synth capture.\n"
                 "fm_output_percent=%d\n"
+                "create_directions=%d\n"
+                "fm_bank_count=%d\n"
                 "; Per-voice note-on de-click ramp in milliseconds; 0 disables it, 20 is the maximum.\n"
                 "voice_attack_ms=%d\n"
                 "; Mouse-launched tile fade in/out; 0 disables it, 30000 is the maximum.\n"
@@ -682,6 +689,7 @@ int ts_config_save(const TsConfig *config, const char *path,
                 config->ripple_cut_crop_canvas ? 1 : 0,
                 config->reference_tone_volume,
                 config->fm_output_percent,
+                config->create_directions, config->fm_bank_count,
                 config->voice_attack_ms,
                 config->tile_fade_ms,
                 config->record_input_device,

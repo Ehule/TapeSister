@@ -301,7 +301,8 @@ typedef enum {
     TS_UI_FM_ACTION_OUTPUT_TRIM,
     TS_UI_FM_ACTION_BACK,
     TS_UI_FM_ACTION_UNISON,
-    TS_UI_FM_ACTION_VOICE_BANK
+    TS_UI_FM_ACTION_VOICE_BANK,
+    TS_UI_FM_ACTION_COUNT
 } TsUiFmAction;
 
 typedef enum {
@@ -887,6 +888,7 @@ TsUiFmAction ts_ui_fm_action_from_point(int x, int y);
 TsUiFmAction ts_ui_fm_bank_action_from_point(int x, int y);
 TsUiFmAction ts_ui_fm_full_action_from_point(int x, int y);
 int ts_ui_fm_range_contains(int x, int y);
+uint32_t ts_ui_direction_from_point(int fm, int x, int y);
 int ts_ui_fm_pitch_root_contains(int x, int y);
 int ts_ui_fm_pitch_scale_contains(int x, int y);
 int ts_ui_transform_control_from_point(int x, int y);

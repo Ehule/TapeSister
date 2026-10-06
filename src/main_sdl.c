@@ -1544,8 +1544,9 @@ static void keyboard_loop_policy(AudioState *audio, const TsUiState *ui)
     for (int i = 0; i < TS_NOTE_BANK_VOICE_CAPACITY; ++i) {
         TsNoteVoice *v = &audio->notes.voices[i];
         if (v->active && v->synth) {
-            v->looping = enabled;
-            v->crossfade_frames = enabled ? v->sample->sample_rate/100u : 0u;
+            int drone = ui->fm_open && ui->fm_patch.directions && ui->fm_patch.drone_mode;
+            v->looping = enabled || drone;
+            v->crossfade_frames = drone ? 0u : enabled ? v->sample->sample_rate/100u : 0u;
             size_t limit=(v->range_last-v->range_first)/4u;
             if(v->crossfade_frames>limit)v->crossfade_frames=limit;
         }
@@ -4034,14 +4035,14 @@ static int generate_family_candidate(SDL_AudioDeviceID device, AudioState *audio
     else if (stamp && vary)
         ok = ts_instrument_stamp_vary(instrument, error, sizeof(error));
     else if (stamp)
-        ok = ts_instrument_stamp_create_fresh(
-            instrument, seed_sequence, &seed, error, sizeof(error));
+        ok = ts_instrument_stamp_directed(
+            instrument, seed_sequence, (uint32_t)ui->config.create_directions, &seed, error, sizeof(error));
     else if (vary)
         ok = ts_instrument_vary_selected(instrument, instrument->family_trajectory,
                                          &slot, error, sizeof(error));
     else
-        ok = ts_instrument_create_selected_fresh(
-            instrument, seed_sequence, &seed, error, sizeof(error));
+        ok = ts_instrument_create_directed(
+            instrument, seed_sequence, (uint32_t)ui->config.create_directions, &seed, error, sizeof(error));
     unlock_edit(device, audio, ui, instrument);
     if (!ok) {
         snprintf(ui->status, sizeof(ui->status), "%s FAILED: %.132s",
@@ -4188,6 +4189,24 @@ static int fm_control_disabled(const TsFmPatch *patch, TsFmPage page, int contro
     return !ts_fm_control_available(patch, page, control);
 }
 
+static void toggle_fm_direction_workspace(TsUiState *ui, const TsInstrument *instrument, uint32_t bit)
+{
+    uint32_t directions = ui->fm_patch.directions |
+        (ui->fm_patch.drone_mode ? TS_FM_DIRECTION_DRONE : 0u);
+    ts_fm_patch_set_directions(&ui->fm_patch, directions ^ bit, instrument->generator.seed);
+    ui->config.create_directions = (int)ui->fm_patch.directions;
+    request_fm_preview(ui, instrument);
+    snprintf(ui->fm_message, sizeof(ui->fm_message), "DIRECTIONS UPDATED - APPLY TO KEEP; CREATE USES THIS CHOICE");
+}
+
+static void step_fm_bank_count(TsUiState *ui, int step)
+{
+    int count = ui->config.fm_bank_count + step;
+    ui->config.fm_bank_count = count < 1 ? 1 : count > TS_BANK_SLOT_COUNT ? TS_BANK_SLOT_COUNT : count;
+    snprintf(ui->fm_message, sizeof(ui->fm_message), "COUNT %d = CURRENT PATCH + %d VARIATIONS",
+             ui->config.fm_bank_count, ui->config.fm_bank_count - 1);
+}
+
 static void randomize_fm_workspace(TsUiState *ui, const TsInstrument *instrument,
                                    TsFmSeedSequence *seed_sequence)
 {
@@ -4237,6 +4256,7 @@ static void begin_fm_note_event(SDL_AudioDeviceID device, AudioState *audio,
     if (result != TS_NOTE_TOGGLED_OFF)
         result = ts_note_bank_start_sample_event(
             &audio->notes, preview, &unity, event, latched, output_rate);
+    keyboard_loop_policy(audio, ui);
     if (result == TS_NOTE_STARTED &&
         audio->capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER) {
         char ignored[2];
@@ -4438,9 +4458,9 @@ static void make_fm_bank_workspace(SDL_AudioDeviceID device, AudioState *audio,
                  "BANK STAGING FAILED: %.72s", error);
         goto finished;
     }
-    if (!ts_instrument_make_fm_bank_seeded(
+    if (!ts_instrument_make_fm_bank_count(
             &made, &ui->fm_patch,
-            ts_fm_seed_sequence_next(seed_sequence),
+            ts_fm_seed_sequence_next(seed_sequence), ui->config.fm_bank_count,
             error, sizeof(error)) ||
         !ts_instrument_clone(&after, &made, error, sizeof(error))) {
         snprintf(ui->fm_message, sizeof(ui->fm_message),
@@ -4482,8 +4502,8 @@ static void make_fm_bank_workspace(SDL_AudioDeviceID device, AudioState *audio,
     ui->fm_held_notes = 0;
     ts_ui_reset_parent_view(ui, instrument->current.frames);
     snprintf(ui->fm_message, sizeof(ui->fm_message),
-             "16-SOUND BANK MADE ON SAMPLE PAGE %d - ONE UNDO",
-             ui->sample_page + 1);
+             "%d-SOUND BANK MADE ON SAMPLE PAGE %d - ONE UNDO",
+             ui->config.fm_bank_count, ui->sample_page + 1);
     ok = 1;
 
 finished:
@@ -14325,7 +14345,7 @@ int main(int argc, char **argv)
                     } else if ((mod & KMOD_SHIFT) && key == SDLK_b) {
                         ui.fm_bank_choice_open = 1;
                         snprintf(ui.fm_message, sizeof(ui.fm_message),
-                                 "CONFIRM 16-SOUND BANK DESTINATION");
+                                 "CHOOSE THE DESTINATION FOR THIS COUNT");
                     } else if (fm_note >= 0 && device) {
                         begin_fm_note(device, &audio, &ui, &instrument,
                                       &fm_preview, fm_note, obtained.freq,
@@ -14991,6 +15011,8 @@ int main(int argc, char **argv)
                         target = WHEEL_TARGET_FM + 0x101;
                     else if (control >= 0)
                         target = WHEEL_TARGET_FM + (int)ui.fm_page * 16 + control;
+                    else if (ts_ui_fm_action_from_point(x, y) == TS_UI_FM_ACTION_COUNT)
+                        target = WHEEL_TARGET_FM + 0x104;
                     else if (ts_ui_fm_range_contains(x, y))
                         target = WHEEL_TARGET_FM + 0x102;
                     else if (ts_ui_fm_action_from_point(x, y) ==
@@ -15031,6 +15053,8 @@ int main(int argc, char **argv)
                             (SDL_GetModState() & KMOD_SHIFT) != 0);
                     if (changed)
                         request_fm_preview(&ui,&instrument);
+                } else if (wheel_y != 0 && ts_ui_fm_action_from_point(x, y) == TS_UI_FM_ACTION_COUNT) {
+                    step_fm_bank_count(&ui, wheel_y);
                 } else if (wheel_y != 0 && ts_ui_fm_range_contains(x, y)) {
                     float step = (SDL_GetModState() & KMOD_SHIFT) ? 0.01f : 0.05f;
                     instrument.family_mutation += wheel_y * step;
@@ -15733,7 +15757,10 @@ int main(int argc, char **argv)
                     uint32_t mutation = ui.fm_page == TS_FM_PAGE_PITCH ? 0u :
                                         ts_ui_fm_mutation_from_point(x, y);
                     TsUiFmAction fm_action = ts_ui_fm_action_from_point(x, y);
-                    if ((int)page >= 0) {
+                    uint32_t direction = ts_ui_direction_from_point(1, x, y);
+                    if (direction) {
+                        toggle_fm_direction_workspace(&ui, &instrument, direction);
+                    } else if ((int)page >= 0) {
                         ui.fm_page = page;
                         snprintf(ui.fm_message, sizeof(ui.fm_message),
                                  "%s PAGE - SAME SIX CONTROLS",
@@ -15805,14 +15832,11 @@ int main(int argc, char **argv)
                                       &fm_preview, 0, obtained.freq, 0);
                     } else if (fm_action == TS_UI_FM_ACTION_HOLD) {
                         toggle_fm_hold(device, &audio, &ui, &instrument);
-                    } else if (fm_action == TS_UI_FM_ACTION_DRONE) {
-                        ui.fm_patch.drone_mode = !ui.fm_patch.drone_mode;
-                        ts_fm_patch_sanitize(&ui.fm_patch);
-                        request_fm_preview(&ui,&instrument);
-                        snprintf(ui.fm_message, sizeof(ui.fm_message),
-                                 ui.fm_patch.drone_mode ?
-                                 "DRONE ON - ENVELOPES BYPASSED, EDGES ZEROED" :
-                                 "DRONE OFF - ATTACK AND RELEASE RESTORED");
+                    } else if (fm_action == TS_UI_FM_ACTION_COUNT) {
+                        int step = (mod & KMOD_SHIFT) ? -1 : 1;
+                        if (step > 0 && ui.config.fm_bank_count == TS_BANK_SLOT_COUNT) ui.config.fm_bank_count = 0;
+                        else if (step < 0 && ui.config.fm_bank_count == 1) ui.config.fm_bank_count = TS_BANK_SLOT_COUNT + 1;
+                        step_fm_bank_count(&ui, step);
                     } else if (fm_action == TS_UI_FM_ACTION_EXTREME) {
                         ui.fm_patch.extreme_mode = !ui.fm_patch.extreme_mode;
                         ts_fm_patch_sanitize(&ui.fm_patch);
@@ -16196,6 +16220,11 @@ int main(int argc, char **argv)
                     cancel_pitch_preview(device, &audio, &ui, &instrument);
                     (void)begin_amplitude_draw(device, &audio, &ui,
                                                &instrument, x, y);
+                } else if (ts_ui_direction_from_point(0, x, y)) {
+                    ui.config.create_directions ^= (int)ts_ui_direction_from_point(0, x, y);
+                    snprintf(ui.status, sizeof(ui.status), ui.config.create_directions ?
+                             "CREATE DIRECTIONS SET - COMBINE ANY; ALL OFF IS UNRESTRICTED" :
+                             "CREATE UNRESTRICTED - FRESH SOUND EVERY CLICK");
                 } else if (ui.input_meter_active &&
                            x >= TS_WAVE_X && x < TS_WAVE_X + TS_WAVE_W &&
                            y >= TS_WAVE_Y && y < TS_WAVE_Y + TS_WAVE_H) {

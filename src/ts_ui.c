@@ -1636,6 +1636,29 @@ static void transform_render(TsFramebuffer *fb, const TsUiState *ui,
 
 #include "ts_ui_waveform_detail.inc"
 
+static const int direction_offsets[] = {0, 68, 126, 206};
+static const int direction_widths[] = {64, 54, 76, 100};
+static const char *direction_names[] = {"DRONE", "PERC", "MELODIC", "EXPERIMENTAL"};
+
+uint32_t ts_ui_direction_from_point(int fm, int x, int y)
+{
+    int left = fm ? 20 : 112;
+    int top = fm ? 94 : TS_CANVAS_CONTROLS_Y;
+    if (y < top || y >= top + 16) return 0;
+    for (int i = 0; i < 4; ++i)
+        if (x >= left + direction_offsets[i] && x < left + direction_offsets[i] + direction_widths[i])
+            return 1u << i;
+    return 0;
+}
+
+static void direction_buttons(TsFramebuffer *fb, int fm, uint32_t mask)
+{
+    int left = fm ? 20 : 112;
+    int top = fm ? 94 : TS_CANVAS_CONTROLS_Y;
+    for (int i = 0; i < 4; ++i)
+        mini_button(fb, left + direction_offsets[i], top, direction_widths[i], direction_names[i], (mask & (1u << i)) != 0);
+}
+
 static void fm_render(TsFramebuffer *fb, const TsUiState *ui,
                       const TsInstrument *instrument)
 {
@@ -1654,8 +1677,8 @@ static void fm_render(TsFramebuffer *fb, const TsUiState *ui,
         text(fb,370,46,"UPDATING",PAL_MOUSE,1);
     text(fb, 474, 46, ui->fm_patch.structure == TS_FM_STRUCTURE_UNISON ?
          "12-VOICE UNISON" : "SIX-VOICE FM", PAL_EFFECT, 1);
-    frame(fb, 20, 62, 600, 48, RGB(8, 8, 8), PAL_BUTTON);
-    rect(fb, 22, 85, 596, 1, PAL_BUTTON);
+    frame(fb, 20, 62, 600, 29, RGB(8, 8, 8), PAL_BUTTON);
+    rect(fb, 22, 76, 596, 1, PAL_BUTTON);
     if (preview != NULL && preview->data != NULL && preview->frames > 1u) {
         TsWaveformRequest request={0};request.sample=preview;request.last=preview->frames;
         request.width=596;request.revision=ui->waveform_revisions[TS_UI_WAVEFORM_FM];
@@ -1667,17 +1690,20 @@ static void fm_render(TsFramebuffer *fb, const TsUiState *ui,
             float low=cache->columns[column].left_minimum;
             float high=cache->columns[column].left_maximum;
             {
-                int y0 = 85 - (int)lrintf(high * 20.0f);
-                int y1 = 85 - (int)lrintf(low * 20.0f);
+                int y0 = 76 - (int)lrintf(high * 12.0f);
+                int y1 = 76 - (int)lrintf(low * 12.0f);
                 if (y0 < 64) y0 = 64;
-                if (y1 > 108) y1 = 108;
+                if (y1 > 89) y1 = 89;
                 rect(fb, 22 + column, y0, 1, y1 - y0 + 1, PAL_INSTRUMENT);
             }
         }
     }
     detail_capture_slot(fb,0);
-    mini_playhead(fb, ui, preview, 22, 63, 596, 46,
+    mini_playhead(fb, ui, preview, 22, 63, 596, 27,
                   0u, preview != NULL ? preview->frames : 0u);
+    direction_buttons(fb, 1, ui->fm_patch.directions |
+                      (ui->fm_patch.drone_mode ? TS_FM_DIRECTION_DRONE : 0u));
+    text(fb, 342, 99, "COMBINE SOUND DIRECTIONS", PAL_TUNING, 1);
     for (int page = 0; page < TS_FM_PAGE_COUNT; ++page) {
         int x = 20 + page * 86;
         button(fb, x, 116, 82, ts_fm_page_name((TsFmPage)page),
@@ -1741,7 +1767,11 @@ static void fm_render(TsFramebuffer *fb, const TsUiState *ui,
         slider(fb, 518, 252, 102, output,
                (float)ui->config.fm_output_percent / 100.0f, PAL_EFFECT);
     }
-    button(fb, 20, 278, 86, "DRONE", ui->fm_patch.drone_mode);
+    {
+        char count[24];
+        snprintf(count, sizeof(count), "COUNT %d", ui->config.fm_bank_count);
+        button(fb, 20, 278, 86, count, 0);
+    }
     button(fb, 112, 278, 100, "EXTREME", ui->fm_patch.extreme_mode);
     button(fb, 218, 278, 86,
            instrument != NULL && instrument->family_trajectory ?
@@ -1760,12 +1790,13 @@ static void fm_render(TsFramebuffer *fb, const TsUiState *ui,
     text(fb, 20, 306, ui->fm_message, PAL_MOUSE, 1);
     if (ui->fm_bank_choice_open) {
         frame(fb, 62, 218, 516, 92, RGB(28, 25, 30), PAL_VOLUME);
-        text(fb, 82, 226, "MAKE A 16-SOUND FM BANK?", PAL_NOTE, 1);
-        text(fb, 82, 242,
-             "CURRENT PATCH IS TILE 01; RANGE + CHAIN BUILD 15 VARIATIONS",
-             PAL_MOUSE, 1);
+        char title[64], detail[80];
+        snprintf(title, sizeof(title), "MAKE A %d-SOUND FM BANK?", ui->config.fm_bank_count);
+        snprintf(detail, sizeof(detail), "TILE 01 IS THE PATCH; %d VARIATIONS AT THIS RANGE", ui->config.fm_bank_count - 1);
+        text(fb, 82, 226, title, PAL_NOTE, 1);
+        text(fb, 82, 242, detail, PAL_MOUSE, 1);
         text(fb, 82, 257,
-             "REPLACE NEEDS EVERY CURRENT TILE UNLOCKED",
+             "REPLACE AFFECTS ONLY COUNT TILES; PROTECTED TILES ARE SAFE",
              PAL_TUNING, 1);
         button(fb, 82, 278, 132, "REPLACE PAGE", 0);
         button(fb, 220, 278, 150, "NEW SAMPLE PAGE", 1);
@@ -2348,7 +2379,7 @@ TsUiFmAction ts_ui_fm_action_from_point(int x, int y)
         if (x >= 518 && x < 620) return TS_UI_FM_ACTION_OUTPUT_TRIM;
     }
     if (y >= 278 && y < 302) {
-        if (x >= 20 && x < 106) return TS_UI_FM_ACTION_DRONE;
+        if (x >= 20 && x < 106) return TS_UI_FM_ACTION_COUNT;
         if (x >= 112 && x < 212) return TS_UI_FM_ACTION_EXTREME;
         if (x >= 218 && x < 304) return TS_UI_FM_ACTION_CHAIN;
     }
@@ -3523,6 +3554,8 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     }
 
     if (ui->input_meter_active) live_input_render(fb, ui);
+    text(fb, 90, TS_CANVAS_CONTROLS_Y + 5, "NEW", PAL_TUNING, 1);
+    direction_buttons(fb, 0, (uint32_t)ui->config.create_directions);
 
     button(fb, 10, 205, 70, "LOAD", ui->browser.mode == TS_BROWSER_LOAD_WAV);
     button(fb, 85, 205, 82, ui->cdp_creating ? "CDP..." : ui->cdp_create ? "CREATE+CDP" : "CREATE", ui->cdp_create);
@@ -3530,7 +3563,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     button(fb, 247, 205, 78,
            ui->workbench_loop_persistent ? "LOOP LOCK" : "LOOP",
            ui->workbench_loop_active);
-    button(fb, 330, 205, 72, "DRONE", ui->drone_open);
+    button(fb, 330, 205, 72, "DRONE FX", ui->drone_open);
 
     bipolar_slider(fb, 10, 233, 72, "BODY",
                    ui->material_macro_gesture.active &&

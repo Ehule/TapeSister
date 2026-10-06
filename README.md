@@ -71,6 +71,11 @@ a selected timeline.
 
 ![A bank developing through related variations](docs/images/manual/create-and-variation.png)
 
+The **NEW** direction buttons combine **DRONE**, **PERC**, **MELODIC**, and
+**EXPERIMENTAL**. All off keeps unrestricted Create. Directed drones have loop
+points; Perc + Drone makes pulsing loops and Perc + Melodic makes tuned strikes.
+[Sound directions and counted banks](docs/CREATE_DIRECTIONS.md).
+
 ### FM Logic
 
 FM Logic exposes the six-voice genome behind Create: pitch ratios and scales, ten
@@ -78,7 +83,7 @@ routing structures, waveform families, per-voice LFOs, filtering, interaction mo
 feedback, transient behavior, mutation permissions, Drone, and Extreme ranges.
 
 The live preview can be played from QWERTY or MIDI before it is applied. MAKE BANK
-creates a complete 16-sound family in one atomic operation.
+creates 1–16 sounds (the original plus relatives) in one atomic operation.
 
 ![Six-voice FM Logic](docs/images/manual/fm-logic.png)
 

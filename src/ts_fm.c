@@ -10,7 +10,7 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-#define TS_FM_GENOME_VERSION 7u
+#define TS_FM_GENOME_VERSION 8u
 _Static_assert(offsetof(TsFmPatch, has_unison_source) >= sizeof(TsFmSound),
                "FM sound snapshot must fit before its backup");
 #define TS_FM_MIN_USABLE_PEAK 1.0e-5f
@@ -195,7 +195,8 @@ int ts_fm_control_available(const TsFmPatch *patch, TsFmPage page, int control)
     if (patch->filter_mode == TS_FM_FILTER_CLEAN &&
         page == TS_FM_PAGE_FILTER && control < 5) return 0;
     if (patch->drone_mode && ((page == TS_FM_PAGE_FILTER && (control == 2 || control == 3)) ||
-        (page == TS_FM_PAGE_STRUCTURE && control == 5))) return 0;
+        (page == TS_FM_PAGE_STRUCTURE && control == 5 &&
+         !(patch->directions & TS_FM_DIRECTION_PERC)))) return 0;
     return !(patch->structure == TS_FM_STRUCTURE_UNISON && page == TS_FM_PAGE_STRUCTURE &&
              (control == 1 || control == 2 || control == 4));
 }
@@ -221,6 +222,7 @@ void ts_fm_patch_unison(TsFmPatch *patch)
     patch->mutation_mask &= ~TS_FM_MUTATE_STRUCTURE;
     patch->feedback = patch->interaction_mix = patch->transient_mix = 0;
     patch->drone_mode = 1;
+    if (patch->directions) patch->directions |= TS_FM_DIRECTION_DRONE;
     for (int voice = 0; voice < TS_FM_UNISON_VOICE_COUNT; ++voice) {
         patch->ratios[voice] = center * exp2f(cents[voice] / 1200.0f);
         patch->waveforms[voice] = patch->waveforms[0];
@@ -297,6 +299,22 @@ void ts_fm_patch_sanitize(TsFmPatch *patch)
         }
         patch->has_unison_source = 0;
         memset(&patch->unison_source, 0, sizeof(patch->unison_source));
+    }
+    if (patch->genome_version < 8u || patch->genome_version > TS_FM_GENOME_VERSION) {
+        patch->directions = 0;
+        patch->sound_seed = 0;
+        patch->percussion = 0;
+        patch->attack_seconds = patch->decay_seconds = 0;
+        patch->pitch_sweep = patch->pulse_rate = 0;
+    }
+    patch->directions &= TS_FM_DIRECTION_ALL;
+    if (patch->directions) {
+        if (patch->percussion < 0 || patch->percussion >= TS_FM_PERC_COUNT)
+            patch->percussion = TS_FM_PERC_KICK;
+        patch->attack_seconds = clampf(isfinite(patch->attack_seconds) ? patch->attack_seconds : .002f, .0002f, 2.0f);
+        patch->decay_seconds = clampf(isfinite(patch->decay_seconds) ? patch->decay_seconds : .25f, .015f, 4.0f);
+        patch->pitch_sweep = clampf(isfinite(patch->pitch_sweep) ? patch->pitch_sweep : 0, -3.0f, 5.0f);
+        patch->pulse_rate = clampf(isfinite(patch->pulse_rate) ? patch->pulse_rate : 2, .25f, 20.0f);
     }
     patch->genome_version = TS_FM_GENOME_VERSION;
     ratio_high = ratio_maximum(patch);
@@ -501,6 +519,8 @@ int ts_fm_apply_pitch_scale(TsFmPatch *patch)
     return changed;
 }
 
+#include "ts_fm_directions.inc"
+
 void ts_fm_patch_vary(const TsFmPatch *source, uint32_t seed, float range,
                       TsFmPatch *varied)
 {
@@ -619,6 +639,7 @@ void ts_fm_patch_vary(const TsFmPatch *source, uint32_t seed, float range,
             if (varied->active_mask == 0u) varied->active_mask = 1u << voice;
         }
     }
+    vary_directions(&base, varied, amount, &rng);
     ts_fm_patch_sanitize(varied);
 }
 
@@ -1193,7 +1214,7 @@ static int render_sample(TsSample *sample, const TsFmPatch *patch,
 {
     TsFmPatch safe;
     float *data;
-    size_t frames;
+    size_t frames, render_frames, seam = 0;
     float phases[TS_FM_UNISON_VOICE_COUNT] = {0};
     float previous[TS_FM_UNISON_VOICE_COUNT] = {0};
     float lfo_phases[TS_FM_UNISON_VOICE_COUNT] = {0};
@@ -1202,6 +1223,7 @@ static int render_sample(TsSample *sample, const TsFmPatch *patch,
     float low = 0.0f, band = 0.0f;
     float dc_x = 0.0f, dc_y = 0.0f;
     float clean_peak = 0.0f;
+    float last_noise = 0.0f;
     if (sample == NULL || patch == NULL || sample_rate == 0u ||
         !isfinite(seconds) || !isfinite(frequency)) {
         if (error != NULL && error_size > 0u) snprintf(error, error_size, "Invalid FM render request");
@@ -1209,14 +1231,20 @@ static int render_sample(TsSample *sample, const TsFmPatch *patch,
     }
     safe = *patch;
     ts_fm_patch_sanitize(&safe);
-    seconds = clampf(seconds, 0.1f, 8.0f);
+    if (safe.directions) seed = safe.sound_seed;
+    seconds = clampf(ts_fm_patch_duration(&safe, seconds), 0.1f, 8.0f);
     frequency = clampf(frequency, 20.0f, 4000.0f);
     frames = (size_t)((double)seconds * (double)sample_rate);
     if (frames < 2u || frames > SIZE_MAX / sizeof(*data)) {
         if (error != NULL && error_size > 0u) snprintf(error, error_size, "FM render duration is too large");
         return 0;
     }
-    data = (float *)malloc(frames * sizeof(*data));
+    if (safe.directions && safe.drone_mode) {
+        seam = (size_t)(sample_rate * .02f);
+        if (seam > frames / 8) seam = frames / 8;
+    }
+    render_frames = frames + seam;
+    data = (float *)malloc(render_frames * sizeof(*data));
     if (data == NULL) {
         if (error != NULL && error_size > 0u) snprintf(error, error_size, "Out of memory rendering FM source");
         return 0;
@@ -1225,12 +1253,22 @@ static int render_sample(TsSample *sample, const TsFmPatch *patch,
         voice_rng[voice] = seed ^ (0x9e3779b9u * (uint32_t)(voice + 1));
         lfo_random[voice] = rng_bipolar(&voice_rng[voice]);
     }
-    for (size_t frame = 0; frame < frames; ++frame) {
+    for (size_t frame = 0; frame < render_frames; ++frame) {
         float current[TS_FM_UNISON_VOICE_COUNT] = {0};
         float carriers = 0.0f;
         float filter_lfo = 0.0f;
         float t = (float)frame / (float)sample_rate;
         float remaining = seconds - t;
+        int percussive = (safe.directions & TS_FM_DIRECTION_PERC) != 0;
+        int shaped = percussive || (safe.directions & TS_FM_DIRECTION_MELODIC);
+        float event_t = t;
+        float event_tail = 1;
+        if (percussive && safe.drone_mode) {
+            /* An integer number of events closes the pulse across the seam. */
+            float rate = fmaxf(1, roundf(seconds * safe.pulse_rate)) / seconds;
+            event_t = t - floorf(t * rate) / rate;
+            event_tail = clampf((1 / rate - event_t) / fminf(.005f, .1f / rate), 0, 1);
+        }
         float amplitude_attack = safe.drone_mode ? 1.0f :
             fminf(1.0f, t * (18.0f + safe.shape * 760.0f));
         float amplitude_release = safe.drone_mode ? 1.0f :
@@ -1238,6 +1276,11 @@ static int render_sample(TsSample *sample, const TsFmPatch *patch,
         float amplitude_envelope = safe.drone_mode ? 1.0f :
             amplitude_attack * amplitude_release *
             expf(-t * (0.08f + safe.shape * 2.8f));
+        if (safe.directions && shaped && (!safe.drone_mode || percussive)) {
+            float tail = safe.drone_mode ? event_tail : clampf(remaining / .008f, 0, 1);
+            amplitude_envelope = fminf(1, event_t / safe.attack_seconds) *
+                                 expf(-event_t / safe.decay_seconds) * tail;
+        }
         int carrier_count = 0;
         int first_active = -1;
         for (int voice = ts_fm_voice_count(&safe) - 1; voice >= 0; --voice) {
@@ -1285,6 +1328,8 @@ static int render_sample(TsSample *sample, const TsFmPatch *patch,
             else if (safe.lfo_types[voice] == TS_FM_LFO_FILTER_SINE ||
                      safe.lfo_types[voice] == TS_FM_LFO_FILTER_RANDOM)
                 filter_lfo += lfo;
+            if (percussive)
+                pitch_scale *= exp2f(safe.pitch_sweep * expf(-event_t / .025f));
             increment = clampf(frequency * safe.ratios[voice] * pitch_scale /
                                (float)sample_rate, 0.0f, 0.49f);
             phases[voice] = wrap_phase(phases[voice] + increment);
@@ -1297,8 +1342,11 @@ static int render_sample(TsSample *sample, const TsFmPatch *patch,
                 oscillator(safe.waveforms[voice], phases[voice], increment, noise) :
                 interaction_sample(&safe, voice, phases[voice], increment,
                                    modulation, noise, index_scale)) * amp_scale;
-            if (!safe.drone_mode && !topology_carrier(safe.structure, voice))
-                current[voice] *= expf(-t * (0.25f + (float)voice * 0.16f +
+            if (percussive && safe.percussion == TS_FM_PERC_SNARE && voice < 2 &&
+                !(safe.directions & TS_FM_DIRECTION_MELODIC))
+                current[voice] *= expf(-event_t / (safe.decay_seconds * .45f));
+            if ((!safe.drone_mode || percussive) && !topology_carrier(safe.structure, voice))
+                current[voice] *= expf(-(percussive ? event_t : t) * (0.25f + (float)voice * 0.16f +
                                              safe.shape * 3.2f));
             if (topology_carrier(safe.structure, voice)) {
                 carriers += current[voice];
@@ -1330,9 +1378,15 @@ static int render_sample(TsSample *sample, const TsFmPatch *patch,
             value *= amplitude_envelope;
             /* The attack exciter belongs to the enabled voices. Without this
                gate a completely muted patch could still play a noise hit. */
-            if (!safe.drone_mode && first_active >= 0)
+            if (percussive && first_active >= 0) {
+                float exciter = (noise - last_noise) * .5f;
+                float tail = safe.drone_mode ? event_tail : clampf(remaining / .008f, 0, 1);
+                value += exciter * expf(-event_t / (safe.decay_seconds * .6f)) *
+                         safe.transient_mix * fminf(1, event_t / safe.attack_seconds) * tail;
+            } else if (!safe.drone_mode && first_active >= 0)
                 value += noise * expf(-t * (22.0f + safe.shape * 90.0f)) *
                          safe.transient_mix;
+            last_noise = noise;
             if (safe.filter_mode == TS_FM_FILTER_CLEAN) {
                 /* A linear path makes a single sine a sine. Preserve the
                    existing colored output for all pre-CLEAN patches. */
@@ -1364,11 +1418,19 @@ static int render_sample(TsSample *sample, const TsFmPatch *patch,
     }
     /* Preserve the clean waveform when several carriers add up. The offline
        peak is known, so use one constant attenuation instead of clipping. */
+    if (seam > 1) {
+        /* Blend the actual continuation into the beginning. The sample length
+           and pulse period remain unchanged, and the wrap follows the signal. */
+        for (size_t i = 0; i < seam; ++i) {
+            float w = .5f - .5f * cosf((float)M_PI * (float)i / (float)(seam - 1));
+            data[i] = data[frames + i] * (1 - w) + data[i] * w;
+        }
+    }
     if (clean_peak > 0.98f) {
         float gain = 0.98f / clean_peak;
         for (size_t frame = 0; frame < frames; ++frame) data[frame] *= gain;
     }
-    if (safe.drone_mode)
+    if (safe.drone_mode && !seam)
         trim_drone_to_zero_boundaries(data, &frames, sample_rate);
     {
         TsSample candidate = {0};
@@ -1392,6 +1454,14 @@ static int render_sample(TsSample *sample, const TsFmPatch *patch,
     snprintf(sample->name, sizeof(sample->name), "FM %.8s %.8s %08X",
              ts_fm_structure_name(safe.structure),
              ts_fm_interaction_name(safe.interaction), seed);
+    if (safe.directions) {
+        const char *kind = safe.directions & TS_FM_DIRECTION_PERC ?
+            (safe.directions & TS_FM_DIRECTION_MELODIC ? "TUNED HIT" : ts_fm_percussion_name(safe.percussion)) :
+            safe.directions & TS_FM_DIRECTION_MELODIC ? "MELODIC" : "TEXTURE";
+        snprintf(sample->name, sizeof(sample->name), "%s%s%s %08X",
+                 safe.drone_mode ? "LOOP " : "", kind,
+                 safe.directions & TS_FM_DIRECTION_EXPERIMENTAL ? " EXP" : "", seed);
+    }
     if (error != NULL && error_size > 0u) error[0] = '\0';
     return 1;
 }

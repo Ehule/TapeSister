@@ -18,6 +18,12 @@ startup_welcome_autoplay=1
 ; Dim applied to protected tiles: 0 leaves them unchanged, 90 is darkest.
 locked_tile_dim_percent=38
 
+[Create]
+; Drone=1, Perc=2, Melodic=4, Experimental=8; add to combine, 0 is unrestricted.
+create_directions=0
+; Total bank sounds, including the original (1-16).
+fm_bank_count=16
+
 [Waveform]
 ; Snap clicked playheads to the nearest zero crossing. Set to 0 for exact clicks.
 playhead_zero_snap=1

@@ -18,6 +18,8 @@ on:
       - "src/*tapehead*"
       - "include/tapesister/tapehead_embed.h"
       - "src/ts_sample.c"
+      - "src/*fm*"
+      - "tests/test_fm*"
       - "src/ts_sample_pages.c"
       - "src/ts_tile_id.c"
       - "include/tapesister/sample*.h"
@@ -68,7 +70,7 @@ jobs:
       - name: Build TapeSister, tests, and CDP8
         run: cmake --build build
       - name: Run audio, keyboard, Insert and Router regression tests
-        run: ctest --test-dir build --output-on-failure -R 'asio|audio_lifecycle|audio_config|insert_tests|router|keyboard_hold|keyboard_sequence|sister_tracker|tracker_playback|tracker_edit|tracker_controller|tapehead_embedded|quick_capture|sample_pages|sister_project_state|core_tests|capture_tests|midi_tests|performance_tests|preview_loop|realtime_edits|realtime_controller|realtime_diagnostics|audio_health|sister_post_fx|sister_modulation|sister_routes|note_bank_stereo|performance_stereo'
+        run: ctest --test-dir build --output-on-failure -R 'asio|audio_lifecycle|audio_config|insert_tests|router|keyboard_hold|keyboard_sequence|sister_tracker|tracker_playback|tracker_edit|tracker_controller|tapehead_embedded|quick_capture|sample_pages|sister_project_state|core_tests|fm_directions|fm_unison|capture_tests|midi_tests|performance_tests|preview_loop|realtime_edits|realtime_controller|realtime_diagnostics|audio_health|sister_post_fx|sister_modulation|sister_routes|note_bank_stereo|performance_stereo'
       - name: Run package regression guard
         if: github.event_name == 'pull_request'
         run: ctest --test-dir build --output-on-failure -R test_identity_packaging
@@ -105,7 +107,7 @@ jobs:
         run: cmake --build build
       - name: Run audio, keyboard, Insert and Router regression tests
         shell: msys2 {0}
-        run: ctest --test-dir build --output-on-failure -R 'asio|audio_lifecycle|audio_config|insert_tests|router|keyboard_hold|keyboard_sequence|sister_tracker|tracker_playback|tracker_edit|tracker_controller|tapehead_embedded|quick_capture|sample_pages|sister_project_state|core_tests|capture_tests|midi_tests|performance_tests|preview_loop|realtime_edits|realtime_controller|realtime_diagnostics|audio_health|sister_post_fx|sister_modulation|sister_routes|note_bank_stereo|performance_stereo'
+        run: ctest --test-dir build --output-on-failure -R 'asio|audio_lifecycle|audio_config|insert_tests|router|keyboard_hold|keyboard_sequence|sister_tracker|tracker_playback|tracker_edit|tracker_controller|tapehead_embedded|quick_capture|sample_pages|sister_project_state|core_tests|fm_directions|fm_unison|capture_tests|midi_tests|performance_tests|preview_loop|realtime_edits|realtime_controller|realtime_diagnostics|audio_health|sister_post_fx|sister_modulation|sister_routes|note_bank_stereo|performance_stereo'
       - name: Run package regression guard
         if: github.event_name == 'pull_request'
         shell: msys2 {0}
