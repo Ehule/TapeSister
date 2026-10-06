@@ -79,7 +79,7 @@ static void test_keyboard_sequence_transport(void)
     toggle_fm_hold(device, &audio, &ui, &instrument); click_note(0, 0);
     TsMidiEvent midi = {0}; midi.action = TS_MIDI_ACTION_NOTE_ON;
     assert(ts_note_event_midi(&midi.note, 67, 100, 2));
-    handle_midi_event(device, &audio, &ui, &instrument, &fm, &midi, 44100);
+    handle_midi_event(device, &audio, &ui, &instrument, &fm, &midi, 44100,1);
     assert(voices() == 2);
     assert(TRANSPORT() && audio.keyboard_sequence.running && voices() == 2);
     assert(TRANSPORT() && !audio.keyboard_sequence.running && voices() == 2);
@@ -468,11 +468,11 @@ static void test_keyboard_sequence_controller(void)
         set_keyboard_octave(device, &audio, &ui, 4);
         TsMidiEvent midi = {0}; midi.action = TS_MIDI_ACTION_NOTE_ON;
         assert(ts_note_event_midi(&midi.note, 64, 100, 2));
-        handle_midi_event(device, &audio, &ui, &instrument, &fm, &midi, 44100);
+        handle_midi_event(device, &audio, &ui, &instrument, &fm, &midi, 44100,1);
         assert(voices() == 1);
         sequence_click(36, 260, KMOD_NONE); /* ARP Stop leaves MIDI alone. */
         assert(!audio.keyboard_sequence.running && voices() == 1);
-        handle_midi_event(device, &audio, &ui, &instrument, &fm, &midi, 44100);
+        handle_midi_event(device, &audio, &ui, &instrument, &fm, &midi, 44100,1);
         assert(!voices()); assert(power_audio_energy() < .0001);
         sequence_click(36, 260, KMOD_NONE); assert(audio.keyboard_sequence.running);
         stop_all_force(device, &audio, &ui); assert(!audio.keyboard_sequence.running);

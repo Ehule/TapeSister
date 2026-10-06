@@ -7,6 +7,7 @@
 #include "tapesister/note_bank.h"
 #include "tapesister/sample_pages.h"
 #include "tapesister/tracker_playback.h"
+#include "tapesister/tapehead_embed.h"
 #include "tapesister/realtime_diagnostics.h"
 #include "tapesister/sister_runtime.h"
 #include "tapesister/sister_preset.h"
@@ -797,6 +798,8 @@ typedef struct {
     const TsInstrument *workspace_bank; /* Parked Sample bank while editing a Mosaic card. */
     TsKeyboardSequence keyboard_sequence;
     TsTrackerPlayback tracker;
+    unsigned embedded_capture_flags;
+    int embedded_tracker_active;
     uint64_t keyboard_sequence_source_stamp;
     TsPerformanceBank performance;
     TsMosaic *mosaic;
@@ -1000,6 +1003,21 @@ static int tracker_capture_frame_allowed(AudioState *audio)
 {
     unsigned capture=atomic_load_explicit(&audio->tracker_capture,memory_order_acquire);
     if(!capture)return 1;
+    if(audio->embedded_tracker_active) {
+        unsigned flags=audio->embedded_capture_flags;
+        if(!(flags&1)) {
+            ts_performance_recorder_request_stop(audio->sister_file_recorder);
+            atomic_store(&audio->tracker_capture,0);return 0;
+        }
+        if(flags&2) {
+            if(capture==3 || capture==5) {
+                ts_performance_recorder_request_stop(audio->sister_file_recorder);
+                atomic_store(&audio->tracker_capture,0);return 0;
+            }
+            if(capture==1 || capture==4){++capture;atomic_store(&audio->tracker_capture,capture);}
+        }
+        return capture==2 || capture==3 || capture==5;
+    }
     TsTrackerPlayback *rt=&audio->tracker;
     if(!rt->running || !rt->block_active) {
         ts_performance_recorder_request_stop(audio->sister_file_recorder);
@@ -1042,6 +1060,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
                                  (uint32_t)audio->output_rate);
     ts_sister_runtime_begin_audio_block(&audio->sister);
     ts_insert_begin_output_block(&audio->sister.insert, (unsigned)frames);
+    const float *embedded_block=NULL;
     for (int i = 0; i < values; i += 2) {
         audio->sister.insert.send=(TsStereoFrame){0,0};
         TsAudioBuses buses;
@@ -1101,7 +1120,13 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             buses.tapehead.r = i + 1 < values ?
                 audio->live_link_buffer[i + 1] : buses.tapehead.l;
         }
-        buses.tracker = ts_tracker_playback_read(&audio->tracker, audio->output_rate);
+        if((i/2)%8192==0)embedded_block=ts_tapehead_render(
+            (unsigned)SDL_min(frames-i/2,8192),(unsigned)audio->output_rate);
+        audio->embedded_tracker_active=embedded_block!=NULL;
+        unsigned embedded_index=(unsigned)(i/2)%8192;
+        audio->embedded_capture_flags=embedded_block?ts_tapehead_capture_flags(embedded_index):0;
+        buses.tracker = embedded_block?(TsStereoFrame){embedded_block[embedded_index*2],embedded_block[embedded_index*2+1]}:
+            ts_tracker_playback_read(&audio->tracker, audio->output_rate);
         sister_sources.tracker = buses.tracker;
         sister_sources.fm = buses.fm;
         /* Notes already sounding before POWER retain their original voice
@@ -1978,6 +2003,7 @@ static void fade_all_tile_launchers(SDL_AudioDeviceID device,
 
 static void stop_all_force(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui)
 {
+    ts_tapehead_stop();
     if (device) SDL_LockAudioDevice(device);
     ts_tracker_playback_stop(&audio->tracker);
     audio->browser_voice.active = 0;
@@ -6438,6 +6464,7 @@ static unsigned bank_modifiers(SDL_Keymod mod)
 static void browser_open(TsUiState *ui, TsBrowserMode mode)
 {
     const char *filename = mode == TS_BROWSER_SAVE_RECIPE ? "tapesister-recipe.tsr" :
+                           mode == TS_BROWSER_TRACKER_PALETTE_EXPORT ? "tracksister.pal" :
                            mode == TS_BROWSER_SAVE_PRESET ? "my-process.tsp" :
                            mode == TS_BROWSER_EXPORT_WAV ? "tapesister-export.wav" : "";
     SDL_StopTextInput();
@@ -6693,9 +6720,15 @@ static void preview_midi_note(SDL_AudioDeviceID device, AudioState *audio,
 static void handle_midi_event(SDL_AudioDeviceID device, AudioState *audio,
                               TsUiState *ui, const TsInstrument *instrument,
                               const TsSample *fm_preview,
-                              const TsMidiEvent *midi, int output_rate)
+                              const TsMidiEvent *midi, int output_rate, int tracker_input_allowed)
 {
     if (audio == NULL || ui == NULL || instrument == NULL || midi == NULL) return;
+    int tracker_focus=tracker_input_allowed && ui->tracker_open && ui->tracker_embedded_frame && !ui_dialog_open(ui) &&
+                      !ui->router_open && !ui->master_eq_open && !ui->midi_learn_active;
+    if(ts_tapehead_midi(midi,tracker_focus)) {
+        ts_tapehead_host_lock();ts_tapehead_export(ui->tracker,ui->status,sizeof(ui->status));ts_tapehead_host_unlock();
+        return;
+    }
     if (midi->action == TS_MIDI_ACTION_PANIC) {
         if (device) SDL_LockAudioDevice(device);
         if (midi->channel >= 0)
@@ -8159,6 +8192,24 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
             SDL_StopTextInput();
         return;
     }
+    if (browser->mode==TS_BROWSER_TRACKER_PALETTE_IMPORT || browser->mode==TS_BROWSER_TRACKER_PALETTE_EXPORT) {
+        int importing=browser->mode==TS_BROWSER_TRACKER_PALETTE_IMPORT;
+        if(importing && browser->selected>=0 && browser->selected<browser->entry_count && browser->entries[browser->selected].is_directory) {
+            ts_browser_enter_selected_directory(browser);return;
+        }
+        if(!(importing?ts_browser_selected_path(browser,path,sizeof(path)):ts_browser_destination_path(browser,path,sizeof(path)))) {
+            snprintf(browser->message,sizeof(browser->message),importing?"SELECT A PALETTE FILE":"ENTER A PALETTE FILENAME");return;
+        }
+        if(!importing && ts_browser_path_exists(path) && !browser->overwrite_armed) {
+            browser->overwrite_armed=1;snprintf(browser->message,sizeof(browser->message),"CONFIRM PALETTE OVERWRITE");return;
+        }
+        int ok=importing?ts_tapehead_palette_import(path,browser->message,sizeof(browser->message)):
+                         ts_tapehead_palette_export(path,browser->message,sizeof(browser->message));
+        if(!ok)return;
+        ts_tapehead_host_lock();ts_tapehead_export(&sample_pages->tracker,ui->status,sizeof(ui->status));ts_tapehead_host_unlock();
+        ts_browser_close(browser);SDL_StopTextInput();
+        snprintf(ui->status,sizeof(ui->status),importing?"TRACKER PALETTE IMPORTED":"TRACKER PALETTE EXPORTED");return;
+    }
     if (ts_browser_mode_selects_config(browser->mode)) {
         TsBrowserMode mode = browser->mode;
         TsConfigField field = browser_config_field(mode);
@@ -8166,9 +8217,7 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
         if (mode == TS_BROWSER_SELECT_FASTTRACKER_EXECUTABLE) {
             if (browser->selected >= 0 && browser->selected < browser->entry_count &&
                 browser->entries[browser->selected].is_directory) {
-                if (!ts_browser_enter_selected_directory(browser))
-                    snprintf(browser->message, sizeof(browser->message),
-                             "COULD NOT ENTER DIRECTORY");
+                ts_browser_enter_selected_directory(browser);
                 return;
             }
             if (!ts_browser_selected_path(browser, path, sizeof(path))) {
@@ -8195,8 +8244,7 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     if (browser->mode == TS_BROWSER_LOAD_WAV && browser->selected >= 0 &&
         browser->selected < browser->entry_count &&
         browser->entries[browser->selected].is_directory) {
-        if (!ts_browser_enter_selected_directory(browser))
-            snprintf(browser->message, sizeof(browser->message), "COULD NOT ENTER DIRECTORY");
+        ts_browser_enter_selected_directory(browser);
         return;
     }
     if (browser->mode == TS_BROWSER_LOAD_WAV) {
@@ -8300,7 +8348,10 @@ static void run_pending_file_operation(SDL_AudioDeviceID device,
             &sister_state, &audio->sister,
             ts_sample_pages_count(sample_pages), NULL);
         sister_state.keyboard_sequence = ts_keyboard_sequence_export(&audio->keyboard_sequence);
-        ok = ts_sample_pages_save_project(sample_pages, active_sample, record_bank,
+        ts_tapehead_host_lock();
+        ok=ts_tapehead_export(&sample_pages->tracker,error,sizeof(error));
+        ts_tapehead_host_unlock();
+        if(ok)ok = ts_sample_pages_save_project(sample_pages, active_sample, record_bank,
                                           &sister_state, pending->path,
                                           error, sizeof(error));
         if (ok)
@@ -8375,8 +8426,7 @@ static void browser_activate_selection(SDL_AudioDeviceID device, AudioState *aud
     TsBrowser *browser = &ui->browser;
     if (browser->selected >= 0 && browser->selected < browser->entry_count &&
         browser->entries[browser->selected].is_directory && !browser->filename_focus) {
-        if (!ts_browser_enter_selected_directory(browser))
-            snprintf(browser->message, sizeof(browser->message), "COULD NOT ENTER DIRECTORY");
+        ts_browser_enter_selected_directory(browser);
         return;
     }
     browser_action(device, audio, ui, instrument, pending_selection_load,
@@ -8674,6 +8724,7 @@ static int workspace_tab_event(const SDL_Event *event, SDL_Window *window,
 
 static int main_waveform_detail_allowed(const TsUiState *ui)
 {
+    if(ui->tracker_open && ui->tracker_embedded_frame)return 0;
     return ui->portal.open ? !ui->portal.manage_open && !ui->portal.macro_edit :
         !ui_blocking_dialog_open_except_fm(ui) && !ui->fm_bank_choice_open && !ui->fm_full_choice_open;
 }
@@ -9799,12 +9850,12 @@ static int begin_file_capture(AudioState *audio,SisterWindow *sister,
 static int tracker_capture_event(const SDL_Event *event,SDL_Window *window,
     SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,SisterWindow *sister,uint32_t rate)
 {
-    if(!ui->tracker_open || ui_dialog_open(ui) || ui->midi_learn_active ||
+    if(!ui->tracker_open || ui_dialog_open(ui) || ui->router_open || ui->master_eq_open || ui->midi_learn_active ||
        event->type!=SDL_KEYDOWN || event->key.windowID!=SDL_GetWindowID(window) ||
        (event->key.keysym.mod&(KMOD_CTRL|KMOD_ALT|KMOD_SHIFT|KMOD_GUI)) ||
        (event->key.keysym.sym!=SDLK_F7 && event->key.keysym.sym!=SDLK_F8))return 0;
     if(device)SDL_LockAudioDevice(device);
-    int active=audio->tracker.block_active;
+    int active=ui->tracker_embedded_frame?ts_tapehead_block_active():audio->tracker.block_active;
     unsigned capture=atomic_load(&audio->tracker_capture);
     TsPerformanceFileState state=ts_performance_recorder_state(&sister->performance_recorder);
     if(active && !event->key.repeat && event->key.keysym.sym==SDLK_F7 &&
@@ -9934,7 +9985,7 @@ static int main_file_capture_event(const SDL_Event *event, SDL_Window *window,
        event->button.windowID==SDL_GetWindowID(window)) {
         if(ui->midi_learn_active)return 0;
         int x,y;logical_mouse(window,event->button.x,event->button.y,&x,&y);
-        if(x>=544 && x<630 && y>=382 && y<398)trigger=1;
+        if(!(ui->tracker_open && ui->tracker_embedded_frame) && x>=544 && x<630 && y>=382 && y<398)trigger=1;
         else if(ui->mosaic_open && !ui_dialog_open(ui))
             trigger=x>=206 && x<270 && y>=39 && y<58;
         else if(sister_performance_keys_allowed(ui) && ui->show_keyboard &&
@@ -12743,7 +12794,12 @@ static int keyboard_sustain_event(const SDL_Event *event,SDL_Window *window,
 }
 
 #include "main_sdl_keyboard_sequence.inc"
+#define tracker_event tracker_native_event
+#define tracker_refresh tracker_native_refresh
 #include "main_sdl_tracker.inc"
+#undef tracker_event
+#undef tracker_refresh
+#include "main_sdl_tracker_embed.inc"
 
 /* One pointer route for the visible keyboard, regardless of its sound source.
    Releases still arrive after opening a dialog or moving focus within the UI. */
@@ -13227,6 +13283,7 @@ int main(int argc, char **argv)
     desired.userdata = &audio;
     device = SDL_OpenAudioDevice(NULL, 0, &desired, &obtained, 0);
     audio.output_rate = obtained.freq;
+    embedded_host.device=&device;
     audio.live_link_buffer_frames = obtained.samples > 0u ?
         obtained.samples : desired.samples;
     audio.live_link_buffer = (float *)calloc(
@@ -13515,6 +13572,15 @@ int main(int argc, char **argv)
             if(router_event(&event,window,device,&audio,&ui,&sister_window))continue;
             if(master_eq_event(&event,window,device,&audio,&ui,&sister_window))continue;
             if(tracker_capture_event(&event,window,device,&audio,&ui,&sister_window,(uint32_t)obtained.freq))continue;
+            if(ui.tracker_open && ui.tracker_embedded_frame && !ui_dialog_open(&ui) &&
+               !ui.router_open && !ui.master_eq_open && !ui.midi_learn_active && event.type==SDL_KEYDOWN &&
+               !event.key.repeat && event.key.keysym.sym==SDLK_F7 &&
+               !(event.key.keysym.mod&(KMOD_CTRL|KMOD_ALT|KMOD_SHIFT|KMOD_GUI))) {
+                if(ts_performance_recorder_state(&sister_window.performance_recorder)==TS_PERFORMANCE_FILE_RECORDING)
+                    ts_performance_recorder_request_stop(&sister_window.performance_recorder);
+                else begin_file_capture(&audio,&sister_window,(uint32_t)obtained.freq,TS_SISTER_TAP_MIX,2);
+                continue;
+            }
             if(tracker_event(&event,window,device,&audio,&ui,&sample_pages,&instrument,obtained.freq))continue;
             mosaic_commit(device,&ui,&instrument,&mosaic);
             /* Finish an active pointer gesture before Escape can discard a take. */
@@ -17038,7 +17104,7 @@ int main(int argc, char **argv)
                         &input_device, &external_input, &midi,
                         (uint32_t)obtained.freq, 2))
                     handle_midi_event(device, &audio, &ui, &instrument,
-                                      &fm_preview, &midi, obtained.freq);
+                                      &fm_preview, &midi, obtained.freq, !sister_window.model.visible);
             }
         }
         if (ui.midi_activity_until_ms != 0u &&
@@ -17135,7 +17201,7 @@ int main(int argc, char **argv)
                      sizeof(sister_window.model.status), "ROLLING MEMORY CLEARED");
         }
         poll_fm_preview(device,&audio,&ui,&fm_preview);
-        tracker_refresh(device,&audio,&ui,&sample_pages,&instrument,obtained.freq);
+        tracker_refresh(device,&audio,&ui,&sample_pages,&instrument,obtained.freq,&sister_window);
         keyboard_sequence_prepare(device,&audio,&ui,&instrument,&fm_preview,obtained.freq,0);
         poll_transform_worker(device, &audio, &ui, &instrument, &transform);
         mosaic_commit(device,&ui,&instrument,&mosaic);
@@ -17412,6 +17478,9 @@ int main(int argc, char **argv)
     if (input_device) SDL_PauseAudioDevice(input_device, 1);
     if (input_device) SDL_CloseAudioDevice(input_device);
     if (device) SDL_PauseAudioDevice(device, 1);
+    ts_tapehead_close();
+    if(embedded_host.texture)SDL_DestroyTexture(embedded_host.texture);
+    embedded_host.texture=NULL;
     tapeCompanionClose(&companion_focus);
     tapeLinkReaderClose(&audio.live_link);
     free(audio.live_link_buffer);

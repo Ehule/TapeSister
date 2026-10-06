@@ -75,6 +75,9 @@ typedef struct {
     TsPatternId editor_pattern;
     uint16_t editor_row;
     uint8_t editor_lane, edit_step, follow;
+    /* Owned versioned TapeHead score extension; contains no audio or pointers. */
+    uint8_t *embedded_data;
+    uint32_t embedded_size;
     /* Definitions only: no playback state, voice pointers or transient solo. */
 } TsSisterTracker;
 
@@ -104,10 +107,14 @@ int ts_sister_tracker_validate(const TsSisterTracker *tracker,
 /* Call after accepting a loaded definition, including missing tile references. */
 void ts_sister_tracker_reserve_tile_ids(const TsSisterTracker *tracker);
 uint64_t ts_sister_tracker_hash(const TsSisterTracker *tracker);
+int ts_tracker_embedded_matches(const TsSisterTracker *tracker);
+int ts_tracker_embedded_validate(const uint8_t *data, uint32_t size);
 int ts_sister_tracker_save_file(const TsSisterTracker *tracker, const char *path,
                                 char *error, size_t error_size);
 /* Atomic replacement; missing files are handled by the project loader. */
 int ts_sister_tracker_load_file(TsSisterTracker *tracker, const char *path,
                                 char *error, size_t error_size);
 
+/* Portable embedded tracker preferences shared by projects and saved defaults. */
+int ts_tracker_preferences_validate(const uint8_t *p,uint32_t size);
 #endif

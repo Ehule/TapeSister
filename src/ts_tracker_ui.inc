@@ -51,27 +51,6 @@ static void tracker_switch(TsFramebuffer *fb,int x,int y,const char *label,int a
     tracker_tiny(fb,x+3,y+1,label,active?PAL_BLOCK_TEXT:PAL_TEXT);
     rect(fb,x,y+9,10,1,active?PAL_BLOCK_TEXT:PAL_BUTTON);
 }
-static void tracker_eject(TsFramebuffer *fb,int x,int y,uint32_t color)
-{
-    /* Tapehead's seven-pixel CONTROL symbol. */
-    rect(fb,x+3,y,1,1,color);rect(fb,x+2,y+1,3,1,color);
-    rect(fb,x+1,y+2,5,1,color);rect(fb,x,y+4,7,2,color);
-}
-static void tracker_note_draw(TsFramebuffer *fb,int x,int y,const TsTrackerCell *cell,uint32_t color)
-{
-    static const uint8_t letters[12]={12,12,13,13,14,15,15,16,16,10,10,11};
-    if(cell->note_kind==TS_TRACKER_NOTE_PITCH) {
-        tracker_glyph(fb,x,y,tracker_font4[letters[cell->note%12]],8,8,color);
-        int sharp=cell->note%12==1 || cell->note%12==3 || cell->note%12==6 || cell->note%12==8 || cell->note%12==10;
-        tracker_glyph(fb,x+8,y,tracker_font4[sharp?37:36],8,8,color);
-        int octave=cell->note/12-1;
-        if(octave<0)tracker_tiny(fb,x+16,y,"-1",color);
-        else tracker_glyph(fb,x+16,y,tracker_font4[octave],8,8,color);
-    } else if(cell->note_kind==TS_TRACKER_NOTE_OFF) {
-        for(int i=0;i<3;++i)tracker_glyph(fb,x+i*8,y,tracker_font4[40+i],8,8,color);
-    } else if(cell->note_kind==TS_TRACKER_NOTE_CUT)tracker_tiny(fb,x+6,y,"CUT",color);
-    else for(int i=0;i<3;++i)rect(fb,x+3+i*8,y+3,1,1,color);
-}
 static unsigned tracker_alias(const TsSisterTracker *t, TsTileId id)
 {
     if (id) for (unsigned i=1;i<TS_TRACKER_ALIASES;++i) if(t->aliases[i]==id)return i;
@@ -103,111 +82,57 @@ static void tracker_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrum
     snprintf(line,sizeof(line),"TPL %02u",t->ticks_per_line);tracker_button(fb,294,34,56,line,0,1);
     snprintf(line,sizeof(line),"ROWS %03u",p?p->rows:0);tracker_button(fb,354,34,72,line,0,1);
     tracker_button(fb,430,34,56,"LOOP",t->loop,1);
-    snprintf(line,sizeof(line),"HEARD %03u %03u",ui->tracker_heard_pattern,ui->tracker_row);
+    snprintf(line,sizeof(line),"HEARD %03u %03u",ui->tracker_heard_pattern,ui->tracker_master_row);
     text(fb,494,39,line,ui->tracker_running?PAL_NOTE:PAL_TEXT,1);
     }
+    tracker_tiny(fb,5,g.len_y,t->length_bypass?"OFF":"LEN",t->length_bypass?PAL_TEXT:PAL_NOTE);
+    tracker_tiny(fb,5,g.ratio_y,t->fasttracks_uses_length?"FTL":"PAT",PAL_TEXT);
     for(int lane=0;lane<TS_TRACKER_LANES;++lane) {
         int x=TS_TRACKER_LANE_X+lane*TS_TRACKER_LANE_WIDTH;
-        /* Tapehead's separate LEN and Fast Tracks strips. These show saved
-           definitions; this stage's playback still uses the Standard clock. */
-        static const char *ratios[TS_TRACKER_RATIOS]={"1:2","2:3","3:4","4:5","5:6","7:8","15:16",
-            "1:1","17:16","8:7","6:5","5:4","4:3","3:2","2:1","3:1","5:1"};
         const TsTrackerLane *definition=&t->lanes[lane];
-        uint32_t header_color=palette_blend(PAL_DESKTOP,PAL_BLOCK_TEXT,75);
         frame(fb,x-1,g.len_y-2,TS_TRACKER_LANE_WIDTH,g.bottom-g.len_y+4,RGB(0,0,0),0);
         rect(fb,x+1,g.len_y-1,TS_TRACKER_LANE_WIDTH-3,g.grid_y-g.len_y+1,PAL_DESKTOP);
-        snprintf(line,sizeof(line),"%d",lane+1);tracker_tiny(fb,x+2,g.len_y,line,PAL_MOUSE);
-        if(definition->length)snprintf(line,sizeof(line),"LEN%u",definition->length);
-        else snprintf(line,sizeof(line),"LEN OFF");
-        tracker_tiny(fb,x+10,g.len_y,line,header_color);
-        tracker_eject(fb,x+TS_TRACKER_LANE_WIDTH-11,g.len_y,
-            t->control_lane==lane?PAL_BLOCK_TEXT:header_color);
-        snprintf(line,sizeof(line),"FT %s %c",ratios[definition->ratio<TS_TRACKER_RATIOS?definition->ratio:7],
-            definition->mode==TS_TRACKER_PATTERN?'P':definition->mode==TS_TRACKER_SONG?'S':'-');
-        tracker_tiny(fb,x+2,g.ratio_y,line,header_color);
         if(g.name_y>=0 && ts_tracker_custom_name(definition,lane)) {
             snprintf(line,sizeof(line),"%.16s",definition->name);tracker_tiny(fb,x+2,g.name_y,line,PAL_MOUSE);
         }
         tracker_switch(fb,x+2,g.mix_y,"M",definition->muted);
         tracker_switch(fb,x+14,g.mix_y,"S",ui->tracker_solo&(1u<<lane));
+        if(ui->tracker_running && ui->tracker_heard_pattern==(p?p->id:0) &&
+           (!ui->tracker_block || (lane>=(int)(ui->tracker_block_lanes&255) && lane<=(int)(ui->tracker_block_lanes>>8)))) {
+            unsigned head=ui->tracker_lane_row[lane];
+            if(head<TS_TRACKER_ROWS)snprintf(line,sizeof(line),"%02X",head);
+            else snprintf(line,sizeof(line),"--");
+            tracker_tiny(fb,x+31,g.mix_y+1,line,PAL_TEXT);
+        }
         snprintf(line,sizeof(line),"%.1f",definition->trim);tracker_tiny(fb,x+49,g.mix_y+1,line,PAL_VOLUME);
     }
     TsTrackerRegion selection=ts_tracker_edit_region(ui->tracker_edit,t);
-    if(p)for(int visible=0;visible<g.rows;++visible) {
-        int row=ui->tracker_scroll+visible,y=g.grid_y+visible*TS_TRACKER_ROW_HEIGHT;
-        if(row>=p->rows)break;
-        int heard=ui->tracker_running && ui->tracker_heard_pattern==p->id && ui->tracker_row==(unsigned)row;
-        int current=row==t->editor_row;
-        if(current)rect(fb,4,y,632,12,PAL_DESKTOP);
-        if(heard) {
-            rect(fb,TS_TRACKER_LANE_X,y,TS_TRACKER_LANE_RIGHT-TS_TRACKER_LANE_X,1,PAL_NOTE);
-            rect(fb,TS_TRACKER_LANE_X,y+11,TS_TRACKER_LANE_RIGHT-TS_TRACKER_LANE_X,1,PAL_NOTE);
-        }
-        snprintf(line,sizeof(line),"%02X",row);
-        uint32_t row_color=current?RGB(255,255,255):PAL_TEXT;
-        for(int side=0;side<2;++side)for(int digit=0;digit<2;++digit)
-            tracker_glyph(fb,(side?TS_TRACKER_LANE_RIGHT+7:9)+digit*8,y+2,
-                tracker_font4[row>>(digit?0:4)&15],8,8,row_color);
-        for(int lane=0;lane<TS_TRACKER_LANES;++lane) {
-            const TsTrackerCell *c=&p->cells[row][lane];int x=TS_TRACKER_LANE_X+lane*TS_TRACKER_LANE_WIDTH;
-            if(ts_tracker_edit_selected(ui->tracker_edit,t) && row>=selection.row0 && row<=selection.row1 &&
-               lane>=selection.lane0 && lane<=selection.lane1)rect(fb,x+1,y,TS_TRACKER_LANE_WIDTH-3,12,PAL_BLOCK);
-            if(ui->tracker_block && ui->tracker_heard_pattern==p->id &&
-               row>=(int)(ui->tracker_block_rows&255) && row<=(int)(ui->tracker_block_rows>>8) &&
-               lane>=(int)(ui->tracker_block_lanes&255) && lane<=(int)(ui->tracker_block_lanes>>8))rect(fb,x,y,1,12,PAL_VOLUME);
-            if(heard)rect(fb,x+1,y+11,TS_TRACKER_LANE_WIDTH-3,1,PAL_NOTE);
-            if(row==t->editor_row && lane==t->editor_lane) {
-                int start=x+ts_tracker_field_offset(ui->tracker_field),width=ts_tracker_field_width(ui->tracker_field);
-                uint32_t focus=ui->tracker_hex_digit?RGB(255,224,32):RGB(40,224,255);
-                rect(fb,start-1,y,width+1,12,palette_blend(PAL_DESKTOP,focus,20));
-                rect(fb,start-1,y,1,12,focus);rect(fb,start+width-1,y,1,12,focus);
-                rect(fb,start-1,y,width+1,1,focus);
-                if(ui->tracker_cursor_visible) {
-                    int caret=start+(ui->tracker_field?ui->tracker_hex_digit*4:0);
-                    rect(fb,caret,y+10,ui->tracker_field==0?23:3,2,RGB(255,224,32));
-                }
-            }
-            char tile[8],volume[8],tune[8],fx[8];
-            unsigned alias=tracker_alias(t,c->tile_id);
-            snprintf(tile,sizeof(tile),c->tile_id?(alias?"%02X":"??"):"..",alias);
-            snprintf(volume,sizeof(volume),c->has_volume?"%02X":"..",c->volume);
-            snprintf(tune,sizeof(tune),c->tune_command?"%c%02X":"...",c->tune_command,c->tune_value);
-            snprintf(fx,sizeof(fx),c->fx_command?"%c%02X":"...",c->fx_command,c->fx_value);
-            if(row==t->editor_row && lane==t->editor_lane && ui->tracker_hex_digit) {
-                if(ui->tracker_field==1)snprintf(tile,sizeof(tile),"%X.",((unsigned)ui->tracker_hex_value>>4)&15u);
-                if(ui->tracker_field==2)snprintf(volume,sizeof(volume),"%X.",((unsigned)ui->tracker_hex_value>>4)&15u);
-                if(ui->tracker_field==4)snprintf(tune+1,sizeof(tune)-1,"%X.",((unsigned)ui->tracker_hex_value>>4)&15u);
-                if(ui->tracker_field==6)snprintf(fx+1,sizeof(fx)-1,"%X.",((unsigned)ui->tracker_hex_value>>4)&15u);
-            }
-            uint32_t empty=active_palette()->colors[TS_PALETTE_PATTERN_EMPTY];
-            int selected=ts_tracker_edit_selected(ui->tracker_edit,t) && row>=selection.row0 && row<=selection.row1 && lane>=selection.lane0 && lane<=selection.lane1;
-            uint32_t colors[]={c->note_kind?PAL_NOTE:empty,c->tile_id?PAL_INSTRUMENT:empty,c->has_volume?PAL_VOLUME:empty,c->tune_command?PAL_TUNING:empty,c->fx_command?PAL_EFFECT:empty};
-            for(int field=0;field<5;++field) {
-                if(selected)colors[field]=PAL_BLOCK_TEXT;
-                else if(t->lanes[lane].muted)colors[field]=palette_blend(RGB(0,0,0),colors[field],40);
-            }
-            tracker_note_draw(fb,x+2,y+2,c,colors[0]);
-            tracker_tiny(fb,x+27,y+2,tile,colors[1]);tracker_tiny(fb,x+36,y+2,volume,colors[2]);
-            tracker_tiny(fb,x+45,y+2,tune,colors[3]);tracker_tiny(fb,x+58,y+2,fx,colors[4]);
-        }
-    }
+    ts_tracker_tapehead_render(fb,ui);
     const TsTrackerCell *c=p?&p->cells[t->editor_row][t->editor_lane]:NULL;
     snprintf(line,sizeof(line),"ROW %03u LANE %u  %s  TILE %02X  %s",t->editor_row,t->editor_lane+1,
         (const char*[]){"NOTE","TILE","VOLUME","TUNE COMMAND","TUNE VALUE","FX COMMAND","FX VALUE"}[ui->tracker_field],c?tracker_alias(t,c->tile_id):0,
-        ui->tracker_missing?"MISSING TILE IN PLAYBACK":"STANDARD; LEN / FT / COMMAND AUDIO INACTIVE");
+        ui->tracker_missing?"MISSING TILE IN PLAYBACK":t->lanes[t->editor_lane].mode==TS_TRACKER_SONG?
+            "SONG SAVED ONLY: PLAYS STANDARD":"LEN / PATTERN FT ACTIVE; TUNE / FX STORED ONLY");
     if(ui->tracker_hover_x>=TS_TRACKER_LANE_X && ui->tracker_hover_x<TS_TRACKER_LANE_RIGHT &&
        ui->tracker_hover_y>=g.len_y && ui->tracker_hover_y<g.grid_y) {
         int lane=(ui->tracker_hover_x-TS_TRACKER_LANE_X)/TS_TRACKER_LANE_WIDTH;
         if(ui->tracker_hover_y>=g.mix_y && ui->tracker_hover_y<g.mix_y+10)
             snprintf(line,sizeof(line),"LANE %d %.31s - M MUTE / S SOLO / RIGHT NUMBER: TRIM 0-2 - CLICK OR WHEEL",lane+1,t->lanes[lane].name);
-        else snprintf(line,sizeof(line),"LANE %d %.31s - LEN / FASTTRACKS SHOW SAVED SETUP; AUDIO USES STANDARD CLOCK",lane+1,t->lanes[lane].name);
+        else if(ui->tracker_hover_y<g.ratio_y-1)
+            snprintf(line,sizeof(line),"LEN: CLICK +/- OR WHEEL / SHIFT 8 / CTRL OFF / EJECT SYMBOL SETS CONTROL");
+        else snprintf(line,sizeof(line),"FT: ENABLE / RATIO: CLICK-WHEEL / R-B: DIRECTION / LED BANK: DISABLE / RIGHT CLICK: DIRECTION");
+    } else if(ui->tracker_hover_x>=4 && ui->tracker_hover_x<TS_TRACKER_LANE_X-2 &&
+              ui->tracker_hover_y>=g.len_y-1 && ui->tracker_hover_y<g.ratio_y+9) {
+        snprintf(line,sizeof(line),ui->tracker_hover_y<g.ratio_y-1?
+            "LEN: BYPASS / RESTORE ALL LEN AND CONTROL - SAVED LENGTHS RETAINED":
+            "FTL: FASTTRACKS USE LANE LENGTHS / PAT: FASTTRACKS USE PHYSICAL PATTERN ROWS");
     } else if(ui->tracker_hover_y>=g.grid_y && ui->tracker_hover_y<g.bottom &&
               ui->tracker_hover_x>=TS_TRACKER_LANE_X && ui->tracker_hover_x<TS_TRACKER_LANE_RIGHT) {
         static const char *help[]={"NOTE: QWERTY ENTRY / OFF OR CUT", "TILE: TWO HEX DIGITS / 00 INHERITS", "VOLUME: 00-40 HEX / EMPTY INHERITS",
             "TUNING COMMAND: M ROOT / N FINE - STORED ONLY", "TUNING VALUE: TWO HEX DIGITS - STORED ONLY",
             "FX COMMAND: 0-9 A-Z - STORED ONLY", "FX VALUE: TWO HEX DIGITS - STORED ONLY"};
         int f=ts_tracker_field_at((ui->tracker_hover_x-TS_TRACKER_LANE_X)%TS_TRACKER_LANE_WIDTH);
-        snprintf(line,sizeof(line),"%s / CTRL L BLOCK LOOP / CTRL ALT BACKSPACE VIEW",help[f]);
+        snprintf(line,sizeof(line),"ROW %03d LANE %d %s",ts_tracker_view_row(ui,p,(ui->tracker_hover_x-TS_TRACKER_LANE_X)/TS_TRACKER_LANE_WIDTH,ui->tracker_hover_y),(ui->tracker_hover_x-TS_TRACKER_LANE_X)/TS_TRACKER_LANE_WIDTH+1,help[f]);
     }
     if(g.expanded && (ui->file_record_state==TS_PERFORMANCE_FILE_RECORDING || ui->file_record_state==TS_PERFORMANCE_FILE_STOPPING))
         snprintf(line,sizeof(line),"FILE CAPTURE %.1F S / F7 STOP AT SEAM / CTRL SHIFT F STOP NOW / CTRL ALT BACKSPACE VIEW",

@@ -37,10 +37,13 @@ static uint64_t number(TrackerStream *s, uint64_t value, unsigned width)
 static void codec(TrackerStream *s, TsSisterTracker *loaded, const TsSisterTracker *saved)
 {
     const TsSisterTracker *t = s->reading ? loaded : saved;
-    static const char magic[8] = { 'S','I','S','T','R','K',1,0 };
+    char magic[8] = { 'S','I','S','T','R','K',1,0 };
+    if(!s->reading && saved->embedded_size)magic[6]=2;
     char header[8] = {0};
     bytes(s, header, magic, sizeof(header));
-    if (s->reading && memcmp(header, magic, sizeof(header))) { s->failed = 1; return; }
+    if (s->reading && (memcmp(header, magic, 6) || header[7] ||
+        (header[6]!=1 && header[6]!=2))) { s->failed = 1; return; }
+    unsigned version=s->reading?(unsigned char)header[6]:(unsigned char)magic[6];
 #define FIELD(owner, target, field, width) do { \
     uint64_t value = number(s, (uint64_t)(owner)->field, width); \
     if (s->reading) (target)->field = value; \
@@ -93,6 +96,16 @@ static void codec(TrackerStream *s, TsSisterTracker *loaded, const TsSisterTrack
     }
 #undef SONG
 #undef FIELD
+    if(version==2 && !s->failed) {
+        uint32_t count=(uint32_t)number(s,t->embedded_size,4);
+        if(!count || count>4u*1024u*1024u){s->failed=1;return;}
+        if(s->reading) {
+            loaded->embedded_data=malloc(count);loaded->embedded_size=count;
+            if(!loaded->embedded_data){s->failed=1;return;}
+        }
+        bytes(s,loaded?loaded->embedded_data:NULL,t->embedded_data,count);
+        if(s->reading && !ts_tracker_embedded_validate(loaded->embedded_data,count))s->failed=1;
+    }
 }
 
 uint64_t ts_sister_tracker_hash(const TsSisterTracker *t)

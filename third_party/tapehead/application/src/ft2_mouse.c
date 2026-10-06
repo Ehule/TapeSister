@@ -1,0 +1,1246 @@
+// for finding memory leaks in debug mode with Visual Studio
+#if defined _DEBUG && defined _MSC_VER
+#include <crtdbg.h>
+#endif
+
+#include <stdio.h>
+#include <stdbool.h>
+#include <math.h>
+#include <string.h>
+#include "ft2_header.h"
+#include "ft2_gui.h"
+#include "ft2_video.h"
+#include "scopes/ft2_scopes.h"
+#include "ft2_help.h"
+#include "ft2_sample_ed.h"
+#include "ft2_inst_ed.h"
+#include "ft2_pattern_ed.h"
+#include "ft2_mouse.h"
+#include "ft2_undo.h"
+#include "ft2_config.h"
+#include "ft2_palette.h"
+#include "ft2_diskop.h"
+#include "ft2_audioselector.h"
+#include "ft2_midi.h"
+#include "ft2_bmp.h"
+#include "ft2_structs.h"
+#include "ft2_keyboard.h"
+#include "ft2_edit.h"
+#include "ft2_replayer.h"
+#include "ft2_audio.h"
+#include "ft2_fasttracks.h"
+#include "ft2_tables.h"
+#include "ft2_pattern_launcher_ui.h"
+#include "ft2_tapesister_exchange.h"
+
+#define NUM_CURSORS 6
+
+mouse_t mouse; // globalized
+
+static bool mouseBusyGfxBackwards;
+static int16_t mouseShape;
+static int32_t mouseModeGfxOffs, mouseBusyGfxFrame;
+static SDL_Cursor *cursors[NUM_CURSORS];
+
+#if defined __APPLE__ && defined __aarch64__
+void armMacGhostMouseCursorFix(void)
+{
+	/* M E G A K L U D G E:
+	** The mouse cursor can sometimes change back to OS stock
+	** (or show both stock and custom mouse) on Macs with a notch
+	** (ARM based) in fullscreen mode. Weird, right?!
+	**
+	** XXX: Can this cause stuttering or performance issues?
+	*/
+	if (video.fullscreen)
+		SDL_SetCursor(NULL); // forces redraw
+}
+#endif
+
+static bool setSystemCursor(SDL_Cursor *cur)
+{
+	if (config.specialFlags2 & USE_OS_MOUSE_POINTER)
+	{
+		SDL_SetCursor(SDL_GetDefaultCursor());
+		return true;
+	}
+
+	if (cur == NULL)
+	{
+		SDL_SetCursor(SDL_GetDefaultCursor());
+		return false;
+	}
+
+	SDL_SetCursor(cur);
+	return true;
+}
+
+void freeMouseCursors(void)
+{
+	SDL_SetCursor(SDL_GetDefaultCursor());
+	for (int32_t i = 0; i < NUM_CURSORS; i++)
+	{
+		if (cursors[i] != NULL)
+		{
+			SDL_FreeCursor(cursors[i]);
+			cursors[i] = NULL;
+		}
+	}
+}
+
+bool createMouseCursors(void) // creates scaled SDL surfaces for current mouse pointer shape
+{
+	freeMouseCursors();
+
+	const uint8_t *cursorsSrc = bmp.mouseCursors;
+	switch (config.mouseType)
+	{
+		case MOUSE_IDLE_SHAPE_NICE: cursorsSrc += 0 * (MOUSE_CURSOR_W * MOUSE_CURSOR_H); break;
+		case MOUSE_IDLE_SHAPE_UGLY: cursorsSrc += 1 * (MOUSE_CURSOR_W * MOUSE_CURSOR_H); break;
+		case MOUSE_IDLE_SHAPE_AWFUL: cursorsSrc += 2 * (MOUSE_CURSOR_W * MOUSE_CURSOR_H); break;
+		case MOUSE_IDLE_SHAPE_USABLE: cursorsSrc += 3 * (MOUSE_CURSOR_W * MOUSE_CURSOR_H); break;
+		default: break;
+	}
+
+	for (int32_t i = 0; i < NUM_CURSORS; i++)
+	{
+		int32_t scaleFactor = video.mouseCursorUpscaleFactor;
+		if (scaleFactor > 8) // just in case
+			scaleFactor = 8;
+
+		SDL_Surface *surface = SDL_CreateRGBSurface(0, MOUSE_CURSOR_W*scaleFactor, MOUSE_CURSOR_H*scaleFactor, 32, 0, 0, 0, 0);
+		if (surface == NULL)
+		{
+			freeMouseCursors();
+
+			if (config.specialFlags2 & USE_OS_MOUSE_POINTER)
+			{
+				SDL_ShowCursor(SDL_TRUE);
+			}
+			else
+			{
+				// enable software mouse
+				config.specialFlags2 &= ~HARDWARE_MOUSE;
+				SDL_ShowCursor(SDL_FALSE);
+			}
+
+			return false;
+		}
+
+		const uint32_t colorkey = SDL_MapRGB(surface->format, 0x00, 0xFF, 0x00); // colorkey
+		const uint32_t fg = SDL_MapRGB(surface->format, 0xFF, 0xFF, 0xFF); // foreground
+		const uint32_t border = SDL_MapRGB(surface->format, 0x00, 0x00, 0x00); // border
+
+		SDL_SetSurfaceBlendMode(surface, SDL_BLENDMODE_NONE);
+		SDL_SetColorKey(surface, SDL_TRUE, colorkey);
+		SDL_SetSurfaceRLE(surface, SDL_TRUE);
+
+		const uint8_t *srcPixels8;
+		if (i == 3) // text edit cursor
+			srcPixels8 = &bmp.mouseCursors[12 * (MOUSE_CURSOR_W * MOUSE_CURSOR_H)];
+		else if (i == 4) // mouse busy (wall clock)
+			srcPixels8 = &bmp.mouseCursorBusyClock[2 * (MOUSE_CURSOR_W * MOUSE_CURSOR_H)]; // pick a good still-frame
+		else if (i == 5) // mouse busy (hourglass)
+			srcPixels8 = &bmp.mouseCursorBusyGlass[2 * (MOUSE_CURSOR_W * MOUSE_CURSOR_H)]; // pick a good still-frame
+		else // normal idle cursor + disk op. "delete/rename" cursors
+			srcPixels8 = &cursorsSrc[i * (4 * (MOUSE_CURSOR_W * MOUSE_CURSOR_H))];
+
+		SDL_LockSurface(surface);
+
+		uint32_t *dstPixels32 = (uint32_t *)surface->pixels;
+		for (int32_t k = 0; k < surface->w*surface->h; k++) // fill surface with colorkey pixels
+			dstPixels32[k] = colorkey;
+
+		// blit upscaled cursor to surface
+		for (int32_t y = 0; y < MOUSE_CURSOR_H; y++)
+		{
+			uint32_t *outX = &dstPixels32[(y * scaleFactor) * surface->w];
+			for (int32_t yScale = 0; yScale < scaleFactor; yScale++)
+			{
+				const uint8_t *srcPtr = &srcPixels8[y * MOUSE_CURSOR_W];
+				for (int32_t x = 0; x < MOUSE_CURSOR_W; x++)
+				{
+					const uint8_t srcPix = srcPtr[x];
+					if (srcPix != PAL_TRANSPR)
+					{
+						uint32_t pixel = colorkey;
+						if (srcPix == PAL_MOUSEPT)
+							pixel = fg;
+						else if (srcPix == PAL_BCKGRND)
+							pixel = border;
+
+						for (int32_t xScale = 0; xScale < scaleFactor; xScale++)
+							outX[xScale] = pixel;
+					}
+
+					outX += scaleFactor;
+				}
+			}
+		}
+		SDL_UnlockSurface(surface);
+
+		uint32_t hotX = 0;
+		uint32_t hotY = 0;
+
+		if (i == 3) // text edit cursor bias
+		{
+			hotX = 2 * video.mouseCursorUpscaleFactor;
+			hotY = 6 * video.mouseCursorUpscaleFactor;
+		}
+
+		cursors[i] = SDL_CreateColorCursor(surface, hotX, hotY);
+		if (cursors[i] == NULL)
+		{
+			SDL_FreeSurface(surface);
+			freeMouseCursors();
+
+			if (config.specialFlags2 & USE_OS_MOUSE_POINTER)
+			{
+				SDL_ShowCursor(SDL_TRUE);
+			}
+			else
+			{
+				// enable software mouse
+				config.specialFlags2 &= ~HARDWARE_MOUSE;
+				SDL_ShowCursor(SDL_FALSE);
+			}
+
+			return false;
+		}
+
+		SDL_FreeSurface(surface);
+	}
+
+	if (config.specialFlags2 & HARDWARE_MOUSE)
+	{
+		     if (mouse.mode == MOUSE_MODE_NORMAL) setSystemCursor(cursors[0]);
+		else if (mouse.mode == MOUSE_MODE_DELETE) setSystemCursor(cursors[1]);
+		else if (mouse.mode == MOUSE_MODE_RENAME) setSystemCursor(cursors[2]);
+
+		SDL_ShowCursor(SDL_TRUE);
+	}
+	else
+	{
+		SDL_ShowCursor(SDL_FALSE);
+	}
+
+	return true;
+}
+
+void setMousePosToCenter(void)
+{
+	if (video.fullscreen)
+	{
+		mouse.setPosX = video.displayW >> 1;
+		mouse.setPosY = video.displayH >> 1;
+	}
+	else
+	{
+		mouse.setPosX = video.renderW >> 1;
+		mouse.setPosY = video.renderH >> 1;
+	}
+
+	mouse.setPosFlag = true;
+}
+
+void animateBusyMouse(void)
+{
+	if (config.mouseAnimType == MOUSE_BUSY_SHAPE_CLOCK)
+	{
+		if (config.specialFlags2 & HARDWARE_MOUSE)
+		{
+			setSystemCursor(cursors[4]);
+			return;
+		}
+
+		if ((editor.framesPassed % 7) == 6)
+		{
+			if (mouseBusyGfxBackwards)
+			{
+				if (--mouseBusyGfxFrame <= 0)
+				{
+					mouseBusyGfxFrame = 0;
+					mouseBusyGfxBackwards = false;
+				}
+			}
+			else
+			{
+				if (++mouseBusyGfxFrame >= MOUSE_CLOCK_ANI_FRAMES-1)
+				{
+					mouseBusyGfxFrame = MOUSE_CLOCK_ANI_FRAMES - 1;
+					mouseBusyGfxBackwards = true;
+				}
+			}
+
+			changeSpriteData(SPRITE_MOUSE_POINTER,
+				&bmp.mouseCursorBusyClock[(mouseBusyGfxFrame % MOUSE_CLOCK_ANI_FRAMES) * (MOUSE_CURSOR_W * MOUSE_CURSOR_H)]);
+		}
+	}
+	else
+	{
+		if (config.specialFlags2 & HARDWARE_MOUSE)
+		{
+			setSystemCursor(cursors[5]);
+			return;
+		}
+
+		if ((editor.framesPassed % 5) == 4)
+		{
+			mouseBusyGfxFrame = (mouseBusyGfxFrame + 1) % MOUSE_GLASS_ANI_FRAMES;
+
+			changeSpriteData(SPRITE_MOUSE_POINTER,
+				&bmp.mouseCursorBusyGlass[mouseBusyGfxFrame * (MOUSE_CURSOR_W * MOUSE_CURSOR_H)]);
+		}
+	}
+}
+
+void setMouseShape(int16_t shape)
+{
+	const uint8_t *gfxPtr;
+
+	if (editor.busy)
+	{
+		if (config.mouseAnimType == MOUSE_BUSY_SHAPE_CLOCK)
+			gfxPtr = &bmp.mouseCursorBusyClock[(mouseBusyGfxFrame % MOUSE_GLASS_ANI_FRAMES) * (MOUSE_CURSOR_W * MOUSE_CURSOR_H)];
+		else
+			gfxPtr = &bmp.mouseCursorBusyGlass[(mouseBusyGfxFrame % MOUSE_CLOCK_ANI_FRAMES) * (MOUSE_CURSOR_W * MOUSE_CURSOR_H)];
+	}
+	else
+	{
+		gfxPtr = &bmp.mouseCursors[mouseModeGfxOffs];
+		switch (shape)
+		{
+			case MOUSE_IDLE_SHAPE_NICE:   gfxPtr +=  0 * (MOUSE_CURSOR_W * MOUSE_CURSOR_H); break;
+			case MOUSE_IDLE_SHAPE_UGLY:   gfxPtr +=  1 * (MOUSE_CURSOR_W * MOUSE_CURSOR_H); break;
+			case MOUSE_IDLE_SHAPE_AWFUL:  gfxPtr +=  2 * (MOUSE_CURSOR_W * MOUSE_CURSOR_H); break;
+			case MOUSE_IDLE_SHAPE_USABLE: gfxPtr +=  3 * (MOUSE_CURSOR_W * MOUSE_CURSOR_H); break;
+			case MOUSE_IDLE_TEXT_EDIT:    gfxPtr += 12 * (MOUSE_CURSOR_W * MOUSE_CURSOR_H); break;
+			default: return;
+		}
+	}
+
+	mouseShape = shape;
+	changeSpriteData(SPRITE_MOUSE_POINTER, gfxPtr);
+
+	if (config.specialFlags2 & HARDWARE_MOUSE)
+	{
+		     if (mouse.mode == MOUSE_MODE_NORMAL) setSystemCursor(cursors[0]);
+		else if (mouse.mode == MOUSE_MODE_DELETE) setSystemCursor(cursors[1]);
+		else if (mouse.mode == MOUSE_MODE_RENAME) setSystemCursor(cursors[2]);
+	}
+}
+
+static void setTextEditMouse(void)
+{
+	setMouseShape(MOUSE_IDLE_TEXT_EDIT);
+	mouse.xBias = -2;
+	mouse.yBias = -6;
+
+	if (config.specialFlags2 & HARDWARE_MOUSE)
+		setSystemCursor(cursors[3]);
+}
+
+static void clearTextEditMouse(void)
+{
+	setMouseShape(config.mouseType);
+	mouse.xBias = 0;
+	mouse.yBias = 0;
+
+	if (config.specialFlags2 & HARDWARE_MOUSE)
+		setSystemCursor(cursors[0]);
+}
+
+static void changeCursorIfOverTextBoxes(void)
+{
+	int32_t i;
+
+	mouse.mouseOverTextBox = false;
+	if (editor.busy || mouse.mode != MOUSE_MODE_NORMAL)
+		return;
+
+	const int32_t mx = mouse.x;
+	const int32_t my = mouse.y;
+
+	textBox_t *t = textBoxes;
+	for (i = 0; i < NUM_TEXTBOXES; i++, t++)
+	{
+		if (ui.sysReqShown && i != 0) // Sys. Req can only have one (special) text box
+			continue;
+
+		if (!t->visible)
+			continue;
+
+		if (!t->changeMouseCursor && (!editor.editTextFlag || i != mouse.lastEditBox))
+			continue; // some kludge of sorts
+
+		if (my >= t->y && my < t->y+t->h && mx >= t->x && mx < t->x+t->w)
+		{
+			mouse.mouseOverTextBox = true;
+
+			if (mouseShape != MOUSE_IDLE_TEXT_EDIT)
+				setTextEditMouse();
+
+			return;
+		}
+	}
+
+	// we're not inside a text edit box, set back mouse cursor
+	if (i == NUM_TEXTBOXES && mouseShape == MOUSE_IDLE_TEXT_EDIT)
+		clearTextEditMouse();
+}
+
+void setMouseMode(uint8_t mode)
+{
+	switch (mode)
+	{
+		case MOUSE_MODE_NORMAL: { mouse.mode = mode; mouseModeGfxOffs = 0 * (MOUSE_CURSOR_W * MOUSE_CURSOR_H); } break;
+		case MOUSE_MODE_DELETE: { mouse.mode = mode; mouseModeGfxOffs = 4 * (MOUSE_CURSOR_W * MOUSE_CURSOR_H); } break;
+		case MOUSE_MODE_RENAME: { mouse.mode = mode; mouseModeGfxOffs = 8 * (MOUSE_CURSOR_W * MOUSE_CURSOR_H); } break;
+
+		default: return;
+	}
+
+	setMouseShape(config.mouseType);
+}
+
+void resetMouseBusyAnimation(void)
+{
+	mouseBusyGfxBackwards = false;
+	mouseBusyGfxFrame = 0;
+}
+
+void setMouseBusy(bool busy) // can be called from other threads
+{
+	if (busy)
+	{
+		ui.setMouseIdle = false;
+		ui.setMouseBusy = true;
+	}
+	else
+	{
+		ui.setMouseBusy = false;
+		ui.setMouseIdle = true;
+	}
+}
+
+void mouseAnimOn(void)
+{
+	ui.setMouseBusy = false;
+	ui.setMouseIdle = false;
+
+	editor.busy = true;
+	setMouseShape(config.mouseAnimType);
+}
+
+void mouseAnimOff(void)
+{
+	ui.setMouseBusy = false;
+	ui.setMouseIdle = false;
+
+	editor.busy = false;
+	setMouseShape(config.mouseType);
+}
+
+static void mouseWheelDecRow(void)
+{
+	if (songPlaying)
+		return;
+
+	int16_t row = editor.row - 1;
+	if (row < 0)
+		row = patternNumRows[editor.editPattern] - 1;
+
+	setSongPos(-1, row, RESET_SONG_TICK);
+}
+
+static void mouseWheelIncRow(void)
+{
+	if (songPlaying)
+		return;
+
+	int16_t row = editor.row + 1;
+	if (row >= patternNumRows[editor.editPattern])
+		row = 0;
+
+	setSongPos(-1, row, RESET_SONG_TICK);
+}
+
+static bool getTrackHeaderChannel(int32_t *channelIndex)
+{
+	if (!ui.patternEditorShown || mouse.x < 30)
+		return false;
+
+	const pattCoord2_t *pattCoord = &pattCoord2Table[config.ptnStretch]
+		[ui.pattChanScrollShown][getPatternEditorView()];
+	const int32_t headerY = pattCoord->upperRowsY + 2;
+	if (mouse.y < headerY || mouse.y >= headerY + 8)
+		return false;
+
+	const int32_t visibleChannel = (mouse.x - 30) / ui.patternChannelWidth;
+	if (visibleChannel < 0 || visibleChannel >= ui.numChannelsShown)
+		return false;
+
+	const int32_t resolvedChannel = ui.channelOffset + visibleChannel;
+	if (resolvedChannel < 0 || resolvedChannel >= song.numChannels ||
+		resolvedChannel >= MAX_CHANNELS)
+		return false;
+
+	*channelIndex = resolvedChannel;
+	return true;
+}
+
+static bool handleTrackLengthHeaderWheel(bool directionUp)
+{
+	int32_t channelIndex;
+	if (!getTrackHeaderChannel(&channelIndex))
+		return false;
+
+	const uint16_t oldLength = fastTracksPOCGetTrackLength(
+		editor.editPattern, channelIndex);
+	uint16_t newLength = oldLength;
+	const SDL_Keymod modifiers = SDL_GetModState();
+	if (modifiers & KMOD_CTRL)
+	{
+		newLength = 0; // explicit, quick LEN OFF gesture
+	}
+	else
+	{
+		const uint16_t step = (modifiers & KMOD_SHIFT) ? 8 : 1;
+		const uint16_t controlMax = CLAMP(
+			tapeheadConfig.trackLengthControlMax, 1, MAX_PATT_LEN);
+		if (directionUp)
+			newLength = (uint16_t)MIN((int32_t)controlMax,
+				(int32_t)oldLength + step);
+		else if (oldLength <= step)
+			newLength = 0;
+		else
+			newLength = oldLength - step;
+	}
+
+	if (newLength == oldLength)
+		return true;
+	if (!undoPatternBegin(editor.editPattern, "Set track length"))
+		return true;
+
+	const bool audioWasntLocked = !audio.locked;
+	if (audioWasntLocked)
+		lockAudio();
+	fastTracksPOCSetTrackLength(editor.editPattern, channelIndex, newLength);
+	setSongModifiedFlag();
+	undoPatternCommit();
+	if (audioWasntLocked)
+		unlockAudio();
+
+	ui.updatePatternEditor = true;
+	return true;
+}
+
+void mouseWheelHandler(bool directionUp)
+{
+	if (ui.sysReqShown || editor.editTextFlag)
+		return;
+	if (patternLauncherHandleStandaloneWheel(mouse.x, mouse.y, directionUp))
+		return;
+	if (paletteListMouseWheel(directionUp, mouse.x, mouse.y))
+		return;
+	if (handleTrackLengthHeaderWheel(directionUp))
+		return;
+
+	// Ctrl+wheel over a scope adjusts that channel's output trim.
+	if ((SDL_GetModState() & KMOD_CTRL) && testScopesMouseWheel(directionUp))
+		return;
+
+	if (ui.extendedPatternEditor)
+	{
+		if (mouse.y <= 52)
+		{
+			     if (mouse.x <= 111) directionUp ? decSongPos() : incSongPos();
+			else if (mouse.x >= 386) directionUp ?  decCurIns() :  incCurIns();
+		}
+		else
+		{
+			directionUp ? mouseWheelDecRow() : mouseWheelIncRow();
+		}
+
+		return;
+	}
+
+	if (mouse.y < 173)
+	{
+		// top screens
+
+		if (ui.helpScreenShown)
+		{
+			// help screen
+
+			if (directionUp)
+			{
+				helpScrollUp();
+				helpScrollUp();
+			}
+			else
+			{
+				helpScrollDown();
+				helpScrollDown();
+			}
+		}
+		else if (ui.diskOpShown)
+		{
+			// disk op - 3x speed
+			if (mouse.x <= 355)
+			{
+				if (directionUp)
+				{
+					pbDiskOpListUp();
+					pbDiskOpListUp();
+					pbDiskOpListUp();
+				}
+				else
+				{
+					pbDiskOpListDown();
+					pbDiskOpListDown();
+					pbDiskOpListDown();
+				}
+			}
+		}
+		else if (ui.configScreenShown)
+		{
+			if (editor.currConfigScreen == CONFIG_SCREEN_AUDIO)
+			{
+				// audio device selectors
+				if (mouse.x >= 110 && mouse.x <= 355 && mouse.y <= 173)
+				{
+					if (mouse.y < 87)
+						directionUp ? scrollAudOutputDevListUp() : scrollAudOutputDevListDown();
+					else
+						directionUp ? scrollAudInputDevListUp() : scrollAudInputDevListDown();
+				}
+			}
+#ifdef HAS_MIDI
+			else if (editor.currConfigScreen == CONFIG_SCREEN_MIDI_INPUT)
+			{
+				// midi input device selector
+				if (mouse.x >= 110 && mouse.x <= 503 && mouse.y <= 173)
+				{
+					if (mouse.y < 87) directionUp ? scrollMidiInputDevListUp() : scrollMidiInputDevListDown();
+					else directionUp ? scrollMidiOutputDevListUp() : scrollMidiOutputDevListDown();
+				}
+			}
+#endif
+		}
+
+		if (!ui.aboutScreenShown  && !ui.helpScreenShown &&
+			!ui.configScreenShown && !ui.nibblesShown)
+		{
+			if (mouse.x >= 421 && mouse.y <= 173)
+			{
+				     if (mouse.y <= 93) directionUp ? decCurIns() : incCurIns();
+				else if (mouse.y >= 94) directionUp ? decCurSmp() : incCurSmp();
+			}
+			else if (!ui.diskOpShown && mouse.x <= 111 && mouse.y <= 76)
+			{
+				directionUp ? decSongPos() : incSongPos();
+			}
+		}
+	}
+	else
+	{
+		// bottom screens
+
+		if (ui.sampleEditorShown)
+		{
+			if (mouse.y >= 174 && mouse.y <= 328)
+			{
+				if (keyb.leftShiftPressed)
+					directionUp ? scrollSampleDataLeft() : scrollSampleDataRight();
+				else
+					directionUp ? mouseZoomSampleDataIn() : mouseZoomSampleDataOut();
+			}
+		}
+		else if (ui.patternEditorShown)
+		{
+			directionUp ? mouseWheelDecRow() : mouseWheelIncRow();
+		}
+	}
+}
+
+static bool testSamplerDataMouseDown(void)
+{
+	if (ui.sampleEditorShown && mouse.y >= 174 && mouse.y <= 327 && ui.sampleDataOrLoopDrag == -1)
+	{
+		handleSampleDataMouseDown(false);
+		return true;
+	}
+
+	return false;
+}
+
+static bool testPatternDataMouseDown(void)
+{
+	if (ui.patternEditorShown)
+	{
+		const int32_t y1 = ui.patternEditorOnly ? 3 : (ui.extendedPatternEditor ? 71 : 176);
+		const int32_t y2 = ui.pattChanScrollShown ? 382 : 396;
+
+		if (mouse.y >= y1 && mouse.y <= y2 && mouse.x >= 29 && mouse.x <= 602)
+		{
+			handlePatternDataMouseDown(false);
+			return true;
+		}
+	}
+
+	return false;
+}
+
+void mouseButtonUpHandler(uint8_t mouseButton)
+{
+	if (mouseButton == SDL_BUTTON_MIDDLE)
+	{
+		mouse.middleButtonPressed = false;
+		stopPatternMiddleAudition();
+		return;
+	}
+
+	if (mouseButton == SDL_BUTTON_LEFT)
+	{
+		mouse.leftButtonPressed = false;
+		mouse.leftButtonReleased = true;
+
+		if (ui.leftLoopPinMoving)
+		{
+			setLeftLoopPinState(false);
+			ui.leftLoopPinMoving = false;
+		}
+
+		if (ui.rightLoopPinMoving)
+		{
+			setRightLoopPinState(false);
+			ui.rightLoopPinMoving = false;
+		}
+	}
+	else if (mouseButton == SDL_BUTTON_RIGHT)
+	{
+		mouse.rightButtonPressed = false;
+		mouse.rightButtonReleased = true;
+
+		if (editor.editSampleFlag)
+		{
+			// right mouse button released after hand-editing sample data
+			if (instr[editor.curInstr] != NULL)
+				fixSample(&instr[editor.curInstr]->smp[editor.curSmp]);
+
+			resumeAudio();
+
+			if (ui.sampleEditorShown)
+				writeSample(FORCE_SAMPLE_REDRAW);
+
+			setSongModifiedFlag();
+			undoSampleCommit();
+
+			editor.editSampleFlag = false;
+		}
+	}
+
+	mouse.firstTimePressingButton = false;
+	mouse.buttonCounter = 0;
+	editor.textCursorBlinkCounter = 0;
+
+	// if we used both mouse button at the same time and released *one*, don't release GUI object
+	if ( mouse.leftButtonPressed && !mouse.rightButtonPressed) return;
+	if (!mouse.leftButtonPressed &&  mouse.rightButtonPressed) return;
+
+	if (ui.sampleEditorShown)
+		testSmpEdMouseUp();
+
+	mouse.lastX = 0;
+	mouse.lastY = 0;
+
+	ui.sampleDataOrLoopDrag = -1;
+
+	// check if we released a GUI object
+	testDiskOpMouseRelease();
+	testPushButtonMouseRelease(true);
+	testCheckBoxMouseRelease();
+	testScrollBarMouseRelease();
+	testRadioButtonMouseRelease();
+
+	// revert "delete/rename" mouse modes (disk op.)
+	if (mouse.mode != MOUSE_MODE_NORMAL)
+	{
+		if (mouse.lastUsedObjectID != PB_DISKOP_DELETE && mouse.lastUsedObjectID != PB_DISKOP_RENAME)
+			setMouseMode(MOUSE_MODE_NORMAL);
+	}
+
+	mouse.lastUsedObjectID = OBJECT_ID_NONE;
+	mouse.lastUsedObjectType = OBJECT_NONE;
+}
+
+
+static bool handleFastTracksLogoRightClick(uint8_t mouseButton)
+{
+	if (mouseButton != SDL_BUTTON_RIGHT)
+		return false;
+
+	/* Keep the two recovery gestures together on the reliable right mouse
+	** button. Plain right-click normalizes all assigned FasTracks heads to
+	** 1:1 while preserving their private positions. Ctrl+right-click also
+	** synchronizes those heads to the master transport. */
+	if (mouse.x < 112 || mouse.x >= 266 || mouse.y < 0 || mouse.y >= 32)
+		return false;
+
+	const SDL_Keymod modifiers = SDL_GetModState();
+	if (modifiers & (KMOD_SHIFT | KMOD_ALT))
+		return false;
+
+	if (modifiers & KMOD_CTRL)
+		fastTracksPOCResetAllRatios();
+	else
+		fastTracksPOCSetAllRatiosOneToOne();
+
+	return true;
+}
+
+
+static bool handleFastTracksHeaderRightClick(uint8_t mouseButton)
+{
+	if (mouseButton != SDL_BUTTON_RIGHT || !ui.patternEditorShown ||
+		!fastTracksPOCMasterIsEnabled())
+		return false;
+
+	const pattCoord2_t *pattCoord = &pattCoord2Table[config.ptnStretch][ui.pattChanScrollShown][getPatternEditorView()];
+	const int32_t headerY = pattCoord->upperRowsY + 10;
+	if (mouse.y < headerY || mouse.y >= headerY + 8 || mouse.x < 30)
+		return false;
+
+	const int32_t visibleChannel = (mouse.x - 30) / ui.patternChannelWidth;
+	if (visibleChannel < 0 || visibleChannel >= ui.numChannelsShown)
+		return false;
+
+	const int32_t channelIndex = ui.channelOffset + visibleChannel;
+	if (channelIndex < 0 || channelIndex >= MAX_CHANNELS || !fastTracksPOCIsSelected(channelIndex))
+		return false;
+
+	/* Keep neighboring transport gestures on the same per-track header:
+	** right-click reverses an audibly enabled FasTracks head, while
+	** Shift+right-click switches its persistent Pattern/Song source mode. */
+	if ((SDL_GetModState() & KMOD_SHIFT) != 0)
+	{
+		fastTracksPOCToggleSongModeForTest(channelIndex);
+		return true;
+	}
+
+	if (!fastTracksPOCIsEnabled(channelIndex))
+		return false;
+
+	fastTracksPOCToggleDirection(channelIndex);
+	return true;
+}
+
+static bool handleControlTrackHeaderClick(uint8_t mouseButton)
+{
+	if (mouseButton != SDL_BUTTON_LEFT || ui.sysReqShown || editor.editTextFlag)
+		return false;
+
+	if (!ui.patternEditorShown)
+		return false;
+	const pattCoord2_t *pattCoord = &pattCoord2Table[config.ptnStretch]
+		[ui.pattChanScrollShown][getPatternEditorView()];
+	const int32_t headerY = pattCoord->upperRowsY + 2;
+	if (mouse.y < headerY || mouse.y >= headerY + 8)
+		return false;
+
+	int32_t channelIndex = -1;
+	for (int32_t visibleChannel = 0; visibleChannel < ui.numChannelsShown;
+		visibleChannel++)
+	{
+		const int32_t panelWidth = ui.patternChannelWidth - 2;
+		const int32_t iconX = 30 + (visibleChannel * ui.patternChannelWidth) +
+			panelWidth - 11;
+		if (mouse.x >= iconX - 1 && mouse.x < iconX + 8)
+		{
+			channelIndex = ui.channelOffset + visibleChannel;
+			break;
+		}
+	}
+	if (channelIndex < 0 || channelIndex >= song.numChannels ||
+		channelIndex >= MAX_CHANNELS)
+		return false;
+
+	const int8_t oldControl = fastTracksPOCGetControlTrack(editor.editPattern);
+	const int32_t newControl = oldControl == channelIndex ? -1 : channelIndex;
+	if (!undoPatternBegin(editor.editPattern, "Set control track"))
+		return true;
+
+	const bool audioWasntLocked = !audio.locked;
+	if (audioWasntLocked)
+		lockAudio();
+	fastTracksPOCSetControlTrack(editor.editPattern, newControl);
+	setSongModifiedFlag();
+	undoPatternCommit();
+	if (audioWasntLocked)
+		unlockAudio();
+
+	ui.updatePatternEditor = true;
+	return true;
+}
+
+void mouseButtonDownHandler(uint8_t mouseButton)
+{
+	if (mouseButton == SDL_BUTTON_LEFT && paletteListMouseDown(mouse.x, mouse.y))
+		return;
+	if (patternLauncherStandaloneIsShown())
+	{
+		patternLauncherHandleStandaloneClick(mouse.x, mouse.y, mouseButton,
+			keyb.leftShiftPressed);
+		return;
+	}
+
+	/* Tapehead Edition: right-click the established Instr. Ed. button for the
+	** reciprocal TapeSister send/inbox command. Left-click behavior is untouched. */
+	if (mouseButton == SDL_BUTTON_RIGHT && !ui.sysReqShown &&
+		mouse.x >= 359 && mouse.x < 418 && mouse.y >= 104 && mouse.y < 120)
+	{
+		tapeSisterExchangeOpenMenu();
+		return;
+	}
+
+	if (handleFastTracksLogoRightClick(mouseButton)) return;
+	if (handleControlTrackHeaderClick(mouseButton)) return;
+	if (handleFastTracksHeaderRightClick(mouseButton)) return;
+
+	/* EXS is a two-way file workflow: left-click selects export as before;
+	** right-click its format row replaces the manifest's exact slots from the
+	** WAV files in the currently open EXS folder. */
+	if (mouseButton == SDL_BUTTON_RIGHT && ui.diskOpShown &&
+		getDiskOpItem() == DISKOP_ITEM_SAMPLE && tapeheadConfig.sampleExportEXS &&
+		mouse.x >= 4 && mouse.x < 44 && mouse.y >= 114 && mouse.y < 128)
+	{
+		replaceSamplesFromEXSFolder();
+		return;
+	}
+
+	/* Tapehead Edition: Shift-click the Disk Op. Sample selector to import
+	** supported samples from the current folder or its complete subtree.
+	** Ctrl+Shift sends the chosen scope directly to the Sample Matrix.
+	*/
+	if (mouseButton == SDL_BUTTON_LEFT && ui.diskOpShown && keyb.leftShiftPressed &&
+		mouse.x >= 4 && mouse.x < 60 && mouse.y >= 44 && mouse.y < 58)
+	{
+		if (keyb.leftCtrlPressed)
+			loadCurrentFolderIntoSampleLauncher();
+		else
+			showSampleFolderImportDialog();
+		return;
+	}
+
+	// Tapehead Edition: Ctrl-click the existing Adv. Edit pushbutton to open
+	// the Instrument Transform Editor. A normal click keeps FT2's original
+	// Advanced Edit behavior unchanged.
+	if (mouseButton == SDL_BUTTON_LEFT && !ui.advEditShown && (SDL_GetModState() & KMOD_CTRL) != 0 &&
+		mouse.x >= 294 && mouse.x < 353 && mouse.y >= 138 && mouse.y < 154)
+	{
+		openInstrumentTransformEditor();
+		return;
+	}
+
+	if (instrumentTransformHandleMouseDown(mouse.x, mouse.y, mouseButton)) return;
+
+	if (mouseButton == SDL_BUTTON_MIDDLE)
+	{
+		mouse.middleButtonPressed = true;
+
+		if (patternLauncherHandlePanelMiddleClick(mouse.x, mouse.y, keyb.leftShiftPressed))
+			return;
+
+		if (!songPlaying && ui.patternEditorShown)
+		{
+			const int32_t y1 = ui.patternEditorOnly ? 3 : (ui.extendedPatternEditor ? 71 : 176);
+			const int32_t y2 = ui.pattChanScrollShown ? 382 : 396;
+			if (mouse.y >= y1 && mouse.y <= y2 && mouse.x >= 29 && mouse.x <= 602)
+				startPatternMiddleAudition(keyb.leftShiftPressed);
+		}
+
+		return;
+	}
+
+	// if already holding left button and clicking right, don't do mouse down handling
+	if (mouseButton == SDL_BUTTON_RIGHT && mouse.leftButtonPressed)
+	{
+		if (ui.sampleDataOrLoopDrag == -1)
+		{
+			mouse.rightButtonPressed = true;
+			mouse.rightButtonReleased = false;
+		}
+
+		// kludge - we must do scope solo/unmute all here
+		if (!ui.sysReqShown)
+			testScopesMouseDown();
+
+		return;
+	}
+
+	// if already holding right button and clicking left, don't do mouse down handling
+	if (mouseButton == SDL_BUTTON_LEFT && mouse.rightButtonPressed)
+	{
+		if (ui.sampleDataOrLoopDrag == -1)
+		{
+			mouse.leftButtonPressed = true;
+			mouse.leftButtonReleased = false;
+		}
+
+		// kludge - we must do scope solo/unmute all here
+		if (!ui.sysReqShown)
+			testScopesMouseDown();
+
+		return;
+	}
+
+	// mouse 0,0 = open exit dialog (also make sure the test always works in fullscreen mode)
+	if ((mouse.x == 0 && mouse.y == 0) || (video.fullscreen && (video.renderX > 0 || video.renderY > 0) && (mouse.rawX == 0 && mouse.rawY == 0)))
+	{
+#ifdef TAPEHEAD_EMBEDDED
+		ts_tapehead_request(TS_TH_CANVAS);
+#else
+		if (quitBox(false) == 1)
+			editor.throwExit = true;
+#endif
+
+		// release button presses from okBox()
+		mouse.leftButtonPressed = false;
+		mouse.rightButtonPressed = false;
+		mouse.leftButtonReleased = false;
+		mouse.rightButtonReleased = false;
+
+		return;
+	}
+
+	if (mouseButton == SDL_BUTTON_LEFT)
+		mouse.leftButtonPressed = true;
+	else if (mouseButton == SDL_BUTTON_RIGHT)
+		mouse.rightButtonPressed = true;
+
+	mouse.leftButtonReleased = false;
+	mouse.rightButtonReleased = false;
+
+	// don't do mouse down testing here if we already are using an object
+	if (mouse.lastUsedObjectType != OBJECT_NONE)
+		return;
+
+	// kludge #2
+	if (mouse.lastUsedObjectType != OBJECT_PUSHBUTTON && mouse.lastUsedObjectID != OBJECT_ID_NONE)
+		return;
+
+	// kludge #3 :(
+	if (!mouse.rightButtonPressed)
+		mouse.lastUsedObjectID = OBJECT_ID_NONE;
+
+	// check if we pressed a GUI object
+
+	/* test objects like this - clickable things *never* overlap, so no need to test all
+	** other objects if we clicked on one already
+	*/
+
+	const bool instrSwitcherHandled = testInstrSwitcherMouseDown(); // allow normal right click to both change ins. and edit text
+	if (instrSwitcherHandled)
+	{
+		if (patternLauncherPanelIsShown())
+			return; // Matrix owns both mouse buttons inside its panel
+
+		if (mouseButton == SDL_BUTTON_RIGHT && keyb.leftShiftPressed)
+			return; // Tape Head Edition: Shift+right-click clears instrument
+	}
+
+	if (testTextBoxMouseDown()) return;
+	if (testPushButtonMouseDown()) return;
+	if (testCheckBoxMouseDown()) return;
+	if (testScrollBarMouseDown()) return;
+	if (testRadioButtonMouseDown()) return;
+
+	// at this point, we don't need to test more widgets if a system request is shown
+	if (ui.sysReqShown)
+		return;
+
+	const bool mouseButtonHeldDown = false;
+	if (testInstrVolEnvMouseDown(mouseButtonHeldDown)) return;
+	if (testInstrPanEnvMouseDown(mouseButtonHeldDown)) return;
+	if (testDiskOpMouseDown(mouseButtonHeldDown)) return;
+	if (testPianoKeysMouseDown(mouseButtonHeldDown)) return;
+	if (testSamplerDataMouseDown()) return;
+	if (testPatternDataMouseDown()) return;
+	if (testScopesMouseDown()) return;
+	if (testAudioDeviceListsMouseDown()) return;
+
+#ifdef HAS_MIDI
+	if (testMidiInputDeviceListMouseDown()) return;
+	if (testMidiOutputDeviceListMouseDown()) return;
+#endif
+}
+
+static void sendMouseButtonUpEvent(uint8_t button)
+{
+	SDL_Event event;
+
+	memset(&event, 0, sizeof (event));
+	event.type = SDL_MOUSEBUTTONUP;
+	event.button.button = button;
+
+	SDL_PushEvent(&event);
+}
+
+void handleLastGUIObjectDown(void)
+{
+	if (mouse.lastUsedObjectType == OBJECT_NONE)
+		return;
+
+	if (mouse.leftButtonPressed || mouse.rightButtonPressed)
+	{
+		if (mouse.lastUsedObjectID != OBJECT_ID_NONE)
+		{
+			switch (mouse.lastUsedObjectType)
+			{
+				case OBJECT_PUSHBUTTON:  handlePushButtonsWhileMouseDown();  break;
+				case OBJECT_RADIOBUTTON: handleRadioButtonsWhileMouseDown(); break;
+				case OBJECT_CHECKBOX:    handleCheckBoxesWhileMouseDown();   break;
+				case OBJECT_SCROLLBAR:   handleScrollBarsWhileMouseDown();   break;
+				case OBJECT_TEXTBOX:     handleTextBoxWhileMouseDown();      break;
+				default: break;
+			}
+		}
+		else
+		{
+			const bool mouseButtonHeldDown = true;
+
+			// test non-standard GUI elements
+			switch (mouse.lastUsedObjectType)
+			{
+				case OBJECT_INSTRSWITCH: testInstrSwitcherMouseDown();                    break;
+				case OBJECT_PATTERNMARK: handlePatternDataMouseDown(mouseButtonHeldDown); break;
+				case OBJECT_DISKOPLIST:  testDiskOpMouseDown(mouseButtonHeldDown);        break;
+				case OBJECT_SMPDATA:     handleSampleDataMouseDown(mouseButtonHeldDown);  break;
+				case OBJECT_PIANO:       testPianoKeysMouseDown(mouseButtonHeldDown);     break;
+				case OBJECT_INSVOLENV:   testInstrVolEnvMouseDown(mouseButtonHeldDown);   break;
+				case OBJECT_INSPANENV:   testInstrPanEnvMouseDown(mouseButtonHeldDown);   break;
+				default: break;
+			}
+		}
+
+		/* Hack to send "mouse button up" events if we released the mouse button(s)
+		** outside of the window...
+		*/
+		if (mouse.x < 0 || mouse.x >= SCREEN_W || mouse.y < 0 || mouse.y >= SCREEN_H)
+		{
+			if (mouse.leftButtonPressed && !(mouse.buttonState & SDL_BUTTON_LMASK))
+				sendMouseButtonUpEvent(SDL_BUTTON_LEFT);
+
+			if (mouse.rightButtonPressed && !(mouse.buttonState & SDL_BUTTON_RMASK))
+				sendMouseButtonUpEvent(SDL_BUTTON_RIGHT);
+		}
+	}
+}
+
+void updateMouseScaling(void)
+{
+	if (video.renderW > 0) video.dMouseXMul = (double)SCREEN_W / video.renderW;
+	if (video.renderH > 0) video.dMouseYMul = (double)SCREEN_H / video.renderH;
+}
+
+void readMouseXY(void)
+{
+#ifdef TAPEHEAD_EMBEDDED
+	ts_tapehead_host_mouse(NULL);
+#else
+	int32_t mx, my, windowX, windowY;
+
+	if (mouse.setPosFlag)
+	{
+		if (!video.windowHidden)
+			SDL_WarpMouseInWindow(video.window, mouse.setPosX, mouse.setPosY);
+
+		mouse.setPosFlag = false;
+		return;
+	}
+
+	if (video.fullscreen)
+	{
+		mouse.buttonState = SDL_GetMouseState(&mx, &my);
+
+		mouse.absX = mx;
+		mouse.absY = my;
+	}
+	else
+	{
+		mouse.buttonState = SDL_GetGlobalMouseState(&mx, &my);
+
+		mouse.absX = mx;
+		mouse.absY = my;
+
+		// convert desktop coords to window coords
+		SDL_GetWindowPosition(video.window, &windowX, &windowY);
+
+		mx -= windowX;
+		my -= windowY;
+	}
+
+	mouse.rawX = mx;
+	mouse.rawY = my;
+
+	if (video.fullscreen)
+	{
+		// if software mouse is enabled, warp mouse inside render space
+		if (!(config.specialFlags2 & HARDWARE_MOUSE))
+		{
+			bool warpMouse = false;
+
+			if (mx < video.renderX)
+			{
+				mx = video.renderX;
+				warpMouse = true;
+			}
+			else if (mx >= video.renderX+video.renderW)
+			{
+				mx = (video.renderX + video.renderW) - 1;
+				warpMouse = true;
+			}
+
+			if (my < video.renderY)
+			{
+				my = video.renderY;
+				warpMouse = true;
+			}
+			else if (my >= video.renderY+video.renderH)
+			{
+				my = (video.renderY + video.renderH) - 1;
+				warpMouse = true;
+			}
+
+			if (warpMouse)
+				SDL_WarpMouseInWindow(video.window, mx, my);
+		}
+
+		// convert fullscreen coords to window (centered image) coords
+		mx -= video.renderX;
+		my -= video.renderY;
+	}
+
+	// kludge: this can happen and prevent buttons from pressing on the very first row of pixels
+	if (mx == -1) mx = 0;
+	if (my == -1) my = 0;
+
+	// multiply coords by video upscaling factors
+	mouse.x = (int32_t)floor(mx * video.dMouseXMul);
+	mouse.y = (int32_t)floor(my * video.dMouseYMul);
+#endif
+
+	if (config.specialFlags2 & HARDWARE_MOUSE)
+	{
+		// hardware mouse mode (OS)
+		hideSprite(SPRITE_MOUSE_POINTER);
+	}
+	else
+	{
+		// software mouse mode (FT2 mouse)
+		setSpritePos(SPRITE_MOUSE_POINTER, mouse.x + mouse.xBias, mouse.y + mouse.yBias);
+	}
+
+	changeCursorIfOverTextBoxes();
+}

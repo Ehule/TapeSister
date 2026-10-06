@@ -1,0 +1,15 @@
+{
+  "repository": "https://github.com/Ehule/FT2-Tapehead-Edition",
+  "commit": "f053d96df3996a5fd3b26625f069888c3a7d24ab",
+  "sha256": {
+    "src/ft2_pattern_draw.c": "caf64ff116d5a0943bb139bc1c550b79d7fcd3079b06c30b4069b29d7e0f9735",
+    "src/ft2_tables.c": "507aa025b5f6276208774d97ff59e3442a520d31d93e33ed8404122690c93f47",
+    "src/ft2_transport_visuals.h": "11df975ce9190e49d773848bd34c54a5eb0f1a534b35cfeaf8b31ed5a1affafc",
+    "src/ft2_fasttracks_core.c": "9dac15dc79e0e4c1f97bbc79f7216aeede8c72eaef731fa41ac2e25364dc1ec8",
+    "src/ft2_fasttracks_core.h": "35d029a89265d58f02e945ce218b5d9e0f37fdfadc029a4f72c68b1c1aab9837",
+    "src/ft2_gui.c": "b7d099007c015329d09d7732aba81b2d5e850c59ea02a24a52807cf152d9e539",
+    "src/ft2_keyboard.c": "c02c7d0799c26d73cc3f30593f17756682d62197b1a2f7797c9bb2991bffad10",
+    "src/ft2_edit.c": "3676a38f4ae216fb939b0287dce9e43ce99a3dcc8241483ce5293ffe4935a6f7",
+    "release/other/tapehead.ini": "e20042315f15057aea5ab93a79cd1dfbbbea7937e3e0db2bcf4d4a5432ebe2c3"
+  }
+}

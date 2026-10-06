@@ -1,5 +1,12 @@
 # Third-party runtime notices
 
+TapeSister embeds application sources from FT2 TapeHead Edition at commit
+`f053d96df3996a5fd3b26625f069888c3a7d24ab`, based on Olav Sorensen's
+FT2 clone under the BSD 3-Clause license. Source notices, original input hashes
+and the host integration patch are retained in `third_party/tapehead/application`.
+Binary bundles include the code/font licenses and source provenance under
+`licenses/tapehead`. TapeHead's upstream repository is not modified.
+
 SisterTracker reuses the original Tapehead/FT2 bitmap fonts by Magnus "Vogue"
 Hogdahl, edited by Olav Sorensen, under CC BY-NC-SA 4.0. Packed font pixels
 retain the original artwork. Font width tables and adapted glyph drawing are

@@ -187,5 +187,179 @@ static void block_loop(void)
     CHECK(last>0 && rt.loop_cycles==99);
     ts_tracker_playback_stop(&rt);CHECK(!rt.block_active);cleanup();
 }
+static void to_tick(unsigned tick,int rate,int bpm)
+{
+    uint64_t frame=(uint64_t)ceil(tick*rate*2.5/bpm-1e-7);
+    CHECK(frame+1>=rt.elapsed_frames);
+    render((int)(frame+1-rt.elapsed_frames),rate);
+}
+static void rational_clocks(void)
+{
+    static const unsigned num[]={1,2,3,4,5,7,15,1,17,8,6,5,4,3,2,3,5};
+    static const unsigned den[]={2,3,4,5,6,8,16,1,16,7,5,4,3,2,1,1,1};
+    static const int tpls[]={1,2,6,31};
+    fixture(3);
+    for(int row=0;row<3;++row)for(int lane=0;lane<8;++lane)pattern->cells[row][lane]=note(tile,60+row);
+    /* These expected event counts come from elapsed rational time, not the
+       scheduler implementation. Frequent master wraps must not reset phase. */
+    for(unsigned r=0;r<TS_TRACKER_RATIOS;++r)for(unsigned k=0;k<4;++k)for(int test_rate=0;test_rate<2;++test_rate) {
+        int rate=test_rate?44100:1000,bpm=test_rate?137:125,tpl=tpls[k];
+        pages->tracker.bpm=bpm;pages->tracker.ticks_per_line=tpl;
+        pages->tracker.lanes[0].mode=TS_TRACKER_PATTERN;pages->tracker.lanes[0].ratio=r;
+        pages->tracker.lanes[1].mode=TS_TRACKER_PATTERN;pages->tracker.lanes[1].ratio=7;
+        prepare(rate);CHECK(ts_tracker_playback_start(&rt));
+        for(unsigned tick=0;tick<200;++tick) {
+            to_tick(tick,rate,bpm);
+            uint64_t crossings=(uint64_t)tick*num[r]/(den[r]*tpl);
+            CHECK(rt.lanes[0].notes_started==1+crossings);
+            CHECK(rt.lanes[0].source_row==crossings%3);
+            CHECK(rt.lanes[0].voice.note==60+(int)(crossings%3));
+            CHECK(rt.lanes[1].notes_started==rt.lanes[2].notes_started);
+            CHECK(rt.lanes[1].source_row==rt.lanes[2].source_row);
+        }
+    }
+    cleanup();
+}
+static void length_domains(void)
+{
+    fixture(4);pages->tracker.ticks_per_line=1;
+    for(int row=0;row<256;++row)for(int lane=0;lane<8;++lane)pattern->cells[row][lane]=note(tile,row<4?60+row:99);
+    pages->tracker.lanes[0].length=3;pages->tracker.lanes[1].length=7;
+    pages->tracker.lanes[2].mode=TS_TRACKER_PATTERN;pages->tracker.lanes[2].length=6;
+    prepare(1000);CHECK(ts_tracker_playback_start(&rt));
+    for(unsigned tick=0;tick<=7;++tick) {
+        to_tick(tick,1000,125);
+        CHECK(rt.lanes[0].source_row==(tick%7)%3);
+        CHECK(rt.lanes[1].source_row==tick%7);
+        CHECK(rt.lanes[2].source_row==tick%6); /* Remains private at master seam. */
+        CHECK(rt.lanes[3].source_row==tick%7);
+        for(int lane=0;lane<8;++lane)CHECK(rt.lanes[lane].voice.note!=99);
+    }
+    CHECK(rt.loop_cycles==1 && rt.lanes[3].notes_started==5);
+    /* CONTROL OFF means the physical reel, even with a longer LEN elsewhere. */
+    pages->tracker.control_lane=3;pages->tracker.loop=0;prepare(1000);
+    CHECK(ts_tracker_playback_start(&rt));to_tick(4,1000,125);CHECK(!rt.running);
+    pages->tracker.control_lane=-1;pages->tracker.loop=1;
+    pages->tracker.lanes[1].length=2;pages->tracker.lanes[2].length=0;
+    prepare(1000);CHECK(ts_tracker_playback_start(&rt));to_tick(3,1000,125);
+    CHECK(rt.loop_cycles==1 && rt.lanes[0].source_row==0); /* Longest explicit 3 shortens physical 4. */
+    pages->tracker.lanes[0].length=256;pages->tracker.lanes[2].length=256;
+    prepare(1000);CHECK(ts_tracker_playback_start(&rt));to_tick(255,1000,125);
+    CHECK(rt.lanes[0].source_row==255 && rt.lanes[2].source_row==255 && rt.lanes[0].notes_started==4);
+    to_tick(256,1000,125);CHECK(rt.loop_cycles==1 && rt.lanes[0].notes_started==5);
+    /* FTL off bypasses LEN only for private tracks. Global bypass covers both. */
+    pages->tracker.fasttracks_uses_length=0;prepare(1000);
+    CHECK(ts_tracker_playback_start(&rt));to_tick(5,1000,125);
+    CHECK(rt.lanes[0].source_row==5 && rt.lanes[2].source_row==1);
+    pages->tracker.length_bypass=1;prepare(1000);CHECK(ts_tracker_playback_start(&rt));to_tick(5,1000,125);
+    CHECK(rt.loop_cycles==1 && rt.lanes[0].source_row==1 && rt.lanes[2].source_row==1);
+    CHECK(pages->tracker.lanes[0].length==256);
+    cleanup();
+}
+static void directions_and_crossings(void)
+{
+    fixture(4);pages->tracker.ticks_per_line=1;
+    for(int row=0;row<4;++row)for(int lane=0;lane<8;++lane)pattern->cells[row][lane]=note(tile,60+row);
+    pages->tracker.lanes[0].mode=pages->tracker.lanes[1].mode=TS_TRACKER_PATTERN;
+    pages->tracker.lanes[0].direction=TS_TRACKER_REVERSE;
+    pages->tracker.lanes[1].direction=TS_TRACKER_PING_PONG;
+    pages->tracker.lanes[2].direction=TS_TRACKER_REVERSE; /* Standard ignores private direction. */
+    prepare(1000);CHECK(ts_tracker_playback_start(&rt));
+    unsigned bounce[]={0,1,2,3,2,1,0,1,2,3,2,1,0};
+    for(unsigned tick=0;tick<13;++tick) {
+        to_tick(tick,1000,125);
+        CHECK(rt.lanes[0].source_row==(4-tick%4)%4);
+        CHECK(rt.lanes[1].source_row==bounce[tick]);
+        CHECK(rt.lanes[2].source_row==tick%4);
+    }
+    pages->tracker.lanes[0].length=pages->tracker.lanes[1].length=1;
+    prepare(1000);CHECK(ts_tracker_playback_start(&rt));to_tick(8,1000,125);
+    CHECK(rt.lanes[0].source_row==0 && rt.lanes[1].notes_started==9);
+    /* Five crossings in one tick must not discard inherited controls. */
+    CHECK(ts_sister_tracker_set_rows(&pages->tracker,pattern->id,8));
+    memset(pattern->cells,0,sizeof(pattern->cells));
+    pages->tracker.lanes[0].length=0;pages->tracker.lanes[0].direction=TS_TRACKER_FORWARD;
+    pages->tracker.lanes[0].ratio=16;
+    pattern->cells[1][0]=(TsTrackerCell){.tile_id=tile,.has_volume=1,.volume=17};
+    pattern->cells[2][0]=note(0,72);
+    pattern->cells[3][0].note_kind=TS_TRACKER_NOTE_OFF;
+    pattern->cells[4][0]=(TsTrackerCell){.has_volume=1,.volume=31};
+    pattern->cells[5][0]=note(0,67);
+    pages->tracker.fasttracks_uses_length=0;
+    prepare(1000);CHECK(ts_tracker_playback_start(&rt));to_tick(1,1000,125);
+    CHECK(rt.lanes[0].notes_started==2 && rt.lanes[0].voice.note==67);
+    CHECK(rt.lanes[0].volume==31 && rt.lanes[0].default_tile==tile);
+    cleanup();
+}
+static void live_clock_changes(void)
+{
+    fixture(8);pages->tracker.ticks_per_line=6;
+    for(int row=0;row<8;++row)pattern->cells[row][0]=note(tile,60+row);
+    pages->tracker.lanes[0].mode=TS_TRACKER_PATTERN;pages->tracker.lanes[0].ratio=0;
+    prepare(1000);CHECK(ts_tracker_playback_start(&rt));to_tick(5,1000,125);
+    CHECK(rt.lanes[0].accumulator==5 && rt.lanes[0].source_row==0);
+    pages->tracker.lanes[0].ratio=1;prepare(1000); /* 5/12 -> 7/18, Tapehead integer normalization. */
+    CHECK(rt.lanes[0].accumulator==7 && rt.lanes[0].notes_started==1);
+    pages->tracker.ticks_per_line=3;prepare(1000);
+    CHECK(rt.lanes[0].accumulator==3 && rt.tick==2);
+    pages->tracker.lanes[0].direction=TS_TRACKER_REVERSE;prepare(1000);
+    CHECK(rt.lanes[0].accumulator==3 && rt.lanes[0].source_row==0);
+    to_tick(8,1000,125);CHECK(rt.lanes[0].source_row==7);
+    double until=rt.until_tick,position=rt.lanes[0].voice.position;
+    int phase=rt.lanes[0].accumulator;uint64_t count=rt.lanes[0].notes_started,elapsed=rt.elapsed_frames;
+    ts_tracker_playback_pause(&rt,1);render(1000,1000);
+    CHECK(rt.until_tick==until && rt.lanes[0].voice.position==position && rt.lanes[0].accumulator==phase && rt.elapsed_frames==elapsed);
+    ts_tracker_playback_pause(&rt,0);render(1,2000);
+    CHECK(rt.lanes[0].accumulator==phase && fabs(rt.until_tick-(until*2-1))<1e-8);
+    pages->tracker.lanes[0].length=2;prepare(2000);
+    CHECK(rt.lanes[0].source_row==7 && rt.lanes[0].notes_started==count);
+    render(360,2000);CHECK(rt.lanes[0].source_row<2 && rt.lanes[0].voice.note<62);
+    /* Definitions publish during a literal block but cannot affect its clock. */
+    TsTrackerBlock b={pattern->id,2,3,0,0};CHECK(ts_tracker_playback_start_block(&rt,b));
+    render(1,2000);count=rt.lanes[0].notes_started;
+    pages->tracker.lanes[0].ratio=16;pages->tracker.control_lane=0;prepare(2000);
+    render(120,2000);CHECK(rt.row==3 && rt.lanes[0].notes_started==count+1);
+    cleanup();
+}
+static void control_clocks(void)
+{
+    fixture(4);pages->tracker.ticks_per_line=2;pages->tracker.loop=0;
+    for(int row=0;row<4;++row)for(int lane=0;lane<8;++lane)pattern->cells[row][lane]=note(tile,60+row);
+    pages->tracker.control_lane=0;pages->tracker.lanes[0].mode=TS_TRACKER_PATTERN;
+    pages->tracker.lanes[0].ratio=0;pages->tracker.lanes[0].length=3;
+    prepare(1000);CHECK(ts_tracker_playback_start(&rt));to_tick(12,1000,125);
+    CHECK(rt.running && rt.control_pending && rt.lanes[0].notes_started==4);
+    to_tick(13,1000,125);CHECK(!rt.running);
+    /* Reversing, muting and soloing do not remove CONTROL authority. */
+    pages->tracker.loop=1;pages->tracker.lanes[0].muted=1;pages->tracker.lanes[0].direction=TS_TRACKER_REVERSE;
+    prepare(1000);ts_tracker_playback_solo(&rt,2);CHECK(ts_tracker_playback_start(&rt));to_tick(13,1000,125);
+    CHECK(rt.loop_cycles==1 && rt.tick==0 && rt.master_row==0 && rt.lanes[0].gain==0);
+    pages->tracker.length_bypass=1;prepare(1000);
+    CHECK(!rt.control_pending);CHECK(ts_tracker_playback_start(&rt));to_tick(8,1000,125);CHECK(rt.loop_cycles==1);
+    /* Standard CONTROL without LEN owns the physical pattern, not longest LEN. */
+    pages->tracker.length_bypass=0;pages->tracker.control_lane=1;pages->tracker.lanes[0].length=7;
+    prepare(1000);CHECK(ts_tracker_playback_start(&rt));to_tick(8,1000,125);CHECK(rt.loop_cycles==1);
+    cleanup();
+}
+static void transport_visual_telemetry(void)
+{
+    fixture(16);pages->tracker.ticks_per_line=4;pages->tracker.control_lane=1;
+    for(int lane=0;lane<3;++lane)pages->tracker.lanes[lane].mode=TS_TRACKER_PATTERN;
+    pages->tracker.lanes[0].ratio=7;pages->tracker.lanes[1].ratio=14;pages->tracker.lanes[2].ratio=0;
+    prepare(1000);CHECK(ts_tracker_playback_start(&rt));to_tick(1,1000,125);
+    ts_tracker_playback_end_block(&rt);
+    CHECK(atomic_load(&rt.display_lane_phase[0])==2); /* 1:1 is exactly in phase. */
+    CHECK(atomic_load(&rt.display_lane_phase[1])==5); /* Same row, different subrow phase. */
+    CHECK(atomic_load(&rt.display_lane_phase[2])==5);
+    to_tick(4,1000,125);ts_tracker_playback_end_block(&rt);
+    CHECK(atomic_load(&rt.display_master_row)==1 && atomic_load(&rt.display_row)==2);
+    CHECK(atomic_load(&rt.display_lane_phase[0])==2);
+    CHECK(atomic_load(&rt.display_lane_phase[1])==4 && atomic_load(&rt.display_lane_phase[2])==1);
+    ts_tracker_playback_pause(&rt,1);render(200,1000);ts_tracker_playback_end_block(&rt);
+    CHECK(atomic_load(&rt.display_master_row)==1 && atomic_load(&rt.display_lane_row[1])==2);
+    ts_tracker_playback_stop(&rt);ts_tracker_playback_end_block(&rt);
+    CHECK(!atomic_load(&rt.display_lane_phase[1]));
+    cleanup();
+}
 int main(void)
-{block_loop();timing();pause_rate_and_stop();inheritance_and_ownership();missing_and_live_edits();native_reader_metadata();puts("SisterTracker playback checks passed");return 0;}
+{transport_visual_telemetry();rational_clocks();length_domains();directions_and_crossings();live_clock_changes();control_clocks();block_loop();timing();pause_rate_and_stop();inheritance_and_ownership();missing_and_live_edits();native_reader_metadata();puts("SisterTracker playback checks passed");return 0;}

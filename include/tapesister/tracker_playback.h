@@ -4,6 +4,7 @@
 #include "tapesister/sample_pages.h"
 #include "tapesister/note_bank.h"
 #include <stdatomic.h>
+#include <stdbool.h>
 
 /* Immutable audio generations. Only reference counts change in the callback;
    allocation, cloning and destruction are control-thread work. */
@@ -31,6 +32,8 @@ typedef struct {
     TsTrackerLane lanes[TS_TRACKER_LANES];
     uint16_t bpm;
     uint8_t ticks_per_line, loop;
+    int8_t control_lane;
+    uint8_t fasttracks_uses_length, length_bypass;
     int rate;
     uint64_t stamp;
 } TsTrackerPrepared;
@@ -44,6 +47,12 @@ typedef struct {
     uint8_t volume;
     int changed;
     uint64_t last_note_frame, notes_started;
+    uint32_t source_row;
+    int32_t accumulator;
+    bool clock_started;
+    uint16_t clock_tpl;
+    uint16_t cycle_steps;
+    int ping_direction;
 } TsTrackerLanePlayback;
 
 typedef struct {
@@ -59,12 +68,16 @@ typedef struct {
     uint8_t missing_mask, solo_mask;
     double until_tick, tick_frames;
     uint64_t elapsed_frames;
+    uint32_t master_row;
+    int transport_started, control_pending;
     TsTrackerBlock block,pending_block;
     int block_active,block_pending;
     uint64_t loop_cycles;
     int loop_seam; /* True for exactly the first audio frame of a cycle. */
     atomic_uint display_running, display_row, display_pattern, display_missing;
     atomic_uint display_block,display_block_rows,display_block_lanes;
+    atomic_uint display_lane_row[TS_TRACKER_LANES];
+    atomic_uint display_master_row, display_lane_phase[TS_TRACKER_LANES];
 } TsTrackerPlayback;
 
 void ts_tracker_playback_init(TsTrackerPlayback *playback);

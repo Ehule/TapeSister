@@ -970,6 +970,8 @@ static void browser_render(TsFramebuffer *fb, const TsBrowser *browser,
         text(fb, 58, 300,
              "AUDIO AUTO-DECODE; SHIFT+CLICK BYPASSES PREVIEW; OTHER FILES OPEN AS RAW",
              PAL_EFFECT, 1);
+    } else if (browser->mode == TS_BROWSER_TRACKER_PALETTE_IMPORT) {
+        text(fb, 58, 300, "SELECT A SHARED TAPEHEAD / TAPESISTER .PAL FILE", PAL_EFFECT, 1);
     } else if (ts_browser_mode_selects_directory(browser->mode)) {
         text(fb, 58, 300, "NAVIGATE, THEN USE THIS FOLDER", PAL_EFFECT, 1);
     } else {
@@ -987,6 +989,7 @@ static void browser_render(TsFramebuffer *fb, const TsBrowser *browser,
            browser->creating_directory ? "CREATE" :
            ts_browser_mode_selects_directory(browser->mode) ? "USE FOLDER" :
            browser->mode == TS_BROWSER_SELECT_FASTTRACKER_EXECUTABLE ? "USE FILE" :
+           browser->mode == TS_BROWSER_TRACKER_PALETTE_IMPORT ? "IMPORT" :
            browser->mode == TS_BROWSER_LOAD_WAV ? "OPEN" :
            (browser->mode == TS_BROWSER_SAVE_RECIPE ||
             browser->mode == TS_BROWSER_SAVE_PRESET) ? "SAVE" : "EXPORT",
@@ -2968,7 +2971,16 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
 {
     render_palette = &ui->palette;
     if(ui->portal.open) { portal_render(fb,ui); return; }
-    if(ui->tracker_open && ui->tracker) {tracker_render(fb,ui,instrument);master_eq_render(fb,ui);router_render(fb,ui);main_midi_learn_overlay(fb,ui);return;}
+    if(ui->tracker_open && ui->tracker) {
+        if(ui->tracker_embedded_frame) {
+            memset(fb->pixels,0,sizeof(fb->pixels));
+            for(int y=0;y<400;++y)for(int x=0;x<632;++x)
+                fb->pixels[y*TS_UI_WIDTH+x+4]=ui->tracker_embedded_frame[y*632+x]|0xff000000u;
+        } else tracker_render(fb,ui,instrument);
+        if(ui->browser.mode!=TS_BROWSER_CLOSED)
+            browser_render(fb,&ui->browser,ui->text_cursor_visible,ui->file_busy,0);
+        master_eq_render(fb,ui);router_render(fb,ui);main_midi_learn_overlay(fb,ui);return;
+    }
     if(ui->mosaic_open && ui->mosaic) {mosaic_render(fb,ui,instrument);master_eq_render(fb,ui);router_render(fb,ui);main_midi_learn_overlay(fb,ui);return;}
     const TsTuning *display_tuning = &ui->tune_reference;
     int showing_bank = ui->bank_view_slot >= 0 && ui->bank_view_slot < TS_BANK_SLOT_COUNT;
@@ -4130,8 +4142,18 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
 void ts_ui_render_file_recording(TsFramebuffer *fb, const TsUiState *ui)
 {
     if(!fb || !ui)return;
-    if(ui->tracker_open && ui->tracker_expanded)return; /* Tracker owns every grid row. */
     render_palette=&ui->palette;
+    if(ui->tracker_open && ui->tracker_embedded_frame) {
+        /* Keep the full pattern grid visible. The embedded panel owns its
+           button/timer, while this shared border survives pattern-only view. */
+        if((ui->file_record_state==TS_PERFORMANCE_FILE_RECORDING ||
+            ui->file_record_state==TS_PERFORMANCE_FILE_STOPPING) && ui->text_cursor_visible) {
+            rect(fb,0,0,640,2,PAL_VOLUME);rect(fb,0,398,640,2,PAL_VOLUME);
+            rect(fb,0,0,2,400,PAL_VOLUME);rect(fb,638,0,2,400,PAL_VOLUME);
+        }
+        return;
+    }
+    if(ui->tracker_open && ui->tracker_expanded)return;
     if(ui->file_record_state!=TS_PERFORMANCE_FILE_RECORDING &&
        ui->file_record_state!=TS_PERFORMANCE_FILE_STOPPING) {
         mini_button(fb,544,382,86,"REC FILE",0);
@@ -5496,22 +5518,25 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     button(fb, 278, 172, 52, "TH PATT", model->tapehead_pattern_playing);
     button(fb, 334, 172, 44, "TRACK",
            model->routing.source_switches & TS_SISTER_SOURCE_TRACK);
-    snprintf(line, sizeof(line), "%s %04X V%02d IN%.2F",
+    /* Diagnostics share a bounded two-line well beside the source buttons.
+       The TRACK switch occupies the old head-meter text position. */
+    char source_status[35];
+    snprintf(source_status, sizeof(source_status), "%s %04X V%02d IN%.2F",
              model->routing.live_link_available ? "LINK" : "WAIT",
              model->routing.source_mask, model->routing.active_source_voices,
              model->routing.source_input_peak);
-    text(fb, 382, 179, line,
-         model->routing.warnings ? PAL_VOLUME : PAL_MOUSE, 1);
+    tracker_tiny(fb, 384, 175, source_status,
+         model->routing.warnings ? PAL_VOLUME : PAL_MOUSE);
     overload_display = model->routing.overload_count > 9999u ?
         9999u : (unsigned long long)model->routing.overload_count;
-    snprintf(line, sizeof(line), "H1%.2F H2%.2F H3%.2F O%04llu%s",
+    snprintf(source_status, sizeof(source_status), "H1%.2F H2%.2F H3%.2F O%04llu%s",
              model->routing.tap_peak[TS_SISTER_TAP_H1],
              model->routing.tap_peak[TS_SISTER_TAP_H2],
              model->routing.tap_peak[TS_SISTER_TAP_H3],
              overload_display,
              model->routing.overload_count > 9999u ? "+" : "");
-    text(fb, 336, 190, line,
-         model->routing.overload_count != 0u ? PAL_VOLUME : PAL_TUNING, 1);
+    tracker_tiny(fb, 384, 186, source_status,
+         model->routing.overload_count != 0u ? PAL_VOLUME : PAL_TUNING);
     sister_vertical_mixer(fb, 526, 172, model);
 
     text(fb, 10, 207, "H1", PAL_NOTE, 1);

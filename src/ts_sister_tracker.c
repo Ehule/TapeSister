@@ -35,6 +35,7 @@ void ts_sister_tracker_free(TsSisterTracker *t)
 {
     if (!t) return;
     for (int i = 0; i < TS_TRACKER_PATTERNS; ++i) free(t->patterns[i]);
+    free(t->embedded_data);
     ts_sister_tracker_init(t);
 }
 
@@ -59,7 +60,13 @@ int ts_sister_tracker_clone(TsSisterTracker *dst, const TsSisterTracker *src,
     if (!dst || !ts_sister_tracker_validate(src, error, size)) return 0;
     if (dst == src) return 1;
     copy = *src;
+    copy.embedded_data = NULL;
     memset(copy.patterns, 0, sizeof(copy.patterns));
+    if(src->embedded_size) {
+        copy.embedded_data = malloc(src->embedded_size);
+        if(!copy.embedded_data)return fail(error,size,"Out of memory copying embedded tracker");
+        memcpy(copy.embedded_data,src->embedded_data,src->embedded_size);
+    }
     for (int i = 0; i < src->pattern_count; ++i) {
         copy.patterns[i] = malloc(sizeof(*copy.patterns[i]));
         if (!copy.patterns[i]) {
@@ -189,9 +196,12 @@ int ts_sister_tracker_validate(const TsSisterTracker *t, char *error, size_t siz
 {
 #define REQUIRE(condition, message) do { if (!(condition)) return fail(error, size, message); } while (0)
     REQUIRE(t, "No SisterTracker definition");
+    REQUIRE((!t->embedded_size && !t->embedded_data) ||
+            ts_tracker_embedded_validate(t->embedded_data,t->embedded_size),
+            "Invalid embedded SisterTracker score");
     REQUIRE(t->pattern_count <= TS_TRACKER_PATTERNS && t->order_count <= TS_TRACKER_ORDERS &&
             t->next_pattern_id != 0 && t->bpm >= 32 && t->bpm <= 999 &&
-            t->ticks_per_line >= 1 && t->ticks_per_line <= 31 && boolean(t->loop) &&
+            (t->ticks_per_line >= 1 || t->embedded_size) && t->ticks_per_line <= 31 && boolean(t->loop) &&
             t->control_lane >= -1 && t->control_lane < TS_TRACKER_LANES &&
             boolean(t->fasttracks_uses_length) && boolean(t->length_bypass) &&
             ((!t->order_count && !t->restart_order) || t->restart_order < t->order_count),
@@ -228,7 +238,7 @@ int ts_sister_tracker_validate(const TsSisterTracker *t, char *error, size_t siz
                     boolean(c->has_volume) && c->volume <= 0x40 && (c->has_volume || !c->volume) &&
                     (!c->tune_command || c->tune_command == 'M' || c->tune_command == 'N') &&
                     (c->tune_command || !c->tune_value) &&
-                    (c->tune_command != 'M' || c->tune_value <= 127) &&
+                    (t->embedded_size || c->tune_command != 'M' || c->tune_value <= 127) &&
                     (!c->fx_command || (c->fx_command >= '0' && c->fx_command <= '9') ||
                      (c->fx_command >= 'A' && c->fx_command <= 'Z')) &&
                     (c->fx_command || !c->fx_value), "Invalid SisterTracker cell command");
@@ -243,10 +253,14 @@ int ts_sister_tracker_validate(const TsSisterTracker *t, char *error, size_t siz
     for (int i = 0; i < t->order_count; ++i)
         REQUIRE(ts_sister_tracker_pattern_const(t, t->orders[i]), "SisterTracker order references a missing pattern");
     const TsTrackerPattern *editor = ts_sister_tracker_pattern_const(t, t->editor_pattern);
+    unsigned editor_rows = editor ? editor->rows : 0;
+    if (t->embedded_size) for (int lane = 0; lane < TS_TRACKER_LANES; ++lane)
+        if (t->lanes[lane].length > editor_rows) editor_rows = t->lanes[lane].length;
     REQUIRE(((!t->pattern_count && !t->editor_pattern && !t->editor_row) ||
-             (editor && t->editor_row < editor->rows)) &&
+             (editor && t->editor_row < editor_rows)) &&
             t->editor_lane < TS_TRACKER_LANES && t->edit_step <= 16 && boolean(t->follow),
             "Invalid SisterTracker editor position");
+    REQUIRE(ts_tracker_embedded_matches(t),"Embedded SisterTracker pattern identity mismatch");
     if (error && size) error[0] = 0;
     return 1;
 #undef REQUIRE
