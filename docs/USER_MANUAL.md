@@ -909,15 +909,16 @@ project and heard through the normal Mosaic effects/recording route. See
 
 ## Recording and capture
 
-TapeSister has four related recording paths. They share audio foundations but serve
+TapeSister has several related recording paths. They share audio foundations but serve
 different purposes.
 
 | Path | Records | Destination | Archive prefix |
 | --- | --- | --- | --- |
-| Main **CAPTURE** | final performed TapeSister mix | blank/current tile | `CAPTURE_` |
+| Main **CAP OUT** | final audible mix; DRY, EXT and FM also available | automatically reserved new Sample tile | `OUTPUT_` / `CAPTURE_` / `INPUT_` |
 | Main **OVERDUB** | final performance layered onto a tile | existing tile | `CAPTURE_` |
 | REC BANK **SRC EXT** | configured physical input | REC tile | `INPUT_` |
-| REC BANK **SRC SYNTH** | internal live FM voices only | REC tile | `SYNTH_` |
+| REC BANK **SRC FM** | internal live FM voices only | REC tile | `SYNTH_` |
+| REC BANK **SRC OUT/DRY** | final output / live keyboard before shared effects | REC tile | `OUTPUT_` / `CAPTURE_` |
 | Mosaic **REC DRY** | live keyboard instrument before Prism/FX | Mosaic card + Sample tile | `CAPTURE_` |
 | Mosaic **REC OUT** | final audible stereo output, including Mosaic/Prism/FX | Mosaic card + Sample tile | `OUTPUT_` |
 | Mosaic **REC EXT** | configured external recording input | Mosaic card + Sample tile | `INPUT_` |
@@ -929,31 +930,36 @@ the editable copy is installed. Ordinary edits and generated sounds are not arch
 
 ### Capture a performance to a tile
 
-![A stereo performance being captured into an armed tile](images/manual/capture-to-tile.png)
+![Quick Capture recording a playing group into a new tile](images/quick-capture.png)
 
-1. Double-click an empty tile to create blank tape, or select an existing target for
-   Overdub.
-2. Choose **M** for mono or **S** for stereo beside Overdub.
-3. Click **CAPTURE**. Existing playback stops and the destination remains armed.
-4. Select and deliberately start a different source: click a tile, play a loop, use
-   QWERTY/MIDI, or launch a staged chord.
-5. Perform edits and layer additional sounds while recording.
-6. Press **STOP** or Space to keep a shorter take. Escape cancels and restores the
-   destination.
+1. Start playing: use ARP, QWERTY, MIDI, tiles or an arrangement.
+2. Click **CAP OUT** beside the Sample tiles, in the note keyboard, or in the FM footer.
+3. Recording begins immediately into a new tile. The pink border flashes and the
+   footer shows the destination and elapsed time. Your performance keeps running.
+4. Click **STOP TILE** to keep the take, or press Escape to discard it.
 
-The first newly triggered source begins recording at frame zero, so an earlier sound
-does not leak into the take and the onset is not clipped. A completed take becomes the
-active tile. Undo removes the whole capture; Redo restores it.
+No blank tile is needed. Capture finds a free, unprotected tile and adds a page if
+necessary. The finished tile is highlighted without changing the selected instrument,
+playing group or ARP source, and without automatically playing the recording.
+Leading silence and pauses are retained. Space remains a global playback stop;
+use **STOP TILE** to finish recording while leaving the performance running.
 
-With automatic resize enabled, the tile shrinks to the completed performance. With it
-disabled, Capture retains the blank canvas duration.
+Right-click Capture to cycle **OUT → DRY → EXT → FM**. OUT records the final audible
+mix including effects and backing arrangements. DRY records the live keyboard,
+playing group and ARP before shared effects, without backing arrangements or external
+monitoring. EXT records the configured physical input; FM records the internal FM bus.
+Shift-right-click cycles **until stopped → 10s → 30s → 60s → 5min**. Settings persist
+in the configuration. See [Capture workflow](CAPTURE_WORKFLOW.md) for limits and routing.
+
+Use **OVERDUB** when you explicitly want to add audio to an existing tile instead.
 
 ### Mono and stereo capture
 
-The **M/S** choice is one shared internal-capture setting. The button on the main page
-and the button in Sister Machine always mirror one another.
+The main **M/S** button sets the format of internal Quick Capture. Stereo is the default;
+Sister Machine's head-capture format is independent. EXT follows the configured input
+channel mode.
 
-- **M** stores `0.5 × (L + R)` and is the compatibility default.
+- **M** stores `0.5 × (L + R)`.
 - **S** stores independent left and right channels.
 
 Overdub follows the target tile: mono is duplicated into a stereo target, while stereo
@@ -1064,9 +1070,11 @@ is separate from Prism presets and global SAVE CONFIG preferences.
 
 ### Multi-tile performance sources
 
-Shift-click occupied tiles to build a source group. QWERTY and MIDI notes fan out across
-the complete group. Shift-clicking a member during recording removes it from future
-triggers without cutting off its current pass.
+Shift-click occupied tiles to add or remove members of a playing group. QWERTY, MIDI
+and ARP play the complete group with Sister Machine on or off. Group membership is
+independent of Quick Capture and ordinary tile selection, and is saved per Sample page
+with the project. Shift-clicking an empty tile still copies Current without adding the
+copy to the group.
 
 With **PLAY ON SEL** on, plain-clicked tiles form a separate performance layer: one-shots overlap and end
 naturally; loops fade in and fade out when clicked again. **FADE ALL** releases those
@@ -1083,14 +1091,18 @@ is one Undoable action.
 
 ### External REC BANK
 
-Press `Shift+1`, choose an empty REC tile, and select **SRC EXT** or **SRC SYNTH**.
+Press `Shift+1`, choose an empty REC tile, and cycle **SRC EXT/FM/OUT/DRY**.
+REC BANK collects separate takes with threshold, pre-roll, tail, Chain and KEEP.
+Opening it stops the live Sample performance; use main **CAP OUT** for uninterrupted
+performance capture.
 
 **SRC EXT** waits for the configured threshold. It includes pre-roll, stops after the
 configured silence and tail, and can optionally monitor dry input. Monitoring does not
-control recording and does not enter TapeSister's internal Capture or effects path.
+control EXT recording. Any audible monitored input is included in OUT recordings.
 Use headphones when monitoring microphones.
 
-**SRC SYNTH** records only internal FM performance. It requires no audio input device.
+**SRC FM** records only internal FM performance and uses threshold triggering.
+**SRC OUT/DRY** start immediately. These internal sources need no audio input device.
 
 When **CHAIN** is on, a finished REC take advances to the next empty REC tile and rearms.
 **KEEP** copies every occupied REC tile into the first empty Sample slots, creates

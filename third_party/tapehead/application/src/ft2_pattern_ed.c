@@ -1004,8 +1004,11 @@ void handlePatternDataMouseDown(bool mouseButtonHeld)
 	** FasTrack header gestures are dispatched before this handler, so they
 	** remain available without allowing cursor/block edits to change the
 	** transport view underneath a performance. */
-	if (songPlaying)
-		return;
+#ifdef TAPEHEAD_EMBEDDED
+	if (songPlaying && ts_tapehead_following())return;
+#else
+	if (songPlaying)return;
+#endif
 
 	// non-FT2 feature: Use right mouse button to remove pattern marking
 	if (mouse.rightButtonPressed)
@@ -1026,6 +1029,9 @@ void handlePatternDataMouseDown(bool mouseButtonHeld)
 
 		lastChMark = mouseXToCh();
 		lastRowMark = mouseYToRow();
+#ifdef TAPEHEAD_EMBEDDED
+		ts_tapehead_mark_anchor(lastChMark,lastRowMark);
+#endif
 
 		/* Keep the edit cursor aligned with the adaptive field geometry while
 		** preserving FT2's click-and-drag block selection behavior. */
@@ -1182,6 +1188,9 @@ bool startPatternMiddleAudition(bool wholeRow)
 
 void rowOneUpWrap(void)
 {
+#ifdef TAPEHEAD_EMBEDDED
+	if(songPlaying && !ts_tapehead_following()) {ts_tapehead_navigate_rows(-1);return;}
+#endif
 	const bool audioWasntLocked = !audio.locked;
 	if (audioWasntLocked)
 		lockAudio();
@@ -1219,6 +1228,9 @@ void rowOneUpWrap(void)
 
 void rowOneDownWrap(void)
 {
+#ifdef TAPEHEAD_EMBEDDED
+	if(songPlaying && !ts_tapehead_following()) {ts_tapehead_navigate_rows(1);return;}
+#endif
 	const bool audioWasntLocked = !audio.locked;
 	if (audioWasntLocked)
 		lockAudio();
@@ -1254,6 +1266,9 @@ void rowOneDownWrap(void)
 
 void rowUp(uint16_t amount)
 {
+#ifdef TAPEHEAD_EMBEDDED
+	if(songPlaying && !ts_tapehead_following()) {ts_tapehead_navigate_rows(-(int)amount);return;}
+#endif
 	const bool audioWasntLocked = !audio.locked;
 	if (audioWasntLocked)
 		lockAudio();
@@ -1302,6 +1317,9 @@ void rowUp(uint16_t amount)
 
 void rowDown(uint16_t amount)
 {
+#ifdef TAPEHEAD_EMBEDDED
+	if(songPlaying && !ts_tapehead_following()) {ts_tapehead_navigate_rows(amount);return;}
+#endif
 	const bool audioWasntLocked = !audio.locked;
 	if (audioWasntLocked)
 		lockAudio();

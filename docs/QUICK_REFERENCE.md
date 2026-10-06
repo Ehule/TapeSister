@@ -339,25 +339,30 @@ queues one more roll. See [CREATE and CDP variations](USER_MANUAL.md#create-and-
 
 ## Main Capture
 
-1. Select/double-click destination tile.
-2. Choose M or S.
-3. Press CAPTURE or enable OVERDUB.
-4. Deliberately trigger a different tile, QWERTY/MIDI note, loop, or staged chord.
-5. Press STOP/Space to keep; Escape to cancel.
+1. Play your instrument, group, ARP or arrangement.
+2. Click **CAP OUT** beside the tiles, in the note keyboard, or in the FM footer.
+3. Click **STOP TILE** to keep the new tile, or Escape to discard the take.
 
-| Format | Stored result |
+Playback and the selected instrument remain unchanged. The new tile is highlighted
+without being selected, launched or added to the playing group.
+
+| Gesture | Action |
 | --- | --- |
-| M | `0.5 × (L + R)` mono |
-| S | independent stereo L/R |
+| Right-click CAP | Cycle OUT / DRY / EXT / FM |
+| Shift-right-click CAP | Cycle until stopped / 10s / 30s / 60s / 5min |
+| Main M/S | Quick Capture mono fold / stereo (default) |
+| Shift-click occupied tile | Toggle playing-group membership, also with Sister off |
+| Shift-click empty tile | Copy Current; the new copy is not marked |
+| OVERDUB | Explicitly record a layer onto the selected existing tile |
 
-The main and Sister M/S controls mirror one shared setting.
+See [Capture workflow](CAPTURE_WORKFLOW.md) for source and recording behavior.
 
 ## REC BANK
 
 | Control | Meaning |
 | --- | --- |
 | `Shift+1` | Open REC BANK |
-| SRC EXT | Record configured physical input |
+| SRC EXT / FM / OUT / DRY | Cycle the recording source |
 | SRC SYNTH | Record internal FM voices only |
 | REC ARM | Wait for threshold / begin recorder workflow |
 | MONITOR | Add dry external input to output; use headphones |

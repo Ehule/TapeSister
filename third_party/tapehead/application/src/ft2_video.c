@@ -1545,6 +1545,9 @@ void handleRedrawing(void)
 
 						str = auditionNoteText;
 					}
+#ifdef TAPEHEAD_EMBEDDED
+					else if (ts_tapehead_live_editing())  str = "> Live edit <";
+#endif
 					else if (playMode == PLAYMODE_PATT)    str = "> Play ptn. <";
 					else if (playMode == PLAYMODE_EDIT)    str = "> Editing <";
 					else if (playMode == PLAYMODE_RECSONG) str = "> Rec. sng. <";

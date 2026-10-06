@@ -92,6 +92,13 @@ mosaic_silence_seconds=120
 ; Quiet threshold in dBFS (-90..0); lower it to preserve very quiet drones.
 mosaic_silence_db=-60
 
+[Quick Capture]
+; 0=EXT, 1=FM, 2=OUT, 3=DRY. Internal quick takes default to stereo.
+quick_capture_source=2
+quick_capture_channels=2
+; 0=until stopped, otherwise exact seconds (1..3600), within the native tile limit.
+quick_capture_seconds=0
+
 [Internal Capture]
 ; Resize the armed blank tile to the completed Capture duration. Set to 0 to
 ; retain the blank canvas duration used when Capture is armed.

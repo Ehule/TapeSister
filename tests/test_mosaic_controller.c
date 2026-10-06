@@ -93,6 +93,7 @@ static void wait_render(void);
 #include "test_prism_factory_controller.inc"
 #include "test_mosaic_record_tile.inc"
 #include "test_mosaic_record_routes.inc"
+#include "test_quick_capture.inc"
 #include "test_mosaic_record_bank.inc"
 #include "test_mosaic_record_preview.inc"
 #include "test_mosaic_glacial.inc"
@@ -386,7 +387,7 @@ static void test_async_ownership(uint64_t a,uint64_t b,uint64_t original,int sup
     TsMosaicEvent *restored=ts_mosaic_add(ui.mosaic,ts_mosaic_find(ui.mosaic,b)->source,0,0);assert(restored);restored->id=a;
     portal_close(0,&audio,&ui,&portal);mosaic_leave(0,&audio,&ui,&instrument,&mosaic);
 }
-int main(void)
+int main(int argc,char **argv)
 {
     SDL_SetMainReady();SDL_setenv("SDL_AUDIODRIVER","dummy",1);
     SDL_setenv("SDL_VIDEODRIVER","dummy",1);assert(SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER|SDL_INIT_AUDIO)==0);
@@ -398,6 +399,7 @@ int main(void)
     ts_sister_runtime_init(&audio.sister);ts_capture_init(&audio.capture);audio.output_rate=48000;audio.bank_slot=-1;
     transform_controller_init(&transform);portal_init(&portal,&ui.portal);portal.mosaic=&mosaic;
     assert(ts_instrument_generate(&instrument,TS_GENERATOR_METALLIC,777,error,sizeof(error)));
+    if(argc>1 && !strcmp(argv[1],"--quick-capture")) {test_quick_capture(window,device);goto done;}
     uint64_t original=ts_sample_hash(&instrument.current);
     ui.mosaic=audio.mosaic=ts_mosaic_create();ui.mosaic_scale=24;ui.mosaic_open=1;
     TsMosaicSource *source=ts_mosaic_source(ui.mosaic,&instrument.current,error,sizeof(error));assert(source);
@@ -432,6 +434,7 @@ int main(void)
     test_prism_factory_controller();
     test_mosaic_record_tile(window,device);
     test_mosaic_record_routes(window,device);
+    test_quick_capture(window,device);
     test_mosaic_record_bank();
     test_mosaic_record_preview(device);
     test_mosaic_glacial(window,device);
@@ -501,6 +504,7 @@ int main(void)
         mosaic_native_check(bank,getenv("TS_MOSAIC_NATIVE_SCREENSHOT"));
         ui.mosaic=saved;ts_mosaic_free(scene);ts_instrument_free(bank);free(bank);
     }
+done:
     portal_free(&portal);mosaic_controller_free(&mosaic);ts_mosaic_free(ui.mosaic);
     ts_performance_free(&audio.performance);ts_performance_free(&audio.tile_launchers);ts_sister_runtime_free(&audio.sister);
     ts_capture_free(&audio.capture);ts_instrument_free(&instrument);SDL_DestroyWindow(window);

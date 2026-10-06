@@ -25,6 +25,11 @@ void ts_tapehead_show_config(void);
 void ts_tapehead_mix_tile(void *voice, unsigned offset, unsigned frames);
 double ts_tapehead_tile_begin(void *voice);
 void ts_tapehead_audio_span(unsigned offset,unsigned frames,int seam);
+int ts_tapehead_following(void);
+int ts_tapehead_live_editing(void);
+void ts_tapehead_edit_row(int row);
+void ts_tapehead_navigate_rows(int delta);
+void ts_tapehead_mark_anchor(int channel,int row);
 #endif
 
 #define PROG_VER_STR "2.21"

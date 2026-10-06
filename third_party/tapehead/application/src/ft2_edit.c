@@ -45,6 +45,32 @@ static const int8_t tickArr[16] = { 16, 8, 0, 4, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0
 
 void recordNote(uint8_t note, int8_t vol);
 
+static bool liveCursorEdit(void)
+{
+#ifdef TAPEHEAD_EMBEDDED
+    return ts_tapehead_live_editing();
+#else
+    return false;
+#endif
+}
+static bool cursorEditMode(void) { return playMode == PLAYMODE_EDIT || liveCursorEdit(); }
+static void moveEditRow(int row)
+{
+#ifdef TAPEHEAD_EMBEDDED
+    if (songPlaying && !ts_tapehead_following()) { ts_tapehead_edit_row(row); return; }
+#endif
+    editor.row = song.row = row;
+}
+static void stepEditRow(int row)
+{
+    int rows = liveCursorEdit() ? fastTracksPOCGetExtendedPatternLength(editor.editPattern) : patternNumRows[editor.editPattern];
+    if (rows < 1)return;
+    row %= rows;
+    if (liveCursorEdit()) { moveEditRow(row); return; }
+    setSongPos(-1, row, RESET_SONG_TICK);
+}
+
+
 // when the cursor is at the note slot
 static bool testNoteKeys(SDL_Scancode scancode)
 {
@@ -55,7 +81,7 @@ static bool testNoteKeys(SDL_Scancode scancode)
 	const int8_t noteNum = scancodeKeyToNote(scancode);
 	if (noteNum == NOTE_OFF)
 	{
-		bool editmode = ui.patternEditorShown && (playMode == PLAYMODE_EDIT);
+		bool editmode = ui.patternEditorShown && cursorEditMode();
 
 		// inserts "note off" if editing song
 		if (editmode || playMode == PLAYMODE_RECPATT || playMode == PLAYMODE_RECSONG)
@@ -76,8 +102,8 @@ static bool testNoteKeys(SDL_Scancode scancode)
 			pattern[curPattern][(row * MAX_CHANNELS) + cursor.ch].note = NOTE_OFF;
 
 			const uint16_t numRows = patternNumRows[curPattern];
-			if (playMode == PLAYMODE_EDIT && numRows >= 1)
-				setSongPos(-1, (row + editor.editRowSkip) % numRows, RESET_SONG_TICK);
+			if (cursorEditMode() && numRows >= 1)
+				stepEditRow(row + editor.editRowSkip);
 
 			ui.updatePatternEditor = true;
 			setSongModifiedFlag();
@@ -108,7 +134,7 @@ static bool testEditKeys(SDL_Scancode scancode, SDL_Keycode keycode)
 {
 	int8_t i;
 
-	bool editmode = ui.patternEditorShown && (playMode == PLAYMODE_EDIT);
+	bool editmode = ui.patternEditorShown && cursorEditMode();
 
 	if (cursor.object == CURSOR_NOTE)
 	{
@@ -287,8 +313,8 @@ static bool testEditKeys(SDL_Scancode scancode, SDL_Keycode keycode)
 	// increase row (only in edit mode)
 
 	const int16_t numRows = patternNumRows[curPattern];
-	if (playMode == PLAYMODE_EDIT && numRows >= 1)
-		setSongPos(-1, (row + editor.editRowSkip) % numRows, RESET_SONG_TICK);
+	if (cursorEditMode() && numRows >= 1)
+		stepEditRow(row + editor.editRowSkip);
 
 	const bool patternDataChanged = memcmp(&oldNote, p, sizeof (note_t)) != 0;
 	if (i == 0) // if we inserted a zero, check if pattern is empty
@@ -380,7 +406,7 @@ void recordNote(uint8_t noteNum, int8_t vol) // directly ported from the origina
 
 	const int16_t oldRow = editor.row;
 
-	if (songPlaying)
+	if (songPlaying && !liveCursorEdit())
 	{
 		// row quantization
 		evaluateTimeStamp(&songPos, &pattNum, &row, &tick);
@@ -393,8 +419,8 @@ void recordNote(uint8_t noteNum, int8_t vol) // directly ported from the origina
 		tick = 0;
 	}
 
-	bool editmode = ui.patternEditorShown && (playMode == PLAYMODE_EDIT);
-	bool recmode = (playMode == PLAYMODE_RECSONG) || (playMode == PLAYMODE_RECPATT);
+	bool editmode = ui.patternEditorShown && cursorEditMode();
+	bool recmode = !liveCursorEdit() && ((playMode == PLAYMODE_RECSONG) || (playMode == PLAYMODE_RECPATT));
 
 	if (noteNum == NOTE_OFF)
 		vol = 0;
@@ -483,7 +509,7 @@ void recordNote(uint8_t noteNum, int8_t vol) // directly ported from the origina
 		editor.keyOnTab[c] = noteNum;
 
 			 if (row >= oldRow &&
-                   	     !(songPlaying && recmode &&
+                         !(songPlaying && (recmode || liveCursorEdit()) &&
                                (config.specialFlags2 & SILENT_REC_ENTRY))) // suppress audition while recording playback
 		{
 #ifdef HAS_MIDI
@@ -513,7 +539,7 @@ void recordNote(uint8_t noteNum, int8_t vol) // directly ported from the origina
 				if (!recmode)
 				{
 					if (numRows >= 1)
-						setSongPos(-1, (editor.row + editor.editRowSkip) % numRows, RESET_SONG_TICK);
+						stepEditRow(editor.row + editor.editRowSkip);
 				}
 				else if (!config.recQuant && tick > 0)
 				{
@@ -547,7 +573,7 @@ void recordNote(uint8_t noteNum, int8_t vol) // directly ported from the origina
 		editor.keyOffTime[c] = editor.keyOffNr;
 
 		if (row >= oldRow &&
-		    !(songPlaying && recmode &&
+		    !(songPlaying && (recmode || liveCursorEdit()) &&
 		      (config.specialFlags2 & SILENT_REC_ENTRY))) //suppress audtion while recording playback
 		{
 #ifdef HAS_MIDI
@@ -623,7 +649,7 @@ bool handleEditKeys(SDL_Keycode keycode, SDL_Scancode scancode)
 	// special case for delete - manipulate note data
 	if (keycode == SDLK_DELETE)
 	{
-		bool editmode = ui.patternEditorShown && (playMode == PLAYMODE_EDIT);
+		bool editmode = ui.patternEditorShown && cursorEditMode();
 		if (!editmode && playMode != PLAYMODE_RECSONG && playMode != PLAYMODE_RECPATT)
 			return false; // we're not editing, test other keys
 
@@ -686,8 +712,8 @@ bool handleEditKeys(SDL_Keycode keycode, SDL_Scancode scancode)
 
 		// increase row (only in edit mode)
 		const int16_t numRows = patternNumRows[curPattern];
-		if (playMode == PLAYMODE_EDIT && numRows >= 1)
-			setSongPos(-1, (row + editor.editRowSkip) % numRows, RESET_SONG_TICK);
+		if (cursorEditMode() && numRows >= 1)
+			stepEditRow(row + editor.editRowSkip);
 
 		ui.updatePatternEditor = true;
 		if (patternDataChanged)
@@ -743,7 +769,7 @@ void writeFromMacroSlot(uint8_t slot)
 	int16_t row = editor.row;
 	resumeMusic();
 
-	bool editmode = ui.patternEditorShown && (playMode == PLAYMODE_EDIT);
+	bool editmode = ui.patternEditorShown && cursorEditMode();
 	if (!editmode && playMode != PLAYMODE_RECSONG && playMode != PLAYMODE_RECPATT)
 		return;
 
@@ -777,8 +803,8 @@ void writeFromMacroSlot(uint8_t slot)
 	}
 
 	const int16_t numRows = patternNumRows[curPattern];
-	if (playMode == PLAYMODE_EDIT && numRows >= 1)
-		setSongPos(-1, (row + editor.editRowSkip) % numRows, RESET_SONG_TICK);
+	if (cursorEditMode() && numRows >= 1)
+		stepEditRow(row + editor.editRowSkip);
 
 	killPatternIfUnused(curPattern);
 
@@ -794,7 +820,7 @@ void insertPatternNote(void)
 	int16_t row = editor.row;
 	resumeMusic();
 
-	bool editmode = ui.patternEditorShown && (playMode == PLAYMODE_EDIT);
+	bool editmode = ui.patternEditorShown && cursorEditMode();
 	if (!editmode && playMode != PLAYMODE_RECPATT && playMode != PLAYMODE_RECSONG)
 		return;
 
@@ -827,7 +853,7 @@ void insertPatternLine(void)
 	int16_t row = editor.row;
 	resumeMusic();
 
-	bool editmode = ui.patternEditorShown && (playMode == PLAYMODE_EDIT);
+	bool editmode = ui.patternEditorShown && cursorEditMode();
 	if (!editmode && playMode != PLAYMODE_RECPATT && playMode != PLAYMODE_RECSONG)
 		return;
 	undoPatternBegin(curPattern, "Insert line");
@@ -865,7 +891,7 @@ void clearPreviousPatternEntry(void)
 	int16_t row = editor.row;
 	resumeMusic();
 
-	bool editmode = ui.patternEditorShown && (playMode == PLAYMODE_EDIT);
+	bool editmode = ui.patternEditorShown && cursorEditMode();
 	if (!editmode && playMode != PLAYMODE_RECPATT && playMode != PLAYMODE_RECSONG)
 		return;
 
@@ -874,7 +900,7 @@ void clearPreviousPatternEntry(void)
 	if (row <= 0)
 		return;
 	row--;
-	editor.row = song.row = row;
+	moveEditRow(row);
 #endif
 
 	note_t *p = pattern[curPattern];
@@ -889,7 +915,7 @@ void clearPreviousPatternEntry(void)
 
 
 #ifdef TAPEHEAD_EMBEDDED
-	editor.row = song.row = row > 0 ? row - 1 : 0;
+	moveEditRow(row > 0 ? row - 1 : 0);
 #endif
 	ui.updatePatternEditor = true;
 }
@@ -901,7 +927,7 @@ void deletePatternNote(void)
 	int16_t row = editor.row;
 	resumeMusic();
 
-	bool editmode = ui.patternEditorShown && (playMode == PLAYMODE_EDIT);
+	bool editmode = ui.patternEditorShown && cursorEditMode();
 	if (!editmode && playMode != PLAYMODE_RECPATT && playMode != PLAYMODE_RECSONG)
 		return;
 	undoPatternBegin(curPattern, "Delete note");
@@ -914,7 +940,7 @@ void deletePatternNote(void)
 		if (row > 0)
 		{
 			row--;
-			editor.row = song.row = row;
+			moveEditRow(row);
 
 			for (int32_t i = row; i < numRows-1; i++)
 				p[(i * MAX_CHANNELS) + cursor.ch] = p[((i+1) * MAX_CHANNELS) + cursor.ch];
@@ -927,7 +953,7 @@ void deletePatternNote(void)
 		if (row > 0)
 		{
 			row--;
-			editor.row = song.row = row;
+			moveEditRow(row);
 		}
 	}
 
@@ -945,7 +971,7 @@ void deletePatternLine(void)
 	int16_t row = editor.row;
 	resumeMusic();
 
-	bool editmode = ui.patternEditorShown && (playMode == PLAYMODE_EDIT);
+	bool editmode = ui.patternEditorShown && cursorEditMode();
 	if (!editmode && playMode != PLAYMODE_RECPATT && playMode != PLAYMODE_RECSONG)
 		return;
 	undoPatternBegin(curPattern, "Delete line");
@@ -957,7 +983,7 @@ void deletePatternLine(void)
 		if (row > 0)
 		{
 			row--;
-			editor.row = song.row = row;
+			moveEditRow(row);
 
 			for (int32_t i = row; i < numRows-1; i++)
 			{
@@ -973,7 +999,7 @@ void deletePatternLine(void)
 		if (row > 0)
 		{
 			row--;
-			editor.row = song.row = row;
+			moveEditRow(row);
 		}
 	}
 

@@ -52,6 +52,9 @@ void ts_config_init(TsConfig *config)
         config->capture_auto_resize = 1;
         config->capture_max_seconds = TS_CAPTURE_MAX_SECONDS_DEFAULT;
         config->capture_channels = TS_CAPTURE_CHANNELS_DEFAULT;
+        config->quick_capture_channels = 2;
+        config->quick_capture_source = 2; /* OUT */
+        config->quick_capture_seconds = 0;
         config->waveform_display_mode = TS_WAVEFORM_DISPLAY_STEREO;
         config->sister_waveform_display_mode = TS_WAVEFORM_DISPLAY_STEREO;
         config->prism_zoya_pose = TS_PRISM_ZOYA_POSE_NEBULA;
@@ -382,6 +385,12 @@ int ts_config_load(TsConfig *config, const char *path,
             if (!parse_boolean(value, &loaded.capture_auto_resize)) { snprintf(error, error_size, "Invalid boolean on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "capture_max_seconds") == 0) {
             if (!parse_clamped_integer(value, TS_CAPTURE_MAX_SECONDS_MIN, TS_CAPTURE_MAX_SECONDS_MAX, &loaded.capture_max_seconds)) { snprintf(error, error_size, "Invalid integer on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "quick_capture_channels") == 0) {
+            if (!parse_clamped_integer(value, 1, 2, &loaded.quick_capture_channels)) { snprintf(error,error_size,"Invalid quick capture channels"); fclose(file); return 0; }
+        } else if (strcmp(key, "quick_capture_source") == 0) {
+            if (!parse_clamped_integer(value, 0, 3, &loaded.quick_capture_source)) { snprintf(error,error_size,"Invalid quick capture source"); fclose(file); return 0; }
+        } else if (strcmp(key, "quick_capture_seconds") == 0) {
+            if (!parse_clamped_integer(value, 0, 3600, &loaded.quick_capture_seconds)) { snprintf(error,error_size,"Invalid quick capture length"); fclose(file); return 0; }
         } else if (strcmp(key, "capture_channels") == 0) {
             if (!parse_clamped_integer(value, TS_CAPTURE_CHANNELS_MIN, TS_CAPTURE_CHANNELS_MAX, &loaded.capture_channels)) { snprintf(error, error_size, "Invalid integer on config line %d", line_number); fclose(file); return 0; }
             saw_capture_channels = 1;
@@ -588,6 +597,12 @@ int ts_config_save(const TsConfig *config, const char *path,
                 "mosaic_silence_seconds=%d\n"
                 "; Quiet threshold in dBFS, -90..0. Finite takes keep their exact duration.\n"
                 "mosaic_silence_db=%d\n"
+                "\n[Quick Capture]\n"
+                "; Source: 0=EXT, 1=FM, 2=OUT, 3=DRY performance. Stereo for internal sources.\n"
+                "quick_capture_source=%d\n"
+                "quick_capture_channels=%d\n"
+                "; 0=until stopped; otherwise exact duration in seconds, 1..3600.\n"
+                "quick_capture_seconds=%d\n"
                 "\n[Internal Capture]\n"
                 "; Resize the armed blank tile to the completed Capture duration.\n"
                 "capture_auto_resize=%d\n"
@@ -681,6 +696,9 @@ int ts_config_save(const TsConfig *config, const char *path,
                 config->mosaic_record_seconds,
                 config->mosaic_silence_seconds,
                 config->mosaic_silence_db,
+                config->quick_capture_source,
+                config->quick_capture_channels,
+                config->quick_capture_seconds,
                 config->capture_auto_resize ? 1 : 0,
                 config->capture_max_seconds,
                 config->capture_channels,

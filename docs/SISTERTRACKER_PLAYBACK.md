@@ -18,8 +18,8 @@ Its upstream repository is unchanged. The imported source is pinned to
 2. Enter notes with the original tracker keyboard. The selected tile is assigned
    a stable instrument alias. Click a populated mini-canvas tile to select another
    instrument; use its arrows or wheel to browse Sample pages.
-3. Use **Play ptn.**, **Play sng.**, **Rec. ptn.** or **Rec. sng.**. Space stops
-   playback and switches between idle and editing, following TapeHead.
+3. Use **Play ptn.**, **Play sng.**, **Rec. ptn.** or **Rec. sng.**. **Follow**
+   controls whether the editor follows playback; see live editing below.
 4. F10, Escape or Canvas returns to the canvas. Playback continues when
    the workspace is hidden. F10 returns to the same score and transport.
 5. F9 opens the existing Router. Enable TRACK as a Sister source to feed the
@@ -139,6 +139,28 @@ Master EQ → limiter → global OUT follows the shared result. Final-output fil
 recording observes that result. This explanation describes the existing audio
 path; the full-logo correction does not change routing.
 
+## Follow and live editing
+
+**FOLLOW ON/OFF** sits below Config, beside the octave control. **Ctrl+F** toggles
+it in every pattern view, including Ctrl+Alt+Backspace's full-window view. Follow
+starts on for new projects and saves with the project.
+
+With Follow on, playback retains TapeHead's moving view and display-only pattern
+body. Space stops playback; pressing it again enables editing while stopped.
+
+With Follow off, the pattern stays centered on your edit cursor while the transport
+and individual LEN/FasTrax heads keep running. Click a cell to position the cursor,
+or use arrows, Tab, Home/End, Page Up/Down and the wheel. While playing, the first
+Space enables **Live edit** without stopping; the second Space stops. Stop always
+stops immediately. Note entry, MIDI, Delete, Backspace and undo/redo work at the edit
+position, independently of the playback row. Rec pattern/song also use the edit
+cursor while Follow is off. Turning Follow on returns the view to playback.
+
+Clicking or dragging a highlight establishes its own anchor. **Alt+Arrows** expand
+or contract that mouse selection from the clicked cell, even when the edit cursor
+is elsewhere. Ordinary cursor movement leaves the highlight intact. Keyboard-only
+block marking retains the original behavior when no mouse anchor is active.
+
 ## Controls
 
 The tracker uses TapeHead's original controls. In particular, its clipboard
@@ -150,7 +172,10 @@ bindings differ from the earlier native editor's Ctrl+C/X/V shortcuts.
 | Play ptn. / Right Alt | Play the current pattern |
 | Play sng. / Right Ctrl | Play the song orders |
 | Rec. ptn. / Right Shift | Record into pattern playback |
-| Space / Stop | Stop; Space also switches idle/edit mode |
+| Follow / Ctrl+F | Toggle following playback or independent editing |
+| Space, Follow on | Stop playback, then toggle idle/edit while stopped |
+| Space, Follow off | While playing: enter live editing, then stop; stopped: toggle idle/edit |
+| Stop | Stop immediately |
 | Arrows / Tab | Move the original field/lane cursor |
 | Alt+Arrows / mouse drag | Mark a block |
 | Shift/Ctrl/Alt + F3/F4/F5 | Cut/copy/paste track, pattern, or block |

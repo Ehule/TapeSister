@@ -83,6 +83,9 @@ static struct {
     uint64_t file_seconds;
     uint32_t record_color;
     int record_flash;
+    int follow, live_edit;
+    int mark_valid, mark_pattern, mark_channel, mark_row;
+    int pointer_mark, pointer_x, pointer_y;
 } embed;
 
 static int fail(char *e,size_t n,const char *s) { if(e&&n)snprintf(e,n,"%s",s);return 0; }
@@ -223,6 +226,7 @@ static int main_panel_visible(void) {
     return !ui.extendedPatternEditor && !ui.patternEditorOnly && !ui.configScreenShown &&
            !ui.helpScreenShown && !ui.aboutScreenShown && !ui.nibblesShown;
 }
+#include "ts_tapehead_follow.inc"
 static void menu(void) {
     if(ui.configScreenShown) {palette_buttons();textOutClipX(400,157,PAL_FORGRND,preferences_message,628);return;}
     pushButtons[PB_DISK_OP].x=294;pushButtons[PB_DISK_OP].y=36;
@@ -257,6 +261,8 @@ static void menu(void) {
         canvas_draw();
         char octave[12];snprintf(octave,sizeof(octave),"OCT %u",editor.curOctave);
         drawFramework(294,155,59,16,FRAMEWORK_TYPE1);textOut(300,159,PAL_FORGRND,octave);
+        drawFramework(359,155,59,16,FRAMEWORK_TYPE1);
+        textOutTiny(363,160,embed.follow?"FOLLOW ON":"FOLLOW OFF",video.palette[embed.follow?PAL_FORGRND:PAL_PATTEXT]);
     }
 }
 void ts_tapehead_host_redraw(void) {menu();}
@@ -277,7 +283,7 @@ int ts_tapehead_init(const TsTapeHeadHost *host,unsigned rate,char *error,size_t
     video.mouseCursorUpscaleFactor=1;video.windowModeUpscaleFactor=1;
     video.frameBuffer=calloc(SCREEN_W*SCREEN_H,sizeof(uint32_t));
     if(!video.frameBuffer)return fail(error,size,"Unable to allocate tracker framebuffer");
-    embed.initialized=1;
+    embed.initialized=1;embed.follow=1;
     editor.programRunning=true;editor.editRowSkip=1;editor.curOctave=4;
     editor.curInstr=editor.srcInstr=1;editor.copyMaskEnable=true;
     editor.ptnJumpPos[0]=0;editor.ptnJumpPos[1]=16;editor.ptnJumpPos[2]=32;editor.ptnJumpPos[3]=48;
@@ -360,6 +366,7 @@ void ts_tapehead_focus_lost(void) {
 }
 void ts_tapehead_tick(void) {
     if(!embed.initialized)return;
+    if(!songPlaying)embed.live_edit=0;
     ts_tapehead_host_lock();collect_tiles();ts_tapehead_host_unlock();
     eraseSprites();readKeyModifiers();setSyncedReplayerVars();
     handleLastGUIObjectDown();handleRecPlusExhaustion();handlePolyMatrixQHandoff();
@@ -386,6 +393,7 @@ int ts_tapehead_event(const SDL_Event *event,int x,int y) {
     switch(event->type) {
     case SDL_KEYDOWN:
         if(event->key.keysym.sym==SDLK_ESCAPE && ui.configScreenShown) {exitConfigScreen();return 1;}
+        if(follow_key(event))return 1;
         /* MIDI and project commands belong to the host. Instrument destructive
            shortcuts cannot modify the host's tile registry. */
         if(event->key.keysym.scancode==SDL_SCANCODE_KP_PERIOD)return 1;
@@ -401,6 +409,7 @@ int ts_tapehead_event(const SDL_Event *event,int x,int y) {
                      scancodeKeyToNote((SDL_Scancode)sc):0;
             if(sc>=0 && sc<SDL_NUM_SCANCODES)embed.key_held[sc]=1;
             keyDownHandler((SDL_Scancode)sc,event->key.keysym.sym,(SDL_Keymod)event->key.keysym.mod,event->key.repeat);
+            if(!songPlaying)embed.live_edit=0;
             if(note>0 && note<=96 && sc>=0 && sc<SDL_NUM_SCANCODES)
                 for(int ch=0;ch<8;++ch)if(editor.keyOnTab[ch]==note)embed.key_note[sc]=note;
             return 1;
@@ -416,6 +425,11 @@ int ts_tapehead_event(const SDL_Event *event,int x,int y) {
     }
     case SDL_MOUSEBUTTONDOWN: {
         readKeyModifiers();
+        if(main_panel_visible() && !ui.sysReqShown && !editor.editTextFlag &&
+           x>=359 && x<418 && y>=155 && y<171) {
+            if(event->button.button==SDL_BUTTON_LEFT)follow_toggle();
+            return 1;
+        }
         int lane=fasttracks_header_lane(x,y);
         if(lane>=0 && !ui.sysReqShown && !editor.editTextFlag &&
            (event->button.button==SDL_BUTTON_LEFT || event->button.button==SDL_BUTTON_RIGHT)) {
@@ -437,9 +451,16 @@ int ts_tapehead_event(const SDL_Event *event,int x,int y) {
         if(main_panel_visible() && x>=294 && x<353 && y>=155 && y<171) {
             editor.curOctave=CLAMP(editor.curOctave+(event->button.button==SDL_BUTTON_RIGHT?-1:1),0,7);return 1;
         }
+        embed.pointer_mark=0;embed.pointer_x=x;embed.pointer_y=y;
         mouse.buttonState|=SDL_BUTTON(event->button.button);mouseButtonDownHandler(event->button.button);return 1;
     }
-    case SDL_MOUSEBUTTONUP:mouse.buttonState&=~SDL_BUTTON(event->button.button);mouseButtonUpHandler(event->button.button);return 1;
+    case SDL_MOUSEBUTTONUP:
+        if(event->button.button==SDL_BUTTON_LEFT && embed.pointer_mark && !embed.follow &&
+           abs(x-embed.pointer_x)<3 && abs(y-embed.pointer_y)<3)ts_tapehead_edit_row(embed.mark_row);
+        embed.pointer_mark=0;
+        mouse.buttonState&=~SDL_BUTTON(event->button.button);mouseButtonUpHandler(event->button.button);
+        if(!songPlaying)embed.live_edit=0;
+        return 1;
     case SDL_MOUSEMOTION:return 1;
     case SDL_MOUSEWHEEL: {
         readKeyModifiers();
@@ -673,6 +694,7 @@ int ts_tapehead_export(TsSisterTracker *t,char *e,size_t n) {
     t->bpm=editor.BPM;t->ticks_per_line=editor.speed;t->order_count=song.songLength;t->restart_order=song.songLoopStart;
     for(int i=0;i<song.songLength;++i)t->orders[i]=embed.ids[song.orders[i]];
     t->editor_pattern=embed.ids[editor.editPattern];t->editor_row=editor.row;t->editor_lane=cursor.ch;t->edit_step=editor.editRowSkip;
+    t->follow=embed.follow;
     t->fasttracks_uses_length=fastTracksPOCUsesTrackLengths();t->length_bypass=fastTracksPOCLengthTopologyIsBypassed();t->control_lane=fastTracksPOCGetControlTrack(0);
     for(int lane=0;lane<8;++lane) {
         TsTrackerLane *l=&t->lanes[lane];l->length=fastTracksPOCGetTrackLength(0,lane);
@@ -748,6 +770,7 @@ int ts_tapehead_sync(TsSamplePages *pages,const TsInstrument *active,unsigned ra
     if(embed.model!=t || h!=embed.model_hash) {
         ts_tapehead_host_lock();atomic_store(&embed.ready,0);
         if(!score_import(t,e,n)){ts_tapehead_host_unlock();return 0;}
+        embed.follow=t->follow;embed.live_edit=embed.mark_valid=embed.pointer_mark=0;
         embed.model=t;embed.model_hash=ts_sister_tracker_hash(t);memset(embed.tile_stamp,0,sizeof(embed.tile_stamp));
         ts_tapehead_host_unlock();
     }

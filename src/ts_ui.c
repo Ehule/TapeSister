@@ -1928,6 +1928,8 @@ void ts_ui_init(TsUiState *ui)
     ui->playhead_bank_slot = -1;
     ui->drone_source_slot = -1;
     ui->capture_destination_slot = -1;
+    ui->quick_capture_page=ui->quick_capture_slot=-1;
+    ui->captured_tile_page=ui->captured_tile_slot=-1;
     ui->capture_source_slot = -1;
     ui->overdub_confirm_slot = -1;
     ui->capture_state = TS_CAPTURE_IDLE;
@@ -2898,8 +2900,8 @@ static void live_input_render(TsFramebuffer *fb, const TsUiState *ui)
     frame(fb, 10, 40, 620, 164, RGB(42, 39, 42), RGB(105, 98, 105));
     if (ui->capture_state == TS_CAPTURE_RECORDING && ui->input_sample_rate > 0u)
         snprintf(title, sizeof(title),
-                 "INPUT  %+.1F DBFS   PEAK %+.1F DBFS   REC %.2F S",
-                 level_db, peak_db,
+                 "%s  %+.1F DBFS   PEAK %+.1F DBFS   REC %.2F S",
+                 ui->quick_capture_active ? "CAPTURE" : "INPUT", level_db, peak_db,
                  (double)ui->capture_recorded_frames / ui->input_sample_rate);
     else
         snprintf(title, sizeof(title),
@@ -2937,11 +2939,13 @@ static void live_input_render(TsFramebuffer *fb, const TsUiState *ui)
               meter_y + meter_h - level_y, meter_color);
     wave_rect(fb, meter_x - 2, peak_y, 16, 2,
               ui->input_clipping ? RGB(255, 74, 58) : PAL_EFFECT);
-    wave_rect(fb, meter_x - 4, threshold_y, 20, 2, PAL_TUNING);
-    snprintf(threshold, sizeof(threshold), "TH %.0F", input_dbfs(ui->input_threshold));
-    wave_text(fb, meter_x - 48,
-              threshold_y > TS_WAVE_Y + 10 ? threshold_y - 9 : threshold_y + 3,
-              threshold, PAL_TUNING, 1);
+    if(!ui->quick_capture_active) {
+        wave_rect(fb, meter_x - 4, threshold_y, 20, 2, PAL_TUNING);
+        snprintf(threshold, sizeof(threshold), "TH %.0F", input_dbfs(ui->input_threshold));
+        wave_text(fb, meter_x - 48,
+                  threshold_y > TS_WAVE_Y + 10 ? threshold_y - 9 : threshold_y + 3,
+                  threshold, PAL_TUNING, 1);
+    }
     if (ui->input_clipping)
         wave_text(fb, meter_x - 34, TS_WAVE_Y + 5, "CLIP", RGB(255, 74, 58), 1);
 }
@@ -3684,7 +3688,13 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                      ts_midi_note_name(ts_ui_keyboard_base_note(ui),
                                        base_note, sizeof(base_note)));
         mini_button(fb,10,313,46,"ARP",ui->keyboard_sequence_running || ui->keyboard_sequence_open);
-        text(fb, 62, 318, keyboard_hint, RGB(184, 180, 184), 1);
+        char short_hint[39];snprintf(short_hint,sizeof(short_hint),"%.38s",keyboard_hint);
+        text(fb, 62, 318, short_hint, RGB(184, 180, 184), 1);
+        char cap_label[16];snprintf(cap_label,sizeof(cap_label),"CAP %s",
+            ui->config.quick_capture_source==TS_RECORD_SOURCE_OUTPUT?"OUT":
+            ui->config.quick_capture_source==TS_RECORD_SOURCE_DRY?"DRY":
+            ui->config.quick_capture_source==TS_RECORD_SOURCE_EXT?"EXT":"FM");
+        mini_button(fb,298,313,76,ui->quick_capture_active?"STOP TILE":cap_label,ui->quick_capture_active);
         mini_button(fb,380,313,74,
             ui->file_record_state==TS_PERFORMANCE_FILE_STOPPING?"FILE WAIT":
             ui->file_record_state==TS_PERFORMANCE_FILE_RECORDING?"STOP FILE":"REC FILE",
@@ -3819,13 +3829,16 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                      ui->dsp_page == 0 ? PAL_INSTRUMENT : PAL_EFFECT);
         }
     } else {
+        char quick_label[16];
+        snprintf(quick_label,sizeof(quick_label),"CAP %s",ui->config.quick_capture_source==TS_RECORD_SOURCE_OUTPUT?"OUT":
+            ui->config.quick_capture_source==TS_RECORD_SOURCE_DRY?"DRY":ui->config.quick_capture_source==TS_RECORD_SOURCE_EXT?"EXT":"FM");
         const char *capture_label = ui->external_record_bank ?
                                     (ui->capture_state == TS_CAPTURE_RECORDING ? "STOP REC" :
                                      ui->capture_state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER ?
                                      "REC ARMED" : "REC ARM") :
                                     (ui->capture_state == TS_CAPTURE_RECORDING ? "STOP" :
                                      ui->capture_state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER ?
-                                     "ARMED" : "CAPTURE");
+                                     "ARMED" : quick_label);
         char page_hint[112];
         const char *bank_hint =
             ui->capture_state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER ?
@@ -3858,8 +3871,9 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
              ui->external_record_bank ? PAL_VOLUME : RGB(184, 180, 184), 1);
         if (ui->external_record_bank) {
             mini_button(fb, 320, 313, 75,
-                        ui->record_source == TS_RECORD_SOURCE_SYNTH ?
-                        "SRC SYNTH" : "SRC EXT",
+                        ui->record_source == TS_RECORD_SOURCE_SYNTH ? "SRC FM" :
+                        ui->record_source == TS_RECORD_SOURCE_OUTPUT ? "SRC OUT" :
+                        ui->record_source == TS_RECORD_SOURCE_DRY ? "SRC DRY" : "SRC EXT",
                         ui->record_source == TS_RECORD_SOURCE_SYNTH);
             mini_button(fb, 400, 313, 56, "KEEP", 0);
             if (ui->record_source == TS_RECORD_SOURCE_EXT)
@@ -3869,7 +3883,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         } else {
             int capture_channels = ui->capture_state != TS_CAPTURE_IDLE ?
                                    ui->capture_channels :
-                                   ui->config.capture_channels;
+                                   ui->config.quick_capture_channels;
             mini_button(fb, 154, 313, 78, "FADE ALL",
                         ui->tile_launcher_mask != 0u);
             mini_button(fb,250,313,94,"PLAY ON SEL",ui->play_on_select);
@@ -3909,6 +3923,10 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                 rect(fb, x + 4, y + 18, 64, 2, PAL_VOLUME);
                 rect(fb, x + 4, y + 4, 2, 16, PAL_VOLUME);
             }
+            if(ui->quick_capture_active && ui->sample_page==ui->quick_capture_page && i==ui->quick_capture_slot)
+                text(fb,x+24,y+8,"REC",PAL_VOLUME,1);
+            if(ui->captured_tile_until_ms && ui->sample_page==ui->captured_tile_page && i==ui->captured_tile_slot)
+                rect(fb,x+4,y+20,64,2,PAL_VOLUME);
             ts_ui_draw_tile_state_borders(
                 fb, i, i == instrument->selected_slot,
                 (ui->sister_source_mask & (uint16_t)(1u << i)) != 0u,
@@ -4085,7 +4103,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     }
 
     keyboard_sequence_panel(fb, ui);
-    if (ui->capture_state == TS_CAPTURE_RECORDING) {
+    if (ui->capture_state == TS_CAPTURE_RECORDING && (!ui->quick_capture_active || ui->text_cursor_visible)) {
         size_t capacity = ui->capture_capacity_frames;
         size_t recorded = ui->capture_recorded_frames;
         int progress = capacity > 0u ?
@@ -4143,6 +4161,20 @@ void ts_ui_render_file_recording(TsFramebuffer *fb, const TsUiState *ui)
 {
     if(!fb || !ui)return;
     render_palette=&ui->palette;
+    if(ui->quick_capture_active) {
+        uint64_t seconds=ui->input_sample_rate?ui->capture_recorded_frames/ui->input_sample_rate:0;
+        char label[88];
+        snprintf(label,sizeof(label),"CAP %02d:%02d  %02llu:%02llu:%02llu  PLAYBACK CONTINUES",
+            ui->quick_capture_page+1,ui->quick_capture_slot+1,(unsigned long long)(seconds/3600),
+            (unsigned long long)(seconds/60%60),(unsigned long long)(seconds%60));
+        if(ui->text_cursor_visible) {
+            rect(fb,0,0,640,2,PAL_VOLUME);rect(fb,0,398,640,2,PAL_VOLUME);
+            rect(fb,0,0,2,400,PAL_VOLUME);rect(fb,638,0,2,400,PAL_VOLUME);
+        }
+        if(ui->tracker_open && ui->tracker_embedded_frame)return;
+        rect(fb,3,382,634,15,RGB(12,12,12));text(fb,10,387,label,PAL_VOLUME,1);
+        mini_button(fb,544,382,86,"STOP TILE",ui->text_cursor_visible);return;
+    }
     if(ui->tracker_open && ui->tracker_embedded_frame) {
         /* Keep the full pattern grid visible. The embedded panel owns its
            button/timer, while this shared border survives pattern-only view. */
@@ -4156,6 +4188,13 @@ void ts_ui_render_file_recording(TsFramebuffer *fb, const TsUiState *ui)
     if(ui->tracker_open && ui->tracker_expanded)return;
     if(ui->file_record_state!=TS_PERFORMANCE_FILE_RECORDING &&
        ui->file_record_state!=TS_PERFORMANCE_FILE_STOPPING) {
+        if(ui->fm_open && !ui->mosaic_editing && !ui->external_record_bank) {
+            const char *source=ui->config.quick_capture_source==TS_RECORD_SOURCE_OUTPUT?"OUT":
+                ui->config.quick_capture_source==TS_RECORD_SOURCE_DRY?"DRY":
+                ui->config.quick_capture_source==TS_RECORD_SOURCE_EXT?"EXT":"FM";
+            char label[16];snprintf(label,sizeof(label),"CAP %s",source);
+            mini_button(fb,456,382,80,label,0);
+        }
         mini_button(fb,544,382,86,"REC FILE",0);
         return;
     }

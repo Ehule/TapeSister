@@ -483,9 +483,9 @@ int ts_external_recorder_arm_stream(TsExternalRecorder *r,const char *path,
 {
     if(!r || r->state!=TS_EXTERNAL_CAPTURE_IDLE || !rate ||
        !ts_sample_valid_channels(channels) || seconds<0 || seconds>3600 ||
-       (seconds && seconds<10) || silence_seconds<0 || silence_seconds>3600 ||
+       silence_seconds<0 || silence_seconds>3600 ||
        silence_db< -90 || silence_db>0 || (uint64_t)rate*3600>SIZE_MAX) {
-        set_error(error,size,"Invalid Mosaic recording settings");return 0;
+        set_error(error,size,"Invalid streaming recording settings");return 0;
     }
     TsPerformanceRecorder *stream=malloc(sizeof(*stream));
     float *preview=calloc(65536u*channels,sizeof(float));

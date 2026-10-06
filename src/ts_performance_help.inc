@@ -24,6 +24,15 @@ static const char *performance_help(const TsUiState *ui,int x,int y)
         H(328,337,182,29,"FINAL OUTPUT LEVEL AFTER EQ AND LIMITER; ALSO AFFECTS FILE OUT RECORDING");
         return "";
     }
+    if(!ui->mosaic_open && !ui->tracker_open && !ui->external_record_bank &&
+       !ui->show_recipes && !ui->show_ingredients) {
+        if(ui->show_keyboard) {
+            H(298,313,76,17,"CAPTURE TO NEW TILE; RIGHT: OUT/DRY/EXT/FM; SHIFT+RIGHT: LENGTH; PLAYBACK CONTINUES");
+        } else {
+            H(536,313,94,17,"CAPTURE TO NEW TILE; RIGHT: OUT/DRY/EXT/FM; SHIFT+RIGHT: LENGTH; PLAYBACK CONTINUES");
+            H(10,330,612,49,"SHIFT OCCUPIED: PLAY GROUP; SHIFT EMPTY: COPY; CLICK: SELECT / PLAY ON SEL");
+        }
+    }
     if(!ts_ui_keyboard_sequence_visible(ui))return "";
     H(10,313,46,17,"SHOW/HIDE ARP CONTROLS; SHIFT+SPACE STARTS/STOPS ARP EVEN WITH THE PANEL CLOSED");
     if(ui->show_keyboard) {

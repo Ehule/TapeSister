@@ -128,9 +128,11 @@ or canceled work leaves the tile untouched.
 
 ### Performance and recording
 
-Tiles, loops, QWERTY notes, MIDI notes, FM, and staged chords can be layered while
-TapeSister records the final performance into a new tile. Shift-clicked source groups
-fan notes across several tiles. Plain-clicked one-shots and loops form a separate live
+**CAP OUT** immediately records the audible performance into a new tile while
+the selected instrument, held notes, ARP and arrangements continue. STOP TILE keeps
+the take without selecting or playing it. Right-click CAP chooses OUT/DRY/EXT/FM;
+Shift-right-click selects a fixed duration. Shift-clicked playing groups fan notes
+across several tiles, including when Sister Machine is off. Plain-clicked one-shots and loops form a separate live
 performance layer. **Shift+S / SUSTAIN** selects whether QWERTY and MIDI notes
 release with the key or continue to their end (or keep looping). This setting is
 shared with FM, Portal, import preview, and Sister Machine; Portal and file previews
@@ -153,15 +155,15 @@ existing recording and effects paths. **Shift+Space** starts/stops ARP with its
 controls hidden, and tile selection changes the sound without restarting the
 sequence. See [Keyboard sequencing](docs/KEYBOARD_SEQUENCE.md).
 
-The main and Sister Machine **M/S** buttons mirror one capture-format setting:
+Quick Capture defaults to stereo; its main **M/S** button selects:
 
 - **M** stores `0.5 × (L + R)` mono.
 - **S** preserves stereo.
 
 ![Capturing a stereo performance into a tile](docs/images/manual/capture-to-tile.png)
 
-The separate REC BANK records either configured external input or the internal FM
-performance bus with threshold, pre-roll, tail, and optional sequential Chain recording.
+The separate REC BANK collects successive takes with external/FM threshold, pre-roll,
+tail and optional Chain recording; OUT/DRY sources start immediately.
 KEEP moves completed REC tiles into the Sample collection.
 
 Every completed real-time take is also preserved as a timestamped 32-bit float WAV in

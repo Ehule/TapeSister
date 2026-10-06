@@ -324,7 +324,11 @@ static void writeCursor(void)
 	** edit pattern data, without requiring the performer to look at the status
 	** readout above the editor. Recording modes use the edit color as well.
 	*/
-	const bool editCursor = playMode == PLAYMODE_EDIT ||
+	const bool editCursor =
+#ifdef TAPEHEAD_EMBEDDED
+                            ts_tapehead_live_editing() ||
+#endif
+                            playMode == PLAYMODE_EDIT ||
 	                        playMode == PLAYMODE_RECPATT ||
 	                        playMode == PLAYMODE_RECSONG;
 	uint32_t cursorColor = video.palette[editCursor ? PAL_CURSOR_EDIT : PAL_CURSOR_NAV];
@@ -1313,7 +1317,11 @@ void writePattern(int32_t currRow, int32_t currPattern)
 	/* Playback never lets pointer gestures in the tracker body change the
 	** coordinate model. Recording retains the original FT2 view for write
 	** safety; ordinary stopped editing remains unchanged. */
-	const bool hybridVisuals = songPlaying && playMode != PLAYMODE_RECPATT &&
+	const bool hybridVisuals =
+#ifdef TAPEHEAD_EMBEDDED
+        ts_tapehead_following() &&
+#endif
+        songPlaying && playMode != PLAYMODE_RECPATT &&
 		playMode != PLAYMODE_RECSONG;
 	const int32_t visualMasterRow = hybridVisuals ? song.row : currRow;
 	int32_t row = visualMasterRow - pattCoord->numUpperRows;
@@ -1353,7 +1361,11 @@ void writePattern(int32_t currRow, int32_t currPattern)
 			const bool fastTrackVisible = fastTrack->enabled;
 
 			int32_t displayedPattern = currPattern;
-			if (fastTrackVisible)
+			if (fastTrackVisible
+#ifdef TAPEHEAD_EMBEDDED
+                && ts_tapehead_following()
+#endif
+            )
 			{
 				displayedPattern = fastTrack->sourcePattern;
 				if (displayedPattern < 0 || displayedPattern >= MAX_PATTERNS)
@@ -1506,8 +1518,8 @@ void writePattern(int32_t currRow, int32_t currPattern)
 			if (!independentVisual && !hybridVisuals)
 			{
 				if (songPlaying && fastTrackVisible)
-					drawPlayhead = displayedRow == fastTrack->sourceRow;
-				else if (songPlaying && storedLength != 0 &&
+					drawPlayhead = displayedPattern == fastTrack->sourcePattern && displayedRow == fastTrack->sourceRow;
+				else if (songPlaying &&
 					currPattern == song.pattNum)
 				{
 					const int32_t localRow = fastTracksPOCResolveMasterSourceRow(
