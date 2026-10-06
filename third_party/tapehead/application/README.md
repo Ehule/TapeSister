@@ -76,6 +76,11 @@ and fixes unaligned original help/scoped-sample reads. Original code otherwise
 provides editing and playback behavior. Standalone support modules are retained
 for source completeness even when their screens are inaccessible.
 
+The embedded Follow toggle separates manual editing from transport position.
+Follow-off navigation and note edits leave the running row/tick untouched; mouse
+selection anchors also remain separate from the edit cursor. The host keeps this
+state in `src/ts_tapehead_follow.inc`, reusing the project's existing Follow field.
+
 `tapesister_tapehead_embedded_tests` runs the actual host event and audio paths:
 F10, original editing/undo, block clipboard/extraction, MIDI, STEP/octave,
 Song/Pattern transport, volume/FX commands, LEN/CONTROL, float stereo, exact

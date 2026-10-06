@@ -7,6 +7,11 @@
 #undef main
 #include <assert.h>
 #include "../third_party/tapehead/application/src/ft2_fasttracks.h"
+#include "../third_party/tapehead/application/src/ft2_structs.h"
+#include "../third_party/tapehead/application/src/ft2_pattern_ed.h"
+#include "../third_party/tapehead/application/src/ft2_pattern_draw.h"
+#include "../third_party/tapehead/application/src/ft2_tables.h"
+#include "../third_party/tapehead/application/src/ft2_config.h"
 static SDL_Window *test_window;
 static AudioState *test_audio;
 static TsUiState *test_ui;
@@ -354,6 +359,7 @@ static void audit_blank_song(unsigned rows) {
     for(int lane=0;lane<8;++lane) {uint8_t *l=s+52+lane*10;memset(l,0,10);l[3]=7;l[8]=1;}
     assert(ts_tapehead_sync(test_pages,test_bank,48000,test_error,sizeof(test_error)));export_score();
 }
+#include "test_tracker_follow.inc"
 static void audit_recording(void) {
     audit_blank_song(7);
     click(90,10);assert(test_pages->tracker.order_count==2 && pat()->rows==7); /* IPL + INP */
@@ -784,6 +790,7 @@ int main(int argc,char **argv) {
     pattern_transport_controls(0);
     pattern_transport_controls(1);
     file_recording_feedback();
+    tracker_follow_and_selection();
     shrink_dialog();
     ts_tapehead_close();ts_tracker_playback_free(&test_audio->tracker);ts_sister_runtime_free(&test_audio->sister);
     ts_tracker_edit_free(test_ui->tracker_edit);

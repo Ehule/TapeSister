@@ -425,7 +425,8 @@ static int load_user_palette(const TsUiState *ui, TsPalette *palette,
 
 static const char *capture_archive_directory(void)
 {
-    const char *override = getenv("TAPESISTER_CAPTURES");
+    /* Match SDL_setenv even when SDL and the application use different Windows CRTs. */
+    const char *override = SDL_getenv("TAPESISTER_CAPTURES");
     return override != NULL && override[0] != '\0' ? override : "Captures";
 }
 

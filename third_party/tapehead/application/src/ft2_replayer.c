@@ -4305,8 +4305,11 @@ void stopPlaying(void)
 	}
 
 	// if song was playing, update local row (fixes certain glitches)
-	if (songWasPlaying)
-		editor.row = song.row;
+	if (songWasPlaying
+#ifdef TAPEHEAD_EMBEDDED
+        && ts_tapehead_following()
+#endif
+    )editor.row = song.row;
 
 #ifdef HAS_MIDI
 	midiDubPanic();
@@ -4940,6 +4943,10 @@ void setSyncedReplayerVars(void)
 		editor.globalVolume = pattSyncEntry->globalVolume;
 		ui.drawGlobVolFlag = true;
 	}
+
+#ifdef TAPEHEAD_EMBEDDED
+    if(!ts_tapehead_following()) {ui.updatePatternEditor=true;return;}
+#endif
 
 	if (editor.songPos != pattSyncEntry->songPos)
 	{

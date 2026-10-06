@@ -280,7 +280,69 @@
  	else
 --- a/src/ft2_edit.c
 +++ b/src/ft2_edit.c
-@@ -216,6 +216,9 @@
+@@ -45,6 +45,32 @@
+ 
+ void recordNote(uint8_t note, int8_t vol);
+ 
++static bool liveCursorEdit(void)
++{
++#ifdef TAPEHEAD_EMBEDDED
++    return ts_tapehead_live_editing();
++#else
++    return false;
++#endif
++}
++static bool cursorEditMode(void) { return playMode == PLAYMODE_EDIT || liveCursorEdit(); }
++static void moveEditRow(int row)
++{
++#ifdef TAPEHEAD_EMBEDDED
++    if (songPlaying && !ts_tapehead_following()) { ts_tapehead_edit_row(row); return; }
++#endif
++    editor.row = song.row = row;
++}
++static void stepEditRow(int row)
++{
++    int rows = liveCursorEdit() ? fastTracksPOCGetExtendedPatternLength(editor.editPattern) : patternNumRows[editor.editPattern];
++    if (rows < 1)return;
++    row %= rows;
++    if (liveCursorEdit()) { moveEditRow(row); return; }
++    setSongPos(-1, row, RESET_SONG_TICK);
++}
++
++
+ // when the cursor is at the note slot
+ static bool testNoteKeys(SDL_Scancode scancode)
+ {
+@@ -55,7 +81,7 @@
+ 	const int8_t noteNum = scancodeKeyToNote(scancode);
+ 	if (noteNum == NOTE_OFF)
+ 	{
+-		bool editmode = ui.patternEditorShown && (playMode == PLAYMODE_EDIT);
++		bool editmode = ui.patternEditorShown && cursorEditMode();
+ 
+ 		// inserts "note off" if editing song
+ 		if (editmode || playMode == PLAYMODE_RECPATT || playMode == PLAYMODE_RECSONG)
+@@ -76,8 +102,8 @@
+ 			pattern[curPattern][(row * MAX_CHANNELS) + cursor.ch].note = NOTE_OFF;
+ 
+ 			const uint16_t numRows = patternNumRows[curPattern];
+-			if (playMode == PLAYMODE_EDIT && numRows >= 1)
+-				setSongPos(-1, (row + editor.editRowSkip) % numRows, RESET_SONG_TICK);
++			if (cursorEditMode() && numRows >= 1)
++				stepEditRow(row + editor.editRowSkip);
+ 
+ 			ui.updatePatternEditor = true;
+ 			setSongModifiedFlag();
+@@ -108,7 +134,7 @@
+ {
+ 	int8_t i;
+ 
+-	bool editmode = ui.patternEditorShown && (playMode == PLAYMODE_EDIT);
++	bool editmode = ui.patternEditorShown && cursorEditMode();
+ 
+ 	if (cursor.object == CURSOR_NOTE)
+ 	{
+@@ -216,6 +242,9 @@
  		case CURSOR_INST2:
  		{
  			p->instr = (p->instr & 0xF0) | i;
@@ -290,7 +352,128 @@
  
  		}
  		break;
-@@ -866,11 +869,13 @@
+@@ -284,8 +313,8 @@
+ 	// increase row (only in edit mode)
+ 
+ 	const int16_t numRows = patternNumRows[curPattern];
+-	if (playMode == PLAYMODE_EDIT && numRows >= 1)
+-		setSongPos(-1, (row + editor.editRowSkip) % numRows, RESET_SONG_TICK);
++	if (cursorEditMode() && numRows >= 1)
++		stepEditRow(row + editor.editRowSkip);
+ 
+ 	const bool patternDataChanged = memcmp(&oldNote, p, sizeof (note_t)) != 0;
+ 	if (i == 0) // if we inserted a zero, check if pattern is empty
+@@ -377,7 +406,7 @@
+ 
+ 	const int16_t oldRow = editor.row;
+ 
+-	if (songPlaying)
++	if (songPlaying && !liveCursorEdit())
+ 	{
+ 		// row quantization
+ 		evaluateTimeStamp(&songPos, &pattNum, &row, &tick);
+@@ -390,8 +419,8 @@
+ 		tick = 0;
+ 	}
+ 
+-	bool editmode = ui.patternEditorShown && (playMode == PLAYMODE_EDIT);
+-	bool recmode = (playMode == PLAYMODE_RECSONG) || (playMode == PLAYMODE_RECPATT);
++	bool editmode = ui.patternEditorShown && cursorEditMode();
++	bool recmode = !liveCursorEdit() && ((playMode == PLAYMODE_RECSONG) || (playMode == PLAYMODE_RECPATT));
+ 
+ 	if (noteNum == NOTE_OFF)
+ 		vol = 0;
+@@ -480,7 +509,7 @@
+ 		editor.keyOnTab[c] = noteNum;
+ 
+ 			 if (row >= oldRow &&
+-                   	     !(songPlaying && recmode &&
++                         !(songPlaying && (recmode || liveCursorEdit()) &&
+                                (config.specialFlags2 & SILENT_REC_ENTRY))) // suppress audition while recording playback
+ 		{
+ #ifdef HAS_MIDI
+@@ -510,7 +539,7 @@
+ 				if (!recmode)
+ 				{
+ 					if (numRows >= 1)
+-						setSongPos(-1, (editor.row + editor.editRowSkip) % numRows, RESET_SONG_TICK);
++						stepEditRow(editor.row + editor.editRowSkip);
+ 				}
+ 				else if (!config.recQuant && tick > 0)
+ 				{
+@@ -544,7 +573,7 @@
+ 		editor.keyOffTime[c] = editor.keyOffNr;
+ 
+ 		if (row >= oldRow &&
+-		    !(songPlaying && recmode &&
++		    !(songPlaying && (recmode || liveCursorEdit()) &&
+ 		      (config.specialFlags2 & SILENT_REC_ENTRY))) //suppress audtion while recording playback
+ 		{
+ #ifdef HAS_MIDI
+@@ -620,7 +649,7 @@
+ 	// special case for delete - manipulate note data
+ 	if (keycode == SDLK_DELETE)
+ 	{
+-		bool editmode = ui.patternEditorShown && (playMode == PLAYMODE_EDIT);
++		bool editmode = ui.patternEditorShown && cursorEditMode();
+ 		if (!editmode && playMode != PLAYMODE_RECSONG && playMode != PLAYMODE_RECPATT)
+ 			return false; // we're not editing, test other keys
+ 
+@@ -683,8 +712,8 @@
+ 
+ 		// increase row (only in edit mode)
+ 		const int16_t numRows = patternNumRows[curPattern];
+-		if (playMode == PLAYMODE_EDIT && numRows >= 1)
+-			setSongPos(-1, (row + editor.editRowSkip) % numRows, RESET_SONG_TICK);
++		if (cursorEditMode() && numRows >= 1)
++			stepEditRow(row + editor.editRowSkip);
+ 
+ 		ui.updatePatternEditor = true;
+ 		if (patternDataChanged)
+@@ -740,7 +769,7 @@
+ 	int16_t row = editor.row;
+ 	resumeMusic();
+ 
+-	bool editmode = ui.patternEditorShown && (playMode == PLAYMODE_EDIT);
++	bool editmode = ui.patternEditorShown && cursorEditMode();
+ 	if (!editmode && playMode != PLAYMODE_RECSONG && playMode != PLAYMODE_RECPATT)
+ 		return;
+ 
+@@ -774,8 +803,8 @@
+ 	}
+ 
+ 	const int16_t numRows = patternNumRows[curPattern];
+-	if (playMode == PLAYMODE_EDIT && numRows >= 1)
+-		setSongPos(-1, (row + editor.editRowSkip) % numRows, RESET_SONG_TICK);
++	if (cursorEditMode() && numRows >= 1)
++		stepEditRow(row + editor.editRowSkip);
+ 
+ 	killPatternIfUnused(curPattern);
+ 
+@@ -791,7 +820,7 @@
+ 	int16_t row = editor.row;
+ 	resumeMusic();
+ 
+-	bool editmode = ui.patternEditorShown && (playMode == PLAYMODE_EDIT);
++	bool editmode = ui.patternEditorShown && cursorEditMode();
+ 	if (!editmode && playMode != PLAYMODE_RECPATT && playMode != PLAYMODE_RECSONG)
+ 		return;
+ 
+@@ -824,7 +853,7 @@
+ 	int16_t row = editor.row;
+ 	resumeMusic();
+ 
+-	bool editmode = ui.patternEditorShown && (playMode == PLAYMODE_EDIT);
++	bool editmode = ui.patternEditorShown && cursorEditMode();
+ 	if (!editmode && playMode != PLAYMODE_RECPATT && playMode != PLAYMODE_RECSONG)
+ 		return;
+ 	undoPatternBegin(curPattern, "Insert line");
+@@ -862,15 +891,17 @@
+ 	int16_t row = editor.row;
+ 	resumeMusic();
+ 
+-	bool editmode = ui.patternEditorShown && (playMode == PLAYMODE_EDIT);
++	bool editmode = ui.patternEditorShown && cursorEditMode();
  	if (!editmode && playMode != PLAYMODE_RECPATT && playMode != PLAYMODE_RECSONG)
  		return;
  
@@ -300,23 +483,78 @@
  		return;
 -
  	row--;
- 	editor.row = song.row = row;
+-	editor.row = song.row = row;
++	moveEditRow(row);
 +#endif
  
  	note_t *p = pattern[curPattern];
  	if (p != NULL)
-@@ -882,6 +887,10 @@
+@@ -882,6 +913,10 @@
  		undoPatternCommit();
  	}
  
 +
 +#ifdef TAPEHEAD_EMBEDDED
-+	editor.row = song.row = row > 0 ? row - 1 : 0;
++	moveEditRow(row > 0 ? row - 1 : 0);
 +#endif
  	ui.updatePatternEditor = true;
  }
  
-@@ -2764,3 +2773,13 @@
+@@ -892,7 +927,7 @@
+ 	int16_t row = editor.row;
+ 	resumeMusic();
+ 
+-	bool editmode = ui.patternEditorShown && (playMode == PLAYMODE_EDIT);
++	bool editmode = ui.patternEditorShown && cursorEditMode();
+ 	if (!editmode && playMode != PLAYMODE_RECPATT && playMode != PLAYMODE_RECSONG)
+ 		return;
+ 	undoPatternBegin(curPattern, "Delete note");
+@@ -905,7 +940,7 @@
+ 		if (row > 0)
+ 		{
+ 			row--;
+-			editor.row = song.row = row;
++			moveEditRow(row);
+ 
+ 			for (int32_t i = row; i < numRows-1; i++)
+ 				p[(i * MAX_CHANNELS) + cursor.ch] = p[((i+1) * MAX_CHANNELS) + cursor.ch];
+@@ -918,7 +953,7 @@
+ 		if (row > 0)
+ 		{
+ 			row--;
+-			editor.row = song.row = row;
++			moveEditRow(row);
+ 		}
+ 	}
+ 
+@@ -936,7 +971,7 @@
+ 	int16_t row = editor.row;
+ 	resumeMusic();
+ 
+-	bool editmode = ui.patternEditorShown && (playMode == PLAYMODE_EDIT);
++	bool editmode = ui.patternEditorShown && cursorEditMode();
+ 	if (!editmode && playMode != PLAYMODE_RECPATT && playMode != PLAYMODE_RECSONG)
+ 		return;
+ 	undoPatternBegin(curPattern, "Delete line");
+@@ -948,7 +983,7 @@
+ 		if (row > 0)
+ 		{
+ 			row--;
+-			editor.row = song.row = row;
++			moveEditRow(row);
+ 
+ 			for (int32_t i = row; i < numRows-1; i++)
+ 			{
+@@ -964,7 +999,7 @@
+ 		if (row > 0)
+ 		{
+ 			row--;
+-			editor.row = song.row = row;
++			moveEditRow(row);
+ 		}
+ 	}
+ 
+@@ -2764,3 +2799,13 @@
  void toggleTranspMask2(void) { editor.transpMask[2] ^= 1; };
  void toggleTranspMask3(void) { editor.transpMask[3] ^= 1; };
  void toggleTranspMask4(void) { editor.transpMask[4] ^= 1; };
@@ -485,7 +723,7 @@
  int32_t fastTracksPOCGetSourceRow(int32_t channelIndex);
 --- a/src/ft2_header.h
 +++ b/src/ft2_header.h
-@@ -13,6 +13,19 @@
+@@ -13,6 +13,24 @@
  #include <limits.h> // also has PATH_MAX
  #endif
  #include "ft2_replayer.h"
@@ -501,11 +739,16 @@
 +void ts_tapehead_mix_tile(void *voice, unsigned offset, unsigned frames);
 +double ts_tapehead_tile_begin(void *voice);
 +void ts_tapehead_audio_span(unsigned offset,unsigned frames,int seam);
++int ts_tapehead_following(void);
++int ts_tapehead_live_editing(void);
++void ts_tapehead_edit_row(int row);
++void ts_tapehead_navigate_rows(int delta);
++void ts_tapehead_mark_anchor(int channel,int row);
 +#endif
  
  #define PROG_VER_STR "2.21"
  
-@@ -40,7 +53,11 @@
+@@ -40,7 +58,11 @@
  ** branchless in the inner channel mixer loop.
  ** Warning: Do not change this!
  */
@@ -699,7 +942,27 @@
  			{
 --- a/src/ft2_mouse.c
 +++ b/src/ft2_mouse.c
-@@ -508,7 +508,7 @@
+@@ -443,6 +443,9 @@
+ 
+ static void mouseWheelDecRow(void)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	if(songPlaying && !ts_tapehead_following()) {ts_tapehead_navigate_rows(-1);return;}
++#endif
+ 	if (songPlaying)
+ 		return;
+ 
+@@ -455,6 +458,9 @@
+ 
+ static void mouseWheelIncRow(void)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	if(songPlaying && !ts_tapehead_following()) {ts_tapehead_navigate_rows(1);return;}
++#endif
+ 	if (songPlaying)
+ 		return;
+ 
+@@ -508,7 +514,7 @@
  		const uint16_t step = (modifiers & KMOD_SHIFT) ? 8 : 1;
  		const uint16_t controlMax = CLAMP(
  			tapeheadConfig.trackLengthControlMax, 1, MAX_PATT_LEN);
@@ -708,7 +971,7 @@
  			newLength = (uint16_t)MIN((int32_t)controlMax,
  				(int32_t)oldLength + step);
  		else if (oldLength <= step)
-@@ -998,8 +998,12 @@
+@@ -998,8 +1004,12 @@
  	// mouse 0,0 = open exit dialog (also make sure the test always works in fullscreen mode)
  	if ((mouse.x == 0 && mouse.y == 0) || (video.fullscreen && (video.renderX > 0 || video.renderY > 0) && (mouse.rawX == 0 && mouse.rawY == 0)))
  	{
@@ -721,7 +984,7 @@
  
  		// release button presses from okBox()
  		mouse.leftButtonPressed = false;
-@@ -1142,6 +1146,9 @@
+@@ -1142,6 +1152,9 @@
  
  void readMouseXY(void)
  {
@@ -731,7 +994,7 @@
  	int32_t mx, my, windowX, windowY;
  
  	if (mouse.setPosFlag)
-@@ -1222,6 +1229,7 @@
+@@ -1222,6 +1235,7 @@
  	// multiply coords by video upscaling factors
  	mouse.x = (int32_t)floor(mx * video.dMouseXMul);
  	mouse.y = (int32_t)floor(my * video.dMouseYMul);
@@ -981,7 +1244,20 @@
 +#endif
 --- a/src/ft2_pattern_draw.c
 +++ b/src/ft2_pattern_draw.c
-@@ -1087,10 +1087,9 @@
+@@ -324,7 +324,11 @@
+ 	** edit pattern data, without requiring the performer to look at the status
+ 	** readout above the editor. Recording modes use the edit color as well.
+ 	*/
+-	const bool editCursor = playMode == PLAYMODE_EDIT ||
++	const bool editCursor =
++#ifdef TAPEHEAD_EMBEDDED
++                            ts_tapehead_live_editing() ||
++#endif
++                            playMode == PLAYMODE_EDIT ||
+ 	                        playMode == PLAYMODE_RECPATT ||
+ 	                        playMode == PLAYMODE_RECSONG;
+ 	uint32_t cursorColor = video.palette[editCursor ? PAL_CURSOR_EDIT : PAL_CURSOR_NAV];
+@@ -1087,10 +1091,9 @@
  		textOutTiny(ratioX, yPos + 1, ratioText, ratioColor);
  
  		int32_t statusX = ratioX + ratioWidth + 2;
@@ -994,6 +1270,109 @@
  				video.palette[PAL_FASTTRACKS_PHASE]);
  			statusX += 6;
  		}
+@@ -1314,7 +1317,11 @@
+ 	/* Playback never lets pointer gestures in the tracker body change the
+ 	** coordinate model. Recording retains the original FT2 view for write
+ 	** safety; ordinary stopped editing remains unchanged. */
+-	const bool hybridVisuals = songPlaying && playMode != PLAYMODE_RECPATT &&
++	const bool hybridVisuals =
++#ifdef TAPEHEAD_EMBEDDED
++        ts_tapehead_following() &&
++#endif
++        songPlaying && playMode != PLAYMODE_RECPATT &&
+ 		playMode != PLAYMODE_RECSONG;
+ 	const int32_t visualMasterRow = hybridVisuals ? song.row : currRow;
+ 	int32_t row = visualMasterRow - pattCoord->numUpperRows;
+@@ -1354,7 +1361,11 @@
+ 			const bool fastTrackVisible = fastTrack->enabled;
+ 
+ 			int32_t displayedPattern = currPattern;
+-			if (fastTrackVisible)
++			if (fastTrackVisible
++#ifdef TAPEHEAD_EMBEDDED
++                && ts_tapehead_following()
++#endif
++            )
+ 			{
+ 				displayedPattern = fastTrack->sourcePattern;
+ 				if (displayedPattern < 0 || displayedPattern >= MAX_PATTERNS)
+@@ -1507,8 +1518,8 @@
+ 			if (!independentVisual && !hybridVisuals)
+ 			{
+ 				if (songPlaying && fastTrackVisible)
+-					drawPlayhead = displayedRow == fastTrack->sourceRow;
+-				else if (songPlaying && storedLength != 0 &&
++					drawPlayhead = displayedPattern == fastTrack->sourcePattern && displayedRow == fastTrack->sourceRow;
++				else if (songPlaying &&
+ 					currPattern == song.pattNum)
+ 				{
+ 					const int32_t localRow = fastTracksPOCResolveMasterSourceRow(
+--- a/src/ft2_pattern_ed.c
++++ b/src/ft2_pattern_ed.c
+@@ -1004,8 +1004,11 @@
+ 	** FasTrack header gestures are dispatched before this handler, so they
+ 	** remain available without allowing cursor/block edits to change the
+ 	** transport view underneath a performance. */
+-	if (songPlaying)
+-		return;
++#ifdef TAPEHEAD_EMBEDDED
++	if (songPlaying && ts_tapehead_following())return;
++#else
++	if (songPlaying)return;
++#endif
+ 
+ 	// non-FT2 feature: Use right mouse button to remove pattern marking
+ 	if (mouse.rightButtonPressed)
+@@ -1026,6 +1029,9 @@
+ 
+ 		lastChMark = mouseXToCh();
+ 		lastRowMark = mouseYToRow();
++#ifdef TAPEHEAD_EMBEDDED
++		ts_tapehead_mark_anchor(lastChMark,lastRowMark);
++#endif
+ 
+ 		/* Keep the edit cursor aligned with the adaptive field geometry while
+ 		** preserving FT2's click-and-drag block selection behavior. */
+@@ -1182,6 +1188,9 @@
+ 
+ void rowOneUpWrap(void)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	if(songPlaying && !ts_tapehead_following()) {ts_tapehead_navigate_rows(-1);return;}
++#endif
+ 	const bool audioWasntLocked = !audio.locked;
+ 	if (audioWasntLocked)
+ 		lockAudio();
+@@ -1219,6 +1228,9 @@
+ 
+ void rowOneDownWrap(void)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	if(songPlaying && !ts_tapehead_following()) {ts_tapehead_navigate_rows(1);return;}
++#endif
+ 	const bool audioWasntLocked = !audio.locked;
+ 	if (audioWasntLocked)
+ 		lockAudio();
+@@ -1254,6 +1266,9 @@
+ 
+ void rowUp(uint16_t amount)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	if(songPlaying && !ts_tapehead_following()) {ts_tapehead_navigate_rows(-(int)amount);return;}
++#endif
+ 	const bool audioWasntLocked = !audio.locked;
+ 	if (audioWasntLocked)
+ 		lockAudio();
+@@ -1302,6 +1317,9 @@
+ 
+ void rowDown(uint16_t amount)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	if(songPlaying && !ts_tapehead_following()) {ts_tapehead_navigate_rows(amount);return;}
++#endif
+ 	const bool audioWasntLocked = !audio.locked;
+ 	if (audioWasntLocked)
+ 		lockAudio();
 --- a/src/ft2_pattern_launcher_ui.c
 +++ b/src/ft2_pattern_launcher_ui.c
 @@ -1740,6 +1740,9 @@
@@ -1016,6 +1395,33 @@
  	patternLauncherPanelShown = shown;
  	if (shown)
  		sampleLauncherDeckShown = false;
+--- a/src/ft2_replayer.c
++++ b/src/ft2_replayer.c
+@@ -4305,8 +4305,11 @@
+ 	}
+ 
+ 	// if song was playing, update local row (fixes certain glitches)
+-	if (songWasPlaying)
+-		editor.row = song.row;
++	if (songWasPlaying
++#ifdef TAPEHEAD_EMBEDDED
++        && ts_tapehead_following()
++#endif
++    )editor.row = song.row;
+ 
+ #ifdef HAS_MIDI
+ 	midiDubPanic();
+@@ -4941,6 +4944,10 @@
+ 		ui.drawGlobVolFlag = true;
+ 	}
+ 
++#ifdef TAPEHEAD_EMBEDDED
++    if(!ts_tapehead_following()) {ui.updatePatternEditor=true;return;}
++#endif
++
+ 	if (editor.songPos != pattSyncEntry->songPos)
+ 	{
+ 		editor.songPos = pattSyncEntry->songPos;
 --- a/src/ft2_replayer.h
 +++ b/src/ft2_replayer.h
 @@ -228,6 +228,12 @@
@@ -1206,6 +1612,16 @@
  	if (!forceUpdate && songIsModified == song.isModified)
  		return; // window title is already set to the same
  
+@@ -1530,6 +1545,9 @@
+ 
+ 						str = auditionNoteText;
+ 					}
++#ifdef TAPEHEAD_EMBEDDED
++					else if (ts_tapehead_live_editing())  str = "> Live edit <";
++#endif
+ 					else if (playMode == PLAYMODE_PATT)    str = "> Play ptn. <";
+ 					else if (playMode == PLAYMODE_EDIT)    str = "> Editing <";
+ 					else if (playMode == PLAYMODE_RECSONG) str = "> Rec. sng. <";
 --- a/src/ft2_wav_renderer.c
 +++ b/src/ft2_wav_renderer.c
 @@ -164,6 +164,9 @@

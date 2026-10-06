@@ -27,6 +27,8 @@ const uint32_t *ts_tapehead_frame(void);
 const float *ts_tapehead_render(unsigned frames, unsigned rate);
 int ts_tapehead_action(void);
 int ts_tapehead_running(void);
+int ts_tapehead_following(void);
+int ts_tapehead_live_editing(void);
 int ts_tapehead_block_active(void);
 unsigned ts_tapehead_capture_flags(unsigned frame);
 void ts_tapehead_audio_span(unsigned offset,unsigned frames,int seam);

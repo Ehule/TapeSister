@@ -74,7 +74,10 @@ static void reset_route(int route)
     audio.performance_source_mask = route == 2 ? 1u : 0u;
     ts_sister_runtime_set_sources(&audio.sister, route == 3 ? TS_SISTER_SOURCE_TILES : 0u);
     ts_sister_runtime_clear_source_mask(&audio.sister);
-    assert(ts_sister_runtime_set_source_slot(&audio.sister, &instrument, 0, 1));
+    /* Playing-group marks now work with Sister power off. Single-tile/FM
+       fixtures must not leave a group selected just because it was bypassed. */
+    if (route == 3)
+        assert(ts_sister_runtime_set_source_slot(&audio.sister, &instrument, 0, 1));
 }
 
 static void test_chords(void)

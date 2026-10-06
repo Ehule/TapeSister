@@ -443,6 +443,9 @@ void mouseAnimOff(void)
 
 static void mouseWheelDecRow(void)
 {
+#ifdef TAPEHEAD_EMBEDDED
+	if(songPlaying && !ts_tapehead_following()) {ts_tapehead_navigate_rows(-1);return;}
+#endif
 	if (songPlaying)
 		return;
 
@@ -455,6 +458,9 @@ static void mouseWheelDecRow(void)
 
 static void mouseWheelIncRow(void)
 {
+#ifdef TAPEHEAD_EMBEDDED
+	if(songPlaying && !ts_tapehead_following()) {ts_tapehead_navigate_rows(1);return;}
+#endif
 	if (songPlaying)
 		return;
 
