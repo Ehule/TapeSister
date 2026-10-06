@@ -2494,7 +2494,15 @@ bool tapeheadEmbeddedAudioPrepare(uint32_t rate, uint32_t frames)
 void tapeheadEmbeddedAudioRender(float *out,uint32_t frames)
 {
     renderAudioFrames(frames,1);
-    sendSamples32BitFloat(out,frames,1);
+    /* TRACK is a host source bus, not a standalone device output. Keep its
+       float headroom and omit FT2's device amplification/master attenuation;
+       TapeSister owns the shared mixer, effects, limiter and output gain. */
+    for (uint32_t i=0; i<frames; ++i)
+    {
+        out[i*2] = audio.fBusMixBufferL[0][i];
+        out[i*2+1] = audio.fBusMixBufferR[0][i];
+        audio.fBusMixBufferL[0][i] = audio.fBusMixBufferR[0][i] = 0.0f;
+    }
     audio.callbackOngoing=false;
 }
 #endif
