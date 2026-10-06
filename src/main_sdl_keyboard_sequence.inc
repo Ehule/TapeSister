@@ -38,8 +38,7 @@ static int keyboard_sequence_prepare(SDL_AudioDeviceID device, AudioState *audio
     if (device) SDL_LockAudioDevice(device);
     keyboard_sequence_ui(audio, ui);
     running = ts_keyboard_sequence_active(&audio->keyboard_sequence);
-    if (!ui->fm_open && audio->sister.enabled &&
-        (audio->sister.source_switches & TS_SISTER_SOURCE_TILES))
+    if (!ui->fm_open)
         mask = ts_sister_runtime_source_mask(&audio->sister);
     if (!mask && audio->performance_group_latched) mask = audio->performance_source_mask;
     if (device) SDL_UnlockAudioDevice(device);

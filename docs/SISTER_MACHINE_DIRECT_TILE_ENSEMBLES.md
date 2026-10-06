@@ -12,7 +12,9 @@ one occupancy-sensitive Shift-click contract:
 Copy still rejects occupied destinations and invalid Current material. Source toggling
 never selects or auditions the tile, never writes its sample, and remains legal for an
 occupied protected tile. Plain click selects the active canvas and never changes the
-mask. Capture's armed transient Shift-click group remains a separate contextual workflow.
+mask. Quick Capture uses this same saved playing group. QWERTY/MIDI and ARP honor it
+with Sister POWER on or off. The legacy blank-canvas/overdub recorder retains its
+older transient staging behavior.
 
 ## State and border language
 

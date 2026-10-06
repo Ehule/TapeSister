@@ -1147,7 +1147,7 @@ TsSisterTileShiftResult ts_sister_runtime_shift_sample_tile(
         return TS_SISTER_TILE_SHIFT_FAILED;
     }
     if (status != NULL && status_size > 0u)
-        snprintf(status, status_size, "TILE %02d SISTER SOURCE %s",
+        snprintf(status, status_size, "TILE %02d PLAY GROUP %s",
                  slot + 1, was_source ? "REMOVED" : "ADDED");
     return was_source ? TS_SISTER_TILE_SHIFT_SOURCE_REMOVED :
                         TS_SISTER_TILE_SHIFT_SOURCE_ADDED;
@@ -1280,9 +1280,8 @@ int ts_sister_runtime_note_on(TsSisterRuntime *runtime,
 {
     uint16_t mask;
     int started;
-    if (runtime == NULL || !runtime->enabled || instrument == NULL ||
-        event == NULL || output_rate <= 0 ||
-        (runtime->source_switches & TS_SISTER_SOURCE_TILES) == 0u)
+    if (runtime == NULL || instrument == NULL ||
+        event == NULL || output_rate <= 0)
         return 0;
     mask = ts_sister_runtime_validate_source_mask(runtime, instrument);
     ts_performance_set_attack_ms(&runtime->performance,

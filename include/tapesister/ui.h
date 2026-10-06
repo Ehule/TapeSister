@@ -458,6 +458,9 @@ typedef struct {
     TsDspRecipeValues dsp_presets[TS_DSP_FACTORY_RECIPE_COUNT];
     TsCaptureState capture_state;
     int capture_overdub;
+    int quick_capture_active, quick_capture_page, quick_capture_slot;
+    int captured_tile_page, captured_tile_slot;
+    uint32_t captured_tile_until_ms;
     int external_record_bank;
     int sample_page;
     int sample_page_count;

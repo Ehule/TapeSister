@@ -40,6 +40,8 @@ static int runtime_capture_source_matches(const AudioState *audio,
 static TsUiBankAction runtime_bank_action(AudioState *audio, int right_button,
                                           unsigned modifiers)
 {
+    /* Legacy blank-canvas/overdub staging remains private to that recorder.
+       Quick Capture never enters this state; its Shift-clicks use the saved group. */
     if (audio != NULL && !right_button &&
         (atomic_load_explicit(&audio->capture.state, memory_order_acquire) ==
              TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER ||

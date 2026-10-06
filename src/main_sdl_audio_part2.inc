@@ -224,14 +224,11 @@ static int ts_switch_output_for_config(char *error, size_t error_size)
                  "Finish or cancel Capture before switching output");
         return 0;
     }
-    if (audio != NULL && audio->record_bank_recorder != NULL &&
-        audio->record_source != NULL &&
-        atomic_load_explicit(audio->record_source, memory_order_acquire) ==
-            TS_RECORD_SOURCE_SYNTH &&
-        (audio->record_bank_recorder->state == TS_EXTERNAL_CAPTURE_ARMED ||
-         audio->record_bank_recorder->state == TS_EXTERNAL_CAPTURE_RECORDING)) {
-        snprintf(error, error_size,
-                 "Stop or cancel SYNTH REC before switching output");
+    if (audio && audio->record_bank_recorder && audio->record_source &&
+        atomic_load_explicit(audio->record_source,memory_order_acquire)!=TS_RECORD_SOURCE_EXT &&
+        (audio->record_bank_recorder->state==TS_EXTERNAL_CAPTURE_ARMED ||
+         audio->record_bank_recorder->state==TS_EXTERNAL_CAPTURE_RECORDING)) {
+        snprintf(error,error_size,"Stop or cancel internal recording before switching output");
         return 0;
     }
 

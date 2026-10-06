@@ -564,6 +564,7 @@ if(TAPESISTER_BUILD_SDL)
     target_link_libraries(tapesister_mosaic_controller_tests PRIVATE rt)
   endif()
   add_test(NAME tapesister_mosaic_controller_tests COMMAND tapesister_mosaic_controller_tests)
+  add_test(NAME tapesister_quick_capture_tests COMMAND tapesister_mosaic_controller_tests --quick-capture)
 endif()
 
 add_executable(test_prism tests/test_prism.c)

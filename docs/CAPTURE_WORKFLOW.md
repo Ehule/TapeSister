@@ -1,25 +1,66 @@
 # Realtime capture workflow
 
-TapeSister treats a completed realtime performance differently from an editor or
-generator state: it preserves the original performance before installing an editable
-working copy. External input uses `INPUT_...wav`; FM performances recorded directly
-to the REC BANK use `SYNTH_...wav`; and Capture-to-New-Tile uses `CAPTURE_...wav`.
-Archives are 32-bit float WAV files in `Captures/` and preserve the take's explicit
-channel shape. Internal Capture defaults to mono (**M**) and may deliberately preserve
-stereo (**S**); external MIX/LEFT/RIGHT takes are mono and STEREO takes are stereo.
-The main-page and Sister Machine M/S buttons mirror one shared Internal Capture format,
-including Sister's long-form FILE destination.
-FM/SYNTH remains native mono. Files live in `TAPESISTER_CAPTURES` when set and use local
-time, milliseconds, process identity, and a
-collision counter. Files are written to a temporary name and renamed only after the
-WAV closes successfully. TapeSister never scans this folder for cleanup and no tile or
-project operation owns an archived file.
+## Quick Capture to a new tile
 
-Canceled/empty takes are not archived. Normal edits, generated sounds, transforms,
-previews, and history checkpoints are not archived. If archive I/O fails, the working
-take is still retained and the UI reports the failure explicitly; fixing an unavailable
-or full destination remains a user action because silently deleting a playable take
-would be worse.
+**CAP OUT** is available beside the Sample tiles and beside REC FILE in the
+note keyboard, and in the FM footer. Click to start immediately; click **STOP TILE** to keep the take.
+The footer also provides STOP TILE, destination page/tile and elapsed time, with
+a flashing pink border. Capture reserves the next free, unprotected tile and
+adds a Sample page when needed. It does not select the destination, stop the
+ARP, clear held notes, restart TrackSister/Mosaic or change the playing group.
+A completed tile is highlighted for eight seconds; it is not played or added
+to the group automatically. Escape cancels a take without stopping playback.
+
+Right-click the Capture button to cycle sources. Its caption identifies the
+current choice. The choices use the same taps as Mosaic recording:
+
+| Source | Recorded sound |
+| --- | --- |
+| OUT (default) | Final audible output, including backing arrangements, enabled effects, limiter, output fader and any audible external monitor |
+| DRY | Live sample/FM keyboard and MIDI notes, playing groups and ARP, before the shared effects; excludes Mosaic/TrackSister backing and monitored input |
+| EXT | Configured physical input and channel selection, independently of output monitoring |
+| FM | Internal FM performance bus only, including FM ARP |
+
+Internal Quick Capture defaults to stereo. The main **M/S** button changes its
+format: M folds `0.5 × (L + R)`; S retains both channels. External input follows
+its configured channel mode. Sister head Capture retains its own existing M/S
+setting; Overdub always follows the target tile's channel shape.
+
+Shift-right-click Capture cycles **until stopped → 10s → 30s → 60s → 5min**.
+The status line shows the chosen duration. `[Quick Capture]` in the INI saves
+`quick_capture_source` (0 EXT, 1 FM, 2 OUT, 3 DRY), `quick_capture_channels` (1/2)
+and `quick_capture_seconds` (0 until stopped, otherwise 1..3600). Gaps and leading
+silence are retained; Quick Capture does not use Record Bank's threshold or
+silence splitting. The native 100,000,000-frame tile limit is the upper bound.
+
+The shared streaming recorder writes a 32-bit float WAV through a background
+writer and a bounded queue. OUT uses `OUTPUT_...wav`, EXT uses `INPUT_...wav`,
+and DRY/FM quick takes use `CAPTURE_...wav` in `Captures/` (or
+`TAPESISTER_CAPTURES`). Publication prepares the editable tile outside the audio
+lock. If its reserved slot became unavailable, it finds another empty slot;
+existing audio is never overwritten. A WAV remains available if tile creation
+fails. Disk/queue errors stop recording and report a partial take when recoverable.
+Canceled and zero-frame takes are discarded. Edits and project deletion never
+own or remove a completed archive.
+
+## Playing groups and specialized recording
+
+Shift-click an occupied tile to add/remove it from the current Sample page's
+playing group. QWERTY, MIDI and ARP play the group with Sister Machine on or off,
+without arming Capture. The existing per-page marks, colors and project state
+are reused. Plain selection leaves the group intact. Shift-click an empty tile
+still copies Current and leaves the copy unmarked. Group voices preserve the
+existing linked `1/sqrt(member count)` gain and immutable source generations.
+Sister's TILES source switch still controls routing while Sister owns the mix.
+
+**REC FILE** saves the final performance without making a tile. **OVERDUB**
+retains the explicit existing-tile workflow. **REC BANK** remains a separate
+collection for threshold/pre-roll/tail/Chain sampling with KEEP; its source
+button cycles EXT/FM/OUT/DRY. EXT/FM use threshold triggering, while OUT/DRY
+start immediately. Opening that collection and its legacy recording controls
+still stop the live Sample performance; use Quick Capture for uninterrupted
+recording. Sister MIX/head capture and Mosaic REC TILE retain their specialized
+destinations. A busy tile recorder cannot be stolen by another capture mode.
 
 ## Sample pages and project compatibility
 
@@ -46,8 +87,8 @@ Sister PR9 head Capture includes that head's PR8 weave and targeted fixed-chain
 effects because the insertion precedes the established tap. Unselected head taps
 remain unchanged. MIX Capture includes MIX-target post effects after OUT and
 retains the existing linked safety and explicit mono `0.5 × (L + R)` fold. MIX
-effects never leak into raw head taps; ordinary main Capture remains at its
-established pre-monitor source point.
+effects never leak into raw head taps; legacy blank-canvas Capture remains at its
+established pre-monitor source point. Quick Capture uses the selected tap above.
 
 PR10 duration changes never stop or re-arm Capture. The selected H1/H2/H3/MIX tap is
 published at the same stage while rolling history is resized by age; Capture recorder
@@ -62,8 +103,9 @@ headroom. It performs only that conversion, channel-aware external-source record
 writes, one block peak publication, one atomic activity-mask publication, and an
 optional lock-free SPSC monitor-ring write. It does no
 drawing, file I/O, allocation, or project mutation. The output callback consumes the
-dry monitor ring after producing and feeding the internal CAPTURE performance mix, so
-monitored input cannot be printed into internal CAPTURE or routed through tile effects.
+dry monitor ring after producing and feeding the legacy blank-canvas capture mix, so
+that legacy tap excludes monitored input. Quick Capture OUT includes the final audible
+monitor return; DRY excludes it.
 When REC BANK source is SYNTH, the output callback feeds the synth-only `TsNoteBank`
 submix to the same recorder before dry monitoring. This path does not open or round-trip
 through a physical input device.

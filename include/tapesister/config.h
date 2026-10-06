@@ -149,6 +149,9 @@ typedef struct {
     int capture_auto_resize;
     int capture_max_seconds;
     int capture_channels;
+    int quick_capture_channels; /* 1=M, 2=S; independent of legacy head capture. */
+    int quick_capture_source; /* TsRecordSource; OUT by default. */
+    int quick_capture_seconds; /* 0 = until stopped, otherwise 1..3600. */
     int waveform_display_mode;
     int sister_waveform_display_mode;
     TsPrismZoyaPose prism_zoya_pose;

@@ -184,8 +184,9 @@ pattern rise from 10% to 40% of its original level over the steady drone.
 
 ![The same ARP volume and LFO controls in FM](images/keyboard-sequence-fm.png)
 
-The sequencer uses the current tile/Source choice, FM preview, or selected
-tile/Sister ensemble. Sound and routing changes are prepared outside the audio
+The sequencer uses the current tile/Source choice, FM preview, or Shift-clicked
+playing group. Tile groups work with Sister Machine on or off, without arming
+Capture. Sound and routing changes are prepared outside the audio
 callback and swapped into playback. Existing manual notes retain their own
 ownership. If the source becomes unavailable, sequencing stops instead of
 continuing to trigger stale audio; press PLAY once a source is ready again.
@@ -205,7 +206,9 @@ sequence boundaries. An explicitly locked main loop retains its established
 resume behavior after the sequence stops. Hiding the panel or moving to Sister
 does not itself stop the sequence. Actions that normally stop audition, such as
 closing FM, switching Sample pages, or clearing the active source, also stop ARP;
-the selection remains ready for PLAY. Capture staging keeps its Shift-click controls.
+the selection remains ready for PLAY. Main **CAP OUT** records the running ARP into
+a new tile without stopping or replacing its source. **STOP TILE** keeps the take
+while the sequence continues. Legacy Overdub retains its capture-staging controls.
 
 Sequence audio follows the existing tile/FM buses through Sister, Prism, master
 effects, and recording. Mosaic REC DRY includes it; FM's SYNTH tap includes FM
