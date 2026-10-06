@@ -400,6 +400,9 @@ int main(int argc,char **argv)
     transform_controller_init(&transform);portal_init(&portal,&ui.portal);portal.mosaic=&mosaic;
     assert(ts_instrument_generate(&instrument,TS_GENERATOR_METALLIC,777,error,sizeof(error)));
     if(argc>1 && !strcmp(argv[1],"--quick-capture")) {test_quick_capture(window,device);goto done;}
+    if(argc>1 && !strcmp(argv[1],"--fm-directions")) {
+        test_fm_preview_updates();test_basic_create_controller();test_create_directions_controller();goto done;
+    }
     uint64_t original=ts_sample_hash(&instrument.current);
     ui.mosaic=audio.mosaic=ts_mosaic_create();ui.mosaic_scale=24;ui.mosaic_open=1;
     TsMosaicSource *source=ts_mosaic_source(ui.mosaic,&instrument.current,error,sizeof(error));assert(source);

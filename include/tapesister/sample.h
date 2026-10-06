@@ -169,6 +169,19 @@ enum {
 
 /* One field list keeps the reversible Unison source identical to the live
    sound settings, without pointers or recursive patch ownership. */
+enum {
+    TS_FM_DIRECTION_DRONE = 1u << 0,
+    TS_FM_DIRECTION_PERC = 1u << 1,
+    TS_FM_DIRECTION_MELODIC = 1u << 2,
+    TS_FM_DIRECTION_EXPERIMENTAL = 1u << 3,
+    TS_FM_DIRECTION_ALL = 15u
+};
+typedef enum {
+    TS_FM_PERC_KICK, TS_FM_PERC_SNARE, TS_FM_PERC_HAT,
+    TS_FM_PERC_CYMBAL, TS_FM_PERC_TOM, TS_FM_PERC_WOOD,
+    TS_FM_PERC_BELL, TS_FM_PERC_DIGITAL, TS_FM_PERC_COUNT
+} TsFmPercussion;
+
 #define TS_FM_SOUND_FIELDS \
     uint32_t genome_version; \
     int drone_mode; \
@@ -196,7 +209,14 @@ enum {
     float filter_release_seconds; \
     float filter_envelope_amount; \
     int interaction; \
-    float interaction_mix;
+    float interaction_mix; \
+    uint32_t directions; \
+    uint32_t sound_seed; \
+    int percussion; \
+    float attack_seconds; \
+    float decay_seconds; \
+    float pitch_sweep; \
+    float pulse_rate;
 
 typedef struct { TS_FM_SOUND_FIELDS } TsFmSound;
 typedef struct {
@@ -813,6 +833,11 @@ void ts_fm_patch_from_recipe(const TsGeneratorRecipe *recipe, TsFmPatch *patch);
 void ts_fm_patch_basic(TsFmPatch *patch, TsFmWaveform waveform);
 /* Independent Create palette; keep legacy seed-only recipes unchanged. */
 void ts_fm_patch_fresh(TsFmPatch *patch, uint32_t seed);
+/* Zero directions delegates to the original independent Create palette. */
+void ts_fm_patch_directed(TsFmPatch *patch, uint32_t seed, uint32_t directions);
+void ts_fm_patch_set_directions(TsFmPatch *patch, uint32_t directions, uint32_t seed);
+float ts_fm_patch_duration(const TsFmPatch *patch, float seconds);
+const char *ts_fm_percussion_name(int percussion);
 void ts_fm_patch_vary(const TsFmPatch *source, uint32_t seed, float range,
                       TsFmPatch *varied);
 float ts_fm_patch_distance(const TsFmPatch *source, const TsFmPatch *varied);
@@ -933,6 +958,15 @@ int ts_instrument_create_selected(TsInstrument *instrument, uint32_t seed,
 /* Create a clean oscillator, or stamp it into the current selection. */
 int ts_instrument_create_basic(TsInstrument *instrument, TsFmWaveform waveform,
                                char *error, size_t error_size);
+int ts_instrument_create_directed(TsInstrument *instrument,
+    TsFmSeedSequence *sequence, uint32_t directions, uint32_t *successful_seed,
+    char *error, size_t error_size);
+int ts_instrument_stamp_directed(TsInstrument *instrument,
+    TsFmSeedSequence *sequence, uint32_t directions, uint32_t *successful_seed,
+    char *error, size_t error_size);
+int ts_instrument_make_fm_bank_count(TsInstrument *instrument,
+    const TsFmPatch *patch, uint32_t root_seed, int count,
+    char *error, size_t error_size);
 int ts_instrument_create_selected_fresh(TsInstrument *instrument,
                                         TsFmSeedSequence *sequence,
                                         uint32_t *successful_seed,

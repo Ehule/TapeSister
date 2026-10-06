@@ -480,3 +480,15 @@ tapesister_mosaic_controller_tests: tests/test_mosaic_controller.c tests/test_mo
 tapesister tapesister_keyboard_hold_tests tapesister_keyboard_sustain_tests tapesister_portal_controller_tests: src/main_sdl_jack.inc
 tapesister_jack_backend_tests: tests/test_jack_backend.c src/main_sdl_jack.inc
 	$(CC) $(CFLAGS) $(shell sdl2-config --cflags) $< -o $@ $(shell sdl2-config --libs)
+
+# Combinable Create/FM directions and counted banks.
+tapesister tapesister_core_tests tapesister_fm_unison_tests tapesister_bank_tests tapesister_render_demo: src/ts_fm_directions.inc
+
+tapesister_fm_directions_tests: $(CORE) src/ts_fm_directions.inc tests/test_fm_directions.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(CORE) tests/test_fm_directions.c -o $@ -lm
+
+.PHONY: test-fm-directions
+test-fm-directions: tapesister_fm_directions_tests
+	./tapesister_fm_directions_tests
+
+test: test-fm-directions

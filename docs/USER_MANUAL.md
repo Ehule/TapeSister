@@ -314,18 +314,38 @@ it deliberately before replacing or clearing it.
 3. TapeSister rolls a fresh sound from its FM palette into that tile.
 4. Audition it with Space, the tile, the onscreen keyboard, QWERTY, or MIDI.
 
-Ordinary left-clicking **CREATE** starts independently on every click, whether the
+The **NEW** row above CREATE has four independent directions: **DRONE**, **PERC**,
+**MELODIC**, and **EXPERIMENTAL**. Combine any of them. They guide the next Create;
+changing these buttons does not alter an existing tile. With all four off, ordinary
+left-clicking **CREATE** starts independently on every click, whether the
 tile is empty or already occupied. It draws from simple tones, layered drones,
 evolving drones, percussive sounds, softer filter openings, and wild FM. Drone and
 Extreme may therefore appear as part of a new roll. Each family has randomized
 settings; no family is held between clicks.
 
-The previous tile's waveform, Unison state, Drone/Extreme switches, pitch locks,
+The previous tile's waveform, Unison state, internal Drone/Extreme switches, pitch locks,
 mutation permissions, and render duration do not constrain a new Create. Use
 **VARY** to develop the current material and **VARY with CHAIN** to put a related
 child in another tile. **Shift-CREATE** is the direct route to basic waveforms.
 The same fresh palette applies when Create stamps into a waveform selection;
 the surrounding audio is preserved.
+
+Drone creates a continuous loop and stores its loop points. Perc generates kicks,
+snares, hats, cymbals, toms, wood-like hits, bells, and digital percussion with
+individual attack/decay profiles. Melodic favors a stable pitch center. Experimental
+favors unusual modulation, noise, and interactions; it is separate from Extreme's
+wider parameter limits. Perc + Drone repeats articulated events across the loop;
+Perc + Melodic favors tuned strikes. All combinations are valid.
+
+The same four buttons in FM Logic shape the preview immediately and also update the
+next Create choice. FM opens a selected tile's saved patch; simply opening an old
+tile does not change the independent NEW choice. APPLY saves the preview; RANDOMIZE
+and VARY develop its stored directions while honoring their mutation permissions.
+Explicitly adding Perc or Melodic revoices the preview for that direction. Removing
+a direction releases its constraint without restoring previously replaced parameters.
+**Shift-CREATE** retains its explicit basic-waveform cycle. Right-click CDP rolls
+remain subsequent transformations and may change the sound's original character.
+See [Create sound directions](CREATE_DIRECTIONS.md) for combinations and examples.
 
 ### Simple oscillator sources
 
@@ -489,17 +509,23 @@ MIDI note 60/C4 is the universal unity key for newly rendered FM material.
 - **RANDOMIZE** creates a new permitted genome and immediately updates the preview.
 - **APPLY** prints the preview into the active tile. With Chain on, it uses the next
   empty tile.
-- **MAKE BANK** places the exact patch in tile 01 and creates 15 relatives at the current
-  Range. Chain off derives them from tile 01; Chain on makes a trajectory.
+- **COUNT** selects 1–16 total sounds, including the original. Wheel to adjust, click
+  to advance, or Shift-click to go backward. The default is 16.
+- **MAKE BANK** places the exact patch in tile 01 and creates Count minus one relatives
+  at the current Range. Chain off derives them from tile 01; Chain on makes a trajectory.
+  Replacing a page affects only the first Count tiles. Tiles beyond Count are preserved.
 
 If the page is full, TapeSister asks whether to replace the page, create a new Sample
-page, or cancel. A protected tile prevents destructive page replacement.
+page, or cancel. A protected tile within the destination count prevents replacement.
 
 ### Drone and Extreme
 
-**DRONE** removes amplitude decay, filter attack/release, modulator decay, and the
-transient layer, then trims the render to clean zero-valued boundaries. It is intended
-for continuous tones rather than disguised one-shots.
+**DRONE** is now one of the combinable sound directions above the FM preview controls.
+New directed drones use a continuation crossfade and keep their full loop duration.
+**DRONE + PERC** retains attack transients and repeats each component's decay inside
+the continuous loop. Pulse rates close on a whole number of events at the boundary.
+Stored older patches retain the previous renderer, including its zero-boundary trim,
+until an explicit direction is applied. Extreme remains a separate bottom-row button.
 
 **EXTREME** opens much wider ratios, depth, feedback, resonance, filter motion, and
 per-voice LFO ranges. It does not disable safety: finite checks, DC rejection,
@@ -604,7 +630,7 @@ Undo step. Escape restores the original.
 
 ### Drone Maker
 
-Select material and press **DRONE** to construct a purpose-built seamless loop. Drone
+Select material and press **DRONE FX** to construct a purpose-built seamless loop. Drone
 Maker finds a quiet overlap-safe crossing, rotates the selected halves, and crossfades
 the internal seam. Preview Loop repeats the temporary result without changing the tile.
 

@@ -196,3 +196,49 @@ static void test_basic_create_controller(void)
     mosaic_controller_free(mc);free(mc);
     ts_instrument_free(inst);free(inst);free(u);routing_free(a);
 }
+
+static void test_create_directions_controller(void)
+{
+    AudioState *a=routing_audio(0);a->mosaic->playing=0;
+    TsUiState *u=calloc(1,sizeof(*u));TsInstrument *inst=calloc(1,sizeof(*inst));
+    FmBankHistory *history=calloc(1,sizeof(*history));assert(u && inst && history);
+    TsSamplePages pages;TsFmSeedSequence seeds;TsSample preview={0};char error[160];
+    ts_ui_init(u);u->mosaic=a->mosaic;ts_instrument_init(inst);fm_bank_history_init(history);
+    assert(ts_sample_pages_init(&pages,error,sizeof(error)));ts_fm_seed_sequence_init(&seeds,912);
+    u->config.create_directions=TS_FM_DIRECTION_PERC|TS_FM_DIRECTION_MELODIC;
+    assert(generate_family_candidate(0,a,u,inst,&seeds,0,0,0,NULL));
+    assert(inst->generator.fm_patch.directions==(unsigned)u->config.create_directions);
+    begin_fm_workspace(0,a,u,inst,&preview);
+    assert(ts_sample_hash(&preview)==ts_sample_hash(&inst->current));
+    toggle_fm_direction_workspace(u,inst,TS_FM_DIRECTION_DRONE);
+    finish_fm_preview(a,u,&preview);
+    assert(u->config.create_directions==7 && u->fm_patch.directions==7);
+    assert(ts_fm_control_available(&u->fm_patch,TS_FM_PAGE_STRUCTURE,5));
+    apply_fm_workspace(0,a,u,inst,&pages,0);
+    assert(inst->has_loop && ts_sample_hash(&inst->current)==ts_sample_hash(&preview));
+    u->fm_page=TS_FM_PAGE_PITCH;
+    float ratio=u->fm_patch.ratios[0];
+    randomize_fm_workspace(u,inst,&seeds);finish_fm_preview(a,u,&preview);
+    assert(u->fm_patch.directions==7 && u->fm_patch.ratios[0]==ratio);
+    TsTuning unity={TS_KEYBOARD_BASE_NOTE,0};
+    TsNoteEvent note;assert(ts_note_event_qwerty(&note,0,60));
+    assert(ts_note_bank_start_sample_event(&a->notes,&preview,&unity,&note,0,48000)==TS_NOTE_STARTED);
+    keyboard_loop_policy(a,u);
+    assert(a->notes.voices[0].looping && !a->notes.voices[0].crossfade_frames);
+    step_fm_bank_count(u,-13);assert(u->config.fm_bank_count==3);
+    make_fm_bank_workspace(0,a,u,inst,&pages,history,&seeds,1);
+    assert(history->valid && ts_sample_pages_count(&pages)==2);
+    assert(ts_instrument_bank_count(inst)==3 && ts_sample_hash(&inst->bank[0].sample)==ts_sample_hash(&preview));
+    assert(fm_bank_history_move(history,&pages,inst,0,error,sizeof(error))==1);
+    assert(ts_sample_pages_count(&pages)==1);
+    assert(fm_bank_history_move(history,&pages,inst,1,error,sizeof(error))==1);
+    assert(ts_instrument_bank_count(inst)==3);
+    close_fm_workspace(0,a,u,&preview);
+    /* Turning all directions off restores the independent original palette. */
+    u->config.create_directions=0;
+    assert(generate_family_candidate(0,a,u,inst,&seeds,0,0,0,NULL));
+    TsFmPatch fresh;ts_fm_patch_fresh(&fresh,inst->generator.seed);
+    assert(!memcmp(&fresh,&inst->generator.fm_patch,sizeof(fresh)));
+    fm_bank_history_free(history);free(history);ts_sample_pages_free(&pages);
+    ts_instrument_free(inst);free(inst);free(u);routing_free(a);
+}

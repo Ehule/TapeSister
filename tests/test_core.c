@@ -2482,7 +2482,7 @@ int main(void)
             CHECK(fread(magic, 1, sizeof(magic), recipe) == sizeof(magic));
             fclose(recipe);
         }
-        CHECK(memcmp(magic, "TSR32", 5) == 0);
+        CHECK(memcmp(magic, "TSR33", 5) == 0);
     }
     CHECK(ts_instrument_load_recipe(&restored, "test-recipe.tsr", error, sizeof(error)));
     CHECK(ts_sample_hash(&restored.parent) == ts_sample_hash(&committed.parent));
@@ -3644,7 +3644,7 @@ int main(void)
         CHECK(ts_ui_fm_action_from_point(220, 260) == TS_UI_FM_ACTION_APPLY);
         CHECK(ts_ui_fm_action_from_point(300, 260) == TS_UI_FM_ACTION_AUDITION);
         CHECK(ts_ui_fm_action_from_point(400, 260) == TS_UI_FM_ACTION_HOLD);
-        CHECK(ts_ui_fm_action_from_point(40, 286) == TS_UI_FM_ACTION_DRONE);
+        CHECK(ts_ui_fm_action_from_point(40, 286) == TS_UI_FM_ACTION_COUNT);
         CHECK(ts_ui_fm_action_from_point(160, 286) == TS_UI_FM_ACTION_EXTREME);
         CHECK(ts_ui_fm_action_from_point(250, 286) == TS_UI_FM_ACTION_CHAIN);
         CHECK(ts_ui_fm_action_from_point(470, 260) == TS_UI_FM_ACTION_BACK);

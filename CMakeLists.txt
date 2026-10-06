@@ -455,6 +455,12 @@ add_test(NAME tapesister_portal_tests COMMAND tapesister_portal_tests)
 add_executable(tapesister_supersaw_tests tests/test_supersaw.c)
 target_link_libraries(tapesister_supersaw_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_supersaw_tests COMMAND tapesister_supersaw_tests)
+add_executable(tapesister_fm_directions_tests tests/test_fm_directions.c)
+target_link_libraries(tapesister_fm_directions_tests PRIVATE tapesister_core)
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(tapesister_fm_directions_tests PRIVATE -UNDEBUG)
+endif()
+add_test(NAME tapesister_fm_directions_tests COMMAND tapesister_fm_directions_tests)
 add_executable(tapesister_fm_unison_tests tests/test_fm_unison.c)
 target_link_libraries(tapesister_fm_unison_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_fm_unison_tests COMMAND tapesister_fm_unison_tests)
@@ -564,6 +570,7 @@ if(TAPESISTER_BUILD_SDL)
     target_link_libraries(tapesister_mosaic_controller_tests PRIVATE rt)
   endif()
   add_test(NAME tapesister_mosaic_controller_tests COMMAND tapesister_mosaic_controller_tests)
+  add_test(NAME tapesister_fm_directions_controller_tests COMMAND tapesister_mosaic_controller_tests --fm-directions)
   add_test(NAME tapesister_quick_capture_tests COMMAND tapesister_mosaic_controller_tests --quick-capture)
 endif()
 
@@ -599,6 +606,8 @@ if(MINGW)
                                tapesister_audio_health_tests
                                tapesister_tracker_controller_tests
                                tapesister_core_tests
+                               tapesister_fm_directions_tests
+                               tapesister_mosaic_controller_tests
                                test_sister_project_state
                                tapesister_sample_pages_tests
                                tapesister_keyboard_hold_tests

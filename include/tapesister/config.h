@@ -128,6 +128,8 @@ typedef struct {
     int ripple_cut_crop_canvas;
     int reference_tone_volume;
     int fm_output_percent;
+    int create_directions;
+    int fm_bank_count;
     int master_output_percent;
     TsMasterEqControls master_eq;
     TsRouterControls router;
