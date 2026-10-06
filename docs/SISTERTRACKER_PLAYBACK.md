@@ -95,6 +95,15 @@ Master EQ, limiter, OUT gain and final-output recording remain host operations.
 This version supplies one stereo tracker bus; per-lane hardware outputs are not
 part of this transplant.
 
+A centered tracker note at full volume (`40`) matches the level of the same
+tile played directly at full velocity, after the short attack ramps settle.
+TRACK omits TapeHead's standalone device attenuation and uses unity gain at
+the center of its equal-power pan law. Note volume, Gxx global volume, envelopes
+and panning still apply. Multiple lanes sum with float headroom before the host
+mixer and Router; they are not individually normalized or clipped by the
+embedded device-output routine. Existing scores receive this level correction
+without changing their stored note or volume data.
+
 ## Where TrackSister enters the Router
 
 TrackSister is a stereo source at the Router input. Its eight lanes are mixed

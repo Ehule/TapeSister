@@ -41,6 +41,14 @@ This is not a promise of bit-identical XM output from TapeHead's integer sample
 mixer. The original sequencer, effect execution, envelopes, periods, panning and
 volume ramps remain in the playback path.
 
+The embedded TRACK bus bypasses the standalone device's amplification and
+clipping stage. Host tile reads compensate the original -3 dB center-pan gain
+to match direct tile playback while retaining the equal-power pan curve.
+The embedded integration test compares mono and stereo tiles through the real
+host callback, including full/half/zero note volume, global volume, panning and
+eight-lane float headroom before host output clipping. The original port was
+about 13.1 dB quieter at its default standalone amplification of 10/32.
+
 The original application supports many modes beyond the focused host tests.
 Compiling those modes does not substitute for manual musical testing. Test the
 PR builds with real MIDI devices, route combinations and performance gestures

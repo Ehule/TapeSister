@@ -163,8 +163,12 @@ void ts_tapehead_mix_tile(void *ptr,unsigned offset,unsigned count) {
             if(v->tilePosition<0 || v->tilePosition>=v->sampleEnd) {v->active=false;break;}
             value=ts_audition_read_frame(&sample,v->tilePosition,v->sampleEnd);
         }
-        audio.fMixBufferL[offset+i]+=value.l*v->fCurrVolumeL;
-        audio.fMixBufferR[offset+i]+=value.r*v->fCurrVolumeR;
+        /* FT2's equal-power pan is -3 dB at center. Host tiles already carry
+           their stereo level: make center unity while retaining the pan law,
+           note/global volume, envelopes and ramps (including fade voices). */
+        const float center_gain=1.41421356237f;
+        audio.fMixBufferL[offset+i]+=value.l*v->fCurrVolumeL*center_gain;
+        audio.fMixBufferR[offset+i]+=value.r*v->fCurrVolumeR*center_gain;
         if(v->volumeRampLength) {
             v->fCurrVolumeL+=v->fVolumeLDelta;v->fCurrVolumeR+=v->fVolumeRDelta;
             if(--v->volumeRampLength==0) {
