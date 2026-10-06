@@ -354,6 +354,58 @@ static void audit_blank_song(unsigned rows) {
     for(int lane=0;lane<8;++lane) {uint8_t *l=s+52+lane*10;memset(l,0,10);l[3]=7;l[8]=1;}
     assert(ts_tapehead_sync(test_pages,test_bank,48000,test_error,sizeof(test_error)));export_score();
 }
+static TsStereoFrame settled_output(void) {
+    float out[1024];
+    for(int block=0;block<8;++block)audio_callback(test_audio,(Uint8*)out,sizeof(out));
+    return (TsStereoFrame){out[1022],out[1023]};
+}
+static void tile_level_parity(void) {
+    for(unsigned channels=1;channels<=2;++channels) {
+        ts_tapehead_stop();
+        test_bank->current.channels=channels;
+        for(size_t i=0;i<test_bank->current.frames;++i) {
+            test_bank->current.data[i*channels]=.1234567f;
+            if(channels==2)test_bank->current.data[i*2+1]=-.2345678f;
+        }
+        ++test_bank->generation;
+        assert(ts_instrument_sync_selected(test_bank,test_error,sizeof(test_error)));
+        audit_blank_song(64);
+        assert(ts_note_bank_start(&test_audio->notes,test_bank,TS_AUDITION_CURRENT,0,0,48000)==TS_NOTE_STARTED);
+        TsStereoFrame direct=settled_output();
+        ts_note_bank_clear(&test_audio->notes);
+        assert(fabsf(direct.l-.1234567f*.8f)<.00002f);
+        assert(fabsf(direct.r-(channels==2?-.2345678f:.1234567f)*.8f)<.00002f);
+        /* Full/half/zero volume and hard-left/right panning retain their
+           musical meaning after matching the centered single-tile level. */
+        const unsigned volumes[]={64,32,0,64,64,64,64};
+        const unsigned pans[]={128,128,128,0,255,128,128};
+        const unsigned voices[]={1,1,1,1,1,8,1};
+        const unsigned global[]={64,64,64,64,64,64,32};
+        for(unsigned c=0;c<7;++c) {
+            audit_blank_song(64);
+            uint8_t *raw=test_pages->tracker.embedded_data+52+80+256+7;
+            for(unsigned lane=0;lane<voices[c];++lane) {
+                uint8_t *cell=raw+lane*7;
+                cell[0]=49;cell[1]=1;cell[2]=0x10+volumes[c];cell[3]=8;cell[4]=pans[c];
+            }
+            raw[8*7+3]=16;raw[8*7+4]=global[c]; /* Gxx on the next row. */
+            assert(ts_tapehead_sync(test_pages,test_bank,48000,test_error,sizeof(test_error)));
+            click(390,27);assert(ts_tapehead_running());
+            TsStereoFrame tracked=settled_output();
+            const float *block=ts_tapehead_render(512,48000);assert(block);
+            TsStereoFrame bus={block[1022],block[1023]};
+            float gain=volumes[c]/64.f*voices[c]*global[c]/64.f;
+            float expected_l=direct.l/.8f*gain*sqrtf((256-pans[c])/128.f);
+            float expected_r=direct.r/.8f*gain*sqrtf(pans[c]/128.f);
+            if(c==0)printf("Tile level parity (%u channels): direct=(%.7f,%.7f), tracker=(%.7f,%.7f)\n",
+                           channels,direct.l,direct.r,tracked.l,tracked.r);
+            assert(fabsf(bus.l-expected_l)<.00004f && fabsf(bus.r-expected_r)<.00004f);
+            assert(fabsf(tracked.l-fmaxf(-1,fminf(1,expected_l))*.8f)<.00004f);
+            assert(fabsf(tracked.r-fmaxf(-1,fminf(1,expected_r))*.8f)<.00004f);
+        }
+    }
+    audit_blank_song(64);
+}
 static void audit_recording(void) {
     audit_blank_song(7);
     click(90,10);assert(test_pages->tracker.order_count==2 && pat()->rows==7); /* IPL + INP */
@@ -663,6 +715,7 @@ int main(int argc,char **argv) {
     TsTileId tile=test_bank->bank[0].tile_id;
     press(SDLK_F10,SDL_SCANCODE_F10,KMOD_NONE);assert(test_ui->tracker_open&&test_ui->tracker_embedded_frame);
     assert(test_pages->tracker.embedded_size && ts_sister_tracker_validate(&test_pages->tracker,test_error,sizeof(test_error)));
+    tile_level_parity();
     press(SDLK_z,SDL_SCANCODE_Z,KMOD_NONE);assert(pat()->cells[0][0].note_kind==TS_TRACKER_NOTE_PITCH);
     assert(pat()->cells[0][0].tile_id==tile);assert(test_pages->tracker.editor_row==1);
     press(SDLK_x,SDL_SCANCODE_X,KMOD_NONE);assert(test_pages->tracker.editor_row==2);
