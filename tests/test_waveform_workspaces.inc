@@ -103,7 +103,7 @@ static void test_workspace_waveforms(void)
     assert(800/4==801/4);
     assert(portal_frame_from_pointer(&ui.portal.waves[0],window,801)>
            portal_frame_from_pointer(&ui.portal.waves[0],window,800));
-    SDL_Event e={0};e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=SDL_GetWindowID(window);
+    SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=SDL_GetWindowID(window);
     e.button.button=SDL_BUTTON_LEFT;e.button.x=801;e.button.y=300;
     assert(portal_event(&e,window,0,&audio,&ui,&instrument,&portal,&sister,48000,&transform));
     assert(ui.portal.drag_anchor==portal_frame_from_pointer(&ui.portal.waves[0],window,801));
@@ -130,7 +130,9 @@ static void test_workspace_waveforms(void)
     assert(ts_sample_hash(&source)==hash);
     /* Tab opens, hides and reopens fullscreen Sister, also over an FM/Portal workspace. */
     ui.config.sister_window_maximized=1;
-    e=(SDL_Event){0};e.type=SDL_KEYDOWN;e.key.keysym.sym=SDLK_TAB;e.key.windowID=SDL_GetWindowID(window);
+    /* Clear the entire union, including keyboard repeat/modifier fields; a
+       compound-literal union assignment need only copy its first member. */
+    SDL_zero(e);e.type=SDL_KEYDOWN;e.key.keysym.sym=SDLK_TAB;e.key.windowID=SDL_GetWindowID(window);
     assert(workspace_tab_event(&e,window,&sister,&ui));
     assert(sister.model.visible && !(SDL_GetWindowFlags(sister.window)&SDL_WINDOW_HIDDEN));
     for(int i=0;i<4;++i) {

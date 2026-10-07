@@ -652,6 +652,8 @@ if(MINGW)
                                tapesister_sample_pages_tests
                                tapesister_keyboard_hold_tests
                                tapesister_native_waveform_tests
+                               tapesister_render_efficiency_tests
+                               test_prism
                                tapesister_capture_tests
                                tapesister_midi_tests
                                tapesister_performance_tests
