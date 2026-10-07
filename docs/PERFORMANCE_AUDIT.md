@@ -189,3 +189,79 @@ cost. The software renderer's visible-loop raster/upload work remains worth
 profiling on the A8. Whole-process startup measurements were excluded from the
 steady-idle comparison because they include the five-second splash. No A8 CPU,
 GPU, PipeWire or MOTU improvement percentage is asserted by these measurements.
+
+
+## A8 active Prism/pedalboard follow-up
+
+The October 7 visible-window report (48 kHz, 512 frames, PulseAudio, two held
+keyboard voices/ARP, harmonic Prism with 16 lenses and the four-slot pedalboard)
+measured a 4.541 ms mean callback over 40.4 seconds. Prism accounted for 38.4%
+and Pedalboard for 37.2% of the inclusive sampled callback time. Two callbacks
+exceeded the 10.667 ms budget; the retained maximum was 14.227 ms. Crackling was
+reported, but this backend does not expose native underrun counters.
+
+On the UI side, waveforms took 114.180 ms/s within Main paint's 138.723 ms/s;
+texture/damage/copy took 97.827 ms/s. Waveform analysis itself was only 0.022 ms/s.
+This identifies repeated raster/compositor work after the existing sample-analysis
+cache. Event wait (678.941 ms/s) is waiting, and tracker/controller timings can
+include lock waits; these rows must not be added up as independent CPU loads.
+
+This follow-up changes three paths:
+
+- Cache the native-resolution sample raster as well as its analysis. Source
+  identity/data/dimensions, sample and UI revisions, range, display mode,
+  palette, selection, padding, and the actual grid/loop background invalidate
+  it. Moving playheads restore the underlying native pixels from that raster.
+- Compare overlays at logical resolution and upload only the affected native
+  rectangle. New textures and source changes still upload fully; an upload
+  failure forces texture recreation. Moving live Sister/Mosaic surfaces retain
+  their full redraw path. Cache storage is UI-owned and bounded by window size.
+- Reuse the pedalboard's exact equal-power sine/cosine coefficients when the
+  smoothed mix is unchanged. Prism's glass filters remain primed, while a
+  nonlinear color calculation with exactly zero contribution is omitted.
+  Smoothers, modulation, period-analysis cadence, stereo, tails and zero-mix
+  reverb history continue as before. No audio-thread allocation or new lock.
+
+### Local comparison for this follow-up
+
+Release baseline: merged main `86b5a1c`, with the same extended benchmark added
+before either production change. Medians of three alternating before/after
+runs in the hosted Linux environment, with no simultaneous build or test job.
+The representative patch uses the reported lens count/mixes and defaults for
+unspecified settings; it is not a reconstruction of the user's exact project.
+Callbacks use 48 kHz/512 stereo. The UI case uses a moving playhead at 1280x1024,
+including the first uncached render. It measures software drawing/composition,
+not SDL driver uploads or GPU presentation. PROFILE is enabled for both builds.
+
+| Case | Before (ms) | After (ms) | Change |
+|---|---:|---:|---:|
+| Idle callback | 0.368 | 0.375 | +1.9% |
+| Dry looping callback | 0.385 | 0.396 | +2.9% |
+| Prism16 + pedalboard callback | 1.057 | 0.984 | -6.9% |
+| Same, warmed zero-mix reverb | 1.300 | 1.272 | -2.2% |
+| Software paint + overlay per frame | 1.204 | 0.265 | -78.0% |
+| Main paint per frame | 0.807 | 0.165 | -79.6% |
+| Waveform drawing per frame | 0.722 | 0.083 | -88.5% |
+| Native overlay composition per frame | 0.396 | 0.100 | -74.8% |
+
+Idle/dry callbacks show no improvement in these measurements. The principal
+local gain is visible waveform rendering; the active DSP gain is modest. These
+are not A8 CPU percentages and do not establish that crackling is eliminated.
+
+Validation includes bit-for-bit original/optimized output comparisons for
+3,072,000 representative callback frames, plus 784,400 frames from direct Prism
+and pedalboard streams at 8/44.1/48/96 kHz with shape/mode changes, wet amounts,
+bypasses and silence. The committed pedalboard regression compares cached and
+forced-uncached coefficients throughout control changes. Pixel comparisons
+cover cached versus fresh native renders, mono/stereo/channel modes, palette,
+selection, loop, sample edits, zoom, downscaling/noninteger scaling, and renders
+that were not presented. SDL texture readback checks verify partial uploads and
+workspace transitions. The formerly Make-only native/workspace fixtures are
+registered in CMake/CI and updated for Sister's existing borderless screen-fill
+behavior (SDL dummy does not implement native window decorations).
+
+Retest the same saved project on the A8 at 512 frames, visible, after warmup:
+RESET, enable PROFILE and collect 40–60 seconds. Compare Waveforms, Main paint,
+Texture/damage/copy, Prism, Pedalboard and callback overruns. Then compare the
+same project minimized; assess whole-process CPU separately with PROFILE off.
+The existing PulseAudio start-gap caveat still applies.

@@ -9006,10 +9006,17 @@ static void native_waveform_copy(SDL_Renderer *renderer, SDL_Texture *textures[2
             if(textures[i])SDL_DestroyTexture(textures[i]);
             textures[i]=SDL_CreateTexture(renderer,SDL_PIXELFORMAT_ARGB8888,
                 SDL_TEXTUREACCESS_STREAMING,d->width,d->height);
+            d->dirty_x=d->dirty_y=0;d->dirty_w=d->width;d->dirty_h=d->height;
         }
         SDL_Rect target={d->output_x,d->output_y,d->width,d->height};
-        if(textures[i] && SDL_UpdateTexture(textures[i],NULL,d->pixels,d->width*sizeof(uint32_t))==0)
-            SDL_RenderCopy(renderer,textures[i],NULL,&target);
+        SDL_Rect dirty={d->dirty_x,d->dirty_y,d->dirty_w,d->dirty_h};
+        if(!textures[i])continue;
+        if(dirty.w>0 && dirty.h>0 && SDL_UpdateTexture(textures[i],&dirty,
+            d->pixels+(size_t)dirty.y*d->width+dirty.x,d->width*sizeof(uint32_t))!=0) {
+            /* Recreate and upload fully next time after an upload failure. */
+            SDL_DestroyTexture(textures[i]);textures[i]=NULL;continue;
+        }
+        SDL_RenderCopy(renderer,textures[i],NULL,&target);
     }
 }
 

@@ -18,6 +18,86 @@ static void fill_sample(TsSample *sample, size_t frames, float phase)
     ts_sample_touch(sample);
 }
 
+static void check_native_cache(TsUiState *ui, TsInstrument *instrument,
+                               TsUiWaveformDetail *warm, int width, int height)
+{
+    static TsFramebuffer frame, reference;
+    TsUiWaveformDetail cold={0};
+    assert(ts_ui_waveform_detail_resize(warm,width,height));
+    assert(ts_ui_waveform_detail_resize(&cold,width,height));
+    size_t bytes=(size_t)width*height*sizeof(uint32_t);
+    uint32_t *previous=malloc(bytes);assert(previous);
+    int had_pixels=warm->valid;
+    if(had_pixels)memcpy(previous,warm->pixels,bytes);
+    ts_ui_waveform_detail_begin(warm);ts_ui_render(&frame,ui,instrument);
+    assert(ts_ui_waveform_detail_finish(warm,&frame));
+    ts_ui_waveform_detail_begin(&cold);ts_ui_render(&reference,ui,instrument);
+    assert(ts_ui_waveform_detail_finish(&cold,&reference));
+    assert(!memcmp(frame.pixels,reference.pixels,sizeof(frame.pixels)));
+    assert(!memcmp(warm->pixels,cold.pixels,bytes));
+    if(had_pixels)for(int y=0;y<height;++y)for(int x=0;x<width;++x)
+        if(x<warm->dirty_x || x>=warm->dirty_x+warm->dirty_w ||
+           y<warm->dirty_y || y>=warm->dirty_y+warm->dirty_h)
+            assert(previous[(size_t)y*width+x]==warm->pixels[(size_t)y*width+x]);
+    free(previous);ts_ui_waveform_detail_free(&cold);
+}
+
+static void test_native_raster_cache(TsUiState *ui, TsInstrument *instrument)
+{
+    TsUiWaveformDetail warm={0};
+    ui->playback_active=1;ui->playhead_source=TS_AUDITION_CURRENT;
+    ui->playhead_frames=instrument->current.frames;
+    const int dimensions[][2]={{600,134},{1200,343},{997,211},{2400,536},{399,89}};
+    for(unsigned size=0;size<sizeof(dimensions)/sizeof(dimensions[0]);++size) {
+        if(size==1) {
+            TsSample *s=&instrument->current;
+            float *stereo=malloc(s->frames*2*sizeof(float));assert(stereo);
+            for(size_t i=0;i<s->frames;++i) {
+                stereo[2*i]=s->data[i];stereo[2*i+1]=.4f*cosf(i*.07f);
+            }
+            free(s->data);s->data=stereo;s->channels=2;ts_sample_touch(s);
+        }
+        int w=dimensions[size][0],h=dimensions[size][1];
+        check_native_cache(ui,instrument,&warm,w,h);
+        uint64_t rasters=warm.raster_count;
+        for(int i=0;i<6;++i) {
+            ui->playhead_frame=(i*1733u)%instrument->current.frames;
+            check_native_cache(ui,instrument,&warm,w,h);
+            assert(warm.raster_count==rasters);
+        }
+        check_native_cache(ui,instrument,&warm,w,h);
+        assert(!warm.dirty_w && !warm.dirty_h);
+        instrument->has_selection=1;instrument->selection_first=1037;instrument->selection_last=4117;
+        check_native_cache(ui,instrument,&warm,w,h);
+        instrument->has_loop=1;instrument->loop_first=1539;instrument->loop_last=8153;
+        check_native_cache(ui,instrument,&warm,w,h);
+        instrument->has_selection=instrument->has_loop=0;
+        check_native_cache(ui,instrument,&warm,w,h);
+        uint64_t analyses=warm.analysis_count;
+        instrument->current.data[0]=-instrument->current.data[0]+.1f;
+        ts_sample_touch(&instrument->current);
+        check_native_cache(ui,instrument,&warm,w,h);
+        assert(warm.analysis_count==analyses+1);
+        for(int mode=0;mode<TS_WAVEFORM_DISPLAY_COUNT;++mode) {
+            ui->config.waveform_display_mode=mode;
+            check_native_cache(ui,instrument,&warm,w,h);
+        }
+        ui->palette.colors[TS_PALETTE_STEREO_WAVE_LEFT]^=0x00202020u;
+        ui->palette.colors[TS_PALETTE_STEREO_WAVE_SUM]^=0x00202020u;
+        check_native_cache(ui,instrument,&warm,w,h);
+        /* Below one source frame per pixel, then return to the full sample. */
+        instrument->view_first=100;instrument->view_last=200;
+        /* A render may be skipped by the presenter; its pending full upload
+           must survive a subsequent cache hit. */
+        static TsFramebuffer skipped;
+        ts_ui_waveform_detail_begin(&warm);ts_ui_render(&skipped,ui,instrument);
+        check_native_cache(ui,instrument,&warm,w,h);
+        instrument->view_first=0;instrument->view_last=instrument->current.frames;
+        check_native_cache(ui,instrument,&warm,w,h);
+    }
+    ts_ui_waveform_detail_free(&warm);
+}
+
 int main(void)
 {
     TsInstrument instrument;
@@ -38,6 +118,7 @@ int main(void)
     fill_sample(&instrument.current, 12000u, 0.0f);
     instrument.view_first = 0u;
     instrument.view_last = instrument.current.frames;
+    test_native_raster_cache(&ui,&instrument);
 
     ts_ui_waveform_cache_reset_counters();
     ts_ui_render(framebuffer, &ui, &instrument);

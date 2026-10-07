@@ -430,8 +430,11 @@ static float glass_channel(float x, float *low, float *memory, const TsPrismGlas
     if (fabsf(*low) < 1e-20f) *low = 0;
     if (fabsf(*memory) < 1e-20f) *memory = 0;
     /* Normalized rational saturation stays finite at large internal levels. */
-    float driven = 2 * x / (1 + fabsf(x));
-    float phase_driven = 2.5f * phase / (1 + 1.5f * fabsf(phase));
+    /* Keep the filters primed for shape changes, but evaluate nonlinear
+       colors only when they can contribute (including during fades). */
+    float driven = mix[TS_PRISM_BICONCAVE] != 0 ? 2 * x / (1 + fabsf(x)) : x;
+    float phase_driven = mix[TS_PRISM_MENISCUS_NEGATIVE] != 0 ?
+        2.5f * phase / (1 + 1.5f * fabsf(phase)) : x;
     return x + mix[TS_PRISM_PLANO_CONVEX] * (*low - x) +
         mix[TS_PRISM_MENISCUS_POSITIVE] * (phase - x) +
         mix[TS_PRISM_BICONCAVE] * (driven - x) +
