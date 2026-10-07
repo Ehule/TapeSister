@@ -57,6 +57,19 @@ int main(void)
         (void)ts_performance_read_stereo(&bank, &raw);
     CHECK(ts_performance_count(&bank) == 0);
 
+    /* Voices may finish while the UI prepares an edit. A captured source mask
+       still warms the unchanged generation without needing live voice reads. */
+    TsPerformanceGeneration *generation = bank.slot_generations[1];
+    TsSample replacement = {0};
+    CHECK(ts_sample_clone(&replacement, &instrument.bank[1].sample, NULL, 0));
+    ts_sample_free(&instrument.bank[1].sample);
+    instrument.bank[1].sample = replacement;
+    ++instrument.bank[1].sample.visual_revision;
+    CHECK(ts_performance_prepare_sources(&bank, &instrument, 0x2u));
+    CHECK(bank.slot_generations[1] == generation);
+    CHECK(generation->source_data == instrument.bank[1].sample.data);
+    CHECK(generation->source_visual_revision == instrument.bank[1].sample.visual_revision);
+
     CHECK(CLOSE(ts_performance_peak_scale_channels(
                     loud, 2u, 2u, 0.98f), 0.49f));
     CHECK(CLOSE(loud[0], 0.98f));
@@ -65,6 +78,7 @@ int main(void)
 
     free(instrument.bank[0].sample.data);
     free(instrument.bank[1].sample.data);
+    ts_performance_free(&bank);
     if (failures) return 1;
     puts("performance stereo tests passed");
     return 0;

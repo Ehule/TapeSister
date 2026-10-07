@@ -165,6 +165,11 @@ void ts_performance_sync(TsPerformanceBank *bank,
                          int output_rate);
 int ts_performance_prepare_sync(TsPerformanceBank *bank,
                                 const TsInstrument *instrument);
+/* UI preparation without reading callback-owned voices. Capture source_mask
+   under audio exclusion before an edit; notes cannot start on the blocked UI. */
+int ts_performance_prepare_sources(TsPerformanceBank *bank,
+                                   const TsInstrument *instrument,
+                                   uint16_t source_mask);
 int ts_performance_count(const TsPerformanceBank *bank);
 TsKeyboardMask ts_performance_visible_mask(const TsPerformanceBank *bank,
                                      int keyboard_base_note);

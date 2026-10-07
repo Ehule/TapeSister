@@ -239,6 +239,7 @@ static void ts_audio_health_report(AudioState *audio, char *report, size_t size)
     ts_audio_health_setup_report(setup, sizeof(setup), SDL_GetTicks());
     snprintf(report, size,
         "TapeSister Audio Health\n"
+        "Build: %s (%s %s)\n"
         "Backend: %s\nOutput: %s\nConnection: %s\n"
         "Actual output: %u Hz, %u frames, %u channels\n"
         "Buffer duration: %.3f ms (not round-trip latency)\n"
@@ -257,6 +258,7 @@ static void ts_audio_health_report(AudioState *audio, char *report, size_t size)
         "Start gaps may include scheduling/backend batching; they do not prove a dropout.\n"
         "Control wait is UI waiting to acquire a lock; hold is time playback is excluded.\n"
         "Native counters cover the main output stream, since reset/device restart.\n",
+        TAPESISTER_BUILD_MARKER, __DATE__, __TIME__,
         driver ? driver : "none", ts_output_endpoint.active_name,
         ts_audio_connection_state_name(ts_output_endpoint.state),
         ts_output_endpoint.sample_rate, ts_output_endpoint.buffer_frames,

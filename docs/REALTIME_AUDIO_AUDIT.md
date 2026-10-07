@@ -129,8 +129,8 @@ contention. Even a short UI lock can therefore cause a discontinuity; a fast
 callback average does not rule this out. The report cannot attribute every
 audible click to a particular operation.
 
-Warp, Smear and Tear now prepare stable Current/Parent copies for ordinary
-keyboard/MIDI voices on the UI thread. A short locked pointer swap lets those
+Sample edits now prepare stable Current/Parent copies for keyboard/MIDI voices
+and ordinary audition on the UI thread. A short locked pointer swap lets those
 voices continue advancing during gesture setup, rendering, commit and cancel.
 The final locked publication restores editor references and uses the existing
 note-bank residual fade when the sound changes. Copies are shared by notes
@@ -140,9 +140,30 @@ queue, extra device latency, waiting or allocation was added to the callback.
 Unchanged HOLD/PLAY VIEW refreshes now skip synchronization, while changes to
 sample, tuning, range or loop metadata still update the voices. Snapshot
 retirement also avoids the device lock when there are no snapshots to retire.
-Other UI polling and edit paths still take locks. Standalone audition, grouped
-keyboard playback and allocation failure retain the previous safe exclusion
-path; this is a focused reduction in contention, not a claim of zero dropouts.
+Other UI polling and edit paths still take locks. Direct bank/preview audition,
+page-wide FM bank history, project/capture operations and allocation failure
+retain conservative exclusion; this is a reduction in contention, not a claim
+of zero dropouts. The ASIO callback continues to count and silence lock misses.
+
+The follow-up report from build #129 (44.1 kHz / 512 frames) showed 84 skips,
+eight over-buffer holds and a 112.073 ms maximum hold. The first patch had only
+covered Warp/Smear/Tear. The same protected render path now covers Body/Edge/Drift,
+process recipes, material pitch, tape length, rotation, drawing, canvas resize,
+gain/reverse/fades, crop/cut/paste, tape drag, transform application, Create/Vary,
+FM application and ordinary tile Undo/Redo. Intentional note clearing in Create
+or FM workflows retains its existing semantics. Grouped held notes keep reading
+immutable generations; their active source mask is captured under exclusion so
+preparation outside the lock never reads callback-owned voice liveness.
+When a render produces identical audio at a new address/revision, preparation
+refreshes the generation's source key so locked publication does not hash that
+same audio again.
+
+The controller regression also exposed automatic transform audition clearing
+held notes, independent of lock timing. HOLD now owns playback during preview
+and cancellation, as does the active workbench loop. Ordinary audition uses the
+existing five-ms residual handoff when its sample changes. Audio Health includes
+the build marker and compile timestamp, and attributes edit holds to their
+calling function instead of the shared `lock_edit` helper.
 
 `test_edit_audio_continuity.inc` runs the actual callback on another thread
 after a render replaces Current, before publishing the edit. It checks lock
@@ -151,9 +172,15 @@ handoff ramp, plus failed rendering and native gesture commit/cancel. The idle
 test checks 120 unchanged HOLD refreshes with no lock acquisitions and verifies
 that view and tuning changes still synchronize. The ordinary controller suite
 and an AddressSanitizer/UndefinedBehaviorSanitizer build cover this path.
+The extended controller test interposes the actual Body/Edge/Drift, drawing and
+canvas render calls, runs the real callback on another thread before and after
+destructive rendering, and then publishes the result. It checks audible output,
+lock availability and retained voice ownership for ordinary notes, grouped notes,
+looping audition and Parent notes, plus the stereo audition handoff. No hooks are
+added to the production render path.
 
 For the Windows listening check, retain MOTU M Series, 44.1 kHz, 1,024 frames
 and four channels. Reset Audio Health, hold two ordinary sample notes, leave
-the UI untouched, then exercise Warp, Smear and Tear. Compare control-lock
+the UI untouched, then exercise the sample controls. Compare control-lock
 skips and long holds with a separate idle-only run. This environment cannot
 verify the physical M6 driver or speakers.

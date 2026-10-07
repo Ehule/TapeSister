@@ -10,6 +10,13 @@
 static void silence(void *unused, Uint8 *data, int bytes)
 { (void)unused; memset(data, 0, bytes); }
 
+static void named_edit_for_health(AudioState *audio)
+{
+    lock_edit(TS_AUDIO_LOGICAL_OUTPUT, audio);
+    SDL_Delay(1);
+    ts_audio_unlock_device(TS_AUDIO_LOGICAL_OUTPUT);
+}
+
 static int publish(void *data)
 {
     TsRealtimeDiagnostics *d = data;
@@ -59,6 +66,10 @@ int main(int argc, char **argv)
     TsRealtimeDiagnosticsSnapshot s;
     ts_realtime_diagnostics_get(&a->realtime_diagnostics, &s);
     assert(s.control_count == 1 && !strcmp(s.control_worst_site, "outer edit"));
+    ts_realtime_diagnostics_reset(&a->realtime_diagnostics);
+    named_edit_for_health(a);
+    ts_realtime_diagnostics_get(&a->realtime_diagnostics, &s);
+    assert(s.control_count == 1 && !strcmp(s.control_worst_site, "named_edit_for_health"));
 
     SDL_Event e = {0}; e.type = SDL_KEYDOWN;
     e.key.windowID = SDL_GetWindowID(main_window); e.key.keysym.sym = SDLK_F12;
@@ -75,6 +86,8 @@ int main(int argc, char **argv)
     ts_audio_health_update(a, ui);
     char report[4096]; ts_audio_health_report(a, report, sizeof(report));
     assert(strstr(report, "48000 Hz, 256 frames, 2 channels"));
+    assert(strstr(report, "Build: " TAPESISTER_BUILD_MARKER));
+    assert(strstr(report, "Longest hold call site: named_edit_for_health"));
     assert(strstr(report, "not exposed by this backend"));
     assert(strstr(report, "Recent processing: 25.00%"));
     assert(strstr(report, "not round-trip latency"));

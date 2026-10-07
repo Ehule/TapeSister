@@ -3,9 +3,21 @@
 #undef NDEBUG
 #endif
 #define SDL_MAIN_HANDLED
+/* Interpose only controller calls, then execute the real DSP implementation.
+   The probes run the callback before and after the destructive render. */
+#include "tapesister/sample.h"
+static int checked_material_preview(TsInstrument *, TsMaterialMacroGesture *, float, char *, size_t);
+static int checked_amplitude_preview(TsInstrument *, TsAmplitudeGesture *, size_t, float, size_t, float, char *, size_t);
+static int checked_canvas_preview(TsInstrument *, TsCanvasGesture *, int64_t, char *, size_t);
+#define ts_instrument_material_macro_gesture_preview checked_material_preview
+#define ts_instrument_amplitude_gesture_preview checked_amplitude_preview
+#define ts_instrument_canvas_gesture_preview checked_canvas_preview
 #define main tapesister_application_main
 #include "../src/main_sdl.c"
 #undef main
+#undef ts_instrument_material_macro_gesture_preview
+#undef ts_instrument_amplitude_gesture_preview
+#undef ts_instrument_canvas_gesture_preview
 #include <assert.h>
 
 static AudioState audio;
@@ -409,6 +421,7 @@ int main(void)
     assert(ts_sample_clone(&fm, &instrument.current, error, sizeof(error)));
     test_idle_hold_locking();
     test_edit_audio_continuity();
+    test_other_edit_controls();
     test_extended_keyboard();
     test_chords();
     test_fm_release_without_preview();

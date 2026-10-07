@@ -80,7 +80,13 @@ static TsPerformanceGeneration *publish_generation(
     if (bank == NULL || sample == NULL || slot < 0 ||
         slot >= TS_BANK_SLOT_COUNT) return NULL;
     previous = bank->slot_generations[slot];
-    if (generation_matches(previous, sample)) return previous;
+    if (generation_matches(previous, sample)) {
+        /* An unchanged render may live at a new address/revision. Remember
+           that UI-side comparison so locked sync does not hash it again. */
+        previous->source_data = sample->data;
+        previous->source_visual_revision = sample->visual_revision;
+        return previous;
+    }
     made = calloc(1u, sizeof(*made));
     if (made == NULL) return NULL;
     ts_sample_init(&made->sample);
@@ -880,6 +886,22 @@ float ts_performance_read(TsPerformanceBank *bank, float *raw_mix)
         bank, raw_mix != NULL ? &raw : NULL);
     if (raw_mix != NULL) *raw_mix = ts_stereo_frame_fold_mono(raw);
     return ts_stereo_frame_fold_mono(mixed);
+}
+
+int ts_performance_prepare_sources(TsPerformanceBank *bank,
+                                   const TsInstrument *instrument,
+                                   uint16_t source_mask)
+{
+    if (bank == NULL || instrument == NULL) return 0;
+    for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i) if (source_mask & (1u << i)) {
+        TsBankSlot view;
+        const TsBankSlot *slot = source_slot_view(instrument, i, &view);
+        /* Clearing an occupied source needs no new generation; sync will
+           deactivate its voice during the final metadata publication. */
+        if (!slot || !slot->occupied || !slot->sample.data || slot->sample.frames < 2u) continue;
+        if (!publish_generation(bank, i, &slot->sample)) return 0;
+    }
+    return 1;
 }
 
 int ts_performance_prepare_sync(TsPerformanceBank *bank,
