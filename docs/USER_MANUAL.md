@@ -1482,7 +1482,8 @@ FX/Fallout feedback taps stay before that merge and do not automatically recircu
 the external return. H1/H2/H3 captures remain
 internal head taps; MIX follows the routed wet result with linked peak safety.
 FILE OUT and Mosaic OUTPUT
-record the final audible result, including dry monitoring, EQ, limiter, and OUT.
+record the final stereo mix, including dry monitoring, EQ, limiter, and OUT,
+before the optional Ambisonics speaker stage.
 
 Order changes fade down and back up over about **10 ms**. Bypass/solo crossfade
 over about **10 ms**. These are short safety transitions, not performance timers.
@@ -1496,6 +1497,17 @@ Older files with no Router keys load the default order with only INSERT bypassed
 and no solo. Four-stage Router files retain their previous order/bypasses/solo and
 append the bypassed INSERT. Sound presets do not overwrite routing. Audio-device
 recovery preserves it.
+
+### Ambisonics output
+
+**F9 → AMBISONICS**, or **Ctrl+F9**, opens a modeless output window after the
+stereo chain. It encodes the complete mix into a horizontal first-order field,
+transforms it, and decodes to 3–16 assigned speakers. It starts disabled.
+The bypass pair selector can send ordinary stereo to each side of a quad room:
+1–2, 2–3, 3–4 or 4–1. Speaker numbering follows the room; hardware outputs
+are assigned separately. FIELD, ARRAY and MOTION pages cover visual manipulation,
+calibration, slow LFO/Rise motion and A/B morphs. Closing the window leaves audio
+running. [Full setup, routing and limitations](AMBISONICS.md).
 
 ### Router Performance
 

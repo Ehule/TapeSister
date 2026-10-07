@@ -26,7 +26,7 @@ static int ts_jack_selected;
 enum { TS_JACK_SLOTS=8, TS_JACK_MAX_FRAMES=16384, TS_JACK_BLOCKS=4, TS_JACK_ID_BASE=0x40000000 };
 typedef struct {
     TsJackClient *client;
-    TsJackPort *ports[8];
+    TsJackPort *ports[16];
     SDL_AudioSpec spec;
     float *interleaved, *blocks;
     SDL_Thread *worker;
@@ -108,7 +108,7 @@ static int ts_jack_worker(void *userdata)
 static int ts_jack_process(TsJackFrames frames,void *userdata)
 {
     TsJackEndpoint *e=userdata;
-    float *ports[8]={0};
+    float *ports[16]={0};
     for (unsigned ch=0;ch<e->spec.channels;++ch) {
         ports[ch]=ts_jack.port_get_buffer(e->ports[ch],frames);
         if (!e->capture && ports[ch]) memset(ports[ch],0,frames*sizeof(float));
@@ -196,7 +196,7 @@ static SDL_AudioDeviceID ts_jack_open(const char *name,int capture,
     }
     e->spec.freq=(int)ts_jack.get_sample_rate(e->client);
     unsigned frames=ts_jack.get_buffer_size(e->client);
-    e->spec.channels=role?2:8;e->spec.samples=(Uint16)frames;
+    e->spec.channels=role?2:(capture?8:16);e->spec.samples=(Uint16)frames;
     e->spec.size=frames*e->spec.channels*sizeof(float);e->spec.silence=0;
     if (!frames || frames>TS_JACK_MAX_FRAMES || e->spec.freq<=0) goto failed;
     e->interleaved=calloc(1,e->spec.size);e->blocks=calloc(TS_JACK_BLOCKS,e->spec.size);
@@ -270,7 +270,7 @@ static int ts_native_device_spec(int index,int capture,SDL_AudioSpec *spec)
 #if defined(__linux__)
     if (ts_jack_selected) {
         if (index<0 || index>1) return SDL_SetError("Invalid JACK device");
-        SDL_zero(*spec);spec->channels=index?2:8;spec->format=AUDIO_F32SYS;
+        SDL_zero(*spec);spec->channels=index?2:(capture?8:16);spec->format=AUDIO_F32SYS;
         return 0; /* Actual rate/quantum are read from JACK on open. */
     }
 #endif

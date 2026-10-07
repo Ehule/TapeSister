@@ -6,6 +6,7 @@
 #include "tapesister/audio_lifecycle.h"
 #include "tapesister/master_eq.h"
 #include "tapesister/router.h"
+#include "tapesister/spatial.h"
 #include "tapesister/insert.h"
 #include "tapesister/audition.h"
 #include "tapesister/dsp_recipe.h"
@@ -135,6 +136,7 @@ typedef struct {
     TsRouterControls router;
     TsRouterPerformance router_performance;
     TsInsertControls insert;
+    TsSpatialControls spatial;
     TsAudioBackend audio_backend;
     int audio_backend_invalid;
     int audio_buffer_frames;

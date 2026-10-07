@@ -7,6 +7,7 @@
 #include "tapesister/sister_limiter.h"
 #include "tapesister/master_eq.h"
 #include "tapesister/router.h"
+#include "tapesister/spatial.h"
 #include "tapesister/insert.h"
 #include "tapesister/sister_wave_snapshot.h"
 
@@ -217,6 +218,7 @@ typedef struct {
     TsMasterEq master_eq;
     TsRouter router;
     TsInsert insert;
+    TsSpatial spatial;
     TsSisterParameters parameters;
     TsPerformanceBank performance;
     TsCaptureRecorder capture;

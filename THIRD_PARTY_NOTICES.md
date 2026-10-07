@@ -55,3 +55,15 @@ Windows ASIO support uses RtAudio, copyright 2001–2023 Gary P. Scavone, pinned
 interface/loader files carry Steinberg's notices; see
 `third_party/rtaudio/include/asioinfo.txt`. ASIO is a trademark of Steinberg Media
 Technologies GmbH. A local RtAudio change reads the current ASIO sample rate.
+
+## Ambisonic Toolkit spatial transformations
+
+The Focus, Press, Push and Zoom axial transforms in
+`third_party/atk/foa_transform.h` are adapted from ATK for REAPER,
+https://github.com/ambisonictoolkit/atk-reaper, commit
+`bfff697e3f3977f80a6a3941c35c79c8e316be83`.
+Copyright the ATK Community and Joseph Anderson, Josh Parmenter, Trond Lossius, 2013.
+Licensed under LGPL-3.0-or-later. The complete license texts and adaptation
+notes are in `third_party/atk/` and staged in `licenses/atk/` with releases.
+The modified library source is provided and can be rebuilt/relinked using
+TapeSister's CMake build. No convolution or HRTF assets are included.

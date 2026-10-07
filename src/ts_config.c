@@ -34,6 +34,7 @@ void ts_config_init(TsConfig *config)
         config->fm_bank_count = 16;
         config->master_output_percent = TS_MASTER_OUTPUT_PERCENT_DEFAULT;
         ts_master_eq_default(&config->master_eq);
+        ts_spatial_default(&config->spatial);
         ts_router_default(&config->router);
         ts_router_performance_default(&config->router_performance);
         ts_insert_default(&config->insert);
@@ -294,7 +295,12 @@ int ts_config_load(TsConfig *config, const char *path,
         *equals = '\0';
         value = trim(equals + 1);
         key = trim(key);
-        if (!strncmp(key,"Insert.",7)) {
+        if (!strncmp(key,"Spatial.",8)) {
+            if(ts_spatial_read(&loaded.spatial,key,value)<0) {
+                snprintf(error,error_size,"Invalid Spatial field on config line %d",line_number);
+                fclose(file);return 0;
+            }
+        } else if (!strncmp(key,"Insert.",7)) {
             saw_insert=1;
             if(ts_insert_read(&loaded.insert,key,value)<0) {
                 snprintf(error,error_size,"Invalid Insert on config line %d",line_number);
@@ -805,6 +811,7 @@ int ts_config_save(const TsConfig *config, const char *path,
     }
     if (!write_failed) write_failed = fprintf(file,"\n[Master EQ]\n") < 0 ||
         !ts_master_eq_write(file,&config->master_eq);
+    if(!write_failed)write_failed=!ts_spatial_write(file,&config->spatial);
     if(!write_failed)write_failed=!ts_router_write(file,&config->router);
     if(!write_failed)write_failed=!ts_router_performance_write(file,&config->router_performance);
     if(!write_failed)write_failed=!ts_insert_write(file,&config->insert);

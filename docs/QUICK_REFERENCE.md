@@ -19,6 +19,7 @@ For explanations and complete workflows, see the [User Manual](USER_MANUAL.md).
 | `F1`–`F8` | Select keyboard octave |
 | `F10` | Open/close the [SisterTracker pattern editor](SISTERTRACKER_PLAYBACK.md); playback continues when closed |
 | `F9` | Open/close the Router, including from SisterTracker |
+| `Ctrl+F9` | Open/close the modeless Ambisonics output window |
 | `F12` or CFG → AUDIO HEALTH | Open/close the [Audio Health monitor](AUDIO_HEALTH.md); Reset counters and Copy Report for a crackle investigation |
 | `Space` | Main: play/stop audition. Mosaic: play/pause arrangement |
 | `Ctrl+Shift+M` | Enter or leave MIDI Learn in either window |
@@ -474,6 +475,14 @@ or through the bounded ordinary playback return when Sister is off.
 
 MOD targets: Mix, Feedback, Noise, Drop Rate, Pan Rate, Skip Span/Rate, Bit
 Sample/Depth/Rate, Pitch Ratio/Ramp/Rate. `L` assigns LFO; `R` assigns Rise.
+
+## Ambisonics output
+
+F9 → AMBISONICS or Ctrl+F9. The top toggle switches between the spatial field
+and ordinary stereo. STEREO n–n cycles adjacent room pairs (quad: 1–2, 2–3,
+3–4, 4–1); hardware assignments live on ARRAY. Closing the window keeps it
+running. FIELD provides map dragging, MOTION provides LFO/Rise/A–B controls.
+FILE OUT remains stereo before this speaker stage. [Setup and controls](AMBISONICS.md).
 
 ## Global Router
 
