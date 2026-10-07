@@ -43,7 +43,7 @@ require("ts_audio_endpoint_open_failed" in startup_open,
         "selected output failure must become an explicit lifecycle state")
 
 main_loop = MAIN.index("while (running) {")
-poll = MAIN.index("while (SDL_PollEvent(&event))", main_loop)
+poll = MAIN.index("SDL_PollEvent(&event)", main_loop)
 device_removed = MAIN.index("event.type == SDL_AUDIODEVICEREMOVED", poll)
 global_keys = MAIN.index("event.type == SDL_KEYDOWN", device_removed)
 require(device_removed < global_keys,

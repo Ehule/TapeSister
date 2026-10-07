@@ -1,3 +1,4 @@
+#include "tapesister/profile.h"
 #include "tapesister/waveform_cache.h"
 
 #include <string.h>
@@ -130,7 +131,7 @@ int ts_waveform_analyze_columns(TsWaveformColumn *columns,
     return 1;
 }
 
-int ts_waveform_cache_prepare(TsWaveformCache *cache,
+static int waveform_cache_prepare(TsWaveformCache *cache,
                               const TsWaveformRequest *request)
 {
     const TsSample *sample;
@@ -176,4 +177,12 @@ int ts_waveform_cache_prepare(TsWaveformCache *cache,
     cache->detect_zero_crossings = request->detect_zero_crossings;
     cache->valid = 1;
     return 1;
+}
+
+int ts_waveform_cache_prepare(TsWaveformCache *cache,const TsWaveformRequest *request)
+{
+    uint64_t started=ts_profile_begin(TS_PROF_WAVE_CACHE);
+    int result=waveform_cache_prepare(cache,request);
+    ts_profile_end(TS_PROF_WAVE_CACHE,started);
+    return result;
 }

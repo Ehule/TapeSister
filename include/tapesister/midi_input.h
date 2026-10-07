@@ -8,6 +8,8 @@
 typedef struct TsMidiInput TsMidiInput;
 
 TsMidiInput *ts_midi_input_create(void);
+/* Set before configure; the notification runs on the MIDI producer thread. */
+void ts_midi_input_set_wake(TsMidiInput *input, void (*wake)(void *), void *context);
 void ts_midi_input_destroy(TsMidiInput *input);
 int ts_midi_input_rescan(TsMidiInput *input, char *error, size_t error_size);
 int ts_midi_input_configure(TsMidiInput *input, const char *device_name,

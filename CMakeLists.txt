@@ -17,7 +17,7 @@ FetchContent_MakeAvailable(miniaudio)
 add_library(tapesister_core src/ts_spatial.c src/ts_sample.c src/ts_prism.c src/ts_prism_performance.c src/ts_fm.c src/ts_audition.c src/ts_note_bank.c src/ts_keyboard_sequence.c
              src/ts_mosaic.c src/ts_note_event.c src/ts_midi_map.c src/ts_performance.c src/ts_audio_mixer.c
              src/ts_audio_lifecycle.c
-             src/ts_realtime_diagnostics.c
+             src/ts_realtime_diagnostics.c src/ts_profile.c
              src/ts_sister_effects.c src/ts_sister_fallout.c src/ts_sister_post_fx.c
              src/ts_sister_limiter.c src/ts_master_eq.c src/ts_router.c src/ts_router_performance.c src/ts_insert.c
              src/ts_sister_machine.c src/ts_sister_wave_snapshot.c
@@ -535,6 +535,17 @@ if(TAPESISTER_BUILD_SDL)
   set_tests_properties(tapesister_tapehead_embedded_tests PROPERTIES
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/sistertracker-fixtures")
 
+  add_executable(tapesister_midi_wake_tests tests/test_midi_wake.c)
+  target_include_directories(tapesister_midi_wake_tests PRIVATE third_party)
+  target_link_libraries(tapesister_midi_wake_tests PRIVATE tapesister_core SDL2::SDL2)
+  add_test(NAME tapesister_midi_wake_tests COMMAND tapesister_midi_wake_tests)
+  add_executable(tapesister_performance_benchmark EXCLUDE_FROM_ALL tests/benchmark_performance.c
+                 src/tape_link.c src/tape_companion.c src/ts_startup_diag.c src/ts_midi_input.c)
+  target_include_directories(tapesister_performance_benchmark PRIVATE third_party)
+  target_link_libraries(tapesister_performance_benchmark PRIVATE tapesister_core tapesister_tapehead SDL2::SDL2)
+  if(UNIX AND NOT APPLE)
+    target_link_libraries(tapesister_performance_benchmark PRIVATE rt)
+  endif()
   add_executable(tapesister_audio_health_tests tests/test_audio_health.c
                  src/tape_link.c src/tape_companion.c src/ts_startup_diag.c src/ts_midi_input.c)
   target_include_directories(tapesister_audio_health_tests PRIVATE third_party)
@@ -641,3 +652,20 @@ if(MINGW)
     endif()
   endforeach()
 endif()
+
+add_executable(tapesister_profile_tests tests/test_profile.c)
+target_link_libraries(tapesister_profile_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_profile_tests COMMAND tapesister_profile_tests)
+
+# Several older fixtures put their setup in assert(). Release must exercise
+# those checks too, while the linked production DSP stays fully optimized.
+get_property(tapesister_test_targets DIRECTORY PROPERTY TESTS)
+foreach(test_target IN LISTS tapesister_test_targets)
+  if(TARGET ${test_target})
+    if(MSVC)
+      target_compile_options(${test_target} PRIVATE /UNDEBUG)
+    elseif(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+      target_compile_options(${test_target} PRIVATE -UNDEBUG)
+    endif()
+  endif()
+endforeach()

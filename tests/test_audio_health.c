@@ -10,6 +10,13 @@
 static void silence(void *unused, Uint8 *data, int bytes)
 { (void)unused; memset(data, 0, bytes); }
 
+static void named_edit_for_health(AudioState *audio)
+{
+    lock_edit(TS_AUDIO_LOGICAL_OUTPUT, audio);
+    SDL_Delay(1);
+    ts_audio_unlock_device(TS_AUDIO_LOGICAL_OUTPUT);
+}
+
 static int publish(void *data)
 {
     TsRealtimeDiagnostics *d = data;
@@ -39,6 +46,20 @@ int main(int argc, char **argv)
     a->audio_health_started = SDL_GetTicks();
     SDL_Window *main_window = SDL_CreateWindow("main", 0, 0, 640, 400, 0);
     assert(main_window);
+    assert(window_drawable(main_window));SDL_HideWindow(main_window);
+    assert(!window_drawable(main_window));SDL_ShowWindow(main_window);
+    assert(window_drawable(main_window));
+    SDL_Renderer *damage_renderer=SDL_CreateRenderer(main_window,-1,SDL_RENDERER_SOFTWARE);assert(damage_renderer);
+    SDL_Texture *damage_texture=SDL_CreateTexture(damage_renderer,SDL_PIXELFORMAT_ARGB8888,SDL_TEXTUREACCESS_STREAMING,640,400);assert(damage_texture);
+    TsFramebuffer *damage_frame=calloc(1,sizeof(*damage_frame));uint32_t *damage_previous=calloc(640*400,sizeof(uint32_t));assert(damage_frame && damage_previous);
+    int damage_valid=0;
+    assert(update_texture_damage(damage_texture,damage_frame,damage_previous,&damage_valid)==1);
+    assert(update_texture_damage(damage_texture,damage_frame,damage_previous,&damage_valid)==2);
+    damage_frame->pixels[20]=0xffffffffu;
+    assert(update_texture_damage(damage_texture,damage_frame,damage_previous,&damage_valid)==1);
+    damage_valid=0;assert(update_texture_damage(damage_texture,damage_frame,damage_previous,&damage_valid)==1);
+    SDL_DestroyTexture(damage_texture);SDL_DestroyRenderer(damage_renderer);free(damage_frame);free(damage_previous);
+    ts_profile_init(SDL_GetPerformanceCounter,SDL_GetPerformanceFrequency());
     SDL_AudioSpec want = {0}, got = {0};
     want.freq = 48000; want.format = AUDIO_F32SYS; want.channels = 2;
     want.samples = 256; want.callback = silence;
@@ -59,6 +80,10 @@ int main(int argc, char **argv)
     TsRealtimeDiagnosticsSnapshot s;
     ts_realtime_diagnostics_get(&a->realtime_diagnostics, &s);
     assert(s.control_count == 1 && !strcmp(s.control_worst_site, "outer edit"));
+    ts_realtime_diagnostics_reset(&a->realtime_diagnostics);
+    named_edit_for_health(a);
+    ts_realtime_diagnostics_get(&a->realtime_diagnostics, &s);
+    assert(s.control_count == 1 && !strcmp(s.control_worst_site, "named_edit_for_health"));
 
     SDL_Event e = {0}; e.type = SDL_KEYDOWN;
     e.key.windowID = SDL_GetWindowID(main_window); e.key.keysym.sym = SDLK_F12;
@@ -69,12 +94,24 @@ int main(int argc, char **argv)
     SDL_RendererInfo renderer_info;
     assert(!SDL_GetRendererInfo(ts_health.renderer, &renderer_info));
     assert(renderer_info.flags & SDL_RENDERER_SOFTWARE);
+    SDL_Event profile_event={0};profile_event.type=SDL_MOUSEBUTTONDOWN;
+    profile_event.button.windowID=ts_health.window_id;profile_event.button.button=SDL_BUTTON_LEFT;
+    profile_event.button.x=500;profile_event.button.y=470;
+    assert(ts_audio_health_event(&profile_event,main_window,a,ui));assert(ts_profile_enabled());
+    ts_audio_health_update(a,ui);
+    if (SDL_getenv("TAPESISTER_PROFILE_SCREENSHOT")) {
+        SDL_Surface *surface=SDL_CreateRGBSurfaceFrom(ts_health.framebuffer->pixels,640,400,32,640*4,0x00ff0000u,0x0000ff00u,0x000000ffu,0xff000000u);
+        assert(surface);assert(!SDL_SaveBMP(surface,SDL_getenv("TAPESISTER_PROFILE_SCREENSHOT")));SDL_FreeSurface(surface);
+    }
+    assert(ts_audio_health_event(&profile_event,main_window,a,ui));assert(!ts_profile_enabled());
     for (unsigned i = 0; i < 25; ++i)
         ts_realtime_diagnostics_record_timed(&a->realtime_diagnostics, i * 10000u,
             2500, 1000000, 48000, 480, 0);
     ts_audio_health_update(a, ui);
     char report[4096]; ts_audio_health_report(a, report, sizeof(report));
     assert(strstr(report, "48000 Hz, 256 frames, 2 channels"));
+    assert(strstr(report, "Build: " TAPESISTER_BUILD_MARKER));
+    assert(strstr(report, "Longest hold call site: named_edit_for_health"));
     assert(strstr(report, "not exposed by this backend"));
     assert(strstr(report, "Recent processing: 25.00%"));
     assert(strstr(report, "not round-trip latency"));
@@ -121,7 +158,9 @@ int main(int argc, char **argv)
     a->sister.parameters.prism.enabled = 1;
     a->sister.parameters.prism.lenses = 12;
     a->sister.prism.matrix.running = 1;
+    a->tracker.lanes[0].voice.active=1;
     ts_audio_health_capture_setup(a, ui, 1000);
+    assert(ts_health.setup.tracker_voices==1);
     char setup[3072]; ts_audio_health_setup_report(setup, sizeof(setup), 1020);
     assert(strstr(setup, "Keyboard HOLD: ON; keyboard voice instances: 1; latched/sustained: 1"));
     assert(strstr(setup, "ARP: RUNNING; outer ARP: RUNNING; active slot: 5"));
@@ -140,6 +179,7 @@ int main(int argc, char **argv)
     ts_audio_health_setup_report(setup, sizeof(setup), 1100);
     assert(strstr(setup, "Prism: ON, routed"));
     ts_audio_health_capture_setup(a, ui, 1250);
+    assert(ts_health.setup.tracker_voices==1);
     ts_audio_health_setup_report(setup, sizeof(setup), 1250);
     assert(strstr(setup, "Prism: ON, bypassed"));
     assert(strstr(setup, "Fallout: ON, routed; FX master: OFF"));
@@ -186,6 +226,12 @@ int main(int argc, char **argv)
         assert(s.recent_load_percent == 0 || fabs(s.recent_load_percent - 25) < .00001);
     }
     SDL_WaitThread(thread, NULL);
+    assert(spatial_show(0,a,ui));
+    SDL_HideWindow(spatial_window.window);spatial_window.presented=0;
+    spatial_window.framebuffer->pixels[0]=0x12345678u;
+    spatial_window_update(ui);assert(!spatial_window.presented);
+    assert(spatial_window.framebuffer->pixels[0]==0x12345678u);
+    spatial_window_close();
     ts_audio_health_close(); ts_native_close(ts_real_output);
     ts_real_output = 0; ts_output_userdata = NULL;
     SDL_DestroyWindow(main_window); free(a); free(ui); SDL_Quit();

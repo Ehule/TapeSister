@@ -1,3 +1,4 @@
+#include "tapesister/profile.h"
 #include "tapesister/ui.h"
 #include "tapesister/spatial_ui.h"
 #include "tapesister/input_monitor.h"
@@ -3133,6 +3134,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                 ts_waveform_display_letter((TsWaveformDisplayMode)
                                            ui->config.waveform_display_mode),
                 ui->config.waveform_display_mode != TS_WAVEFORM_DISPLAY_STEREO);
+    uint64_t profile_wave = ts_profile_begin(TS_PROF_WAVEFORM);
     wave_rect(fb, TS_WAVE_X, TS_WAVE_Y, TS_WAVE_W, TS_WAVE_H, RGB(8, 8, 8));
     if (grid_divisions < TS_GRID_DIVISION_MIN ||
         grid_divisions > TS_GRID_DIVISION_MAX ||
@@ -3302,6 +3304,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             }
         }
         detail_capture_coarse(fb);
+    ts_profile_end(TS_PROF_WAVEFORM, profile_wave);
     } else {
         text(fb, showing_bank ? 199 : 211, 135,
              showing_bank ? "EMPTY BANK SLOT" : "DROP WAV HERE",
@@ -5277,7 +5280,9 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
          model->midi_activity ? PAL_TUNING : RGB(22, 22, 22));
 
     if (model->fx_page == 3) {
+        uint64_t profile_prism = ts_profile_begin(TS_PROF_PRISM_UI);
         sister_prism_render(fb, model);
+        ts_profile_end(TS_PROF_PRISM_UI, profile_prism);
         goto sister_footer;
     }
     if (model->fx_page == 2) {

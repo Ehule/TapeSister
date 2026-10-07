@@ -532,6 +532,10 @@ void ts_note_bank_read_buses(TsNoteBank *bank,
     if (fm_output != NULL) *fm_output = (TsStereoFrame){0.0f, 0.0f};
     if (synth_capture != NULL) *synth_capture = (TsStereoFrame){0.0f, 0.0f};
     if (bank == NULL) return;
+    if (!bank->render_limit && !bank->normalization_count &&
+        ts_voice_handoff_idle(&bank->sample_handoff) &&
+        ts_voice_handoff_idle(&bank->fm_handoff) &&
+        ts_voice_handoff_idle(&bank->capture_handoff)) return;
     for (int i = 0; i < bank->render_limit; ++i) {
         TsNoteVoice *voice = &bank->voices[i];
         TsStereoFrame value = voice->active ? ts_note_voice_read(voice) : (TsStereoFrame){0};

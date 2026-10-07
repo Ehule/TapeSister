@@ -23,7 +23,7 @@ static void runtime_router_begin(RouterFrameContext *c)
     if(peak>1.5f)c->causal=frame_scale(c->causal,1.5f/peak);
 }
 
-static TsStereoFrame runtime_router_stage(void *context,int stage,TsStereoFrame input)
+static TsStereoFrame runtime_router_stage_impl(void *context,int stage,TsStereoFrame input)
 {
     RouterFrameContext *c=context;TsSisterRuntime *r=c->runtime;
     switch(stage) {
@@ -72,6 +72,16 @@ static TsStereoFrame runtime_router_stage(void *context,int stage,TsStereoFrame 
     }
     default:return input;
     }
+}
+
+static TsStereoFrame runtime_router_stage(void *context,int stage,TsStereoFrame input)
+{
+    static const TsProfileId ids[TS_ROUTER_COUNT] = {
+        TS_PROF_PRISM, TS_PROF_SISTER_STAGE, TS_PROF_FALLOUT, TS_PROF_PEDALBOARD, TS_PROF_INSERT};
+    uint64_t started = ts_profile_begin(ids[stage]);
+    TsStereoFrame output = runtime_router_stage_impl(context, stage, input);
+    ts_profile_end(ids[stage], started);
+    return output;
 }
 
 static TsStereoFrame runtime_router_prepare_stage(void *context,int stage,TsStereoFrame input)

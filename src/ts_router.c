@@ -1,3 +1,4 @@
+#include "tapesister/profile.h"
 #include "tapesister/router.h"
 #include <math.h>
 #include <ctype.h>
@@ -77,6 +78,7 @@ TsStereoFrame ts_router_process_with_prepare(TsRouter *r,TsStereoFrame in,
 {
     in=ts_stereo_frame_sanitize(in);
     if(!r || !fn)return in;
+    uint64_t profile = ts_profile_begin(TS_PROF_ROUTER);
     r->source_peak=fmaxf(peak(in),r->source_peak*r->decay);
     if(r->handoff<0) {
         r->gain=fmaxf(0,r->gain-r->step);
@@ -100,6 +102,7 @@ TsStereoFrame ts_router_process_with_prepare(TsRouter *r,TsStereoFrame in,
     in.l*=r->gain;in.r*=r->gain;
     r->master_peak=fmaxf(peak(in),r->master_peak*r->decay);
     ts_router_performance_advance(r,1);
+    ts_profile_end(TS_PROF_ROUTER, profile);
     return in;
 }
 int ts_router_write(FILE *file,const TsRouterControls *controls)

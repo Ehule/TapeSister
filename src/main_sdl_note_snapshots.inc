@@ -3,6 +3,12 @@
 static void runtime_note_collect_snapshots(SDL_AudioDeviceID device,AudioState *audio)
 {
     TsSample retired[TS_NOTE_BANK_VOICE_CAPACITY]={0};int count=0;
+    /* Snapshot storage is owned by this UI thread. With nothing to reclaim,
+       polling must not exclude the ASIO callback once per display frame. */
+    int pending=0;
+    for(int s=0;s<TS_NOTE_BANK_VOICE_CAPACITY;++s)
+        pending|=audio->note_snapshots[s].data!=NULL;
+    if(!pending)return;
     if(device)SDL_LockAudioDevice(device);
     for(int s=0;s<TS_NOTE_BANK_VOICE_CAPACITY;++s) {
         TsSample *sample=&audio->note_snapshots[s];if(!sample->data)continue;

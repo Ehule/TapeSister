@@ -65,7 +65,8 @@ static void spatial_commit(SDL_AudioDeviceID device,AudioState *audio,TsUiState 
 }
 static void spatial_window_update(const TsUiState *ui)
 {
-    if(!spatial_window.visible||SDL_GetTicks()-spatial_window.presented<33)return;
+    if(!spatial_window.visible || !window_drawable(spatial_window.window) ||
+       SDL_GetTicks()-spatial_window.presented<33)return;
     if(SDL_GetTicks()>spatial_window.message_until)spatial_window.model.message[0]=0;
     if(ui->midi_learn_active)snprintf(spatial_window.model.message,sizeof(spatial_window.model.message),"%.103s",ui->status);
     ts_spatial_ui_render(spatial_window.framebuffer,&spatial_window.model,&ui->palette);

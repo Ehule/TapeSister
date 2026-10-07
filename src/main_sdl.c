@@ -1,3 +1,8 @@
+#include "tapesister/profile.h"
+#include "tapesister/ui_schedule.h"
+#if defined(__SSE2__)
+#include <xmmintrin.h>
+#endif
 #include "tapesister/sample.h"
 #include "tapesister/capture.h"
 #include "tapesister/capture_archive.h"
@@ -206,7 +211,7 @@ static int update_texture_damage(SDL_Texture *texture,
     previous = *snapshot_valid ? snapshot : NULL;
     if (!ts_render_damage_plan(framebuffer->pixels, previous,
                                TS_UI_WIDTH, TS_UI_HEIGHT, &damage))
-        return 1;
+        return 2; /* Valid texture, unchanged pixels: no upload/present needed. */
 
     for (int i = 0; i < damage.count; ++i) {
         const TsRenderDamageRect *rect = &damage.rects[i];
@@ -225,18 +230,22 @@ static int update_texture_damage(SDL_Texture *texture,
     return 1;
 }
 
-static void pace_frame_60hz(Uint64 started)
+/* MIDI arrives on its own producer thread; wake the main event queue instead
+   of polling it at render rate. No audio-callback work is dispatched here. */
+static Uint32 midi_wake_event;
+static void midi_wake_ui(void *unused)
 {
-    Uint64 frequency = SDL_GetPerformanceFrequency();
-    Uint64 elapsed = SDL_GetPerformanceCounter() - started;
-    Uint64 target = frequency / 60u;
-    if (frequency == 0u || elapsed >= target) return;
-    {
-        Uint64 remaining = target - elapsed;
-        Uint32 delay = (Uint32)((remaining * 1000u + frequency - 1u) /
-                                frequency);
-        if (delay > 0u) SDL_Delay(delay);
+    (void)unused;
+    if (midi_wake_event && midi_wake_event != (Uint32)-1) {
+        SDL_Event event; SDL_zero(event); event.type = midi_wake_event;
+        (void)SDL_PushEvent(&event);
     }
+}
+static int window_drawable(SDL_Window *window)
+{
+    if (!window) return 0;
+    Uint32 flags=SDL_GetWindowFlags(window);
+    return (flags & SDL_WINDOW_SHOWN) && !(flags & (SDL_WINDOW_MINIMIZED|SDL_WINDOW_HIDDEN));
 }
 
 enum { TS_RUNTIME_PATH_MAX = TS_CONFIG_PATH_MAX + 32 };
@@ -797,9 +806,13 @@ typedef struct {
     int bank_slot;
     size_t attack_frame;
     size_t attack_frames;
+    TsVoiceHandoff audition_edit_handoff;
+    int audition_edit_changed;
     TsNoteBank notes;
     TsNoteVoice browser_voice;
     TsSample note_snapshots[TS_NOTE_BANK_VOICE_CAPACITY];
+    uint64_t workbench_refresh_stamp; /* UI-owned; unchanged HOLD needs no lock. */
+    int workbench_refresh_valid;
     const TsInstrument *workspace_bank; /* Parked Sample bank while editing a Mosaic card. */
     TsKeyboardSequence keyboard_sequence;
     TsTrackerPlayback tracker;
@@ -1045,6 +1058,14 @@ static int tracker_capture_frame_allowed(AudioState *audio)
 
 static void audio_callback(void *userdata, Uint8 *stream, int bytes)
 {
+    /* Subnormal tails are far below the output's noise floor but can make
+       older x86 CPUs dramatically slower. Restore the caller's FP mode. */
+#if defined(__SSE2__)
+    unsigned saved_mxcsr = _mm_getcsr();
+    _mm_setcsr(saved_mxcsr | 0x8040u);
+#endif
+    ts_profile_lane_begin(1);
+    uint64_t profile_callback = ts_profile_begin(TS_PROF_AUDIO);
     AudioState *audio = (AudioState *)userdata;
     float *out = (float *)stream;
     unsigned device_channels=audio->output_device_channels?audio->output_device_channels:2u;
@@ -1103,12 +1124,19 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         }
         if (audio->playing && audio->attack_frame < audio->attack_frames)
             ++audio->attack_frame;
+        buses.legacy_preview = ts_voice_handoff_process(
+            &audio->audition_edit_handoff, buses.legacy_preview,
+            audio->audition_edit_changed,
+            audio->output_rate > 0 ? (uint32_t)(audio->output_rate / 200) : 0u);
+        audio->audition_edit_changed = 0;
 
         /* Five-ms trim slew, shared by monitor and all dry capture taps. */
         float fm_slew = audio->output_rate > 0 ? 1.0f / (0.005f * audio->output_rate) : 1.0f;
         audio->fm_output_gain += fmaxf(-fm_slew,
             fminf(fm_slew, audio->fm_output_target - audio->fm_output_gain));
+        uint64_t profile_voices = ts_profile_begin(TS_PROF_VOICES);
         runtime_note_render(audio, &buses, &synth_capture);
+        ts_profile_end(TS_PROF_VOICES, profile_voices);
         buses.fm.l *= audio->fm_output_gain;
         buses.fm.r *= audio->fm_output_gain;
         synth_capture.l *= audio->fm_output_gain;
@@ -1125,6 +1153,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             buses.tapehead.r = i + 1 < values ?
                 audio->live_link_buffer[i + 1] : buses.tapehead.l;
         }
+        uint64_t profile_tracker = ts_profile_begin(TS_PROF_TRACKER);
         if((i/2)%8192==0)embedded_block=ts_tapehead_render(
             (unsigned)SDL_min(frames-i/2,8192),(unsigned)audio->output_rate);
         audio->embedded_tracker_active=embedded_block!=NULL;
@@ -1132,6 +1161,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         audio->embedded_capture_flags=embedded_block?ts_tapehead_capture_flags(embedded_index):0;
         buses.tracker = embedded_block?(TsStereoFrame){embedded_block[embedded_index*2],embedded_block[embedded_index*2+1]}:
             ts_tracker_playback_read(&audio->tracker, audio->output_rate);
+        ts_profile_end(TS_PROF_TRACKER, profile_tracker);
         sister_sources.tracker = buses.tracker;
         sister_sources.fm = buses.fm;
         /* Notes already sounding before POWER retain their original voice
@@ -1140,8 +1170,10 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         sister_sources.external = buses.external;
         sister_sources.preview = buses.legacy_preview;
         sister_sources.tapehead = buses.tapehead;
+        uint64_t profile_sister = ts_profile_begin(TS_PROF_SISTER);
         sister_frame = ts_sister_runtime_process_frame(&audio->sister,
                                                         &sister_sources);
+        ts_profile_end(TS_PROF_SISTER, profile_sister);
         if(!audio->sister.enabled && !audio->sister.callback_failed) {
             /* Sister group notes remain live input when its tape is bypassed. */
             buses.tile_performance.l += sister_frame.keyboard_dry.l;
@@ -1243,7 +1275,9 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         }
         output = ts_audio_mixer_render_unclamped(&audio->mixer, &buses);
         output = audio_apply_topology_crossfade(audio, output);
+        uint64_t profile_master = ts_profile_begin(TS_PROF_MASTER);
         output = ts_sister_runtime_process_output(&audio->sister, output);
+        ts_profile_end(TS_PROF_MASTER, profile_master);
         /* Mosaic OUTPUT records exactly the stereo speaker program, including
            keyboard/sample voices, Prism, Sister/FX, Master EQ, limiter and OUT gain. */
         if(audio->record_bank_recorder && audio->record_source &&
@@ -1268,8 +1302,10 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         audio->last_output = output;
         audio->mixer.buses.output = output;
         ts_insert_write_output(&audio->sister.insert,out+(i/2)*device_channels,device_channels,output);
+        uint64_t profile_spatial = ts_profile_begin(TS_PROF_SPATIAL);
         ts_spatial_process(&audio->sister.spatial,output,out+(i/2)*device_channels,
             device_channels,audio->sister.insert.separate_send?0:audio->sister.insert.controls.send_pair);
+        ts_profile_end(TS_PROF_SPATIAL, profile_spatial);
     }
     ts_tracker_playback_end_block(&audio->tracker);
     ts_sister_runtime_end_audio_block(&audio->sister);
@@ -1326,6 +1362,11 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             values > 0 ? (uint32_t)((values + 1) / 2) : 0u,
             configuration);
     }
+    ts_profile_end(TS_PROF_AUDIO, profile_callback);
+    ts_profile_lane_end(1);
+#if defined(__SSE2__)
+    _mm_setcsr(saved_mxcsr);
+#endif
 }
 
 static int sync_live_link(SDL_AudioDeviceID device, AudioState *audio,
@@ -1622,19 +1663,58 @@ static void toggle_workbench_loop(SDL_AudioDeviceID device, AudioState *audio,
                   ui->play_view ? "VIEW" : instrument->has_selection ? "SELECTION" : "WHOLE SAMPLE");
 }
 
+static uint64_t workbench_note_stamp(const AudioState *audio, const TsUiState *ui,
+                                      const TsInstrument *instrument)
+{
+    uint64_t stamp = 1469598103934665603ull;
+#define STAMP(value) state_hash_bytes(&stamp, &(value), sizeof(value))
+#define SAMPLE_STAMP(sample) do { STAMP((sample).data); STAMP((sample).frames); \
+    STAMP((sample).sample_rate); STAMP((sample).channels); STAMP((sample).visual_revision); } while (0)
+    STAMP(audio->output_rate); STAMP(ui->keyboard_hold); STAMP(ui->play_view);
+    STAMP(ui->parent_view_first); STAMP(ui->parent_view_last);
+    STAMP(ui->fm_open); STAMP(ui->fm_patch.directions); STAMP(ui->fm_patch.drone_mode);
+    STAMP(instrument); STAMP(instrument->generation); STAMP(instrument->selected_slot);
+    STAMP(instrument->tuning); STAMP(instrument->audible_tuning);
+    STAMP(instrument->has_loop); STAMP(instrument->loop_first); STAMP(instrument->loop_last);
+    STAMP(instrument->loop_mode); STAMP(instrument->loop_crossfade_ms);
+    STAMP(instrument->has_selection); STAMP(instrument->selection_first); STAMP(instrument->selection_last);
+    STAMP(instrument->view_first); STAMP(instrument->view_last);
+    SAMPLE_STAMP(instrument->current); SAMPLE_STAMP(instrument->parent);
+    const TsInstrument *bank = audio->workspace_bank ? audio->workspace_bank : instrument;
+    STAMP(bank); STAMP(bank->selected_slot);
+    SAMPLE_STAMP(bank->current); STAMP(bank->tuning); STAMP(bank->audible_tuning);
+    STAMP(bank->has_loop); STAMP(bank->loop_first); STAMP(bank->loop_last);
+    STAMP(bank->loop_mode); STAMP(bank->loop_crossfade_ms);
+    for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i) {
+        const TsBankSlot *slot = &bank->bank[i];
+        SAMPLE_STAMP(slot->sample); STAMP(slot->occupied);
+        STAMP(slot->tuning); STAMP(slot->audible_tuning);
+        STAMP(slot->has_loop); STAMP(slot->loop_first); STAMP(slot->loop_last);
+        STAMP(slot->loop_mode); STAMP(slot->loop_crossfade_ms);
+    }
+#undef SAMPLE_STAMP
+#undef STAMP
+    return stamp;
+}
+
 static void refresh_workbench_loop(SDL_AudioDeviceID device, AudioState *audio,
                                    TsUiState *ui, const TsInstrument *instrument)
 {
     TsAuditionPlan plan;
     if (!ui->workbench_loop_active) {
         if (ui->play_view || ui->keyboard_hold) {
+            uint64_t stamp = workbench_note_stamp(audio, ui, instrument);
+            if (audio->workbench_refresh_valid && audio->workbench_refresh_stamp == stamp) return;
             if (device) SDL_LockAudioDevice(device);
             keyboard_loop_policy(audio, ui);
             runtime_note_sync(audio, instrument, audio->output_rate);
             if (device) SDL_UnlockAudioDevice(device);
-        }
+            audio->workbench_refresh_stamp = stamp;
+            audio->workbench_refresh_valid = 1;
+        } else audio->workbench_refresh_valid = 0;
         return;
     }
+    audio->workbench_refresh_valid = 0;
     /* Once played notes take over an ordinary loop, their final release must
        leave it armed and silent. Only an explicitly locked loop may restart
        the standalone audition after the keyboard chord has ended. */
@@ -2490,36 +2570,89 @@ static void begin_exit_confirmation(SDL_AudioDeviceID device, AudioState *audio,
              "EXIT? UNSAVED CHANGES WILL BE LOST" : "EXIT TAPESISTER?");
 }
 
-static void lock_edit(SDL_AudioDeviceID device, AudioState *audio)
+static void lock_edit_at(SDL_AudioDeviceID device, AudioState *audio,
+                         const char *site)
 {
-    if (device) SDL_LockAudioDevice(device);
+    if (device) ts_audio_lock_device_at(device, site);
     (void)audio;
 }
+#define lock_edit(device, audio) lock_edit_at(device, audio, __func__)
 
 static void unlock_edit(SDL_AudioDeviceID device, AudioState *audio,
                         TsUiState *ui, TsInstrument *instrument);
 
-static int native_sister_edit_can_render_unlocked(const AudioState *audio)
-{
-    return audio != NULL &&
-           (ts_sister_runtime_tiles_insert_active(&audio->sister) ||
-            (audio->mosaic && audio->mosaic->playing)) &&
-           !audio->playing && ts_note_bank_count(&audio->notes) == 0 &&
-           ts_performance_count(&audio->performance) == 0;
-}
+typedef struct {
+    const TsSample *source[2];
+    const float *data[2];
+    uint64_t revision[2];
+    TsSample copy[2];
+    int needed[2];
+    int unlocked;
+    const char *site;
+    uint16_t performance_sources[3];
+} TsNativeSampleEdit;
 
-static int begin_native_sister_edit(SDL_AudioDeviceID device,
-                                    AudioState *audio)
+static void begin_native_sample_edit_at(SDL_AudioDeviceID device, AudioState *audio,
+                                     const TsInstrument *instrument,
+                                     TsNativeSampleEdit *edit, const char *site)
 {
-    int render_unlocked;
-    /* Sample the voice owners while the callback is stopped.  When Sister is
-       the only active reader it owns immutable generations, so release the
-       device before doing the potentially expensive transform render. */
-    lock_edit(device, audio);
-    render_unlocked = native_sister_edit_can_render_unlocked(audio);
-    if (render_unlocked && device) SDL_UnlockAudioDevice(device);
-    return render_unlocked;
+    memset(edit, 0, sizeof(*edit));
+    edit->site = site;
+    edit->source[0] = &instrument->current;
+    edit->source[1] = &instrument->parent;
+    for (int s = 0; s < 2; ++s) {
+        edit->data[s] = edit->source[s]->data;
+        edit->revision[s] = edit->source[s]->visual_revision;
+    }
+    lock_edit_at(device, audio, site);
+    /* Grouped notes, Sister, Mosaic and tile launchers own immutable samples.
+       Direct bank/preview audition keeps the conservative exclusion path. */
+    if (audio->playing) {
+        if (audio->bank_slot >= 0) return;
+        if (audio->sample != edit->source[0] && audio->sample != edit->source[1]) return;
+        for (int s = 0; s < 2; ++s) edit->needed[s] |= audio->sample == edit->source[s];
+    }
+    for (int i = 0; i < TS_NOTE_BANK_VOICE_CAPACITY; ++i) {
+        const TsNoteVoice *v = &audio->notes.voices[i];
+        if (!v->active || v->synth || v->preview || v->detached) continue;
+        if (v->sample != edit->source[0] && v->sample != edit->source[1]) return;
+        for (int s = 0; s < 2; ++s) edit->needed[s] |= v->sample == edit->source[s];
+    }
+    for (int s = 0; s < 2; ++s)
+        if (audio->browser_voice.active && audio->browser_voice.sample == edit->source[s]) return;
+    TsPerformanceBank *banks[] = {&audio->performance, &audio->tile_launchers,
+                                  &audio->sister.performance};
+    /* Voice liveness is callback-owned. Capture source slots while excluded;
+       preparation later reads only UI-owned samples and generation storage. */
+    for (int b = 0; b < 3; ++b)
+        for (int i = 0; i < TS_PERFORMANCE_VOICE_LIMIT; ++i) {
+            const TsPerformanceVoice *v = &banks[b]->voices[i];
+            if (v->active && !v->detached && v->source_slot >= 0 &&
+                v->source_slot < TS_BANK_SLOT_COUNT)
+                edit->performance_sources[b] |= (uint16_t)(1u << v->source_slot);
+        }
+    if (device) SDL_UnlockAudioDevice(device);
+    /* The UI alone edits Current/Parent. Clone while the callback still reads
+       the unchanged originals, then publish only pointers under the lock. */
+    for (int s = 0; s < 2; ++s) if (edit->needed[s] &&
+        !ts_sample_clone(&edit->copy[s], edit->source[s], NULL, 0)) {
+        for (int j = 0; j < 2; ++j) ts_sample_free(&edit->copy[j]);
+        lock_edit_at(device, audio, site);
+        return; /* Allocation failure preserves the original safe edit path. */
+    }
+    lock_edit_at(device, audio, site);
+    for (int i = 0; i < TS_NOTE_BANK_VOICE_CAPACITY; ++i)
+        for (int s = 0; s < 2; ++s) if (edit->needed[s] &&
+            audio->notes.voices[i].sample == edit->source[s])
+            audio->notes.voices[i].sample = &edit->copy[s];
+    for (int s = 0; s < 2; ++s)
+        if (edit->needed[s] && audio->sample == edit->source[s])
+            audio->sample = &edit->copy[s];
+    edit->unlocked = 1;
+    if (device) SDL_UnlockAudioDevice(device);
 }
+#define begin_native_sample_edit(device, audio, instrument, edit) \
+    begin_native_sample_edit_at(device, audio, instrument, edit, __func__)
 
 static int begin_capture_commit_edit(SDL_AudioDeviceID device,
                                      AudioState *audio)
@@ -2554,6 +2687,49 @@ static void finish_native_sister_edit(SDL_AudioDeviceID device,
         lock_edit(device, audio);
     }
     unlock_edit(device, audio, ui, instrument);
+}
+
+/* Reacquire before touching audio-owned metadata such as canvas position.
+   Every begin must end in finish, including failed/cancelled renders. */
+static void publish_native_sample_edit(SDL_AudioDeviceID device, AudioState *audio,
+                                      const TsInstrument *instrument,
+                                      TsNativeSampleEdit *edit)
+{
+    if (edit->unlocked) {
+        const TsInstrument *bank = audio->workspace_bank ? audio->workspace_bank : instrument;
+        (void)ts_performance_prepare_sources(&audio->performance, bank, edit->performance_sources[0]);
+        (void)ts_performance_prepare_sources(&audio->tile_launchers, bank, edit->performance_sources[1]);
+        (void)ts_performance_prepare_sources(&audio->sister.performance, bank, edit->performance_sources[2]);
+        lock_edit_at(device, audio, edit->site);
+        for (int i = 0; i < TS_NOTE_BANK_VOICE_CAPACITY; ++i) {
+            TsNoteVoice *v = &audio->notes.voices[i];
+            for (int s = 0; s < 2; ++s) if (v->sample == &edit->copy[s]) {
+                v->sample = edit->source[s];
+                /* Use the existing note-bank handoff ramp for changed audio. */
+                if (v->active && !v->synth && !v->preview && !v->detached &&
+                    (edit->source[s]->data != edit->data[s] ||
+                     edit->source[s]->visual_revision != edit->revision[s]))
+                    audio->notes.rendered_serial[i] = 0;
+            }
+        }
+        for (int s = 0; s < 2; ++s) if (audio->sample == &edit->copy[s]) {
+            audio->sample = edit->source[s];
+            if (audio->playing &&
+                (edit->source[s]->data != edit->data[s] ||
+                 edit->source[s]->visual_revision != edit->revision[s]))
+                audio->audition_edit_changed = 1;
+        }
+        edit->unlocked = 0;
+    }
+}
+
+static void finish_native_sample_edit(SDL_AudioDeviceID device, AudioState *audio,
+                                      TsUiState *ui, TsInstrument *instrument,
+                                      TsNativeSampleEdit *edit)
+{
+    publish_native_sample_edit(device, audio, instrument, edit);
+    unlock_edit(device, audio, ui, instrument);
+    for (int s = 0; s < 2; ++s) ts_sample_free(&edit->copy[s]);
 }
 
 static void unlock_edit(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
@@ -3278,6 +3454,7 @@ static void poll_transform_worker(SDL_AudioDeviceID device, AudioState *audio,
                                   TsUiState *ui, TsInstrument *instrument,
                                   TransformController *controller)
 {
+    TsNativeSampleEdit sample_edit;
     TransformWorker *worker = controller->worker;
     const TsCdpRecipe *recipe = controller->quick_apply && worker != NULL ?
                                 worker->recipe :
@@ -3345,7 +3522,7 @@ static void poll_transform_worker(SDL_AudioDeviceID device, AudioState *audio,
                 snprintf(error, sizeof(error),
                          "CAPTURE STARTED - QUICK APPLY DISCARDED");
             } else {
-                lock_edit(device, audio);
+                begin_native_sample_edit(device, audio, instrument, &sample_edit);
                 if (worker->backend == TS_TRANSFORM_BACKEND_DSP)
                     applied = ts_dsp_transform_apply_preview_recipe(
                         instrument, &controller->dsp_preview,
@@ -3357,7 +3534,7 @@ static void poll_transform_worker(SDL_AudioDeviceID device, AudioState *audio,
                         instrument, &controller->preview, worker->identity.scope,
                         worker->recipe, &worker->values,
                         controller->render_generation, error, sizeof(error));
-                unlock_edit(device, audio, ui, instrument);
+                finish_native_sample_edit(device, audio, ui, instrument, &sample_edit);
             }
             if (applied) {
                 snprintf(ui->status, sizeof(ui->status),
@@ -3469,6 +3646,7 @@ static void apply_transform_preview(SDL_AudioDeviceID device, AudioState *audio,
                                     TsUiState *ui, TsInstrument *instrument,
                                     TransformController *controller)
 {
+    TsNativeSampleEdit sample_edit;
     const int dsp = ui->transform_backend == TS_TRANSFORM_BACKEND_DSP;
     const TsCdpRecipe *recipe = dsp ? NULL : active_transform_recipe(ui);
     const TsDspRecipe *dsp_recipe = dsp && ui->transform_dsp_slot >= 0 ?
@@ -3483,7 +3661,7 @@ static void apply_transform_preview(SDL_AudioDeviceID device, AudioState *audio,
         return;
     }
     stop_transform_preview(device, audio, ui, controller);
-    lock_edit(device, audio);
+    begin_native_sample_edit(device, audio, instrument, &sample_edit);
     ok = dsp ? ts_dsp_transform_apply_preview_recipe(
                    instrument, &controller->dsp_preview, ui->transform_scope,
                    dsp_recipe, &ui->transform_dsp_values,
@@ -3493,7 +3671,7 @@ static void apply_transform_preview(SDL_AudioDeviceID device, AudioState *audio,
                                           &ui->transform_values,
                                           controller->render_generation,
                                           error, sizeof(error));
-    unlock_edit(device, audio, ui, instrument);
+    finish_native_sample_edit(device, audio, ui, instrument, &sample_edit);
     if (!ok) {
         snprintf(ui->transform_message, sizeof(ui->transform_message), "%.92s", error);
         return;
@@ -4034,6 +4212,9 @@ static int generate_family_candidate(SDL_AudioDeviceID device, AudioState *audio
     if (ui->workbench_loop_active) stop_all(device, audio, ui);
     lock_edit(device, audio);
     audio->playing = 0; audio->bank_slot = -1;
+    if (device) SDL_UnlockAudioDevice(device);
+    TsNativeSampleEdit sample_edit;
+    begin_native_sample_edit(device, audio, instrument, &sample_edit);
     if (basic)
         ok = ts_instrument_create_basic(instrument, waves[basic_index], error, sizeof(error));
     else if (stamp && vary && instrument->family_trajectory)
@@ -4051,7 +4232,7 @@ static int generate_family_candidate(SDL_AudioDeviceID device, AudioState *audio
     else
         ok = ts_instrument_create_directed(
             instrument, seed_sequence, (uint32_t)ui->config.create_directions, &seed, error, sizeof(error));
-    unlock_edit(device, audio, ui, instrument);
+    finish_native_sample_edit(device, audio, ui, instrument, &sample_edit);
     if (!ok) {
         snprintf(ui->status, sizeof(ui->status), "%s FAILED: %.132s",
                  vary ? "VARY" : "CREATE", error);
@@ -4394,6 +4575,9 @@ static void apply_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
     }
     lock_edit(device, audio);
     runtime_note_clear(audio);
+    if (device) SDL_UnlockAudioDevice(device);
+    TsNativeSampleEdit sample_edit;
+    begin_native_sample_edit(device, audio, instrument, &sample_edit);
     ok = destination == original_slot ||
          ts_instrument_select_bank(instrument, destination,
                                    error, sizeof(error));
@@ -4402,7 +4586,7 @@ static void apply_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
                                           error, sizeof(error));
     if (!ok && destination != original_slot)
         (void)ts_instrument_select_bank(instrument, original_slot, NULL, 0u);
-    unlock_edit(device, audio, ui, instrument);
+    finish_native_sample_edit(device, audio, ui, instrument, &sample_edit);
     ui->active_notes = 0u;
     ui->fm_held_notes = 0;
     if (ok) {
@@ -4524,12 +4708,13 @@ finished:
 static void apply_process(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
                           TsInstrument *instrument, TsProcessRecipe process, const char *label)
 {
+    TsNativeSampleEdit sample_edit;
     char error[160];
     const char *scope = instrument->has_selection ? "SELECTION" : "SELECTED TILE";
     int ok;
-    lock_edit(device, audio);
+    begin_native_sample_edit(device, audio, instrument, &sample_edit);
     ok = ts_instrument_set_process(instrument, &process, error, sizeof(error));
-    unlock_edit(device, audio, ui, instrument);
+    finish_native_sample_edit(device, audio, ui, instrument, &sample_edit);
     if (ok) ui->recipes.active_slot = -1;
     if (ok && strcmp(label, "BODY") == 0)
         snprintf(ui->status, sizeof(ui->status), "BODY %.2F - %s UPDATED",
@@ -4561,13 +4746,14 @@ static int begin_material_macro_gesture(
     SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
     TsInstrument *instrument, TsMaterialMacro macro, int wheel)
 {
+    TsNativeSampleEdit sample_edit;
     char error[160];
     int ok;
-    lock_edit(device, audio);
+    begin_native_sample_edit(device, audio, instrument, &sample_edit);
     ok = ts_instrument_material_macro_gesture_begin(
         instrument, &ui->material_macro_gesture, macro,
         error, sizeof(error));
-    unlock_edit(device, audio, ui, instrument);
+    finish_native_sample_edit(device, audio, ui, instrument, &sample_edit);
     if (ok) {
         ui->material_macro_dragging = !wheel;
         ui->material_macro_wheel_active = wheel;
@@ -4583,17 +4769,18 @@ static int preview_material_macro_gesture(
     SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
     TsInstrument *instrument, float amount, int output_rate)
 {
+    TsNativeSampleEdit sample_edit;
     char error[160];
     const char *name = material_macro_name(ui->material_macro_gesture.macro);
     uint32_t now;
     int ok;
     if (amount < -1.0f) amount = -1.0f;
     if (amount > 1.0f) amount = 1.0f;
-    lock_edit(device, audio);
+    begin_native_sample_edit(device, audio, instrument, &sample_edit);
     ok = ts_instrument_material_macro_gesture_preview(
         instrument, &ui->material_macro_gesture, amount,
         error, sizeof(error));
-    unlock_edit(device, audio, ui, instrument);
+    finish_native_sample_edit(device, audio, ui, instrument, &sample_edit);
     if (!ok) {
         snprintf(ui->status, sizeof(ui->status),
                  "%s PREVIEW FAILED: %.128s", name, error);
@@ -4601,9 +4788,9 @@ static int preview_material_macro_gesture(
     }
     ui->material_macro_amount = amount;
     now = SDL_GetTicks();
-    if (!ts_ui_transform_auto_audition_allowed(ui)) {
+    if (ui->keyboard_hold || !ts_ui_transform_auto_audition_allowed(ui)) {
         snprintf(ui->status, sizeof(ui->status),
-                 "%s PREVIEW %.2F - LOOP OWNS AUDITION", name, amount);
+                 "%s PREVIEW %.2F - %s OWNS AUDITION", name, amount, ui->keyboard_hold ? "HOLD" : "LOOP");
     } else if (ui->material_macro_last_audition_ms == 0u ||
                now - ui->material_macro_last_audition_ms >= 100u) {
         TsAuditionRange range = ui->material_macro_gesture.start.has_selection ?
@@ -4621,25 +4808,26 @@ static void end_material_macro_gesture(
     SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
     TsInstrument *instrument, int cancel)
 {
+    TsNativeSampleEdit sample_edit;
     char error[160];
     TsMaterialMacro macro = ui->material_macro_gesture.macro;
     float amount = ui->material_macro_gesture.amount;
     float neutral = material_macro_neutral_value(macro);
     const char *name = material_macro_name(macro);
     int ok;
-    lock_edit(device, audio);
+    begin_native_sample_edit(device, audio, instrument, &sample_edit);
     ok = cancel ? ts_instrument_material_macro_gesture_cancel(
                       instrument, &ui->material_macro_gesture,
                       error, sizeof(error)) :
                   ts_instrument_material_macro_gesture_commit(
                       instrument, &ui->material_macro_gesture,
                       error, sizeof(error));
-    unlock_edit(device, audio, ui, instrument);
+    finish_native_sample_edit(device, audio, ui, instrument, &sample_edit);
     ui->material_macro_dragging = 0;
     ui->material_macro_wheel_active = 0;
     ui->material_macro_amount = 0.0f;
     ui->material_macro_last_audition_ms = 0u;
-    if (cancel && !ui->workbench_loop_active) stop_all(device, audio, ui);
+    if (cancel && !ui->keyboard_hold && !ui->workbench_loop_active) stop_all(device, audio, ui);
     if (ok && cancel)
         snprintf(ui->status, sizeof(ui->status),
                  "%s CANCELLED - ORIGINAL RESTORED", name);
@@ -4657,6 +4845,7 @@ static int apply_material_macro_once(
     SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
     TsInstrument *instrument, TsMaterialMacro macro, float amount)
 {
+    TsNativeSampleEdit sample_edit;
     char error[160];
     const char *name = material_macro_name(macro);
     int ok;
@@ -4667,10 +4856,10 @@ static int apply_material_macro_once(
                  "%s IS AT NEUTRAL - NO MATERIAL EDIT", name);
         return 1;
     }
-    lock_edit(device, audio);
+    begin_native_sample_edit(device, audio, instrument, &sample_edit);
     ok = ts_instrument_apply_material_macro(
         instrument, macro, amount, error, sizeof(error));
-    unlock_edit(device, audio, ui, instrument);
+    finish_native_sample_edit(device, audio, ui, instrument, &sample_edit);
     if (ok)
         snprintf(ui->status, sizeof(ui->status),
                  "%s %.2F PRINTED TO %s - ONE UNDO",
@@ -4686,6 +4875,7 @@ static void apply_material_pitch_shift(SDL_AudioDeviceID device,
                                        TsInstrument *instrument,
                                        float semitones)
 {
+    TsNativeSampleEdit sample_edit;
     char error[160];
     int selected = instrument->has_selection &&
                    instrument->selection_last > instrument->selection_first;
@@ -4694,10 +4884,10 @@ static void apply_material_pitch_shift(SDL_AudioDeviceID device,
                     instrument->current.frames;
     size_t canvas_before = instrument->current.frames;
     int ok;
-    lock_edit(device, audio);
+    begin_native_sample_edit(device, audio, instrument, &sample_edit);
     ok = ts_instrument_apply_pitch_shift(instrument, semitones,
                                          error, sizeof(error));
-    unlock_edit(device, audio, ui, instrument);
+    finish_native_sample_edit(device, audio, ui, instrument, &sample_edit);
     if (ok) {
         size_t after = selected && instrument->has_selection ?
                        instrument->selection_last - instrument->selection_first :
@@ -4927,11 +5117,12 @@ static void select_current_view(SDL_AudioDeviceID device, AudioState *audio,
 static void crop_selection(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
                            TsInstrument *instrument)
 {
+    TsNativeSampleEdit sample_edit;
     char error[160];
     int ok;
-    lock_edit(device, audio);
+    begin_native_sample_edit(device, audio, instrument, &sample_edit);
     ok = ts_instrument_crop_selection(instrument, error, sizeof(error));
-    unlock_edit(device, audio, ui, instrument);
+    finish_native_sample_edit(device, audio, ui, instrument, &sample_edit);
     if (ok) snprintf(ui->status, sizeof(ui->status), "CROPPED SELECTED TILE");
     else snprintf(ui->status, sizeof(ui->status), "CROP FAILED: %.135s", error);
 }
@@ -4939,12 +5130,13 @@ static void crop_selection(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
 static void apply_sample_edit(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
                               TsInstrument *instrument, TsSampleEditKind kind, float amount)
 {
+    TsNativeSampleEdit sample_edit;
     char error[160];
     int ok;
     int selected = instrument->has_selection;
-    lock_edit(device, audio);
+    begin_native_sample_edit(device, audio, instrument, &sample_edit);
     ok = ts_instrument_apply_sample_edit(instrument, kind, amount, error, sizeof(error));
-    unlock_edit(device, audio, ui, instrument);
+    finish_native_sample_edit(device, audio, ui, instrument, &sample_edit);
     if (ok) snprintf(ui->status, sizeof(ui->status), "%s %s - SELECTED TILE UPDATED",
                      ts_sample_edit_name(kind), selected ? "SELECTION" : "ALL");
     else snprintf(ui->status, sizeof(ui->status), "EDIT FAILED: %.137s", error);
@@ -4957,10 +5149,10 @@ static void copy_selection_to_clipboard(SDL_AudioDeviceID device, AudioState *au
 {
     char error[160];
     int ok;
-    lock_edit(device, audio);
+    /* Both the editable sample and clipboard are owned by the UI thread. */
+    (void)device; (void)audio;
     ok = ts_instrument_copy_selection(instrument, clipboard, origin_first,
                                       error, sizeof(error));
-    if (device) SDL_UnlockAudioDevice(device);
     if (ok) {
         if (source_frames != NULL) *source_frames = instrument->current.frames;
         if (source_rate != NULL) *source_rate = instrument->current.sample_rate;
@@ -4975,15 +5167,16 @@ static void cut_selection_to_clipboard(SDL_AudioDeviceID device, AudioState *aud
                                        TsSample *clipboard, size_t *origin_first,
                                        size_t *source_frames, uint32_t *source_rate)
 {
+    TsNativeSampleEdit sample_edit;
     char error[160];
     int ok;
     size_t copied_source_frames = instrument->current.frames;
     uint32_t copied_source_rate = instrument->current.sample_rate;
-    lock_edit(device, audio);
+    begin_native_sample_edit(device, audio, instrument, &sample_edit);
     ok = ts_instrument_cut_selection_mode(
         instrument, clipboard, origin_first,
         ui->config.ripple_cut_crop_canvas, error, sizeof(error));
-    unlock_edit(device, audio, ui, instrument);
+    finish_native_sample_edit(device, audio, ui, instrument, &sample_edit);
     if (ok) {
         if (source_frames != NULL) *source_frames = copied_source_frames;
         if (source_rate != NULL) *source_rate = copied_source_rate;
@@ -5000,14 +5193,15 @@ static void paste_from_clipboard(SDL_AudioDeviceID device, AudioState *audio,
                                  const TsSample *clipboard, size_t origin_first,
                                  int fit_selection)
 {
+    TsNativeSampleEdit sample_edit;
     char error[160];
     int ok;
     size_t target_frames = instrument->has_selection ?
                            instrument->selection_last - instrument->selection_first : 0;
-    lock_edit(device, audio);
+    begin_native_sample_edit(device, audio, instrument, &sample_edit);
     ok = ts_instrument_paste(instrument, clipboard, origin_first, fit_selection,
                              error, sizeof(error));
-    unlock_edit(device, audio, ui, instrument);
+    finish_native_sample_edit(device, audio, ui, instrument, &sample_edit);
     if (ok && fit_selection)
         snprintf(ui->status, sizeof(ui->status),
                  "FIT-PASTED %zu FRAMES INTO %zu ON TILE %02d",
@@ -5082,11 +5276,12 @@ static int rebuild_amplitude_draw_preview(
     SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
     TsInstrument *instrument, char *error, size_t error_size)
 {
+    TsNativeSampleEdit sample_edit;
     int previous_x = -1;
     size_t previous_frame = 0u;
     float previous_gain = 0.0f;
     int ok = 1;
-    lock_edit(device, audio);
+    begin_native_sample_edit(device, audio, instrument, &sample_edit);
     ok = ts_instrument_amplitude_gesture_reset_preview(
         instrument, &ui->amplitude_gesture, error, error_size);
     for (int x = 0; ok && x < TS_WAVE_W; ++x) {
@@ -5111,7 +5306,7 @@ static int rebuild_amplitude_draw_preview(
         previous_frame = frame;
         previous_gain = gain;
     }
-    unlock_edit(device, audio, ui, instrument);
+    finish_native_sample_edit(device, audio, ui, instrument, &sample_edit);
     return ok;
 }
 
@@ -5139,6 +5334,7 @@ static int begin_amplitude_draw(SDL_AudioDeviceID device, AudioState *audio,
                                 TsUiState *ui, TsInstrument *instrument,
                                 int x, int y)
 {
+    TsNativeSampleEdit sample_edit;
     char error[160];
     size_t frame;
     float gain;
@@ -5146,19 +5342,19 @@ static int begin_amplitude_draw(SDL_AudioDeviceID device, AudioState *audio,
     int ok;
     frame = ts_instrument_frame_from_view_x(instrument, local_x, TS_WAVE_W);
     gain = amplitude_gain_from_y(y);
-    lock_edit(device, audio);
+    begin_native_sample_edit(device, audio, instrument, &sample_edit);
     ok = ts_instrument_amplitude_gesture_begin(
              instrument, &ui->amplitude_gesture, error, sizeof(error)) &&
          ts_instrument_amplitude_gesture_preview(
              instrument, &ui->amplitude_gesture,
              frame, gain, frame, gain, error, sizeof(error));
-    unlock_edit(device, audio, ui, instrument);
+    finish_native_sample_edit(device, audio, ui, instrument, &sample_edit);
     if (!ok) {
         if (ui->amplitude_gesture.active) {
-            lock_edit(device, audio);
+            begin_native_sample_edit(device, audio, instrument, &sample_edit);
             (void)ts_instrument_amplitude_gesture_cancel(
                 instrument, &ui->amplitude_gesture, NULL, 0);
-            unlock_edit(device, audio, ui, instrument);
+            finish_native_sample_edit(device, audio, ui, instrument, &sample_edit);
         }
         snprintf(ui->status, sizeof(ui->status),
                  "DRAW BEGIN FAILED: %.139s", error);
@@ -5189,6 +5385,7 @@ static int preview_amplitude_draw(SDL_AudioDeviceID device, AudioState *audio,
                                   TsUiState *ui, TsInstrument *instrument,
                                   int x, int y)
 {
+    TsNativeSampleEdit sample_edit;
     char error[160];
     int local_x = ts_ui_amplitude_draw_local_x(x);
     size_t frame;
@@ -5213,12 +5410,12 @@ static int preview_amplitude_draw(SDL_AudioDeviceID device, AudioState *audio,
         ok = rebuild_amplitude_draw_preview(
             device, audio, ui, instrument, error, sizeof(error));
     } else {
-        lock_edit(device, audio);
+        begin_native_sample_edit(device, audio, instrument, &sample_edit);
         ok = ts_instrument_amplitude_gesture_preview(
             instrument, &ui->amplitude_gesture,
             ui->amplitude_last_frame, ui->amplitude_last_gain,
             frame, gain, error, sizeof(error));
-        unlock_edit(device, audio, ui, instrument);
+        finish_native_sample_edit(device, audio, ui, instrument, &sample_edit);
     }
     if (!ok) {
         snprintf(ui->status, sizeof(ui->status),
@@ -5239,16 +5436,17 @@ static void end_amplitude_draw(SDL_AudioDeviceID device, AudioState *audio,
                                TsUiState *ui, TsInstrument *instrument,
                                int cancel)
 {
+    TsNativeSampleEdit sample_edit;
     char error[160];
     int ok;
-    lock_edit(device, audio);
+    begin_native_sample_edit(device, audio, instrument, &sample_edit);
     ok = cancel ? ts_instrument_amplitude_gesture_cancel(
                       instrument, &ui->amplitude_gesture,
                       error, sizeof(error)) :
                   ts_instrument_amplitude_gesture_commit(
                       instrument, &ui->amplitude_gesture,
                       error, sizeof(error));
-    unlock_edit(device, audio, ui, instrument);
+    finish_native_sample_edit(device, audio, ui, instrument, &sample_edit);
     ui->amplitude_draw_dragging = 0;
     ui->amplitude_profile_first_x = TS_WAVE_W;
     ui->amplitude_profile_last_x = -1;
@@ -5272,10 +5470,11 @@ static int begin_warp_gesture(SDL_AudioDeviceID device, AudioState *audio,
 {
     char error[160];
     int ok;
-    lock_edit(device, audio);
+    TsNativeSampleEdit edit;
+    begin_native_sample_edit(device, audio, instrument, &edit);
     ok = ts_instrument_warp_gesture_begin(instrument, &ui->warp_gesture,
                                           error, sizeof(error));
-    unlock_edit(device, audio, ui, instrument);
+    finish_native_sample_edit(device, audio, ui, instrument, &edit);
     if (ok) {
         ui->warp_dragging = !wheel;
         ui->warp_wheel_active = wheel;
@@ -5293,14 +5492,13 @@ static int preview_warp_gesture(SDL_AudioDeviceID device, AudioState *audio,
     char error[160];
     uint32_t now;
     int ok;
-    int rendered_unlocked;
+    TsNativeSampleEdit edit;
     if (amount < 0.0f) amount = 0.0f;
     if (amount > 1.0f) amount = 1.0f;
-    rendered_unlocked = begin_native_sister_edit(device, audio);
+    begin_native_sample_edit(device, audio, instrument, &edit);
     ok = ts_instrument_warp_gesture_preview(instrument, &ui->warp_gesture,
                                             amount, error, sizeof(error));
-    finish_native_sister_edit(device, audio, ui, instrument,
-                              rendered_unlocked);
+    finish_native_sample_edit(device, audio, ui, instrument, &edit);
     if (!ok) {
         snprintf(ui->status, sizeof(ui->status),
                  "WARP PREVIEW FAILED: %.129s", error);
@@ -5308,8 +5506,8 @@ static int preview_warp_gesture(SDL_AudioDeviceID device, AudioState *audio,
     }
     ui->warp_amount = amount;
     now = SDL_GetTicks();
-    if (!ts_ui_transform_auto_audition_allowed(ui)) {
-        snprintf(ui->status, sizeof(ui->status), "WARP PREVIEW %.2F - LOOP OWNS AUDITION", amount);
+    if (ui->keyboard_hold || !ts_ui_transform_auto_audition_allowed(ui)) {
+        snprintf(ui->status, sizeof(ui->status), "WARP PREVIEW %.2F - %s OWNS AUDITION", amount, ui->keyboard_hold ? "HOLD" : "LOOP");
     } else if (ui->warp_last_audition_ms == 0 || now - ui->warp_last_audition_ms >= 100u) {
         TsAuditionRange range = ui->warp_gesture.start.has_selection ?
                                 TS_AUDITION_SELECTION : TS_AUDITION_ALL;
@@ -5326,18 +5524,18 @@ static void end_warp_gesture(SDL_AudioDeviceID device, AudioState *audio,
     char error[160];
     float amount = ui->warp_gesture.amount;
     int ok;
-    int rendered_unlocked = begin_native_sister_edit(device, audio);
+    TsNativeSampleEdit edit;
+    begin_native_sample_edit(device, audio, instrument, &edit);
     ok = cancel ? ts_instrument_warp_gesture_cancel(
                       instrument, &ui->warp_gesture, error, sizeof(error)) :
                   ts_instrument_warp_gesture_commit(
                       instrument, &ui->warp_gesture, error, sizeof(error));
-    finish_native_sister_edit(device, audio, ui, instrument,
-                              rendered_unlocked);
+    finish_native_sample_edit(device, audio, ui, instrument, &edit);
     ui->warp_dragging = 0;
     ui->warp_wheel_active = 0;
     ui->warp_amount = 0.0f;
     ui->warp_last_audition_ms = 0;
-    if (cancel) stop_all(device, audio, ui);
+    if (cancel && !ui->keyboard_hold && !ui->workbench_loop_active) stop_all(device, audio, ui);
     if (ok && cancel)
         snprintf(ui->status, sizeof(ui->status),
                  "WARP CANCELLED - ORIGINAL RESTORED");
@@ -5354,9 +5552,10 @@ static int begin_smear_gesture(SDL_AudioDeviceID device, AudioState *audio,
                                TsUiState *ui, TsInstrument *instrument, int wheel)
 {
     char error[160]; int ok;
-    lock_edit(device, audio);
+    TsNativeSampleEdit edit;
+    begin_native_sample_edit(device, audio, instrument, &edit);
     ok = ts_instrument_smear_gesture_begin(instrument, &ui->smear_gesture, error, sizeof(error));
-    unlock_edit(device, audio, ui, instrument);
+    finish_native_sample_edit(device, audio, ui, instrument, &edit);
     if (ok) {
         ui->smear_dragging = !wheel; ui->smear_wheel_active = wheel;
         ui->smear_amount = 0.0f; ui->smear_last_audition_ms = 0;
@@ -5368,18 +5567,17 @@ static int preview_smear_gesture(SDL_AudioDeviceID device, AudioState *audio,
                                  TsUiState *ui, TsInstrument *instrument,
                                  float amount, int output_rate)
 {
-    char error[160]; uint32_t now; int ok; int rendered_unlocked;
+    char error[160]; uint32_t now; int ok; TsNativeSampleEdit edit;
     if (amount < 0.0f) amount = 0.0f;
     if (amount > 1.0f) amount = 1.0f;
-    rendered_unlocked = begin_native_sister_edit(device, audio);
+    begin_native_sample_edit(device, audio, instrument, &edit);
     ok = ts_instrument_smear_gesture_preview(instrument, &ui->smear_gesture,
                                              amount, error, sizeof(error));
-    finish_native_sister_edit(device, audio, ui, instrument,
-                              rendered_unlocked);
+    finish_native_sample_edit(device, audio, ui, instrument, &edit);
     if (!ok) { snprintf(ui->status, sizeof(ui->status), "SMEAR PREVIEW FAILED: %.128s", error); return 0; }
     ui->smear_amount = amount; now = SDL_GetTicks();
-    if (!ts_ui_transform_auto_audition_allowed(ui)) {
-        snprintf(ui->status, sizeof(ui->status), "SMEAR PREVIEW %.2F - LOOP OWNS AUDITION", amount);
+    if (ui->keyboard_hold || !ts_ui_transform_auto_audition_allowed(ui)) {
+        snprintf(ui->status, sizeof(ui->status), "SMEAR PREVIEW %.2F - %s OWNS AUDITION", amount, ui->keyboard_hold ? "HOLD" : "LOOP");
     } else if (ui->smear_last_audition_ms == 0 || now - ui->smear_last_audition_ms >= 150u) {
         TsAuditionRange range = ui->smear_gesture.start.has_selection ? TS_AUDITION_SELECTION : TS_AUDITION_ALL;
         ui->audition_source = TS_AUDITION_CURRENT;
@@ -5393,14 +5591,14 @@ static void end_smear_gesture(SDL_AudioDeviceID device, AudioState *audio,
                               TsUiState *ui, TsInstrument *instrument, int cancel)
 {
     char error[160]; float amount = ui->smear_gesture.amount; int ok;
-    int rendered_unlocked = begin_native_sister_edit(device, audio);
+    TsNativeSampleEdit edit;
+    begin_native_sample_edit(device, audio, instrument, &edit);
     ok = cancel ? ts_instrument_smear_gesture_cancel(instrument, &ui->smear_gesture, error, sizeof(error)) :
                   ts_instrument_smear_gesture_commit(instrument, &ui->smear_gesture, error, sizeof(error));
-    finish_native_sister_edit(device, audio, ui, instrument,
-                              rendered_unlocked);
+    finish_native_sample_edit(device, audio, ui, instrument, &edit);
     ui->smear_dragging = ui->smear_wheel_active = 0; ui->smear_amount = 0.0f;
     ui->smear_last_audition_ms = 0;
-    if (cancel) stop_all(device, audio, ui);
+    if (cancel && !ui->keyboard_hold && !ui->workbench_loop_active) stop_all(device, audio, ui);
     if (ok && cancel) snprintf(ui->status, sizeof(ui->status), "SMEAR CANCELLED - ORIGINAL RESTORED");
     else if (ok && amount > 0.0f) snprintf(ui->status, sizeof(ui->status), "SMEAR %.2F COMMITTED", amount);
     else if (ok) snprintf(ui->status, sizeof(ui->status), "SMEAR RETURNED TO ZERO - NO EDIT");
@@ -5411,10 +5609,11 @@ static int begin_tear_gesture(SDL_AudioDeviceID device, AudioState *audio,
                               TsUiState *ui, TsInstrument *instrument, int wheel)
 {
     char error[160]; int ok;
-    lock_edit(device, audio);
+    TsNativeSampleEdit edit;
+    begin_native_sample_edit(device, audio, instrument, &edit);
     ok = ts_instrument_tear_gesture_begin(instrument, &ui->tear_gesture,
                                           error, sizeof(error));
-    unlock_edit(device, audio, ui, instrument);
+    finish_native_sample_edit(device, audio, ui, instrument, &edit);
     if (ok) {
         ui->tear_dragging = !wheel; ui->tear_wheel_active = wheel;
         ui->tear_amount = 0.0f; ui->tear_last_audition_ms = 0;
@@ -5426,18 +5625,17 @@ static int preview_tear_gesture(SDL_AudioDeviceID device, AudioState *audio,
                                 TsUiState *ui, TsInstrument *instrument,
                                 float amount, int output_rate)
 {
-    char error[160]; uint32_t now; int ok; int rendered_unlocked;
+    char error[160]; uint32_t now; int ok; TsNativeSampleEdit edit;
     if (amount < 0.0f) amount = 0.0f;
     if (amount > 1.0f) amount = 1.0f;
-    rendered_unlocked = begin_native_sister_edit(device, audio);
+    begin_native_sample_edit(device, audio, instrument, &edit);
     ok = ts_instrument_tear_gesture_preview(instrument, &ui->tear_gesture,
                                             amount, error, sizeof(error));
-    finish_native_sister_edit(device, audio, ui, instrument,
-                              rendered_unlocked);
+    finish_native_sample_edit(device, audio, ui, instrument, &edit);
     if (!ok) { snprintf(ui->status, sizeof(ui->status), "TEAR PREVIEW FAILED: %.129s", error); return 0; }
     ui->tear_amount = amount; now = SDL_GetTicks();
-    if (!ts_ui_transform_auto_audition_allowed(ui)) {
-        snprintf(ui->status, sizeof(ui->status), "TEAR PREVIEW %.2F - LOOP OWNS AUDITION", amount);
+    if (ui->keyboard_hold || !ts_ui_transform_auto_audition_allowed(ui)) {
+        snprintf(ui->status, sizeof(ui->status), "TEAR PREVIEW %.2F - %s OWNS AUDITION", amount, ui->keyboard_hold ? "HOLD" : "LOOP");
     } else if (ui->tear_last_audition_ms == 0 || now - ui->tear_last_audition_ms >= 125u) {
         TsAuditionRange range = ui->tear_gesture.start.has_selection ? TS_AUDITION_SELECTION : TS_AUDITION_ALL;
         ui->audition_source = TS_AUDITION_CURRENT;
@@ -5451,14 +5649,14 @@ static void end_tear_gesture(SDL_AudioDeviceID device, AudioState *audio,
                              TsUiState *ui, TsInstrument *instrument, int cancel)
 {
     char error[160]; float amount = ui->tear_gesture.amount; int ok;
-    int rendered_unlocked = begin_native_sister_edit(device, audio);
+    TsNativeSampleEdit edit;
+    begin_native_sample_edit(device, audio, instrument, &edit);
     ok = cancel ? ts_instrument_tear_gesture_cancel(instrument, &ui->tear_gesture, error, sizeof(error)) :
                   ts_instrument_tear_gesture_commit(instrument, &ui->tear_gesture, error, sizeof(error));
-    finish_native_sister_edit(device, audio, ui, instrument,
-                              rendered_unlocked);
+    finish_native_sample_edit(device, audio, ui, instrument, &edit);
     ui->tear_dragging = ui->tear_wheel_active = 0; ui->tear_amount = 0.0f;
     ui->tear_last_audition_ms = 0;
-    if (cancel && !ui->workbench_loop_active) stop_all(device, audio, ui);
+    if (cancel && !ui->keyboard_hold && !ui->workbench_loop_active) stop_all(device, audio, ui);
     if (ok && cancel) snprintf(ui->status, sizeof(ui->status), "TEAR CANCELLED - ORIGINAL RESTORED");
     else if (ok && amount > 0.0f) snprintf(ui->status, sizeof(ui->status), "TEAR %.2F COMMITTED", amount);
     else if (ok) snprintf(ui->status, sizeof(ui->status), "TEAR RETURNED TO ZERO - NO EDIT");
@@ -5468,6 +5666,7 @@ static void end_tear_gesture(SDL_AudioDeviceID device, AudioState *audio,
 static void rotate_waveform(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
                             TsInstrument *instrument, int direction, int crossing_count)
 {
+    TsNativeSampleEdit sample_edit;
     char error[160];
     int selected = instrument->has_selection;
     size_t detents = direction < 0 ? (size_t)(-(int64_t)direction) : (size_t)direction;
@@ -5475,11 +5674,11 @@ static void rotate_waveform(SDL_AudioDeviceID device, AudioState *audio, TsUiSta
     int ok;
     if (detents > SIZE_MAX / candidates) candidates = SIZE_MAX;
     else candidates *= detents;
-    lock_edit(device, audio);
+    begin_native_sample_edit(device, audio, instrument, &sample_edit);
     ok = ts_instrument_rotate_zero_crossing(instrument, direction > 0 ? 1 : -1,
                                              candidates,
                                              error, sizeof(error));
-    unlock_edit(device, audio, ui, instrument);
+    finish_native_sample_edit(device, audio, ui, instrument, &sample_edit);
     if (ok) snprintf(ui->status, sizeof(ui->status),
                      "ROTATED %s TO %s ZERO CROSSING",
                      selected ? "SELECTION" : "WAVEFORM",
@@ -5490,6 +5689,7 @@ static void rotate_waveform(SDL_AudioDeviceID device, AudioState *audio, TsUiSta
 static int begin_stretch_gesture(SDL_AudioDeviceID device, AudioState *audio,
                                  TsUiState *ui, TsInstrument *instrument)
 {
+    TsNativeSampleEdit sample_edit;
     char error[160];
     size_t pivot;
     int ok;
@@ -5505,10 +5705,10 @@ static int begin_stretch_gesture(SDL_AudioDeviceID device, AudioState *audio,
             instrument->playhead_frame :
             instrument->selection_first +
             (instrument->selection_last - instrument->selection_first) / 2u;
-    lock_edit(device, audio);
+    begin_native_sample_edit(device, audio, instrument, &sample_edit);
     ok = ts_instrument_stretch_gesture_begin(
         instrument, &ui->stretch_gesture, pivot, error, sizeof(error));
-    unlock_edit(device, audio, ui, instrument);
+    finish_native_sample_edit(device, audio, ui, instrument, &sample_edit);
     if (ok) {
         ui->stretch_wheel_active = 1;
         ui->stretch_wheel_semitones = 0.0f;
@@ -5521,6 +5721,7 @@ static void stretch_waveform(SDL_AudioDeviceID device, AudioState *audio,
                              TsUiState *ui, TsInstrument *instrument,
                              int wheel_y, int fine)
 {
+    TsNativeSampleEdit sample_edit;
     char error[160];
     float pitch = 0.0f;
     float requested_ratio;
@@ -5535,11 +5736,11 @@ static void stretch_waveform(SDL_AudioDeviceID device, AudioState *audio,
     requested_semitones = ui->stretch_wheel_semitones +
                           (float)wheel_y * (fine ? 0.01f : 1.0f);
     requested_ratio = powf(2.0f, requested_semitones / 12.0f);
-    lock_edit(device, audio);
+    begin_native_sample_edit(device, audio, instrument, &sample_edit);
     ok = ts_instrument_stretch_gesture_preview(
         instrument, &ui->stretch_gesture, requested_ratio,
         &pitch, error, sizeof(error));
-    unlock_edit(device, audio, ui, instrument);
+    finish_native_sample_edit(device, audio, ui, instrument, &sample_edit);
     if (ok) {
         ui->stretch_wheel_semitones = requested_semitones;
         after_frames = instrument->selection_last - instrument->selection_first;
@@ -5560,24 +5761,25 @@ static void end_stretch_gesture(SDL_AudioDeviceID device, AudioState *audio,
                                 TsUiState *ui, TsInstrument *instrument,
                                 int cancel)
 {
+    TsNativeSampleEdit sample_edit;
     char error[160];
     float pitch = ui->stretch_gesture.pitch_semitones;
     float ratio = ui->stretch_gesture.actual_ratio;
     int changed = fabsf(ui->stretch_wheel_semitones) >= 0.0001f;
     int ok;
-    lock_edit(device, audio);
+    begin_native_sample_edit(device, audio, instrument, &sample_edit);
     ok = cancel ? ts_instrument_stretch_gesture_cancel(
                       instrument, &ui->stretch_gesture, error, sizeof(error)) :
                   ts_instrument_stretch_gesture_commit(
                       instrument, &ui->stretch_gesture, error, sizeof(error));
-    unlock_edit(device, audio, ui, instrument);
+    finish_native_sample_edit(device, audio, ui, instrument, &sample_edit);
     if (!ok && ui->stretch_gesture.active) {
         char restore_error[160];
-        lock_edit(device, audio);
+        begin_native_sample_edit(device, audio, instrument, &sample_edit);
         (void)ts_instrument_stretch_gesture_cancel(
             instrument, &ui->stretch_gesture,
             restore_error, sizeof(restore_error));
-        unlock_edit(device, audio, ui, instrument);
+        finish_native_sample_edit(device, audio, ui, instrument, &sample_edit);
     }
     ui->stretch_wheel_active = 0;
     ui->stretch_wheel_semitones = 0.0f;
@@ -5610,14 +5812,15 @@ static int begin_canvas_gesture(SDL_Window *window, SDL_AudioDeviceID device,
                                 TsInstrument *instrument, int edge,
                                 int raw_x, int raw_y)
 {
+    TsNativeSampleEdit sample_edit;
     char error[160];
     int ok;
     cancel_pitch_preview(device, audio, ui, instrument);
     release_canvas_capture(ui);
-    lock_edit(device, audio);
+    begin_native_sample_edit(device, audio, instrument, &sample_edit);
     ok = ts_instrument_canvas_gesture_begin(
         instrument, &ui->canvas_gesture, edge, error, sizeof(error));
-    unlock_edit(device, audio, ui, instrument);
+    finish_native_sample_edit(device, audio, ui, instrument, &sample_edit);
     if (!ok) {
         snprintf(ui->status, sizeof(ui->status),
                  "CANVAS RESIZE FAILED: %.132s", error);
@@ -5625,11 +5828,11 @@ static int begin_canvas_gesture(SDL_Window *window, SDL_AudioDeviceID device,
     }
     if (SDL_CaptureMouse(SDL_TRUE) != 0) {
         char restore_error[160];
-        lock_edit(device, audio);
+        begin_native_sample_edit(device, audio, instrument, &sample_edit);
         (void)ts_instrument_canvas_gesture_cancel(
             instrument, &ui->canvas_gesture,
             restore_error, sizeof(restore_error));
-        unlock_edit(device, audio, ui, instrument);
+        finish_native_sample_edit(device, audio, ui, instrument, &sample_edit);
         release_canvas_capture(ui);
         snprintf(ui->status, sizeof(ui->status),
                  "CANVAS MOUSE CAPTURE FAILED: %.113s", SDL_GetError());
@@ -5697,6 +5900,7 @@ static void preview_canvas_capture(SDL_Window *window, SDL_AudioDeviceID device,
                                    AudioState *audio, TsUiState *ui,
                                    TsInstrument *instrument, int raw_x)
 {
+    TsNativeSampleEdit sample_edit;
     char error[160];
     int raw_delta = raw_x - ui->canvas_capture_raw_x;
     int window_width = 0;
@@ -5719,14 +5923,15 @@ static void preview_canvas_capture(SDL_Window *window, SDL_AudioDeviceID device,
     else ui->canvas_drag_logical_x += logical_delta;
     requested = canvas_delta_from_capture(window, ui);
     previous_delta = ui->canvas_gesture.delta_frames;
-    lock_edit(device, audio);
+    begin_native_sample_edit(device, audio, instrument, &sample_edit);
     ok = ts_instrument_canvas_gesture_preview(
         instrument, &ui->canvas_gesture, requested, error, sizeof(error));
+    publish_native_sample_edit(device, audio, instrument, &sample_edit);
     if (ok)
         preserve_canvas_audition_position(
             audio, ui, instrument, ui->canvas_gesture.edge,
             ui->canvas_gesture.delta_frames - previous_delta);
-    unlock_edit(device, audio, ui, instrument);
+    finish_native_sample_edit(device, audio, ui, instrument, &sample_edit);
     SDL_WarpMouseInWindow(window, ui->canvas_capture_raw_x,
                          ui->canvas_capture_raw_y);
     if (ok) {
@@ -5749,28 +5954,31 @@ static void end_canvas_gesture(SDL_Window *window, SDL_AudioDeviceID device,
                                AudioState *audio, TsUiState *ui,
                                TsInstrument *instrument, int cancel)
 {
+    TsNativeSampleEdit sample_edit;
     char error[160];
     int64_t delta = ui->canvas_gesture.delta_frames;
     int edge = ui->canvas_gesture.edge;
     int ok;
     (void)window;
-    lock_edit(device, audio);
+    begin_native_sample_edit(device, audio, instrument, &sample_edit);
     ok = cancel ? ts_instrument_canvas_gesture_cancel(
                       instrument, &ui->canvas_gesture, error, sizeof(error)) :
                   ts_instrument_canvas_gesture_commit(
                       instrument, &ui->canvas_gesture, error, sizeof(error));
+    publish_native_sample_edit(device, audio, instrument, &sample_edit);
     if (ok)
         preserve_canvas_audition_position(
             audio, ui, instrument, edge, cancel ? -delta : 0);
-    unlock_edit(device, audio, ui, instrument);
+    finish_native_sample_edit(device, audio, ui, instrument, &sample_edit);
     if (!ok && ui->canvas_gesture.active) {
         char restore_error[160];
-        lock_edit(device, audio);
+        begin_native_sample_edit(device, audio, instrument, &sample_edit);
         (void)ts_instrument_canvas_gesture_cancel(
             instrument, &ui->canvas_gesture,
             restore_error, sizeof(restore_error));
+        publish_native_sample_edit(device, audio, instrument, &sample_edit);
         preserve_canvas_audition_position(audio, ui, instrument, edge, -delta);
-        unlock_edit(device, audio, ui, instrument);
+        finish_native_sample_edit(device, audio, ui, instrument, &sample_edit);
     }
     release_canvas_capture(ui);
     if (ok && cancel)
@@ -5792,6 +6000,7 @@ static void apply_canvas_action(SDL_AudioDeviceID device, AudioState *audio,
                                 TsUiState *ui, TsInstrument *instrument,
                                 TsUiCanvasAction action)
 {
+    TsNativeSampleEdit sample_edit;
     char error[160];
     int ok = 0;
     if (action == TS_UI_CANVAS_ACTION_GRID_COARSER) {
@@ -5819,14 +6028,15 @@ static void apply_canvas_action(SDL_AudioDeviceID device, AudioState *audio,
         return;
     }
     cancel_pitch_preview(device, audio, ui, instrument);
-    lock_edit(device, audio);
+    begin_native_sample_edit(device, audio, instrument, &sample_edit);
     if (action == TS_UI_CANVAS_ACTION_HALF)
         ok = ts_instrument_half_canvas(instrument, error, sizeof(error));
     else if (action == TS_UI_CANVAS_ACTION_DOUBLE)
         ok = ts_instrument_double_canvas(instrument, error, sizeof(error));
+    publish_native_sample_edit(device, audio, instrument, &sample_edit);
     if (ok)
         preserve_canvas_audition_position(audio, ui, instrument, 2, 0);
-    unlock_edit(device, audio, ui, instrument);
+    finish_native_sample_edit(device, audio, ui, instrument, &sample_edit);
     if (ok)
         snprintf(ui->status, sizeof(ui->status),
                  "CANVAS %s - %zu FRAMES  DIV %u  ONE UNDO",
@@ -5843,14 +6053,25 @@ static void history_move(SDL_AudioDeviceID device, AudioState *audio, TsUiState 
 {
     char error[160];
     int ok;
-    lock_edit(device, audio);
-    ok = fm_bank_history_move(fm_bank_history, sample_pages, instrument,
-                              redo, error, sizeof(error));
-    if (ok >= 0) runtime_note_clear(audio);
-    if (ok < 0)
+    /* Page-wide FM bank history can replace additional sample owners. Keep
+       that path excluded; ordinary tile undo/redo uses stable voice copies. */
+    ok = -1;
+    if (fm_bank_history && fm_bank_history->valid) {
+        lock_edit(device, audio);
+        ok = fm_bank_history_move(fm_bank_history, sample_pages, instrument,
+                                  redo, error, sizeof(error));
+        if (ok >= 0) {
+            runtime_note_clear(audio);
+            unlock_edit(device, audio, ui, instrument);
+        } else if (device) SDL_UnlockAudioDevice(device);
+    }
+    if (ok < 0) {
+        TsNativeSampleEdit sample_edit;
+        begin_native_sample_edit(device, audio, instrument, &sample_edit);
         ok = redo ? ts_instrument_redo(instrument, error, sizeof(error)) :
                     ts_instrument_undo(instrument, error, sizeof(error));
-    unlock_edit(device, audio, ui, instrument);
+        finish_native_sample_edit(device, audio, ui, instrument, &sample_edit);
+    }
     if (ok) {
         ui->has_stretch_readout = 0;
         ui->sample_page = (int)ts_sample_pages_active(sample_pages);
@@ -5866,6 +6087,7 @@ static void sync_playing_loop(SDL_AudioDeviceID device, AudioState *audio,
 static void set_loop(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
                      TsInstrument *instrument)
 {
+    TsNativeSampleEdit sample_edit;
     char error[160];
     int bank_slot = ui->bank_view_slot;
     int selected_automatically = !instrument->has_selection;
@@ -5885,9 +6107,9 @@ static void set_loop(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
                         "BANK LOOP FAILED: %.135s", error);
         return;
     }
-    lock_edit(device, audio);
+    begin_native_sample_edit(device, audio, instrument, &sample_edit);
     ok = ts_instrument_set_loop_from_selection(instrument, error, sizeof(error));
-    unlock_edit(device, audio, ui, instrument);
+    finish_native_sample_edit(device, audio, ui, instrument, &sample_edit);
     if (ok && selected_automatically)
         snprintf(ui->status, sizeof(ui->status),
                  "WHOLE TILE SELECTED AND LOOPED - %zu FRAMES",
@@ -5901,6 +6123,7 @@ static void set_loop(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
 static void clear_loop(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
                        TsInstrument *instrument)
 {
+    TsNativeSampleEdit sample_edit;
     char error[160];
     int bank_slot = ui->bank_view_slot;
     int ok;
@@ -5917,9 +6140,9 @@ static void clear_loop(SDL_AudioDeviceID device, AudioState *audio, TsUiState *u
         else snprintf(ui->status, sizeof(ui->status), "%.150s", error);
         return;
     }
-    lock_edit(device, audio);
+    begin_native_sample_edit(device, audio, instrument, &sample_edit);
     ok = ts_instrument_clear_loop(instrument, error, sizeof(error));
-    unlock_edit(device, audio, ui, instrument);
+    finish_native_sample_edit(device, audio, ui, instrument, &sample_edit);
     snprintf(ui->status, sizeof(ui->status), "%s", ok ? "LOOP CLEARED" : error);
 }
 
@@ -8534,6 +8757,9 @@ static int sync_external_input_consumers(SDL_AudioDeviceID *input_device,
 static int ts_audio_health_event(const SDL_Event *event, SDL_Window *main_window,
                                   AudioState *audio, TsUiState *ui);
 static void ts_audio_health_update(AudioState *audio, const TsUiState *ui);
+static int ts_audio_health_drawable(void);
+static void ts_audio_health_reset(AudioState *audio);
+static void ts_audio_health_report(AudioState *audio, char *report, size_t size);
 static void ts_audio_health_close(void);
 static void ts_audio_health_capture_setup(const AudioState *audio,
                                          const TsUiState *ui, Uint32 now);
@@ -11541,16 +11767,17 @@ static void update_tape_drag(TsUiState *ui, const TsInstrument *instrument, int 
 static void finish_tape_drag(SDL_AudioDeviceID device, AudioState *audio,
                              TsUiState *ui, TsInstrument *instrument)
 {
+    TsNativeSampleEdit sample_edit;
     char error[160];
     TsPostEditKind kind = ui->tape_drag_kind;
     int ok;
-    lock_edit(device, audio);
+    begin_native_sample_edit(device, audio, instrument, &sample_edit);
     ok = ts_instrument_apply_tape_drag(instrument, kind,
                                        ui->tape_source_first, ui->tape_source_last,
                                        ui->tape_destination, error, sizeof(error));
     ui->tape_dragging = 0;
     ui->tape_drag_button = 0;
-    unlock_edit(device, audio, ui, instrument);
+    finish_native_sample_edit(device, audio, ui, instrument, &sample_edit);
     if (ok) snprintf(ui->status, sizeof(ui->status), "%s APPLIED - ONE STEP UNDO",
                      tape_gesture_name(kind));
     else snprintf(ui->status, sizeof(ui->status), "TAPE DRAG FAILED: %.132s", error);
@@ -13015,9 +13242,19 @@ int main(int argc, char **argv)
                                  strcmp(argv[1], "--diagnostic-bank-toggle-stress") == 0;
     int diagnostic_audio = argc > 1 &&
                            strcmp(argv[1], "--diagnostic-audio") == 0;
+    int diagnostic_performance = argc > 1 && !strcmp(argv[1], "--diagnostic-performance");
+    unsigned audit_seconds = diagnostic_performance && argc > 2 ? (unsigned)atoi(argv[2]) : 10u;
+    if (audit_seconds < 2u || audit_seconds > 600u) audit_seconds = 10u;
+    const char *audit_scenario = diagnostic_performance && argc > 3 ? argv[3] : "idle";
+    Uint32 audit_started = 0; int audit_measuring = 0;
     int diagnostic_failed = 0;
     int frame_snapshot_valid = 0;
     int window_minimized = 0;
+    SDL_Event pending_event;
+    int event_pending = 0;
+    Uint32 last_input_ms = 0, last_main_paint = 0, last_service_ms = 0;
+    int main_paint_invalid = 1;
+    uint64_t presented_detail_analysis[2] = {0};
     int renderer_vsync = 0;
     int running = 1;
     uint32_t last_audio_diagnostic_log = 0u;
@@ -13242,11 +13479,15 @@ int main(int argc, char **argv)
         return 1;
     }
     ts_fm_seed_sequence_init(&fm_seed_sequence, fm_session_seed_root());
+    ts_profile_init(SDL_GetPerformanceCounter, SDL_GetPerformanceFrequency());
+    ts_profile_enable(SDL_getenv("TAPESISTER_PROFILE") != NULL);
     audio.realtime_counter_frequency = SDL_GetPerformanceFrequency();
     audio.audio_health_started = SDL_GetTicks();
     {
         char midi_error[160];
+        midi_wake_event = SDL_RegisterEvents(1);
         ts_midi_input = ts_midi_input_create();
+        ts_midi_input_set_wake(ts_midi_input, midi_wake_ui, NULL);
         if (ts_midi_input == NULL)
             fprintf(stderr, "TapeSister MIDI: out of memory\n");
         else if (!ts_midi_input_configure(
@@ -13292,16 +13533,16 @@ int main(int argc, char **argv)
             diagnostic_log("renderer=%s flags=0x%x pacing=%s",
                            info.name != NULL ? info.name : "unknown",
                            (unsigned)info.flags,
-                           renderer_vsync ? "vsync" : "explicit-60hz");
+                           renderer_vsync ? "adaptive+vsync" : "adaptive-event-wait");
         } else {
-            diagnostic_log("renderer info unavailable pacing=explicit-60hz");
+            diagnostic_log("renderer info unavailable pacing=adaptive-event-wait");
         }
     }
     if (!window || !renderer || !texture) {
         fprintf(stderr, "Video setup failed: %s\n", SDL_GetError());
         running = 0;
     }
-    if (running && !diagnostic_bank_stress && !show_splash(renderer)) {
+    if (running && !diagnostic_bank_stress && !diagnostic_performance && !show_splash(renderer)) {
         SDL_DestroyTexture(texture);
         SDL_DestroyRenderer(renderer);
         SDL_DestroyWindow(window);
@@ -13370,11 +13611,11 @@ int main(int argc, char **argv)
     }
     SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
 
-    if (argc > 1 && !diagnostic_bank_stress && !diagnostic_audio) {
+    if (argc > 1 && !diagnostic_bank_stress && !diagnostic_audio && !diagnostic_performance) {
         load_instrument(device, &audio, &ui, &instrument,
                         &sample_pages, parked_instrument,
                         record_bank_active, argv[1]);
-    } else if (!diagnostic_bank_stress && !diagnostic_audio &&
+    } else if (!diagnostic_bank_stress && !diagnostic_audio && !diagnostic_performance &&
                ui.config.startup_welcome_sample) {
         char welcome_path[1024];
         if (runtime_asset_path("assets/tapesister_welcome.wav",
@@ -13452,10 +13693,36 @@ int main(int argc, char **argv)
         running = 0;
     }
 
+    if (diagnostic_performance && running) {
+        if (strstr(audit_scenario,"tracker")) {
+            ui.tracker_open=embedded_open(window,device,&audio,&ui,&sample_pages,&instrument,obtained.freq);
+            if(!ui.tracker_open){running=0;diagnostic_failed=1;}
+        }
+        if (strstr(audit_scenario,"loop")) {
+            char error[160];
+            if (!ts_instrument_create_basic(&instrument,TS_FM_WAVE_SINE,error,sizeof(error))) {
+                fprintf(stderr,"Audit sample: %s\n",error);running=0;diagnostic_failed=1;
+            } else {
+                if(device)SDL_LockAudioDevice(device);
+                audio.sample=&instrument.current;audio.position=0;audio.step=(double)instrument.current.sample_rate/obtained.freq;
+                audio.range_start=0;audio.range_end=instrument.current.frames;audio.loop_direction=1;
+                audio.looping=audio.playing=1;audio.bank_slot=-1;
+                if(device)SDL_UnlockAudioDevice(device);
+            }
+        }
+        if(strstr(audit_scenario,"hidden"))SDL_HideWindow(window);
+        audit_started=SDL_GetTicks();
+    }
+
     while (running) {
-        insert_sync(device,&input_device,&audio,&external_input,&ui);
+        ts_profile_lane_begin(0);
+        uint64_t profile_ui = ts_profile_begin(TS_PROF_UI);
+        uint64_t profile_control = ts_profile_begin(TS_PROF_CONTROL);
         SDL_Event event;
         Uint64 frame_started = SDL_GetPerformanceCounter();
+        int service_due = (Uint32)(SDL_GetTicks()-last_service_ms)>=TS_UI_ACTIVE_MS || main_paint_invalid;
+        if (service_due) {
+        insert_sync(device,&input_device,&audio,&external_input,&ui);
         (void)tapeCompanionPump(&companion_focus);
         /* Reader counts are atomic; retired immutable generations are owned
            and reclaimed by this controller thread, never by the callback. */
@@ -13520,7 +13787,17 @@ int main(int argc, char **argv)
 #if defined(TAPESISTER_HAS_ASIO)
         ts_asio_poll();
 #endif
-        while (SDL_PollEvent(&event)) {
+        }
+        ts_profile_end(TS_PROF_CONTROL, profile_control);
+        uint64_t profile_events = ts_profile_begin(TS_PROF_EVENTS);
+        while (event_pending ? (event = pending_event, event_pending = 0, 1) : SDL_PollEvent(&event)) {
+            if (event.type == SDL_KEYDOWN || event.type == SDL_KEYUP ||
+                event.type == SDL_MOUSEBUTTONDOWN || event.type == SDL_MOUSEBUTTONUP ||
+                event.type == SDL_MOUSEWHEEL || event.type == SDL_MOUSEMOTION ||
+                event.type == SDL_TEXTINPUT || event.type == midi_wake_event)
+                last_input_ms = SDL_GetTicks();
+            if (event.type == SDL_WINDOWEVENT && event.window.windowID == SDL_GetWindowID(window))
+                main_paint_invalid = 1;
             wheel_event_coalesce(&event);
             if (!wheel_event_prepare(&event)) continue;
             uint32_t event_id = event_window_id(&event);
@@ -15894,7 +16171,7 @@ int main(int argc, char **argv)
                         int selected;
                         mark_transform_stale(device, &audio, &ui, &transform,
                                              "TILE CHANGED - RENDER AGAIN");
-                        lock_edit(device, &audio);
+                        lock_edit_at(device, &audio, "transform bank selection");
                         selected = ts_ui_execute_bank_action(
                             &instrument, bank_slot, TS_UI_BANK_ACTION_AUDITION,
                             select_error, sizeof(select_error));
@@ -16819,7 +17096,7 @@ int main(int argc, char **argv)
                                          bank_slot + 1);
                                 continue;
                             }
-                            lock_edit(device, &audio);
+                            lock_edit_at(device, &audio, "sample bank selection");
                             selected = ts_ui_execute_bank_action(
                                 &instrument, bank_slot, action,
                                 select_error, sizeof(select_error));
@@ -16903,7 +17180,7 @@ int main(int argc, char **argv)
                         } else if (action == TS_UI_BANK_ACTION_CAPTURE_CURRENT) {
                             TsSisterTileShiftResult result;
                             char shift_status[160];
-                            lock_edit(device, &audio);
+                            lock_edit_at(device, &audio, "capture current tile");
                             result = ts_sister_runtime_shift_sample_tile(
                                 &audio.sister, &instrument, bank_slot,
                                 shift_status, sizeof(shift_status));
@@ -17184,6 +17461,20 @@ int main(int argc, char **argv)
             sister_window.model.midi_activity = 0;
         }
 
+        ts_profile_end(TS_PROF_EVENTS, profile_events);
+        if (!service_due && !main_paint_invalid) {
+            /* A burst of MIDI/mouse events may wake us faster than 60 Hz.
+               Deliver input immediately, but do not rerun the controller or
+               paint on every notification. The next service deadline stands. */
+            ts_profile_end(TS_PROF_UI,profile_ui);
+            unsigned elapsed=(Uint32)(SDL_GetTicks()-last_service_ms);
+            uint64_t waited=ts_profile_begin(TS_PROF_WAIT);
+            if (elapsed<TS_UI_ACTIVE_MS) event_pending=SDL_WaitEventTimeout(&pending_event,(int)(TS_UI_ACTIVE_MS-elapsed));
+            ts_profile_end(TS_PROF_WAIT,waited);ts_profile_lane_end(0);
+            continue;
+        }
+        last_service_ms=SDL_GetTicks();
+        profile_control = ts_profile_begin(TS_PROF_CONTROL);
         /* Some window managers can drop the button-up event after a captured,
            warped drag. Never leave the resize gesture owning the pointer once
            SDL reports that the physical button is no longer down. */
@@ -17199,8 +17490,7 @@ int main(int argc, char **argv)
             end_canvas_gesture(window, device, &audio, &ui, &instrument, 0);
 
         {
-            int minimized_now =
-                (SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED) != 0u;
+            int minimized_now = !window_drawable(window);
             if (window_minimized && !minimized_now)
                 frame_snapshot_valid = 0;
             window_minimized = minimized_now;
@@ -17272,7 +17562,9 @@ int main(int argc, char **argv)
                      sizeof(sister_window.model.status), "ROLLING MEMORY CLEARED");
         }
         poll_fm_preview(device,&audio,&ui,&fm_preview);
+        uint64_t profile_tracker_ui = ts_profile_begin(TS_PROF_TRACKER_UI);
         tracker_refresh(device,&audio,&ui,&sample_pages,&instrument,obtained.freq,&sister_window);
+        ts_profile_end(TS_PROF_TRACKER_UI, profile_tracker_ui);
         keyboard_sequence_prepare(device,&audio,&ui,&instrument,&fm_preview,obtained.freq,0);
         poll_transform_worker(device, &audio, &ui, &instrument, &transform);
         mosaic_commit(device,&ui,&instrument,&mosaic);
@@ -17378,7 +17670,7 @@ int main(int argc, char **argv)
             TsSisterRoutingSnapshot routing = {0};
             uint32_t now = SDL_GetTicks();
             (void)ts_sister_runtime_get_snapshot(&audio.sister, &routing);
-            if (sister_window.model.visible &&
+            if (sister_window.model.visible && window_drawable(sister_window.window) &&
                 now - sister_window.last_model_sync_ms >= 33u) {
                 TsSisterSnapshot engine = {0};
                 TsSisterWaveSnapshot wave = {0};
@@ -17481,26 +17773,51 @@ int main(int argc, char **argv)
             ui.sister_portal_pressed =
                 hovered && (buttons & SDL_BUTTON_LMASK) != 0u;
         }
-        if (!window_minimized) {
+        ts_profile_end(TS_PROF_CONTROL, profile_control);
+        Uint32 schedule_now = SDL_GetTicks();
+        int editing = (Uint32)(schedule_now-last_input_ms)<250u || SDL_GetMouseState(NULL,NULL)!=0u;
+        int animated = ui.playback_active || ui.tracker_running || ui.sister_enabled ||
+            ui.sister_capture_active || ui.file_busy || ui.midi_activity_until_ms ||
+            (ui.mosaic && ui.mosaic->playing) || ui.capture_state==TS_CAPTURE_RECORDING ||
+            audio.live_link_available>0 || ts_input_monitor_enabled(audio.input_monitor);
+        unsigned paint_period = ts_ui_refresh_ms(!window_minimized, editing, animated);
+        if (!window_minimized && ts_ui_refresh_due(schedule_now,last_main_paint,paint_period,
+                main_paint_invalid || !frame_snapshot_valid)) {
+            int force_present=main_paint_invalid || !frame_snapshot_valid;
+            last_main_paint=schedule_now;main_paint_invalid=0;
+            uint64_t profile_paint = ts_profile_begin(TS_PROF_RENDER);
             native_waveform_prepare(renderer,waveform_details,main_waveform_detail_allowed(&ui));
             ts_ui_render(&framebuffer, &ui, &instrument);
-            if (update_texture_damage(texture, &framebuffer, frame_snapshot,
-                                      &frame_snapshot_valid)) {
+            ts_profile_end(TS_PROF_RENDER, profile_paint);
+            uint64_t profile_upload = ts_profile_begin(TS_PROF_UPLOAD);
+            int upload = update_texture_damage(texture, &framebuffer, frame_snapshot,
+                                                &frame_snapshot_valid);
+            int detail_changed=0;
+            for(int i=0;i<2;i++)detail_changed|=waveform_details[i].valid &&
+                waveform_details[i].analysis_count!=presented_detail_analysis[i];
+            if (upload && (upload==1 || force_present || detail_changed || animated || editing)) {
                 SDL_RenderCopy(renderer, texture, NULL, NULL);
                 native_waveform_copy(renderer,waveform_textures,waveform_details,&framebuffer);
+                for(int i=0;i<2;i++)presented_detail_analysis[i]=waveform_details[i].analysis_count;
+                ts_profile_end(TS_PROF_UPLOAD, profile_upload);
+                uint64_t profile_present = ts_profile_begin(TS_PROF_PRESENT);
                 SDL_RenderPresent(renderer);
-            }
+                ts_profile_end(TS_PROF_PRESENT, profile_present);
+            } else ts_profile_end(TS_PROF_UPLOAD,profile_upload);
         }
-        if (sister_window.model.visible && !sister_window.minimized &&
+        if (sister_window.model.visible && window_drawable(sister_window.window) &&
             sister_window.renderer != NULL && sister_window.texture != NULL &&
             (!sister_window.rendered_model_valid ||
              memcmp(&sister_window.model, &sister_window.rendered_model,
                     sizeof(sister_window.model)) != 0) &&
             SDL_GetTicks() - sister_window.last_present_ms >= 33u) {
+            uint64_t profile_sister_ui = ts_profile_begin(TS_PROF_SISTER_UI);
             native_waveform_prepare(sister_window.renderer,sister_window.waveform_details,
                 !sister_window.model.preset_manage_open && !sister_window.model.fallout_lfo_open);
             ts_sister_ui_render(&sister_window.framebuffer,
                                 &sister_window.model, &ui.palette);
+            ts_profile_end(TS_PROF_SISTER_UI, profile_sister_ui);
+            uint64_t profile_upload = ts_profile_begin(TS_PROF_UPLOAD);
             if (SDL_UpdateTexture(sister_window.texture, NULL,
                                   sister_window.framebuffer.pixels,
                                   TS_SISTER_UI_WIDTH *
@@ -17510,20 +17827,52 @@ int main(int argc, char **argv)
                                sister_window.texture, NULL, NULL);
                 native_waveform_copy(sister_window.renderer,sister_window.waveform_textures,
                     sister_window.waveform_details,&sister_window.framebuffer);
+                ts_profile_end(TS_PROF_UPLOAD, profile_upload);
+                uint64_t profile_present = ts_profile_begin(TS_PROF_PRESENT);
                 SDL_RenderPresent(sister_window.renderer);
+                ts_profile_end(TS_PROF_PRESENT, profile_present);
                 sister_window.rendered_model = sister_window.model;
                 sister_window.rendered_model_valid = 1;
                 sister_window.last_present_ms = SDL_GetTicks();
             }
         }
+        uint64_t profile_aux = ts_profile_begin(TS_PROF_AUX_UI);
         spatial_window_update(&ui);
         ts_audio_health_update(&audio, &ui);
+        ts_profile_end(TS_PROF_AUX_UI, profile_aux);
+        ts_profile_end(TS_PROF_UI, profile_ui);
+        ts_profile_lane_end(0);
         if (pending_file.active && !pending_file.presented)
             pending_file.presented = 1;
-        if (window_minimized || !renderer_vsync || !frame_snapshot_valid)
-            pace_frame_60hz(frame_started);
+        if (diagnostic_performance) {
+            Uint32 elapsed=SDL_GetTicks()-audit_started;
+            if (!audit_measuring && elapsed>=1000u) {
+                ts_profile_enable(1);ts_profile_reset();ts_audio_health_reset(&audio);
+                audit_started=SDL_GetTicks();audit_measuring=1;
+            } else if (audit_measuring && elapsed>=audit_seconds*1000u) {
+                char report[16384];ts_audio_health_report(&audio,report,sizeof(report));
+                printf("Performance audit scenario: %s\n%s\n",audit_scenario,report);
+                running=0;continue;
+            }
+        }
+        int any_visible = !window_minimized ||
+            (sister_window.model.visible && window_drawable(sister_window.window)) ||
+            ts_audio_health_drawable() ||
+            window_drawable(spatial_window.window);
+        unsigned service_ms = ts_ui_refresh_ms(any_visible, editing, animated);
+        if (sister_window.model.visible && window_drawable(sister_window.window) && service_ms>33u)
+            service_ms=33u;
+        if (window_drawable(spatial_window.window) && service_ms>33u) service_ms=33u;
+        Uint64 frequency=SDL_GetPerformanceFrequency();
+        unsigned spent=frequency?(unsigned)((SDL_GetPerformanceCounter()-frame_started)*1000u/frequency):0;
+        int wait_ms=spent<service_ms?(int)(service_ms-spent):0;
+        uint64_t profile_wait=ts_profile_begin(TS_PROF_WAIT);
+        if (wait_ms>0) event_pending=SDL_WaitEventTimeout(&pending_event,wait_ms);
+        ts_profile_end(TS_PROF_WAIT,profile_wait);
+        ts_profile_lane_end(0);
     }
 
+    ts_midi_input_destroy(ts_midi_input);ts_midi_input=NULL;midi_wake_event=0;
     if (ui.amplitude_gesture.active)
         end_amplitude_draw(device, &audio, &ui, &instrument, 1);
     if (ui.material_macro_gesture.active)
@@ -17598,7 +17947,7 @@ int main(int argc, char **argv)
                               &ui.config.sister_window_y);
     {
         char config_error[160];
-        if (!ts_config_save(&ui.config, config_file_path(),
+        if (!diagnostic_performance && !ts_config_save(&ui.config, config_file_path(),
                             config_error, sizeof(config_error)))
             fprintf(stderr, "TapeSister config save: %s\n", config_error);
     }

@@ -25,6 +25,8 @@ struct TsMidiInput {
     atomic_int accepting;
     atomic_int channel;
     int active;
+    void (*wake)(void *);
+    void *wake_context;
 };
 
 static void set_error(char *error, size_t error_size, const char *message)
@@ -41,6 +43,19 @@ static void free_ports(TsMidiInput *input)
     input->port_names = NULL;
     input->port_count = 0;
 }
+
+#if defined(TAPESISTER_HAS_MIDI) || defined(TAPESISTER_MIDI_QUEUE_TEST)
+static void midi_enqueue(TsMidiInput *input, const TsMidiEvent *event)
+{
+    unsigned write_index=atomic_load_explicit(&input->write_index,memory_order_relaxed);
+    unsigned next=(write_index+1u)%TS_MIDI_QUEUE_CAPACITY;
+    unsigned read_index=atomic_load_explicit(&input->read_index,memory_order_acquire);
+    if(next==read_index) {atomic_fetch_add_explicit(&input->dropped,1u,memory_order_relaxed);return;}
+    input->queue[write_index]=*event;
+    atomic_store_explicit(&input->write_index,next,memory_order_release);
+    if(input->wake)input->wake(input->wake_context);
+}
+#endif
 
 #ifdef TAPESISTER_HAS_MIDI
 static void clear_queue(TsMidiInput *input)
@@ -90,9 +105,6 @@ static void midi_callback(double timestamp, const unsigned char *message,
 {
     TsMidiInput *input = (TsMidiInput *)user_data;
     TsMidiEvent event;
-    unsigned write_index;
-    unsigned next;
-    unsigned read_index;
     int wanted_channel;
     (void)timestamp;
     if (input == NULL || message == NULL || message_size < 2u ||
@@ -104,17 +116,15 @@ static void midi_callback(double timestamp, const unsigned char *message,
         return;
     wanted_channel = atomic_load_explicit(&input->channel, memory_order_relaxed);
     if (wanted_channel > 0 && event.channel + 1 != wanted_channel) return;
-    write_index = atomic_load_explicit(&input->write_index, memory_order_relaxed);
-    next = (write_index + 1u) % TS_MIDI_QUEUE_CAPACITY;
-    read_index = atomic_load_explicit(&input->read_index, memory_order_acquire);
-    if (next == read_index) {
-        atomic_fetch_add_explicit(&input->dropped, 1u, memory_order_relaxed);
-        return;
-    }
-    input->queue[write_index] = event;
-    atomic_store_explicit(&input->write_index, next, memory_order_release);
+    midi_enqueue(input, &event);
 }
 #endif
+
+void ts_midi_input_set_wake(TsMidiInput *input, void (*wake)(void *), void *context)
+{
+    if (!input || input->active) return;
+    input->wake = wake; input->wake_context = context;
+}
 
 TsMidiInput *ts_midi_input_create(void)
 {
