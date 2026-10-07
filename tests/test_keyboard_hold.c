@@ -383,6 +383,7 @@ static void test_sister_prepared_power(void)
 #include "test_insert_controller.inc"
 #include "test_insert_devices.inc"
 #include "test_router_performance_shots.inc"
+#include "test_edit_audio_continuity.inc"
 
 int main(void)
 {
@@ -406,6 +407,8 @@ int main(void)
     assert(ts_sister_runtime_enable(&audio.sister, 44100, 2, 2, 1.0, error, sizeof(error)));
     assert(ts_instrument_create_basic(&instrument, TS_FM_WAVE_SINE, error, sizeof(error)));
     assert(ts_sample_clone(&fm, &instrument.current, error, sizeof(error)));
+    test_idle_hold_locking();
+    test_edit_audio_continuity();
     test_extended_keyboard();
     test_chords();
     test_fm_release_without_preview();

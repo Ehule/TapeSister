@@ -119,3 +119,41 @@ powered on. Move Sister and FX sliders while a long ramp is in progress. Held
 notes, arp clocks and existing tails should continue. Check ordinary Sustain and
 HOLD behavior, dry recording, and Stop. Hardware listening remains necessary to
 confirm the user's crackle is resolved on their Windows machine.
+
+## ASIO edit contention, October 2026
+
+The MOTU report at 44.1 kHz / 1,024 frames / four outputs had no DSP deadline
+overruns, but 21 ASIO control-lock skips and a 65.237 ms `lock_edit` hold. The
+native adapter uses a nonblocking mutex attempt and emits a silent period on
+contention. Even a short UI lock can therefore cause a discontinuity; a fast
+callback average does not rule this out. The report cannot attribute every
+audible click to a particular operation.
+
+Warp, Smear and Tear now prepare stable Current/Parent copies for ordinary
+keyboard/MIDI voices on the UI thread. A short locked pointer swap lets those
+voices continue advancing during gesture setup, rendering, commit and cancel.
+The final locked publication restores editor references and uses the existing
+note-bank residual fade when the sound changes. Copies are shared by notes
+using the same source, and freed on the UI thread after publication. No output
+queue, extra device latency, waiting or allocation was added to the callback.
+
+Unchanged HOLD/PLAY VIEW refreshes now skip synchronization, while changes to
+sample, tuning, range or loop metadata still update the voices. Snapshot
+retirement also avoids the device lock when there are no snapshots to retire.
+Other UI polling and edit paths still take locks. Standalone audition, grouped
+keyboard playback and allocation failure retain the previous safe exclusion
+path; this is a focused reduction in contention, not a claim of zero dropouts.
+
+`test_edit_audio_continuity.inc` runs the actual callback on another thread
+after a render replaces Current, before publishing the edit. It checks lock
+availability, non-silent output, advancing positions, pointer lifetime and the
+handoff ramp, plus failed rendering and native gesture commit/cancel. The idle
+test checks 120 unchanged HOLD refreshes with no lock acquisitions and verifies
+that view and tuning changes still synchronize. The ordinary controller suite
+and an AddressSanitizer/UndefinedBehaviorSanitizer build cover this path.
+
+For the Windows listening check, retain MOTU M Series, 44.1 kHz, 1,024 frames
+and four channels. Reset Audio Health, hold two ordinary sample notes, leave
+the UI untouched, then exercise Warp, Smear and Tear. Compare control-lock
+skips and long holds with a separate idle-only run. This environment cannot
+verify the physical M6 driver or speakers.
