@@ -1,4 +1,5 @@
 #include "tapesister/ui.h"
+#include "tapesister/spatial_ui.h"
 #include "tapesister/input_monitor.h"
 #include "tapesister/sister_ui.h"
 #include "tapesister/version.h"
@@ -5933,3 +5934,5 @@ sister_footer:
              TS_MIDI_LEARN_AVAILABLE_COLOR, 1);
     }
 }
+
+#include "ts_spatial_ui.inc"

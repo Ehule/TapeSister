@@ -12,6 +12,7 @@
 #include "tapesister/sister_runtime.h"
 #include "tapesister/sister_preset.h"
 #include "tapesister/sister_project_state.h"
+#include "tapesister/spatial_ui.h"
 #include "tapesister/sister_ui.h"
 #include "tapesister/dsp_transform.h"
 #include "tapesister/render_damage.h"
@@ -673,6 +674,9 @@ static uint64_t paged_project_state_hash(const TsSamplePages *pages,
         state_hash_bytes(&hash,&sister->master_eq.controls,sizeof(sister->master_eq.controls));
         TsRouterControls saved_router=ts_router_export(&sister->router);
         state_hash_bytes(&hash,&saved_router,sizeof(saved_router));
+        TsSpatialControls spatial=sister->spatial.controls;
+        spatial.rise_trigger=spatial.morph_trigger=0;
+        state_hash_bytes(&hash,&spatial,sizeof(spatial));
         state_hash_bytes(&hash,&sister->router.performance,sizeof(sister->router.performance));
         state_hash_bytes(&hash,&sister->insert.controls,sizeof(sister->insert.controls));
         uint8_t routes = sister->source_switches & TS_SISTER_SOURCE_ALL;
@@ -1266,6 +1270,8 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         audio->last_output = output;
         audio->mixer.buses.output = output;
         ts_insert_write_output(&audio->sister.insert,out+(i/2)*device_channels,device_channels,output);
+        ts_spatial_process(&audio->sister.spatial,output,out+(i/2)*device_channels,
+            device_channels,audio->sister.insert.separate_send?0:audio->sister.insert.controls.send_pair);
     }
     ts_tracker_playback_end_block(&audio->tracker);
     ts_sister_runtime_end_audio_block(&audio->sister);
@@ -4053,6 +4059,8 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
                 (void)ts_sister_project_state_apply(
                     &sister_state, &audio->sister, instrument);
             } else {
+                TsSpatialControls spatial;ts_spatial_default(&spatial);
+                ts_spatial_recall(&audio->sister.spatial,&spatial);
                 TsMasterEqControls flat;ts_master_eq_default(&flat);
                 ts_master_eq_set(&audio->sister.master_eq,&flat);
                 TsRouterControls defaults;ts_router_default(&defaults);
@@ -11168,6 +11176,7 @@ static int midi_source_from_event(const TsMidiEvent *midi,
 }
 
 #include "main_sdl_master_eq.inc"
+#include "main_sdl_spatial.inc"
 #include "main_sdl_router.inc"
 
 static int midi_sister_hit_from_target(const char *target, float normalized,
@@ -11245,6 +11254,8 @@ static float midi_target_current_value(const char *target,
     int parameter;
     char trailing;
     if (target == NULL || ui == NULL || sister == NULL) return 0.0f;
+    int sp=spatial_midi_index(target);
+    if(sp>=0)return ui->config.spatial.value[sp];
     int eq_band,eq_control;
     if(master_eq_midi_band(target,&eq_band,&eq_control))
         return ts_master_eq_normalized(&ui->config.master_eq.band[eq_band-1],eq_control,ui->master_eq_rate);
@@ -11290,6 +11301,7 @@ static int midi_apply_target(SDL_AudioDeviceID device, AudioState *audio,
                              const char *target, float normalized,
                              uint32_t sample_rate, uint8_t output_channels)
 {
+    if(spatial_midi(device,audio,ui,target,normalized))return 1;
     if(router_midi_command(device,audio,ui,target))return 1;
     int slot,eq_band,eq_control;
     TsSisterUiHit hit;
@@ -13238,6 +13250,7 @@ int main(int argc, char **argv)
     ts_sister_runtime_set_master_output_gain(
         &audio.sister, (float)ui.config.master_output_percent / 100.0f);
     ts_master_eq_set(&audio.sister.master_eq,&ui.config.master_eq);
+    ts_spatial_recall(&audio.sister.spatial,&ui.config.spatial);
     ts_sister_runtime_set_router(&audio.sister,&ui.config.router);
     ts_router_performance_set(&audio.sister.router,&ui.config.router_performance);
     ts_sister_runtime_set_insert(&audio.sister,&ui.config.insert);
@@ -13713,6 +13726,8 @@ int main(int argc, char **argv)
                 }
                 continue;
             }
+            if (spatial_event(&event,window,device,&audio,&ui,&sister_window)) continue;
+            event_id=event_window_id(&event);
             if (ts_audio_health_event(&event, window, &audio, &ui)) continue;
             if((!ui.tracker_open || event_id!=SDL_GetWindowID(window)) && keyboard_sequence_transport_event(&event,window,device,&audio,&ui,
                 &sister_window,&instrument,&fm_preview,obtained.freq))continue;
@@ -17442,6 +17457,7 @@ int main(int argc, char **argv)
                 ui.playhead_sample = NULL;
             }
         }
+        spatial_capture(&audio,&ui);
         ts_audio_health_capture_setup(&audio, &ui, health_setup_now);
         /* Read the frozen Matrix pair and its position together while the
            existing voice/UI lock owns the audio state. No drawing happens here. */
@@ -17594,6 +17610,7 @@ int main(int argc, char **argv)
                 sister_window.last_present_ms = SDL_GetTicks();
             }
         }
+        spatial_window_update(&ui);
         ts_audio_health_update(&audio, &ui);
         if (pending_file.active && !pending_file.presented)
             pending_file.presented = 1;
@@ -17689,6 +17706,7 @@ int main(int argc, char **argv)
     if (sister_window.texture) SDL_DestroyTexture(sister_window.texture);
     if (sister_window.renderer) SDL_DestroyRenderer(sister_window.renderer);
     if (sister_window.window) SDL_DestroyWindow(sister_window.window);
+    spatial_window_close();
     ts_audio_health_close();
     if (texture) SDL_DestroyTexture(texture);
     if (renderer) SDL_DestroyRenderer(renderer);

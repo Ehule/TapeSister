@@ -15,6 +15,8 @@ Its basic creative loop is simple:
 
 - [Complete User Manual](docs/USER_MANUAL.md) — workflows, every major instrument,
   recording, routing, saving, and performance techniques.
+- [Ambisonics output](docs/AMBISONICS.md) — optional 3–16-speaker output, field
+  transformations, slow modulation, and stereo playback from any adjacent pair.
 - [Audio Health](docs/AUDIO_HEALTH.md) — live callback load, timing gaps, control stalls,
   and a copyable diagnostic report (F12 or CFG → AUDIO HEALTH).
 - [Quick Reference](docs/QUICK_REFERENCE.md) — keys, mouse gestures, control ranges,

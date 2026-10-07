@@ -72,6 +72,7 @@ void ts_sister_project_state_init(TsSisterProjectState *state,
     memset(state, 0, sizeof(*state));
     state->page_count = 1u;
     ts_master_eq_default(&state->master_eq);
+    ts_spatial_default(&state->spatial);
     ts_router_default(&state->router);
     ts_router_performance_default(&state->router_performance);
     ts_keyboard_sequence_bank_default(&state->keyboard_sequence);
@@ -101,6 +102,8 @@ void ts_sister_project_state_capture(TsSisterProjectState *state,
     state->router = ts_router_export(&runtime->router);
     state->router_performance = runtime->router.performance;
     state->insert = runtime->insert.controls;
+    state->spatial = runtime->spatial.controls;
+    state->spatial.rise_trigger = state->spatial.morph_trigger = 0;
     state->parameter_locks = runtime->parameter_locks;
     state->parameter_locks_high = runtime->parameter_locks_high;
     ts_sister_parameters_sanitize(&state->parameters,
@@ -126,6 +129,7 @@ int ts_sister_project_state_apply(const TsSisterProjectState *state,
     runtime->active_page = state->active_page;
     ts_sister_runtime_set_parameters(runtime, &state->parameters);
     ts_master_eq_set(&runtime->master_eq,&state->master_eq);
+    ts_spatial_recall(&runtime->spatial,&state->spatial);
     ts_sister_runtime_set_router(runtime,&state->router);
     runtime->router.transport.restore_valid=0;
     ts_router_performance_set(&runtime->router,&state->router_performance);
@@ -284,6 +288,7 @@ int ts_sister_project_state_save_file(const TsSisterProjectState *state,
                          state->page_masks[page]) < 0;
     if (!failed) failed = !write_parameters(file, &state->parameters);
     if (!failed) failed = !ts_master_eq_write(file,&state->master_eq);
+    if (!failed) failed = !ts_spatial_write(file,&state->spatial);
     if (!failed) failed = !ts_router_write(file,&state->router);
     if (!failed) failed = !ts_router_performance_write(file,&state->router_performance);
     if (!failed) failed = !ts_keyboard_sequence_bank_write(file,&state->keyboard_sequence);
@@ -626,6 +631,8 @@ int ts_sister_project_state_load_file(TsSisterProjectState *state,
             loaded.page_masks[page] = (uint16_t)parsed_mask;
         } else if (!strncmp(key,"Arp.",4)) {
             if(ts_keyboard_sequence_bank_read(&loaded.keyboard_sequence,key,value)<0)goto malformed;
+        } else if (!strncmp(key,"Spatial.",8)) {
+            if(ts_spatial_read(&loaded.spatial,key,value)<0)goto malformed;
         } else if (!strncmp(key,"Insert.",7)) {
             if(ts_insert_read(&loaded.insert,key,value)<0)goto malformed;
         } else if (!strncmp(key,"RouterPerf.",11)) {

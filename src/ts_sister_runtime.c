@@ -557,6 +557,7 @@ void ts_sister_runtime_init(TsSisterRuntime *runtime)
     ts_master_eq_init(&runtime->master_eq);
     ts_router_init(&runtime->router);
     ts_insert_init(&runtime->insert);
+    ts_spatial_init(&runtime->spatial);
     runtime->rolling = 1;
     runtime->input_available = 1;
     runtime->live_link_available = 0;
@@ -591,6 +592,7 @@ void ts_sister_runtime_init(TsSisterRuntime *runtime)
 void ts_sister_runtime_free(TsSisterRuntime *runtime)
 {
     if (runtime == NULL) return;
+    ts_spatial_free(&runtime->spatial);
     ts_prism_free(&runtime->prism);
     ts_sister_machine_free(&runtime->machine);
     ts_sister_fallout_free(&runtime->fallout);
