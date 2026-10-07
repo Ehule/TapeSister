@@ -18,6 +18,49 @@ persistent footer; it does not draw REC over the input-channel count or logo.
 
 ![Master / Room EQ](images/master-performance-eq.png)
 
+## Live frequency spectrum and presets
+
+**SPEC ON** overlays a teal live spectrum beneath the amber EQ response curve.
+Both use the same logarithmic frequency axis. The **left** scale measures the EQ
+curve's gain in dB; the **right** scale measures the audio spectrum in dBFS, from
+0 to -96. The spectrum is tapped **after EQ and before the limiter and OUT** so
+changing listening volume does not move the trace. Global EQ bypass lets you
+compare the unfiltered mix with the filtered mix.
+
+The analyzer combines the power of both channels, preserving visibility of wide
+or opposite-phase stereo. It uses a 4096-frame Hann-windowed FFT with quick attack
+and a falling trace, normally refreshed at 10 Hz. Peaks are per-bin amplitudes,
+not an overall output meter. Low sample rates take longer to gather a full frame.
+**SPEC OFF**, closing the EQ, covering it with another panel, or minimizing/hiding
+the main window suspends capture and analysis. Reopening starts a fresh capture.
+Spectrum display state is temporary and does not change saved EQ settings.
+
+![Live post-EQ spectrum with the filter response](images/master-eq-spectrum.png)
+
+**PRESETS** opens eight starting shapes. Selecting one enables EQ, clears band
+solo, and uses the existing smooth filter transitions. Limiter, OUT, tiles,
+effects and playback retain their settings. All bands remain editable; the label
+changes to **CUSTOM** after changing a preset's band settings. The resulting
+bands save with the project/session through the existing EQ fields.
+
+| Preset | Starting shape |
+| --- | --- |
+| Flat | Neutral bands, EQ enabled |
+| Rumble Cut | 30 Hz high-pass |
+| Less Boom | 30 Hz high-pass, -3 dB shelf at 150 Hz, broad -2 dB at 250 Hz |
+| Warm | +2 dB low shelf at 180 Hz, -2 dB high shelf at 5.5 kHz |
+| Presence | 35 Hz high-pass, -1.5 dB low shelf at 180 Hz, broad +2 dB at 2.5 kHz |
+| Air | +2 dB high shelf at 9 kHz |
+| Soften Highs | -3 dB high shelf at 3.5 kHz, broad -1.5 dB at 6.5 kHz |
+| Telephone | 350 Hz high-pass, 3.5 kHz low-pass, broad +2 dB at 1.4 kHz |
+
+These are starting points to adjust by ear. The spectrum shows TapeSister's
+internal signal; it does not measure the room acoustically. Escape or clicking
+outside the preset list dismisses it without loading a preset. In MIDI-learn
+mode, preset loading is inactive.
+
+![EQ preset picker](images/master-eq-presets.png)
+
 ## Signal order
 
 **Master → EQ → Limiter → Output**
@@ -113,6 +156,13 @@ Global bypass ramps over 20 ms while the wet filters stay warm. Coefficients are
 calculated on the device-locked control thread; the sample callback performs no
 allocation, coefficient trigonometry, file I/O, or new locks. EQ adds no buffering
 or look-ahead latency. Existing limiter latency remains unchanged.
+
+Spectrum capture is a fixed-size, single-producer/single-consumer mailbox. The
+audio callback only copies samples while requested; it drops analyzer samples
+when the mailbox is full. The UI owns the FFT work and releases each capture
+after reading it. No analysis runs in the audio callback, and enabling the
+analyzer leaves output samples bit-for-bit identical. Old partial or queued
+captures are rejected after visibility or sample-rate changes.
 
 `test_master_eq.c` checks rendered and analytical responses for all six types at
 8/44.1/48/96 kHz, exact flat/bypass output, stereo matching, rapid extreme edits,

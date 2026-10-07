@@ -6,6 +6,7 @@
 #include "tapesister/sister_machine.h"
 #include "tapesister/sister_limiter.h"
 #include "tapesister/master_eq.h"
+#include "tapesister/eq_spectrum.h"
 #include "tapesister/router.h"
 #include "tapesister/spatial.h"
 #include "tapesister/insert.h"
@@ -216,6 +217,7 @@ typedef struct {
     TsSisterPostFxEngine post_fx;
     TsSisterLimiter limiter;
     TsMasterEq master_eq;
+    TsEqSpectrum eq_spectrum;
     TsRouter router;
     TsInsert insert;
     TsSpatial spatial;

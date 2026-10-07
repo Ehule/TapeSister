@@ -31,6 +31,13 @@ typedef struct {
 } TsMasterEq;
 
 void ts_master_eq_default(TsMasterEqControls *c);
+enum { TS_EQ_PRESET_FLAT, TS_EQ_PRESET_RUMBLE_CUT, TS_EQ_PRESET_LESS_BOOM,
+       TS_EQ_PRESET_WARM, TS_EQ_PRESET_PRESENCE, TS_EQ_PRESET_AIR,
+       TS_EQ_PRESET_SOFTEN_HIGHS, TS_EQ_PRESET_TELEPHONE, TS_EQ_PRESET_COUNT };
+const char *ts_master_eq_preset_name(int preset);
+int ts_master_eq_preset(TsMasterEqControls *c, int preset);
+/* Matches band settings, independently of global bypass or temporary solo. */
+int ts_master_eq_preset_match(const TsMasterEqControls *c);
 void ts_master_eq_sanitize(TsMasterEqControls *c);
 int ts_master_eq_band_active(const TsMasterEqControls *c, int band);
 void ts_master_eq_toggle_band(TsMasterEqControls *c, int band);

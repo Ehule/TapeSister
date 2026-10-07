@@ -7,6 +7,31 @@ static int eq_click(int x,int y,int button)
     e.type=SDL_MOUSEBUTTONUP;master_eq_event(&e,window,device,&audio,&ui,&eq_panel);
     return result;
 }
+static void eq_preset_controls(void)
+{
+    int limiter=audio.sister.limiter.enabled;
+    float gain=audio.sister.master_output_gain.target;
+    for(int p=0;p<TS_EQ_PRESET_COUNT;++p) {
+        ui.config.master_eq.solo_band=3;master_eq_commit(device,&audio,&ui);
+        eq_click(250,55,SDL_BUTTON_LEFT);assert(ui.master_eq_presets_open);
+        eq_click(260,102+p*20,SDL_BUTTON_LEFT);
+        assert(!ui.master_eq_presets_open && !ui.master_eq_drag);
+        assert(audio.sister.master_eq.controls.enabled && !audio.sister.master_eq.controls.solo_band);
+        assert(ts_master_eq_preset_match(&audio.sister.master_eq.controls)==p);
+        assert(audio.sister.limiter.enabled==limiter && audio.sister.master_output_gain.target==gain);
+    }
+    TsMasterEqControls saved=ui.config.master_eq;
+    eq_click(250,55,SDL_BUTTON_LEFT);eq_click(220,120,SDL_BUTTON_LEFT);
+    assert(!ui.master_eq_presets_open && !memcmp(&saved,&ui.config.master_eq,sizeof(saved)));
+    eq_click(250,55,SDL_BUTTON_LEFT);
+    SDL_Event e;SDL_zero(e);e.type=SDL_KEYDOWN;e.key.windowID=SDL_GetWindowID(window);e.key.keysym.sym=SDLK_ESCAPE;
+    assert(master_eq_event(&e,window,device,&audio,&ui,&eq_panel));
+    assert(!ui.master_eq_presets_open && ui.master_eq_open);
+    ui.midi_learn_active=1;eq_click(250,55,SDL_BUTTON_LEFT);
+    assert(!ui.master_eq_presets_open && !memcmp(&saved,&ui.config.master_eq,sizeof(saved)));
+    ui.midi_learn_active=0;
+    ts_master_eq_default(&ui.config.master_eq);master_eq_commit(device,&audio,&ui);
+}
 static void test_master_eq_controller(void)
 {
     ts_sister_ui_model_init(&eq_panel.model,&ui.config);
@@ -15,6 +40,7 @@ static void test_master_eq_controller(void)
     assert(eq_click(TS_UI_MASTER_LIMITER_X+5,10,SDL_BUTTON_LEFT));
     assert(ui.master_eq_open);
     assert(audio.sister.limiter.enabled==lim);
+    eq_preset_controls();
     eq_click(412,55,SDL_BUTTON_LEFT);assert(audio.sister.master_eq.controls.enabled);
     uint64_t hash=paged_project_state_hash(NULL,&instrument,NULL,&audio.sister,&audio.keyboard_sequence);
     eq_click(330,311,SDL_BUTTON_LEFT);
@@ -104,6 +130,9 @@ static void test_master_eq_controller(void)
         ui.config.master_eq.enabled=1;master_eq_commit(device,&audio,&ui);
         assert(voices()==1 && audio.keyboard_sequence.running);
         assert(power_audio_energy()>.01);
+        eq_click(250,55,SDL_BUTTON_LEFT);eq_click(260,102+TS_EQ_PRESET_WARM*20,SDL_BUTTON_LEFT);
+        assert(ts_master_eq_preset_match(&audio.sister.master_eq.controls)==TS_EQ_PRESET_WARM);
+        assert(voices()==1 && audio.keyboard_sequence.running && power_audio_energy()>.01);
         SDL_zero(e);e.type=SDL_KEYUP;e.key.windowID=SDL_GetWindowID(window);e.key.keysym.sym=SDLK_z;
         assert(!master_eq_event(&e,window,device,&audio,&ui,&eq_panel));
         e.type=SDL_KEYDOWN;e.key.keysym.sym=SDLK_SPACE;
@@ -113,6 +142,27 @@ static void test_master_eq_controller(void)
     /* FILE OUT sees exactly the post-EQ/limiter/fader hardware frames. */
     reset_route(0);ts_sister_runtime_disable(&audio.sister);
     toggle_fm_hold(device,&audio,&ui,&instrument);click_note(0,0);assert(power_audio_energy()>.01);
+    ui.master_eq_open=1;
+    master_eq_spectrum_tick(&audio,&ui,1,1000);
+    assert(atomic_load(&audio.sister.eq_spectrum.request)&1u);
+    float spectrum_out[512];
+    for(int block=0;block<16;++block)audio_callback(&audio,(Uint8 *)spectrum_out,sizeof(spectrum_out));
+    master_eq_spectrum_tick(&audio,&ui,1,1100);
+    assert(ui.master_eq_spectrum.valid);
+    float peak=-96;for(int i=0;i<TS_EQ_SPECTRUM_POINTS;++i)peak=fmaxf(peak,ui.master_eq_spectrum.db[i]);
+    assert(peak>-60);
+    master_eq_spectrum_tick(&audio,&ui,0,1200); /* Minimized/hidden. */
+    assert(!(atomic_load(&audio.sister.eq_spectrum.request)&1u) && !ui.master_eq_spectrum.valid);
+    unsigned fill=audio.sister.eq_spectrum.fill;
+    audio_callback(&audio,(Uint8 *)spectrum_out,sizeof(spectrum_out));assert(audio.sister.eq_spectrum.fill==fill);
+    master_eq_spectrum_tick(&audio,&ui,1,1300);
+    eq_click(335,55,SDL_BUTTON_LEFT);assert(ui.master_eq_spectrum_off);
+    master_eq_spectrum_tick(&audio,&ui,1,1400);assert(!(atomic_load(&audio.sister.eq_spectrum.request)&1u));
+    eq_click(335,55,SDL_BUTTON_LEFT);master_eq_spectrum_tick(&audio,&ui,1,1500);
+    ui.router_open=1;master_eq_spectrum_tick(&audio,&ui,1,1600);
+    assert(!(atomic_load(&audio.sister.eq_spectrum.request)&1u));ui.router_open=0;
+    ui.master_eq_open=0;master_eq_spectrum_tick(&audio,&ui,1,1700);
+    assert(!(atomic_load(&audio.sister.eq_spectrum.request)&1u));ui.master_eq_open=1;
     TsPerformanceRecorder recorder;ts_performance_recorder_init(&recorder);char error[160];
     assert(ts_performance_recorder_start(&recorder,"test-master-eq-output.wav",44100,2,1024,error,sizeof(error)));
     audio.sister_file_recorder=&recorder;atomic_store(&audio.sister_file_tap,TS_SISTER_TAP_MIX);
@@ -133,8 +183,26 @@ static void test_master_eq_controller(void)
     ui.config.master_eq.band[4]=(TsEqBand){1,TS_EQ_HIGH_SHELF,10000,1.5f,.70710678f};
     master_eq_commit(device,&audio,&ui);ui.master_output.limiter_enabled=1;
     ui.master_output.limiter_ceiling_db=-1;ui.master_output.limiter_gain_reduction_db=0;ui.master_output.gain=1;
+    /* Screenshot spectrum comes from the actual output EQ, not a drawn fixture. */
+    master_eq_spectrum_tick(&audio,&ui,1,2000);
+    uint32_t noise=12345;
+    for(int i=0;i<TS_EQ_SPECTRUM_FRAMES;++i) {
+        noise=noise*1664525u+1013904223u;
+        float t=i/44100.f;
+        float x=.22f*sinf(6.2831853f*97*t)+.13f*sinf(6.2831853f*225*t)+
+            .075f*sinf(6.2831853f*880*t)+.045f*sinf(6.2831853f*3400*t)+
+            .025f*((noise>>8)/8388608.f-1);
+        ts_sister_runtime_process_output(&audio.sister,(TsStereoFrame){x,-x});
+    }
+    master_eq_spectrum_tick(&audio,&ui,1,2100);assert(ui.master_eq_spectrum.valid);
     const char *shot=getenv("TS_TEST_MASTER_EQ_PPM");
     if(shot){static TsFramebuffer fb;ts_ui_render(&fb,&ui,&instrument);assert(ts_ui_write_ppm(&fb,shot));}
+    const char *preset_shot=getenv("TS_TEST_MASTER_EQ_PRESETS_PPM");
+    if(preset_shot) {
+        ui.master_eq_presets_open=1;
+        static TsFramebuffer fb;ts_ui_render(&fb,&ui,&instrument);assert(ts_ui_write_ppm(&fb,preset_shot));
+        ui.master_eq_presets_open=0;
+    }
     const char *record_shot=getenv("TS_TEST_EQ_RECORDING_PPM");
     if(record_shot) {
         ui.file_record_state=TS_PERFORMANCE_FILE_RECORDING;ui.file_record_rate=44100;
