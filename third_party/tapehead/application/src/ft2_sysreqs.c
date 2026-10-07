@@ -40,7 +40,11 @@ static char *buttonText[NUM_SYSREQ_TYPES][MAX_PUSHBUTTONS] =
 	{ "Yes", "No", "","","" },
 
 	// custom dialogs
+#ifdef TAPEHEAD_EMBEDDED
+	{ "Pattern", "Song", "PatData", "Cancel", "" }, // host tiles are never zapped
+#else
 	{ "All", "Song", "PatData", "Instr.", "Cancel" }, // "song clear" dialog
+#endif
 	{ "Left channel", "Right channel", "Mix to mono", "", "" }, // "stereo sample loader" dialog
 	{ "Mono", "Stereo", "Cancel", "","" },            // "audio sampling" dialog
 	{ "OK", "Preview", "Cancel", "","" },             // sample editor effects filters
@@ -68,7 +72,11 @@ static SDL_Keycode shortCut[NUM_SYSREQ_TYPES][5] =
 	{ SDLK_y, SDLK_n, 0,      0,      0 },
 
 	// custom dialogs
+#ifdef TAPEHEAD_EMBEDDED
+	{ SDLK_p, SDLK_s, SDLK_d, SDLK_c, 0 },
+#else
 	{ SDLK_a, SDLK_s, SDLK_p, SDLK_i, SDLK_c }, // "song clear" dialog
+#endif
 	{ SDLK_l, SDLK_r, SDLK_c, 0,      0 }, // "stereo sample loader" dialog 
 	{ SDLK_m, SDLK_s, SDLK_c, 0,      0 }, // "audio sampling" dialog
 	{ SDLK_o, SDLK_p, SDLK_c, 0,      0 }, // sample editor effects filters

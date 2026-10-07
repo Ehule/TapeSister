@@ -12,6 +12,10 @@
 #include "../third_party/tapehead/application/src/ft2_pattern_draw.h"
 #include "../third_party/tapehead/application/src/ft2_tables.h"
 #include "../third_party/tapehead/application/src/ft2_config.h"
+#include "../third_party/tapehead/application/src/ft2_replayer.h"
+#include "../third_party/tapehead/application/src/ft2_undo.h"
+#include "../third_party/tapehead/application/src/ft2_gui.h"
+#include "../third_party/tapehead/application/src/ft2_pushbuttons.h"
 static SDL_Window *test_window;
 static AudioState *test_audio;
 static TsUiState *test_ui;
@@ -176,6 +180,8 @@ static void file_recording_feedback(void) {
 typedef struct {SDL_Event click;atomic_int timed_out;} ModalInput;
 static ModalInput *modal_pending;
 static SDL_Surface *modal_capture;
+static SDL_Keycode modal_keys[2];
+static unsigned modal_key_count,modal_key_index;
 static void modal_present(void *context,const uint32_t *pixels) {
     embedded_present(context,pixels);
     assert(!SDL_RenderReadPixels(embedded_host.renderer,NULL,modal_capture->format->format,
@@ -186,6 +192,11 @@ static void modal_present(void *context,const uint32_t *pixels) {
         modal_pending->click.type=SDL_MOUSEBUTTONUP;
         assert(SDL_PushEvent(&modal_pending->click)==1);modal_pending=NULL;
     }
+    if(modal_key_index<modal_key_count) {
+        SDL_Event key;SDL_zero(key);key.type=SDL_KEYDOWN;
+        key.key.keysym.sym=modal_keys[modal_key_index++];
+        assert(SDL_PushEvent(&key)==1);
+    }
 }
 static Uint32 modal_input(Uint32 interval,void *context) {
     (void)interval;ModalInput *input=context;
@@ -193,6 +204,7 @@ static Uint32 modal_input(Uint32 interval,void *context) {
     SDL_Event event;SDL_zero(event);event.type=SDL_KEYDOWN;
     event.key.keysym.sym=SDLK_ESCAPE;SDL_PushEvent(&event);return 0;
 }
+static void zap_choices(void);
 static void shrink_dialog(void) {
     audit_blank_song(64);
     ts_tapehead_close();
@@ -232,6 +244,9 @@ static void shrink_dialog(void) {
     assert(!SDL_SaveBMP(surface,"embedded-shrink-dialog.bmp"));SDL_FreeSurface(surface);
     modal_capture=NULL;
     press(SDLK_z,SDL_SCANCODE_Z,KMOD_CTRL);assert(pat()->rows==64);
+    /* Exercise ZAP at the same scaled window size as the shrink dialog. */
+    modal_capture=surface=SDL_CreateRGBSurfaceWithFormat(0,1400,900,32,SDL_PIXELFORMAT_ARGB8888);
+    assert(surface);zap_choices();SDL_FreeSurface(surface);modal_capture=NULL;
     SDL_DestroyTexture(embedded_host.texture);SDL_DestroyRenderer(embedded_host.renderer);
     embedded_host.texture=NULL;embedded_host.renderer=NULL;
     SDL_SetWindowSize(test_window,640,400);
@@ -358,6 +373,84 @@ static void audit_blank_song(unsigned rows) {
     ts_sister_tracker_pattern(t,id)->rows=rows;t->editor_pattern=id;t->editor_row=0;t->ticks_per_line=1;
     for(int lane=0;lane<8;++lane) {uint8_t *l=s+52+lane*10;memset(l,0,10);l[3]=7;l[8]=1;}
     assert(ts_tapehead_sync(test_pages,test_bank,48000,test_error,sizeof(test_error)));export_score();
+}
+static void zap_choose(SDL_Keycode choice,SDL_Keycode confirm) {
+    modal_keys[0]=choice;modal_keys[1]=confirm;modal_key_count=confirm?2:1;modal_key_index=0;
+    ModalInput input={0};atomic_init(&input.timed_out,0);
+    SDL_TimerID timeout=SDL_AddTimer(2000,modal_input,&input);assert(timeout);
+    click(325*1400/640,10*900/400);SDL_RemoveTimer(timeout);
+    assert(!atomic_load(&input.timed_out) && modal_key_index==modal_key_count);
+    modal_key_count=modal_key_index=0;
+    assert(!ui.sysReqShown && !ui.aboutScreenShown);
+    assert(!strcmp(pushButtons[PB_ABOUT].caption,"Zap"));
+}
+static void zap_choices(void) {
+    audit_blank_song(32);
+    if(ts_tapehead_following())click(390*1400/640,160*900/400);
+    freeAllPatterns();
+    setPatternLen(0,32);setPatternLen(7,16);setPatternLen(9,23);setPatternLen(12,8);
+    assert(allocatePattern(0) && allocatePattern(7) && allocatePattern(12));
+    const note_t note={.note=49,.instr=1,.vol=0x40,.efx=0x0e,.efxData=0x91,.tuneType=0x16,.tuneData=33};
+    const size_t hidden=200*MAX_CHANNELS+7;
+    pattern[0][0]=note;pattern[7][0]=note;pattern[7][hidden]=note;
+    pattern[12][0]=note;pattern[12][hidden]=note;
+    memset(song.orders,0,sizeof(song.orders));song.orders[1]=7;song.orders[2]=9;
+    song.songLength=4;song.songLoopStart=1;song.BPM=editor.BPM=143;song.speed=editor.speed=3;
+    fastTracksPOCSetTrackLength(0,2,21);fastTracksPOCSetControlTrack(0,2);
+    startPlaying(PLAYMODE_SONG,0);
+    editor.editPattern=7;editor.row=3;ui.updatePatternEditor=true;
+    undoClear();export_score();
+    const TsPatternId id=test_pages->tracker.editor_pattern;
+    TsTileId aliases[129];memcpy(aliases,test_pages->tracker.aliases,sizeof(aliases));
+    TsTileId tile=test_bank->bank[test_bank->selected_slot].tile_id;
+    const float *tile_data=test_bank->current.data;
+    size_t tile_frames=test_bank->current.frames;
+    const float tile_value=tile_data[0];
+    uint8_t orders[sizeof(song.orders)];memcpy(orders,song.orders,sizeof(orders));
+    note_t *before=malloc(MAX_PATT_LEN*TRACK_WIDTH);assert(before);
+    memcpy(before,pattern[7],MAX_PATT_LEN*TRACK_WIDTH);
+
+    zap_choose(SDLK_ESCAPE,0);assert(!memcmp(before,pattern[7],MAX_PATT_LEN*TRACK_WIDTH));
+    zap_choose(SDLK_c,0);assert(!memcmp(before,pattern[7],MAX_PATT_LEN*TRACK_WIDTH));
+    zap_choose(SDLK_p,0);
+    assert(songPlaying && song.pattNum==0 && editor.editPattern==7 && editor.row==3);
+    assert(pattern[7][0].note==0 && pattern[7][hidden].note==0);
+    assert(pattern[0][0].note==note.note && pattern[12][hidden].note==note.note);
+    assert(patternNumRows[7]==16 && song.BPM==143 && song.speed==3);
+    assert(song.songLength==4 && song.songLoopStart==1 && !memcmp(orders,song.orders,sizeof(orders)));
+    assert(fastTracksPOCGetTrackLength(0,2)==21 && fastTracksPOCGetControlTrack(0)==2);
+    assert(test_pages->tracker.editor_pattern==id);
+    assert(!SDL_SaveBMP(modal_capture,"embedded-zap-dialog.bmp"));
+    press(SDLK_z,SDL_SCANCODE_Z,KMOD_CTRL);assert(!memcmp(before,pattern[7],MAX_PATT_LEN*TRACK_WIDTH));
+    press(SDLK_y,SDL_SCANCODE_Y,KMOD_CTRL);assert(pattern[7][hidden].note==0);
+    press(SDLK_z,SDL_SCANCODE_Z,KMOD_CTRL);assert(!memcmp(before,pattern[7],MAX_PATT_LEN*TRACK_WIDTH));
+
+    zap_choose(SDLK_d,0);
+    assert(songPlaying && song.songLength==4 && song.BPM==143 && song.speed==3);
+    assert(!memcmp(orders,song.orders,sizeof(orders)) && patternNumRows[9]==23 && patternNumRows[12]==8);
+    for(unsigned p=0;p<MAX_PATTERNS;++p)if(pattern[p])
+        for(unsigned i=0;i<MAX_PATT_LEN*MAX_CHANNELS;++i)assert(!memcmp(&pattern[p][i],&(note_t){0},sizeof(note_t)));
+    assert(fastTracksPOCGetTrackLength(0,2)==0 && fastTracksPOCGetControlTrack(0)==-1);
+    press(SDLK_z,SDL_SCANCODE_Z,KMOD_CTRL);
+    assert(!memcmp(before,pattern[7],MAX_PATT_LEN*TRACK_WIDTH));
+    assert(pattern[0][0].note==note.note && pattern[12][hidden].note==note.note);
+    assert(fastTracksPOCGetTrackLength(0,2)==21 && fastTracksPOCGetControlTrack(0)==2);
+    press(SDLK_y,SDL_SCANCODE_Y,KMOD_CTRL);assert(pattern[12][hidden].note==0);
+    project_roundtrip();assert(pattern[7][hidden].note==0 && pattern[12][0].note==0);
+    assert(song.BPM==143 && patternNumRows[7]==16 && !memcmp(orders,song.orders,sizeof(orders)));
+
+    pattern[7][0]=note;pattern[7][hidden]=note;setSongModifiedFlag();export_score();
+    zap_choose(SDLK_s,SDLK_n);assert(pattern[7][hidden].note==note.note && song.songLength==4);
+    zap_choose(SDLK_s,SDLK_y);
+    assert(!songPlaying && song.songLength==1 && song.orders[0]==0 && song.songLoopStart==0);
+    assert(song.BPM==125 && song.speed==6 && editor.editPattern==0 && editor.row==0);
+    for(unsigned p=0;p<MAX_PATTERNS;++p)assert(!pattern[p] && patternNumRows[p]==64);
+    press(SDLK_z,SDL_SCANCODE_Z,KMOD_CTRL);assert(!pattern[7] && song.songLength==1);
+    assert(!memcmp(aliases,test_pages->tracker.aliases,sizeof(aliases)));
+    assert(test_bank->bank[test_bank->selected_slot].tile_id==tile);
+    assert(test_bank->current.data==tile_data && test_bank->current.frames==tile_frames && tile_data[0]==tile_value);
+    project_roundtrip();assert(song.songLength==1 && song.BPM==125 && patternNumRows[7]==64);
+    free(before);
 }
 #include "test_tracker_follow.inc"
 static TsStereoFrame settled_output(void) {

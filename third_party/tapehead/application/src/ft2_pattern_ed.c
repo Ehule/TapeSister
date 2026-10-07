@@ -3557,6 +3557,55 @@ static void zapInstrs(void)
 
 void pbZap(void)
 {
+#ifdef TAPEHEAD_EMBEDDED
+	/* Capture the edit pattern before the modal services playback/follow. */
+	const uint16_t targetPattern = editor.editPattern;
+	const int16_t choice = okBox(3, "Zap tracker data",
+		"Pattern: current. PatData: all pattern contents.\n"
+		"Song: reset patterns, order and tempo.\n"
+		"TapeSister tiles are kept.", NULL);
+	if (choice < 1 || choice > 3)
+		return;
+
+	if (choice == 2)
+	{
+		if (okBox(2, "Reset tracker song?",
+			"Clear all patterns and reset song order and tempo?\n"
+			"Tiles are kept. This song reset cannot be undone.", NULL) != 1)
+			return;
+		stopPlaying();
+		zapSong();
+	}
+	else
+	{
+		const bool ready = choice == 1
+			? undoPatternBegin(targetPattern, "Zap current pattern")
+			: undoSongBegin("Zap all pattern data");
+		if (!ready)
+		{
+			okBox(0, "Zap cancelled", "Not enough memory to create undo data.", NULL);
+			return;
+		}
+		if (choice == 1)
+		{
+			lockMixerCallback();
+			if (pattern[targetPattern] != NULL)
+				memset(pattern[targetPattern], 0, (MAX_PATT_LEN * TRACK_WIDTH) + 16);
+			clearPattMark();
+			resetChannels();
+			unlockMixerCallback();
+			ui.updatePatternEditor = true;
+		}
+		else
+			zapPatternData();
+	}
+
+	hideTopScreen();
+	showTopScreen(RESTORE_SCREENS);
+	setSongModifiedFlag();
+	if (choice != 2)
+		undoTransactionCommit();
+#else
 	const int16_t choice = okBox(3, "System request", "Total devastation of the...", NULL);
 
 	if (choice == 1) // zap all
@@ -3585,6 +3634,7 @@ void pbZap(void)
 
 		setSongModifiedFlag();
 	}
+#endif
 }
 
 void sbSmpBankPos(uint32_t pos)

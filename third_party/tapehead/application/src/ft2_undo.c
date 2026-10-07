@@ -220,6 +220,17 @@ static bool captureInstrument(uint8_t instrNum, instrumentSnapshot_t *dst)
 	return captureInstrumentFrom(song.instrName[instrNum], instr[instrNum], dst);
 }
 
+static uint32_t patternDataBytes(const patternSnapshot_t *p)
+{
+#ifdef TAPEHEAD_EMBEDDED
+	/* TrackSister persists hidden rows; ZAP clears them along with visible rows. */
+	(void)p;
+	return MAX_PATT_LEN * TRACK_WIDTH;
+#else
+	return (uint32_t)p->numRows * TRACK_WIDTH;
+#endif
+}
+
 static bool capturePattern(uint16_t patternNum, patternSnapshot_t *dst)
 {
 	memset(dst, 0, sizeof (*dst));
@@ -233,7 +244,7 @@ static bool capturePattern(uint16_t patternNum, patternSnapshot_t *dst)
 		return true;
 
 	dst->exists = true;
-	const uint32_t bytes = (uint32_t)dst->numRows * TRACK_WIDTH;
+	const uint32_t bytes = patternDataBytes(dst);
 	dst->data = (note_t *)malloc(bytes);
 	if (dst->data == NULL)
 		return false;
@@ -252,7 +263,7 @@ static void captureOrder(orderSnapshot_t *dst)
 
 static uint32_t patternSnapshotBytes(const patternSnapshot_t *p)
 {
-	return sizeof (*p) + (p->exists ? (uint32_t)p->numRows * TRACK_WIDTH : 0);
+	return sizeof (*p) + (p->exists ? patternDataBytes(p) : 0);
 }
 
 static uint32_t sampleSnapshotBytes(const sampleSnapshot_t *s)
@@ -276,7 +287,7 @@ static bool patternsEqual(const patternSnapshot_t *a, const patternSnapshot_t *b
 		return false;
 	if (!a->exists)
 		return true;
-	return memcmp(a->data, b->data, (uint32_t)a->numRows * TRACK_WIDTH) == 0;
+	return memcmp(a->data, b->data, patternDataBytes(a)) == 0;
 }
 
 static bool samplesEqual(const sampleSnapshot_t *a, const sampleSnapshot_t *b)
@@ -737,14 +748,14 @@ static bool restorePattern(const patternSnapshot_t *src)
 	{
 		if (pattern[src->patternNum] != NULL)
 		{
-			memset(pattern[src->patternNum], 0, (uint32_t)src->numRows * TRACK_WIDTH);
+			memset(pattern[src->patternNum], 0, patternDataBytes(src));
 			killPatternIfUnused(src->patternNum);
 		}
 		return true;
 	}
 	if (!allocatePattern(src->patternNum))
 		return false;
-	memcpy(pattern[src->patternNum], src->data, (uint32_t)src->numRows * TRACK_WIDTH);
+	memcpy(pattern[src->patternNum], src->data, patternDataBytes(src));
 	return true;
 }
 

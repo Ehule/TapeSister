@@ -1381,6 +1381,70 @@
  	const bool audioWasntLocked = !audio.locked;
  	if (audioWasntLocked)
  		lockAudio();
+@@ -3539,6 +3557,55 @@
+ 
+ void pbZap(void)
+ {
++#ifdef TAPEHEAD_EMBEDDED
++	/* Capture the edit pattern before the modal services playback/follow. */
++	const uint16_t targetPattern = editor.editPattern;
++	const int16_t choice = okBox(3, "Zap tracker data",
++		"Pattern: current. PatData: all pattern contents.\n"
++		"Song: reset patterns, order and tempo.\n"
++		"TapeSister tiles are kept.", NULL);
++	if (choice < 1 || choice > 3)
++		return;
++
++	if (choice == 2)
++	{
++		if (okBox(2, "Reset tracker song?",
++			"Clear all patterns and reset song order and tempo?\n"
++			"Tiles are kept. This song reset cannot be undone.", NULL) != 1)
++			return;
++		stopPlaying();
++		zapSong();
++	}
++	else
++	{
++		const bool ready = choice == 1
++			? undoPatternBegin(targetPattern, "Zap current pattern")
++			: undoSongBegin("Zap all pattern data");
++		if (!ready)
++		{
++			okBox(0, "Zap cancelled", "Not enough memory to create undo data.", NULL);
++			return;
++		}
++		if (choice == 1)
++		{
++			lockMixerCallback();
++			if (pattern[targetPattern] != NULL)
++				memset(pattern[targetPattern], 0, (MAX_PATT_LEN * TRACK_WIDTH) + 16);
++			clearPattMark();
++			resetChannels();
++			unlockMixerCallback();
++			ui.updatePatternEditor = true;
++		}
++		else
++			zapPatternData();
++	}
++
++	hideTopScreen();
++	showTopScreen(RESTORE_SCREENS);
++	setSongModifiedFlag();
++	if (choice != 2)
++		undoTransactionCommit();
++#else
+ 	const int16_t choice = okBox(3, "System request", "Total devastation of the...", NULL);
+ 
+ 	if (choice == 1) // zap all
+@@ -3567,6 +3634,7 @@
+ 
+ 		setSongModifiedFlag();
+ 	}
++#endif
+ }
+ 
+ void sbSmpBankPos(uint32_t pos)
 --- a/src/ft2_pattern_launcher_ui.c
 +++ b/src/ft2_pattern_launcher_ui.c
 @@ -1740,6 +1740,9 @@
@@ -1501,7 +1565,31 @@
  #define STBI_NO_LINEAR
 --- a/src/ft2_sysreqs.c
 +++ b/src/ft2_sysreqs.c
-@@ -484,6 +484,9 @@
+@@ -40,7 +40,11 @@
+ 	{ "Yes", "No", "","","" },
+ 
+ 	// custom dialogs
++#ifdef TAPEHEAD_EMBEDDED
++	{ "Pattern", "Song", "PatData", "Cancel", "" }, // host tiles are never zapped
++#else
+ 	{ "All", "Song", "PatData", "Instr.", "Cancel" }, // "song clear" dialog
++#endif
+ 	{ "Left channel", "Right channel", "Mix to mono", "", "" }, // "stereo sample loader" dialog
+ 	{ "Mono", "Stereo", "Cancel", "","" },            // "audio sampling" dialog
+ 	{ "OK", "Preview", "Cancel", "","" },             // sample editor effects filters
+@@ -68,7 +72,11 @@
+ 	{ SDLK_y, SDLK_n, 0,      0,      0 },
+ 
+ 	// custom dialogs
++#ifdef TAPEHEAD_EMBEDDED
++	{ SDLK_p, SDLK_s, SDLK_d, SDLK_c, 0 },
++#else
+ 	{ SDLK_a, SDLK_s, SDLK_p, SDLK_i, SDLK_c }, // "song clear" dialog
++#endif
+ 	{ SDLK_l, SDLK_r, SDLK_c, 0,      0 }, // "stereo sample loader" dialog 
+ 	{ SDLK_m, SDLK_s, SDLK_c, 0,      0 }, // "audio sampling" dialog
+ 	{ SDLK_o, SDLK_p, SDLK_c, 0,      0 }, // sample editor effects filters
+@@ -484,6 +492,9 @@
  		while (SDL_PollEvent(&inputEvent))
  		{
  			handleWaitVblQuirk(&inputEvent);
@@ -1511,7 +1599,7 @@
  
  			if (inputEvent.type == SDL_KEYDOWN)
  			{
-@@ -566,6 +569,9 @@
+@@ -566,6 +577,9 @@
  			break;
  
  		handleRedrawing();
@@ -1521,7 +1609,7 @@
  
  		// draw OK box
  		drawWindowAt(wlen, dialogHeight, y);
-@@ -779,6 +785,9 @@
+@@ -779,6 +793,9 @@
  		while (SDL_PollEvent(&inputEvent))
  		{
  			handleWaitVblQuirk(&inputEvent);
@@ -1531,7 +1619,7 @@
  
  			if (inputEvent.type == SDL_TEXTINPUT)
  			{
-@@ -886,6 +895,9 @@
+@@ -886,6 +903,9 @@
  			break;
  
  		handleRedrawing();
@@ -1575,6 +1663,70 @@
  	if (ui.trimScreenShown)
  		hideTrimScreen();
  	else
+--- a/src/ft2_undo.c
++++ b/src/ft2_undo.c
+@@ -220,6 +220,17 @@
+ 	return captureInstrumentFrom(song.instrName[instrNum], instr[instrNum], dst);
+ }
+ 
++static uint32_t patternDataBytes(const patternSnapshot_t *p)
++{
++#ifdef TAPEHEAD_EMBEDDED
++	/* TrackSister persists hidden rows; ZAP clears them along with visible rows. */
++	(void)p;
++	return MAX_PATT_LEN * TRACK_WIDTH;
++#else
++	return (uint32_t)p->numRows * TRACK_WIDTH;
++#endif
++}
++
+ static bool capturePattern(uint16_t patternNum, patternSnapshot_t *dst)
+ {
+ 	memset(dst, 0, sizeof (*dst));
+@@ -233,7 +244,7 @@
+ 		return true;
+ 
+ 	dst->exists = true;
+-	const uint32_t bytes = (uint32_t)dst->numRows * TRACK_WIDTH;
++	const uint32_t bytes = patternDataBytes(dst);
+ 	dst->data = (note_t *)malloc(bytes);
+ 	if (dst->data == NULL)
+ 		return false;
+@@ -252,7 +263,7 @@
+ 
+ static uint32_t patternSnapshotBytes(const patternSnapshot_t *p)
+ {
+-	return sizeof (*p) + (p->exists ? (uint32_t)p->numRows * TRACK_WIDTH : 0);
++	return sizeof (*p) + (p->exists ? patternDataBytes(p) : 0);
+ }
+ 
+ static uint32_t sampleSnapshotBytes(const sampleSnapshot_t *s)
+@@ -276,7 +287,7 @@
+ 		return false;
+ 	if (!a->exists)
+ 		return true;
+-	return memcmp(a->data, b->data, (uint32_t)a->numRows * TRACK_WIDTH) == 0;
++	return memcmp(a->data, b->data, patternDataBytes(a)) == 0;
+ }
+ 
+ static bool samplesEqual(const sampleSnapshot_t *a, const sampleSnapshot_t *b)
+@@ -737,14 +748,14 @@
+ 	{
+ 		if (pattern[src->patternNum] != NULL)
+ 		{
+-			memset(pattern[src->patternNum], 0, (uint32_t)src->numRows * TRACK_WIDTH);
++			memset(pattern[src->patternNum], 0, patternDataBytes(src));
+ 			killPatternIfUnused(src->patternNum);
+ 		}
+ 		return true;
+ 	}
+ 	if (!allocatePattern(src->patternNum))
+ 		return false;
+-	memcpy(pattern[src->patternNum], src->data, (uint32_t)src->numRows * TRACK_WIDTH);
++	memcpy(pattern[src->patternNum], src->data, patternDataBytes(src));
+ 	return true;
+ }
+ 
 --- a/src/ft2_video.c
 +++ b/src/ft2_video.c
 @@ -563,6 +563,10 @@
