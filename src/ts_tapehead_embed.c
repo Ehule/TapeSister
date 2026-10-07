@@ -240,6 +240,7 @@ static void menu(void) {
     pushButtons[PB_INST_ED].caption="FX";pushButtons[PB_INST_ED].callbackFuncOnUp=fx_button;
     pushButtons[PB_SMP_ED].caption="Prism";pushButtons[PB_SMP_ED].callbackFuncOnUp=prism_button;
     pushButtons[PB_CONFIG].caption="Config";
+    pushButtons[PB_ABOUT].caption="Zap";pushButtons[PB_ABOUT].callbackFuncOnUp=pbZap;
     pushButtons[PB_INST_ED_EXT].caption="Sister";pushButtons[PB_INST_ED_EXT].callbackFuncOnUp=sister_button;
     pushButtons[PB_SMP_ED_EXT].caption="Canvas";pushButtons[PB_SMP_ED_EXT].callbackFuncOnUp=canvas_button;
     /* These mutate an independent sample library; tiles belong to the host. */
@@ -248,7 +249,7 @@ static void menu(void) {
     pushButtons[PB_ZAP].caption="Save";pushButtons[PB_ZAP].callbackFuncOnUp=project_save_button;
     pushButtons[PB_TRIM].caption="Router";pushButtons[PB_TRIM].callbackFuncOnUp=router_button;
     if(main_panel_visible()) {
-        drawPushButton(PB_NIBBLES);drawPushButton(PB_TRIM);drawPushButton(PB_CONFIG);
+        drawPushButton(PB_ABOUT);drawPushButton(PB_NIBBLES);drawPushButton(PB_TRIM);drawPushButton(PB_CONFIG);
         showPushButton(PB_ZAP);drawPushButton(PB_DISK_OP);drawPushButton(PB_EXTEND_VIEW);
         record_outline(359,87,59,16);
         if(ui.scopesShown) {

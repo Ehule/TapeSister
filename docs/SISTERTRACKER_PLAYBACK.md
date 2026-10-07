@@ -43,6 +43,23 @@ metadata and song-title strip has been removed to give those rows to the tiles.
 The title is **TrackSister** and the old badge is a functional **LEN ON/OFF**
 bypass button. **Rec file**, below **Rec. ptn.**, starts/stops final-output recording.
 
+**Zap** replaces About and opens the tracker clearing choices:
+
+- **Pattern** clears the pattern selected when Zap was opened, including hidden
+  rows and every note, instrument, volume, tuning and effect column. Other
+  patterns, pattern lengths, song order, tempo and LEN/CONTROL settings stay put.
+- **PatData** clears every pattern's contents, including patterns outside the
+  song order, while keeping pattern lengths, order and tempo. As in TapeHead,
+  it also resets LEN/CONTROL metadata.
+- **Song** resets all patterns to 64 rows, order to pattern 00, tempo to 125 BPM
+  and speed to 6. It stops tracker playback and asks for confirmation because
+  the song reset cannot be undone.
+- **Cancel** or Escape closes the dialog without clearing anything.
+
+Pattern and PatData support the normal Ctrl+Z / Ctrl+Y Undo/Redo, including
+hidden rows. Every choice keeps TapeSister tiles and instrument aliases. The
+standalone All/Instr. choices do not apply to the host-owned tile library.
+
 ## Tracker configuration
 
 **Config** / Ctrl+C opens two pages with the palette editor always available:
