@@ -339,7 +339,9 @@ static TsStereoFrame read_lens(const TsPrism *p, double phase, double span, floa
 static double advance_phase(double phase, double ratio, double span)
 {
     phase += (1 - ratio) / span;
-    phase -= floor(phase); /* Wide pitch edits can advance over a full cycle. */
+    /* The ordinary advance stays inside this cycle. Keep floor for wide
+       pitch edits/crossings without doing it for every dormant lens. */
+    if (phase < 0 || phase >= 1) phase -= floor(phase);
     return phase;
 }
 
@@ -535,6 +537,9 @@ TsStereoFrame ts_prism_process(TsPrism *p, TsStereoFrame input)
         v->phase = advance_phase(v->phase, v->ratio, p->window_frames);
         if (p->window_fade < 1)
             v->previous_phase = advance_phase(v->previous_phase, v->ratio, p->previous_window);
+        /* Keep history, all lens phases, smoothers and modulation clocks
+           running during bypass; no inaudible energy/pan summation needed. */
+        if (p->wet == 0) continue;
         float balance_l = v->pan > 0 ? 1 - v->pan : 1;
         float balance_r = v->pan < 0 ? 1 + v->pan : 1;
         float reference_l = v->weight * balance_l, reference_r = v->weight * balance_r;

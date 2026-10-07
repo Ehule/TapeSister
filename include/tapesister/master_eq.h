@@ -26,7 +26,7 @@ typedef struct {
 typedef struct {
     TsMasterEqControls controls;
     TsEqStage stage[TS_MASTER_EQ_BANDS];
-    unsigned sample_rate, fade_frames;
+    unsigned sample_rate, fade_frames, active_stages;
     double mix;
 } TsMasterEq;
 

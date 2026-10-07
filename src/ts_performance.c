@@ -766,6 +766,8 @@ TsStereoFrame ts_performance_read_stereo(TsPerformanceBank *bank,
     int changed = 0;
     if (raw_mix != NULL) *raw_mix = (TsStereoFrame){0.0f, 0.0f};
     if (bank == NULL) return mixed;
+    if (!bank->render_limit && ts_voice_handoff_idle(&bank->raw_handoff) &&
+        ts_voice_handoff_idle(&bank->output_handoff)) return mixed;
     for (int i = 0; i < bank->render_limit; ++i) {
         TsPerformanceVoice *voice = &bank->voices[i];
         TsStereoFrame value;

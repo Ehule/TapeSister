@@ -1,3 +1,4 @@
+#include "tapesister/profile.h"
 /* TapeHead runs as an embedded subsystem. This file is the host boundary;
    editing, undo, selection, timing, effects and transport stay upstream. */
 #include "tapesister/tapehead_embed.h"
@@ -364,16 +365,23 @@ void ts_tapehead_focus_lost(void) {
     ts_tapehead_midi(&panic,0);
     memset(&keyb,0,sizeof(keyb));
 }
-void ts_tapehead_tick(void) {
+void ts_tapehead_service(int draw) {
     if(!embed.initialized)return;
     if(!songPlaying)embed.live_edit=0;
     ts_tapehead_host_lock();collect_tiles();ts_tapehead_host_unlock();
-    eraseSprites();readKeyModifiers();setSyncedReplayerVars();
+    if(draw)eraseSprites();
+    readKeyModifiers();setSyncedReplayerVars();
     handleLastGUIObjectDown();handleRecPlusExhaustion();handlePolyMatrixQHandoff();
-    handlePatternLauncherStop();handlePatternLauncherPanelRefresh();
-    tapeheadEmbeddedScopeTick();handleRedrawing();menu();
-    ++editor.framesPassed;renderSprites();
+    handlePatternLauncherStop();
+    if(draw)handlePatternLauncherPanelRefresh();
+    if(draw) {
+        uint64_t started=ts_profile_begin(TS_PROF_SCOPES);
+        tapeheadEmbeddedScopeTick();ts_profile_end(TS_PROF_SCOPES,started);
+        handleRedrawing();menu();renderSprites();
+    }
+    ++editor.framesPassed;
 }
+void ts_tapehead_tick(void) { ts_tapehead_service(1); }
 static int fasttracks_header_lane(int x,int y) {
     if(!ui.patternEditorShown || !fastTracksPOCMasterIsEnabled() || x<30 || !ui.patternChannelWidth)return -1;
     const pattCoord2_t *p=&pattCoord2Table[config.ptnStretch][ui.pattChanScrollShown][getPatternEditorView()];

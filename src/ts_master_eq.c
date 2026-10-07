@@ -74,14 +74,21 @@ TsEqCoefficients ts_master_eq_coefficients(TsEqBand b,unsigned rate)
 }
 void ts_master_eq_init(TsMasterEq *eq)
 { memset(eq,0,sizeof(*eq));ts_master_eq_default(&eq->controls); }
+static int identity_filter(const TsEqFilter *f)
+{
+    return f->c.b0==1 && f->c.b1==0 && f->c.b2==0 && f->c.a1==0 && f->c.a2==0 &&
+        f->z1[0]==0 && f->z1[1]==0 && f->z2[0]==0 && f->z2[1]==0;
+}
 void ts_master_eq_prepare(TsMasterEq *eq,unsigned rate)
 {
     if(!rate || eq->sample_rate==rate)return;
     eq->sample_rate=rate;eq->fade_frames=(unsigned)fmax(1,rate*.04);
     eq->mix=eq->controls.enabled;
-    memset(eq->stage,0,sizeof(eq->stage));
-    for(int i=0;i<TS_MASTER_EQ_BANDS;++i)
+    memset(eq->stage,0,sizeof(eq->stage));eq->active_stages=0;
+    for(int i=0;i<TS_MASTER_EQ_BANDS;++i) {
         eq->stage[i].current.c=eq->stage[i].pending=ts_master_eq_coefficients(active_band(&eq->controls,i),rate);
+        if(!identity_filter(&eq->stage[i].current))eq->active_stages|=1u<<i;
+    }
 }
 void ts_master_eq_set(TsMasterEq *eq,const TsMasterEqControls *controls)
 {
@@ -89,7 +96,7 @@ void ts_master_eq_set(TsMasterEq *eq,const TsMasterEqControls *controls)
     for(int i=0;i<TS_MASTER_EQ_BANDS;++i) {
         TsEqStage *s=&eq->stage[i];
         TsEqCoefficients c=ts_master_eq_coefficients(active_band(&eq->controls,i),eq->sample_rate);
-        if(memcmp(&s->pending,&c,sizeof(c))) { s->pending=c;s->dirty=1; }
+        if(memcmp(&s->pending,&c,sizeof(c))) { s->pending=c;s->dirty=1;eq->active_stages|=1u<<i; }
     }
 }
 static double filter(TsEqFilter *f,double in,int ch)
@@ -108,6 +115,7 @@ TsStereoFrame ts_master_eq_process(TsMasterEq *eq,TsStereoFrame input)
     if(!eq || !eq->sample_rate)return input;
     double v[2]={input.l,input.r};
     for(int i=0;i<TS_MASTER_EQ_BANDS;++i) {
+        if (!(eq->active_stages & (1u<<i))) continue;
         TsEqStage *s=&eq->stage[i];
         if(!s->fade && s->dirty) {
             memset(&s->next,0,sizeof(s->next));s->next.c=s->pending;
@@ -120,6 +128,7 @@ TsStereoFrame ts_master_eq_process(TsMasterEq *eq,TsStereoFrame input)
             v[ch]=s->fade?old+(filter(&s->next,v[ch],ch)-old)*blend:old;
         }
         if(s->fade && !--s->fade)s->current=s->next;
+        if(!s->fade && !s->dirty && identity_filter(&s->current))eq->active_stages&=~(1u<<i);
     }
     double step=1.0/fmax(1,eq->sample_rate*.02);
     eq->mix=eq->controls.enabled?fmin(1,eq->mix+step):fmax(0,eq->mix-step);

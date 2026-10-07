@@ -11,6 +11,9 @@ typedef struct {
     uint32_t remaining;
 } TsVoiceHandoff;
 
+static inline int ts_voice_handoff_idle(const TsVoiceHandoff *h)
+{ return !h->remaining && h->last.l == 0.0f && h->last.r == 0.0f; }
+
 static inline TsStereoFrame ts_voice_handoff_process(TsVoiceHandoff *h,
     TsStereoFrame input, int changed, uint32_t frames)
 {

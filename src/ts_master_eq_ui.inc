@@ -31,7 +31,7 @@ int ts_ui_master_eq_midi_target(const TsUiState *ui,int x,int y,char *target,siz
     else return 0;
     return 1;
 }
-static void master_eq_render(TsFramebuffer *fb,const TsUiState *ui)
+static void master_eq_render_impl(TsFramebuffer *fb,const TsUiState *ui)
 {
     if(!ui->master_eq_open || ui->mosaic_edit_choice || ui->portal.open ||
        ui->exit_confirm_open || ui->project_overwrite_confirm_open || ui->overdub_confirm_open ||
@@ -121,4 +121,12 @@ static void master_eq_render(TsFramebuffer *fb,const TsUiState *ui)
         midi_learn_tint(fb,20,340,104,26,midi_learn_target_state(&ui->config.midi_map,ui->midi_learn_pending,"sister.limiter"));
         midi_learn_tint(fb,328,337,182,29,midi_learn_target_state(&ui->config.midi_map,ui->midi_learn_pending,"main.master_output"));
     }
+}
+
+static void master_eq_render(TsFramebuffer *fb,const TsUiState *ui)
+{
+    if(!ui->master_eq_open) return;
+    uint64_t started=ts_profile_begin(TS_PROF_EQ_UI);
+    master_eq_render_impl(fb,ui);
+    ts_profile_end(TS_PROF_EQ_UI,started);
 }

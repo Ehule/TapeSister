@@ -1,3 +1,8 @@
+#include "tapesister/profile.h"
+#include "tapesister/ui_schedule.h"
+#if defined(__SSE2__)
+#include <xmmintrin.h>
+#endif
 #include "tapesister/sample.h"
 #include "tapesister/capture.h"
 #include "tapesister/capture_archive.h"
@@ -206,7 +211,7 @@ static int update_texture_damage(SDL_Texture *texture,
     previous = *snapshot_valid ? snapshot : NULL;
     if (!ts_render_damage_plan(framebuffer->pixels, previous,
                                TS_UI_WIDTH, TS_UI_HEIGHT, &damage))
-        return 1;
+        return 2; /* Valid texture, unchanged pixels: no upload/present needed. */
 
     for (int i = 0; i < damage.count; ++i) {
         const TsRenderDamageRect *rect = &damage.rects[i];
@@ -225,18 +230,22 @@ static int update_texture_damage(SDL_Texture *texture,
     return 1;
 }
 
-static void pace_frame_60hz(Uint64 started)
+/* MIDI arrives on its own producer thread; wake the main event queue instead
+   of polling it at render rate. No audio-callback work is dispatched here. */
+static Uint32 midi_wake_event;
+static void midi_wake_ui(void *unused)
 {
-    Uint64 frequency = SDL_GetPerformanceFrequency();
-    Uint64 elapsed = SDL_GetPerformanceCounter() - started;
-    Uint64 target = frequency / 60u;
-    if (frequency == 0u || elapsed >= target) return;
-    {
-        Uint64 remaining = target - elapsed;
-        Uint32 delay = (Uint32)((remaining * 1000u + frequency - 1u) /
-                                frequency);
-        if (delay > 0u) SDL_Delay(delay);
+    (void)unused;
+    if (midi_wake_event && midi_wake_event != (Uint32)-1) {
+        SDL_Event event; SDL_zero(event); event.type = midi_wake_event;
+        (void)SDL_PushEvent(&event);
     }
+}
+static int window_drawable(SDL_Window *window)
+{
+    if (!window) return 0;
+    Uint32 flags=SDL_GetWindowFlags(window);
+    return (flags & SDL_WINDOW_SHOWN) && !(flags & (SDL_WINDOW_MINIMIZED|SDL_WINDOW_HIDDEN));
 }
 
 enum { TS_RUNTIME_PATH_MAX = TS_CONFIG_PATH_MAX + 32 };
@@ -1049,6 +1058,14 @@ static int tracker_capture_frame_allowed(AudioState *audio)
 
 static void audio_callback(void *userdata, Uint8 *stream, int bytes)
 {
+    /* Subnormal tails are far below the output's noise floor but can make
+       older x86 CPUs dramatically slower. Restore the caller's FP mode. */
+#if defined(__SSE2__)
+    unsigned saved_mxcsr = _mm_getcsr();
+    _mm_setcsr(saved_mxcsr | 0x8040u);
+#endif
+    ts_profile_lane_begin(1);
+    uint64_t profile_callback = ts_profile_begin(TS_PROF_AUDIO);
     AudioState *audio = (AudioState *)userdata;
     float *out = (float *)stream;
     unsigned device_channels=audio->output_device_channels?audio->output_device_channels:2u;
@@ -1117,7 +1134,9 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         float fm_slew = audio->output_rate > 0 ? 1.0f / (0.005f * audio->output_rate) : 1.0f;
         audio->fm_output_gain += fmaxf(-fm_slew,
             fminf(fm_slew, audio->fm_output_target - audio->fm_output_gain));
+        uint64_t profile_voices = ts_profile_begin(TS_PROF_VOICES);
         runtime_note_render(audio, &buses, &synth_capture);
+        ts_profile_end(TS_PROF_VOICES, profile_voices);
         buses.fm.l *= audio->fm_output_gain;
         buses.fm.r *= audio->fm_output_gain;
         synth_capture.l *= audio->fm_output_gain;
@@ -1134,6 +1153,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             buses.tapehead.r = i + 1 < values ?
                 audio->live_link_buffer[i + 1] : buses.tapehead.l;
         }
+        uint64_t profile_tracker = ts_profile_begin(TS_PROF_TRACKER);
         if((i/2)%8192==0)embedded_block=ts_tapehead_render(
             (unsigned)SDL_min(frames-i/2,8192),(unsigned)audio->output_rate);
         audio->embedded_tracker_active=embedded_block!=NULL;
@@ -1141,6 +1161,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         audio->embedded_capture_flags=embedded_block?ts_tapehead_capture_flags(embedded_index):0;
         buses.tracker = embedded_block?(TsStereoFrame){embedded_block[embedded_index*2],embedded_block[embedded_index*2+1]}:
             ts_tracker_playback_read(&audio->tracker, audio->output_rate);
+        ts_profile_end(TS_PROF_TRACKER, profile_tracker);
         sister_sources.tracker = buses.tracker;
         sister_sources.fm = buses.fm;
         /* Notes already sounding before POWER retain their original voice
@@ -1149,8 +1170,10 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         sister_sources.external = buses.external;
         sister_sources.preview = buses.legacy_preview;
         sister_sources.tapehead = buses.tapehead;
+        uint64_t profile_sister = ts_profile_begin(TS_PROF_SISTER);
         sister_frame = ts_sister_runtime_process_frame(&audio->sister,
                                                         &sister_sources);
+        ts_profile_end(TS_PROF_SISTER, profile_sister);
         if(!audio->sister.enabled && !audio->sister.callback_failed) {
             /* Sister group notes remain live input when its tape is bypassed. */
             buses.tile_performance.l += sister_frame.keyboard_dry.l;
@@ -1252,7 +1275,9 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         }
         output = ts_audio_mixer_render_unclamped(&audio->mixer, &buses);
         output = audio_apply_topology_crossfade(audio, output);
+        uint64_t profile_master = ts_profile_begin(TS_PROF_MASTER);
         output = ts_sister_runtime_process_output(&audio->sister, output);
+        ts_profile_end(TS_PROF_MASTER, profile_master);
         /* Mosaic OUTPUT records exactly the stereo speaker program, including
            keyboard/sample voices, Prism, Sister/FX, Master EQ, limiter and OUT gain. */
         if(audio->record_bank_recorder && audio->record_source &&
@@ -1277,8 +1302,10 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         audio->last_output = output;
         audio->mixer.buses.output = output;
         ts_insert_write_output(&audio->sister.insert,out+(i/2)*device_channels,device_channels,output);
+        uint64_t profile_spatial = ts_profile_begin(TS_PROF_SPATIAL);
         ts_spatial_process(&audio->sister.spatial,output,out+(i/2)*device_channels,
             device_channels,audio->sister.insert.separate_send?0:audio->sister.insert.controls.send_pair);
+        ts_profile_end(TS_PROF_SPATIAL, profile_spatial);
     }
     ts_tracker_playback_end_block(&audio->tracker);
     ts_sister_runtime_end_audio_block(&audio->sister);
@@ -1335,6 +1362,11 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             values > 0 ? (uint32_t)((values + 1) / 2) : 0u,
             configuration);
     }
+    ts_profile_end(TS_PROF_AUDIO, profile_callback);
+    ts_profile_lane_end(1);
+#if defined(__SSE2__)
+    _mm_setcsr(saved_mxcsr);
+#endif
 }
 
 static int sync_live_link(SDL_AudioDeviceID device, AudioState *audio,
@@ -8725,6 +8757,9 @@ static int sync_external_input_consumers(SDL_AudioDeviceID *input_device,
 static int ts_audio_health_event(const SDL_Event *event, SDL_Window *main_window,
                                   AudioState *audio, TsUiState *ui);
 static void ts_audio_health_update(AudioState *audio, const TsUiState *ui);
+static int ts_audio_health_drawable(void);
+static void ts_audio_health_reset(AudioState *audio);
+static void ts_audio_health_report(AudioState *audio, char *report, size_t size);
 static void ts_audio_health_close(void);
 static void ts_audio_health_capture_setup(const AudioState *audio,
                                          const TsUiState *ui, Uint32 now);
@@ -13207,9 +13242,19 @@ int main(int argc, char **argv)
                                  strcmp(argv[1], "--diagnostic-bank-toggle-stress") == 0;
     int diagnostic_audio = argc > 1 &&
                            strcmp(argv[1], "--diagnostic-audio") == 0;
+    int diagnostic_performance = argc > 1 && !strcmp(argv[1], "--diagnostic-performance");
+    unsigned audit_seconds = diagnostic_performance && argc > 2 ? (unsigned)atoi(argv[2]) : 10u;
+    if (audit_seconds < 2u || audit_seconds > 600u) audit_seconds = 10u;
+    const char *audit_scenario = diagnostic_performance && argc > 3 ? argv[3] : "idle";
+    Uint32 audit_started = 0; int audit_measuring = 0;
     int diagnostic_failed = 0;
     int frame_snapshot_valid = 0;
     int window_minimized = 0;
+    SDL_Event pending_event;
+    int event_pending = 0;
+    Uint32 last_input_ms = 0, last_main_paint = 0, last_service_ms = 0;
+    int main_paint_invalid = 1;
+    uint64_t presented_detail_analysis[2] = {0};
     int renderer_vsync = 0;
     int running = 1;
     uint32_t last_audio_diagnostic_log = 0u;
@@ -13434,11 +13479,15 @@ int main(int argc, char **argv)
         return 1;
     }
     ts_fm_seed_sequence_init(&fm_seed_sequence, fm_session_seed_root());
+    ts_profile_init(SDL_GetPerformanceCounter, SDL_GetPerformanceFrequency());
+    ts_profile_enable(SDL_getenv("TAPESISTER_PROFILE") != NULL);
     audio.realtime_counter_frequency = SDL_GetPerformanceFrequency();
     audio.audio_health_started = SDL_GetTicks();
     {
         char midi_error[160];
+        midi_wake_event = SDL_RegisterEvents(1);
         ts_midi_input = ts_midi_input_create();
+        ts_midi_input_set_wake(ts_midi_input, midi_wake_ui, NULL);
         if (ts_midi_input == NULL)
             fprintf(stderr, "TapeSister MIDI: out of memory\n");
         else if (!ts_midi_input_configure(
@@ -13484,16 +13533,16 @@ int main(int argc, char **argv)
             diagnostic_log("renderer=%s flags=0x%x pacing=%s",
                            info.name != NULL ? info.name : "unknown",
                            (unsigned)info.flags,
-                           renderer_vsync ? "vsync" : "explicit-60hz");
+                           renderer_vsync ? "adaptive+vsync" : "adaptive-event-wait");
         } else {
-            diagnostic_log("renderer info unavailable pacing=explicit-60hz");
+            diagnostic_log("renderer info unavailable pacing=adaptive-event-wait");
         }
     }
     if (!window || !renderer || !texture) {
         fprintf(stderr, "Video setup failed: %s\n", SDL_GetError());
         running = 0;
     }
-    if (running && !diagnostic_bank_stress && !show_splash(renderer)) {
+    if (running && !diagnostic_bank_stress && !diagnostic_performance && !show_splash(renderer)) {
         SDL_DestroyTexture(texture);
         SDL_DestroyRenderer(renderer);
         SDL_DestroyWindow(window);
@@ -13562,11 +13611,11 @@ int main(int argc, char **argv)
     }
     SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
 
-    if (argc > 1 && !diagnostic_bank_stress && !diagnostic_audio) {
+    if (argc > 1 && !diagnostic_bank_stress && !diagnostic_audio && !diagnostic_performance) {
         load_instrument(device, &audio, &ui, &instrument,
                         &sample_pages, parked_instrument,
                         record_bank_active, argv[1]);
-    } else if (!diagnostic_bank_stress && !diagnostic_audio &&
+    } else if (!diagnostic_bank_stress && !diagnostic_audio && !diagnostic_performance &&
                ui.config.startup_welcome_sample) {
         char welcome_path[1024];
         if (runtime_asset_path("assets/tapesister_welcome.wav",
@@ -13644,10 +13693,36 @@ int main(int argc, char **argv)
         running = 0;
     }
 
+    if (diagnostic_performance && running) {
+        if (strstr(audit_scenario,"tracker")) {
+            ui.tracker_open=embedded_open(window,device,&audio,&ui,&sample_pages,&instrument,obtained.freq);
+            if(!ui.tracker_open){running=0;diagnostic_failed=1;}
+        }
+        if (strstr(audit_scenario,"loop")) {
+            char error[160];
+            if (!ts_instrument_create_basic(&instrument,TS_FM_WAVE_SINE,error,sizeof(error))) {
+                fprintf(stderr,"Audit sample: %s\n",error);running=0;diagnostic_failed=1;
+            } else {
+                if(device)SDL_LockAudioDevice(device);
+                audio.sample=&instrument.current;audio.position=0;audio.step=(double)instrument.current.sample_rate/obtained.freq;
+                audio.range_start=0;audio.range_end=instrument.current.frames;audio.loop_direction=1;
+                audio.looping=audio.playing=1;audio.bank_slot=-1;
+                if(device)SDL_UnlockAudioDevice(device);
+            }
+        }
+        if(strstr(audit_scenario,"hidden"))SDL_HideWindow(window);
+        audit_started=SDL_GetTicks();
+    }
+
     while (running) {
-        insert_sync(device,&input_device,&audio,&external_input,&ui);
+        ts_profile_lane_begin(0);
+        uint64_t profile_ui = ts_profile_begin(TS_PROF_UI);
+        uint64_t profile_control = ts_profile_begin(TS_PROF_CONTROL);
         SDL_Event event;
         Uint64 frame_started = SDL_GetPerformanceCounter();
+        int service_due = (Uint32)(SDL_GetTicks()-last_service_ms)>=TS_UI_ACTIVE_MS || main_paint_invalid;
+        if (service_due) {
+        insert_sync(device,&input_device,&audio,&external_input,&ui);
         (void)tapeCompanionPump(&companion_focus);
         /* Reader counts are atomic; retired immutable generations are owned
            and reclaimed by this controller thread, never by the callback. */
@@ -13712,7 +13787,17 @@ int main(int argc, char **argv)
 #if defined(TAPESISTER_HAS_ASIO)
         ts_asio_poll();
 #endif
-        while (SDL_PollEvent(&event)) {
+        }
+        ts_profile_end(TS_PROF_CONTROL, profile_control);
+        uint64_t profile_events = ts_profile_begin(TS_PROF_EVENTS);
+        while (event_pending ? (event = pending_event, event_pending = 0, 1) : SDL_PollEvent(&event)) {
+            if (event.type == SDL_KEYDOWN || event.type == SDL_KEYUP ||
+                event.type == SDL_MOUSEBUTTONDOWN || event.type == SDL_MOUSEBUTTONUP ||
+                event.type == SDL_MOUSEWHEEL || event.type == SDL_MOUSEMOTION ||
+                event.type == SDL_TEXTINPUT || event.type == midi_wake_event)
+                last_input_ms = SDL_GetTicks();
+            if (event.type == SDL_WINDOWEVENT && event.window.windowID == SDL_GetWindowID(window))
+                main_paint_invalid = 1;
             wheel_event_coalesce(&event);
             if (!wheel_event_prepare(&event)) continue;
             uint32_t event_id = event_window_id(&event);
@@ -17376,6 +17461,20 @@ int main(int argc, char **argv)
             sister_window.model.midi_activity = 0;
         }
 
+        ts_profile_end(TS_PROF_EVENTS, profile_events);
+        if (!service_due && !main_paint_invalid) {
+            /* A burst of MIDI/mouse events may wake us faster than 60 Hz.
+               Deliver input immediately, but do not rerun the controller or
+               paint on every notification. The next service deadline stands. */
+            ts_profile_end(TS_PROF_UI,profile_ui);
+            unsigned elapsed=(Uint32)(SDL_GetTicks()-last_service_ms);
+            uint64_t waited=ts_profile_begin(TS_PROF_WAIT);
+            if (elapsed<TS_UI_ACTIVE_MS) event_pending=SDL_WaitEventTimeout(&pending_event,(int)(TS_UI_ACTIVE_MS-elapsed));
+            ts_profile_end(TS_PROF_WAIT,waited);ts_profile_lane_end(0);
+            continue;
+        }
+        last_service_ms=SDL_GetTicks();
+        profile_control = ts_profile_begin(TS_PROF_CONTROL);
         /* Some window managers can drop the button-up event after a captured,
            warped drag. Never leave the resize gesture owning the pointer once
            SDL reports that the physical button is no longer down. */
@@ -17391,8 +17490,7 @@ int main(int argc, char **argv)
             end_canvas_gesture(window, device, &audio, &ui, &instrument, 0);
 
         {
-            int minimized_now =
-                (SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED) != 0u;
+            int minimized_now = !window_drawable(window);
             if (window_minimized && !minimized_now)
                 frame_snapshot_valid = 0;
             window_minimized = minimized_now;
@@ -17464,7 +17562,9 @@ int main(int argc, char **argv)
                      sizeof(sister_window.model.status), "ROLLING MEMORY CLEARED");
         }
         poll_fm_preview(device,&audio,&ui,&fm_preview);
+        uint64_t profile_tracker_ui = ts_profile_begin(TS_PROF_TRACKER_UI);
         tracker_refresh(device,&audio,&ui,&sample_pages,&instrument,obtained.freq,&sister_window);
+        ts_profile_end(TS_PROF_TRACKER_UI, profile_tracker_ui);
         keyboard_sequence_prepare(device,&audio,&ui,&instrument,&fm_preview,obtained.freq,0);
         poll_transform_worker(device, &audio, &ui, &instrument, &transform);
         mosaic_commit(device,&ui,&instrument,&mosaic);
@@ -17570,7 +17670,7 @@ int main(int argc, char **argv)
             TsSisterRoutingSnapshot routing = {0};
             uint32_t now = SDL_GetTicks();
             (void)ts_sister_runtime_get_snapshot(&audio.sister, &routing);
-            if (sister_window.model.visible &&
+            if (sister_window.model.visible && window_drawable(sister_window.window) &&
                 now - sister_window.last_model_sync_ms >= 33u) {
                 TsSisterSnapshot engine = {0};
                 TsSisterWaveSnapshot wave = {0};
@@ -17673,26 +17773,51 @@ int main(int argc, char **argv)
             ui.sister_portal_pressed =
                 hovered && (buttons & SDL_BUTTON_LMASK) != 0u;
         }
-        if (!window_minimized) {
+        ts_profile_end(TS_PROF_CONTROL, profile_control);
+        Uint32 schedule_now = SDL_GetTicks();
+        int editing = (Uint32)(schedule_now-last_input_ms)<250u || SDL_GetMouseState(NULL,NULL)!=0u;
+        int animated = ui.playback_active || ui.tracker_running || ui.sister_enabled ||
+            ui.sister_capture_active || ui.file_busy || ui.midi_activity_until_ms ||
+            (ui.mosaic && ui.mosaic->playing) || ui.capture_state==TS_CAPTURE_RECORDING ||
+            audio.live_link_available>0 || ts_input_monitor_enabled(audio.input_monitor);
+        unsigned paint_period = ts_ui_refresh_ms(!window_minimized, editing, animated);
+        if (!window_minimized && ts_ui_refresh_due(schedule_now,last_main_paint,paint_period,
+                main_paint_invalid || !frame_snapshot_valid)) {
+            int force_present=main_paint_invalid || !frame_snapshot_valid;
+            last_main_paint=schedule_now;main_paint_invalid=0;
+            uint64_t profile_paint = ts_profile_begin(TS_PROF_RENDER);
             native_waveform_prepare(renderer,waveform_details,main_waveform_detail_allowed(&ui));
             ts_ui_render(&framebuffer, &ui, &instrument);
-            if (update_texture_damage(texture, &framebuffer, frame_snapshot,
-                                      &frame_snapshot_valid)) {
+            ts_profile_end(TS_PROF_RENDER, profile_paint);
+            uint64_t profile_upload = ts_profile_begin(TS_PROF_UPLOAD);
+            int upload = update_texture_damage(texture, &framebuffer, frame_snapshot,
+                                                &frame_snapshot_valid);
+            int detail_changed=0;
+            for(int i=0;i<2;i++)detail_changed|=waveform_details[i].valid &&
+                waveform_details[i].analysis_count!=presented_detail_analysis[i];
+            if (upload && (upload==1 || force_present || detail_changed || animated || editing)) {
                 SDL_RenderCopy(renderer, texture, NULL, NULL);
                 native_waveform_copy(renderer,waveform_textures,waveform_details,&framebuffer);
+                for(int i=0;i<2;i++)presented_detail_analysis[i]=waveform_details[i].analysis_count;
+                ts_profile_end(TS_PROF_UPLOAD, profile_upload);
+                uint64_t profile_present = ts_profile_begin(TS_PROF_PRESENT);
                 SDL_RenderPresent(renderer);
-            }
+                ts_profile_end(TS_PROF_PRESENT, profile_present);
+            } else ts_profile_end(TS_PROF_UPLOAD,profile_upload);
         }
-        if (sister_window.model.visible && !sister_window.minimized &&
+        if (sister_window.model.visible && window_drawable(sister_window.window) &&
             sister_window.renderer != NULL && sister_window.texture != NULL &&
             (!sister_window.rendered_model_valid ||
              memcmp(&sister_window.model, &sister_window.rendered_model,
                     sizeof(sister_window.model)) != 0) &&
             SDL_GetTicks() - sister_window.last_present_ms >= 33u) {
+            uint64_t profile_sister_ui = ts_profile_begin(TS_PROF_SISTER_UI);
             native_waveform_prepare(sister_window.renderer,sister_window.waveform_details,
                 !sister_window.model.preset_manage_open && !sister_window.model.fallout_lfo_open);
             ts_sister_ui_render(&sister_window.framebuffer,
                                 &sister_window.model, &ui.palette);
+            ts_profile_end(TS_PROF_SISTER_UI, profile_sister_ui);
+            uint64_t profile_upload = ts_profile_begin(TS_PROF_UPLOAD);
             if (SDL_UpdateTexture(sister_window.texture, NULL,
                                   sister_window.framebuffer.pixels,
                                   TS_SISTER_UI_WIDTH *
@@ -17702,20 +17827,52 @@ int main(int argc, char **argv)
                                sister_window.texture, NULL, NULL);
                 native_waveform_copy(sister_window.renderer,sister_window.waveform_textures,
                     sister_window.waveform_details,&sister_window.framebuffer);
+                ts_profile_end(TS_PROF_UPLOAD, profile_upload);
+                uint64_t profile_present = ts_profile_begin(TS_PROF_PRESENT);
                 SDL_RenderPresent(sister_window.renderer);
+                ts_profile_end(TS_PROF_PRESENT, profile_present);
                 sister_window.rendered_model = sister_window.model;
                 sister_window.rendered_model_valid = 1;
                 sister_window.last_present_ms = SDL_GetTicks();
             }
         }
+        uint64_t profile_aux = ts_profile_begin(TS_PROF_AUX_UI);
         spatial_window_update(&ui);
         ts_audio_health_update(&audio, &ui);
+        ts_profile_end(TS_PROF_AUX_UI, profile_aux);
+        ts_profile_end(TS_PROF_UI, profile_ui);
+        ts_profile_lane_end(0);
         if (pending_file.active && !pending_file.presented)
             pending_file.presented = 1;
-        if (window_minimized || !renderer_vsync || !frame_snapshot_valid)
-            pace_frame_60hz(frame_started);
+        if (diagnostic_performance) {
+            Uint32 elapsed=SDL_GetTicks()-audit_started;
+            if (!audit_measuring && elapsed>=1000u) {
+                ts_profile_enable(1);ts_profile_reset();ts_audio_health_reset(&audio);
+                audit_started=SDL_GetTicks();audit_measuring=1;
+            } else if (audit_measuring && elapsed>=audit_seconds*1000u) {
+                char report[16384];ts_audio_health_report(&audio,report,sizeof(report));
+                printf("Performance audit scenario: %s\n%s\n",audit_scenario,report);
+                running=0;continue;
+            }
+        }
+        int any_visible = !window_minimized ||
+            (sister_window.model.visible && window_drawable(sister_window.window)) ||
+            ts_audio_health_drawable() ||
+            window_drawable(spatial_window.window);
+        unsigned service_ms = ts_ui_refresh_ms(any_visible, editing, animated);
+        if (sister_window.model.visible && window_drawable(sister_window.window) && service_ms>33u)
+            service_ms=33u;
+        if (window_drawable(spatial_window.window) && service_ms>33u) service_ms=33u;
+        Uint64 frequency=SDL_GetPerformanceFrequency();
+        unsigned spent=frequency?(unsigned)((SDL_GetPerformanceCounter()-frame_started)*1000u/frequency):0;
+        int wait_ms=spent<service_ms?(int)(service_ms-spent):0;
+        uint64_t profile_wait=ts_profile_begin(TS_PROF_WAIT);
+        if (wait_ms>0) event_pending=SDL_WaitEventTimeout(&pending_event,wait_ms);
+        ts_profile_end(TS_PROF_WAIT,profile_wait);
+        ts_profile_lane_end(0);
     }
 
+    ts_midi_input_destroy(ts_midi_input);ts_midi_input=NULL;midi_wake_event=0;
     if (ui.amplitude_gesture.active)
         end_amplitude_draw(device, &audio, &ui, &instrument, 1);
     if (ui.material_macro_gesture.active)
@@ -17790,7 +17947,7 @@ int main(int argc, char **argv)
                               &ui.config.sister_window_y);
     {
         char config_error[160];
-        if (!ts_config_save(&ui.config, config_file_path(),
+        if (!diagnostic_performance && !ts_config_save(&ui.config, config_file_path(),
                             config_error, sizeof(config_error)))
             fprintf(stderr, "TapeSister config save: %s\n", config_error);
     }

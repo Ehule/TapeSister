@@ -10,7 +10,7 @@ static void embedded_unlock(void *context) {
 }
 static void embedded_present(void *context,const uint32_t *pixels) {
     (void)context;
-    if(!embedded_host.renderer || !embedded_host.texture)return;
+    if(!embedded_host.renderer || !embedded_host.texture || !window_drawable(embedded_host.window))return;
     SDL_UpdateTexture(embedded_host.texture,NULL,pixels,632*(int)sizeof(uint32_t));
     /* Dialogs run the imported event loop. Present its framebuffer with the
        same 640x400 host transform as the normal workspace, including margins. */
@@ -65,7 +65,7 @@ static void tracker_refresh(SDL_AudioDeviceID device,AudioState *audio,TsUiState
     unsigned capturing=atomic_load(&audio->tracker_capture);
     if(sister && ts_performance_recorder_state(&sister->performance_recorder)==TS_PERFORMANCE_FILE_RECORDING)capturing=1;
     ts_tapehead_status(ui,capturing);
-    ts_tapehead_tick();
+    ts_tapehead_service(ui->tracker_open && window_drawable(embedded_host.window));
     ui->tracker_running=ts_tapehead_running();
     int action=ts_tapehead_action();
     if(action==TS_TH_CANVAS || action==TS_TH_TILES) {

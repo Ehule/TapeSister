@@ -1,3 +1,4 @@
+#include "tapesister/profile.h"
 #include "tapesister/sister_runtime.h"
 
 #include <float.h>
@@ -234,7 +235,7 @@ static void snapshot_atomic_init(TsSisterRoutingSnapshotAtomic *snapshot)
     atomic_init(&snapshot->fallout_preset_transition_active, 0);
 }
 
-static void publish_snapshot(TsSisterRuntime *runtime)
+static void publish_snapshot_impl(TsSisterRuntime *runtime)
 {
     TsSisterRoutingSnapshotAtomic *snapshot;
     uint64_t revision;
@@ -448,6 +449,13 @@ static void publish_snapshot(TsSisterRuntime *runtime)
                           transition_active, memory_order_relaxed);
     atomic_store_explicit(&snapshot->revision, revision + 2u,
                           memory_order_release);
+}
+
+static void publish_snapshot(TsSisterRuntime *runtime)
+{
+    uint64_t started = ts_profile_begin(TS_PROF_SNAPSHOT);
+    publish_snapshot_impl(runtime);
+    ts_profile_end(TS_PROF_SNAPSHOT, started);
 }
 
 static void publish_frame_snapshot(TsSisterRuntime *runtime)

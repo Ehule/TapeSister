@@ -33,6 +33,8 @@ typedef struct {
     char message[80];
 } TsAudioHealthWindow;
 static TsAudioHealthWindow ts_health;
+static int ts_audio_health_drawable(void)
+{ return ts_health.visible && window_drawable(ts_health.window); }
 
 /* Called on the UI thread while its existing voice-state lock is held. Copy
    small state only, at most 4 Hz while visible. No new audio-callback work, lock,
@@ -41,7 +43,7 @@ static void ts_audio_health_capture_setup(const AudioState *audio,
                                          const TsUiState *ui, Uint32 now)
 {
     TsAudioHealthSetup *s = &ts_health.setup;
-    if (!ts_health.visible || (s->valid && now - s->captured < 250u)) return;
+    if ((!ts_health.visible && !ts_profile_enabled()) || (s->valid && now - s->captured < 250u)) return;
     const TsSisterRuntime *r = &audio->sister;
     const TsSisterParameters *p = &r->parameters;
     s->hold = ui->keyboard_hold;
@@ -72,6 +74,7 @@ static void ts_audio_health_capture_setup(const AudioState *audio,
     s->mosaic = audio->mosaic && audio->mosaic->playing;
     s->tracker=audio->tracker.running?(audio->tracker.paused?2:1):0;
     s->tracker_row=audio->tracker.row<0?0:audio->tracker.row;
+    s->tracker_voices=0;
     for(int i=0;i<TS_TRACKER_LANES;++i)s->tracker_voices+=audio->tracker.lanes[i].voice.active;
     s->sister = r->enabled; s->rolling = r->rolling; s->tape_hold = r->held;
     s->monitor = r->monitor_enabled; s->sources = r->source_switches;
@@ -224,6 +227,7 @@ static void ts_audio_health_reset(AudioState *audio)
     ts_audio_health_native(&ts_health.driver_base, &ts_health.control_base,
                           &ts_health.worker_base, &ts_health.native_kind);
     ts_health.device_generation = audio->audio_health_generation;
+    ts_profile_reset();
     ts_health.seen_callbacks = 0;
     audio->audio_health_started = ts_health.last_callback = SDL_GetTicks();
     ts_health.last_update = 0;
@@ -279,6 +283,28 @@ static void ts_audio_health_report(AudioState *audio, char *report, size_t size)
         ts_health.native_kind == 1 ? "ASIO" : ts_health.native_kind == 2 ? "JACK worker" : "not exposed by this backend",
         ts_health.driver_reports, ts_health.control_skips, ts_health.worker_gaps,
         s->active_configuration);
+    size_t used = strlen(report);
+    if (used + 2 < size) { report[used++] = '\n'; ts_profile_report(report + used, size-used); }
+}
+
+static void ts_audio_profile_draw(TsFramebuffer *fb, uint32_t ink, uint32_t dim)
+{
+    TsProfileSnapshot s; ts_profile_snapshot(&s); char line[160];
+    snprintf(line,sizeof(line),"%.1F S  INCLUSIVE WALL TIME; AUDIO CHILDREN SAMPLED 1/32 BLOCKS",s.seconds);
+    cfg_text(fb,20,42,line,dim);
+    cfg_text(fb,20,58,"SUBSYSTEM",ink);
+    cfg_text(fb,276,58,"AVG MS",ink);cfg_text(fb,348,58,"PEAK MS",ink);
+    cfg_text(fb,428,58,"CALLS/S",ink);cfg_text(fb,508,58,"MS/S",ink);cfg_text(fb,566,58,"PARENT%",ink);
+    for(int i=0;i<TS_PROF_COUNT;i++) {
+        TsProfileValue *v=&s.value[i]; double ms=s.frequency?1000.0*v->ticks/s.frequency:0;
+        uint64_t parent=s.value[i>=TS_PROF_AUDIO?TS_PROF_AUDIO:TS_PROF_UI].ticks;
+        int y=73+i*10;cfg_text(fb,20,y,ts_profile_name((TsProfileId)i),ink);
+        snprintf(line,sizeof(line),"%.4F",v->calls?ms/v->calls:0);cfg_text(fb,276,y,line,dim);
+        snprintf(line,sizeof(line),"%.3F",s.frequency?1000.0*v->peak/s.frequency:0);cfg_text(fb,348,y,line,dim);
+        snprintf(line,sizeof(line),"%.0F",s.seconds?v->calls/s.seconds:0);cfg_text(fb,428,y,line,dim);
+        snprintf(line,sizeof(line),"%.1F",s.seconds?ms/s.seconds:0);cfg_text(fb,508,y,line,dim);
+        snprintf(line,sizeof(line),"%.1F",i==TS_PROF_WAIT?0:parent?100.0*v->ticks/parent:0);cfg_text(fb,566,y,line,dim);
+    }
 }
 
 static void ts_audio_health_draw(TsFramebuffer *fb, const TsUiState *ui,
@@ -297,7 +323,8 @@ static void ts_audio_health_draw(TsFramebuffer *fb, const TsUiState *ui,
     char line[160];
     cfg_rect(fb, 0, 0, 640, 400, 0xff1b191fu);
     cfg_frame(fb, 8, 8, 624, 384, 0xff242125u, accent);
-    cfg_text(fb, 20, 20, "AUDIO HEALTH", accent);
+    cfg_text(fb, 20, 20, ts_profile_enabled() ? "PERFORMANCE PROFILE" : "AUDIO HEALTH", accent);
+    if (ts_profile_enabled()) { ts_audio_profile_draw(fb, ink, dim); goto footer; }
     cfg_text(fb, 490, 20, state, active ? effect : dim);
     const char *driver = ts_native_current_driver();
     snprintf(line, sizeof(line), "%.16s / %.78s", driver ? driver : "NONE",
@@ -349,12 +376,15 @@ static void ts_audio_health_draw(TsFramebuffer *fb, const TsUiState *ui,
         snprintf(line, sizeof(line), "WORKER QUEUE GAPS %u", health_count(ts_health.worker_gaps));
     else snprintf(line, sizeof(line), "DROPOUT COUNTERS NOT EXPOSED BY THIS BACKEND");
     cfg_text(fb, 20, 327, line, ink);
-    cfg_text(fb, 20, 347, now < ts_health.message_until ? ts_health.message :
+footer:
+    cfg_text(fb, 20, ts_profile_enabled()?354:347, now < ts_health.message_until ? ts_health.message :
              "F12: OPEN/CLOSE    RESET STARTS A NEW MEASUREMENT", dim);
     cfg_frame(fb, 20, 367, 120, 19, 0xff1b191cu, edge);
     cfg_text(fb, 65, 373, "RESET", accent);
     cfg_frame(fb, 150, 367, 150, 19, 0xff1b191cu, edge);
     cfg_text(fb, 192, 373, "COPY REPORT", effect);
+    cfg_frame(fb, 310, 367, 180, 19, 0xff1b191cu, edge);
+    cfg_text(fb, 332, 373, ts_profile_enabled() ? "STOP PROFILE" : "START PROFILE", effect);
     cfg_frame(fb, 500, 367, 120, 19, 0xff1b191cu, edge);
     cfg_text(fb, 545, 373, "CLOSE", ink);
 }
@@ -434,10 +464,13 @@ static int ts_audio_health_event(const SDL_Event *event, SDL_Window *main_window
         if (y >= 367 && y < 386) {
             if (x >= 20 && x < 140) ts_audio_health_reset(audio);
             else if (x >= 150 && x < 300) {
-                char report[8192]; ts_audio_health_report(audio, report, sizeof(report));
+                char report[16384]; ts_audio_health_report(audio, report, sizeof(report));
                 snprintf(ts_health.message, sizeof(ts_health.message), "%s",
                     SDL_SetClipboardText(report) == 0 ? "AUDIO REPORT COPIED" : "COULD NOT COPY REPORT");
                 ts_health.message_until = SDL_GetTicks() + 2500u;
+                ts_health.last_update = 0;
+            } else if (x >= 310 && x < 490) {
+                ts_profile_enable(!ts_profile_enabled());
                 ts_health.last_update = 0;
             } else if (x >= 500 && x < 620) {
                 ts_health.visible = 0; SDL_HideWindow(ts_health.window);
@@ -452,8 +485,7 @@ static int ts_audio_health_event(const SDL_Event *event, SDL_Window *main_window
 
 static void ts_audio_health_update(AudioState *audio, const TsUiState *ui)
 {
-    if (!ts_health.visible || !ts_health.renderer ||
-        (SDL_GetWindowFlags(ts_health.window) & SDL_WINDOW_MINIMIZED)) return;
+    if (!ts_audio_health_drawable() || !ts_health.renderer) return;
     Uint32 now = SDL_GetTicks();
     if (ts_health.last_update && now - ts_health.last_update < 250u) return;
     ts_audio_health_sample(audio, now);
