@@ -18,7 +18,23 @@ static void master_eq_open(SDL_AudioDeviceID device,AudioState *audio,TsUiState 
     if(device)SDL_UnlockAudioDevice(device);
     ui->master_eq_rate=audio->output_rate>0?(unsigned)audio->output_rate:48000;
     ui->master_eq_open=1;ui->master_eq_drag=0;ui->master_eq_reset_pending=0;
+    ui->master_eq_presets_open=0;
     snprintf(ui->status,sizeof(ui->status),"MASTER EQ: ROOM / SYSTEM CORRECTION - LIMITER FOLLOWS EQ");
+}
+static void master_eq_spectrum_tick(AudioState *audio,TsUiState *ui,int visible,Uint32 now)
+{
+    TsEqSpectrum *s=&audio->sister.eq_spectrum;
+    int enabled=visible && ts_ui_master_eq_visible(ui) && !ui->master_eq_spectrum_off;
+    unsigned was_enabled=atomic_load_explicit(&s->request,memory_order_relaxed)&1u;
+    unsigned rate=audio->output_rate>0?(unsigned)audio->output_rate:48000;
+    ts_eq_spectrum_enable(s,enabled);
+    if(!enabled && !was_enabled && !ui->master_eq_spectrum.valid)return;
+    Uint32 elapsed=now-ui->master_eq_spectrum_tick;
+    if(!enabled || !was_enabled || ui->master_eq_spectrum.rate!=rate || elapsed>=100) {
+        if(!was_enabled)ts_eq_spectrum_clear(&ui->master_eq_spectrum,rate);
+        ts_eq_spectrum_poll(s,&ui->master_eq_spectrum,rate,elapsed/1000.f);
+        ui->master_eq_spectrum_tick=now;
+    }
 }
 static int master_eq_event(const SDL_Event *event,SDL_Window *window,
     SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,SisterWindow *sister)
@@ -64,7 +80,11 @@ static int master_eq_event(const SDL_Event *event,SDL_Window *window,
     if(event->type==SDL_KEYDOWN) {
         SDL_Keycode key=event->key.keysym.sym;
         if(ui->midi_learn_active)return 0;
-        if(key==SDLK_ESCAPE){ui->master_eq_open=0;ui->master_eq_drag=0;return 1;}
+        if(key==SDLK_ESCAPE) {
+            if(ui->master_eq_presets_open)ui->master_eq_presets_open=0;
+            else ui->master_eq_open=0;
+            ui->master_eq_drag=0;return 1;
+        }
         if(key==SDLK_TAB || key==SDLK_BACKQUOTE){ui->master_eq_open=0;return 0;}
         if(key==SDLK_SPACE){if(!event->key.repeat)stop_all(device,audio,ui);return 1;}
         if(event->key.keysym.mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI))return 0;
@@ -84,6 +104,19 @@ static int master_eq_event(const SDL_Event *event,SDL_Window *window,
         int rx,ry;wheel_event_mouse(event,&rx,&ry);logical_mouse(window,rx,ry,&x,&y);
         wheel=wheel_event_delta(event,0);
     } else if(event->type!=SDL_MOUSEBUTTONDOWN)return 0;
+    if(ui->midi_learn_active)ui->master_eq_presets_open=0;
+    if(ui->master_eq_presets_open) {
+        if(event->type==SDL_MOUSEBUTTONDOWN) {
+            int preset=ts_ui_master_eq_preset_at(x,y);
+            if(button==SDL_BUTTON_LEFT && preset>=0) {
+                ts_master_eq_preset(&ui->config.master_eq,preset);
+                master_eq_commit(device,audio,ui);
+                snprintf(ui->status,sizeof(ui->status),"EQ PRESET: %s - ADJUST BANDS TO TASTE",ts_master_eq_preset_name(preset));
+            }
+            ui->master_eq_presets_open=0;ui->master_eq_drag=0;ui->master_eq_reset_pending=0;
+        }
+        return 1;
+    }
     if(event->type==SDL_MOUSEBUTTONDOWN && y<32) {
         if(ts_ui_master_limiter_contains(x,y)){ui->master_eq_open=0;return 1;}
         ui->master_eq_open=0;return 0;
@@ -117,6 +150,13 @@ static int master_eq_event(const SDL_Event *event,SDL_Window *window,
     int fine=(SDL_GetModState()&KMOD_SHIFT)!=0;
     if(event->type==SDL_MOUSEBUTTONDOWN) {
         if(y>=44 && y<68) {
+            if(x>=224 && x<302 && button==SDL_BUTTON_LEFT) {
+                ui->master_eq_presets_open=1;ui->master_eq_drag=0;ui->master_eq_reset_pending=0;return 1;
+            }
+            if(x>=312 && x<388 && button==SDL_BUTTON_LEFT) {
+                ui->master_eq_spectrum_off=!ui->master_eq_spectrum_off;
+                ui->master_eq_reset_pending=0;return 1;
+            }
             if(x>=596){ui->master_eq_open=0;ui->master_eq_drag=0;return 1;}
             if(x>=484 && x<580) {
                 if(ui->master_eq_reset_pending){ts_master_eq_default(&ui->config.master_eq);changed=1;ui->master_eq_reset_pending=0;}

@@ -31,15 +31,25 @@ int ts_ui_master_eq_midi_target(const TsUiState *ui,int x,int y,char *target,siz
     else return 0;
     return 1;
 }
-static void master_eq_render_impl(TsFramebuffer *fb,const TsUiState *ui)
+int ts_ui_master_eq_preset_at(int x,int y)
 {
-    if(!ui->master_eq_open || ui->mosaic_edit_choice || ui->portal.open ||
+    if(x<230 || x>=436 || y<94 || y>=94+20*TS_EQ_PRESET_COUNT || (y-94)%20>=TS_CANVAS_CONTROLS_H)return -1;
+    return (y-94)/20;
+}
+int ts_ui_master_eq_visible(const TsUiState *ui)
+{
+    if(!ui->master_eq_open || ui->router_open || ui->mosaic_edit_choice || ui->portal.open ||
        ui->exit_confirm_open || ui->project_overwrite_confirm_open || ui->overdub_confirm_open ||
        ui->file_busy || ui->transform_open || ui->drone_open || ui->import_preview_open ||
        ui->load_selection_choice_open || ui->palette_open || ui->config_open ||
        ui->renaming_bank_slot>=0 || ui->renaming_recipe_slot>=0 || ui->export_choice_open ||
        ui->exchange_dialog!=TS_UI_EXCHANGE_NONE || ui->browser.mode!=TS_BROWSER_CLOSED ||
-       ui->fm_bank_choice_open || ui->fm_full_choice_open)return;
+       ui->fm_bank_choice_open || ui->fm_full_choice_open)return 0;
+    return 1;
+}
+static void master_eq_render_impl(TsFramebuffer *fb,const TsUiState *ui)
+{
+    if(!ts_ui_master_eq_visible(ui))return;
     const TsMasterEqControls *c=&ui->config.master_eq;
     const TsEqBand *b=&c->band[ui->master_eq_band];
     unsigned rate=ui->master_eq_rate?ui->master_eq_rate:48000;
@@ -48,12 +58,26 @@ static void master_eq_render_impl(TsFramebuffer *fb,const TsUiState *ui)
     frame(fb,10,38,620,341,RGB(29,27,32),PAL_BUTTON);
     text(fb,20,48,"MASTER / ROOM EQ",amber,1);
     if(c->solo_band)snprintf(label,sizeof(label),"SOLO %02d / CTRL-CLICK TO RESTORE",c->solo_band);
-    else snprintf(label,sizeof(label),"BUTTONS: BYPASS / CTRL-CLICK: SOLO");
+    else snprintf(label,sizeof(label),"PRESET: %s",ts_master_eq_preset_name(ts_master_eq_preset_match(c)));
     text(fb,20,62,label,c->solo_band?amber:muted,1);
+    button(fb,224,44,78,"PRESETS",ui->master_eq_presets_open);
+    button(fb,312,44,76,ui->master_eq_spectrum_off?"SPEC OFF":"SPEC ON",!ui->master_eq_spectrum_off);
     button(fb,396,44,78,c->enabled?"EQ ON":"EQ BYPASS",c->enabled);
     button(fb,484,44,96,ui->master_eq_reset_pending?"CONFIRM RESET":"RESET EQ",ui->master_eq_reset_pending);
     button(fb,596,44,24,"X",0);
     frame(fb,43,78,555,156,RGB(10,12,15),RGB(61,59,66));
+    if(!ui->master_eq_spectrum_off && ui->master_eq_spectrum.valid && ui->master_eq_spectrum.rate==rate) {
+        int previous_y=232;
+        for(int x=0;x<552;++x) {
+            double p=(double)x*(TS_EQ_SPECTRUM_POINTS-1)/551;
+            int i=(int)p,j=i<TS_EQ_SPECTRUM_POINTS-1?i+1:i;
+            float db=ui->master_eq_spectrum.db[i]+(ui->master_eq_spectrum.db[j]-ui->master_eq_spectrum.db[i])*(float)(p-i);
+            int y=79+(int)lrintf(-fmaxf(-96,fminf(0,db))*153/96);
+            rect(fb,44+x,y,1,233-y,RGB(20,45,48));
+            if(x)ui_line(fb,43+x,previous_y,44+x,y,RGB(56,115,124));
+            previous_y=y;
+        }
+    }
     const int hz[]={20,50,100,200,500,1000,2000,5000,10000,20000};
     for(int i=0;i<10;++i) {
         if(hz[i]>ts_master_eq_max_hz(rate))continue;
@@ -79,6 +103,14 @@ static void master_eq_render_impl(TsFramebuffer *fb,const TsUiState *ui)
         previous=y;
     }
     if(!c->enabled)rect(fb,44,155,552,1,amber);
+    text(fb,49,83,"EQ DB",amber,1);
+    if(!ui->master_eq_spectrum_off) {
+        text(fb,456,83,"POST EQ / DBFS",teal,1);
+        for(int db=0;db>=-96;db-=24) {
+            int y=79+(int)lrintf(-db*153/96.f);
+            snprintf(label,sizeof(label),"%d",db);text(fb,602,y-3,label,teal,1);
+        }
+    }
     for(int i=0;i<5;++i) {
         int x=eq_node_x(ui,i),y=eq_node_y(ui,i),selected=i==ui->master_eq_band;
         uint32_t color=!ts_master_eq_band_active(c,i)?muted:selected?amber:teal;
@@ -120,6 +152,14 @@ static void master_eq_render_impl(TsFramebuffer *fb,const TsUiState *ui)
         midi_learn_tint(fb,396,44,78,24,midi_learn_target_state(&ui->config.midi_map,ui->midi_learn_pending,"main.eq.bypass"));
         midi_learn_tint(fb,20,340,104,26,midi_learn_target_state(&ui->config.midi_map,ui->midi_learn_pending,"sister.limiter"));
         midi_learn_tint(fb,328,337,182,29,midi_learn_target_state(&ui->config.midi_map,ui->midi_learn_pending,"main.master_output"));
+    }
+    if(ui->master_eq_presets_open) {
+        frame(fb,220,72,226,208,RGB(29,27,32),teal);
+        text(fb,230,81,"EQ PRESETS",amber,1);mini_button(fb,412,76,24,"X",0);
+        int selected=ts_master_eq_preset_match(c);
+        for(int p=0;p<TS_EQ_PRESET_COUNT;++p)
+            mini_button(fb,230,94+p*20,206,ts_master_eq_preset_name(p),selected==p);
+        text(fb,230,263,"EQ ONLY - LIMITER / OUT KEPT",muted,1);
     }
 }
 

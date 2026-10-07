@@ -30,6 +30,51 @@ void ts_master_eq_sanitize(TsMasterEqControls *c)
         b->q=(float)clamp(b->q,.3,8,.70710678);
     }
 }
+const char *ts_master_eq_preset_name(int p)
+{
+    static const char *names[]={"FLAT","RUMBLE CUT","LESS BOOM","WARM",
+                               "PRESENCE","AIR","SOFTEN HIGHS","TELEPHONE"};
+    return p>=0 && p<TS_EQ_PRESET_COUNT?names[p]:"CUSTOM";
+}
+int ts_master_eq_preset(TsMasterEqControls *c,int p)
+{
+    if(!c || p<0 || p>=TS_EQ_PRESET_COUNT)return 0;
+    ts_master_eq_default(c);c->enabled=1;
+    switch(p) {
+    case TS_EQ_PRESET_RUMBLE_CUT:
+        c->band[0]=(TsEqBand){1,TS_EQ_HIGH_PASS,30,0,.70710678f};break;
+    case TS_EQ_PRESET_LESS_BOOM:
+        c->band[0]=(TsEqBand){1,TS_EQ_HIGH_PASS,30,0,.70710678f};
+        c->band[1]=(TsEqBand){1,TS_EQ_LOW_SHELF,150,-3,.70710678f};
+        c->band[2]=(TsEqBand){1,TS_EQ_BELL,250,-2,.8f};break;
+    case TS_EQ_PRESET_WARM:
+        c->band[0]=(TsEqBand){1,TS_EQ_LOW_SHELF,180,2,.70710678f};
+        c->band[4]=(TsEqBand){1,TS_EQ_HIGH_SHELF,5500,-2,.70710678f};break;
+    case TS_EQ_PRESET_PRESENCE:
+        c->band[0]=(TsEqBand){1,TS_EQ_HIGH_PASS,35,0,.70710678f};
+        c->band[1]=(TsEqBand){1,TS_EQ_LOW_SHELF,180,-1.5f,.70710678f};
+        c->band[3]=(TsEqBand){1,TS_EQ_BELL,2500,2,.7f};break;
+    case TS_EQ_PRESET_AIR:
+        c->band[4]=(TsEqBand){1,TS_EQ_HIGH_SHELF,9000,2,.70710678f};break;
+    case TS_EQ_PRESET_SOFTEN_HIGHS:
+        c->band[3]=(TsEqBand){1,TS_EQ_BELL,6500,-1.5f,.7f};
+        c->band[4]=(TsEqBand){1,TS_EQ_HIGH_SHELF,3500,-3,.70710678f};break;
+    case TS_EQ_PRESET_TELEPHONE:
+        c->band[0]=(TsEqBand){1,TS_EQ_HIGH_PASS,350,0,.70710678f};
+        c->band[2]=(TsEqBand){1,TS_EQ_BELL,1400,2,.9f};
+        c->band[4]=(TsEqBand){1,TS_EQ_LOW_PASS,3500,0,.70710678f};break;
+    default:break;
+    }
+    return 1;
+}
+int ts_master_eq_preset_match(const TsMasterEqControls *c)
+{
+    for(int p=0;p<TS_EQ_PRESET_COUNT;++p) {
+        TsMasterEqControls preset;ts_master_eq_preset(&preset,p);
+        if(!memcmp(c->band,preset.band,sizeof(c->band)))return p;
+    }
+    return -1;
+}
 int ts_master_eq_band_active(const TsMasterEqControls *c,int band)
 {
     if(band<0 || band>=TS_MASTER_EQ_BANDS)return 0;

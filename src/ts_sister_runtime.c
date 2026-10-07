@@ -563,6 +563,7 @@ void ts_sister_runtime_init(TsSisterRuntime *runtime)
     ts_capture_init(&runtime->capture);
     ts_sister_limiter_init(&runtime->limiter);
     ts_master_eq_init(&runtime->master_eq);
+    ts_eq_spectrum_init(&runtime->eq_spectrum);
     ts_router_init(&runtime->router);
     ts_insert_init(&runtime->insert);
     ts_spatial_init(&runtime->spatial);
@@ -1464,6 +1465,7 @@ TsStereoFrame ts_sister_runtime_process_output(TsSisterRuntime *runtime,
     float pre_peak = 0.0f;
     if (runtime == NULL) return ts_stereo_frame_sanitize(input);
     input = ts_master_eq_process(&runtime->master_eq, input);
+    ts_eq_spectrum_push(&runtime->eq_spectrum,input,runtime->master_eq.sample_rate);
     output = ts_sister_limiter_process(&runtime->limiter, input,
                                        NULL, &pre_peak);
     /* The global OUT fader is the final audible gain stage. The VU and FILE

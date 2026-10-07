@@ -19,7 +19,7 @@ add_library(tapesister_core src/ts_spatial.c src/ts_sample.c src/ts_prism.c src/
              src/ts_audio_lifecycle.c
              src/ts_realtime_diagnostics.c src/ts_profile.c
              src/ts_sister_effects.c src/ts_sister_fallout.c src/ts_sister_post_fx.c
-             src/ts_sister_limiter.c src/ts_master_eq.c src/ts_router.c src/ts_router_performance.c src/ts_insert.c
+             src/ts_sister_limiter.c src/ts_master_eq.c src/ts_eq_spectrum.c src/ts_router.c src/ts_router_performance.c src/ts_insert.c
              src/ts_sister_machine.c src/ts_sister_wave_snapshot.c
              src/ts_sister_runtime.c src/ts_sister_ui.c
              src/ts_sister_preset.c src/ts_sister_project_state.c

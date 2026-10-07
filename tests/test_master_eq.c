@@ -200,5 +200,97 @@ static void persistence_tests(void)
     assert(ts_master_eq_read(&loaded.master_eq,"MasterEq.Band.1","1,0,100,0,1junk")<0);
     remove("test-master-eq.state");ts_sister_runtime_free(&runtime);
 }
+static void preset_tests(void)
+{
+    for(int p=0;p<TS_EQ_PRESET_COUNT;++p) {
+        TsMasterEqControls c;assert(ts_master_eq_preset(&c,p));
+        assert(c.enabled && !c.solo_band && ts_master_eq_preset_match(&c)==p);
+        c.enabled=0;c.solo_band=2;assert(ts_master_eq_preset_match(&c)==p);
+        c.band[2].gain_db+=.1f;assert(ts_master_eq_preset_match(&c)==-1);
+        assert(ts_master_eq_preset(&c,p));
+        const unsigned rates[]={8000,44100,48000,96000};
+        for(unsigned r=0;r<4;++r)for(int k=0;k<100;++k) {
+            double hz=20*pow(ts_master_eq_max_hz(rates[r])/20.,k/99.);
+            double db=ts_master_eq_response_db(&c,rates[r],hz);assert(isfinite(db) && db<5);
+        }
+    }
+    TsMasterEqControls c;ts_master_eq_preset(&c,TS_EQ_PRESET_FLAT);
+    assert(ts_master_eq_response_db(&c,48000,1000)==0);
+    ts_master_eq_preset(&c,TS_EQ_PRESET_RUMBLE_CUT);assert(ts_master_eq_response_db(&c,48000,20)<-6);
+    ts_master_eq_preset(&c,TS_EQ_PRESET_LESS_BOOM);assert(ts_master_eq_response_db(&c,48000,150)<-2);
+    ts_master_eq_preset(&c,TS_EQ_PRESET_WARM);assert(ts_master_eq_response_db(&c,48000,80)>1);
+    ts_master_eq_preset(&c,TS_EQ_PRESET_PRESENCE);assert(ts_master_eq_response_db(&c,48000,2500)>1);
+    ts_master_eq_preset(&c,TS_EQ_PRESET_AIR);assert(ts_master_eq_response_db(&c,48000,16000)>1);
+    ts_master_eq_preset(&c,TS_EQ_PRESET_SOFTEN_HIGHS);assert(ts_master_eq_response_db(&c,48000,8000)<-2);
+    ts_master_eq_preset(&c,TS_EQ_PRESET_TELEPHONE);
+    assert(ts_master_eq_response_db(&c,48000,80)<-20 && ts_master_eq_response_db(&c,48000,12000)<-20);
+    TsMasterEqControls saved=c;assert(!ts_master_eq_preset(&c,-1) && !memcmp(&saved,&c,sizeof(c)));
+}
+static void spectrum_tone(TsEqSpectrum *s,unsigned rate,int bin,float right)
+{
+    for(int i=0;i<TS_EQ_SPECTRUM_FRAMES;++i) {
+        float x=.5f*sinf((float)(6.283185307179586*bin*i/TS_EQ_SPECTRUM_FRAMES));
+        ts_eq_spectrum_push(s,(TsStereoFrame){x,x*right},rate);
+    }
+}
+static void spectrum_tests(void)
+{
+    static TsEqSpectrum s;TsEqSpectrumView v;ts_eq_spectrum_init(&s);ts_eq_spectrum_clear(&v,48000);
+    spectrum_tone(&s,48000,85,1);assert(!atomic_load(&s.ready) && !s.fill);
+    const unsigned rates[]={8000,44100,48000,96000};
+    for(unsigned r=0;r<4;++r)for(int phase=0;phase<3;++phase) {
+        ts_eq_spectrum_enable(&s,1);ts_eq_spectrum_clear(&v,rates[r]);
+        spectrum_tone(&s,rates[r],85,phase==0?1:phase==1?-1:0);
+        assert(atomic_load(&s.ready));
+        TsStereoFrame first=s.samples[1];spectrum_tone(&s,rates[r],150,1);
+        assert(!memcmp(&s.samples[1],&first,sizeof(first))); /* Full mailbox never overwritten. */
+        assert(ts_eq_spectrum_poll(&s,&v,rates[r],.1f) && v.valid);
+        int peak=0;for(int i=1;i<TS_EQ_SPECTRUM_POINTS;++i)if(v.db[i]>v.db[peak])peak=i;
+        double hz=20*pow(ts_master_eq_max_hz(rates[r])/20.,peak/(double)(TS_EQ_SPECTRUM_POINTS-1));
+        assert(fabs(hz/(85.*rates[r]/TS_EQ_SPECTRUM_FRAMES)-1)<.025);
+        assert(fabs(v.db[peak]-(phase==2?-9.0309:-6.0206))<.05);
+        float level=v.db[peak];
+        assert(!ts_eq_spectrum_poll(&s,&v,rates[r],.1f) && v.db[peak]==level);
+        for(int n=0;n<TS_EQ_SPECTRUM_FRAMES;++n)ts_eq_spectrum_push(&s,(TsStereoFrame){0},rates[r]);
+        assert(ts_eq_spectrum_poll(&s,&v,rates[r],3));
+        for(int i=0;i<TS_EQ_SPECTRUM_POINTS;++i)assert(v.db[i]==TS_EQ_SPECTRUM_FLOOR_DB);
+        ts_eq_spectrum_enable(&s,0);ts_eq_spectrum_poll(&s,&v,rates[r],.1f);assert(!v.valid);
+    }
+    /* Reopen and rate changes discard queued/partial captures from the old epoch. */
+    ts_eq_spectrum_enable(&s,1);spectrum_tone(&s,48000,85,1);
+    ts_eq_spectrum_enable(&s,0);ts_eq_spectrum_enable(&s,1);
+    assert(!ts_eq_spectrum_poll(&s,&v,48000,.1f) && !v.valid && !atomic_load(&s.ready));
+    for(int i=0;i<1000;++i)ts_eq_spectrum_push(&s,(TsStereoFrame){1,1},48000);
+    ts_eq_spectrum_enable(&s,0);ts_eq_spectrum_enable(&s,1);
+    spectrum_tone(&s,44100,85,-1);assert(s.rate==44100 && !s.fill);
+    assert(!ts_eq_spectrum_poll(&s,&v,48000,.1f));
+    spectrum_tone(&s,48000,85,1);assert(ts_eq_spectrum_poll(&s,&v,48000,.1f));
+    for(int i=0;i<TS_EQ_SPECTRUM_FRAMES;++i)ts_eq_spectrum_push(&s,(TsStereoFrame){NAN,INFINITY},48000);
+    assert(ts_eq_spectrum_poll(&s,&v,48000,3));
+    for(int i=0;i<TS_EQ_SPECTRUM_POINTS;++i)assert(v.db[i]==TS_EQ_SPECTRUM_FLOOR_DB);
+}
+static void spectrum_output_isolation(void)
+{
+    static TsSisterRuntime reference,observed;
+    ts_sister_runtime_init(&reference);ts_sister_runtime_init(&observed);
+    assert(ts_sister_limiter_reconfigure(&reference.limiter,48000));
+    assert(ts_sister_limiter_reconfigure(&observed.limiter,48000));
+    ts_master_eq_prepare(&reference.master_eq,48000);ts_master_eq_prepare(&observed.master_eq,48000);
+    ts_eq_spectrum_enable(&observed.eq_spectrum,1);
+    TsEqSpectrumView view;ts_eq_spectrum_clear(&view,48000);
+    for(int i=0;i<48000;++i) {
+        if(i%6000==0) {
+            TsMasterEqControls c;assert(ts_master_eq_preset(&c,i/6000));
+            ts_master_eq_set(&reference.master_eq,&c);ts_master_eq_set(&observed.master_eq,&c);
+        }
+        TsStereoFrame input={.4f*sinf(i*.07f),-.5f*cosf(i*.31f)};
+        TsStereoFrame a=ts_sister_runtime_process_output(&reference,input);
+        TsStereoFrame b=ts_sister_runtime_process_output(&observed,input);
+        assert(!memcmp(&a,&b,sizeof(a)));
+        if(i%4800==4799)ts_eq_spectrum_poll(&observed.eq_spectrum,&view,48000,.1f);
+    }
+    assert(view.valid);
+    ts_sister_runtime_free(&reference);ts_sister_runtime_free(&observed);
+}
 int main(void)
-{ response_tests();stability_tests();transition_tests();solo_tests();output_tests();persistence_tests();puts("Master EQ response, stability, output protection and persistence passed.");return 0; }
+{ response_tests();stability_tests();transition_tests();solo_tests();output_tests();persistence_tests();preset_tests();spectrum_tests();spectrum_output_isolation();puts("Master EQ response, presets, stereo spectrum, output protection and persistence passed.");return 0; }

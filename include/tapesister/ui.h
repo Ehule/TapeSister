@@ -21,6 +21,7 @@
 #include "tapesister/exchange.h"
 #include "tapesister/cdp_portal.h"
 #include "tapesister/waveform_cache.h"
+#include "tapesister/eq_spectrum.h"
 #include "../../third_party/tapehead/transport_visuals.h"
 
 enum { TS_UI_WIDTH = 640, TS_UI_HEIGHT = 400 };
@@ -495,6 +496,9 @@ typedef struct {
     int master_output_dragging;
     int master_eq_open, master_eq_band, master_eq_drag, master_eq_reset_pending;
     unsigned master_eq_rate;
+    int master_eq_presets_open, master_eq_spectrum_off;
+    uint32_t master_eq_spectrum_tick;
+    TsEqSpectrumView master_eq_spectrum;
     int router_open, router_drag, router_drop, router_transition;
     int router_performance_open, router_slot, router_step, router_timer_stage;
     TsRouterControls router_live;
@@ -856,6 +860,8 @@ int ts_ui_keyboard_set_octave(TsUiState *ui, int octave);
 int ts_ui_keyboard_cycle_octave(TsUiState *ui, int amount);
 int ts_ui_keyboard_shift_semitone(TsUiState *ui, int amount);
 int ts_ui_master_eq_node(const TsUiState *ui,int x,int y);
+int ts_ui_master_eq_visible(const TsUiState *ui);
+int ts_ui_master_eq_preset_at(int x,int y);
 int ts_ui_master_eq_control(int x,int y);
 int ts_ui_master_eq_midi_target(const TsUiState *ui,int x,int y,char *target,size_t size);
 int ts_ui_master_limiter_contains(int x, int y);

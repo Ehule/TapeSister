@@ -4,13 +4,15 @@ static const char *performance_help(const TsUiState *ui,int x,int y)
 #define H(X,Y,W,H,T) if(x>=(X) && x<(X)+(W) && y>=(Y) && y<(Y)+(H))return (T)
     if(ui->router_open)return router_help(ui,x,y);
     if(ui->master_eq_open) {
+        H(224,44,78,24,"EQ PRESETS: LOAD A STARTING SHAPE; LIMITER, OUT, TILES AND EFFECTS STAY SET");
+        H(312,44,76,24,"LIVE STEREO SPECTRUM AFTER EQ, BEFORE LIMITER/OUT; RIGHT SCALE IS DBFS; TOGGLE OFF");
         H(528,340,88,25,"OPEN GLOBAL ROUTER; F9 ALSO OPENS/CLOSES ROUTING");
         H(396,44,78,24,"BYPASS ALL EQ BANDS FOR COMPARISON; YOUR SETTINGS ARE RETAINED");
         H(484,44,96,24,"RESET EQ: CLICK TWICE TO RESTORE FLAT BANDS AND BYPASS; LIMITER/OUT STAY SET");
         H(596,44,24,24,"CLOSE EQ; PROCESSING AND PLAYBACK CONTINUE");
         if(x>=35 && x<606 && y>=70 && y<245 && ts_ui_master_eq_node(ui,x,y)>=0)
             return "DRAG: FREQUENCY/GAIN; WHEEL: Q; SHIFT: FINE; MIDDLE: BYPASS; RIGHT: ZERO GAIN";
-        H(43,78,555,156,"COMBINED EQ RESPONSE; NUMBERED NODES SELECT BANDS; AMBER IS THE ACTIVE CURVE");
+        H(43,78,555,156,"AMBER: EQ RESPONSE (LEFT DB); TEAL: LIVE POST-EQ SPECTRUM (RIGHT DBFS)");
         for(int i=0;i<5;++i) {
             H(20+i*88,252,76,24,"CLICK: BAND BYPASS; CTRL-CLICK: SOLO THIS FILTER / RESTORE ALL BANDS");
         }
