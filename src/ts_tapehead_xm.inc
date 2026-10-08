@@ -1,9 +1,14 @@
-/* XM exchange uses TapeHead's decoder/replayer and portable host tile storage. */
+/* Module import and XM export use TapeHead's decoder/replayer and portable host tile storage. */
 #include "ft2_module_loader.h"
 #include "ft2_module_saver.h"
 #include "ft2_sysreqs.h"
 #include <stdarg.h>
+#include "tapesister/audio_import.h"
+#include "ts_tapehead_module_validate.inc"
 extern bool loadXM(FILE *,uint32_t);
+extern bool loadMOD(FILE *,uint32_t);
+extern bool loadSTK(FILE *,uint32_t);
+extern bool loadIT(FILE *,uint32_t);
 extern void tapeheadEmbeddedPendingLengths(const song_t *,uint16_t [32],int *);
 static char xm_message[256];
 void tapeheadEmbeddedXmError(const char *message){snprintf(xm_message,sizeof(xm_message),"%s",message);}
@@ -29,19 +34,36 @@ static void xm_clear_temporary(void) {
     memset(&songTmp,0,sizeof(songTmp));
     sampleLauncherBeginModuleLoad();fastTracksPOCBeginModuleLoad();
 }
-int ts_tapehead_xm_prepare(const char *path,TsSamplePages *staged,char *error,size_t size) {
+int ts_tapehead_module_prepare(const char *path,TsSamplePages *staged,char *error,size_t size) {
     if(!embed.initialized || !path || !staged)return fail(error,size,"Tracker is not initialized");
     memset(staged,0,sizeof(*staged));xm_clear_temporary();xm_message[0]=0;
     void (*previous_message)(const char *,...)=loaderMsgBox;loaderMsgBox=xm_loader_message;
     UNICHAR *filename=xm_path(path);FILE *f=filename?UNICHAR_FOPEN(filename,"rb"):NULL;free(filename);
-    if(!f){loaderMsgBox=previous_message;return fail(error,size,"Unable to open XM file");}
+    if(!f){loaderMsgBox=previous_message;return fail(error,size,"Unable to open module file");}
     fseek(f,0,SEEK_END);long length=ftell(f);rewind(f);
-    xmHdr_t header={0};size_t header_read=fread(&header,1,sizeof(header),f);rewind(f);
-    int ok=header_read==sizeof(header) && length>0 && (uint64_t)length<=UINT32_MAX && loadXM(f,(uint32_t)length);
+    TsModuleKind kind=ts_module_kind(path);
+    unsigned pattern_count=1;int ok=0,stk=0;
+    if(length>0 && (uint64_t)length<=UINT32_MAX) {
+        if(kind==TS_MODULE_XM) {
+            xmHdr_t header={0};size_t got=fread(&header,1,sizeof(header),f);rewind(f);
+            pattern_count=header.numPatterns;
+            ok=got==sizeof(header) && loadXM(f,(uint32_t)length);
+            if(xm_message[0])ok=0;
+        } else if(kind==TS_MODULE_MOD) {
+            ok=module_validate_mod(f,(uint32_t)length,&stk,xm_message,sizeof(xm_message));
+            if(ok){rewind(f);ok=stk?loadSTK(f,(uint32_t)length):loadMOD(f,(uint32_t)length);}
+        } else if(kind==TS_MODULE_IT) {
+            ok=module_validate_it(f,(uint32_t)length,&pattern_count,xm_message,sizeof(xm_message));
+            if(ok){rewind(f);ok=loadIT(f,(uint32_t)length);}
+        }
+    }
     if(ferror(f))ok=0;
     fclose(f);loaderMsgBox=previous_message;
-    if(!ok || xm_message[0]) {
-        fail(error,size,xm_message[0]?xm_message:"Invalid or truncated XM file");goto bad;
+    if(!ok) {
+        fail(error,size,xm_message[0]?xm_message:"Invalid or truncated module file");goto bad;
+    }
+    if(songTmp.numChannels<1 || songTmp.numChannels>32) {
+        fail(error,size,"Module exceeds 32 tracks");goto bad;
     }
     if(!ts_sample_pages_init(staged,error,size))goto bad;
     staged->active_live=0;
@@ -58,6 +80,8 @@ int ts_tapehead_xm_prepare(const char *path,TsSamplePages *staged,char *error,si
         if(!ins && !songTmp.instrName[a][0])continue;
         v->present=1;snprintf(v->name,sizeof(v->name),"%.22s",songTmp.instrName[a]);
         if(!ins)continue;
+        /* MOD loaders predate numSamples metadata; each instrument owns one sample. */
+        if(kind==TS_MODULE_MOD)ins->numSamples=ins->smp[0].length?1:0;
         sanitizeInstrument(ins);
         for(int k=0;k<16;++k)sanitizeSample(&ins->smp[k]);
         instrument_metadata(v,ins);
@@ -78,9 +102,9 @@ int ts_tapehead_xm_prepare(const char *path,TsSamplePages *staged,char *error,si
                 tuning.fine_tune_cents=(float)(1200*log2(exact_rate/sample.sample_rate));
             }
             snprintf(sample.name,sizeof(sample.name),"%.22s",s->name[0]?s->name:v->name);
-            if(!sample.name[0])snprintf(sample.name,sizeof(sample.name),"XM %02X SAMPLE %02X",a,k+1);
+            if(!sample.name[0])snprintf(sample.name,sizeof(sample.name),"%s %02X SAMPLE %02X",ts_module_kind_name(kind),a,k+1);
             sample.data=malloc(sample.frames*sizeof(float));
-            if(!sample.data){fail(error,size,"Unable to allocate XM sample");goto bad;}
+            if(!sample.data){fail(error,size,"Unable to allocate module sample");goto bad;}
             for(size_t j=0;j<sample.frames;++j)sample.data[j]=(s->flags&SAMPLE_16BIT)?
                 ((int16_t*)s->dataPtr)[j]/32768.0f:s->dataPtr[j]/128.0f;
             bank->selected_slot=slot;
@@ -97,11 +121,11 @@ int ts_tapehead_xm_prepare(const char *path,TsSamplePages *staged,char *error,si
     }
     /* Preserve empty patterns and all hidden channels; orders can refer to an
        empty pattern beyond the last physically stored pattern. */
-    int count=MAX(1,header.numPatterns);
-    for(int i=0;i<256;++i)if(patternTmp[i] || patternNumRowsTmp[i]!=64)count=i+1;
+    int count=MAX(1,pattern_count);
+    for(int i=0;i<256;++i)if(patternTmp[i] || patternNumRowsTmp[i]!=64)count=MAX(count,i+1);
     for(int i=0;i<t->order_count;++i)count=MAX(count,songTmp.orders[i]+1);
     size_t bytes=TH_HEADER+32*TH_LANE_BYTES+256+count*TH_PATTERN_BYTES+TH_PREFS_BYTES;
-    uint8_t *p=calloc(1,bytes);if(!p){fail(error,size,"Unable to allocate XM score");goto bad;}
+    uint8_t *p=calloc(1,bytes);if(!p){fail(error,size,"Unable to allocate module score");goto bad;}
     t->embedded_data=p;t->embedded_size=bytes;
     memcpy(p,"STH3",4);p[5]=t->channel_count;p[6]=tmpLinearPeriodsFlag;p+=8;
     put(&p,count,2);put(&p,t->bpm,2);put(&p,t->ticks_per_line,1);put(&p,64,1);
@@ -120,7 +144,7 @@ int ts_tapehead_xm_prepare(const char *path,TsSamplePages *staged,char *error,si
         TsTrackerPattern *native=t->patterns[i];
         for(int row=0;row<256;++row)for(int ch=0;ch<32;++ch) {
             note_t c=patternTmp[i]?patternTmp[i][row*32+ch]:(note_t){0};
-            if(c.note>97 || c.instr>128 || c.efx>35){fail(error,size,"Unsupported XM pattern command");goto bad;}
+            if(c.note>97 || c.instr>128 || c.efx>35){fail(error,size,"Unsupported module pattern command");goto bad;}
             put(&p,c.note,1);put(&p,c.instr,1);put(&p,c.vol,1);put(&p,c.efx,1);put(&p,c.efxData,1);put(&p,c.tuneType,1);put(&p,c.tuneData,1);
             TsTrackerCell *d=&native->cells[row][ch];
             if(c.note==97)d->note_kind=TS_TRACKER_NOTE_OFF;

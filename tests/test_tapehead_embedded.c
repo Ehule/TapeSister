@@ -851,6 +851,7 @@ static void suspended_tracker_refresh(void) {
     assert(test_ui->router_open && !tracker_sync_calls);test_ui->router_open=0;
 }
 #include "test_xm_exchange.inc"
+#include "test_module_import.inc"
 
 int main(int argc,char **argv) {
     SDL_SetHint(SDL_HINT_VIDEODRIVER,"dummy");assert(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER));
@@ -1001,6 +1002,8 @@ int main(int argc,char **argv) {
     shrink_dialog();
     suspended_tracker_refresh();
     xm_roundtrip();
+    module_imports();
+    raw_module_imports();
     ts_tapehead_close();ts_tracker_playback_free(&test_audio->tracker);ts_sister_runtime_free(&test_audio->sister);
     ts_tracker_edit_free(test_ui->tracker_edit);
     ts_sample_pages_free(test_pages);ts_instrument_free(test_bank);

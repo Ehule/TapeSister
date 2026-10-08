@@ -162,22 +162,22 @@ static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevi
     return consumed;
 }
 
-static int load_xm_instrument(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,
+static int load_module_instrument(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,
                               TsInstrument *instrument,TsSamplePages *pages,int record_active,const char *path) {
     char error[160];TsSamplePages staged={0};
     if(record_active || ui->mosaic_editing || pages->mosaic_bank || !pages->active_live ||
        audio->capture.state!=TS_CAPTURE_IDLE) {
-        snprintf(ui->status,sizeof(ui->status),"RETURN TO SAMPLE PAGES AND FINISH CAPTURE BEFORE IMPORTING XM");return 0;
+        snprintf(ui->status,sizeof(ui->status),"RETURN TO SAMPLE PAGES AND FINISH CAPTURE BEFORE IMPORTING A MODULE");return 0;
     }
     unsigned rate=audio->output_rate>0?(unsigned)audio->output_rate:48000;
     if(!embedded_open(embedded_host.window,device,audio,ui,pages,instrument,rate))return 0;
-    if(!ts_tapehead_xm_prepare(path,&staged,error,sizeof(error))) {
-        snprintf(ui->status,sizeof(ui->status),"XM IMPORT FAILED: %.130s",error);return 0;
+    if(!ts_tapehead_module_prepare(path,&staged,error,sizeof(error))) {
+        snprintf(ui->status,sizeof(ui->status),"%s IMPORT FAILED: %.125s",ts_module_kind_name(ts_module_kind(path)),error);return 0;
     }
     size_t first=pages->page_count,total=first+staged.page_count;
     TsInstrument **grown=total<=1024?malloc(total*sizeof(*grown)):NULL;
     if(!grown) {
-        ts_sample_pages_free(&staged);snprintf(ui->status,sizeof(ui->status),"XM IMPORT: SAMPLE PAGE LIMIT OR OUT OF MEMORY");return 0;
+        ts_sample_pages_free(&staged);snprintf(ui->status,sizeof(ui->status),"MODULE IMPORT: SAMPLE PAGE LIMIT OR OUT OF MEMORY");return 0;
     }
     memcpy(grown,pages->pages,first*sizeof(*grown));
     memcpy(grown+first,staged.pages,staged.page_count*sizeof(*grown));
@@ -197,7 +197,7 @@ static int load_xm_instrument(SDL_AudioDeviceID device,AudioState *audio,TsUiSta
     if(!embedded_open(embedded_host.window,device,audio,ui,pages,instrument,rate))return 0;
     ui->tracker_open=1;ui->mosaic_open=0;ui->load_bank_slot=-1;
     ts_ui_reset_parent_view(ui,instrument->parent.frames);
-    snprintf(ui->status,sizeof(ui->status),"IMPORTED XM: %u TRACKS / SAMPLES ON PAGES %u-%u",pages->tracker.channel_count,(unsigned)first+1,(unsigned)total);
+    snprintf(ui->status,sizeof(ui->status),"IMPORTED %s: %u TRACKS / PAGES %u-%u%s",ts_module_kind_name(ts_module_kind(path)),pages->tracker.channel_count,(unsigned)first+1,(unsigned)total,ts_module_kind(path)==TS_MODULE_IT?" - APPROXIMATE IT CONVERSION":"");
     return 1;
 }
 static int save_xm_song(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,

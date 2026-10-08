@@ -39,6 +39,14 @@ typedef enum {
     TS_AUDIO_IMPORT_RAW
 } TsAudioImportKind;
 
+typedef enum {
+    TS_MODULE_NONE = 0, TS_MODULE_XM, TS_MODULE_MOD, TS_MODULE_IT
+} TsModuleKind;
+/* Includes Amiga-style MOD.song filenames. This classifies the requested
+   import route; the module loader still validates the actual file contents. */
+TsModuleKind ts_module_kind(const char *path);
+const char *ts_module_kind_name(TsModuleKind kind);
+
 typedef struct {
     TsSample sample;
     TsTuning tuning;

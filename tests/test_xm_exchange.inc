@@ -36,7 +36,7 @@ static void xm_roundtrip(void) {
     size_t old_pages=test_pages->page_count;
     uint64_t hash=ts_sister_tracker_hash(&test_pages->tracker);
     TsSamplePages staged;
-    assert(ts_tapehead_xm_prepare("fixture-32.xm",&staged,test_error,sizeof(test_error)));
+    assert(ts_tapehead_module_prepare("fixture-32.xm",&staged,test_error,sizeof(test_error)));
     assert(ts_sister_tracker_hash(&test_pages->tracker)==hash);
     assert(staged.tracker.channel_count==32 && staged.tracker.pattern_count==2);
     assert(staged.tracker.patterns[1]->rows==17);
@@ -80,7 +80,7 @@ static void xm_roundtrip(void) {
     instr[1]->smp[1].tileCrossfade=1;
     assert(!ts_tapehead_xm_save("roundtrip-32.xm",test_error,sizeof(test_error)) && strstr(test_error,"crossfade"));
     instr[1]->smp[1].tileCrossfade=0; /* Failed export must leave the previous file intact. */
-    assert(ts_tapehead_xm_prepare("roundtrip-32.xm",&staged,test_error,sizeof(test_error)));
+    assert(ts_tapehead_module_prepare("roundtrip-32.xm",&staged,test_error,sizeof(test_error)));
     assert(staged.tracker.channel_count==32 && staged.tracker.patterns[0]->cells[1][31].note==72);
     assert(staged.tracker.instruments[1].sample_count==3 && staged.tracker.instruments[1].vol_flags==3);
     assert(staged.tracker.instruments[2].sample_count==0 && !staged.tracker.instruments[3].present);
@@ -94,25 +94,25 @@ static void xm_roundtrip(void) {
     assert(!strcmp(ts_browser_mode_extension(test_ui->browser.mode),".xm"));
     snapshot("xm-save-browser.bmp");ts_browser_close(&test_ui->browser);test_ui->tracker_open=1;
     /* Other frequency table, normal 8-track scores, and explicit rejection. */
-    xm_fixture("fixture-8.xm",8,1);assert(ts_tapehead_xm_prepare("fixture-8.xm",&staged,test_error,sizeof(test_error)));
+    xm_fixture("fixture-8.xm",8,1);assert(ts_tapehead_module_prepare("fixture-8.xm",&staged,test_error,sizeof(test_error)));
     assert(staged.tracker.channel_count==8 && staged.tracker.embedded_data[6]==0);ts_sample_pages_free(&staged);
     FILE *bad=fopen("fixture-8.xm","r+b");assert(bad);assert(fputc('?',bad)!=EOF);fclose(bad);
-    assert(!ts_tapehead_xm_prepare("fixture-8.xm",&staged,test_error,sizeof(test_error)));
+    assert(!ts_tapehead_module_prepare("fixture-8.xm",&staged,test_error,sizeof(test_error)));
     xm_fixture("fixture-8.xm",8,1);bad=fopen("fixture-8.xm","r+b");assert(bad);
     assert(!fseek(bad,336+7,SEEK_SET));assert(fputc(1,bad)!=EOF && fputc(0,bad)!=EOF);fclose(bad);
-    assert(!ts_tapehead_xm_prepare("fixture-8.xm",&staged,test_error,sizeof(test_error)));
+    assert(!ts_tapehead_module_prepare("fixture-8.xm",&staged,test_error,sizeof(test_error)));
     xm_fixture("fixture-8.xm",8,1);
     bad=fopen("fixture-8.xm","rb");assert(bad);
     FILE *short_sample=fopen("truncated-sample.xm","wb");assert(short_sample);
     /* Ends halfway through the second sample, beyond its valid header. */
     for(int j=0;j<336+9+80+9+263+120+512+512;++j){int c=fgetc(bad);assert(c!=EOF);assert(fputc(c,short_sample)!=EOF);}
     fclose(bad);fclose(short_sample);
-    assert(!ts_tapehead_xm_prepare("truncated-sample.xm",&staged,test_error,sizeof(test_error)));
+    assert(!ts_tapehead_module_prepare("truncated-sample.xm",&staged,test_error,sizeof(test_error)));
     FILE *f=fopen("truncated.xm","wb");assert(f);fwrite("Extended Module: ",17,1,f);fclose(f);
-    assert(!ts_tapehead_xm_prepare("truncated.xm",&staged,test_error,sizeof(test_error)));
+    assert(!ts_tapehead_module_prepare("truncated.xm",&staged,test_error,sizeof(test_error)));
     assert(ts_sister_tracker_hash(&test_pages->tracker)==hash);
     xm_fixture("too-wide.xm",33,0);
-    assert(!ts_tapehead_xm_prepare("too-wide.xm",&staged,test_error,sizeof(test_error)));
+    assert(!ts_tapehead_module_prepare("too-wide.xm",&staged,test_error,sizeof(test_error)));
     assert(strstr(test_error,"32 tracks") && ts_sister_tracker_hash(&test_pages->tracker)==hash);
     /* A new ordinary tile must never inherit imported envelopes or keymaps. */
     ts_sister_tracker_free(&test_pages->tracker);

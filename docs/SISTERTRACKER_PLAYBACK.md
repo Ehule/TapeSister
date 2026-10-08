@@ -31,7 +31,7 @@ Sister Machine pages. **Canvas** returns to the tile canvas. These buttons
 release held manual notes while tracker transport continues; Escape in the
 Sister window returns to the tracker.
 
-**Load** opens the normal host load page (audio, raw, XM, TSR or TSP); **Save**
+**Load** opens the normal host load page (audio, raw, XM/MOD/IT, TSR or TSP); **Save**
 opens a browser with **TSR Project** and **XM Song** tabs. **Config** opens tracker
 preferences; **Router** and Config's **Audio health** open the host panels.
 The 4×6 mini canvas replaces the instrument/sample lists and bank buttons.
@@ -95,7 +95,7 @@ moves. Reducing the track count hides those columns; their notes remain in the
 TSR project and return when the track count increases. Track count belongs to
 the song and is not a global default.
 
-## Importing and saving XM songs
+## Importing tracker songs and saving XM
 
 Choose an `.xm` file with **Load**, or drop it onto TapeSister. Import replaces
 the tracker score, adds its samples to new Sample pages, and opens TrackSister
@@ -113,6 +113,39 @@ counts gain one empty track to fit TapeHead's paired layout. TapeHead's tuning
 columns and LEN/CONTROL extensions are also read. Unsupported stereo/ADPCM
 extensions, excessive instrument/sample counts and malformed files report an
 error before replacing the score; they are not silently truncated.
+
+**MOD import** uses the bundled ProTracker/NoiseTracker converter, including
+15-sample SoundTracker files, StarTrekker FLT4/FLT8 and common multichannel MODs.
+Both `song.mod` and Amiga-style `MOD.song` names work. Patterns, order, effects,
+sample names, tuning, volume and loops become a TrackSister score and tiles.
+Playback uses the FT2 engine, so tracker-specific quirks may sound different.
+
+**IT import is an approximate conversion**, intended for bringing samples and
+editable patterns into TrackSister. It uses TapeHead's existing lossy IT loader;
+it is not a faithful Impulse Tracker player. IT new-note actions/voice overlap,
+filters, channel/global mixing defaults, pitch envelopes, some effect commands,
+wide note ranges, envelope details and note remapping can change or be lost.
+The browser and import status identify this limitation. Both sample mode and
+instrument mode work, with mono 8/16-bit PCM or IT 2.14/2.15 compressed samples.
+Files using tracks beyond 32, more than 128 instruments (or sample-mode samples),
+more than 16 mapped samples per instrument, patterns beyond 256 rows, stereo
+samples or unsupported encodings are rejected before changing the song. IT
+sample-mode files must have at most 128 samples; instrument-mode files may refer
+to a pool of up to 256. Converted songs can be saved as TSR projects or XM files.
+MOD/IT export is not provided.
+
+**Import as raw** is a checkbox below the Load file list (shortcut **R**). It is
+off each time a new browser session opens. Check it before opening any file,
+including XM, MOD, IT or an ordinary audio file, to interpret the entire file's
+bytes as one sample. This preserves the experimental concatenated/noisy sound,
+including the file headers and packed data; it does not render the song or
+extract its instruments. The existing preview offers encoding, byte order,
+mono/stereo, sample rate, byte offset, normalization, looping and selection.
+Raw starts as signed 8-bit mono at 44.1 kHz, with normalization on. It always
+opens the preview, including Shift+click, before importing into a tile. The
+tracker score stays unchanged. Uncheck the box for normal song import;
+drag-and-drop uses normal import. Damaged modules never silently fall back to
+raw; the checkbox remains available when that is the intended result.
 
 Click **Save → XM Song** to write the score and its currently bound samples as
 an XM. **TSR Project** remains the complete project format. XM export writes
