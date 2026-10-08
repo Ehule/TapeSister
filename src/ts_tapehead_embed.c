@@ -57,7 +57,7 @@ static struct {
     TsTapeHeadHost host;
     SDL_Cursor *host_cursor;int host_cursor_visible;
     atomic_int ready;
-    int initialized, action, lock_depth, loading;
+    int initialized, action, lock_depth, loading, sync_suspended;
     TsSisterTracker *model;
     uint64_t model_hash;
     TsPatternId ids[256];
@@ -353,6 +353,7 @@ int ts_tapehead_midi(const TsMidiEvent *event,int allow_on) {
 }
 void ts_tapehead_focus_lost(void) {
     if(!embed.initialized)return;
+    embed.sync_suspended=1;
     if(embed.host_cursor)SDL_SetCursor(embed.host_cursor);
     SDL_ShowCursor(embed.host_cursor_visible);
     if(editor.editTextFlag)exitTextEditing();
@@ -366,10 +367,13 @@ void ts_tapehead_focus_lost(void) {
     ts_tapehead_midi(&panic,0);
     memset(&keyb,0,sizeof(keyb));
 }
+void ts_tapehead_suspend_sync(void) { embed.sync_suspended=1; }
 void ts_tapehead_service(int draw) {
     if(!embed.initialized)return;
     if(!songPlaying)embed.live_edit=0;
-    ts_tapehead_host_lock();collect_tiles();ts_tapehead_host_unlock();
+    /* The retired list is UI-owned. Only inspecting active mixer voices
+       requires the audio lock, and an empty list has nothing to inspect. */
+    if(embed.retired) {ts_tapehead_host_lock();collect_tiles();ts_tapehead_host_unlock();}
     if(draw)eraseSprites();
     readKeyModifiers();setSyncedReplayerVars();
     handleLastGUIObjectDown();handleRecPlusExhaustion();handlePolyMatrixQHandoff();
@@ -515,7 +519,7 @@ const float *ts_tapehead_render(unsigned frames,unsigned rate) {
 
 static uint64_t hash_bytes(uint64_t h,const void *p,size_t n) {const uint8_t *b=p;while(n--){h^=*b++;h*=UINT64_C(1099511628211);}return h;}
 #define HASH(v) h=hash_bytes(h,&(v),sizeof(v))
-static int bind_tiles(TsSamplePages *pages,const TsInstrument *active,char *e,size_t size) {
+static int bind_tiles(TsSamplePages *pages,const TsInstrument *active,int *aliases_changed,char *e,size_t size) {
     TsSisterTracker *t=&pages->tracker;
     /* Register the active bank and populated visible tiles without reassigning
        existing aliases. A missing/deleted tile never resolves by slot number. */
@@ -527,7 +531,7 @@ static int bind_tiles(TsSamplePages *pages,const TsInstrument *active,char *e,si
     if(bank->bank[slot].occupied) {
         TsTileId id=bank->bank[slot].tile_id;int a=1;
         for(;a<=128 && t->aliases[a]!=id;++a);
-        if(a>128){for(a=1;a<=128 && t->aliases[a];++a);if(a<=128)t->aliases[a]=id;}
+        if(a>128){for(a=1;a<=128 && t->aliases[a];++a);if(a<=128){t->aliases[a]=id;*aliases_changed=1;}}
         if(a>128 && !pass && slot==active->selected_slot)return fail(e,size,"Tracker's 128 tile aliases are occupied");
         if(a<=128 && !pass && slot==active->selected_slot && embed.selected_tile!=id) {editor.curInstr=a;embed.selected_tile=id;ui.updatePosSections=true;updateInstrumentSwitcher();}
     }
@@ -657,6 +661,10 @@ import_failed:
 
 int ts_tapehead_export(TsSisterTracker *t,char *e,size_t n) {
     if(!embed.initialized || !t)return 1;
+    /* A host project loaded while this workspace was suspended is already
+       authoritative. Do not save the old embedded score over it; opening
+       the workspace will import it through sync before accepting edits. */
+    if(embed.model!=t || (embed.sync_suspended && ts_sister_tracker_hash(t)!=embed.model_hash))return 1;
     int count=0;uint8_t used[256]={0};
     used[editor.editPattern]=1;
     for(int i=0;i<song.songLength;++i)used[song.orders[i]]=1;
@@ -780,7 +788,7 @@ int ts_tapehead_sync(TsSamplePages *pages,const TsInstrument *active,unsigned ra
         ts_tapehead_host_lock();atomic_store(&embed.ready,0);
         if(!score_import(t,e,n)){ts_tapehead_host_unlock();return 0;}
         embed.follow=t->follow;embed.live_edit=embed.mark_valid=embed.pointer_mark=0;
-        embed.model=t;embed.model_hash=ts_sister_tracker_hash(t);memset(embed.tile_stamp,0,sizeof(embed.tile_stamp));
+        embed.model=t;h=ts_sister_tracker_hash(t);memset(embed.tile_stamp,0,sizeof(embed.tile_stamp));
         ts_tapehead_host_unlock();
     }
     if(rate && rate!=embed.rate) {
@@ -795,7 +803,10 @@ int ts_tapehead_sync(TsSamplePages *pages,const TsInstrument *active,unsigned ra
         embed.canvas_page=(pages->active_page*TS_BANK_SLOT_COUNT+(selected>=0?(size_t)selected:0))/CANVAS_TILES;
     embed.pages=pages;embed.active=active;embed.host_page=pages->active_page;
     if(embed.canvas_page>=canvas_view_count())embed.canvas_page=canvas_view_count()-1;
-    if(!bind_tiles(pages,active,e,n))return 0;
-    embed.model_hash=ts_sister_tracker_hash(t);atomic_store_explicit(&embed.ready,1,memory_order_release);
+    int aliases_changed=0;
+    if(!bind_tiles(pages,active,&aliases_changed,e,n))return 0;
+    embed.model_hash=aliases_changed?ts_sister_tracker_hash(t):h;
+    embed.sync_suspended=0;
+    atomic_store_explicit(&embed.ready,1,memory_order_release);
     return 1;
 }

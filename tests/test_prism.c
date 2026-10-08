@@ -337,6 +337,35 @@ static void check_lens_mixer(void)
     ts_prism_free(&p);
 }
 
+/* Period tracking must retain pitch and its sample-clock cadence across
+   ring wraps, bypass, channel changes and device rates. */
+static void check_period_history_wrap(void)
+{
+    const unsigned rates[]={8000,11025,48000,192000,768000};
+    for(unsigned r=0;r<sizeof(rates)/sizeof(rates[0]);++r) {
+        TsPrism p={0};unsigned rate=rates[r];assert(ts_prism_prepare(&p,rate));
+        TsPrismControls c=settings();c.lenses=2;c.drift=0;c.mix=1;
+        unsigned hop=(rate/47/TS_PRISM_HOP+1)*TS_PRISM_HOP;
+        for(int phase=0;phase<3;++phase) {
+            c.enabled=phase!=1;ts_prism_set_controls(&p,&c);
+            unsigned period=rate/(phase==2?317:220);
+            for(unsigned n=0;n<rate/(phase==1?2:5);++n) {
+                float x=.3f*sinf((float)(6.283185307179586*(n%period)/period));
+                TsStereoFrame input=phase==2?(TsStereoFrame){0,x}:(TsStereoFrame){x,0};
+                double before=p.window_target;uint64_t clock=p.clock;
+                TsStereoFrame out=ts_prism_process(&p,input);
+                assert(isfinite(out.l) && isfinite(out.r));
+                if(p.window_target!=before)assert(clock%hop==0);
+            }
+            if(c.enabled) {
+                double expected=2*period*fmax(1,floor(rate*.040/(2*period)+.5));
+                assert(fabs(p.window_target-expected)<1.5);
+            } else assert(p.wet==0);
+        }
+        ts_prism_free(&p);
+    }
+}
+
 #include "test_prism_shapes.inc"
 #include "test_prism_capacity.inc"
 #include "test_prism_performance.inc"
@@ -356,6 +385,7 @@ int main(void)
     check_prism_matrix();
     check_prism_matrix_live_timing();
     check_prism_glacial();
+    check_period_history_wrap();
     check_stream(44100); check_stream(48000); check_stream(96000);
     check_pitch_and_focus(44100); check_pitch_and_focus(48000); check_state();
     check_gain(); check_manual_geometry(); check_lens_mixer();

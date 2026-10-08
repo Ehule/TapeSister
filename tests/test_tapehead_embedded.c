@@ -2,9 +2,16 @@
 #undef NDEBUG
 #endif
 #define SDL_MAIN_HANDLED
+#include "tapesister/tapehead_embed.h"
+static unsigned tracker_sync_calls;
+static int counted_tracker_sync(TsSamplePages *pages,const TsInstrument *active,unsigned rate,char *e,size_t n) {
+    ++tracker_sync_calls;return ts_tapehead_sync(pages,active,rate,e,n);
+}
+#define ts_tapehead_sync counted_tracker_sync
 #define main tapesister_application_main
 #include "../src/main_sdl.c"
 #undef main
+#undef ts_tapehead_sync
 #include <assert.h>
 #include "../third_party/tapehead/application/src/ft2_fasttracks.h"
 #include "../third_party/tapehead/application/src/ft2_structs.h"
@@ -791,6 +798,46 @@ static void followup_canvas_palette(const char *image,const char *config_image,c
     }
 }
 
+static void suspended_tracker_refresh(void) {
+    audit_blank_song(64);
+    if(!test_ui->tracker_open)press(SDLK_F10,SDL_SCANCODE_F10,KMOD_NONE);
+    press(SDLK_F10,SDL_SCANCODE_F10,KMOD_NONE);
+    assert(!test_ui->tracker_open && !ts_tapehead_running());
+    tracker_sync_calls=0;
+    for(int i=0;i<120;++i)tracker_refresh(0,test_audio,test_ui,test_pages,test_bank,48000,NULL);
+    assert(!tracker_sync_calls);
+    /* A project definition replaced/edited while suspended must survive an
+       immediate save, including in-place edits to the embedded score. */
+    TsSisterTracker *t=&test_pages->tracker;
+    unsigned bpm=t->bpm==137?138:137;t->bpm=bpm;
+    t->embedded_data[10]=bpm;t->embedded_data[11]=0;
+    uint64_t hash=ts_sister_tracker_hash(t);
+    tracker_refresh(0,test_audio,test_ui,test_pages,test_bank,48000,NULL);
+    export_score();assert(ts_sister_tracker_hash(t)==hash);
+    assert(ts_sister_tracker_save_file(t,"suspended-tracker.tst",test_error,sizeof(test_error)));
+    TsSisterTracker saved;ts_sister_tracker_init(&saved);
+    assert(ts_sister_tracker_load_file(&saved,"suspended-tracker.tst",test_error,sizeof(test_error)));
+    assert(ts_sister_tracker_hash(&saved)==hash);ts_sister_tracker_free(&saved);remove("suspended-tracker.tst");
+    assert(!tracker_sync_calls);
+    /* Reopening imports that authoritative score before edits are accepted. */
+    press(SDLK_F10,SDL_SCANCODE_F10,KMOD_NONE);
+    assert(tracker_sync_calls==1 && editor.BPM==bpm && test_ui->tracker_open);
+    tracker_sync_calls=0;tracker_refresh(0,test_audio,test_ui,test_pages,test_bank,48000,NULL);
+    assert(tracker_sync_calls==1);
+    startPlaying(PLAYMODE_SONG,0);assert(ts_tapehead_running());
+    press(SDLK_F10,SDL_SCANCODE_F10,KMOD_NONE);assert(!test_ui->tracker_open);
+    tracker_sync_calls=0;
+    tracker_refresh(0,test_audio,test_ui,test_pages,test_bank,48000,NULL);
+    assert(tracker_sync_calls==1 && ts_tapehead_running());
+    assert(ts_tapehead_render(512,48000));
+    ts_tapehead_stop();tracker_sync_calls=0;
+    tracker_refresh(0,test_audio,test_ui,test_pages,test_bank,48000,NULL);
+    assert(!tracker_sync_calls);
+    /* Pending workspace actions still run while synchronization is parked. */
+    ts_tapehead_request(TS_TH_ROUTER);
+    tracker_refresh(0,test_audio,test_ui,test_pages,test_bank,48000,NULL);
+    assert(test_ui->router_open && !tracker_sync_calls);test_ui->router_open=0;
+}
 int main(int argc,char **argv) {
     SDL_SetHint(SDL_HINT_VIDEODRIVER,"dummy");assert(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER));
     test_window=SDL_CreateWindow("Embedded fixture",0,0,640,400,SDL_WINDOW_HIDDEN);assert(test_window);
@@ -938,6 +985,7 @@ int main(int argc,char **argv) {
     file_recording_feedback();
     tracker_follow_and_selection();
     shrink_dialog();
+    suspended_tracker_refresh();
     ts_tapehead_close();ts_tracker_playback_free(&test_audio->tracker);ts_sister_runtime_free(&test_audio->sister);
     ts_tracker_edit_free(test_ui->tracker_edit);
     ts_sample_pages_free(test_pages);ts_instrument_free(test_bank);

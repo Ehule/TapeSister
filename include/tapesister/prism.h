@@ -136,6 +136,7 @@ typedef struct {
     size_t capacity, write;
     uint32_t sample_rate;
     uint64_t clock;
+    unsigned analysis_hop, analysis_remaining;
     double window_frames, window_target, previous_window;
     float window_fade, window_fade_step;
     float pitch_smoothing;
