@@ -640,11 +640,15 @@ add_test(NAME tapesister_insert_tests COMMAND tapesister_insert_tests)
 # These DSP/core/project fixtures keep multiple instruments/runtimes alive
 # while processing or calling the real Save/Open path. Match the application's
 # Windows stack reserve; MinGW's default 2 MiB is too small for these fixtures.
+# Tracker fixtures also retain the 32-track score and multisample metadata
+# while the project loader stages its replacement instruments.
 if(MINGW)
   foreach(project_test IN ITEMS test_sister_post_fx
                                tapesister_realtime_controller_tests
                                tapesister_audio_health_tests
                                tapesister_tracker_controller_tests
+                               tapesister_sister_tracker_tests
+                               tapesister_tapehead_embedded_tests
                                tapesister_core_tests
                                tapesister_fm_directions_tests
                                tapesister_mosaic_controller_tests
