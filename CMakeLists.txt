@@ -562,6 +562,14 @@ if(TAPESISTER_BUILD_SDL)
     target_link_libraries(tapesister_keyboard_hold_tests PRIVATE rt)
   endif()
   add_test(NAME tapesister_keyboard_hold_tests COMMAND tapesister_keyboard_hold_tests)
+  add_executable(tapesister_native_waveform_tests tests/test_native_waveform_controller.c
+                 src/tape_link.c src/tape_companion.c src/ts_startup_diag.c src/ts_midi_input.c)
+  target_include_directories(tapesister_native_waveform_tests PRIVATE third_party)
+  target_link_libraries(tapesister_native_waveform_tests PRIVATE tapesister_core tapesister_tapehead SDL2::SDL2)
+  if(UNIX AND NOT APPLE)
+    target_link_libraries(tapesister_native_waveform_tests PRIVATE rt)
+  endif()
+  add_test(NAME tapesister_native_waveform_tests COMMAND tapesister_native_waveform_tests)
 endif()
 add_executable(tapesister_transform_tests tests/test_transform.c)
 target_link_libraries(tapesister_transform_tests PRIVATE tapesister_core)
@@ -643,6 +651,9 @@ if(MINGW)
                                test_sister_project_state
                                tapesister_sample_pages_tests
                                tapesister_keyboard_hold_tests
+                               tapesister_native_waveform_tests
+                               tapesister_render_efficiency_tests
+                               test_prism
                                tapesister_capture_tests
                                tapesister_midi_tests
                                tapesister_performance_tests

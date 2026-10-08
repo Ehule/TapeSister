@@ -31,7 +31,7 @@ static TsStereoFrame lerp_frame(TsStereoFrame a, TsStereoFrame b, float t)
 }
 
 static TsStereoFrame effect_mix(TsStereoFrame dry, TsStereoFrame wet,
-                                float amount)
+                                float amount, TsSisterFxMixCache *cache)
 {
     TsStereoFrame result;
     float dry_gain;
@@ -39,8 +39,14 @@ static TsStereoFrame effect_mix(TsStereoFrame dry, TsStereoFrame wet,
     amount = clampf(amount, 0.0f, 1.0f);
     if (amount <= 0.0f) return ts_stereo_frame_sanitize(dry);
     if (amount >= 1.0f) return ts_stereo_frame_sanitize(wet);
-    dry_gain = cosf(amount * (float)(M_PI * 0.5));
-    wet_gain = sinf(amount * (float)(M_PI * 0.5));
+    if (!cache->valid || cache->amount != amount) {
+        cache->amount = amount;
+        cache->dry_gain = cosf(amount * (float)(M_PI * 0.5));
+        cache->wet_gain = sinf(amount * (float)(M_PI * 0.5));
+        cache->valid = 1;
+    }
+    dry_gain = cache->dry_gain;
+    wet_gain = cache->wet_gain;
     result.l = dry.l * dry_gain + wet.l * wet_gain;
     result.r = dry.r * dry_gain + wet.r * wet_gain;
     return ts_stereo_frame_sanitize(result);
@@ -64,7 +70,7 @@ static TsStereoFrame effect_makeup(TsStereoFrame frame, float gain,
    replacement. Keep more of the immediate instrument through the middle of
    the control while still reaching exact dry and exact wet at the ends. */
 static TsStereoFrame reverb_effect_mix(TsStereoFrame dry, TsStereoFrame wet,
-                                       float amount)
+                                       float amount, TsSisterFxMixCache *cache)
 {
     TsStereoFrame result;
     float dry_gain;
@@ -72,8 +78,14 @@ static TsStereoFrame reverb_effect_mix(TsStereoFrame dry, TsStereoFrame wet,
     amount = clampf(amount, 0.0f, 1.0f);
     if (amount <= 0.0f) return ts_stereo_frame_sanitize(dry);
     if (amount >= 1.0f) return ts_stereo_frame_sanitize(wet);
-    dry_gain = cosf(amount * amount * (float)(M_PI * 0.5));
-    wet_gain = sinf(amount * (float)(M_PI * 0.5));
+    if (!cache->valid || cache->amount != amount) {
+        cache->amount = amount;
+        cache->dry_gain = cosf(amount * amount * (float)(M_PI * 0.5));
+        cache->wet_gain = sinf(amount * (float)(M_PI * 0.5));
+        cache->valid = 1;
+    }
+    dry_gain = cache->dry_gain;
+    wet_gain = cache->wet_gain;
     result.l = dry.l * dry_gain + wet.l * wet_gain;
     result.r = dry.r * dry_gain + wet.r * wet_gain;
     return ts_stereo_frame_sanitize(result);
@@ -905,7 +917,7 @@ static TsStereoFrame distortion_process(TsSisterPostFxEngine *engine,
     }
     wet = ts_stereo_frame_sanitize(wet);
     return effect_makeup(effect_mix(input, wet,
-        clampf(state->mix_current * active, 0.0f, 1.0f)),
+        clampf(state->mix_current * active, 0.0f, 1.0f), &state->mix_cache),
         state->gain_current, active);
 }
 
@@ -999,7 +1011,7 @@ static TsStereoFrame grain_process(TsSisterPostFxEngine *engine,
         ++state->history_frames;
 
     return effect_makeup(effect_mix(input, wet,
-        clampf(state->mix_current * active, 0.0f, 1.0f)),
+        clampf(state->mix_current * active, 0.0f, 1.0f), &state->mix_cache),
         state->gain_current, active);
 }
 
@@ -1151,7 +1163,7 @@ static TsStereoFrame delay_process(TsSisterPostFxEngine *engine,
     wet.l = tape_saturate(wet.l);
     wet.r = tape_saturate(wet.r);
     return effect_makeup(effect_mix(input, wet,
-        clampf(state->mix_current * active, 0.0f, 1.0f)),
+        clampf(state->mix_current * active, 0.0f, 1.0f), &state->mix_cache),
         state->gain_current, active);
 }
 
@@ -1318,7 +1330,7 @@ static TsStereoFrame reverb_process(TsSisterPostFxEngine *engine,
     wet = ts_stereo_frame_sanitize(wet);
     wet = read_handoff_apply(&state->read_handoff, wet);
     return effect_makeup(reverb_effect_mix(input, wet,
-        clampf(state->mix_current * active, 0.0f, 1.0f)),
+        clampf(state->mix_current * active, 0.0f, 1.0f), &state->mix_cache),
         state->gain_current, active);
 }
 

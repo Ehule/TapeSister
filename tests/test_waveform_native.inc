@@ -104,9 +104,15 @@ static void test_native_waveform_and_window(void)
         TsSisterUiHit hit=ts_sister_ui_hit_test_model(&sister.model,x,y);assert(hit.action==want.action);
     }
     sister_window_fullscreen(&sister,1);
-    assert(SDL_GetWindowFlags(sister.window)&SDL_WINDOW_FULLSCREEN_DESKTOP);
-    sister_window_fullscreen(&sister,0);
+    assert(sister.screen_filling);
+    SDL_Rect bounds;assert(!SDL_GetDisplayBounds(SDL_GetWindowDisplayIndex(sister.window),&bounds));
+    int filled_w,filled_h;SDL_GetWindowSize(sister.window,&filled_w,&filled_h);
+    assert(filled_w==bounds.w && filled_h==bounds.h);
     assert(!(SDL_GetWindowFlags(sister.window)&SDL_WINDOW_FULLSCREEN_DESKTOP));
+    sister_window_fullscreen(&sister,0);
+    assert(!sister.screen_filling);
+    SDL_GetWindowSize(sister.window,&filled_w,&filled_h);
+    assert(filled_w==2560 && filled_h==1600);
     SDL_DestroyTexture(sister.texture);SDL_DestroyRenderer(sister.renderer);SDL_DestroyWindow(sister.window);
     memset(&sister,0,sizeof(sister));ts_sample_free(&sample);ts_instrument_free(&instrument);
     puts("Native waveform detail, precise selection and filled Sister window checks passed");

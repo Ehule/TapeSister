@@ -120,6 +120,12 @@ typedef struct {
     float damping[2];
 } TsSisterReverbLine;
 
+/* Equal-power coefficients depend only on the smoothed wet amount. */
+typedef struct {
+    float amount, dry_gain, wet_gain;
+    int valid;
+} TsSisterFxMixCache;
+
 typedef struct {
     TsSisterReverbLine line[TS_SISTER_REVERB_LINES];
     uint32_t sample_rate;
@@ -141,6 +147,7 @@ typedef struct {
     float feedback_gain[TS_SISTER_REVERB_LINES];
     float feedback_decay_cached, feedback_size_cached;
     int feedback_valid;
+    TsSisterFxMixCache mix_cache;
 } TsSisterReverbState;
 
 typedef struct {
@@ -171,6 +178,7 @@ typedef struct {
     float gain_db_cached;
     float route_current;
     int has_history;
+    TsSisterFxMixCache mix_cache;
 } TsSisterDelayState;
 
 typedef struct {
@@ -187,6 +195,7 @@ typedef struct {
     float route_current;
     float drive_cached, tone_cached, drive_gain, tone_coefficient;
     int coefficients_valid;
+    TsSisterFxMixCache mix_cache;
 } TsSisterDistortionState;
 
 typedef struct {
@@ -220,6 +229,7 @@ typedef struct {
     float gain_target;
     float gain_db_cached;
     float route_current;
+    TsSisterFxMixCache mix_cache;
 } TsSisterGrainState;
 
 typedef struct {

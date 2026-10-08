@@ -8,6 +8,16 @@ static void render_workspace_frame(SDL_Renderer *renderer, SDL_Texture *base,
     assert(!SDL_UpdateTexture(base,NULL,fb->pixels,640*sizeof(uint32_t)));
     assert(!SDL_RenderCopy(renderer,base,NULL,NULL));
     native_waveform_copy(renderer,textures,details,fb);
+    /* A partial upload must produce the same native texture as a full upload,
+       including restoring the waveform under a departing playhead. */
+    for(int i=0;i<2;++i)if(details[i].valid) {
+        TsUiWaveformDetail *d=&details[i];
+        SDL_Rect region={d->output_x,d->output_y,d->width,d->height};
+        size_t bytes=(size_t)d->width*d->height*sizeof(uint32_t);
+        uint32_t *actual=malloc(bytes);assert(actual);
+        assert(!SDL_RenderReadPixels(renderer,&region,SDL_PIXELFORMAT_ARGB8888,actual,d->width*sizeof(uint32_t)));
+        assert(!memcmp(actual,d->pixels,bytes));free(actual);
+    }
     if(name) {
         int width,height;assert(!SDL_GetRendererOutputSize(renderer,&width,&height));
         uint32_t *pixels=malloc((size_t)width*height*sizeof(uint32_t));assert(pixels);
@@ -46,6 +56,14 @@ static void test_workspace_waveforms(void)
     SDL_Renderer *renderer=SDL_CreateRenderer(window,-1,SDL_RENDERER_SOFTWARE);assert(renderer);
     SDL_Texture *base=SDL_CreateTexture(renderer,SDL_PIXELFORMAT_ARGB8888,SDL_TEXTUREACCESS_STREAMING,640,400);assert(base);
     SDL_Texture *textures[2]={0};TsUiWaveformDetail details[2]={0};
+    ui.playback_active=1;ui.playhead_source=TS_AUDITION_CURRENT;ui.playhead_frames=source.frames;
+    for(int i=0;i<6;++i) {
+        ui.playhead_frame=2000+i*97;
+        render_workspace_frame(renderer,base,textures,details,&fb,&ui,&instrument,NULL);
+        if(i)assert(details[0].dirty_w<details[0].width/4);
+    }
+    assert(details[0].raster_count==1);
+    ui.playback_active=0;
     portal_init(&portal,&ui.portal);ui.portal.open=1;ui.portal.source=&source;ui.portal.result=&result;ui.portal.valid=1;
     snprintf(ui.portal.source_name,sizeof(ui.portal.source_name),"STEREO TEST");
     ts_portal_recipe_default(&ui.portal.recipe,ts_portal_process_find("modify.loudness.1"));
@@ -85,7 +103,7 @@ static void test_workspace_waveforms(void)
     assert(800/4==801/4);
     assert(portal_frame_from_pointer(&ui.portal.waves[0],window,801)>
            portal_frame_from_pointer(&ui.portal.waves[0],window,800));
-    SDL_Event e={0};e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=SDL_GetWindowID(window);
+    SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=SDL_GetWindowID(window);
     e.button.button=SDL_BUTTON_LEFT;e.button.x=801;e.button.y=300;
     assert(portal_event(&e,window,0,&audio,&ui,&instrument,&portal,&sister,48000,&transform));
     assert(ui.portal.drag_anchor==portal_frame_from_pointer(&ui.portal.waves[0],window,801));
@@ -112,7 +130,9 @@ static void test_workspace_waveforms(void)
     assert(ts_sample_hash(&source)==hash);
     /* Tab opens, hides and reopens fullscreen Sister, also over an FM/Portal workspace. */
     ui.config.sister_window_maximized=1;
-    e=(SDL_Event){0};e.type=SDL_KEYDOWN;e.key.keysym.sym=SDLK_TAB;e.key.windowID=SDL_GetWindowID(window);
+    /* Clear the entire union, including keyboard repeat/modifier fields; a
+       compound-literal union assignment need only copy its first member. */
+    SDL_zero(e);e.type=SDL_KEYDOWN;e.key.keysym.sym=SDLK_TAB;e.key.windowID=SDL_GetWindowID(window);
     assert(workspace_tab_event(&e,window,&sister,&ui));
     assert(sister.model.visible && !(SDL_GetWindowFlags(sister.window)&SDL_WINDOW_HIDDEN));
     for(int i=0;i<4;++i) {
@@ -122,7 +142,7 @@ static void test_workspace_waveforms(void)
         assert(!sister.model.visible && (SDL_GetWindowFlags(sister.window)&SDL_WINDOW_HIDDEN));
         ui.portal.open=0;ui.fm_open=1;e.key.windowID=SDL_GetWindowID(window);
         assert(workspace_tab_event(&e,window,&sister,&ui));
-        assert(sister.model.visible && (SDL_GetWindowFlags(sister.window)&SDL_WINDOW_FULLSCREEN_DESKTOP));
+        assert(sister.model.visible && sister.screen_filling);
     }
     e.key.windowID=sister.window_id;e.key.repeat=1;assert(workspace_tab_event(&e,window,&sister,&ui));assert(sister.model.visible);
     e.key.repeat=0;e.key.keysym.mod=KMOD_CTRL;assert(!workspace_tab_event(&e,window,&sister,&ui));

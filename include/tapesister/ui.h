@@ -365,6 +365,7 @@ typedef struct {
 typedef struct {
     uint32_t *pixels;
     uint32_t *coarse;
+    uint32_t *raster, *background, *presented;
     int *logical_x;
     TsWaveformColumn *columns;
     int width, height, valid;
@@ -375,6 +376,13 @@ typedef struct {
     uint8_t source_channels;
     int detect_zero_crossings;
     uint64_t source_revision, analysis_count;
+    uint32_t source_visual_revision;
+    uint64_t raster_analysis, raster_count;
+    uint32_t raster_colors[5];
+    size_t raster_selection_first, raster_selection_last;
+    double raster_padding;
+    int raster_mode, raster_selected, raster_valid, sample_raster, raster_changed;
+    int dirty_x, dirty_y, dirty_w, dirty_h;
 } TsUiWaveformDetail;
 
 int ts_ui_waveform_detail_resize(TsUiWaveformDetail *detail, int width, int height);

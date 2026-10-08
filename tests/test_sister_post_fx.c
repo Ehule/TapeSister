@@ -1148,8 +1148,39 @@ static void test_pre_is_recorded_post_is_not(void)
     ts_sister_runtime_free(&post);
 }
 
+static void test_mix_cache_matches_uncached(void)
+{
+    static TsSisterPostFxEngine cached, reference;
+    TsSisterFxControls c;ts_sister_fx_controls_default(&c);
+    assert(ts_sister_post_fx_init(&cached,48000));
+    assert(ts_sister_post_fx_init(&reference,48000));
+    c.transition=0;c.master_transition=0;
+    for(int section=0;section<8;++section) {
+        for(int slot=0;slot<4;++slot) {
+            c.slot[slot].mix=section==0?0:section==7?1:(float)((section+slot)%7)/6;
+            c.slot[slot].enabled=section!=4 || slot%2;
+            c.slot[slot].gain_db=section%3-1;
+        }
+        direct_set_controls(&cached,&c);direct_set_controls(&reference,&c);
+        for(int n=0;n<6000;++n) {
+            for(int slot=0;slot<4;++slot)for(int place=0;place<TS_SISTER_FX_LOCATION_COUNT;++place) {
+                reference.distortion[slot][place].mix_cache.valid=0;
+                reference.grain[slot][place].mix_cache.valid=0;
+                reference.delay[slot][place].mix_cache.valid=0;
+                reference.reverb[slot][place].mix_cache.valid=0;
+            }
+            TsStereoFrame input={.2f*sinf((section*6000+n)*.071f),.3f*cosf(n*.037f)};
+            TsStereoFrame a=ts_sister_post_fx_process(&cached,TS_SISTER_HEAD_COUNT,input,0);
+            TsStereoFrame b=ts_sister_post_fx_process(&reference,TS_SISTER_HEAD_COUNT,input,0);
+            assert(a.l==b.l && a.r==b.r);
+        }
+    }
+    ts_sister_post_fx_free(&cached);ts_sister_post_fx_free(&reference);
+}
+
 int main(void)
 {
+    test_mix_cache_matches_uncached();
     test_defaults_and_identity();
     test_explicit_slots_override_stale_legacy_fields();
     test_post_mix_makeup_gain_and_bypass();

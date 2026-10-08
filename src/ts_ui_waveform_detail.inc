@@ -8,6 +8,7 @@ void ts_ui_waveform_detail_free(TsUiWaveformDetail *d)
     if (!d) return;
     if (active_waveform_detail == d) active_waveform_detail = NULL;
     free(d->pixels); free(d->coarse); free(d->columns); free(d->logical_x);
+    free(d->raster); free(d->background); free(d->presented);
     memset(d, 0, sizeof(*d));
 }
 
@@ -21,9 +22,13 @@ static int detail_resize(TsUiWaveformDetail *d, int width, int height,
     TsUiWaveformDetail next = {0};
     next.pixels = malloc((size_t)width * height * sizeof(*next.pixels));
     next.coarse = malloc((size_t)logical_width * logical_height * sizeof(*next.coarse));
+    next.raster = malloc((size_t)width * height * sizeof(*next.raster));
+    next.background = malloc((size_t)logical_width * logical_height * sizeof(*next.background));
+    next.presented = malloc((size_t)logical_width * logical_height * sizeof(*next.presented));
     next.columns = malloc((size_t)width * sizeof(*next.columns));
     next.logical_x = malloc((size_t)width * sizeof(*next.logical_x));
-    if (!next.pixels || !next.coarse || !next.columns || !next.logical_x) {
+    if (!next.pixels || !next.coarse || !next.columns || !next.logical_x ||
+        !next.raster || !next.background || !next.presented) {
         ts_ui_waveform_detail_free(&next); return 0;
     }
     next.width = width; next.height = height;
@@ -44,14 +49,14 @@ void ts_ui_waveform_details_begin(TsUiWaveformDetail details[2], int width, int 
 {
     active_waveform_detail=details; active_detail_count=2;
     detail_output_width=width; detail_output_height=height;
-    for(int i=0;i<2;++i)details[i].valid=0;
+    for(int i=0;i<2;++i)details[i].valid=details[i].sample_raster=0;
 }
 
 void ts_ui_waveform_detail_begin(TsUiWaveformDetail *d)
 {
     active_waveform_detail = d; active_detail_count=1;
     detail_output_width=detail_output_height=0;
-    if (d) d->valid = 0;
+    if (d) d->valid = d->sample_raster = 0;
 }
 
 static void detail_plot(TsUiWaveformDetail *d, int x, int y, uint32_t color, double alpha)
@@ -142,18 +147,37 @@ static void detail_sample(TsFramebuffer *fb, int slot, int x, int y, int width, 
     TsUiWaveformDetail *d=detail_region(slot,x,y,width,height);
     if(!d)return;
     const TsSample *sample=request->sample;
+    d->sample_raster=1;
     if(d->source!=sample || d->source_data!=sample->data ||
        d->source_frames!=sample->frames || d->source_channels!=sample->channels ||
        d->detect_zero_crossings!=request->detect_zero_crossings ||
        d->first!=request->first || d->last!=request->last ||
-       d->source_revision!=request->revision) {
+       d->source_revision!=request->revision ||
+       d->source_visual_revision!=sample->visual_revision) {
         TsWaveformRequest native=*request;native.width=d->width;
         if(!ts_waveform_analyze_columns(d->columns,&native))return;
         d->source=sample;d->source_data=sample->data;d->source_frames=sample->frames;
         d->detect_zero_crossings=request->detect_zero_crossings;
         d->source_channels=sample->channels;d->first=request->first;d->last=request->last;
         d->source_revision=request->revision;++d->analysis_count;
+        d->source_visual_revision=sample->visual_revision;
     }
+    uint32_t colors[5]={left_color,right_color,selected_left,selected_right,PAL_VOLUME};
+    int reuse=d->raster_valid && d->raster_analysis==d->analysis_count &&
+        d->raster_mode==(int)mode && d->raster_padding==padding &&
+        d->raster_selected==selected && d->raster_selection_first==selection_first &&
+        d->raster_selection_last==selection_last &&
+        memcmp(d->raster_colors,colors,sizeof(colors))==0;
+    /* The logical background includes selection, loop shading and grid ink.
+       Checking it keeps all those controls live without re-rasterizing audio. */
+    for(int row=0;reuse && row<height;++row)
+        reuse=memcmp(d->background+row*width,fb->pixels+(y+row)*TS_UI_WIDTH+x,
+                     (size_t)width*sizeof(uint32_t))==0;
+    if(!reuse)d->raster_changed=1;
+    if(reuse) {d->valid=1;return;}
+    for(int row=0;row<height;++row)
+        memcpy(d->background+row*width,fb->pixels+(y+row)*TS_UI_WIDTH+x,
+               (size_t)width*sizeof(uint32_t));
     detail_background(d,fb);
     size_t span=request->last-request->first;
     double previous[2]={0,0};
@@ -198,13 +222,19 @@ static void detail_sample(TsFramebuffer *fb, int slot, int x, int y, int width, 
             detail_line(d,x,y-half,x,y+half,PAL_VOLUME);
         }
     }
-    d->valid=1;
+    memcpy(d->raster,d->pixels,(size_t)d->width*d->height*sizeof(uint32_t));
+    d->raster_analysis=d->analysis_count;d->raster_mode=mode;d->raster_padding=padding;
+    d->raster_selected=selected;d->raster_selection_first=selection_first;
+    d->raster_selection_last=selection_last;
+    memcpy(d->raster_colors,colors,sizeof(colors));
+    d->raster_valid=1;++d->raster_count;d->valid=1;
 }
 
 static void detail_capture_slot(const TsFramebuffer *fb, int slot)
 {
     TsUiWaveformDetail *d=active_waveform_detail && slot<active_detail_count?&active_waveform_detail[slot]:NULL;
     if (!d || !d->valid) return;
+    if (!d->sample_raster) d->raster_valid=0;
     for (int y=0; y<d->logical_height; ++y)
         memcpy(d->coarse+y*d->logical_width,fb->pixels+(d->y+y)*TS_UI_WIDTH+d->x,
                d->logical_width*sizeof(uint32_t));
@@ -214,6 +244,44 @@ int ts_ui_waveform_detail_finish(TsUiWaveformDetail *d, const TsFramebuffer *fb)
 {
     active_waveform_detail=NULL;
     if (!d || !d->valid || !fb) return 0;
+    d->dirty_x=d->dirty_y=0;d->dirty_w=d->width;d->dirty_h=d->height;
+    if(d->sample_raster) {
+        int left=d->width,right=-1,top=d->height,bottom=-1;
+        /* Compare overlays at logical resolution, then touch only their
+           changed native pixels. Restore a departing playhead from the
+           cached signal, never from an enlarged logical waveform. */
+        for(int ly=0;ly<d->logical_height;++ly) {
+            const uint32_t *row=fb->pixels+(d->y+ly)*TS_UI_WIDTH+d->x;
+            uint32_t *previous=d->presented+ly*d->logical_width;
+            if(!d->raster_changed && !memcmp(row,previous,d->logical_width*sizeof(uint32_t)))continue;
+            int first=(int)((2LL*ly*d->height+d->logical_height-1)/(2LL*d->logical_height));
+            int last=(int)((2LL*(ly+1)*d->height+d->logical_height-1)/(2LL*d->logical_height));
+            for(int lx=0;lx<d->logical_width;++lx) {
+                if(!d->raster_changed && row[lx]==previous[lx])continue;
+                int xfirst=(int)((2LL*lx*d->width+d->logical_width-1)/(2LL*d->logical_width));
+                int xlast=(int)((2LL*(lx+1)*d->width+d->logical_width-1)/(2LL*d->logical_width));
+                int overlay=row[lx]!=d->coarse[ly*d->logical_width+lx];
+                for(int py=first;py<last;++py)for(int px=xfirst;px<xlast;++px) {
+                    size_t at=(size_t)py*d->width+px;
+                    uint32_t color=overlay?row[lx]:d->raster[at];
+                    if(d->pixels[at]!=color) {
+                        d->pixels[at]=color;
+                        if(px<left)left=px;
+                        if(px>right)right=px;
+                        if(py<top)top=py;
+                        if(py>bottom)bottom=py;
+                    }
+                }
+            }
+            memcpy(previous,row,d->logical_width*sizeof(uint32_t));
+        }
+        if(!d->raster_changed) {
+            d->dirty_x=left;d->dirty_y=top;
+            d->dirty_w=right>=left?right-left+1:0;d->dirty_h=bottom>=top?bottom-top+1:0;
+        }
+        d->raster_changed=0;
+        return 1;
+    }
     /* Preserve every later control/label/playhead overlay at its original
        pixel scale; only the underlying signal is rendered at native detail. */
     for (int y=0; y<d->height; ++y) {
