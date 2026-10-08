@@ -2,6 +2,7 @@
 #undef NDEBUG
 #endif
 #define SDL_MAIN_HANDLED
+#define TAPEHEAD_EMBEDDED
 #include "tapesister/tapehead_embed.h"
 static unsigned tracker_sync_calls;
 static int counted_tracker_sync(TsSamplePages *pages,const TsInstrument *active,unsigned rate,char *e,size_t n) {
@@ -316,11 +317,11 @@ static void pattern_transport_controls(int extended_length) {
     click(390,44);assert(!ts_tapehead_running());
 }
 static void replayer_commands(void) {
-    TsSisterTracker *t=&test_pages->tracker;const unsigned record_size=7+256*8*7;
+    TsSisterTracker *t=&test_pages->tracker;const unsigned record_size=7+256*32*7;
     ts_tapehead_stop();
     /* Return from full view for original Play controls. */
     press(SDLK_BACKSPACE,SDL_SCANCODE_BACKSPACE,KMOD_CTRL|KMOD_ALT);
-    uint8_t *score=t->embedded_data,*record=score+52+80+256;
+    uint8_t *score=t->embedded_data,*record=score+52+320+256;
     score[18]=record[0];score[19]=score[20]=0;t->editor_pattern=pat()->id;t->editor_row=0;
     /* C00 silences the triggered note; C40 restores it through the real FX path. */
     record[7]=49;record[8]=1;record[9]=0;record[10]=12;record[11]=0;record[12]=record[13]=0;
@@ -328,22 +329,22 @@ static void replayer_commands(void) {
     click(390,25);assert(ts_tapehead_running());
     float out[512*2];audio_callback(test_audio,(Uint8*)out,sizeof(out));
     assert(fabsf(out[1000])+fabsf(out[1001])<1e-6f);ts_tapehead_stop();
-    score=t->embedded_data;record=score+52+80+256;record[11]=64;
+    score=t->embedded_data;record=score+52+320+256;record[11]=64;
     assert(ts_tapehead_sync(test_pages,test_bank,48000,test_error,sizeof(test_error)));click(390,25);
     audio_callback(test_audio,(Uint8*)out,sizeof(out));assert(out[1000]<-.001f && out[1001]>.001f);ts_tapehead_stop();
     /* Volume-column 10 is an explicit zero, not an empty field. */
-    score=t->embedded_data;record=score+52+80+256;record[9]=0x10;record[10]=record[11]=0;
+    score=t->embedded_data;record=score+52+320+256;record[9]=0x10;record[10]=record[11]=0;
     assert(ts_tapehead_sync(test_pages,test_bank,48000,test_error,sizeof(test_error)));click(390,25);
     audio_callback(test_audio,(Uint8*)out,sizeof(out));assert(fabsf(out[1000])+fabsf(out[1001])<1e-6f);ts_tapehead_stop();
     /* Two physical patterns in the order list use the original Song transport. */
-    score=t->embedded_data;record=score+52+80+256;uint8_t *second=record+record_size;
+    score=t->embedded_data;record=score+52+320+256;uint8_t *second=record+record_size;
     record[9]=0x50;record[1]=second[1]=2;record[2]=second[2]=0;
     ts_sister_tracker_pattern(t,(TsPatternId)(record[3]|record[4]<<8|record[5]<<16|record[6]<<24))->rows=2;
     ts_sister_tracker_pattern(t,(TsPatternId)(second[3]|second[4]<<8|second[5]<<16|second[6]<<24))->rows=2;
-    memset(second+7,0,256*8*7);second[7]=49;second[8]=1;second[9]=0x10;
+    memset(second+7,0,256*32*7);second[7]=49;second[8]=1;second[9]=0x10;
     score[14]=2;score[15]=0;score[16]=score[17]=score[51]=0;
     for(int lane=0;lane<8;++lane){score[52+lane*10]=score[53+lane*10]=0;score[54+lane*10]=0;}
-    uint8_t *orders=score+52+80;orders[0]=record[0];orders[1]=second[0];
+    uint8_t *orders=score+52+320;orders[0]=record[0];orders[1]=second[0];
     t->order_count=2;t->orders[0]=t->patterns[0]->id;t->orders[1]=t->patterns[1]->id;
     assert(ts_tapehead_sync(test_pages,test_bank,48000,test_error,sizeof(test_error)));click(390,9);
     audio_callback(test_audio,(Uint8*)out,sizeof(out));assert(out[1000]<-.001f);
@@ -372,10 +373,10 @@ static void mouse_click(int x,int y,int button) {
 }
 static void audit_blank_song(unsigned rows) {
     ts_tapehead_stop();export_score();TsSisterTracker *t=&test_pages->tracker;
-    uint8_t *s=t->embedded_data,*record=s+52+80+256;
+    uint8_t *s=t->embedded_data,*record=s+52+320+256;
     s[12]=1;s[14]=1;s[15]=s[16]=s[17]=s[19]=s[20]=0;s[18]=record[0];
-    s[24]=s[25]=1;s[26]=s[51]=0;s[52+80]=record[0];
-    record[1]=rows;record[2]=rows>>8;memset(record+7,0,256*8*7);
+    s[24]=s[25]=1;s[26]=s[51]=0;s[52+320]=record[0];
+    record[1]=rows;record[2]=rows>>8;memset(record+7,0,256*32*7);
     TsPatternId id=record[3]|(uint32_t)record[4]<<8|(uint32_t)record[5]<<16|(uint32_t)record[6]<<24;
     ts_sister_tracker_pattern(t,id)->rows=rows;t->editor_pattern=id;t->editor_row=0;t->ticks_per_line=1;
     for(int lane=0;lane<8;++lane) {uint8_t *l=s+52+lane*10;memset(l,0,10);l[3]=7;l[8]=1;}
@@ -489,12 +490,12 @@ static void tile_level_parity(void) {
         const unsigned global[]={64,64,64,64,64,64,32};
         for(unsigned c=0;c<7;++c) {
             audit_blank_song(64);
-            uint8_t *raw=test_pages->tracker.embedded_data+52+80+256+7;
+            uint8_t *raw=test_pages->tracker.embedded_data+52+320+256+7;
             for(unsigned lane=0;lane<voices[c];++lane) {
                 uint8_t *cell=raw+lane*7;
                 cell[0]=49;cell[1]=1;cell[2]=0x10+volumes[c];cell[3]=8;cell[4]=pans[c];
             }
-            raw[8*7+3]=16;raw[8*7+4]=global[c]; /* Gxx on the next row. */
+            raw[32*7+3]=16;raw[32*7+4]=global[c]; /* Gxx on the next row. */
             assert(ts_tapehead_sync(test_pages,test_bank,48000,test_error,sizeof(test_error)));
             click(390,27);assert(ts_tapehead_running());
             TsStereoFrame tracked=settled_output();
@@ -632,9 +633,9 @@ static void audit_controls(const char *config_image,const char *record_image) {
     for(int i=0;i<5;++i)assert(!crossings[i].sourceRow);
     /* Song Bounce crosses unequal pattern boundaries, reflecting only at song ends. */
     export_score();s=test_pages->tracker.embedded_data;
-    uint8_t *first=s+52+80+256,*second=first+7+256*8*7;assert(s[8]>=2);
+    uint8_t *first=s+52+320+256,*second=first+7+256*32*7;assert(s[8]>=2);
     first[1]=3;first[2]=0;second[1]=2;second[2]=0;s[14]=2;s[15]=0;
-    s[52+80]=first[0];s[52+80+1]=second[0];s[52]=s[53]=0;s[54]=FAST_TRACKS_MODE_SONG;s[55]=7;s[56]=2;
+    s[52+320]=first[0];s[52+320+1]=second[0];s[52]=s[53]=0;s[54]=FAST_TRACKS_MODE_SONG;s[55]=7;s[56]=2;
     s[19]=s[20]=0;
     assert(ts_tapehead_sync(test_pages,test_bank,48000,test_error,sizeof(test_error)));
     fastTracksPOCGetRuntimeState(&runtime);runtime.tracks[0].sourceOrder=0;runtime.tracks[0].sourceRow=0;
@@ -649,8 +650,19 @@ static void audit_controls(const char *config_image,const char *record_image) {
     export_score();s=test_pages->tracker.embedded_data;unsigned size=test_pages->tracker.embedded_size;
     assert(!ts_tracker_embedded_validate(s,size-1));uint8_t before=prefs()[32];prefs()[32]=255;
     assert(!ts_tracker_embedded_validate(s,size));prefs()[32]=before;
-    s[3]='1';s[56]=0;s[25]=0;s[29]=2;assert(ts_tracker_embedded_validate(s,size-128));
-    test_pages->tracker.embedded_size-=128;
+    unsigned count=s[8]|(s[9]<<8),old_record=7+256*8*7,new_record=7+256*32*7;
+    unsigned old_size=52+80+256+count*old_record;
+    uint8_t *legacy=calloc(1,old_size);assert(legacy);
+    memcpy(legacy,s,52);legacy[3]='1';legacy[5]=legacy[6]=0;legacy[25]=0;legacy[29]=2;
+    memcpy(legacy+52,s+52,80);legacy[56]=0;
+    memcpy(legacy+52+80,s+52+320,256);
+    for(unsigned i=0;i<count;++i) {
+        uint8_t *to=legacy+52+80+256+i*old_record,*from=s+52+320+256+i*new_record;
+        memcpy(to,from,7);
+        for(unsigned row=0;row<256;++row)memcpy(to+7+row*8*7,from+7+row*32*7,8*7);
+    }
+    assert(ts_tracker_embedded_validate(legacy,old_size));
+    free(s);test_pages->tracker.embedded_data=legacy;test_pages->tracker.embedded_size=old_size;
     assert(ts_tapehead_sync(test_pages,test_bank,48000,test_error,sizeof(test_error)));export_score();
     assert(prefs()[29]==0 && prefs()[28]==2); /* STH1 retains its own LEN and colors. */
     ts_sister_tracker_free(&test_pages->tracker);test_pages->tracker=saved;
@@ -659,8 +671,8 @@ static void audit_controls(const char *config_image,const char *record_image) {
 
 static void followup_interpolation(void) {
     audit_blank_song(16);
-    uint8_t *record=test_pages->tracker.embedded_data+52+80+256+7;
-    record[0]=49;record[1]=1;record[8*8*7]=61;record[8*8*7+1]=1;
+    uint8_t *record=test_pages->tracker.embedded_data+52+320+256+7;
+    record[0]=49;record[1]=1;record[8*32*7]=61;record[8*32*7+1]=1;
     assert(ts_tapehead_sync(test_pages,test_bank,48000,test_error,sizeof(test_error)));export_score();
     press(SDLK_HOME,SDL_SCANCODE_HOME,KMOD_NONE);
     for(int i=0;i<9;++i)press(SDLK_DOWN,SDL_SCANCODE_DOWN,KMOD_ALT);
@@ -681,19 +693,19 @@ static void followup_interpolation(void) {
     const SDL_Keycode keys[]={SDLK_v,SDLK_b,SDLK_t};
     const SDL_Scancode scans[]={SDL_SCANCODE_V,SDL_SCANCODE_B,SDL_SCANCODE_T};
     for(int kind=0;kind<3;++kind) {
-        audit_blank_song(9);uint8_t *raw=test_pages->tracker.embedded_data+52+80+256+7;
-        if(kind==0) {raw[2]=0x10;raw[8*8*7+2]=0x50;}
-        else if(kind==1) {raw[3]=raw[8*8*7+3]=8;raw[4]=0;raw[8*8*7+4]=255;}
-        else {raw[5]=raw[8*8*7+5]=0x16;raw[6]=0;raw[8*8*7+6]=255;}
+        audit_blank_song(9);uint8_t *raw=test_pages->tracker.embedded_data+52+320+256+7;
+        if(kind==0) {raw[2]=0x10;raw[8*32*7+2]=0x50;}
+        else if(kind==1) {raw[3]=raw[8*32*7+3]=8;raw[4]=0;raw[8*32*7+4]=255;}
+        else {raw[5]=raw[8*32*7+5]=0x16;raw[6]=0;raw[8*32*7+6]=255;}
         assert(ts_tapehead_sync(test_pages,test_bank,48000,test_error,sizeof(test_error)));export_score();
         press(SDLK_HOME,SDL_SCANCODE_HOME,KMOD_NONE);
         for(int i=0;i<9;++i)press(SDLK_DOWN,SDL_SCANCODE_DOWN,KMOD_ALT);
         press(keys[kind],scans[kind],KMOD_CTRL|KMOD_SHIFT);assert(ts_tapehead_interpolation_active());
         press(SDLK_RETURN,SDL_SCANCODE_RETURN,KMOD_NONE);assert(!ts_tapehead_interpolation_active());
-        raw=test_pages->tracker.embedded_data+52+80+256+7;
-        assert(raw[4*8*7+(kind==0?2:kind==1?4:6)]==(kind==0?0x30:128));
+        raw=test_pages->tracker.embedded_data+52+320+256+7;
+        assert(raw[4*32*7+(kind==0?2:kind==1?4:6)]==(kind==0?0x30:128));
         press(SDLK_z,SDL_SCANCODE_Z,KMOD_CTRL);
-        raw=test_pages->tracker.embedded_data+52+80+256+7;assert(!raw[4*8*7+(kind==0?2:kind==1?4:6)]);
+        raw=test_pages->tracker.embedded_data+52+320+256+7;assert(!raw[4*32*7+(kind==0?2:kind==1?4:6)]);
     }
     SDL_Event midi;SDL_zero(midi);midi.type=SDL_KEYDOWN;midi.key.windowID=SDL_GetWindowID(test_window);
     midi.key.keysym.sym=SDLK_m;midi.key.keysym.mod=KMOD_CTRL|KMOD_SHIFT;
@@ -784,11 +796,11 @@ static void followup_canvas_palette(const char *image,const char *config_image,c
     assert(test_pages->tracker.aliases[test_pages->tracker.embedded_data[22]]==test_bank->bank[1].tile_id);
     followup_interpolation();
     if(image) {
-        audit_blank_song(32);uint8_t *raw=test_pages->tracker.embedded_data+52+80+256+7;
+        audit_blank_song(32);uint8_t *raw=test_pages->tracker.embedded_data+52+320+256+7;
         const int slots[]={0,1,2,3};
         for(int lane=0;lane<4;++lane)for(int row=lane;row<32;row+=lane==2?2:4) {
             int a=1;while(a<=128 && test_pages->tracker.aliases[a]!=test_bank->bank[slots[lane]].tile_id)++a;
-            uint8_t *cell=raw+(row*8+lane)*7;cell[0]=lane==3?37+(row/4)%5:49;cell[1]=a;cell[2]=0x30+row%16;
+            uint8_t *cell=raw+(row*32+lane)*7;cell[0]=lane==3?37+(row/4)%5:49;cell[1]=a;cell[2]=0x30+row%16;
         }
         assert(ts_tapehead_sync(test_pages,test_bank,48000,test_error,sizeof(test_error)));
         fastTracksPOCSetMode(2,FAST_TRACKS_MODE_PATTERN);fastTracksPOCSetRatioIndex(2,8);
@@ -838,6 +850,8 @@ static void suspended_tracker_refresh(void) {
     tracker_refresh(0,test_audio,test_ui,test_pages,test_bank,48000,NULL);
     assert(test_ui->router_open && !tracker_sync_calls);test_ui->router_open=0;
 }
+#include "test_xm_exchange.inc"
+
 int main(int argc,char **argv) {
     SDL_SetHint(SDL_HINT_VIDEODRIVER,"dummy");assert(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER));
     test_window=SDL_CreateWindow("Embedded fixture",0,0,640,400,SDL_WINDOW_HIDDEN);assert(test_window);
@@ -898,16 +912,16 @@ int main(int argc,char **argv) {
     /* Retain song-wide LEN and raw volume/effect columns in the project. */
     uint8_t *score=test_pages->tracker.embedded_data;
     score[12]=1;test_pages->tracker.ticks_per_line=1;
-    uint8_t *record=score+52+80+256;
+    uint8_t *record=score+52+320+256;
     score[52]=3;score[62]=5;score[51]=2;
     /* Hidden-row raw volume slide, effect Pxx, M/N survive native mirroring. */
-    uint8_t *raw=record+7+(200*8+3)*7;
+    uint8_t *raw=record+7+(200*32+3)*7;
     raw[2]=0xa5;raw[3]=25;raw[4]=0x33;raw[5]=0x16;raw[6]=0xff;
     assert(ts_tapehead_sync(test_pages,test_bank,48000,test_error,sizeof(test_error)));
     assert(ts_tapehead_export(&test_pages->tracker,test_error,sizeof(test_error)));
-    score=test_pages->tracker.embedded_data;record=score+52+80+256;
+    score=test_pages->tracker.embedded_data;record=score+52+320+256;
     assert(score[52]==3 && score[62]==5 && score[51]==2);
-    raw=record+7+(200*8+3)*7;assert(raw[2]==0xa5&&raw[3]==25&&raw[4]==0x33&&raw[5]==0x16&&raw[6]==0xff);
+    raw=record+7+(200*32+3)*7;assert(raw[2]==0xa5&&raw[3]==25&&raw[4]==0x33&&raw[5]==0x16&&raw[6]==0xff);
     if(argc>2) {tracker_refresh(0,test_audio,test_ui,test_pages,test_bank,48000,NULL);snapshot(argv[2]);}
     /* Original marking and Ctrl+L block transport. */
     press(SDLK_HOME,SDL_SCANCODE_HOME,KMOD_NONE);
@@ -986,6 +1000,7 @@ int main(int argc,char **argv) {
     tracker_follow_and_selection();
     shrink_dialog();
     suspended_tracker_refresh();
+    xm_roundtrip();
     ts_tapehead_close();ts_tracker_playback_free(&test_audio->tracker);ts_sister_runtime_free(&test_audio->sister);
     ts_tracker_edit_free(test_ui->tracker_edit);
     ts_sample_pages_free(test_pages);ts_instrument_free(test_bank);

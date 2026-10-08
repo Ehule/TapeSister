@@ -219,7 +219,7 @@ static TsTrackerRegion tracker_scope(TsUiState *ui,int scope)
     TsTrackerRegion r=ts_tracker_edit_region(ui->tracker_edit,ui->tracker);
     const TsTrackerPattern *p=ts_sister_tracker_pattern_const(ui->tracker,ui->tracker->editor_pattern);
     if(scope==1 || scope==2) {r.row0=0;r.row1=p->rows-1;r.lane0=r.lane1=ui->tracker->editor_lane;}
-    if(scope==2){r.lane0=0;r.lane1=TS_TRACKER_LANES-1;}
+    if(scope==2){r.lane0=0;r.lane1=TS_TRACKER_LEGACY_LANES-1;}
     return r;
 }
 static void tracker_command(TsUiState *ui,int command,int scope,int whole)
@@ -229,7 +229,7 @@ static void tracker_command(TsUiState *ui,int command,int scope,int whole)
     TsTrackerRegion r=tracker_scope(ui,scope);ui->tracker_hex_digit=0;
     if(command==TRACKER_SELECT_LANE || command==TRACKER_SELECT_PATTERN) {
         e->anchor_row=0;e->anchor_lane=command==TRACKER_SELECT_PATTERN?0:t->editor_lane;
-        e->end_row=p->rows-1;e->end_lane=command==TRACKER_SELECT_PATTERN?TS_TRACKER_LANES-1:t->editor_lane;
+        e->end_row=p->rows-1;e->end_lane=command==TRACKER_SELECT_PATTERN?TS_TRACKER_LEGACY_LANES-1:t->editor_lane;
         e->selected_pattern=p->id;e->selected=1;return;
     }
     if(command==TRACKER_UNDO || command==TRACKER_REDO) {
@@ -458,7 +458,7 @@ static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevi
             if(sym==SDLK_UP || sym==SDLK_DOWN)t->editor_row=SDL_clamp((int)t->editor_row+(sym==SDLK_UP?-1:1),0,p->rows-1);
             else if(sym==SDLK_LEFT || sym==SDLK_RIGHT) {
                 if(mod&KMOD_SHIFT)t->editor_lane=SDL_clamp((int)t->editor_lane+(sym==SDLK_LEFT?-1:1),0,7);
-                else {int count=TS_TRACKER_LANES*TS_TRACKER_FIELD_COUNT,f=t->editor_lane*TS_TRACKER_FIELD_COUNT+ui->tracker_field;
+                else {int count=TS_TRACKER_LEGACY_LANES*TS_TRACKER_FIELD_COUNT,f=t->editor_lane*TS_TRACKER_FIELD_COUNT+ui->tracker_field;
                     f=(f+(sym==SDLK_LEFT?-1:1)+count)%count;t->editor_lane=f/TS_TRACKER_FIELD_COUNT;ui->tracker_field=f%TS_TRACKER_FIELD_COUNT;}
             } else if(sym==SDLK_PAGEUP || sym==SDLK_PAGEDOWN)t->editor_row=SDL_clamp((int)t->editor_row+(sym==SDLK_PAGEUP?-g.rows:g.rows),0,p->rows-1);
             else t->editor_row=sym==SDLK_HOME?0:p->rows-1;
@@ -627,7 +627,7 @@ static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevi
     } else if(y>=g.mix_y && y<g.mix_y+10 && x>=TS_TRACKER_LANE_X && x<TS_TRACKER_LANE_RIGHT) {
         int lane=(x-TS_TRACKER_LANE_X)/TS_TRACKER_LANE_WIDTH,local=(x-TS_TRACKER_LANE_X)%TS_TRACKER_LANE_WIDTH;
         if(local>=2 && local<12)t->lanes[lane].muted=!t->lanes[lane].muted;
-        else if(local>=14 && local<24){ui->tracker_solo^=(uint8_t)(1u<<lane);if(device)SDL_LockAudioDevice(device);
+        else if(local>=14 && local<24){ui->tracker_solo^=(uint32_t)(1u<<lane);if(device)SDL_LockAudioDevice(device);
             ts_tracker_playback_solo(&audio->tracker,ui->tracker_solo);if(device)SDL_UnlockAudioDevice(device);}
         else if(local>=49){float trim=t->lanes[lane].trim+delta*.1f;t->lanes[lane].trim=fmaxf(0,fminf(2,trim));}
     } else if(y>=g.grid_y && y<g.bottom && x>=TS_TRACKER_LANE_X && x<TS_TRACKER_LANE_RIGHT) {

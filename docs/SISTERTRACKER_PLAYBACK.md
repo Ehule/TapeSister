@@ -31,8 +31,8 @@ Sister Machine pages. **Canvas** returns to the tile canvas. These buttons
 release held manual notes while tracker transport continues; Escape in the
 Sister window returns to the tracker.
 
-**Load** opens the normal host load page (audio, raw, TSR or TSP); **Save**
-opens the host project save page. **Config** opens tracker
+**Load** opens the normal host load page (audio, raw, XM, TSR or TSP); **Save**
+opens a browser with **TSR Project** and **XM Song** tabs. **Config** opens tracker
 preferences; **Router** and Config's **Audio health** open the host panels.
 The 4×6 mini canvas replaces the instrument/sample lists and bank buttons.
 Its 24 beveled tile buttons show instrument aliases, names and waveform previews;
@@ -68,7 +68,7 @@ standalone All/Instr. choices do not apply to the host-owned tile library.
   (INP), Auto Pattern Generation (APG), multichannel recording/key jazz/editing,
   recorded key-offs, quantization, cut/insert/delete behavior, kill voices at
   stop and whether FasTracks uses LEN.
-- **Layout**: pattern stretch, row numbering, sharps/flats, zeroes, framework,
+- **Layout**: track count (2–32, in pairs), pattern stretch, row numbering, sharps/flats, zeroes, framework,
   row colors, channel numbers, volume column, blank fields and pattern font.
 - **Palette**: select a preset or edit RGB/contrast and individual field/head
   colors. Wheel the color list to reach additional entries. Editing a preset
@@ -90,12 +90,47 @@ Silent Record still enters notes while suppressing live monitoring.
 Projects retain these preferences and colors. **Save defaults** explicitly
 stores defaults for future/legacy scores in `sistertracker.cfg` beside the host
 configuration. **Done** or Escape closes Config and stays in the tracker.
+New songs start with eight tracks. Wider songs scroll horizontally as the cursor
+moves. Reducing the track count hides those columns; their notes remain in the
+TSR project and return when the track count increases. Track count belongs to
+the song and is not a global default.
+
+## Importing and saving XM songs
+
+Choose an `.xm` file with **Load**, or drop it onto TapeSister. Import replaces
+the tracker score, adds its samples to new Sample pages, and opens TrackSister
+stopped. Existing tiles remain available on their pages. Each nonempty sample
+becomes an editable tile. An instrument with several samples keeps its original
+note-to-sample map, so its tiles share an instrument number instead of becoming
+separate instruments. Volume/pan envelopes, sustain and loop points, fadeout,
+automatic vibrato, sample tuning, panning, volume and forward/ping-pong loops
+are retained. Sample edits are heard on the next note and included in later saves.
+
+Standard XM versions 1.02–1.04, 8/16-bit mono samples, up to 32 tracks, 128
+instruments, 16 samples per instrument and 256 patterns/orders are supported.
+Linear and Amiga frequency tables retain their original setting. Odd track
+counts gain one empty track to fit TapeHead's paired layout. TapeHead's tuning
+columns and LEN/CONTROL extensions are also read. Unsupported stereo/ADPCM
+extensions, excessive instrument/sample counts and malformed files report an
+error before replacing the score; they are not silently truncated.
+
+Click **Save → XM Song** to write the score and its currently bound samples as
+an XM. **TSR Project** remains the complete project format. XM export writes
+16-bit mono PCM, so it quantizes float tile audio. Stereo tiles, loop crossfade
+and loop modes other than forward/ping-pong require TSR or rendered WAV output;
+the exporter reports these instead of silently changing them. Host Router,
+Sister, Prism, Fallout, Master processing and live FastTracks controls are not
+baked into an XM. TapeHead's tuning and LEN/CONTROL extensions accompany it;
+other trackers may ignore those extensions. Use final-output recording for the
+processed performance. Exporting XM does not mark the TSR project as saved.
 
 ## Tiles and audio
 
-Aliases 01–80 (hex; 128 tiles) refer to persistent TapeSister tile IDs, across
+Aliases 01–80 (hex; 128 instruments) refer to persistent TapeSister tile IDs, across
 Sample pages. Moving a tile does not change its score references. Deleting a
 tile leaves a missing reference; reusing its old slot does not retarget notes.
+Ordinary instruments bind one tile; imported multisample instruments bind up to
+16 tiles through their keymap. Selecting any of those tiles selects its instrument.
 Selecting another tile on the canvas chooses its alias on return. Choosing an
 alias inside the tracker stays selected until the canvas selection changes.
 
@@ -123,14 +158,14 @@ without changing their stored note or volume data.
 
 ## Where TrackSister enters the Router
 
-TrackSister is a stereo source at the Router input. Its eight lanes are mixed
+TrackSister is a stereo source at the Router input. Its active lanes are mixed
 by the embedded replayer before joining the host. Current source grouping is:
 
 | Playback | Source group |
 | --- | --- |
 | Sample ARP, QWERTY/MIDI sample voices, tile launchers and Mosaic | TILES |
 | FM ARP and FM keyboard voices | FM |
-| All eight TrackSister lanes | TRACK |
+| All active TrackSister lanes (up to 32) | TRACK |
 | Separate TapeHead application's Live Link | TAPEHEAD |
 
 With Sister Machine POWER off, the ordinary program sums these playing sources,
@@ -267,17 +302,20 @@ The host project owns both the stable pattern/tile model and a versioned score
 extension. The extension retains original note/instrument/volume/effect/tuning
 bytes, hidden rows, orders, song name, global volume, FastTracks state, mute/trim,
 editor position, octave/STEP, recording/layout preferences, full custom palette,
-Forward/Reverse/Bounce choices and expanded-view choice. Its `STH2` payload
-also reads earlier `STH1` embedded scores; those retain their stored color mode
+Forward/Reverse/Bounce choices and expanded-view choice. Its `STH3` payload
+adds all 32 stored columns, the active track count and the frequency table.
+It also reads earlier `STH1`/`STH2` embedded scores; those retain their stored color mode
 and LEN policy and receive defaults for newly stored preferences. It contains
 no pointers, copied tile audio, active voices or running transport. Loading a
 project starts stopped and clears the original clipboard and undo history.
 
-Legacy version-1 scores still load through the migration adapter. TapeHead's
+The surrounding version-3 score stores multisample instrument metadata and
+stable tile IDs. Version-1 and version-2 eight-track scores still load through
+the migration adapter. TapeHead's
 native note range is C-0–B-7 (MIDI 12–107), its tempo range is 32–255 BPM, and its
 instrument limit is 128. A legacy score outside those limits is rejected with
 an explicit message before replacing the embedded score; it is not silently
-clamped or discarded. Do not open a version-2 score in an older TapeSister build.
+clamped or discarded. Newly saved version-3 scores require this version of TapeSister.
 
 Tile audio continues to use the existing host project sample format. The score
 extension does not change that format or make project audio storage lossless.

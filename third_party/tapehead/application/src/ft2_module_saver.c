@@ -1,3 +1,4 @@
+#include <math.h>
 // for finding memory leaks in debug mode with Visual Studio
 #if defined _DEBUG && defined _MSC_VER
 #include <crtdbg.h>
@@ -157,6 +158,18 @@ bool saveCurrentModule(void)
 
 static uint16_t packPatt(uint8_t *writePtr, const note_t *pattPtr, uint16_t numRows);
 
+#ifdef TAPEHEAD_EMBEDDED
+extern void tapeheadEmbeddedXmError(const char *);
+#define okBoxThreadSafe(a,b,c,d) (tapeheadEmbeddedXmError(c),0)
+#endif
+static int16_t xmUsedSamples(int16_t instrument)
+{
+#ifdef TAPEHEAD_EMBEDDED
+    return instr[instrument] ? MAX(instr[instrument]->numSamples,getRealUsedSamples(instrument)) : 0;
+#else
+    return getUsedSamples(instrument);
+#endif
+}
 bool saveXM(UNICHAR *filenameU)
 {
 	int16_t i, j, k, a;
@@ -202,13 +215,20 @@ bool saveXM(UNICHAR *filenameU)
 	h.numOrders = song.songLength;
 	h.songLoopStart = song.songLoopStart;
 	h.numChannels = (uint16_t)song.numChannels;
+#ifdef TAPEHEAD_EMBEDDED
+    h.speed=editor.speed;h.BPM=editor.BPM;
+#else
 	h.speed = song.speed;
 	h.BPM = song.BPM;
+#endif
 
 	// count number of patterns
 	i = MAX_PATTERNS;
 	do
 	{
+#ifdef TAPEHEAD_EMBEDDED
+        if(patternNumRows[i-1]!=64)break;
+#endif
 		if (patternEmpty(i-1) && (standardXMSave ||
 			fastTracksPOCPatternMetadataIsDefault((uint16_t)(i-1))))
 			i--;
@@ -222,7 +242,7 @@ bool saveXM(UNICHAR *filenameU)
 
 	// count number of instruments
 	i = 128;
-	while (i > 0 && getUsedSamples(i) == 0 && song.instrName[i][0] == '\0')
+	while (i > 0 && xmUsedSamples(i) == 0 && song.instrName[i][0] == '\0')
 		i--;
 	h.numInstr = i;
 
@@ -238,6 +258,7 @@ bool saveXM(UNICHAR *filenameU)
 
 	for (i = 0; i < h.numPatterns; i++)
 	{
+#ifndef TAPEHEAD_EMBEDDED
 		if (patternEmpty(i))
 		{
 			if (pattern[i] != NULL)
@@ -249,6 +270,7 @@ bool saveXM(UNICHAR *filenameU)
 			patternNumRows[i] = 64;
 		}
 
+#endif
 		ph.headerSize = sizeof (xmPatHdr_t);
 		ph.numRows = patternNumRows[i];
 		ph.type = 0;
@@ -288,7 +310,7 @@ bool saveXM(UNICHAR *filenameU)
 		else
 			j = i;
 
-		a = getUsedSamples(i);
+		a = xmUsedSamples(i);
 
 		nameLength = (int32_t)strlen(song.instrName[i]);
 		if (nameLength > 22)
@@ -356,6 +378,12 @@ bool saveXM(UNICHAR *filenameU)
 				dst->flags = s->flags & ~SAMPLE_REVERSE_LOOP;
 				dst->panning = s->panning;
 				dst->relativeNote = s->relativeNote;
+#ifdef TAPEHEAD_EMBEDDED
+                if(s->tileData && fabs(s->tileRateCorrection-1.0)>1e-6) {
+                    sample_t tuned=*s;setSampleC4Hz(&tuned,getSampleC4Hz(s)*s->tileRateCorrection);
+                    dst->relativeNote=tuned.relativeNote;dst->finetune=tuned.finetune;
+                }
+#endif
 
 				nameLength = (int32_t)strlen(s->name);
 				if (nameLength > 22)
@@ -388,13 +416,19 @@ bool saveXM(UNICHAR *filenameU)
 			s = &instr[j]->smp[k-1];
 			if (s->dataPtr != NULL)
 			{
-				unfixSample(s);
-				samp2Delta(s->dataPtr, s->length, s->flags);
-
-				result = fwrite(s->dataPtr, 1, SAMPLE_LENGTH_BYTES(s), f);
-
-				delta2Samp(s->dataPtr, s->length, s->flags);
-				fixSample(s);
+#ifdef TAPEHEAD_EMBEDDED
+                sample_t copy=*s;copy.dataPtr=copy.origDataPtr=NULL;
+                if(!allocateSmpData(&copy,s->length,!!(s->flags&SAMPLE_16BIT))) {
+                    fclose(f);tapeheadEmbeddedXmError("Unable to snapshot XM sample");return false;
+                }
+                memcpy(copy.dataPtr,s->dataPtr,SAMPLE_LENGTH_BYTES(s));unfixSample(&copy);
+                samp2Delta(copy.dataPtr,copy.length,copy.flags);
+                result=fwrite(copy.dataPtr,1,SAMPLE_LENGTH_BYTES(s),f);freeSmpData(&copy);
+#else
+                unfixSample(s);samp2Delta(s->dataPtr,s->length,s->flags);
+                result=fwrite(s->dataPtr,1,SAMPLE_LENGTH_BYTES(s),f);
+                delta2Samp(s->dataPtr,s->length,s->flags);fixSample(s);
+#endif
 
 				if (result != (size_t)SAMPLE_LENGTH_BYTES(s)) // write not OK
 				{
@@ -425,9 +459,10 @@ bool saveXM(UNICHAR *filenameU)
 		return false;
 	}
 
+#ifndef TAPEHEAD_EMBEDDED
 	removeSongModifiedFlag();
-
-	fclose(f);
+#endif
+    if(fclose(f)!=0)return false;
 
 	editor.diskOpReadDir = true; // force diskop re-read
 

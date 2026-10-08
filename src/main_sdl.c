@@ -997,6 +997,12 @@ static const TsSample loop_lock_silence = {
     1u
 };
 
+static int path_is_xm(const char *path) {
+    const char *ext=path?strrchr(path,'.'):NULL;
+    return ext && strlen(ext)==3 && tolower((unsigned char)ext[1])=='x' && tolower((unsigned char)ext[2])=='m';
+}
+static int load_xm_instrument(SDL_AudioDeviceID,AudioState *,TsUiState *,TsInstrument *,TsSamplePages *,int,const char *);
+static int save_xm_song(SDL_AudioDeviceID,AudioState *,TsUiState *,TsInstrument *,TsSamplePages *,int,const char *,char *,size_t);
 static int path_is_tsr(const char *path)
 {
     const char *extension = path != NULL ? strrchr(path, '.') : NULL;
@@ -4041,6 +4047,7 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
                            int record_bank_active,
                            const char *path)
 {
+    if(path_is_xm(path))return load_xm_instrument(device,audio,ui,instrument,sample_pages,record_bank_active,path);
     char error[160];
     TsSisterProjectState sister_state;
     TsKeyboardSequenceSource *previous_sequence_source = NULL;
@@ -6717,6 +6724,7 @@ static unsigned bank_modifiers(SDL_Keymod mod)
 static void browser_open(TsUiState *ui, TsBrowserMode mode)
 {
     const char *filename = mode == TS_BROWSER_SAVE_RECIPE ? "tapesister-recipe.tsr" :
+                           mode == TS_BROWSER_SAVE_XM ? "tracksister-song.xm" :
                            mode == TS_BROWSER_TRACKER_PALETTE_EXPORT ? "tracksister.pal" :
                            mode == TS_BROWSER_SAVE_PRESET ? "my-process.tsp" :
                            mode == TS_BROWSER_EXPORT_WAV ? "tapesister-export.wav" : "";
@@ -8507,7 +8515,7 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
             return;
         }
         pending->selection_load =
-            !bypass_preview && !path_is_tsr(path) && !path_is_tsp(path) &&
+            !bypass_preview && !path_is_tsr(path) && !path_is_tsp(path) && !path_is_xm(path) &&
             instrument->current.data != NULL && instrument->has_selection &&
             instrument->selection_last > instrument->selection_first;
     } else {
@@ -8575,7 +8583,7 @@ static void run_pending_file_operation(SDL_AudioDeviceID device,
     if (pending == NULL || !pending->active) return;
     (void)pending_selection_load;
     if (pending->mode == TS_BROWSER_LOAD_WAV &&
-        !path_is_tsr(pending->path) && !path_is_tsp(pending->path)) {
+        !path_is_tsr(pending->path) && !path_is_tsp(pending->path) && !path_is_xm(pending->path)) {
         if (audio->capture.state == TS_CAPTURE_COMPLETED)
             finalize_capture(device, audio, ui, instrument);
         ok = begin_import_preview(device, audio, ui, import_controller,
@@ -8612,6 +8620,9 @@ static void run_pending_file_operation(SDL_AudioDeviceID device,
                 sample_pages, active_sample, record_bank, &audio->sister, &audio->keyboard_sequence);
         snprintf(ui->status, sizeof(ui->status), ok ? "SAVED TSR PROJECT %.104s" :
                  "SAVE FAILED: %.135s", ok ? pending->path : error);
+    } else if(pending->mode==TS_BROWSER_SAVE_XM) {
+        ok=save_xm_song(device,audio,ui,instrument,sample_pages,record_bank_active,pending->path,error,sizeof(error));
+        snprintf(ui->status,sizeof(ui->status),ok?"SAVED XM SONG %.130s":"XM SAVE FAILED: %.135s",ok?pending->path:error);
     } else if (pending->mode == TS_BROWSER_SAVE_PRESET) {
         char name[TS_RECIPE_NAME_MAX + 1];
         size_t length;
@@ -13593,7 +13604,7 @@ int main(int argc, char **argv)
     desired.userdata = &audio;
     device = SDL_OpenAudioDevice(NULL, 0, &desired, &obtained, 0);
     audio.output_rate = obtained.freq;
-    embedded_host.device=&device;
+    embedded_host.device=&device;embedded_host.window=window;
     audio.live_link_buffer_frames = obtained.samples > 0u ?
         obtained.samples : desired.samples;
     audio.live_link_buffer = (float *)calloc(
@@ -14382,7 +14393,7 @@ int main(int argc, char **argv)
             else if (event.type == SDL_DROPFILE) {
                 if (audio.capture.state == TS_CAPTURE_COMPLETED)
                     finalize_capture(device, &audio, &ui, &instrument);
-                if (path_is_tsr(event.drop.file) || path_is_tsp(event.drop.file))
+                if (path_is_tsr(event.drop.file) || path_is_tsp(event.drop.file) || path_is_xm(event.drop.file))
                     load_instrument(device, &audio, &ui, &instrument,
                                     &sample_pages, parked_instrument,
                                     record_bank_active, event.drop.file);
@@ -16404,7 +16415,14 @@ int main(int argc, char **argv)
                 } else if (ui.browser.mode != TS_BROWSER_CLOSED) {
                     TsUiImportAction import_tab =
                         ts_ui_import_action_from_point(x, y);
-                    if (ui.browser.mode == TS_BROWSER_LOAD_WAV &&
+                    if((ui.browser.mode==TS_BROWSER_SAVE_RECIPE || ui.browser.mode==TS_BROWSER_SAVE_XM) &&
+                       !ui.browser.creating_directory && y>=39 && y<62 && x>=34 && x<290) {
+                        TsBrowserMode mode=x<176?TS_BROWSER_SAVE_RECIPE:TS_BROWSER_SAVE_XM;
+                        char filename[TS_BROWSER_NAME_MAX+1];snprintf(filename,sizeof(filename),"%s",ui.browser.filename);
+                        char *extension=strrchr(filename,'.');if(extension)*extension=0;
+                        size_t used=strlen(filename);snprintf(filename+used,sizeof(filename)-used,"%s",ts_browser_mode_extension(mode));
+                        browser_open(&ui,mode);ts_browser_set_filename(&ui.browser,filename);
+                    } else if (ui.browser.mode == TS_BROWSER_LOAD_WAV &&
                         ui.import_preview_available &&
                         import_tab == TS_UI_IMPORT_ACTION_SHOW_PREVIEW) {
                         show_import_preview_tab(&ui, &import_controller);

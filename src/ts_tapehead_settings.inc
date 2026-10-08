@@ -131,6 +131,16 @@ static void preferences_layout_page(void) {editor.currConfigScreen=CONFIG_SCREEN
 static void preferences_font_button(void) {config.ptnFont=(config.ptnFont+1)%4;updatePattFontPtrs();ui.updatePatternEditor=true;ts_tapehead_show_config();}
 static void preferences_quant_up(void) {config.recQuantRes=MIN(16,config.recQuantRes*2);ts_tapehead_show_config();}
 static void preferences_quant_down(void) {config.recQuantRes=MAX(1,config.recQuantRes/2);ts_tapehead_show_config();}
+static void preferences_tracks_up(void) {
+    if(song.numChannels<32){ts_tapehead_host_lock();song.numChannels+=2;ts_tapehead_host_unlock();}
+    updateChanNums();ts_tapehead_show_config();showPatternEditor();
+}
+static void preferences_tracks_down(void) {
+    if(song.numChannels>2){ts_tapehead_host_lock();stopVoices();song.numChannels-=2;
+        if(cursor.ch>=song.numChannels)cursor.ch=song.numChannels-1;
+        ts_tapehead_host_unlock();}
+    updateChanNums();ts_tapehead_show_config();showPatternEditor();
+}
 static void settings_button(int id,int x,int y,int width,const char *caption,void (*fn)(void)) {
     pushButton_t *b=&pushButtons[id];b->x=x;b->y=y;b->w=width;b->h=16;
     b->caption=(char*)caption;b->caption2=NULL;b->callbackFuncOnDown=NULL;b->callbackFuncOnUp=fn;showPushButton(id);
@@ -185,6 +195,9 @@ void ts_tapehead_show_config(void) {
         settings_checkbox(CB_CONF_FRAMEWORK,8,93,"Pattern framework",config.ptnFrmWrk);
         settings_checkbox(CB_CONF_LINECOLORS,8,106,"Row number colors",config.ptnLineLight);
         settings_checkbox(CB_CONF_CHANNUMS,8,119,"Channel numbering",config.ptnChnNumbers);
+        char tracks[24];snprintf(tracks,sizeof(tracks),"Tracks: %02u",song.numChannels);textOut(8,137,PAL_FORGRND,tracks);
+        settings_button(PB_SUB_CHANNELS,114,132,24,"-",preferences_tracks_down);
+        settings_button(PB_ADD_CHANNELS,144,132,24,"+",preferences_tracks_up);
         settings_checkbox(CB_CONF_SHOW_VOLCOL,204,41,"Show volume column",config.ptnShowVolColumn);
         settings_checkbox(CB_CONF_ORIG_FT2_PATT_LAYOUT,204,54,"Original blank fields",!config.ptnAlternativeLayout);
         static const char *fonts[]={"Capitals","Lowercase","Future","Bold"};

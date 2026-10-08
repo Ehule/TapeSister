@@ -330,7 +330,7 @@ TsTrackerPrepared *ts_tracker_playback_publish(TsTrackerPlayback *rt, TsTrackerP
         TsTrackerLanePlayback *l = &rt->lanes[i];
         if (!l->voice.active) continue;
         const TsTrackerBinding *b = binding(p, l->sounding_tile);
-        if (!b) { stop_lane(l); rt->missing_mask |= (uint8_t)(1u << i); }
+        if (!b) { stop_lane(l); rt->missing_mask |= (uint32_t)(1u << i); }
         else if (l->source != b->source || l->voice.range_first != b->first ||
                  l->voice.range_last != b->last || l->voice.loop_mode != b->loop_mode ||
                  l->voice.looping != b->looping || l->voice.crossfade_frames != b->crossfade ||
@@ -402,7 +402,7 @@ static void block_seam(TsTrackerPlayback *rt)
     rt->block=b;rt->block_pending=0;rt->row=b.row0;
     for(int lane=0;lane<TS_TRACKER_LANES;++lane) {
         if(lane<b.lane0 || lane>b.lane1) {
-            stop_lane(&rt->lanes[lane]);rt->missing_mask&=(uint8_t)~(1u<<lane);
+            stop_lane(&rt->lanes[lane]);rt->missing_mask&=(uint32_t)~(1u<<lane);
         } else if(lane<old.lane0 || lane>old.lane1)inherit_before(rt,lane,b.row0);
     }
     ++rt->loop_cycles;rt->loop_seam=1;
@@ -416,7 +416,7 @@ void ts_tracker_playback_pause(TsTrackerPlayback *rt, int paused)
         ts_tracker_playback_end_block(rt);
     }
 }
-void ts_tracker_playback_solo(TsTrackerPlayback *rt, uint8_t mask) { if (rt) rt->solo_mask = mask; }
+void ts_tracker_playback_solo(TsTrackerPlayback *rt, uint32_t mask) { if (rt) rt->solo_mask = mask; }
 
 static void execute_lane(TsTrackerPlayback *rt, int i, uint32_t row)
 {
@@ -434,7 +434,7 @@ static void execute_lane(TsTrackerPlayback *rt, int i, uint32_t row)
         }
         else if (c->note_kind == TS_TRACKER_NOTE_PITCH) {
             const TsTrackerBinding *b = binding(rt->prepared, l->default_tile);
-            if (!b) { stop_lane(l); rt->missing_mask |= (uint8_t)(1u << i); }
+            if (!b) { stop_lane(l); rt->missing_mask |= (uint32_t)(1u << i); }
             else {
                 if (!l->voice.active && !l->handoff.remaining && l->handoff.last.l == 0 && l->handoff.last.r == 0) {
                     const TsTrackerLane *definition = &rt->prepared->lanes[i];
@@ -442,7 +442,7 @@ static void execute_lane(TsTrackerPlayback *rt, int i, uint32_t row)
                               definition->trim * l->volume / 64.0f : 0;
                 }
                 configure_voice(rt, l, b, c->note, 0);
-                rt->missing_mask &= (uint8_t)~(1u << i);
+                rt->missing_mask &= (uint32_t)~(1u << i);
                 l->last_note_frame = rt->elapsed_frames; ++l->notes_started;
             }
         }

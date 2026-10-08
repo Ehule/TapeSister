@@ -1,3 +1,4 @@
+static int instrument_has_tile(const TsSisterTracker *,int,TsTileId);
 /* Compact host canvas. Stable tile identity, not bank position, selects an instrument. */
 #include "ts_sister_portal_mask.inc"
 static int bind_tiles(TsSamplePages *,const TsInstrument *,int *,char *,size_t);
@@ -33,7 +34,12 @@ static const TsInstrument *canvas_bank_at(int cell,int *slot) {
 }
 static int canvas_alias(TsTileId id) {
     if(!id || !embed.model)return 0;
-    for(int a=1;a<=128;++a)if(embed.model->aliases[a]==id)return a;
+    for(int a=1;a<=128;++a)if(instrument_has_tile(embed.model,a,id))return a;
+    return 0;
+}
+static int canvas_free_alias(void) {
+    if(!embed.model)return 0;
+    for(int a=1;a<=128;++a)if(!embed.model->aliases[a] && !embed.model->instruments[a].present)return a;
     return 0;
 }
 static void canvas_page_step(int delta) {
@@ -57,7 +63,15 @@ static void canvas_click(int x,int y) {
     const TsInstrument *bank=canvas_bank_at((y/CANVAS_DY)*CANVAS_COLUMNS+x/CANVAS_DX,&slot);
     if(bank && bank->bank[slot].occupied) {
         int alias=canvas_alias(bank->bank[slot].tile_id);
-        if(alias) {embed.canvas_message[0]=0;editor.curInstr=alias;editor.curSmp=0;ui.updatePosSections=true;}
+        if(!alias && (alias=canvas_free_alias())) {
+            embed.model->aliases[alias]=bank->bank[slot].tile_id;
+            int changed=1;
+            if(!bind_tiles(embed.pages,embed.active,&changed,embed.canvas_message,sizeof(embed.canvas_message)))return;
+            embed.model_hash=ts_sister_tracker_hash(embed.model);
+        }
+        if(alias) {embed.canvas_message[0]=0;editor.curInstr=alias;editor.curSmp=0;ui.updatePosSections=true;
+            const TsTrackerInstrument *ins=&embed.model->instruments[alias];
+            for(int k=0;k<ins->sample_count;++k)if(ins->tiles[k]==bank->bank[slot].tile_id)editor.curSmp=k;}
         else snprintf(embed.canvas_message,sizeof(embed.canvas_message),"128 INSTRUMENTS USED");
     }
 }
@@ -101,7 +115,7 @@ static void canvas_draw(void) {
         const TsSample *sample=tile && tile->occupied?
             (slot==bank->selected_slot && bank->current.data?&bank->current:&tile->sample):NULL;
         if(sample && alias)snprintf(line,sizeof(line),"%02X %.6s",alias,sample->name[0]?sample->name:"TILE");
-        else snprintf(line,sizeof(line),"%s",sample?"FULL":"");
+        else snprintf(line,sizeof(line),"%s",sample?(canvas_free_alias()?"ADD":"FULL"):"");
         textOutTiny(x+3,y+4,line,video.palette[selected?PAL_MOUSEPT:PAL_BTNTEXT]);
         if(sample && sample->data && sample->frames && sample->channels) {
             fillRect(x+3,y+13,43,7,PAL_DESKTOP);

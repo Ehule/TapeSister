@@ -1814,3 +1814,174 @@
 +#ifdef TAPEHEAD_EMBEDDED
 +void tapeheadEmbeddedScopeTick(void) { updateScopes(); }
 +#endif
+
+diff --git a/src/ft2_fasttracks.c b/src/ft2_fasttracks.c
+index 6b3e62c..8ca7167 100644
+--- a/src/ft2_fasttracks.c
++++ b/src/ft2_fasttracks.c
+@@ -1656,0 +1657,15 @@ void fastTracksPOCSetDirection(int32_t channelIndex,uint8_t direction)
++
++#ifdef TAPEHEAD_EMBEDDED
++/* Read the same first-in-song LEN/CONTROL policy without touching playback. */
++void tapeheadEmbeddedPendingLengths(const song_t *source,uint16_t lengths[32],int *control)
++{
++    memset(lengths,0,32*sizeof(*lengths));*control=-1;
++    if(!pendingFastTracksMetadataValid)return;
++    for(int pass=0;pass<2;++pass)for(int n=0;n<(pass?256:source->songLength);++n) {
++        int p=pass?n:source->orders[n];
++        if(*control<0 && pendingFastTracksControlTrackPlusOne[p])
++            *control=pendingFastTracksControlTrackPlusOne[p]-1;
++        for(int ch=0;ch<32;++ch)if(!lengths[ch])lengths[ch]=pendingFastTracksPatternLength[p][ch];
++    }
++}
++#endif
+diff --git a/src/ft2_module_saver.c b/src/ft2_module_saver.c
+index eff70ff..fda7338 100644
+--- a/src/ft2_module_saver.c
++++ b/src/ft2_module_saver.c
+@@ -0,0 +1 @@
++#include <math.h>
+@@ -159,0 +161,12 @@ static uint16_t packPatt(uint8_t *writePtr, const note_t *pattPtr, uint16_t numR
++#ifdef TAPEHEAD_EMBEDDED
++extern void tapeheadEmbeddedXmError(const char *);
++#define okBoxThreadSafe(a,b,c,d) (tapeheadEmbeddedXmError(c),0)
++#endif
++static int16_t xmUsedSamples(int16_t instrument)
++{
++#ifdef TAPEHEAD_EMBEDDED
++    return instr[instrument] ? MAX(instr[instrument]->numSamples,getRealUsedSamples(instrument)) : 0;
++#else
++    return getUsedSamples(instrument);
++#endif
++}
+@@ -204,0 +218,3 @@ bool saveXM(UNICHAR *filenameU)
++#ifdef TAPEHEAD_EMBEDDED
++    h.speed=editor.speed;h.BPM=editor.BPM;
++#else
+@@ -206,0 +223 @@ bool saveXM(UNICHAR *filenameU)
++#endif
+@@ -211,0 +229,3 @@ bool saveXM(UNICHAR *filenameU)
++#ifdef TAPEHEAD_EMBEDDED
++        if(patternNumRows[i-1]!=64)break;
++#endif
+@@ -225 +245 @@ bool saveXM(UNICHAR *filenameU)
+-	while (i > 0 && getUsedSamples(i) == 0 && song.instrName[i][0] == '\0')
++	while (i > 0 && xmUsedSamples(i) == 0 && song.instrName[i][0] == '\0')
+@@ -240,0 +261 @@ bool saveXM(UNICHAR *filenameU)
++#ifndef TAPEHEAD_EMBEDDED
+@@ -251,0 +273 @@ bool saveXM(UNICHAR *filenameU)
++#endif
+@@ -291 +313 @@ bool saveXM(UNICHAR *filenameU)
+-		a = getUsedSamples(i);
++		a = xmUsedSamples(i);
+@@ -358,0 +381,6 @@ bool saveXM(UNICHAR *filenameU)
++#ifdef TAPEHEAD_EMBEDDED
++                if(s->tileData && fabs(s->tileRateCorrection-1.0)>1e-6) {
++                    sample_t tuned=*s;setSampleC4Hz(&tuned,getSampleC4Hz(s)*s->tileRateCorrection);
++                    dst->relativeNote=tuned.relativeNote;dst->finetune=tuned.finetune;
++                }
++#endif
+@@ -391,7 +419,13 @@ bool saveXM(UNICHAR *filenameU)
+-				unfixSample(s);
+-				samp2Delta(s->dataPtr, s->length, s->flags);
+-
+-				result = fwrite(s->dataPtr, 1, SAMPLE_LENGTH_BYTES(s), f);
+-
+-				delta2Samp(s->dataPtr, s->length, s->flags);
+-				fixSample(s);
++#ifdef TAPEHEAD_EMBEDDED
++                sample_t copy=*s;copy.dataPtr=copy.origDataPtr=NULL;
++                if(!allocateSmpData(&copy,s->length,!!(s->flags&SAMPLE_16BIT))) {
++                    fclose(f);tapeheadEmbeddedXmError("Unable to snapshot XM sample");return false;
++                }
++                memcpy(copy.dataPtr,s->dataPtr,SAMPLE_LENGTH_BYTES(s));unfixSample(&copy);
++                samp2Delta(copy.dataPtr,copy.length,copy.flags);
++                result=fwrite(copy.dataPtr,1,SAMPLE_LENGTH_BYTES(s),f);freeSmpData(&copy);
++#else
++                unfixSample(s);samp2Delta(s->dataPtr,s->length,s->flags);
++                result=fwrite(s->dataPtr,1,SAMPLE_LENGTH_BYTES(s),f);
++                delta2Samp(s->dataPtr,s->length,s->flags);fixSample(s);
++#endif
+@@ -427,0 +462 @@ bool saveXM(UNICHAR *filenameU)
++#ifndef TAPEHEAD_EMBEDDED
+@@ -429,2 +464,2 @@ bool saveXM(UNICHAR *filenameU)
+-
+-	fclose(f);
++#endif
++    if(fclose(f)!=0)return false;
+diff --git a/src/modloaders/ft2_load_xm.c b/src/modloaders/ft2_load_xm.c
+index 4b0b8bd..9b888be 100644
+--- a/src/modloaders/ft2_load_xm.c
++++ b/src/modloaders/ft2_load_xm.c
+@@ -73,0 +74,9 @@ bool loadXM(FILE *f, uint32_t filesize)
++#ifdef TAPEHEAD_EMBEDDED
++    if(memcmp(header.ID,"Extended Module: ",17) || header.x1A!=0x1A) {
++        loaderMsgBox("Invalid XM file signature.");return false;
++    }
++    if(header.numChannels>32 || header.numInstr>128 || header.BPM<32 || header.BPM>255 || header.speed>31 ||
++       header.headerSize<20u+header.numOrders || (uint64_t)60+header.headerSize>filesize) {
++        loaderMsgBox("Unsupported XM: requires 1-32 tracks, <=128 instruments, BPM 32-255 and speed 0-31.");return false;
++    }
++#endif
+@@ -106,0 +116 @@ bool loadXM(FILE *f, uint32_t filesize)
++#ifndef TAPEHEAD_EMBEDDED
+@@ -108,0 +119 @@ bool loadXM(FILE *f, uint32_t filesize)
++#endif
+@@ -188,0 +200,6 @@ bool loadXM(FILE *f, uint32_t filesize)
++#ifdef TAPEHEAD_EMBEDDED
++    long position=ftell(f);
++    if(position<0 || (uint64_t)position>filesize) {
++        loaderMsgBox("Truncated XM header data.");return false;
++    }
++#endif
+@@ -206 +223 @@ static bool loadInstrHeader(FILE *f, int32_t insNum)
+-	fread(&readSize, 4, 1, f);
++	if(fread(&readSize,4,1,f)!=1){loaderMsgBox("Truncated XM instrument header.");return false;}
+@@ -219 +236 @@ static bool loadInstrHeader(FILE *f, int32_t insNum)
+-	fread(&ih, readSize, 1, f); // read instrument header
++	if(readSize<29 || fread(&ih,readSize,1,f)!=1){loaderMsgBox("Truncated XM instrument header.");return false;}
+@@ -224,0 +242,6 @@ static bool loadInstrHeader(FILE *f, int32_t insNum)
++#ifdef TAPEHEAD_EMBEDDED
++    if(ih.numSamples>16){loaderMsgBox("XM instruments with more than 16 samples are not supported.");return false;}
++    if(ih.numSamples && ih.sampleSize!=sizeof(xmSmpHdr_t)) {
++        loaderMsgBox("Unsupported XM sample header size.");return false;
++    }
++#endif
+@@ -233,0 +257 @@ static bool loadInstrHeader(FILE *f, int32_t insNum)
++	if (ih.numSamples > 0 && readSize<241) {loaderMsgBox("Truncated XM instrument settings.");return false;}
+@@ -296,0 +321,6 @@ static bool loadInstrHeader(FILE *f, int32_t insNum)
++#ifdef TAPEHEAD_EMBEDDED
++            if((srcSmp->flags&SAMPLE_STEREO) || srcSmp->nameLength==0xAD ||
++               srcSmp->length>MAX_SAMPLE_LEN || ((srcSmp->flags&SAMPLE_16BIT) && (srcSmp->length&1))) {
++                loaderMsgBox("Unsupported XM sample: stereo/ADPCM extension, oversized or invalid length.");return false;
++            }
++#endif
+@@ -383,4 +413,3 @@ static bool loadInstrSample(FILE *f, int32_t insNum)
+-					if (sample16Bit)
+-						fread(s->dataPtr, 2, s->length, f);
+-					else
+-						fread(s->dataPtr, 1, s->length, f);
++                    if(fread(s->dataPtr,sample16Bit?2:1,s->length,f)!=(size_t)s->length) {
++                        loaderMsgBox("Truncated XM sample data.");return false;
++                    }
+@@ -467,0 +497,3 @@ static bool loadPatterns(FILE *f, int32_t numPatterns, uint16_t xmVersion)
++#ifdef TAPEHEAD_EMBEDDED
++        if(!ph.numRows || ph.numRows>256 || ph.headerSize<(xmVersion==0x0102?8u:9u))goto pattCorrupt;
++#endif
+@@ -485,0 +518,12 @@ static bool loadPatterns(FILE *f, int32_t numPatterns, uint16_t xmVersion)
++#ifdef TAPEHEAD_EMBEDDED
++            /* The upstream unpacker assumes a valid compressed stream. Bound
++               every field before passing bytes to it. */
++            size_t at=0;
++            for(int c=0;c<ph.numRows*songTmp.numChannels;++c) {
++                if(at>=ph.dataSize)goto pattCorrupt;
++                unsigned flag=tmpBuffer[at++],need=4;
++                if(flag&128) {need=0;for(int b=0;b<5;++b)need+=!!(flag&(1u<<b));}
++                if(need>ph.dataSize-at)goto pattCorrupt;
++                at+=need;
++            }
++#endif
+@@ -497,0 +542 @@ static bool loadPatterns(FILE *f, int32_t numPatterns, uint16_t xmVersion)
++#ifndef TAPEHEAD_EMBEDDED
+@@ -498,0 +544 @@ static bool loadPatterns(FILE *f, int32_t numPatterns, uint16_t xmVersion)
++#endif

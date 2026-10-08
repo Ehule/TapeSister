@@ -71,6 +71,15 @@ bool loadXM(FILE *f, uint32_t filesize)
 		return false;
 	}
 
+#ifdef TAPEHEAD_EMBEDDED
+    if(memcmp(header.ID,"Extended Module: ",17) || header.x1A!=0x1A) {
+        loaderMsgBox("Invalid XM file signature.");return false;
+    }
+    if(header.numChannels>32 || header.numInstr>128 || header.BPM<32 || header.BPM>255 || header.speed>31 ||
+       header.headerSize<20u+header.numOrders || (uint64_t)60+header.headerSize>filesize) {
+        loaderMsgBox("Unsupported XM: requires 1-32 tracks, <=128 instruments, BPM 32-255 and speed 0-31.");return false;
+    }
+#endif
 	fseek(f, 60 + header.headerSize, SEEK_SET);
 	if (filesize != 336 && feof(f)) // 336 in length at this point = empty XM
 	{
@@ -104,8 +113,10 @@ bool loadXM(FILE *f, uint32_t filesize)
 	}
 
 	// even though XM supports 256 orders, FT2 supports only 255...
+#ifndef TAPEHEAD_EMBEDDED
 	if (songTmp.songLength > 255)
 		songTmp.songLength = 255;
+#endif
 
 	if (header.version < 0x0104)
 	{
@@ -186,6 +197,12 @@ bool loadXM(FILE *f, uint32_t filesize)
 	if (instrHasMoreThan16Samples)
 		loaderMsgBox("Warning: Module contains instrument(s) with >16 samples. The extra samples will be discarded!");
 
+#ifdef TAPEHEAD_EMBEDDED
+    long position=ftell(f);
+    if(position<0 || (uint64_t)position>filesize) {
+        loaderMsgBox("Truncated XM header data.");return false;
+    }
+#endif
 	sampleLauncherReadXMMetadata(f, filesize);
 	if (!tuningLaneReadXMExtension(f, filesize))
 		loaderMsgBox("Warning: corrupt or unsupported Tapehead tuning extension ignored.");
@@ -203,7 +220,7 @@ static bool loadInstrHeader(FILE *f, int32_t insNum)
 	memset(extraSampleLengths, 0, sizeof (extraSampleLengths));
 	memset(&ih, 0, sizeof (ih));
 
-	fread(&readSize, 4, 1, f);
+	if(fread(&readSize,4,1,f)!=1){loaderMsgBox("Truncated XM instrument header.");return false;}
 	fseek(f, -4, SEEK_CUR);
 
 	// yes, some XMs can have a header size of 0, and it usually means 263 bytes (INSTR_HEADER_SIZE)
@@ -216,12 +233,18 @@ static bool loadInstrHeader(FILE *f, int32_t insNum)
 		return false;
 	}
 
-	fread(&ih, readSize, 1, f); // read instrument header
+	if(readSize<29 || fread(&ih,readSize,1,f)!=1){loaderMsgBox("Truncated XM instrument header.");return false;}
 
 	// FT2 bugfix: skip instrument header data if instrSize is above INSTR_HEADER_SIZE
 	if (ih.instrSize > INSTR_HEADER_SIZE)
 		fseek(f, ih.instrSize-INSTR_HEADER_SIZE, SEEK_CUR);
 
+#ifdef TAPEHEAD_EMBEDDED
+    if(ih.numSamples>16){loaderMsgBox("XM instruments with more than 16 samples are not supported.");return false;}
+    if(ih.numSamples && ih.sampleSize!=sizeof(xmSmpHdr_t)) {
+        loaderMsgBox("Unsupported XM sample header size.");return false;
+    }
+#endif
 	if (ih.numSamples < 0 || ih.numSamples > 32)
 	{
 		loaderMsgBox("Error loading XM: This file is corrupt (or not supported)!");
@@ -231,6 +254,7 @@ static bool loadInstrHeader(FILE *f, int32_t insNum)
 	if (insNum < MAX_INST) // copy over instrument name
 		memcpy(songTmp.instrName[1+insNum], ih.name, 22);
 
+	if (ih.numSamples > 0 && readSize<241) {loaderMsgBox("Truncated XM instrument settings.");return false;}
 	if (ih.numSamples > 0 && ih.numSamples <= 32)
 	{
 		if (!allocateTmpInstr(1+insNum))
@@ -294,6 +318,12 @@ static bool loadInstrHeader(FILE *f, int32_t insNum)
 		{
 			// copy sample header elements to our sample struct
 
+#ifdef TAPEHEAD_EMBEDDED
+            if((srcSmp->flags&SAMPLE_STEREO) || srcSmp->nameLength==0xAD ||
+               srcSmp->length>MAX_SAMPLE_LEN || ((srcSmp->flags&SAMPLE_16BIT) && (srcSmp->length&1))) {
+                loaderMsgBox("Unsupported XM sample: stereo/ADPCM extension, oversized or invalid length.");return false;
+            }
+#endif
 			s->length = srcSmp->length;
 			s->loopStart = srcSmp->loopStart;
 			s->loopLength = srcSmp->loopLength;
@@ -380,10 +410,9 @@ static bool loadInstrSample(FILE *f, int32_t insNum)
 				}
 				else
 				{
-					if (sample16Bit)
-						fread(s->dataPtr, 2, s->length, f);
-					else
-						fread(s->dataPtr, 1, s->length, f);
+                    if(fread(s->dataPtr,sample16Bit?2:1,s->length,f)!=(size_t)s->length) {
+                        loaderMsgBox("Truncated XM sample data.");return false;
+                    }
 
 					const int32_t sampleLengthInBytes = SAMPLE_LENGTH_BYTES(s);
 					if (sampleLengthInBytes < lengthInFile)
@@ -465,6 +494,9 @@ static bool loadPatterns(FILE *f, int32_t numPatterns, uint16_t xmVersion)
 		if (feof(f))
 			goto pattCorrupt;
 
+#ifdef TAPEHEAD_EMBEDDED
+        if(!ph.numRows || ph.numRows>256 || ph.headerSize<(xmVersion==0x0102?8u:9u))goto pattCorrupt;
+#endif
 		patternNumRowsTmp[i] = ph.numRows;
 		if (patternNumRowsTmp[i] > MAX_PATT_LEN)
 		{
@@ -483,6 +515,18 @@ static bool loadPatterns(FILE *f, int32_t numPatterns, uint16_t xmVersion)
 			if (fread(tmpBuffer, 1, ph.dataSize, f) != ph.dataSize)
 				goto pattCorrupt;
 
+#ifdef TAPEHEAD_EMBEDDED
+            /* The upstream unpacker assumes a valid compressed stream. Bound
+               every field before passing bytes to it. */
+            size_t at=0;
+            for(int c=0;c<ph.numRows*songTmp.numChannels;++c) {
+                if(at>=ph.dataSize)goto pattCorrupt;
+                unsigned flag=tmpBuffer[at++],need=4;
+                if(flag&128) {need=0;for(int b=0;b<5;++b)need+=!!(flag&(1u<<b));}
+                if(need>ph.dataSize-at)goto pattCorrupt;
+                at+=need;
+            }
+#endif
 			unpackPattern(patternTmp[i], tmpBuffer, patternNumRowsTmp[i], songTmp.numChannels);
 			clearUnusedChannels(patternTmp[i], patternNumRowsTmp[i], songTmp.numChannels);
 		}
@@ -495,7 +539,9 @@ static bool loadPatterns(FILE *f, int32_t numPatterns, uint16_t xmVersion)
 				patternTmp[i] = NULL;
 			}
 
+#ifndef TAPEHEAD_EMBEDDED
 			patternNumRowsTmp[i] = 64;
+#endif
 		}
 	}
 

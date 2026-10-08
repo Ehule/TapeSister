@@ -50,9 +50,9 @@ extern void windUpFTHelp(void);
 #define TH_FRAMES 8192u
 #define TH_HEADER 52u
 #define TH_LANE_BYTES 10u
-#define TH_PATTERN_BYTES (7u+256u*8u*7u)
+#define TH_PATTERN_BYTES (7u+256u*TS_TRACKER_LANES*7u)
 typedef struct RetiredTile {float *data;struct RetiredTile *next;} RetiredTile;
-#define TH_MAX_SCORE (TH_HEADER+8u*TH_LANE_BYTES+256u+256u*TH_PATTERN_BYTES)
+#define TH_MAX_SCORE (TH_HEADER+TS_TRACKER_LANES*TH_LANE_BYTES+256u+256u*TH_PATTERN_BYTES)
 static struct {
     TsTapeHeadHost host;
     SDL_Cursor *host_cursor;int host_cursor_visible;
@@ -65,10 +65,8 @@ static struct {
     TsSamplePages *pages;
     const TsInstrument *active;
     size_t canvas_page,host_page; /* 24-tile viewport; 16-tile host Sample page. */
-    uint64_t tile_stamp[129];
-    TsTileLocation tile_location[129];
-    unsigned tile_rate[129];
-    float *tile_data[129];
+    uint64_t tile_stamp[129][16];
+    float *tile_data[129][16];
     RetiredTile *retired;
     uint8_t midi_held[16][128];
     uint8_t key_held[SDL_NUM_SCANCODES],key_note[SDL_NUM_SCANCODES];
@@ -316,7 +314,7 @@ void ts_tapehead_close(void) {
     editor.programRunning=false;stopVoices();stopAllScopes();
     closeAudio();closeReplayer();undoClose();
     collect_tiles();
-    for(int a=1;a<=128;++a){free(embed.tile_data[a]);embed.tile_data[a]=NULL;}
+    for(int a=1;a<=128;++a)for(int k=0;k<16;++k){free(embed.tile_data[a][k]);embed.tile_data[a][k]=NULL;}
     video.window=NULL;closeVideo(); /* The host window is never owned here. */
     freeSprites();freeTextBoxes();windUpFTHelp();freeMouseCursors();freeBMPs();freeWindowedSincTables();
     if(embed.host_cursor)SDL_SetCursor(embed.host_cursor);
@@ -424,7 +422,7 @@ int ts_tapehead_event(const SDL_Event *event,int x,int y) {
             keyDownHandler((SDL_Scancode)sc,event->key.keysym.sym,(SDL_Keymod)event->key.keysym.mod,event->key.repeat);
             if(!songPlaying)embed.live_edit=0;
             if(note>0 && note<=96 && sc>=0 && sc<SDL_NUM_SCANCODES)
-                for(int ch=0;ch<8;++ch)if(editor.keyOnTab[ch]==note)embed.key_note[sc]=note;
+                for(int ch=0;ch<TS_TRACKER_LANES;++ch)if(editor.keyOnTab[ch]==note)embed.key_note[sc]=note;
             return 1;
         }
     case SDL_KEYUP: {
@@ -517,10 +515,13 @@ const float *ts_tapehead_render(unsigned frames,unsigned rate) {
     tapeheadEmbeddedAudioRender(embed.output,frames);return embed.output;
 }
 
+#include "ts_tapehead_instruments.inc"
+
 static uint64_t hash_bytes(uint64_t h,const void *p,size_t n) {const uint8_t *b=p;while(n--){h^=*b++;h*=UINT64_C(1099511628211);}return h;}
 #define HASH(v) h=hash_bytes(h,&(v),sizeof(v))
 static int bind_tiles(TsSamplePages *pages,const TsInstrument *active,int *aliases_changed,char *e,size_t size) {
     TsSisterTracker *t=&pages->tracker;
+    int imported_set=0;for(int a=1;a<=128;++a)imported_set|=t->instruments[a].present;
     /* Register the active bank and populated visible tiles without reassigning
        existing aliases. A missing/deleted tile never resolves by slot number. */
     for(int pass=0;pass<2;++pass) {
@@ -530,15 +531,19 @@ static int bind_tiles(TsSamplePages *pages,const TsInstrument *active,int *alias
     if(!bank)continue;
     if(bank->bank[slot].occupied) {
         TsTileId id=bank->bank[slot].tile_id;int a=1;
-        for(;a<=128 && t->aliases[a]!=id;++a);
-        if(a>128){for(a=1;a<=128 && t->aliases[a];++a);if(a<=128){t->aliases[a]=id;*aliases_changed=1;}}
+        for(;a<=128 && !instrument_has_tile(t,a,id);++a);
+        if(a>128 && imported_set && (pass || slot!=active->selected_slot))continue;
+        if(a>128){for(a=1;a<=128 && (t->aliases[a] || t->instruments[a].present);++a);if(a<=128){t->aliases[a]=id;*aliases_changed=1;}}
         if(a>128 && !pass && slot==active->selected_slot)return fail(e,size,"Tracker's 128 tile aliases are occupied");
         if(a<=128 && !pass && slot==active->selected_slot && embed.selected_tile!=id) {editor.curInstr=a;embed.selected_tile=id;ui.updatePosSections=true;updateInstrumentSwitcher();}
     }
     }
     }
-    for(int a=1;a<=128;++a) {
-        TsTileLocation loc={0};const TsBankSlot *slot=t->aliases[a]?ts_sample_pages_find_tile(pages,active,t->aliases[a],&loc):NULL;
+    for(int a=1;a<=128;++a)for(int k=0;k<(t->instruments[a].present?MAX(1,t->instruments[a].sample_count):1);++k) {
+        const TsTrackerInstrument *meta=&t->instruments[a];
+        TsTileId tile=meta->present?meta->tiles[k]:t->aliases[a];
+        if(!tile && !meta->present && !instr[a])continue;
+        TsTileLocation loc={0};const TsBankSlot *slot=tile?ts_sample_pages_find_tile(pages,active,tile,&loc):NULL;
         const TsInstrument *bank=slot?ts_sample_pages_page(pages,active,loc.page):NULL;
         const TsSample *src=slot?(bank->selected_slot==loc.slot&&bank->current.data?&bank->current:&slot->sample):NULL;
         int live=src&&src==&bank->current;
@@ -547,11 +552,15 @@ static int bind_tiles(TsSamplePages *pages,const TsInstrument *active,int *alias
         size_t first=slot?(live?bank->loop_first:slot->loop_first):0,last=slot?(live?bank->loop_last:slot->loop_last):0;
         float fade_ms=slot?(live?bank->loop_crossfade_ms:slot->loop_crossfade_ms):0;
         TsLoopMode mode=slot?(live?bank->loop_mode:slot->loop_mode):TS_LOOP_FORWARD;
-        uint64_t h=UINT64_C(14695981039346656037);HASH(t->aliases[a]);HASH(src);HASH(tuning.root_note);HASH(tuning.fine_tune_cents);HASH(loop);HASH(first);HASH(last);HASH(mode);HASH(fade_ms);
+        uint64_t h=UINT64_C(14695981039346656037);HASH(tile);HASH(meta->volume[k]);HASH(meta->panning[k]);HASH(src);HASH(tuning.root_note);HASH(tuning.fine_tune_cents);HASH(loop);HASH(first);HASH(last);HASH(mode);HASH(fade_ms);
         if(src){HASH(src->name);HASH(src->data);HASH(src->visual_revision);HASH(src->frames);HASH(src->channels);HASH(src->sample_rate);if(live)HASH(bank->generation);}
-        embed.tile_location[a]=loc;embed.tile_rate[a]=src?src->sample_rate:0;
-        if(h==embed.tile_stamp[a])continue;
+        if(h==embed.tile_stamp[a][k])continue;
         sample_t prepared={0};float *data=NULL;
+        if(meta->present) {
+            prepared.volume=meta->volume[k];prepared.panning=meta->panning[k];
+            prepared.relativeNote=meta->relative_note[k];prepared.finetune=meta->finetune[k];
+            snprintf(prepared.name,sizeof(prepared.name),"%s",meta->sample_names[k]);
+        }
         if(src && src->data && src->frames>0) {
             if(src->frames>MAX_SAMPLE_LEN || src->channels<1 || src->channels>2)return fail(e,size,"Tile exceeds tracker sample capacity");
             data=malloc(src->frames*src->channels*sizeof(float));
@@ -559,14 +568,14 @@ static int bind_tiles(TsSamplePages *pages,const TsInstrument *active,int *alias
             memcpy(data,src->data,src->frames*src->channels*sizeof(float));
             for(size_t f=0;f<src->frames;++f) {
                 float mono=data[f*src->channels];if(src->channels==2)mono=(mono+data[f*2+1])*.5f;
-                ((int16_t*)prepared.dataPtr)[f]=(int16_t)lrintf(fmaxf(-1,fminf(1,mono))*32767);
+                ((int16_t*)prepared.dataPtr)[f]=(int16_t)lrintf(fmaxf(-32768,fminf(32767,mono*32768)));
             }
             prepared.tileData=data;prepared.tileChannels=src->channels;
             prepared.length=(int32_t)src->frames;
             prepared.tileLoopMode=mode;
             TsAuditionPlan plan={src,first,last};
             prepared.tileCrossfade=loop?ts_audition_crossfade_frames(&plan,fade_ms):0;
-            prepared.volume=64;prepared.panning=128;prepared.flags=SAMPLE_16BIT;
+            prepared.volume=meta->present?meta->volume[k]:64;prepared.panning=meta->present?meta->panning[k]:128;prepared.flags=SAMPLE_16BIT;
             snprintf(prepared.name,sizeof(prepared.name),"%.22s",src->name);
             if(loop && first<last && last<=src->frames) {
                 prepared.loopStart=(int)first;prepared.loopLength=(int)(last-first);
@@ -576,17 +585,22 @@ static int bind_tiles(TsSamplePages *pages,const TsInstrument *active,int *alias
             double c4_rate=src->sample_rate*exp2((60-tuning.root_note)/12.0+tuning.fine_tune_cents/1200.0);
             setSampleC4Hz(&prepared,c4_rate);
             prepared.tileRateCorrection=c4_rate/getSampleC4Hz(&prepared);
+            if(meta->present) {
+                prepared.relativeNote=meta->relative_note[k];prepared.finetune=meta->finetune[k];
+                prepared.tileRateCorrection=c4_rate/(8363.0*exp2(prepared.relativeNote/12.0+prepared.finetune/1536.0));
+            }
             fixSample(&prepared);
         }
-        RetiredTile *retired=embed.tile_data[a]?malloc(sizeof(*retired)):NULL;
-        if(embed.tile_data[a]&&!retired) {free(data);freeSmpData(&prepared);return fail(e,size,"Unable to retain sounding tile");}
+        RetiredTile *retired=embed.tile_data[a][k]?malloc(sizeof(*retired)):NULL;
+        if(embed.tile_data[a][k]&&!retired) {free(data);freeSmpData(&prepared);return fail(e,size,"Unable to retain sounding tile");}
         ts_tapehead_host_lock();
         if(!instr[a] && !allocateInstr(a)) {ts_tapehead_host_unlock();free(retired);free(data);freeSmpData(&prepared);return fail(e,size,"Unable to bind tracker tile");}
-        sample_t *old=&instr[a]->smp[0];
+        sample_t *old=&instr[a]->smp[k];
         stopAllScopes();freeSmpData(old);
-        if(retired) {retired->data=embed.tile_data[a];retired->next=embed.retired;embed.retired=retired;}
-        *old=prepared;embed.tile_data[a]=data;embed.tile_stamp[a]=h;
-        if(src&&src->name[0])snprintf(song.instrName[a],sizeof(song.instrName[a]),"%.22s",src->name);
+        if(retired) {retired->data=embed.tile_data[a][k];retired->next=embed.retired;embed.retired=retired;}
+        *old=prepared;embed.tile_data[a][k]=data;embed.tile_stamp[a][k]=h;
+        if(meta->present)snprintf(song.instrName[a],sizeof(song.instrName[a]),"%s",meta->name);
+        else if(src&&src->name[0])snprintf(song.instrName[a],sizeof(song.instrName[a]),"%.22s",src->name);
         else if(src)snprintf(song.instrName[a],sizeof(song.instrName[a]),"TILE %02X",a);
         else snprintf(song.instrName[a],sizeof(song.instrName[a]),"%s",t->aliases[a]?"MISSING TILE":"");
         updateInstrumentSwitcher();
@@ -608,7 +622,7 @@ static int native_import(TsSisterTracker *t,char *e,size_t n) {
     }
     for(int i=0;i<t->pattern_count;++i) {
         const TsTrackerPattern *p=t->patterns[i];
-        for(int row=0;row<256;++row)for(int lane=0;lane<8;++lane) {
+        for(int row=0;row<256;++row)for(int lane=0;lane<TS_TRACKER_LANES;++lane) {
             const TsTrackerCell *c=&p->cells[row][lane];note_t *d=&prepared[i][row*MAX_CHANNELS+lane];
             if(c->note_kind==TS_TRACKER_NOTE_PITCH) {
                 if(c->note<12 || c->note>107) {fail(e,n,"Existing score contains pitches outside TapeHead C-0 to B-7");goto import_failed;}
@@ -626,6 +640,7 @@ static int native_import(TsSisterTracker *t,char *e,size_t n) {
             if(c->fx_command){d->efx=c->fx_command<='9'?c->fx_command-'0':c->fx_command-'A'+10;d->efxData=c->fx_value;}
         }
     }
+    if(!restore_instruments(t)){fail(e,n,"Unable to restore tracker instruments");goto import_failed;}
     ts_tapehead_focus_lost();stopPlaying();undoClear();embed.capture_seam_pending=0;
     tapeheadEmbeddedClearClipboard();memset((void*)&pattMark,0,sizeof(pattMark));
     fastTracksPOCResetForLoadedModule();
@@ -634,7 +649,8 @@ static int native_import(TsSisterTracker *t,char *e,size_t n) {
         patternNumRows[i]=i<t->pattern_count?t->patterns[i]->rows:64;
         if(embed.ids[i]==t->editor_pattern)editor.editPattern=i;
     }
-    song.numChannels=8;
+    setLinearPeriods(true);
+    song.numChannels=t->channel_count;
     song.songLength=t->order_count?t->order_count:1;song.songLoopStart=t->restart_order;
     for(int i=0;i<t->order_count;++i)for(int p=0;p<t->pattern_count;++p)if(t->orders[i]==embed.ids[p])song.orders[i]=p;
     editor.row=t->editor_row;cursor.ch=t->editor_lane;editor.editRowSkip=t->edit_step;
@@ -642,7 +658,7 @@ static int native_import(TsSisterTracker *t,char *e,size_t n) {
     setMixerBPM(song.BPM);fastTracksPOCSetMasterEnabled(true);
     fastTracksPOCSetUsesTrackLengths(t->fasttracks_uses_length);
     fastTracksPOCSetLengthTopologyBypassed(t->length_bypass);
-    for(int lane=0;lane<8;++lane) {
+    for(int lane=0;lane<TS_TRACKER_LANES;++lane) {
         TsTrackerLane *l=&t->lanes[lane];fastTracksPOCSetTrackLength(0,lane,l->length);
         fastTracksPOCSetMode(lane,(fastTracksMode_t)l->mode);fastTracksPOCSetRatioIndex(lane,l->ratio);
         fastTracksPOCSetDirection(lane,l->direction);
@@ -651,7 +667,7 @@ static int native_import(TsSisterTracker *t,char *e,size_t n) {
     fastTracksPOCSetControlTrack(0,t->control_lane);playMode=PLAYMODE_EDIT;
     song.row=editor.row;song.pattNum=editor.editPattern;song.currNumRows=patternNumRows[editor.editPattern];
     fastTracksPOCResetForLoadedModule();fastTracksPOCSetLengthTopologyBypassed(t->length_bypass);
-    ui.updatePatternEditor=ui.updatePosSections=true;return 1;
+    updateChanNums();ui.updatePatternEditor=ui.updatePosSections=true;return 1;
 allocation_failed:
     fail(e,n,"Unable to import tracker pattern");
 import_failed:
@@ -669,16 +685,16 @@ int ts_tapehead_export(TsSisterTracker *t,char *e,size_t n) {
     used[editor.editPattern]=1;
     for(int i=0;i<song.songLength;++i)used[song.orders[i]]=1;
     for(int i=0;i<256;++i)if(pattern[i]||embed.ids[i]||used[i])++count;
-    size_t size=TH_HEADER+8*TH_LANE_BYTES+256+(size_t)count*TH_PATTERN_BYTES+TH_PREFS_BYTES;
+    size_t size=TH_HEADER+TS_TRACKER_LANES*TH_LANE_BYTES+256+(size_t)count*TH_PATTERN_BYTES+TH_PREFS_BYTES;
     uint8_t *bytes=calloc(1,size);if(!bytes)return fail(e,n,"Unable to save embedded tracker score");
-    uint8_t *p=bytes;memcpy(p,"STH2\0\0\0\0",8);p+=8;
+    uint8_t *p=bytes;memcpy(p,"STH3\0\0\0\0",8);p[5]=song.numChannels;p[6]=audio.linearPeriodsFlag;p+=8;
     put(&p,count,2);put(&p,editor.BPM,2);put(&p,editor.speed,1);put(&p,editor.globalVolume,1);
     put(&p,song.songLength,2);put(&p,song.songLoopStart,2);put(&p,editor.editPattern,1);put(&p,editor.row,2);
     put(&p,editor.curOctave,1);put(&p,editor.curInstr,1);put(&p,editor.editRowSkip,1);
     put(&p,fastTracksPOCMasterIsEnabled(),1);put(&p,fastTracksPOCUsesTrackLengths(),1);put(&p,fastTracksPOCLengthTopologyIsBypassed(),1);
     put(&p,ui.patternEditorOnly,1);put(&p,ui.extendedPatternEditor,1);put(&p,tapeheadConfig.patternColorMode,1);
     memcpy(p,song.name,21);p+=21;put(&p,fastTracksPOCGetControlTrack(0)+1,1);
-    for(int lane=0;lane<8;++lane) {
+    for(int lane=0;lane<TS_TRACKER_LANES;++lane) {
         put(&p,fastTracksPOCGetTrackLength(0,lane),2);put(&p,fastTracksPOCGetMode(lane),1);
         put(&p,fastTracksPOCGetRatioIndex(lane),1);put(&p,fastTracksPOCGetDirection(lane),1);
         put(&p,fastTracksPOCIsSelected(lane),1);put(&p,editor.channelMuted[lane],1);
@@ -695,7 +711,7 @@ int ts_tapehead_export(TsSisterTracker *t,char *e,size_t n) {
         if(!native){free(bytes);return fail(e,n,"Embedded pattern identity is missing");}
         native->rows=patternNumRows[i];
         put(&p,i,1);put(&p,patternNumRows[i],2);put(&p,embed.ids[i],4);
-        for(int row=0;row<256;++row)for(int lane=0;lane<8;++lane) {
+        for(int row=0;row<256;++row)for(int lane=0;lane<TS_TRACKER_LANES;++lane) {
             note_t c=pattern[i]?pattern[i][row*MAX_CHANNELS+lane]:(note_t){0};
             put(&p,c.note,1);put(&p,c.instr,1);put(&p,c.vol,1);put(&p,c.efx,1);put(&p,c.efxData,1);put(&p,c.tuneType,1);put(&p,c.tuneData,1);
             TsTrackerCell *d=&native->cells[row][lane];memset(d,0,sizeof(*d));
@@ -708,12 +724,12 @@ int ts_tapehead_export(TsSisterTracker *t,char *e,size_t n) {
         }
     }
     preferences_get(bytes+size-TH_PREFS_BYTES);
-    t->bpm=editor.BPM;t->ticks_per_line=editor.speed;t->order_count=song.songLength;t->restart_order=song.songLoopStart;
+    t->channel_count=song.numChannels;t->bpm=editor.BPM;t->ticks_per_line=editor.speed;t->order_count=song.songLength;t->restart_order=song.songLoopStart;
     for(int i=0;i<song.songLength;++i)t->orders[i]=embed.ids[song.orders[i]];
     t->editor_pattern=embed.ids[editor.editPattern];t->editor_row=editor.row;t->editor_lane=cursor.ch;t->edit_step=editor.editRowSkip;
     t->follow=embed.follow;
     t->fasttracks_uses_length=fastTracksPOCUsesTrackLengths();t->length_bypass=fastTracksPOCLengthTopologyIsBypassed();t->control_lane=fastTracksPOCGetControlTrack(0);
-    for(int lane=0;lane<8;++lane) {
+    for(int lane=0;lane<TS_TRACKER_LANES;++lane) {
         TsTrackerLane *l=&t->lanes[lane];l->length=fastTracksPOCGetTrackLength(0,lane);
         l->mode=fastTracksPOCGetMode(lane);l->ratio=fastTracksPOCGetRatioIndex(lane);
         l->direction=fastTracksPOCGetDirection(lane);
@@ -732,15 +748,21 @@ static int score_import(TsSisterTracker *t,char *e,size_t n) {
     if(!t->embedded_size) {preferences_apply(default_preferences);return native_import(t,e,n);}
     if(!ts_tracker_embedded_validate(t->embedded_data,t->embedded_size))return fail(e,n,"Invalid embedded tracker score");
     note_t *prepared[256]={0};
-    const uint8_t *records=t->embedded_data+TH_HEADER+8*TH_LANE_BYTES+256;
+    int stored_lanes=t->embedded_data[3]=='3'?TS_TRACKER_LANES:8;
+    size_t record_bytes=7u+256u*stored_lanes*7u;
+    const uint8_t *records=t->embedded_data+TH_HEADER+stored_lanes*TH_LANE_BYTES+256;
     int total=t->embedded_data[8]|(t->embedded_data[9]<<8);
     for(int k=0;k<total;++k) {
-        int i=records[k*TH_PATTERN_BYTES];
+        int i=records[k*record_bytes];
         prepared[i]=calloc(MAX_PATT_LEN*TRACK_WIDTH+16,1);
         if(!prepared[i]) {
             for(int j=0;j<256;++j)free(prepared[j]);
             return fail(e,n,"Unable to load embedded tracker pattern");
         }
+    }
+    if(!restore_instruments(t)) {
+        for(int j=0;j<256;++j)free(prepared[j]);
+        return fail(e,n,"Unable to restore tracker instruments");
     }
     const uint8_t *p=t->embedded_data+8;int count=get(&p,2);
     ts_tapehead_focus_lost();stopPlaying();undoClear();embed.capture_seam_pending=0;
@@ -753,7 +775,7 @@ static int score_import(TsSisterTracker *t,char *e,size_t n) {
     memcpy(song.name,p,21);p+=21;int control=(int)get(&p,1)-1;
     fastTracksPOCResetForLoadedModule();fastTracksPOCSetMasterEnabled(master);
     fastTracksPOCSetUsesTrackLengths(uses);fastTracksPOCSetLengthTopologyBypassed(bypass);
-    for(int lane=0;lane<8;++lane) {
+    for(int lane=0;lane<stored_lanes;++lane) {
         unsigned len=get(&p,2),mode=get(&p,1),ratio=get(&p,1),reverse=get(&p,1),selected=get(&p,1),muted=get(&p,1),trim=get(&p,2);get(&p,1);
         fastTracksPOCSetTrackLength(0,lane,len);fastTracksPOCSetMode(lane,mode);fastTracksPOCSetRatioIndex(lane,ratio);
         fastTracksPOCSetDirection(lane,reverse);
@@ -764,22 +786,23 @@ static int score_import(TsSisterTracker *t,char *e,size_t n) {
     for(int k=0;k<count;++k) {
         int i=get(&p,1);int rows=get(&p,2);embed.ids[i]=get(&p,4);
         patternNumRows[i]=rows;
-        for(int row=0;row<256;++row)for(int lane=0;lane<8;++lane) {
+        for(int row=0;row<256;++row)for(int lane=0;lane<stored_lanes;++lane) {
             note_t *c=&pattern[i][row*MAX_CHANNELS+lane];
             c->note=get(&p,1);c->instr=get(&p,1);c->vol=get(&p,1);c->efx=get(&p,1);c->efxData=get(&p,1);c->tuneType=get(&p,1);c->tuneData=get(&p,1);
         }
     }
-    preferences_apply(t->embedded_data[3]=='2'?t->embedded_data+t->embedded_size-TH_PREFS_BYTES:default_preferences);
+    preferences_apply(t->embedded_data[3]>='2'?t->embedded_data+t->embedded_size-TH_PREFS_BYTES:default_preferences);
     /* STH1 already stored these two settings, before the preferences tail. */
     fastTracksPOCSetUsesTrackLengths(uses);tapeheadConfig.patternColorMode=color;
     cursor.ch=t->editor_lane;
-    setMixerBPM(song.BPM);song.numChannels=8;playMode=PLAYMODE_EDIT;
+    setLinearPeriods(t->embedded_data[3]=='3'?t->embedded_data[6]:true);
+    setMixerBPM(song.BPM);song.numChannels=t->channel_count;playMode=PLAYMODE_EDIT;
     song.pattNum=editor.editPattern;song.row=editor.row;song.currNumRows=patternNumRows[editor.editPattern];
     fastTracksPOCResetForLoadedModule();fastTracksPOCSetLengthTopologyBypassed(bypass);
     if(ui.patternEditorOnly)togglePatternEditorOnly();
     if(ui.extendedPatternEditor)togglePatternEditorExtended();
     if(only)togglePatternEditorOnly();else if(expanded)togglePatternEditorExtended();
-    ui.updatePatternEditor=ui.updatePosSections=true;return 1;
+    updateChanNums();ui.updatePatternEditor=ui.updatePosSections=true;return 1;
 }
 int ts_tapehead_sync(TsSamplePages *pages,const TsInstrument *active,unsigned rate,char *e,size_t n) {
     if(!embed.initialized)return 1;
@@ -810,3 +833,5 @@ int ts_tapehead_sync(TsSamplePages *pages,const TsInstrument *active,unsigned ra
     atomic_store_explicit(&embed.ready,1,memory_order_release);
     return 1;
 }
+
+#include "ts_tapehead_xm.inc"

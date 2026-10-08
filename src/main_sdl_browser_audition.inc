@@ -89,6 +89,10 @@ static int browser_audition_event(const SDL_Event *event,SDL_Window *window,
         browser_audition_stop(device,audio,ui,c,1);
         snprintf(ui->browser.message,sizeof(ui->browser.message),"SELECT AN AUDIO FILE");return 1;
     }
+    if(path_is_xm(path)) {
+        browser_audition_stop(device,audio,ui,c,1);
+        snprintf(ui->browser.message,sizeof(ui->browser.message),"XM: OPEN TO IMPORT THE SONG AND SAMPLES");return 1;
+    }
     if(ts_audio_import_detect_kind(path)==TS_AUDIO_IMPORT_UNKNOWN) {
         browser_audition_stop(device,audio,ui,c,1);
         snprintf(ui->browser.message,sizeof(ui->browser.message),"RAW: OPEN IMPORT PREVIEW");return 1;

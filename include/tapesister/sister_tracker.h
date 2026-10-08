@@ -6,7 +6,7 @@
 #include <stdint.h>
 
 enum {
-    TS_TRACKER_LANES = 8,
+    TS_TRACKER_LANES = 32,
     TS_TRACKER_ROWS = 256,
     TS_TRACKER_PATTERNS = 256,
     TS_TRACKER_ORDERS = 256,
@@ -59,6 +59,22 @@ typedef struct {
     uint8_t muted, route, output_channel, output_stereo;
 } TsTrackerLane;
 
+/* XM instruments keep their note map and envelopes; audio remains editable
+   host tiles. Zero present retains the original one-tile instrument behavior. */
+typedef struct {
+    uint8_t present, sample_count;
+    char name[23];
+    char sample_names[16][23];
+    TsTileId tiles[16];
+    uint8_t volume[16], panning[16], note_map[96];
+    int8_t relative_note[16], finetune[16];
+    uint16_t vol_points[12][2], pan_points[12][2];
+    uint8_t vol_length, pan_length, vol_sustain, vol_start, vol_end;
+    uint8_t pan_sustain, pan_start, pan_end, vol_flags, pan_flags;
+    uint8_t vib_type, vib_sweep, vib_depth, vib_rate;
+    uint16_t fadeout;
+} TsTrackerInstrument;
+
 typedef struct {
     TsTrackerPattern *patterns[TS_TRACKER_PATTERNS];
     uint16_t pattern_count;
@@ -67,10 +83,12 @@ typedef struct {
     uint16_t order_count, restart_order;
     uint16_t bpm;
     uint8_t ticks_per_line, loop;
+    uint8_t channel_count; /* Active lanes, even 2-32; new/legacy projects start at 8. */
     int8_t control_lane; /* -1 = none. */
     uint8_t fasttracks_uses_length, length_bypass;
     uint32_t random_seed;
     TsTileId aliases[TS_TRACKER_ALIASES];
+    TsTrackerInstrument instruments[129];
     TsTrackerLane lanes[TS_TRACKER_LANES];
     TsPatternId editor_pattern;
     uint16_t editor_row;

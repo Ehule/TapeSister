@@ -1654,3 +1654,18 @@ void fastTracksPOCSetDirection(int32_t channelIndex,uint8_t direction)
     if(unlocked)unlockAudio();
     ui.updatePatternEditor=true;
 }
+
+#ifdef TAPEHEAD_EMBEDDED
+/* Read the same first-in-song LEN/CONTROL policy without touching playback. */
+void tapeheadEmbeddedPendingLengths(const song_t *source,uint16_t lengths[32],int *control)
+{
+    memset(lengths,0,32*sizeof(*lengths));*control=-1;
+    if(!pendingFastTracksMetadataValid)return;
+    for(int pass=0;pass<2;++pass)for(int n=0;n<(pass?256:source->songLength);++n) {
+        int p=pass?n:source->orders[n];
+        if(*control<0 && pendingFastTracksControlTrackPlusOne[p])
+            *control=pendingFastTracksControlTrackPlusOne[p]-1;
+        for(int ch=0;ch<32;++ch)if(!lengths[ch])lengths[ch]=pendingFastTracksPatternLength[p][ch];
+    }
+}
+#endif

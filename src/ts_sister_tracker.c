@@ -17,6 +17,7 @@ void ts_sister_tracker_init(TsSisterTracker *t)
     t->next_pattern_id = 1;
     t->bpm = 125;
     t->ticks_per_line = 6;
+    t->channel_count = 8;
     t->loop = 1;
     t->control_lane = -1;
     t->fasttracks_uses_length = 1;
@@ -200,6 +201,7 @@ int ts_sister_tracker_validate(const TsSisterTracker *t, char *error, size_t siz
             ts_tracker_embedded_validate(t->embedded_data,t->embedded_size),
             "Invalid embedded SisterTracker score");
     REQUIRE(t->pattern_count <= TS_TRACKER_PATTERNS && t->order_count <= TS_TRACKER_ORDERS &&
+            t->channel_count >= 2 && t->channel_count <= TS_TRACKER_LANES && !(t->channel_count&1) &&
             t->next_pattern_id != 0 && t->bpm >= 32 && t->bpm <= 999 &&
             (t->ticks_per_line >= 1 || t->embedded_size) && t->ticks_per_line <= 31 && boolean(t->loop) &&
             t->control_lane >= -1 && t->control_lane < TS_TRACKER_LANES &&
@@ -211,6 +213,17 @@ int ts_sister_tracker_validate(const TsSisterTracker *t, char *error, size_t siz
         REQUIRE(!t->aliases[i] || ts_tile_id_valid(t->aliases[i]), "Invalid SisterTracker tile alias");
         for (int j = 1; j < i; ++j)
             REQUIRE(!t->aliases[i] || t->aliases[i] != t->aliases[j], "Duplicate SisterTracker tile alias");
+    }
+    for (int a=1;a<=128;++a) {
+        const TsTrackerInstrument *v=&t->instruments[a];
+        REQUIRE(v->present<=1 && v->sample_count<=16 && memchr(v->name,0,sizeof(v->name)), "Invalid XM instrument");
+        REQUIRE(v->vol_length<=12 && v->pan_length<=12 && v->vol_sustain<12 && v->vol_start<12 && v->vol_end<12 &&
+                v->pan_sustain<12 && v->pan_start<12 && v->pan_end<12 && v->vol_flags<=7 && v->pan_flags<=7 &&
+                v->vib_type<=3, "Invalid XM envelope");
+        for(int k=0;k<96;++k) REQUIRE(v->note_map[k]<16, "Invalid XM sample map");
+        for(int k=0;k<16;++k) REQUIRE((!v->tiles[k] || ts_tile_id_valid(v->tiles[k])) && v->volume[k]<=64 &&
+            memchr(v->sample_names[k],0,sizeof(v->sample_names[k])), "Invalid XM sample binding");
+        for(int k=0;k<12;++k) REQUIRE(v->vol_points[k][1]<=64 && v->pan_points[k][1]<=64, "Invalid XM envelope point");
     }
     for (int i = 0; i < TS_TRACKER_LANES; ++i) {
         const TsTrackerLane *l = &t->lanes[i];
@@ -270,4 +283,5 @@ void ts_sister_tracker_reserve_tile_ids(const TsSisterTracker *t)
 {
     if (!t) return;
     for (int i = 1; i < TS_TRACKER_ALIASES; ++i) ts_tile_id_reserve(t->aliases[i]);
+    for(int a=1;a<=128;++a)for(int k=0;k<16;++k)ts_tile_id_reserve(t->instruments[a].tiles[k]);
 }

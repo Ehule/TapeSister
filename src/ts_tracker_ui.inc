@@ -87,7 +87,7 @@ static void tracker_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrum
     }
     tracker_tiny(fb,5,g.len_y,t->length_bypass?"OFF":"LEN",t->length_bypass?PAL_TEXT:PAL_NOTE);
     tracker_tiny(fb,5,g.ratio_y,t->fasttracks_uses_length?"FTL":"PAT",PAL_TEXT);
-    for(int lane=0;lane<TS_TRACKER_LANES;++lane) {
+    for(int lane=0;lane<TS_TRACKER_LEGACY_LANES;++lane) {
         int x=TS_TRACKER_LANE_X+lane*TS_TRACKER_LANE_WIDTH;
         const TsTrackerLane *definition=&t->lanes[lane];
         frame(fb,x-1,g.len_y-2,TS_TRACKER_LANE_WIDTH,g.bottom-g.len_y+4,RGB(0,0,0),0);
