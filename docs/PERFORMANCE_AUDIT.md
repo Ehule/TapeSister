@@ -265,3 +265,81 @@ RESET, enable PROFILE and collect 40–60 seconds. Compare Waveforms, Main paint
 Texture/damage/copy, Prism, Pedalboard and callback overruns. Then compare the
 same project minimized; assess whole-process CPU separately with PROFILE off.
 The existing PulseAudio start-gap caveat still applies.
+
+## Tracker suspension and Prism indexing follow-up
+
+Baseline is the merge of PR #132, `de386aa`. The subsequent A8 report measured
+3.748 ms average callback, an 8.580 ms retained maximum, and no near/over-budget
+callbacks in 94.2 seconds. Tracker UI was almost absent in that capture; this
+alone does not exercise the initialized-then-closed tracker case.
+
+This pass:
+
+- Suspends periodic score hashing and tile rebinding when TrackSister is closed,
+  stopped and has no interpolation preview. Reopening imports the current host
+  score before accepting input. Hidden tracker playback still synchronizes.
+- Keeps service/action handling and retired-tile collection running. An empty
+  retirement list no longer acquires the audio lock. Live sample snapshots and
+  sounding retired samples retain their existing ownership rules.
+- Reuses the first score hash when tile binding did not add aliases, including
+  the separate canvas-page binding path. Export checks for a pending host score
+  replacement after suspension/focus loss so saving cannot overwrite a newly
+  loaded project with stale embedded state. Ordinary synchronized edits do not
+  acquire an extra hash pass.
+- Replaces Prism's per-sample write-index modulus with compare/wrap and its
+  analysis scheduler modulus with a countdown. The first analysis opportunity,
+  bypass progression, rate changes and sample-clock wrap retain their schedule.
+- Reuses the period estimator's coarse sample indices and values during
+  refinement, with bounded backward wrapping instead of repeated division.
+  All floating-point arithmetic, filter histories, phase updates, smoothing,
+  lens sequencing, morph/Matrix operation and analysis timing are preserved.
+  The estimator still completes on the same sample; it is not spread across
+  later callbacks. No new heap allocation or lock is added to audio processing.
+
+### Measurements and validation
+
+Hosted Linux Release builds; these are not A8 measurements. The committed
+`tapesister_performance_benchmark --tracker` runs 500 refreshes on a 16-pattern
+score with an initialized tracker and no audio device. Both workspace states
+use a hidden window to exclude paint from the synchronization measurement.
+Medians of three alternating baseline/current runs:
+
+| Case | Before | After |
+|---|---:|---:|
+| Closed, stopped tracker refresh | 2.230305 ms | 0.000072 ms |
+| Open, stopped tracker refresh (no paint) | 2.190819 ms | 1.071539 ms |
+| Idle callback | 0.411 ms | 0.388 ms |
+| Dry looping callback | 0.399 ms | 0.409 ms |
+| Prism16 + pedalboard callback | 1.002 ms | 1.003 ms |
+| Same, warmed zero-mix reverb | 1.236 ms | 1.234 ms |
+
+The callback benchmark uses the previous representative 48 kHz/512-frame patch
+with PROFILE enabled. Its active DSP averages show no reliable improvement;
+idle/dry fluctuations also demonstrate host timing noise. A separate six-pair
+alternating benchmark of the **period-analysis function alone** measured median
+54.439 us before and 45.490 us after (16.4% lower). It used separately compiled
+original/current source objects, `-O3` without LTO, 5,000 analyses per run on a
+48 kHz stereo sine history, and walked all ring positions. An unprofiled full
+Prism stream remained within noise (about 0.95 us/sample in both versions).
+The narrower analysis result must not be presented as a 16% callback saving.
+
+Original/current comparisons matched 1,868,528 frames bit-for-bit at 8, 7,999,
+8,000, 11,025, 44,100, 48,000, 96,000, 192,000 and 768,000 Hz. These comparisons
+also checked every lens/filter state, Matrix state, ring position, sample clock
+and period target through changing lens counts, shapes, mute/solo, sequencing,
+manual/timed morphs, Matrix restarts, bypass and silence. The full callback
+benchmark matched another 3,072,000 frames exactly.
+
+Committed regression coverage checks repeated closed/stopped refreshes without
+sync calls; preserving/saving an in-place changed host score while suspended;
+importing it on reopen; continued hidden playback synchronization; pending host
+actions; and period/pitch/cadence across history wraps, bypass, dominant-channel
+changes and sample rates through 768 kHz. Existing Prism and embedded tracker
+suites and the package guard passed locally. Native CI retains these suites.
+
+For A8 validation, open TrackSister once, stop it, return to the canvas, then
+reset and profile the same held ARP/Prism/pedalboard patch for 40–60 seconds.
+Compare Tracker UI and callback budget events. Also check an actual tracker
+song continuing behind the canvas, tile edits during playback, and reopening
+after loading/saving another project. Scheduling/start gaps and audible
+crackling still require the user's hardware test.

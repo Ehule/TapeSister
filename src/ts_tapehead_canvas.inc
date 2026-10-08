@@ -1,6 +1,6 @@
 /* Compact host canvas. Stable tile identity, not bank position, selects an instrument. */
 #include "ts_sister_portal_mask.inc"
-static int bind_tiles(TsSamplePages *,const TsInstrument *,char *,size_t);
+static int bind_tiles(TsSamplePages *,const TsInstrument *,int *,char *,size_t);
 static void tracker_logo(void) {
     drawFramework(112,0,154,32,FRAMEWORK_TYPE1);
     for(int y=0;y<28;++y)for(int x=0;x<42;++x) {
@@ -43,7 +43,9 @@ static void canvas_page_step(int delta) {
     else if(delta>0 && page+1<canvas_view_count())++page;
     if(page!=embed.canvas_page) {
         embed.canvas_page=page;embed.canvas_message[0]=0;
-        bind_tiles(embed.pages,embed.active,embed.canvas_message,sizeof(embed.canvas_message));
+        int aliases_changed=0;
+        bind_tiles(embed.pages,embed.active,&aliases_changed,embed.canvas_message,sizeof(embed.canvas_message));
+        if(aliases_changed)embed.model_hash=ts_sister_tracker_hash(&embed.pages->tracker);
     }
 }
 static void canvas_click(int x,int y) {

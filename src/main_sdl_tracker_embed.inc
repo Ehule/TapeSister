@@ -59,9 +59,14 @@ static void tracker_refresh(SDL_AudioDeviceID device,AudioState *audio,TsUiState
 #endif
     (void)device;
     if(!ts_tapehead_frame())return;
-    if(!ts_tapehead_sync(pages,instrument,rate,ui->status,sizeof(ui->status))) {
-        ui->tracker_open=0;ui->tracker_embedded_frame=NULL;return;
-    }
+    /* Reopening explicitly syncs in embedded_open. Hidden playback still
+       follows tile edits, but a closed, stopped workspace needs no score
+       hashing or alias scan on every service tick. */
+    if(ui->tracker_open || ts_tapehead_running() || ts_tapehead_interpolation_active()) {
+        if(!ts_tapehead_sync(pages,instrument,rate,ui->status,sizeof(ui->status))) {
+            ui->tracker_open=0;ui->tracker_embedded_frame=NULL;return;
+        }
+    } else ts_tapehead_suspend_sync();
     unsigned capturing=atomic_load(&audio->tracker_capture);
     if(sister && ts_performance_recorder_state(&sister->performance_recorder)==TS_PERFORMANCE_FILE_RECORDING)capturing=1;
     ts_tapehead_status(ui,capturing);

@@ -12,8 +12,33 @@ static AudioState a;
 static TsUiState u;
 static TsInstrument instrument;
 static TsFramebuffer framebuffer;
+/* Explicit UI benchmark: initialized tracker, 16 patterns, no audio device.
+   Both states keep the window hidden to exclude painting from sync/service. */
+static int benchmark_tracker_refresh(void)
+{
+    SDL_SetMainReady(); SDL_SetHint(SDL_HINT_VIDEODRIVER,"dummy");
+    assert(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER));
+    SDL_Window *window=SDL_CreateWindow("Tracker benchmark",0,0,640,400,SDL_WINDOW_HIDDEN);
+    assert(window);
+    TsSamplePages *pages=malloc(sizeof(*pages));char error[160];
+    ts_ui_init(&u);ts_instrument_init(&instrument);
+    assert(pages && ts_sample_pages_init(pages,error,sizeof(error)));
+    for(int i=0;i<16;++i) {TsPatternId id;assert(ts_sister_tracker_add_pattern(&pages->tracker,64,&id,error,sizeof(error)));}
+    assert(embedded_open(window,0,&a,&u,pages,&instrument,48000));
+    for(int visible=0;visible<2;++visible) {
+        u.tracker_open=visible;
+        uint64_t begin=SDL_GetPerformanceCounter();
+        for(int i=0;i<500;++i)tracker_refresh(0,&a,&u,pages,&instrument,48000,NULL);
+        double ms=(double)(SDL_GetPerformanceCounter()-begin)*1000/SDL_GetPerformanceFrequency()/500;
+        printf("Tracker %s, stopped: %.6f ms/refresh\n",visible?"open (no paint)":"closed",ms);
+    }
+    ts_tapehead_close();SDL_DestroyTexture(embedded_host.texture);
+    ts_sample_pages_free(pages);free(pages);ts_instrument_free(&instrument);
+    SDL_DestroyWindow(window);SDL_Quit();return 0;
+}
 int main(int argc, char **argv)
 {
+    if(argc>1 && !strcmp(argv[1],"--tracker"))return benchmark_tracker_refresh();
     SDL_SetMainReady(); assert(!SDL_Init(SDL_INIT_TIMER));
     ts_profile_init(SDL_GetPerformanceCounter,SDL_GetPerformanceFrequency());
     ts_ui_init(&u); ts_instrument_init(&instrument);

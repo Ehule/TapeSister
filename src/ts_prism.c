@@ -258,6 +258,7 @@ int ts_prism_prepare(TsPrism *p, uint32_t rate)
     p->history = history;
     p->capacity = capacity;
     p->sample_rate = rate;
+    p->analysis_hop = (rate / 47 / TS_PRISM_HOP + 1) * TS_PRISM_HOP;
     p->window_frames = p->window_target = fmax(4, rate * .040);
     p->previous_window = p->window_frames;
     p->window_fade = 1;
@@ -345,6 +346,13 @@ static double advance_phase(double phase, double ratio, double span)
     return phase;
 }
 
+/* Period-analysis lookbacks are below the 80 ms history capacity: the
+   coarse window plus full-rate refinement spans less than 40 ms. */
+static size_t history_back(size_t at, size_t frames, size_t capacity)
+{
+    return at >= frames ? at - frames : capacity - (frames - at);
+}
+
 /* A bounded, shared YIN-style period estimate. Synchronizing the crossfade
    span to an even number of source periods avoids the fixed-window sideband
    grid that otherwise makes octave-down tones miss their intended pitch.
@@ -359,14 +367,16 @@ static void track_period(TsPrism *p)
     if (minimum < 2) minimum = 2;
     if (maximum > 258) maximum = 258;
     float signal[520], power[2] = {0};
+    size_t indices[520], at = p->write;
     for (int i = 0; i < 2 * maximum + 2; ++i) {
-        size_t at = (p->write + p->capacity - (size_t)i * stride) % p->capacity;
+        indices[i] = at;
         power[0] += p->history[at].l * p->history[at].l;
         power[1] += p->history[at].r * p->history[at].r;
+        at = history_back(at, stride, p->capacity);
     }
     if (fmaxf(power[0], power[1]) < .00001f) return;
     for (int i = 0; i < 2 * maximum + 2; ++i) {
-        size_t at = (p->write + p->capacity - (size_t)i * stride) % p->capacity;
+        size_t at = indices[i];
         signal[i] = power[0] >= power[1] ? p->history[at].l : p->history[at].r;
     }
     double cumulative = 0;
@@ -397,19 +407,17 @@ static void track_period(TsPrism *p)
             if (candidate < 2) continue;
             double error = 0;
             for (int j = 0; j < maximum; ++j) {
-                size_t at = (p->write + p->capacity - (size_t)j * stride) % p->capacity;
-                size_t behind = (at + p->capacity - candidate) % p->capacity;
-                double delta = power[0] >= power[1] ?
-                    p->history[at].l - p->history[behind].l : p->history[at].r - p->history[behind].r;
+                size_t behind = history_back(indices[j], (size_t)candidate, p->capacity);
+                double delta = signal[j] - (power[0] >= power[1] ?
+                    p->history[behind].l : p->history[behind].r);
                 error += delta * delta;
             }
             if (error < best_error) {best_error = error; best = candidate;}
         }
         for (int k = 0; k < 3; ++k) for (int j = 0; j < maximum; ++j) {
-            size_t at = (p->write + p->capacity - (size_t)j * stride) % p->capacity;
-            size_t behind = (at + p->capacity - (best + k - 1)) % p->capacity;
-            double delta = power[0] >= power[1] ?
-                p->history[at].l - p->history[behind].l : p->history[at].r - p->history[behind].r;
+            size_t behind = history_back(indices[j], (size_t)(best + k - 1), p->capacity);
+            double delta = signal[j] - (power[0] >= power[1] ?
+                p->history[behind].l : p->history[behind].r);
             errors[k] += delta * delta;
         }
         denominator = errors[0] - 2 * errors[1] + errors[2];
@@ -451,8 +459,11 @@ TsStereoFrame ts_prism_process(TsPrism *p, TsStereoFrame input)
 
     /* Analysis is scheduled at roughly 47 Hz, regardless of device buffer
        size. A fixed upper bound keeps both memory and callback work bounded. */
-    unsigned analysis_hop = (p->sample_rate / 47 / TS_PRISM_HOP + 1) * TS_PRISM_HOP;
-    if ((c->enabled || p->wet > 0) && p->clock % analysis_hop == 0) track_period(p);
+    if (p->analysis_remaining == 0) {
+        p->analysis_remaining = p->analysis_hop;
+        if (c->enabled || p->wet > 0) track_period(p);
+    }
+    --p->analysis_remaining;
     /* A changing source period replaces the read geometry through a 40 ms
        crossfade. Slewing a delay span would bend the instrument's pitch. */
     if (p->window_fade >= 1 && fabs(p->window_target - p->window_frames) > .1) {
@@ -576,8 +587,8 @@ TsStereoFrame ts_prism_process(TsPrism *p, TsStereoFrame input)
         sum.r += lens.r * right;
 
     }
-    p->write = (p->write + 1) % p->capacity;
-    ++p->clock;
+    if (++p->write == p->capacity) p->write = 0;
+    if (++p->clock == 0) p->analysis_remaining = 0;
     if (p->wet == 0 && p->dry == 1) return input; /* Exact settled bypass, including output trim. */
     /* Root-sum-square compensation preserves decorrelated voice energy,
        including the actual stereo balance and smoothed lens fades. A floor
