@@ -80,6 +80,15 @@ if(TAPESISTER_BUILD_SDL)
   endif()
   target_include_directories(tapesister PRIVATE third_party)
   target_link_libraries(tapesister PRIVATE tapesister_core tapesister_tapehead SDL2::SDL2)
+
+  # Optional composition utility; uses the canonical application callback.
+  add_executable(tapesister_compose EXCLUDE_FROM_ALL tools/compose_native.c
+    src/tape_link.c src/tape_companion.c src/ts_startup_diag.c src/ts_midi_input.c)
+  target_include_directories(tapesister_compose PRIVATE third_party)
+  target_link_libraries(tapesister_compose PRIVATE tapesister_core tapesister_tapehead SDL2::SDL2)
+  if(UNIX AND NOT APPLE)
+    target_link_libraries(tapesister_compose PRIVATE rt)
+  endif()
   add_custom_command(TARGET tapesister POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:tapesister>/licenses/tapehead"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
