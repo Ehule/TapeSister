@@ -87,6 +87,9 @@ static int router_event(const SDL_Event *e,SDL_Window *window,SDL_AudioDeviceID 
             if(stage==TS_ROUTER_INSERT && x>=252 && x<330){insert_panel_open(ui);return 1;}
             if(x>=414)router_manual(device,audio,ui,stage,x>=512);
             else {
+                if(stage==TS_ROUTER_INSERT && ui->router_live.master_mix) {
+                    snprintf(ui->status,sizeof(ui->status),"MASTER MIX INSERT IS FIXED BEFORE EQ / LIMITER");return 1;
+                }
                 if(ui->router_view.running){snprintf(ui->status,sizeof(ui->status),"STOP ROUTER SEQUENCE TO REORDER STAGES");return 1;}
                 ui->router_drag=row+1;ui->router_drop=row;return 1;
             }

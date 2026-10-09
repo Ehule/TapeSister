@@ -1475,6 +1475,16 @@ TsStereoFrame ts_sister_runtime_process_output(TsSisterRuntime *runtime,
     TsStereoFrame output;
     float pre_peak = 0.0f;
     if (runtime == NULL) return ts_stereo_frame_sanitize(input);
+    if(runtime->router.master_mix) {
+        float wet=runtime->router.wet[TS_ROUTER_INSERT];
+        uint64_t profile_insert=ts_profile_begin(TS_PROF_INSERT);
+        TsStereoFrame processed=ts_insert_process(&runtime->insert,wet>0?input:(TsStereoFrame){0,0},wet*runtime->router.gain);
+        ts_profile_end(TS_PROF_INSERT,profile_insert);
+        runtime->router.input_peak[TS_ROUTER_INSERT]=fmaxf(frame_peak(input),runtime->router.input_peak[TS_ROUTER_INSERT]*runtime->router.decay);
+        input=frame_effect_return(input,processed,wet);
+        runtime->router.output_peak[TS_ROUTER_INSERT]=fmaxf(frame_peak(input),runtime->router.output_peak[TS_ROUTER_INSERT]*runtime->router.decay);
+        runtime->router.master_peak=fmaxf(frame_peak(input),runtime->router.master_peak*runtime->router.decay);
+    }
     input = ts_master_eq_process(&runtime->master_eq, input);
     ts_eq_spectrum_push(&runtime->eq_spectrum,input,runtime->master_eq.sample_rate);
     output = ts_sister_limiter_process(&runtime->limiter, input,

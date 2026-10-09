@@ -75,7 +75,7 @@ void ts_router_reorder(TsRouter *r,int from,int to)
 {
     if(r->transport.running)return;
     ts_router_move(&r->controls,from,to);
-    if(memcmp(r->order,r->controls.order,sizeof(r->order)) || r->send_mask!=r->controls.send_mask)r->handoff=-1;
+    if(memcmp(r->order,r->controls.order,sizeof(r->order)) || r->send_mask!=r->controls.send_mask || r->master_mix!=r->controls.master_mix)r->handoff=-1;
     else if(r->handoff<0)r->handoff=1;
 }
 int ts_router_store(TsRouter *r,int slot)

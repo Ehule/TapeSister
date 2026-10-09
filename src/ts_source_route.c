@@ -79,9 +79,11 @@ TsStereoFrame ts_source_route_frame(TsSourceRouteVoice *v, TsStereoFrame in, TsS
     clean->reference.l+=in.l*(1-v->main);clean->reference.r+=in.r*(1-v->main);
     for(int i=0;i<TS_SOURCE_COEFFICIENTS;++i)if(v->mask&(1u<<i)) {
         float value=in.l*v->matrix[i][0]+in.r*v->matrix[i][1];
-        if(i<16) {if(!missing)clean->speaker[i]+=value;}
-        else if(i==16){clean->monitor.l+=value;if(missing)clean->fallback.l+=value;}
-        else if(i==17){clean->monitor.r+=value;if(missing)clean->fallback.r+=value;}
+        if(i<16) {if(!missing){clean->speaker[i]+=value;if(v->route.mix_enabled)clean->matrix_speaker[i]+=value;}}
+        else if(i==16){clean->monitor.l+=value;if(missing)clean->fallback.l+=value;
+            if(v->route.mix_enabled){clean->matrix_monitor.l+=value;if(missing)clean->matrix_fallback.l+=value;}}
+        else if(i==17){clean->monitor.r+=value;if(missing)clean->fallback.r+=value;
+            if(v->route.mix_enabled){clean->matrix_monitor.r+=value;if(missing)clean->matrix_fallback.r+=value;}}
         else {
             int bus=(i-18)/2;
             if(i&1)clean->send[bus].r+=value;else clean->send[bus].l+=value;
@@ -94,7 +96,12 @@ TsStereoFrame ts_source_route_frame(TsSourceRouteVoice *v, TsStereoFrame in, TsS
 void ts_source_route_add(TsSourceRouteMix *to, const TsSourceRouteMix *from, float gain)
 {
     if(!to || !from || (!from->mask && !from->send_mask && !from->reference.l && !from->reference.r))return;
-    for(int i=0;i<TS_SOURCE_SPEAKERS;++i)if(from->mask&(1u<<i))to->speaker[i]+=from->speaker[i]*gain;
+    for(int i=0;i<TS_SOURCE_SPEAKERS;++i)if(from->mask&(1u<<i)) {
+        to->speaker[i]+=from->speaker[i]*gain;
+        to->matrix_speaker[i]+=from->matrix_speaker[i]*gain;
+    }
+    to->matrix_monitor.l+=from->matrix_monitor.l*gain;to->matrix_monitor.r+=from->matrix_monitor.r*gain;
+    to->matrix_fallback.l+=from->matrix_fallback.l*gain;to->matrix_fallback.r+=from->matrix_fallback.r*gain;
     to->monitor.l+=from->monitor.l*gain;to->monitor.r+=from->monitor.r*gain;to->mask|=from->mask;
     to->fallback.l+=from->fallback.l*gain;to->fallback.r+=from->fallback.r*gain;to->missing|=from->missing;
     for(int i=0;i<TS_SOURCE_SENDS;++i)if(from->send_mask&(1u<<i)) {
@@ -102,6 +109,18 @@ void ts_source_route_add(TsSourceRouteMix *to, const TsSourceRouteMix *from, flo
     }
     to->send_mask|=from->send_mask;
     to->reference.l+=from->reference.l*gain;to->reference.r+=from->reference.r*gain;
+}
+
+TsStereoFrame ts_source_route_take_master(TsSourceRouteMix *mix)
+{
+    TsStereoFrame master=mix->matrix_monitor;
+    for(int i=0;i<TS_SOURCE_SPEAKERS;++i) {
+        mix->speaker[i]-=mix->matrix_speaker[i];mix->matrix_speaker[i]=0;
+    }
+    mix->monitor.l-=master.l;mix->monitor.r-=master.r;
+    mix->fallback.l-=mix->matrix_fallback.l;mix->fallback.r-=mix->matrix_fallback.r;
+    mix->matrix_monitor=mix->matrix_fallback=(TsStereoFrame){0,0};
+    return master;
 }
 
 /* Match Main's residual fade on voice removal and normalization changes. */

@@ -191,6 +191,15 @@ static int source_route_event(SDL_Event *event,SDL_Window *main,SDL_AudioDeviceI
     int wheel=event->type==SDL_MOUSEWHEEL?(event->wheel.y>0?1:event->wheel.y<0?-1:0):0;
     if(left) {
         if((x>=586&&y<34)||(x>=480&&y>=365)){source_route_hide();return 1;}
+        if(page!=0 && y>=365 && x>=178 && x<464) {
+            if(device)SDL_LockAudioDevice(device);
+            ts_router_set_master_mix(&audio->sister.router,!w->model.router.master_mix);
+            ui->config.router=ts_router_export(&audio->sister.router);
+            ui->router_live=audio->sister.router.controls;
+            source_route_capture(audio,pages,instrument);
+            if(device)SDL_UnlockAudioDevice(device);
+            return 1;
+        }
         if(y>=9&&y<34&&x>=250&&x<576) {
             int next=x<348?0:x<456?1:2;
             if(w->track!=-2||next==2){w->model.page=next;w->drag=0;}return 1;
@@ -245,7 +254,8 @@ static int source_route_event(SDL_Event *event,SDL_Window *main,SDL_AudioDeviceI
         return 1;
     }
     int clean=r.mode==TS_SOURCE_PAIR||r.mode==TS_SOURCE_SPEAKER;
-    if(clean && (click||wheel) && y>=144&&y<169&&x>=30&&x<348) {
+    int master_mix=w->model.router.master_mix && (page==2 || r.mix_enabled);
+    if(clean && !master_mix && (click||wheel) && y>=144&&y<169&&x>=30&&x<348) {
         int delta=wheel?wheel:right?-1:1;int *destination=x<180?&r.speaker:&r.second;
         if(x<180||r.mode==TS_SOURCE_PAIR) {
             *destination=(*destination+w->model.array.speakers+delta)%w->model.array.speakers;

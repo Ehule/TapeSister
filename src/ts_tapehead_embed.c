@@ -723,6 +723,24 @@ static int bind_tiles(TsSamplePages *pages,const TsInstrument *active,int *alias
 
 static void put(uint8_t **p,uint32_t v,int width) {while(width--){*(*p)++=(uint8_t)v;v>>=8;}}
 static uint32_t get(const uint8_t **p,int width) {uint32_t v=0;for(int i=0;i<width;++i)v|=(uint32_t)*(*p)++<<(8*i);return v;}
+static void begin_score_import(void) {
+    ts_tapehead_focus_lost();stopPlaying();stopVoices();undoClear();embed.capture_seam_pending=0;
+    tapeheadEmbeddedClearClipboard();memset((void*)&pattMark,0,sizeof(pattMark));
+    /* Loaded scores own their mutes. setChannelMute updates the replayer,
+       not the editor flags that playback and export subsequently consult. */
+    memset(editor.channelMuted,0,sizeof(editor.channelMuted));
+    memset(performanceMute,0,sizeof(performanceMute));
+    resetChannels();resetSyncQueues();
+    song.songPos=editor.songPos=0;
+    fastTracksPOCResetAllPatternMetadata();
+    for(int lane=0;lane<TS_TRACKER_LANES;++lane) {
+        channelVolumeTrim[lane]=256;
+        fastTracksPOCSetMode(lane,FAST_TRACKS_MODE_STANDARD);
+        fastTracksPOCSetRatioIndex(lane,7);fastTracksPOCSetDirection(lane,0);
+        tapeheadEmbeddedScopeReset(lane);
+    }
+    fastTracksPOCResetForLoadedModule();
+}
 static int native_import(TsSisterTracker *t,char *e,size_t n) {
     if(!ts_sister_tracker_validate(t,e,n))return 0;
     if(t->bpm>255)return fail(e,n,"Existing score tempo exceeds TapeHead's 255 BPM limit");
@@ -753,9 +771,9 @@ static int native_import(TsSisterTracker *t,char *e,size_t n) {
         }
     }
     if(!restore_instruments(t)){fail(e,n,"Unable to restore tracker instruments");goto import_failed;}
-    ts_tapehead_focus_lost();stopPlaying();undoClear();embed.capture_seam_pending=0;
-    tapeheadEmbeddedClearClipboard();memset((void*)&pattMark,0,sizeof(pattMark));
-    fastTracksPOCResetForLoadedModule();
+    begin_score_import();
+    song.name[0]=0;memset(song.orders,0,sizeof(song.orders));
+    editor.editPattern=0;editor.curOctave=4;editor.curInstr=1;
     for(int i=0;i<256;++i) {
         free(pattern[i]);pattern[i]=prepared[i];embed.ids[i]=i<t->pattern_count?t->patterns[i]->id:0;
         patternNumRows[i]=i<t->pattern_count?t->patterns[i]->rows:64;
@@ -776,7 +794,8 @@ static int native_import(TsSisterTracker *t,char *e,size_t n) {
         fastTracksPOCSetTrackLength(0,lane,l->length);
         fastTracksPOCSetMode(lane,(fastTracksMode_t)l->mode);fastTracksPOCSetRatioIndex(lane,l->ratio);
         fastTracksPOCSetDirection(lane,l->direction);
-        channelVolumeTrim[lane]=(uint16_t)lrintf(l->trim*256);setChannelMute(lane,l->muted);
+        channelVolumeTrim[lane]=(uint16_t)lrintf(l->trim*256);
+        editor.channelMuted[lane]=l->muted;setChannelMute(lane,l->muted);
     }
     fastTracksPOCSetControlTrack(0,t->control_lane);playMode=PLAYMODE_EDIT;
     song.row=editor.row;song.pattNum=editor.editPattern;song.currNumRows=patternNumRows[editor.editPattern];
@@ -879,8 +898,7 @@ static int score_import(TsSisterTracker *t,char *e,size_t n) {
         return fail(e,n,"Unable to restore tracker instruments");
     }
     const uint8_t *p=t->embedded_data+8;int count=get(&p,2);
-    ts_tapehead_focus_lost();stopPlaying();undoClear();embed.capture_seam_pending=0;
-    tapeheadEmbeddedClearClipboard();memset((void*)&pattMark,0,sizeof(pattMark));
+    begin_score_import();
     for(int i=0;i<256;++i){free(pattern[i]);pattern[i]=prepared[i];patternNumRows[i]=64;embed.ids[i]=0;}
     editor.BPM=song.BPM=get(&p,2);editor.speed=song.speed=get(&p,1);song.initialSpeed=MAX(song.speed,1);
     editor.globalVolume=song.globalVolume=get(&p,1);song.songLength=get(&p,2);song.songLoopStart=get(&p,2);
@@ -894,7 +912,7 @@ static int score_import(TsSisterTracker *t,char *e,size_t n) {
         fastTracksPOCSetTrackLength(0,lane,len);fastTracksPOCSetMode(lane,mode);fastTracksPOCSetRatioIndex(lane,ratio);
         fastTracksPOCSetDirection(lane,reverse);
         if(selected!=fastTracksPOCIsSelected(lane))fastTracksPOCToggle(lane);
-        channelVolumeTrim[lane]=trim;setChannelMute(lane,muted);
+        channelVolumeTrim[lane]=trim;editor.channelMuted[lane]=muted;setChannelMute(lane,muted);
     }
     fastTracksPOCSetControlTrack(0,control);memcpy(song.orders,p,256);p+=256;
     for(int k=0;k<count;++k) {

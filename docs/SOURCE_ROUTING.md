@@ -21,6 +21,9 @@ The tile itself stays unchanged, so the same tile can have different destination
 on different tracks. Track routes apply throughout the song, including channels
 9–32 and imported module instruments with multiple tile bindings.
 
+For Clean + Sends sources, **Mix Output: Master** replaces direct speaker
+placement with the complete stereo master path described below.
+
 ## Controls and output mapping
 
 Click destination buttons to step forward, right-click to step backward, or use
@@ -109,7 +112,8 @@ For the Pedalboard, the shared return is the existing **POST slot chain**.
 PRE and H1/H2/H3 placements remain local Sister inserts. Set the desired slots
 to POST to hear them on the shared send. No new per-tile or per-track racks
 are allocated. Shared returns do not feed Sister's tape feedback loop.
-Sister Machine and External Insert keep their serial roles.
+Sister Machine keeps its serial role. External Insert is serial in Direct mode
+and processes the recombined mix in Master mode.
 
 ### Clean/processed balance and placement
 
@@ -128,12 +132,32 @@ may itself sound close to the source (especially neutral Prism/Fallout
 settings); wet-only removes the explicit dry mix, not the source's musical
 content.
 
-Clean contributions and processed returns combine after the serial chain,
-Master EQ and Ambisonics field processing. Each uses the same speaker mapping
-and whole-route stereo fallback described above. Global OUT and the final
-linked output guard control the combined output. FILE OUT captures the stereo
-reference mix, including these returns. Internal Sister head/tape taps keep
-their existing meanings.
+**Mix Output**, at the bottom of Sends and Returns, selects one shared output
+path for the parallel mix. It saves with the project and application config.
+
+- **Master** recombines Clean + Sends sources and processed returns into stereo,
+  preserving their pan/balance, width and levels. This joins the ordinary Main
+  mix before **External Insert → Master EQ → limiter → OUT → master output
+  field**. Insert runs once on that complete mix, regardless of its listed
+  serial position; its return replaces the mix at 100% wet. This lets an external
+  processor such as the Vulture process clean tracks and shared effects together.
+  Bypass restores the combined mix, and the existing Send/Return port controls
+  still apply. The return never feeds the sends again.
+- **Direct** preserves independently assigned speakers for the clean sound and
+  each return, bypassing the serial Insert, Master EQ and master field. Global
+  OUT and the linked hardware peak guard still apply. Insert retains its movable
+  serial position for ordinary Main sources.
+
+Existing projects open with their previous Direct behavior. For **Threshold /
+Embers**, open **F9 → Send Returns**, click **Mix Output: Master**, and save the
+project. No track or send-level edits are needed. Speaker assignments are kept
+for switching back to Direct; Master uses their stereo reference mix instead.
+Ordinary clean routes with Clean + Sends disabled remain explicitly direct.
+
+![Master mix output and final processing path](screenshots/master-mix/embers-master-mix.png)
+
+FILE OUT records the resulting stereo program, including the external return,
+EQ and limiter in Master mode. Internal Sister head/tape taps keep their meanings.
 
 This first matrix has source-to-processor sends and independent returns.
 It has no return-to-return sends or arbitrary feedback connections. Older

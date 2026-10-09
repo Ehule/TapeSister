@@ -1299,11 +1299,31 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         }
         output = ts_audio_mixer_render_unclamped(&audio->mixer, &buses);
         output = audio_apply_topology_crossfade(audio, output);
+        ts_source_route_add(&audio->clean,&audio->sister.effect_returns,1.f);
+        /* The parallel bus follows the Router's brief topology fade too,
+           so switching Direct/Master never jumps between two signal paths. */
+        if(audio->sister.router.handoff) {
+            float gain=audio->sister.router.gain;
+            for(int speaker=0;speaker<TS_SOURCE_SPEAKERS;++speaker) {
+                audio->clean.speaker[speaker]-=audio->clean.matrix_speaker[speaker]*(1-gain);
+                audio->clean.matrix_speaker[speaker]*=gain;
+            }
+            audio->clean.monitor.l-=audio->clean.matrix_monitor.l*(1-gain);
+            audio->clean.monitor.r-=audio->clean.matrix_monitor.r*(1-gain);
+            audio->clean.fallback.l-=audio->clean.matrix_fallback.l*(1-gain);
+            audio->clean.fallback.r-=audio->clean.matrix_fallback.r*(1-gain);
+            audio->clean.matrix_monitor.l*=gain;audio->clean.matrix_monitor.r*=gain;
+            audio->clean.matrix_fallback.l*=gain;audio->clean.matrix_fallback.r*=gain;
+        }
+        if(audio->sister.router.master_mix) {
+            TsStereoFrame parallel=ts_source_route_take_master(&audio->clean);
+            output.l+=parallel.l*audio->mixer.program_gain;
+            output.r+=parallel.r*audio->mixer.program_gain;
+        }
         uint64_t profile_master = ts_profile_begin(TS_PROF_MASTER);
         output = ts_sister_runtime_process_output(&audio->sister, output);
         ts_profile_end(TS_PROF_MASTER, profile_master);
         TsStereoFrame main_output=output;
-        ts_source_route_add(&audio->clean,&audio->sister.effect_returns,1.f);
         float clean_gain=audio->mixer.program_gain*audio->sister.master_output_gain.current;
         if(audio->clean.mask) {
             output.l+=audio->clean.monitor.l*clean_gain;output.r+=audio->clean.monitor.r*clean_gain;

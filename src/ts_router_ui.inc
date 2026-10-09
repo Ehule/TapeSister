@@ -18,6 +18,7 @@ static const char *router_help(const TsUiState *ui,int x,int y)
     if(y>=108 && y<318) {
         int stage=ui->config.router.order[(y-108)/42];
         if(stage==TS_ROUTER_INSERT && x>=252 && x<330)return "INSERT SETUP: SELECT SEND / RETURN PAIRS AND LEVELS";
+        if(stage==TS_ROUTER_INSERT && ui->router_live.master_mix && x<414)return "MASTER MIX: INSERT IS FIXED AFTER CLEAN + RETURNS, BEFORE EQ AND LIMITER";
         if(x>=512)return "SOLO ONE STAGE / RIGHT-CLICK: TIMED SOLO / LEFT-CLICK: OVERRIDE UNTIL NEXT STEP";
         if(x>=414)return "BYPASS THIS STAGE / RIGHT-CLICK: TIMED BYPASS / LEFT-CLICK: OVERRIDE UNTIL NEXT STEP";
         if(x>=344)return "SIGNAL AT THIS POINT; LIGHTS CAN GLOW WHILE A PROCESSOR IS BYPASSED OR OFF";
@@ -73,7 +74,7 @@ static void router_render(TsFramebuffer *fb,const TsUiState *ui)
                 ui->router_view.timer_after[stage]?"IN":"FOR",time);text(fb,99,y+23,timer,amber,1);
         } else {
             int bus=ts_router_send_bus(stage);
-            text(fb,99,y+23,bus>=0&&(c->send_mask&(1u<<bus))?"SHARED SEND / WET RETURN":detail[stage],muted,1);
+            text(fb,99,y+23,stage==TS_ROUTER_INSERT && c->master_mix?"FINAL MIX / BEFORE EQ":bus>=0&&(c->send_mask&(1u<<bus))?"SHARED SEND / WET RETURN":detail[stage],muted,1);
         }
         const char *state=!active?(c->solo?"SKIP":"BYPASS"):!available?"OFF":c->solo==stage+1?"SOLO":"ON";
         if(stage==TS_ROUTER_INSERT) {
@@ -96,6 +97,7 @@ static void router_render(TsFramebuffer *fb,const TsUiState *ui)
     button(fb,426,331,140,"AMBISONICS",ui->config.spatial.enabled);
     router_activity(fb,382,341,ui->router_peaks[TS_ROUTER_COUNT*2+1]);
     const char *help=ui->performance_tooltip[0]?ui->performance_tooltip:
+        c->master_mix?"MASTER MIX: CLEAN + RETURNS > INSERT > MASTER EQ > LIMITER > OUT":
         "DRAG: ORDER / RIGHT-CLICK BYPASS/SOLO: TIMER / PERFORMANCE: STATES / F9: CLOSE";
     router_learn_overlay(fb,ui);
     char line[99];snprintf(line,sizeof(line),"%.98s",help);text(fb,22,364,line,ui->performance_tooltip[0]?amber:muted,1);

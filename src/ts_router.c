@@ -21,7 +21,7 @@ int ts_router_valid(const TsRouterControls *c)
 {
     unsigned seen=0;
     if(!c || c->solo<0 || c->solo>TS_ROUTER_COUNT || c->bypass_mask>>TS_ROUTER_COUNT ||
-       c->send_mask>>TS_SOURCE_SENDS)return 0;
+       c->send_mask>>TS_SOURCE_SENDS || c->master_mix<0 || c->master_mix>1)return 0;
     for(int i=0;i<TS_SOURCE_SENDS;++i) {
         const TsSourceRoute *r=&c->return_route[i];
         if(!ts_source_route_valid(r,0) || r->mix_enabled || c->return_level[i]<0 || c->return_level[i]>100 ||
@@ -72,6 +72,13 @@ void ts_router_set_return(TsRouter *r,int bus,int send,TsSourceRoute route,int l
     if(r->send_mask!=next.send_mask)r->handoff=-1;
     /* Placement edits do not cancel a running sequence or temporary bypass. */
 }
+void ts_router_set_master_mix(TsRouter *r,int enabled)
+{
+    if(!r || (enabled!=0 && enabled!=1))return;
+    r->controls.master_mix=enabled;
+    if(r->master_mix!=enabled)r->handoff=-1;
+    /* Like return placement, changing the mix bus preserves automation. */
+}
 void ts_router_init(TsRouter *r)
 {
     memset(r,0,sizeof(*r));ts_router_default(&r->controls);
@@ -92,7 +99,7 @@ void ts_router_set(TsRouter *r,const TsRouterControls *c)
     if(!r || !c)return;
     r->controls=*c;ts_router_sanitize(&r->controls);
     ts_router_takeover(r);
-    if(memcmp(r->order,r->controls.order,sizeof(r->order)) || r->send_mask!=r->controls.send_mask)r->handoff=-1;
+    if(memcmp(r->order,r->controls.order,sizeof(r->order)) || r->send_mask!=r->controls.send_mask || r->master_mix!=r->controls.master_mix)r->handoff=-1;
     else if(r->handoff<0)r->handoff=1;
 }
 static float peak(TsStereoFrame f) {return fmaxf(fabsf(f.l),fabsf(f.r));}
@@ -108,7 +115,7 @@ TsStereoFrame ts_router_process_with_prepare(TsRouter *r,TsStereoFrame in,
     r->source_peak=fmaxf(peak(in),r->source_peak*r->decay);
     if(r->handoff<0) {
         r->gain=fmaxf(0,r->gain-r->step);
-        if(r->gain==0){memcpy(r->order,r->controls.order,sizeof(r->order));r->send_mask=r->controls.send_mask;r->handoff=1;}
+        if(r->gain==0){memcpy(r->order,r->controls.order,sizeof(r->order));r->send_mask=r->controls.send_mask;r->master_mix=r->controls.master_mix;r->handoff=1;}
     } else if(r->handoff>0) {
         r->gain=fminf(1,r->gain+r->step);if(r->gain==1)r->handoff=0;
     }
@@ -120,14 +127,15 @@ TsStereoFrame ts_router_process_with_prepare(TsRouter *r,TsStereoFrame in,
         *wet=target>*wet?fminf(target,*wet+step):fmaxf(target,*wet-step);
         if(prepare)in=ts_stereo_frame_sanitize(prepare(context,s,in));
         int bus=ts_router_send_bus(s),send=bus>=0 && (r->send_mask&(1u<<bus));
-        if(!send)r->input_peak[s]=fmaxf(peak(in),r->input_peak[s]*r->decay);
+        int final_insert=s==TS_ROUTER_INSERT && r->master_mix;
+        if(!send && !final_insert)r->input_peak[s]=fmaxf(peak(in),r->input_peak[s]*r->decay);
         TsStereoFrame out=ts_stereo_frame_sanitize(fn(context,s,*wet>0?in:(TsStereoFrame){0,0}));
         in=(TsStereoFrame){in.l+(out.l-in.l)*(*wet),in.r+(out.r-in.r)*(*wet)};
         in=ts_stereo_frame_sanitize(in);
-        if(!send)r->output_peak[s]=fmaxf(peak(in),r->output_peak[s]*r->decay);
+        if(!send && !final_insert)r->output_peak[s]=fmaxf(peak(in),r->output_peak[s]*r->decay);
     }
     in.l*=r->gain;in.r*=r->gain;
-    r->master_peak=fmaxf(peak(in),r->master_peak*r->decay);
+    if(!r->master_mix)r->master_peak=fmaxf(peak(in),r->master_peak*r->decay);
     ts_router_performance_advance(r,1);
     ts_profile_end(TS_PROF_ROUTER, profile);
     return in;
@@ -137,7 +145,7 @@ int ts_router_write(FILE *file,const TsRouterControls *controls)
     TsRouterControls c=*controls;ts_router_sanitize(&c);
     if(fprintf(file,"Router.Order=")<0)return 0;
     for(int i=0;i<TS_ROUTER_COUNT;++i)if(fprintf(file,"%s%d",i?",":"",c.order[i])<0)return 0;
-    if(fprintf(file,"\nRouter.Bypass=%u\nRouter.Solo=%d\nRouter.SendMask=%u\n",c.bypass_mask,c.solo,c.send_mask)<0)return 0;
+    if(fprintf(file,"\nRouter.Bypass=%u\nRouter.Solo=%d\nRouter.SendMask=%u\nRouter.MasterMix=%d\n",c.bypass_mask,c.solo,c.send_mask,c.master_mix)<0)return 0;
     for(int i=0;i<TS_SOURCE_SENDS;++i) {
         const TsSourceRoute *r=&c.return_route[i];
         if(fprintf(file,"Router.Return%d=%d,%d,%d,%d,%d,%d\n",i,r->mode,r->speaker,r->second,r->pan,r->width,c.return_level[i])<0)return 0;
@@ -175,6 +183,8 @@ int ts_router_read(TsRouterControls *c,const char *key,const char *value)
     } else if(!strcmp(key,"Router.SendMask")) {
         if(!read_integer(&value,&n) || n<0)return -1;
         next.send_mask=(unsigned)n;
+    } else if(!strcmp(key,"Router.MasterMix")) {
+        if(!read_integer(&value,&next.master_mix))return -1;
     } else if(!strncmp(key,"Router.Return",13) && key[13]>='0' && key[13]<'0'+TS_SOURCE_SENDS && !key[14]) {
         int bus=key[13]-'0',fields[6];
         for(int i=0;i<6;++i) {

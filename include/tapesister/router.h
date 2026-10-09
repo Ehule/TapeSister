@@ -14,6 +14,7 @@ typedef struct {
     unsigned bypass_mask;
     int solo; /* Zero, or one stable processor ID + 1. */
     unsigned send_mask; /* TS_SEND_* buses: each processor is Chain OR Send. */
+    int master_mix; /* Recombine Clean + Sends before a final Insert and EQ. */
     TsSourceRoute return_route[TS_SOURCE_SENDS];
     int return_level[TS_SOURCE_SENDS];
 } TsRouterControls;
@@ -56,6 +57,7 @@ typedef struct {
     unsigned sample_rate;
     int handoff; /* -1 fades out, +1 fades in. Never runs two DSP histories. */
     unsigned send_mask; /* Active topology, switched only at the handoff's zero. */
+    int master_mix;
     TsRouterPerformance performance;
     TsRouterTransport transport;
 } TsRouter;
@@ -72,6 +74,7 @@ const char *ts_router_name(int stage);
 int ts_router_send_bus(int stage);
 int ts_router_send_stage(int bus);
 void ts_router_set_return(TsRouter *router,int bus,int send,TsSourceRoute route,int level);
+void ts_router_set_master_mix(TsRouter *router,int enabled);
 void ts_router_init(TsRouter *router);
 void ts_router_prepare(TsRouter *router,unsigned sample_rate);
 void ts_router_set(TsRouter *router,const TsRouterControls *controls);

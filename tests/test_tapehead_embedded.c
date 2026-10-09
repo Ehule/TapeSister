@@ -24,6 +24,7 @@ static int counted_tracker_sync(TsSamplePages *pages,const TsInstrument *active,
 #include "../third_party/tapehead/application/src/ft2_undo.h"
 #include "../third_party/tapehead/application/src/ft2_gui.h"
 #include "../third_party/tapehead/application/src/ft2_pushbuttons.h"
+#include "../third_party/tapehead/application/src/scopes/ft2_scopes.h"
 static SDL_Window *test_window;
 static AudioState *test_audio;
 static TsUiState *test_ui;
@@ -662,8 +663,14 @@ static void audit_controls(const char *config_image,const char *record_image) {
         for(unsigned row=0;row<256;++row)memcpy(to+7+row*8*7,from+7+row*32*7,8*7);
     }
     assert(ts_tracker_embedded_validate(legacy,old_size));
+    editor.channelMuted[31]=performanceMute[31]=true;channelVolumeTrim[31]=64;
+    fastTracksPOCSetMode(31,FAST_TRACKS_MODE_SONG);fastTracksPOCSetRatioIndex(31,12);
+    fastTracksPOCSetDirection(31,2);fastTracksPOCSetTrackLength(0,31,255);
     free(s);test_pages->tracker.embedded_data=legacy;test_pages->tracker.embedded_size=old_size;
     assert(ts_tapehead_sync(test_pages,test_bank,48000,test_error,sizeof(test_error)));export_score();
+    assert(!editor.channelMuted[31] && !performanceMute[31] && channelVolumeTrim[31]==256);
+    assert(fastTracksPOCGetMode(31)==FAST_TRACKS_MODE_STANDARD && fastTracksPOCGetRatioIndex(31)==7);
+    assert(fastTracksPOCGetDirection(31)==0 && fastTracksPOCGetTrackLength(0,31)==0);
     assert(prefs()[29]==0 && prefs()[28]==2); /* STH1 retains its own LEN and colors. */
     ts_sister_tracker_free(&test_pages->tracker);test_pages->tracker=saved;
     assert(ts_tapehead_sync(test_pages,test_bank,48000,test_error,sizeof(test_error)));export_score();
@@ -853,6 +860,7 @@ static void suspended_tracker_refresh(void) {
 #include "test_xm_exchange.inc"
 #include "test_module_import.inc"
 #include "test_tracker_channel_count.inc"
+#include "test_tracker_project_load.inc"
 
 int main(int argc,char **argv) {
     SDL_SetHint(SDL_HINT_VIDEODRIVER,"dummy");assert(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER));
@@ -1007,6 +1015,7 @@ int main(int argc,char **argv) {
     module_imports();
     raw_module_imports();
     tracker_channel_count();
+    tracker_project_load();
     ts_tapehead_close();ts_tracker_playback_free(&test_audio->tracker);ts_sister_runtime_free(&test_audio->sister);
     ts_tracker_edit_free(test_ui->tracker_edit);
     ts_sample_pages_free(test_pages);ts_instrument_free(test_bank);

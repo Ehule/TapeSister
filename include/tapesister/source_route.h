@@ -9,6 +9,10 @@ typedef struct {
     TsStereoFrame monitor, fallback;
     TsStereoFrame reference; /* Pre-routing dry recording tap, counted once. */
     TsStereoFrame send[TS_SOURCE_SENDS];
+    /* Parallel-mix subset of speaker/monitor/fallback, for optional Master
+       recombination. Ordinary direct routes are not part of this subset. */
+    float matrix_speaker[TS_SOURCE_SPEAKERS];
+    TsStereoFrame matrix_monitor, matrix_fallback;
     unsigned send_mask;
     unsigned mask, missing, available;
     int check_outputs;
@@ -27,5 +31,6 @@ void ts_source_route_set(TsSourceRouteVoice *v, TsSourceRoute route, unsigned ra
 TsStereoFrame ts_source_route_frame(TsSourceRouteVoice *v, TsStereoFrame input,
                                     TsSourceRouteMix *clean);
 void ts_source_route_add(TsSourceRouteMix *to, const TsSourceRouteMix *from, float gain);
+TsStereoFrame ts_source_route_take_master(TsSourceRouteMix *mix);
 
 #endif

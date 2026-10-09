@@ -4,6 +4,7 @@ static void source_route_output_render(TsFramebuffer *fb,const TsSourceRouteUi *
     const TsSourceRoute *r=&m->route;
     uint32_t dim=RGB(155,148,163),edge=RGB(70,60,78);char label[112];
     int inherit=r->mode==TS_SOURCE_INHERIT,clean=r->mode==TS_SOURCE_PAIR||r->mode==TS_SOURCE_SPEAKER;
+    int master=clean && r->mix_enabled && m->router.master_mix;
     rect(fb,0,0,640,400,RGB(24,21,29));frame(fb,6,6,628,388,RGB(30,26,34),edge);
     snprintf(label,sizeof(label),m->track>=0?"TRACK %02d ROUTING":"TILE %02d ROUTING",m->track>=0?m->track+1:m->slot+1);
     text(fb,18,18,label,PAL_NOTE,1);button(fb,586,9,40,"X",0);
@@ -16,11 +17,15 @@ static void source_route_output_render(TsFramebuffer *fb,const TsSourceRouteUi *
     frame(fb,18,112,346,192,RGB(23,20,28),edge);
     text(fb,30,124,inherit?"FOLLOW EACH SOUNDING TILE":clean?"DESTINATION":"EXISTING SHARED SIGNAL PATH",PAL_EFFECT,1);
     if(clean) {
-        snprintf(label,sizeof(label),r->mode==TS_SOURCE_PAIR?"L: SPEAKER %02d":"SPEAKER %02d",r->speaker+1);
+        if(master)snprintf(label,sizeof(label),"%s",r->mode==TS_SOURCE_PAIR?"MASTER LEFT":"MASTER MONO");
+        else snprintf(label,sizeof(label),r->mode==TS_SOURCE_PAIR?"L: SPEAKER %02d":"SPEAKER %02d",r->speaker+1);
         button(fb,30,144,150,label,0);
-        if(r->mode==TS_SOURCE_PAIR){snprintf(label,sizeof(label),"R: SPEAKER %02d",r->second+1);button(fb,198,144,150,label,0);}
-        snprintf(label,sizeof(label),"HARDWARE OUT %d",m->array.output[r->speaker]+1);text(fb,30,174,label,dim,1);
-        if(r->mode==TS_SOURCE_PAIR){snprintf(label,sizeof(label),"HARDWARE OUT %d",m->array.output[r->second]+1);text(fb,198,174,label,dim,1);}
+        if(r->mode==TS_SOURCE_PAIR){if(master)snprintf(label,sizeof(label),"MASTER RIGHT");else snprintf(label,sizeof(label),"R: SPEAKER %02d",r->second+1);button(fb,198,144,150,label,0);}
+        if(master)text(fb,30,174,"RECOMBINED BEFORE INSERT AND EQ",dim,1);
+        else {
+            snprintf(label,sizeof(label),"HARDWARE OUT %d",m->array.output[r->speaker]+1);text(fb,30,174,label,dim,1);
+            if(r->mode==TS_SOURCE_PAIR){snprintf(label,sizeof(label),"HARDWARE OUT %d",m->array.output[r->second]+1);text(fb,198,174,label,dim,1);}
+        }
         if(r->mode==TS_SOURCE_PAIR) {
             snprintf(label,sizeof(label),"PAN / BALANCE  %s%d",r->pan>0?"+":"",r->pan);text(fb,30,202,label,PAL_TEXT,1);
             spatial_bar(fb,32,224,312,(r->pan+100)/200.f,(r->pan+100)/200.f,PAL_MOUSE);
@@ -28,7 +33,7 @@ static void source_route_output_render(TsFramebuffer *fb,const TsSourceRouteUi *
             snprintf(label,sizeof(label),"WIDTH %d%%",r->width+100);text(fb,30,260,label,PAL_TEXT,1);
             spatial_bar(fb,32,285,312,(r->width+100)/200.f,(r->width+100)/200.f,PAL_EFFECT);
         } else {
-            text(fb,30,214,"MONO SUM TO ONE SPEAKER",PAL_TEXT,1);
+            text(fb,30,214,master?"MONO SUM TO MASTER":"MONO SUM TO ONE SPEAKER",PAL_TEXT,1);
             text(fb,30,239,"STEREO INPUT: (L + R) / 2",dim,1);
             text(fb,30,264,"FIXED POSITION - NO FIELD MOTION",dim,1);
         }
@@ -43,6 +48,12 @@ static void source_route_output_render(TsFramebuffer *fb,const TsSourceRouteUi *
         text(fb,30,210,"CURRENT AMBISONICS OR STEREO PAIR",dim,1);
         text(fb,30,264,"EXISTING PROJECT SOUND IS PRESERVED.",dim,1);
     }
+    if(master) {
+        text(fb,402,151,"CLEAN + RETURNS",PAL_EFFECT,1);
+        text(fb,402,185,"INSERT > MASTER EQ",PAL_TEXT,1);
+        text(fb,402,219,"LIMITER > OUT",PAL_TEXT,1);
+        text(fb,402,253,"MASTER OUTPUT FIELD",dim,1);
+    } else {
     spatial_grid(fb,494,204);
     for(int i=0;i<m->array.speakers;++i) {
         float a=m->array.azimuth[i]*3.14159265358979323846f/180.f;
@@ -55,9 +66,10 @@ static void source_route_output_render(TsFramebuffer *fb,const TsSourceRouteUi *
         snprintf(label,sizeof(label),"OUT %d",m->array.output[i]+1);text(fb,x-(int)strlen(label)*3,y+13,label,dim,1);
     }
     text(fb,402,306,"SPEAKER ARRAY MAPPING",dim,1);
+    }
     unsigned wanted=clean?(1u<<r->speaker)|(r->mode==TS_SOURCE_PAIR?1u<<r->second:0):0;
-    if(wanted&~m->available)text(fb,18,327,"DESTINATION UNAVAILABLE - THIS ROUTE FALLS BACK TO OUT 1/2",RGB(239,166,101),1);
-    else text(fb,18,327,clean?"CLEAN BYPASSES ROUTER + EQ. GLOBAL OUT STILL CONTROLS LEVEL.":inherit?
+    if(!master && (wanted&~m->available))text(fb,18,327,"DESTINATION UNAVAILABLE - THIS ROUTE FALLS BACK TO OUT 1/2",RGB(239,166,101),1);
+    else text(fb,18,327,master?"MASTER MIX: CLEAN + RETURNS > INSERT > EQ > LIMITER > OUT.":clean?"CLEAN BYPASSES ROUTER + EQ. GLOBAL OUT STILL CONTROLS LEVEL.":inherit?
         "TRACK OVERRIDES TILE ONLY WHEN YOU CHOOSE AN EXPLICIT ROUTE.":"MAIN USES THE CURRENT ROUTER AND OUTPUT SETTINGS.",PAL_TEXT,1);
     text(fb,18,345,clean?"PAIR: PAN/WIDTH APPLY AFTER TRACKER PANNING.  FILE OUT IS STEREO.":
         "ROUTES SAVE WITH THE PROJECT.  ESC CLOSES; PLAYBACK CONTINUES.",dim,1);
@@ -93,7 +105,7 @@ static void source_send_render(TsFramebuffer *fb,const TsSourceRouteUi *m)
             const char *state=!(m->router.send_mask&(1u<<bus))?"CHAIN":
                 !ts_router_active(&m->router,stage)?"BYPASS":!(m->enabled&(1u<<stage))?"OFF":"SEND";
             text(fb,111,y,state,dim,1);
-        } else text(fb,111,y,"DIRECT",dim,1);
+        } else text(fb,111,y,m->router.master_mix?"MASTER":"DIRECT",dim,1);
         spatial_bar(fb,226,y+5,320,value*.01f,value*.01f,color);
         snprintf(label,sizeof(label),"%3d%%",value);text(fb,572,y,label,color,1);
     }
@@ -101,7 +113,7 @@ static void source_send_render(TsFramebuffer *fb,const TsSourceRouteUi *m)
         "CLEAN 0% = EFFECTS ONLY.  SEND LEVELS ARE INDEPENDENT.",PAL_TEXT,1);
     text(fb,18,340,"SELECT RETURNS TO SWITCH A PROCESSOR FROM CHAIN TO SEND.",dim,1);
     button(fb,18,365,144,m->track>=0?"RESET: USE TILE":"RESET: MAIN",0);
-    if(m->can_rename)button(fb,178,365,144,"RENAME TILE",0);
+    button(fb,178,365,286,m->router.master_mix?"MIX OUTPUT: MASTER":"MIX OUTPUT: DIRECT",m->router.master_mix);
     button(fb,480,365,144,"CLOSE",0);
 }
 static void source_return_render(TsFramebuffer *fb,const TsSourceRouteUi *m,const TsPalette *palette)
@@ -109,23 +121,25 @@ static void source_return_render(TsFramebuffer *fb,const TsSourceRouteUi *m,cons
     uint32_t bg=RGB(30,26,34),dim=RGB(155,148,163);char label[100];
     int bus=m->bus,stage=ts_router_send_stage(bus),send=(m->router.send_mask&(1u<<bus))!=0;
     TsSourceRouteUi placed=*m;placed.route=m->router.return_route[bus];placed.track=-1;placed.can_rename=0;
+    placed.route.mix_enabled=1;
     source_route_output_render(fb,&placed,palette);
     rect(fb,12,10,616,96,bg);
     snprintf(label,sizeof(label),"%s / SHARED RETURN",source_send_name(bus));text(fb,18,48,label,PAL_TEXT,1);
     button(fb,444,39,180,send?"ROLE: SEND":"ROLE: CHAIN",send);
     for(int i=0;i<3;++i)button(fb,18+i*204,78,i==2?198:190,source_send_name(i),bus==i);
-    button(fb,230,116,118,placed.route.mode==TS_SOURCE_PAIR?"STEREO PAIR":"ONE SPEAKER",0);
+    button(fb,230,116,118,placed.route.mode==TS_SOURCE_PAIR?"STEREO PAIR":m->router.master_mix?"MONO SUM":"ONE SPEAKER",0);
     rect(fb,18,317,606,44,bg);
     const char *status=!send?"IN SERIAL CHAIN; SOURCE SENDS ARE INACTIVE":
         !ts_router_active(&m->router,stage)?"RETURN BYPASSED BY ROUTER":
         !(m->enabled&(1u<<stage))?"PROCESSOR IS OFF; RETURN IS SILENT":"WET RETURN / NO EXTRA DRY COPY";
     unsigned wanted=(1u<<placed.route.speaker)|(placed.route.mode==TS_SOURCE_PAIR?1u<<placed.route.second:0);
-    if(send && (wanted&~m->available))status="MISSING DESTINATION: FALLBACK TO OUT 1/2";
+    if(send && !m->router.master_mix && (wanted&~m->available))status="MISSING DESTINATION: FALLBACK TO OUT 1/2";
     text(fb,18,324,status,PAL_TEXT,1);
     text(fb,18,344,bus==TS_SEND_PEDALBOARD?"POST SLOTS; PRE/HEAD INSERTS STAY IN SISTER.":"PROCESSOR MIX CONTROLS THE WET AMOUNT.",dim,1);
     snprintf(label,sizeof(label),"RETURN LEVEL  %d%%",m->router.return_level[bus]);text(fb,402,324,label,PAL_EFFECT,1);
     spatial_bar(fb,402,347,200,m->router.return_level[bus]*.01f,m->router.return_level[bus]*.01f,PAL_EFFECT);
     button(fb,18,365,144,"RESET RETURN",0);
+    button(fb,178,365,286,m->router.master_mix?"MIX OUTPUT: MASTER":"MIX OUTPUT: DIRECT",m->router.master_mix);
 }
 void ts_source_route_ui_render(TsFramebuffer *fb,const TsSourceRouteUi *m,const TsPalette *palette)
 {

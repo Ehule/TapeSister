@@ -378,6 +378,10 @@ It also reads earlier `STH1`/`STH2` embedded scores; those retain their stored c
 and LEN policy and receive defaults for newly stored preferences. It contains
 no pointers, copied tile audio, active voices or running transport. Loading a
 project starts stopped and clears the original clipboard and undo history.
+Saved mutes replace the previous project's mutes in both the editor and audio
+engine. Loading also clears temporary performance mutes, voices, effect memory,
+scope history and the old order position. Eight-track legacy scores receive
+default mute, trim and FastTracks settings on the remaining hidden lanes.
 
 The surrounding version-3 score stores multisample instrument metadata and
 stable tile IDs. Version-1 and version-2 eight-track scores still load through

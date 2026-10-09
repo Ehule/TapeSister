@@ -52,6 +52,7 @@ static TsStereoFrame runtime_router_stage_impl(void *context,int stage,TsStereoF
     }
     switch(stage) {
     case TS_ROUTER_INSERT:
+        if(r->router.master_mix)return input; /* One pass after recombination. */
         return ts_insert_process(&r->insert,input,
             r->router.wet[TS_ROUTER_INSERT]*r->router.gain);
     case TS_ROUTER_PRISM:
@@ -111,7 +112,7 @@ static TsStereoFrame runtime_router_stage(void *context,int stage,TsStereoFrame 
 static TsStereoFrame runtime_router_prepare_stage(void *context,int stage,TsStereoFrame input)
 {
     RouterFrameContext *c=context;TsSisterRuntime *r=c->runtime;
-    if(stage==TS_ROUTER_INSERT && c->passed_sister &&
+    if(stage==TS_ROUTER_INSERT && !r->router.master_mix && c->passed_sister &&
        (r->insert.controls.send_pair || r->router.wet[TS_ROUTER_INSERT]>0 ||
         ts_router_active(&r->router.controls,TS_ROUTER_INSERT))) {
         float sister=r->router.wet[TS_ROUTER_SISTER];

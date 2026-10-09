@@ -187,6 +187,8 @@ static void routing_pan_scope(const char *directory)
     source_route_hide();startPlaying(PLAYMODE_SONG,0);
 }
 
+#include "test_master_mix.inc"
+
 int main(int argc,char **argv)
 {
     SDL_setenv("SDL_VIDEODRIVER","dummy",1);SDL_setenv("SDL_AUDIODRIVER","dummy",1);
@@ -255,6 +257,8 @@ int main(int argc,char **argv)
     e=(SDL_Event){0};e.type=SDL_KEYUP;e.key.windowID=source_route_window.id;e.key.keysym.sym=SDLK_z;
     assert(!source_route_event(&e,window,0,&a,&u,&pages,&bank));assert(e.key.windowID==SDL_GetWindowID(window));
     shared_send_controls(argc>1?argv[1]:NULL);
+    master_mix_controls(argc>1?argv[1]:NULL);
+    master_mix_project(argc>2?argv[2]:NULL,argc>1?argv[1]:NULL);
     ts_tapehead_stop();ts_tapehead_close();source_route_close();remove("route-score.tst");
     ts_sister_runtime_free(&a.sister);ts_capture_free(&a.capture);ts_instrument_free(&bank);ts_sample_pages_free(&pages);
     SDL_DestroyWindow(window);SDL_Quit();puts("Source routing UI, native audio, track precedence, live edits, saved score and stereo fallback passed");return 0;

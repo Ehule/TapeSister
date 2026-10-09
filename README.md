@@ -220,7 +220,11 @@ Right-click a tile or TrackSister track number for **Output / Sends / Returns**.
 Tracks can inherit the tile or override its complete mix. Independent Clean,
 Prism, Pedalboard and Fallout levels feed shared processors; each processor has
 one global **Chain / Send** role and a separately positioned wet-only return.
-**F9 → SEND RETURNS** opens the return controls directly. Middle-click a tile
+**F9 → SEND RETURNS → Mix Output: Master** recombines clean sound and shared
+returns through one final External Insert, Master EQ, limiter and OUT. This lets
+external hardware process the complete stereo mix. **Direct** keeps independent
+speaker placement. Existing projects retain Direct until you select Master.
+Middle-click a tile
 to rename it. [Source routing guide and examples](docs/SOURCE_ROUTING.md).
 
 **F9 → PERFORMANCE** adds timed Bypass/Solo, A–Z Router States and up to 64

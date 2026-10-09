@@ -19,6 +19,14 @@ static void source_matrix(void)
     TsStereoFrame main=ts_source_route_frame(&v,in,&mix);
     NEAR(main.l,0);NEAR(main.r,0);NEAR(mix.speaker[0],0);NEAR(mix.speaker[1],.1f);
     for(int bus=0;bus<3;++bus) {NEAR(mix.send[bus].l,in.l*route.send_level[bus]*.01f);NEAR(mix.send[bus].r,in.r*route.send_level[bus]*.01f);}
+    /* Recombining the matrix preserves panning and leaves ordinary direct
+       routes independent, even when they share a physical output. */
+    TsSourceRouteVoice direct={0};ts_source_route_set(&direct,(TsSourceRoute){.mode=TS_SOURCE_PAIR,.second=1},48000);
+    ts_source_route_frame(&direct,(TsStereoFrame){.03f,.06f},&mix);
+    TsStereoFrame master=ts_source_route_take_master(&mix);
+    NEAR(master.l,0);NEAR(master.r,.1f);
+    NEAR(mix.speaker[0],.03f);NEAR(mix.speaker[1],.06f);NEAR(mix.monitor.r,.06f);
+    master=ts_source_route_take_master(&mix);NEAR(master.l,0);NEAR(master.r,0);
     /* A send-only source survives summing and removal fades with no speaker mask. */
     route.clean_level=0;memset(&v,0,sizeof(v));memset(&mix,0,sizeof(mix));ts_source_route_set(&v,route,48000);
     ts_source_route_frame(&v,in,&mix);assert(!mix.mask && mix.send_mask==7);
@@ -138,6 +146,7 @@ static void shared_runtime_and_storage(void)
     TsRouterControls old;ts_router_default(&old);assert(ts_router_read(&old,"Router.Order","0,1,2,3")==1 && old.send_mask==0);
     assert(ts_router_read(&old,"Router.Return0","1,0,0,0,0,100")==-1);
     assert(ts_router_read(&old,"Router.SendMask","8")==-1);
+    assert(!old.master_mix && ts_router_read(&old,"Router.MasterMix","2")==-1);
     free(state);free(loaded);remove("shared-send-state.ini");ts_sister_runtime_free(r);free(r);
 }
 int main(void)
