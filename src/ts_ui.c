@@ -1,6 +1,7 @@
 #include "tapesister/profile.h"
 #include "tapesister/ui.h"
 #include "tapesister/spatial_ui.h"
+#include "tapesister/source_route_ui.h"
 #include "tapesister/input_monitor.h"
 #include "tapesister/sister_ui.h"
 #include "tapesister/version.h"
@@ -4389,7 +4390,7 @@ TsUiBankAction ts_ui_bank_action(int right_button, unsigned modifiers)
                                      TS_UI_BANK_MOD_ALT);
     if (right_button)
         return relevant == TS_UI_BANK_MOD_SHIFT ? TS_UI_BANK_ACTION_CLEAR :
-               relevant == 0 ? TS_UI_BANK_ACTION_RENAME : TS_UI_BANK_ACTION_INVALID;
+               relevant == 0 ? TS_UI_BANK_ACTION_ROUTING : TS_UI_BANK_ACTION_INVALID;
     if (relevant == 0) return TS_UI_BANK_ACTION_AUDITION;
     if (relevant == TS_UI_BANK_MOD_SHIFT) return TS_UI_BANK_ACTION_CAPTURE_CURRENT;
     if (relevant == TS_UI_BANK_MOD_ALT) return TS_UI_BANK_ACTION_CAPTURE_LOOP;
@@ -4435,7 +4436,7 @@ int ts_ui_execute_bank_action(TsInstrument *instrument, int slot,
             return ts_instrument_sync_selected(instrument, error, error_size);
         return ts_instrument_select_bank(instrument, slot, error, error_size);
     }
-    if (action == TS_UI_BANK_ACTION_RENAME) {
+    if (action == TS_UI_BANK_ACTION_ROUTING) {
         if (!instrument->bank[slot].occupied) {
             if (error != NULL && error_size > 0)
                 snprintf(error, error_size, "Bank slot is empty");
@@ -5952,3 +5953,4 @@ sister_footer:
 }
 
 #include "ts_spatial_ui.inc"
+#include "ts_source_route_ui.inc"

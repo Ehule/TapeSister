@@ -1,11 +1,13 @@
 --- a/src/ft2_audio.c
 +++ b/src/ft2_audio.c
-@@ -503,6 +503,19 @@
+@@ -503,6 +503,21 @@
  	}
  
  	v->mixFuncOffset = ((int32_t)sample16Bit * 15) + (audio.interpolationType * 3) + loopType;
 +#ifdef TAPEHEAD_EMBEDDED
 +	v->tileData = s->tileData;
++	v->tileId=s->tileId;v->tileRouteIndex=s->tileRouteIndex;v->tileRoute=s->tileRoute;v->tileLane=-1;
++	memset(&v->tileRouting,0,sizeof(v->tileRouting));
 +	v->tileChannels = s->tileChannels;
 +	v->tilePosition = v->position;
 +	v->tileDirection = 1;
@@ -20,7 +22,7 @@
  	v->active = true;
  }
  
-@@ -594,6 +607,11 @@
+@@ -594,6 +609,11 @@
  	v->position = 0;
  	v->positionFrac = 0;
  	v->samplingBackwards = reverse;
@@ -32,7 +34,7 @@
  	v->loopType = reverse ? LOOP_PINGPONG : LOOP_DISABLED;
  	if (sample16Bit)
  		v->revBase16 = &v->base16[s->length];
-@@ -759,6 +777,9 @@
+@@ -759,6 +779,9 @@
  {
  	if (v->active)
  	{
@@ -42,7 +44,7 @@
  		const bool volRampFlag = (v->volumeRampLength > 0);
  		const bool silent = audio.monoOutputMode
  			? v->fCurrVolumeMono == 0.0f
-@@ -770,6 +791,12 @@
+@@ -770,6 +793,12 @@
  				v, bufferPosition, samplesToMix);
  	}
  
@@ -55,7 +57,17 @@
  	if (r->active) // volume ramp fadeout-voice
  		mixFuncTab[mixOffsetBias + r->mixFuncOffset](r, bufferPosition, samplesToMix);
  }
-@@ -1465,6 +1492,11 @@
+@@ -885,6 +914,9 @@
+ 
+ 	for (int32_t i = 0; i < song.numChannels; i++, v++, r++)
+ 	{
++#ifdef TAPEHEAD_EMBEDDED
++        v->tileLane=r->tileLane=i;
++#endif
+ 		if (audio.monoOutputMode)
+ 		{
+ 			/*
+@@ -1465,6 +1497,11 @@
  
  void lockAudio(void)
  {
@@ -67,7 +79,7 @@
  	if (tapeheadLiveLinkIsOpen())
  		tapeheadLiveLinkLock();
  	else if (tapeheadJackIsOpen())
-@@ -1477,6 +1509,11 @@
+@@ -1477,6 +1514,11 @@
  
  void unlockAudio(void)
  {
@@ -79,7 +91,7 @@
  	if (tapeheadLiveLinkIsOpen())
  		tapeheadLiveLinkUnlock();
  	else if (tapeheadJackIsOpen())
-@@ -1682,6 +1719,10 @@
+@@ -1682,6 +1724,10 @@
  		const bool blockSeam = audio.tickSampleCounter == 0 &&
  			tapeheadBlockLoopIsActive() && !tapeheadBlockLoopIsOffline() &&
  			tapeheadBlockLoopCycleCompleted();
@@ -90,7 +102,7 @@
  		const float captureNormalizeMultiplier =
  			(config.specialFlags & BITDEPTH_16)
  			? fAudioNormalizeMul / 32768.0f : fAudioNormalizeMul;
-@@ -2075,6 +2116,10 @@
+@@ -2075,6 +2121,10 @@
  
  bool setupAudio(bool showErrorMsg)
  {
@@ -101,7 +113,7 @@
  	SDL_AudioSpec want, have;
  
  	closeAudio();
-@@ -2427,3 +2472,49 @@
+@@ -2427,3 +2477,49 @@
  			updateWindowTitle(true);
  	}
  }
@@ -153,13 +165,18 @@
 +#endif
 --- a/src/ft2_audio.h
 +++ b/src/ft2_audio.h
-@@ -78,6 +78,16 @@
+@@ -78,6 +78,21 @@
  
  typedef struct
  {
 +
 +#ifdef TAPEHEAD_EMBEDDED
 +	const float *tileData;
++	uint64_t tileId;
++	unsigned tileRouteIndex;
++	int tileLane;
++	TsSourceRoute tileRoute;
++	TsSourceRouteVoice tileRouting;
 +	uint8_t tileChannels;
 +	double tilePosition;
 +	int tileDirection, tileIntro;
@@ -676,7 +693,7 @@
  	state->reversed = !state->reversed;
  	state->cycleStepCounter = 0;
  
-@@ -1612,3 +1639,18 @@
+@@ -1612,3 +1639,33 @@
  	}
  	pendingFastTracksMetadataValid = false;
  }
@@ -695,6 +712,21 @@
 +    if(unlocked)unlockAudio();
 +    ui.updatePatternEditor=true;
 +}
++
++#ifdef TAPEHEAD_EMBEDDED
++/* Read the same first-in-song LEN/CONTROL policy without touching playback. */
++void tapeheadEmbeddedPendingLengths(const song_t *source,uint16_t lengths[32],int *control)
++{
++    memset(lengths,0,32*sizeof(*lengths));*control=-1;
++    if(!pendingFastTracksMetadataValid)return;
++    for(int pass=0;pass<2;++pass)for(int n=0;n<(pass?256:source->songLength);++n) {
++        int p=pass?n:source->orders[n];
++        if(*control<0 && pendingFastTracksControlTrackPlusOne[p])
++            *control=pendingFastTracksControlTrackPlusOne[p]-1;
++        for(int ch=0;ch<32;++ch)if(!lengths[ch])lengths[ch]=pendingFastTracksPatternLength[p][ch];
++    }
++}
++#endif
 --- a/src/ft2_fasttracks.h
 +++ b/src/ft2_fasttracks.h
 @@ -41,7 +41,7 @@
@@ -1496,12 +1528,25 @@
  		editor.songPos = pattSyncEntry->songPos;
 --- a/src/ft2_replayer.h
 +++ b/src/ft2_replayer.h
-@@ -228,6 +228,12 @@
+@@ -2,6 +2,9 @@
+ 
+ #include <stdint.h>
+ #include <stdbool.h>
++#ifdef TAPEHEAD_EMBEDDED
++#include "tapesister/source_route_types.h"
++#endif
+ #include "ft2_unicode.h"
+ #include "ft2_microtonal.h"
+ #include "mixer/ft2_windowed_sinc.h"
+@@ -228,6 +231,15 @@
  typedef struct sample_t
  {
  	char name[22+1];
 +#ifdef TAPEHEAD_EMBEDDED
 +	float *tileData;
++	uint64_t tileId;
++	unsigned tileRouteIndex;
++	TsSourceRoute tileRoute;
 +	uint8_t tileChannels, tileLoopMode;
 +	uint32_t tileCrossfade;
 +	double tileRateCorrection;
@@ -1817,26 +1862,6 @@
 
 diff --git a/src/ft2_fasttracks.c b/src/ft2_fasttracks.c
 index 6b3e62c..8ca7167 100644
---- a/src/ft2_fasttracks.c
-+++ b/src/ft2_fasttracks.c
-@@ -1656,0 +1657,15 @@ void fastTracksPOCSetDirection(int32_t channelIndex,uint8_t direction)
-+
-+#ifdef TAPEHEAD_EMBEDDED
-+/* Read the same first-in-song LEN/CONTROL policy without touching playback. */
-+void tapeheadEmbeddedPendingLengths(const song_t *source,uint16_t lengths[32],int *control)
-+{
-+    memset(lengths,0,32*sizeof(*lengths));*control=-1;
-+    if(!pendingFastTracksMetadataValid)return;
-+    for(int pass=0;pass<2;++pass)for(int n=0;n<(pass?256:source->songLength);++n) {
-+        int p=pass?n:source->orders[n];
-+        if(*control<0 && pendingFastTracksControlTrackPlusOne[p])
-+            *control=pendingFastTracksControlTrackPlusOne[p]-1;
-+        for(int ch=0;ch<32;++ch)if(!lengths[ch])lengths[ch]=pendingFastTracksPatternLength[p][ch];
-+    }
-+}
-+#endif
-diff --git a/src/ft2_module_saver.c b/src/ft2_module_saver.c
-index eff70ff..fda7338 100644
 --- a/src/ft2_module_saver.c
 +++ b/src/ft2_module_saver.c
 @@ -0,0 +1 @@

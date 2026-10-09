@@ -1,5 +1,11 @@
 # TapeSister User Manual
 
+Tile/track routing: **right-click a tile** or **right-click a SisterTracker track
+number**. **Middle-click a tile to rename**. Tracks default to **Use Tile**;
+an explicit track route overrides the tile. Choose Main, Clean Stereo Pair
+(with pan/width), or Clean Single Speaker. See [Source Routing](SOURCE_ROUTING.md)
+for output mapping, fallback, recording, and project format details.
+
 TapeSister is a standalone sound-making, sample-sculpting, and performance instrument.
 It can generate material, reshape imported recordings, build related sound families,
 arrange events in Mosaic, capture live performances into new tiles, and send sound through Sister Machine,

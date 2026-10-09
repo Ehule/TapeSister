@@ -23,6 +23,8 @@
 #include "tapesister/render_damage.h"
 #include "tapesister/ui.h"
 #include "tapesister/version.h"
+#include "tapesister/clean_output.h"
+#include "tapesister/source_route_ui.h"
 #include "tape_link.h"
 #include "tape_companion.h"
 
@@ -540,6 +542,7 @@ static uint64_t instrument_state_hash(const TsInstrument *instrument)
         state_hash_bytes(&hash, &bank->occupied, sizeof(bank->occupied));
         if (!bank->occupied) continue;
         state_hash_bytes(&hash, &bank->tile_id, sizeof(bank->tile_id));
+        state_hash_bytes(&hash,&bank->output_route,sizeof(bank->output_route));
         state_hash_bytes(&hash, &bank->locked, sizeof(bank->locked));
         state_hash_sample(&hash, &bank->sample);
         state_hash_bytes(&hash, &bank->tuning, sizeof(bank->tuning));
@@ -820,6 +823,10 @@ typedef struct {
     int embedded_tracker_active;
     uint64_t keyboard_sequence_source_stamp;
     TsPerformanceBank performance;
+    TsSourceRouteMix clean;
+    TsCleanOutput clean_output;
+    TsSourceRouteVoice audition_route;
+    TsTileId audition_route_tile;
     TsMosaic *mosaic;
     TsPerformanceBank tile_launchers;
     TsStereoFrame tile_launcher_mix;
@@ -1090,8 +1097,14 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
     ts_sister_runtime_begin_audio_block(&audio->sister);
     ts_insert_begin_output_block(&audio->sister.insert, (unsigned)frames);
     const float *embedded_block=NULL;
+    const TsSourceRouteMix *embedded_clean=NULL;
+    int reserved_pair=audio->sister.insert.separate_send?0:audio->sister.insert.controls.send_pair;
+    unsigned available=ts_clean_output_available(&audio->sister.spatial.controls,device_channels,reserved_pair);
+    ts_tapehead_route_outputs(available);
     for (int i = 0; i < values; i += 2) {
         audio->sister.insert.send=(TsStereoFrame){0,0};
+        ts_source_route_mix_init(&audio->clean,NULL);audio->clean.available=available;audio->clean.check_outputs=1;
+        audio->sister.clean_output.available=available;audio->sister.clean_output.check_outputs=1;
         TsAudioBuses buses;
         TsSisterSourceFrames sister_sources = {0};
         TsSisterRuntimeFrame sister_frame;
@@ -1132,6 +1145,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             audio->audition_edit_changed,
             audio->output_rate > 0 ? (uint32_t)(audio->output_rate / 200) : 0u);
         audio->audition_edit_changed = 0;
+        buses.legacy_preview=ts_source_route_frame(&audio->audition_route,buses.legacy_preview,&audio->clean);
 
         /* Five-ms trim slew, shared by monitor and all dry capture taps. */
         float fm_slew = audio->output_rate > 0 ? 1.0f / (0.005f * audio->output_rate) : 1.0f;
@@ -1157,14 +1171,17 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
                 audio->live_link_buffer[i + 1] : buses.tapehead.l;
         }
         uint64_t profile_tracker = ts_profile_begin(TS_PROF_TRACKER);
-        if((i/2)%8192==0)embedded_block=ts_tapehead_render(
-            (unsigned)SDL_min(frames-i/2,8192),(unsigned)audio->output_rate);
+        if((i/2)%8192==0) {
+            embedded_block=ts_tapehead_render((unsigned)SDL_min(frames-i/2,8192),(unsigned)audio->output_rate);
+            embedded_clean=embedded_block?ts_tapehead_clean_render():NULL;
+        }
         audio->embedded_tracker_active=embedded_block!=NULL;
         unsigned embedded_index=(unsigned)(i/2)%8192;
         audio->embedded_capture_flags=embedded_block?ts_tapehead_capture_flags(embedded_index):0;
         buses.tracker = embedded_block?(TsStereoFrame){embedded_block[embedded_index*2],embedded_block[embedded_index*2+1]}:
             ts_tracker_playback_read(&audio->tracker, audio->output_rate);
         ts_profile_end(TS_PROF_TRACKER, profile_tracker);
+        if(embedded_clean)ts_source_route_add(&audio->clean,&embedded_clean[embedded_index],1.f);
         sister_sources.tracker = buses.tracker;
         sister_sources.fm = buses.fm;
         /* Notes already sounding before POWER retain their original voice
@@ -1177,6 +1194,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         sister_frame = ts_sister_runtime_process_frame(&audio->sister,
                                                         &sister_sources);
         ts_profile_end(TS_PROF_SISTER, profile_sister);
+        ts_source_route_add(&audio->clean,&audio->sister.clean_output,1.f);
         if(!audio->sister.enabled && !audio->sister.callback_failed) {
             /* Sister group notes remain live input when its tape is bypassed. */
             buses.tile_performance.l += sister_frame.keyboard_dry.l;
@@ -1184,8 +1202,8 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         }
         if(audio->record_bank_recorder && audio->record_source &&
            atomic_load_explicit(audio->record_source,memory_order_acquire)==TS_RECORD_SOURCE_DRY) {
-            TsStereoFrame dry={audio->keyboard_dry.l+sister_frame.keyboard_dry.l,
-                               audio->keyboard_dry.r+sister_frame.keyboard_dry.r};
+            TsStereoFrame dry={audio->keyboard_dry.l+sister_frame.keyboard_dry.l+audio->sister.clean_output.monitor.l,
+                               audio->keyboard_dry.r+sister_frame.keyboard_dry.r+audio->sister.clean_output.monitor.r};
             (void)ts_external_recorder_write_frame(audio->record_bank_recorder,dry);
             synth_block_peak=fmaxf(synth_block_peak,fmaxf(fabsf(dry.l),fabsf(dry.r)));
         }
@@ -1203,7 +1221,9 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         if (buses.program.r < -1.0f) buses.program.r = -1.0f;
         buses.capture = audio->performance_group_latched &&
                         audio->performance_source_mask != 0u ?
-                        audio->performance_raw_mix : buses.program;
+                        audio->performance_raw_mix : (TsStereoFrame){
+                            buses.program.l+audio->clean.monitor.l,
+                            buses.program.r+audio->clean.monitor.r};
         buses.monitor = audio->external_monitor_enabled != NULL &&
                         atomic_load_explicit(audio->external_monitor_enabled,
                                              memory_order_acquire) != 0 ?
@@ -1281,6 +1301,14 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         uint64_t profile_master = ts_profile_begin(TS_PROF_MASTER);
         output = ts_sister_runtime_process_output(&audio->sister, output);
         ts_profile_end(TS_PROF_MASTER, profile_master);
+        TsStereoFrame main_output=output;
+        float clean_gain=audio->mixer.program_gain*audio->sister.master_output_gain.current;
+        if(audio->clean.mask) {
+            output.l+=audio->clean.monitor.l*clean_gain;output.r+=audio->clean.monitor.r*clean_gain;
+            output=ts_stereo_frame_sanitize(output);
+            float peak=fmaxf(fabsf(output.l),fabsf(output.r));
+            if(peak>.98f){output.l*=.98f/peak;output.r*=.98f/peak;}
+        }
         /* Mosaic OUTPUT records exactly the stereo speaker program, including
            keyboard/sample voices, Prism, Sister/FX, Master EQ, limiter and OUT gain. */
         if(audio->record_bank_recorder && audio->record_source &&
@@ -1304,10 +1332,12 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         }
         audio->last_output = output;
         audio->mixer.buses.output = output;
-        ts_insert_write_output(&audio->sister.insert,out+(i/2)*device_channels,device_channels,output);
+        ts_insert_write_output(&audio->sister.insert,out+(i/2)*device_channels,device_channels,main_output);
         uint64_t profile_spatial = ts_profile_begin(TS_PROF_SPATIAL);
-        ts_spatial_process(&audio->sister.spatial,output,out+(i/2)*device_channels,
+        ts_spatial_process(&audio->sister.spatial,main_output,out+(i/2)*device_channels,
             device_channels,audio->sister.insert.separate_send?0:audio->sister.insert.controls.send_pair);
+        ts_clean_output_mix(&audio->clean_output,&audio->clean,&audio->sister.spatial.controls,
+            clean_gain,out+(i/2)*device_channels,device_channels,reserved_pair,(unsigned)audio->output_rate);
         ts_profile_end(TS_PROF_SPATIAL, profile_spatial);
     }
     ts_tracker_playback_end_block(&audio->tracker);
@@ -1442,6 +1472,17 @@ static void show_overlay(TsUiState *ui, const char *message, uint32_t millisecon
     ui->overlay_until_ms = SDL_GetTicks() + milliseconds;
 }
 
+static void audition_source_route(AudioState *audio,const TsInstrument *instrument,int slot)
+{
+    TsSourceRoute route={0};TsTileId tile=0;
+    if(instrument && slot>=0 && slot<TS_BANK_SLOT_COUNT && instrument->bank[slot].occupied) {
+        route=instrument->bank[slot].output_route;tile=instrument->bank[slot].tile_id;
+    }
+    if(tile!=audio->audition_route_tile)memset(&audio->audition_route,0,sizeof(audio->audition_route));
+    audio->audition_route_tile=tile;
+    ts_source_route_set(&audio->audition_route,route,audio->output_rate);
+}
+
 static void begin_audition(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
                            const TsInstrument *instrument, TsAuditionRange range,
                            double pitch, int output_rate)
@@ -1464,6 +1505,8 @@ static void begin_audition(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     SDL_LockAudioDevice(device);
     runtime_note_clear(audio);
     audio->bank_slot = -1;
+    audition_source_route(audio,instrument,
+        plan.sample==&instrument->parent?-1:instrument->selected_slot);
     audio->sample = plan.sample;
     audio->loop_mode = instrument->loop_mode;
     audio->loop_direction = 1; audio->loop_intro = 0;
@@ -1522,6 +1565,7 @@ static void begin_playhead_audition(SDL_AudioDeviceID device, AudioState *audio,
     }
     SDL_LockAudioDevice(device);
     runtime_note_clear(audio);
+    audition_source_route(audio,instrument,instrument->selected_slot);
     audio->sample = &instrument->current;
     audio->position = (double)instrument->playhead_frame;
     audio->pitch = ts_instrument_audition_pitch(instrument);
@@ -1560,6 +1604,7 @@ static void stop_all_force(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
 static void set_loop_lock_silence(SDL_AudioDeviceID device, AudioState *audio)
 {
     if (device) SDL_LockAudioDevice(device);
+    audition_source_route(audio,NULL,-1);
     audio->sample = &loop_lock_silence;
     audio->position = ts_audition_map_progress(
         audio->position, audio->range_start, audio->range_end,
@@ -1746,6 +1791,8 @@ static void refresh_workbench_loop(SDL_AudioDeviceID device, AudioState *audio,
             audio->position, audio->range_start, audio->range_end, plan.first, plan.last);
         if (audio->position >= (double)plan.last) audio->position = (double)plan.first;
     }
+    audition_source_route(audio,instrument,
+        plan.sample==&instrument->parent?-1:instrument->selected_slot);
     audio->sample = plan.sample;
     audio->range_start = plan.first;
     audio->range_end = plan.last;
@@ -2759,6 +2806,8 @@ static void unlock_edit(SDL_AudioDeviceID device, AudioState *audio, TsUiState *
             audio->position, audio->loop_intro ? 0 : audio->range_start, audio->range_end,
             audio->loop_intro ? 0 : plan.first, plan.last);
         if (audio->position >= (double)plan.last) audio->position = (double)plan.first;
+        audition_source_route(audio,instrument,
+            plan.sample==&instrument->parent?-1:instrument->selected_slot);
         audio->sample = plan.sample;
         audio->range_start = plan.first;
         audio->range_end = plan.last;
@@ -2958,6 +3007,7 @@ static void preview_drone(SDL_AudioDeviceID device, AudioState *audio,
     }
     SDL_LockAudioDevice(device);
     runtime_note_clear(audio);
+    audition_source_route(audio,NULL,-1);
     audio->sample = drone;
     audio->position = 0.0;
     audio->pitch = ts_instrument_audition_pitch(instrument);
@@ -3624,6 +3674,7 @@ static void audition_transform_preview(SDL_AudioDeviceID device, AudioState *aud
     }
     SDL_LockAudioDevice(device);
     runtime_note_clear(audio);
+    audition_source_route(audio,NULL,-1);
     audio->sample = preview;
     audio->position = 0.0;
     audio->pitch = ts_instrument_audition_pitch(instrument);
@@ -6238,6 +6289,7 @@ static void sync_playing_loop(SDL_AudioDeviceID device, AudioState *audio,
             if (device) SDL_UnlockAudioDevice(device);
             return;
         }
+        audition_source_route(audio,instrument,audio->bank_slot);
         audio->sample = plan.sample;
         audio->range_start = plan.first;
         audio->range_end = plan.last;
@@ -6262,6 +6314,8 @@ static void sync_playing_loop(SDL_AudioDeviceID device, AudioState *audio,
                               (double)(plan.last - 1u) : (double)plan.first;
     } else if (audio->playing && audio->bank_slot < 0 && audio->looping &&
         ts_audition_plan(instrument, audio->source, TS_AUDITION_LOOP, &plan)) {
+        audition_source_route(audio,instrument,
+            plan.sample==&instrument->parent?-1:instrument->selected_slot);
         audio->sample = plan.sample;
         audio->range_start = plan.first;
         audio->range_end = plan.last;
@@ -6312,6 +6366,7 @@ static void begin_bank_audition(SDL_AudioDeviceID device, AudioState *audio,
         return;
     }
     if (!device || output_rate <= 0) {
+        audition_source_route(audio,instrument,slot_index);
         audio->sample = &slot->sample;
         if (device) SDL_UnlockAudioDevice(device);
         snprintf(ui->status, sizeof(ui->status), "BANK %02d SHOWN - AUDIO UNAVAILABLE",
@@ -6325,6 +6380,7 @@ static void begin_bank_audition(SDL_AudioDeviceID device, AudioState *audio,
                  slot_index + 1);
         return;
     }
+    audition_source_route(audio,instrument,slot_index);
     audio->sample = &slot->sample;
     audio->loop_mode = slot->loop_mode;
     audio->loop_direction = 1; audio->loop_intro = 0;
@@ -8093,6 +8149,7 @@ static void audition_import_preview(SDL_AudioDeviceID device, AudioState *audio,
     }
     SDL_LockAudioDevice(device);
     runtime_note_clear(audio);
+    audition_source_route(audio,NULL,-1);
     audio->sample = sample;
     audio->range_start = ui->import_preview_has_selection ?
                          ui->import_preview_selection_first : 0u;
@@ -11331,6 +11388,7 @@ static int midi_source_from_event(const TsMidiEvent *midi,
 
 #include "main_sdl_master_eq.inc"
 #include "main_sdl_spatial.inc"
+#include "main_sdl_source_route.inc"
 #include "main_sdl_router.inc"
 
 static int midi_sister_hit_from_target(const char *target, float normalized,
@@ -13931,6 +13989,7 @@ int main(int argc, char **argv)
                 }
                 continue;
             }
+            if(source_route_event(&event,window,device,&audio,&ui,&sample_pages,&instrument))continue;
             if (spatial_event(&event,window,device,&audio,&ui,&sister_window)) continue;
             event_id=event_window_id(&event);
             if (ts_audio_health_event(&event, window, &audio, &ui)) continue;
@@ -15949,6 +16008,9 @@ int main(int argc, char **argv)
                     ui.exchange_dialog != TS_UI_EXCHANGE_NONE) {
                     snprintf(ui.status, sizeof(ui.status),
                              "FINISH OR CANCEL THE OPEN DIALOG FIRST");
+                } else if(!ui.show_keyboard && !ui.show_recipes && !ui.show_ingredients &&
+                          ts_ui_bank_slot_from_point(x,y)>=0) {
+                    begin_bank_rename(&ui,&instrument,ts_ui_bank_slot_from_point(x,y));
                 } else if (recipe_slot >= 0) {
                     int recipe_index = ui.dsp_page * TS_DSP_BANK_SLOT_COUNT +
                                        recipe_slot;
@@ -17333,12 +17395,12 @@ int main(int argc, char **argv)
                     clear_bank_slot(device, &audio, &ui, &instrument, bank_slot);
                 } else if (!ui.show_keyboard && !ui.show_recipes &&
                            !ui.show_ingredients && bank_slot >= 0 &&
-                           action == TS_UI_BANK_ACTION_RENAME) {
-                    begin_bank_rename(&ui, &instrument, bank_slot);
+                           action == TS_UI_BANK_ACTION_ROUTING) {
+                    source_route_show(device,&audio,&ui,&sample_pages,&instrument,-1,bank_slot);
                 } else if (!ui.show_keyboard && !ui.show_recipes &&
                            !ui.show_ingredients && bank_slot >= 0) {
                     snprintf(ui.status, sizeof(ui.status),
-                             "RMB RENAME  SHIFT+RMB CLEAR");
+                             "RMB ROUTING  MIDDLE RENAME  SHIFT+RMB CLEAR");
                 }
             } else if (event.type == SDL_MOUSEBUTTONUP &&
                        (event.button.button == SDL_BUTTON_LEFT ||
@@ -17874,6 +17936,7 @@ int main(int argc, char **argv)
         }
         uint64_t profile_aux = ts_profile_begin(TS_PROF_AUX_UI);
         spatial_window_update(&ui);
+        source_route_update(device,&audio,&ui,&sample_pages,&instrument);
         ts_audio_health_update(&audio, &ui);
         ts_profile_end(TS_PROF_AUX_UI, profile_aux);
         ts_profile_end(TS_PROF_UI, profile_ui);
@@ -17998,6 +18061,7 @@ int main(int argc, char **argv)
     if (sister_window.renderer) SDL_DestroyRenderer(sister_window.renderer);
     if (sister_window.window) SDL_DestroyWindow(sister_window.window);
     spatial_window_close();
+    source_route_close();
     ts_audio_health_close();
     if (texture) SDL_DestroyTexture(texture);
     if (renderer) SDL_DestroyRenderer(renderer);

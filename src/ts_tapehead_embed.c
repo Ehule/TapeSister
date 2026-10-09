@@ -71,6 +71,11 @@ static struct {
     uint8_t midi_held[16][128];
     uint8_t key_held[SDL_NUM_SCANCODES],key_note[SDL_NUM_SCANCODES];
     float output[TH_FRAMES*2u];
+    TsSourceRouteMix clean[TH_FRAMES];
+    TsSourceRoute track_routes[TS_TRACKER_LANES], tile_routes[129*16];
+    TsTileId route_ids[129*16];
+    int routes_enabled, clean_used, route_check;
+    unsigned route_available;
     uint8_t capture_flags[TH_FRAMES];
     int capture_seam_pending;
     unsigned rate;
@@ -153,6 +158,13 @@ void ts_tapehead_mix_tile(void *ptr,unsigned offset,unsigned count) {
     if(!v->tileData || v->sampleEnd<1)return;
     TsSample sample={0};sample.data=(float*)v->tileData;
     sample.frames=v->tileFrames;sample.channels=v->tileChannels;
+    TsSourceRoute route=v->tileRoute;
+    if(v->tileRouteIndex<129*16 && embed.route_ids[v->tileRouteIndex]==v->tileId)
+        route=embed.tile_routes[v->tileRouteIndex];
+    if(v->tileLane>=0 && v->tileLane<TS_TRACKER_LANES)
+        route=ts_source_route_resolve(route,embed.track_routes[v->tileLane]);
+    ts_source_route_set(&v->tileRouting,route,embed.rate);
+    if(v->tileRouting.mask)embed.clean_used=1;
     for(unsigned i=0;i<count && v->active;++i) {
         TsStereoFrame value;
         if(v->loopType!=LOOP_DISABLED && !v->oneShot) {
@@ -166,8 +178,11 @@ void ts_tapehead_mix_tile(void *ptr,unsigned offset,unsigned count) {
            their stereo level: make center unity while retaining the pan law,
            note/global volume, envelopes and ramps (including fade voices). */
         const float center_gain=1.41421356237f;
-        audio.fMixBufferL[offset+i]+=value.l*v->fCurrVolumeL*center_gain;
-        audio.fMixBufferR[offset+i]+=value.r*v->fCurrVolumeR*center_gain;
+        value.l*=v->fCurrVolumeL*center_gain;value.r*=v->fCurrVolumeR*center_gain;
+        embed.clean[offset+i].available=embed.route_available;embed.clean[offset+i].check_outputs=embed.route_check;
+        value=ts_source_route_frame(&v->tileRouting,value,&embed.clean[offset+i]);
+        audio.fMixBufferL[offset+i]+=value.l;
+        audio.fMixBufferR[offset+i]+=value.r;
         if(v->volumeRampLength) {
             v->fCurrVolumeL+=v->fVolumeLDelta;v->fCurrVolumeR+=v->fVolumeRDelta;
             if(--v->volumeRampLength==0) {
@@ -441,6 +456,15 @@ int ts_tapehead_event(const SDL_Event *event,int x,int y) {
             if(event->button.button==SDL_BUTTON_LEFT)follow_toggle();
             return 1;
         }
+        if(event->button.button==SDL_BUTTON_RIGHT && !ui.sysReqShown && !editor.editTextFlag &&
+           ui.patternEditorShown && ui.patternChannelWidth && x>=30) {
+            const pattCoord2_t *header=&pattCoord2Table[config.ptnStretch][ui.pattChanScrollShown][getPatternEditorView()];
+            int visible=(x-30)/ui.patternChannelWidth,track=visible+ui.channelOffset;
+            if(y>=header->upperRowsY+2 && y<header->upperRowsY+10 &&
+               (x-30)%ui.patternChannelWidth<10 && visible<ui.numChannelsShown && track<song.numChannels) {
+                ts_tapehead_request(TS_TH_TRACK_ROUTE+track);return 1;
+            }
+        }
         int lane=fasttracks_header_lane(x,y);
         if(lane>=0 && !ui.sysReqShown && !editor.editTextFlag &&
            (event->button.button==SDL_BUTTON_LEFT || event->button.button==SDL_BUTTON_RIGHT)) {
@@ -512,8 +536,13 @@ int ts_tapehead_event(const SDL_Event *event,int x,int y) {
 const float *ts_tapehead_render(unsigned frames,unsigned rate) {
     if(!atomic_load_explicit(&embed.ready,memory_order_acquire) || frames>TH_FRAMES || rate!=embed.rate)return NULL;
     memset(embed.capture_flags,0,frames);
+    if(embed.routes_enabled || embed.clean_used)memset(embed.clean,0,frames*sizeof(*embed.clean));
+    embed.clean_used=0;
     tapeheadEmbeddedAudioRender(embed.output,frames);return embed.output;
 }
+
+void ts_tapehead_route_outputs(unsigned available){embed.route_available=available;embed.route_check=1;}
+const TsSourceRouteMix *ts_tapehead_clean_render(void) {return embed.clean_used?embed.clean:NULL;}
 
 #include "ts_tapehead_instruments.inc"
 
@@ -547,6 +576,12 @@ static int bind_tiles(TsSamplePages *pages,const TsInstrument *active,int *alias
         const TsInstrument *bank=slot?ts_sample_pages_page(pages,active,loc.page):NULL;
         const TsSample *src=slot?(bank->selected_slot==loc.slot&&bank->current.data?&bank->current:&slot->sample):NULL;
         int live=src&&src==&bank->current;
+        TsSourceRoute routing=slot?slot->output_route:(TsSourceRoute){0};
+        unsigned route_index=(unsigned)a*16u+(unsigned)k;
+        if(embed.route_ids[route_index]!=tile || memcmp(&routing,&embed.tile_routes[route_index],sizeof(routing))) {
+            ts_tapehead_host_lock();embed.route_ids[route_index]=tile;embed.tile_routes[route_index]=routing;
+            if(routing.mode)embed.routes_enabled=1;ts_tapehead_host_unlock();
+        }
         TsTuning tuning=slot?(live?bank->audible_tuning:slot->audible_tuning):(TsTuning){60,0};
         int loop=slot?(live?bank->has_loop:slot->has_loop):0;
         size_t first=slot?(live?bank->loop_first:slot->loop_first):0,last=slot?(live?bank->loop_last:slot->loop_last):0;
@@ -571,6 +606,7 @@ static int bind_tiles(TsSamplePages *pages,const TsInstrument *active,int *alias
                 ((int16_t*)prepared.dataPtr)[f]=(int16_t)lrintf(fmaxf(-32768,fminf(32767,mono*32768)));
             }
             prepared.tileData=data;prepared.tileChannels=src->channels;
+            prepared.tileId=tile;prepared.tileRouteIndex=route_index;prepared.tileRoute=routing;
             prepared.length=(int32_t)src->frames;
             prepared.tileLoopMode=mode;
             TsAuditionPlan plan={src,first,last};
@@ -659,7 +695,9 @@ static int native_import(TsSisterTracker *t,char *e,size_t n) {
     fastTracksPOCSetUsesTrackLengths(t->fasttracks_uses_length);
     fastTracksPOCSetLengthTopologyBypassed(t->length_bypass);
     for(int lane=0;lane<TS_TRACKER_LANES;++lane) {
-        TsTrackerLane *l=&t->lanes[lane];fastTracksPOCSetTrackLength(0,lane,l->length);
+        TsTrackerLane *l=&t->lanes[lane];embed.track_routes[lane]=l->output_route;
+        if(l->output_route.mode==TS_SOURCE_PAIR || l->output_route.mode==TS_SOURCE_SPEAKER)embed.routes_enabled=1;
+        fastTracksPOCSetTrackLength(0,lane,l->length);
         fastTracksPOCSetMode(lane,(fastTracksMode_t)l->mode);fastTracksPOCSetRatioIndex(lane,l->ratio);
         fastTracksPOCSetDirection(lane,l->direction);
         channelVolumeTrim[lane]=(uint16_t)lrintf(l->trim*256);setChannelMute(lane,l->muted);
@@ -810,6 +848,11 @@ int ts_tapehead_sync(TsSamplePages *pages,const TsInstrument *active,unsigned ra
     if(embed.model!=t || h!=embed.model_hash) {
         ts_tapehead_host_lock();atomic_store(&embed.ready,0);
         if(!score_import(t,e,n)){ts_tapehead_host_unlock();return 0;}
+        for(int lane=0;lane<TS_TRACKER_LANES;++lane) {
+            embed.track_routes[lane]=t->lanes[lane].output_route;
+            if(embed.track_routes[lane].mode==TS_SOURCE_PAIR || embed.track_routes[lane].mode==TS_SOURCE_SPEAKER)
+                embed.routes_enabled=1;
+        }
         embed.follow=t->follow;embed.live_edit=embed.mark_valid=embed.pointer_mark=0;
         embed.model=t;h=ts_sister_tracker_hash(t);memset(embed.tile_stamp,0,sizeof(embed.tile_stamp));
         ts_tapehead_host_unlock();
@@ -835,3 +878,21 @@ int ts_tapehead_sync(TsSamplePages *pages,const TsInstrument *active,unsigned ra
 }
 
 #include "ts_tapehead_xm.inc"
+
+void ts_tapehead_routes_changed(TsTileId tile, TsSourceRoute route)
+{
+    if(!embed.initialized || !embed.model)return;
+    uint64_t model_hash=ts_sister_tracker_hash(embed.model);
+    ts_tapehead_host_lock();
+    embed.routes_enabled=0;
+    for(int i=0;i<129*16;++i) {
+        if(tile && embed.route_ids[i]==tile)embed.tile_routes[i]=route;
+        embed.routes_enabled|=embed.tile_routes[i].mode!=TS_SOURCE_MAIN;
+    }
+    for(int i=0;i<TS_TRACKER_LANES;++i) {
+        embed.track_routes[i]=embed.model->lanes[i].output_route;
+        embed.routes_enabled|=embed.track_routes[i].mode==TS_SOURCE_PAIR || embed.track_routes[i].mode==TS_SOURCE_SPEAKER;
+    }
+    embed.model_hash=model_hash;
+    ts_tapehead_host_unlock();
+}

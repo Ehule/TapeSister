@@ -1391,7 +1391,9 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
     /* This is the untrimmed, pre-Sister Live Link stream. It remains available
        as a recorder tap even when Sister processing itself is bypassed. */
     frame.tap[TS_SISTER_TAP_TAPEHEAD] = source.tapehead;
-    tile_bus = ts_performance_read_stereo(&runtime->performance, &tile_raw);
+    TsSourceRouteMix clean_map=runtime->clean_output;
+    ts_source_route_mix_init(&runtime->clean_output,&clean_map);
+    tile_bus = ts_performance_read_routed(&runtime->performance, &tile_raw,&runtime->clean_output);
     frame.keyboard_dry = tile_bus;
     tile_bus = frame_add(tile_bus, source.tiles);
     (void)tile_raw;

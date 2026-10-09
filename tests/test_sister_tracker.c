@@ -142,7 +142,10 @@ static void test_score_migration(void)
         size_t offset=39,aliases_orders=TS_TRACKER_ALIASES*8+original.order_count*4;
         CHECK(fwrite(bytes+offset,1,aliases_orders,f)==aliases_orders);offset+=aliases_orders;
         size_t lane_bytes=TS_TRACKER_NAME_SIZE+14;
-        CHECK(fwrite(bytes+offset,1,8*lane_bytes,f)==8*lane_bytes);offset+=32*lane_bytes;
+        for(int lane=0;lane<32;++lane) {
+            if(lane<8)CHECK(fwrite(bytes+offset,1,lane_bytes,f)==lane_bytes);
+            offset+=lane_bytes+5; /* v4 adds per-track source routing. */
+        }
         for(int i=0;i<original.pattern_count;++i) {
             size_t header_bytes=6+TS_TRACKER_NAME_SIZE;
             CHECK(fwrite(bytes+offset,1,header_bytes,f)==header_bytes);offset+=header_bytes;
@@ -334,9 +337,9 @@ static void test_tsr31_migration(void)
     sound(source, 0, 0.25f);
     CHECK(ts_instrument_save_recipe(source, "identity32.tsr", error, sizeof(error)));
     FILE *in = fopen("identity32.tsr", "rb"), *out = fopen("legacy31.tsr", "wb");
-    unsigned char header[72]; CHECK(in && out);
+    unsigned char header[92]; CHECK(in && out);
     CHECK(fread(header, 1, sizeof(header), in) == sizeof(header));
-    /* TSR32 adds the eight-byte identity after the first occupied flag. */
+    /* Remove TSR32 identity and TSR34 routing after the occupied flag. */
     header[4] = '1';
     CHECK(fwrite(header, 1, 64, out) == 64);
     int byte;

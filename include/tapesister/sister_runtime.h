@@ -223,6 +223,7 @@ typedef struct {
     TsSpatial spatial;
     TsSisterParameters parameters;
     TsPerformanceBank performance;
+    TsSourceRouteMix clean_output;
     TsCaptureRecorder capture;
     TsSisterRuntimeFrame last_frame;
     uint16_t page_source_masks[TS_SISTER_RUNTIME_PAGE_LIMIT];

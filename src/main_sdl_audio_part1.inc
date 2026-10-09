@@ -346,27 +346,29 @@ static void runtime_note_render(AudioState *audio, TsAudioBuses *buses,
     TsStereoFrame performance;
     TsStereoFrame launcher;
     if (audio == NULL || buses == NULL) return;
-    ts_note_bank_read_buses(&audio->notes, &sample, &fm, &synth);
+    TsStereoFrame clean_before=audio->clean.monitor;
+    ts_note_bank_read_routed(&audio->notes, &sample, &fm, &synth,&audio->clean);
     TsStereoFrame browser = ts_note_voice_read(&audio->browser_voice);
     buses->legacy_preview.l += browser.l;
     buses->legacy_preview.r += browser.r;
-    performance = ts_performance_read_stereo(
-        &audio->performance, &audio->performance_raw_mix);
-    TsStereoFrame sequence = ts_keyboard_sequence_read(&audio->keyboard_sequence, audio->output_rate);
+    performance = ts_performance_read_routed(
+        &audio->performance, &audio->performance_raw_mix,&audio->clean);
+    TsStereoFrame sequence_before=audio->clean.monitor;
+    TsStereoFrame sequence = ts_keyboard_sequence_read_routed(&audio->keyboard_sequence, audio->output_rate,&audio->clean);
     if (audio->keyboard_sequence.source && audio->keyboard_sequence.source->fm) {
         fm.l += sequence.l; fm.r += sequence.r;
         synth.l += sequence.l; synth.r += sequence.r;
     } else {
         sample.l += sequence.l; sample.r += sequence.r;
-        audio->performance_raw_mix.l += sequence.l;
-        audio->performance_raw_mix.r += sequence.r;
+        audio->performance_raw_mix.l += sequence.l+audio->clean.monitor.l-sequence_before.l;
+        audio->performance_raw_mix.r += sequence.r+audio->clean.monitor.r-sequence_before.r;
     }
     /* QWERTY/MIDI notes only: keep backing cards, tile launchers and transport
        preview out of the dry instrument recording. FM's own level is retained. */
-    audio->keyboard_dry=(TsStereoFrame){sample.l+performance.l+fm.l*audio->fm_output_gain,
-                                       sample.r+performance.r+fm.r*audio->fm_output_gain};
+    audio->keyboard_dry=(TsStereoFrame){sample.l+performance.l+fm.l*audio->fm_output_gain+audio->clean.monitor.l-clean_before.l,
+                                       sample.r+performance.r+fm.r*audio->fm_output_gain+audio->clean.monitor.r-clean_before.r};
     launcher = audio->tile_launcher_active ?
-        ts_performance_read_stereo(&audio->tile_launchers, NULL) :
+        ts_performance_read_routed(&audio->tile_launchers, NULL,&audio->clean) :
         (TsStereoFrame){0.0f, 0.0f};
     TsStereoFrame mosaic = ts_mosaic_read(audio->mosaic, audio->output_rate);
     launcher.l += mosaic.l; launcher.r += mosaic.r;

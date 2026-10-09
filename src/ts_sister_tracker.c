@@ -1,4 +1,5 @@
 #include "tapesister/sister_tracker.h"
+#include "tapesister/source_route.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -28,6 +29,7 @@ void ts_sister_tracker_init(TsSisterTracker *t)
         snprintf(t->lanes[lane].name, TS_TRACKER_NAME_SIZE, "TRACK %d", lane + 1);
         t->lanes[lane].ratio = 7; /* 1:1 in the frozen 17-entry ratio bank. */
         t->lanes[lane].trim = 1.0f;
+        t->lanes[lane].output_route.mode = TS_SOURCE_INHERIT;
         t->lanes[lane].output_stereo = 1;
     }
 }
@@ -227,7 +229,7 @@ int ts_sister_tracker_validate(const TsSisterTracker *t, char *error, size_t siz
     }
     for (int i = 0; i < TS_TRACKER_LANES; ++i) {
         const TsTrackerLane *l = &t->lanes[i];
-        REQUIRE(name_valid(l->name) && l->length <= TS_TRACKER_ROWS &&
+        REQUIRE(ts_source_route_valid(&l->output_route,1) && name_valid(l->name) && l->length <= TS_TRACKER_ROWS &&
                 l->mode <= TS_TRACKER_SONG && l->ratio < TS_TRACKER_RATIOS &&
                 l->direction <= TS_TRACKER_PING_PONG && l->voice_mode <= TS_TRACKER_VOICE_OVERLAP &&
                 isfinite(l->trim) && l->trim >= 0 && l->trim <= 2 && boolean(l->muted) &&

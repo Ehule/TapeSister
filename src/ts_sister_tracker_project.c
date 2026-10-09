@@ -37,11 +37,11 @@ static uint64_t number(TrackerStream *s, uint64_t value, unsigned width)
 static void codec(TrackerStream *s, TsSisterTracker *loaded, const TsSisterTracker *saved)
 {
     const TsSisterTracker *t = s->reading ? loaded : saved;
-    char magic[8] = { 'S','I','S','T','R','K',3,0 };
+    char magic[8] = { 'S','I','S','T','R','K',4,0 };
     char header[8] = {0};
     bytes(s, header, magic, sizeof(header));
     if (s->reading && (memcmp(header, magic, 6) || header[7] ||
-        (header[6]!=1 && header[6]!=2 && header[6]!=3))) { s->failed = 1; return; }
+        (header[6]!=1 && header[6]!=2 && header[6]!=3 && header[6]!=4))) { s->failed = 1; return; }
     unsigned version=s->reading?(unsigned char)header[6]:(unsigned char)magic[6];
 #define FIELD(owner, target, field, width) do { \
     uint64_t value = number(s, (uint64_t)(owner)->field, width); \
@@ -75,6 +75,13 @@ static void codec(TrackerStream *s, TsSisterTracker *loaded, const TsSisterTrack
         if (s->reading) memcpy(&out->trim, &trim, sizeof(trim));
         FIELD(l, out, muted, 1); FIELD(l, out, route, 1);
         FIELD(l, out, output_channel, 1); FIELD(l, out, output_stereo, 1);
+        if(version>=4) {
+            FIELD(l,out,output_route.mode,1);FIELD(l,out,output_route.speaker,1);
+            FIELD(l,out,output_route.second,1);
+            unsigned pan=number(s,(unsigned)(l->output_route.pan+100),1);
+            unsigned width=number(s,(unsigned)(l->output_route.width+100),1);
+            if(s->reading) {out->output_route.pan=(int)pan-100;out->output_route.width=(int)width-100;}
+        }
     }
     for (int i = 0; i < t->pattern_count && !s->failed; ++i) {
         if (s->reading) {

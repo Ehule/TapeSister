@@ -133,7 +133,7 @@ static void check_project_roundtrip(const TsSample *source, const char *wav,
     f = fopen(project, "rb");
     assert(f != NULL && fread(magic, 1u, sizeof(magic), f) == sizeof(magic));
     fclose(f);
-    assert(memcmp(magic, "TSR33", 5u) == 0);
+    assert(memcmp(magic, "TSR34", 5u) == 0);
     assert(ts_instrument_load_recipe(&restored, project, error, sizeof(error)));
     assert(restored.current.channels == source->channels);
     assert(restored.current.frames == source->frames);

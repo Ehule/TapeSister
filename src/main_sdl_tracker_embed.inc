@@ -73,6 +73,10 @@ static void tracker_refresh(SDL_AudioDeviceID device,AudioState *audio,TsUiState
     ts_tapehead_service(ui->tracker_open && window_drawable(embedded_host.window));
     ui->tracker_running=ts_tapehead_running();
     int action=ts_tapehead_action();
+    if(action>=TS_TH_TRACK_ROUTE && action<TS_TH_TRACK_ROUTE+TS_TRACKER_LANES) {
+        ts_tapehead_focus_lost();
+        source_route_show(device,audio,ui,pages,(TsInstrument *)instrument,action-TS_TH_TRACK_ROUTE,-1);
+    }
     if(action==TS_TH_CANVAS || action==TS_TH_TILES) {
         ts_tapehead_focus_lost();ui->tracker_open=0;
         snprintf(ui->status,sizeof(ui->status),action==TS_TH_TILES?
