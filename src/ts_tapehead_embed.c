@@ -297,8 +297,14 @@ static void track_count_adjust(int delta)
         fastTracksPOCSyncTrackToMaster(lane);
     }
     resetSyncQueues();audio.resetSyncTickTimeFlag=true;
+    int last_row=fastTracksPOCGetExtendedPatternLength(editor.editPattern)-1;
+    editor.row=MIN(editor.row,last_row);
+    if(!songPlaying)song.row=editor.row;
     checkMarkLimits();
-    if(embed.mark_valid)embed.mark_channel=MIN(embed.mark_channel,after-1);
+    if(embed.mark_valid) {
+        embed.mark_channel=MIN(embed.mark_channel,after-1);
+        embed.mark_row=MIN(embed.mark_row,last_row);
+    }
     embed.pointer_mark=0;
     ts_tapehead_host_unlock();
     /* Pattern data, routing, trim and LEN metadata remain stored for all 32

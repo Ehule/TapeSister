@@ -12,12 +12,14 @@ static void tracker_channel_count(void)
     channelVolumeTrim[31]=160;
     fastTracksPOCSetTrackLength(editor.editPattern,31,128);
     fastTracksPOCSetControlTrack(editor.editPattern,31);
+    editor.row=song.row=100; /* Inside this lane's extended LEN surface. */
     jumpToChannel(31);ts_tapehead_mark_anchor(31,2);
     pattMark.markX1=pattMark.markX2=31;pattMark.markY1=2;pattMark.markY2=4;
     unsigned octave=editor.curOctave;
     mouse_click(313,160,SDL_BUTTON_RIGHT);
     assert(song.numChannels==30 && test_pages->tracker.channel_count==30);
     assert(cursor.ch<30 && pattMark.markX1<30 && pattMark.markX2<30);
+    assert(editor.row<64 && song.row<64);
     assert(ui.channelOffset+ui.numChannelsShown<=30);
     press(SDLK_LEFT,SDL_SCANCODE_LEFT,KMOD_ALT);
     assert(pattMark.markX1<30 && pattMark.markX2<30);
