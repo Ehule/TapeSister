@@ -225,6 +225,17 @@ uint16_t fastTracksPOCGetTrackLength(uint16_t patternNumber, int32_t channelInde
 	return fastTracksTrackLength[channelIndex];
 }
 
+static int32_t lengthChannelCount(void)
+{
+#ifdef TAPEHEAD_EMBEDDED
+	/* Removed lanes retain their metadata, but cannot extend or control the
+	** active song until the user adds them back. */
+	return song.numChannels;
+#else
+	return FAST_TRACKS_MAX_CHANNELS;
+#endif
+}
+
 uint16_t fastTracksPOCGetExtendedPatternLength(uint16_t patternNumber)
 {
 	if (patternNumber >= MAX_PATTERNS)
@@ -232,7 +243,7 @@ uint16_t fastTracksPOCGetExtendedPatternLength(uint16_t patternNumber)
 
 	uint16_t length = (uint16_t)CLAMP(patternNumRows[patternNumber], 1,
 		MAX_PATT_LEN);
-	for (int32_t channelIndex = 0; channelIndex < FAST_TRACKS_MAX_CHANNELS;
+	for (int32_t channelIndex = 0; channelIndex < lengthChannelCount();
 		channelIndex++)
 	{
 		length = MAX(length, fastTracksTrackLength[channelIndex]);
@@ -242,7 +253,7 @@ uint16_t fastTracksPOCGetExtendedPatternLength(uint16_t patternNumber)
 
 bool fastTracksPOCHasExplicitTrackLengths(void)
 {
-	for (int32_t channelIndex = 0; channelIndex < FAST_TRACKS_MAX_CHANNELS;
+	for (int32_t channelIndex = 0; channelIndex < lengthChannelCount();
 		channelIndex++)
 	{
 		if (fastTracksTrackLength[channelIndex] != 0)
@@ -263,7 +274,7 @@ uint16_t fastTracksPOCGetSharedBoundary(uint16_t patternNumber)
 		return physicalLength;
 
 	const int32_t controlTrack = fastTracksPOCGetControlTrack(patternNumber);
-	if (controlTrack >= 0)
+	if (controlTrack >= 0 && controlTrack < lengthChannelCount())
 	{
 		/* CONTROL always owns the shared boundary. Assigning CONTROL to a
 		** LEN-OFF lane deliberately selects the ordinary physical reel rather
@@ -273,7 +284,7 @@ uint16_t fastTracksPOCGetSharedBoundary(uint16_t patternNumber)
 	}
 
 	uint16_t longestExplicitLength = 0;
-	for (int32_t channelIndex = 0; channelIndex < FAST_TRACKS_MAX_CHANNELS;
+	for (int32_t channelIndex = 0; channelIndex < lengthChannelCount();
 		channelIndex++)
 	{
 		longestExplicitLength = MAX(longestExplicitLength,
@@ -285,8 +296,9 @@ uint16_t fastTracksPOCGetSharedBoundary(uint16_t patternNumber)
 
 bool fastTracksPOCLengthTopologyIsActive(uint16_t patternNumber)
 {
+	const int32_t controlTrack = fastTracksPOCGetControlTrack(patternNumber);
 	return patternNumber < MAX_PATTERNS && !fastTracksLengthTopologyBypassed &&
-		(fastTracksPOCGetControlTrack(patternNumber) >= 0 ||
+		((controlTrack >= 0 && controlTrack < lengthChannelCount()) ||
 		 fastTracksPOCHasExplicitTrackLengths());
 }
 

@@ -43,6 +43,17 @@ metadata and song-title strip has been removed to give those rows to the tiles.
 The title is **TrackSister** and the old badge is a functional **LEN ON/OFF**
 bypass button. **Rec file**, below **Rec. ptn.**, starts/stops final-output recording.
 
+**TRK 08**, beside Follow, displays the active track count and replaces OCT.
+Left-click or wheel up adds two tracks; right-click or wheel down removes two,
+from the right edge, within the native 2–32-track range. The scopes and pattern
+columns resize immediately. Remaining tracks keep playing when the count changes.
+Removed tracks retain their notes, routing, trim and LEN/CONTROL settings in TSR
+projects and tracker scores; adding them back restores that data. Their voices
+stop, and their LEN/CONTROL settings remain inactive until restored. XM exports
+contain the active tracks only. F1–F6 still select keyboard octaves 0–5.
+
+![Track-count control with twelve active tracks](screenshots/track-count/tracks-12.png)
+
 Each scope has a thin yellow **pan marker**, with small dim ticks marking
 the center. It combines the track's live sample pan, pan commands, slides and
 instrument pan envelope with **Stereo Pair → Pan/Balance** in the routing window.
@@ -250,7 +261,7 @@ path; the full-logo correction does not change routing.
 
 ## Follow and live editing
 
-**FOLLOW ON/OFF** sits below Config, beside the octave control. **Ctrl+F** toggles
+**FOLLOW ON/OFF** sits below Config, beside the track-count control. **Ctrl+F** toggles
 it in every pattern view, including Ctrl+Alt+Backspace's full-window view. Follow
 starts on for new projects and saves with the project.
 
@@ -305,7 +316,9 @@ bindings differ from the earlier native editor's Ctrl+C/X/V shortcuts.
 | Config / Ctrl+C | Tracker recording, layout and palette preferences |
 | Grave / Shift+Grave | Increase/decrease STEP, wrapping 0–16 |
 | STEP arrows / STEP wheel | Original edit step |
-| OCT click/right click/wheel | Increase/decrease octave, clamped 0–7 |
+| TRK left click / wheel up | Add two tracks at the right, up to 32 |
+| TRK right click / wheel down | Remove two tracks at the right, down to 2; retain their stored notes |
+| F1–F6 | Select keyboard octave 0–5 |
 | Backspace | Clear the current full cell, then move up; clamp at row zero |
 | Shift+Backspace | Original structural row deletion |
 | Ctrl+Alt+Backspace | Pattern-only view |
@@ -314,7 +327,7 @@ bindings differ from the earlier native editor's Ctrl+C/X/V shortcuts.
 
 F10 reserves the host workspace toggle, so the original plain F10 row bookmark
 is unavailable. Modified F10 bindings remain with TapeHead. Plain F7 belongs to
-host capture; use OCT for octave 6/7. Ctrl+D opens host projects through Disk Op; Ctrl+E
+host capture. Ctrl+D opens host projects through Disk Op; Ctrl+E
 returns to Canvas through the original extended sample editor command.
 
 Backspace's clear-before-move order and the additional Ctrl+Alt+Backspace alias

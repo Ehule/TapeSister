@@ -852,6 +852,7 @@ static void suspended_tracker_refresh(void) {
 }
 #include "test_xm_exchange.inc"
 #include "test_module_import.inc"
+#include "test_tracker_channel_count.inc"
 
 int main(int argc,char **argv) {
     SDL_SetHint(SDL_HINT_VIDEODRIVER,"dummy");assert(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER));
@@ -891,8 +892,9 @@ int main(int argc,char **argv) {
     press(SDLK_BACKQUOTE,SDL_SCANCODE_GRAVE,KMOD_SHIFT);assert(test_pages->tracker.edit_step==step);
     wheel(156,66,1);assert(test_pages->tracker.edit_step==(step+1)%17);
     wheel(156,66,-1);assert(test_pages->tracker.edit_step==step);
-    unsigned octave=test_pages->tracker.embedded_data[21];wheel(313,160,1);
-    assert(test_pages->tracker.embedded_data[21]==octave+1);wheel(313,160,-1);
+    unsigned tracks=test_pages->tracker.channel_count,octave=editor.curOctave;wheel(313,160,1);
+    assert(test_pages->tracker.channel_count==tracks+2 && editor.curOctave==octave);wheel(313,160,-1);
+    assert(test_pages->tracker.channel_count==tracks);
     /* MIDI uses upstream note entry and velocity, not a parallel canvas voice. */
     TsMidiEvent midi;assert(ts_midi_decode_short_message(0x92,67,100,&midi));
     unsigned midi_row=test_pages->tracker.editor_row;TsTrackerCell before_midi=pat()->cells[midi_row][0];
@@ -1004,6 +1006,7 @@ int main(int argc,char **argv) {
     xm_roundtrip();
     module_imports();
     raw_module_imports();
+    tracker_channel_count();
     ts_tapehead_close();ts_tracker_playback_free(&test_audio->tracker);ts_sister_runtime_free(&test_audio->sister);
     ts_tracker_edit_free(test_ui->tracker_edit);
     ts_sample_pages_free(test_pages);ts_instrument_free(test_bank);

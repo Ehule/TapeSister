@@ -885,4 +885,13 @@ bool initScopes(void)
 
 #ifdef TAPEHEAD_EMBEDDED
 void tapeheadEmbeddedScopeTick(void) { updateScopes(); }
+void tapeheadEmbeddedScopeReset(int32_t ch)
+{
+	if (ch < 0 || ch >= MAX_CHANNELS)return;
+	scope[ch].active = false;
+	scope[ch].wasCleared = false;
+	scopePan[ch] = 128;
+	scopeDisplayedPan[ch] = -1;
+	lastChInstr[ch].instrNum = lastChInstr[ch].smpNum = 255;
+}
 #endif

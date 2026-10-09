@@ -42,6 +42,7 @@ extern void tapeheadEmbeddedConfigDefaults(void);
 extern bool tapeheadEmbeddedAudioPrepare(uint32_t,uint32_t);
 extern void tapeheadEmbeddedAudioRender(float *,uint32_t);
 extern void tapeheadEmbeddedScopeTick(void);
+extern void tapeheadEmbeddedScopeReset(int32_t);
 extern void tapeheadEmbeddedClearClipboard(void);
 extern bool tapeheadEmbeddedTileInUse(const float *);
 extern void freeTextBoxes(void);
@@ -275,6 +276,37 @@ static int main_panel_visible(void) {
            !ui.helpScreenShown && !ui.aboutScreenShown && !ui.nibblesShown;
 }
 #include "ts_tapehead_follow.inc"
+static void track_count_adjust(int delta)
+{
+    ts_tapehead_host_lock();
+    int before=song.numChannels,after=CLAMP(before+delta*2,2,TS_TRACKER_LANES);
+    if(after==before){ts_tapehead_host_unlock();return;}
+    /* Keep the remaining voices and transport running. The original FT2
+       add/subtract buttons stop every voice through lockMixerCallback(). */
+    song.numChannels=(uint8_t)after;
+    for(int lane=MIN(before,after);lane<MAX(before,after);++lane) {
+        stopVoice(lane);
+        memset(&channel[lane],0,sizeof(channel[lane]));
+        channel[lane].instrPtr=instr[0];
+        channel[lane].channelOff=editor.channelMuted[lane];
+        channel[lane].oldPan=channel[lane].outPan=channel[lane].finalPan=128;
+        microtonalReset(&channel[lane].microtonal,(uint32_t)lane);
+        editor.keyOnTab[lane]=0;
+        tapeheadEmbeddedScopeReset(lane);
+        embed.scope_tile_ids[lane]=0;
+        fastTracksPOCSyncTrackToMaster(lane);
+    }
+    resetSyncQueues();audio.resetSyncTickTimeFlag=true;
+    checkMarkLimits();
+    if(embed.mark_valid)embed.mark_channel=MIN(embed.mark_channel,after-1);
+    embed.pointer_mark=0;
+    ts_tapehead_host_unlock();
+    /* Pattern data, routing, trim and LEN metadata remain stored for all 32
+       lanes, so adding a removed pair restores it, including after a save. */
+    hideTopScreen();showTopLeftMainScreen(RESTORE_SCREENS);showTopRightMainScreen();
+    if(ui.patternEditorShown)showPatternEditor();
+    setSongModifiedFlag();
+}
 static void menu(void) {
     if(ui.configScreenShown) {palette_buttons();textOutClipX(400,157,PAL_FORGRND,preferences_message,628);return;}
     pushButtons[PB_DISK_OP].x=294;pushButtons[PB_DISK_OP].y=36;
@@ -290,7 +322,7 @@ static void menu(void) {
     pushButtons[PB_ABOUT].caption="Zap";pushButtons[PB_ABOUT].callbackFuncOnUp=pbZap;
     pushButtons[PB_INST_ED_EXT].caption="Sister";pushButtons[PB_INST_ED_EXT].callbackFuncOnUp=sister_button;
     pushButtons[PB_SMP_ED_EXT].caption="Canvas";pushButtons[PB_SMP_ED_EXT].callbackFuncOnUp=canvas_button;
-    /* These mutate an independent sample library; tiles belong to the host. */
+    /* The host's TRK control replaces these two native channel buttons. */
     hidePushButton(PB_ADD_CHANNELS);hidePushButton(PB_SUB_CHANNELS);
     pushButtons[PB_NIBBLES].caption="Fallout";pushButtons[PB_NIBBLES].callbackFuncOnUp=fallout_button;
     pushButtons[PB_ZAP].caption="Save";pushButtons[PB_ZAP].callbackFuncOnUp=project_save_button;
@@ -308,8 +340,8 @@ static void menu(void) {
             textOutTiny(273,20,fastTracksPOCLengthTopologyIsBypassed()?"OFF":"ON",video.palette[PAL_FORGRND]);
         }
         canvas_draw();
-        char octave[12];snprintf(octave,sizeof(octave),"OCT %u",editor.curOctave);
-        drawFramework(294,155,59,16,FRAMEWORK_TYPE1);textOut(300,159,PAL_FORGRND,octave);
+        char tracks[12];snprintf(tracks,sizeof(tracks),"TRK %02u",song.numChannels);
+        drawFramework(294,155,59,16,FRAMEWORK_TYPE1);textOut(298,159,PAL_FORGRND,tracks);
         drawFramework(359,155,59,16,FRAMEWORK_TYPE1);
         textOutTiny(363,160,embed.follow?"FOLLOW ON":"FOLLOW OFF",video.palette[embed.follow?PAL_FORGRND:PAL_PATTEXT]);
     }
@@ -518,7 +550,11 @@ int ts_tapehead_event(const SDL_Event *event,int x,int y) {
             return 1;
         }
         if(main_panel_visible() && x>=294 && x<353 && y>=155 && y<171) {
-            editor.curOctave=CLAMP(editor.curOctave+(event->button.button==SDL_BUTTON_RIGHT?-1:1),0,7);return 1;
+            if(!ui.sysReqShown && !editor.editTextFlag) {
+                if(event->button.button==SDL_BUTTON_LEFT)track_count_adjust(1);
+                else if(event->button.button==SDL_BUTTON_RIGHT)track_count_adjust(-1);
+            }
+            return 1;
         }
         embed.pointer_mark=0;embed.pointer_x=x;embed.pointer_y=y;
         mouse.buttonState|=SDL_BUTTON(event->button.button);mouseButtonDownHandler(event->button.button);return 1;
@@ -555,7 +591,7 @@ int ts_tapehead_event(const SDL_Event *event,int x,int y) {
             else if(target==600)canvas_page_step(ticks>0?-1:1);
             else if(main_panel_visible() && x>=125 && x<168 && y>=62 && y<78) {if(ticks>0)pbIncAdd();else pbDecAdd();}
             else if(main_panel_visible() && x>=294 && x<353 && y>=155 && y<171)
-                editor.curOctave=CLAMP(editor.curOctave+(ticks>0?1:-1),0,7);
+                track_count_adjust(ticks>0?1:-1);
             else mouseWheelHandler(ticks>0?MOUSE_WHEEL_UP:MOUSE_WHEEL_DOWN);
         }
         return 1;

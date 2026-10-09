@@ -2401,3 +2401,51 @@ index 1cb8dba..472d0f3 100644
 +			ts_tapehead_scope_source(i, ch->scopeTileId, ch->scopeTileRouteIndex);
 @@ -853,0 +870 @@ bool initScopes(void)
 +		scopeDisplayedPan[i] = -1;
+
+diff --git a/src/ft2_fasttracks.c b/src/ft2_fasttracks.c
+index 8ca7167..41f9991 100644
+--- a/src/ft2_fasttracks.c
++++ b/src/ft2_fasttracks.c
+@@ -227,0 +228,11 @@ uint16_t fastTracksPOCGetTrackLength(uint16_t patternNumber, int32_t channelInde
++static int32_t lengthChannelCount(void)
++{
++#ifdef TAPEHEAD_EMBEDDED
++	/* Removed lanes retain their metadata, but cannot extend or control the
++	** active song until the user adds them back. */
++	return song.numChannels;
++#else
++	return FAST_TRACKS_MAX_CHANNELS;
++#endif
++}
++
+@@ -235 +246 @@ uint16_t fastTracksPOCGetExtendedPatternLength(uint16_t patternNumber)
+-	for (int32_t channelIndex = 0; channelIndex < FAST_TRACKS_MAX_CHANNELS;
++	for (int32_t channelIndex = 0; channelIndex < lengthChannelCount();
+@@ -245 +256 @@ bool fastTracksPOCHasExplicitTrackLengths(void)
+-	for (int32_t channelIndex = 0; channelIndex < FAST_TRACKS_MAX_CHANNELS;
++	for (int32_t channelIndex = 0; channelIndex < lengthChannelCount();
+@@ -266 +277 @@ uint16_t fastTracksPOCGetSharedBoundary(uint16_t patternNumber)
+-	if (controlTrack >= 0)
++	if (controlTrack >= 0 && controlTrack < lengthChannelCount())
+@@ -276 +287 @@ uint16_t fastTracksPOCGetSharedBoundary(uint16_t patternNumber)
+-	for (int32_t channelIndex = 0; channelIndex < FAST_TRACKS_MAX_CHANNELS;
++	for (int32_t channelIndex = 0; channelIndex < lengthChannelCount();
+@@ -287,0 +299 @@ bool fastTracksPOCLengthTopologyIsActive(uint16_t patternNumber)
++	const int32_t controlTrack = fastTracksPOCGetControlTrack(patternNumber);
+@@ -289 +301 @@ bool fastTracksPOCLengthTopologyIsActive(uint16_t patternNumber)
+-		(fastTracksPOCGetControlTrack(patternNumber) >= 0 ||
++		((controlTrack >= 0 && controlTrack < lengthChannelCount()) ||
+diff --git a/src/scopes/ft2_scopes.c b/src/scopes/ft2_scopes.c
+index 472d0f3..851464a 100644
+--- a/src/scopes/ft2_scopes.c
++++ b/src/scopes/ft2_scopes.c
+@@ -887,0 +888,9 @@ void tapeheadEmbeddedScopeTick(void) { updateScopes(); }
++void tapeheadEmbeddedScopeReset(int32_t ch)
++{
++	if (ch < 0 || ch >= MAX_CHANNELS)return;
++	scope[ch].active = false;
++	scope[ch].wasCleared = false;
++	scopePan[ch] = 128;
++	scopeDisplayedPan[ch] = -1;
++	lastChInstr[ch].instrNum = lastChInstr[ch].smpNum = 255;
++}
