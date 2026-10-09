@@ -24,6 +24,7 @@ static SDL_Window *window;
 static char message[2048];
 static unsigned portal_count;
 static int performance;
+static int revision;
 static int asset_count=19;
 #define REQUIRE(call) do { if (!(call)) { fprintf(stderr,"%s: %s\n",#call,message); exit(1); } } while(0)
 
@@ -69,6 +70,7 @@ static void select_asset(int alias)
 
 static void fm_asset(int alias,const char *name,TsFmPatch p,float seconds,int root)
 {
+    REQUIRE(seconds>=.1f&&seconds<=8.0f);
     select_asset(alias);ts_fm_patch_sanitize(&p);
     bank.generator=(TsGeneratorRecipe){.seed=p.sound_seed,.kind=TS_GENERATOR_FM,
         .seconds=seconds,.frequency=261.625565f,.fm_patch=p,.has_fm_patch=1};
@@ -247,6 +249,47 @@ static void performance_instruments(void)
     transformed_asset(23,13,"23 FLURRY - slow dust","stretch.time.1",6);
 }
 
+/* Additional FM voices for Threshold's second, more forceful arrangement.
+   The first 23 tiles are loaded unchanged from the original native project. */
+static void rupture_instruments(void)
+{
+    TsFmPatch p=basic(TS_FM_WAVE_SAW,3024);
+    const float cents[]={-18,-7,-2,3,9,19};
+    p.structure=TS_FM_STRUCTURE_UNISON;p.active_mask=63;
+    p.drone_mode=1;p.directions=TS_FM_DIRECTION_DRONE;
+    p.filter_mode=TS_FILTER_LOWPASS;p.filter_cutoff_hz=5200;p.filter_resonance=.16f;
+    p.feedback=.28f;
+    for(int v=0;v<6;++v){
+        p.ratios[v]=exp2f(cents[v]/1200);p.waveforms[v]=v==2?TS_FM_WAVE_FOLDED:TS_FM_WAVE_SAW;
+        p.lfo_types[v]=TS_FM_LFO_FILTER_SINE;p.lfo_rates[v]=.035f+.009f*v;p.lfo_depths[v]=.16f;
+    }
+    fm_asset(24,"24 SERAPH - open choir",p,8,60);
+    p=basic(TS_FM_WAVE_FOLDED,3025);p.structure=TS_FM_STRUCTURE_UNISON;p.active_mask=63;
+    p.drone_mode=1;p.directions=TS_FM_DIRECTION_DRONE;p.feedback=.78f;
+    p.filter_mode=TS_FILTER_HIGHPASS;p.filter_cutoff_hz=190;p.filter_resonance=.08f;
+    for(int v=0;v<6;++v){
+        p.ratios[v]=.5f*exp2f(cents[v]/1200);p.waveforms[v]=v%2?TS_FM_WAVE_SAW:TS_FM_WAVE_FOLDED;
+        p.lfo_types[v]=TS_FM_LFO_INDEX_SINE;p.lfo_rates[v]=.2f+.027f*v;p.lfo_depths[v]=.25f;
+    }
+    fm_asset(25,"25 FAULT - fractured Reese",p,8,48);
+    p=basic(TS_FM_WAVE_SINE,3026);p.structure=0;p.active_mask=7;
+    p.directions=TS_FM_DIRECTION_PERC;p.percussion=TS_FM_PERC_DIGITAL;
+    p.ratios[0]=1.19f;p.ratios[1]=2.731f;p.ratios[2]=7.137f;
+    p.depth=5;p.feedback=.65f;p.pitch_sweep=.5f;p.transient_mix=.20f;
+    p.decay_seconds=.22f;p.attack_seconds=.0007f;
+    p.filter_mode=TS_FILTER_HIGHPASS;p.filter_cutoff_hz=600;p.filter_resonance=.14f;
+    fm_asset(26,"26 SHARD - metal fracture",p,2,60);
+    p=basic(TS_FM_WAVE_FOLDED,3027);p.structure=3;p.active_mask=63;
+    p.drone_mode=1;p.directions=TS_FM_DIRECTION_DRONE;p.feedback=.55f;p.depth=3.2f;
+    const float ratios[]={1,1.007f,2,3.003f,5.01f,7.13f};
+    p.filter_mode=TS_FILTER_BANDPASS;p.filter_cutoff_hz=2200;p.filter_resonance=.22f;
+    for(int v=0;v<6;++v){
+        p.ratios[v]=ratios[v];p.waveforms[v]=v==5?TS_FM_WAVE_NOISE:TS_FM_WAVE_FOLDED;
+        p.lfo_types[v]=TS_FM_LFO_FILTER_SINE;p.lfo_rates[v]=.12f+.031f*v;p.lfo_depths[v]=.36f;
+    }
+    fm_asset(27,"27 VEIL - harmonic abrasion",p,8,60);
+}
+
 static void mixer(void)
 {
     TsSisterParameters *p=&state.parameters;
@@ -295,6 +338,13 @@ static void mixer(void)
             l->output_route.send_level[TS_SEND_PRISM]=5;
         }
     }
+    if(revision){
+        snprintf(project.tracker.lanes[5].name,TS_TRACKER_NAME_SIZE,"FAULT / REESE");
+        snprintf(project.tracker.lanes[9].name,TS_TRACKER_NAME_SIZE,"TERRA GUIDE / MUTE ME");
+        snprintf(project.tracker.lanes[10].name,TS_TRACKER_NAME_SIZE,"VEIL / GHOST");
+        snprintf(project.tracker.lanes[13].name,TS_TRACKER_NAME_SIZE,"SERAPH / HIGH ANSWER");
+        snprintf(project.tracker.lanes[15].name,TS_TRACKER_NAME_SIZE,"SHARD / IRON");
+    }
 }
 
 /* Text score fields: pattern,row,lane,alias,MIDI,volume,ASCII-effect,value.
@@ -303,7 +353,7 @@ static void read_score(const char *path)
 {
     FILE *f=fopen(path,"r");REQUIRE(f);char line[512];
     char pattern_names[256][TS_TRACKER_NAME_SIZE]={{0}};
-    TsSisterTracker *t=&project.tracker;t->bpm=performance?75:72;t->ticks_per_line=3;t->channel_count=16;t->loop=0;
+    TsSisterTracker *t=&project.tracker;t->bpm=revision?150:performance?75:72;t->ticks_per_line=3;t->channel_count=16;t->loop=0;
     while(fgets(line,sizeof(line),f)){
         if(!strncmp(line,"#@pattern ",10)){
             int index,offset=0;
@@ -337,12 +387,12 @@ static void save_and_verify(const char *path)
     REQUIRE(ts_sample_pages_switch(&project,&bank,0,message,sizeof(message)));
     REQUIRE(ts_instrument_select_bank(&bank,5,message,sizeof(message)));
     REQUIRE(embedded_open(window,0,&studio,&view,&project,&bank,48000));
-    snprintf(song.name,sizeof(song.name),"%s",performance?"THRESHOLD":"BLACK SNOW");
+    snprintf(song.name,sizeof(song.name),"%s",revision?"THRESHOLD RUPTURE":performance?"THRESHOLD":"BLACK SNOW");
     REQUIRE(ts_tapehead_export(&project.tracker,message,sizeof(message)));
     ts_tapehead_close();
     state.page_count=project.page_count;
     REQUIRE(ts_sample_pages_save_project(&project,&bank,&recording,&state,path,message,sizeof(message)));
-    uint64_t score=ts_sister_tracker_hash(&project.tracker),samples[24]={0};
+    uint64_t score=ts_sister_tracker_hash(&project.tracker),samples[TS_TRACKER_ALIASES]={0};
     for(int a=1;a<=asset_count;++a){const TsBankSlot *s=ts_sample_pages_find_tile(&project,&bank,project.tracker.aliases[a],NULL);
         REQUIRE(s);samples[a]=ts_sample_hash(&s->sample);}
     TsSisterProjectState expected=state;
@@ -350,7 +400,7 @@ static void save_and_verify(const char *path)
     REQUIRE(score==ts_sister_tracker_hash(&project.tracker));
     for(int a=1;a<=asset_count;++a){const TsBankSlot *s=ts_sample_pages_find_tile(&project,&bank,project.tracker.aliases[a],NULL);
         REQUIRE(s&&samples[a]==ts_sample_hash(&s->sample));
-        if(a<=14||a==20)REQUIRE(s->has_generator&&s->generator.has_fm_patch);}
+        if(a<=14||a==20||a>=24)REQUIRE(s->has_generator&&s->generator.has_fm_patch);}
     int present=0;REQUIRE(ts_sister_project_state_load(&state,path,48000,&present,message,sizeof(message)));REQUIRE(present);
     REQUIRE(!memcmp(&expected.router,&state.router,sizeof(state.router)));
     REQUIRE(fabsf(expected.parameters.prism.spread-state.parameters.prism.spread)<1e-6f);
@@ -371,6 +421,11 @@ static void render(const char *path,const char *wav,double seconds,double start)
     REQUIRE(embedded_open(window,0,&studio,&view,&project,&bank,48000));view.tracker_open=1;
     const char *solo=SDL_getenv("TS_COMPOSE_SOLO");
     if(solo){int lane=atoi(solo);REQUIRE(lane>=0&&lane<16);for(int i=0;i<16;++i)setChannelMute(i,i!=lane);}
+    /* Optional rehearsal render. Runtime mutes do not modify the project. */
+    const char *mute=SDL_getenv("TS_COMPOSE_MUTE");
+    if(mute){char list[128];REQUIRE(strlen(mute)<sizeof(list));strcpy(list,mute);
+        for(char *s=strtok(list,",");s;s=strtok(NULL,",")){char *end=NULL;long lane=strtol(s,&end,10);
+            REQUIRE(end!=s&&*end==0&&lane>=0&&lane<16);setChannelMute((int)lane,1);}}
     startPlaying(PLAYMODE_SONG,0);
     uint64_t total=(uint64_t)llround(seconds*48000),skip=(uint64_t)llround(start*48000);
     uint64_t score_end=(uint64_t)llround(project.tracker.order_count*128.0*project.tracker.ticks_per_line*2.5/project.tracker.bpm*48000);
@@ -399,10 +454,21 @@ static void render(const char *path,const char *wav,double seconds,double start)
 
 int main(int argc,char **argv)
 {
-    if(argc<5){fprintf(stderr,"create|create-performance PROJECT SCORE_CSV CDP_BIN | render PROJECT WAV END_SECONDS [START_SECONDS]\n");return 2;}
-    performance=!strcmp(argv[1],"create-performance");asset_count=performance?23:19;
+    if(argc<5){fprintf(stderr,"create|create-performance PROJECT SCORE_CSV CDP_BIN | revise-performance PROJECT SCORE_CSV SOURCE_PROJECT | render PROJECT WAV END_SECONDS [START_SECONDS]\n");return 2;}
+    revision=!strcmp(argv[1],"revise-performance");
+    performance=revision||!strcmp(argv[1],"create-performance");asset_count=revision?27:performance?23:19;
     setup();
-    if(!strcmp(argv[1],"create")||performance){
+    if(revision){
+        REQUIRE(ts_sample_pages_load_project(&project,&bank,&recording,argv[4],message,sizeof(message)));
+        int present=0;REQUIRE(ts_sister_project_state_load(&state,argv[4],48000,&present,message,sizeof(message)));REQUIRE(present);
+        char presets[1400];snprintf(presets,sizeof(presets),"%s-portal-recipes.txt",argv[4]);
+        REQUIRE(ts_portal_library_load(&portal_presets,presets,message,sizeof(message)));
+        TsTileId aliases[TS_TRACKER_ALIASES];memcpy(aliases,project.tracker.aliases,sizeof(aliases));
+        ts_sister_tracker_free(&project.tracker);ts_sister_tracker_init(&project.tracker);
+        memcpy(project.tracker.aliases,aliases,sizeof(aliases));
+        for(int a=1;a<=23;++a)REQUIRE(aliases[a]&&ts_sample_pages_find_tile(&project,&bank,aliases[a],NULL));
+        rupture_instruments();mixer();read_score(argv[3]);save_and_verify(argv[2]);
+    }else if(!strcmp(argv[1],"create")||performance){
         ts_cdp_runtime_init(&cdp);REQUIRE(ts_cdp_runtime_discover(&cdp,argv[4],NULL,message,sizeof(message)));
         instruments();tape_asset();if(performance)performance_instruments();mixer();read_score(argv[3]);save_and_verify(argv[2]);
     }else if(!strcmp(argv[1],"render"))render(argv[2],argv[3],strtod(argv[4],NULL),argc>5?strtod(argv[5],NULL):0);

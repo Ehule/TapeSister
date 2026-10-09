@@ -104,3 +104,70 @@ mixing/mastering, copied reference melody or reference-track audio. Native
 save/reload checks cover every tile, the score and the shared routing state.
 Listening and rehearsal on the performance machine remain essential: this is
 an unauditioned composition draft, not a claim of a rehearsed live show.
+
+## Threshold / Rupture revision
+
+`threshold_rupture_score.py` revises the long performance after listening
+feedback: stronger trap phrasing, contrasting peaks and withdrawals, a more
+exposed sustained choir, and a shorter closing DJ handoff. It runs at 150 BPM
+with a 75 BPM half-time relationship. The original first 5:07.2 has identical
+note and volume event times on the finer grid. The revision has 896 bars at
+150 BPM (448 paired phrase bars), 225 patterns/orders including the silent
+terminal order, and a 24:00 reference duration.
+
+The new mode reads an existing, complete Threshold project, preserves its
+23 tiles and CDP recipes, adds four native FM voices, then writes a separate
+project through the normal serializer. The source project is never saved over.
+It requires no CDP executable because its seven earlier CDP transformations
+are already present. To recreate everything from source, first run the
+`create-performance` command above, then:
+
+```sh
+python3 tools/threshold_rupture_score.py output/threshold-rupture-score.csv
+build/tapesister_compose revise-performance output/Threshold-Rupture/Threshold-Rupture.tsr output/threshold-rupture-score.csv output/Threshold/Threshold.tsr
+build/tapesister_compose render output/Threshold-Rupture/Threshold-Rupture.tsr output/Threshold-Rupture.wav 1440
+```
+
+The first rupture is at 8:32 (pattern 080), the first aftermath at 11:31.2
+(108), another drop at 14:56 (140), and the principal peak at 18:46.4 (176).
+A second wave starts at 20:28.8 (192), followed by resolution at 21:20 (200).
+The handoff begins at 22:36.8 (212); the bass is out at 23:02.4 (216).
+Pattern 224 is a silent terminal order with a BE0 jump to itself.
+
+Track 10 remains a separate guide for live Terra playing. Track 13's bells
+and Track 14's high choir answers are optional additional mutes. The suggested
+tuning remains D4 E4 F4 G4 A4 Bb4 C5 D5 E5 F5 G5 A5. The lead leaves two
+phrase bars free out of each eight for live responses.
+
+`TS_COMPOSE_MUTE` takes comma-separated, **zero-based** lanes for an optional
+rehearsal render. For example, mute only user-facing Track 10:
+
+```sh
+TS_COMPOSE_MUTE=9 build/tapesister_compose render output/Threshold-Rupture/Threshold-Rupture.tsr output/Threshold-Rupture-Terra-Backing.wav 1440
+```
+
+This applies native channel mutes before playback, retains the other lanes'
+shared effects, and does not modify the saved project. No audio subtraction
+or external mixing is used. Ordinary `render` and both original creation
+modes retain their behavior. The added voices and authored score do not change
+the application UI, live audio engine or file format.
+
+Timing note: the current embedded player retains FT2's 44 kHz reference-clock
+rounding. At nominal 150 BPM its actual tempo is approximately 150.0682 BPM
+(75.0341 half-time), a 0.0455% difference. Nominal cues above therefore run
+slightly early in the native render: the main entry is about 18:45.9, the
+handoff 22:36.2, and the terminal order 23:52.95. The WAV still lasts 24:00,
+including its tail. Use these actual cues or match the audible downbeat when
+beatmatching. This utility deliberately retains the same clock as the live
+application; it does not silently make the offline render run at another rate.
+
+Revision validation: all 72,973 authored cells match the saved native score
+(including the player's standard EC0 representation of note cuts), all
+27 tile hashes survive reload, and all 23 original exported sound assets
+are unchanged. The original and relocated opening match exactly over 51.2
+seconds. FM directions, shared-send routing and embedded-tracker tests pass.
+Both complete renders are finite with no output-guard contacts. Main mix:
+-14.9 LUFS, approximately -1.2 dBTP; Track-10-muted backing: -15.0 LUFS,
+approximately -2.3 dBTP. The main mix's loudness range is 18.1 LU.
+These are numerical/headless Linux checks; the composition was not auditioned
+and this pass did not test the optional utility on Windows or live hardware.
