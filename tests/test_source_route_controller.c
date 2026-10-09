@@ -109,7 +109,10 @@ static void shared_send_controls(const char *directory)
     render(energy);assert(energy[0]>1 && energy[1]>1 && energy[2]>1 && energy[3]>1);
     ts_tapehead_stop();remove("send-score.tst");
     /* Global Router offers the same returns without needing a selected tile. */
-    source_route_hide();u.router_open=1;SisterWindow sister={0};
+    /* Match the application's static window storage: this contains the large
+       framebuffer/preset banks and cannot fit on MinGW's default 2 MiB stack. */
+    static SisterWindow sister;
+    source_route_hide();u.router_open=1;
     SDL_Event event={0};event.type=SDL_MOUSEBUTTONDOWN;event.button.windowID=SDL_GetWindowID(window);
     event.button.button=SDL_BUTTON_LEFT;event.button.x=70;event.button.y=84;
     assert(router_event(&event,window,0,&a,&u,&sister));
