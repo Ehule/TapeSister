@@ -49,7 +49,7 @@ Route edits interpolate over 5 ms; note/voice transitions retain short fades.
 Routes belong to stable tile identities and tracker lanes. Copying a tile copies
 its default route; moving it between slots/pages keeps the route. Replacement
 and destructive edits retain the destination. Project dirty detection includes
-routing. New projects save tile data as **TSR34** and tracker data as **SISTRK v4**.
+routing. New projects save tile data as **TSR35** and tracker data as **SISTRK v5**.
 Older projects open with Main on tiles and Use Tile on tracks. Older TapeSister
 builds cannot open the new formats; save a separate project copy when comparing
 this build with an older build.
@@ -57,13 +57,96 @@ this build with an older build.
 FILE OUT, Mosaic OUTPUT recording and output meters include a **stereo reference
 mix** of the clean routes plus Main, after OUT gain. They do not capture discrete
 multichannel files or reproduce the array's physical placement/calibration.
-Dry keyboard recording includes clean-routed notes. Existing internal H1/H2/H3
+Dry keyboard recording uses the source before routing, including effects-only notes with Clean at 0%. Existing internal H1/H2/H3
 stem taps keep their meanings. Mosaic cards, FM, external inputs and browser
 previews retain their existing Main routing; this release adds tile and embedded
 tracker routes, not independent routes for those sources.
 
-Shared effect sends and a freely connected routing matrix remain a later step.
-This version offers one Main or clean destination per source.
+## Shared sends and effect returns
+
+The routing window has **Output**, **Sends**, and **Returns** pages. **F9 → Send
+Returns** opens the same shared return controls without selecting a tile.
+
+On **Sends**, enable **Clean + Sends**. A Main or inherited route starts with a
+clean stereo pair; an existing clean destination is kept. Set **Clean** and the
+three send levels independently, from 0–100%. The sends do not need to total
+100%. They are taken after the source's note/voice level and tracker panning,
+but before its clean fader, output pan/balance, width and speaker assignment.
+Turning Clean down therefore leaves the sends intact. Clean at 0% creates an
+effects-only source. No copy of this source is also fed into the Main chain.
+The **Output** page chooses where the clean contribution goes.
+
+For example, enable the relevant shared processors' Send roles and set:
+
+| Track | Clean | Pedalboard | Prism | Fallout |
+| --- | ---: | ---: | ---: | ---: |
+| 1: Pedalboard only | 0% | 100% | 0% | 0% |
+| 2: Pedalboard and Prism | 0% | 100% | 75% | 0% |
+| 3: Fallout only | 0% | 0% | 0% | 100% |
+
+A track override replaces the tile's entire routing choice, including clean
+level and all sends. **Use Tile** restores inheritance. A track can therefore
+send the same tile to different processors without modifying the tile default.
+Selecting **Main Route** disables that source's parallel mix.
+
+### One shared instance, one role
+
+Each processor has an explicit global **Chain / Send** role on **Returns**:
+
+- **Chain** keeps it in the existing serial Router. Its source sends are inactive.
+- **Send** removes that processor from the serial path and processes the sum of
+  its tile/track sends once. Other Main sources pass that stage unchanged.
+  Its processed return joins the final output at its own destination.
+
+This is a global role change, so changing Prism to Send also removes Prism
+from every source using Main. It does not make a second Prism. A brief fade
+handles role changes without running two DSP histories. Router bypass, solo,
+timers and sequenced participation continue to control the processor; bypass
+mutes a send return instead of substituting dry audio. Moving a return's
+position or level does not stop Router automation.
+
+For the Pedalboard, the shared return is the existing **POST slot chain**.
+PRE and H1/H2/H3 placements remain local Sister inserts. Set the desired slots
+to POST to hear them on the shared send. No new per-tile or per-track racks
+are allocated. Shared returns do not feed Sister's tape feedback loop.
+Sister Machine and External Insert keep their serial roles.
+
+### Clean/processed balance and placement
+
+Returns remove each processor's explicit dry branch. Prism's Mix, the
+Pedalboard slots' Mix controls, and Fallout's Mix still set the wet amount;
+they do not add their dry branches to the shared return. An empty or disabled
+processor contributes silence. Prism must be on; Pedalboard/Fallout still
+respect Master FX, and Fallout must also be on. Effect tails continue when a
+source send is reduced, subject to the processor's existing controls.
+
+The Returns page offers a stereo pair or single logical speaker, pan/balance,
+width and a **Return Level** for each processor. These settings are shared by
+all sources feeding that processor. For example, keep a tile's clean signal
+at the front while placing its Prism return behind you. A processed signal
+may itself sound close to the source (especially neutral Prism/Fallout
+settings); wet-only removes the explicit dry mix, not the source's musical
+content.
+
+Clean contributions and processed returns combine after the serial chain,
+Master EQ and Ambisonics field processing. Each uses the same speaker mapping
+and whole-route stereo fallback described above. Global OUT and the final
+linked output guard control the combined output. FILE OUT captures the stereo
+reference mix, including these returns. Internal Sister head/tape taps keep
+their existing meanings.
+
+This first matrix has source-to-processor sends and independent returns.
+It has no return-to-return sends or arbitrary feedback connections. Older
+projects load with every processor in Chain and source mixing disabled,
+including TSR34/SISTRK v4 projects from the first routing build.
+
+### Shared-send UI captures
+
+![Tile clean and shared sends](screenshots/shared-sends/tile-shared-sends.png)
+
+![Track overrides the tile's send mix](screenshots/shared-sends/track-shared-sends.png)
+
+![Independent shared Prism return](screenshots/shared-sends/shared-prism-return.png)
 
 ## Native UI captures
 
@@ -78,7 +161,7 @@ with a four-output fixture and a valid four-speaker mapping.
 
 ## Validation
 
-The source-route tests exercise matrix coefficients, inheritance, transitions,
+The source-route tests exercise matrix coefficients, independent send levels, wet-only returns, single DSP histories, inheritance, transitions,
 output ownership and fallback, note/performance/ARP playback, tile cloning and
 persistence. The native controller test drives the actual routing window and
 main audio callback, including embedded tracker playback, live overrides,

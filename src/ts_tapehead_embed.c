@@ -164,7 +164,7 @@ void ts_tapehead_mix_tile(void *ptr,unsigned offset,unsigned count) {
     if(v->tileLane>=0 && v->tileLane<TS_TRACKER_LANES)
         route=ts_source_route_resolve(route,embed.track_routes[v->tileLane]);
     ts_source_route_set(&v->tileRouting,route,embed.rate);
-    if(v->tileRouting.mask)embed.clean_used=1;
+    if(v->tileRouting.mask || v->tileRouting.main!=1)embed.clean_used=1;
     for(unsigned i=0;i<count && v->active;++i) {
         TsStereoFrame value;
         if(v->loopType!=LOOP_DISABLED && !v->oneShot) {

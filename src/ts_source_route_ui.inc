@@ -1,4 +1,4 @@
-void ts_source_route_ui_render(TsFramebuffer *fb,const TsSourceRouteUi *m,const TsPalette *palette)
+static void source_route_output_render(TsFramebuffer *fb,const TsSourceRouteUi *m,const TsPalette *palette)
 {
     render_palette=palette;
     const TsSourceRoute *r=&m->route;
@@ -64,4 +64,83 @@ void ts_source_route_ui_render(TsFramebuffer *fb,const TsSourceRouteUi *m,const 
     button(fb,18,365,144,m->track>=0?"RESET: USE TILE":"RESET: MAIN",0);
     if(m->can_rename)button(fb,178,365,144,"RENAME TILE",0);
     button(fb,480,365,144,"CLOSE",0);
+}
+
+static const char *source_send_name(int bus)
+{
+    static const char *names[]={"PRISM","PEDALBOARD","FALLOUT"};
+    return bus>=0 && bus<TS_SOURCE_SENDS?names[bus]:"CLEAN";
+}
+static void source_send_render(TsFramebuffer *fb,const TsSourceRouteUi *m)
+{
+    uint32_t dim=RGB(155,148,163),edge=RGB(70,60,78);char label[100];
+    const TsSourceRoute *r=&m->route;
+    int inherit=r->mode==TS_SOURCE_INHERIT,enabled=r->mix_enabled&&!inherit;
+    rect(fb,0,0,640,400,RGB(24,21,29));frame(fb,6,6,628,388,RGB(30,26,34),edge);
+    text(fb,18,48,m->name,PAL_TEXT,1);
+    if(m->track>=0)button(fb,444,39,180,inherit?"USE TILE: ON":"USE TILE: OFF",inherit);
+    else text(fb,444,48,"TILE DEFAULT",dim,1);
+    button(fb,18,78,190,enabled?"CLEAN + SENDS: ON":"CLEAN + SENDS: OFF",enabled);
+    text(fb,222,87,inherit?"ENABLE TO OVERRIDE THIS TRACK":enabled?"PARALLEL MIX / MAIN CHAIN BYPASSED":"ENABLE TO SET A PARALLEL MIX",dim,1);
+    text(fb,30,119,"SENDS TAP BEFORE CLEAN LEVEL, PAN AND WIDTH",PAL_EFFECT,1);
+    frame(fb,18,136,606,167,RGB(23,20,28),edge);
+    for(int row=0;row<4;++row) {
+        int y=147+row*39,bus=row-1,value=row?r->send_level[bus]:r->clean_level;
+        uint32_t color=enabled?row?PAL_EFFECT:PAL_MOUSE:dim;
+        text(fb,30,y,source_send_name(bus),color,1);
+        if(row) {
+            int stage=ts_router_send_stage(bus);
+            const char *state=!(m->router.send_mask&(1u<<bus))?"CHAIN":
+                !ts_router_active(&m->router,stage)?"BYPASS":!(m->enabled&(1u<<stage))?"OFF":"SEND";
+            text(fb,111,y,state,dim,1);
+        } else text(fb,111,y,"DIRECT",dim,1);
+        spatial_bar(fb,226,y+5,320,value*.01f,value*.01f,color);
+        snprintf(label,sizeof(label),"%3d%%",value);text(fb,572,y,label,color,1);
+    }
+    text(fb,18,321,inherit?"EACH NOTE FOLLOWS ITS TILE'S CLEAN AND SEND LEVELS.":
+        "CLEAN 0% = EFFECTS ONLY.  SEND LEVELS ARE INDEPENDENT.",PAL_TEXT,1);
+    text(fb,18,340,"SELECT RETURNS TO SWITCH A PROCESSOR FROM CHAIN TO SEND.",dim,1);
+    button(fb,18,365,144,m->track>=0?"RESET: USE TILE":"RESET: MAIN",0);
+    if(m->can_rename)button(fb,178,365,144,"RENAME TILE",0);
+    button(fb,480,365,144,"CLOSE",0);
+}
+static void source_return_render(TsFramebuffer *fb,const TsSourceRouteUi *m,const TsPalette *palette)
+{
+    uint32_t bg=RGB(30,26,34),dim=RGB(155,148,163);char label[100];
+    int bus=m->bus,stage=ts_router_send_stage(bus),send=(m->router.send_mask&(1u<<bus))!=0;
+    TsSourceRouteUi placed=*m;placed.route=m->router.return_route[bus];placed.track=-1;placed.can_rename=0;
+    source_route_output_render(fb,&placed,palette);
+    rect(fb,12,10,616,96,bg);
+    snprintf(label,sizeof(label),"%s / SHARED RETURN",source_send_name(bus));text(fb,18,48,label,PAL_TEXT,1);
+    button(fb,444,39,180,send?"ROLE: SEND":"ROLE: CHAIN",send);
+    for(int i=0;i<3;++i)button(fb,18+i*204,78,i==2?198:190,source_send_name(i),bus==i);
+    button(fb,230,116,118,placed.route.mode==TS_SOURCE_PAIR?"STEREO PAIR":"ONE SPEAKER",0);
+    rect(fb,18,317,606,44,bg);
+    const char *status=!send?"IN SERIAL CHAIN; SOURCE SENDS ARE INACTIVE":
+        !ts_router_active(&m->router,stage)?"RETURN BYPASSED BY ROUTER":
+        !(m->enabled&(1u<<stage))?"PROCESSOR IS OFF; RETURN IS SILENT":"WET RETURN / NO EXTRA DRY COPY";
+    unsigned wanted=(1u<<placed.route.speaker)|(placed.route.mode==TS_SOURCE_PAIR?1u<<placed.route.second:0);
+    if(send && (wanted&~m->available))status="MISSING DESTINATION: FALLBACK TO OUT 1/2";
+    text(fb,18,324,status,PAL_TEXT,1);
+    text(fb,18,344,bus==TS_SEND_PEDALBOARD?"POST SLOTS; PRE/HEAD INSERTS STAY IN SISTER.":"PROCESSOR MIX CONTROLS THE WET AMOUNT.",dim,1);
+    snprintf(label,sizeof(label),"RETURN LEVEL  %d%%",m->router.return_level[bus]);text(fb,402,324,label,PAL_EFFECT,1);
+    spatial_bar(fb,402,347,200,m->router.return_level[bus]*.01f,m->router.return_level[bus]*.01f,PAL_EFFECT);
+    button(fb,18,365,144,"RESET RETURN",0);
+}
+void ts_source_route_ui_render(TsFramebuffer *fb,const TsSourceRouteUi *m,const TsPalette *palette)
+{
+    render_palette=palette;
+    if(m->page==2)source_return_render(fb,m,palette);
+    else if(m->page==1)source_send_render(fb,m);
+    else source_route_output_render(fb,m,palette);
+    char title[48];
+    if(m->track==-2)snprintf(title,sizeof(title),"SHARED EFFECT ROUTING");
+    else snprintf(title,sizeof(title),m->track>=0?"TRACK %02d ROUTING":"TILE %02d ROUTING",m->track>=0?m->track+1:m->slot+1);
+    text(fb,18,18,title,PAL_NOTE,1);
+    if(m->track!=-2) {
+        button(fb,250,9,98,"OUTPUT",m->page==0);
+        button(fb,358,9,98,"SENDS",m->page==1);
+    }
+    button(fb,466,9,110,"RETURNS",m->page==2);
+    button(fb,586,9,40,"X",0);
 }

@@ -13,6 +13,7 @@ static const char *router_help(const TsUiState *ui,int x,int y)
     if(ui->router_performance_open)return router_performance_help(x,y);
     if(x>=442 && x<566 && y>=42 && y<65)return "ROUTER PERFORMANCE: A-Z STATES / 64 STEPS / TIMED BYPASS AND SOLO";
     if(x>=574 && y>=42 && y<66)return "CLOSE ROUTER; AUDIO KEEPS PLAYING; F9 ALSO OPENS/CLOSES";
+    if(y>=74 && y<98 && x<146)return "SHARED RETURNS: CHAIN / SEND ROLE, OUTPUT PLACEMENT AND RETURN LEVEL";
     if(y>=74 && y<96)return "FIXED SOURCE: CURRENT MIX; POWERED SISTER KEEPS ITS EXISTING INPUT SELECTION";
     if(y>=108 && y<318) {
         int stage=ui->config.router.order[(y-108)/42];
@@ -51,6 +52,7 @@ static void router_render(TsFramebuffer *fb,const TsUiState *ui)
     text(fb,228,48,playback,teal,1);button(fb,442,42,124,"PERFORMANCE",0);
     button(fb,574,42,44,"X",0);
     rect(fb,154,74,336,22,RGB(17,21,24));text(fb,170,82,"SOURCE / INPUT",teal,1);
+    button(fb,22,74,124,"SEND RETURNS",0);
     router_activity(fb,422,83,ui->router_peaks[TS_ROUTER_COUNT*2]);
     text(fb,500,82,ui->router_view.running?"LOCKED":"FIXED",muted,1);
     const TsRouterControls *c=&ui->router_live;
@@ -69,7 +71,10 @@ static void router_render(TsFramebuffer *fb,const TsUiState *ui)
             char timer[48],time[16];router_time_label(time,sizeof(time),ui->router_view.timer_remaining[stage]);
             snprintf(timer,sizeof(timer),"%s %s %s",ui->router_view.timer_kind[stage]==TS_ROUTER_TIMER_SOLO?"SOLO":"BYP",
                 ui->router_view.timer_after[stage]?"IN":"FOR",time);text(fb,99,y+23,timer,amber,1);
-        } else text(fb,99,y+23,detail[stage],muted,1);
+        } else {
+            int bus=ts_router_send_bus(stage);
+            text(fb,99,y+23,bus>=0&&(c->send_mask&(1u<<bus))?"SHARED SEND / WET RETURN":detail[stage],muted,1);
+        }
         const char *state=!active?(c->solo?"SKIP":"BYPASS"):!available?"OFF":c->solo==stage+1?"SOLO":"ON";
         if(stage==TS_ROUTER_INSERT) {
             button(fb,252,y+6,76,"SETUP",0);

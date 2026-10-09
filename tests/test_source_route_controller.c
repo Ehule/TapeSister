@@ -44,6 +44,83 @@ static void render(double energy[4])
         }
     }
 }
+static void shared_send_controls(const char *directory)
+{
+    ts_tapehead_stop();ts_note_bank_clear(&a.notes);a.output_device_channels=4;
+    pages.tracker.lanes[0].output_route=(TsSourceRoute){.mode=TS_SOURCE_INHERIT};
+    bank.bank[0].output_route=(TsSourceRoute){.mode=TS_SOURCE_PAIR,.speaker=2,.second=3};
+    ts_tapehead_routes_changed(bank.bank[0].tile_id,bank.bank[0].output_route);
+    assert(source_route_show(0,&a,&u,&pages,&bank,-1,0));
+    click(399,20,SDL_BUTTON_LEFT);assert(source_route_window.model.page==1);
+    click(100,89,SDL_BUTTON_LEFT);click(226,152,SDL_BUTTON_LEFT);click(546,191,SDL_BUTTON_LEFT);
+    assert(bank.bank[0].output_route.mix_enabled && bank.bank[0].output_route.clean_level==0);
+    assert(bank.bank[0].output_route.send_level[TS_SEND_PRISM]==100);
+    TsSisterParameters parameters=a.sister.parameters;
+    parameters.prism.enabled=1;parameters.prism.lenses=1;parameters.prism.body=1;
+    parameters.prism.mix=.25f;parameters.prism.morph_enabled=0;
+    ts_sister_runtime_set_parameters(&a.sister,&parameters);
+    click(520,20,SDL_BUTTON_LEFT);assert(source_route_window.model.page==2);
+    click(500,48,SDL_BUTTON_LEFT);assert(a.sister.router.controls.send_mask==1);
+    assert(ts_note_bank_start(&a.notes,&bank,TS_AUDITION_CURRENT,12,0,48000)==TS_NOTE_STARTED);
+    double energy[4];render(energy);render(energy);
+    assert(energy[0]>1 && energy[1]>energy[0] && energy[2]==0 && energy[3]==0);
+    uint64_t clock=a.sister.prism.clock;render(energy);assert(a.sister.prism.clock-clock==2048);
+    click(32,224,SDL_BUTTON_LEFT);render(energy);assert(energy[0]>1 && energy[1]==0 && energy[2]==0 && energy[3]==0);
+    click(188,224,SDL_BUTTON_RIGHT);click(502,347,SDL_BUTTON_LEFT);
+    assert(a.sister.router.controls.return_level[0]==50 && a.sister.router.controls.return_route[0].width==0);
+    shot(directory,"shared-prism-return");
+    click(399,20,SDL_BUTTON_LEFT);shot(directory,"tile-shared-sends");
+    /* Source gain edits affect held voices, and muting clean cannot leak Main. */
+    click(226,191,SDL_BUTTON_LEFT);render(energy);render(energy);
+    assert(energy[0]==0 && energy[1]==0 && energy[2]==0 && energy[3]==0);
+    click(546,191,SDL_BUTTON_LEFT);render(energy);assert(energy[0]>1 && energy[1]>1);
+    /* Keyboard DRY capture keeps the source even when its audible clean level is zero. */
+    assert(a.keyboard_dry.l>0 && a.keyboard_dry.r>0);
+    ts_note_bank_clear(&a.notes);render(energy);
+    assert(embedded_open(window,0,&a,&u,&pages,&bank,48000));u.tracker_open=1;
+    startPlaying(PLAYMODE_SONG,0);render(energy);render(energy);
+    assert(energy[0]>1 && energy[1]>1 && energy[2]==0 && energy[3]==0);
+    assert(source_route_show(0,&a,&u,&pages,&bank,0,0));
+    click(399,20,SDL_BUTTON_LEFT);click(100,89,SDL_BUTTON_LEFT);click(226,152,SDL_BUTTON_LEFT);
+    render(energy);render(energy);assert(energy[0]==0 && energy[1]==0 && energy[2]==0 && energy[3]==0);
+    assert(pages.tracker.lanes[0].output_route.mix_enabled); /* Whole-track override replaces tile sends. */
+    click(466,191,SDL_BUTTON_LEFT);click(546,230,SDL_BUTTON_LEFT);
+    assert(pages.tracker.lanes[0].output_route.send_level[0]==75 && pages.tracker.lanes[0].output_route.send_level[1]==100);
+    /* A second shared processor gets a separate input sum and output pair. */
+    parameters=a.sister.parameters;parameters.fx.enabled=1;
+    for(int i=0;i<4;++i)parameters.fx.slot[i]=(TsSisterFxSlotControls){0};
+    parameters.fx.slot[0]=(TsSisterFxSlotControls){.type=TS_SISTER_FX_DELAY,.enabled=1,
+        .placement=TS_SISTER_FX_PLACE_POST,.mix=.5f,.parameter_a=0,.parameter_b=.1f};
+    ts_sister_runtime_set_parameters(&a.sister,&parameters);
+    click(520,20,SDL_BUTTON_LEFT);click(300,89,SDL_BUTTON_LEFT);click(500,48,SDL_BUTTON_LEFT);
+    click(80,153,SDL_BUTTON_LEFT);click(230,153,SDL_BUTTON_LEFT);
+    assert(a.sister.router.controls.send_mask==3);
+    render(energy);render(energy);render(energy);
+    assert(energy[0]>1 && energy[1]>1 && energy[2]>1 && energy[3]>1);
+    shot(directory,"shared-pedalboard-return");
+    click(399,20,SDL_BUTTON_LEFT);
+    shot(directory,"track-shared-sends");
+    assert(ts_tapehead_export(&pages.tracker,error,sizeof(error)));
+    assert(ts_sister_tracker_save_file(&pages.tracker,"send-score.tst",error,sizeof(error)));
+    ts_tapehead_stop();ts_tapehead_close();
+    assert(ts_sister_tracker_load_file(&pages.tracker,"send-score.tst",error,sizeof(error)));
+    assert(pages.tracker.lanes[0].output_route.clean_level==0 && pages.tracker.lanes[0].output_route.send_level[1]==100);
+    assert(embedded_open(window,0,&a,&u,&pages,&bank,48000));startPlaying(PLAYMODE_SONG,0);
+    render(energy);assert(energy[0]>1 && energy[1]>1 && energy[2]>1 && energy[3]>1);
+    ts_tapehead_stop();remove("send-score.tst");
+    /* Global Router offers the same returns without needing a selected tile. */
+    source_route_hide();u.router_open=1;SisterWindow sister={0};
+    SDL_Event event={0};event.type=SDL_MOUSEBUTTONDOWN;event.button.windowID=SDL_GetWindowID(window);
+    event.button.button=SDL_BUTTON_LEFT;event.button.x=70;event.button.y=84;
+    assert(router_event(&event,window,0,&a,&u,&sister));
+    assert(source_route_window.visible && source_route_window.track==-2 && source_route_window.model.page==2);
+    assert(!source_route_window.model.can_rename);
+    /* Enabling Sister still uses one shared Prism pass per sample. */
+    assert(ts_sister_runtime_enable(&a.sister,48000,2,2,5,error,sizeof(error)));
+    clock=a.sister.prism.clock;render(energy);assert(a.sister.prism.clock-clock==2048);
+    ts_sister_runtime_disable(&a.sister);
+}
+
 int main(int argc,char **argv)
 {
     SDL_setenv("SDL_VIDEODRIVER","dummy",1);SDL_setenv("SDL_AUDIODRIVER","dummy",1);
@@ -110,6 +187,7 @@ int main(int argc,char **argv)
     assert(source_route_show(0,&a,&u,&pages,&bank,-1,0));shot(argc>1?argv[1]:NULL,"routing-stereo-fallback");
     e=(SDL_Event){0};e.type=SDL_KEYUP;e.key.windowID=source_route_window.id;e.key.keysym.sym=SDLK_z;
     assert(!source_route_event(&e,window,0,&a,&u,&pages,&bank));assert(e.key.windowID==SDL_GetWindowID(window));
+    shared_send_controls(argc>1?argv[1]:NULL);
     ts_tapehead_stop();ts_tapehead_close();source_route_close();remove("route-score.tst");
     ts_sister_runtime_free(&a.sister);ts_capture_free(&a.capture);ts_instrument_free(&bank);ts_sample_pages_free(&pages);
     SDL_DestroyWindow(window);SDL_Quit();puts("Source routing UI, native audio, track precedence, live edits, saved score and stereo fallback passed");return 0;

@@ -37,11 +37,11 @@ static uint64_t number(TrackerStream *s, uint64_t value, unsigned width)
 static void codec(TrackerStream *s, TsSisterTracker *loaded, const TsSisterTracker *saved)
 {
     const TsSisterTracker *t = s->reading ? loaded : saved;
-    char magic[8] = { 'S','I','S','T','R','K',4,0 };
+    char magic[8] = { 'S','I','S','T','R','K',5,0 };
     char header[8] = {0};
     bytes(s, header, magic, sizeof(header));
     if (s->reading && (memcmp(header, magic, 6) || header[7] ||
-        (header[6]!=1 && header[6]!=2 && header[6]!=3 && header[6]!=4))) { s->failed = 1; return; }
+        (header[6]!=1 && header[6]!=2 && header[6]!=3 && header[6]!=4 && header[6]!=5))) { s->failed = 1; return; }
     unsigned version=s->reading?(unsigned char)header[6]:(unsigned char)magic[6];
 #define FIELD(owner, target, field, width) do { \
     uint64_t value = number(s, (uint64_t)(owner)->field, width); \
@@ -81,6 +81,10 @@ static void codec(TrackerStream *s, TsSisterTracker *loaded, const TsSisterTrack
             unsigned pan=number(s,(unsigned)(l->output_route.pan+100),1);
             unsigned width=number(s,(unsigned)(l->output_route.width+100),1);
             if(s->reading) {out->output_route.pan=(int)pan-100;out->output_route.width=(int)width-100;}
+        }
+        if(version>=5) {
+            FIELD(l,out,output_route.mix_enabled,1);FIELD(l,out,output_route.clean_level,1);
+            for(int bus=0;bus<TS_SOURCE_SENDS;++bus)FIELD(l,out,output_route.send_level[bus],1);
         }
     }
     for (int i = 0; i < t->pattern_count && !s->failed; ++i) {

@@ -71,6 +71,7 @@ typedef struct {
     TsStereoFrame preview;
     TsStereoFrame tapehead;
     TsStereoFrame tracker;
+    TsStereoFrame send[TS_SOURCE_SENDS];
 } TsSisterSourceFrames;
 
 typedef struct {
@@ -150,7 +151,7 @@ typedef struct {
     atomic_int prism_valid, prism_seq_lens;
     atomic_int insert_ports[4];
     atomic_uint_least32_t insert_values[4];
-    atomic_int router_state[TS_ROUTER_COUNT+4];
+    atomic_int router_state[TS_ROUTER_COUNT+5+TS_SOURCE_SENDS*6];
     atomic_int router_perf_int[8+TS_ROUTER_COUNT*2];
     atomic_uint_least32_t router_perf_float[1+TS_ROUTER_COUNT];
     atomic_uint_least32_t router_peaks[TS_ROUTER_COUNT*2+2];
@@ -224,6 +225,11 @@ typedef struct {
     TsSisterParameters parameters;
     TsPerformanceBank performance;
     TsSourceRouteMix clean_output;
+    /* Current sample's aux inputs and independently placed wet-only returns.
+       Source sums are prepared by the host, never by running another rack. */
+    TsStereoFrame send_input[TS_SOURCE_SENDS];
+    TsSourceRouteMix effect_returns;
+    TsSourceRouteVoice return_voice[TS_SOURCE_SENDS];
     TsCaptureRecorder capture;
     TsSisterRuntimeFrame last_frame;
     uint16_t page_source_masks[TS_SISTER_RUNTIME_PAGE_LIMIT];

@@ -1190,6 +1190,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         sister_sources.external = buses.external;
         sister_sources.preview = buses.legacy_preview;
         sister_sources.tapehead = buses.tapehead;
+        memcpy(sister_sources.send,audio->clean.send,sizeof(sister_sources.send));
         uint64_t profile_sister = ts_profile_begin(TS_PROF_SISTER);
         sister_frame = ts_sister_runtime_process_frame(&audio->sister,
                                                         &sister_sources);
@@ -1202,8 +1203,8 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         }
         if(audio->record_bank_recorder && audio->record_source &&
            atomic_load_explicit(audio->record_source,memory_order_acquire)==TS_RECORD_SOURCE_DRY) {
-            TsStereoFrame dry={audio->keyboard_dry.l+sister_frame.keyboard_dry.l+audio->sister.clean_output.monitor.l,
-                               audio->keyboard_dry.r+sister_frame.keyboard_dry.r+audio->sister.clean_output.monitor.r};
+            TsStereoFrame dry={audio->keyboard_dry.l+sister_frame.keyboard_dry.l+audio->sister.clean_output.reference.l,
+                               audio->keyboard_dry.r+sister_frame.keyboard_dry.r+audio->sister.clean_output.reference.r};
             (void)ts_external_recorder_write_frame(audio->record_bank_recorder,dry);
             synth_block_peak=fmaxf(synth_block_peak,fmaxf(fabsf(dry.l),fabsf(dry.r)));
         }
@@ -1222,8 +1223,8 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         buses.capture = audio->performance_group_latched &&
                         audio->performance_source_mask != 0u ?
                         audio->performance_raw_mix : (TsStereoFrame){
-                            buses.program.l+audio->clean.monitor.l,
-                            buses.program.r+audio->clean.monitor.r};
+                            buses.program.l+audio->clean.reference.l,
+                            buses.program.r+audio->clean.reference.r};
         buses.monitor = audio->external_monitor_enabled != NULL &&
                         atomic_load_explicit(audio->external_monitor_enabled,
                                              memory_order_acquire) != 0 ?
@@ -1302,6 +1303,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         output = ts_sister_runtime_process_output(&audio->sister, output);
         ts_profile_end(TS_PROF_MASTER, profile_master);
         TsStereoFrame main_output=output;
+        ts_source_route_add(&audio->clean,&audio->sister.effect_returns,1.f);
         float clean_gain=audio->mixer.program_gain*audio->sister.master_output_gain.current;
         if(audio->clean.mask) {
             output.l+=audio->clean.monitor.l*clean_gain;output.r+=audio->clean.monitor.r*clean_gain;

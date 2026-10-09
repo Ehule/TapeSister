@@ -216,6 +216,13 @@ spare output pairs or independent SEND/RETURN devices. **SETUP** on its Router
 row opens device, channel and level controls. New and older projects start with INSERT bypassed.
 [Controls and routing details](docs/USER_MANUAL.md#global-router).
 
+Right-click a tile or TrackSister track number for **Output / Sends / Returns**.
+Tracks can inherit the tile or override its complete mix. Independent Clean,
+Prism, Pedalboard and Fallout levels feed shared processors; each processor has
+one global **Chain / Send** role and a separately positioned wet-only return.
+**F9 → SEND RETURNS** opens the return controls directly. Middle-click a tile
+to rename it. [Source routing guide and examples](docs/SOURCE_ROUTING.md).
+
 **F9 → PERFORMANCE** adds timed Bypass/Solo, A–Z Router States and up to 64
 steps with individual hold times. Manual gestures override until the next step;
 STOP holds the state and RESTORE returns to the manual state captured before PLAY.

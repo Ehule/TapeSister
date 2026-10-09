@@ -7,6 +7,9 @@
 typedef struct {
     float speaker[TS_SOURCE_SPEAKERS];
     TsStereoFrame monitor, fallback;
+    TsStereoFrame reference; /* Pre-routing dry recording tap, counted once. */
+    TsStereoFrame send[TS_SOURCE_SENDS];
+    unsigned send_mask;
     unsigned mask, missing, available;
     int check_outputs;
 } TsSourceRouteMix;

@@ -158,7 +158,7 @@ static void snapshot_atomic_init(TsSisterRoutingSnapshotAtomic *snapshot)
 {
     if (snapshot == NULL) return;
     for(int i=0;i<4;++i){atomic_init(&snapshot->insert_ports[i],0);atomic_init(&snapshot->insert_values[i],0);}
-    for(int i=0;i<TS_ROUTER_COUNT+4;++i)atomic_init(&snapshot->router_state[i],0);
+    for(int i=0;i<TS_ROUTER_COUNT+5+TS_SOURCE_SENDS*6;++i)atomic_init(&snapshot->router_state[i],0);
     for(int i=0;i<TS_ROUTER_COUNT*2+2;++i)atomic_init(&snapshot->router_peaks[i],float_bits(0));
     for(int i=0;i<8+TS_ROUTER_COUNT*2;++i)atomic_init(&snapshot->router_perf_int[i],0);
     for(int i=0;i<1+TS_ROUTER_COUNT;++i)atomic_init(&snapshot->router_perf_float[i],0);
@@ -271,6 +271,12 @@ static void publish_snapshot_impl(TsSisterRuntime *runtime)
     }
     int router_state[]={runtime->router.controls.bypass_mask,runtime->router.controls.solo,(int)router_enabled,runtime->router.handoff!=0};
     for(int i=0;i<4;++i)atomic_store_explicit(&snapshot->router_state[TS_ROUTER_COUNT+i],router_state[i],memory_order_relaxed);
+    atomic_store_explicit(&snapshot->router_state[TS_ROUTER_COUNT+4],runtime->router.controls.send_mask,memory_order_relaxed);
+    for(int bus=0;bus<TS_SOURCE_SENDS;++bus) {
+        const TsSourceRoute *r=&runtime->router.controls.return_route[bus];
+        int fields[]={r->mode,r->speaker,r->second,r->pan,r->width,runtime->router.controls.return_level[bus]};
+        for(int j=0;j<6;++j)atomic_store_explicit(&snapshot->router_state[TS_ROUTER_COUNT+5+bus*6+j],fields[j],memory_order_relaxed);
+    }
     atomic_store_explicit(&snapshot->router_peaks[TS_ROUTER_COUNT*2],float_bits(runtime->router.source_peak),memory_order_relaxed);
     atomic_store_explicit(&snapshot->router_peaks[TS_ROUTER_COUNT*2+1],float_bits(runtime->router.master_peak),memory_order_relaxed);
     TsRouterView rv=ts_router_view(&runtime->router);
@@ -1393,7 +1399,10 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
     frame.tap[TS_SISTER_TAP_TAPEHEAD] = source.tapehead;
     TsSourceRouteMix clean_map=runtime->clean_output;
     ts_source_route_mix_init(&runtime->clean_output,&clean_map);
+    ts_source_route_mix_init(&runtime->effect_returns,&clean_map);
     tile_bus = ts_performance_read_routed(&runtime->performance, &tile_raw,&runtime->clean_output);
+    for(int bus=0;bus<TS_SOURCE_SENDS;++bus)
+        runtime->send_input[bus]=ts_stereo_frame_sanitize(frame_add(source.send[bus],runtime->clean_output.send[bus]));
     frame.keyboard_dry = tile_bus;
     tile_bus = frame_add(tile_bus, source.tiles);
     (void)tile_raw;
@@ -2007,6 +2016,12 @@ int ts_sister_runtime_get_snapshot(const TsSisterRuntime *runtime,
         snapshot->router.solo=atomic_load_explicit(&source->router_state[TS_ROUTER_COUNT+1],memory_order_relaxed);
         snapshot->router_enabled=atomic_load_explicit(&source->router_state[TS_ROUTER_COUNT+2],memory_order_relaxed);
         snapshot->router_transition=atomic_load_explicit(&source->router_state[TS_ROUTER_COUNT+3],memory_order_relaxed);
+        snapshot->router.send_mask=atomic_load_explicit(&source->router_state[TS_ROUTER_COUNT+4],memory_order_relaxed);
+        for(int bus=0;bus<TS_SOURCE_SENDS;++bus) {
+            int fields[6];for(int j=0;j<6;++j)fields[j]=atomic_load_explicit(&source->router_state[TS_ROUTER_COUNT+5+bus*6+j],memory_order_relaxed);
+            snapshot->router.return_route[bus]=(TsSourceRoute){fields[0],fields[1],fields[2],fields[3],fields[4]};
+            snapshot->router.return_level[bus]=fields[5];
+        }
         TsRouterView *rv=&snapshot->router_view;
         int *ri[]={&rv->running,&rv->step,&rv->state,&rv->missing,&rv->restore_valid};
         for(int i=0;i<5;++i)*ri[i]=atomic_load_explicit(&source->router_perf_int[i],memory_order_relaxed);
