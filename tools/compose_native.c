@@ -10,6 +10,7 @@
 #undef main
 #include "../third_party/tapehead/application/src/ft2_replayer.h"
 #include "../third_party/tapehead/application/src/ft2_structs.h"
+#include "../third_party/tapehead/application/src/scopes/ft2_scopes.h"
 #include <errno.h>
 
 static AudioState studio;
@@ -22,6 +23,8 @@ static TsPortalLibrary portal_presets;
 static SDL_Window *window;
 static char message[2048];
 static unsigned portal_count;
+static int performance;
+static int asset_count=19;
 #define REQUIRE(call) do { if (!(call)) { fprintf(stderr,"%s: %s\n",#call,message); exit(1); } } while(0)
 
 static void setup(void)
@@ -198,7 +201,7 @@ static void tape_asset(void)
     TsSisterMachine machine;memset(&machine,0,sizeof(machine));
     REQUIRE(ts_sister_machine_init(&machine,input.sample_rate,2,8));
     TsSisterParameters p;ts_sister_parameters_default(&p,input.sample_rate);
-    p.head1_level=.7f;p.head1_time_ms=625;p.head1_feedback=.33f;
+    p.head1_level=.7f;p.head1_time_ms=performance?600:625;p.head1_feedback=.33f;
     p.head2_level=.5f;p.head2_scrub=.3f;p.head2_rate_index=2;p.head2_feedback=.16f;
     p.head3_level=.3f;p.head3_span=.28f;p.head3_rate_index=5;
     p.wow=.13f;p.drop=.08f;p.headroom=.7f;p.duck_enabled=0;
@@ -224,7 +227,24 @@ static void tape_asset(void)
     REQUIRE(ts_instrument_sync_selected(&bank,message,sizeof(message)));
     project.tracker.aliases[19]=bank.bank[bank.selected_slot].tile_id;
     ts_sample_free(&input);ts_sample_free(&output);ts_sister_machine_free(&machine);
-    printf("SISTER 19 MEMORY: 625ms echo, reverse and half-speed heads, wow, weave\n");
+    printf("SISTER 19 MEMORY: %dms echo, reverse and half-speed heads, wow, weave\n",performance?600:625);
+}
+
+static void performance_instruments(void)
+{
+    TsFmPatch p=basic(TS_FM_WAVE_TRIANGLE,2020);
+    p.structure=TS_FM_STRUCTURE_UNISON;p.active_mask=63;
+    p.drone_mode=1;p.directions=TS_FM_DIRECTION_DRONE;
+    p.filter_mode=TS_FILTER_LOWPASS;p.filter_cutoff_hz=2100;p.filter_resonance=.12f;
+    const float cents[]={-8,-3,0,2,5,9};
+    for(int v=0;v<6;++v){
+        p.ratios[v]=exp2f(cents[v]/1200);p.waveforms[v]=v==4?TS_FM_WAVE_SAW:TS_FM_WAVE_TRIANGLE;
+        p.lfo_types[v]=TS_FM_LFO_FILTER_SINE;p.lfo_rates[v]=.018f+.004f*v;p.lfo_depths[v]=.14f;
+    }
+    fm_asset(20,"20 HALO - sustained choir",p,8,60);
+    transformed_asset(21,8,"21 FROST - long exhale","stretch.time.1",6);
+    transformed_asset(22,20,"22 HALO - spectral light","blur.blur",96);
+    transformed_asset(23,13,"23 FLURRY - slow dust","stretch.time.1",6);
 }
 
 static void mixer(void)
@@ -258,6 +278,11 @@ static void mixer(void)
     static const int pans[]={0,0,-18,30,0,0,-60,0,60,-8,35,0,42,-35,0,-30};
     static const int prism[]={0,0,0,0,0,10,65,50,65,10,38,22,24,20,45,0};
     static const int verb[]={0,18,5,12,0,0,44,40,44,38,55,32,45,24,65,30};
+    if(performance){
+        p->fx.slot[0].parameter_a=logf(600.0f/8.0f)/logf(250.0f);
+        p->fx.slot[0].mix=.20f;
+        p->fx.slot[0].parameter_b=.26f;
+    }
     for(int i=0;i<16;++i){TsTrackerLane *l=&project.tracker.lanes[i];
         snprintf(l->name,sizeof(l->name),"%s",names[i]);l->trim=trims[i]*.75f;
         l->output_route=(TsSourceRoute){.mode=TS_SOURCE_PAIR,.speaker=0,.second=1,.pan=pans[i],
@@ -265,6 +290,10 @@ static void mixer(void)
         l->output_route.send_level[TS_SEND_PRISM]=prism[i];
         l->output_route.send_level[TS_SEND_PEDALBOARD]=verb[i];
         l->output_route.send_level[TS_SEND_FALLOUT]=(i==10||i==14)?35:0;
+        if(performance&&i==9){
+            l->output_route.send_level[TS_SEND_PEDALBOARD]=16;
+            l->output_route.send_level[TS_SEND_PRISM]=5;
+        }
     }
 }
 
@@ -273,12 +302,19 @@ static void mixer(void)
 static void read_score(const char *path)
 {
     FILE *f=fopen(path,"r");REQUIRE(f);char line[512];
-    TsSisterTracker *t=&project.tracker;t->bpm=72;t->ticks_per_line=3;t->channel_count=16;t->loop=0;
+    char pattern_names[256][TS_TRACKER_NAME_SIZE]={{0}};
+    TsSisterTracker *t=&project.tracker;t->bpm=performance?75:72;t->ticks_per_line=3;t->channel_count=16;t->loop=0;
     while(fgets(line,sizeof(line),f)){
+        if(!strncmp(line,"#@pattern ",10)){
+            int index,offset=0;
+            REQUIRE(sscanf(line+10,"%d %n",&index,&offset)==1&&index>=0&&index<256);
+            line[strcspn(line,"\r\n")]=0;
+            snprintf(pattern_names[index],TS_TRACKER_NAME_SIZE,"%s",line+10+offset);
+        }
         if(line[0]=='#'||line[0]=='\n')continue;
         int p,r,l,a,n,v,fx,x;
         REQUIRE(sscanf(line,"%d,%d,%d,%d,%d,%d,%d,%d",&p,&r,&l,&a,&n,&v,&fx,&x)==8);
-        REQUIRE(p>=0&&p<256&&r>=0&&r<128&&l>=0&&l<16&&a>=0&&a<=19&&n>=-3&&n<=107&&v>=-1&&v<=64);
+        REQUIRE(p>=0&&p<256&&r>=0&&r<128&&l>=0&&l<16&&a>=0&&a<=asset_count&&n>=-3&&n<=107&&v>=-1&&v<=64);
         REQUIRE(fx==0||(fx>='0'&&fx<='9')||(fx>='A'&&fx<='Z'));REQUIRE(x>=0&&x<=255);
         while(t->pattern_count<=p){TsPatternId id;REQUIRE(ts_sister_tracker_add_pattern(t,128,&id,message,sizeof(message)));
             t->orders[t->order_count++]=id;}
@@ -291,6 +327,7 @@ static void read_score(const char *path)
         const char *part=t->pattern_count<22?"STUDY":i<2?"FROST":i<6?"FIRST SNOW":i<10?"UNDER GLASS":
             i<12?"ABSENCE":i<14?"MEMORY":i<20?"WHITEOUT":i<22?"AFTERIMAGE":"SILENCE HOLD";
         snprintf(t->patterns[i]->name,TS_TRACKER_NAME_SIZE,"%02d %s",i+1,part);
+        if(pattern_names[i][0])memcpy(t->patterns[i]->name,pattern_names[i],TS_TRACKER_NAME_SIZE);
     }
     REQUIRE(ts_sister_tracker_validate(t,message,sizeof(message)));
 }
@@ -300,26 +337,26 @@ static void save_and_verify(const char *path)
     REQUIRE(ts_sample_pages_switch(&project,&bank,0,message,sizeof(message)));
     REQUIRE(ts_instrument_select_bank(&bank,5,message,sizeof(message)));
     REQUIRE(embedded_open(window,0,&studio,&view,&project,&bank,48000));
-    snprintf(song.name,sizeof(song.name),"BLACK SNOW");
+    snprintf(song.name,sizeof(song.name),"%s",performance?"THRESHOLD":"BLACK SNOW");
     REQUIRE(ts_tapehead_export(&project.tracker,message,sizeof(message)));
     ts_tapehead_close();
     state.page_count=project.page_count;
     REQUIRE(ts_sample_pages_save_project(&project,&bank,&recording,&state,path,message,sizeof(message)));
-    uint64_t score=ts_sister_tracker_hash(&project.tracker),samples[20]={0};
-    for(int a=1;a<=19;++a){const TsBankSlot *s=ts_sample_pages_find_tile(&project,&bank,project.tracker.aliases[a],NULL);
+    uint64_t score=ts_sister_tracker_hash(&project.tracker),samples[24]={0};
+    for(int a=1;a<=asset_count;++a){const TsBankSlot *s=ts_sample_pages_find_tile(&project,&bank,project.tracker.aliases[a],NULL);
         REQUIRE(s);samples[a]=ts_sample_hash(&s->sample);}
     TsSisterProjectState expected=state;
     REQUIRE(ts_sample_pages_load_project(&project,&bank,&recording,path,message,sizeof(message)));
     REQUIRE(score==ts_sister_tracker_hash(&project.tracker));
-    for(int a=1;a<=19;++a){const TsBankSlot *s=ts_sample_pages_find_tile(&project,&bank,project.tracker.aliases[a],NULL);
+    for(int a=1;a<=asset_count;++a){const TsBankSlot *s=ts_sample_pages_find_tile(&project,&bank,project.tracker.aliases[a],NULL);
         REQUIRE(s&&samples[a]==ts_sample_hash(&s->sample));
-        if(a<=14)REQUIRE(s->has_generator&&s->generator.has_fm_patch);}
+        if(a<=14||a==20)REQUIRE(s->has_generator&&s->generator.has_fm_patch);}
     int present=0;REQUIRE(ts_sister_project_state_load(&state,path,48000,&present,message,sizeof(message)));REQUIRE(present);
     REQUIRE(!memcmp(&expected.router,&state.router,sizeof(state.router)));
     REQUIRE(fabsf(expected.parameters.prism.spread-state.parameters.prism.spread)<1e-6f);
     REQUIRE(fabsf(expected.parameters.fx.slot[0].parameter_a-state.parameters.fx.slot[0].parameter_a)<1e-6f);
-    printf("RELOAD VERIFIED: %u patterns, %u orders, 19 tiles, native FM recipes, score hash %llu\n",
-        project.tracker.pattern_count,project.tracker.order_count,(unsigned long long)score);
+    printf("RELOAD VERIFIED: %u patterns, %u orders, %d tiles, native FM recipes, score hash %llu\n",
+        project.tracker.pattern_count,project.tracker.order_count,asset_count,(unsigned long long)score);
     char presets[1400];snprintf(presets,sizeof(presets),"%s-portal-recipes.txt",path);
     REQUIRE(ts_portal_library_save(&portal_presets,presets,message,sizeof(message)));
 }
@@ -362,11 +399,12 @@ static void render(const char *path,const char *wav,double seconds,double start)
 
 int main(int argc,char **argv)
 {
-    if(argc<5){fprintf(stderr,"create PROJECT SCORE_CSV CDP_BIN | render PROJECT WAV END_SECONDS [START_SECONDS]\n");return 2;}
+    if(argc<5){fprintf(stderr,"create|create-performance PROJECT SCORE_CSV CDP_BIN | render PROJECT WAV END_SECONDS [START_SECONDS]\n");return 2;}
+    performance=!strcmp(argv[1],"create-performance");asset_count=performance?23:19;
     setup();
-    if(!strcmp(argv[1],"create")){
+    if(!strcmp(argv[1],"create")||performance){
         ts_cdp_runtime_init(&cdp);REQUIRE(ts_cdp_runtime_discover(&cdp,argv[4],NULL,message,sizeof(message)));
-        instruments();tape_asset();mixer();read_score(argv[3]);save_and_verify(argv[2]);
+        instruments();tape_asset();if(performance)performance_instruments();mixer();read_score(argv[3]);save_and_verify(argv[2]);
     }else if(!strcmp(argv[1],"render"))render(argv[2],argv[3],strtod(argv[4],NULL),argc>5?strtod(argv[5],NULL):0);
     else {fprintf(stderr,"Unknown mode\n");return 2;}
     ts_tapehead_close();ts_sister_runtime_free(&studio.sister);ts_sample_pages_free(&project);

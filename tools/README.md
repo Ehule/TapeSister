@@ -65,7 +65,42 @@ renders, a relocated-project render comparison, and audio measurements.
 Numerical checks establish technical behavior, not artistic quality. No
 audio-listening capability was available during this production run.
 
-This tool is scoped to the fixed-tempo Black Snow score; its duration handling
+This tool is scoped to these fixed-tempo authored scores; its duration handling
 is not a general renderer for imported modules with tempo changes, arbitrary
 loops or jumps. It deliberately does not add generalized sidechain compression
 or change the application's UI or real-time engine.
+
+## Threshold performance draft
+
+`threshold_score.py` writes an original 24-minute performance at 75 BPM in
+D minor. It retains the Black Snow drum/bass timbres, adds one sustained FM
+choir and three CDP transformations, and builds from long drones to a clear
+backbeat and an ending for a DJ handoff. Its lead attacks use eighth-note
+subdivisions, and the performance mixer reduces lead sends. The shared delay
+and Sister echo use 600 ms (a dotted eighth at 75 BPM).
+
+```sh
+python3 tools/threshold_score.py output/threshold-score.csv
+build/tapesister_compose create-performance output/Threshold/Threshold.tsr output/threshold-score.csv /absolute/path/to/cdp8/bin
+build/tapesister_compose render output/Threshold/Threshold.tsr output/Threshold.wav 1440
+```
+
+This mode has 23 tiles, 15 retained FM recipes, seven CDP transformations and
+one Sister Machine bake. Both modes keep their own sound/mix settings; the
+original `create` command remains the 72 BPM Black Snow composition.
+`#@pattern INDEX NAME` score comments supply optional native pattern names.
+
+Threshold has 448 musical bars (23:53.6) and one silent terminal pattern;
+the 24:00 render includes 6.4 seconds of effects tail. Pattern names include
+decimal indices. The handoff starts at pattern 100 (21:20), harmonic layers
+clear at 104 (22:11.2), and bass clears at 108 (23:02.4). Patterns 108–111
+provide sixteen bars of rhythm for mixing. The final pattern 112 contains
+a B70 jump to itself, not an automatic loop of the closing groove.
+
+The composition stays at 75 BPM throughout. Its apparent pace changes through
+arrangement and subdivisions. All fades and kick-related bass ducking are
+editable tracker volume cells. There is no audio-triggered sidechain, external
+mixing/mastering, copied reference melody or reference-track audio. Native
+save/reload checks cover every tile, the score and the shared routing state.
+Listening and rehearsal on the performance machine remain essential: this is
+an unauditioned composition draft, not a claim of a rehearsed live show.
