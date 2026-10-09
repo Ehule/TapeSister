@@ -28,6 +28,10 @@ static volatile bool scopesUpdatingFlag, scopesDisplayingFlag;
 static hpc_t scopeHpc;
 static volatile scope_t scope[MAX_CHANNELS];
 static SDL_Thread *scopeThread;
+#ifdef TAPEHEAD_EMBEDDED
+/* UI-owned, populated by the existing audio/display sync queue. */
+static uint8_t scopePan[MAX_CHANNELS];
+#endif
 
 lastChInstr_t lastChInstr[MAX_CHANNELS]; // global
 
@@ -234,6 +238,26 @@ static void drawTrackTrimIndicator(uint16_t scopeX, uint16_t scopeY,
 	hLine(x, unityY, width, PAL_FORGRND);
 }
 
+#ifdef TAPEHEAD_EMBEDDED
+static void drawScopePan(uint16_t x, uint16_t y, uint16_t width, int32_t ch)
+{
+	/* Leave the number/REC rows and the right-edge trim strip unobstructed. */
+	const int32_t left = x + 1;
+	const int32_t right = x + width - tapeheadConfig.trackTrimDisplayWidth - 2;
+	if (right < left)
+		return;
+	const int32_t center = (left + right + 1) / 2;
+	const int32_t panX = left + (scopePan[ch] * (right - left) + 127) / 255;
+	const uint8_t color = editor.channelMuted[ch] || performanceMute[ch]
+		? PAL_DSKTOP1 : PAL_MOUSEPT;
+
+	/* Short center ticks remain visible on either end of the moving line. */
+	vLine(center, y + 9, 3, PAL_BUTTONS);
+	vLine(center, y + 28, 3, PAL_BUTTONS);
+	vLine(panX, y + 12, 16, color);
+}
+#endif
+
 static void redrawScope(int32_t ch)
 {
 	if (!ui.scopesShown)
@@ -290,6 +314,9 @@ static void redrawScope(int32_t ch)
 
 	drawOutputBusMarker(x + 1, y + 1, scopeLen, i);
 	drawTrackTrimIndicator(x + 1, y + 1, scopeLen, i);
+#ifdef TAPEHEAD_EMBEDDED
+	drawScopePan(x + 1, y + 1, scopeLen, i);
+#endif
 	scope[ch].wasCleared = false;
 }
 
@@ -725,6 +752,9 @@ void drawScopes(void)
 
 		drawOutputBusMarker(scopeXOffs, scopeYOffs, scopeDrawLen, i);
 		drawTrackTrimIndicator(scopeXOffs, scopeYOffs, scopeDrawLen, i);
+#ifdef TAPEHEAD_EMBEDDED
+		drawScopePan(scopeXOffs, scopeYOffs, scopeDrawLen, i);
+#endif
 
 		// draw rec. symbol (if enabled)
 		if (config.multiRecChn[i])
@@ -750,6 +780,15 @@ void handleScopesFromChQueue(chSyncData_t *chSyncData, uint8_t *scopeUpdateStatu
 	for (int32_t i = 0; i < song.numChannels; i++, sc++, ch++)
 	{
 		const uint8_t status = scopeUpdateStatus[i];
+#ifdef TAPEHEAD_EMBEDDED
+		/* A muted channel is reset to center by FT2. Retain its last position
+		   for the dimmed marker; live/performance-muted tracks follow pan FX. */
+		if (!editor.channelMuted[i] && scopePan[i] != ch->scopePan)
+		{
+			scopePan[i] = ch->scopePan;
+			sc->wasCleared = false; /* Pan can change on a silent/ended voice. */
+		}
+#endif
 
 		if (status & CS_UPDATE_VOL)
 			sc->volume = ch->scopeVolume;
@@ -809,6 +848,11 @@ static int32_t scopeThreadFunc(void *ptr)
 bool initScopes(void)
 {
 #ifdef TAPEHEAD_EMBEDDED
+	for (int32_t i = 0; i < MAX_CHANNELS; i++)
+	{
+		scopePan[i] = 128;
+		scope[i].wasCleared = false;
+	}
 	return true;
 #endif
 	scopeThread = SDL_CreateThread(scopeThreadFunc, "scope thread", NULL);

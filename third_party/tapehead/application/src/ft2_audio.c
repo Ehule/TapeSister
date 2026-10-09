@@ -1645,6 +1645,9 @@ static void fillVisualsSyncBuffer(void)
 	for (int32_t i = 0; i < song.numChannels; i++, c++, s++, v++)
 	{
 		c->scopeVolume = v->scopeVolume;
+#ifdef TAPEHEAD_EMBEDDED
+		c->scopePan = s->finalPan;
+#endif
 		c->period = s->finalPeriod;
 		c->instrNum = s->instrNum;
 		c->smpNum = s->smpNum;

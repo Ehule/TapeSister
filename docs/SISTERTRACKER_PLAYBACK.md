@@ -43,6 +43,20 @@ metadata and song-title strip has been removed to give those rows to the tiles.
 The title is **TrackSister** and the old badge is a functional **LEN ON/OFF**
 bypass button. **Rec file**, below **Rec. ptn.**, starts/stops final-output recording.
 
+Each scope has a thin yellow **source-pan marker**, with small dim ticks marking
+the center. Left/right positions follow the track's live sample pan, pan commands,
+slides and instrument pan envelope. Muting dims the marker; a normal mute retains
+the last visible position until the track is unmuted. The waveform, track number,
+REC label, volume trim strip and mouse controls keep their existing behavior.
+The marker uses the scope-number color, so custom palettes can change its yellow.
+
+This displays the source pan before tile/track output routing and shared effects.
+Clean-output balance and each shared return's placement remain separate controls
+in the routing window. The indicator follows the existing display sync queue and
+adds no audio processing or extra refresh timer.
+
+![Live pan positions on the TrackSister scopes](screenshots/track-pan/scopes-pan.png)
+
 **Zap** replaces About and opens the tracker clearing choices:
 
 - **Pattern** clears the pattern selected when Zap was opened, including hidden

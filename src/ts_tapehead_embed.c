@@ -313,7 +313,7 @@ int ts_tapehead_init(const TsTapeHeadHost *host,unsigned rate,char *error,size_t
     if(embed.host_cursor)SDL_SetCursor(embed.host_cursor);
     SDL_ShowCursor(embed.host_cursor_visible);
     config.ptnMaxChannels=2;ui.maxVisibleChannels=8;
-    if(!setupReplayer() || !tapeheadEmbeddedAudioPrepare(embed.rate,TH_FRAMES) || !setupGUI())goto bad;
+    if(!setupReplayer() || !tapeheadEmbeddedAudioPrepare(embed.rate,TH_FRAMES) || !initScopes() || !setupGUI())goto bad;
     undoInit();undoLoadConfig();
     playMode=PLAYMODE_EDIT;audio.locked=false;
     palette_default();preferences_get(default_preferences);

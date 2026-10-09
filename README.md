@@ -438,7 +438,7 @@ For an ordinary developer build without creating the ZIP, continue to use
   TapeHead editor and replayer, with tile bindings, original editing/undo,
   XM/MOD import, approximate IT conversion, optional raw-file import, XM export,
   instrument tiles, up to 32 tracks, Song and FastTracks
-  transport, Sister TRACK and final Main recording.
+  transport, live source-pan markers on the scopes, Sister TRACK and final Main recording.
 - [SisterTracker foundation](docs/SISTERTRACKER_FOUNDATION.md) — stage 1 song model,
   stable tile identity, native persistence, and migration.
 - [Realtime Capture](docs/CAPTURE_WORKFLOW.md)
