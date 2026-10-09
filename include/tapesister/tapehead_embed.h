@@ -45,6 +45,9 @@ void ts_tapehead_host_unlock(void);
 void ts_tapehead_host_present(void);
 void ts_tapehead_host_mouse(const SDL_Event *event);
 void ts_tapehead_host_redraw(void);
+/* UI-only: combine the last synced source pan with the resolved clean route. */
+void ts_tapehead_scope_source(int lane,uint64_t tile_id,unsigned route_index);
+int ts_tapehead_scope_pan(int lane,int source_pan);
 void ts_tapehead_request(int action);
 void ts_tapehead_show_config(void);
 int ts_tapehead_config_visible(void);

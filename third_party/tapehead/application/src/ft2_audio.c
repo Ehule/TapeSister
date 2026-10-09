@@ -1647,6 +1647,8 @@ static void fillVisualsSyncBuffer(void)
 		c->scopeVolume = v->scopeVolume;
 #ifdef TAPEHEAD_EMBEDDED
 		c->scopePan = s->finalPan;
+		c->scopeTileId = v->tileId;
+		c->scopeTileRouteIndex = v->tileRouteIndex;
 #endif
 		c->period = s->finalPeriod;
 		c->instrNum = s->instrNum;

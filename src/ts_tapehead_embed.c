@@ -74,6 +74,9 @@ static struct {
     TsSourceRouteMix clean[TH_FRAMES];
     TsSourceRoute track_routes[TS_TRACKER_LANES], tile_routes[129*16];
     TsTileId route_ids[129*16];
+    /* UI-owned last sounding tile; stopping a voice must not erase it. */
+    TsTileId scope_tile_ids[TS_TRACKER_LANES];
+    unsigned scope_route_indices[TS_TRACKER_LANES];
     int routes_enabled, clean_used, route_check;
     unsigned route_available;
     uint8_t capture_flags[TH_FRAMES];
@@ -145,6 +148,37 @@ void ts_tapehead_audio_span(unsigned offset,unsigned frames,int seam) {
     if(seam)embed.capture_seam_pending=1;
 }
 const uint32_t *ts_tapehead_frame(void) { return embed.initialized?video.frameBuffer:NULL; }
+
+void ts_tapehead_scope_source(int lane,uint64_t tile_id,unsigned route_index)
+{
+    if(lane<0 || lane>=TS_TRACKER_LANES)return;
+    embed.scope_tile_ids[lane]=tile_id;
+    embed.scope_route_indices[lane]=route_index;
+}
+
+int ts_tapehead_scope_pan(int lane,int source_pan)
+{
+    source_pan=CLAMP(source_pan,0,255);
+    if(!embed.initialized || lane<0 || lane>=TS_TRACKER_LANES)return source_pan;
+    /* Last sounding tile comes from the UI's scope sync queue.
+       Route tables are UI-owned, so dragging a route works even without an
+       audio callback or a new note, and never reads a live mixer voice. */
+    TsSourceRoute tile={0};
+    unsigned index=embed.scope_route_indices[lane];
+    if(embed.scope_tile_ids[lane] && index<129*16 && embed.route_ids[index]==embed.scope_tile_ids[lane])
+        tile=embed.tile_routes[index];
+    TsSourceRoute route=ts_source_route_resolve(tile,embed.track_routes[lane]);
+    if(route.mode==TS_SOURCE_SPEAKER)return 128; /* Mono has no pair balance. */
+    if(route.mode!=TS_SOURCE_PAIR || route.pan==0)return source_pan;
+    /* Convert the tracker pan's equal-power gains through the clean pair's
+       balance attenuation. This is a control indication, not a signal meter:
+       source material, width, clean level and shared returns don't drive it. */
+    float l=route.pan>0?1.f-route.pan*.01f:1.f;
+    float r=route.pan<0?1.f+route.pan*.01f:1.f;
+    float left=(256-source_pan)*l*l,right=source_pan*r*r;
+    if(left+right==0)return route.pan<0?0:255;
+    return CLAMP((int)lroundf(256.f*right/(left+right)),0,255);
+}
 
 /* The original sequencer/voice envelopes supply period, panning and ramps.
    Only sample reads change: immutable host tile snapshots preserve float stereo. */
@@ -849,6 +883,7 @@ int ts_tapehead_sync(TsSamplePages *pages,const TsInstrument *active,unsigned ra
         ts_tapehead_host_lock();atomic_store(&embed.ready,0);
         if(!score_import(t,e,n)){ts_tapehead_host_unlock();return 0;}
         for(int lane=0;lane<TS_TRACKER_LANES;++lane) {
+            embed.scope_tile_ids[lane]=0;
             embed.track_routes[lane]=t->lanes[lane].output_route;
             if(embed.track_routes[lane].mode==TS_SOURCE_PAIR || embed.track_routes[lane].mode==TS_SOURCE_SPEAKER)
                 embed.routes_enabled=1;

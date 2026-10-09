@@ -12,6 +12,8 @@
 #include "../third_party/tapehead/application/src/ft2_pattern_draw.h"
 #include "../third_party/tapehead/application/src/ft2_tables.h"
 #include "../third_party/tapehead/application/src/ft2_config.h"
+#include "../third_party/tapehead/application/src/ft2_video.h"
+#include "../third_party/tapehead/application/src/scopes/ft2_scopes.h"
 static AudioState a;
 static TsUiState u;
 static TsSamplePages pages;
@@ -124,6 +126,67 @@ static void shared_send_controls(const char *directory)
     ts_sister_runtime_disable(&a.sister);
 }
 
+static int first_scope_pan(int muted)
+{
+    ts_tapehead_tick();
+    const uint32_t *frame=ts_tapehead_frame();
+    uint32_t color=video.palette[muted?PAL_DSKTOP1:PAL_MOUSEPT];
+    int found=-1;
+    for(int x=4;x<3+scopeLenTab[3][0]-tapeheadConfig.trackTrimDisplayWidth-1;++x) {
+        int count=0;
+        for(int y=104;y<126;++y)count+=frame[y*632+x]==color;
+        if(count>=14){assert(found<0);found=x;}
+    }
+    assert(found>=0);return found;
+}
+static void scope_shot(const char *directory,const char *name)
+{
+    if(!directory)return;
+    TsFramebuffer *fb=malloc(sizeof(*fb));assert(fb);
+    u.tracker_embedded_frame=ts_tapehead_frame();ts_ui_render(fb,&u,&bank);
+    char path[1024];snprintf(path,sizeof(path),"%s/%s.bmp",directory,name);
+    SDL_Surface *s=SDL_CreateRGBSurfaceFrom(fb->pixels,640,400,32,640*4,0xff0000,0xff00,0xff,0xff000000);
+    assert(s&&!SDL_SaveBMP(s,path));SDL_FreeSurface(s);free(fb);
+}
+static void routing_pan_scope(const char *directory)
+{
+    int center=first_scope_pan(0);
+    assert(source_route_show(0,&a,&u,&pages,&bank,0,0));
+    click(300,89,SDL_BUTTON_LEFT); /* User's Stereo Pair gesture. */
+    click(32,224,SDL_BUTTON_LEFT);
+    int left=first_scope_pan(0);assert(left<center);
+    scope_shot(directory,"routing-pan-left");
+    click(188,224,SDL_BUTTON_RIGHT);assert(first_scope_pan(0)==center);
+    scope_shot(directory,"routing-pan-center");
+    assert(ts_tapehead_scope_pan(0,64)==64); /* Existing note pan is retained. */
+    click(266,224,SDL_BUTTON_LEFT); /* Half-right balance compounds with note pan. */
+    int combined=ts_tapehead_scope_pan(0,64);
+    assert(combined>64 && combined<ts_tapehead_scope_pan(0,128));
+    click(344,224,SDL_BUTTON_LEFT);
+    int right=first_scope_pan(0);assert(right>center);
+    scope_shot(directory,"routing-pan-right");
+    double energy[4];render(energy);
+    assert(energy[0]==0 && energy[1]>1 && energy[2]==0 && energy[3]==0);
+    /* No callback or new note is required for stopped/muted route edits. */
+    ts_tapehead_stop();click(32,224,SDL_BUTTON_LEFT);assert(first_scope_pan(0)==left);
+    editor.channelMuted[0]=true;setChannelMute(0,true);redrawScopeChannel(0);
+    click(344,224,SDL_BUTTON_LEFT);assert(first_scope_pan(1)==right);
+    editor.channelMuted[0]=false;setChannelMute(0,false);redrawScopeChannel(0);
+    /* The scope follows the same whole-track override and tile inheritance. */
+    click(500,48,SDL_BUTTON_LEFT);assert(first_scope_pan(0)==center);
+    assert(source_route_show(0,&a,&u,&pages,&bank,-1,0));
+    click(32,224,SDL_BUTTON_LEFT);assert(first_scope_pan(0)==left);
+    assert(source_route_show(0,&a,&u,&pages,&bank,0,0));
+    click(300,89,SDL_BUTTON_LEFT);click(344,224,SDL_BUTTON_LEFT);
+    assert(first_scope_pan(0)==right);
+    click(500,48,SDL_BUTTON_LEFT);assert(first_scope_pan(0)==left);
+    click(100,89,SDL_BUTTON_LEFT);assert(first_scope_pan(0)==center);
+    click(500,48,SDL_BUTTON_LEFT);
+    assert(source_route_show(0,&a,&u,&pages,&bank,-1,0));
+    click(188,224,SDL_BUTTON_RIGHT);assert(first_scope_pan(0)==center);
+    source_route_hide();startPlaying(PLAYMODE_SONG,0);
+}
+
 int main(int argc,char **argv)
 {
     SDL_setenv("SDL_VIDEODRIVER","dummy",1);SDL_setenv("SDL_AUDIODRIVER","dummy",1);
@@ -163,6 +226,7 @@ int main(int argc,char **argv)
     assert(embedded_open(window,0,&a,&u,&pages,&bank,48000));u.tracker_open=1;
     pattern[editor.editPattern][0]=(note_t){.note=49,.instr=1};song.songLength=1;song.orders[0]=editor.editPattern;
     startPlaying(PLAYMODE_SONG,0);render(energy);assert(energy[0]==0&&energy[1]==0&&energy[2]>1&&energy[3]>1);
+    routing_pan_scope(argc>1?argv[1]:NULL);
     const pattCoord2_t *header=&pattCoord2Table[config.ptnStretch][ui.pattChanScrollShown][getPatternEditorView()];
     SDL_Event e={0};e.type=SDL_MOUSEBUTTONDOWN;e.button.button=SDL_BUTTON_RIGHT;
     assert(ts_tapehead_event(&e,32,header->upperRowsY+3));

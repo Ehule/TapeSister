@@ -218,6 +218,8 @@ typedef struct syncedChannel_t // used for audio/video sync queue (pack to save 
 	uint8_t status, pianoNoteNum, smpNum, instrNum, scopeVolume;
 #ifdef TAPEHEAD_EMBEDDED
 	uint8_t scopePan;
+	uint64_t scopeTileId;
+	unsigned scopeTileRouteIndex;
 #endif
 	uint16_t period;
 	int32_t smpStartPos;

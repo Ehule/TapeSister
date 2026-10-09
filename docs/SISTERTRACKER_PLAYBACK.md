@@ -43,19 +43,29 @@ metadata and song-title strip has been removed to give those rows to the tiles.
 The title is **TrackSister** and the old badge is a functional **LEN ON/OFF**
 bypass button. **Rec file**, below **Rec. ptn.**, starts/stops final-output recording.
 
-Each scope has a thin yellow **source-pan marker**, with small dim ticks marking
-the center. Left/right positions follow the track's live sample pan, pan commands,
-slides and instrument pan envelope. Muting dims the marker; a normal mute retains
-the last visible position until the track is unmuted. The waveform, track number,
+Each scope has a thin yellow **pan marker**, with small dim ticks marking
+the center. It combines the track's live sample pan, pan commands, slides and
+instrument pan envelope with **Stereo Pair → Pan/Balance** in the routing window.
+An explicit track route overrides the tile; **Use Tile** follows the last played
+tile's route. Routing edits move the marker even while stopped or muted. Muting
+dims the marker and holds the last source pan while routing can still change it.
+The waveform, track number,
 REC label, volume trim strip and mouse controls keep their existing behavior.
 The marker uses the scope-number color, so custom palettes can change its yellow.
 
-This displays the source pan before tile/track output routing and shared effects.
-Clean-output balance and each shared return's placement remain separate controls
-in the routing window. The indicator follows the existing display sync queue and
-adds no audio processing or extra refresh timer.
+**Main Route** shows source pan; a **Single Speaker** route shows a centered mono
+marker. For a stereo pair, left/right are relative to that selected pair. This is
+a pan/balance control indication, not a signal meter: width, source waveform,
+clean level and independently positioned shared returns do not drive it. The
+indicator uses the existing display sync queue and UI route state, with no added
+audio processing or refresh timer.
 
 ![Live pan positions on the TrackSister scopes](screenshots/track-pan/scopes-pan.png)
+
+Changing track 1’s routing Pan/Balance from left to center to right updates its
+yellow marker immediately (native UI capture):
+
+![Routing pan moves the first scope marker](screenshots/track-pan/scopes-routing-pan.gif)
 
 **Zap** replaces About and opens the tracker clearing choices:
 

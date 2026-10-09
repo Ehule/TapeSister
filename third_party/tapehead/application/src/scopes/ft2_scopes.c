@@ -31,6 +31,7 @@ static SDL_Thread *scopeThread;
 #ifdef TAPEHEAD_EMBEDDED
 /* UI-owned, populated by the existing audio/display sync queue. */
 static uint8_t scopePan[MAX_CHANNELS];
+static int16_t scopeDisplayedPan[MAX_CHANNELS];
 #endif
 
 lastChInstr_t lastChInstr[MAX_CHANNELS]; // global
@@ -247,7 +248,9 @@ static void drawScopePan(uint16_t x, uint16_t y, uint16_t width, int32_t ch)
 	if (right < left)
 		return;
 	const int32_t center = (left + right + 1) / 2;
-	const int32_t panX = left + (scopePan[ch] * (right - left) + 127) / 255;
+	const int32_t pan = ts_tapehead_scope_pan(ch, scopePan[ch]);
+	scopeDisplayedPan[ch] = (int16_t)pan;
+	const int32_t panX = left + (pan * (right - left) + 127) / 255;
 	const uint8_t color = editor.channelMuted[ch] || performanceMute[ch]
 		? PAL_DSKTOP1 : PAL_MOUSEPT;
 
@@ -698,6 +701,15 @@ void drawScopes(void)
 		}
 
 		const uint16_t scopeDrawLen = scopeLens[i];
+#ifdef TAPEHEAD_EMBEDDED
+		/* Route edits are independent of the audio queue. Clear old markers
+		   on silent scopes too, and repaint the dimmed marker over mute X. */
+		if (scopeDisplayedPan[i] != ts_tapehead_scope_pan(i, scopePan[i]))
+		{
+			scope[i].wasCleared = false;
+			if (editor.channelMuted[i])redrawScope(i);
+		}
+#endif
 		if (editor.channelMuted[i]) // scope muted (mute graphics blit()'ed elsewhere)
 		{
 			scopeXOffs += scopeDrawLen+3; // align x to next scope
@@ -781,6 +793,10 @@ void handleScopesFromChQueue(chSyncData_t *chSyncData, uint8_t *scopeUpdateStatu
 	{
 		const uint8_t status = scopeUpdateStatus[i];
 #ifdef TAPEHEAD_EMBEDDED
+		/* Retain the tile after stop, but replace it on the next voice trigger.
+		   Its stable ID prevents a rebound alias from borrowing another route. */
+		if (ch->scopeTileId || (status & CS_TRIGGER_VOICE))
+			ts_tapehead_scope_source(i, ch->scopeTileId, ch->scopeTileRouteIndex);
 		/* A muted channel is reset to center by FT2. Retain its last position
 		   for the dimmed marker; live/performance-muted tracks follow pan FX. */
 		if (!editor.channelMuted[i] && scopePan[i] != ch->scopePan)
@@ -851,6 +867,7 @@ bool initScopes(void)
 	for (int32_t i = 0; i < MAX_CHANNELS; i++)
 	{
 		scopePan[i] = 128;
+		scopeDisplayedPan[i] = -1;
 		scope[i].wasCleared = false;
 	}
 	return true;

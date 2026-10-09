@@ -2351,3 +2351,53 @@ index b5ac07f..1cb8dba 100644
 +		scopePan[i] = 128;
 +		scope[i].wasCleared = false;
 +	}
+
+diff --git a/src/ft2_audio.c b/src/ft2_audio.c
+index c3bb971..b0c6e61 100644
+--- a/src/ft2_audio.c
++++ b/src/ft2_audio.c
+@@ -1649,0 +1650,2 @@ static void fillVisualsSyncBuffer(void)
++		c->scopeTileId = v->tileId;
++		c->scopeTileRouteIndex = v->tileRouteIndex;
+diff --git a/src/ft2_header.h b/src/ft2_header.h
+index 80cca00..bec789d 100644
+--- a/src/ft2_header.h
++++ b/src/ft2_header.h
+@@ -22,0 +23,2 @@ void ts_tapehead_host_redraw(void);
++void ts_tapehead_scope_source(int lane,uint64_t tile_id,unsigned route_index);
++int ts_tapehead_scope_pan(int lane,int source_pan);
+diff --git a/src/ft2_replayer.h b/src/ft2_replayer.h
+index 3077d93..3547842 100644
+--- a/src/ft2_replayer.h
++++ b/src/ft2_replayer.h
+@@ -220,0 +221,2 @@ typedef struct syncedChannel_t // used for audio/video sync queue (pack to save
++	uint64_t scopeTileId;
++	unsigned scopeTileRouteIndex;
+diff --git a/src/scopes/ft2_scopes.c b/src/scopes/ft2_scopes.c
+index 1cb8dba..472d0f3 100644
+--- a/src/scopes/ft2_scopes.c
++++ b/src/scopes/ft2_scopes.c
+@@ -33,0 +34 @@ static uint8_t scopePan[MAX_CHANNELS];
++static int16_t scopeDisplayedPan[MAX_CHANNELS];
+@@ -250 +251,3 @@ static void drawScopePan(uint16_t x, uint16_t y, uint16_t width, int32_t ch)
+-	const int32_t panX = left + (scopePan[ch] * (right - left) + 127) / 255;
++	const int32_t pan = ts_tapehead_scope_pan(ch, scopePan[ch]);
++	scopeDisplayedPan[ch] = (int16_t)pan;
++	const int32_t panX = left + (pan * (right - left) + 127) / 255;
+@@ -700,0 +704,9 @@ void drawScopes(void)
++#ifdef TAPEHEAD_EMBEDDED
++		/* Route edits are independent of the audio queue. Clear old markers
++		   on silent scopes too, and repaint the dimmed marker over mute X. */
++		if (scopeDisplayedPan[i] != ts_tapehead_scope_pan(i, scopePan[i]))
++		{
++			scope[i].wasCleared = false;
++			if (editor.channelMuted[i])redrawScope(i);
++		}
++#endif
+@@ -783,0 +796,4 @@ void handleScopesFromChQueue(chSyncData_t *chSyncData, uint8_t *scopeUpdateStatu
++		/* Retain the tile after stop, but replace it on the next voice trigger.
++		   Its stable ID prevents a rebound alias from borrowing another route. */
++		if (ch->scopeTileId || (status & CS_TRIGGER_VOICE))
++			ts_tapehead_scope_source(i, ch->scopeTileId, ch->scopeTileRouteIndex);
+@@ -853,0 +870 @@ bool initScopes(void)
++		scopeDisplayedPan[i] = -1;
