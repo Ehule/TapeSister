@@ -25,10 +25,12 @@
 #include "../../third_party/tapehead/transport_visuals.h"
 
 enum { TS_UI_WIDTH = 640, TS_UI_HEIGHT = 400 };
-enum { TS_TRACKER_LEN_Y=54, TS_TRACKER_RATIO_Y=64,
+/* The retired native editor fixture has a fixed eight-column drawing layout.
+   The embedded TapeHead workspace owns scrolling across all 32 stored tracks. */
+enum { TS_TRACKER_LEGACY_LANES=8, TS_TRACKER_LEN_Y=54, TS_TRACKER_RATIO_Y=64,
        TS_TRACKER_MIX_Y=74, TS_TRACKER_GRID_Y=88,
        TS_TRACKER_LANE_X=32, TS_TRACKER_LANE_WIDTH=72,
-       TS_TRACKER_LANE_RIGHT=TS_TRACKER_LANE_X+TS_TRACKER_LANES*TS_TRACKER_LANE_WIDTH,
+       TS_TRACKER_LANE_RIGHT=TS_TRACKER_LANE_X+TS_TRACKER_LEGACY_LANES*TS_TRACKER_LANE_WIDTH,
        TS_TRACKER_FIELD_COUNT=7,
        TS_TRACKER_ROW_HEIGHT=12, TS_TRACKER_VISIBLE_ROWS=19,
        TS_TRACKER_GRID_BOTTOM=TS_TRACKER_GRID_Y+TS_TRACKER_VISIBLE_ROWS*TS_TRACKER_ROW_HEIGHT };
@@ -45,7 +47,7 @@ static inline int ts_tracker_custom_name(const TsTrackerLane *lane,int index)
 static inline TsTrackerLayout ts_tracker_layout(const TsSisterTracker *t,int expanded)
 {
     int names=0;
-    if(t)for(int i=0;i<TS_TRACKER_LANES;++i)names|=ts_tracker_custom_name(&t->lanes[i],i);
+    if(t)for(int i=0;i<TS_TRACKER_LEGACY_LANES;++i)names|=ts_tracker_custom_name(&t->lanes[i],i);
     int top=expanded?4:TS_TRACKER_LEN_Y;
     TsTrackerLayout g={.len_y=top,.ratio_y=top+10,.mix_y=top+20,
         .name_y=names?top+32:-1,.grid_y=top+34+(names?10:0),.expanded=expanded};
@@ -536,7 +538,7 @@ typedef struct {
     unsigned tracker_master_row;
     unsigned tracker_lane_row[TS_TRACKER_LANES];
     unsigned tracker_lane_phase[TS_TRACKER_LANES]; /* lag/sync/lead LED bits */
-    uint8_t tracker_solo;
+    uint32_t tracker_solo;
     TsMosaic *mosaic;
     uint64_t mosaic_selected, mosaic_editing;
     uint64_t mosaic_selection[TS_MOSAIC_EVENTS];

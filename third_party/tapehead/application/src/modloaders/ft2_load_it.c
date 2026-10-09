@@ -154,7 +154,7 @@ bool loadIT(FILE *f, uint32_t filesize)
 	bool compatGxx = !!(header.flags & 32);
 
 	// read order list
-	for (int32_t i = 0; i < MAX_ORDERS; i++)
+	for (int32_t i = 0; i < header.ordNum && i < MAX_ORDERS; i++)
 	{
 		const uint8_t patt = (uint8_t)fgetc(f);
 		if (patt == 254) // separator ("+++"), skip it
@@ -208,7 +208,7 @@ bool loadIT(FILE *f, uint32_t filesize)
 
 				if (!loadSample(f, s, srcSmp))
 				{
-					loaderMsgBox("Not enough memory!");
+					loaderMsgBox("Invalid IT sample data or not enough memory!");
 					goto error;
 				}
 			}
@@ -348,7 +348,7 @@ bool loadIT(FILE *f, uint32_t filesize)
 				{
 					if (!loadSample(f, s, &smpHdrs[sampleList[j]]))
 					{
-						loaderMsgBox("Not enough memory!");
+						loaderMsgBox("Invalid IT sample data or not enough memory!");
 						goto error;
 					}
 				}
@@ -524,7 +524,7 @@ bool loadIT(FILE *f, uint32_t filesize)
 				{
 					if (!loadSample(f, s, &smpHdrs[sampleList[j]]))
 					{
-						loaderMsgBox("Not enough memory!");
+						loaderMsgBox("Invalid IT sample data or not enough memory!");
 						goto error;
 					}
 				}
@@ -1207,183 +1207,63 @@ error:
 	return false;
 }
 
-static void decompress16BitData(int16_t *dst, const uint8_t *src, uint32_t blockLength)
+/* Bounded IT 2.14 / 2.15 unpacker. A damaged block must not read past its
+** packed bytes or loop forever on an invalid bit-width marker. */
+static bool readITBits(const uint8_t *src, uint32_t size, uint32_t *bit,
+                       uint8_t width, uint32_t *value)
 {
-	uint8_t byte8, bitDepth, bitDepthInv, bitsRead;
-	uint16_t bytes16, lastVal;
-	uint32_t bytes32;
-
-	lastVal = 0;
-	bitDepth = 17;
-	bitDepthInv = bitsRead = 0;
-
-	blockLength >>= 1;
-	while (blockLength != 0)
-	{
-		bytes32 = (*(uint32_t *)src) >> bitsRead;
-
-		bitsRead += bitDepth;
-		src += bitsRead >> 3;
-		bitsRead &= 7;
-
-		if (bitDepth <= 6)
-		{
-			bytes32 <<= bitDepthInv & 0x1F;
-
-			bytes16 = (uint16_t)bytes32;
-			if (bytes16 != 0x8000)
-			{
-				lastVal += (int16_t)bytes16 >> (bitDepthInv & 0x1F); // arithmetic shift
-				*dst++ = lastVal;
-				blockLength--;
-			}
-			else
-			{
-				byte8 = ((bytes32 >> 16) & 0xF) + 1;
-				if (byte8 >= bitDepth)
-					byte8++;
-				bitDepth = byte8;
-
-				bitDepthInv = 16;
-				if (bitDepthInv < bitDepth)
-					bitDepthInv++;
-				bitDepthInv -= bitDepth;
-
-				bitsRead += 4;
-			}
-
-			continue;
-		}
-
-		bytes16 = (uint16_t)bytes32;
-
-		if (bitDepth <= 16)
-		{
-			uint16_t tmp16 = 0xFFFF >> (bitDepthInv & 0x1F);
-			bytes16 &= tmp16;
-			tmp16 = (tmp16 >> 1) - 8;
-
-			if (bytes16 > tmp16+16 || bytes16 <= tmp16)
-			{
-				bytes16 <<= bitDepthInv & 0x1F;
-				bytes16 = (int16_t)bytes16 >> (bitDepthInv & 0x1F); // arithmetic shift
-				lastVal += bytes16;
-				*dst++ = lastVal;
-				blockLength--;
-				continue;
-			}
-
-			byte8 = (uint8_t)(bytes16 - tmp16);
-			if (byte8 >= bitDepth)
-				byte8++;
-			bitDepth = byte8;
-
-			bitDepthInv = 16;
-			if (bitDepthInv < bitDepth)
-				bitDepthInv++;
-			bitDepthInv -= bitDepth;
-			continue;
-		}
-
-		if (bytes32 & 0x10000)
-		{
-			bitDepth = (uint8_t)(bytes16 + 1);
-			bitDepthInv = 16 - bitDepth;
-		}
-		else
-		{
-			lastVal += bytes16;
-			*dst++ = lastVal;
-			blockLength--;
-		}
-	}
+    if (width == 0 || width > 17 || *bit > size*8 || width > size*8 - *bit)
+        return false;
+    *value = 0;
+    for (uint8_t i = 0; i < width; i++, (*bit)++)
+        *value |= ((src[*bit >> 3] >> (*bit & 7)) & 1u) << i;
+    return true;
 }
 
-static void decompress8BitData(int8_t *dst, const uint8_t *src, uint32_t blockLength)
+static bool decompressITData(void *dst, const uint8_t *src, uint32_t packedLength,
+                             uint32_t frames, uint8_t bits)
 {
-	uint8_t lastVal, byte8, bitDepth, bitDepthInv, bitsRead;
-	uint16_t bytes16;
-
-	lastVal = 0;
-	bitDepth = 9;
-	bitDepthInv = bitsRead = 0;
-
-	while (blockLength != 0)
-	{
-		bytes16 = (*(uint16_t *)src) >> bitsRead;
-
-		bitsRead += bitDepth;
-		src += (bitsRead >> 3);
-		bitsRead &= 7;
-
-		byte8 = bytes16 & 0xFF;
-
-		if (bitDepth <= 6)
-		{
-			bytes16 <<= (bitDepthInv & 0x1F);
-			byte8 = bytes16 & 0xFF;
-
-			if (byte8 != 0x80)
-			{
-				lastVal += (int8_t)byte8 >> (bitDepthInv & 0x1F); // arithmetic shift
-				*dst++ = lastVal;
-				blockLength--;
-				continue;
-			}
-
-			byte8 = (bytes16 >> 8) & 7;
-			bitsRead += 3;
-			src += (bitsRead >> 3);
-			bitsRead &= 7;
-		}
-		else
-		{
-			if (bitDepth == 8)
-			{
-				if (byte8 < 0x7C || byte8 > 0x83)
-				{
-					lastVal += byte8;
-					*dst++ = lastVal;
-					blockLength--;
-					continue;
-				}
-				byte8 -= 0x7C;
-			}
-			else if (bitDepth < 8)
-			{
-				byte8 <<= 1;
-				if (byte8 < 0x78 || byte8 > 0x86)
-				{
-					lastVal += (int8_t)byte8 >> (bitDepthInv & 0x1F); // arithmetic shift
-					*dst++ = lastVal;
-					blockLength--;
-					continue;
-				}
-				byte8 = (byte8 >> 1) - 0x3C;
-			}
-			else
-			{
-				bytes16 &= 0x1FF;
-				if ((bytes16 & 0x100) == 0)
-				{
-					lastVal += byte8;
-					*dst++ = lastVal;
-					blockLength--;
-					continue;
-				}
-			}
-		}
-
-		byte8++;
-		if (byte8 >= bitDepth)
-			byte8++;
-		bitDepth = byte8;
-
-		bitDepthInv = 8;
-		if (bitDepthInv < bitDepth)
-			bitDepthInv++;
-		bitDepthInv -= bitDepth;
-	}
+    uint32_t bit = 0, written = 0, accumulator = 0;
+    uint8_t width = bits + 1;
+    const uint32_t mask = (1u << bits) - 1;
+    while (written < frames)
+    {
+        uint32_t value, next = 0;
+        if (width == 0 || width > bits + 1 || !readITBits(src, packedLength, &bit, width, &value))
+            return false;
+        if (width < 7 && value == (1u << (width - 1)))
+        {
+            if (!readITBits(src, packedLength, &bit, bits == 8 ? 3 : 4, &next))
+                return false;
+            next++;
+            if (next >= width) next++;
+        }
+        else if (width >= 7 && width <= bits)
+        {
+            uint32_t border = (mask >> (bits + 1 - width)) - bits/2;
+            if (value > border && value <= border + bits)
+            {
+                next = value - border;
+                if (next >= width) next++;
+            }
+        }
+        else if (width == bits + 1 && (value & (1u << bits)))
+            next = (value + 1) & 255;
+        if (next)
+        {
+            if (next > bits + 1) return false;
+            width = (uint8_t)next;
+            continue;
+        }
+        /* A maximum-width marker with a zero result is invalid, not PCM. */
+        if (width == bits + 1 && (value & (1u << bits))) return false;
+        if (width < bits && (value & (1u << (width - 1))))
+            value |= ~((1u << width) - 1);
+        accumulator = (accumulator + value) & mask;
+        if (bits == 16) ((int16_t *)dst)[written++] = (int16_t)accumulator;
+        else ((int8_t *)dst)[written++] = (int8_t)accumulator;
+    }
+    return true;
 }
 
 static bool loadCompressed16BitSample(FILE *f, sample_t *s, bool deltaEncoded)
@@ -1398,10 +1278,10 @@ static bool loadCompressed16BitSample(FILE *f, sample_t *s, bool deltaEncoded)
 			bytesToUnpack = i;
 
 		uint16_t packedLen;
-		fread(&packedLen, sizeof (uint16_t), 1, f);
-		fread(tmpBuffer, 1, packedLen, f);
-
-		decompress16BitData((int16_t *)dstPtr, tmpBuffer, bytesToUnpack);
+		if (fread(&packedLen, sizeof (uint16_t), 1, f) != 1 ||
+            fread(tmpBuffer, 1, packedLen, f) != packedLen ||
+            !decompressITData(dstPtr, tmpBuffer, packedLen, bytesToUnpack/2, 16))
+            return false;
 
 		if (deltaEncoded) // convert from delta values to PCM
 		{
@@ -1435,10 +1315,10 @@ static bool loadCompressed8BitSample(FILE *f, sample_t *s, bool deltaEncoded)
 			bytesToUnpack = i;
 
 		uint16_t packedLen;
-		fread(&packedLen, sizeof (uint16_t), 1, f);
-		fread(tmpBuffer, 1, packedLen, f);
-
-		decompress8BitData(dstPtr, tmpBuffer, bytesToUnpack);
+		if (fread(&packedLen, sizeof (uint16_t), 1, f) != 1 ||
+            fread(tmpBuffer, 1, packedLen, f) != packedLen ||
+            !decompressITData(dstPtr, tmpBuffer, packedLen, bytesToUnpack, 8))
+            return false;
 
 		if (deltaEncoded) // convert from delta values to PCM
 		{
@@ -1529,9 +1409,9 @@ static bool loadSample(FILE *f, sample_t *s, itSmpHdr_t *is)
 	if (compressed)
 	{
 		if (sampleIs16Bit)
-			loadCompressed16BitSample(f, s, deltaEncoded);
+			return loadCompressed16BitSample(f, s, deltaEncoded);
 		else
-			loadCompressed8BitSample(f, s, deltaEncoded);
+			return loadCompressed8BitSample(f, s, deltaEncoded);
 	}
 	else
 	{

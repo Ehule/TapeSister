@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Version 1: explicit little-endian fields, never a dump of C structs. The
+/* Explicit little-endian fields, never a dump of C structs. The
    same encoder feeds persistence and the project dirty-state hash. */
 typedef struct {
     FILE *file;
@@ -37,12 +37,11 @@ static uint64_t number(TrackerStream *s, uint64_t value, unsigned width)
 static void codec(TrackerStream *s, TsSisterTracker *loaded, const TsSisterTracker *saved)
 {
     const TsSisterTracker *t = s->reading ? loaded : saved;
-    char magic[8] = { 'S','I','S','T','R','K',1,0 };
-    if(!s->reading && saved->embedded_size)magic[6]=2;
+    char magic[8] = { 'S','I','S','T','R','K',3,0 };
     char header[8] = {0};
     bytes(s, header, magic, sizeof(header));
     if (s->reading && (memcmp(header, magic, 6) || header[7] ||
-        (header[6]!=1 && header[6]!=2))) { s->failed = 1; return; }
+        (header[6]!=1 && header[6]!=2 && header[6]!=3))) { s->failed = 1; return; }
     unsigned version=s->reading?(unsigned char)header[6]:(unsigned char)magic[6];
 #define FIELD(owner, target, field, width) do { \
     uint64_t value = number(s, (uint64_t)(owner)->field, width); \
@@ -56,12 +55,14 @@ static void codec(TrackerStream *s, TsSisterTracker *loaded, const TsSisterTrack
     SONG(fasttracks_uses_length, 1); SONG(length_bypass, 1); SONG(random_seed, 4);
     SONG(editor_pattern, 4); SONG(editor_row, 2); SONG(editor_lane, 1);
     SONG(edit_step, 1); SONG(follow, 1);
+    if(version>=3) { SONG(channel_count,1); }
+    unsigned lanes=version>=3?TS_TRACKER_LANES:8;
     if (t->pattern_count > TS_TRACKER_PATTERNS || t->order_count > TS_TRACKER_ORDERS) {
         s->failed = 1; return;
     }
     for (int i = 0; i < TS_TRACKER_ALIASES; ++i) SONG(aliases[i], 8);
     for (int i = 0; i < t->order_count; ++i) SONG(orders[i], 4);
-    for (int i = 0; i < TS_TRACKER_LANES; ++i) {
+    for (int i = 0; i < (int)lanes; ++i) {
         const TsTrackerLane *l = &t->lanes[i];
         TsTrackerLane *out = loaded ? &loaded->lanes[i] : NULL;
         uint32_t trim = 0;
@@ -85,7 +86,7 @@ static void codec(TrackerStream *s, TsSisterTracker *loaded, const TsSisterTrack
         FIELD(p, out, id, 4); FIELD(p, out, rows, 2);
         bytes(s, out ? out->name : NULL, p->name, sizeof(p->name));
         for (int row = 0; row < TS_TRACKER_ROWS && !s->failed; ++row)
-            for (int lane = 0; lane < TS_TRACKER_LANES; ++lane) {
+            for (int lane = 0; lane < (int)lanes; ++lane) {
                 const TsTrackerCell *c = &p->cells[row][lane];
                 TsTrackerCell *dst = out ? &out->cells[row][lane] : NULL;
                 FIELD(c, dst, tile_id, 8); FIELD(c, dst, note_kind, 1);
@@ -94,11 +95,27 @@ static void codec(TrackerStream *s, TsSisterTracker *loaded, const TsSisterTrack
                 FIELD(c, dst, fx_command, 1); FIELD(c, dst, fx_value, 1);
             }
     }
+    if(version>=3)for(int a=1;a<=128;++a) {
+        const TsTrackerInstrument *v=&t->instruments[a];
+        TsTrackerInstrument *o=loaded?&loaded->instruments[a]:NULL;
+        FIELD(v,o,present,1);FIELD(v,o,sample_count,1);
+        bytes(s,o?o->name:NULL,v->name,sizeof(v->name));
+        bytes(s,o?o->sample_names:NULL,v->sample_names,sizeof(v->sample_names));
+        for(int k=0;k<16;++k) {FIELD(v,o,tiles[k],8);FIELD(v,o,volume[k],1);FIELD(v,o,panning[k],1);FIELD(v,o,relative_note[k],1);FIELD(v,o,finetune[k],1);}
+        bytes(s,o?o->note_map:NULL,v->note_map,96);
+        for(int k=0;k<12;++k)for(int j=0;j<2;++j) {FIELD(v,o,vol_points[k][j],2);FIELD(v,o,pan_points[k][j],2);}
+#define XM_FIELD(f) FIELD(v,o,f,1)
+        XM_FIELD(vol_length);XM_FIELD(pan_length);XM_FIELD(vol_sustain);XM_FIELD(vol_start);XM_FIELD(vol_end);
+        XM_FIELD(pan_sustain);XM_FIELD(pan_start);XM_FIELD(pan_end);XM_FIELD(vol_flags);XM_FIELD(pan_flags);
+        XM_FIELD(vib_type);XM_FIELD(vib_sweep);XM_FIELD(vib_depth);XM_FIELD(vib_rate);FIELD(v,o,fadeout,2);
+#undef XM_FIELD
+    }
 #undef SONG
 #undef FIELD
-    if(version==2 && !s->failed) {
+    if(version>=2 && !s->failed) {
         uint32_t count=(uint32_t)number(s,t->embedded_size,4);
-        if(!count || count>4u*1024u*1024u){s->failed=1;return;}
+        if((!count && version==2) || count>16u*1024u*1024u){s->failed=1;return;}
+        if(!count)return;
         if(s->reading) {
             loaded->embedded_data=malloc(count);loaded->embedded_size=count;
             if(!loaded->embedded_data){s->failed=1;return;}

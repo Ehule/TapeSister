@@ -1,6 +1,7 @@
 #include "tapesister/audio_import.h"
 
 #include <errno.h>
+#include <ctype.h>
 #include <limits.h>
 #include <math.h>
 #include <stdio.h>
@@ -40,6 +41,28 @@ static const char *path_basename(const char *path)
     const char *backslash = path != NULL ? strrchr(path, '\\') : NULL;
     if (backslash != NULL && (slash == NULL || backslash > slash)) slash = backslash;
     return slash != NULL ? slash + 1 : path != NULL ? path : "IMPORT";
+}
+
+TsModuleKind ts_module_kind(const char *path)
+{
+    const char *name = path_basename(path), *ext = strrchr(name, '.');
+    static const char *tags[] = { "xm", "mod", "it", "nst", "stk" };
+    for (unsigned i = 0; i < sizeof(tags) / sizeof(tags[0]); ++i) {
+        size_t n = strlen(tags[i]);
+        int suffix = ext && strlen(ext + 1) == n;
+        int prefix = strlen(name) > n + 1 && name[n] == '.';
+        for (size_t j = 0; j < n; ++j) {
+            if (suffix && tolower((unsigned char)ext[j + 1]) != tags[i][j]) suffix = 0;
+            if (prefix && tolower((unsigned char)name[j]) != tags[i][j]) prefix = 0;
+        }
+        if (suffix || prefix) return i == 0 ? TS_MODULE_XM : i == 2 ? TS_MODULE_IT : TS_MODULE_MOD;
+    }
+    return TS_MODULE_NONE;
+}
+
+const char *ts_module_kind_name(TsModuleKind kind)
+{
+    return kind == TS_MODULE_XM ? "XM" : kind == TS_MODULE_MOD ? "MOD" : kind == TS_MODULE_IT ? "IT" : "MODULE";
 }
 
 void ts_raw_import_settings_default(TsRawImportSettings *settings)

@@ -126,6 +126,56 @@ static void test_model(void)
     remove("score.tst");
 }
 
+static void test_score_migration(void)
+{
+    TsSisterTracker original,loaded;ts_sister_tracker_init(&original);ts_sister_tracker_init(&loaded);
+    score(&original,ts_tile_id_new());
+    CHECK(ts_sister_tracker_save_file(&original,"migration3.tst",error,sizeof(error)));
+    FILE *f=fopen("migration3.tst","rb");CHECK(f && !fseek(f,0,SEEK_END));
+    long length=ftell(f);CHECK(length>0);rewind(f);
+    uint8_t *bytes=malloc((size_t)length);CHECK(bytes && fread(bytes,1,(size_t)length,f)==(size_t)length);fclose(f);
+    /* Repack the documented v1/v2 wire layout: 38-byte song header, no channel
+       count, eight lane records and eight cells per row, no instrument table. */
+    for(int version=1;version<=2;++version) {
+        f=fopen("legacy-score.tst","wb");CHECK(f);bytes[6]=(uint8_t)version;
+        CHECK(fwrite(bytes,1,38,f)==38);
+        size_t offset=39,aliases_orders=TS_TRACKER_ALIASES*8+original.order_count*4;
+        CHECK(fwrite(bytes+offset,1,aliases_orders,f)==aliases_orders);offset+=aliases_orders;
+        size_t lane_bytes=TS_TRACKER_NAME_SIZE+14;
+        CHECK(fwrite(bytes+offset,1,8*lane_bytes,f)==8*lane_bytes);offset+=32*lane_bytes;
+        for(int i=0;i<original.pattern_count;++i) {
+            size_t header_bytes=6+TS_TRACKER_NAME_SIZE;
+            CHECK(fwrite(bytes+offset,1,header_bytes,f)==header_bytes);offset+=header_bytes;
+            for(int row=0;row<256;++row) {
+                CHECK(fwrite(bytes+offset,1,8*16,f)==8*16);offset+=32*16;
+            }
+        }
+        if(version==2) {
+            /* Minimal independent STH1 score; the old outer v2 required it. */
+            enum { EMBEDDED_SIZE=52+80+256+7+256*8*7 };
+            uint8_t *embedded=calloc(1,EMBEDDED_SIZE);CHECK(embedded);
+            memcpy(embedded,"STH1",4);embedded[8]=1;embedded[10]=125;embedded[12]=6;
+            embedded[13]=64;embedded[14]=1;embedded[21]=4;embedded[22]=1;embedded[23]=1;
+            for(int ch=0;ch<8;++ch){embedded[52+ch*10+3]=7;embedded[52+ch*10+8]=1;}
+            embedded[52+80+256+1]=64;embedded[52+80+256+3]=1;
+            CHECK(ts_tracker_embedded_validate(embedded,EMBEDDED_SIZE));
+            uint8_t size_bytes[4];for(int b=0;b<4;++b)size_bytes[b]=(uint8_t)(EMBEDDED_SIZE>>(b*8));
+            CHECK(fwrite(size_bytes,1,4,f)==4 && fwrite(embedded,1,EMBEDDED_SIZE,f)==EMBEDDED_SIZE);free(embedded);
+        }
+        CHECK(!fclose(f));CHECK(ts_sister_tracker_load_file(&loaded,"legacy-score.tst",error,sizeof(error)));
+        CHECK(loaded.channel_count==8 && loaded.lanes[7].length==256 && loaded.lanes[31].trim==1);
+        CHECK(loaded.patterns[0]->cells[255][7].tile_id==original.aliases[1]);
+        CHECK(!loaded.patterns[0]->cells[255][31].tile_id && !loaded.instruments[1].present);
+        if(version==1)CHECK(ts_sister_tracker_hash(&loaded)==ts_sister_tracker_hash(&original));
+        else CHECK(loaded.embedded_size && loaded.embedded_data[3]=='1');
+        CHECK(ts_sister_tracker_save_file(&loaded,"migration3.tst",error,sizeof(error)));
+        uint64_t hash=ts_sister_tracker_hash(&loaded);
+        CHECK(ts_sister_tracker_load_file(&loaded,"migration3.tst",error,sizeof(error)) && ts_sister_tracker_hash(&loaded)==hash);
+    }
+    free(bytes);ts_sister_tracker_free(&original);ts_sister_tracker_free(&loaded);
+    remove("legacy-score.tst");remove("migration3.tst");
+}
+
 static void test_limits(void)
 {
     TsSisterTracker t;
@@ -325,7 +375,7 @@ static void test_identity_exhaustion(void)
 
 int main(void)
 {
-    test_model(); test_limits(); test_tiles(); test_project(); test_tsr31_migration();
+    test_model(); test_score_migration(); test_limits(); test_tiles(); test_project(); test_tsr31_migration();
     test_identity_exhaustion(); /* Last: deliberately exhaust this test process. */
     puts("SisterTracker model, identity, persistence and migration checks passed");
     return 0;

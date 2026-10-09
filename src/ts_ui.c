@@ -907,7 +907,11 @@ static void browser_render(TsFramebuffer *fb, const TsBrowser *browser,
         button(fb, 34, 39, 108, "FILE BROWSER", 1);
         button(fb, 150, 39, 96,
                import_preview_available ? "PREVIEW" : "PREVIEW --", 0);
-        text(fb, 262, 45, "LOAD AUDIO OR RAW DATA", PAL_NOTE, 1);
+        text(fb, 262, 45, "AUDIO / XM / MOD / IT / TSR / TSP", PAL_NOTE, 1);
+    } else if(browser->mode==TS_BROWSER_SAVE_RECIPE || browser->mode==TS_BROWSER_SAVE_XM) {
+        button(fb,34,39,138,"TSR PROJECT",browser->mode==TS_BROWSER_SAVE_RECIPE);
+        button(fb,180,39,110,"XM SONG",browser->mode==TS_BROWSER_SAVE_XM);
+        text(fb,304,45,browser->mode==TS_BROWSER_SAVE_XM?"SCORE + MONO SAMPLES":"COMPLETE TAPESISTER PROJECT",PAL_NOTE,1);
     } else
         text(fb, 56, 45, ts_browser_mode_title(browser->mode), PAL_NOTE, 1);
     if (directory_length > 73) directory += directory_length - 73;
@@ -967,10 +971,17 @@ static void browser_render(TsFramebuffer *fb, const TsBrowser *browser,
             rect(fb, cursor_x, 301, 2, 11, PAL_MOUSE);
         }
     } else if (browser->mode == TS_BROWSER_LOAD_WAV) {
-        text(fb, 58, 282, browser->preview_loading ? "LOADING PREVIEW - SPACE / ESC CANCELS" :
+        frame(fb, 58, 279, 12, 12, RGB(8, 8, 8), PAL_MOUSE);
+        if (browser->import_as_raw) text(fb, 61, 281, "X", PAL_MOUSE, 1);
+        text(fb, 78, 282, "IMPORT AS RAW (R)", browser->import_as_raw ? PAL_MOUSE : PAL_TEXT, 1);
+        text(fb, 248, 282, browser->import_as_raw ? "OPEN: PREVIEW RAW DATA" : browser->preview_loading ? "LOADING - SPACE / ESC CANCELS" :
              browser->preview_playing ? "PLAYING - SPACE STOPS PREVIEW" : "SPACE: PREVIEW SELECTED AUDIO", PAL_MOUSE, 1);
+        TsModuleKind module = ts_module_kind(browser->filename);
         text(fb, 58, 300,
-             "AUDIO AUTO-DECODE; SHIFT+CLICK BYPASSES PREVIEW; OTHER FILES OPEN AS RAW",
+             browser->import_as_raw ? "ANY FILE AS SAMPLE BYTES - OPEN TO PREVIEW AND ADJUST" :
+             module == TS_MODULE_IT ? "IT CONVERSION: SOME EFFECTS AND VOICE BEHAVIOR WILL DIFFER" :
+             module ? "OPEN IMPORTS THE SONG AND SAMPLE TILES - UP TO 32 TRACKS" :
+             "AUDIO AUTO-DECODE; SHIFT+CLICK SKIPS PREVIEW; OTHER FILES: RAW",
              PAL_EFFECT, 1);
     } else if (browser->mode == TS_BROWSER_TRACKER_PALETTE_IMPORT) {
         text(fb, 58, 300, "SELECT A SHARED TAPEHEAD / TAPESISTER .PAL FILE", PAL_EFFECT, 1);
@@ -994,7 +1005,7 @@ static void browser_render(TsFramebuffer *fb, const TsBrowser *browser,
            browser->mode == TS_BROWSER_TRACKER_PALETTE_IMPORT ? "IMPORT" :
            browser->mode == TS_BROWSER_LOAD_WAV ? "OPEN" :
            (browser->mode == TS_BROWSER_SAVE_RECIPE ||
-            browser->mode == TS_BROWSER_SAVE_PRESET) ? "SAVE" : "EXPORT",
+            browser->mode == TS_BROWSER_SAVE_PRESET || browser->mode == TS_BROWSER_SAVE_XM) ? "SAVE" : "EXPORT",
            file_busy || browser->overwrite_armed || browser->creating_directory ||
            browser->action_focus == 2);
     button(fb, 349, 326, 84, "CANCEL", browser->action_focus == 3);

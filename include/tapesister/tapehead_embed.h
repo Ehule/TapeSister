@@ -50,4 +50,8 @@ int ts_tapehead_preferences_load(const char *path,char *error,size_t size);
 int ts_tapehead_preferences_save(const char *path,char *error,size_t size);
 int ts_tapehead_palette_import(const char *path,char *error,size_t size);
 int ts_tapehead_palette_export(const char *path,char *error,size_t size);
+/* Stage XM, MOD or IT without changing the current score or tiles. The caller
+   owns the returned pages and installs them only after successful validation. */
+int ts_tapehead_module_prepare(const char *path,TsSamplePages *staged,char *error,size_t size);
+int ts_tapehead_xm_save(const char *path,char *error,size_t size);
 #endif

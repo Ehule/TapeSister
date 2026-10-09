@@ -65,7 +65,7 @@ typedef struct {
     TsTrackerSource *sources; /* Control-thread cache, never traversed by audio. */
     TsTrackerLanePlayback lanes[TS_TRACKER_LANES];
     int running, paused, rate, row, tick, tail_active;
-    uint8_t missing_mask, solo_mask;
+    uint32_t missing_mask, solo_mask;
     double until_tick, tick_frames;
     uint64_t elapsed_frames;
     uint32_t master_row;
@@ -99,7 +99,7 @@ int ts_tracker_playback_start_block(TsTrackerPlayback *playback,TsTrackerBlock b
 int ts_tracker_playback_queue_block(TsTrackerPlayback *playback,TsTrackerBlock block);
 void ts_tracker_playback_stop(TsTrackerPlayback *playback);
 void ts_tracker_playback_pause(TsTrackerPlayback *playback, int paused);
-void ts_tracker_playback_solo(TsTrackerPlayback *playback, uint8_t mask);
+void ts_tracker_playback_solo(TsTrackerPlayback *playback, uint32_t mask);
 /* Allocation-free callback API. Rate changes preserve remaining tick time. */
 TsStereoFrame ts_tracker_playback_read(TsTrackerPlayback *playback, int rate);
 void ts_tracker_playback_end_block(TsTrackerPlayback *playback);

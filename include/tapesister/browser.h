@@ -22,7 +22,8 @@ typedef enum {
     TS_BROWSER_SELECT_EXCHANGE_DIRECTORY,
     TS_BROWSER_SELECT_CDP_BIN_DIRECTORY,
     TS_BROWSER_TRACKER_PALETTE_IMPORT,
-    TS_BROWSER_TRACKER_PALETTE_EXPORT
+    TS_BROWSER_TRACKER_PALETTE_EXPORT,
+    TS_BROWSER_SAVE_XM
 } TsBrowserMode;
 
 typedef struct {
@@ -47,6 +48,7 @@ typedef struct {
     int overwrite_armed;
     int dragging_scrollbar;
     int preview_loading, preview_playing;
+    int import_as_raw; /* Explicit per-browser-session override; off on open. */
     int scrollbar_drag_offset;
     char message[160];
 } TsBrowser;

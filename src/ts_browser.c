@@ -46,6 +46,7 @@ const char *ts_browser_mode_extension(TsBrowserMode mode)
 {
     if (mode == TS_BROWSER_TRACKER_PALETTE_IMPORT || mode == TS_BROWSER_TRACKER_PALETTE_EXPORT) return ".pal";
     if (mode == TS_BROWSER_SAVE_RECIPE) return ".tsr";
+    if (mode == TS_BROWSER_SAVE_XM) return ".xm";
     if (mode == TS_BROWSER_SAVE_PRESET) return ".tsp";
     if (mode == TS_BROWSER_EXPORT_BANK) return "";
     if (ts_browser_mode_selects_config(mode)) return "";
@@ -56,8 +57,9 @@ const char *ts_browser_mode_title(TsBrowserMode mode)
 {
     if (mode == TS_BROWSER_TRACKER_PALETTE_IMPORT) return "IMPORT TRACKSISTER / TAPEHEAD PALETTE";
     if (mode == TS_BROWSER_TRACKER_PALETTE_EXPORT) return "EXPORT TRACKSISTER / TAPEHEAD PALETTE";
-    if (mode == TS_BROWSER_LOAD_WAV) return "LOAD AUDIO, RAW DATA, TSR, OR TSP";
+    if (mode == TS_BROWSER_LOAD_WAV) return "LOAD AUDIO, XM / MOD / IT, TSR, OR TSP";
     if (mode == TS_BROWSER_SAVE_RECIPE) return "SAVE TSR PROJECT";
+    if (mode == TS_BROWSER_SAVE_XM) return "SAVE XM SONG";
     if (mode == TS_BROWSER_SAVE_PRESET) return "SAVE PROCESS RECIPE";
     if (mode == TS_BROWSER_EXPORT_WAV) return "EXPORT CURRENT WAV";
     if (mode == TS_BROWSER_EXPORT_BANK) return "EXPORT SOUND COLLECTION";
@@ -72,7 +74,7 @@ const char *ts_browser_mode_title(TsBrowserMode mode)
 int ts_browser_mode_edits_filename(TsBrowserMode mode)
 {
     if (mode == TS_BROWSER_TRACKER_PALETTE_EXPORT) return 1;
-    return mode == TS_BROWSER_SAVE_RECIPE || mode == TS_BROWSER_SAVE_PRESET ||
+    return mode == TS_BROWSER_SAVE_XM || mode == TS_BROWSER_SAVE_RECIPE || mode == TS_BROWSER_SAVE_PRESET ||
            mode == TS_BROWSER_EXPORT_WAV || mode == TS_BROWSER_EXPORT_BANK;
 }
 
@@ -100,7 +102,7 @@ int ts_browser_mode_selects_directory(TsBrowserMode mode)
 int ts_browser_mode_allows_create_directory(TsBrowserMode mode)
 {
     if (mode == TS_BROWSER_TRACKER_PALETTE_EXPORT) return 1;
-    return mode == TS_BROWSER_SAVE_RECIPE || mode == TS_BROWSER_SAVE_PRESET ||
+    return mode == TS_BROWSER_SAVE_XM || mode == TS_BROWSER_SAVE_RECIPE || mode == TS_BROWSER_SAVE_PRESET ||
            mode == TS_BROWSER_EXPORT_WAV || mode == TS_BROWSER_EXPORT_BANK;
 }
 
@@ -278,6 +280,7 @@ static int change_directory(TsBrowser *browser, const char *path)
 
 int ts_browser_open(TsBrowser *browser, TsBrowserMode mode, const char *default_filename)
 {
+    browser->import_as_raw = 0;
     browser->mode = mode;
     browser->filename_focus = ts_browser_mode_edits_filename(mode);
     browser->action_focus = browser->filename_focus ? -2 : -1;

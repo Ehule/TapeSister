@@ -11,7 +11,7 @@
 
 #define SCREEN_W TS_UI_WIDTH
 #define SCREEN_H TS_UI_HEIGHT
-#define MAX_CHANNELS TS_TRACKER_LANES
+#define MAX_CHANNELS TS_TRACKER_LEGACY_LANES
 #define MAX_PATT_LEN TS_TRACKER_ROWS
 #define MAX_PATTERNS 1 /* Stable native pattern IDs are bound to this render slot. */
 #define ASSERT assert

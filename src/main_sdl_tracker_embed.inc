@@ -161,3 +161,54 @@ static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevi
     }
     return consumed;
 }
+
+static int load_module_instrument(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,
+                              TsInstrument *instrument,TsSamplePages *pages,int record_active,const char *path) {
+    char error[160];TsSamplePages staged={0};
+    if(record_active || ui->mosaic_editing || pages->mosaic_bank || !pages->active_live ||
+       audio->capture.state!=TS_CAPTURE_IDLE) {
+        snprintf(ui->status,sizeof(ui->status),"RETURN TO SAMPLE PAGES AND FINISH CAPTURE BEFORE IMPORTING A MODULE");return 0;
+    }
+    unsigned rate=audio->output_rate>0?(unsigned)audio->output_rate:48000;
+    if(!embedded_open(embedded_host.window,device,audio,ui,pages,instrument,rate))return 0;
+    if(!ts_tapehead_module_prepare(path,&staged,error,sizeof(error))) {
+        snprintf(ui->status,sizeof(ui->status),"%s IMPORT FAILED: %.125s",ts_module_kind_name(ts_module_kind(path)),error);return 0;
+    }
+    size_t first=pages->page_count,total=first+staged.page_count;
+    TsInstrument **grown=total<=1024?malloc(total*sizeof(*grown)):NULL;
+    if(!grown) {
+        ts_sample_pages_free(&staged);snprintf(ui->status,sizeof(ui->status),"MODULE IMPORT: SAMPLE PAGE LIMIT OR OUT OF MEMORY");return 0;
+    }
+    memcpy(grown,pages->pages,first*sizeof(*grown));
+    memcpy(grown+first,staged.pages,staged.page_count*sizeof(*grown));
+    stop_all_force(device,audio,ui);
+    lock_edit(device,audio);
+    TsSisterTracker previous=pages->tracker;pages->tracker=staged.tracker;
+    ts_sister_tracker_init(&staged.tracker);
+    TsInstrument **previous_pages=pages->pages;
+    pages->pages=grown;pages->page_count=pages->page_capacity=total;
+    (void)ts_sample_pages_switch(pages,instrument,first,error,sizeof(error));
+    (void)ts_sister_runtime_set_page(&audio->sister,first,instrument);
+    ui->bank_view_slot=-1;ui->sample_page=first;ui->sample_page_count=total;ui->tracker=&pages->tracker;
+    ui->tracker_solo=0;ui->tracker_scroll=0;ts_tracker_edit_reset(ui->tracker_edit);
+    unlock_edit(device,audio,ui,instrument);
+    free(previous_pages);ts_sister_tracker_free(&previous);
+    free(staged.pages);staged.pages=NULL;staged.page_count=0;
+    if(!embedded_open(embedded_host.window,device,audio,ui,pages,instrument,rate))return 0;
+    ui->tracker_open=1;ui->mosaic_open=0;ui->load_bank_slot=-1;
+    ts_ui_reset_parent_view(ui,instrument->parent.frames);
+    snprintf(ui->status,sizeof(ui->status),"IMPORTED %s: %u TRACKS / PAGES %u-%u%s",ts_module_kind_name(ts_module_kind(path)),pages->tracker.channel_count,(unsigned)first+1,(unsigned)total,ts_module_kind(path)==TS_MODULE_IT?" - APPROXIMATE IT CONVERSION":"");
+    return 1;
+}
+static int save_xm_song(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,
+                        TsInstrument *instrument,TsSamplePages *pages,int record_active,
+                        const char *path,char *error,size_t size) {
+    if(record_active || ui->mosaic_editing) {
+        snprintf(error,size,"Return to Sample pages before saving XM");return 0;
+    }
+    unsigned rate=audio->output_rate>0?(unsigned)audio->output_rate:48000;
+    if(!embedded_open(embedded_host.window,device,audio,ui,pages,instrument,rate)) {
+        snprintf(error,size,"%.150s",ui->status);return 0;
+    }
+    return ts_tapehead_xm_save(path,error,size);
+}

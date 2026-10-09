@@ -94,3 +94,8 @@ Code is BSD-3-Clause (see `LICENSE` and `src/LICENSE.txt`). Font artwork retains
 its original CC BY-NC-SA 4.0 terms in the parent `FONTS-LICENSE.txt`. Other
 embedded notices, including stb, remain in their source files. Binary bundles
 carry the licenses, manifest and adaptation patch under `licenses/tapehead`.
+
+Module import also uses the bundled MOD/SoundTracker and lossy IT converters.
+The host preflights offsets, packed patterns and supported dimensions before
+staging tiles. The IT patch bounds compressed bitstream reads and propagates
+decoding failures; the compatibility warning is shown in the host load UI.

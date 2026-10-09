@@ -89,7 +89,11 @@ static int browser_audition_event(const SDL_Event *event,SDL_Window *window,
         browser_audition_stop(device,audio,ui,c,1);
         snprintf(ui->browser.message,sizeof(ui->browser.message),"SELECT AN AUDIO FILE");return 1;
     }
-    if(ts_audio_import_detect_kind(path)==TS_AUDIO_IMPORT_UNKNOWN) {
+    if(!ui->browser.import_as_raw && path_is_module(path)) {
+        browser_audition_stop(device,audio,ui,c,1);
+        snprintf(ui->browser.message,sizeof(ui->browser.message),"OPEN TO IMPORT THE SONG AND SAMPLES");return 1;
+    }
+    if(ui->browser.import_as_raw || ts_audio_import_detect_kind(path)==TS_AUDIO_IMPORT_UNKNOWN) {
         browser_audition_stop(device,audio,ui,c,1);
         snprintf(ui->browser.message,sizeof(ui->browser.message),"RAW: OPEN IMPORT PREVIEW");return 1;
     }
@@ -109,4 +113,13 @@ static int browser_audition_event(const SDL_Event *event,SDL_Window *window,
     c->loader.worker=w;snprintf(c->loader.path,sizeof(c->loader.path),"%s",path);
     ui->browser.preview_loading=1;
     snprintf(ui->browser.message,sizeof(ui->browser.message),"LOADING - SPACE CANCELS");return 1;
+}
+
+static void browser_toggle_raw(SDL_AudioDeviceID device,AudioState *audio,
+                               TsUiState *ui,BrowserAudition *c)
+{
+    browser_audition_stop(device,audio,ui,c,1);
+    ui->browser.import_as_raw = !ui->browser.import_as_raw;
+    snprintf(ui->browser.message,sizeof(ui->browser.message),"%s",
+             ui->browser.import_as_raw ? "RAW IMPORT ON" : "NORMAL IMPORT");
 }
