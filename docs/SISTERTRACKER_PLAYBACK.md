@@ -226,8 +226,8 @@ without changing their stored note or volume data.
 
 ## Where TrackSister enters the Router
 
-TrackSister is a stereo source at the Router input. Its active lanes are mixed
-by the embedded replayer before joining the host. Current source grouping is:
+TrackSister's Main-path lanes are a stereo source at the Router input. Its active
+lanes are mixed by the embedded replayer before joining the host. Current source grouping is:
 
 | Playback | Source group |
 | --- | --- |
@@ -240,9 +240,17 @@ With Sister Machine POWER off, the ordinary program sums these playing sources,
 clamps that program, applies its existing 0.8 gain, adds monitored external input,
 and enters the shared Router. With POWER on, Sister's source switches and trims
 select the input first; enabled source groups are normalized together and then
-enter the same Router. TRACK must be enabled there to hear TrackSister. An
-unselected source is silent while Sister owns the program, including when its
-Router stage is bypassed. There is no per-source FX chain or per-lane Router send.
+enter the same Router. TRACK must be enabled there to hear Main-path TrackSister
+audio. An unselected serial source is silent while Sister owns the program,
+including when its Router stage is bypassed.
+
+Tracks using the [Effect Sends or Direct Outputs paths](SOURCE_ROUTING.md)
+retain their independent audible routes. Selecting TRACK also feeds these
+tracks into Sister's tape input, before route pan/width and clean/send levels,
+without adding a duplicate dry monitor. This source tap excludes shared effect
+returns and joins after serial/PRE effects. Recording requires POWER and ROLL
+on, tape HOLD off, and the Sister Router stage active. Muted tracks do not feed
+the tape; INPUT trim and source normalization still apply.
 
 The default movable order is Prism → Sister Machine → Fallout → Pedalboard →
 External Insert (Insert starts bypassed). F9 shows the saved order, which may

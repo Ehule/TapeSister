@@ -1183,6 +1183,8 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         ts_profile_end(TS_PROF_TRACKER, profile_tracker);
         if(embedded_clean)ts_source_route_add(&audio->clean,&embedded_clean[embedded_index],1.f);
         sister_sources.tracker = buses.tracker;
+        sister_sources.tracker_tape = embedded_clean?
+            embedded_clean[embedded_index].tape_input:(TsStereoFrame){0,0};
         sister_sources.fm = buses.fm;
         /* Notes already sounding before POWER retain their original voice
            bank and playback phase, but must feed the same TILES insert. */

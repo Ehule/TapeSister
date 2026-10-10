@@ -71,6 +71,9 @@ typedef struct {
     TsStereoFrame preview;
     TsStereoFrame tapehead;
     TsStereoFrame tracker;
+    /* Tracker lanes outside the serial chain: record onto tape without an
+       additional dry monitor. Their clean audio/sends keep their own routes. */
+    TsStereoFrame tracker_tape;
     TsStereoFrame send[TS_SOURCE_SENDS];
 } TsSisterSourceFrames;
 

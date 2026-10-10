@@ -22,6 +22,7 @@ static void matrix(void)
     TsStereoFrame audible=ts_source_route_frame(&panned,input,&dry);
     NEAR(audible.l,-.1f);NEAR(audible.r,0);
     NEAR(audible.l+dry.reference.l,input.l);NEAR(audible.r+dry.reference.r,input.r);
+    NEAR(dry.tape_input.l,0);NEAR(dry.tape_input.r,0); /* Main pan stays on its serial path. */
     TsSourceRoute inherit={.mode=TS_SOURCE_INHERIT};
     assert(ts_source_route_resolve(pair,inherit).mode==TS_SOURCE_PAIR);
     assert(ts_source_route_resolve(pair,(TsSourceRoute){0}).mode==TS_SOURCE_MAIN);
@@ -29,8 +30,10 @@ static void matrix(void)
     for(int i=0;i<240;++i) {
         ts_source_route_mix_init(&m,NULL);main=ts_source_route_frame(&v,input,&m);
         NEAR(main.l+m.speaker[2],input.l);NEAR(main.r+m.speaker[3],input.r);
+        NEAR(main.l+m.tape_input.l,input.l);NEAR(main.r+m.tape_input.r,input.r);
     }
     assert(!v.remaining);NEAR(main.l,0);NEAR(m.speaker[2],.2f);NEAR(m.speaker[3],-.4f);
+    NEAR(m.tape_input.l,input.l);NEAR(m.tape_input.r,input.r);
     TsSourceRoute r=pair;r.width=-100;r.pan=100;memset(&v,0,sizeof(v));ts_source_route_set(&v,r,48000);
     ts_source_route_mix_init(&m,NULL);ts_source_route_frame(&v,input,&m);
     NEAR(m.speaker[2],0);NEAR(m.speaker[3],-.1f);

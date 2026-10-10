@@ -165,6 +165,17 @@ the source even at Clean Sound 0%. Internal Sister head/tape taps retain their
 meanings. Mosaic cards, FM, external input and previews keep their existing
 Main routing.
 
+Sister Machine's **TRACK** source records TrackSister with **POWER on**, **ROLL
+on**, tape **HOLD off**, and the Sister stage active in the Router. Main-path
+tracks enter through the serial chain as before. Tracks using Effect Sends or
+Direct Outputs also feed the tape, even at Clean Sound 0%: their recording tap
+is after note level/pan but before route pan, width, clean level and shared
+effects. This tap joins at the tape input after serial/PRE effects and respects
+Sister's INPUT trim and source normalization. It does not add a second dry
+monitor; existing clean outputs and effect sends retain their destinations.
+Muted tracks are not recorded. Shared effect returns are not part of this
+source tap; use FILE OUT to capture the complete audible mix.
+
 ## Validation
 
 Native tests exercise live main-path pan and scope movement, direct-output

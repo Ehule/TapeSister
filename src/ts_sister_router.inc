@@ -4,6 +4,7 @@ typedef struct {
     TsSisterRuntime *runtime;
     TsSisterRuntimeFrame *frame;
     TsStereoFrame causal, sister_feedback, fallout_wet, dry_monitor;
+    TsStereoFrame tape_input;
     int passed_sister, monitor_merged;
 } RouterFrameContext;
 
@@ -62,6 +63,12 @@ static TsStereoFrame runtime_router_stage_impl(void *context,int stage,TsStereoF
         float board=r->router.wet[TS_ROUTER_PEDALBOARD];
         TsStereoFrame pre=ts_sister_post_fx_process_pre(&r->post_fx,board>0?input:(TsStereoFrame){0,0},0);
         input=frame_effect_return(input,pre,board);
+        TsStereoFrame monitor_input=input;
+        /* Parallel tracker routes have already supplied their audible clean
+           sound/sends. Add their selected source tap at the tape input only,
+           after serial/PRE effects, and honor the Sister Router bypass. */
+        if(r->router.wet[TS_ROUTER_SISTER]>0)input=frame_add(input,c->tape_input);
+        r->router.input_peak[stage]=fmaxf(frame_peak(input),r->router.input_peak[stage]);
         TsSisterOutput out=ts_sister_machine_process_router(&r->machine,&r->post_fx,board,input,c->causal);
         if(r->waveform_capacity_frames!=r->machine.buffer.capacity_frames) {
             ts_sister_wave_publisher_resize(&r->waveform,r->waveform_capacity_frames,
@@ -74,7 +81,8 @@ static TsStereoFrame runtime_router_stage_impl(void *context,int stage,TsStereoF
         c->frame->duck_sidechain=c->frame->input;
         c->sister_feedback=out.post_fx;
         c->passed_sister=1;
-        c->dry_monitor=frame_scale(c->frame->input,r->monitor_dry_current);
+        c->dry_monitor=frame_scale(monitor_input,
+            r->machine.input_gain.current*r->monitor_dry_current);
         for(int i=0;i<TS_SISTER_HEAD_COUNT;++i)
             c->frame->tap[TS_SISTER_TAP_H1+i]=ts_stereo_frame_sanitize(out.head[i]);
         return out.mix;

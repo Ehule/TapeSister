@@ -8,6 +8,9 @@ typedef struct {
     float speaker[TS_SOURCE_SPEAKERS];
     TsStereoFrame monitor, fallback;
     TsStereoFrame reference; /* Pre-routing dry recording tap, counted once. */
+    /* Source fraction diverted from Main, before route pan and clean/send
+       levels. Tape input only: never add this tap to the audible dry mix. */
+    TsStereoFrame tape_input;
     TsStereoFrame send[TS_SOURCE_SENDS];
     /* Parallel-mix subset of speaker/monitor/fallback, for optional Master
        recombination. Ordinary direct routes are not part of this subset. */

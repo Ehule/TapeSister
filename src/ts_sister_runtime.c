@@ -1394,6 +1394,7 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
     source.preview = ts_stereo_frame_sanitize(source.preview);
     source.tapehead = ts_stereo_frame_sanitize(source.tapehead);
     source.tracker = ts_stereo_frame_sanitize(source.tracker);
+    source.tracker_tape = ts_stereo_frame_sanitize(source.tracker_tape);
     /* This is the untrimmed, pre-Sister Live Link stream. It remains available
        as a recorder tap even when Sister processing itself is bypassed. */
     frame.tap[TS_SISTER_TAP_TAPEHEAD] = source.tapehead;
@@ -1439,9 +1440,11 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
         source.tapehead, source_gain[4] * source_route[4]));
     input = frame_add(input, frame_scale(
         source.tracker, source_gain[5] * source_route[5]));
-    if (route_energy > 1.0f)
-        input = frame_scale(input, 1.0f / sqrtf(route_energy));
-    RouterFrameContext context={.runtime=runtime,.frame=&frame};
+    float normalization=route_energy>1.0f?1.0f/sqrtf(route_energy):1.0f;
+    input=frame_scale(input,normalization);
+    RouterFrameContext context={.runtime=runtime,.frame=&frame,
+        .tape_input=frame_scale(source.tracker_tape,
+            source_gain[5]*source_route[5]*normalization)};
     runtime_router_begin(&context);
     frame.monitor_return=ts_router_process_with_prepare(&runtime->router,input,runtime_router_stage,runtime_router_prepare_stage,&context);
     frame.monitor_return=ts_sister_machine_finish_router(&runtime->machine,frame.monitor_return);

@@ -77,6 +77,7 @@ TsStereoFrame ts_source_route_frame(TsSourceRouteVoice *v, TsStereoFrame in, TsS
     if(!v->mask && !v->remaining) {
         TsStereoFrame main=main_frame(v,in);
         clean->reference.l+=in.l-main.l;clean->reference.r+=in.r-main.r;
+        clean->tape_input.l+=in.l*(1-v->main);clean->tape_input.r+=in.r*(1-v->main);
         return main;
     }
     if(v->remaining) {
@@ -97,6 +98,7 @@ TsStereoFrame ts_source_route_frame(TsSourceRouteVoice *v, TsStereoFrame in, TsS
     /* DRY capture reconstructs the source before route pan/width as well as
        before clean/send levels. This residual is never mixed into playback. */
     clean->reference.l+=in.l-main.l;clean->reference.r+=in.r-main.r;
+    clean->tape_input.l+=in.l*(1-v->main);clean->tape_input.r+=in.r*(1-v->main);
     for(int i=0;i<TS_SOURCE_COEFFICIENTS;++i)if(v->mask&(1u<<i)) {
         float value=in.l*v->matrix[i][0]+in.r*v->matrix[i][1];
         if(i<16) {if(!missing){clean->speaker[i]+=value;if(v->route.mix_enabled)clean->matrix_speaker[i]+=value;}}
@@ -115,7 +117,8 @@ TsStereoFrame ts_source_route_frame(TsSourceRouteVoice *v, TsStereoFrame in, TsS
 }
 void ts_source_route_add(TsSourceRouteMix *to, const TsSourceRouteMix *from, float gain)
 {
-    if(!to || !from || (!from->mask && !from->send_mask && !from->reference.l && !from->reference.r))return;
+    if(!to || !from || (!from->mask && !from->send_mask && !from->reference.l && !from->reference.r &&
+                       !from->tape_input.l && !from->tape_input.r))return;
     for(int i=0;i<TS_SOURCE_SPEAKERS;++i)if(from->mask&(1u<<i)) {
         to->speaker[i]+=from->speaker[i]*gain;
         to->matrix_speaker[i]+=from->matrix_speaker[i]*gain;
@@ -129,6 +132,7 @@ void ts_source_route_add(TsSourceRouteMix *to, const TsSourceRouteMix *from, flo
     }
     to->send_mask|=from->send_mask;
     to->reference.l+=from->reference.l*gain;to->reference.r+=from->reference.r*gain;
+    to->tape_input.l+=from->tape_input.l*gain;to->tape_input.r+=from->tape_input.r*gain;
 }
 
 TsStereoFrame ts_source_route_take_master(TsSourceRouteMix *mix)
@@ -146,8 +150,10 @@ TsStereoFrame ts_source_route_take_master(TsSourceRouteMix *mix)
 /* Match Main's residual fade on voice removal and normalization changes. */
 void ts_source_route_handoff(TsSourceRouteHandoff *h,TsSourceRouteMix *mix,int changed,unsigned frames)
 {
-    int previous=h->last.mask || h->last.send_mask || h->last.reference.l || h->last.reference.r;
-    if(!mix->mask && !mix->send_mask && !mix->reference.l && !mix->reference.r && !previous)return;
+    int previous=h->last.mask || h->last.send_mask || h->last.reference.l || h->last.reference.r ||
+        h->last.tape_input.l || h->last.tape_input.r;
+    if(!mix->mask && !mix->send_mask && !mix->reference.l && !mix->reference.r &&
+       !mix->tape_input.l && !mix->tape_input.r && !previous)return;
     if(changed && frames && previous) {
         ts_source_route_mix_init(&h->residual,mix);
         ts_source_route_add(&h->residual,&h->last,1);
@@ -161,7 +167,7 @@ void ts_source_route_handoff(TsSourceRouteHandoff *h,TsSourceRouteMix *mix,int c
     h->last=*mix;
     if(!h->remaining) {
         int active=mix->monitor.l!=0 || mix->monitor.r!=0 || mix->fallback.l!=0 || mix->fallback.r!=0 ||
-            mix->reference.l!=0 || mix->reference.r!=0;
+            mix->reference.l!=0 || mix->reference.r!=0 || mix->tape_input.l!=0 || mix->tape_input.r!=0;
         for(int i=0;i<16;++i)active|=mix->speaker[i]!=0;
         for(int i=0;i<TS_SOURCE_SENDS;++i)active|=mix->send[i].l!=0 || mix->send[i].r!=0;
         if(!active)h->last.mask=h->last.send_mask=0;

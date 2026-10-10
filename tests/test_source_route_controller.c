@@ -194,6 +194,7 @@ static void routing_pan_scope(const char *directory)
 
 #include "test_master_mix.inc"
 #include "test_routing_clarity.inc"
+#include "test_tracker_tape_input.inc"
 
 int main(int argc,char **argv)
 {
@@ -269,6 +270,7 @@ int main(int argc,char **argv)
     routing_clarity(argc>1?argv[1]:NULL);
     shared_send_controls(argc>1?argv[1]:NULL);
     master_mix_controls(argc>1?argv[1]:NULL);
+    tracker_tape_input();
     master_mix_project(argc>2?argv[2]:NULL,argc>1?argv[1]:NULL);
     ts_tapehead_stop();ts_tapehead_close();source_route_close();remove("route-score.tst");
     ts_sister_runtime_free(&a.sister);ts_capture_free(&a.capture);ts_instrument_free(&bank);ts_sample_pages_free(&pages);
