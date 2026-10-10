@@ -1446,7 +1446,10 @@ The default order is **Source → Prism → Sister → Fallout → Pedalboard �
 with INSERT initially bypassed and unassigned.
 Drag a module by its name or grip to change its position. The amber line shows
 where it will land; release to apply, or Escape to cancel. Source and Master are
-fixed. All 120 orders of the five processors are available. The order changes the
+fixed. In Main Mix mode, Master Insert is also fixed after recombination and
+before EQ/limiter. Advanced direct mode retains all 120 serial orders.
+**F9 → Main Mix…** shows the final path and shared return controls; see the
+[tile/track routing guide](SOURCE_ROUTING.md). The order changes the
 audio: moving Prism below Sister refracts the tape's output, while placing it above
 Sister prints the refraction into newly arriving tape material.
 
@@ -1530,29 +1533,31 @@ Insert/recording behavior, screenshots and a practical four-step example.
 
 ## External Insert
 
-**INSERT is a serial, 100%-wet send/return point.** Audio at its Router position
-leaves TapeSister, passes through an external application or hardware processor,
-and returns to the following stage. The returned signal replaces the input;
+**Master INSERT processes the combined main mix at 100% return**, before Master
+EQ and the limiter. It leaves TapeSister, passes through an external application
+or hardware processor, and returns to final processing. In advanced direct mode,
+Insert retains its movable serial-chain position; direct outputs bypass it. The returned signal replaces the input;
 there is no dry/wet control and TapeSister does not host plugins.
 
 Open **F9 → INSERT → SETUP**. Master output and the audio backend stay in
 **CFG**. The Insert panel has independent SEND and RETURN device selectors, then
 channel-pair selectors for each device. Left-click cycles forward; right-click
-cycles backward. Click **APPLY PORTS**, and use **CFG → SAVE CONFIG** to remember
+cycles backward. Click **APPLY NOW**, and use **CFG → SAVE CONFIG** to remember
 device choices. Changes are refused during recording; levels, bypass and solo
 remain available while playing. Saved unavailable choices are never reassigned
-silently. **CH / HZ / FR** reports the applied channel count, sample rate and
-device buffer in frames, not the pending choice. Master's active rate and buffer
-appear below the connection status.
+silently. **Selected CH** shows the pending choice; **Active CH** and the device
+below it show the applied stream. A pending banner remains until Apply.
+Backend changes and ASIO driver/buffer changes display **Save Config + Restart**;
+insert ports, routing, pan, levels and bypass do not require a full restart.
 
 ![External Insert ports and levels](images/external-insert.png)
 
 | Setting | Behavior |
 | --- | --- |
-| SEND device | **MASTER DEVICE SPARES**, or a separate named playback endpoint |
+| SEND device | **MAIN DEVICE: SPARE OUTPUTS**, or a separate named playback endpoint |
 | SEND pair | Unassigned, or exposed channels: shared Master offers 3/4, 5/6, 7/8; a separate device also offers 1/2 |
 | Master output | Fixed on 1/2 of the CFG output; a separate SEND cannot select that same endpoint |
-| RETURN device | **SHARED CFG INPUT**, or a separate named capture endpoint |
+| RETURN device | **INPUT DEVICE FROM CFG**, or a separate named capture endpoint |
 | RETURN pair | One exposed stereo pair within the selected device: 1/2, 3/4, 5/6 or 7/8 |
 | SEND / RETURN level | −24 to +12 dB; 0 dB is unity; right-click resets; changes are smoothed |
 | BYPASS | Internal path; SEND fades to zero and RETURN is ignored |
@@ -1567,15 +1572,15 @@ appear below the connection status.
 | Role | Device | Pair |
 | --- | --- | --- |
 | Master in CFG | `Out 1-2 (MOTU M Series)` | 1/2 |
-| Insert SEND | `Out 3-4 (MOTU M Series)` | DEVICE CH 1/2 |
-| Insert RETURN | `In 5-6 (MOTU M Series)` | DEVICE CH 1/2 |
+| Insert SEND | `Out 3-4 (MOTU M Series)` | SELECTED CH 1/2 |
+| Insert RETURN | `In 5-6 (MOTU M Series)` | SELECTED CH 1/2 |
 
 Connect physical outputs 3/4 to the processor and its output to inputs 5/6, apply
 the choices, then unbypass Insert. CFG's ordinary input can remain a different
 endpoint. An input shown as **CLOSED** means no current consumer has opened it;
 TapeSister does not use cable detection to decide which channels exist.
 
-With **SHARED CFG INPUT**, the RETURN pair is reserved from ordinary EXT
+With **INPUT DEVICE FROM CFG**, the RETURN pair is reserved from ordinary EXT
 monitoring and Sister's EXT source while SEND is assigned, even during bypass.
 Other input channels remain available; raw EXT recording retains its source tap.
 SEND UNASSIGNED releases this reservation. A separate RETURN leaves CFG's input

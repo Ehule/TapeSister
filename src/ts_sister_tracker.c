@@ -29,7 +29,7 @@ void ts_sister_tracker_init(TsSisterTracker *t)
         snprintf(t->lanes[lane].name, TS_TRACKER_NAME_SIZE, "TRACK %d", lane + 1);
         t->lanes[lane].ratio = 7; /* 1:1 in the frozen 17-entry ratio bank. */
         t->lanes[lane].trim = 1.0f;
-        t->lanes[lane].output_route.mode = TS_SOURCE_INHERIT;
+        t->lanes[lane].output_route.mode = TS_SOURCE_MAIN;
         t->lanes[lane].output_stereo = 1;
     }
 }

@@ -130,6 +130,8 @@ static void test_score_migration(void)
 {
     TsSisterTracker original,loaded;ts_sister_tracker_init(&original);ts_sister_tracker_init(&loaded);
     score(&original,ts_tile_id_new());
+    /* This fixture represents pre-routing defaults, before tracks owned Main. */
+    for(int lane=0;lane<TS_TRACKER_LANES;++lane)original.lanes[lane].output_route.mode=TS_SOURCE_INHERIT;
     CHECK(ts_sister_tracker_save_file(&original,"migration3.tst",error,sizeof(error)));
     FILE *f=fopen("migration3.tst","rb");CHECK(f && !fseek(f,0,SEEK_END));
     long length=ftell(f);CHECK(length>0);rewind(f);

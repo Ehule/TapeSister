@@ -25,6 +25,13 @@ void ts_source_route_set(TsSourceRouteVoice *v, TsSourceRoute r, unsigned rate)
     if(!ts_source_route_valid(&r,0))r=(TsSourceRoute){0};
     if(v->ready && !memcmp(&r,&v->route,sizeof(r)) && v->rate==rate)return;
     v->route=r;v->rate=rate;v->target_main=r.mode==TS_SOURCE_MAIN?1.f:0.f;
+    float width=1.f+r.width*.01f;
+    float left=r.pan>0?1.f-r.pan*.01f:1.f;
+    float right=r.pan<0?1.f+r.pan*.01f:1.f;
+    v->target_main_matrix[0]=v->target_main*(.5f+.5f*width)*left;
+    v->target_main_matrix[1]=v->target_main*(.5f-.5f*width)*left;
+    v->target_main_matrix[2]=v->target_main*(.5f-.5f*width)*right;
+    v->target_main_matrix[3]=v->target_main*(.5f+.5f*width)*right;
     memset(v->target,0,sizeof(v->target));
     if(r.mode==TS_SOURCE_SPEAKER) {
         v->target[r.speaker][0]=v->target[r.speaker][1]=.5f;
@@ -50,6 +57,7 @@ void ts_source_route_set(TsSourceRouteVoice *v, TsSourceRoute r, unsigned rate)
     }
     if(!v->ready) {
         v->main=v->target_main;memcpy(v->matrix,v->target,sizeof(v->matrix));
+        memcpy(v->main_matrix,v->target_main_matrix,sizeof(v->main_matrix));
         v->remaining=0;v->ready=1;
     } else v->remaining=rate/200?rate/200:1;
     v->mask=0;
@@ -57,26 +65,38 @@ void ts_source_route_set(TsSourceRouteVoice *v, TsSourceRoute r, unsigned rate)
         if(v->matrix[i][0] || v->matrix[i][1] || v->target[i][0] || v->target[i][1])v->mask|=1u<<i;
 }
 
+static TsStereoFrame main_frame(const TsSourceRouteVoice *v,TsStereoFrame in)
+{
+    return (TsStereoFrame){in.l*v->main_matrix[0]+in.r*v->main_matrix[1],
+        in.l*v->main_matrix[2]+in.r*v->main_matrix[3]};
+}
+
 TsStereoFrame ts_source_route_frame(TsSourceRouteVoice *v, TsStereoFrame in, TsSourceRouteMix *clean)
 {
     if(!clean || !v->ready)return in;
     if(!v->mask && !v->remaining) {
-        clean->reference.l+=in.l*(1-v->main);clean->reference.r+=in.r*(1-v->main);
-        return (TsStereoFrame){in.l*v->main,in.r*v->main};
+        TsStereoFrame main=main_frame(v,in);
+        clean->reference.l+=in.l-main.l;clean->reference.r+=in.r-main.r;
+        return main;
     }
     if(v->remaining) {
         float step=1.f/v->remaining;
         v->main+=(v->target_main-v->main)*step;
+        for(int i=0;i<4;++i)v->main_matrix[i]+=(v->target_main_matrix[i]-v->main_matrix[i])*step;
         for(int i=0;i<TS_SOURCE_COEFFICIENTS;++i)if(v->mask&(1u<<i))
             for(int j=0;j<2;++j)v->matrix[i][j]+=(v->target[i][j]-v->matrix[i][j])*step;
         if(!--v->remaining) {
             v->main=v->target_main;memcpy(v->matrix,v->target,sizeof(v->matrix));
+            memcpy(v->main_matrix,v->target_main_matrix,sizeof(v->main_matrix));
             v->mask=0;for(int i=0;i<TS_SOURCE_COEFFICIENTS;++i)
                 if(v->matrix[i][0] || v->matrix[i][1])v->mask|=1u<<i;
         }
     }
     unsigned missing=clean->check_outputs?(v->mask&65535u)&~clean->available:0;
-    clean->reference.l+=in.l*(1-v->main);clean->reference.r+=in.r*(1-v->main);
+    TsStereoFrame main=main_frame(v,in);
+    /* DRY capture reconstructs the source before route pan/width as well as
+       before clean/send levels. This residual is never mixed into playback. */
+    clean->reference.l+=in.l-main.l;clean->reference.r+=in.r-main.r;
     for(int i=0;i<TS_SOURCE_COEFFICIENTS;++i)if(v->mask&(1u<<i)) {
         float value=in.l*v->matrix[i][0]+in.r*v->matrix[i][1];
         if(i<16) {if(!missing){clean->speaker[i]+=value;if(v->route.mix_enabled)clean->matrix_speaker[i]+=value;}}
@@ -91,7 +111,7 @@ TsStereoFrame ts_source_route_frame(TsSourceRouteVoice *v, TsStereoFrame in, TsS
         }
     }
     clean->mask|=v->mask&65535u;clean->missing|=missing;
-    return (TsStereoFrame){in.l*v->main,in.r*v->main};
+    return main;
 }
 void ts_source_route_add(TsSourceRouteMix *to, const TsSourceRouteMix *from, float gain)
 {

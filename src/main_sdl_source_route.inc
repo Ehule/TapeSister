@@ -12,6 +12,7 @@ typedef struct {
     int visible, track, drag, rendered_valid;
 } SourceRouteWindow;
 static SourceRouteWindow source_route_window;
+static void insert_panel_open(TsUiState *ui);
 
 static TsBankSlot *source_route_tile(TsSamplePages *pages,TsInstrument *instrument,int *slot)
 {
@@ -74,7 +75,7 @@ static int source_route_show(SDL_AudioDeviceID device,AudioState *audio,TsUiStat
         snprintf(ui->status,sizeof(ui->status),"MOSAIC CARDS USE THE MAIN ROUTE");return 0;
     }
     w->track=track;w->tile=track==-1?instrument->bank[slot].tile_id:0;
-    w->model.page=track==-2?2:0;w->drag=0;
+    w->model.page=track==-2?3:0;w->drag=0;
     if(!w->window) {
         w->window=SDL_CreateWindow("TapeSister - Source Routing",SDL_WINDOWPOS_CENTERED,
             SDL_WINDOWPOS_CENTERED,960,600,SDL_WINDOW_RESIZABLE|SDL_WINDOW_ALLOW_HIGHDPI);
@@ -96,6 +97,8 @@ static int source_route_show(SDL_AudioDeviceID device,AudioState *audio,TsUiStat
     int ok=source_route_capture(audio,pages,instrument);
     if(device)SDL_UnlockAudioDevice(device);
     if(!ok)return 0;
+    w->model.advanced=(w->model.route.mode==TS_SOURCE_PAIR || w->model.route.mode==TS_SOURCE_SPEAKER) &&
+        !(w->model.route.mix_enabled && w->model.router.master_mix);
     w->visible=1;w->rendered_valid=0;
     SDL_ShowWindow(w->window);SDL_RaiseWindow(w->window);return 1;
 }
@@ -191,14 +194,22 @@ static int source_route_event(SDL_Event *event,SDL_Window *main,SDL_AudioDeviceI
     int wheel=event->type==SDL_MOUSEWHEEL?(event->wheel.y>0?1:event->wheel.y<0?-1:0):0;
     if(left) {
         if((x>=586&&y<34)||(x>=480&&y>=365)){source_route_hide();return 1;}
-        if(page!=0 && y>=365 && x>=178 && x<464) {
+        if(page!=3 && y>=365 && x>=178 && x<464) {
+            w->model.page=3;w->drag=0;return 1;
+        }
+        if(page==3 && y>=78 && y<103 && x>=18 && x<624) {
             if(device)SDL_LockAudioDevice(device);
-            ts_router_set_master_mix(&audio->sister.router,!w->model.router.master_mix);
+            ts_router_set_master_mix(&audio->sister.router,x<384);
             ui->config.router=ts_router_export(&audio->sister.router);
             ui->router_live=audio->sister.router.controls;
             source_route_capture(audio,pages,instrument);
             if(device)SDL_UnlockAudioDevice(device);
             return 1;
+        }
+        if(page==3 && y>=365 && x>=18 && x<464) {
+            if(x>=234){w->model.page=w->track==-2?2:0;return 1;}
+            source_route_hide();ui->router_open=1;insert_panel_open(ui);
+            ts_audio_insert_diagnostics(audio,ui,0);SDL_RaiseWindow(main);return 1;
         }
         if(y>=9&&y<34&&x>=250&&x<576) {
             int next=x<348?0:x<456?1:2;
@@ -207,13 +218,14 @@ static int source_route_event(SDL_Event *event,SDL_Window *main,SDL_AudioDeviceI
         if(y>=365 && x>=18&&x<162) {
             r=(TsSourceRoute){0};
             if(page==2){r.mode=TS_SOURCE_PAIR;r.second=1;level=100;}
-            else if(w->track>=0)r.mode=TS_SOURCE_INHERIT;
+            else w->model.advanced=0;
             changed=1;
         }
-        else if(page!=2&&y>=365&&x>=178&&x<322&&w->model.can_rename) {
+        else if(page==2&&y>=39&&y<67&&x>=444) {send=!send;changed=1;}
+        else if(page<2&&w->model.can_rename&&y>=39&&y<67&&x>=444) {
             int slot=w->model.slot;source_route_hide();begin_bank_rename(ui,instrument,slot);SDL_RaiseWindow(main);return 1;
-        } else if(page==2&&y>=39&&y<67&&x>=444) {send=!send;changed=1;}
-        else if(page!=2&&w->track>=0&&y>=39&&y<67&&x>=444) {
+        }
+        else if(page<2&&w->track>=0&&y>=39&&y<67&&x>=444) {
             if(r.mode==TS_SOURCE_INHERIT)r=(TsSourceRoute){0};else r.mode=TS_SOURCE_INHERIT;changed=1;
         } else if(page==2&&y>=78&&y<103&&x>=18) {
             w->model.bus=SDL_min(2,(x-18)/204);w->drag=0;return 1;
@@ -224,21 +236,29 @@ static int source_route_event(SDL_Event *event,SDL_Window *main,SDL_AudioDeviceI
         } else if(page==1&&y>=78&&y<103&&x>=18&&x<208) {
             int enable=!r.mix_enabled || r.mode==TS_SOURCE_INHERIT;
             if(enable) {
-                if(r.mode==TS_SOURCE_MAIN||r.mode==TS_SOURCE_INHERIT)r=(TsSourceRoute){.mode=TS_SOURCE_PAIR,.second=1};
+                if(r.mode==TS_SOURCE_MAIN||r.mode==TS_SOURCE_INHERIT)r=(TsSourceRoute){.mode=TS_SOURCE_PAIR,.second=1,.pan=r.pan,.width=r.width};
                 r.clean_level=100;
             }
+            else if(w->model.router.master_mix)r.mode=TS_SOURCE_MAIN;
             r.mix_enabled=enable;changed=1;
         } else if(page==0&&y>=78&&y<103&&x>=18) {
+            if(x>=208 && x<222)return 1;
+            if(x>=412 && (x<426 || !w->model.advanced))return 1;
+            if(x>=624)return 1;
+            if(x>=222 && !w->model.advanced){w->model.advanced=1;return 1;}
             r.mode=x<208?TS_SOURCE_MAIN:x<412?TS_SOURCE_PAIR:TS_SOURCE_SPEAKER;
-            if(r.mode==TS_SOURCE_MAIN)r.mix_enabled=0;
+            r.mix_enabled=0;
+            if(r.mode==TS_SOURCE_MAIN)w->model.advanced=0;
             if(r.speaker>=w->model.array.speakers)r.speaker=0;
             if(r.second>=w->model.array.speakers || r.second==r.speaker)r.second=(r.speaker+1)%w->model.array.speakers;
             changed=1;
         }
     }
+    if(page==3)return 1;
     if(page==1) {
         int row=y>=136&&y<303?(y-136)/39:-1;
         if(row>3)row=3;
+        if(left && row>0 && x>=111 && x<213){w->model.page=2;w->model.bus=row-1;w->drag=0;return 1;}
         if(r.mix_enabled && r.mode!=TS_SOURCE_INHERIT) {
             if(left&&row>=0&&x>=216&&x<558)w->drag=row+3;
             int active=event->type==SDL_MOUSEMOTION?w->drag-3:row;
@@ -263,8 +283,8 @@ static int source_route_event(SDL_Event *event,SDL_Window *main,SDL_AudioDeviceI
             changed=1;
         }
     }
-    if(r.mode==TS_SOURCE_PAIR) {
-        int field=y>=211&&y<239?1:y>=275&&y<301?2:0;
+    if(r.mode==TS_SOURCE_PAIR || r.mode==TS_SOURCE_MAIN) {
+        int field=x>=22&&x<358?(y>=211&&y<239?1:y>=275&&y<301?2:0):0;
         if(left&&field)w->drag=field;
         if((left&&field)||(event->type==SDL_MOUSEMOTION&&(w->drag==1||w->drag==2))) {
             int value=SDL_max(-100,SDL_min(100,(x-32)*200/312-100));

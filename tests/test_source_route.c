@@ -17,6 +17,11 @@ static void matrix(void)
     TsSourceRouteVoice v={0};TsSourceRouteMix m={0};TsStereoFrame input={.2f,-.4f},main;
     ts_source_route_set(&v,(TsSourceRoute){0},48000);
     main=ts_source_route_frame(&v,input,&m);assert(!memcmp(&input,&main,sizeof(input))&&!m.mask);
+    TsSourceRouteVoice panned={0};TsSourceRouteMix dry={0};
+    ts_source_route_set(&panned,(TsSourceRoute){.pan=-100,.width=-100},48000);
+    TsStereoFrame audible=ts_source_route_frame(&panned,input,&dry);
+    NEAR(audible.l,-.1f);NEAR(audible.r,0);
+    NEAR(audible.l+dry.reference.l,input.l);NEAR(audible.r+dry.reference.r,input.r);
     TsSourceRoute inherit={.mode=TS_SOURCE_INHERIT};
     assert(ts_source_route_resolve(pair,inherit).mode==TS_SOURCE_PAIR);
     assert(ts_source_route_resolve(pair,(TsSourceRoute){0}).mode==TS_SOURCE_MAIN);

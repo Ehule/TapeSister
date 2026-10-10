@@ -21,6 +21,7 @@ typedef struct {
 typedef struct {
     TsSourceRoute route;
     float main, target_main;
+    float main_matrix[4], target_main_matrix[4];
     float matrix[TS_SOURCE_COEFFICIENTS][2], target[TS_SOURCE_COEFFICIENTS][2];
     unsigned remaining, rate, mask;
     int ready;

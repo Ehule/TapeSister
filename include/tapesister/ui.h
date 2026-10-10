@@ -517,6 +517,8 @@ typedef struct {
     unsigned insert_inputs, insert_outputs, insert_offered_outputs;
     char insert_send_device[TS_CONFIG_PATH_MAX], insert_return_device[TS_CONFIG_PATH_MAX];
     char insert_device_status[160];
+    int insert_restart_required;
+    char insert_active_device[2][160];
     float insert_send_peak, insert_return_peak;
     unsigned insert_rates[2], insert_buffers[2], insert_gaps[2], insert_drops[2];
     float insert_queue_ms[2];

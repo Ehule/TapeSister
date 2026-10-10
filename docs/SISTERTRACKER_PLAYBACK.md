@@ -56,15 +56,15 @@ contain the active tracks only. F1–F6 still select keyboard octaves 0–5.
 
 Each scope has a thin yellow **pan marker**, with small dim ticks marking
 the center. It combines the track's live sample pan, pan commands, slides and
-instrument pan envelope with **Stereo Pair → Pan/Balance** in the routing window.
-An explicit track route overrides the tile; **Use Tile** follows the last played
+instrument pan envelope with **Pan / Out → Pan/Balance** in the routing window.
+An explicit track route overrides the tile; **Routing: Tile** follows the last played
 tile's route. Routing edits move the marker even while stopped or muted. Muting
 dims the marker and holds the last source pan while routing can still change it.
 The waveform, track number,
 REC label, volume trim strip and mouse controls keep their existing behavior.
 The marker uses the scope-number color, so custom palettes can change its yellow.
 
-**Main Route** shows source pan; a **Single Speaker** route shows a centered mono
+**Main Mix** also supports route pan; a **Direct: One Speaker** route shows a centered mono
 marker. For a stereo pair, left/right are relative to that selected pair. This is
 a pan/balance control indication, not a signal meter: width, source waveform,
 clean level and independently positioned shared returns do not drive it. The

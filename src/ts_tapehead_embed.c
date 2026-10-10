@@ -170,7 +170,7 @@ int ts_tapehead_scope_pan(int lane,int source_pan)
         tile=embed.tile_routes[index];
     TsSourceRoute route=ts_source_route_resolve(tile,embed.track_routes[lane]);
     if(route.mode==TS_SOURCE_SPEAKER)return 128; /* Mono has no pair balance. */
-    if(route.mode!=TS_SOURCE_PAIR || route.pan==0)return source_pan;
+    if((route.mode!=TS_SOURCE_PAIR && route.mode!=TS_SOURCE_MAIN) || route.pan==0)return source_pan;
     /* Convert the tracker pan's equal-power gains through the clean pair's
        balance attenuation. This is a control indication, not a signal meter:
        source material, width, clean level and shared returns don't drive it. */
@@ -199,7 +199,7 @@ void ts_tapehead_mix_tile(void *ptr,unsigned offset,unsigned count) {
     if(v->tileLane>=0 && v->tileLane<TS_TRACKER_LANES)
         route=ts_source_route_resolve(route,embed.track_routes[v->tileLane]);
     ts_source_route_set(&v->tileRouting,route,embed.rate);
-    if(v->tileRouting.mask || v->tileRouting.main!=1)embed.clean_used=1;
+    if(v->tileRouting.mask || v->tileRouting.main!=1 || v->tileRouting.remaining || route.pan || route.width)embed.clean_used=1;
     for(unsigned i=0;i<count && v->active;++i) {
         TsStereoFrame value;
         if(v->loopType!=LOOP_DISABLED && !v->oneShot) {
@@ -656,7 +656,7 @@ static int bind_tiles(TsSamplePages *pages,const TsInstrument *active,int *alias
         unsigned route_index=(unsigned)a*16u+(unsigned)k;
         if(embed.route_ids[route_index]!=tile || memcmp(&routing,&embed.tile_routes[route_index],sizeof(routing))) {
             ts_tapehead_host_lock();embed.route_ids[route_index]=tile;embed.tile_routes[route_index]=routing;
-            if(routing.mode)embed.routes_enabled=1;ts_tapehead_host_unlock();
+            if(routing.mode || routing.pan || routing.width)embed.routes_enabled=1;ts_tapehead_host_unlock();
         }
         TsTuning tuning=slot?(live?bank->audible_tuning:slot->audible_tuning):(TsTuning){60,0};
         int loop=slot?(live?bank->has_loop:slot->has_loop):0;
@@ -790,7 +790,7 @@ static int native_import(TsSisterTracker *t,char *e,size_t n) {
     fastTracksPOCSetLengthTopologyBypassed(t->length_bypass);
     for(int lane=0;lane<TS_TRACKER_LANES;++lane) {
         TsTrackerLane *l=&t->lanes[lane];embed.track_routes[lane]=l->output_route;
-        if(l->output_route.mode==TS_SOURCE_PAIR || l->output_route.mode==TS_SOURCE_SPEAKER)embed.routes_enabled=1;
+        if(l->output_route.mode==TS_SOURCE_PAIR || l->output_route.mode==TS_SOURCE_SPEAKER || l->output_route.pan || l->output_route.width)embed.routes_enabled=1;
         fastTracksPOCSetTrackLength(0,lane,l->length);
         fastTracksPOCSetMode(lane,(fastTracksMode_t)l->mode);fastTracksPOCSetRatioIndex(lane,l->ratio);
         fastTracksPOCSetDirection(lane,l->direction);
@@ -945,8 +945,8 @@ int ts_tapehead_sync(TsSamplePages *pages,const TsInstrument *active,unsigned ra
         for(int lane=0;lane<TS_TRACKER_LANES;++lane) {
             embed.scope_tile_ids[lane]=0;
             embed.track_routes[lane]=t->lanes[lane].output_route;
-            if(embed.track_routes[lane].mode==TS_SOURCE_PAIR || embed.track_routes[lane].mode==TS_SOURCE_SPEAKER)
-                embed.routes_enabled=1;
+            if(embed.track_routes[lane].mode==TS_SOURCE_PAIR || embed.track_routes[lane].mode==TS_SOURCE_SPEAKER ||
+               embed.track_routes[lane].pan || embed.track_routes[lane].width)embed.routes_enabled=1;
         }
         embed.follow=t->follow;embed.live_edit=embed.mark_valid=embed.pointer_mark=0;
         embed.model=t;h=ts_sister_tracker_hash(t);memset(embed.tile_stamp,0,sizeof(embed.tile_stamp));
@@ -982,11 +982,12 @@ void ts_tapehead_routes_changed(TsTileId tile, TsSourceRoute route)
     embed.routes_enabled=0;
     for(int i=0;i<129*16;++i) {
         if(tile && embed.route_ids[i]==tile)embed.tile_routes[i]=route;
-        embed.routes_enabled|=embed.tile_routes[i].mode!=TS_SOURCE_MAIN;
+        embed.routes_enabled|=embed.tile_routes[i].mode!=TS_SOURCE_MAIN || embed.tile_routes[i].pan || embed.tile_routes[i].width;
     }
     for(int i=0;i<TS_TRACKER_LANES;++i) {
         embed.track_routes[i]=embed.model->lanes[i].output_route;
-        embed.routes_enabled|=embed.track_routes[i].mode==TS_SOURCE_PAIR || embed.track_routes[i].mode==TS_SOURCE_SPEAKER;
+        embed.routes_enabled|=embed.track_routes[i].mode==TS_SOURCE_PAIR || embed.track_routes[i].mode==TS_SOURCE_SPEAKER ||
+            embed.track_routes[i].pan || embed.track_routes[i].width;
     }
     embed.model_hash=model_hash;
     ts_tapehead_host_unlock();

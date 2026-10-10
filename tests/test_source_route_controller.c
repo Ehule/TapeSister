@@ -27,6 +27,11 @@ static void click(int x,int y,int button)
     assert(source_route_event(&e,window,0,&a,&u,&pages,&bank));
     e.type=SDL_MOUSEBUTTONUP;assert(source_route_event(&e,window,0,&a,&u,&pages,&bank));
 }
+static void direct_output(int x)
+{
+    if(!source_route_window.model.advanced)click(300,89,SDL_BUTTON_LEFT);
+    click(x,89,SDL_BUTTON_LEFT);
+}
 static void shot(const char *directory,const char *name)
 {
     if(!directory)return;
@@ -118,7 +123,7 @@ static void shared_send_controls(const char *directory)
     SDL_Event event={0};event.type=SDL_MOUSEBUTTONDOWN;event.button.windowID=SDL_GetWindowID(window);
     event.button.button=SDL_BUTTON_LEFT;event.button.x=70;event.button.y=84;
     assert(router_event(&event,window,0,&a,&u,&sister));
-    assert(source_route_window.visible && source_route_window.track==-2 && source_route_window.model.page==2);
+    assert(source_route_window.visible && source_route_window.track==-2 && source_route_window.model.page==3);
     assert(!source_route_window.model.can_rename);
     /* Enabling Sister still uses one shared Prism pass per sample. */
     assert(ts_sister_runtime_enable(&a.sister,48000,2,2,5,error,sizeof(error)));
@@ -152,7 +157,7 @@ static void routing_pan_scope(const char *directory)
 {
     int center=first_scope_pan(0);
     assert(source_route_show(0,&a,&u,&pages,&bank,0,0));
-    click(300,89,SDL_BUTTON_LEFT); /* User's Stereo Pair gesture. */
+    direct_output(300); /* Explicit advanced stereo pair. */
     click(32,224,SDL_BUTTON_LEFT);
     int left=first_scope_pan(0);assert(left<center);
     scope_shot(directory,"routing-pan-left");
@@ -177,10 +182,10 @@ static void routing_pan_scope(const char *directory)
     assert(source_route_show(0,&a,&u,&pages,&bank,-1,0));
     click(32,224,SDL_BUTTON_LEFT);assert(first_scope_pan(0)==left);
     assert(source_route_show(0,&a,&u,&pages,&bank,0,0));
-    click(300,89,SDL_BUTTON_LEFT);click(344,224,SDL_BUTTON_LEFT);
+    direct_output(300);click(344,224,SDL_BUTTON_LEFT);
     assert(first_scope_pan(0)==right);
     click(500,48,SDL_BUTTON_LEFT);assert(first_scope_pan(0)==left);
-    click(100,89,SDL_BUTTON_LEFT);assert(first_scope_pan(0)==center);
+    click(100,375,SDL_BUTTON_LEFT);assert(first_scope_pan(0)==center);
     click(500,48,SDL_BUTTON_LEFT);
     assert(source_route_show(0,&a,&u,&pages,&bank,-1,0));
     click(188,224,SDL_BUTTON_RIGHT);assert(first_scope_pan(0)==center);
@@ -188,6 +193,7 @@ static void routing_pan_scope(const char *directory)
 }
 
 #include "test_master_mix.inc"
+#include "test_routing_clarity.inc"
 
 int main(int argc,char **argv)
 {
@@ -209,7 +215,7 @@ int main(int argc,char **argv)
     assert(ts_ui_bank_action(1,0)==TS_UI_BANK_ACTION_ROUTING);
     assert(ts_ui_bank_action(1,TS_UI_BANK_MOD_SHIFT)==TS_UI_BANK_ACTION_CLEAR);
     assert(source_route_show(0,&a,&u,&pages,&bank,-1,0));SDL_SetWindowSize(source_route_window.window,640,400);
-    click(300,89,SDL_BUTTON_LEFT);click(80,153,SDL_BUTTON_LEFT);click(230,153,SDL_BUTTON_LEFT);
+    direct_output(300);click(80,153,SDL_BUTTON_LEFT);click(230,153,SDL_BUTTON_LEFT);
     assert(bank.bank[0].output_route.mode==TS_SOURCE_PAIR&&bank.bank[0].output_route.speaker==2&&bank.bank[0].output_route.second==3);
     assert(ts_note_bank_start(&a.notes,&bank,TS_AUDITION_CURRENT,12,0,48000)==TS_NOTE_STARTED);
     double energy[4];render(energy);assert(energy[0]==0&&energy[1]==0&&energy[2]>1&&energy[3]>energy[2]);
@@ -221,9 +227,13 @@ int main(int argc,char **argv)
     /* Live UI edit reaches the already sounding voice, then returns to Main. */
     click(100,89,SDL_BUTTON_LEFT);render(energy);assert(energy[0]>1&&energy[1]>1&&energy[2]==0&&energy[3]==0);
     ts_note_bank_clear(&a.notes);for(int i=0;i<4;++i)render(energy);
-    click(300,89,SDL_BUTTON_LEFT);click(149,224,SDL_BUTTON_LEFT);click(250,285,SDL_BUTTON_LEFT);
+    direct_output(300);click(149,224,SDL_BUTTON_LEFT);click(250,285,SDL_BUTTON_LEFT);
     shot(argc>1?argv[1]:NULL,"tile-routing");
     click(188,224,SDL_BUTTON_RIGHT);click(188,285,SDL_BUTTON_RIGHT);
+    for(int lane=0;lane<TS_TRACKER_LANES;++lane)assert(pages.tracker.lanes[lane].output_route.mode==TS_SOURCE_MAIN);
+    assert(u.config.router.master_mix);
+    /* This compatibility fixture explicitly opts into the tile routing. */
+    pages.tracker.lanes[0].output_route.mode=TS_SOURCE_INHERIT;
     /* The native tracker renders the same tile and honors explicit Main as an override. */
     assert(embedded_open(window,0,&a,&u,&pages,&bank,48000));u.tracker_open=1;
     pattern[editor.editPattern][0]=(note_t){.note=49,.instr=1};song.songLength=1;song.orders[0]=editor.editPattern;
@@ -237,7 +247,7 @@ int main(int argc,char **argv)
     shot(argc>1?argv[1]:NULL,"track-routing-inherit");
     click(100,89,SDL_BUTTON_LEFT);assert(ts_tapehead_running());render(energy);
     assert(energy[0]>1&&energy[1]>1&&energy[2]==0&&energy[3]==0);
-    click(500,89,SDL_BUTTON_LEFT);click(80,153,SDL_BUTTON_LEFT);
+    direct_output(500);click(80,153,SDL_BUTTON_LEFT);
     assert(pages.tracker.lanes[0].output_route.mode==TS_SOURCE_SPEAKER);
     assert(ts_tapehead_running());render(energy);assert(energy[1]>1&&energy[0]==0&&energy[2]==0&&energy[3]==0);
     shot(argc>1?argv[1]:NULL,"track-routing-override");
@@ -256,6 +266,7 @@ int main(int argc,char **argv)
     assert(source_route_show(0,&a,&u,&pages,&bank,-1,0));shot(argc>1?argv[1]:NULL,"routing-stereo-fallback");
     e=(SDL_Event){0};e.type=SDL_KEYUP;e.key.windowID=source_route_window.id;e.key.keysym.sym=SDLK_z;
     assert(!source_route_event(&e,window,0,&a,&u,&pages,&bank));assert(e.key.windowID==SDL_GetWindowID(window));
+    routing_clarity(argc>1?argv[1]:NULL);
     shared_send_controls(argc>1?argv[1]:NULL);
     master_mix_controls(argc>1?argv[1]:NULL);
     master_mix_project(argc>2?argv[2]:NULL,argc>1?argv[1]:NULL);

@@ -60,6 +60,15 @@ static void source_storage(void)
     assert(ts_instrument_load_recipe(loaded,"send-legacy34.tsr",error,sizeof(error)));
     assert(loaded->bank[0].output_route.mode==TS_SOURCE_PAIR && !loaded->bank[0].output_route.mix_enabled);
     for(int bus=0;bus<3;++bus)assert(!loaded->bank[0].output_route.send_level[bus]);
+    /* Current Main pan/width survive; legacy dormant values remain inaudible. */
+    source->bank[0].output_route=(TsSourceRoute){.mode=TS_SOURCE_MAIN,.pan=-65,.width=-50};
+    assert(ts_instrument_save_recipe(source,"send-tile.tsr",error,sizeof(error)));
+    assert(ts_instrument_load_recipe(loaded,"send-tile.tsr",error,sizeof(error)));
+    assert(loaded->bank[0].output_route.pan==-65 && loaded->bank[0].output_route.width==-50);
+    out=fopen("send-tile.tsr","r+b");assert(out && !fseek(out,4,SEEK_SET));
+    assert(fputc('5',out)!=EOF && !fclose(out));
+    assert(ts_instrument_load_recipe(loaded,"send-tile.tsr",error,sizeof(error)));
+    assert(loaded->bank[0].output_route.mode==TS_SOURCE_MAIN && !loaded->bank[0].output_route.pan && !loaded->bank[0].output_route.width);
     ts_instrument_free(source);ts_instrument_free(loaded);free(source);free(loaded);
     remove("send-tile.tsr");remove("send-legacy34.tsr");
 }

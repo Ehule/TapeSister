@@ -36,6 +36,7 @@ void ts_config_init(TsConfig *config)
         ts_master_eq_default(&config->master_eq);
         ts_spatial_default(&config->spatial);
         ts_router_default(&config->router);
+        config->router.master_mix = 1;
         ts_router_performance_default(&config->router_performance);
         ts_insert_default(&config->insert);
         config->audio_backend = TS_AUDIO_BACKEND_AUTO;
@@ -278,6 +279,8 @@ int ts_config_load(TsConfig *config, const char *path,
         return 0;
     }
     ts_config_init(&loaded);
+    /* Files written before MasterMix existed retain the original signal path. */
+    loaded.router.master_mix = 0;
     while (fgets(line, sizeof(line), file) != NULL) {
         char *key;
         char *value;

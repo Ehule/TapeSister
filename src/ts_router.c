@@ -17,6 +17,15 @@ void ts_router_default(TsRouterControls *c)
         c->return_level[i]=100;
     }
 }
+int ts_router_display_stage(const TsRouterControls *c,int row)
+{
+    if(!c || row<0 || row>=TS_ROUTER_COUNT)return -1;
+    if(!c->master_mix)return c->order[row];
+    if(row==TS_ROUTER_COUNT-1)return TS_ROUTER_INSERT;
+    for(int i=0;i<TS_ROUTER_COUNT;++i)if(c->order[i]!=TS_ROUTER_INSERT && row--==0)return c->order[i];
+    return -1;
+}
+
 int ts_router_valid(const TsRouterControls *c)
 {
     unsigned seen=0;

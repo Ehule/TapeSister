@@ -64,6 +64,7 @@ typedef struct {
 typedef TsStereoFrame (*TsRouterProcess)(void *context,int stage,TsStereoFrame input);
 
 void ts_router_default(TsRouterControls *controls);
+int ts_router_display_stage(const TsRouterControls *controls,int row);
 int ts_router_valid(const TsRouterControls *controls);
 void ts_router_sanitize(TsRouterControls *controls);
 int ts_router_active(const TsRouterControls *controls,int stage);

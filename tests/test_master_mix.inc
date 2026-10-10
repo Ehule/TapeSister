@@ -16,7 +16,7 @@ static void master_mix_controls(const char *directory)
     assert(energy[0]==0 && energy[1]==0 && energy[2]>1 && energy[3]>1);
     assert(source_route_show(0,&a,&u,&pages,&bank,-2,0));
     click(100,89,SDL_BUTTON_LEFT);
-    click(300,375,SDL_BUTTON_LEFT);assert(a.sister.router.controls.master_mix);
+    assert(a.sister.router.controls.master_mix);
     ts_eq_spectrum_enable(&a.sister.eq_spectrum,1);
     for(int i=0;i<8;++i)render(energy);
     assert(a.sister.router.master_mix && energy[0]>1 && energy[1]>1 && energy[2]==0 && energy[3]==0);
@@ -77,7 +77,7 @@ static void master_mix_controls(const char *directory)
     for(int i=0;i<4;++i)render(energy);
     assert(energy[0]+energy[1]>before*.99 && energy[2]==0 && energy[3]==0);
     ports=(TsInsertControls){0};ts_insert_set(&a.sister.insert,&ports);
-    source_route_capture(&a,&pages,&bank);click(300,375,SDL_BUTTON_LEFT);
+    source_route_capture(&a,&pages,&bank);click(500,89,SDL_BUTTON_LEFT);
     for(int i=0;i<4;++i)render(energy);
     assert(!a.sister.router.master_mix && energy[0]==0 && energy[1]==0 && energy[2]>1 && energy[3]>1);
     ts_sister_runtime_set_master_output_gain(&a.sister,0);
@@ -96,7 +96,7 @@ static void master_mix_project(const char *path,const char *directory)
     assert(embedded_open(window,0,&a,&u,&pages,&bank,48000));u.tracker_open=1;
     a.output_device_channels=2;
     assert(source_route_show(0,&a,&u,&pages,&bank,-2,0));
-    if(!a.sister.router.controls.master_mix)click(300,375,SDL_BUTTON_LEFT);
+    if(!a.sister.router.controls.master_mix)click(100,89,SDL_BUTTON_LEFT);
     startPlaying(PLAYMODE_SONG,0);
     float out[1024];double signal=0,eq_input=0;
     for(int block=0;block<256;++block) {
