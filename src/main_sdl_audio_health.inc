@@ -14,6 +14,7 @@ typedef struct {
     int prism, prism_mode, prism_lenses, prism_sequence, prism_matrix;
     int send_assigned, send_available, return_available, router_sequence;
     TsRouterControls router;
+    TsMatrixControls matrix;
     float router_wet[TS_ROUTER_COUNT];
 } TsAudioHealthSetup;
 
@@ -88,7 +89,7 @@ static void ts_audio_health_capture_setup(const AudioState *audio,
     s->send_assigned = r->insert.controls.send_pair > 0;
     s->send_available = ts_insert_send_available(&r->insert);
     s->return_available = ts_insert_return_available(&r->insert);
-    s->router = r->router.controls;
+    s->router = r->router.controls;s->matrix=r->matrix.controls;
     memcpy(s->router.order, r->router.order, sizeof(s->router.order));
     memcpy(s->router_wet, r->router.wet, sizeof(s->router_wet));
     s->router_sequence = r->router.transport.running;
@@ -99,6 +100,7 @@ static const char *health_on(int enabled) { return enabled ? "ON" : "OFF"; }
 static const char *health_running(int running) { return running ? "RUNNING" : "STOPPED"; }
 static const char *health_route(const TsAudioHealthSetup *s, int stage)
 {
+    if(s->matrix.enabled)return stage==TS_ROUTER_INSERT?"legacy inactive":"matrix node";
     int active = ts_router_active(&s->router, stage);
     float wet = s->router_wet[stage];
     if (active && wet < .99999f) return "routing in";
@@ -152,6 +154,21 @@ static void ts_audio_health_setup_report(char *text, size_t size, Uint32 now)
         ts_router_name(s->router.order[2]), ts_router_name(s->router.order[3]),
         ts_router_name(s->router.order[4]), health_running(s->router_sequence),
         health_on(s->board), health_route(s, TS_ROUTER_PEDALBOARD), enabled_slots);
+    if(s->matrix.enabled) {
+        size_t used=strlen(text);
+        snprintf(text+used,size-used,"  Unified routing matrix: ON; legacy order, source switches and Insert assignments above are inactive.\n");
+        for(int row=0;row<TS_MATRIX_ROWS;++row)for(int d=0;d<TS_MATRIX_DESTINATIONS;++d) {
+            int gain=s->matrix.row[row].matrix_gain[d];if(!gain)continue;
+            char from[64],to[64];
+            if(row<TS_MATRIX_NODES)snprintf(from,sizeof(from),"%s",ts_matrix_node_name(row));
+            else if(row<TS_MATRIX_FM)snprintf(from,sizeof(from),"IN %d/%d %.23s",(row-TS_MATRIX_NODES)*2+1,(row-TS_MATRIX_NODES)*2+2,s->matrix.input_name[row-TS_MATRIX_NODES]);
+            else snprintf(from,sizeof(from),"%s",row==TS_MATRIX_FM?"FM":"LIVE LINK");
+            if(d<TS_MATRIX_NODES)snprintf(to,sizeof(to),"%s",ts_matrix_node_name(d));
+            else snprintf(to,sizeof(to),"OUT %d/%d %.23s",(d-TS_MATRIX_NODES)*2+1,(d-TS_MATRIX_NODES)*2+2,s->matrix.output_name[d-TS_MATRIX_NODES]);
+            used=strlen(text);snprintf(text+used,size-used,"    %s -> %s: %+.1f dB; pan %d%s\n",from,to,20*log10f(gain*.001f),s->matrix.row[row].pan,
+                row<TS_MATRIX_NODES && (s->matrix.delayed[row]&(1u<<d))?"; feedback delayed 64 samples":"");
+        }
+    }
     for (int i = 0; i < TS_SISTER_FX_SLOT_COUNT; ++i) {
         const TsSisterFxSlotControls *slot = &s->slot[i];
         char places[48] = "";

@@ -571,6 +571,7 @@ void ts_sister_runtime_init(TsSisterRuntime *runtime)
     ts_master_eq_init(&runtime->master_eq);
     ts_eq_spectrum_init(&runtime->eq_spectrum);
     ts_router_init(&runtime->router);
+    ts_matrix_init(&runtime->matrix);
     ts_insert_init(&runtime->insert);
     ts_spatial_init(&runtime->spatial);
     runtime->rolling = 1;
@@ -607,6 +608,7 @@ void ts_sister_runtime_init(TsSisterRuntime *runtime)
 void ts_sister_runtime_free(TsSisterRuntime *runtime)
 {
     if (runtime == NULL) return;
+    ts_insert_free(&runtime->insert);
     ts_spatial_free(&runtime->spatial);
     ts_prism_free(&runtime->prism);
     ts_sister_machine_free(&runtime->machine);
@@ -654,6 +656,7 @@ int ts_sister_runtime_enable(TsSisterRuntime *runtime, uint32_t sample_rate,
     ts_prism_set_controls(&runtime->prism, &runtime->parameters.prism);
     ts_master_eq_prepare(&runtime->master_eq, sample_rate);
     ts_router_prepare(&runtime->router, sample_rate);
+    ts_matrix_set(&runtime->matrix,&runtime->matrix.controls,sample_rate);
     ts_insert_prepare(&runtime->insert, sample_rate);
     memset(&machine, 0, sizeof(machine));
     cold_fx = !runtime->post_fx.ready || runtime->post_fx.sample_rate != sample_rate;
@@ -825,6 +828,7 @@ int ts_sister_runtime_reconfigure(TsSisterRuntime *runtime,
     ts_prism_set_controls(&runtime->prism, &runtime->parameters.prism);
     ts_master_eq_prepare(&runtime->master_eq, sample_rate);
     ts_router_prepare(&runtime->router, sample_rate);
+    ts_matrix_set(&runtime->matrix,&runtime->matrix.controls,sample_rate);
     ts_insert_prepare(&runtime->insert, sample_rate);
     if (!runtime->enabled) {
         if (sample_rate == 0u || output_channels != 2u) {
@@ -1373,6 +1377,7 @@ static void runtime_fallout_feedback(TsSisterRuntime *runtime, TsStereoFrame wet
 }
 
 #include "ts_sister_router.inc"
+#include "ts_sister_matrix.inc"
 
 TsSisterRuntimeFrame ts_sister_runtime_process_frame(
     TsSisterRuntime *runtime, const TsSisterSourceFrames *sources)
@@ -1407,6 +1412,8 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
     frame.keyboard_dry = tile_bus;
     tile_bus = frame_add(tile_bus, source.tiles);
     (void)tile_raw;
+    if(runtime->matrix.controls.enabled)return runtime_matrix_frame(runtime,&source,
+        frame_add(frame_scale(frame.keyboard_dry,source.matrix_program_gain),source.tiles),frame);
     if (!runtime->enabled || runtime->callback_failed) {
         runtime->last_frame = frame;
         publish_frame_snapshot(runtime);
@@ -1478,7 +1485,7 @@ TsStereoFrame ts_sister_runtime_process_output(TsSisterRuntime *runtime,
     TsStereoFrame output;
     float pre_peak = 0.0f;
     if (runtime == NULL) return ts_stereo_frame_sanitize(input);
-    if(runtime->router.master_mix) {
+    if(!runtime->matrix.controls.enabled && runtime->router.master_mix) {
         float wet=runtime->router.wet[TS_ROUTER_INSERT];
         uint64_t profile_insert=ts_profile_begin(TS_PROF_INSERT);
         TsStereoFrame processed=ts_insert_process(&runtime->insert,wet>0?input:(TsStereoFrame){0,0},wet*runtime->router.gain);
@@ -1488,10 +1495,12 @@ TsStereoFrame ts_sister_runtime_process_output(TsSisterRuntime *runtime,
         runtime->router.output_peak[TS_ROUTER_INSERT]=fmaxf(frame_peak(input),runtime->router.output_peak[TS_ROUTER_INSERT]*runtime->router.decay);
         runtime->router.master_peak=fmaxf(frame_peak(input),runtime->router.master_peak*runtime->router.decay);
     }
+    if(!runtime->matrix.controls.enabled) {
     input = ts_master_eq_process(&runtime->master_eq, input);
     ts_eq_spectrum_push(&runtime->eq_spectrum,input,runtime->master_eq.sample_rate);
     output = ts_sister_limiter_process(&runtime->limiter, input,
                                        NULL, &pre_peak);
+    } else {output=input;pre_peak=runtime->limiter_input_peak;}
     /* The global OUT fader is the final audible gain stage. The VU and FILE
        OUT tap deliberately observe this post-fader signal. */
     output = frame_scale(output,

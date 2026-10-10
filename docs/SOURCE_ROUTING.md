@@ -1,3 +1,6 @@
+> The unified F9 matrix supersedes these legacy routing panels when Matrix is active.
+> See [Routing Matrix](ROUTING_MATRIX.md) for current controls and the Vulture path.
+
 # Tile, track and main-mix routing
 
 Right-click a tile or a TrackSister **track number** to open routing. Playback

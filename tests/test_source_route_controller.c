@@ -195,6 +195,7 @@ static void routing_pan_scope(const char *directory)
 #include "test_master_mix.inc"
 #include "test_routing_clarity.inc"
 #include "test_tracker_tape_input.inc"
+#include "test_matrix_controller.inc"
 
 int main(int argc,char **argv)
 {
@@ -244,6 +245,8 @@ int main(int argc,char **argv)
     SDL_Event e={0};e.type=SDL_MOUSEBUTTONDOWN;e.button.button=SDL_BUTTON_RIGHT;
     assert(ts_tapehead_event(&e,32,header->upperRowsY+3));
     tracker_refresh(0,&a,&u,&pages,&bank,48000,NULL);
+    assert(matrix_window.visible && matrix_window.rows[matrix_window.selected].kind==0);
+    matrix_hide();assert(source_route_show(0,&a,&u,&pages,&bank,0,0));
     assert(source_route_window.track==0&&source_route_window.model.route.mode==TS_SOURCE_INHERIT);
     shot(argc>1?argv[1]:NULL,"track-routing-inherit");
     click(100,89,SDL_BUTTON_LEFT);assert(ts_tapehead_running());render(energy);
@@ -272,6 +275,7 @@ int main(int argc,char **argv)
     master_mix_controls(argc>1?argv[1]:NULL);
     tracker_tape_input();
     master_mix_project(argc>2?argv[2]:NULL,argc>1?argv[1]:NULL);
+    matrix_controller(argc>1?argv[1]:NULL);
     ts_tapehead_stop();ts_tapehead_close();source_route_close();remove("route-score.tst");
     ts_sister_runtime_free(&a.sister);ts_capture_free(&a.capture);ts_instrument_free(&bank);ts_sample_pages_free(&pages);
     SDL_DestroyWindow(window);SDL_Quit();puts("Source routing UI, native audio, track precedence, live edits, saved score and stereo fallback passed");return 0;

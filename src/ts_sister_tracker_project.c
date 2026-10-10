@@ -37,11 +37,11 @@ static uint64_t number(TrackerStream *s, uint64_t value, unsigned width)
 static void codec(TrackerStream *s, TsSisterTracker *loaded, const TsSisterTracker *saved)
 {
     const TsSisterTracker *t = s->reading ? loaded : saved;
-    char magic[8] = { 'S','I','S','T','R','K',6,0 };
+    char magic[8] = { 'S','I','S','T','R','K',7,0 };
     char header[8] = {0};
     bytes(s, header, magic, sizeof(header));
     if (s->reading && (memcmp(header, magic, 6) || header[7] ||
-        (header[6]!=1 && header[6]!=2 && header[6]!=3 && header[6]!=4 && header[6]!=5 && header[6]!=6))) { s->failed = 1; return; }
+        (header[6]!=1 && header[6]!=2 && header[6]!=3 && header[6]!=4 && header[6]!=5 && header[6]!=6 && header[6]!=7))) { s->failed = 1; return; }
     unsigned version=s->reading?(unsigned char)header[6]:(unsigned char)magic[6];
     /* Pre-routing scores historically inherited tiles. Preserve that choice. */
     if(s->reading && version<4)for(int i=0;i<TS_TRACKER_LANES;++i)
@@ -90,6 +90,10 @@ static void codec(TrackerStream *s, TsSisterTracker *loaded, const TsSisterTrack
         if(version>=5) {
             FIELD(l,out,output_route.mix_enabled,1);FIELD(l,out,output_route.clean_level,1);
             for(int bus=0;bus<TS_SOURCE_SENDS;++bus)FIELD(l,out,output_route.send_level[bus],1);
+        }
+        if(version>=7) {
+            FIELD(l,out,output_route.matrix_enabled,1);
+            for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)FIELD(l,out,output_route.matrix_gain[d],2);
         }
     }
     for (int i = 0; i < t->pattern_count && !s->failed; ++i) {

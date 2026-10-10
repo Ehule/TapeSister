@@ -657,6 +657,7 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
         return hit;
     }
     {
+        if(model->matrix_routing && contains(x,y,10,172,208,20)){hit.action=TS_SISTER_UI_ACTION_SOURCE_TILES;return hit;}
         static const int source_left[6] = {10, 58, 90, 128, 170, 334};
         static const int source_width[6] = {44, 28, 34, 38, 48, 44};
         for (int source = 0; source < TS_SISTER_SOURCE_COUNT; ++source) {
@@ -676,6 +677,7 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
         return hit;
     }
     for (int control = 0; control < 6; ++control) {
+        if(model->matrix_routing && control<5)continue;
         static const int parameters[6] = {
             TS_SISTER_UI_PARAM_TILES_GAIN,
             TS_SISTER_UI_PARAM_FM_GAIN,

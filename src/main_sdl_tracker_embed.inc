@@ -78,7 +78,7 @@ static void tracker_refresh(SDL_AudioDeviceID device,AudioState *audio,TsUiState
        !ts_tapehead_export(&pages->tracker,ui->status,sizeof(ui->status)))return;
     if(action>=TS_TH_TRACK_ROUTE && action<TS_TH_TRACK_ROUTE+TS_TRACKER_LANES) {
         ts_tapehead_focus_lost();
-        source_route_show(device,audio,ui,pages,(TsInstrument *)instrument,action-TS_TH_TRACK_ROUTE,-1);
+        matrix_show(device,audio,ui,pages,(TsInstrument *)instrument,action-TS_TH_TRACK_ROUTE,-1);
     }
     if(action==TS_TH_CANVAS || action==TS_TH_TILES) {
         ts_tapehead_focus_lost();ui->tracker_open=0;
@@ -117,7 +117,7 @@ static void tracker_refresh(SDL_AudioDeviceID device,AudioState *audio,TsUiState
     if(action==TS_TH_AUDIO)ts_audio_health_show(ui);
     if(action==TS_TH_ROUTER) {
         if(device)SDL_LockAudioDevice(device);router_sync(audio,ui);if(device)SDL_UnlockAudioDevice(device);
-        ts_tapehead_focus_lost();ui->router_open=1;ui->master_eq_open=0;
+        ts_tapehead_focus_lost();matrix_show(device,audio,ui,pages,(TsInstrument *)instrument,-1,-1);ui->master_eq_open=0;
     }
 }
 static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID device,

@@ -19,6 +19,9 @@ void ts_insert_init(TsInsert *s)
 {
     memset(s, 0, sizeof(*s));
     ts_insert_default(&s->controls);
+    s->matrix_input=calloc(4,sizeof(*s->matrix_input));
+    if(s->matrix_input)for(int p=0;p<4;++p)ts_input_monitor_init(&s->matrix_input[p]);
+    atomic_init(&s->matrix_channels,0);atomic_init(&s->matrix_active,0);
     ts_input_monitor_init(&s->return_monitor);
     ts_input_monitor_init(&s->send_monitor);
     atomic_init(&s->send_request, 0);
@@ -33,6 +36,20 @@ void ts_insert_init(TsInsert *s)
     ts_insert_prepare(s, 48000);
 }
 
+void ts_insert_free(TsInsert *s)
+{ free(s->matrix_input);s->matrix_input=NULL; }
+void ts_insert_matrix_read(TsInsert *s,TsStereoFrame input[4])
+{
+    for(unsigned p=0;p<4;++p) {
+        input[p]=(TsStereoFrame){0,0};
+        if(s->duplex) {
+            if(s->duplex_input && s->duplex_position<s->duplex_frames && p*2<s->duplex_channels) {
+                const float *f=s->duplex_input+s->duplex_position*s->duplex_channels+p*2;
+                input[p]=ts_stereo_frame_sanitize((TsStereoFrame){f[0],p*2+1<s->duplex_channels?f[1]:0});
+            }
+        } else if(s->matrix_input)input[p]=ts_input_monitor_read_frame(&s->matrix_input[p],s->sample_rate);
+    }
+}
 void ts_insert_prepare(TsInsert *s, unsigned rate)
 {
     if (!rate) return;
@@ -58,6 +75,12 @@ void ts_insert_begin_output_block(TsInsert *s, unsigned frames)
 {
     atomic_store_explicit(&s->output_buffer_frames, frames, memory_order_release);
     if (s->duplex) return;
+    if(s->matrix_input)for(int p=0;p<4;++p) {
+        unsigned rate=atomic_load(&s->matrix_input[p].input_rate);
+        ts_input_monitor_set_prime_frames(&s->matrix_input[p],bridge_prime(
+            atomic_load(&s->return_buffer_frames),frames,rate,s->sample_rate));
+        ts_input_monitor_recover_backlog(&s->matrix_input[p]);
+    }
     unsigned rate = atomic_load_explicit(&s->return_monitor.input_rate, memory_order_acquire);
     unsigned capture = atomic_load_explicit(&s->return_buffer_frames, memory_order_acquire);
     ts_input_monitor_set_prime_frames(&s->return_monitor,
@@ -101,6 +124,10 @@ void ts_insert_capture_prepare(TsInsert *s, unsigned channels,
 void ts_insert_capture_prepare_from(TsInsert *s, unsigned channels,
     unsigned rate, unsigned buffer_frames, int dedicated)
 {
+    if(!dedicated && s->matrix_input) {
+        atomic_store(&s->matrix_channels,channels);
+        for(unsigned p=0;p<4;++p)ts_input_monitor_set_enabled(&s->matrix_input[p],p*2<channels,rate);
+    }
     if (atomic_load_explicit(&s->dedicated_return, memory_order_acquire) != dedicated) return;
     if (channels > 255) channels = 0;
     atomic_store_explicit(&s->input_channels, 0, memory_order_release);
@@ -128,8 +155,15 @@ void ts_insert_capture(TsInsert *s, const float *input, size_t frames,
 void ts_insert_capture_from(TsInsert *s, const float *input, size_t frames,
                             unsigned channels, int dedicated)
 {
-    if (!s || !input || channels < 2 || channels > 255) return;
+    if (!s || !input || channels < 1 || channels > 255) return;
     if (s->duplex) return;
+    if(!dedicated && s->matrix_input && atomic_load(&s->matrix_active) && atomic_load(&s->matrix_channels)==channels) {
+        for(unsigned p=0;p<4 && p*2<channels;++p) {
+            ts_input_monitor_note_capture_block(&s->matrix_input[p],(uint32_t)frames);
+            for(size_t i=0;i<frames;++i)ts_input_monitor_push_frame(&s->matrix_input[p],
+                (TsStereoFrame){input[i*channels+p*2],p*2+1<channels?input[i*channels+p*2+1]:0});
+        }
+    }
     if (atomic_load_explicit(&s->dedicated_return, memory_order_acquire) != dedicated) return;
     if(atomic_load_explicit(&s->input_channels,memory_order_acquire)!=channels)return;
     unsigned request = atomic_load_explicit(&s->port_request, memory_order_acquire);

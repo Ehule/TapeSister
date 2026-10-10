@@ -8,6 +8,7 @@
 #include "tapesister/master_eq.h"
 #include "tapesister/eq_spectrum.h"
 #include "tapesister/router.h"
+#include "tapesister/routing_matrix.h"
 #include "tapesister/spatial.h"
 #include "tapesister/insert.h"
 #include "tapesister/sister_wave_snapshot.h"
@@ -74,6 +75,8 @@ typedef struct {
     /* Tracker lanes outside the serial chain: record onto tape without an
        additional dry monitor. Their clean audio/sends keep their own routes. */
     TsStereoFrame tracker_tape;
+    TsStereoFrame matrix_graph[TS_MATRIX_DESTINATIONS], matrix_input[TS_MATRIX_INPUTS];
+    float matrix_program_gain; /* Gain for runtime-owned tile voices; host sums are already trimmed. */
     TsStereoFrame send[TS_SOURCE_SENDS];
 } TsSisterSourceFrames;
 
@@ -223,6 +226,7 @@ typedef struct {
     TsMasterEq master_eq;
     TsEqSpectrum eq_spectrum;
     TsRouter router;
+    TsRoutingMatrix matrix;
     TsInsert insert;
     TsSpatial spatial;
     TsSisterParameters parameters;

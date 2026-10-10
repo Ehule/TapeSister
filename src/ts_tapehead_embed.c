@@ -660,7 +660,7 @@ static int bind_tiles(TsSamplePages *pages,const TsInstrument *active,int *alias
         unsigned route_index=(unsigned)a*16u+(unsigned)k;
         if(embed.route_ids[route_index]!=tile || memcmp(&routing,&embed.tile_routes[route_index],sizeof(routing))) {
             ts_tapehead_host_lock();embed.route_ids[route_index]=tile;embed.tile_routes[route_index]=routing;
-            if(routing.mode || routing.pan || routing.width)embed.routes_enabled=1;ts_tapehead_host_unlock();
+            if(routing.matrix_enabled || routing.mode || routing.pan || routing.width)embed.routes_enabled=1;ts_tapehead_host_unlock();
         }
         TsTuning tuning=slot?(live?bank->audible_tuning:slot->audible_tuning):(TsTuning){60,0};
         int loop=slot?(live?bank->has_loop:slot->has_loop):0;
@@ -794,7 +794,7 @@ static int native_import(TsSisterTracker *t,char *e,size_t n) {
     fastTracksPOCSetLengthTopologyBypassed(t->length_bypass);
     for(int lane=0;lane<TS_TRACKER_LANES;++lane) {
         TsTrackerLane *l=&t->lanes[lane];embed.track_routes[lane]=l->output_route;
-        if(l->output_route.mode==TS_SOURCE_PAIR || l->output_route.mode==TS_SOURCE_SPEAKER || l->output_route.pan || l->output_route.width)embed.routes_enabled=1;
+        if(l->output_route.matrix_enabled || l->output_route.mode==TS_SOURCE_PAIR || l->output_route.mode==TS_SOURCE_SPEAKER || l->output_route.pan || l->output_route.width)embed.routes_enabled=1;
         fastTracksPOCSetTrackLength(0,lane,l->length);
         fastTracksPOCSetMode(lane,(fastTracksMode_t)l->mode);fastTracksPOCSetRatioIndex(lane,l->ratio);
         fastTracksPOCSetDirection(lane,l->direction);
@@ -955,7 +955,7 @@ static int sync_model(TsSamplePages *pages,const TsInstrument *active,unsigned r
         for(int lane=0;lane<TS_TRACKER_LANES;++lane) {
             embed.scope_tile_ids[lane]=0;
             embed.track_routes[lane]=t->lanes[lane].output_route;
-            if(embed.track_routes[lane].mode==TS_SOURCE_PAIR || embed.track_routes[lane].mode==TS_SOURCE_SPEAKER ||
+            if(embed.track_routes[lane].matrix_enabled || embed.track_routes[lane].mode==TS_SOURCE_PAIR || embed.track_routes[lane].mode==TS_SOURCE_SPEAKER ||
                embed.track_routes[lane].pan || embed.track_routes[lane].width)embed.routes_enabled=1;
         }
         embed.follow=t->follow;embed.live_edit=embed.mark_valid=embed.pointer_mark=0;
@@ -999,11 +999,11 @@ void ts_tapehead_routes_changed(TsTileId tile, TsSourceRoute route)
     embed.routes_enabled=0;
     for(int i=0;i<129*16;++i) {
         if(tile && embed.route_ids[i]==tile)embed.tile_routes[i]=route;
-        embed.routes_enabled|=embed.tile_routes[i].mode!=TS_SOURCE_MAIN || embed.tile_routes[i].pan || embed.tile_routes[i].width;
+        embed.routes_enabled|=embed.tile_routes[i].matrix_enabled || embed.tile_routes[i].mode!=TS_SOURCE_MAIN || embed.tile_routes[i].pan || embed.tile_routes[i].width;
     }
     for(int i=0;i<TS_TRACKER_LANES;++i) {
         embed.track_routes[i]=embed.model->lanes[i].output_route;
-        embed.routes_enabled|=embed.track_routes[i].mode==TS_SOURCE_PAIR || embed.track_routes[i].mode==TS_SOURCE_SPEAKER ||
+        embed.routes_enabled|=embed.track_routes[i].matrix_enabled || embed.track_routes[i].mode==TS_SOURCE_PAIR || embed.track_routes[i].mode==TS_SOURCE_SPEAKER ||
             embed.track_routes[i].pan || embed.track_routes[i].width;
     }
     embed.model_hash=model_hash;

@@ -9,7 +9,9 @@ void ts_source_route_mix_init(TsSourceRouteMix *to,const TsSourceRouteMix *map)
 
 int ts_source_route_valid(const TsSourceRoute *r, int inherit)
 {
-    if(!r || r->mix_enabled<0 || r->mix_enabled>1 || r->clean_level<0 || r->clean_level>100 ||
+    if(!r || r->matrix_enabled<0 || r->matrix_enabled>1)return 0;
+    for(int i=0;i<TS_MATRIX_DESTINATIONS;++i)if(r->matrix_gain[i]<0 || r->matrix_gain[i]>2000)return 0;
+    if(r->mix_enabled<0 || r->mix_enabled>1 || r->clean_level<0 || r->clean_level>100 ||
        (r->mix_enabled && r->mode==TS_SOURCE_MAIN))return 0;
     for(int i=0;i<TS_SOURCE_SENDS;++i)if(r->send_level[i]<0 || r->send_level[i]>100)return 0;
     return r->mode>=TS_SOURCE_MAIN && r->mode<=(inherit?TS_SOURCE_INHERIT:TS_SOURCE_SPEAKER) &&
@@ -24,7 +26,7 @@ void ts_source_route_set(TsSourceRouteVoice *v, TsSourceRoute r, unsigned rate)
 {
     if(!ts_source_route_valid(&r,0))r=(TsSourceRoute){0};
     if(v->ready && !memcmp(&r,&v->route,sizeof(r)) && v->rate==rate)return;
-    v->route=r;v->rate=rate;v->target_main=r.mode==TS_SOURCE_MAIN?1.f:0.f;
+    v->route=r;v->rate=rate;v->target_main=!r.matrix_enabled && r.mode==TS_SOURCE_MAIN?1.f:0.f;
     float width=1.f+r.width*.01f;
     float left=r.pan>0?1.f-r.pan*.01f:1.f;
     float right=r.pan<0?1.f+r.pan*.01f:1.f;
@@ -55,6 +57,16 @@ void ts_source_route_set(TsSourceRouteVoice *v, TsSourceRoute r, unsigned rate)
             v->target[19+i*2][1]=r.send_level[i]*.01f;
         }
     }
+    if(r.matrix_enabled) {
+        memset(v->target,0,sizeof(v->target));
+        for(int d=0;d<TS_MATRIX_DESTINATIONS;++d) {
+            float gain=r.matrix_gain[d]*.001f;
+            v->target[24+d*2][0]=gain*(.5f+.5f*width)*left;
+            v->target[24+d*2][1]=gain*(.5f-.5f*width)*left;
+            v->target[25+d*2][0]=gain*(.5f-.5f*width)*right;
+            v->target[25+d*2][1]=gain*(.5f+.5f*width)*right;
+        }
+    }
     if(!v->ready) {
         v->main=v->target_main;memcpy(v->matrix,v->target,sizeof(v->matrix));
         memcpy(v->main_matrix,v->target_main_matrix,sizeof(v->main_matrix));
@@ -62,7 +74,7 @@ void ts_source_route_set(TsSourceRouteVoice *v, TsSourceRoute r, unsigned rate)
     } else v->remaining=rate/200?rate/200:1;
     v->mask=0;
     for(int i=0;i<TS_SOURCE_COEFFICIENTS;++i)
-        if(v->matrix[i][0] || v->matrix[i][1] || v->target[i][0] || v->target[i][1])v->mask|=1u<<i;
+        if(v->matrix[i][0] || v->matrix[i][1] || v->target[i][0] || v->target[i][1])v->mask|=UINT64_C(1)<<i;
 }
 
 static TsStereoFrame main_frame(const TsSourceRouteVoice *v,TsStereoFrame in)
@@ -84,13 +96,13 @@ TsStereoFrame ts_source_route_frame(TsSourceRouteVoice *v, TsStereoFrame in, TsS
         float step=1.f/v->remaining;
         v->main+=(v->target_main-v->main)*step;
         for(int i=0;i<4;++i)v->main_matrix[i]+=(v->target_main_matrix[i]-v->main_matrix[i])*step;
-        for(int i=0;i<TS_SOURCE_COEFFICIENTS;++i)if(v->mask&(1u<<i))
+        for(int i=0;i<TS_SOURCE_COEFFICIENTS;++i)if(v->mask&(UINT64_C(1)<<i))
             for(int j=0;j<2;++j)v->matrix[i][j]+=(v->target[i][j]-v->matrix[i][j])*step;
         if(!--v->remaining) {
             v->main=v->target_main;memcpy(v->matrix,v->target,sizeof(v->matrix));
             memcpy(v->main_matrix,v->target_main_matrix,sizeof(v->main_matrix));
             v->mask=0;for(int i=0;i<TS_SOURCE_COEFFICIENTS;++i)
-                if(v->matrix[i][0] || v->matrix[i][1])v->mask|=1u<<i;
+                if(v->matrix[i][0] || v->matrix[i][1])v->mask|=UINT64_C(1)<<i;
         }
     }
     unsigned missing=clean->check_outputs?(v->mask&65535u)&~clean->available:0;
@@ -99,14 +111,18 @@ TsStereoFrame ts_source_route_frame(TsSourceRouteVoice *v, TsStereoFrame in, TsS
        before clean/send levels. This residual is never mixed into playback. */
     clean->reference.l+=in.l-main.l;clean->reference.r+=in.r-main.r;
     clean->tape_input.l+=in.l*(1-v->main);clean->tape_input.r+=in.r*(1-v->main);
-    for(int i=0;i<TS_SOURCE_COEFFICIENTS;++i)if(v->mask&(1u<<i)) {
+    for(int i=0;i<TS_SOURCE_COEFFICIENTS;++i)if(v->mask&(UINT64_C(1)<<i)) {
         float value=in.l*v->matrix[i][0]+in.r*v->matrix[i][1];
         if(i<16) {if(!missing){clean->speaker[i]+=value;if(v->route.mix_enabled)clean->matrix_speaker[i]+=value;}}
         else if(i==16){clean->monitor.l+=value;if(missing)clean->fallback.l+=value;
             if(v->route.mix_enabled){clean->matrix_monitor.l+=value;if(missing)clean->matrix_fallback.l+=value;}}
         else if(i==17){clean->monitor.r+=value;if(missing)clean->fallback.r+=value;
             if(v->route.mix_enabled){clean->matrix_monitor.r+=value;if(missing)clean->matrix_fallback.r+=value;}}
-        else {
+        else if(i>=TS_SOURCE_GRAPH_OFFSET) {
+            int d=(i-TS_SOURCE_GRAPH_OFFSET)/2;
+            if(i&1)clean->graph[d].r+=value;else clean->graph[d].l+=value;
+            clean->graph_mask|=1u<<d;
+        } else {
             int bus=(i-18)/2;
             if(i&1)clean->send[bus].r+=value;else clean->send[bus].l+=value;
             clean->send_mask|=1u<<bus;
@@ -117,9 +133,13 @@ TsStereoFrame ts_source_route_frame(TsSourceRouteVoice *v, TsStereoFrame in, TsS
 }
 void ts_source_route_add(TsSourceRouteMix *to, const TsSourceRouteMix *from, float gain)
 {
-    if(!to || !from || (!from->mask && !from->send_mask && !from->reference.l && !from->reference.r &&
+    if(!to || !from || (!from->graph_mask && !from->mask && !from->send_mask && !from->reference.l && !from->reference.r &&
                        !from->tape_input.l && !from->tape_input.r))return;
-    for(int i=0;i<TS_SOURCE_SPEAKERS;++i)if(from->mask&(1u<<i)) {
+    for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)if(from->graph_mask&(1u<<d)) {
+        to->graph[d].l+=from->graph[d].l*gain;to->graph[d].r+=from->graph[d].r*gain;
+    }
+    to->graph_mask|=from->graph_mask;
+    for(int i=0;i<TS_SOURCE_SPEAKERS;++i)if(from->mask&(UINT64_C(1)<<i)) {
         to->speaker[i]+=from->speaker[i]*gain;
         to->matrix_speaker[i]+=from->matrix_speaker[i]*gain;
     }
@@ -127,7 +147,7 @@ void ts_source_route_add(TsSourceRouteMix *to, const TsSourceRouteMix *from, flo
     to->matrix_fallback.l+=from->matrix_fallback.l*gain;to->matrix_fallback.r+=from->matrix_fallback.r*gain;
     to->monitor.l+=from->monitor.l*gain;to->monitor.r+=from->monitor.r*gain;to->mask|=from->mask;
     to->fallback.l+=from->fallback.l*gain;to->fallback.r+=from->fallback.r*gain;to->missing|=from->missing;
-    for(int i=0;i<TS_SOURCE_SENDS;++i)if(from->send_mask&(1u<<i)) {
+    for(int i=0;i<TS_SOURCE_SENDS;++i)if(from->send_mask&(UINT64_C(1)<<i)) {
         to->send[i].l+=from->send[i].l*gain;to->send[i].r+=from->send[i].r*gain;
     }
     to->send_mask|=from->send_mask;
@@ -150,9 +170,9 @@ TsStereoFrame ts_source_route_take_master(TsSourceRouteMix *mix)
 /* Match Main's residual fade on voice removal and normalization changes. */
 void ts_source_route_handoff(TsSourceRouteHandoff *h,TsSourceRouteMix *mix,int changed,unsigned frames)
 {
-    int previous=h->last.mask || h->last.send_mask || h->last.reference.l || h->last.reference.r ||
+    int previous=h->last.graph_mask || h->last.mask || h->last.send_mask || h->last.reference.l || h->last.reference.r ||
         h->last.tape_input.l || h->last.tape_input.r;
-    if(!mix->mask && !mix->send_mask && !mix->reference.l && !mix->reference.r &&
+    if(!mix->graph_mask && !mix->mask && !mix->send_mask && !mix->reference.l && !mix->reference.r &&
        !mix->tape_input.l && !mix->tape_input.r && !previous)return;
     if(changed && frames && previous) {
         ts_source_route_mix_init(&h->residual,mix);
@@ -170,6 +190,7 @@ void ts_source_route_handoff(TsSourceRouteHandoff *h,TsSourceRouteMix *mix,int c
             mix->reference.l!=0 || mix->reference.r!=0 || mix->tape_input.l!=0 || mix->tape_input.r!=0;
         for(int i=0;i<16;++i)active|=mix->speaker[i]!=0;
         for(int i=0;i<TS_SOURCE_SENDS;++i)active|=mix->send[i].l!=0 || mix->send[i].r!=0;
-        if(!active)h->last.mask=h->last.send_mask=0;
+        for(int i=0;i<TS_MATRIX_DESTINATIONS;++i)active|=mix->graph[i].l!=0 || mix->graph[i].r!=0;
+        if(!active)h->last.graph_mask=h->last.mask=h->last.send_mask=0;
     }
 }

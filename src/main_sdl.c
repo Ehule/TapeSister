@@ -686,6 +686,7 @@ static uint64_t paged_project_state_hash(const TsSamplePages *pages,
         state_hash_bytes(&hash,&sister->master_eq.controls,sizeof(sister->master_eq.controls));
         TsRouterControls saved_router=ts_router_export(&sister->router);
         state_hash_bytes(&hash,&saved_router,sizeof(saved_router));
+        state_hash_bytes(&hash,&sister->matrix.controls,sizeof(sister->matrix.controls));
         TsSpatialControls spatial=sister->spatial.controls;
         spatial.rise_trigger=spatial.morph_trigger=0;
         state_hash_bytes(&hash,&spatial,sizeof(spatial));
@@ -1098,7 +1099,11 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
     ts_insert_begin_output_block(&audio->sister.insert, (unsigned)frames);
     const float *embedded_block=NULL;
     const TsSourceRouteMix *embedded_clean=NULL;
-    int reserved_pair=audio->sister.insert.separate_send?0:audio->sister.insert.controls.send_pair;
+    int matrix=audio->sister.matrix.controls.enabled;
+    int matrix_was=atomic_exchange_explicit(&audio->sister.insert.matrix_active,matrix,memory_order_acq_rel);
+    if(matrix!=matrix_was && audio->sister.insert.matrix_input)
+        for(int p=0;p<TS_MATRIX_INPUTS;++p)ts_input_monitor_discard(&audio->sister.insert.matrix_input[p]);
+    int reserved_pair=matrix||audio->sister.insert.separate_send?0:audio->sister.insert.controls.send_pair;
     unsigned available=ts_clean_output_available(&audio->sister.spatial.controls,device_channels,reserved_pair);
     ts_tapehead_route_outputs(available);
     for (int i = 0; i < values; i += 2) {
@@ -1193,6 +1198,34 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         sister_sources.preview = buses.legacy_preview;
         sister_sources.tapehead = buses.tapehead;
         memcpy(sister_sources.send,audio->clean.send,sizeof(sister_sources.send));
+        if(matrix) {
+            memcpy(sister_sources.matrix_graph,audio->clean.graph,sizeof(sister_sources.matrix_graph));
+            /* Source level precedes the graph; returns are never attenuated twice. */
+            float gain=audio->mixer.program_gain;
+            sister_sources.matrix_program_gain=gain;
+            for(int d=0;d<TS_MATRIX_DESTINATIONS;++d) {
+                sister_sources.matrix_graph[d].l*=gain;sister_sources.matrix_graph[d].r*=gain;
+            }
+            sister_sources.tiles.l*=gain;sister_sources.tiles.r*=gain;
+            sister_sources.fm.l*=gain;sister_sources.fm.r*=gain;
+            sister_sources.preview.l*=gain;sister_sources.preview.r*=gain;
+            sister_sources.tracker.l*=gain;sister_sources.tracker.r*=gain;
+            sister_sources.tapehead.l*=gain;sister_sources.tapehead.r*=gain;
+            for(int b=0;b<TS_SOURCE_SENDS;++b) {sister_sources.send[b].l*=gain;sister_sources.send[b].r*=gain;}
+            /* Legacy direct routes remain audible when opting a project in. */
+            TsStereoFrame parallel=audio->sister.router.controls.master_mix?audio->clean.matrix_monitor:(TsStereoFrame){0,0};
+            sister_sources.matrix_graph[TS_MATRIX_MAIN].l+=parallel.l*gain;
+            sister_sources.matrix_graph[TS_MATRIX_MAIN].r+=parallel.r*gain;
+            for(int sp=0;sp<TS_SOURCE_SPEAKERS;++sp) {
+                int ch=audio->sister.spatial.controls.output[sp];
+                if(ch<0 || ch>=TS_MATRIX_OUTPUTS*2)continue;
+                float value=audio->clean.speaker[sp];
+                if(audio->sister.router.controls.master_mix)value-=audio->clean.matrix_speaker[sp];
+                TsStereoFrame *to=&sister_sources.matrix_graph[TS_MATRIX_NODES+ch/2];
+                if(ch&1)to->r+=value*gain;else to->l+=value*gain;
+            }
+            ts_insert_matrix_read(&audio->sister.insert,sister_sources.matrix_input);
+        }
         uint64_t profile_sister = ts_profile_begin(TS_PROF_SISTER);
         sister_frame = ts_sister_runtime_process_frame(&audio->sister,
                                                         &sister_sources);
@@ -1231,7 +1264,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
                         atomic_load_explicit(audio->external_monitor_enabled,
                                              memory_order_acquire) != 0 ?
                         buses.external : (TsStereoFrame){0.0f, 0.0f};
-        if (!audio->sister.enabled && !audio->sister.callback_failed &&
+        if (!matrix && !audio->sister.enabled && !audio->sister.callback_failed &&
             audio->sister.post_fx.ready) {
             /* Recreate the legacy ordinary program contribution exactly,
                then insert the shared MIX processor once. Reference remains
@@ -1304,7 +1337,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         ts_source_route_add(&audio->clean,&audio->sister.effect_returns,1.f);
         /* The parallel bus follows the Router's brief topology fade too,
            so switching Direct/Master never jumps between two signal paths. */
-        if(audio->sister.router.handoff) {
+        if(!matrix && audio->sister.router.handoff) {
             float gain=audio->sister.router.gain;
             for(int speaker=0;speaker<TS_SOURCE_SPEAKERS;++speaker) {
                 audio->clean.speaker[speaker]-=audio->clean.matrix_speaker[speaker]*(1-gain);
@@ -1317,17 +1350,18 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             audio->clean.matrix_monitor.l*=gain;audio->clean.matrix_monitor.r*=gain;
             audio->clean.matrix_fallback.l*=gain;audio->clean.matrix_fallback.r*=gain;
         }
-        if(audio->sister.router.master_mix) {
+        if(!matrix && audio->sister.router.master_mix) {
             TsStereoFrame parallel=ts_source_route_take_master(&audio->clean);
             output.l+=parallel.l*audio->mixer.program_gain;
             output.r+=parallel.r*audio->mixer.program_gain;
         }
+        if(matrix)output=(TsStereoFrame){sister_frame.monitor_return.l+buses.reference.l,sister_frame.monitor_return.r+buses.reference.r};
         uint64_t profile_master = ts_profile_begin(TS_PROF_MASTER);
         output = ts_sister_runtime_process_output(&audio->sister, output);
         ts_profile_end(TS_PROF_MASTER, profile_master);
         TsStereoFrame main_output=output;
         float clean_gain=audio->mixer.program_gain*audio->sister.master_output_gain.current;
-        if(audio->clean.mask) {
+        if(!matrix && audio->clean.mask) {
             output.l+=audio->clean.monitor.l*clean_gain;output.r+=audio->clean.monitor.r*clean_gain;
             output=ts_stereo_frame_sanitize(output);
             float peak=fmaxf(fabsf(output.l),fabsf(output.r));
@@ -1356,6 +1390,24 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         }
         audio->last_output = output;
         audio->mixer.buses.output = output;
+        if(matrix) {
+            float *hardware=out+(i/2)*device_channels;
+            float gain=audio->sister.master_output_gain.current;
+            for(unsigned ch=0;ch<device_channels && ch<TS_MATRIX_OUTPUTS*2u;++ch) {
+                TsStereoFrame pair=audio->sister.matrix.output[ch/2];
+                float value=(ch&1?pair.r:pair.l)*gain;
+                if(ch<2)value=ch?main_output.r:main_output.l;
+                hardware[ch]=isfinite(value)?value:0;
+            }
+            float peak=0;
+            for(unsigned ch=0;ch<device_channels;++ch)peak=fmaxf(peak,fabsf(hardware[ch]));
+            float target=peak>.98f?.98f/peak:1;
+            if(!audio->clean_output.limit)audio->clean_output.limit=1;
+            if(target<audio->clean_output.limit)audio->clean_output.limit=target;
+            else audio->clean_output.limit+=(target-audio->clean_output.limit)/(audio->output_rate*.05f);
+            for(unsigned ch=0;ch<device_channels;++ch)hardware[ch]*=audio->clean_output.limit;
+            if(audio->sister.insert.duplex)++audio->sister.insert.duplex_position;
+        } else {
         ts_insert_write_output(&audio->sister.insert,out+(i/2)*device_channels,device_channels,main_output);
         uint64_t profile_spatial = ts_profile_begin(TS_PROF_SPATIAL);
         ts_spatial_process(&audio->sister.spatial,main_output,out+(i/2)*device_channels,
@@ -1363,6 +1415,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         ts_clean_output_mix(&audio->clean_output,&audio->clean,&audio->sister.spatial.controls,
             clean_gain,out+(i/2)*device_channels,device_channels,reserved_pair,(unsigned)audio->output_rate);
         ts_profile_end(TS_PROF_SPATIAL, profile_spatial);
+        }
     }
     ts_tracker_playback_end_block(&audio->tracker);
     ts_sister_runtime_end_audio_block(&audio->sister);
@@ -4228,6 +4281,7 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
                 ts_spatial_recall(&audio->sister.spatial,&spatial);
                 TsMasterEqControls flat;ts_master_eq_default(&flat);
                 ts_master_eq_set(&audio->sister.master_eq,&flat);
+                TsMatrixControls matrix;ts_matrix_default(&matrix);ts_matrix_set(&audio->sister.matrix,&matrix,audio->sister.router.sample_rate);
                 TsRouterControls defaults;ts_router_default(&defaults);
                 ts_sister_runtime_set_router(&audio->sister,&defaults);
                 audio->sister.router.transport.restore_valid=0;
@@ -8895,6 +8949,11 @@ static void sync_sister_ext_consumer(SDL_AudioDeviceID *input_device,
         return;
     desired = audio->sister.enabled &&
               (audio->sister.source_switches & TS_SISTER_SOURCE_EXT) != 0u;
+    if(audio->sister.matrix.controls.enabled) {
+        desired=0;
+        for(int p=0;p<TS_MATRIX_INPUTS;++p)for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)
+            desired|=audio->sister.matrix.controls.row[TS_MATRIX_NODES+p].matrix_gain[d]!=0;
+    }
     current = external_input_requested(input, TS_INPUT_CONSUMER_SISTER_EXT);
     if (desired == current) return;
     external_input_request(input, TS_INPUT_CONSUMER_SISTER_EXT, desired);
@@ -10556,6 +10615,11 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
     TsSisterPresetBank *preset_bank;
     size_t *preset_index;
     if (audio == NULL || ui == NULL || sister == NULL) return;
+    if(audio->sister.matrix.controls.enabled && hit.action>=TS_SISTER_UI_ACTION_SOURCE_TILES &&
+       hit.action<=TS_SISTER_UI_ACTION_SOURCE_TRACK) {
+        SDL_Event event={0};event.type=SDL_KEYDOWN;event.key.windowID=SDL_GetWindowID(sister->window);
+        event.key.keysym.sym=SDLK_F9;SDL_PushEvent(&event);return;
+    }
     fallout_preset_scope = sister->model.fx_page == 2;
     preset_bank = fallout_preset_scope ?
         &sister->fallout_presets : &sister->presets;
@@ -11416,6 +11480,7 @@ static int midi_source_from_event(const TsMidiEvent *midi,
 #include "main_sdl_spatial.inc"
 #include "main_sdl_source_route.inc"
 #include "main_sdl_router.inc"
+#include "main_sdl_matrix.inc"
 
 static int midi_sister_hit_from_target(const char *target, float normalized,
                                        TsSisterUiHit *hit)
@@ -13501,6 +13566,7 @@ int main(int argc, char **argv)
     ts_master_eq_set(&audio.sister.master_eq,&ui.config.master_eq);
     ts_spatial_recall(&audio.sister.spatial,&ui.config.spatial);
     ts_sister_runtime_set_router(&audio.sister,&ui.config.router);
+    ts_matrix_set(&audio.sister.matrix,&ui.config.matrix,(unsigned)audio.output_rate);
     ts_router_performance_set(&audio.sister.router,&ui.config.router_performance);
     ts_sister_runtime_set_insert(&audio.sister,&ui.config.insert);
     audio.sister_file_recorder = &sister_window.performance_recorder;
@@ -14015,6 +14081,7 @@ int main(int argc, char **argv)
                 }
                 continue;
             }
+            if(matrix_event(&event,window,device,&audio,&ui,&sample_pages,&instrument))continue;
             if(source_route_event(&event,window,device,&audio,&ui,&sample_pages,&instrument))continue;
             if (spatial_event(&event,window,device,&audio,&ui,&sister_window)) continue;
             event_id=event_window_id(&event);
@@ -17422,7 +17489,7 @@ int main(int argc, char **argv)
                 } else if (!ui.show_keyboard && !ui.show_recipes &&
                            !ui.show_ingredients && bank_slot >= 0 &&
                            action == TS_UI_BANK_ACTION_ROUTING) {
-                    source_route_show(device,&audio,&ui,&sample_pages,&instrument,-1,bank_slot);
+                    matrix_show(device,&audio,&ui,&sample_pages,&instrument,-1,bank_slot);
                 } else if (!ui.show_keyboard && !ui.show_recipes &&
                            !ui.show_ingredients && bank_slot >= 0) {
                     snprintf(ui.status, sizeof(ui.status),
@@ -17802,6 +17869,7 @@ int main(int argc, char **argv)
                         &audio.sister.machine, &engine);
                 int wave_valid=ts_sister_runtime_get_wave_snapshot(
                     &audio.sister, &wave);
+                sister_window.model.matrix_routing=audio.sister.matrix.controls.enabled;
                 ts_sister_ui_model_update(
                     &sister_window.model, &routing, &engine,
                     wave_valid?&wave:NULL, &audio.sister.parameters);
@@ -17853,6 +17921,7 @@ int main(int argc, char **argv)
                     routing.output_clip[channel];
             }
             ui.config.master_eq = audio.sister.master_eq.controls;
+            ui.config.matrix=audio.sister.matrix.controls;
             ui.config.router = routing.router_saved;
             ui.router_live = routing.router;ui.router_view=routing.router_view;
             /* Settings are UI-owned; only transport/countdowns mutate on audio. */
@@ -17962,6 +18031,7 @@ int main(int argc, char **argv)
         }
         uint64_t profile_aux = ts_profile_begin(TS_PROF_AUX_UI);
         spatial_window_update(&ui);
+        matrix_update(device,&audio,&ui,&sample_pages,&instrument);
         source_route_update(device,&audio,&ui,&sample_pages,&instrument);
         ts_audio_health_update(&audio, &ui);
         ts_profile_end(TS_PROF_AUX_UI, profile_aux);
@@ -18087,7 +18157,7 @@ int main(int argc, char **argv)
     if (sister_window.renderer) SDL_DestroyRenderer(sister_window.renderer);
     if (sister_window.window) SDL_DestroyWindow(sister_window.window);
     spatial_window_close();
-    source_route_close();
+    matrix_close();source_route_close();
     ts_audio_health_close();
     if (texture) SDL_DestroyTexture(texture);
     if (renderer) SDL_DestroyRenderer(renderer);

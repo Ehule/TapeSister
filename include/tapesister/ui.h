@@ -1,5 +1,7 @@
 #ifndef TAPESISTER_UI_H
 #define TAPESISTER_UI_H
+/* Shared bitmap glyphs for native auxiliary windows (5 x 7). */
+const char *ts_ui_glyph(char character);
 
 #include <stdint.h>
 #include "tapesister/audition.h"

@@ -878,7 +878,7 @@ static void suspended_tracker_refresh(void) {
     /* Pending workspace actions still run while synchronization is parked. */
     ts_tapehead_request(TS_TH_ROUTER);
     tracker_refresh(0,test_audio,test_ui,test_pages,test_bank,48000,NULL);
-    assert(test_ui->router_open && !tracker_sync_calls);test_ui->router_open=0;
+    assert(matrix_window.visible && !tracker_sync_calls);matrix_hide();
 }
 #include "test_xm_exchange.inc"
 #include "test_module_import.inc"

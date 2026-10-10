@@ -9985,7 +9985,7 @@ static int snapshot_fits_tile(const TsEditSnapshot *state, const TsBankSlot *slo
 
 static int save_tsr34(const TsInstrument *instrument, FILE *f)
 {
-    fwrite("TSR36\r\n\032", 1, 8, f);
+    fwrite("TSR37\r\n\032", 1, 8, f);
     put32(f, (uint32_t)instrument->selected_slot);
     put_float(f, instrument->family_mutation);
     put32(f, instrument->family_sequence);
@@ -10021,6 +10021,8 @@ static int save_tsr34(const TsInstrument *instrument, FILE *f)
         put32(f,(uint32_t)(slot->output_route.pan+100));put32(f,(uint32_t)(slot->output_route.width+100));
         put32(f,slot->output_route.mix_enabled);put32(f,slot->output_route.clean_level);
         for(int bus=0;bus<TS_SOURCE_SENDS;++bus)put32(f,slot->output_route.send_level[bus]);
+        put32(f,slot->output_route.matrix_enabled);
+        for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)put32(f,slot->output_route.matrix_gain[d]);
         put32(f, (uint32_t)slot->locked);
         audio = &slot->sample;
         baseline = slot->edit_parent.data != NULL ? &slot->edit_parent : &slot->sample;
@@ -10164,6 +10166,15 @@ static int load_tsr15_or_newer(FILE *f, int version, TsInstrument *instrument,
                     slot->output_route.send_level[bus]=send;
                 }
             }
+            if(version>=37) {
+                uint32_t enabled=0,gain=0;
+                if(!get32(f,&enabled) || enabled>1)goto malformed;
+                slot->output_route.matrix_enabled=enabled;
+                for(int d=0;d<TS_MATRIX_DESTINATIONS;++d) {
+                    if(!get32(f,&gain) || gain>2000)goto malformed;
+                    slot->output_route.matrix_gain[d]=gain;
+                }
+            }
             /* Main ignored pan/width before TSR36. Do not activate dormant
                values left behind when an old direct route was switched back. */
             if(version<36 && slot->output_route.mode==TS_SOURCE_MAIN)
@@ -10294,10 +10305,10 @@ static int load_tsr15_or_newer(FILE *f, int version, TsInstrument *instrument,
     set_error(error, error_size, "");
     return 1;
 out_of_memory:
-    set_error(error, error_size, "Out of memory while loading TSR15-TSR36 project");
+    set_error(error, error_size, "Out of memory while loading TSR15-TSR37 project");
     goto failed;
 malformed:
-    set_error(error, error_size, "Malformed or unsupported TSR15-TSR36 project");
+    set_error(error, error_size, "Malformed or unsupported TSR15-TSR37 project");
 failed:
     ts_instrument_free(&loaded);
     return 0;
@@ -10357,7 +10368,8 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Truncated TSR project");
         return 0;
     }
-    if (memcmp(magic, "TSR36\r\n\032", 8) == 0 ||
+    if (memcmp(magic, "TSR37\r\n\032", 8) == 0 ||
+        memcmp(magic, "TSR36\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR35\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR34\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR33\r\n\032", 8) == 0 ||
@@ -10379,7 +10391,8 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         memcmp(magic, "TSR17\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR16\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR15\r\n\032", 8) == 0) {
-        int self_contained_version = memcmp(magic, "TSR36\r\n\032", 8) == 0 ? 36 :
+        int self_contained_version = memcmp(magic, "TSR37\r\n\032", 8) == 0 ? 37 :
+                                     memcmp(magic, "TSR36\r\n\032", 8) == 0 ? 36 :
                                      memcmp(magic, "TSR35\r\n\032", 8) == 0 ? 35 :
                                      memcmp(magic, "TSR34\r\n\032", 8) == 0 ? 34 :
                                      memcmp(magic, "TSR33\r\n\032", 8) == 0 ? 33 :
@@ -10419,7 +10432,7 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         fclose(f);
         ts_instrument_free(&loaded);
         set_error(error, error_size,
-                  "Not a self-contained TSR6-TSR36 project");
+                  "Not a self-contained TSR6-TSR37 project");
         return 0;
     }
 #define GET_U32(dst) do { if (!get32(f, &u32)) goto malformed; (dst) = u32; } while (0)
@@ -10702,7 +10715,7 @@ out_of_memory:
     set_error(error, error_size, "Out of memory while loading TSR project");
     goto failed;
 malformed:
-    set_error(error, error_size, "Malformed or unsupported TSR6-TSR36 project");
+    set_error(error, error_size, "Malformed or unsupported TSR6-TSR37 project");
 failed:
     fclose(f);
     ts_instrument_free(&loaded);

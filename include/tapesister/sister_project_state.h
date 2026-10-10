@@ -8,7 +8,7 @@
 #include "tapesister/keyboard_sequence.h"
 
 enum {
-    TS_SISTER_PROJECT_STATE_VERSION = 29,
+    TS_SISTER_PROJECT_STATE_VERSION = 30,
     TS_SISTER_PROJECT_PRESET_NAME_MAX = 47
 };
 
@@ -20,6 +20,7 @@ typedef struct {
     TsSisterParameters parameters;
     TsMasterEqControls master_eq;
     TsRouterControls router;
+    TsMatrixControls matrix;
     TsRouterPerformance router_performance;
     TsKeyboardSequenceBank keyboard_sequence;
     TsInsertControls insert;

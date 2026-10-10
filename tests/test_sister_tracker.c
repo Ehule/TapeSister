@@ -144,7 +144,7 @@ static void test_score_migration(void)
         for(int lane=0;lane<32;++lane) {
             size_t fields=TS_TRACKER_NAME_SIZE+14+(version==4?5:0);
             CHECK(fwrite(bytes+offset,1,fields,f)==fields);
-            offset+=TS_TRACKER_NAME_SIZE+24;
+            offset+=TS_TRACKER_NAME_SIZE+24+31;
         }
         CHECK(fwrite(bytes+offset,1,(size_t)length-offset,f)==(size_t)length-offset);CHECK(!fclose(f));
         CHECK(ts_sister_tracker_load_file(&loaded,"legacy-score.tst",error,sizeof(error)));
@@ -160,7 +160,7 @@ static void test_score_migration(void)
         size_t lane_bytes=TS_TRACKER_NAME_SIZE+14;
         for(int lane=0;lane<32;++lane) {
             if(lane<8)CHECK(fwrite(bytes+offset,1,lane_bytes,f)==lane_bytes);
-            offset+=lane_bytes+10; /* v4 routing plus v5 clean/send levels. */
+            offset+=lane_bytes+10+31; /* v4 routing plus v5 clean/send levels. */
         }
         for(int i=0;i<original.pattern_count;++i) {
             size_t header_bytes=6+TS_TRACKER_NAME_SIZE;
@@ -353,7 +353,7 @@ static void test_tsr31_migration(void)
     sound(source, 0, 0.25f);
     CHECK(ts_instrument_save_recipe(source, "identity32.tsr", error, sizeof(error)));
     FILE *in = fopen("identity32.tsr", "rb"), *out = fopen("legacy31.tsr", "wb");
-    unsigned char header[112]; CHECK(in && out);
+    unsigned char header[176]; CHECK(in && out);
     CHECK(fread(header, 1, sizeof(header), in) == sizeof(header));
     /* Remove TSR32 identity, TSR34 routing and TSR35 sends after the occupied flag. */
     header[4] = '1';

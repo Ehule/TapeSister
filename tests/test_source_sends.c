@@ -53,7 +53,7 @@ static void source_storage(void)
     assert(!memcmp(&loaded->bank[0].output_route,&route,sizeof(route)));
     /* TSR34 has the same bank layout except the five new 32-bit mix fields. */
     FILE *in=fopen("send-tile.tsr","rb"),*out=fopen("send-legacy34.tsr","wb");assert(in&&out);
-    unsigned char prefix[112];assert(fread(prefix,1,112,in)==112);prefix[4]='4';
+    unsigned char prefix[176];assert(fread(prefix,1,176,in)==176);prefix[4]='4';
     assert(fwrite(prefix,1,92,out)==92);int ch;
     while((ch=fgetc(in))!=EOF)assert(fputc(ch,out)!=EOF);
     assert(!fclose(in)&&!fclose(out));
@@ -65,9 +65,10 @@ static void source_storage(void)
     assert(ts_instrument_save_recipe(source,"send-tile.tsr",error,sizeof(error)));
     assert(ts_instrument_load_recipe(loaded,"send-tile.tsr",error,sizeof(error)));
     assert(loaded->bank[0].output_route.pan==-65 && loaded->bank[0].output_route.width==-50);
-    out=fopen("send-tile.tsr","r+b");assert(out && !fseek(out,4,SEEK_SET));
-    assert(fputc('5',out)!=EOF && !fclose(out));
-    assert(ts_instrument_load_recipe(loaded,"send-tile.tsr",error,sizeof(error)));
+    in=fopen("send-tile.tsr","rb");out=fopen("send-legacy34.tsr","wb");assert(in&&out);
+    assert(fread(prefix,1,176,in)==176);prefix[4]='5';assert(fwrite(prefix,1,112,out)==112);
+    while((ch=fgetc(in))!=EOF)assert(fputc(ch,out)!=EOF);assert(!fclose(in)&&!fclose(out));
+    assert(ts_instrument_load_recipe(loaded,"send-legacy34.tsr",error,sizeof(error)));
     assert(loaded->bank[0].output_route.mode==TS_SOURCE_MAIN && !loaded->bank[0].output_route.pan && !loaded->bank[0].output_route.width);
     ts_instrument_free(source);ts_instrument_free(loaded);free(source);free(loaded);
     remove("send-tile.tsr");remove("send-legacy34.tsr");

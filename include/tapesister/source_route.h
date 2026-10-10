@@ -5,6 +5,8 @@
 #include "tapesister/source_route_types.h"
 
 typedef struct {
+    TsStereoFrame graph[TS_MATRIX_DESTINATIONS];
+    unsigned graph_mask;
     float speaker[TS_SOURCE_SPEAKERS];
     TsStereoFrame monitor, fallback;
     TsStereoFrame reference; /* Pre-routing dry recording tap, counted once. */
