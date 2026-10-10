@@ -4,15 +4,27 @@
 #define SDL_MAIN_HANDLED
 #define TAPEHEAD_EMBEDDED
 #include "tapesister/tapehead_embed.h"
-static unsigned tracker_sync_calls;
+static unsigned tracker_sync_calls,tracker_refresh_calls;
+static unsigned tracker_export_calls,tracker_locked_exports,realtime_lock_depth;
+static int counted_tracker_export(TsSisterTracker *t,char *e,size_t n) {
+    if(realtime_lock_depth)++tracker_locked_exports;
+    ++tracker_export_calls;return ts_tapehead_export(t,e,n);
+}
 static int counted_tracker_sync(TsSamplePages *pages,const TsInstrument *active,unsigned rate,char *e,size_t n) {
     ++tracker_sync_calls;return ts_tapehead_sync(pages,active,rate,e,n);
 }
+static int counted_tracker_refresh(TsSamplePages *pages,const TsInstrument *active,unsigned rate,char *e,size_t n) {
+    ++tracker_refresh_calls;return ts_tapehead_refresh(pages,active,rate,e,n);
+}
 #define ts_tapehead_sync counted_tracker_sync
+#define ts_tapehead_refresh counted_tracker_refresh
+#define ts_tapehead_export counted_tracker_export
 #define main tapesister_application_main
 #include "../src/main_sdl.c"
 #undef main
 #undef ts_tapehead_sync
+#undef ts_tapehead_refresh
+#undef ts_tapehead_export
 #include <assert.h>
 #include "../third_party/tapehead/application/src/ft2_fasttracks.h"
 #include "../third_party/tapehead/application/src/ft2_structs.h"
@@ -31,16 +43,23 @@ static TsUiState *test_ui;
 static TsInstrument *test_bank;
 static TsSamplePages *test_pages;
 static char test_error[256];
+/* These editor/persistence checks inspect the saved native mirror. Production
+   checkpoints at host-view/save boundaries; the realtime test uses raw events. */
+static void checkpoint(void) {
+    assert(ts_tapehead_export(&test_pages->tracker,test_error,sizeof(test_error)));
+}
 static void press(SDL_Keycode key,SDL_Scancode sc,SDL_Keymod mod) {
     SDL_Event e;SDL_zero(e);e.type=SDL_KEYDOWN;e.key.windowID=SDL_GetWindowID(test_window);
     e.key.keysym.sym=key;e.key.keysym.scancode=sc;e.key.keysym.mod=mod;
     assert(tracker_event(&e,test_window,0,test_audio,test_ui,test_pages,test_bank,48000));
     e.type=SDL_KEYUP;tracker_event(&e,test_window,0,test_audio,test_ui,test_pages,test_bank,48000);
+    checkpoint();
 }
 static void wheel(int x,int y,float delta) {
     SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEWHEEL;e.wheel.windowID=SDL_GetWindowID(test_window);
     e.wheel.mouseX=x;e.wheel.mouseY=y;e.wheel.y=(int)delta;e.wheel.preciseY=delta;
     assert(tracker_event(&e,test_window,0,test_audio,test_ui,test_pages,test_bank,48000));
+    checkpoint();
 }
 static TsTrackerPattern *pat(void) {return ts_sister_tracker_pattern(&test_pages->tracker,test_pages->tracker.editor_pattern);}
 static void snapshot(const char *path) {
@@ -87,6 +106,7 @@ static void click(int x,int y) {
     event.button.x=x;event.button.y=y;
     assert(tracker_event(&event,test_window,0,test_audio,test_ui,test_pages,test_bank,48000));
     event.type=SDL_MOUSEBUTTONUP;assert(tracker_event(&event,test_window,0,test_audio,test_ui,test_pages,test_bank,48000));
+    checkpoint();
 }
 static void workspace_buttons(int block_loop) {
     static SisterWindow sister;
@@ -292,6 +312,7 @@ static void pattern_transport_controls(int extended_length) {
     e.key.keysym.sym=SDLK_LCTRL;e.key.keysym.scancode=SDL_SCANCODE_LCTRL;e.key.keysym.mod=KMOD_LCTRL;
     SDL_SetModState(KMOD_LCTRL);
     assert(tracker_event(&e,test_window,0,test_audio,test_ui,test_pages,test_bank,48000));
+    checkpoint();
     assert(ts_sister_tracker_validate(&test_pages->tracker,test_error,sizeof(test_error)));
     if(extended_length)assert(test_pages->tracker.editor_row>=pat()->rows);
     assert(ts_tapehead_running());
@@ -371,6 +392,7 @@ static void mouse_click(int x,int y,int button) {
     event.button.windowID=SDL_GetWindowID(test_window);event.button.button=button;event.button.x=x;event.button.y=y;
     assert(tracker_event(&event,test_window,0,test_audio,test_ui,test_pages,test_bank,48000));
     event.type=SDL_MOUSEBUTTONUP;assert(tracker_event(&event,test_window,0,test_audio,test_ui,test_pages,test_bank,48000));
+    checkpoint();
 }
 static void audit_blank_song(unsigned rows) {
     ts_tapehead_stop();export_score();TsSisterTracker *t=&test_pages->tracker;
@@ -581,6 +603,7 @@ static void audit_controls(const char *config_image,const char *record_image) {
     click(475,162);SDL_Event text;SDL_zero(text);text.type=SDL_TEXTINPUT;text.text.windowID=SDL_GetWindowID(test_window);
     snprintf(text.text.text,sizeof(text.text.text),"Audit score");
     assert(tracker_event(&text,test_window,0,test_audio,test_ui,test_pages,test_bank,48000));
+    checkpoint();
     assert(!memcmp(test_pages->tracker.embedded_data+30,old_title,sizeof(old_title)));
     click(325,61);assert(ts_tapehead_action()==TS_TH_SAVE_PROJECT);
     click(325,44);assert(ts_tapehead_action()==TS_TH_OPEN_PROJECT);
@@ -841,13 +864,13 @@ static void suspended_tracker_refresh(void) {
     /* Reopening imports that authoritative score before edits are accepted. */
     press(SDLK_F10,SDL_SCANCODE_F10,KMOD_NONE);
     assert(tracker_sync_calls==1 && editor.BPM==bpm && test_ui->tracker_open);
-    tracker_sync_calls=0;tracker_refresh(0,test_audio,test_ui,test_pages,test_bank,48000,NULL);
-    assert(tracker_sync_calls==1);
+    tracker_sync_calls=tracker_refresh_calls=0;tracker_refresh(0,test_audio,test_ui,test_pages,test_bank,48000,NULL);
+    assert(!tracker_sync_calls && tracker_refresh_calls==1);
     startPlaying(PLAYMODE_SONG,0);assert(ts_tapehead_running());
     press(SDLK_F10,SDL_SCANCODE_F10,KMOD_NONE);assert(!test_ui->tracker_open);
-    tracker_sync_calls=0;
+    tracker_sync_calls=tracker_refresh_calls=0;
     tracker_refresh(0,test_audio,test_ui,test_pages,test_bank,48000,NULL);
-    assert(tracker_sync_calls==1 && ts_tapehead_running());
+    assert(!tracker_sync_calls && tracker_refresh_calls==1 && ts_tapehead_running());
     assert(ts_tapehead_render(512,48000));
     ts_tapehead_stop();tracker_sync_calls=0;
     tracker_refresh(0,test_audio,test_ui,test_pages,test_bank,48000,NULL);
@@ -861,6 +884,7 @@ static void suspended_tracker_refresh(void) {
 #include "test_module_import.inc"
 #include "test_tracker_channel_count.inc"
 #include "test_tracker_project_load.inc"
+#include "test_tracker_realtime.inc"
 
 int main(int argc,char **argv) {
     SDL_SetHint(SDL_HINT_VIDEODRIVER,"dummy");assert(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER));
@@ -885,6 +909,7 @@ int main(int argc,char **argv) {
     TsTileId tile=test_bank->bank[0].tile_id;
     press(SDLK_F10,SDL_SCANCODE_F10,KMOD_NONE);assert(test_ui->tracker_open&&test_ui->tracker_embedded_frame);
     assert(test_pages->tracker.embedded_size && ts_sister_tracker_validate(&test_pages->tracker,test_error,sizeof(test_error)));
+    if(getenv("TS_TEST_TRACKER_REALTIME")) {tracker_realtime();return 0;}
     tile_level_parity();
     press(SDLK_z,SDL_SCANCODE_Z,KMOD_NONE);assert(pat()->cells[0][0].note_kind==TS_TRACKER_NOTE_PITCH);
     assert(pat()->cells[0][0].tile_id==tile);assert(test_pages->tracker.editor_row==1);
@@ -907,6 +932,7 @@ int main(int argc,char **argv) {
     TsMidiEvent midi;assert(ts_midi_decode_short_message(0x92,67,100,&midi));
     unsigned midi_row=test_pages->tracker.editor_row;TsTrackerCell before_midi=pat()->cells[midi_row][0];
     handle_midi_event(0,test_audio,test_ui,test_bank,NULL,&midi,48000,1);
+    checkpoint();
     assert(pat()->cells[midi_row][0].note==67 && pat()->cells[midi_row][0].tile_id==tile);
     assert(pat()->cells[midi_row][0].has_volume && !ts_note_bank_count(&test_audio->notes));
     assert(ts_midi_decode_short_message(0x82,67,0,&midi));handle_midi_event(0,test_audio,test_ui,test_bank,NULL,&midi,48000,1);

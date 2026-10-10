@@ -28,6 +28,23 @@ event loop and callback. The complete source delta is recorded in
 `third_party/tapehead/application/embedded.patch`, against checked upstream
 input hashes. Builds use committed sources and do not fetch TapeHead.
 
+Live QWERTY/MIDI input stays in the embedded editor. It does not serialize,
+validate or hash the complete score after each event. Routine UI refreshes
+update tile bindings without hashing patterns; explicit synchronization,
+reopening and host project replacement still check the authoritative model.
+The native mirror is checkpointed for saves, host score views and the exit
+dirty check. Export holds the audio lock only for the small shared-state
+snapshot, then performs pattern conversion, allocation, validation and hashing
+on the UI thread with playback unlocked. Pattern storage is UI-owned and read
+by the replayer; this does not relax locks around actual editing mutations.
+
+`tapesister_tapehead_embedded_realtime_tests` exercises 128 patterns with three
+held host voices, actual QWERTY/MIDI controller events and callback output.
+It checks that routine input/refresh do not export or invoke full sync, that
+checkpoint callers do not hold an outer audio lock, and that deferred notes
+survive save/reload and participate in the unsaved-changes prompt. Timings are
+printed for comparison, with no machine-dependent timing threshold.
+
 Local source changes replace hardware/window ownership, suppress standalone
 configuration writes, redirect sampler/disk screens, restore tracker configuration,
 add portable preferences and Bounce, provide float tile

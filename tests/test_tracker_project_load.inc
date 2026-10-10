@@ -43,6 +43,12 @@ static void tracker_project_load(void)
         performanceMute[0]=performanceMute[31]=true;
         editor.songPos=song.songPos=7;
         assert(load_instrument(0,test_audio,test_ui,test_bank,test_pages,record,0,paths[pass]));
+        uint64_t loaded_hash=ts_sister_tracker_hash(&test_pages->tracker);
+        export_score();assert(ts_sister_tracker_hash(&test_pages->tracker)==loaded_hash);
+        /* A visible workspace also imports through the lightweight service
+           path once the host marks a replacement; reopening is not required. */
+        test_ui->tracker_open=1;
+        tracker_refresh(0,test_audio,test_ui,test_pages,test_bank,48000,NULL);
         assert(embedded_open(test_window,0,test_audio,test_ui,test_pages,test_bank,48000));
         assert(!ts_tapehead_running());
         int project=pass%2;
@@ -69,5 +75,23 @@ static void tracker_project_load(void)
             assert(test_pages->tracker.lanes[lane].muted==((lane%2)==project));
         project_roundtrip();
     }
+    /* Reloading the identical checkpoint must discard live edits too. Its
+       saved hash equals the old native mirror, so hash comparison alone
+       cannot identify this as a replacement. An immediate save is safe. */
+    save_tracker_project("project-load-same/project-load-same.tsr");
+    uint64_t same_hash=ts_sister_tracker_hash(&test_pages->tracker);
+    int pattern_index=editor.editPattern;note_t original=pattern[pattern_index][0];
+    editor.row=0;cursor.ch=0;cursor.object=CURSOR_NOTE;playMode=PLAYMODE_EDIT;
+    SDL_Event note={0};note.type=SDL_KEYDOWN;note.key.windowID=SDL_GetWindowID(test_window);
+    note.key.keysym.sym=SDLK_x;note.key.keysym.scancode=SDL_SCANCODE_X;
+    assert(tracker_event(&note,test_window,0,test_audio,test_ui,test_pages,test_bank,48000));
+    note.type=SDL_KEYUP;assert(tracker_event(&note,test_window,0,test_audio,test_ui,test_pages,test_bank,48000));
+    assert(memcmp(&original,&pattern[pattern_index][0],sizeof(original)));
+    assert(ts_sister_tracker_hash(&test_pages->tracker)==same_hash);
+    assert(load_instrument(0,test_audio,test_ui,test_bank,test_pages,record,0,"project-load-same/project-load-same.tsr"));
+    export_score();assert(ts_sister_tracker_hash(&test_pages->tracker)==same_hash);
+    test_ui->tracker_open=1;
+    tracker_refresh(0,test_audio,test_ui,test_pages,test_bank,48000,NULL);
+    assert(!memcmp(&original,&pattern[pattern_index][0],sizeof(original)));
     ts_instrument_free(record);free(record);
 }

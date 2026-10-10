@@ -2631,9 +2631,11 @@ static void begin_exit_confirmation(SDL_AudioDeviceID device, AudioState *audio,
         ts_capture_free(&audio->capture);
     if (device) SDL_UnlockAudioDevice(device);
     sync_capture_ui(device, audio, ui);
+    /* Include live tracker edits even when the workspace has not been closed. */
+    int tracker_saved=ts_tapehead_export(ui->tracker,ui->status,sizeof(ui->status));
     ui->exit_has_unsaved = runtime_project_state_hash(
         sample_pages, instrument, parked_record,
-        record_bank_active, &audio->sister, &audio->keyboard_sequence) != ui->saved_state_hash;
+        record_bank_active, &audio->sister, &audio->keyboard_sequence) != ui->saved_state_hash || !tracker_saved;
     ui->exit_confirm_open = 1;
     ui->exit_choice = ui->exit_has_unsaved ? 2 : 1;
     ui->exit_after_save = 0;
@@ -4247,6 +4249,9 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     ts_keyboard_sequence_source_free(previous_sequence_source);
     if (ok) ts_ui_reset_parent_view(ui, instrument->parent.frames);
     if (ok && recipe) {
+        /* The next tracker refresh must import this host-owned definition,
+           including when loading over a running or visible workspace. */
+        ts_tapehead_project_replaced();
         snprintf(ui->project_path, sizeof(ui->project_path), "%s", path);
         snprintf(ui->status, sizeof(ui->status), "OPENED TSR PROJECT %.112s",
                  instrument->parent.name);
@@ -7062,7 +7067,6 @@ static void handle_midi_event(SDL_AudioDeviceID device, AudioState *audio,
     int tracker_focus=tracker_input_allowed && ui->tracker_open && ui->tracker_embedded_frame && !ui_dialog_open(ui) &&
                       !ui->router_open && !ui->master_eq_open && !ui->midi_learn_active;
     if(ts_tapehead_midi(midi,tracker_focus)) {
-        ts_tapehead_host_lock();ts_tapehead_export(ui->tracker,ui->status,sizeof(ui->status));ts_tapehead_host_unlock();
         return;
     }
     if (midi->action == TS_MIDI_ACTION_PANIC) {
@@ -8548,7 +8552,7 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
         int ok=importing?ts_tapehead_palette_import(path,browser->message,sizeof(browser->message)):
                          ts_tapehead_palette_export(path,browser->message,sizeof(browser->message));
         if(!ok)return;
-        ts_tapehead_host_lock();ts_tapehead_export(&sample_pages->tracker,ui->status,sizeof(ui->status));ts_tapehead_host_unlock();
+        ts_tapehead_export(&sample_pages->tracker,ui->status,sizeof(ui->status));
         ts_browser_close(browser);SDL_StopTextInput();
         snprintf(ui->status,sizeof(ui->status),importing?"TRACKER PALETTE IMPORTED":"TRACKER PALETTE EXPORTED");return;
     }
@@ -8692,9 +8696,7 @@ static void run_pending_file_operation(SDL_AudioDeviceID device,
             &sister_state, &audio->sister,
             ts_sample_pages_count(sample_pages), NULL);
         sister_state.keyboard_sequence = ts_keyboard_sequence_export(&audio->keyboard_sequence);
-        ts_tapehead_host_lock();
         ok=ts_tapehead_export(&sample_pages->tracker,error,sizeof(error));
-        ts_tapehead_host_unlock();
         if(ok)ok = ts_sample_pages_save_project(sample_pages, active_sample, record_bank,
                                           &sister_state, pending->path,
                                           error, sizeof(error));

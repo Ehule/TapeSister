@@ -557,6 +557,11 @@ if(TAPESISTER_BUILD_SDL)
   add_test(NAME tapesister_tapehead_embedded_tests COMMAND tapesister_tapehead_embedded_tests)
   set_tests_properties(tapesister_tapehead_embedded_tests PROPERTIES
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/sistertracker-fixtures")
+  file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/sistertracker-realtime-fixtures")
+  add_test(NAME tapesister_tapehead_embedded_realtime_tests COMMAND tapesister_tapehead_embedded_tests)
+  set_tests_properties(tapesister_tapehead_embedded_realtime_tests PROPERTIES
+    ENVIRONMENT "TS_TEST_TRACKER_REALTIME=1"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/sistertracker-realtime-fixtures")
 
   add_executable(tapesister_midi_wake_tests tests/test_midi_wake.c)
   target_include_directories(tapesister_midi_wake_tests PRIVATE third_party)
