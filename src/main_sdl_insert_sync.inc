@@ -5,6 +5,11 @@ static void insert_sync(SDL_AudioDeviceID device,SDL_AudioDeviceID *capture_devi
 {
     int apply=ui->insert_apply_pending;
     ui->insert_apply_pending=0;
+    ui->insert_restart_required=ts_audio_restart_required(&ui->config);
+    if(ui->insert_restart_required) {
+        if(apply)snprintf(ui->status,sizeof(ui->status),"CFG AUDIO CHANGE PENDING: SAVE CONFIG + RESTART; THEN APPLY INSERT PORTS");
+        return; /* Keep the active backend's endpoints until the restart. */
+    }
     if(apply) {
         int recording=audio->capture.state!=TS_CAPTURE_IDLE ||
             external_capture_busy(input) ||
@@ -22,7 +27,7 @@ static void insert_sync(SDL_AudioDeviceID device,SDL_AudioDeviceID *capture_devi
             ts_sister_runtime_set_insert(&audio->sister,&c);
             ui->config.insert=audio->sister.insert.controls;
             if(device)SDL_UnlockAudioDevice(device);
-            snprintf(ui->status,sizeof(ui->status),"INSERT PORTS APPLIED; USE ROUTER BYPASS TO CONNECT / AUDITION");
+            snprintf(ui->status,sizeof(ui->status),"INSERT PORTS APPLIED LIVE; SAVE CONFIG TO REMEMBER THIS SETUP");
         }
     }
     ts_audio_insert_devices_sync(audio,&ui->config,apply,ui->insert_device_status,sizeof(ui->insert_device_status));

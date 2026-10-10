@@ -14,7 +14,7 @@ FetchContent_Declare(
   SOURCE_SUBDIR _tapesister_header_only)
 FetchContent_MakeAvailable(miniaudio)
 
-add_library(tapesister_core src/ts_spatial.c src/ts_sample.c src/ts_prism.c src/ts_prism_performance.c src/ts_fm.c src/ts_audition.c src/ts_note_bank.c src/ts_keyboard_sequence.c
+add_library(tapesister_core src/ts_routing_matrix.c src/ts_source_route.c src/ts_clean_output.c src/ts_spatial.c src/ts_sample.c src/ts_prism.c src/ts_prism_performance.c src/ts_fm.c src/ts_audition.c src/ts_note_bank.c src/ts_keyboard_sequence.c
              src/ts_mosaic.c src/ts_note_event.c src/ts_midi_map.c src/ts_performance.c src/ts_audio_mixer.c
              src/ts_audio_lifecycle.c
              src/ts_realtime_diagnostics.c src/ts_profile.c
@@ -80,6 +80,15 @@ if(TAPESISTER_BUILD_SDL)
   endif()
   target_include_directories(tapesister PRIVATE third_party)
   target_link_libraries(tapesister PRIVATE tapesister_core tapesister_tapehead SDL2::SDL2)
+
+  # Optional composition utility; uses the canonical application callback.
+  add_executable(tapesister_compose EXCLUDE_FROM_ALL tools/compose_native.c
+    src/tape_link.c src/tape_companion.c src/ts_startup_diag.c src/ts_midi_input.c)
+  target_include_directories(tapesister_compose PRIVATE third_party)
+  target_link_libraries(tapesister_compose PRIVATE tapesister_core tapesister_tapehead SDL2::SDL2)
+  if(UNIX AND NOT APPLE)
+    target_link_libraries(tapesister_compose PRIVATE rt)
+  endif()
   add_custom_command(TARGET tapesister POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:tapesister>/licenses/tapehead"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -469,10 +478,24 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(tapesister_fm_directions_tests PRIVATE -UNDEBUG)
 endif()
 add_test(NAME tapesister_fm_directions_tests COMMAND tapesister_fm_directions_tests)
+add_executable(tapesister_source_route_tests tests/test_source_route.c)
+target_link_libraries(tapesister_source_route_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_source_route_tests COMMAND tapesister_source_route_tests)
+add_executable(tapesister_source_route_send_tests tests/test_source_sends.c)
+target_link_libraries(tapesister_source_route_send_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_source_route_send_tests COMMAND tapesister_source_route_send_tests)
 add_executable(tapesister_spatial_tests tests/test_spatial.c)
 target_link_libraries(tapesister_spatial_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_spatial_tests COMMAND tapesister_spatial_tests)
 if(TAPESISTER_BUILD_SDL)
+  add_executable(tapesister_source_route_controller_tests tests/test_source_route_controller.c
+    src/tape_link.c src/tape_companion.c src/ts_startup_diag.c src/ts_midi_input.c)
+  target_include_directories(tapesister_source_route_controller_tests PRIVATE third_party)
+  target_link_libraries(tapesister_source_route_controller_tests PRIVATE tapesister_core tapesister_tapehead SDL2::SDL2)
+  if(UNIX AND NOT APPLE)
+    target_link_libraries(tapesister_source_route_controller_tests PRIVATE rt)
+  endif()
+  add_test(NAME tapesister_source_route_controller_tests COMMAND tapesister_source_route_controller_tests)
   add_executable(tapesister_spatial_controller_tests tests/test_spatial_controller.c
     src/tape_link.c src/tape_companion.c src/ts_startup_diag.c src/ts_midi_input.c)
   target_include_directories(tapesister_spatial_controller_tests PRIVATE third_party)
@@ -534,6 +557,11 @@ if(TAPESISTER_BUILD_SDL)
   add_test(NAME tapesister_tapehead_embedded_tests COMMAND tapesister_tapehead_embedded_tests)
   set_tests_properties(tapesister_tapehead_embedded_tests PROPERTIES
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/sistertracker-fixtures")
+  file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/sistertracker-realtime-fixtures")
+  add_test(NAME tapesister_tapehead_embedded_realtime_tests COMMAND tapesister_tapehead_embedded_tests)
+  set_tests_properties(tapesister_tapehead_embedded_realtime_tests PROPERTIES
+    ENVIRONMENT "TS_TEST_TRACKER_REALTIME=1"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/sistertracker-realtime-fixtures")
 
   add_executable(tapesister_midi_wake_tests tests/test_midi_wake.c)
   target_include_directories(tapesister_midi_wake_tests PRIVATE third_party)
@@ -684,3 +712,7 @@ foreach(test_target IN LISTS tapesister_test_targets)
     endif()
   endif()
 endforeach()
+
+add_executable(tapesister_routing_matrix_tests tests/test_routing_matrix.c)
+target_link_libraries(tapesister_routing_matrix_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_routing_matrix_tests COMMAND tapesister_routing_matrix_tests)

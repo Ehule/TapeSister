@@ -89,6 +89,7 @@ static int keyboard_sequence_prepare(SDL_AudioDeviceID device, AudioState *audio
                 v->loop_mode = p->loop_mode; v->looping = p->looping;
                 v->direction = p->direction; v->loop_intro = p->loop_intro;
                 v->gain = p->gain * p->group_gain; v->active = 1;
+                v->route_tile=p->route_tile;v->output_route=p->output_route;
             }
         }
     } else {

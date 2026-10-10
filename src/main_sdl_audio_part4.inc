@@ -134,8 +134,8 @@ static void ts_audio_render_config(TsFramebuffer *fb, const TsUiState *ui)
     cfg_frame(fb, 166, 42, 118, 14, row, edge);
     cfg_text(fb, 188, 46, "AUDIO HEALTH", mouse_color);
     cfg_text(fb, 300, 45,
-        ui->config.audio_backend != ts_started_backend ? "BACKEND: SAVE THEN RESTART" :
-        ts_asio_selected ? "ASIO DRIVER/BUF: SAVE+RESTART" : "BACKEND CHANGE NEEDS RESTART", effect_color);
+        ts_audio_restart_required(&ui->config) ? "PENDING: SAVE CONFIG + RESTART" :
+        "DEVICE CHANGES: SAVE CONFIG TO APPLY", effect_color);
 
     for (int field = 0; field < TS_CONFIG_FIELD_COUNT; ++field) {
         const char *value = ts_config_field_const(&ui->config, (TsConfigField)field);

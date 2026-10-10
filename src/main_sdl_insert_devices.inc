@@ -208,6 +208,7 @@ static void ts_audio_insert_cycle_device(TsUiState *ui,int side,int direction)
 static void ts_audio_insert_diagnostics(void *state,TsUiState *ui,int log)
 {
     AudioState *audio=state;
+    ui->insert_restart_required=ts_audio_restart_required(&ui->config);
     ui->insert_master_rate=ts_real_output?ts_output_endpoint.sample_rate:0;
     ui->insert_master_buffer=ts_real_output?ts_output_endpoint.buffer_frames:0;
     if(log && ts_jack_selected) diagnostic_log("JACK Master worker_xruns=%u Input worker_xruns=%u",
@@ -219,6 +220,8 @@ static void ts_audio_insert_diagnostics(void *state,TsUiState *ui,int log)
             (side?&ts_capture_endpoint:&ts_output_endpoint);
         int open=separate?insert_endpoints[side].device!=0:
             (side?ts_real_capture!=0:ts_real_output!=0);
+        snprintf(ui->insert_active_device[side],sizeof(ui->insert_active_device[side]),"%.159s",
+            open?endpoint->active_name:"NOT OPEN");
         const TsInputMonitor *monitor=side?&audio->sister.insert.return_monitor:
             &audio->sister.insert.send_monitor;
         TsInputMonitorDiagnostics d={0};

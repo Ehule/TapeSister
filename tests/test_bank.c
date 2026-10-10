@@ -47,7 +47,7 @@ int main(void)
           TS_UI_BANK_ACTION_CLONE);
     CHECK(ts_ui_bank_action(0, TS_UI_BANK_MOD_CTRL | TS_UI_BANK_MOD_ALT) ==
           TS_UI_BANK_ACTION_TOGGLE_LOCK);
-    CHECK(ts_ui_bank_action(1, 0) == TS_UI_BANK_ACTION_RENAME);
+    CHECK(ts_ui_bank_action(1, 0) == TS_UI_BANK_ACTION_ROUTING);
     CHECK(ts_ui_bank_action(1, TS_UI_BANK_MOD_SHIFT) == TS_UI_BANK_ACTION_CLEAR);
     CHECK(ts_ui_bank_action(0, TS_UI_BANK_MOD_SHIFT | TS_UI_BANK_MOD_ALT) ==
           TS_UI_BANK_ACTION_INVALID);
@@ -81,7 +81,7 @@ int main(void)
                                     error, sizeof(error)));
     slot5_hash = ts_sample_hash(&bank.bank[5].sample);
     CHECK(slot5_hash != slot0_hash && bank.selected_slot == 0);
-    CHECK(ts_ui_execute_bank_action(&bank, 0, TS_UI_BANK_ACTION_RENAME,
+    CHECK(ts_ui_execute_bank_action(&bank, 0, TS_UI_BANK_ACTION_ROUTING,
                                     error, sizeof(error)));
     CHECK(ts_instrument_bank_rename(&bank, 0, "ONE", error, sizeof(error)));
     CHECK(ts_instrument_bank_rename(&bank, 5, "SIX", error, sizeof(error)));

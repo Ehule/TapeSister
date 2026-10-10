@@ -13,16 +13,18 @@ static const char *router_help(const TsUiState *ui,int x,int y)
     if(ui->router_performance_open)return router_performance_help(x,y);
     if(x>=442 && x<566 && y>=42 && y<65)return "ROUTER PERFORMANCE: A-Z STATES / 64 STEPS / TIMED BYPASS AND SOLO";
     if(x>=574 && y>=42 && y<66)return "CLOSE ROUTER; AUDIO KEEPS PLAYING; F9 ALSO OPENS/CLOSES";
+    if(y>=74 && y<98 && x<146)return "MAIN MIX: SIGNAL PATH, MASTER INSERT AND SHARED EFFECT RETURNS";
     if(y>=74 && y<96)return "FIXED SOURCE: CURRENT MIX; POWERED SISTER KEEPS ITS EXISTING INPUT SELECTION";
     if(y>=108 && y<318) {
-        int stage=ui->config.router.order[(y-108)/42];
+        int stage=ts_router_display_stage(&ui->router_live,(y-108)/42);
         if(stage==TS_ROUTER_INSERT && x>=252 && x<330)return "INSERT SETUP: SELECT SEND / RETURN PAIRS AND LEVELS";
+        if(stage==TS_ROUTER_INSERT && ui->router_live.master_mix && x<414)return "MASTER MIX: INSERT IS FIXED AFTER CLEAN + RETURNS, BEFORE EQ AND LIMITER";
         if(x>=512)return "SOLO ONE STAGE / RIGHT-CLICK: TIMED SOLO / LEFT-CLICK: OVERRIDE UNTIL NEXT STEP";
         if(x>=414)return "BYPASS THIS STAGE / RIGHT-CLICK: TIMED BYPASS / LEFT-CLICK: OVERRIDE UNTIL NEXT STEP";
         if(x>=344)return "SIGNAL AT THIS POINT; LIGHTS CAN GLOW WHILE A PROCESSOR IS BYPASSED OR OFF";
         if(ui->router_view.running)return "STOP ROUTER SEQUENCE TO REORDER STAGES; BYPASS/SOLO REMAIN AVAILABLE";
         int row=(y-108)/42;
-        if(ui->config.router.order[row]==TS_ROUTER_PEDALBOARD)
+        if(ts_router_display_stage(&ui->router_live,row)==TS_ROUTER_PEDALBOARD)
             return "DRAG POST CHAIN AS ONE BLOCK; PRE/HEAD INSERTS STAY IN SISTER; BYPASS GATES ALL";
         return "DRAG UP/DOWN TO REORDER THE REAL AUDIO PATH; ESC CANCELS THE DRAG";
     }
@@ -51,25 +53,29 @@ static void router_render(TsFramebuffer *fb,const TsUiState *ui)
     text(fb,228,48,playback,teal,1);button(fb,442,42,124,"PERFORMANCE",0);
     button(fb,574,42,44,"X",0);
     rect(fb,154,74,336,22,RGB(17,21,24));text(fb,170,82,"SOURCE / INPUT",teal,1);
+    button(fb,22,74,124,"MAIN MIX...",0);
     router_activity(fb,422,83,ui->router_peaks[TS_ROUTER_COUNT*2]);
     text(fb,500,82,ui->router_view.running?"LOCKED":"FIXED",muted,1);
     const TsRouterControls *c=&ui->router_live;
     const char *detail[]={"LENSES / MORPH / MATRIX","TAPE / PRE + HEAD INSERTS",
         "GLOBAL TEXTURE / MASTER FX","STEREO POST / SLOT ORDER","100% WET / EXTERNAL LOOP"};
     for(int row=0;row<TS_ROUTER_COUNT;++row) {
-        int stage=c->order[row],y=108+row*42;
+        int stage=ts_router_display_stage(c,row),y=108+row*42;
         int active=ts_router_active(c,stage),available=(ui->router_enabled&(1u<<stage))!=0;
         uint32_t color=active && available?teal:muted;
         rect(fb,319,y-12,2,12,ui->router_peaks[stage*2]>.0001f?teal:RGB(50,53,58));
         rect(fb,64,y,552,36,ui->router_drag==row+1?RGB(55,42,59):RGB(36,37,44));
         rect(fb,64,y,3,36,c->solo==stage+1?amber:color);
         for(int n=0;n<3;++n){rect(fb,77,y+13+n*5,3,2,color);rect(fb,83,y+13+n*5,3,2,color);}
-        text(fb,99,y+8,ts_router_name(stage),color,1);
+        text(fb,99,y+8,stage==TS_ROUTER_INSERT && c->master_mix?"MASTER INSERT":ts_router_name(stage),color,1);
         if(ui->router_view.timer_kind[stage]) {
             char timer[48],time[16];router_time_label(time,sizeof(time),ui->router_view.timer_remaining[stage]);
             snprintf(timer,sizeof(timer),"%s %s %s",ui->router_view.timer_kind[stage]==TS_ROUTER_TIMER_SOLO?"SOLO":"BYP",
                 ui->router_view.timer_after[stage]?"IN":"FOR",time);text(fb,99,y+23,timer,amber,1);
-        } else text(fb,99,y+23,detail[stage],muted,1);
+        } else {
+            int bus=ts_router_send_bus(stage);
+            text(fb,99,y+23,stage==TS_ROUTER_INSERT && c->master_mix?"FINAL MIX / BEFORE EQ":bus>=0&&(c->send_mask&(1u<<bus))?"SHARED SEND / WET RETURN":detail[stage],muted,1);
+        }
         const char *state=!active?(c->solo?"SKIP":"BYPASS"):!available?"OFF":c->solo==stage+1?"SOLO":"ON";
         if(stage==TS_ROUTER_INSERT) {
             button(fb,252,y+6,76,"SETUP",0);
@@ -91,6 +97,7 @@ static void router_render(TsFramebuffer *fb,const TsUiState *ui)
     button(fb,426,331,140,"AMBISONICS",ui->config.spatial.enabled);
     router_activity(fb,382,341,ui->router_peaks[TS_ROUTER_COUNT*2+1]);
     const char *help=ui->performance_tooltip[0]?ui->performance_tooltip:
+        c->master_mix?"MASTER MIX: CLEAN + RETURNS > INSERT > MASTER EQ > LIMITER > OUT":
         "DRAG: ORDER / RIGHT-CLICK BYPASS/SOLO: TIMER / PERFORMANCE: STATES / F9: CLOSE";
     router_learn_overlay(fb,ui);
     char line[99];snprintf(line,sizeof(line),"%.98s",help);text(fb,22,364,line,ui->performance_tooltip[0]?amber:muted,1);

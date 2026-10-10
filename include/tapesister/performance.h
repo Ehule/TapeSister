@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 #include "tapesister/audition.h"
+#include "tapesister/source_route.h"
 #include "tapesister/voice_handoff.h"
 #include "tapesister/note_event.h"
 #include "tapesister/sample.h"
@@ -38,6 +39,8 @@ typedef struct TsPerformanceGeneration {
 
 typedef struct {
     const TsSample *sample;
+    TsTileId route_tile;
+    TsSourceRouteVoice output_route;
     TsPerformanceGeneration *generation;
     TsPerformanceGeneration *pending_generation;
     TsPerformanceGeneration *transition_generation;
@@ -102,6 +105,7 @@ typedef struct {
     uint64_t next_group_id;
     int render_limit; /* One past the highest live or not-yet-observed release. */
     uint64_t rendered_group[TS_PERFORMANCE_VOICE_LIMIT];
+    TsSourceRouteHandoff clean_handoff;
     TsVoiceHandoff output_handoff, raw_handoff;
     uint32_t handoff_frames;
     int attack_ms;
@@ -157,6 +161,7 @@ int ts_performance_trigger_staged(TsPerformanceBank *bank,
                                   TsKeyboardMask staged_notes,
                                   int keyboard_base_note,
                                   int output_rate);
+TsStereoFrame ts_performance_read_routed(TsPerformanceBank *bank, TsStereoFrame *raw, TsSourceRouteMix *clean);
 float ts_performance_read(TsPerformanceBank *bank, float *raw_mix);
 TsStereoFrame ts_performance_read_stereo(TsPerformanceBank *bank,
                                          TsStereoFrame *raw_mix);

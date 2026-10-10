@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "tapesister/tile_id.h"
+#include "tapesister/source_route_types.h"
 
 enum {
     TS_HISTORY_DEPTH = 20,
@@ -438,6 +439,7 @@ typedef struct {
     TsSample sample;
     TsSample edit_parent;
     TsTileId tile_id;
+    TsSourceRoute output_route;
     TsTuning tuning;
     TsTuning audible_tuning;
     size_t loop_first;

@@ -58,6 +58,7 @@ typedef struct {
     double elapsed;
     uint32_t random;
     TsStereoFrame last, fade_from;
+    TsSourceRouteMix clean_last, clean_fade_from;
     unsigned fade_remaining, fade_frames;
     double gain_current, lfo_phase;
     float effective_gain;
@@ -100,6 +101,7 @@ int ts_keyboard_sequence_toggle(TsKeyboardSequence *sequence, int midi_note);
 TsKeyboardSequenceSource *ts_keyboard_sequence_source(
     TsKeyboardSequence *sequence, TsKeyboardSequenceSource *source);
 void ts_keyboard_sequence_source_free(TsKeyboardSequenceSource *source);
+TsStereoFrame ts_keyboard_sequence_read_routed(TsKeyboardSequence *sequence,int rate,TsSourceRouteMix *clean);
 TsStereoFrame ts_keyboard_sequence_read(TsKeyboardSequence *sequence, int rate);
 const char *ts_keyboard_sequence_mode_name(int mode);
 uint32_t ts_keyboard_sequence_mask(const TsKeyboardSequenceSettings *settings,

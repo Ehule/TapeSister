@@ -2,6 +2,7 @@
 #define TAPESISTER_ROUTER_H
 
 #include "tapesister/sample.h"
+#include "tapesister/source_route_types.h"
 #include <stdint.h>
 #include <stdio.h>
 
@@ -12,6 +13,10 @@ typedef struct {
     int order[TS_ROUTER_COUNT];
     unsigned bypass_mask;
     int solo; /* Zero, or one stable processor ID + 1. */
+    unsigned send_mask; /* TS_SEND_* buses: each processor is Chain OR Send. */
+    int master_mix; /* Recombine Clean + Sends before a final Insert and EQ. */
+    TsSourceRoute return_route[TS_SOURCE_SENDS];
+    int return_level[TS_SOURCE_SENDS];
 } TsRouterControls;
 
 enum { TS_ROUTER_STATES=26, TS_ROUTER_STEPS=64 };
@@ -51,12 +56,15 @@ typedef struct {
     float source_peak, master_peak, gain, step, decay;
     unsigned sample_rate;
     int handoff; /* -1 fades out, +1 fades in. Never runs two DSP histories. */
+    unsigned send_mask; /* Active topology, switched only at the handoff's zero. */
+    int master_mix;
     TsRouterPerformance performance;
     TsRouterTransport transport;
 } TsRouter;
 typedef TsStereoFrame (*TsRouterProcess)(void *context,int stage,TsStereoFrame input);
 
 void ts_router_default(TsRouterControls *controls);
+int ts_router_display_stage(const TsRouterControls *controls,int row);
 int ts_router_valid(const TsRouterControls *controls);
 void ts_router_sanitize(TsRouterControls *controls);
 int ts_router_active(const TsRouterControls *controls,int stage);
@@ -64,6 +72,10 @@ void ts_router_move(TsRouterControls *controls,int from,int to);
 void ts_router_toggle_bypass(TsRouterControls *controls,int stage);
 void ts_router_toggle_solo(TsRouterControls *controls,int stage);
 const char *ts_router_name(int stage);
+int ts_router_send_bus(int stage);
+int ts_router_send_stage(int bus);
+void ts_router_set_return(TsRouter *router,int bus,int send,TsSourceRoute route,int level);
+void ts_router_set_master_mix(TsRouter *router,int enabled);
 void ts_router_init(TsRouter *router);
 void ts_router_prepare(TsRouter *router,unsigned sample_rate);
 void ts_router_set(TsRouter *router,const TsRouterControls *controls);

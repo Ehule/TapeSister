@@ -170,6 +170,8 @@ void ts_prism_set_controls(TsPrism *prism, const TsPrismControls *controls);
    changing transport or overwriting any A-Z bank memory. */
 int ts_prism_matrix_export(const TsPrism *prism, TsPrismControls *controls);
 TsStereoFrame ts_prism_process(TsPrism *prism, TsStereoFrame input);
+/* Same history and one processing pass, without the explicit dry branch. */
+TsStereoFrame ts_prism_process_send(TsPrism *prism, TsStereoFrame input);
 /* Audio owner only; the runtime publishes this through its atomic snapshot. */
 TsPrismView ts_prism_view(const TsPrism *prism);
 /* Static control diagram when no device is running. No invented animation. */

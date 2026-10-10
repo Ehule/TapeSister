@@ -74,6 +74,7 @@ void ts_sister_project_state_init(TsSisterProjectState *state,
     ts_master_eq_default(&state->master_eq);
     ts_spatial_default(&state->spatial);
     ts_router_default(&state->router);
+    ts_matrix_default(&state->matrix);
     ts_router_performance_default(&state->router_performance);
     ts_keyboard_sequence_bank_default(&state->keyboard_sequence);
     ts_insert_default(&state->insert);
@@ -100,6 +101,7 @@ void ts_sister_project_state_capture(TsSisterProjectState *state,
     ts_prism_matrix_export(&runtime->prism,&state->parameters.prism);
     state->master_eq = runtime->master_eq.controls;
     state->router = ts_router_export(&runtime->router);
+    state->matrix=runtime->matrix.controls;
     state->router_performance = runtime->router.performance;
     state->insert = runtime->insert.controls;
     state->spatial = runtime->spatial.controls;
@@ -131,6 +133,7 @@ int ts_sister_project_state_apply(const TsSisterProjectState *state,
     ts_master_eq_set(&runtime->master_eq,&state->master_eq);
     ts_spatial_recall(&runtime->spatial,&state->spatial);
     ts_sister_runtime_set_router(runtime,&state->router);
+    ts_matrix_set(&runtime->matrix,&state->matrix,runtime->router.sample_rate);
     runtime->router.transport.restore_valid=0;
     ts_router_performance_set(&runtime->router,&state->router_performance);
     ts_sister_runtime_set_insert(runtime,&state->insert);
@@ -290,6 +293,7 @@ int ts_sister_project_state_save_file(const TsSisterProjectState *state,
     if (!failed) failed = !ts_master_eq_write(file,&state->master_eq);
     if (!failed) failed = !ts_spatial_write(file,&state->spatial);
     if (!failed) failed = !ts_router_write(file,&state->router);
+    if (!failed) failed = !ts_matrix_write(file,&state->matrix);
     if (!failed) failed = !ts_router_performance_write(file,&state->router_performance);
     if (!failed) failed = !ts_keyboard_sequence_bank_write(file,&state->keyboard_sequence);
     if (!failed) failed = !ts_insert_write(file,&state->insert);
@@ -637,13 +641,15 @@ int ts_sister_project_state_load_file(TsSisterProjectState *state,
             if(ts_insert_read(&loaded.insert,key,value)<0)goto malformed;
         } else if (!strncmp(key,"RouterPerf.",11)) {
             if(ts_router_performance_read(&loaded.router_performance,key,value)<0)goto malformed;
+        } else if (!strncmp(key,"Matrix.",7)) {
+            if(ts_matrix_read(&loaded.matrix,key,value)<0)goto malformed;
         } else if (!strncmp(key,"Router.",7)) {
             if(ts_router_read(&loaded.router,key,value)<0)goto malformed;
         } else if (!strncmp(key,"MasterEq.",9)) {
             if(ts_master_eq_read(&loaded.master_eq,key,value)<0)goto malformed;
         } else if (!assign_parameter(&loaded.parameters, key, value)) goto malformed;
     }
-    if (ferror(file) || !header || !version || !have_pages ||
+    if (ferror(file) || !header || !version || !have_pages || !ts_matrix_valid(&loaded.matrix) ||
         loaded.active_page >= loaded.page_count) goto malformed;
     fclose(file);
     if (version < 12 /* FX slot migration predates Prism */) {

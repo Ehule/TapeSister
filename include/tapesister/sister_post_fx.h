@@ -312,6 +312,8 @@ float ts_sister_grain_density_hz(float normalized);
 float ts_sister_grain_pitch_semitones(float normalized);
 float ts_sister_fx_transition_ms(float normalized);
 float ts_sister_fx_transition_normalized(float milliseconds);
+/* Wet-only POST return, sharing the existing slot instances and MIX controls. */
+TsStereoFrame ts_sister_post_fx_process_send(TsSisterPostFxEngine *engine,TsStereoFrame input);
 float ts_sister_post_fx_master_engage(const TsSisterPostFxEngine *engine);
 TsSisterFxTransitionStatus ts_sister_post_fx_transition_status(
     const TsSisterPostFxEngine *engine);

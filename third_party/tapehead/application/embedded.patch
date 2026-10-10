@@ -1,11 +1,13 @@
 --- a/src/ft2_audio.c
 +++ b/src/ft2_audio.c
-@@ -503,6 +503,19 @@
+@@ -503,6 +503,21 @@
  	}
  
  	v->mixFuncOffset = ((int32_t)sample16Bit * 15) + (audio.interpolationType * 3) + loopType;
 +#ifdef TAPEHEAD_EMBEDDED
 +	v->tileData = s->tileData;
++	v->tileId=s->tileId;v->tileRouteIndex=s->tileRouteIndex;v->tileRoute=s->tileRoute;v->tileLane=-1;
++	memset(&v->tileRouting,0,sizeof(v->tileRouting));
 +	v->tileChannels = s->tileChannels;
 +	v->tilePosition = v->position;
 +	v->tileDirection = 1;
@@ -20,7 +22,7 @@
  	v->active = true;
  }
  
-@@ -594,6 +607,11 @@
+@@ -594,6 +609,11 @@
  	v->position = 0;
  	v->positionFrac = 0;
  	v->samplingBackwards = reverse;
@@ -32,7 +34,7 @@
  	v->loopType = reverse ? LOOP_PINGPONG : LOOP_DISABLED;
  	if (sample16Bit)
  		v->revBase16 = &v->base16[s->length];
-@@ -759,6 +777,9 @@
+@@ -759,6 +779,9 @@
  {
  	if (v->active)
  	{
@@ -42,7 +44,7 @@
  		const bool volRampFlag = (v->volumeRampLength > 0);
  		const bool silent = audio.monoOutputMode
  			? v->fCurrVolumeMono == 0.0f
-@@ -770,6 +791,12 @@
+@@ -770,6 +793,12 @@
  				v, bufferPosition, samplesToMix);
  	}
  
@@ -55,7 +57,17 @@
  	if (r->active) // volume ramp fadeout-voice
  		mixFuncTab[mixOffsetBias + r->mixFuncOffset](r, bufferPosition, samplesToMix);
  }
-@@ -1465,6 +1492,11 @@
+@@ -885,6 +914,9 @@
+ 
+ 	for (int32_t i = 0; i < song.numChannels; i++, v++, r++)
+ 	{
++#ifdef TAPEHEAD_EMBEDDED
++        v->tileLane=r->tileLane=i;
++#endif
+ 		if (audio.monoOutputMode)
+ 		{
+ 			/*
+@@ -1465,6 +1497,11 @@
  
  void lockAudio(void)
  {
@@ -67,7 +79,7 @@
  	if (tapeheadLiveLinkIsOpen())
  		tapeheadLiveLinkLock();
  	else if (tapeheadJackIsOpen())
-@@ -1477,6 +1509,11 @@
+@@ -1477,6 +1514,11 @@
  
  void unlockAudio(void)
  {
@@ -79,7 +91,7 @@
  	if (tapeheadLiveLinkIsOpen())
  		tapeheadLiveLinkUnlock();
  	else if (tapeheadJackIsOpen())
-@@ -1682,6 +1719,10 @@
+@@ -1682,6 +1724,10 @@
  		const bool blockSeam = audio.tickSampleCounter == 0 &&
  			tapeheadBlockLoopIsActive() && !tapeheadBlockLoopIsOffline() &&
  			tapeheadBlockLoopCycleCompleted();
@@ -90,7 +102,7 @@
  		const float captureNormalizeMultiplier =
  			(config.specialFlags & BITDEPTH_16)
  			? fAudioNormalizeMul / 32768.0f : fAudioNormalizeMul;
-@@ -2075,6 +2116,10 @@
+@@ -2075,6 +2121,10 @@
  
  bool setupAudio(bool showErrorMsg)
  {
@@ -101,7 +113,7 @@
  	SDL_AudioSpec want, have;
  
  	closeAudio();
-@@ -2427,3 +2472,49 @@
+@@ -2427,3 +2477,49 @@
  			updateWindowTitle(true);
  	}
  }
@@ -153,13 +165,18 @@
 +#endif
 --- a/src/ft2_audio.h
 +++ b/src/ft2_audio.h
-@@ -78,6 +78,16 @@
+@@ -78,6 +78,21 @@
  
  typedef struct
  {
 +
 +#ifdef TAPEHEAD_EMBEDDED
 +	const float *tileData;
++	uint64_t tileId;
++	unsigned tileRouteIndex;
++	int tileLane;
++	TsSourceRoute tileRoute;
++	TsSourceRouteVoice tileRouting;
 +	uint8_t tileChannels;
 +	double tilePosition;
 +	int tileDirection, tileIntro;
@@ -676,7 +693,7 @@
  	state->reversed = !state->reversed;
  	state->cycleStepCounter = 0;
  
-@@ -1612,3 +1639,18 @@
+@@ -1612,3 +1639,33 @@
  	}
  	pendingFastTracksMetadataValid = false;
  }
@@ -695,6 +712,21 @@
 +    if(unlocked)unlockAudio();
 +    ui.updatePatternEditor=true;
 +}
++
++#ifdef TAPEHEAD_EMBEDDED
++/* Read the same first-in-song LEN/CONTROL policy without touching playback. */
++void tapeheadEmbeddedPendingLengths(const song_t *source,uint16_t lengths[32],int *control)
++{
++    memset(lengths,0,32*sizeof(*lengths));*control=-1;
++    if(!pendingFastTracksMetadataValid)return;
++    for(int pass=0;pass<2;++pass)for(int n=0;n<(pass?256:source->songLength);++n) {
++        int p=pass?n:source->orders[n];
++        if(*control<0 && pendingFastTracksControlTrackPlusOne[p])
++            *control=pendingFastTracksControlTrackPlusOne[p]-1;
++        for(int ch=0;ch<32;++ch)if(!lengths[ch])lengths[ch]=pendingFastTracksPatternLength[p][ch];
++    }
++}
++#endif
 --- a/src/ft2_fasttracks.h
 +++ b/src/ft2_fasttracks.h
 @@ -41,7 +41,7 @@
@@ -1496,12 +1528,25 @@
  		editor.songPos = pattSyncEntry->songPos;
 --- a/src/ft2_replayer.h
 +++ b/src/ft2_replayer.h
-@@ -228,6 +228,12 @@
+@@ -2,6 +2,9 @@
+ 
+ #include <stdint.h>
+ #include <stdbool.h>
++#ifdef TAPEHEAD_EMBEDDED
++#include "tapesister/source_route_types.h"
++#endif
+ #include "ft2_unicode.h"
+ #include "ft2_microtonal.h"
+ #include "mixer/ft2_windowed_sinc.h"
+@@ -228,6 +231,15 @@
  typedef struct sample_t
  {
  	char name[22+1];
 +#ifdef TAPEHEAD_EMBEDDED
 +	float *tileData;
++	uint64_t tileId;
++	unsigned tileRouteIndex;
++	TsSourceRoute tileRoute;
 +	uint8_t tileChannels, tileLoopMode;
 +	uint32_t tileCrossfade;
 +	double tileRateCorrection;
@@ -1817,26 +1862,6 @@
 
 diff --git a/src/ft2_fasttracks.c b/src/ft2_fasttracks.c
 index 6b3e62c..8ca7167 100644
---- a/src/ft2_fasttracks.c
-+++ b/src/ft2_fasttracks.c
-@@ -1656,0 +1657,15 @@ void fastTracksPOCSetDirection(int32_t channelIndex,uint8_t direction)
-+
-+#ifdef TAPEHEAD_EMBEDDED
-+/* Read the same first-in-song LEN/CONTROL policy without touching playback. */
-+void tapeheadEmbeddedPendingLengths(const song_t *source,uint16_t lengths[32],int *control)
-+{
-+    memset(lengths,0,32*sizeof(*lengths));*control=-1;
-+    if(!pendingFastTracksMetadataValid)return;
-+    for(int pass=0;pass<2;++pass)for(int n=0;n<(pass?256:source->songLength);++n) {
-+        int p=pass?n:source->orders[n];
-+        if(*control<0 && pendingFastTracksControlTrackPlusOne[p])
-+            *control=pendingFastTracksControlTrackPlusOne[p]-1;
-+        for(int ch=0;ch<32;++ch)if(!lengths[ch])lengths[ch]=pendingFastTracksPatternLength[p][ch];
-+    }
-+}
-+#endif
-diff --git a/src/ft2_module_saver.c b/src/ft2_module_saver.c
-index eff70ff..fda7338 100644
 --- a/src/ft2_module_saver.c
 +++ b/src/ft2_module_saver.c
 @@ -0,0 +1 @@
@@ -2255,3 +2280,172 @@ diff --git a/src/modloaders/ft2_load_it.c b/src/modloaders/ft2_load_it.c
 @@ -1534 +1414 @@
 -			loadCompressed8BitSample(f, s, deltaEncoded);
 +			return loadCompressed8BitSample(f, s, deltaEncoded);
+
+diff --git a/src/ft2_audio.c b/src/ft2_audio.c
+index c2bf580..c3bb971 100644
+--- a/src/ft2_audio.c
++++ b/src/ft2_audio.c
+@@ -1647,0 +1648,3 @@ static void fillVisualsSyncBuffer(void)
++#ifdef TAPEHEAD_EMBEDDED
++		c->scopePan = s->finalPan;
++#endif
+diff --git a/src/ft2_replayer.h b/src/ft2_replayer.h
+index c7d6098..3077d93 100644
+--- a/src/ft2_replayer.h
++++ b/src/ft2_replayer.h
+@@ -218,0 +219,3 @@ typedef struct syncedChannel_t // used for audio/video sync queue (pack to save
++#ifdef TAPEHEAD_EMBEDDED
++	uint8_t scopePan;
++#endif
+diff --git a/src/scopes/ft2_scopes.c b/src/scopes/ft2_scopes.c
+index b5ac07f..1cb8dba 100644
+--- a/src/scopes/ft2_scopes.c
++++ b/src/scopes/ft2_scopes.c
+@@ -30,0 +31,4 @@ static SDL_Thread *scopeThread;
++#ifdef TAPEHEAD_EMBEDDED
++/* UI-owned, populated by the existing audio/display sync queue. */
++static uint8_t scopePan[MAX_CHANNELS];
++#endif
+@@ -236,0 +241,20 @@ static void drawTrackTrimIndicator(uint16_t scopeX, uint16_t scopeY,
++#ifdef TAPEHEAD_EMBEDDED
++static void drawScopePan(uint16_t x, uint16_t y, uint16_t width, int32_t ch)
++{
++	/* Leave the number/REC rows and the right-edge trim strip unobstructed. */
++	const int32_t left = x + 1;
++	const int32_t right = x + width - tapeheadConfig.trackTrimDisplayWidth - 2;
++	if (right < left)
++		return;
++	const int32_t center = (left + right + 1) / 2;
++	const int32_t panX = left + (scopePan[ch] * (right - left) + 127) / 255;
++	const uint8_t color = editor.channelMuted[ch] || performanceMute[ch]
++		? PAL_DSKTOP1 : PAL_MOUSEPT;
++
++	/* Short center ticks remain visible on either end of the moving line. */
++	vLine(center, y + 9, 3, PAL_BUTTONS);
++	vLine(center, y + 28, 3, PAL_BUTTONS);
++	vLine(panX, y + 12, 16, color);
++}
++#endif
++
+@@ -292,0 +317,3 @@ static void redrawScope(int32_t ch)
++#ifdef TAPEHEAD_EMBEDDED
++	drawScopePan(x + 1, y + 1, scopeLen, i);
++#endif
+@@ -727,0 +755,3 @@ void drawScopes(void)
++#ifdef TAPEHEAD_EMBEDDED
++		drawScopePan(scopeXOffs, scopeYOffs, scopeDrawLen, i);
++#endif
+@@ -752,0 +783,9 @@ void handleScopesFromChQueue(chSyncData_t *chSyncData, uint8_t *scopeUpdateStatu
++#ifdef TAPEHEAD_EMBEDDED
++		/* A muted channel is reset to center by FT2. Retain its last position
++		   for the dimmed marker; live/performance-muted tracks follow pan FX. */
++		if (!editor.channelMuted[i] && scopePan[i] != ch->scopePan)
++		{
++			scopePan[i] = ch->scopePan;
++			sc->wasCleared = false; /* Pan can change on a silent/ended voice. */
++		}
++#endif
+@@ -811,0 +851,5 @@ bool initScopes(void)
++	for (int32_t i = 0; i < MAX_CHANNELS; i++)
++	{
++		scopePan[i] = 128;
++		scope[i].wasCleared = false;
++	}
+
+diff --git a/src/ft2_audio.c b/src/ft2_audio.c
+index c3bb971..b0c6e61 100644
+--- a/src/ft2_audio.c
++++ b/src/ft2_audio.c
+@@ -1649,0 +1650,2 @@ static void fillVisualsSyncBuffer(void)
++		c->scopeTileId = v->tileId;
++		c->scopeTileRouteIndex = v->tileRouteIndex;
+diff --git a/src/ft2_header.h b/src/ft2_header.h
+index 80cca00..bec789d 100644
+--- a/src/ft2_header.h
++++ b/src/ft2_header.h
+@@ -22,0 +23,2 @@ void ts_tapehead_host_redraw(void);
++void ts_tapehead_scope_source(int lane,uint64_t tile_id,unsigned route_index);
++int ts_tapehead_scope_pan(int lane,int source_pan);
+diff --git a/src/ft2_replayer.h b/src/ft2_replayer.h
+index 3077d93..3547842 100644
+--- a/src/ft2_replayer.h
++++ b/src/ft2_replayer.h
+@@ -220,0 +221,2 @@ typedef struct syncedChannel_t // used for audio/video sync queue (pack to save
++	uint64_t scopeTileId;
++	unsigned scopeTileRouteIndex;
+diff --git a/src/scopes/ft2_scopes.c b/src/scopes/ft2_scopes.c
+index 1cb8dba..472d0f3 100644
+--- a/src/scopes/ft2_scopes.c
++++ b/src/scopes/ft2_scopes.c
+@@ -33,0 +34 @@ static uint8_t scopePan[MAX_CHANNELS];
++static int16_t scopeDisplayedPan[MAX_CHANNELS];
+@@ -250 +251,3 @@ static void drawScopePan(uint16_t x, uint16_t y, uint16_t width, int32_t ch)
+-	const int32_t panX = left + (scopePan[ch] * (right - left) + 127) / 255;
++	const int32_t pan = ts_tapehead_scope_pan(ch, scopePan[ch]);
++	scopeDisplayedPan[ch] = (int16_t)pan;
++	const int32_t panX = left + (pan * (right - left) + 127) / 255;
+@@ -700,0 +704,9 @@ void drawScopes(void)
++#ifdef TAPEHEAD_EMBEDDED
++		/* Route edits are independent of the audio queue. Clear old markers
++		   on silent scopes too, and repaint the dimmed marker over mute X. */
++		if (scopeDisplayedPan[i] != ts_tapehead_scope_pan(i, scopePan[i]))
++		{
++			scope[i].wasCleared = false;
++			if (editor.channelMuted[i])redrawScope(i);
++		}
++#endif
+@@ -783,0 +796,4 @@ void handleScopesFromChQueue(chSyncData_t *chSyncData, uint8_t *scopeUpdateStatu
++		/* Retain the tile after stop, but replace it on the next voice trigger.
++		   Its stable ID prevents a rebound alias from borrowing another route. */
++		if (ch->scopeTileId || (status & CS_TRIGGER_VOICE))
++			ts_tapehead_scope_source(i, ch->scopeTileId, ch->scopeTileRouteIndex);
+@@ -853,0 +870 @@ bool initScopes(void)
++		scopeDisplayedPan[i] = -1;
+
+diff --git a/src/ft2_fasttracks.c b/src/ft2_fasttracks.c
+index 8ca7167..41f9991 100644
+--- a/src/ft2_fasttracks.c
++++ b/src/ft2_fasttracks.c
+@@ -227,0 +228,11 @@ uint16_t fastTracksPOCGetTrackLength(uint16_t patternNumber, int32_t channelInde
++static int32_t lengthChannelCount(void)
++{
++#ifdef TAPEHEAD_EMBEDDED
++	/* Removed lanes retain their metadata, but cannot extend or control the
++	** active song until the user adds them back. */
++	return song.numChannels;
++#else
++	return FAST_TRACKS_MAX_CHANNELS;
++#endif
++}
++
+@@ -235 +246 @@ uint16_t fastTracksPOCGetExtendedPatternLength(uint16_t patternNumber)
+-	for (int32_t channelIndex = 0; channelIndex < FAST_TRACKS_MAX_CHANNELS;
++	for (int32_t channelIndex = 0; channelIndex < lengthChannelCount();
+@@ -245 +256 @@ bool fastTracksPOCHasExplicitTrackLengths(void)
+-	for (int32_t channelIndex = 0; channelIndex < FAST_TRACKS_MAX_CHANNELS;
++	for (int32_t channelIndex = 0; channelIndex < lengthChannelCount();
+@@ -266 +277 @@ uint16_t fastTracksPOCGetSharedBoundary(uint16_t patternNumber)
+-	if (controlTrack >= 0)
++	if (controlTrack >= 0 && controlTrack < lengthChannelCount())
+@@ -276 +287 @@ uint16_t fastTracksPOCGetSharedBoundary(uint16_t patternNumber)
+-	for (int32_t channelIndex = 0; channelIndex < FAST_TRACKS_MAX_CHANNELS;
++	for (int32_t channelIndex = 0; channelIndex < lengthChannelCount();
+@@ -287,0 +299 @@ bool fastTracksPOCLengthTopologyIsActive(uint16_t patternNumber)
++	const int32_t controlTrack = fastTracksPOCGetControlTrack(patternNumber);
+@@ -289 +301 @@ bool fastTracksPOCLengthTopologyIsActive(uint16_t patternNumber)
+-		(fastTracksPOCGetControlTrack(patternNumber) >= 0 ||
++		((controlTrack >= 0 && controlTrack < lengthChannelCount()) ||
+diff --git a/src/scopes/ft2_scopes.c b/src/scopes/ft2_scopes.c
+index 472d0f3..851464a 100644
+--- a/src/scopes/ft2_scopes.c
++++ b/src/scopes/ft2_scopes.c
+@@ -887,0 +888,9 @@ void tapeheadEmbeddedScopeTick(void) { updateScopes(); }
++void tapeheadEmbeddedScopeReset(int32_t ch)
++{
++	if (ch < 0 || ch >= MAX_CHANNELS)return;
++	scope[ch].active = false;
++	scope[ch].wasCleared = false;
++	scopePan[ch] = 128;
++	scopeDisplayedPan[ch] = -1;
++	lastChInstr[ch].instrNum = lastChInstr[ch].smpNum = 255;
++}

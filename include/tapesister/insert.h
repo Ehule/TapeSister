@@ -14,6 +14,10 @@ typedef struct {
 
 typedef struct {
     TsInsertControls controls;
+    /* Independent physical input pairs for the unified matrix. */
+    TsInputMonitor *matrix_input;
+    _Atomic unsigned matrix_channels;
+    _Atomic int matrix_active;
     TsInputMonitor return_monitor;
     TsInputMonitor send_monitor;
     _Atomic unsigned send_request;
@@ -39,6 +43,8 @@ typedef struct {
 void ts_insert_default(TsInsertControls *controls);
 int ts_insert_valid(const TsInsertControls *controls);
 void ts_insert_init(TsInsert *insert);
+void ts_insert_free(TsInsert *insert);
+void ts_insert_matrix_read(TsInsert *insert,TsStereoFrame input[4]);
 void ts_insert_prepare(TsInsert *insert, unsigned sample_rate);
 /* Master callback, before processing its frames. Sizes the RETURN bridge in
    capture-rate frames and publishes the producer burst size for separate SEND. */

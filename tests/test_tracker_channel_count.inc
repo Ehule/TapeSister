@@ -1,0 +1,80 @@
+static void tracker_channel_count(void)
+{
+    SDL_SetWindowSize(test_window,640,400);
+    mod_fixture("track-count.mod",32,0,0);
+    assert(load_instrument(0,test_audio,test_ui,test_bank,test_pages,NULL,0,"track-count.mod"));
+    if(!test_ui->tracker_open)press(SDLK_F10,SDL_SCANCODE_F10,KMOD_NONE);
+    assert(song.numChannels==32);
+    note_t saved=pattern[editor.editPattern][31];assert(saved.note && saved.instr);
+    TsSourceRoute route={.mode=TS_SOURCE_PAIR,.speaker=2,.second=3,.pan=-40};
+    test_pages->tracker.lanes[31].output_route=route;
+    ts_tapehead_routes_changed(0,(TsSourceRoute){0});
+    channelVolumeTrim[31]=160;
+    fastTracksPOCSetTrackLength(editor.editPattern,31,128);
+    fastTracksPOCSetControlTrack(editor.editPattern,31);
+    editor.row=song.row=100; /* Inside this lane's extended LEN surface. */
+    jumpToChannel(31);ts_tapehead_mark_anchor(31,2);
+    pattMark.markX1=pattMark.markX2=31;pattMark.markY1=2;pattMark.markY2=4;
+    unsigned octave=editor.curOctave;
+    mouse_click(313,160,SDL_BUTTON_RIGHT);
+    assert(song.numChannels==30 && test_pages->tracker.channel_count==30);
+    assert(cursor.ch<30 && pattMark.markX1<30 && pattMark.markX2<30);
+    assert(editor.row<64 && song.row<64);
+    assert(ui.channelOffset+ui.numChannelsShown<=30);
+    press(SDLK_LEFT,SDL_SCANCODE_LEFT,KMOD_ALT);
+    assert(pattMark.markX1<30 && pattMark.markX2<30);
+    assert(!memcmp(&saved,&pattern[editor.editPattern][31],sizeof(saved)));
+    assert(fastTracksPOCGetSharedBoundary(editor.editPattern)==64);
+    assert(fastTracksPOCGetExtendedPatternLength(editor.editPattern)==64);
+    export_score();project_roundtrip();
+    assert(!memcmp(&test_pages->tracker.lanes[31].output_route,&route,sizeof(route)));
+    /* Reload the reduced score, then restore its hidden note and settings. */
+    assert(ts_sister_tracker_save_file(&test_pages->tracker,"track-count.tst",test_error,sizeof(test_error)));
+    ts_tapehead_close();
+    assert(ts_sister_tracker_load_file(&test_pages->tracker,"track-count.tst",test_error,sizeof(test_error)));
+    assert(embedded_open(test_window,0,test_audio,test_ui,test_pages,test_bank,48000));
+    click(313,160);assert(song.numChannels==32 && editor.curOctave==octave);
+    assert(!memcmp(&saved,&pattern[editor.editPattern][31],sizeof(saved)));
+    assert(channelVolumeTrim[31]==160 && fastTracksPOCGetControlTrack(editor.editPattern)==31);
+    assert(fastTracksPOCGetSharedBoundary(editor.editPattern)==128);
+    click(313,160);wheel(313,160,3);assert(song.numChannels==32);
+    wheel(313,160,-1);assert(song.numChannels==30);
+    wheel(313,160,.5f);assert(song.numChannels==30);
+    wheel(313,160,.5f);assert(song.numChannels==32);
+    SDL_Event flipped={0};flipped.type=SDL_MOUSEWHEEL;
+    flipped.wheel.y=1;flipped.wheel.preciseY=1;flipped.wheel.direction=SDL_MOUSEWHEEL_FLIPPED;
+    assert(ts_tapehead_event(&flipped,313,160));export_score();assert(song.numChannels==30);
+    mouse_click(313,160,SDL_BUTTON_MIDDLE);assert(song.numChannels==30);
+    ui.sysReqShown=true;
+    SDL_Event blocked={0};blocked.type=SDL_MOUSEBUTTONDOWN;blocked.button.button=SDL_BUTTON_RIGHT;
+    assert(ts_tapehead_event(&blocked,313,160));assert(song.numChannels==30);
+    ui.sysReqShown=false;
+    editor.editTextFlag=true;assert(ts_tapehead_event(&blocked,313,160));assert(song.numChannels==30);
+    editor.editTextFlag=false;
+    wheel(313,160,-20);assert(song.numChannels==2 && cursor.ch<2);
+    mouse_click(313,160,SDL_BUTTON_RIGHT);assert(song.numChannels==2);
+    wheel(313,160,15);assert(song.numChannels==32);
+    press(SDLK_F1,SDL_SCANCODE_F1,KMOD_NONE);assert(editor.curOctave==0);
+    press(SDLK_F6,SDL_SCANCODE_F6,KMOD_NONE);assert(editor.curOctave==5);
+    /* Removing/re-adding a sounding pair leaves the surviving voice running
+       and cannot revive the removed voice from mixer or sync-queue state. */
+    fastTracksPOCSetTrackLength(editor.editPattern,31,0);
+    fastTracksPOCSetControlTrack(editor.editPattern,-1);
+    test_pages->tracker.lanes[31].output_route=(TsSourceRoute){.mode=TS_SOURCE_INHERIT};
+    ts_tapehead_routes_changed(0,(TsSourceRoute){0});
+    pattern[editor.editPattern][0]=(note_t){.note=49,.instr=1,.efx=8,.efxData=0};
+    pattern[editor.editPattern][31]=(note_t){.note=49,.instr=1,.efx=8,.efxData=255};
+    startPlaying(PLAYMODE_PATT,0);
+    const float *out=ts_tapehead_render(256,48000);assert(out && out[254]>.01f && out[255]>.01f);
+    int row=song.row,tick=song.tick,mode=playMode;
+    mouse_click(313,160,SDL_BUTTON_RIGHT);
+    assert(ts_tapehead_running() && song.row==row && song.tick==tick && playMode==mode);
+    out=ts_tapehead_render(64,48000);assert(out && out[126]>.01f && out[127]==0);
+    click(313,160);assert(song.numChannels==32 && ts_tapehead_running());
+    out=ts_tapehead_render(64,48000);assert(out && out[126]>.01f && out[127]==0);
+    ts_tapehead_stop();wheel(313,160,-10);assert(song.numChannels==12);
+    ts_tapehead_tick();test_ui->tracker_embedded_frame=ts_tapehead_frame();
+    snapshot("tracker-track-count.bmp");export_score();
+    assert(ts_sister_tracker_validate(&test_pages->tracker,test_error,sizeof(test_error)));
+    remove("track-count.mod");remove("track-count.tst");
+}

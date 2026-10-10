@@ -247,6 +247,7 @@ typedef enum {
 
 typedef struct {
     int visible;
+    int matrix_routing;
     int capture_channels;
     int capture_overdub;
     TsPerformanceFileState file_capture_state;

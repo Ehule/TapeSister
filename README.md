@@ -205,16 +205,31 @@ boundary.
 ## Global Router
 
 **F9**, or **EQ → GLOBAL ROUTER**, opens the vertical signal path. Drag Prism,
-Sister Machine, Fallout, Pedalboard and INSERT into a different order, or use each
+Sister Machine, Fallout and Pedalboard into a different order, or use each
 module's Bypass/Solo controls while playing. Small activity lights show where audio
 is arriving, separately from whether a module is enabled. Source and final
 EQ/limiter/OUT stay fixed. Routing saves with projects and configuration.
 
 Pedalboard's stereo POST chain moves as one module; its existing PRE/head inserts
-stay inside Sister. INSERT adds a movable, 100%-wet external send/return loop using
+stay inside Sister. Master INSERT follows the combined mix before EQ; advanced
+direct mode keeps its movable serial position. Its 100%-wet hardware loop uses
 spare output pairs or independent SEND/RETURN devices. **SETUP** on its Router
 row opens device, channel and level controls. New and older projects start with INSERT bypassed.
 [Controls and routing details](docs/USER_MANUAL.md#global-router).
+
+Right-click a tile or TrackSister track number for **Pan / Out**, **Sends** and
+**FX Returns**. New tracks use their own **Main Mix** routing, with live pan and
+width; **Routing: Tile** explicitly enables tile inheritance. Advanced direct
+speaker outputs are revealed separately and clearly mark the master processing
+they bypass. Each effect keeps one shared **Chain / Send** role and wet-only return.
+
+**F9 → Main Mix…** shows the complete path and opens Master Insert setup. Fresh
+configuration sends clean sound and shared returns through **Master Insert → EQ
+→ limiter → OUT**. Existing projects retain their saved routing. Insert starts
+bypassed. Its device/pair choices use **Apply Now**, with selected and active ports
+shown separately; pending backend or ASIO driver/buffer changes explicitly say
+**Save Config + Restart**. Pan, routing and mix edits apply live. Middle-click a
+tile to rename it. [Routing guide and examples](docs/SOURCE_ROUTING.md).
 
 **F9 → PERFORMANCE** adds timed Bypass/Solo, A–Z Router States and up to 64
 steps with individual hold times. Manual gestures override until the next step;
@@ -430,8 +445,8 @@ For an ordinary developer build without creating the ZIP, continue to use
 - [SisterTracker playback](docs/SISTERTRACKER_PLAYBACK.md) — F10 embeds the original
   TapeHead editor and replayer, with tile bindings, original editing/undo,
   XM/MOD import, approximate IT conversion, optional raw-file import, XM export,
-  instrument tiles, up to 32 tracks, Song and FastTracks
-  transport, Sister TRACK and final Main recording.
+  instrument tiles, a TRK control for 2–32 tracks, Song and FastTracks
+  transport, live pan/balance markers on the scopes, Sister TRACK and final Main recording.
 - [SisterTracker foundation](docs/SISTERTRACKER_FOUNDATION.md) — stage 1 song model,
   stable tile identity, native persistence, and migration.
 - [Realtime Capture](docs/CAPTURE_WORKFLOW.md)

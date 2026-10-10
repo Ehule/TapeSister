@@ -158,7 +158,7 @@ static void snapshot_atomic_init(TsSisterRoutingSnapshotAtomic *snapshot)
 {
     if (snapshot == NULL) return;
     for(int i=0;i<4;++i){atomic_init(&snapshot->insert_ports[i],0);atomic_init(&snapshot->insert_values[i],0);}
-    for(int i=0;i<TS_ROUTER_COUNT+4;++i)atomic_init(&snapshot->router_state[i],0);
+    for(int i=0;i<TS_ROUTER_COUNT+5+TS_SOURCE_SENDS*6;++i)atomic_init(&snapshot->router_state[i],0);
     for(int i=0;i<TS_ROUTER_COUNT*2+2;++i)atomic_init(&snapshot->router_peaks[i],float_bits(0));
     for(int i=0;i<8+TS_ROUTER_COUNT*2;++i)atomic_init(&snapshot->router_perf_int[i],0);
     for(int i=0;i<1+TS_ROUTER_COUNT;++i)atomic_init(&snapshot->router_perf_float[i],0);
@@ -271,6 +271,12 @@ static void publish_snapshot_impl(TsSisterRuntime *runtime)
     }
     int router_state[]={runtime->router.controls.bypass_mask,runtime->router.controls.solo,(int)router_enabled,runtime->router.handoff!=0};
     for(int i=0;i<4;++i)atomic_store_explicit(&snapshot->router_state[TS_ROUTER_COUNT+i],router_state[i],memory_order_relaxed);
+    atomic_store_explicit(&snapshot->router_state[TS_ROUTER_COUNT+4],runtime->router.controls.send_mask,memory_order_relaxed);
+    for(int bus=0;bus<TS_SOURCE_SENDS;++bus) {
+        const TsSourceRoute *r=&runtime->router.controls.return_route[bus];
+        int fields[]={r->mode,r->speaker,r->second,r->pan,r->width,runtime->router.controls.return_level[bus]};
+        for(int j=0;j<6;++j)atomic_store_explicit(&snapshot->router_state[TS_ROUTER_COUNT+5+bus*6+j],fields[j],memory_order_relaxed);
+    }
     atomic_store_explicit(&snapshot->router_peaks[TS_ROUTER_COUNT*2],float_bits(runtime->router.source_peak),memory_order_relaxed);
     atomic_store_explicit(&snapshot->router_peaks[TS_ROUTER_COUNT*2+1],float_bits(runtime->router.master_peak),memory_order_relaxed);
     TsRouterView rv=ts_router_view(&runtime->router);
@@ -565,6 +571,7 @@ void ts_sister_runtime_init(TsSisterRuntime *runtime)
     ts_master_eq_init(&runtime->master_eq);
     ts_eq_spectrum_init(&runtime->eq_spectrum);
     ts_router_init(&runtime->router);
+    ts_matrix_init(&runtime->matrix);
     ts_insert_init(&runtime->insert);
     ts_spatial_init(&runtime->spatial);
     runtime->rolling = 1;
@@ -601,6 +608,7 @@ void ts_sister_runtime_init(TsSisterRuntime *runtime)
 void ts_sister_runtime_free(TsSisterRuntime *runtime)
 {
     if (runtime == NULL) return;
+    ts_insert_free(&runtime->insert);
     ts_spatial_free(&runtime->spatial);
     ts_prism_free(&runtime->prism);
     ts_sister_machine_free(&runtime->machine);
@@ -648,6 +656,7 @@ int ts_sister_runtime_enable(TsSisterRuntime *runtime, uint32_t sample_rate,
     ts_prism_set_controls(&runtime->prism, &runtime->parameters.prism);
     ts_master_eq_prepare(&runtime->master_eq, sample_rate);
     ts_router_prepare(&runtime->router, sample_rate);
+    ts_matrix_set(&runtime->matrix,&runtime->matrix.controls,sample_rate);
     ts_insert_prepare(&runtime->insert, sample_rate);
     memset(&machine, 0, sizeof(machine));
     cold_fx = !runtime->post_fx.ready || runtime->post_fx.sample_rate != sample_rate;
@@ -819,6 +828,7 @@ int ts_sister_runtime_reconfigure(TsSisterRuntime *runtime,
     ts_prism_set_controls(&runtime->prism, &runtime->parameters.prism);
     ts_master_eq_prepare(&runtime->master_eq, sample_rate);
     ts_router_prepare(&runtime->router, sample_rate);
+    ts_matrix_set(&runtime->matrix,&runtime->matrix.controls,sample_rate);
     ts_insert_prepare(&runtime->insert, sample_rate);
     if (!runtime->enabled) {
         if (sample_rate == 0u || output_channels != 2u) {
@@ -1367,6 +1377,7 @@ static void runtime_fallout_feedback(TsSisterRuntime *runtime, TsStereoFrame wet
 }
 
 #include "ts_sister_router.inc"
+#include "ts_sister_matrix.inc"
 
 TsSisterRuntimeFrame ts_sister_runtime_process_frame(
     TsSisterRuntime *runtime, const TsSisterSourceFrames *sources)
@@ -1388,13 +1399,21 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
     source.preview = ts_stereo_frame_sanitize(source.preview);
     source.tapehead = ts_stereo_frame_sanitize(source.tapehead);
     source.tracker = ts_stereo_frame_sanitize(source.tracker);
+    source.tracker_tape = ts_stereo_frame_sanitize(source.tracker_tape);
     /* This is the untrimmed, pre-Sister Live Link stream. It remains available
        as a recorder tap even when Sister processing itself is bypassed. */
     frame.tap[TS_SISTER_TAP_TAPEHEAD] = source.tapehead;
-    tile_bus = ts_performance_read_stereo(&runtime->performance, &tile_raw);
+    TsSourceRouteMix clean_map=runtime->clean_output;
+    ts_source_route_mix_init(&runtime->clean_output,&clean_map);
+    ts_source_route_mix_init(&runtime->effect_returns,&clean_map);
+    tile_bus = ts_performance_read_routed(&runtime->performance, &tile_raw,&runtime->clean_output);
+    for(int bus=0;bus<TS_SOURCE_SENDS;++bus)
+        runtime->send_input[bus]=ts_stereo_frame_sanitize(frame_add(source.send[bus],runtime->clean_output.send[bus]));
     frame.keyboard_dry = tile_bus;
     tile_bus = frame_add(tile_bus, source.tiles);
     (void)tile_raw;
+    if(runtime->matrix.controls.enabled)return runtime_matrix_frame(runtime,&source,
+        frame_add(frame_scale(frame.keyboard_dry,source.matrix_program_gain),source.tiles),frame);
     if (!runtime->enabled || runtime->callback_failed) {
         runtime->last_frame = frame;
         publish_frame_snapshot(runtime);
@@ -1428,9 +1447,11 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
         source.tapehead, source_gain[4] * source_route[4]));
     input = frame_add(input, frame_scale(
         source.tracker, source_gain[5] * source_route[5]));
-    if (route_energy > 1.0f)
-        input = frame_scale(input, 1.0f / sqrtf(route_energy));
-    RouterFrameContext context={.runtime=runtime,.frame=&frame};
+    float normalization=route_energy>1.0f?1.0f/sqrtf(route_energy):1.0f;
+    input=frame_scale(input,normalization);
+    RouterFrameContext context={.runtime=runtime,.frame=&frame,
+        .tape_input=frame_scale(source.tracker_tape,
+            source_gain[5]*source_route[5]*normalization)};
     runtime_router_begin(&context);
     frame.monitor_return=ts_router_process_with_prepare(&runtime->router,input,runtime_router_stage,runtime_router_prepare_stage,&context);
     frame.monitor_return=ts_sister_machine_finish_router(&runtime->machine,frame.monitor_return);
@@ -1464,10 +1485,22 @@ TsStereoFrame ts_sister_runtime_process_output(TsSisterRuntime *runtime,
     TsStereoFrame output;
     float pre_peak = 0.0f;
     if (runtime == NULL) return ts_stereo_frame_sanitize(input);
+    if(!runtime->matrix.controls.enabled && runtime->router.master_mix) {
+        float wet=runtime->router.wet[TS_ROUTER_INSERT];
+        uint64_t profile_insert=ts_profile_begin(TS_PROF_INSERT);
+        TsStereoFrame processed=ts_insert_process(&runtime->insert,wet>0?input:(TsStereoFrame){0,0},wet*runtime->router.gain);
+        ts_profile_end(TS_PROF_INSERT,profile_insert);
+        runtime->router.input_peak[TS_ROUTER_INSERT]=fmaxf(frame_peak(input),runtime->router.input_peak[TS_ROUTER_INSERT]*runtime->router.decay);
+        input=frame_effect_return(input,processed,wet);
+        runtime->router.output_peak[TS_ROUTER_INSERT]=fmaxf(frame_peak(input),runtime->router.output_peak[TS_ROUTER_INSERT]*runtime->router.decay);
+        runtime->router.master_peak=fmaxf(frame_peak(input),runtime->router.master_peak*runtime->router.decay);
+    }
+    if(!runtime->matrix.controls.enabled) {
     input = ts_master_eq_process(&runtime->master_eq, input);
     ts_eq_spectrum_push(&runtime->eq_spectrum,input,runtime->master_eq.sample_rate);
     output = ts_sister_limiter_process(&runtime->limiter, input,
                                        NULL, &pre_peak);
+    } else {output=input;pre_peak=runtime->limiter_input_peak;}
     /* The global OUT fader is the final audible gain stage. The VU and FILE
        OUT tap deliberately observe this post-fader signal. */
     output = frame_scale(output,
@@ -2005,6 +2038,12 @@ int ts_sister_runtime_get_snapshot(const TsSisterRuntime *runtime,
         snapshot->router.solo=atomic_load_explicit(&source->router_state[TS_ROUTER_COUNT+1],memory_order_relaxed);
         snapshot->router_enabled=atomic_load_explicit(&source->router_state[TS_ROUTER_COUNT+2],memory_order_relaxed);
         snapshot->router_transition=atomic_load_explicit(&source->router_state[TS_ROUTER_COUNT+3],memory_order_relaxed);
+        snapshot->router.send_mask=atomic_load_explicit(&source->router_state[TS_ROUTER_COUNT+4],memory_order_relaxed);
+        for(int bus=0;bus<TS_SOURCE_SENDS;++bus) {
+            int fields[6];for(int j=0;j<6;++j)fields[j]=atomic_load_explicit(&source->router_state[TS_ROUTER_COUNT+5+bus*6+j],memory_order_relaxed);
+            snapshot->router.return_route[bus]=(TsSourceRoute){fields[0],fields[1],fields[2],fields[3],fields[4]};
+            snapshot->router.return_level[bus]=fields[5];
+        }
         TsRouterView *rv=&snapshot->router_view;
         int *ri[]={&rv->running,&rv->step,&rv->state,&rv->missing,&rv->restore_valid};
         for(int i=0;i<5;++i)*ri[i]=atomic_load_explicit(&source->router_perf_int[i],memory_order_relaxed);

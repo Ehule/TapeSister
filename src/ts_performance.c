@@ -199,6 +199,8 @@ static int start_slot_event(TsPerformanceBank *bank, const TsBankSlot *slot,
     voice->midi_note = event->midi_note;
     voice->channel = event->channel;
     voice->source_slot = source_slot;
+    voice->route_tile=slot->tile_id;
+    ts_source_route_set(&voice->output_route,slot->output_route,(unsigned)output_rate);
     voice->gain = ts_note_event_gain(event);
     voice->group_gain = group_gain;
     voice->latched = latched != 0;
@@ -301,6 +303,8 @@ TsPerformanceTileResult ts_performance_toggle_tile(
                                                  &slot->audible_tuning);
     voice->crossfade_frames = crossfade;
     voice->source_slot = source_slot;
+    voice->route_tile=slot->tile_id;
+    ts_source_route_set(&voice->output_route,slot->output_route,(unsigned)output_rate);
     voice->gain = 1.0f;
     voice->group_gain = 1.0f;
     voice->latched = 1;
@@ -759,14 +763,15 @@ static TsStereoFrame transition_old_frame(TsPerformanceVoice *voice)
     return frame;
 }
 
-TsStereoFrame ts_performance_read_stereo(TsPerformanceBank *bank,
-                                         TsStereoFrame *raw_mix)
+TsStereoFrame ts_performance_read_routed(TsPerformanceBank *bank,
+                                         TsStereoFrame *raw_mix, TsSourceRouteMix *clean)
 {
+    TsSourceRouteMix direct;ts_source_route_mix_init(&direct,clean);
     TsStereoFrame mixed = {0.0f, 0.0f}, raw = {0.0f, 0.0f};
     int changed = 0;
     if (raw_mix != NULL) *raw_mix = (TsStereoFrame){0.0f, 0.0f};
     if (bank == NULL) return mixed;
-    if (!bank->render_limit && ts_voice_handoff_idle(&bank->raw_handoff) &&
+    if (!bank->clean_handoff.last.mask && !bank->render_limit && ts_voice_handoff_idle(&bank->raw_handoff) &&
         ts_voice_handoff_idle(&bank->output_handoff)) return mixed;
     for (int i = 0; i < bank->render_limit; ++i) {
         TsPerformanceVoice *voice = &bank->voices[i];
@@ -861,8 +866,9 @@ TsStereoFrame ts_performance_read_stereo(TsPerformanceBank *bank,
         voice->position += voice->step * voice->direction;
         raw.l += value.l;
         raw.r += value.r;
-        mixed.l += value.l * voice->group_gain;
-        mixed.r += value.r * voice->group_gain;
+        TsStereoFrame routed={value.l*voice->group_gain,value.r*voice->group_gain};
+        routed=ts_source_route_frame(&voice->output_route,routed,clean?&direct:NULL);
+        mixed.l += routed.l; mixed.r += routed.r;
 voice_done: {
         /* Tile launchers already own attack/release ramps. */
         uint64_t group = voice->active && !voice->tile_launched ? voice->group_id : 0;
@@ -877,9 +883,16 @@ voice_done: {
        level, and overlapping retriggers remain independently normalized. */
     raw = ts_voice_handoff_process(&bank->raw_handoff, raw, changed, bank->handoff_frames);
     mixed = ts_voice_handoff_process(&bank->output_handoff, mixed, changed, bank->handoff_frames);
+    if(clean) {
+        ts_source_route_handoff(&bank->clean_handoff,&direct,changed,bank->handoff_frames);
+        ts_source_route_add(clean,&direct,1);
+    }
     if (raw_mix != NULL) *raw_mix = raw;
     return mixed;
 }
+
+TsStereoFrame ts_performance_read_stereo(TsPerformanceBank *bank,TsStereoFrame *raw)
+{ return ts_performance_read_routed(bank,raw,NULL); }
 
 float ts_performance_read(TsPerformanceBank *bank, float *raw_mix)
 {

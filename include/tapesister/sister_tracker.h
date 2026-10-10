@@ -2,6 +2,7 @@
 #define TAPESISTER_SISTER_TRACKER_H
 
 #include "tapesister/tile_id.h"
+#include "tapesister/source_route_types.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -57,6 +58,7 @@ typedef struct {
     uint8_t mode, ratio, direction, voice_mode;
     float trim; /* 0-2; event volume is separate. */
     uint8_t muted, route, output_channel, output_stereo;
+    TsSourceRoute output_route; /* INHERIT uses each sounding tile, including XM keymaps. */
 } TsTrackerLane;
 
 /* XM instruments keep their note map and envelopes; audio remains editable

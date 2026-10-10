@@ -524,6 +524,13 @@ static int ts_audio_main_config_write(const TsConfig *config, const char *path,
     return 1;
 }
 
+static int ts_audio_restart_required(const TsConfig *config)
+{
+    return config->audio_backend != ts_started_backend || (ts_asio_selected &&
+        (ts_output_desired.samples != (Uint16)config->audio_buffer_frames ||
+         strcmp(config->audio_output_device,ts_active_output)));
+}
+
 static int ts_audio_main_config_save(const TsConfig *config, const char *path,
                                      char *error, size_t error_size)
 {
@@ -543,9 +550,7 @@ static int ts_audio_main_config_save(const TsConfig *config, const char *path,
     }
     if (!ts_audio_main_config_write(config, path, error, error_size)) return 0;
     ts_live_config = (TsConfig *)config;
-    if (backend_changed || (ts_asio_selected &&
-        (ts_output_desired.samples != (Uint16)config->audio_buffer_frames ||
-         strcmp(config->audio_output_device, ts_active_output)))) {
+    if (ts_audio_restart_required(config)) {
         snprintf(ts_pending_notice, sizeof(ts_pending_notice),
                  "CONFIG SAVED - RESTART REQUIRED FOR %s DRIVER / BUFFER",
                  ts_audio_backend_name(config->audio_backend));
