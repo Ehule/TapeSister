@@ -17,6 +17,21 @@ Track routes take precedence over tile routes. **Use Tile** makes the entire
 track inherit the route of each played tile; **Use Track** gives it its own route.
 An inherited row says TILE rather than pretending that every note has one route.
 
+**Clear All** disconnects every source, processor and physical output, including
+tracks and tiles hidden by the current filter or on other pages. It also cuts
+feedback. The matrix stays active and silent so you can patch a new path.
+
+**Reset to Default** restores the normal stereo path above: all tiles/tracks,
+FM and Live Link feed Main; Main feeds EQ, then limiter, then OUT 1/2. Effect
+returns feed Main, but no source is sent to an effect. External inputs are
+disconnected. All tracks own their routes again rather than inheriting tiles.
+
+Both buttons act immediately, center row pan, restore stereo, disable graph
+feedback and keep your hardware names. They affect the whole project even when
+the grid is filtered. Processor settings, samples and notes are unchanged.
+Using either button on a legacy project enables the matrix with the chosen
+blank/default routing. Save the project to retain the result.
+
 Older configurations and project files retain the old engine and saved sound.
 F9 identifies this as a legacy project. **Use Matrix** opts into the new graph:
 the legacy serial order, Insert assignment and Sister source switches stop
@@ -93,6 +108,8 @@ new source routes, graph, connection levels, row pan/mono and hardware aliases.
 Old formats load; older application builds cannot read the new tile/score saves.
 Opening a project replaces its matrix and aliases rather than retaining the
 previous project's graph. The graph and aliases are also in saved configuration.
+Saving a TSR project includes these settings in its accompanying project files;
+keep the `.samples` folder alongside the `.tsr` when copying or moving a project.
 
 FILE OUT records the main stereo program (OUT 1/2), before the final linked
 hardware guard. It does not sum every separate speaker/send output. Sister's

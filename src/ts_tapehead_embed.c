@@ -991,14 +991,14 @@ int ts_tapehead_refresh(TsSamplePages *pages,const TsInstrument *active,unsigned
 
 #include "ts_tapehead_xm.inc"
 
-void ts_tapehead_routes_changed(TsTileId tile, TsSourceRoute route)
+static void routes_changed(TsTileId tile, TsSourceRoute route,int all_tiles)
 {
     if(!embed.initialized || !embed.model)return;
     uint64_t model_hash=ts_sister_tracker_hash(embed.model);
     ts_tapehead_host_lock();
     embed.routes_enabled=0;
     for(int i=0;i<129*16;++i) {
-        if(tile && embed.route_ids[i]==tile)embed.tile_routes[i]=route;
+        if((all_tiles && embed.route_ids[i]) || (tile && embed.route_ids[i]==tile))embed.tile_routes[i]=route;
         embed.routes_enabled|=embed.tile_routes[i].matrix_enabled || embed.tile_routes[i].mode!=TS_SOURCE_MAIN || embed.tile_routes[i].pan || embed.tile_routes[i].width;
     }
     for(int i=0;i<TS_TRACKER_LANES;++i) {
@@ -1009,3 +1009,7 @@ void ts_tapehead_routes_changed(TsTileId tile, TsSourceRoute route)
     embed.model_hash=model_hash;
     ts_tapehead_host_unlock();
 }
+void ts_tapehead_routes_changed(TsTileId tile, TsSourceRoute route)
+{ routes_changed(tile,route,0); }
+void ts_tapehead_all_routes_changed(TsSourceRoute route)
+{ routes_changed(0,route,1); }

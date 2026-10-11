@@ -38,6 +38,8 @@ const float *ts_tapehead_render(unsigned frames, unsigned rate);
 void ts_tapehead_route_outputs(unsigned available);
 const TsSourceRouteMix *ts_tapehead_clean_render(void);
 void ts_tapehead_routes_changed(TsTileId tile,TsSourceRoute route);
+/* After a project-wide source reset, update tile caches and track routes once. */
+void ts_tapehead_all_routes_changed(TsSourceRoute route);
 int ts_tapehead_action(void);
 int ts_tapehead_running(void);
 int ts_tapehead_following(void);

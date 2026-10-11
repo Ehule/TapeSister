@@ -142,6 +142,8 @@ static void mx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
 {
     MatrixWindow *w=&matrix_window;char label[160];mx_rect(0,0,MATRIX_W,MATRIX_H,MX_BG);
     mx_text(22,22,"TAPESISTER / ROUTING MATRIX",MX_GREEN,3);
+    mx_button(750,20,152,"CLEAR ALL",0);
+    mx_button(914,20,240,"RESET TO DEFAULT",0);
     mx_text(22,57,"FROM A ROW > TO A COLUMN. ONE SHARED INSTANCE OF EACH PROCESSOR.",MX_DIM,2);
     mx_button(22,88,102,"ALL",w->filter==0);mx_button(134,88,126,"TRACKS",w->filter==1);
     mx_button(270,88,114,"TILES",w->filter==2);mx_button(394,88,126,"INPUTS",w->filter==3);
@@ -250,6 +252,36 @@ static void mx_gain(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsS
             snprintf(w->status,sizeof(w->status),"FEEDBACK: 64-SAMPLE DELAY / MAX -6 dB / BOUNDED RETURN. CUT FEEDBACK REMOVES ALL LOOP CONNECTIONS.");
     } else {TsSourceRoute r=mx_display_route(raw);r.matrix_gain[w->destination]=gain;mx_commit_route(device,audio,ui,pages,bank,r);}
 }
+/* These are project-wide actions, independent of the current row filter.
+   Explicit source routes also replace inherited and legacy direct outputs. */
+static void mx_reset_routes(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,
+    TsSamplePages *pages,TsInstrument *bank,int defaults)
+{
+    MatrixWindow *w=&matrix_window;TsMatrixControls controls;
+    TsSourceRoute route={.matrix_enabled=1};
+    if(defaults)route.matrix_gain[TS_MATRIX_MAIN]=1000;
+    ts_matrix_default(&controls);controls.enabled=1;
+    if(!defaults)for(int i=0;i<TS_MATRIX_ROWS;++i)controls.row[i]=route;
+    if(device)SDL_LockAudioDevice(device);
+    memcpy(controls.input_name,audio->sister.matrix.controls.input_name,sizeof(controls.input_name));
+    memcpy(controls.output_name,audio->sister.matrix.controls.output_name,sizeof(controls.output_name));
+    for(int lane=0;lane<TS_TRACKER_LANES;++lane)pages->tracker.lanes[lane].output_route=route;
+    for(size_t p=0;p<ts_sample_pages_count(pages);++p) {
+        TsInstrument *page=ts_sample_pages_page_mut(pages,bank,p);if(!page)continue;
+        for(int slot=0;slot<TS_BANK_SLOT_COUNT;++slot)if(page->bank[slot].occupied)
+            page->bank[slot].output_route=route;
+    }
+    source_route_update_voices(audio,0,route);
+    ts_matrix_set(&audio->sister.matrix,&controls,(unsigned)audio->output_rate);
+    ui->config.matrix=w->controls=audio->sister.matrix.controls;
+    if(device)SDL_UnlockAudioDevice(device);
+    /* One cache refresh, not a score hash and host lock for every tile. */
+    ts_tapehead_all_routes_changed(route);
+    w->drag=0;w->dirty=1;
+    snprintf(w->status,sizeof(w->status),defaults?
+        "DEFAULT: ALL TILES/TRACKS + FM/LINK > MAIN > EQ > LIMITER > OUT 1/2. EXTERNAL INPUTS OFF. I/O NAMES KEPT.":
+        "ALL CONNECTIONS CLEARED, INCLUDING HIDDEN TRACKS/TILES AND FEEDBACK. I/O NAMES KEPT. PATCH A NEW PATH TO HEAR AUDIO.");
+}
 static void matrix_update(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsSamplePages *pages,TsInstrument *bank)
 {
     MatrixWindow *w=&matrix_window;(void)ui;if(!w->visible || !window_drawable(w->window) || SDL_GetTicks()-w->presented<50)return;
@@ -310,6 +342,10 @@ static int matrix_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,A
     x=rx*MATRIX_W/SDL_max(1,ww);y=ry*MATRIX_H/SDL_max(1,hh);w->dirty=1;
     if(e->type==SDL_MOUSEBUTTONUP){w->drag=0;return 1;}
     int click=e->type==SDL_MOUSEBUTTONDOWN,left=click&&e->button.button==SDL_BUTTON_LEFT,middle=click&&e->button.button==SDL_BUTTON_MIDDLE;
+    if(left && y>=20 && y<48) {
+        if(x>=750 && x<902){mx_reset_routes(device,audio,ui,pages,bank,0);return 1;}
+        if(x>=914 && x<1154){mx_reset_routes(device,audio,ui,pages,bank,1);return 1;}
+    }
     if(left && y>=88 && y<116) {
         int f=x<124?0:x<260?1:x<384?2:x<520?3:x<668?4:-1;
         if(f>=0){w->filter=f;w->scroll=0;mx_rows(pages,bank);return 1;}

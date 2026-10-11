@@ -14,6 +14,73 @@ static void matrix_shot(const char *directory,const char *name)
     SDL_Surface *s=SDL_CreateRGBSurfaceFrom(matrix_window.pixels,MATRIX_W,MATRIX_H,32,MATRIX_W*4,0xff0000,0xff00,0xff,0xff000000);
     assert(s&&!SDL_SaveBMP(s,path));SDL_FreeSurface(s);
 }
+static void matrix_clear_reset(const char *directory)
+{
+    /* Include off-page tiles, inherited tracks and a hidden lane. */
+    assert(ts_sample_pages_append(&pages,error,sizeof(error)));
+    TsInstrument *other=ts_sample_pages_page_mut(&pages,&bank,ts_sample_pages_count(&pages)-1);
+    assert(other && ts_instrument_activate_silence(other,32,48000,error,sizeof(error)));
+    TsSourceRoute direct={.matrix_enabled=1,.pan=30,.width=-100};
+    direct.matrix_gain[TS_MATRIX_NODES+1]=1000;
+    other->bank[0].output_route=bank.bank[0].output_route=direct;
+    pages.tracker.lanes[0].output_route=(TsSourceRoute){.mode=TS_SOURCE_INHERIT};
+    pages.tracker.lanes[TS_TRACKER_LANES-1].output_route=direct;
+    ts_tapehead_routes_changed(bank.bank[0].tile_id,direct);
+    TsMatrixControls named=a.sister.matrix.controls;named.feedback=1;
+    assert(ts_matrix_connect(&named,TS_MATRIX_MAIN,TS_MATRIX_SISTER,500)==1);
+    assert(named.delayed[TS_MATRIX_MAIN]);
+    assert(ts_matrix_set(&a.sister.matrix,&named,48000));
+    assert(matrix_show(0,&a,&u,&pages,&bank,-1,-1));
+    matrix_click(455,102,SDL_BUTTON_LEFT); /* Filtered INPUTS must still clear everything. */
+    assert(ts_note_bank_start(&a.notes,&bank,TS_AUDITION_CURRENT,12,0,48000)==TS_NOTE_STARTED);
+    startPlaying(PLAYMODE_SONG,0);double energy[4];render(energy);render(energy);
+    assert(energy[2]>1 && energy[3]>1);
+    matrix_click(800,34,SDL_BUTTON_LEFT);
+    assert(ts_tapehead_running() && a.sister.matrix.controls.enabled && !a.sister.matrix.controls.feedback);
+    for(int row=0;row<TS_MATRIX_ROWS;++row)for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)
+        assert(!a.sister.matrix.controls.row[row].matrix_gain[d]);
+    for(int lane=0;lane<TS_TRACKER_LANES;++lane) {
+        TsSourceRoute route=pages.tracker.lanes[lane].output_route;
+        assert(route.matrix_enabled && route.mode==TS_SOURCE_MAIN && !route.pan && !route.width);
+        for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)assert(!route.matrix_gain[d]);
+    }
+    assert(!memcmp(&bank.bank[0].output_route,&other->bank[0].output_route,sizeof(TsSourceRoute)));
+    for(int n=0;n<TS_MATRIX_NODES;++n) {
+        assert(!a.sister.matrix.controls.delayed[n]);
+        for(int f=0;f<TS_MATRIX_DELAY;++f)assert(a.sister.matrix.history[n][f].l==0 && a.sister.matrix.history[n][f].r==0);
+    }
+    assert(!memcmp(named.input_name,a.sister.matrix.controls.input_name,sizeof(named.input_name)));
+    assert(!memcmp(named.output_name,a.sister.matrix.controls.output_name,sizeof(named.output_name)));
+    render(energy);render(energy);for(int ch=0;ch<4;++ch)assert(energy[ch]==0);
+    matrix_shot(directory,"matrix-cleared");
+    /* Restoring only the graph cannot unmute cleared source routes, including
+       cached tiles on inherited tracks and already-held keyboard voices. */
+    TsMatrixControls defaults;ts_matrix_default(&defaults);defaults.enabled=1;
+    memcpy(defaults.input_name,named.input_name,sizeof(named.input_name));
+    memcpy(defaults.output_name,named.output_name,sizeof(named.output_name));
+    assert(ts_matrix_set(&a.sister.matrix,&defaults,48000));
+    pages.tracker.lanes[0].output_route.mode=TS_SOURCE_INHERIT;
+    ts_tapehead_routes_changed(0,(TsSourceRoute){0});
+    render(energy);render(energy);for(int ch=0;ch<4;++ch)assert(energy[ch]==0);
+    matrix_click(1000,34,SDL_BUTTON_LEFT);
+    assert(ts_tapehead_running());
+    assert(!memcmp(&defaults,&a.sister.matrix.controls,sizeof(defaults)));
+    assert(!memcmp(&defaults,&u.config.matrix,sizeof(defaults)));
+    TsSourceRoute main={.matrix_enabled=1};main.matrix_gain[TS_MATRIX_MAIN]=1000;
+    for(int lane=0;lane<TS_TRACKER_LANES;++lane)assert(!memcmp(&main,&pages.tracker.lanes[lane].output_route,sizeof(main)));
+    assert(!memcmp(&main,&bank.bank[0].output_route,sizeof(main)));
+    assert(!memcmp(&main,&other->bank[0].output_route,sizeof(main)));
+    render(energy);render(energy);assert(energy[0]>1 && energy[1]>1 && energy[2]==0 && energy[3]==0);
+    ts_tapehead_stop();render(energy);render(energy);
+    assert(energy[0]>1 && energy[1]>1 && energy[2]==0 && energy[3]==0); /* The held tile recovers too. */
+    ts_note_bank_clear(&a.notes);
+    matrix_click(600,102,SDL_BUTTON_LEFT);matrix_shot(directory,"matrix-default");
+    /* Either explicit action also activates the matrix from legacy mode. */
+    defaults.enabled=0;assert(ts_matrix_set(&a.sister.matrix,&defaults,48000));
+    matrix_click(800,34,SDL_BUTTON_LEFT);assert(a.sister.matrix.controls.enabled);
+    defaults.enabled=0;assert(ts_matrix_set(&a.sister.matrix,&defaults,48000));
+    matrix_click(1000,34,SDL_BUTTON_LEFT);assert(a.sister.matrix.controls.enabled);
+}
 static void matrix_controller(const char *directory)
 {
     ts_tapehead_stop();ts_note_bank_clear(&a.notes);ts_performance_clear(&a.performance);ts_performance_clear(&a.tile_launchers);
@@ -98,6 +165,7 @@ static void matrix_controller(const char *directory)
     assert(ts_matrix_set(&a.sister.matrix,&c,48000));matrix_window.controls=c;
     matrix_click(455,102,SDL_BUTTON_LEFT);matrix_window.selected=0;matrix_window.destination=TS_MATRIX_PRISM;
     matrix_shot(directory,"matrix-terra-multiple");
+    matrix_clear_reset(directory);
     ts_sister_project_state_init(state,48000);assert(ts_sister_project_state_apply(state,&a.sister,&bank));free(state);
     assert(!a.sister.matrix.controls.enabled && !a.sister.matrix.controls.input_name[0][0]);
     matrix_close();puts("Matrix UI, native track/tile audio, pan, inheritance, physical return, naming and project reset passed");

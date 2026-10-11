@@ -102,24 +102,25 @@ static int source_route_show(SDL_AudioDeviceID device,AudioState *audio,TsUiStat
     w->visible=1;w->rendered_valid=0;
     SDL_ShowWindow(w->window);SDL_RaiseWindow(w->window);return 1;
 }
+/* A zero tile ID applies a project-wide edit to all tile-routed voices. */
 static void source_route_update_voices(AudioState *audio,TsTileId tile,TsSourceRoute route)
 {
     unsigned rate=audio->output_rate>0?(unsigned)audio->output_rate:48000;
     TsPerformanceBank *banks[]={&audio->performance,&audio->tile_launchers,&audio->sister.performance};
     for(int b=0;b<3;++b)for(int i=0;i<banks[b]->render_limit;++i) {
         TsPerformanceVoice *v=&banks[b]->voices[i];
-        if(v->active && v->route_tile==tile)ts_source_route_set(&v->output_route,route,rate);
+        if(v->active && v->route_tile && (!tile || v->route_tile==tile))ts_source_route_set(&v->output_route,route,rate);
     }
     for(int i=0;i<audio->notes.render_limit;++i) {
         TsNoteVoice *v=&audio->notes.voices[i];
-        if(v->active && v->route_tile==tile)ts_source_route_set(&v->output_route,route,rate);
+        if(v->active && v->route_tile && (!tile || v->route_tile==tile))ts_source_route_set(&v->output_route,route,rate);
     }
     TsKeyboardSequence *s=&audio->keyboard_sequence;
     if(s->source && !s->source->fm)for(int i=0;i<s->source->count;++i) {
-        if(s->source->voices[i].route_tile==tile)ts_source_route_set(&s->source->voices[i].output_route,route,rate);
-        if(s->voices[i].route_tile==tile)ts_source_route_set(&s->voices[i].output_route,route,rate);
+        if(s->source->voices[i].route_tile && (!tile || s->source->voices[i].route_tile==tile))ts_source_route_set(&s->source->voices[i].output_route,route,rate);
+        if(s->voices[i].route_tile && (!tile || s->voices[i].route_tile==tile))ts_source_route_set(&s->voices[i].output_route,route,rate);
     }
-    if(audio->audition_route_tile==tile)ts_source_route_set(&audio->audition_route,route,rate);
+    if(audio->audition_route_tile && (!tile || audio->audition_route_tile==tile))ts_source_route_set(&audio->audition_route,route,rate);
 }
 static void source_route_commit(SDL_AudioDeviceID device,AudioState *audio,TsSamplePages *pages,
                                  TsInstrument *instrument,TsSourceRoute route)
