@@ -550,18 +550,24 @@ static void audit_recording(void) {
     for(unsigned i=0;i<test_pages->tracker.order_count;++i)
         assert(ts_sister_tracker_pattern(&test_pages->tracker,test_pages->tracker.orders[i])->rows==3);
     ts_tapehead_stop();
-    for(int silent=0;silent<=1;++silent) {
+    const unsigned velocities[]={1,32,64,100,127};
+    const unsigned volumes[]={1,16,32,50,64};
+    for(int silent=0;silent<=1;++silent) for(unsigned v=0;v<5;++v) {
         audit_blank_song(32);prefs()[4]=silent;prefs()[7]=0;
         assert(ts_tapehead_sync(test_pages,test_bank,48000,test_error,sizeof(test_error)));
         click(390,77);assert(ts_tapehead_running());
         audio_callback(test_audio,(Uint8*)out,128*2*sizeof(float));
-        TsMidiEvent midi={0};assert(ts_midi_decode_short_message(0x90,76,100,&midi));
+        TsMidiEvent midi={0};assert(ts_midi_decode_short_message(0x90,76,velocities[v],&midi));
         assert(ts_tapehead_midi(&midi,1));
         audio_callback(test_audio,(Uint8*)out,sizeof(out));
         float energy=0;for(int i=0;i<2048;++i)energy+=fabsf(out[i]);
         if(silent)assert(energy<1e-6f);else assert(energy>.001f);
-        export_score();int found=0;for(int lane=0;lane<8;++lane)found|=pat()->cells[0][lane].note==76;assert(found);
+        export_score();int found=0;for(int lane=0;lane<8;++lane) {
+            const TsTrackerCell *cell=&pat()->cells[0][lane];
+            if(cell->note==76) {assert(cell->has_volume && cell->volume==volumes[v]);++found;}
+        } assert(found==1);
         midi.action=TS_MIDI_ACTION_NOTE_OFF;ts_tapehead_midi(&midi,0);ts_tapehead_stop();
+        export_score();project_roundtrip();
     }
 }
 

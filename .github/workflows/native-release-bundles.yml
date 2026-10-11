@@ -52,6 +52,7 @@ on:
       - "src/ts_realtime_diagnostics.c"
       - "include/tapesister/realtime_diagnostics.h"
       - "src/ts_asio_backend.cpp"
+      - "src/ts_asio_callback_lock.h"
       - "include/tapesister/asio_backend.h"
       - "tests/test_audio_health.c"
       - "tests/test_asio_backend.cpp"

@@ -26,8 +26,8 @@ typedef struct {
     Uint32 window_id, last_update, last_callback, message_until;
     uint64_t seen_callbacks;
     uint32_t device_generation;
-    unsigned driver_base, control_base, worker_base;
-    unsigned driver_reports, control_skips, worker_gaps;
+    unsigned driver_base, control_base, recovery_base, worker_base;
+    unsigned driver_reports, control_skips, control_recoveries, worker_gaps;
     int visible, native_kind;
     TsRealtimeDiagnosticsSnapshot snapshot;
     TsAudioHealthSetup setup;
@@ -191,14 +191,15 @@ static void ts_audio_health_setup_report(char *text, size_t size, Uint32 now)
 static unsigned health_count(uint64_t value)
 { return value > 999999u ? 999999u : (unsigned)value; }
 
-static void ts_audio_health_native(unsigned *driver, unsigned *control, unsigned *worker, int *kind)
+static void ts_audio_health_native(unsigned *driver, unsigned *control, unsigned *recovered, unsigned *worker, int *kind)
 {
-    *driver = *control = *worker = 0; *kind = 0;
+    *driver = *control = *recovered = *worker = 0; *kind = 0;
 #if defined(TAPESISTER_HAS_ASIO)
     if (ts_asio_owns(ts_real_output)) {
         *kind = 1;
         *driver = ts_asio_driver_xruns();
         *control = ts_asio_control_skips();
+        *recovered = ts_asio_control_recoveries();
         return;
     }
 #endif
@@ -213,18 +214,20 @@ static void ts_audio_health_native(unsigned *driver, unsigned *control, unsigned
 
 static void ts_audio_health_sample(AudioState *audio, Uint32 now)
 {
-    unsigned driver, control, worker;
-    ts_audio_health_native(&driver, &control, &worker, &ts_health.native_kind);
+    unsigned driver, control, recovered, worker;
+    ts_audio_health_native(&driver, &control, &recovered, &worker, &ts_health.native_kind);
     if (ts_health.device_generation != audio->audio_health_generation) {
         ts_health.device_generation = audio->audio_health_generation;
-        ts_health.driver_base = ts_health.control_base = ts_health.worker_base = 0;
+        ts_health.driver_base = ts_health.control_base = ts_health.recovery_base = ts_health.worker_base = 0;
     }
     /* Native counters restart with their device. Also tolerate counter wrap. */
     if (driver < ts_health.driver_base) ts_health.driver_base = 0;
     if (control < ts_health.control_base) ts_health.control_base = 0;
+    if (recovered < ts_health.recovery_base) ts_health.recovery_base = 0;
     if (worker < ts_health.worker_base) ts_health.worker_base = 0;
     ts_health.driver_reports = driver - ts_health.driver_base;
     ts_health.control_skips = control - ts_health.control_base;
+    ts_health.control_recoveries = recovered - ts_health.recovery_base;
     ts_health.worker_gaps = worker - ts_health.worker_base;
     ts_realtime_diagnostics_get(&audio->realtime_diagnostics, &ts_health.snapshot);
     if (ts_health.snapshot.callback_count != ts_health.seen_callbacks) {
@@ -242,7 +245,7 @@ static void ts_audio_health_reset(AudioState *audio)
     ts_realtime_diagnostics_reset(&audio->realtime_diagnostics);
     if (real) ts_native_unlock(real);
     ts_audio_health_native(&ts_health.driver_base, &ts_health.control_base,
-                          &ts_health.worker_base, &ts_health.native_kind);
+                          &ts_health.recovery_base, &ts_health.worker_base, &ts_health.native_kind);
     ts_health.device_generation = audio->audio_health_generation;
     ts_profile_reset();
     ts_health.seen_callbacks = 0;
@@ -274,7 +277,8 @@ static void ts_audio_health_report(AudioState *audio, char *report, size_t size)
         "Maximum UI lock-acquisition wait: %.3f ms\n"
         "Longest hold call site: %s\n"
         "Native counters available: %s\n"
-        "ASIO driver reports: %u; ASIO control-lock skips: %u; JACK worker gaps: %u\n"
+        "ASIO driver reports: %u; ASIO control-lock skips: %u; ASIO short-lock recoveries: %u; JACK worker gaps: %u\n"
+        "ASIO retries brief control overlaps for at most 0.5 ms or 1/8 buffer; callback timings exclude this wait.\n"
         "Callback configuration: 0x%04x\n"
         "Start gaps may include scheduling/backend batching; they do not prove a dropout.\n"
         "Control wait is UI waiting to acquire a lock; hold is time playback is excluded.\n"
@@ -298,7 +302,7 @@ static void ts_audio_health_report(AudioState *audio, char *report, size_t size)
         (unsigned long long)s->control_long_holds, s->control_wait_worst_microseconds / 1000,
         s->control_worst_site ? s->control_worst_site : "none",
         ts_health.native_kind == 1 ? "ASIO" : ts_health.native_kind == 2 ? "JACK worker" : "not exposed by this backend",
-        ts_health.driver_reports, ts_health.control_skips, ts_health.worker_gaps,
+        ts_health.driver_reports, ts_health.control_skips, ts_health.control_recoveries, ts_health.worker_gaps,
         s->active_configuration);
     size_t used = strlen(report);
     if (used + 2 < size) { report[used++] = '\n'; ts_profile_report(report + used, size-used); }
@@ -387,8 +391,9 @@ static void ts_audio_health_draw(TsFramebuffer *fb, const TsUiState *ui,
     cfg_rect(fb, 20, 296, 600, 1, edge);
     cfg_text(fb, 20, 308, "BACKEND SIGNALS", accent);
     if (ts_health.native_kind == 1)
-        snprintf(line, sizeof(line), "DRIVER REPORTS %u    CONTROL-LOCK SKIPS %u",
-                 health_count(ts_health.driver_reports), health_count(ts_health.control_skips));
+        snprintf(line, sizeof(line), "DRIVER %u   LOCK SKIPS %u   RECOVERED %u",
+                 health_count(ts_health.driver_reports), health_count(ts_health.control_skips),
+                 health_count(ts_health.control_recoveries));
     else if (ts_health.native_kind == 2)
         snprintf(line, sizeof(line), "WORKER QUEUE GAPS %u", health_count(ts_health.worker_gaps));
     else snprintf(line, sizeof(line), "DROPOUT COUNTERS NOT EXPOSED BY THIS BACKEND");

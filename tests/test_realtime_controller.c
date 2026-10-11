@@ -101,6 +101,34 @@ int main(int argc,char **argv)
         set_fm_output_trim(0,a,u,1,0);
         for(int i=0;i<300;++i)audio_callback(a,(Uint8*)block,2*sizeof(float));
         assert(fabsf(a->fm_output_gain-1)<1e-6f && a->keyboard_dry.l>.1f);
+        /* Native synth note edges and velocity must survive the unified matrix,
+           including its direct Main -> physical output route. */
+        ts_keyboard_sequence_stop(&a->keyboard_sequence);ts_note_bank_init(&a->notes);
+        TsMatrixControls matrix;ts_matrix_default(&matrix);matrix.enabled=1;
+        matrix.row[TS_MATRIX_MAIN].matrix_gain[TS_MATRIX_EQ]=0;
+        matrix.row[TS_MATRIX_MAIN].matrix_gain[TS_MATRIX_NODES]=1000;
+        assert(ts_matrix_set(&a->sister.matrix,&matrix,48000));
+        for(int i=0;i<8;++i)audio_callback(a,(Uint8*)block,sizeof(block));
+        const int velocities[]={32,64,127};float levels[3];
+        for(int v=0;v<3;++v) {
+            TsMidiEvent midi={0};assert(ts_midi_decode_short_message(0x90,60,velocities[v],&midi));
+            assert(ts_note_bank_start_sample_event(&a->notes,&sample,&tuning,&midi.note,0,48000)==TS_NOTE_STARTED);
+            previous=0;largest=0;
+            for(int f=0;f<512;++f) {
+                audio_callback(a,(Uint8*)block,2*sizeof(float));
+                largest=fmaxf(largest,fabsf(block[0]-previous));previous=block[0];
+            }
+            levels[v]=previous;assert(levels[v]>.01f);
+            ts_note_bank_release_event(&a->notes,&midi.note);
+            for(int f=0;f<512;++f) {
+                audio_callback(a,(Uint8*)block,2*sizeof(float));
+                largest=fmaxf(largest,fabsf(block[0]-previous));previous=block[0];
+            }
+            assert(largest<.003f && fabsf(previous)<1e-6f);
+        }
+        assert(fabsf(levels[0]/levels[2]-32.f/127)<1e-5f);
+        assert(fabsf(levels[1]/levels[2]-64.f/127)<1e-5f);
+        puts("Matrix synth note attack/release and MIDI velocity passed");
     }
     ts_keyboard_sequence_source_free(ts_keyboard_sequence_source(&a->keyboard_sequence,NULL));
     ts_sister_runtime_free(&a->sister);ts_sample_free(&sample);free(a);free(u);

@@ -24,6 +24,7 @@ void ts_asio_quit(void);
 unsigned ts_asio_xruns(void);
 unsigned ts_asio_driver_xruns(void);
 unsigned ts_asio_control_skips(void);
+unsigned ts_asio_control_recoveries(void);
 const float *ts_asio_input_block(unsigned *frames, unsigned *channels);
 #ifdef __cplusplus
 }

@@ -48,8 +48,13 @@ The displayed Insert queue target is zero for this synchronous path; this does
 not mean zero round-trip latency. Driver buffers, the ASIO adapter, converters,
 Matrix and external processing still contribute. GAPS reports ASIO/adapter
 missed periods for the shared stream, so the two sides show the same counter.
-Existing UI/DSP exclusion is respected; the driver callback never waits for a
-UI lock and emits silence/counts a missed period if that lock is busy.
+Existing UI/DSP exclusion is respected. If a note edit briefly holds the audio
+lock, the callback retries for at most the smaller of 0.5 ms and one eighth of a
+buffer period. This avoids replacing a whole buffer with silence for a short
+overlap. It never sleeps or takes an unbounded lock; a longer edit still emits
+silence and counts a missed period. F12 Audio Health distinguishes short-lock
+recoveries from control-lock skips and driver reports. Callback processing
+timings exclude that retry interval. No extra audio buffer is queued.
 
 Only one ASIO driver may be open in TapeSister. Independent SEND/RETURN device
 choices remain available on other backends. Old projects with named independent
@@ -68,8 +73,12 @@ save again. Neither step requires closing TapeSister.
 
 Automated tests exercise the actual adapter against a simulated duplex driver,
 including negotiated 48 kHz/128 frames, 16-channel stride, capture-before-output,
-exact level/channel mapping, lock contention, stopped streams, start failure and
-stale handles. The CFG integration fixture switches SDL → ASIO, switches duplex
+exact level/channel mapping, long lock contention, stopped streams, start failure
+and stale handles. Deterministic clock tests cover brief contention recovery,
+retry expiry and the smaller budgets needed for low buffer sizes. Native synth
+tests cover note attack/release and velocity through the unified matrix. Tracker
+tests record five velocity levels and verify their volume cells survive TSR
+save/reload. The CFG integration fixture switches SDL → ASIO, switches duplex
 drivers and buffers, returns to SDL, blocks changes during recording, and checks
 rollback after a missing device or failed start. It also verifies persisted
 choices, stable logical handles and preserved matrix routes/aliases. Insert tests compare unity to bypass and check that no independent
