@@ -18142,7 +18142,7 @@ int main(int argc, char **argv)
                               &ui.config.sister_window_y);
     {
         char config_error[160];
-        if (!diagnostic_performance && !ts_config_save(&ui.config, config_file_path(),
+        if (!diagnostic_performance && !ts_audio_main_config_write(&ui.config, config_file_path(),
                             config_error, sizeof(config_error)))
             fprintf(stderr, "TapeSister config save: %s\n", config_error);
     }

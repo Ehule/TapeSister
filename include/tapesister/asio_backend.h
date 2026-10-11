@@ -18,6 +18,7 @@ void ts_asio_close(SDL_AudioDeviceID id);
 void ts_asio_lock(void);
 void ts_asio_unlock(void);
 void ts_asio_pause(SDL_AudioDeviceID id, int paused);
+int ts_asio_running(void);
 void ts_asio_poll(void);
 void ts_asio_quit(void);
 unsigned ts_asio_xruns(void);

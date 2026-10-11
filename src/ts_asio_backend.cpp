@@ -130,7 +130,7 @@ SDL_AudioDeviceID ts_asio_open(const char *name, int capture,
             SDL_SetError("ASIO uses one driver for main I/O and Insert; set INPUT to SYSTEM DEFAULT"); return 0;
         }
         if (endpoints[capture].id) {
-            SDL_SetError("ASIO endpoint already open; save and restart to change its driver or buffer"); return 0;
+            SDL_SetError("ASIO endpoint already open; close both endpoint views before reopening"); return 0;
         }
         if (!driver->isStreamOpen()) {
             if (capture) { SDL_SetError("Open ASIO output before its shared input"); return 0; }
@@ -187,6 +187,8 @@ void ts_asio_pause(SDL_AudioDeviceID id, int paused)
         if (driver->startStream() != RTAUDIO_NO_ERROR) lost.store(true);
     }
 }
+int ts_asio_running(void)
+{ return driver && started && !lost.load() && driver->isStreamRunning(); }
 void ts_asio_poll(void)
 {
     if (!driver || notified || !started) return;

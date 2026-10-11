@@ -1,32 +1,3 @@
-
-    if (ts_real_capture != 0 &&
-        (!ts_capture_name_matches_config() ||
-         ts_capture_desired.samples !=
-             (Uint16)config->audio_buffer_frames)) {
-        ts_capture_reconfigure_pending = 1;
-        ts_capture_reconfigure_error[0] = '\0';
-    }
-    ts_mark_capture_config_after_save();
-    if (ts_capture_reconfigure_pending) {
-        ts_audio_pause_device(TS_AUDIO_LOGICAL_CAPTURE, 1);
-        ts_audio_pause_device(TS_AUDIO_LOGICAL_CAPTURE, 0);
-        if (ts_capture_reconfigure_error[0] != '\0')
-            snprintf(ts_pending_notice, sizeof(ts_pending_notice),
-                     "INPUT SWITCH FAILED - KEPT PREVIOUS: %.104s",
-                     ts_capture_reconfigure_error);
-        else
-            snprintf(ts_pending_notice, sizeof(ts_pending_notice),
-                     "CONFIG SAVED - INPUT %.132s",
-                     config->record_input_device[0] != '\0' ?
-                     config->record_input_device : "SYSTEM DEFAULT");
-    }
-    if (config->audio_backend != ts_started_backend)
-        snprintf(ts_pending_notice, sizeof(ts_pending_notice),
-                 "CONFIG SAVED - BACKEND %s APPLIES AFTER RESTART",
-                 ts_audio_backend_name(config->audio_backend));
-    return 1;
-}
-
 static void cfg_rect(TsFramebuffer *fb, int x, int y, int w, int h,
                      uint32_t color)
 {
@@ -134,8 +105,7 @@ static void ts_audio_render_config(TsFramebuffer *fb, const TsUiState *ui)
     cfg_frame(fb, 166, 42, 118, 14, row, edge);
     cfg_text(fb, 188, 46, "AUDIO HEALTH", mouse_color);
     cfg_text(fb, 300, 45,
-        ts_audio_restart_required(&ui->config) ? "PENDING: SAVE CONFIG + RESTART" :
-        "DEVICE CHANGES: SAVE CONFIG TO APPLY", effect_color);
+        "SAVE CONFIG APPLIES AUDIO LIVE", effect_color);
 
     for (int field = 0; field < TS_CONFIG_FIELD_COUNT; ++field) {
         const char *value = ts_config_field_const(&ui->config, (TsConfigField)field);

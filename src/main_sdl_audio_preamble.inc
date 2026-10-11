@@ -48,13 +48,15 @@ static void ts_audio_insert_device_event(const SDL_Event *event);
 static void ts_audio_insert_cycle_device(TsUiState *ui,int side,int direction);
 static unsigned ts_audio_insert_choice_channels(const TsUiState *ui,int side);
 static void ts_audio_insert_diagnostics(void *audio,TsUiState *ui,int log);
-static int ts_audio_restart_required(const TsConfig *config);
+static int ts_audio_reopen_required(const TsConfig *config);
 static int ts_audio_resolve_output_failure(SDL_Window *window);
 static int ts_switch_output_for_config(char *error, size_t error_size);
 static void ts_audio_catalog_refresh(void);
 static void ts_audio_quit(void);
 static int ts_audio_main_config_load(TsConfig *config, const char *path,
                                      char *error, size_t error_size);
+static int ts_audio_main_config_write(const TsConfig *config, const char *path,
+                                      char *error, size_t error_size);
 static int ts_audio_main_config_write(const TsConfig *config, const char *path,
                                       char *error, size_t error_size);
 static int ts_audio_main_config_save(const TsConfig *config, const char *path,

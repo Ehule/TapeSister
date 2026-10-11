@@ -488,6 +488,22 @@ add_executable(tapesister_spatial_tests tests/test_spatial.c)
 target_link_libraries(tapesister_spatial_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_spatial_tests COMMAND tapesister_spatial_tests)
 if(TAPESISTER_BUILD_SDL)
+  # Exercise the real CFG/session code and ASIO adapter with deterministic
+  # duplex drivers on both Linux and Windows, without requiring hardware.
+  add_executable(tapesister_audio_reconfigure_tests tests/test_audio_reconfigure.c
+    tests/asio_fixture/driver_state.cpp src/ts_asio_backend.cpp
+    src/tape_link.c src/tape_companion.c src/ts_startup_diag.c src/ts_midi_input.c)
+  target_compile_definitions(tapesister_audio_reconfigure_tests PRIVATE TAPESISTER_HAS_ASIO)
+  target_compile_features(tapesister_audio_reconfigure_tests PRIVATE cxx_std_11)
+  target_include_directories(tapesister_audio_reconfigure_tests PRIVATE tests/asio_fixture third_party)
+  target_link_libraries(tapesister_audio_reconfigure_tests PRIVATE tapesister_core tapesister_tapehead SDL2::SDL2)
+  if(UNIX AND NOT APPLE)
+    target_link_libraries(tapesister_audio_reconfigure_tests PRIVATE rt)
+  endif()
+  if(MINGW)
+    target_link_options(tapesister_audio_reconfigure_tests PRIVATE "-Wl,--stack,16777216")
+  endif()
+  add_test(NAME tapesister_audio_reconfigure_tests COMMAND tapesister_audio_reconfigure_tests)
   add_executable(tapesister_source_route_controller_tests tests/test_source_route_controller.c
     src/tape_link.c src/tape_companion.c src/ts_startup_diag.c src/ts_midi_input.c)
   target_include_directories(tapesister_source_route_controller_tests PRIVATE third_party)

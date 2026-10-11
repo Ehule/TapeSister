@@ -59,24 +59,24 @@ static void routing_clarity(const char *directory)
 
     TsConfig config=u.config;
     u.config.audio_backend=ts_started_backend;
-    assert(!ts_audio_restart_required(&u.config));
+    assert(!ts_audio_reopen_required(&u.config));
     u.config.insert.send_pair=1;u.config.insert.return_pair=2;
-    assert(!ts_audio_restart_required(&u.config)); /* Port choices alone stay live. */
+    assert(!ts_audio_reopen_required(&u.config)); /* Port choices alone stay live. */
     u.config.audio_backend=ts_started_backend==TS_AUDIO_BACKEND_AUTO?TS_AUDIO_BACKEND_JACK:TS_AUDIO_BACKEND_AUTO;
-    assert(ts_audio_restart_required(&u.config));
+    assert(ts_audio_reopen_required(&u.config));
     ExternalInputState input={0};SDL_AudioDeviceID capture=0;
     u.insert_apply_pending=1;TsInsertControls before=a.sister.insert.controls;
     insert_sync(0,&capture,&a,&input,&u);
     assert(u.insert_restart_required && !memcmp(&before,&a.sister.insert.controls,sizeof(before)));
-    assert(strstr(u.status,"RESTART"));
+    assert(strstr(u.status,"SAVE CONFIG"));
     int asio=ts_asio_selected;ts_asio_selected=1;
     u.config.audio_backend=ts_started_backend;u.config.audio_buffer_frames=ts_output_desired.samples;
     snprintf(u.config.audio_output_device,sizeof(u.config.audio_output_device),"%s",ts_active_output);
-    assert(!ts_audio_restart_required(&u.config));
-    ++u.config.audio_buffer_frames;assert(ts_audio_restart_required(&u.config));
+    assert(!ts_audio_reopen_required(&u.config));
+    ++u.config.audio_buffer_frames;assert(ts_audio_reopen_required(&u.config));
     u.config.audio_buffer_frames=ts_output_desired.samples;
     snprintf(u.config.audio_output_device,sizeof(u.config.audio_output_device),"Other ASIO driver");
-    assert(ts_audio_restart_required(&u.config));ts_asio_selected=asio;
+    assert(ts_audio_reopen_required(&u.config));ts_asio_selected=asio;
     u.config=config;u.insert_restart_required=0;
     ts_sister_runtime_set_router(&a.sister,&old);
     ts_tapehead_stop();remove("clarity-score.tst");

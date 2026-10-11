@@ -1,7 +1,7 @@
 static void ts_audio_catalog_refresh(void)
 {
 #if defined(TAPESISTER_HAS_ASIO)
-    if (ts_asio_selected) ts_asio_rescan();
+    if (ts_live_config && ts_live_config->audio_backend == TS_AUDIO_BACKEND_ASIO) ts_asio_rescan();
 #endif
     char midi_error[160];
     int input_ok = ts_audio_name_list_refresh(
@@ -55,6 +55,17 @@ static void ts_cycle_device_name(char *configured, size_t configured_size,
     current = (current + (direction >= 0 ? 1 : total - 1)) % total;
     if (current == 0) configured[0] = '\0';
     else ts_copy_name(configured, configured_size, names[current - 1]);
+}
+
+static void ts_audio_link_asio_selection(int input_changed)
+{
+    if (!ts_live_config || ts_live_config->audio_backend != TS_AUDIO_BACKEND_ASIO) return;
+    if (input_changed)
+        ts_copy_name(ts_live_config->audio_output_device, sizeof(ts_live_config->audio_output_device),
+                     ts_live_config->record_input_device);
+    else
+        ts_copy_name(ts_live_config->record_input_device, sizeof(ts_live_config->record_input_device),
+                     ts_live_config->audio_output_device);
 }
 
 static void ts_cycle_input_channel(int direction)

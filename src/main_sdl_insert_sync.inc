@@ -5,10 +5,10 @@ static void insert_sync(SDL_AudioDeviceID device,SDL_AudioDeviceID *capture_devi
 {
     int apply=ui->insert_apply_pending;
     ui->insert_apply_pending=0;
-    ui->insert_restart_required=ts_audio_restart_required(&ui->config);
+    ui->insert_restart_required=ts_audio_reopen_required(&ui->config);
     if(ui->insert_restart_required) {
-        if(apply)snprintf(ui->status,sizeof(ui->status),"CFG AUDIO CHANGE PENDING: SAVE CONFIG + RESTART; THEN APPLY INSERT PORTS");
-        return; /* Keep the active backend's endpoints until the restart. */
+        if(apply)snprintf(ui->status,sizeof(ui->status),"CFG AUDIO CHANGE PENDING: SAVE CONFIG; THEN APPLY INSERT PORTS");
+        return; /* Keep the active backend's endpoints until SAVE CONFIG. */
     }
     if(apply) {
         int recording=audio->capture.state!=TS_CAPTURE_IDLE ||

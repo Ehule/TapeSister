@@ -5,15 +5,19 @@ or VB-Audio Matrix and its virtual ASIO drivers before starting TapeSister.
 
 ## Setup
 
-1. CFG → BACKEND → ASIO → SAVE CONFIG, then close and restart TapeSister.
-   Backend changes require a restart. `ON:` shows the backend actually running;
-   the selector shows the saved/requested backend. Changing backend resets device
-   names from the old backend to defaults; choose the new driver after restarting.
-2. In CFG, choose the MOTU or Matrix ASIO driver under OUTPUT. Leave INPUT on
-   SYSTEM DEFAULT to share that driver. Select a buffer request, save, and restart
-   after changing the ASIO driver or buffer. Start with 256 frames. TapeSister uses
-   the driver's current sample rate and negotiated buffer; the Insert panel shows
-   the actual values. Set the desired rate in the MOTU/Matrix control panel first.
+1. In CFG, choose BACKEND → ASIO. The device rows immediately list installed
+   ASIO drivers, before changing the running backend. Choose your MOTU or Matrix
+   driver in either INPUT or OUTPUT; both rows follow the same duplex driver.
+2. Choose the buffer request, then SAVE CONFIG. TapeSister stops playback and
+   reopens audio in place; the app and project stay open. Backend, driver and
+   buffer changes do **not** require an app restart. Recording must be finished
+   or cancelled first. Start with 256 frames. The driver negotiates the actual
+   rate/buffer shown in Insert; set its rate in the MOTU/Matrix control panel first.
+   `ON:` identifies the backend actually running. If a selected device cannot
+   open, TapeSister attempts to restore the previous audio setup, reports the
+   failure and leaves CFG open without saving the failed choice. No other device
+   is silently substituted. If restoration also fails, choose an available device
+   and save again to recover from silence.
 3. F9 → INSERT SETUP: select MASTER DEVICE SPARES for SEND and SHARED CFG INPUT
    for RETURN. Pick channel pairs and APPLY PORTS. For example, Master 1/2,
    Send 3/4 and Return 5/6. These are channels of the one ASIO driver, not the
@@ -50,18 +54,25 @@ UI lock and emits silence/counts a missed period if that lock is busy.
 Only one ASIO driver may be open in TapeSister. Independent SEND/RETURN device
 choices remain available on other backends. Old projects with named independent
 endpoints need to be changed to the shared selections above when used with ASIO.
-Driver changes and buffer changes are saved for restart. SCAN uses the cached
-ASIO catalog while a stream is open: probing other drivers could disturb it.
-Restart after installing a new driver. Reset/rate-change/stopped-stream detection
-marks both endpoints unavailable; it does not silently switch drivers. Restart
-or save CFG after the driver is available to reopen the output, then APPLY PORTS.
+Driver and buffer changes close both endpoint views and reopen one duplex stream.
+SCAN uses the cached ASIO catalog while a stream is open: probing other drivers
+could disturb it. Applying a new setup releases the driver and refreshes discovery.
+Reset/rate-change/stopped-stream detection marks both endpoints unavailable;
+save CFG after the driver is available to recover, then APPLY PORTS if needed.
+
+For other SDL backends, the new backend must be applied before SDL can enumerate
+its device list. Save CFG once to activate it, reopen CFG to choose devices, then
+save again. Neither step requires closing TapeSister.
 
 ## Verification and remaining hardware test
 
 Automated tests exercise the actual adapter against a simulated duplex driver,
 including negotiated 48 kHz/128 frames, 16-channel stride, capture-before-output,
 exact level/channel mapping, lock contention, stopped streams, start failure and
-stale handles. Insert tests compare unity to bypass and check that no independent
+stale handles. The CFG integration fixture switches SDL → ASIO, switches duplex
+drivers and buffers, returns to SDL, blocks changes during recording, and checks
+rollback after a missing device or failed start. It also verifies persisted
+choices, stable logical handles and preserved matrix routes/aliases. Insert tests compare unity to bypass and check that no independent
 Send/Return queues are used. Native callback tests compare a unity cable loop to
 bypass through the actual mixer. Windows CI compiles the real RtAudio ASIO backend.
 These tests do not substitute for a MOTU or Matrix listening/round-trip test.

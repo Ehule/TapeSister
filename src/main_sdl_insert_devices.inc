@@ -208,7 +208,7 @@ static void ts_audio_insert_cycle_device(TsUiState *ui,int side,int direction)
 static void ts_audio_insert_diagnostics(void *state,TsUiState *ui,int log)
 {
     AudioState *audio=state;
-    ui->insert_restart_required=ts_audio_restart_required(&ui->config);
+    ui->insert_restart_required=ts_audio_reopen_required(&ui->config);
     ui->insert_master_rate=ts_real_output?ts_output_endpoint.sample_rate:0;
     ui->insert_master_buffer=ts_real_output?ts_output_endpoint.buffer_frames:0;
     if(log && ts_jack_selected) diagnostic_log("JACK Master worker_xruns=%u Input worker_xruns=%u",

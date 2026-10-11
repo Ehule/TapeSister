@@ -125,3 +125,7 @@ A legacy direct stereo route using nonadjacent/reversed speaker-array channels
 is marked OLD, rather than showing an incorrect matrix checkbox. It keeps
 playing its saved map. The row's **Use Matrix** button explicitly replaces that
 map with Main Mix so it can be repatched using the physical pair columns.
+
+Audio backend, ASIO driver and buffer changes now apply from CFG without closing
+TapeSister; see [ASIO audio setup](ASIO_AUDIO.md). Hardware-name editing displays
+a blinking caret, which returns to visible after typing or Backspace.

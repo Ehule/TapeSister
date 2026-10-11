@@ -8,7 +8,7 @@ typedef struct {
     MatrixRow rows[TS_TRACKER_LANES+TS_SISTER_RUNTIME_PAGE_LIMIT*TS_BANK_SLOT_COUNT+TS_MATRIX_ROWS];int count;
     TsMatrixControls controls;TsSourceRoute route;
     TsRouterControls legacy;TsSpatialControls array;
-    int rename;char name[TS_MATRIX_NAME],status[150];
+    int rename;Uint32 rename_blink_started;char name[TS_MATRIX_NAME],status[150];
     float peaks[TS_MATRIX_ROWS];unsigned inputs,outputs;
 } MatrixWindow;
 static MatrixWindow matrix_window={.selected=-1,.rename=-1};
@@ -209,7 +209,9 @@ static void mx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
         mx_button(1070,762,170,r.width==-100?"MONO":"STEREO",r.width==-100);
     }
     if(w->rename>=0) {
-        mx_rect(252,730,792,51,0xff33443du);snprintf(label,sizeof(label),"NAME: %.23s_",w->name);mx_text(266,738,label,MX_YELLOW,2);
+        mx_rect(252,730,792,51,0xff33443du);snprintf(label,sizeof(label),"NAME: %.23s",w->name);mx_text(266,738,label,MX_YELLOW,2);
+        if ((Uint32)(SDL_GetTicks()-w->rename_blink_started)%1000u < 500u)
+            mx_rect(266+(6+(int)strlen(w->name))*12,736,2,18,MX_YELLOW);
         mx_text(266,763,"ENTER: SAVE / ESC: CANCEL - CHANNEL NUMBERS STAY VISIBLE",MX_TEXT,1);
     }
     if(!w->controls.enabled)mx_text(24,804,"LEGACY PROJECT: USE MATRIX STARTS A NEW MAIN > EQ > LIMITER PATH. EXISTING SOURCE SENDS ARE RETAINED.",MX_YELLOW,1);
@@ -296,7 +298,7 @@ static void matrix_update(SDL_AudioDeviceID device,AudioState *audio,TsUiState *
 }
 static void mx_name(int port)
 {
-    MatrixWindow *w=&matrix_window;w->rename=port;
+    MatrixWindow *w=&matrix_window;w->rename=port;w->rename_blink_started=SDL_GetTicks();
     snprintf(w->name,sizeof(w->name),"%s",port<TS_MATRIX_INPUTS?w->controls.input_name[port]:w->controls.output_name[port-TS_MATRIX_INPUTS]);
     SDL_StartTextInput();w->dirty=1;
 }
@@ -321,6 +323,8 @@ static int matrix_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,A
     }
     if(!w->visible)return 1;
     if(w->rename>=0) {
+        if(e->type==SDL_TEXTINPUT || (e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_BACKSPACE))
+            w->rename_blink_started=SDL_GetTicks();
         if(e->type==SDL_TEXTINPUT)for(const char *s=e->text.text;*s;++s) {
             size_t n=strlen(w->name);if(n+1<TS_MATRIX_NAME && *s>=32 && *s<=126 && *s!='='){w->name[n]=*s;w->name[n+1]=0;}
         }

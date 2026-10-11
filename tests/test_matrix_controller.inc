@@ -147,7 +147,15 @@ static void matrix_controller(const char *directory)
     assert(matrix_show(0,&a,&u,&pages,&bank,-1,-1));
     matrix_click(455,102,SDL_BUTTON_LEFT); /* INPUTS */
     matrix_click(80,MATRIX_Y+12,SDL_BUTTON_MIDDLE);assert(matrix_window.rename==0);
-    strcpy(matrix_window.name,"Terra live");SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.windowID=matrix_window.id;e.key.keysym.sym=SDLK_RETURN;
+    strcpy(matrix_window.name,"Terra live");
+    matrix_window.rename_blink_started=SDL_GetTicks();
+    matrix_shot(directory,"matrix-rename-caret");
+    mx_paint(&a,&pages,&bank);
+    int caret=736*MATRIX_W+266+(6+(int)strlen(matrix_window.name))*12;
+    assert(matrix_window.pixels[caret]==0xffffce69u);
+    matrix_window.rename_blink_started=SDL_GetTicks()-600u;
+    mx_paint(&a,&pages,&bank);assert(matrix_window.pixels[caret]!=0xffffce69u);
+    SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.windowID=matrix_window.id;e.key.keysym.sym=SDLK_RETURN;
     assert(matrix_event(&e,window,0,&a,&u,&pages,&bank));assert(!strcmp(a.sister.matrix.controls.input_name[0],"Terra live"));
     matrix_shot(directory,"matrix-hardware-inputs");
     /* Project state owns names and graph, and an old project clears both. */

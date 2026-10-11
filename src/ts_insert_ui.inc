@@ -25,7 +25,7 @@ static void insert_render(TsFramebuffer *fb,const TsUiState *ui)
         ui->insert_return_choice!=ui->config.insert.return_pair ||
         strcmp(ui->insert_send_device,ui->config.insert_send_device) ||
         strcmp(ui->insert_return_device,ui->config.insert_return_device);
-    text(fb,22,69,ui->insert_restart_required?"CFG CHANGE PENDING: SAVE CONFIG + RESTART REQUIRED":pending?
+    text(fb,22,69,ui->insert_restart_required?"CFG CHANGE PENDING: SAVE CONFIG TO APPLY AUDIO":pending?
         "PORT CHOICES NOT ACTIVE YET - CLICK APPLY NOW":"PORT CHOICES APPLIED - LEVELS AND BYPASS CHANGE LIVE",pending||ui->insert_restart_required?amber:teal,1);
     for(int side=0;side<2;++side) {
         int x=22+side*310;
@@ -75,7 +75,7 @@ static void insert_render(TsFramebuffer *fb,const TsUiState *ui)
     button(fb,22,326,92,"BYPASS",(ui->router_live.bypass_mask&(1u<<TS_ROUTER_INSERT))!=0);
     button(fb,128,326,70,"SOLO",ui->router_live.solo==TS_ROUTER_INSERT+1);
     button(fb,210,326,96,"RESCAN",0);
-    button(fb,420,326,196,ui->insert_restart_required?"RESTART REQUIRED":pending?"APPLY NOW":"RECONNECT PORTS",pending||ui->insert_apply_pending||ui->insert_restart_required);
-    const char *help=ui->performance_tooltip[0]?ui->performance_tooltip:"APPLY PORTS LIVE; SAVE CFG TO REMEMBER. BACKEND / ASIO DRIVER CHANGES NEED RESTART.";
+    button(fb,420,326,196,ui->insert_restart_required?"APPLY CFG FIRST":pending?"APPLY NOW":"RECONNECT PORTS",pending||ui->insert_apply_pending||ui->insert_restart_required);
+    const char *help=ui->performance_tooltip[0]?ui->performance_tooltip:"APPLY PORTS LIVE; SAVE CFG TO REMEMBER. APPLY AUDIO BACKEND / DRIVER CHANGES IN CFG.";
     snprintf(label,sizeof(label),"%.98s",help);text(fb,22,364,label,muted,1);
 }
