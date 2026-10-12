@@ -119,6 +119,7 @@ static int m_target(Mandala *m)
     int q=m->quality-m->shed;if(q<0)q=0;
     m->width=(int[]){768,960,1280}[q];
     m->height=(int[]){480,600,800}[q];
+    if(m->shed && q==0) { m->width=m->shed==1?640:512; m->height=m->width*5/8; }
     m->history=SDL_CreateTexture(m->renderer,SDL_PIXELFORMAT_ARGB8888,SDL_TEXTUREACCESS_TARGET,m->width,m->height);
     if(!m->history)return 0;
     SDL_SetTextureBlendMode(m->history,SDL_BLENDMODE_NONE);
@@ -193,7 +194,7 @@ static void m_scene(Mandala *m, double dt)
         }
     }
     unsigned budget=(unsigned[]){1152,1792,2304}[m->quality];
-    if(m->shed)budget=budget*2/3;
+    if(m->shed)budget=m->shed==1?budget*2/3:budget/2;
     /* Evenly thin the whole layout, preserving outer architecture at Economy. */
     for(unsigned i=0;i<m->count;++i) {
         if((i*budget/m->count)==((i+1)*budget/m->count) && budget<m->count)continue;
@@ -386,7 +387,7 @@ static int mandala_run(VisualShared *shared,
         if(rendered) {
             m->cost=m->cost*.9+ms*.1;m->max_cost=fmax(m->max_cost,ms);m->total_cost+=ms;++m->frames;
         }
-        int fps=(int[]){15,30,60}[m->quality];if(m->shed)fps=15;
+        int fps=(int[]){15,30,60}[m->quality];if(m->shed)fps=m->shed==1?15:8;
         if(rendered && !m->frozen && ms>500.0/fps)++m->slow_frames;else if(rendered && m->slow_frames)m->slow_frames--;
         if(m->slow_frames>15 && m->shed<2) {++m->shed;m->slow_frames=0;if(!m_target(m))break;}
         /* No catch-up frames; a slow present only lowers visual cadence. Freeze
