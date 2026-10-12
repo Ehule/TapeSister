@@ -95,8 +95,8 @@ reconstruction and per-instance allocation. One retained texture implements
 short fading traces; no recursive history, growing cache, particle queue or
 performance-time readback exists. Sustained expensive frames reduce instance
 count, resolution and cadence to 15, then 8 FPS (down to a 512×320 internal
-texture). Frame deadlines also
-cap drawing during event floods. SDL 2.0.18+ supports accelerated and software
+texture). Frame deadlines also cap drawing during event floods. SDL 2.0.18+
+supports accelerated and software
 paths; no dedicated GPU is required. Priority and process isolation do not
 eliminate CPU/memory-bandwidth contention.
 

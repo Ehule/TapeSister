@@ -1,0 +1,15 @@
+Measured binary: 0bcbe4ff53fb34e779ea798eef1ea48b28f76f80
+Command: tapesister_mandala_controller_tests --soak 240
+Harness elapsed seconds (including exit polling): 1460.073951409002
+Return code: 0
+
+Could not load external Fast Tracks logo. Using embedded FT2 logo.
+trial=OFF callbacks=17528 mean_us=3581.645 p50_us=3408.848 p95_us=4587.681 p99_us=6166.238 max_us=37866.352 deadline_misses=16 gaps_over_16ms=228 visual_dropped=0
+Mandala renderer: software, 768x480, 1570 instances, 97112 bytes model
+trial=ECONOMY callbacks=17542 mean_us=3569.686 p50_us=3378.443 p95_us=4673.398 p99_us=6385.405 max_us=22143.309 deadline_misses=22 gaps_over_16ms=269 visual_dropped=0
+trial=STANDARD callbacks=17568 mean_us=3552.099 p50_us=3344.673 p95_us=4666.108 p99_us=6388.889 max_us=33526.359 deadline_misses=20 gaps_over_16ms=257 visual_dropped=0
+trial=STANDARD callbacks=17556 mean_us=3559.632 p50_us=3342.640 p95_us=4697.605 p99_us=6354.107 max_us=33225.502 deadline_misses=21 gaps_over_16ms=253 visual_dropped=0
+trial=ECONOMY callbacks=17559 mean_us=3559.036 p50_us=3375.019 p95_us=4650.184 p99_us=6148.437 max_us=34827.323 deadline_misses=17 gaps_over_16ms=222 visual_dropped=0
+Mandala frames=21402 mean=8.593ms max=158.548ms shed=0
+trial=OFF callbacks=17736 mean_us=3423.237 p50_us=3268.871 p95_us=4170.060 p99_us=5772.403 max_us=40319.199 deadline_misses=20 gaps_over_16ms=167 visual_dropped=0
+soak transport status: tracker=1 mosaic=1 arp=1 time=1134.67
