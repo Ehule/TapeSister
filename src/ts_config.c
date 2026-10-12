@@ -493,6 +493,10 @@ int ts_config_load(TsConfig *config, const char *path,
             if (!parse_clamped_integer(value, TS_SISTER_ERASE_PERCENT_MIN, TS_SISTER_ERASE_PERCENT_MAX, &loaded.sister_erase_percent)) { snprintf(error, error_size, "Invalid Sister erase strength on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "sister_ghost_percent") == 0) {
             if (!parse_clamped_integer(value, TS_SISTER_GHOST_PERCENT_MIN, TS_SISTER_GHOST_PERCENT_MAX, &loaded.sister_ghost_percent)) { snprintf(error, error_size, "Invalid Sister Ghost Tone on config line %d", line_number); fclose(file); return 0; }
+        } else if (!strcmp(key,"visual_quality") || !strcmp(key,"visual_display") || !strcmp(key,"visual_fullscreen")) {
+            int *field=!strcmp(key,"visual_quality")?&loaded.visual_quality:!strcmp(key,"visual_display")?&loaded.visual_display:&loaded.visual_fullscreen;
+            int maximum=!strcmp(key,"visual_quality")?2:!strcmp(key,"visual_display")?63:1;
+            if(!parse_clamped_integer(value,0,maximum,field)){fclose(file);set_error(error,error_size,"Invalid visualizer preference");return 0;}
         } else if (strcmp(key, "sister_window_maximized") == 0) {
             if (!parse_boolean(value, &loaded.sister_window_maximized)) { snprintf(error, error_size, "Invalid Sister window maximize setting on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "sister_window_x") == 0) {
@@ -561,6 +565,7 @@ int ts_config_save(const TsConfig *config, const char *path,
         snprintf(error, error_size, "Could not create config: %s", strerror(errno));
         return 0;
     }
+    int visual_write_failed = fprintf(file,"; Visualizer presentation only (project seed lives in sister-state.ini).\nvisual_quality=%d\nvisual_display=%d\nvisual_fullscreen=%d\n",config->visual_quality,config->visual_display,config->visual_fullscreen)<0;
     write_failed = fprintf(file,
                 "; TapeSister paths. Blank values disable that shortcut.\n"
                 "[Paths]\n"
@@ -825,6 +830,7 @@ int ts_config_save(const TsConfig *config, const char *path,
     if(!write_failed)write_failed=!ts_insert_write(file,&config->insert);
     if(!write_failed)write_failed=fprintf(file,"insert_send_device=%s\ninsert_return_device=%s\n",
         config->insert_send_device,config->insert_return_device)<0;
+    write_failed |= visual_write_failed;
     if (fclose(file) != 0) write_failed = 1;
     if (write_failed) {
         set_error(error, error_size, "Could not finish writing config");

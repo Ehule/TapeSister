@@ -204,3 +204,10 @@ RouterPerf.Loop=1
 # RouterPerf.State.A=16,0  # bypass mask, solo (stable stage ID + 1; 0 = none)
 # RouterPerf.Step.1=0,30  # state index (A=0, HOLD=-1), Step Time in seconds
 # RouterPerf.Timer.0=0,8  # AFTER=1 / FOR=0, seconds; stage 0 is Prism
+
+[Visualizer]
+; Display preferences only; the seed belongs to each saved project.
+; 0 = Economy 15 FPS, 1 = Standard 30 FPS, 2 = Enhanced 60 FPS (target caps).
+visual_quality=0
+visual_display=0
+visual_fullscreen=0

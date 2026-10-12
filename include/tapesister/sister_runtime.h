@@ -2,6 +2,7 @@
 #define TAPESISTER_SISTER_RUNTIME_H
 
 #include "tapesister/capture.h"
+#include "tapesister/mandala.h"
 #include "tapesister/performance.h"
 #include "tapesister/sister_machine.h"
 #include "tapesister/sister_limiter.h"
@@ -249,6 +250,7 @@ typedef struct {
     uint8_t source_switches;
     TsPerformanceMixer performance_mixer;
     float performance_gain_current[4]; /* Audio-owned five-ms fader slew. */
+    TsMandalaConfig mandala; /* UI-owned project state; never used by audio DSP. */
     unsigned performance_transport; /* ARP=1, SisterTracker=2, Mosaic=4; project setting. */
     uint8_t output_channels;
     TsSisterTap selected_tap;

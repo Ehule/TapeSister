@@ -1,4 +1,5 @@
 #include "tapesister/profile.h"
+#include "tapesister/mandala_sdl.h"
 #include "tapesister/ui_schedule.h"
 #if defined(__SSE2__)
 #include <xmmintrin.h>
@@ -688,6 +689,7 @@ static uint64_t paged_project_fingerprint(const TsSamplePages *pages,
         state_hash_bytes(&hash, &record_hash, sizeof(record_hash));
     }
     if (sister != NULL) {
+        state_hash_bytes(&hash,&sister->mandala,sizeof(sister->mandala));
         state_hash_bytes(&hash,&sister->master_eq.controls,sizeof(sister->master_eq.controls));
         TsRouterControls saved_router=ts_router_export(&sister->router);
         state_hash_bytes(&hash,&saved_router,sizeof(saved_router));
@@ -1467,6 +1469,8 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         ts_profile_end(TS_PROF_SPATIAL, profile_spatial);
         }
     }
+    /* Final physical output: after routing, spatial decode, fader and safety limiting. */
+    ts_mandala_audio(out, (unsigned)frames, device_channels);
     ts_tracker_playback_end_block(&audio->tracker);
     ts_sister_runtime_end_audio_block(&audio->sister);
     {
@@ -4332,6 +4336,7 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
                 ts_spatial_recall(&audio->sister.spatial,&spatial);
                 TsMasterEqControls flat;ts_master_eq_default(&flat);
                 ts_master_eq_set(&audio->sister.master_eq,&flat);
+                ts_mandala_default(&audio->sister.mandala);
                 audio->sister.performance_transport=1;
                 ts_performance_mixer_default(&audio->sister.performance_mixer);
                 TsMatrixControls matrix;ts_matrix_default(&matrix);ts_matrix_set(&audio->sister.matrix,&matrix,audio->sister.router.sample_rate);
@@ -13448,6 +13453,9 @@ static int keyboard_note_key_event(const SDL_Event *event, SDL_Window *window,
 
 int main(int argc, char **argv)
 {
+    int visual_dispatch = ts_mandala_dispatch(argc, argv);
+    if (visual_dispatch >= 0) return visual_dispatch;
+    ts_mandala_host_init();
     SDL_Window *window = NULL;
     SDL_Renderer *renderer = NULL;
     SDL_Texture *texture = NULL;
@@ -18115,6 +18123,9 @@ int main(int argc, char **argv)
             }
         }
         uint64_t profile_aux = ts_profile_begin(TS_PROF_AUX_UI);
+        TsMandalaPreferences visual_prefs={ui.config.visual_quality,ui.config.visual_display,ui.config.visual_fullscreen};
+        ts_mandala_poll(&audio.sister.mandala,&visual_prefs);
+        ui.config.visual_quality=visual_prefs.quality;ui.config.visual_display=visual_prefs.display;ui.config.visual_fullscreen=visual_prefs.fullscreen;
         spatial_window_update(&ui);
         canvas_eq_poll(device,&audio,&ui,&instrument);
         matrix_update(device,&audio,&ui,&sample_pages,&instrument);performance_update(device,&audio);
@@ -18144,6 +18155,7 @@ int main(int argc, char **argv)
         if (sister_window.model.visible && window_drawable(sister_window.window) && service_ms>33u)
             service_ms=33u;
         if (window_drawable(spatial_window.window) && service_ms>33u) service_ms=33u;
+        if (ts_mandala_active() && !ts_mandala_frozen() && service_ms>33u) service_ms=33u;
         Uint64 frequency=SDL_GetPerformanceFrequency();
         unsigned spent=frequency?(unsigned)((SDL_GetPerformanceCounter()-frame_started)*1000u/frequency):0;
         int wait_ms=spent<service_ms?(int)(service_ms-spent):0;
@@ -18153,6 +18165,7 @@ int main(int argc, char **argv)
         ts_profile_lane_end(0);
     }
 
+    ts_mandala_shutdown();
     ts_midi_input_destroy(ts_midi_input);ts_midi_input=NULL;midi_wake_event=0;
     if (ui.amplitude_gesture.active)
         end_amplitude_draw(device, &audio, &ui, &instrument, 1);

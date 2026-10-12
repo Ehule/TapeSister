@@ -571,6 +571,7 @@ void ts_sister_runtime_init(TsSisterRuntime *runtime)
     ts_master_eq_init(&runtime->master_eq);
     ts_eq_spectrum_init(&runtime->eq_spectrum);
     ts_router_init(&runtime->router);
+    ts_mandala_default(&runtime->mandala);
     ts_matrix_init(&runtime->matrix);runtime->performance_transport=1;
     ts_performance_mixer_default(&runtime->performance_mixer);
     for(int i=0;i<4;++i)runtime->performance_gain_current[i]=1;

@@ -191,6 +191,7 @@ typedef struct {
     int sister_output_percent;
     int sister_erase_percent;
     int sister_ghost_percent;
+    int visual_quality, visual_display, visual_fullscreen; /* Presentation, not project identity. */
     int sister_window_maximized;
     int sister_window_x;
     int sister_window_y;

@@ -1,5 +1,5 @@
 /* Modeless player mixer with a separate live tile bus. Group edits publish at one callback boundary. */
-enum { PERF_ARP=1,PERF_TRACKER=2,PERF_MOSAIC=4,PERF_W=600,PERF_H=440 };
+enum { PERF_ARP=1,PERF_TRACKER=2,PERF_MOSAIC=4,PERF_W=600,PERF_H=548 };
 static struct {SDL_Window *window;SDL_Renderer *renderer;Uint32 id,painted;int visible,drag;} performance_transport;
 static unsigned performance_running(AudioState *audio)
 {
@@ -119,6 +119,15 @@ static void performance_update(SDL_AudioDeviceID device,AudioState *audio)
     for(int i=0;i<3;++i){int x=20+i*190;perf_rect(x,364,180,34,0x365746);perf_text(x+10,377,buttons[i],0xdbe8e3,1);}
     perf_text(22,412,"SHIFT+SPACE: GROUP   F11: OPEN   ALT+F11: FULLSCREEN",0x94aaa7,1);
     perf_text(22,430,"GAIN: DRAG / WHEEL   DOUBLE-CLICK OR RIGHT-CLICK: 0 DB",0x94aaa7,1);
+    perf_rect(20,454,180,32,0x514933);perf_text(32,466,ts_mandala_active()?"CLOSE VISUALIZER":"VISUALIZE",0xf0c982,1);
+    perf_rect(210,454,180,32,0x304047);perf_text(222,466,ts_mandala_frozen()?"RESUME VISUAL":"FREEZE VISUAL",0xdbe8e3,1);
+    perf_rect(400,454,180,32,0x304047);perf_text(412,466,"NEW SEED",0xdbe8e3,1);
+    const TsMandalaConfig *v=&audio->sister.mandala;
+    snprintf(line,sizeof(line),"PALETTE: %s",(const char*[]){"AMBER","LUNAR","EMBER"}[v->palette%3]);
+    perf_rect(20,494,180,28,0x304047);perf_text(32,505,line,0xdbe8e3,1);
+    snprintf(line,sizeof(line),"SYMMETRY: %u",v->symmetry);perf_rect(210,494,180,28,0x304047);perf_text(222,505,line,0xdbe8e3,1);
+    snprintf(line,sizeof(line),"EVOLUTION: %u MIN",v->cycle_seconds/60);perf_rect(400,494,180,28,0x304047);perf_text(412,505,line,0xdbe8e3,1);
+    perf_text(22,534,"IN VISUAL WINDOW: F FULLSCREEN / D DISPLAY / Q QUALITY / ESC EXIT",0x94aaa7,1);
     SDL_RenderPresent(performance_transport.renderer);performance_transport.painted=SDL_GetTicks();
 }
 static void performance_gain(SDL_AudioDeviceID device,AudioState *audio,int channel,float gain)
@@ -172,6 +181,28 @@ static int performance_event(SDL_Event *e,SDL_Window *window,SDL_AudioDeviceID d
     }
     if(e->type==SDL_MOUSEBUTTONDOWN) {
         int x=e->button.x,y=e->button.y,left=e->button.button==SDL_BUTTON_LEFT;
+        if(left && y>=454 && y<522 && x>=20 && x<580) {
+            int col=(x-20)/190;
+            if((x-20)%190>=180)return 1;
+            TsMandalaConfig *v=&audio->sister.mandala;
+            if(y<486) {
+                if(col==0) {
+                    if(ts_mandala_active())ts_mandala_close();
+                    else {
+                        TsMandalaPreferences prefs={ui->config.visual_quality,ui->config.visual_display,ui->config.visual_fullscreen};
+                        char error[160];
+                        if(!ts_mandala_open(v,&prefs,error,sizeof(error)))snprintf(ui->status,sizeof(ui->status),"VISUALIZER: %.140s",error);
+                    }
+                } else if(col==1)ts_mandala_freeze();
+                else ts_mandala_reseed(v);
+            } else if(y>=494) {
+                if(col==0)v->palette=(v->palette+1)%3;
+                else if(col==1)v->symmetry=v->symmetry>=12?4:v->symmetry+2;
+                else v->cycle_seconds=v->cycle_seconds>=960?60:v->cycle_seconds*2;
+            }
+            performance_transport.painted=SDL_GetTicks()-100;
+            return 1;
+        }
         int row=(y-76)/54;
         if(x>=346 && x<580 && y>=76 && row<4 && (y-76)%54<46) {
             if(e->button.button==SDL_BUTTON_RIGHT || (left && e->button.clicks>=2))performance_gain(device,audio,row,1);

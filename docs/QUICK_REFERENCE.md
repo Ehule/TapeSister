@@ -807,3 +807,11 @@ and [Matrix editing](ROUTING_MATRIX.md#selection-undo-and-ab).
 The main canvas footer shows the current project filename beside Undo and gain
 reduction. `*` means unsaved changes. Long names are shortened there; the window
 title keeps the full filename in every workspace.
+
+### Impermanent Mandala visualizer
+
+F11 → **VISUALIZE** opens the independent audio-reactive mandala. In that window:
+**F** fullscreen, **D** next display, **Q** quality, **Space** freeze, **Esc** exit
+fullscreen/close, **I** diagnostics. Pointer movement reveals controls. Project
+seed, palette, symmetry and evolution controls are in Performance Transport.
+Closing/freeze never controls musical playback. See [the visualizer guide](IMPERMANENT_MANDALA.md).
