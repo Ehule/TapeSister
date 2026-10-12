@@ -43,7 +43,7 @@ forward. Tab from the main canvas or FM reopens it. Tape processing, effects and
 recording continue while hidden. The FM and project-save shortcuts that bring
 the main workspace forward use the same hide-before-focus path. Portal keeps
 its own Tab A/B action, preset dialogs keep their field navigation, and Ctrl+Tab
-still switches to TapeHead. F11 retains fullscreen/windowed switching.
+still switches to TapeHead. Alt+F11 retains fullscreen/windowed switching.
 
 ## Performance measurements
 

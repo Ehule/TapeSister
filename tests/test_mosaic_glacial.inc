@@ -2,11 +2,11 @@ static void test_mosaic_glacial(SDL_Window *window,SDL_AudioDeviceID device)
 {
     AudioState *a=routing_audio(0);TsUiState *u=mosaic_record_ui_fixture(a);
     ExternalInputState *input=mosaic_record_input_fixture(a);SDL_AudioDeviceID input_device=0;
-    SDL_Event e={0};e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=SDL_GetWindowID(window);
+    SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=SDL_GetWindowID(window);
     e.button.button=SDL_BUTTON_LEFT;e.button.x=TS_MOSAIC_LENGTH_X;e.button.y=60;
     assert(mosaic_record_tile_event(&e,window,device,&input_device,a,input,u,&instrument));
     assert(u->config.mosaic_record_seconds==10 && u->config.record_max_seconds==2);
-    SDL_Event escape={0};escape.type=SDL_KEYDOWN;escape.key.windowID=SDL_GetWindowID(window);escape.key.keysym.sym=SDLK_ESCAPE;
+    SDL_Event escape;SDL_zero(escape);escape.type=SDL_KEYDOWN;escape.key.windowID=SDL_GetWindowID(window);escape.key.keysym.sym=SDLK_ESCAPE;
     assert(mosaic_record_tile_event(&escape,window,device,&input_device,a,input,u,&instrument));
     assert(!u->mosaic_record_length_drag && u->config.mosaic_record_seconds==0);
     assert(mosaic_record_tile_event(&e,window,device,&input_device,a,input,u,&instrument));
@@ -38,7 +38,22 @@ static void test_mosaic_glacial(SDL_Window *window,SDL_AudioDeviceID device)
         assert(mosaic_record_tile_event(&e,window,device,&input_device,a,input,u,&instrument));
         assert(u->config.mosaic_record_seconds==10 && strstr(u->status,"FINISH"));
         float output[512];
-        for(int i=0;i<40;++i){audio_callback(a,(Uint8 *)output,sizeof(output));SDL_Delay(1);}
+        for(int i=0;i<40;++i) {
+            audio_callback(a,(Uint8 *)output,sizeof(output));
+            /* This offline producer delivers 256 ms per iteration into a two-
+               second queue. A 1 ms sleep is not a writer scheduling guarantee,
+               especially on Windows. Wait for observed consumer progress;
+               keep the real writer as the queue's sole consumer. */
+            TsPerformanceRecorder *stream=input->recorder.stream;
+            uint64_t accepted=atomic_load(&stream->accepted_frames);
+            Uint32 started=SDL_GetTicks();
+            while(atomic_load(&stream->read_cursor)<accepted &&
+                  ts_performance_recorder_state(stream)!=TS_PERFORMANCE_FILE_FAILED &&
+                  SDL_GetTicks()-started<5000)SDL_Delay(1);
+            assert(atomic_load(&stream->read_cursor)==accepted);
+            assert(ts_performance_recorder_state(stream)!=TS_PERFORMANCE_FILE_FAILED);
+            assert(!input->recorder.stream_overrun && !ts_performance_recorder_dropped(stream));
+        }
         assert(input->recorder.state==TS_EXTERNAL_CAPTURE_COMPLETED && input->recorder.recorded_frames==10000);
         assert(!input->recorder.silence_stopped);
         uint64_t next=a->mosaic->next_id;

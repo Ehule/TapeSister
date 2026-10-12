@@ -22,7 +22,7 @@ static SDL_Window *window;
 static char error[256];
 static void click(int x,int y,int button)
 {
-    SDL_Event e={0};e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=source_route_window.id;
+    SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=source_route_window.id;
     e.button.x=x;e.button.y=y;e.button.button=button;
     assert(source_route_event(&e,window,0,&a,&u,&pages,&bank));
     e.type=SDL_MOUSEBUTTONUP;assert(source_route_event(&e,window,0,&a,&u,&pages,&bank));
@@ -120,7 +120,7 @@ static void shared_send_controls(const char *directory)
        framebuffer/preset banks and cannot fit on MinGW's default 2 MiB stack. */
     static SisterWindow sister;
     source_route_hide();u.router_open=1;
-    SDL_Event event={0};event.type=SDL_MOUSEBUTTONDOWN;event.button.windowID=SDL_GetWindowID(window);
+    SDL_Event event;SDL_zero(event);event.type=SDL_MOUSEBUTTONDOWN;event.button.windowID=SDL_GetWindowID(window);
     event.button.button=SDL_BUTTON_LEFT;event.button.x=70;event.button.y=84;
     assert(router_event(&event,window,0,&a,&u,&sister));
     assert(source_route_window.visible && source_route_window.track==-2 && source_route_window.model.page==3);
@@ -196,6 +196,7 @@ static void routing_pan_scope(const char *directory)
 #include "test_routing_clarity.inc"
 #include "test_tracker_tape_input.inc"
 #include "test_matrix_controller.inc"
+#include "test_matrix_import.inc"
 
 int main(int argc,char **argv)
 {
@@ -206,6 +207,8 @@ int main(int argc,char **argv)
     u.tracker=&pages.tracker;ts_note_bank_init(&a.notes);ts_performance_init(&a.performance);ts_performance_init(&a.tile_launchers);
     ts_keyboard_sequence_init(&a.keyboard_sequence);ts_tracker_playback_init(&a.tracker);ts_audio_mixer_init(&a.mixer);
     ts_capture_init(&a.capture);ts_sister_runtime_init(&a.sister);a.output_rate=48000;a.output_device_channels=4;
+    assert(ts_tapehead_transport_locked(0)); /* A never-opened tracker is already stopped. */
+    assert(ts_tapehead_transport_locked(2));assert(!ts_tapehead_transport_locked(1));
     a.sister.spatial.controls.output[2]=2;a.sister.spatial.controls.output[3]=3;
     assert(ts_sister_runtime_reconfigure(&a.sister,48000,2,error,sizeof(error)));assert(ts_spatial_prepare(&a.sister.spatial,48000));
     assert(ts_instrument_activate_silence(&bank,8192,48000,error,sizeof(error)));
@@ -222,6 +225,23 @@ int main(int argc,char **argv)
     assert(ts_note_bank_start(&a.notes,&bank,TS_AUDITION_CURRENT,12,0,48000)==TS_NOTE_STARTED);
     double energy[4];render(energy);assert(energy[0]==0&&energy[1]==0&&energy[2]>1&&energy[3]>energy[2]);
     assert(a.keyboard_dry.l>0&&a.keyboard_dry.r>0);
+    /* ARP trim reaches direct outputs and leaves manually held notes alone. */
+    double held=energy[2];
+    performance_gain(0,&a,3,.5f);render(energy);assert(fabs(energy[2]-held*.5)<.001);
+    performance_gain(0,&a,3,0);render(energy);assert(energy[2]==0 && energy[3]==0);
+    performance_gain(0,&a,3,1);render(energy);assert(fabs(energy[2]-held)<.001);
+    TsKeyboardSequenceSource *arp=calloc(1,sizeof(*arp));assert(arp);
+    assert(ts_sample_clone(&arp->sample,&bank.current,error,sizeof(error)));
+    arp->count=1;arp->voices[0]=a.notes.voices[0];arp->voices[0].sample=&arp->sample;
+    TsKeyboardSequenceSettings arp_settings=a.keyboard_sequence.settings;
+    arp_settings.notes[0]=60;arp_settings.count=1;arp_settings.seconds=10;arp_settings.gate=1;
+    ts_keyboard_sequence_set(&a.keyboard_sequence,&arp_settings);ts_keyboard_sequence_source(&a.keyboard_sequence,arp);
+    assert(ts_keyboard_sequence_play(&a.keyboard_sequence));render(energy);assert(energy[2]>held*1.5);
+    performance_gain(0,&a,0,0);render(energy);assert(fabs(energy[2]-held)<.001);
+    assert(a.sister.performance_gain_current[0]==0 && a.keyboard_sequence.running);
+    performance_gain(0,&a,0,1);render(energy);assert(energy[2]>held*1.5);
+    ts_keyboard_sequence_stop(&a.keyboard_sequence);ts_keyboard_sequence_source_free(ts_keyboard_sequence_source(&a.keyboard_sequence,NULL));
+    ts_keyboard_sequence_init(&a.keyboard_sequence);render(energy);
     ts_sister_runtime_set_master_output_gain(&a.sister,0);render(energy);render(energy);
     assert(energy[0]==0&&energy[1]==0&&energy[2]==0&&energy[3]==0);
     ts_sister_runtime_set_master_output_gain(&a.sister,1);render(energy);render(energy);
@@ -242,7 +262,7 @@ int main(int argc,char **argv)
     startPlaying(PLAYMODE_SONG,0);render(energy);assert(energy[0]==0&&energy[1]==0&&energy[2]>1&&energy[3]>1);
     routing_pan_scope(argc>1?argv[1]:NULL);
     const pattCoord2_t *header=&pattCoord2Table[config.ptnStretch][ui.pattChanScrollShown][getPatternEditorView()];
-    SDL_Event e={0};e.type=SDL_MOUSEBUTTONDOWN;e.button.button=SDL_BUTTON_RIGHT;
+    SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.button=SDL_BUTTON_RIGHT;
     assert(ts_tapehead_event(&e,32,header->upperRowsY+3));
     tracker_refresh(0,&a,&u,&pages,&bank,48000,NULL);
     assert(matrix_window.visible && matrix_window.rows[matrix_window.selected].kind==0);
@@ -264,11 +284,20 @@ int main(int argc,char **argv)
     startPlaying(PLAYMODE_SONG,0);render(energy);assert(energy[1]>1&&energy[0]==0&&energy[2]==0&&energy[3]==0);
     click(500,48,SDL_BUTTON_LEFT);assert(pages.tracker.lanes[0].output_route.mode==TS_SOURCE_INHERIT);
     render(energy);assert(energy[0]==0&&energy[1]==0&&energy[2]>1&&energy[3]>1);
+    /* Tracker trim scales its native clean route without stopping the clock. */
+    double tracker_level=energy[2];performance_gain(0,&a,1,.5f);render(energy);
+    assert(fabs(energy[2]-tracker_level*.5)<.001 && ts_tapehead_running());
+    performance_gain(0,&a,1,0);render(energy);assert(energy[0]==0 && energy[1]==0 && energy[2]==0 && energy[3]==0);
+    performance_gain(0,&a,1,1);render(energy);assert(energy[2]>1);
+    /* The ARP override observes the actual rendered tracker's tempo. */
+    a.sister.performance_mixer.arp_sync=2;render(energy);
+    assert(ts_tapehead_tempo(511)==song.BPM && fabs(a.keyboard_sequence.clock_seconds-30.0/song.BPM)<1e-9);
+    a.sister.performance_mixer.arp_sync=0;render(energy);assert(a.keyboard_sequence.clock_seconds==0);
     /* Changing devices keeps the same route and folds only its missing pair. */
     a.output_device_channels=2;float stereo[1024];audio_callback(&a,(Uint8*)stereo,sizeof(stereo));
     assert(a.clean_output.missing==12&&fabsf(stereo[1000])>0&&fabsf(stereo[1001])>0);
     assert(source_route_show(0,&a,&u,&pages,&bank,-1,0));shot(argc>1?argv[1]:NULL,"routing-stereo-fallback");
-    e=(SDL_Event){0};e.type=SDL_KEYUP;e.key.windowID=source_route_window.id;e.key.keysym.sym=SDLK_z;
+    SDL_zero(e);e.type=SDL_KEYUP;e.key.windowID=source_route_window.id;e.key.keysym.sym=SDLK_z;
     assert(!source_route_event(&e,window,0,&a,&u,&pages,&bank));assert(e.key.windowID==SDL_GetWindowID(window));
     routing_clarity(argc>1?argv[1]:NULL);
     shared_send_controls(argc>1?argv[1]:NULL);
@@ -276,6 +305,7 @@ int main(int argc,char **argv)
     tracker_tape_input();
     master_mix_project(argc>2?argv[2]:NULL,argc>1?argv[1]:NULL);
     matrix_controller(argc>1?argv[1]:NULL);
+    matrix_import_project();
     ts_tapehead_stop();ts_tapehead_close();source_route_close();remove("route-score.tst");
     ts_sister_runtime_free(&a.sister);ts_capture_free(&a.capture);ts_instrument_free(&bank);ts_sample_pages_free(&pages);
     SDL_DestroyWindow(window);SDL_Quit();puts("Source routing UI, native audio, track precedence, live edits, saved score and stereo fallback passed");return 0;

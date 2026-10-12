@@ -65,7 +65,7 @@ Structure routing manually uses only the original six operators.
 ## Compatibility and checks
 
 TSR30 / genome 7 introduced twelve voice settings and a bounded,
-nonrecursive copy of the original sound. Current saves use TSR37 and retain
+nonrecursive copy of the original sound. Current saves use TSR38 and retain
 those fields. Earlier TSR6–TSR36 projects remain readable.
 Older nine-voice tiles retain their original sound with the three new voices off.
 They did not save a pre-Unison source: switching those old tiles off isolates

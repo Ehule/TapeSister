@@ -50,17 +50,48 @@ static int embedded_open(SDL_Window *window,SDL_AudioDeviceID device,AudioState 
     if(!ok)return 0;
     ui->tracker_embedded_frame=ts_tapehead_frame();return 1;
 }
+/* Resolve the stable tile before leaving the tracker; page/alias numbers can move. */
+static int tracker_open_canvas(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,
+    TsSamplePages *pages,TsInstrument *bank,TsTileId tile)
+{
+    TsTileLocation loc;
+    if(!ts_sample_pages_find_tile(pages,bank,tile,&loc)) {
+        snprintf(ui->status,sizeof(ui->status),"THIS TRACKER TILE IS NO LONGER AVAILABLE");return 0;
+    }
+    if(!pages->active_live || pages->mosaic_bank || audio->capture.state!=TS_CAPTURE_IDLE || ui->input_meter_active) {
+        snprintf(ui->status,sizeof(ui->status),"RETURN TO SAMPLE PAGES AND FINISH CAPTURE TO OPEN THIS TILE");return 0;
+    }
+    if(!runtime_note_preserve_workspace(device,audio,ui))return 0;
+    lock_edit(device,audio);
+    int ok=ts_sample_pages_switch(pages,bank,loc.page,ui->status,sizeof(ui->status)) &&
+        ts_instrument_select_bank(bank,loc.slot,ui->status,sizeof(ui->status));
+    if(ok) {
+        ts_sister_runtime_set_page(&audio->sister,loc.page,bank);
+        ui->sample_page=loc.page;ui->sample_page_count=pages->page_count;
+        ui->audition_source=TS_AUDITION_CURRENT;ui->bank_view_slot=-1;
+        ui->mosaic_open=ui->tracker_open=0;
+        ts_ui_reset_parent_view(ui,bank->parent.frames);
+    }
+    unlock_edit(device,audio,ui,bank);
+    if(ok) {
+        ts_tapehead_focus_lost();
+        snprintf(ui->status,sizeof(ui->status),"TILE %02d / SAMPLE PAGE %u - CANVAS / F10 RETURNS TO TRACKSISTER",loc.slot+1,(unsigned)loc.page+1);
+    }
+    return ok;
+}
 static void tracker_refresh(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,
                              TsSamplePages *pages,const TsInstrument *instrument,int rate,SisterWindow *sister) {
 #ifdef TAPESISTER_LEGACY_TRACKER_FIXTURE
     tracker_native_refresh(device,audio,ui,pages,instrument,rate);return;
 #endif
     (void)device;
+    if(!ts_tapehead_frame() && audio->sister.performance_mixer.arp_sync && embedded_host.window)
+        embedded_open(embedded_host.window,device,audio,ui,pages,instrument,rate);
     if(!ts_tapehead_frame())return;
     /* Reopening explicitly syncs in embedded_open. Hidden playback still
        follows tile edits, but a closed, stopped workspace needs no score
        hashing or alias scan on every service tick. */
-    if(ui->tracker_open || ts_tapehead_running() || ts_tapehead_interpolation_active()) {
+    if(ui->tracker_open || ts_tapehead_running() || ts_tapehead_interpolation_active() || audio->sister.performance_mixer.arp_sync) {
         if(!ts_tapehead_refresh(pages,instrument,rate,ui->status,sizeof(ui->status))) {
             ui->tracker_open=0;ui->tracker_embedded_frame=NULL;return;
         }
@@ -73,9 +104,10 @@ static void tracker_refresh(SDL_AudioDeviceID device,AudioState *audio,TsUiState
     int action=ts_tapehead_action();
     /* Host views and project commands need a persisted snapshot. Playing,
        typing, MIDI and ordinary service ticks keep the live editor in charge. */
-    if((action==TS_TH_CANVAS || action==TS_TH_TILES || action==TS_TH_SAVE_PROJECT || action==TS_TH_OPEN_PROJECT ||
+    if((action==TS_TH_TILE_CANVAS || action==TS_TH_CANVAS || action==TS_TH_TILES || action==TS_TH_SAVE_PROJECT || action==TS_TH_OPEN_PROJECT ||
         (action>=TS_TH_TRACK_ROUTE && action<TS_TH_TRACK_ROUTE+TS_TRACKER_LANES)) &&
        !ts_tapehead_export(&pages->tracker,ui->status,sizeof(ui->status)))return;
+    if(action==TS_TH_TILE_CANVAS)tracker_open_canvas(device,audio,ui,pages,(TsInstrument *)instrument,ts_tapehead_canvas_tile());
     if(action>=TS_TH_TRACK_ROUTE && action<TS_TH_TRACK_ROUTE+TS_TRACKER_LANES) {
         ts_tapehead_focus_lost();
         matrix_show(device,audio,ui,pages,(TsInstrument *)instrument,action-TS_TH_TRACK_ROUTE,-1);
@@ -201,7 +233,7 @@ static int load_module_instrument(SDL_AudioDeviceID device,AudioState *audio,TsU
     unlock_edit(device,audio,ui,instrument);
     free(previous_pages);ts_sister_tracker_free(&previous);
     free(staged.pages);staged.pages=NULL;staged.page_count=0;
-    ts_tapehead_project_replaced();
+    matrix_history_clear();ts_tapehead_project_replaced();
     if(!embedded_open(embedded_host.window,device,audio,ui,pages,instrument,rate))return 0;
     ui->tracker_open=1;ui->mosaic_open=0;ui->load_bank_slot=-1;
     ts_ui_reset_parent_view(ui,instrument->parent.frames);

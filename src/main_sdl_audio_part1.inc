@@ -347,19 +347,30 @@ static void runtime_note_render(AudioState *audio, TsAudioBuses *buses,
     TsStereoFrame launcher;
     if (audio == NULL || buses == NULL) return;
     TsStereoFrame clean_before=audio->clean.reference;
-    ts_note_bank_read_routed(&audio->notes, &sample, &fm, &synth,&audio->clean);
+    TsSourceRouteMix channel;ts_source_route_mix_init(&channel,&audio->clean);
+    ts_note_bank_read_routed(&audio->notes, &sample, &fm, &synth,&channel);
     TsStereoFrame browser = ts_note_voice_read(&audio->browser_voice);
     buses->legacy_preview.l += browser.l;
     buses->legacy_preview.r += browser.r;
     performance = ts_performance_read_routed(
-        &audio->performance, &audio->performance_raw_mix,&audio->clean);
+        &audio->performance, &audio->performance_raw_mix,&channel);
+    float tile_gain=audio->sister.performance_gain_current[3];
+    sample.l*=tile_gain;sample.r*=tile_gain;fm.l*=tile_gain;fm.r*=tile_gain;
+    synth.l*=tile_gain;synth.r*=tile_gain;performance.l*=tile_gain;performance.r*=tile_gain;
+    audio->performance_raw_mix.l*=tile_gain;audio->performance_raw_mix.r*=tile_gain;
+    ts_source_route_add(&audio->clean,&channel,tile_gain);
+    TsStereoFrame live_sample=sample,sequence_sample={0,0};
     TsStereoFrame sequence_before=audio->clean.reference;
-    TsStereoFrame sequence = ts_keyboard_sequence_read_routed(&audio->keyboard_sequence, audio->output_rate,&audio->clean);
+    ts_source_route_mix_init(&channel,&audio->clean);
+    TsStereoFrame sequence = ts_keyboard_sequence_read_routed(&audio->keyboard_sequence, audio->output_rate,&channel);
+    float arp_gain=audio->sister.performance_gain_current[0];
+    sequence.l*=arp_gain;sequence.r*=arp_gain;
+    ts_source_route_add(&audio->clean,&channel,arp_gain);
     if (audio->keyboard_sequence.source && audio->keyboard_sequence.source->fm) {
         fm.l += sequence.l; fm.r += sequence.r;
         synth.l += sequence.l; synth.r += sequence.r;
     } else {
-        sample.l += sequence.l; sample.r += sequence.r;
+        sequence_sample=sequence;sample.l += sequence.l; sample.r += sequence.r;
         audio->performance_raw_mix.l += sequence.l+audio->clean.reference.l-sequence_before.l;
         audio->performance_raw_mix.r += sequence.r+audio->clean.reference.r-sequence_before.r;
     }
@@ -367,12 +378,25 @@ static void runtime_note_render(AudioState *audio, TsAudioBuses *buses,
        preview out of the dry instrument recording. FM's own level is retained. */
     audio->keyboard_dry=(TsStereoFrame){sample.l+performance.l+fm.l*audio->fm_output_gain+audio->clean.reference.l-clean_before.l,
                                        sample.r+performance.r+fm.r*audio->fm_output_gain+audio->clean.reference.r-clean_before.r};
+    ts_source_route_mix_init(&channel,&audio->clean);
     launcher = audio->tile_launcher_active ?
-        ts_performance_read_routed(&audio->tile_launchers, NULL,&audio->clean) :
+        ts_performance_read_routed(&audio->tile_launchers, NULL,&channel) :
         (TsStereoFrame){0.0f, 0.0f};
-    TsStereoFrame mosaic = ts_mosaic_read(audio->mosaic, audio->output_rate);
-    launcher.l += mosaic.l; launcher.r += mosaic.r;
-    audio->tile_launcher_mix = launcher;
+    launcher.l*=tile_gain;launcher.r*=tile_gain;
+    ts_source_route_add(&audio->clean,&channel,tile_gain);
+    int matrix=audio->sister.matrix.controls.enabled;
+    ts_source_route_mix_init(&channel,&audio->clean);
+    TsStereoFrame mosaic=ts_mosaic_read_routed(audio->mosaic,audio->output_rate,matrix?&channel:NULL);
+    float mosaic_gain=audio->sister.performance_gain_current[2];
+    mosaic.l*=mosaic_gain;mosaic.r*=mosaic_gain;
+    if(matrix)ts_source_route_add(&audio->clean,&channel,mosaic_gain);
+    audio->tile_launcher_mix=(TsStereoFrame){launcher.l+mosaic.l,launcher.r+mosaic.r};
+    if(matrix) {
+        buses->mosaic=mosaic;
+        buses->live_tiles=(TsStereoFrame){live_sample.l+performance.l+launcher.l,live_sample.r+performance.r+launcher.r};
+        sample=sequence_sample;performance=launcher=(TsStereoFrame){0,0};
+    }
+    else {launcher.l+=mosaic.l;launcher.r+=mosaic.r;}
     buses->tile_performance.l += sample.l + performance.l + launcher.l;
     buses->tile_performance.r += sample.r + performance.r + launcher.r;
     buses->fm.l += fm.l;

@@ -1,13 +1,13 @@
 static void matrix_click(int x,int y,int button)
 {
-    SDL_Event event={0};event.type=SDL_MOUSEBUTTONDOWN;event.button.windowID=matrix_window.id;
+    SDL_Event event;SDL_zero(event);event.type=SDL_MOUSEBUTTONDOWN;event.button.windowID=matrix_window.id;
     event.button.x=x;event.button.y=y;event.button.button=button;
     assert(matrix_event(&event,window,0,&a,&u,&pages,&bank));
     event.type=SDL_MOUSEBUTTONUP;assert(matrix_event(&event,window,0,&a,&u,&pages,&bank));
 }
 static void matrix_wheel(int x,int y,int steps,int modifiers,int flipped)
 {
-    SDL_Event e={0};e.type=SDL_MOUSEWHEEL;e.wheel.windowID=matrix_window.id;e.wheel.y=steps;
+    SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEWHEEL;e.wheel.windowID=matrix_window.id;e.wheel.y=steps;
     e.wheel.direction=flipped?SDL_MOUSEWHEEL_FLIPPED:SDL_MOUSEWHEEL_NORMAL;
     int width,height;SDL_GetWindowSize(matrix_window.window,&width,&height);
 #if SDL_VERSION_ATLEAST(2,26,0)
@@ -115,6 +115,9 @@ static void matrix_clear_reset(const char *directory)
     defaults.enabled=0;assert(ts_matrix_set(&a.sister.matrix,&defaults,48000));
     matrix_click(1000,34,SDL_BUTTON_LEFT);assert(a.sister.matrix.controls.enabled);
 }
+#include "test_matrix_history.inc"
+#include "test_performance_transport.inc"
+#include "test_matrix_buses.inc"
 static void matrix_controller(const char *directory)
 {
     ts_tapehead_stop();ts_note_bank_clear(&a.notes);ts_performance_clear(&a.performance);ts_performance_clear(&a.tile_launchers);
@@ -170,7 +173,7 @@ static void matrix_controller(const char *directory)
     ts_tapehead_stop();
     /* Tile keyboard voices use the same path, independent of track overrides. */
     assert(matrix_show(0,&a,&u,&pages,&bank,-1,0));
-    matrix_click(MATRIX_X+8,MATRIX_Y+12,SDL_BUTTON_LEFT);
+    /* First destination replaces the inherited live tile bus. */
     matrix_click(MATRIX_X+8*MATRIX_CW+8,MATRIX_Y+12,SDL_BUTTON_LEFT);
     assert(ts_note_bank_start(&a.notes,&bank,TS_AUDITION_CURRENT,12,0,48000)==TS_NOTE_STARTED);
     render(energy);render(energy);assert(energy[0]==0&&energy[1]==0&&energy[2]>1&&energy[3]>1);
@@ -208,7 +211,7 @@ static void matrix_controller(const char *directory)
     assert(matrix_window.pixels[caret]==0xffffce69u);
     matrix_window.rename_blink_started=SDL_GetTicks()-600u;
     mx_paint(&a,&pages,&bank);assert(matrix_window.pixels[caret]!=0xffffce69u);
-    SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.windowID=matrix_window.id;e.key.keysym.sym=SDLK_RETURN;
+    SDL_Event e;SDL_zero(e);e.type=SDL_KEYDOWN;e.key.windowID=matrix_window.id;e.key.keysym.sym=SDLK_RETURN;
     assert(matrix_event(&e,window,0,&a,&u,&pages,&bank));assert(!strcmp(a.sister.matrix.controls.input_name[0],"Terra live"));
     matrix_shot(directory,"matrix-hardware-inputs");
     /* Project state owns names and graph, and an old project clears both. */
@@ -226,7 +229,7 @@ static void matrix_controller(const char *directory)
     assert(ts_matrix_set(&a.sister.matrix,&c,48000));matrix_window.controls=c;
     matrix_click(455,102,SDL_BUTTON_LEFT);matrix_window.selected=0;matrix_window.destination=TS_MATRIX_PRISM;
     matrix_shot(directory,"matrix-terra-multiple");
-    matrix_clear_reset(directory);
+    matrix_clear_reset(directory);matrix_history_bulk(directory);test_performance_transport(directory);
     /* An input can reach an OFF processor without an output from that node.
        The screenshot is a native render driven by actual callback samples. */
     assert(matrix_show(0,&a,&u,&pages,&bank,-1,-1));
@@ -250,5 +253,7 @@ static void matrix_controller(const char *directory)
     ts_insert_duplex_block(&a.sister.insert,0,NULL,0,0);
     ts_sister_project_state_init(state,48000);assert(ts_sister_project_state_apply(state,&a.sister,&bank));free(state);
     assert(!a.sister.matrix.controls.enabled && !a.sister.matrix.controls.input_name[0][0]);
+    matrix_import_controls();
+    test_matrix_buses(directory);
     matrix_close();puts("Matrix UI, native track/tile audio, pan, inheritance, physical return, naming and project reset passed");
 }

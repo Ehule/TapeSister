@@ -5,6 +5,7 @@ typedef struct {
     TsSisterRuntimeFrame *frame;
     TsStereoFrame causal, sister_feedback, fallout_wet, dry_monitor;
     TsStereoFrame tape_input;
+    float matrix_program_gain;
     int passed_sister, monitor_merged;
 } RouterFrameContext;
 

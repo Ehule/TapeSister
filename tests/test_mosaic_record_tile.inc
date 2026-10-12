@@ -21,7 +21,7 @@ static void test_mosaic_record_tile(SDL_Window *window,SDL_AudioDeviceID device)
     int bank_slot=instrument.selected_slot;
     uint64_t first_id=u->mosaic->events[0].id;
     double start=u->mosaic->time;
-    SDL_Event e={0};e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=SDL_GetWindowID(window);
+    SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=SDL_GetWindowID(window);
     e.button.x=TS_MOSAIC_REC_TILE_X+10;e.button.y=45;e.button.button=SDL_BUTTON_RIGHT;
     assert(u->mosaic_record_source==TS_RECORD_SOURCE_DRY);
     assert(mosaic_record_tile_event(&e,window,device,&input_device,a,input,u,&instrument));
@@ -45,7 +45,7 @@ static void test_mosaic_record_tile(SDL_Window *window,SDL_AudioDeviceID device)
     navigation.fm_parked=1;navigation.fm_epoch=u->mosaic->epoch;
     u->fm_preview_sample=&preview;u->fm_source_slot=instrument.selected_slot;
     u->fm_source_page=u->sample_page;u->fm_source_hash=bank_hash;
-    SDL_Event visit={0};visit.type=SDL_KEYDOWN;visit.key.windowID=SDL_GetWindowID(window);
+    SDL_Event visit;SDL_zero(visit);visit.type=SDL_KEYDOWN;visit.key.windowID=SDL_GetWindowID(window);
     visit.key.keysym.sym=SDLK_BACKQUOTE;visit.key.keysym.mod=KMOD_SHIFT;
     assert(workspace_event(&visit,window,device,a,u,&instrument,&navigation,&portal,&sister,&transform,&preview));
     assert(u->fm_open && !u->mosaic_open && u->mosaic_recording);
@@ -89,7 +89,7 @@ static void test_mosaic_record_tile(SDL_Window *window,SDL_AudioDeviceID device)
     assert(!u->mosaic_recording && u->mosaic->revision==revision && !external_capture_busy(input));
     assert(mosaic_record_tile_event(&e,window,device,&input_device,a,input,u,&instrument));
     test_mosaic_record_feed(input,0);
-    SDL_Event cancel={0};cancel.type=SDL_KEYDOWN;cancel.key.windowID=SDL_GetWindowID(window);
+    SDL_Event cancel;SDL_zero(cancel);cancel.type=SDL_KEYDOWN;cancel.key.windowID=SDL_GetWindowID(window);
     cancel.key.keysym.sym=SDLK_ESCAPE;
     assert(mosaic_record_tile_event(&cancel,window,device,&input_device,a,input,u,&instrument));
     assert(!u->mosaic_recording && u->mosaic->revision==revision && !external_capture_busy(input));

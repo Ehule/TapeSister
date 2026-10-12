@@ -44,6 +44,7 @@ the EVENTS pages. Shared originals and the original Sample banks remain availabl
 | Cancel a move / copy drag | Escape |
 | Mute / unmute selected events | M |
 | Solo / unsolo selected events | S |
+| Mute / solo every instance sharing the selected sources | Shift+M / Shift+S |
 | Clear every solo, including offscreen events | CLEAR SOLO in footer |
 | Set selection level, pan and fades | LEVEL / PAN / IN / OUT in footer |
 | Global tape speed, 0.5×–2× | SPEED slider above canvas |
@@ -75,7 +76,9 @@ beats or mandatory snapping. Click an unselected event to return to a single
 selection. Selected tiles and Sources previews use the bright red highlight color by default. Muted events and events excluded by
 solo are dim; MUTE/SOLO appears on the relevant cards, and excluded cards say
 SOLO OUT (EXCL on narrow cards). CLEAR SOLO stays visible in the footer whenever any event is soloed,
-including events outside the viewport. Multiple events may be
+including events outside the viewport. Shift+M / Shift+S target all cards using
+the selected cards' shared audio sources, including offscreen cards. A separately
+edited source is independent. Each action is one undo step. Multiple events may be
 soloed together. Mute takes precedence over solo. These switches use a short
 fade, and all voice clocks continue while inaudible, so unmuting resumes their
 current phases. Delete applies to the selection; copy/paste uses the last
@@ -136,9 +139,19 @@ The status message explains when Repeat already links the endpoints or a ramp
 is flat because the endpoint levels are equal.
 
 Each stroke or tool action is one undo step. **Escape** cancels a stroke, and
-Ctrl+Z / Ctrl+Y undo and redo it. The curve saves in Mosaic format 4; older
+Ctrl+Z / Ctrl+Y undo and redo it. The curve was introduced in Mosaic format 4; current saves use format 6; older
 arrangements open with a flat, full-level envelope. Failed loads leave the current
 arrangement intact.
+
+## EQ and coordinated transport
+
+Double-click a card and use **EQ** beside the waveform display control. Its curve
+and pre-EQ audio remain editable through save/load. Returning to Mosaic uses the
+usual Update Instance / Update All / Create Tile decision. See [Canvas EQ](CANVAS_EQ.md).
+
+[Performance Transport](PERFORMANCE_TRANSPORT.md), opened from CFG or
+F11 or Ctrl+Shift+Space, groups ARP, SisterTracker and Mosaic under Shift+Space. Ordinary
+Space remains local. This shares start/stop without changing tempo or tape speed.
 
 ## Performance controls
 
@@ -241,9 +254,11 @@ this decision and then continues the requested action.
 ![Choosing the destination of an audio edit](images/mosaic-edit-choice.png)
 
 Live distortion, reverb and other effects remain shared processors. In matrix
-mode Mosaic voices use their source tile routes. **F9** opens the
-[routing matrix](ROUTING_MATRIX.md) without stopping the arrangement. Patch those
-sources into Sister or shared effects and route their output rows onward. Dry
+mode cards feed the **Mosaic bus**, which defaults to Main. **F9** opens the
+[routing matrix](ROUTING_MATRIX.md) without stopping the arrangement. Patch the
+bus into Sister or shared effects, or use the Mosaic filter to give individual
+cards custom destinations. A custom card route replaces its bus feed. Mosaic
+does not inherit the routing of the bank tile from which a card was created. Dry
 sound needs its own connection. Sister source switches do not select matrix input.
 MASTER FX gates Pedalboard/Fallout; it does not create a dry connection where
 none exists. Settings, transitions and modulation are retained.
@@ -466,3 +481,9 @@ audio and remaining processing in real time. Keep the external processor running
 during the take. REC DRY, SYNTH and raw EXT retain their earlier source taps.
 Missing RETURN stays silent while INSERT is active; use Router BYPASS to return
 to internal processing. [Setup and channel limits](USER_MANUAL.md#external-insert).
+
+In the Matrix **Mosaic** filter, select cards and click **To Mosaic Bus** at the
+bottom right to remove custom routes. The bus appears alongside the cards.
+For quieter QWERTY soloing over the arrangement, open **F11** and lower **Live Tiles**.
+Cards reference audio copies in the arrangement, so that live trim leaves the
+backing intact.

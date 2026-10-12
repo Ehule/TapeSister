@@ -1317,8 +1317,11 @@ int ts_sample_pages_load_project(TsSamplePages *pages,
     ts_instrument_init(&loaded_record);
     *pages = loaded;
     if (mosaic_loaded) {
-        TsMosaic swap = *mosaic_target; *mosaic_target = *mosaic_loaded;
-        *mosaic_loaded = swap; ts_mosaic_free(mosaic_loaded); mosaic_loaded = NULL;
+        /* Retire only the old owned sources; history stays off the stack. */
+        TsMosaicSource *old_sources = mosaic_target->sources;
+        *mosaic_target = *mosaic_loaded;
+        mosaic_loaded->sources = old_sources;
+        ts_mosaic_free(mosaic_loaded); mosaic_loaded = NULL;
     }
     memset(&loaded, 0, sizeof(loaded));
     if (!ts_sample_pages_unpark(pages, active_sample, error, error_size))

@@ -29,10 +29,14 @@ void ts_tapehead_suspend_sync(void);
 /* After a successful host project replacement, even if its bytes match the
    last checkpoint. Uncheckpointed live edits must not overwrite a reload. */
 void ts_tapehead_project_replaced(void);
+void ts_tapehead_project_saved(const TsSisterTracker *tracker);
+int ts_tapehead_project_dirty(const TsSisterTracker *tracker);
 void ts_tapehead_status(const TsUiState *host_ui,unsigned capture);
 void ts_tapehead_focus_lost(void);
 int ts_tapehead_midi(const TsMidiEvent *event,int allow_note_on);
 void ts_tapehead_stop(void);
+/* Caller holds ts_tapehead_host_lock across the complete transport group. */
+int ts_tapehead_transport_locked(int command); /* 0 stop, 1 play, 2 rewind */
 const uint32_t *ts_tapehead_frame(void);
 const float *ts_tapehead_render(unsigned frames, unsigned rate);
 void ts_tapehead_route_outputs(unsigned available);
@@ -40,12 +44,16 @@ const TsSourceRouteMix *ts_tapehead_clean_render(void);
 void ts_tapehead_routes_changed(TsTileId tile,TsSourceRoute route);
 /* After a project-wide source reset, update tile caches and track routes once. */
 void ts_tapehead_all_routes_changed(TsSourceRoute route);
+void ts_tapehead_refresh_routes(TsSamplePages *pages,TsInstrument *bank);
 int ts_tapehead_action(void);
 int ts_tapehead_running(void);
+int ts_tapehead_transport_keys_allowed(void);
 int ts_tapehead_following(void);
 int ts_tapehead_live_editing(void);
 int ts_tapehead_block_active(void);
 unsigned ts_tapehead_capture_flags(unsigned frame);
+unsigned ts_tapehead_tempo(unsigned frame); /* Audio-thread, most recently rendered block. */
+TsTileId ts_tapehead_canvas_tile(void); /* UI consumes the double-click target. */
 void ts_tapehead_audio_span(unsigned offset,unsigned frames,int seam);
 /* UI-thread checkpoint for persistence/host views, not a per-note operation.
    Owns its short audio lock; callers must not wrap it in an outer audio lock. */

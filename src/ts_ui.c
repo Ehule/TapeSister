@@ -281,7 +281,7 @@ typedef struct {
 
 static const TsPanelButton config_buttons[] = {
     {20, 96, "SAVE CONFIG"}, {121, 76, "USE CWD"},
-    {202, 76, "PALETTE"}, {283, 68, "CANCEL"}
+    {202, 76, "PALETTE"}, {283, 68, "CANCEL"}, {356, 104, "TRANSPORT"}
 };
 
 static const TsPanelButton palette_buttons[] = {
@@ -3144,6 +3144,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         rect(fb, 240, 58, (int)lrintf(amount * 62.0f), 3, PAL_VOLUME);
         rect(fb, 239 + (int)lrintf(amount * 62.0f), 56, 3, 7, PAL_MOUSE);
     }
+    mini_button(fb,568,43,28,"EQ",instrument->tile_eq.enabled);
     mini_button(fb, 600, 43, 24,
                 ts_waveform_display_letter((TsWaveformDisplayMode)
                                            ui->config.waveform_display_mode),
@@ -3986,25 +3987,21 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     }
     rect(fb, 0, 386, TS_UI_WIDTH, 14, RGB(10, 10, 10));
     {
-        char status_line[83];
-        char output_info[24];
-        char diagnostic[48];
-        int diagnostic_x;
-        snprintf(status_line, sizeof(status_line), "%.82s",
-                 ui->performance_tooltip[0] ? ui->performance_tooltip : ui->status);
-        master_output_diagnostic(output_info, sizeof(output_info),
-                                 &ui->master_output);
-        snprintf(diagnostic, sizeof(diagnostic), "UNDO %02d/%02d  %s",
-                 instrument->undo_count, TS_HISTORY_DEPTH, output_info);
-        diagnostic_x = 536 - (int)strlen(diagnostic) * 6;
-        text(fb, 8, 389, status_line, PAL_MOUSE, 1);
-        if(!ui->performance_tooltip[0]) {
-            rect(fb, diagnostic_x - 6, 385,
-                 TS_UI_WIDTH - diagnostic_x + 6, 15, PAL_DESKTOP);
-            text(fb, diagnostic_x, 389, diagnostic,
-                 ui->master_output.limiter_gain_reduction_db > 0.05f ?
-                 PAL_VOLUME : PAL_EFFECT, 1);
-        }
+        char status_line[83],output_info[24],diagnostic[48],filename[36];
+        const char *name=ui->project_path;
+        for(const char *c=name;*c;++c)if(*c=='/' || *c=='\\')name=c+1;
+        if(!*name)name="Untitled";
+        int available=35-(ui->project_modified?1:0);
+        if(strlen(name)>(size_t)available)snprintf(filename,sizeof(filename),"%.*s...%s",available-3,name,ui->project_modified?"*":"");
+        else snprintf(filename,sizeof(filename),"%s%s",name,ui->project_modified?"*":"");
+        master_output_diagnostic(output_info,sizeof(output_info),&ui->master_output);
+        snprintf(diagnostic,sizeof(diagnostic),"UNDO %02d/%02d  %s",instrument->undo_count,TS_HISTORY_DEPTH,output_info);
+        int diagnostic_x=402-(int)strlen(diagnostic)*6;
+        int status_chars=(diagnostic_x-16)/6;
+        snprintf(status_line,sizeof(status_line),"%.*s",status_chars,ui->performance_tooltip[0]?ui->performance_tooltip:ui->status);
+        text(fb,8,389,status_line,PAL_MOUSE,1);
+        text(fb,diagnostic_x,389,diagnostic,ui->master_output.limiter_gain_reduction_db>.05f?PAL_VOLUME:PAL_EFFECT,1);
+        text(fb,418,389,filename,ui->project_modified?PAL_VOLUME:PAL_NOTE,1);
     }
 
     if (ui->exit_confirm_open) {

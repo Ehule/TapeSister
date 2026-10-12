@@ -30,7 +30,7 @@ static int dispatch(const SDL_Event *event,SDL_Window *window)
 
 static void click(SDL_Window *window,int x,int y,int clicks)
 {
-    SDL_Event event={0};event.type=SDL_MOUSEBUTTONDOWN;event.button.windowID=SDL_GetWindowID(window);
+    SDL_Event event;SDL_zero(event);event.type=SDL_MOUSEBUTTONDOWN;event.button.windowID=SDL_GetWindowID(window);
     event.button.button=SDL_BUTTON_LEFT;event.button.x=x;event.button.y=y;event.button.clicks=(Uint8)clicks;
     (void)dispatch(&event,window);
 }
@@ -38,7 +38,7 @@ static void test_canvas_gestures(SDL_Window *window)
 {
     ui.mosaic_open=1;ui.mosaic_scroll=ui.mosaic_xscroll=0;ui.mosaic_scale=24;ui.mosaic_hscale=1;
     click(window,20,85,1);assert(mosaic.drag==3);
-    SDL_Event event={0};event.type=SDL_MOUSEBUTTONUP;event.button.windowID=SDL_GetWindowID(window);
+    SDL_Event event;SDL_zero(event);event.type=SDL_MOUSEBUTTONUP;event.button.windowID=SDL_GetWindowID(window);
     event.button.button=SDL_BUTTON_LEFT;event.button.x=430;event.button.y=100;
     assert(mosaic_event(&event,window,0,&audio,&ui,&instrument,&mosaic,&portal,&sister,&transform,48000));
     TsMosaicEvent *e=ts_mosaic_find(ui.mosaic,ui.mosaic_selected);assert(e);
@@ -63,18 +63,20 @@ static void test_canvas_gestures(SDL_Window *window)
 }
 static void motion(SDL_Window *window,int x,int y)
 {
-    SDL_Event e={0};e.type=SDL_MOUSEMOTION;e.motion.windowID=SDL_GetWindowID(window);e.motion.x=x;e.motion.y=y;
+    SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEMOTION;e.motion.windowID=SDL_GetWindowID(window);e.motion.x=x;e.motion.y=y;
     dispatch(&e,window);
 }
 static void release(SDL_Window *window,int x,int y)
 {
-    SDL_Event e={0};e.type=SDL_MOUSEBUTTONUP;e.button.windowID=SDL_GetWindowID(window);
+    SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONUP;e.button.windowID=SDL_GetWindowID(window);
     e.button.button=SDL_BUTTON_LEFT;e.button.x=x;e.button.y=y;
     mosaic_event(&e,window,0,&audio,&ui,&instrument,&mosaic,&portal,&sister,&transform,48000);
 }
+/* SDL_Event is a union: {0} initializes only its first member on GCC 15+.
+   Clear the whole event so generated keys never inherit repeat/modifier bits. */
 static void key(SDL_Window *window,SDL_Keycode key,SDL_Keymod mod)
 {
-    SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.windowID=SDL_GetWindowID(window);e.key.keysym.sym=key;e.key.keysym.mod=mod;
+    SDL_Event e;SDL_zero(e);e.type=SDL_KEYDOWN;e.key.windowID=SDL_GetWindowID(window);e.key.keysym.sym=key;e.key.keysym.mod=mod;
     dispatch(&e,window);
 }
 static void wait_render(void);
@@ -128,7 +130,7 @@ static void test_canvas_feedback(SDL_Window *window)
     key(window,SDLK_s,KMOD_NONE);assert(!a->solo && !b->solo);
     click(window,430,96,1);release(window,430,96);assert(ui.mosaic_selected==obstacle->id && !mosaic_chosen(&ui,0));
     /* Middle click seeks through a tile without changing the selected event. */
-    SDL_Event seek={0};seek.type=SDL_MOUSEBUTTONDOWN;seek.button.windowID=SDL_GetWindowID(window);
+    SDL_Event seek;SDL_zero(seek);seek.type=SDL_MOUSEBUTTONDOWN;seek.button.windowID=SDL_GetWindowID(window);
     seek.button.button=SDL_BUTTON_MIDDLE;seek.button.x=190;seek.button.y=110;
     mosaic_event(&seek,window,0,&audio,&ui,&instrument,&mosaic,&portal,&sister,&transform,48000);
     assert(fabs(scene->time-44.0/24)<1e-9 && ui.mosaic_selected==obstacle->id);
@@ -221,7 +223,7 @@ static void test_canvas_feedback(SDL_Window *window)
            exit. Completion must still reach that owner while B is selected. */
         TsFmSeedSequence seeds;ts_fm_seed_sequence_init(&seeds,0x43524541);portal.create_seeds=&seeds;
         assert(mosaic_enter(0,&audio,&ui,&instrument,&mosaic,variant->id));
-        SDL_Event create={0};create.type=SDL_MOUSEBUTTONDOWN;create.button.button=SDL_BUTTON_LEFT;
+        SDL_Event create;SDL_zero(create);create.type=SDL_MOUSEBUTTONDOWN;create.button.button=SDL_BUTTON_LEFT;
         assert(portal_create_event(&create,100,214,0,&audio,&ui,&instrument,&portal,&transform));
         uint64_t fm=ts_sample_hash(&instrument.current),sibling=b->source->hash;
         uint64_t root=1;for(;;++root){TsFmSeedSequence probe;ts_fm_seed_sequence_init(&probe,root);if(ts_fm_seed_sequence_next(&probe)%12==1)break;}
@@ -292,7 +294,7 @@ static void test_record_file(SDL_Window *window,int x,int y,int in_portal)
     ui.mosaic_open=1;ts_mosaic_seek(ui.mosaic,0);ui.mosaic->playing=1;
     if(in_portal) {
         ui.mosaic_open=0;ui.show_keyboard=ui.show_recipes=ui.show_ingredients=0;
-        SDL_Event e={0};e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=SDL_GetWindowID(window);
+        SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=SDL_GetWindowID(window);
         e.button.button=SDL_BUTTON_LEFT;e.button.x=290;e.button.y=320;
         /* Removed bank duplicate has no invisible recorder hit area. */
         assert(!main_file_capture_event(&e,window,&audio,&ui,&sister,48000));
@@ -311,7 +313,7 @@ static void test_record_file(SDL_Window *window,int x,int y,int in_portal)
     if(x>=0)click(window,x,y,1);else key(window,SDLK_f,KMOD_CTRL|KMOD_SHIFT);
     assert(ui.file_record_state==TS_PERFORMANCE_FILE_RECORDING);
     if(in_portal) {
-        SDL_Event e={0};e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=SDL_GetWindowID(window);
+        SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=SDL_GetWindowID(window);
         e.button.button=SDL_BUTTON_LEFT;e.button.x=478;e.button.y=12;
         assert(!main_file_capture_event(&e,window,&audio,&ui,&sister,48000));
         assert(portal_event(&e,window,0,&audio,&ui,&instrument,&portal,&sister,48000,&transform));
@@ -387,6 +389,7 @@ static void test_async_ownership(uint64_t a,uint64_t b,uint64_t original,int sup
     TsMosaicEvent *restored=ts_mosaic_add(ui.mosaic,ts_mosaic_find(ui.mosaic,b)->source,0,0);assert(restored);restored->id=a;
     portal_close(0,&audio,&ui,&portal);mosaic_leave(0,&audio,&ui,&instrument,&mosaic);
 }
+#include "test_canvas_eq_controller.inc"
 int main(int argc,char **argv)
 {
     SDL_SetMainReady();SDL_setenv("SDL_AUDIODRIVER","dummy",1);
@@ -457,7 +460,7 @@ int main(int argc,char **argv)
     test_mosaic_scroll_waveforms();
     test_mosaic_scroll_cards();
     test_fallout_without_sister();
-    test_mosaic_palette_controls();
+    test_mosaic_palette_controls();test_canvas_eq_controller(window);
 
     /* Route a single render to the direct bus and Sister input without
        advancing its clock twice. Different left/right data stays stereo. */

@@ -14,7 +14,7 @@ static void test_chain_workflow(SDL_Window *window,SDL_AudioDeviceID device)
     snprintf(ui.config.cdp_bin_path,sizeof(ui.config.cdp_bin_path),"%s",getenv("TS_TEST_CDP_BIN"));
     TsPortalUi *p=&ui.portal;assert(portal_source(device,&audio,&ui,&instrument,&c));
     ts_portal_recipe_default(&p->recipe,ts_portal_process_find("extend.scramble.1"));
-    SDL_Event click={0};click.type=SDL_MOUSEBUTTONDOWN;click.button.button=SDL_BUTTON_LEFT;
+    SDL_Event click;SDL_zero(click);click.type=SDL_MOUSEBUTTONDOWN;click.button.button=SDL_BUTTON_LEFT;
     click.button.windowID=SDL_GetWindowID(window);
 #define CHAIN_CLICK(X,Y) do {click.button.x=(X);click.button.y=(Y);assert(portal_event(&click,window,device,&audio,&ui,&instrument,&c,&sister,44100,&transform));}while(0)
     CHAIN_CLICK(25,365);assert(p->chain_active && p->chain.stage_count==1);

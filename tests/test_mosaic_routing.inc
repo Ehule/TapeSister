@@ -1,6 +1,6 @@
 static void sister_key(SDL_Window *window,SDL_Keycode sym,SDL_Keymod mod)
 {
-    SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.windowID=sister.window_id;e.key.keysym.sym=sym;e.key.keysym.mod=mod;
+    SDL_Event e;SDL_zero(e);e.type=SDL_KEYDOWN;e.key.windowID=sister.window_id;e.key.keysym.sym=sym;e.key.keysym.mod=mod;
     dispatch(&e,window);
 }
 static void test_workspace_playback(SDL_Window *window)
@@ -13,15 +13,16 @@ static void test_workspace_playback(SDL_Window *window)
     assert(ts_note_event_qwerty(&fm_note,2,ts_ui_keyboard_base_note(&ui)));
     assert(ts_note_bank_start_tuned_event(&audio.notes,&instrument,&instrument.tuning,
         TS_AUDITION_CURRENT,&sample_note,0,48000)==TS_NOTE_STARTED);
-    TsNoteBank held=audio.notes;
+    TsNoteBank held;memcpy(&held,&audio.notes,sizeof(held));
     key(window,SDLK_BACKQUOTE,KMOD_NONE);
     assert(ui.mosaic_open && !scene->playing && !memcmp(&held,&audio.notes,sizeof(held)));
     key(window,SDLK_BACKQUOTE,KMOD_NONE);
+    assert(!ui.mosaic_open && !ui.fm_open);
     key(window,SDLK_BACKQUOTE,KMOD_SHIFT);
-    assert(ui.fm_open && !memcmp(&held,&audio.notes,sizeof(held)));
+    assert(ui.fm_open);assert(!memcmp(&held,&audio.notes,sizeof(held)));
     assert(ts_note_bank_start_sample_event(&audio.notes,&workspace_preview,&instrument.tuning,
         &fm_note,0,48000)==TS_NOTE_STARTED);
-    held=audio.notes;
+    memcpy(&held,&audio.notes,sizeof(held));
     const float *preview=workspace_preview.data;
     key(window,SDLK_BACKQUOTE,KMOD_NONE);
     assert(ui.mosaic_open && !ui.fm_open && !scene->playing);
@@ -39,7 +40,7 @@ static void test_workspace_playback(SDL_Window *window)
     key(window,SDLK_ESCAPE,KMOD_NONE);
     assert(!scene->playing && ts_note_bank_count(&audio.notes)==2);
     /* A key released over the arrangement must reach its original sample/FM voice. */
-    SDL_Event up={0};up.type=SDL_KEYUP;up.key.windowID=SDL_GetWindowID(window);up.key.keysym.sym=SDLK_z;
+    SDL_Event up;SDL_zero(up);up.type=SDL_KEYUP;up.key.windowID=SDL_GetWindowID(window);up.key.keysym.sym=SDLK_z;
     assert(dispatch(&up,window) && ts_note_bank_count(&audio.notes)==1);
     up.key.keysym.sym=SDLK_x;
     assert(dispatch(&up,window) && ts_note_bank_count(&audio.notes)==0);
@@ -47,7 +48,7 @@ static void test_workspace_playback(SDL_Window *window)
     assert(ts_note_bank_start_sample_event(&audio.notes,&workspace_preview,&instrument.tuning,
         &fm_note,1,48000)==TS_NOTE_STARTED);
     assert(dispatch(&up,window) && ts_note_bank_latched_synth_count(&audio.notes)==1);
-    held=audio.notes;
+    memcpy(&held,&audio.notes,sizeof(held));
     key(window,SDLK_BACKQUOTE,KMOD_SHIFT);key(window,SDLK_BACKQUOTE,KMOD_SHIFT);
     assert(!ui.fm_open && !ui.mosaic_open && workspace_preview.data==preview);
     assert(!memcmp(&held,&audio.notes,sizeof(held)));
@@ -89,7 +90,7 @@ static void test_workspace_routes(SDL_Window *window)
     for(int n=0;n<3;++n) {
         key(window,SDLK_TAB,KMOD_NONE);
         assert(sister.model.visible && !(SDL_GetWindowFlags(window)&SDL_WINDOW_MINIMIZED));
-        SDL_Event repeat={0};repeat.type=SDL_KEYDOWN;repeat.key.windowID=sister.window_id;
+        SDL_Event repeat;SDL_zero(repeat);repeat.type=SDL_KEYDOWN;repeat.key.windowID=sister.window_id;
         repeat.key.keysym.sym=SDLK_TAB;repeat.key.repeat=1;
         assert(workspace_tab_event(&repeat,window,&sister,&ui) && sister.model.visible);
         sister_key(window,SDLK_TAB,KMOD_NONE);
@@ -165,7 +166,7 @@ static void test_play_on_select(SDL_Window *window)
     assert(ts_instrument_copy_selected(inst,1,error,sizeof(error)));
     assert(ts_instrument_select_bank(inst,0,error,sizeof(error)));
     state->show_keyboard=state->show_recipes=state->show_ingredients=0;
-    SDL_Event e={0};e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=SDL_GetWindowID(window);
+    SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=SDL_GetWindowID(window);
     e.button.button=SDL_BUTTON_LEFT;e.button.x=290;e.button.y=320;
     sample_bank_audition_selected(0,a,state,inst,inst->selected_slot,48000);
     assert(ts_performance_count(&a->tile_launchers)==1);

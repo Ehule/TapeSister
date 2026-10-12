@@ -35,6 +35,19 @@ static void prepare(int mode)
     assert(ts_keyboard_sequence_play(&sequence));
 }
 
+static void test_external_clock(void)
+{
+    prepare(TS_KEYBOARD_SEQUENCE_UP);
+    ts_keyboard_sequence_clock(&sequence,.25);render(125);
+    assert(sequence.current_note==60 && fabs(sequence.elapsed-.125)<1e-8);
+    ts_keyboard_sequence_clock(&sequence,.125);
+    assert(fabs(sequence.elapsed-.0625)<1e-8); /* Tempo doubles, same beat phase. */
+    render(60);assert(sequence.current_note==60);render(5);assert(sequence.current_note==64);
+    assert(sequence.settings.seconds==.04 && ts_keyboard_sequence_export(&sequence).slot[0].seconds==.04);
+    double phase=sequence.elapsed/.125;
+    ts_keyboard_sequence_clock(&sequence,0);assert(fabs(sequence.elapsed/.04-phase)<1e-8);
+    ts_keyboard_sequence_clock(&sequence,NAN);assert(sequence.clock_seconds==0);
+}
 static void test_volume_lfo(void)
 {
     prepare(TS_KEYBOARD_SEQUENCE_UP);
@@ -173,6 +186,7 @@ int main(void)
     source.count = 1;
     source.voices[0] = (TsNoteVoice){.sample=&source.sample, .range_last=256,
         .step=1, .gain=1, .active=1, .looping=1, .direction=1};
+    test_external_clock();
     test_volume_lfo();
     test_slots_and_projects();
     test_slot_sequence();

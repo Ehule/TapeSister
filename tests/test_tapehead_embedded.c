@@ -815,6 +815,18 @@ static void followup_canvas_palette(const char *image,const char *config_image,c
     click(540,133);alias=test_pages->tracker.embedded_data[22]; /* Fifth row spans the next host page. */
     assert(test_pages->tracker.aliases[alias]==other->bank[2].tile_id);
     press(SDLK_z,SDL_SCANCODE_Z,KMOD_NONE);assert(pat()->cells[1][0].tile_id==other->bank[2].tile_id);
+    TsTileId opened=other->bank[2].tile_id;
+    startPlaying(PLAYMODE_SONG,0);
+    SDL_Event dbl;SDL_zero(dbl);dbl.type=SDL_MOUSEBUTTONDOWN;dbl.button.windowID=SDL_GetWindowID(test_window);
+    dbl.button.button=SDL_BUTTON_LEFT;dbl.button.clicks=2;dbl.button.x=540;dbl.button.y=133;
+    assert(tracker_event(&dbl,test_window,0,test_audio,test_ui,test_pages,test_bank,48000));
+    tracker_refresh(0,test_audio,test_ui,test_pages,test_bank,48000,NULL);
+    assert(!test_ui->tracker_open && ts_tapehead_running());
+    assert(test_pages->active_page==1 && test_bank->selected_slot==2 && test_bank->bank[2].tile_id==opened);
+    assert(test_ui->bank_view_slot==-1 && test_ui->audition_source==TS_AUDITION_CURRENT);
+    ts_tapehead_stop();assert(ts_sample_pages_switch(test_pages,test_bank,0,test_error,sizeof(test_error)));
+    other=ts_sample_pages_page_mut(test_pages,test_bank,1);
+    press(SDLK_F10,SDL_SCANCODE_F10,KMOD_NONE);
     assert(ts_instrument_select_bank(other,7,test_error,sizeof(test_error)));
     assert(ts_instrument_activate_silence(other,1024,48000,test_error,sizeof(test_error)));
     assert(ts_instrument_sync_selected(other,test_error,sizeof(test_error)));

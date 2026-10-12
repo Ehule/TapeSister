@@ -1,4 +1,5 @@
 #include "tapesister/mosaic.h"
+#include "tapesister/master_eq.h"
 #include <errno.h>
 #include <math.h>
 #include <stdio.h>
@@ -16,7 +17,7 @@ TsMosaic *ts_mosaic_create(void)
 void ts_mosaic_free(TsMosaic *m)
 {
     if(!m)return;
-    while(m->sources) {TsMosaicSource *s=m->sources;m->sources=s->next;ts_sample_free(&s->sample);free(s);}
+    while(m->sources) {TsMosaicSource *s=m->sources;m->sources=s->next;ts_sample_free(&s->sample);ts_sample_free(&s->eq_dry);free(s);}
     free(m);
 }
 TsMosaicEvent *ts_mosaic_find(TsMosaic *m,uint64_t id)
@@ -24,18 +25,26 @@ TsMosaicEvent *ts_mosaic_find(TsMosaic *m,uint64_t id)
     if(m && id)for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(m->events[i].id==id)return &m->events[i];
     return NULL;
 }
-TsMosaicSource *ts_mosaic_source(TsMosaic *m,const TsSample *sample,char *error,size_t size)
+TsMosaicSource *ts_mosaic_source_eq(TsMosaic *m,const TsSample *sample,const TsSample *dry,const TsMasterEqControls *eq,char *error,size_t size)
 {
     if(!m || !sample || !sample->data || sample->frames<2 || !sample->sample_rate)return NULL;
+    if(dry && dry->data && (!eq || dry->frames!=sample->frames || dry->channels!=sample->channels || dry->sample_rate!=sample->sample_rate)) {
+        if(error && size)snprintf(error,size,"Editable EQ audio must match the rendered source");return NULL;
+    }
     uint64_t hash=ts_sample_hash(sample);
     for(TsMosaicSource *s=m->sources;s;s=s->next)
-        if(s->hash==hash && s->sample.frames==sample->frames &&
+        if((!dry || !dry->data)==(!s->eq_dry.data) &&
+           (!dry || !dry->data || (!memcmp(eq,&s->eq,sizeof(*eq)) && dry->frames==s->eq_dry.frames && dry->channels==s->eq_dry.channels &&
+             !memcmp(dry->data,s->eq_dry.data,dry->frames*dry->channels*sizeof(float)))) &&
+           s->hash==hash && s->sample.frames==sample->frames &&
            s->sample.sample_rate==sample->sample_rate && s->sample.channels==sample->channels &&
            !memcmp(s->sample.data,sample->data,sample->frames*sample->channels*sizeof(float)))return s;
     TsMosaicSource *s=calloc(1,sizeof(*s));
     if(!s){if(error && size)snprintf(error,size,"Not enough memory for event audio");return NULL;}
     if(!ts_sample_clone(&s->sample,sample,error,size)) {free(s);return NULL;}
-    s->hash=hash;
+    ts_master_eq_default(&s->eq);
+    if(dry && dry->data){if(!ts_sample_clone(&s->eq_dry,dry,error,size)){ts_sample_free(&s->sample);free(s);return NULL;}s->eq=*eq;}
+    s->hash=hash;s->eq_dry_hash=ts_sample_hash(&s->eq_dry);
     /* Built once per immutable source, never on the audio thread. Peak and
        RMS preserve transients and reveal the body of the waveform separately. */
     for(size_t bin=0;bin<TS_MOSAIC_PEAKS;++bin) {
@@ -53,6 +62,24 @@ TsMosaicSource *ts_mosaic_source(TsMosaic *m,const TsSample *sample,char *error,
     }
     s->next=m->sources;m->sources=s;return s;
 }
+TsMosaicSource *ts_mosaic_source(TsMosaic *m,const TsSample *sample,char *error,size_t size)
+{return ts_mosaic_source_eq(m,sample,NULL,NULL,error,size);}
+TsMosaicSource *ts_mosaic_source_document(TsMosaic *m,const TsInstrument *doc,char *error,size_t size)
+{
+    if(!doc)return NULL;
+    TsMasterEqControls flat,eq=doc->tile_eq;ts_master_eq_default(&flat);
+    if(!eq.band[0].frequency)eq=flat;
+    if(!memcmp(&flat,&eq,sizeof(flat)))return ts_mosaic_source(m,&doc->current,error,size);
+    TsSample dry={0};
+    if(!ts_instrument_render_tile_eq(&dry,doc,&flat,error,size)){ts_sample_free(&dry);return NULL;}
+    TsMosaicSource *s=ts_mosaic_source_eq(m,&doc->current,&dry,&eq,error,size);ts_sample_free(&dry);return s;
+}
+int ts_mosaic_import_source(TsInstrument *doc,const TsMosaicSource *s,int loop,size_t first,size_t last,TsLoopMode mode,char *error,size_t size)
+{
+    if(!ts_instrument_import_sample(doc,s->eq_dry.data?&s->eq_dry:&s->sample,loop,first,last,mode,error,size))return 0;
+    if(s->eq_dry.data && !ts_instrument_set_tile_eq(doc,&s->eq,error,size))return 0;
+    return 1;
+}
 void ts_mosaic_collect(TsMosaic *m)
 {
     if(!m)return;
@@ -62,7 +89,7 @@ void ts_mosaic_collect(TsMosaic *m)
         for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(m->events[i].id && m->events[i].source==s)used=1;
         for(int h=0;h<m->history_count && !used;++h)
             for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(m->history[h][i].id && m->history[h][i].source==s)used=1;
-        if(used)p=&s->next;else {*p=s->next;ts_sample_free(&s->sample);free(s);}
+        if(used)p=&s->next;else {*p=s->next;ts_sample_free(&s->sample);ts_sample_free(&s->eq_dry);free(s);}
     }
 }
 void ts_mosaic_checkpoint(TsMosaic *m)
@@ -95,7 +122,7 @@ int ts_mosaic_undo(TsMosaic *m,int redo)
         float value=m->volume[i];m->volume[i]=m->history_volume[at][i];m->history_volume[at][i]=value;
     }
     int repeat=m->repeat;m->repeat=m->history_repeat[at];m->history_repeat[at]=repeat;
-    m->history_cursor+=redo?1:-1;memset(m->voices,0,sizeof(m->voices));++m->revision;return 1;
+    m->history_cursor+=redo?1:-1;m->route_discontinuity=1;memset(m->voices,0,sizeof(m->voices));++m->revision;return 1;
 }
 static int overlap(const TsMosaicEvent *a,const TsMosaicEvent *b)
 {return a->start<b->start+b->duration-1e-9 && b->start<a->start+a->duration-1e-9;}
@@ -138,7 +165,7 @@ TsMosaicEvent *ts_mosaic_copy(TsMosaic *m,uint64_t id,double start,double x)
     ts_mosaic_space(m,e);return e;
 }
 void ts_mosaic_delete(TsMosaic *m,uint64_t id)
-{TsMosaicEvent *e=ts_mosaic_find(m,id);if(e){memset(e,0,sizeof(*e));++m->revision;}}
+{TsMosaicEvent *e=ts_mosaic_find(m,id);if(e){memset(e,0,sizeof(*e));m->route_discontinuity=1;++m->revision;}}
 double ts_mosaic_snap(const TsMosaic *m,uint64_t id,double time,double tolerance)
 {
     double result=time,best=tolerance;
@@ -157,7 +184,7 @@ double ts_mosaic_end(const TsMosaic *m)
 }
 void ts_mosaic_seek(TsMosaic *m,double time)
 {
-    if(m){m->time=isfinite(time)?fmax(0,time):0;memset(m->voices,0,sizeof(m->voices));
+    if(m){m->route_discontinuity=1;m->time=isfinite(time)?fmax(0,time):0;memset(m->voices,0,sizeof(m->voices));
         m->transition_from=m->last_output;m->transition_total=m->transition_remaining=(unsigned)(m->rate>0?m->rate/500:0);
         double end=ts_mosaic_end(m);m->volume_current=ts_mosaic_volume_at(m,end>0?m->time/end:0);}
 }
@@ -273,11 +300,11 @@ void ts_mosaic_volume_action(TsMosaic *m,TsMosaicEnvelopeAction action)
     ++m->revision;
 }
 
-TsStereoFrame ts_mosaic_read(TsMosaic *m,int rate)
+static TsStereoFrame mosaic_read(TsMosaic *m,int rate,TsSourceRouteMix *routes)
 {
     TsStereoFrame out={0,0};if(!m || rate<=0)return out;
     if(!m->playing) {
-        if(m->was_playing){m->transition_from=m->last_output;m->transition_total=m->transition_remaining=(unsigned)(rate/500);m->was_playing=0;}
+        if(m->was_playing){m->route_discontinuity=1;m->transition_from=m->last_output;m->transition_total=m->transition_remaining=(unsigned)(rate/500);m->was_playing=0;}
         if(m->transition_remaining && m->transition_total) {
             float gain=(float)--m->transition_remaining/m->transition_total;
             out.l=m->transition_from.l*gain;out.r=m->transition_from.r*gain;
@@ -299,7 +326,7 @@ TsStereoFrame ts_mosaic_read(TsMosaic *m,int rate)
     }
     if(m->time>=end) {
         if(m->repeat && end>0)ts_mosaic_seek(m,fmod(m->time,end));
-        else {m->playing=0;return out;}
+        else {m->playing=0;m->route_discontinuity=1;return out;}
     }
     float target_volume=ts_mosaic_volume_at(m,end>0?m->time/end:0);
     if(starting)m->volume_current=target_volume;
@@ -323,6 +350,7 @@ TsStereoFrame ts_mosaic_read(TsMosaic *m,int rate)
         v->mix_left+=fmaxf(-mix_ramp,fminf(mix_ramp,left-v->mix_left));
         v->mix_right+=fmaxf(-mix_ramp,fminf(mix_ramp,right-v->mix_right));
         float gain=m->gain*m->volume_current*envelope*v->audible_gain*event_fade(e,m->time-e->start)/e->note_count;
+        TsStereoFrame card={0,0};
         for(int n=0;n<e->note_count;++n) {
             TsStereoFrame f;
             v->position[n]=voice_position(e,v->travel[n],&v->direction[n],&v->intro[n]);
@@ -333,9 +361,16 @@ TsStereoFrame ts_mosaic_read(TsMosaic *m,int rate)
                 f.l*=release;f.r*=release;
             } else f=v->intro[n]?ts_audition_read_frame(&e->source->sample,v->position[n],e->last):
                 ts_audition_read_looped_mode_frame(&e->source->sample,v->position[n],e->first,e->last,e->crossfade,e->mode);
-            out.l+=f.l*gain*v->mix_left;out.r+=f.r*gain*v->mix_right;
+            card.l+=f.l*gain*v->mix_left;card.r+=f.r*gain*v->mix_right;
             v->travel[n]+=v->step[n]*speed;
         }
+        if(routes) {
+            if(!v->output_route.ready || v->output_route.rate!=(unsigned)rate ||
+               memcmp(&v->output_route.route,&e->output_route,sizeof(e->output_route)))
+                ts_source_route_set(&v->output_route,e->output_route,(unsigned)rate);
+            card=ts_source_route_frame(&v->output_route,card,routes);
+        }
+        out.l+=card.l;out.r+=card.r;
     }
     if(m->transition_remaining && m->transition_total) {
         float gain=(float)--m->transition_remaining/m->transition_total;
@@ -344,6 +379,20 @@ TsStereoFrame ts_mosaic_read(TsMosaic *m,int rate)
     }
     m->time+=speed/rate;m->last_output=ts_stereo_frame_sanitize(out);return m->last_output;
 }
+TsStereoFrame ts_mosaic_read_routed(TsMosaic *m,int rate,TsSourceRouteMix *routes)
+{
+    if(!routes || !m)return mosaic_read(m,rate,NULL);
+    if(!m->playing && !m->was_playing && !m->transition_remaining && !m->route_handoff.remaining)return (TsStereoFrame){0,0};
+    TsSourceRouteMix mix={0};
+    TsStereoFrame out=mosaic_read(m,rate,routes?&mix:NULL);
+    if(m && routes && rate>0) {
+        ts_source_route_handoff(&m->route_handoff,&mix,m->route_discontinuity,(unsigned)rate/500);
+        m->route_discontinuity=0;ts_source_route_add(routes,&mix,1);
+    }
+    return out;
+}
+TsStereoFrame ts_mosaic_read(TsMosaic *m,int rate)
+{return ts_mosaic_read_routed(m,rate,NULL);}
 uint64_t ts_mosaic_hash(const TsMosaic *m)
 {
     uint64_t hash=1469598103934665603ull;if(!m)return hash;
@@ -354,6 +403,17 @@ uint64_t ts_mosaic_hash(const TsMosaic *m)
             (unsigned long long)e->id,(unsigned long long)e->source->hash,e->start,e->duration,e->x,e->width,
             e->first,e->last,e->crossfade,e->mode,e->looping,e->note_count,e->gain,e->tuning.root_note,
             e->tuning.fine_tune_cents,e->notes[0],e->notes[1],e->notes[2],e->notes[3],e->notes[4]);
+        if(e->source->eq_dry.data) {
+            hash^=e->source->eq_dry_hash;hash*=1099511628211ull;
+            const TsMasterEqControls *eq=&e->source->eq;hash^=eq->enabled;hash*=1099511628211ull;
+            for(int b=0;b<5;++b) {
+                char value[100];TsEqBand v=eq->band[b];snprintf(value,sizeof(value),"%d %d %.9g %.9g %.9g",v.enabled,v.type,v.frequency,v.gain_db,v.q);
+                for(const unsigned char *p=(const unsigned char *)value;*p;++p){hash^=*p;hash*=1099511628211ull;}
+            }
+        }
+        const TsSourceRoute *r=&e->output_route;
+        hash^=(uint64_t)(r->matrix_enabled+2*(r->pan+100)+402*(r->width+100));hash*=1099511628211ull;
+        for(int d=0;d<TS_MATRIX_DESTINATIONS;++d){hash^=(uint64_t)r->matrix_gain[d];hash*=1099511628211ull;}
         char mix[128];snprintf(mix,sizeof(mix),"%.9g %.17g %.17g",e->pan,e->fade_in,e->fade_out);
         for(const unsigned char *p=(const unsigned char *)mix;*p;++p){hash^=*p;hash*=1099511628211ull;}
         hash^=(uint64_t)(e->muted | (e->solo<<1));hash*=1099511628211ull;
@@ -376,7 +436,7 @@ int ts_mosaic_save(const TsMosaic *m,const char *dir,char *error,size_t size)
     char path[4096];
     if(snprintf(path,sizeof(path),"%s/mosaic.tsm",dir)>=(int)sizeof(path))return 0;
     FILE *f=fopen(path,"w");if(!f)goto failed;
-    if(fprintf(f,"TAPESISTER_MOSAIC 4\nSETTINGS %d %.9g %.17g\n",m->repeat,m->gain,m->speed)<0)goto close_failed;
+    if(fprintf(f,"TAPESISTER_MOSAIC 6\nSETTINGS %d %.9g %.17g\n",m->repeat,m->gain,m->speed)<0)goto close_failed;
     if(fprintf(f,"VOLUME %d\n",TS_MOSAIC_ENVELOPE_POINTS)<0)goto close_failed;
     for(int i=0;i<TS_MOSAIC_ENVELOPE_POINTS;++i)
         if(fprintf(f,"%.9g\n",m->repeat && i==TS_MOSAIC_ENVELOPE_POINTS-1?m->volume[0]:m->volume[i])<0)goto close_failed;
@@ -388,6 +448,10 @@ int ts_mosaic_save(const TsMosaic *m,const char *dir,char *error,size_t size)
             sources[count++]=e->source;
             if(snprintf(path,sizeof(path),"%s/mosaic-%03d.wav",dir,s)>=(int)sizeof(path) ||
                 !ts_sample_save_wav32f(&e->source->sample,path,error,size))goto close_failed;
+            if(e->source->eq_dry.data) {
+                if(snprintf(path,sizeof(path),"%s/mosaic-%03d-dry.wav",dir,s)>=(int)sizeof(path) ||
+                   !ts_sample_save_wav32f(&e->source->eq_dry,path,error,size))goto close_failed;
+            }
         }
         char name[129];
         for(int k=0;k<64;++k)snprintf(name+2*k,3,"%02x",(unsigned char)e->name[k]);
@@ -395,6 +459,16 @@ int ts_mosaic_save(const TsMosaic *m,const char *dir,char *error,size_t size)
             (unsigned long long)e->id,s,e->start,e->duration,e->x,e->width,e->first,e->last,e->crossfade,
             e->mode,e->looping,e->note_count,e->gain,e->tuning.root_note,e->tuning.fine_tune_cents,
             e->notes[0],e->notes[1],e->notes[2],e->notes[3],e->notes[4],name,e->muted,e->solo,e->pan,e->fade_in,e->fade_out)<0)goto close_failed;
+        const TsSourceRoute *r=&e->output_route;
+        if(fprintf(f,"ROUTE %d %d %d",r->matrix_enabled,r->pan,r->width)<0)goto close_failed;
+        for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)if(fprintf(f," %d",r->matrix_gain[d])<0)goto close_failed;
+        if(fputc('\n',f)==EOF)goto close_failed;
+        int editable=e->source->eq_dry.data!=NULL;
+        if(fprintf(f,"EQ %d %d\n",editable,e->source->eq.enabled)<0)goto close_failed;
+        if(editable)for(int b=0;b<5;++b) {
+            TsEqBand v=e->source->eq.band[b];
+            if(fprintf(f,"%d %d %.9g %.9g %.9g\n",v.enabled,v.type,v.frequency,v.gain_db,v.q)<0)goto close_failed;
+        }
     }
     if(fclose(f))goto failed;
     return 1;
@@ -413,7 +487,7 @@ int ts_mosaic_load(TsMosaic *m,const char *dir,char *error,size_t size)
     TsMosaic *next=ts_mosaic_create();if(!next){fclose(f);return 0;}
     TsMosaicSource *sources[TS_MOSAIC_EVENTS]={0};int count=0;
     if(!fgets(line,sizeof(line),f))goto failed;
-    int version=!strcmp(line,"TAPESISTER_MOSAIC 4\n")?4:!strcmp(line,"TAPESISTER_MOSAIC 1\n")?1:!strcmp(line,"TAPESISTER_MOSAIC 2\n")?2:!strcmp(line,"TAPESISTER_MOSAIC 3\n")?3:0;
+    int version=!strcmp(line,"TAPESISTER_MOSAIC 6\n")?6:!strcmp(line,"TAPESISTER_MOSAIC 5\n")?5:!strcmp(line,"TAPESISTER_MOSAIC 4\n")?4:!strcmp(line,"TAPESISTER_MOSAIC 1\n")?1:!strcmp(line,"TAPESISTER_MOSAIC 2\n")?2:!strcmp(line,"TAPESISTER_MOSAIC 3\n")?3:0;
     if(!version)goto failed;
     char trailing;
     if(!fgets(line,sizeof(line),f))goto failed;
@@ -475,12 +549,48 @@ int ts_mosaic_load(TsMosaic *m,const char *dir,char *error,size_t size)
         }
         e.source=sources[source];
         if(e.first>=e.last || e.last>e.source->sample.frames || e.crossfade>(e.last-e.first)/2)goto failed;
+        if(version>=5) {
+            int used=0,at=0;
+            if(!fgets(line,sizeof(line),f) || sscanf(line,"ROUTE %d %d %d %n",
+                &e.output_route.matrix_enabled,&e.output_route.pan,&e.output_route.width,&at)!=3)goto failed;
+            for(int d=0;d<TS_MATRIX_DESTINATIONS;++d) {
+                if(sscanf(line+at,"%d %n",&e.output_route.matrix_gain[d],&used)!=1)goto failed;
+                at+=used;
+            }
+            if(sscanf(line+at," %c",&extra)==1 || !ts_source_route_valid(&e.output_route,0))goto failed;
+        }
+        if(version>=6) {
+            int editable,enabled;
+            if(!fgets(line,sizeof(line),f) || sscanf(line,"EQ %d %d %c",&editable,&enabled,&extra)!=2 ||
+               editable<0 || editable>1 || enabled<0 || enabled>1)goto failed;
+            if(editable) {
+                TsMasterEqControls eq;ts_master_eq_default(&eq);eq.enabled=enabled;
+                for(int b=0;b<5;++b) {
+                    TsEqBand *v=&eq.band[b];
+                    if(!fgets(line,sizeof(line),f) || sscanf(line,"%d %d %f %f %f %c",&v->enabled,&v->type,&v->frequency,&v->gain_db,&v->q,&extra)!=5 ||
+                       v->enabled<0 || v->enabled>1 || v->type<0 || v->type>=TS_EQ_TYPE_COUNT ||
+                       !isfinite(v->frequency) || v->frequency<20 || v->frequency>20000 || !isfinite(v->gain_db) || v->gain_db<-12 || v->gain_db>12 ||
+                       !isfinite(v->q) || v->q<.3f || v->q>8)goto failed;
+                }
+                if(!sources[source]->eq_dry.data) {
+                    TsSample dry={0};snprintf(path,sizeof(path),"%s/mosaic-%03d-dry.wav",dir,source);
+                    if(!ts_sample_load_wav(&dry,path,error,size))goto failed;
+                    if(dry.frames!=e.source->sample.frames || dry.channels!=e.source->sample.channels || dry.sample_rate!=e.source->sample.sample_rate){ts_sample_free(&dry);goto failed;}
+                    sources[source]=ts_mosaic_source_eq(next,&e.source->sample,&dry,&eq,error,size);ts_sample_free(&dry);
+                    if(!sources[source])goto failed;
+                } else if(memcmp(&eq,&sources[source]->eq,sizeof(eq)))goto failed;
+                e.source=sources[source];
+            } else if(sources[source]->eq_dry.data)goto failed;
+        }
         next->events[count++]=e;if(e.id>=next->next_id)next->next_id=e.id+1;
     }
     if(ferror(f))goto failed;
     fclose(f);
     /* Caller stops/locks audio before replacing a live model. */
-    TsMosaic old=*m;*m=*next;*next=old;ts_mosaic_free(next);return 1;
+    /* Only sources own allocations. Do not put the full arrangement/history
+       on the stack while publishing a loaded model. */
+    TsMosaicSource *old_sources=m->sources;*m=*next;
+    next->sources=old_sources;ts_mosaic_free(next);return 1;
 failed:
     fclose(f);ts_mosaic_free(next);snprintf(error,size,"Invalid or incomplete Mosaic project data");return 0;
 }

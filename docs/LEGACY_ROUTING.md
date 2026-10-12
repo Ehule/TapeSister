@@ -6,7 +6,9 @@ historical: **F9 now opens the routing matrix**. It is not a setup recipe for a
 new matrix project. See [Routing Matrix](ROUTING_MATRIX.md) for current operation.
 
 Existing legacy projects retain their saved audio path until **Use Matrix**,
-**Clear All** or **Reset to Default** is selected. In matrix mode, serial order,
+**Clear All** or **Reset to Default** is selected. Use Matrix preserves supported
+ordinary serial chains; it refuses unsupported conversions without changing audio.
+Clear All and Reset intentionally replace routing. In matrix mode, serial order,
 Router bypass/solo/timers, legacy Insert assignments and Sister source switches
 do not control the graph. Matrix outputs also bypass the legacy Ambisonics stage.
 The old state sequencer does not sequence matrix connections.

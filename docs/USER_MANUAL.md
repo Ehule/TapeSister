@@ -701,6 +701,38 @@ Some operations are intentionally unavailable for linked stereo material until t
 channel relationship can be preserved exactly. TapeSister reports that boundary rather
 than silently folding the tile to mono.
 
+## Canvas and instance EQ
+
+Click **EQ** beside the waveform's S/M/R/L display control to open a five-band
+overlay for the selected tile. Drag curve points, wheel Frequency/Gain/Q, and
+right-click to reset. Space auditions, Apply commits one undo step, and Cancel
+keeps the original. Reopening EQ adjusts the same curve. Rendering happens in a
+worker; ordinary committed playback uses cached audio. See [Canvas EQ](CANVAS_EQ.md)
+for the rendering, pitch and external-transform behavior.
+
+Double-clicking a Mosaic card opens the same editor for that instance. Returning
+to the arrangement uses Update Instance / Update All / Create Tile. Its pre-EQ
+audio and settings save with the project.
+
+![Canvas EQ](screenshots/performance/canvas-eq.png)
+
+## Performance Transport
+
+Open **CFG → Transport**, **F11**, or **Ctrl+Shift+Space** for the floating
+three-channel ARP, TrackSister, and Mosaic mixer. **Alt+F11** toggles fullscreen.
+Each channel has group selection, independent Play/Stop/Home, and a smoothed
+Silent-to-+6 dB gain fader. Double-click or right-click a fader for 0 dB.
+**Always on Top** keeps the window visible above the workspaces.
+
+Group Play can resume or restart checked players together. **ARP Clock** links
+ARP note intervals to TrackSister quarter/eighth/sixteenth notes, including tempo
+changes; Local restores the saved slot timings. Mosaic shares transport while
+keeping its own tape speed and pitch. These settings save with the project.
+**Shift+Space** controls the checked group. See [Performance Transport](PERFORMANCE_TRANSPORT.md).
+
+Double-click an occupied tile in TrackSister to open its editable canvas on the
+correct Sample page without stopping the tracker. F10 returns.
+
 ## Mosaic
 
 ![Mosaic with freely placed events and a downward playhead](images/mosaic.png)
@@ -1086,10 +1118,9 @@ stopped. **CLEAR ALL** requires a second click within three seconds, resets all
 survives clearing; outer mode, time and Loop remain configured. The lower CLEAR
 button still clears only one slot. See [ARP controls](KEYBOARD_SEQUENCE.md).
 
-**Shift+Space** starts/stops ARP even with its controls hidden, including from
-the tile bank, FM, Mosaic, EQ, and Sister Machine. **ARP STOP**, **Shift+Space**,
-**CLEAR**, and ONCE completion release only sequencer voices;
-Space keeps its global stop behavior. The sequence follows the current tile,
+**Shift+Space** controls the saved Performance Transport group, which defaults
+to ARP only. ARP STOP, CLEAR and ONCE completion release only sequencer voices.
+Space retains the active workspace behavior; in the canvas EQ editor it auditions EQ. The sequence follows the current tile,
 FM preview, or selected ensemble through the existing effects and recording
 paths. Selecting another tile keeps the notes, order, and timing running with
 the new sound; it does not start a separate tile layer while ARP is active.
@@ -1507,6 +1538,24 @@ on the current device: the route stays saved but is silent, with no redirection.
 Direct physical routes bypass any EQ/limiter nodes they do not pass through;
 the global OUT gain and final linked hardware guard still apply.
 
+### Bulk routes, history and Mosaic
+
+Ctrl-click rows for separate selections or Shift-click a range. Click a destination
+header or selected cell to connect all selected sources; mixed selections connect
+all first. Level and Row Pan affect the group. Inherited/legacy rows and invalid
+loops cause the whole edit to be refused. Other outgoing destinations are kept.
+
+Undo/Redo buttons and Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z in the Matrix retain 32 edits;
+a drag or batch is one step. Original/Edited switches between the initial routing
+and your edits without changing history. Restore confirms replacing the edited
+patch and can itself be undone. Loading a different project clears this history;
+saving stores the currently auditioned routing, not A/B or undo state.
+
+Mosaic has its own bus, defaulting to Main. The Mosaic filter shows per-card routes.
+BUS follows the bus; a custom route replaces that card's bus feed. To Mosaic Bus returns
+it to the bus. Routes save with the project. The [Matrix guide](ROUTING_MATRIX.md)
+explains bulk editing, restoration and routing details.
+
 ### Activity, clear and reset
 
 Small green marks beside source rows show source activity, beneath headers show
@@ -1523,8 +1572,8 @@ the stereo path above. Both act immediately, center row pan, restore stereo,
 make tracks own their routes, disable graph feedback and preserve hardware names,
 samples, notes and processor settings. Save the project to retain the change.
 
-**MATRIX LIVE** means the matrix is currently controlling audio. It is a status
-label, not a transport, state sequencer or placeholder. Sequencing between saved
+**MATRIX LIVE** is a status indicator and does not switch audio when clicked.
+Original / Edited compares your starting routes and changes. It is not a state sequencer. Sequencing between saved
 matrix patches is not implemented. Prism's Morph Matrix is a separate instrument.
 
 ### Feedback and older projects
@@ -1535,11 +1584,13 @@ maximum −6 dB gain. **Cut Feedback** removes those connections and clears thei
 stored audio. Physical cable loops are outside the graph.
 
 Existing projects/configurations retain their legacy engine until **Use Matrix**
-is chosen. Conversion retains source clean/send levels and initializes shared
-returns through Main/EQ/limiter; it cannot reproduce every arbitrary serial
-chain unchanged. Save under another project name to keep the original. Clear
-All and Reset to Default also enable the matrix. Legacy cross-pair speaker maps
-marked OLD remain audible until that row's **Use Matrix** conversion.
+is chosen. Supported ordinary serial chains import with the same processor order,
+dry/wet settings and running effect histories. Imported processor rows say MIX;
+new wet-only sends say WET. Original/Edited compares the starting routing and your
+edits; Restore replaces your edits with the starting routes and can be undone.
+Unsupported conversions leave the original sound and routes unchanged and explain
+why. See the [matrix guide](ROUTING_MATRIX.md) for the current supported scope.
+Clear All and Reset to Default intentionally replace the routing instead.
 
 The [legacy routing reference](LEGACY_ROUTING.md), [source routing reference](SOURCE_ROUTING.md)
 and [Router Performance reference](ROUTER_PERFORMANCE.md) describe the retained
@@ -1884,7 +1935,8 @@ Saving `Terra Night.tsr` creates one movable folder named `Terra Night/`:
 | `sister-state.ini` | Sister/FX/Prism, EQ, routing graph, connection levels and hardware aliases |
 | `project-data/` | Additional Sample pages and optional REC BANK state |
 | `project-data/sister-tracker.tst` | TrackSister notes, volume/velocity, track routes, inheritance and editor state |
-| `project-data/mosaic.tsm` | Mosaic event layout and playback settings |
+| `project-data/mosaic.tsm` | Mosaic layout, playback, card routing and EQ settings |
+| `project-data/mosaic-000-dry.wav`, etc. | Pre-EQ audio for editable Mosaic source versions |
 | `project-data/mosaic-000.wav`, etc. | Shared Mosaic source versions, stored once each as lossless 32-bit float audio |
 | `samples/page-01/`, `samples/page-02/`, etc. | Extractable Sample-bank WAV copies |
 | `samples/rec-bank/` | Extractable REC BANK WAV copies |
@@ -1904,7 +1956,7 @@ failed save from publishing a mixed or partial generation.
 `Ctrl+S` saves the active project. An existing destination requires overwrite
 confirmation. A short SAVING overlay appears while the folder is built.
 
-New saves use **TSR37**, **SISTRK v7** and **Sister state v30**. Earlier formats
+New saves use **TSR38**, **SISTRK v7**, **Mosaic format 6** and **Sister state v32**. Earlier formats
 load; older application builds cannot open the new tile/score saves. Loading
 replaces saved routing and hardware names. TrackSister starts stopped; activity
 indicators and live voice state are not saved. Device names/backend/buffer and
@@ -2223,3 +2275,16 @@ faders.
 
 These boundaries are stated here so the manual can describe the current instrument
 without confusing planned features with controls that already exist.
+
+### Current project and live tile level
+
+The main canvas footer shows the current project filename beside Undo/gain
+reduction, with `*` for unsaved changes. The window title shows the full filename
+in every workspace. A successful project save clears the indicator.
+
+**F11 → Live Tiles** lowers manual QWERTY/MIDI notes and tile launchers independently
+of Mosaic, ARP and TrackSister. The Matrix Tiles filter includes **Live Tile Bus**;
+Mosaic includes **Mosaic Bus**. Select cards and click **To Mosaic Bus** to remove
+custom routes without using Undo. See [Routing Matrix](ROUTING_MATRIX.md).
+
+![Project filename and unsaved indicator](screenshots/performance/project-filename.png)

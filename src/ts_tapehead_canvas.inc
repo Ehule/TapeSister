@@ -54,7 +54,7 @@ static void canvas_page_step(int delta) {
         if(aliases_changed)embed.model_hash=ts_sister_tracker_hash(&embed.pages->tracker);
     }
 }
-static void canvas_click(int x,int y) {
+static void canvas_click(int x,int y,int clicks) {
     if(y>=3 && y<19) {if(x>=603 && x<627)canvas_page_step(1);else if(x>=577 && x<601)canvas_page_step(-1);return;}
     x-=CANVAS_X;y-=CANVAS_Y;
     if(x<0 || x>=CANVAS_COLUMNS*CANVAS_DX || y<0 || y>=CANVAS_ROWS*CANVAS_DY ||
@@ -62,6 +62,7 @@ static void canvas_click(int x,int y) {
     int slot;
     const TsInstrument *bank=canvas_bank_at((y/CANVAS_DY)*CANVAS_COLUMNS+x/CANVAS_DX,&slot);
     if(bank && bank->bank[slot].occupied) {
+        if(clicks>=2) {embed.canvas_tile=bank->bank[slot].tile_id;ts_tapehead_request(TS_TH_TILE_CANVAS);}
         int alias=canvas_alias(bank->bank[slot].tile_id);
         if(!alias && (alias=canvas_free_alias())) {
             embed.model->aliases[alias]=bank->bank[slot].tile_id;

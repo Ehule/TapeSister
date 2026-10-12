@@ -64,7 +64,7 @@ static void test_selection_workflow(SDL_Window *window,SDL_AudioDeviceID device)
     uint64_t initial=ts_sample_hash(p->source);
     /* Result audition edits leave the render valid. Source processing edits
        invalidate it while preserving the running loop and audible old result. */
-    SDL_Event wheel={0};wheel.type=SDL_MOUSEWHEEL;wheel.wheel.windowID=SDL_GetWindowID(window);wheel.wheel.y=-1;
+    SDL_Event wheel;SDL_zero(wheel);wheel.type=SDL_MOUSEWHEEL;wheel.wheel.windowID=SDL_GetWindowID(window);wheel.wheel.y=-1;
     SDL_SetModState(KMOD_ALT);SDL_WarpMouseInWindow(window,180,170);
     uint64_t generation=c.generation;
     portal_event(&wheel,window,device,&audio,&ui,&instrument,&c,&sister,44100,&transform);
@@ -134,7 +134,7 @@ static void test_selection_workflow(SDL_Window *window,SDL_AudioDeviceID device)
     int full_slot=instrument.selected_slot;
     assert(!portal_apply(device,&audio,&ui,&instrument,&c,2));assert(p->full_action==2 && pages.page_count==1);
     selection_screenshot("TS_TEST_PORTAL_FULL_SCREENSHOT",&ui,&instrument);
-    SDL_Event click={0};click.type=SDL_MOUSEBUTTONDOWN;click.button.windowID=SDL_GetWindowID(window);click.button.button=SDL_BUTTON_LEFT;
+    SDL_Event click;SDL_zero(click);click.type=SDL_MOUSEBUTTONDOWN;click.button.windowID=SDL_GetWindowID(window);click.button.button=SDL_BUTTON_LEFT;
     click.button.x=380;click.button.y=225;
     portal_event(&click,window,device,&audio,&ui,&instrument,&c,&sister,44100,&transform);
     assert(!p->full_action && p->valid && p->result==result && p->source->data==source_data);
@@ -354,7 +354,7 @@ int main(void)
     p->library.recipes[19].values[0]=3;
     p->tab=1;p->family=TS_PORTAL_SPECTRAL+1;
     snprintf(p->query,sizeof(p->query),"chorus");
-    SDL_Event manage={0};manage.type=SDL_MOUSEBUTTONDOWN;manage.button.windowID=SDL_GetWindowID(window);
+    SDL_Event manage;SDL_zero(manage);manage.type=SDL_MOUSEBUTTONDOWN;manage.button.windowID=SDL_GetWindowID(window);
     manage.button.button=SDL_BUTTON_LEFT;
 #define CLICK(X,Y) do { manage.button.x=(X);manage.button.y=(Y); \
     assert(portal_event(&manage,window,audition,&audio,&ui,&instrument,&c,&sister,44100,&transform)); } while(0)
@@ -366,10 +366,10 @@ int main(void)
     CLICK(440,210);CLICK(320,306);
     assert(p->library.recipes[19].values[0]==4 && p->library.recipes[1].values[0]==1.5);
     CLICK(315,182);
-    SDL_Event key={0};key.type=SDL_KEYDOWN;key.key.windowID=SDL_GetWindowID(window);
+    SDL_Event key;SDL_zero(key);key.type=SDL_KEYDOWN;key.key.windowID=SDL_GetWindowID(window);
     key.key.keysym.sym=SDLK_a;key.key.keysym.mod=KMOD_CTRL;
     portal_event(&key,window,audition,&audio,&ui,&instrument,&c,&sister,44100,&transform);
-    SDL_Event typed={0};typed.type=SDL_TEXTINPUT;typed.text.windowID=SDL_GetWindowID(window);
+    SDL_Event typed;SDL_zero(typed);typed.type=SDL_TEXTINPUT;typed.text.windowID=SDL_GetWindowID(window);
     snprintf(typed.text.text,sizeof(typed.text.text),"SOFT GHOST");
     portal_event(&typed,window,audition,&audio,&ui,&instrument,&c,&sister,44100,&transform);
     CLICK(320,210);CLICK(320,306);
@@ -392,7 +392,7 @@ int main(void)
     CLICK(25,112);assert(p->family==TS_PORTAL_FILTER+1);
     CLICK(25,TS_PORTAL_LIST_Y+4*TS_PORTAL_LIST_ROW_H+4);assert(!strcmp(p->recipe.process_id,"filter.sweeping.2"));
     assert(p->parameter_scroll==0 && portal_parameter_at(p,2)==2);
-    SDL_Event wheel={0};wheel.type=SDL_MOUSEWHEEL;wheel.wheel.windowID=SDL_GetWindowID(window);
+    SDL_Event wheel;SDL_zero(wheel);wheel.type=SDL_MOUSEWHEEL;wheel.wheel.windowID=SDL_GetWindowID(window);
     wheel.wheel.y=-100;
     SDL_WarpMouseInWindow(window,180,280);
     assert(portal_event(&wheel,window,audition,&audio,&ui,&instrument,&c,&sister,44100,&transform));
@@ -458,7 +458,7 @@ int main(void)
     portal_invalidate(audition,&audio,p,&c);
     ts_portal_recipe_default(&p->recipe,ts_portal_process_find("blur.avrg"));p->parameter_scroll=0;
     CLICK(300,270);assert(fmod(p->recipe.values[0],2)==1);
-    SDL_Event release={0};release.type=SDL_MOUSEBUTTONUP;release.button.windowID=SDL_GetWindowID(window);
+    SDL_Event release;SDL_zero(release);release.type=SDL_MOUSEBUTTONUP;release.button.windowID=SDL_GetWindowID(window);
     release.button.button=SDL_BUTTON_LEFT;
     portal_event(&release,window,audition,&audio,&ui,&instrument,&c,&sister,44100,&transform);
     double odd=p->recipe.values[0];
@@ -481,7 +481,7 @@ int main(void)
     p->library=prior_library;p->recipe=prior_recipe;p->query[0]=0;p->tab=p->family=0;
     p->selected_tab=p->selected_slot=-1;
 #undef CLICK
-    SDL_Event event={0};event.type=SDL_MOUSEBUTTONDOWN;
+    SDL_Event event;SDL_zero(event);event.type=SDL_MOUSEBUTTONDOWN;
     event.button.windowID=SDL_GetWindowID(window);event.button.button=SDL_BUTTON_LEFT;
     event.button.x=395;event.button.y=267;
     assert(portal_event(&event,window,audition,&audio,&ui,&instrument,&c,&sister,44100,&transform));

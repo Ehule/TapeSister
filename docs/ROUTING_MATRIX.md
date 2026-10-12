@@ -3,8 +3,9 @@
 F9, tile right-click and TrackSister track-header right-click open the same
 modeless window. Audio and keyboard playing continue while it is open.
 
-**MATRIX LIVE** means this graph is controlling the audio. It is a status label,
-not a sequencer or placeholder. Storing/sequencing different matrix patches is
+**MATRIX LIVE** is a status indicator: this graph is controlling the audio.
+It does not switch routing when clicked. Use **Original / Edited** for A/B listening.
+It is not a sequencer. Storing/sequencing different matrix patches is
 not implemented. The legacy Router Performance sequencer only affects the old
 serial engine; Prism's Morph Matrix is a separate sound-morphing feature.
 
@@ -16,7 +17,7 @@ checking a processor does not secretly add another dry copy.
 
 ## Normal stereo
 
-New configurations start with tile/track sound and FM/Live Link feeding
+New configurations start with tile/track sound, the Mosaic bus and FM/Live Link feeding
 **Main Mix → Master EQ → Limiter → OUT 1/2**. External inputs start disconnected.
 Track routes take precedence over tile routes. **Use Tile** makes the entire
 track inherit the route of each played tile; **Use Track** gives it its own route.
@@ -27,7 +28,7 @@ tracks and tiles hidden by the current filter or on other pages. It also cuts
 feedback. The matrix stays active and silent so you can patch a new path.
 
 **Reset to Default** restores the normal stereo path above: all tiles/tracks,
-FM and Live Link feed Main; Main feeds EQ, then limiter, then OUT 1/2. Effect
+FM, Live Link and the Mosaic bus feed Main; Main feeds EQ, then limiter, then OUT 1/2. Effect
 returns feed Main, but no source is sent to an effect. External inputs are
 disconnected. All tracks own their routes again rather than inheriting tiles.
 
@@ -38,13 +39,82 @@ Using either button on a legacy project enables the matrix with the chosen
 blank/default routing. Save the project to retain the result.
 
 Older configurations and project files retain the old engine and saved sound.
-F9 identifies this as a legacy project. **Use Matrix** opts into the new graph:
-the legacy serial order, Insert assignment and Sister source switches stop
-controlling the signal path. Existing source clean/send levels are retained;
-legacy direct speakers retain their channel mapping. Shared processor outputs
-start at Main, followed by EQ/limiter. This is an intentional conversion, not a
-claim that an arbitrary old serial chain sounds identical through the new graph.
-Save an experimental version under another project name if you want both.
+**Use Matrix** imports a supported ordinary serial chain with its processor order,
+bypass choices, dry/wet settings, return trims and existing DSP histories intact.
+The initial graph therefore sounds the same before you edit it. Imported effects
+say **MIX**, because their output includes the saved dry/wet mix; newly patched
+**WET** rows retain the wet-only behavior described above. For example, a Mosaic
+project using Prism and delay/reverb imports as Mosaic → Main → Prism MIX →
+Pedalboard MIX → EQ → limiter → OUT 1/2. It does not start a dry default patch.
+
+The importer currently supports ordinary Main-source serial chains. Live Sister,
+parallel/direct source or send-return arrangements, an active external Insert,
+Ambisonics, monitor/reference paths, and running Router transitions/automation
+are not yet safely translated. In these cases **Use Matrix leaves every route
+unchanged** and displays the reason. Clear All and Reset to Default remain
+explicit ways to build a different patch; neither is a preservation operation.
+
+The original routing is captured before your first Matrix edit. Original/Edited
+compares it during this session; Restore replaces the edited version with it.
+
+## Selection, undo and A/B
+
+Ctrl-click row labels to select separate sources; Shift-click selects a range.
+Click a destination header (with multiple rows selected), or a selected row's
+cell, to route the whole selection. Mixed selections connect all rows first;
+click again to disconnect all. Other destinations stay connected. Level and Pan
+apply to the selection; the footer identifies mixed values. A batch is refused
+in full if it contains an inherited/legacy row or creates an unapproved loop.
+Convert inherited/legacy rows individually before including them in a batch.
+
+**Undo / Redo**, **Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z** work while the Matrix owns
+keyboard focus. The last 32 edits include connections, gains, pan, mono,
+inheritance, names, feedback, activation, Clear All and Reset. A whole drag or
+bulk edit is one step. A fresh edit after Undo replaces the redo branch.
+
+**Original / Edited** auditions the state captured before the first routing edit
+in this project session. The Matrix Live status never changes the audition.
+A/B preserves the edited version and undo history; return to Edited to make
+changes. **Restore** asks before replacing your edited routing, and that restore
+can itself be undone. Closing/reopening the Matrix keeps the session history.
+Loading another project clears it. Undo/A/B restore routes and related legacy
+controls, not tape contents, FX tails or transport time. Deleted sources are not
+recreated or confused with new sources. History and the alternate A/B state are
+not saved; saving stores the routing currently being auditioned.
+
+![Bulk selection and undo](screenshots/performance/matrix-bulk-undo.png)
+
+## Mosaic routing
+
+**MOSAIC BUS** appears in All and Mosaic filters and defaults to Main. Patch it to shared
+processors or hardware independently of keyboard tiles and tracker lanes.
+The **Mosaic** filter exposes each card. A card marked **BUS** follows the bus.
+Click a destination to make a custom route. Select one or more cards and click
+**To Mosaic Bus** (bottom right) to remove their overrides. Custom routing replaces the bus
+feed for that card, so it cannot add an unintended dry duplicate. Card routes
+save with the arrangement and can be selected/edited/undone as a group.
+Clear All also clears cards; Reset returns cards to the Mosaic bus.
+
+![Mosaic bus and selected cards](screenshots/performance/matrix-mosaic-bus.png)
+
+## Live tile bus
+
+**LIVE TILE BUS** appears in All and Tiles filters. Tiles without a custom route
+feed it; it defaults to Main. A tile's first destination click replaces its bus
+feed. **To Tile Bus** returns the selected tiles to it, with Matrix undo/redo.
+TrackSister and ARP retain their own routing and levels.
+
+Open **F11** and lower **Live Tiles** to trim QWERTY/MIDI playing and tile launchers
+without lowering Mosaic, ARP or TrackSister. This shared trim also reaches custom
+tile outputs and effects sends. It defaults to 0 dB, works in legacy and Matrix
+modes, and saves with the project. The bus row controls routing of default tile
+feeds; the Live Tiles fader controls all manually played voices, including FM
+and Sister tile groups. Browser/transport preview has its existing level.
+
+Mosaic cards reference audio sources copied into the arrangement. Cards sharing
+a source can share edits through Update All, but live tile gain never edits that
+audio or the card gains. Existing arrangements keep their sound at the default
+0 dB setting.
 
 ## Connections and positioning
 
@@ -63,16 +133,16 @@ Save an experimental version under another project name if you want both.
 - **Stereo / Mono** preserves stereo or folds it to mono before pan. Mono plus
   full-left/right pan addresses a single speaker in an output pair.
 - Wheel over the grid to scroll sources. The filters show tracks, tiles on all
-  pages, external/live inputs, or processor returns. OUT arrows reveal more ports.
+  pages, external/live inputs, processor returns, or Mosaic cards. OUT arrows reveal more ports.
 - Middle-click an input row or output column to rename it, or select it and use
   **Name I/O**. Enter saves; Escape cancels. IN/OUT numbers remain visible.
 
-Small green indicators follow actual signal activity with a gentle fade:
+Amber/orange indicators follow actual signal activity with the same gentle fade:
 
 - Beside a row: its source has audio, even if it is currently unpatched.
 - Below a destination header: audio is arriving at that processor or output.
 - Below a connected cell: that source is sending along the connection. Feedback
-  indicators retain their amber color. Disconnected and unavailable cells stay dark.
+  indicators remain yellow. Disconnected and unavailable cells stay dark.
 
 An OFF processor can show incoming activity while its output row stays silent.
 Physical output indicators are measured after the OUT fader and final hardware
@@ -132,7 +202,7 @@ are outside the graph and cannot be inferred from port aliases.
 
 ## Saving, recording and compatibility
 
-TSR37 tile files, SISTRK v7 tracker scores and Sister state v30 preserve the
+TSR38 tile files, SISTRK v7 tracker scores, Mosaic format 6 and Sister state v32 preserve the
 new source routes, graph, connection levels, row pan/mono and hardware aliases.
 Old formats load; older application builds cannot read the new tile/score saves.
 Opening a project replaces its matrix and aliases rather than retaining the
@@ -164,3 +234,18 @@ text, selection, routing and activity roles are not individually editable in
 CFG → PALETTE. An expanded palette editor is a separate proposed follow-up.
 
 ![Native matrix responding to a test signal](screenshots/routing-matrix/matrix-signal-activity.png)
+
+## Import regression checks
+
+The core routing test compares running serial and imported graphs, including
+reordered effects, Prism dry level/mix, delay tails, Fallout and the program
+ceiling. Controller tests check guarded activation, status-only Matrix Live,
+A/B and activation undo/redo. Sister state v32 persists the MIX processing mode;
+older files default to wet-only graph nodes.
+
+For an optional real Mosaic project comparison, set
+`TAPESISTER_MATRIX_IMPORT_PROJECT` to a portable `.tsr` and run
+`tapesister_source_route_controller_tests`. The test does not save the project.
+It renders 768,000 frames from 5:30, enables Matrix during playback, and compares
+Original/Edited against an uninterrupted legacy render. A Pale Weight measured
+a maximum absolute difference of `2.98023224e-08` per sample (float rounding).

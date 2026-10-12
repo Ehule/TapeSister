@@ -1,3 +1,4 @@
+#include "tapesister/master_eq.h"
 #include "tapesister/sample.h"
 #include "tapesister/source_route.h"
 
@@ -1692,7 +1693,7 @@ static TsEditSnapshot snapshot(const TsInstrument *instrument)
     memcpy(result.sample_edits, instrument->sample_edits, sizeof(result.sample_edits));
     result.sample_edit_count = instrument->sample_edit_count;
     memcpy(result.post_edits, instrument->post_edits, sizeof(result.post_edits));
-    result.post_edit_count = instrument->post_edit_count;
+    result.post_edit_count = instrument->post_edit_count;result.tile_eq=instrument->tile_eq;
     return result;
 }
 
@@ -1716,6 +1717,7 @@ static int ensure_edit_graph_capacity(TsInstrument *instrument, int needs_patch,
 
 static void reset_editor(TsInstrument *instrument)
 {
+    ts_master_eq_default(&instrument->tile_eq);
     instrument->crop_first = 0;
     instrument->crop_last = instrument->parent.frames;
     instrument->selection_first = 0;
@@ -2866,9 +2868,27 @@ static int apply_snapshot_process(TsSample *destination,
         *destination = processed;
         ts_sample_init(&processed);
     }
-    return 1;
+    return ts_sample_apply_eq(destination,&state->tile_eq);
 }
 
+int ts_sample_apply_eq(TsSample *sample,const TsMasterEqControls *controls)
+{
+    if(!sample || !sample->data)return 0;
+    if(!controls->enabled)return 1;
+    TsMasterEqControls c=*controls;ts_master_eq_sanitize(&c);
+    TsEqFilter filters[TS_MASTER_EQ_BANDS]={0};
+    for(int b=0;b<TS_MASTER_EQ_BANDS;++b)if(ts_master_eq_band_active(&c,b))
+        filters[b].c=ts_master_eq_coefficients(c.band[b],sample->sample_rate);
+    for(size_t i=0;i<sample->frames;++i)for(int ch=0;ch<sample->channels;++ch) {
+        double v=sample->data[i*sample->channels+ch];
+        for(int b=0;b<TS_MASTER_EQ_BANDS;++b)if(ts_master_eq_band_active(&c,b)) {
+            TsEqFilter *f=&filters[b];double y=f->c.b0*v+f->z1[ch];
+            f->z1[ch]=f->c.b1*v-f->c.a1*y+f->z2[ch];f->z2[ch]=f->c.b2*v-f->c.a2*y;v=y;
+        }
+        sample->data[i*sample->channels+ch]=isfinite(v)?(float)v:0;
+    }
+    return 1;
+}
 static int render_snapshot(TsSample *destination, const TsInstrument *instrument,
                            const TsEditSnapshot *state, char *error, size_t error_size)
 {
@@ -2881,6 +2901,12 @@ static int render_snapshot(TsSample *destination, const TsInstrument *instrument
                                 error, error_size);
     ts_sample_free(&material);
     return ok;
+}
+
+int ts_instrument_render_tile_eq(TsSample *out,const TsInstrument *instrument,const TsMasterEqControls *eq,char *error,size_t size)
+{
+    TsEditSnapshot state=snapshot(instrument);state.tile_eq=*eq;ts_master_eq_sanitize(&state.tile_eq);
+    return render_snapshot(out,instrument,&state,error,size);
 }
 
 void ts_process_recipe_reset(TsProcessRecipe *process)
@@ -2949,7 +2975,7 @@ const char *ts_family_relation_name(TsFamilyRelation relation)
 
 static void bank_slot_init(TsBankSlot *slot)
 {
-    memset(slot, 0, sizeof(*slot));
+    memset(slot, 0, sizeof(*slot));ts_master_eq_default(&slot->edit.tile_eq);
     ts_sample_init(&slot->sample);
     ts_sample_init(&slot->edit_parent);
     slot->loop_crossfade_ms = 8.0f;
@@ -3035,7 +3061,7 @@ static int sample_clone_range(TsSample *destination, const TsSample *source,
 
 void ts_instrument_init(TsInstrument *instrument)
 {
-    memset(instrument, 0, sizeof(*instrument));
+    memset(instrument, 0, sizeof(*instrument));ts_master_eq_default(&instrument->tile_eq);
     ts_sample_init(&instrument->parent);
     ts_sample_init(&instrument->current);
     for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i) bank_slot_init(&instrument->bank[i]);
@@ -4332,6 +4358,7 @@ int ts_instrument_apply_tape_drag(TsInstrument *instrument, TsPostEditKind kind,
     instrument->view_last = target.view_last;
     memcpy(instrument->post_edits, target.post_edits, sizeof(instrument->post_edits));
     instrument->post_edit_count = target.post_edit_count;
+    instrument->tile_eq = target.tile_eq;
     if (!bank_sync_selected(instrument, error, error_size)) return 0;
     set_error(error, error_size, "");
     return 1;
@@ -4735,6 +4762,7 @@ int ts_instrument_select_bank(TsInstrument *instrument, int slot,
         instrument->sample_edit_count = state.sample_edit_count;
         memcpy(instrument->post_edits, state.post_edits, sizeof(instrument->post_edits));
         instrument->post_edit_count = state.post_edit_count;
+    instrument->tile_eq = state.tile_eq;
     } else reset_editor(instrument);
     if (switching && !instrument->has_playhead && previous_has_playhead &&
         previous_frames > 0 && instrument->current.frames > 0) {
@@ -5258,8 +5286,8 @@ static int compact_edit_graph(TsInstrument *instrument,
         return 0;
     }
     ts_sample_init(&baseline);
-    if (!ts_sample_clone(&baseline, &instrument->current,
-                         error, error_size)) return 0;
+    TsMasterEqControls flat;ts_master_eq_default(&flat);
+    if (!ts_instrument_render_tile_eq(&baseline,instrument,&flat,error,error_size)) return 0;
     if (checkpoint_count > 0) {
         checkpoints = calloc((size_t)checkpoint_count, sizeof(*checkpoints));
         if (checkpoints == NULL) {
@@ -5269,14 +5297,16 @@ static int compact_edit_graph(TsInstrument *instrument,
         }
     }
     for (int index = 0; index < instrument->undo_count; ++index) {
+        TsEditSnapshot dry=instrument->undo[index];dry.tile_eq.enabled=0;
         if (!render_snapshot(&checkpoints[built].sample, instrument,
-                             &instrument->undo[index], error, error_size))
+                             &dry, error, error_size))
             goto failed;
         ++built;
     }
     for (int index = 0; index < instrument->redo_count; ++index) {
+        TsEditSnapshot dry=instrument->redo[index];dry.tile_eq.enabled=0;
         if (!render_snapshot(&checkpoints[built].sample, instrument,
-                             &instrument->redo[index], error, error_size))
+                             &dry, error, error_size))
             goto failed;
         ++built;
     }
@@ -5459,7 +5489,17 @@ static int commit_post_snapshot(TsInstrument *instrument, TsEditSnapshot *target
     instrument->sample_edit_count = target->sample_edit_count;
     memcpy(instrument->post_edits, target->post_edits, sizeof(instrument->post_edits));
     instrument->post_edit_count = target->post_edit_count;
+    instrument->tile_eq = target->tile_eq;
     return bank_sync_selected(instrument, error, error_size);
+}
+
+int ts_instrument_set_tile_eq(TsInstrument *instrument,const TsMasterEqControls *eq,char *error,size_t size)
+{
+    TsEditSnapshot target=snapshot(instrument);target.tile_eq=*eq;ts_master_eq_sanitize(&target.tile_eq);
+    if(!memcmp(&target.tile_eq,&instrument->tile_eq,sizeof(target.tile_eq)))return 1;
+    TsSample current={0};
+    if(!render_snapshot(&current,instrument,&target,error,size)){ts_sample_free(&current);return 0;}
+    int ok=commit_post_snapshot(instrument,&target,&current,error,size);ts_sample_free(&current);return ok;
 }
 
 static int commit_material_checkpoint_mode(TsInstrument *instrument,
@@ -5492,6 +5532,7 @@ static int commit_material_checkpoint_mode(TsInstrument *instrument,
     target->sample_edit_count = 0;
     ts_process_recipe_reset(&target->process);
     target->process.seed = process_seed;
+    if(!preserve_process)ts_master_eq_default(&target->tile_eq);
     target->process_first = 0u;
     target->process_last = 0u;
     target->has_process_range = 0;
@@ -5803,6 +5844,7 @@ static void restore_stretch_snapshot(TsInstrument *instrument,
     memcpy(instrument->post_edits, state->post_edits,
            sizeof(instrument->post_edits));
     instrument->post_edit_count = state->post_edit_count;
+    instrument->tile_eq = state->tile_eq;
 }
 
 static size_t stretch_crossfade_frames(const TsSample *sample)
@@ -5992,6 +6034,7 @@ int ts_instrument_stretch_gesture_commit(TsInstrument *instrument,
     memcpy(instrument->post_edits, gesture->start.post_edits,
            sizeof(instrument->post_edits));
     instrument->post_edit_count = gesture->start.post_edit_count;
+    instrument->tile_eq = gesture->start.tile_eq;
     memset(&operation, 0, sizeof(operation));
     operation.kind = wanted_frames > gesture->start.selection_last -
                                       gesture->start.selection_first ?
@@ -6268,6 +6311,7 @@ int ts_instrument_canvas_gesture_preview(TsInstrument *instrument,
     memcpy(instrument->post_edits, target.post_edits,
            sizeof(instrument->post_edits));
     instrument->post_edit_count = target.post_edit_count;
+    instrument->tile_eq = target.tile_eq;
     canvas_apply_state(instrument, gesture->edge, delta_frames,
                        old_frames, new_frames);
     gesture->delta_frames = delta_frames;
@@ -6681,6 +6725,7 @@ int ts_instrument_apply_rendered_replacement(TsInstrument *instrument,
     target.sample_edit_count = 0;
     ts_process_recipe_reset(&target.process);
     target.process.seed = process_seed;
+    ts_master_eq_default(&target.tile_eq);
     target.process_first = 0u;
     target.process_last = 0u;
     target.has_process_range = 0;
@@ -8509,6 +8554,7 @@ int ts_instrument_crop_selection(TsInstrument *instrument, char *error, size_t e
         instrument->has_playhead = target.has_playhead;
         memcpy(instrument->post_edits, target.post_edits, sizeof(instrument->post_edits));
         instrument->post_edit_count = target.post_edit_count;
+    instrument->tile_eq = target.tile_eq;
         ts_instrument_clear_selection(instrument);
         ts_instrument_show_all(instrument);
         set_error(error, error_size, "");
@@ -8605,6 +8651,7 @@ int ts_instrument_apply_sample_edit(TsInstrument *instrument, TsSampleEditKind k
         replace_current_preserving_view(instrument, &current);
         memcpy(instrument->post_edits, target.post_edits, sizeof(instrument->post_edits));
         instrument->post_edit_count = target.post_edit_count;
+    instrument->tile_eq = target.tile_eq;
         set_error(error, error_size, "");
         return 1;
     }
@@ -8699,6 +8746,7 @@ int ts_instrument_rotate_zero_crossing(TsInstrument *instrument, int direction,
         replace_current_preserving_view(instrument, &current);
         memcpy(instrument->post_edits, target.post_edits, sizeof(instrument->post_edits));
         instrument->post_edit_count = target.post_edit_count;
+    instrument->tile_eq = target.tile_eq;
         set_error(error, error_size, "");
         return bank_sync_selected(instrument, error, error_size);
     }
@@ -8734,6 +8782,7 @@ int ts_instrument_rotate_zero_crossing(TsInstrument *instrument, int direction,
     }
     memcpy(instrument->post_edits, target.post_edits, sizeof(instrument->post_edits));
     instrument->post_edit_count = target.post_edit_count;
+    instrument->tile_eq = target.tile_eq;
     set_error(error, error_size, "");
     return bank_sync_selected(instrument, error, error_size);
 }
@@ -9659,6 +9708,7 @@ static int restore_history(TsInstrument *instrument, TsEditSnapshot target,
     instrument->sample_edit_count = target.sample_edit_count;
     memcpy(instrument->post_edits, target.post_edits, sizeof(instrument->post_edits));
     instrument->post_edit_count = target.post_edit_count;
+    instrument->tile_eq = target.tile_eq;
     return 1;
 }
 
@@ -9830,6 +9880,14 @@ static void put_edit_snapshot(FILE *f, const TsEditSnapshot *state)
         put32(f, edit->crossfade_frames);
         put32(f, edit->patch_index);
     }
+    TsMasterEqControls saved_eq=state->tile_eq;
+    if(saved_eq.band[0].frequency==0)ts_master_eq_default(&saved_eq);
+    ts_master_eq_sanitize(&saved_eq);
+    put32(f,saved_eq.enabled);put32(f,saved_eq.solo_band);
+    for(int b=0;b<TS_MASTER_EQ_BANDS;++b) {
+        TsEqBand eq=saved_eq.band[b];put32(f,eq.enabled);put32(f,eq.type);
+        put_float(f,eq.frequency);put_float(f,eq.gain_db);put_float(f,eq.q);
+    }
 }
 
 static int get_edit_snapshot(FILE *f, TsEditSnapshot *state, int version)
@@ -9894,6 +9952,17 @@ static int get_edit_snapshot(FILE *f, TsEditSnapshot *state, int version)
             (edit->kind == TS_POST_PATCH_REPLACE && edit->last < edit->first) ||
             edit->last > frame_limit || edit->destination < -(int64_t)frame_limit ||
             edit->destination > (int64_t)frame_limit || edit->crossfade_frames > 65536u) return 0;
+    }
+    ts_master_eq_default(&state->tile_eq);
+    if(version>=38) {
+        GET_STATE_U32(state->tile_eq.enabled);GET_STATE_U32(state->tile_eq.solo_band);
+        if(state->tile_eq.enabled>1 || state->tile_eq.solo_band>5)return 0;
+        for(int b=0;b<TS_MASTER_EQ_BANDS;++b) {
+            TsEqBand *eq=&state->tile_eq.band[b];GET_STATE_U32(eq->enabled);GET_STATE_U32(eq->type);
+            if(!get_float(f,&eq->frequency) || !get_float(f,&eq->gain_db) || !get_float(f,&eq->q) ||
+               eq->enabled>1 || eq->type>=TS_EQ_TYPE_COUNT || !isfinite(eq->frequency) || !isfinite(eq->gain_db) || !isfinite(eq->q) ||
+               eq->frequency<20 || eq->frequency>20000 || eq->gain_db<-12 || eq->gain_db>12 || eq->q<.3f || eq->q>8)return 0;
+        }
     }
 #undef GET_STATE_SIZE
 #undef GET_STATE_U32
@@ -9985,7 +10054,7 @@ static int snapshot_fits_tile(const TsEditSnapshot *state, const TsBankSlot *slo
 
 static int save_tsr34(const TsInstrument *instrument, FILE *f)
 {
-    fwrite("TSR37\r\n\032", 1, 8, f);
+    fwrite("TSR38\r\n\032", 1, 8, f);
     put32(f, (uint32_t)instrument->selected_slot);
     put_float(f, instrument->family_mutation);
     put32(f, instrument->family_sequence);
@@ -10045,7 +10114,7 @@ static int save_tsr34(const TsInstrument *instrument, FILE *f)
                    edit->crop_last > baseline->frames ||
                    edit->view_last <= edit->view_first ||
                    edit->view_last > audio->frames) {
-            memset(&default_edit, 0, sizeof(default_edit));
+            memset(&default_edit, 0, sizeof(default_edit));ts_master_eq_default(&default_edit.tile_eq);
             default_edit.crop_last = baseline->frames;
             default_edit.view_last = audio->frames;
             default_edit.loop_first = slot->loop_first;
@@ -10305,10 +10374,10 @@ static int load_tsr15_or_newer(FILE *f, int version, TsInstrument *instrument,
     set_error(error, error_size, "");
     return 1;
 out_of_memory:
-    set_error(error, error_size, "Out of memory while loading TSR15-TSR37 project");
+    set_error(error, error_size, "Out of memory while loading TSR15-TSR38 project");
     goto failed;
 malformed:
-    set_error(error, error_size, "Malformed or unsupported TSR15-TSR37 project");
+    set_error(error, error_size, "Malformed or unsupported TSR15-TSR38 project");
 failed:
     ts_instrument_free(&loaded);
     return 0;
@@ -10329,11 +10398,11 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
     }
     if (!save_tsr34(instrument, f)) {
         fclose(f);
-        set_error(error, error_size, "Could not write TSR36 project");
+        set_error(error, error_size, "Could not write TSR38 project");
         return 0;
     }
     if (fclose(f) != 0) {
-        set_error(error, error_size, "Could not finish TSR36 project");
+        set_error(error, error_size, "Could not finish TSR38 project");
         return 0;
     }
     set_error(error, error_size, "");
@@ -10368,7 +10437,8 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Truncated TSR project");
         return 0;
     }
-    if (memcmp(magic, "TSR37\r\n\032", 8) == 0 ||
+    if (memcmp(magic, "TSR38\r\n\032", 8) == 0 ||
+        memcmp(magic, "TSR37\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR36\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR35\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR34\r\n\032", 8) == 0 ||
@@ -10391,7 +10461,8 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         memcmp(magic, "TSR17\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR16\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR15\r\n\032", 8) == 0) {
-        int self_contained_version = memcmp(magic, "TSR37\r\n\032", 8) == 0 ? 37 :
+        int self_contained_version = memcmp(magic, "TSR38\r\n\032", 8) == 0 ? 38 :
+                                     memcmp(magic, "TSR37\r\n\032", 8) == 0 ? 37 :
                                      memcmp(magic, "TSR36\r\n\032", 8) == 0 ? 36 :
                                      memcmp(magic, "TSR35\r\n\032", 8) == 0 ? 35 :
                                      memcmp(magic, "TSR34\r\n\032", 8) == 0 ? 34 :
@@ -10432,7 +10503,7 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         fclose(f);
         ts_instrument_free(&loaded);
         set_error(error, error_size,
-                  "Not a self-contained TSR6-TSR37 project");
+                  "Not a self-contained TSR6-TSR38 project");
         return 0;
     }
 #define GET_U32(dst) do { if (!get32(f, &u32)) goto malformed; (dst) = u32; } while (0)
@@ -10703,6 +10774,7 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
     loaded.sample_edit_count = state.sample_edit_count;
     memcpy(loaded.post_edits, state.post_edits, sizeof(loaded.post_edits));
     loaded.post_edit_count = state.post_edit_count;
+    loaded.tile_eq = state.tile_eq;
     fclose(f);
     ts_instrument_free(instrument);
     *instrument = loaded;
@@ -10715,7 +10787,7 @@ out_of_memory:
     set_error(error, error_size, "Out of memory while loading TSR project");
     goto failed;
 malformed:
-    set_error(error, error_size, "Malformed or unsupported TSR6-TSR37 project");
+    set_error(error, error_size, "Malformed or unsupported TSR6-TSR38 project");
 failed:
     fclose(f);
     ts_instrument_free(&loaded);

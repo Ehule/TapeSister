@@ -23,7 +23,7 @@ static TsUiState *mosaic_record_ui_fixture(AudioState *a)
 static void mosaic_record_play_keyboard(SDL_AudioDeviceID device,AudioState *a,TsUiState *u,int kind)
 {
     if(kind==0) {
-        SDL_Event key={0};key.type=SDL_KEYDOWN;key.key.keysym.sym=SDLK_z;
+        SDL_Event key;SDL_zero(key);key.type=SDL_KEYDOWN;key.key.keysym.sym=SDLK_z;
         assert(canvas_qwerty_event(&key,device,a,u,&instrument,48000));
     } else {
         TsNoteEvent note;
@@ -94,7 +94,7 @@ static void test_mosaic_record_routes(SDL_Window *window,SDL_AudioDeviceID devic
     char folder[160],error[160];snprintf(folder,sizeof(folder),"mosaic-output-%lu",(unsigned long)SDL_GetTicks());
     SDL_setenv("TAPESISTER_CAPTURES",folder,1);
 
-    SDL_Event click={0};click.type=SDL_MOUSEBUTTONDOWN;click.button.windowID=SDL_GetWindowID(window);
+    SDL_Event click;SDL_zero(click);click.type=SDL_MOUSEBUTTONDOWN;click.button.windowID=SDL_GetWindowID(window);
     click.button.button=SDL_BUTTON_LEFT;click.button.x=TS_MOSAIC_REC_TILE_X+10;click.button.y=45;
     assert(mosaic_record_tile_event(&click,window,device,&input_device,a,input,u,&instrument));
     assert(input->recorder.state==TS_EXTERNAL_CAPTURE_RECORDING && input->recorder.channels==2);

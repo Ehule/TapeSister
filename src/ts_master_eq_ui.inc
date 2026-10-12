@@ -1,8 +1,10 @@
+static const TsMasterEqControls *eq_controls(const TsUiState *ui)
+{return ui->canvas_eq_open?&ui->canvas_eq:&ui->config.master_eq;}
 /* Native fixed-pixel master page: same primitives and palette as the instrument. */
 static int eq_node_x(const TsUiState *ui,int i)
-{ return 44+(int)lrintf(552*ts_master_eq_normalized(&ui->config.master_eq.band[i],0,ui->master_eq_rate)); }
+{ return 44+(int)lrintf(552*ts_master_eq_normalized(&eq_controls(ui)->band[i],0,ui->master_eq_rate)); }
 static int eq_node_y(const TsUiState *ui,int i)
-{ const TsEqBand *b=&ui->config.master_eq.band[i];return 155-(int)lrintf((ts_master_eq_has_gain(b->type)?b->gain_db:0)*4.5f); }
+{ const TsEqBand *b=&eq_controls(ui)->band[i];return 155-(int)lrintf((ts_master_eq_has_gain(b->type)?b->gain_db:0)*4.5f); }
 int ts_ui_master_eq_node(const TsUiState *ui,int x,int y)
 {
     int best=-1,distance=145;
@@ -50,18 +52,18 @@ int ts_ui_master_eq_visible(const TsUiState *ui)
 static void master_eq_render_impl(TsFramebuffer *fb,const TsUiState *ui)
 {
     if(!ts_ui_master_eq_visible(ui))return;
-    const TsMasterEqControls *c=&ui->config.master_eq;
+    const TsMasterEqControls *c=eq_controls(ui);
     const TsEqBand *b=&c->band[ui->master_eq_band];
     unsigned rate=ui->master_eq_rate?ui->master_eq_rate:48000;
     uint32_t amber=RGB(247,196,91),muted=RGB(123,127,133),teal=RGB(107,176,182);
     char label[96];
     frame(fb,10,38,620,341,RGB(29,27,32),PAL_BUTTON);
-    text(fb,20,48,"MASTER / ROOM EQ",amber,1);
+    text(fb,20,48,ui->canvas_eq_open?(ui->mosaic_editing?"MOSAIC INSTANCE EQ":"CANVAS TILE EQ"):"MASTER / ROOM EQ",amber,1);
     if(c->solo_band)snprintf(label,sizeof(label),"SOLO %02d / CTRL-CLICK TO RESTORE",c->solo_band);
     else snprintf(label,sizeof(label),"PRESET: %s",ts_master_eq_preset_name(ts_master_eq_preset_match(c)));
     text(fb,20,62,label,c->solo_band?amber:muted,1);
     button(fb,224,44,78,"PRESETS",ui->master_eq_presets_open);
-    button(fb,312,44,76,ui->master_eq_spectrum_off?"SPEC OFF":"SPEC ON",!ui->master_eq_spectrum_off);
+    if(!ui->canvas_eq_open)button(fb,312,44,76,ui->master_eq_spectrum_off?"SPEC OFF":"SPEC ON",!ui->master_eq_spectrum_off);
     button(fb,396,44,78,c->enabled?"EQ ON":"EQ BYPASS",c->enabled);
     button(fb,484,44,96,ui->master_eq_reset_pending?"CONFIRM RESET":"RESET EQ",ui->master_eq_reset_pending);
     button(fb,596,44,24,"X",0);
@@ -135,6 +137,11 @@ static void master_eq_render_impl(TsFramebuffer *fb,const TsUiState *ui)
     snprintf(label,sizeof(label),"Q %.2F",b->q);
     slider(fb,428,303,188,label,ts_master_eq_normalized(b,2,rate),teal);
     rect(fb,20,331,600,1,PAL_BUTTON);
+    if(ui->canvas_eq_open) {
+        button(fb,20,341,120,ui->canvas_eq_busy?"RENDERING...":"AUDITION SPACE",0);
+        button(fb,392,341,102,"APPLY EQ",0);button(fb,510,341,108,"CANCEL",0);
+        text(fb,20,369,"EDITABLE EQ / ORIGINAL AUDIO KEPT / APPLIED BEFORE PLAYBACK PITCH",muted,1);
+    } else {
     button(fb,20,341,104,ui->master_output.limiter_enabled?"LIMITER ON":"LIMITER OFF",ui->master_output.limiter_enabled);
     snprintf(label,sizeof(label),"CEIL %+.1F  GR %.1F DB",ui->master_output.limiter_ceiling_db,ui->master_output.limiter_gain_reduction_db);
     text(fb,138,349,label,ui->master_output.limiter_gain_reduction_db>.1?amber:muted,1);
@@ -142,6 +149,7 @@ static void master_eq_render_impl(TsFramebuffer *fb,const TsUiState *ui)
     slider(fb,328,340,182,label,ui->master_output.gain,amber);
     text(fb,20,369,"MASTER > EQ > LIMITER > OUT",muted,1);
     button(fb,528,341,88,"ROUTER F9",0);
+    }
     if(ui->midi_learn_active) {
         char target[TS_MIDI_TARGET_ID_MAX];
         for(int i=0;i<3;++i) {

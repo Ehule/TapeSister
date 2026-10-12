@@ -158,7 +158,7 @@ hardware meter.
 Routes follow tile identities and tracker lanes. Copying a tile copies its
 route; moving or editing it retains that route. Project saves include routing,
 shared effect roles and returns. TSR36 / SISTRK v6 introduced these legacy
-main-mix semantics; current saves use TSR37 / SISTRK v7. Older files
+main-mix semantics; current saves use TSR38 / SISTRK v7. Older files
 retain their prior sound: dormant Main pan/width values are cleared on import.
 Older builds cannot open these new saves; keep a separate copy when comparing
 versions.

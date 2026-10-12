@@ -56,4 +56,4 @@ seed live with the patch, including the source saved behind Unison. Preview, App
 and Make Bank use the same noise realization for a directed patch. TSR33 stores the
 new fields and continues to read older projects; old patches retain their original
 renderer. The independent next-Create choice and Count are saved in tapesister.ini.
-Current saves use TSR37 and retain these fields; older builds cannot read the new saves.
+Current saves use TSR38 and retain these fields; older builds cannot read the new saves.

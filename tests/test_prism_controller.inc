@@ -15,7 +15,7 @@ static void test_prism_points(void)
     TsPrismView v=ts_prism_control_view(&panel->model.parameters.prism);
     int x,y; ts_sister_ui_prism_point(v.lens[8],&x,&y);
     assert(ts_sister_ui_prism_hit(&panel->model,x,y)==8);
-    SDL_Event e={0}; e.type=SDL_MOUSEBUTTONDOWN; e.button.button=SDL_BUTTON_LEFT;
+    SDL_Event e;SDL_zero(e); e.type=SDL_MOUSEBUTTONDOWN; e.button.button=SDL_BUTTON_LEFT;
     e.button.x=x*2; e.button.y=y*2;
     assert(sister_prism_event(0,a,&ui,panel,&e) && panel->prism_drag_lens==9);
     assert(!a->sister.parameters.prism.pitch_offset[8]); /* No click jump. */
@@ -174,7 +174,7 @@ static void test_prism_strip(void)
     assert(a->sister.parameters.prism.lenses==24);
     panel->model.parameters.prism.focus=1;panel->model.parameters.prism.stereo=0;
     ts_sister_runtime_set_parameters(&a->sister,&panel->model.parameters);
-    SDL_Event e={0};e.type=SDL_MOUSEBUTTONDOWN;e.button.button=SDL_BUTTON_LEFT;
+    SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.button=SDL_BUTTON_LEFT;
     SDL_SetModState(KMOD_NONE);
     for(int i=0;i<24;++i) {
         e.button.x=(TS_PRISM_STRIP_X+i*TS_PRISM_STRIP_STEP+10)*2;

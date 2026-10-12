@@ -11,7 +11,7 @@ static void test_portal_workflow_ui(SDL_Window *window,SDL_AudioDeviceID device)
     assert(ts_instrument_generate(&instrument,TS_GENERATOR_METALLIC,999,error,sizeof(error)));
     portal_init(&c,&ui.portal);TsPortalUi *p=&ui.portal;
     snprintf(ui.config.cdp_bin_path,sizeof(ui.config.cdp_bin_path),"%s",getenv("TS_TEST_CDP_BIN"));
-    SDL_Event click={0};click.type=SDL_MOUSEBUTTONDOWN;click.button.button=SDL_BUTTON_LEFT;
+    SDL_Event click;SDL_zero(click);click.type=SDL_MOUSEBUTTONDOWN;click.button.button=SDL_BUTTON_LEFT;
     click.button.windowID=SDL_GetWindowID(window);click.button.x=478;click.button.y=12;
 #define WORK_CLICK(X,Y) do {click.button.x=(X);click.button.y=(Y);assert(portal_event(&click,window,device,&audio,&ui,&instrument,&c,&sister,44100,&transform));}while(0)
     assert(!ui.show_recipes && !p->open);
@@ -43,7 +43,7 @@ static void test_portal_workflow_ui(SDL_Window *window,SDL_AudioDeviceID device)
     int changed=0;for(int y=263;y<276;++y)for(int x=388;x<437;++x)changed+=off.pixels[y*640+x]!=on.pixels[y*640+x];
     assert(changed==9);
     selection_screenshot("TS_TEST_PORTAL_CURSOR_SCREENSHOT",&ui,&instrument);
-    SDL_Event key={0};key.type=SDL_KEYDOWN;key.key.windowID=SDL_GetWindowID(window);key.key.keysym.sym=SDLK_RETURN;
+    SDL_Event key;SDL_zero(key);key.type=SDL_KEYDOWN;key.key.windowID=SDL_GetWindowID(window);key.key.keysym.sym=SDLK_RETURN;
     assert(portal_event(&key,window,device,&audio,&ui,&instrument,&c,&sister,44100,&transform));
     assert(p->number_focus<0 && c.auto_pending && fabs(p->recipe.values[0]-.123456789)<1e-9);
     /* Explicit Preview/Cancel takes precedence over queued automatic work. */

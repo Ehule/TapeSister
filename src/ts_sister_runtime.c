@@ -571,7 +571,9 @@ void ts_sister_runtime_init(TsSisterRuntime *runtime)
     ts_master_eq_init(&runtime->master_eq);
     ts_eq_spectrum_init(&runtime->eq_spectrum);
     ts_router_init(&runtime->router);
-    ts_matrix_init(&runtime->matrix);
+    ts_matrix_init(&runtime->matrix);runtime->performance_transport=1;
+    ts_performance_mixer_default(&runtime->performance_mixer);
+    for(int i=0;i<4;++i)runtime->performance_gain_current[i]=1;
     ts_insert_init(&runtime->insert);
     ts_spatial_init(&runtime->spatial);
     runtime->rolling = 1;
@@ -1406,14 +1408,20 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
     TsSourceRouteMix clean_map=runtime->clean_output;
     ts_source_route_mix_init(&runtime->clean_output,&clean_map);
     ts_source_route_mix_init(&runtime->effect_returns,&clean_map);
-    tile_bus = ts_performance_read_routed(&runtime->performance, &tile_raw,&runtime->clean_output);
+    TsSourceRouteMix manual;ts_source_route_mix_init(&manual,&runtime->clean_output);
+    tile_bus = ts_performance_read_routed(&runtime->performance, &tile_raw,&manual);
+    float live_gain=runtime->performance_gain_current[3];
+    tile_bus=frame_scale(tile_bus,live_gain);
+    ts_source_route_add(&runtime->clean_output,&manual,live_gain);
     for(int bus=0;bus<TS_SOURCE_SENDS;++bus)
         runtime->send_input[bus]=ts_stereo_frame_sanitize(frame_add(source.send[bus],runtime->clean_output.send[bus]));
     frame.keyboard_dry = tile_bus;
     tile_bus = frame_add(tile_bus, source.tiles);
     (void)tile_raw;
-    if(runtime->matrix.controls.enabled)return runtime_matrix_frame(runtime,&source,
-        frame_add(frame_scale(frame.keyboard_dry,source.matrix_program_gain),source.tiles),frame);
+    if(runtime->matrix.controls.enabled) {
+        source.live_tiles=frame_add(ts_stereo_frame_sanitize(source.live_tiles),frame_scale(frame.keyboard_dry,source.matrix_program_gain));
+        return runtime_matrix_frame(runtime,&source,source.tiles,frame);
+    }
     if (!runtime->enabled || runtime->callback_failed) {
         runtime->last_frame = frame;
         publish_frame_snapshot(runtime);

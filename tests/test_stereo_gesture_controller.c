@@ -55,7 +55,7 @@ int main(void)
         if(getenv("TS_TEST_STEREO_GESTURE_SCREENSHOT"))
             assert(ts_ui_write_ppm(&frame,getenv("TS_TEST_STEREO_GESTURE_SCREENSHOT")));
         /* Paired channels through the held-note callback before and after edit. */
-        SDL_Event key={0};key.type=SDL_KEYDOWN;key.key.keysym.sym=SDLK_z;
+        SDL_Event key;SDL_zero(key);key.type=SDL_KEYDOWN;key.key.keysym.sym=SDLK_z;
         assert(canvas_qwerty_event(&key,device,&audio,&ui,&instrument,48000));
         key.key.keysym.sym=SDLK_x;assert(canvas_qwerty_event(&key,device,&audio,&ui,&instrument,48000));
         assert(ts_note_bank_count(&audio.notes)==2);

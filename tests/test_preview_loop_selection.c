@@ -25,7 +25,7 @@ static void test_import_keyboard(SDL_AudioDeviceID device, AudioState *audio,
                                   TsUiState *ui, ImportController *c)
 {
     static TsInstrument instrument;TsSample pending;ts_sample_init(&pending);
-    ts_instrument_init(&instrument);SDL_Event event={0};
+    ts_instrument_init(&instrument);SDL_Event event;SDL_zero(event);
     const TsSample *sample=&c->decoded.sample;uint64_t original=ts_sample_hash(sample);
     uint64_t tile=ts_sample_hash(&instrument.current);
 #define IMPORT_KEY(K,T,M) do {memset(&event,0,sizeof(event));event.type=(T);event.key.keysym.sym=(K);event.key.keysym.mod=(M);assert(import_preview_event(&event,device,audio,ui,&instrument,&pending,c,44100));} while(0)
@@ -196,7 +196,7 @@ static void test_import(SDL_AudioDeviceID device, AudioState *audio, TsUiState *
 static void test_portal_keyboard(SDL_Window *window,SDL_AudioDeviceID device,AudioState *audio,
     TsUiState *ui,TsInstrument *instrument,PortalController *c,SisterWindow *sister,TransformController *transform)
 {
-    TsPortalUi *p=&ui->portal;SDL_Event event={0};
+    TsPortalUi *p=&ui->portal;SDL_Event event;SDL_zero(event);
 #define SEND() assert(portal_event(&event,window,device,audio,ui,instrument,c,sister,44100,transform))
 #define KEY(K,T) do {memset(&event,0,sizeof(event));event.type=(T);event.key.windowID=SDL_GetWindowID(window);event.key.keysym.sym=(K);SEND();} while(0)
     p->open=p->loop=1;p->listen_result=0;p->dragging_wave=-1;
@@ -309,7 +309,7 @@ int main(void)
         audio.attack_frame=123;
         /* Exercise the actual Alt+wheel route, including flipped wheel devices. */
         SDL_WarpMouseInWindow(window,154+15,which?180:80);SDL_SetModState(KMOD_ALT);
-        SDL_Event event={0};event.type=SDL_MOUSEWHEEL;event.wheel.windowID=SDL_GetWindowID(window);
+        SDL_Event event;SDL_zero(event);event.type=SDL_MOUSEWHEEL;event.wheel.windowID=SDL_GetWindowID(window);
         event.wheel.y=1;
 #if SDL_VERSION_ATLEAST(2, 26, 0)
         /* Real SDL wheel packets carry the pointer position at event time. */

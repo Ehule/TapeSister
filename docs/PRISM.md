@@ -514,7 +514,7 @@ morphing. Missing lens keys remain neutral and projects predating Prism start
 with Prism off. The existing FX migration behavior is retained.
 
 TSR31 introduced recoverable amplitude-drawing source references. Current saves
-use **TSR37**; older formats remain readable, while older application builds
+use **TSR38**; older formats remain readable, while older application builds
 cannot read the new saves. This change does not alter FM's twelve-voice Unison or genome 7.
 
 With 24 lenses, two colored glass stages, 40 Hz Drift Rate, A/B interpolation and

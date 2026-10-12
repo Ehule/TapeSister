@@ -69,7 +69,7 @@ static void test_mosaic_external_banks(SDL_Window *window)
     mosaic_poll(0,view,bank,&browser);
     assert(view->mosaic_source_pages==2 && view->mosaic_source_page==1 && view->mosaic_source_offset==0);
     for(int i=0;i<16;++i)assert(view->mosaic_sources[i].sample && view->mosaic_sources[i].bank_page==1);
-    SDL_Event e={0};e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=SDL_GetWindowID(window);e.button.button=SDL_BUTTON_LEFT;e.button.x=20;e.button.y=359;
+    SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=SDL_GetWindowID(window);e.button.button=SDL_BUTTON_LEFT;e.button.x=20;e.button.y=359;
 #define PAGE_EVENT() mosaic_event(&e,window,0,a,view,bank,&browser,&p,&sister,&t,48000)
     assert(PAGE_EVENT());assert(view->mosaic_source_page==0 && ts_sample_pages_active(&pages)==1 && ts_sample_hash(&bank->current)==fm);
     assert(view->mosaic_sources[0].hash==welcome && view->mosaic_sources[1].sample==NULL);

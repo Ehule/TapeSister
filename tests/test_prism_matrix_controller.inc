@@ -1,12 +1,12 @@
 static void matrix_ui_click(AudioState *a,SisterWindow *s,int x,int y,int button)
 {
-    SDL_Event e={0};e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=s->window_id;
+    SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=s->window_id;
     e.button.x=x*2;e.button.y=y*2;e.button.button=button;
     assert(sister_prism_event(0,a,&ui,s,&e));
 }
 static void matrix_ui_wheel(AudioState *a,SisterWindow *s,int x,int y,int amount)
 {
-    SDL_Event e={0};e.type=SDL_MOUSEWHEEL;e.wheel.windowID=s->window_id;e.wheel.y=amount;
+    SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEWHEEL;e.wheel.windowID=s->window_id;e.wheel.y=amount;
 #if SDL_VERSION_ATLEAST(2,26,0)
     e.wheel.mouseX=x*2;e.wheel.mouseY=y*2;
 #else

@@ -137,7 +137,17 @@ static void mosaic_source_drag(TsUiState *ui,const TsInstrument *instrument,Mosa
         if(!sample || !sample->data)return;
         const TsInstrument *bank=c->pages?ts_sample_pages_page(c->pages,instrument,(size_t)ui->mosaic_sources[n].bank_page):instrument;
         if(!bank || slot<0 || slot>=TS_BANK_SLOT_COUNT)return;
-        TsMosaicSource *source=ts_mosaic_source(ui->mosaic,sample,error,sizeof(error));
+        TsMosaicSource *source=NULL;TsMasterEqControls flat;ts_master_eq_default(&flat);
+        const TsMasterEqControls *eq=slot==bank->selected_slot?&bank->tile_eq:&bank->bank[slot].edit.tile_eq;
+        if(eq->band[0].frequency && memcmp(eq,&flat,sizeof(flat))) {
+            if(slot==bank->selected_slot)source=ts_mosaic_source_document(ui->mosaic,bank,error,sizeof(error));
+            else {
+                TsInstrument *doc=malloc(sizeof(*doc));if(!doc)return;ts_instrument_init(doc);
+                if(ts_instrument_clone(doc,bank,error,sizeof(error)) && ts_instrument_select_bank(doc,slot,error,sizeof(error)))
+                    source=ts_mosaic_source_document(ui->mosaic,doc,error,sizeof(error));
+                ts_instrument_free(doc);free(doc);
+            }
+        } else source=ts_mosaic_source(ui->mosaic,sample,error,sizeof(error));
         if(!source)return;
         const TsBankSlot *b=&bank->bank[slot];int current=slot==bank->selected_slot;
         TsMosaicEvent *d=&c->source_drag;*d=(TsMosaicEvent){.source=source,.width=86,.looping=1,.note_count=1,.notes={60},.gain=1};
@@ -319,13 +329,18 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
             for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(mosaic_chosen(ui,i))ts_mosaic_delete(ui->mosaic,ui->mosaic->events[i].id);
             mosaic_select_only(ui,0);
         } else if((k==SDLK_m || k==SDLK_s) && !(mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI))) {
-            int count=0,all=1;
+            int count=0,all=1;unsigned char chosen[TS_MOSAIC_EVENTS]={0};
             for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(mosaic_chosen(ui,i)) {
+                chosen[i]=1;
+                if(mod&KMOD_SHIFT)for(int j=0;j<TS_MOSAIC_EVENTS;++j)
+                    if(ui->mosaic->events[j].id && ui->mosaic->events[j].source==ui->mosaic->events[i].source)chosen[j]=1;
+            }
+            for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(chosen[i]) {
                 ++count;all&=k==SDLK_m?ui->mosaic->events[i].muted:ui->mosaic->events[i].solo;
             }
             if(count) {
                 ts_mosaic_checkpoint(ui->mosaic);
-                for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(mosaic_chosen(ui,i)) {
+                for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(chosen[i]) {
                     TsMosaicEvent *e=&ui->mosaic->events[i];if(k==SDLK_m)e->muted=!all;else e->solo=!all;
                 }
                 snprintf(ui->status,sizeof(ui->status),"%d EVENT%s: %s %s",count,count==1?"":"S",k==SDLK_m?"MUTE":"SOLO",all?"OFF":"ON");

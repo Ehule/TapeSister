@@ -15,6 +15,7 @@
 
 #include <stdatomic.h>
 #include <stddef.h>
+#include "tapesister/performance_transport.h"
 #include <stdint.h>
 
 enum {
@@ -71,6 +72,8 @@ typedef struct {
     TsStereoFrame external;
     TsStereoFrame preview;
     TsStereoFrame tapehead;
+    TsStereoFrame mosaic;
+    TsStereoFrame live_tiles; /* Manual tile bus, independent of backing players. */
     TsStereoFrame tracker;
     /* Tracker lanes outside the serial chain: record onto tape without an
        additional dry monitor. Their clean audio/sends keep their own routes. */
@@ -244,6 +247,9 @@ typedef struct {
     uint64_t processed_frames;
     uint32_t warnings;
     uint8_t source_switches;
+    TsPerformanceMixer performance_mixer;
+    float performance_gain_current[4]; /* Audio-owned five-ms fader slew. */
+    unsigned performance_transport; /* ARP=1, SisterTracker=2, Mosaic=4; project setting. */
     uint8_t output_channels;
     TsSisterTap selected_tap;
     TsSisterDestinationStatus destination_status;
@@ -288,6 +294,10 @@ typedef struct {
 } TsSisterRuntime;
 
 void ts_sister_runtime_init(TsSisterRuntime *runtime);
+/* Stage a lossless ordinary serial-chain import without changing live DSP.
+   Unsupported topologies return 0 and leave controls untouched. */
+int ts_sister_runtime_matrix_import(const TsSisterRuntime *runtime,
+    TsMatrixControls *controls, char *error, size_t error_size);
 void ts_sister_runtime_free(TsSisterRuntime *runtime);
 int ts_sister_runtime_enable(TsSisterRuntime *runtime, uint32_t sample_rate,
                              uint8_t output_channels,

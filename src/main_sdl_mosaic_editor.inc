@@ -130,7 +130,11 @@ static TsInstrument *mosaic_stage_bank_tile(const TsInstrument *doc,char *error,
 {
     TsInstrument *staged=malloc(sizeof(*staged));if(!staged)return NULL;
     ts_instrument_init(staged);
-    if(!ts_instrument_import_sample(staged,&doc->current,doc->has_loop,doc->loop_first,doc->loop_last,doc->loop_mode,error,size)) {
+    TsSample dry={0};TsMasterEqControls flat;ts_master_eq_default(&flat);
+    int ok=ts_instrument_render_tile_eq(&dry,doc,&flat,error,size) &&
+        ts_instrument_import_sample(staged,&dry,doc->has_loop,doc->loop_first,doc->loop_last,doc->loop_mode,error,size) &&
+        ts_instrument_set_tile_eq(staged,&doc->tile_eq,error,size);ts_sample_free(&dry);
+    if(!ok) {
         ts_instrument_free(staged);free(staged);return NULL;
     }
     staged->tuning=staged->audible_tuning=doc->tuning;staged->loop_crossfade_ms=doc->loop_crossfade_ms;
@@ -184,7 +188,7 @@ static int mosaic_publish(SDL_AudioDeviceID device,TsUiState *ui,
 {
     if(!e || !doc->current.data)return 0;
     char error[160]={0};
-    TsMosaicSource *source=refresh_audio?ts_mosaic_source(ui->mosaic,&doc->current,error,sizeof(error)):e->source;
+    TsMosaicSource *source=refresh_audio?ts_mosaic_source_document(ui->mosaic,doc,error,sizeof(error)):e->source;
     if(!source){snprintf(ui->status,sizeof(ui->status),"EVENT AUDIO NOT UPDATED: %.120s",error);return 0;}
     size_t first=doc->has_loop?doc->loop_first:doc->has_selection?doc->selection_first:0;
     size_t last=doc->has_loop?doc->loop_last:doc->has_selection?doc->selection_last:doc->current.frames;
@@ -217,7 +221,7 @@ static int mosaic_commit(SDL_AudioDeviceID device,TsUiState *ui,
     int audio_changed=c->seen_data!=instrument->current.data || c->seen_revision!=instrument->current.visual_revision ||
         c->seen_frames!=instrument->current.frames;
     if(audio_changed) {
-        c->audio_dirty=!mosaic_same_audio(&instrument->current,&e->source->sample);
+        c->audio_dirty=!mosaic_same_audio(&instrument->current,&e->source->sample) || memcmp(&instrument->tile_eq,&e->source->eq,sizeof(instrument->tile_eq));
         c->seen_data=instrument->current.data;c->seen_revision=instrument->current.visual_revision;
         c->seen_frames=instrument->current.frames;
     }
@@ -259,7 +263,7 @@ static int mosaic_resolve_edit(SDL_AudioDeviceID device,AudioState *audio,TsUiSt
         TsInstrument *restored=malloc(sizeof(*restored));
         if(!restored){snprintf(ui->status,sizeof(ui->status),"EDIT RETAINED - OUT OF MEMORY");return 0;}
         ts_instrument_init(restored);
-        if(!ts_instrument_import_sample(restored,&owner->source->sample,1,owner->first,owner->last,
+        if(!ts_mosaic_import_source(restored,owner->source,1,owner->first,owner->last,
                                         owner->mode,error,sizeof(error))) {
             ts_instrument_free(restored);free(restored);
             snprintf(ui->status,sizeof(ui->status),"EDIT RETAINED: %.140s",error);return 0;
@@ -283,7 +287,7 @@ static int mosaic_resolve_edit(SDL_AudioDeviceID device,AudioState *audio,TsUiSt
     }
     if(choice<1 || choice>3)return 0;
     TsMosaicSource *previous_source=owner->source;
-    TsMosaicSource *source=ts_mosaic_source(ui->mosaic,&instrument->current,error,sizeof(error));
+    TsMosaicSource *source=ts_mosaic_source_document(ui->mosaic,instrument,error,sizeof(error));
     if(!source){snprintf(ui->status,sizeof(ui->status),"EVENT AUDIO NOT UPDATED: %.120s",error);return 0;}
     ++source->pins;
     TsInstrument *original_doc=NULL;int new_index=-1;
@@ -295,7 +299,7 @@ static int mosaic_resolve_edit(SDL_AudioDeviceID device,AudioState *audio,TsUiSt
         original_doc=new_index>=0?malloc(sizeof(*original_doc)):NULL;
         if(!original_doc){--source->pins;snprintf(ui->status,sizeof(ui->status),"NOT ENOUGH MEMORY FOR A NEW EVENT DOCUMENT");return 0;}
         ts_instrument_init(original_doc);
-        if(!ts_instrument_import_sample(original_doc,&owner->source->sample,1,owner->first,owner->last,owner->mode,error,sizeof(error))) {
+        if(!ts_mosaic_import_source(original_doc,owner->source,1,owner->first,owner->last,owner->mode,error,sizeof(error))) {
             ts_instrument_free(original_doc);free(original_doc);--source->pins;
             snprintf(ui->status,sizeof(ui->status),"COULD NOT KEEP ORIGINAL EVENT: %.110s",error);return 0;
         }
@@ -420,9 +424,10 @@ static int mosaic_enter(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui
     if(!c->bank){c->bank=malloc(sizeof(*c->bank));if(!c->bank)return 0;ts_instrument_init(c->bank);}
     if(!c->documents[i]){c->documents[i]=malloc(sizeof(TsInstrument));if(!c->documents[i])return 0;ts_instrument_init(c->documents[i]);}
     TsInstrument *doc=c->documents[i];
-    if(c->document_ids[i]!=id || c->document_epochs[i]!=ui->mosaic->epoch || !mosaic_same_audio(&doc->current,&e->source->sample)) {
+    if(c->document_ids[i]!=id || c->document_epochs[i]!=ui->mosaic->epoch || !mosaic_same_audio(&doc->current,&e->source->sample) ||
+       memcmp(&doc->tile_eq,&e->source->eq,sizeof(doc->tile_eq))) {
         ts_instrument_free(doc);ts_instrument_init(doc);
-        if(!ts_instrument_import_sample(doc,&e->source->sample,1,e->first,e->last,e->mode,error,sizeof(error))) {
+        if(!ts_mosaic_import_source(doc,e->source,1,e->first,e->last,e->mode,error,sizeof(error))) {
             snprintf(ui->status,sizeof(ui->status),"EVENT EDITOR: %.130s",error);return 0;
         }
     }

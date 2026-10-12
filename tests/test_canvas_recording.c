@@ -62,7 +62,7 @@ int main(void)
     instrument.has_selection=1;instrument.selection_first=1000;instrument.selection_last=10000;
     uint64_t original=ts_sample_hash(&instrument.current);
     ts_ui_keyboard_set_octave(&ui,4);ui.show_keyboard=ui.show_recipes=ui.show_ingredients=0;
-    SDL_Event event={0};event.type=SDL_KEYDOWN;event.key.windowID=SDL_GetWindowID(window);event.key.keysym.sym=SDLK_z;
+    SDL_Event event;SDL_zero(event);event.type=SDL_KEYDOWN;event.key.windowID=SDL_GetWindowID(window);event.key.keysym.sym=SDLK_z;
     assert(canvas_qwerty_event(&event,device,&audio,&ui,&instrument,44100));
     TsNoteVoice *first=&audio.notes.voices[0];assert(first->active && first->looping && first->range_first==1000 && first->range_last==10000);
     float before[512];audio_callback(&audio,(Uint8*)before,sizeof(before));double position=first->position;

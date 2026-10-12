@@ -82,7 +82,7 @@ static void tracker_project_load(void)
     uint64_t same_hash=ts_sister_tracker_hash(&test_pages->tracker);
     int pattern_index=editor.editPattern;note_t original=pattern[pattern_index][0];
     editor.row=0;cursor.ch=0;cursor.object=CURSOR_NOTE;playMode=PLAYMODE_EDIT;
-    SDL_Event note={0};note.type=SDL_KEYDOWN;note.key.windowID=SDL_GetWindowID(test_window);
+    SDL_Event note;SDL_zero(note);note.type=SDL_KEYDOWN;note.key.windowID=SDL_GetWindowID(test_window);
     note.key.keysym.sym=SDLK_x;note.key.keysym.scancode=SDL_SCANCODE_X;
     assert(tracker_event(&note,test_window,0,test_audio,test_ui,test_pages,test_bank,48000));
     note.type=SDL_KEYUP;assert(tracker_event(&note,test_window,0,test_audio,test_ui,test_pages,test_bank,48000));

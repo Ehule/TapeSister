@@ -8,6 +8,12 @@ static void test_mosaic_live_controls(SDL_Window *window)
     mosaic_poll(0,&ui,&instrument,&mosaic);mosaic_select_only(&ui,a->id);
     click(window,480,389,1);assert(!b->solo);key(window,SDLK_z,KMOD_CTRL);assert(b->solo);
     click(window,480,389,1);assert(!b->solo);
+    key(window,SDLK_m,KMOD_NONE);assert(a->muted && !b->muted);
+    key(window,SDLK_m,KMOD_SHIFT);assert(a->muted && b->muted);
+    key(window,SDLK_z,KMOD_CTRL);assert(a->muted && !b->muted);
+    key(window,SDLK_m,KMOD_NONE);assert(!a->muted);
+    key(window,SDLK_s,KMOD_SHIFT);assert(a->solo && b->solo);
+    key(window,SDLK_s,KMOD_SHIFT);assert(!a->solo && !b->solo);
     scene->playing=1;for(int i=0;i<1000;++i)ts_mosaic_read(scene,48000);
     uint64_t revision=a->revision,attack=scene->voices[0].attack;
     int history=scene->history_count;
@@ -22,7 +28,7 @@ static void test_mosaic_live_controls(SDL_Window *window)
     history=scene->history_count;click(window,500,60,1);motion(window,550,60);key(window,SDLK_ESCAPE,KMOD_NONE);
     assert(scene->speed==2 && scene->playing && scene->history_count==history+1);
     click(window,563,60,2);assert(scene->speed==1);
-    SDL_Event reset={0};reset.type=SDL_MOUSEBUTTONDOWN;reset.button.windowID=SDL_GetWindowID(window);reset.button.button=SDL_BUTTON_RIGHT;reset.button.x=130;reset.button.y=390;
+    SDL_Event reset;SDL_zero(reset);reset.type=SDL_MOUSEBUTTONDOWN;reset.button.windowID=SDL_GetWindowID(window);reset.button.button=SDL_BUTTON_RIGHT;reset.button.x=130;reset.button.y=390;
     dispatch(&reset,window);assert(a->pan==0);
     /* A group receives one undoable gesture, while audio document identity stays
        stable for a CDP render that might still be working on either member. */
@@ -110,7 +116,7 @@ static void test_mosaic_variation_banks(SDL_Window *window)
     assert(ts_sample_hash(&c->bank->current)==original && ts_sample_hash(&other_mut->current)==original);
     other_mut->bank[2].locked=0;
     /* Exercise the visible UPDATE ALL button through its real hit target. */
-    SDL_Event accept={0};accept.type=SDL_MOUSEBUTTONDOWN;accept.button.windowID=SDL_GetWindowID(window);
+    SDL_Event accept;SDL_zero(accept);accept.type=SDL_MOUSEBUTTONDOWN;accept.button.windowID=SDL_GetWindowID(window);
     accept.button.button=SDL_BUTTON_LEFT;accept.button.x=300;accept.button.y=230;
     assert(mosaic_event(&accept,window,0,a,view,bank,c,&portal,&sister,&transform,48000));
     assert(!view->mosaic_edit_choice && !c->active && ts_sample_hash(&bank->current)==shared);

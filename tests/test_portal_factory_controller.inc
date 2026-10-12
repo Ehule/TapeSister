@@ -17,7 +17,7 @@ static void test_factory_workflow(SDL_Window *window,SDL_AudioDeviceID device)
     enabled[index]=1;ts_cdp_catalog_view_build(&ui.cdp_catalog,enabled,TS_CDP_FACTORY_RECIPE_COUNT);
     ui.cdp_presets[index].controls[0]=4;ui.show_recipes=1;ui.cdp_user_pins=0;ui.cdp_page=0;
     instrument.has_selection=1;instrument.selection_first=4000;instrument.selection_last=20000;
-    SDL_Event click={0};click.type=SDL_MOUSEBUTTONDOWN;click.button.button=SDL_BUTTON_MIDDLE;
+    SDL_Event click;SDL_zero(click);click.type=SDL_MOUSEBUTTONDOWN;click.button.button=SDL_BUTTON_MIDDLE;
     click.button.windowID=SDL_GetWindowID(window);click.button.x=20;click.button.y=340;
 #define FACTORY_EVENT() assert(portal_event(&click,window,device,&audio,&ui,&instrument,&c,&sister,44100,&transform))
     FACTORY_EVENT();assert(p->open && !ui.transform_open && !c.worker);

@@ -85,7 +85,7 @@ int main(int argc, char **argv)
     ts_realtime_diagnostics_get(&a->realtime_diagnostics, &s);
     assert(s.control_count == 1 && !strcmp(s.control_worst_site, "named_edit_for_health"));
 
-    SDL_Event e = {0}; e.type = SDL_KEYDOWN;
+    SDL_Event e;SDL_zero(e); e.type = SDL_KEYDOWN;
     e.key.windowID = SDL_GetWindowID(main_window); e.key.keysym.sym = SDLK_F12;
     int handled = ts_audio_health_event(&e, main_window, a, ui);
     if (!ts_health.visible)
@@ -94,7 +94,7 @@ int main(int argc, char **argv)
     SDL_RendererInfo renderer_info;
     assert(!SDL_GetRendererInfo(ts_health.renderer, &renderer_info));
     assert(renderer_info.flags & SDL_RENDERER_SOFTWARE);
-    SDL_Event profile_event={0};profile_event.type=SDL_MOUSEBUTTONDOWN;
+    SDL_Event profile_event;SDL_zero(profile_event);profile_event.type=SDL_MOUSEBUTTONDOWN;
     profile_event.button.windowID=ts_health.window_id;profile_event.button.button=SDL_BUTTON_LEFT;
     profile_event.button.x=500;profile_event.button.y=470;
     assert(ts_audio_health_event(&profile_event,main_window,a,ui));assert(ts_profile_enabled());

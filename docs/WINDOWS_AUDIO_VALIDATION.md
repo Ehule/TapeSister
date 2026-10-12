@@ -232,7 +232,7 @@ cannot be repaired inside TapeSister.
   active view's own grave shortcut must return to the canvas. Reopen FM to confirm
   its parked patch remains intact; test unresolved event edits too.
 - [ ] Open/close Sister repeatedly with Tab at full-screen size. Check for desktop
-  flashes, retained first frames, F11 restoration and placement on another monitor.
+  flashes, retained first frames, Alt+F11 restoration and placement on another monitor.
   The headless test checks window ownership; Windows compositor behavior needs this audition.
 - [ ] Compare bypass and Wet zero with the original; vary count, mode, Spread,
   Focus and Drift during sustained notes and note changes. Listen for clicks,

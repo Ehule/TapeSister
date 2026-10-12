@@ -32,7 +32,7 @@ static void test_portal_create(SDL_Window *window,SDL_AudioDeviceID device)
     assert(ts_instrument_generate(&instrument,TS_GENERATOR_METALLIC,777,error,sizeof(error)));
     portal_init(&c,&ui.portal);c.create_seeds=&seeds;
     snprintf(ui.config.cdp_bin_path,sizeof(ui.config.cdp_bin_path),"%s",getenv("TS_TEST_CDP_BIN"));
-    SDL_Event e={0};e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=SDL_GetWindowID(window);
+    SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=SDL_GetWindowID(window);
     e.button.x=100;e.button.y=214;e.button.button=SDL_BUTTON_LEFT;
 #define CREATE_EVENT() portal_event(&e,window,device,&audio,&ui,&instrument,&c,&sister,44100,&transform)
     uint64_t before=ts_sample_hash(&instrument.current);
