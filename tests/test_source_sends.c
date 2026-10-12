@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include "tsr_legacy_fixture.h"
 #define NEAR(a,b) assert(fabsf((a)-(b))<.00001f)
 static void source_matrix(void)
 {
@@ -51,23 +52,18 @@ static void source_storage(void)
     assert(ts_instrument_save_recipe(source,"send-tile.tsr",error,sizeof(error)));
     assert(ts_instrument_load_recipe(loaded,"send-tile.tsr",error,sizeof(error)));
     assert(!memcmp(&loaded->bank[0].output_route,&route,sizeof(route)));
-    /* TSR34 has the same bank layout except the five new 32-bit mix fields. */
-    FILE *in=fopen("send-tile.tsr","rb"),*out=fopen("send-legacy34.tsr","wb");assert(in&&out);
-    unsigned char prefix[176];assert(fread(prefix,1,176,in)==176);prefix[4]='4';
-    assert(fwrite(prefix,1,92,out)==92);int ch;
-    while((ch=fgetc(in))!=EOF)assert(fputc(ch,out)!=EOF);
-    assert(!fclose(in)&&!fclose(out));
+    assert(!source->undo_count && !source->redo_count);
+    assert(test_write_legacy_single_tile("send-tile.tsr","send-legacy34.tsr",34));
     assert(ts_instrument_load_recipe(loaded,"send-legacy34.tsr",error,sizeof(error)));
     assert(loaded->bank[0].output_route.mode==TS_SOURCE_PAIR && !loaded->bank[0].output_route.mix_enabled);
+    assert(!loaded->tile_eq.enabled && loaded->tile_eq.band[0].frequency>0);
     for(int bus=0;bus<3;++bus)assert(!loaded->bank[0].output_route.send_level[bus]);
     /* Current Main pan/width survive; legacy dormant values remain inaudible. */
     source->bank[0].output_route=(TsSourceRoute){.mode=TS_SOURCE_MAIN,.pan=-65,.width=-50};
     assert(ts_instrument_save_recipe(source,"send-tile.tsr",error,sizeof(error)));
     assert(ts_instrument_load_recipe(loaded,"send-tile.tsr",error,sizeof(error)));
     assert(loaded->bank[0].output_route.pan==-65 && loaded->bank[0].output_route.width==-50);
-    in=fopen("send-tile.tsr","rb");out=fopen("send-legacy34.tsr","wb");assert(in&&out);
-    assert(fread(prefix,1,176,in)==176);prefix[4]='5';assert(fwrite(prefix,1,112,out)==112);
-    while((ch=fgetc(in))!=EOF)assert(fputc(ch,out)!=EOF);assert(!fclose(in)&&!fclose(out));
+    assert(test_write_legacy_single_tile("send-tile.tsr","send-legacy34.tsr",35));
     assert(ts_instrument_load_recipe(loaded,"send-legacy34.tsr",error,sizeof(error)));
     assert(loaded->bank[0].output_route.mode==TS_SOURCE_MAIN && !loaded->bank[0].output_route.pan && !loaded->bank[0].output_route.width);
     ts_instrument_free(source);ts_instrument_free(loaded);free(source);free(loaded);

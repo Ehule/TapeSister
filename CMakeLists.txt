@@ -700,6 +700,7 @@ if(MINGW)
                                tapesister_core_tests
                                tapesister_fm_directions_tests
                                tapesister_mosaic_controller_tests
+                               tapesister_mosaic_tests
                                test_sister_project_state
                                tapesister_sample_pages_tests
                                tapesister_keyboard_hold_tests

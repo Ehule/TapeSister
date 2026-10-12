@@ -587,7 +587,10 @@ int ts_mosaic_load(TsMosaic *m,const char *dir,char *error,size_t size)
     if(ferror(f))goto failed;
     fclose(f);
     /* Caller stops/locks audio before replacing a live model. */
-    TsMosaic old=*m;*m=*next;*next=old;ts_mosaic_free(next);return 1;
+    /* Only sources own allocations. Do not put the full arrangement/history
+       on the stack while publishing a loaded model. */
+    TsMosaicSource *old_sources=m->sources;*m=*next;
+    next->sources=old_sources;ts_mosaic_free(next);return 1;
 failed:
     fclose(f);ts_mosaic_free(next);snprintf(error,size,"Invalid or incomplete Mosaic project data");return 0;
 }

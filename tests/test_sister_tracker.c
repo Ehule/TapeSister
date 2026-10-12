@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "tsr_legacy_fixture.h"
 
 /* These checks execute in Release too; setup never lives inside assert(). */
 #define CHECK(condition) do { if (!(condition)) { \
@@ -352,17 +353,11 @@ static void test_tsr31_migration(void)
     TsSamplePages pages;
     sound(source, 0, 0.25f);
     CHECK(ts_instrument_save_recipe(source, "identity32.tsr", error, sizeof(error)));
-    FILE *in = fopen("identity32.tsr", "rb"), *out = fopen("legacy31.tsr", "wb");
-    unsigned char header[176]; CHECK(in && out);
-    CHECK(fread(header, 1, sizeof(header), in) == sizeof(header));
-    /* Remove TSR32 identity, TSR34 routing and TSR35 sends after the occupied flag. */
-    header[4] = '1';
-    CHECK(fwrite(header, 1, 64, out) == 64);
-    int byte;
-    while ((byte = fgetc(in)) != EOF) CHECK(fputc(byte, out) != EOF);
-    CHECK(fclose(in) == 0 && fclose(out) == 0);
+    CHECK(!source->undo_count && !source->redo_count);
+    CHECK(test_write_legacy_single_tile("identity32.tsr","legacy31.tsr",31));
     CHECK(ts_sample_pages_init(&pages, error, sizeof(error)));
     CHECK(ts_sample_pages_load_project(&pages, loaded, record, "legacy31.tsr", error, sizeof(error)));
+    CHECK(!loaded->tile_eq.enabled && loaded->tile_eq.band[0].frequency>0);
     CHECK(ts_tile_id_valid(loaded->bank[0].tile_id));
     CHECK(loaded->bank[0].tile_id != source->bank[0].tile_id);
     CHECK(ts_sample_hash(&loaded->current) == ts_sample_hash(&source->current));

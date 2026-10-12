@@ -13,15 +13,20 @@ static void test_workspace_playback(SDL_Window *window)
     assert(ts_note_event_qwerty(&fm_note,2,ts_ui_keyboard_base_note(&ui)));
     assert(ts_note_bank_start_tuned_event(&audio.notes,&instrument,&instrument.tuning,
         TS_AUDITION_CURRENT,&sample_note,0,48000)==TS_NOTE_STARTED);
-    TsNoteBank held=audio.notes;
+    TsNoteBank held;memcpy(&held,&audio.notes,sizeof(held));
     key(window,SDLK_BACKQUOTE,KMOD_NONE);
     assert(ui.mosaic_open && !scene->playing && !memcmp(&held,&audio.notes,sizeof(held)));
     key(window,SDLK_BACKQUOTE,KMOD_NONE);
     key(window,SDLK_BACKQUOTE,KMOD_SHIFT);
-    assert(ui.fm_open && !memcmp(&held,&audio.notes,sizeof(held)));
+    if(!ui.fm_open || memcmp(&held,&audio.notes,sizeof(held))) {
+        fprintf(stderr,"FM workspace: open=%d, status=%s, notes=%d/%d\n",ui.fm_open,ui.status,ts_note_bank_count(&held),ts_note_bank_count(&audio.notes));
+        const unsigned char *before=(const unsigned char *)&held,*after=(const unsigned char *)&audio.notes;
+        for(size_t i=0;i<sizeof(held);++i)if(before[i]!=after[i]){fprintf(stderr,"First changed note-bank byte: %zu (%u -> %u)\n",i,before[i],after[i]);break;}
+    }
+    assert(ui.fm_open);assert(!memcmp(&held,&audio.notes,sizeof(held)));
     assert(ts_note_bank_start_sample_event(&audio.notes,&workspace_preview,&instrument.tuning,
         &fm_note,0,48000)==TS_NOTE_STARTED);
-    held=audio.notes;
+    memcpy(&held,&audio.notes,sizeof(held));
     const float *preview=workspace_preview.data;
     key(window,SDLK_BACKQUOTE,KMOD_NONE);
     assert(ui.mosaic_open && !ui.fm_open && !scene->playing);
@@ -47,7 +52,7 @@ static void test_workspace_playback(SDL_Window *window)
     assert(ts_note_bank_start_sample_event(&audio.notes,&workspace_preview,&instrument.tuning,
         &fm_note,1,48000)==TS_NOTE_STARTED);
     assert(dispatch(&up,window) && ts_note_bank_latched_synth_count(&audio.notes)==1);
-    held=audio.notes;
+    memcpy(&held,&audio.notes,sizeof(held));
     key(window,SDLK_BACKQUOTE,KMOD_SHIFT);key(window,SDLK_BACKQUOTE,KMOD_SHIFT);
     assert(!ui.fm_open && !ui.mosaic_open && workspace_preview.data==preview);
     assert(!memcmp(&held,&audio.notes,sizeof(held)));
