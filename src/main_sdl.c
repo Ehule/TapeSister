@@ -499,6 +499,7 @@ static uint64_t instrument_state_hash(const TsInstrument *instrument)
     state_hash_bytes(&hash, &instrument->source_kind, sizeof(instrument->source_kind));
     state_hash_bytes(&hash, &instrument->generator, sizeof(instrument->generator));
     state_hash_bytes(&hash, &instrument->process, sizeof(instrument->process));
+    state_hash_bytes(&hash,&instrument->tile_eq,sizeof(instrument->tile_eq));
     state_hash_bytes(&hash, &instrument->family_relation,
                      sizeof(instrument->family_relation));
     state_hash_bytes(&hash, &instrument->family_mutation,
@@ -687,6 +688,7 @@ static uint64_t paged_project_state_hash(const TsSamplePages *pages,
         TsRouterControls saved_router=ts_router_export(&sister->router);
         state_hash_bytes(&hash,&saved_router,sizeof(saved_router));
         state_hash_bytes(&hash,&sister->matrix.controls,sizeof(sister->matrix.controls));
+        state_hash_bytes(&hash,&sister->performance_transport,sizeof(sister->performance_transport));
         TsSpatialControls spatial=sister->spatial.controls;
         spatial.rise_trigger=spatial.morph_trigger=0;
         state_hash_bytes(&hash,&spatial,sizeof(spatial));
@@ -792,6 +794,7 @@ static int launch_program(const char *path, char *error, size_t error_size)
 
 typedef struct {
     const TsSample *sample;
+    int canvas_eq_preview;TsMasterEq canvas_eq;
     double position;
     double step;
     double pitch;
@@ -1137,6 +1140,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
                 }
             }
         }
+        if(audio->canvas_eq_preview)buses.legacy_preview=ts_master_eq_process(&audio->canvas_eq,buses.legacy_preview);
         if (audio->playing) {
             float attack = ts_audition_attack_gain(
                 audio->attack_frame, audio->attack_frames);
@@ -1197,6 +1201,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         sister_sources.external = buses.external;
         sister_sources.preview = buses.legacy_preview;
         sister_sources.tapehead = buses.tapehead;
+        sister_sources.mosaic = buses.mosaic;
         memcpy(sister_sources.send,audio->clean.send,sizeof(sister_sources.send));
         if(matrix) {
             memcpy(sister_sources.matrix_graph,audio->clean.graph,sizeof(sister_sources.matrix_graph));
@@ -1207,6 +1212,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
                 sister_sources.matrix_graph[d].l*=gain;sister_sources.matrix_graph[d].r*=gain;
             }
             sister_sources.tiles.l*=gain;sister_sources.tiles.r*=gain;
+            sister_sources.mosaic.l*=gain;sister_sources.mosaic.r*=gain;
             sister_sources.fm.l*=gain;sister_sources.fm.r*=gain;
             sister_sources.preview.l*=gain;sister_sources.preview.r*=gain;
             sister_sources.tracker.l*=gain;sister_sources.tracker.r*=gain;
@@ -4171,6 +4177,7 @@ static void commit_drone(SDL_AudioDeviceID device, AudioState *audio,
 
 static void keyboard_sequence_ui(AudioState *audio, TsUiState *ui);
 
+static void matrix_history_clear(void);
 static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
                            TsInstrument *instrument,
                            TsSamplePages *sample_pages,
@@ -4285,6 +4292,7 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
                 ts_spatial_recall(&audio->sister.spatial,&spatial);
                 TsMasterEqControls flat;ts_master_eq_default(&flat);
                 ts_master_eq_set(&audio->sister.master_eq,&flat);
+                audio->sister.performance_transport=1;
                 TsMatrixControls matrix;ts_matrix_default(&matrix);ts_matrix_set(&audio->sister.matrix,&matrix,audio->sister.router.sample_rate);
                 TsRouterControls defaults;ts_router_default(&defaults);
                 ts_sister_runtime_set_router(&audio->sister,&defaults);
@@ -4311,7 +4319,7 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     if (ok && recipe) {
         /* The next tracker refresh must import this host-owned definition,
            including when loading over a running or visible workspace. */
-        ts_tapehead_project_replaced();
+        matrix_history_clear();ts_tapehead_project_replaced();
         snprintf(ui->project_path, sizeof(ui->project_path), "%s", path);
         snprintf(ui->status, sizeof(ui->status), "OPENED TSR PROJECT %.112s",
                  instrument->parent.name);
@@ -11480,6 +11488,7 @@ static int midi_source_from_event(const TsMidiEvent *midi,
     return 1;
 }
 
+static int canvas_eq_handling;
 #include "main_sdl_master_eq.inc"
 #include "main_sdl_spatial.inc"
 #include "main_sdl_source_route.inc"
@@ -13263,6 +13272,8 @@ static int keyboard_sustain_event(const SDL_Event *event,SDL_Window *window,
 #undef tracker_event
 #undef tracker_refresh
 #include "main_sdl_tracker_embed.inc"
+#include "main_sdl_performance_transport.inc"
+#include "main_sdl_canvas_eq.inc"
 
 /* One pointer route for the visible keyboard, regardless of its sound source.
    Releases still arrive after opening a dialog or moving focus within the UI. */
@@ -14085,6 +14096,8 @@ int main(int argc, char **argv)
                 }
                 continue;
             }
+            if(canvas_eq_event(&event,window,device,&audio,&ui,&sister_window,&instrument))continue;
+            if(performance_event(&event,window,device,&audio,&ui,&sample_pages,audio.workspace_bank?audio.workspace_bank:&instrument,&fm_preview,obtained.freq))continue;
             if(matrix_event(&event,window,device,&audio,&ui,&sample_pages,&instrument))continue;
             if(source_route_event(&event,window,device,&audio,&ui,&sample_pages,&instrument))continue;
             if (spatial_event(&event,window,device,&audio,&ui,&sister_window)) continue;
@@ -18035,7 +18048,8 @@ int main(int argc, char **argv)
         }
         uint64_t profile_aux = ts_profile_begin(TS_PROF_AUX_UI);
         spatial_window_update(&ui);
-        matrix_update(device,&audio,&ui,&sample_pages,&instrument);
+        canvas_eq_poll(device,&audio,&ui,&instrument);
+        matrix_update(device,&audio,&ui,&sample_pages,&instrument);performance_update(device,&audio);
         source_route_update(device,&audio,&ui,&sample_pages,&instrument);
         ts_audio_health_update(&audio, &ui);
         ts_profile_end(TS_PROF_AUX_UI, profile_aux);
@@ -18087,6 +18101,7 @@ int main(int argc, char **argv)
         free(transform.worker);
         transform.worker = NULL;
     }
+    canvas_eq_close(device,&audio,&ui);
     discard_transform_preview(device, &audio, &ui, &transform);
     if (ts_performance_recorder_state(&sister_window.performance_recorder) ==
             TS_PERFORMANCE_FILE_RECORDING)
@@ -18161,7 +18176,7 @@ int main(int argc, char **argv)
     if (sister_window.renderer) SDL_DestroyRenderer(sister_window.renderer);
     if (sister_window.window) SDL_DestroyWindow(sister_window.window);
     spatial_window_close();
-    matrix_close();source_route_close();
+    performance_close();matrix_close();source_route_close();
     ts_audio_health_close();
     if (texture) SDL_DestroyTexture(texture);
     if (renderer) SDL_DestroyRenderer(renderer);

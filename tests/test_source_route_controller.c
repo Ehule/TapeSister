@@ -206,6 +206,8 @@ int main(int argc,char **argv)
     u.tracker=&pages.tracker;ts_note_bank_init(&a.notes);ts_performance_init(&a.performance);ts_performance_init(&a.tile_launchers);
     ts_keyboard_sequence_init(&a.keyboard_sequence);ts_tracker_playback_init(&a.tracker);ts_audio_mixer_init(&a.mixer);
     ts_capture_init(&a.capture);ts_sister_runtime_init(&a.sister);a.output_rate=48000;a.output_device_channels=4;
+    assert(ts_tapehead_transport_locked(0)); /* A never-opened tracker is already stopped. */
+    assert(ts_tapehead_transport_locked(2));assert(!ts_tapehead_transport_locked(1));
     a.sister.spatial.controls.output[2]=2;a.sister.spatial.controls.output[3]=3;
     assert(ts_sister_runtime_reconfigure(&a.sister,48000,2,error,sizeof(error)));assert(ts_spatial_prepare(&a.sister.spatial,48000));
     assert(ts_instrument_activate_silence(&bank,8192,48000,error,sizeof(error)));

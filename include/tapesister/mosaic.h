@@ -2,6 +2,7 @@
 #define TAPESISTER_MOSAIC_H
 
 #include "tapesister/audition.h"
+#include "tapesister/source_route.h"
 
 #define TS_MOSAIC_EVENTS 128
 #define TS_MOSAIC_NOTES 5
@@ -18,8 +19,9 @@ typedef enum {
 /* Sources are immutable. Model mutations require the host's audio lock;
    source allocation, collection, project IO and editor work stay on the UI thread. */
 typedef struct TsMosaicSource {
-    TsSample sample;
-    uint64_t hash;
+    TsSample sample,eq_dry;
+    TsMasterEqControls eq;
+    uint64_t hash,eq_dry_hash;
     unsigned pins;
     float peaks[TS_MOSAIC_PEAKS], rms[TS_MOSAIC_PEAKS];
     struct TsMosaicSource *next;
@@ -37,6 +39,7 @@ typedef struct {
     int muted, solo;
     float gain, pan;
     double fade_in, fade_out; /* Seconds on the arrangement timeline. */
+    TsSourceRoute output_route; /* matrix_enabled: custom; otherwise Mosaic bus. */
 } TsMosaicEvent;
 
 typedef struct {
@@ -47,6 +50,7 @@ typedef struct {
     uint64_t attack;
     int active;
     float audible_gain, mix_left, mix_right;
+    TsSourceRouteVoice output_route;
 } TsMosaicVoice;
 
 typedef struct TsMosaic {
@@ -68,6 +72,8 @@ typedef struct TsMosaic {
     TsStereoFrame last_output, transition_from;
     int was_playing;
     unsigned transition_remaining, transition_total;
+    TsSourceRouteHandoff route_handoff;
+    int route_discontinuity;
 } TsMosaic;
 
 TsMosaic *ts_mosaic_create(void);
@@ -75,6 +81,9 @@ void ts_mosaic_free(TsMosaic *m);
 TsMosaicEvent *ts_mosaic_find(TsMosaic *m, uint64_t id);
 TsMosaicSource *ts_mosaic_source(TsMosaic *m, const TsSample *sample,
                                 char *error, size_t size);
+TsMosaicSource *ts_mosaic_source_eq(TsMosaic *m,const TsSample *sample,const TsSample *dry,const TsMasterEqControls *eq,char *error,size_t size);
+TsMosaicSource *ts_mosaic_source_document(TsMosaic *m,const TsInstrument *doc,char *error,size_t size);
+int ts_mosaic_import_source(TsInstrument *doc,const TsMosaicSource *source,int loop,size_t first,size_t last,TsLoopMode mode,char *error,size_t size);
 /* UI thread, after publishing under the audio lock. Sources absent from
    events/history/pins cannot be retained by callback voices. */
 void ts_mosaic_collect(TsMosaic *m);
@@ -95,6 +104,8 @@ void ts_mosaic_volume_draw(TsMosaic *m, double from, float a, double to, float b
 void ts_mosaic_volume_action(TsMosaic *m, TsMosaicEnvelopeAction action);
 void ts_mosaic_set_repeat(TsMosaic *m, int repeat);
 TsStereoFrame ts_mosaic_read(TsMosaic *m, int output_rate);
+/* Returns the Mosaic bus; custom cards go only into routes. NULL ignores routing. */
+TsStereoFrame ts_mosaic_read_routed(TsMosaic *m, int output_rate, TsSourceRouteMix *routes);
 uint64_t ts_mosaic_hash(const TsMosaic *m);
 /* Project-data directory; optional on load for pre-Mosaic projects. */
 int ts_mosaic_save(const TsMosaic *m, const char *directory, char *error, size_t size);

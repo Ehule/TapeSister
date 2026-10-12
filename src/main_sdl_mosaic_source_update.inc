@@ -26,7 +26,9 @@ static int mosaic_stage_shared_update(MosaicController *c,const TsInstrument *do
         unsigned matches=0;
         for(int n=0;n<TS_BANK_SLOT_COUNT;++n) {
             const TsSample *sample=n==bank->selected_slot?&bank->current:&bank->bank[n].sample;
-            if(!mosaic_same_audio(sample,&source->sample))continue;
+            TsMasterEqControls eq=n==bank->selected_slot?bank->tile_eq:bank->bank[n].edit.tile_eq;
+            if(eq.band[0].frequency==0)ts_master_eq_default(&eq);
+            if(memcmp(&eq,&source->eq,sizeof(eq)) || !mosaic_same_audio(sample,&source->sample))continue;
             if(bank->bank[n].locked) {
                 snprintf(error,size,"Bank %02d tile %02d is locked; unlock it before Update All",p+1,n+1);goto failed;
             }
@@ -55,8 +57,10 @@ static int mosaic_stage_shared_update(MosaicController *c,const TsInstrument *do
             TsInstrument *staged=update->replacement;
             /* Import replaces only this slot; the original bank is still parked. */
             staged->selected_slot=n;
-            if(!ts_instrument_import_sample(staged,&doc->current,doc->has_loop,doc->loop_first,
-                                           doc->loop_last,doc->loop_mode,error,size))goto failed;
+            TsSample dry={0};TsMasterEqControls flat;ts_master_eq_default(&flat);
+            int ok=ts_instrument_render_tile_eq(&dry,doc,&flat,error,size) &&
+                ts_instrument_import_sample(staged,&dry,doc->has_loop,doc->loop_first,doc->loop_last,doc->loop_mode,error,size) &&
+                ts_instrument_set_tile_eq(staged,&doc->tile_eq,error,size);ts_sample_free(&dry);if(!ok)goto failed;
             staged->tuning=staged->audible_tuning=doc->tuning;staged->loop_crossfade_ms=doc->loop_crossfade_ms;
             if(!ts_instrument_sync_selected(staged,error,size))goto failed;
         }

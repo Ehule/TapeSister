@@ -69,6 +69,7 @@ does not switch the main bank. See the [Mosaic chapter](USER_MANUAL.md#mosaic).
 | Extend duration / change visual width | Drag bottom / right edge |
 | Optional start, end, midpoint alignment | Alt during move or duration resize |
 | Mute / solo selected events | M / S; excluded cards say SOLO OUT |
+| Mute / solo all cards sharing selected sources | Shift+M / Shift+S |
 | Clear all solos, including offscreen cards | CLEAR SOLO in footer |
 | Selection level / pan / fade-in / fade-out | LEVEL / PAN / IN / OUT in footer |
 | Global tape speed | SPEED: 0.5× (−12 st), center 1×, 2× (+12 st) |
@@ -497,7 +498,8 @@ Green marks beside rows = source activity; beneath columns = arriving audio;
 beneath checked cells = sends. Amber indicates feedback. These softly fading
 marks are not calibrated meters; disconnected/unavailable paths stay dark.
 **N/A** means that hardware channel is not open; the saved route remains silent.
-**MATRIX LIVE** is active-routing status, not a patch-state sequencer.
+**MATRIX LIVE** indicates active routing; click it again to audition Original.
+Edited returns to your changes. It is not a patch-state sequencer.
 
 For a series Vulture loop: **Main → OUT 3/4 → hardware → IN 5/6 → EQ → limiter →
 OUT 1/2**; disconnect Main → EQ to avoid parallel dry audio. For Terra, connect
@@ -657,8 +659,8 @@ This button leaves the tap, mono/stereo and tile-destination selectors unchanged
 **ARP** opens the keyboard arpeggiator: select up to 24 pitches with EDIT on or
 Ctrl-click, choose UP/DOWN/UP-DOWN/ORDER/RANDOM, then PLAY. Teal keys are selected;
 gold follows the current gated step. STEP spans 30 ms–1 hour; GATE spans 5–100%.
-Both update live. Turn EDIT off to play alongside it. **Shift+Space** starts/stops
-ARP even with the controls hidden; stopping releases only the sequence. Selecting
+Both update live. Turn EDIT off to play alongside it. **Shift+Space** controls the configured Performance Transport group (ARP only
+by default); ARP STOP always releases only the sequence. Selecting
 a new tile keeps its notes and timing running with the new sound, without launching
 a separate tile layer. FROM HELD copies the current QWERTY chord. Selection/settings last for
 the session. See [Keyboard arpeggio and sequencing](KEYBOARD_SEQUENCE.md).
@@ -764,10 +766,27 @@ Ctrl+Z / Ctrl+Y undo/redo; Escape cancels the current stroke.
   then restart. Legacy `meditation`/`standing` values migrate to `nebula`.
   `off` leaves audio and optical controls active. [Details](PRISM_ZOYA.md).
 - **DRAW**: each stroke replaces the previous envelope in its drawn region,
-  with recoverable zeroed sections and ordinary undo/redo. Current saves use TSR37.
+  with recoverable zeroed sections and ordinary undo/redo. Current saves use TSR38.
 
 ### JACK and device discovery
 
 - Linux: CFG → BACKEND → JACK, SAVE CONFIG; select TapeSister Master/Input in CFG and save again if needed. No app restart. Patch matrix IN/OUT pairs and connect JACK ports in the patchbay; dedicated Insert endpoints belong to legacy routing.
 - CFG SCAN / Insert RESCAN refresh device lists. General buffers include 128 frames; JACK follows its server.
 - [Full setup and diagnostics](JACK_AUDIO.md), including REAPER/SunVox and both sides of Insert.
+
+### Matrix and performance workflow
+
+| Action | Control |
+| --- | --- |
+| Select Matrix source rows | Ctrl-click separately; Shift-click a range |
+| Route selected rows together | Click destination header or a selected row's cell |
+| Matrix undo / redo | Buttons, Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z in Matrix |
+| Compare routing | Original / Edited; Matrix Live also returns to Original |
+| Restore original routing | Restore, then confirm; restore is undoable |
+| Route Mosaic independently | Mosaic bus row; Mosaic filter for custom card routes |
+| Edit tile/card EQ | EQ beside S/M/R/L; Space auditions; Apply or Cancel |
+| Choose transport group | CFG → Transport or Ctrl+Shift+Space |
+| Play/stop selected transport group | Shift+Space; Space remains workspace-local |
+
+See [Canvas EQ](CANVAS_EQ.md), [Performance Transport](PERFORMANCE_TRANSPORT.md),
+and [Matrix editing](ROUTING_MATRIX.md#selection-undo-and-ab).

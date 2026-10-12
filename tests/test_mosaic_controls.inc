@@ -8,6 +8,12 @@ static void test_mosaic_live_controls(SDL_Window *window)
     mosaic_poll(0,&ui,&instrument,&mosaic);mosaic_select_only(&ui,a->id);
     click(window,480,389,1);assert(!b->solo);key(window,SDLK_z,KMOD_CTRL);assert(b->solo);
     click(window,480,389,1);assert(!b->solo);
+    key(window,SDLK_m,KMOD_NONE);assert(a->muted && !b->muted);
+    key(window,SDLK_m,KMOD_SHIFT);assert(a->muted && b->muted);
+    key(window,SDLK_z,KMOD_CTRL);assert(a->muted && !b->muted);
+    key(window,SDLK_m,KMOD_NONE);assert(!a->muted);
+    key(window,SDLK_s,KMOD_SHIFT);assert(a->solo && b->solo);
+    key(window,SDLK_s,KMOD_SHIFT);assert(!a->solo && !b->solo);
     scene->playing=1;for(int i=0;i<1000;++i)ts_mosaic_read(scene,48000);
     uint64_t revision=a->revision,attack=scene->voices[0].attack;
     int history=scene->history_count;

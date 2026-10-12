@@ -281,7 +281,7 @@ typedef struct {
 
 static const TsPanelButton config_buttons[] = {
     {20, 96, "SAVE CONFIG"}, {121, 76, "USE CWD"},
-    {202, 76, "PALETTE"}, {283, 68, "CANCEL"}
+    {202, 76, "PALETTE"}, {283, 68, "CANCEL"}, {356, 104, "TRANSPORT"}
 };
 
 static const TsPanelButton palette_buttons[] = {
@@ -3144,6 +3144,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         rect(fb, 240, 58, (int)lrintf(amount * 62.0f), 3, PAL_VOLUME);
         rect(fb, 239 + (int)lrintf(amount * 62.0f), 56, 3, 7, PAL_MOUSE);
     }
+    mini_button(fb,568,43,28,"EQ",instrument->tile_eq.enabled);
     mini_button(fb, 600, 43, 24,
                 ts_waveform_display_letter((TsWaveformDisplayMode)
                                            ui->config.waveform_display_mode),

@@ -71,6 +71,7 @@ typedef struct {
     TsStereoFrame external;
     TsStereoFrame preview;
     TsStereoFrame tapehead;
+    TsStereoFrame mosaic;
     TsStereoFrame tracker;
     /* Tracker lanes outside the serial chain: record onto tape without an
        additional dry monitor. Their clean audio/sends keep their own routes. */
@@ -244,6 +245,7 @@ typedef struct {
     uint64_t processed_frames;
     uint32_t warnings;
     uint8_t source_switches;
+    unsigned performance_transport; /* ARP=1, SisterTracker=2, Mosaic=4; project setting. */
     uint8_t output_channels;
     TsSisterTap selected_tap;
     TsSisterDestinationStatus destination_status;

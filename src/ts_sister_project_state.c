@@ -74,7 +74,7 @@ void ts_sister_project_state_init(TsSisterProjectState *state,
     ts_master_eq_default(&state->master_eq);
     ts_spatial_default(&state->spatial);
     ts_router_default(&state->router);
-    ts_matrix_default(&state->matrix);
+    ts_matrix_default(&state->matrix);state->performance_transport=1;
     ts_router_performance_default(&state->router_performance);
     ts_keyboard_sequence_bank_default(&state->keyboard_sequence);
     ts_insert_default(&state->insert);
@@ -101,7 +101,7 @@ void ts_sister_project_state_capture(TsSisterProjectState *state,
     ts_prism_matrix_export(&runtime->prism,&state->parameters.prism);
     state->master_eq = runtime->master_eq.controls;
     state->router = ts_router_export(&runtime->router);
-    state->matrix=runtime->matrix.controls;
+    state->matrix=runtime->matrix.controls;state->performance_transport=runtime->performance_transport;
     state->router_performance = runtime->router.performance;
     state->insert = runtime->insert.controls;
     state->spatial = runtime->spatial.controls;
@@ -134,6 +134,7 @@ int ts_sister_project_state_apply(const TsSisterProjectState *state,
     ts_spatial_recall(&runtime->spatial,&state->spatial);
     ts_sister_runtime_set_router(runtime,&state->router);
     ts_matrix_set(&runtime->matrix,&state->matrix,runtime->router.sample_rate);
+    runtime->performance_transport=state->performance_transport&7u;
     runtime->router.transport.restore_valid=0;
     ts_router_performance_set(&runtime->router,&state->router_performance);
     ts_sister_runtime_set_insert(runtime,&state->insert);
@@ -295,6 +296,7 @@ int ts_sister_project_state_save_file(const TsSisterProjectState *state,
     if (!failed) failed = !ts_router_write(file,&state->router);
     if (!failed) failed = !ts_matrix_write(file,&state->matrix);
     if (!failed) failed = !ts_router_performance_write(file,&state->router_performance);
+    if (!failed) failed = fprintf(file,"PerformanceTransport=%u\n",state->performance_transport&7u)<0;
     if (!failed) failed = !ts_keyboard_sequence_bank_write(file,&state->keyboard_sequence);
     if (!failed) failed = !ts_insert_write(file,&state->insert);
     if (fclose(file) != 0) failed = 1;
@@ -633,6 +635,8 @@ int ts_sister_project_state_load_file(TsSisterProjectState *state,
             errno = 0; parsed_mask = strtoul(value, &end, 16);
             if (errno != 0 || end == value || *trim(end) != '\0' || parsed_mask > 0xffffu) goto malformed;
             loaded.page_masks[page] = (uint16_t)parsed_mask;
+        } else if (!strcmp(key,"PerformanceTransport")) {
+            int mask;if(!parse_int_value(value,&mask) || mask<0 || mask>7)goto malformed;loaded.performance_transport=(unsigned)mask;
         } else if (!strncmp(key,"Arp.",4)) {
             if(ts_keyboard_sequence_bank_read(&loaded.keyboard_sequence,key,value)<0)goto malformed;
         } else if (!strncmp(key,"Spatial.",8)) {

@@ -370,9 +370,11 @@ static void runtime_note_render(AudioState *audio, TsAudioBuses *buses,
     launcher = audio->tile_launcher_active ?
         ts_performance_read_routed(&audio->tile_launchers, NULL,&audio->clean) :
         (TsStereoFrame){0.0f, 0.0f};
-    TsStereoFrame mosaic = ts_mosaic_read(audio->mosaic, audio->output_rate);
-    launcher.l += mosaic.l; launcher.r += mosaic.r;
-    audio->tile_launcher_mix = launcher;
+    int matrix=audio->sister.matrix.controls.enabled;
+    TsStereoFrame mosaic=ts_mosaic_read_routed(audio->mosaic,audio->output_rate,matrix?&audio->clean:NULL);
+    audio->tile_launcher_mix=(TsStereoFrame){launcher.l+mosaic.l,launcher.r+mosaic.r};
+    if(matrix)buses->mosaic=mosaic;
+    else {launcher.l+=mosaic.l;launcher.r+=mosaic.r;}
     buses->tile_performance.l += sample.l + performance.l + launcher.l;
     buses->tile_performance.r += sample.r + performance.r + launcher.r;
     buses->fm.l += fm.l;

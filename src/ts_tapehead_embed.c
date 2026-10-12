@@ -138,6 +138,7 @@ void ts_tapehead_host_mouse(const SDL_Event *event) {
 void ts_tapehead_request(int action) { embed.action=action; }
 int ts_tapehead_action(void) { int a=embed.action;embed.action=0;return a; }
 int ts_tapehead_interpolation_active(void) {return embed.initialized && interpolationPreviewActive();}
+int ts_tapehead_transport_keys_allowed(void) {return !embed.initialized || (!editor.editTextFlag && !ui.sysReqShown);}
 int ts_tapehead_running(void) { return atomic_load(&embed.ready)&&songPlaying; }
 int ts_tapehead_block_active(void) { return embed.initialized&&tapeheadBlockLoopIsActive(); }
 unsigned ts_tapehead_capture_flags(unsigned frame) {return frame<TH_FRAMES?embed.capture_flags[frame]:0;}
@@ -1034,3 +1035,40 @@ void ts_tapehead_routes_changed(TsTileId tile, TsSourceRoute route)
 { routes_changed(tile,route,0); }
 void ts_tapehead_all_routes_changed(TsSourceRoute route)
 { routes_changed(0,route,1); }
+
+/* Refresh heterogeneous routes once per bulk transaction, with one score hash. */
+void ts_tapehead_refresh_routes(TsSamplePages *pages,TsInstrument *bank)
+{
+    if(!embed.initialized || !embed.model)return;
+    TsSourceRoute routes[129*16];memset(routes,0,sizeof(routes));
+    for(int i=0;i<129*16;++i)if(embed.route_ids[i]) {
+        const TsBankSlot *slot=ts_sample_pages_find_tile(pages,bank,embed.route_ids[i],NULL);
+        if(slot)routes[i]=slot->output_route;
+    }
+    uint64_t hash=ts_sister_tracker_hash(embed.model);
+    ts_tapehead_host_lock();embed.routes_enabled=0;
+    memcpy(embed.tile_routes,routes,sizeof(routes));
+    for(int i=0;i<129*16;++i)embed.routes_enabled|=routes[i].matrix_enabled || routes[i].mode!=TS_SOURCE_MAIN || routes[i].pan || routes[i].width;
+    for(int i=0;i<TS_TRACKER_LANES;++i) {
+        TsSourceRoute r=embed.track_routes[i]=embed.model->lanes[i].output_route;
+        embed.routes_enabled|=r.matrix_enabled || r.mode==TS_SOURCE_PAIR || r.mode==TS_SOURCE_SPEAKER || r.pan || r.width;
+    }
+    embed.model_hash=hash;ts_tapehead_host_unlock();
+}
+
+int ts_tapehead_transport_locked(int command)
+{
+    if(!embed.initialized || !atomic_load(&embed.ready))return command!=1;
+    if(command==1) {
+        if(!songPlaying)startPlaying(PLAYMODE_SONG,editor.row);
+        return songPlaying;
+    }
+    int position=songPlaying?song.songPos:editor.songPos;
+    int row=songPlaying?song.row:editor.row;
+    stopPlaying();stopVoices();embed.capture_seam_pending=0;
+    if(command==2)position=row=0;
+    editor.songPos=position;editor.row=row;
+    setSongPos(position,row,RESET_SONG_TICK);
+    ui.updatePosSections=ui.updatePatternEditor=true;
+    return 1;
+}

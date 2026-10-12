@@ -201,7 +201,7 @@ static int load_module_instrument(SDL_AudioDeviceID device,AudioState *audio,TsU
     unlock_edit(device,audio,ui,instrument);
     free(previous_pages);ts_sister_tracker_free(&previous);
     free(staged.pages);staged.pages=NULL;staged.page_count=0;
-    ts_tapehead_project_replaced();
+    matrix_history_clear();ts_tapehead_project_replaced();
     if(!embedded_open(embedded_host.window,device,audio,ui,pages,instrument,rate))return 0;
     ui->tracker_open=1;ui->mosaic_open=0;ui->load_bank_slot=-1;
     ts_ui_reset_parent_view(ui,instrument->parent.frames);

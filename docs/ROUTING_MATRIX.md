@@ -3,8 +3,8 @@
 F9, tile right-click and TrackSister track-header right-click open the same
 modeless window. Audio and keyboard playing continue while it is open.
 
-**MATRIX LIVE** means this graph is controlling the audio. It is a status label,
-not a sequencer or placeholder. Storing/sequencing different matrix patches is
+**MATRIX LIVE** means this graph is controlling the audio. Click it again to
+audition the original routing; **Edited** returns to your changes. It is not a sequencer. Storing/sequencing different matrix patches is
 not implemented. The legacy Router Performance sequencer only affects the old
 serial engine; Prism's Morph Matrix is a separate sound-morphing feature.
 
@@ -16,7 +16,7 @@ checking a processor does not secretly add another dry copy.
 
 ## Normal stereo
 
-New configurations start with tile/track sound and FM/Live Link feeding
+New configurations start with tile/track sound, the Mosaic bus and FM/Live Link feeding
 **Main Mix → Master EQ → Limiter → OUT 1/2**. External inputs start disconnected.
 Track routes take precedence over tile routes. **Use Tile** makes the entire
 track inherit the route of each played tile; **Use Track** gives it its own route.
@@ -27,7 +27,7 @@ tracks and tiles hidden by the current filter or on other pages. It also cuts
 feedback. The matrix stays active and silent so you can patch a new path.
 
 **Reset to Default** restores the normal stereo path above: all tiles/tracks,
-FM and Live Link feed Main; Main feeds EQ, then limiter, then OUT 1/2. Effect
+FM, Live Link and the Mosaic bus feed Main; Main feeds EQ, then limiter, then OUT 1/2. Effect
 returns feed Main, but no source is sent to an effect. External inputs are
 disconnected. All tracks own their routes again rather than inheriting tiles.
 
@@ -44,7 +44,45 @@ controlling the signal path. Existing source clean/send levels are retained;
 legacy direct speakers retain their channel mapping. Shared processor outputs
 start at Main, followed by EQ/limiter. This is an intentional conversion, not a
 claim that an arbitrary old serial chain sounds identical through the new graph.
-Save an experimental version under another project name if you want both.
+The original routing is captured before your first Matrix edit; use Original/Edited to compare it during this session.
+
+## Selection, undo and A/B
+
+Ctrl-click row labels to select separate sources; Shift-click selects a range.
+Click a destination header (with multiple rows selected), or a selected row's
+cell, to route the whole selection. Mixed selections connect all rows first;
+click again to disconnect all. Other destinations stay connected. Level and Pan
+apply to the selection; the footer identifies mixed values. A batch is refused
+in full if it contains an inherited/legacy row or creates an unapproved loop.
+Convert inherited/legacy rows individually before including them in a batch.
+
+**Undo / Redo**, **Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z** work while the Matrix owns
+keyboard focus. The last 32 edits include connections, gains, pan, mono,
+inheritance, names, feedback, activation, Clear All and Reset. A whole drag or
+bulk edit is one step. A fresh edit after Undo replaces the redo branch.
+
+**Original / Edited** auditions the state captured before the first routing edit
+in this project session. The Matrix Live button also switches back to Original.
+A/B preserves the edited version and undo history; return to Edited to make
+changes. **Restore** asks before replacing your edited routing, and that restore
+can itself be undone. Closing/reopening the Matrix keeps the session history.
+Loading another project clears it. Undo/A/B restore routes and related legacy
+controls, not tape contents, FX tails or transport time. Deleted sources are not
+recreated or confused with new sources. History and the alternate A/B state are
+not saved; saving stores the routing currently being auditioned.
+
+![Bulk selection and undo](screenshots/performance/matrix-bulk-undo.png)
+
+## Mosaic routing
+
+**MOSAIC BUS** appears with live inputs and defaults to Main. Patch it to shared
+processors or hardware independently of keyboard tiles and tracker lanes.
+The **Mosaic** filter exposes each card. A card marked **BUS** follows the bus.
+Click a destination to make a custom route, or choose **Custom Route**, then
+connect it. **Use Bus** removes the override. Custom routing replaces the bus
+feed for that card, so it cannot add an unintended dry duplicate. Card routes
+save with the arrangement and can be selected/edited/undone as a group.
+Clear All also clears cards; Reset returns cards to the Mosaic bus.
 
 ## Connections and positioning
 
@@ -63,7 +101,7 @@ Save an experimental version under another project name if you want both.
 - **Stereo / Mono** preserves stereo or folds it to mono before pan. Mono plus
   full-left/right pan addresses a single speaker in an output pair.
 - Wheel over the grid to scroll sources. The filters show tracks, tiles on all
-  pages, external/live inputs, or processor returns. OUT arrows reveal more ports.
+  pages, external/live inputs, processor returns, or Mosaic cards. OUT arrows reveal more ports.
 - Middle-click an input row or output column to rename it, or select it and use
   **Name I/O**. Enter saves; Escape cancels. IN/OUT numbers remain visible.
 
@@ -132,7 +170,7 @@ are outside the graph and cannot be inferred from port aliases.
 
 ## Saving, recording and compatibility
 
-TSR37 tile files, SISTRK v7 tracker scores and Sister state v30 preserve the
+TSR38 tile files, SISTRK v7 tracker scores, Mosaic format 6 and Sister state v31 preserve the
 new source routes, graph, connection levels, row pan/mono and hardware aliases.
 Old formats load; older application builds cannot read the new tile/score saves.
 Opening a project replaces its matrix and aliases rather than retaining the

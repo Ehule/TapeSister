@@ -387,6 +387,7 @@ static void test_async_ownership(uint64_t a,uint64_t b,uint64_t original,int sup
     TsMosaicEvent *restored=ts_mosaic_add(ui.mosaic,ts_mosaic_find(ui.mosaic,b)->source,0,0);assert(restored);restored->id=a;
     portal_close(0,&audio,&ui,&portal);mosaic_leave(0,&audio,&ui,&instrument,&mosaic);
 }
+#include "test_canvas_eq_controller.inc"
 int main(int argc,char **argv)
 {
     SDL_SetMainReady();SDL_setenv("SDL_AUDIODRIVER","dummy",1);
@@ -457,7 +458,7 @@ int main(int argc,char **argv)
     test_mosaic_scroll_waveforms();
     test_mosaic_scroll_cards();
     test_fallout_without_sister();
-    test_mosaic_palette_controls();
+    test_mosaic_palette_controls();test_canvas_eq_controller(window);
 
     /* Route a single render to the direct bus and Sister input without
        advancing its clock twice. Different left/right data stays stereo. */

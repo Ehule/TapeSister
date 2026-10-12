@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include "tapesister/tile_id.h"
 #include "tapesister/source_route_types.h"
+#include "tapesister/eq_types.h"
 
 enum {
     TS_HISTORY_DEPTH = 20,
@@ -433,6 +434,7 @@ typedef struct {
     int sample_edit_count;
     TsPostEdit post_edits[TS_POST_EDIT_DEPTH];
     int post_edit_count;
+    TsMasterEqControls tile_eq;
 } TsEditSnapshot;
 
 typedef struct {
@@ -510,6 +512,7 @@ typedef struct {
     int sample_edit_count;
     TsPostEdit post_edits[TS_POST_EDIT_DEPTH];
     int post_edit_count;
+    TsMasterEqControls tile_eq;
     TsEditSnapshot undo[TS_HISTORY_DEPTH];
     TsEditSnapshot redo[TS_HISTORY_DEPTH];
     int undo_count;
@@ -588,6 +591,10 @@ typedef struct {
 void ts_sample_init(TsSample *sample);
 void ts_sample_free(TsSample *sample);
 void ts_sample_touch(TsSample *sample);
+/* Offline edit pipeline: EQ is last, after material and native effects. */
+int ts_instrument_render_tile_eq(TsSample *out,const TsInstrument *instrument,const TsMasterEqControls *eq,char *error,size_t size);
+int ts_instrument_set_tile_eq(TsInstrument *instrument,const TsMasterEqControls *eq,char *error,size_t size);
+int ts_sample_apply_eq(TsSample *sample,const TsMasterEqControls *eq);
 int ts_sample_clone(TsSample *destination, const TsSample *source, char *error, size_t error_size);
 int ts_sample_load_wav(TsSample *sample, const char *path, char *error, size_t error_size);
 int ts_sample_load_wav_tuned(TsSample *sample, TsTuning *tuning, const char *path,

@@ -429,7 +429,7 @@ native note range is C-0–B-7 (MIDI 12–107), its tempo range is 32–255 BPM,
 instrument limit is 128. A legacy score outside those limits is rejected with
 an explicit message before replacing the embedded score; it is not silently
 clamped or discarded. Newly saved v7 scores require a compatible TapeSister build.
-Tile banks use TSR37 and Sister state v30; save/move the complete named project folder.
+Tile banks use TSR38 and Sister state v31; save/move the complete named project folder.
 
 Tile audio continues to use the existing host project sample format. The score
 extension does not change that format or make project audio storage lossless.

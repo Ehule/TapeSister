@@ -667,6 +667,10 @@ add_executable(test_prism_zoya tests/test_prism_zoya.c)
 target_link_libraries(test_prism_zoya PRIVATE tapesister_core)
 add_test(NAME test_prism_zoya COMMAND test_prism_zoya)
 
+add_executable(tapesister_tile_eq_tests tests/test_tile_eq.c)
+target_link_libraries(tapesister_tile_eq_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_tile_eq_tests COMMAND tapesister_tile_eq_tests)
+
 add_executable(tapesister_master_eq_tests tests/test_master_eq.c)
 target_link_libraries(tapesister_master_eq_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_master_eq_tests COMMAND tapesister_master_eq_tests)

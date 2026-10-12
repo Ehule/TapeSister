@@ -124,6 +124,27 @@ static void test_mute_solo_phase(void)
 
 #include "test_mosaic_performance.inc"
 
+static void test_card_routes(void)
+{
+    TsMosaic *m=fixture(),*plain=fixture();
+    m->events[0].output_route.matrix_enabled=1;m->events[0].output_route.matrix_gain[3]=1000;
+    for(int i=0;i<500;++i) {
+        TsSourceRouteMix mix={0};TsStereoFrame bus=ts_mosaic_read_routed(m,48000,&mix),expected=ts_mosaic_read(plain,48000);
+        assert(bus.l==0 && bus.r==0);
+        assert(fabsf(mix.graph[3].l-expected.l)<1e-6f && fabsf(mix.graph[3].r-expected.r)<1e-6f);
+    }
+    m->events[0].output_route=(TsSourceRoute){0};
+    for(int i=0;i<300;++i) {
+        TsSourceRouteMix mix={0};TsStereoFrame bus=ts_mosaic_read_routed(m,48000,&mix),expected=ts_mosaic_read(plain,48000);
+        assert(fabsf(bus.l+mix.graph[3].l-expected.l)<1e-5f);
+        if(i==299)assert(mix.graph[3].l==0 && fabsf(bus.l-expected.l)<1e-6f);
+    }
+    m->events[0].output_route.matrix_enabled=1;m->events[0].output_route.matrix_gain[3]=1000;
+    for(int i=0;i<300;++i){TsSourceRouteMix mix={0};ts_mosaic_read_routed(m,48000,&mix);}
+    m->playing=0;
+    for(int i=0;i<100;++i){TsSourceRouteMix mix={0};ts_mosaic_read_routed(m,48000,&mix);if(i==99)assert(mix.graph[3].l==0 && mix.graph[3].r==0);}
+    ts_mosaic_free(m);ts_mosaic_free(plain);
+}
 static void test_storage(void)
 {
     const char *dir="mosaic-storage-test";MKDIR(dir);
@@ -144,7 +165,7 @@ static void test_storage(void)
     char lines[4][1024];
     for(int i=0;i<2;++i)assert(fgets(lines[i],sizeof(lines[i]),old));
     for(int i=0;i<=TS_MOSAIC_ENVELOPE_POINTS;++i)assert(fgets(lines[2],sizeof(lines[2]),old));
-    for(int i=2;i<4;++i)assert(fgets(lines[i],sizeof(lines[i]),old));fclose(old);
+    for(int i=2;i<4;++i){assert(fgets(lines[i],sizeof(lines[i]),old));char route[1024];assert(fgets(route,sizeof(route),old));assert(fgets(route,sizeof(route),old));}fclose(old);
     for(int version=3;version>=1;--version) {
         old=fopen("mosaic-storage-test/mosaic.tsm","w");assert(old);
         fprintf(old,"TAPESISTER_MOSAIC %d\nSETTINGS 0 0.7%s\n",version,version==3?" 1.5":"");
@@ -199,6 +220,6 @@ static void test_project_transaction(void)
 int main(void)
 {
     test_mosaic_volume();
-    test_tape_speed();test_event_mix_and_fades();test_mute_solo_phase();test_ownership();test_seek();test_one_shot_and_resize();test_spacing_and_history();test_storage();test_project_transaction();
+    test_card_routes();test_tape_speed();test_event_mix_and_fades();test_mute_solo_phase();test_ownership();test_seek();test_one_shot_and_resize();test_spacing_and_history();test_storage();test_project_transaction();
     puts("Mosaic ownership, independent clocks, seeking, geometry and storage passed");return 0;
 }

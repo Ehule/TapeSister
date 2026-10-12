@@ -53,7 +53,7 @@ Empty slots are skipped and never automatically filled by sequencing.
 A pass begins at the manually selected slot and wraps through the chosen order.
 **LOOP ON** repeats; **LOOP OFF** stops ARP after the last slot has held for its
 full duration. The inner pattern's LOOP/ONCE is separate: an inner ONCE can finish
-and wait silently until the next outer slot. STOP/Shift+Space stops both clocks
+and wait silently until the next outer slot. ARP STOP (or Shift+Space with ARP in the transport group) stops both clocks
 without releasing manual notes or Sister Machine's held memory. RESET restarts
 the current pattern and a fresh outer pass. Manual slot selection starts a new
 outer hold/pass from that slot; an empty live copy still preserves inner phase.
@@ -104,8 +104,9 @@ resumes. Automatic slot changes never dirty the project or change its saved
 manual selection. Older projects get the outer sequencer disabled; projects
 without ARP data get an empty default bank. Edits trigger the unsaved warning.
 
-**Shift+Space** starts/stops ARP, including with the panel closed or the tile
-bank visible. It also works from FM, Mosaic, the EQ page, and Sister Machine.
+**Shift+Space** controls the [Performance Transport](PERFORMANCE_TRANSPORT.md)
+group, defaulting to ARP only. CFG → Transport or Ctrl+Shift+Space edits the group.
+The ARP panel's own Play/Stop buttons always control ARP alone.
 Text fields, dialogs, Portal, and file preview retain their existing key handling.
 
 Hover a button or slider for **600 ms** to see help and shortcuts in the bottom
@@ -127,7 +128,7 @@ alongside the sequence, including HOLD, Shift-click chords, and MIDI.
 | 01–16 | Recall a saved pattern, or copy into an empty slot during playback |
 | SLOT SEQ / mode / SLOT TIME / LOOP | Sequence populated slots independently of their note patterns |
 | PLAY / STOP | Start from the first step / release the sequencer's voices only |
-| Shift+Space | The same ARP-only transport, even with its controls hidden |
+| Shift+Space | Configured Performance Transport group (ARP only by default) |
 | UP | Ascending pitch |
 | DOWN | Descending pitch |
 | UP/DOWN | Ascend then descend without repeating the end notes |
@@ -198,7 +199,8 @@ source without adding a separate click-launched layer, even with PLAY ON SEL or
 main LOOP enabled. Existing click-launched layers keep playing. Normal tile
 launching resumes after ARP stops.
 
-ARP STOP, Shift+Space, CLEAR, and the end of ONCE release only sequence voices.
+ARP STOP, CLEAR, and the end of ONCE release only sequence voices. Shift+Space
+stops every checked Performance Transport participant.
 CLEAR or inner ONCE leaves an active outer clock waiting for its next slot. They do not
 release a manually held chord, same-pitch MIDI notes, or click-launched tiles.
 Space/Stop retains its global stop behavior. A short 5 ms fade removes abrupt

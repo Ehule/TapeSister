@@ -571,7 +571,7 @@ void ts_sister_runtime_init(TsSisterRuntime *runtime)
     ts_master_eq_init(&runtime->master_eq);
     ts_eq_spectrum_init(&runtime->eq_spectrum);
     ts_router_init(&runtime->router);
-    ts_matrix_init(&runtime->matrix);
+    ts_matrix_init(&runtime->matrix);runtime->performance_transport=1;
     ts_insert_init(&runtime->insert);
     ts_spatial_init(&runtime->spatial);
     runtime->rolling = 1;

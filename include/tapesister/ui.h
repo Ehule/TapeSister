@@ -506,6 +506,7 @@ typedef struct {
     int sister_portal_pressed;
     TsUiMasterOutputStatus master_output;
     int master_output_dragging;
+    TsMasterEqControls canvas_eq;int canvas_eq_open,canvas_eq_busy;
     int master_eq_open, master_eq_band, master_eq_drag, master_eq_reset_pending;
     unsigned master_eq_rate;
     int master_eq_presets_open, master_eq_spectrum_off;

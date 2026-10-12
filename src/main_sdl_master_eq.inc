@@ -2,7 +2,7 @@ static void master_eq_commit(SDL_AudioDeviceID device,AudioState *audio,TsUiStat
 {
     ts_master_eq_sanitize(&ui->config.master_eq);
     if(device)SDL_LockAudioDevice(device);
-    ts_master_eq_set(&audio->sister.master_eq,&ui->config.master_eq);
+    ts_master_eq_set(canvas_eq_handling?&audio->canvas_eq:&audio->sister.master_eq,&ui->config.master_eq);
     if(device)SDL_UnlockAudioDevice(device);
 }
 static int master_eq_midi_band(const char *target,int *band,int *control)
@@ -24,7 +24,7 @@ static void master_eq_open(SDL_AudioDeviceID device,AudioState *audio,TsUiState 
 static void master_eq_spectrum_tick(AudioState *audio,TsUiState *ui,int visible,Uint32 now)
 {
     TsEqSpectrum *s=&audio->sister.eq_spectrum;
-    int enabled=visible && ts_ui_master_eq_visible(ui) && !ui->master_eq_spectrum_off;
+    int enabled=!ui->canvas_eq_open && visible && ts_ui_master_eq_visible(ui) && !ui->master_eq_spectrum_off;
     unsigned was_enabled=atomic_load_explicit(&s->request,memory_order_relaxed)&1u;
     unsigned rate=audio->output_rate>0?(unsigned)audio->output_rate:48000;
     ts_eq_spectrum_enable(s,enabled);

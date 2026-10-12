@@ -115,6 +115,8 @@ static void matrix_clear_reset(const char *directory)
     defaults.enabled=0;assert(ts_matrix_set(&a.sister.matrix,&defaults,48000));
     matrix_click(1000,34,SDL_BUTTON_LEFT);assert(a.sister.matrix.controls.enabled);
 }
+#include "test_matrix_history.inc"
+#include "test_performance_transport.inc"
 static void matrix_controller(const char *directory)
 {
     ts_tapehead_stop();ts_note_bank_clear(&a.notes);ts_performance_clear(&a.performance);ts_performance_clear(&a.tile_launchers);
@@ -226,7 +228,7 @@ static void matrix_controller(const char *directory)
     assert(ts_matrix_set(&a.sister.matrix,&c,48000));matrix_window.controls=c;
     matrix_click(455,102,SDL_BUTTON_LEFT);matrix_window.selected=0;matrix_window.destination=TS_MATRIX_PRISM;
     matrix_shot(directory,"matrix-terra-multiple");
-    matrix_clear_reset(directory);
+    matrix_clear_reset(directory);matrix_history_bulk(directory);test_performance_transport(directory);
     /* An input can reach an OFF processor without an output from that node.
        The screenshot is a native render driven by actual callback samples. */
     assert(matrix_show(0,&a,&u,&pages,&bank,-1,-1));

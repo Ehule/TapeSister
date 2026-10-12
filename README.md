@@ -109,7 +109,8 @@ open. Copies share source audio until an edit creates a new version. Sources
 browses all Sample banks and the event audio versions.
 
 Shift-drag a box to select a group; drag to move it or Shift-drag a selected tile to
-copy the group. M/S mutes or solos, middle-click seeks, and FOLLOW scrolls with the
+copy the group. M/S mutes or solos selected cards; Shift+M/Shift+S affects all
+cards sharing those sources. Middle-click seeks, and FOLLOW scrolls with the
 playhead. **grave** visits Mosaic and returns to the previous main or FM
 workspace. Its colors and selection highlight are editable in CFG → PALETTE.
 
@@ -118,7 +119,10 @@ A centered global SPEED slider covers 0.5×–2×, changing pitch and arrangemen
 together with smooth live movement. These settings save with the project. CLEAR SOLO
 remains visible while any card is soloed, including cards outside the view.
 
-Mosaic plays through the existing global Fallout, pedalboard, and Sister routing.
+Mosaic has its own Matrix bus and optional per-card routes into shared effects
+or hardware. [Performance Transport](docs/PERFORMANCE_TRANSPORT.md) groups ARP,
+SisterTracker and Mosaic under Shift+Space. [Canvas EQ](docs/CANVAS_EQ.md) adds an
+editable five-band overlay to tiles and Mosaic instances, with cached playback.
 **REC FILE** records the final stereo output while you arrange or edit. Saving
 preserves the arrangement and shared audio versions in the project folder. See the
 [illustrated Mosaic chapter](docs/USER_MANUAL.md#mosaic) and
@@ -214,7 +218,9 @@ Subtle activity marks show source, destination and connection signals with a gen
 fade. Wheel over Level or Row Pan to adjust; Shift makes finer changes. Right-click
 resets Level to 0 dB and Pan to center. Middle-click IN/OUT names to label hardware;
 the text field has a blinking caret. **Clear All** removes the whole patch;
-**Reset to Default** restores normal stereo. Both preserve hardware names.
+**Reset to Default** restores normal stereo. Both preserve hardware names. Ctrl/Shift-select rows for bulk routing; Undo/Redo
+retains grouped edits. Original/Edited provides A/B and Restore confirms returning
+to the initial routing.
 
 ![Native matrix responding to a test signal](docs/screenshots/routing-matrix/matrix-signal-activity.png)
 

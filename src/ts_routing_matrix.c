@@ -19,6 +19,7 @@ void ts_matrix_default(TsMatrixControls *c)
     for(int i=TS_MATRIX_SISTER;i<=TS_MATRIX_FALLOUT;++i)c->row[i].matrix_gain[TS_MATRIX_MAIN]=1000;
     c->row[TS_MATRIX_FM].matrix_gain[TS_MATRIX_MAIN]=1000;
     c->row[TS_MATRIX_LINK].matrix_gain[TS_MATRIX_MAIN]=1000;
+    c->row[TS_MATRIX_MOSAIC].matrix_gain[TS_MATRIX_MAIN]=1000;
     snprintf(c->output_name[0],TS_MATRIX_NAME,"MAIN SPEAKERS");
 }
 static int order_graph(const TsMatrixControls *c,int *order)
