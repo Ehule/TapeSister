@@ -97,4 +97,52 @@ static void physical_inputs(void)
     near(pairs[2].l,.5f);near(pairs[2].r,.6f);
     ts_insert_free(io);free(io);
 }
-int main(void){graph();runtime();physical_inputs();puts("Unified routing graph, shared DSP, loop isolation, hardware returns and persistence passed");}
+static void import_serial_chain(void)
+{
+    static TsSisterRuntime legacy,edited;char error[200];
+    for(int reversed=0;reversed<2;++reversed) {
+        TsSisterRuntime *both[]={&legacy,&edited};
+        for(int i=0;i<2;++i) {
+            TsSisterRuntime *r=both[i];ts_sister_runtime_init(r);
+            assert(ts_sister_runtime_reconfigure(r,48000,2,error,sizeof(error)));
+            ts_sister_runtime_configure_limiter(r,0,-1,1,50);
+            TsSisterParameters p=r->parameters;
+            p.prism.enabled=1;p.prism.lenses=8;p.prism.mix=.25f;p.prism.dry_level=.75f;
+            p.fx.enabled=1;p.fx.fallout.enabled=1;p.fx.fallout.mix=.2f;
+            p.fx.slot[0]=(TsSisterFxSlotControls){.type=TS_SISTER_FX_DELAY,.enabled=1,
+                .placement=TS_SISTER_FX_PLACE_POST,.mix=.3f,.parameter_a=.02f,.parameter_b=.4f};
+            ts_sister_runtime_set_parameters(r,&p);
+            if(reversed){TsRouterControls c=r->router.controls;ts_router_move(&c,3,0);ts_sister_runtime_set_router(r,&c);}
+        }
+        for(int f=0;f<48000;++f) {
+            if(f==8000) {
+                TsMatrixControls c;assert(ts_sister_runtime_matrix_import(&edited,&c,error,sizeof(error)));
+                assert(c.serial_mask&(1u<<TS_MATRIX_PRISM));
+                assert(ts_matrix_set(&edited.matrix,&c,48000));
+                for(int row=0;row<TS_MATRIX_ROWS;++row)assert(!edited.matrix.voice[row].remaining);
+                FILE *file=tmpfile();assert(file&&ts_matrix_write(file,&c));rewind(file);
+                TsMatrixControls copy;ts_matrix_default(&copy);char line[512];
+                while(fgets(line,sizeof(line),file)){char *v=strchr(line,'=');assert(v);*v++=0;v[strcspn(v,"\r\n")]=0;assert(ts_matrix_read(&copy,line,v)==1);}
+                fclose(file);assert(!memcmp(&copy,&c,sizeof(c)));
+            }
+            TsStereoFrame raw={1.2f*sinf(f*.032f),.4f*cosf(f*.027f)};
+            TsSisterSourceFrames s={.mosaic={raw.l*.8f,raw.r*.8f},.matrix_program_gain=.8f};
+            TsStereoFrame input={fmaxf(-1,fminf(1,raw.l))*.8f,raw.r*.8f};
+            ts_sister_runtime_process_frame(&legacy,&s);
+            TsStereoFrame want=ts_sister_runtime_process_ordinary_post_fx(&legacy,input);
+            want=ts_sister_runtime_process_output(&legacy,want);
+            TsSisterRuntimeFrame frame=ts_sister_runtime_process_frame(&edited,&s);
+            TsStereoFrame got=edited.matrix.controls.enabled?frame.monitor_return:
+                ts_sister_runtime_process_ordinary_post_fx(&edited,input);
+            got=ts_sister_runtime_process_output(&edited,got);
+            assert(fabsf(want.l-got.l)<.000002f && fabsf(want.r-got.r)<.000002f);
+        }
+        TsMatrixControls untouched=edited.matrix.controls,c=untouched;
+        edited.enabled=1;assert(!ts_sister_runtime_matrix_import(&edited,&c,error,sizeof(error)));
+        assert(!memcmp(&c,&untouched,sizeof(c)));edited.enabled=0;
+        edited.router.controls.send_mask=1;assert(!ts_sister_runtime_matrix_import(&edited,&c,error,sizeof(error)));
+        assert(!memcmp(&c,&untouched,sizeof(c)));
+        for(int i=0;i<2;++i)ts_sister_runtime_free(both[i]);
+    }
+}
+int main(void){graph();runtime();physical_inputs();import_serial_chain();puts("Unified routing graph, shared DSP, serial import audio parity, loop isolation, hardware returns and persistence passed");}

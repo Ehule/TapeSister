@@ -8,7 +8,7 @@
 #include "tapesister/keyboard_sequence.h"
 
 enum {
-    TS_SISTER_PROJECT_STATE_VERSION = 31,
+    TS_SISTER_PROJECT_STATE_VERSION = 32,
     TS_SISTER_PROJECT_PRESET_NAME_MAX = 47
 };
 

@@ -33,7 +33,8 @@ its sharing support. VB-Audio Matrix is separate from TapeSister's F9 routing ma
 
 ### Legacy projects
 
-Legacy serial projects retain Insert assignments until converted with Use Matrix.
+Legacy serial projects retain Insert assignments. Use Matrix refuses conversion
+while an external Insert is active; it does not silently drop a hardware loop.
 Their old Insert setup uses **MASTER DEVICE SPARES** for SEND and **SHARED CFG
 INPUT** for RETURN, with channel pairs such as send 3/4 and return 5/6, then
 APPLY PORTS and SAVE CONFIG. Legacy INSERT bypass compares the internal path

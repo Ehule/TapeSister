@@ -1565,8 +1565,8 @@ the stereo path above. Both act immediately, center row pan, restore stereo,
 make tracks own their routes, disable graph feedback and preserve hardware names,
 samples, notes and processor settings. Save the project to retain the change.
 
-**MATRIX LIVE** means the matrix is currently controlling audio. Click it again
-to audition Original, then Edited to return. It is not a state sequencer. Sequencing between saved
+**MATRIX LIVE** is a status indicator and does not switch audio when clicked.
+Original / Edited compares your starting routes and changes. It is not a state sequencer. Sequencing between saved
 matrix patches is not implemented. Prism's Morph Matrix is a separate instrument.
 
 ### Feedback and older projects
@@ -1577,11 +1577,13 @@ maximum −6 dB gain. **Cut Feedback** removes those connections and clears thei
 stored audio. Physical cable loops are outside the graph.
 
 Existing projects/configurations retain their legacy engine until **Use Matrix**
-is chosen. Conversion retains source clean/send levels and initializes shared
-returns through Main/EQ/limiter; it cannot reproduce every arbitrary serial
-chain unchanged. Original/Edited preserves an A/B comparison during this project session. Clear
-All and Reset to Default also enable the matrix. Legacy cross-pair speaker maps
-marked OLD remain audible until that row's **Use Matrix** conversion.
+is chosen. Supported ordinary serial chains import with the same processor order,
+dry/wet settings and running effect histories. Imported processor rows say MIX;
+new wet-only sends say WET. Original/Edited compares the starting routing and your
+edits; Restore replaces your edits with the starting routes and can be undone.
+Unsupported conversions leave the original sound and routes unchanged and explain
+why. See the [matrix guide](ROUTING_MATRIX.md) for the current supported scope.
+Clear All and Reset to Default intentionally replace the routing instead.
 
 The [legacy routing reference](LEGACY_ROUTING.md), [source routing reference](SOURCE_ROUTING.md)
 and [Router Performance reference](ROUTER_PERFORMANCE.md) describe the retained
@@ -1947,7 +1949,7 @@ failed save from publishing a mixed or partial generation.
 `Ctrl+S` saves the active project. An existing destination requires overwrite
 confirmation. A short SAVING overlay appears while the folder is built.
 
-New saves use **TSR38**, **SISTRK v7**, **Mosaic format 6** and **Sister state v31**. Earlier formats
+New saves use **TSR38**, **SISTRK v7**, **Mosaic format 6** and **Sister state v32**. Earlier formats
 load; older application builds cannot open the new tile/score saves. Loading
 replaces saved routing and hardware names. TrackSister starts stopped; activity
 indicators and live voice state are not saved. Device names/backend/buffer and

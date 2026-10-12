@@ -224,16 +224,17 @@ to the initial routing.
 
 ![Native matrix responding to a test signal](docs/screenshots/routing-matrix/matrix-signal-activity.png)
 
-**MATRIX LIVE** means the graph controls audio. It is not a state sequencer.
-One shared instance of each processor handles its summed inputs; dry audio needs
-an explicit route. Whole-mix hardware processing uses Main → output pair → hardware
+**MATRIX LIVE** is status only. Use Original / Edited for A/B listening; Restore
+replaces your changes with the starting routing and can be undone. It is not a state sequencer.
+One shared instance of each processor handles its summed inputs. WET rows need
+an explicit dry route; imported MIX rows keep their saved dry/wet balance. Whole-mix hardware processing uses Main → output pair → hardware
 → input pair → EQ/limiter, without legacy Insert assignment. The matrix addresses
 pairs on the active device, not aggregated independent output devices.
 
 Routing, levels, pan/mono, inheritance and aliases save with the TSR project.
 Keep the complete project folder. Existing projects retain their legacy path
-until explicitly converted with **Use Matrix**; save a separate copy to retain
-the old patch. The legacy serial Router, its Performance states/timers, Insert
+until **Use Matrix** imports their existing ordinary serial chain. Unsupported
+conversions leave the routing unchanged and show a reason. The legacy serial Router, its Performance states/timers, Insert
 assignments and Ambisonics output do not control an active matrix.
 
 [Routing guide, default path, Terra and Vulture examples](docs/ROUTING_MATRIX.md) ·

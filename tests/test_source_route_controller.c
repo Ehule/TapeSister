@@ -196,6 +196,7 @@ static void routing_pan_scope(const char *directory)
 #include "test_routing_clarity.inc"
 #include "test_tracker_tape_input.inc"
 #include "test_matrix_controller.inc"
+#include "test_matrix_import.inc"
 
 int main(int argc,char **argv)
 {
@@ -278,6 +279,7 @@ int main(int argc,char **argv)
     tracker_tape_input();
     master_mix_project(argc>2?argv[2]:NULL,argc>1?argv[1]:NULL);
     matrix_controller(argc>1?argv[1]:NULL);
+    matrix_import_project();
     ts_tapehead_stop();ts_tapehead_close();source_route_close();remove("route-score.tst");
     ts_sister_runtime_free(&a.sister);ts_capture_free(&a.capture);ts_instrument_free(&bank);ts_sample_pages_free(&pages);
     SDL_DestroyWindow(window);SDL_Quit();puts("Source routing UI, native audio, track precedence, live edits, saved score and stereo fallback passed");return 0;

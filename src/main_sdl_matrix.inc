@@ -111,7 +111,7 @@ static void mx_rows(TsSamplePages *pages,TsInstrument *bank)
     }
     if(!f || f==4)for(int i=0;i<TS_MATRIX_NODES;++i) {
         MatrixRow *r=&w->rows[w->count++];*r=(MatrixRow){.kind=2,.index=i};
-        snprintf(r->name,sizeof(r->name),"%s%s",ts_matrix_node_name(i),i>=1 && i<=4?" WET":"");
+        snprintf(r->name,sizeof(r->name),"%s%s",ts_matrix_node_name(i),i>=1 && i<=4?(w->controls.serial_mask&(1u<<i)?" MIX":" WET"):"");
     }
     if((!f || f==5) && w->mosaic)for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(w->mosaic->events[i].id) {
         MatrixRow *r=&w->rows[w->count++];*r=(MatrixRow){.kind=3,.index=i,.tile=w->mosaic->events[i].id};
@@ -212,7 +212,9 @@ static void mx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
     mx_text(22,57,"FROM A ROW > TO A COLUMN. ONE SHARED INSTANCE OF EACH PROCESSOR.",MX_DIM,2);
     const char *filters[]={"ALL","TRACKS","TILES","INPUTS","RETURNS","MOSAIC"};
     for(int i=0;i<6;++i)mx_button(22+i*110,88,104,filters[i],w->filter==i);
-    mx_button(690,88,174,w->original_active?"ORIGINAL":w->controls.enabled?"MATRIX LIVE":"USE MATRIX",w->controls.enabled);
+    if(w->original_active || w->controls.enabled)
+        mx_text(700,95,w->original_active?"HEARING ORIGINAL":"MATRIX LIVE",MX_GREEN,w->original_active?1:2);
+    else mx_button(690,88,174,"USE MATRIX",0);
     mx_button(876,88,174,"CUT FEEDBACK",0);mx_button(1062,88,192,w->controls.feedback?"FEEDBACK ON":"FEEDBACK OFF",w->controls.feedback);
     mx_text(22,137,"SOURCE / OUTPUT",MX_DIM,2);
     const char *shorts[]={"MAIN","SISTER","PRISM","PEDALS","FALLOUT","EQ","LIMITER"};
@@ -287,8 +289,8 @@ static void mx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
             mx_rect(266+(6+(int)strlen(w->name))*12,736,2,18,MX_YELLOW);
         mx_text(266,763,"ENTER: SAVE / ESC: CANCEL - CHANNEL NUMBERS STAY VISIBLE",MX_TEXT,1);
     }
-    if(!w->controls.enabled)mx_text(24,804,"LEGACY PROJECT: USE MATRIX STARTS A NEW MAIN > EQ > LIMITER PATH. EXISTING SOURCE SENDS ARE RETAINED.",MX_YELLOW,1);
-    else if(w->status[0])mx_text(24,804,w->status,MX_YELLOW,1);
+    if(w->status[0])mx_text(24,804,w->status,MX_YELLOW,1);
+    else if(!w->controls.enabled)mx_text(24,804,"SAVED ROUTING: USE MATRIX IMPORTS THE EXISTING EFFECT CHAIN. ORIGINAL/EDITED COMPARES; RESTORE REPLACES YOUR EDITS.",MX_YELLOW,1);
     else mx_text(24,804,"SIGNAL: ROW = SOURCE / COLUMN = RECEIVING / CELL = SENDING. N/A = PORT NOT OPEN. F9 / ESC CLOSE.",MX_DIM,1);
     mx_text(1180,25,"F9",MX_DIM,2);
 }
@@ -305,6 +307,34 @@ static void mx_commit_controls(SDL_AudioDeviceID device,AudioState *audio,TsUiSt
     ui->config.matrix=audio->sister.matrix.controls;
     if(device)SDL_UnlockAudioDevice(device);
     matrix_window.dirty=1;
+}
+static int mx_importable_source(TsSourceRoute r)
+{return !r.matrix_enabled && !r.mix_enabled && (r.mode==TS_SOURCE_MAIN || r.mode==TS_SOURCE_INHERIT);}
+static void mx_activate(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsSamplePages *pages,TsInstrument *bank)
+{
+    MatrixWindow *w=&matrix_window;
+    if(w->controls.enabled || w->original_active)return;
+    /* Do not claim a lossless conversion for source paths the importer does
+       not represent yet. Validate the complete project, not just its filter. */
+    int supported=audio->mixer.master_gain==1 && !audio->tune_reference_target && !audio->tune_reference_level &&
+        !(audio->mixer.monitor_enabled && audio->external_monitor_enabled && atomic_load(audio->external_monitor_enabled));
+    for(int i=0;i<TS_TRACKER_LANES;++i)supported&=mx_importable_source(pages->tracker.lanes[i].output_route);
+    for(size_t p=0;p<ts_sample_pages_count(pages);++p) {
+        const TsInstrument *page=ts_sample_pages_page(pages,bank,p);if(!page)continue;
+        for(int i=0;i<TS_BANK_SLOT_COUNT;++i)if(page->bank[i].occupied)supported&=mx_importable_source(page->bank[i].output_route);
+    }
+    if(w->mosaic)for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(w->mosaic->events[i].id)supported&=!w->mosaic->events[i].output_route.matrix_enabled;
+    if(!supported){snprintf(w->status,sizeof(w->status),"UNCHANGED: CUSTOM SOURCE / MONITOR ROUTING CANNOT YET BE IMPORTED WITHOUT CHANGING THE SOUND.");return;}
+    TsMatrixControls next;
+    if(device)SDL_LockAudioDevice(device);
+    int ok=ts_sister_runtime_matrix_import(&audio->sister,&next,w->status,sizeof(w->status));
+    if(ok) {
+        ok=ts_matrix_set(&audio->sister.matrix,&next,(unsigned)audio->output_rate);
+        if(ok)w->controls=ui->config.matrix=next;
+    }
+    if(device)SDL_UnlockAudioDevice(device);
+    if(ok)snprintf(w->status,sizeof(w->status),"SAVED CHAIN IMPORTED: MIX ROWS KEEP THEIR DRY/WET SETTINGS. ORIGINAL/EDITED COMPARES; RESTORE REPLACES EDITS.");
+    w->dirty=1;
 }
 static void mx_commit_route(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsSamplePages *pages,TsInstrument *bank,TsSourceRoute route)
 {
@@ -563,8 +593,7 @@ static int matrix_event_inner(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID de
         int f=x>=22 && x<682?(x-22)/110:-1;
         if(f>=0){w->selection_count=0;w->filter=f;w->scroll=0;mx_rows(pages,bank);return 1;}
         if(x>=690 && x<864) {
-            if(w->controls.enabled || w->original_active)mx_ab(device,audio,ui,pages,bank);
-            else {mx_original(device,audio,pages,bank);w->controls.enabled=1;mx_commit_controls(device,audio,ui);}return 1;
+            mx_activate(device,audio,ui,pages,bank);return 1;
         }
         if(x>=876 && x<1050){ts_matrix_cut_feedback(&w->controls);mx_commit_controls(device,audio,ui);return 1;}
         if(x>=1062){if(w->controls.feedback)ts_matrix_cut_feedback(&w->controls);else w->controls.feedback=1;mx_commit_controls(device,audio,ui);return 1;}

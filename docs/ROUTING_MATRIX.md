@@ -3,8 +3,9 @@
 F9, tile right-click and TrackSister track-header right-click open the same
 modeless window. Audio and keyboard playing continue while it is open.
 
-**MATRIX LIVE** means this graph is controlling the audio. Click it again to
-audition the original routing; **Edited** returns to your changes. It is not a sequencer. Storing/sequencing different matrix patches is
+**MATRIX LIVE** is a status indicator: this graph is controlling the audio.
+It does not switch routing when clicked. Use **Original / Edited** for A/B listening.
+It is not a sequencer. Storing/sequencing different matrix patches is
 not implemented. The legacy Router Performance sequencer only affects the old
 serial engine; Prism's Morph Matrix is a separate sound-morphing feature.
 
@@ -38,13 +39,23 @@ Using either button on a legacy project enables the matrix with the chosen
 blank/default routing. Save the project to retain the result.
 
 Older configurations and project files retain the old engine and saved sound.
-F9 identifies this as a legacy project. **Use Matrix** opts into the new graph:
-the legacy serial order, Insert assignment and Sister source switches stop
-controlling the signal path. Existing source clean/send levels are retained;
-legacy direct speakers retain their channel mapping. Shared processor outputs
-start at Main, followed by EQ/limiter. This is an intentional conversion, not a
-claim that an arbitrary old serial chain sounds identical through the new graph.
-The original routing is captured before your first Matrix edit; use Original/Edited to compare it during this session.
+**Use Matrix** imports a supported ordinary serial chain with its processor order,
+bypass choices, dry/wet settings, return trims and existing DSP histories intact.
+The initial graph therefore sounds the same before you edit it. Imported effects
+say **MIX**, because their output includes the saved dry/wet mix; newly patched
+**WET** rows retain the wet-only behavior described above. For example, a Mosaic
+project using Prism and delay/reverb imports as Mosaic → Main → Prism MIX →
+Pedalboard MIX → EQ → limiter → OUT 1/2. It does not start a dry default patch.
+
+The importer currently supports ordinary Main-source serial chains. Live Sister,
+parallel/direct source or send-return arrangements, an active external Insert,
+Ambisonics, monitor/reference paths, and running Router transitions/automation
+are not yet safely translated. In these cases **Use Matrix leaves every route
+unchanged** and displays the reason. Clear All and Reset to Default remain
+explicit ways to build a different patch; neither is a preservation operation.
+
+The original routing is captured before your first Matrix edit. Original/Edited
+compares it during this session; Restore replaces the edited version with it.
 
 ## Selection, undo and A/B
 
@@ -62,7 +73,7 @@ inheritance, names, feedback, activation, Clear All and Reset. A whole drag or
 bulk edit is one step. A fresh edit after Undo replaces the redo branch.
 
 **Original / Edited** auditions the state captured before the first routing edit
-in this project session. The Matrix Live button also switches back to Original.
+in this project session. The Matrix Live status never changes the audition.
 A/B preserves the edited version and undo history; return to Edited to make
 changes. **Restore** asks before replacing your edited routing, and that restore
 can itself be undone. Closing/reopening the Matrix keeps the session history.
@@ -170,7 +181,7 @@ are outside the graph and cannot be inferred from port aliases.
 
 ## Saving, recording and compatibility
 
-TSR38 tile files, SISTRK v7 tracker scores, Mosaic format 6 and Sister state v31 preserve the
+TSR38 tile files, SISTRK v7 tracker scores, Mosaic format 6 and Sister state v32 preserve the
 new source routes, graph, connection levels, row pan/mono and hardware aliases.
 Old formats load; older application builds cannot read the new tile/score saves.
 Opening a project replaces its matrix and aliases rather than retaining the
@@ -202,3 +213,18 @@ text, selection, routing and activity roles are not individually editable in
 CFG → PALETTE. An expanded palette editor is a separate proposed follow-up.
 
 ![Native matrix responding to a test signal](screenshots/routing-matrix/matrix-signal-activity.png)
+
+## Import regression checks
+
+The core routing test compares running serial and imported graphs, including
+reordered effects, Prism dry level/mix, delay tails, Fallout and the program
+ceiling. Controller tests check guarded activation, status-only Matrix Live,
+A/B and activation undo/redo. Sister state v32 persists the MIX processing mode;
+older files default to wet-only graph nodes.
+
+For an optional real Mosaic project comparison, set
+`TAPESISTER_MATRIX_IMPORT_PROJECT` to a portable `.tsr` and run
+`tapesister_source_route_controller_tests`. The test does not save the project.
+It renders 768,000 frames from 5:30, enables Matrix during playback, and compares
+Original/Edited against an uninterrupted legacy render. A Pale Weight measured
+a maximum absolute difference of `2.98023224e-08` per sample (float rounding).

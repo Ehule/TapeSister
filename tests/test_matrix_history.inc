@@ -41,3 +41,28 @@ static void matrix_history_bulk(const char *directory)
     mx_apply(before,0,&a,&u,&pages,&bank);free(before);matrix_history_clear();
     assert(matrix_show(0,&a,&u,&pages,&bank,-1,-1));
 }
+static void matrix_import_controls(void)
+{
+    ts_tapehead_stop();ts_note_bank_clear(&a.notes);ts_performance_clear(&a.performance);ts_performance_clear(&a.tile_launchers);
+    ts_audio_mixer_init(&a.mixer);a.external_monitor_enabled=NULL;a.tune_reference_target=a.tune_reference_level=0;
+    for(int i=0;i<TS_TRACKER_LANES;++i)pages.tracker.lanes[i].output_route=(TsSourceRoute){0};
+    for(size_t p=0;p<ts_sample_pages_count(&pages);++p) {
+        TsInstrument *page=ts_sample_pages_page_mut(&pages,&bank,p);assert(page);
+        for(int i=0;i<TS_BANK_SLOT_COUNT;++i)page->bank[i].output_route=(TsSourceRoute){0};
+    }
+    double energy[4];render(energy);matrix_history_clear();assert(matrix_show(0,&a,&u,&pages,&bank,-1,-1));
+    bank.bank[0].output_route=(TsSourceRoute){.mode=TS_SOURCE_PAIR,.second=1};
+    TsMatrixControls before=a.sister.matrix.controls;
+    matrix_click(760,102,SDL_BUTTON_LEFT);
+    assert(!memcmp(&before,&a.sister.matrix.controls,sizeof(before)) && !matrix_window.history_count);
+    assert(strstr(matrix_window.status,"UNCHANGED"));
+    bank.bank[0].output_route=(TsSourceRoute){0};matrix_history_clear();
+    matrix_click(760,102,SDL_BUTTON_LEFT);assert(a.sister.matrix.controls.enabled && a.sister.matrix.controls.serial_mask);
+    assert(matrix_window.history_count==1);
+    matrix_click(760,102,SDL_BUTTON_LEFT);assert(!matrix_window.original_active && matrix_window.history_count==1);
+    matrix_click(540,34,SDL_BUTTON_LEFT);assert(matrix_window.original_active && !a.sister.matrix.controls.enabled);
+    matrix_click(760,102,SDL_BUTTON_LEFT);assert(matrix_window.original_active && !a.sister.matrix.controls.enabled);
+    matrix_click(540,34,SDL_BUTTON_LEFT);assert(!matrix_window.original_active && a.sister.matrix.controls.enabled);
+    matrix_click(330,34,SDL_BUTTON_LEFT);assert(!a.sister.matrix.controls.enabled);
+    matrix_click(430,34,SDL_BUTTON_LEFT);assert(a.sister.matrix.controls.enabled);
+}

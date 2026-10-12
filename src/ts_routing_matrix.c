@@ -50,6 +50,8 @@ static int name_valid(const char *s)
 int ts_matrix_valid(const TsMatrixControls *c)
 {
     if(!c || c->enabled<0 || c->enabled>1 || c->feedback<0 || c->feedback>1)return 0;
+    const unsigned serial=(1u<<TS_MATRIX_MAIN)|(1u<<TS_MATRIX_PRISM)|(1u<<TS_MATRIX_BOARD)|(1u<<TS_MATRIX_FALLOUT);
+    if(c->serial_mask&~serial)return 0;
     for(int s=0;s<TS_MATRIX_ROWS;++s) {
         if(!ts_source_route_valid(&c->row[s],0) || !c->row[s].matrix_enabled)return 0;
         if(s<TS_MATRIX_NODES) {
@@ -93,6 +95,7 @@ void ts_matrix_init(TsRoutingMatrix *m)
 int ts_matrix_set(TsRoutingMatrix *m,const TsMatrixControls *c,unsigned rate)
 {
     if(!m || !ts_matrix_valid(c))return 0;
+    int activating=!m->controls.enabled && c->enabled;
     /* Route compilation and validation happen on the control thread. */
     int changed=!m->ready || m->controls.enabled!=c->enabled ||
         memcmp(m->controls.delayed,c->delayed,sizeof(c->delayed));
@@ -101,6 +104,9 @@ int ts_matrix_set(TsRoutingMatrix *m,const TsMatrixControls *c,unsigned rate)
         TsSourceRoute route=c->row[i];
         if(i<TS_MATRIX_NODES)for(int d=0;d<TS_MATRIX_NODES;++d)
             if(c->delayed[i]&(1u<<d))route.matrix_gain[d]=0;
+        /* The dormant graph must start at its imported gains, not crossfade
+           from unrelated default routes. Subsequent edits still slew. */
+        if(activating)m->voice[i].ready=0;
         ts_source_route_set(&m->voice[i],route,rate);
     }
     if(changed)memset(m->history,0,sizeof(m->history));
@@ -158,7 +164,7 @@ TsSourceRoute ts_matrix_source_route(TsSourceRoute old)
 int ts_matrix_write(FILE *f,const TsMatrixControls *c)
 {
     if(!ts_matrix_valid(c))return 0;
-    if(fprintf(f,"Matrix.Enabled=%d\nMatrix.Feedback=%d\n",c->enabled,c->feedback)<0)return 0;
+    if(fprintf(f,"Matrix.Enabled=%d\nMatrix.Feedback=%d\nMatrix.SerialMask=%u\n",c->enabled,c->feedback,c->serial_mask)<0)return 0;
     for(int s=0;s<TS_MATRIX_ROWS;++s) {
         if(fprintf(f,"Matrix.Row%d=%d,%d,%u",s,c->row[s].pan,c->row[s].width,s<TS_MATRIX_NODES?c->delayed[s]:0)<0)return 0;
         for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)if(fprintf(f,",%d",c->row[s].matrix_gain[d])<0)return 0;
@@ -178,7 +184,11 @@ int ts_matrix_read(TsMatrixControls *c,const char *key,const char *v)
 {
     if(strncmp(key,"Matrix.",7))return 0;
     key+=7;int n=-1,used=0;TsMatrixControls next=*c;
-    if(!strcmp(key,"Enabled") || !strcmp(key,"Feedback")) {
+    if(!strcmp(key,"SerialMask")) {
+        const unsigned serial=(1u<<TS_MATRIX_MAIN)|(1u<<TS_MATRIX_PRISM)|(1u<<TS_MATRIX_BOARD)|(1u<<TS_MATRIX_FALLOUT);
+        if(!integer(&v,&n) || *v || n<0 || ((unsigned)n&~serial))return -1;
+        next.serial_mask=(unsigned)n;
+    } else if(!strcmp(key,"Enabled") || !strcmp(key,"Feedback")) {
         if(!integer(&v,&n) || *v || n<0 || n>1)return -1;
         if(!strcmp(key,"Enabled"))next.enabled=n;else next.feedback=n;
     } else if(sscanf(key,"Row%d%n",&n,&used)==1 && !key[used] && n>=0 && n<TS_MATRIX_ROWS) {

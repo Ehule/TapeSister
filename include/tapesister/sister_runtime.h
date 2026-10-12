@@ -290,6 +290,10 @@ typedef struct {
 } TsSisterRuntime;
 
 void ts_sister_runtime_init(TsSisterRuntime *runtime);
+/* Stage a lossless ordinary serial-chain import without changing live DSP.
+   Unsupported topologies return 0 and leave controls untouched. */
+int ts_sister_runtime_matrix_import(const TsSisterRuntime *runtime,
+    TsMatrixControls *controls, char *error, size_t error_size);
 void ts_sister_runtime_free(TsSisterRuntime *runtime);
 int ts_sister_runtime_enable(TsSisterRuntime *runtime, uint32_t sample_rate,
                              uint8_t output_channels,

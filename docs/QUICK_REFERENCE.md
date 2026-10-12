@@ -498,8 +498,8 @@ Green marks beside rows = source activity; beneath columns = arriving audio;
 beneath checked cells = sends. Amber indicates feedback. These softly fading
 marks are not calibrated meters; disconnected/unavailable paths stay dark.
 **N/A** means that hardware channel is not open; the saved route remains silent.
-**MATRIX LIVE** indicates active routing; click it again to audition Original.
-Edited returns to your changes. It is not a patch-state sequencer.
+**MATRIX LIVE** indicates active routing; clicking it does not switch audio.
+Original / Edited performs A/B listening. It is not a patch-state sequencer.
 
 For a series Vulture loop: **Main → OUT 3/4 → hardware → IN 5/6 → EQ → limiter →
 OUT 1/2**; disconnect Main → EQ to avoid parallel dry audio. For Terra, connect
@@ -507,7 +507,9 @@ its input row to each desired processor/output. Each processor remains one
 shared instance. See [Routing Matrix](ROUTING_MATRIX.md).
 
 TSR saves include routing, levels, row pan/mono and hardware names. Keep the
-whole project folder. Legacy projects retain the old path until Use Matrix,
+whole project folder. Use Matrix imports supported serial chains without changing
+their sound; unsupported setups remain unchanged with an explanation. Imported
+MIX rows retain their dry/wet settings. Legacy projects retain the old path until Use Matrix,
 Clear All or Reset to Default is selected. Legacy serial order, Router
 Performance, Insert assignments and Sister source switches are inactive in the
 matrix. [Legacy reference](LEGACY_ROUTING.md).
@@ -781,7 +783,7 @@ Ctrl+Z / Ctrl+Y undo/redo; Escape cancels the current stroke.
 | Select Matrix source rows | Ctrl-click separately; Shift-click a range |
 | Route selected rows together | Click destination header or a selected row's cell |
 | Matrix undo / redo | Buttons, Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z in Matrix |
-| Compare routing | Original / Edited; Matrix Live also returns to Original |
+| Compare routing | Original / Edited; Matrix Live is status only |
 | Restore original routing | Restore, then confirm; restore is undoable |
 | Route Mosaic independently | Mosaic bus row; Mosaic filter for custom card routes |
 | Edit tile/card EQ | EQ beside S/M/R/L; Space auditions; Apply or Cancel |

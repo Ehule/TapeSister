@@ -11,6 +11,9 @@ enum { TS_MATRIX_INPUTS=4, TS_MATRIX_OUTPUTS=8,
        TS_MATRIX_ROWS, TS_MATRIX_DELAY=64, TS_MATRIX_NAME=24 };
 typedef struct {
     int enabled, feedback;
+    /* Imported serial effects retain their full dry/wet output. Bit MAIN
+       retains the ordinary program input ceiling; other nodes stay wet-only. */
+    unsigned serial_mask;
     TsSourceRoute row[TS_MATRIX_ROWS];
     unsigned delayed[TS_MATRIX_NODES];
     char input_name[TS_MATRIX_INPUTS][TS_MATRIX_NAME];
