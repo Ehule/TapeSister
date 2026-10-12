@@ -1,5 +1,11 @@
 # SisterTracker source boundary
 
+> Historical implementation reference. The current user workflow is documented
+> in the [User Manual](USER_MANUAL.md), [Routing Matrix](ROUTING_MATRIX.md) and
+> [TrackSister guide](SISTERTRACKER_PLAYBACK.md). Earlier serial/source-switch
+> paths, format versions and staged limitations below describe their original
+> implementation, not the current matrix defaults.
+
 F10 now embeds the TapeHead application at `f053d96df3996a5fd3b26625f069888c3a7d24ab`.
 The previous drawing-only extraction and native editing/playback recreation are
 superseded for the active workspace. The old controller suite still exercises

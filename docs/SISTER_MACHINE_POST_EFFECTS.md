@@ -1,5 +1,11 @@
 # Sister Machine post-effects architecture
 
+> Historical implementation reference. The current user workflow is documented
+> in the [User Manual](USER_MANUAL.md), [Routing Matrix](ROUTING_MATRIX.md) and
+> [TrackSister guide](SISTERTRACKER_PLAYBACK.md). Earlier serial/source-switch
+> paths, format versions and staged limitations below describe their original
+> implementation, not the current matrix defaults.
+
 > Historical note: this document records the earlier fixed-chain implementation. The
 > current instrument replaces that chain with four reorderable, independently placed,
 > duplicate-capable Reverb/Delay/Distortion/Grain slots. See the

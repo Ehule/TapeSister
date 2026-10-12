@@ -1,17 +1,17 @@
 # JACK audio and Insert troubleshooting
 
-Select **CFG → BACKEND → JACK**, save, and restart TapeSister. Linux builds
+Select **CFG → BACKEND → JACK** and **SAVE CONFIG**. Linux builds
 include a native JACK adapter; SDL itself does not need JACK support. The JACK
 runtime (`libjack.so.0`) and a running JACK server are required. For PipeWire's
 JACK compatibility layer, launch TapeSister through `pw-jack` where your distro
-requires it. Other backends continue to use SDL.
+requires it. Windows also has native ASIO; remaining backends use SDL.
 
-After switching backends, choose the corresponding devices in CFG and Insert.
-Saved device names remain explicit; a name from the old backend is not silently
-replaced. CFG's **SCAN** refreshes its input/output lists; Insert has **RESCAN**.
-Neither action interrupts active streams. **SAVE CONFIG** applies main-device
-changes, and **APPLY PORTS** applies Insert choices. A backend change requires a
-restart; selecting a backend does not switch the device lists before that restart.
+SAVE CONFIG applies the backend/device change in place, with a brief audio stop;
+finish or cancel recording first. Reopen CFG to select **TapeSister Master/Input**
+after applying the backend, then save again if needed. No app restart is required.
+Saved names remain explicit; failed setup changes attempt rollback and stay unsaved.
+CFG **SCAN** refreshes input/output lists without interrupting active streams.
+Legacy Insert has its own RESCAN/APPLY PORTS controls.
 
 ## JACK routing
 
@@ -21,12 +21,23 @@ corresponding stream opens. TapeSister does not connect them automatically.
 
 | Selector | Endpoint | JACK port names | Purpose |
 | --- | --- | --- | --- |
-| CFG output | TapeSister Master | `master_1` … `master_8` | Master on 1/2; optional shared Insert send on spare pairs |
-| CFG input | TapeSister Input | `input_1` … `input_8` | Ordinary EXT input and optional shared Insert return |
-| Insert SEND | TapeSister Insert Send | `send_1`, `send_2` | Dedicated stereo output to the external processor |
-| Insert RETURN | TapeSister Insert Return | `return_1`, `return_2` | Dedicated stereo input from the external processor |
+| CFG output | TapeSister Master | `master_1` … `master_16` | Matrix OUT pairs; legacy Master on 1/2 plus spare sends/spatial outputs |
+| CFG input | TapeSister Input | `input_1` … `input_8` | Matrix IN pairs; legacy EXT/shared Insert return |
+| Legacy Insert SEND | TapeSister Insert Send | `send_1`, `send_2` | Dedicated stereo output to the external processor |
+| Legacy Insert RETURN | TapeSister Insert Return | `return_1`, `return_2` | Dedicated stereo input from the external processor |
 
-For a straightforward software Insert:
+### Matrix path
+
+For a software/hardware loop, route **Main → OUT 3/4** in F9, then **IN 5/6 → EQ**
+and **EQ → limiter → OUT 1/2**. Disconnect Main → EQ for a series loop. In the
+JACK patchbay connect `master_3/4` to the processor, its return to `input_5/6`,
+and `master_1/2` to speakers. Other input/output pairs work the same way.
+Matrix routes do not use the dedicated legacy Insert Send/Return endpoints.
+
+### Legacy Insert path
+
+The following describes the retained serial engine/old Insert controls, not an
+active matrix. For a legacy software Insert:
 
 1. Use **TapeSister Master** as CFG output; connect `master_1/2` to your playback
    interface in the patchbay.
@@ -46,8 +57,8 @@ may receive JACK client-name suffixes; use the actual patchbay names.
 JACK determines the sample rate and period. TapeSister reports those negotiated
 values; CFG's buffer request does not override the server. Stop playback before
 changing server rate/period. Such a change or server shutdown marks old streams
-unavailable and silences them, rather than processing with stale timing. Restart
-TapeSister after restarting/reconfiguring JACK and reconnect the patchbay ports.
+unavailable and silences them, rather than processing with stale timing. Once JACK
+is available, save CFG to reopen audio in place and reconnect the patchbay ports.
 Missing JACK does not silently select another backend.
 
 ## Discovery and supported layouts
@@ -63,12 +74,12 @@ Insert now attempts explicit devices even when SDL cannot report their channel
 layout before opening. General capture accepts the first valid negotiated layout
 instead of repeatedly rejecting it for differing from the request. Native layouts
 larger than eight channels are accepted and traversed at their actual stride;
-EXT and Insert selectors still address the first eight channels. Extra output
-channels are silent. General mono output folds Master to mono; Insert endpoints
+EXT and legacy Insert selectors address the first eight channels; matrix outputs
+address up to sixteen. Unassigned outputs are silent. General mono output folds Master to mono; Insert endpoints
 still require a stereo pair. Missing named endpoints never substitute another
 physical device.
 
-## Delay and dropouts on both sides
+## Legacy Insert queue delay and dropouts
 
 This applies equally to REAPER, SunVox, a cable loop, and other processors.
 The SEND and RETURN bridges each size their queue for both callback bursts and
@@ -108,7 +119,7 @@ establish that the user's hardware issue is resolved.
 `tests/test_jack_backend.c` tests named endpoints, server-negotiated timing,
 stereo transfer, pause/lock behavior, shutdown/rate/buffer changes, and cleanup.
 `--live` additionally opens all four endpoints and connects stereo Send/Return
-and eight-channel Master/Input through a running JACK server. The JACK audio CI
+and multichannel Master/Input through a running JACK server. The JACK audio CI
 workflow runs that test with JACK's dummy hardware driver at 48 kHz/128 frames.
 
 The Insert regression covers independent clocks, unequal buffers/rates, delayed

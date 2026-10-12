@@ -5,8 +5,11 @@ end, roll off subsonic material, tame a resonance or harsh range, or make a broa
 tonal adjustment. Click **EQ** in the main or Sister window to open the native
 **Master / Room EQ** page. Opening the page does not change limiter state.
 
-The compact **ROUTER F9** button beside OUT opens the serial macro-routing page. EQ, limiter and OUT
-always remain after its movable stages. See the [Global Router controls](USER_MANUAL.md#global-router).
+The compact **ROUTER F9** button beside OUT opens the [routing matrix](ROUTING_MATRIX.md).
+The default path is Main → EQ → limiter → OUT 1/2. EQ and limiter are routable
+nodes: direct hardware connections can bypass them. Global OUT gain and the
+final linked hardware guard still apply. Legacy serial routing keeps EQ/limiter
+after the Router stages.
 
 Hover a button, graph node, or slider for **600 ms** to see help and shortcuts
 in the bottom status line. Moving away restores the operation message. Fresh

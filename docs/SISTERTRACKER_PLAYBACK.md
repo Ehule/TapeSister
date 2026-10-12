@@ -22,8 +22,9 @@ Its upstream repository is unchanged. The imported source is pinned to
    controls whether the editor follows playback; see live editing below.
 4. F10, Escape or Canvas returns to the canvas. Playback continues when
    the workspace is hidden. F10 returns to the same score and transport.
-5. F9 opens the existing Router. Enable TRACK as a Sister source to feed the
-   tracker into the routed processing chain. F12 opens Audio Health.
+5. F9 opens the routing matrix. New tracks feed Main → EQ → limiter → OUT 1/2.
+   Patch track rows into Sister to feed its tape; enable POWER/ROLL, release HOLD,
+   and enable MONITOR to hear its return. F12 opens Audio Health.
 6. Ctrl+S / Ctrl+O use TapeSister's project save/open flow.
 
 **FX**, **Prism**, **Sister** and **Fallout** open the corresponding existing
@@ -56,16 +57,18 @@ contain the active tracks only. F1–F6 still select keyboard octaves 0–5.
 
 Each scope has a thin yellow **pan marker**, with small dim ticks marking
 the center. It combines the track's live sample pan, pan commands, slides and
-instrument pan envelope with **Pan / Out → Pan/Balance** in the routing window.
-An explicit track route overrides the tile; **Routing: Tile** follows the last played
+instrument pan envelope with **Row Pan** in F9.
+An explicit track route overrides the tile; **Use Tile** follows the last played
 tile's route. Routing edits move the marker even while stopped or muted. Muting
 dims the marker and holds the last source pan while routing can still change it.
 The waveform, track number,
 REC label, volume trim strip and mouse controls keep their existing behavior.
 The marker uses the scope-number color, so custom palettes can change its yellow.
 
-**Main Mix** also supports route pan; a **Direct: One Speaker** route shows a centered mono
-marker. For a stereo pair, left/right are relative to that selected pair. This is
+Route pan applies to Main and other checked destinations. **Mono** folds before
+row pan; full left/right addresses one side of a physical pair. For a stereo
+pair, left/right are relative to that selected pair. Older legacy One Speaker
+routes retain their centered mono marker until converted. This is
 a pan/balance control indication, not a signal meter: width, source waveform,
 clean level and independently positioned shared returns do not drive it. The
 indicator uses the existing display sync queue and UI route state, with no added
@@ -224,7 +227,35 @@ mixer and Router; they are not individually normalized or clipped by the
 embedded device-output routine. Existing scores receive this level correction
 without changing their stored note or volume data.
 
-## Where TrackSister enters the Router
+## Where TrackSister enters the routing matrix
+
+Right-click a track header or press **F9**. Each new track owns its full route,
+including connection levels, row pan and mono/stereo. **Use Tile** instead makes
+the lane follow each played tile's route; its row becomes read-only until Use Track.
+Direct tile playback still uses that tile's route. Tracks feed Main by default.
+
+Connect a track to Sister to write it to the tape (POWER and ROLL on, HOLD off).
+Track volume/mute and note velocity apply. Sister's matrix output is its tape/head
+mix; connect the track to Main as well for dry sound. The legacy TRACK source
+switch and normalization do not select matrix input. For shared effects, patch
+tracks to Prism/Pedalboard/Fallout, then route their output rows to Main or hardware.
+
+Fading activity marks follow actual rendered track/tile audio and route ownership.
+They are not note-on flags or calibrated meters. [Matrix controls and saving](ROUTING_MATRIX.md).
+
+### MIDI velocity recording
+
+MIDI note-on velocity controls live playback and, while note editing/recording is
+active, writes the volume column. MIDI 1–127 becomes level 1–64; velocities
+1/32/64/100/127 produce 1/16/32/50/64. The tracker displays these levels in hex
+(`01`, `10`, `20`, `32`, `40`). Silent Record still writes velocity while muting
+local monitoring. Recorded levels survive TSR save/reopen. Pressure/aftertouch
+is not recorded as changing note velocity. Select the correct MIDI input and
+channel (or OMNI) and enable velocity transmission on the controller.
+
+### Legacy source path
+
+The following applies to existing projects that have not enabled the matrix.
 
 TrackSister's Main-path lanes are a stereo source at the Router input. Its active
 lanes are mixed by the embedded replayer before joining the host. Current source grouping is:
@@ -264,8 +295,8 @@ External Insert after Sister merges dry/wet before that external loop, even
 while that Insert is bypassed, to avoid a parallel undelayed dry signal.
 
 Master EQ → limiter → global OUT follows the shared result. Final-output file
-recording observes that result. This explanation describes the existing audio
-path; the full-logo correction does not change routing.
+recording observes that result. These source switches and serial
+processing rules apply only while the legacy engine is active.
 
 ## Follow and live editing
 
@@ -391,13 +422,14 @@ engine. Loading also clears temporary performance mutes, voices, effect memory,
 scope history and the old order position. Eight-track legacy scores receive
 default mute, trim and FastTracks settings on the remaining hidden lanes.
 
-The surrounding version-3 score stores multisample instrument metadata and
-stable tile IDs. Version-1 and version-2 eight-track scores still load through
+The surrounding **SISTRK v7** score also stores track routes and matrix connection
+data; multisample instrument metadata and stable tile IDs remain included. Version-1 and version-2 eight-track scores still load through
 the migration adapter. TapeHead's
 native note range is C-0–B-7 (MIDI 12–107), its tempo range is 32–255 BPM, and its
 instrument limit is 128. A legacy score outside those limits is rejected with
 an explicit message before replacing the embedded score; it is not silently
-clamped or discarded. Newly saved version-3 scores require this version of TapeSister.
+clamped or discarded. Newly saved v7 scores require a compatible TapeSister build.
+Tile banks use TSR37 and Sister state v30; save/move the complete named project folder.
 
 Tile audio continues to use the existing host project sample format. The score
 extension does not change that format or make project audio storage lossless.

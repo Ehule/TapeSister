@@ -1,5 +1,11 @@
 # Sister Machine PR4 live-routing contract
 
+> Historical implementation reference. The current user workflow is documented
+> in the [User Manual](USER_MANUAL.md), [Routing Matrix](ROUTING_MATRIX.md) and
+> [TrackSister guide](SISTERTRACKER_PLAYBACK.md). Earlier serial/source-switch
+> paths, format versions and staged limitations below describe their original
+> implementation, not the current matrix defaults.
+
 > PR9 adds post effects without changing source selection: only the eligible
 > Sister branch can feed Master FX Feedback while POWER is on.
 

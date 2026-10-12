@@ -93,7 +93,13 @@ jobs:
         if: github.event_name != 'pull_request'
         run: ctest --test-dir build --output-on-failure
       - name: Assemble archive
-        run: tar -C build -czf TapeSister-linux-x86_64.tar.gz tapesister assets cdp licenses tapesister.ini.example
+        run: |
+          tar -czf TapeSister-linux-x86_64.tar.gz -C build tapesister assets cdp licenses tapesister.ini.example \
+            -C .. docs README.md THIRD_PARTY_NOTICES.md -C release PORTABLE_README.txt
+          tar -tzf TapeSister-linux-x86_64.tar.gz > archive-contents.txt
+          for required in docs/USER_MANUAL.md docs/QUICK_REFERENCE.md docs/ROUTING_MATRIX.md docs/ASIO_AUDIO.md docs/LEGACY_ROUTING.md docs/screenshots/routing-matrix/matrix-signal-activity.png; do
+            grep -Fxq "$required" archive-contents.txt || exit 1
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: TapeSister-linux-x86_64

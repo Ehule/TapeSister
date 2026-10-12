@@ -1,5 +1,10 @@
 # Universal TapeSister / Tapehead palette
 
+The F9 routing matrix currently uses fixed colors. Its individual background,
+text, selection, connection, feedback and activity colors are not exposed in the
+existing palette editor. A per-panel/per-role editor with live preview and saved
+presets is a separate proposed follow-up; it is not implemented in this version.
+
 TapeSister and Tapehead share one text palette named `palette.pal`. The
 canonical section is `[Palette]`; readers also accept the legacy
 `[TapeheadPalette]` section.

@@ -10,13 +10,14 @@ only application that owns the speakers or audio interface.
 2. In Tapehead, open **Config → Audio** and select **TapeSister Live Link**.
 3. Open Sister Machine. The source strip shows **LINK** when Tapehead is present and
    **WAIT** while TapeSister is waiting.
-4. With Sister Machine off, Tapehead enters the ordinary program/post-FX path. With
-   Sister Machine on, click **TH SRC** to route it through the tape, heads, Fallout,
-   and placed pedalboard effects.
+4. In **F9**, patch **LIVE LINK** to Main, Sister, another processor or physical
+   outputs. New routing defaults to Live Link → Main → EQ → limiter → OUT 1/2.
+   Patch it into Sister for tape processing; POWER/ROLL must be on and HOLD off,
+   and MONITOR gates its output. Legacy projects use TH SRC instead.
 
 Start order does not matter. TapeSister checks once per second and reconnects after a
-Tapehead restart. The TAPEHEAD switch can remain armed while **WAIT** is shown; its
-source route fades in automatically when the producer appears.
+Tapehead restart. A saved matrix connection (or armed legacy TAPEHEAD switch)
+remains while WAIT is shown, and audio fades in when the producer appears.
 
 ## Signal and capture behavior
 
@@ -28,7 +29,9 @@ large output buffers, to absorb scheduler jitter and correct small independent-c
 drift. Start, stop, disconnect, underrun, and session replacement use short fades rather
 than discontinuous cuts.
 
-The TAPEHEAD source has its own 0–400% mixer trim. It is stored in `tapesister.ini`,
+In matrix mode, LIVE LINK connection levels and Row Pan control its destinations.
+The following source-trim/closed-insert behavior applies only to legacy routing.
+The legacy TAPEHEAD source has its own 0–400% mixer trim. It is stored in `tapesister.ini`,
 Sister projects, and Sister presets. As with the other Sister inputs, a selected source
 is a closed insert while Sister Machine is powered: it leaves the ordinary direct path
 and returns through Sister's DRY/WET monitoring. If Sister is off, it remains audible
@@ -45,13 +48,14 @@ Tapehead audio can be captured in the same places as other musical sources:
 
 The three Tapehead controls have deliberately separate jobs:
 
-- **TH SRC** only selects whether the Live Link is routed through Sister Machine;
+- **TH SRC** selects Live Link for Sister in legacy mode; it is inactive in matrix mode;
 - **TH SONG** sends Tapehead Song Play/Stop and lights only while Song mode is playing;
 - **TH PATT** sends Tapehead Pattern Play/Stop and lights only while Pattern mode is
   playing.
 
 Modifier-clicking TH SRC has no hidden transport behavior. The source can remain armed
-while WAIT is shown and will enter Sister automatically when Tapehead reconnects.
+while WAIT is shown and, in legacy mode, enters Sister automatically on reconnect.
+Matrix mode instead follows the saved LIVE LINK connections.
 
 Only one consumer and one active producer are supported. If multiple Tapehead instances
 select Live Link, the newest session becomes authoritative and TapeSister reconnects to

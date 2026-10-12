@@ -51,7 +51,9 @@ without arming Capture. The existing per-page marks, colors and project state
 are reused. Plain selection leaves the group intact. Shift-click an empty tile
 still copies Current and leaves the copy unmarked. Group voices preserve the
 existing linked `1/sqrt(member count)` gain and immutable source generations.
-Sister's TILES source switch still controls routing while Sister owns the mix.
+In matrix mode, tile routes control where these voices go; Sister's TILES switch
+controls routing only in legacy mode. OUT capture records the matrix's OUT 1/2
+program, not all physical sends. See [Routing Matrix](ROUTING_MATRIX.md).
 
 **REC FILE** saves the final performance without making a tile. **OVERDUB**
 retains the explicit existing-tile workflow. **REC BANK** remains a separate

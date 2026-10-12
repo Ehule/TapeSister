@@ -3,6 +3,11 @@
 F9, tile right-click and TrackSister track-header right-click open the same
 modeless window. Audio and keyboard playing continue while it is open.
 
+**MATRIX LIVE** means this graph is controlling the audio. It is a status label,
+not a sequencer or placeholder. Storing/sequencing different matrix patches is
+not implemented. The legacy Router Performance sequencer only affects the old
+serial engine; Prism's Morph Matrix is a separate sound-morphing feature.
+
 **Read across a row:** this sound goes to each checked destination column.
 Multiple sources feeding a processor are summed into one shared instance.
 Prism, Pedalboard and Fallout rows contain only the processed contribution.
@@ -132,8 +137,11 @@ new source routes, graph, connection levels, row pan/mono and hardware aliases.
 Old formats load; older application builds cannot read the new tile/score saves.
 Opening a project replaces its matrix and aliases rather than retaining the
 previous project's graph. The graph and aliases are also in saved configuration.
-Saving a TSR project includes these settings in its accompanying project files;
-keep the `.samples` folder alongside the `.tsr` when copying or moving a project.
+Saving a TSR project includes these settings in its accompanying project files.
+Current saves use a named project folder containing the `.tsr`, `sister-state.ini`,
+`project-data/` (including `sister-tracker.tst`) and `samples/`; move the complete
+folder. Older layouts may use an adjacent `<name>.tsr.samples/` folder, which must
+remain beside its TSR. See [project saving](USER_MANUAL.md#saving-moving-and-extracting-a-project).
 
 FILE OUT records the main stereo program (OUT 1/2), before the final linked
 hardware guard. It does not sum every separate speaker/send output. Sister's
@@ -150,6 +158,9 @@ is marked OLD, rather than showing an incorrect matrix checkbox. It keeps
 playing its saved map. The row's **Use Matrix** button explicitly replaces that
 map with Main Mix so it can be repatched using the physical pair columns.
 
-Audio backend, ASIO driver and buffer changes now apply from CFG without closing
-TapeSister; see [ASIO audio setup](ASIO_AUDIO.md). Hardware-name editing displays
-a blinking caret, which returns to visible after typing or Backspace.
+Hardware-name editing displays a blinking caret, which returns to visible after
+typing or Backspace. The matrix currently uses fixed colors; its background,
+text, selection, routing and activity roles are not individually editable in
+CFG → PALETTE. An expanded palette editor is a separate proposed follow-up.
+
+![Native matrix responding to a test signal](screenshots/routing-matrix/matrix-signal-activity.png)

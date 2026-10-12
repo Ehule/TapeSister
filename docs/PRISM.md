@@ -11,28 +11,25 @@ is involved. The existing FM Unison remains available.
 
 ## Play it
 
-The following describes the default routing order. **F9** opens the
-[Global Router](USER_MANUAL.md#global-router), where Prism can also process the
-output of Sister, Fallout, or the Pedalboard. Morph states and Matrix keep their
-own controls and clock when Prism moves or is bypassed.
+**F9** opens the [Routing Matrix](ROUTING_MATRIX.md). Choose the source feeding
+Prism and the destination of its processed output; it can receive tiles, tracks,
+FM, hardware inputs or another processor. Prism's A–Z states, lens sequence and
+Morph Matrix remain separate from routing and retain their own controls/clock.
 
-1. Open Sister Machine with **Tab**. Its page button cycles **Tape → FX → Fallout → Prism → Tape**.
-2. For a direct pedal, leave **POWER off**. Play a tile, FM, Mosaic or TapeHead, or
-   enable the main window's external input monitor for a physical instrument.
-   Prism runs before the existing ordinary FX/Fallout path.
+1. Open Sister Machine with **Tab** and visit the **Prism** page. Sister POWER
+   may stay off for direct Prism processing.
+2. In F9, connect the desired source to **PRISM** and **PRISM → Main** (or another
+   destination). New default routing does not send sources to effects automatically.
 3. Engage **PRISM ON**. Start with Supersaw, 12 lenses, Spread 50, Focus 0, Drift 15,
-   Stereo 80, Body 50, Wet 80 and Output 0 dB. Output offers up to +12 dB if needed.
-4. Press **REC FILE** on this page. It records the final stereo output, including
-   Prism, subsequent effects, the safety limiter and OUT fader. The existing timer,
-   stop control and recording state continue across page changes.
+   Stereo 80, Body 50, Wet 80 and Output 0 dB. The matrix row carries the processed
+   contribution; connect the original source to Main as well for explicit dry sound.
+4. **REC FILE** records the final OUT 1/2 program. To print Prism into Sister's
+   tape, connect **Prism → Sister** and enable Sister POWER/ROLL, with HOLD off.
+   MONITOR gates Sister's tape/head output; route dry sound separately.
 
-With **POWER on**, Sister owns the musical sources as before: select the sources
-on its Tape page and enable Monitor. Prism precedes the PRE slots, tape input trim,
-rolling write and heads. For direct instrument playing without delayed tape heads,
-set Sister's **DRY 100 / WET 0**. Here DRY means the direct *Sister* input, which
-already contains Prism; Prism's own WET controls refraction. PRE FX can process
-that direct path. Raise Sister WET to hear the heads and their downstream effects.
-Head-tap capture still selects the corresponding head; **REC FILE** uses final OUT.
+Existing legacy projects keep the earlier serial path until converted. There,
+Prism's serial position and Sister source switches still determine what enters
+the tape. See [legacy routing](LEGACY_ROUTING.md) for that path.
 
 ## Controls and optical meaning
 
@@ -516,9 +513,9 @@ Drift Rate at its original motion speed, with no sequence, octave offsets or A/B
 morphing. Missing lens keys remain neutral and projects predating Prism start
 with Prism off. The existing FX migration behavior is retained.
 
-The main TSR format is now **TSR31**, adding recoverable amplitude-drawing source
-references. Older TSR versions remain readable; new saves require this version
-of TapeSister. This change does not alter FM's twelve-voice Unison or genome 7.
+TSR31 introduced recoverable amplitude-drawing source references. Current saves
+use **TSR37**; older formats remain readable, while older application builds
+cannot read the new saves. This change does not alter FM's twelve-voice Unison or genome 7.
 
 With 24 lenses, two colored glass stages, 40 Hz Drift Rate, A/B interpolation and
 an eight-lens sequence, the shared-server 48 kHz / 256-frame probe measured about

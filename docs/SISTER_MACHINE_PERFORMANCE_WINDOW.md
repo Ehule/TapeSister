@@ -1,5 +1,11 @@
 # Sister Machine PR5 performance window
 
+> Historical implementation reference. The current user workflow is documented
+> in the [User Manual](USER_MANUAL.md), [Routing Matrix](ROUTING_MATRIX.md) and
+> [TrackSister guide](SISTERTRACKER_PLAYBACK.md). Earlier serial/source-switch
+> paths, format versions and staged limitations below describe their original
+> implementation, not the current matrix defaults.
+
 > Historical note: this document follows the PR5-PR10 interface as it was introduced.
 > The current FX page is a four-slot pedalboard rather than the fixed three-panel layout
 > described below. See the [User Manual](USER_MANUAL.md#sister-machine) for the current

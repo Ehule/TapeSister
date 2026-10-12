@@ -1,7 +1,10 @@
-> The unified F9 matrix supersedes these legacy routing panels when Matrix is active.
-> See [Routing Matrix](ROUTING_MATRIX.md) for current controls and the Vulture path.
+# Legacy tile, track and main-mix routing
 
-# Tile, track and main-mix routing
+> This is the earlier source-panel/serial-engine reference. F9 and tile/track
+> right-click now open the [Routing Matrix](ROUTING_MATRIX.md). The controls,
+> screenshots, spatial speaker mapping and fallback rules below describe the
+> older path retained for legacy projects. Matrix physical routes use channel
+> pairs directly; unavailable pairs stay silent instead of falling back.
 
 Right-click a tile or a TrackSister **track number** to open routing. Playback
 continues while you edit. Middle-click a tile to rename it, or use **Rename Tile**
@@ -141,11 +144,9 @@ a hardware return from audio actually reaching TapeSister.
 
 ![Selected and active Insert ports, using simulated device streams](screenshots/routing-clarity/insert-setup.png)
 
-Backend changes and ASIO driver/buffer changes currently require **Save Config +
-Restart**. Configuration and Insert Setup both show that requirement while a
-change is pending. Insert Apply will not reopen endpoints against an unapplied
-backend. Other output/input device changes are applied by saving configuration;
-insert ports use Apply Now. Pan, width, levels, source routes, effect roles,
+Backend, ASIO driver and buffer changes apply with **CFG → SAVE CONFIG** without
+closing TapeSister. Finish or cancel recording first. Legacy Insert Apply does
+not reopen endpoints against an unapplied backend; its ports use Apply Now. Pan, width, levels, source routes, effect roles,
 main-mix selection and bypass apply immediately.
 
 An enabled insert with a missing send/return is silent; it does not substitute
@@ -156,7 +157,8 @@ hardware meter.
 
 Routes follow tile identities and tracker lanes. Copying a tile copies its
 route; moving or editing it retains that route. Project saves include routing,
-shared effect roles and returns. New saves use TSR36 / SISTRK v6. Older files
+shared effect roles and returns. TSR36 / SISTRK v6 introduced these legacy
+main-mix semantics; current saves use TSR37 / SISTRK v7. Older files
 retain their prior sound: dormant Main pan/width values are cleared on import.
 Older builds cannot open these new saves; keep a separate copy when comparing
 versions.

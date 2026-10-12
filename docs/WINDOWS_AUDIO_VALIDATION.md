@@ -23,7 +23,43 @@ Use 44.1, 48, and 96 kHz where the devices support them. Repeat representative c
 with 256, 512, and 1024 frame buffers and with matching and mismatched application
 rates/buffers.
 
-## Matrix
+## Unified routing matrix and live audio setup
+
+These are manual hardware checks, not claims that a physical MOTU test has run.
+Automated regressions cover the graph, controls, persistence, velocity and device
+reconfiguration separately.
+
+- [ ] Select ASIO, the MOTU duplex driver and buffer in one CFG visit; save without
+  closing TapeSister. Verify actual driver/rate/frames/channels in F12. Change
+  driver/buffer and switch back to WASAPI; verify the project and routing remain.
+- [ ] Fail a device change deliberately; verify the previous setup is restored,
+  the failed choice is not saved, and CFG stays open with the error. If rollback
+  also fails, select an available device and save again. Test recording guards.
+- [ ] Reset to Default and confirm Main → EQ → limiter → OUT 1/2, with external
+  inputs/effect sends disconnected. Clear All must silence every route, including
+  hidden/off-page tracks and tiles, while preserving names and processor settings.
+- [ ] Feed Terra to Sister, Prism and Main simultaneously; verify one shared
+  instance per processor. Test a Vulture OUT 3/4 → IN 5/6 loop with the dry path
+  disconnected. Unavailable output pairs stay silent without rerouting.
+- [ ] Check source/header/connection activity, gentle decay, silent OFF-processor
+  output, muted hardware output and N/A pairs. Listen for changes while opening,
+  closing, resizing and scrolling the matrix.
+- [ ] Wheel Level and Row Pan on labels and sliders, with and without Shift;
+  right-click resets to 0 dB/center. Verify feedback still caps at −6 dB and
+  inherited tracks remain read-only. Confirm ordinary grid scrolling is unchanged.
+- [ ] Rename IN/OUT hardware; verify the blinking caret, Enter/Escape, retained
+  channel numbers, and names/routing after complete TSR save/reload.
+- [ ] Play and release internal synth notes at 512 and 1024 frames; compare clicks
+  and F12 ASIO skips/short-lock recoveries. Zero budget overruns alone do not prove
+  clean sound. Retain the complete report for each repeatable gesture.
+- [ ] Record soft/medium/hard Terra note-on velocities into TrackSister and verify
+  volume levels, audible differences, and save/reload. Repeat Silent Record.
+  Continuous aftertouch is not recorded.
+
+## Legacy Insert and other instrument checks
+
+The Insert/order/bypass checks below concern the retained serial engine and its
+historical controls. They are not instructions for an active F9 matrix.
 
 - [ ] External Insert: choose a native multichannel output in CFG. Confirm Master
   is only on 1/2, SEND only on the chosen spare pair, and unused channels silent.
@@ -86,7 +122,7 @@ rates/buffers.
   factory/user/varied endpoints, save/reload, and test Shift-recall of a saved pair.
 - [ ] Middle-click Prism CAP A and CAP B, including during a timed morph. Confirm
   EMPTY states, canceled motion, unlocked sound editing, and successful fresh captures.
-- [ ] Matrix timing: Morph 60s / Step 10s travels for 60s then stays for 10s;
+- [ ] Prism Morph Matrix timing: Morph 60s / Step 10s travels for 60s then stays for 10s;
   Morph 10s / Step 60s reverses these phases. Adjust Morph during travel and Step
   during a hold: progress updates immediately without Reset. Shortening a phase
   past elapsed time finishes it once, without skipping cells. Step zero gives

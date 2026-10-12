@@ -210,7 +210,9 @@ the selection remains ready for PLAY. Main **CAP OUT** records the running ARP i
 a new tile without stopping or replacing its source. **STOP TILE** keeps the take
 while the sequence continues. Legacy Overdub retains its capture-staging controls.
 
-Sequence audio follows the existing tile/FM buses through Sister, Prism, master
+In matrix mode, sample sequences follow tile routes and FM follows its FM row;
+patch those sources to the desired processors in [F9](ROUTING_MATRIX.md).
+Legacy sequence audio follows the tile/FM buses through Sister, Prism, master
 effects, and recording. Mosaic REC DRY includes it; FM's SYNTH tap includes FM
 sequences. Normal source switches and monitoring still determine what is heard.
 The sequence bank is saved with the project, independently of Prism presets and
