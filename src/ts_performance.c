@@ -868,6 +868,11 @@ TsStereoFrame ts_performance_read_routed(TsPerformanceBank *bank,
         raw.r += value.r;
         TsStereoFrame routed={value.l*voice->group_gain,value.r*voice->group_gain};
         routed=ts_source_route_frame(&voice->output_route,routed,clean?&direct:NULL);
+        TsRouteActivity *activity=&bank->activity[i];
+        if(activity->tile!=voice->route_tile)*activity=(TsRouteActivity){.tile=voice->route_tile};
+        activity->source=fmaxf(activity->source,voice->output_route.activity_source);
+        activity->send=fmaxf(activity->send,voice->output_route.activity_send);
+        voice->output_route.activity_source=voice->output_route.activity_send=0;
         mixed.l += routed.l; mixed.r += routed.r;
 voice_done: {
         /* Tile launchers already own attack/release ramps. */

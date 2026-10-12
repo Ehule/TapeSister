@@ -2,6 +2,7 @@
 #define TAPESISTER_SOURCE_ROUTE_TYPES_H
 
 #include <stdint.h>
+typedef struct {uint64_t tile;float source,send;} TsRouteActivity;
 
 enum { TS_SOURCE_MAIN, TS_SOURCE_PAIR, TS_SOURCE_SPEAKER, TS_SOURCE_INHERIT };
 enum { TS_SOURCE_SPEAKERS = 16 };
@@ -30,6 +31,8 @@ typedef struct {
     unsigned remaining, rate;
     uint64_t mask;
     int ready;
+    /* Audio accumulates signal peaks; the matrix UI consumes under exclusion. */
+    float activity_source, activity_send;
 } TsSourceRouteVoice;
 
 #endif

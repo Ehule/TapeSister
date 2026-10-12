@@ -85,6 +85,7 @@ static void voices_and_storage(void)
     assert(ts_performance_trigger_group(&p,i,1,0,60,0,48000)==1);
     m=(TsSourceRouteMix){0};TsStereoFrame raw;main=ts_performance_read_routed(&p,&raw,&m);
     NEAR(main.l,0);assert(m.speaker[2]>0&&raw.l>0);ts_performance_clear(&p);
+    assert(!p.render_limit && p.activity[0].tile==i->bank[0].tile_id && p.activity[0].source>0 && p.activity[0].send>0);
     TsKeyboardSequence seq;ts_keyboard_sequence_init(&seq);TsKeyboardSequenceSource source={0};
     source.count=1;
     source.voices[0]=n.voices[0]; /* Install an independent immutable template below. */
@@ -97,4 +98,16 @@ static void voices_and_storage(void)
     assert(energy>0);ts_keyboard_sequence_stop(&seq);
     ts_instrument_free(i);ts_instrument_free(loaded);free(i);free(loaded);remove("source-route.tsr");
 }
-int main(void){matrix();hardware();voices_and_storage();puts("Source routing: coefficients, ramps, output ownership, voices and persistence passed");return 0;}
+static void activity(void)
+{
+    TsSourceRouteVoice v={0};TsSourceRoute r={.matrix_enabled=1,.width=-100};
+    r.matrix_gain[0]=1000;ts_source_route_set(&v,r,48000);TsSourceRouteMix mix={0};
+    ts_source_route_frame(&v,(TsStereoFrame){.2f,-.2f},&mix);
+    NEAR(v.activity_source,.2f);NEAR(v.activity_send,0); /* Mono cancellation. */
+    ts_source_route_frame(&v,(TsStereoFrame){.1f,.1f},&mix);
+    NEAR(v.activity_source,.2f);NEAR(v.activity_send,.1f); /* Retain short transients. */
+    memset(&v,0,sizeof(v));r.matrix_gain[0]=0;ts_source_route_set(&v,r,48000);
+    ts_source_route_frame(&v,(TsStereoFrame){.3f,.3f},&mix);
+    NEAR(v.activity_source,.3f);NEAR(v.activity_send,0); /* An unpatched source still has input. */
+}
+int main(void){matrix();hardware();voices_and_storage();activity();puts("Source routing: coefficients, ramps, output ownership, voices, signal activity and persistence passed");return 0;}

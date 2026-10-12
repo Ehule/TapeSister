@@ -59,6 +59,11 @@ void ts_tapehead_host_redraw(void);
 /* UI-only: combine the last synced source pan with the resolved clean route. */
 void ts_tapehead_scope_source(int lane,uint64_t tile_id,unsigned route_index);
 int ts_tapehead_scope_pan(int lane,int source_pan);
+/* Small fixed snapshots; caller holds the existing host audio lock. Tile
+   activity follows inherited routing, while every sounding track lights. */
+enum { TS_TAPEHEAD_ROUTE_ACTIVITY_COUNT=129*16 };
+void ts_tapehead_take_route_activity(TsRouteActivity tracks[TS_TRACKER_LANES],
+    TsRouteActivity tiles[TS_TAPEHEAD_ROUTE_ACTIVITY_COUNT]);
 void ts_tapehead_request(int action);
 void ts_tapehead_show_config(void);
 int ts_tapehead_config_visible(void);

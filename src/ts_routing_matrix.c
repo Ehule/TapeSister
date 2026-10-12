@@ -121,6 +121,8 @@ void ts_matrix_process(TsRoutingMatrix *m,TsSourceRouteMix *sums,
         for(int d=0;d<TS_MATRIX_NODES;++d)if(m->controls.delayed[s]&(1u<<d)) {
             float g=r->matrix_gain[d]*.001f;
             sums->graph[d].l+=old.l*g*l;sums->graph[d].r+=old.r*g*rh;
+            float activity=fmaxf(fabsf(old.l*g*l),fabsf(old.r*g*rh));
+            if(activity>m->voice[s].activity_send)m->voice[s].activity_send=activity;
         }
     }
     for(int i=0;i<TS_MATRIX_NODES;++i) {

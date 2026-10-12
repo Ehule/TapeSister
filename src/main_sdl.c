@@ -1405,7 +1405,11 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             if(!audio->clean_output.limit)audio->clean_output.limit=1;
             if(target<audio->clean_output.limit)audio->clean_output.limit=target;
             else audio->clean_output.limit+=(target-audio->clean_output.limit)/(audio->output_rate*.05f);
-            for(unsigned ch=0;ch<device_channels;++ch)hardware[ch]*=audio->clean_output.limit;
+            for(unsigned ch=0;ch<device_channels;++ch) {
+                hardware[ch]*=audio->clean_output.limit;
+                if(ch<TS_MATRIX_OUTPUTS*2u && fabsf(hardware[ch])>audio->sister.matrix.hardware_peak[ch/2])
+                    audio->sister.matrix.hardware_peak[ch/2]=fabsf(hardware[ch]);
+            }
             if(audio->sister.insert.duplex)++audio->sister.insert.duplex_position;
         } else {
         ts_insert_write_output(&audio->sister.insert,out+(i/2)*device_channels,device_channels,main_output);

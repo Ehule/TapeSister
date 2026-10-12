@@ -45,15 +45,39 @@ Save an experimental version under another project name if you want both.
 
 - Left-click a cell to connect/disconnect. A new connection starts at 0 dB.
 - Right-click a cell to inspect it without toggling it.
-- Drag **Level**, or Ctrl+wheel over a cell, to change that connection's level.
+- Drag or wheel over **Level** (its label or slider) to change the selected
+  connection. Wheel steps are 1 dB; Shift+wheel gives 0.1 dB adjustments.
+  Right-click Level to reset to **0 dB** (unity). As with dragging Level, this
+  can connect a previously disconnected cell. Feedback connections keep their
+  −6 dB ceiling. Ctrl+wheel over a connected grid cell also adjusts its level.
 - **Row Pan** positions that source on all its outgoing connections. Track pan
   also updates the yellow scope indicator, including while stopped or muted.
+  Drag or wheel over its label/slider; wheel steps are 5, or 1 with Shift.
+  Right-click to center it at **0**. Inherited tracks remain read-only until
+  **Use Track** is selected.
 - **Stereo / Mono** preserves stereo or folds it to mono before pan. Mono plus
   full-left/right pan addresses a single speaker in an output pair.
 - Wheel over the grid to scroll sources. The filters show tracks, tiles on all
   pages, external/live inputs, or processor returns. OUT arrows reveal more ports.
 - Middle-click an input row or output column to rename it, or select it and use
   **Name I/O**. Enter saves; Escape cancels. IN/OUT numbers remain visible.
+
+Small green indicators follow actual signal activity with a gentle fade:
+
+- Beside a row: its source has audio, even if it is currently unpatched.
+- Below a destination header: audio is arriving at that processor or output.
+- Below a connected cell: that source is sending along the connection. Feedback
+  indicators retain their amber color. Disconnected and unavailable cells stay dark.
+
+An OFF processor can show incoming activity while its output row stays silent.
+Physical output indicators are measured after the OUT fader and final hardware
+guard; unavailable outputs never light. Track and tile indications follow route
+ownership: a track using its own route does not light the overridden tile's
+connections. Track activity still appears when it inherits its tiles.
+These are activity cues, not calibrated meters or clipping indicators. Sources
+are measured individually, so two signals that cancel when summed can light
+their individual routes while the destination stays dark. Updates are limited
+to 20 Hz while the matrix is visible, and stale indications fade if callbacks stop.
 
 Physical destinations are pairs on the active output device, up to OUT 15/16;
 input rows expose up to four pairs on the active input device. **N/A** means a
@@ -88,9 +112,9 @@ for a full-series hardware path.
 
 Matrix checkbox, gain, pan and naming changes are live. Adding an input route
 requests the active capture device automatically. Changing the audio backend,
-ASIO driver or driver buffer still uses the existing Audio setup lifecycle;
-those settings can require Save Config + Restart. The matrix does not introduce
-backend hot switching or aggregate multiple independent output devices.
+ASIO driver or driver buffer applies from CFG without closing the application;
+see [ASIO audio setup](ASIO_AUDIO.md). The matrix does not aggregate multiple
+independent output devices.
 
 ## Feedback
 

@@ -5,9 +5,43 @@ static void matrix_click(int x,int y,int button)
     assert(matrix_event(&event,window,0,&a,&u,&pages,&bank));
     event.type=SDL_MOUSEBUTTONUP;assert(matrix_event(&event,window,0,&a,&u,&pages,&bank));
 }
+static void matrix_wheel(int x,int y,int steps,int modifiers,int flipped)
+{
+    SDL_Event e={0};e.type=SDL_MOUSEWHEEL;e.wheel.windowID=matrix_window.id;e.wheel.y=steps;
+    e.wheel.direction=flipped?SDL_MOUSEWHEEL_FLIPPED:SDL_MOUSEWHEEL_NORMAL;
+    int width,height;SDL_GetWindowSize(matrix_window.window,&width,&height);
+#if SDL_VERSION_ATLEAST(2,26,0)
+    e.wheel.mouseX=x*width/MATRIX_W;e.wheel.mouseY=y*height/MATRIX_H;
+#else
+    SDL_WarpMouseInWindow(matrix_window.window,x*width/MATRIX_W,y*height/MATRIX_H);
+#endif
+    SDL_SetModState(modifiers);assert(matrix_event(&e,window,0,&a,&u,&pages,&bank));SDL_SetModState(KMOD_NONE);
+}
+static void matrix_feedback_controls(void)
+{
+    int scroll=matrix_window.scroll;TsSourceRoute *route=&pages.tracker.lanes[0].output_route;
+    matrix_wheel(400,744,1,0,0);assert(route->matrix_gain[8]==1122 && matrix_window.scroll==scroll);
+    matrix_click(100,744,SDL_BUTTON_RIGHT);assert(route->matrix_gain[8]==1000 && !matrix_window.drag);
+    matrix_wheel(400,744,1,KMOD_SHIFT,0);assert(route->matrix_gain[8]==1012);
+    matrix_wheel(400,744,1,KMOD_SHIFT,1);assert(route->matrix_gain[8]==1000);
+    matrix_wheel(400,744,128,0,0);assert(route->matrix_gain[8]==2000);
+    matrix_click(500,744,SDL_BUTTON_RIGHT);assert(route->matrix_gain[8]==1000);
+    matrix_wheel(650,744,1,0,0);assert(route->pan==5);
+    matrix_wheel(900,744,1,KMOD_SHIFT,0);assert(route->pan==6);
+    matrix_wheel(900,744,1,0,1);assert(route->pan==1);
+    matrix_wheel(900,744,128,0,0);assert(route->pan==100);
+    matrix_click(640,744,SDL_BUTTON_RIGHT);assert(route->pan==0);
+    SDL_SetWindowSize(matrix_window.window,960,630);
+    matrix_wheel(400,744,1,0,0);assert(route->matrix_gain[8]==1122);
+    matrix_wheel(900,744,-1,0,0);assert(route->pan==-5);
+    SDL_SetWindowSize(matrix_window.window,MATRIX_W,MATRIX_H);
+    matrix_click(400,744,SDL_BUTTON_RIGHT);matrix_click(900,744,SDL_BUTTON_RIGHT);
+    assert(route->matrix_gain[8]==1000 && !route->pan && ts_tapehead_running());
+}
 static void matrix_shot(const char *directory,const char *name)
 {
     if(!directory)return;
+    mx_capture_activity(0,&a,&pages,&bank,0);
     matrix_window.outputs=a.output_device_channels;matrix_window.inputs=6;
     mx_rows(&pages,&bank);mx_paint(&a,&pages,&bank);
     char path[1024];snprintf(path,sizeof(path),"%s/%s.bmp",directory,name);
@@ -105,9 +139,23 @@ static void matrix_controller(const char *directory)
     assert(!bank.bank[0].output_route.matrix_enabled);
     startPlaying(PLAYMODE_SONG,0);double energy[4];render(energy);render(energy);
     assert(energy[0]==0&&energy[1]==0&&energy[2]>1&&energy[3]>1);
+    matrix_feedback_controls();
+    mx_capture_activity(0,&a,&pages,&bank,50);render(energy);mx_capture_activity(0,&a,&pages,&bank,50);
+    assert(matrix_window.row_source[0]>.001f && matrix_window.row_send[0]>.001f);
+    assert(matrix_window.receiving[8]>.001f && matrix_window.receiving[7]==0);
+    matrix_shot(directory,"matrix-track-activity");
+    /* Actual output metering is after OUT gain, not just graph connectivity. */
+    ts_sister_runtime_set_master_output_gain(&a.sister,0);render(energy);
+    mx_capture_activity(0,&a,&pages,&bank,50);
+    for(int i=0;i<10;++i){render(energy);mx_capture_activity(0,&a,&pages,&bank,150);}
+    assert(matrix_window.row_source[0]>.001f && matrix_window.receiving[8]<.0001f);
+    ts_sister_runtime_set_master_output_gain(&a.sister,1);render(energy);
     matrix_click(1044,744,SDL_BUTTON_LEFT);render(energy);render(energy);
     assert(energy[2]==0&&energy[3]>1);assert(ts_tapehead_scope_pan(0,128)==255);
     matrix_click(1100,744,SDL_BUTTON_LEFT);render(energy);render(energy);
+    assert(pages.tracker.lanes[0].output_route.mode==TS_SOURCE_INHERIT);
+    matrix_wheel(400,744,-1,0,0);matrix_wheel(900,744,1,0,0);
+    matrix_click(400,744,SDL_BUTTON_RIGHT);matrix_click(900,744,SDL_BUTTON_RIGHT);
     assert(pages.tracker.lanes[0].output_route.mode==TS_SOURCE_INHERIT);
     assert(energy[0]>1&&energy[1]>1&&energy[2]==0&&energy[3]==0);
     matrix_click(1100,744,SDL_BUTTON_LEFT);
@@ -126,6 +174,11 @@ static void matrix_controller(const char *directory)
     matrix_click(MATRIX_X+8*MATRIX_CW+8,MATRIX_Y+12,SDL_BUTTON_LEFT);
     assert(ts_note_bank_start(&a.notes,&bank,TS_AUDITION_CURRENT,12,0,48000)==TS_NOTE_STARTED);
     render(energy);render(energy);assert(energy[0]==0&&energy[1]==0&&energy[2]>1&&energy[3]>1);
+    mx_capture_activity(0,&a,&pages,&bank,50);render(energy);mx_capture_activity(0,&a,&pages,&bank,50);
+    assert(matrix_window.row_source[0]>.001f && matrix_window.row_send[0]>.001f);
+    /* No new callbacks must let meters fade instead of retaining old peaks. */
+    for(int i=0;i<12;++i)mx_capture_activity(0,&a,&pages,&bank,150);
+    assert(matrix_window.row_source[0]<.0001f && matrix_window.receiving[8]<.0001f);
     ts_note_bank_clear(&a.notes);render(energy);render(energy);
     assert(ts_instrument_save_recipe(&bank,"matrix-tile.tsr",error,sizeof(error)));
     TsInstrument *tile_copy=malloc(sizeof(*tile_copy));assert(tile_copy);ts_instrument_init(tile_copy);
@@ -174,6 +227,27 @@ static void matrix_controller(const char *directory)
     matrix_click(455,102,SDL_BUTTON_LEFT);matrix_window.selected=0;matrix_window.destination=TS_MATRIX_PRISM;
     matrix_shot(directory,"matrix-terra-multiple");
     matrix_clear_reset(directory);
+    /* An input can reach an OFF processor without an output from that node.
+       The screenshot is a native render driven by actual callback samples. */
+    assert(matrix_show(0,&a,&u,&pages,&bank,-1,-1));
+    c=a.sister.matrix.controls;c.row[TS_MATRIX_NODES].matrix_gain[TS_MATRIX_MAIN]=1000;
+    c.row[TS_MATRIX_NODES].matrix_gain[TS_MATRIX_PRISM]=500;
+    assert(ts_matrix_set(&a.sister.matrix,&c,48000));
+    a.sister.parameters.prism.enabled=0;
+    for(int f=0;f<2048;++f){input[f*6]=.12f;input[f*6+1]=.18f;input[f*6+4]=input[f*6+5]=0;}
+    mx_capture_activity(0,&a,&pages,&bank,50);
+    for(int i=0;i<3;++i){ts_insert_duplex_block(&a.sister.insert,1,input,2048,6);audio_callback(&a,(Uint8*)out,sizeof(out));}
+    mx_capture_activity(0,&a,&pages,&bank,50);
+    assert(matrix_window.receiving[TS_MATRIX_PRISM]>.01f && matrix_window.peaks[TS_MATRIX_PRISM]<.0001f);
+    assert(matrix_window.receiving[TS_MATRIX_NODES]>.01f && matrix_window.receiving[TS_MATRIX_NODES+2]==0);
+    matrix_window.filter=0;matrix_window.selected=-1;matrix_window.destination=TS_MATRIX_MAIN;mx_rows(&pages,&bank);
+    /* Put the external inputs and processor returns together in view. */
+    for(int i=0;i<matrix_window.count;++i)if(matrix_window.rows[i].kind==2 && matrix_window.rows[i].index==TS_MATRIX_NODES) {
+        matrix_window.scroll=SDL_max(0,SDL_min(i,matrix_window.count-MATRIX_VISIBLE));matrix_window.selected=i;break;
+    }
+    ts_insert_duplex_block(&a.sister.insert,1,input,2048,6);audio_callback(&a,(Uint8*)out,sizeof(out));
+    mx_capture_activity(0,&a,&pages,&bank,50);matrix_shot(directory,"matrix-signal-activity");
+    ts_insert_duplex_block(&a.sister.insert,0,NULL,0,0);
     ts_sister_project_state_init(state,48000);assert(ts_sister_project_state_apply(state,&a.sister,&bank));free(state);
     assert(!a.sister.matrix.controls.enabled && !a.sister.matrix.controls.input_name[0][0]);
     matrix_close();puts("Matrix UI, native track/tile audio, pan, inheritance, physical return, naming and project reset passed");

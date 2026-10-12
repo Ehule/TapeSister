@@ -99,6 +99,8 @@ typedef struct {
 
 typedef struct {
     TsPerformanceVoice voices[TS_PERFORMANCE_VOICE_LIMIT];
+    /* Keep brief one-shot activity after its voice has been retired. */
+    TsRouteActivity activity[TS_PERFORMANCE_VOICE_LIMIT];
     TsPerformanceGeneration *slot_generations[TS_BANK_SLOT_COUNT];
     TsPerformanceGeneration *retired_generations;
     uint64_t next_generation_id;

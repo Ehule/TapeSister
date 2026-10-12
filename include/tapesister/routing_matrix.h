@@ -23,6 +23,7 @@ typedef struct {
     unsigned position;
     TsStereoFrame history[TS_MATRIX_NODES][TS_MATRIX_DELAY];
     float input_peak[TS_MATRIX_NODES], output_peak[TS_MATRIX_ROWS], decay;
+    float hardware_peak[TS_MATRIX_OUTPUTS]; /* After OUT gain and hardware guard. */
     TsStereoFrame output[TS_MATRIX_OUTPUTS];
 } TsRoutingMatrix;
 typedef TsStereoFrame (*TsMatrixProcess)(void *,int,TsStereoFrame);

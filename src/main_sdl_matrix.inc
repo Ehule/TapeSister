@@ -1,6 +1,7 @@
 /* F9: one modeless patch matrix. No DSP or project export in paint/input. */
 enum { MATRIX_W=1280,MATRIX_H=840,MATRIX_X=264,MATRIX_Y=176,
-       MATRIX_CW=98,MATRIX_RH=28,MATRIX_VISIBLE=17,MATRIX_COLS=10 };
+       MATRIX_CW=98,MATRIX_RH=28,MATRIX_VISIBLE=17,MATRIX_COLS=10,
+       MATRIX_ACTIVITY_VOICES=TS_NOTE_BANK_VOICE_CAPACITY+3*TS_PERFORMANCE_VOICE_LIMIT+TS_BANK_SLOT_COUNT+1 };
 typedef struct {int kind,index;TsTileId tile;char name[48];} MatrixRow;
 typedef struct {
     SDL_Window *window;SDL_Renderer *renderer;SDL_Texture *texture;uint32_t *pixels;
@@ -10,6 +11,12 @@ typedef struct {
     TsRouterControls legacy;TsSpatialControls array;
     int rename;Uint32 rename_blink_started;char name[TS_MATRIX_NAME],status[150];
     float peaks[TS_MATRIX_ROWS];unsigned inputs,outputs;
+    float sends[TS_MATRIX_ROWS],receiving[TS_MATRIX_DESTINATIONS];
+    float row_source[MATRIX_VISIBLE],row_send[MATRIX_VISIBLE];
+    MatrixRow activity_rows[MATRIX_VISIBLE];
+    TsRouteActivity activity[MATRIX_ACTIVITY_VOICES],tracks[TS_TRACKER_LANES],tiles[TS_TAPEHEAD_ROUTE_ACTIVITY_COUNT];
+    int activity_count,activity_ready;unsigned processors;
+    uint64_t activity_frame;
 } MatrixWindow;
 static MatrixWindow matrix_window={.selected=-1,.rename=-1};
 #define MX_BG 0xff151c20u
@@ -35,6 +42,18 @@ static void mx_button(int x,int y,int width,const char *label,int selected)
 {
     mx_rect(x,y,width,28,selected?0xff365746u:MX_PANEL);
     mx_text(x+10,y+7,label,selected?MX_GREEN:MX_TEXT,2);
+}
+/* Small, quiet meters: rapid attack with a 150 ms release. No timed blinking. */
+static void mx_signal(int x,int y,int width,int height,float peak,uint32_t color)
+{
+    if(!isfinite(peak) || peak<=.0001f)return;
+    float light=SDL_min(1.f,(20*log10f(peak)+80)/80);
+    uint32_t ink=0xff000000u;
+    for(int shift=0;shift<=16;shift+=8) {
+        int from=(MX_PANEL>>shift)&255,to=(color>>shift)&255;
+        ink|=(uint32_t)(from+(to-from)*light*.85f)<<shift;
+    }
+    mx_rect(x,y,width,height,ink);
 }
 static TsBankSlot *mx_tile(TsSamplePages *pages,TsInstrument *bank,TsTileId id)
 { return (TsBankSlot *)ts_sample_pages_find_tile(pages,bank,id,NULL); }
@@ -125,6 +144,9 @@ static int matrix_show(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,
     }
     if(device)SDL_LockAudioDevice(device);
     w->controls=audio->sister.matrix.controls;w->legacy=audio->sister.router.controls;w->array=audio->sister.spatial.controls;
+    w->activity_ready=0;w->activity_frame=audio->sister.processed_frames;
+    memset(w->row_source,0,sizeof(w->row_source));memset(w->row_send,0,sizeof(w->row_send));
+    memset(w->receiving,0,sizeof(w->receiving));
     if(device)SDL_UnlockAudioDevice(device);
     w->filter=track>=0?1:slot>=0?2:0;w->scroll=0;mx_rows(pages,bank);
     for(int i=0;i<w->count;++i)if((track>=0 && w->rows[i].kind==0 && w->rows[i].index==track) ||
@@ -140,6 +162,7 @@ static void mx_destination(char *name,size_t size,int d,int full)
 }
 static void mx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
 {
+    (void)audio;
     MatrixWindow *w=&matrix_window;char label[160];mx_rect(0,0,MATRIX_W,MATRIX_H,MX_BG);
     mx_text(22,22,"TAPESISTER / ROUTING MATRIX",MX_GREEN,3);
     mx_button(750,20,152,"CLEAR ALL",0);
@@ -161,6 +184,7 @@ static void mx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
         const char *detail=d<TS_MATRIX_NODES?(d==0?"SUM":d==1?"TAPE IN":d<=4?"FX IN":"IN"):w->controls.output_name[d-TS_MATRIX_NODES];
         snprintf(label,sizeof(label),"%.14s",detail);mx_text(x+5,151,label,MX_DIM,1);
         if(d>=TS_MATRIX_NODES && (unsigned)(d-TS_MATRIX_NODES)*2>=w->outputs)mx_text(x+68,153,"N/A",MX_YELLOW,1);
+        mx_signal(x+5,165,MATRIX_CW-12,3,w->receiving[d],MX_GREEN);
     }
     for(int line=0;line<MATRIX_VISIBLE && line+w->scroll<w->count;++line) {
         int at=line+w->scroll,y=MATRIX_Y+line*MATRIX_RH;MatrixRow row=w->rows[at];
@@ -168,12 +192,9 @@ static void mx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
         mx_rect(20,y,1234,MATRIX_RH-2,at==w->selected?0xff2a393bu:line&1?0xff1c262bu:0xff192227u);
         snprintf(label,sizeof(label),"%.19s",row.name);mx_text(28,y+6,label,at==w->selected?MX_YELLOW:row.kind==2?MX_GREEN:MX_TEXT,2);
         if(inherit)mx_text(225,y+19,mx_legacy_direct(raw)?"OLD":"TILE",MX_YELLOW,1);
+        mx_signal(21,y+5,4,17,w->row_source[line],MX_GREEN);
         if(row.kind==2) {
-            float peak=w->peaks[row.index];mx_rect(22,y+2,2,24,peak>.0001f?MX_GREEN:MX_PANEL);
-            int off=(row.index==TS_MATRIX_SISTER&&!audio->sister.enabled) ||
-                (row.index==TS_MATRIX_PRISM&&!audio->sister.parameters.prism.enabled) ||
-                (row.index==TS_MATRIX_BOARD&&!audio->sister.parameters.fx.enabled) ||
-                (row.index==TS_MATRIX_FALLOUT&&(!audio->sister.parameters.fx.enabled||!audio->sister.parameters.fx.fallout.enabled));
+            int off=row.index>=TS_MATRIX_SISTER && row.index<=TS_MATRIX_FALLOUT && !(w->processors&(1u<<row.index));
             if(off)mx_text(225,y+19,"OFF",MX_YELLOW,1);
             if(row.index>=TS_MATRIX_NODES && row.index<TS_MATRIX_FM && (unsigned)(row.index-TS_MATRIX_NODES)*2>=w->inputs)mx_text(225,y+19,"N/A",MX_YELLOW,1);
         }
@@ -187,6 +208,11 @@ static void mx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
             if(g&&!inherit){mx_text(x+12,y+9,"X",MX_BG,1);snprintf(label,sizeof(label),"%+.1f",20*log10f(g*.001f));}
             else snprintf(label,sizeof(label),"%s",inherit?(mx_legacy_direct(raw)?"OLD":"TILE"):"--");
             mx_text(x+28,y+6,label,g?MX_TEXT:MX_DIM,2);if(delayed)mx_text(x+79,y+9,"F",MX_YELLOW,1);
+            if(g && !inherit && w->controls.enabled &&
+               (d<TS_MATRIX_NODES || (unsigned)(d-TS_MATRIX_NODES)*2<w->outputs)) {
+                int maximum=1;for(int dest=0;dest<TS_MATRIX_DESTINATIONS;++dest)maximum=SDL_max(maximum,r.matrix_gain[dest]);
+                mx_signal(x+28,y+22,60,2,w->row_send[line]*g/maximum,delayed?MX_YELLOW:MX_GREEN);
+            }
         }
     }
     int bottom=MATRIX_Y+MATRIX_VISIBLE*MATRIX_RH;
@@ -205,7 +231,7 @@ static void mx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
         if(r.pan<0)mx_rect(914+r.pan*130/100,743,-r.pan*130/100,3,MX_YELLOW);
         mx_rect(914+r.pan*130/100-3,735,6,19,MX_YELLOW);
         mx_button(1070,731,170,mx_legacy_direct(raw)?"USE MATRIX":row.kind==0?(raw.mode==TS_SOURCE_INHERIT?"USE TRACK":"USE TILE"):"NAME I/O",0);
-        mx_text(32,769,"CHECKBOX: CONNECT | RIGHT-CLICK: SELECT | MIDDLE-CLICK I/O: NAME | RIGHT-CLICK PAN: CENTER",MX_DIM,1);
+        mx_text(32,769,"LEVEL/PAN: DRAG OR WHEEL | SHIFT: FINE | RIGHT-CLICK: 0 dB / CENTER | CELL RIGHT-CLICK: SELECT",MX_DIM,1);
         mx_button(1070,762,170,r.width==-100?"MONO":"STEREO",r.width==-100);
     }
     if(w->rename>=0) {
@@ -216,7 +242,7 @@ static void mx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
     }
     if(!w->controls.enabled)mx_text(24,804,"LEGACY PROJECT: USE MATRIX STARTS A NEW MAIN > EQ > LIMITER PATH. EXISTING SOURCE SENDS ARE RETAINED.",MX_YELLOW,1);
     else if(w->status[0])mx_text(24,804,w->status,MX_YELLOW,1);
-    else mx_text(24,804,"CHANGES ARE LIVE. INPUTS/OUTPUTS USE THE ACTIVE AUDIO DEVICE. N/A = PORT NOT OPEN. F9 / ESC CLOSE.",MX_DIM,1);
+    else mx_text(24,804,"SIGNAL: ROW = SOURCE / COLUMN = RECEIVING / CELL = SENDING. N/A = PORT NOT OPEN. F9 / ESC CLOSE.",MX_DIM,1);
     mx_text(1180,25,"F9",MX_DIM,2);
 }
 static void mx_commit_controls(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui)
@@ -284,15 +310,92 @@ static void mx_reset_routes(SDL_AudioDeviceID device,AudioState *audio,TsUiState
         "DEFAULT: ALL TILES/TRACKS + FM/LINK > MAIN > EQ > LIMITER > OUT 1/2. EXTERNAL INPUTS OFF. I/O NAMES KEPT.":
         "ALL CONNECTIONS CLEARED, INCLUDING HIDDEN TRACKS/TILES AND FEEDBACK. I/O NAMES KEPT. PATCH A NEW PATH TO HEAR AUDIO.");
 }
-static void matrix_update(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsSamplePages *pages,TsInstrument *bank)
+static void mx_take_voice(TsSourceRouteVoice *voice,TsTileId tile,float gain)
 {
-    MatrixWindow *w=&matrix_window;(void)ui;if(!w->visible || !window_drawable(w->window) || SDL_GetTicks()-w->presented<50)return;
+    MatrixWindow *w=&matrix_window;
+    if(tile && voice->activity_source>0 && w->activity_count<MATRIX_ACTIVITY_VOICES)
+        w->activity[w->activity_count++]=(TsRouteActivity){tile,voice->activity_source*gain,voice->activity_send*gain};
+    voice->activity_source=voice->activity_send=0;
+}
+/* Fixed-size copies and bounded voice reads under the existing exclusion.
+   Matching rows, smoothing, logs and painting all happen after unlocking. */
+static void mx_capture_activity(SDL_AudioDeviceID device,AudioState *audio,TsSamplePages *pages,TsInstrument *bank,Uint32 elapsed)
+{
+    MatrixWindow *w=&matrix_window;float destinations[TS_MATRIX_DESTINATIONS];
+    MatrixRow old_rows[MATRIX_VISIBLE];float old_source[MATRIX_VISIBLE],old_send[MATRIX_VISIBLE];
+    memcpy(old_rows,w->activity_rows,sizeof(old_rows));memcpy(old_source,w->row_source,sizeof(old_source));memcpy(old_send,w->row_send,sizeof(old_send));
     if(device)SDL_LockAudioDevice(device);
     w->controls=audio->sister.matrix.controls;w->legacy=audio->sister.router.controls;w->array=audio->sister.spatial.controls;memcpy(w->peaks,audio->sister.matrix.output_peak,sizeof(w->peaks));
+    int fresh=w->activity_ready && audio->sister.processed_frames!=w->activity_frame;
+    w->activity_frame=audio->sister.processed_frames;w->activity_ready=1;
+    memcpy(destinations,audio->sister.matrix.input_peak,sizeof(audio->sister.matrix.input_peak));
+    memcpy(destinations+TS_MATRIX_NODES,audio->sister.matrix.hardware_peak,sizeof(audio->sister.matrix.hardware_peak));
+    memset(audio->sister.matrix.hardware_peak,0,sizeof(audio->sister.matrix.hardware_peak));
+    for(int i=0;i<TS_MATRIX_ROWS;++i) {
+        TsSourceRouteVoice *v=&audio->sister.matrix.voice[i];w->sends[i]=v->activity_send;
+        v->activity_source=v->activity_send=0;
+    }
+    w->processors=(audio->sister.enabled?1u<<TS_MATRIX_SISTER:0)|
+        (audio->sister.parameters.prism.enabled?1u<<TS_MATRIX_PRISM:0)|
+        (audio->sister.parameters.fx.enabled?1u<<TS_MATRIX_BOARD:0)|
+        (audio->sister.parameters.fx.enabled && audio->sister.parameters.fx.fallout.enabled?1u<<TS_MATRIX_FALLOUT:0);
+    w->activity_count=0;
+    float program=audio->mixer.program_gain;
+    for(int i=0;i<TS_NOTE_BANK_VOICE_CAPACITY;++i)
+        mx_take_voice(&audio->notes.voices[i].output_route,audio->notes.voices[i].route_tile,program*audio->notes.normalization_gain);
+    TsPerformanceBank *voices[]={&audio->performance,&audio->tile_launchers,&audio->sister.performance};
+    for(int b=0;b<3;++b) {
+        for(int i=0;i<TS_PERFORMANCE_VOICE_LIMIT;++i) {
+            TsRouteActivity value=voices[b]->activity[i];
+            if(value.tile && value.source>0 && w->activity_count<MATRIX_ACTIVITY_VOICES) {
+                value.source*=program;value.send*=program;w->activity[w->activity_count++]=value;
+            }
+        }
+        memset(voices[b]->activity,0,sizeof(voices[b]->activity));
+    }
+    for(int i=0;i<TS_BANK_SLOT_COUNT;++i)
+        mx_take_voice(&audio->keyboard_sequence.voices[i].output_route,audio->keyboard_sequence.voices[i].route_tile,program);
+    mx_take_voice(&audio->audition_route,audio->audition_route_tile,program);
+    ts_tapehead_take_route_activity(w->tracks,w->tiles);
     w->inputs=audio->sister.insert.duplex?atomic_load(&audio->sister.insert.input_channels):atomic_load(&audio->sister.insert.matrix_channels);
     w->outputs=audio->output_device_channels;
     if(device)SDL_UnlockAudioDevice(device);
-    mx_rows(pages,bank);mx_paint(audio,pages,bank);
+    mx_rows(pages,bank);
+    float release=expf(-(float)SDL_min(elapsed,1000u)/150.f);
+    for(int d=0;d<TS_MATRIX_DESTINATIONS;++d) {
+        float value=fresh && w->controls.enabled?destinations[d]:0;
+        w->receiving[d]=w->controls.enabled?fmaxf(value,w->receiving[d]*release):0;
+        if(d>=TS_MATRIX_NODES && (unsigned)(d-TS_MATRIX_NODES)*2>=w->outputs)w->receiving[d]=0;
+    }
+    for(int line=0;line<MATRIX_VISIBLE;++line) {
+        int at=w->scroll+line;float source=0,send=0;MatrixRow row={.kind=-1};
+        if(at<w->count) {
+            row=w->rows[at];
+            if(fresh && w->controls.enabled) {
+                if(row.kind==2){source=w->peaks[row.index];send=w->sends[row.index];}
+                else if(row.kind==0){source=w->tracks[row.index].source*program;send=w->tracks[row.index].send*program;}
+                else {
+                    for(int i=0;i<w->activity_count;++i)if(w->activity[i].tile==row.tile) {
+                        source=fmaxf(source,w->activity[i].source);send=fmaxf(send,w->activity[i].send);
+                    }
+                    for(int i=0;i<TS_TAPEHEAD_ROUTE_ACTIVITY_COUNT;++i)if(w->tiles[i].tile==row.tile) {
+                        source=fmaxf(source,w->tiles[i].source*program);send=fmaxf(send,w->tiles[i].send*program);
+                    }
+                }
+            }
+            if(w->controls.enabled)for(int i=0;i<MATRIX_VISIBLE;++i)
+                if(row.kind==old_rows[i].kind && row.index==old_rows[i].index && row.tile==old_rows[i].tile) {
+                    source=fmaxf(source,old_source[i]*release);send=fmaxf(send,old_send[i]*release);break;
+                }
+        }
+        w->activity_rows[line]=row;w->row_source[line]=source;w->row_send[line]=send;
+    }
+}
+static void matrix_update(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsSamplePages *pages,TsInstrument *bank)
+{
+    MatrixWindow *w=&matrix_window;(void)ui;Uint32 elapsed=SDL_GetTicks()-w->presented;
+    if(!w->visible || !window_drawable(w->window) || elapsed<50)return;
+    mx_capture_activity(device,audio,pages,bank,elapsed);mx_paint(audio,pages,bank);
     SDL_UpdateTexture(w->texture,NULL,w->pixels,MATRIX_W*4);SDL_RenderClear(w->renderer);
     SDL_RenderCopy(w->renderer,w->texture,NULL,NULL);SDL_RenderPresent(w->renderer);w->presented=SDL_GetTicks();w->dirty=0;
 }
@@ -344,6 +447,8 @@ static int matrix_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,A
     else if(e->type==SDL_MOUSEMOTION){rx=e->motion.x;ry=e->motion.y;}
     else if(e->type==SDL_MOUSEWHEEL)wheel_event_mouse(e,&rx,&ry);else return 1;
     x=rx*MATRIX_W/SDL_max(1,ww);y=ry*MATRIX_H/SDL_max(1,hh);w->dirty=1;
+    int wheel=e->type==SDL_MOUSEWHEEL?wheel_event_detents(e,0):0;
+    int fine=(SDL_GetModState()&KMOD_SHIFT)!=0;
     if(e->type==SDL_MOUSEBUTTONUP){w->drag=0;return 1;}
     int click=e->type==SDL_MOUSEBUTTONDOWN,left=click&&e->button.button==SDL_BUTTON_LEFT,middle=click&&e->button.button==SDL_BUTTON_MIDDLE;
     if(left && y>=20 && y<48) {
@@ -367,8 +472,8 @@ static int matrix_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,A
             if((SDL_GetModState()&KMOD_CTRL) && x>=MATRIX_X && at<w->count) {
                 w->selected=at;w->destination=SDL_min(TS_MATRIX_DESTINATIONS-1,(x-MATRIX_X)/MATRIX_CW+w->column);
                 TsSourceRoute r=mx_display_route(mx_route(w->rows[at],pages,bank));int g=r.matrix_gain[w->destination];
-                if(g)mx_gain(device,audio,ui,pages,bank,(int)lrintf(g*powf(10,e->wheel.y*.05f)));
-            } else w->scroll=SDL_max(0,SDL_min(w->count-MATRIX_VISIBLE,w->scroll-e->wheel.y*3));return 1;
+                if(g && wheel)mx_gain(device,audio,ui,pages,bank,(int)lrintf(fminf(2000.f,g*powf(10,wheel*(fine?.005f:.05f)))));
+            } else w->scroll=SDL_max(0,SDL_min(w->count-MATRIX_VISIBLE,w->scroll-wheel*3));return 1;
         }
         if(click && at<w->count) {
             w->selected=at;w->status[0]=0;MatrixRow row=w->rows[at];
@@ -389,14 +494,33 @@ static int matrix_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,A
     if(left && x>=1070 && y>=762 && y<790 && raw.mode!=TS_SOURCE_INHERIT && !mx_legacy_direct(raw) && w->controls.enabled) {
         r.width=r.width==-100?0:-100;mx_commit_route(device,audio,ui,pages,bank,r);return 1;
     }
-    if(click && y>=730 && y<760) {
-        if(x>=252 && x<=552)w->drag=1;
-        if(x>=784 && x<=1044)w->drag=2;
+    if(y>=730 && y<760) {
+        int level=x>=32 && x<=552,pan=x>=588 && x<=1044;
+        if(e->type==SDL_MOUSEWHEEL && (level || pan)) {
+            if(wheel && level) {
+                int g=r.matrix_gain[w->destination];
+                if(g || wheel>0)mx_gain(device,audio,ui,pages,bank,g?
+                    (int)lrintf(fminf(2000.f,g*powf(10,wheel*(fine?.005f:.05f)))):1000);
+            } else if(wheel && raw.mode!=TS_SOURCE_INHERIT && !mx_legacy_direct(raw) && w->controls.enabled) {
+                r.pan=SDL_clamp(r.pan+wheel*(fine?1:5),-100,100);mx_commit_route(device,audio,ui,pages,bank,r);
+            }
+            return 1;
+        }
+        if(click && e->button.button==SDL_BUTTON_RIGHT && (level || pan)) {
+            w->drag=0;
+            if(level)mx_gain(device,audio,ui,pages,bank,1000);
+            else if(raw.mode!=TS_SOURCE_INHERIT && !mx_legacy_direct(raw) && w->controls.enabled) {
+                r.pan=0;mx_commit_route(device,audio,ui,pages,bank,r);
+            }
+            return 1;
+        }
+        if(left && x>=252 && x<=552)w->drag=1;
+        if(left && x>=784 && x<=1044)w->drag=2;
     }
     if(w->drag && (click || e->type==SDL_MOUSEMOTION)) {
         if(w->drag==1)mx_gain(device,audio,ui,pages,bank,(x-252)*2000/300);
         else if(raw.mode!=TS_SOURCE_INHERIT && !mx_legacy_direct(raw) && w->controls.enabled) {
-            r.pan=click&&e->button.button==SDL_BUTTON_RIGHT?0:SDL_max(-100,SDL_min(100,(x-914)*100/130));
+            r.pan=SDL_max(-100,SDL_min(100,(x-914)*100/130));
             mx_commit_route(device,audio,ui,pages,bank,r);
         }
     }

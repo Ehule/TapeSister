@@ -1,5 +1,6 @@
 #include "tapesister/source_route.h"
 #include <string.h>
+#include <math.h>
 
 void ts_source_route_mix_init(TsSourceRouteMix *to,const TsSourceRouteMix *map)
 {
@@ -85,9 +86,13 @@ static TsStereoFrame main_frame(const TsSourceRouteVoice *v,TsStereoFrame in)
 
 TsStereoFrame ts_source_route_frame(TsSourceRouteVoice *v, TsStereoFrame in, TsSourceRouteMix *clean)
 {
+    float source=fmaxf(fabsf(in.l),fabsf(in.r));
+    if(isfinite(source) && source>v->activity_source)v->activity_source=source;
     if(!clean || !v->ready)return in;
     if(!v->mask && !v->remaining) {
         TsStereoFrame main=main_frame(v,in);
+        float sent=fmaxf(fabsf(main.l),fabsf(main.r));
+        if(isfinite(sent) && sent>v->activity_send)v->activity_send=sent;
         clean->reference.l+=in.l-main.l;clean->reference.r+=in.r-main.r;
         clean->tape_input.l+=in.l*(1-v->main);clean->tape_input.r+=in.r*(1-v->main);
         return main;
@@ -107,12 +112,15 @@ TsStereoFrame ts_source_route_frame(TsSourceRouteVoice *v, TsStereoFrame in, TsS
     }
     unsigned missing=clean->check_outputs?(v->mask&65535u)&~clean->available:0;
     TsStereoFrame main=main_frame(v,in);
+    float sent=fmaxf(fabsf(main.l),fabsf(main.r));
+    if(isfinite(sent) && sent>v->activity_send)v->activity_send=sent;
     /* DRY capture reconstructs the source before route pan/width as well as
        before clean/send levels. This residual is never mixed into playback. */
     clean->reference.l+=in.l-main.l;clean->reference.r+=in.r-main.r;
     clean->tape_input.l+=in.l*(1-v->main);clean->tape_input.r+=in.r*(1-v->main);
     for(int i=0;i<TS_SOURCE_COEFFICIENTS;++i)if(v->mask&(UINT64_C(1)<<i)) {
         float value=in.l*v->matrix[i][0]+in.r*v->matrix[i][1];
+        if(isfinite(value) && fabsf(value)>v->activity_send)v->activity_send=fabsf(value);
         if(i<16) {if(!missing){clean->speaker[i]+=value;if(v->route.mix_enabled)clean->matrix_speaker[i]+=value;}}
         else if(i==16){clean->monitor.l+=value;if(missing)clean->fallback.l+=value;
             if(v->route.mix_enabled){clean->matrix_monitor.l+=value;if(missing)clean->matrix_fallback.l+=value;}}

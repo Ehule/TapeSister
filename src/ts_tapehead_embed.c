@@ -63,6 +63,7 @@ static struct {
     uint64_t model_hash;
     TsPatternId ids[256];
     TsTileId selected_tile;
+    TsRouteActivity track_activity[TS_TRACKER_LANES],tile_activity[TS_TAPEHEAD_ROUTE_ACTIVITY_COUNT];
     TsSamplePages *pages;
     const TsInstrument *active;
     size_t canvas_page,host_page; /* 24-tile viewport; 16-tile host Sample page. */
@@ -229,6 +230,26 @@ void ts_tapehead_mix_tile(void *ptr,unsigned offset,unsigned count) {
         v->position=(int)v->tilePosition;
         v->positionFrac=(uint64_t)((v->tilePosition-floor(v->tilePosition))*4294967296.0);
     }
+    float source=v->tileRouting.activity_source,send=v->tileRouting.activity_send;
+    if(v->tileLane>=0 && v->tileLane<TS_TRACKER_LANES) {
+        TsRouteActivity *a=&embed.track_activity[v->tileLane];
+        a->source=fmaxf(a->source,source);a->send=fmaxf(a->send,send);
+    }
+    if(v->tileRouteIndex<TS_TAPEHEAD_ROUTE_ACTIVITY_COUNT &&
+       (v->tileLane<0 || v->tileLane>=TS_TRACKER_LANES || embed.track_routes[v->tileLane].mode==TS_SOURCE_INHERIT)) {
+        TsRouteActivity *a=&embed.tile_activity[v->tileRouteIndex];
+        if(a->tile!=v->tileId)*a=(TsRouteActivity){.tile=v->tileId};
+        a->source=fmaxf(a->source,source);a->send=fmaxf(a->send,send);
+    }
+    v->tileRouting.activity_source=v->tileRouting.activity_send=0;
+}
+void ts_tapehead_take_route_activity(TsRouteActivity tracks[TS_TRACKER_LANES],
+    TsRouteActivity tiles[TS_TAPEHEAD_ROUTE_ACTIVITY_COUNT])
+{
+    memcpy(tracks,embed.track_activity,sizeof(embed.track_activity));
+    memcpy(tiles,embed.tile_activity,sizeof(embed.tile_activity));
+    memset(embed.track_activity,0,sizeof(embed.track_activity));
+    memset(embed.tile_activity,0,sizeof(embed.tile_activity));
 }
 static void collect_tiles(void) {
     RetiredTile **link=&embed.retired;
