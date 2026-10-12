@@ -92,7 +92,7 @@ static void test_native_waveform_and_window(void)
         assert(pixels[(size_t)width*height-1]==sister.framebuffer.pixels[400*640-1]);
         if(!i)native_pixels_shot("sister-filled-window",pixels,width,height);
         free(pixels);
-        SDL_Event sent={0},received={0};sent.type=SDL_MOUSEBUTTONDOWN;sent.button.windowID=sister.window_id;
+        SDL_Event sent,received;SDL_zero(sent);SDL_zero(received);sent.type=SDL_MOUSEBUTTONDOWN;sent.button.windowID=sister.window_id;
         sent.button.button=SDL_BUTTON_LEFT;sent.button.x=480*width/640;sent.button.y=380*height/400;
         SDL_FlushEvent(SDL_MOUSEBUTTONDOWN);assert(SDL_PushEvent(&sent)==1);
         assert(SDL_PeepEvents(&received,1,SDL_GETEVENT,SDL_MOUSEBUTTONDOWN,SDL_MOUSEBUTTONDOWN)==1);

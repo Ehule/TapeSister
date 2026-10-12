@@ -1,13 +1,13 @@
 static void matrix_click(int x,int y,int button)
 {
-    SDL_Event event={0};event.type=SDL_MOUSEBUTTONDOWN;event.button.windowID=matrix_window.id;
+    SDL_Event event;SDL_zero(event);event.type=SDL_MOUSEBUTTONDOWN;event.button.windowID=matrix_window.id;
     event.button.x=x;event.button.y=y;event.button.button=button;
     assert(matrix_event(&event,window,0,&a,&u,&pages,&bank));
     event.type=SDL_MOUSEBUTTONUP;assert(matrix_event(&event,window,0,&a,&u,&pages,&bank));
 }
 static void matrix_wheel(int x,int y,int steps,int modifiers,int flipped)
 {
-    SDL_Event e={0};e.type=SDL_MOUSEWHEEL;e.wheel.windowID=matrix_window.id;e.wheel.y=steps;
+    SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEWHEEL;e.wheel.windowID=matrix_window.id;e.wheel.y=steps;
     e.wheel.direction=flipped?SDL_MOUSEWHEEL_FLIPPED:SDL_MOUSEWHEEL_NORMAL;
     int width,height;SDL_GetWindowSize(matrix_window.window,&width,&height);
 #if SDL_VERSION_ATLEAST(2,26,0)
@@ -210,7 +210,7 @@ static void matrix_controller(const char *directory)
     assert(matrix_window.pixels[caret]==0xffffce69u);
     matrix_window.rename_blink_started=SDL_GetTicks()-600u;
     mx_paint(&a,&pages,&bank);assert(matrix_window.pixels[caret]!=0xffffce69u);
-    SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.windowID=matrix_window.id;e.key.keysym.sym=SDLK_RETURN;
+    SDL_Event e;SDL_zero(e);e.type=SDL_KEYDOWN;e.key.windowID=matrix_window.id;e.key.keysym.sym=SDLK_RETURN;
     assert(matrix_event(&e,window,0,&a,&u,&pages,&bank));assert(!strcmp(a.sister.matrix.controls.input_name[0],"Terra live"));
     matrix_shot(directory,"matrix-hardware-inputs");
     /* Project state owns names and graph, and an old project clears both. */

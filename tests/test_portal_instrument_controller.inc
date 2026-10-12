@@ -11,7 +11,7 @@ static void test_instrument_controls(SDL_Window *window,SDL_AudioDeviceID device
     snprintf(ui.config.cdp_bin_path,sizeof(ui.config.cdp_bin_path),"%s",getenv("TS_TEST_CDP_BIN"));
     TsPortalUi *p=&ui.portal;assert(portal_source(device,&audio,&ui,&instrument,&c));
     p->family=TS_PORTAL_INSTRUMENTS+1;
-    SDL_Event event={0};event.type=SDL_MOUSEBUTTONDOWN;event.button.button=SDL_BUTTON_LEFT;event.button.windowID=SDL_GetWindowID(window);
+    SDL_Event event;SDL_zero(event);event.type=SDL_MOUSEBUTTONDOWN;event.button.button=SDL_BUTTON_LEFT;event.button.windowID=SDL_GetWindowID(window);
 #define TOOL_CLICK(X,Y,B) do {event.type=SDL_MOUSEBUTTONDOWN;event.button.windowID=SDL_GetWindowID(window);event.button.button=(B);event.button.x=(X);event.button.y=(Y);assert(portal_event(&event,window,device,&audio,&ui,&instrument,&c,&sister,44100,&transform));}while(0)
     TOOL_CLICK(25,TS_PORTAL_LIST_Y+4+3*17,SDL_BUTTON_LEFT);
     assert(p->chain_active && p->macro_view && !strcmp(p->chain.name,"SLOW BLOOM"));

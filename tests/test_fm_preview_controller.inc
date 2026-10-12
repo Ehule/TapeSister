@@ -135,7 +135,7 @@ static void test_basic_create_controller(void)
     toggle_fm_voice_workspace(u,inst,0);finish_fm_preview(a,u,&preview);
     assert(ts_sample_peak(&preview)==0);
     close_fm_workspace(0,a,u,&preview);
-    SDL_Event event={0};event.type=SDL_MOUSEBUTTONDOWN;event.button.button=SDL_BUTTON_LEFT;
+    SDL_Event event;SDL_zero(event);event.type=SDL_MOUSEBUTTONDOWN;event.button.button=SDL_BUTTON_LEFT;
     const int waveforms[]={TS_FM_WAVE_SINE,TS_FM_WAVE_SQUARE,TS_FM_WAVE_SAW,TS_FM_WAVE_TRIANGLE};
     SDL_SetModState(KMOD_SHIFT);
     for(int n=0;n<5;++n) {

@@ -34,7 +34,7 @@ static void test_wheel_pipeline(void)
     SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
     e = wheel_fixture(.25, 40, 340);
     for (int i = 0; i < 7; ++i) { SDL_Event next = e; next.wheel.y = (i + 2) % 4 == 0; assert(SDL_PushEvent(&next) == 1); }
-    SDL_Event key = {0}; key.type = SDL_KEYUP; key.key.windowID = SDL_GetWindowID(window);
+    SDL_Event key;SDL_zero(key); key.type = SDL_KEYUP; key.key.windowID = SDL_GetWindowID(window);
     assert(SDL_PushEvent(&key) == 1);
     SDL_Event next = e; assert(SDL_PushEvent(&next) == 1);
     wheel_event_coalesce(&e);

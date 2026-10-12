@@ -29,7 +29,7 @@ static void test_quick_capture(SDL_Window *window,SDL_AudioDeviceID device)
     char directory[160];snprintf(directory,sizeof(directory),"quick-capture-%lu",(unsigned long)SDL_GetTicks());
     assert(!SDL_setenv("TAPESISTER_CAPTURES",directory,1));
     assert(!strcmp(capture_archive_directory(),directory));
-    SDL_Event e={0};e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=SDL_GetWindowID(window);
+    SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=SDL_GetWindowID(window);
     e.button.x=580;e.button.y=320;e.button.button=SDL_BUTTON_LEFT;
     assert(quick_capture_event(&e,window,device,&input_device,a,input,u,bank,pages));
     assert(input->quick_recording && !input->mosaic_recording && !input_device);

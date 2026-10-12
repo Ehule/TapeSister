@@ -45,7 +45,7 @@ static void tracker_follow_and_selection(void)
     TsMidiEvent note;assert(ts_midi_decode_short_message(0x90,67,100,&note));
     assert(ts_tapehead_midi(&note,1));note.action=TS_MIDI_ACTION_NOTE_OFF;assert(ts_tapehead_midi(&note,0));
     export_score();assert(pat()->cells[61][0].note==67 && song.row==row && song.tick==tick);
-    SDL_Event held={0};held.type=SDL_KEYDOWN;held.key.windowID=SDL_GetWindowID(test_window);
+    SDL_Event held;SDL_zero(held);held.type=SDL_KEYDOWN;held.key.windowID=SDL_GetWindowID(test_window);
     held.key.keysym.sym=SDLK_SPACE;held.key.keysym.scancode=SDL_SCANCODE_SPACE;held.key.repeat=1;
     assert(tracker_event(&held,test_window,0,test_audio,test_ui,test_pages,test_bank,48000));
     assert(ts_tapehead_running());

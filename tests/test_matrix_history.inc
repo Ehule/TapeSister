@@ -16,7 +16,7 @@ static void matrix_history_bulk(const char *directory)
     matrix_click(430,34,SDL_BUTTON_LEFT);
     assert(pages.tracker.lanes[0].output_route.matrix_gain[TS_MATRIX_BOARD]==1000);
     int count=matrix_window.history_count;
-    SDL_Event e={0};e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=matrix_window.id;e.button.button=SDL_BUTTON_LEFT;e.button.x=914;e.button.y=744;
+    SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=matrix_window.id;e.button.button=SDL_BUTTON_LEFT;e.button.x=914;e.button.y=744;
     assert(matrix_event(&e,window,0,&a,&u,&pages,&bank));
     e.type=SDL_MOUSEMOTION;e.motion.windowID=matrix_window.id;e.motion.x=1044;e.motion.y=744;
     assert(matrix_event(&e,window,0,&a,&u,&pages,&bank));

@@ -14,7 +14,7 @@ static void test_canvas_eq_controller(SDL_Window *window)
     canvas_eq_open(0,sound,view,doc);wait_canvas_eq(sound,view,doc);assert(view->canvas_eq_open && canvas_eq.dry.data);
     ts_master_eq_preset(&view->canvas_eq,TS_EQ_PRESET_WARM);view->canvas_eq.band[2].gain_db=-4;
     canvas_eq_preview(0,sound,view);assert(sound->playing && sound->canvas_eq_preview);
-    SDL_Event e={0};e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=SDL_GetWindowID(window);e.button.button=SDL_BUTTON_LEFT;e.button.x=320;e.button.y=155;
+    SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=SDL_GetWindowID(window);e.button.button=SDL_BUTTON_LEFT;e.button.x=320;e.button.y=155;
     assert(canvas_eq_event(&e,window,0,sound,view,&sister,doc));
     assert(!memcmp(&master,&view->config.master_eq,sizeof(master)));
     const char *directory=getenv("TS_NEXT_SCREENSHOTS");

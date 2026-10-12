@@ -22,7 +22,7 @@ static SDL_Window *window;
 static char error[256];
 static void click(int x,int y,int button)
 {
-    SDL_Event e={0};e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=source_route_window.id;
+    SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=source_route_window.id;
     e.button.x=x;e.button.y=y;e.button.button=button;
     assert(source_route_event(&e,window,0,&a,&u,&pages,&bank));
     e.type=SDL_MOUSEBUTTONUP;assert(source_route_event(&e,window,0,&a,&u,&pages,&bank));
@@ -120,7 +120,7 @@ static void shared_send_controls(const char *directory)
        framebuffer/preset banks and cannot fit on MinGW's default 2 MiB stack. */
     static SisterWindow sister;
     source_route_hide();u.router_open=1;
-    SDL_Event event={0};event.type=SDL_MOUSEBUTTONDOWN;event.button.windowID=SDL_GetWindowID(window);
+    SDL_Event event;SDL_zero(event);event.type=SDL_MOUSEBUTTONDOWN;event.button.windowID=SDL_GetWindowID(window);
     event.button.button=SDL_BUTTON_LEFT;event.button.x=70;event.button.y=84;
     assert(router_event(&event,window,0,&a,&u,&sister));
     assert(source_route_window.visible && source_route_window.track==-2 && source_route_window.model.page==3);
@@ -244,7 +244,7 @@ int main(int argc,char **argv)
     startPlaying(PLAYMODE_SONG,0);render(energy);assert(energy[0]==0&&energy[1]==0&&energy[2]>1&&energy[3]>1);
     routing_pan_scope(argc>1?argv[1]:NULL);
     const pattCoord2_t *header=&pattCoord2Table[config.ptnStretch][ui.pattChanScrollShown][getPatternEditorView()];
-    SDL_Event e={0};e.type=SDL_MOUSEBUTTONDOWN;e.button.button=SDL_BUTTON_RIGHT;
+    SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.button=SDL_BUTTON_RIGHT;
     assert(ts_tapehead_event(&e,32,header->upperRowsY+3));
     tracker_refresh(0,&a,&u,&pages,&bank,48000,NULL);
     assert(matrix_window.visible && matrix_window.rows[matrix_window.selected].kind==0);
@@ -270,7 +270,7 @@ int main(int argc,char **argv)
     a.output_device_channels=2;float stereo[1024];audio_callback(&a,(Uint8*)stereo,sizeof(stereo));
     assert(a.clean_output.missing==12&&fabsf(stereo[1000])>0&&fabsf(stereo[1001])>0);
     assert(source_route_show(0,&a,&u,&pages,&bank,-1,0));shot(argc>1?argv[1]:NULL,"routing-stereo-fallback");
-    e=(SDL_Event){0};e.type=SDL_KEYUP;e.key.windowID=source_route_window.id;e.key.keysym.sym=SDLK_z;
+    SDL_zero(e);e.type=SDL_KEYUP;e.key.windowID=source_route_window.id;e.key.keysym.sym=SDLK_z;
     assert(!source_route_event(&e,window,0,&a,&u,&pages,&bank));assert(e.key.windowID==SDL_GetWindowID(window));
     routing_clarity(argc>1?argv[1]:NULL);
     shared_send_controls(argc>1?argv[1]:NULL);

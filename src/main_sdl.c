@@ -10629,7 +10629,7 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
     if (audio == NULL || ui == NULL || sister == NULL) return;
     if(audio->sister.matrix.controls.enabled && hit.action>=TS_SISTER_UI_ACTION_SOURCE_TILES &&
        hit.action<=TS_SISTER_UI_ACTION_SOURCE_TRACK) {
-        SDL_Event event={0};event.type=SDL_KEYDOWN;event.key.windowID=SDL_GetWindowID(sister->window);
+        SDL_Event event;SDL_zero(event);event.type=SDL_KEYDOWN;event.key.windowID=SDL_GetWindowID(sister->window);
         event.key.keysym.sym=SDLK_F9;SDL_PushEvent(&event);return;
     }
     fallout_preset_scope = sister->model.fx_page == 2;

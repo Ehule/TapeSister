@@ -512,7 +512,7 @@ static void portal_poll(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui
         if(c->create_retry) {
             c->create_retry=0;
             if(portal_create_matches(c,ui,instrument)) {
-                SDL_Event retry={0};retry.type=SDL_MOUSEBUTTONDOWN;retry.button.button=SDL_BUTTON_RIGHT;
+                SDL_Event retry;SDL_zero(retry);retry.type=SDL_MOUSEBUTTONDOWN;retry.button.button=SDL_BUTTON_RIGHT;
                 portal_create_event(&retry,100,214,device,audio,ui,instrument,c,c->create_transform);
             }
         }

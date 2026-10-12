@@ -113,7 +113,7 @@ int main(void)
         assert(flag==forward);
     }
 
-    SDL_Event key={0};key.type=SDL_KEYDOWN;key.key.windowID=SDL_GetWindowID(window);
+    SDL_Event key;SDL_zero(key);key.type=SDL_KEYDOWN;key.key.windowID=SDL_GetWindowID(window);
     key.key.keysym.sym=SDLK_s;key.key.keysym.mod=KMOD_SHIFT;
     assert(keyboard_sustain_event(&key,window,device,&audio,&ui,&sister,&instrument));
     assert(ui.keyboard_sustain && audio.notes.sustain && audio.performance.sustain && audio.sister.performance.sustain);
@@ -179,7 +179,7 @@ int main(void)
     TsStereoFrame heard={0};for(int i=0;i<200;++i)heard=ts_note_bank_read_stereo(&audio.notes);
     assert(fabsf(heard.l)>.001 && fabsf(heard.l+heard.r)<.00001);
     shot("sustain-import",&ui,&instrument);
-    SDL_Event click={0};click.type=SDL_MOUSEBUTTONDOWN;click.button.windowID=SDL_GetWindowID(window);
+    SDL_Event click;SDL_zero(click);click.type=SDL_MOUSEBUTTONDOWN;click.button.windowID=SDL_GetWindowID(window);
     click.button.button=SDL_BUTTON_LEFT;click.button.x=550;click.button.y=320;
     assert(keyboard_sustain_event(&click,window,device,&audio,&ui,&sister,&instrument));assert(!ui.keyboard_sustain && !ts_note_bank_count(&audio.notes));
     midi.action=TS_MIDI_ACTION_NOTE_ON;handle_midi_event(device,&audio,&ui,&instrument,NULL,&midi,44100,1);

@@ -15,7 +15,7 @@ static void test_portal_usability(SDL_Window *window,SDL_AudioDeviceID device)
     snprintf(ui.config.cdp_bin_path,sizeof(ui.config.cdp_bin_path),"%s",getenv("TS_TEST_CDP_BIN"));
     assert(portal_source(device,&audio,&ui,&instrument,&c));
     uint64_t source_hash=ts_sample_hash(p->source),generation=c.generation;
-    SDL_Event e={0};
+    SDL_Event e;SDL_zero(e);
 #define USE_EVENT() assert(portal_event(&e,window,device,&audio,&ui,&instrument,&c,&sister,44100,&transform))
 #define USE_CLICK(X,Y) do {memset(&e,0,sizeof(e));e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=SDL_GetWindowID(window);e.button.button=SDL_BUTTON_LEFT;e.button.x=(X);e.button.y=(Y);USE_EVENT();}while(0)
 #define USE_KEY(K,M,R) do {memset(&e,0,sizeof(e));e.type=SDL_KEYDOWN;e.key.windowID=SDL_GetWindowID(window);e.key.keysym.sym=(K);e.key.keysym.mod=(M);e.key.repeat=(R);USE_EVENT();}while(0)

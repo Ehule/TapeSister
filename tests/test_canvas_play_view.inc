@@ -12,7 +12,7 @@ static void test_canvas_play_view(SDL_Window *window,SDL_AudioDeviceID device)
     assert(ts_instrument_import_sample(&instrument,&sample,0,0,sample.frames,TS_LOOP_FORWARD,error,sizeof(error)));
     uint64_t hash=ts_sample_hash(&instrument.current);int undo=instrument.undo_count;
     ui.show_keyboard=1;ui.config.voice_attack_ms=0;instrument.loop_crossfade_ms=0;
-    SDL_Event pointer={0};pointer.type=SDL_MOUSEBUTTONDOWN;pointer.button.button=SDL_BUTTON_LEFT;
+    SDL_Event pointer;SDL_zero(pointer);pointer.type=SDL_MOUSEBUTTONDOWN;pointer.button.button=SDL_BUTTON_LEFT;
     pointer.button.windowID=SDL_GetWindowID(window);pointer.button.x=25;pointer.button.y=368;
     TsMidiEvent midi={0};midi.action=TS_MIDI_ACTION_NOTE_ON;
     assert(ts_note_event_midi(&midi.note,60,127,1));

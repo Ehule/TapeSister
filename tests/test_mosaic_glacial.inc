@@ -2,11 +2,11 @@ static void test_mosaic_glacial(SDL_Window *window,SDL_AudioDeviceID device)
 {
     AudioState *a=routing_audio(0);TsUiState *u=mosaic_record_ui_fixture(a);
     ExternalInputState *input=mosaic_record_input_fixture(a);SDL_AudioDeviceID input_device=0;
-    SDL_Event e={0};e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=SDL_GetWindowID(window);
+    SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=SDL_GetWindowID(window);
     e.button.button=SDL_BUTTON_LEFT;e.button.x=TS_MOSAIC_LENGTH_X;e.button.y=60;
     assert(mosaic_record_tile_event(&e,window,device,&input_device,a,input,u,&instrument));
     assert(u->config.mosaic_record_seconds==10 && u->config.record_max_seconds==2);
-    SDL_Event escape={0};escape.type=SDL_KEYDOWN;escape.key.windowID=SDL_GetWindowID(window);escape.key.keysym.sym=SDLK_ESCAPE;
+    SDL_Event escape;SDL_zero(escape);escape.type=SDL_KEYDOWN;escape.key.windowID=SDL_GetWindowID(window);escape.key.keysym.sym=SDLK_ESCAPE;
     assert(mosaic_record_tile_event(&escape,window,device,&input_device,a,input,u,&instrument));
     assert(!u->mosaic_record_length_drag && u->config.mosaic_record_seconds==0);
     assert(mosaic_record_tile_event(&e,window,device,&input_device,a,input,u,&instrument));

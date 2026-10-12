@@ -8,7 +8,7 @@ static void test_keyboard_continuity(SDL_Window *window,SDL_AudioDeviceID device
     instrument->has_loop=0;instrument->has_selection=0;instrument->view_first=0;
     instrument->view_last=instrument->current.frames;audio->output_rate=44100;
     uint64_t hash=ts_sample_hash(&instrument->current);
-    SDL_Event pointer={0};pointer.type=SDL_MOUSEBUTTONDOWN;pointer.button.button=SDL_BUTTON_LEFT;
+    SDL_Event pointer;SDL_zero(pointer);pointer.type=SDL_MOUSEBUTTONDOWN;pointer.button.button=SDL_BUTTON_LEFT;
     pointer.button.windowID=SDL_GetWindowID(window);pointer.button.x=25;pointer.button.y=368;
     SDL_SetModState(KMOD_NONE);
     for(int synth=0;synth<2;++synth)for(int origin=0;origin<3;++origin) {

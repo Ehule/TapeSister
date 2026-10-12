@@ -27,7 +27,7 @@ static void test_prism_morph_bank_ui(void)
     TsPrismControls bank=a->sister.parameters.prism;assert(bank.captured==((1<<TS_PRISM_STATES)-1));
     assert(sister_prism_performance_click(0,a,s,25,290,1,KMOD_NONE));
     TsPrismControls before=a->sister.parameters.prism;
-    SDL_Event wheel={0};wheel.type=SDL_MOUSEWHEEL;wheel.wheel.windowID=s->window_id;wheel.wheel.y=2;
+    SDL_Event wheel;SDL_zero(wheel);wheel.type=SDL_MOUSEWHEEL;wheel.wheel.windowID=s->window_id;wheel.wheel.y=2;
 #if SDL_VERSION_ATLEAST(2,26,0)
     wheel.wheel.mouseX=200;wheel.wheel.mouseY=580;
 #else
@@ -112,7 +112,7 @@ static void test_prism_empty_state_edit(void)
     bank.endpoint[0]=6;bank.endpoint[1]=3; /* Screenshot: G/D with C browsed. */
     bank.seq_enabled=1;bank.seq_count=2;bank.sequence[0]=1;bank.sequence[1]=3;
     const float positions[]={0,.35f,1};
-    SDL_Event e={0};e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=s->window_id;e.button.y=580;
+    SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=s->window_id;e.button.y=580;
     TsSisterUiHit mode=ts_sister_ui_hit_test_model(&s->model,170,58);
     assert(mode.action==TS_SISTER_UI_ACTION_PRISM_MODE);
     /* Both sides, stopped endpoints and mid-morph: clear an assigned state,

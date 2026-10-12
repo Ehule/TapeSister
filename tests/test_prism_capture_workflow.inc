@@ -48,7 +48,7 @@ static void test_prism_capture_workflow(void)
     assert(!memcmp(&a->sister.parameters.prism.b,&c,sizeof(c.b)));
     assert(sister_prism_performance_click(0,a,s,245,290,0,KMOD_NONE));
     assert(a->sister.parameters.prism.morph_enabled);
-    SDL_Event e={0};e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=s->window_id;
+    SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=s->window_id;
     e.button.button=SDL_BUTTON_MIDDLE;e.button.x=50;e.button.y=580;
     assert(sister_prism_event(0,a,&ui,s,&e));
     assert(a->sister.parameters.prism.captured==2 && !a->sister.parameters.prism.morph_enabled);

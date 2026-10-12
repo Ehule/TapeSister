@@ -45,7 +45,7 @@ static void test_prism_performance_ui(void)
     assert(sister_prism_performance_click(0,a,s,100,290,1,KMOD_NONE));
     assert(!a->sister.parameters.prism.morph_enabled && a->sister.parameters.prism.mode==TS_PRISM_FIFTHS);
     assert(sister_prism_performance_click(0,a,s,100,318,0,KMOD_NONE) && s->model.prism_seq_edit);
-    SDL_Event e={0};e.type=SDL_MOUSEBUTTONDOWN;e.button.button=SDL_BUTTON_LEFT;e.button.y=(TS_PRISM_STRIP_Y+4)*2;
+    SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.button=SDL_BUTTON_LEFT;e.button.y=(TS_PRISM_STRIP_Y+4)*2;
     SDL_SetModState(KMOD_CTRL);
     const int order[]={20,2,7};
     for(int j=0;j<3;++j) {

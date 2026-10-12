@@ -41,12 +41,12 @@ static void tracker_channel_count(void)
     wheel(313,160,-1);assert(song.numChannels==30);
     wheel(313,160,.5f);assert(song.numChannels==30);
     wheel(313,160,.5f);assert(song.numChannels==32);
-    SDL_Event flipped={0};flipped.type=SDL_MOUSEWHEEL;
+    SDL_Event flipped;SDL_zero(flipped);flipped.type=SDL_MOUSEWHEEL;
     flipped.wheel.y=1;flipped.wheel.preciseY=1;flipped.wheel.direction=SDL_MOUSEWHEEL_FLIPPED;
     assert(ts_tapehead_event(&flipped,313,160));export_score();assert(song.numChannels==30);
     mouse_click(313,160,SDL_BUTTON_MIDDLE);assert(song.numChannels==30);
     ui.sysReqShown=true;
-    SDL_Event blocked={0};blocked.type=SDL_MOUSEBUTTONDOWN;blocked.button.button=SDL_BUTTON_RIGHT;
+    SDL_Event blocked;SDL_zero(blocked);blocked.type=SDL_MOUSEBUTTONDOWN;blocked.button.button=SDL_BUTTON_RIGHT;
     assert(ts_tapehead_event(&blocked,313,160));assert(song.numChannels==30);
     ui.sysReqShown=false;
     editor.editTextFlag=true;assert(ts_tapehead_event(&blocked,313,160));assert(song.numChannels==30);
