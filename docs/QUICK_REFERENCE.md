@@ -786,6 +786,8 @@ Ctrl+Z / Ctrl+Y undo/redo; Escape cancels the current stroke.
 | Compare routing | Original / Edited; Matrix Live is status only |
 | Restore original routing | Restore, then confirm; restore is undoable |
 | Route Mosaic independently | Mosaic bus row; Mosaic filter for custom card routes |
+| Return cards to Mosaic bus | Select cards, then To Mosaic Bus at bottom right |
+| Lower keyboard tiles without lowering backing | F11 → Live Tiles gain |
 | Edit tile/card EQ | EQ beside S/M/R/L; Space auditions; Apply or Cancel |
 | Choose transport group | CFG → Transport, F11, or Ctrl+Shift+Space |
 | Play/stop selected transport group | Shift+Space; Space remains workspace-local |
@@ -801,3 +803,7 @@ and [Matrix editing](ROUTING_MATRIX.md#selection-undo-and-ab).
 - **ARP Clock**: Local or TrackSister 1/4, 1/8, 1/16; Mosaic keeps its tape speed.
 - **Always on Top** and mixer settings save with the project.
 - **Double-click a TrackSister tile**: open that tile's canvas; **F10** returns.
+
+The main canvas footer shows the current project filename beside Undo and gain
+reduction. `*` means unsaved changes. Long names are shortened there; the window
+title keeps the full filename in every workspace.

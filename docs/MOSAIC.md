@@ -481,3 +481,9 @@ audio and remaining processing in real time. Keep the external processor running
 during the take. REC DRY, SYNTH and raw EXT retain their earlier source taps.
 Missing RETURN stays silent while INSERT is active; use Router BYPASS to return
 to internal processing. [Setup and channel limits](USER_MANUAL.md#external-insert).
+
+In the Matrix **Mosaic** filter, select cards and click **To Mosaic Bus** at the
+bottom right to remove custom routes. The bus appears alongside the cards.
+For quieter QWERTY soloing over the arrangement, open **F11** and lower **Live Tiles**.
+Cards reference audio copies in the arrangement, so that live trim leaves the
+backing intact.

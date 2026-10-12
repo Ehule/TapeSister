@@ -480,8 +480,15 @@ void ts_tapehead_focus_lost(void) {
     memset(&keyb,0,sizeof(keyb));
 }
 void ts_tapehead_suspend_sync(void) { embed.sync_suspended=1; }
+void ts_tapehead_project_saved(const TsSisterTracker *tracker) {
+    if(embed.initialized && embed.model==tracker)removeSongModifiedFlag();
+}
+int ts_tapehead_project_dirty(const TsSisterTracker *tracker) {
+    return embed.initialized && embed.model==tracker && song.isModified;
+}
 void ts_tapehead_project_replaced(void) {
     ts_tapehead_stop();
+    if(embed.initialized)removeSongModifiedFlag();
     embed.model=NULL;embed.sync_suspended=1;
 }
 void ts_tapehead_service(int draw) {

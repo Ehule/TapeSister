@@ -117,6 +117,7 @@ static void matrix_clear_reset(const char *directory)
 }
 #include "test_matrix_history.inc"
 #include "test_performance_transport.inc"
+#include "test_matrix_buses.inc"
 static void matrix_controller(const char *directory)
 {
     ts_tapehead_stop();ts_note_bank_clear(&a.notes);ts_performance_clear(&a.performance);ts_performance_clear(&a.tile_launchers);
@@ -172,7 +173,7 @@ static void matrix_controller(const char *directory)
     ts_tapehead_stop();
     /* Tile keyboard voices use the same path, independent of track overrides. */
     assert(matrix_show(0,&a,&u,&pages,&bank,-1,0));
-    matrix_click(MATRIX_X+8,MATRIX_Y+12,SDL_BUTTON_LEFT);
+    /* First destination replaces the inherited live tile bus. */
     matrix_click(MATRIX_X+8*MATRIX_CW+8,MATRIX_Y+12,SDL_BUTTON_LEFT);
     assert(ts_note_bank_start(&a.notes,&bank,TS_AUDITION_CURRENT,12,0,48000)==TS_NOTE_STARTED);
     render(energy);render(energy);assert(energy[0]==0&&energy[1]==0&&energy[2]>1&&energy[3]>1);
@@ -253,5 +254,6 @@ static void matrix_controller(const char *directory)
     ts_sister_project_state_init(state,48000);assert(ts_sister_project_state_apply(state,&a.sister,&bank));free(state);
     assert(!a.sister.matrix.controls.enabled && !a.sister.matrix.controls.input_name[0][0]);
     matrix_import_controls();
+    test_matrix_buses(directory);
     matrix_close();puts("Matrix UI, native track/tile audio, pan, inheritance, physical return, naming and project reset passed");
 }

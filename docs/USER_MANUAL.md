@@ -1552,7 +1552,7 @@ patch and can itself be undone. Loading a different project clears this history;
 saving stores the currently auditioned routing, not A/B or undo state.
 
 Mosaic has its own bus, defaulting to Main. The Mosaic filter shows per-card routes.
-BUS follows the bus; a custom route replaces that card's bus feed. Use Bus returns
+BUS follows the bus; a custom route replaces that card's bus feed. To Mosaic Bus returns
 it to the bus. Routes save with the project. The [Matrix guide](ROUTING_MATRIX.md)
 explains bulk editing, restoration and routing details.
 
@@ -2275,3 +2275,16 @@ faders.
 
 These boundaries are stated here so the manual can describe the current instrument
 without confusing planned features with controls that already exist.
+
+### Current project and live tile level
+
+The main canvas footer shows the current project filename beside Undo/gain
+reduction, with `*` for unsaved changes. The window title shows the full filename
+in every workspace. A successful project save clears the indicator.
+
+**F11 → Live Tiles** lowers manual QWERTY/MIDI notes and tile launchers independently
+of Mosaic, ARP and TrackSister. The Matrix Tiles filter includes **Live Tile Bus**;
+Mosaic includes **Mosaic Bus**. Select cards and click **To Mosaic Bus** to remove
+custom routes without using Undo. See [Routing Matrix](ROUTING_MATRIX.md).
+
+![Project filename and unsaved indicator](screenshots/performance/project-filename.png)

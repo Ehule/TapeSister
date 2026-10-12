@@ -86,14 +86,35 @@ not saved; saving stores the routing currently being auditioned.
 
 ## Mosaic routing
 
-**MOSAIC BUS** appears with live inputs and defaults to Main. Patch it to shared
+**MOSAIC BUS** appears in All and Mosaic filters and defaults to Main. Patch it to shared
 processors or hardware independently of keyboard tiles and tracker lanes.
 The **Mosaic** filter exposes each card. A card marked **BUS** follows the bus.
-Click a destination to make a custom route, or choose **Custom Route**, then
-connect it. **Use Bus** removes the override. Custom routing replaces the bus
+Click a destination to make a custom route. Select one or more cards and click
+**To Mosaic Bus** (bottom right) to remove their overrides. Custom routing replaces the bus
 feed for that card, so it cannot add an unintended dry duplicate. Card routes
 save with the arrangement and can be selected/edited/undone as a group.
 Clear All also clears cards; Reset returns cards to the Mosaic bus.
+
+![Mosaic bus and selected cards](screenshots/performance/matrix-mosaic-bus.png)
+
+## Live tile bus
+
+**LIVE TILE BUS** appears in All and Tiles filters. Tiles without a custom route
+feed it; it defaults to Main. A tile's first destination click replaces its bus
+feed. **To Tile Bus** returns the selected tiles to it, with Matrix undo/redo.
+TrackSister and ARP retain their own routing and levels.
+
+Open **F11** and lower **Live Tiles** to trim QWERTY/MIDI playing and tile launchers
+without lowering Mosaic, ARP or TrackSister. This shared trim also reaches custom
+tile outputs and effects sends. It defaults to 0 dB, works in legacy and Matrix
+modes, and saves with the project. The bus row controls routing of default tile
+feeds; the Live Tiles fader controls all manually played voices, including FM
+and Sister tile groups. Browser/transport preview has its existing level.
+
+Mosaic cards reference audio sources copied into the arrangement. Cards sharing
+a source can share edits through Update All, but live tile gain never edits that
+audio or the card gains. Existing arrangements keep their sound at the default
+0 dB setting.
 
 ## Connections and positioning
 
@@ -116,12 +137,12 @@ Clear All also clears cards; Reset returns cards to the Mosaic bus.
 - Middle-click an input row or output column to rename it, or select it and use
   **Name I/O**. Enter saves; Escape cancels. IN/OUT numbers remain visible.
 
-Small green indicators follow actual signal activity with a gentle fade:
+Amber/orange indicators follow actual signal activity with the same gentle fade:
 
 - Beside a row: its source has audio, even if it is currently unpatched.
 - Below a destination header: audio is arriving at that processor or output.
 - Below a connected cell: that source is sending along the connection. Feedback
-  indicators retain their amber color. Disconnected and unavailable cells stay dark.
+  indicators remain yellow. Disconnected and unavailable cells stay dark.
 
 An OFF processor can show incoming activity while its output row stays silent.
 Physical output indicators are measured after the OUT fader and final hardware

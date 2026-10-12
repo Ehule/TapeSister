@@ -46,7 +46,7 @@ static void test_performance_transport(const char *directory)
     e.type=SDL_MOUSEBUTTONUP;e.button.windowID=performance_transport.id;performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000);assert(!performance_transport.drag);
     e.type=SDL_MOUSEBUTTONDOWN;e.button.button=SDL_BUTTON_RIGHT;e.button.x=400;e.button.y=100;
     performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000);assert(a.sister.performance_mixer.gain[0]==1);
-    e.button.button=SDL_BUTTON_LEFT;e.button.x=320;e.button.y=250;
+    e.button.button=SDL_BUTTON_LEFT;e.button.x=320;e.button.y=304;
     for(int i=1;i<=4;++i) {performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000);assert(a.sister.performance_mixer.arp_sync==(unsigned)i%4);}
     /* Fader edits affect saved-state dirty detection. */
     uint64_t h=paged_project_state_hash(&pages,&bank,NULL,&a.sister,&a.keyboard_sequence);

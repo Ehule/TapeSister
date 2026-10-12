@@ -20,6 +20,7 @@ void ts_matrix_default(TsMatrixControls *c)
     c->row[TS_MATRIX_FM].matrix_gain[TS_MATRIX_MAIN]=1000;
     c->row[TS_MATRIX_LINK].matrix_gain[TS_MATRIX_MAIN]=1000;
     c->row[TS_MATRIX_MOSAIC].matrix_gain[TS_MATRIX_MAIN]=1000;
+    c->row[TS_MATRIX_TILES].matrix_gain[TS_MATRIX_MAIN]=1000;
     snprintf(c->output_name[0],TS_MATRIX_NAME,"MAIN SPEAKERS");
 }
 static int order_graph(const TsMatrixControls *c,int *order)

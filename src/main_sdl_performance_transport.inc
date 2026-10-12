@@ -1,5 +1,5 @@
-/* Modeless three-channel mixer. Group edits publish at one callback boundary. */
-enum { PERF_ARP=1,PERF_TRACKER=2,PERF_MOSAIC=4,PERF_W=600,PERF_H=386 };
+/* Modeless player mixer with a separate live tile bus. Group edits publish at one callback boundary. */
+enum { PERF_ARP=1,PERF_TRACKER=2,PERF_MOSAIC=4,PERF_W=600,PERF_H=440 };
 static struct {SDL_Window *window;SDL_Renderer *renderer;Uint32 id,painted;int visible,drag;} performance_transport;
 static unsigned performance_running(AudioState *audio)
 {
@@ -94,34 +94,36 @@ static void performance_update(SDL_AudioDeviceID device,AudioState *audio)
     perf_rect(0,0,PERF_W,PERF_H,0x151c20);perf_text(22,20,"PERFORMANCE TRANSPORT",0x8addb4,2);
     perf_rect(422,20,12,12,m.always_on_top?0x8addb4:0x47605d);perf_text(444,23,"ALWAYS ON TOP",0xdbe8e3,1);
     perf_text(22,49,"CHECK PLAYERS FOR GROUP CONTROL",0x94aaa7,1);perf_text(352,49,"CHANNEL GAIN",0x94aaa7,1);
-    const char *names[]={"ARP","TRACKSISTER","MOSAIC"};
+    const char *names[]={"ARP","TRACKSISTER","MOSAIC","LIVE TILES"};
     char line[80];
-    for(int i=0;i<3;++i) {
+    for(int i=0;i<4;++i) {
         int y=76+i*54;unsigned bit=1u<<i;
-        perf_rect(20,y,560,46,0x202b30);perf_rect(28,y+15,12,12,selected&bit?0x8addb4:0x47605d);
+        perf_rect(20,y,560,46,0x202b30);if(i<3)perf_rect(28,y+15,12,12,selected&bit?0x8addb4:0x47605d);
         perf_text(49,y+9,names[i],0xdbe8e3,2);
-        perf_text(50,y+30,running&bit?"PLAYING":"STOPPED",running&bit?0x8addb4:0x94aaa7,1);
+        perf_text(50,y+30,i==3?"+ LAUNCHERS":running&bit?"PLAYING":"STOPPED",running&bit?0x8addb4:0x94aaa7,1);
+        if(i<3) {
         perf_rect(206,y+8,76,30,0x365746);perf_text(220,y+20,running&bit?"STOP":"PLAY",0xdbe8e3,1);
         perf_rect(290,y+8,48,30,0x304047);perf_text(302,y+20,"HOME",0xdbe8e3,1);
+        } else perf_text(214,y+20,"QWERTY / MIDI",0x94aaa7,1);
         int position=352+(int)lrintf(m.gain[i]*74);
         perf_rect(352,y+20,148,6,0x47605d);perf_rect(352,y+20,position-352,6,0x8addb4);
         perf_rect(425,y+16,2,14,0xb6aa73);perf_rect(position-3,y+15,6,16,0xdbe8e3);
         if(m.gain[i]>0)snprintf(line,sizeof(line),"%+.1f DB",20*log10f(m.gain[i]));else snprintf(line,sizeof(line),"SILENT");
         perf_text(513,y+20,line,0xdbe8e3,1);
     }
-    perf_rect(20,244,262,30,0x304047);perf_text(32,255,m.restart?"GROUP PLAY: RESTART TOGETHER":"GROUP PLAY: RESUME",0xdbe8e3,1);
+    perf_rect(20,298,262,30,0x304047);perf_text(32,309,m.restart?"GROUP PLAY: RESTART TOGETHER":"GROUP PLAY: RESUME",0xdbe8e3,1);
     const char *clocks[]={"ARP CLOCK: LOCAL","ARP CLOCK: TRACKER 1/4","ARP CLOCK: TRACKER 1/8","ARP CLOCK: TRACKER 1/16"};
-    perf_rect(294,244,286,30,0x304047);perf_text(306,255,clocks[m.arp_sync%4],0xdbe8e3,1);
-    perf_text(22,285,"MOSAIC SHARES GROUP START; ITS TAPE SPEED AND PITCH STAY LOCAL.",0x94aaa7,1);
+    perf_rect(294,298,286,30,0x304047);perf_text(306,309,clocks[m.arp_sync%4],0xdbe8e3,1);
+    perf_text(22,339,"MOSAIC SHARES GROUP START; ITS TAPE SPEED AND PITCH STAY LOCAL.",0x94aaa7,1);
     const char *buttons[]={"PLAY GROUP","STOP GROUP","RETURN TO START"};
-    for(int i=0;i<3;++i){int x=20+i*190;perf_rect(x,310,180,34,0x365746);perf_text(x+10,323,buttons[i],0xdbe8e3,1);}
-    perf_text(22,358,"SHIFT+SPACE: GROUP   F11: OPEN   ALT+F11: FULLSCREEN",0x94aaa7,1);
-    perf_text(22,376,"GAIN: DRAG / WHEEL   DOUBLE-CLICK OR RIGHT-CLICK: 0 DB",0x94aaa7,1);
+    for(int i=0;i<3;++i){int x=20+i*190;perf_rect(x,364,180,34,0x365746);perf_text(x+10,377,buttons[i],0xdbe8e3,1);}
+    perf_text(22,412,"SHIFT+SPACE: GROUP   F11: OPEN   ALT+F11: FULLSCREEN",0x94aaa7,1);
+    perf_text(22,430,"GAIN: DRAG / WHEEL   DOUBLE-CLICK OR RIGHT-CLICK: 0 DB",0x94aaa7,1);
     SDL_RenderPresent(performance_transport.renderer);performance_transport.painted=SDL_GetTicks();
 }
 static void performance_gain(SDL_AudioDeviceID device,AudioState *audio,int channel,float gain)
 {
-    if(channel<0 || channel>2)return;
+    if(channel<0 || channel>3)return;
     if(device)SDL_LockAudioDevice(device);
     audio->sister.performance_mixer.gain[channel]=fmaxf(0,fminf(2,gain));
     if(device)SDL_UnlockAudioDevice(device);
@@ -162,7 +164,7 @@ static int performance_event(SDL_Event *e,SDL_Window *window,SDL_AudioDeviceID d
     if(e->type==SDL_MOUSEWHEEL) {
         int x,y;wheel_event_mouse(e,&x,&y);
         int row=(y-76)/54;
-        if(x>=346 && x<580 && y>=76 && row<3 && (y-76)%54<46) {
+        if(x>=346 && x<580 && y>=76 && row<4 && (y-76)%54<46) {
             float delta=e->wheel.preciseY?e->wheel.preciseY:e->wheel.y;
             if(e->wheel.direction==SDL_MOUSEWHEEL_FLIPPED)delta=-delta;
             performance_gain(device,audio,row,audio->sister.performance_mixer.gain[row]+delta*.02f);
@@ -171,7 +173,7 @@ static int performance_event(SDL_Event *e,SDL_Window *window,SDL_AudioDeviceID d
     if(e->type==SDL_MOUSEBUTTONDOWN) {
         int x=e->button.x,y=e->button.y,left=e->button.button==SDL_BUTTON_LEFT;
         int row=(y-76)/54;
-        if(x>=346 && x<580 && y>=76 && row<3 && (y-76)%54<46) {
+        if(x>=346 && x<580 && y>=76 && row<4 && (y-76)%54<46) {
             if(e->button.button==SDL_BUTTON_RIGHT || (left && e->button.clicks>=2))performance_gain(device,audio,row,1);
             else if(left) {performance_transport.drag=row+1;SDL_CaptureMouse(SDL_TRUE);performance_gain(device,audio,row,(x-352)/74.f);}
         } else if(left && x>=20 && x<338 && y>=76 && row<3 && (y-76)%54<46) {
@@ -180,13 +182,13 @@ static int performance_event(SDL_Event *e,SDL_Window *window,SDL_AudioDeviceID d
         } else if(left && x>=422 && x<580 && y>=16 && y<38) {
             if(device)SDL_LockAudioDevice(device);audio->sister.performance_mixer.always_on_top^=1;if(device)SDL_UnlockAudioDevice(device);
             SDL_SetWindowAlwaysOnTop(performance_transport.window,audio->sister.performance_mixer.always_on_top?SDL_TRUE:SDL_FALSE);
-        } else if(left && x>=20 && x<580 && y>=244 && y<274) {
+        } else if(left && x>=20 && x<580 && y>=298 && y<328) {
             if(x>=294 && !ts_tapehead_frame() && !embedded_open(window,device,audio,ui,pages,bank,rate))return 1;
             if(device)SDL_LockAudioDevice(device);
             if(x<282)audio->sister.performance_mixer.restart^=1;
             else if(x>=294)audio->sister.performance_mixer.arp_sync=(audio->sister.performance_mixer.arp_sync+1)%4;
             if(device)SDL_UnlockAudioDevice(device);
-        } else if(left && y>=310 && y<344 && x>=20 && x<580 && (x-20)%190<180)
+        } else if(left && y>=364 && y<398 && x>=20 && x<580 && (x-20)%190<180)
             performance_command((int[]){1,0,2}[(x-20)/190],window,device,audio,ui,pages,bank,fm,rate);
         performance_transport.painted=SDL_GetTicks()-100;
     }

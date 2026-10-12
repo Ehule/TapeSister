@@ -9,6 +9,7 @@
 typedef struct {
     TsStereoFrame legacy_preview;
     TsStereoFrame tile_performance;
+    TsStereoFrame live_tiles; /* Matrix-only source; legacy uses tile_performance. */
     TsStereoFrame mosaic;
     TsStereoFrame fm;
     TsStereoFrame tracker;

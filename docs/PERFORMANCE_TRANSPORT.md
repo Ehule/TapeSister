@@ -2,7 +2,8 @@
 
 Open **CFG → Transport**, **F11**, or **Ctrl+Shift+Space**. **Alt+F11** toggles
 fullscreen. This small modeless window mixes ARP,
-TrackSister (SisterTracker), and Mosaic while you work elsewhere.
+TrackSister (SisterTracker), and Mosaic while you work elsewhere. A fourth
+**Live Tiles** fader controls your live instrument without transport buttons.
 
 ![Performance Transport](screenshots/performance/performance-transport.png)
 
@@ -12,6 +13,7 @@ TrackSister (SisterTracker), and Mosaic while you work elsewhere.
 | Channel Play/Stop | Starts or stops just that player |
 | Channel Home | Stops and rewinds just that player |
 | Channel Gain | Silent through +6 dB; drag or wheel, double-click or right-click for 0 dB |
+| Live Tiles | Shared QWERTY/MIDI and tile-launcher level, independent of the three players |
 | Always on Top | Keeps the transport above other windows |
 | Group Play: Resume | Starts stopped checked players; running players continue |
 | Group Play: Restart Together | Restarts all checked players from the beginning on Play |
@@ -30,7 +32,9 @@ Channel gains act before routing, including effects sends, Matrix routes,
 direct hardware outputs, and the tracker tape-input route. Changes are smoothed
 over at most five milliseconds. ARP's fader trims only its sequenced voices;
 manually held notes keep their own levels. Its existing volume/LFO still applies.
-A silent channel keeps advancing, and shared effects can finish their tails.
+Live Tiles trims manual sample/FM notes, tile launchers and Sister tile groups,
+including their custom outputs and sends; Mosaic audio and card gains stay intact.
+Its default Matrix path is the Live Tile Bus. A silent channel keeps advancing, and shared effects can finish their tails.
 
 The ARP clock link follows TrackSister BPM, including score tempo commands
 within an audio buffer. A tempo change preserves the current note's beat phase.

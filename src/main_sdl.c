@@ -482,20 +482,21 @@ static void state_hash_bytes(uint64_t *hash, const void *data, size_t size)
     }
 }
 
-static void state_hash_sample(uint64_t *hash, const TsSample *sample)
+static void state_hash_sample(uint64_t *hash, const TsSample *sample, int quick)
 {
-    uint64_t waveform = ts_sample_hash(sample);
+    uint64_t waveform = quick ? sample->visual_revision : ts_sample_hash(sample);
+    if(quick) {state_hash_bytes(hash,&sample->frames,sizeof(sample->frames));state_hash_bytes(hash,&sample->sample_rate,sizeof(sample->sample_rate));state_hash_bytes(hash,&sample->channels,sizeof(sample->channels));}
     size_t name_length = strlen(sample->name);
     state_hash_bytes(hash, &waveform, sizeof(waveform));
     state_hash_bytes(hash, &name_length, sizeof(name_length));
     state_hash_bytes(hash, sample->name, name_length);
 }
 
-static uint64_t instrument_state_hash(const TsInstrument *instrument)
+static uint64_t instrument_state_fingerprint(const TsInstrument *instrument,int quick)
 {
     uint64_t hash = 1469598103934665603ull;
-    state_hash_sample(&hash, &instrument->parent);
-    state_hash_sample(&hash, &instrument->current);
+    state_hash_sample(&hash, &instrument->parent,quick);
+    state_hash_sample(&hash, &instrument->current,quick);
     state_hash_bytes(&hash, &instrument->source_kind, sizeof(instrument->source_kind));
     state_hash_bytes(&hash, &instrument->generator, sizeof(instrument->generator));
     state_hash_bytes(&hash, &instrument->process, sizeof(instrument->process));
@@ -545,7 +546,7 @@ static uint64_t instrument_state_hash(const TsInstrument *instrument)
         state_hash_bytes(&hash, &bank->tile_id, sizeof(bank->tile_id));
         state_hash_bytes(&hash,&bank->output_route,sizeof(bank->output_route));
         state_hash_bytes(&hash, &bank->locked, sizeof(bank->locked));
-        state_hash_sample(&hash, &bank->sample);
+        state_hash_sample(&hash, &bank->sample,quick);
         state_hash_bytes(&hash, &bank->tuning, sizeof(bank->tuning));
         state_hash_bytes(&hash, &bank->audible_tuning, sizeof(bank->audible_tuning));
         state_hash_bytes(&hash, &bank->loop_first, sizeof(bank->loop_first));
@@ -569,6 +570,9 @@ static uint64_t instrument_state_hash(const TsInstrument *instrument)
     }
     return hash;
 }
+static uint64_t instrument_state_hash(const TsInstrument *instrument)
+{return instrument_state_fingerprint(instrument,0);}
+
 
 static void fm_bank_history_init(FmBankHistory *history)
 {
@@ -638,11 +642,11 @@ static int fm_bank_history_move(FmBankHistory *history,
     return 1;
 }
 
-static uint64_t paged_project_state_hash(const TsSamplePages *pages,
+static uint64_t paged_project_fingerprint(const TsSamplePages *pages,
                                          const TsInstrument *active_sample,
                                          const TsInstrument *record_bank,
                                          const TsSisterRuntime *sister,
-                                         const TsKeyboardSequence *sequence)
+                                         const TsKeyboardSequence *sequence,int quick)
 {
     uint64_t hash = 1469598103934665603ull;
     uint64_t mosaic_hash = ts_mosaic_hash(pages ? pages->mosaic : NULL);
@@ -675,12 +679,12 @@ static uint64_t paged_project_state_hash(const TsSamplePages *pages,
         const TsInstrument *instrument = ts_sample_pages_page(
             pages, active_sample, page);
         uint64_t page_hash = instrument != NULL ?
-                             instrument_state_hash(instrument) : 0u;
+                             instrument_state_fingerprint(instrument,quick) : 0u;
         state_hash_bytes(&hash, &page_hash, sizeof(page_hash));
     }
     {
         uint64_t record_hash = record_bank != NULL ?
-                               instrument_state_hash(record_bank) : 0u;
+                               instrument_state_fingerprint(record_bank,quick) : 0u;
         state_hash_bytes(&hash, &record_hash, sizeof(record_hash));
     }
     if (sister != NULL) {
@@ -716,6 +720,27 @@ static uint64_t paged_project_state_hash(const TsSamplePages *pages,
                          sizeof(sister->selected_preset_modified));
     }
     return hash;
+}
+
+static uint64_t paged_project_state_hash(const TsSamplePages *pages,const TsInstrument *active,
+    const TsInstrument *record,const TsSisterRuntime *sister,const TsKeyboardSequence *sequence)
+{return paged_project_fingerprint(pages,active,record,sister,sequence,0);}
+
+static void project_mark_saved(TsUiState *ui,const TsSamplePages *pages,const TsInstrument *active,
+    const TsInstrument *record,const TsSisterRuntime *sister,const TsKeyboardSequence *sequence)
+{
+    ui->saved_ui_hash=paged_project_fingerprint(pages,active,record,sister,sequence,1);
+    ui->project_modified=0;ui->project_check_ms=0;ts_tapehead_project_saved(&pages->tracker);
+}
+static void project_refresh_title(SDL_Window *window,TsUiState *ui,const TsSamplePages *pages,const TsInstrument *active,
+    const TsInstrument *record,const TsSisterRuntime *sister,const TsKeyboardSequence *sequence,Uint32 now)
+{
+    if(ui->project_check_ms && (Uint32)(now-ui->project_check_ms)<250u)return;
+    ui->project_check_ms=now;
+    ui->project_modified=paged_project_fingerprint(pages,active,record,sister,sequence,1)!=ui->saved_ui_hash || ts_tapehead_project_dirty(&pages->tracker);
+    const char *name=ui->project_path;for(const char *s=name;*s;++s)if(*s=='/' || *s=='\\')name=s+1;
+    char title[TS_BROWSER_PATH_MAX+32];snprintf(title,sizeof(title),"TapeSister - %s%s",*name?name:"Untitled",ui->project_modified?" *":"");
+    if(window && strcmp(SDL_GetWindowTitle(window),title))SDL_SetWindowTitle(window,title);
 }
 
 static uint64_t runtime_project_state_hash(const TsSamplePages *pages,
@@ -1175,7 +1200,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         unsigned bpm=embedded_block?ts_tapehead_tempo(embedded_index):0;
         ts_keyboard_sequence_clock(&audio->keyboard_sequence,sync && bpm?60.0/bpm/(1u<<(sync-1)):0);
         float slew=audio->output_rate>0?2.f/(.005f*audio->output_rate):2.f;
-        for(int ch=0;ch<3;++ch)audio->sister.performance_gain_current[ch]+=fmaxf(-slew,
+        for(int ch=0;ch<4;++ch)audio->sister.performance_gain_current[ch]+=fmaxf(-slew,
             fminf(slew,audio->sister.performance_mixer.gain[ch]-audio->sister.performance_gain_current[ch]));
         uint64_t profile_voices = ts_profile_begin(TS_PROF_VOICES);
         runtime_note_render(audio, &buses, &synth_capture);
@@ -1215,6 +1240,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         sister_sources.preview = buses.legacy_preview;
         sister_sources.tapehead = buses.tapehead;
         sister_sources.mosaic = buses.mosaic;
+        sister_sources.live_tiles = buses.live_tiles;
         memcpy(sister_sources.send,audio->clean.send,sizeof(sister_sources.send));
         if(matrix) {
             memcpy(sister_sources.matrix_graph,audio->clean.graph,sizeof(sister_sources.matrix_graph));
@@ -1226,6 +1252,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             }
             sister_sources.tiles.l*=gain;sister_sources.tiles.r*=gain;
             sister_sources.mosaic.l*=gain;sister_sources.mosaic.r*=gain;
+            sister_sources.live_tiles.l*=gain;sister_sources.live_tiles.r*=gain;
             sister_sources.fm.l*=gain;sister_sources.fm.r*=gain;
             sister_sources.preview.l*=gain;sister_sources.preview.r*=gain;
             sister_sources.tracker.l*=gain;sister_sources.tracker.r*=gain;
@@ -1264,10 +1291,10 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         }
         buses.sister = sister_frame.monitor_return;
         buses.program.l = buses.legacy_preview.l +
-                          buses.tile_performance.l + buses.fm.l +
+                          buses.tile_performance.l + buses.live_tiles.l + buses.fm.l +
                           buses.tapehead.l + buses.tracker.l;
         buses.program.r = buses.legacy_preview.r +
-                          buses.tile_performance.r + buses.fm.r +
+                          buses.tile_performance.r + buses.live_tiles.r + buses.fm.r +
                           buses.tapehead.r + buses.tracker.r;
         buses.program = ts_stereo_frame_sanitize(buses.program);
         if (buses.program.l > 1.0f) buses.program.l = 1.0f;
@@ -4344,9 +4371,11 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
                  instrument->selected_slot + 1, instrument->parent.name);
     }
     else snprintf(ui->status, sizeof(ui->status), "LOAD FAILED: %.135s", error);
-    if (ok && recipe)
+    if (ok && recipe) {
         ui->saved_state_hash = paged_project_state_hash(
             sample_pages, instrument, record_bank, &audio->sister, &audio->keyboard_sequence);
+        project_mark_saved(ui,sample_pages,instrument,record_bank,&audio->sister,&audio->keyboard_sequence);
+    }
     return ok;
 }
 
@@ -8782,9 +8811,11 @@ static void run_pending_file_operation(SDL_AudioDeviceID device,
         if(ok)ok = ts_sample_pages_save_project(sample_pages, active_sample, record_bank,
                                           &sister_state, pending->path,
                                           error, sizeof(error));
-        if (ok)
+        if (ok) {
             ui->saved_state_hash = paged_project_state_hash(
                 sample_pages, active_sample, record_bank, &audio->sister, &audio->keyboard_sequence);
+            project_mark_saved(ui,sample_pages,active_sample,record_bank,&audio->sister,&audio->keyboard_sequence);
+        }
         snprintf(ui->status, sizeof(ui->status), ok ? "SAVED TSR PROJECT %.104s" :
                  "SAVE FAILED: %.135s", ok ? pending->path : error);
     } else if(pending->mode==TS_BROWSER_SAVE_XM) {
@@ -13861,6 +13892,8 @@ int main(int argc, char **argv)
     ui.saved_state_hash = runtime_project_state_hash(
         &sample_pages, &instrument, parked_instrument, record_bank_active,
         &audio.sister, &audio.keyboard_sequence);
+    project_mark_saved(&ui,&sample_pages,record_bank_active?NULL:&instrument,
+        record_bank_active?&instrument:parked_instrument,&audio.sister,&audio.keyboard_sequence);
     last_exchange_poll = SDL_GetTicks();
     last_live_link_poll = last_exchange_poll;
     (void)ts_exchange_presence_touch(exchange_directory(&ui), "tapesister");
@@ -17989,6 +18022,8 @@ int main(int argc, char **argv)
                 routing.limiter_gain_reduction_db;
             ui.master_output.gain = routing.master_output_gain;
         }
+        project_refresh_title(window,&ui,&sample_pages,record_bank_active?NULL:&instrument,
+            record_bank_active?&instrument:parked_instrument,&audio.sister,&audio.keyboard_sequence,SDL_GetTicks());
         master_eq_spectrum_tick(&audio,&ui,!window_minimized,SDL_GetTicks());
         if(ui.insert_open)ts_audio_insert_diagnostics(&audio,&ui,0);
         ui.text_cursor_visible = ((SDL_GetTicks() / 500u) & 1u) == 0u;

@@ -227,6 +227,9 @@ int main(int argc,char **argv)
     assert(a.keyboard_dry.l>0&&a.keyboard_dry.r>0);
     /* ARP trim reaches direct outputs and leaves manually held notes alone. */
     double held=energy[2];
+    performance_gain(0,&a,3,.5f);render(energy);assert(fabs(energy[2]-held*.5)<.001);
+    performance_gain(0,&a,3,0);render(energy);assert(energy[2]==0 && energy[3]==0);
+    performance_gain(0,&a,3,1);render(energy);assert(fabs(energy[2]-held)<.001);
     TsKeyboardSequenceSource *arp=calloc(1,sizeof(*arp));assert(arp);
     assert(ts_sample_clone(&arp->sample,&bank.current,error,sizeof(error)));
     arp->count=1;arp->voices[0]=a.notes.voices[0];arp->voices[0].sample=&arp->sample;

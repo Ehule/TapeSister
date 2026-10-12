@@ -113,13 +113,13 @@ int main(void)
     ts_sister_runtime_mark_selected_preset_modified(&runtime);
     runtime.machine.buffer.data[0] = 0.75f;
     runtime.performance_transport = 6u;
-    runtime.performance_mixer=(TsPerformanceMixer){{0,.5f,2},1,3,1};
+    runtime.performance_mixer=(TsPerformanceMixer){{0,.5f,2,.25f},1,3,1};
     ts_sister_project_state_capture(&state, &runtime, 2u, "GHOST FIELD");
     assert(ts_sister_project_state_save(&state, project, error, sizeof(error)));
     assert(ts_sister_project_state_load(&loaded, project, 1000u, &present,
                                         error, sizeof(error)) && present);
     assert(loaded.performance_transport == 6u);
-    assert(loaded.performance_mixer.gain[0]==0 && loaded.performance_mixer.gain[1]==.5f && loaded.performance_mixer.gain[2]==2);
+    assert(loaded.performance_mixer.gain[0]==0 && loaded.performance_mixer.gain[1]==.5f && loaded.performance_mixer.gain[2]==2 && loaded.performance_mixer.gain[3]==.25f);
     assert(loaded.performance_mixer.restart && loaded.performance_mixer.arp_sync==3 && loaded.performance_mixer.always_on_top);
     assert(loaded.page_masks[0] == 1u && loaded.page_masks[1] == 2u);
     assert(loaded.parameters.ghost_tone > 0.60f);
@@ -202,7 +202,7 @@ int main(void)
     ts_sister_runtime_init(&restored);
     assert(ts_sister_project_state_apply(&loaded, &restored, &instrument));
     assert(restored.performance_transport == 6u);
-    assert(restored.performance_mixer.gain[0]==0 && restored.performance_mixer.gain[1]==.5f && restored.performance_mixer.gain[2]==2);
+    assert(restored.performance_mixer.gain[0]==0 && restored.performance_mixer.gain[1]==.5f && restored.performance_mixer.gain[2]==2 && restored.performance_mixer.gain[3]==.25f);
     assert(restored.performance_mixer.restart && restored.performance_mixer.arp_sync==3 && restored.performance_mixer.always_on_top);
     assert(restored.source_switches == loaded.source_switches);
     assert(restored.parameter_locks == loaded.parameter_locks);
@@ -230,7 +230,8 @@ int main(void)
                loaded.parameters.ghost_tone == 0.25f);
         assert(loaded.selected_preset_modified == 0);
         assert(loaded.performance_transport == 1u);
-        for(int i=0;i<3;++i)assert(loaded.performance_mixer.gain[i]==1);
+        for(int i=0;i<4;++i)assert(loaded.performance_mixer.gain[i]==1);
+        assert(loaded.matrix.row[TS_MATRIX_TILES].matrix_gain[TS_MATRIX_MAIN]==1000);
         assert(!loaded.performance_mixer.restart && !loaded.performance_mixer.arp_sync && !loaded.performance_mixer.always_on_top);
         assert((loaded.parameter_locks & TS_SISTER_UI_PARAMETER_BIT(
                     TS_SISTER_UI_PARAM_REVERB_TYPE)) != 0u);

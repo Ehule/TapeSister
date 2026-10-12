@@ -98,6 +98,7 @@ static TsSisterRuntimeFrame runtime_matrix_frame(TsSisterRuntime *r,
     for(int i=0;i<TS_MATRIX_INPUTS;++i)live[i]=s->matrix_input[i];
     live[TS_MATRIX_FM-TS_MATRIX_NODES]=s->fm;live[TS_MATRIX_LINK-TS_MATRIX_NODES]=s->tapehead;
     live[TS_MATRIX_MOSAIC-TS_MATRIX_NODES]=s->mosaic;
+    live[TS_MATRIX_TILES-TS_MATRIX_NODES]=s->live_tiles;
     RouterFrameContext context={.runtime=r,.frame=&frame,.matrix_program_gain=s->matrix_program_gain};
     /* Matrix controls supersede legacy chain placement and source switches. */
     if(!r->matrix.controls.serial_mask)r->router.wet[TS_ROUTER_SISTER]=r->router.wet[TS_ROUTER_PEDALBOARD]=1;

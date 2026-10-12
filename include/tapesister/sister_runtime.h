@@ -73,6 +73,7 @@ typedef struct {
     TsStereoFrame preview;
     TsStereoFrame tapehead;
     TsStereoFrame mosaic;
+    TsStereoFrame live_tiles; /* Manual tile bus, independent of backing players. */
     TsStereoFrame tracker;
     /* Tracker lanes outside the serial chain: record onto tape without an
        additional dry monitor. Their clean audio/sends keep their own routes. */
@@ -247,7 +248,7 @@ typedef struct {
     uint32_t warnings;
     uint8_t source_switches;
     TsPerformanceMixer performance_mixer;
-    float performance_gain_current[3]; /* Audio-owned five-ms fader slew. */
+    float performance_gain_current[4]; /* Audio-owned five-ms fader slew. */
     unsigned performance_transport; /* ARP=1, SisterTracker=2, Mosaic=4; project setting. */
     uint8_t output_channels;
     TsSisterTap selected_tap;

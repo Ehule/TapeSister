@@ -661,6 +661,9 @@ typedef struct {
     int project_overwrite_confirm_open;
     char project_path[TS_BROWSER_PATH_MAX];
     uint64_t saved_state_hash;
+    uint64_t saved_ui_hash;
+    uint32_t project_check_ms;
+    int project_modified;
     int config_open;
     int palette_open;
     int palette_entry;

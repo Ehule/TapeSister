@@ -301,7 +301,7 @@ int ts_sister_project_state_save_file(const TsSisterProjectState *state,
     if (!failed) failed = !ts_router_performance_write(file,&state->router_performance);
     if (!failed) failed = fprintf(file,"PerformanceTransport=%u\nPerformance.Restart=%u\nPerformance.ArpSync=%u\nPerformance.AlwaysOnTop=%u\n",
         state->performance_transport&7u,state->performance_mixer.restart,state->performance_mixer.arp_sync,state->performance_mixer.always_on_top)<0;
-    for(int i=0;!failed && i<3;++i)failed=fprintf(file,"Performance.Gain%d=%.9g\n",i,state->performance_mixer.gain[i])<0;
+    for(int i=0;!failed && i<4;++i)failed=fprintf(file,"Performance.Gain%d=%.9g\n",i,state->performance_mixer.gain[i])<0;
     if (!failed) failed = !ts_keyboard_sequence_bank_write(file,&state->keyboard_sequence);
     if (!failed) failed = !ts_insert_write(file,&state->insert);
     if (fclose(file) != 0) failed = 1;
@@ -644,7 +644,7 @@ int ts_sister_project_state_load_file(TsSisterProjectState *state,
             int mask;if(!parse_int_value(value,&mask) || mask<0 || mask>7)goto malformed;loaded.performance_transport=(unsigned)mask;
         } else if (!strncmp(key,"Performance.Gain",16)) {
             int channel;float gain;
-            if(!parse_int_value(key+16,&channel) || channel<0 || channel>2 ||
+            if(!parse_int_value(key+16,&channel) || channel<0 || channel>3 ||
                !parse_float_value(value,&gain) || gain<0 || gain>2)goto malformed;
             loaded.performance_mixer.gain[channel]=gain;
         } else if (!strcmp(key,"Performance.Restart") || !strcmp(key,"Performance.ArpSync") || !strcmp(key,"Performance.AlwaysOnTop")) {
