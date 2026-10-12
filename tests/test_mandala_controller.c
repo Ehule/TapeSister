@@ -29,7 +29,7 @@ static void measured_callback(void *unused,Uint8 *output,int bytes)
     (void)unused;
     /* A synthetic external source uses the real matrix capture path. */
     float external[512*2];
-    unsigned frames=(unsigned)bytes/(sizeof(float)*4);
+    unsigned frames=(unsigned)bytes/(sizeof(float)*a.output_device_channels);
     assert(frames<=512);
     for(unsigned i=0;i<frames;++i) {
         external[i*2]=.08f*sinf((input_phase+i)*.031f);
@@ -104,6 +104,32 @@ static void setup(SDL_Window *window)
     ts_insert_capture_prepare(&a.sister.insert,2,48000,512);
     for(int i=0;i<8;++i)measured_callback(NULL,(Uint8*)out,sizeof(out));
 }
+static void external_tap_checks(void)
+{
+    ts_tapehead_stop();ts_note_bank_clear(&a.notes);ts_keyboard_sequence_stop(&a.keyboard_sequence);
+    a.mosaic->playing=0;
+    TsMatrixControls matrix;ts_matrix_default(&matrix);matrix.enabled=1;
+    for(int row=0;row<TS_MATRIX_ROWS;++row)memset(matrix.row[row].matrix_gain,0,sizeof(matrix.row[row].matrix_gain));
+    matrix.row[TS_MATRIX_NODES].matrix_gain[TS_MATRIX_NODES]=1000;
+    matrix.row[TS_MATRIX_NODES].matrix_gain[TS_MATRIX_NODES+1]=1000;
+    assert(ts_matrix_set(&a.sister.matrix,&matrix,48000));
+    atomic_store(&audio_queue.enabled,1);
+    TsMandalaPacket packet;TsMandalaFeatures f={0};
+    for(int i=0;i<50;++i) {
+        measured_callback(NULL,(Uint8*)out,sizeof(out));assert(ts_mandala_latest(&audio_queue,&packet));
+        assert(packet.channels==4);ts_mandala_analyze(&packet,&f,.05f);
+    }
+    assert(f.level>.1f);
+    ts_sister_runtime_set_master_output_gain(&a.sister,0);
+    for(int i=0;i<50;++i) {measured_callback(NULL,(Uint8*)out,sizeof(out));ts_mandala_latest(&audio_queue,&packet);}
+    for(unsigned i=0;i<packet.count;++i)for(unsigned ch=0;ch<packet.channels;++ch)assert(packet.samples[i][ch]==0);
+    a.output_device_channels=2;ts_sister_runtime_set_master_output_gain(&a.sister,1);
+    for(int i=0;i<50;++i) {
+        measured_callback(NULL,(Uint8*)out,512*2*sizeof(float));ts_mandala_latest(&audio_queue,&packet);
+    }
+    assert(packet.channels==2);atomic_store(&audio_queue.enabled,0);
+    puts("external-only physical output and post-fader silence in stereo/multichannel: PASS");
+}
 static int compare_double(const void *a0,const void *b0)
 { double a1=*(const double*)a0,b1=*(const double*)b0;return (a1>b1)-(a1<b1); }
 static void report(unsigned start,unsigned end,const char *label)
@@ -147,6 +173,18 @@ static void lifecycle(SDL_Window *window)
     started=SDL_GetTicks();while(host.shared && SDL_GetTicks()-started<3000){ts_mandala_poll(&a.sister.mandala,&prefs);SDL_Delay(10);}
     assert(!host.shared && !atomic_load(&audio_queue.enabled));
     assert(!memcmp(&before,&a.sister.matrix.controls,sizeof(before)));
+#ifndef _WIN32
+    assert(ts_mandala_open(&a.sister.mandala,&prefs,error,sizeof(error)));
+    started=SDL_GetTicks();
+    while(host.shared && !atomic_load(&host.shared->ready) && SDL_GetTicks()-started<5000) {ts_mandala_poll(&a.sister.mandala,&prefs);SDL_Delay(10);}
+    assert(host.shared && atomic_load(&host.shared->ready));
+    assert(!kill(host.pid,SIGSTOP));ts_mandala_close();
+    started=SDL_GetTicks();
+    while(host.shared && SDL_GetTicks()-started<3000) {
+        measured_callback(NULL,(Uint8*)out,sizeof(out));ts_mandala_poll(&a.sister.mandala,&prefs);SDL_Delay(10);
+    }
+    assert(!host.shared); /* Timed retirement must reap a suspended child. */
+#endif
     for(int repeat=0;repeat<3;++repeat) {
         assert(ts_mandala_open(&a.sister.mandala,&prefs,error,sizeof(error)));
         ts_mandala_close();
@@ -172,6 +210,7 @@ static void lifecycle(SDL_Window *window)
     e.key.keysym.sym=SDLK_ESCAPE;m_event(m,&shared,&e);m_window_mode(m,&shared,0);assert(!m->fullscreen && !atomic_load(&shared.quit));
     atomic_store(&shared.fullscreen,1);m_window_mode(m,&shared,0);
     m_window_mode(m,&shared,1);assert(!m->fullscreen && m->display==0);
+    e.type=SDL_RENDER_DEVICE_RESET;m_event(m,&shared,&e);assert(m->history && m->haze && !atomic_load(&shared.quit));
     m_destroy(m);free(m);
     puts("native launch, freeze, stall, kill, close/reopen, transport independence, reseed dirty state, display fallback: PASS");
 }
@@ -206,7 +245,7 @@ int main(int argc,char **argv)
         }
         ts_native_pause(device,1);ts_native_close(device);
         printf("soak transport status: tracker=%d mosaic=%d arp=%d time=%.2f\n",ts_tapehead_running(),a.mosaic->playing,a.keyboard_sequence.running,a.mosaic->time);
-    } else lifecycle(window);
+    } else {lifecycle(window);external_tap_checks();}
     ts_mandala_shutdown();ts_tapehead_stop();ts_tapehead_close();
     ts_keyboard_sequence_source_free(ts_keyboard_sequence_source(&a.keyboard_sequence,NULL));
     ts_sister_runtime_free(&a.sister);ts_mosaic_free(a.mosaic);ts_capture_free(&a.capture);

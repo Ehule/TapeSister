@@ -32,7 +32,8 @@ static TsMandalaQueue audio_queue;
 static struct {
     VisualShared *shared;
     char name[96];
-    Uint32 sent, launched;
+    Uint32 sent, launched, closing;
+    int force_stopped, close_requested;
     unsigned serial;
     TsMandalaPacket last_audio;
     TsMandalaConfig sent_config;
@@ -90,7 +91,21 @@ void ts_mandala_freeze(void)
 void ts_mandala_close(void)
 {
     atomic_store(&audio_queue.enabled, 0);
-    if (host.shared) atomic_store(&host.shared->quit, 1);
+    if (host.shared) {
+        atomic_store(&host.shared->quit, 1);
+        if (!host.close_requested) { host.closing = SDL_GetTicks(); host.close_requested = 1; }
+    }
+}
+static void host_force_stop(void)
+{
+    if (host.force_stopped) return;
+#ifdef _WIN32
+    if (host.process) TerminateProcess(host.process, 0);
+#else
+    /* SIGKILL also retires a suspended child. Never wait for graphics exit. */
+    if (host.pid > 0) kill(host.pid, SIGKILL);
+#endif
+    host.force_stopped = 1;
 }
 static void host_release(void)
 {
@@ -107,10 +122,9 @@ static void host_release(void)
 void ts_mandala_shutdown(void)
 {
     ts_mandala_close();
-#ifdef _WIN32
-    if (host.process) TerminateProcess(host.process, 0);
-#else
-    if (host.pid > 0) { kill(host.pid, SIGTERM); waitpid(host.pid, NULL, WNOHANG); }
+    host_force_stop();
+#ifndef _WIN32
+    if (host.pid > 0) waitpid(host.pid, NULL, WNOHANG);
 #endif
     host_release();
 }
@@ -185,7 +199,9 @@ int ts_mandala_poll(const TsMandalaConfig *config, TsMandalaPreferences *prefs)
     prefs->fullscreen = (int)atomic_load(&host.shared->fullscreen);
     if (!alive) { atomic_store(&audio_queue.enabled, 0); host_release(); return 0; }
     int ready = atomic_load(&host.shared->ready);
-    if (!ready && SDL_GetTicks() - host.launched > 10000) { ts_mandala_shutdown(); return 0; }
+    if (atomic_load(&host.shared->quit) && !host.close_requested) ts_mandala_close();
+    if (!ready && SDL_GetTicks() - host.launched > 10000) ts_mandala_close();
+    if (host.close_requested && SDL_GetTicks() - host.closing > 1000) host_force_stop();
 #ifndef _WIN32
     if (ready && *host.name) { shm_unlink(host.name); *host.name = 0; }
 #endif

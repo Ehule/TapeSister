@@ -77,7 +77,9 @@ to the local session (0600 POSIX object; Windows local-session mapping). POSIX
 names are unlinked after the child's startup acknowledgement; mappings survive
 until each process closes them. The child detects parent exit. The host polls
 process exit without waiting, disables sampling and reclaims handles. Startup
-timeout is 10 seconds. Child stall/crash cannot backpressure the callback.
+timeout is 10 seconds. A child that cannot honor Close within one second is
+terminated and reaped by nonblocking polling, including a suspended POSIX child.
+Child stall/crash cannot backpressure the callback.
 
 Analysis and smoothing run only in the child. A fixed -60 dB floor and bounded
 normalization avoid noise-driven gain chasing. Audio changes membership, size,

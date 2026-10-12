@@ -30,10 +30,30 @@ buffers. No GPU memory figure is inferred from process RSS.
 Captures in `screenshots/mandala/` are from the actual software renderer using
 synthetic diagnostic audio features. They are not the supplied concept image.
 
-Full regression, final benchmark and CI results will be added before review is
-finished. The long fixture records p50/p95/p99/max, callback deadline misses,
-arrival gaps, renderer frame time and process memory. Physical underruns cannot
-be measured by SDL dummy audio.
+The full local suite ran 114 tests. After correcting an executable permission
+on a local build artifact, 108 pass. Six failures also reproduce on an isolated,
+unmodified `ae596039` build: `test_sister_source_mask`, `test_sister_recursion`,
+`test_sister_ui_model`, `test_sister_source_ui`, `test_sister_capture_ui`, and
+`tapesister_canvas_tests`. They are pre-existing and outside this feature.
+Increasing the stack limit did not change the three UI-fixture crashes.
+
+The concurrent queue test completed 100,000 publications under a deliberately
+slow/stalled reader, without torn snapshots or producer backpressure. The
+100,000-call producer microbenchmark (including clock overhead) measured:
+
+| Path | Mean | p99 | Maximum |
+| --- | ---: | ---: | ---: |
+| Disabled | 26.4 ns | 31 ns | 75.5 µs |
+| Full queue / drop | 29.1 ns | 31 ns | 228.7 µs |
+| 64 frames × 16 channels copied | 492.9 ns | 491 ns | 133.4 µs |
+
+The large isolated maxima include container scheduling; they are reported,
+not hidden by the sub-microsecond median/mean. No hard worst-case latency is
+inferred from these measurements.
+
+A preliminary short six-period callback run had no 10.667 ms deadline misses
+in any mode. Longer comparison and CI results are being collected. Physical
+underruns cannot be measured by SDL dummy audio.
 
 ## Remaining manual hardware acceptance
 

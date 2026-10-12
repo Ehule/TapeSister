@@ -125,6 +125,23 @@ static int m_target(Mandala *m)
     SDL_SetRenderTarget(m->renderer,m->history);SDL_SetRenderDrawColor(m->renderer,4,7,10,255);SDL_RenderClear(m->renderer);
     SDL_SetRenderTarget(m->renderer,NULL);m->dirty=1;return 1;
 }
+static void m_haze(Mandala *m)
+{
+    if(m->haze)SDL_DestroyTexture(m->haze);
+    m->haze=NULL;
+    /* One tiny cached soft sprite, reused for every halo. */
+    SDL_Surface *haze=SDL_CreateRGBSurfaceWithFormat(0,64,64,32,SDL_PIXELFORMAT_ARGB8888);
+    if(haze) {
+        for(int y=0;y<64;++y)for(int x=0;x<64;++x) {
+            float dx=(x-31.5f)/31.5f,dy=(y-31.5f)/31.5f;
+            float fall=fmaxf(0,1-dx*dx-dy*dy);
+            ((Uint32*)haze->pixels)[y*64+x]=((Uint32)(fall*fall*32)<<24)|0xADA27E;
+        }
+        m->haze=SDL_CreateTextureFromSurface(m->renderer,haze);
+        if(m->haze)SDL_SetTextureBlendMode(m->haze,SDL_BLENDMODE_BLEND);
+        SDL_FreeSurface(haze);
+    }
+}
 static int m_init(Mandala *m, const TsMandalaConfig *config, int quality)
 {
     memset(m,0,sizeof(*m));m->quality=quality;m->display=0;m->controls=0;
@@ -138,18 +155,7 @@ static int m_init(Mandala *m, const TsMandalaConfig *config, int quality)
     if(!m->renderer)return 0;
     SDL_SetRenderDrawBlendMode(m->renderer,SDL_BLENDMODE_BLEND);
     m_build(m,config);
-    /* One tiny cached soft sprite, reused for every halo. */
-    SDL_Surface *haze=SDL_CreateRGBSurfaceWithFormat(0,64,64,32,SDL_PIXELFORMAT_ARGB8888);
-    if(haze) {
-        for(int y=0;y<64;++y)for(int x=0;x<64;++x) {
-            float dx=(x-31.5f)/31.5f,dy=(y-31.5f)/31.5f;
-            float fall=fmaxf(0,1-dx*dx-dy*dy);
-            ((Uint32*)haze->pixels)[y*64+x]=((Uint32)(fall*fall*32)<<24)|0xADA27E;
-        }
-        m->haze=SDL_CreateTextureFromSurface(m->renderer,haze);
-        if(m->haze)SDL_SetTextureBlendMode(m->haze,SDL_BLENDMODE_BLEND);
-        SDL_FreeSurface(haze);
-    }
+    m_haze(m);
     return m_target(m);
 }
 static void m_destroy(Mandala *m)
@@ -295,6 +301,7 @@ static void m_event(Mandala *m,VisualShared *s,const SDL_Event *e)
     if(e->type==SDL_QUIT || (e->type==SDL_WINDOWEVENT && e->window.event==SDL_WINDOWEVENT_CLOSE))atomic_store(&s->quit,1);
     if(e->type==SDL_DISPLAYEVENT)m_window_mode(m,s,1);
     if(e->type==SDL_RENDER_TARGETS_RESET || e->type==SDL_RENDER_DEVICE_RESET) {
+        if(e->type==SDL_RENDER_DEVICE_RESET)m_haze(m);
         if(!m_target(m))atomic_store(&s->quit,1);
     }
     if(e->type==SDL_WINDOWEVENT) {
