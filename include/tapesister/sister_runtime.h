@@ -15,6 +15,7 @@
 
 #include <stdatomic.h>
 #include <stddef.h>
+#include "tapesister/performance_transport.h"
 #include <stdint.h>
 
 enum {
@@ -245,6 +246,8 @@ typedef struct {
     uint64_t processed_frames;
     uint32_t warnings;
     uint8_t source_switches;
+    TsPerformanceMixer performance_mixer;
+    float performance_gain_current[3]; /* Audio-owned five-ms fader slew. */
     unsigned performance_transport; /* ARP=1, SisterTracker=2, Mosaic=4; project setting. */
     uint8_t output_channels;
     TsSisterTap selected_tap;

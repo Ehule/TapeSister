@@ -56,6 +56,7 @@ typedef struct {
     int order[TS_KEYBOARD_SEQUENCE_NOTES], order_count;
     int running, current_note, cursor, fresh;
     double elapsed;
+    double clock_seconds; /* Optional host tempo interval; zero uses saved slot timing. */
     uint32_t random;
     TsStereoFrame last, fade_from;
     TsSourceRouteMix clean_last, clean_fade_from;
@@ -91,6 +92,7 @@ void ts_keyboard_sequence_set_slot_policy(TsKeyboardSequence *sequence, int mini
 int ts_keyboard_sequence_bank_write(FILE *file, const TsKeyboardSequenceBank *bank);
 /* 1 = recognized, 0 = unknown key, -1 = malformed value. */
 int ts_keyboard_sequence_bank_read(TsKeyboardSequenceBank *bank, const char *key, const char *value);
+void ts_keyboard_sequence_clock(TsKeyboardSequence *sequence, double seconds);
 void ts_keyboard_sequence_stop(TsKeyboardSequence *sequence);
 int ts_keyboard_sequence_play(TsKeyboardSequence *sequence);
 void ts_keyboard_sequence_reset(TsKeyboardSequence *sequence);

@@ -718,13 +718,20 @@ audio and settings save with the project.
 
 ## Performance Transport
 
-Use **CFG → Transport** or **Ctrl+Shift+Space** to choose ARP, SisterTracker and
-Mosaic. **Shift+Space** stops all checked players if any is running, otherwise
-starts them together. Play, Stop and Return to Start are also available in the
-dialog. Closing it leaves playback running. The selection saves with the project,
-with ARP-only as the old-project default. Ordinary Space keeps the active
-workspace's behavior. This coordinates transport without tempo following or
-changing Mosaic tape speed. See [Performance Transport](PERFORMANCE_TRANSPORT.md).
+Open **CFG → Transport**, **Ctrl+F11**, or **Ctrl+Shift+Space** for the floating
+three-channel ARP, TrackSister, and Mosaic mixer. Plain F11 retains fullscreen.
+Each channel has group selection, independent Play/Stop/Home, and a smoothed
+Silent-to-+6 dB gain fader. Double-click or right-click a fader for 0 dB.
+**Always on Top** keeps the window visible above the workspaces.
+
+Group Play can resume or restart checked players together. **ARP Clock** links
+ARP note intervals to TrackSister quarter/eighth/sixteenth notes, including tempo
+changes; Local restores the saved slot timings. Mosaic shares transport while
+keeping its own tape speed and pitch. These settings save with the project.
+**Shift+Space** controls the checked group. See [Performance Transport](PERFORMANCE_TRANSPORT.md).
+
+Double-click an occupied tile in TrackSister to open its editable canvas on the
+correct Sample page without stopping the tracker. F10 returns.
 
 ## Mosaic
 

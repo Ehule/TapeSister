@@ -60,11 +60,23 @@ static int cycle_length(const TsKeyboardSequence *s)
         s->order_count * 2 - 2 : s->order_count;
 }
 
+static double note_seconds(const TsKeyboardSequence *s)
+{ return s->clock_seconds>0?s->clock_seconds:s->settings.seconds; }
+void ts_keyboard_sequence_clock(TsKeyboardSequence *s,double seconds)
+{
+    if(!isfinite(seconds) || seconds<0)seconds=0;
+    if(s->clock_seconds==seconds)return;
+    double old=note_seconds(s);s->clock_seconds=seconds;
+    if(old>0)s->elapsed*=note_seconds(s)/old; /* Preserve beat phase across tempo changes. */
+    if(s->slot_running && s->slot_min_full_pattern)
+        s->slot_duration=fmax(s->slot_duration,s->slot_elapsed+
+            (cycle_length(s)-s->cursor)*note_seconds(s)-s->elapsed);
+}
 static double full_pattern_seconds(const TsKeyboardSequence *s)
 {
     /* Inner notes round to audio frames. Round the minimum up so a fractional
        note interval cannot shave the end off the last note in a full cycle. */
-    double step = s->settings.seconds;
+    double step = note_seconds(s);
     if (s->slot_rate > 0) step = ceil(step * s->slot_rate) / s->slot_rate;
     return cycle_length(s) * step;
 }
@@ -540,14 +552,14 @@ TsStereoFrame ts_keyboard_sequence_read_routed(TsKeyboardSequence *s, int rate,T
     if (s->slot_running) s->slot_elapsed += 1.0 / rate;
     if (s->running) {
         if (s->fresh) { trigger(s, note_at(s)); s->fresh = 0; }
-        else if (s->elapsed + .5 / rate >= s->settings.seconds) {
+        else if (s->elapsed + .5 / rate >= note_seconds(s)) {
             if (++s->cursor >= cycle_length(s)) {
                 if (s->settings.loop) s->cursor = 0;
                 else { stop_notes(s); goto fade; }
             }
             s->elapsed = 0; trigger(s, note_at(s));
         }
-        double remaining = s->settings.seconds * s->settings.gate - s->elapsed;
+        double remaining = note_seconds(s) * s->settings.gate - s->elapsed;
         double target_gate = fmax(0.0, fmin(1.0, remaining / .005));
         double gate_slew = 1.0 / (.005 * rate);
         s->gate_current += fmax(-gate_slew, fmin(gate_slew, target_gate - s->gate_current));

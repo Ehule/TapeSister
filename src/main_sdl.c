@@ -689,6 +689,10 @@ static uint64_t paged_project_state_hash(const TsSamplePages *pages,
         state_hash_bytes(&hash,&saved_router,sizeof(saved_router));
         state_hash_bytes(&hash,&sister->matrix.controls,sizeof(sister->matrix.controls));
         state_hash_bytes(&hash,&sister->performance_transport,sizeof(sister->performance_transport));
+        state_hash_bytes(&hash,sister->performance_mixer.gain,sizeof(sister->performance_mixer.gain));
+        state_hash_bytes(&hash,&sister->performance_mixer.restart,sizeof(sister->performance_mixer.restart));
+        state_hash_bytes(&hash,&sister->performance_mixer.arp_sync,sizeof(sister->performance_mixer.arp_sync));
+        state_hash_bytes(&hash,&sister->performance_mixer.always_on_top,sizeof(sister->performance_mixer.always_on_top));
         TsSpatialControls spatial=sister->spatial.controls;
         spatial.rise_trigger=spatial.morph_trigger=0;
         state_hash_bytes(&hash,&spatial,sizeof(spatial));
@@ -1160,6 +1164,19 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         float fm_slew = audio->output_rate > 0 ? 1.0f / (0.005f * audio->output_rate) : 1.0f;
         audio->fm_output_gain += fmaxf(-fm_slew,
             fminf(fm_slew, audio->fm_output_target - audio->fm_output_gain));
+        uint64_t profile_tracker = ts_profile_begin(TS_PROF_TRACKER);
+        if((i/2)%8192==0) {
+            embedded_block=ts_tapehead_render((unsigned)SDL_min(frames-i/2,8192),(unsigned)audio->output_rate);
+            embedded_clean=embedded_block?ts_tapehead_clean_render():NULL;
+        }
+        ts_profile_end(TS_PROF_TRACKER, profile_tracker);
+        unsigned embedded_index=(unsigned)(i/2)%8192;
+        unsigned sync=audio->sister.performance_mixer.arp_sync;
+        unsigned bpm=embedded_block?ts_tapehead_tempo(embedded_index):0;
+        ts_keyboard_sequence_clock(&audio->keyboard_sequence,sync && bpm?60.0/bpm/(1u<<(sync-1)):0);
+        float slew=audio->output_rate>0?2.f/(.005f*audio->output_rate):2.f;
+        for(int ch=0;ch<3;++ch)audio->sister.performance_gain_current[ch]+=fmaxf(-slew,
+            fminf(slew,audio->sister.performance_mixer.gain[ch]-audio->sister.performance_gain_current[ch]));
         uint64_t profile_voices = ts_profile_begin(TS_PROF_VOICES);
         runtime_note_render(audio, &buses, &synth_capture);
         ts_profile_end(TS_PROF_VOICES, profile_voices);
@@ -1179,21 +1196,17 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             buses.tapehead.r = i + 1 < values ?
                 audio->live_link_buffer[i + 1] : buses.tapehead.l;
         }
-        uint64_t profile_tracker = ts_profile_begin(TS_PROF_TRACKER);
-        if((i/2)%8192==0) {
-            embedded_block=ts_tapehead_render((unsigned)SDL_min(frames-i/2,8192),(unsigned)audio->output_rate);
-            embedded_clean=embedded_block?ts_tapehead_clean_render():NULL;
-        }
         audio->embedded_tracker_active=embedded_block!=NULL;
-        unsigned embedded_index=(unsigned)(i/2)%8192;
         audio->embedded_capture_flags=embedded_block?ts_tapehead_capture_flags(embedded_index):0;
         buses.tracker = embedded_block?(TsStereoFrame){embedded_block[embedded_index*2],embedded_block[embedded_index*2+1]}:
             ts_tracker_playback_read(&audio->tracker, audio->output_rate);
-        ts_profile_end(TS_PROF_TRACKER, profile_tracker);
-        if(embedded_clean)ts_source_route_add(&audio->clean,&embedded_clean[embedded_index],1.f);
+        float tracker_gain=audio->sister.performance_gain_current[1];
+        buses.tracker.l*=tracker_gain;buses.tracker.r*=tracker_gain;
+        if(embedded_clean)ts_source_route_add(&audio->clean,&embedded_clean[embedded_index],tracker_gain);
         sister_sources.tracker = buses.tracker;
         sister_sources.tracker_tape = embedded_clean?
             embedded_clean[embedded_index].tape_input:(TsStereoFrame){0,0};
+        sister_sources.tracker_tape.l*=tracker_gain;sister_sources.tracker_tape.r*=tracker_gain;
         sister_sources.fm = buses.fm;
         /* Notes already sounding before POWER retain their original voice
            bank and playback phase, but must feed the same TILES insert. */
@@ -4293,6 +4306,7 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
                 TsMasterEqControls flat;ts_master_eq_default(&flat);
                 ts_master_eq_set(&audio->sister.master_eq,&flat);
                 audio->sister.performance_transport=1;
+                ts_performance_mixer_default(&audio->sister.performance_mixer);
                 TsMatrixControls matrix;ts_matrix_default(&matrix);ts_matrix_set(&audio->sister.matrix,&matrix,audio->sister.router.sample_rate);
                 TsRouterControls defaults;ts_router_default(&defaults);
                 ts_sister_runtime_set_router(&audio->sister,&defaults);

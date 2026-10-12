@@ -50,6 +50,8 @@ int ts_tapehead_following(void);
 int ts_tapehead_live_editing(void);
 int ts_tapehead_block_active(void);
 unsigned ts_tapehead_capture_flags(unsigned frame);
+unsigned ts_tapehead_tempo(unsigned frame); /* Audio-thread, most recently rendered block. */
+TsTileId ts_tapehead_canvas_tile(void); /* UI consumes the double-click target. */
 void ts_tapehead_audio_span(unsigned offset,unsigned frames,int seam);
 /* UI-thread checkpoint for persistence/host views, not a per-note operation.
    Owns its short audio lock; callers must not wrap it in an outer audio lock. */

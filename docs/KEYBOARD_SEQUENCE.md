@@ -105,7 +105,7 @@ manual selection. Older projects get the outer sequencer disabled; projects
 without ARP data get an empty default bank. Edits trigger the unsaved warning.
 
 **Shift+Space** controls the [Performance Transport](PERFORMANCE_TRANSPORT.md)
-group, defaulting to ARP only. CFG → Transport or Ctrl+Shift+Space edits the group.
+group, defaulting to ARP only. CFG → Transport, Ctrl+F11, or Ctrl+Shift+Space edits the group.
 The ARP panel's own Play/Stop buttons always control ARP alone.
 Text fields, dialogs, Portal, and file preview retain their existing key handling.
 

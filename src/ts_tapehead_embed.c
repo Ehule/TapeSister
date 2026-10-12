@@ -82,6 +82,8 @@ static struct {
     int routes_enabled, clean_used, route_check;
     unsigned route_available;
     uint8_t capture_flags[TH_FRAMES];
+    uint16_t tempo[TH_FRAMES];
+    TsTileId canvas_tile;
     int capture_seam_pending;
     unsigned rate;
     double wheel_fraction;
@@ -142,10 +144,13 @@ int ts_tapehead_transport_keys_allowed(void) {return !embed.initialized || (!edi
 int ts_tapehead_running(void) { return atomic_load(&embed.ready)&&songPlaying; }
 int ts_tapehead_block_active(void) { return embed.initialized&&tapeheadBlockLoopIsActive(); }
 unsigned ts_tapehead_capture_flags(unsigned frame) {return frame<TH_FRAMES?embed.capture_flags[frame]:0;}
+unsigned ts_tapehead_tempo(unsigned frame) {return frame<TH_FRAMES?embed.tempo[frame]:0;}
+TsTileId ts_tapehead_canvas_tile(void) {TsTileId id=embed.canvas_tile;embed.canvas_tile=0;return id;}
 void ts_tapehead_audio_span(unsigned offset,unsigned frames,int seam) {
     unsigned flags=(tapeheadBlockLoopIsActive()?1u:0u)|(songPlaying?4u:0u);
     if(offset+frames<=TH_FRAMES && frames) {
         memset(embed.capture_flags+offset,flags,frames);
+        for(unsigned f=offset;f<offset+frames;++f)embed.tempo[f]=song.BPM;
         if(embed.capture_seam_pending) {embed.capture_flags[offset]|=2;embed.capture_seam_pending=0;}
     }
     if(seam)embed.capture_seam_pending=1;
@@ -578,7 +583,7 @@ int ts_tapehead_event(const SDL_Event *event,int x,int y) {
             setSongModifiedFlag();return 1;
         }
         if(main_panel_visible() && x>=421 && x<632 && y<173) {
-            if(!ui.sysReqShown && !editor.editTextFlag && event->button.button==SDL_BUTTON_LEFT)canvas_click(x,y);
+            if(!ui.sysReqShown && !editor.editTextFlag && event->button.button==SDL_BUTTON_LEFT)canvas_click(x,y,event->button.clicks);
             return 1;
         }
         if(main_panel_visible() && x>=294 && x<353 && y>=155 && y<171) {

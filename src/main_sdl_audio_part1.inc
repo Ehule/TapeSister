@@ -354,7 +354,11 @@ static void runtime_note_render(AudioState *audio, TsAudioBuses *buses,
     performance = ts_performance_read_routed(
         &audio->performance, &audio->performance_raw_mix,&audio->clean);
     TsStereoFrame sequence_before=audio->clean.reference;
-    TsStereoFrame sequence = ts_keyboard_sequence_read_routed(&audio->keyboard_sequence, audio->output_rate,&audio->clean);
+    TsSourceRouteMix channel;ts_source_route_mix_init(&channel,&audio->clean);
+    TsStereoFrame sequence = ts_keyboard_sequence_read_routed(&audio->keyboard_sequence, audio->output_rate,&channel);
+    float arp_gain=audio->sister.performance_gain_current[0];
+    sequence.l*=arp_gain;sequence.r*=arp_gain;
+    ts_source_route_add(&audio->clean,&channel,arp_gain);
     if (audio->keyboard_sequence.source && audio->keyboard_sequence.source->fm) {
         fm.l += sequence.l; fm.r += sequence.r;
         synth.l += sequence.l; synth.r += sequence.r;
@@ -371,7 +375,11 @@ static void runtime_note_render(AudioState *audio, TsAudioBuses *buses,
         ts_performance_read_routed(&audio->tile_launchers, NULL,&audio->clean) :
         (TsStereoFrame){0.0f, 0.0f};
     int matrix=audio->sister.matrix.controls.enabled;
-    TsStereoFrame mosaic=ts_mosaic_read_routed(audio->mosaic,audio->output_rate,matrix?&audio->clean:NULL);
+    ts_source_route_mix_init(&channel,&audio->clean);
+    TsStereoFrame mosaic=ts_mosaic_read_routed(audio->mosaic,audio->output_rate,matrix?&channel:NULL);
+    float mosaic_gain=audio->sister.performance_gain_current[2];
+    mosaic.l*=mosaic_gain;mosaic.r*=mosaic_gain;
+    if(matrix)ts_source_route_add(&audio->clean,&channel,mosaic_gain);
     audio->tile_launcher_mix=(TsStereoFrame){launcher.l+mosaic.l,launcher.r+mosaic.r};
     if(matrix)buses->mosaic=mosaic;
     else {launcher.l+=mosaic.l;launcher.r+=mosaic.r;}

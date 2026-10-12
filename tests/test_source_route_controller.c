@@ -225,6 +225,20 @@ int main(int argc,char **argv)
     assert(ts_note_bank_start(&a.notes,&bank,TS_AUDITION_CURRENT,12,0,48000)==TS_NOTE_STARTED);
     double energy[4];render(energy);assert(energy[0]==0&&energy[1]==0&&energy[2]>1&&energy[3]>energy[2]);
     assert(a.keyboard_dry.l>0&&a.keyboard_dry.r>0);
+    /* ARP trim reaches direct outputs and leaves manually held notes alone. */
+    double held=energy[2];
+    TsKeyboardSequenceSource *arp=calloc(1,sizeof(*arp));assert(arp);
+    assert(ts_sample_clone(&arp->sample,&bank.current,error,sizeof(error)));
+    arp->count=1;arp->voices[0]=a.notes.voices[0];arp->voices[0].sample=&arp->sample;
+    TsKeyboardSequenceSettings arp_settings=a.keyboard_sequence.settings;
+    arp_settings.notes[0]=60;arp_settings.count=1;arp_settings.seconds=10;arp_settings.gate=1;
+    ts_keyboard_sequence_set(&a.keyboard_sequence,&arp_settings);ts_keyboard_sequence_source(&a.keyboard_sequence,arp);
+    assert(ts_keyboard_sequence_play(&a.keyboard_sequence));render(energy);assert(energy[2]>held*1.5);
+    performance_gain(0,&a,0,0);render(energy);assert(fabs(energy[2]-held)<.001);
+    assert(a.sister.performance_gain_current[0]==0 && a.keyboard_sequence.running);
+    performance_gain(0,&a,0,1);render(energy);assert(energy[2]>held*1.5);
+    ts_keyboard_sequence_stop(&a.keyboard_sequence);ts_keyboard_sequence_source_free(ts_keyboard_sequence_source(&a.keyboard_sequence,NULL));
+    ts_keyboard_sequence_init(&a.keyboard_sequence);render(energy);
     ts_sister_runtime_set_master_output_gain(&a.sister,0);render(energy);render(energy);
     assert(energy[0]==0&&energy[1]==0&&energy[2]==0&&energy[3]==0);
     ts_sister_runtime_set_master_output_gain(&a.sister,1);render(energy);render(energy);
@@ -267,6 +281,15 @@ int main(int argc,char **argv)
     startPlaying(PLAYMODE_SONG,0);render(energy);assert(energy[1]>1&&energy[0]==0&&energy[2]==0&&energy[3]==0);
     click(500,48,SDL_BUTTON_LEFT);assert(pages.tracker.lanes[0].output_route.mode==TS_SOURCE_INHERIT);
     render(energy);assert(energy[0]==0&&energy[1]==0&&energy[2]>1&&energy[3]>1);
+    /* Tracker trim scales its native clean route without stopping the clock. */
+    double tracker_level=energy[2];performance_gain(0,&a,1,.5f);render(energy);
+    assert(fabs(energy[2]-tracker_level*.5)<.001 && ts_tapehead_running());
+    performance_gain(0,&a,1,0);render(energy);assert(energy[0]==0 && energy[1]==0 && energy[2]==0 && energy[3]==0);
+    performance_gain(0,&a,1,1);render(energy);assert(energy[2]>1);
+    /* The ARP override observes the actual rendered tracker's tempo. */
+    a.sister.performance_mixer.arp_sync=2;render(energy);
+    assert(ts_tapehead_tempo(511)==song.BPM && fabs(a.keyboard_sequence.clock_seconds-30.0/song.BPM)<1e-9);
+    a.sister.performance_mixer.arp_sync=0;render(energy);assert(a.keyboard_sequence.clock_seconds==0);
     /* Changing devices keeps the same route and folds only its missing pair. */
     a.output_device_channels=2;float stereo[1024];audio_callback(&a,(Uint8*)stereo,sizeof(stereo));
     assert(a.clean_output.missing==12&&fabsf(stereo[1000])>0&&fabsf(stereo[1001])>0);
