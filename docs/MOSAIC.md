@@ -150,7 +150,7 @@ and pre-EQ audio remain editable through save/load. Returning to Mosaic uses the
 usual Update Instance / Update All / Create Tile decision. See [Canvas EQ](CANVAS_EQ.md).
 
 [Performance Transport](PERFORMANCE_TRANSPORT.md), opened from CFG or
-Ctrl+F11 or Ctrl+Shift+Space, groups ARP, SisterTracker and Mosaic under Shift+Space. Ordinary
+F11 or Ctrl+Shift+Space, groups ARP, SisterTracker and Mosaic under Shift+Space. Ordinary
 Space remains local. This shares start/stop without changing tempo or tape speed.
 
 ## Performance controls

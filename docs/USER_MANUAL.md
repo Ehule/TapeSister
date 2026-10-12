@@ -718,8 +718,8 @@ audio and settings save with the project.
 
 ## Performance Transport
 
-Open **CFG → Transport**, **Ctrl+F11**, or **Ctrl+Shift+Space** for the floating
-three-channel ARP, TrackSister, and Mosaic mixer. Plain F11 retains fullscreen.
+Open **CFG → Transport**, **F11**, or **Ctrl+Shift+Space** for the floating
+three-channel ARP, TrackSister, and Mosaic mixer. **Alt+F11** toggles fullscreen.
 Each channel has group selection, independent Play/Stop/Home, and a smoothed
 Silent-to-+6 dB gain fader. Double-click or right-click a fader for 0 dB.
 **Always on Top** keeps the window visible above the workspaces.

@@ -787,7 +787,7 @@ Ctrl+Z / Ctrl+Y undo/redo; Escape cancels the current stroke.
 | Restore original routing | Restore, then confirm; restore is undoable |
 | Route Mosaic independently | Mosaic bus row; Mosaic filter for custom card routes |
 | Edit tile/card EQ | EQ beside S/M/R/L; Space auditions; Apply or Cancel |
-| Choose transport group | CFG → Transport, Ctrl+F11, or Ctrl+Shift+Space |
+| Choose transport group | CFG → Transport, F11, or Ctrl+Shift+Space |
 | Play/stop selected transport group | Shift+Space; Space remains workspace-local |
 
 See [Canvas EQ](CANVAS_EQ.md), [Performance Transport](PERFORMANCE_TRANSPORT.md),
@@ -795,7 +795,7 @@ and [Matrix editing](ROUTING_MATRIX.md#selection-undo-and-ab).
 
 ### Performance mixer shortcuts
 
-- **Ctrl+F11** or **Ctrl+Shift+Space**: open Performance Transport (F11 remains fullscreen).
+- **F11** or **Ctrl+Shift+Space**: open Performance Transport (**Alt+F11** toggles fullscreen).
 - **Shift+Space**: play/stop the checked group; choose Resume or Restart Together.
 - Each channel has Play/Stop/Home and a gain fader; double/right-click gain for 0 dB.
 - **ARP Clock**: Local or TrackSister 1/4, 1/8, 1/16; Mosaic keeps its tape speed.

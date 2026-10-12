@@ -116,7 +116,7 @@ for screenshots, cache behavior, and the measured live-display cost.
 
 Sister Machine fills the full width and height of its window. Maximizing it
 enters desktop fullscreen, like the main canvas, covering the entire display.
-F11 toggles back to a resizable window. Mouse buttons, drags and wheel targeting
+Alt+F11 toggles back to a resizable window. Mouse buttons, drags and wheel targeting
 use the same mapping, including high-DPI output. Exposing the window forces a
 fresh redraw. Tab from Sister hides its window and returns to the main
 workspace; Tab from the main canvas or FM opens it again. The tape engine,

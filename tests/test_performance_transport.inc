@@ -20,8 +20,22 @@ static void test_performance_transport(const char *directory)
     performance_show(&u,&a);
     SDL_Event e;SDL_zero(e);e.type=SDL_KEYDOWN;e.key.windowID=SDL_GetWindowID(window);e.key.keysym.sym=SDLK_F11;
     int tracker_open=u.tracker_open;u.tracker_open=0;matrix_window.rename=-1;
-    assert(!performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000)); /* Plain F11 stays fullscreen. */
-    e.key.keysym.mod=KMOD_CTRL;assert(performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));
+    assert(!application_fullscreen_event(&e,window,NULL,&u));
+    assert(performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));assert(performance_transport.visible);
+    e.key.keysym.mod=KMOD_ALT;
+    assert(!performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));
+    int fullscreen=(SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN)!=0;
+    u.tracker_open=1;assert(application_fullscreen_event(&e,window,NULL,&u));
+    assert(((SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN)!=0)!=fullscreen);
+    e.key.repeat=1;assert(application_fullscreen_event(&e,window,NULL,&u));
+    assert(((SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN)!=0)!=fullscreen);
+    e.key.repeat=0;e.key.windowID=performance_transport.id;assert(application_fullscreen_event(&e,window,NULL,&u));
+    assert(((SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN)!=0)==fullscreen);u.tracker_open=0;
+    e.key.windowID=SDL_GetWindowID(window);e.key.keysym.mod=KMOD_CTRL;
+    assert(!application_fullscreen_event(&e,window,NULL,&u));
+    assert(!performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));
+    e.key.keysym.sym=SDLK_SPACE;e.key.keysym.mod=KMOD_CTRL|KMOD_SHIFT;
+    assert(performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));
     e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=performance_transport.id;e.button.button=SDL_BUTTON_LEFT;e.button.clicks=1;
     e.button.x=430;e.button.y=24;assert(performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));assert(a.sister.performance_mixer.always_on_top);
     /* SDL dummy has no window manager; persistence is checked independently. */

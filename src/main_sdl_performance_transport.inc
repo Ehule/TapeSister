@@ -115,7 +115,7 @@ static void performance_update(SDL_AudioDeviceID device,AudioState *audio)
     perf_text(22,285,"MOSAIC SHARES GROUP START; ITS TAPE SPEED AND PITCH STAY LOCAL.",0x94aaa7,1);
     const char *buttons[]={"PLAY GROUP","STOP GROUP","RETURN TO START"};
     for(int i=0;i<3;++i){int x=20+i*190;perf_rect(x,310,180,34,0x365746);perf_text(x+10,323,buttons[i],0xdbe8e3,1);}
-    perf_text(22,358,"SHIFT+SPACE: GROUP   CTRL+F11: OPEN   SPACE: ACTIVE WORKSPACE",0x94aaa7,1);
+    perf_text(22,358,"SHIFT+SPACE: GROUP   F11: OPEN   ALT+F11: FULLSCREEN",0x94aaa7,1);
     perf_text(22,376,"GAIN: DRAG / WHEEL   DOUBLE-CLICK OR RIGHT-CLICK: 0 DB",0x94aaa7,1);
     SDL_RenderPresent(performance_transport.renderer);performance_transport.painted=SDL_GetTicks();
 }
@@ -133,7 +133,7 @@ static int performance_event(SDL_Event *e,SDL_Window *window,SDL_AudioDeviceID d
     int own=performance_transport.window && event_window_id(e)==performance_transport.id;
     int key=e->type==SDL_KEYDOWN,mod=key?e->key.keysym.mod:0;
     int shortcut=key && e->key.keysym.sym==SDLK_SPACE && (mod&KMOD_SHIFT) && !(mod&(KMOD_ALT|KMOD_GUI));
-    int openkey=key && e->key.keysym.sym==SDLK_F11 && (mod&KMOD_CTRL) && !(mod&(KMOD_ALT|KMOD_GUI|KMOD_SHIFT));
+    int openkey=key && e->key.keysym.sym==SDLK_F11 && !(mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI|KMOD_SHIFT));
     if(!own && !sister_performance_keys_allowed(ui)) {
         if(ui->config_open && e->type==SDL_MOUSEBUTTONDOWN && e->button.button==SDL_BUTTON_LEFT && event_window_id(e)==SDL_GetWindowID(window)) {
             int x,y;logical_mouse(window,e->button.x,e->button.y,&x,&y);

@@ -9081,6 +9081,25 @@ static void sister_window_fullscreen(SisterWindow *sister, int enabled)
     sister->rendered_model_valid=0;
 }
 
+/* Global window shortcut: handle it before tracker/modal/modeless controllers.
+   Floating panels target the main workspace, not their small utility window. */
+static int application_fullscreen_event(const SDL_Event *event,SDL_Window *window,
+    SisterWindow *sister,TsUiState *ui)
+{
+    if(event->type!=SDL_KEYDOWN || event->key.keysym.sym!=SDLK_F11 ||
+       !(event->key.keysym.mod&KMOD_ALT) || (event->key.keysym.mod&(KMOD_CTRL|KMOD_SHIFT|KMOD_GUI)))return 0;
+    if(event->key.repeat)return 1;
+    if(sister && sister->window && event->key.windowID==sister->window_id)
+        sister_window_fullscreen(sister,!sister->screen_filling);
+    else {
+        int fullscreen=(SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN)!=0;
+        if(SDL_SetWindowFullscreen(window,fullscreen?0u:SDL_WINDOW_FULLSCREEN_DESKTOP)==0)
+            snprintf(ui->status,sizeof(ui->status),"%s - ALT+F11 TO TOGGLE",fullscreen?"WINDOWED":"FULLSCREEN");
+        else snprintf(ui->status,sizeof(ui->status),"FULLSCREEN TOGGLE FAILED: %.119s",SDL_GetError());
+    }
+    return 1;
+}
+
 static int sister_event_mouse(SDL_Window *window, int event_x, int event_y, int *x, int *y)
 {
     int width, height;
@@ -14110,6 +14129,9 @@ int main(int argc, char **argv)
                 }
                 continue;
             }
+            if(application_fullscreen_event(&event,window,&sister_window,&ui)) {
+                frame_snapshot_valid=0;continue;
+            }
             if(canvas_eq_event(&event,window,device,&audio,&ui,&sister_window,&instrument))continue;
             if(performance_event(&event,window,device,&audio,&ui,&sample_pages,audio.workspace_bank?audio.workspace_bank:&instrument,&fm_preview,obtained.freq))continue;
             if(matrix_event(&event,window,device,&audio,&ui,&sample_pages,&instrument))continue;
@@ -14258,9 +14280,6 @@ int main(int argc, char **argv)
                            event.window.event == SDL_WINDOWEVENT_MOVED) {
                     ui.config.sister_window_x = event.window.data1;
                     ui.config.sister_window_y = event.window.data2;
-                } else if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_F11) {
-                    if(!event.key.repeat)sister_window_fullscreen(&sister_window,
-                        !sister_window.screen_filling);
                 } else if (event.type == SDL_KEYDOWN &&
                            event.key.keysym.sym == SDLK_ESCAPE) {
                     if (sister_window.model.fallout_lfo_open) {

@@ -1,7 +1,7 @@
 # Performance Transport
 
-Open **CFG → Transport**, **Ctrl+F11**, or **Ctrl+Shift+Space**. Plain F11 keeps
-its existing fullscreen behavior. This small modeless window mixes ARP,
+Open **CFG → Transport**, **F11**, or **Ctrl+Shift+Space**. **Alt+F11** toggles
+fullscreen. This small modeless window mixes ARP,
 TrackSister (SisterTracker), and Mosaic while you work elsewhere.
 
 ![Performance Transport](screenshots/performance/performance-transport.png)
