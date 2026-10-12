@@ -17,6 +17,7 @@ static void test_workspace_playback(SDL_Window *window)
     key(window,SDLK_BACKQUOTE,KMOD_NONE);
     assert(ui.mosaic_open && !scene->playing && !memcmp(&held,&audio.notes,sizeof(held)));
     key(window,SDLK_BACKQUOTE,KMOD_NONE);
+    assert(!ui.mosaic_open && !ui.fm_open);
     key(window,SDLK_BACKQUOTE,KMOD_SHIFT);
     if(!ui.fm_open || memcmp(&held,&audio.notes,sizeof(held))) {
         fprintf(stderr,"FM workspace: open=%d, status=%s, notes=%d/%d\n",ui.fm_open,ui.status,ts_note_bank_count(&held),ts_note_bank_count(&audio.notes));

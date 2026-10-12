@@ -17,14 +17,16 @@ static MosaicController mosaic;
 static PortalController portal;
 static TransformController transform;
 static TsSample workspace_preview;
+static const char *last_dispatch;
 
 static int dispatch(const SDL_Event *event,SDL_Window *window)
 {
-    if(main_file_capture_event(event,window,&audio,&ui,&sister,48000))return 1;
-    if(sample_bank_play_select_event(event,window,&ui))return 1;
-    if(workspace_tab_event(event,window,&sister,&ui))return 1;
-    if(workspace_event(event,window,0,&audio,&ui,&instrument,&mosaic,&portal,&sister,&transform,&workspace_preview))return 1;
-    if(mosaic_event(event,window,0,&audio,&ui,&instrument,&mosaic,&portal,&sister,&transform,48000))return 1;
+    last_dispatch="capture";if(main_file_capture_event(event,window,&audio,&ui,&sister,48000))return 1;
+    last_dispatch="bank";if(sample_bank_play_select_event(event,window,&ui))return 1;
+    last_dispatch="tab";if(workspace_tab_event(event,window,&sister,&ui))return 1;
+    last_dispatch="workspace";if(workspace_event(event,window,0,&audio,&ui,&instrument,&mosaic,&portal,&sister,&transform,&workspace_preview))return 1;
+    last_dispatch="mosaic";if(mosaic_event(event,window,0,&audio,&ui,&instrument,&mosaic,&portal,&sister,&transform,48000))return 1;
+    last_dispatch="unhandled";
     return main_file_capture_event(event,window,&audio,&ui,&sister,48000);
 }
 
@@ -75,7 +77,11 @@ static void release(SDL_Window *window,int x,int y)
 static void key(SDL_Window *window,SDL_Keycode key,SDL_Keymod mod)
 {
     SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.windowID=SDL_GetWindowID(window);e.key.keysym.sym=key;e.key.keysym.mod=mod;
-    dispatch(&e,window);
+    int was_mosaic=ui.mosaic_open,was_fm=ui.fm_open;
+    int handled=dispatch(&e,window);
+    if(key==SDLK_BACKQUOTE)fprintf(stderr,"Workspace key: sym=%d mod=%x shift=%x event=%u/%u repeat=%u handled=%d/%s views=%d,%d -> %d,%d blocked=%d choices=%d,%d preset=%d preview=%p fm=%s\n",
+        (int)e.key.keysym.sym,(unsigned)e.key.keysym.mod,(unsigned)KMOD_SHIFT,e.key.windowID,SDL_GetWindowID(window),e.key.repeat,handled,last_dispatch,
+        was_mosaic,was_fm,ui.mosaic_open,ui.fm_open,ui_blocking_dialog_open_except_workspaces(&ui),ui.fm_bank_choice_open,ui.fm_full_choice_open,sister.model.preset_manage_open,(void *)workspace_preview.data,ui.fm_message);
 }
 static void wait_render(void);
 #include "test_mosaic_native.inc"
