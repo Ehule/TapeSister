@@ -69,6 +69,7 @@ static void persistence_tests(void)
 {
     TsConfig config,loaded;ts_config_init(&config);char error[160];
     ts_router_move(&config.router,0,3);config.router.bypass_mask=5;config.router.solo=2;
+    config.router.master_mix=1;
     assert(ts_config_save(&config,"test-router-config.ini",error,sizeof(error)));
     assert(ts_config_load(&loaded,"test-router-config.ini",error,sizeof(error)));
     assert(!memcmp(&loaded.router,&config.router,sizeof(config.router)));

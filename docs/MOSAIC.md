@@ -240,26 +240,27 @@ this decision and then continues the requested action.
 
 ![Choosing the destination of an audio edit](images/mosaic-edit-choice.png)
 
-Live distortion, reverb and the other effects remain global. Mosaic feeds the
-existing **TILES** input when Sister Machine is powered. With Sister off it
-feeds the ordinary shared Fallout/pedalboard/output path. Fallout's controls
-and processing are available with Sister off. **Master FX** bypasses the pedalboard
-and Fallout together, including Fallout's feedback return. Its configured transition
-time still applies. Individual pedal/Fallout settings and modulation clocks are
-preserved, so enabling Master FX restores the chosen setup. This bypass affects
-the live processors; audio previously recorded into Sister's buffer retains its
-recorded sound. Sister power preserves the shared pedal settings, transitions,
-tails and Fallout modulation state; it only changes the rolling-machine route. A single rendering of each
-voice supplies those routes.
+Live distortion, reverb and other effects remain shared processors. In matrix
+mode Mosaic voices use their source tile routes. **F9** opens the
+[routing matrix](ROUTING_MATRIX.md) without stopping the arrangement. Patch those
+sources into Sister or shared effects and route their output rows onward. Dry
+sound needs its own connection. Sister source switches do not select matrix input.
+MASTER FX gates Pedalboard/Fallout; it does not create a dry connection where
+none exists. Settings, transitions and modulation are retained.
 
-**F9** opens the [Global Router](USER_MANUAL.md#global-router) while Mosaic keeps
-playing. Its order, bypass and solo affect the live processing path; REC DRY stays
-before those stages and REC OUT/REC FILE capture the final routed output.
+Legacy projects retain the older TILES/serial path until converted: with Sister
+on, Mosaic belongs to TILES; with Sister off, it enters the ordinary shared path.
+The retained source switches and serial order apply only to that legacy engine.
+
+REC DRY stays upstream of live processing. REC OUT/REC FILE capture the matrix's
+OUT 1/2 program, before the final hardware guard, rather than summing every
+separate physical output/send. Audio already printed to Sister's tape keeps its
+recorded processing.
 
 Workspace switching and audition stop leave Mosaic playback running. The toolbar
 MOSAIC button stays highlighted while it plays, and stopping an audition reports
 **AUDITION STOPPED - MOSAIC CONTINUES**. Stop the arrangement with its STOP control
-or Escape in Mosaic; Master FX bypass leaves the unprocessed source audible.
+or Escape in Mosaic; unprocessed sound remains audible where a dry route is connected.
 
 ## CDP ownership
 

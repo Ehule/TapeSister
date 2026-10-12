@@ -81,6 +81,11 @@ typedef struct
 
 #ifdef TAPEHEAD_EMBEDDED
 	const float *tileData;
+	uint64_t tileId;
+	unsigned tileRouteIndex;
+	int tileLane;
+	TsSourceRoute tileRoute;
+	TsSourceRouteVoice tileRouting;
 	uint8_t tileChannels;
 	double tilePosition;
 	int tileDirection, tileIntro;

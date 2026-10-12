@@ -17,6 +17,15 @@ on:
       - "tests/test_tapehead*.c"
       - "src/*tapehead*"
       - "include/tapesister/tapehead_embed.h"
+      - "src/*source_route*"
+      - "src/*matrix*"
+      - "include/tapesister/routing_matrix.h"
+      - "tests/test_matrix_controller.inc"
+      - "tests/test_routing_matrix.c"
+      - "src/*clean_output*"
+      - "include/tapesister/*route*.h"
+      - "include/tapesister/clean_output.h"
+      - "tests/test_source_route*.c"
       - "src/*spatial*"
       - "include/tapesister/spatial*.h"
       - "tests/test_spatial*.c"
@@ -43,9 +52,12 @@ on:
       - "src/ts_realtime_diagnostics.c"
       - "include/tapesister/realtime_diagnostics.h"
       - "src/ts_asio_backend.cpp"
+      - "src/ts_asio_callback_lock.h"
       - "include/tapesister/asio_backend.h"
       - "tests/test_audio_health.c"
       - "tests/test_asio_backend.cpp"
+      - "tests/test_audio_reconfigure.c"
+      - "tests/asio_fixture/**"
       - "src/main_sdl_wheel.inc"
       - "src/ts_ui.c"
       - "tests/test_wheel_controller.inc"
@@ -73,7 +85,7 @@ jobs:
       - name: Build TapeSister, tests, and CDP8
         run: cmake --build build
       - name: Run audio, keyboard, Insert and Router regression tests
-        run: ctest --test-dir build --output-on-failure -R 'spatial|jack_backend|asio|audio_lifecycle|audio_config|insert_tests|router|master_eq|native_waveform|render_efficiency|test_prism|keyboard_hold|keyboard_sequence|sister_tracker|tracker_playback|tracker_edit|tracker_controller|tapehead_embedded|quick_capture|sample_pages|sister_project_state|core_tests|fm_directions|fm_unison|capture_tests|midi_tests|performance_tests|preview_loop|realtime_edits|realtime_controller|realtime_diagnostics|audio_health|sister_post_fx|sister_modulation|sister_routes|note_bank_stereo|performance_stereo'
+        run: ctest --test-dir build --output-on-failure -R 'routing_matrix|source_route|spatial|jack_backend|asio|audio_reconfigure|audio_lifecycle|audio_config|insert_tests|router|master_eq|native_waveform|render_efficiency|test_prism|keyboard_hold|keyboard_sequence|sister_tracker|tracker_playback|tracker_edit|tracker_controller|tapehead_embedded|quick_capture|sample_pages|sister_project_state|core_tests|fm_directions|fm_unison|capture_tests|midi_tests|performance_tests|preview_loop|realtime_edits|realtime_controller|realtime_diagnostics|audio_health|sister_post_fx|sister_modulation|sister_routes|note_bank_stereo|performance_stereo'
       - name: Run package regression guard
         if: github.event_name == 'pull_request'
         run: ctest --test-dir build --output-on-failure -R test_identity_packaging
@@ -81,7 +93,13 @@ jobs:
         if: github.event_name != 'pull_request'
         run: ctest --test-dir build --output-on-failure
       - name: Assemble archive
-        run: tar -C build -czf TapeSister-linux-x86_64.tar.gz tapesister assets cdp licenses tapesister.ini.example
+        run: |
+          tar -czf TapeSister-linux-x86_64.tar.gz -C build tapesister assets cdp licenses tapesister.ini.example \
+            -C .. docs README.md THIRD_PARTY_NOTICES.md -C release PORTABLE_README.txt
+          tar -tzf TapeSister-linux-x86_64.tar.gz > archive-contents.txt
+          for required in docs/USER_MANUAL.md docs/QUICK_REFERENCE.md docs/ROUTING_MATRIX.md docs/ASIO_AUDIO.md docs/LEGACY_ROUTING.md docs/screenshots/routing-matrix/matrix-signal-activity.png; do
+            grep -Fxq "$required" archive-contents.txt || exit 1
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: TapeSister-linux-x86_64
@@ -110,7 +128,7 @@ jobs:
         run: cmake --build build
       - name: Run audio, keyboard, Insert and Router regression tests
         shell: msys2 {0}
-        run: ctest --test-dir build --output-on-failure -R 'spatial|jack_backend|asio|audio_lifecycle|audio_config|insert_tests|router|master_eq|native_waveform|render_efficiency|test_prism|keyboard_hold|keyboard_sequence|sister_tracker|tracker_playback|tracker_edit|tracker_controller|tapehead_embedded|quick_capture|sample_pages|sister_project_state|core_tests|fm_directions|fm_unison|capture_tests|midi_tests|performance_tests|preview_loop|realtime_edits|realtime_controller|realtime_diagnostics|audio_health|sister_post_fx|sister_modulation|sister_routes|note_bank_stereo|performance_stereo'
+        run: ctest --test-dir build --output-on-failure -R 'routing_matrix|source_route|spatial|jack_backend|asio|audio_reconfigure|audio_lifecycle|audio_config|insert_tests|router|master_eq|native_waveform|render_efficiency|test_prism|keyboard_hold|keyboard_sequence|sister_tracker|tracker_playback|tracker_edit|tracker_controller|tapehead_embedded|quick_capture|sample_pages|sister_project_state|core_tests|fm_directions|fm_unison|capture_tests|midi_tests|performance_tests|preview_loop|realtime_edits|realtime_controller|realtime_diagnostics|audio_health|sister_post_fx|sister_modulation|sister_routes|note_bank_stereo|performance_stereo'
       - name: Run package regression guard
         if: github.event_name == 'pull_request'
         shell: msys2 {0}

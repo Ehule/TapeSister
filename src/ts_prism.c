@@ -450,10 +450,10 @@ static float glass_channel(float x, float *low, float *memory, const TsPrismGlas
         mix[TS_PRISM_MENISCUS_NEGATIVE] * (phase_driven - x);
 }
 
-TsStereoFrame ts_prism_process(TsPrism *p, TsStereoFrame input)
+static TsStereoFrame prism_process(TsPrism *p, TsStereoFrame input,int wet_only)
 {
     input = ts_stereo_frame_sanitize(input);
-    if (!p || !p->history) return input;
+    if (!p || !p->history) return wet_only?(TsStereoFrame){0,0}:input;
     p->history[p->write] = input; /* Always prime: no stale audio on engagement. */
     const TsPrismControls *c = &p->controls;
 
@@ -589,17 +589,23 @@ TsStereoFrame ts_prism_process(TsPrism *p, TsStereoFrame input)
     }
     if (++p->write == p->capacity) p->write = 0;
     if (++p->clock == 0) p->analysis_remaining = 0;
-    if (p->wet == 0 && p->dry == 1) return input; /* Exact settled bypass, including output trim. */
+    if (p->wet == 0 && p->dry == 1) return wet_only?(TsStereoFrame){0,0}:input;
     /* Root-sum-square compensation preserves decorrelated voice energy,
        including the actual stereo balance and smoothed lens fades. A floor
        of one avoids boosting the first samples of engagement. Correlated
        peaks intentionally reach the existing final linked limiter. */
     float gain_l = p->gain / sqrtf(fmaxf(1, energy_l));
     float gain_r = p->gain / sqrtf(fmaxf(1, energy_r));
+    float dry=wet_only?0:p->dry;
     return ts_stereo_frame_sanitize((TsStereoFrame){
-        input.l * p->dry + sum.l * gain_l * p->wet,
-        input.r * p->dry + sum.r * gain_r * p->wet});
+        input.l * dry + sum.l * gain_l * p->wet,
+        input.r * dry + sum.r * gain_r * p->wet});
 }
+
+TsStereoFrame ts_prism_process(TsPrism *p,TsStereoFrame input)
+{return prism_process(p,input,0);}
+TsStereoFrame ts_prism_process_send(TsPrism *p,TsStereoFrame input)
+{return prism_process(p,input,1);}
 
 TsPrismView ts_prism_view(const TsPrism *p)
 {

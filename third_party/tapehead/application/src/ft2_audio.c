@@ -505,6 +505,8 @@ static void voiceTriggerData(voice_t *v, sample_t *s, int32_t position)
 	v->mixFuncOffset = ((int32_t)sample16Bit * 15) + (audio.interpolationType * 3) + loopType;
 #ifdef TAPEHEAD_EMBEDDED
 	v->tileData = s->tileData;
+	v->tileId=s->tileId;v->tileRouteIndex=s->tileRouteIndex;v->tileRoute=s->tileRoute;v->tileLane=-1;
+	memset(&v->tileRouting,0,sizeof(v->tileRouting));
 	v->tileChannels = s->tileChannels;
 	v->tilePosition = v->position;
 	v->tileDirection = 1;
@@ -912,6 +914,9 @@ static void doChannelMixing(int32_t bufferPosition, int32_t samplesToMix,
 
 	for (int32_t i = 0; i < song.numChannels; i++, v++, r++)
 	{
+#ifdef TAPEHEAD_EMBEDDED
+        v->tileLane=r->tileLane=i;
+#endif
 		if (audio.monoOutputMode)
 		{
 			/*
@@ -1640,6 +1645,11 @@ static void fillVisualsSyncBuffer(void)
 	for (int32_t i = 0; i < song.numChannels; i++, c++, s++, v++)
 	{
 		c->scopeVolume = v->scopeVolume;
+#ifdef TAPEHEAD_EMBEDDED
+		c->scopePan = s->finalPan;
+		c->scopeTileId = v->tileId;
+		c->scopeTileRouteIndex = v->tileRouteIndex;
+#endif
 		c->period = s->finalPeriod;
 		c->instrNum = s->instrNum;
 		c->smpNum = s->smpNum;

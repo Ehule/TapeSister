@@ -1,4 +1,10 @@
-# Router Performance
+# Legacy Router Performance
+
+> The following documents the earlier serial Router and its historical F9 →
+> PERFORMANCE panel. Current F9 opens the [Routing Matrix](ROUTING_MATRIX.md).
+> These state slots/timers do not sequence matrix patches or affect its graph.
+> **MATRIX LIVE** means active routing only. A matrix patch-state sequencer is
+> not implemented; Prism's Morph Matrix remains separate.
 
 Open **F9 → PERFORMANCE**. Router Performance controls when the existing macro
 stages participate: PRISM, SISTER MACHINE, FALLOUT, PEDALBOARD and INSERT. It never

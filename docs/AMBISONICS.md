@@ -1,6 +1,10 @@
 # Ambisonics output
 
-**F9 → AMBISONICS**, or **Ctrl+F9**, opens a separate, modeless window. The
+**Ctrl+F9** opens a separate, modeless window (older Router panels also had
+F9 → AMBISONICS). This stage belongs to the **legacy output path**. An active
+[routing matrix](ROUTING_MATRIX.md) writes physical output pairs directly and
+bypasses Ambisonics processing/speaker assignments. The controls below describe
+legacy spatial playback. The
 stage starts **off**. Closing its window leaves audio and modulation running.
 Click the top **STEREO / ENABLED** button to bypass or engage the stage.
 

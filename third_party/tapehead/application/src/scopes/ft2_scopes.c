@@ -28,6 +28,11 @@ static volatile bool scopesUpdatingFlag, scopesDisplayingFlag;
 static hpc_t scopeHpc;
 static volatile scope_t scope[MAX_CHANNELS];
 static SDL_Thread *scopeThread;
+#ifdef TAPEHEAD_EMBEDDED
+/* UI-owned, populated by the existing audio/display sync queue. */
+static uint8_t scopePan[MAX_CHANNELS];
+static int16_t scopeDisplayedPan[MAX_CHANNELS];
+#endif
 
 lastChInstr_t lastChInstr[MAX_CHANNELS]; // global
 
@@ -234,6 +239,28 @@ static void drawTrackTrimIndicator(uint16_t scopeX, uint16_t scopeY,
 	hLine(x, unityY, width, PAL_FORGRND);
 }
 
+#ifdef TAPEHEAD_EMBEDDED
+static void drawScopePan(uint16_t x, uint16_t y, uint16_t width, int32_t ch)
+{
+	/* Leave the number/REC rows and the right-edge trim strip unobstructed. */
+	const int32_t left = x + 1;
+	const int32_t right = x + width - tapeheadConfig.trackTrimDisplayWidth - 2;
+	if (right < left)
+		return;
+	const int32_t center = (left + right + 1) / 2;
+	const int32_t pan = ts_tapehead_scope_pan(ch, scopePan[ch]);
+	scopeDisplayedPan[ch] = (int16_t)pan;
+	const int32_t panX = left + (pan * (right - left) + 127) / 255;
+	const uint8_t color = editor.channelMuted[ch] || performanceMute[ch]
+		? PAL_DSKTOP1 : PAL_MOUSEPT;
+
+	/* Short center ticks remain visible on either end of the moving line. */
+	vLine(center, y + 9, 3, PAL_BUTTONS);
+	vLine(center, y + 28, 3, PAL_BUTTONS);
+	vLine(panX, y + 12, 16, color);
+}
+#endif
+
 static void redrawScope(int32_t ch)
 {
 	if (!ui.scopesShown)
@@ -290,6 +317,9 @@ static void redrawScope(int32_t ch)
 
 	drawOutputBusMarker(x + 1, y + 1, scopeLen, i);
 	drawTrackTrimIndicator(x + 1, y + 1, scopeLen, i);
+#ifdef TAPEHEAD_EMBEDDED
+	drawScopePan(x + 1, y + 1, scopeLen, i);
+#endif
 	scope[ch].wasCleared = false;
 }
 
@@ -671,6 +701,15 @@ void drawScopes(void)
 		}
 
 		const uint16_t scopeDrawLen = scopeLens[i];
+#ifdef TAPEHEAD_EMBEDDED
+		/* Route edits are independent of the audio queue. Clear old markers
+		   on silent scopes too, and repaint the dimmed marker over mute X. */
+		if (scopeDisplayedPan[i] != ts_tapehead_scope_pan(i, scopePan[i]))
+		{
+			scope[i].wasCleared = false;
+			if (editor.channelMuted[i])redrawScope(i);
+		}
+#endif
 		if (editor.channelMuted[i]) // scope muted (mute graphics blit()'ed elsewhere)
 		{
 			scopeXOffs += scopeDrawLen+3; // align x to next scope
@@ -725,6 +764,9 @@ void drawScopes(void)
 
 		drawOutputBusMarker(scopeXOffs, scopeYOffs, scopeDrawLen, i);
 		drawTrackTrimIndicator(scopeXOffs, scopeYOffs, scopeDrawLen, i);
+#ifdef TAPEHEAD_EMBEDDED
+		drawScopePan(scopeXOffs, scopeYOffs, scopeDrawLen, i);
+#endif
 
 		// draw rec. symbol (if enabled)
 		if (config.multiRecChn[i])
@@ -750,6 +792,19 @@ void handleScopesFromChQueue(chSyncData_t *chSyncData, uint8_t *scopeUpdateStatu
 	for (int32_t i = 0; i < song.numChannels; i++, sc++, ch++)
 	{
 		const uint8_t status = scopeUpdateStatus[i];
+#ifdef TAPEHEAD_EMBEDDED
+		/* Retain the tile after stop, but replace it on the next voice trigger.
+		   Its stable ID prevents a rebound alias from borrowing another route. */
+		if (ch->scopeTileId || (status & CS_TRIGGER_VOICE))
+			ts_tapehead_scope_source(i, ch->scopeTileId, ch->scopeTileRouteIndex);
+		/* A muted channel is reset to center by FT2. Retain its last position
+		   for the dimmed marker; live/performance-muted tracks follow pan FX. */
+		if (!editor.channelMuted[i] && scopePan[i] != ch->scopePan)
+		{
+			scopePan[i] = ch->scopePan;
+			sc->wasCleared = false; /* Pan can change on a silent/ended voice. */
+		}
+#endif
 
 		if (status & CS_UPDATE_VOL)
 			sc->volume = ch->scopeVolume;
@@ -809,6 +864,12 @@ static int32_t scopeThreadFunc(void *ptr)
 bool initScopes(void)
 {
 #ifdef TAPEHEAD_EMBEDDED
+	for (int32_t i = 0; i < MAX_CHANNELS; i++)
+	{
+		scopePan[i] = 128;
+		scopeDisplayedPan[i] = -1;
+		scope[i].wasCleared = false;
+	}
 	return true;
 #endif
 	scopeThread = SDL_CreateThread(scopeThreadFunc, "scope thread", NULL);
@@ -824,4 +885,13 @@ bool initScopes(void)
 
 #ifdef TAPEHEAD_EMBEDDED
 void tapeheadEmbeddedScopeTick(void) { updateScopes(); }
+void tapeheadEmbeddedScopeReset(int32_t ch)
+{
+	if (ch < 0 || ch >= MAX_CHANNELS)return;
+	scope[ch].active = false;
+	scope[ch].wasCleared = false;
+	scopePan[ch] = 128;
+	scopeDisplayedPan[ch] = -1;
+	lastChInstr[ch].instrNum = lastChInstr[ch].smpNum = 255;
+}
 #endif

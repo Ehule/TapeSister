@@ -22,6 +22,12 @@ can continue. Voice counts are instances across playback routes, not distinct
 pitches. Prism's base mode/lens count are configured values; Matrix morphs can
 use different values.
 
+With **Unified routing matrix: ON**, the report lists active connections with
+levels and row pan, names the hardware pairs, and labels legacy order/source
+switches/Insert assignments as inactive. Processor power remains relevant. For
+actual signal activity, use the softly fading indicators in [F9](ROUTING_MATRIX.md);
+the setup snapshot reports controls, not measured sound.
+
 Setup is copied at most four times per second while the monitor is visible,
 during the UI's existing locked state read. Formatting happens after that lock
 is released; this adds no audio-callback work or additional lock acquisition.
@@ -39,7 +45,8 @@ investigate. Before the first UI snapshot it reports that setup is unavailable.
 | Maximum hold / over buffer | Time an instrument control held the existing output-device lock after acquiring it. Nested locks count as one outer hold. Holds reaching one buffer duration are counted. |
 | Maximum UI wait | Time a control spent waiting to acquire that lock. It is distinct from the period during which that control excluded playback. |
 | ASIO driver reports | Native stream status reported by RtAudio; it may cover input or output. |
-| ASIO control-lock skips | The native callback could not acquire the shared control mutex, so it skipped processing and left its output buffer silent. |
+| ASIO control-lock skips | The callback could not acquire the shared control mutex within its bounded retry budget, so the buffer was silent. |
+| ASIO short-lock recoveries | An initially busy control mutex became available within the smaller of 0.5 ms and one eighth of the buffer period; the callback rendered rather than skipping that buffer. |
 | JACK worker queue gaps | Native JACK worker deadline/queue failures. These do not identify which operation caused them. |
 
 Other SDL backends show that dropout counters are unavailable. A zero timing
@@ -47,7 +54,7 @@ counter does not certify clean hardware output. Start gaps can include operating
 system scheduling, backend buffering and callback batching; they do not by
 themselves prove a dropout or identify a control as its cause. Callback processing
 time excludes native capture processing, driver work and time spent waiting
-outside the application callback. The monitor does not measure external Insert
+outside the application callback, including the ASIO short-lock retry. The monitor does not measure external Insert
 latency, acoustic latency or waveform discontinuities.
 
 The report includes the longest control-hold call site to help locate expensive
@@ -63,7 +70,8 @@ while audio runs; the recent load window is published consistently.
 
 Timing uses two performance-counter reads per output callback and per outer
 control hold (plus one before acquisition to separate wait). Counter updates are
-bounded, with no allocation, logging, extra lock or retry loop in the callback.
+bounded, with no allocation, logging, extra lock or retry loop added by the
+telemetry. The ASIO adapter separately uses the bounded retry described above.
 Instrumentation is enabled only when its atomics are lock-free. Rendering,
 formatting and clipboard work stay on the UI thread. The visible panel updates
 at most four times per second, uses no vsync wait, and does no drawing when hidden

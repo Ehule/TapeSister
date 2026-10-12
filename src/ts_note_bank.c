@@ -224,6 +224,11 @@ TsNoteStartResult ts_note_bank_start_tuned_event(
         voice->attack_frames = ts_audition_attack_frames(
             output_rate, bank->attack_ms);
         voice->source = source;
+        if(instrument->selected_slot>=0 && instrument->selected_slot<TS_BANK_SLOT_COUNT) {
+            const TsBankSlot *slot=&instrument->bank[instrument->selected_slot];
+            voice->route_tile=slot->tile_id;
+            ts_source_route_set(&voice->output_route,slot->output_route,(unsigned)output_rate);
+        }
         voice->serial = ++bank->next_serial;
         voice->origin = event->origin;
         voice->note = event->key;
@@ -518,11 +523,12 @@ TsStereoFrame ts_note_voice_read(TsNoteVoice *voice)
     return value;
 }
 
-void ts_note_bank_read_buses(TsNoteBank *bank,
+void ts_note_bank_read_routed(TsNoteBank *bank,
                              TsStereoFrame *sample_output,
                              TsStereoFrame *fm_output,
-                             TsStereoFrame *synth_capture)
+                             TsStereoFrame *synth_capture, TsSourceRouteMix *clean)
 {
+    TsSourceRouteMix direct;ts_source_route_mix_init(&direct,clean);
     TsStereoFrame sample = {0.0f, 0.0f};
     TsStereoFrame synth = {0.0f, 0.0f};
     int count = 0;
@@ -532,7 +538,7 @@ void ts_note_bank_read_buses(TsNoteBank *bank,
     if (fm_output != NULL) *fm_output = (TsStereoFrame){0.0f, 0.0f};
     if (synth_capture != NULL) *synth_capture = (TsStereoFrame){0.0f, 0.0f};
     if (bank == NULL) return;
-    if (!bank->render_limit && !bank->normalization_count &&
+    if (!bank->clean_handoff.last.mask && !bank->render_limit && !bank->normalization_count &&
         ts_voice_handoff_idle(&bank->sample_handoff) &&
         ts_voice_handoff_idle(&bank->fm_handoff) &&
         ts_voice_handoff_idle(&bank->capture_handoff)) return;
@@ -548,6 +554,7 @@ void ts_note_bank_read_buses(TsNoteBank *bank,
             synth.r += value.r;
             ++synth_count;
         } else {
+            value=ts_source_route_frame(&voice->output_route,value,clean?&direct:NULL);
             sample.l += value.l;
             sample.r += value.r;
         }
@@ -569,6 +576,12 @@ void ts_note_bank_read_buses(TsNoteBank *bank,
         sample.l *= gain; sample.r *= gain;
         synth.l *= gain; synth.r *= gain;
     }
+    if(clean) {
+        TsSourceRouteMix scaled;ts_source_route_mix_init(&scaled,clean);
+        ts_source_route_add(&scaled,&direct,count>0?bank->normalization_gain:1.f);
+        ts_source_route_handoff(&bank->clean_handoff,&scaled,changed,bank->handoff_frames);
+        ts_source_route_add(clean,&scaled,1);
+    }
     TsStereoFrame capture = {synth.l * bank->normalization_capture_gain,
                               synth.r * bank->normalization_capture_gain};
     sample = ts_voice_handoff_process(&bank->sample_handoff, sample, changed, bank->handoff_frames);
@@ -578,6 +591,10 @@ void ts_note_bank_read_buses(TsNoteBank *bank,
     if (fm_output != NULL) *fm_output = synth;
     if (synth_capture != NULL) *synth_capture = capture;
 }
+
+void ts_note_bank_read_buses(TsNoteBank *bank, TsStereoFrame *sample,
+                             TsStereoFrame *fm,TsStereoFrame *capture)
+{ ts_note_bank_read_routed(bank,sample,fm,capture,NULL); }
 
 TsStereoFrame ts_note_bank_read_stereo(TsNoteBank *bank)
 {

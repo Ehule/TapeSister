@@ -1,5 +1,11 @@
 # Sister Machine PR2 audio-bus contract
 
+> Historical implementation reference. The current user workflow is documented
+> in the [User Manual](USER_MANUAL.md), [Routing Matrix](ROUTING_MATRIX.md) and
+> [TrackSister guide](SISTERTRACKER_PLAYBACK.md). Earlier serial/source-switch
+> paths, format versions and staged limitations below describe their original
+> implementation, not the current matrix defaults.
+
 > PR9 extension: `post_fx` is now an explicit stereo contribution. With Sister
 > active it is owned inside the Sister MIX result; with POWER off it replaces
 > the once-only legacy program/EXT contribution before hardware output.
@@ -91,7 +97,7 @@ post-OUT, immediately before linked safety, and has no return to rolling memory.
 continues to consume the published taps. See `SISTER_MACHINE_SOAK_BLEED.md` for the
 complete audited order, mappings and mono contract.
 
-## Current Global Router boundary
+## Legacy Global Router boundary
 
 `TsRouter` traverses a validated permutation of stable processor IDs. The
 runtime adapter supplies Prism, Sister, Fallout, Pedalboard and External Insert. Source

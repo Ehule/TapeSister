@@ -14,6 +14,7 @@ typedef struct {
     int prism, prism_mode, prism_lenses, prism_sequence, prism_matrix;
     int send_assigned, send_available, return_available, router_sequence;
     TsRouterControls router;
+    TsMatrixControls matrix;
     float router_wet[TS_ROUTER_COUNT];
 } TsAudioHealthSetup;
 
@@ -25,8 +26,8 @@ typedef struct {
     Uint32 window_id, last_update, last_callback, message_until;
     uint64_t seen_callbacks;
     uint32_t device_generation;
-    unsigned driver_base, control_base, worker_base;
-    unsigned driver_reports, control_skips, worker_gaps;
+    unsigned driver_base, control_base, recovery_base, worker_base;
+    unsigned driver_reports, control_skips, control_recoveries, worker_gaps;
     int visible, native_kind;
     TsRealtimeDiagnosticsSnapshot snapshot;
     TsAudioHealthSetup setup;
@@ -88,7 +89,7 @@ static void ts_audio_health_capture_setup(const AudioState *audio,
     s->send_assigned = r->insert.controls.send_pair > 0;
     s->send_available = ts_insert_send_available(&r->insert);
     s->return_available = ts_insert_return_available(&r->insert);
-    s->router = r->router.controls;
+    s->router = r->router.controls;s->matrix=r->matrix.controls;
     memcpy(s->router.order, r->router.order, sizeof(s->router.order));
     memcpy(s->router_wet, r->router.wet, sizeof(s->router_wet));
     s->router_sequence = r->router.transport.running;
@@ -99,6 +100,7 @@ static const char *health_on(int enabled) { return enabled ? "ON" : "OFF"; }
 static const char *health_running(int running) { return running ? "RUNNING" : "STOPPED"; }
 static const char *health_route(const TsAudioHealthSetup *s, int stage)
 {
+    if(s->matrix.enabled)return stage==TS_ROUTER_INSERT?"legacy inactive":"matrix node";
     int active = ts_router_active(&s->router, stage);
     float wet = s->router_wet[stage];
     if (active && wet < .99999f) return "routing in";
@@ -152,6 +154,21 @@ static void ts_audio_health_setup_report(char *text, size_t size, Uint32 now)
         ts_router_name(s->router.order[2]), ts_router_name(s->router.order[3]),
         ts_router_name(s->router.order[4]), health_running(s->router_sequence),
         health_on(s->board), health_route(s, TS_ROUTER_PEDALBOARD), enabled_slots);
+    if(s->matrix.enabled) {
+        size_t used=strlen(text);
+        snprintf(text+used,size-used,"  Unified routing matrix: ON; legacy order, source switches and Insert assignments above are inactive.\n");
+        for(int row=0;row<TS_MATRIX_ROWS;++row)for(int d=0;d<TS_MATRIX_DESTINATIONS;++d) {
+            int gain=s->matrix.row[row].matrix_gain[d];if(!gain)continue;
+            char from[64],to[64];
+            if(row<TS_MATRIX_NODES)snprintf(from,sizeof(from),"%s",ts_matrix_node_name(row));
+            else if(row<TS_MATRIX_FM)snprintf(from,sizeof(from),"IN %d/%d %.23s",(row-TS_MATRIX_NODES)*2+1,(row-TS_MATRIX_NODES)*2+2,s->matrix.input_name[row-TS_MATRIX_NODES]);
+            else snprintf(from,sizeof(from),"%s",row==TS_MATRIX_FM?"FM":"LIVE LINK");
+            if(d<TS_MATRIX_NODES)snprintf(to,sizeof(to),"%s",ts_matrix_node_name(d));
+            else snprintf(to,sizeof(to),"OUT %d/%d %.23s",(d-TS_MATRIX_NODES)*2+1,(d-TS_MATRIX_NODES)*2+2,s->matrix.output_name[d-TS_MATRIX_NODES]);
+            used=strlen(text);snprintf(text+used,size-used,"    %s -> %s: %+.1f dB; pan %d%s\n",from,to,20*log10f(gain*.001f),s->matrix.row[row].pan,
+                row<TS_MATRIX_NODES && (s->matrix.delayed[row]&(1u<<d))?"; feedback delayed 64 samples":"");
+        }
+    }
     for (int i = 0; i < TS_SISTER_FX_SLOT_COUNT; ++i) {
         const TsSisterFxSlotControls *slot = &s->slot[i];
         char places[48] = "";
@@ -174,14 +191,15 @@ static void ts_audio_health_setup_report(char *text, size_t size, Uint32 now)
 static unsigned health_count(uint64_t value)
 { return value > 999999u ? 999999u : (unsigned)value; }
 
-static void ts_audio_health_native(unsigned *driver, unsigned *control, unsigned *worker, int *kind)
+static void ts_audio_health_native(unsigned *driver, unsigned *control, unsigned *recovered, unsigned *worker, int *kind)
 {
-    *driver = *control = *worker = 0; *kind = 0;
+    *driver = *control = *recovered = *worker = 0; *kind = 0;
 #if defined(TAPESISTER_HAS_ASIO)
     if (ts_asio_owns(ts_real_output)) {
         *kind = 1;
         *driver = ts_asio_driver_xruns();
         *control = ts_asio_control_skips();
+        *recovered = ts_asio_control_recoveries();
         return;
     }
 #endif
@@ -196,18 +214,20 @@ static void ts_audio_health_native(unsigned *driver, unsigned *control, unsigned
 
 static void ts_audio_health_sample(AudioState *audio, Uint32 now)
 {
-    unsigned driver, control, worker;
-    ts_audio_health_native(&driver, &control, &worker, &ts_health.native_kind);
+    unsigned driver, control, recovered, worker;
+    ts_audio_health_native(&driver, &control, &recovered, &worker, &ts_health.native_kind);
     if (ts_health.device_generation != audio->audio_health_generation) {
         ts_health.device_generation = audio->audio_health_generation;
-        ts_health.driver_base = ts_health.control_base = ts_health.worker_base = 0;
+        ts_health.driver_base = ts_health.control_base = ts_health.recovery_base = ts_health.worker_base = 0;
     }
     /* Native counters restart with their device. Also tolerate counter wrap. */
     if (driver < ts_health.driver_base) ts_health.driver_base = 0;
     if (control < ts_health.control_base) ts_health.control_base = 0;
+    if (recovered < ts_health.recovery_base) ts_health.recovery_base = 0;
     if (worker < ts_health.worker_base) ts_health.worker_base = 0;
     ts_health.driver_reports = driver - ts_health.driver_base;
     ts_health.control_skips = control - ts_health.control_base;
+    ts_health.control_recoveries = recovered - ts_health.recovery_base;
     ts_health.worker_gaps = worker - ts_health.worker_base;
     ts_realtime_diagnostics_get(&audio->realtime_diagnostics, &ts_health.snapshot);
     if (ts_health.snapshot.callback_count != ts_health.seen_callbacks) {
@@ -225,7 +245,7 @@ static void ts_audio_health_reset(AudioState *audio)
     ts_realtime_diagnostics_reset(&audio->realtime_diagnostics);
     if (real) ts_native_unlock(real);
     ts_audio_health_native(&ts_health.driver_base, &ts_health.control_base,
-                          &ts_health.worker_base, &ts_health.native_kind);
+                          &ts_health.recovery_base, &ts_health.worker_base, &ts_health.native_kind);
     ts_health.device_generation = audio->audio_health_generation;
     ts_profile_reset();
     ts_health.seen_callbacks = 0;
@@ -257,7 +277,8 @@ static void ts_audio_health_report(AudioState *audio, char *report, size_t size)
         "Maximum UI lock-acquisition wait: %.3f ms\n"
         "Longest hold call site: %s\n"
         "Native counters available: %s\n"
-        "ASIO driver reports: %u; ASIO control-lock skips: %u; JACK worker gaps: %u\n"
+        "ASIO driver reports: %u; ASIO control-lock skips: %u; ASIO short-lock recoveries: %u; JACK worker gaps: %u\n"
+        "ASIO retries brief control overlaps for at most 0.5 ms or 1/8 buffer; callback timings exclude this wait.\n"
         "Callback configuration: 0x%04x\n"
         "Start gaps may include scheduling/backend batching; they do not prove a dropout.\n"
         "Control wait is UI waiting to acquire a lock; hold is time playback is excluded.\n"
@@ -281,7 +302,7 @@ static void ts_audio_health_report(AudioState *audio, char *report, size_t size)
         (unsigned long long)s->control_long_holds, s->control_wait_worst_microseconds / 1000,
         s->control_worst_site ? s->control_worst_site : "none",
         ts_health.native_kind == 1 ? "ASIO" : ts_health.native_kind == 2 ? "JACK worker" : "not exposed by this backend",
-        ts_health.driver_reports, ts_health.control_skips, ts_health.worker_gaps,
+        ts_health.driver_reports, ts_health.control_skips, ts_health.control_recoveries, ts_health.worker_gaps,
         s->active_configuration);
     size_t used = strlen(report);
     if (used + 2 < size) { report[used++] = '\n'; ts_profile_report(report + used, size-used); }
@@ -370,8 +391,9 @@ static void ts_audio_health_draw(TsFramebuffer *fb, const TsUiState *ui,
     cfg_rect(fb, 20, 296, 600, 1, edge);
     cfg_text(fb, 20, 308, "BACKEND SIGNALS", accent);
     if (ts_health.native_kind == 1)
-        snprintf(line, sizeof(line), "DRIVER REPORTS %u    CONTROL-LOCK SKIPS %u",
-                 health_count(ts_health.driver_reports), health_count(ts_health.control_skips));
+        snprintf(line, sizeof(line), "DRIVER %u   LOCK SKIPS %u   RECOVERED %u",
+                 health_count(ts_health.driver_reports), health_count(ts_health.control_skips),
+                 health_count(ts_health.control_recoveries));
     else if (ts_health.native_kind == 2)
         snprintf(line, sizeof(line), "WORKER QUEUE GAPS %u", health_count(ts_health.worker_gaps));
     else snprintf(line, sizeof(line), "DROPOUT COUNTERS NOT EXPOSED BY THIS BACKEND");

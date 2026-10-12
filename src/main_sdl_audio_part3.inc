@@ -524,67 +524,39 @@ static int ts_audio_main_config_write(const TsConfig *config, const char *path,
     return 1;
 }
 
+static int ts_audio_reopen_required(const TsConfig *config)
+{
+    return config->audio_backend != ts_started_backend || (ts_asio_selected &&
+        (ts_output_desired.samples != (Uint16)config->audio_buffer_frames ||
+         strcmp(config->audio_output_device,ts_active_output)));
+}
+
+#include "main_sdl_audio_reconfigure.inc"
+
 static int ts_audio_main_config_save(const TsConfig *config, const char *path,
                                      char *error, size_t error_size)
 {
     char midi_error[160];
-    char switch_error[160];
-    int output_changed;
-    /* Backend catalogs and ASIO drivers cannot be switched by reopening just
-       one endpoint. Persist the request, keep current streams intact and make
-       the required restart explicit. Do not reopen old-backend device names. */
-    int backend_changed = config->audio_backend != ts_started_backend;
-    if (backend_changed && ts_live_ui && config == &ts_live_ui->config) {
-        TsConfig *editable = &ts_live_ui->config;
-        editable->audio_output_device[0] = 0;
-        editable->record_input_device[0] = 0;
-        editable->insert_send_device[0] = 0;
-        editable->insert_return_device[0] = 0;
-    }
-    if (!ts_audio_main_config_write(config, path, error, error_size)) return 0;
     ts_live_config = (TsConfig *)config;
-    if (backend_changed || (ts_asio_selected &&
-        (ts_output_desired.samples != (Uint16)config->audio_buffer_frames ||
-         strcmp(config->audio_output_device, ts_active_output)))) {
-        snprintf(ts_pending_notice, sizeof(ts_pending_notice),
-                 "CONFIG SAVED - RESTART REQUIRED FOR %s DRIVER / BUFFER",
-                 ts_audio_backend_name(config->audio_backend));
-        return 1;
-    }
-
-    output_changed = ts_real_output == 0 ||
+    ts_pending_notice[0] = 0;
+    int changed = ts_audio_reopen_required(config) || ts_real_output == 0 ||
+        ts_audio_endpoint_should_retry_capture() ||
         ts_output_desired.samples != (Uint16)config->audio_buffer_frames ||
-        (config->audio_output_device[0] == '\0' ?
-         ts_active_output[0] != '\0' :
-         strcmp(config->audio_output_device, ts_active_output) != 0);
-
-    if (output_changed) {
-        if (ts_switch_output_for_config(switch_error, sizeof(switch_error))) {
-            snprintf(ts_pending_notice, sizeof(ts_pending_notice),
-                     "CONFIG SAVED - OUTPUT %.136s",
-                     config->audio_output_device[0] != '\0' ?
-                     config->audio_output_device : "SYSTEM DEFAULT");
-        } else {
-            snprintf(ts_pending_notice, sizeof(ts_pending_notice),
-                     "OUTPUT SWITCH FAILED - KEPT PREVIOUS: %.100s",
-                     switch_error);
-        }
-    } else {
-        snprintf(ts_pending_notice, sizeof(ts_pending_notice),
-                 "CONFIG SAVED - AUDIO DEVICE SETTINGS READY");
-    }
+        strcmp(config->audio_output_device, ts_active_output) ||
+        (ts_real_capture && (!ts_capture_name_matches_config() ||
+         ts_capture_desired.samples != (Uint16)config->audio_buffer_frames));
+    if (ts_output_desired.freq > 0 && changed &&
+        !ts_audio_reconfigure(config, error, error_size)) return 0;
+    if (!ts_audio_main_config_write(config, path, error, error_size)) return 0;
+    ts_mark_capture_config_after_save();
+    snprintf(ts_pending_notice, sizeof(ts_pending_notice),
+             "CONFIG SAVED - %s AUDIO APPLIED (NO APP RESTART)",
+             ts_audio_backend_name(config->audio_backend));
     if (ts_midi_input != NULL &&
         !ts_midi_input_configure(ts_midi_input, config->midi_input_device,
                                  config->midi_input_channel,
                                  midi_error, sizeof(midi_error)))
         snprintf(ts_pending_notice, sizeof(ts_pending_notice),
-                 "CONFIG SAVED - MIDI INPUT UNAVAILABLE: %.104s", midi_error);
-    else if (ts_midi_input != NULL && ts_midi_input_is_active(ts_midi_input))
-        snprintf(ts_pending_notice, sizeof(ts_pending_notice),
-                 "CONFIG SAVED - MIDI READY: %.112s",
-                 ts_midi_input_active_name(ts_midi_input));
-    else if (ts_midi_input != NULL)
-        snprintf(ts_pending_notice, sizeof(ts_pending_notice),
-                 "CONFIG SAVED - MIDI %s",
-                 strcmp(config->midi_input_device, "OFF") == 0 ?
-                 "OFF" : "WAITING FOR AN INPUT");
+                 "AUDIO APPLIED - MIDI INPUT UNAVAILABLE: %.112s", midi_error);
+    return 1;
+}

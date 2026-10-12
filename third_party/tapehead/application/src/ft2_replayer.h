@@ -2,6 +2,9 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#ifdef TAPEHEAD_EMBEDDED
+#include "tapesister/source_route_types.h"
+#endif
 #include "ft2_unicode.h"
 #include "ft2_microtonal.h"
 #include "mixer/ft2_windowed_sinc.h"
@@ -213,6 +216,11 @@ note_t;
 typedef struct syncedChannel_t // used for audio/video sync queue (pack to save RAM)
 {
 	uint8_t status, pianoNoteNum, smpNum, instrNum, scopeVolume;
+#ifdef TAPEHEAD_EMBEDDED
+	uint8_t scopePan;
+	uint64_t scopeTileId;
+	unsigned scopeTileRouteIndex;
+#endif
 	uint16_t period;
 	int32_t smpStartPos;
 }
@@ -230,6 +238,9 @@ typedef struct sample_t
 	char name[22+1];
 #ifdef TAPEHEAD_EMBEDDED
 	float *tileData;
+	uint64_t tileId;
+	unsigned tileRouteIndex;
+	TsSourceRoute tileRoute;
 	uint8_t tileChannels, tileLoopMode;
 	uint32_t tileCrossfade;
 	double tileRateCorrection;

@@ -91,6 +91,18 @@ static TsStereoFrame reverb_effect_mix(TsStereoFrame dry, TsStereoFrame wet,
     return ts_stereo_frame_sanitize(result);
 }
 
+/* Track only the explicit dry path through the existing serial slot chain.
+   The shared send removes that path once, after all slots. This preserves
+   each slot's MIX, gain, morph and tail with one pass through its DSP. */
+static TsStereoFrame slot_mix(TsStereoFrame input,TsStereoFrame wet,float amount,
+    TsSisterFxMixCache *cache,float gain,float active,int reverb,float *direct)
+{
+    TsStereoFrame out=reverb?reverb_effect_mix(input,wet,amount,cache):effect_mix(input,wet,amount,cache);
+    float dry=amount<=0?1:amount>=1?0:cache->dry_gain;
+    *direct=dry*(1+(gain-1)*clampf(active,0,1));
+    return effect_makeup(out,gain,active);
+}
+
 static void ramp_start(TsSisterFxRamp *ramp, float target, uint32_t frames)
 {
     if (ramp == NULL) return;
@@ -864,7 +876,7 @@ void ts_sister_post_fx_sync_controls(TsSisterPostFxEngine *engine,
 static TsStereoFrame distortion_process(TsSisterPostFxEngine *engine,
                                         TsSisterDistortionState *state,
                                         const TsSisterFxSlotControls *control,
-                                        TsStereoFrame input, float gate)
+                                        TsStereoFrame input, float gate, float *direct)
 {
     TsStereoFrame wet = {0.0f, 0.0f};
     float values[2] = {input.l, input.r};
@@ -886,7 +898,8 @@ static TsStereoFrame distortion_process(TsSisterPostFxEngine *engine,
         clampf(gate, 0.0f, 1.0f), engine->smooth_12ms);
     active = clampf(gate, 0.0f, 1.0f);
     if (state->mix_current <= FLT_EPSILON && control->mix <= 0.0f)
-        return effect_makeup(input, state->gain_current, active);
+        { *direct=1+(state->gain_current-1)*active;
+          return effect_makeup(input, state->gain_current, active); }
     if (!state->coefficients_valid || state->drive_cached != state->drive_current ||
         state->tone_cached != state->tone_current) {
         state->drive_cached = state->drive_current;
@@ -916,15 +929,14 @@ static TsStereoFrame distortion_process(TsSisterPostFxEngine *engine,
         *outputs[channel] = soft_clip(dc * (1.35f - 0.35f * state->drive_current));
     }
     wet = ts_stereo_frame_sanitize(wet);
-    return effect_makeup(effect_mix(input, wet,
-        clampf(state->mix_current * active, 0.0f, 1.0f), &state->mix_cache),
-        state->gain_current, active);
+    return slot_mix(input,wet,clampf(state->mix_current*active,0,1),
+        &state->mix_cache,state->gain_current,active,0,direct);
 }
 
 static TsStereoFrame grain_process(TsSisterPostFxEngine *engine,
                                    TsSisterGrainState *state,
                                    const TsSisterFxSlotControls *control,
-                                   TsStereoFrame input, float gate)
+                                   TsStereoFrame input, float gate, float *direct)
 {
     TsStereoFrame wet = {0.0f, 0.0f};
     float energy = 0.0f;
@@ -1010,15 +1022,14 @@ static TsStereoFrame grain_process(TsSisterPostFxEngine *engine,
     if (state->history_frames < state->capacity_frames)
         ++state->history_frames;
 
-    return effect_makeup(effect_mix(input, wet,
-        clampf(state->mix_current * active, 0.0f, 1.0f), &state->mix_cache),
-        state->gain_current, active);
+    return slot_mix(input,wet,clampf(state->mix_current*active,0,1),
+        &state->mix_cache,state->gain_current,active,0,direct);
 }
 
 static TsStereoFrame delay_process(TsSisterPostFxEngine *engine,
                                    TsSisterDelayState *state,
                                    const TsSisterFxSlotControls *control,
-                                   TsStereoFrame input, float gate)
+                                   TsStereoFrame input, float gate, float *direct)
 {
     TsStereoFrame wet = {0.0f, 0.0f};
     TsStereoFrame feedback_read = {0.0f, 0.0f};
@@ -1071,7 +1082,8 @@ static TsStereoFrame delay_process(TsSisterPostFxEngine *engine,
     if (!state->has_history &&
         ((state->mix_current <= FLT_EPSILON && control->mix <= 0.0f) ||
          active <= FLT_EPSILON))
-        return effect_makeup(input, state->gain_current, active);
+        { *direct=1+(state->gain_current-1)*active;
+          return effect_makeup(input, state->gain_current, active); }
     if (active *
         fmaxf(fabsf(input.l), fabsf(input.r)) > 1.0e-12f)
         state->has_history = 1;
@@ -1162,15 +1174,14 @@ static TsStereoFrame delay_process(TsSisterPostFxEngine *engine,
     }
     wet.l = tape_saturate(wet.l);
     wet.r = tape_saturate(wet.r);
-    return effect_makeup(effect_mix(input, wet,
-        clampf(state->mix_current * active, 0.0f, 1.0f), &state->mix_cache),
-        state->gain_current, active);
+    return slot_mix(input,wet,clampf(state->mix_current*active,0,1),
+        &state->mix_cache,state->gain_current,active,0,direct);
 }
 
 static TsStereoFrame reverb_process(TsSisterPostFxEngine *engine,
                                     TsSisterReverbState *state,
                                     const TsSisterFxSlotControls *control,
-                                    TsStereoFrame input, float gate)
+                                    TsStereoFrame input, float gate, float *direct)
 {
     float read_l[TS_SISTER_REVERB_LINES];
     float read_r[TS_SISTER_REVERB_LINES];
@@ -1221,7 +1232,8 @@ static TsStereoFrame reverb_process(TsSisterPostFxEngine *engine,
     if (!state->has_history &&
         ((state->mix_current <= FLT_EPSILON && control->mix <= 0.0f) ||
          active <= FLT_EPSILON))
-        return effect_makeup(input, state->gain_current, active);
+        { *direct=1+(state->gain_current-1)*active;
+          return effect_makeup(input, state->gain_current, active); }
     if (active *
         fmaxf(fabsf(input.l), fabsf(input.r)) > 1.0e-12f)
         state->has_history = 1;
@@ -1329,16 +1341,16 @@ static TsStereoFrame reverb_process(TsSisterPostFxEngine *engine,
     wet.r = feedback_condition(wet.r);
     wet = ts_stereo_frame_sanitize(wet);
     wet = read_handoff_apply(&state->read_handoff, wet);
-    return effect_makeup(reverb_effect_mix(input, wet,
-        clampf(state->mix_current * active, 0.0f, 1.0f), &state->mix_cache),
-        state->gain_current, active);
+    return slot_mix(input,wet,clampf(state->mix_current*active,0,1),
+        &state->mix_cache,state->gain_current,active,1,direct);
 }
 
 static TsStereoFrame slot_effect_process(TsSisterPostFxEngine *engine,
                                          size_t slot, size_t location,
                                          const TsSisterFxSlotControls *control,
-                                         TsStereoFrame input, float gate)
+                                         TsStereoFrame input, float gate, float *direct)
 {
+    *direct=1;
     if (engine == NULL || control == NULL ||
         slot >= TS_SISTER_FX_SLOT_COUNT ||
         location >= TS_SISTER_FX_LOCATION_COUNT)
@@ -1346,16 +1358,16 @@ static TsStereoFrame slot_effect_process(TsSisterPostFxEngine *engine,
     switch (control->type) {
     case TS_SISTER_FX_REVERB:
         return reverb_process(engine, &engine->reverb[slot][location],
-                              control, input, gate);
+                              control, input, gate, direct);
     case TS_SISTER_FX_DELAY:
         return delay_process(engine, &engine->delay[slot][location],
-                             control, input, gate);
+                             control, input, gate, direct);
     case TS_SISTER_FX_DISTORTION:
         return distortion_process(engine,
-            &engine->distortion[slot][location], control, input, gate);
+            &engine->distortion[slot][location], control, input, gate, direct);
     case TS_SISTER_FX_GRAIN:
         return grain_process(engine, &engine->grain[slot][location],
-                             control, input, gate);
+                             control, input, gate, direct);
     default:
         return input;
     }
@@ -1363,7 +1375,7 @@ static TsStereoFrame slot_effect_process(TsSisterPostFxEngine *engine,
 
 static TsStereoFrame process_location(TsSisterPostFxEngine *engine,
                                       size_t location, TsStereoFrame input,
-                                      int explicit_mono, int advance_frame)
+                                      int explicit_mono, int advance_frame, int wet_only)
 {
     uint8_t placement_bit;
     float master_gain;
@@ -1382,30 +1394,34 @@ static TsStereoFrame process_location(TsSisterPostFxEngine *engine,
         return (TsStereoFrame){input.l, input.l};
     }
     placement_bit = (uint8_t)(1u << location);
-    output = input;
+    output = input;float direct=1;
     for (size_t slot = 0u; slot < TS_SISTER_FX_SLOT_COUNT; ++slot) {
         TsSisterFxSlotState *state = &engine->slot[slot];
         TsStereoFrame active_output = output;
         TsStereoFrame pending_output = output;
-        float gate = state->engage.current;
+        float gate = state->engage.current,active_dry=1,pending_dry=1;
         if ((state->active.placement & placement_bit) != 0u)
             active_output = slot_effect_process(engine, slot, location,
-                                                &state->active, output, gate);
+                                                &state->active, output, gate, &active_dry);
         if (state->has_pending) {
             if ((state->pending.placement & placement_bit) != 0u)
                 pending_output = slot_effect_process(
-                    engine, slot, location, &state->pending, output, gate);
+                    engine, slot, location, &state->pending, output, gate, &pending_dry);
             output = lerp_frame(active_output, pending_output,
                                 state->morph.current);
         } else {
             output = active_output;
         }
+        direct*=state->has_pending?active_dry+(pending_dry-active_dry)*state->morph.current:active_dry;
     }
     master_gain = clampf(engine->master_engage.current, 0.0f, 1.0f);
     /* Master is the final return valve. Keep the exact-zero case explicit so
        no processor state, tail, malformed sample, or individual switch can
        contribute even a floating-point residue once the master reaches dry. */
-    if (master_gain <= 0.0f)
+    if(wet_only) {
+        output.l=(output.l-input.l*direct)*master_gain;
+        output.r=(output.r-input.r*direct)*master_gain;
+    } else if (master_gain <= 0.0f)
         output = input;
     else if (master_gain < 1.0f)
         output = lerp_frame(input, output, master_gain);
@@ -1422,7 +1438,7 @@ TsStereoFrame ts_sister_post_fx_process_pre(TsSisterPostFxEngine *engine,
                                             TsStereoFrame input,
                                             int explicit_mono)
 {
-    return process_location(engine, 0u, input, explicit_mono, 0);
+    return process_location(engine, 0u, input, explicit_mono, 0, 0);
 }
 
 TsStereoFrame ts_sister_post_fx_process(TsSisterPostFxEngine *engine,
@@ -1433,7 +1449,13 @@ TsStereoFrame ts_sister_post_fx_process(TsSisterPostFxEngine *engine,
     if (target_index >= TS_SISTER_EFFECT_PROCESSOR_COUNT)
         return ts_stereo_frame_sanitize(input);
     return process_location(engine, target_index + 1u, input, explicit_mono,
-                            target_index == TS_SISTER_EFFECT_PROCESSOR_COUNT - 1u);
+                            target_index == TS_SISTER_EFFECT_PROCESSOR_COUNT - 1u, 0);
+}
+
+TsStereoFrame ts_sister_post_fx_process_send(TsSisterPostFxEngine *engine,TsStereoFrame input)
+{
+    if(!engine || !engine->ready)return (TsStereoFrame){0,0};
+    return process_location(engine,TS_SISTER_FX_LOCATION_COUNT-1,input,0,1,1);
 }
 
 float ts_sister_post_fx_master_engage(const TsSisterPostFxEngine *engine)

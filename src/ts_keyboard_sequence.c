@@ -32,7 +32,7 @@ void ts_keyboard_sequence_init(TsKeyboardSequence *s)
 static void release_voices(TsKeyboardSequence *s)
 {
     memset(s->voices, 0, sizeof(s->voices));
-    s->fade_from = s->last; s->fade_remaining = s->fade_frames;
+    s->fade_from = s->last;s->clean_fade_from=s->clean_last; s->fade_remaining = s->fade_frames;
 }
 
 static void stop_notes(TsKeyboardSequence *s)
@@ -526,9 +526,9 @@ void ts_keyboard_sequence_source_free(TsKeyboardSequenceSource *source)
     ts_sample_free(&source->sample); free(source);
 }
 
-TsStereoFrame ts_keyboard_sequence_read(TsKeyboardSequence *s, int rate)
+TsStereoFrame ts_keyboard_sequence_read_routed(TsKeyboardSequence *s, int rate,TsSourceRouteMix *clean)
 {
-    TsStereoFrame out = {0};
+    TsStereoFrame out = {0};TsSourceRouteMix direct;ts_source_route_mix_init(&direct,clean);
     if (rate <= 0) { ts_keyboard_sequence_stop(s); s->last = out; return out; }
     s->fade_frames = (unsigned)(rate / 200); /* 5 ms boundary/Stop de-click. */
     if (s->slot_rate != rate) {
@@ -555,7 +555,9 @@ TsStereoFrame ts_keyboard_sequence_read(TsKeyboardSequence *s, int rate)
             float gate = (float)s->gate_current;
             for (int i = 0; i < s->source->count; ++i) {
                 TsStereoFrame frame = ts_note_voice_read(&s->voices[i]);
-                out.l += frame.l * gate; out.r += frame.r * gate;
+                frame.l*=gate;frame.r*=gate;
+                if(!s->source->fm)frame=ts_source_route_frame(&s->voices[i].output_route,frame,clean?&direct:NULL);
+                out.l += frame.l; out.r += frame.r;
             }
         }
         s->elapsed += 1.0 / rate;
@@ -565,9 +567,13 @@ fade:
         float from = (float)s->fade_remaining / s->fade_frames;
         out.l = out.l * (1 - from) + s->fade_from.l * from;
         out.r = out.r * (1 - from) + s->fade_from.r * from;
+        if(clean) {
+            TsSourceRouteMix next={0};ts_source_route_add(&next,&direct,1-from);
+            ts_source_route_add(&next,&s->clean_fade_from,from);direct=next;
+        }
         --s->fade_remaining;
     }
-    s->last = ts_stereo_frame_sanitize(out);
+    s->last = ts_stereo_frame_sanitize(out);s->clean_last=direct;
     /* Keep boundary history unscaled: applying gain before that history would
        attenuate it repeatedly at note changes. This stage owns only ARP voices. */
     double slew = 2.0 / (.005 * rate);
@@ -583,8 +589,11 @@ fade:
     }
     out.l = s->last.l * s->effective_gain;
     out.r = s->last.r * s->effective_gain;
+    if(clean)ts_source_route_add(clean,&direct,s->effective_gain);
     return ts_stereo_frame_sanitize(out);
 }
+TsStereoFrame ts_keyboard_sequence_read(TsKeyboardSequence *s,int rate)
+{ return ts_keyboard_sequence_read_routed(s,rate,NULL); }
 
 uint32_t ts_keyboard_sequence_mask(const TsKeyboardSequenceSettings *settings, int base)
 {

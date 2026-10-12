@@ -22,8 +22,9 @@ Its upstream repository is unchanged. The imported source is pinned to
    controls whether the editor follows playback; see live editing below.
 4. F10, Escape or Canvas returns to the canvas. Playback continues when
    the workspace is hidden. F10 returns to the same score and transport.
-5. F9 opens the existing Router. Enable TRACK as a Sister source to feed the
-   tracker into the routed processing chain. F12 opens Audio Health.
+5. F9 opens the routing matrix. New tracks feed Main → EQ → limiter → OUT 1/2.
+   Patch track rows into Sister to feed its tape; enable POWER/ROLL, release HOLD,
+   and enable MONITOR to hear its return. F12 opens Audio Health.
 6. Ctrl+S / Ctrl+O use TapeSister's project save/open flow.
 
 **FX**, **Prism**, **Sister** and **Fallout** open the corresponding existing
@@ -42,6 +43,43 @@ of 24 slots. Empty slots and the gutters do not change the instrument. The
 metadata and song-title strip has been removed to give those rows to the tiles.
 The title is **TrackSister** and the old badge is a functional **LEN ON/OFF**
 bypass button. **Rec file**, below **Rec. ptn.**, starts/stops final-output recording.
+
+**TRK 08**, beside Follow, displays the active track count and replaces OCT.
+Left-click or wheel up adds two tracks; right-click or wheel down removes two,
+from the right edge, within the native 2–32-track range. The scopes and pattern
+columns resize immediately. Remaining tracks keep playing when the count changes.
+Removed tracks retain their notes, routing, trim and LEN/CONTROL settings in TSR
+projects and tracker scores; adding them back restores that data. Their voices
+stop, and their LEN/CONTROL settings remain inactive until restored. XM exports
+contain the active tracks only. F1–F6 still select keyboard octaves 0–5.
+
+![Track-count control with twelve active tracks](screenshots/track-count/tracks-12.png)
+
+Each scope has a thin yellow **pan marker**, with small dim ticks marking
+the center. It combines the track's live sample pan, pan commands, slides and
+instrument pan envelope with **Row Pan** in F9.
+An explicit track route overrides the tile; **Use Tile** follows the last played
+tile's route. Routing edits move the marker even while stopped or muted. Muting
+dims the marker and holds the last source pan while routing can still change it.
+The waveform, track number,
+REC label, volume trim strip and mouse controls keep their existing behavior.
+The marker uses the scope-number color, so custom palettes can change its yellow.
+
+Route pan applies to Main and other checked destinations. **Mono** folds before
+row pan; full left/right addresses one side of a physical pair. For a stereo
+pair, left/right are relative to that selected pair. Older legacy One Speaker
+routes retain their centered mono marker until converted. This is
+a pan/balance control indication, not a signal meter: width, source waveform,
+clean level and independently positioned shared returns do not drive it. The
+indicator uses the existing display sync queue and UI route state, with no added
+audio processing or refresh timer.
+
+![Live pan positions on the TrackSister scopes](screenshots/track-pan/scopes-pan.png)
+
+Changing track 1’s routing Pan/Balance from left to center to right updates its
+yellow marker immediately (native UI capture):
+
+![Routing pan moves the first scope marker](screenshots/track-pan/scopes-routing-pan.gif)
 
 **Zap** replaces About and opens the tracker clearing choices:
 
@@ -189,10 +227,38 @@ mixer and Router; they are not individually normalized or clipped by the
 embedded device-output routine. Existing scores receive this level correction
 without changing their stored note or volume data.
 
-## Where TrackSister enters the Router
+## Where TrackSister enters the routing matrix
 
-TrackSister is a stereo source at the Router input. Its active lanes are mixed
-by the embedded replayer before joining the host. Current source grouping is:
+Right-click a track header or press **F9**. Each new track owns its full route,
+including connection levels, row pan and mono/stereo. **Use Tile** instead makes
+the lane follow each played tile's route; its row becomes read-only until Use Track.
+Direct tile playback still uses that tile's route. Tracks feed Main by default.
+
+Connect a track to Sister to write it to the tape (POWER and ROLL on, HOLD off).
+Track volume/mute and note velocity apply. Sister's matrix output is its tape/head
+mix; connect the track to Main as well for dry sound. The legacy TRACK source
+switch and normalization do not select matrix input. For shared effects, patch
+tracks to Prism/Pedalboard/Fallout, then route their output rows to Main or hardware.
+
+Fading activity marks follow actual rendered track/tile audio and route ownership.
+They are not note-on flags or calibrated meters. [Matrix controls and saving](ROUTING_MATRIX.md).
+
+### MIDI velocity recording
+
+MIDI note-on velocity controls live playback and, while note editing/recording is
+active, writes the volume column. MIDI 1–127 becomes level 1–64; velocities
+1/32/64/100/127 produce 1/16/32/50/64. The tracker displays these levels in hex
+(`01`, `10`, `20`, `32`, `40`). Silent Record still writes velocity while muting
+local monitoring. Recorded levels survive TSR save/reopen. Pressure/aftertouch
+is not recorded as changing note velocity. Select the correct MIDI input and
+channel (or OMNI) and enable velocity transmission on the controller.
+
+### Legacy source path
+
+The following applies to existing projects that have not enabled the matrix.
+
+TrackSister's Main-path lanes are a stereo source at the Router input. Its active
+lanes are mixed by the embedded replayer before joining the host. Current source grouping is:
 
 | Playback | Source group |
 | --- | --- |
@@ -205,9 +271,17 @@ With Sister Machine POWER off, the ordinary program sums these playing sources,
 clamps that program, applies its existing 0.8 gain, adds monitored external input,
 and enters the shared Router. With POWER on, Sister's source switches and trims
 select the input first; enabled source groups are normalized together and then
-enter the same Router. TRACK must be enabled there to hear TrackSister. An
-unselected source is silent while Sister owns the program, including when its
-Router stage is bypassed. There is no per-source FX chain or per-lane Router send.
+enter the same Router. TRACK must be enabled there to hear Main-path TrackSister
+audio. An unselected serial source is silent while Sister owns the program,
+including when its Router stage is bypassed.
+
+Tracks using the [Effect Sends or Direct Outputs paths](SOURCE_ROUTING.md)
+retain their independent audible routes. Selecting TRACK also feeds these
+tracks into Sister's tape input, before route pan/width and clean/send levels,
+without adding a duplicate dry monitor. This source tap excludes shared effect
+returns and joins after serial/PRE effects. Recording requires POWER and ROLL
+on, tape HOLD off, and the Sister Router stage active. Muted tracks do not feed
+the tape; INPUT trim and source normalization still apply.
 
 The default movable order is Prism → Sister Machine → Fallout → Pedalboard →
 External Insert (Insert starts bypassed). F9 shows the saved order, which may
@@ -221,12 +295,12 @@ External Insert after Sister merges dry/wet before that external loop, even
 while that Insert is bypassed, to avoid a parallel undelayed dry signal.
 
 Master EQ → limiter → global OUT follows the shared result. Final-output file
-recording observes that result. This explanation describes the existing audio
-path; the full-logo correction does not change routing.
+recording observes that result. These source switches and serial
+processing rules apply only while the legacy engine is active.
 
 ## Follow and live editing
 
-**FOLLOW ON/OFF** sits below Config, beside the octave control. **Ctrl+F** toggles
+**FOLLOW ON/OFF** sits below Config, beside the track-count control. **Ctrl+F** toggles
 it in every pattern view, including Ctrl+Alt+Backspace's full-window view. Follow
 starts on for new projects and saves with the project.
 
@@ -281,7 +355,9 @@ bindings differ from the earlier native editor's Ctrl+C/X/V shortcuts.
 | Config / Ctrl+C | Tracker recording, layout and palette preferences |
 | Grave / Shift+Grave | Increase/decrease STEP, wrapping 0–16 |
 | STEP arrows / STEP wheel | Original edit step |
-| OCT click/right click/wheel | Increase/decrease octave, clamped 0–7 |
+| TRK left click / wheel up | Add two tracks at the right, up to 32 |
+| TRK right click / wheel down | Remove two tracks at the right, down to 2; retain their stored notes |
+| F1–F6 | Select keyboard octave 0–5 |
 | Backspace | Clear the current full cell, then move up; clamp at row zero |
 | Shift+Backspace | Original structural row deletion |
 | Ctrl+Alt+Backspace | Pattern-only view |
@@ -290,7 +366,7 @@ bindings differ from the earlier native editor's Ctrl+C/X/V shortcuts.
 
 F10 reserves the host workspace toggle, so the original plain F10 row bookmark
 is unavailable. Modified F10 bindings remain with TapeHead. Plain F7 belongs to
-host capture; use OCT for octave 6/7. Ctrl+D opens host projects through Disk Op; Ctrl+E
+host capture. Ctrl+D opens host projects through Disk Op; Ctrl+E
 returns to Canvas through the original extended sample editor command.
 
 Backspace's clear-before-move order and the additional Ctrl+Alt+Backspace alias
@@ -341,14 +417,19 @@ It also reads earlier `STH1`/`STH2` embedded scores; those retain their stored c
 and LEN policy and receive defaults for newly stored preferences. It contains
 no pointers, copied tile audio, active voices or running transport. Loading a
 project starts stopped and clears the original clipboard and undo history.
+Saved mutes replace the previous project's mutes in both the editor and audio
+engine. Loading also clears temporary performance mutes, voices, effect memory,
+scope history and the old order position. Eight-track legacy scores receive
+default mute, trim and FastTracks settings on the remaining hidden lanes.
 
-The surrounding version-3 score stores multisample instrument metadata and
-stable tile IDs. Version-1 and version-2 eight-track scores still load through
+The surrounding **SISTRK v7** score also stores track routes and matrix connection
+data; multisample instrument metadata and stable tile IDs remain included. Version-1 and version-2 eight-track scores still load through
 the migration adapter. TapeHead's
 native note range is C-0–B-7 (MIDI 12–107), its tempo range is 32–255 BPM, and its
 instrument limit is 128. A legacy score outside those limits is rejected with
 an explicit message before replacing the embedded score; it is not silently
-clamped or discarded. Newly saved version-3 scores require this version of TapeSister.
+clamped or discarded. Newly saved v7 scores require a compatible TapeSister build.
+Tile banks use TSR37 and Sister state v30; save/move the complete named project folder.
 
 Tile audio continues to use the existing host project sample format. The score
 extension does not change that format or make project audio storage lossless.

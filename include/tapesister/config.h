@@ -6,6 +6,7 @@
 #include "tapesister/audio_lifecycle.h"
 #include "tapesister/master_eq.h"
 #include "tapesister/router.h"
+#include "tapesister/routing_matrix.h"
 #include "tapesister/spatial.h"
 #include "tapesister/insert.h"
 #include "tapesister/audition.h"
@@ -134,6 +135,7 @@ typedef struct {
     int master_output_percent;
     TsMasterEqControls master_eq;
     TsRouterControls router;
+    TsMatrixControls matrix;
     TsRouterPerformance router_performance;
     TsInsertControls insert;
     TsSpatialControls spatial;

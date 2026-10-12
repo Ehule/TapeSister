@@ -1,6 +1,7 @@
 #define SDL_MAIN_HANDLED
 #include "tapesister/asio_backend.h"
 #include "RtAudio.h"
+#include "../src/ts_asio_callback_lock.h"
 #include <cassert>
 #include <cstdio>
 #include <cstring>
@@ -8,6 +9,30 @@ RtAudio *RtAudio::instance;
 unsigned RtAudio::opens,RtAudio::closes,RtAudio::probes;
 bool RtAudio::failStart;
 static unsigned captures,plays;
+static void lock_deadlines() {
+ struct Fake {
+  uint64_t ticks=0;unsigned calls=0,clocks=0,busy=0;bool error=false;
+  int try_lock() { ++calls;return error?-1:(calls<=busy?1:0); }
+  uint64_t now() { ++clocks;return ticks++; }
+  void pause() {}
+ } fast,shortEdit,longEdit,failed,zero;
+ assert(ts_asio_callback_lock(fast,10)==TsAsioLock::acquired);
+ assert(fast.calls==1 && fast.clocks==0); /* Uncontended path does not read time. */
+ shortEdit.busy=4;
+ assert(ts_asio_callback_lock(shortEdit,10)==TsAsioLock::recovered);
+ assert(shortEdit.calls==5 && shortEdit.ticks<=10);
+ longEdit.busy=1000;
+ assert(ts_asio_callback_lock(longEdit,10)==TsAsioLock::skipped);
+ assert(longEdit.calls==10 && longEdit.ticks==11); /* Never wait for a long edit. */
+ failed.error=true;
+ assert(ts_asio_callback_lock(failed,10)==TsAsioLock::skipped && failed.calls==1);
+ zero.busy=1;assert(ts_asio_callback_lock(zero,0)==TsAsioLock::skipped && zero.calls==1);
+ assert(ts_asio_lock_budget(1024,44100,1000000000)==500000);
+ assert(ts_asio_lock_budget(512,44100,1000000000)==500000);
+ assert(ts_asio_lock_budget(128,48000,1000000000)==333333);
+ assert(ts_asio_lock_budget(32,192000,1000000000)==20833);
+ assert(ts_asio_lock_budget(128,0,1000000000)==0);
+}
 static void capture(void *,Uint8 *data,int bytes) {
  assert(bytes==128*16*4);++captures;assert(((float *)data)[5]==.25f);
 }
@@ -19,6 +44,7 @@ static void playback(void *,Uint8 *data,int bytes) {
 }
 static int hold(void *semaphore) { ts_asio_lock();SDL_SemPost((SDL_sem *)semaphore);SDL_Delay(50);ts_asio_unlock();return 0; }
 int main() {
+ lock_deadlines();
  assert(!SDL_Init(SDL_INIT_EVENTS|SDL_INIT_TIMER));
  assert(ts_asio_count(0)==2 && ts_asio_count(1)==2);
  SDL_AudioSpec w{},got{},cg{};w.freq=44100;w.samples=512;w.channels=2;w.format=AUDIO_F32SYS;w.callback=playback;
@@ -43,7 +69,7 @@ int main() {
  RtAudio::instance->running=false;ts_asio_poll();SDL_Event e;unsigned removed=0;while(SDL_PollEvent(&e))if(e.type==SDL_AUDIODEVICEREMOVED){++removed;ts_asio_close(e.adevice.which);}assert(removed==2 && RtAudio::closes==1);
  ts_asio_rescan();assert(RtAudio::probes>probes);
  w.callback=playback;auto next=ts_asio_open(nullptr,0,&w,&got);assert(next && next!=out);
- assert(!ts_asio_xruns() && !ts_asio_control_skips() && !ts_asio_driver_xruns());
+ assert(!ts_asio_xruns() && !ts_asio_control_skips() && !ts_asio_driver_xruns() && !ts_asio_control_recoveries());
  ts_asio_close(out);assert(RtAudio::instance->isStreamOpen());
  RtAudio::failStart=true;ts_asio_pause(next,0);ts_asio_poll();removed=0;while(SDL_PollEvent(&e))if(e.type==SDL_AUDIODEVICEREMOVED){++removed;ts_asio_close(e.adevice.which);}assert(removed==1);
  ts_asio_quit();SDL_Quit();puts("ASIO adapter: one clock, native stride, exact unity, callback order, stalls, reset, start failure and stale handles passed");

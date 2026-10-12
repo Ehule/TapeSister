@@ -46,9 +46,7 @@ static int embedded_open(SDL_Window *window,SDL_AudioDeviceID device,AudioState 
     ts_tracker_playback_stop(&audio->tracker);
     if(device)SDL_UnlockAudioDevice(device);
     if(!ts_tapehead_sync(pages,instrument,rate,ui->status,sizeof(ui->status)))return 0;
-    ts_tapehead_host_lock();
     int ok=ts_tapehead_export(&pages->tracker,ui->status,sizeof(ui->status));
-    ts_tapehead_host_unlock();
     if(!ok)return 0;
     ui->tracker_embedded_frame=ts_tapehead_frame();return 1;
 }
@@ -63,7 +61,7 @@ static void tracker_refresh(SDL_AudioDeviceID device,AudioState *audio,TsUiState
        follows tile edits, but a closed, stopped workspace needs no score
        hashing or alias scan on every service tick. */
     if(ui->tracker_open || ts_tapehead_running() || ts_tapehead_interpolation_active()) {
-        if(!ts_tapehead_sync(pages,instrument,rate,ui->status,sizeof(ui->status))) {
+        if(!ts_tapehead_refresh(pages,instrument,rate,ui->status,sizeof(ui->status))) {
             ui->tracker_open=0;ui->tracker_embedded_frame=NULL;return;
         }
     } else ts_tapehead_suspend_sync();
@@ -73,6 +71,15 @@ static void tracker_refresh(SDL_AudioDeviceID device,AudioState *audio,TsUiState
     ts_tapehead_service(ui->tracker_open && window_drawable(embedded_host.window));
     ui->tracker_running=ts_tapehead_running();
     int action=ts_tapehead_action();
+    /* Host views and project commands need a persisted snapshot. Playing,
+       typing, MIDI and ordinary service ticks keep the live editor in charge. */
+    if((action==TS_TH_CANVAS || action==TS_TH_TILES || action==TS_TH_SAVE_PROJECT || action==TS_TH_OPEN_PROJECT ||
+        (action>=TS_TH_TRACK_ROUTE && action<TS_TH_TRACK_ROUTE+TS_TRACKER_LANES)) &&
+       !ts_tapehead_export(&pages->tracker,ui->status,sizeof(ui->status)))return;
+    if(action>=TS_TH_TRACK_ROUTE && action<TS_TH_TRACK_ROUTE+TS_TRACKER_LANES) {
+        ts_tapehead_focus_lost();
+        matrix_show(device,audio,ui,pages,(TsInstrument *)instrument,action-TS_TH_TRACK_ROUTE,-1);
+    }
     if(action==TS_TH_CANVAS || action==TS_TH_TILES) {
         ts_tapehead_focus_lost();ui->tracker_open=0;
         snprintf(ui->status,sizeof(ui->status),action==TS_TH_TILES?
@@ -110,7 +117,7 @@ static void tracker_refresh(SDL_AudioDeviceID device,AudioState *audio,TsUiState
     if(action==TS_TH_AUDIO)ts_audio_health_show(ui);
     if(action==TS_TH_ROUTER) {
         if(device)SDL_LockAudioDevice(device);router_sync(audio,ui);if(device)SDL_UnlockAudioDevice(device);
-        ts_tapehead_focus_lost();ui->router_open=1;ui->master_eq_open=0;
+        ts_tapehead_focus_lost();matrix_show(device,audio,ui,pages,(TsInstrument *)instrument,-1,-1);ui->master_eq_open=0;
     }
 }
 static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID device,
@@ -129,7 +136,10 @@ static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevi
         if(ui_dialog_open(ui) || ui->mosaic_editing || ui->fm_open || ui->selecting ||
            ui->tape_dragging || ui->dragging_loop_endpoint || ui->wave_pointer_pending)return 1;
         release_mouse_note_before_keyboard_move(device,audio,ui);
-        if(ui->tracker_open){ts_tapehead_focus_lost();ui->tracker_open=0;}
+        if(ui->tracker_open){
+            if(!ts_tapehead_export(&pages->tracker,ui->status,sizeof(ui->status)))return 1;
+            ts_tapehead_focus_lost();ui->tracker_open=0;
+        }
         else if(embedded_open(window,device,audio,ui,pages,instrument,rate)) {ui->tracker_open=1;ui->mosaic_open=0;snprintf(ui->status,sizeof(ui->status),"SISTERTRACKER - SELECT TILES ON THE CANVAS");}
         return 1;
     }
@@ -140,12 +150,13 @@ static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevi
     if(!ui->tracker_open || !ui->tracker_embedded_frame || ui_dialog_open(ui) ||
        ui->router_open || ui->master_eq_open || ui->midi_learn_active)return 0;
     if(key && event->key.keysym.sym==SDLK_ESCAPE && !ts_tapehead_config_visible() && !ts_tapehead_interpolation_active()) {
+        if(!ts_tapehead_export(&pages->tracker,ui->status,sizeof(ui->status)))return 1;
         ts_tapehead_focus_lost();ui->tracker_open=0;return 1;
     }
     if(key && event->key.keysym.sym==SDLK_m && (mod&KMOD_CTRL) && (mod&KMOD_SHIFT))return 0;
     if(key && event->key.keysym.sym==SDLK_TAB && (mod&KMOD_CTRL))return 0;
     if(key && (mod&KMOD_CTRL) && (event->key.keysym.sym==SDLK_s || event->key.keysym.sym==SDLK_o)) {
-        ts_tapehead_host_lock();ts_tapehead_export(&pages->tracker,ui->status,sizeof(ui->status));ts_tapehead_host_unlock();
+        if(!ts_tapehead_export(&pages->tracker,ui->status,sizeof(ui->status)))return 1;
         return 0; /* The host's existing project save/open flow owns these keys. */
     }
     int x=embedded_host.mouse_x,y=embedded_host.mouse_y;
@@ -155,11 +166,7 @@ static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevi
     if(event->type==SDL_MOUSEMOTION || event->type==SDL_MOUSEBUTTONDOWN ||
        event->type==SDL_MOUSEBUTTONUP || event->type==SDL_MOUSEWHEEL)x-=4;
     embedded_host.mouse_x=x;embedded_host.mouse_y=y;
-    int consumed=ts_tapehead_event(event,x,y);
-    if(consumed && event->type!=SDL_MOUSEMOTION && event->type!=SDL_KEYUP) {
-        ts_tapehead_host_lock();ts_tapehead_export(&pages->tracker,ui->status,sizeof(ui->status));ts_tapehead_host_unlock();
-    }
-    return consumed;
+    return ts_tapehead_event(event,x,y);
 }
 
 static int load_module_instrument(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,
@@ -194,6 +201,7 @@ static int load_module_instrument(SDL_AudioDeviceID device,AudioState *audio,TsU
     unlock_edit(device,audio,ui,instrument);
     free(previous_pages);ts_sister_tracker_free(&previous);
     free(staged.pages);staged.pages=NULL;staged.page_count=0;
+    ts_tapehead_project_replaced();
     if(!embedded_open(embedded_host.window,device,audio,ui,pages,instrument,rate))return 0;
     ui->tracker_open=1;ui->mosaic_open=0;ui->load_bank_slot=-1;
     ts_ui_reset_parent_view(ui,instrument->parent.frames);

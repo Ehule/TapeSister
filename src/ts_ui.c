@@ -1,6 +1,7 @@
 #include "tapesister/profile.h"
 #include "tapesister/ui.h"
 #include "tapesister/spatial_ui.h"
+#include "tapesister/source_route_ui.h"
 #include "tapesister/input_monitor.h"
 #include "tapesister/sister_ui.h"
 #include "tapesister/version.h"
@@ -489,7 +490,7 @@ static void ui_marker(TsFramebuffer *fb, int x, int y, uint32_t color)
     rect(fb, x - 1, y - 2, 3, 5, color);
 }
 
-static const char *glyph(char c)
+const char *ts_ui_glyph(char c)
 {
     switch (c) {
     case 'a': return "00000000000111000001011111000101111";
@@ -590,11 +591,13 @@ static const char *glyph(char c)
     }
 }
 
+static const char *glyph(char c){return ts_ui_glyph(c);}
+
 static void text(TsFramebuffer *fb, int x, int y, const char *value, uint32_t color, int scale)
 {
     for (; *value; ++value, x += 6 * scale) {
         char c = *value >= 'a' && *value <= 'z' ? (char)(*value - 32) : *value;
-        const char *bits = glyph(c);
+        const char *bits = ts_ui_glyph(c);
         for (int gy = 0; gy < 7; ++gy)
             for (int gx = 0; gx < 5; ++gx)
                 if (bits[gy * 5 + gx] == '1')
@@ -606,7 +609,7 @@ static void text_case(TsFramebuffer *fb, int x, int y, const char *value, uint32
 {
     for (; *value; ++value, x += 6 * scale) {
         char c = *value;
-        const char *bits = glyph(c);
+        const char *bits = ts_ui_glyph(c);
         for (int gy = 0; gy < 7; ++gy)
             for (int gx = 0; gx < 5; ++gx)
                 if (bits[gy * 5 + gx] == '1')
@@ -619,7 +622,7 @@ static void wave_text(TsFramebuffer *fb, int x, int y, const char *value,
 {
     for (; *value; ++value, x += 6 * scale) {
         char c = *value >= 'a' && *value <= 'z' ? (char)(*value - 32) : *value;
-        const char *bits = glyph(c);
+        const char *bits = ts_ui_glyph(c);
         for (int gy = 0; gy < 7; ++gy)
             for (int gx = 0; gx < 5; ++gx)
                 if (bits[gy * 5 + gx] == '1')
@@ -4389,7 +4392,7 @@ TsUiBankAction ts_ui_bank_action(int right_button, unsigned modifiers)
                                      TS_UI_BANK_MOD_ALT);
     if (right_button)
         return relevant == TS_UI_BANK_MOD_SHIFT ? TS_UI_BANK_ACTION_CLEAR :
-               relevant == 0 ? TS_UI_BANK_ACTION_RENAME : TS_UI_BANK_ACTION_INVALID;
+               relevant == 0 ? TS_UI_BANK_ACTION_ROUTING : TS_UI_BANK_ACTION_INVALID;
     if (relevant == 0) return TS_UI_BANK_ACTION_AUDITION;
     if (relevant == TS_UI_BANK_MOD_SHIFT) return TS_UI_BANK_ACTION_CAPTURE_CURRENT;
     if (relevant == TS_UI_BANK_MOD_ALT) return TS_UI_BANK_ACTION_CAPTURE_LOOP;
@@ -4435,7 +4438,7 @@ int ts_ui_execute_bank_action(TsInstrument *instrument, int slot,
             return ts_instrument_sync_selected(instrument, error, error_size);
         return ts_instrument_select_bank(instrument, slot, error, error_size);
     }
-    if (action == TS_UI_BANK_ACTION_RENAME) {
+    if (action == TS_UI_BANK_ACTION_ROUTING) {
         if (!instrument->bank[slot].occupied) {
             if (error != NULL && error_size > 0)
                 snprintf(error, error_size, "Bank slot is empty");
@@ -4679,6 +4682,10 @@ static void sister_vertical_mixer(TsFramebuffer *fb, int x, int y,
     rect(fb, x, y, 104, 110, RGB(24, 23, 25));
     text(fb, x + 37, y + 3, "MIXER", PAL_MOUSE, 1);
     for (int control = 0; control < 6; ++control) {
+        if(model->matrix_routing && control<5) {
+            if(!control){text(fb,x+8,y+48,"LEVELS",PAL_MOUSE,1);text(fb,x+8,y+65,"IN F9",PAL_MOUSE,1);}
+            continue;
+        }
         float amount = amounts[control];
         int lane_x = x + 3 + control * 16;
         int handle_y;
@@ -5593,6 +5600,8 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     button(fb, 600, 144, 24,
            ts_waveform_display_letter(model->waveform_mode),
            model->waveform_mode != TS_WAVEFORM_DISPLAY_STEREO);
+    if(model->matrix_routing)button(fb,10,172,208,"F9 ROUTING MATRIX",1);
+    else {
     button(fb, 10, 172, 44, "TILES",
            model->routing.source_switches & TS_SISTER_SOURCE_TILES);
     button(fb, 58, 172, 28, "FM",
@@ -5603,9 +5612,10 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
            model->routing.source_switches & TS_SISTER_SOURCE_PREVIEW);
     button(fb, 170, 172, 48, "TH SRC",
            model->routing.source_switches & TS_SISTER_SOURCE_TAPEHEAD);
+    }
     button(fb, 222, 172, 52, "TH SONG", model->tapehead_song_playing);
     button(fb, 278, 172, 52, "TH PATT", model->tapehead_pattern_playing);
-    button(fb, 334, 172, 44, "TRACK",
+    button(fb, 334, 172, 44, model->matrix_routing?"F9":"TRACK",
            model->routing.source_switches & TS_SISTER_SOURCE_TRACK);
     /* Diagnostics share a bounded two-line well beside the source buttons.
        The TRACK switch occupies the old head-meter text position. */
@@ -5952,3 +5962,4 @@ sister_footer:
 }
 
 #include "ts_spatial_ui.inc"
+#include "ts_source_route_ui.inc"

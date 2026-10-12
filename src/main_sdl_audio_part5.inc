@@ -27,6 +27,7 @@
         cfg_text(fb, 28, TS_AUDIO_CONFIG_BACKEND_Y + 5, "<", text_color);
         cfg_text(fb, 44, TS_AUDIO_CONFIG_BACKEND_Y + 5, "BACKEND", text_color);
         cfg_text(fb, 100, TS_AUDIO_CONFIG_BACKEND_Y + 5,
+                 ui->config.audio_backend == TS_AUDIO_BACKEND_ASIO ? "ASIO (LINKED I/O)" :
                  ts_audio_backend_name(ui->config.audio_backend), text_color);
         cfg_text(fb, 432, TS_AUDIO_CONFIG_BACKEND_Y + 5, ">", text_color);
         cfg_frame(fb, TS_AUDIO_CONFIG_CHANNEL_X, TS_AUDIO_CONFIG_BACKEND_Y,
@@ -300,8 +301,14 @@ static int ts_audio_config_field_from_point(int x, int y)
         x >= 20 && x < 20 + TS_AUDIO_CONFIG_INPUT_W) {
         if (x < 48) ts_cycle_audio_backend(-1);
         else if (x >= 420) ts_cycle_audio_backend(1);
+        int needs_catalog = ts_live_ui->config.audio_backend != ts_started_backend &&
+                            ts_live_ui->config.audio_backend != TS_AUDIO_BACKEND_ASIO;
+#if defined(__linux__)
+        needs_catalog &= ts_live_ui->config.audio_backend != TS_AUDIO_BACKEND_JACK;
+#endif
         snprintf(ts_live_ui->status, sizeof(ts_live_ui->status),
-                 "AUDIO BACKEND: %s - SAVE AND RESTART TO APPLY",
+                 needs_catalog ? "%s: SAVE CONFIG TO LOAD ITS DEVICE LIST; NO APP RESTART" :
+                 "%s: CHOOSE DEVICE, SAVE CONFIG TO APPLY; PLAYBACK WILL STOP",
                  ts_audio_backend_name(ts_live_ui->config.audio_backend));
         return -1;
     }
@@ -319,6 +326,7 @@ static int ts_audio_config_field_from_point(int x, int y)
                                      sizeof(ts_live_ui->config.record_input_device),
                                      ts_device_catalog.input_names,
                                      ts_device_catalog.input_count, 1);
+            ts_audio_link_asio_selection(1);
             snprintf(ts_live_ui->status, sizeof(ts_live_ui->status),
                      "INPUT DEVICE: %.120s",
                      ts_live_ui->config.record_input_device[0] != '\0' ?
@@ -351,6 +359,7 @@ static int ts_audio_config_field_from_point(int x, int y)
                                      sizeof(ts_live_ui->config.audio_output_device),
                                      ts_device_catalog.output_names,
                                      ts_device_catalog.output_count, 1);
+            ts_audio_link_asio_selection(0);
             snprintf(ts_live_ui->status, sizeof(ts_live_ui->status),
                      "OUTPUT DEVICE: %.120s",
                      ts_live_ui->config.audio_output_device[0] != '\0' ?
@@ -363,7 +372,7 @@ static int ts_audio_config_field_from_point(int x, int y)
             else if (x >= 594)
                 ts_cycle_audio_buffer(1);
             snprintf(ts_live_ui->status, sizeof(ts_live_ui->status),
-                     "AUDIO BUFFER: %d FRAMES - SAVE TO RESTART AUDIO",
+                     "AUDIO BUFFER: %d FRAMES - SAVE CONFIG TO APPLY",
                      ts_live_ui->config.audio_buffer_frames);
             return -1;
         }

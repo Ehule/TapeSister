@@ -32,7 +32,7 @@ static const char *performance_help(const TsUiState *ui,int x,int y)
             H(298,313,76,17,"CAPTURE TO NEW TILE; RIGHT: OUT/DRY/EXT/FM; SHIFT+RIGHT: LENGTH; PLAYBACK CONTINUES");
         } else {
             H(536,313,94,17,"CAPTURE TO NEW TILE; RIGHT: OUT/DRY/EXT/FM; SHIFT+RIGHT: LENGTH; PLAYBACK CONTINUES");
-            H(10,330,612,49,"SHIFT OCCUPIED: PLAY GROUP; SHIFT EMPTY: COPY; CLICK: SELECT / PLAY ON SEL");
+            H(10,330,612,49,"RIGHT: ROUTING; MIDDLE: RENAME; SHIFT OCCUPIED: GROUP; SHIFT EMPTY: COPY");
         }
     }
     if(!ts_ui_keyboard_sequence_visible(ui))return "";

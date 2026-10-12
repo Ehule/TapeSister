@@ -130,10 +130,26 @@ static void test_score_migration(void)
 {
     TsSisterTracker original,loaded;ts_sister_tracker_init(&original);ts_sister_tracker_init(&loaded);
     score(&original,ts_tile_id_new());
+    /* This fixture represents pre-routing defaults, before tracks owned Main. */
+    for(int lane=0;lane<TS_TRACKER_LANES;++lane)original.lanes[lane].output_route.mode=TS_SOURCE_INHERIT;
     CHECK(ts_sister_tracker_save_file(&original,"migration3.tst",error,sizeof(error)));
     FILE *f=fopen("migration3.tst","rb");CHECK(f && !fseek(f,0,SEEK_END));
     long length=ftell(f);CHECK(length>0);rewind(f);
     uint8_t *bytes=malloc((size_t)length);CHECK(bytes && fread(bytes,1,(size_t)length,f)==(size_t)length);fclose(f);
+    /* v3/v4 retained all 32 lanes, but predate the v5 mix fields. */
+    for(int version=3;version<=4;++version) {
+        f=fopen("legacy-score.tst","wb");CHECK(f);bytes[6]=(uint8_t)version;
+        size_t offset=39+TS_TRACKER_ALIASES*8+original.order_count*4;
+        CHECK(fwrite(bytes,1,offset,f)==offset);
+        for(int lane=0;lane<32;++lane) {
+            size_t fields=TS_TRACKER_NAME_SIZE+14+(version==4?5:0);
+            CHECK(fwrite(bytes+offset,1,fields,f)==fields);
+            offset+=TS_TRACKER_NAME_SIZE+24+31;
+        }
+        CHECK(fwrite(bytes+offset,1,(size_t)length-offset,f)==(size_t)length-offset);CHECK(!fclose(f));
+        CHECK(ts_sister_tracker_load_file(&loaded,"legacy-score.tst",error,sizeof(error)));
+        CHECK(ts_sister_tracker_hash(&loaded)==ts_sister_tracker_hash(&original));
+    }
     /* Repack the documented v1/v2 wire layout: 38-byte song header, no channel
        count, eight lane records and eight cells per row, no instrument table. */
     for(int version=1;version<=2;++version) {
@@ -142,7 +158,10 @@ static void test_score_migration(void)
         size_t offset=39,aliases_orders=TS_TRACKER_ALIASES*8+original.order_count*4;
         CHECK(fwrite(bytes+offset,1,aliases_orders,f)==aliases_orders);offset+=aliases_orders;
         size_t lane_bytes=TS_TRACKER_NAME_SIZE+14;
-        CHECK(fwrite(bytes+offset,1,8*lane_bytes,f)==8*lane_bytes);offset+=32*lane_bytes;
+        for(int lane=0;lane<32;++lane) {
+            if(lane<8)CHECK(fwrite(bytes+offset,1,lane_bytes,f)==lane_bytes);
+            offset+=lane_bytes+10+31; /* v4 routing plus v5 clean/send levels. */
+        }
         for(int i=0;i<original.pattern_count;++i) {
             size_t header_bytes=6+TS_TRACKER_NAME_SIZE;
             CHECK(fwrite(bytes+offset,1,header_bytes,f)==header_bytes);offset+=header_bytes;
@@ -334,9 +353,9 @@ static void test_tsr31_migration(void)
     sound(source, 0, 0.25f);
     CHECK(ts_instrument_save_recipe(source, "identity32.tsr", error, sizeof(error)));
     FILE *in = fopen("identity32.tsr", "rb"), *out = fopen("legacy31.tsr", "wb");
-    unsigned char header[72]; CHECK(in && out);
+    unsigned char header[176]; CHECK(in && out);
     CHECK(fread(header, 1, sizeof(header), in) == sizeof(header));
-    /* TSR32 adds the eight-byte identity after the first occupied flag. */
+    /* Remove TSR32 identity, TSR34 routing and TSR35 sends after the occupied flag. */
     header[4] = '1';
     CHECK(fwrite(header, 1, 64, out) == 64);
     int byte;

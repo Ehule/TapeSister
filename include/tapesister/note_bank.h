@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "tapesister/audition.h"
+#include "tapesister/source_route.h"
 #include "tapesister/voice_handoff.h"
 #include "tapesister/note_event.h"
 
@@ -17,6 +18,8 @@
 
 typedef struct {
     const TsSample *sample;
+    TsTileId route_tile;
+    TsSourceRouteVoice output_route;
     double position;
     double step;
     double pitch;
@@ -50,6 +53,7 @@ typedef struct {
     uint64_t next_serial;
     int render_limit; /* One past the highest live or not-yet-observed release. */
     uint64_t rendered_serial[TS_NOTE_BANK_VOICE_CAPACITY];
+    TsSourceRouteHandoff clean_handoff;
     TsVoiceHandoff sample_handoff, fm_handoff, capture_handoff;
     uint32_t handoff_frames;
     int normalization_count, normalization_synth_count;
@@ -68,6 +72,7 @@ typedef enum {
     TS_NOTE_LIMIT_REACHED
 } TsNoteStartResult;
 
+void ts_note_bank_read_routed(TsNoteBank *bank, TsStereoFrame *sample, TsStereoFrame *fm, TsStereoFrame *capture, TsSourceRouteMix *clean);
 void ts_note_bank_init(TsNoteBank *bank);
 void ts_note_bank_clear(TsNoteBank *bank);
 /* Disabling releases key-up voices, preserving held keys and explicit latches. */

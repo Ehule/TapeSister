@@ -64,7 +64,15 @@ static int router_event(const SDL_Event *e,SDL_Window *window,SDL_AudioDeviceID 
     if(e->type==SDL_MOUSEBUTTONUP) {
         if(ui->router_drag && e->button.button==SDL_BUTTON_LEFT && row>=0 && x>=64 && x<616) {
             if(device)SDL_LockAudioDevice(device);
-            ts_router_reorder(&audio->sister.router,ui->router_drag-1,row);router_sync(audio,ui);
+            int from_stage=ts_router_display_stage(&ui->router_live,ui->router_drag-1);
+            int to_stage=ts_router_display_stage(&ui->router_live,row),from=0,to=0;
+            for(int i=0;i<TS_ROUTER_COUNT;++i) {
+                if(ui->router_live.order[i]==from_stage)from=i;
+                if(ui->router_live.order[i]==to_stage)to=i;
+            }
+            if(!ui->router_live.master_mix || to_stage!=TS_ROUTER_INSERT)
+                ts_router_reorder(&audio->sister.router,from,to);
+            router_sync(audio,ui);
             if(device)SDL_UnlockAudioDevice(device);
         }
         ui->router_drag=0;
@@ -73,17 +81,23 @@ static int router_event(const SDL_Event *e,SDL_Window *window,SDL_AudioDeviceID 
     if(ui->router_drag){ui->router_drop=row;return 1;}
     if(e->type==SDL_MOUSEBUTTONDOWN) {
         if(y<32){ui->router_open=0;return 0;}
+        if(x>=22&&x<146&&y>=74&&y<98) {
+            source_route_show(device,audio,ui,NULL,NULL,-2,0);return 1;
+        }
         if(x>=426&&x<566&&y>=331&&y<354){spatial_show(device,audio,ui);return 1;}
         if(x>=574 && y>=42 && y<66){ui->router_open=0;return 1;}
         if(x>=442 && x<566 && y>=42 && y<65){ui->router_performance_open=1;ui->router_drag=0;return 1;}
         if(row>=0 && x>=414 && x<616 && e->button.button==SDL_BUTTON_RIGHT) {
-            router_arm(device,audio,ui,ui->config.router.order[row],x>=512?TS_ROUTER_TIMER_SOLO:TS_ROUTER_TIMER_BYPASS);return 1;
+            router_arm(device,audio,ui,ts_router_display_stage(&ui->router_live,row),x>=512?TS_ROUTER_TIMER_SOLO:TS_ROUTER_TIMER_BYPASS);return 1;
         }
         if(row>=0 && x>=64 && x<616 && e->button.button==SDL_BUTTON_LEFT) {
-            int stage=ui->config.router.order[row];
+            int stage=ts_router_display_stage(&ui->router_live,row);
             if(stage==TS_ROUTER_INSERT && x>=252 && x<330){insert_panel_open(ui);return 1;}
             if(x>=414)router_manual(device,audio,ui,stage,x>=512);
             else {
+                if(stage==TS_ROUTER_INSERT && ui->router_live.master_mix) {
+                    snprintf(ui->status,sizeof(ui->status),"MASTER MIX INSERT IS FIXED BEFORE EQ / LIMITER");return 1;
+                }
                 if(ui->router_view.running){snprintf(ui->status,sizeof(ui->status),"STOP ROUTER SEQUENCE TO REORDER STAGES");return 1;}
                 ui->router_drag=row+1;ui->router_drop=row;return 1;
             }

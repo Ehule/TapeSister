@@ -1,5 +1,7 @@
 #ifndef TAPESISTER_UI_H
 #define TAPESISTER_UI_H
+/* Shared bitmap glyphs for native auxiliary windows (5 x 7). */
+const char *ts_ui_glyph(char character);
 
 #include <stdint.h>
 #include "tapesister/audition.h"
@@ -182,7 +184,7 @@ typedef enum {
     TS_UI_BANK_ACTION_CAPTURE_LOOP,
     TS_UI_BANK_ACTION_CAPTURE_SELECTION,
     TS_UI_BANK_ACTION_CLONE,
-    TS_UI_BANK_ACTION_RENAME,
+    TS_UI_BANK_ACTION_ROUTING,
     TS_UI_BANK_ACTION_CLEAR,
     TS_UI_BANK_ACTION_TOGGLE_LOCK,
     TS_UI_BANK_ACTION_INVALID
@@ -517,6 +519,8 @@ typedef struct {
     unsigned insert_inputs, insert_outputs, insert_offered_outputs;
     char insert_send_device[TS_CONFIG_PATH_MAX], insert_return_device[TS_CONFIG_PATH_MAX];
     char insert_device_status[160];
+    int insert_restart_required;
+    char insert_active_device[2][160];
     float insert_send_peak, insert_return_peak;
     unsigned insert_rates[2], insert_buffers[2], insert_gaps[2], insert_drops[2];
     float insert_queue_ms[2];

@@ -20,7 +20,7 @@ static void insert_callback_block(float *out)
 static void insert_controller_shot(const char *key)
 {
     TsSisterRoutingSnapshot s;assert(ts_sister_runtime_get_snapshot(&audio.sister,&s));
-    ui.config.router=s.router;ui.config.insert=s.insert;ui.router_enabled=s.router_enabled;
+    ui.config.router=ui.router_live=s.router;ui.config.insert=s.insert;ui.router_enabled=s.router_enabled;
     ui.insert_send_peak=s.insert_send_peak;ui.insert_return_peak=s.insert_return_peak;
     ui.insert_inputs=s.insert_inputs;ui.insert_outputs=s.insert_outputs;
     ts_audio_insert_diagnostics(&audio,&ui,0);

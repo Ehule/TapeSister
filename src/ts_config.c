@@ -36,6 +36,8 @@ void ts_config_init(TsConfig *config)
         ts_master_eq_default(&config->master_eq);
         ts_spatial_default(&config->spatial);
         ts_router_default(&config->router);
+        config->router.master_mix = 1;
+        ts_matrix_default(&config->matrix);config->matrix.enabled=1;
         ts_router_performance_default(&config->router_performance);
         ts_insert_default(&config->insert);
         config->audio_backend = TS_AUDIO_BACKEND_AUTO;
@@ -278,6 +280,8 @@ int ts_config_load(TsConfig *config, const char *path,
         return 0;
     }
     ts_config_init(&loaded);
+    /* Files written before MasterMix existed retain the original signal path. */
+    loaded.router.master_mix = 0;loaded.matrix.enabled=0;
     while (fgets(line, sizeof(line), file) != NULL) {
         char *key;
         char *value;
@@ -311,6 +315,8 @@ int ts_config_load(TsConfig *config, const char *path,
                 snprintf(error,error_size,"Invalid Router performance on config line %d",line_number);
                 fclose(file);return 0;
             }
+        } else if (!strncmp(key,"Matrix.",7)) {
+            if(ts_matrix_read(&loaded.matrix,key,value)<0) {fclose(file);set_error(error,error_size,"Invalid routing matrix");return 0;}
         } else if (!strncmp(key,"Router.",7)) {
             if(ts_router_read(&loaded.router,key,value)<0) {
                 snprintf(error,error_size,"Invalid router on config line %d",line_number);
@@ -534,6 +540,7 @@ int ts_config_load(TsConfig *config, const char *path,
     if (!saw_capture_channels && saw_sister_capture_channels)
         loaded.capture_channels = loaded.sister_capture_channels;
     loaded.sister_capture_channels = loaded.capture_channels;
+    if(!ts_matrix_valid(&loaded.matrix)){set_error(error,error_size,"Invalid routing matrix graph");return 0;}
     if(!saw_insert)loaded.router.bypass_mask |= 1u<<TS_ROUTER_INSERT;
     *config = loaded;
     set_error(error, error_size, "");
@@ -813,6 +820,7 @@ int ts_config_save(const TsConfig *config, const char *path,
         !ts_master_eq_write(file,&config->master_eq);
     if(!write_failed)write_failed=!ts_spatial_write(file,&config->spatial);
     if(!write_failed)write_failed=!ts_router_write(file,&config->router);
+    if(!write_failed)write_failed=!ts_matrix_write(file,&config->matrix);
     if(!write_failed)write_failed=!ts_router_performance_write(file,&config->router_performance);
     if(!write_failed)write_failed=!ts_insert_write(file,&config->insert);
     if(!write_failed)write_failed=fprintf(file,"insert_send_device=%s\ninsert_return_device=%s\n",

@@ -346,27 +346,29 @@ static void runtime_note_render(AudioState *audio, TsAudioBuses *buses,
     TsStereoFrame performance;
     TsStereoFrame launcher;
     if (audio == NULL || buses == NULL) return;
-    ts_note_bank_read_buses(&audio->notes, &sample, &fm, &synth);
+    TsStereoFrame clean_before=audio->clean.reference;
+    ts_note_bank_read_routed(&audio->notes, &sample, &fm, &synth,&audio->clean);
     TsStereoFrame browser = ts_note_voice_read(&audio->browser_voice);
     buses->legacy_preview.l += browser.l;
     buses->legacy_preview.r += browser.r;
-    performance = ts_performance_read_stereo(
-        &audio->performance, &audio->performance_raw_mix);
-    TsStereoFrame sequence = ts_keyboard_sequence_read(&audio->keyboard_sequence, audio->output_rate);
+    performance = ts_performance_read_routed(
+        &audio->performance, &audio->performance_raw_mix,&audio->clean);
+    TsStereoFrame sequence_before=audio->clean.reference;
+    TsStereoFrame sequence = ts_keyboard_sequence_read_routed(&audio->keyboard_sequence, audio->output_rate,&audio->clean);
     if (audio->keyboard_sequence.source && audio->keyboard_sequence.source->fm) {
         fm.l += sequence.l; fm.r += sequence.r;
         synth.l += sequence.l; synth.r += sequence.r;
     } else {
         sample.l += sequence.l; sample.r += sequence.r;
-        audio->performance_raw_mix.l += sequence.l;
-        audio->performance_raw_mix.r += sequence.r;
+        audio->performance_raw_mix.l += sequence.l+audio->clean.reference.l-sequence_before.l;
+        audio->performance_raw_mix.r += sequence.r+audio->clean.reference.r-sequence_before.r;
     }
     /* QWERTY/MIDI notes only: keep backing cards, tile launchers and transport
        preview out of the dry instrument recording. FM's own level is retained. */
-    audio->keyboard_dry=(TsStereoFrame){sample.l+performance.l+fm.l*audio->fm_output_gain,
-                                       sample.r+performance.r+fm.r*audio->fm_output_gain};
+    audio->keyboard_dry=(TsStereoFrame){sample.l+performance.l+fm.l*audio->fm_output_gain+audio->clean.reference.l-clean_before.l,
+                                       sample.r+performance.r+fm.r*audio->fm_output_gain+audio->clean.reference.r-clean_before.r};
     launcher = audio->tile_launcher_active ?
-        ts_performance_read_stereo(&audio->tile_launchers, NULL) :
+        ts_performance_read_routed(&audio->tile_launchers, NULL,&audio->clean) :
         (TsStereoFrame){0.0f, 0.0f};
     TsStereoFrame mosaic = ts_mosaic_read(audio->mosaic, audio->output_rate);
     launcher.l += mosaic.l; launcher.r += mosaic.r;
@@ -542,6 +544,12 @@ static void ts_cycle_audio_backend(int direction)
     }
     ts_live_config->audio_backend = (TsAudioBackend)backend;
     ts_live_config->audio_backend_invalid = 0;
+    /* Clear old-backend names before selection, never after the user chooses. */
+    ts_live_config->audio_output_device[0] = 0;
+    ts_live_config->record_input_device[0] = 0;
+    ts_live_config->insert_send_device[0] = 0;
+    ts_live_config->insert_return_device[0] = 0;
+    ts_audio_catalog_refresh();
 }
 
 static void ts_cycle_midi_device(int direction)
@@ -661,6 +669,7 @@ static int ts_audio_apply_backend_before_sdl(TsAudioBackend backend)
         fprintf(stderr, "TapeSister audio: %s\n", SDL_GetError());
         return 0;
     }
+    if (driver == NULL) SDL_ResetHint(SDL_HINT_AUDIODRIVER);
     if (driver != NULL &&
         !SDL_SetHintWithPriority(SDL_HINT_AUDIODRIVER, driver,
                                  SDL_HINT_OVERRIDE)) {
@@ -771,9 +780,34 @@ static void ts_audio_name_list_free(char ***names, int *count)
     if (count != NULL) *count = 0;
 }
 
+static int ts_audio_catalog_count(int capture)
+{
+    TsAudioBackend wanted = ts_live_config ? ts_live_config->audio_backend : ts_started_backend;
+#if defined(TAPESISTER_HAS_ASIO)
+    if (wanted == TS_AUDIO_BACKEND_ASIO) return ts_asio_count(capture);
+#endif
+#if defined(__linux__)
+    if (wanted == TS_AUDIO_BACKEND_JACK) return 2;
+#endif
+    /* SDL can enumerate only its initialized backend. Do not present stale names. */
+    return wanted == ts_started_backend ? SDL_GetNumAudioDevices(capture) : 0;
+}
+
+static const char *ts_audio_catalog_name(int index, int capture)
+{
+    TsAudioBackend wanted = ts_live_config ? ts_live_config->audio_backend : ts_started_backend;
+#if defined(TAPESISTER_HAS_ASIO)
+    if (wanted == TS_AUDIO_BACKEND_ASIO) return ts_asio_name(index, capture);
+#endif
+#if defined(__linux__)
+    if (wanted == TS_AUDIO_BACKEND_JACK) return ts_jack_names[capture != 0][index];
+#endif
+    return wanted == ts_started_backend ? SDL_GetAudioDeviceName(index, capture) : NULL;
+}
+
 static int ts_audio_name_list_refresh(int capture, char ***names, int *count)
 {
-    int available = SDL_GetNumAudioDevices(capture);
+    int available = ts_audio_catalog_count(capture);
     char **made = NULL;
     int kept = 0;
     if (available < 0) available = 0;
@@ -781,7 +815,7 @@ static int ts_audio_name_list_refresh(int capture, char ***names, int *count)
         made = (char **)calloc((size_t)available, sizeof(*made));
         if (made == NULL) return 0;
         for (int i = 0; i < available; ++i) {
-            const char *name = SDL_GetAudioDeviceName(i, capture);
+            const char *name = ts_audio_catalog_name(i, capture);
             if (name == NULL || name[0] == '\0') continue;
             made[kept] = ts_audio_name_copy(name);
             if (made[kept] == NULL) {

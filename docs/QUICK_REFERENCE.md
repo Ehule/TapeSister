@@ -1,5 +1,11 @@
 # TapeSister Quick Reference
 
+**F9**, tile right-click, and TrackSister track-header right-click open the
+[routing matrix](ROUTING_MATRIX.md). Read from a source row to its checked
+destination columns. New tracks own their routes; **Use Tile** explicitly enables
+inheritance. Middle-click a tile to rename it; middle-click an IN row or OUT
+column in the matrix to name hardware.
+
 For explanations and complete workflows, see the [User Manual](USER_MANUAL.md).
 
 ## Global navigation
@@ -18,7 +24,7 @@ For explanations and complete workflows, see the [User Manual](USER_MANUAL.md).
 | `4` | Show native DSP; press again to cycle DSP pages |
 | `F1`–`F8` | Select keyboard octave |
 | `F10` | Open/close the [SisterTracker pattern editor](SISTERTRACKER_PLAYBACK.md); playback continues when closed |
-| `F9` | Open/close the Router, including from SisterTracker |
+| `F9` | Open/close the routing matrix, including from TrackSister |
 | `Ctrl+F9` | Open/close the modeless Ambisonics output window |
 | `F12` or CFG → AUDIO HEALTH | Open/close the [Audio Health monitor](AUDIO_HEALTH.md); Reset counters and Copy Report for a crackle investigation |
 | `Space` | Main: play/stop audition. Mosaic: play/pause arrangement |
@@ -31,38 +37,22 @@ behind it. Active dialogs keep focus until resolved. Number-key lower-panel shor
 apply to the main canvas. Navigation and audition stop leave Mosaic playback running.
 While SisterTracker owns focus, grave / Shift+grave adjust STEP instead.
 
-## SisterTracker
+## TrackSister
 
-Use arrows for fields and rows, Shift+arrows or drag for block selection, and
-Tab or the visible FX button for Sister/FX. Ctrl+C/X/V copies, cuts and pastes;
-Ctrl+Z/Y undoes and redoes. Shift/Ctrl/Alt+F3/F4/F5 edits a lane, pattern or
-block using Tapehead's cut/copy/paste shortcuts. The EDIT button also exposes
-transpose, field masks, mix paste, fill, repeat, reverse, volume interpolation
-and pattern expand/shrink. Plain navigation and entry preserve the marked block.
-Ctrl+L starts/stops block looping; Shift+arrows changes its bounds at the next
-seam. Alt+C marks a lane. F8 extracts a block outside looping; in Block Loop,
-F7 captures a live performance and F8 captures one live cycle to WAV.
-Ctrl+Alt+Backspace expands/restores the pattern view. Ctrl+E opens EDIT in either
-view. F7/F8 take priority over octave selection in those contexts; OCT remains
-available in the ordinary view.
-Backspace clears all fields in the current track row and moves up one row without
-shifting any contents. Insert and EDIT's DELETE ROW remain structural row edits;
-Shift+Insert/Backspace applies them across all tracks. Grave / Shift+grave
-increases/decreases STEP, wrapping 0–16. Wheel over STEP or OCT adjusts the hovered
-control; octave clamps to 0–7.
-Hold left/right mouse on BPM, TPL or ROWS to increase/decrease continuously.
-LEN click/wheel adjusts 0–256 (Shift: 8; Ctrl: OFF). The eject symbol assigns
-CONTROL. Click FT to enable Pattern; click its LED bank to return to Standard. Click/wheel the ratio;
-right-click the FT strip for forward/reverse/ping-pong. Ctrl+Shift+1–8 toggles
-Pattern clocks; Alt+Shift+1–8 cycles ratios. Left-margin LEN/OFF bypasses all
-LEN/CONTROL; FTL/PAT chooses lane lengths or physical rows for private clocks.
-FOLLOW scrolls normal lanes through a fixed master band; LEN/FT lanes stay on
-stationary pages with their own outlines. Default colors: LEN cyan, FT amber,
-FT+LEN violet, CONTROL red. Rows past LEN dim; populated FT fields turn blue.
-Lag/sync/lead LEDs use the audio phase. Pointer edits preserve the running
-coordinate model; wheel/keyboard browsing suspends FOLLOW. Ctrl+L remains
-literal block audition. Song and tuning/FX command playback remain pending.
-See the [full editing reference](SISTERTRACKER_PLAYBACK.md#editing-and-mixing).
+F10 opens embedded TapeHead. Choose a tile in the mini canvas; use **Play ptn.**,
+**Play sng.**, **Rec. ptn.** and **Rec. sng.** for pattern/song playback or recording.
+**TRK nn** left/right-click or wheel adds/removes two tracks (2–32). Removed tracks
+retain their project data. F10/Escape returns to the canvas while playback continues.
+
+Use original tracker editing, clipboard, undo, effects/tuning and LEN/FasTrax.
+**Ctrl+F** toggles Follow. With Follow on, Space stops playback; with Follow off,
+Space first enables Live edit, then stops. Ctrl+L loops a block; F7/F8 capture the
+live block. Ctrl+Alt+Backspace toggles the expanded pattern view.
+
+MIDI note-on velocity is recorded as tracker volume 1–64 from MIDI 1–127 when note
+editing/recording is active; aftertouch is not recorded. Ctrl+S/Ctrl+O use host
+project save/open. Track routing lives in F9, and F12 opens Audio Health.
+See the [complete editing reference](SISTERTRACKER_PLAYBACK.md).
 
 ## Mosaic
 
@@ -132,7 +122,8 @@ the arrangement, level/pan/fades, global speed and shared audio versions; capaci
 
 **CFG → PALETTE → MOSAIC** offers HILITE and colors 1–5. Select a swatch and use
 the existing RGB sliders or Tapehead eyedropper. SAVE SHARED stores them; CANCEL
-restores the previous palette. HILITE defaults to bright red.
+restores the previous palette. HILITE defaults to bright red. Matrix colors are
+currently fixed; a separate expanded palette editor is proposed.
 
 ## CDP Portal
 
@@ -375,13 +366,17 @@ STEREO maps odd channels to L and even channels to R.
 
 ## Sister Machine transport and routing
 
+In matrix mode, patch source rows to Sister in F9. The source switches below
+(TILES/FM/EXT/AUDITION/TH SRC) describe legacy routing only. Matrix connection
+levels replace their source trims; POWER/ROLL/HOLD/INPUT/MONITOR still operate.
+
 | Control | Meaning |
 | --- | --- |
 | POWER | Allocate/release Sister engine and histories |
 | ROLL | Move write head and accept writes |
 | HOLD | Stop writing while playback heads continue |
 | CLEAR | Safely clear rolling memory |
-| MONITOR | Gate complete Sister DRY+WET return |
+| MONITOR | Gate Sister tape/head output; legacy mode: complete DRY+WET return |
 | BUFFER | Live 5–60 second rolling tape |
 | TILES | Route Mosaic plus the page-specific Shift-click tile sources |
 | FM | Route live FM Logic |
@@ -391,7 +386,7 @@ STEREO maps odd channels to L and even channels to R.
 | TH SONG | Toggle Tapehead Song Play/Stop; lit only while Song mode is playing |
 | TH PATT | Toggle Tapehead Pattern Play/Stop; lit only while Pattern mode is playing |
 
-A routed source leaves its ordinary direct speaker path and returns through Sister.
+In legacy mode, a routed source leaves its ordinary direct speaker path and returns through Sister.
 Power changes preserve shared pedalboard settings and transitions and Fallout's
 modulation state. With Sister off, ordinary playback uses Fallout and POST slots.
 
@@ -443,16 +438,16 @@ Placement is exactly one of:
 | --- | --- |
 | PRE | new source before INPUT/write/Duck |
 | H1/H2/H3 | after selected head read, before later head character/level |
-| POST | after Sister MIX and Fallout |
+| POST | Matrix Pedalboard node; legacy mode: serial Pedalboard stage |
 
 Effect and Master transitions: 10 ms–60 min. Slot Gain: -12 to +12 dB. FX Feedback:
 0–135%.
 
 **MASTER FX** bypasses the live pedalboard and Fallout together, including Fallout's
 feedback, over the Master transition time. It preserves settings and modulation
-clocks. Bypass leaves dry playback audible and cannot remove effects printed into
-Sister's tape. With Sister off, only POST slots process ordinary playback; PRE and
-head placements require Sister.
+clocks. In matrix mode, dry sound requires a separate connection. Bypass cannot
+remove effects printed into Sister's tape. With Sister off, POST slots can still
+process routed sources; PRE/head placements require Sister.
 
 ## Fallout
 
@@ -476,61 +471,56 @@ or through the bounded ordinary playback return when Sister is off.
 MOD targets: Mix, Feedback, Noise, Drop Rate, Pan Rate, Skip Span/Rate, Bit
 Sample/Depth/Rate, Pitch Ratio/Ramp/Rate. `L` assigns LFO; `R` assigns Rise.
 
-## Ambisonics output
+## Routing matrix (F9)
 
-F9 → AMBISONICS or Ctrl+F9. The top toggle switches between the spatial field
-and ordinary stereo. STEREO n–n cycles adjacent room pairs (quad: 1–2, 2–3,
-3–4, 4–1); hardware assignments live on ARRAY. Closing the window keeps it
-running. FIELD provides map dragging, MOTION provides LFO/Rise/A–B controls.
-FILE OUT remains stereo before this speaker stage. [Setup and controls](AMBISONICS.md).
-
-## Global Router
+Default: **tiles/tracks + FM + Live Link → Main → EQ → limiter → OUT 1/2**.
+External inputs/effect sends start disconnected. Processor returns feed Main.
 
 | Action | Control |
 | --- | --- |
-| Open/close Router | F9 from Main, FM, Mosaic or Sister; also EQ → GLOBAL ROUTER |
-| Reorder | Drag a module name/grip; release at the amber destination line |
-| Cancel drag / close | Escape |
-| Bypass | BYPASS on the module; retains its settings |
-| Solo | SOLO; click again to restore bypasses, or another Solo to move it |
-| Help | Hover for 600 ms |
+| Open/close | F9; tile/track-header right-click selects that source; Escape closes |
+| Connect/disconnect | Left-click cell; new connection 0 dB |
+| Inspect without toggling | Right-click cell |
+| Connection level | Drag/wheel Level label or slider: 1 dB; Shift: 0.1 dB |
+| Level reset | Right-click Level: 0 dB; may connect an unpatched cell; feedback capped at −6 dB |
+| All sends from one row | Drag/wheel Row Pan label or slider: 5 points; Shift: 1 |
+| Pan reset | Right-click Row Pan: 0 (center) |
+| Mono source / single speaker | Mono sums before pan; full pan targets one side of a pair |
+| Track ownership | Use Tile inherits tile routes; Use Track enables independent track controls |
+| Scroll | Wheel over grid; Ctrl+wheel connected cell adjusts level |
+| Hardware naming | Middle-click IN row/OUT column or Name I/O; blinking caret; Enter saves/Escape cancels |
+| Clear All | Remove every connection across all filters/pages; matrix active and silent |
+| Reset to Default | Restore normal stereo, track ownership, centered pan/stereo; preserve names |
+| Feedback / Cut Feedback | Enable explicit 64-sample delayed loop edges (−6 dB maximum) / remove them |
 
-Default: **Prism → Sister → Fallout → Pedalboard → INSERT (bypassed)**. Source and the final
-EQ/limiter/OUT are fixed. IN lights show audio reaching each position; OFF is the
-module's own power, separate from Router BYPASS/SKIP/SOLO. Solo does not power on
-an OFF module. QWERTY/MIDI/ARP remain playable.
+Green marks beside rows = source activity; beneath columns = arriving audio;
+beneath checked cells = sends. Amber indicates feedback. These softly fading
+marks are not calibrated meters; disconnected/unavailable paths stay dark.
+**N/A** means that hardware channel is not open; the saved route remains silent.
+**MATRIX LIVE** is active-routing status, not a patch-state sequencer.
 
-Pedalboard's POST slots move as one chain. Its PRE/head inserts stay local to
-Sister; Pedalboard bypass gates them too. Sister's DRY monitor normally joins at
-Master; a configured downstream INSERT merges it before the external loop.
-MASTER FX still gates
-Pedalboard and Fallout. Order/bypass/solo save with projects and configuration;
-sound presets preserve routing. [Full behavior](USER_MANUAL.md#global-router).
+For a series Vulture loop: **Main → OUT 3/4 → hardware → IN 5/6 → EQ → limiter →
+OUT 1/2**; disconnect Main → EQ to avoid parallel dry audio. For Terra, connect
+its input row to each desired processor/output. Each processor remains one
+shared instance. See [Routing Matrix](ROUTING_MATRIX.md).
 
-### External Insert
+TSR saves include routing, levels, row pan/mono and hardware names. Keep the
+whole project folder. Legacy projects retain the old path until Use Matrix,
+Clear All or Reset to Default is selected. Legacy serial order, Router
+Performance, Insert assignments and Sister source switches are inactive in the
+matrix. [Legacy reference](LEGACY_ROUTING.md).
 
-- **SETUP** on INSERT opens its panel; Escape returns to Router.
-- Master output/backend stay in **CFG**. SEND can use **MASTER DEVICE SPARES**
-  or a separate output device; RETURN can use **SHARED CFG INPUT** or its own input.
-- Click device/pair buttons to cycle; right-click reverses; **APPLY PORTS** commits.
-  **SAVE CONFIG** remembers device names. Finish recording before changing ports.
-- Pair numbers are local to the selected device. M6 `Out 3-4` and `In 5-6`
-  endpoints each use **DEVICE CH 1/2**. Master can remain on `Out 1-2`.
-- SEND/RETURN levels span −24 to +12 dB; right-click restores 0 dB.
-- **100% returned audio, no Mix control.** BYPASS restores the internal path.
-  SOLO uses the existing Router solo. S/R lights distinguish outgoing/incoming activity.
-- Missing return stays silent while active. A shared RETURN pair is excluded from
-  ordinary EXT monitoring; a separate RETURN leaves CFG's input available.
-- Stereo pairs in the first eight negotiated channels; wider devices accepted; no ASIO host.
-  Separate SEND and RETURN target two of their larger producer/consumer bursts,
-  converted to each queue's source rate. Live HZ/FR and GAPS/DROP help diagnose I/O. No latency
-  compensation. Device names persist across loss/recovery without fallback.
-- FILE OUT and Mosaic REC OUT include the returned signal. Earlier source/head
-  taps retain their named position. [Setup and limits](USER_MANUAL.md#external-insert).
+## Ambisonics output
+
+Ctrl+F9 opens the existing field/array/motion window. This is part of the legacy
+output path; matrix physical outputs bypass its speaker mapping and processing.
+[Legacy setup and controls](AMBISONICS.md).
 
 ## Final output
 
-Final order: mix → Master EQ → linked limiter → OUT fader → L/R meter and FILE OUT.
+Default path: Main → Master EQ → linked limiter → OUT 1/2; OUT gain and the final
+hardware guard apply at the device. Matrix connections can bypass EQ/limiter nodes.
+FILE OUT records OUT 1/2 before the final hardware guard, not the sum of all outputs.
 
 Click **EQ** in either window for Master / Room EQ and the limiter toggle.
 Hover its controls for 600 ms to see help in the bottom status line.
@@ -559,8 +549,9 @@ OUT is after the limiter. Lower pre-limiter stages to reduce gain reduction.
 | Setting/state | Meaning |
 | --- | --- |
 | Backend Auto | recommended; SDL chooses the Windows backend |
-| Backend WASAPI | explicit Windows WASAPI; save and restart |
-| Backend DirectSound | explicit compatibility backend; save and restart |
+| Backend WASAPI | Windows shared-mode audio; SAVE CONFIG applies in place |
+| Backend DirectSound | Compatibility backend; SAVE CONFIG applies in place |
+| Backend ASIO | One 64-bit duplex driver; choose driver and buffer, then SAVE CONFIG |
 | Input/Output SYSTEM DEFAULT | deliberate use of the current system default |
 | active | configured endpoint is open |
 | closed capture | normal when EXT, external REC, and input monitoring are idle |
@@ -569,8 +560,12 @@ OUT is after the limiter. Lower pre-limiter stages to reduce gain reduction.
 
 Capture loss leaves tiles, FM, audition, and internal Sister audio available. Output
 loss leaves the application responsive. Reconnect the configured endpoint or select a
-new one in CONFIG. TapeSister has no native ASIO backend; prefer WASAPI shared mode for
-coexistence and validate REAPER/ASIO against the interface driver's own sharing rules.
+new one in CONFIG. Finish/cancel recording before changes. Backend/driver/buffer
+changes briefly stop audio and reopen devices without closing the app. Failed
+changes attempt rollback and stay unsaved. ASIO driver selection links INPUT and
+OUTPUT immediately. For other SDL backends, save to activate the backend, reopen
+CFG and choose its devices, then save again. F12 shows actual rate/frames/channels.
+Driver sharing rules still apply. [ASIO setup](ASIO_AUDIO.md).
 
 ## Files and folders
 
@@ -581,7 +576,8 @@ coexistence and validate REAPER/ASIO against the interface driver's own sharing 
 | `project-data/` | additional pages, REC BANK, and Mosaic | move with the project folder |
 | `project-data/mosaic.tsm` | event layout, notes, regions, loop/mute/solo/repeat settings | move with the project folder |
 | `project-data/mosaic-000.wav`, etc. | shared event audio versions, lossless 32-bit float | move with the project folder |
-| `sister-state.ini` | Sister/Fallout project state | move with the project folder |
+| `sister-state.ini` | Sister/FX/Prism, EQ, routing graph and hardware names | move with the project folder |
+| `project-data/sister-tracker.tst` | TrackSister score, recorded volumes, routes and editor state | move with the project folder |
 | `manifest.txt` | collection map | move with the project folder |
 | `.tsp` | processing recipe, no audio | standalone |
 | `.wav` | ordinary audio export/capture | standalone |
@@ -641,8 +637,8 @@ characters where needed. You can edit the suggested name before saving.
 Recording continues through workspace changes and event editing. Click the active
 recording button again to finish the timestamped file in `Captures/`; Mosaic keeps
 playing. Stop the arrangement first and record its effects tails if desired. The
-file contains the final processing, Master EQ, limiter, and OUT level and requires no tile
-destination or powered Sister engine.
+file contains the routed OUT 1/2 signal and OUT gain, before the hardware guard;
+other physical outputs are not summed into it. It needs no tile destination or powered Sister.
 | **STOP FILE** in the recording footer | Finish the WAV and keep playback running |
 | QWERTY on the canvas | Up to five simultaneous notes; newest voice supplies the playhead |
 
@@ -768,10 +764,10 @@ Ctrl+Z / Ctrl+Y undo/redo; Escape cancels the current stroke.
   then restart. Legacy `meditation`/`standing` values migrate to `nebula`.
   `off` leaves audio and optical controls active. [Details](PRISM_ZOYA.md).
 - **DRAW**: each stroke replaces the previous envelope in its drawn region,
-  with recoverable zeroed sections and ordinary undo/redo. New saves use TSR32.
+  with recoverable zeroed sections and ordinary undo/redo. Current saves use TSR37.
 
 ### JACK and device discovery
 
-- Linux: CFG → BACKEND → JACK, save/restart; select TapeSister Master/Input in CFG and TapeSister Insert Send/Return in Insert. Connect ports in the JACK patchbay.
+- Linux: CFG → BACKEND → JACK, SAVE CONFIG; select TapeSister Master/Input in CFG and save again if needed. No app restart. Patch matrix IN/OUT pairs and connect JACK ports in the patchbay; dedicated Insert endpoints belong to legacy routing.
 - CFG SCAN / Insert RESCAN refresh device lists. General buffers include 128 frames; JACK follows its server.
 - [Full setup and diagnostics](JACK_AUDIO.md), including REAPER/SunVox and both sides of Insert.

@@ -17,10 +17,34 @@ must remain beside TapeSister.exe. The assets, cdp, and licenses directories mus
 also remain in place.
 
 For coexistence with Tapehead, REAPER, or VB-CABLE, start with Auto or WASAPI
-shared mode and matching sample rates. TapeSister does not provide native ASIO.
+shared mode and matching sample rates. Native ASIO is also included: install the
+interface's 64-bit driver, select ASIO in CFG, choose the duplex driver and buffer,
+then SAVE CONFIG. Backend/device/buffer changes apply without closing the app;
+finish or cancel recording first. F12 shows the actual rate, buffer and channels.
+See docs/ASIO_AUDIO.md for MOTU/VB-Audio Matrix setup and driver-sharing limits.
+
+F9 opens the unified routing matrix. Default audio goes through Main, EQ and the
+limiter to OUT 1/2. External hardware uses explicit output/input connections.
+Activity indicators, Level/Row Pan wheel edits and right-click resets are covered
+in docs/ROUTING_MATRIX.md, along with Clear All, Reset to Default and I/O naming.
+MATRIX LIVE means active routing, not a patch-state sequencer. Existing projects
+retain their old engine until explicitly converted.
+
+Save/copy the whole named project folder to keep routing, hardware names,
+TrackSister notes/recorded velocities and all audio. Older projects may have an
+adjacent .tsr.samples folder; keep that with the TSR.
 See docs/USER_MANUAL.md for the illustrated manual, including Mosaic, and
 docs/QUICK_REFERENCE.md for controls and shortcuts. docs/MOSAIC.md covers the
 arrangement workflow in detail. Linked guides and screenshots are included in docs/.
+
+LINUX
+-----
+Extract the complete TapeSister-linux-x86_64.tar.gz archive to a writable folder
+and run ./tapesister there. Keep assets, cdp and licenses with the executable.
+The docs folder contains the same manual, quick reference, guides and screenshots.
+JACK users should read docs/JACK_AUDIO.md; the runtime and a running JACK server
+(or the distribution's PipeWire JACK setup) must be available. Audio setup applies
+from CFG without closing the application.
 
 BUILDING THE WINDOWS ARCHIVE
 ----------------------------

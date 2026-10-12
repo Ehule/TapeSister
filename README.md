@@ -180,9 +180,9 @@ Every completed real-time take is also preserved as a timestamped 32-bit float W
 
 Sister Machine is a live 5–60 second rolling stereo tape memory with one moving write
 head and three playback heads. It accepts selected tiles, FM, external input,
-audition/preview audio, and Tapehead's direct Live Link. Sources routed into Sister
-behave like hardware inserts: they leave their direct path and return through Sister's
-DRY/WET monitor section.
+audition/preview audio, tracks and Tapehead's direct Live Link. In F9, patch sources
+to Sister and send its tape/head output onward. Dry sound needs its own connection.
+Legacy projects retain the earlier source-switch and DRY/WET monitoring path.
 
 Its controls include:
 
@@ -202,42 +202,41 @@ boundary.
 
 ![Sister Machine during a routed capture](docs/images/manual/sister-machine.png)
 
-## Global Router
+## Routing matrix
 
-**F9**, or **EQ → GLOBAL ROUTER**, opens the vertical signal path. Drag Prism,
-Sister Machine, Fallout, Pedalboard and INSERT into a different order, or use each
-module's Bypass/Solo controls while playing. Small activity lights show where audio
-is arriving, separately from whether a module is enabled. Source and final
-EQ/limiter/OUT stay fixed. Routing saves with projects and configuration.
+**F9**, tile right-click and TrackSister track-header right-click open one modeless
+matrix. Read from a source row to checked destinations: tracks, tiles, FM, Live
+Link, external inputs and shared processors can feed processors or physical outputs.
+New configurations use **Main Mix → EQ → limiter → OUT 1/2**; inputs/effect sends
+start disconnected. Track routes take precedence; **Use Tile** enables inheritance.
 
-Pedalboard's stereo POST chain moves as one module; its existing PRE/head inserts
-stay inside Sister. INSERT adds a movable, 100%-wet external send/return loop using
-spare output pairs or independent SEND/RETURN devices. **SETUP** on its Router
-row opens device, channel and level controls. New and older projects start with INSERT bypassed.
-[Controls and routing details](docs/USER_MANUAL.md#global-router).
+Subtle activity marks show source, destination and connection signals with a gentle
+fade. Wheel over Level or Row Pan to adjust; Shift makes finer changes. Right-click
+resets Level to 0 dB and Pan to center. Middle-click IN/OUT names to label hardware;
+the text field has a blinking caret. **Clear All** removes the whole patch;
+**Reset to Default** restores normal stereo. Both preserve hardware names.
 
-**F9 → PERFORMANCE** adds timed Bypass/Solo, A–Z Router States and up to 64
-steps with individual hold times. Manual gestures override until the next step;
-STOP holds the state and RESTORE returns to the manual state captured before PLAY.
-[Router Performance controls, MIDI and examples](docs/ROUTER_PERFORMANCE.md).
+![Native matrix responding to a test signal](docs/screenshots/routing-matrix/matrix-signal-activity.png)
 
-![Router Performance](docs/images/router-performance-playing.png)
+**MATRIX LIVE** means the graph controls audio. It is not a state sequencer.
+One shared instance of each processor handles its summed inputs; dry audio needs
+an explicit route. Whole-mix hardware processing uses Main → output pair → hardware
+→ input pair → EQ/limiter, without legacy Insert assignment. The matrix addresses
+pairs on the active device, not aggregated independent output devices.
 
-![Native Global Router](docs/images/global-router.png)
+Routing, levels, pan/mono, inheritance and aliases save with the TSR project.
+Keep the complete project folder. Existing projects retain their legacy path
+until explicitly converted with **Use Matrix**; save a separate copy to retain
+the old patch. The legacy serial Router, its Performance states/timers, Insert
+assignments and Ambisonics output do not control an active matrix.
 
-![External Insert setup](docs/images/external-insert.png)
+[Routing guide, default path, Terra and Vulture examples](docs/ROUTING_MATRIX.md) ·
+[Manual](docs/USER_MANUAL.md#global-router) ·
+[Legacy routing reference](docs/LEGACY_ROUTING.md).
 
-Master stays on output 1/2 of the CFG device. SEND can use its spare native
-channels or a separate playback device; RETURN can share CFG's input or use a
-separate capture device. This supports interfaces exposed as separate stereo
-endpoints: for an M6, choose SEND `Out 3-4` and RETURN `In 5-6`, each using its
-local **DEVICE CH 1/2**. An active Insert with a missing return stays silent until
-you bypass it. [Setup, buffering and limits](docs/USER_MANUAL.md#external-insert).
-Linux now offers native JACK with named Master/Input and Insert Send/Return ports,
-independent of SDL's JACK support. CFG/Insert rescan devices; opaque and wider
-layouts are accepted. [JACK setup and both-side diagnostics](docs/JACK_AUDIO.md).
-The panel shows actual stream rates/buffers, queue targets, and SEND/RETURN
-dropout counters. Tile sample rates can differ from the live device rate.
+CFG applies backend/device/buffer changes without closing the app. ASIO lets you
+select the backend, duplex driver and buffer before saving once. See
+[ASIO setup](docs/ASIO_AUDIO.md) and [JACK setup](docs/JACK_AUDIO.md).
 
 ## Four-slot FX pedalboard
 
@@ -247,7 +246,7 @@ placement:
 
 - PRE — newly arriving material before the tape write;
 - H1, H2, or H3 — one playback head and its recurrence;
-- POST — the Router's Pedalboard position, initially after Sister MIX and Fallout.
+- POST — the matrix Pedalboard node (or the Pedalboard stage in legacy serial routing).
 
 Each slot has Mix and ±12 dB Gain. Reverb reaches approximately two-minute decay,
 Delay spans about 8–2000 ms, and Grain ranges from isolated fragments to dense clouds.
@@ -265,10 +264,10 @@ require Sister. Turning Sister on preserves the shared effect setup.
 
 ## Fallout
 
-Fallout is a stereo deterioration instrument initially between Sister's completed
-MIX and the POST pedalboard location; Global Router can move it. With Sister off,
-it processes ordinary playback, including Mosaic. Drop, Pan, Skip, Bit, Pitch, colored Noise, and Feedback can
-be combined or modulated.
+Fallout is a stereo deterioration instrument. Patch sources into its matrix node
+and route its processed return onward; it works with Sister POWER off. Drop, Pan,
+Skip, Bit, Pitch and colored Noise can be combined or modulated. Matrix feedback
+uses explicit delayed connections; legacy projects retain the serial return path.
 
 Its three independent transition clocks—Preset, Parts, and Master—each span 10 ms to
 60 minutes. A shared sine LFO spans one cycle per hour through 10 Hz. Rise can repeat
@@ -387,11 +386,11 @@ diagnostics.
 ### Windows audio coexistence
 
 TapeSister defaults to `audio_backend=Auto`. On Windows, CONFIG can also select
-ASIO, WASAPI or DirectSound; save and restart after changing the backend. The
+ASIO, WASAPI or DirectSound; SAVE CONFIG applies changes without closing the app. The
 CFG `ON:` label identifies the backend actually running. Native ASIO puts Master,
 ordinary input and Insert Send/Return on one multichannel duplex driver clock,
 without the independent Insert queues. See [ASIO setup](docs/ASIO_AUDIO.md) for
-MOTU and VB-Audio Matrix routing. ASIO driver/buffer changes also require restart.
+MOTU and VB-Audio Matrix routing. Finish or cancel recording before changing audio setup.
 Auto/WASAPI shared mode remains available for TapeHead, REAPER or VB-CABLE;
 hardware-driver sharing and exclusivity rules still apply.
 
@@ -399,7 +398,7 @@ Configured and active devices are tracked separately. A named output or input is
 never silently replaced with the system default. If a named output fails at startup,
 TapeSister offers Retry, a temporary explicitly approved system-default output,
 continued operation without physical output, or Exit. Capture hardware is opened only
-while EXT, external recording, or input monitoring needs it; capture loss does not stop
+while matrix input routes, EXT, external recording, or input monitoring need it; capture loss does not stop
 tiles, FM, audition, or Sister's internal sources. CONFIG shows connection state, while
 stderr and `tapesister-diagnostic.log` record the active backend, real SDL device IDs,
 negotiated format, rate, channels, buffer, fallback state, and last error.
@@ -430,8 +429,8 @@ For an ordinary developer build without creating the ZIP, continue to use
 - [SisterTracker playback](docs/SISTERTRACKER_PLAYBACK.md) — F10 embeds the original
   TapeHead editor and replayer, with tile bindings, original editing/undo,
   XM/MOD import, approximate IT conversion, optional raw-file import, XM export,
-  instrument tiles, up to 32 tracks, Song and FastTracks
-  transport, Sister TRACK and final Main recording.
+  instrument tiles, a TRK control for 2–32 tracks, Song and FastTracks
+  transport, live pan/balance markers on the scopes, Sister TRACK and final Main recording.
 - [SisterTracker foundation](docs/SISTERTRACKER_FOUNDATION.md) — stage 1 song model,
   stable tile identity, native persistence, and migration.
 - [Realtime Capture](docs/CAPTURE_WORKFLOW.md)
@@ -450,6 +449,9 @@ For an ordinary developer build without creating the ZIP, continue to use
 - [Sister Fallout](docs/SISTER_MACHINE_FALLOUT.md)
 - [Sister Realtime Audit](docs/SISTER_MACHINE_PR11_REALTIME_AUDIT.md)
 - [Universal TapeSister/TapeHead Palette](docs/UNIVERSAL_PALETTE.md)
+- [Routing Matrix](docs/ROUTING_MATRIX.md)
+- [ASIO Audio](docs/ASIO_AUDIO.md)
+- [Audio Health](docs/AUDIO_HEALTH.md)
 - [Windows Audio Validation](docs/WINDOWS_AUDIO_VALIDATION.md)
 - [Third-party notices](THIRD_PARTY_NOTICES.md)
 

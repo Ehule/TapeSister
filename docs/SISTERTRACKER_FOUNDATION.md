@@ -1,5 +1,11 @@
 # SisterTracker: stage 1 foundation
 
+> Historical implementation reference. The current user workflow is documented
+> in the [User Manual](USER_MANUAL.md), [Routing Matrix](ROUTING_MATRIX.md) and
+> [TrackSister guide](SISTERTRACKER_PLAYBACK.md). Earlier serial/source-switch
+> paths, format versions and staged limitations below describe their original
+> implementation, not the current matrix defaults.
+
 This document describes the original native score/identity foundation. F10 now
 uses the embedded TapeHead application described in
 [SisterTracker playback](SISTERTRACKER_PLAYBACK.md). The stable model remains the
@@ -74,7 +80,7 @@ not for importing independent tiles.
 
 ## Native format and migration
 
-New native bank files use **TSR32**, adding an explicit little-endian tile ID
+This stage introduced **TSR32**, adding an explicit little-endian tile ID
 after each occupied-slot flag. Existing TSR6–TSR31 readers remain supported and
 assign identities during migration. Audio, recipes, and existing edit histories
 keep their earlier serialization. Older TapeSister binaries cannot read TSR32.

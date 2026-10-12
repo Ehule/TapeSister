@@ -1,20 +1,17 @@
 # Sister Machine Fallout
 
-Fallout is a stereo deterioration instrument. The default order places it after
-Sister Machine's completed MIX and before pedalboard slots placed at POST.
-**F9** opens the [Global Router](USER_MANUAL.md#global-router) to change its position:
+Fallout is a stereo deterioration instrument. In the [F9 matrix](ROUTING_MATRIX.md),
+patch sources or another processor into **FALLOUT**, then route its output to
+Main or hardware. Its row contains the processed contribution, scaled by MIX;
+dry audio needs a separate source connection. FALLOUT and MASTER FX must be on.
+It can process audio with Sister POWER off. PRE/head pedalboard slots remain
+local to Sister; POST slots are the separate Pedalboard node.
 
-`Sister MIX -> Fallout -> POST slots in 1-2-3-4 order -> linked safety -> global limiter -> master OUT`
-
-Pedalboard slots placed at PRE or H1/H2/H3 enter at their named earlier locations and
-therefore do not appear in this post-MIX shorthand. See the
-[User Manual](USER_MANUAL.md#the-four-slot-fx-pedalboard) for the current rack.
-
-Fallout also processes ordinary playback with Sister powered off, including Mosaic:
-the shared input mix enters Fallout, then POST slots, the limiter, and final OUT.
-PRE and head placements require Sister. Mosaic supplies Sister's **TILES** input
-when Sister is powered, and uses this ordinary route when it is off. Switching
-Sister power preserves the global effect settings, transitions, and modulation state.
+The following feedback/bypass descriptions originated in the legacy serial
+engine. Its default order was Sister MIX → Fallout → POST rack → EQ/limiter/OUT.
+In matrix mode, inter-processor recirculation is explicit: enable **Feedback**
+and add a delayed, gain-limited connection. The old Fallout FEEDBACK return does
+not create that graph connection. Power/modulation settings remain local.
 
 It is an original C reimplementation inspired by Bahiamansa's freely shared
 `failure_v2` ppooll act. No Max, ppooll, patcher, artwork, or UI code is embedded.
@@ -33,14 +30,14 @@ The pedalboard's **MASTER FX** switch separately governs all live pedalboard and
 Fallout processing, including Fallout feedback, on both the Sister and ordinary
 routes. Its selected Master transition applies to this combined bypass. Individual
 Fallout settings and modulation clocks survive Master FX bypass; the FALLOUT switch
-above has its own history-reset behavior. Bypass leaves dry playback audible and
+above has its own history-reset behavior. In matrix mode, dry playback needs a separate connection. Bypass
 does not undo processing already recorded into Sister's tape memory.
 
 ## Controls
 
-- MIX blends Fallout with the incoming Sister MIX or ordinary playback mix.
-- FEEDBACK returns Fallout's wet-only signal to Sister's rolling write when powered,
-  or through the bounded ordinary playback return with Sister off.
+- MIX scales the wet matrix return; in legacy mode it blends with the incoming mix.
+- FEEDBACK is the legacy wet return to Sister/ordinary playback. In matrix mode,
+  recirculation instead uses explicit delayed graph connections.
 - NOISE cycles among WHITE, PINK, BROWN, and BLUE spectra; LEVEL sets its amount.
 - DROP creates Gaussian amplitude failures.
 - PAN creates smoothed random equal-power positions.

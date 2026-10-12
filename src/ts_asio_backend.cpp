@@ -2,6 +2,7 @@
    driver ABI. This adapter keeps TapeSister on a single synchronous stream. */
 #include "tapesister/asio_backend.h"
 #include "RtAudio.h"
+#include "ts_asio_callback_lock.h"
 #include <algorithm>
 #include <atomic>
 #include <cstring>
@@ -15,10 +16,11 @@ struct Endpoint { SDL_AudioSpec spec{}; SDL_AudioDeviceID id{}; bool paused{true
 std::unique_ptr<RtAudio> driver;
 std::vector<RtAudio::DeviceInfo> devices;
 SDL_mutex *mutex;
-std::atomic<unsigned> xruns{0}, driverXruns{0}, controlSkips{0};
+std::atomic<unsigned> xruns{0}, driverXruns{0}, controlSkips{0}, controlRecoveries{0};
 std::atomic<bool> lost{false};
 bool started, notified;
 unsigned inputs, outputs, frames, rate, serial;
+uint64_t lockRetryTicks;
 std::string active;
 const float *currentInput;
 
@@ -38,9 +40,17 @@ int process(void *out, void *in, unsigned n, double, RtAudioStreamStatus status,
     if (out) std::memset(out, 0, size_t(n) * outputs * sizeof(float));
     if (status) { ++xruns; ++driverXruns; }
     if (lost.load() || n != frames) { lost.store(true); return 0; }
-    /* The application has existing UI/DSP exclusion. Never wait for it on the
-       driver deadline: output silence and count a missed period instead. */
-    if (SDL_TryLockMutex(mutex)) { ++xruns; ++controlSkips; return 0; }
+    /* Note edits normally hold this mutex for a fraction of a millisecond.
+       Recover those overlaps instead of replacing a whole period with silence.
+       Long edits still stop at the retry budget and remain visible as skips. */
+    struct LockOps {
+        int try_lock() { return SDL_TryLockMutex(mutex); }
+        uint64_t now() { return SDL_GetPerformanceCounter(); }
+        void pause() { SDL_CPUPauseInstruction(); }
+    } ops;
+    const auto lock = ts_asio_callback_lock(ops, lockRetryTicks);
+    if (lock == TsAsioLock::skipped) { ++xruns; ++controlSkips; return 0; }
+    if (lock == TsAsioLock::recovered) ++controlRecoveries;
     Endpoint &capture = endpoints[1], &playback = endpoints[0];
     currentInput = capture.id && !capture.paused ? static_cast<float *>(in) : nullptr;
     if (currentInput && capture.spec.callback)
@@ -130,7 +140,7 @@ SDL_AudioDeviceID ts_asio_open(const char *name, int capture,
             SDL_SetError("ASIO uses one driver for main I/O and Insert; set INPUT to SYSTEM DEFAULT"); return 0;
         }
         if (endpoints[capture].id) {
-            SDL_SetError("ASIO endpoint already open; save and restart to change its driver or buffer"); return 0;
+            SDL_SetError("ASIO endpoint already open; close both endpoint views before reopening"); return 0;
         }
         if (!driver->isStreamOpen()) {
             if (capture) { SDL_SetError("Open ASIO output before its shared input"); return 0; }
@@ -144,7 +154,7 @@ SDL_AudioDeviceID ts_asio_open(const char *name, int capture,
             op.nChannels = outputs; ip.nChannels = inputs;
             RtAudio::StreamOptions options; options.streamName = "TapeSister";
             lost.store(false); notified = false; xruns.store(0);
-            driverXruns.store(0); controlSkips.store(0);
+            driverXruns.store(0); controlSkips.store(0); controlRecoveries.store(0);
             if (driver->openStream(&op, inputs ? &ip : nullptr, RTAUDIO_FLOAT32, rate,
                                    &frames, process, nullptr, &options) != RTAUDIO_NO_ERROR) {
                 closeStream(); SDL_SetError("ASIO open failed; check driver availability, rate and control panel"); return 0;
@@ -153,6 +163,7 @@ SDL_AudioDeviceID ts_asio_open(const char *name, int capture,
             if (!frames || frames > 32768 || !rate) {
                 closeStream(); SDL_SetError("Unsupported ASIO buffer size or sample rate"); return 0;
             }
+            lockRetryTicks = ts_asio_lock_budget(frames, rate, SDL_GetPerformanceFrequency());
             active = choice->name;
         }
         SDL_LockMutex(mutex);
@@ -187,6 +198,8 @@ void ts_asio_pause(SDL_AudioDeviceID id, int paused)
         if (driver->startStream() != RTAUDIO_NO_ERROR) lost.store(true);
     }
 }
+int ts_asio_running(void)
+{ return driver && started && !lost.load() && driver->isStreamRunning(); }
 void ts_asio_poll(void)
 {
     if (!driver || notified || !started) return;
@@ -202,6 +215,7 @@ void ts_asio_poll(void)
 unsigned ts_asio_xruns(void) { return xruns.load(); }
 unsigned ts_asio_driver_xruns(void) { return driverXruns.load(); }
 unsigned ts_asio_control_skips(void) { return controlSkips.load(); }
+unsigned ts_asio_control_recoveries(void) { return controlRecoveries.load(); }
 const float *ts_asio_input_block(unsigned *n, unsigned *ch)
 { *n = frames; *ch = inputs; return currentInput; }
 void ts_asio_quit(void)
