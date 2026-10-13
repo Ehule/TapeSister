@@ -233,6 +233,7 @@ void ts_tracker_tapehead_render(TsFramebuffer *fb,const TsUiState *state)
     for(int i=0;i<PAL_NUM;++i)video.palette[i]=paletteMap[i]>=0?state->palette.colors[paletteMap[i]]:RGB32(0,0,0);
     video.palette[PAL_FORGRND]=RGB32(255,255,255);
     video.palette[PAL_CURSOR_NAV]=RGB32(40,224,255);video.palette[PAL_CURSOR_EDIT]=RGB32(255,224,32);
+    for(int i=0;i<PAL_NUM;++i)video.palette[i]=ts_theme_tracker_color(&state->palette,i,video.palette[i]);
     ui.numChannelsShown=ui.maxVisibleChannels=MAX_CHANNELS;ui.channelOffset=0;ui.patternChannelWidth=TS_TRACKER_LANE_WIDTH;
     config.ptnShowVolColumn=config.ptnHex=config.ptnAlternativeLayout=config.ptnChnNumbers=1;
     song.numChannels=MAX_CHANNELS;song.pattNum=0;song.row=host.view.master_row;

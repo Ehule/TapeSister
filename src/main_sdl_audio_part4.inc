@@ -1,3 +1,5 @@
+static const TsPalette *cfg_palette;
+static TsThemeGroup cfg_group=TS_THEME_BROWSER;
 static void cfg_rect(TsFramebuffer *fb, int x, int y, int w, int h,
                      uint32_t color)
 {
@@ -85,19 +87,20 @@ static void cfg_frame(TsFramebuffer *fb, int x, int y, int w, int h,
     cfg_rect(fb, x, y, w, h, fill);
     cfg_rect(fb, x, y, w, 1, edge);
     cfg_rect(fb, x, y, 1, h, edge);
-    cfg_rect(fb, x, y + h - 1, w, 1, 0xff151316u);
-    cfg_rect(fb, x + w - 1, y, 1, h, 0xff151316u);
+    cfg_rect(fb, x, y + h - 1, w, 1, ts_theme_color(cfg_palette,cfg_group,TS_COLOR_EDGE,0xff151316u));
+    cfg_rect(fb, x + w - 1, y, 1, h, ts_theme_color(cfg_palette,cfg_group,TS_COLOR_EDGE,0xff151316u));
 }
 
 static void ts_audio_render_config(TsFramebuffer *fb, const TsUiState *ui)
 {
-    uint32_t text_color = ui->palette.colors[TS_PALETTE_PATTERN_TEXT];
-    uint32_t mouse_color = ui->palette.colors[TS_PALETTE_MOUSE];
-    uint32_t effect_color = ui->palette.colors[TS_PALETTE_PATTERN_EFFECT];
-    uint32_t instrument_color = ui->palette.colors[TS_PALETTE_PATTERN_INSTRUMENT];
-    uint32_t panel = 0xff242125u;
-    uint32_t row = 0xff1b191cu;
-    uint32_t edge = 0xff48434au;
+    cfg_palette=&ui->palette;cfg_group=TS_THEME_BROWSER;
+    uint32_t text_color = ts_theme_legacy(&ui->palette,TS_THEME_BROWSER,TS_COLOR_TEXT,TS_PALETTE_PATTERN_TEXT);
+    uint32_t mouse_color = ts_theme_legacy(&ui->palette,TS_THEME_BROWSER,TS_COLOR_FOCUS,TS_PALETTE_MOUSE);
+    uint32_t effect_color = ts_theme_legacy(&ui->palette,TS_THEME_BROWSER,TS_COLOR_DATA2,TS_PALETTE_PATTERN_EFFECT);
+    uint32_t instrument_color = ts_theme_legacy(&ui->palette,TS_THEME_BROWSER,TS_COLOR_DATA4,TS_PALETTE_PATTERN_INSTRUMENT);
+    uint32_t panel = ts_theme_color(&ui->palette,TS_THEME_BROWSER,TS_COLOR_PANEL,0xff242125u);
+    uint32_t row = ts_theme_color(&ui->palette,TS_THEME_BROWSER,TS_COLOR_BACKGROUND,0xff1b191cu);
+    uint32_t edge = ts_theme_color(&ui->palette,TS_THEME_BROWSER,TS_COLOR_EDGE,0xff48434au);
 
     cfg_frame(fb, 10, TS_AUDIO_CONFIG_PANEL_Y, 620,
               TS_AUDIO_CONFIG_PANEL_H, panel, mouse_color);

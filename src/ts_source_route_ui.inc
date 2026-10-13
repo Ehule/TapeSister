@@ -1,11 +1,11 @@
 static void source_route_output_render(TsFramebuffer *fb,const TsSourceRouteUi *m,const TsPalette *palette)
 {
-    render_palette=palette;
+    render_palette=palette;render_group=TS_THEME_ROUTER;
     const TsSourceRoute *r=&m->route;
-    uint32_t dim=RGB(155,148,163),edge=RGB(70,60,78);char label[112];
+    uint32_t dim=ts_theme_color(active_palette(), TS_THEME_ROUTER, TS_COLOR_DIM, RGB(155,148,163)),edge=ts_theme_color(active_palette(), TS_THEME_ROUTER, TS_COLOR_EDGE, RGB(70,60,78));char label[112];
     int inherit=r->mode==TS_SOURCE_INHERIT,clean=r->mode==TS_SOURCE_PAIR||r->mode==TS_SOURCE_SPEAKER;
     int master=r->mode==TS_SOURCE_MAIN || (clean && r->mix_enabled && m->router.master_mix);
-    rect(fb,0,0,640,400,RGB(24,21,29));frame(fb,6,6,628,388,RGB(30,26,34),edge);
+    rect(fb,0,0,640,400,ts_theme_color(active_palette(), TS_THEME_ROUTER, TS_COLOR_PANEL, RGB(24,21,29)));frame(fb,6,6,628,388,ts_theme_color(active_palette(), TS_THEME_ROUTER, TS_COLOR_PANEL, RGB(30,26,34)),edge);
     snprintf(label,sizeof(label),m->track>=0?"TRACK %02d ROUTING":"TILE %02d ROUTING",m->track>=0?m->track+1:m->slot+1);
     text(fb,18,18,label,PAL_NOTE,1);button(fb,586,9,40,"X",0);
     text(fb,18,48,m->name,PAL_TEXT,1);
@@ -15,7 +15,7 @@ static void source_route_output_render(TsFramebuffer *fb,const TsSourceRouteUi *
     button(fb,18,78,190,"MAIN MIX",master);
     button(fb,222,78,190,m->advanced?"DIRECT: STEREO PAIR":"ADVANCED OUTPUTS...",clean&&!master&&r->mode==TS_SOURCE_PAIR);
     if(m->advanced)button(fb,426,78,198,"DIRECT: ONE SPEAKER",clean&&!master&&r->mode==TS_SOURCE_SPEAKER);
-    frame(fb,18,112,346,192,RGB(23,20,28),edge);
+    frame(fb,18,112,346,192,ts_theme_color(active_palette(), TS_THEME_ROUTER, TS_COLOR_PANEL, RGB(23,20,28)),edge);
     text(fb,30,124,inherit?"USING TILE ROUTING":master?"TO MAIN MIX":"DIRECT SPEAKER OUTPUT",PAL_EFFECT,1);
     if(clean || r->mode==TS_SOURCE_MAIN) {
         if(master)text(fb,30,153,r->mode==TS_SOURCE_SPEAKER?"MONO TO MAIN MIX":"STEREO TO MAIN MIX",PAL_TEXT,1);
@@ -68,15 +68,15 @@ static void source_route_output_render(TsFramebuffer *fb,const TsSourceRouteUi *
         int x=494-(int)(80*sinf(a)),y=204-(int)(80*cosf(a));
         int selected=clean&&(i==r->speaker||(r->mode==TS_SOURCE_PAIR&&i==r->second));
         uint32_t color=selected?PAL_MOUSE:dim;
-        if(!(m->available&(1u<<i)))color=RGB(193,127,87);
-        frame(fb,x-10,y-8,20,16,RGB(23,20,28),color);
+        if(!(m->available&(1u<<i)))color=ts_theme_color(active_palette(), TS_THEME_ROUTER, TS_COLOR_DATA1, RGB(193,127,87));
+        frame(fb,x-10,y-8,20,16,ts_theme_color(active_palette(), TS_THEME_ROUTER, TS_COLOR_PANEL, RGB(23,20,28)),color);
         snprintf(label,sizeof(label),"%d",i+1);text(fb,x-(i<9?3:6),y-3,label,color,1);
         snprintf(label,sizeof(label),"OUT %d",m->array.output[i]+1);text(fb,x-(int)strlen(label)*3,y+13,label,dim,1);
     }
     text(fb,402,306,"SPEAKER ARRAY MAPPING",dim,1);
     }
     unsigned wanted=clean?(1u<<r->speaker)|(r->mode==TS_SOURCE_PAIR?1u<<r->second:0):0;
-    if(!inherit && !master && (wanted&~m->available))text(fb,18,327,"DESTINATION UNAVAILABLE - THIS ROUTE FALLS BACK TO OUT 1/2",RGB(239,166,101),1);
+    if(!inherit && !master && (wanted&~m->available))text(fb,18,327,"DESTINATION UNAVAILABLE - THIS ROUTE FALLS BACK TO OUT 1/2",ts_theme_color(active_palette(), TS_THEME_ROUTER, TS_COLOR_DATA1, RGB(239,166,101)),1);
     else text(fb,18,327,master?"MAIN MIX INCLUDES EQ + LIMITER. INSERT CAN BE ENABLED OR BYPASSED.":clean?"DIRECT OUTPUT BYPASSES MASTER INSERT + EQ + MASTER LIMITER.":inherit?
         "TRACK OVERRIDES TILE ONLY WHEN YOU CHOOSE AN EXPLICIT ROUTE.":"MAIN USES THE CURRENT ROUTER AND OUTPUT SETTINGS.",PAL_TEXT,1);
     text(fb,18,345,inherit?"TILE ROUTES MAY DIFFER FROM NOTE TO NOTE. CLICK MAIN MIX TO OVERRIDE.":m->track<0?
@@ -94,10 +94,10 @@ static const char *source_send_name(int bus)
 }
 static void source_send_render(TsFramebuffer *fb,const TsSourceRouteUi *m)
 {
-    uint32_t dim=RGB(155,148,163),edge=RGB(70,60,78);char label[100];
+    uint32_t dim=ts_theme_color(active_palette(), TS_THEME_ROUTER, TS_COLOR_DIM, RGB(155,148,163)),edge=ts_theme_color(active_palette(), TS_THEME_ROUTER, TS_COLOR_EDGE, RGB(70,60,78));char label[100];
     const TsSourceRoute *r=&m->route;
     int inherit=r->mode==TS_SOURCE_INHERIT,enabled=r->mix_enabled&&!inherit;
-    rect(fb,0,0,640,400,RGB(24,21,29));frame(fb,6,6,628,388,RGB(30,26,34),edge);
+    rect(fb,0,0,640,400,ts_theme_color(active_palette(), TS_THEME_ROUTER, TS_COLOR_PANEL, RGB(24,21,29)));frame(fb,6,6,628,388,ts_theme_color(active_palette(), TS_THEME_ROUTER, TS_COLOR_PANEL, RGB(30,26,34)),edge);
     text(fb,18,48,m->name,PAL_TEXT,1);
     if(m->track>=0)button(fb,444,39,180,inherit?"ROUTING: TILE":"ROUTING: TRACK",inherit);
     else if(m->can_rename)button(fb,444,39,180,"RENAME TILE",0);
@@ -105,7 +105,7 @@ static void source_send_render(TsFramebuffer *fb,const TsSourceRouteUi *m)
     button(fb,18,78,190,enabled?"PATH: EFFECT SENDS":"PATH: SHARED CHAIN",enabled);
     text(fb,222,87,inherit?"CLICK TO SET TRACK SENDS":enabled?"CLEAN + SEPARATE SHARED EFFECTS":"CLICK TO SET INDIVIDUAL FX AMOUNTS",dim,1);
     text(fb,30,119,"SENDS TAP BEFORE CLEAN LEVEL, PAN AND WIDTH",PAL_EFFECT,1);
-    frame(fb,18,136,606,167,RGB(23,20,28),edge);
+    frame(fb,18,136,606,167,ts_theme_color(active_palette(), TS_THEME_ROUTER, TS_COLOR_PANEL, RGB(23,20,28)),edge);
     for(int row=0;row<4;++row) {
         int y=147+row*39,bus=row-1,value=row?r->send_level[bus]:r->clean_level;
         uint32_t color=enabled?row?PAL_EFFECT:PAL_MOUSE:dim;
@@ -129,7 +129,7 @@ static void source_send_render(TsFramebuffer *fb,const TsSourceRouteUi *m)
 }
 static void source_return_render(TsFramebuffer *fb,const TsSourceRouteUi *m,const TsPalette *palette)
 {
-    uint32_t bg=RGB(30,26,34),dim=RGB(155,148,163);char label[100];
+    uint32_t bg=ts_theme_color(active_palette(), TS_THEME_ROUTER, TS_COLOR_PANEL, RGB(30,26,34)),dim=ts_theme_color(active_palette(), TS_THEME_ROUTER, TS_COLOR_DIM, RGB(155,148,163));char label[100];
     int bus=m->bus,stage=ts_router_send_stage(bus),send=(m->router.send_mask&(1u<<bus))!=0;
     TsSourceRouteUi placed=*m;placed.route=m->router.return_route[bus];placed.track=-1;placed.can_rename=0;
     placed.route.mix_enabled=1;
@@ -154,8 +154,8 @@ static void source_return_render(TsFramebuffer *fb,const TsSourceRouteUi *m,cons
 }
 static void source_main_mix_render(TsFramebuffer *fb,const TsSourceRouteUi *m)
 {
-    uint32_t dim=RGB(155,148,163),edge=RGB(70,60,78);
-    rect(fb,0,0,640,400,RGB(24,21,29));frame(fb,6,6,628,388,RGB(30,26,34),edge);
+    uint32_t dim=ts_theme_color(active_palette(), TS_THEME_ROUTER, TS_COLOR_DIM, RGB(155,148,163)),edge=ts_theme_color(active_palette(), TS_THEME_ROUTER, TS_COLOR_EDGE, RGB(70,60,78));
+    rect(fb,0,0,640,400,ts_theme_color(active_palette(), TS_THEME_ROUTER, TS_COLOR_PANEL, RGB(24,21,29)));frame(fb,6,6,628,388,ts_theme_color(active_palette(), TS_THEME_ROUTER, TS_COLOR_PANEL, RGB(30,26,34)),edge);
     text(fb,18,48,"GLOBAL: CLEAN SOUND AND SHARED FX RETURNS",PAL_TEXT,1);
     button(fb,18,78,350,"MAIN MIX: CLEAN + FX RETURNS",m->router.master_mix);
     button(fb,384,78,240,"ADVANCED: DIRECT SPEAKERS",!m->router.master_mix);
@@ -165,12 +165,12 @@ static void source_main_mix_render(TsFramebuffer *fb,const TsSourceRouteUi *m)
         "TONE SHAPING FOR THE COMPLETE MIX","FINAL LEVEL PROTECTION","OUT LEVEL > STEREO / SPEAKER FIELD"};
     for(int i=0;i<5;++i) {
         int y=116+i*37;
-        frame(fb,18,y,606,31,RGB(23,20,28),edge);
+        frame(fb,18,y,606,31,ts_theme_color(active_palette(), TS_THEME_ROUTER, TS_COLOR_PANEL, RGB(23,20,28)),edge);
         text(fb,30,y+12,names[i],i==1?PAL_MOUSE:PAL_EFFECT,1);
         text(fb,238,y+12,detail[i],dim,1);
     }
     if(!m->router.master_mix) {
-        rect(fb,22,120,598,176,RGB(23,20,28));
+        rect(fb,22,120,598,176,ts_theme_color(active_palette(), TS_THEME_ROUTER, TS_COLOR_PANEL, RGB(23,20,28)));
         text(fb,30,135,"ADVANCED DIRECT MIX",PAL_MOUSE,1);
         text(fb,30,167,"CLEAN SOUND + FX RETURNS GO TO THEIR ASSIGNED SPEAKERS.",PAL_TEXT,1);
         text(fb,30,199,"THEY BYPASS MASTER INSERT, EQ AND MASTER LIMITER.",PAL_TEXT,1);
@@ -185,7 +185,7 @@ static void source_main_mix_render(TsFramebuffer *fb,const TsSourceRouteUi *m)
 }
 void ts_source_route_ui_render(TsFramebuffer *fb,const TsSourceRouteUi *m,const TsPalette *palette)
 {
-    render_palette=palette;
+    render_palette=palette;render_group=TS_THEME_ROUTER;
     if(m->page==3)source_main_mix_render(fb,m);
     else if(m->page==2)source_return_render(fb,m,palette);
     else if(m->page==1)source_send_render(fb,m);

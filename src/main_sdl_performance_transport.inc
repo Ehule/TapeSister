@@ -1,6 +1,7 @@
 /* Modeless player mixer with a separate live tile bus. Group edits publish at one callback boundary. */
 enum { PERF_ARP=1,PERF_TRACKER=2,PERF_MOSAIC=4,PERF_W=600,PERF_H=548 };
 static struct {SDL_Window *window;SDL_Renderer *renderer;Uint32 id,painted;int visible,drag;} performance_transport;
+static TsPalette performance_palette;
 static unsigned performance_running(AudioState *audio)
 {
     return (ts_keyboard_sequence_active(&audio->keyboard_sequence)?PERF_ARP:0)|
@@ -63,6 +64,7 @@ static void performance_close(void)
 }
 static void performance_show(TsUiState *ui,AudioState *audio)
 {
+    performance_palette=ui->palette;
     if(!performance_transport.window) {
         performance_transport.window=SDL_CreateWindow("TapeSister - Performance Transport",SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,PERF_W,PERF_H,SDL_WINDOW_ALLOW_HIGHDPI);
         if(performance_transport.window)performance_transport.renderer=SDL_CreateRenderer(performance_transport.window,-1,SDL_RENDERER_SOFTWARE);
@@ -93,43 +95,43 @@ static void performance_update(SDL_AudioDeviceID device,AudioState *audio)
     if(device)SDL_UnlockAudioDevice(device);
     int top=(SDL_GetWindowFlags(performance_transport.window)&SDL_WINDOW_ALWAYS_ON_TOP)!=0;
     if(top!=(int)m.always_on_top)SDL_SetWindowAlwaysOnTop(performance_transport.window,m.always_on_top?SDL_TRUE:SDL_FALSE);
-    perf_rect(0,0,PERF_W,PERF_H,0x151c20);perf_text(22,20,"PERFORMANCE TRANSPORT",0x8addb4,2);
-    perf_rect(422,20,12,12,m.always_on_top?0x8addb4:0x47605d);perf_text(444,23,"ALWAYS ON TOP",0xdbe8e3,1);
-    perf_text(22,49,"CHECK PLAYERS FOR GROUP CONTROL",0x94aaa7,1);perf_text(352,49,"CHANNEL GAIN",0x94aaa7,1);
+    perf_rect(0,0,PERF_W,PERF_H,ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_PANEL,0xff151c20u));perf_text(22,20,"PERFORMANCE TRANSPORT",ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_DATA4,0xff8addb4u),2);
+    perf_rect(422,20,12,12,m.always_on_top?ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_DATA4,0xff8addb4u):ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_GRID,0xff47605du));perf_text(444,23,"ALWAYS ON TOP",ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_TEXT,0xffdbe8e3u),1);
+    perf_text(22,49,"CHECK PLAYERS FOR GROUP CONTROL",ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_DIM,0xff94aaa7u),1);perf_text(352,49,"CHANNEL GAIN",ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_DIM,0xff94aaa7u),1);
     const char *names[]={"ARP","TRACKSISTER","MOSAIC","LIVE TILES"};
     char line[80];
     for(int i=0;i<4;++i) {
         int y=76+i*54;unsigned bit=1u<<i;
-        perf_rect(20,y,560,46,0x202b30);if(i<3)perf_rect(28,y+15,12,12,selected&bit?0x8addb4:0x47605d);
-        perf_text(49,y+9,names[i],0xdbe8e3,2);
-        perf_text(50,y+30,i==3?"+ LAUNCHERS":running&bit?"PLAYING":"STOPPED",running&bit?0x8addb4:0x94aaa7,1);
+        perf_rect(20,y,560,46,ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_EDGE,0xff202b30u));if(i<3)perf_rect(28,y+15,12,12,selected&bit?ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_DATA4,0xff8addb4u):ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_GRID,0xff47605du));
+        perf_text(49,y+9,names[i],ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_TEXT,0xffdbe8e3u),2);
+        perf_text(50,y+30,i==3?"+ LAUNCHERS":running&bit?"PLAYING":"STOPPED",running&bit?ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_DATA4,0xff8addb4u):ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_DIM,0xff94aaa7u),1);
         if(i<3) {
-        perf_rect(206,y+8,76,30,0x365746);perf_text(220,y+20,running&bit?"STOP":"PLAY",0xdbe8e3,1);
-        perf_rect(290,y+8,48,30,0x304047);perf_text(302,y+20,"HOME",0xdbe8e3,1);
-        } else perf_text(214,y+20,"QWERTY / MIDI",0x94aaa7,1);
+        perf_rect(206,y+8,76,30,ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_GRID,0xff365746u));perf_text(220,y+20,running&bit?"STOP":"PLAY",ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_TEXT,0xffdbe8e3u),1);
+        perf_rect(290,y+8,48,30,ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_EDGE,0xff304047u));perf_text(302,y+20,"HOME",ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_TEXT,0xffdbe8e3u),1);
+        } else perf_text(214,y+20,"QWERTY / MIDI",ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_DIM,0xff94aaa7u),1);
         int position=352+(int)lrintf(m.gain[i]*74);
-        perf_rect(352,y+20,148,6,0x47605d);perf_rect(352,y+20,position-352,6,0x8addb4);
-        perf_rect(425,y+16,2,14,0xb6aa73);perf_rect(position-3,y+15,6,16,0xdbe8e3);
+        perf_rect(352,y+20,148,6,ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_GRID,0xff47605du));perf_rect(352,y+20,position-352,6,ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_DATA4,0xff8addb4u));
+        perf_rect(425,y+16,2,14,ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_DATA1,0xffb6aa73u));perf_rect(position-3,y+15,6,16,ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_TEXT,0xffdbe8e3u));
         if(m.gain[i]>0)snprintf(line,sizeof(line),"%+.1f DB",20*log10f(m.gain[i]));else snprintf(line,sizeof(line),"SILENT");
-        perf_text(513,y+20,line,0xdbe8e3,1);
+        perf_text(513,y+20,line,ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_TEXT,0xffdbe8e3u),1);
     }
-    perf_rect(20,298,262,30,0x304047);perf_text(32,309,m.restart?"GROUP PLAY: RESTART TOGETHER":"GROUP PLAY: RESUME",0xdbe8e3,1);
+    perf_rect(20,298,262,30,ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_EDGE,0xff304047u));perf_text(32,309,m.restart?"GROUP PLAY: RESTART TOGETHER":"GROUP PLAY: RESUME",ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_TEXT,0xffdbe8e3u),1);
     const char *clocks[]={"ARP CLOCK: LOCAL","ARP CLOCK: TRACKER 1/4","ARP CLOCK: TRACKER 1/8","ARP CLOCK: TRACKER 1/16"};
-    perf_rect(294,298,286,30,0x304047);perf_text(306,309,clocks[m.arp_sync%4],0xdbe8e3,1);
-    perf_text(22,339,"MOSAIC SHARES GROUP START; ITS TAPE SPEED AND PITCH STAY LOCAL.",0x94aaa7,1);
+    perf_rect(294,298,286,30,ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_EDGE,0xff304047u));perf_text(306,309,clocks[m.arp_sync%4],ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_TEXT,0xffdbe8e3u),1);
+    perf_text(22,339,"MOSAIC SHARES GROUP START; ITS TAPE SPEED AND PITCH STAY LOCAL.",ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_DIM,0xff94aaa7u),1);
     const char *buttons[]={"PLAY GROUP","STOP GROUP","RETURN TO START"};
-    for(int i=0;i<3;++i){int x=20+i*190;perf_rect(x,364,180,34,0x365746);perf_text(x+10,377,buttons[i],0xdbe8e3,1);}
-    perf_text(22,412,"SHIFT+SPACE: GROUP   F11: OPEN   ALT+F11: FULLSCREEN",0x94aaa7,1);
-    perf_text(22,430,"GAIN: DRAG / WHEEL   DOUBLE-CLICK OR RIGHT-CLICK: 0 DB",0x94aaa7,1);
-    perf_rect(20,454,180,32,0x514933);perf_text(32,466,ts_mandala_active()?"CLOSE VISUALIZER":"VISUALIZE",0xf0c982,1);
-    perf_rect(210,454,180,32,0x304047);perf_text(222,466,ts_mandala_frozen()?"RESUME VISUAL":"FREEZE VISUAL",0xdbe8e3,1);
-    perf_rect(400,454,180,32,0x304047);perf_text(412,466,"NEW SEED",0xdbe8e3,1);
+    for(int i=0;i<3;++i){int x=20+i*190;perf_rect(x,364,180,34,ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_GRID,0xff365746u));perf_text(x+10,377,buttons[i],ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_TEXT,0xffdbe8e3u),1);}
+    perf_text(22,412,"SHIFT+SPACE: GROUP   F11: OPEN   ALT+F11: FULLSCREEN",ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_DIM,0xff94aaa7u),1);
+    perf_text(22,430,"GAIN: DRAG / WHEEL   DOUBLE-CLICK OR RIGHT-CLICK: 0 DB",ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_DIM,0xff94aaa7u),1);
+    perf_rect(20,454,180,32,ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_GRID,0xff514933u));perf_text(32,466,ts_mandala_active()?"CLOSE VISUALIZER":"VISUALIZE",ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_DATA1,0xfff0c982u),1);
+    perf_rect(210,454,180,32,ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_EDGE,0xff304047u));perf_text(222,466,ts_mandala_frozen()?"RESUME VISUAL":"FREEZE VISUAL",ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_TEXT,0xffdbe8e3u),1);
+    perf_rect(400,454,180,32,ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_EDGE,0xff304047u));perf_text(412,466,"NEW SEED",ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_TEXT,0xffdbe8e3u),1);
     const TsMandalaConfig *v=&audio->sister.mandala;
     snprintf(line,sizeof(line),"PALETTE: %s",(const char*[]){"AMBER","LUNAR","EMBER"}[v->palette%3]);
-    perf_rect(20,494,180,28,0x304047);perf_text(32,505,line,0xdbe8e3,1);
-    snprintf(line,sizeof(line),"SYMMETRY: %u",v->symmetry);perf_rect(210,494,180,28,0x304047);perf_text(222,505,line,0xdbe8e3,1);
-    snprintf(line,sizeof(line),"EVOLUTION: %u MIN",v->cycle_seconds/60);perf_rect(400,494,180,28,0x304047);perf_text(412,505,line,0xdbe8e3,1);
-    perf_text(22,534,"IN VISUAL WINDOW: F FULLSCREEN / D DISPLAY / Q QUALITY / ESC EXIT",0x94aaa7,1);
+    perf_rect(20,494,180,28,ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_EDGE,0xff304047u));perf_text(32,505,line,ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_TEXT,0xffdbe8e3u),1);
+    snprintf(line,sizeof(line),"SYMMETRY: %u",v->symmetry);perf_rect(210,494,180,28,ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_EDGE,0xff304047u));perf_text(222,505,line,ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_TEXT,0xffdbe8e3u),1);
+    snprintf(line,sizeof(line),"EVOLUTION: %u MIN",v->cycle_seconds/60);perf_rect(400,494,180,28,ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_EDGE,0xff304047u));perf_text(412,505,line,ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_TEXT,0xffdbe8e3u),1);
+    perf_text(22,534,"IN VISUAL WINDOW: F FULLSCREEN / D DISPLAY / Q QUALITY / ESC EXIT",ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_DIM,0xff94aaa7u),1);
     SDL_RenderPresent(performance_transport.renderer);performance_transport.painted=SDL_GetTicks();
 }
 static void performance_gain(SDL_AudioDeviceID device,AudioState *audio,int channel,float gain)

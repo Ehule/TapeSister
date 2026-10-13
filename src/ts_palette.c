@@ -5,6 +5,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 #define RGB(r,g,b) (0xff000000u | ((uint32_t)(r) << 16) | \
                     ((uint32_t)(g) << 8) | (uint32_t)(b))
@@ -142,6 +145,8 @@ void ts_palette_default(TsPalette *palette)
         RGB(162,185,131), RGB(141,169,203)
     };
     if (palette == NULL) return;
+    memset(palette, 0, sizeof(*palette));
+    palette->theme.text_clarity = palette->theme.grid_visibility = palette->theme.selection_strength = 50;
     memcpy(palette->colors, defaults, sizeof(defaults));
     palette->defined_colors = TS_PALETTE_ALL_COLORS;
     palette->desktop_contrast = 18;
@@ -201,6 +206,20 @@ int ts_palette_load(TsPalette *palette, const char *path,
         *equals = '\0';
         key = trim(text);
         value = trim(equals + 1);
+        if (!strncmp(key,"Theme",5)) {
+            if (!strcmp(key,"ThemeVersion")) {if(strcmp(value,"1"))goto malformed;}
+            else if (!strcmp(key,"ThemePreset") || !strcmp(key,"ThemeText") || !strcmp(key,"ThemeGrid") || !strcmp(key,"ThemeSelection")) {
+                char *end;errno=0;long n=strtol(value,&end,10);if(errno||end==value||*end||n<0||n>(!strcmp(key,"ThemePreset")?7:100))goto malformed;
+                if(!strcmp(key,"ThemePreset"))loaded.theme.preset=(uint8_t)n;
+                else if(!strcmp(key,"ThemeText"))loaded.theme.text_clarity=(uint8_t)n;
+                else if(!strcmp(key,"ThemeGrid"))loaded.theme.grid_visibility=(uint8_t)n;
+                else loaded.theme.selection_strength=(uint8_t)n;
+            } else for(int g=0;g<TS_THEME_GROUP_COUNT;++g)for(int r=0;r<TS_THEME_ROLE_COUNT;++r) {
+                char match[96];snprintf(match,sizeof(match),"Theme.%s.%s",ts_theme_group_key(g),ts_theme_role_key(r));
+                if(!strcmp(key,match)&&!parse_color(value,&loaded.theme.overrides[g][r]))goto malformed;
+            }
+            continue;
+        }
         for (int color = 0; color < TS_PALETTE_COLOR_COUNT; ++color) {
             if (equal_icase(key, color_keys[color])) {
                 recognized = 1;
@@ -317,7 +336,7 @@ static int save_palette(const TsPalette *palette, const char *path,
     }
     failed |= fprintf(file,
                       "; Shared TapeSister / Tapehead palette\n"
-                      "; Both applications preserve every key in this file.\n\n"
+                      "; Legacy colors are shared; Theme keys require a theme-aware reader.\n\n"
                       "[Palette]\n") < 0;
     for (int index = 0; index < TS_PALETTE_COLOR_COUNT; ++index) {
         TsPaletteColor color = universal_save_order[index];
@@ -329,6 +348,11 @@ static int save_palette(const TsPalette *palette, const char *path,
     }
     failed |= fprintf(file, "DesktopContrast=%d\nButtonsContrast=%d\n",
                       palette->desktop_contrast, palette->buttons_contrast) < 0;
+    failed |= fprintf(file,"ThemeVersion=1\nThemePreset=%u\nThemeText=%u\nThemeGrid=%u\nThemeSelection=%u\n",
+        palette->theme.preset,palette->theme.text_clarity,palette->theme.grid_visibility,palette->theme.selection_strength)<0;
+    for(int g=0;g<TS_THEME_GROUP_COUNT;++g)for(int r=0;r<TS_THEME_ROLE_COUNT;++r)
+        if(palette->theme.overrides[g][r])failed |= fprintf(file,"Theme.%s.%s=#%06X\n",ts_theme_group_key(g),ts_theme_role_key(r),
+            (unsigned)(palette->theme.overrides[g][r]&0xffffffu))<0;
     if (fclose(file) != 0) failed = 1;
     if (failed) {
         set_error(error, error_size, "Could not finish writing palette");
@@ -341,13 +365,27 @@ static int save_palette(const TsPalette *palette, const char *path,
 int ts_palette_save(const TsPalette *palette, const char *path,
                     char *error, size_t error_size)
 {
-    return save_palette(palette, path, error, error_size);
+    if(!palette || !path || !path[0]){set_error(error,error_size,"Invalid palette destination");return 0;}
+    size_t length=strlen(path);char *temporary=malloc(length+17);
+    if(!temporary){set_error(error,error_size,"Unable to allocate palette save");return 0;}
+    snprintf(temporary,length+17,"%s.tapesister.tmp",path);
+    int ok=save_palette(palette,temporary,error,error_size);
+    if(ok){
+#ifdef _WIN32
+        ok=MoveFileExA(temporary,path,MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)!=0;
+#else
+        ok=rename(temporary,path)==0;
+#endif
+        if(!ok)set_error(error,error_size,"Could not replace palette file");
+    }
+    if(!ok)remove(temporary);
+    free(temporary);return ok;
 }
 
 int ts_palette_save_tapehead(const TsPalette *palette, const char *path,
                              char *error, size_t error_size)
 {
-    return save_palette(palette, path, error, error_size);
+    return ts_palette_save(palette,path,error,error_size);
 }
 
 int ts_palette_color_is_defined(const TsPalette *palette, TsPaletteColor color)

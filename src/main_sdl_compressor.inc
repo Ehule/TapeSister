@@ -1,28 +1,29 @@
 /* Compact, modeless F9 panel. Included after matrix drawing helpers. */
 static int mx_editable(void);
+#define CP_COLOR(role,original) ts_theme_color(&matrix_window.palette,TS_THEME_EQ,role,original)
 static void mx_compressor_paint(void)
 {
     MatrixWindow *w=&matrix_window;char label[100];
-    mx_text(32,703,"COMPRESSOR",MX_GREEN,2);
+    mx_text(32,703,"COMPRESSOR",CP_COLOR(TS_COLOR_DATA2,0xff8addb4u),2);
     mx_button(190,696,126,w->compressor.enabled?"ACTIVE":"BYPASS",w->compressor.enabled);
     mx_button(330,696,210,w->compressor.external?"SC: EXTERNAL":"SC: INTERNAL",w->compressor.external);
     snprintf(label,sizeof(label),"GAIN REDUCTION %.1f DB",w->controls.enabled?w->compressor_gr:0);
-    mx_text(570,703,label,MX_YELLOW,2);
-    mx_rect(914,700,310,14,MX_BG);
-    mx_rect(914,700,(int)(310*fminf(1,fmaxf(0,w->controls.enabled?w->compressor_gr/24:0))),14,MX_AMBER);
+    mx_text(570,703,label,CP_COLOR(TS_COLOR_ACTIVITY,0xffffce69u),2);
+    mx_rect(914,700,310,14,CP_COLOR(TS_COLOR_BACKGROUND,0xff151c20u));
+    mx_rect(914,700,(int)(310*fminf(1,fmaxf(0,w->controls.enabled?w->compressor_gr/24:0))),14,ts_theme_color(&w->palette,TS_THEME_EQ,TS_COLOR_ACTIVITY,0xffffb43bu));
     const char *names[]={"THRESHOLD","RATIO","ATTACK","RELEASE","OUTPUT"};
     const float values[]={w->compressor.threshold_db,w->compressor.ratio,w->compressor.attack_ms,w->compressor.release_ms,w->compressor.output_db};
     for(int i=0;i<5;++i) {
         int x=32+i*242;
         snprintf(label,sizeof(label),i==1?"%s %.1f:1":i==2 || i==3?"%s %.1f MS":"%s %+.1f DB",names[i],values[i]);
-        mx_text(x,735,label,MX_TEXT,1);
-        mx_rect(x,758,220,8,MX_BG);
+        mx_text(x,735,label,CP_COLOR(TS_COLOR_TEXT,0xffdbe8e3u),1);
+        mx_rect(x,758,220,8,CP_COLOR(TS_COLOR_BACKGROUND,0xff151c20u));
         int marker=(int)(216*ts_compressor_normalized(&w->compressor,i));
-        mx_rect(x,758,marker+4,8,0xff416359u);mx_rect(x+marker,754,4,16,MX_GREEN);
+        mx_rect(x,758,marker+4,8,ts_theme_color(&w->palette,TS_THEME_EQ,TS_COLOR_CONTROL,0xff416359u));mx_rect(x+marker,754,4,16,CP_COLOR(TS_COLOR_DATA2,0xff8addb4u));
     }
     mx_text(32,779,w->controls.enabled?
         "COMP IN: SOUND TO COMPRESS | COMP SC: TRIGGER ONLY | ROUTE COMPRESSOR ROW TO MAIN / FX / OUT":
-        "COMPRESSOR NEEDS MATRIX MODE. USE MATRIX ABOVE TO IMPORT THE CURRENT ROUTING.",MX_DIM,1);
+        "COMPRESSOR NEEDS MATRIX MODE. USE MATRIX ABOVE TO IMPORT THE CURRENT ROUTING.",CP_COLOR(TS_COLOR_DIM,0xff94aaa7u),1);
 }
 static void mx_compressor_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,int x,int y,int wheel)
 {
@@ -56,3 +57,5 @@ static void mx_compressor_event(const SDL_Event *e,SDL_AudioDeviceID device,Audi
         w->dirty=1;
     }
 }
+
+#undef CP_COLOR

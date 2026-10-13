@@ -146,6 +146,7 @@ static void tracker_refresh(SDL_AudioDeviceID device,AudioState *audio,TsUiState
         if(embedded_preferences_path(path,sizeof(path)) && ts_tapehead_preferences_save(path,ui->status,sizeof(ui->status)))
             snprintf(ui->status,sizeof(ui->status),"TRACKER DEFAULTS SAVED");
     }
+    if(action==TS_TH_PALETTE_EDITOR){ts_tapehead_focus_lost();palette_window_show(ui);}
     if(action==TS_TH_AUDIO)ts_audio_health_show(ui);
     if(action==TS_TH_ROUTER) {
         if(device)SDL_LockAudioDevice(device);router_sync(audio,ui);if(device)SDL_UnlockAudioDevice(device);

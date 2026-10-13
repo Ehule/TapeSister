@@ -220,7 +220,7 @@ static void ts_overlay_tile_states(TsFramebuffer *fb, const TsUiState *ui,
             &ui->palette);
     if (audio == NULL || !audio->performance_group_latched ||
         audio->performance_source_mask == 0u) return;
-    source_color = ui->palette.colors[TS_PALETTE_PATTERN_EFFECT];
+    source_color = ts_theme_legacy(&ui->palette,TS_THEME_CANVAS,TS_COLOR_DATA2,TS_PALETTE_PATTERN_EFFECT);
     for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot)
         if ((audio->performance_source_mask & (uint16_t)(1u << slot)) != 0u)
             ts_draw_tile_border(fb, &ts_tile_bounds[slot], source_color);

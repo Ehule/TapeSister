@@ -40,7 +40,7 @@ static void prism_lens_outline(TsFramebuffer *fb,int x,int shape,uint32_t color)
     for(int j=-56;j<=56;++j) {
         float l,r;prism_profile(shape,j/56.f,&l,&r);
         int left=(int)lrintf(x+l),right=(int)lrintf(x+r);
-        rect(fb,left,167+j,right-left+1,1,RGB(18,27,31));
+        rect(fb,left,167+j,right-left+1,1,ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_PANEL, RGB(18,27,31)));
     }
     float pl,pr;prism_profile(shape,-1,&pl,&pr);
     prism_line(fb,x+pl,111,x+pr,111,color);
@@ -55,15 +55,15 @@ static void prism_lens_outline(TsFramebuffer *fb,int x,int shape,uint32_t color)
 static void prism_value(TsFramebuffer *fb,int x,int y,int w,const char *label,float amount,uint32_t color)
 {
     sister_percent_parameter_state(fb,x,y,w,"",amount,100,color,0);
-    rect(fb,x+2,y+2,w-4,11,RGB(24,23,25));text(fb,x+3,y+3,label,color,1);
+    rect(fb,x+2,y+2,w-4,11,ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_PANEL, RGB(24,23,25)));text(fb,x+3,y+3,label,color,1);
 }
 
 static void prism_capture_button(TsFramebuffer *fb,const TsSisterUiModel *model,int endpoint)
 {
     TsPrismCaptureVisual state=ts_sister_ui_prism_capture_visual(model,endpoint);
     static const char *const names[]={"EMPTY","READY","EDIT","CHANGED"};
-    static const uint32_t inks[]={RGB(142,151,163),RGB(105,229,153),RGB(119,190,255),RGB(255,193,92)};
-    static const uint32_t fills[]={RGB(27,31,37),RGB(17,53,37),RGB(23,44,73),RGB(67,43,18)};
+    const uint32_t inks[]={ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_DIM, RGB(142,151,163)),ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_DATA4, RGB(105,229,153)),ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_DATA3, RGB(119,190,255)),ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_DATA1, RGB(255,193,92))};
+    const uint32_t fills[]={ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_PANEL, RGB(27,31,37)),ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_PANEL, RGB(17,53,37)),ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_PANEL, RGB(23,44,73)),ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_PANEL, RGB(67,43,18))};
     int x=endpoint?88:16;char label[8];
     int letter=ts_sister_ui_prism_state(model,endpoint);
     int browsing=letter!=ts_sister_ui_prism_assigned(model,endpoint);
@@ -95,10 +95,10 @@ static void sister_prism_render(TsFramebuffer *fb,const TsSisterUiModel *model)
     }
     TsPrismView v=model->routing.prism.valid && !model->prism_matrix_edit?model->routing.prism:ts_prism_control_view(p);
     if(v.matrix_active) {shown.lenses=v.matrix_lenses;shown.input_shape=v.matrix_input_shape;shown.output_shape=v.matrix_output_shape;}
-    const uint32_t background=RGB(7,11,15),ink=RGB(140,179,192),original=RGB(229,232,212);
-    const uint32_t colors[12]={RGB(236,224,159),RGB(241,148,108),RGB(239,193,101),
-        RGB(195,215,120),RGB(126,215,171),RGB(92,207,212),RGB(106,168,238),
-        RGB(159,146,229),RGB(207,139,206),RGB(205,177,122),RGB(187,153,110),RGB(227,188,124)};
+    const uint32_t background=ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_BACKGROUND, RGB(7,11,15)),ink=ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_DATA2, RGB(140,179,192)),original=ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_TEXT, RGB(229,232,212));
+    const uint32_t colors[12]={ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_DATA4, RGB(236,224,159)),ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_DATA1, RGB(241,148,108)),ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_DATA1, RGB(239,193,101)),
+        ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_DATA4, RGB(195,215,120)),ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_DATA4, RGB(126,215,171)),ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_DATA2, RGB(92,207,212)),ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_DATA3, RGB(106,168,238)),
+        ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_DATA3, RGB(159,146,229)),ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_DATA5, RGB(207,139,206)),ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_DATA1, RGB(205,177,122)),ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_DATA1, RGB(187,153,110)),ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_DATA1, RGB(227,188,124))};
     char label[96];
     rect(fb,10,40,620,232,background);
     button(fb,16,48,96,p->enabled?"PRISM ON":"PRISM OFF",p->enabled);
@@ -117,18 +117,18 @@ static void sister_prism_render(TsFramebuffer *fb,const TsSisterUiModel *model)
         int x=TS_PRISM_STRIP_X+i*TS_PRISM_STRIP_STEP;
         uint32_t color=colors[i%12];
         if(i>=p->lenses || v.lens[i].level<.001f)color=blend_color(background,color,28);
-        if(model->prism_selected==i+1)rect(fb,x,TS_PRISM_STRIP_Y,TS_PRISM_STRIP_W,TS_PRISM_STRIP_H,RGB(55,18,64));
+        if(model->prism_selected==i+1)rect(fb,x,TS_PRISM_STRIP_Y,TS_PRISM_STRIP_W,TS_PRISM_STRIP_H,ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_SELECTION, RGB(55,18,64)));
         snprintf(label,sizeof(label),"%02d",i+1);text(fb,x+5,TS_PRISM_STRIP_Y+2,label,color,1);
         for(int j=0;j<p->seq_count;++j)if(p->sequence[j]==i) {
             rect(fb,x+3,TS_PRISM_STRIP_Y+TS_PRISM_STRIP_H-1,16,1,
-                 v.seq_lens==i+1 ? RGB(255,255,230) : RGB(221,67,207));
+                 v.seq_lens==i+1 ? ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_TEXT, RGB(255,255,230)) : ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_DATA5, RGB(221,67,207)));
         }
     }
     text(fb,28,85,"SOURCE",ink,1);text(fb,118,85,"INPUT",ink,1);
     text(fb,290,85,"ALTER",ink,1);text(fb,440,85,"OUTPUT",ink,1);text(fb,574,85,"OUT",ink,1);
     prism_zoya_figures(fb,model,p,&v);
-    prism_lens_outline(fb,148,p->input_shape,RGB(114,181,203));
-    prism_lens_outline(fb,462,p->output_shape,RGB(114,181,203));
+    prism_lens_outline(fb,148,p->input_shape,ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_DATA2, RGB(114,181,203)));
+    prism_lens_outline(fb,462,p->output_shape,ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_DATA2, RGB(114,181,203)));
     int shape[2]={p->input_shape,p->output_shape};
     for(int stage=0;stage<2;++stage) {
         int cx=stage?462:148;
@@ -173,7 +173,7 @@ static void sister_prism_render(TsFramebuffer *fb,const TsSisterUiModel *model)
     int selected=model->prism_selected-1;
     if(selected>=0 && selected<p->lenses) {
         int x,y;ts_sister_ui_prism_point(v.lens[selected],&x,&y);
-        uint32_t highlight=RGB(240,240,220);
+        uint32_t highlight=ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_TEXT, RGB(240,240,220));
         if(selected==0) {
             rect(fb,x-2,y-2,5,5,highlight);
             snprintf(label,sizeof(label),"01 BODY %+.0FDB",p->trim_db[0]);
@@ -189,9 +189,9 @@ static void sister_prism_render(TsFramebuffer *fb,const TsSisterUiModel *model)
     button(fb,102,250,92,"PERFORM",model->prism_panel==1);
     button(fb,202,250,86,"PRESETS",model->prism_panel==2);
     const char *edit_status=ts_sister_ui_prism_edit_status(model);
-    uint32_t state_color=p->morph_enabled ? RGB(205,169,255) :
-        strstr(edit_status,"NOT CAPTURED") ? RGB(255,193,92) :
-        model->prism_edit_endpoint ? RGB(119,190,255) : RGB(105,229,153);
+    uint32_t state_color=p->morph_enabled ? ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_DATA6, RGB(205,169,255)) :
+        strstr(edit_status,"NOT CAPTURED") ? ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_DATA1, RGB(255,193,92)) :
+        model->prism_edit_endpoint ? ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_DATA3, RGB(119,190,255)) : ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_DATA4, RGB(105,229,153));
     text(fb,300,257,edit_status,state_color,1);
     if(model->prism_matrix_edit) {
         snprintf(label,sizeof(label),"SAVE %c",'A'+model->prism_matrix_edit-1);button(fb,530,250,86,label,1);
@@ -222,7 +222,7 @@ static void sister_prism_render(TsFramebuffer *fb,const TsSisterUiModel *model)
         float group=(p->morph_enabled || v.matrix_active)?v.group_octave:(float)p->group_octave;
         snprintf(label,sizeof(label),"GROUP OCT %+.2F",(double)group);
         prism_value(fb,170,332,144,label,(group+3)/6.f,colors[4]);
-        text(fb,326,336,model->prism_seq_edit ? "SEQ EDIT: CTRL-CLICK NUMBERS" : "WHEEL CAP/TO: A-Z / CLICK CONFIRMS",RGB(119,190,255),1);
+        text(fb,326,336,model->prism_seq_edit ? "SEQ EDIT: CTRL-CLICK NUMBERS" : "WHEEL CAP/TO: A-Z / CLICK CONFIRMS",ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_DATA3, RGB(119,190,255)),1);
     } else if(model->prism_panel==2) {
         button(fb,16,280,30,"<",0);
         button(fb,52,280,218,model->prism_preset_count?model->prism_preset_name:"PRISM BANK EMPTY",0);
@@ -245,7 +245,7 @@ static void sister_prism_render(TsFramebuffer *fb,const TsSisterUiModel *model)
         sister_percent_parameter_state(fb, x, y, 144, names[i], amounts[i],
                                        i==1 || i==2 ? 200 : i==5 ? 300 : 100, colors[i], locked);
         if (i == 0 || i == 7) {
-            rect(fb, x + 2, y + 2, 140, 11, RGB(24,23,25));
+            rect(fb, x + 2, y + 2, 140, 11, ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_PANEL, RGB(24,23,25)));
             if (i == 0) snprintf(label, sizeof(label), "LENSES %02d", p->lenses);
             else snprintf(label, sizeof(label), "OUTPUT %+.1F DB", p->output_db);
             text(fb, x + 3, y + 3, label, locked ? sister_dim_color(colors[i]) : colors[i], 1);

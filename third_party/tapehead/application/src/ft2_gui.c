@@ -715,6 +715,15 @@ void hexOutShadow(uint16_t xPos, uint16_t yPos, uint8_t paletteIndex, uint8_t sh
 
 void clearRect(uint16_t xPos, uint16_t yPos, uint16_t w, uint16_t h)
 {
+#ifdef TAPEHEAD_EMBEDDED
+    /* The host may use a light pattern/scope background. Original keeps the
+       native zero-fill fast path and its tagged palette index zero. */
+    if (video.palette[PAL_BCKGRND] != 0)
+    {
+        fillRect(xPos, yPos, w, h, PAL_BCKGRND);
+        return;
+    }
+#endif
 	ASSERT(xPos < SCREEN_W && yPos < SCREEN_H && (xPos + w) <= SCREEN_W && (yPos + h) <= SCREEN_H);
 
 	const uint32_t pitch = w * sizeof (int32_t);

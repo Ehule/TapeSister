@@ -11,6 +11,7 @@ typedef struct {
     MatrixRow rows[MATRIX_CAPACITY],selection[MATRIX_CAPACITY];int count,selection_count,anchor;
     TsMosaic *mosaic;uint64_t epoch;
     MatrixSnapshot *history[32],*pending,*original,*edited;int history_count,history_cursor,original_active,history_skip;
+    TsPalette palette;
     TsMatrixControls controls;TsSourceRoute route;
     TsCompressorControls compressor;int compressor_open;float compressor_gr,compressor_key;
     TsRouterControls legacy;TsSpatialControls array;
@@ -52,13 +53,14 @@ static void mx_select(int at,int modifiers)
     } else {w->selection[0]=w->rows[at];w->selection_count=1;w->anchor=at;}
     w->selected=at;
 }
-#define MX_BG 0xff151c20u
-#define MX_PANEL 0xff202b30u
-#define MX_TEXT 0xffdbe8e3u
-#define MX_DIM 0xff94aaa7u
-#define MX_AMBER 0xffffb43bu
-#define MX_GREEN 0xff8addb4u
-#define MX_YELLOW 0xffffce69u
+#define MX_BG (ts_theme_color(&matrix_window.palette, TS_THEME_ROUTER, TS_COLOR_BACKGROUND, 0xff151c20u))
+#define MX_PANEL (ts_theme_color(&matrix_window.palette, TS_THEME_ROUTER, TS_COLOR_PANEL, 0xff202b30u))
+#define MX_TEXT (ts_theme_color(&matrix_window.palette, TS_THEME_ROUTER, TS_COLOR_TEXT, 0xffdbe8e3u))
+#define MX_DIM (ts_theme_color(&matrix_window.palette, TS_THEME_ROUTER, TS_COLOR_DIM, 0xff94aaa7u))
+#define MX_AMBER (ts_theme_color(&matrix_window.palette, TS_THEME_ROUTER, TS_COLOR_ACTIVITY, 0xffffb43bu))
+#define MX_GREEN (ts_theme_color(&matrix_window.palette, TS_THEME_ROUTER, TS_COLOR_DATA2, 0xff8addb4u))
+#define MX_YELLOW (ts_theme_color(&matrix_window.palette, TS_THEME_ROUTER, TS_COLOR_FOCUS, 0xffffce69u))
+#define MX_FEEDBACK (ts_theme_color(&matrix_window.palette, TS_THEME_ROUTER, TS_COLOR_WARNING, 0xffffce69u))
 static void mx_rect(int x,int y,int width,int height,uint32_t color)
 {
     MatrixWindow *w=&matrix_window;
@@ -74,7 +76,7 @@ static void mx_text(int x,int y,const char *text,uint32_t color,int scale)
 }
 static void mx_button(int x,int y,int width,const char *label,int selected)
 {
-    mx_rect(x,y,width,28,selected?0xff365746u:MX_PANEL);
+    mx_rect(x,y,width,28,selected?ts_theme_color(&matrix_window.palette,TS_THEME_ROUTER,TS_COLOR_SELECTION,0xff365746u):MX_PANEL);
     mx_text(x+10,y+7,label,selected?MX_GREEN:MX_TEXT,2);
 }
 /* Small, quiet meters: rapid attack with a 150 ms release. No timed blinking. */
@@ -228,7 +230,7 @@ static void mx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
     mx_text(22,137,"SOURCE / OUTPUT",MX_DIM,2);
     for(int col=0;col<MATRIX_COLS && col+w->column<TS_MATRIX_DESTINATIONS;++col) {
         int d=col+w->column,x=MATRIX_X+col*MATRIX_CW;
-        mx_rect(x,128,MATRIX_CW-2,44,d==w->destination?0xff4a4532u:MX_PANEL);
+        mx_rect(x,128,MATRIX_CW-2,44,d==w->destination?ts_theme_color(&matrix_window.palette,TS_THEME_ROUTER,TS_COLOR_SELECTION,0xff4a4532u):MX_PANEL);
         mx_destination(label,sizeof(label),d,0);
         mx_text(x+5,133,label,d==w->destination?MX_YELLOW:MX_TEXT,strlen(label)>7?1:2);
         const char *detail=d==TS_MATRIX_COMPRESSOR?"AUDIO IN":d==TS_MATRIX_SIDECHAIN?"DETECTOR ONLY":d<TS_MATRIX_NODES?(d==0?"SUM":d==1?"TAPE IN":d<=4?"FX IN":"IN"):w->controls.output_name[d-TS_MATRIX_NODES];
@@ -239,29 +241,29 @@ static void mx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
     for(int line=0;line<MATRIX_VISIBLE && line+w->scroll<w->count;++line) {
         int at=line+w->scroll,y=MATRIX_Y+line*MATRIX_RH;MatrixRow row=w->rows[at];
         TsSourceRoute raw=mx_route(row,pages,bank),r=mx_display_route(raw);int inherit=raw.mode==TS_SOURCE_INHERIT || mx_legacy_direct(raw) || mx_uses_bus(row,raw);
-        mx_rect(20,y,1234,MATRIX_RH-2,mx_chosen(at)?0xff2a393bu:line&1?0xff1c262bu:0xff192227u);
-        snprintf(label,sizeof(label),"%.19s",row.name);mx_text(28,y+6,label,mx_chosen(at)?MX_YELLOW:row.kind==2?MX_GREEN:MX_TEXT,2);
+        mx_rect(20,y,1234,MATRIX_RH-2,mx_chosen(at)?ts_theme_color(&matrix_window.palette,TS_THEME_ROUTER,TS_COLOR_SELECTION,0xff2a393bu):line&1?ts_theme_color(&matrix_window.palette,TS_THEME_ROUTER,TS_COLOR_PANEL,0xff1c262bu):ts_theme_color(&matrix_window.palette,TS_THEME_ROUTER,TS_COLOR_PANEL,0xff192227u));
+        snprintf(label,sizeof(label),"%.19s",row.name);mx_text(28,y+6,label,mx_chosen(at)?ts_theme_color(&w->palette,TS_THEME_ROUTER,TS_COLOR_SELECTEDTEXT,MX_YELLOW):row.kind==2?MX_GREEN:MX_TEXT,2);
         if(inherit)mx_text(225,y+19,mx_legacy_direct(raw)?"OLD":row.kind==3?"BUS":"TILE",MX_YELLOW,1);
         mx_signal(21,y+5,4,17,w->row_source[line],MX_AMBER);
         if(row.kind==2) {
             int off=row.index>=TS_MATRIX_SISTER && row.index<=TS_MATRIX_FALLOUT && !(w->processors&(1u<<row.index));
-            if(off)mx_text(225,y+19,"OFF",MX_YELLOW,1);
+            if(off)mx_text(225,y+19,"OFF",ts_theme_color(&w->palette,TS_THEME_ROUTER,TS_COLOR_MUTED,MX_YELLOW),1);
             if(row.index>=TS_MATRIX_NODES && row.index<TS_MATRIX_FM && (unsigned)(row.index-TS_MATRIX_NODES)*2>=w->inputs)mx_text(225,y+19,"N/A",MX_YELLOW,1);
         }
         for(int col=0;col<MATRIX_COLS && col+w->column<TS_MATRIX_DESTINATIONS;++col) {
             int d=col+w->column,x=MATRIX_X+col*MATRIX_CW,g=r.matrix_gain[d];
             int selected=mx_chosen(at)&&d==w->destination;
             int delayed=row.kind==2&&ts_matrix_is_processor(row.index)&&(w->controls.delayed[row.index]&(1u<<d));
-            mx_rect(x,y,MATRIX_CW-2,MATRIX_RH-2,selected?0xff4a4532u:d==w->destination?0xff303733u:MX_PANEL);
-            mx_rect(x+7,y+6,14,14,inherit?MX_DIM:g?(delayed?MX_YELLOW:MX_GREEN):0xff47605du);
-            mx_rect(x+9,y+8,10,10,g&&!inherit?(delayed?MX_YELLOW:MX_GREEN):MX_BG);
+            mx_rect(x,y,MATRIX_CW-2,MATRIX_RH-2,selected?ts_theme_color(&matrix_window.palette,TS_THEME_ROUTER,TS_COLOR_SELECTION,0xff4a4532u):d==w->destination?ts_theme_color(&matrix_window.palette,TS_THEME_ROUTER,TS_COLOR_SELECTION,0xff303733u):MX_PANEL);
+            mx_rect(x+7,y+6,14,14,inherit?MX_DIM:g?(delayed?MX_FEEDBACK:MX_GREEN):ts_theme_color(&matrix_window.palette,TS_THEME_ROUTER,TS_COLOR_GRID,0xff47605du));
+            mx_rect(x+9,y+8,10,10,g&&!inherit?(delayed?MX_FEEDBACK:MX_GREEN):MX_BG);
             if(g&&!inherit){mx_text(x+12,y+9,"X",MX_BG,1);snprintf(label,sizeof(label),"%+.1f",20*log10f(g*.001f));}
             else snprintf(label,sizeof(label),"%s",inherit?(mx_legacy_direct(raw)?"OLD":row.kind==3?"BUS":"TILE"):"--");
-            mx_text(x+28,y+6,label,g?MX_TEXT:MX_DIM,2);if(delayed)mx_text(x+79,y+9,"F",MX_YELLOW,1);
+            mx_text(x+28,y+6,label,g?MX_TEXT:MX_DIM,2);if(delayed)mx_text(x+79,y+9,"F",MX_FEEDBACK,1);
             if(g && !inherit && w->controls.enabled &&
                (!ts_matrix_is_output(d) || (unsigned)(d-TS_MATRIX_NODES)*2<w->outputs)) {
                 int maximum=1;for(int dest=0;dest<TS_MATRIX_DESTINATIONS;++dest)maximum=SDL_max(maximum,r.matrix_gain[dest]);
-                mx_signal(x+28,y+22,60,2,w->row_send[line]*g/maximum,delayed?MX_YELLOW:MX_AMBER);
+                mx_signal(x+28,y+22,60,2,w->row_send[line]*g/maximum,delayed?MX_FEEDBACK:MX_AMBER);
             }
         }
     }
@@ -294,7 +296,7 @@ static void mx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
         mx_button(1070,762,170,r.width==-100?"MONO":"STEREO",r.width==-100);
     }
     if(w->rename>=0) {
-        mx_rect(252,730,792,51,0xff33443du);snprintf(label,sizeof(label),"NAME: %.23s",w->name);mx_text(266,738,label,MX_YELLOW,2);
+        mx_rect(252,730,792,51,ts_theme_color(&matrix_window.palette,TS_THEME_ROUTER,TS_COLOR_CONTROL,0xff33443du));snprintf(label,sizeof(label),"NAME: %.23s",w->name);mx_text(266,738,label,MX_YELLOW,2);
         if ((Uint32)(SDL_GetTicks()-w->rename_blink_started)%1000u < 500u)
             mx_rect(266+(6+(int)strlen(w->name))*12,736,2,18,MX_YELLOW);
         mx_text(266,763,"ENTER: SAVE / ESC: CANCEL - CHANNEL NUMBERS STAY VISIBLE",MX_TEXT,1);
@@ -554,6 +556,7 @@ static void mx_capture_activity(SDL_AudioDeviceID device,AudioState *audio,TsSam
 }
 static void matrix_update(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsSamplePages *pages,TsInstrument *bank)
 {
+    if(memcmp(&matrix_window.palette,&ui->palette,sizeof(ui->palette))) {matrix_window.palette=ui->palette;matrix_window.dirty=1;}
     MatrixWindow *w=&matrix_window;(void)ui;Uint32 elapsed=SDL_GetTicks()-w->presented;
     if(!w->visible || !window_drawable(w->window) || elapsed<50)return;
     mx_capture_activity(device,audio,pages,bank,elapsed);mx_paint(audio,pages,bank);

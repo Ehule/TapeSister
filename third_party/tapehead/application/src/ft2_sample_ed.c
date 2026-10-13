@@ -1124,7 +1124,7 @@ static void getSampleDataPeak(sample_t *s, int32_t index, int32_t length, int16_
 static void writeWaveform(void)
 {
 	// clear sample data area
-	memset(&video.frameBuffer[174 * SCREEN_W], 0, SAMPLE_AREA_WIDTH * SAMPLE_AREA_HEIGHT * sizeof (int32_t));
+	clearRect(0, 174, SAMPLE_AREA_WIDTH, SAMPLE_AREA_HEIGHT);
 
 	// draw center line
 	hLine(0, SAMPLE_AREA_Y_CENTER, SAMPLE_AREA_WIDTH, PAL_DESKTOP);

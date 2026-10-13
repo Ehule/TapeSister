@@ -1065,7 +1065,15 @@
  	"PAT Empty", "Wave Select", "LEN Head", "FT Head", "CONTROL Head", "FT Sync LED",
  	"FT Phase LED", "FT Song Badge", "FT+LEN Head"
  };
-@@ -594,6 +594,9 @@
+@@ -305,0 +306,7 @@
++#ifdef TAPEHEAD_EMBEDDED
++    /* Host theme is visual only. Preserve the palette-index byte used by the
++       framebuffer, including selection pixels, without changing saved colors. */
++    extern void ts_tapehead_theme_colors(uint32_t *colors);
++    ts_tapehead_theme_colors(video.palette);
++#endif
++
+@@ -594,6 +601,9 @@
  
  static void drawTapeSisterSwatches(void)
  {
@@ -1075,7 +1083,7 @@
  	initializeUniversalPalette();
  	textOutShadow(400, 159, PAL_FORGRND, PAL_DSKTOP2, "TS:");
  	for (int32_t swatch = 0;
-@@ -627,6 +630,9 @@
+@@ -627,6 +637,9 @@
  
  static int32_t tapeSisterSwatchFromPoint(int32_t x, int32_t y)
  {
@@ -1085,7 +1093,7 @@
  	if (x < TAPESISTER_SWATCH_X || y < TAPESISTER_SWATCH_Y ||
  		y >= TAPESISTER_SWATCH_Y + TAPESISTER_SWATCH_H)
  	{
-@@ -687,6 +693,9 @@
+@@ -687,6 +700,9 @@
  
  static void paletteDragMoved(void)
  {
@@ -1095,7 +1103,7 @@
  	if (config.cfg_StdPalNum != PAL_USER_DEFINED)
  	{
  		updatePaletteEditor(); // resets colors/contrast vars
-@@ -767,6 +776,9 @@
+@@ -767,6 +783,9 @@
  
  void configPalRDown(void)
  {
@@ -1105,7 +1113,7 @@
  	if (config.cfg_StdPalNum != PAL_USER_DEFINED)
  		showColorErrorMsg();
  	else if ((config.specialFlags2 & HARDWARE_MOUSE) && cfg_ColorNum == 3)
-@@ -777,6 +789,9 @@
+@@ -777,6 +796,9 @@
  
  void configPalRUp(void)
  {
@@ -1115,7 +1123,7 @@
  	if (config.cfg_StdPalNum != PAL_USER_DEFINED)
  		showColorErrorMsg();
  	else if ((config.specialFlags2 & HARDWARE_MOUSE) && cfg_ColorNum == 3)
-@@ -787,6 +802,9 @@
+@@ -787,6 +809,9 @@
  
  void configPalGDown(void)
  {
@@ -1125,7 +1133,7 @@
  	if (config.cfg_StdPalNum != PAL_USER_DEFINED)
  		showColorErrorMsg();
  	else if ((config.specialFlags2 & HARDWARE_MOUSE) && cfg_ColorNum == 3)
-@@ -797,6 +815,9 @@
+@@ -797,6 +822,9 @@
  
  void configPalGUp(void)
  {
@@ -1135,7 +1143,7 @@
  	if (config.cfg_StdPalNum != PAL_USER_DEFINED)
  		showColorErrorMsg();
  	else if ((config.specialFlags2 & HARDWARE_MOUSE) && cfg_ColorNum == 3)
-@@ -807,6 +828,9 @@
+@@ -807,6 +835,9 @@
  
  void configPalBDown(void)
  {
@@ -1145,7 +1153,7 @@
  	if (config.cfg_StdPalNum != PAL_USER_DEFINED)
  		showColorErrorMsg();
  	else if ((config.specialFlags2 & HARDWARE_MOUSE) && cfg_ColorNum == 3)
-@@ -817,6 +841,9 @@
+@@ -817,6 +848,9 @@
  
  void configPalBUp(void)
  {
@@ -1155,7 +1163,7 @@
  	if (config.cfg_StdPalNum != PAL_USER_DEFINED)
  		showColorErrorMsg();
  	else if ((config.specialFlags2 & HARDWARE_MOUSE) && cfg_ColorNum == 3)
-@@ -827,6 +854,9 @@
+@@ -827,6 +861,9 @@
  
  void configPalContDown(void)
  {
@@ -1165,7 +1173,7 @@
  	if (config.cfg_StdPalNum != PAL_USER_DEFINED)
  		showColorErrorMsg();
  	else if ((config.specialFlags2 & HARDWARE_MOUSE) && cfg_ColorNum == 3)
-@@ -837,6 +867,9 @@
+@@ -837,6 +874,9 @@
  
  void configPalContUp(void)
  {
@@ -1175,7 +1183,7 @@
  	if (config.cfg_StdPalNum != PAL_USER_DEFINED)
  		showColorErrorMsg();
  	else if ((config.specialFlags2 & HARDWARE_MOUSE) && cfg_ColorNum == 3)
-@@ -878,6 +911,9 @@
+@@ -878,6 +918,9 @@
  
  void configPalSaveShared(void)
  {
@@ -1185,7 +1193,7 @@
  	UNICHAR *filePathU = getCanonicalPalettePathU();
  	if (filePathU == NULL)
  	{
-@@ -930,6 +966,9 @@
+@@ -930,6 +973,9 @@
  	static const char *modeNames[3] = { "Edit", "Always", "Mono" };
  	textOutShadow(400,  92, PAL_FORGRND, PAL_DSKTOP2, "Preset:");
  	textOutShadow(400, 109, PAL_FORGRND, PAL_DSKTOP2, "PAT Colors:");
@@ -1195,7 +1203,7 @@
  	textOutShadow(400, 126, PAL_FORGRND, PAL_DSKTOP2, "Exchange:");
  	textOutShadow(400, 143, PAL_FORGRND, PAL_DSKTOP2, "Program:");
  	drawFramework(474, 122, 156, 14, FRAMEWORK_TYPE2);
-@@ -939,6 +978,7 @@
+@@ -939,6 +985,7 @@
  	drawTextBox(TB_CONF_TAPESISTER_EXCHANGE);
  	drawTextBox(TB_CONF_TAPESISTER_EXECUTABLE);
  	drawTapeSisterSwatches();
@@ -1203,7 +1211,7 @@
  	pushButtons[PB_CONFIG_PAL_PRESET].caption = (char *)presetNames[config.cfg_StdPalNum];
  	pushButtons[PB_CONFIG_PAL_COLOR_MODE].caption = (char *)modeNames[MIN(tapeheadConfig.patternColorMode, 2)];
  	charOutShadow(503, 17, PAL_FORGRND, PAL_DSKTOP2, 'R');
-@@ -964,8 +1004,10 @@
+@@ -964,8 +1011,10 @@
  	showScrollBar(SB_PAL_CONTRAST);
  	showPushButton(PB_CONFIG_PAL_CONT_DOWN);
  	showPushButton(PB_CONFIG_PAL_CONT_UP);
@@ -1214,7 +1222,7 @@
  
  	updatePaletteEditor();
  }
-@@ -1132,7 +1174,13 @@
+@@ -1132,7 +1181,13 @@
  
  bool paletteListMouseWheel(bool directionUp, int32_t x, int32_t y)
  {
@@ -1229,7 +1237,7 @@
  		x < PAL_LIST_X || x >= 501 || y < PAL_LIST_Y || y >= PAL_LIST_Y + (PAL_LIST_ROW_H * PAL_LIST_VISIBLE_ROWS))
  		return false;
  
-@@ -1146,7 +1194,13 @@
+@@ -1146,7 +1201,13 @@
  
  bool paletteListMouseDown(int32_t x, int32_t y)
  {
@@ -1244,7 +1252,7 @@
  		return false;
  	const int32_t swatch = tapeSisterSwatchFromPoint(x, y);
  	if (swatch >= 0)
-@@ -1205,3 +1259,37 @@
+@@ -1205,3 +1266,37 @@
  	patternColors[PAL_USER_DEFINED][field].g = color8To6(RGB32_G(rgb));
  	patternColors[PAL_USER_DEFINED][field].b = color8To6(RGB32_B(rgb));
  }
@@ -2449,3 +2457,36 @@ index 472d0f3..851464a 100644
 +	scopeDisplayedPan[ch] = -1;
 +	lastChInstr[ch].instrNum = lastChInstr[ch].smpNum = 255;
 +}
+--- a/src/ft2_gui.c
++++ b/src/ft2_gui.c
+@@ -717,0 +718,9 @@
++#ifdef TAPEHEAD_EMBEDDED
++    /* The host may use a light pattern/scope background. Original keeps the
++       native zero-fill fast path and its tagged palette index zero. */
++    if (video.palette[PAL_BCKGRND] != 0)
++    {
++        fillRect(xPos, yPos, w, h, PAL_BCKGRND);
++        return;
++    }
++#endif
+--- a/src/ft2_pattern_draw.c
++++ b/src/ft2_pattern_draw.c
+@@ -251 +251 @@
+-			memset(video.frameBuffer, 0, SCREEN_W * sizeof (int32_t) * clearRows);
++			clearRect(0, 0, SCREEN_W, clearRows);
+@@ -256 +256 @@
+-			memset(&video.frameBuffer[68 * SCREEN_W], 0, clearSize);
++			clearRect(0, 68, SCREEN_W, clearSize / (SCREEN_W * sizeof (int32_t)));
+@@ -261 +261 @@
+-			memset(&video.frameBuffer[173 * SCREEN_W], 0, clearSize);
++			clearRect(0, 173, SCREEN_W, clearSize / (SCREEN_W * sizeof (int32_t)));
+--- a/src/ft2_sample_ed.c
++++ b/src/ft2_sample_ed.c
+@@ -1127 +1127 @@
+-	memset(&video.frameBuffer[174 * SCREEN_W], 0, SAMPLE_AREA_WIDTH * SAMPLE_AREA_HEIGHT * sizeof (int32_t));
++	clearRect(0, 174, SAMPLE_AREA_WIDTH, SAMPLE_AREA_HEIGHT);
+--- a/src/ft2_sampling.c
++++ b/src/ft2_sampling.c
+@@ -199 +199 @@
+-	memset(&video.frameBuffer[174 * SCREEN_W], 0, SAMPLE_AREA_WIDTH * SAMPLE_AREA_HEIGHT * sizeof (int32_t));
++	clearRect(0, 174, SAMPLE_AREA_WIDTH, SAMPLE_AREA_HEIGHT);

@@ -99,3 +99,12 @@ Module import also uses the bundled MOD/SoundTracker and lossy IT converters.
 The host preflights offsets, packed patterns and supported dimensions before
 staging tiles. The IT patch bounds compressed bitstream reads and propagates
 decoding failures; the compatibility warning is shown in the host load UI.
+
+## Host palette overlay
+
+The embedded `setPalette` calls `ts_tapehead_theme_colors` after rebuilding the
+native palette and before recoloring the framebuffer. The host preserves the
+index byte and resolves semantic roles through the current UI theme. No replay
+or saved preference bytes are changed. Returning to Original rebuilds the
+project's underlying colors. The native configuration also exposes the host's
+floating Palette window. This hook is recorded in `embedded.patch`.

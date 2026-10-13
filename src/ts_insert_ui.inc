@@ -15,9 +15,9 @@ static const char *insert_help(int x,int y)
 
 static void insert_render(TsFramebuffer *fb,const TsUiState *ui)
 {
-    uint32_t amber=RGB(247,196,91),teal=RGB(107,176,182),muted=RGB(123,127,133);
+    uint32_t amber=ts_theme_color(active_palette(), TS_THEME_ROUTER, TS_COLOR_DATA1, RGB(247,196,91)),teal=ts_theme_color(active_palette(), TS_THEME_ROUTER, TS_COLOR_DATA2, RGB(107,176,182)),muted=ts_theme_color(active_palette(), TS_THEME_ROUTER, TS_COLOR_DIM, RGB(123,127,133));
     char label[100];
-    rect(fb,10,38,620,344,RGB(29,29,35));rect(fb,10,38,620,2,teal);
+    rect(fb,10,38,620,344,ts_theme_color(active_palette(), TS_THEME_ROUTER, TS_COLOR_PANEL, RGB(29,29,35)));rect(fb,10,38,620,2,teal);
     text(fb,22,48,ui->router_live.master_mix?"MASTER INSERT":"CHAIN INSERT",amber,1);
     text(fb,264,48,"HARDWARE LOOP / 100% RETURN",teal,1);
     button(fb,546,43,70,"BACK",0);
@@ -29,7 +29,7 @@ static void insert_render(TsFramebuffer *fb,const TsUiState *ui)
         "PORT CHOICES NOT ACTIVE YET - CLICK APPLY NOW":"PORT CHOICES APPLIED - LEVELS AND BYPASS CHANGE LIVE",pending||ui->insert_restart_required?amber:teal,1);
     for(int side=0;side<2;++side) {
         int x=22+side*310;
-        rect(fb,x,83,286,180,RGB(36,37,44));rect(fb,x,83,3,180,teal);
+        rect(fb,x,83,286,180,ts_theme_color(active_palette(), TS_THEME_ROUTER, TS_COLOR_PANEL, RGB(36,37,44)));rect(fb,x,83,3,180,teal);
         text(fb,x+14,94,side?"RETURN FROM HARDWARE":"SEND TO HARDWARE",teal,1);
         router_activity(fb,x+222,96,side?ui->insert_return_peak:ui->insert_send_peak);
         const char *device=side?ui->insert_return_device:ui->insert_send_device;

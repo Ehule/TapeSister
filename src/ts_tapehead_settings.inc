@@ -1,3 +1,21 @@
+/* A display overlay keeps the live host theme out of tracker preferences and
+   project bytes. setPalette always rebuilds the native colors before this hook,
+   so returning to Original restores even a project's custom tracker palette. */
+static TsPalette tracker_host_theme;
+static int tracker_host_theme_valid;
+void ts_tapehead_theme_colors(uint32_t *colors)
+{
+    if(!tracker_host_theme_valid)return;
+    for(int i=0;i<PAL_NUM;++i)
+        colors[i]=((uint32_t)i<<24)|(ts_theme_tracker_color(&tracker_host_theme,i,colors[i])&0xffffffu);
+}
+void ts_tapehead_theme_apply(const TsPalette *p)
+{
+    if(tracker_host_theme_valid&&!memcmp(&tracker_host_theme,p,sizeof(*p)))return;
+    tracker_host_theme=*p;tracker_host_theme_valid=1;
+    if(embed.initialized){setPalette(palTable[config.cfg_StdPalNum],true);ui.updatePatternEditor=ui.updatePosSections=true;}
+}
+
 /* Embedded tracker preferences. Original checkbox/palette callbacks own edits;
    only their presentation and storage are adapted to TapeSister. */
 #define TH_PREFS_BYTES 128u
@@ -53,6 +71,7 @@ int ts_tapehead_palette_export(const char *path,char *error,size_t size) {
     snprintf(preferences_message,sizeof(preferences_message),"Palette exported");return 1;
 }
 static void palette_import_button(void) {ts_tapehead_request(TS_TH_PALETTE_IMPORT);}
+static void palette_editor_button(void) {ts_tapehead_request(TS_TH_PALETTE_EDITOR);}
 static void palette_export_button(void) {ts_tapehead_request(TS_TH_PALETTE_EXPORT);}
 static void palette_default_button(void) {
     palette_default();snprintf(preferences_message,sizeof(preferences_message),"Default palette restored");
@@ -168,6 +187,7 @@ void ts_tapehead_show_config(void) {
     settings_button(PB_CONFIG_EXIT,8,153,64,"Done",exitConfigScreen);
     settings_button(PB_CONFIG_SAVE,76,153,115,"Save defaults",preferences_save_button);
     settings_button(PB_CONFIG_AUDIO_RESCAN,195,153,88,"Audio health",preferences_audio_button);
+    settings_button(PB_CONFIG_AUDIO_OUTPUT_DOWN,287,153,98,"Palette",palette_editor_button);
     if(!layout) {
         settings_checkbox(CB_CONF_SILENT_REC_ENTRY,8,41,"Silent record",config.specialFlags2&SILENT_REC_ENTRY);
         settings_checkbox(CB_CONF_INHERIT_PATT_LEN,8,54,"Inherit pattern length",config.specialFlags&INHERIT_PATT_LEN);

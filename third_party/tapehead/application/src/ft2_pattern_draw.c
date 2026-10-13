@@ -248,17 +248,17 @@ void drawPatternBorders(void)
 		if (ui.patternEditorOnly)
 		{
 			const int32_t clearRows = ui.pattChanScrollShown ? 383 : SCREEN_H;
-			memset(video.frameBuffer, 0, SCREEN_W * sizeof (int32_t) * clearRows);
+			clearRect(0, 0, SCREEN_W, clearRows);
 		}
 		else if (ui.extendedPatternEditor)
 		{
 			const int32_t clearSize = ui.pattChanScrollShown ? (SCREEN_W * sizeof (int32_t) * 315) : (SCREEN_W * sizeof (int32_t) * 332);
-			memset(&video.frameBuffer[68 * SCREEN_W], 0, clearSize);
+			clearRect(0, 68, SCREEN_W, clearSize / (SCREEN_W * sizeof (int32_t)));
 		}
 		else
 		{
 			const int32_t clearSize = ui.pattChanScrollShown ? (SCREEN_W * sizeof(int32_t) * 210) : (SCREEN_W * sizeof(int32_t) * 227);
-			memset(&video.frameBuffer[173 * SCREEN_W], 0, clearSize);
+			clearRect(0, 173, SCREEN_W, clearSize / (SCREEN_W * sizeof (int32_t)));
 		}
 
 		drawFramework(0, pattCoord->lowerRowsY - 10, SCREEN_W, 11, FRAMEWORK_TYPE1);

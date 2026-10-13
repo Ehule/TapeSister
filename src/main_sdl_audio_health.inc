@@ -34,6 +34,7 @@ typedef struct {
     char message[80];
 } TsAudioHealthWindow;
 static TsAudioHealthWindow ts_health;
+static Uint32 ts_audio_health_window_id(void){return ts_health.window_id;}
 static int ts_audio_health_drawable(void)
 { return ts_health.visible && window_drawable(ts_health.window); }
 
@@ -332,18 +333,19 @@ static void ts_audio_health_draw(TsFramebuffer *fb, const TsUiState *ui,
                                  const AudioState *audio, Uint32 now)
 {
     const TsRealtimeDiagnosticsSnapshot *s = &ts_health.snapshot;
-    uint32_t ink = ui->palette.colors[TS_PALETTE_PATTERN_TEXT];
-    uint32_t accent = ui->palette.colors[TS_PALETTE_MOUSE];
-    uint32_t effect = ui->palette.colors[TS_PALETTE_PATTERN_EFFECT];
-    uint32_t dim = 0xffa5a0aeu, edge = 0xff48434au;
-    uint32_t red = 0xffeb777du, amber = 0xffdfbc72u;
+    cfg_palette=&ui->palette;cfg_group=TS_THEME_HEALTH;
+    uint32_t ink = ts_theme_legacy(&ui->palette,TS_THEME_HEALTH,TS_COLOR_TEXT,TS_PALETTE_PATTERN_TEXT);
+    uint32_t accent = ts_theme_legacy(&ui->palette,TS_THEME_HEALTH,TS_COLOR_FOCUS,TS_PALETTE_MOUSE);
+    uint32_t effect = ts_theme_legacy(&ui->palette,TS_THEME_HEALTH,TS_COLOR_ACTIVITY,TS_PALETTE_PATTERN_EFFECT);
+    uint32_t dim = ts_theme_color(&ui->palette,TS_THEME_HEALTH,TS_COLOR_DIM,0xffa5a0aeu), edge = ts_theme_color(&ui->palette,TS_THEME_HEALTH,TS_COLOR_EDGE,0xff48434au);
+    uint32_t red = ts_theme_color(&ui->palette,TS_THEME_HEALTH,TS_COLOR_ERROR,0xffeb777du), amber = ts_theme_color(&ui->palette,TS_THEME_HEALTH,TS_COLOR_WARNING,0xffdfbc72u);
     int active = ts_audio_output_is_available() && s->callback_count &&
                  now - ts_health.last_callback < 1000u;
     const char *state = !audio->realtime_diagnostics_enabled ? "TIMING UNAVAILABLE" :
         !ts_audio_output_is_available() ? "OUTPUT UNAVAILABLE" : active ? "MONITORING" : "WAITING FOR AUDIO";
     char line[160];
-    cfg_rect(fb, 0, 0, 640, 400, 0xff1b191fu);
-    cfg_frame(fb, 8, 8, 624, 384, 0xff242125u, accent);
+    cfg_rect(fb, 0, 0, 640, 400, ts_theme_color(&ui->palette,TS_THEME_HEALTH,TS_COLOR_BACKGROUND,0xff1b191fu));
+    cfg_frame(fb, 8, 8, 624, 384, ts_theme_color(&ui->palette,TS_THEME_HEALTH,TS_COLOR_PANEL,0xff242125u), accent);
     cfg_text(fb, 20, 20, ts_profile_enabled() ? "PERFORMANCE PROFILE" : "AUDIO HEALTH", accent);
     if (ts_profile_enabled()) { ts_audio_profile_draw(fb, ink, dim); goto footer; }
     cfg_text(fb, 490, 20, state, active ? effect : dim);
@@ -363,7 +365,7 @@ static void ts_audio_health_draw(TsFramebuffer *fb, const TsUiState *ui,
     else snprintf(line, sizeof(line), "WAITING FOR A FRESH WINDOW");
     uint32_t load_color = s->recent_load_percent >= 100 ? red : s->recent_load_percent >= 90 ? amber : effect;
     cfg_text(fb, 350, 87, line, active ? load_color : dim);
-    cfg_frame(fb, 20, 102, 600, 12, 0xff17151au, edge);
+    cfg_frame(fb, 20, 102, 600, 12, ts_theme_color(&ui->palette,TS_THEME_HEALTH,TS_COLOR_PANEL,0xff17151au), edge);
     if (active && s->recent_callback_count) {
         int filled = (int)(fmax(0, fmin(100, s->recent_load_percent)) * 5.96);
         cfg_rect(fb, 22, 104, filled, 8, load_color);
@@ -401,13 +403,13 @@ static void ts_audio_health_draw(TsFramebuffer *fb, const TsUiState *ui,
 footer:
     cfg_text(fb, 20, ts_profile_enabled()?354:347, now < ts_health.message_until ? ts_health.message :
              "F12: OPEN/CLOSE    RESET STARTS A NEW MEASUREMENT", dim);
-    cfg_frame(fb, 20, 367, 120, 19, 0xff1b191cu, edge);
+    cfg_frame(fb, 20, 367, 120, 19, ts_theme_color(&ui->palette,TS_THEME_HEALTH,TS_COLOR_PANEL,0xff1b191cu), edge);
     cfg_text(fb, 65, 373, "RESET", accent);
-    cfg_frame(fb, 150, 367, 150, 19, 0xff1b191cu, edge);
+    cfg_frame(fb, 150, 367, 150, 19, ts_theme_color(&ui->palette,TS_THEME_HEALTH,TS_COLOR_PANEL,0xff1b191cu), edge);
     cfg_text(fb, 192, 373, "COPY REPORT", effect);
-    cfg_frame(fb, 310, 367, 180, 19, 0xff1b191cu, edge);
+    cfg_frame(fb, 310, 367, 180, 19, ts_theme_color(&ui->palette,TS_THEME_HEALTH,TS_COLOR_PANEL,0xff1b191cu), edge);
     cfg_text(fb, 332, 373, ts_profile_enabled() ? "STOP PROFILE" : "START PROFILE", effect);
-    cfg_frame(fb, 500, 367, 120, 19, 0xff1b191cu, edge);
+    cfg_frame(fb, 500, 367, 120, 19, ts_theme_color(&ui->palette,TS_THEME_HEALTH,TS_COLOR_PANEL,0xff1b191cu), edge);
     cfg_text(fb, 545, 373, "CLOSE", ink);
 }
 

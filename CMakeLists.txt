@@ -31,7 +31,7 @@ add_library(tapesister_core src/ts_mandala.c src/ts_routing_matrix.c src/ts_sour
              src/ts_tile_id.c src/ts_sister_tracker.c src/ts_sister_tracker_project.c src/ts_tracker_embedded_codec.c src/ts_tracker_playback.c src/ts_tracker_edit.c
              src/ts_browser.c src/ts_config.c src/ts_audio_config.c
              src/ts_recipe.c src/ts_dsp_recipe.c
-             src/ts_palette.c
+             src/ts_palette.c src/ts_theme.c
              src/ts_render_damage.c src/ts_waveform_cache.c
              src/ts_cdp_recipe.c src/ts_cdp_adapter.c src/ts_cdp_portal.c src/ts_transform.c
              src/ts_dsp_transform.c src/ts_exchange.c src/ts_waveform_display.c
@@ -759,4 +759,21 @@ if(TAPESISTER_BUILD_SDL)
   endif()
   add_dependencies(tapesister_mandala_controller_tests tapesister)
   add_test(NAME tapesister_mandala_controller_tests COMMAND tapesister_mandala_controller_tests)
+endif()
+
+add_executable(tapesister_theme_tests tests/test_theme.c)
+target_link_libraries(tapesister_theme_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_theme_tests COMMAND tapesister_theme_tests)
+if(TAPESISTER_BUILD_SDL)
+  add_executable(tapesister_palette_window_tests tests/test_palette_window.c
+    src/tape_link.c src/tape_companion.c src/ts_startup_diag.c src/ts_midi_input.c)
+  target_include_directories(tapesister_palette_window_tests PRIVATE third_party)
+  target_link_libraries(tapesister_palette_window_tests PRIVATE tapesister_core tapesister_tapehead SDL2::SDL2)
+  if(UNIX AND NOT APPLE)
+    target_link_libraries(tapesister_palette_window_tests PRIVATE rt)
+  endif()
+  if(MINGW)
+    target_link_options(tapesister_palette_window_tests PRIVATE "-Wl,--stack,16777216")
+  endif()
+  add_test(NAME tapesister_palette_window_tests COMMAND tapesister_palette_window_tests)
 endif()

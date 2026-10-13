@@ -42,8 +42,8 @@ static void tracker_button(TsFramebuffer *fb,int x,int y,int w,const char *label
     int h=compact?16:24;
     bevel_frame(fb,x,y,w,h,active?PAL_BLOCK:PAL_BUTTON,light,dark);
     int width=tracker_text_width(label);
-    if(width<=w-6)tracker_text(fb,x+(w-width)/2,y+(h-10)/2,label,active?PAL_BLOCK_TEXT:RGB(0,0,0));
-    else tracker_tiny(fb,x+(w-(int)strlen(label)*4)/2,y+(h-7)/2,label,active?PAL_BLOCK_TEXT:RGB(0,0,0));
+    if(width<=w-6)tracker_text(fb,x+(w-width)/2,y+(h-10)/2,label,active?PAL_BLOCK_TEXT:ts_theme_color(active_palette(), TS_THEME_TRACKER, TS_COLOR_BACKGROUND, RGB(0,0,0)));
+    else tracker_tiny(fb,x+(w-(int)strlen(label)*4)/2,y+(h-7)/2,label,active?PAL_BLOCK_TEXT:ts_theme_color(active_palette(), TS_THEME_TRACKER, TS_COLOR_BACKGROUND, RGB(0,0,0)));
 }
 static void tracker_switch(TsFramebuffer *fb,int x,int y,const char *label,int active)
 {
@@ -90,7 +90,7 @@ static void tracker_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrum
     for(int lane=0;lane<TS_TRACKER_LEGACY_LANES;++lane) {
         int x=TS_TRACKER_LANE_X+lane*TS_TRACKER_LANE_WIDTH;
         const TsTrackerLane *definition=&t->lanes[lane];
-        frame(fb,x-1,g.len_y-2,TS_TRACKER_LANE_WIDTH,g.bottom-g.len_y+4,RGB(0,0,0),0);
+        frame(fb,x-1,g.len_y-2,TS_TRACKER_LANE_WIDTH,g.bottom-g.len_y+4,ts_theme_color(active_palette(), TS_THEME_TRACKER, TS_COLOR_BACKGROUND, RGB(0,0,0)),0);
         rect(fb,x+1,g.len_y-1,TS_TRACKER_LANE_WIDTH-3,g.grid_y-g.len_y+1,PAL_DESKTOP);
         if(g.name_y>=0 && ts_tracker_custom_name(definition,lane)) {
             snprintf(line,sizeof(line),"%.16s",definition->name);tracker_tiny(fb,x+2,g.name_y,line,PAL_MOUSE);
@@ -164,7 +164,7 @@ static void tracker_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrum
             "INSERT ROW","DELETE ROW","NOTE -1","NOTE +1","NOTE -12","NOTE +12",
             "VOL RAMP","FILL DOWN","REVERSE","REPEAT BLOCK","SELECT LANE","SELECT ALL","CLONE PAT","EXTRACT F8","EXPAND X2","SHRINK /2"};
         static const char *masks[]={"NOTE","TILE","VOLUME","TUNE","FX"};
-        rect(fb,18,106,604,216,RGB(9,11,17));rect(fb,18,106,604,2,RGB(232,208,255));
+        rect(fb,18,106,604,216,ts_theme_color(active_palette(), TS_THEME_TRACKER, TS_COLOR_BACKGROUND, RGB(9,11,17)));rect(fb,18,106,604,2,ts_theme_color(active_palette(), TS_THEME_TRACKER, TS_COLOR_DATA6, RGB(232,208,255)));
         text(fb,28,116,"PATTERN EDITING",PAL_NOTE,1);tracker_button(fb,536,111,76,"CLOSE",0,1);
         for(int i=0;i<22;++i)tracker_button(fb,28+(i%6)*98,138+(i/6)*22,94,labels[i],0,1);
         text(fb,28,231,"FIELDS FOR CLIPBOARD / CLEAR BLOCK / FILL / REVERSE:",PAL_TEXT,1);

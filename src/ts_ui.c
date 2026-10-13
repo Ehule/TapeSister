@@ -23,6 +23,7 @@ _Static_assert(sizeof(TAPESISTER_BUILD_MARKER) <=
 #define RGB(r,g,b) (0xff000000u | ((uint32_t)(r) << 16) | ((uint32_t)(g) << 8) | (uint32_t)(b))
 
 static const TsPalette *render_palette;
+static TsThemeGroup render_group = TS_THEME_CANVAS;
 static TsWaveformCache waveform_caches[TS_UI_WAVEFORM_COUNT];
 static int waveform_caches_initialized;
 
@@ -159,31 +160,31 @@ static const TsPalette *active_palette(void)
     return render_palette != NULL ? render_palette : &fallback;
 }
 
-#define PAL_TEXT (active_palette()->colors[TS_PALETTE_PATTERN_TEXT])
-#define PAL_BLOCK (active_palette()->colors[TS_PALETTE_BLOCK_MARK])
-#define PAL_BLOCK_TEXT (active_palette()->colors[TS_PALETTE_TEXT_ON_BLOCK])
-#define PAL_MOUSE (active_palette()->colors[TS_PALETTE_MOUSE])
-#define PAL_DESKTOP (active_palette()->colors[TS_PALETTE_DESKTOP])
-#define PAL_BUTTON (active_palette()->colors[TS_PALETTE_BUTTONS])
-#define PAL_NOTE (active_palette()->colors[TS_PALETTE_PATTERN_NOTE])
-#define PAL_INSTRUMENT (active_palette()->colors[TS_PALETTE_PATTERN_INSTRUMENT])
-#define PAL_VOLUME (active_palette()->colors[TS_PALETTE_PATTERN_VOLUME])
-#define PAL_TUNING (active_palette()->colors[TS_PALETTE_PATTERN_TUNING])
-#define PAL_EFFECT (active_palette()->colors[TS_PALETTE_PATTERN_EFFECT])
-#define PAL_WAVE_SELECTION (active_palette()->colors[TS_PALETTE_WAVE_SELECTION])
-#define PAL_ACTIVE_TILE (active_palette()->colors[TS_PALETTE_ACTIVE_TILE])
-#define PAL_WAVE_LEFT (active_palette()->colors[TS_PALETTE_STEREO_WAVE_LEFT])
-#define PAL_WAVE_RIGHT (active_palette()->colors[TS_PALETTE_STEREO_WAVE_RIGHT])
-#define PAL_WAVE_SUM (active_palette()->colors[TS_PALETTE_STEREO_WAVE_SUM])
+#define PAL_TEXT (ts_theme_legacy(active_palette(), render_group, TS_COLOR_TEXT, TS_PALETTE_PATTERN_TEXT))
+#define PAL_BLOCK (ts_theme_legacy(active_palette(), render_group, TS_COLOR_SELECTION, TS_PALETTE_BLOCK_MARK))
+#define PAL_BLOCK_TEXT (ts_theme_legacy(active_palette(), render_group, TS_COLOR_SELECTEDTEXT, TS_PALETTE_TEXT_ON_BLOCK))
+#define PAL_MOUSE (ts_theme_legacy(active_palette(), render_group, TS_COLOR_FOCUS, TS_PALETTE_MOUSE))
+#define PAL_DESKTOP (ts_theme_legacy(active_palette(), render_group, TS_COLOR_BACKGROUND, TS_PALETTE_DESKTOP))
+#define PAL_BUTTON (ts_theme_legacy(active_palette(), render_group, TS_COLOR_CONTROL, TS_PALETTE_BUTTONS))
+#define PAL_NOTE (ts_theme_legacy(active_palette(), render_group, TS_COLOR_DATA1, TS_PALETTE_PATTERN_NOTE))
+#define PAL_INSTRUMENT (ts_theme_legacy(active_palette(), render_group, TS_COLOR_DATA4, TS_PALETTE_PATTERN_INSTRUMENT))
+#define PAL_VOLUME (ts_theme_legacy(active_palette(), render_group, TS_COLOR_DATA5, TS_PALETTE_PATTERN_VOLUME))
+#define PAL_TUNING (ts_theme_legacy(active_palette(), render_group, TS_COLOR_DATA3, TS_PALETTE_PATTERN_TUNING))
+#define PAL_EFFECT (ts_theme_legacy(active_palette(), render_group, TS_COLOR_DATA2, TS_PALETTE_PATTERN_EFFECT))
+#define PAL_WAVE_SELECTION (ts_theme_legacy(active_palette(), render_group, TS_COLOR_SELECTION, TS_PALETTE_WAVE_SELECTION))
+#define PAL_ACTIVE_TILE (ts_theme_legacy(active_palette(), render_group, TS_COLOR_FOCUS, TS_PALETTE_ACTIVE_TILE))
+#define PAL_WAVE_LEFT (ts_theme_legacy(active_palette(), render_group, TS_COLOR_DATA1, TS_PALETTE_STEREO_WAVE_LEFT))
+#define PAL_WAVE_RIGHT (ts_theme_legacy(active_palette(), render_group, TS_COLOR_DATA2, TS_PALETTE_STEREO_WAVE_RIGHT))
+#define PAL_WAVE_SUM (ts_theme_legacy(active_palette(), render_group, TS_COLOR_DATA4, TS_PALETTE_STEREO_WAVE_SUM))
 
 #ifndef TS_MIDI_LEARN_AVAILABLE_COLOR
-#define TS_MIDI_LEARN_AVAILABLE_COLOR 0xff35ffffu
+#define TS_MIDI_LEARN_AVAILABLE_COLOR (ts_theme_color(active_palette(), TS_THEME_MIDI, TS_COLOR_DATA2, 0xff35ffffu))
 #endif
 #ifndef TS_MIDI_LEARN_MAPPED_COLOR
-#define TS_MIDI_LEARN_MAPPED_COLOR 0xff258cffu
+#define TS_MIDI_LEARN_MAPPED_COLOR (ts_theme_color(active_palette(), TS_THEME_MIDI, TS_COLOR_DATA3, 0xff258cffu))
 #endif
 #ifndef TS_MIDI_LEARN_SELECTED_COLOR
-#define TS_MIDI_LEARN_SELECTED_COLOR 0xffd8ffffu
+#define TS_MIDI_LEARN_SELECTED_COLOR (ts_theme_color(active_palette(), TS_THEME_MIDI, TS_COLOR_FOCUS, 0xffd8ffffu))
 #endif
 
 int ts_ui_logo_contains(int x, int y)
@@ -365,12 +366,12 @@ void ts_ui_draw_tile_state_borders(TsFramebuffer *fb, int slot,
         slot >= TS_BANK_SLOT_COUNT || (!active && !sister_source)) return;
     x = 10 + (slot % 8) * 77;
     y = 330 + (slot / 8) * 25;
-    active_color = palette->colors[TS_PALETTE_ACTIVE_TILE];
+    active_color = ts_theme_legacy(palette,TS_THEME_CANVAS,TS_COLOR_FOCUS,TS_PALETTE_ACTIVE_TILE);
     if (sister_source) {
         uint32_t horizontal =
-            palette->colors[TS_PALETTE_SISTER_SOURCE_HORIZONTAL];
+            ts_theme_legacy(palette,TS_THEME_CANVAS,TS_COLOR_DATA1,TS_PALETTE_SISTER_SOURCE_HORIZONTAL);
         uint32_t vertical =
-            palette->colors[TS_PALETTE_SISTER_SOURCE_VERTICAL];
+            ts_theme_legacy(palette,TS_THEME_CANVAS,TS_COLOR_DATA2,TS_PALETTE_SISTER_SOURCE_VERTICAL);
         rect(fb, x - 2, y - 2, 76, 2, horizontal);
         rect(fb, x - 2, y + 23, 76, 2, horizontal);
         rect(fb, x - 2, y, 2, 23, vertical);
@@ -745,7 +746,7 @@ static void main_midi_learn_overlay(TsFramebuffer *fb, const TsUiState *ui)
         }
     }
 learn_footer:
-    rect(fb, 0, TS_UI_HEIGHT - 16, TS_UI_WIDTH, 16, RGB(12, 12, 12));
+    rect(fb, 0, TS_UI_HEIGHT - 16, TS_UI_WIDTH, 16, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(12, 12, 12)));
     text(fb, 10, TS_UI_HEIGHT - 12,
          ui->midi_learn_pending[0] != '\0' ?
          "MIDI LEARN: MOVE OR PRESS A CONTROL  ESC CANCELS" :
@@ -781,12 +782,12 @@ static void button(TsFramebuffer *fb, int x, int y, int w, const char *label, in
     uint32_t dark = contrast_color(
         PAL_BUTTON, active_palette()->buttons_contrast, 0.5f);
     bevel_frame(fb, x, y, w, 23, fill, light, dark);
-    text(fb, x + 6, y + 8, label, active ? PAL_BLOCK_TEXT : RGB(245, 242, 235), 1);
+    text(fb, x + 6, y + 8, label, active ? PAL_BLOCK_TEXT : ts_theme_color(active_palette(), render_group, TS_COLOR_TEXT, RGB(245, 242, 235)), 1);
 }
 
 static void sister_portal_render(TsFramebuffer *fb, const TsUiState *ui)
 {
-    const uint32_t background = RGB(12, 12, 12);
+    const uint32_t background = ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(12, 12, 12));
     uint32_t accent = ui->sister_warning ? PAL_VOLUME :
                       ui->sister_enabled ? PAL_WAVE_RIGHT : PAL_EFFECT;
     int state = ui->sister_portal_pressed ? 2 :
@@ -847,8 +848,8 @@ static void mini_button(TsFramebuffer *fb, int x, int y, int w,
 static void slider(TsFramebuffer *fb, int x, int y, int w, const char *label, float value,
                    uint32_t color)
 {
-    text(fb, x, y, label, RGB(222, 218, 214), 1);
-    rect(fb, x, y + 13, w, 6, RGB(12, 12, 12));
+    text(fb, x, y, label, ts_theme_color(active_palette(), render_group, TS_COLOR_TEXT, RGB(222, 218, 214)), 1);
+    rect(fb, x, y + 13, w, 6, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(12, 12, 12)));
     rect(fb, x + 1, y + 14, (int)((w - 2) * value), 4, color);
     int knob = x + (int)((w - 6) * value);
     rect(fb, knob, y + 10, 6, 12, PAL_MOUSE);
@@ -863,8 +864,8 @@ static void bipolar_slider(TsFramebuffer *fb, int x, int y, int w,
     int fill_last;
     if (value < -1.0f) value = -1.0f;
     if (value > 1.0f) value = 1.0f;
-    text(fb, x, y, label, RGB(222, 218, 214), 1);
-    rect(fb, x, y + 13, w, 6, RGB(12, 12, 12));
+    text(fb, x, y, label, ts_theme_color(active_palette(), render_group, TS_COLOR_TEXT, RGB(222, 218, 214)), 1);
+    rect(fb, x, y + 13, w, 6, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(12, 12, 12)));
     center = x + (w - 6) / 2;
     knob = x + (int)lrintf((float)(w - 6) * (value + 1.0f) * 0.5f);
     fill_first = knob < center ? knob + 3 : center + 3;
@@ -886,8 +887,8 @@ static void compact_slider(TsFramebuffer *fb, int x, int y, int w,
     if (value < 0.0f) value = 0.0f;
     if (value > 1.0f) value = 1.0f;
     if (active) rect(fb, x - 4, y + 1, 3, 11, PAL_MOUSE);
-    text(fb, x, y + 3, label, active ? PAL_MOUSE : RGB(222, 218, 214), 1);
-    rect(fb, track_x, y + 5, track_w, 4, RGB(8, 8, 8));
+    text(fb, x, y + 3, label, active ? PAL_MOUSE : ts_theme_color(active_palette(), render_group, TS_COLOR_TEXT, RGB(222, 218, 214)), 1);
+    rect(fb, track_x, y + 5, track_w, 4, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(8, 8, 8)));
     rect(fb, track_x + 1, y + 6, (int)((track_w - 2) * value), 2, color);
     knob = track_x + (int)((track_w - 4) * value);
     rect(fb, knob, y + 2, 4, 10, PAL_MOUSE);
@@ -895,7 +896,7 @@ static void compact_slider(TsFramebuffer *fb, int x, int y, int w,
     text(fb, x + w - 20, y + 3, shown, active ? PAL_MOUSE : PAL_EFFECT, 1);
 }
 
-static void browser_render(TsFramebuffer *fb, const TsBrowser *browser,
+static void browser_render_themed_impl(TsFramebuffer *fb, const TsBrowser *browser,
                            int cursor_visible, int file_busy,
                            int import_preview_available)
 {
@@ -903,9 +904,9 @@ static void browser_render(TsFramebuffer *fb, const TsBrowser *browser,
     char footer[40];
     const char *directory = browser->directory;
     size_t directory_length = strlen(directory);
-    rect(fb, 0, 32, TS_UI_WIDTH, TS_UI_HEIGHT - 48, RGB(12, 12, 12));
-    frame(fb, 20, 34, 600, 342, RGB(36, 33, 37), PAL_MOUSE);
-    rect(fb, 22, 36, 596, 28, RGB(12, 12, 12));
+    rect(fb, 0, 32, TS_UI_WIDTH, TS_UI_HEIGHT - 48, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(12, 12, 12)));
+    frame(fb, 20, 34, 600, 342, ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(36, 33, 37)), PAL_MOUSE);
+    rect(fb, 22, 36, 596, 28, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(12, 12, 12)));
     if (browser->mode == TS_BROWSER_LOAD_WAV) {
         button(fb, 34, 39, 108, "FILE BROWSER", 1);
         button(fb, 150, 39, 96,
@@ -921,7 +922,7 @@ static void browser_render(TsFramebuffer *fb, const TsBrowser *browser,
     text_case(fb, 56, 70, directory, PAL_INSTRUMENT, 1);
 
     rect(fb, TS_BROWSER_LIST_X, TS_BROWSER_LIST_Y, TS_BROWSER_LIST_W,
-         TS_BROWSER_SCROLL_H, RGB(8, 8, 8));
+         TS_BROWSER_SCROLL_H, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(8, 8, 8)));
     for (int row = 0; row < TS_BROWSER_VISIBLE_ROWS; ++row) {
         int index = browser->scroll + row;
         int y = TS_BROWSER_LIST_Y + row * TS_BROWSER_ROW_H;
@@ -937,7 +938,7 @@ static void browser_render(TsFramebuffer *fb, const TsBrowser *browser,
     }
 
     rect(fb, TS_BROWSER_SCROLL_X, TS_BROWSER_LIST_Y, TS_BROWSER_SCROLL_W,
-         TS_BROWSER_SCROLL_H, RGB(16, 16, 16));
+         TS_BROWSER_SCROLL_H, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(16, 16, 16)));
     {
         int thumb_h = browser->entry_count <= TS_BROWSER_VISIBLE_ROWS ? TS_BROWSER_SCROLL_H :
                       TS_BROWSER_SCROLL_H * TS_BROWSER_VISIBLE_ROWS / browser->entry_count;
@@ -962,7 +963,7 @@ static void browser_render(TsFramebuffer *fb, const TsBrowser *browser,
              browser->creating_directory ? "NEW FOLDER NAME" :
              browser->mode == TS_BROWSER_EXPORT_BANK ? "COLLECTION FOLDER" : "FILENAME",
              PAL_EFFECT, 1);
-        rect(fb, 58, 294, 518, 24, RGB(8, 8, 8));
+        rect(fb, 58, 294, 518, 24, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(8, 8, 8)));
         if (cursor < first) first = cursor;
         if (cursor > first + 78) first = cursor - 78;
         filename += first;
@@ -974,7 +975,7 @@ static void browser_render(TsFramebuffer *fb, const TsBrowser *browser,
             rect(fb, cursor_x, 301, 2, 11, PAL_MOUSE);
         }
     } else if (browser->mode == TS_BROWSER_LOAD_WAV) {
-        frame(fb, 58, 279, 12, 12, RGB(8, 8, 8), PAL_MOUSE);
+        frame(fb, 58, 279, 12, 12, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(8, 8, 8)), PAL_MOUSE);
         if (browser->import_as_raw) text(fb, 61, 281, "X", PAL_MOUSE, 1);
         text(fb, 78, 282, "IMPORT AS RAW (R)", browser->import_as_raw ? PAL_MOUSE : PAL_TEXT, 1);
         text(fb, 248, 282, browser->import_as_raw ? "OPEN: PREVIEW RAW DATA" : browser->preview_loading ? "LOADING - SPACE / ESC CANCELS" :
@@ -1015,8 +1016,11 @@ static void browser_render(TsFramebuffer *fb, const TsBrowser *browser,
     snprintf(footer, sizeof(footer), "%.24s", browser->overwrite_armed ?
              "CONFIRM FILE OVERWRITE" : browser->message);
     text(fb, 441, 334, footer,
-         browser->overwrite_armed ? PAL_VOLUME : RGB(190, 185, 190), 1);
+         browser->overwrite_armed ? PAL_VOLUME : ts_theme_color(active_palette(), render_group, TS_COLOR_DIM, RGB(190, 185, 190)), 1);
 }
+static void browser_render(TsFramebuffer *fb,const TsBrowser *browser,int cursor_visible,int file_busy,int import_preview_available)
+{ TsThemeGroup old=render_group; render_group=TS_THEME_BROWSER; browser_render_themed_impl(fb,browser,cursor_visible,file_busy,import_preview_available); render_group=old; }
+
 
 enum {
     TS_IMPORT_WAVE_X = 36,
@@ -1073,7 +1077,7 @@ static void import_wave_render(TsFramebuffer *fb, const TsUiState *ui,
     }
     view_span = view_last > view_first ? view_last - view_first : 0u;
     rect(fb, TS_IMPORT_WAVE_X, TS_IMPORT_WAVE_Y,
-         TS_IMPORT_WAVE_W, TS_IMPORT_WAVE_H, RGB(7, 7, 8));
+         TS_IMPORT_WAVE_W, TS_IMPORT_WAVE_H, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(7, 7, 8)));
     if (sample != NULL && sample->frames > 0u &&
         view_span > 0u && ui->import_preview_has_selection &&
         ui->import_preview_selection_last > view_first &&
@@ -1090,10 +1094,10 @@ static void import_wave_render(TsFramebuffer *fb, const TsUiState *ui,
         if (last_x > TS_IMPORT_WAVE_X + TS_IMPORT_WAVE_W)
             last_x = TS_IMPORT_WAVE_X + TS_IMPORT_WAVE_W;
         rect(fb, first_x, TS_IMPORT_WAVE_Y, last_x - first_x,
-             TS_IMPORT_WAVE_H, RGB(42, 5, 48));
+             TS_IMPORT_WAVE_H, ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(42, 5, 48)));
     }
     rect(fb, TS_IMPORT_WAVE_X, TS_IMPORT_WAVE_Y + TS_IMPORT_WAVE_H / 2,
-         TS_IMPORT_WAVE_W, 1, RGB(52, 48, 55));
+         TS_IMPORT_WAVE_W, 1, ts_theme_color(active_palette(), render_group, TS_COLOR_EDGE, RGB(52, 48, 55)));
     if (sample == NULL || sample->data == NULL || sample->frames == 0u ||
         !ui->import_preview_waveform_ready) return;
     for (int x = 0; x < TS_IMPORT_WAVE_W; ++x) {
@@ -1148,7 +1152,7 @@ static void import_wave_render(TsFramebuffer *fb, const TsUiState *ui,
                   TS_IMPORT_WAVE_W / view_span);
         if (playhead_x >= TS_IMPORT_WAVE_X + TS_IMPORT_WAVE_W)
             playhead_x = TS_IMPORT_WAVE_X + TS_IMPORT_WAVE_W - 1;
-        rect(fb, playhead_x, TS_IMPORT_WAVE_Y, 1, TS_IMPORT_WAVE_H, PAL_VOLUME);
+        rect(fb, playhead_x, TS_IMPORT_WAVE_Y, 1, TS_IMPORT_WAVE_H, ts_theme_legacy(active_palette(),TS_THEME_BROWSER,TS_COLOR_PLAYHEAD,TS_PALETTE_PATTERN_VOLUME));
     }
 }
 
@@ -1161,9 +1165,9 @@ static void import_preview_render(TsFramebuffer *fb, const TsUiState *ui)
     const TsSample *sample = ui->import_preview_sample;
     double seconds = sample != NULL && sample->sample_rate > 0u ?
                      (double)sample->frames / sample->sample_rate : 0.0;
-    rect(fb, 0, 32, TS_UI_WIDTH, TS_UI_HEIGHT - 48, RGB(12, 12, 12));
-    frame(fb, 20, 34, 600, 342, RGB(36, 33, 37), PAL_MOUSE);
-    rect(fb, 22, 36, 596, 28, RGB(12, 12, 12));
+    rect(fb, 0, 32, TS_UI_WIDTH, TS_UI_HEIGHT - 48, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(12, 12, 12)));
+    frame(fb, 20, 34, 600, 342, ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(36, 33, 37)), PAL_MOUSE);
+    rect(fb, 22, 36, 596, 28, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(12, 12, 12)));
     button(fb, 34, 39, 108, "FILE BROWSER", 0);
     button(fb, 150, 39, 96, "PREVIEW", 1);
     text_case(fb, 262, 45, ui->import_preview_name, PAL_EFFECT, 1);
@@ -1199,7 +1203,7 @@ static void import_preview_render(TsFramebuffer *fb, const TsUiState *ui)
         button(fb, 214, 218, 24, "<", 0);
         button(fb, 242, 218, 184, offset, 0);
         button(fb, 430, 218, 24, ">", 0);
-        text(fb, 466, 226, "SHIFT = LARGE STEP", RGB(190, 185, 190), 1);
+        text(fb, 466, 226, "SHIFT = LARGE STEP", ts_theme_color(active_palette(), render_group, TS_COLOR_DIM, RGB(190, 185, 190)), 1);
     } else {
         text(fb, 132, 196,
              "AUTO: WAV / FLAC / MP3 / OGG. RAW REINTERPRETS THE FILE BYTES.",
@@ -1240,16 +1244,16 @@ static void import_preview_render(TsFramebuffer *fb, const TsUiState *ui)
     mini_button(fb,514,312,90,ui->keyboard_sustain?"SUSTAIN ON":"SUSTAIN OFF",ui->keyboard_sustain);
     text(fb, 65, 330,
          "WHEEL ZOOM  SHIFT+WHEEL PAN  0 FULL  SPACE PLAY/STOP",
-         RGB(190, 185, 190), 1);
+         ts_theme_color(active_palette(), render_group, TS_COLOR_DIM, RGB(190, 185, 190)), 1);
     text(fb, 47, 344,
          "ENTER ALL  SHIFT+ENTER SELECTION  L LOOP  CTRL+R AUTO/RAW  ESC BACK",
-         RGB(190, 185, 190), 1);
+         ts_theme_color(active_palette(), render_group, TS_COLOR_DIM, RGB(190, 185, 190)), 1);
 }
 
 static void config_render(TsFramebuffer *fb, const TsUiState *ui)
 {
     frame(fb, TS_MODAL_PANEL_X, TS_MODAL_PANEL_Y,
-          TS_MODAL_PANEL_W, TS_MODAL_PANEL_H + 24, RGB(36, 33, 37), PAL_MOUSE);
+          TS_MODAL_PANEL_W, TS_MODAL_PANEL_H + 24, ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(36, 33, 37)), PAL_MOUSE);
     text(fb, 20, 45, "CONFIGURATION", PAL_NOTE, 1);
     text(fb, 442, 45, "BLANK OK / DBL-CLICK BROWSE", PAL_EFFECT, 1);
     for (int i = 0; i < TS_CONFIG_FIELD_COUNT; ++i) {
@@ -1265,9 +1269,9 @@ static void config_render(TsFramebuffer *fb, const TsUiState *ui)
         snprintf(shown, sizeof(shown), "%.96s", value + first);
         text(fb, TS_CONFIG_FIELD_X, y - 9,
              ts_config_field_name((TsConfigField)i),
-             i == (int)ui->config_field ? PAL_EFFECT : RGB(190, 185, 190), 1);
+             i == (int)ui->config_field ? PAL_EFFECT : ts_theme_color(active_palette(), render_group, TS_COLOR_DIM, RGB(190, 185, 190)), 1);
         rect(fb, TS_CONFIG_FIELD_X, y,
-             TS_CONFIG_FIELD_W, TS_CONFIG_FIELD_H, RGB(8, 8, 8));
+             TS_CONFIG_FIELD_W, TS_CONFIG_FIELD_H, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(8, 8, 8)));
         text_case(fb, TS_CONFIG_FIELD_X + 6, y + 6, shown,
              i == (int)ui->config_field ? PAL_MOUSE : PAL_INSTRUMENT, 1);
         if (i == (int)ui->config_field && ui->text_cursor_visible)
@@ -1337,10 +1341,10 @@ static void drone_waveform(TsFramebuffer *fb, const TsUiState *ui)
         ui, &crossfade_first, &crossfade_last);
     int center = TS_DRONE_WAVE_Y + TS_DRONE_WAVE_H / 2;
     rect(fb, TS_DRONE_WAVE_X, TS_DRONE_WAVE_Y,
-         TS_DRONE_WAVE_W, TS_DRONE_WAVE_H, RGB(8, 8, 8));
+         TS_DRONE_WAVE_W, TS_DRONE_WAVE_H, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(8, 8, 8)));
     for (int x = TS_DRONE_WAVE_X; x < TS_DRONE_WAVE_X + TS_DRONE_WAVE_W;
          x += 50)
-        rect(fb, x, TS_DRONE_WAVE_Y, 1, TS_DRONE_WAVE_H, RGB(35, 32, 36));
+        rect(fb, x, TS_DRONE_WAVE_Y, 1, TS_DRONE_WAVE_H, ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(35, 32, 36)));
     if (has_crossfade) {
         int first_x = TS_DRONE_WAVE_X +
                       (int)(crossfade_first * TS_DRONE_WAVE_W /
@@ -1352,7 +1356,7 @@ static void drone_waveform(TsFramebuffer *fb, const TsUiState *ui)
         rect(fb, first_x, TS_DRONE_WAVE_Y, last_x - first_x,
              TS_DRONE_WAVE_H, PAL_WAVE_SELECTION);
     }
-    rect(fb, TS_DRONE_WAVE_X, center, TS_DRONE_WAVE_W, 1, RGB(80, 73, 81));
+    rect(fb, TS_DRONE_WAVE_X, center, TS_DRONE_WAVE_W, 1, ts_theme_color(active_palette(), render_group, TS_COLOR_EDGE, RGB(80, 73, 81)));
     if (sample != NULL && sample->data != NULL && sample->frames > 0) {
         TsWaveformRequest request;
         TsWaveformCache *cache = waveform_cache(TS_UI_WAVEFORM_DRONE);
@@ -1409,13 +1413,13 @@ static void drone_render(TsFramebuffer *fb, const TsUiState *ui)
     char crossfade[64];
     char output[64];
     frame(fb, TS_MODAL_PANEL_X, TS_MODAL_PANEL_Y,
-          TS_MODAL_PANEL_W, TS_MODAL_PANEL_H, RGB(36, 33, 37), PAL_MOUSE);
+          TS_MODAL_PANEL_W, TS_MODAL_PANEL_H, ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(36, 33, 37)), PAL_MOUSE);
     text(fb, 20, 47, "DRONE MAKER", PAL_NOTE, 1);
     snprintf(crossfade, sizeof(crossfade), "CROSSFADE: %.2F MS",
              ui->drone_effective_crossfade_ms);
     text(fb, 414, 47, crossfade, PAL_EFFECT, 1);
     text(fb, 20, 63, "WHEEL COARSE  SHIFT+WHEEL FINE  DRAG EDGES - ZERO SNAP",
-         RGB(190, 185, 190), 1);
+         ts_theme_color(active_palette(), render_group, TS_COLOR_DIM, RGB(190, 185, 190)), 1);
     snprintf(output, sizeof(output), "OUT %zu  SPLIT %zu",
              ui->drone_output_frames, ui->drone_split_frame);
     text(fb, 476, 63, output, PAL_TUNING, 1);
@@ -1426,7 +1430,7 @@ static void drone_render(TsFramebuffer *fb, const TsUiState *ui)
     button(fb, 328, 161, 132, "REPLACE SELECTION", 0);
     button(fb, 466, 161, 80, "CANCEL", 0);
     text(fb, 20, 190, "P PREVIEW  SPACE STOP  C COPY  R REPLACE  ESC CANCEL",
-         RGB(190, 185, 190), 1);
+         ts_theme_color(active_palette(), render_group, TS_COLOR_DIM, RGB(190, 185, 190)), 1);
 }
 
 static int transform_frame_x(size_t frame, size_t first, size_t last)
@@ -1450,8 +1454,8 @@ static void mini_playhead(TsFramebuffer *fb, const TsUiState *ui,
     if (frame_at < first || frame_at >= last) return;
     marker_x = x + (int)((frame_at - first) * (size_t)width / (last - first));
     if (marker_x >= x + width) marker_x = x + width - 1;
-    rect(fb, marker_x, y, 1, height, PAL_VOLUME);
-    rect(fb, marker_x > x ? marker_x - 1 : marker_x, y, 3, 3, PAL_VOLUME);
+    rect(fb, marker_x, y, 1, height, ts_theme_legacy(active_palette(),render_group,TS_COLOR_PLAYHEAD,TS_PALETTE_PATTERN_VOLUME));
+    rect(fb, marker_x > x ? marker_x - 1 : marker_x, y, 3, 3, ts_theme_legacy(active_palette(),render_group,TS_COLOR_PLAYHEAD,TS_PALETTE_PATTERN_VOLUME));
 }
 
 static void transform_waveform(TsFramebuffer *fb, const TsUiState *ui,
@@ -1462,7 +1466,7 @@ static void transform_waveform(TsFramebuffer *fb, const TsUiState *ui,
     size_t last = instrument->view_last;
     int middle = TS_TRANSFORM_WAVE_Y + TS_TRANSFORM_WAVE_H / 2;
     rect(fb, TS_TRANSFORM_WAVE_X, TS_TRANSFORM_WAVE_Y,
-         TS_TRANSFORM_WAVE_W, TS_TRANSFORM_WAVE_H, RGB(8, 8, 8));
+         TS_TRANSFORM_WAVE_W, TS_TRANSFORM_WAVE_H, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(8, 8, 8)));
     if (sample->data == NULL || sample->frames == 0u) return;
     if (last <= first || last > sample->frames) { first = 0u; last = sample->frames; }
     if (instrument->has_selection && instrument->selection_last > first &&
@@ -1555,7 +1559,7 @@ static void transform_control(TsFramebuffer *fb, const TsCdpRecipe *recipe,
                           recipe->analysis_overlap, shown, sizeof(shown));
     text(fb, x, 155, control->label, PAL_TUNING, 1);
     text(fb, x + 62, 155, shown, PAL_EFFECT, 1);
-    frame(fb, x, 166, 140, 18, RGB(12, 12, 12), PAL_BUTTON);
+    frame(fb, x, 166, 140, 18, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(12, 12, 12)), PAL_BUTTON);
     rect(fb, x + 3, 169, (int)lrintf(amount * 134.0f), 12, PAL_BLOCK);
 }
 
@@ -1577,7 +1581,7 @@ static void dsp_transform_control(TsFramebuffer *fb,
     ts_dsp_recipe_control_format(control, amount, shown, sizeof(shown));
     text(fb, x, 155, control->label, PAL_TUNING, 1);
     text(fb, x + 62, 155, shown, PAL_EFFECT, 1);
-    frame(fb, x, 166, 140, 18, RGB(12, 12, 12), PAL_BUTTON);
+    frame(fb, x, 166, 140, 18, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(12, 12, 12)), PAL_BUTTON);
     rect(fb, x + 3, 169, (int)lrintf(amount * 134.0f), 12, PAL_BLOCK);
 }
 
@@ -1597,7 +1601,7 @@ static void transform_render(TsFramebuffer *fb, const TsUiState *ui,
     if ((dsp && dsp_recipe == NULL) || (!dsp && recipe == NULL)) return;
     name = dsp ? dsp_recipe->display_name : recipe->display_name;
     description = dsp ? dsp_recipe->description : recipe->description;
-    frame(fb, 10, 40, 620, 264, RGB(36, 33, 37), PAL_MOUSE);
+    frame(fb, 10, 40, 620, 264, ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(36, 33, 37)), PAL_MOUSE);
     text(fb, 20, 46, "TRANSFORM", PAL_NOTE, 1);
     text(fb, dsp ? 476 : 452, 46, dsp ? "NATIVE DSP" : "OFFLINE CDP8",
          PAL_EFFECT, 1);
@@ -1628,7 +1632,7 @@ static void transform_render(TsFramebuffer *fb, const TsUiState *ui,
              "SEL %zu:%zu" : "NO SELECTION",
              instrument->selection_first, instrument->selection_last);
     text(fb, 350, 198, selection,
-         instrument->has_selection ? PAL_TUNING : RGB(150, 145, 150), 1);
+         instrument->has_selection ? PAL_TUNING : ts_theme_color(active_palette(), render_group, TS_COLOR_DIM, RGB(150, 145, 150)), 1);
     button(fb, 20, 220, 80, ui->transform_rendering ? "WORKING" : "RENDER",
            ui->transform_rendering);
     button(fb, 106, 220, 74, "APPLY", ui->transform_preview_available);
@@ -1684,7 +1688,7 @@ static void fm_render(TsFramebuffer *fb, const TsUiState *ui,
         TS_FM_MUTATE_FILTER, TS_FM_MUTATE_STRUCTURE
     };
     const TsSample *preview = ui->fm_preview_sample;
-    frame(fb, 10, 38, 620, 276, RGB(36, 33, 37), PAL_MOUSE);
+    frame(fb, 10, 38, 620, 276, ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(36, 33, 37)), PAL_MOUSE);
     text(fb, 20, 46, "FM SOUND LOGIC", PAL_NOTE, 1);
     mini_button(fb,178,42,78,"UNISON",ui->fm_patch.structure==TS_FM_STRUCTURE_UNISON);
     if (ts_fm_voice_count(&ui->fm_patch) > TS_FM_OPERATOR_COUNT)
@@ -1693,7 +1697,7 @@ static void fm_render(TsFramebuffer *fb, const TsUiState *ui,
         text(fb,370,46,"UPDATING",PAL_MOUSE,1);
     text(fb, 474, 46, ui->fm_patch.structure == TS_FM_STRUCTURE_UNISON ?
          "12-VOICE UNISON" : "SIX-VOICE FM", PAL_EFFECT, 1);
-    frame(fb, 20, 62, 600, 29, RGB(8, 8, 8), PAL_BUTTON);
+    frame(fb, 20, 62, 600, 29, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(8, 8, 8)), PAL_BUTTON);
     rect(fb, 22, 76, 596, 1, PAL_BUTTON);
     if (preview != NULL && preview->data != NULL && preview->frames > 1u) {
         TsWaveformRequest request={0};request.sample=preview;request.last=preview->frames;
@@ -1736,11 +1740,11 @@ static void fm_render(TsFramebuffer *fb, const TsUiState *ui,
         int disabled = !ts_fm_control_available(&ui->fm_patch, ui->fm_page, control);
         ts_fm_control_format(&ui->fm_patch, ui->fm_page, control,
                              label, sizeof(label), value, sizeof(value));
-        text(fb, x, 146, label, disabled ? RGB(112, 108, 114) : PAL_TUNING, 1);
-        text(fb, x, 158, value, disabled ? RGB(112, 108, 114) : PAL_EFFECT, 1);
-        frame(fb, x, 171, 94, 17, RGB(12, 12, 12), PAL_BUTTON);
+        text(fb, x, 146, label, disabled ? ts_theme_color(active_palette(), render_group, TS_COLOR_DIM, RGB(112, 108, 114)) : PAL_TUNING, 1);
+        text(fb, x, 158, value, disabled ? ts_theme_color(active_palette(), render_group, TS_COLOR_DIM, RGB(112, 108, 114)) : PAL_EFFECT, 1);
+        frame(fb, x, 171, 94, 17, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(12, 12, 12)), PAL_BUTTON);
         rect(fb, x + 3, 174, (int)lrintf(amount * 88.0f), 11,
-             disabled ? RGB(70, 66, 72) : PAL_BLOCK);
+             disabled ? ts_theme_color(active_palette(), render_group, TS_COLOR_EDGE, RGB(70, 66, 72)) : PAL_BLOCK);
         if (voice >= 0) button(fb, x, 193, 94,
                (ui->fm_patch.active_mask & (1u << voice)) != 0u ?
                "VOICE ON" : "VOICE OFF",
@@ -1800,12 +1804,12 @@ static void fm_render(TsFramebuffer *fb, const TsUiState *ui,
         if (amount > 1.0f) amount = 1.0f;
         snprintf(range, sizeof(range), "RANGE %d", (int)lrintf(amount * 100.0f));
         text(fb, 314, 286, range, PAL_TUNING, 1);
-        frame(fb, 386, 279, 234, 20, RGB(12, 12, 12), PAL_BUTTON);
+        frame(fb, 386, 279, 234, 20, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(12, 12, 12)), PAL_BUTTON);
         rect(fb, 389, 282, (int)lrintf(amount * 228.0f), 14, PAL_BLOCK);
     }
     text(fb, 20, 306, ui->fm_message, PAL_MOUSE, 1);
     if (ui->fm_bank_choice_open) {
-        frame(fb, 62, 218, 516, 92, RGB(28, 25, 30), PAL_VOLUME);
+        frame(fb, 62, 218, 516, 92, ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(28, 25, 30)), PAL_VOLUME);
         char title[64], detail[80];
         snprintf(title, sizeof(title), "MAKE A %d-SOUND FM BANK?", ui->config.fm_bank_count);
         snprintf(detail, sizeof(detail), "TILE 01 IS THE PATCH; %d VARIATIONS AT THIS RANGE", ui->config.fm_bank_count - 1);
@@ -1818,7 +1822,7 @@ static void fm_render(TsFramebuffer *fb, const TsUiState *ui,
         button(fb, 220, 278, 150, "NEW SAMPLE PAGE", 1);
         button(fb, 376, 278, 94, "CANCEL", 0);
     } else if (ui->fm_full_choice_open) {
-        frame(fb, 72, 226, 496, 80, RGB(28, 25, 30), PAL_VOLUME);
+        frame(fb, 72, 226, 496, 80, ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(28, 25, 30)), PAL_VOLUME);
         text(fb, 92, 234, "THIS SAMPLE PAGE IS FULL", PAL_NOTE, 1);
         text(fb, 92, 250,
              "OVERWRITE THIS TILE OR CONTINUE THE CHAIN ON A NEW PAGE?",
@@ -1848,7 +1852,7 @@ static void palette_render(TsFramebuffer *fb, const TsUiState *ui)
     char value[48];
     uint32_t selected = ui->palette.colors[ui->palette_entry];
     frame(fb, TS_MODAL_PANEL_X, TS_MODAL_PANEL_Y,
-          TS_MODAL_PANEL_W, TS_MODAL_PANEL_H, RGB(36, 33, 37), PAL_MOUSE);
+          TS_MODAL_PANEL_W, TS_MODAL_PANEL_H, ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(36, 33, 37)), PAL_MOUSE);
     text(fb, 20, 45, "PALETTE EDITOR", PAL_NOTE, 1);
     text(fb, 438, 45, "LIVE TAPESISTER COLORS", PAL_EFFECT, 1);
     for (int color = 0; color < TS_PALETTE_TAPESISTER_COLOR_COUNT; ++color) {
@@ -1858,7 +1862,7 @@ static void palette_render(TsFramebuffer *fb, const TsUiState *ui)
         int y = TS_PALETTE_SWATCH_Y + row * TS_PALETTE_SWATCH_STEP_Y;
         uint32_t entry = ui->palette.colors[color];
         rect(fb, x, y, TS_PALETTE_SWATCH_W, TS_PALETTE_SWATCH_H,
-             color == ui->palette_entry ? PAL_BLOCK : RGB(18, 18, 18));
+             color == ui->palette_entry ? PAL_BLOCK : ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(18, 18, 18)));
         if (color == ui->palette_entry) {
             rect(fb, x, y, TS_PALETTE_SWATCH_W, 1, PAL_MOUSE);
             rect(fb, x, y + TS_PALETTE_SWATCH_H - 1, TS_PALETTE_SWATCH_W, 1, PAL_MOUSE);
@@ -1867,7 +1871,7 @@ static void palette_render(TsFramebuffer *fb, const TsUiState *ui)
         }
         rect(fb, x + 3, y + 3, 11, 7, entry);
         text(fb, x + 18, y + 3, short_names[color],
-             color == ui->palette_entry ? PAL_BLOCK_TEXT : RGB(222, 218, 214), 1);
+             color == ui->palette_entry ? PAL_BLOCK_TEXT : ts_theme_color(active_palette(), render_group, TS_COLOR_TEXT, RGB(222, 218, 214)), 1);
     }
     snprintf(value, sizeof(value), "%s  #%06X",
              ui->palette_entry<TS_PALETTE_TAPESISTER_COLOR_COUNT?short_names[ui->palette_entry]:ts_palette_color_name((TsPaletteColor)ui->palette_entry),
@@ -1901,9 +1905,9 @@ static void palette_render(TsFramebuffer *fb, const TsUiState *ui)
     text(fb, 432, 106, "COLOR", PAL_TUNING, 1);
     frame(fb, 432, 116, 70, 38, selected, PAL_MOUSE);
     text(fb, 510, 106, "WAVE SEL", PAL_TUNING, 1);
-    frame(fb, 510, 116, 108, 38, RGB(8, 8, 8), PAL_MOUSE);
+    frame(fb, 510, 116, 108, 38, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(8, 8, 8)), PAL_MOUSE);
     rect(fb, 538, 119, 40, 32, PAL_WAVE_SELECTION);
-    rect(fb, 513, 135, 102, 1, RGB(74, 67, 75));
+    rect(fb, 513, 135, 102, 1, ts_theme_color(active_palette(), render_group, TS_COLOR_EDGE, RGB(74, 67, 75)));
     for (int x = 516; x < 612; x += 8) {
         int height = 8 + ((x / 8) % 4) * 4;
         rect(fb, x, 136 - height / 2, 1, height,
@@ -1914,10 +1918,10 @@ static void palette_render(TsFramebuffer *fb, const TsUiState *ui)
     for(int slot=0;slot<TS_PALETTE_MOSAIC_COLOR_COUNT;++slot) {
         int color=TS_PALETTE_MOSAIC_HIGHLIGHT+slot,x=palette_mosaic_x(slot),w=palette_mosaic_width(slot);
         int active=color==ui->palette_entry;
-        frame(fb,x,TS_PALETTE_MOSAIC_Y,w,TS_PALETTE_MOSAIC_H,active?PAL_BLOCK:RGB(18,18,18),active?PAL_MOUSE:RGB(70,61,75));
+        frame(fb,x,TS_PALETTE_MOSAIC_Y,w,TS_PALETTE_MOSAIC_H,active?PAL_BLOCK:ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(18,18,18)),active?PAL_MOUSE:ts_theme_color(active_palette(), render_group, TS_COLOR_EDGE, RGB(70,61,75)));
         rect(fb,x+3,TS_PALETTE_MOSAIC_Y+3,11,10,ui->palette.colors[color]);
         char label[12];if(slot)snprintf(label,sizeof(label),"%d",slot);else snprintf(label,sizeof(label),"HILITE");
-        text(fb,x+18,TS_PALETTE_MOSAIC_Y+5,label,active?PAL_BLOCK_TEXT:RGB(222,218,214),1);
+        text(fb,x+18,TS_PALETTE_MOSAIC_Y+5,label,active?PAL_BLOCK_TEXT:ts_theme_color(active_palette(), render_group, TS_COLOR_TEXT, RGB(222,218,214)),1);
     }
     text(fb, TS_PALETTE_TAPEHEAD_X, 159, "TAPEHEAD EYEDROPPER", PAL_TUNING, 1);
     for (int swatch = 0; swatch < ts_palette_tapehead_swatch_count(); ++swatch) {
@@ -1925,15 +1929,15 @@ static void palette_render(TsFramebuffer *fb, const TsUiState *ui)
         int x = TS_PALETTE_TAPEHEAD_X + swatch * TS_PALETTE_TAPEHEAD_STEP_X;
         int defined = ts_palette_color_is_defined(&ui->palette_suggestions, source);
         uint32_t color = defined ? ui->palette_suggestions.colors[source] :
-                                   RGB(92, 88, 92);
+                                   ts_theme_color(active_palette(), render_group, TS_COLOR_GRID, RGB(92, 88, 92));
         rect(fb, x, TS_PALETTE_TAPEHEAD_Y, TS_PALETTE_TAPEHEAD_W,
              TS_PALETTE_TAPEHEAD_H, color);
         if (!defined) {
             rect(fb, x + 1, TS_PALETTE_TAPEHEAD_Y + 1, 1,
-                 TS_PALETTE_TAPEHEAD_H - 2, RGB(42, 40, 42));
+                 TS_PALETTE_TAPEHEAD_H - 2, ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(42, 40, 42)));
             rect(fb, x + TS_PALETTE_TAPEHEAD_W - 2,
                  TS_PALETTE_TAPEHEAD_Y + 1, 1,
-                 TS_PALETTE_TAPEHEAD_H - 2, RGB(42, 40, 42));
+                 TS_PALETTE_TAPEHEAD_H - 2, ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(42, 40, 42)));
         }
     }
     for (size_t i = 0; i < sizeof(palette_buttons) / sizeof(palette_buttons[0]); ++i)
@@ -2943,8 +2947,8 @@ static void live_input_render(TsFramebuffer *fb, const TsUiState *ui)
     int level_y = input_meter_y(ui->input_level);
     int peak_y = input_meter_y(ui->input_peak);
     int threshold_y = input_meter_y(ui->input_threshold);
-    uint32_t meter_color = ui->input_clipping ? RGB(255, 74, 58) : PAL_VOLUME;
-    frame(fb, 10, 40, 620, 164, RGB(42, 39, 42), RGB(105, 98, 105));
+    uint32_t meter_color = ui->input_clipping ? ts_theme_color(active_palette(), render_group, TS_COLOR_ERROR, RGB(255, 74, 58)) : PAL_VOLUME;
+    frame(fb, 10, 40, 620, 164, ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(42, 39, 42)), ts_theme_color(active_palette(), render_group, TS_COLOR_DIM, RGB(105, 98, 105)));
     if (ui->capture_state == TS_CAPTURE_RECORDING && ui->input_sample_rate > 0u)
         snprintf(title, sizeof(title),
                  "%s  %+.1F DBFS   PEAK %+.1F DBFS   REC %.2F S",
@@ -2954,8 +2958,8 @@ static void live_input_render(TsFramebuffer *fb, const TsUiState *ui)
         snprintf(title, sizeof(title),
                  "INPUT  %+.1F DBFS   PEAK %+.1F DBFS   ARMED",
                  level_db, peak_db);
-    text(fb, 20, 49, title, ui->input_clipping ? RGB(255, 96, 72) : PAL_INSTRUMENT, 1);
-    wave_rect(fb, TS_WAVE_X, TS_WAVE_Y, TS_WAVE_W, TS_WAVE_H, RGB(8, 8, 8));
+    text(fb, 20, 49, title, ui->input_clipping ? ts_theme_color(active_palette(), render_group, TS_COLOR_DATA1, RGB(255, 96, 72)) : PAL_INSTRUMENT, 1);
+    wave_rect(fb, TS_WAVE_X, TS_WAVE_Y, TS_WAVE_W, TS_WAVE_H, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(8, 8, 8)));
     for (int y = TS_WAVE_Y + 20; y < TS_WAVE_Y + TS_WAVE_H; y += 20)
         wave_rect(fb, TS_WAVE_X, y, waveform_width, 1,
                   contrast_color(PAL_DESKTOP,
@@ -2977,15 +2981,15 @@ static void live_input_render(TsFramebuffer *fb, const TsUiState *ui)
                       TS_WAVE_X + (int)column, y1, PAL_NOTE);
         }
     } else {
-        text(fb, 202, 126, "WAITING FOR THRESHOLD", RGB(120, 113, 121), 2);
+        text(fb, 202, 126, "WAITING FOR THRESHOLD", ts_theme_color(active_palette(), render_group, TS_COLOR_DIM, RGB(120, 113, 121)), 2);
     }
-    wave_rect(fb, meter_x, meter_y, 12, meter_h, RGB(24, 24, 24));
+    wave_rect(fb, meter_x, meter_y, 12, meter_h, ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(24, 24, 24)));
     if (level_y < meter_y) level_y = meter_y;
     if (level_y > meter_y + meter_h) level_y = meter_y + meter_h;
     wave_rect(fb, meter_x + 2, level_y, 8,
               meter_y + meter_h - level_y, meter_color);
     wave_rect(fb, meter_x - 2, peak_y, 16, 2,
-              ui->input_clipping ? RGB(255, 74, 58) : PAL_EFFECT);
+              ui->input_clipping ? ts_theme_color(active_palette(), render_group, TS_COLOR_ERROR, RGB(255, 74, 58)) : PAL_EFFECT);
     if(!ui->quick_capture_active) {
         wave_rect(fb, meter_x - 4, threshold_y, 20, 2, PAL_TUNING);
         snprintf(threshold, sizeof(threshold), "TH %.0F", input_dbfs(ui->input_threshold));
@@ -2994,7 +2998,7 @@ static void live_input_render(TsFramebuffer *fb, const TsUiState *ui)
                   threshold, PAL_TUNING, 1);
     }
     if (ui->input_clipping)
-        wave_text(fb, meter_x - 34, TS_WAVE_Y + 5, "CLIP", RGB(255, 74, 58), 1);
+        wave_text(fb, meter_x - 34, TS_WAVE_Y + 5, "CLIP", ts_theme_color(active_palette(), render_group, TS_COLOR_ERROR, RGB(255, 74, 58)), 1);
 }
 
 int ts_ui_foreground_panel_open(const TsUiState *ui)
@@ -3021,8 +3025,10 @@ int ts_ui_foreground_panel_open(const TsUiState *ui)
 void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *instrument)
 {
     render_palette = &ui->palette;
-    if(ui->portal.open) { portal_render(fb,ui); return; }
+    render_group = TS_THEME_CANVAS;
+    if(ui->portal.open) { render_group=TS_THEME_PORTAL; portal_render(fb,ui); return; }
     if(ui->tracker_open && ui->tracker) {
+        render_group=TS_THEME_TRACKER;
         if(ui->tracker_embedded_frame) {
             memset(fb->pixels,0,sizeof(fb->pixels));
             for(int y=0;y<400;++y)for(int x=0;x<632;++x)
@@ -3032,7 +3038,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             browser_render(fb,&ui->browser,ui->text_cursor_visible,ui->file_busy,0);
         master_eq_render(fb,ui);router_render(fb,ui);main_midi_learn_overlay(fb,ui);return;
     }
-    if(ui->mosaic_open && ui->mosaic) {mosaic_render(fb,ui,instrument);master_eq_render(fb,ui);router_render(fb,ui);main_midi_learn_overlay(fb,ui);return;}
+    if(ui->mosaic_open && ui->mosaic) {render_group=TS_THEME_MOSAIC;mosaic_render(fb,ui,instrument);master_eq_render(fb,ui);router_render(fb,ui);main_midi_learn_overlay(fb,ui);return;}
     const TsTuning *display_tuning = &ui->tune_reference;
     int showing_bank = ui->bank_view_slot >= 0 && ui->bank_view_slot < TS_BANK_SLOT_COUNT;
     int showing_parent = !showing_bank && ui->audition_source == TS_AUDITION_PARENT;
@@ -3068,7 +3074,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     }
     clear(fb, PAL_DESKTOP);
 
-    rect(fb, 0, 0, TS_UI_WIDTH, 32, RGB(12, 12, 12));
+    rect(fb, 0, 0, TS_UI_WIDTH, 32, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(12, 12, 12)));
     sister_portal_render(fb, ui);
     {
         uint8_t channels = ui->input_available_channels <=
@@ -3080,7 +3086,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     for (int channel = 0; channel < TS_INPUT_DEVICE_CHANNEL_MAX; ++channel) {
         int x = TS_UI_INPUT_LED_X + channel * TS_UI_INPUT_LED_STEP_X;
         uint32_t color = channel >= ui->input_available_channels ?
-                         RGB(22, 22, 22) :
+                         ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(22, 22, 22)) :
                          (ui->input_activity_mask & (uint8_t)(1u << channel)) != 0u ?
                          PAL_WAVE_LEFT : PAL_BUTTON;
         rect(fb, x, TS_UI_INPUT_LED_Y,
@@ -3093,7 +3099,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     master_output_meter(fb, &ui->master_output,
                         TS_UI_MASTER_METER_X, TS_UI_MASTER_METER_Y);
     rect(fb, 576, 12, 3, 9,
-         ui->midi_activity_until_ms != 0u ? PAL_TUNING : RGB(22, 22, 22));
+         ui->midi_activity_until_ms != 0u ? PAL_TUNING : ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(22, 22, 22)));
     button(fb, 214, 4, 46, "CFG", ui->config_open);
     button(fb, 264, 4, 32, "FT2", ui->exchange_dialog != TS_UI_EXCHANGE_NONE);
     button(fb, 300, 4, 56, "MOSAIC", ui->mosaic_editing != 0 || ui->mosaic_playing);
@@ -3101,7 +3107,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     button(fb, 402, 4, 58, "EXPORT", 0);
     button(fb, 464, 4, 28, "CDP", 0);
 
-    frame(fb, 10, 40, 620, 164, RGB(42, 39, 42), RGB(105, 98, 105));
+    frame(fb, 10, 40, 620, 164, ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(42, 39, 42)), ts_theme_color(active_palette(), render_group, TS_COLOR_DIM, RGB(105, 98, 105)));
     if (sample->frames) {
         char tile[96], info[112];
         int tile_number = showing_bank ? ui->bank_view_slot + 1 :
@@ -3140,7 +3146,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             snprintf(fade, sizeof(fade), "FADE %.1FS",
                      (double)ui->config.tile_fade_ms / 1000.0);
         text(fb, 240, 45, fade, PAL_VOLUME, 1);
-        rect(fb, 240, 58, 62, 3, RGB(18, 18, 18));
+        rect(fb, 240, 58, 62, 3, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(18, 18, 18)));
         rect(fb, 240, 58, (int)lrintf(amount * 62.0f), 3, PAL_VOLUME);
         rect(fb, 239 + (int)lrintf(amount * 62.0f), 56, 3, 7, PAL_MOUSE);
     }
@@ -3150,7 +3156,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                                            ui->config.waveform_display_mode),
                 ui->config.waveform_display_mode != TS_WAVEFORM_DISPLAY_STEREO);
     uint64_t profile_wave = ts_profile_begin(TS_PROF_WAVEFORM);
-    wave_rect(fb, TS_WAVE_X, TS_WAVE_Y, TS_WAVE_W, TS_WAVE_H, RGB(8, 8, 8));
+    wave_rect(fb, TS_WAVE_X, TS_WAVE_Y, TS_WAVE_W, TS_WAVE_H, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(8, 8, 8)));
     if (grid_divisions < TS_GRID_DIVISION_MIN ||
         grid_divisions > TS_GRID_DIVISION_MAX ||
         (grid_divisions & (grid_divisions - 1u)) != 0u)
@@ -3203,7 +3209,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     if (has_loop && loop_last > view_first && loop_first < view_last) {
         int lx0 = frame_x(loop_first, view_first, view_last);
         int lx1 = frame_x(loop_last, view_first, view_last);
-        wave_rect(fb, lx0, TS_WAVE_Y, lx1 - lx0, TS_WAVE_H, RGB(5, 24, 48));
+        wave_rect(fb, lx0, TS_WAVE_Y, lx1 - lx0, TS_WAVE_H, ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(5, 24, 48)));
     }
 
     if (has_selection && selection_last > view_first &&
@@ -3323,7 +3329,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     } else {
         text(fb, showing_bank ? 199 : 211, 135,
              showing_bank ? "EMPTY BANK SLOT" : "DROP WAV HERE",
-             RGB(120, 113, 121), 2);
+             ts_theme_color(active_palette(), render_group, TS_COLOR_DIM, RGB(120, 113, 121)), 2);
     }
 
     if (!showing_bank && !showing_parent && ui->amplitude_draw_dragging &&
@@ -3516,6 +3522,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         }
         if (playhead_x >= TS_WAVE_X && playhead_x <= TS_WAVE_X + TS_WAVE_W) {
             if (playhead_x == TS_WAVE_X + TS_WAVE_W) --playhead_x;
+            playhead_color=ts_theme_color(active_palette(),render_group,TS_COLOR_PLAYHEAD,playhead_color);
             wave_rect(fb, playhead_x, TS_WAVE_Y, 2, TS_WAVE_H, playhead_color);
             wave_rect(fb, playhead_x - 2, TS_WAVE_Y, 6, 3, playhead_color);
         }
@@ -3741,7 +3748,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                                        base_note, sizeof(base_note)));
         mini_button(fb,10,313,46,"ARP",ui->keyboard_sequence_running || ui->keyboard_sequence_open);
         char short_hint[39];snprintf(short_hint,sizeof(short_hint),"%.38s",keyboard_hint);
-        text(fb, 62, 318, short_hint, RGB(184, 180, 184), 1);
+        text(fb, 62, 318, short_hint, ts_theme_color(active_palette(), render_group, TS_COLOR_DIM, RGB(184, 180, 184)), 1);
         char cap_label[16];snprintf(cap_label,sizeof(cap_label),"CAP %s",
             ui->config.quick_capture_source==TS_RECORD_SOURCE_OUTPUT?"OUT":
             ui->config.quick_capture_source==TS_RECORD_SOURCE_DRY?"DRY":
@@ -3769,12 +3776,12 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                  TS_KEYBOARD_Y, layout.white_width - 1,
                  TS_KEYBOARD_WHITE_HEIGHT,
                  staged ? PAL_TUNING : keyboard_sequence_color(ui, keyboard_base_note + key, 0,
-                     active ? PAL_MOUSE : RGB(220, 216, 207)));
+                     active ? PAL_MOUSE : ts_theme_color(active_palette(), render_group, TS_COLOR_TEXT, RGB(220, 216, 207))));
             int ordinal = keyboard_sequence_ordinal(ui, keyboard_base_note + key);
             if (ordinal) {
                 char number[8]; snprintf(number, sizeof(number), "%02d", ordinal);
                 text(fb, TS_KEYBOARD_X + i * layout.white_width + (layout.white_width - 12) / 2, TS_KEYBOARD_Y + 25,
-                     number, RGB(16, 35, 41), 1);
+                     number, ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(16, 35, 41)), 1);
                 if (active) rect(fb, TS_KEYBOARD_X + i * layout.white_width + 4,
                                  TS_KEYBOARD_Y + 45, layout.white_width - 9, 2, PAL_MOUSE);
             }
@@ -3782,7 +3789,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                 const char *hint = keyboard_key_labels[key];
                 text(fb, TS_KEYBOARD_X + i * layout.white_width +
                      (layout.white_width - (int)strlen(hint) * 6) / 2,
-                     TS_KEYBOARD_Y + 32, hint, RGB(72, 68, 72), 1);
+                     TS_KEYBOARD_Y + 32, hint, ts_theme_color(active_palette(), render_group, TS_COLOR_EDGE, RGB(72, 68, 72)), 1);
             }
             if (keyboard_base_note + key > 127) snprintf(label, sizeof(label), "--");
             else ts_midi_note_name(keyboard_base_note + key, label, sizeof(label));
@@ -3790,7 +3797,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                       (layout.white_width - 1 -
                        (int)strlen(label) * 6) / 2;
             text(fb, label_x, TS_KEYBOARD_Y + 41, label,
-                 RGB(24, 24, 24), 1);
+                 ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(24, 24, 24)), 1);
         }
         for (int i = 0; i < layout.black_count; ++i) {
             char label[8];
@@ -3802,25 +3809,25 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             rect(fb, left, TS_KEYBOARD_Y, TS_KEYBOARD_BLACK_WIDTH,
                  TS_KEYBOARD_BLACK_HEIGHT,
                  staged ? PAL_TUNING : keyboard_sequence_color(ui, keyboard_base_note + key, 1,
-                     active ? PAL_VOLUME : RGB(18, 18, 18)));
+                     active ? PAL_VOLUME : ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(18, 18, 18))));
             int ordinal = keyboard_sequence_ordinal(ui, keyboard_base_note + key);
             if (ordinal) {
                 char number[8]; snprintf(number, sizeof(number), "%02d", ordinal);
-                text(fb, left + (TS_KEYBOARD_BLACK_WIDTH - 12) / 2, TS_KEYBOARD_Y + 5, number, RGB(218, 241, 238), 1);
+                text(fb, left + (TS_KEYBOARD_BLACK_WIDTH - 12) / 2, TS_KEYBOARD_Y + 5, number, ts_theme_color(active_palette(), render_group, TS_COLOR_TEXT, RGB(218, 241, 238)), 1);
                 if (active) rect(fb, left + 3, TS_KEYBOARD_Y + 28, TS_KEYBOARD_BLACK_WIDTH - 6, 2, PAL_VOLUME);
             }
             if (!ordinal && keyboard_base_note + key <= 127) {
                 const char *hint = keyboard_key_labels[key];
                 text(fb, left + (TS_KEYBOARD_BLACK_WIDTH - (int)strlen(hint) * 6) / 2,
-                     TS_KEYBOARD_Y + 5, hint, RGB(150, 146, 150), 1);
+                     TS_KEYBOARD_Y + 5, hint, ts_theme_color(active_palette(), render_group, TS_COLOR_DIM, RGB(150, 146, 150)), 1);
             }
             if (keyboard_base_note + key > 127) snprintf(label, sizeof(label), "--");
             else ts_midi_note_name(keyboard_base_note + key, label, sizeof(label));
             label_x = left +
                       (TS_KEYBOARD_BLACK_WIDTH - (int)strlen(label) * 6) / 2;
             text(fb, label_x, TS_KEYBOARD_Y + 19, label,
-                 ui->keyboard_sequence_current == keyboard_base_note + key ? RGB(24, 24, 24) :
-                 active || staged ? PAL_BLOCK_TEXT : RGB(220, 216, 207), 1);
+                 ui->keyboard_sequence_current == keyboard_base_note + key ? ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(24, 24, 24)) :
+                 active || staged ? PAL_BLOCK_TEXT : ts_theme_color(active_palette(), render_group, TS_COLOR_TEXT, RGB(220, 216, 207)), 1);
         }
     } else if (ui->show_recipes) {
         mini_button(fb, 10, 312, 48, ui->cdp_user_pins ? "PIN 1" : "CDP 1", ui->cdp_page == 0);
@@ -3829,7 +3836,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         mini_button(fb, 182, 312, 48, "PINS", ui->cdp_user_pins);
         text(fb, 242, 318,
              "LEFT APPLY  MIDDLE EDIT  CTRL+SHIFT+P PORTAL",
-             RGB(184, 180, 184), 1);
+             ts_theme_color(active_palette(), render_group, TS_COLOR_DIM, RGB(184, 180, 184)), 1);
         for (int i = 0; i < TS_RECIPE_SLOT_COUNT; ++i) {
             const TsCdpRecipe *recipe =
                 ts_cdp_catalog_recipe_for_slot(&ui->cdp_catalog,
@@ -3864,7 +3871,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
              ui->dsp_page == 0 ?
              "PROCESS  LEFT APPLY  MIDDLE EDIT     4 TOGGLES PAGE" :
              "PRIMITIVES  LEFT APPLY  MIDDLE EDIT  4 TOGGLES PAGE",
-             RGB(184, 180, 184), 1);
+             ts_theme_color(active_palette(), render_group, TS_COLOR_DIM, RGB(184, 180, 184)), 1);
         for (int i = 0; i < TS_RECIPE_SLOT_COUNT; ++i) {
             const TsDspRecipe *slot =
                 ts_dsp_factory_recipe_for_slot((size_t)ui->dsp_page, (size_t)i);
@@ -3920,7 +3927,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             bank_hint = page_hint;
         }
         text(fb, 11, 318, bank_hint,
-             ui->external_record_bank ? PAL_VOLUME : RGB(184, 180, 184), 1);
+             ui->external_record_bank ? PAL_VOLUME : ts_theme_color(active_palette(), render_group, TS_COLOR_DIM, RGB(184, 180, 184)), 1);
         if (ui->external_record_bank) {
             mini_button(fb, 320, 313, 75,
                         ui->record_source == TS_RECORD_SOURCE_SYNTH ? "SRC FM" :
@@ -3965,7 +3972,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                 text(fb, x + 10, y + 8, "SRC", PAL_NOTE, 1);
             }
             if (i == ui->capture_destination_slot) {
-                uint32_t record_color = ui->text_cursor_visible ? PAL_VOLUME : PAL_EFFECT;
+                uint32_t record_color = ts_theme_color(active_palette(),render_group,TS_COLOR_RECORD,ui->text_cursor_visible ? PAL_VOLUME : PAL_EFFECT);
                 rect(fb, x - 2, y - 2, 76, 3, record_color);
                 rect(fb, x - 2, y + 22, 76, 3, record_color);
                 rect(fb, x - 2, y - 2, 3, 27, record_color);
@@ -3985,7 +3992,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                 active_palette());
         }
     }
-    rect(fb, 0, 386, TS_UI_WIDTH, 14, RGB(10, 10, 10));
+    rect(fb, 0, 386, TS_UI_WIDTH, 14, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(10, 10, 10)));
     {
         char status_line[83],output_info[24],diagnostic[48],filename[36];
         const char *name=ui->project_path;
@@ -4005,11 +4012,11 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     }
 
     if (ui->exit_confirm_open) {
-        frame(fb, 154, 128, 332, 130, RGB(36, 33, 37), PAL_MOUSE);
+        frame(fb, 154, 128, 332, 130, ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(36, 33, 37)), PAL_MOUSE);
         text(fb, 172, 143, "EXIT TAPESISTER?", PAL_NOTE, 1);
         text(fb, 172, 164,
              ui->exit_has_unsaved ? "UNSAVED CHANGES WILL BE LOST" : "CLOSE TAPESISTER",
-             ui->exit_has_unsaved ? PAL_VOLUME : RGB(190, 185, 190), 1);
+             ui->exit_has_unsaved ? PAL_VOLUME : ts_theme_color(active_palette(), render_group, TS_COLOR_DIM, RGB(190, 185, 190)), 1);
         if (ui->exit_has_unsaved) {
             button(fb, 172, 188, 88, "SAVE", ui->exit_choice == 0);
             button(fb, 266, 188, 88, "EXIT", ui->exit_choice == 1);
@@ -4019,7 +4026,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             button(fb, 324, 188, 144, "CANCEL", ui->exit_choice == 1);
         }
         text(fb, 172, 230, "TAB/ARROWS CHOOSE  ENTER CONFIRMS  ESC CANCELS",
-             RGB(190, 185, 190), 1);
+             ts_theme_color(active_palette(), render_group, TS_COLOR_DIM, RGB(190, 185, 190)), 1);
     } else if (ui->project_overwrite_confirm_open) {
         const char *name = ui->project_path;
         char shown_name[49];
@@ -4029,17 +4036,17 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             slash = backslash;
         if (slash != NULL) name = slash + 1;
         snprintf(shown_name, sizeof(shown_name), "%.48s", name);
-        frame(fb, 146, 122, 348, 132, RGB(36, 33, 37), PAL_MOUSE);
+        frame(fb, 146, 122, 348, 132, ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(36, 33, 37)), PAL_MOUSE);
         text(fb, 166, 137, "OVERWRITE ACTIVE PROJECT?", PAL_NOTE, 1);
         text(fb, 166, 158, shown_name, PAL_EFFECT, 1);
         text(fb, 166, 176, "THIS REPLACES THE CURRENT TSR FILE", PAL_VOLUME, 1);
         button(fb, 166, 200, 136, "OVERWRITE", 1);
         button(fb, 318, 200, 156, "CANCEL", 0);
         text(fb, 166, 238, "ENTER/Y/CTRL+S CONFIRM   ESC/N CANCEL",
-             RGB(190, 185, 190), 1);
+             ts_theme_color(active_palette(), render_group, TS_COLOR_DIM, RGB(190, 185, 190)), 1);
     } else if (ui->overdub_confirm_open) {
         char target[80];
-        frame(fb, 146, 122, 348, 132, RGB(36, 33, 37), PAL_MOUSE);
+        frame(fb, 146, 122, 348, 132, ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(36, 33, 37)), PAL_MOUSE);
         text(fb, 166, 137, "OVERDUB TARGET?", PAL_NOTE, 1);
         snprintf(target, sizeof(target),
                  "MIX A NEW PERFORMANCE INTO TILE %02d",
@@ -4048,7 +4055,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         text(fb, 166, 176, "THIS IS ONE UNDO/REDO OPERATION", PAL_VOLUME, 1);
         button(fb, 166, 200, 136, "OVERDUB", 1);
         button(fb, 318, 200, 156, "CANCEL", 0);
-        text(fb, 166, 238, "ENTER/Y CONFIRM   ESC/N CANCEL", RGB(190, 185, 190), 1);
+        text(fb, 166, 238, "ENTER/Y CONFIRM   ESC/N CANCEL", ts_theme_color(active_palette(), render_group, TS_COLOR_DIM, RGB(190, 185, 190)), 1);
     } else if (ui->fm_open)
         fm_render(fb, ui, instrument);
     else if (ui->transform_open)
@@ -4057,7 +4064,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         drone_render(fb, ui);
     else if (ui->exchange_dialog != TS_UI_EXCHANGE_NONE) {
         char count[80];
-        frame(fb, 110, 54, 420, 140, RGB(36, 33, 37), PAL_MOUSE);
+        frame(fb, 110, 54, 420, 140, ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(36, 33, 37)), PAL_MOUSE);
         if (ui->exchange_dialog == TS_UI_EXCHANGE_SEND) {
             text(fb, 128, 68, "SEND TAPESISTER BANK TO TAPEHEAD", PAL_NOTE, 1);
             snprintf(count, sizeof(count), "%d TILES  %d SAMPLE PAGE%s",
@@ -4098,13 +4105,13 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     else if (ui->load_selection_choice_open) {
         char source[58];
         snprintf(source, sizeof(source), "%.52s", ui->load_selection_name);
-        frame(fb, 126, 78, 388, 108, RGB(36, 33, 37), PAL_MOUSE);
+        frame(fb, 126, 78, 388, 108, ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(36, 33, 37)), PAL_MOUSE);
         text(fb, 146, 91, "LOAD WAV INTO SELECTION?", PAL_NOTE, 1);
         text(fb, 146, 108, source, PAL_EFFECT, 1);
         button(fb, 146, 132, 96, "PASTE", 0);
         button(fb, 272, 132, 96, "FIT", 1);
         button(fb, 398, 132, 96, "CANCEL", 0);
-        text(fb, 146, 164, "P/ENTER EXACT   F FITS RANGE   ESC CANCEL", RGB(190, 185, 190), 1);
+        text(fb, 146, 164, "P/ENTER EXACT   F FITS RANGE   ESC CANCEL", ts_theme_color(active_palette(), render_group, TS_COLOR_DIM, RGB(190, 185, 190)), 1);
     } else if (ui->palette_open)
         palette_render(fb, ui);
     else if (ui->config_open)
@@ -4121,33 +4128,33 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         if (cursor < first) first = cursor;
         if (cursor > first + 62) first = cursor - 62;
         snprintf(shown, sizeof(shown), "%.62s", ui->bank_rename + first);
-        frame(fb, 104, 306, 432, 76, RGB(36, 33, 37), PAL_MOUSE);
+        frame(fb, 104, 306, 432, 76, ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(36, 33, 37)), PAL_MOUSE);
         snprintf(title, sizeof(title), "RENAME BANK %02d", ui->renaming_bank_slot + 1);
         text(fb, 116, 316, title, PAL_NOTE, 1);
-        rect(fb, 116, 332, 408, 23, RGB(8, 8, 8));
+        rect(fb, 116, 332, 408, 23, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(8, 8, 8)));
         text_case(fb, 122, 340, shown, PAL_MOUSE, 1);
         if (ui->text_cursor_visible)
             rect(fb, 122 + (int)(cursor - first) * 6, 338, 2, 11, PAL_MOUSE);
-        text(fb, 116, 365, "ENTER ACCEPTS   ESC CANCELS", RGB(190, 185, 190), 1);
+        text(fb, 116, 365, "ENTER ACCEPTS   ESC CANCELS", ts_theme_color(active_palette(), render_group, TS_COLOR_DIM, RGB(190, 185, 190)), 1);
     } else if (ui->renaming_recipe_slot >= 0) {
         size_t length = strlen(ui->recipe_rename);
         size_t cursor = ui->recipe_rename_cursor > length ? length :
                         ui->recipe_rename_cursor;
         char title[40];
-        frame(fb, 160, 306, 320, 76, RGB(36, 33, 37), PAL_MOUSE);
+        frame(fb, 160, 306, 320, 76, ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(36, 33, 37)), PAL_MOUSE);
         snprintf(title, sizeof(title), "RENAME RECIPE %02d", ui->renaming_recipe_slot + 1);
         text(fb, 172, 316, title, PAL_NOTE, 1);
-        rect(fb, 172, 332, 296, 23, RGB(8, 8, 8));
+        rect(fb, 172, 332, 296, 23, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(8, 8, 8)));
         text_case(fb, 178, 340, ui->recipe_rename, PAL_MOUSE, 1);
         if (ui->text_cursor_visible)
             rect(fb, 178 + (int)cursor * 6, 338, 2, 11, PAL_MOUSE);
-        text(fb, 172, 365, "ENTER ACCEPTS   ESC CANCELS", RGB(190, 185, 190), 1);
+        text(fb, 172, 365, "ENTER ACCEPTS   ESC CANCELS", ts_theme_color(active_palette(), render_group, TS_COLOR_DIM, RGB(190, 185, 190)), 1);
     } else if (ui->export_choice_open) {
-        frame(fb, 154, 135, 332, 112, RGB(36, 33, 37), PAL_MOUSE);
+        frame(fb, 154, 135, 332, 112, ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(36, 33, 37)), PAL_MOUSE);
         text(fb, 172, 150, "EXPORT WHAT?", PAL_NOTE, 1);
         button(fb, 172, 176, 136, "SELECTED WAV", 0);
         button(fb, 324, 176, 144, "COLLECTION", 0);
-        text(fb, 172, 218, "C SELECTED  F FULL COLLECTION   ESC CANCEL", RGB(190, 185, 190), 1);
+        text(fb, 172, 218, "C SELECTED  F FULL COLLECTION   ESC CANCEL", ts_theme_color(active_palette(), render_group, TS_COLOR_DIM, RGB(190, 185, 190)), 1);
     }
 
     keyboard_sequence_panel(fb, ui);
@@ -4162,18 +4169,18 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         rect(fb, 0, TS_UI_HEIGHT - 3, TS_UI_WIDTH, 3, PAL_VOLUME);
         rect(fb, 0, 0, 3, TS_UI_HEIGHT, PAL_VOLUME);
         rect(fb, TS_UI_WIDTH - 3, 0, 3, TS_UI_HEIGHT, PAL_VOLUME);
-        rect(fb, 0, 32, TS_UI_WIDTH, 4, RGB(30, 8, 8));
+        rect(fb, 0, 32, TS_UI_WIDTH, 4, ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(30, 8, 8)));
         rect(fb, 0, 32, progress, 4, PAL_VOLUME);
     }
     if (ui->overlay[0] != '\0') {
         if (strcmp(ui->overlay, "SAVING") == 0) {
-            frame(fb, 210, 146, 220, 84, RGB(12, 12, 12), PAL_VOLUME);
+            frame(fb, 210, 146, 220, 84, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(12, 12, 12)), PAL_VOLUME);
             text(fb, 272, 181, "SAVING", PAL_VOLUME, 2);
         } else {
             int scale = strlen(ui->overlay) <= 46u ? 2 : 1;
             int width = (int)strlen(ui->overlay) * 6 * scale;
             int x = (TS_UI_WIDTH - width) / 2;
-            frame(fb, 24, 126, 592, 76, RGB(12, 12, 12), PAL_VOLUME);
+            frame(fb, 24, 126, 592, 76, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(12, 12, 12)), PAL_VOLUME);
             if (x < 34) x = 34;
             text(fb, x, 153, ui->overlay, PAL_VOLUME, scale);
         }
@@ -4182,20 +4189,20 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         char busy[64];
         int dots = ui->file_busy_phase % 4 + 1;
         if (strcmp(ui->file_busy_label, "SAVING") == 0) {
-            frame(fb, 210, 146, 220, 84, RGB(12, 12, 12), PAL_VOLUME);
+            frame(fb, 210, 146, 220, 84, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(12, 12, 12)), PAL_VOLUME);
             text(fb, 272, 181, "SAVING", PAL_VOLUME, 2);
             return;
         }
         snprintf(busy, sizeof(busy), "%s%.*s",
                  ui->file_busy_label[0] != '\0' ? ui->file_busy_label : "WORKING",
                  dots, "....");
-        frame(fb, 154, 142, 332, 94, RGB(12, 12, 12), PAL_VOLUME);
+        frame(fb, 154, 142, 332, 94, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(12, 12, 12)), PAL_VOLUME);
         text(fb, 174, 158, busy, PAL_VOLUME, 2);
         text(fb, 174, 207,
              strcmp(ui->file_busy_label, "DECODING") == 0 ?
              "ESC OR CANCEL STOPS DECODING" :
              "PLEASE WAIT - FILE OPERATION IN PROGRESS",
-             RGB(190, 185, 190), 1);
+             ts_theme_color(active_palette(), render_group, TS_COLOR_DIM, RGB(190, 185, 190)), 1);
     }
     if (!ui->exit_confirm_open && !ui->project_overwrite_confirm_open && !ui->file_busy &&
         ui->browser.mode==TS_BROWSER_CLOSED) master_eq_render(fb,ui);
@@ -4209,6 +4216,7 @@ void ts_ui_render_file_recording(TsFramebuffer *fb, const TsUiState *ui)
 {
     if(!fb || !ui)return;
     render_palette=&ui->palette;
+    uint32_t recording=ts_theme_legacy(&ui->palette,TS_THEME_TRANSPORT,TS_COLOR_RECORD,TS_PALETTE_PATTERN_VOLUME);
     if(ui->quick_capture_active) {
         uint64_t seconds=ui->input_sample_rate?ui->capture_recorded_frames/ui->input_sample_rate:0;
         char label[88];
@@ -4216,11 +4224,11 @@ void ts_ui_render_file_recording(TsFramebuffer *fb, const TsUiState *ui)
             ui->quick_capture_page+1,ui->quick_capture_slot+1,(unsigned long long)(seconds/3600),
             (unsigned long long)(seconds/60%60),(unsigned long long)(seconds%60));
         if(ui->text_cursor_visible) {
-            rect(fb,0,0,640,2,PAL_VOLUME);rect(fb,0,398,640,2,PAL_VOLUME);
-            rect(fb,0,0,2,400,PAL_VOLUME);rect(fb,638,0,2,400,PAL_VOLUME);
+            rect(fb,0,0,640,2,recording);rect(fb,0,398,640,2,recording);
+            rect(fb,0,0,2,400,recording);rect(fb,638,0,2,400,recording);
         }
         if(ui->tracker_open && ui->tracker_embedded_frame)return;
-        rect(fb,3,382,634,15,RGB(12,12,12));text(fb,10,387,label,PAL_VOLUME,1);
+        rect(fb,3,382,634,15,ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(12,12,12)));text(fb,10,387,label,recording,1);
         mini_button(fb,544,382,86,"STOP TILE",ui->text_cursor_visible);return;
     }
     if(ui->tracker_open && ui->tracker_embedded_frame) {
@@ -4228,8 +4236,8 @@ void ts_ui_render_file_recording(TsFramebuffer *fb, const TsUiState *ui)
            button/timer, while this shared border survives pattern-only view. */
         if((ui->file_record_state==TS_PERFORMANCE_FILE_RECORDING ||
             ui->file_record_state==TS_PERFORMANCE_FILE_STOPPING) && ui->text_cursor_visible) {
-            rect(fb,0,0,640,2,PAL_VOLUME);rect(fb,0,398,640,2,PAL_VOLUME);
-            rect(fb,0,0,2,400,PAL_VOLUME);rect(fb,638,0,2,400,PAL_VOLUME);
+            rect(fb,0,0,640,2,recording);rect(fb,0,398,640,2,recording);
+            rect(fb,0,0,2,400,recording);rect(fb,638,0,2,400,recording);
         }
         return;
     }
@@ -4246,7 +4254,7 @@ void ts_ui_render_file_recording(TsFramebuffer *fb, const TsUiState *ui)
         mini_button(fb,544,382,86,"REC FILE",0);
         return;
     }
-    uint32_t color=PAL_VOLUME;
+    uint32_t color=recording;
     uint64_t seconds=ui->file_record_rate?ui->file_record_frames/ui->file_record_rate:0;
     char label[88];
     snprintf(label,sizeof(label),"FILE %s  %02llu:%02llu:%02llu  CTRL+SHIFT+F STOP",
@@ -4255,10 +4263,10 @@ void ts_ui_render_file_recording(TsFramebuffer *fb, const TsUiState *ui)
              (unsigned long long)(seconds/60%60),(unsigned long long)(seconds%60));
     rect(fb,0,0,640,3,color);rect(fb,0,397,640,3,color);
     rect(fb,0,0,3,400,color);rect(fb,637,0,3,400,color);
-    rect(fb,3,32,634,3,RGB(30,8,8));
+    rect(fb,3,32,634,3,ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(30,8,8)));
     int pulse=(int)((ui->file_record_frames/1024u)%620u);
     rect(fb,3+pulse,32,14,3,color);
-    rect(fb,3,382,634,15,RGB(12,12,12));
+    rect(fb,3,382,634,15,ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(12,12,12)));
     text(fb,10,387,label,color,1);
     mini_button(fb,544,382,86,ui->file_record_state==TS_PERFORMANCE_FILE_STOPPING?"WAIT":"STOP FILE",
                 ui->text_cursor_visible);
@@ -4494,7 +4502,7 @@ static void sister_wave_lane(TsFramebuffer *fb,
 {
     int slot=y==103?1:0;
     int middle=y+height/2;
-    rect(fb,x,middle,width,1,RGB(55,52,57));
+    rect(fb,x,middle,width,1,ts_theme_color(active_palette(), render_group, TS_COLOR_EDGE, RGB(55,52,57)));
     TsUiWaveformDetail *d=detail_region(slot,x,y,width,height);
     if(d) {
         detail_background(d,fb);
@@ -4599,7 +4607,7 @@ static void sister_parameter_state(TsFramebuffer *fb, int x, int y, int width,
     if (amount < 0.0f) amount = 0.0f;
     if (amount > 1.0f) amount = 1.0f;
     if (locked) color = sister_dim_color(color);
-    rect(fb, x, y, width, 18, RGB(24, 23, 25));
+    rect(fb, x, y, width, 18, ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(24, 23, 25)));
     rect(fb, x + 1, y + 14, (int)lrintf((width - 2) * amount), 3, color);
     snprintf(value, sizeof(value), "%s %02d", label, (int)lrintf(amount * 99.0f));
     text(fb, x + 3, y + 3, value, color, 1);
@@ -4615,7 +4623,7 @@ static void sister_percent_parameter_state(TsFramebuffer *fb, int x, int y,
     if (amount < 0.0f) amount = 0.0f;
     if (amount > 1.0f) amount = 1.0f;
     if (locked) color = sister_dim_color(color);
-    rect(fb, x, y, width, 18, RGB(24, 23, 25));
+    rect(fb, x, y, width, 18, ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(24, 23, 25)));
     rect(fb, x + 1, y + 14, (int)lrintf((width - 2) * amount), 3, color);
     snprintf(value, sizeof(value), "%s %03d", label,
              (int)lrintf(amount * (float)maximum_percent));
@@ -4634,7 +4642,7 @@ static void sister_db_parameter_state(TsFramebuffer *fb, int x, int y,
     if (decibels > 12.0f) decibels = 12.0f;
     amount = (decibels + 12.0f) / 24.0f;
     if (locked) color = sister_dim_color(color);
-    rect(fb, x, y, width, 18, RGB(24, 23, 25));
+    rect(fb, x, y, width, 18, ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(24, 23, 25)));
     rect(fb, x + 1, y + 14, (int)lrintf((width - 2) * amount), 3, color);
     snprintf(value, sizeof(value), "%s %+.0fDB", label, decibels);
     text(fb, x + 3, y + 3, value, color, 1);
@@ -4647,7 +4655,7 @@ static void sister_value_parameter_state(TsFramebuffer *fb, int x, int y,
 {
     amount = sister_clamp(amount);
     if (locked) color = sister_dim_color(color);
-    rect(fb, x, y, width, 18, RGB(24, 23, 25));
+    rect(fb, x, y, width, 18, ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(24, 23, 25)));
     rect(fb, x + 1, y + 14, (int)lrintf((width - 2) * amount), 3, color);
     text(fb, x + 3, y + 3, value, color, 1);
 }
@@ -4676,7 +4684,7 @@ static void sister_vertical_mixer(TsFramebuffer *fb, int x, int y,
     };
     const int track_y = y + 22;
     const int track_height = 84;
-    rect(fb, x, y, 104, 110, RGB(24, 23, 25));
+    rect(fb, x, y, 104, 110, ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(24, 23, 25)));
     text(fb, x + 37, y + 3, "MIXER", PAL_MOUSE, 1);
     for (int control = 0; control < 6; ++control) {
         if(model->matrix_routing && control<5) {
@@ -4694,7 +4702,7 @@ static void sister_vertical_mixer(TsFramebuffer *fb, int x, int y,
         if (amount < 0.0f) amount = 0.0f;
         if (amount > 1.0f) amount = 1.0f;
         text(fb, lane_x + 4, y + 12, labels[control], color, 1);
-        rect(fb, lane_x + 5, track_y, 4, track_height, RGB(7, 7, 8));
+        rect(fb, lane_x + 5, track_y, 4, track_height, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(7, 7, 8)));
         unity_y = track_y + (int)lrintf(
             (track_height - 1) * (control == 5 ? 0.5f : 0.75f));
         rect(fb, lane_x + 2, unity_y, 10, 1, PAL_BUTTON);
@@ -4724,7 +4732,7 @@ static void sister_transition_progress(TsFramebuffer *fb, int x, int y,
                                        uint32_t color)
 {
     progress = sister_clamp(progress);
-    rect(fb, x, y, width, 4, RGB(24, 23, 25));
+    rect(fb, x, y, width, 4, ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(24, 23, 25)));
     if (active)
         rect(fb, x, y, (int)lrintf((float)width * progress), 4, color);
     else
@@ -4754,10 +4762,10 @@ static void master_output_fader(TsFramebuffer *fb, float gain,
         snprintf(label, sizeof(label), "OUT -INF");
     else
         snprintf(label, sizeof(label), "OUT %+.0F", 20.0f * log10f(gain));
-    rect(fb, x, y, 48, 22, RGB(24, 23, 25));
+    rect(fb, x, y, 48, 22, ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(24, 23, 25)));
     text_x = x + (48 - (int)strlen(label) * 6) / 2;
     text(fb, text_x, y + 2, label, PAL_MOUSE, 1);
-    rect(fb, x + 4, y + 15, 40, 3, RGB(7, 7, 8));
+    rect(fb, x + 4, y + 15, 40, 3, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(7, 7, 8)));
     fill = (int)lrintf(39.0f * gain);
     if (fill > 0) rect(fb, x + 4, y + 15, fill + 1, 3, PAL_INSTRUMENT);
     handle = x + 4 + fill;
@@ -4769,9 +4777,9 @@ static void master_output_meter(TsFramebuffer *fb,
                                 int x, int y)
 {
     static const char *const names[2] = {"L", "R"};
-    static const uint32_t colors[4] = {
-        RGB(48, 184, 88), RGB(210, 196, 46),
-        RGB(236, 126, 38), RGB(226, 48, 44)
+    const uint32_t colors[4] = {
+        ts_theme_color(active_palette(), render_group, TS_COLOR_DATA4, RGB(48, 184, 88)), ts_theme_color(active_palette(), render_group, TS_COLOR_DATA4, RGB(210, 196, 46)),
+        ts_theme_color(active_palette(), render_group, TS_COLOR_DATA1, RGB(236, 126, 38)), ts_theme_color(active_palette(), render_group, TS_COLOR_ERROR, RGB(226, 48, 44))
     };
     float ceiling = output->limiter_ceiling_db;
     int ceiling_x;
@@ -4790,7 +4798,7 @@ static void master_output_meter(TsFramebuffer *fb,
         static const int boundaries[4] = {32, 37, 39, 42};
         int start = 0;
         text(fb, x, lane_y - 1, names[channel], PAL_MOUSE, 1);
-        rect(fb, x + 8, lane_y, width, 6, RGB(7, 7, 8));
+        rect(fb, x + 8, lane_y, width, 6, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(7, 7, 8)));
         for (int zone = 0; zone < 4; ++zone) {
             int end = fill < boundaries[zone] ? fill : boundaries[zone];
             if (end > start)
@@ -4905,7 +4913,7 @@ static void sister_fallout_lfo_panel(TsFramebuffer *fb,
     float hz = ts_sister_fallout_lfo_hz(controls->lfo_rate);
     float period = 1.0f / hz;
     float rise = ts_sister_fallout_rise_seconds(controls->rise_length);
-    rect(fb, 540, 48, 90, 256, RGB(15, 14, 16));
+    rect(fb, 540, 48, 90, 256, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(15, 14, 16)));
     button(fb, 548, 55, 74, "MOD", controls->lfo_targets != 0u ||
            controls->rise_targets != 0u);
     text(fb, 548, 79, "LFO", PAL_TUNING, 1);
@@ -4917,7 +4925,7 @@ static void sister_fallout_lfo_panel(TsFramebuffer *fb,
     for (int lane = 0; lane < 4; ++lane) {
         int handle_y = track_y + (int)lrintf(
             (track_height - 1) * (1.0f - sister_clamp(amount[lane])));
-        rect(fb, lane_x[lane] + 3, track_y, 4, track_height, RGB(7, 7, 8));
+        rect(fb, lane_x[lane] + 3, track_y, 4, track_height, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(7, 7, 8)));
         rect(fb, lane_x[lane] - 1, handle_y - 1, 13, 3, color[lane]);
     }
     if (period >= 3600.0f)
@@ -4966,7 +4974,7 @@ static void sister_fallout_lfo_dialog(TsFramebuffer *fb,
         TS_SISTER_FALLOUT_LFO_PITCH_RAMP,
         TS_SISTER_FALLOUT_LFO_PITCH_RATE
     };
-    rect(fb, 70, 52, 500, 292, RGB(8, 8, 9));
+    rect(fb, 70, 52, 500, 292, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(8, 8, 9)));
     rect(fb, 70, 52, 500, 1, PAL_EFFECT);
     rect(fb, 70, 343, 500, 1, PAL_EFFECT);
     rect(fb, 70, 52, 1, 292, PAL_EFFECT);
@@ -5044,7 +5052,7 @@ static void sister_choice_parameter_state(TsFramebuffer *fb, int x, int y,
     if (locked) color = sister_dim_color(color);
     if (!isfinite(amount)) amount = 0.0f;
     amount = sister_clamp(amount);
-    rect(fb, x, y, width, 18, RGB(24, 23, 25));
+    rect(fb, x, y, width, 18, ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(24, 23, 25)));
     if (amount > 0.0f)
         rect(fb, x + 1, y + 14,
              (int)lrintf((float)(width - 2) * amount), 3, color);
@@ -5056,7 +5064,7 @@ static void sister_target_toggle(TsFramebuffer *fb, int x, int y, int width,
                                  const char *label, int active,
                                  uint32_t color)
 {
-    rect(fb, x, y, width, 18, RGB(24, 23, 25));
+    rect(fb, x, y, width, 18, ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(24, 23, 25)));
     if (active) {
         rect(fb, x + 1, y + 1, width - 2, 2, color);
         rect(fb, x + 1, y + 14, width - 2, 3, color);
@@ -5199,7 +5207,7 @@ static void sister_spirit_dust_render(TsFramebuffer *fb,
 static void sister_spirit_render(TsFramebuffer *fb,
                                  const TsSisterUiModel *model)
 {
-    const uint32_t background = RGB(7, 7, 8);
+    const uint32_t background = ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(7, 7, 8));
     const int origin_x = (TS_SISTER_UI_WIDTH - TS_SISTER_SPIRIT_MASK_WIDTH) / 2;
     const int origin_y = 43;
     int level = sister_spirit_level(model);
@@ -5257,9 +5265,10 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     unsigned long long overload_display;
     if (fb == NULL || model == NULL || palette == NULL) return;
     render_palette = palette;
+    render_group = model->fx_page==1?TS_THEME_PEDALBOARD:model->fx_page==2?TS_THEME_FALLOUT:model->fx_page==3?TS_THEME_PRISM:TS_THEME_SISTER;
     master_output = master_output_from_routing(&model->routing);
     clear(fb, PAL_DESKTOP);
-    rect(fb, 0, 0, TS_SISTER_UI_WIDTH, 36, RGB(12, 12, 12));
+    rect(fb, 0, 0, TS_SISTER_UI_WIDTH, 36, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(12, 12, 12)));
     button(fb, 10, 8, 62, model->routing.enabled ? "POWER ON" : "POWER", model->routing.enabled);
     button(fb, 78, 8, 62, "ROLL", model->routing.rolling);
     button(fb, 146, 8, 62, "HOLD", model->routing.held);
@@ -5292,7 +5301,7 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     master_output_fader(fb, model->routing.master_output_gain, 528, 8);
     master_output_meter(fb, &master_output, 580, 8);
     rect(fb, 576, 12, 3, 9,
-         model->midi_activity ? PAL_TUNING : RGB(22, 22, 22));
+         model->midi_activity ? PAL_TUNING : ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(22, 22, 22)));
 
     if (model->fx_page == 3) {
         uint64_t profile_prism = ts_profile_begin(TS_PROF_PRISM_UI);
@@ -5313,7 +5322,7 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
             ts_sister_fallout_transition_ms(f->component_transition));
         sister_fallout_time_label(master_transition, sizeof(master_transition),
             ts_sister_fallout_transition_ms(f->master_transition));
-        rect(fb, 10, 42, 620, 268, RGB(9, 9, 10));
+        rect(fb, 10, 42, 620, 268, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(9, 9, 10)));
         button(fb, 16, 50, 86, f->enabled ? "FALLOUT ON" : "FALLOUT",
                f->enabled);
         sister_percent_parameter_state(fb, 120, 52, 165, "MIX", f->mix,
@@ -5428,7 +5437,7 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
             int field_width = fields == 5 ? 70 : 88;
             int field_step = fields == 5 ? 74 : 92;
             uint32_t color = slot->type == TS_SISTER_FX_REVERB ?
-                PAL_WAVE_RIGHT : slot->type == TS_SISTER_FX_DELAY ?
+                ts_theme_color(palette, TS_THEME_PEDALBOARD, TS_COLOR_DATA6, palette->colors[TS_PALETTE_STEREO_WAVE_RIGHT]) : slot->type == TS_SISTER_FX_DELAY ?
                 PAL_EFFECT : slot->type == TS_SISTER_FX_DISTORTION ?
                 PAL_VOLUME : PAL_NOTE;
             char number[8];
@@ -5437,7 +5446,7 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                 "4-HEAD TAPE" : slot->type == TS_SISTER_FX_DISTORTION ?
                 "RAT / 2X" : slot->type == TS_SISTER_FX_GRAIN ?
                 "24 VOICES" : "NO PROCESSOR";
-            rect(fb, 10, top, 620, 50, RGB(10, 10, 11));
+            rect(fb, 10, top, 620, 50, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(10, 10, 11)));
             snprintf(number, sizeof(number), "%d", row + 1);
             button(fb, 16, top + 2, 40, number, slot->enabled);
             button(fb, 60, top + 2, 90,
@@ -5569,7 +5578,7 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
         goto sister_footer;
     }
 
-    rect(fb, 10, 40, 620, 126, RGB(7, 7, 8));
+    rect(fb, 10, 40, 620, 126, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(7, 7, 8)));
     if (model->routing.enabled &&
         model->power_visual == TS_SISTER_UI_POWER_VISUAL_NONE) {
         mode = ts_waveform_display_sanitize(model->waveform_mode);
@@ -5747,12 +5756,12 @@ sister_footer:
             (int)((double)recorded * 620.0 / (double)capacity) : 0;
         if (progress < 0) progress = 0;
         if (progress > 620) progress = 620;
-        rect(fb, 10, 40, 620, 3, RGB(30, 8, 8));
+        rect(fb, 10, 40, 620, 3, ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(30, 8, 8)));
         rect(fb, 10, 40, progress, 3, PAL_VOLUME);
     } else if (model->file_capture_state == TS_PERFORMANCE_FILE_RECORDING ||
                model->file_capture_state == TS_PERFORMANCE_FILE_STOPPING) {
         int pulse = (int)((model->file_capture_frames / 1024u) % 620u);
-        rect(fb, 10, 40, 620, 3, RGB(30, 8, 8));
+        rect(fb, 10, 40, 620, 3, ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(30, 8, 8)));
         rect(fb, 10 + pulse, 40, pulse > 606 ? 620 - pulse : 14, 3,
              PAL_VOLUME);
     }
@@ -5785,7 +5794,7 @@ sister_footer:
                 if(!length)length=63;
             }
             memcpy(row,remaining,length);row[length]=0;
-            text(fb,10,351+i*9,row,RGB(119,190,255),1);
+            text(fb,10,351+i*9,row,ts_theme_color(active_palette(), render_group, TS_COLOR_DATA3, RGB(119,190,255)),1);
             remaining+=length;while(*remaining==' ')++remaining;
         }
     } else {
@@ -5873,7 +5882,7 @@ sister_footer:
     } else if (model->preset_manage_open) {
         char preset_count[16];
         char managed_name[48];
-        rect(fb, 160, 130, 320, 170, RGB(8, 8, 9));
+        rect(fb, 160, 130, 320, 170, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(8, 8, 9)));
         rect(fb, 160, 130, 320, 1, PAL_MOUSE);
         rect(fb, 160, 299, 320, 1, PAL_MOUSE);
         rect(fb, 160, 130, 1, 170, PAL_MOUSE);
@@ -5949,7 +5958,7 @@ sister_footer:
                     }
                 }
             }
-        rect(fb, 0, 351, TS_SISTER_UI_WIDTH, 16, RGB(12, 12, 12));
+        rect(fb, 0, 351, TS_SISTER_UI_WIDTH, 16, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(12, 12, 12)));
         text(fb, 10, 355,
              model->midi_learn_pending[0] != '\0' ?
              "MIDI LEARN: MOVE OR PRESS A CONTROL  ESC CANCELS" :
