@@ -19,7 +19,7 @@ add_library(tapesister_core src/ts_mandala.c src/ts_routing_matrix.c src/ts_sour
              src/ts_audio_lifecycle.c
              src/ts_realtime_diagnostics.c src/ts_profile.c
              src/ts_sister_effects.c src/ts_sister_fallout.c src/ts_sister_post_fx.c
-             src/ts_sister_limiter.c src/ts_master_eq.c src/ts_eq_spectrum.c src/ts_router.c src/ts_router_performance.c src/ts_insert.c
+             src/ts_sister_limiter.c src/ts_compressor.c src/ts_master_eq.c src/ts_eq_spectrum.c src/ts_router.c src/ts_router_performance.c src/ts_insert.c
              src/ts_sister_machine.c src/ts_sister_wave_snapshot.c
              src/ts_sister_runtime.c src/ts_sister_ui.c
              src/ts_sister_preset.c src/ts_sister_project_state.c
@@ -673,6 +673,9 @@ add_executable(tapesister_tile_eq_tests tests/test_tile_eq.c)
 target_link_libraries(tapesister_tile_eq_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_tile_eq_tests COMMAND tapesister_tile_eq_tests)
 
+add_executable(tapesister_compressor_tests tests/test_compressor.c)
+target_link_libraries(tapesister_compressor_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_compressor_tests COMMAND tapesister_compressor_tests)
 add_executable(tapesister_master_eq_tests tests/test_master_eq.c)
 target_link_libraries(tapesister_master_eq_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_master_eq_tests COMMAND tapesister_master_eq_tests)

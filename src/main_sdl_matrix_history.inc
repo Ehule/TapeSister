@@ -3,6 +3,7 @@
 typedef struct { MatrixRow row;TsSourceRoute route; } MatrixSavedRoute;
 struct MatrixSnapshot {
     TsMatrixControls controls;TsRouterControls router;TsSpatialControls spatial;
+    TsCompressorControls compressor;
     TsInsertControls insert;uint16_t sources;int count;
     MatrixSavedRoute routes[];
 };
@@ -18,6 +19,7 @@ static MatrixSnapshot *mx_snapshot(SDL_AudioDeviceID device,AudioState *audio,Ts
     MatrixSnapshot *s=calloc(1,sizeof(*s)+count*sizeof(s->routes[0]));if(!s)return NULL;
     if(device)SDL_LockAudioDevice(device);
     s->controls=audio->sister.matrix.controls;s->router=audio->sister.router.controls;s->spatial=audio->sister.spatial.controls;
+    s->compressor=audio->sister.compressor.controls;
     s->insert=audio->sister.insert.controls;s->sources=audio->sister.source_switches;
     if(device)SDL_UnlockAudioDevice(device);
     for(int i=0;i<TS_TRACKER_LANES;++i)s->routes[s->count++]=(MatrixSavedRoute){.row={.kind=0,.index=i},.route=pages->tracker.lanes[i].output_route};
@@ -48,6 +50,8 @@ static void mx_apply(const MatrixSnapshot *s,SDL_AudioDeviceID device,AudioState
         } else {TsMosaicEvent *e=ts_mosaic_find(w->mosaic,v.row.tile);if(e)e->output_route=v.route;}
     }
     ts_matrix_set(&audio->sister.matrix,&s->controls,(unsigned)audio->output_rate);
+    ts_compressor_set(&audio->sister.compressor,&s->compressor);
+    w->compressor=ui->config.compressor=s->compressor;
     ts_sister_runtime_set_router(&audio->sister,&s->router);
     ts_spatial_recall(&audio->sister.spatial,&s->spatial);
     ts_sister_runtime_set_insert(&audio->sister,&s->insert);

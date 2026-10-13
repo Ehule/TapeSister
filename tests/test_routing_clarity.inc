@@ -23,7 +23,7 @@ static void routing_clarity(const char *directory)
     assert(ts_sister_tracker_load_file(&pages.tracker,"clarity-score.tst",error,sizeof(error)));
     assert(embedded_open(window,0,&a,&u,&pages,&bank,48000));startPlaying(PLAYMODE_SONG,0);
     render(energy);assert(energy[0]==0 && energy[1]>1 && energy[2]==0 && energy[3]==0);
-    /* Build a real v5 byte stream: v7 appended 31 matrix bytes to each lane. */
+    /* Build a real v5 byte stream: v8 appended 35 matrix bytes to each lane. */
     FILE *legacy=fopen("clarity-score.tst","rb");assert(legacy);
     assert(!fseek(legacy,0,SEEK_END));long legacy_size=ftell(legacy);rewind(legacy);
     unsigned char *legacy_bytes=malloc((size_t)legacy_size);assert(legacy_bytes);
@@ -31,7 +31,7 @@ static void routing_clarity(const char *directory)
     size_t prefix=8+31+TS_TRACKER_ALIASES*8+pages.tracker.order_count*4;
     size_t lane_size=sizeof(pages.tracker.lanes[0].name)+24,read=prefix,write=prefix;
     for(int lane=0;lane<TS_TRACKER_LANES;++lane) {
-        memmove(legacy_bytes+write,legacy_bytes+read,lane_size);write+=lane_size;read+=lane_size+31;
+        memmove(legacy_bytes+write,legacy_bytes+read,lane_size);write+=lane_size;read+=lane_size+1+2*TS_MATRIX_DESTINATIONS;
     }
     memmove(legacy_bytes+write,legacy_bytes+read,(size_t)legacy_size-read);write+=(size_t)legacy_size-read;
     legacy_bytes[6]=5;legacy=fopen("clarity-score.tst","wb");assert(legacy);

@@ -2,6 +2,7 @@
 #undef NDEBUG
 #endif
 #include "tapesister/mosaic.h"
+#include "tapesister/routing_matrix.h"
 #include "tapesister/sample_pages.h"
 #include <assert.h>
 #include <math.h>
@@ -153,12 +154,31 @@ static void test_storage(void)
     m->events[0].muted=1;m->events[1].solo=1;
     m->events[0].pan=-.35f;m->events[0].fade_in=1.25;m->events[0].fade_out=2.5;ts_mosaic_set_speed(m,1.5);
     ts_mosaic_volume_draw(m,0,.2f,1,.8f);
+    m->events[0].output_route.matrix_enabled=1;
+    m->events[0].output_route.matrix_gain[7]=500;
+    m->events[0].output_route.matrix_gain[TS_MATRIX_COMPRESSOR]=1000;
+    m->events[0].output_route.matrix_gain[TS_MATRIX_SIDECHAIN]=600;
     assert(ts_mosaic_save(m,dir,error,sizeof(error)));
     assert(ts_mosaic_load(loaded,dir,error,sizeof(error)));
     assert(ts_mosaic_hash(m)==ts_mosaic_hash(loaded));
     assert(loaded->events[0].muted && loaded->events[1].solo);
     assert(loaded->events[0].source==loaded->events[1].source);
     assert(!memcmp(m->events[0].source->sample.data,loaded->events[0].source->sample.data,4096*2*sizeof(float)));
+    /* v6 retained EQ, but route records had only the original 15 ports. */
+    FILE *current=fopen("mosaic-storage-test/mosaic.tsm","r"),*v6=fopen("mosaic-storage-test/old.tsm","w");assert(current && v6);
+    char record[1024];assert(fgets(record,sizeof(record),current));fputs("TAPESISTER_MOSAIC 6\n",v6);
+    while(fgets(record,sizeof(record),current)) {
+        if(!strncmp(record,"ROUTE ",6)) {
+            record[strcspn(record,"\r\n")]=0;
+            for(int i=0;i<2;++i){char *last=strrchr(record,' ');assert(last);*last=0;}
+            fprintf(v6,"%s\n",record);
+        } else fputs(record,v6);
+    }
+    fclose(current);fclose(v6);remove("mosaic-storage-test/mosaic.tsm");
+    assert(!rename("mosaic-storage-test/old.tsm","mosaic-storage-test/mosaic.tsm"));
+    assert(ts_mosaic_load(loaded,dir,error,sizeof(error)));
+    assert(loaded->events[0].output_route.matrix_gain[7]==500 && !loaded->events[0].output_route.matrix_gain[TS_MATRIX_COMPRESSOR] && !loaded->events[0].output_route.matrix_gain[TS_MATRIX_SIDECHAIN]);
+    assert(ts_mosaic_save(m,dir,error,sizeof(error)));
     /* Both previous formats load with neutral new controls, preserving the
        second format's mute/solo state. */
     FILE *old=fopen("mosaic-storage-test/mosaic.tsm","r");assert(old);

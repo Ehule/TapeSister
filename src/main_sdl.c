@@ -691,6 +691,7 @@ static uint64_t paged_project_fingerprint(const TsSamplePages *pages,
     if (sister != NULL) {
         state_hash_bytes(&hash,&sister->mandala,sizeof(sister->mandala));
         state_hash_bytes(&hash,&sister->master_eq.controls,sizeof(sister->master_eq.controls));
+        state_hash_bytes(&hash,&sister->compressor.controls,sizeof(sister->compressor.controls));
         TsRouterControls saved_router=ts_router_export(&sister->router);
         state_hash_bytes(&hash,&saved_router,sizeof(saved_router));
         state_hash_bytes(&hash,&sister->matrix.controls,sizeof(sister->matrix.controls));
@@ -4336,6 +4337,7 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
                 ts_spatial_recall(&audio->sister.spatial,&spatial);
                 TsMasterEqControls flat;ts_master_eq_default(&flat);
                 ts_master_eq_set(&audio->sister.master_eq,&flat);
+                TsCompressorControls comp;ts_compressor_default(&comp);ts_compressor_set(&audio->sister.compressor,&comp);
                 ts_mandala_default(&audio->sister.mandala);
                 audio->sister.performance_transport=1;
                 ts_performance_mixer_default(&audio->sister.performance_mixer);
@@ -13651,6 +13653,7 @@ int main(int argc, char **argv)
     ts_sister_runtime_set_master_output_gain(
         &audio.sister, (float)ui.config.master_output_percent / 100.0f);
     ts_master_eq_set(&audio.sister.master_eq,&ui.config.master_eq);
+    ts_compressor_set(&audio.sister.compressor,&ui.config.compressor);
     ts_spatial_recall(&audio.sister.spatial,&ui.config.spatial);
     ts_sister_runtime_set_router(&audio.sister,&ui.config.router);
     ts_matrix_set(&audio.sister.matrix,&ui.config.matrix,(unsigned)audio.output_rate);
@@ -18012,6 +18015,7 @@ int main(int argc, char **argv)
                     routing.output_clip[channel];
             }
             ui.config.master_eq = audio.sister.master_eq.controls;
+            ui.config.compressor=audio.sister.compressor.controls;
             ui.config.matrix=audio.sister.matrix.controls;
             ui.config.router = routing.router_saved;
             ui.router_live = routing.router;ui.router_view=routing.router_view;

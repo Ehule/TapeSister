@@ -1,6 +1,7 @@
 #ifndef TAPESISTER_SISTER_RUNTIME_H
 #define TAPESISTER_SISTER_RUNTIME_H
 
+#include "tapesister/compressor.h"
 #include "tapesister/capture.h"
 #include "tapesister/mandala.h"
 #include "tapesister/performance.h"
@@ -231,6 +232,7 @@ typedef struct {
     TsSisterPostFxEngine post_fx;
     TsSisterLimiter limiter;
     TsMasterEq master_eq;
+    TsCompressor compressor;
     TsEqSpectrum eq_spectrum;
     TsRouter router;
     TsRoutingMatrix matrix;

@@ -160,13 +160,13 @@ static void ts_audio_health_setup_report(char *text, size_t size, Uint32 now)
         for(int row=0;row<TS_MATRIX_ROWS;++row)for(int d=0;d<TS_MATRIX_DESTINATIONS;++d) {
             int gain=s->matrix.row[row].matrix_gain[d];if(!gain)continue;
             char from[64],to[64];
-            if(row<TS_MATRIX_NODES)snprintf(from,sizeof(from),"%s",ts_matrix_node_name(row));
+            if(ts_matrix_is_processor(row))snprintf(from,sizeof(from),"%s",ts_matrix_node_name(row));
             else if(row<TS_MATRIX_FM)snprintf(from,sizeof(from),"IN %d/%d %.23s",(row-TS_MATRIX_NODES)*2+1,(row-TS_MATRIX_NODES)*2+2,s->matrix.input_name[row-TS_MATRIX_NODES]);
             else snprintf(from,sizeof(from),"%s",row==TS_MATRIX_FM?"FM":row==TS_MATRIX_MOSAIC?"MOSAIC":"LIVE LINK");
-            if(d<TS_MATRIX_NODES)snprintf(to,sizeof(to),"%s",ts_matrix_node_name(d));
+            if(!ts_matrix_is_output(d))snprintf(to,sizeof(to),"%s",ts_matrix_node_name(d));
             else snprintf(to,sizeof(to),"OUT %d/%d %.23s",(d-TS_MATRIX_NODES)*2+1,(d-TS_MATRIX_NODES)*2+2,s->matrix.output_name[d-TS_MATRIX_NODES]);
             used=strlen(text);snprintf(text+used,size-used,"    %s -> %s: %+.1f dB; pan %d%s\n",from,to,20*log10f(gain*.001f),s->matrix.row[row].pan,
-                row<TS_MATRIX_NODES && (s->matrix.delayed[row]&(1u<<d))?"; feedback delayed 64 samples":"");
+                ts_matrix_is_processor(row) && (s->matrix.delayed[row]&(1u<<d))?"; feedback delayed 64 samples":"");
         }
     }
     for (int i = 0; i < TS_SISTER_FX_SLOT_COUNT; ++i) {

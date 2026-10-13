@@ -34,6 +34,7 @@ void ts_config_init(TsConfig *config)
         config->fm_bank_count = 16;
         config->master_output_percent = TS_MASTER_OUTPUT_PERCENT_DEFAULT;
         ts_master_eq_default(&config->master_eq);
+        ts_compressor_default(&config->compressor);
         ts_spatial_default(&config->spatial);
         ts_router_default(&config->router);
         config->router.master_mix = 1;
@@ -322,6 +323,8 @@ int ts_config_load(TsConfig *config, const char *path,
                 snprintf(error,error_size,"Invalid router on config line %d",line_number);
                 fclose(file);return 0;
             }
+        } else if (!strncmp(key,"Compressor.",11)) {
+            if(ts_compressor_read(&loaded.compressor,key,value)<0) {fclose(file);set_error(error,error_size,"Invalid compressor");return 0;}
         } else if (!strncmp(key, "MasterEq.", 9)) {
             if (ts_master_eq_read(&loaded.master_eq,key,value)<0) {
                 snprintf(error,error_size,"Invalid master EQ on config line %d",line_number);
@@ -825,6 +828,7 @@ int ts_config_save(const TsConfig *config, const char *path,
         !ts_master_eq_write(file,&config->master_eq);
     if(!write_failed)write_failed=!ts_spatial_write(file,&config->spatial);
     if(!write_failed)write_failed=!ts_router_write(file,&config->router);
+    if(!write_failed)write_failed=!ts_compressor_write(file,&config->compressor);
     if(!write_failed)write_failed=!ts_matrix_write(file,&config->matrix);
     if(!write_failed)write_failed=!ts_router_performance_write(file,&config->router_performance);
     if(!write_failed)write_failed=!ts_insert_write(file,&config->insert);

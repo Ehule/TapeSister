@@ -1,6 +1,7 @@
 #ifndef TAPESISTER_SISTER_PROJECT_STATE_H
 #define TAPESISTER_SISTER_PROJECT_STATE_H
 
+#include "tapesister/compressor.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -8,7 +9,7 @@
 #include "tapesister/keyboard_sequence.h"
 
 enum {
-    TS_SISTER_PROJECT_STATE_VERSION = 35,
+    TS_SISTER_PROJECT_STATE_VERSION = 36,
     TS_SISTER_PROJECT_PRESET_NAME_MAX = 47
 };
 
@@ -19,6 +20,7 @@ typedef struct {
     uint16_t page_masks[TS_SISTER_RUNTIME_PAGE_LIMIT];
     TsSisterParameters parameters;
     TsMasterEqControls master_eq;
+    TsCompressorControls compressor;
     TsRouterControls router;
     TsMatrixControls matrix;
     TsMandalaConfig mandala;

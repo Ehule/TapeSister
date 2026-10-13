@@ -468,3 +468,7 @@ make a detuned ensemble with three lower voices, and toggle back to the original
 
 Mosaic has a [drawable arrangement volume envelope](docs/MOSAIC.md#arrangement-volume-envelope)
 that stretches with the timeline and links its endpoints during Repeat.
+
+### Routable compressor
+
+F9 → **COMP** opens the stereo compressor: separate **COMP IN** and **COMP SC** inputs, five controls, bypass, and gain reduction. Route a TrackSister kick to COMP SC to duck Mosaic, Prism, or selected sources. See [routing, controls, and project compatibility](docs/ROUTER_COMPRESSOR.md).
