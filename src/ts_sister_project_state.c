@@ -71,6 +71,7 @@ void ts_sister_project_state_init(TsSisterProjectState *state,
     if (state == NULL) return;
     memset(state, 0, sizeof(*state));
     state->page_count = 1u;
+    ts_mandala_default(&state->mandala);
     ts_master_eq_default(&state->master_eq);
     ts_spatial_default(&state->spatial);
     ts_router_default(&state->router);
@@ -100,6 +101,7 @@ void ts_sister_project_state_capture(TsSisterProjectState *state,
            state->page_count * sizeof(state->page_masks[0]));
     state->parameters = runtime->parameters;
     ts_prism_matrix_export(&runtime->prism,&state->parameters.prism);
+    state->mandala = runtime->mandala;
     state->master_eq = runtime->master_eq.controls;
     state->router = ts_router_export(&runtime->router);
     state->matrix=runtime->matrix.controls;state->performance_transport=runtime->performance_transport;
@@ -125,7 +127,7 @@ int ts_sister_project_state_apply(const TsSisterProjectState *state,
 {
     if (state == NULL || runtime == NULL || state->page_count == 0u ||
         state->page_count > TS_SISTER_RUNTIME_PAGE_LIMIT ||
-        state->active_page >= state->page_count) return 0;
+        state->active_page >= state->page_count || !ts_mandala_valid(&state->mandala)) return 0;
     runtime->source_switches = state->source_switches & TS_SISTER_SOURCE_ALL;
     memset(runtime->page_source_masks, 0, sizeof(runtime->page_source_masks));
     memcpy(runtime->page_source_masks, state->page_masks,
@@ -136,6 +138,7 @@ int ts_sister_project_state_apply(const TsSisterProjectState *state,
     ts_spatial_recall(&runtime->spatial,&state->spatial);
     ts_sister_runtime_set_router(runtime,&state->router);
     ts_matrix_set(&runtime->matrix,&state->matrix,runtime->router.sample_rate);
+    runtime->mandala = state->mandala;
     runtime->performance_transport=state->performance_transport&7u;
     runtime->performance_mixer=state->performance_mixer;
     runtime->router.transport.restore_valid=0;
@@ -293,6 +296,7 @@ int ts_sister_project_state_save_file(const TsSisterProjectState *state,
     for (size_t page = 0u; page < state->page_count && !failed; ++page)
         failed = fprintf(file, "Mask.%zu=%04X\n", page,
                          state->page_masks[page]) < 0;
+    if (!failed) failed = !ts_mandala_write(file, &state->mandala);
     if (!failed) failed = !write_parameters(file, &state->parameters);
     if (!failed) failed = !ts_master_eq_write(file,&state->master_eq);
     if (!failed) failed = !ts_spatial_write(file,&state->spatial);
@@ -640,6 +644,8 @@ int ts_sister_project_state_load_file(TsSisterProjectState *state,
             errno = 0; parsed_mask = strtoul(value, &end, 16);
             if (errno != 0 || end == value || *trim(end) != '\0' || parsed_mask > 0xffffu) goto malformed;
             loaded.page_masks[page] = (uint16_t)parsed_mask;
+        } else if (!strncmp(key,"Mandala.",8)) {
+            if(ts_mandala_read(&loaded.mandala,key,value)<0)goto malformed;
         } else if (!strcmp(key,"PerformanceTransport")) {
             int mask;if(!parse_int_value(value,&mask) || mask<0 || mask>7)goto malformed;loaded.performance_transport=(unsigned)mask;
         } else if (!strncmp(key,"Performance.Gain",16)) {

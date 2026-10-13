@@ -1178,8 +1178,46 @@ static void test_mix_cache_matches_uncached(void)
     ts_sister_post_fx_free(&cached);ts_sister_post_fx_free(&reference);
 }
 
+static void test_visual_readout_follows_actual_ramps(void)
+{
+    static TsSisterPostFxEngine e;
+    TsSisterFxControls c;ts_sister_fx_controls_default(&c);
+    assert(ts_sister_post_fx_init(&e,8000));c.enabled=1;
+    for(int i=0;i<4;++i)c.slot[i]=(TsSisterFxSlotControls){0};
+    c.slot[0]=(TsSisterFxSlotControls){TS_SISTER_FX_DISTORTION,0,TS_SISTER_FX_PLACE_POST,0,.8f,.3f,0,.7f};
+    c.transition=ts_sister_fx_transition_normalized(240000);direct_sync_controls(&e,&c);
+    c.slot[0].enabled=1;direct_set_controls(&e,&c);
+    TsStereoFrame input={.1f,-.08f};
+    float previous=0;
+    for(int quarter=1;quarter<=4;++quarter) {
+        for(int i=0;i<8000*60;++i)ts_sister_post_fx_process(&e,TS_SISTER_HEAD_COUNT,input,0);
+        TsSisterFxView view=ts_sister_post_fx_view(&e);
+        float wet=view.value[TS_SISTER_FX_DISTORTION-1][0];
+        assert(wet>previous && fabsf(wet-.7f*quarter/4)<.025f);
+        assert(fabsf(view.value[TS_SISTER_FX_DISTORTION-1][1]/wet-.8f)<.001f);
+        previous=wet;
+    }
+    c.transition=ts_sister_fx_transition_normalized(1000);
+    c.slot[0].type=TS_SISTER_FX_GRAIN;direct_set_controls(&e,&c);
+    for(int i=0;i<4000;++i)ts_sister_post_fx_process(&e,TS_SISTER_HEAD_COUNT,input,0);
+    TsSisterFxView halfway=ts_sister_post_fx_view(&e);
+    assert(halfway.value[TS_SISTER_FX_DISTORTION-1][0]>.3f && halfway.value[TS_SISTER_FX_DISTORTION-1][0]<.4f);
+    assert(halfway.value[TS_SISTER_FX_GRAIN-1][0]>.3f && halfway.value[TS_SISTER_FX_GRAIN-1][0]<.4f);
+    for(int i=0;i<4100;++i)ts_sister_post_fx_process(&e,TS_SISTER_HEAD_COUNT,input,0);
+    TsSisterFxView final=ts_sister_post_fx_view(&e);
+    assert(final.value[TS_SISTER_FX_DISTORTION-1][0]==0 && final.value[TS_SISTER_FX_GRAIN-1][0]>.69f);
+    c.master_transition=ts_sister_fx_transition_normalized(1000);c.enabled=0;direct_set_controls(&e,&c);
+    for(int i=0;i<4000;++i)ts_sister_post_fx_process(&e,TS_SISTER_HEAD_COUNT,input,0);
+    halfway=ts_sister_post_fx_view(&e);assert(halfway.value[TS_SISTER_FX_GRAIN-1][0]>.3f && halfway.value[TS_SISTER_FX_GRAIN-1][0]<.4f);
+    for(int i=0;i<4100;++i)ts_sister_post_fx_process(&e,TS_SISTER_HEAD_COUNT,input,0);
+    final=ts_sister_post_fx_view(&e);for(int i=0;i<4;++i)assert(final.value[i][0]==0);
+    ts_sister_post_fx_free(&e);
+    puts("visual readout: actual four-minute engage, topology crossfade and master fade PASS");
+}
+
 int main(void)
 {
+    test_visual_readout_follows_actual_ramps();
     test_mix_cache_matches_uncached();
     test_defaults_and_identity();
     test_explicit_slots_override_stale_legacy_fields();

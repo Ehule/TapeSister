@@ -1458,6 +1458,52 @@ TsStereoFrame ts_sister_post_fx_process_send(TsSisterPostFxEngine *engine,TsSter
     return process_location(engine,TS_SISTER_FX_LOCATION_COUNT-1,input,0,1,1);
 }
 
+/* Fixed upper bound: four slots, two morph endpoints, five locations.
+   Invoked only for requested block snapshots. No allocation, locks or history. */
+TsSisterFxView ts_sister_post_fx_view(const TsSisterPostFxEngine *engine)
+{
+    TsSisterFxView view = {0};
+    if (!engine || !engine->ready) return view;
+    float master = clampf(engine->master_engage.current,0,1);
+    for (unsigned slot=0; slot<TS_SISTER_FX_SLOT_COUNT; ++slot) {
+        const TsSisterFxSlotState *s=&engine->slot[slot];
+        for (unsigned side=0; side<(s->has_pending?2u:1u); ++side) {
+            const TsSisterFxSlotControls *c=side?&s->pending:&s->active;
+            if (c->type<=TS_SISTER_FX_EMPTY || c->type>=TS_SISTER_FX_TYPE_COUNT) continue;
+            float mix=0,a=0,b=0;
+            for (unsigned loc=0; loc<TS_SISTER_FX_LOCATION_COUNT; ++loc) {
+                if (!(c->placement&(1u<<loc))) continue;
+                float wet=0,x=0,y=0;
+                switch(c->type) {
+                case TS_SISTER_FX_REVERB:
+                    wet=engine->reverb[slot][loc].mix_current;
+                    x=engine->reverb[slot][loc].size_current;y=engine->reverb[slot][loc].decay_current;break;
+                case TS_SISTER_FX_DELAY:
+                    wet=engine->delay[slot][loc].mix_current;
+                    x=engine->sample_rate?engine->delay[slot][loc].delay_current/engine->sample_rate:0;
+                    y=engine->delay[slot][loc].feedback_current;break;
+                case TS_SISTER_FX_DISTORTION:
+                    wet=engine->distortion[slot][loc].mix_current;
+                    x=engine->distortion[slot][loc].drive_current;y=engine->distortion[slot][loc].tone_current;break;
+                case TS_SISTER_FX_GRAIN:
+                    wet=engine->grain[slot][loc].mix_current;
+                    x=engine->grain[slot][loc].size_current;y=engine->grain[slot][loc].density_current;break;
+                default:break;
+                }
+                /* Multiple head placements are one effect, not extra loudness. */
+                if (wet>mix) {mix=wet;a=x;b=y;}
+            }
+            float weight=master*clampf(s->engage.current,0,1)*clampf(mix,0,1);
+            if(s->has_pending)weight*=side?s->morph.current:1-s->morph.current;
+            unsigned type=(unsigned)c->type-1;
+            view.value[type][0]+=weight;
+            view.value[type][1]+=weight*a;
+            view.value[type][2]+=weight*b;
+        }
+    }
+    return view;
+}
+
 float ts_sister_post_fx_master_engage(const TsSisterPostFxEngine *engine)
 {
     return engine != NULL && engine->ready ?

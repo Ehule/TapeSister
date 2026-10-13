@@ -157,6 +157,8 @@ static float bits_float(uint32_t bits)
 static void snapshot_atomic_init(TsSisterRoutingSnapshotAtomic *snapshot)
 {
     if (snapshot == NULL) return;
+    atomic_init(&snapshot->visual_enabled,0);
+    for(int i=0;i<14;++i)atomic_init(&snapshot->visual_fx[i],0);
     for(int i=0;i<4;++i){atomic_init(&snapshot->insert_ports[i],0);atomic_init(&snapshot->insert_values[i],0);}
     for(int i=0;i<TS_ROUTER_COUNT+5+TS_SOURCE_SENDS*6;++i)atomic_init(&snapshot->router_state[i],0);
     for(int i=0;i<TS_ROUTER_COUNT*2+2;++i)atomic_init(&snapshot->router_peaks[i],float_bits(0));
@@ -289,6 +291,28 @@ static void publish_snapshot_impl(TsSisterRuntime *runtime)
         atomic_store_explicit(&snapshot->router_perf_int[9+i*2],rv.timer_after[i],memory_order_relaxed);
         atomic_store_explicit(&snapshot->router_perf_float[1+i],float_bits(rv.timer_remaining[i]),memory_order_relaxed);
     }
+    /* Existing block publication; closed/frozen visuals only cost the gate.
+       All expensive interpretation remains on the UI/renderer side. */
+#if ATOMIC_INT_LOCK_FREE == 2
+    if(atomic_load_explicit(&snapshot->visual_enabled,memory_order_relaxed)) {
+        TsSisterFxView fx=ts_sister_post_fx_view(&runtime->post_fx);
+        for(int i=0;i<4;++i)for(int j=0;j<3;++j)
+            atomic_store_explicit(&snapshot->visual_fx[i*3+j],float_bits(fx.value[i][j]),memory_order_relaxed);
+        float board=runtime->matrix.controls.enabled?runtime->matrix.output_peak[TS_MATRIX_BOARD]:runtime->router.output_peak[TS_ROUTER_PEDALBOARD];
+        /* PRE/head slots can sound through Sister without a BOARD connection. */
+        float sister=runtime->matrix.controls.enabled?runtime->matrix.output_peak[TS_MATRIX_SISTER]:runtime->router.output_peak[TS_ROUTER_SISTER];
+        int local=0;
+        for(int i=0;i<4;++i) {
+            const TsSisterFxSlotState *slot=&runtime->post_fx.slot[i];
+            local|=(slot->active.placement & ~TS_SISTER_FX_PLACE_POST)!=0;
+            if(slot->has_pending)local|=(slot->pending.placement & ~TS_SISTER_FX_PLACE_POST)!=0;
+        }
+        if(local)board=fmaxf(board,sister);
+        float prism_peak=runtime->matrix.controls.enabled?runtime->matrix.output_peak[TS_MATRIX_PRISM]:runtime->router.output_peak[TS_ROUTER_PRISM];
+        atomic_store_explicit(&snapshot->visual_fx[12],float_bits(board),memory_order_relaxed);
+        atomic_store_explicit(&snapshot->visual_fx[13],float_bits(prism_peak),memory_order_relaxed);
+    }
+#endif
     TsPrismView prism = ts_prism_view(&runtime->prism);
     int matrix_int[]={prism.matrix_active,prism.matrix_running,prism.matrix_step,prism.matrix_waiting,
         prism.matrix_from,prism.matrix_to,prism.matrix_missing,
@@ -571,6 +595,7 @@ void ts_sister_runtime_init(TsSisterRuntime *runtime)
     ts_master_eq_init(&runtime->master_eq);
     ts_eq_spectrum_init(&runtime->eq_spectrum);
     ts_router_init(&runtime->router);
+    ts_mandala_default(&runtime->mandala);
     ts_matrix_init(&runtime->matrix);runtime->performance_transport=1;
     ts_performance_mixer_default(&runtime->performance_mixer);
     for(int i=0;i<4;++i)runtime->performance_gain_current[i]=1;
@@ -1968,6 +1993,10 @@ int ts_sister_runtime_get_snapshot(const TsSisterRuntime *runtime,
     for (int attempt = 0; attempt < 8; ++attempt) {
         before = atomic_load_explicit(&source->revision, memory_order_acquire);
         if ((before & 1u) != 0u) continue;
+        for(int i=0;i<4;++i)for(int j=0;j<3;++j)
+            snapshot->visual_fx.value[i][j]=bits_float(atomic_load_explicit(&source->visual_fx[i*3+j],memory_order_relaxed));
+        snapshot->visual_fx_peak=bits_float(atomic_load_explicit(&source->visual_fx[12],memory_order_relaxed));
+        snapshot->visual_prism_peak=bits_float(atomic_load_explicit(&source->visual_fx[13],memory_order_relaxed));
         snapshot->prism.seq_lens = atomic_load_explicit(&source->prism_seq_lens,memory_order_relaxed);
         int *matrix_int[]={&snapshot->prism.matrix_active,&snapshot->prism.matrix_running,&snapshot->prism.matrix_step,
             &snapshot->prism.matrix_waiting,&snapshot->prism.matrix_from,&snapshot->prism.matrix_to,&snapshot->prism.matrix_missing,

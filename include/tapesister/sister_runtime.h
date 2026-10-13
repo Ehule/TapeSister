@@ -2,6 +2,7 @@
 #define TAPESISTER_SISTER_RUNTIME_H
 
 #include "tapesister/capture.h"
+#include "tapesister/mandala.h"
 #include "tapesister/performance.h"
 #include "tapesister/sister_machine.h"
 #include "tapesister/sister_limiter.h"
@@ -146,6 +147,8 @@ typedef struct {
     int fallout_preset_transition_active;
     uint64_t revision;
     TsPrismView prism;
+    TsSisterFxView visual_fx;
+    float visual_fx_peak, visual_prism_peak;
     TsRouterControls router, router_saved;
     TsRouterView router_view;
     TsInsertControls insert;
@@ -158,6 +161,7 @@ typedef struct {
 
 typedef struct {
     atomic_int prism_valid, prism_seq_lens;
+    atomic_uint visual_enabled, visual_fx[14];
     atomic_int insert_ports[4];
     atomic_uint_least32_t insert_values[4];
     atomic_int router_state[TS_ROUTER_COUNT+5+TS_SOURCE_SENDS*6];
@@ -249,6 +253,7 @@ typedef struct {
     uint8_t source_switches;
     TsPerformanceMixer performance_mixer;
     float performance_gain_current[4]; /* Audio-owned five-ms fader slew. */
+    TsMandalaConfig mandala; /* UI-owned project state; never used by audio DSP. */
     unsigned performance_transport; /* ARP=1, SisterTracker=2, Mosaic=4; project setting. */
     uint8_t output_channels;
     TsSisterTap selected_tap;

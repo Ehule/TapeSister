@@ -14,7 +14,7 @@ FetchContent_Declare(
   SOURCE_SUBDIR _tapesister_header_only)
 FetchContent_MakeAvailable(miniaudio)
 
-add_library(tapesister_core src/ts_routing_matrix.c src/ts_source_route.c src/ts_clean_output.c src/ts_spatial.c src/ts_sample.c src/ts_prism.c src/ts_prism_performance.c src/ts_fm.c src/ts_audition.c src/ts_note_bank.c src/ts_keyboard_sequence.c
+add_library(tapesister_core src/ts_mandala.c src/ts_routing_matrix.c src/ts_source_route.c src/ts_clean_output.c src/ts_spatial.c src/ts_sample.c src/ts_prism.c src/ts_prism_performance.c src/ts_fm.c src/ts_audition.c src/ts_note_bank.c src/ts_keyboard_sequence.c
              src/ts_mosaic.c src/ts_note_event.c src/ts_midi_map.c src/ts_performance.c src/ts_audio_mixer.c
              src/ts_audio_lifecycle.c
              src/ts_realtime_diagnostics.c src/ts_profile.c
@@ -51,7 +51,9 @@ if(TAPESISTER_BUNDLE_CDP8)
   include(cmake/CDP8Runtime.cmake)
 endif()
 if(TAPESISTER_BUILD_SDL)
-  find_package(SDL2 REQUIRED)
+  find_package(SDL2 2.0.18 REQUIRED)
+  target_sources(tapesister_core PRIVATE src/ts_mandala_sdl.c)
+  target_link_libraries(tapesister_core PUBLIC SDL2::SDL2)
   include(cmake/TapeHeadEmbedded.cmake)
   enable_language(CXX)
   add_executable(tapesister_asio_adapter_tests tests/test_asio_backend.cpp src/ts_asio_backend.cpp)
@@ -737,3 +739,21 @@ endforeach()
 add_executable(tapesister_routing_matrix_tests tests/test_routing_matrix.c)
 target_link_libraries(tapesister_routing_matrix_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_routing_matrix_tests COMMAND tapesister_routing_matrix_tests)
+
+add_executable(tapesister_mandala_tests tests/test_mandala.c)
+target_link_libraries(tapesister_mandala_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_mandala_tests COMMAND tapesister_mandala_tests)
+if(TAPESISTER_BUILD_SDL)
+  add_executable(tapesister_mandala_queue_tests tests/test_mandala_queue.c)
+  target_link_libraries(tapesister_mandala_queue_tests PRIVATE tapesister_core SDL2::SDL2)
+  add_test(NAME tapesister_mandala_queue_tests COMMAND tapesister_mandala_queue_tests)
+  add_executable(tapesister_mandala_controller_tests tests/test_mandala_controller.c
+    src/tape_link.c src/tape_companion.c src/ts_startup_diag.c src/ts_midi_input.c)
+  target_include_directories(tapesister_mandala_controller_tests PRIVATE third_party)
+  target_link_libraries(tapesister_mandala_controller_tests PRIVATE tapesister_core tapesister_tapehead SDL2::SDL2)
+  if(UNIX AND NOT APPLE)
+    target_link_libraries(tapesister_mandala_controller_tests PRIVATE rt)
+  endif()
+  add_dependencies(tapesister_mandala_controller_tests tapesister)
+  add_test(NAME tapesister_mandala_controller_tests COMMAND tapesister_mandala_controller_tests)
+endif()

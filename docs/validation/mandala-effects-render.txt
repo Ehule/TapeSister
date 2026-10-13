@@ -1,0 +1,11 @@
+Source revision faa87565
+Actual software renderer, SDL 2.30, seed 314159, 900 frames / 60 simulated seconds.
+Synthetic audio features identical in each capture. Optimized diffusion/echo composition; echo gain stays below history loss.
+
+dry capture backend=software frames=900 mean_ms=8.132 max_ms=13.385 instances=1558 model_bytes=97224 history_bytes=2304000 effect_texture_bytes=1088000
+distortion capture backend=software frames=900 mean_ms=14.611 max_ms=22.785 instances=1558 model_bytes=97224 history_bytes=2304000 effect_texture_bytes=1088000
+grains capture backend=software frames=900 mean_ms=9.873 max_ms=46.161 instances=1558 model_bytes=97224 history_bytes=2304000 effect_texture_bytes=1088000
+reverb capture backend=software frames=900 mean_ms=17.287 max_ms=37.258 instances=1558 model_bytes=97224 history_bytes=2304000 effect_texture_bytes=1088000
+delay capture backend=software frames=900 mean_ms=11.406 max_ms=23.291 instances=1558 model_bytes=97224 history_bytes=2304000 effect_texture_bytes=1088000
+prism capture backend=software frames=900 mean_ms=9.049 max_ms=38.173 instances=1558 model_bytes=97224 history_bytes=2304000 effect_texture_bytes=1088000
+combined capture backend=software frames=900 mean_ms=22.537 max_ms=48.281 instances=1558 model_bytes=97224 history_bytes=2304000 effect_texture_bytes=1088000
