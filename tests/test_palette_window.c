@@ -48,6 +48,7 @@ static void navigation(void)
 {
     char error[160];ts_ui_init(&u);ts_palette_preset(&u.palette,7);
     ts_sister_runtime_init(&navigation_audio.sister);ts_note_bank_init(&navigation_audio.notes);
+    ts_performance_init(&navigation_audio.performance);ts_performance_init(&navigation_audio.tile_launchers);
     navigation_audio.output_rate=48000;
     assert(ts_sample_pages_init(&navigation_pages,error,sizeof(error)));
     assert(ts_instrument_generate(&bank,TS_GENERATOR_METALLIC,777,error,sizeof(error)));
@@ -86,11 +87,22 @@ static void navigation(void)
     assert(u.mosaic->playing && u.mosaic->time==12.25 && navigation_audio.playing);
     assert(ts_sample_hash(&bank.current)==hash && !memcmp(&eq,&navigation_audio.sister.master_eq.controls,sizeof(eq)));
     component(TS_THEME_CANVAS);
+    /* An event edit must expose its existing choice dialog when leaving Portal. */
+    navigation_audio.playing=0;navigation_audio.sample=NULL;
+    TsMosaicSource *source=ts_mosaic_source(u.mosaic,&bank.current,error,sizeof(error));assert(source);
+    TsMosaicEvent *event=ts_mosaic_add(u.mosaic,source,0,0);assert(event);
+    assert(mosaic_enter(0,&navigation_audio,&u,&bank,&navigation_mosaic,event->id));
+    assert(ts_instrument_apply_smear(&bank,.4f,error,sizeof(error)));
+    u.portal.open=1;
+    component(TS_THEME_MOSAIC);assert(u.mosaic_edit_choice && !u.portal.open && navigation_mosaic.active==event->id);
+    u.mosaic_edit_choice=0;assert(ts_instrument_undo(&bank,error,sizeof(error)));
+    assert(mosaic_leave(0,&navigation_audio,&u,&bank,&navigation_mosaic));
     ts_tapehead_close();if(embedded_host.texture)SDL_DestroyTexture(embedded_host.texture);memset(&embedded_host,0,sizeof(embedded_host));
     matrix_close();spatial_window_close();ts_audio_health_close();performance_close();
     SDL_DestroyTexture(sister.texture);SDL_DestroyRenderer(sister.renderer);SDL_DestroyWindow(sister.window);memset(&sister,0,sizeof(sister));
     portal_free(&navigation_portal);mosaic_controller_free(&navigation_mosaic);ts_mosaic_free(u.mosaic);u.mosaic=NULL;
     ts_sample_pages_free(&navigation_pages);ts_sister_runtime_free(&navigation_audio.sister);
+    ts_performance_free(&navigation_audio.performance);ts_performance_free(&navigation_audio.tile_launchers);
 }
 static void screenshots(void)
 {

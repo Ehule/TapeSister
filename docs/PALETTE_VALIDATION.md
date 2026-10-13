@@ -39,7 +39,8 @@ through semantic roles. Existing legacy swatch imports remain usable.
   confirmation, import and Save Shared. Ctrl+Shift+P remains available to CDP;
   Ctrl+Alt+P opens the editor.
 - Component clicks exercise all 16 destinations, repeated selection, pending
-  configuration/EQ guards and parked FM state. Mosaic playback position, canvas
+  configuration/EQ guards, visible Mosaic edit choices after leaving Portal,
+  and parked FM state. Mosaic playback position, canvas
   playback, source samples and master EQ controls remain unchanged.
 - Native texture-composition tests reproduce the reported EQ ghosting before
   the fix. Master EQ, tile EQ and the legacy router now fully occlude canvas

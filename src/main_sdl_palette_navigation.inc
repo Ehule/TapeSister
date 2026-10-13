@@ -60,6 +60,8 @@ static void palette_window_navigate(SDL_Window *main,SDL_AudioDeviceID device,
         if(!ts_tapehead_export(&pages->tracker,ui->status,sizeof(ui->status))){opened=0;goto done;}
         ts_tapehead_focus_lost();
     }
+    /* Reveal the canvas before mosaic_leave can open its edit confirmation. */
+    if(ui->portal.open)portal_close(device,audio,ui,portal);
     if((group==TS_THEME_MOSAIC || group==TS_THEME_TRACKER) && mosaic->active) {
         int was_fm=ui->fm_open;
         if(was_fm){mosaic->fm_owner=mosaic->active;mosaic->fm_epoch=ui->mosaic->epoch;workspace_park_fm(ui,mosaic);}
@@ -70,7 +72,6 @@ static void palette_window_navigate(SDL_Window *main,SDL_AudioDeviceID device,
             snprintf(w->message,sizeof(w->message),"RESOLVE THE MOSAIC EDIT, THEN SELECT THE COMPONENT AGAIN");goto done;
         }
     }
-    if(ui->portal.open)portal_close(device,audio,ui,portal);
     if(group!=TS_THEME_EQ)ui->master_eq_open=ui->master_eq_drag=ui->master_eq_presets_open=0;
     ui->router_open=0;
     if(ui->midi_learn_active && group!=TS_THEME_MIDI)midi_learn_set_active(ui,sister,0);
