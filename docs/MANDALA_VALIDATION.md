@@ -1,5 +1,10 @@
 # Mandala validation — 12 October 2026
 
+The 13 October Pedalboard/Prism follow-up has its own
+[current measurements and native effect comparisons](MANDALA_EFFECTS.md).
+The original baseline and sustained run below are retained at their measured
+revisions; they do not include the later effect-driven rendering.
+
 Implementation base: `ae596039` (main, PR #136 merged). No open PR was found at
 start. Branch: `feature/impermanent-mandala`.
 

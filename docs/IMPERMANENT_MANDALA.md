@@ -62,7 +62,7 @@ These are approximate energy measurements, not spectral analysis or true peaks.
 
 The callback copies at most 64 stratified frames × 16 floats into a four-slot
 SPSC ring. The changing positions avoid coherent decimation nulls. No visual
-allocation, analysis, clock, file operation, graphics call, wait, retry loop or
+allocation, sample analysis, clock, file operation, graphics call, wait, retry loop or
 lock runs in the callback. Closed/frozen sampling is gated by one atomic load.
 The sole callback producer writes a slot then release-publishes its index; the
 UI acquire-reads the newest complete slot and release-returns ownership. Full
@@ -88,17 +88,56 @@ and dissolution. Missing telemetry decays after 250 ms. Time uses elapsed clock
 time, capped at 250 ms after a stall; no catch-up simulation occurs.
 
 The renderer uses 12 seed-built motifs (at most 49 points each), at most 2304
-instances, one 64×64 soft sprite and one bounded history texture. Internal
+instances, one 64×64 soft sprite, one bounded history texture, four 320×200 delay echoes
+and a 160×100 diffusion/compositing texture. Internal
 resolution is 768×480 / 960×600 / 1280×800. Instance budgets are 1152 / 1792 /
 2304. Transforming/drawing instances has real cost; geometry sharing only avoids
 reconstruction and per-instance allocation. One retained texture implements
-short fading traces; no recursive history, growing cache, particle queue or
-performance-time readback exists. Sustained expensive frames reduce instance
+fading traces; the fixed four-slot echo history never grows. No growing cache,
+particle queue or performance-time readback exists. Effect layers reuse the tiny
+compositing texture and add 1,088,000 bytes of texture pixel storage. Sustained expensive frames reduce instance
 count, resolution and cadence to 15, then 8 FPS (down to a 512×320 internal
 texture). Frame deadlines also cap drawing during event floods. SDL 2.0.18+
 supports accelerated and software
 paths; no dedicated GPU is required. Priority and process isolation do not
 eliminate CPU/memory-bandwidth contention.
+
+## Effects shape the image
+
+Amplitude remains the main brightness and structural-presence input. Built-in
+Pedalboard and Prism states now add distinct transformations:
+
+| Audio control | Visual response |
+| --- | --- |
+| Distortion wet mix / drive | Geometry separates, bends and loses edges; greater drive adds soft smearing |
+| Grain wet mix / size / density | Motifs shrink into fine fragments or grow into larger overlapping forms; density changes gentle local breathing |
+| Reverb wet mix / size / decay | Diffusion, broader halos and longer traces |
+| Delay wet mix / time / feedback | Up to three time-spaced expanding echoes; feedback strengthens them |
+| Prism wet mix / current lens spread | Displaced teal/plum layers follow the current refracted lens spread |
+
+The visual follows current DSP engage amounts, Master FX fades and both sides
+of an effect-type crossfade. A four-minute engage therefore produces a gradual
+visual change. It does not jump to the target switch state. Built-in control
+smoothing is followed by a 450 ms visual easing time, with signal-meter gating
+and the final-output silence floor. These are artistic interpretations of
+module activity, not per-slot audio isolation, spectral reconstruction or exact
+waveform-aligned delay repeats. Delay spacing is visually bounded to 80 ms–2 s.
+EVOLUTION still controls the independent slow cycle, without BPM synchronization.
+
+While visuals are active and unfrozen, the existing audio-owned runtime snapshot
+publishes 14 extra scalar values. The readout examines at most four slots, two
+morph endpoints and five placements, using existing smoothed controls and peak
+meters. It performs no new audio analysis, allocation, lock, wait or graphics
+work. A lock-free gate skips the readout while closed/frozen. UI-side reduction
+runs at most about 30 times per second, reading only the atomic snapshot. The
+small result travels in the existing bounded IPC queue; smoothing, blur and
+transforms stay in the renderer process. The audio-sample packet is unchanged.
+
+Blur is composited at the internal capped resolution. Echoes are combined at
+160×100 before one internal-size pass; their total reinjection gain stays below
+the trace decay, preventing runaway brightness. Existing load shedding also
+applies when effects make rendering more costly. See
+[effect validation and native comparisons](MANDALA_EFFECTS.md).
 
 ## Reproducing validation
 
@@ -122,7 +161,8 @@ measure physical-device underruns. It does not establish X220/HP A8 acceptance.
 capture.bmp 314159 1800` writes a deterministic actual-renderer capture using
 synthetic test features at 120 seconds of simulated evolution. Diagnostic
 capture is the only path with readback. Screenshots are implementation evidence,
-not the supplied concept art and not captures of a hardware performance.
+not the supplied concept art and not captures of a hardware performance. An optional fifth argument selects
+reverb=0, delay=1, distortion=2, grains=3, Prism=4, or combined=5 for diagnostics.
 
 Measured results and remaining hardware checks are recorded in
 [MANDALA_VALIDATION.md](MANDALA_VALIDATION.md).

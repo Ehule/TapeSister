@@ -1,0 +1,13 @@
+Source revision faa87565
+Command: tapesister_mandala_controller_tests --soak 30 --effects
+Could not load external Fast Tracks logo. Using embedded FT2 logo.
+effect comparison: four settled FX slots plus Prism; same DSP in every visual mode
+trial=OFF callbacks=2236 mean_us=3318.449 p50_us=3191.796 p95_us=3993.949 p99_us=5243.696 max_us=8110.779 deadline_misses=0 gaps_over_16ms=13 visual_dropped=0
+Mandala renderer: software, 768x480, 1547 instances, 97224 bytes model
+trial=ECONOMY callbacks=2212 mean_us=3456.982 p50_us=3279.125 p95_us=4477.287 p99_us=5715.659 max_us=16838.106 deadline_misses=4 gaps_over_16ms=22 visual_dropped=0
+trial=STANDARD callbacks=2214 mean_us=3446.387 p50_us=3268.219 p95_us=4506.701 p99_us=6027.312 max_us=12937.406 deadline_misses=2 gaps_over_16ms=24 visual_dropped=0
+trial=STANDARD callbacks=2218 mean_us=3430.451 p50_us=3265.355 p95_us=4474.653 p99_us=5574.984 max_us=9272.983 deadline_misses=0 gaps_over_16ms=16 visual_dropped=0
+trial=ECONOMY callbacks=2233 mean_us=3332.524 p50_us=3203.743 p95_us=4076.977 p99_us=5193.702 max_us=13467.219 deadline_misses=1 gaps_over_16ms=11 visual_dropped=0
+Mandala frames=1917 mean=12.161ms max=27.091ms shed=0
+trial=OFF callbacks=2194 mean_us=3545.804 p50_us=3296.021 p95_us=4859.496 p99_us=8172.741 max_us=21714.376 deadline_misses=9 gaps_over_16ms=47 visual_dropped=0
+soak transport status: tracker=1 mosaic=1 arp=1 time=151.34
