@@ -23,7 +23,7 @@ extern char **environ;
    in this build AND on the mapped addresses; otherwise launch is refused.
    Windows and POSIX shared mappings supply coherent ordinary RAM on the
    supported x86/x64 targets. No atomic_flag/spinlock or process-shared mutex. */
-typedef struct { TsMandalaConfig config; TsMandalaPacket audio; unsigned serial; } VisualMessage;
+typedef struct { TsMandalaConfig config; TsMandalaPacket audio; TsMandalaEffects effects; unsigned serial; } VisualMessage;
 typedef struct {
     atomic_uint write, read, quit, ready, freeze, quality, display, fullscreen;
     VisualMessage message[4];
@@ -32,11 +32,12 @@ static TsMandalaQueue audio_queue;
 static struct {
     VisualShared *shared;
     char name[96];
-    Uint32 sent, launched, closing;
+    Uint32 sent, launched, closing, followed;
     int force_stopped, close_requested;
     unsigned serial;
     TsMandalaPacket last_audio;
     TsMandalaConfig sent_config;
+    TsMandalaEffects effects, sent_effects;
 #ifdef _WIN32
     HANDLE mapping, process;
 #else
@@ -77,6 +78,41 @@ static int shared_latest(VisualShared *s, VisualMessage *m)
     *m = s->message[(w-1)%4];
     atomic_store_explicit(&s->read, w, memory_order_release);
     return 1;
+}
+static float visual_unit(float x) { return isfinite(x)?fmaxf(0,fminf(1,x)):0; }
+static TsMandalaEffects visual_effects(const TsSisterRoutingSnapshot *s)
+{
+    TsMandalaEffects e={0};
+    /* Activity is only a soft gate, not a claim to isolate each effect's audio. */
+    float board=visual_unit((s->visual_fx_peak-.001f)*200);
+    for(int i=0;i<4;++i) {
+        float weight=s->visual_fx.value[i][0];
+        e.wet[i]=visual_unit(weight)*board;
+        if(weight>1e-6f) {
+            e.size[i]=visual_unit(s->visual_fx.value[i][1]/weight/(i==TS_MANDALA_DELAY?2:1));
+            e.character[i]=visual_unit(s->visual_fx.value[i][2]/weight);
+        }
+    }
+    e.wet[TS_MANDALA_PRISM]=visual_unit(s->prism.wet)*visual_unit((s->visual_prism_peak-.001f)*200);
+    float spread=0,weight=0;
+    for(int i=0;i<TS_PRISM_LENSES;++i) {
+        float w=visual_unit(s->prism.lens[i].level);
+        spread+=w*(fabsf(s->prism.lens[i].pan)*.6f+fminf(1,fabsf(s->prism.lens[i].cents)/100)*.4f);weight+=w;
+    }
+    e.size[TS_MANDALA_PRISM]=weight>1e-6f?visual_unit(spread/weight):0;
+    return e;
+}
+void ts_mandala_follow_effects(TsSisterRuntime *runtime)
+{
+    if(!runtime)return;
+    int active=ts_mandala_active() && !ts_mandala_frozen();
+#if ATOMIC_INT_LOCK_FREE == 2
+    atomic_store_explicit(&runtime->snapshot.visual_enabled,active,memory_order_relaxed);
+#endif
+    if(!active || SDL_GetTicks()-host.followed<33)return;
+    TsSisterRoutingSnapshot snapshot;
+    if(ts_sister_runtime_get_snapshot(runtime,&snapshot))host.effects=visual_effects(&snapshot);
+    host.followed=SDL_GetTicks();
 }
 void ts_mandala_host_init(void) { ts_mandala_queue_init(&audio_queue); }
 void ts_mandala_audio(const float *out, unsigned frames, unsigned channels)
@@ -211,9 +247,10 @@ int ts_mandala_poll(const TsMandalaConfig *config, TsMandalaPreferences *prefs)
         VisualMessage m; m.config = *config;
         int fresh = ts_mandala_latest(&audio_queue, &host.last_audio);
         if (fresh) ++host.serial;
-        m.audio = host.last_audio; m.serial = host.serial;
-        if (fresh || memcmp(config, &host.sent_config, sizeof(*config))) {
-            if (shared_send(host.shared, &m)) host.sent_config = *config;
+        m.audio = host.last_audio; m.serial = host.serial; m.effects = host.effects;
+        if (fresh || memcmp(config, &host.sent_config, sizeof(*config)) ||
+            memcmp(&m.effects,&host.sent_effects,sizeof(m.effects))) {
+            if (shared_send(host.shared, &m)) { host.sent_config = *config; host.sent_effects=m.effects; }
         }
         host.sent = now;
     }

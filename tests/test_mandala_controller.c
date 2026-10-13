@@ -156,11 +156,13 @@ static void lifecycle(SDL_Window *window)
     double time=a.mosaic->time;
     for(int i=0;i<20;++i){measured_callback(NULL,(Uint8*)out,sizeof(out));ts_mandala_poll(&a.sister.mandala,&prefs);SDL_Delay(5);}
     assert(a.mosaic->time>time && ts_tapehead_running() && a.keyboard_sequence.running);
-    ts_mandala_freeze();assert(ts_mandala_frozen() && !atomic_load(&audio_queue.enabled));
+    ts_mandala_freeze();ts_mandala_follow_effects(&a.sister);
+    assert(ts_mandala_frozen() && !atomic_load(&audio_queue.enabled) && !atomic_load(&a.sister.snapshot.visual_enabled));
     unsigned write=atomic_load(&audio_queue.write);
     for(int i=0;i<100;++i)measured_callback(NULL,(Uint8*)out,sizeof(out));
     assert(atomic_load(&audio_queue.write)==write);
-    ts_mandala_freeze();assert(!ts_mandala_frozen());
+    ts_mandala_freeze();ts_mandala_follow_effects(&a.sister);
+    assert(!ts_mandala_frozen() && atomic_load(&a.sister.snapshot.visual_enabled));
 #ifndef _WIN32
     /* Kernel suspension is a genuine render-process stall, not a mock flag. */
     assert(!kill(host.pid,SIGSTOP));
@@ -210,9 +212,34 @@ static void lifecycle(SDL_Window *window)
     e.key.keysym.sym=SDLK_ESCAPE;m_event(m,&shared,&e);m_window_mode(m,&shared,0);assert(!m->fullscreen && !atomic_load(&shared.quit));
     atomic_store(&shared.fullscreen,1);m_window_mode(m,&shared,0);
     m_window_mode(m,&shared,1);assert(!m->fullscreen && m->display==0);
-    e.type=SDL_RENDER_DEVICE_RESET;m_event(m,&shared,&e);assert(m->history && m->haze && !atomic_load(&shared.quit));
+    e.type=SDL_RENDER_DEVICE_RESET;m_event(m,&shared,&e);assert(m->history && m->haze && m->veil && m->echo[3] && !atomic_load(&shared.quit));
     m_destroy(m);free(m);
     puts("native launch, freeze, stall, kill, close/reopen, transport independence, reseed dirty state, display fallback: PASS");
+}
+static void effect_snapshot_checks(void)
+{
+    TsSisterRoutingSnapshot s={0};
+    s.visual_fx.value[TS_MANDALA_DISTORTION][0]=.75f;
+    s.visual_fx.value[TS_MANDALA_DISTORTION][1]=.6f;
+    s.prism.wet=1;s.prism.lens[0].level=1;s.prism.lens[0].pan=1;
+    TsMandalaEffects e=visual_effects(&s);
+    assert(e.wet[TS_MANDALA_DISTORTION]==0 && e.wet[TS_MANDALA_PRISM]==0);
+    s.visual_fx_peak=s.visual_prism_peak=.2f;e=visual_effects(&s);
+    assert(e.wet[TS_MANDALA_DISTORTION]==.75f && fabsf(e.size[TS_MANDALA_DISTORTION]-.8f)<1e-6f);
+    assert(e.wet[TS_MANDALA_PRISM]==1 && e.size[TS_MANDALA_PRISM]>.5f);
+    atomic_store(&a.sister.snapshot.visual_enabled,1);
+    ts_sister_runtime_publish_router(&a.sister);
+    assert(ts_sister_runtime_get_snapshot(&a.sister,&s));
+    TsSisterFxView expected=ts_sister_post_fx_view(&a.sister.post_fx);
+    assert(!memcmp(&expected,&s.visual_fx,sizeof(expected)));
+    TsSisterFxView previous=s.visual_fx;
+    atomic_store(&a.sister.snapshot.visual_enabled,0);
+    float saved=a.sister.post_fx.master_engage.current;a.sister.post_fx.master_engage.current=0;
+    ts_sister_runtime_publish_router(&a.sister);assert(ts_sister_runtime_get_snapshot(&a.sister,&s));
+    assert(!memcmp(&previous,&s.visual_fx,sizeof(previous)));a.sister.post_fx.master_engage.current=saved;
+    performance_transport.visible=0;performance_update(0,&a);
+    assert(!atomic_load(&a.sister.snapshot.visual_enabled));
+    puts("effect snapshot ownership, disabled publication and signal-activity gate: PASS");
 }
 int main(int argc,char **argv)
 {
@@ -223,6 +250,14 @@ int main(int argc,char **argv)
     setup(window);
     if(argc>1 && !strcmp(argv[1],"--soak")) {
         unsigned seconds=argc>2?(unsigned)atoi(argv[2]):240;
+        if(argc>3 && !strcmp(argv[3],"--effects")) {
+            TsSisterParameters p=a.sister.parameters;
+            p.fx.slot[2]=(TsSisterFxSlotControls){TS_SISTER_FX_DISTORTION,1,TS_SISTER_FX_PLACE_POST,0,.65f,.5f,0,.3f};
+            p.fx.slot[3]=(TsSisterFxSlotControls){TS_SISTER_FX_GRAIN,1,TS_SISTER_FX_PLACE_POST,0,.65f,.4f,.5f,.3f};
+            ts_sister_runtime_set_parameters(&a.sister,&p);
+            ts_sister_post_fx_sync_controls(&a.sister.post_fx,&p.fx);
+            puts("effect comparison: four settled FX slots plus Prism; same DSP in every visual mode");
+        }
         assert(seconds>=2 && seconds<=300);
         SDL_AudioSpec want={0},got={0};want.freq=48000;want.format=AUDIO_F32SYS;want.channels=4;want.samples=512;want.callback=measured_callback;
         SDL_AudioDeviceID device=ts_native_open(NULL,0,&want,&got,0);assert(device && got.samples==512);
@@ -237,7 +272,7 @@ int main(int argc,char **argv)
             } else ts_mandala_close();
             Uint32 began=SDL_GetTicks();unsigned start=atomic_load(&timing_count);
             while(SDL_GetTicks()-began<(seconds+2)*1000u) {
-                ts_mandala_poll(&a.sister.mandala,&prefs);SDL_Delay(20);
+                ts_mandala_follow_effects(&a.sister);ts_mandala_poll(&a.sister.mandala,&prefs);SDL_Delay(20);
                 if(SDL_GetTicks()-began<2000)start=atomic_load_explicit(&timing_count,memory_order_acquire);
             }
             unsigned end=atomic_load_explicit(&timing_count,memory_order_acquire);
@@ -245,7 +280,7 @@ int main(int argc,char **argv)
         }
         ts_native_pause(device,1);ts_native_close(device);
         printf("soak transport status: tracker=%d mosaic=%d arp=%d time=%.2f\n",ts_tapehead_running(),a.mosaic->playing,a.keyboard_sequence.running,a.mosaic->time);
-    } else {lifecycle(window);external_tap_checks();}
+    } else {lifecycle(window);external_tap_checks();effect_snapshot_checks();}
     ts_mandala_shutdown();ts_tapehead_stop();ts_tapehead_close();
     ts_keyboard_sequence_source_free(ts_keyboard_sequence_source(&a.keyboard_sequence,NULL));
     ts_sister_runtime_free(&a.sister);ts_mosaic_free(a.mosaic);ts_capture_free(&a.capture);

@@ -84,6 +84,8 @@ static void perf_text(int x,int y,const char *s,Uint32 color,int scale)
 }
 static void performance_update(SDL_AudioDeviceID device,AudioState *audio)
 {
+    /* Runs even when this dialog is hidden, outside its existing device lock. */
+    ts_mandala_follow_effects(&audio->sister);
     if(!performance_transport.visible || !window_drawable(performance_transport.window) || SDL_GetTicks()-performance_transport.painted<50)return;
     if(device)SDL_LockAudioDevice(device);
     unsigned selected=audio->sister.performance_transport,running=performance_running(audio);

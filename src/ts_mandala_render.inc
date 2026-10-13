@@ -1,5 +1,5 @@
 /* Bounded seed library: 12 immutable motifs, <= 2304 manifestations, one
-   <=1280x800 history texture. No recursion, heap allocation or readback in a
+   <=1280x800 history texture, four 320x200 echoes and a 160x100 veil. No recursion, heap allocation or readback in a
    performance frame. Capture mode is explicitly offline and may read pixels. */
 #define M_PI_F 3.14159265358979323846f
 enum { M_MOTIFS = 12, M_POINTS = 49, M_INSTANCES = 2304 };
@@ -10,10 +10,12 @@ typedef struct {
     unsigned motif, color, family;
 } MInstance;
 typedef struct {
-    SDL_Window *window; SDL_Renderer *renderer; SDL_Texture *history, *haze;
+    SDL_Window *window; SDL_Renderer *renderer; SDL_Texture *history, *haze, *veil, *echo[4];
     MMotif motifs[M_MOTIFS]; MInstance instances[M_INSTANCES]; unsigned count;
     TsMandalaConfig config;
     TsMandalaFeatures features;
+    TsMandalaEffects effects;
+    double echo_at; unsigned echo_write, echo_count;
     int width, height, quality, shed, fullscreen, display, old_x, old_y, old_w, old_h;
     int dirty, diagnostics, controls, frozen;
     Uint32 pointer_time, next_frame;
@@ -113,6 +115,24 @@ static void m_build(Mandala *m, const TsMandalaConfig *config)
     for(int i=0;i<4;++i)m_instance(m,2,0,0,.14f+i*.008f,.14f+i*.008f,0,0,2);
     m->dirty=1;
 }
+static int m_effect_targets(Mandala *m)
+{
+    if(m->veil)SDL_DestroyTexture(m->veil);
+    m->veil=SDL_CreateTexture(m->renderer,SDL_PIXELFORMAT_ARGB8888,SDL_TEXTUREACCESS_TARGET,160,100);
+    int ok=m->veil!=NULL;
+    if(m->veil)SDL_SetTextureBlendMode(m->veil,SDL_BLENDMODE_BLEND);
+    for(int i=0;i<4;++i) {
+        if(m->echo[i])SDL_DestroyTexture(m->echo[i]);
+        m->echo[i]=SDL_CreateTexture(m->renderer,SDL_PIXELFORMAT_ARGB8888,SDL_TEXTUREACCESS_TARGET,320,200);
+        if(!m->echo[i])ok=0;
+        else {
+            SDL_SetTextureBlendMode(m->echo[i],SDL_BLENDMODE_BLEND);
+            SDL_SetRenderTarget(m->renderer,m->echo[i]);SDL_SetRenderDrawColor(m->renderer,4,7,10,255);SDL_RenderClear(m->renderer);
+        }
+    }
+    m->echo_write=m->echo_count=0;m->echo_at=0;
+    SDL_SetRenderTarget(m->renderer,NULL);return ok;
+}
 static int m_target(Mandala *m)
 {
     if (m->history)SDL_DestroyTexture(m->history);
@@ -124,7 +144,7 @@ static int m_target(Mandala *m)
     if(!m->history)return 0;
     SDL_SetTextureBlendMode(m->history,SDL_BLENDMODE_NONE);
     SDL_SetRenderTarget(m->renderer,m->history);SDL_SetRenderDrawColor(m->renderer,4,7,10,255);SDL_RenderClear(m->renderer);
-    SDL_SetRenderTarget(m->renderer,NULL);m->dirty=1;return 1;
+    SDL_SetRenderTarget(m->renderer,NULL);m->dirty=1;return m_effect_targets(m);
 }
 static void m_haze(Mandala *m)
 {
@@ -161,6 +181,8 @@ static int m_init(Mandala *m, const TsMandalaConfig *config, int quality)
 }
 static void m_destroy(Mandala *m)
 {
+    if(m->veil)SDL_DestroyTexture(m->veil);
+    for(int i=0;i<4;++i)if(m->echo[i])SDL_DestroyTexture(m->echo[i]);
     if(m->history)SDL_DestroyTexture(m->history);
     if(m->haze)SDL_DestroyTexture(m->haze);
     if(m->renderer)SDL_DestroyRenderer(m->renderer);
@@ -175,6 +197,11 @@ static void m_scene(Mandala *m, double dt)
     };
     m->time+=dt;
     float level=m->features.level;
+    const TsMandalaEffects *fx=&m->effects;
+    float distortion=fx->wet[TS_MANDALA_DISTORTION]*(.3f+.7f*fx->size[TS_MANDALA_DISTORTION]);
+    float grain=fx->wet[TS_MANDALA_GRAIN],reverb=fx->wet[TS_MANDALA_REVERB],delay=fx->wet[TS_MANDALA_DELAY];
+    float prism=fx->wet[TS_MANDALA_PRISM];
+    float activity=fminf(1,level*2);distortion*=activity;grain*=activity;reverb*=activity;delay*=activity;prism*=activity;
     float cycle=(float)(m->time/m->config.cycle_seconds*2*M_PI_F);
     float era=.5f+.5f*sinf(cycle-M_PI_F*.5f);
     float age=smooth((float)m->time/18);
@@ -182,19 +209,39 @@ static void m_scene(Mandala *m, double dt)
     SDL_SetRenderTarget(m->renderer,m->history);
     SDL_SetRenderDrawBlendMode(m->renderer,SDL_BLENDMODE_BLEND);
     /* Frame-rate-independent temporal trace, bounded by one texture. */
-    Uint8 fade=(Uint8)fmax(1,fmin(255,255*(1-exp(-dt/(level>.01f?.55:1.6)))));
+    Uint8 fade=(Uint8)fmax(1,fmin(255,255*(1-exp(-dt/(level>.01f?.55+reverb*fx->character[TS_MANDALA_REVERB]*2:1.6)))));
     SDL_SetRenderDrawColor(m->renderer,4,7,10,fade);SDL_RenderFillRect(m->renderer,NULL);
+    /* Combine the three time-spaced echoes at 160x100, then one internal-size
+       copy. Avoid three large alpha-blended passes on a software renderer. */
+    if(delay>.005f && m->echo_count) {
+        SDL_SetRenderTarget(m->renderer,m->veil);SDL_SetRenderDrawColor(m->renderer,0,0,0,255);SDL_RenderClear(m->renderer);
+        /* Sum of tap gains stays below the history loss, even with long reverb
+           traces: no positive-feedback bloom or frame-rate-dependent buildup. */
+        for(unsigned j=0;j<3 && j<m->echo_count;++j) {
+            SDL_Texture *echo=m->echo[(m->echo_write+3-j)%4];
+            float expansion=1+(.016f+.06f*fx->size[TS_MANDALA_DELAY])*(j+1);
+            SDL_FRect dst={(160-160*expansion)*.5f,(100-100*expansion)*.5f,160*expansion,100*expansion};
+            SDL_SetTextureAlphaMod(echo,(Uint8)(fade*.45f*delay*(.3f+.7f*fx->character[TS_MANDALA_DELAY])/(j+1)));
+            SDL_RenderCopyF(m->renderer,echo,NULL,&dst);
+        }
+        SDL_SetRenderTarget(m->renderer,m->history);SDL_SetTextureAlphaMod(m->veil,255);
+        SDL_SetTextureBlendMode(m->veil,SDL_BLENDMODE_ADD);SDL_RenderCopy(m->renderer,m->veil,NULL,NULL);
+        SDL_SetTextureBlendMode(m->veil,SDL_BLENDMODE_BLEND);
+    }
     float scale=m->height*.46f,cx=m->width*.5f,cy=m->height*.5f;
     if(m->haze && presence>.01f) {
-        SDL_SetTextureAlphaMod(m->haze,(Uint8)(presence*42));
+        SDL_SetTextureAlphaMod(m->haze,(Uint8)(presence*(42+110*reverb)));
         for(int i=0;i<12;++i) {
             float a=i*M_PI_F/6,r=.4f+.18f*sinf(cycle+i);
-            SDL_FRect dst={cx+cosf(a)*scale*r-scale*.24f,cy+sinf(a)*scale*r-scale*.24f,scale*.48f,scale*.48f};
+            float fog=.24f+reverb*(.04f+.08f*fx->size[TS_MANDALA_REVERB]);
+            SDL_FRect dst={cx+cosf(a)*scale*r-scale*fog,cy+sinf(a)*scale*r-scale*fog,scale*fog*2,scale*fog*2};
             SDL_RenderCopyF(m->renderer,m->haze,NULL,&dst);
         }
     }
     unsigned budget=(unsigned[]){1152,1792,2304}[m->quality];
     if(m->shed)budget=m->shed==1?budget*2/3:budget/2;
+    /* Reserve draw cost for the extra refraction strokes. */
+    if(prism>.01f)budget=budget*4/5;
     /* Evenly thin the whole layout, preserving outer architecture at Economy. */
     for(unsigned i=0;i<m->count;++i) {
         if((i*budget/m->count)==((i+1)*budget/m->count) && budget<m->count)continue;
@@ -204,22 +251,28 @@ static void m_scene(Mandala *m, double dt)
         if(inst->family==2)life=level*(.25f+.4f*age);
         if(inst->family==1)life*=.6f+.4f*m->features.peak;
         if(inst->family==4)life*=.26f;
+        float drift=sinf((float)m->time*.31f+inst->phase);
+        life*=1-distortion*.55f*smooth(inst->threshold+drift*.16f);
         if(life<.006f)continue;
         const Uint8 *rgb=colors[m->config.palette][inst->color];
         Uint8 alpha=(Uint8)fminf(200,(22+80*level)*life);
         SDL_SetRenderDrawColor(m->renderer,rgb[0],rgb[1],rgb[2],alpha);
         float breath=1+.012f*sinf(cycle+inst->phase)+.025f*level;
-        float rotation=inst->angle+(inst->family==4?.04f*sinf((float)m->time*.012f+inst->phase):0);
+        float rotation=inst->angle+distortion*.2f*drift+(inst->family==4?.04f*sinf((float)m->time*.012f+inst->phase):0);
         float ca=cosf(rotation),sa=sinf(rotation);
         float px=cx+inst->x*scale*breath,py=cy+inst->y*scale*breath;
         if(inst->family==4)px+=m->features.balance*8;
-        float grow=.75f+.25f*life;
+        px+=distortion*scale*.12f*drift*cosf(inst->phase);
+        py+=distortion*scale*.12f*drift*sinf(inst->phase);
+        float grow=(.75f+.25f*life)*(1+grain*(-.65f+2.1f*fx->size[TS_MANDALA_GRAIN]));
+        grow*=1+grain*.2f*sinf((float)m->time*(.4f+1.2f*fx->character[TS_MANDALA_GRAIN])+inst->phase);
         const MMotif *motif=&m->motifs[inst->motif];
         SDL_FPoint points[M_POINTS];
         for(int j=0;j<motif->count;++j) {
             float x=motif->p[j].x*inst->sx*scale*grow;
             float y=motif->p[j].y*inst->sy*scale*grow;
-            points[j]=(SDL_FPoint){px+ca*x-sa*y,py+sa*x+ca*y};
+            float split=distortion*scale*.009f*(j%3-1)*drift;
+            points[j]=(SDL_FPoint){px+ca*x-sa*y+split,py+sa*x+ca*y-split*.6f};
         }
         if(inst->motif==0 && inst->family!=2) {
             SDL_Vertex face[4];
@@ -237,12 +290,37 @@ static void m_scene(Mandala *m, double dt)
             }
             SDL_RenderDrawLinesF(m->renderer,points,motif->count);
         }
+        if(prism>.01f && i%4==0) {
+            float shift=prism*(3+21*fx->size[TS_MANDALA_PRISM]);
+            SDL_SetRenderDrawColor(m->renderer,91,182,177,(Uint8)(alpha*prism*.65f));
+            for(int j=0;j<motif->count;++j){points[j].x+=shift;points[j].y-=shift*.38f;}
+            SDL_RenderDrawLinesF(m->renderer,points,motif->count);
+            SDL_SetRenderDrawColor(m->renderer,173,107,155,(Uint8)(alpha*prism*.5f));
+            for(int j=0;j<motif->count;++j){points[j].x-=2*shift;points[j].y+=shift*.76f;}
+            SDL_RenderDrawLinesF(m->renderer,points,motif->count);
+        }
         if(inst->family==1 && m->features.width>.05f) {
             SDL_SetRenderDrawColor(m->renderer,102,155,174,(Uint8)(alpha*m->features.width*.5f));
             for(int j=0;j<motif->count;++j){points[j].x+=3*m->features.width;points[j].y+=2*m->features.width;}
             SDL_RenderDrawLinesF(m->renderer,points,motif->count);
         }
     }
+    float blur=fminf(1,reverb*.7f+distortion*.55f);
+    if(blur>.005f) {
+        /* Diffuse at bounded internal resolution, not in full-window passes.
+           Blend once into the retained image; no extra full-size texture. */
+        SDL_SetRenderTarget(m->renderer,m->veil);SDL_RenderCopy(m->renderer,m->history,NULL,NULL);
+        SDL_SetRenderTarget(m->renderer,m->history);
+        SDL_SetTextureAlphaMod(m->veil,(Uint8)(blur*110));
+        SDL_Rect smear={(int)(distortion*4),(int)(distortion*2),m->width,m->height};
+        SDL_RenderCopy(m->renderer,m->veil,NULL,&smear);
+    }
+    if(delay>.005f && m->time>=m->echo_at) {
+        SDL_Texture *echo=m->echo[m->echo_write];
+        SDL_SetRenderTarget(m->renderer,echo);SDL_RenderCopy(m->renderer,m->history,NULL,NULL);
+        m->echo_write=(m->echo_write+1)%4;if(m->echo_count<4)++m->echo_count;
+        m->echo_at=m->time+fmax(.08,2*fx->size[TS_MANDALA_DELAY]);
+    } else if(delay<=.005f) {m->echo_count=0;m->echo_at=m->time;}
     SDL_SetRenderTarget(m->renderer,NULL);
 }
 static void m_text(SDL_Renderer *r,int x,int y,const char *text,Uint8 shade)
@@ -251,9 +329,9 @@ static void m_text(SDL_Renderer *r,int x,int y,const char *text,Uint8 shade)
     for(;*text;++text,x+=6){const char *g=ts_ui_glyph(*text);for(int row=0;row<7;++row)for(int col=0;col<5;++col)
         if(g[row*5+col]=='1'){SDL_Rect pixel={x+col,y+row,1,1};SDL_RenderFillRect(r,&pixel);}}
 }
-static void m_present(Mandala *m)
+static void m_compose(Mandala *m,SDL_Texture *target,int width,int height)
 {
-    int width,height;SDL_GetRendererOutputSize(m->renderer,&width,&height);
+    SDL_SetRenderTarget(m->renderer,target);
     SDL_SetRenderDrawColor(m->renderer,4,7,10,255);SDL_RenderClear(m->renderer);
     float scale=fminf((float)width/m->width,(float)height/m->height);
     SDL_Rect destination={(width-(int)(m->width*scale))/2,(height-(int)(m->height*scale))/2,(int)(m->width*scale),(int)(m->height*scale)};
@@ -271,7 +349,12 @@ static void m_present(Mandala *m)
         char line[120];snprintf(line,sizeof(line),"%u INSTANCES / %.2F MS / %dX%d / I HIDES DIAGNOSTICS",m->count,m->cost,m->width,m->height);
         m_text(m->renderer,20,height-24,line,175);
     }
-    SDL_RenderPresent(m->renderer);m->dirty=0;
+    m->dirty=0;
+}
+static void m_present(Mandala *m)
+{
+    int width,height;SDL_GetRendererOutputSize(m->renderer,&width,&height);
+    m_compose(m,NULL,width,height);SDL_RenderPresent(m->renderer);
 }
 static void m_window_mode(Mandala *m, VisualShared *s, int topology_changed)
 {
@@ -379,6 +462,7 @@ static int mandala_run(VisualShared *shared,
         if(m->frozen || hidden)previous=tick;
         if(due && !m->frozen && !hidden) {
             ts_mandala_analyze(now-fresh<250?&message.audio:NULL,&m->features,(float)dt);
+            ts_mandala_effects_follow(&m->effects,now-fresh<250?&message.effects:NULL,(float)dt);
             m_scene(m,dt);m->dirty=1;previous=tick;
         }
         int rendered=due && m->dirty && !hidden;
@@ -411,19 +495,28 @@ static int mandala_capture(int argc,char **argv)
     if(!config.seed)config.seed=12345;
     int frames=argc>4?atoi(argv[4]):900;if(frames<1||frames>100000)frames=900;
     Mandala *m=calloc(1,sizeof(*m));int ok=m && m_init(m,&config,1);
+    TsMandalaEffects effects={0};
+    int effect=argc>5?atoi(argv[5]):-1;
+    for(int j=0;j<TS_MANDALA_EFFECTS;++j)if(effect==j || effect==5) {
+        effects.wet[j]=effect==5?.7f:1;effects.size[j]=.8f;effects.character[j]=.7f;
+    }
     double frequency=(double)SDL_GetPerformanceFrequency(),sum=0,max=0;
     if(ok) {
         for(int i=0;i<frames;++i) {
             m->features=(TsMandalaFeatures){.76f+.15f*sinf(i*.017f),.8f,.6f,.15f*sinf(i*.01f),.12f};
+            ts_mandala_effects_follow(&m->effects,&effects,1.0f/15);
             Uint64 before=SDL_GetPerformanceCounter();m_scene(m,1.0/15);m_present(m);
             double cost=(SDL_GetPerformanceCounter()-before)*1000/frequency;sum+=cost;max=fmax(max,cost);
         }
         SDL_Surface *surface=SDL_CreateRGBSurfaceWithFormat(0,m->width,m->height,32,SDL_PIXELFORMAT_ARGB8888);
-        SDL_SetRenderTarget(m->renderer,m->history);
-        ok=surface && !SDL_RenderReadPixels(m->renderer,NULL,SDL_PIXELFORMAT_ARGB8888,surface->pixels,surface->pitch) && !SDL_SaveBMP(surface,argv[2]);
+        SDL_Texture *capture=SDL_CreateTexture(m->renderer,SDL_PIXELFORMAT_ARGB8888,SDL_TEXTUREACCESS_TARGET,m->width,m->height);
+        /* The same final compositor, into a bounded offline readback target. */
+        if(capture)m_compose(m,capture,m->width,m->height);
+        ok=surface && capture && !SDL_RenderReadPixels(m->renderer,NULL,SDL_PIXELFORMAT_ARGB8888,surface->pixels,surface->pitch) && !SDL_SaveBMP(surface,argv[2]);
         if(surface)SDL_FreeSurface(surface);
+        SDL_SetRenderTarget(m->renderer,NULL);if(capture)SDL_DestroyTexture(capture);
         SDL_RendererInfo info;SDL_GetRendererInfo(m->renderer,&info);
-        printf("capture backend=%s frames=%d mean_ms=%.3f max_ms=%.3f instances=%u model_bytes=%zu texture_bytes=%d\n",info.name,frames,sum/frames,max,m->count,sizeof(*m),m->width*m->height*4);
+        printf("capture backend=%s frames=%d mean_ms=%.3f max_ms=%.3f instances=%u model_bytes=%zu history_bytes=%d effect_texture_bytes=1088000\n",info.name,frames,sum/frames,max,m->count,sizeof(*m),m->width*m->height*4);
     }
     if(m){m_destroy(m);free(m);}SDL_Quit();return ok?0:1;
 }

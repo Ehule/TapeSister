@@ -134,3 +134,17 @@ void ts_mandala_analyze(const TsMandalaPacket *p, TsMandalaFeatures *f, float dt
     f->width += ((energy > 1e-6 ? fminf(1, (float)(side / (2*energy))) : 0) - f->width) * blend;
     f->balance += ((energy > 1e-6 ? (float)((right-left)/energy) : 0) - f->balance) * blend;
 }
+
+void ts_mandala_effects_follow(TsMandalaEffects *current,const TsMandalaEffects *target,float dt)
+{
+    float blend=1-expf(-fmaxf(0,fminf(.25f,dt))/.45f);
+    for(int i=0;i<TS_MANDALA_EFFECTS;++i) {
+        float wet=target?target->wet[i]:0,size=target?target->size[i]:0,character=target?target->character[i]:0;
+        wet=isfinite(wet)?fmaxf(0,fminf(1,wet)):0;
+        size=isfinite(size)?fmaxf(0,fminf(1,size)):0;
+        character=isfinite(character)?fmaxf(0,fminf(1,character)):0;
+        current->wet[i]+=(wet-current->wet[i])*blend;
+        current->size[i]+=(size-current->size[i])*blend;
+        current->character[i]+=(character-current->character[i])*blend;
+    }
+}

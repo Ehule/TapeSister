@@ -78,6 +78,17 @@ int main(void)
     atomic_store(&q.write,UINT32_MAX-1);atomic_store(&q.read,UINT32_MAX-1);atomic_store(&q.enabled,1);
     for(int i=0;i<4;++i)ts_mandala_push(&q,out,512,2);
     assert(ts_mandala_latest(&q,&packet));
+    TsMandalaEffects fx={0},target={0};
+    for(int i=0;i<TS_MANDALA_EFFECTS;++i){target.wet[i]=1;target.size[i]=.8f;target.character[i]=.6f;}
+    ts_mandala_effects_follow(&fx,&target,0);assert(fx.wet[0]==0);
+    ts_mandala_effects_follow(&fx,&target,1.f/30);assert(fx.wet[0]>0 && fx.wet[0]<.1f);
+    for(int i=0;i<200;++i)ts_mandala_effects_follow(&fx,&target,1.f/30);
+    assert(fx.wet[0]>.999f && fabsf(fx.size[3]-.8f)<.001f);
+    target.wet[0]=NAN;target.size[0]=INFINITY;target.character[0]=-1;
+    for(int i=0;i<200;++i)ts_mandala_effects_follow(&fx,&target,1.f/30);
+    assert(isfinite(fx.wet[0]) && fx.wet[0]<.001f && fx.size[0]<.001f);
+    for(int i=0;i<200;++i)ts_mandala_effects_follow(&fx,NULL,1.f/30);
+    for(int i=0;i<TS_MANDALA_EFFECTS;++i)assert(fx.wet[i]<.001f);
     puts("mandala identity, legacy migration, bounds, presentation, queue and analysis: PASS");
     return 0;
 }

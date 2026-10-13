@@ -297,6 +297,12 @@ typedef struct {
     int ready;
 } TsSisterPostFxEngine;
 
+/* Audio-owner readout of the existing processor state, not new DSP analysis.
+   Per type (REVERB..GRAIN): wet contribution, wet-weighted A, wet-weighted B.
+   Delay A is seconds; all other controls retain their normalized units. */
+typedef struct { float value[TS_SISTER_FX_TYPE_COUNT-1][3]; } TsSisterFxView;
+TsSisterFxView ts_sister_post_fx_view(const TsSisterPostFxEngine *engine);
+
 const char *ts_sister_fx_type_name(TsSisterFxType type);
 uint8_t ts_sister_fx_placement_sanitize(uint8_t placement);
 void ts_sister_fx_controls_migrate_legacy(TsSisterFxControls *controls);
