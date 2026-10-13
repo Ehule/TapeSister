@@ -233,7 +233,7 @@ static void pw_follow(SDL_Window *main,const TsUiState *ui,const SisterWindow *s
 static int palette_window_event(const SDL_Event *e,SDL_Window *main,TsUiState *ui,SisterWindow *sister)
 {
     PaletteWindow *w=&palette_window;Uint32 id=event_window_id(e);
-    if(e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_p && (e->key.keysym.mod&(KMOD_CTRL|KMOD_ALT))==(KMOD_CTRL|KMOD_ALT) && !(e->key.keysym.mod&(KMOD_SHIFT|KMOD_GUI))) {
+    if(e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_p && (e->key.keysym.mod&KMOD_CTRL) && (e->key.keysym.mod&KMOD_ALT) && !(e->key.keysym.mod&(KMOD_SHIFT|KMOD_GUI))) {
         if(!e->key.repeat)palette_window_show(ui);
         return 1;
     }

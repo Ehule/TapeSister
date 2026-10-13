@@ -85,8 +85,8 @@ int main(int argc,char **argv)
     click(360,599);assert(ts_palette_load(&loaded,"palette-shared-fixture.pal",err,sizeof(err)));assert(!memcmp(&loaded,&edited,sizeof(loaded)));
     click(360,599);assert(palette_window.overwrite_shared);click(360,599);assert(!palette_window.overwrite_shared);remove("palette-shared-fixture.pal");
     palette_window_hide(&u,0);SDL_Event shortcut={0};shortcut.type=SDL_KEYDOWN;shortcut.key.windowID=SDL_GetWindowID(host);shortcut.key.keysym.sym=SDLK_p;
-    shortcut.key.keysym.mod=KMOD_CTRL|KMOD_SHIFT;assert(!palette_window_event(&shortcut,host,&u,&sister)); /* CDP shortcut stays available */
-    shortcut.key.keysym.mod=KMOD_CTRL|KMOD_ALT;assert(palette_window_event(&shortcut,host,&u,&sister));assert(palette_window.visible);
+    shortcut.key.keysym.mod=KMOD_LCTRL|KMOD_LSHIFT;assert(!palette_window_event(&shortcut,host,&u,&sister)); /* CDP shortcut stays available */
+    shortcut.key.keysym.mod=KMOD_LCTRL|KMOD_LALT;assert(palette_window_event(&shortcut,host,&u,&sister));assert(palette_window.visible);
     /* Native application hook changes pixels, not saved tracker preferences. */
     TsTapeHeadHost native={.window=host};assert(ts_tapehead_init(&native,48000,err,sizeof(err)));
     static TsSamplePages native_pages;assert(ts_sample_pages_init(&native_pages,err,sizeof(err)));
