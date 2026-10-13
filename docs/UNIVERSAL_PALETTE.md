@@ -10,8 +10,10 @@ continues. Ctrl+Shift+P still opens CDP Portal.
 ## Start with a preset
 
 Eight presets are built in: **Original**, **Soft**, **High Contrast**, **Night**,
-**Moss**, **Plum**, **Ice**, and **Paper**. Original keeps the existing factory
+**Moss**, **Plum**, **Ice**, and **Sister**. Original keeps the existing factory
 appearance, including the distinct colors of the different workspaces.
+Sister draws from the splash artwork: deep plum surfaces with saturated gold,
+orange, violet and pink. It replaces the former Paper preset.
 Selecting a preset replaces the current customizations; Undo restores them.
 
 ![Eight presets on the same Canvas](screenshots/palette/presets.png)
@@ -33,8 +35,13 @@ Selecting a preset replaces the current customizations; Undo restores them.
   legacy edits; component overrides take precedence over shared values.
 
 **Follow View** selects the component of the active workspace or auxiliary
-window. Selecting a component in the sidebar pins it; turn Follow View back on
-to resume following. **Always on Top** is optional. The window can be moved or
+window. Selecting a component in the sidebar pins it and opens or raises its
+matching interface, keeping the palette editor in front. Repeated clicks leave
+that view open. Browser / dialogs opens configuration (or raises an existing
+browser); EQ / compressor raises an already-open compressor or opens EQ.
+Unfinished edits and confirmations keep ownership: resolve them before changing
+the main workspace. Playback continues during palette navigation.
+Turn Follow View back on to resume following. **Always on Top** is optional. The window can be moved or
 resized with normal operating-system controls.
 
 Select a swatch, then drag its RGB sliders or edit its six-digit hex value.

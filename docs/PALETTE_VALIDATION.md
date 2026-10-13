@@ -38,9 +38,16 @@ through semantic roles. Existing legacy swatch imports remain usable.
   following and modeless event ownership. It covers Save As, overwrite
   confirmation, import and Save Shared. Ctrl+Shift+P remains available to CDP;
   Ctrl+Alt+P opens the editor.
-- Native TrackSister applies Paper to the actual framebuffer while its 62
+- Component clicks exercise all 16 destinations, repeated selection, pending
+  configuration/EQ guards and parked FM state. Mosaic playback position, canvas
+  playback, source samples and master EQ controls remain unchanged.
+- Native texture-composition tests reproduce the reported EQ ghosting before
+  the fix. Master EQ, tile EQ and the legacy router now fully occlude canvas
+  detail under all eight presets at 4x scale; returning to Canvas restores its
+  native waveform layer. This does not rely on different background colors.
+- Native TrackSister applies Sister to the actual framebuffer while its 62
   preference bytes remain unchanged, then restores Original. The fixture also
-  verifies a light background after the pattern and scopes redraw, covering
+  verifies the plum background after the pattern and scopes redraw, covering
   native clear operations that formerly always filled with black.
 - A deterministic comparison against the unchanged compressor build produces
   identical complete framebuffer hashes for **Canvas, FM, ARP, EQ, legacy
@@ -59,13 +66,15 @@ The images under `docs/screenshots/palette/` come from the real renderers, with
 SDL's dummy video driver, rather than an HTML mockup. Run
 `build/tapesister_palette_window_tests --screenshots` from a scratch directory
 to regenerate BMP captures of all eight Canvas, Pedalboard and Router presets,
-the editor, readability controls and native TrackSister Paper. Documentation
+the editor, readability controls and native TrackSister Sister theme. Documentation
 uses lossless RGB PNG conversions; the preset overview arranges eight captures
 with labels.
 
 ![Routing matrix in Soft](screenshots/palette/router-soft.png)
 
-![TrackSister in Paper](screenshots/palette/tracker-paper.png)
+![TrackSister in Sister](screenshots/palette/tracker-sister.png)
+
+![EQ in High Contrast after the occlusion fix](screenshots/palette/eq-high-contrast.png)
 
 Native multi-monitor movement, mixed-DPI desktop scaling and compositor-specific
 Always on Top behavior still need checks on physical Windows/Linux desktops.

@@ -4,7 +4,7 @@ typedef struct {
     SDL_Window *window; SDL_Renderer *renderer; SDL_Texture *texture;
     uint32_t pixels[PALETTE_W*PALETTE_H];
     Uint32 id; int visible, dirty, page, group, role, scroll, detail, follow, top, drag, hex_focus;
-    int compare, history_count, history_cursor, overwrite_shared;
+    int compare, history_count, history_cursor, overwrite_shared, requested_group;
     TsPalette original, edited, history[PALETTE_HISTORY];
     TsBrowser browser;
     char hex[8], message[128];
@@ -222,7 +222,7 @@ static int palette_active_group(SDL_Window *main,const TsUiState *ui,const Siste
     if(ui->portal.open)return TS_THEME_PORTAL;
     if(ui->tracker_open)return TS_THEME_TRACKER;
     if(ui->mosaic_open)return TS_THEME_MOSAIC;
-    if(ui->keyboard_sequence_open)return TS_THEME_ARP;
+    if(ui->keyboard_sequence_open && ts_ui_keyboard_sequence_visible(ui))return TS_THEME_ARP;
     return TS_THEME_CANVAS;
 }
 static void pw_follow(SDL_Window *main,const TsUiState *ui,const SisterWindow *sister,Uint32 id)
@@ -291,7 +291,7 @@ static int palette_window_event(const SDL_Event *e,SDL_Window *main,TsUiState *u
         if(y>=113&&y<137){w->page=x<240?0:x<470?1:2;w->scroll=0;int roles[PALETTE_ROLE_CAPACITY];pw_roles(w->page,w->detail,roles);w->role=roles[0];pw_hex(&ui->palette);return 1;}
         if(w->page==1&&y>=167&&y<477){int row=(y-167)/62;if(row<5){pw_edit(ui);w->drag=10+row;SDL_CaptureMouse(SDL_TRUE);}}
         else if(w->page!=1) {
-            if(x>=16&&x<190&&y>=157&&y<493){w->group=1+(y-157)/21;w->page=2;w->follow=0;w->scroll=0;int roles[PALETTE_ROLE_CAPACITY];pw_roles(w->page,w->detail,roles);w->role=roles[0];pw_hex(&ui->palette);return 1;}
+            if(x>=16&&x<190&&y>=157&&y<493){w->group=1+(y-157)/21;w->requested_group=w->group;w->page=2;w->follow=0;w->scroll=0;int roles[PALETTE_ROLE_CAPACITY];pw_roles(w->page,w->detail,roles);w->role=roles[0];pw_hex(&ui->palette);return 1;}
             if(w->page!=3&&x>=555&&y>=143&&y<167){w->detail=!w->detail;w->scroll=0;int roles[PALETTE_ROLE_CAPACITY];pw_roles(w->page,w->detail,roles);w->role=roles[0];pw_hex(&ui->palette);return 1;}
             if(x>=204&&y>=176&&y<376){int roles[PALETTE_ROLE_CAPACITY],n=pw_roles(w->page,w->detail,roles),at=w->scroll+(y-176)/25;if(at<n)w->role=roles[at];pw_hex(&ui->palette);return 1;}
             if(x>=340&&x<470&&y>=399&&y<423){w->hex_focus=1;SDL_StartTextInput();return 1;}
@@ -321,3 +321,5 @@ static void palette_window_update(SDL_Window *main,TsUiState *ui,SisterWindow *s
     if(!w->dirty||!window_drawable(w->window))return;
     pw_paint(ui);SDL_UpdateTexture(w->texture,NULL,w->pixels,PALETTE_W*sizeof(uint32_t));SDL_RenderCopy(w->renderer,w->texture,NULL,NULL);SDL_RenderPresent(w->renderer);w->dirty=0;
 }
+
+#include "main_sdl_palette_navigation.inc"

@@ -7,7 +7,21 @@ static void render_workspace_frame(SDL_Renderer *renderer, SDL_Texture *base,
     ts_ui_render(fb,ui,instrument);ts_ui_render_file_recording(fb,ui);
     assert(!SDL_UpdateTexture(base,NULL,fb->pixels,640*sizeof(uint32_t)));
     assert(!SDL_RenderCopy(renderer,base,NULL,NULL));
+    /* Opaque workspaces must hide the native waveform even when their theme
+       uses exactly the same background colors as the canvas underneath. */
+    uint32_t *covered=NULL;int covered_w=0,covered_h=0;
+    if(ts_ui_master_eq_visible(ui) || ui->router_open) {
+        assert(!SDL_GetRendererOutputSize(renderer,&covered_w,&covered_h));
+        covered=malloc((size_t)covered_w*covered_h*4);assert(covered);
+        assert(!SDL_RenderReadPixels(renderer,NULL,SDL_PIXELFORMAT_ARGB8888,covered,covered_w*4));
+    }
     native_waveform_copy(renderer,textures,details,fb);
+    if(covered) {
+        uint32_t *actual=malloc((size_t)covered_w*covered_h*4);assert(actual);
+        assert(!SDL_RenderReadPixels(renderer,NULL,SDL_PIXELFORMAT_ARGB8888,actual,covered_w*4));
+        assert(!memcmp(actual,covered,(size_t)covered_w*covered_h*4));
+        free(actual);free(covered);
+    }
     /* A partial upload must produce the same native texture as a full upload,
        including restoring the waveform under a departing playhead. */
     for(int i=0;i<2;++i)if(details[i].valid) {
@@ -64,6 +78,20 @@ static void test_workspace_waveforms(void)
     }
     assert(details[0].raster_count==1);
     ui.playback_active=0;
+    for(int preset=0;preset<TS_THEME_PRESET_COUNT;++preset) {
+        ts_palette_preset(&ui.palette,preset);
+        ui.master_eq_open=1;ui.master_eq_rate=48000;
+        render_workspace_frame(renderer,base,textures,details,&fb,&ui,&instrument,
+            preset==2?"eq-high-contrast":preset==7?"eq-sister":NULL);
+        ui.canvas_eq_open=1;ui.canvas_eq=ui.config.master_eq;
+        render_workspace_frame(renderer,base,textures,details,&fb,&ui,&instrument,NULL);
+        ui.canvas_eq_open=ui.master_eq_open=0;ui.router_open=1;
+        render_workspace_frame(renderer,base,textures,details,&fb,&ui,&instrument,NULL);
+        ui.router_open=0;
+        render_workspace_frame(renderer,base,textures,details,&fb,&ui,&instrument,NULL);
+        assert(details[0].valid); /* The high-detail canvas returns immediately. */
+    }
+    ts_palette_default(&ui.palette);
     portal_init(&portal,&ui.portal);ui.portal.open=1;ui.portal.source=&source;ui.portal.result=&result;ui.portal.valid=1;
     snprintf(ui.portal.source_name,sizeof(ui.portal.source_name),"STEREO TEST");
     ts_portal_recipe_default(&ui.portal.recipe,ts_portal_process_find("modify.loudness.1"));

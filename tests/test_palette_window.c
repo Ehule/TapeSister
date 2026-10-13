@@ -31,6 +31,67 @@ static void snapshot(const char *path,const uint32_t *pixels,int width,int heigh
     SDL_Surface *s=SDL_CreateRGBSurfaceFrom((void*)pixels,width,height,32,width*4,0xff0000,0xff00,0xff,0);
     assert(s&&!SDL_SaveBMP(s,path));SDL_FreeSurface(s);
 }
+static AudioState navigation_audio;
+static TsSamplePages navigation_pages;
+static MosaicController navigation_mosaic;
+static PortalController navigation_portal;
+static TransformController navigation_transform;
+static void component(int group)
+{
+    click(495,123);
+    click(40,164+(group-1)*21);assert(palette_window.requested_group==group);
+    palette_window_navigate(host,0,&navigation_audio,&u,&sister,&navigation_pages,&bank,
+        &navigation_mosaic,&navigation_portal,&navigation_transform);
+    assert(palette_window.visible && !palette_window.requested_group && !palette_window.follow);
+}
+static void navigation(void)
+{
+    char error[160];ts_ui_init(&u);ts_palette_preset(&u.palette,7);
+    ts_sister_runtime_init(&navigation_audio.sister);ts_note_bank_init(&navigation_audio.notes);
+    navigation_audio.output_rate=48000;
+    assert(ts_sample_pages_init(&navigation_pages,error,sizeof(error)));
+    assert(ts_instrument_generate(&bank,TS_GENERATOR_METALLIC,777,error,sizeof(error)));
+    u.mosaic=navigation_audio.mosaic=navigation_pages.mosaic=ts_mosaic_create();assert(u.mosaic);
+    navigation_mosaic.pages=&navigation_pages;navigation_portal.mosaic=&navigation_mosaic;
+    portal_init(&navigation_portal,&u.portal);
+    u.mosaic->playing=1;u.mosaic->time=12.25;
+    navigation_audio.playing=1;navigation_audio.sample=&bank.current;
+    uint64_t hash=ts_sample_hash(&bank.current);
+    TsMasterEqControls eq=navigation_audio.sister.master_eq.controls;
+    component(TS_THEME_MOSAIC);assert(u.mosaic_open);
+    component(TS_THEME_MOSAIC);assert(u.mosaic_open); /* Repeated selection never toggles off. */
+    component(TS_THEME_CANVAS);assert(!u.mosaic_open && !u.tracker_open);
+    for(int g=TS_THEME_SISTER;g<=TS_THEME_PRISM;++g) {
+        component(g);assert(sister.model.visible && sister.model.fx_page==g-TS_THEME_SISTER);
+    }
+    component(TS_THEME_TRACKER);assert(u.tracker_open && u.tracker_embedded_frame && !sister.model.visible);
+    component(TS_THEME_EQ);assert(u.master_eq_open && ts_ui_master_eq_visible(&u));
+    component(TS_THEME_ARP);assert(u.keyboard_sequence_open && ts_ui_keyboard_sequence_visible(&u));
+    component(TS_THEME_CANVAS);assert(!u.keyboard_sequence_open);
+    component(TS_THEME_ROUTER);assert(matrix_window.visible && !matrix_window.compressor_open);
+    component(TS_THEME_SPATIAL);assert(spatial_window.visible);
+    component(TS_THEME_HEALTH);assert(ts_health.visible);
+    component(TS_THEME_TRANSPORT);assert(performance_transport.visible);
+    component(TS_THEME_BROWSER);assert(u.config_open);
+    component(TS_THEME_PORTAL);assert(u.portal.open && !u.config_open && u.portal.source);
+    component(TS_THEME_MIDI);assert(u.midi_learn_active && !u.portal.open);
+    component(TS_THEME_CANVAS);assert(!u.midi_learn_active);
+    /* Pending configuration or EQ edits cannot be silently discarded. */
+    begin_config(&u);++u.config.voice_attack_ms;
+    component(TS_THEME_MOSAIC);assert(u.config_open && !u.mosaic_open);
+    cancel_config(&u);u.canvas_eq_open=u.master_eq_open=1;
+    component(TS_THEME_MOSAIC);assert(u.canvas_eq_open && !u.mosaic_open);
+    u.canvas_eq_open=u.master_eq_open=0;
+    u.fm_open=1;component(TS_THEME_MOSAIC);assert(u.mosaic_open && !u.fm_open && navigation_mosaic.fm_parked);
+    assert(u.mosaic->playing && u.mosaic->time==12.25 && navigation_audio.playing);
+    assert(ts_sample_hash(&bank.current)==hash && !memcmp(&eq,&navigation_audio.sister.master_eq.controls,sizeof(eq)));
+    component(TS_THEME_CANVAS);
+    ts_tapehead_close();if(embedded_host.texture)SDL_DestroyTexture(embedded_host.texture);memset(&embedded_host,0,sizeof(embedded_host));
+    matrix_close();spatial_window_close();ts_audio_health_close();performance_close();
+    SDL_DestroyTexture(sister.texture);SDL_DestroyRenderer(sister.renderer);SDL_DestroyWindow(sister.window);memset(&sister,0,sizeof(sister));
+    portal_free(&navigation_portal);mosaic_controller_free(&navigation_mosaic);ts_mosaic_free(u.mosaic);u.mosaic=NULL;
+    ts_sample_pages_free(&navigation_pages);ts_sister_runtime_free(&navigation_audio.sister);
+}
 static void screenshots(void)
 {
     char path[100],error[160];assert(ts_instrument_generate(&bank,TS_GENERATOR_METALLIC,777,error,sizeof(error)));
@@ -96,9 +157,9 @@ int main(int argc,char **argv)
     tapeheadEmbeddedPaletteCurrent(native_before);ts_palette_preset(&u.palette,7);ts_tapehead_theme_apply(&u.palette);
     tapeheadEmbeddedPaletteCurrent(native_after);assert(!memcmp(native_before,native_after,62));
     ts_tapehead_service(1);const uint32_t *pixels=ts_tapehead_frame();assert(pixels);
-    size_t paper=0;for(int i=290*632;i<632*400;++i)if((pixels[i]&0xffffff)==0xf1ece0)++paper;assert(paper>30000);
-    if(argc>1){snapshot("palette-tracker-paper.bmp",pixels,632,400);u.tracker_open=0;screenshots();}
+    size_t background=0;for(int i=290*632;i<632*400;++i)if((pixels[i]&0xffffff)==0x100b19)++background;assert(background>30000);
+    if(argc>1){snapshot("palette-tracker-sister.bmp",pixels,632,400);u.tracker_open=0;screenshots();}
     ts_tapehead_theme_apply(&original);tapeheadEmbeddedPaletteCurrent(native_after);assert(!memcmp(native_before,native_after,62));
-    ts_tapehead_close();ts_sample_pages_free(&native_pages);palette_window_close();SDL_DestroyWindow(host);ts_instrument_free(&bank);SDL_Quit();
+    ts_tapehead_close();ts_sample_pages_free(&native_pages);navigation();palette_window_close();SDL_DestroyWindow(host);ts_instrument_free(&bank);SDL_Quit();
     puts("Floating palette event ownership, editing, history and native tracker passed");return 0;
 }

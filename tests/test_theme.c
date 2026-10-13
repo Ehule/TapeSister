@@ -38,7 +38,15 @@ int main(void)
     FILE *f=fopen("theme-roundtrip.pal","ab");assert(f);fputs("ThemeGrid=101\n",f);fclose(f);
     assert(!ts_palette_load(&loaded,"theme-roundtrip.pal",error,sizeof(error)));
     assert(!memcmp(&p,&loaded,sizeof(p)));remove("theme-roundtrip.pal");
-    ts_palette_preset(&p,7);uint32_t before=ts_theme_color(&p,TS_THEME_ROUTER,TS_COLOR_TEXT,0);
+    ts_palette_preset(&p,7);assert(!strcmp(ts_theme_preset_name(7),"Sister"));
+    assert(luminance(ts_theme_color(&p,TS_THEME_OVERALL,TS_COLOR_BACKGROUND,0))<.02);
+    uint32_t before=ts_theme_color(&p,TS_THEME_ROUTER,TS_COLOR_TEXT,0);
+    p.theme.text_clarity=100;assert(luminance(ts_theme_color(&p,TS_THEME_ROUTER,TS_COLOR_TEXT,0))>luminance(before));
+    p.theme.text_clarity=0;assert(luminance(ts_theme_color(&p,TS_THEME_ROUTER,TS_COLOR_TEXT,0))<luminance(before));
+    /* Custom light backgrounds still reverse clarity toward dark ink. */
+    ts_theme_override(&p,TS_THEME_OVERALL,TS_COLOR_BACKGROUND,0xffeee8df);
+    ts_theme_override(&p,TS_THEME_OVERALL,TS_COLOR_TEXT,0xff504050);p.theme.text_clarity=50;
+    before=ts_theme_color(&p,TS_THEME_ROUTER,TS_COLOR_TEXT,0);
     p.theme.text_clarity=100;assert(luminance(ts_theme_color(&p,TS_THEME_ROUTER,TS_COLOR_TEXT,0))<luminance(before));
     p.theme.text_clarity=0;assert(luminance(ts_theme_color(&p,TS_THEME_ROUTER,TS_COLOR_TEXT,0))>luminance(before));
     ts_palette_preset(&p,0);assert(!memcmp(&p,&original,sizeof(p)));

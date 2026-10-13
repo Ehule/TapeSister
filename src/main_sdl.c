@@ -9222,8 +9222,11 @@ static int workspace_tab_event(const SDL_Event *event, SDL_Window *window,
 static int main_waveform_detail_allowed(const TsUiState *ui)
 {
     if(ui->tracker_open && ui->tracker_embedded_frame)return 0;
-    return ui->portal.open ? !ui->portal.manage_open && !ui->portal.macro_edit :
-        !ui_blocking_dialog_open_except_fm(ui) && !ui->fm_bank_choice_open && !ui->fm_full_choice_open;
+    if(ui->portal.open)return !ui->portal.manage_open && !ui->portal.macro_edit;
+    /* Color equality cannot identify occlusion when two workspaces share a
+       theme. Never composite the hidden canvas signal over these panels. */
+    if(ui->master_eq_open || ui->router_open)return 0;
+    return !ui_blocking_dialog_open_except_fm(ui) && !ui->fm_bank_choice_open && !ui->fm_full_choice_open;
 }
 
 static void native_waveform_prepare(SDL_Renderer *renderer, TsUiWaveformDetail details[2], int enabled)
@@ -14067,7 +14070,14 @@ int main(int argc, char **argv)
             wheel_event_coalesce(&event);
             if (!wheel_event_prepare(&event)) continue;
             uint32_t event_id = event_window_id(&event);
-            if(palette_window_event(&event,window,&ui,&sister_window))continue;
+            if(palette_window_event(&event,window,&ui,&sister_window)) {
+                if(palette_window.requested_group) {
+                    palette_window_navigate(window,device,&audio,&ui,&sister_window,
+                        &sample_pages,&instrument,&mosaic,&portal,&transform);
+                    main_paint_invalid=1;
+                }
+                continue;
+            }
             if (event.type == SDL_WINDOWEVENT &&
                 event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) {
                 if (sister_window.window != NULL &&

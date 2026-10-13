@@ -8,7 +8,7 @@ static const char *const group_keys[]={"Overall","Canvas","Sister","Pedalboard",
 static const char *const group_names[]={"Overall look","Canvas / FM","Sister Machine","Pedalboard","Fallout","Prism / morph","Mosaic","TrackSister","Keyboard / ARP","Routing / inserts","EQ / compressor","Spatial / speakers","CDP Portal","Browser / dialogs","Audio health","MIDI learn","Transport"};
 static const char *const role_keys[]={"Background","Panel","Control","Text","Dim","Edge","Grid","Selection","SelectedText","Focus","Activity","Warning","Error","Data1","Data2","Data3","Data4","Data5","Data6","Playhead","Muted","Solo","Record"};
 static const char *const role_names[]={"Background","Panel fill","Control fill","Text","Secondary text","Borders","Grid","Selection fill","Selected text","Focus / pointer","Signal / activity","Warning","Error / clip","Warm accent","Cool accent","Blue accent","Green accent","Pink accent","Violet accent","Playhead","Muted / bypass","Solo","Recording"};
-static const char *const presets[]={"Original","Soft","High Contrast","Night","Moss","Plum","Ice","Paper"};
+static const char *const presets[]={"Original","Soft","High Contrast","Night","Moss","Plum","Ice","Sister"};
 /* bg, panel, control, text, dim, warm, cool, blue, green, pink, violet.
    Surface/text pairs are hand picked; state meaning is also carried by labels. */
 static const uint32_t schemes[8][11]={
@@ -19,7 +19,8 @@ static const uint32_t schemes[8][11]={
  {0x1d231b,0x293026,0x46523d,0xe9e5cf,0xb8bba1,0xe2bd75,0x93c6b2,0x9cb7c1,0xb6d37a,0xd3a8a1,0xb4aac8},
  {0x221923,0x302331,0x59415a,0xf0dfee,0xc1a5bd,0xe6b776,0x97d1ce,0xaab3de,0xbac998,0xe5a2c7,0xc9a8e9},
  {0x172027,0x222f38,0x3c5260,0xe5f3f5,0xa6bcc8,0xd5c18e,0x86e0df,0xa4caff,0xa1d4bc,0xd4b5d7,0xbab6e0},
- {0xf1ece0,0xe6ded0,0xd2c6b9,0x28242e,0x59505c,0x875100,0x006b70,0x285b99,0x3d662c,0x974078,0x675298}
+ /* Splash-screen gold, orange and luminous purple on deep plum. */
+ {0x100b19,0x20112e,0x4f2a61,0xffedce,0xc7a6d6,0xffb52e,0xff7a25,0x9562ff,0xffdb70,0xff48bd,0xc47aff}
 };
 static uint32_t blend(uint32_t a,uint32_t b,int amount) {
     uint32_t c=0xff000000u;if(amount<0)amount=0;if(amount>100)amount=100;
@@ -53,11 +54,11 @@ static uint32_t factory(int preset,int role) {
       case TS_COLOR_BACKGROUND:return bg;case TS_COLOR_PANEL:return s[1]|0xff000000u;
       case TS_COLOR_CONTROL:return s[2]|0xff000000u;case TS_COLOR_TEXT:return text;case TS_COLOR_DIM:case TS_COLOR_MUTED:return s[4]|0xff000000u;
       case TS_COLOR_EDGE:return blend(bg,text,32);case TS_COLOR_GRID:return blend(bg,text,16);
-      case TS_COLOR_SELECTION:return blend(bg,s[7]|0xff000000u,preset==7?22:28);
+      case TS_COLOR_SELECTION:return blend(bg,s[7]|0xff000000u,28);
       case TS_COLOR_SELECTEDTEXT:return text;case TS_COLOR_FOCUS:return s[5]|0xff000000u;
       case TS_COLOR_ACTIVITY:case TS_COLOR_PLAYHEAD:return s[5]|0xff000000u;
-      case TS_COLOR_WARNING:case TS_COLOR_SOLO:return (preset==7?0x8b5500:0xeabc65)|0xff000000u;
-      case TS_COLOR_ERROR:case TS_COLOR_RECORD:return (preset==7?0xa82e38:0xf1848b)|0xff000000u;
+      case TS_COLOR_WARNING:case TS_COLOR_SOLO:return (preset==7?0xffd35c:0xeabc65)|0xff000000u;
+      case TS_COLOR_ERROR:case TS_COLOR_RECORD:return (preset==7?0xff5278:0xf1848b)|0xff000000u;
       default:return s[5+(role-TS_COLOR_DATA1+6)%6]|0xff000000u;
     }
 }
@@ -86,7 +87,8 @@ static uint32_t resolved(const TsPalette *p,int g,int r,uint32_t original,int le
       int k=(int)(r==TS_COLOR_GRID?p->theme.grid_visibility:p->theme.selection_strength)-50;
       if(k) {uint32_t bg=p->theme.overrides[g][TS_COLOR_BACKGROUND];if(!bg)bg=p->theme.overrides[0][TS_COLOR_BACKGROUND];
       if(!bg)bg=factory(p->theme.preset,TS_COLOR_BACKGROUND);
-        c=blend(c,k<0?bg:(p->theme.preset==7?0xff000000u:0xffffffffu),k<0?-k:k);}
+        int light=(((bg>>16)&255)*54+((bg>>8)&255)*183+(bg&255)*19)>160*256;
+        c=blend(c,k<0?bg:(light?0xff000000u:0xffffffffu),k<0?-k:k);}
     }
     return c;
 }

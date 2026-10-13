@@ -2020,8 +2020,10 @@ Open **CFG → PALETTE**, the tracker's configuration **Palette** button, or
 workspaces; changes appear immediately, and playback continues.
 
 Choose **Original**, **Soft**, **High Contrast**, **Night**, **Moss**, **Plum**,
-**Ice**, or **Paper**, then use **Overall Look**, **Readability**, or **Components**.
-Components follow the active view unless pinned. Start with its eight relevant
+**Ice**, or **Sister**, then use **Overall Look**, **Readability**, or **Components**.
+Sister uses saturated gold, orange and purple from the splash artwork on a dark background.
+Clicking a component also opens its interface and pins the palette selection;
+Follow View can resume following the active workspace. Start with its eight relevant
 colors, and open **Detail** for additional roles. Component overrides can be
 reset to inherit the overall palette. **Shared Colors** exposes all legacy values.
 
