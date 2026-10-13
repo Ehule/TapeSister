@@ -112,13 +112,32 @@ jobs:
           for required in docs/USER_MANUAL.md docs/QUICK_REFERENCE.md docs/ROUTING_MATRIX.md docs/ASIO_AUDIO.md docs/LEGACY_ROUTING.md docs/screenshots/routing-matrix/matrix-signal-activity.png; do
             grep -Fxq "$required" archive-contents.txt || exit 1
           done
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        id: linux-artifact
         with:
-          name: TapeSister-linux-x86_64
           path: TapeSister-linux-x86_64.tar.gz
+          archive: false
+          if-no-files-found: error
+      - name: Download the exact user-facing tar archive
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          artifact-ids: ${{ steps.linux-artifact.outputs.artifact-id }}
+          path: download-check
+      - name: Verify direct Linux download and executable permissions
+        run: |
+          cmp TapeSister-linux-x86_64.tar.gz download-check/TapeSister-linux-x86_64.tar.gz
+          mkdir download-check/extracted
+          tar -xzf download-check/TapeSister-linux-x86_64.tar.gz -C download-check/extracted
+          test -x download-check/extracted/tapesister
+          for program in build/cdp/bin/*; do
+            test -x "download-check/extracted/cdp/bin/$(basename "$program")" || exit 1
+          done
 
   windows:
     runs-on: windows-latest
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v4
       - uses: msys2/setup-msys2@v2
@@ -156,7 +175,24 @@ jobs:
         shell: pwsh
         timeout-minutes: 5
         run: ./tests/test_windows_portable.ps1 -ArchivePath TapeSister-Windows-x64.zip -StagingDirectory TapeSister-Windows-x64
-      - uses: actions/upload-artifact@v4
+      # Send our ZIP unchanged; do not put it inside a second artifact ZIP.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        id: windows-artifact
         with:
-          name: TapeSister-Windows-x64
           path: TapeSister-Windows-x64.zip
+          archive: false
+          if-no-files-found: error
+      - name: Download the exact user-facing ZIP
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          artifact-ids: ${{ steps.windows-artifact.outputs.artifact-id }}
+          path: download-check
+      - name: Verify one-extraction downloaded package
+        shell: pwsh
+        timeout-minutes: 5
+        run: |
+          $Downloaded = 'download-check/TapeSister-Windows-x64.zip'
+          if ((Get-FileHash TapeSister-Windows-x64.zip).Hash -ne (Get-FileHash $Downloaded).Hash) {
+            throw 'Downloaded archive differs from the packaged ZIP'
+          }
+          ./tests/test_windows_portable.ps1 -ArchivePath $Downloaded -StagingDirectory TapeSister-Windows-x64 -MarkDownloaded

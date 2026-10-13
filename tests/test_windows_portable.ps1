@@ -1,13 +1,15 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)] [string]$ArchivePath,
-    [Parameter(Mandatory = $true)] [string]$StagingDirectory
+    [Parameter(Mandatory = $true)] [string]$StagingDirectory,
+    [switch]$MarkDownloaded
 )
 
 $ErrorActionPreference = "Stop"
 $ArchivePath = [System.IO.Path]::GetFullPath($ArchivePath)
 $StagingDirectory = [System.IO.Path]::GetFullPath($StagingDirectory)
 $PackageName = Split-Path -Leaf $StagingDirectory
+$ArchivePrefix = "$PackageName/"
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $Archive = [System.IO.Compression.ZipFile]::OpenRead($ArchivePath)
 $ExpectedFiles = @{}
@@ -16,7 +18,8 @@ try {
     foreach ($Entry in $Archive.Entries) {
         $Name = $Entry.FullName
         if ($Entries.ContainsKey($Name)) { throw "Duplicate ZIP entry: $Name" }
-        if (-not $Name.StartsWith("$PackageName/") -or $Name.Contains('\') -or
+        if (-not $Name.StartsWith($ArchivePrefix) -or $Name.StartsWith('/') -or
+            $Name.Contains(':') -or $Name.Contains('\') -or
             $Name.Split('/') -contains '..') { throw "Invalid ZIP path: $Name" }
         $Entries[$Name] = $true
         $Directory = $Name.EndsWith('/')
@@ -38,12 +41,25 @@ try {
     if (-not $Entries.ContainsKey("$PackageName/cdp/bin/")) {
         throw "ZIP is missing cdp/bin/"
     }
+    foreach ($Required in @('TapeSister.exe', 'SDL2.dll', 'cdp/bin/modify.exe', 'cdp/bin/pvoc.exe')) {
+        if (-not $ExpectedFiles.ContainsKey("$ArchivePrefix$Required")) {
+            throw "Runtime is not available after one extraction: $Required"
+        }
+    }
+    if ($ExpectedFiles.Keys | Where-Object { $_ -match '(^|/)TapeSister[^/]*\.zip$' }) {
+        throw "Portable download contains a nested TapeSister ZIP"
+    }
 } finally {
     $Archive.Dispose()
 }
 
 # Exercise the Windows compressed-folder shell used by Explorer, not only a
 # ZIP library. CopyHere is asynchronous, so wait for the complete file manifest.
+# Mark the retrieved artifact as an Internet download, as browsers do. This is
+# still a hosted runner with UAC disabled; it is not a normal-user UAC test.
+if ($MarkDownloaded) {
+    Set-Content -LiteralPath $ArchivePath -Stream Zone.Identifier -Value "[ZoneTransfer]`r`nZoneId=3"
+}
 $ExtractRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("TapeSister-zip-test-" + [guid]::NewGuid())
 New-Item -ItemType Directory -Path $ExtractRoot | Out-Null
 try {
@@ -68,7 +84,7 @@ try {
     if ($Files.Count -ne $ExpectedFiles.Count) { throw "ZIP file count differs from staged runtime" }
     foreach ($File in $Files) {
         $Relative = $File.FullName.Substring($StagingDirectory.Length + 1)
-        $Extracted = Join-Path (Join-Path $ExtractRoot $PackageName) $Relative
+        $Extracted = Join-Path $ExtractRoot "$ArchivePrefix$Relative"
         if ((Get-FileHash -LiteralPath $File.FullName).Hash -ne
             (Get-FileHash -LiteralPath $Extracted).Hash) { throw "Extracted content differs: $Relative" }
     }
@@ -77,7 +93,7 @@ try {
         [System.IO.File]::WriteAllText($Probe, 'write test')
         Remove-Item -LiteralPath $Probe
     }
-    Write-Host "Windows ZIP metadata, shell extraction, $($Files.Count) file hashes and folder writes passed."
+    Write-Host "Windows ZIP metadata, shell extraction, $($Files.Count) file hashes and folder writes passed. MarkDownloaded=$MarkDownloaded"
 } finally {
     Remove-Item -LiteralPath $ExtractRoot -Recurse -Force
 }

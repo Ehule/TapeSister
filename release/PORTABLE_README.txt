@@ -11,6 +11,10 @@ WINDOWS
 2. Open that folder and double-click TapeSister.exe.
 3. Do not run TapeSister.exe from inside the ZIP file.
 
+The GitHub Actions Windows download needs only one extraction. The resulting
+folder contains TapeSister.exe, its DLLs, assets, cdp, licenses and docs directly;
+there is no second TapeSister ZIP to extract. Keep cdp/bin and all its programs.
+
 TapeSister writes its settings, presets, diagnostic log, and Captures folder in
 portable locations associated with the extracted folder. SDL2 and the MinGW DLLs
 must remain beside TapeSister.exe. The assets, cdp, and licenses directories must
@@ -39,6 +43,7 @@ arrangement workflow in detail. Linked guides and screenshots are included in do
 
 LINUX
 -----
+The GitHub Actions Linux download is the .tar.gz itself, without an outer ZIP.
 Extract the complete TapeSister-linux-x86_64.tar.gz archive to a writable folder
 and run ./tapesister there. Keep assets, cdp and licenses with the executable.
 The docs folder contains the same manual, quick reference, guides and screenshots.
