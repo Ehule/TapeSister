@@ -187,6 +187,7 @@ jobs:
         with:
           artifact-ids: ${{ steps.windows-artifact.outputs.artifact-id }}
           path: download-check
+          skip-decompress: true
       - name: Verify one-extraction downloaded package
         shell: pwsh
         timeout-minutes: 5
