@@ -372,7 +372,8 @@ enum { TS_SHARED_PALETTE_PATH_MAX = TS_RUNTIME_PATH_MAX };
 
 static int shared_palette_path(const TsUiState *ui, char *path, size_t path_size)
 {
-    const char *override = getenv("TAPESISTER_PALETTE");
+    /* SDL and the application can use different environment caches on Windows. */
+    const char *override = SDL_getenv("TAPESISTER_PALETTE");
     const char *directory;
     int written;
     if (path == NULL || path_size == 0u) return 0;

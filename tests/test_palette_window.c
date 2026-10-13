@@ -82,6 +82,7 @@ int main(int argc,char **argv)
     for(int i=0;i<browser->entry_count;++i)if(!strcmp(browser->entries[i].name,"Palette Window Fixture.pal"))file=i;
     assert(file>=0);ts_browser_select(browser,file);click(40,590);assert(!memcmp(&u.palette,&edited,sizeof(edited)));remove(saved_path);
     SDL_setenv("TAPESISTER_PALETTE","palette-shared-fixture.pal",1);remove("palette-shared-fixture.pal");
+    assert(shared_palette_path(&u,saved_path,sizeof(saved_path))&&!strcmp(saved_path,"palette-shared-fixture.pal"));
     click(360,599);assert(ts_palette_load(&loaded,"palette-shared-fixture.pal",err,sizeof(err)));assert(!memcmp(&loaded,&edited,sizeof(loaded)));
     click(360,599);assert(palette_window.overwrite_shared);click(360,599);assert(!palette_window.overwrite_shared);remove("palette-shared-fixture.pal");
     palette_window_hide(&u,0);SDL_Event shortcut={0};shortcut.type=SDL_KEYDOWN;shortcut.key.windowID=SDL_GetWindowID(host);shortcut.key.keysym.sym=SDLK_p;
