@@ -849,7 +849,7 @@ static void slider(TsFramebuffer *fb, int x, int y, int w, const char *label, fl
                    uint32_t color)
 {
     text(fb, x, y, label, ts_theme_color(active_palette(), render_group, TS_COLOR_TEXT, RGB(222, 218, 214)), 1);
-    rect(fb, x, y + 13, w, 6, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(12, 12, 12)));
+    rect(fb, x, y + 13, w, 6, ts_theme_color(active_palette(), render_group, TS_COLOR_CONTROL, RGB(12, 12, 12)));
     rect(fb, x + 1, y + 14, (int)((w - 2) * value), 4, color);
     int knob = x + (int)((w - 6) * value);
     rect(fb, knob, y + 10, 6, 12, PAL_MOUSE);
@@ -865,7 +865,7 @@ static void bipolar_slider(TsFramebuffer *fb, int x, int y, int w,
     if (value < -1.0f) value = -1.0f;
     if (value > 1.0f) value = 1.0f;
     text(fb, x, y, label, ts_theme_color(active_palette(), render_group, TS_COLOR_TEXT, RGB(222, 218, 214)), 1);
-    rect(fb, x, y + 13, w, 6, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(12, 12, 12)));
+    rect(fb, x, y + 13, w, 6, ts_theme_color(active_palette(), render_group, TS_COLOR_CONTROL, RGB(12, 12, 12)));
     center = x + (w - 6) / 2;
     knob = x + (int)lrintf((float)(w - 6) * (value + 1.0f) * 0.5f);
     fill_first = knob < center ? knob + 3 : center + 3;
@@ -888,7 +888,7 @@ static void compact_slider(TsFramebuffer *fb, int x, int y, int w,
     if (value > 1.0f) value = 1.0f;
     if (active) rect(fb, x - 4, y + 1, 3, 11, PAL_MOUSE);
     text(fb, x, y + 3, label, active ? PAL_MOUSE : ts_theme_color(active_palette(), render_group, TS_COLOR_TEXT, RGB(222, 218, 214)), 1);
-    rect(fb, track_x, y + 5, track_w, 4, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(8, 8, 8)));
+    rect(fb, track_x, y + 5, track_w, 4, ts_theme_color(active_palette(), render_group, TS_COLOR_CONTROL, RGB(8, 8, 8)));
     rect(fb, track_x + 1, y + 6, (int)((track_w - 2) * value), 2, color);
     knob = track_x + (int)((track_w - 4) * value);
     rect(fb, knob, y + 2, 4, 10, PAL_MOUSE);

@@ -45,6 +45,8 @@ Turn Follow View back on to resume following. **Always on Top** is optional. The
 resized with normal operating-system controls.
 
 Select a swatch, then drag its RGB sliders or edit its six-digit hex value.
+**Control fill** also colors slider tracks, keeping their full range visible
+against the canvas background even when a handle is centered or at zero.
 Ctrl+A replaces the hex value; Enter applies it, Escape discards the typed value.
 The mouse wheel changes a channel by one; Shift makes it eight. Arrow keys
 select colors, and the wheel over the list scrolls Detail or Shared Colors.

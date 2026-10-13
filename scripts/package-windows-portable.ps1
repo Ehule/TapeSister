@@ -32,7 +32,34 @@ New-Item -ItemType Directory -Path $StagingDirectory | Out-Null
 if (Test-Path -LiteralPath $ArchivePath) {
     Remove-Item -LiteralPath $ArchivePath -Force
 }
-Compress-Archive -LiteralPath $StagingDirectory -DestinationPath $ArchivePath `
-    -CompressionLevel Optimal
+# Write every directory explicitly, including cdp/bin. Compress-Archive emitted
+# only some parent folders, with no DOS directory bit. Keep the portable ZIP's
+# metadata independent of build-machine attributes and access-control settings.
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$Archive = [System.IO.Compression.ZipFile]::Open(
+    $ArchivePath, [System.IO.Compression.ZipArchiveMode]::Create)
+try {
+    $Items = @((Get-Item -LiteralPath $StagingDirectory)) + @(
+        Get-ChildItem -LiteralPath $StagingDirectory -Recurse -Force |
+            Sort-Object FullName
+    )
+    foreach ($Item in $Items) {
+        if ($Item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) {
+            throw "Portable package must contain ordinary files and folders: $($Item.FullName)"
+        }
+        $RelativePath = $Item.FullName.Substring($OutputDirectory.TrimEnd('\', '/').Length + 1).Replace('\', '/')
+        if ($Item.PSIsContainer) {
+            $Entry = $Archive.CreateEntry("$RelativePath/")
+            $Entry.ExternalAttributes = 0x10 # DOS directory; no read-only/system flags
+        } else {
+            $Entry = [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+                $Archive, $Item.FullName, $RelativePath,
+                [System.IO.Compression.CompressionLevel]::Optimal)
+            $Entry.ExternalAttributes = 0x20 # Ordinary archive file
+        }
+    }
+} finally {
+    $Archive.Dispose()
+}
 
 Write-Host "Created '$ArchivePath'."

@@ -36,6 +36,28 @@ static TsSamplePages navigation_pages;
 static MosaicController navigation_mosaic;
 static PortalController navigation_portal;
 static TransformController navigation_transform;
+static void slider_tracks(void)
+{
+    /* Zero/center values leave most of the trough unfilled. It must still be
+       visible on both sides of the handle, independently of the grid setting. */
+    static const int sides[]={11,80,89,158,167,236,252,328};
+    for(int preset=0;preset<TS_THEME_PRESET_COUNT;++preset) {
+        ts_palette_preset(&u.palette,preset);u.palette.theme.grid_visibility=0;
+        ts_ui_render(&fb,&u,&bank);
+        for(size_t i=0;i<sizeof(sides)/sizeof(*sides);++i) {
+            int x=sides[i];
+            assert(fb.pixels[248*640+x]!=fb.pixels[244*640+x]);
+            if(!preset)assert(fb.pixels[248*640+x]==0xff0c0c0c);
+        }
+    }
+    /* The existing Control fill setting adjusts troughs; it does not change
+       the canvas background or require another exposed palette control. */
+    ts_theme_override(&u.palette,TS_THEME_CANVAS,TS_COLOR_CONTROL,0xff123456);
+    ts_ui_render(&fb,&u,&bank);
+    assert(fb.pixels[248*640+11]==0xff123456);
+    assert(fb.pixels[244*640+11]!=0xff123456);
+    ts_palette_default(&u.palette);
+}
 static void component(int group)
 {
     click(495,123);
@@ -123,6 +145,7 @@ int main(int argc,char **argv)
     SDL_SetMainReady();SDL_setenv("SDL_VIDEODRIVER","dummy",1);assert(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER));
     host=SDL_CreateWindow("Palette fixture",0,0,640,400,0);assert(host);
     ts_ui_init(&u);ts_instrument_init(&bank);ts_sister_ui_model_init(&sister.model,&u.config);
+    slider_tracks();
     TsPalette original=u.palette;u.config_open=1;begin_palette(&u);
     assert(palette_window.visible&&!u.palette_open&&!u.config_open&&!ui_dialog_open(&u));
     click(205,58);assert(u.palette.theme.preset==1); /* Soft */

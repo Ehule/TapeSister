@@ -46,6 +46,9 @@ through semantic roles. Existing legacy swatch imports remain usable.
   the fix. Master EQ, tile EQ and the legacy router now fully occlude canvas
   detail under all eight presets at 4x scale; returning to Canvas restores its
   native waveform layer. This does not rely on different background colors.
+- Native framebuffer checks keep the unfilled Body, Edge, Drift and Warp slider
+  tracks visible under all eight presets, including zero grid visibility and
+  a component Control fill override. Original retains its original track color.
 - Native TrackSister applies Sister to the actual framebuffer while its 62
   preference bytes remain unchanged, then restores Original. The fixture also
   verifies the plum background after the pattern and scopes redraw, covering
