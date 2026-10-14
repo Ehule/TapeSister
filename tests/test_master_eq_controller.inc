@@ -47,12 +47,39 @@ static void eq_morph_controller(void)
     eq_click(140,236,SDL_BUTTON_LEFT);assert(audio.sister.master_eq.morph.captured==3);
     eq_click(98,236,SDL_BUTTON_LEFT);assert(ui.config.master_eq.band[0].frequency==200);
     eq_click(194,236,SDL_BUTTON_LEFT);assert(ui.config.master_eq.band[0].frequency==12800);
+    assert(ui.eq_morph_selected==2 && ts_ui_eq_capture_visual(&ui,1)==TS_EQ_CAPTURE_EDITING);
+    eq_click(45,236,SDL_BUTTON_RIGHT);
+    assert(ui.eq_morph_selected==1 && ts_ui_eq_capture_visual(&ui,0)==TS_EQ_CAPTURE_EDITING);
+    assert(ts_ui_eq_capture_visual(&ui,1)==TS_EQ_CAPTURE_READY);
+    TsEqMorph captured=audio.sister.master_eq.morph;
+    eq_click(100,310,SDL_BUTTON_LEFT); /* Low-pass has frequency/Q, no gain. */
+    assert(ts_ui_eq_capture_visual(&ui,0)==TS_EQ_CAPTURE_CHANGED);
+    assert(!memcmp(&captured,&audio.sister.master_eq.morph,sizeof(captured)));
+    char help[160];ts_ui_eq_morph_status(&ui,help,sizeof(help));assert(strstr(help,"NOT CAPTURED"));
+    ts_ui_performance_hover(&ui,45,236,100,0);ts_ui_performance_hover(&ui,45,236,700,0);
+    assert(strstr(ui.performance_tooltip,"CHANGED") && strstr(ui.performance_tooltip,"middle clears"));
+    eq_click(45,236,SDL_BUTTON_LEFT);
+    assert(ts_ui_eq_capture_visual(&ui,0)==TS_EQ_CAPTURE_READY && !ui.performance_tooltip[0]);
+    eq_click(140,236,SDL_BUTTON_MIDDLE);
+    assert(ui.config.eq_morph.captured==1 && ui.eq_morph_selected==2 && strstr(ui.status,"CLEARED"));
+    assert(ts_ui_eq_capture_visual(&ui,1)==TS_EQ_CAPTURE_EMPTY);
+    ts_ui_eq_morph_status(&ui,help,sizeof(help));assert(strstr(help,"EMPTY"));
+    TsMasterEqControls live=ui.config.master_eq;
+    eq_click(140,236,SDL_BUTTON_RIGHT);assert(!memcmp(&live,&ui.config.master_eq,sizeof(live)));
+    eq_click(465,236,SDL_BUTTON_LEFT);assert(!ui.eq_morph_running && strstr(ui.status,"WAIT"));
+    /* Restore the original pair for transport tests, including the old A curve. */
+    ts_master_eq_morph_set(&audio.sister.master_eq,&captured);master_eq_snapshot(&audio,&ui);
     ui.config.eq_morph_max_seconds=14400;
     eq_click(361,236,SDL_BUTTON_LEFT);assert(ui.config.eq_morph.seconds>13000);
     ui.config.eq_morph_max_seconds=240;
     audio.sister.master_eq.morph.seconds=.1;
     eq_click(400,236,SDL_BUTTON_LEFT);assert(ui.config.eq_morph.loop);
     eq_click(465,236,SDL_BUTTON_LEFT);assert(audio.sister.master_eq.morph_running);
+    assert(!ui.eq_morph_selected);
+    TsEqMorph playing_pair=audio.sister.master_eq.morph;
+    eq_click(45,236,SDL_BUTTON_LEFT);
+    assert(ui.eq_morph_running && strstr(ui.status,"STOP BEFORE SAVING"));
+    assert(!memcmp(&playing_pair,&audio.sister.master_eq.morph,sizeof(playing_pair)));
     uint64_t saved=paged_project_state_hash(NULL,&instrument,NULL,&audio.sister,&audio.keyboard_sequence);
     /* Clock advances through the real native callback with the panel hidden. */
     ui.master_eq_open=0;
@@ -67,6 +94,8 @@ static void eq_morph_controller(void)
     assert(audio.sister.master_eq.morph_frames==clock+256); /* Exactly one tick per matrix frame. */
     ts_matrix_set(&audio.sister.matrix,&previous_graph,44100);
     master_eq_open(device,&audio,&ui);
+    clock=audio.sister.master_eq.morph_frames;
+    eq_click(465,236,SDL_BUTTON_LEFT);assert(audio.sister.master_eq.morph_frames==clock);
     eq_click(540,236,SDL_BUTTON_LEFT);assert(!audio.sister.master_eq.morph_running);
     TsMasterEqControls frozen=ui.config.master_eq;
     audio_callback(&audio,(Uint8 *)out,sizeof(out));
@@ -81,6 +110,15 @@ static void eq_morph_controller(void)
     eq_click(465,236,SDL_BUTTON_LEFT);
     assert(midi_apply_target(device,&audio,&ui,&instrument,&eq_panel,NULL,NULL,"main.eq.band.2.1",.7f,44100,2));
     assert(!audio.sister.master_eq.morph_running);
+    eq_click(45,236,SDL_BUTTON_RIGHT);
+    assert(ui.eq_morph_selected==1 && ts_ui_eq_capture_visual(&ui,0)==TS_EQ_CAPTURE_EDITING);
+    /* Reset edits only the curve. Clear is explicit and independent for each end. */
+    pair=audio.sister.master_eq.morph;
+    eq_click(500,55,SDL_BUTTON_LEFT);eq_click(500,55,SDL_BUTTON_LEFT);
+    assert(!memcmp(&pair,&audio.sister.master_eq.morph,sizeof(pair)));
+    assert(ts_ui_eq_capture_visual(&ui,0)==TS_EQ_CAPTURE_CHANGED);
+    ts_ui_eq_morph_help(&ui,500,236,help,sizeof(help));assert(strstr(help,"PLAY"));
+    ui.canvas_eq_open=1;ts_ui_eq_morph_help(&ui,45,236,help,sizeof(help));assert(!help[0]);ui.canvas_eq_open=0;
     /* Two-times scaling reaches the same compact controls. */
     SDL_SetWindowSize(window,1280,800);
     eq_click(196,472,SDL_BUTTON_LEFT);assert(ui.config.master_eq.band[0].frequency==200);

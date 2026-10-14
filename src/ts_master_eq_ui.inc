@@ -1,3 +1,76 @@
+TsEqCaptureVisual ts_ui_eq_capture_visual(const TsUiState *ui,int state)
+{
+    if(state<0 || state>1 || !(ui->config.eq_morph.captured&(1u<<state)))return TS_EQ_CAPTURE_EMPTY;
+    if(!ui->eq_morph_running && ui->eq_morph_selected==state+1) {
+        if(!ts_master_eq_matches(&ui->config.master_eq,&ui->config.eq_morph.state[state]))return TS_EQ_CAPTURE_CHANGED;
+        if(ui->eq_morph_editing)return TS_EQ_CAPTURE_EDITING;
+    }
+    return TS_EQ_CAPTURE_READY;
+}
+void ts_ui_eq_morph_status(const TsUiState *ui,char *out,size_t size)
+{
+    const TsEqMorph *m=&ui->config.eq_morph;
+    if(ui->eq_morph_running) {
+        snprintf(out,size,"RUNNING %s / %.1F%% B / %s / %s",ui->eq_morph_reverse?"B > A":"A > B",
+            100*ui->eq_morph_position,m->loop?"LOOP":"ONCE",
+            !ui->config.master_eq.enabled?"EQ BYPASSED":ts_master_eq_matches(&m->state[0],&m->state[1])?"A = B: SAME CURVE":"STOP HOLDS CURVE");return;
+    }
+    int state=ui->eq_morph_selected-1;
+    if(state>=0 && state<2) {
+        TsEqCaptureVisual visual=ts_ui_eq_capture_visual(ui,state);
+        if(visual==TS_EQ_CAPTURE_EMPTY)snprintf(out,size,"EDIT %c / EMPTY / LIVE CURVE KEPT / CLICK CAP %c TO SAVE",'A'+state,'A'+state);
+        else if(visual==TS_EQ_CAPTURE_CHANGED)snprintf(out,size,"EDIT %c / CHANGED - NOT CAPTURED / CLICK CAP %c TO SAVE",'A'+state,'A'+state);
+        else snprintf(out,size,"%s %c / %s",visual==TS_EQ_CAPTURE_EDITING?"EDIT":"AT",'A'+state,
+            m->captured!=3?"CAPTURE OTHER END TO PLAY":ts_master_eq_matches(&m->state[0],&m->state[1])?
+            "A = B: SAME CURVE / EDIT THEN CAPTURE":"A+B READY / PLAY STARTS A > B");
+    } else if(m->captured!=3)snprintf(out,size,"A %s / B %s / CAPTURE BOTH TO PLAY",m->captured&1?"READY":"EMPTY",m->captured&2?"READY":"EMPTY");
+    else snprintf(out,size,"%s / A+B READY / PLAY STARTS A > B",ui->eq_morph_editing?"LIVE EDIT - NOT CAPTURED":"STOPPED / CURVE HELD");
+}
+void ts_ui_eq_morph_help(const TsUiState *ui,int x,int y,char *out,size_t size)
+{
+    if(!size)return;
+    out[0]=0;
+    if(ui->canvas_eq_open || y<220 || y>=250)return;
+    int state=x>=20 && x<82?0:x>=116 && x<178?1:-1;
+    if(state>=0) {
+        static const char *const states[]={"EMPTY","CAPTURED","EDITING","CHANGED - NOT CAPTURED"};
+        snprintf(out,size,"CAP %c: %s. %s",'A'+state,states[ts_ui_eq_capture_visual(ui,state)],
+            ui->eq_morph_running?"Running: right-click recalls for editing; middle clears. Stop before saving.":
+            "Left saves all five bands; right recalls to edit (even empty); middle clears this capture.");
+    } else if((x>=88 && x<110) || (x>=184 && x<206)) {
+        state=x>=184;
+        snprintf(out,size,"%c: recall for editing and stop the timer. Highlight marks the selected state. Empty keeps the live curve; CAP %c saves it.",'A'+state,'A'+state);
+    } else if(x>=220 && x<362)snprintf(out,size,"TIME per leg. Drag/wheel; Shift-wheel: 0.1s; right: 4 minutes. Changes apply next leg. INI eq_morph_max_seconds extends range.");
+    else if(x>=370 && x<438)snprintf(out,size,"LOOP: A > B > A continuously; Time applies to each leg. Off finishes the current leg and holds its destination.");
+    else if(x>=444 && x<514)snprintf(out,size,"%s",ui->eq_morph_running?
+        "RUNNING: follows the audio clock, even with this view closed. Clicking again keeps moving. STOP holds; then PLAY restarts at A.":
+        ui->config.eq_morph.captured==3?"PLAY: recalls saved A, then moves to saved B over Time. Unsaved changes are not captured. Loop repeats both directions.":
+        "WAIT: capture A and B first. Set the first curve, CAP A; set the second curve, CAP B; then PLAY.");
+    else if(x>=520 && x<568)snprintf(out,size,"STOP: freeze the current curve for editing. Captures stay saved. PLAY starts again at A. Right-click a CAP recalls its saved curve.");
+    else if(x>=580 && x<620)snprintf(out,size,"Progress is the amount of B in the blend. A/B marks the selected state when stopped; LIVE is a held blend. Amber means unsaved edits.");
+}
+static uint32_t eq_capture_ink(TsEqCaptureVisual state)
+{
+    static const TsThemeRole roles[]={TS_COLOR_DIM,TS_COLOR_DATA4,TS_COLOR_DATA3,TS_COLOR_DATA1};
+    static const uint32_t defaults[]={RGB(142,151,163),RGB(105,229,153),RGB(119,190,255),RGB(255,193,92)};
+    return ts_theme_color(active_palette(),TS_THEME_EQ,roles[state],defaults[state]);
+}
+static void eq_capture_button(TsFramebuffer *fb,const TsUiState *ui,int state)
+{
+    static const char *const names[]={"EMPTY","READY","EDIT","CHANGED"};
+    TsEqCaptureVisual visual=ts_ui_eq_capture_visual(ui,state);
+    uint32_t ink=eq_capture_ink(visual),bg=ts_theme_color(active_palette(),TS_THEME_EQ,TS_COLOR_PANEL,RGB(27,31,37));
+    int x=20+state*96;char label[8];
+    frame(fb,x,225,62,22,palette_blend(bg,ink,18),ink);
+    snprintf(label,sizeof(label),"CAP %c",'A'+state);text(fb,x+16,228,label,ink,1);
+    text(fb,x+(62-(int)strlen(names[visual])*6)/2,238,names[visual],ink,1);
+    int selected=!ui->eq_morph_running && ui->eq_morph_selected==state+1;
+    int target=ui->eq_morph_running && state==(ui->eq_morph_reverse?0:1);
+    uint32_t highlight=eq_capture_ink(selected && visual==TS_EQ_CAPTURE_CHANGED?TS_EQ_CAPTURE_CHANGED:TS_EQ_CAPTURE_EDITING);
+    frame(fb,x+68,225,22,22,selected?highlight:target?palette_blend(bg,highlight,35):bg,
+        selected || target?highlight:ink);
+    snprintf(label,sizeof(label),"%c",'A'+state);text(fb,x+76,233,label,selected?bg:target?highlight:ink,1);
+}
 static const TsMasterEqControls *eq_controls(const TsUiState *ui)
 {return ui->canvas_eq_open?&ui->canvas_eq:&ui->config.master_eq;}
 /* Native fixed-pixel master page: same primitives and palette as the instrument. */
@@ -118,10 +191,11 @@ static void master_eq_render_impl(TsFramebuffer *fb,const TsUiState *ui)
     }
     if(!ui->canvas_eq_open) {
         const TsEqMorph *m=&ui->config.eq_morph;
-        button(fb,20,225,62,"CAP A",(m->captured&1)!=0);
-        button(fb,88,225,22,"A",0);
-        button(fb,116,225,62,"CAP B",(m->captured&2)!=0);
-        button(fb,184,225,22,"B",0);
+        eq_capture_button(fb,ui,0);eq_capture_button(fb,ui,1);
+        ts_ui_eq_morph_status(ui,label,sizeof(label));
+        int selected=ui->eq_morph_selected-1;
+        uint32_t status_ink=ui->eq_morph_running?teal:selected>=0?eq_capture_ink(ts_ui_eq_capture_visual(ui,selected)):muted;
+        text(fb,20,214,label,status_ink,1);
         double maximum=ui->master_eq_drag==6?ui->eq_morph_drag_max:fmax(m->seconds,ui->config.eq_morph_max_seconds);
         maximum=fmax(1,fmin(TS_EQ_MORPH_MAX_SECONDS,maximum));
         double seconds=fmax(TS_EQ_MORPH_MIN_SECONDS,m->seconds);
@@ -132,9 +206,17 @@ static void master_eq_render_impl(TsFramebuffer *fb,const TsUiState *ui)
         frame(fb,376,232,9,9,PAL_DESKTOP,m->loop?amber:muted);
         if(m->loop){ui_line(fb,377,235,380,239,amber);ui_line(fb,380,239,383,233,amber);}
         text(fb,391,234,"LOOP",m->loop?amber:muted,1);
-        button(fb,444,225,70,ui->eq_morph_running?(ui->eq_morph_reverse?"B > A":"A > B"):"PLAY",ui->eq_morph_running);
+        if(m->captured!=3) {
+            frame(fb,444,225,70,22,PAL_DESKTOP,muted);text(fb,467,233,"WAIT",muted,1);
+        } else button(fb,444,225,70,ui->eq_morph_running?(ui->eq_morph_reverse?"B > A":"A > B"):"PLAY",ui->eq_morph_running);
         button(fb,520,225,48,"STOP",0);
-        snprintf(label,sizeof(label),"%3.0F%%",100*ui->eq_morph_position);text(fb,580,234,label,teal,1);
+        if(ui->eq_morph_running)snprintf(label,sizeof(label),"%3.0F%%",100*ui->eq_morph_position);
+        else if(ui->eq_morph_selected)snprintf(label,sizeof(label),"%c",'A'+ui->eq_morph_selected-1);
+        else snprintf(label,sizeof(label),"LIVE");
+        text(fb,580,232,label,status_ink,1);
+        if(ui->eq_morph_running) {
+            rect(fb,580,243,36,3,muted);rect(fb,580,243,(int)(36*ui->eq_morph_position),3,teal);
+        }
     }
     for(int pass=0;pass<5;++pass) {
         /* A moving selected node must remain visible when bands cross. */
@@ -172,7 +254,13 @@ static void master_eq_render_impl(TsFramebuffer *fb,const TsUiState *ui)
     text(fb,138,349,label,ui->master_output.limiter_gain_reduction_db>.1?amber:muted,1);
     snprintf(label,sizeof(label),"OUT %.0F%%",ui->master_output.gain*100);
     slider(fb,328,340,182,label,ui->master_output.gain,amber);
-    text(fb,20,369,"MASTER > EQ > LIMITER > OUT",muted,1);
+    const char *help=ui->performance_tooltip[0]?ui->performance_tooltip:
+        "CAP: LEFT SAVE / RIGHT EDIT / MIDDLE CLEAR.  A/B: RECALL.  PLAY: A > B.  STOP: HOLD.";
+    for(int row=0;row<2 && *help;++row) {
+        size_t n=strlen(help);if(n>98){n=98;while(n && help[n]!=' ')--n;if(!n)n=98;}
+        char line[100];memcpy(line,help,n);line[n]=0;text(fb,20,364+row*9,line,teal,1);
+        help+=n;while(*help==' ')++help;
+    }
     button(fb,528,341,88,"ROUTER F9",0);
     }
     if(ui->midi_learn_active) {

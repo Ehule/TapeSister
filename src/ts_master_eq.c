@@ -157,8 +157,19 @@ static void eq_apply(TsMasterEq *eq,const TsMasterEqControls *controls,int morph
 void ts_master_eq_set(TsMasterEq *eq,const TsMasterEqControls *controls)
 {
     TsMasterEqControls c=*controls;ts_master_eq_sanitize(&c);
+    if(!ts_master_eq_matches(&c,&eq->live))eq->morph_editing=1;
     eq->controls=c;eq->morph_running=0;eq->morph_tick=0;
     eq_apply(eq,&c,0);
+}
+int ts_master_eq_matches(const TsMasterEqControls *a,const TsMasterEqControls *b)
+{
+    if(a->enabled!=b->enabled)return 0;
+    for(int i=0;i<TS_MASTER_EQ_BANDS;++i) {
+        const TsEqBand *x=&a->band[i],*y=&b->band[i];
+        if(x->enabled!=y->enabled || x->type!=y->type || x->frequency!=y->frequency ||
+           x->gain_db!=y->gain_db || x->q!=y->q)return 0;
+    }
+    return 1;
 }
 void ts_eq_morph_default(TsEqMorph *m)
 {
@@ -177,25 +188,40 @@ void ts_master_eq_morph_set(TsMasterEq *eq,const TsEqMorph *m)
 {
     ts_master_eq_morph_stop(eq);eq->morph=*m;ts_eq_morph_sanitize(&eq->morph);
     eq->morph_position=0;eq->morph_reverse=0;
+    eq->morph_selected=eq->morph_editing=0;
+    for(int i=0;i<2;++i)if((eq->morph.captured&(1u<<i)) && ts_master_eq_matches(&eq->live,&eq->morph.state[i])) {
+        eq->morph_selected=i+1;eq->morph_position=i;break;
+    }
 }
 void ts_master_eq_morph_capture(TsMasterEq *eq,int state)
 {
     if(state<0 || state>1)return;
     ts_master_eq_morph_stop(eq);eq->morph.state[state]=eq->live;
     eq->morph.state[state].solo_band=0;eq->morph.captured|=1u<<state;
+    eq->morph_selected=state+1;eq->morph_editing=0;eq->morph_position=state;eq->morph_reverse=0;
+}
+void ts_master_eq_morph_clear(TsMasterEq *eq,int state)
+{
+    if(state<0 || state>1)return;
+    ts_master_eq_morph_stop(eq);
+    eq->morph.captured&=~(1u<<state);ts_master_eq_default(&eq->morph.state[state]);
+    eq->morph_selected=state+1;eq->morph_editing=1;
 }
 int ts_master_eq_morph_recall(TsMasterEq *eq,int state)
 {
-    if(state<0 || state>1 || !(eq->morph.captured&(1u<<state)))return 0;
+    if(state<0 || state>1)return 0;
+    ts_master_eq_morph_stop(eq);eq->morph_selected=state+1;eq->morph_editing=1;
+    if(!(eq->morph.captured&(1u<<state)))return 0;
     ts_master_eq_set(eq,&eq->morph.state[state]);eq->morph_position=state;eq->morph_reverse=0;return 1;
 }
 int ts_master_eq_morph_start(TsMasterEq *eq)
 {
-    if(eq->morph.captured!=3u)return 0;
+    if(eq->morph.captured!=3u || !eq->sample_rate)return 0;
+    if(eq->morph_running)return 1; /* Repeated clicks must not pin the clock to A. */
     ts_eq_morph_sanitize(&eq->morph);
     ts_master_eq_morph_recall(eq,0);eq->morph_duration=eq->morph.seconds;
     eq->morph_frames=0;eq->morph_total_frames=(uint64_t)llround(eq->sample_rate*eq->morph_duration);
-    eq->morph_running=1;return 1;
+    eq->morph_selected=eq->morph_editing=0;eq->morph_running=1;return 1;
 }
 static void eq_morph_tick(TsMasterEq *eq)
 {
@@ -226,7 +252,7 @@ static void eq_morph_tick(TsMasterEq *eq)
             eq->morph_reverse=!eq->morph_reverse;eq->morph_duration=eq->morph.seconds;
             eq->morph_frames=0;eq->morph_total_frames=(uint64_t)llround(eq->sample_rate*eq->morph_duration);
         }
-        else eq->morph_running=0;
+        else {eq->morph_running=0;eq->morph_selected=eq->morph_reverse?1:2;eq->morph_editing=0;}
     }
 }
 static double filter(TsEqFilter *f,double in,int ch)

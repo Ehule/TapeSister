@@ -10,8 +10,27 @@ rendered curves.
 3. Set **TIME**, then click **PLAY**. The EQ recalls A and moves to B.
 
 Click the small **A** or **B** button to recall a captured curve for editing.
-Capture buttons light when their state is stored; capturing again replaces that
-state. Both captures are required before Play works. Captures include every
+The selected A/B button is highlighted. Capture buttons use Prism's state colors:
+
+| Capture label | Color | Meaning |
+| --- | --- | --- |
+| EMPTY | Gray | No stored capture; select it and edit the live curve before saving. |
+| READY | Green | A saved capture is available. |
+| EDIT | Blue | Its saved curve is recalled for editing. |
+| CHANGED | Amber | The selected curve has edits that have not been captured. |
+
+**Left-click CAP** saves all five bands, **right-click CAP** recalls for editing,
+and **middle-click CAP** clears only that capture. Clearing stops the timer and
+holds the live curve; the other capture stays saved. Empty recall also keeps the
+live curve. The small A/B buttons are recall shortcuts. During playback, the
+highlighted outline indicates the destination; a solid highlight indicates the
+selected editable state when stopped. Capture is protected during playback:
+Stop first, or right-click CAP to recall an endpoint for editing.
+
+Both captures are required before Play works; otherwise the button says **WAIT**.
+Hover help explains each control in two lines below the output controls. The
+status above the buttons always shows the selected edit state or running
+phase/direction, including identical captures and EQ bypass. Captures include every
 band's frequency, gain, Q, type and bypass, plus the overall EQ bypass. Temporary
 band solo, limiter, output gain and routing are excluded.
 
@@ -20,7 +39,11 @@ band solo, limiter, output gain and routing are excluded.
   a 4:00 setting gives an eight-minute round trip.
 - **Stop:** hold the current curve. Editing a band, choosing a preset, resetting
   EQ, toggling bypass/solo or using an EQ MIDI control also takes over manually.
-- **Play:** restart at A. **A/B recall** uses the usual short EQ smoothing.
+- **Play:** start at A when stopped. Clicking while already running keeps the
+  transition moving. Stop, then Play to restart. **A/B recall** uses the usual
+  short EQ smoothing.
+- **Reset EQ:** resets the live curve and bypass only. Saved captures stay stored;
+  use middle-click CAP to clear each one explicitly.
 - Closing or minimizing the EQ view does not stop the sweep. Its clock follows
   processed audio frames, independently of song tempo and source transport.
   Pausing the audio device pauses its clock.
@@ -74,13 +97,17 @@ four-minute low-pass sweep checks for unwanted periodic level dips.
 The native SDL controller fixture exercises capture/recall, the extended time
 range, two-times window scaling, MIDI/manual takeover, hidden-panel playback,
 stable dirty-state hashing, and exactly one EQ clock tick per matrix frame.
-Existing tile EQ, routing, keyboard, recording and spectrum tests remain in the
-release gate. Windows and Linux each passed 63 regression tests plus packaging
-on the initial implementation (`122c8a4`). The final UI polish keeps the selected
-band visible as nodes cross and shortens the footer hint.
+It also checks Prism-style empty/ready/edit/changed feedback, empty recall,
+clear while running, saved-pair preservation, contextual hover help, repeated
+Play without restarting, and selection at the completed endpoint. Existing tile
+EQ, routing, keyboard, recording and spectrum tests remain in the release gate. Windows and Linux each passed 63 regression tests plus packaging
+on the initial implementation (`122c8a4`). The state-feedback update keeps selection and hover help visible and schedules
+EQ motion at the animated refresh rate, even without other transports running.
 
 Physical-device listening and low-power laptop performance are not established
 by these tests. The image below is the native framebuffer, rendered from the DSP
 state at 40% through a four-minute sweep.
 
 ![Native whole-EQ A/B controls](screenshots/eq-ab-morph.png)
+
+![Changed capture, selected state and contextual help](screenshots/eq-ab-morph-edit.png)

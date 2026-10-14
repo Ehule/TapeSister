@@ -27,6 +27,8 @@ typedef struct {
     TsMasterEqControls live;
     TsEqMorph morph;
     int morph_running, morph_reverse;
+    /* Transient selection: 0 = live blend, 1 = A, 2 = B. Never serialized. */
+    int morph_selected, morph_editing;
     double morph_position, morph_duration;
     uint64_t morph_frames, morph_total_frames;
     unsigned morph_tick;
@@ -44,6 +46,8 @@ int ts_master_eq_preset(TsMasterEqControls *c, int preset);
 /* Matches band settings, independently of global bypass or temporary solo. */
 int ts_master_eq_preset_match(const TsMasterEqControls *c);
 void ts_master_eq_sanitize(TsMasterEqControls *c);
+/* Capture comparison excludes temporary band solo and structure padding. */
+int ts_master_eq_matches(const TsMasterEqControls *a, const TsMasterEqControls *b);
 int ts_master_eq_band_active(const TsMasterEqControls *c, int band);
 void ts_master_eq_toggle_band(TsMasterEqControls *c, int band);
 void ts_master_eq_init(TsMasterEq *eq);
@@ -54,6 +58,7 @@ void ts_eq_morph_default(TsEqMorph *m);
 void ts_eq_morph_sanitize(TsEqMorph *m);
 void ts_master_eq_morph_set(TsMasterEq *eq, const TsEqMorph *m);
 void ts_master_eq_morph_capture(TsMasterEq *eq, int state);
+void ts_master_eq_morph_clear(TsMasterEq *eq, int state);
 int ts_master_eq_morph_recall(TsMasterEq *eq, int state);
 int ts_master_eq_morph_start(TsMasterEq *eq);
 void ts_master_eq_morph_stop(TsMasterEq *eq);

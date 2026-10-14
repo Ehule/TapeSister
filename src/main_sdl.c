@@ -18102,6 +18102,7 @@ int main(int argc, char **argv)
         Uint32 schedule_now = SDL_GetTicks();
         int editing = (Uint32)(schedule_now-last_input_ms)<250u || SDL_GetMouseState(NULL,NULL)!=0u;
         int animated = ui.playback_active || ui.tracker_running || ui.sister_enabled ||
+            (ts_ui_master_eq_visible(&ui) && ui.eq_morph_running) ||
             ui.sister_capture_active || ui.file_busy || ui.midi_activity_until_ms ||
             (ui.mosaic && ui.mosaic->playing) || ui.capture_state==TS_CAPTURE_RECORDING ||
             audio.live_link_available>0 || ts_input_monitor_enabled(audio.input_monitor);

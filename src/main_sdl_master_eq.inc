@@ -5,13 +5,17 @@ static void master_eq_snapshot(AudioState *audio,TsUiState *ui)
     ui->config.master_eq=eq->live;ui->config.eq_morph=eq->morph;
     ui->eq_morph_running=eq->morph_running;ui->eq_morph_reverse=eq->morph_reverse;
     ui->eq_morph_position=eq->morph_position;
+    ui->eq_morph_selected=eq->morph_selected;ui->eq_morph_editing=eq->morph_editing;
 }
 static void master_eq_commit(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui)
 {
     ts_master_eq_sanitize(&ui->config.master_eq);
     if(device)SDL_LockAudioDevice(device);
     ts_master_eq_set(canvas_eq_handling?&audio->canvas_eq:&audio->sister.master_eq,&ui->config.master_eq);
-    if(!canvas_eq_handling)master_eq_snapshot(audio,ui);
+    if(!canvas_eq_handling) {
+        master_eq_snapshot(audio,ui);
+        ts_ui_eq_morph_status(ui,ui->status,sizeof(ui->status));
+    }
     if(device)SDL_UnlockAudioDevice(device);
 }
 static int master_eq_midi_band(const char *target,int *band,int *control)
@@ -163,19 +167,35 @@ static int master_eq_event(const SDL_Event *event,SDL_Window *window,
         if(device)SDL_LockAudioDevice(device);
         TsMasterEq *eq=&audio->sister.master_eq;
         int left=event->type==SDL_MOUSEBUTTONDOWN && button==SDL_BUTTON_LEFT;
-        int result=1;
-        if(left) {
+        int down=event->type==SDL_MOUSEBUTTONDOWN;
+        int state=x>=20 && x<82?0:x>=116 && x<178?1:-1;
+        char message[160]="";
+        if(down && state>=0) {
             ui->master_eq_reset_pending=0;
-            if(x>=20 && x<82)ts_master_eq_morph_capture(eq,0);
-            else if(x>=88 && x<110)result=ts_master_eq_morph_recall(eq,0);
-            else if(x>=116 && x<178)ts_master_eq_morph_capture(eq,1);
-            else if(x>=184 && x<206)result=ts_master_eq_morph_recall(eq,1);
+            if(button==SDL_BUTTON_MIDDLE) {
+                ts_master_eq_morph_clear(eq,state);
+                snprintf(message,sizeof(message),"%c CLEARED / EMPTY / LIVE CURVE AND OTHER CAPTURE KEPT",'A'+state);
+            } else if(button==SDL_BUTTON_RIGHT)ts_master_eq_morph_recall(eq,state);
+            else if(left) {
+                if(eq->morph_running)snprintf(message,sizeof(message),"RUNNING / RIGHT-CLICK CAP TO EDIT / STOP BEFORE SAVING");
+                else {
+                    ts_master_eq_morph_capture(eq,state);
+                    snprintf(message,sizeof(message),"CAPTURED %c / ALL FIVE BANDS SAVED",'A'+state);
+                }
+            }
+        } else if(left) {
+            ui->master_eq_reset_pending=0;
+            if(x>=88 && x<110)ts_master_eq_morph_recall(eq,0);
+            else if(x>=184 && x<206)ts_master_eq_morph_recall(eq,1);
             else if(x>=220 && x<362) {
                 ui->master_eq_drag=6;
                 ui->eq_morph_drag_max=fmax(eq->morph.seconds,ui->config.eq_morph_max_seconds);
             }
             else if(x>=370 && x<438)eq->morph.loop=!eq->morph.loop;
-            else if(x>=444 && x<514)result=ts_master_eq_morph_start(eq);
+            else if(x>=444 && x<514) {
+                if(!ts_master_eq_morph_start(eq))snprintf(message,sizeof(message),"%s",
+                    eq->morph.captured!=3?"WAIT / CAPTURE A AND B BEFORE PLAY":"WAIT / AUDIO DEVICE NOT READY");
+            }
             else if(x>=520 && x<568)ts_master_eq_morph_stop(eq);
         }
         /* The INI limit expands the control. A longer recalled project remains
@@ -192,9 +212,11 @@ static int master_eq_event(const SDL_Event *event,SDL_Window *window,
             eq->morph.seconds=fmin(maximum,TS_EQ_MORPH_DEFAULT_MAX_SECONDS);
         master_eq_snapshot(audio,ui);
         if(device)SDL_UnlockAudioDevice(device);
-        if(!result)snprintf(ui->status,sizeof(ui->status),"CAPTURE A AND B BEFORE PLAY");
-        else if(left || wheel)snprintf(ui->status,sizeof(ui->status),
-            "EQ A/B: TIME PER LEG / STOP HOLDS CURVE");
+        if(down || wheel) {
+            if(message[0])snprintf(ui->status,sizeof(ui->status),"%s",message);
+            else ts_ui_eq_morph_status(ui,ui->status,sizeof(ui->status));
+            ui->performance_tooltip[0]=0;
+        }
         return 1;
     }
     TsEqBand *b=&ui->config.master_eq.band[ui->master_eq_band];

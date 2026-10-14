@@ -4,11 +4,14 @@ static const char *performance_help(const TsUiState *ui,int x,int y)
 #define H(X,Y,W,H,T) if(x>=(X) && x<(X)+(W) && y>=(Y) && y<(Y)+(H))return (T)
     if(ui->router_open)return router_help(ui,x,y);
     if(ui->master_eq_open) {
+        static char morph_help[160];
+        ts_ui_eq_morph_help(ui,x,y,morph_help,sizeof(morph_help));
+        if(morph_help[0])return morph_help;
         H(224,44,78,24,"EQ PRESETS: LOAD A STARTING SHAPE; LIMITER, OUT, TILES AND EFFECTS STAY SET");
         H(312,44,76,24,"LIVE STEREO SPECTRUM AFTER EQ, BEFORE LIMITER/OUT; RIGHT SCALE IS DBFS; TOGGLE OFF");
         H(528,340,88,25,"OPEN GLOBAL ROUTER; F9 ALSO OPENS/CLOSES ROUTING");
         H(396,44,78,24,"BYPASS ALL EQ BANDS FOR COMPARISON; YOUR SETTINGS ARE RETAINED");
-        H(484,44,96,24,"RESET EQ: CLICK TWICE TO RESTORE FLAT BANDS AND BYPASS; LIMITER/OUT STAY SET");
+        H(484,44,96,24,"RESET EQ: CLICK TWICE FOR FLAT BANDS AND BYPASS. A/B CAPTURES STAY SAVED; MIDDLE-CLICK EACH CAP TO CLEAR.");
         H(596,44,24,24,"CLOSE EQ; PROCESSING AND PLAYBACK CONTINUE");
         if(x>=35 && x<606 && y>=70 && y<245 && ts_ui_master_eq_node(ui,x,y)>=0)
             return "DRAG: FREQUENCY/GAIN; WHEEL: Q; SHIFT: FINE; MIDDLE: BYPASS; RIGHT: ZERO GAIN";

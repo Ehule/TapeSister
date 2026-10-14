@@ -95,6 +95,38 @@ static void continuous_sweep(void)
         assert(!e.morph_running && !memcmp(&e.live,&e.morph.state[1],sizeof(e.live)));
     }
 }
+static void capture_workflow(void)
+{
+    TsMasterEq e;setup(&e,48000,1);
+    assert(e.morph_selected==2 && !e.morph_editing);
+    assert(ts_master_eq_morph_recall(&e,0) && e.morph_selected==1 && e.morph_editing);
+    TsMasterEqControls a=e.live,b=e.morph.state[1],edited=a;
+    edited.band[2].gain_db=3;ts_master_eq_set(&e,&edited);
+    assert(!ts_master_eq_matches(&e.live,&e.morph.state[0]));
+    assert(ts_master_eq_matches(&a,&e.morph.state[0]));
+    ts_master_eq_morph_capture(&e,0);assert(!e.morph_editing && e.morph_selected==1);
+    assert(ts_master_eq_matches(&edited,&e.morph.state[0]));
+    edited.solo_band=4;assert(ts_master_eq_matches(&edited,&e.morph.state[0]));
+    assert(ts_master_eq_morph_start(&e));frames(&e,12000);
+    assert(!e.morph_selected && !e.morph_editing);
+    uint64_t elapsed=e.morph_frames;
+    assert(ts_master_eq_morph_start(&e) && e.morph_frames==elapsed);
+    TsMasterEqControls held=e.live;
+    ts_master_eq_morph_clear(&e,0);
+    assert(!e.morph_running && e.morph_selected==1 && e.morph_editing && e.morph.captured==2);
+    assert(ts_master_eq_matches(&held,&e.live) && ts_master_eq_matches(&b,&e.morph.state[1]));
+    assert(!ts_master_eq_morph_start(&e));
+    assert(!ts_master_eq_morph_recall(&e,0) && ts_master_eq_matches(&held,&e.live));
+    ts_master_eq_morph_capture(&e,0);assert(ts_master_eq_morph_start(&e));frames(&e,48000);
+    assert(!e.morph_running && e.morph_selected==2 && !e.morph_editing);
+    TsEqMorph saved=e.morph;ts_master_eq_morph_set(&e,&saved);
+    assert(e.morph_selected==2 && !e.morph_editing);
+    ts_master_eq_morph_clear(&e,1);assert(e.morph.captured==1);
+    ts_master_eq_morph_clear(&e,0);assert(!e.morph.captured);
+    TsMasterEq unprepared;ts_master_eq_init(&unprepared);
+    ts_master_eq_morph_capture(&unprepared,0);ts_master_eq_morph_capture(&unprepared,1);
+    assert(!ts_master_eq_morph_start(&unprepared));
+}
 static void persistence(void)
 {
     static TsConfig c,restored;ts_config_init(&c);
@@ -131,4 +163,4 @@ static void persistence(void)
     assert(ts_eq_morph_read(&e.morph,"EqMorph.Captured","4")<0);
     assert(ts_eq_morph_read(&e.morph,"EqMorph.A.Band.1","1,0,nan,0,1")<0);
 }
-int main(void){timeline();continuous_sweep();persistence();puts("EQ A/B morph tests passed");return 0;}
+int main(void){timeline();continuous_sweep();capture_workflow();persistence();puts("EQ A/B morph tests passed");return 0;}

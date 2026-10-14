@@ -511,6 +511,7 @@ typedef struct {
     unsigned master_eq_rate;
     int master_eq_presets_open, master_eq_spectrum_off;
     int eq_morph_running, eq_morph_reverse;
+    int eq_morph_selected, eq_morph_editing;
     double eq_morph_position;
     double eq_morph_drag_max;
     uint32_t master_eq_spectrum_tick;
@@ -882,6 +883,10 @@ int ts_ui_keyboard_cycle_octave(TsUiState *ui, int amount);
 int ts_ui_keyboard_shift_semitone(TsUiState *ui, int amount);
 int ts_ui_master_eq_node(const TsUiState *ui,int x,int y);
 int ts_ui_master_eq_visible(const TsUiState *ui);
+typedef enum { TS_EQ_CAPTURE_EMPTY, TS_EQ_CAPTURE_READY, TS_EQ_CAPTURE_EDITING, TS_EQ_CAPTURE_CHANGED } TsEqCaptureVisual;
+TsEqCaptureVisual ts_ui_eq_capture_visual(const TsUiState *ui,int state);
+void ts_ui_eq_morph_status(const TsUiState *ui,char *text,size_t size);
+void ts_ui_eq_morph_help(const TsUiState *ui,int x,int y,char *text,size_t size);
 int ts_ui_master_eq_preset_at(int x,int y);
 int ts_ui_master_eq_control(int x,int y);
 int ts_ui_master_eq_midi_target(const TsUiState *ui,int x,int y,char *target,size_t size);
