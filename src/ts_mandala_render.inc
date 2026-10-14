@@ -201,7 +201,10 @@ static void m_scene(Mandala *m, double dt)
     float distortion=fx->wet[TS_MANDALA_DISTORTION]*(.3f+.7f*fx->size[TS_MANDALA_DISTORTION]);
     float grain=fx->wet[TS_MANDALA_GRAIN],reverb=fx->wet[TS_MANDALA_REVERB],delay=fx->wet[TS_MANDALA_DELAY];
     float prism=fx->wet[TS_MANDALA_PRISM];
-    float activity=fminf(1,level*2);distortion*=activity;grain*=activity;reverb*=activity;delay*=activity;prism*=activity;
+    float transient=fx->wet[TS_MANDALA_TRANSIENT];
+    float attack_shape=2*fx->size[TS_MANDALA_TRANSIENT]-1;
+    float sustain_shape=2*fx->character[TS_MANDALA_TRANSIENT]-1;
+    float activity=fminf(1,level*2);distortion*=activity;grain*=activity;reverb*=activity;delay*=activity;prism*=activity;transient*=activity;
     float cycle=(float)(m->time/m->config.cycle_seconds*2*M_PI_F);
     float era=.5f+.5f*sinf(cycle-M_PI_F*.5f);
     float age=smooth((float)m->time/18);
@@ -265,6 +268,7 @@ static void m_scene(Mandala *m, double dt)
         px+=distortion*scale*.12f*drift*cosf(inst->phase);
         py+=distortion*scale*.12f*drift*sinf(inst->phase);
         float grow=(.75f+.25f*life)*(1+grain*(-.65f+2.1f*fx->size[TS_MANDALA_GRAIN]));
+        grow*=1+transient*.12f*attack_shape*m->features.onset;
         grow*=1+grain*.2f*sinf((float)m->time*(.4f+1.2f*fx->character[TS_MANDALA_GRAIN])+inst->phase);
         const MMotif *motif=&m->motifs[inst->motif];
         SDL_FPoint points[M_POINTS];
@@ -305,7 +309,7 @@ static void m_scene(Mandala *m, double dt)
             SDL_RenderDrawLinesF(m->renderer,points,motif->count);
         }
     }
-    float blur=fminf(1,reverb*.7f+distortion*.55f);
+    float blur=fminf(1,reverb*.7f+distortion*.55f+transient*(fmaxf(0,-attack_shape)*.25f+fmaxf(0,sustain_shape)*.15f));
     if(blur>.005f) {
         /* Diffuse at bounded internal resolution, not in full-window passes.
            Blend once into the retained image; no extra full-size texture. */

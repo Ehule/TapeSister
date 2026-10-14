@@ -67,7 +67,7 @@ static int name_valid(const char *s)
 }
 int ts_matrix_valid(const TsMatrixControls *c)
 {
-    if(!c || c->enabled<0 || c->enabled>1 || c->feedback<0 || c->feedback>1)return 0;
+    if(!c || c->enabled<0 || c->enabled>1 || c->feedback<0 || c->feedback>1 || c->board_insert<0 || c->board_insert>1)return 0;
     const unsigned serial=(1u<<TS_MATRIX_MAIN)|(1u<<TS_MATRIX_PRISM)|(1u<<TS_MATRIX_BOARD)|(1u<<TS_MATRIX_FALLOUT);
     if(c->serial_mask&~serial)return 0;
     for(int s=0;s<TS_MATRIX_ROWS;++s) {
@@ -117,6 +117,8 @@ int ts_matrix_set(TsRoutingMatrix *m,const TsMatrixControls *c,unsigned rate)
     /* Route compilation and validation happen on the control thread. */
     int changed=!m->ready || m->controls.enabled!=c->enabled ||
         memcmp(m->controls.delayed,c->delayed,sizeof(c->delayed));
+    if(!m->ready || activating)m->board_insert_current=(float)c->board_insert;
+    m->mode_follow=rate?1-expf(-1.f/(rate*.012f)):1;
     m->controls=*c;order_graph(c,m->order);
     for(int i=0;i<TS_MATRIX_ROWS;++i) {
         TsSourceRoute route=c->row[i];
@@ -186,7 +188,7 @@ TsSourceRoute ts_matrix_source_route(TsSourceRoute old)
 int ts_matrix_write(FILE *f,const TsMatrixControls *c)
 {
     if(!ts_matrix_valid(c))return 0;
-    if(fprintf(f,"Matrix.Enabled=%d\nMatrix.Feedback=%d\nMatrix.SerialMask=%u\n",c->enabled,c->feedback,c->serial_mask)<0)return 0;
+    if(fprintf(f,"Matrix.Enabled=%d\nMatrix.Feedback=%d\nMatrix.SerialMask=%u\nMatrix.BoardInsert=%d\n",c->enabled,c->feedback,c->serial_mask,c->board_insert)<0)return 0;
     for(int s=0;s<TS_MATRIX_ROWS;++s) {
         if(fprintf(f,"Matrix.Row%d=%d,%d,%u",s,c->row[s].pan,c->row[s].width,ts_matrix_is_processor(s)?c->delayed[s]:0)<0)return 0;
         for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)if(fprintf(f,",%d",c->row[s].matrix_gain[d])<0)return 0;
@@ -210,6 +212,9 @@ int ts_matrix_read(TsMatrixControls *c,const char *key,const char *v)
         const unsigned serial=(1u<<TS_MATRIX_MAIN)|(1u<<TS_MATRIX_PRISM)|(1u<<TS_MATRIX_BOARD)|(1u<<TS_MATRIX_FALLOUT);
         if(!integer(&v,&n) || *v || n<0 || ((unsigned)n&~serial))return -1;
         next.serial_mask=(unsigned)n;
+    } else if(!strcmp(key,"BoardInsert")) {
+        if(!integer(&v,&n) || *v || n<0 || n>1)return -1;
+        next.board_insert=n;
     } else if(!strcmp(key,"Enabled") || !strcmp(key,"Feedback")) {
         if(!integer(&v,&n) || *v || n<0 || n>1)return -1;
         if(!strcmp(key,"Enabled"))next.enabled=n;else next.feedback=n;

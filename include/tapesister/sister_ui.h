@@ -8,6 +8,11 @@
 #include "tapesister/ui.h"
 
 enum { TS_SISTER_UI_WIDTH = 640, TS_SISTER_UI_HEIGHT = 400 };
+/* Shared by rendering and hit testing; keep text and control heights intact. */
+enum { TS_SISTER_UI_FX_TOP = 48, TS_SISTER_UI_FX_ROW_STEP = 48,
+       TS_SISTER_UI_FX_ROW_H = 46, TS_SISTER_UI_FX_CLOCK_Y = 294,
+       TS_SISTER_UI_FX_EFFECT_X = 110, TS_SISTER_UI_FX_MASTER_X = 374,
+       TS_SISTER_UI_FX_CLOCK_W = 246, TS_SISTER_UI_FX_PROGRESS_Y = 323 };
 enum { TS_SISTER_UI_FX_REC_X = 538, TS_SISTER_UI_FX_REC_Y = 328,
        TS_SISTER_UI_FX_REC_W = 92, TS_SISTER_UI_FX_REC_H = 22 };
 enum { TS_PRISM_SUSTAIN_X = 396, TS_PRISM_SUSTAIN_W = 82,
@@ -197,6 +202,11 @@ typedef enum {
     TS_SISTER_UI_PARAM_PRISM_MORPH,
     TS_SISTER_UI_PARAM_PRISM_TIME,
     TS_SISTER_UI_PARAM_PRISM_SEQ_RATE,
+    TS_SISTER_UI_PARAM_SLOT5_GAIN,
+    TS_SISTER_UI_PARAM_SLOT5_A,
+    TS_SISTER_UI_PARAM_SLOT5_B,
+    TS_SISTER_UI_PARAM_SLOT5_C,
+    TS_SISTER_UI_PARAM_SLOT5_MIX,
     TS_SISTER_UI_PARAM_COUNT,
     /* These clocks are intentionally not preset-lock bits: the established
        63 lock indices remain stable in existing preset files. */
@@ -207,7 +217,18 @@ typedef enum {
 } TsSisterUiParameter;
 
 #define TS_SISTER_UI_SLOT_PARAMETER(slot, field) \
-    (TS_SISTER_UI_PARAM_SLOT1_GAIN + (int)(slot) * 5 + (int)(field))
+    ((int)(slot) == 4 ? TS_SISTER_UI_PARAM_SLOT5_GAIN + (int)(field) : \
+     TS_SISTER_UI_PARAM_SLOT1_GAIN + (int)(slot) * 5 + (int)(field))
+
+/* Return a dense slot/field index while preserving the historic IDs. */
+static inline int ts_sister_ui_slot_offset(int parameter)
+{
+    if(parameter >= TS_SISTER_UI_PARAM_SLOT1_GAIN && parameter <= TS_SISTER_UI_PARAM_SLOT4_MIX)
+        return parameter-TS_SISTER_UI_PARAM_SLOT1_GAIN;
+    if(parameter >= TS_SISTER_UI_PARAM_SLOT5_GAIN && parameter <= TS_SISTER_UI_PARAM_SLOT5_MIX)
+        return 20+parameter-TS_SISTER_UI_PARAM_SLOT5_GAIN;
+    return -1;
+}
 
 typedef enum {
     TS_SISTER_UI_FX_MASTER = 0,

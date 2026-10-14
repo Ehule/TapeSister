@@ -4883,6 +4883,7 @@ static const char *sister_fx_transition_source_name(
     case TS_SISTER_FX_TRANSITION_SLOT_2: return "SLOT 2";
     case TS_SISTER_FX_TRANSITION_SLOT_3: return "SLOT 3";
     case TS_SISTER_FX_TRANSITION_SLOT_4: return "SLOT 4";
+    case TS_SISTER_FX_TRANSITION_SLOT_5: return "SLOT 5";
     default: return NULL;
     }
 }
@@ -5429,24 +5430,25 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     if (model->fx_page == 1) {
         char effect_transition_caption[24];
         char master_transition_caption[24];
-        for (int row = 0; row < 4; ++row) {
+        for (int row = 0; row < TS_SISTER_FX_SLOT_COUNT; ++row) {
             const TsSisterFxSlotControls *slot =
                 &model->parameters.fx.slot[row];
-            int top = 48 + row * 56;
-            int fields = slot->type == TS_SISTER_FX_GRAIN ? 5 : 4;
+            int top = TS_SISTER_UI_FX_TOP + row * TS_SISTER_UI_FX_ROW_STEP;
+            int fields = (slot->type == TS_SISTER_FX_GRAIN || slot->type == TS_SISTER_FX_TRANSIENT) ? 5 : 4;
             int field_width = fields == 5 ? 70 : 88;
             int field_step = fields == 5 ? 74 : 92;
             uint32_t color = slot->type == TS_SISTER_FX_REVERB ?
                 ts_theme_color(palette, TS_THEME_PEDALBOARD, TS_COLOR_DATA6, palette->colors[TS_PALETTE_STEREO_WAVE_RIGHT]) : slot->type == TS_SISTER_FX_DELAY ?
                 PAL_EFFECT : slot->type == TS_SISTER_FX_DISTORTION ?
-                PAL_VOLUME : PAL_NOTE;
+                PAL_VOLUME : slot->type == TS_SISTER_FX_TRANSIENT ? PAL_TUNING : PAL_NOTE;
             char number[8];
             const char *description = slot->type == TS_SISTER_FX_REVERB ?
                 "TAIL-SAFE SPACE" : slot->type == TS_SISTER_FX_DELAY ?
                 "4-HEAD TAPE" : slot->type == TS_SISTER_FX_DISTORTION ?
                 "RAT / 2X" : slot->type == TS_SISTER_FX_GRAIN ?
-                "24 VOICES" : "NO PROCESSOR";
-            rect(fb, 10, top, 620, 50, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(10, 10, 11)));
+                "24 VOICES" : slot->type == TS_SISTER_FX_TRANSIENT ?
+                "STEREO ENVELOPE" : "NO PROCESSOR";
+            rect(fb, 10, top, 620, TS_SISTER_UI_FX_ROW_H, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(10, 10, 11)));
             snprintf(number, sizeof(number), "%d", row + 1);
             button(fb, 16, top + 2, 40, number, slot->enabled);
             button(fb, 60, top + 2, 90,
@@ -5457,7 +5459,20 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                 sister_db_parameter_state(fb, 156, top + 4, field_width,
                     "GAIN", slot->gain_db, color,
                     ts_sister_ui_parameter_locked(model, parameter));
-                if (slot->type == TS_SISTER_FX_GRAIN) {
+                if (slot->type == TS_SISTER_FX_TRANSIENT) {
+                    char label[24];
+                    snprintf(label,sizeof(label),"ATK %+.1f",(slot->parameter_a-.5f)*30);
+                    sister_value_parameter_state(fb,156+field_step,top+4,field_width,
+                        label,slot->parameter_a,color,ts_sister_ui_parameter_locked(model,parameter+1));
+                    snprintf(label,sizeof(label),"SUS %+.1f",(slot->parameter_b-.5f)*48);
+                    sister_value_parameter_state(fb,156+field_step*2,top+4,field_width,
+                        label,slot->parameter_b,color,ts_sister_ui_parameter_locked(model,parameter+2));
+                    snprintf(label,sizeof(label),"RESP %.2fX",.25f*powf(16,slot->parameter_c));
+                    sister_value_parameter_state(fb,156+field_step*3,top+4,field_width,
+                        label,slot->parameter_c,color,ts_sister_ui_parameter_locked(model,parameter+3));
+                    sister_percent_parameter_state(fb,156+field_step*4,top+4,field_width,
+                        "MIX",slot->mix,100,color,ts_sister_ui_parameter_locked(model,parameter+4));
+                } else if (slot->type == TS_SISTER_FX_GRAIN) {
                     char a[20], b[20], c[20];
                     snprintf(a, sizeof(a), "SIZE %.0f",
                         ts_sister_grain_size_ms(slot->parameter_a));
@@ -5507,7 +5522,7 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                 slot->placement & TS_SISTER_FX_PLACE_POST, PAL_WAVE_RIGHT);
             text(fb, 330, top + 31, description, PAL_MOUSE, 1);
             if (row > 0) button(fb, 542, top + 4, 36, "UP", 0);
-            if (row < 3) button(fb, 584, top + 4, 36, "DN", 0);
+            if (row + 1 < TS_SISTER_FX_SLOT_COUNT) button(fb, 584, top + 4, 36, "DN", 0);
         }
         {
             char effect_transition[24];
@@ -5518,15 +5533,15 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
             sister_fallout_time_label(master_transition,
                 sizeof(master_transition), ts_sister_fx_transition_ms(
                     model->parameters.fx.master_transition));
-            sister_choice_parameter_state(fb, 110, 276, 300,
+            sister_choice_parameter_state(fb, TS_SISTER_UI_FX_EFFECT_X, TS_SISTER_UI_FX_CLOCK_Y, TS_SISTER_UI_FX_CLOCK_W,
                 "EFFECT TRANSITION", effect_transition,
                 model->parameters.fx.transition, PAL_EFFECT,
                 ts_sister_ui_parameter_locked(
                     model, TS_SISTER_UI_PARAM_FX_TRANSITION));
-            button(fb, 10, 304, 92,
+            button(fb, 10, TS_SISTER_UI_FX_CLOCK_Y, 92,
                    model->parameters.fx.enabled ? "MASTER FX ON" : "MASTER FX",
                    model->parameters.fx.enabled);
-            sister_choice_parameter_state(fb, 110, 306, 300,
+            sister_choice_parameter_state(fb, TS_SISTER_UI_FX_MASTER_X, TS_SISTER_UI_FX_CLOCK_Y, TS_SISTER_UI_FX_CLOCK_W,
                 "MASTER TRANSITION", master_transition,
                 model->parameters.fx.master_transition, PAL_MOUSE,
                 ts_sister_ui_parameter_locked(
@@ -5537,7 +5552,7 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_MASTER_FX_FEEDBACK));
         text(fb, 420, 337, "0-135%", PAL_MOUSE, 1);
-        text(fb, 10, 284, "1 > 2 > 3 > 4", PAL_MOUSE, 1);
+        text(fb, 10, 337, "1>2>3>4>5", PAL_MOUSE, 1);
         if (model->routing.fx_transition_active) {
             if (model->routing.fx_transition_topology)
                 snprintf(effect_transition_caption,
@@ -5550,24 +5565,24 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                     sister_fx_transition_source_name(
                         model->routing.fx_transition_source),
                     model->routing.fx_transition_target_enabled);
-            text(fb, 420, 278, effect_transition_caption,
+            text(fb, TS_SISTER_UI_FX_EFFECT_X, 314, effect_transition_caption,
                 sister_transition_caption_color(
                     model->routing.fx_transition_progress,
                     PAL_DESKTOP, PAL_EFFECT), 1);
         }
-        sister_transition_progress(fb, 420, 289, 100,
+        sister_transition_progress(fb, TS_SISTER_UI_FX_EFFECT_X, TS_SISTER_UI_FX_PROGRESS_Y, TS_SISTER_UI_FX_CLOCK_W,
             model->routing.fx_transition_progress,
             model->routing.fx_transition_active, PAL_EFFECT);
         if (model->routing.fx_master_transition_active) {
             sister_transition_caption(master_transition_caption,
                 sizeof(master_transition_caption), "MASTER FX",
                 model->routing.fx_master_transition_target_enabled);
-            text(fb, 420, 308, master_transition_caption,
+            text(fb, TS_SISTER_UI_FX_MASTER_X, 314, master_transition_caption,
                 sister_transition_caption_color(
                     model->routing.fx_master_transition_progress,
                     PAL_DESKTOP, PAL_MOUSE), 1);
         }
-        sister_transition_progress(fb, 420, 319, 100,
+        sister_transition_progress(fb, TS_SISTER_UI_FX_MASTER_X, TS_SISTER_UI_FX_PROGRESS_Y, TS_SISTER_UI_FX_CLOCK_W,
             model->routing.fx_master_transition_progress,
             model->routing.fx_master_transition_active, PAL_MOUSE);
         button(fb, TS_SISTER_UI_FX_REC_X, TS_SISTER_UI_FX_REC_Y,

@@ -18,6 +18,8 @@ typedef struct {
     /* Imported serial effects retain their full dry/wet output. Bit MAIN
        retains the ordinary program input ceiling; other nodes stay wet-only. */
     unsigned serial_mask;
+    /* Explicit full-signal pedalboard mode; independent of legacy imports. */
+    int board_insert;
     TsSourceRoute row[TS_MATRIX_ROWS];
     unsigned delayed[TS_MATRIX_ROWS];
     char input_name[TS_MATRIX_INPUTS][TS_MATRIX_NAME];
@@ -30,6 +32,7 @@ typedef struct {
     unsigned position;
     TsStereoFrame history[TS_MATRIX_ROWS][TS_MATRIX_DELAY];
     float input_peak[TS_MATRIX_DESTINATIONS], output_peak[TS_MATRIX_ROWS], decay;
+    float board_insert_current, mode_follow;
     float hardware_peak[TS_MATRIX_OUTPUTS]; /* After OUT gain and hardware guard. */
     TsStereoFrame output[TS_MATRIX_OUTPUTS], sidechain;
 } TsRoutingMatrix;

@@ -64,8 +64,13 @@ static TsStereoFrame runtime_matrix_node(void *context,int node,TsStereoFrame in
     }
     case TS_MATRIX_BOARD: {
         uint64_t p=ts_profile_begin(TS_PROF_PEDALBOARD);
-        TsStereoFrame out=ts_sister_post_fx_process_send(&r->post_fx,input);
-        out=frame_scale(out,runtime_ramp_advance(&r->ordinary_fx_return_gain));
+        float *insert=&r->matrix.board_insert_current;
+        float difference=(float)r->matrix.controls.board_insert-*insert;
+        *insert=fabsf(difference)<1e-6f?(float)r->matrix.controls.board_insert:
+            *insert+difference*r->matrix.mode_follow;
+        TsStereoFrame out=ts_sister_post_fx_process_matrix(&r->post_fx,input,*insert);
+        float trim=runtime_ramp_advance(&r->ordinary_fx_return_gain);
+        out=frame_add(frame_scale(out,trim),frame_scale(input,*insert*(1-trim)));
         ts_profile_end(TS_PROF_PEDALBOARD,p);return out;
     }
     case TS_MATRIX_FALLOUT: {

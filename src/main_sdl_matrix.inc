@@ -117,7 +117,7 @@ static void mx_rows(TsSamplePages *pages,TsInstrument *bank)
     if(!f || f==4)for(int k=0;k<TS_MATRIX_PROCESSORS;++k) {
         int i=ts_matrix_processor(k);
         MatrixRow *r=&w->rows[w->count++];*r=(MatrixRow){.kind=2,.index=i};
-        snprintf(r->name,sizeof(r->name),"%s%s",ts_matrix_node_name(i),i>=1 && i<=4?(w->controls.serial_mask&(1u<<i)?" MIX":" WET"):"");
+        snprintf(r->name,sizeof(r->name),"%s%s",ts_matrix_node_name(i),i==TS_MATRIX_BOARD?((w->controls.serial_mask&(1u<<i)) || w->controls.board_insert?" INSERT":" SEND"):i>=1 && i<=4?(w->controls.serial_mask&(1u<<i)?" MIX":" WET"):"");
     }
     if((!f || f==5) && w->mosaic)for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(w->mosaic->events[i].id) {
         MatrixRow *r=&w->rows[w->count++];*r=(MatrixRow){.kind=3,.index=i,.tile=w->mosaic->events[i].id};
@@ -291,7 +291,7 @@ static void mx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
         mx_rect(784,743,260,3,MX_DIM);mx_rect(913,734,2,20,MX_DIM);mx_rect(914,743,r.pan>0?r.pan*130/100:0,3,MX_YELLOW);
         if(r.pan<0)mx_rect(914+r.pan*130/100,743,-r.pan*130/100,3,MX_YELLOW);
         mx_rect(914+r.pan*130/100-3,735,6,19,MX_YELLOW);
-        mx_button(1070,731,170,mx_legacy_direct(raw)?"USE MATRIX":row.kind==0?(raw.mode==TS_SOURCE_INHERIT?"USE TRACK":"USE TILE"):row.kind==3?"TO MOSAIC BUS":row.kind==1?"TO TILE BUS":"NAME I/O",(row.kind==3 || row.kind==1) && !raw.matrix_enabled && raw.mode==TS_SOURCE_MAIN);
+        mx_button(1070,731,170,row.kind==2 && row.index==TS_MATRIX_BOARD?((w->controls.serial_mask&(1u<<TS_MATRIX_BOARD)) || w->controls.board_insert?"MODE: INSERT":"MODE: SEND"):mx_legacy_direct(raw)?"USE MATRIX":row.kind==0?(raw.mode==TS_SOURCE_INHERIT?"USE TRACK":"USE TILE"):row.kind==3?"TO MOSAIC BUS":row.kind==1?"TO TILE BUS":"NAME I/O",(row.kind==3 || row.kind==1) && !raw.matrix_enabled && raw.mode==TS_SOURCE_MAIN);
         mx_text(32,769,"LEVEL/PAN: DRAG OR WHEEL | SHIFT: FINE | RIGHT-CLICK: 0 dB / CENTER | CELL RIGHT-CLICK: SELECT",MX_DIM,1);
         mx_button(1070,762,170,r.width==-100?"MONO":"STEREO",r.width==-100);
     }
@@ -662,6 +662,23 @@ static int matrix_event_inner(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID de
     if(w->selected<0 || w->selected>=w->count)return 1;
     MatrixRow row=w->rows[w->selected];TsSourceRoute raw=mx_route(row,pages,bank),r=mx_display_route(raw);
     if(left && x>=1070 && y>=731 && y<759) {
+        if(row.kind==2 && row.index==TS_MATRIX_BOARD) {
+            if(!mx_editable() || !w->controls.enabled)return 1;
+            int was_insert=w->controls.board_insert || (w->controls.serial_mask&(1u<<TS_MATRIX_BOARD));
+            w->controls.serial_mask&=~(1u<<TS_MATRIX_BOARD);
+            w->controls.board_insert=!was_insert;
+            /* An imported full-signal board begins its mode fade at full. */
+            if(was_insert && (audio->sister.matrix.controls.serial_mask&(1u<<TS_MATRIX_BOARD))) {
+                if(device)SDL_LockAudioDevice(device);
+                audio->sister.matrix.board_insert_current=1;
+                if(device)SDL_UnlockAudioDevice(device);
+            }
+            mx_commit_controls(device,audio,ui);mx_rows(pages,bank);
+            snprintf(w->status,sizeof(w->status),w->controls.board_insert?
+                "PEDALBOARD INSERT: FULL SIGNAL. FOR TRANSIENT CUTS, ROUTE THE SOURCE THROUGH PEDALS WITHOUT A PARALLEL DRY ROUTE.":
+                "PEDALBOARD SEND: WET RETURN. THE SOURCE'S DIRECT ROUTE SUPPLIES THE DRY SIGNAL.");
+            return 1;
+        }
         if(row.kind==3 || row.kind==1)mx_return_bus(device,audio,ui,pages,bank,row.kind);
         else if(mx_legacy_direct(raw)){mx_commit_route(device,audio,ui,pages,bank,(TsSourceRoute){0});return 1;}
         else if(row.kind==0) {if(raw.mode==TS_SOURCE_INHERIT)raw=(TsSourceRoute){0};else raw.mode=TS_SOURCE_INHERIT;mx_commit_route(device,audio,ui,pages,bank,raw);}

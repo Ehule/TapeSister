@@ -2,6 +2,7 @@
 #define TAPESISTER_SISTER_POST_FX_H
 
 #include "tapesister/sample.h"
+#include "tapesister/transient.h"
 #include "tapesister/sister_effects.h"
 #include "tapesister/sister_fallout.h"
 
@@ -22,11 +23,12 @@ typedef enum {
     TS_SISTER_FX_DELAY,
     TS_SISTER_FX_DISTORTION,
     TS_SISTER_FX_GRAIN,
+    TS_SISTER_FX_TRANSIENT,
     TS_SISTER_FX_TYPE_COUNT
 } TsSisterFxType;
 
 enum {
-    TS_SISTER_FX_SLOT_COUNT = 4,
+    TS_SISTER_FX_SLOT_COUNT = 5,
     TS_SISTER_FX_PLACE_PRE = 1u << 0,
     TS_SISTER_FX_PLACE_H1 = 1u << 1,
     TS_SISTER_FX_PLACE_H2 = 1u << 2,
@@ -38,12 +40,14 @@ enum {
     TS_SISTER_FX_PLACE_ALL = TS_SISTER_FX_PLACE_PRE |
                              TS_SISTER_FX_PLACE_HEADS |
                              TS_SISTER_FX_PLACE_POST,
-    TS_SISTER_FX_LOCATION_COUNT = 5
+    TS_SISTER_FX_LOCATION_COUNT = 5,
+    TS_SISTER_FX_VIEW_VALUES = (TS_SISTER_FX_TYPE_COUNT-1)*3,
+    TS_SISTER_FX_SNAPSHOT_VALUES = TS_SISTER_FX_VIEW_VALUES+2
 };
 
 /* A slot owns an independent processor instance. The generic A/B/C controls
    map to the visible controls for the selected type: Reverb SIZE/DECAY,
-   Delay TIME/FEEDBACK, Distortion DRIVE/TONE, and Grain SIZE/DENSITY/PITCH. */
+   Delay TIME/FEEDBACK, Distortion DRIVE/TONE, Grain SIZE/DENSITY/PITCH, and Transient ATTACK/SUSTAIN/RESPONSE. */
 typedef struct {
     TsSisterFxType type;
     int enabled;
@@ -233,6 +237,12 @@ typedef struct {
 } TsSisterGrainState;
 
 typedef struct {
+    TsTransient dsp;
+    float mix_current, gain_current, gain_target, gain_db_cached;
+    float response_cached;
+} TsSisterTransientState;
+
+typedef struct {
     uint8_t active_mask;
     uint8_t pending_mask;
     uint32_t handoff_remaining;
@@ -256,7 +266,8 @@ typedef enum {
     TS_SISTER_FX_TRANSITION_SLOT_1,
     TS_SISTER_FX_TRANSITION_SLOT_2,
     TS_SISTER_FX_TRANSITION_SLOT_3,
-    TS_SISTER_FX_TRANSITION_SLOT_4
+    TS_SISTER_FX_TRANSITION_SLOT_4,
+    TS_SISTER_FX_TRANSITION_SLOT_5
 } TsSisterFxTransitionSource;
 
 typedef struct {
@@ -286,6 +297,8 @@ typedef struct {
         distortion[TS_SISTER_FX_SLOT_COUNT][TS_SISTER_FX_LOCATION_COUNT];
     TsSisterGrainState
         grain[TS_SISTER_FX_SLOT_COUNT][TS_SISTER_FX_LOCATION_COUNT];
+    TsSisterTransientState
+        transient[TS_SISTER_FX_SLOT_COUNT][TS_SISTER_FX_LOCATION_COUNT];
     /* Prepared on init/reconfigure, never recomputed per audio sample. */
     float smooth_12ms, smooth_18ms, smooth_20ms, smooth_24ms;
     float smooth_30ms, smooth_35ms, smooth_55ms;
@@ -298,8 +311,9 @@ typedef struct {
 } TsSisterPostFxEngine;
 
 /* Audio-owner readout of the existing processor state, not new DSP analysis.
-   Per type (REVERB..GRAIN): wet contribution, wet-weighted A, wet-weighted B.
-   Delay A is seconds; all other controls retain their normalized units. */
+   Per type (REVERB..TRANSIENT): wet contribution, wet-weighted A, wet-weighted B.
+   Delay A is seconds; all other controls retain their normalized units.
+   Transient contribution is weighted by its actual signed shaping amount. */
 typedef struct { float value[TS_SISTER_FX_TYPE_COUNT-1][3]; } TsSisterFxView;
 TsSisterFxView ts_sister_post_fx_view(const TsSisterPostFxEngine *engine);
 
@@ -320,6 +334,8 @@ float ts_sister_fx_transition_ms(float normalized);
 float ts_sister_fx_transition_normalized(float milliseconds);
 /* Wet-only POST return, sharing the existing slot instances and MIX controls. */
 TsStereoFrame ts_sister_post_fx_process_send(TsSisterPostFxEngine *engine,TsStereoFrame input);
+/* Crossfade SEND/INSERT in one DSP pass; no duplicated state advancement. */
+TsStereoFrame ts_sister_post_fx_process_matrix(TsSisterPostFxEngine *engine, TsStereoFrame input, float insert);
 float ts_sister_post_fx_master_engage(const TsSisterPostFxEngine *engine);
 TsSisterFxTransitionStatus ts_sister_post_fx_transition_status(
     const TsSisterPostFxEngine *engine);

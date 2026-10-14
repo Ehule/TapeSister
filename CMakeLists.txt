@@ -19,7 +19,7 @@ add_library(tapesister_core src/ts_mandala.c src/ts_routing_matrix.c src/ts_sour
              src/ts_audio_lifecycle.c
              src/ts_realtime_diagnostics.c src/ts_profile.c
              src/ts_sister_effects.c src/ts_sister_fallout.c src/ts_sister_post_fx.c
-             src/ts_sister_limiter.c src/ts_compressor.c src/ts_master_eq.c src/ts_eq_spectrum.c src/ts_router.c src/ts_router_performance.c src/ts_insert.c
+             src/ts_sister_limiter.c src/ts_compressor.c src/ts_transient.c src/ts_master_eq.c src/ts_eq_spectrum.c src/ts_router.c src/ts_router_performance.c src/ts_insert.c
              src/ts_sister_machine.c src/ts_sister_wave_snapshot.c
              src/ts_sister_runtime.c src/ts_sister_ui.c
              src/ts_sister_preset.c src/ts_sister_project_state.c
@@ -776,4 +776,24 @@ if(TAPESISTER_BUILD_SDL)
     target_link_options(tapesister_palette_window_tests PRIVATE "-Wl,--stack,16777216")
   endif()
   add_test(NAME tapesister_palette_window_tests COMMAND tapesister_palette_window_tests)
+endif()
+
+add_executable(tapesister_transient_tests tests/test_transient.c)
+target_link_libraries(tapesister_transient_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_transient_tests COMMAND tapesister_transient_tests)
+if(MINGW)
+  target_link_options(tapesister_transient_tests PRIVATE "-Wl,--stack,16777216")
+endif()
+if(TAPESISTER_BUILD_SDL)
+  add_executable(tapesister_transient_controller_tests tests/test_transient_controller.c
+    src/tape_link.c src/tape_companion.c src/ts_startup_diag.c src/ts_midi_input.c)
+  target_include_directories(tapesister_transient_controller_tests PRIVATE third_party)
+  target_link_libraries(tapesister_transient_controller_tests PRIVATE tapesister_core tapesister_tapehead SDL2::SDL2)
+  if(UNIX AND NOT APPLE)
+    target_link_libraries(tapesister_transient_controller_tests PRIVATE rt)
+  endif()
+  if(MINGW)
+    target_link_options(tapesister_transient_controller_tests PRIVATE "-Wl,--stack,16777216")
+  endif()
+  add_test(NAME tapesister_transient_controller_tests COMMAND tapesister_transient_controller_tests)
 endif()

@@ -9271,7 +9271,7 @@ static void sister_set_parameter(TsSisterParameters *parameters,
     if (parameters == NULL) return;
     if (amount < 0.0f) amount = 0.0f;
     if (amount > 1.0f) amount = 1.0f;
-    slot_offset = parameter - TS_SISTER_UI_PARAM_SLOT1_GAIN;
+    slot_offset = ts_sister_ui_slot_offset(parameter);
     if (slot_offset >= 0 && slot_offset < TS_SISTER_FX_SLOT_COUNT * 5) {
         TsSisterFxSlotControls *slot = &parameters->fx.slot[slot_offset / 5];
         switch (slot_offset % 5) {
@@ -9413,7 +9413,7 @@ static float sister_parameter_normalized(const TsSisterParameters *parameters,
     float value = 0.0f;
     int slot_offset;
     if (parameters == NULL) return 0.0f;
-    slot_offset = parameter - TS_SISTER_UI_PARAM_SLOT1_GAIN;
+    slot_offset = ts_sister_ui_slot_offset(parameter);
     if (slot_offset >= 0 && slot_offset < TS_SISTER_FX_SLOT_COUNT * 5) {
         const TsSisterFxSlotControls *slot =
             &parameters->fx.slot[slot_offset / 5];
@@ -9674,7 +9674,7 @@ static void fallout_factory_presets_configure(TsSisterPresetBank *bank,
 
 static const char *sister_parameter_name(int parameter)
 {
-    int slot_offset = parameter - TS_SISTER_UI_PARAM_SLOT1_GAIN;
+    int slot_offset = ts_sister_ui_slot_offset(parameter);
     if (slot_offset >= 0 && slot_offset < TS_SISTER_FX_SLOT_COUNT * 5) {
         static const char *const names[5] = {
             "SLOT GAIN", "SLOT PARAMETER A", "SLOT PARAMETER B",
@@ -10594,6 +10594,9 @@ static void sister_fx_slot_select_type(TsSisterFxSlotControls *slot,
     if (slot == NULL) return;
     slot->type = type;
     switch (type) {
+    case TS_SISTER_FX_TRANSIENT:
+        slot->parameter_a = slot->parameter_b = slot->parameter_c = .5f;
+        break;
     case TS_SISTER_FX_REVERB:
         slot->parameter_a = 0.58f;
         slot->parameter_b = 0.42f;
@@ -11625,7 +11628,7 @@ static int midi_sister_hit_from_target(const char *target, float normalized,
         hit->action = TS_SISTER_UI_ACTION_FX_TOGGLE;
         hit->index = index;
     } else if (sscanf(target, "sister.fx.slot.%d.toggle%c", &index,
-                      &trailing) == 1 && index >= 1 && index <= 4) {
+                      &trailing) == 1 && index >= 1 && index <= TS_SISTER_FX_SLOT_COUNT) {
         hit->action = TS_SISTER_UI_ACTION_FX_SLOT_TOGGLE;
         hit->index = index - 1;
     } else if (sscanf(target, "sister.fallout.toggle.%d%c", &index,
