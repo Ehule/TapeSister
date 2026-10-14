@@ -135,6 +135,8 @@ typedef struct {
     int fm_bank_count;
     int master_output_percent;
     TsMasterEqControls master_eq;
+    TsEqMorph eq_morph;
+    int eq_morph_max_seconds;
     TsCompressorControls compressor;
     TsRouterControls router;
     TsMatrixControls matrix;

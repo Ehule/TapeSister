@@ -73,6 +73,7 @@ void ts_sister_project_state_init(TsSisterProjectState *state,
     state->page_count = 1u;
     ts_mandala_default(&state->mandala);
     ts_master_eq_default(&state->master_eq);
+    ts_eq_morph_default(&state->eq_morph);
     ts_compressor_default(&state->compressor);
     ts_spatial_default(&state->spatial);
     ts_router_default(&state->router);
@@ -103,7 +104,8 @@ void ts_sister_project_state_capture(TsSisterProjectState *state,
     state->parameters = runtime->parameters;
     ts_prism_matrix_export(&runtime->prism,&state->parameters.prism);
     state->mandala = runtime->mandala;
-    state->master_eq = runtime->master_eq.controls;
+    state->master_eq = runtime->master_eq.live;
+    state->eq_morph = runtime->master_eq.morph;
     state->compressor=runtime->compressor.controls;
     state->router = ts_router_export(&runtime->router);
     state->matrix=runtime->matrix.controls;state->performance_transport=runtime->performance_transport;
@@ -137,6 +139,7 @@ int ts_sister_project_state_apply(const TsSisterProjectState *state,
     runtime->active_page = state->active_page;
     ts_sister_runtime_set_parameters(runtime, &state->parameters);
     ts_master_eq_set(&runtime->master_eq,&state->master_eq);
+    ts_master_eq_morph_set(&runtime->master_eq,&state->eq_morph);
     ts_compressor_set(&runtime->compressor,&state->compressor);
     ts_spatial_recall(&runtime->spatial,&state->spatial);
     ts_sister_runtime_set_router(runtime,&state->router);
@@ -302,6 +305,7 @@ int ts_sister_project_state_save_file(const TsSisterProjectState *state,
     if (!failed) failed = !ts_mandala_write(file, &state->mandala);
     if (!failed) failed = !write_parameters(file, &state->parameters);
     if (!failed) failed = !ts_master_eq_write(file,&state->master_eq);
+    if (!failed) failed = !ts_eq_morph_write(file,&state->eq_morph);
     if (!failed) failed = !ts_spatial_write(file,&state->spatial);
     if (!failed) failed = !ts_router_write(file,&state->router);
     if (!failed) failed = !ts_compressor_write(file,&state->compressor);
@@ -677,6 +681,8 @@ int ts_sister_project_state_load_file(TsSisterProjectState *state,
             if(ts_router_read(&loaded.router,key,value)<0)goto malformed;
         } else if (!strncmp(key,"Compressor.",11)) {
             if(ts_compressor_read(&loaded.compressor,key,value)<0)goto malformed;
+        } else if (!strncmp(key,"EqMorph.",8)) {
+            if(ts_eq_morph_read(&loaded.eq_morph,key,value)<0)goto malformed;
         } else if (!strncmp(key,"MasterEq.",9)) {
             if(ts_master_eq_read(&loaded.master_eq,key,value)<0)goto malformed;
         } else if (!assign_parameter(&loaded.parameters, key, value)) goto malformed;

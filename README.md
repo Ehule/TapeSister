@@ -306,7 +306,10 @@ toggle individual band bypass; Ctrl-click solos one band's EQ, and repeating res
 the previous bypass states. The selected
 band has exact values below the graph. Frequency, gain, Q, and EQ bypass support
 existing MIDI learn. Room EQ stays in projects and session settings, separate
-from sound presets. See [Master Performance EQ](docs/MASTER_EQ.md).
+from sound presets. The live master EQ also offers [whole-EQ A/B capture and timed
+transitions](docs/EQ_AB_MORPH.md): one timer for all five bands, optional A → B → A
+looping, a four-minute default maximum, and an INI range up to four hours per leg.
+See [Master Performance EQ](docs/MASTER_EQ.md).
 
 ![Master / Room EQ and limiter](docs/images/master-performance-eq.png)
 

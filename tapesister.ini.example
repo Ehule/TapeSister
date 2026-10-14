@@ -211,3 +211,8 @@ RouterPerf.Loop=1
 visual_quality=0
 visual_display=0
 visual_fullscreen=0
+
+[EQ Morph]
+; Whole-master-EQ A/B sweep range, 1..14400 seconds (four hours per leg).
+; A/B captures, Loop and Time are written automatically by SAVE CONFIG.
+eq_morph_max_seconds=240
