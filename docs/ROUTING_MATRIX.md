@@ -60,7 +60,7 @@ compares it during this session; Restore replaces the edited version with it.
 ## Selection, undo and A/B
 
 Ctrl-click row labels to select separate sources; Shift-click selects a range.
-Click a destination header (with multiple rows selected), or a selected row's
+Ctrl-click a destination header (with multiple rows selected), or a selected row's
 cell, to route the whole selection. Mixed selections connect all rows first;
 click again to disconnect all. Other destinations stay connected. Level and Pan
 apply to the selection; the footer identifies mixed values. A batch is refused
@@ -69,7 +69,7 @@ Convert inherited/legacy rows individually before including them in a batch.
 
 **Undo / Redo**, **Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z** work while the Matrix owns
 keyboard focus. The last 32 edits include connections, gains, pan, mono,
-inheritance, names, feedback, activation, Clear All and Reset. A whole drag or
+inheritance, names, feedback, activation, layout moves, Clear All and Reset. A whole drag or
 bulk edit is one step. A fresh edit after Undo replaces the redo branch.
 
 **Original / Edited** auditions the state captured before the first routing edit
@@ -83,6 +83,42 @@ recreated or confused with new sources. History and the alternate A/B state are
 not saved; saving stores the routing currently being auditioned.
 
 ![Bulk selection and undo](screenshots/performance/matrix-bulk-undo.png)
+
+## Organizing the grid
+
+Click a **row label**, then hold **Shift** and press **Up / Down** to move it
+one visible row at a time. Click a **column header**, then use **Shift + Left /
+Right** to move that destination. A yellow outline identifies the label that
+will move. Hold an arrow to repeat; the view scrolls to keep the moved label
+visible. Rows and columns have independent orders, so you can arrange checked
+connections into a diagonal or staircase that follows your signal flow.
+
+A plain header click now selects without changing any connections, including
+when multiple rows are selected. Use **Ctrl-click on a header** to route a
+multi-row selection, or click a cell as before. Ctrl-click and Shift-click on
+row labels still select separate rows and ranges. Shift-arrows move only the
+focused row, preserving the other selected sources.
+
+Reordering changes presentation only: routes, gains, hardware channel numbers,
+processor order, sidechain connections and audio histories stay attached to the
+same source/destination. Meters follow their labels. This adds no per-sample DSP.
+In a filtered view, moves swap adjacent visible rows; hidden rows retain their
+relative order. Tile and Mosaic-card positions follow stable identities rather
+than their current slot numbers. New sources append after a customized order;
+deleted sources do not transfer their position to a replacement.
+
+**Reset Layout**, above the source labels, restores both default orders without
+changing routing. Layout moves and Reset Layout use the existing 32-step Matrix
+Undo/Redo history. Clear All and Reset to Default still affect routing and leave
+the layout alone. As with other Matrix edits, return to **Edited** before moving
+labels while auditioning Original.
+
+Save the project to keep its layout. Sister state **version 40** stores the two
+orders independently of the audio graph. Older projects start in the default
+layout; older application versions cannot read the new layout keys. Global INI
+routing does not copy a project's arrangement into another project.
+
+![Reordered Matrix with keyboard focus](screenshots/matrix-layout-order.png)
 
 ## Mosaic routing
 

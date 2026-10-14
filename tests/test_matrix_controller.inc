@@ -120,6 +120,7 @@ static void matrix_clear_reset(const char *directory)
 #include "test_performance_transport.inc"
 #include "test_matrix_buses.inc"
 #include "test_compressor_controller.inc"
+#include "test_matrix_layout_controller.inc"
 static void matrix_controller(const char *directory)
 {
     ts_tapehead_stop();ts_note_bank_clear(&a.notes);ts_performance_clear(&a.performance);ts_performance_clear(&a.tile_launchers);
@@ -257,5 +258,6 @@ static void matrix_controller(const char *directory)
     test_matrix_buses(directory);
     test_tracker_bus(directory);
     test_compressor_controller(directory);
+    matrix_layout_controller(directory);
     matrix_close();puts("Matrix UI, native track/tile audio, pan, inheritance, physical return, naming and project reset passed");
 }

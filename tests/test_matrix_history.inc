@@ -7,7 +7,7 @@ static void matrix_history_bulk(const char *directory)
     matrix_click(80,MATRIX_Y+12,SDL_BUTTON_LEFT);
     SDL_SetModState(KMOD_CTRL);matrix_click(80,MATRIX_Y+MATRIX_RH+12,SDL_BUTTON_LEFT);SDL_SetModState(KMOD_NONE);
     assert(matrix_window.selection_count==2);
-    matrix_click(MATRIX_X+TS_MATRIX_BOARD*MATRIX_CW+20,140,SDL_BUTTON_LEFT);
+    SDL_SetModState(KMOD_CTRL);matrix_click(MATRIX_X+TS_MATRIX_BOARD*MATRIX_CW+20,140,SDL_BUTTON_LEFT);SDL_SetModState(KMOD_NONE);
     assert(pages.tracker.lanes[0].output_route.matrix_gain[TS_MATRIX_BOARD]==1000);
     assert(pages.tracker.lanes[1].output_route.matrix_gain[TS_MATRIX_BOARD]==1000);
     assert(matrix_window.history_count==1);
@@ -36,7 +36,7 @@ static void matrix_history_bulk(const char *directory)
     assert(matrix_window.history_cursor==matrix_window.history_count); /* New branch discards redo. */
     pages.tracker.lanes[1].output_route.mode=TS_SOURCE_INHERIT;
     TsSourceRoute first=pages.tracker.lanes[0].output_route;
-    matrix_click(MATRIX_X+TS_MATRIX_PRISM*MATRIX_CW+20,140,SDL_BUTTON_LEFT);
+    SDL_SetModState(KMOD_CTRL);matrix_click(MATRIX_X+TS_MATRIX_PRISM*MATRIX_CW+20,140,SDL_BUTTON_LEFT);SDL_SetModState(KMOD_NONE);
     assert(!memcmp(&first,&pages.tracker.lanes[0].output_route,sizeof(first))); /* Atomic refusal. */
     mx_apply(before,0,&a,&u,&pages,&bank);free(before);matrix_history_clear();
     assert(matrix_show(0,&a,&u,&pages,&bank,-1,-1));

@@ -77,7 +77,7 @@ void ts_sister_project_state_init(TsSisterProjectState *state,
     ts_compressor_default(&state->compressor);
     ts_spatial_default(&state->spatial);
     ts_router_default(&state->router);
-    ts_matrix_default(&state->matrix);state->performance_transport=1;
+    ts_matrix_default(&state->matrix);ts_matrix_layout_default(&state->matrix_layout);state->performance_transport=1;
     ts_performance_mixer_default(&state->performance_mixer);
     ts_router_performance_default(&state->router_performance);
     ts_keyboard_sequence_bank_default(&state->keyboard_sequence);
@@ -108,7 +108,7 @@ void ts_sister_project_state_capture(TsSisterProjectState *state,
     state->eq_morph = runtime->master_eq.morph;
     state->compressor=runtime->compressor.controls;
     state->router = ts_router_export(&runtime->router);
-    state->matrix=runtime->matrix.controls;state->performance_transport=runtime->performance_transport;
+    state->matrix=runtime->matrix.controls;state->matrix_layout=runtime->matrix_layout;state->performance_transport=runtime->performance_transport;
     state->performance_mixer=runtime->performance_mixer;
     state->router_performance = runtime->router.performance;
     state->insert = runtime->insert.controls;
@@ -131,7 +131,7 @@ int ts_sister_project_state_apply(const TsSisterProjectState *state,
 {
     if (state == NULL || runtime == NULL || state->page_count == 0u ||
         state->page_count > TS_SISTER_RUNTIME_PAGE_LIMIT ||
-        state->active_page >= state->page_count || !ts_mandala_valid(&state->mandala)) return 0;
+        state->active_page >= state->page_count || !ts_mandala_valid(&state->mandala) || !ts_matrix_layout_valid(&state->matrix_layout)) return 0;
     runtime->source_switches = state->source_switches & TS_SISTER_SOURCE_ALL;
     memset(runtime->page_source_masks, 0, sizeof(runtime->page_source_masks));
     memcpy(runtime->page_source_masks, state->page_masks,
@@ -144,6 +144,7 @@ int ts_sister_project_state_apply(const TsSisterProjectState *state,
     ts_spatial_recall(&runtime->spatial,&state->spatial);
     ts_sister_runtime_set_router(runtime,&state->router);
     ts_matrix_set(&runtime->matrix,&state->matrix,runtime->router.sample_rate);
+    runtime->matrix_layout=state->matrix_layout;
     runtime->mandala = state->mandala;
     runtime->performance_transport=state->performance_transport&7u;
     runtime->performance_mixer=state->performance_mixer;
@@ -310,6 +311,7 @@ int ts_sister_project_state_save_file(const TsSisterProjectState *state,
     if (!failed) failed = !ts_router_write(file,&state->router);
     if (!failed) failed = !ts_compressor_write(file,&state->compressor);
     if (!failed) failed = !ts_matrix_write(file,&state->matrix);
+    if (!failed) failed = !ts_matrix_layout_write(file,&state->matrix_layout);
     if (!failed) failed = !ts_router_performance_write(file,&state->router_performance);
     if (!failed) failed = fprintf(file,"PerformanceTransport=%u\nPerformance.Restart=%u\nPerformance.ArpSync=%u\nPerformance.AlwaysOnTop=%u\n",
         state->performance_transport&7u,state->performance_mixer.restart,state->performance_mixer.arp_sync,state->performance_mixer.always_on_top)<0;
@@ -675,6 +677,8 @@ int ts_sister_project_state_load_file(TsSisterProjectState *state,
             if(ts_insert_read(&loaded.insert,key,value)<0)goto malformed;
         } else if (!strncmp(key,"RouterPerf.",11)) {
             if(ts_router_performance_read(&loaded.router_performance,key,value)<0)goto malformed;
+        } else if (!strncmp(key,"MatrixLayout.",13)) {
+            if(ts_matrix_layout_read(&loaded.matrix_layout,key,value)<0)goto malformed;
         } else if (!strncmp(key,"Matrix.",7)) {
             if(ts_matrix_read(&loaded.matrix,key,value)<0)goto malformed;
         } else if (!strncmp(key,"Router.",7)) {
@@ -687,7 +691,7 @@ int ts_sister_project_state_load_file(TsSisterProjectState *state,
             if(ts_master_eq_read(&loaded.master_eq,key,value)<0)goto malformed;
         } else if (!assign_parameter(&loaded.parameters, key, value)) goto malformed;
     }
-    if (ferror(file) || !header || !version || !have_pages || !ts_matrix_valid(&loaded.matrix) ||
+    if (ferror(file) || !header || !version || !have_pages || !ts_matrix_valid(&loaded.matrix) || !ts_matrix_layout_valid(&loaded.matrix_layout) ||
         loaded.active_page >= loaded.page_count) goto malformed;
     fclose(file);
     if (version < 12 /* FX slot migration predates Prism */) {
