@@ -325,6 +325,20 @@ The limiter is a safety boundary for extreme synthesis and feedback. Gain should
 be managed at Sister INPUT/internal OUT, the source mixer, effect slots, and feedback
 controls.
 
+## Starting a new project
+
+**NEW** in the canvas toolbar starts a blank session without closing TapeSister.
+The confirmation offers **SAVE & NEW**, **DISCARD & NEW**, and **CANCEL**; Cancel
+is selected initially. Saving must finish successfully as a complete TSR project
+before the session clears. Cancelling or failing the save keeps the session.
+
+New clears Sample pages and the Record bank, TrackSister, Mosaic, routing, Matrix
+instances, pedalboard settings, playback buffers, and undo history. Audio-device,
+MIDI, palette, and user-preset settings remain available. Finish or cancel an active
+recording/edit gesture first. Saved projects and recording archives stay on disk.
+
+![New project confirmation](docs/screenshots/new-project-confirmation.png)
+
 ## Portable project folders
 
 Saving `Terra Night.tsr` creates one movable `Terra Night/` folder containing:
