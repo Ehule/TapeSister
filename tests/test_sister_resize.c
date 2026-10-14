@@ -124,7 +124,7 @@ static void bounds_and_transport_states(void)
 
 static void rapid_random_full_graph_stress(void)
 {
-    /* The runtime alone exceeds the default Windows test stack. */
+    /* Keep the large runtime fixture off the default Windows test stack. */
     static TsSisterRuntime runtime;
     TsSisterParameters parameters;
     TsSisterSourceFrames source = {0};

@@ -12,7 +12,7 @@ static int failures;
 /* Power only owns the rolling machine, not the already playing global FX. */
 static void test_global_fx_survive_power(void)
 {
-    /* The runtime alone exceeds the default Windows test stack. */
+    /* Keep the large runtime fixture off the default Windows test stack. */
     static TsSisterRuntime runtime;char error[160];ts_sister_runtime_init(&runtime);
     CHECK(ts_sister_runtime_reconfigure(&runtime,1000u,2u,error,sizeof(error)));
     TsSisterParameters p=runtime.parameters;

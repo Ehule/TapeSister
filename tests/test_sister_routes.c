@@ -12,7 +12,7 @@ static int failures;
 
 int main(void)
 {
-    /* The runtime alone exceeds the default Windows test stack. */
+    /* Keep the large runtime fixture off the default Windows test stack. */
     static TsSisterRuntime runtime;
     TsInstrument instrument;
     TsNoteEvent note;

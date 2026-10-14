@@ -18,7 +18,7 @@ int main(int argc, char **argv)
 {
     uint64_t total_frames = UINT64_C(2000000);
     uint32_t callback_frames = 256u;
-    /* The runtime alone exceeds the default Windows benchmark stack. */
+    /* Keep the large runtime fixture off the default Windows benchmark stack. */
     static TsSisterRuntime runtime;
     TsSisterParameters p;
     TsSisterSourceFrames source = {0};

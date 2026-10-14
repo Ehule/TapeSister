@@ -104,7 +104,7 @@ static void process_frames(TsSisterRuntime *runtime,
 
 static void head_identity_and_crossing(void)
 {
-    /* The runtime alone exceeds the default Windows test stack. */
+    /* Keep the large runtime fixture off the default Windows test stack. */
     static TsSisterRuntime runtime;
     TsSisterParameters p;
     TsSisterSourceFrames source = {0};

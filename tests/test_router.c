@@ -77,7 +77,7 @@ static void persistence_tests(void)
     assert(ts_sister_project_state_save_file(&state,"test-router-project.ini",error,sizeof(error)));int present=0;
     assert(ts_sister_project_state_load_file(&read,"test-router-project.ini",48000,&present,error,sizeof(error)) && present);
     assert(!memcmp(&state.router,&read.router,sizeof(state.router)));
-    /* The runtime alone exceeds the default Windows test stack. */
+    /* Keep the large runtime fixture off the default Windows test stack. */
     static TsSisterRuntime runtime;ts_sister_runtime_init(&runtime);
     assert(ts_sister_project_state_apply(&read,&runtime,NULL));
     assert(!memcmp(&runtime.router.controls,&state.router,sizeof(state.router)));
