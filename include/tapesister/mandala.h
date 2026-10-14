@@ -37,7 +37,7 @@ typedef struct { float level, peak, width, balance, onset; } TsMandalaFeatures;
 void ts_mandala_analyze(const TsMandalaPacket *packet, TsMandalaFeatures *features, float dt);
 
 enum { TS_MANDALA_REVERB, TS_MANDALA_DELAY, TS_MANDALA_DISTORTION,
-       TS_MANDALA_GRAIN, TS_MANDALA_PRISM, TS_MANDALA_EFFECTS };
+       TS_MANDALA_GRAIN, TS_MANDALA_PRISM, TS_MANDALA_TRANSIENT, TS_MANDALA_EFFECTS };
 /* Artistic controls, reduced on the UI thread and smoothed in the renderer. */
 typedef struct { float wet[TS_MANDALA_EFFECTS], size[TS_MANDALA_EFFECTS], character[TS_MANDALA_EFFECTS]; } TsMandalaEffects;
 void ts_mandala_effects_follow(TsMandalaEffects *current, const TsMandalaEffects *target, float dt);

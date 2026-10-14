@@ -227,6 +227,12 @@ static void effect_snapshot_checks(void)
     s.visual_fx_peak=s.visual_prism_peak=.2f;e=visual_effects(&s);
     assert(e.wet[TS_MANDALA_DISTORTION]==.75f && fabsf(e.size[TS_MANDALA_DISTORTION]-.8f)<1e-6f);
     assert(e.wet[TS_MANDALA_PRISM]==1 && e.size[TS_MANDALA_PRISM]>.5f);
+    s.visual_fx.value[TS_SISTER_FX_TRANSIENT-1][0]=.5f;
+    s.visual_fx.value[TS_SISTER_FX_TRANSIENT-1][1]=.4f;
+    s.visual_fx.value[TS_SISTER_FX_TRANSIENT-1][2]=.1f;
+    e=visual_effects(&s);
+    assert(e.wet[TS_MANDALA_TRANSIENT]==.5f && e.wet[TS_MANDALA_PRISM]==1);
+    assert(fabsf(e.size[TS_MANDALA_TRANSIENT]-.8f)<1e-6f);
     atomic_store(&a.sister.snapshot.visual_enabled,1);
     ts_sister_runtime_publish_router(&a.sister);
     assert(ts_sister_runtime_get_snapshot(&a.sister,&s));

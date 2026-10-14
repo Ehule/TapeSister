@@ -64,8 +64,13 @@ static TsStereoFrame runtime_matrix_node(void *context,int node,TsStereoFrame in
     }
     case TS_MATRIX_BOARD: {
         uint64_t p=ts_profile_begin(TS_PROF_PEDALBOARD);
-        TsStereoFrame out=ts_sister_post_fx_process_send(&r->post_fx,input);
-        out=frame_scale(out,runtime_ramp_advance(&r->ordinary_fx_return_gain));
+        float *insert=&r->matrix.board_insert_current;
+        float difference=(float)r->matrix.controls.board_insert-*insert;
+        *insert=fabsf(difference)<1e-6f?(float)r->matrix.controls.board_insert:
+            *insert+difference*r->matrix.mode_follow;
+        TsStereoFrame out=ts_sister_post_fx_process_matrix(&r->post_fx,input,*insert);
+        float trim=runtime_ramp_advance(&r->ordinary_fx_return_gain);
+        out=frame_add(frame_scale(out,trim),frame_scale(input,*insert*(1-trim)));
         ts_profile_end(TS_PROF_PEDALBOARD,p);return out;
     }
     case TS_MATRIX_FALLOUT: {
@@ -90,7 +95,7 @@ static TsSisterRuntimeFrame runtime_matrix_frame(TsSisterRuntime *r,
     TsSourceRouteMix sums={0};
     memcpy(sums.graph,s->matrix_graph,sizeof(sums.graph));
     for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)sums.graph[d]=frame_add(sums.graph[d],frame_scale(r->clean_output.graph[d],s->matrix_program_gain));
-    sums.graph[TS_MATRIX_MAIN]=frame_add(sums.graph[TS_MATRIX_MAIN],frame_add(tiles,frame_add(s->preview,s->tracker)));
+    sums.graph[TS_MATRIX_MAIN]=frame_add(sums.graph[TS_MATRIX_MAIN],frame_add(tiles,s->preview));
     if(!r->matrix.controls.serial_mask) {
         sums.graph[TS_MATRIX_PRISM]=frame_add(sums.graph[TS_MATRIX_PRISM],r->send_input[TS_SEND_PRISM]);
         sums.graph[TS_MATRIX_BOARD]=frame_add(sums.graph[TS_MATRIX_BOARD],r->send_input[TS_SEND_PEDALBOARD]);
@@ -101,6 +106,9 @@ static TsSisterRuntimeFrame runtime_matrix_frame(TsSisterRuntime *r,
     live[TS_MATRIX_FM-TS_MATRIX_NODES]=s->fm;live[TS_MATRIX_LINK-TS_MATRIX_NODES]=s->tapehead;
     live[TS_MATRIX_MOSAIC-TS_MATRIX_NODES]=s->mosaic;
     live[TS_MATRIX_TILES-TS_MATRIX_NODES]=s->live_tiles;
+    /* Only the ordinary tracker mix reaches this bus. Explicit track/tile
+       routes have already been removed by the voice router and stay direct. */
+    live[TS_MATRIX_TRACKER-TS_MATRIX_NODES]=s->tracker;
     RouterFrameContext context={.runtime=r,.frame=&frame,.matrix_program_gain=s->matrix_program_gain};
     /* Matrix controls supersede legacy chain placement and source switches. */
     if(!r->matrix.controls.serial_mask)r->router.wet[TS_ROUTER_SISTER]=r->router.wet[TS_ROUTER_PEDALBOARD]=1;

@@ -85,12 +85,13 @@ static TsMandalaEffects visual_effects(const TsSisterRoutingSnapshot *s)
     TsMandalaEffects e={0};
     /* Activity is only a soft gate, not a claim to isolate each effect's audio. */
     float board=visual_unit((s->visual_fx_peak-.001f)*200);
-    for(int i=0;i<4;++i) {
+    for(int i=0;i<TS_SISTER_FX_TYPE_COUNT-1;++i) {
+        int effect=i==TS_SISTER_FX_TRANSIENT-1?TS_MANDALA_TRANSIENT:i;
         float weight=s->visual_fx.value[i][0];
-        e.wet[i]=visual_unit(weight)*board;
+        e.wet[effect]=visual_unit(weight)*board;
         if(weight>1e-6f) {
-            e.size[i]=visual_unit(s->visual_fx.value[i][1]/weight/(i==TS_MANDALA_DELAY?2:1));
-            e.character[i]=visual_unit(s->visual_fx.value[i][2]/weight);
+            e.size[effect]=visual_unit(s->visual_fx.value[i][1]/weight/(i==TS_MANDALA_DELAY?2:1));
+            e.character[effect]=visual_unit(s->visual_fx.value[i][2]/weight);
         }
     }
     e.wet[TS_MANDALA_PRISM]=visual_unit(s->prism.wet)*visual_unit((s->visual_prism_peak-.001f)*200);

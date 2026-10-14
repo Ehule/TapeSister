@@ -230,56 +230,56 @@ int main(void)
     hit = ts_sister_ui_hit_test_model(&model, 435, 56);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_SLOT1_MIX);
-    hit = ts_sister_ui_hit_test_model(&model, 160, 112);
+    hit = ts_sister_ui_hit_test_model(&model, 160, 104);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_SLOT2_GAIN);
-    hit = ts_sister_ui_hit_test_model(&model, 230, 112);
+    hit = ts_sister_ui_hit_test_model(&model, 230, 104);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_SLOT2_A);
-    hit = ts_sister_ui_hit_test_model(&model, 304, 112);
+    hit = ts_sister_ui_hit_test_model(&model, 304, 104);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_SLOT2_B);
-    hit = ts_sister_ui_hit_test_model(&model, 378, 112);
+    hit = ts_sister_ui_hit_test_model(&model, 378, 104);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_SLOT2_C);
-    hit = ts_sister_ui_hit_test_model(&model, 452, 112);
+    hit = ts_sister_ui_hit_test_model(&model, 452, 104);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_SLOT2_MIX);
-    hit = ts_sister_ui_hit_test_model(&model, 345, 168);
+    hit = ts_sister_ui_hit_test_model(&model, 345, 152);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_SLOT3_B);
-    hit = ts_sister_ui_hit_test_model(&model, 435, 224);
+    hit = ts_sister_ui_hit_test_model(&model, 435, 200);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_SLOT4_MIX);
     hit = ts_sister_ui_hit_test_model(&model, 115, 78);
     CHECK(hit.action == TS_SISTER_UI_ACTION_FX_SLOT_PLACEMENT &&
           hit.index == TS_SISTER_FX_PLACE_H1);
-    hit = ts_sister_ui_hit_test_model(&model, 280, 190);
+    hit = ts_sister_ui_hit_test_model(&model, 280, 174);
     CHECK(hit.action == TS_SISTER_UI_ACTION_FX_SLOT_PLACEMENT &&
           hit.index == ((2 << 8) | TS_SISTER_FX_PLACE_POST));
     hit = ts_sister_ui_hit_test_model(&model, 25, 55);
     CHECK(hit.action == TS_SISTER_UI_ACTION_FX_SLOT_TOGGLE && hit.index == 0);
-    hit = ts_sister_ui_hit_test_model(&model, 25, 111);
+    hit = ts_sister_ui_hit_test_model(&model, 25, 103);
     CHECK(hit.action == TS_SISTER_UI_ACTION_FX_SLOT_TOGGLE && hit.index == 1);
-    hit = ts_sister_ui_hit_test_model(&model, 25, 167);
+    hit = ts_sister_ui_hit_test_model(&model, 25, 151);
     CHECK(hit.action == TS_SISTER_UI_ACTION_FX_SLOT_TOGGLE && hit.index == 2);
-    hit = ts_sister_ui_hit_test_model(&model, 25, 223);
+    hit = ts_sister_ui_hit_test_model(&model, 25, 199);
     CHECK(hit.action == TS_SISTER_UI_ACTION_FX_SLOT_TOGGLE && hit.index == 3);
     hit = ts_sister_ui_hit_test_model(&model, 80, 55);
     CHECK(hit.action == TS_SISTER_UI_ACTION_FX_SLOT_TYPE && hit.index == 0);
     hit = ts_sister_ui_hit_test_model(&model, 590, 55);
     CHECK(hit.action == TS_SISTER_UI_ACTION_FX_SLOT_MOVE && hit.index == 1);
-    hit = ts_sister_ui_hit_test_model(&model, 550, 111);
+    hit = ts_sister_ui_hit_test_model(&model, 550, 103);
     CHECK(hit.action == TS_SISTER_UI_ACTION_FX_SLOT_MOVE && hit.index == 256);
     CHECK(ts_sister_ui_hit_test_model(&model, 25, 95).action ==
           TS_SISTER_UI_ACTION_NONE);
     hit = ts_sister_ui_hit_test_model(&model, 25, 310);
     CHECK(hit.action == TS_SISTER_UI_ACTION_FX_TOGGLE &&
           hit.index == TS_SISTER_UI_FX_MASTER);
-    hit = ts_sister_ui_hit_test_model(&model, 200, 280);
+    hit = ts_sister_ui_hit_test_model(&model, 200, 300);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_FX_TRANSITION);
-    hit = ts_sister_ui_hit_test_model(&model, 200, 310);
+    hit = ts_sister_ui_hit_test_model(&model, 450, 300);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_MASTER_FX_TRANSITION);
     hit = ts_sister_ui_hit_test_model(&model, 200, 336);
@@ -514,15 +514,15 @@ int main(void)
     CHECK(framebuffer.pixels[10u * TS_UI_WIDTH + 629u] == 0xffe2302cu);
     model.parameters.fx.master_transition = 0.0f;
     ts_sister_ui_render(&framebuffer, &model, &palette);
-    CHECK(framebuffer.pixels[320u * TS_UI_WIDTH + 111u] !=
+    CHECK(framebuffer.pixels[308u * TS_UI_WIDTH + 375u] !=
           palette.colors[TS_PALETTE_MOUSE]);
     /* One ordinary 5-percent wheel step is about 19 ms on the logarithmic
        10 ms..60 min range.  Its meter must remain near the left edge. */
     model.parameters.fx.master_transition = 0.05f;
     ts_sister_ui_render(&framebuffer, &model, &palette);
-    CHECK(framebuffer.pixels[320u * TS_UI_WIDTH + 120u] ==
+    CHECK(framebuffer.pixels[308u * TS_UI_WIDTH + 384u] ==
           palette.colors[TS_PALETTE_MOUSE]);
-    CHECK(framebuffer.pixels[320u * TS_UI_WIDTH + 150u] !=
+    CHECK(framebuffer.pixels[308u * TS_UI_WIDTH + 410u] !=
           palette.colors[TS_PALETTE_MOUSE]);
     model.routing.capture_state = TS_CAPTURE_RECORDING;
     model.routing.capture_recorded_frames = 25u;

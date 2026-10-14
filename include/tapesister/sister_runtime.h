@@ -162,7 +162,7 @@ typedef struct {
 
 typedef struct {
     atomic_int prism_valid, prism_seq_lens;
-    atomic_uint visual_enabled, visual_fx[14];
+    atomic_uint visual_enabled, visual_fx[TS_SISTER_FX_SNAPSHOT_VALUES];
     atomic_int insert_ports[4];
     atomic_uint_least32_t insert_values[4];
     atomic_int router_state[TS_ROUTER_COUNT+5+TS_SOURCE_SENDS*6];

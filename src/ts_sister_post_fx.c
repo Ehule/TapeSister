@@ -235,6 +235,7 @@ const char *ts_sister_fx_type_name(TsSisterFxType type)
     case TS_SISTER_FX_DELAY: return "DELAY";
     case TS_SISTER_FX_DISTORTION: return "DISTORTION";
     case TS_SISTER_FX_GRAIN: return "GRAIN";
+    case TS_SISTER_FX_TRANSIENT: return "TRANSIENT";
     default: return "EMPTY";
     }
 }
@@ -297,6 +298,8 @@ void ts_sister_fx_controls_migrate_legacy(TsSisterFxControls *controls)
         legacy_targets_to_placement(controls->reverb_targets),
         controls->reverb_gain_db, controls->reverb_size,
         controls->reverb_decay, 0.5f, controls->reverb_mix);
+    controls->slot[4] = slot_controls(TS_SISTER_FX_EMPTY, 1,
+        TS_SISTER_FX_PLACE_POST, 0, .5f, .5f, .5f, 1);
 }
 
 float ts_sister_reverb_legacy_size(TsSisterReverbType type)
@@ -700,6 +703,10 @@ int ts_sister_post_fx_init(TsSisterPostFxEngine *engine,
                 ts_sister_post_fx_free(&next);
                 return 0;
             }
+            ts_transient_init(&next.transient[slot][location].dsp, sample_rate);
+            next.transient[slot][location].response_cached = .5f;
+            next.transient[slot][location].gain_current = 1;
+            next.transient[slot][location].gain_target = 1;
             next.distortion[slot][location].drive_current = 0.25f;
             next.distortion[slot][location].tone_current = 0.55f;
             next.distortion[slot][location].gain_current = 1.0f;
@@ -869,6 +876,15 @@ void ts_sister_post_fx_sync_controls(TsSisterPostFxEngine *engine,
             grain->pitch_current = control->parameter_c;
             grain->gain_current = grain->gain_target =
                 makeup_gain_linear(control->gain_db);
+            TsSisterTransientState *transient = &engine->transient[slot][location];
+            transient->gain_db_cached = control->gain_db;
+            transient->gain_current = transient->gain_target = makeup_gain_linear(control->gain_db);
+            transient->mix_current = control->mix;
+            transient->response_cached = control->parameter_c;
+            if(control->type == TS_SISTER_FX_TRANSIENT)
+                ts_transient_sync(&transient->dsp, (TsTransientControls){
+                    (control->parameter_a-.5f)*30, (control->parameter_b-.5f)*48,
+                    .25f*powf(16,control->parameter_c)});
         }
     }
 }
@@ -1345,6 +1361,31 @@ static TsStereoFrame reverb_process(TsSisterPostFxEngine *engine,
         &state->mix_cache,state->gain_current,active,1,direct);
 }
 
+static TsStereoFrame transient_process(TsSisterPostFxEngine *engine,
+    TsSisterTransientState *state, const TsSisterFxSlotControls *control,
+    TsStereoFrame input, float gate, float *direct)
+{
+    TsTransientControls c={(control->parameter_a-.5f)*30,
+                          (control->parameter_b-.5f)*48,state->dsp.controls.response};
+    if(state->response_cached!=control->parameter_c) {
+        state->response_cached=control->parameter_c;
+        c.response=.25f*powf(16,control->parameter_c);
+    }
+    ts_transient_set(&state->dsp,c);
+    if(state->gain_db_cached!=control->gain_db) {
+        state->gain_db_cached=control->gain_db;
+        state->gain_target=makeup_gain_linear(control->gain_db);
+    }
+    state->mix_current=approach(state->mix_current,control->mix,engine->smooth_20ms);
+    state->gain_current=approach(state->gain_current,state->gain_target,engine->smooth_20ms);
+    TsStereoFrame wet=ts_transient_process(&state->dsp,input);
+    float amount=clampf(state->mix_current*gate,0,1);
+    /* A dynamics processor is strongly correlated with its input. Linear
+       interpolation keeps neutral settings exactly neutral at every MIX. */
+    *direct=(1-amount)*(1+(state->gain_current-1)*gate);
+    return effect_makeup(lerp_frame(input,wet,amount),state->gain_current,gate);
+}
+
 static TsStereoFrame slot_effect_process(TsSisterPostFxEngine *engine,
                                          size_t slot, size_t location,
                                          const TsSisterFxSlotControls *control,
@@ -1365,6 +1406,9 @@ static TsStereoFrame slot_effect_process(TsSisterPostFxEngine *engine,
     case TS_SISTER_FX_DISTORTION:
         return distortion_process(engine,
             &engine->distortion[slot][location], control, input, gate, direct);
+    case TS_SISTER_FX_TRANSIENT:
+        return transient_process(engine, &engine->transient[slot][location],
+                                 control, input, gate, direct);
     case TS_SISTER_FX_GRAIN:
         return grain_process(engine, &engine->grain[slot][location],
                              control, input, gate, direct);
@@ -1375,7 +1419,7 @@ static TsStereoFrame slot_effect_process(TsSisterPostFxEngine *engine,
 
 static TsStereoFrame process_location(TsSisterPostFxEngine *engine,
                                       size_t location, TsStereoFrame input,
-                                      int explicit_mono, int advance_frame, int wet_only)
+                                      int explicit_mono, int advance_frame, float send_amount)
 {
     uint8_t placement_bit;
     float master_gain;
@@ -1418,13 +1462,16 @@ static TsStereoFrame process_location(TsSisterPostFxEngine *engine,
     /* Master is the final return valve. Keep the exact-zero case explicit so
        no processor state, tail, malformed sample, or individual switch can
        contribute even a floating-point residue once the master reaches dry. */
-    if(wet_only) {
+    if(send_amount>=1) {
         output.l=(output.l-input.l*direct)*master_gain;
         output.r=(output.r-input.r*direct)*master_gain;
-    } else if (master_gain <= 0.0f)
-        output = input;
-    else if (master_gain < 1.0f)
-        output = lerp_frame(input, output, master_gain);
+    } else {
+        TsStereoFrame send={(output.l-input.l*direct)*master_gain,
+                            (output.r-input.r*direct)*master_gain};
+        if(master_gain<=0)output=input;
+        else if(master_gain<1)output=lerp_frame(input,output,master_gain);
+        if(send_amount>0)output=lerp_frame(output,send,send_amount);
+    }
     if (advance_frame) {
         uint32_t frames = engine->transition_frames;
         for (size_t slot = 0u; slot < TS_SISTER_FX_SLOT_COUNT; ++slot)
@@ -1458,7 +1505,12 @@ TsStereoFrame ts_sister_post_fx_process_send(TsSisterPostFxEngine *engine,TsSter
     return process_location(engine,TS_SISTER_FX_LOCATION_COUNT-1,input,0,1,1);
 }
 
-/* Fixed upper bound: four slots, two morph endpoints, five locations.
+TsStereoFrame ts_sister_post_fx_process_matrix(TsSisterPostFxEngine *engine, TsStereoFrame input, float insert)
+{
+    return process_location(engine,TS_SISTER_FX_LOCATION_COUNT-1,input,0,1,1-clampf(insert,0,1));
+}
+
+/* Fixed upper bound: five slots, two morph endpoints, five locations.
    Invoked only for requested block snapshots. No allocation, locks or history. */
 TsSisterFxView ts_sister_post_fx_view(const TsSisterPostFxEngine *engine)
 {
@@ -1485,6 +1537,12 @@ TsSisterFxView ts_sister_post_fx_view(const TsSisterPostFxEngine *engine)
                 case TS_SISTER_FX_DISTORTION:
                     wet=engine->distortion[slot][loc].mix_current;
                     x=engine->distortion[slot][loc].drive_current;y=engine->distortion[slot][loc].tone_current;break;
+                case TS_SISTER_FX_TRANSIENT: {
+                    const TsSisterTransientState *t=&engine->transient[slot][loc];
+                    x=.5f+(float)t->dsp.attack_db/30;
+                    y=.5f+(float)t->dsp.sustain_db/48;
+                    wet=t->mix_current*fmaxf(fabsf(2*x-1),fabsf(2*y-1));break;
+                }
                 case TS_SISTER_FX_GRAIN:
                     wet=engine->grain[slot][loc].mix_current;
                     x=engine->grain[slot][loc].size_current;y=engine->grain[slot][loc].density_current;break;

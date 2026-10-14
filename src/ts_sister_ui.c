@@ -578,10 +578,10 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
             hit.action = TS_SISTER_UI_ACTION_RECORD_FILE;
             return hit;
         }
-        for (int row = 0; row < 4; ++row) {
-            int top = 52 + row * 56;
-            int field_count = model->parameters.fx.slot[row].type ==
-                              TS_SISTER_FX_GRAIN ? 5 : 4;
+        for (int row = 0; row < TS_SISTER_FX_SLOT_COUNT; ++row) {
+            int top = TS_SISTER_UI_FX_TOP + 4 + row * TS_SISTER_UI_FX_ROW_STEP;
+            int field_count = (model->parameters.fx.slot[row].type == TS_SISTER_FX_GRAIN ||
+                               model->parameters.fx.slot[row].type == TS_SISTER_FX_TRANSIENT) ? 5 : 4;
             int field_width = field_count == 5 ? 70 : 88;
             int field_step = field_count == 5 ? 74 : 92;
             if (contains(x, y, 16, top - 2, 40, 22)) {
@@ -620,27 +620,27 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
                 hit.index = row << 8;
                 return hit;
             }
-            if (row < 3 && contains(x, y, 584, top, 36, 18)) {
+            if (row + 1 < TS_SISTER_FX_SLOT_COUNT && contains(x, y, 584, top, 36, 18)) {
                 hit.action = TS_SISTER_UI_ACTION_FX_SLOT_MOVE;
                 hit.index = (row << 8) | 1;
                 return hit;
             }
         }
-        if (contains(x, y, 10, 304, 92, 22)) {
+        if (contains(x, y, 10, TS_SISTER_UI_FX_CLOCK_Y, 92, 22)) {
             hit.action = TS_SISTER_UI_ACTION_FX_TOGGLE;
             hit.index = TS_SISTER_UI_FX_MASTER;
             return hit;
         }
-        if (contains(x, y, 110, 276, 300, 18)) {
+        if (contains(x, y, TS_SISTER_UI_FX_EFFECT_X, TS_SISTER_UI_FX_CLOCK_Y, TS_SISTER_UI_FX_CLOCK_W, 18)) {
             hit.action = TS_SISTER_UI_ACTION_PARAMETER;
             hit.index = TS_SISTER_UI_PARAM_FX_TRANSITION;
-            hit.normalized = (float)(x - 110) / 299.0f;
+            hit.normalized = (float)(x - TS_SISTER_UI_FX_EFFECT_X) / (TS_SISTER_UI_FX_CLOCK_W-1);
             return hit;
         }
-        if (contains(x, y, 110, 306, 300, 18)) {
+        if (contains(x, y, TS_SISTER_UI_FX_MASTER_X, TS_SISTER_UI_FX_CLOCK_Y, TS_SISTER_UI_FX_CLOCK_W, 18)) {
             hit.action = TS_SISTER_UI_ACTION_PARAMETER;
             hit.index = TS_SISTER_UI_PARAM_MASTER_FX_TRANSITION;
-            hit.normalized = (float)(x - 110) / 299.0f;
+            hit.normalized = (float)(x - TS_SISTER_UI_FX_MASTER_X) / (TS_SISTER_UI_FX_CLOCK_W-1);
             return hit;
         }
         if (contains(x, y, 110, 332, 300, 18)) {
@@ -657,7 +657,7 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
         return hit;
     }
     {
-        if(model->matrix_routing && contains(x,y,10,172,208,20)){hit.action=TS_SISTER_UI_ACTION_SOURCE_TILES;return hit;}
+        if(model && model->matrix_routing && contains(x,y,10,172,208,20)){hit.action=TS_SISTER_UI_ACTION_SOURCE_TILES;return hit;}
         static const int source_left[6] = {10, 58, 90, 128, 170, 334};
         static const int source_width[6] = {44, 28, 34, 38, 48, 44};
         for (int source = 0; source < TS_SISTER_SOURCE_COUNT; ++source) {
@@ -677,7 +677,7 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
         return hit;
     }
     for (int control = 0; control < 6; ++control) {
-        if(model->matrix_routing && control<5)continue;
+        if(model && model->matrix_routing && control<5)continue;
         static const int parameters[6] = {
             TS_SISTER_UI_PARAM_TILES_GAIN,
             TS_SISTER_UI_PARAM_FM_GAIN,

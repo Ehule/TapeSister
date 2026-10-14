@@ -101,7 +101,8 @@ static void matrix_clear_reset(const char *directory)
     assert(!memcmp(&defaults,&a.sister.matrix.controls,sizeof(defaults)));
     assert(!memcmp(&defaults,&u.config.matrix,sizeof(defaults)));
     TsSourceRoute main={.matrix_enabled=1};main.matrix_gain[TS_MATRIX_MAIN]=1000;
-    for(int lane=0;lane<TS_TRACKER_LANES;++lane)assert(!memcmp(&main,&pages.tracker.lanes[lane].output_route,sizeof(main)));
+    TsSourceRoute track_bus={0};
+    for(int lane=0;lane<TS_TRACKER_LANES;++lane)assert(!memcmp(&track_bus,&pages.tracker.lanes[lane].output_route,sizeof(track_bus)));
     assert(!memcmp(&main,&bank.bank[0].output_route,sizeof(main)));
     assert(!memcmp(&main,&other->bank[0].output_route,sizeof(main)));
     render(energy);render(energy);assert(energy[0]>1 && energy[1]>1 && energy[2]==0 && energy[3]==0);
@@ -137,7 +138,6 @@ static void matrix_controller(const char *directory)
     legacy.mix_enabled=0;legacy.second=3;assert(mx_legacy_direct(legacy));
     matrix_window.legacy=a.sister.router.controls;
     /* The real checkbox edits the track, with no tile write and no transport stop. */
-    matrix_click(MATRIX_X+8,MATRIX_Y+12,SDL_BUTTON_LEFT);
     matrix_click(MATRIX_X+8*MATRIX_CW+8,MATRIX_Y+12,SDL_BUTTON_LEFT);
     assert(pages.tracker.lanes[0].output_route.matrix_enabled && pages.tracker.lanes[0].output_route.matrix_gain[8]==1000);
     assert(!bank.bank[0].output_route.matrix_enabled);
@@ -164,7 +164,6 @@ static void matrix_controller(const char *directory)
     assert(energy[0]>1&&energy[1]>1&&energy[2]==0&&energy[3]==0);
     matrix_click(1100,744,SDL_BUTTON_LEFT);
     /* Track matrix routing survives the real embedded score codec. */
-    matrix_click(MATRIX_X+8,MATRIX_Y+12,SDL_BUTTON_LEFT);
     matrix_click(MATRIX_X+8*MATRIX_CW+8,MATRIX_Y+12,SDL_BUTTON_LEFT);
     assert(ts_tapehead_export(&pages.tracker,error,sizeof(error)));
     assert(ts_sister_tracker_save_file(&pages.tracker,"matrix-score.tst",error,sizeof(error)));
@@ -256,6 +255,7 @@ static void matrix_controller(const char *directory)
     assert(!a.sister.matrix.controls.enabled && !a.sister.matrix.controls.input_name[0][0]);
     matrix_import_controls();
     test_matrix_buses(directory);
+    test_tracker_bus(directory);
     test_compressor_controller(directory);
     matrix_close();puts("Matrix UI, native track/tile audio, pan, inheritance, physical return, naming and project reset passed");
 }
