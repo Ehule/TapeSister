@@ -214,6 +214,7 @@ static int master_eq_event(const SDL_Event *event,SDL_Window *window,
         if(device)SDL_UnlockAudioDevice(device);
         if(down || wheel) {
             if(message[0])snprintf(ui->status,sizeof(ui->status),"%s",message);
+            else if(ui->eq_morph_running)snprintf(ui->status,sizeof(ui->status),"EQ TIMER RUNNING / STOP HOLDS CURVE");
             else ts_ui_eq_morph_status(ui,ui->status,sizeof(ui->status));
             ui->performance_tooltip[0]=0;
         }

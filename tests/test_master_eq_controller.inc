@@ -76,6 +76,7 @@ static void eq_morph_controller(void)
     eq_click(400,236,SDL_BUTTON_LEFT);assert(ui.config.eq_morph.loop);
     eq_click(465,236,SDL_BUTTON_LEFT);assert(audio.sister.master_eq.morph_running);
     assert(!ui.eq_morph_selected);
+    assert(!strstr(ui.status,"%")); /* Static action footer must not show a stale phase. */
     TsEqMorph playing_pair=audio.sister.master_eq.morph;
     eq_click(45,236,SDL_BUTTON_LEFT);
     assert(ui.eq_morph_running && strstr(ui.status,"STOP BEFORE SAVING"));
