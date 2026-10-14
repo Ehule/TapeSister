@@ -1,6 +1,7 @@
 #ifndef TAPESISTER_ROUTING_MATRIX_H
 #define TAPESISTER_ROUTING_MATRIX_H
 #include "tapesister/source_route.h"
+#include "tapesister/matrix_effect_types.h"
 #include <stdio.h>
 
 /* Saved IDs 0..6 are the original processors, destinations 7..14 are physical
@@ -12,8 +13,10 @@ enum { TS_MATRIX_MAIN, TS_MATRIX_SISTER, TS_MATRIX_PRISM, TS_MATRIX_BOARD,
        TS_MATRIX_FALLOUT, TS_MATRIX_EQ, TS_MATRIX_LIMITER, TS_MATRIX_NODES };
 enum { TS_MATRIX_INPUTS=4, TS_MATRIX_OUTPUTS=8,
        TS_MATRIX_FM=TS_MATRIX_NODES+TS_MATRIX_INPUTS, TS_MATRIX_LINK, TS_MATRIX_MOSAIC, TS_MATRIX_TILES,
-       TS_MATRIX_COMPRESSOR, TS_MATRIX_TRACKER, TS_MATRIX_ROWS, TS_MATRIX_SIDECHAIN=16,
-       TS_MATRIX_PROCESSORS=8, TS_MATRIX_DELAY=64, TS_MATRIX_NAME=24 };
+       TS_MATRIX_COMPRESSOR, TS_MATRIX_TRACKER, TS_MATRIX_SHARED_ROWS, TS_MATRIX_SIDECHAIN=16,
+       TS_MATRIX_EFFECT_BASE=17, TS_MATRIX_ROWS=TS_MATRIX_EFFECT_BASE+TS_MATRIX_EFFECT_CAPACITY,
+       TS_MATRIX_EFFECT_SC_BASE=TS_MATRIX_ROWS,
+       TS_MATRIX_PROCESSORS=8+TS_MATRIX_EFFECT_CAPACITY, TS_MATRIX_DELAY=64, TS_MATRIX_NAME=24 };
 typedef struct {
     int enabled, feedback;
     /* Imported serial effects retain their full dry/wet output. Bit MAIN
@@ -22,7 +25,9 @@ typedef struct {
     /* Explicit full-signal pedalboard mode; independent of legacy imports. */
     int board_insert;
     TsSourceRoute row[TS_MATRIX_ROWS];
-    unsigned delayed[TS_MATRIX_ROWS];
+    uint64_t delayed[TS_MATRIX_ROWS];
+    uint32_t next_effect_id;
+    TsMatrixEffectControls effect[TS_MATRIX_EFFECT_CAPACITY];
     char input_name[TS_MATRIX_INPUTS][TS_MATRIX_NAME];
     char output_name[TS_MATRIX_OUTPUTS][TS_MATRIX_NAME];
 } TsMatrixControls;
@@ -54,6 +59,11 @@ const char *ts_matrix_node_name(int node);
 int ts_matrix_is_processor(int id);
 int ts_matrix_is_output(int id);
 int ts_matrix_processor(int index);
+int ts_matrix_effect_index(int node);
+int ts_matrix_sidechain_for(int node);
+int ts_matrix_destination_active(const TsMatrixControls *c,int destination);
+int ts_matrix_effect_add(TsMatrixControls *c,int type);
+void ts_matrix_effect_remove(TsMatrixControls *c,int slot);
 /* Translate a source's old routing into the matrix without changing the source. */
 TsSourceRoute ts_matrix_source_route(TsSourceRoute route);
 #endif

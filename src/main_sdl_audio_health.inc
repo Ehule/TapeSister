@@ -168,7 +168,7 @@ static void ts_audio_health_setup_report(char *text, size_t size, Uint32 now)
             if(!ts_matrix_is_output(d))snprintf(to,sizeof(to),"%s",ts_matrix_node_name(d));
             else snprintf(to,sizeof(to),"OUT %d/%d %.23s",(d-TS_MATRIX_NODES)*2+1,(d-TS_MATRIX_NODES)*2+2,s->matrix.output_name[d-TS_MATRIX_NODES]);
             used=strlen(text);snprintf(text+used,size-used,"    %s -> %s: %+.1f dB; pan %d%s\n",from,to,20*log10f(gain*.001f),s->matrix.row[row].pan,
-                ts_matrix_is_processor(row) && (s->matrix.delayed[row]&(1u<<d))?"; feedback delayed 64 samples":"");
+                ts_matrix_is_processor(row) && (s->matrix.delayed[row]&(UINT64_C(1)<<d))?"; feedback delayed 64 samples":"");
         }
     }
     for (int i = 0; i < TS_SISTER_FX_SLOT_COUNT; ++i) {

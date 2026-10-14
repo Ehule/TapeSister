@@ -11,6 +11,7 @@
 #include "tapesister/eq_spectrum.h"
 #include "tapesister/router.h"
 #include "tapesister/routing_matrix.h"
+#include "tapesister/matrix_effects.h"
 #include "tapesister/matrix_layout.h"
 #include "tapesister/spatial.h"
 #include "tapesister/insert.h"
@@ -237,6 +238,7 @@ typedef struct {
     TsEqSpectrum eq_spectrum;
     TsRouter router;
     TsRoutingMatrix matrix;
+    TsMatrixEffects matrix_effects;
     TsMatrixLayout matrix_layout; /* Control-thread project metadata; never read by DSP. */
     TsInsert insert;
     TsSpatial spatial;

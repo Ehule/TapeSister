@@ -14,7 +14,7 @@ FetchContent_Declare(
   SOURCE_SUBDIR _tapesister_header_only)
 FetchContent_MakeAvailable(miniaudio)
 
-add_library(tapesister_core src/ts_mandala.c src/ts_routing_matrix.c src/ts_matrix_layout.c src/ts_source_route.c src/ts_clean_output.c src/ts_spatial.c src/ts_sample.c src/ts_prism.c src/ts_prism_performance.c src/ts_fm.c src/ts_audition.c src/ts_note_bank.c src/ts_keyboard_sequence.c
+add_library(tapesister_core src/ts_mandala.c src/ts_routing_matrix.c src/ts_matrix_effects.c src/ts_matrix_layout.c src/ts_source_route.c src/ts_clean_output.c src/ts_spatial.c src/ts_sample.c src/ts_prism.c src/ts_prism_performance.c src/ts_fm.c src/ts_audition.c src/ts_note_bank.c src/ts_keyboard_sequence.c
              src/ts_mosaic.c src/ts_note_event.c src/ts_midi_map.c src/ts_performance.c src/ts_audio_mixer.c
              src/ts_audio_lifecycle.c
              src/ts_realtime_diagnostics.c src/ts_profile.c
@@ -699,7 +699,8 @@ add_test(NAME tapesister_insert_tests COMMAND tapesister_insert_tests)
 # Tracker fixtures also retain the 32-track score and multisample metadata
 # while the project loader stages its replacement instruments.
 if(MINGW)
-  foreach(project_test IN ITEMS test_sister_post_fx
+  foreach(project_test IN ITEMS tapesister_source_route_controller_tests
+                               test_sister_post_fx
                                test_sister_source_ui
                                tapesister_realtime_controller_tests
                                tapesister_audio_health_tests
@@ -743,9 +744,16 @@ foreach(test_target IN LISTS tapesister_test_targets)
   endif()
 endforeach()
 
+add_executable(tapesister_routing_matrix_instances_tests tests/test_routing_matrix_instances.c)
+target_link_libraries(tapesister_routing_matrix_instances_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_routing_matrix_instances_tests COMMAND tapesister_routing_matrix_instances_tests)
 add_executable(tapesister_routing_matrix_tests tests/test_routing_matrix.c)
 target_link_libraries(tapesister_routing_matrix_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_routing_matrix_tests COMMAND tapesister_routing_matrix_tests)
+if(MINGW)
+  target_link_options(tapesister_routing_matrix_tests PRIVATE "-Wl,--stack,16777216")
+  target_link_options(tapesister_routing_matrix_instances_tests PRIVATE "-Wl,--stack,16777216")
+endif()
 
 add_executable(tapesister_mandala_tests tests/test_mandala.c)
 target_link_libraries(tapesister_mandala_tests PRIVATE tapesister_core)

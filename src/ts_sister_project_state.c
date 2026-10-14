@@ -132,6 +132,8 @@ int ts_sister_project_state_apply(const TsSisterProjectState *state,
     if (state == NULL || runtime == NULL || state->page_count == 0u ||
         state->page_count > TS_SISTER_RUNTIME_PAGE_LIMIT ||
         state->active_page >= state->page_count || !ts_mandala_valid(&state->mandala) || !ts_matrix_layout_valid(&state->matrix_layout)) return 0;
+    if(!ts_matrix_effects_restore(&runtime->matrix_effects,&state->matrix,
+        runtime->router.sample_rate?runtime->router.sample_rate:48000))return 0;
     runtime->source_switches = state->source_switches & TS_SISTER_SOURCE_ALL;
     memset(runtime->page_source_masks, 0, sizeof(runtime->page_source_masks));
     memcpy(runtime->page_source_masks, state->page_masks,

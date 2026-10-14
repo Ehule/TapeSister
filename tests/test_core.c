@@ -175,13 +175,14 @@ static void browser_navigation_regressions(TsBrowser *browser)
 int main(void)
 {
     TsSample a, b, loaded, copy, dry, effected, repeated;
-    TsInstrument generated, imported, committed, audition, restored, bank_edit, recipe_target;
-    TsInstrument family, family_repeat, family_restored;
-    TsUiState ui;
-    TsNoteBank notes;
+    /* Large fixtures live outside the thread stack as route state grows. */
+    static TsInstrument generated, imported, committed, audition, restored, bank_edit, recipe_target;
+    static TsInstrument family, family_repeat, family_restored;
+    static TsUiState ui;
+    static TsNoteBank notes;
     TsRecipeBank recipe_bank;
     TsBrowser browser;
-    TsFramebuffer fb;
+    static TsFramebuffer fb;
     char error[160];
     uint64_t parent_hash, current_hash, edited_hash, family_root_hash;
     ts_sample_init(&a); ts_sample_init(&b); ts_sample_init(&loaded); ts_sample_init(&copy);
@@ -2482,7 +2483,7 @@ int main(void)
             CHECK(fread(magic, 1, sizeof(magic), recipe) == sizeof(magic));
             fclose(recipe);
         }
-        CHECK(memcmp(magic, "TSR39", 5) == 0);
+        CHECK(memcmp(magic, "TSR40", 5) == 0);
     }
     CHECK(ts_instrument_load_recipe(&restored, "test-recipe.tsr", error, sizeof(error)));
     CHECK(ts_sample_hash(&restored.parent) == ts_sample_hash(&committed.parent));
