@@ -1,3 +1,55 @@
+static void test_tracker_bus(const char *directory)
+{
+    ts_tapehead_stop();ts_note_bank_clear(&a.notes);matrix_close();
+    TsMatrixControls saved=a.sister.matrix.controls,c;ts_matrix_default(&c);c.enabled=1;
+    TsSourceRoute routes[2]={pages.tracker.lanes[0].output_route,pages.tracker.lanes[1].output_route};
+    TsSourceRoute tile=bank.bank[0].output_route;
+    note_t second=pattern[editor.editPattern][1];
+    pattern[editor.editPattern][1]=(note_t){.note=49,.instr=1};
+    pages.tracker.lanes[0].output_route=pages.tracker.lanes[1].output_route=bank.bank[0].output_route=(TsSourceRoute){0};
+    ts_tapehead_refresh_routes(&pages,&bank);
+    c.row[TS_MATRIX_TRACKER].matrix_gain[TS_MATRIX_MAIN]=0;c.row[TS_MATRIX_TRACKER].matrix_gain[8]=1000;
+    assert(ts_matrix_set(&a.sister.matrix,&c,48000));
+    performance_gain(0,&a,1,1);performance_gain(0,&a,3,1);
+    assert(ts_note_bank_start(&a.notes,&bank,TS_AUDITION_CURRENT,12,0,48000)==TS_NOTE_STARTED);
+    startPlaying(PLAYMODE_SONG,0);double energy[4];render(energy);render(energy);
+    assert(energy[0]>1 && energy[2]>1);double live=energy[0],group=energy[2];
+    assert(matrix_show(0,&a,&u,&pages,&bank,0,-1));
+    int bus=-1;for(int i=0;i<matrix_window.count;++i)
+        if(matrix_window.rows[i].kind==2 && matrix_window.rows[i].index==TS_MATRIX_TRACKER)bus=i;
+    assert(bus>=0 && matrix_window.filter==1 && mx_uses_bus(matrix_window.rows[0],pages.tracker.lanes[0].output_route));
+    /* A single track overrides the bus without duplicating its signal. */
+    matrix_click(MATRIX_X+8,MATRIX_Y+12,SDL_BUTTON_LEFT);render(energy);render(energy);
+    assert(energy[0]>live && energy[2]>1 && energy[2]<group*.9);
+    double split=energy[2],direct=energy[0];
+    /* Editing the bus changes the grouped track; keyboard and direct track stay put. */
+    mx_select(bus,0);matrix_window.destination=8;matrix_window.scroll=SDL_max(0,bus-MATRIX_VISIBLE+1);
+    matrix_click(327,744,SDL_BUTTON_LEFT);render(energy);render(energy);
+    assert(fabs(energy[0]-direct)<.001 && fabs(energy[2]-split*.5)<.001);
+    matrix_click(330,34,SDL_BUTTON_LEFT);render(energy);render(energy);assert(fabs(energy[2]-split)<.001);
+    matrix_shot(directory,"matrix-tracksister-bus");
+    /* F11 remains a single trim for both group and individually routed tracks. */
+    performance_gain(0,&a,1,0);render(energy);render(energy);
+    assert(fabs(energy[0]-live)<.001 && energy[2]==0 && energy[3]==0);
+    performance_gain(0,&a,1,1);render(energy);render(energy);
+    mx_select(0,0);mx_select(1,KMOD_CTRL);matrix_window.scroll=0;
+    matrix_click(100,775,SDL_BUTTON_LEFT);
+    assert(!pages.tracker.lanes[0].output_route.matrix_enabled && !pages.tracker.lanes[1].output_route.matrix_enabled);
+    render(energy);render(energy);assert(fabs(energy[0]-live)<.001 && fabs(energy[2]-group)<.001);
+    matrix_click(330,34,SDL_BUTTON_LEFT);assert(pages.tracker.lanes[0].output_route.matrix_enabled);
+    matrix_click(430,34,SDL_BUTTON_LEFT);assert(!pages.tracker.lanes[0].output_route.matrix_enabled);
+    /* Pan and mono retain membership; selecting a destination explicitly leaves the bus. */
+    mx_select(0,0);matrix_wheel(900,744,1,0,0);
+    assert(!pages.tracker.lanes[0].output_route.matrix_enabled && pages.tracker.lanes[0].output_route.pan==5);
+    matrix_click(1100,775,SDL_BUTTON_LEFT);
+    assert(!pages.tracker.lanes[0].output_route.matrix_enabled && pages.tracker.lanes[0].output_route.width==-100);
+    ts_tapehead_stop();ts_note_bank_clear(&a.notes);matrix_close();
+    pattern[editor.editPattern][1]=second;
+    for(int i=0;i<2;++i)pages.tracker.lanes[i].output_route=routes[i];
+    bank.bank[0].output_route=tile;ts_tapehead_refresh_routes(&pages,&bank);
+    assert(ts_matrix_set(&a.sister.matrix,&saved,48000));
+    puts("TrackSister group bus, direct overrides, live tile isolation, F11 trim and native return/undo controls passed");
+}
 static void test_matrix_buses(const char *directory)
 {
     ts_tapehead_stop();ts_note_bank_clear(&a.notes);ts_performance_clear(&a.performance);ts_performance_clear(&a.tile_launchers);

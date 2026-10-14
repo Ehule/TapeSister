@@ -33,6 +33,7 @@ void ts_matrix_default(TsMatrixControls *c)
     c->row[TS_MATRIX_LINK].matrix_gain[TS_MATRIX_MAIN]=1000;
     c->row[TS_MATRIX_MOSAIC].matrix_gain[TS_MATRIX_MAIN]=1000;
     c->row[TS_MATRIX_TILES].matrix_gain[TS_MATRIX_MAIN]=1000;
+    c->row[TS_MATRIX_TRACKER].matrix_gain[TS_MATRIX_MAIN]=1000;
     snprintf(c->output_name[0],TS_MATRIX_NAME,"MAIN SPEAKERS");
 }
 static int order_graph(const TsMatrixControls *c,int *order)
@@ -136,7 +137,7 @@ static float peak(TsStereoFrame f){return fmaxf(fabsf(f.l),fabsf(f.r));}
 void ts_matrix_process(TsRoutingMatrix *m,TsSourceRouteMix *sums,
     const TsStereoFrame live[TS_MATRIX_ROWS-TS_MATRIX_NODES],TsMatrixProcess fn,void *context)
 {
-    for(int s=TS_MATRIX_NODES;s<TS_MATRIX_COMPRESSOR;++s) {
+    for(int s=TS_MATRIX_NODES;s<TS_MATRIX_ROWS;++s)if(!ts_matrix_is_processor(s)) {
         TsStereoFrame input=ts_stereo_frame_sanitize(live[s-TS_MATRIX_NODES]);
         m->output_peak[s]=fmaxf(peak(input),m->output_peak[s]*m->decay);
         ts_source_route_frame(&m->voice[s],input,sums);

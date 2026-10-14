@@ -38,6 +38,28 @@ the shared DSP only once per sample. Mode selection is saved in projects/config
 and participates in matrix Undo/Redo and Original/Edited history. Existing
 matrix projects retain their mode until explicitly changed.
 
+### TrackSister group processing
+
+Open **F9 → TRACKS** and select **TRACKSISTER BUS**, directly below the individual
+track rows. It collects tracks using their normal output, after the F11 TrackSister
+level. Its default route is Main, preserving the existing mix. To shape the group,
+disconnect the bus from Main, connect it to PEDALS, and use **MODE: INSERT** on the
+pedalboard row. The bus also has the usual level, pan, mono, hardware-output and
+compressor/sidechain routing controls.
+
+An explicit individual track route bypasses this bus. To put any selection of
+tracks back into the group, select those track rows and click **TO TRACK BUS** at
+the bottom left. Ctrl/Shift selection and Undo/Redo work for this action. **USE TILE**
+still follows each playing tile's route; only tiles using their normal output
+then reach the TrackSister bus. Live keyboard tiles, FM, Mosaic and preview audio
+remain separate. F11 TrackSister level controls both grouped and direct tracks.
+
+Reset to Default returns tracks to the bus; Clear All disconnects it along with
+the other routes. Project-state version 38 saves the new source row, and older
+projects receive a unity route to Main. Existing destination IDs are unchanged.
+The duplicate F9 hint has been removed from the COMP button; it remains in the
+window title and footer.
+
 ## Design and compatibility
 
 This is an original digital interpretation of the differential-envelope idea
@@ -58,7 +80,7 @@ control changes. The sample path has bounded work and no allocation or locks.
 
 Processor IDs and all existing MIDI/lock parameter IDs retain their values.
 Slot 5's five parameters are appended after Prism instead of taking its IDs.
-Project-state version 37 and preset version 21 write the new slot; older versions
+Project-state version 37 introduced the new slot, as did preset version 21; older versions
 load it empty. Each slot/location owns independent history. Visual snapshots
 include the new type without reassigning Prism's Mandala channel.
 
@@ -84,4 +106,10 @@ existing Sister UI fixtures to run. The Mandala controller fixture checks distin
 and Transient channels. Both new fixtures are mandatory Linux/Windows release
 gates.
 
+The routing and source-route controller fixtures additionally check TrackSister
+group audio, independent track overrides, live tile isolation, F11 trim, bus
+meters, return-to-bus Undo/Redo, current/legacy project recall and reset behavior.
+
 ![Native five-slot pedalboard](screenshots/transient-pedalboard.png)
+
+![TrackSister bus in the native routing matrix](screenshots/matrix-tracksister-bus.png)

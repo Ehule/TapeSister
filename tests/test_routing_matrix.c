@@ -3,6 +3,7 @@
 #endif
 #include "tapesister/routing_matrix.h"
 #include "tapesister/sister_runtime.h"
+#include "tapesister/sister_project_state.h"
 #include <assert.h>
 #include <math.h>
 #include <string.h>
@@ -97,6 +98,54 @@ static void physical_inputs(void)
     near(pairs[2].l,.5f);near(pairs[2].r,.6f);
     ts_insert_free(io);free(io);
 }
+static void tracker_bus(void)
+{
+    static TsSisterRuntime r;char error[200];ts_sister_runtime_init(&r);
+    assert(ts_sister_runtime_reconfigure(&r,48000,2,error,sizeof(error)));
+    ts_sister_runtime_configure_limiter(&r,0,-1,1,50);
+    TsMatrixControls c=r.matrix.controls;c.enabled=1;
+    assert(TS_MATRIX_COMPRESSOR==15 && TS_MATRIX_SIDECHAIN==16 && TS_MATRIX_DESTINATIONS==17);
+    assert(ts_matrix_set(&r.matrix,&c,48000));
+    TsSisterSourceFrames s={.tracker={.2f,-.3f},.preview={.05f,.07f},.fm={.1f,.12f}};
+    /* Explicit per-track destinations arrive separately from the group mix. */
+    s.matrix_graph[TS_MATRIX_NODES+2]=(TsStereoFrame){.04f,.08f};
+    for(int i=0;i<300;++i)ts_sister_runtime_process_frame(&r,&s);
+    near(r.matrix.output[0].l,.35f);near(r.matrix.output[0].r,-.11f);
+    c.row[TS_MATRIX_TRACKER].matrix_gain[TS_MATRIX_MAIN]=0;
+    c.row[TS_MATRIX_TRACKER].matrix_gain[TS_MATRIX_NODES+1]=500;
+    assert(ts_matrix_set(&r.matrix,&c,48000));
+    for(int i=0;i<300;++i)ts_sister_runtime_process_frame(&r,&s);
+    near(r.matrix.output[0].l,.15f);near(r.matrix.output[0].r,.19f);
+    near(r.matrix.output[1].l,.1f);near(r.matrix.output[1].r,-.15f);
+    near(r.matrix.output[2].l,.04f);near(r.matrix.output[2].r,.08f);
+    assert(r.matrix.output_peak[TS_MATRIX_TRACKER]>.29f);
+    /* A group can feed the pedalboard and compressor detector independently. */
+    c.row[TS_MATRIX_TRACKER].matrix_gain[TS_MATRIX_NODES+1]=0;
+    c.row[TS_MATRIX_TRACKER].matrix_gain[TS_MATRIX_BOARD]=1000;
+    c.row[TS_MATRIX_TRACKER].matrix_gain[TS_MATRIX_SIDECHAIN]=500;c.board_insert=1;
+    assert(ts_matrix_set(&r.matrix,&c,48000));
+    for(int i=0;i<10000;++i)ts_sister_runtime_process_frame(&r,&s);
+    near(r.matrix.output[0].l,.35f);near(r.matrix.output[0].r,-.11f);
+    near(r.matrix.sidechain.l,.1f);near(r.matrix.sidechain.r,-.15f);
+    /* The new row persists; older projects retain the former unity-to-Main sound. */
+    TsSisterProjectState *state=calloc(1,sizeof(*state)),*copy=calloc(1,sizeof(*copy));assert(state && copy);
+    ts_sister_project_state_init(state,48000);state->matrix=c;
+    int present=0;
+    assert(ts_sister_project_state_save_file(state,"tracker-bus-project.ini",error,sizeof(error)));
+    assert(ts_sister_project_state_load_file(copy,"tracker-bus-project.ini",48000,&present,error,sizeof(error)) && present);
+    assert(!memcmp(&copy->matrix,&c,sizeof(c)));
+    FILE *from=fopen("tracker-bus-project.ini","r"),*old=fopen("tracker-bus-old.ini","w");assert(from && old);
+    char line[2048];while(fgets(line,sizeof(line),from)) {
+        if(!strncmp(line,"Matrix.Row16=",13))continue;
+        if(!strncmp(line,"Version=",8))fputs("Version=37\n",old);else fputs(line,old);
+    }
+    fclose(from);fclose(old);
+    assert(ts_sister_project_state_load_file(copy,"tracker-bus-old.ini",48000,&present,error,sizeof(error)) && present);
+    TsMatrixControls defaults;ts_matrix_default(&defaults);
+    assert(!memcmp(&copy->matrix.row[TS_MATRIX_TRACKER],&defaults.row[TS_MATRIX_TRACKER],sizeof(TsSourceRoute)));
+    for(int i=0;i<TS_MATRIX_TRACKER;++i)assert(!memcmp(&copy->matrix.row[i],&c.row[i],sizeof(TsSourceRoute)));
+    remove("tracker-bus-project.ini");remove("tracker-bus-old.ini");free(state);free(copy);ts_sister_runtime_free(&r);
+}
 static void import_serial_chain(void)
 {
     static TsSisterRuntime legacy,edited;char error[200];
@@ -145,4 +194,4 @@ static void import_serial_chain(void)
         for(int i=0;i<2;++i)ts_sister_runtime_free(both[i]);
     }
 }
-int main(void){graph();runtime();physical_inputs();import_serial_chain();puts("Unified routing graph, shared DSP, serial import audio parity, loop isolation, hardware returns and persistence passed");}
+int main(void){graph();runtime();physical_inputs();tracker_bus();import_serial_chain();puts("Unified routing graph, TrackSister bus, shared DSP, serial import audio parity, loop isolation, hardware returns and persistence passed");}

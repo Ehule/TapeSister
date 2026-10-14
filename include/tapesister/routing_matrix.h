@@ -5,13 +5,14 @@
 
 /* Saved IDs 0..6 are the original processors, destinations 7..14 are physical
    outputs. Source rows 7..14 are the original inputs/buses. Compressor is
-   appended at row/destination 15; 16 is a detector-only destination.
+   appended at row/destination 15; 16 is a detector-only destination and,
+   independently, the TrackSister source bus row. Destination IDs are unchanged.
    TS_MATRIX_NODES remains the legacy output/input offset, not a node count. */
 enum { TS_MATRIX_MAIN, TS_MATRIX_SISTER, TS_MATRIX_PRISM, TS_MATRIX_BOARD,
        TS_MATRIX_FALLOUT, TS_MATRIX_EQ, TS_MATRIX_LIMITER, TS_MATRIX_NODES };
 enum { TS_MATRIX_INPUTS=4, TS_MATRIX_OUTPUTS=8,
        TS_MATRIX_FM=TS_MATRIX_NODES+TS_MATRIX_INPUTS, TS_MATRIX_LINK, TS_MATRIX_MOSAIC, TS_MATRIX_TILES,
-       TS_MATRIX_COMPRESSOR, TS_MATRIX_ROWS, TS_MATRIX_SIDECHAIN=16,
+       TS_MATRIX_COMPRESSOR, TS_MATRIX_TRACKER, TS_MATRIX_ROWS, TS_MATRIX_SIDECHAIN=16,
        TS_MATRIX_PROCESSORS=8, TS_MATRIX_DELAY=64, TS_MATRIX_NAME=24 };
 typedef struct {
     int enabled, feedback;
