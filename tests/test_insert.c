@@ -268,7 +268,8 @@ static void isolation_and_persistence(void)
 static void sister_serial_monitor(void)
 {
     for(int position=0;position<TS_ROUTER_COUNT;++position) {
-        TsSisterRuntime r;ts_sister_runtime_init(&r);
+        /* Reinitialized/freed each pass; keep the large fixture off the stack. */
+        static TsSisterRuntime r;ts_sister_runtime_init(&r);
         assert(ts_sister_runtime_enable(&r,8000,2,2,1,NULL,0));
         TsSisterParameters p=r.parameters;p.monitor_dry=1;p.monitor_wet=0;p.prism.enabled=0;p.fx.enabled=0;
         ts_sister_runtime_set_parameters(&r,&p);ts_sister_runtime_set_sources(&r,TS_SISTER_SOURCE_PREVIEW);ts_sister_runtime_set_monitor(&r,1);

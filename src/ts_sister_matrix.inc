@@ -38,7 +38,7 @@ int ts_sister_runtime_matrix_import(const TsSisterRuntime *r,
 static TsStereoFrame runtime_matrix_node(void *context,int node,TsStereoFrame input)
 {
     RouterFrameContext *c=context;TsSisterRuntime *r=c->runtime;
-    if(r->matrix.controls.serial_mask&(1u<<node)) {
+    if(node<TS_MATRIX_NODES && (r->matrix.controls.serial_mask&(1u<<node))) {
         if(node==TS_MATRIX_MAIN) {
             float ceiling=fmaxf(0,c->matrix_program_gain);
             return (TsStereoFrame){fmaxf(-ceiling,fminf(ceiling,input.l)),fmaxf(-ceiling,fminf(ceiling,input.r))};
@@ -48,6 +48,9 @@ static TsStereoFrame runtime_matrix_node(void *context,int node,TsStereoFrame in
            import. Graph connections now own its position. */
         return runtime_router_stage(c,stage,input);
     }
+    int effect=ts_matrix_effect_index(node);
+    if(effect>=0)return ts_matrix_effects_process(&r->matrix_effects,effect,input,r->matrix.sidechain,
+        r->matrix.voice[node].active_count!=0 || r->matrix.controls.delayed[node]!=0);
     switch(node) {
     case TS_MATRIX_MAIN:return input;
     case TS_MATRIX_SISTER: {

@@ -4337,8 +4337,9 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
             (void)ts_sister_runtime_set_page(
                 &audio->sister, ts_sample_pages_active(sample_pages), instrument);
             if (sister_state_present) {
-                (void)ts_sister_project_state_apply(
-                    &sister_state, &audio->sister, instrument);
+                if(!ts_sister_project_state_apply(&sister_state,&audio->sister,instrument)) {
+                    ok=0;snprintf(error,sizeof(error),"Could not allocate the project's Matrix effects");
+                }
             } else {
                 TsSpatialControls spatial;ts_spatial_default(&spatial);
                 ts_spatial_recall(&audio->sister.spatial,&spatial);
@@ -4349,6 +4350,7 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
                 ts_mandala_default(&audio->sister.mandala);
                 audio->sister.performance_transport=1;
                 ts_performance_mixer_default(&audio->sister.performance_mixer);
+                ts_matrix_effects_free(&audio->sister.matrix_effects);
                 TsMatrixControls matrix;ts_matrix_default(&matrix);ts_matrix_set(&audio->sister.matrix,&matrix,audio->sister.router.sample_rate);
                 TsRouterControls defaults;ts_router_default(&defaults);
                 ts_sister_runtime_set_router(&audio->sister,&defaults);

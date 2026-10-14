@@ -158,6 +158,7 @@ static void test_storage(void)
     m->events[0].output_route.matrix_gain[7]=500;
     m->events[0].output_route.matrix_gain[TS_MATRIX_COMPRESSOR]=1000;
     m->events[0].output_route.matrix_gain[TS_MATRIX_SIDECHAIN]=600;
+    m->events[0].output_route.matrix_gain[TS_MATRIX_DESTINATIONS-1]=1234;
     assert(ts_mosaic_save(m,dir,error,sizeof(error)));
     assert(ts_mosaic_load(loaded,dir,error,sizeof(error)));
     assert(ts_mosaic_hash(m)==ts_mosaic_hash(loaded));
@@ -170,7 +171,7 @@ static void test_storage(void)
     while(fgets(record,sizeof(record),current)) {
         if(!strncmp(record,"ROUTE ",6)) {
             record[strcspn(record,"\r\n")]=0;
-            for(int i=0;i<2;++i){char *last=strrchr(record,' ');assert(last);*last=0;}
+            for(int i=TS_MATRIX_LEGACY_DESTINATIONS;i<TS_MATRIX_DESTINATIONS;++i){char *last=strrchr(record,' ');assert(last);*last=0;}
             fprintf(v6,"%s\n",record);
         } else fputs(record,v6);
     }

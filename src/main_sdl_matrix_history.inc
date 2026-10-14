@@ -39,11 +39,13 @@ static int mx_equal(const MatrixSnapshot *a,const MatrixSnapshot *b)
 {
     return a && b && a->count==b->count && !memcmp(a,b,sizeof(*a)+a->count*sizeof(a->routes[0]));
 }
-static void mx_apply(const MatrixSnapshot *s,SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsSamplePages *pages,TsInstrument *bank)
+static int mx_apply(const MatrixSnapshot *s,SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsSamplePages *pages,TsInstrument *bank)
 {
-    if(!s)return;MatrixWindow *w=&matrix_window;
+    if(!s)return 0;MatrixWindow *w=&matrix_window;
+    TsMatrixControls controls=s->controls;
+    if(controls.next_effect_id<audio->sister.matrix.controls.next_effect_id)controls.next_effect_id=audio->sister.matrix.controls.next_effect_id;
+    TsMatrixEffectPlan plan;if(!mx_stage_effects(device,audio,&controls,&plan))return 0;
     audio->sister.matrix_layout=s->layout;
-    mx_rows(pages,bank);mx_reveal_column(w->destination);
     if(device)SDL_LockAudioDevice(device);
     for(int i=0;i<s->count;++i) {
         MatrixSavedRoute v=s->routes[i];
@@ -53,17 +55,18 @@ static void mx_apply(const MatrixSnapshot *s,SDL_AudioDeviceID device,AudioState
             if(tile){tile->output_route=v.route;source_route_update_voices(audio,v.row.tile,v.route);}
         } else {TsMosaicEvent *e=ts_mosaic_find(w->mosaic,v.row.tile);if(e)e->output_route=v.route;}
     }
-    ts_matrix_set(&audio->sister.matrix,&s->controls,(unsigned)audio->output_rate);
+    ts_matrix_effects_commit(&audio->sister.matrix_effects,&controls,(unsigned)audio->output_rate,&plan);
+    ts_matrix_set(&audio->sister.matrix,&controls,(unsigned)audio->output_rate);
     ts_compressor_set(&audio->sister.compressor,&s->compressor);
     w->compressor=ui->config.compressor=s->compressor;
     ts_sister_runtime_set_router(&audio->sister,&s->router);
     ts_spatial_recall(&audio->sister.spatial,&s->spatial);
     ts_sister_runtime_set_insert(&audio->sister,&s->insert);
     ts_sister_runtime_set_sources(&audio->sister,s->sources);
-    w->controls=ui->config.matrix=s->controls;w->legacy=ui->config.router=s->router;
+    w->controls=ui->config.matrix=controls;w->legacy=ui->config.router=s->router;
     w->array=ui->config.spatial=s->spatial;ui->config.insert=s->insert;
     if(device)SDL_UnlockAudioDevice(device);
-    mx_refresh_tracker(pages,bank);w->dirty=1;
+    mx_refresh_tracker(pages,bank);mx_rows(pages,bank);mx_reveal_column(w->destination);w->dirty=1;return 1;
 }
 static void matrix_history_clear(void)
 {
@@ -71,7 +74,7 @@ static void matrix_history_clear(void)
     for(int i=0;i<w->history_count;++i)free(w->history[i]);
     free(w->pending);free(w->original);free(w->edited);
     w->pending=w->original=w->edited=NULL;w->history_count=w->history_cursor=0;
-    w->original_active=w->selection_count=w->drag=w->layout_focus=0;
+    w->original_active=w->selection_count=w->drag=w->layout_focus=0;w->effect_open=0;w->effect_menu=0;
 }
 static void mx_push(MatrixSnapshot *s)
 {
@@ -98,7 +101,7 @@ static void mx_undo(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsS
         audio->sister.matrix_layout=saved->layout;mx_rows(pages,bank);mx_reveal_column(w->destination);
         if(w->layout_focus==1 && w->selected>=0)w->scroll=SDL_clamp(w->selected-MATRIX_VISIBLE+1,0,SDL_max(0,w->count-MATRIX_VISIBLE));
         w->dirty=1;
-    } else mx_apply(saved,device,audio,ui,pages,bank);
+    } else if(!mx_apply(saved,device,audio,ui,pages,bank)){free(now);return;}
     free(saved);w->history[at]=now;
     w->history_cursor+=redo?1:-1;snprintf(w->status,sizeof(w->status),"%s MATRIX EDIT (%d / %d)",redo?"REDID":"UNDID",w->history_cursor,w->history_count);
 }
@@ -106,8 +109,8 @@ static void mx_ab(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsSam
 {
     MatrixWindow *w=&matrix_window;w->history_skip=1;w->drag=0;
     if(!w->original){snprintf(w->status,sizeof(w->status),"ORIGINAL IS CAPTURED WHEN YOU FIRST EDIT ROUTING IN THIS PROJECT.");return;}
-    if(w->original_active) {mx_apply(w->edited,device,audio,ui,pages,bank);w->original_active=0;}
-    else {free(w->edited);w->edited=mx_snapshot(device,audio,pages,bank);if(!w->edited)return;mx_apply(w->original,device,audio,ui,pages,bank);w->original_active=1;}
+    if(w->original_active) {if(!mx_apply(w->edited,device,audio,ui,pages,bank))return;w->original_active=0;}
+    else {free(w->edited);w->edited=mx_snapshot(device,audio,pages,bank);if(!w->edited)return;if(!mx_apply(w->original,device,audio,ui,pages,bank))return;w->original_active=1;}
     snprintf(w->status,sizeof(w->status),"AUDITIONING %s - A/B PRESERVES THE EDITED ROUTING AND UNDO HISTORY.",w->original_active?"ORIGINAL":"EDITED");
 }
 static void mx_restore(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsSamplePages *pages,TsInstrument *bank)
@@ -118,8 +121,8 @@ static void mx_restore(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,
     SDL_MessageBoxData dialog={SDL_MESSAGEBOX_WARNING,w->window,"Restore original routing?",
         "Replace edited routing with the original? You can undo this restore. Audio and arrangement edits are kept.",2,buttons,NULL};
     int choice=0;if(SDL_ShowMessageBox(&dialog,&choice)<0 || choice!=1)return;
-    if(w->original_active){mx_apply(w->edited,device,audio,ui,pages,bank);w->original_active=0;}
+    if(w->original_active){if(!mx_apply(w->edited,device,audio,ui,pages,bank))return;w->original_active=0;}
     MatrixSnapshot *now=mx_snapshot(device,audio,pages,bank);if(!now)return;
-    mx_apply(w->original,device,audio,ui,pages,bank);mx_push(now);
+    if(!mx_apply(w->original,device,audio,ui,pages,bank)){free(now);return;}mx_push(now);
     free(w->edited);w->edited=NULL;snprintf(w->status,sizeof(w->status),"ORIGINAL ROUTING RESTORED - CTRL+Z TO UNDO.");
 }
