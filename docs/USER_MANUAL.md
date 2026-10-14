@@ -2015,22 +2015,31 @@ Named presets and projects keep musical state separate from device choices.
 
 ### Palette and Mosaic colors
 
-Open **CFG → PALETTE** to edit live interface colors. The compact **MOSAIC** strip
-adds **HILITE** and five source-color swatches, **1–5**, to the existing palette.
-Select a swatch, then adjust the existing RGB sliders or pick a color from the
-Tapehead eyedropper. PgUp/PgDn cycles through the available palette entries.
+Open **CFG → PALETTE**, the tracker's configuration **Palette** button, or
+**Ctrl+Alt+P** for the floating palette window. Keep it open while moving between
+workspaces; changes appear immediately, and playback continues.
 
-![Compact Mosaic swatches in the palette editor](images/mosaic-palette.png)
+Choose **Original**, **Soft**, **High Contrast**, **Night**, **Moss**, **Plum**,
+**Ice**, or **Sister**, then use **Overall Look**, **Readability**, or **Components**.
+Sister uses saturated gold, orange and purple from the splash artwork on a dark background.
+Clicking a component also opens its interface and pins the palette selection;
+Follow View can resume following the active workspace. Start with its eight relevant
+colors, and open **Detail** for additional roles. Component overrides can be
+reset to inherit the overall palette. **Shared Colors** exposes all legacy values.
 
-HILITE controls the selection border and Sources highlight; its default is bright
-red. The five source colors consistently color event waveforms and borders by source
-identity. **SAVE SHARED** stores the six entries in `palette.pal`; **CANCEL** restores
-the palette from before editing. Older palettes use defaults for omitted Mosaic
-entries. See [Universal palette](UNIVERSAL_PALETTE.md).
+![Floating palette window](screenshots/palette/editor.png)
 
-The routing matrix currently uses fixed interface/activity colors. Those roles
-are not individually exposed in CFG → PALETTE. A broader per-panel/per-role
-palette editor is a separate proposed follow-up, not part of this version.
+Mosaic retains five source colors, a selection highlight, and separate playhead,
+muted/solo and recording roles. Routing, Prism, the pedalboard, TrackSister and
+the supporting windows also have component controls. Reverb is independent of
+the right waveform color. Mandala artwork palettes stay separate.
+
+Use RGB sliders or a hex value. **Undo/Redo**, **Show Before**, and **Revert
+Session** make experiments reversible. **Done** keeps live changes for this run;
+**Save Shared** saves the startup palette, and **Save As / Export** creates a
+named `.pal` for **Load / Import**. Existing files require a second save to
+replace them. See [the full palette guide](UNIVERSAL_PALETTE.md) for inheritance,
+shortcuts, and compatibility with older TapeHead versions.
 
 ### Audio backends and device discovery
 
@@ -2265,7 +2274,7 @@ faders.
 - MIDI note input, velocity, channels, All Notes Off, sample polyphony, CC mapping,
   14-bit pitch bend, and global MIDI Learn are supported.
 - TrackSister records note-on velocity in its volume column; continuous pressure/aftertouch recording is not implemented.
-- Matrix patch-state sequencing and individual matrix palette controls are not implemented.
+- Matrix patch-state sequencing is not implemented. Matrix colors are available in CFG → PALETTE → Routing / inserts.
 - MIDI output feedback to controller LEDs and motorized controls is not implemented.
 - FT2 Link exchange and direct Tapehead-to-TapeSister Live Link audio are supported.
 - Mosaic holds up to 128 events with five voices per event; these are storage limits,

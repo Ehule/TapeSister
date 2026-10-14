@@ -55,9 +55,9 @@ static void master_eq_render_impl(TsFramebuffer *fb,const TsUiState *ui)
     const TsMasterEqControls *c=eq_controls(ui);
     const TsEqBand *b=&c->band[ui->master_eq_band];
     unsigned rate=ui->master_eq_rate?ui->master_eq_rate:48000;
-    uint32_t amber=RGB(247,196,91),muted=RGB(123,127,133),teal=RGB(107,176,182);
+    uint32_t amber=ts_theme_color(active_palette(), TS_THEME_EQ, TS_COLOR_DATA1, RGB(247,196,91)),muted=ts_theme_color(active_palette(), TS_THEME_EQ, TS_COLOR_DIM, RGB(123,127,133)),teal=ts_theme_color(active_palette(), TS_THEME_EQ, TS_COLOR_DATA2, RGB(107,176,182));
     char label[96];
-    frame(fb,10,38,620,341,RGB(29,27,32),PAL_BUTTON);
+    frame(fb,10,38,620,341,ts_theme_color(active_palette(), TS_THEME_EQ, TS_COLOR_PANEL, RGB(29,27,32)),PAL_BUTTON);
     text(fb,20,48,ui->canvas_eq_open?(ui->mosaic_editing?"MOSAIC INSTANCE EQ":"CANVAS TILE EQ"):"MASTER / ROOM EQ",amber,1);
     if(c->solo_band)snprintf(label,sizeof(label),"SOLO %02d / CTRL-CLICK TO RESTORE",c->solo_band);
     else snprintf(label,sizeof(label),"PRESET: %s",ts_master_eq_preset_name(ts_master_eq_preset_match(c)));
@@ -67,7 +67,7 @@ static void master_eq_render_impl(TsFramebuffer *fb,const TsUiState *ui)
     button(fb,396,44,78,c->enabled?"EQ ON":"EQ BYPASS",c->enabled);
     button(fb,484,44,96,ui->master_eq_reset_pending?"CONFIRM RESET":"RESET EQ",ui->master_eq_reset_pending);
     button(fb,596,44,24,"X",0);
-    frame(fb,43,78,555,156,RGB(10,12,15),RGB(61,59,66));
+    frame(fb,43,78,555,156,ts_theme_color(active_palette(), TS_THEME_EQ, TS_COLOR_BACKGROUND, RGB(10,12,15)),ts_theme_color(active_palette(), TS_THEME_EQ, TS_COLOR_EDGE, RGB(61,59,66)));
     if(!ui->master_eq_spectrum_off && ui->master_eq_spectrum.valid && ui->master_eq_spectrum.rate==rate) {
         int previous_y=232;
         for(int x=0;x<552;++x) {
@@ -75,8 +75,8 @@ static void master_eq_render_impl(TsFramebuffer *fb,const TsUiState *ui)
             int i=(int)p,j=i<TS_EQ_SPECTRUM_POINTS-1?i+1:i;
             float db=ui->master_eq_spectrum.db[i]+(ui->master_eq_spectrum.db[j]-ui->master_eq_spectrum.db[i])*(float)(p-i);
             int y=79+(int)lrintf(-fmaxf(-96,fminf(0,db))*153/96);
-            rect(fb,44+x,y,1,233-y,RGB(20,45,48));
-            if(x)ui_line(fb,43+x,previous_y,44+x,y,RGB(56,115,124));
+            rect(fb,44+x,y,1,233-y,ts_theme_color(active_palette(), TS_THEME_EQ, TS_COLOR_EDGE, RGB(20,45,48)));
+            if(x)ui_line(fb,43+x,previous_y,44+x,y,ts_theme_color(active_palette(), TS_THEME_EQ, TS_COLOR_DATA2, RGB(56,115,124)));
             previous_y=y;
         }
     }
@@ -84,7 +84,7 @@ static void master_eq_render_impl(TsFramebuffer *fb,const TsUiState *ui)
     for(int i=0;i<10;++i) {
         if(hz[i]>ts_master_eq_max_hz(rate))continue;
         int x=44+(int)(552*log(hz[i]/20.)/log(ts_master_eq_max_hz(rate)/20.));
-        rect(fb,x,79,1,154,RGB(32,34,39));
+        rect(fb,x,79,1,154,ts_theme_color(active_palette(), TS_THEME_EQ, TS_COLOR_PANEL, RGB(32,34,39)));
         if(i==0 || i==2 || i==4 || i==5 || i==7 || i==9) {
             snprintf(label,sizeof(label),hz[i]>=1000?"%dK":"%d",hz[i]>=1000?hz[i]/1000:hz[i]);
             text(fb,x-6,237,label,muted,1);
@@ -92,7 +92,7 @@ static void master_eq_render_impl(TsFramebuffer *fb,const TsUiState *ui)
     }
     for(int db=-12;db<=12;db+=6) {
         int y=155-(int)(db*4.5);
-        rect(fb,44,y,552,1,db==0?RGB(81,76,70):RGB(38,37,42));
+        rect(fb,44,y,552,1,db==0?ts_theme_color(active_palette(), TS_THEME_EQ, TS_COLOR_EDGE, RGB(81,76,70)):ts_theme_color(active_palette(), TS_THEME_EQ, TS_COLOR_PANEL, RGB(38,37,42)));
         snprintf(label,sizeof(label),"%+d",db);text(fb,18,y-3,label,muted,1);
     }
     TsMasterEqControls curve=*c;curve.enabled=1;
@@ -101,7 +101,7 @@ static void master_eq_render_impl(TsFramebuffer *fb,const TsUiState *ui)
         double f=20*pow(ts_master_eq_max_hz(rate)/20.,x/551.);
         double db=ts_master_eq_response_db(&curve,rate,f);
         int y=155-(int)lrint(fmax(-17,fmin(17,db))*4.5);
-        if(x)ui_line(fb,43+x,previous,44+x,y,c->enabled?amber:RGB(95,91,83));
+        if(x)ui_line(fb,43+x,previous,44+x,y,c->enabled?amber:ts_theme_color(active_palette(), TS_THEME_EQ, TS_COLOR_GRID, RGB(95,91,83)));
         previous=y;
     }
     if(!c->enabled)rect(fb,44,155,552,1,amber);
@@ -115,14 +115,14 @@ static void master_eq_render_impl(TsFramebuffer *fb,const TsUiState *ui)
     }
     for(int i=0;i<5;++i) {
         int x=eq_node_x(ui,i),y=eq_node_y(ui,i),selected=i==ui->master_eq_band;
-        uint32_t color=!ts_master_eq_band_active(c,i)?muted:selected?amber:teal;
-        frame(fb,x-8,y-8,17,17,selected?RGB(70,57,35):RGB(26,32,37),color);
+        uint32_t color=!ts_master_eq_band_active(c,i)?ts_theme_color(active_palette(),TS_THEME_EQ,TS_COLOR_MUTED,muted):selected?amber:teal;
+        frame(fb,x-8,y-8,17,17,selected?ts_theme_color(active_palette(), TS_THEME_EQ, TS_COLOR_SELECTION, RGB(70,57,35)):ts_theme_color(active_palette(), TS_THEME_EQ, TS_COLOR_PANEL, RGB(26,32,37)),color);
         snprintf(label,sizeof(label),"%d",i+1);text(fb,x-2,y-3,label,color,1);
         int solo=c->solo_band==i+1;
         snprintf(label,sizeof(label),"%02d %s",i+1,solo?"SOLO":
             !c->band[i].enabled?"BYPASS":c->solo_band?"SKIP":"ON");
         button(fb,20+i*88,252,76,label,ts_master_eq_band_active(c,i));
-        if(solo)rect(fb,20+i*88,274,76,2,amber);
+        if(solo)rect(fb,20+i*88,274,76,2,ts_theme_color(active_palette(),TS_THEME_EQ,TS_COLOR_SOLO,amber));
     }
     text(fb,476,261,"CLICK: BYPASS",muted,1);
     snprintf(label,sizeof(label),"BAND %d",ui->master_eq_band+1);text(fb,20,284,label,teal,1);
@@ -162,7 +162,7 @@ static void master_eq_render_impl(TsFramebuffer *fb,const TsUiState *ui)
         midi_learn_tint(fb,328,337,182,29,midi_learn_target_state(&ui->config.midi_map,ui->midi_learn_pending,"main.master_output"));
     }
     if(ui->master_eq_presets_open) {
-        frame(fb,220,72,226,208,RGB(29,27,32),teal);
+        frame(fb,220,72,226,208,ts_theme_color(active_palette(), TS_THEME_EQ, TS_COLOR_PANEL, RGB(29,27,32)),teal);
         text(fb,230,81,"EQ PRESETS",amber,1);mini_button(fb,412,76,24,"X",0);
         int selected=ts_master_eq_preset_match(c);
         for(int p=0;p<TS_EQ_PRESET_COUNT;++p)
@@ -171,10 +171,12 @@ static void master_eq_render_impl(TsFramebuffer *fb,const TsUiState *ui)
     }
 }
 
-static void master_eq_render(TsFramebuffer *fb,const TsUiState *ui)
+static void master_eq_render_themed_impl(TsFramebuffer *fb,const TsUiState *ui)
 {
     if(!ui->master_eq_open) return;
     uint64_t started=ts_profile_begin(TS_PROF_EQ_UI);
     master_eq_render_impl(fb,ui);
     ts_profile_end(TS_PROF_EQ_UI,started);
 }
+static void master_eq_render(TsFramebuffer *fb,const TsUiState *ui)
+{ TsThemeGroup old=render_group; render_group=TS_THEME_EQ; master_eq_render_themed_impl(fb,ui); render_group=old; }

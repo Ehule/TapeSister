@@ -19,7 +19,8 @@ int ts_sister_runtime_matrix_import(const TsSisterRuntime *r,
     TsMatrixControls next;ts_matrix_default(&next);next.enabled=1;next.serial_mask=1u<<TS_MATRIX_MAIN;
     memcpy(next.input_name,r->matrix.controls.input_name,sizeof(next.input_name));
     memcpy(next.output_name,r->matrix.controls.output_name,sizeof(next.output_name));
-    for(int n=0;n<TS_MATRIX_NODES;++n)next.row[n]=(TsSourceRoute){.matrix_enabled=1};
+    for(int n=0;n<TS_MATRIX_ROWS;++n)if(ts_matrix_is_processor(n))next.row[n]=(TsSourceRoute){.matrix_enabled=1};
+    next.row[TS_MATRIX_COMPRESSOR].matrix_gain[TS_MATRIX_MAIN]=1000;
     int from=TS_MATRIX_MAIN;
     for(int i=0;i<TS_ROUTER_COUNT;++i) {
         int stage=r->router.controls.order[i];
@@ -78,6 +79,7 @@ static TsStereoFrame runtime_matrix_node(void *context,int node,TsStereoFrame in
         TsStereoFrame out=ts_master_eq_process(&r->master_eq,input);
         ts_eq_spectrum_push(&r->eq_spectrum,out,r->master_eq.sample_rate);return out;
     }
+    case TS_MATRIX_COMPRESSOR:return ts_compressor_process(&r->compressor,input,r->matrix.sidechain);
     case TS_MATRIX_LIMITER:return ts_sister_limiter_process(&r->limiter,input,NULL,&r->limiter_input_peak);
     default:return (TsStereoFrame){0,0};
     }

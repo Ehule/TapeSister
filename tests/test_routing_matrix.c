@@ -7,8 +7,8 @@
 #include <math.h>
 #include <string.h>
 #include <stdlib.h>
-static int calls[TS_MATRIX_NODES];
-static TsStereoFrame received[TS_MATRIX_NODES];
+static int calls[TS_MATRIX_ROWS];
+static TsStereoFrame received[TS_MATRIX_ROWS];
 static TsStereoFrame identity(void *ctx,int n,TsStereoFrame input)
 {(void)ctx;++calls[n];received[n]=input;return input;}
 static void near(float a,float b){assert(fabsf(a-b)<.0001f);}

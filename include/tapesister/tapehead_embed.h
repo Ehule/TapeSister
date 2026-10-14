@@ -31,6 +31,7 @@ void ts_tapehead_suspend_sync(void);
 void ts_tapehead_project_replaced(void);
 void ts_tapehead_project_saved(const TsSisterTracker *tracker);
 int ts_tapehead_project_dirty(const TsSisterTracker *tracker);
+void ts_tapehead_theme_apply(const TsPalette *palette);
 void ts_tapehead_status(const TsUiState *host_ui,unsigned capture);
 void ts_tapehead_focus_lost(void);
 int ts_tapehead_midi(const TsMidiEvent *event,int allow_note_on);

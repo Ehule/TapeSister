@@ -5,7 +5,7 @@ static void router_time_field(TsFramebuffer *fb,int x,int y,int w,const char *pr
     char time[24],label[48];router_time_label(time,sizeof(time),seconds);
     snprintf(label,sizeof(label),"%s %s",prefix,time);button(fb,x,y,w,label,0);
     float amount=maximum>TS_ROUTER_TIME_MIN?logf(fmaxf(seconds,TS_ROUTER_TIME_MIN)/TS_ROUTER_TIME_MIN)/logf(maximum/TS_ROUTER_TIME_MIN):1;
-    rect(fb,x+3,y+20,(int)((w-6)*fminf(1,fmaxf(0,amount))),2,RGB(107,176,182));
+    rect(fb,x+3,y+20,(int)((w-6)*fminf(1,fmaxf(0,amount))),2,ts_theme_color(active_palette(), TS_THEME_ROUTER, TS_COLOR_DATA2, RGB(107,176,182)));
 }
 static const char *router_performance_help(int x,int y)
 {
@@ -37,8 +37,8 @@ static const char *router_performance_help(int x,int y)
 static void router_performance_render(TsFramebuffer *fb,const TsUiState *ui)
 {
     const TsRouterPerformance *p=&ui->config.router_performance;const TsRouterView *v=&ui->router_view;
-    const uint32_t teal=RGB(107,176,182),amber=RGB(247,196,91),muted=RGB(123,127,133),dim=RGB(60,65,72);
-    char label[100],time[24];rect(fb,10,38,620,344,RGB(22,25,31));rect(fb,10,38,620,2,teal);
+    const uint32_t teal=ts_theme_color(active_palette(), TS_THEME_ROUTER, TS_COLOR_DATA2, RGB(107,176,182)),amber=ts_theme_color(active_palette(), TS_THEME_ROUTER, TS_COLOR_DATA1, RGB(247,196,91)),muted=ts_theme_color(active_palette(), TS_THEME_ROUTER, TS_COLOR_DIM, RGB(123,127,133)),dim=ts_theme_color(active_palette(), TS_THEME_ROUTER, TS_COLOR_EDGE, RGB(60,65,72));
+    char label[100],time[24];rect(fb,10,38,620,344,ts_theme_color(active_palette(), TS_THEME_ROUTER, TS_COLOR_PANEL, RGB(22,25,31)));rect(fb,10,38,620,2,teal);
     text(fb,22,48,"ROUTER PERFORMANCE",amber,1);
     text(fb,270,48,"PARTICIPATION STATES A-Z",teal,1);button(fb,506,42,112,"< ROUTER",0);
     for(int row=0;row<TS_ROUTER_COUNT;++row) {
@@ -51,7 +51,7 @@ static void router_performance_render(TsFramebuffer *fb,const TsUiState *ui)
     for(int slot=0;slot<TS_ROUTER_STATES;++slot) {
         int x=22+(slot%13)*45,y=74+(slot/13)*26,occupied=(p->occupied&(1u<<slot))!=0;
         rect(fb,x,y,41,23,slot==ui->router_slot?amber:occupied?teal:dim);
-        rect(fb,x+1,y+1,39,21,slot==ui->router_slot?RGB(63,51,30):RGB(27,33,41));
+        rect(fb,x+1,y+1,39,21,slot==ui->router_slot?ts_theme_color(active_palette(), TS_THEME_ROUTER, TS_COLOR_GRID, RGB(63,51,30)):ts_theme_color(active_palette(), TS_THEME_ROUTER, TS_COLOR_PANEL, RGB(27,33,41)));
         snprintf(label,sizeof(label),"%c %s",'A'+slot,occupied?"+":"-");text(fb,x+6,y+8,label,occupied?teal:muted,1);
     }
     button(fb,22,129,72,"STORE",0);button(fb,100,129,78,"RECALL",0);button(fb,184,129,66,"CLEAR",0);
@@ -74,7 +74,7 @@ static void router_performance_render(TsFramebuffer *fb,const TsUiState *ui)
         int state=p->step[cell].state,missing=state>=0 && !(p->occupied&(1u<<state));
         int playing=v->running && v->step==cell;
         rect(fb,x,y,33,18,playing?teal:cell==ui->router_step?amber:dim);
-        rect(fb,x+1,y+1,31,16,playing?RGB(29,65,70):RGB(23,28,34));
+        rect(fb,x+1,y+1,31,16,playing?ts_theme_color(active_palette(), TS_THEME_ROUTER, TS_COLOR_SELECTION, RGB(29,65,70)):ts_theme_color(active_palette(), TS_THEME_ROUTER, TS_COLOR_PANEL, RGB(23,28,34)));
         snprintf(label,sizeof(label),"%02d%c",cell+1,state<0?'-':missing?'X':'A'+state);
         text(fb,x+3,y+5,label,!included?dim:missing?amber:teal,1);
         if(missing && included)rect(fb,x+28,y+2,3,3,amber);

@@ -267,10 +267,11 @@ static void collect_tiles(void) {
 }
 
 void ts_tapehead_status(const TsUiState *host_ui,unsigned capture) {
+    ts_tapehead_theme_apply(&host_ui->palette);
     snprintf(embed.status,sizeof(embed.status),"%s",host_ui->status);embed.capture=capture;
     embed.file_state=host_ui->file_record_state;
     embed.file_seconds=host_ui->file_record_rate?host_ui->file_record_frames/host_ui->file_record_rate:0;
-    embed.record_color=host_ui->palette.colors[TS_PALETTE_PATTERN_VOLUME]|0xff000000u;
+    embed.record_color=ts_theme_legacy(&host_ui->palette,TS_THEME_TRACKER,TS_COLOR_RECORD,TS_PALETTE_PATTERN_VOLUME);
     embed.record_flash=host_ui->text_cursor_visible;
 }
 static int file_recording(void) {

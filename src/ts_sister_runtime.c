@@ -593,6 +593,7 @@ void ts_sister_runtime_init(TsSisterRuntime *runtime)
     ts_capture_init(&runtime->capture);
     ts_sister_limiter_init(&runtime->limiter);
     ts_master_eq_init(&runtime->master_eq);
+    ts_compressor_init(&runtime->compressor);
     ts_eq_spectrum_init(&runtime->eq_spectrum);
     ts_router_init(&runtime->router);
     ts_mandala_default(&runtime->mandala);
@@ -682,6 +683,7 @@ int ts_sister_runtime_enable(TsSisterRuntime *runtime, uint32_t sample_rate,
     }
     ts_prism_set_controls(&runtime->prism, &runtime->parameters.prism);
     ts_master_eq_prepare(&runtime->master_eq, sample_rate);
+    ts_compressor_prepare(&runtime->compressor,sample_rate);
     ts_router_prepare(&runtime->router, sample_rate);
     ts_matrix_set(&runtime->matrix,&runtime->matrix.controls,sample_rate);
     ts_insert_prepare(&runtime->insert, sample_rate);
@@ -854,6 +856,7 @@ int ts_sister_runtime_reconfigure(TsSisterRuntime *runtime,
     }
     ts_prism_set_controls(&runtime->prism, &runtime->parameters.prism);
     ts_master_eq_prepare(&runtime->master_eq, sample_rate);
+    ts_compressor_prepare(&runtime->compressor,sample_rate);
     ts_router_prepare(&runtime->router, sample_rate);
     ts_matrix_set(&runtime->matrix,&runtime->matrix.controls,sample_rate);
     ts_insert_prepare(&runtime->insert, sample_rate);

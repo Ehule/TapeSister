@@ -1,6 +1,7 @@
 #ifndef TAPESISTER_CONFIG_H
 #define TAPESISTER_CONFIG_H
 
+#include "tapesister/compressor.h"
 #include <stddef.h>
 
 #include "tapesister/audio_lifecycle.h"
@@ -134,6 +135,7 @@ typedef struct {
     int fm_bank_count;
     int master_output_percent;
     TsMasterEqControls master_eq;
+    TsCompressorControls compressor;
     TsRouterControls router;
     TsMatrixControls matrix;
     TsRouterPerformance router_performance;

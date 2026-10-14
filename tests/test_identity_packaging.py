@@ -51,7 +51,8 @@ def check_windows_portable_manifest() -> None:
         assert f'"{directory}"' in stage
 
     assert '"TapeSister-Windows-x64"' in package
-    assert "Compress-Archive" in package
+    assert "ZipFileExtensions]::CreateEntryFromFile" in package
+    assert "test_windows_portable.ps1" in workflow
     assert '$env:MSYSTEM -ne "UCRT64"' in build
     assert '"./build.sh"' in build
     assert "package-windows-portable.ps1" in build

@@ -196,7 +196,7 @@ static void drawSamplingPreview(void)
 	int16_t min, max;
 
 	// clear sample data area
-	memset(&video.frameBuffer[174 * SCREEN_W], 0, SAMPLE_AREA_WIDTH * SAMPLE_AREA_HEIGHT * sizeof (int32_t));
+	clearRect(0, 174, SAMPLE_AREA_WIDTH, SAMPLE_AREA_HEIGHT);
 
 	if (sampleInStereo) // stereo sampling
 	{

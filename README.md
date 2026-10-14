@@ -112,7 +112,9 @@ Shift-drag a box to select a group; drag to move it or Shift-drag a selected til
 copy the group. M/S mutes or solos selected cards; Shift+M/Shift+S affects all
 cards sharing those sources. Middle-click seeks, and FOLLOW scrolls with the
 playhead. **grave** visits Mosaic and returns to the previous main or FM
-workspace. Its colors and selection highlight are editable in CFG → PALETTE.
+workspace. The floating **CFG → PALETTE** editor covers all workspaces with
+eight presets, overall/readability controls and component overrides. See the
+[palette guide](docs/UNIVERSAL_PALETTE.md).
 
 The footer controls level, stereo balance and fade-in/out for an event or selection.
 A centered global SPEED slider covers 0.5×–2×, changing pitch and arrangement timing
@@ -468,3 +470,7 @@ make a detuned ensemble with three lower voices, and toggle back to the original
 
 Mosaic has a [drawable arrangement volume envelope](docs/MOSAIC.md#arrangement-volume-envelope)
 that stretches with the timeline and links its endpoints during Repeat.
+
+### Routable compressor
+
+F9 → **COMP** opens the stereo compressor: separate **COMP IN** and **COMP SC** inputs, five controls, bypass, and gain reduction. Route a TrackSister kick to COMP SC to duck Mosaic, Prism, or selected sources. See [routing, controls, and project compatibility](docs/ROUTER_COMPRESSOR.md).

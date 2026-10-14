@@ -11,18 +11,18 @@ static void spatial_circle(TsFramebuffer *fb,int cx,int cy,int r,uint32_t color)
 }
 static void spatial_grid(TsFramebuffer *fb,int x,int y)
 {
-    uint32_t grid=RGB(55,52,62);
+    uint32_t grid=ts_theme_color(active_palette(), TS_THEME_SPATIAL, TS_COLOR_EDGE, RGB(55,52,62));
     spatial_circle(fb,x,y,80,grid);spatial_circle(fb,x,y,40,grid);
     spatial_line(fb,x-84,y,x+84,y,grid);spatial_line(fb,x,y-84,x,y+84,grid);
     text(fb,x-15,y-96,"FRONT",PAL_TEXT,1);
-    text(fb,x-12,y+62,"REAR",RGB(140,137,146),1);
+    text(fb,x-12,y+62,"REAR",ts_theme_color(active_palette(), TS_THEME_SPATIAL, TS_COLOR_DIM, RGB(140,137,146)),1);
 }
 static void spatial_bar(TsFramebuffer *fb,int x,int y,int width,float base,float live,uint32_t color)
 {
-    rect(fb,x,y,width,8,RGB(16,16,22));
+    rect(fb,x,y,width,8,ts_theme_color(active_palette(), TS_THEME_SPATIAL, TS_COLOR_BACKGROUND, RGB(16,16,22)));
     int b=(int)(fmaxf(0,fminf(1,base))*(width-1));
     int l=(int)(fmaxf(0,fminf(1,live))*(width-1));
-    rect(fb,x,y,width,1,RGB(66,60,71));rect(fb,x+b-1,y-2,3,12,PAL_TEXT);
+    rect(fb,x,y,width,1,ts_theme_color(active_palette(), TS_THEME_SPATIAL, TS_COLOR_EDGE, RGB(66,60,71)));rect(fb,x+b-1,y-2,3,12,PAL_TEXT);
     rect(fb,x+l,y,2,8,color);
 }
 static void spatial_speakers(TsFramebuffer *fb,const TsSpatialUi *m,int cx,int cy)
@@ -41,10 +41,10 @@ static void spatial_speakers(TsFramebuffer *fb,const TsSpatialUi *m,int cx,int c
         uint32_t color=m->speaker==i?PAL_MOUSE:PAL_TEXT;
         if(!c->enabled&&(i==l||i==r))color=PAL_EFFECT;
         if(m->view.test_speaker==i)color=PAL_NOTE;
-        frame(fb,x-9,y-8,18,16,RGB(25,24,30),color);
+        frame(fb,x-9,y-8,18,16,ts_theme_color(active_palette(), TS_THEME_SPATIAL, TS_COLOR_PANEL, RGB(25,24,30)),color);
         char label[16];snprintf(label,sizeof(label),"%d",i+1);text(fb,x-(i<9?3:6),y-3,label,color,1);
         snprintf(label,sizeof(label),"OUT %d",c->output[i]+1);
-        text(fb,x-(int)(strlen(label)*3),y+13,label,RGB(153,150,160),1);
+        text(fb,x-(int)(strlen(label)*3),y+13,label,ts_theme_color(active_palette(), TS_THEME_SPATIAL, TS_COLOR_DIM, RGB(153,150,160)),1);
         int level=(int)(fminf(1,m->view.peak[i])*24);
         if(level)rect(fb,x-12,y-13,level,2,PAL_WAVE_LEFT);
     }
@@ -53,10 +53,10 @@ int ts_spatial_ui_parameter(int x,int y)
 { return x>=12&&x<628&&y>=273&&y<330?(x-12)/125:-1; }
 void ts_spatial_ui_render(TsFramebuffer *fb,const TsSpatialUi *m,const TsPalette *palette)
 {
-    render_palette=palette;
+    render_palette=palette;render_group=TS_THEME_SPATIAL;
     const TsSpatialControls *c=&m->controls;const TsSpatialView *v=&m->view;
-    uint32_t dim=RGB(158,150,165),edge=RGB(57,50,63);char label[112];
-    rect(fb,0,0,640,400,RGB(24,21,29));frame(fb,6,6,628,388,RGB(30,26,34),edge);
+    uint32_t dim=ts_theme_color(active_palette(), TS_THEME_SPATIAL, TS_COLOR_DIM, RGB(158,150,165)),edge=ts_theme_color(active_palette(), TS_THEME_SPATIAL, TS_COLOR_EDGE, RGB(57,50,63));char label[112];
+    rect(fb,0,0,640,400,ts_theme_color(active_palette(), TS_THEME_SPATIAL, TS_COLOR_PANEL, RGB(24,21,29)));frame(fb,6,6,628,388,ts_theme_color(active_palette(), TS_THEME_SPATIAL, TS_COLOR_PANEL, RGB(30,26,34)),edge);
     text(fb,18,17,"AMBISONICS",PAL_NOTE,1);
     button(fb,208,9,96,c->enabled?"ENABLED":"STEREO",c->enabled);
     snprintf(label,sizeof(label),"STEREO %d-%d",c->stereo_pair+1,(c->stereo_pair+1)%c->speakers+1);

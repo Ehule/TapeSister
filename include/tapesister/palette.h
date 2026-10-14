@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "tapesister/theme.h"
 
 typedef enum {
     TS_PALETTE_PATTERN_TEXT = 0,
@@ -53,6 +54,7 @@ typedef struct {
     uint32_t defined_colors;
     int desktop_contrast;
     int buttons_contrast;
+    TsTheme theme;
 } TsPalette;
 
 void ts_palette_default(TsPalette *palette);
@@ -83,4 +85,18 @@ uint8_t ts_palette_component(const TsPalette *palette, TsPaletteColor color,
 void ts_palette_set_component(TsPalette *palette, TsPaletteColor color,
                               int component, uint8_t value);
 
+const char *ts_theme_group_name(int group);
+const char *ts_theme_group_key(int group);
+const char *ts_theme_role_key(int role);
+const char *ts_theme_role_name(int group, int role);
+const char *ts_theme_preset_name(int preset);
+void ts_palette_preset(TsPalette *palette, int preset);
+uint32_t ts_theme_color(const TsPalette *palette, int group, int role, uint32_t original);
+uint32_t ts_theme_legacy(const TsPalette *palette, int group, int role, TsPaletteColor color);
+uint32_t ts_theme_tracker_color(const TsPalette *palette,int index,uint32_t original);
+uint32_t ts_theme_preview(const TsPalette *palette,int group,int role);
+uint32_t ts_theme_original(int group, int role);
+void ts_theme_override(TsPalette *palette, int group, int role, uint32_t color);
+void ts_theme_reset_group(TsPalette *palette, int group);
+int ts_theme_group_custom(const TsPalette *palette, int group);
 #endif

@@ -372,7 +372,8 @@ enum { TS_SHARED_PALETTE_PATH_MAX = TS_RUNTIME_PATH_MAX };
 
 static int shared_palette_path(const TsUiState *ui, char *path, size_t path_size)
 {
-    const char *override = getenv("TAPESISTER_PALETTE");
+    /* SDL and the application can use different environment caches on Windows. */
+    const char *override = SDL_getenv("TAPESISTER_PALETTE");
     const char *directory;
     int written;
     if (path == NULL || path_size == 0u) return 0;
@@ -691,6 +692,7 @@ static uint64_t paged_project_fingerprint(const TsSamplePages *pages,
     if (sister != NULL) {
         state_hash_bytes(&hash,&sister->mandala,sizeof(sister->mandala));
         state_hash_bytes(&hash,&sister->master_eq.controls,sizeof(sister->master_eq.controls));
+        state_hash_bytes(&hash,&sister->compressor.controls,sizeof(sister->compressor.controls));
         TsRouterControls saved_router=ts_router_export(&sister->router);
         state_hash_bytes(&hash,&saved_router,sizeof(saved_router));
         state_hash_bytes(&hash,&sister->matrix.controls,sizeof(sister->matrix.controls));
@@ -4336,6 +4338,7 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
                 ts_spatial_recall(&audio->sister.spatial,&spatial);
                 TsMasterEqControls flat;ts_master_eq_default(&flat);
                 ts_master_eq_set(&audio->sister.master_eq,&flat);
+                TsCompressorControls comp;ts_compressor_default(&comp);ts_compressor_set(&audio->sister.compressor,&comp);
                 ts_mandala_default(&audio->sister.mandala);
                 audio->sister.performance_transport=1;
                 ts_performance_mixer_default(&audio->sister.performance_mixer);
@@ -6737,11 +6740,11 @@ static void begin_config(TsUiState *ui)
     snprintf(ui->status, sizeof(ui->status), "EDITING TAPESISTER PATHS");
 }
 
+static void palette_window_show(TsUiState *ui);
+static Uint32 ts_audio_health_window_id(void);
 static void begin_palette(TsUiState *ui)
 {
-    ts_ui_begin_palette_edit(ui);
-    SDL_StopTextInput();
-    snprintf(ui->status, sizeof(ui->status), "EDITING LIVE PALETTE");
+    palette_window_show(ui);
 }
 
 static void finish_palette(TsUiState *ui, int cancel)
@@ -9219,8 +9222,11 @@ static int workspace_tab_event(const SDL_Event *event, SDL_Window *window,
 static int main_waveform_detail_allowed(const TsUiState *ui)
 {
     if(ui->tracker_open && ui->tracker_embedded_frame)return 0;
-    return ui->portal.open ? !ui->portal.manage_open && !ui->portal.macro_edit :
-        !ui_blocking_dialog_open_except_fm(ui) && !ui->fm_bank_choice_open && !ui->fm_full_choice_open;
+    if(ui->portal.open)return !ui->portal.manage_open && !ui->portal.macro_edit;
+    /* Color equality cannot identify occlusion when two workspaces share a
+       theme. Never composite the hidden canvas signal over these panels. */
+    if(ui->master_eq_open || ui->router_open)return 0;
+    return !ui_blocking_dialog_open_except_fm(ui) && !ui->fm_bank_choice_open && !ui->fm_full_choice_open;
 }
 
 static void native_waveform_prepare(SDL_Renderer *renderer, TsUiWaveformDetail details[2], int enabled)
@@ -13343,6 +13349,7 @@ static int keyboard_sustain_event(const SDL_Event *event,SDL_Window *window,
 #include "main_sdl_tracker_embed.inc"
 #include "main_sdl_performance_transport.inc"
 #include "main_sdl_canvas_eq.inc"
+#include "main_sdl_palette.inc"
 
 /* One pointer route for the visible keyboard, regardless of its sound source.
    Releases still arrive after opening a dialog or moving focus within the UI. */
@@ -13651,6 +13658,7 @@ int main(int argc, char **argv)
     ts_sister_runtime_set_master_output_gain(
         &audio.sister, (float)ui.config.master_output_percent / 100.0f);
     ts_master_eq_set(&audio.sister.master_eq,&ui.config.master_eq);
+    ts_compressor_set(&audio.sister.compressor,&ui.config.compressor);
     ts_spatial_recall(&audio.sister.spatial,&ui.config.spatial);
     ts_sister_runtime_set_router(&audio.sister,&ui.config.router);
     ts_matrix_set(&audio.sister.matrix,&ui.config.matrix,(unsigned)audio.output_rate);
@@ -14062,6 +14070,14 @@ int main(int argc, char **argv)
             wheel_event_coalesce(&event);
             if (!wheel_event_prepare(&event)) continue;
             uint32_t event_id = event_window_id(&event);
+            if(palette_window_event(&event,window,&ui,&sister_window)) {
+                if(palette_window.requested_group) {
+                    palette_window_navigate(window,device,&audio,&ui,&sister_window,
+                        &sample_pages,&instrument,&mosaic,&portal,&transform);
+                    main_paint_invalid=1;
+                }
+                continue;
+            }
             if (event.type == SDL_WINDOWEVENT &&
                 event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) {
                 if (sister_window.window != NULL &&
@@ -18012,6 +18028,7 @@ int main(int argc, char **argv)
                     routing.output_clip[channel];
             }
             ui.config.master_eq = audio.sister.master_eq.controls;
+            ui.config.compressor=audio.sister.compressor.controls;
             ui.config.matrix=audio.sister.matrix.controls;
             ui.config.router = routing.router_saved;
             ui.router_live = routing.router;ui.router_view=routing.router_view;
@@ -18060,6 +18077,15 @@ int main(int argc, char **argv)
                 hovered && (buttons & SDL_BUTTON_LMASK) != 0u;
         }
         ts_profile_end(TS_PROF_CONTROL, profile_control);
+        /* Palette-only edits invalidate idle windows as well as animated ones. */
+        static TsPalette painted_palette;
+        if(memcmp(&painted_palette,&ui.palette,sizeof(ui.palette))) {
+            painted_palette=ui.palette;frame_snapshot_valid=0;main_paint_invalid=1;
+            sister_window.rendered_model_valid=0;matrix_window.dirty=1;
+            source_route_window.rendered_valid=0;performance_palette=ui.palette;
+            palette_window.dirty=1;
+            ts_tapehead_theme_apply(&ui.palette);
+        }
         Uint32 schedule_now = SDL_GetTicks();
         int editing = (Uint32)(schedule_now-last_input_ms)<250u || SDL_GetMouseState(NULL,NULL)!=0u;
         int animated = ui.playback_active || ui.tracker_running || ui.sister_enabled ||
@@ -18122,6 +18148,7 @@ int main(int argc, char **argv)
                 sister_window.last_present_ms = SDL_GetTicks();
             }
         }
+        palette_window_update(window,&ui,&sister_window);
         uint64_t profile_aux = ts_profile_begin(TS_PROF_AUX_UI);
         TsMandalaPreferences visual_prefs={ui.config.visual_quality,ui.config.visual_display,ui.config.visual_fullscreen};
         ts_mandala_poll(&audio.sister.mandala,&visual_prefs);
@@ -18150,6 +18177,7 @@ int main(int argc, char **argv)
         int any_visible = !window_minimized ||
             (sister_window.model.visible && window_drawable(sister_window.window)) ||
             ts_audio_health_drawable() ||
+            (palette_window.visible && window_drawable(palette_window.window)) ||
             window_drawable(spatial_window.window);
         unsigned service_ms = ts_ui_refresh_ms(any_visible, editing, animated);
         if (sister_window.model.visible && window_drawable(sister_window.window) && service_ms>33u)
@@ -18165,6 +18193,7 @@ int main(int argc, char **argv)
         ts_profile_lane_end(0);
     }
 
+    palette_window_close();
     ts_mandala_shutdown();
     ts_midi_input_destroy(ts_midi_input);ts_midi_input=NULL;midi_wake_event=0;
     if (ui.amplitude_gesture.active)

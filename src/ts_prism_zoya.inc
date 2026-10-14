@@ -117,12 +117,12 @@ static void prism_zoya_figures(TsFramebuffer *fb,const TsSisterUiModel *m,
     uint32_t palettes[2][256];
     for(int i=0;i<256;++i) {
         /* Warm copper -> amber -> starlight; cool blue -> cyan -> violet/pink. */
-        palettes[0][i]=i<128 ? blend_color(RGB(126,29,6),RGB(255,125,26),i*100/128) :
-            blend_color(RGB(255,125,26),RGB(255,223,139),(i-128)*100/127);
-        uint32_t spectral=i<85 ? blend_color(RGB(41,75,218),RGB(73,204,244),i*100/85) :
-            i<170 ? blend_color(RGB(73,204,244),RGB(125,60,226),(i-85)*100/85) :
-            blend_color(RGB(125,60,226),RGB(246,78,204),(i-170)*100/85);
-        palettes[1][i]=blend_color(RGB(70,119,213),spectral,(unsigned)(35+65*color));
+        palettes[0][i]=i<128 ? blend_color(ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_DATA1, RGB(126,29,6)),ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_DATA1, RGB(255,125,26)),i*100/128) :
+            blend_color(ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_DATA1, RGB(255,125,26)),ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_DATA1, RGB(255,223,139)),(i-128)*100/127);
+        uint32_t spectral=i<85 ? blend_color(ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_DATA3, RGB(41,75,218)),ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_DATA2, RGB(73,204,244)),i*100/85) :
+            i<170 ? blend_color(ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_DATA2, RGB(73,204,244)),ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_DATA6, RGB(125,60,226)),(i-85)*100/85) :
+            blend_color(ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_DATA6, RGB(125,60,226)),ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_DATA5, RGB(246,78,204)),(i-170)*100/85);
+        palettes[1][i]=blend_color(ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_DATA3, RGB(70,119,213)),spectral,(unsigned)(35+65*color));
     }
     for(int side=0;side<2;++side) {
         const TsPrismNebulaPoint *points=side?prism_nebula_output:prism_nebula_source;
@@ -160,10 +160,10 @@ static void prism_zoya_figures(TsFramebuffer *fb,const TsSisterUiModel *m,
             if(spectrum<0)spectrum=0;
             if(spectrum>255)spectrum=255;
             uint32_t tone=palettes[side][spectrum];
-            if(side && mass>.70f)tone=blend_color(tone,RGB(255,188,115),(unsigned)(prism_zoya_unit((mass-.70f)*3)*100));
+            if(side && mass>.70f)tone=blend_color(tone,ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_DATA1, RGB(255,188,115)),(unsigned)(prism_zoya_unit((mass-.70f)*3)*100));
             prism_nebula_cloud(fb,&mask,x,y,tone,285*density);
             if(q->density>180 && (hash&31u)==0)
-                prism_nebula_mote(fb,&mask,(int)lrintf(x),(int)lrintf(y),RGB(255,224,182),(int)(75*strength),1);
+                prism_nebula_mote(fb,&mask,(int)lrintf(x),(int)lrintf(y),ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_DATA1, RGB(255,224,182)),(int)(75*strength),1);
         }
     }
     /* Atmospheric currents share the exact optical paths, with at most six
@@ -226,8 +226,8 @@ static void prism_zoya_figures(TsFramebuffer *fb,const TsSisterUiModel *m,
             float weight=1-clarity*.78f*(1-prism_zoya_unit(mass*2));
             float chest_x=(q->x-46)/8.f,chest_y=(q->y-52)/10.f;
             float heart=1/(1+chest_x*chest_x+chest_y*chest_y);
-            uint32_t tone=blend_color(RGB(112,149,231),RGB(237,162,225),(unsigned)(mass*100));
-            tone=blend_color(tone,RGB(255,229,164),(unsigned)(heart*clarity*75));
+            uint32_t tone=blend_color(ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_DATA3, RGB(112,149,231)),ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_DATA5, RGB(237,162,225)),(unsigned)(mass*100));
+            tone=blend_color(tone,ts_theme_color(active_palette(), TS_THEME_PRISM, TS_COLOR_DATA1, RGB(255,229,164)),(unsigned)(heart*clarity*75));
             float loosen=(1-clarity)*1.4f;
             float px=610-q->x+loosen*((int)((hash>>8)%5u)-2);
             float py=100+q->y+loosen*((int)((hash>>12)%5u)-2);

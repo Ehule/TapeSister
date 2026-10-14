@@ -3,31 +3,35 @@
 #include "tapesister/source_route.h"
 #include <stdio.h>
 
-/* Stable node/port IDs. Hardware ports are physical, never speaker-array slots. */
+/* Saved IDs 0..6 are the original processors, destinations 7..14 are physical
+   outputs. Source rows 7..14 are the original inputs/buses. Compressor is
+   appended at row/destination 15; 16 is a detector-only destination.
+   TS_MATRIX_NODES remains the legacy output/input offset, not a node count. */
 enum { TS_MATRIX_MAIN, TS_MATRIX_SISTER, TS_MATRIX_PRISM, TS_MATRIX_BOARD,
        TS_MATRIX_FALLOUT, TS_MATRIX_EQ, TS_MATRIX_LIMITER, TS_MATRIX_NODES };
 enum { TS_MATRIX_INPUTS=4, TS_MATRIX_OUTPUTS=8,
        TS_MATRIX_FM=TS_MATRIX_NODES+TS_MATRIX_INPUTS, TS_MATRIX_LINK, TS_MATRIX_MOSAIC, TS_MATRIX_TILES,
-       TS_MATRIX_ROWS, TS_MATRIX_DELAY=64, TS_MATRIX_NAME=24 };
+       TS_MATRIX_COMPRESSOR, TS_MATRIX_ROWS, TS_MATRIX_SIDECHAIN=16,
+       TS_MATRIX_PROCESSORS=8, TS_MATRIX_DELAY=64, TS_MATRIX_NAME=24 };
 typedef struct {
     int enabled, feedback;
     /* Imported serial effects retain their full dry/wet output. Bit MAIN
        retains the ordinary program input ceiling; other nodes stay wet-only. */
     unsigned serial_mask;
     TsSourceRoute row[TS_MATRIX_ROWS];
-    unsigned delayed[TS_MATRIX_NODES];
+    unsigned delayed[TS_MATRIX_ROWS];
     char input_name[TS_MATRIX_INPUTS][TS_MATRIX_NAME];
     char output_name[TS_MATRIX_OUTPUTS][TS_MATRIX_NAME];
 } TsMatrixControls;
 typedef struct {
     TsMatrixControls controls;
     TsSourceRouteVoice voice[TS_MATRIX_ROWS];
-    int order[TS_MATRIX_NODES], ready;
+    int order[TS_MATRIX_PROCESSORS], ready;
     unsigned position;
-    TsStereoFrame history[TS_MATRIX_NODES][TS_MATRIX_DELAY];
-    float input_peak[TS_MATRIX_NODES], output_peak[TS_MATRIX_ROWS], decay;
+    TsStereoFrame history[TS_MATRIX_ROWS][TS_MATRIX_DELAY];
+    float input_peak[TS_MATRIX_DESTINATIONS], output_peak[TS_MATRIX_ROWS], decay;
     float hardware_peak[TS_MATRIX_OUTPUTS]; /* After OUT gain and hardware guard. */
-    TsStereoFrame output[TS_MATRIX_OUTPUTS];
+    TsStereoFrame output[TS_MATRIX_OUTPUTS], sidechain;
 } TsRoutingMatrix;
 typedef TsStereoFrame (*TsMatrixProcess)(void *,int,TsStereoFrame);
 void ts_matrix_default(TsMatrixControls *c);
@@ -42,6 +46,10 @@ void ts_matrix_process(TsRoutingMatrix *m,TsSourceRouteMix *sums,
 int ts_matrix_write(FILE *f,const TsMatrixControls *c);
 int ts_matrix_read(TsMatrixControls *c,const char *key,const char *value);
 const char *ts_matrix_node_name(int node);
+/* IDs 0..14 retain their original saved meaning. New ports are appended. */
+int ts_matrix_is_processor(int id);
+int ts_matrix_is_output(int id);
+int ts_matrix_processor(int index);
 /* Translate a source's old routing into the matrix without changing the source. */
 TsSourceRoute ts_matrix_source_route(TsSourceRoute route);
 #endif

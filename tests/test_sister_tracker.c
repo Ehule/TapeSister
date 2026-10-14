@@ -1,4 +1,5 @@
 #include "tapesister/sample_pages.h"
+#include "tapesister/routing_matrix.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -83,6 +84,9 @@ static void test_model(void)
     CHECK(ts_sister_tracker_pattern(&t, original)->cells[0][0].note == 0);
     CHECK(ts_sister_tracker_hash(&t) != ts_sister_tracker_hash(&copy));
     CHECK(ts_sister_tracker_set_rows(&t, original, 256));
+    t.lanes[0].output_route.matrix_enabled=1;
+    t.lanes[0].output_route.matrix_gain[TS_MATRIX_COMPRESSOR]=850;
+    t.lanes[0].output_route.matrix_gain[TS_MATRIX_SIDECHAIN]=500;
     CHECK(ts_sister_tracker_save_file(&t, "score.tst", error, sizeof(error)));
     CHECK(ts_sister_tracker_load_file(&copy, "score.tst", error, sizeof(error)));
     CHECK(ts_sister_tracker_hash(&t) == ts_sister_tracker_hash(&copy));
@@ -138,14 +142,14 @@ static void test_score_migration(void)
     long length=ftell(f);CHECK(length>0);rewind(f);
     uint8_t *bytes=malloc((size_t)length);CHECK(bytes && fread(bytes,1,(size_t)length,f)==(size_t)length);fclose(f);
     /* v3/v4 retained all 32 lanes, but predate the v5 mix fields. */
-    for(int version=3;version<=4;++version) {
+    for(int version=3;version<=7;++version) {
         f=fopen("legacy-score.tst","wb");CHECK(f);bytes[6]=(uint8_t)version;
         size_t offset=39+TS_TRACKER_ALIASES*8+original.order_count*4;
         CHECK(fwrite(bytes,1,offset,f)==offset);
         for(int lane=0;lane<32;++lane) {
-            size_t fields=TS_TRACKER_NAME_SIZE+14+(version==4?5:0);
+            size_t fields=TS_TRACKER_NAME_SIZE+14+(version>=4?5:0)+(version>=5?5:0)+(version>=7?31:0);
             CHECK(fwrite(bytes+offset,1,fields,f)==fields);
-            offset+=TS_TRACKER_NAME_SIZE+24+31;
+            offset+=TS_TRACKER_NAME_SIZE+24+1+2*TS_MATRIX_DESTINATIONS;
         }
         CHECK(fwrite(bytes+offset,1,(size_t)length-offset,f)==(size_t)length-offset);CHECK(!fclose(f));
         CHECK(ts_sister_tracker_load_file(&loaded,"legacy-score.tst",error,sizeof(error)));
@@ -161,7 +165,7 @@ static void test_score_migration(void)
         size_t lane_bytes=TS_TRACKER_NAME_SIZE+14;
         for(int lane=0;lane<32;++lane) {
             if(lane<8)CHECK(fwrite(bytes+offset,1,lane_bytes,f)==lane_bytes);
-            offset+=lane_bytes+10+31; /* v4 routing plus v5 clean/send levels. */
+            offset+=lane_bytes+10+1+2*TS_MATRIX_DESTINATIONS; /* v4 routing plus v5 clean/send levels. */
         }
         for(int i=0;i<original.pattern_count;++i) {
             size_t header_bytes=6+TS_TRACKER_NAME_SIZE;

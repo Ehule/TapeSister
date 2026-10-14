@@ -303,6 +303,13 @@ void setPalette(pal16 *p, bool redrawScreen)
 	video.palette[PAL_TRACKTRIM_GREEN] = (PAL_TRACKTRIM_GREEN << 24) |
 		RGB32(b8, r8, g8);
 
+#ifdef TAPEHEAD_EMBEDDED
+    /* Host theme is visual only. Preserve the palette-index byte used by the
+       framebuffer, including selection pixels, without changing saved colors. */
+    extern void ts_tapehead_theme_colors(uint32_t *colors);
+    ts_tapehead_theme_colors(video.palette);
+#endif
+
 	/* Repaint grayscale custom artwork through the newly selected theme. */
 	refreshFastTracksLogoTheme();
 

@@ -7,7 +7,7 @@ typedef struct {uint64_t tile;float source,send;} TsRouteActivity;
 enum { TS_SOURCE_MAIN, TS_SOURCE_PAIR, TS_SOURCE_SPEAKER, TS_SOURCE_INHERIT };
 enum { TS_SOURCE_SPEAKERS = 16 };
 enum { TS_SEND_PRISM, TS_SEND_PEDALBOARD, TS_SEND_FALLOUT, TS_SOURCE_SENDS };
-enum { TS_MATRIX_DESTINATIONS = 15, TS_SOURCE_GRAPH_OFFSET=24,
+enum { TS_MATRIX_LEGACY_DESTINATIONS = 15, TS_MATRIX_DESTINATIONS = 17, TS_SOURCE_GRAPH_OFFSET=24,
        TS_SOURCE_COEFFICIENTS = TS_SOURCE_GRAPH_OFFSET + TS_MATRIX_DESTINATIONS*2 };
 /* Zero is the legacy Main route. Width is an offset from the original 100%.
    Speaker numbers are logical array positions, never hardware channel IDs. */
