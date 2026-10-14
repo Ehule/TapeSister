@@ -697,6 +697,7 @@ add_test(NAME tapesister_insert_tests COMMAND tapesister_insert_tests)
 # while the project loader stages its replacement instruments.
 if(MINGW)
   foreach(project_test IN ITEMS test_sister_post_fx
+                               test_sister_source_ui
                                tapesister_realtime_controller_tests
                                tapesister_audio_health_tests
                                tapesister_tracker_controller_tests
