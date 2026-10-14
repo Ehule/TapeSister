@@ -57,9 +57,10 @@ void ts_master_eq_morph_capture(TsMasterEq *eq, int state);
 int ts_master_eq_morph_recall(TsMasterEq *eq, int state);
 int ts_master_eq_morph_start(TsMasterEq *eq);
 void ts_master_eq_morph_stop(TsMasterEq *eq);
-/* Audio thread; no allocation, lock, or wall clock. */
+/* Saved setup text extension. */
 int ts_eq_morph_write(FILE *file, const TsEqMorph *m);
 int ts_eq_morph_read(TsEqMorph *m, const char *key, const char *value);
+/* Audio thread; no allocation, lock, or wall clock. */
 TsStereoFrame ts_master_eq_process(TsMasterEq *eq, TsStereoFrame input);
 TsEqCoefficients ts_master_eq_coefficients(TsEqBand band, unsigned rate);
 double ts_master_eq_response_db(const TsMasterEqControls *c, unsigned rate, double hz);

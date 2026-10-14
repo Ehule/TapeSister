@@ -192,9 +192,9 @@ static int master_eq_event(const SDL_Event *event,SDL_Window *window,
             eq->morph.seconds=fmin(maximum,TS_EQ_MORPH_DEFAULT_MAX_SECONDS);
         master_eq_snapshot(audio,ui);
         if(device)SDL_UnlockAudioDevice(device);
-        if(!result)snprintf(ui->status,sizeof(ui->status),"CAPTURE A AND B BEFORE PLAY / CLICK A OR B TO RECALL");
+        if(!result)snprintf(ui->status,sizeof(ui->status),"CAPTURE A AND B BEFORE PLAY");
         else if(left || wheel)snprintf(ui->status,sizeof(ui->status),
-            "EQ A/B: CAPTURE WHOLE CURVE / PLAY A > B / LOOP RETURNS TO A / TIME PER LEG");
+            "EQ A/B: TIME PER LEG / STOP HOLDS CURVE");
         return 1;
     }
     TsEqBand *b=&ui->config.master_eq.band[ui->master_eq_band];

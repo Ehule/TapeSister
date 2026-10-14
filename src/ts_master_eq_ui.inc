@@ -136,7 +136,9 @@ static void master_eq_render_impl(TsFramebuffer *fb,const TsUiState *ui)
         button(fb,520,225,48,"STOP",0);
         snprintf(label,sizeof(label),"%3.0F%%",100*ui->eq_morph_position);text(fb,580,234,label,teal,1);
     }
-    for(int i=0;i<5;++i) {
+    for(int pass=0;pass<5;++pass) {
+        /* A moving selected node must remain visible when bands cross. */
+        int i=(ui->master_eq_band+1+pass)%5;
         int x=eq_node_x(ui,i),y=eq_node_y(ui,i),selected=i==ui->master_eq_band;
         uint32_t color=!ts_master_eq_band_active(c,i)?ts_theme_color(active_palette(),TS_THEME_EQ,TS_COLOR_MUTED,muted):selected?amber:teal;
         frame(fb,x-8,y-8,17,17,selected?ts_theme_color(active_palette(), TS_THEME_EQ, TS_COLOR_SELECTION, RGB(70,57,35)):ts_theme_color(active_palette(), TS_THEME_EQ, TS_COLOR_PANEL, RGB(26,32,37)),color);

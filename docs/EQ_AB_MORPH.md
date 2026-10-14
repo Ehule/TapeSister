@@ -63,3 +63,24 @@ lock; drawing and disk I/O run after unlocking.
 Automation phase is separate from explicitly edited settings, so timer motion
 does not repeatedly mark a saved project dirty. A capture, manual edit or timing
 change does mark it modified.
+
+## Validation
+
+The native DSP and persistence fixtures cover five sample rates (8–192 kHz),
+exact one-shot endpoints, ping-pong loops, stop/recall, changes of sample rate,
+four-hour settings, malformed input, and old/new project and INI loading. A full
+four-minute low-pass sweep checks for unwanted periodic level dips.
+
+The native SDL controller fixture exercises capture/recall, the extended time
+range, two-times window scaling, MIDI/manual takeover, hidden-panel playback,
+stable dirty-state hashing, and exactly one EQ clock tick per matrix frame.
+Existing tile EQ, routing, keyboard, recording and spectrum tests remain in the
+release gate. Windows and Linux each passed 63 regression tests plus packaging
+on the initial implementation (`122c8a4`). The final UI polish keeps the selected
+band visible as nodes cross and shortens the footer hint.
+
+Physical-device listening and low-power laptop performance are not established
+by these tests. The image below is the native framebuffer, rendered from the DSP
+state at 40% through a four-minute sweep.
+
+![Native whole-EQ A/B controls](screenshots/eq-ab-morph.png)
