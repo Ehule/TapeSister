@@ -124,7 +124,8 @@ static void bounds_and_transport_states(void)
 
 static void rapid_random_full_graph_stress(void)
 {
-    TsSisterRuntime runtime;
+    /* The runtime alone exceeds the default Windows test stack. */
+    static TsSisterRuntime runtime;
     TsSisterParameters parameters;
     TsSisterSourceFrames source = {0};
     TsSisterRuntimeFrame frame;
@@ -182,7 +183,7 @@ static void rapid_random_full_graph_stress(void)
 
 static void capture_and_note_continuity(void)
 {
-    TsSisterRuntime runtime;
+    static TsSisterRuntime runtime;
     TsInstrument instrument;
     TsNoteEvent note;
     TsSisterParameters parameters;

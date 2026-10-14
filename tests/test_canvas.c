@@ -177,7 +177,9 @@ static void test_grid_and_hierarchical_snap(void)
     make_canvas(&instrument, 17, 44100, 0);
     instrument.current.data[3] = instrument.parent.data[3] = 0.01f;
     instrument.current.data[9] = instrument.parent.data[9] = 0.02f;
-    CHECK(ts_instrument_resolve_boundary(&instrument, 12) == 3);
+    /* With no crossing, editing retains the requested position. DSP range
+       searches still fall back to the quietest sample inside the range. */
+    CHECK(ts_instrument_resolve_boundary(&instrument, 12) == 12);
     CHECK(ts_sample_nearest_zero_crossing_in_range(
               &instrument.current, 10, 3, 12) == 3);
     ts_instrument_free(&instrument);

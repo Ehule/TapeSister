@@ -12,7 +12,8 @@ static int failures;
 
 int main(void)
 {
-    TsSisterRuntime runtime;
+    /* The runtime alone exceeds the default Windows test stack. */
+    static TsSisterRuntime runtime;
     TsInstrument instrument;
     TsNoteEvent note;
     TsSisterSourceFrames sources = {0};

@@ -167,7 +167,8 @@ static TsSisterRuntimeFrame run_runtime(TsSisterRuntime *runtime, int frames,
 
 static void capture_dry_and_mono_contract(void)
 {
-    TsSisterRuntime runtime;
+    /* The runtime alone exceeds the default Windows test stack. */
+    static TsSisterRuntime runtime;
     TsInstrument instrument;
     TsSisterParameters p;
     TsSisterRuntimeFrame frame;

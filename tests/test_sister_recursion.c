@@ -10,7 +10,8 @@ static int failures;
 
 int main(void)
 {
-    TsSisterRuntime runtime;
+    /* The runtime alone exceeds the default Windows test stack. */
+    static TsSisterRuntime runtime;
     TsInstrument instrument;
     TsSisterParameters parameters;
     TsSisterRuntimeFrame frame = {0};
@@ -21,6 +22,8 @@ int main(void)
 
     CHECK(sister_test_make_tiles(&instrument, 1, 2, 1000u, 64u));
     CHECK(sister_test_enable(&runtime, 1000u, 2u, 0.2));
+    /* Keep the earlier one-shot generations playing after key-up. */
+    ts_performance_set_sustain(&runtime.performance, 1);
     parameters = runtime.parameters;
     parameters.head1_level = 1.0f;
     parameters.head1_time_ms = 1.0f;

@@ -104,7 +104,8 @@ static void process_frames(TsSisterRuntime *runtime,
 
 static void head_identity_and_crossing(void)
 {
-    TsSisterRuntime runtime;
+    /* The runtime alone exceeds the default Windows test stack. */
+    static TsSisterRuntime runtime;
     TsSisterParameters p;
     TsSisterSourceFrames source = {0};
     StressResult result = {0};
@@ -160,7 +161,7 @@ static void head_identity_and_crossing(void)
 
 static void continuity_transitions(void)
 {
-    TsSisterRuntime runtime;
+    static TsSisterRuntime runtime;
     TsSisterParameters p;
     TsSisterSourceFrames source = {0};
     TsStereoFrame previous = {0};
@@ -349,7 +350,7 @@ static void apply_transition(TsSisterRuntime *runtime, TsInstrument *instrument,
 static StressResult run_stress(uint32_t seed, uint64_t transitions,
                                uint64_t soak_frames)
 {
-    TsSisterRuntime runtime;
+    static TsSisterRuntime runtime;
     TsSisterParameters p;
     TsSisterSourceFrames source = {0};
     TsInstrument instrument;

@@ -17,7 +17,8 @@ static float tape_peak(const TsSisterRuntime *runtime)
 
 int main(void)
 {
-    TsSisterRuntime runtime;
+    /* The runtime alone exceeds the default Windows test stack. */
+    static TsSisterRuntime runtime;
     TsSisterSourceFrames sources = {0};
     TsSisterRuntimeFrame frame;
     TsInstrument empty;

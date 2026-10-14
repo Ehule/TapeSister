@@ -12,7 +12,8 @@ static int failures;
 /* Power only owns the rolling machine, not the already playing global FX. */
 static void test_global_fx_survive_power(void)
 {
-    TsSisterRuntime runtime;char error[160];ts_sister_runtime_init(&runtime);
+    /* The runtime alone exceeds the default Windows test stack. */
+    static TsSisterRuntime runtime;char error[160];ts_sister_runtime_init(&runtime);
     CHECK(ts_sister_runtime_reconfigure(&runtime,1000u,2u,error,sizeof(error)));
     TsSisterParameters p=runtime.parameters;
     p.fx.transition=ts_sister_fx_transition_normalized(1000);
@@ -50,7 +51,7 @@ static void test_global_fx_survive_power(void)
 
 static void test_prepared_power_storage(void)
 {
-    TsSisterRuntime runtime;TsSisterMachine prepared={0},retired={0};char error[160];
+    static TsSisterRuntime runtime;TsSisterMachine prepared={0},retired={0};char error[160];
     ts_sister_runtime_init(&runtime);
     CHECK(ts_sister_machine_init(&prepared,1000,2,.1));
     float *storage=prepared.buffer.data;
@@ -74,7 +75,7 @@ int main(void)
 {
     test_global_fx_survive_power();
     test_prepared_power_storage();
-    TsSisterRuntime runtime;
+    static TsSisterRuntime runtime;
     TsInstrument instrument;
     TsSisterSourceFrames source = {0};
     TsSisterRuntimeFrame frame;

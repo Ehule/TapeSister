@@ -258,7 +258,8 @@ static void test_transition_noise_and_centered_lfo(void)
 
 static void test_runtime_feedback_is_wet_only_and_causal(void)
 {
-    TsSisterRuntime runtime;
+    /* The runtime alone exceeds the default Windows test stack. */
+    static TsSisterRuntime runtime;
     TsSisterParameters parameters;
     TsSisterSourceFrames sources = {0};
     char error[160];

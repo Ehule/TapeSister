@@ -9,7 +9,8 @@ static int failures;
 
 int main(void)
 {
-    TsSisterRuntime runtime;
+    /* The runtime alone exceeds the default Windows test stack. */
+    static TsSisterRuntime runtime;
     TsInstrument instrument;
     TsNoteEvent qwerty;
     TsNoteEvent midi;
@@ -17,6 +18,8 @@ int main(void)
 
     CHECK(sister_test_make_tiles(&instrument, 2, 2, 1000u, 32u));
     CHECK(sister_test_enable(&runtime, 1000u, 2u, 0.1));
+    /* This case exercises one-shot overlap beyond key-up. */
+    ts_performance_set_sustain(&runtime.performance, 1);
     ts_sister_runtime_set_sources(&runtime, TS_SISTER_SOURCE_TILES);
     instrument.bank[1].locked = 1;
     CHECK(ts_sister_runtime_set_source_slot(&runtime, &instrument, 0, 1));
