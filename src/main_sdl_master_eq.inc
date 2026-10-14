@@ -1,8 +1,17 @@
+/* Caller holds the device lock. Live curves are audio-owned during a sweep. */
+static void master_eq_snapshot(AudioState *audio,TsUiState *ui)
+{
+    const TsMasterEq *eq=&audio->sister.master_eq;
+    ui->config.master_eq=eq->live;ui->config.eq_morph=eq->morph;
+    ui->eq_morph_running=eq->morph_running;ui->eq_morph_reverse=eq->morph_reverse;
+    ui->eq_morph_position=eq->morph_position;
+}
 static void master_eq_commit(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui)
 {
     ts_master_eq_sanitize(&ui->config.master_eq);
     if(device)SDL_LockAudioDevice(device);
     ts_master_eq_set(canvas_eq_handling?&audio->canvas_eq:&audio->sister.master_eq,&ui->config.master_eq);
+    if(!canvas_eq_handling)master_eq_snapshot(audio,ui);
     if(device)SDL_UnlockAudioDevice(device);
 }
 static int master_eq_midi_band(const char *target,int *band,int *control)
@@ -14,7 +23,7 @@ static int master_eq_midi_band(const char *target,int *band,int *control)
 static void master_eq_open(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui)
 {
     if(device)SDL_LockAudioDevice(device);
-    ui->config.master_eq=audio->sister.master_eq.controls;
+    master_eq_snapshot(audio,ui);
     if(device)SDL_UnlockAudioDevice(device);
     ui->master_eq_rate=audio->output_rate>0?(unsigned)audio->output_rate:48000;
     ui->master_eq_open=1;ui->master_eq_drag=0;ui->master_eq_reset_pending=0;
@@ -104,6 +113,11 @@ static int master_eq_event(const SDL_Event *event,SDL_Window *window,
         int rx,ry;wheel_event_mouse(event,&rx,&ry);logical_mouse(window,rx,ry,&x,&y);
         wheel=wheel_event_delta(event,0);
     } else if(event->type!=SDL_MOUSEBUTTONDOWN)return 0;
+    if(!canvas_eq_handling) {
+        if(device)SDL_LockAudioDevice(device);
+        master_eq_snapshot(audio,ui);
+        if(device)SDL_UnlockAudioDevice(device);
+    }
     if(ui->midi_learn_active)ui->master_eq_presets_open=0;
     if(ui->master_eq_presets_open) {
         if(event->type==SDL_MOUSEBUTTONDOWN) {
@@ -143,6 +157,44 @@ static int master_eq_event(const SDL_Event *event,SDL_Window *window,
             char target[TS_MIDI_TARGET_ID_MAX]={0};
             ts_ui_master_eq_midi_target(ui,x,y,target,sizeof(target));midi_learn_click(ui,sister,target);
         }
+        return 1;
+    }
+    if(!canvas_eq_handling && (ui->master_eq_drag==6 || (y>=220 && y<250))) {
+        if(device)SDL_LockAudioDevice(device);
+        TsMasterEq *eq=&audio->sister.master_eq;
+        int left=event->type==SDL_MOUSEBUTTONDOWN && button==SDL_BUTTON_LEFT;
+        int result=1;
+        if(left) {
+            ui->master_eq_reset_pending=0;
+            if(x>=20 && x<82)ts_master_eq_morph_capture(eq,0);
+            else if(x>=88 && x<110)result=ts_master_eq_morph_recall(eq,0);
+            else if(x>=116 && x<178)ts_master_eq_morph_capture(eq,1);
+            else if(x>=184 && x<206)result=ts_master_eq_morph_recall(eq,1);
+            else if(x>=220 && x<362) {
+                ui->master_eq_drag=6;
+                ui->eq_morph_drag_max=fmax(eq->morph.seconds,ui->config.eq_morph_max_seconds);
+            }
+            else if(x>=370 && x<438)eq->morph.loop=!eq->morph.loop;
+            else if(x>=444 && x<514)result=ts_master_eq_morph_start(eq);
+            else if(x>=520 && x<568)ts_master_eq_morph_stop(eq);
+        }
+        /* The INI limit expands the control. A longer recalled project remains
+           editable without silently shortening its saved transition. */
+        double maximum=ui->master_eq_drag==6?ui->eq_morph_drag_max:fmax(eq->morph.seconds,ui->config.eq_morph_max_seconds);
+        maximum=fmax(1,fmin(TS_EQ_MORPH_MAX_SECONDS,maximum));
+        if(ui->master_eq_drag==6 && (left || event->type==SDL_MOUSEMOTION)) {
+            double n=fmax(0,fmin(1,(x-220)/142.0));
+            eq->morph.seconds=TS_EQ_MORPH_MIN_SECONDS*pow(maximum/TS_EQ_MORPH_MIN_SECONDS,n);
+        } else if(wheel && x>=220 && x<362) {
+            eq->morph.seconds=fmax(TS_EQ_MORPH_MIN_SECONDS,fmin(maximum,
+                eq->morph.seconds+wheel*((SDL_GetModState()&KMOD_SHIFT)?.1:1)));
+        } else if(event->type==SDL_MOUSEBUTTONDOWN && button==SDL_BUTTON_RIGHT && x>=220 && x<362)
+            eq->morph.seconds=fmin(maximum,TS_EQ_MORPH_DEFAULT_MAX_SECONDS);
+        master_eq_snapshot(audio,ui);
+        if(device)SDL_UnlockAudioDevice(device);
+        if(!result)snprintf(ui->status,sizeof(ui->status),"CAPTURE A AND B BEFORE PLAY / CLICK A OR B TO RECALL");
+        else if(left || wheel)snprintf(ui->status,sizeof(ui->status),
+            "EQ A/B: CAPTURE WHOLE CURVE / PLAY A > B / LOOP RETURNS TO A / TIME PER LEG");
         return 1;
     }
     TsEqBand *b=&ui->config.master_eq.band[ui->master_eq_band];
@@ -205,7 +257,7 @@ static int master_eq_event(const SDL_Event *event,SDL_Window *window,
                 int ww,wh;SDL_GetWindowSize(window,&ww,&wh);
                 float frequency=ts_master_eq_normalized(b,0,rate)+(float)event->motion.xrel*TS_UI_WIDTH/fmaxf(1,ww)/552*(fine?.15f:1);
                 ts_master_eq_set_normalized(b,0,frequency,rate);
-                if(ts_master_eq_has_gain(b->type))b->gain_db-=event->motion.yrel*TS_UI_HEIGHT/fmaxf(1,wh)/4.5f*(fine?.15f:1);
+                if(ts_master_eq_has_gain(b->type))b->gain_db-=event->motion.yrel*TS_UI_HEIGHT/fmaxf(1,wh)/(canvas_eq_handling?4.5f:3.5f)*(fine?.15f:1);
                 changed=1;
             }
         } else if(d==5)set_master_output_gain(device,audio,ui,sister,(x-328)/182.f);

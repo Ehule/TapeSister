@@ -4,7 +4,7 @@ static const TsMasterEqControls *eq_controls(const TsUiState *ui)
 static int eq_node_x(const TsUiState *ui,int i)
 { return 44+(int)lrintf(552*ts_master_eq_normalized(&eq_controls(ui)->band[i],0,ui->master_eq_rate)); }
 static int eq_node_y(const TsUiState *ui,int i)
-{ const TsEqBand *b=&eq_controls(ui)->band[i];return 155-(int)lrintf((ts_master_eq_has_gain(b->type)?b->gain_db:0)*4.5f); }
+{ const TsEqBand *b=&eq_controls(ui)->band[i];return (ui->canvas_eq_open?155:140)-(int)lrintf((ts_master_eq_has_gain(b->type)?b->gain_db:0)*(ui->canvas_eq_open?4.5f:3.5f)); }
 int ts_ui_master_eq_node(const TsUiState *ui,int x,int y)
 {
     int best=-1,distance=145;
@@ -57,6 +57,9 @@ static void master_eq_render_impl(TsFramebuffer *fb,const TsUiState *ui)
     unsigned rate=ui->master_eq_rate?ui->master_eq_rate:48000;
     uint32_t amber=ts_theme_color(active_palette(), TS_THEME_EQ, TS_COLOR_DATA1, RGB(247,196,91)),muted=ts_theme_color(active_palette(), TS_THEME_EQ, TS_COLOR_DIM, RGB(123,127,133)),teal=ts_theme_color(active_palette(), TS_THEME_EQ, TS_COLOR_DATA2, RGB(107,176,182));
     char label[96];
+    int bottom=ui->canvas_eq_open?233:201,mid=ui->canvas_eq_open?155:140;
+    float db_scale=ui->canvas_eq_open?4.5f:3.5f;
+    int height=bottom-79;
     frame(fb,10,38,620,341,ts_theme_color(active_palette(), TS_THEME_EQ, TS_COLOR_PANEL, RGB(29,27,32)),PAL_BUTTON);
     text(fb,20,48,ui->canvas_eq_open?(ui->mosaic_editing?"MOSAIC INSTANCE EQ":"CANVAS TILE EQ"):"MASTER / ROOM EQ",amber,1);
     if(c->solo_band)snprintf(label,sizeof(label),"SOLO %02d / CTRL-CLICK TO RESTORE",c->solo_band);
@@ -67,15 +70,15 @@ static void master_eq_render_impl(TsFramebuffer *fb,const TsUiState *ui)
     button(fb,396,44,78,c->enabled?"EQ ON":"EQ BYPASS",c->enabled);
     button(fb,484,44,96,ui->master_eq_reset_pending?"CONFIRM RESET":"RESET EQ",ui->master_eq_reset_pending);
     button(fb,596,44,24,"X",0);
-    frame(fb,43,78,555,156,ts_theme_color(active_palette(), TS_THEME_EQ, TS_COLOR_BACKGROUND, RGB(10,12,15)),ts_theme_color(active_palette(), TS_THEME_EQ, TS_COLOR_EDGE, RGB(61,59,66)));
+    frame(fb,43,78,555,bottom-77,ts_theme_color(active_palette(), TS_THEME_EQ, TS_COLOR_BACKGROUND, RGB(10,12,15)),ts_theme_color(active_palette(), TS_THEME_EQ, TS_COLOR_EDGE, RGB(61,59,66)));
     if(!ui->master_eq_spectrum_off && ui->master_eq_spectrum.valid && ui->master_eq_spectrum.rate==rate) {
-        int previous_y=232;
+        int previous_y=bottom-1;
         for(int x=0;x<552;++x) {
             double p=(double)x*(TS_EQ_SPECTRUM_POINTS-1)/551;
             int i=(int)p,j=i<TS_EQ_SPECTRUM_POINTS-1?i+1:i;
             float db=ui->master_eq_spectrum.db[i]+(ui->master_eq_spectrum.db[j]-ui->master_eq_spectrum.db[i])*(float)(p-i);
-            int y=79+(int)lrintf(-fmaxf(-96,fminf(0,db))*153/96);
-            rect(fb,44+x,y,1,233-y,ts_theme_color(active_palette(), TS_THEME_EQ, TS_COLOR_EDGE, RGB(20,45,48)));
+            int y=79+(int)lrintf(-fmaxf(-96,fminf(0,db))*height/96);
+            rect(fb,44+x,y,1,bottom-y,ts_theme_color(active_palette(), TS_THEME_EQ, TS_COLOR_EDGE, RGB(20,45,48)));
             if(x)ui_line(fb,43+x,previous_y,44+x,y,ts_theme_color(active_palette(), TS_THEME_EQ, TS_COLOR_DATA2, RGB(56,115,124)));
             previous_y=y;
         }
@@ -84,34 +87,54 @@ static void master_eq_render_impl(TsFramebuffer *fb,const TsUiState *ui)
     for(int i=0;i<10;++i) {
         if(hz[i]>ts_master_eq_max_hz(rate))continue;
         int x=44+(int)(552*log(hz[i]/20.)/log(ts_master_eq_max_hz(rate)/20.));
-        rect(fb,x,79,1,154,ts_theme_color(active_palette(), TS_THEME_EQ, TS_COLOR_PANEL, RGB(32,34,39)));
+        rect(fb,x,79,1,height+1,ts_theme_color(active_palette(), TS_THEME_EQ, TS_COLOR_PANEL, RGB(32,34,39)));
         if(i==0 || i==2 || i==4 || i==5 || i==7 || i==9) {
             snprintf(label,sizeof(label),hz[i]>=1000?"%dK":"%d",hz[i]>=1000?hz[i]/1000:hz[i]);
-            text(fb,x-6,237,label,muted,1);
+            text(fb,x-6,bottom+4,label,muted,1);
         }
     }
     for(int db=-12;db<=12;db+=6) {
-        int y=155-(int)(db*4.5);
+        int y=mid-(int)(db*db_scale);
         rect(fb,44,y,552,1,db==0?ts_theme_color(active_palette(), TS_THEME_EQ, TS_COLOR_EDGE, RGB(81,76,70)):ts_theme_color(active_palette(), TS_THEME_EQ, TS_COLOR_PANEL, RGB(38,37,42)));
         snprintf(label,sizeof(label),"%+d",db);text(fb,18,y-3,label,muted,1);
     }
     TsMasterEqControls curve=*c;curve.enabled=1;
-    int previous=155;
+    int previous=mid;
     for(int x=0;x<552;++x) {
         double f=20*pow(ts_master_eq_max_hz(rate)/20.,x/551.);
         double db=ts_master_eq_response_db(&curve,rate,f);
-        int y=155-(int)lrint(fmax(-17,fmin(17,db))*4.5);
+        int y=mid-(int)lrint(fmax(-17,fmin(17,db))*db_scale);
         if(x)ui_line(fb,43+x,previous,44+x,y,c->enabled?amber:ts_theme_color(active_palette(), TS_THEME_EQ, TS_COLOR_GRID, RGB(95,91,83)));
         previous=y;
     }
-    if(!c->enabled)rect(fb,44,155,552,1,amber);
+    if(!c->enabled)rect(fb,44,mid,552,1,amber);
     text(fb,49,83,"EQ DB",amber,1);
     if(!ui->master_eq_spectrum_off) {
         text(fb,456,83,"POST EQ / DBFS",teal,1);
         for(int db=0;db>=-96;db-=24) {
-            int y=79+(int)lrintf(-db*153/96.f);
+            int y=79+(int)lrintf(-db*height/96.f);
             snprintf(label,sizeof(label),"%d",db);text(fb,602,y-3,label,teal,1);
         }
+    }
+    if(!ui->canvas_eq_open) {
+        const TsEqMorph *m=&ui->config.eq_morph;
+        button(fb,20,225,62,"CAP A",(m->captured&1)!=0);
+        button(fb,88,225,22,"A",0);
+        button(fb,116,225,62,"CAP B",(m->captured&2)!=0);
+        button(fb,184,225,22,"B",0);
+        double maximum=ui->master_eq_drag==6?ui->eq_morph_drag_max:fmax(m->seconds,ui->config.eq_morph_max_seconds);
+        maximum=fmax(1,fmin(TS_EQ_MORPH_MAX_SECONDS,maximum));
+        double seconds=fmax(TS_EQ_MORPH_MIN_SECONDS,m->seconds);
+        if(seconds<60)snprintf(label,sizeof(label),"TIME %.1F S",seconds);
+        else {int tenths=(int)lround(seconds*10);snprintf(label,sizeof(label),"TIME %d:%02d.%d",tenths/600,(tenths/10)%60,tenths%10);}
+        slider(fb,220,222,142,label,(float)(log(seconds/TS_EQ_MORPH_MIN_SECONDS)/log(maximum/TS_EQ_MORPH_MIN_SECONDS)),teal);
+        button(fb,370,225,68,"",m->loop);
+        frame(fb,376,232,9,9,PAL_DESKTOP,m->loop?amber:muted);
+        if(m->loop){ui_line(fb,377,235,380,239,amber);ui_line(fb,380,239,383,233,amber);}
+        text(fb,391,234,"LOOP",m->loop?amber:muted,1);
+        button(fb,444,225,70,ui->eq_morph_running?(ui->eq_morph_reverse?"B > A":"A > B"):"PLAY",ui->eq_morph_running);
+        button(fb,520,225,48,"STOP",0);
+        snprintf(label,sizeof(label),"%3.0F%%",100*ui->eq_morph_position);text(fb,580,234,label,teal,1);
     }
     for(int i=0;i<5;++i) {
         int x=eq_node_x(ui,i),y=eq_node_y(ui,i),selected=i==ui->master_eq_band;

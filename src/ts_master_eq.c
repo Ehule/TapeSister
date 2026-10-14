@@ -93,8 +93,8 @@ static TsEqBand active_band(const TsMasterEqControls *c,int band)
     TsEqBand b=c->band[band];b.enabled=ts_master_eq_band_active(c,band);return b;
 }
 /* RBJ biquads, normalized a0; formula reference: https://www.w3.org/TR/audio-eq-cookbook/
-   Coefficients are calculated by the control/device thread only. Each fading
-   filter has fixed stable poles; rapid edits coalesce into the next transition. */
+   Manual edits run on the control thread; morphs update at 100 Hz on audio.
+   Each fading filter has fixed stable poles; rapid targets coalesce. */
 TsEqCoefficients ts_master_eq_coefficients(TsEqBand b,unsigned rate)
 {
     TsEqCoefficients c={1,0,0,0,0};
@@ -118,7 +118,7 @@ TsEqCoefficients ts_master_eq_coefficients(TsEqBand b,unsigned rate)
     return (TsEqCoefficients){b0/a0,b1/a0,b2/a0,a1/a0,a2/a0};
 }
 void ts_master_eq_init(TsMasterEq *eq)
-{ memset(eq,0,sizeof(*eq));ts_master_eq_default(&eq->controls); }
+{ memset(eq,0,sizeof(*eq));ts_master_eq_default(&eq->controls);eq->live=eq->controls;ts_eq_morph_default(&eq->morph); }
 static int identity_filter(const TsEqFilter *f)
 {
     return f->c.b0==1 && f->c.b1==0 && f->c.b2==0 && f->c.a1==0 && f->c.a2==0 &&
@@ -128,20 +128,105 @@ void ts_master_eq_prepare(TsMasterEq *eq,unsigned rate)
 {
     if(!rate || eq->sample_rate==rate)return;
     eq->sample_rate=rate;eq->fade_frames=(unsigned)fmax(1,rate*.04);
-    eq->mix=eq->controls.enabled;
+    eq->mix=eq->live.enabled;eq->morph_tick=0;
+    if(eq->morph_running) {
+        eq->morph_total_frames=(uint64_t)llround(rate*eq->morph_duration);
+        eq->morph_frames=(uint64_t)llround((eq->morph_reverse?1-eq->morph_position:eq->morph_position)*eq->morph_total_frames);
+    }
     memset(eq->stage,0,sizeof(eq->stage));eq->active_stages=0;
     for(int i=0;i<TS_MASTER_EQ_BANDS;++i) {
-        eq->stage[i].current.c=eq->stage[i].pending=ts_master_eq_coefficients(active_band(&eq->controls,i),rate);
+        eq->stage[i].current.c=eq->stage[i].pending=ts_master_eq_coefficients(active_band(&eq->live,i),rate);
         if(!identity_filter(&eq->stage[i].current))eq->active_stages|=1u<<i;
     }
 }
-void ts_master_eq_set(TsMasterEq *eq,const TsMasterEqControls *controls)
+static void eq_apply(TsMasterEq *eq,const TsMasterEqControls *controls,int morph)
 {
-    eq->controls=*controls;ts_master_eq_sanitize(&eq->controls);
     for(int i=0;i<TS_MASTER_EQ_BANDS;++i) {
         TsEqStage *s=&eq->stage[i];
-        TsEqCoefficients c=ts_master_eq_coefficients(active_band(&eq->controls,i),eq->sample_rate);
-        if(memcmp(&s->pending,&c,sizeof(c))) { s->pending=c;s->dirty=1;eq->active_stages|=1u<<i; }
+        TsEqCoefficients c=ts_master_eq_coefficients(active_band(controls,i),eq->sample_rate);
+        if(memcmp(&s->pending,&c,sizeof(c))) {
+            /* Keep the filter warm during small continuous sweeps; resetting
+               its memory at every control tick would modulate low frequencies. */
+            s->warm=(!s->dirty || s->warm) && morph && eq->live.band[i].type==controls->band[i].type &&
+                ts_master_eq_band_active(&eq->live,i)==ts_master_eq_band_active(controls,i);
+            s->pending=c;s->dirty=1;eq->active_stages|=1u<<i;
+        }
+    }
+    eq->live=*controls;
+}
+void ts_master_eq_set(TsMasterEq *eq,const TsMasterEqControls *controls)
+{
+    TsMasterEqControls c=*controls;ts_master_eq_sanitize(&c);
+    eq->controls=c;eq->morph_running=0;eq->morph_tick=0;
+    eq_apply(eq,&c,0);
+}
+void ts_eq_morph_default(TsEqMorph *m)
+{
+    memset(m,0,sizeof(*m));m->seconds=TS_EQ_MORPH_DEFAULT_MAX_SECONDS;
+    ts_master_eq_default(&m->state[0]);ts_master_eq_default(&m->state[1]);
+}
+void ts_eq_morph_sanitize(TsEqMorph *m)
+{
+    m->captured&=3u;m->loop=m->loop!=0;
+    m->seconds=clamp(m->seconds,TS_EQ_MORPH_MIN_SECONDS,TS_EQ_MORPH_MAX_SECONDS,TS_EQ_MORPH_DEFAULT_MAX_SECONDS);
+    for(int i=0;i<2;++i){ts_master_eq_sanitize(&m->state[i]);m->state[i].solo_band=0;}
+}
+void ts_master_eq_morph_stop(TsMasterEq *eq)
+{ ts_master_eq_set(eq,&eq->live); }
+void ts_master_eq_morph_set(TsMasterEq *eq,const TsEqMorph *m)
+{
+    ts_master_eq_morph_stop(eq);eq->morph=*m;ts_eq_morph_sanitize(&eq->morph);
+    eq->morph_position=0;eq->morph_reverse=0;
+}
+void ts_master_eq_morph_capture(TsMasterEq *eq,int state)
+{
+    if(state<0 || state>1)return;
+    ts_master_eq_morph_stop(eq);eq->morph.state[state]=eq->live;
+    eq->morph.state[state].solo_band=0;eq->morph.captured|=1u<<state;
+}
+int ts_master_eq_morph_recall(TsMasterEq *eq,int state)
+{
+    if(state<0 || state>1 || !(eq->morph.captured&(1u<<state)))return 0;
+    ts_master_eq_set(eq,&eq->morph.state[state]);eq->morph_position=state;eq->morph_reverse=0;return 1;
+}
+int ts_master_eq_morph_start(TsMasterEq *eq)
+{
+    if(eq->morph.captured!=3u)return 0;
+    ts_eq_morph_sanitize(&eq->morph);
+    ts_master_eq_morph_recall(eq,0);eq->morph_duration=eq->morph.seconds;
+    eq->morph_frames=0;eq->morph_total_frames=(uint64_t)llround(eq->sample_rate*eq->morph_duration);
+    eq->morph_running=1;return 1;
+}
+static void eq_morph_tick(TsMasterEq *eq)
+{
+    if(!eq->morph_running)return;
+    ++eq->morph_frames;
+    double progress=(double)eq->morph_frames/eq->morph_total_frames;
+    eq->morph_position=eq->morph_reverse?1-progress:progress;
+    int end=eq->morph_frames>=eq->morph_total_frames;
+    if(end)eq->morph_position=eq->morph_reverse?0:1;
+    if(!eq->morph_tick || end) {
+        double t=eq->morph_position;
+        const TsMasterEqControls *a=&eq->morph.state[0],*b=&eq->morph.state[1];
+        TsMasterEqControls c=t<.5?*a:*b;c.solo_band=0;
+        for(int i=0;i<TS_MASTER_EQ_BANDS;++i) {
+            if(t==0)c.band[i]=a->band[i];
+            else if(t==1)c.band[i]=b->band[i];
+            else {
+                c.band[i].frequency=(float)(a->band[i].frequency*pow(b->band[i].frequency/a->band[i].frequency,t));
+                c.band[i].q=(float)(a->band[i].q*pow(b->band[i].q/a->band[i].q,t));
+                c.band[i].gain_db=(float)(a->band[i].gain_db+(b->band[i].gain_db-a->band[i].gain_db)*t);
+            }
+        }
+        eq_apply(eq,&c,1);eq->morph_tick=(unsigned)fmax(1,eq->sample_rate*.01);
+    }
+    --eq->morph_tick;
+    if(end) {
+        if(eq->morph.loop) {
+            eq->morph_reverse=!eq->morph_reverse;eq->morph_duration=eq->morph.seconds;
+            eq->morph_frames=0;eq->morph_total_frames=(uint64_t)llround(eq->sample_rate*eq->morph_duration);
+        }
+        else eq->morph_running=0;
     }
 }
 static double filter(TsEqFilter *f,double in,int ch)
@@ -158,12 +243,14 @@ TsStereoFrame ts_master_eq_process(TsMasterEq *eq,TsStereoFrame input)
 {
     input=ts_stereo_frame_sanitize(input);
     if(!eq || !eq->sample_rate)return input;
+    eq_morph_tick(eq);
     double v[2]={input.l,input.r};
     for(int i=0;i<TS_MASTER_EQ_BANDS;++i) {
         if (!(eq->active_stages & (1u<<i))) continue;
         TsEqStage *s=&eq->stage[i];
         if(!s->fade && s->dirty) {
-            memset(&s->next,0,sizeof(s->next));s->next.c=s->pending;
+            if(s->warm)s->next=s->current;else memset(&s->next,0,sizeof(s->next));
+            s->next.c=s->pending;
             s->fade=eq->fade_frames;s->dirty=0;
         }
         double blend=s->fade?1-(double)s->fade/eq->fade_frames:0;
@@ -176,7 +263,7 @@ TsStereoFrame ts_master_eq_process(TsMasterEq *eq,TsStereoFrame input)
         if(!s->fade && !s->dirty && identity_filter(&s->current))eq->active_stages&=~(1u<<i);
     }
     double step=1.0/fmax(1,eq->sample_rate*.02);
-    eq->mix=eq->controls.enabled?fmin(1,eq->mix+step):fmax(0,eq->mix-step);
+    eq->mix=eq->live.enabled?fmin(1,eq->mix+step):fmax(0,eq->mix-step);
     /* Exact dry return after the ramp, with no added delay. Wet filters stay warm. */
     if(eq->mix==0)return input;
     return ts_stereo_frame_sanitize((TsStereoFrame){
@@ -235,4 +322,42 @@ int ts_master_eq_read(TsMasterEqControls *c,const char *key,const char *value)
        !end || value[end] || !isfinite(b.frequency) || !isfinite(b.gain_db) || !isfinite(b.q) ||
        b.type<0 || b.type>=TS_EQ_TYPE_COUNT || (b.enabled!=0 && b.enabled!=1))return -1;
     c->band[n-1]=b;ts_master_eq_sanitize(c);return 1;
+}
+int ts_eq_morph_write(FILE *f,const TsEqMorph *settings)
+{
+    TsEqMorph m=*settings;ts_eq_morph_sanitize(&m);
+    if(fprintf(f,"EqMorph.Captured=%u\nEqMorph.Loop=%d\nEqMorph.Seconds=%.17g\n",m.captured,m.loop,m.seconds)<0)return 0;
+    for(int s=0;s<2;++s) {
+        if(fprintf(f,"EqMorph.%c.Enabled=%d\n",'A'+s,m.state[s].enabled)<0)return 0;
+        for(int i=0;i<TS_MASTER_EQ_BANDS;++i) {
+            TsEqBand b=m.state[s].band[i];
+            if(fprintf(f,"EqMorph.%c.Band.%d=%d,%d,%.9g,%.9g,%.9g\n",'A'+s,i+1,
+                b.enabled,b.type,b.frequency,b.gain_db,b.q)<0)return 0;
+        }
+    }
+    return 1;
+}
+int ts_eq_morph_read(TsEqMorph *m,const char *key,const char *value)
+{
+    if(strncmp(key,"EqMorph.",8))return 0;
+    char extra;int n;
+    if(!strcmp(key,"EqMorph.Captured")) {
+        if(sscanf(value,"%d %c",&n,&extra)!=1 || n<0 || n>3)return -1;
+        m->captured=(unsigned)n;return 1;
+    }
+    if(!strcmp(key,"EqMorph.Loop")) {
+        if(sscanf(value,"%d %c",&n,&extra)!=1 || n<0 || n>1)return -1;
+        m->loop=n;return 1;
+    }
+    if(!strcmp(key,"EqMorph.Seconds")) {
+        double d;
+        if(sscanf(value,"%lf %c",&d,&extra)!=1 || !isfinite(d) || d<TS_EQ_MORPH_MIN_SECONDS || d>TS_EQ_MORPH_MAX_SECONDS)return -1;
+        m->seconds=d;return 1;
+    }
+    if((key[8]=='A' || key[8]=='B') && key[9]=='.' &&
+       (!strcmp(key+10,"Enabled") || !strncmp(key+10,"Band.",5))) {
+        char band_key[64];snprintf(band_key,sizeof(band_key),"MasterEq.%s",key+10);
+        return ts_master_eq_read(&m->state[key[8]-'A'],band_key,value);
+    }
+    return -1;
 }

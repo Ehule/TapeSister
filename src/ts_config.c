@@ -34,6 +34,8 @@ void ts_config_init(TsConfig *config)
         config->fm_bank_count = 16;
         config->master_output_percent = TS_MASTER_OUTPUT_PERCENT_DEFAULT;
         ts_master_eq_default(&config->master_eq);
+        ts_eq_morph_default(&config->eq_morph);
+        config->eq_morph_max_seconds=(int)TS_EQ_MORPH_DEFAULT_MAX_SECONDS;
         ts_compressor_default(&config->compressor);
         ts_spatial_default(&config->spatial);
         ts_router_default(&config->router);
@@ -325,6 +327,14 @@ int ts_config_load(TsConfig *config, const char *path,
             }
         } else if (!strncmp(key,"Compressor.",11)) {
             if(ts_compressor_read(&loaded.compressor,key,value)<0) {fclose(file);set_error(error,error_size,"Invalid compressor");return 0;}
+        } else if (!strcmp(key,"eq_morph_max_seconds")) {
+            if(!parse_clamped_integer(value,1,(int)TS_EQ_MORPH_MAX_SECONDS,&loaded.eq_morph_max_seconds)) {
+                snprintf(error,error_size,"Invalid EQ morph maximum on config line %d",line_number);fclose(file);return 0;
+            }
+        } else if (!strncmp(key,"EqMorph.",8)) {
+            if(ts_eq_morph_read(&loaded.eq_morph,key,value)<0) {
+                snprintf(error,error_size,"Invalid EQ morph on config line %d",line_number);fclose(file);return 0;
+            }
         } else if (!strncmp(key, "MasterEq.", 9)) {
             if (ts_master_eq_read(&loaded.master_eq,key,value)<0) {
                 snprintf(error,error_size,"Invalid master EQ on config line %d",line_number);
@@ -825,7 +835,8 @@ int ts_config_save(const TsConfig *config, const char *path,
                                source) < 0;
     }
     if (!write_failed) write_failed = fprintf(file,"\n[Master EQ]\n") < 0 ||
-        !ts_master_eq_write(file,&config->master_eq);
+        !ts_master_eq_write(file,&config->master_eq) || !ts_eq_morph_write(file,&config->eq_morph) ||
+        fprintf(file,"eq_morph_max_seconds=%d\n",config->eq_morph_max_seconds)<0;
     if(!write_failed)write_failed=!ts_spatial_write(file,&config->spatial);
     if(!write_failed)write_failed=!ts_router_write(file,&config->router);
     if(!write_failed)write_failed=!ts_compressor_write(file,&config->compressor);

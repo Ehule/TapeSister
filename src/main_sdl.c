@@ -692,6 +692,7 @@ static uint64_t paged_project_fingerprint(const TsSamplePages *pages,
     if (sister != NULL) {
         state_hash_bytes(&hash,&sister->mandala,sizeof(sister->mandala));
         state_hash_bytes(&hash,&sister->master_eq.controls,sizeof(sister->master_eq.controls));
+        state_hash_bytes(&hash,&sister->master_eq.morph,sizeof(sister->master_eq.morph));
         state_hash_bytes(&hash,&sister->compressor.controls,sizeof(sister->compressor.controls));
         TsRouterControls saved_router=ts_router_export(&sister->router);
         state_hash_bytes(&hash,&saved_router,sizeof(saved_router));
@@ -4338,6 +4339,7 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
                 ts_spatial_recall(&audio->sister.spatial,&spatial);
                 TsMasterEqControls flat;ts_master_eq_default(&flat);
                 ts_master_eq_set(&audio->sister.master_eq,&flat);
+                TsEqMorph morph;ts_eq_morph_default(&morph);ts_master_eq_morph_set(&audio->sister.master_eq,&morph);
                 TsCompressorControls comp;ts_compressor_default(&comp);ts_compressor_set(&audio->sister.compressor,&comp);
                 ts_mandala_default(&audio->sister.mandala);
                 audio->sister.performance_transport=1;
@@ -8811,10 +8813,12 @@ static void run_pending_file_operation(SDL_AudioDeviceID device,
         const TsInstrument *record_bank = record_bank_active ?
                                           instrument : parked_record;
         TsSisterProjectState sister_state;
+        if(device)SDL_LockAudioDevice(device);
         ts_sister_project_state_capture(
             &sister_state, &audio->sister,
             ts_sample_pages_count(sample_pages), NULL);
         sister_state.keyboard_sequence = ts_keyboard_sequence_export(&audio->keyboard_sequence);
+        if(device)SDL_UnlockAudioDevice(device);
         ok=ts_tapehead_export(&sample_pages->tracker,error,sizeof(error));
         if(ok)ok = ts_sample_pages_save_project(sample_pages, active_sample, record_bank,
                                           &sister_state, pending->path,
@@ -11699,6 +11703,11 @@ static int midi_apply_target(SDL_AudioDeviceID device, AudioState *audio,
     if(router_midi_command(device,audio,ui,target))return 1;
     int slot,eq_band,eq_control;
     TsSisterUiHit hit;
+    if(!strcmp(target,"main.eq.bypass") || master_eq_midi_band(target,&eq_band,&eq_control)) {
+        if(device)SDL_LockAudioDevice(device);
+        master_eq_snapshot(audio,ui);
+        if(device)SDL_UnlockAudioDevice(device);
+    }
     if(!strcmp(target,"main.eq.bypass")) {
         ui->config.master_eq.enabled=!ui->config.master_eq.enabled;master_eq_commit(device,audio,ui);return 1;
     }
@@ -13661,6 +13670,7 @@ int main(int argc, char **argv)
     ts_sister_runtime_set_master_output_gain(
         &audio.sister, (float)ui.config.master_output_percent / 100.0f);
     ts_master_eq_set(&audio.sister.master_eq,&ui.config.master_eq);
+    ts_master_eq_morph_set(&audio.sister.master_eq,&ui.config.eq_morph);
     ts_compressor_set(&audio.sister.compressor,&ui.config.compressor);
     ts_spatial_recall(&audio.sister.spatial,&ui.config.spatial);
     ts_sister_runtime_set_router(&audio.sister,&ui.config.router);
@@ -17956,6 +17966,7 @@ int main(int argc, char **argv)
             }
         }
         spatial_capture(&audio,&ui);
+        master_eq_snapshot(&audio,&ui);
         ts_audio_health_capture_setup(&audio, &ui, health_setup_now);
         /* Read the frozen Matrix pair and its position together while the
            existing voice/UI lock owns the audio state. No drawing happens here. */
@@ -18030,7 +18041,6 @@ int main(int argc, char **argv)
                 ui.master_output.clip[channel] =
                     routing.output_clip[channel];
             }
-            ui.config.master_eq = audio.sister.master_eq.controls;
             ui.config.compressor=audio.sister.compressor.controls;
             ui.config.matrix=audio.sister.matrix.controls;
             ui.config.router = routing.router_saved;

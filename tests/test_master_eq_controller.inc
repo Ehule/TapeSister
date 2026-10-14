@@ -32,6 +32,72 @@ static void eq_preset_controls(void)
     ui.midi_learn_active=0;
     ts_master_eq_default(&ui.config.master_eq);master_eq_commit(device,&audio,&ui);
 }
+static void eq_morph_controller(void)
+{
+    reset_route(0);master_eq_open(device,&audio,&ui);
+    TsEqMorph empty;ts_eq_morph_default(&empty);ts_master_eq_morph_set(&audio.sister.master_eq,&empty);
+    eq_click(465,236,SDL_BUTTON_LEFT);assert(!audio.sister.master_eq.morph_running);
+    TsMasterEqControls c;ts_master_eq_default(&c);c.enabled=1;
+    c.band[0]=(TsEqBand){1,TS_EQ_LOW_PASS,200,0,.70710678f};
+    ui.config.master_eq=c;master_eq_commit(device,&audio,&ui);
+    eq_click(45,236,SDL_BUTTON_LEFT);
+    assert(audio.sister.master_eq.morph.captured==1);
+    c.band[0].frequency=12800;c.band[3].gain_db=-6;
+    ui.config.master_eq=c;master_eq_commit(device,&audio,&ui);
+    eq_click(140,236,SDL_BUTTON_LEFT);assert(audio.sister.master_eq.morph.captured==3);
+    eq_click(98,236,SDL_BUTTON_LEFT);assert(ui.config.master_eq.band[0].frequency==200);
+    eq_click(194,236,SDL_BUTTON_LEFT);assert(ui.config.master_eq.band[0].frequency==12800);
+    ui.config.eq_morph_max_seconds=14400;
+    eq_click(361,236,SDL_BUTTON_LEFT);assert(ui.config.eq_morph.seconds>13000);
+    ui.config.eq_morph_max_seconds=240;
+    audio.sister.master_eq.morph.seconds=.1;
+    eq_click(400,236,SDL_BUTTON_LEFT);assert(ui.config.eq_morph.loop);
+    eq_click(465,236,SDL_BUTTON_LEFT);assert(audio.sister.master_eq.morph_running);
+    uint64_t saved=paged_project_state_hash(NULL,&instrument,NULL,&audio.sister,&audio.keyboard_sequence);
+    /* Clock advances through the real native callback with the panel hidden. */
+    ui.master_eq_open=0;
+    float out[512];for(int i=0;i<25;++i)audio_callback(&audio,(Uint8 *)out,sizeof(out));
+    assert(audio.sister.master_eq.morph_reverse && audio.sister.master_eq.morph_running);
+    assert(saved==paged_project_state_hash(NULL,&instrument,NULL,&audio.sister,&audio.keyboard_sequence));
+    TsMatrixControls previous_graph=audio.sister.matrix.controls,graph;
+    ts_matrix_default(&graph);graph.enabled=1;
+    ts_matrix_set(&audio.sister.matrix,&graph,44100);
+    uint64_t clock=audio.sister.master_eq.morph_frames;
+    audio_callback(&audio,(Uint8 *)out,sizeof(out));
+    assert(audio.sister.master_eq.morph_frames==clock+256); /* Exactly one tick per matrix frame. */
+    ts_matrix_set(&audio.sister.matrix,&previous_graph,44100);
+    master_eq_open(device,&audio,&ui);
+    eq_click(540,236,SDL_BUTTON_LEFT);assert(!audio.sister.master_eq.morph_running);
+    TsMasterEqControls frozen=ui.config.master_eq;
+    audio_callback(&audio,(Uint8 *)out,sizeof(out));
+    assert(!memcmp(&frozen,&audio.sister.master_eq.live,sizeof(frozen)));
+    eq_click(465,236,SDL_BUTTON_LEFT);
+    /* Ordinary curve edits take over, and never overwrite the saved pair. */
+    TsEqMorph pair=audio.sister.master_eq.morph;
+    eq_click(100,310,SDL_BUTTON_LEFT);assert(!audio.sister.master_eq.morph_running);
+    assert(!memcmp(&pair,&audio.sister.master_eq.morph,sizeof(pair)));
+    ui.midi_learn_active=1;eq_click(465,236,SDL_BUTTON_LEFT);
+    assert(!audio.sister.master_eq.morph_running);ui.midi_learn_active=0;
+    eq_click(465,236,SDL_BUTTON_LEFT);
+    assert(midi_apply_target(device,&audio,&ui,&instrument,&eq_panel,NULL,NULL,"main.eq.band.2.1",.7f,44100,2));
+    assert(!audio.sister.master_eq.morph_running);
+    /* Two-times scaling reaches the same compact controls. */
+    SDL_SetWindowSize(window,1280,800);
+    eq_click(196,472,SDL_BUTTON_LEFT);assert(ui.config.master_eq.band[0].frequency==200);
+    SDL_SetWindowSize(window,640,400);
+    const char *shot=getenv("TS_TEST_EQ_MORPH_PPM");
+    if(shot) {
+        audio.sister.master_eq.morph.seconds=240;
+        eq_click(465,236,SDL_BUTTON_LEFT);
+        /* Render the actual native UI from a live midpoint snapshot. */
+        audio.sister.master_eq.morph_frames=(uint64_t)(audio.sister.master_eq.morph_total_frames*.4);
+        audio_callback(&audio,(Uint8 *)out,sizeof(out));master_eq_snapshot(&audio,&ui);
+        ui.master_eq_band=0;
+        static TsFramebuffer fb;ts_ui_render(&fb,&ui,&instrument);assert(ts_ui_write_ppm(&fb,shot));
+    }
+    ts_master_eq_morph_set(&audio.sister.master_eq,&empty);
+    ts_master_eq_default(&ui.config.master_eq);master_eq_commit(device,&audio,&ui);
+}
 static void test_master_eq_controller(void)
 {
     ts_sister_ui_model_init(&eq_panel.model,&ui.config);
@@ -41,6 +107,7 @@ static void test_master_eq_controller(void)
     assert(ui.master_eq_open);
     assert(audio.sister.limiter.enabled==lim);
     eq_preset_controls();
+    eq_morph_controller();
     eq_click(412,55,SDL_BUTTON_LEFT);assert(audio.sister.master_eq.controls.enabled);
     uint64_t hash=paged_project_state_hash(NULL,&instrument,NULL,&audio.sister,&audio.keyboard_sequence);
     eq_click(330,311,SDL_BUTTON_LEFT);
@@ -87,11 +154,11 @@ static void test_master_eq_controller(void)
     int nx=44+(int)lrintf(552*ts_master_eq_normalized(&ui.config.master_eq.band[0],0,44100));
     SDL_SetWindowSize(window,1280,800);
     SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=SDL_GetWindowID(window);
-    e.button.button=SDL_BUTTON_LEFT;e.button.x=nx*2;e.button.y=310;
+    e.button.button=SDL_BUTTON_LEFT;e.button.x=nx*2;e.button.y=280;
     assert(master_eq_event(&e,window,device,&audio,&ui,&eq_panel));assert(ui.master_eq_drag==4);
     float old_hz=ui.config.master_eq.band[0].frequency;
     e.type=SDL_MOUSEMOTION;e.motion.windowID=SDL_GetWindowID(window);e.motion.state=SDL_BUTTON_LMASK;
-    e.motion.x=nx*2+100;e.motion.y=274;e.motion.xrel=100;e.motion.yrel=-36;
+    e.motion.x=nx*2+100;e.motion.y=252;e.motion.xrel=100;e.motion.yrel=-28;
     assert(master_eq_event(&e,window,device,&audio,&ui,&eq_panel));
     assert(ui.config.master_eq.band[0].frequency>old_hz && fabs(ui.config.master_eq.band[0].gain_db-4)<.01);
     e.type=SDL_MOUSEBUTTONUP;e.button.windowID=SDL_GetWindowID(window);e.button.button=SDL_BUTTON_LEFT;

@@ -510,6 +510,9 @@ typedef struct {
     int master_eq_open, master_eq_band, master_eq_drag, master_eq_reset_pending;
     unsigned master_eq_rate;
     int master_eq_presets_open, master_eq_spectrum_off;
+    int eq_morph_running, eq_morph_reverse;
+    double eq_morph_position;
+    double eq_morph_drag_max;
     uint32_t master_eq_spectrum_tick;
     TsEqSpectrumView master_eq_spectrum;
     int router_open, router_drag, router_drop, router_transition;
