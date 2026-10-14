@@ -23,6 +23,15 @@ int ts_source_route_valid(const TsSourceRoute *r, int inherit)
 TsSourceRoute ts_source_route_resolve(TsSourceRoute tile, TsSourceRoute track)
 { return track.mode==TS_SOURCE_INHERIT?tile:track; }
 
+static void route_active(TsSourceRouteVoice *v,int target)
+{
+    v->mask=0;v->active_count=0;
+    for(int i=0;i<TS_SOURCE_COEFFICIENTS;++i)
+        if(v->matrix[i][0] || v->matrix[i][1] || (target && (v->target[i][0] || v->target[i][1]))) {
+            v->active[v->active_count++]=(unsigned char)i;
+            if(i<TS_SOURCE_SPEAKERS)v->mask|=1u<<i;
+        }
+}
 void ts_source_route_set(TsSourceRouteVoice *v, TsSourceRoute r, unsigned rate)
 {
     if(!ts_source_route_valid(&r,0))r=(TsSourceRoute){0};
@@ -73,9 +82,7 @@ void ts_source_route_set(TsSourceRouteVoice *v, TsSourceRoute r, unsigned rate)
         memcpy(v->main_matrix,v->target_main_matrix,sizeof(v->main_matrix));
         v->remaining=0;v->ready=1;
     } else v->remaining=rate/200?rate/200:1;
-    v->mask=0;
-    for(int i=0;i<TS_SOURCE_COEFFICIENTS;++i)
-        if(v->matrix[i][0] || v->matrix[i][1] || v->target[i][0] || v->target[i][1])v->mask|=UINT64_C(1)<<i;
+    route_active(v,1);
 }
 
 static TsStereoFrame main_frame(const TsSourceRouteVoice *v,TsStereoFrame in)
@@ -89,7 +96,7 @@ TsStereoFrame ts_source_route_frame(TsSourceRouteVoice *v, TsStereoFrame in, TsS
     float source=fmaxf(fabsf(in.l),fabsf(in.r));
     if(isfinite(source) && source>v->activity_source)v->activity_source=source;
     if(!clean || !v->ready)return in;
-    if(!v->mask && !v->remaining) {
+    if(!v->active_count && !v->remaining) {
         TsStereoFrame main=main_frame(v,in);
         float sent=fmaxf(fabsf(main.l),fabsf(main.r));
         if(isfinite(sent) && sent>v->activity_send)v->activity_send=sent;
@@ -101,13 +108,13 @@ TsStereoFrame ts_source_route_frame(TsSourceRouteVoice *v, TsStereoFrame in, TsS
         float step=1.f/v->remaining;
         v->main+=(v->target_main-v->main)*step;
         for(int i=0;i<4;++i)v->main_matrix[i]+=(v->target_main_matrix[i]-v->main_matrix[i])*step;
-        for(int i=0;i<TS_SOURCE_COEFFICIENTS;++i)if(v->mask&(UINT64_C(1)<<i))
+        for(unsigned at=0;at<v->active_count;++at) {int i=v->active[at];
             for(int j=0;j<2;++j)v->matrix[i][j]+=(v->target[i][j]-v->matrix[i][j])*step;
+        }
         if(!--v->remaining) {
             v->main=v->target_main;memcpy(v->matrix,v->target,sizeof(v->matrix));
             memcpy(v->main_matrix,v->target_main_matrix,sizeof(v->main_matrix));
-            v->mask=0;for(int i=0;i<TS_SOURCE_COEFFICIENTS;++i)
-                if(v->matrix[i][0] || v->matrix[i][1])v->mask|=UINT64_C(1)<<i;
+            route_active(v,0);
         }
     }
     unsigned missing=clean->check_outputs?(v->mask&65535u)&~clean->available:0;
@@ -118,7 +125,8 @@ TsStereoFrame ts_source_route_frame(TsSourceRouteVoice *v, TsStereoFrame in, TsS
        before clean/send levels. This residual is never mixed into playback. */
     clean->reference.l+=in.l-main.l;clean->reference.r+=in.r-main.r;
     clean->tape_input.l+=in.l*(1-v->main);clean->tape_input.r+=in.r*(1-v->main);
-    for(int i=0;i<TS_SOURCE_COEFFICIENTS;++i)if(v->mask&(UINT64_C(1)<<i)) {
+    for(unsigned at=0;at<v->active_count;++at) {
+        int i=v->active[at];
         float value=in.l*v->matrix[i][0]+in.r*v->matrix[i][1];
         if(isfinite(value) && fabsf(value)>v->activity_send)v->activity_send=fabsf(value);
         if(i<16) {if(!missing){clean->speaker[i]+=value;if(v->route.mix_enabled)clean->matrix_speaker[i]+=value;}}
@@ -129,7 +137,7 @@ TsStereoFrame ts_source_route_frame(TsSourceRouteVoice *v, TsStereoFrame in, TsS
         else if(i>=TS_SOURCE_GRAPH_OFFSET) {
             int d=(i-TS_SOURCE_GRAPH_OFFSET)/2;
             if(i&1)clean->graph[d].r+=value;else clean->graph[d].l+=value;
-            clean->graph_mask|=1u<<d;
+            clean->graph_mask|=UINT64_C(1)<<d;
         } else {
             int bus=(i-18)/2;
             if(i&1)clean->send[bus].r+=value;else clean->send[bus].l+=value;
@@ -143,7 +151,7 @@ void ts_source_route_add(TsSourceRouteMix *to, const TsSourceRouteMix *from, flo
 {
     if(!to || !from || (!from->graph_mask && !from->mask && !from->send_mask && !from->reference.l && !from->reference.r &&
                        !from->tape_input.l && !from->tape_input.r))return;
-    for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)if(from->graph_mask&(1u<<d)) {
+    for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)if(from->graph_mask&(UINT64_C(1)<<d)) {
         to->graph[d].l+=from->graph[d].l*gain;to->graph[d].r+=from->graph[d].r*gain;
     }
     to->graph_mask|=from->graph_mask;

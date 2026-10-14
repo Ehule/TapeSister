@@ -8,7 +8,8 @@ static int failures;
 
 int main(void)
 {
-    TsSisterRuntime runtime;
+    /* Keep the large runtime fixture off the default Windows test stack. */
+    static TsSisterRuntime runtime;
     TsInstrument instrument;
     char error[160];
     CHECK(sister_test_make_tiles(&instrument, 1, 2, 1000u, 32u));

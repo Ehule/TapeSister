@@ -142,7 +142,8 @@ static void persistence(void)
     assert(ts_config_save(&config,"test-router-perf.ini",error,sizeof(error)));
     assert(ts_config_load(&loaded,"test-router-perf.ini",error,sizeof(error)));
     assert(!memcmp(&config.router_performance,&loaded.router_performance,sizeof(r.performance)));
-    TsSisterRuntime runtime;ts_sister_runtime_init(&runtime);ts_sister_runtime_set_router(&runtime,&r.controls);
+    /* Keep the large runtime fixture off the default Windows test stack. */
+    static TsSisterRuntime runtime;ts_sister_runtime_init(&runtime);ts_sister_runtime_set_router(&runtime,&r.controls);
     ts_router_performance_set(&runtime.router,&r.performance);ts_router_timer_start(&runtime.router,0,TS_ROUTER_TIMER_SOLO);
     TsSisterProjectState state,read;ts_sister_project_state_capture(&state,&runtime,1,NULL);
     assert(state.router.solo==0); /* Temporary solo must never become permanent on save. */

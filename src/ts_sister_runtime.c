@@ -597,6 +597,7 @@ void ts_sister_runtime_init(TsSisterRuntime *runtime)
     ts_eq_spectrum_init(&runtime->eq_spectrum);
     ts_router_init(&runtime->router);
     ts_mandala_default(&runtime->mandala);
+    ts_matrix_effects_init(&runtime->matrix_effects);
     ts_matrix_init(&runtime->matrix);ts_matrix_layout_default(&runtime->matrix_layout);runtime->performance_transport=1;
     ts_performance_mixer_default(&runtime->performance_mixer);
     for(int i=0;i<4;++i)runtime->performance_gain_current[i]=1;
@@ -636,6 +637,7 @@ void ts_sister_runtime_init(TsSisterRuntime *runtime)
 void ts_sister_runtime_free(TsSisterRuntime *runtime)
 {
     if (runtime == NULL) return;
+    ts_matrix_effects_free(&runtime->matrix_effects);
     ts_insert_free(&runtime->insert);
     ts_spatial_free(&runtime->spatial);
     ts_prism_free(&runtime->prism);
@@ -685,6 +687,10 @@ int ts_sister_runtime_enable(TsSisterRuntime *runtime, uint32_t sample_rate,
     ts_master_eq_prepare(&runtime->master_eq, sample_rate);
     ts_compressor_prepare(&runtime->compressor,sample_rate);
     ts_router_prepare(&runtime->router, sample_rate);
+    if(sample_rate && runtime->matrix_effects.rate!=sample_rate &&
+       !ts_matrix_effects_restore(&runtime->matrix_effects,&runtime->matrix.controls,sample_rate)) {
+        runtime_error(error,error_size,"Could not allocate Matrix effect instances");return 0;
+    }
     ts_matrix_set(&runtime->matrix,&runtime->matrix.controls,sample_rate);
     ts_insert_prepare(&runtime->insert, sample_rate);
     memset(&machine, 0, sizeof(machine));
@@ -858,6 +864,10 @@ int ts_sister_runtime_reconfigure(TsSisterRuntime *runtime,
     ts_master_eq_prepare(&runtime->master_eq, sample_rate);
     ts_compressor_prepare(&runtime->compressor,sample_rate);
     ts_router_prepare(&runtime->router, sample_rate);
+    if(sample_rate && runtime->matrix_effects.rate!=sample_rate &&
+       !ts_matrix_effects_restore(&runtime->matrix_effects,&runtime->matrix.controls,sample_rate)) {
+        runtime_error(error,error_size,"Could not allocate Matrix effect instances");return 0;
+    }
     ts_matrix_set(&runtime->matrix,&runtime->matrix.controls,sample_rate);
     ts_insert_prepare(&runtime->insert, sample_rate);
     if (!runtime->enabled) {
@@ -1422,6 +1432,7 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
     float route_energy = 0.0f;
     frame.dry_monitor_gain = 1.0f;
     if (runtime == NULL) return frame;
+    ts_matrix_effects_tick(&runtime->matrix_effects);
     if (sources != NULL) source = *sources;
     source.tiles = ts_stereo_frame_sanitize(source.tiles);
     source.fm = ts_stereo_frame_sanitize(source.fm);

@@ -34,7 +34,8 @@ static void record_frames(TsSisterRuntime *runtime, int frames,
 
 int main(void)
 {
-    TsSisterRuntime runtime;
+    /* Keep the large runtime fixture off the default Windows test stack. */
+    static TsSisterRuntime runtime;
     TsInstrument instrument;
     TsSisterRoutingSnapshot snapshot;
     char error[160];

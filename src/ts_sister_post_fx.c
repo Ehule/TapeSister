@@ -674,14 +674,14 @@ int ts_sister_post_fx_init(TsSisterPostFxEngine *engine,
     if (engine == NULL || sample_rate < 1000u || sample_rate > 384000u)
         return 0;
     memset(&next, 0, sizeof(next));
-    next.sample_rate = sample_rate;
-    next.smooth_12ms = 1.0f - expf(-1.0f / (12.0f * 0.001f * (float)sample_rate));
-    next.smooth_18ms = 1.0f - expf(-1.0f / (18.0f * 0.001f * (float)sample_rate));
-    next.smooth_20ms = 1.0f - expf(-1.0f / (20.0f * 0.001f * (float)sample_rate));
-    next.smooth_24ms = 1.0f - expf(-1.0f / (24.0f * 0.001f * (float)sample_rate));
-    next.smooth_30ms = 1.0f - expf(-1.0f / (30.0f * 0.001f * (float)sample_rate));
-    next.smooth_35ms = 1.0f - expf(-1.0f / (35.0f * 0.001f * (float)sample_rate));
-    next.smooth_55ms = 1.0f - expf(-1.0f / (55.0f * 0.001f * (float)sample_rate));
+    next.sample_rate = sample_rate;next.timing.sample_rate=sample_rate;
+    next.timing.smooth_12ms = 1.0f - expf(-1.0f / (12.0f * 0.001f * (float)sample_rate));
+    next.timing.smooth_18ms = 1.0f - expf(-1.0f / (18.0f * 0.001f * (float)sample_rate));
+    next.timing.smooth_20ms = 1.0f - expf(-1.0f / (20.0f * 0.001f * (float)sample_rate));
+    next.timing.smooth_24ms = 1.0f - expf(-1.0f / (24.0f * 0.001f * (float)sample_rate));
+    next.timing.smooth_30ms = 1.0f - expf(-1.0f / (30.0f * 0.001f * (float)sample_rate));
+    next.timing.smooth_35ms = 1.0f - expf(-1.0f / (35.0f * 0.001f * (float)sample_rate));
+    next.timing.smooth_55ms = 1.0f - expf(-1.0f / (55.0f * 0.001f * (float)sample_rate));
     ts_sister_fx_controls_default(&next.controls);
     next.transition_frames = (uint32_t)fmaxf(1.0f,
         ts_sister_fx_transition_ms(next.controls.transition) * (float)sample_rate / 1000.0f);
@@ -889,7 +889,7 @@ void ts_sister_post_fx_sync_controls(TsSisterPostFxEngine *engine,
     }
 }
 
-static TsStereoFrame distortion_process(TsSisterPostFxEngine *engine,
+static TsStereoFrame distortion_process(const TsSisterFxTiming *engine,
                                         TsSisterDistortionState *state,
                                         const TsSisterFxSlotControls *control,
                                         TsStereoFrame input, float gate, float *direct)
@@ -949,7 +949,7 @@ static TsStereoFrame distortion_process(TsSisterPostFxEngine *engine,
         &state->mix_cache,state->gain_current,active,0,direct);
 }
 
-static TsStereoFrame grain_process(TsSisterPostFxEngine *engine,
+static TsStereoFrame grain_process(const TsSisterFxTiming *engine,
                                    TsSisterGrainState *state,
                                    const TsSisterFxSlotControls *control,
                                    TsStereoFrame input, float gate, float *direct)
@@ -1042,7 +1042,7 @@ static TsStereoFrame grain_process(TsSisterPostFxEngine *engine,
         &state->mix_cache,state->gain_current,active,0,direct);
 }
 
-static TsStereoFrame delay_process(TsSisterPostFxEngine *engine,
+static TsStereoFrame delay_process(const TsSisterFxTiming *engine,
                                    TsSisterDelayState *state,
                                    const TsSisterFxSlotControls *control,
                                    TsStereoFrame input, float gate, float *direct)
@@ -1194,7 +1194,7 @@ static TsStereoFrame delay_process(TsSisterPostFxEngine *engine,
         &state->mix_cache,state->gain_current,active,0,direct);
 }
 
-static TsStereoFrame reverb_process(TsSisterPostFxEngine *engine,
+static TsStereoFrame reverb_process(const TsSisterFxTiming *engine,
                                     TsSisterReverbState *state,
                                     const TsSisterFxSlotControls *control,
                                     TsStereoFrame input, float gate, float *direct)
@@ -1361,7 +1361,7 @@ static TsStereoFrame reverb_process(TsSisterPostFxEngine *engine,
         &state->mix_cache,state->gain_current,active,1,direct);
 }
 
-static TsStereoFrame transient_process(TsSisterPostFxEngine *engine,
+static TsStereoFrame transient_process(const TsSisterFxTiming *engine,
     TsSisterTransientState *state, const TsSisterFxSlotControls *control,
     TsStereoFrame input, float gate, float *direct)
 {
@@ -1398,19 +1398,19 @@ static TsStereoFrame slot_effect_process(TsSisterPostFxEngine *engine,
         return input;
     switch (control->type) {
     case TS_SISTER_FX_REVERB:
-        return reverb_process(engine, &engine->reverb[slot][location],
+        return reverb_process(&engine->timing, &engine->reverb[slot][location],
                               control, input, gate, direct);
     case TS_SISTER_FX_DELAY:
-        return delay_process(engine, &engine->delay[slot][location],
+        return delay_process(&engine->timing, &engine->delay[slot][location],
                              control, input, gate, direct);
     case TS_SISTER_FX_DISTORTION:
-        return distortion_process(engine,
+        return distortion_process(&engine->timing,
             &engine->distortion[slot][location], control, input, gate, direct);
     case TS_SISTER_FX_TRANSIENT:
-        return transient_process(engine, &engine->transient[slot][location],
+        return transient_process(&engine->timing, &engine->transient[slot][location],
                                  control, input, gate, direct);
     case TS_SISTER_FX_GRAIN:
-        return grain_process(engine, &engine->grain[slot][location],
+        return grain_process(&engine->timing, &engine->grain[slot][location],
                              control, input, gate, direct);
     default:
         return input;
@@ -1654,4 +1654,77 @@ size_t ts_sister_post_fx_memory_bytes(const TsSisterPostFxEngine *engine)
                          2u * sizeof(float);
         }
     return bytes;
+}
+
+/* Standalone Matrix nodes call the same DSP kernels as pedalboard slots. */
+struct TsSisterSingleFx {
+    TsSisterFxTiming timing;
+    TsSisterFxSlotControls controls;
+    union {
+        TsSisterReverbState reverb;
+        TsSisterDelayState delay;
+        TsSisterDistortionState distortion;
+        TsSisterGrainState grain;
+        TsSisterTransientState transient;
+    } state;
+};
+TsSisterSingleFx *ts_sister_single_fx_new(TsSisterFxType type,unsigned rate,uint32_t seed)
+{
+    if(type<=TS_SISTER_FX_EMPTY || type>=TS_SISTER_FX_TYPE_COUNT || rate<1000 || rate>384000)return NULL;
+    TsSisterSingleFx *f=calloc(1,sizeof(*f));if(!f)return NULL;
+    f->timing.sample_rate=rate;
+#define FX_SMOOTH(n) f->timing.smooth_##n##ms=1-expf(-1.f/(.001f*(n)*rate))
+    FX_SMOOTH(12);FX_SMOOTH(18);FX_SMOOTH(20);FX_SMOOTH(24);
+    FX_SMOOTH(30);FX_SMOOTH(35);FX_SMOOTH(55);
+#undef FX_SMOOTH
+    f->controls=(TsSisterFxSlotControls){type,1,TS_SISTER_FX_PLACE_POST,0,.5f,.5f,.5f,1};
+    int ok=1;
+    switch(type) {
+    case TS_SISTER_FX_REVERB:ok=reverb_init(&f->state.reverb,rate);break;
+    case TS_SISTER_FX_DELAY:ok=delay_init_state(&f->state.delay,rate);break;
+    case TS_SISTER_FX_GRAIN:ok=grain_init_state(&f->state.grain,rate,seed);break;
+    case TS_SISTER_FX_DISTORTION:
+        f->state.distortion.drive_current=.25f;f->state.distortion.tone_current=.55f;
+        f->state.distortion.gain_current=f->state.distortion.gain_target=1;break;
+    case TS_SISTER_FX_TRANSIENT:
+        ts_transient_init(&f->state.transient.dsp,rate);f->state.transient.response_cached=.5f;
+        f->state.transient.gain_current=f->state.transient.gain_target=1;break;
+    default:ok=0;break;
+    }
+    if(!ok){ts_sister_single_fx_free(f);return NULL;}return f;
+}
+void ts_sister_single_fx_free(TsSisterSingleFx *f)
+{
+    if(!f)return;
+    if(f->controls.type==TS_SISTER_FX_REVERB)reverb_free(&f->state.reverb);
+    if(f->controls.type==TS_SISTER_FX_DELAY)free(f->state.delay.data);
+    if(f->controls.type==TS_SISTER_FX_GRAIN)free(f->state.grain.data);
+    free(f);
+}
+void ts_sister_single_fx_set(TsSisterSingleFx *f,const TsSisterFxSlotControls *c)
+{
+    if(!f || !c || c->type!=f->controls.type)return;
+    f->controls=*c;f->controls.gain_db=clampf(c->gain_db,-12,12);
+    f->controls.parameter_a=clampf(c->parameter_a,0,1);f->controls.parameter_b=clampf(c->parameter_b,0,1);
+    f->controls.parameter_c=clampf(c->parameter_c,0,1);f->controls.mix=clampf(c->mix,0,1);
+}
+TsStereoFrame ts_sister_single_fx_process(TsSisterSingleFx *f,TsStereoFrame input,float gate)
+{
+    if(!f)return input;float direct=1;
+    switch(f->controls.type) {
+    case TS_SISTER_FX_REVERB:return reverb_process(&f->timing,&f->state.reverb,&f->controls,input,gate,&direct);
+    case TS_SISTER_FX_DELAY:return delay_process(&f->timing,&f->state.delay,&f->controls,input,gate,&direct);
+    case TS_SISTER_FX_DISTORTION:return distortion_process(&f->timing,&f->state.distortion,&f->controls,input,gate,&direct);
+    case TS_SISTER_FX_GRAIN:return grain_process(&f->timing,&f->state.grain,&f->controls,input,gate,&direct);
+    case TS_SISTER_FX_TRANSIENT:return transient_process(&f->timing,&f->state.transient,&f->controls,input,gate,&direct);
+    default:return input;
+    }
+}
+size_t ts_sister_single_fx_memory(const TsSisterSingleFx *f)
+{
+    if(!f)return 0;size_t n=sizeof(*f);
+    if(f->controls.type==TS_SISTER_FX_REVERB)for(int i=0;i<TS_SISTER_REVERB_LINES;++i)n+=f->state.reverb.line[i].capacity_frames*2*sizeof(float);
+    if(f->controls.type==TS_SISTER_FX_DELAY)n+=f->state.delay.capacity_frames*2*sizeof(float);
+    if(f->controls.type==TS_SISTER_FX_GRAIN)n+=f->state.grain.capacity_frames*2*sizeof(float);
+    return n;
 }

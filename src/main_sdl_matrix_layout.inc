@@ -2,7 +2,7 @@
    control thread; unknown/new sources append after the saved custom order. */
 _Static_assert(MATRIX_CAPACITY==TS_MATRIX_LAYOUT_ROWS,"Matrix layout must hold every source");
 static uint64_t mx_row_id(MatrixRow r)
-{return r.kind==1 || r.kind==3?r.tile:(uint64_t)r.index;}
+{return r.kind==1 || r.kind==3 || r.kind==4?r.tile:(uint64_t)r.index;}
 static int mx_identity_compare(const void *a,const void *b)
 {
     const MatrixRow *x=a,*y=b;
@@ -51,14 +51,23 @@ static void mx_layout_rows(void)
     for(int i=0;i<w->count;++i)if(mx_filter_row(w->rows[i],w->filter))w->rows[count++]=w->rows[i];
     w->count=count;
 }
+static void mx_columns(void)
+{
+    MatrixWindow *w=&matrix_window;w->column_count=0;
+    for(int i=0;i<TS_MATRIX_DESTINATIONS;++i) {
+        int d=w->layout?w->layout->column[i]:i;
+        if(ts_matrix_destination_active(&w->controls,d))w->columns[w->column_count++]=d;
+    }
+    w->column=SDL_clamp(w->column,0,SDL_max(0,w->column_count-MATRIX_COLS));
+    if(!ts_matrix_destination_active(&w->controls,w->destination))w->destination=TS_MATRIX_MAIN;
+}
 static int mx_column(int position)
 {
-    if(position<0 || position>=TS_MATRIX_DESTINATIONS)return -1;
-    return matrix_window.layout?matrix_window.layout->column[position]:position;
+    return position>=0 && position<matrix_window.column_count?matrix_window.columns[position]:-1;
 }
 static int mx_column_position(int destination)
 {
-    for(int i=0;i<TS_MATRIX_DESTINATIONS;++i)if(mx_column(i)==destination)return i;
+    for(int i=0;i<matrix_window.column_count;++i)if(mx_column(i)==destination)return i;
     return 0;
 }
 static void mx_reveal_column(int destination)
@@ -106,8 +115,12 @@ static void mx_layout_move(SDL_Keycode key,TsSamplePages *pages,TsInstrument *ba
         snprintf(w->status,sizeof(w->status),"MOVED %.32s %s. ROUTING UNCHANGED. CTRL+Z TO UNDO.",row.name,key==SDLK_UP?"UP":"DOWN");
     } else if(w->layout_focus==2 && (key==SDLK_LEFT || key==SDLK_RIGHT)) {
         int at=mx_column_position(w->destination),to=at+(key==SDLK_LEFT?-1:1);
-        if(to<0 || to>=TS_MATRIX_DESTINATIONS)return;
-        unsigned char other=l->column[to];l->column[to]=l->column[at];l->column[at]=other;
+        if(to<0 || to>=w->column_count)return;
+        int a=-1,b=-1;
+        for(int i=0;i<TS_MATRIX_DESTINATIONS;++i){if(l->column[i]==mx_column(at))a=i;if(l->column[i]==mx_column(to))b=i;}
+        if(a<0 || b<0)return;
+        unsigned char other=l->column[b];l->column[b]=l->column[a];l->column[a]=other;
+        mx_columns();
         mx_reveal_column(w->destination);
         snprintf(w->status,sizeof(w->status),"MOVED DESTINATION %s. ROUTING UNCHANGED. CTRL+Z TO UNDO.",key==SDLK_LEFT?"LEFT":"RIGHT");
     } else snprintf(w->status,sizeof(w->status),"CLICK A ROW LABEL: SHIFT+UP/DOWN. CLICK A COLUMN HEADER: SHIFT+LEFT/RIGHT.");

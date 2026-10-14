@@ -216,6 +216,14 @@ Link, external inputs and shared processors can feed processors or physical outp
 New configurations use **Main Mix → EQ → limiter → OUT 1/2**; inputs/effect sends
 start disconnected. Track routes take precedence; **Use Tile** enables inheritance.
 
+**Add Effect +** creates independent Reverb, Delay, Distortion, Grain, Transient,
+or Compressor instances, up to 16 added nodes alongside the five-slot pedalboard.
+Patch their input columns and output rows into chains or parallel paths. Each
+compressor has its own sidechain column. Click an instance row for its controls;
+**Back to Routes** returns to connection editing. Removal clears its connections
+and can be undone. Shift+arrows reorder rows and columns without changing audio.
+[Instance controls and headless stress tests](docs/ROUTING_MATRIX.md#independent-effect-instances).
+
 Subtle activity marks show source, destination and connection signals with a gentle
 fade. Wheel over Level or Row Pan to adjust; Shift makes finer changes. Right-click
 resets Level to 0 dB and Pan to center. Middle-click IN/OUT names to label hardware;
@@ -228,7 +236,7 @@ to the initial routing.
 
 **MATRIX LIVE** is status only. Use Original / Edited for A/B listening; Restore
 replaces your changes with the starting routing and can be undone. It is not a state sequencer.
-One shared instance of each processor handles its summed inputs. WET rows need
+Each processor column sums its incoming sources. WET rows need
 an explicit dry route; imported MIX rows keep their saved dry/wet balance. Whole-mix hardware processing uses Main → output pair → hardware
 → input pair → EQ/limiter, without legacy Insert assignment. The matrix addresses
 pairs on the active device, not aggregated independent output devices.
