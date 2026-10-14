@@ -5,6 +5,7 @@ struct MatrixSnapshot {
     TsMatrixControls controls;TsRouterControls router;TsSpatialControls spatial;
     TsCompressorControls compressor;
     TsInsertControls insert;uint16_t sources;int count;
+    TsMatrixLayout layout;
     MatrixSavedRoute routes[];
 };
 static void mx_refresh_tracker(TsSamplePages *pages,TsInstrument *bank)
@@ -20,6 +21,7 @@ static MatrixSnapshot *mx_snapshot(SDL_AudioDeviceID device,AudioState *audio,Ts
     if(device)SDL_LockAudioDevice(device);
     s->controls=audio->sister.matrix.controls;s->router=audio->sister.router.controls;s->spatial=audio->sister.spatial.controls;
     s->compressor=audio->sister.compressor.controls;
+    s->layout=audio->sister.matrix_layout;
     s->insert=audio->sister.insert.controls;s->sources=audio->sister.source_switches;
     if(device)SDL_UnlockAudioDevice(device);
     for(int i=0;i<TS_TRACKER_LANES;++i)s->routes[s->count++]=(MatrixSavedRoute){.row={.kind=0,.index=i},.route=pages->tracker.lanes[i].output_route};
@@ -40,6 +42,8 @@ static int mx_equal(const MatrixSnapshot *a,const MatrixSnapshot *b)
 static void mx_apply(const MatrixSnapshot *s,SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsSamplePages *pages,TsInstrument *bank)
 {
     if(!s)return;MatrixWindow *w=&matrix_window;
+    audio->sister.matrix_layout=s->layout;
+    mx_rows(pages,bank);mx_reveal_column(w->destination);
     if(device)SDL_LockAudioDevice(device);
     for(int i=0;i<s->count;++i) {
         MatrixSavedRoute v=s->routes[i];
@@ -67,7 +71,7 @@ static void matrix_history_clear(void)
     for(int i=0;i<w->history_count;++i)free(w->history[i]);
     free(w->pending);free(w->original);free(w->edited);
     w->pending=w->original=w->edited=NULL;w->history_count=w->history_cursor=0;
-    w->original_active=w->selection_count=w->drag=0;
+    w->original_active=w->selection_count=w->drag=w->layout_focus=0;
 }
 static void mx_push(MatrixSnapshot *s)
 {
@@ -87,8 +91,16 @@ static void mx_undo(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsS
     if(w->original_active){snprintf(w->status,sizeof(w->status),"SELECT EDITED TO USE UNDO/REDO.");return;}
     int at=redo?w->history_cursor:w->history_cursor-1;if(at<0 || at>=w->history_count)return;
     MatrixSnapshot *now=mx_snapshot(device,audio,pages,bank);if(!now)return;
-    mx_apply(w->history[at],device,audio,ui,pages,bank);free(w->history[at]);w->history[at]=now;
-    w->history_cursor+=redo?1:-1;snprintf(w->status,sizeof(w->status),"%s ROUTING EDIT (%d / %d)",redo?"REDID":"UNDID",w->history_cursor,w->history_count);
+    MatrixSnapshot *saved=w->history[at];
+    if(saved->count==now->count && !memcmp(saved,now,offsetof(MatrixSnapshot,layout)) &&
+       !memcmp(saved->routes,now->routes,now->count*sizeof(now->routes[0]))) {
+        /* Undoing a view edit must not reapply controls or touch DSP history. */
+        audio->sister.matrix_layout=saved->layout;mx_rows(pages,bank);mx_reveal_column(w->destination);
+        if(w->layout_focus==1 && w->selected>=0)w->scroll=SDL_clamp(w->selected-MATRIX_VISIBLE+1,0,SDL_max(0,w->count-MATRIX_VISIBLE));
+        w->dirty=1;
+    } else mx_apply(saved,device,audio,ui,pages,bank);
+    free(saved);w->history[at]=now;
+    w->history_cursor+=redo?1:-1;snprintf(w->status,sizeof(w->status),"%s MATRIX EDIT (%d / %d)",redo?"REDID":"UNDID",w->history_cursor,w->history_count);
 }
 static void mx_ab(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsSamplePages *pages,TsInstrument *bank)
 {

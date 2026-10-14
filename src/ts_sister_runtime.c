@@ -597,7 +597,7 @@ void ts_sister_runtime_init(TsSisterRuntime *runtime)
     ts_eq_spectrum_init(&runtime->eq_spectrum);
     ts_router_init(&runtime->router);
     ts_mandala_default(&runtime->mandala);
-    ts_matrix_init(&runtime->matrix);runtime->performance_transport=1;
+    ts_matrix_init(&runtime->matrix);ts_matrix_layout_default(&runtime->matrix_layout);runtime->performance_transport=1;
     ts_performance_mixer_default(&runtime->performance_mixer);
     for(int i=0;i<4;++i)runtime->performance_gain_current[i]=1;
     ts_insert_init(&runtime->insert);
@@ -1957,6 +1957,7 @@ void ts_sister_runtime_live_link_available(TsSisterRuntime *runtime,
 void ts_sister_runtime_project_close(TsSisterRuntime *runtime)
 {
     if (runtime == NULL) return;
+    ts_matrix_layout_default(&runtime->matrix_layout);
     memset(runtime->page_source_masks, 0,
            sizeof(runtime->page_source_masks));
     runtime->active_page = 0u;

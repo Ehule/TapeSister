@@ -11,6 +11,7 @@
 #include "tapesister/eq_spectrum.h"
 #include "tapesister/router.h"
 #include "tapesister/routing_matrix.h"
+#include "tapesister/matrix_layout.h"
 #include "tapesister/spatial.h"
 #include "tapesister/insert.h"
 #include "tapesister/sister_wave_snapshot.h"
@@ -21,7 +22,7 @@
 #include <stdint.h>
 
 enum {
-    TS_SISTER_RUNTIME_PAGE_LIMIT = 1024,
+    TS_SISTER_RUNTIME_PAGE_LIMIT = TS_MATRIX_LAYOUT_PAGES,
     TS_SISTER_SOURCE_TILES = 1u << 0,
     TS_SISTER_SOURCE_FM = 1u << 1,
     TS_SISTER_SOURCE_EXT = 1u << 2,
@@ -236,6 +237,7 @@ typedef struct {
     TsEqSpectrum eq_spectrum;
     TsRouter router;
     TsRoutingMatrix matrix;
+    TsMatrixLayout matrix_layout; /* Control-thread project metadata; never read by DSP. */
     TsInsert insert;
     TsSpatial spatial;
     TsSisterParameters parameters;

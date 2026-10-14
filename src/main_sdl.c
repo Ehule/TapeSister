@@ -697,6 +697,11 @@ static uint64_t paged_project_fingerprint(const TsSamplePages *pages,
         TsRouterControls saved_router=ts_router_export(&sister->router);
         state_hash_bytes(&hash,&saved_router,sizeof(saved_router));
         state_hash_bytes(&hash,&sister->matrix.controls,sizeof(sister->matrix.controls));
+        const TsMatrixLayout *layout=&sister->matrix_layout;
+        state_hash_bytes(&hash,&layout->row_count,sizeof(layout->row_count));
+        state_hash_bytes(&hash,layout->row_id,layout->row_count*sizeof(layout->row_id[0]));
+        state_hash_bytes(&hash,layout->row_kind,layout->row_count*sizeof(layout->row_kind[0]));
+        state_hash_bytes(&hash,layout->column,sizeof(layout->column));
         state_hash_bytes(&hash,&sister->performance_transport,sizeof(sister->performance_transport));
         state_hash_bytes(&hash,sister->performance_mixer.gain,sizeof(sister->performance_mixer.gain));
         state_hash_bytes(&hash,&sister->performance_mixer.restart,sizeof(sister->performance_mixer.restart));

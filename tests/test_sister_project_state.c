@@ -7,6 +7,7 @@
 
 #include <assert.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #ifdef _WIN32
@@ -20,8 +21,23 @@
 #define REMOVE_DIR(path) rmdir(path)
 #endif
 
+static void layout_malformed(void)
+{
+    TsMatrixLayout *l=malloc(sizeof(*l));assert(l);ts_matrix_layout_default(l);
+    assert(ts_matrix_layout_read(l,"MatrixLayout.Row1","0,1")==-1);
+    assert(ts_matrix_layout_read(l,"MatrixLayout.Row0","1,18446744073709551616")==-1);
+    assert(ts_matrix_layout_read(l,"MatrixLayout.Row0","1,-1")==-1);
+    assert(ts_matrix_layout_read(l,"MatrixLayout.Row0","0,1 junk")==-1);
+    assert(ts_matrix_layout_read(l,"MatrixLayout.Row0","0,1")==1);
+    assert(ts_matrix_layout_read(l,"MatrixLayout.Row1","0,1")==1);
+    assert(!ts_matrix_layout_valid(l));
+    ts_matrix_layout_default(l);l->column[0]=1;assert(!ts_matrix_layout_valid(l));
+    ts_matrix_layout_default(l);l->row_count=1;l->row_kind[0]=2;l->row_id[0]=TS_MATRIX_ROWS;
+    assert(!ts_matrix_layout_valid(l));free(l);
+}
 int main(void)
 {
+    layout_malformed();
     static const char project[] = "test-sister-project.tsr";
     static const char directory[] = "test-sister-project.tsr.samples";
     static const char state_path[] = "test-sister-project.tsr.samples/sister-state.ini";
@@ -112,12 +128,21 @@ int main(void)
     ts_sister_runtime_set_selected_preset(&runtime, "GHOST FIELD");
     ts_sister_runtime_mark_selected_preset_modified(&runtime);
     runtime.machine.buffer.data[0] = 0.75f;
+    runtime.matrix_layout.row_count=4;
+    runtime.matrix_layout.row_kind[0]=2;runtime.matrix_layout.row_id[0]=TS_MATRIX_TRACKER;
+    runtime.matrix_layout.row_kind[1]=0;runtime.matrix_layout.row_id[1]=1;
+    runtime.matrix_layout.row_kind[2]=1;runtime.matrix_layout.row_id[2]=UINT64_MAX;
+    runtime.matrix_layout.row_kind[3]=3;runtime.matrix_layout.row_id[3]=UINT64_MAX;
+    runtime.matrix_layout.column[0]=TS_MATRIX_SIDECHAIN;
+    runtime.matrix_layout.column[TS_MATRIX_SIDECHAIN]=0;
+    assert(ts_matrix_layout_valid(&runtime.matrix_layout));
     runtime.performance_transport = 6u;
     runtime.performance_mixer=(TsPerformanceMixer){{0,.5f,2,.25f},1,3,1};
     ts_sister_project_state_capture(&state, &runtime, 2u, "GHOST FIELD");
     assert(ts_sister_project_state_save(&state, project, error, sizeof(error)));
     assert(ts_sister_project_state_load(&loaded, project, 1000u, &present,
                                         error, sizeof(error)) && present);
+    assert(!memcmp(&loaded.matrix_layout,&runtime.matrix_layout,sizeof(TsMatrixLayout)));
     assert(loaded.performance_transport == 6u);
     assert(loaded.performance_mixer.gain[0]==0 && loaded.performance_mixer.gain[1]==.5f && loaded.performance_mixer.gain[2]==2 && loaded.performance_mixer.gain[3]==.25f);
     assert(loaded.performance_mixer.restart && loaded.performance_mixer.arp_sync==3 && loaded.performance_mixer.always_on_top);
