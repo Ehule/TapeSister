@@ -107,6 +107,9 @@ static int project_new(SDL_Window *window, SDL_AudioDeviceID device,
         view->waveform_revisions[i] = ui->waveform_revisions[i] + 1u;
     next->output_rate = audio->output_rate;
     next->output_device_channels = audio->output_device_channels;
+    next->output_range = audio->output_range;
+    next->input_range = audio->input_range;
+    next->speakers = audio->speakers;
     next->bank_slot = -1;
     next->fm_output_gain = next->fm_output_target = (float)view->config.fm_output_percent / 100.0f;
     next->realtime_counter_frequency = audio->realtime_counter_frequency;

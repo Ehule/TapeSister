@@ -51,14 +51,27 @@ static SDL_AudioDeviceID ts_audio_open_output_native(const char *device,
     const SDL_AudioSpec *desired, SDL_AudioSpec *obtained, int allowed)
 {
     SDL_AudioSpec request = *desired;
+    if (ts_live_config) {
+        ts_native_ranges[0]=ts_live_config->audio_output_range;
+        ts_native_ranges[1]=ts_live_config->audio_input_range;
+    }
+    if (!ts_audio_range_valid(ts_native_ranges[0]) || !ts_audio_range_valid(ts_native_ranges[1])) {
+        SDL_SetError("Invalid audio channel range"); return 0;
+    }
 #if defined(TAPESISTER_HAS_ASIO)
     if (ts_asio_selected) {
+        if (!ts_asio_set_ranges(ts_native_ranges[0],ts_native_ranges[1])) {
+            SDL_SetError("Close the ASIO stream before changing channel ranges"); return 0;
+        }
         ts_asio_master_callback=*desired;
         request.callback=ts_asio_render_master;
     }
 #endif
     {
         unsigned channels = ts_audio_output_channels_for(device);
+        if (channels && !ts_audio_range_fits(ts_native_ranges[0],channels)) {
+            SDL_SetError("Output range exceeds this device's %u channels",channels); return 0;
+        }
         if (channels >= 2 && channels <= 255) {
             request.channels = (Uint8)channels;
             /* Without this flag SDL may silently downmix SEND into Master. */
@@ -73,18 +86,27 @@ static SDL_AudioDeviceID ts_audio_open_output_native(const char *device,
         SDL_SetError("Output must expose float audio at a valid rate and buffer size");
         return 0;
     }
+    if (result && !ts_audio_range_fits(ts_native_ranges[0],obtained->channels)) {
+        SDL_CloseAudioDevice(result);
+        SDL_SetError("Output range exceeds the opened device's %u channels",obtained->channels); return 0;
+    }
     return result;
 }
 
 static void ts_audio_commit_output_layout(AudioState *audio, const SDL_AudioSpec *spec)
 {
+    ts_active_ranges[0]=ts_native_ranges[0];
+    ts_active_ranges[1]=ts_native_ranges[1];
     if (!audio) return;
+    audio->output_range=ts_active_ranges[0];
+    audio->input_range=ts_active_ranges[1];
     ++audio->audio_health_generation;
     if (audio->realtime_diagnostics_enabled)
         ts_realtime_diagnostics_discontinuity(&audio->realtime_diagnostics);
     ts_insert_duplex_block(&audio->sister.insert,ts_asio_selected,NULL,0,0);
     (void)ts_spatial_prepare(&audio->sister.spatial,(unsigned)spec->freq);
     audio->output_device_channels = spec->channels;
+    audio->speaker_test_remaining=0;audio->speaker_test_gain=0;
     audio->sister.insert.output_channels = spec->channels;
     ts_input_monitor_discard(&audio->sister.insert.return_monitor);
 }

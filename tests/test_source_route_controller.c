@@ -203,7 +203,7 @@ int main(int argc,char **argv)
     SDL_setenv("SDL_VIDEODRIVER","dummy",1);SDL_setenv("SDL_AUDIODRIVER","dummy",1);
     assert(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_AUDIO|SDL_INIT_TIMER));
     window=SDL_CreateWindow("Source routing fixture",0,0,640,400,0);assert(window);
-    ts_ui_init(&u);ts_instrument_init(&bank);assert(ts_sample_pages_init(&pages,error,sizeof(error)));
+    ts_ui_init(&u);a.speakers=u.config.speakers;ts_instrument_init(&bank);assert(ts_sample_pages_init(&pages,error,sizeof(error)));
     u.tracker=&pages.tracker;ts_note_bank_init(&a.notes);ts_performance_init(&a.performance);ts_performance_init(&a.tile_launchers);
     ts_keyboard_sequence_init(&a.keyboard_sequence);ts_tracker_playback_init(&a.tracker);ts_audio_mixer_init(&a.mixer);
     ts_capture_init(&a.capture);ts_sister_runtime_init(&a.sister);a.output_rate=48000;a.output_device_channels=4;

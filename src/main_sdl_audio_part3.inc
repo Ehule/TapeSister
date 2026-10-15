@@ -61,8 +61,7 @@ static uint8_t ts_audio_capture_preferred_channels(const char *device)
         SDL_zero(spec);
         if (SDL_GetDefaultAudioInfo(NULL, &spec, 1) == 0 &&
             spec.channels >= 1u) {
-            return spec.channels > TS_INPUT_DEVICE_CHANNEL_MAX ?
-                   TS_INPUT_DEVICE_CHANNEL_MAX : spec.channels;
+            return spec.channels;
         }
     }
 #endif
@@ -76,8 +75,7 @@ static uint8_t ts_audio_capture_preferred_channels(const char *device)
         SDL_zero(spec);
         if (SDL_GetAudioDeviceSpec(index, 1, &spec) == 0 &&
             spec.channels >= 1u) {
-            return spec.channels > TS_INPUT_DEVICE_CHANNEL_MAX ?
-                   TS_INPUT_DEVICE_CHANNEL_MAX : spec.channels;
+            return spec.channels;
         }
         if (device == NULL) break;
     }
@@ -124,7 +122,11 @@ static SDL_AudioDeviceID ts_audio_open_capture_widest(
     maximum = desired->channels;
     if (maximum == 0u || maximum > TS_INPUT_DEVICE_CHANNEL_MAX)
         maximum = TS_INPUT_DEVICE_CHANNEL_MAX;
+    TsAudioChannelRange range = ts_active_ranges[1];
     preferred = ts_audio_capture_preferred_channels(device);
+    if (!ts_audio_range_valid(range) || (preferred && !ts_audio_range_fits(range,preferred))) {
+        SDL_SetError("Input range exceeds this device's %u available channels",preferred); return 0;
+    }
     if (preferred != 0u) maximum = preferred;
     if (obtained != NULL) SDL_zero(*obtained);
 
@@ -138,7 +140,7 @@ static SDL_AudioDeviceID ts_audio_open_capture_widest(
      * control-thread device-open path; no probing reaches either callback.
      */
     for (uint8_t probe = 0u; ; ++probe) {
-        uint8_t channels = ts_input_capture_probe_request(maximum, probe);
+        uint8_t channels = probe==0 ? maximum : ts_input_capture_probe_request(maximum, probe-1);
         if (channels == 0u) break;
         attempt = *desired;
         attempt.channels = channels;
@@ -151,7 +153,7 @@ static SDL_AudioDeviceID ts_audio_open_capture_widest(
         }
         if (candidate_spec.format == attempt.format &&
             candidate_spec.freq > 0 && candidate_spec.samples > 0 &&
-            candidate_spec.channels >= 1) {
+            candidate_spec.channels >= 1 && ts_audio_range_fits(range,candidate_spec.channels)) {
             if (old != 0) SDL_CloseAudioDevice(old);
             ts_real_capture = candidate;
             ts_audio_active_device_name(active_name, sizeof(active_name),
@@ -165,6 +167,7 @@ static SDL_AudioDeviceID ts_audio_open_capture_widest(
             ts_capture_desired = attempt;
             ts_capture_allowed_changes = allowed_changes;
             ts_capture_userdata = desired->userdata;
+            if (ts_capture_userdata) ((ExternalInputState *)ts_capture_userdata)->range=range;
             ts_copy_name(ts_active_capture, sizeof(ts_active_capture),
                          device != NULL ? device : "");
             ts_capture_reconfigure_pending = 0;
@@ -178,7 +181,7 @@ static SDL_AudioDeviceID ts_audio_open_capture_widest(
     }
     if (open_error[0] == '\0')
         snprintf(open_error, sizeof(open_error),
-                 "No exact float capture layout available with 1-8 channels");
+                 "No float capture layout supports the selected input channel range");
     SDL_SetError("%s", open_error);
     if (old != 0) {
         ts_capture_endpoint = previous;
@@ -392,7 +395,10 @@ static void ts_audio_close_device(SDL_AudioDeviceID device)
     else
         real = device;
     if (real != 0) SDL_CloseAudioDevice(real);
-    if (device == TS_AUDIO_LOGICAL_OUTPUT) ts_real_output = 0;
+    if (device == TS_AUDIO_LOGICAL_OUTPUT) {
+        ts_real_output = 0;
+        if(ts_output_userdata)((AudioState *)ts_output_userdata)->output_device_channels=0;
+    }
     else if (device == TS_AUDIO_LOGICAL_CAPTURE) {
         ExternalInputState *input = (ExternalInputState *)ts_capture_userdata;
         ts_real_capture = 0;
@@ -526,7 +532,9 @@ static int ts_audio_main_config_write(const TsConfig *config, const char *path,
 
 static int ts_audio_reopen_required(const TsConfig *config)
 {
-    return config->audio_backend != ts_started_backend || (ts_asio_selected &&
+    return !ts_audio_range_equal(config->audio_output_range,ts_active_ranges[0]) ||
+        !ts_audio_range_equal(config->audio_input_range,ts_active_ranges[1]) ||
+        config->audio_backend != ts_started_backend || (ts_asio_selected &&
         (ts_output_desired.samples != (Uint16)config->audio_buffer_frames ||
          strcmp(config->audio_output_device,ts_active_output)));
 }
@@ -537,6 +545,14 @@ static int ts_audio_main_config_save(const TsConfig *config, const char *path,
                                      char *error, size_t error_size)
 {
     char midi_error[160];
+    for(int capture=0;capture<2;++capture) {
+        TsAudioChannelRange range=capture?config->audio_input_range:config->audio_output_range;
+        unsigned offered=ts_audio_range_offered(config,capture);
+        if(!ts_audio_range_valid(range) || (offered && !ts_audio_range_fits(range,offered))) {
+            snprintf(error,error_size,"%s range unavailable: device exposes %u channels",capture?"Input":"Output",offered);
+            return 0;
+        }
+    }
     ts_live_config = (TsConfig *)config;
     ts_pending_notice[0] = 0;
     int changed = ts_audio_reopen_required(config) || ts_real_output == 0 ||

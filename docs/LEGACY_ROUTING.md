@@ -10,7 +10,8 @@ Existing legacy projects retain their saved audio path until **Use Matrix**,
 ordinary serial chains; it refuses unsupported conversions without changing audio.
 Clear All and Reset intentionally replace routing. In matrix mode, serial order,
 Router bypass/solo/timers, legacy Insert assignments and Sister source switches
-do not control the graph. Matrix outputs also bypass the legacy Ambisonics stage.
+do not control the graph. Matrix outputs bypass the legacy whole-mix Ambisonics stage; selected Matrix
+sources can now use the separate [Ambisonics destination](AMBISONICS.md).
 The old state sequencer does not sequence matrix connections.
 
 ## Serial Router

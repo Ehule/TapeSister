@@ -1,3 +1,5 @@
+#include "tapesister/audio_channels.h"
+static TsAudioChannelRange ts_native_ranges[2] = {{1,0},{1,0}}; /* output, input */
 /* Native JACK endpoints. Loaded at runtime on Linux, independently of SDL's
    optional JACK driver. No JACK headers or link-time dependency are required.
    ABI types/constants below correspond to jack/types.h and jack/jack.h.
@@ -110,7 +112,7 @@ static int ts_jack_process(TsJackFrames frames,void *userdata)
     TsJackEndpoint *e=userdata;
     float *ports[16]={0};
     for (unsigned ch=0;ch<e->spec.channels;++ch) {
-        ports[ch]=ts_jack.port_get_buffer(e->ports[ch],frames);
+        ports[ch]=e->ports[ch]?ts_jack.port_get_buffer(e->ports[ch],frames):NULL;
         if (!e->capture && ports[ch]) memset(ports[ch],0,frames*sizeof(float));
     }
     if (frames!=e->spec.samples) {atomic_store(&e->lost,1);return 0;}
@@ -182,6 +184,10 @@ static SDL_AudioDeviceID ts_jack_open(const char *name,int capture,
     if (!wanted || !wanted->callback || wanted->format!=AUDIO_F32SYS) {
         SDL_SetError("JACK requires a float audio callback");return 0;
     }
+    TsAudioChannelRange range = role ? (TsAudioChannelRange){1,0} : ts_native_ranges[capture];
+    if (!ts_audio_range_fits(range, capture ? 8u : 16u)) {
+        SDL_SetError("JACK %s range exceeds %d ports",capture?"input":"output",capture?8:16); return 0;
+    }
     if (!ts_jack_load()) return 0;
     for (slot=0;slot<TS_JACK_SLOTS && ts_jack_endpoints[slot].client;++slot) {}
     if (slot==TS_JACK_SLOTS) {SDL_SetError("Too many TapeSister JACK streams");return 0;}
@@ -196,7 +202,7 @@ static SDL_AudioDeviceID ts_jack_open(const char *name,int capture,
     }
     e->spec.freq=(int)ts_jack.get_sample_rate(e->client);
     unsigned frames=ts_jack.get_buffer_size(e->client);
-    e->spec.channels=role?2:(capture?8:16);e->spec.samples=(Uint16)frames;
+    e->spec.channels=role?2:(Uint8)ts_audio_range_end(range,capture?8:16);e->spec.samples=(Uint16)frames;
     e->spec.size=frames*e->spec.channels*sizeof(float);e->spec.silence=0;
     if (!frames || frames>TS_JACK_MAX_FRAMES || e->spec.freq<=0) goto failed;
     e->interleaved=calloc(1,e->spec.size);e->blocks=calloc(TS_JACK_BLOCKS,e->spec.size);
@@ -205,7 +211,7 @@ static SDL_AudioDeviceID ts_jack_open(const char *name,int capture,
     e->worker=SDL_CreateThread(ts_jack_worker,"TapeSister JACK audio",e);
     if (!e->worker) goto failed;
     const char *port_prefix=capture?(role?"return":"input"):(role?"send":"master");
-    for (unsigned ch=0;ch<e->spec.channels;++ch) {
+    for (unsigned ch=(unsigned)(range.first-1);ch<e->spec.channels;++ch) {
         char port[32];snprintf(port,sizeof(port),"%s_%u",port_prefix,ch+1);
         e->ports[ch]=ts_jack.port_register(e->client,port,"32 bit float mono audio",capture?1u:2u,0);
         if (!e->ports[ch]) goto failed;

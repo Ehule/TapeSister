@@ -5,13 +5,14 @@ static void matrix_instances_controller(const char *directory)
     matrix_click(1130,66,SDL_BUTTON_LEFT);assert(w->effect_menu);
     matrix_click(860,750,SDL_BUTTON_LEFT);assert(!w->effect_menu && w->effect_open==1);
     assert(w->controls.effect[0].type==TS_SISTER_FX_TRANSIENT && w->rows[w->selected].kind==4);
-    assert(w->column_count==TS_MATRIX_SHARED_DESTINATIONS+1 && w->destination==17);
+    /* Four physical outputs: two OUT pairs and four available SPK columns. */
+    assert(w->column_count==TS_MATRIX_SHARED_DESTINATIONS-6+2+4 && w->destination==17);
     uint32_t first=w->effect_open;float old=w->controls.effect[0].a;
     matrix_wheel(90,755,3,0,0);assert(w->controls.effect[0].a>old);
     matrix_shot(directory,"matrix-transient-instance");
     render(energy);matrix_click(1130,66,SDL_BUTTON_LEFT);matrix_click(1060,750,SDL_BUTTON_LEFT);
     assert(w->effect_open!=first && w->controls.effect[1].type==TS_MATRIX_FX_COMPRESSOR);
-    assert(w->column_count==TS_MATRIX_SHARED_DESTINATIONS+3);
+    assert(w->column_count==TS_MATRIX_SHARED_DESTINATIONS-6+4+4);
     uint32_t second=w->effect_open;
     matrix_click(470,710,SDL_BUTTON_LEFT);assert(w->controls.effect[1].compressor.external);
     assert(w->controls.effect[0].a>old && !w->controls.effect[0].compressor.external);
@@ -35,7 +36,7 @@ static void matrix_instances_controller(const char *directory)
     assert(other);other->bank[0].output_route=route;
     if(w->mosaic)for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(w->mosaic->events[i].id)w->mosaic->events[i].output_route=route;
     render(energy);matrix_click(950,710,SDL_BUTTON_LEFT);
-    assert(!w->controls.effect[1].id && !w->effect_open && w->column_count==TS_MATRIX_SHARED_DESTINATIONS+1);
+    assert(!w->controls.effect[1].id && !w->effect_open && w->column_count==TS_MATRIX_SHARED_DESTINATIONS-6+2+4);
     assert(!pages.tracker.lanes[TS_TRACKER_LANES-1].output_route.matrix_gain[34]);
     assert(!bank.bank[0].output_route.matrix_gain[18] && !other->bank[0].output_route.matrix_gain[34]);
     render(energy);matrix_key(SDLK_z,KMOD_CTRL);

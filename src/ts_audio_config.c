@@ -80,6 +80,19 @@ static int load_device_settings(TsConfig *config, const char *path,
             config->audio_buffer_frames = (int)frames;
             continue;
         }
+        int *range_value = !strcmp(key, "audio_input_first") ? &config->audio_input_range.first :
+            !strcmp(key, "audio_input_last") ? &config->audio_input_range.last :
+            !strcmp(key, "audio_output_first") ? &config->audio_output_range.first :
+            !strcmp(key, "audio_output_last") ? &config->audio_output_range.last : NULL;
+        if (range_value) {
+            char *end; errno = 0;
+            long n = strtol(value, &end, 10);
+            if (errno || end == value || *end || n < 0 || n > 255) {
+                fclose(file); set_error(error, error_size, "Invalid audio channel range"); return 0;
+            }
+            *range_value = (int)n;
+            continue;
+        }
         if (strcmp(key, "midi_input_channel") == 0) {
             char *end;
             long channel = strtol(value, &end, 10);
@@ -128,8 +141,14 @@ static int load_device_settings(TsConfig *config, const char *path,
 int ts_audio_config_load(TsConfig *config, const char *path,
                          char *error, size_t error_size)
 {
-    if (!ts_config_load(config, path, error, error_size)) return 0;
-    if (!load_device_settings(config, path, error, error_size)) return 0;
+    if (!config) { set_error(error, error_size, "Missing audio config"); return 0; }
+    TsConfig loaded;
+    if (!ts_config_load(&loaded, path, error, error_size)) return 0;
+    if (!load_device_settings(&loaded, path, error, error_size)) return 0;
+    if (!ts_audio_range_valid(loaded.audio_input_range) || !ts_audio_range_valid(loaded.audio_output_range)) {
+        set_error(error, error_size, "Audio ranges need FIRST <= LAST (1-255); LAST 0 means ALL"); return 0;
+    }
+    *config = loaded;
     set_error(error, error_size, "");
     return 1;
 }
@@ -138,6 +157,10 @@ int ts_audio_config_save(const TsConfig *config, const char *path,
                          char *error, size_t error_size)
 {
     FILE *file;
+    if (!config) { set_error(error, error_size, "Missing audio config"); return 0; }
+    if (!ts_audio_range_valid(config->audio_input_range) || !ts_audio_range_valid(config->audio_output_range)) {
+        set_error(error, error_size, "Invalid audio channel range"); return 0;
+    }
     if (!ts_config_save(config, path, error, error_size)) return 0;
 
     file = fopen(path, "ab");
@@ -150,10 +173,13 @@ int ts_audio_config_save(const TsConfig *config, const char *path,
                 "\n[Audio]\n"
                 "; Backend: Auto, ASIO (Windows), JACK (Linux), PipeWire, PulseAudio, ALSA, WASAPI, DirectSound, etc.\n"
                 "audio_backend=%s\n"
-                "; Blank uses the operating system default stereo playback device.\n"
+                "; Blank uses the operating system default playback device.\n"
                 "audio_output_device=%s\n"
                 "; Shared playback/capture callback size: 128, 256, 512, or 1024 frames.\n"
                 "audio_buffer_frames=%d\n"
+                "; Physical channel numbers; last=0 uses all device channels.\n"
+                "audio_input_first=%d\naudio_input_last=%d\n"
+                "audio_output_first=%d\naudio_output_last=%d\n"
                 "\n[MIDI]\n"
                 "; Blank automatically opens the first input; OFF disables MIDI.\n"
                 "midi_input_device=%s\n"
@@ -161,6 +187,8 @@ int ts_audio_config_save(const TsConfig *config, const char *path,
                 "midi_input_channel=%d\n",
                 ts_audio_backend_name(config->audio_backend),
                 config->audio_output_device, config->audio_buffer_frames,
+                config->audio_input_range.first, config->audio_input_range.last,
+                config->audio_output_range.first, config->audio_output_range.last,
                 config->midi_input_device,
                 config->midi_input_channel) < 0) {
         fclose(file);

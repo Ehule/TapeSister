@@ -1,6 +1,7 @@
 #ifndef TAPESISTER_ASIO_BACKEND_H
 #define TAPESISTER_ASIO_BACKEND_H
 #include <SDL.h>
+#include "tapesister/audio_channels.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -11,6 +12,8 @@ const char *ts_asio_name(int index, int capture);
 int ts_asio_spec(int index, int capture, SDL_AudioSpec *spec);
 int ts_asio_default_info(char **name, SDL_AudioSpec *spec, int capture);
 void ts_asio_rescan(void);
+/* Set before opening the shared stream. Returns false while a stream is open. */
+int ts_asio_set_ranges(TsAudioChannelRange output, TsAudioChannelRange input);
 SDL_AudioDeviceID ts_asio_open(const char *name, int capture,
     const SDL_AudioSpec *wanted, SDL_AudioSpec *got);
 int ts_asio_owns(SDL_AudioDeviceID id);

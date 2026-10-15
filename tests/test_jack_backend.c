@@ -76,6 +76,7 @@ static int live(void)
     printf("Live JACK stereo SEND -> RETURN passed at %d Hz / %u frames\n",send_spec.freq,send_spec.samples);
     return 0;
 }
+static char port_names[64][32];
 static float buffers[64][256];static unsigned nports,nclients,closed;
 static TsJackClient *mock_open(const char *name,unsigned options,unsigned *status,...)
 {assert(strstr(name,"TapeSister") && options==1);*status=0;return (TsJackClient *)(uintptr_t)++nclients;}
@@ -84,7 +85,7 @@ static int mock_active(TsJackClient *c){assert(c);return 0;}
 static TsJackFrames mock_rate(TsJackClient *c){assert(c);return 48000;}
 static TsJackFrames mock_size(TsJackClient *c){assert(c);return 128;}
 static TsJackPort *mock_port(TsJackClient *c,const char *name,const char *type,unsigned long flags,unsigned long size)
-{assert(c && name && !strcmp(type,"32 bit float mono audio") && (flags==1 || flags==2) && !size);return (TsJackPort *)(uintptr_t)++nports;}
+{assert(c && name && !strcmp(type,"32 bit float mono audio") && (flags==1 || flags==2) && !size);snprintf(port_names[nports],32,"%s",name);return (TsJackPort *)(uintptr_t)++nports;}
 static void *mock_buffer(TsJackPort *p,TsJackFrames frames)
 {assert(frames<=256);return buffers[(uintptr_t)p-1];}
 static int mock_process(TsJackClient *c,int (*cb)(TsJackFrames,void *),void *u)
@@ -135,6 +136,25 @@ static void mocked(void)
     ts_native_lock(master);ts_jack_process(128,m);
     assert(buffers[4][0]==.25f && buffers[19][127]==-.5f);ts_native_unlock(master);
     ts_native_close(master);ts_native_close(send);ts_native_close(ret);assert(closed==3);
+    /* Range 3-10 creates eight physical ports, keeping absolute port names and
+       callback positions. Insert endpoints remain independent stereo pairs. */
+    ts_native_ranges[0]=(TsAudioChannelRange){3,10};
+    unsigned first=nports;master=ts_native_open(ts_jack_names[0][0],0,&want,&got,0);
+    m=ts_jack_endpoint(master);assert(master && got.channels==10 && nports==first+8);
+    assert(!m->ports[0] && !m->ports[1] && !strcmp(port_names[first],"master_3") && !strcmp(port_names[nports-1],"master_10"));
+    ts_native_pause(master,0);
+    for(int i=0;i<100 && !atomic_load(&m->write_block);++i)SDL_Delay(1);
+    ts_native_lock(master);ts_jack_process(128,m);
+    assert(buffers[first][0]==.25f && buffers[nports-1][127]==-.5f);ts_native_unlock(master);
+    ts_native_close(master);
+    ts_native_ranges[0]=(TsAudioChannelRange){1,17};
+    assert(!ts_native_open(ts_jack_names[0][0],0,&want,&got,0));
+    ts_native_ranges[0]=(TsAudioChannelRange){1,0};
+    ts_native_ranges[1]=(TsAudioChannelRange){3,6};want=desired(1);
+    first=nports;ret=ts_native_open(ts_jack_names[1][0],1,&want,&got,0);
+    r=ts_jack_endpoint(ret);assert(ret && got.channels==6 && nports==first+4);
+    assert(!r->ports[0] && !r->ports[1] && !strcmp(port_names[first],"input_3"));
+    ts_native_close(ret);ts_native_ranges[1]=(TsAudioChannelRange){1,0};
     ts_jack_library=NULL;memset(&ts_jack,0,sizeof(ts_jack));ts_jack_selected=0;
     puts("JACK endpoints: enumeration, negotiated timing, 16-channel master, stereo Insert ports, pause/lock, server changes and close passed");
 }

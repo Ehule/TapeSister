@@ -47,6 +47,22 @@ audio_backend=Auto
 audio_output_device=
 ; Shared playback/capture callback size: 256, 512, or 1024 frames.
 audio_buffer_frames=512
+; One-based physical channel ranges; last=0 means ALL offered channels.
+; For a 10-output interface set audio_output_last=10. SAVE CONFIG applies live.
+audio_input_first=1
+audio_input_last=0
+audio_output_first=1
+audio_output_last=0
+
+[Speakers]
+; Active logical speakers, 1..16. Set 10 for a ten-output setup.
+; Inactive SPK columns are hidden in the Matrix; their routes remain saved.
+; CFG > SPEAKER SETUP edits count, names and physical outputs. SAVE CONFIG persists it.
+Speakers.Count=16
+; Physical outputs are ZERO-BASED in this file (one-based in the UI).
+; Each active speaker needs a distinct output. Omitted slots default to 0..15.
+; Speakers.Output0=0
+; Speakers.Name0=FRONT LEFT
 
 [Audition]
 ; Per-voice note-on de-click ramp in milliseconds (0-20, default 2).

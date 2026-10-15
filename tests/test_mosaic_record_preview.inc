@@ -24,7 +24,19 @@ static void test_mosaic_record_preview(SDL_AudioDeviceID device)
         float value=i<1000?.85f:i<2000?0:.25f;
         if(i>=4000)value=(.1f+.7f*fabsf(sinf((i-4000)*.002f)))*sinf(i*.067f);
         assert(!ts_external_recorder_write_frame(&input->recorder,(TsStereoFrame){value,-value}));
-        if(i%500==499){SDL_Delay(2);sync_external_capture_ui(device,0,input,u);}
+        if(i%500==499) {
+            /* This fixture produces half a second of audio in a tight loop.
+               Wait for actual writer progress, not a scheduler-dependent sleep,
+               before filling the two-second queue with the next block. */
+            TsPerformanceRecorder *stream=input->recorder.stream;assert(stream);
+            Uint32 start=SDL_GetTicks();
+            while(atomic_load_explicit(&stream->written_frames,memory_order_acquire)<(uint64_t)i+1 &&
+                  ts_performance_recorder_state(stream)==TS_PERFORMANCE_FILE_RECORDING &&
+                  SDL_GetTicks()-start<5000)SDL_Delay(1);
+            assert(atomic_load_explicit(&stream->written_frames,memory_order_acquire)==(uint64_t)i+1);
+            assert(!ts_performance_recorder_dropped(stream));
+            sync_external_capture_ui(device,0,input,u);
+        }
         if(i==499) {
             ts_ui_render(&on,u,&instrument);int ink=0;
             for(int px=0;px<640*400;++px)ink+=on.pixels[px]==0xffee8b95u;

@@ -15,6 +15,10 @@
                             ui->config.record_input_device : "SYSTEM DEFAULT";
         const char *output = ui->config.audio_output_device[0] != '\0' ?
                              ui->config.audio_output_device : "SYSTEM DEFAULT";
+        if(ui->config.audio_backend==TS_AUDIO_BACKEND_JACK) {
+            if(!*ui->config.record_input_device || !strcmp(input,"TapeSister Input"))input="JACK INPUT PORTS";
+            if(!*ui->config.audio_output_device || !strcmp(output,"TapeSister Master"))output="JACK MASTER PORTS";
+        }
         const char *midi = ui->config.midi_input_device[0] != '\0' ?
                            ui->config.midi_input_device : "AUTO FIRST";
         char shown[96];
@@ -53,7 +57,7 @@
         cfg_text(fb, TS_AUDIO_CONFIG_CHANNEL_X + 5,
                  TS_AUDIO_CONFIG_INPUT_Y + 5, "<", text_color);
         cfg_text(fb, TS_AUDIO_CONFIG_CHANNEL_X + 22,
-                 TS_AUDIO_CONFIG_INPUT_Y + 5, "CH", text_color);
+                 TS_AUDIO_CONFIG_INPUT_Y + 5, "REC", text_color);
         snprintf(channel, sizeof(channel), "%s",
                  ts_input_channel_mode_name(
                      ui->config.record_input_channel));
@@ -80,6 +84,12 @@
         cfg_text(fb, TS_AUDIO_CONFIG_CHANNEL_X + 58,
                  TS_AUDIO_CONFIG_OUTPUT_Y + 5, buffer, text_color);
         cfg_text(fb, 608, TS_AUDIO_CONFIG_OUTPUT_Y + 5, ">", text_color);
+
+        ts_audio_range_render(fb,&ui->config,1,row,edge,text_color);
+        ts_audio_range_render(fb,&ui->config,0,row,edge,text_color);
+        cfg_text(fb,24,233,ui->config.audio_backend==TS_AUDIO_BACKEND_JACK?
+            "JACK GRAPH: CONNECT PORTS TO HARDWARE / SPEAKER SETUP: NAMES + MAPPING":
+            "REC: RECORDING MODE / SPEAKER SETUP: NAMES + MAPPING / SAVE APPLIES RANGES",text_color);
 
         cfg_frame(fb, 20, TS_MIDI_CONFIG_INPUT_Y,
                   TS_AUDIO_CONFIG_INPUT_W, TS_AUDIO_CONFIG_ROW_H, row, edge);
@@ -282,6 +292,8 @@ static int ts_audio_config_field_from_point(int x, int y)
 {
     if (ts_live_ui == NULL || !ts_live_ui->config_open)
         return ts_ui_config_field_from_point(x, y);
+
+    if (ts_audio_range_click(x,y)) return -1;
 
     for (int field = 0; field < TS_CONFIG_FIELD_COUNT; ++field) {
         int top = TS_AUDIO_CONFIG_PATH_Y + field * TS_AUDIO_CONFIG_PATH_STEP;

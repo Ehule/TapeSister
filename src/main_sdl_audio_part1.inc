@@ -418,15 +418,17 @@ static void runtime_note_sync(AudioState *audio,
 }
 enum {
     TS_AUDIO_CONFIG_PANEL_Y = 40,
-    TS_AUDIO_CONFIG_PANEL_H = 155,
+    TS_AUDIO_CONFIG_PANEL_H = 205,
     TS_AUDIO_CONFIG_PATH_Y = 58,
     TS_AUDIO_CONFIG_PATH_STEP = 17,
     TS_AUDIO_CONFIG_ROW_H = 16,
     TS_AUDIO_CONFIG_VALUE_X = 188,
     TS_AUDIO_CONFIG_BACKEND_Y = 127,
     TS_AUDIO_CONFIG_INPUT_Y = 144,
-    TS_AUDIO_CONFIG_OUTPUT_Y = 161,
-    TS_MIDI_CONFIG_INPUT_Y = 178,
+    TS_AUDIO_CONFIG_INPUT_RANGE_Y = 161,
+    TS_AUDIO_CONFIG_OUTPUT_Y = 178,
+    TS_AUDIO_CONFIG_OUTPUT_RANGE_Y = 195,
+    TS_MIDI_CONFIG_INPUT_Y = 212,
     TS_AUDIO_CONFIG_INPUT_W = 430,
     TS_AUDIO_CONFIG_CHANNEL_X = 455,
     TS_AUDIO_CONFIG_CHANNEL_W = 165
@@ -460,6 +462,7 @@ static int ts_capture_allowed_changes;
 static void *ts_output_userdata;
 static void *ts_capture_userdata;
 static TsConfig *ts_live_config;
+static TsAudioChannelRange ts_active_ranges[2] = {{1,0},{1,0}};
 static TsAudioDeviceCatalog ts_device_catalog;
 static int ts_config_was_open;
 static int ts_capture_reconfigure_pending;
@@ -757,7 +760,7 @@ static void ts_audio_handle_removed(int is_capture, const char *error)
         ts_real_output = 0;
         if (ts_output_obtained_target != NULL)
             SDL_zero(*ts_output_obtained_target);
-        if (audio != NULL) {audio->output_rate = 0;audio->sister.insert.output_channels=0;}
+        if (audio != NULL) {audio->output_rate = 0;audio->output_device_channels=0;audio->sister.insert.output_channels=0;}
     }
     ts_audio_log_endpoint(endpoint);
 }

@@ -38,6 +38,7 @@ void ts_config_init(TsConfig *config)
         config->eq_morph_max_seconds=(int)TS_EQ_MORPH_DEFAULT_MAX_SECONDS;
         ts_compressor_default(&config->compressor);
         ts_spatial_default(&config->spatial);
+        ts_speakers_default(&config->speakers);
         ts_router_default(&config->router);
         config->router.master_mix = 1;
         ts_matrix_default(&config->matrix);config->matrix.enabled=1;
@@ -46,6 +47,7 @@ void ts_config_init(TsConfig *config)
         config->audio_backend = TS_AUDIO_BACKEND_AUTO;
         config->audio_backend_invalid = 0;
         config->audio_buffer_frames = TS_AUDIO_BUFFER_FRAMES_DEFAULT;
+        config->audio_input_range = config->audio_output_range = (TsAudioChannelRange){1, 0};
         config->record_input_channel = TS_RECORD_INPUT_CHANNEL_DEFAULT;
         config->midi_input_channel = TS_MIDI_INPUT_CHANNEL_DEFAULT;
         ts_midi_map_init(&config->midi_map);
@@ -302,7 +304,9 @@ int ts_config_load(TsConfig *config, const char *path,
         *equals = '\0';
         value = trim(equals + 1);
         key = trim(key);
-        if (!strncmp(key,"Spatial.",8)) {
+        if (!strncmp(key,"Speakers.",9)) {
+            if(ts_speakers_read(&loaded.speakers,key,value)<0) {fclose(file);set_error(error,error_size,"Invalid speaker setup");return 0;}
+        } else if (!strncmp(key,"Spatial.",8)) {
             if(ts_spatial_read(&loaded.spatial,key,value)<0) {
                 snprintf(error,error_size,"Invalid Spatial field on config line %d",line_number);
                 fclose(file);return 0;
@@ -557,6 +561,7 @@ int ts_config_load(TsConfig *config, const char *path,
     if (!saw_capture_channels && saw_sister_capture_channels)
         loaded.capture_channels = loaded.sister_capture_channels;
     loaded.sister_capture_channels = loaded.capture_channels;
+    if(!ts_speakers_valid(&loaded.speakers)){set_error(error,error_size,"Invalid or duplicate speaker outputs");return 0;}
     if(!ts_matrix_valid(&loaded.matrix)){set_error(error,error_size,"Invalid routing matrix graph");return 0;}
     if(!saw_insert)loaded.router.bypass_mask |= 1u<<TS_ROUTER_INSERT;
     *config = loaded;
@@ -838,6 +843,7 @@ int ts_config_save(const TsConfig *config, const char *path,
         !ts_master_eq_write(file,&config->master_eq) || !ts_eq_morph_write(file,&config->eq_morph) ||
         fprintf(file,"eq_morph_max_seconds=%d\n",config->eq_morph_max_seconds)<0;
     if(!write_failed)write_failed=!ts_spatial_write(file,&config->spatial);
+    if(!write_failed)write_failed=!ts_speakers_write(file,&config->speakers);
     if(!write_failed)write_failed=!ts_router_write(file,&config->router);
     if(!write_failed)write_failed=!ts_compressor_write(file,&config->compressor);
     if(!write_failed)write_failed=!ts_matrix_write(file,&config->matrix);

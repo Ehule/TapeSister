@@ -103,3 +103,14 @@ effects bypassed and listen there. Return that dry signal to TapeSister, compare
 it with the internal route, then enable the effect. Retain the actual rate,
 buffer, channel pairs and F12 counters at each stage. In legacy mode, also record
 Insert's GAPS counters. A clean SunVox synth return tests RETURN, not TapeSister SEND.
+
+## Channel ranges
+
+CFG INPUT RANGE and OUTPUT RANGE select FIRST/LAST physical ASIO channels.
+SAVE CONFIG closes and reopens the single duplex stream with these ranges.
+For a ten-output Focusrite use FIRST 1 / LAST 10. ALL follows the driver.
+Selecting 3–10 opens physical outputs 3–10 and retains those channel numbers in
+saved routes. Inputs outside the input range are silent, including Insert reads;
+outputs outside the output range are not sent to the driver. Invalid ranges are
+rejected; failed reconfiguration attempts restore the previous working ranges.
+The routing matrix shows only available enabled speakers and output pairs.

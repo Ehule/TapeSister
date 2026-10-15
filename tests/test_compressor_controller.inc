@@ -21,7 +21,7 @@ static void test_compressor_controller(const char *directory)
     assert(matrix_show(0,&a,&u,&pages,&bank,0,-1));
     matrix_click(1200,34,SDL_BUTTON_LEFT);assert(matrix_window.compressor_open);
     /* Real track row -> the new SC column. No second audible copy. */
-    int sc_x=MATRIX_X+(TS_MATRIX_SIDECHAIN-matrix_window.column)*MATRIX_CW+12;
+    int sc_x=MATRIX_X+(mx_column_position(TS_MATRIX_SIDECHAIN)-matrix_window.column)*MATRIX_CW+12;
     matrix_click(sc_x,MATRIX_Y+10,SDL_BUTTON_LEFT);
     assert(pages.tracker.lanes[0].output_route.matrix_gain[TS_MATRIX_SIDECHAIN]==1000);
     matrix_click(250,708,SDL_BUTTON_LEFT);matrix_click(400,708,SDL_BUTTON_LEFT);

@@ -1,5 +1,6 @@
 #ifndef TAPESISTER_CONFIG_H
 #define TAPESISTER_CONFIG_H
+#include "tapesister/audio_channels.h"
 
 #include "tapesister/compressor.h"
 #include <stddef.h>
@@ -9,6 +10,7 @@
 #include "tapesister/router.h"
 #include "tapesister/routing_matrix.h"
 #include "tapesister/spatial.h"
+#include "tapesister/speakers.h"
 #include "tapesister/insert.h"
 #include "tapesister/audition.h"
 #include "tapesister/dsp_recipe.h"
@@ -143,9 +145,11 @@ typedef struct {
     TsRouterPerformance router_performance;
     TsInsertControls insert;
     TsSpatialControls spatial;
+    TsSpeakerSetup speakers;
     TsAudioBackend audio_backend;
     int audio_backend_invalid;
     int audio_buffer_frames;
+    TsAudioChannelRange audio_input_range, audio_output_range;
     int record_input_channel;
     int midi_input_channel;
     TsMidiMap midi_map;

@@ -2,6 +2,7 @@
 #define TAPESISTER_SPATIAL_H
 
 #include "tapesister/sample.h"
+#include "tapesister/speakers.h"
 #include <stdio.h>
 
 enum { TS_SPATIAL_SPEAKERS = 16, TS_SPATIAL_PARAMS = 5 };
@@ -28,6 +29,7 @@ typedef struct {
     float value[TS_SPATIAL_PARAMS], peak[TS_SPATIAL_SPEAKERS];
     float lfo, rise, morph, wet;
     int available, stereo_available, layout_valid, conflict, morph_active, test_speaker;
+    int capture_selected, capture_editing; /* 0 = live, 1 = A, 2 = B; not persisted. */
     unsigned channels;
 } TsSpatialView;
 
@@ -59,11 +61,23 @@ void ts_spatial_free(TsSpatial *s);
 void ts_spatial_set(TsSpatial *s, const TsSpatialControls *c);
 /* Project recall starts modulation from a defined phase without firing a trigger. */
 void ts_spatial_recall(TsSpatial *s, const TsSpatialControls *c);
+/* Capture workflow shares the audio-state lock with other control changes. */
+int ts_spatial_capture_state(TsSpatial *s, int state);
+void ts_spatial_edit_state(TsSpatial *s, int state);
+void ts_spatial_clear_state(TsSpatial *s, int state);
+int ts_spatial_morph_to(TsSpatial *s, int state);
+void ts_spatial_stop_morph(TsSpatial *s);
 void ts_spatial_test(TsSpatial *s, int speaker);
 /* Render into an existing hardware frame; unassigned Insert channels are
    preserved. Caller has already written legacy stereo + external Insert. */
 void ts_spatial_process(TsSpatial *s, TsStereoFrame input, float *output,
                         unsigned channels, int shared_send_pair);
+/* Matrix bus: add decoded feeds to existing hardware audio. Disabled/unavailable
+   mutes only this bus, never folds it into unrelated stereo outputs. */
+void ts_spatial_process_bus(TsSpatial *s,TsStereoFrame input,float *output,
+    unsigned channels,const TsSpeakerSetup *speakers);
+/* A changed count redistributes the ring, preserving existing assignments/calibration. */
+void ts_spatial_resize(TsSpatialControls *c,int count,int available);
 /* FuMa WXYZ, for the field diagram and future independently encoded sources. */
 void ts_spatial_transform(float field[4], const float value[TS_SPATIAL_PARAMS], int transform);
 const char *ts_spatial_parameter_name(int parameter);

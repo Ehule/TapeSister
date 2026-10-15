@@ -7,7 +7,7 @@ typedef struct {
     TsFramebuffer *framebuffer;
     TsSpatialUi model;
     Uint32 id, presented, message_until;
-    int visible, drag;
+    int visible, drag, show_routes;
 } SpatialWindow;
 static SpatialWindow spatial_window;
 static int spatial_wrap_index(int value,int count)
@@ -24,11 +24,18 @@ static void spatial_capture(AudioState *audio,TsUiState *ui)
 {
     /* Caller already owns the existing application audio-state lock. */
     ui->config.spatial=audio->sister.spatial.controls;
+    if(memcmp(&audio->speakers,&ui->config.speakers,sizeof(audio->speakers))) {
+        audio->speakers=ui->config.speakers;audio->sister.spatial.hop=0;
+        audio->speaker_test_remaining=0;
+    }
     if(!spatial_window.visible)return;
     spatial_window.model.controls=audio->sister.spatial.controls;
     spatial_window.model.view=audio->sister.spatial.view;
     spatial_window.model.view.channels=audio->output_device_channels;
     spatial_window.model.learn=ui->midi_learn_active;
+    spatial_window.model.matrix=audio->sister.matrix.controls.enabled;
+    spatial_window.model.speakers=audio->speakers;
+    spatial_window.model.input_peak=audio->sister.matrix.input_peak[TS_MATRIX_AMBISONICS];
     if(spatial_window.model.speaker>=ui->config.spatial.speakers)spatial_window.model.speaker=0;
 }
 static int spatial_show(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui)
@@ -157,7 +164,10 @@ static int spatial_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,
     if(device)SDL_LockAudioDevice(device);c=audio->sister.spatial.controls;if(device)SDL_UnlockAudioDevice(device);
     if((down||wheel)&&y>=9&&y<31){
         if(x>=208&&x<304)c.enabled=!c.enabled;
-        else if(x>=312&&x<442)c.stereo_pair=spatial_wrap_index(c.stereo_pair+delta,c.speakers);
+        else if(x>=312&&x<442) {
+            if(m->matrix){spatial_window.show_routes=1;return 1;}
+            c.stereo_pair=spatial_wrap_index(c.stereo_pair+delta,c.speakers);
+        }
         else return 1;
         spatial_commit(device,audio,ui,&c);return 1;
     }
@@ -188,7 +198,10 @@ static int spatial_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,
             return 1;
         }
         if((down||wheel)&&y>=80&&y<103){
-            if(x>=326&&x<464)ts_spatial_ring(&c,c.speakers+(wheel?wheel:x<395?-1:1),c.point);
+            if(x>=326&&x<464) {
+                if(m->matrix)ts_spatial_resize(&c,c.speakers+(wheel?wheel:x<395?-1:1),m->speakers.count);
+                else ts_spatial_ring(&c,c.speakers+(wheel?wheel:x<395?-1:1),c.point);
+            }
             else if(x>=474&&x<616){
                 TsSpatialControls ring=c;ts_spatial_ring(&ring,c.speakers,!c.point);
                 c.point=ring.point;memcpy(c.azimuth,ring.azimuth,sizeof(c.azimuth));
@@ -199,7 +212,16 @@ static int spatial_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,
             m->speaker=spatial_wrap_index(m->speaker+(wheel?wheel:x<471?-1:1),c.speakers);return 1;
         }else if((down||wheel)&&x>=500&&x<616&&y>=198&&y<314){
             int row=(y-198)/29,sp=m->speaker;
-            if(row==0)c.output[sp]+=delta;
+            if(row==0) {
+                if(m->matrix) {
+                    int candidate=c.output[sp],step=delta<0?-1:1;
+                    for(int tries=0;tries<m->speakers.count;++tries) {
+                        candidate=spatial_wrap_index(candidate+step,m->speakers.count);
+                        int used=0;for(int j=0;j<c.speakers;++j)if(j!=sp)used|=c.output[j]==candidate;
+                        if(!used){c.output[sp]=candidate;break;}
+                    }
+                } else c.output[sp]+=delta;
+            }
             if(row==1)c.azimuth[sp]+=delta*(fine?.1f:1.f);
             if(row==2)c.trim_db[sp]+=delta*(fine?.1f:1.f);
             if(row==3)c.delay_ms[sp]+=delta*(fine?.01f:.1f);
@@ -210,20 +232,50 @@ static int spatial_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,
         }
     }else{
         int control=-1;
-        if(y>=101&&y<=140)control=x<310?0:1;
-        if(y>=209&&y<=248)control=x<310?2:3;
+        int column=x>=18&&x<294?0:x>=326&&x<614?1:-1;
+        if(column>=0 && y>=101&&y<=140)control=column;
+        if(column>=0 && y>=209&&y<=248)control=2+column;
         if(motion&&spatial_window.drag>=20)control=spatial_window.drag-20;
         if(control>=0){float *f=control==0?&c.lfo_rate:control==1?&c.lfo_depth:control==2?&c.rise_length:&c.rise_depth;
             if(wheel)*f+=(fine?.001f:.01f)*wheel;
-            else {*f=(x-(control%2?326:18))/(control%2?288.f:276.f);spatial_window.drag=20+control;}
+            else if(right){
+                TsSpatialControls defaults;ts_spatial_default(&defaults);
+                *f=control==0?defaults.lfo_rate:control==1?defaults.lfo_depth:control==2?defaults.rise_length:defaults.rise_depth;
+                spatial_window.drag=0;
+            }
+            else if(motion || (down && e->button.button==SDL_BUTTON_LEFT)){
+                *f=(x-(control%2?326:18))/(control%2?288.f:276.f);spatial_window.drag=20+control;
+            }
         }else if(down&&x>=14&&x<628&&((y>=147&&y<170)||(y>=255&&y<278))){
             int p=(x-14)/124;if(p<5){if(y<200)c.lfo_targets^=1u<<p;else c.rise_targets^=1u<<p;}
         }else if(down&&y>=286&&y<309){if(x>=14&&x<114)c.rise_loop=!c.rise_loop;else if(x>=122&&x<230)++c.rise_trigger;}
         else if((down||wheel)&&y>=324&&y<347){
-            if(x>=392&&x<614)c.morph_seconds*=powf(fine?1.01f:1.1f,(float)delta);
-            else if(down&&x>=14&&x<382){int which=(x-14)/94,side=which/2;
-                if(which%2){c.morph_target=side;++c.morph_trigger;}
-                else {memcpy(c.state[side],c.value,sizeof(c.value));c.captured|=1u<<side;}
+            if(x>=342&&x<540){
+                if(right){TsSpatialControls defaults;ts_spatial_default(&defaults);c.morph_seconds=defaults.morph_seconds;}
+                else if(wheel || (down && e->button.button==SDL_BUTTON_LEFT))c.morph_seconds*=powf(fine?1.01f:1.1f,(float)delta);
+            }else if(down){
+                int state=x>=14&&x<90?0:x>=98&&x<174?1:-1;
+                char message[104]="";
+                if(device)SDL_LockAudioDevice(device);
+                TsSpatial *s=&audio->sister.spatial;
+                if(state>=0){
+                    if(right)ts_spatial_edit_state(s,state);
+                    else if(e->button.button==SDL_BUTTON_MIDDLE){
+                        ts_spatial_clear_state(s,state);snprintf(message,sizeof(message),"%c CLEARED / LIVE FIELD AND OTHER CAPTURE KEPT",'A'+state);
+                    }else if(e->button.button==SDL_BUTTON_LEFT){
+                        if(ts_spatial_capture_state(s,state))snprintf(message,sizeof(message),"CAPTURED %c / FIVE BASE FIELD VALUES SAVED",'A'+state);
+                        else snprintf(message,sizeof(message),"MORPH RUNNING / STOP TO CAPTURE / RIGHT-CLICK CAP TO EDIT");
+                    }
+                }else if(e->button.button==SDL_BUTTON_LEFT){
+                    state=x>=188&&x<256?0:x>=264&&x<332?1:-1;
+                    if(state>=0 && !ts_spatial_morph_to(s,state))snprintf(message,sizeof(message),"%c IS EMPTY / CLICK CAP %c BEFORE MORPHING",'A'+state,'A'+state);
+                    else if(x>=550&&x<614)ts_spatial_stop_morph(s);
+                }
+                spatial_capture(audio,ui);
+                if(device)SDL_UnlockAudioDevice(device);
+                snprintf(m->message,sizeof(m->message),"%s",message);
+                spatial_window.message_until=SDL_GetTicks()+4000;
+                return 1;
             }
         }
     }

@@ -12,7 +12,7 @@ int ts_matrix_is_output(int n)
 int ts_matrix_processor(int index)
 { return index<TS_MATRIX_NODES?index:index==7?TS_MATRIX_COMPRESSOR:TS_MATRIX_EFFECT_BASE+index-8; }
 static int dependency(int destination)
-{ return destination==TS_MATRIX_SIDECHAIN?TS_MATRIX_COMPRESSOR:destination>=TS_MATRIX_EFFECT_SC_BASE?TS_MATRIX_EFFECT_BASE+destination-TS_MATRIX_EFFECT_SC_BASE:destination; }
+{ return destination==TS_MATRIX_SIDECHAIN?TS_MATRIX_COMPRESSOR:destination>=TS_MATRIX_EFFECT_SC_BASE && destination<TS_MATRIX_INSTANCE_DESTINATIONS?TS_MATRIX_EFFECT_BASE+destination-TS_MATRIX_EFFECT_SC_BASE:destination; }
 
 int ts_matrix_effect_index(int n)
 {return n>=TS_MATRIX_EFFECT_BASE && n<TS_MATRIX_ROWS?n-TS_MATRIX_EFFECT_BASE:-1;}
@@ -21,7 +21,7 @@ int ts_matrix_sidechain_for(int n)
 int ts_matrix_destination_active(const TsMatrixControls *c,int d)
 {
     if(d<0 || d>=TS_MATRIX_DESTINATIONS)return 0;
-    if(d<TS_MATRIX_SHARED_DESTINATIONS)return 1;
+    if(d<TS_MATRIX_SHARED_DESTINATIONS || d>=TS_MATRIX_AMBISONICS)return 1;
     int i=d<TS_MATRIX_EFFECT_SC_BASE?d-TS_MATRIX_EFFECT_BASE:d-TS_MATRIX_EFFECT_SC_BASE;
     return c->effect[i].id && (d<TS_MATRIX_EFFECT_SC_BASE || c->effect[i].type==TS_MATRIX_FX_COMPRESSOR);
 }
@@ -78,7 +78,7 @@ static int order_graph(const TsMatrixControls *c,int *order)
             for(int j=0;j<TS_MATRIX_PROCESSORS;++j) {
                 int s=ts_matrix_processor(j);if(done&(UINT64_C(1)<<s))continue;
                 for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)
-                    if(dependency(d)==n && c->row[s].matrix_gain[d] && !(c->delayed[s]&(UINT64_C(1)<<d)))incoming=1;
+                    if(dependency(d)==n && c->row[s].matrix_gain[d] && !(c->delayed[s]&ts_matrix_feedback_bit(d)))incoming=1;
             }
             if(!incoming){found=n;break;}
         }
@@ -110,8 +110,8 @@ int ts_matrix_valid(const TsMatrixControls *c)
     for(int s=0;s<TS_MATRIX_ROWS;++s) {
         if(!ts_source_route_valid(&c->row[s],0) || !c->row[s].matrix_enabled)return 0;
         if(ts_matrix_is_processor(s)) {
-            if(c->delayed[s]>>TS_MATRIX_DESTINATIONS || (!c->feedback && c->delayed[s]))return 0;
-            for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)if((c->delayed[s]&(UINT64_C(1)<<d)) &&
+            if(c->delayed[s]>>TS_MATRIX_INSTANCE_DESTINATIONS || (!c->feedback && c->delayed[s]))return 0;
+            for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)if((c->delayed[s]&ts_matrix_feedback_bit(d)) &&
                 (!ts_matrix_is_processor(dependency(d)) || c->row[s].matrix_gain[d]>500 || !c->row[s].matrix_gain[d]))return 0;
         } else if(c->delayed[s])return 0;
     }
@@ -124,12 +124,12 @@ int ts_matrix_connect(TsMatrixControls *c,int s,int d,int gain)
     if(!c || s<0 || s>=TS_MATRIX_ROWS || d<0 || d>=TS_MATRIX_DESTINATIONS || gain<0 || gain>2000)return -1;
     TsMatrixControls next=*c;next.row[s].matrix_gain[d]=gain;
     if(ts_matrix_is_processor(s)) {
-        if(!gain)next.delayed[s]&=~(UINT64_C(1)<<d);
+        if(!gain)next.delayed[s]&=~ts_matrix_feedback_bit(d);
         if(!order_graph(&next,NULL)) {
             if(!next.feedback)return 0;
-            next.delayed[s]|=UINT64_C(1)<<d;
+            next.delayed[s]|=ts_matrix_feedback_bit(d);
         }
-        if(next.delayed[s]&(UINT64_C(1)<<d))next.row[s].matrix_gain[d]=gain>500?500:gain;
+        if(next.delayed[s]&ts_matrix_feedback_bit(d))next.row[s].matrix_gain[d]=gain>500?500:gain;
     }
     if(!ts_matrix_valid(&next))return -1;
     *c=next;return 1;
@@ -137,7 +137,7 @@ int ts_matrix_connect(TsMatrixControls *c,int s,int d,int gain)
 void ts_matrix_cut_feedback(TsMatrixControls *c)
 {
     for(int s=0;s<TS_MATRIX_ROWS;++s) {
-        for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)if(c->delayed[s]&(UINT64_C(1)<<d))c->row[s].matrix_gain[d]=0;
+        for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)if(c->delayed[s]&ts_matrix_feedback_bit(d))c->row[s].matrix_gain[d]=0;
         c->delayed[s]=0;
     }
     c->feedback=0;
@@ -164,7 +164,7 @@ int ts_matrix_set(TsRoutingMatrix *m,const TsMatrixControls *c,unsigned rate)
     for(int i=0;i<TS_MATRIX_ROWS;++i) {
         TsSourceRoute route=c->row[i];
         if(ts_matrix_is_processor(i))for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)
-            if(c->delayed[i]&(UINT64_C(1)<<d))route.matrix_gain[d]=0;
+            if(c->delayed[i]&ts_matrix_feedback_bit(d))route.matrix_gain[d]=0;
         /* The dormant graph must start at its imported gains, not crossfade
            from unrelated default routes. Subsequent edits still slew. */
         if(activating)m->voice[i].ready=0;
@@ -186,7 +186,7 @@ void ts_matrix_process(TsRoutingMatrix *m,TsSourceRouteMix *sums,
         TsStereoFrame old=m->history[s][m->position];
         const TsSourceRoute *r=&m->controls.row[s];
         float l=r->pan>0?1-r->pan*.01f:1,rh=r->pan<0?1+r->pan*.01f:1;
-        for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)if(m->controls.delayed[s]&(UINT64_C(1)<<d)) {
+        for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)if(m->controls.delayed[s]&ts_matrix_feedback_bit(d)) {
             float g=r->matrix_gain[d]*.001f;
             sums->graph[d].l+=old.l*g*l;sums->graph[d].r+=old.r*g*rh;
             float activity=fmaxf(fabsf(old.l*g*l),fabsf(old.r*g*rh));
@@ -210,6 +210,13 @@ void ts_matrix_process(TsRoutingMatrix *m,TsSourceRouteMix *sums,
         ts_source_route_frame(&m->voice[n],output,sums);
     }
     for(int p=0;p<TS_MATRIX_OUTPUTS;++p)m->output[p]=ts_stereo_frame_sanitize(sums->graph[TS_MATRIX_NODES+p]);
+    m->spatial_input=ts_stereo_frame_sanitize(sums->graph[TS_MATRIX_AMBISONICS]);
+    m->input_peak[TS_MATRIX_AMBISONICS]=fmaxf(peak(m->spatial_input),m->input_peak[TS_MATRIX_AMBISONICS]*m->decay);
+    for(int i=0;i<TS_SOURCE_SPEAKERS;++i) {
+        TsStereoFrame f=ts_stereo_frame_sanitize(sums->graph[TS_MATRIX_SPEAKER_BASE+i]);
+        m->speaker_output[i]=.5f*(f.l+f.r);
+        m->input_peak[TS_MATRIX_SPEAKER_BASE+i]=fmaxf(fabsf(m->speaker_output[i]),m->input_peak[TS_MATRIX_SPEAKER_BASE+i]*m->decay);
+    }
     m->position=(m->position+1)%TS_MATRIX_DELAY;
 }
 TsSourceRoute ts_matrix_source_route(TsSourceRoute old)
@@ -295,11 +302,11 @@ int ts_matrix_read(TsMatrixControls *c,const char *key,const char *v)
         if(!integer(&v,&pan) || pan>100 || *v++!=',' || !integer(&v,&width) || width>100 || *v++!=',')return -1;
         if(*v<'0' || *v>'9')return -1;
         char *end;errno=0;uint64_t delay=strtoull(v,&end,10);
-        if(errno || end==v || delay>>TS_MATRIX_DESTINATIONS)return -1;v=end;
+        if(errno || end==v || delay>>TS_MATRIX_INSTANCE_DESTINATIONS)return -1;v=end;
         next.row[n].pan=pan;next.row[n].width=width;if(ts_matrix_is_processor(n))next.delayed[n]=delay;else if(delay)return -1;
         memset(next.row[n].matrix_gain,0,sizeof(next.row[n].matrix_gain));
         for(int d=0;d<TS_MATRIX_DESTINATIONS;++d) {
-            if(!*v && (d==TS_MATRIX_LEGACY_DESTINATIONS || d==TS_MATRIX_SHARED_DESTINATIONS))break; /* Old 15-port sessions. */
+            if(!*v && (d==TS_MATRIX_LEGACY_DESTINATIONS || d==TS_MATRIX_SHARED_DESTINATIONS || d==TS_MATRIX_INSTANCE_DESTINATIONS))break; /* Old 15-port sessions. */
             if(*v++!=',' || !integer(&v,&next.row[n].matrix_gain[d]) || next.row[n].matrix_gain[d]<0 || next.row[n].matrix_gain[d]>2000)return -1;
         }
         if(*v)return -1;

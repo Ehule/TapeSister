@@ -131,10 +131,13 @@ static void persistence_and_runtime(void)
     TsInstrument *tile=calloc(1,sizeof(*tile)),*loaded=calloc(1,sizeof(*loaded));assert(tile && loaded);
     ts_instrument_init(tile);ts_instrument_init(loaded);
     assert(ts_instrument_activate_silence(tile,32,48000,error,sizeof(error)));
-    tile->bank[0].output_route.matrix_enabled=1;tile->bank[0].output_route.matrix_gain[48]=1234;tile->bank[0].output_route.matrix_gain[16]=500;
+    tile->bank[0].output_route.matrix_enabled=1;tile->bank[0].output_route.matrix_gain[48]=1234;tile->bank[0].output_route.matrix_gain[16]=500;tile->bank[0].output_route.matrix_gain[65]=875;tile->bank[0].output_route.matrix_gain[49]=1000;
     assert(ts_instrument_save_recipe(tile,"matrix-instance-tile.tsr",error,sizeof(error)));
     assert(ts_instrument_load_recipe(loaded,"matrix-instance-tile.tsr",error,sizeof(error)));
-    assert(loaded->bank[0].output_route.matrix_gain[48]==1234);
+    assert(loaded->bank[0].output_route.matrix_gain[48]==1234 && loaded->bank[0].output_route.matrix_gain[65]==875 && loaded->bank[0].output_route.matrix_gain[49]==1000);
+    assert(test_write_legacy_single_tile("matrix-instance-tile.tsr","matrix-instance-old.tsr",40));
+    assert(ts_instrument_load_recipe(loaded,"matrix-instance-old.tsr",error,sizeof(error)));
+    assert(loaded->bank[0].output_route.matrix_gain[48]==1234 && loaded->bank[0].output_route.matrix_gain[65]==0 && loaded->bank[0].output_route.matrix_gain[49]==0);
     assert(test_write_legacy_single_tile("matrix-instance-tile.tsr","matrix-instance-old.tsr",39));
     assert(ts_instrument_load_recipe(loaded,"matrix-instance-old.tsr",error,sizeof(error)));
     assert(loaded->bank[0].output_route.matrix_gain[16]==500 && !loaded->bank[0].output_route.matrix_gain[48]);

@@ -516,15 +516,19 @@ matrix. [Legacy reference](LEGACY_ROUTING.md).
 
 ## Ambisonics output
 
-Ctrl+F9 opens the existing field/array/motion window. This is part of the legacy
-output path; matrix physical outputs bypass its speaker mapping and processing.
-[Legacy setup and controls](AMBISONICS.md).
+**CFG → SPEAKER SETUP** sets the active count (up to 16), names and hardware outputs.
+Inactive SPK columns are hidden; saved routes return when reactivated.
+**F9 → AMBISONICS** / **Ctrl+F9** opens Field / Speakers / Motion. Send selected
+sources to the Ambisonics destination, choose 3–16 active speakers and enable it.
+Direct SPK routes and the decoded field can share speakers and play together.
+Muting Ambisonics leaves direct routes playing. [Setup and controls](AMBISONICS.md).
 
 ## Final output
 
 Default path: Main → Master EQ → linked limiter → OUT 1/2; OUT gain and the final
 hardware guard apply at the device. Matrix connections can bypass EQ/limiter nodes.
-FILE OUT records OUT 1/2 before the final hardware guard, not the sum of all outputs.
+FILE OUT records OUT 1/2 before the added SPK/Ambisonics layers and final hardware
+guard, not the sum of all outputs.
 
 Click **EQ** in either window for Master / Room EQ and the limiter toggle.
 Hover its controls for 600 ms to see help in the bottom status line.
@@ -556,6 +560,9 @@ OUT is after the limiter. Lower pre-limiter stages to reduce gain reduction.
 | Backend WASAPI | Windows shared-mode audio; SAVE CONFIG applies in place |
 | Backend DirectSound | Compatibility backend; SAVE CONFIG applies in place |
 | Backend ASIO | One 64-bit duplex driver; choose driver and buffer, then SAVE CONFIG |
+| INPUT/OUTPUT RANGE | FIRST/LAST physical channel numbers; ALL follows the device; SAVE CONFIG applies |
+| REC | recording input mode, independent of the enabled I/O range |
+| SPEAKER SETUP | active count, names and output mapping; only available speakers appear in Matrix |
 | Input/Output SYSTEM DEFAULT | deliberate use of the current system default |
 | active | configured endpoint is open |
 | closed capture | normal when EXT, external REC, and input monitoring are idle |

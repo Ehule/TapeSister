@@ -124,9 +124,11 @@ static void persistence(void)
 {
     TsConfig c,loaded;ts_config_init(&c);ts_spatial_ring(&c.spatial,8,1);c.spatial.enabled=1;c.spatial.stereo_pair=7;
     c.spatial.value[3]=.42f;c.spatial.lfo_targets=5;c.spatial.captured=3;c.spatial.state[1][2]=.71f;c.spatial.morph_target=1;
+    c.speakers.count=10;c.speakers.output[9]=15;snprintf(c.speakers.name[9],TS_SPEAKER_NAME,"REAR WALL");
     char error[160];assert(ts_config_save(&c,"spatial-test.ini",error,sizeof(error)));
     int ok=ts_config_load(&loaded,"spatial-test.ini",error,sizeof(error));if(!ok)fprintf(stderr,"%s\n",error);assert(ok);
     assert(!memcmp(&c.spatial,&loaded.spatial,sizeof(c.spatial)));
+    assert(!memcmp(&c.speakers,&loaded.speakers,sizeof(c.speakers)));
     TsSisterProjectState state,read;ts_sister_project_state_init(&state,48000);state.spatial=c.spatial;
     assert(ts_sister_project_state_save_file(&state,"spatial-project.ini",error,sizeof(error)));int present=0;
     assert(ts_sister_project_state_load_file(&read,"spatial-project.ini",48000,&present,error,sizeof(error))&&present);
@@ -135,8 +137,98 @@ static void persistence(void)
     assert(ts_spatial_read(&read.spatial,"Spatial.Output0","2.5")<0);
     remove("spatial-test.ini");remove("spatial-project.ini");
 }
+static void capture_workflow(void)
+{
+    TsSpatial s;ts_spatial_init(&s);assert(ts_spatial_prepare(&s,48000));
+    assert(!ts_spatial_morph_to(&s,0));
+    TsSpatialControls c=s.controls;c.value[0]=.98f;c.value[3]=.2f;
+    c.lfo_depth=.5f;c.lfo_targets=1;c.morph_seconds=.1f;ts_spatial_set(&s,&c);
+    assert(ts_spatial_capture_state(&s,0));
+    c=s.controls;c.value[0]=.02f;c.value[3]=.8f;ts_spatial_set(&s,&c);
+    assert(ts_spatial_capture_state(&s,1));
+    float saved[2][5];memcpy(saved,s.controls.state,sizeof(saved));
+    ts_spatial_edit_state(&s,0);
+    assert(s.view.capture_selected==1 && s.view.capture_editing && !s.morph_active);
+    assert(!memcmp(s.controls.value,saved[0],sizeof(c.value)));
+    assert(ts_spatial_morph_to(&s,1));assert(s.view.morph_active && s.view.morph==0);
+    float out[4];render(&s,(TsStereoFrame){.1f,.1f},out,4,3000,0);
+    assert(s.base[0]>1 && s.base[3]>.2f && s.base[3]<.8f);
+    assert(!ts_spatial_capture_state(&s,0)); /* Never silently capture the destination mid-flight. */
+    assert(!memcmp(saved,s.controls.state,sizeof(saved)));
+    float live[5];memcpy(live,s.base,sizeof(live));
+    ts_spatial_stop_morph(&s);
+    assert(!s.morph_active && !s.view.morph_active && !s.view.capture_selected);
+    close_to(s.controls.value[0],live[0]-1,.000001f);
+    close_to(s.controls.value[3],live[3],.000001f);
+    assert(!memcmp(saved,s.controls.state,sizeof(saved)));
+    assert(ts_spatial_capture_state(&s,0)); /* Stores held base, not the LFO excursion. */
+    close_to(s.controls.state[0][0],live[0]-1,.000001f);
+    assert(ts_spatial_morph_to(&s,1));
+    ts_spatial_edit_state(&s,1); /* Destination already equals controls.value: must still stop. */
+    assert(!s.morph_active && !s.view.morph_active && s.view.capture_editing);
+    assert(!memcmp(s.controls.value,saved[1],sizeof(c.value)));
+    ts_spatial_clear_state(&s,0);assert(s.controls.captured==2 && s.view.capture_selected==1);
+    assert(!memcmp(s.controls.value,saved[1],sizeof(c.value)));
+    ts_spatial_edit_state(&s,0);assert(!memcmp(s.controls.value,saved[1],sizeof(c.value)));
+    assert(!memcmp(s.controls.state[1],saved[1],sizeof(c.value)));
+    ts_spatial_free(&s);
+}
+
+static void additive_bus(void)
+{
+    TsSpeakerSetup setup;ts_speakers_default(&setup);
+    /* Every supported array count, with spatial and fixed signals sharing outputs. */
+    for(int count=3;count<=16;++count) {
+        TsSpatial s;ts_spatial_init(&s);assert(ts_spatial_prepare(&s,48000));
+        TsSpatialControls c=s.controls;ts_spatial_ring(&c,count,0);c.enabled=1;
+        ts_spatial_set(&s,&c);float out[16],pure[16];
+        TsSpatial reference;ts_spatial_init(&reference);assert(ts_spatial_prepare(&reference,48000));ts_spatial_set(&reference,&c);
+        for(int frame=0;frame<14000;++frame) {
+            for(int ch=0;ch<16;++ch){out[ch]=.01f*(ch+1);pure[ch]=0;}
+            ts_spatial_process_bus(&s,(TsStereoFrame){.17f,.09f},out,16,&setup);
+            ts_spatial_process_bus(&reference,(TsStereoFrame){.17f,.09f},pure,16,&setup);
+        }
+        assert(s.view.available);
+        for(int ch=0;ch<16;++ch)close_to(out[ch],pure[ch]+.01f*(ch+1),.000001f);
+        c.enabled=0;ts_spatial_set(&s,&c);
+        for(int frame=0;frame<14000;++frame) {
+            for(int ch=0;ch<16;++ch)out[ch]=.01f*(ch+1);
+            ts_spatial_process_bus(&s,(TsStereoFrame){.17f,.09f},out,16,&setup);
+        }
+        for(int ch=0;ch<16;++ch)close_to(out[ch],.01f*(ch+1),.000001f);
+        /* Missing array output mutes the bus; never falls back to OUT 1/2. */
+        c.enabled=1;ts_spatial_set(&s,&c);setup.count=count-1;
+        memset(out,0,sizeof(out));ts_spatial_process_bus(&s,(TsStereoFrame){.2f,.3f},out,16,&setup);
+        assert(!s.view.available);for(int ch=0;ch<16;++ch)close_to(out[ch],0,.000001f);
+        ts_speakers_default(&setup);ts_spatial_free(&s);ts_spatial_free(&reference);
+    }
+    /* Named logical speaker maps to a different physical socket. */
+    TsSpatial s;ts_spatial_init(&s);assert(ts_spatial_prepare(&s,48000));
+    TsSpatialControls c=s.controls;c.enabled=1;c.output[0]=1;c.output[1]=3;c.output[2]=6;c.output[3]=9;
+    setup.count=10;setup.output[1]=14;assert(ts_speakers_valid(&setup));ts_spatial_set(&s,&c);
+    float out[16];for(int f=0;f<14000;++f){memset(out,0,sizeof(out));ts_spatial_process_bus(&s,(TsStereoFrame){.2f,.1f},out,16,&setup);}
+    assert(s.view.available && fabsf(out[14])>.001f && out[1]==0 && out[0]==0);
+    for(int ch=0;ch<16;++ch)if(ch!=14 && ch!=3 && ch!=6 && ch!=9)assert(out[ch]==0);
+    int old=c.output[0];float trim=c.trim_db[0]=-.7f,delay=c.delay_ms[0]=2.5f;
+    ts_spatial_resize(&c,5,10);assert(c.speakers==5 && c.output[0]==old && c.trim_db[0]==trim && c.delay_ms[0]==delay);
+    ts_spatial_resize(&c,2,10);assert(c.speakers==3);ts_spatial_resize(&c,16,10);assert(c.speakers==10);
+    for(int point=0;point<2;++point)for(int direction=-1;direction<=1;direction+=2) {
+        c.point=point;
+        for(int n=direction<0?15:3;n>=3 && n<=16;n+=direction) {
+            ts_spatial_resize(&c,n,16);assert(c.speakers==n);
+            TsSpatialControls ring=c;ts_spatial_ring(&ring,n,point);
+            assert(!memcmp(c.azimuth,ring.azimuth,sizeof(c.azimuth)));
+            assert(c.output[0]==old && c.trim_db[0]==trim && c.delay_ms[0]==delay);
+            float decoder[16][3];assert(ts_spatial_decoder(&c,decoder));
+            for(int i=0;i<n;++i)for(int j=0;j<i;++j)assert(c.output[i]!=c.output[j]);
+        }
+    }
+    c.azimuth[0]=17;TsSpatialControls custom=c;
+    ts_spatial_resize(&c,16,16);assert(!memcmp(&c,&custom,sizeof(c))); /* At the limit, preserve manual angles. */
+    ts_spatial_free(&s);
+}
 int main(void)
 {
-    decoders();transform_vectors();routing();transitions_and_motion();persistence();
+    decoders();transform_vectors();routing();transitions_and_motion();persistence();capture_workflow();additive_bus();
     puts("Ambisonics: decoder reconstruction, ATK transforms, stereo sides, output ownership, motion, smoothing and persistence passed");return 0;
 }

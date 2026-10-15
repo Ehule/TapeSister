@@ -20,11 +20,11 @@ static int key_compare(const void *a,const void *b)
 int ts_matrix_layout_valid(const TsMatrixLayout *l)
 {
     if(!l || l->row_count<0 || l->row_count>TS_MATRIX_LAYOUT_ROWS)return 0;
-    uint64_t seen=0;
+    unsigned char seen[TS_MATRIX_DESTINATIONS]={0};
     for(int i=0;i<TS_MATRIX_DESTINATIONS;++i) {
         unsigned d=l->column[i];
-        if(d>=TS_MATRIX_DESTINATIONS || (seen&(UINT64_C(1)<<d)))return 0;
-        seen|=UINT64_C(1)<<d;
+        if(d>=TS_MATRIX_DESTINATIONS || seen[d])return 0;
+        seen[d]=1;
     }
     if(!l->row_count)return 1;
     LayoutKey *keys=malloc((size_t)l->row_count*sizeof(*keys));if(!keys)return 0;
