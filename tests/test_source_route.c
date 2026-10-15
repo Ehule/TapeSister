@@ -81,7 +81,9 @@ static void voices_and_storage(void)
     TsSourceRouteMix m={0};TsStereoFrame main={0};ts_note_bank_read_routed(&n,&main,NULL,NULL,&m);
     NEAR(main.l,0);assert(m.speaker[2]>0&&m.speaker[3]>0);
     ts_note_bank_clear(&n);
-    TsPerformanceBank p;ts_performance_init(&p);ts_performance_set_attack_ms(&p,0);
+    /* Hundreds of voices include expanded routing coefficients. Keep this
+       single-use fixture off MinGW's 2 MiB stack, including during TSR loads. */
+    static TsPerformanceBank p;ts_performance_init(&p);ts_performance_set_attack_ms(&p,0);
     assert(ts_performance_trigger_group(&p,i,1,0,60,0,48000)==1);
     m=(TsSourceRouteMix){0};TsStereoFrame raw;main=ts_performance_read_routed(&p,&raw,&m);
     NEAR(main.l,0);assert(m.speaker[2]>0&&raw.l>0);ts_performance_clear(&p);
