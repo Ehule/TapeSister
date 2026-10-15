@@ -321,6 +321,13 @@ if(Python3_Interpreter_FOUND)
   add_test(NAME test_identity_packaging
     COMMAND "${Python3_EXECUTABLE}"
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_identity_packaging.py")
+  if(TAPESISTER_BUILD_SDL AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_test(NAME tapesister_linux_startup
+      COMMAND "${Python3_EXECUTABLE}"
+              "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_linux_startup.py"
+              "$<TARGET_FILE:tapesister>")
+    set_tests_properties(tapesister_linux_startup PROPERTIES TIMEOUT 60)
+  endif()
 endif()
 
 if(TAPESISTER_BUILD_SDL AND TAPESISTER_BUNDLE_CDP8)

@@ -13502,15 +13502,19 @@ int main(int argc, char **argv)
     SDL_AudioDeviceID device = 0;
     SDL_AudioDeviceID input_device = 0;
     SDL_AudioSpec desired, obtained;
-    TsInstrument instrument;
-    TsSamplePages sample_pages;
+    /* These stores live for the entire application, including across New.
+       Together with the audio engine they exceed the safe budget of Linux's
+       usual 8 MiB stack. Keep their storage static, like the preset banks,
+       so startup and nested UI/DSP calls have room on the main-thread stack. */
+    static TsInstrument instrument;
+    static TsSamplePages sample_pages;
     TsInstrument *parked_instrument = NULL;
-    TsUiState ui;
+    static TsUiState ui;
     /* Session-wide preset banks include all 26 Prism states. Keep this storage
        off the main-thread stack, including on platforms with an 8 MiB limit. */
     static SisterWindow sister_window;
     TapeCompanion companion_focus;
-    TsFramebuffer framebuffer;
+    static TsFramebuffer framebuffer;
     uint32_t *frame_snapshot = NULL;
     TsSample clipboard;
     TsSample pending_selection_load;
@@ -13528,8 +13532,8 @@ int main(int argc, char **argv)
     size_t clipboard_origin_first = 0;
     size_t clipboard_source_frames = 0;
     uint32_t clipboard_source_rate = 0;
-    AudioState audio = {0};
-    ExternalInputState external_input = {0};
+    static AudioState audio;
+    static ExternalInputState external_input;
     char ignored_exchange[TS_EXCHANGE_PATH_MAX] = {0};
     uint32_t last_exchange_poll = 0;
     uint32_t last_live_link_poll = 0;
