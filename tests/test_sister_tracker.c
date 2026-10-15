@@ -87,6 +87,7 @@ static void test_model(void)
     t.lanes[0].output_route.matrix_enabled=1;
     t.lanes[0].output_route.matrix_gain[TS_MATRIX_COMPRESSOR]=850;
     t.lanes[0].output_route.matrix_gain[TS_MATRIX_SIDECHAIN]=500;
+    t.lanes[0].output_route.matrix_gain[TS_MATRIX_DESTINATIONS-1]=1234;
     CHECK(ts_sister_tracker_save_file(&t, "score.tst", error, sizeof(error)));
     CHECK(ts_sister_tracker_load_file(&copy, "score.tst", error, sizeof(error)));
     CHECK(ts_sister_tracker_hash(&t) == ts_sister_tracker_hash(&copy));

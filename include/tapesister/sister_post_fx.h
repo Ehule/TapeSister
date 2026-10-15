@@ -289,6 +289,20 @@ typedef struct {
 } TsSisterFxSlotState;
 
 typedef struct {
+    float smooth_12ms, smooth_18ms, smooth_20ms, smooth_24ms;
+    float smooth_30ms, smooth_35ms, smooth_55ms;
+    uint32_t sample_rate;
+} TsSisterFxTiming;
+
+/* One chosen processor, one location: no unused delay/reverb/grain buffers. */
+typedef struct TsSisterSingleFx TsSisterSingleFx;
+TsSisterSingleFx *ts_sister_single_fx_new(TsSisterFxType type,unsigned rate,uint32_t seed);
+void ts_sister_single_fx_free(TsSisterSingleFx *fx);
+void ts_sister_single_fx_set(TsSisterSingleFx *fx,const TsSisterFxSlotControls *controls);
+TsStereoFrame ts_sister_single_fx_process(TsSisterSingleFx *fx,TsStereoFrame input,float gate);
+size_t ts_sister_single_fx_memory(const TsSisterSingleFx *fx);
+
+typedef struct {
     TsSisterReverbState
         reverb[TS_SISTER_FX_SLOT_COUNT][TS_SISTER_FX_LOCATION_COUNT];
     TsSisterDelayState
@@ -300,8 +314,7 @@ typedef struct {
     TsSisterTransientState
         transient[TS_SISTER_FX_SLOT_COUNT][TS_SISTER_FX_LOCATION_COUNT];
     /* Prepared on init/reconfigure, never recomputed per audio sample. */
-    float smooth_12ms, smooth_18ms, smooth_20ms, smooth_24ms;
-    float smooth_30ms, smooth_35ms, smooth_55ms;
+    TsSisterFxTiming timing;
     uint32_t transition_frames;
     TsSisterFxControls controls;
     TsSisterFxSlotState slot[TS_SISTER_FX_SLOT_COUNT];

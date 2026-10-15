@@ -2754,6 +2754,7 @@ static void begin_exit_confirmation(SDL_AudioDeviceID device, AudioState *audio,
         sample_pages, instrument, parked_record,
         record_bank_active, &audio->sister, &audio->keyboard_sequence) != ui->saved_state_hash || !tracker_saved;
     ui->exit_confirm_open = 1;
+    ui->exit_for_new = 0;
     ui->exit_choice = ui->exit_has_unsaved ? 2 : 1;
     ui->exit_after_save = 0;
     snprintf(ui->status, sizeof(ui->status), "%s",
@@ -4337,8 +4338,9 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
             (void)ts_sister_runtime_set_page(
                 &audio->sister, ts_sample_pages_active(sample_pages), instrument);
             if (sister_state_present) {
-                (void)ts_sister_project_state_apply(
-                    &sister_state, &audio->sister, instrument);
+                if(!ts_sister_project_state_apply(&sister_state,&audio->sister,instrument)) {
+                    ok=0;snprintf(error,sizeof(error),"Could not allocate the project's Matrix effects");
+                }
             } else {
                 TsSpatialControls spatial;ts_spatial_default(&spatial);
                 ts_spatial_recall(&audio->sister.spatial,&spatial);
@@ -4349,6 +4351,7 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
                 ts_mandala_default(&audio->sister.mandala);
                 audio->sister.performance_transport=1;
                 ts_performance_mixer_default(&audio->sister.performance_mixer);
+                ts_matrix_effects_free(&audio->sister.matrix_effects);
                 TsMatrixControls matrix;ts_matrix_default(&matrix);ts_matrix_set(&audio->sister.matrix,&matrix,audio->sister.router.sample_rate);
                 TsRouterControls defaults;ts_router_default(&defaults);
                 ts_sister_runtime_set_router(&audio->sister,&defaults);
@@ -7002,24 +7005,30 @@ static void browser_cycle_focus(TsBrowser *browser, int amount)
 static int exit_confirmation_activate(TsUiState *ui)
 {
     if (ui == NULL || !ui->exit_confirm_open) return 0;
-    if (ui->exit_has_unsaved && ui->exit_choice == 0) {
+    if ((ui->exit_has_unsaved || ui->exit_for_new) && ui->exit_choice == 0) {
         ui->exit_confirm_open = 0;
         ui->exit_after_save = 1;
         browser_open(ui, TS_BROWSER_SAVE_RECIPE);
         if (ui->browser.mode == TS_BROWSER_CLOSED) {
             ui->exit_after_save = 0;
+            ui->exit_for_new = 0;
             return 0;
         }
-        snprintf(ui->status, sizeof(ui->status),
-                 "SAVE PROJECT BEFORE EXITING");
+        snprintf(ui->status, sizeof(ui->status), "%s", ui->exit_for_new ?
+                 "SAVE TSR PROJECT BEFORE STARTING NEW" : "SAVE PROJECT BEFORE EXITING");
         return 0;
     }
-    if ((!ui->exit_has_unsaved && ui->exit_choice == 0) ||
-        (ui->exit_has_unsaved && ui->exit_choice == 1))
-        return 1;
+    if ((!ui->exit_has_unsaved && !ui->exit_for_new && ui->exit_choice == 0) ||
+        ((ui->exit_has_unsaved || ui->exit_for_new) && ui->exit_choice == 1)) {
+        if (!ui->exit_for_new) return 1;
+        ui->exit_confirm_open = 0;
+        ui->new_project_pending = 1;
+        return 0;
+    }
     ui->exit_confirm_open = 0;
     ui->exit_after_save = 0;
-    snprintf(ui->status, sizeof(ui->status), "EXIT CANCELLED");
+    snprintf(ui->status, sizeof(ui->status), "%s CANCELLED", ui->exit_for_new ? "NEW PROJECT" : "EXIT");
+    ui->exit_for_new = 0;
     return 0;
 }
 
@@ -7425,6 +7434,7 @@ static void browser_cancel(TsUiState *ui)
     }
     int returning_to_config = ts_browser_mode_selects_config(ui->browser.mode);
     ui->exit_after_save = 0;
+    ui->exit_for_new = 0;
     SDL_StopTextInput();
     ts_browser_close(&ui->browser);
     if (returning_to_config) {
@@ -8886,8 +8896,10 @@ static void run_pending_file_operation(SDL_AudioDeviceID device,
             ui->exit_after_save == 1)
             ui->exit_after_save = 2;
     } else if (browser->mode != TS_BROWSER_CLOSED) {
-        if (pending->mode == TS_BROWSER_SAVE_RECIPE)
+        if (pending->mode == TS_BROWSER_SAVE_RECIPE) {
             ui->exit_after_save = 0;
+            ui->exit_for_new = 0;
+        }
         browser->overwrite_armed = 0;
         snprintf(browser->message, sizeof(browser->message), "%.150s", ui->status);
     }
@@ -13475,6 +13487,8 @@ static int keyboard_note_key_event(const SDL_Event *event, SDL_Window *window,
 }
 
 
+#include "main_sdl_project.inc"
+
 int main(int argc, char **argv)
 {
     int visual_dispatch = ts_mandala_dispatch(argc, argv);
@@ -13520,6 +13534,14 @@ int main(int argc, char **argv)
     uint32_t last_exchange_poll = 0;
     uint32_t last_live_link_poll = 0;
     int record_bank_active = 0;
+    ProjectSession project_session = {
+        .audio=&audio, .ui=&ui, .instrument=&instrument, .pages=&sample_pages,
+        .record_active=&record_bank_active, .sister=&sister_window, .input=&external_input,
+        .mosaic=&mosaic, .portal=&portal, .transform=&transform, .import=&import_controller,
+        .audition=&browser_audition, .file=&pending_file, .clipboard=&clipboard,
+        .selection=&pending_selection_load, .drone=&drone_preview, .fm=&fm_preview,
+        .fm_history=&fm_bank_history, .seeds=&fm_seed_sequence, .exchange=&exchange_offer
+    };
     int diagnostic_bank_stress = argc > 1 &&
                                  strcmp(argv[1], "--diagnostic-bank-toggle-stress") == 0;
     int diagnostic_audio = argc > 1 &&
@@ -14026,8 +14048,20 @@ int main(int argc, char **argv)
                                        parked_instrument, record_bank_active,
                                        &pending_file);
         if (ui.exit_after_save == 2) {
-            running = 0;
-            continue;
+            if (ui.exit_for_new) ui.new_project_pending = 1;
+            else { running = 0; continue; }
+        }
+        if (ui.new_project_pending) {
+            project_session.record = parked_instrument;
+            if (project_new(window, device, input_device, &project_session)) {
+                clipboard_origin_first = clipboard_source_frames = clipboard_source_rate = 0;
+                frame_snapshot_valid = 0;
+                event_pending = 0;
+                /* Do not carry queued keyboard launches across the reset. */
+                SDL_FlushEvents(SDL_KEYDOWN, SDL_KEYUP);
+                if (ts_midi_input) { TsMidiEvent stale; while (ts_midi_input_poll(ts_midi_input, &stale)) {} }
+            }
+            main_paint_invalid = 1;
         }
         sync_sister_ext_consumer(&input_device, &audio, &external_input,
                                  &ui, &sister_window);
@@ -14088,6 +14122,10 @@ int main(int argc, char **argv)
             wheel_event_coalesce(&event);
             if (!wheel_event_prepare(&event)) continue;
             uint32_t event_id = event_window_id(&event);
+            if (ui.new_project_pending) { main_paint_invalid = 1; break; }
+            if (ui.exit_for_new && (ui.exit_confirm_open || ui.exit_after_save) &&
+                event_id && event_id != SDL_GetWindowID(window) &&
+                event.type != SDL_KEYUP && event.type != SDL_MOUSEBUTTONUP) continue;
             if(palette_window_event(&event,window,&ui,&sister_window)) {
                 if(palette_window.requested_group) {
                     palette_window_navigate(window,device,&audio,&ui,&sister_window,
@@ -14827,16 +14865,15 @@ int main(int argc, char **argv)
                              "AMPLITUDE DRAW TOOL OFF");
                 } else if (ui.exit_confirm_open) {
                     if (key == SDLK_ESCAPE || key == SDLK_n) {
-                        ui.exit_confirm_open = 0;
-                        ui.exit_after_save = 0;
-                        snprintf(ui.status, sizeof(ui.status), "EXIT CANCELLED");
+                        ui.exit_choice = (ui.exit_has_unsaved || ui.exit_for_new) ? 2 : 1;
+                        (void)exit_confirmation_activate(&ui);
                     } else if (key == SDLK_y) {
-                        ui.exit_choice = ui.exit_has_unsaved ? 1 : 0;
+                        ui.exit_choice = (ui.exit_has_unsaved || ui.exit_for_new) ? 1 : 0;
                         if (exit_confirmation_activate(&ui)) running = 0;
                     } else if (key == SDLK_TAB || key == SDLK_LEFT ||
                                key == SDLK_RIGHT || key == SDLK_UP ||
                                key == SDLK_DOWN) {
-                        int count = ui.exit_has_unsaved ? 3 : 2;
+                        int count = (ui.exit_has_unsaved || ui.exit_for_new) ? 3 : 2;
                         int amount = key == SDLK_LEFT || key == SDLK_UP ||
                                      (key == SDLK_TAB && (mod & KMOD_SHIFT)) ?
                                      -1 : 1;
@@ -16277,7 +16314,14 @@ int main(int argc, char **argv)
                       !ui.show_ingredients))
                     ui.bank_clear_armed = 0;
                 if (ui.exit_confirm_open) {
-                    if (ui.exit_has_unsaved && y >= 188 && y < 211) {
+                    if (ui.exit_for_new) {
+                        if (y < 199 || y >= 222) continue;
+                        if (x >= 104 && x < 236) ui.exit_choice = 0;
+                        else if (x >= 244 && x < 384) ui.exit_choice = 1;
+                        else if (x >= 392 && x < 536) ui.exit_choice = 2;
+                        else continue;
+                        (void)exit_confirmation_activate(&ui);
+                    } else if (ui.exit_has_unsaved && y >= 188 && y < 211) {
                         if (x >= 172 && x < 260) ui.exit_choice = 0;
                         else if (x >= 266 && x < 354) ui.exit_choice = 1;
                         else if (x >= 360 && x < 468) ui.exit_choice = 2;
@@ -16704,6 +16748,11 @@ int main(int argc, char **argv)
                         ts_ui_import_action_from_point(x, y);
                     if((ui.browser.mode==TS_BROWSER_SAVE_RECIPE || ui.browser.mode==TS_BROWSER_SAVE_XM) &&
                        !ui.browser.creating_directory && y>=39 && y<62 && x>=34 && x<290) {
+                        if (ui.exit_after_save && x >= 176) {
+                            snprintf(ui.browser.message, sizeof(ui.browser.message),
+                                     "SAVE A COMPLETE TSR PROJECT TO CONTINUE; XM IS ONLY A SONG EXPORT");
+                            continue;
+                        }
                         TsBrowserMode mode=x<176?TS_BROWSER_SAVE_RECIPE:TS_BROWSER_SAVE_XM;
                         char filename[TS_BROWSER_NAME_MAX+1];snprintf(filename,sizeof(filename),"%s",ui.browser.filename);
                         char *extension=strrchr(filename,'.');if(extension)*extension=0;
@@ -16795,9 +16844,12 @@ int main(int argc, char **argv)
                         cancel_browser_with_import(
                             device, &audio, &ui, &import_controller);
                     }
-                } else if (y >= 4 && y < 28 && x >= 214 && x < 260) {
+                } else if (y >= 4 && y < 28 && x >= TS_UI_NEW_X && x < TS_UI_NEW_X + TS_UI_NEW_W) {
+                    project_session.record = parked_instrument;
+                    begin_new_confirmation(&project_session);
+                } else if (y >= 4 && y < 28 && x >= TS_UI_CONFIG_X && x < TS_UI_CONFIG_X + TS_UI_CONFIG_W) {
                     begin_config(&ui);
-                } else if (y >= 4 && y < 28 && x >= 264 && x < 296) {
+                } else if (y >= 4 && y < 28 && x >= TS_UI_FT2_X && x < TS_UI_FT2_X + TS_UI_FT2_W) {
                     begin_exchange_send(&ui, &instrument, &sample_pages);
                 } else if (y >= 4 && y < 28 && x >= 360 && x < 398) {
                     browser_open(&ui, ui.show_ingredients ?
@@ -17760,6 +17812,11 @@ int main(int argc, char **argv)
         if (ts_midi_input != NULL) {
             TsMidiEvent midi;
             while (ts_midi_input_poll(ts_midi_input, &midi)) {
+                if (ui.exit_for_new || ui.new_project_pending) {
+                    if (midi.action == TS_MIDI_ACTION_NOTE_OFF || midi.action == TS_MIDI_ACTION_PANIC)
+                        handle_midi_event(device, &audio, &ui, &instrument, &fm_preview, &midi, obtained.freq, 0);
+                    continue;
+                }
                 ui.midi_activity_until_ms = SDL_GetTicks() + 140u;
                 sister_window.model.midi_activity = 1;
                 if (!handle_midi_mapping(

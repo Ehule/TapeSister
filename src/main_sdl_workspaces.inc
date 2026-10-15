@@ -55,7 +55,7 @@ static int workspace_event(const SDL_Event *event,SDL_Window *window,
         (mod&(KMOD_CTRL|KMOD_SHIFT))==(KMOD_CTRL|KMOD_SHIFT) && !(mod&(KMOD_ALT|KMOD_GUI));
     if(!from_sister && event->type==SDL_MOUSEBUTTONDOWN && event->button.button==SDL_BUTTON_LEFT && !ui->portal.open) {
         int x,y;logical_mouse(window,event->button.x,event->button.y,&x,&y);
-        to_mosaic=x>=300 && x<356 && y>=4 && y<28;
+        to_mosaic=x>=TS_UI_MOSAIC_X && x<TS_UI_MOSAIC_X+TS_UI_MOSAIC_W && y>=4 && y<28;
     }
     if(!to_mosaic && !to_fm && !to_portal)return 0;
     if(key && event->key.repeat)return 1;

@@ -45,9 +45,9 @@ static void matrix_layout_controller(const char *directory)
     w->receiving[8]=.5f;mx_paint(&a,&pages,&bank);
     assert(w->pixels[128*MATRIX_W+MATRIX_X]==0xffffce69u);
     assert(w->pixels[165*MATRIX_W+MATRIX_X+5]!=0xff202b30u);
-    for(int i=0;i<TS_MATRIX_DESTINATIONS-1;++i)matrix_key(SDLK_RIGHT,KMOD_SHIFT);
-    assert(mx_column(TS_MATRIX_DESTINATIONS-1)==8 && w->column==TS_MATRIX_DESTINATIONS-MATRIX_COLS);
-    matrix_key(SDLK_RIGHT,KMOD_SHIFT);assert(mx_column(TS_MATRIX_DESTINATIONS-1)==8);
+    for(int i=0;i<TS_MATRIX_SHARED_DESTINATIONS-1;++i)matrix_key(SDLK_RIGHT,KMOD_SHIFT);
+    assert(mx_column(TS_MATRIX_SHARED_DESTINATIONS-1)==8 && w->column==TS_MATRIX_SHARED_DESTINATIONS-MATRIX_COLS);
+    matrix_key(SDLK_RIGHT,KMOD_SHIFT);assert(mx_column(TS_MATRIX_SHARED_DESTINATIONS-1)==8);
     assert(!memcmp(dsp,&a.sister.matrix,sizeof(*dsp)));
     /* A relocated header/cell still edits the original hardware destination. */
     int y=MATRIX_Y+(w->selected-w->scroll)*MATRIX_RH+12;
@@ -63,7 +63,7 @@ static void matrix_layout_controller(const char *directory)
     assert(w->destination==TS_MATRIX_SIDECHAIN);
     for(int i=0;i<sc;++i)matrix_key(SDLK_LEFT,KMOD_SHIFT);
     assert(mx_column(0)==TS_MATRIX_SIDECHAIN);
-    w->column=TS_MATRIX_DESTINATIONS-MATRIX_COLS;
+    w->column=TS_MATRIX_SHARED_DESTINATIONS-MATRIX_COLS;
     matrix_click(1200,34,SDL_BUTTON_LEFT);
     assert(w->compressor_open && w->column==0);
     matrix_click(1200,34,SDL_BUTTON_LEFT);assert(!w->compressor_open);

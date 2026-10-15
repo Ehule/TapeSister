@@ -436,7 +436,7 @@ int ts_mosaic_save(const TsMosaic *m,const char *dir,char *error,size_t size)
     char path[4096];
     if(snprintf(path,sizeof(path),"%s/mosaic.tsm",dir)>=(int)sizeof(path))return 0;
     FILE *f=fopen(path,"w");if(!f)goto failed;
-    if(fprintf(f,"TAPESISTER_MOSAIC 7\nSETTINGS %d %.9g %.17g\n",m->repeat,m->gain,m->speed)<0)goto close_failed;
+    if(fprintf(f,"TAPESISTER_MOSAIC 8\nSETTINGS %d %.9g %.17g\n",m->repeat,m->gain,m->speed)<0)goto close_failed;
     if(fprintf(f,"VOLUME %d\n",TS_MOSAIC_ENVELOPE_POINTS)<0)goto close_failed;
     for(int i=0;i<TS_MOSAIC_ENVELOPE_POINTS;++i)
         if(fprintf(f,"%.9g\n",m->repeat && i==TS_MOSAIC_ENVELOPE_POINTS-1?m->volume[0]:m->volume[i])<0)goto close_failed;
@@ -487,7 +487,7 @@ int ts_mosaic_load(TsMosaic *m,const char *dir,char *error,size_t size)
     TsMosaic *next=ts_mosaic_create();if(!next){fclose(f);return 0;}
     TsMosaicSource *sources[TS_MOSAIC_EVENTS]={0};int count=0;
     if(!fgets(line,sizeof(line),f))goto failed;
-    int version=!strcmp(line,"TAPESISTER_MOSAIC 7\n")?7:!strcmp(line,"TAPESISTER_MOSAIC 6\n")?6:!strcmp(line,"TAPESISTER_MOSAIC 5\n")?5:!strcmp(line,"TAPESISTER_MOSAIC 4\n")?4:!strcmp(line,"TAPESISTER_MOSAIC 1\n")?1:!strcmp(line,"TAPESISTER_MOSAIC 2\n")?2:!strcmp(line,"TAPESISTER_MOSAIC 3\n")?3:0;
+    int version=!strcmp(line,"TAPESISTER_MOSAIC 8\n")?8:!strcmp(line,"TAPESISTER_MOSAIC 7\n")?7:!strcmp(line,"TAPESISTER_MOSAIC 6\n")?6:!strcmp(line,"TAPESISTER_MOSAIC 5\n")?5:!strcmp(line,"TAPESISTER_MOSAIC 4\n")?4:!strcmp(line,"TAPESISTER_MOSAIC 1\n")?1:!strcmp(line,"TAPESISTER_MOSAIC 2\n")?2:!strcmp(line,"TAPESISTER_MOSAIC 3\n")?3:0;
     if(!version)goto failed;
     char trailing;
     if(!fgets(line,sizeof(line),f))goto failed;
@@ -553,7 +553,7 @@ int ts_mosaic_load(TsMosaic *m,const char *dir,char *error,size_t size)
             int used=0,at=0;
             if(!fgets(line,sizeof(line),f) || sscanf(line,"ROUTE %d %d %d %n",
                 &e.output_route.matrix_enabled,&e.output_route.pan,&e.output_route.width,&at)!=3)goto failed;
-            for(int d=0;d<(version>=7?TS_MATRIX_DESTINATIONS:TS_MATRIX_LEGACY_DESTINATIONS);++d) {
+            for(int d=0;d<(version>=8?TS_MATRIX_DESTINATIONS:version>=7?TS_MATRIX_SHARED_DESTINATIONS:TS_MATRIX_LEGACY_DESTINATIONS);++d) {
                 if(sscanf(line+at,"%d %n",&e.output_route.matrix_gain[d],&used)!=1)goto failed;
                 at+=used;
             }

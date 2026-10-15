@@ -27,6 +27,7 @@ int main(int argc,char **argv)
     (void)argv;SDL_SetMainReady();SDL_setenv("SDL_VIDEODRIVER","dummy",1);
     assert(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER));
     ts_ui_init(&ui);ts_instrument_init(&bank);ts_sister_runtime_init(&audio.sister);
+    audio.output_rate=48000;audio.output_device_channels=2;
     char error[200];assert(ts_sister_runtime_reconfigure(&audio.sister,48000,2,error,sizeof(error)));
     assert(ts_sample_pages_init(&pages,error,sizeof(error)));
     ts_sister_ui_model_init(&sister.model,&ui.config);sister.model.fx_page=1;

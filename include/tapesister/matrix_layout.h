@@ -6,7 +6,7 @@
 #include "tapesister/sister_tracker.h"
 
 /* Presentation metadata only. Neither the graph nor the audio callback reads it.
-   Tracks and fixed buses use their index; tiles/cards use their stable identity. */
+   Tracks and fixed buses use their index; tiles/cards/effect instances use their stable identity. */
 enum { TS_MATRIX_LAYOUT_PAGES=1024,
        TS_MATRIX_LAYOUT_ROWS=TS_TRACKER_LANES+TS_MATRIX_LAYOUT_PAGES*TS_BANK_SLOT_COUNT+TS_MATRIX_ROWS+TS_MOSAIC_EVENTS };
 typedef struct {

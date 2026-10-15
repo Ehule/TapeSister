@@ -20,19 +20,19 @@ static int key_compare(const void *a,const void *b)
 int ts_matrix_layout_valid(const TsMatrixLayout *l)
 {
     if(!l || l->row_count<0 || l->row_count>TS_MATRIX_LAYOUT_ROWS)return 0;
-    unsigned seen=0;
+    uint64_t seen=0;
     for(int i=0;i<TS_MATRIX_DESTINATIONS;++i) {
         unsigned d=l->column[i];
-        if(d>=TS_MATRIX_DESTINATIONS || (seen&(1u<<d)))return 0;
-        seen|=1u<<d;
+        if(d>=TS_MATRIX_DESTINATIONS || (seen&(UINT64_C(1)<<d)))return 0;
+        seen|=UINT64_C(1)<<d;
     }
     if(!l->row_count)return 1;
     LayoutKey *keys=malloc((size_t)l->row_count*sizeof(*keys));if(!keys)return 0;
     int valid=1;
     for(int i=0;i<l->row_count;++i) {
         unsigned kind=l->row_kind[i];uint64_t id=l->row_id[i];
-        if(kind>3 || (kind==0 && id>=TS_TRACKER_LANES) || (kind==2 && id>=TS_MATRIX_ROWS) ||
-           ((kind==1 || kind==3) && !id)){valid=0;break;}
+        if(kind>4 || (kind==0 && id>=TS_TRACKER_LANES) || (kind==2 && id>=TS_MATRIX_ROWS) ||
+           ((kind==1 || kind==3 || kind==4) && !id)){valid=0;break;}
         keys[i]=(LayoutKey){id,kind};
     }
     if(valid) {
@@ -72,7 +72,7 @@ int ts_matrix_layout_read(TsMatrixLayout *l,const char *key,const char *value)
         s=key+16;
         /* Consecutive entries reject holes, duplicate indices and oversized files. */
         if(!layout_number(&s,TS_MATRIX_LAYOUT_ROWS-1,&i) || *s || i!=(uint64_t)l->row_count ||
-           !layout_number(&value,3,&kind) || *value++!=',' ||
+           !layout_number(&value,4,&kind) || *value++!=',' ||
            !layout_number(&value,UINT64_MAX,&id) || *value)return -1;
         l->row_kind[i]=(unsigned char)kind;l->row_id[i]=id;++l->row_count;return 1;
     }

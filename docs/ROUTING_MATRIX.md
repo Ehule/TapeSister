@@ -10,10 +10,73 @@ not implemented. The legacy Router Performance sequencer only affects the old
 serial engine; Prism's Morph Matrix is a separate sound-morphing feature.
 
 **Read across a row:** this sound goes to each checked destination column.
-Multiple sources feeding a processor are summed into one shared instance.
+Multiple sources feeding one processor column are summed into that instance.
+Added effects have independent columns and DSP histories.
 Prism, Pedalboard and Fallout rows contain only the processed contribution.
 Sister's row contains its tape/head mix. Dry audio needs its own connection;
 checking a processor does not secretly add another dry copy.
+
+## Independent effect instances
+
+In Matrix mode, click **Add Effect +** and choose **Reverb, Delay, Distortion,
+Grain, Transient, or Compressor**. Up to **16 added instances** can coexist with
+the fixed processors and the five-slot pedalboard. You can use all 16 for one
+type or mix types. Each has its own numbered row, input column, settings and DSP
+history. Only occupied instance ports appear in the grid.
+
+New effects start **unpatched**. Connect a source row to the instance's input
+column, then connect its output row to another effect, Main, or a physical output.
+For example: TrackSister Bus → Transient 1 → Reverb 2 → Transient 3 → Main.
+Multiple sources can share an instance; multiple instances can run in parallel.
+Added effects return their own dry/wet mix. Their default Mix is 100% processed;
+use Mix to blend dry audio or make an explicit parallel dry connection.
+
+Click an instance row label to edit it. **Back to Routes** exposes the ordinary
+connection level and row pan controls. Selecting another source closes the added
+instance panel. Escape closes the panel first, then the Matrix. Controls support
+dragging, wheel, Shift+wheel for fine adjustment, and right-click for defaults.
+Each instance has **Active / Bypass** and a **Bypass Fade** from 10 ms to 60 minutes.
+Bypass fades to the dry signal; it does not mute the row. Parameter smoothing
+remains independent of that enable/bypass fade.
+
+Each added compressor also has its own **SC** destination. Patch the sound to
+compress into its audio column, the trigger into its SC column, and select
+**SC: External**. SC audio drives the detector only. You can use independent keys
+for different compressors, or patch a processor output into another compressor's
+key. Sidechain edges participate in the same cycle checks as audio edges.
+
+**Remove** deletes the selected instance and all its incoming/outgoing routes,
+including off-page tiles, hidden tracks and Mosaic cards. The change is undoable;
+undo recreates the instance with its saved controls and connections, with a fresh
+DSP history. A later new instance receives a new identity. Add/remove/control
+edits participate in Matrix undo, A/B and project saving. Clear All and Reset to
+Default retain instances/settings but disconnect their routes.
+
+Row and column ordering works for added instances too. Their labels, controls,
+meters and connections stay together through moves, filtering and undo. New ports
+append at the end of a customized column layout.
+
+The 16-instance limit bounds routing storage; it is **not** a promise that every
+16-effect patch meets a device's audio deadline. Each node allocates only its
+selected engine: at 48 kHz, 16 grain nodes use about 30 MiB of effect storage,
+16 reverbs about 9 MiB, and 16 transient shapers about 20 KiB. Allocation and
+retirement run on the control thread. Completely unpatched, silent nodes skip
+DSP; connected reverb/delay histories keep processing their tails. Bypass retains
+state and is not a CPU-unload switch. Remove releases the instance after a short
+lifecycle fade. If an edit catches that fade, it is refused without changes and
+can be retried; offline editing retires it immediately.
+
+Build and run `tapesister_routing_matrix_instances_tests` for headless checks of
+16-stage chains, parallel reverbs, mixed graphs, delayed feedback, independent
+sidechains, extreme controls/signals, persistence and repeated removal/recreation.
+It prints CPU time and allocated effect memory for each patch. CPU time is measured
+on the host running the test, excludes much of the complete application, and is
+not a real-time deadline guarantee. The native source-routing controller test also
+checks the actual audio callback and linked physical-output guard with 16 boosted
+transient shapers. Internal graph levels can be far above unity; FILE OUT remains
+before the physical guard, so route through the Limiter when that is desired.
+
+![Independent Transient and Compressor instances with dedicated sidechain ports](screenshots/matrix-effect-instances.png)
 
 ## Normal stereo
 
@@ -69,7 +132,7 @@ Convert inherited/legacy rows individually before including them in a batch.
 
 **Undo / Redo**, **Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z** work while the Matrix owns
 keyboard focus. The last 32 edits include connections, gains, pan, mono,
-inheritance, names, feedback, activation, layout moves, Clear All and Reset. A whole drag or
+inheritance, names, feedback, activation, layout moves, effect instances and their controls, Clear All and Reset. A whole drag or
 bulk edit is one step. A fresh edit after Undo replaces the redo branch.
 
 **Original / Edited** auditions the state captured before the first routing edit
@@ -78,8 +141,9 @@ A/B preserves the edited version and undo history; return to Edited to make
 changes. **Restore** asks before replacing your edited routing, and that restore
 can itself be undone. Closing/reopening the Matrix keeps the session history.
 Loading another project clears it. Undo/A/B restore routes and related legacy
-controls, not tape contents, FX tails or transport time. Deleted sources are not
-recreated or confused with new sources. History and the alternate A/B state are
+controls, not tape contents, FX tails or transport time. Deleted tiles/cards are not
+recreated or confused with new sources. Removed effect instances are recreated
+when undo/A/B restores them; their old audio histories are not restored. History and the alternate A/B state are
 not saved; saving stores the routing currently being auditioned.
 
 ![Bulk selection and undo](screenshots/performance/matrix-bulk-undo.png)
@@ -113,7 +177,7 @@ Undo/Redo history. Clear All and Reset to Default still affect routing and leave
 the layout alone. As with other Matrix edits, return to **Edited** before moving
 labels while auditioning Original.
 
-Save the project to keep its layout. Sister state **version 40** stores the two
+Save the project to keep its layout. Sister state **version 41** stores the two
 orders independently of the audio graph. Older projects start in the default
 layout; older application versions cannot read the new layout keys. Global INI
 routing does not copy a project's arrangement into another project.
@@ -238,8 +302,9 @@ are outside the graph and cannot be inferred from port aliases.
 
 ## Saving, recording and compatibility
 
-TSR38 tile files, SISTRK v7 tracker scores, Mosaic format 6 and Sister state v32 preserve the
-new source routes, graph, connection levels, row pan/mono and hardware aliases.
+TSR40 tile files, SISTRK v9 tracker scores, Mosaic format 8 and Sister state v41
+preserve the expanded source routes, effect instances and their settings, graph,
+connection levels, row pan/mono and hardware aliases.
 Old formats load; older application builds cannot read the new tile/score saves.
 Opening a project replaces its matrix and aliases rather than retaining the
 previous project's graph. The graph and aliases are also in saved configuration.
@@ -255,7 +320,7 @@ H1/H2/H3 capture taps remain available. Matrix-routed input to Sister reaches
 its tape directly; a second TRACK/EXT source switch is not required.
 
 Internal route edits are compiled off the audio thread. The callback uses fixed
-storage and one shared DSP history per processor. ASIO inputs use the same
+routing storage and one independent DSP history per active processor instance. ASIO inputs use the same
 borrowed duplex block as playback; asynchronous input devices use bounded,
 resampling input bridges. Physical M6/Vulture listening remains a hardware check.
 

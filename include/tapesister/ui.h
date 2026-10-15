@@ -27,6 +27,11 @@ const char *ts_ui_glyph(char character);
 #include "../../third_party/tapehead/transport_visuals.h"
 
 enum { TS_UI_WIDTH = 640, TS_UI_HEIGHT = 400 };
+/* Shared by the main toolbar and workspace event routing. */
+enum { TS_UI_NEW_X = 214, TS_UI_NEW_W = 28,
+       TS_UI_CONFIG_X = 246, TS_UI_CONFIG_W = 28,
+       TS_UI_FT2_X = 278, TS_UI_FT2_W = 28,
+       TS_UI_MOSAIC_X = 310, TS_UI_MOSAIC_W = 46 };
 /* The retired native editor fixture has a fixed eight-column drawing layout.
    The embedded TapeHead workspace owns scrolling across all 32 stored tracks. */
 enum { TS_TRACKER_LEGACY_LANES=8, TS_TRACKER_LEN_Y=54, TS_TRACKER_RATIO_Y=64,
@@ -662,6 +667,8 @@ typedef struct {
     int exit_has_unsaved;
     int exit_choice;
     int exit_after_save;
+    int exit_for_new; /* Shared confirmation/save flow; completion starts a blank project. */
+    int new_project_pending;
     int project_overwrite_confirm_open;
     char project_path[TS_BROWSER_PATH_MAX];
     uint64_t saved_state_hash;

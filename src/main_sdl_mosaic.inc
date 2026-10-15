@@ -240,7 +240,8 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
         if(!ui->show_recipes && !ui->show_ingredients)ui->show_keyboard=1;
         if((key && event->key.keysym.sym==SDLK_ESCAPE) ||
            (key && (mod&KMOD_CTRL) && (event->key.keysym.sym==SDLK_s || event->key.keysym.sym==SDLK_o)) ||
-           (down && y>=4 && y<28 && x>=360 && x<398)) {
+           (down && y>=4 && y<28 && ((x>=360 && x<398) ||
+            (x>=TS_UI_NEW_X && x<TS_UI_NEW_X+TS_UI_NEW_W)))) {
             if(transform->worker){snprintf(ui->status,sizeof(ui->status),"WAIT FOR THE CURRENT EDIT TO FINISH");return 1;}
             if(!mosaic_leave(device,audio,ui,instrument,c)) {
                 if(ui->mosaic_edit_choice && !(key && event->key.keysym.sym==SDLK_ESCAPE)) {
@@ -287,7 +288,7 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
     if(down && y<32) {
         if(x>=402 && x<494 && ui->mosaic_selected)
             (void)mosaic_enter(device,audio,ui,instrument,c,ui->mosaic_selected);
-        if((x>=214 && x<296) || (x>=360 && x<494))ui->mosaic_open=0;
+        if((x>=TS_UI_NEW_X && x<TS_UI_FT2_X+TS_UI_FT2_W) || (x>=360 && x<494))ui->mosaic_open=0;
         return 0; /* Existing global output, Sister, project and configuration controls. */
     }
     if(key) {

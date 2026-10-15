@@ -3100,9 +3100,10 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                         TS_UI_MASTER_METER_X, TS_UI_MASTER_METER_Y);
     rect(fb, 576, 12, 3, 9,
          ui->midi_activity_until_ms != 0u ? PAL_TUNING : ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(22, 22, 22)));
-    button(fb, 214, 4, 46, "CFG", ui->config_open);
-    button(fb, 264, 4, 32, "FT2", ui->exchange_dialog != TS_UI_EXCHANGE_NONE);
-    button(fb, 300, 4, 56, "MOSAIC", ui->mosaic_editing != 0 || ui->mosaic_playing);
+    button(fb, TS_UI_NEW_X, 4, TS_UI_NEW_W, "NEW", ui->exit_for_new);
+    button(fb, TS_UI_CONFIG_X, 4, TS_UI_CONFIG_W, "CFG", ui->config_open);
+    button(fb, TS_UI_FT2_X, 4, TS_UI_FT2_W, "FT2", ui->exchange_dialog != TS_UI_EXCHANGE_NONE);
+    button(fb, TS_UI_MOSAIC_X, 4, TS_UI_MOSAIC_W, "MOSAIC", ui->mosaic_editing != 0 || ui->mosaic_playing);
     button(fb, 360, 4, 38, "SAVE", 0);
     button(fb, 402, 4, 58, "EXPORT", 0);
     button(fb, 464, 4, 28, "CDP", 0);
@@ -4011,7 +4012,18 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         text(fb,418,389,filename,ui->project_modified?PAL_VOLUME:PAL_NOTE,1);
     }
 
-    if (ui->exit_confirm_open) {
+    if (ui->exit_confirm_open && ui->exit_for_new) {
+        frame(fb, 88, 118, 464, 150, ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(36, 33, 37)), PAL_MOUSE);
+        text(fb, 104, 134, "START A NEW PROJECT?", PAL_NOTE, 1);
+        text(fb, 104, 156, "CLEARS TILES, TRACKS, MOSAIC, ROUTING AND EFFECTS", PAL_VOLUME, 1);
+        text(fb, 104, 173, ui->exit_has_unsaved ?
+             "UNSAVED CHANGES WILL BE LOST. SAVE BEFORE CLEARING?" :
+             "SAVE A COPY BEFORE CLEARING?", PAL_NOTE, 1);
+        button(fb, 104, 199, 132, "SAVE & NEW", ui->exit_choice == 0);
+        button(fb, 244, 199, 140, "DISCARD & NEW", ui->exit_choice == 1);
+        button(fb, 392, 199, 144, "CANCEL", ui->exit_choice == 2);
+        text(fb, 104, 244, "TAB/ARROWS CHOOSE  ENTER CONFIRMS  ESC CANCELS", PAL_NOTE, 1);
+    } else if (ui->exit_confirm_open) {
         frame(fb, 154, 128, 332, 130, ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(36, 33, 37)), PAL_MOUSE);
         text(fb, 172, 143, "EXIT TAPESISTER?", PAL_NOTE, 1);
         text(fb, 172, 164,

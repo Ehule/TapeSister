@@ -11,7 +11,8 @@ static int failures;
 
 int main(void)
 {
-    TsSisterRuntime runtime;
+    /* Keep the large runtime fixture off the default Windows test stack. */
+    static TsSisterRuntime runtime;
     TsSisterParameters parameters;
     TsSisterSourceFrames source = {0};
     TsSisterRuntimeFrame frame;

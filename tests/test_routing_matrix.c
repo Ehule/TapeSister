@@ -104,7 +104,7 @@ static void tracker_bus(void)
     assert(ts_sister_runtime_reconfigure(&r,48000,2,error,sizeof(error)));
     ts_sister_runtime_configure_limiter(&r,0,-1,1,50);
     TsMatrixControls c=r.matrix.controls;c.enabled=1;
-    assert(TS_MATRIX_COMPRESSOR==15 && TS_MATRIX_SIDECHAIN==16 && TS_MATRIX_DESTINATIONS==17);
+    assert(TS_MATRIX_COMPRESSOR==15 && TS_MATRIX_SIDECHAIN==16 && TS_MATRIX_SHARED_DESTINATIONS==17 && TS_MATRIX_DESTINATIONS==49);
     assert(ts_matrix_set(&r.matrix,&c,48000));
     TsSisterSourceFrames s={.tracker={.2f,-.3f},.preview={.05f,.07f},.fm={.1f,.12f}};
     /* Explicit per-track destinations arrive separately from the group mix. */
