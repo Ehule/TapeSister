@@ -9,6 +9,7 @@ on:
       - "include/tapesister/transient.h"
       - "tests/test_transient*.c"
       - "tests/test_new_project.c"
+      - "tests/test_linux_startup.py"
       - "src/main_sdl_project.inc"
       - "src/*compressor*"
       - "include/tapesister/compressor.h"
@@ -140,6 +141,8 @@ jobs:
           for program in build/cdp/bin/*; do
             test -x "download-check/extracted/cdp/bin/$(basename "$program")" || exit 1
           done
+      - name: Launch the downloaded Linux executable with a desktop stack limit
+        run: python3 tests/test_linux_startup.py download-check/extracted/tapesister
 
   windows:
     runs-on: windows-latest
