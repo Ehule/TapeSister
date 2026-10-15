@@ -27,15 +27,25 @@ static void set_route(int spatial,int direct,int last)
 }
 static void spatial_enabled(int enabled)
 {TsSpatialControls c=a.sister.spatial.controls;c.enabled=enabled;ts_spatial_set(&a.sister.spatial,&c);}
-static void click_window(Uint32 id,int x,int y)
+static void button_window(Uint32 id,int x,int y,int button)
 {
-    SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=id;e.button.button=SDL_BUTTON_LEFT;e.button.x=x;e.button.y=y;
+    SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=id;e.button.button=button;e.button.x=x;e.button.y=y;
     if(id==speakers_window.id)assert(speakers_event(&e,window,0,&a,&u));
     else if(id==matrix_window.id)assert(matrix_event(&e,window,0,&a,&u,&pages,&bank));
     else assert(spatial_event(&e,window,0,&a,&u,&sister));
     e.type=SDL_MOUSEBUTTONUP;
     if(id==matrix_window.id)matrix_event(&e,window,0,&a,&u,&pages,&bank);
     else if(id==spatial_window.id)spatial_event(&e,window,0,&a,&u,&sister);
+}
+static void click_window(Uint32 id,int x,int y)
+{button_window(id,x,y,SDL_BUTTON_LEFT);}
+static void check_array(void)
+{
+    const TsSpatialControls *c=&a.sister.spatial.controls;
+    TsSpatialControls expected=*c;ts_spatial_ring(&expected,c->speakers,c->point);
+    assert(!memcmp(c->azimuth,expected.azimuth,sizeof(c->azimuth)));
+    assert(!memcmp(spatial_window.model.controls.azimuth,c->azimuth,sizeof(c->azimuth)));
+    assert(a.sister.spatial.layout_valid);
 }
 static void shot(TsFramebuffer *fb,const char *dir,const char *name)
 {
@@ -107,17 +117,34 @@ int main(int argc,char **argv)
     a.output_device_channels=16;mx_capture_activity(0,&a,&pages,&bank,50);found=0;
     for(int i=0;i<matrix_window.column_count;++i)found|=mx_column(i)==TS_MATRIX_SPEAKER_BASE+9;
     assert(found);
-    click_window(speakers_window.id,45,76);assert(speakers_window.model.editing);
+    click_window(speakers_window.id,45,76);assert(!speakers_window.model.editing && speakers_window.model.selected==0);
+    click_window(speakers_window.id,45,108);assert(!speakers_window.model.editing && speakers_window.model.selected==1);
+    button_window(speakers_window.id,45,76,SDL_BUTTON_MIDDLE);assert(speakers_window.model.editing);
     snprintf(speakers_window.model.edit,sizeof(speakers_window.model.edit),"FRONT LEFT");
     SDL_Event e;SDL_zero(e);e.type=SDL_KEYDOWN;e.key.windowID=speakers_window.id;e.key.keysym.sym=SDLK_RETURN;
     assert(speakers_event(&e,window,0,&a,&u));assert(!strcmp(a.speakers.name[0],"FRONT LEFT"));
+    button_window(speakers_window.id,45,76,SDL_BUTTON_MIDDLE);
+    snprintf(speakers_window.model.edit,sizeof(speakers_window.model.edit),"CANCEL ME");
+    e.key.keysym.sym=SDLK_ESCAPE;assert(speakers_event(&e,window,0,&a,&u));
+    assert(!speakers_window.model.editing && speakers_window.visible && !strcmp(a.speakers.name[0],"FRONT LEFT"));
+    SDL_SetWindowSize(speakers_window.window,1280,800);
+    button_window(speakers_window.id,90,216,SDL_BUTTON_MIDDLE);assert(speakers_window.model.editing && speakers_window.model.selected==1);
+    snprintf(speakers_window.model.edit,sizeof(speakers_window.model.edit),"FRONT RIGHT");
+    click_window(speakers_window.id,90,152); /* Click-away saves and selects in one gesture. */
+    assert(!speakers_window.model.editing && speakers_window.model.selected==0 && !strcmp(a.speakers.name[1],"FRONT RIGHT"));
+    SDL_SetWindowSize(speakers_window.window,640,400);
+    button_window(speakers_window.id,45,76,SDL_BUTTON_MIDDLE);
+    e.type=SDL_WINDOWEVENT;e.window.windowID=speakers_window.id;e.window.event=SDL_WINDOWEVENT_FOCUS_LOST;
+    assert(speakers_event(&e,window,0,&a,&u));assert(!speakers_window.model.editing);
+    e.type=SDL_KEYDOWN;e.key.windowID=speakers_window.id;e.key.keysym.sym=SDLK_z;
+    assert(!speakers_event(&e,window,0,&a,&u));assert(e.key.windowID==SDL_GetWindowID(window));
     assert(ts_config_save(&u.config,"speaker-config.ini",error,sizeof(error)));TsConfig loaded;assert(ts_config_load(&loaded,"speaker-config.ini",error,sizeof(error)));
     assert(!memcmp(&loaded.speakers,&u.config.speakers,sizeof(loaded.speakers)));remove("speaker-config.ini");
     click_window(speakers_window.id,430,18);assert(a.speaker_test_remaining==48000);speakers_hide(0,&a);assert(!a.speaker_test_remaining);
     /* Array count cannot fall below 3 or grow beyond the configured setup. */
     spatial_capture(&a,&u);spatial_window.model.page=1;
-    for(int i=0;i<4;++i)click_window(spatial_window.id,350,90);assert(a.sister.spatial.controls.speakers==3);
-    for(int i=0;i<20;++i)click_window(spatial_window.id,440,90);assert(a.sister.spatial.controls.speakers==10);
+    for(int i=0;i<4;++i){click_window(spatial_window.id,350,90);check_array();}assert(a.sister.spatial.controls.speakers==3);
+    for(int i=0;i<20;++i){click_window(spatial_window.id,440,90);check_array();}assert(a.sister.spatial.controls.speakers==10);
     ts_spatial_set(&a.sister.spatial,&c);spatial_capture(&a,&u);
     if(argc>1) {
         u.config_open=1;u.config.audio_backend=TS_AUDIO_BACKEND_JACK;

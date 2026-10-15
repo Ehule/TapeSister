@@ -27,6 +27,53 @@ static void screenshot(const char *path)
         unsigned char rgb[3]={(unsigned char)(p>>16),(unsigned char)(p>>8),(unsigned char)p};assert(fwrite(rgb,1,3,f)==3);}
     fclose(f);
 }
+static void motion_controls(SDL_Window *main)
+{
+    TsSpatial *s=&test_audio.sister.spatial;
+    TsSpatialControls defaults;ts_spatial_default(&defaults);
+    const int x[]={200,500,200,500},y[]={125,125,233,233};
+    const float expected[]={defaults.lfo_rate,defaults.lfo_depth,defaults.rise_length,defaults.rise_depth};
+    for(int scale=1;scale<=2;++scale) {
+        SDL_SetWindowSize(spatial_window.window,640*scale,400*scale);
+        for(int i=0;i<4;++i) {
+            mouse(main,x[i]*scale,y[i]*scale,SDL_BUTTON_LEFT);
+            mouse(main,x[i]*scale,y[i]*scale,SDL_BUTTON_RIGHT);
+            float actual[]={s->controls.lfo_rate,s->controls.lfo_depth,s->controls.rise_length,s->controls.rise_depth};
+            assert(actual[i]==expected[i] && !spatial_window.drag);
+        }
+    }
+    SDL_SetWindowSize(spatial_window.window,640,400);
+    TsSpatialControls c=s->controls;c.captured=0;c.morph_seconds=.2f;c.value[0]=.2f;
+    ts_spatial_recall(s,&c);spatial_capture(&test_audio,&test_ui);
+    assert(ts_spatial_ui_capture_visual(&spatial_window.model,0)==TS_SPATIAL_CAPTURE_EMPTY);
+    mouse(main,215,334,SDL_BUTTON_LEFT);assert(!s->morph_active && strstr(spatial_window.model.message,"EMPTY"));
+    mouse(main,45,334,SDL_BUTTON_LEFT);assert(s->controls.captured==1);
+    assert(ts_spatial_ui_capture_visual(&spatial_window.model,0)==TS_SPATIAL_CAPTURE_READY);
+    assert(spatial_midi(0,&test_audio,&test_ui,"main.spatial.param.0",.8f));
+    assert(ts_spatial_ui_capture_visual(&spatial_window.model,0)==TS_SPATIAL_CAPTURE_CHANGED);
+    char help[112];ts_spatial_ui_capture_status(&spatial_window.model,help,sizeof(help));assert(strstr(help,"NOT CAPTURED"));
+    mouse(main,130,334,SDL_BUTTON_LEFT);assert(s->controls.captured==3);
+    mouse(main,45,334,SDL_BUTTON_RIGHT);assert(s->controls.value[0]==.2f);
+    assert(ts_spatial_ui_capture_visual(&spatial_window.model,0)==TS_SPATIAL_CAPTURE_EDITING);
+    assert(ts_spatial_ui_capture_visual(&spatial_window.model,1)==TS_SPATIAL_CAPTURE_READY);
+    float saved[2][5];memcpy(saved,s->controls.state,sizeof(saved));
+    mouse(main,295,334,SDL_BUTTON_LEFT);assert(s->morph_active && spatial_window.model.view.morph_active);
+    ts_spatial_ui_capture_status(&spatial_window.model,help,sizeof(help));assert(strstr(help,"MORPH TO B"));
+    mouse(main,45,334,SDL_BUTTON_LEFT);assert(s->morph_active && strstr(spatial_window.model.message,"MORPH RUNNING"));
+    assert(!memcmp(saved,s->controls.state,sizeof(saved)));
+    float output[4]={0};for(int i=0;i<2400;++i)ts_spatial_process(s,(TsStereoFrame){0,0},output,4,0);
+    float held=s->base[3];mouse(main,575,334,SDL_BUTTON_LEFT);
+    assert(!s->morph_active && !spatial_window.model.view.morph_active && s->controls.value[3]==held);
+    assert(!memcmp(saved,s->controls.state,sizeof(saved)));
+    mouse(main,130,334,SDL_BUTTON_RIGHT);assert(s->controls.value[0]==.8f && !s->morph_active);
+    mouse(main,45,334,SDL_BUTTON_MIDDLE);assert(s->controls.captured==2 && s->controls.value[0]==.8f);
+    assert(ts_spatial_ui_capture_visual(&spatial_window.model,0)==TS_SPATIAL_CAPTURE_EMPTY);
+    mouse(main,45,334,SDL_BUTTON_RIGHT);assert(s->controls.value[0]==.8f); /* Empty recall keeps live field. */
+    mouse(main,45,334,SDL_BUTTON_LEFT);assert(s->controls.captured==3);
+    mouse(main,400,334,SDL_BUTTON_RIGHT);assert(s->controls.morph_seconds==defaults.morph_seconds);
+    c=s->controls;mouse(main,94,334,SDL_BUTTON_LEFT);assert(!memcmp(&c,&s->controls,sizeof(c))); /* Button gap. */
+    assert(!memcmp(saved[1],s->controls.state[1],sizeof(saved[1])));
+}
 int main(int argc,char **argv)
 {
     assert(!SDL_setenv("SDL_VIDEODRIVER","dummy",1));assert(!SDL_setenv("SDL_AUDIODRIVER","dummy",1));
@@ -49,6 +96,7 @@ int main(int argc,char **argv)
     mouse(main,150,249,SDL_BUTTON_RIGHT);assert(test_audio.sister.spatial.controls.transform==TS_SPATIAL_FOCUS);
     mouse(main,350,18,SDL_BUTTON_LEFT);assert(test_audio.sister.spatial.controls.stereo_pair==1);
     mouse(main,240,50,SDL_BUTTON_LEFT);assert(spatial_window.model.page==2);
+    motion_controls(main);
     mouse(main,70,153,SDL_BUTTON_LEFT);assert(test_audio.sister.spatial.controls.lfo_targets&1);
     mouse(main,430,125,SDL_BUTTON_LEFT);assert(test_audio.sister.spatial.controls.lfo_depth>.3f);
     mouse(main,50,332,SDL_BUTTON_LEFT);assert(test_audio.sister.spatial.controls.captured&1);
@@ -70,6 +118,19 @@ int main(int argc,char **argv)
     if(argc>1){char path[1024];
         for(int page=0;page<3;++page){spatial_window.model.page=page;
             snprintf(path,sizeof(path),"%s/spatial-%d.ppm",argv[1],page);screenshot(path);}
+        const char *states[]={"edit","changed","ready","running"};
+        for(int state=0;state<4;++state) {
+            if(state==0)mouse(main,45,334,SDL_BUTTON_RIGHT);
+            if(state==1)assert(spatial_midi(0,&test_audio,&test_ui,"main.spatial.param.0",.35f));
+            if(state==2)mouse(main,45,334,SDL_BUTTON_LEFT);
+            if(state==3) {
+                TsSpatialControls c=test_audio.sister.spatial.controls;c.morph_seconds=1;
+                ts_spatial_set(&test_audio.sister.spatial,&c);mouse(main,295,334,SDL_BUTTON_LEFT);
+                for(int i=0;i<48;++i)audio_callback(&test_audio,(Uint8 *)samples,sizeof(samples));
+            }
+            spatial_window.model.message[0]=0;
+            snprintf(path,sizeof(path),"%s/spatial-capture-%s.ppm",argv[1],states[state]);screenshot(path);
+        }
     }
     /* Closing cancels the temporary test but keeps spatial audio enabled. */
     spatial_hide(0,&test_audio);assert(test_audio.sister.spatial.controls.enabled);

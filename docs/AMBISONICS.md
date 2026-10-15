@@ -11,8 +11,10 @@ audio and modulation running. No plugin host is required.
 
 1. Open **CFG → SPEAKERS** (also available as **SPEAKERS** in the Matrix).
    Set the active speaker count: **10** for a ten-output setup, up to **16**.
-   Name each speaker and assign its physical output. Click a name to edit it;
-   Enter saves and Escape cancels. Scroll an output number, or left/right-click
+   Name each speaker and assign its physical output. Click a name to select its
+   speaker; **middle-click** the name to rename it. Enter or clicking another
+   control saves; Escape cancels. Leaving the window cancels unfinished naming.
+   Scroll an output number, or left/right-click
    it, to adjust. Active speakers must have different physical outputs.
 2. Select each speaker and use **TEST 1 SEC** to check its cable/position.
    The tone is 440 Hz at approximately −24 dBFS. Stop, closing the setup window,
@@ -20,7 +22,9 @@ audio and modulation running. No plugin host is required.
    setup across projects. Legacy projects use ARRAY's existing test instead.
 3. Open **AMBISONICS → SPEAKERS**. Choose at least three array slots, then
    choose a configured **SPK** for each slot. An array can use any subset of
-   active speakers. Adjust its angles, trim and delay as needed.
+   active speakers. Adding or removing a slot immediately redistributes the
+   Point/Flat ring. Existing assignments, trim and delay stay in place; adjust
+   individual angles after choosing the count.
 4. Click **INPUT ROUTES** to reveal the Ambisonics column in the Matrix.
    Connect a source or processor output to it, then click **MUTED** to enable
    the Ambisonics layer. Use Field and Motion to position and move that mix.
@@ -29,9 +33,9 @@ audio and modulation running. No plugin host is required.
 
 Only active **SPK** columns appear in the Matrix. Reducing the count hides those
 columns and silences them without deleting their saved connections. Increasing
-it restores them. An active speaker whose physical output is unavailable stays
-visible as **N/A** and remains silent. Hardware **OUT n/n** pairs remain available
-separately for stereo routes and external hardware loops.
+it restores them. Speakers mapped outside the available, enabled output range
+are also hidden. Hardware **OUT n/n** pairs appear only when at least one member
+is available inside that range, separately from SPK routes.
 
 ## Direct sounds and the array can share speakers
 
@@ -172,12 +176,34 @@ to one hour, and **RISE** lengths from one second to four hours. Each has a dept
 and a set of five target buttons. LFO is bipolar around the base value; Rise adds
 upward from it. Angular targets wrap; other targets clamp to their control range.
 Rise can run once, holding its final value, or loop. **TRIGGER** restarts Rise.
+**Right-click any Motion slider** to restore its default: 60 seconds for LFO
+period and Rise length, zero for either depth. Left-drag and wheel still adjust;
+Shift-wheel makes fine adjustments.
 
-**CAP A / CAP B** store the five base field values. **TO A / TO B** morph toward
-a captured endpoint over **MORPH** time (10 ms to one hour; scroll to adjust).
-Rotation/direction follow the shortest arc. Editing a base value cancels a morph.
-Capture stores base settings, not a momentary LFO excursion. The transform type,
-input mode, speaker geometry and routing are not morphed.
+The capture buttons follow Prism and EQ's colors and gestures:
+
+| Capture state | Meaning |
+| --- | --- |
+| Gray **EMPTY** | No saved field for this endpoint. |
+| Green **READY** | The endpoint is captured. |
+| Blue **EDIT** | Its saved field has been recalled for editing. |
+| Amber **CHANGED** | Edits to the selected field have not been captured. |
+
+**Left-click CAP A / CAP B** to store the five base field values. **Right-click**
+to recall and edit that endpoint; an empty endpoint keeps the live field.
+**Middle-click** clears only that capture, keeping the live field and the other
+capture. Editing never overwrites a capture until you left-click CAP again.
+
+**TO A / TO B** morph toward a saved field over **TIME** (10 ms to one hour).
+The target lights up and the status line shows progress. **STOP** holds the
+current base field for editing or capturing. Stop before capturing during a
+morph; right-clicking a CAP also stops and recalls it. Scroll TIME to adjust
+(Shift for fine adjustment), or right-click it to restore four minutes.
+Rotation/direction follow the shortest arc. Editing a base value cancels a
+morph. Capture stores base settings, not a momentary LFO excursion. The
+transform type, input mode, speaker geometry and routing are not morphed.
+
+![Morphing toward B with progress and Stop](images/ambisonics-motion-running.png)
 
 **MIDI LEARN**, or Ctrl+Shift+M, can learn the five field controls, enable toggle
 and Rise trigger. Select a control, then move the controller as elsewhere in

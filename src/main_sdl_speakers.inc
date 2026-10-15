@@ -58,6 +58,17 @@ static int speakers_commit(SDL_AudioDeviceID device,AudioState *audio,TsUiState 
     speakers_window.model.setup=*setup;
     snprintf(speakers_window.model.message,sizeof(speakers_window.model.message),"SETUP APPLIED / SAVE CONFIG TO KEEP THIS HARDWARE SETUP");return 1;
 }
+static int speakers_finish_name(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,int save)
+{
+    SpeakersWindow *w=&speakers_window;
+    if(!w->model.editing)return 1;
+    if(save) {
+        TsSpeakerSetup next=ui->config.speakers;
+        snprintf(next.name[w->model.selected],TS_SPEAKER_NAME,"%s",w->model.edit);
+        if(!speakers_commit(device,audio,ui,&next))return 0;
+    }
+    w->model.editing=0;SDL_StopTextInput();return 1;
+}
 static int speakers_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui)
 {
     SpeakersWindow *w=&speakers_window;Uint32 id=event_window_id(e);
@@ -68,7 +79,7 @@ static int speakers_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device
     if(!w->window || id!=w->id)return 0;
     if(e->type==SDL_WINDOWEVENT) {
         if(e->window.event==SDL_WINDOWEVENT_CLOSE)speakers_hide(device,audio);
-        if(e->window.event==SDL_WINDOWEVENT_FOCUS_LOST)speakers_stop(device,audio);
+        if(e->window.event==SDL_WINDOWEVENT_FOCUS_LOST){speakers_stop(device,audio);speakers_finish_name(device,audio,ui,0);}
         return 1;
     }
     if(w->model.editing) {
@@ -78,14 +89,13 @@ static int speakers_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device
         }
         if(e->type==SDL_KEYDOWN) {
             if(e->key.keysym.sym==SDLK_BACKSPACE){size_t n=strlen(name);if(n)name[n-1]=0;}
-            if(e->key.keysym.sym==SDLK_RETURN) {
-                TsSpeakerSetup next=ui->config.speakers;
-                snprintf(next.name[w->model.selected],TS_SPEAKER_NAME,"%s",name);
-                if(speakers_commit(device,audio,ui,&next)){w->model.editing=0;SDL_StopTextInput();}
-            }
-            if(e->key.keysym.sym==SDLK_ESCAPE){w->model.editing=0;SDL_StopTextInput();}
+            if(e->key.keysym.sym==SDLK_RETURN || e->key.keysym.sym==SDLK_KP_ENTER)speakers_finish_name(device,audio,ui,1);
+            if(e->key.keysym.sym==SDLK_ESCAPE)speakers_finish_name(device,audio,ui,0);
         }
-        w->blink=SDL_GetTicks();return 1;
+        w->blink=SDL_GetTicks();
+        /* Clicking another control finishes the name and performs that click. */
+        if(e->type!=SDL_MOUSEBUTTONDOWN && e->type!=SDL_MOUSEWHEEL)return 1;
+        if(!speakers_finish_name(device,audio,ui,1))return 1;
     }
     if(e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_ESCAPE){speakers_hide(device,audio);return 1;}
     if(e->type==SDL_KEYDOWN || e->type==SDL_KEYUP){e->key.windowID=SDL_GetWindowID(main);return 0;}
@@ -111,9 +121,9 @@ static int speakers_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device
         int col=x>=328,index=col*8+(y-76)/32,local=x-(14+col*314);
         if(index<16 && local>=0 && local<296) {
             w->model.selected=index;
-            if(local>=24 && local<198 && e->type==SDL_MOUSEBUTTONDOWN) {
+            if(local>=24 && local<198 && e->type==SDL_MOUSEBUTTONDOWN && e->button.button==SDL_BUTTON_MIDDLE) {
                 snprintf(w->model.edit,sizeof(w->model.edit),"%s",next.name[index]);w->model.editing=1;w->blink=SDL_GetTicks();SDL_StartTextInput();
-            } else if(local>=206) {
+            } else if(local>=206 && (e->type==SDL_MOUSEWHEEL || e->button.button!=SDL_BUTTON_MIDDLE)) {
                 next.output[index]=SDL_clamp(next.output[index]+delta,0,63);speakers_commit(device,audio,ui,&next);
             }
         }

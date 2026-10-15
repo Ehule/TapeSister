@@ -232,20 +232,50 @@ static int spatial_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,
         }
     }else{
         int control=-1;
-        if(y>=101&&y<=140)control=x<310?0:1;
-        if(y>=209&&y<=248)control=x<310?2:3;
+        int column=x>=18&&x<294?0:x>=326&&x<614?1:-1;
+        if(column>=0 && y>=101&&y<=140)control=column;
+        if(column>=0 && y>=209&&y<=248)control=2+column;
         if(motion&&spatial_window.drag>=20)control=spatial_window.drag-20;
         if(control>=0){float *f=control==0?&c.lfo_rate:control==1?&c.lfo_depth:control==2?&c.rise_length:&c.rise_depth;
             if(wheel)*f+=(fine?.001f:.01f)*wheel;
-            else {*f=(x-(control%2?326:18))/(control%2?288.f:276.f);spatial_window.drag=20+control;}
+            else if(right){
+                TsSpatialControls defaults;ts_spatial_default(&defaults);
+                *f=control==0?defaults.lfo_rate:control==1?defaults.lfo_depth:control==2?defaults.rise_length:defaults.rise_depth;
+                spatial_window.drag=0;
+            }
+            else if(motion || (down && e->button.button==SDL_BUTTON_LEFT)){
+                *f=(x-(control%2?326:18))/(control%2?288.f:276.f);spatial_window.drag=20+control;
+            }
         }else if(down&&x>=14&&x<628&&((y>=147&&y<170)||(y>=255&&y<278))){
             int p=(x-14)/124;if(p<5){if(y<200)c.lfo_targets^=1u<<p;else c.rise_targets^=1u<<p;}
         }else if(down&&y>=286&&y<309){if(x>=14&&x<114)c.rise_loop=!c.rise_loop;else if(x>=122&&x<230)++c.rise_trigger;}
         else if((down||wheel)&&y>=324&&y<347){
-            if(x>=392&&x<614)c.morph_seconds*=powf(fine?1.01f:1.1f,(float)delta);
-            else if(down&&x>=14&&x<382){int which=(x-14)/94,side=which/2;
-                if(which%2){c.morph_target=side;++c.morph_trigger;}
-                else {memcpy(c.state[side],c.value,sizeof(c.value));c.captured|=1u<<side;}
+            if(x>=342&&x<540){
+                if(right){TsSpatialControls defaults;ts_spatial_default(&defaults);c.morph_seconds=defaults.morph_seconds;}
+                else if(wheel || (down && e->button.button==SDL_BUTTON_LEFT))c.morph_seconds*=powf(fine?1.01f:1.1f,(float)delta);
+            }else if(down){
+                int state=x>=14&&x<90?0:x>=98&&x<174?1:-1;
+                char message[104]="";
+                if(device)SDL_LockAudioDevice(device);
+                TsSpatial *s=&audio->sister.spatial;
+                if(state>=0){
+                    if(right)ts_spatial_edit_state(s,state);
+                    else if(e->button.button==SDL_BUTTON_MIDDLE){
+                        ts_spatial_clear_state(s,state);snprintf(message,sizeof(message),"%c CLEARED / LIVE FIELD AND OTHER CAPTURE KEPT",'A'+state);
+                    }else if(e->button.button==SDL_BUTTON_LEFT){
+                        if(ts_spatial_capture_state(s,state))snprintf(message,sizeof(message),"CAPTURED %c / FIVE BASE FIELD VALUES SAVED",'A'+state);
+                        else snprintf(message,sizeof(message),"MORPH RUNNING / STOP TO CAPTURE / RIGHT-CLICK CAP TO EDIT");
+                    }
+                }else if(e->button.button==SDL_BUTTON_LEFT){
+                    state=x>=188&&x<256?0:x>=264&&x<332?1:-1;
+                    if(state>=0 && !ts_spatial_morph_to(s,state))snprintf(message,sizeof(message),"%c IS EMPTY / CLICK CAP %c BEFORE MORPHING",'A'+state,'A'+state);
+                    else if(x>=550&&x<614)ts_spatial_stop_morph(s);
+                }
+                spatial_capture(audio,ui);
+                if(device)SDL_UnlockAudioDevice(device);
+                snprintf(m->message,sizeof(m->message),"%s",message);
+                spatial_window.message_until=SDL_GetTicks()+4000;
+                return 1;
             }
         }
     }

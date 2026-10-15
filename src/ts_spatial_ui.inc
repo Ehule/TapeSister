@@ -1,4 +1,44 @@
 /* Uses the same fixed-pixel drawing and palette as the main instrument. */
+TsSpatialCaptureVisual ts_spatial_ui_capture_visual(const TsSpatialUi *m,int state)
+{
+    if(state<0 || state>1 || !(m->controls.captured&(1u<<state)))return TS_SPATIAL_CAPTURE_EMPTY;
+    if(!m->view.morph_active && m->view.capture_selected==state+1) {
+        for(int i=0;i<TS_SPATIAL_PARAMS;++i) {
+            float d=m->controls.value[i]-m->controls.state[state][i];
+            if(i==TS_SPATIAL_ROTATE || i==TS_SPATIAL_AIM)d-=floorf(d+.5f);
+            if(fabsf(d)>.000001f)return TS_SPATIAL_CAPTURE_CHANGED;
+        }
+        if(m->view.capture_editing)return TS_SPATIAL_CAPTURE_EDITING;
+    }
+    return TS_SPATIAL_CAPTURE_READY;
+}
+void ts_spatial_ui_capture_status(const TsSpatialUi *m,char *out,size_t size)
+{
+    if(m->view.morph_active) {
+        snprintf(out,size,"MORPH TO %c / %.1F%% / STOP HOLDS THE FIELD",'A'+m->controls.morph_target,100*m->view.morph);return;
+    }
+    int state=m->view.capture_selected-1;
+    if(state>=0 && state<2) {
+        TsSpatialCaptureVisual visual=ts_spatial_ui_capture_visual(m,state);
+        if(visual==TS_SPATIAL_CAPTURE_EMPTY)snprintf(out,size,"EDIT %c / EMPTY / CLICK CAP %c TO SAVE THE BASE FIELD",'A'+state,'A'+state);
+        else if(visual==TS_SPATIAL_CAPTURE_CHANGED)snprintf(out,size,"EDIT %c / CHANGED - NOT CAPTURED / CLICK CAP %c TO SAVE",'A'+state,'A'+state);
+        else snprintf(out,size,"%s %c / TO A OR TO B MORPHS TO A SAVED FIELD",visual==TS_SPATIAL_CAPTURE_EDITING?"EDIT":"AT",'A'+state);
+    } else snprintf(out,size,"%s / A %s / B %s",m->view.capture_editing?"STOPPED / FIELD HELD":"CAPTURE THE BASE FIELD",
+        m->controls.captured&1?"READY":"EMPTY",m->controls.captured&2?"READY":"EMPTY");
+}
+static void spatial_capture_button(TsFramebuffer *fb,const TsSpatialUi *m,int state)
+{
+    static const char *const names[]={"EMPTY","READY","EDIT","CHANGED"};
+    static const TsThemeRole roles[]={TS_COLOR_DIM,TS_COLOR_DATA4,TS_COLOR_DATA3,TS_COLOR_DATA1};
+    static const uint32_t defaults[]={RGB(142,151,163),RGB(105,229,153),RGB(119,190,255),RGB(255,193,92)};
+    TsSpatialCaptureVisual visual=ts_spatial_ui_capture_visual(m,state);
+    uint32_t ink=ts_theme_color(active_palette(),TS_THEME_SPATIAL,roles[visual],defaults[visual]);
+    uint32_t bg=ts_theme_color(active_palette(),TS_THEME_SPATIAL,TS_COLOR_PANEL,RGB(30,26,34));
+    int x=14+84*state;char label[8];
+    frame(fb,x,324,76,22,palette_blend(bg,ink,18),ink);
+    snprintf(label,sizeof(label),"CAP %c",'A'+state);text(fb,x+23,327,label,ink,1);
+    text(fb,x+(76-(int)strlen(names[visual])*6)/2,337,names[visual],ink,1);
+}
 static void spatial_line(TsFramebuffer *fb,int x0,int y0,int x1,int y1,uint32_t color)
 {
     int dx=abs(x1-x0),sx=x0<x1?1:-1,dy=-abs(y1-y0),sy=y0<y1?1:-1,e=dx+dy;
@@ -125,6 +165,7 @@ void ts_spatial_ui_render(TsFramebuffer *fb,const TsSpatialUi *m,const TsPalette
         text(fb,18,358,"WHEEL: ADJUST   SHIFT: FINE   L/R CLICK: + / -   TEST: -24 DB",dim,1);
     }else{
         text(fb,18,81,"LFO / CONTINUOUS MOTION",PAL_NOTE,1);
+        text(fb,350,81,"RIGHT-CLICK SLIDERS: DEFAULT",dim,1);
         snprintf(label,sizeof(label),"PERIOD %.2F S",1.f/ts_sister_fallout_lfo_hz(c->lfo_rate));text(fb,18,105,label,PAL_TEXT,1);
         spatial_bar(fb,18,123,276,c->lfo_rate,c->lfo_rate,PAL_MOUSE);
         snprintf(label,sizeof(label),"DEPTH %.1F%%",c->lfo_depth*100);text(fb,326,105,label,PAL_TEXT,1);
@@ -138,10 +179,13 @@ void ts_spatial_ui_render(TsFramebuffer *fb,const TsSpatialUi *m,const TsPalette
         for(int i=0;i<5;++i)button(fb,14+i*124,255,118,ts_spatial_parameter_name(i),(c->rise_targets&(1u<<i))!=0);
         button(fb,14,286,100,c->rise_loop?"LOOP":"ONE SHOT",c->rise_loop);button(fb,122,286,108,"TRIGGER",0);
         spatial_bar(fb,246,293,368,v->rise,v->rise,PAL_EFFECT);
-        button(fb,14,324,86,"CAP A",c->captured&1);button(fb,108,324,86,"TO A",0);
-        button(fb,202,324,86,"CAP B",c->captured&2);button(fb,296,324,86,"TO B",0);
-        snprintf(label,sizeof(label),"MORPH %.1F S",c->morph_seconds);button(fb,392,324,222,label,v->morph_active);
-        text(fb,18,358,"CAP STORES BASE FIELD / TO MORPHS / WHEEL MORPH TIME / SHIFT FINE",dim,1);
+        spatial_capture_button(fb,m,0);spatial_capture_button(fb,m,1);
+        button(fb,188,324,68,"TO A",v->morph_active && c->morph_target==0);
+        button(fb,264,324,68,"TO B",v->morph_active && c->morph_target==1);
+        snprintf(label,sizeof(label),"TIME %.1F S",c->morph_seconds);button(fb,342,324,198,label,0);
+        button(fb,550,324,64,"STOP",0);
+        ts_spatial_ui_capture_status(m,label,sizeof(label));text(fb,18,350,label,PAL_EFFECT,1);
+        text(fb,18,364,"CAP: LEFT SAVE / RIGHT EDIT / MIDDLE CLEAR   TIME: WHEEL / RIGHT RESET",dim,1);
     }
     const char *status=m->message;
     if(!status[0] && m->matrix)status=c->enabled&&!v->available?
@@ -167,7 +211,7 @@ void ts_speakers_ui_render(TsFramebuffer *fb,const TsSpeakersUi *m,const TsPalet
     char label[104];snprintf(label,sizeof(label),"SPEAKERS: %d",m->setup.count);
     button(fb,210,9,156,label,0);button(fb,374,9,110,"TEST 1 SEC",m->test);
     button(fb,492,9,82,"STOP",0);button(fb,586,9,40,"X",0);
-    snprintf(label,sizeof(label),"OUTPUTS %d-%u ENABLED / CLICK NAME TO EDIT / WHEEL OUTPUT TO ASSIGN",m->range.first>0?m->range.first:1,ts_audio_range_end(m->range,m->channels));
+    snprintf(label,sizeof(label),"OUTPUTS %d-%u ENABLED / CLICK TO SELECT / MIDDLE-CLICK NAME TO RENAME",m->range.first>0?m->range.first:1,ts_audio_range_end(m->range,m->channels));
     text(fb,18,48,label,dim,1);
     for(int sp=0;sp<16;++sp) {
         int x=14+(sp/8)*314,y=76+(sp%8)*32,active=sp<m->setup.count;
@@ -180,8 +224,8 @@ void ts_speakers_ui_render(TsFramebuffer *fb,const TsSpeakersUi *m,const TsPalet
         button(fb,x+206,y,90,label,m->selected==sp && !m->editing);
         if(active && available)rect(fb,x+24,y+24,(int)(174*fminf(1,m->peak[sp])),2,PAL_WAVE_LEFT);
     }
-    text(fb,18,341,"SPEAKERS CAN PLAY DIRECT SOUND AND AMBISONICS TOGETHER.",dim,1);
-    text(fb,18,355,"CLICK COUNT LEFT/RIGHT: -/+   RIGHT-CLICK OUTPUT: -   SAVE CONFIG TO KEEP",dim,1);
+    text(fb,18,341,m->editing?"RENAME: ENTER OR CLICK AWAY SAVES / ESC CANCELS":"SPEAKERS CAN PLAY DIRECT SOUND AND AMBISONICS TOGETHER.",dim,1);
+    text(fb,18,355,"COUNT LEFT/RIGHT: -/+   OUTPUT: WHEEL OR L/R CLICK   SAVE CONFIG TO KEEP",dim,1);
     text(fb,18,379,m->message[0]?m->message:"! = INACTIVE OR OUTPUT UNAVAILABLE / SAVED ROUTES ARE NEVER REDIRECTED",PAL_EFFECT,1);
     render_palette=NULL;
 }

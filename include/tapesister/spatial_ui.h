@@ -9,6 +9,12 @@ typedef struct {
     float input_peak;
     char message[104];
 } TsSpatialUi;
+typedef enum {
+    TS_SPATIAL_CAPTURE_EMPTY, TS_SPATIAL_CAPTURE_READY,
+    TS_SPATIAL_CAPTURE_EDITING, TS_SPATIAL_CAPTURE_CHANGED
+} TsSpatialCaptureVisual;
+TsSpatialCaptureVisual ts_spatial_ui_capture_visual(const TsSpatialUi *model, int state);
+void ts_spatial_ui_capture_status(const TsSpatialUi *model, char *out, size_t size);
 void ts_spatial_ui_render(TsFramebuffer *fb, const TsSpatialUi *model, const TsPalette *palette);
 typedef struct {
     TsSpeakerSetup setup;
