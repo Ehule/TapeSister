@@ -439,8 +439,25 @@ static int test_invalid_backend_falls_back_to_auto(void)
     return ok;
 }
 
+static int test_ranges(void)
+{
+    TsConfig a,b;char error[256];const char *path="audio-ranges-test.ini";
+    ts_config_init(&a);
+    if(!expect(a.audio_input_range.first==1 && !a.audio_input_range.last &&
+               a.audio_output_range.first==1 && !a.audio_output_range.last,"legacy defaults keep all channels"))return 0;
+    a.audio_input_range=(TsAudioChannelRange){3,6};a.audio_output_range=(TsAudioChannelRange){3,10};
+    if(!expect(ts_audio_config_save(&a,path,error,sizeof(error)) && ts_audio_config_load(&b,path,error,sizeof(error)) &&
+        ts_audio_range_equal(a.audio_input_range,b.audio_input_range) && ts_audio_range_equal(a.audio_output_range,b.audio_output_range),"range persistence"))return 0;
+    const char *bad[]={"audio_output_first=0", "audio_input_first=7\naudio_input_last=6", "audio_output_last=256", "audio_input_last=3oops"};
+    for(unsigned i=0;i<sizeof(bad)/sizeof(bad[0]);++i) {
+        FILE *f=fopen(path,"wb");if(!f)return 0;fputs(bad[i],f);fclose(f);
+        if(!expect(!ts_audio_config_load(&b,path,error,sizeof(error)) && ts_audio_range_equal(b.audio_input_range,a.audio_input_range),"invalid range leaves config intact"))return 0;
+    }
+    remove(path);return 1;
+}
 int main(void)
 {
+    if (!test_ranges()) return 1;
     if (!test_defaults()) return 1;
     if (!test_roundtrip()) return 1;
     if (!test_blank_roundtrip()) return 1;

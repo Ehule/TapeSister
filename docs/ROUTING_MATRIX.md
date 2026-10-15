@@ -255,9 +255,11 @@ their individual routes while the destination stays dark. Updates are limited
 to 20 Hz while the matrix is visible, and stale indications fade if callbacks stop.
 
 Physical **OUT** destinations are pairs on the active output device, up to OUT 15/16;
-input rows expose up to four pairs on the active input device. **N/A** means a
-port is not open on the current device. It stays saved but produces silence;
-it is never silently redirected into the main speakers. These physical matrix
+input rows expose up to four pairs on the active input device. Output columns
+appear only when at least one channel is available inside **CFG → OUTPUT RANGE**.
+A partly enabled pair is labeled with its one active output. Hidden output routes
+stay saved and produce silence; they are never redirected into the main speakers.
+Input **N/A** means that port is not open on the current device. These physical matrix
 outputs bypass the old spatial-array/Insert port reservation system.
 
 The processors' own power/effect controls still apply. OFF labels distinguish
@@ -268,13 +270,13 @@ levels. Local head feedback remains inside Sister.
 
 ## Speakers and Ambisonics
 
-**SPEAKERS** opens the same setup as **CFG → SPEAKERS**. Set the active count
+**SPEAKERS** opens the same setup as **CFG → SPEAKER SETUP**. Set the active count
 (1–16), name speakers, assign physical output channels and test them. SAVE CONFIG
 keeps this hardware setup across projects. **SPK 1…16** destinations send a mono
-average of each incoming stereo signal to those speakers. Only the configured
-active count appears; hidden speaker routes stay saved for later use. A configured
-speaker whose output is unavailable stays visible as **N/A**, with no fallback.
-The original stereo OUT pairs remain available for direct and hardware-loop use.
+average of each incoming stereo signal to those speakers. A speaker column appears
+only if it is enabled in Speaker Setup and its mapped output is both open on the
+device and inside the saved output range. Hidden speaker routes stay saved and
+reappear when available again. OUT pairs follow the same output range.
 
 **AMBISONICS** opens the separate Field / Speakers / Motion window (Ctrl+F9).
 Connect any source or processor output to the **AMBISONICS** destination, choose

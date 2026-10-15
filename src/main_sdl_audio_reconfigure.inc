@@ -17,6 +17,7 @@ static void ts_audio_session_close(void)
     AudioState *audio = ts_output_userdata;
     if (audio) {
         audio->output_rate = 0;
+        audio->output_device_channels = 0;
         audio->sister.insert.output_channels = 0;
         ts_sister_runtime_input_available(&audio->sister, 0);
     }
@@ -98,6 +99,8 @@ static int ts_audio_reconfigure(const TsConfig *config, char *error, size_t size
     /* Config is edited in place, so snapshot the active endpoint settings. */
     TsConfig previous = *config;
     previous.audio_backend = ts_started_backend;
+    previous.audio_output_range = ts_active_ranges[0];
+    previous.audio_input_range = ts_active_ranges[1];
     previous.audio_buffer_frames = ts_output_desired.samples;
     ts_copy_name(previous.audio_output_device, sizeof(previous.audio_output_device), ts_active_output);
     ts_copy_name(previous.record_input_device, sizeof(previous.record_input_device), ts_active_capture);

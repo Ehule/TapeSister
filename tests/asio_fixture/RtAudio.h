@@ -18,7 +18,7 @@ public:
  static RtAudio *instance;
  static unsigned opens,closes,probes;
  static bool failStart;
- bool open{},running{};Callback callback{};void *userdata{};unsigned frames{},channels{};
+ bool open{},running{};Callback callback{};void *userdata{};unsigned frames{},channels{},inputChannels{},outputFirst{},inputFirst{};
  RtAudio(Api,RtAudioErrorCallback &&) { instance=this; }
  ~RtAudio() {instance=nullptr;}
  std::vector<unsigned> getDeviceIds() { assert(!open);++probes;return {7,9}; }
@@ -27,8 +27,8 @@ public:
  bool isStreamRunning() {return running;}
  unsigned getStreamSampleRate() {return 48000;}
  RtAudioErrorType openStream(StreamParameters *op,StreamParameters *ip,unsigned fmt,unsigned rate,unsigned *n,Callback cb,void *u,StreamOptions *) {
-  assert(!open && op && ip && op->deviceId==ip->deviceId && op->nChannels==16 && ip->nChannels==16 && rate==48000 && fmt==RTAUDIO_FLOAT32);
-  open=true;++opens;*n=frames=128;channels=16;callback=cb;userdata=u;return RTAUDIO_NO_ERROR;
+  assert(!open && op && ip && op->deviceId==ip->deviceId && op->nChannels>0 && op->firstChannel+op->nChannels<=16 && ip->nChannels>0 && ip->firstChannel+ip->nChannels<=16 && rate==48000 && fmt==RTAUDIO_FLOAT32);
+  open=true;++opens;*n=frames=128;channels=op->nChannels;inputChannels=ip->nChannels;outputFirst=op->firstChannel;inputFirst=ip->firstChannel;callback=cb;userdata=u;return RTAUDIO_NO_ERROR;
  }
  RtAudioErrorType startStream() { running=!failStart;return running?RTAUDIO_NO_ERROR:RTAUDIO_SYSTEM_ERROR; }
  void closeStream() {assert(open);open=running=false;++closes;}

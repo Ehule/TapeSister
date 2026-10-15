@@ -13,6 +13,7 @@ void ts_spatial_ui_render(TsFramebuffer *fb, const TsSpatialUi *model, const TsP
 typedef struct {
     TsSpeakerSetup setup;
     unsigned channels;
+    TsAudioChannelRange range;
     int selected, editing, caret, test;
     char edit[TS_SPEAKER_NAME], message[104];
     float peak[16];

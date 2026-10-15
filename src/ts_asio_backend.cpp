@@ -19,7 +19,9 @@ SDL_mutex *mutex;
 std::atomic<unsigned> xruns{0}, driverXruns{0}, controlSkips{0}, controlRecoveries{0};
 std::atomic<bool> lost{false};
 bool started, notified;
-unsigned inputs, outputs, frames, rate, serial;
+unsigned inputs, outputs, frames, rate, serial, nativeInputs, nativeOutputs;
+TsAudioChannelRange ranges[2] = {{1,0},{1,0}};
+std::vector<float> inputBuffer, outputBuffer;
 uint64_t lockRetryTicks;
 std::string active;
 const float *currentInput;
@@ -37,7 +39,7 @@ void initialize()
 }
 int process(void *out, void *in, unsigned n, double, RtAudioStreamStatus status, void *)
 {
-    if (out) std::memset(out, 0, size_t(n) * outputs * sizeof(float));
+    if (out) std::memset(out, 0, size_t(n) * nativeOutputs * sizeof(float));
     if (status) { ++xruns; ++driverXruns; }
     if (lost.load() || n != frames) { lost.store(true); return 0; }
     /* Note edits normally hold this mutex for a fraction of a millisecond.
@@ -52,13 +54,21 @@ int process(void *out, void *in, unsigned n, double, RtAudioStreamStatus status,
     if (lock == TsAsioLock::skipped) { ++xruns; ++controlSkips; return 0; }
     if (lock == TsAsioLock::recovered) ++controlRecoveries;
     Endpoint &capture = endpoints[1], &playback = endpoints[0];
-    currentInput = capture.id && !capture.paused ? static_cast<float *>(in) : nullptr;
+    std::fill(inputBuffer.begin(), inputBuffer.end(), 0.f);
+    std::fill(outputBuffer.begin(), outputBuffer.end(), 0.f);
+    if (in && nativeInputs) for (unsigned f=0; f<n; ++f)
+        std::memcpy(inputBuffer.data()+f*inputs+ranges[1].first-1,
+                    static_cast<float *>(in)+f*nativeInputs, nativeInputs*sizeof(float));
+    currentInput = capture.id && !capture.paused && in ? inputBuffer.data() : nullptr;
     if (currentInput && capture.spec.callback)
-        capture.spec.callback(capture.spec.userdata, static_cast<Uint8 *>(in),
+        capture.spec.callback(capture.spec.userdata, reinterpret_cast<Uint8 *>(inputBuffer.data()),
                               int(n * inputs * sizeof(float)));
     if (out && playback.id && !playback.paused && playback.spec.callback)
-        playback.spec.callback(playback.spec.userdata, static_cast<Uint8 *>(out),
+        playback.spec.callback(playback.spec.userdata, reinterpret_cast<Uint8 *>(outputBuffer.data()),
                                int(n * outputs * sizeof(float)));
+    if (out) for (unsigned f=0; f<n; ++f)
+        std::memcpy(static_cast<float *>(out)+f*nativeOutputs,
+                    outputBuffer.data()+f*outputs+ranges[0].first-1, nativeOutputs*sizeof(float));
     currentInput = nullptr;
     SDL_UnlockMutex(mutex);
     return 0;
@@ -77,6 +87,12 @@ void closeStream()
 }
 }
 extern "C" {
+int ts_asio_set_ranges(TsAudioChannelRange output, TsAudioChannelRange input)
+{
+    if (!ts_audio_range_valid(output) || !ts_audio_range_valid(input) ||
+        (driver && driver->isStreamOpen())) return 0;
+    ranges[0]=output; ranges[1]=input; return 1;
+}
 void ts_asio_rescan(void)
 {
     try {
@@ -144,14 +160,22 @@ SDL_AudioDeviceID ts_asio_open(const char *name, int capture,
         }
         if (!driver->isStreamOpen()) {
             if (capture) { SDL_SetError("Open ASIO output before its shared input"); return 0; }
-            outputs = std::min(255u, choice->outputChannels);
-            inputs = std::min(255u, choice->inputChannels);
+            if (!ts_audio_range_fits(ranges[0], choice->outputChannels) ||
+                (choice->inputChannels ? !ts_audio_range_fits(ranges[1], choice->inputChannels) :
+                 (ranges[1].first != 1 || ranges[1].last != 0))) {
+                SDL_SetError("ASIO channel range exceeds this driver's available inputs or outputs"); return 0;
+            }
+            outputs = ts_audio_range_end(ranges[0], std::min(255u, choice->outputChannels));
+            inputs = ts_audio_range_end(ranges[1], std::min(255u, choice->inputChannels));
+            nativeOutputs = outputs - unsigned(ranges[0].first-1);
+            nativeInputs = inputs ? inputs - unsigned(ranges[1].first-1) : 0;
             rate = choice->currentSampleRate ? choice->currentSampleRate : choice->preferredSampleRate;
             if (!rate) rate = wanted->freq > 0 ? unsigned(wanted->freq) : 48000;
             frames = wanted->samples ? wanted->samples : 256;
             RtAudio::StreamParameters op, ip;
             op.deviceId = ip.deviceId = choice->ID;
-            op.nChannels = outputs; ip.nChannels = inputs;
+            op.nChannels = nativeOutputs; ip.nChannels = nativeInputs;
+            op.firstChannel = unsigned(ranges[0].first-1); ip.firstChannel = unsigned(ranges[1].first-1);
             RtAudio::StreamOptions options; options.streamName = "TapeSister";
             lost.store(false); notified = false; xruns.store(0);
             driverXruns.store(0); controlSkips.store(0); controlRecoveries.store(0);
@@ -163,6 +187,8 @@ SDL_AudioDeviceID ts_asio_open(const char *name, int capture,
             if (!frames || frames > 32768 || !rate) {
                 closeStream(); SDL_SetError("Unsupported ASIO buffer size or sample rate"); return 0;
             }
+            inputBuffer.assign(size_t(frames)*inputs, 0.f);
+            outputBuffer.assign(size_t(frames)*outputs, 0.f);
             lockRetryTicks = ts_asio_lock_budget(frames, rate, SDL_GetPerformanceFrequency());
             active = choice->name;
         }
@@ -175,7 +201,7 @@ SDL_AudioDeviceID ts_asio_open(const char *name, int capture,
         *got = e.spec; auto id = e.id;
         SDL_UnlockMutex(mutex);
         return id;
-    } catch (...) { SDL_SetError("ASIO driver failed while opening"); return 0; }
+    } catch (...) { if (!endpoints[0].id && !endpoints[1].id) closeStream(); SDL_SetError("ASIO driver failed while opening"); return 0; }
 }
 void ts_asio_lock(void) { if (mutex) SDL_LockMutex(mutex); }
 void ts_asio_unlock(void) { if (mutex) SDL_UnlockMutex(mutex); }

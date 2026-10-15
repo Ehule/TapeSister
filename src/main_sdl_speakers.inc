@@ -24,7 +24,7 @@ static int speakers_show(AudioState *audio,TsUiState *ui)
         if(!w->window || !w->renderer || !w->texture || !w->fb){speakers_close();snprintf(ui->status,sizeof(ui->status),"SPEAKER SETUP WINDOW FAILED");return 0;}
         w->id=SDL_GetWindowID(w->window);
     }
-    w->visible=1;w->model.setup=ui->config.speakers;w->model.channels=audio->output_device_channels;
+    w->visible=1;w->model.setup=ui->config.speakers;w->model.channels=audio->output_device_channels;w->model.range=audio->output_range;
     SDL_ShowWindow(w->window);SDL_RaiseWindow(w->window);return 1;
 }
 static void speakers_stop(SDL_AudioDeviceID device,AudioState *audio)
@@ -40,7 +40,7 @@ static void speakers_update(SDL_AudioDeviceID device,AudioState *audio,TsUiState
 {
     SpeakersWindow *w=&speakers_window;
     if(!w->visible || !window_drawable(w->window) || SDL_GetTicks()-w->presented<33)return;
-    w->model.setup=ui->config.speakers;w->model.channels=audio->output_device_channels;
+    w->model.setup=ui->config.speakers;w->model.channels=audio->output_device_channels;w->model.range=audio->output_range;
     if(device)SDL_LockAudioDevice(device);
     memcpy(w->model.peak,audio->speaker_peak,sizeof(w->model.peak));w->model.test=audio->speaker_test_remaining>0;
     if(device)SDL_UnlockAudioDevice(device);
@@ -98,7 +98,7 @@ static int speakers_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device
         if(x>=586){speakers_hide(device,audio);return 1;}
         if(x>=492){speakers_stop(device,audio);return 1;}
         if(x>=374 && x<484) {
-            int channel=ts_speakers_channel(&next,w->model.selected,audio->output_device_channels);
+            int channel=ts_speakers_enabled_channel(&next,w->model.selected,audio->output_device_channels,audio->output_range);
             if(channel<0)snprintf(w->model.message,sizeof(w->model.message),"THIS SPEAKER OUTPUT IS UNAVAILABLE");
             else if(!audio->sister.matrix.controls.enabled)snprintf(w->model.message,sizeof(w->model.message),"LEGACY PROJECT: USE ARRAY TEST IN THE AMBISONICS WINDOW");
             else {if(device)SDL_LockAudioDevice(device);audio->speaker_test_channel=channel;audio->speaker_test_remaining=audio->output_rate;audio->speaker_test_gain=0;if(device)SDL_UnlockAudioDevice(device);}

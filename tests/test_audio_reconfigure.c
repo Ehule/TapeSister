@@ -123,6 +123,39 @@ int main(void)
     assert(ts_audio_main_config_save(&ui.config, path, error, sizeof(error)));
     assert(ts_asio_running() && ts_real_capture);
 
+    /* The same CFG ranges apply to Windows ASIO and SDL, without moving routes. */
+    ui.config.audio_input_range=(TsAudioChannelRange){3,6};
+    ui.config.audio_output_range=(TsAudioChannelRange){3,10};
+    assert(ts_audio_main_config_save(&ui.config,path,error,sizeof(error)));
+    assert(obtained.channels==10 && input.channels==6 && audio.output_range.first==3);
+    assert(!ts_audio_reopen_required(&ui.config));
+    assert(!memcmp(&matrix,&audio.sister.matrix.controls,sizeof(matrix)));
+    assert(ts_audio_config_load(&saved,path,error,sizeof(error)) && saved.audio_output_range.last==10);
+    ui.config.audio_output_range.last=17;
+    unsigned opens=fixture_asio_opens();
+    assert(!ts_audio_main_config_save(&ui.config,path,error,sizeof(error)) && strstr(error,"range"));
+    assert(fixture_asio_opens()==opens && ts_asio_running());
+    ui.config=saved;
+    snprintf(ui.config.audio_output_device,sizeof(ui.config.audio_output_device),"Missing ASIO");
+    ts_audio_link_asio_selection(0);ui.config.audio_output_range=(TsAudioChannelRange){1,16};
+    assert(!ts_audio_main_config_save(&ui.config,path,error,sizeof(error)) && strstr(error,"restored"));
+    assert(audio.output_range.first==3 && audio.output_range.last==10 && input.range.first==3);
+    ui.config=saved;
+    ui.config.audio_backend=TS_AUDIO_BACKEND_AUTO;
+    ui.config.audio_output_device[0]=ui.config.record_input_device[0]=0;
+    ui.config.audio_output_range=(TsAudioChannelRange){2,2};ui.config.audio_input_range=(TsAudioChannelRange){2,2};
+    assert(ts_audio_main_config_save(&ui.config,path,error,sizeof(error)));
+    assert(!ts_asio_selected && obtained.channels==2 && input.range.first==2 && audio.output_range.last==2);
+    float capture_data[512];assert(input.channels<=255);
+    for(unsigned i=0;i<input.channels*2u;++i)capture_data[i]=(float)(i+1);
+    external_input_callback(&input,(Uint8 *)capture_data,input.channels*2*sizeof(float));
+    for(unsigned i=0;i<input.channels*2u;++i)assert(capture_data[i]==(i%input.channels==1?(float)(i+1):0));
+    /* Arrows use physical numbers; touching the center leaves a range alone. */
+    ts_audio_config_field_from_point(425,TS_AUDIO_CONFIG_OUTPUT_RANGE_Y+5);assert(!ui.config.audio_output_range.last);
+    ts_audio_config_field_from_point(290,TS_AUDIO_CONFIG_OUTPUT_RANGE_Y+5);assert(ui.config.audio_output_range.last==2);
+    ts_audio_config_field_from_point(135,TS_AUDIO_CONFIG_OUTPUT_RANGE_Y+5);assert(ui.config.audio_output_range.first==1);
+    ts_audio_config_field_from_point(210,TS_AUDIO_CONFIG_OUTPUT_RANGE_Y+5);assert(ui.config.audio_output_range.first==1);
+
     ts_audio_session_close(); ts_audio_catalog_free();
     ts_sister_runtime_free(&audio.sister); ts_external_recorder_free(&input.recorder);
     ts_capture_free(&audio.capture); ts_performance_free(&audio.performance);

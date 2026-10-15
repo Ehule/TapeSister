@@ -849,6 +849,7 @@ typedef struct {
     int playing;
     int output_rate;
     unsigned output_device_channels;
+    TsAudioChannelRange output_range, input_range;
     TsSpeakerSetup speakers;
     float speaker_peak[16], speaker_test_gain;
     double speaker_test_phase;
@@ -1128,6 +1129,10 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
     float *out = (float *)stream;
     unsigned device_channels=audio->output_device_channels?audio->output_device_channels:2u;
     int frames=bytes/(int)(sizeof(float)*device_channels);
+    TsSpeakerSetup enabled_speakers=audio->speakers;
+    for(int sp=0;sp<16;++sp)
+        if(!ts_audio_range_contains(audio->output_range,(unsigned)enabled_speakers.output[sp],device_channels))
+            enabled_speakers.output[sp]=-1;
     int values=frames*2;
     memset(stream,0,(size_t)bytes);
     float synth_block_peak = 0.0f;
@@ -1463,13 +1468,13 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
                 hardware[ch]=isfinite(value)?value:0;
             }
             for(int sp=0;sp<audio->speakers.count && sp<16;++sp) {
-                int ch=ts_speakers_channel(&audio->speakers,sp,device_channels);
+                int ch=ts_speakers_channel(&enabled_speakers,sp,device_channels);
                 if(ch>=0)hardware[ch]+=audio->sister.matrix.speaker_output[sp]*gain;
             }
             TsStereoFrame spatial_input=audio->sister.matrix.spatial_input;
             spatial_input.l*=gain;spatial_input.r*=gain;
             uint64_t profile_spatial=ts_profile_begin(TS_PROF_SPATIAL);
-            ts_spatial_process_bus(&audio->sister.spatial,spatial_input,hardware,device_channels,&audio->speakers);
+            ts_spatial_process_bus(&audio->sister.spatial,spatial_input,hardware,device_channels,&enabled_speakers);
             ts_profile_end(TS_PROF_SPATIAL,profile_spatial);
             if(audio->speaker_test_remaining || audio->speaker_test_gain>.00001f) {
                 float target=audio->speaker_test_remaining?.0631f:0;
@@ -1480,6 +1485,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
                 if((unsigned)audio->speaker_test_channel<device_channels)
                     hardware[audio->speaker_test_channel]+=sinf((float)audio->speaker_test_phase)*audio->speaker_test_gain;
             }
+            ts_audio_range_mask(audio->output_range,hardware,1,device_channels);
             float peak=0;
             for(unsigned ch=0;ch<device_channels;++ch)peak=fmaxf(peak,fabsf(hardware[ch]));
             float target=peak>.98f?.98f/peak:1;
@@ -1492,7 +1498,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
                     audio->sister.matrix.hardware_peak[ch/2]=fabsf(hardware[ch]);
             }
             for(int sp=0;sp<16;++sp) {
-                int ch=ts_speakers_channel(&audio->speakers,sp,device_channels);
+                int ch=ts_speakers_channel(&enabled_speakers,sp,device_channels);
                 float v=ch>=0?fabsf(hardware[ch]):0;
                 audio->speaker_peak[sp]=fmaxf(v,audio->speaker_peak[sp]*.9999f);
             }
@@ -1508,6 +1514,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         }
     }
     /* Final physical output: after routing, spatial decode, fader and safety limiting. */
+    ts_audio_range_mask(audio->output_range,out,(unsigned)frames,device_channels);
     ts_mandala_audio(out, (unsigned)frames, device_channels);
     ts_tracker_playback_end_block(&audio->tracker);
     ts_sister_runtime_end_audio_block(&audio->sister);
@@ -12161,6 +12168,7 @@ struct ExternalInputState {
     size_t waveform_consumed_frames;
     uint32_t peak_hold_until_ms;
     uint32_t clip_hold_until_ms;
+    TsAudioChannelRange range;
     uint32_t activity_hold_until_ms[TS_INPUT_DEVICE_CHANNEL_MAX];
     int channels;
     int input_channel;
@@ -12202,6 +12210,7 @@ static void external_input_callback(void *userdata, Uint8 *stream, int bytes)
     float block_peak = 0.0f;
     uint32_t block_activity = 0u;
     if (input == NULL) return;
+    ts_audio_range_mask(input->range,(float *)stream,(unsigned)(values/channels),(unsigned)channels);
     if(input->insert)ts_insert_capture(input->insert,samples,(size_t)(values/channels),(unsigned)channels);
     ts_input_monitor_note_capture_block(
         &input->monitor, (uint32_t)(values / channels));

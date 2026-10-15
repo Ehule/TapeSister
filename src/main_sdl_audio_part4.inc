@@ -91,6 +91,8 @@ static void cfg_frame(TsFramebuffer *fb, int x, int y, int w, int h,
     cfg_rect(fb, x + w - 1, y, 1, h, ts_theme_color(cfg_palette,cfg_group,TS_COLOR_EDGE,0xff151316u));
 }
 
+#include "main_sdl_audio_ranges.inc"
+
 static void ts_audio_render_config(TsFramebuffer *fb, const TsUiState *ui)
 {
     cfg_palette=&ui->palette;cfg_group=TS_THEME_BROWSER;
@@ -108,7 +110,7 @@ static void ts_audio_render_config(TsFramebuffer *fb, const TsUiState *ui)
     cfg_frame(fb, 166, 42, 118, 14, row, edge);
     cfg_text(fb, 188, 46, "AUDIO HEALTH", mouse_color);
     cfg_frame(fb,300,42,110,14,row,edge);
-    cfg_text(fb,312,46,"SPEAKERS",mouse_color);
+    cfg_text(fb,312,46,"SPEAKER SETUP",mouse_color);
     cfg_text(fb,424,45,"SAVE APPLIES AUDIO LIVE",effect_color);
 
     for (int field = 0; field < TS_CONFIG_FIELD_COUNT; ++field) {

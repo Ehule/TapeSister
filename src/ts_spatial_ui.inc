@@ -167,11 +167,11 @@ void ts_speakers_ui_render(TsFramebuffer *fb,const TsSpeakersUi *m,const TsPalet
     char label[104];snprintf(label,sizeof(label),"SPEAKERS: %d",m->setup.count);
     button(fb,210,9,156,label,0);button(fb,374,9,110,"TEST 1 SEC",m->test);
     button(fb,492,9,82,"STOP",0);button(fb,586,9,40,"X",0);
-    snprintf(label,sizeof(label),"%u OUTPUT CHANNELS OPEN / CLICK NAME TO EDIT / WHEEL OUTPUT TO ASSIGN",m->channels);
+    snprintf(label,sizeof(label),"OUTPUTS %d-%u ENABLED / CLICK NAME TO EDIT / WHEEL OUTPUT TO ASSIGN",m->range.first>0?m->range.first:1,ts_audio_range_end(m->range,m->channels));
     text(fb,18,48,label,dim,1);
     for(int sp=0;sp<16;++sp) {
         int x=14+(sp/8)*314,y=76+(sp%8)*32,active=sp<m->setup.count;
-        int available=ts_speakers_channel(&m->setup,sp,m->channels)>=0;
+        int available=ts_speakers_enabled_channel(&m->setup,sp,m->channels,m->range)>=0;
         uint32_t color=active?(available?PAL_TEXT:PAL_EFFECT):dim;
         snprintf(label,sizeof(label),"%02d",sp+1);text(fb,x,y+8,label,color,1);
         button(fb,x+24,y,174,m->editing && m->selected==sp?m->edit:m->setup.name[sp],m->selected==sp);

@@ -1600,7 +1600,7 @@ and Sister source switches do not control an active matrix.
 ### Ambisonics output
 
 Set the active speaker count (up to 16), names and hardware outputs in
-**CFG → SPEAKERS**. Inactive speaker columns are hidden in the Matrix; their
+**CFG → SPEAKER SETUP**. Inactive speaker columns are hidden in the Matrix; their
 saved connections return when reactivated. **F9 → AMBISONICS** or **Ctrl+F9** opens
 Field / Speakers / Motion. Route selected sources to the Ambisonics column and
 choose 3–16 active speakers for its array. Each speaker can also receive direct
@@ -2300,3 +2300,13 @@ Mosaic includes **Mosaic Bus**. Select cards and click **To Mosaic Bus** to remo
 custom routes without using Undo. See [Routing Matrix](ROUTING_MATRIX.md).
 
 ![Project filename and unsaved indicator](screenshots/performance/project-filename.png)
+
+### Input and output channel ranges
+
+In CFG, set FIRST/LAST under INPUT RANGE and OUTPUT RANGE, then SAVE CONFIG.
+For ten outputs use 1–10; ALL follows the device. Numbers stay physical: 3–10
+does not become 1–8. This applies to Linux and Windows, including ASIO.
+SPEAKER SETUP controls speaker names, count and output assignments. The matrix
+shows only enabled speakers mapped to available outputs in the saved range;
+hidden routes are retained. REC selects the recording input mode separately.
+See [channel setup and JACK/ASIO behavior](AUDIO_CHANNEL_RANGES.md).

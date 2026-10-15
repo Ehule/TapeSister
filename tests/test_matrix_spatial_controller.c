@@ -71,6 +71,12 @@ int main(int argc,char **argv)
     for(int ch=0;ch<6;++ch)assert(fabsf(spatial[ch])<.00001f);
     a.speakers.count=16;u.config.speakers=a.speakers;set_route(0,0,1000);render(spatial,16);
     assert(spatial[15]>.01f);for(int ch=0;ch<15;++ch)if(ch!=9)assert(fabsf(spatial[ch])<.00001f);
+    /* Disabled physical outputs are silent even on a full-width SDL device. */
+    a.output_range=(TsAudioChannelRange){3,10};render(spatial,16);
+    assert(spatial[15]==0 && spatial[9]>.005f);
+    set_route(1000,1000,1000);render(spatial,16);
+    assert(spatial[0]==0 && spatial[15]==0 && !a.sister.spatial.view.available);
+    a.output_range=(TsAudioChannelRange){1,0};
     /* A speaker mapping can move above channel 16 without changing its routes. */
     TsSpeakerSetup remap=a.speakers;remap.count=10;remap.output[9]=15;
     assert(speakers_commit(0,&a,&u,&remap));set_route(1000,1000,0);render(both,16);
@@ -88,6 +94,19 @@ int main(int argc,char **argv)
     mx_capture_activity(0,&a,&pages,&bank,50);int found=0;
     for(int i=0;i<matrix_window.column_count;++i)found|=mx_column(i)==TS_MATRIX_SPEAKER_BASE+9;
     assert(found && bank.bank[0].output_route.matrix_gain[TS_MATRIX_SPEAKER_BASE+9]==500);
+    a.output_range=(TsAudioChannelRange){3,10};mx_capture_activity(0,&a,&pages,&bank,50);
+    int visible_speakers=0;
+    for(int i=0;i<matrix_window.column_count;++i) {
+        int d=mx_column(i);assert(mx_destination_available(d));
+        if(d>=TS_MATRIX_SPEAKER_BASE){++visible_speakers;assert(d>=TS_MATRIX_SPEAKER_BASE+2 && d<TS_MATRIX_SPEAKER_BASE+9);}
+        if(ts_matrix_is_output(d))assert(d>=TS_MATRIX_NODES+1 && d<TS_MATRIX_NODES+5);
+    }
+    assert(visible_speakers==7 && bank.bank[0].output_route.matrix_gain[TS_MATRIX_SPEAKER_BASE+9]==500);
+    a.output_range=(TsAudioChannelRange){1,0};a.output_device_channels=10;mx_capture_activity(0,&a,&pages,&bank,50);
+    for(int i=0;i<matrix_window.column_count;++i)assert(mx_column(i)!=TS_MATRIX_SPEAKER_BASE+9); /* mapped to absent OUT16 */
+    a.output_device_channels=16;mx_capture_activity(0,&a,&pages,&bank,50);found=0;
+    for(int i=0;i<matrix_window.column_count;++i)found|=mx_column(i)==TS_MATRIX_SPEAKER_BASE+9;
+    assert(found);
     click_window(speakers_window.id,45,76);assert(speakers_window.model.editing);
     snprintf(speakers_window.model.edit,sizeof(speakers_window.model.edit),"FRONT LEFT");
     SDL_Event e;SDL_zero(e);e.type=SDL_KEYDOWN;e.key.windowID=speakers_window.id;e.key.keysym.sym=SDLK_RETURN;
@@ -101,6 +120,9 @@ int main(int argc,char **argv)
     for(int i=0;i<20;++i)click_window(spatial_window.id,440,90);assert(a.sister.spatial.controls.speakers==10);
     ts_spatial_set(&a.sister.spatial,&c);spatial_capture(&a,&u);
     if(argc>1) {
+        u.config_open=1;u.config.audio_backend=TS_AUDIO_BACKEND_JACK;
+        u.config.audio_input_range=(TsAudioChannelRange){1,6};u.config.audio_output_range=(TsAudioChannelRange){1,10};
+        ts_audio_ui_render(speakers_window.fb,&u,&bank);shot(speakers_window.fb,argv[1],"audio-channel-ranges");u.config_open=0;
         for(int page=0;page<3;++page){spatial_window.model.page=page;ts_spatial_ui_render(spatial_window.framebuffer,&spatial_window.model,&u.palette);
             char name[40];snprintf(name,sizeof(name),"matrix-ambisonics-%d",page);shot(spatial_window.framebuffer,argv[1],name);}
         speakers_show(&a,&u);speakers_window.model.setup=u.config.speakers;speakers_window.model.channels=16;

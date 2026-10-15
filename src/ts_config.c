@@ -47,6 +47,7 @@ void ts_config_init(TsConfig *config)
         config->audio_backend = TS_AUDIO_BACKEND_AUTO;
         config->audio_backend_invalid = 0;
         config->audio_buffer_frames = TS_AUDIO_BUFFER_FRAMES_DEFAULT;
+        config->audio_input_range = config->audio_output_range = (TsAudioChannelRange){1, 0};
         config->record_input_channel = TS_RECORD_INPUT_CHANNEL_DEFAULT;
         config->midi_input_channel = TS_MIDI_INPUT_CHANNEL_DEFAULT;
         ts_midi_map_init(&config->midi_map);

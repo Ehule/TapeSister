@@ -1253,7 +1253,7 @@ static void import_preview_render(TsFramebuffer *fb, const TsUiState *ui)
 static void config_render(TsFramebuffer *fb, const TsUiState *ui)
 {
     frame(fb, TS_MODAL_PANEL_X, TS_MODAL_PANEL_Y,
-          TS_MODAL_PANEL_W, TS_MODAL_PANEL_H + 24, ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(36, 33, 37)), PAL_MOUSE);
+          TS_MODAL_PANEL_W, TS_CONFIG_ACTION_Y - TS_MODAL_PANEL_Y + 40, ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(36, 33, 37)), PAL_MOUSE);
     text(fb, 20, 45, "CONFIGURATION", PAL_NOTE, 1);
     text(fb, 442, 45, "BLANK OK / DBL-CLICK BROWSE", PAL_EFFECT, 1);
     for (int i = 0; i < TS_CONFIG_FIELD_COUNT; ++i) {
@@ -1281,7 +1281,7 @@ static void config_render(TsFramebuffer *fb, const TsUiState *ui)
     for (size_t i = 0; i < sizeof(config_buttons) / sizeof(config_buttons[0]); ++i)
         button(fb, config_buttons[i].x, TS_CONFIG_ACTION_Y,
                config_buttons[i].width, config_buttons[i].label, 0);
-    text(fb, 364, 220, "TAB FIELD  CTRL BACKSPACE CLEAR", PAL_TUNING, 1);
+    text(fb, 364, TS_CONFIG_ACTION_Y + 24, "TAB FIELD  CTRL BACKSPACE CLEAR", PAL_TUNING, 1);
 }
 
 static int drone_crossfade_range(const TsUiState *ui, size_t *first, size_t *last)

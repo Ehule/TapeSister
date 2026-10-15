@@ -516,7 +516,7 @@ matrix. [Legacy reference](LEGACY_ROUTING.md).
 
 ## Ambisonics output
 
-**CFG → SPEAKERS** sets the active count (up to 16), names and hardware outputs.
+**CFG → SPEAKER SETUP** sets the active count (up to 16), names and hardware outputs.
 Inactive SPK columns are hidden; saved routes return when reactivated.
 **F9 → AMBISONICS** / **Ctrl+F9** opens Field / Speakers / Motion. Send selected
 sources to the Ambisonics destination, choose 3–16 active speakers and enable it.
@@ -560,6 +560,9 @@ OUT is after the limiter. Lower pre-limiter stages to reduce gain reduction.
 | Backend WASAPI | Windows shared-mode audio; SAVE CONFIG applies in place |
 | Backend DirectSound | Compatibility backend; SAVE CONFIG applies in place |
 | Backend ASIO | One 64-bit duplex driver; choose driver and buffer, then SAVE CONFIG |
+| INPUT/OUTPUT RANGE | FIRST/LAST physical channel numbers; ALL follows the device; SAVE CONFIG applies |
+| REC | recording input mode, independent of the enabled I/O range |
+| SPEAKER SETUP | active count, names and output mapping; only available speakers appear in Matrix |
 | Input/Output SYSTEM DEFAULT | deliberate use of the current system default |
 | active | configured endpoint is open |
 | closed capture | normal when EXT, external REC, and input monitoring are idle |

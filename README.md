@@ -247,7 +247,7 @@ until **Use Matrix** imports their existing ordinary serial chain. Unsupported
 conversions leave the routing unchanged and show a reason. The legacy serial Router, its Performance states/timers, Insert
 assignments and Sister source switches do not control an active matrix.
 
-**CFG → SPEAKERS** configures up to 16 named speakers and their hardware outputs;
+**CFG → SPEAKER SETUP** configures up to 16 named speakers and their hardware outputs;
 inactive speaker columns are hidden, with their routes retained. **F9 → AMBISONICS**
 (or Ctrl+F9) opens Field / Speakers / Motion. Route selected sounds to the
 Ambisonics destination and choose a 3–16-speaker array. Direct SPK connections
@@ -434,6 +434,17 @@ without the independent Insert queues. See [ASIO setup](docs/ASIO_AUDIO.md) for
 MOTU and VB-Audio Matrix routing. Finish or cancel recording before changing audio setup.
 Auto/WASAPI shared mode remains available for TapeHead, REAPER or VB-CABLE;
 hardware-driver sharing and exclusivity rules still apply.
+
+CONFIG has **INPUT RANGE** and **OUTPUT RANGE**, each with **FIRST** and **LAST**.
+For a ten-output interface, choose output FIRST 1 / LAST 10, then SAVE CONFIG.
+ALL follows the device's channel count. This works on Linux and Windows: JACK
+creates only the selected numbered ports; ASIO opens the selected physical ranges;
+WASAPI/DirectSound and other SDL backends silence channels outside the range.
+Channel numbers stay fixed (3–10 remains OUT 3–10). **REC** chooses the recording
+input mode independently. **SPEAKER SETUP** names and maps up to 16 speakers;
+the routing matrix hides speakers and output pairs outside the available range,
+retaining their routes. JACK's input/master labels refer to application ports;
+connect them to hardware in the JACK graph. See [channel setup](docs/AUDIO_CHANNEL_RANGES.md).
 
 Configured and active devices are tracked separately. A named output or input is
 never silently replaced with the system default. If a named output fails at startup,

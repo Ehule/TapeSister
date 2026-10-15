@@ -94,8 +94,9 @@ use short coefficient fades. The pair selector also chooses the fallback while
 the spatial stage is enabled but unavailable.
 
 On Linux select TapeSister's **JACK** backend and route its master playback ports
-to the M6 using your JACK or PipeWire JACK patchbay. The master exposes 16 ports;
-connect the four assigned ports for this setup. The dedicated stereo Insert
+to the M6 using your JACK or PipeWire JACK patchbay. **CFG → OUTPUT RANGE**
+chooses which numbered master ports to expose (up to 16; ALL preserves the old
+16-port default). Connect the four assigned ports for this setup. The dedicated stereo Insert
 Send/Return ports stay separate. A visible JACK port does not prove that it is
 connected to a physical speaker: check the patchbay and test tones.
 
