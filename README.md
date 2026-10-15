@@ -245,7 +245,14 @@ Routing, levels, pan/mono, inheritance and aliases save with the TSR project.
 Keep the complete project folder. Existing projects retain their legacy path
 until **Use Matrix** imports their existing ordinary serial chain. Unsupported
 conversions leave the routing unchanged and show a reason. The legacy serial Router, its Performance states/timers, Insert
-assignments and Ambisonics output do not control an active matrix.
+assignments and Sister source switches do not control an active matrix.
+
+**CFG → SPEAKERS** configures up to 16 named speakers and their hardware outputs;
+inactive speaker columns are hidden, with their routes retained. **F9 → AMBISONICS**
+(or Ctrl+F9) opens Field / Speakers / Motion. Route selected sounds to the
+Ambisonics destination and choose a 3–16-speaker array. Direct SPK connections
+can play on the same speakers alongside the decoded field.
+[Speaker setup and layering](docs/AMBISONICS.md).
 
 [Routing guide, default path, Terra and Vulture examples](docs/ROUTING_MATRIX.md) ·
 [Manual](docs/USER_MANUAL.md#global-router) ·

@@ -516,15 +516,19 @@ matrix. [Legacy reference](LEGACY_ROUTING.md).
 
 ## Ambisonics output
 
-Ctrl+F9 opens the existing field/array/motion window. This is part of the legacy
-output path; matrix physical outputs bypass its speaker mapping and processing.
-[Legacy setup and controls](AMBISONICS.md).
+**CFG → SPEAKERS** sets the active count (up to 16), names and hardware outputs.
+Inactive SPK columns are hidden; saved routes return when reactivated.
+**F9 → AMBISONICS** / **Ctrl+F9** opens Field / Speakers / Motion. Send selected
+sources to the Ambisonics destination, choose 3–16 active speakers and enable it.
+Direct SPK routes and the decoded field can share speakers and play together.
+Muting Ambisonics leaves direct routes playing. [Setup and controls](AMBISONICS.md).
 
 ## Final output
 
 Default path: Main → Master EQ → linked limiter → OUT 1/2; OUT gain and the final
 hardware guard apply at the device. Matrix connections can bypass EQ/limiter nodes.
-FILE OUT records OUT 1/2 before the final hardware guard, not the sum of all outputs.
+FILE OUT records OUT 1/2 before the added SPK/Ambisonics layers and final hardware
+guard, not the sum of all outputs.
 
 Click **EQ** in either window for Master / Room EQ and the limiter toggle.
 Hover its controls for 600 ms to see help in the bottom status line.

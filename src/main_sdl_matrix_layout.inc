@@ -56,10 +56,12 @@ static void mx_columns(void)
     MatrixWindow *w=&matrix_window;w->column_count=0;
     for(int i=0;i<TS_MATRIX_DESTINATIONS;++i) {
         int d=w->layout?w->layout->column[i]:i;
+        if(d>=TS_MATRIX_SPEAKER_BASE && d-TS_MATRIX_SPEAKER_BASE>=w->speakers.count)continue;
         if(ts_matrix_destination_active(&w->controls,d))w->columns[w->column_count++]=d;
     }
     w->column=SDL_clamp(w->column,0,SDL_max(0,w->column_count-MATRIX_COLS));
-    if(!ts_matrix_destination_active(&w->controls,w->destination))w->destination=TS_MATRIX_MAIN;
+    if(!ts_matrix_destination_active(&w->controls,w->destination) ||
+       (w->destination>=TS_MATRIX_SPEAKER_BASE && w->destination-TS_MATRIX_SPEAKER_BASE>=w->speakers.count))w->destination=TS_MATRIX_MAIN;
 }
 static int mx_column(int position)
 {

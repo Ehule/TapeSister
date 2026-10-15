@@ -7,7 +7,7 @@ typedef struct {
     TsFramebuffer *framebuffer;
     TsSpatialUi model;
     Uint32 id, presented, message_until;
-    int visible, drag;
+    int visible, drag, show_routes;
 } SpatialWindow;
 static SpatialWindow spatial_window;
 static int spatial_wrap_index(int value,int count)
@@ -24,11 +24,18 @@ static void spatial_capture(AudioState *audio,TsUiState *ui)
 {
     /* Caller already owns the existing application audio-state lock. */
     ui->config.spatial=audio->sister.spatial.controls;
+    if(memcmp(&audio->speakers,&ui->config.speakers,sizeof(audio->speakers))) {
+        audio->speakers=ui->config.speakers;audio->sister.spatial.hop=0;
+        audio->speaker_test_remaining=0;
+    }
     if(!spatial_window.visible)return;
     spatial_window.model.controls=audio->sister.spatial.controls;
     spatial_window.model.view=audio->sister.spatial.view;
     spatial_window.model.view.channels=audio->output_device_channels;
     spatial_window.model.learn=ui->midi_learn_active;
+    spatial_window.model.matrix=audio->sister.matrix.controls.enabled;
+    spatial_window.model.speakers=audio->speakers;
+    spatial_window.model.input_peak=audio->sister.matrix.input_peak[TS_MATRIX_AMBISONICS];
     if(spatial_window.model.speaker>=ui->config.spatial.speakers)spatial_window.model.speaker=0;
 }
 static int spatial_show(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui)
@@ -157,7 +164,10 @@ static int spatial_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,
     if(device)SDL_LockAudioDevice(device);c=audio->sister.spatial.controls;if(device)SDL_UnlockAudioDevice(device);
     if((down||wheel)&&y>=9&&y<31){
         if(x>=208&&x<304)c.enabled=!c.enabled;
-        else if(x>=312&&x<442)c.stereo_pair=spatial_wrap_index(c.stereo_pair+delta,c.speakers);
+        else if(x>=312&&x<442) {
+            if(m->matrix){spatial_window.show_routes=1;return 1;}
+            c.stereo_pair=spatial_wrap_index(c.stereo_pair+delta,c.speakers);
+        }
         else return 1;
         spatial_commit(device,audio,ui,&c);return 1;
     }
@@ -188,7 +198,10 @@ static int spatial_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,
             return 1;
         }
         if((down||wheel)&&y>=80&&y<103){
-            if(x>=326&&x<464)ts_spatial_ring(&c,c.speakers+(wheel?wheel:x<395?-1:1),c.point);
+            if(x>=326&&x<464) {
+                if(m->matrix)ts_spatial_resize(&c,c.speakers+(wheel?wheel:x<395?-1:1),m->speakers.count);
+                else ts_spatial_ring(&c,c.speakers+(wheel?wheel:x<395?-1:1),c.point);
+            }
             else if(x>=474&&x<616){
                 TsSpatialControls ring=c;ts_spatial_ring(&ring,c.speakers,!c.point);
                 c.point=ring.point;memcpy(c.azimuth,ring.azimuth,sizeof(c.azimuth));
@@ -199,7 +212,16 @@ static int spatial_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,
             m->speaker=spatial_wrap_index(m->speaker+(wheel?wheel:x<471?-1:1),c.speakers);return 1;
         }else if((down||wheel)&&x>=500&&x<616&&y>=198&&y<314){
             int row=(y-198)/29,sp=m->speaker;
-            if(row==0)c.output[sp]+=delta;
+            if(row==0) {
+                if(m->matrix) {
+                    int candidate=c.output[sp],step=delta<0?-1:1;
+                    for(int tries=0;tries<m->speakers.count;++tries) {
+                        candidate=spatial_wrap_index(candidate+step,m->speakers.count);
+                        int used=0;for(int j=0;j<c.speakers;++j)if(j!=sp)used|=c.output[j]==candidate;
+                        if(!used){c.output[sp]=candidate;break;}
+                    }
+                } else c.output[sp]+=delta;
+            }
             if(row==1)c.azimuth[sp]+=delta*(fine?.1f:1.f);
             if(row==2)c.trim_db[sp]+=delta*(fine?.1f:1.f);
             if(row==3)c.delay_ms[sp]+=delta*(fine?.01f:.1f);

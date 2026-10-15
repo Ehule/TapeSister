@@ -48,6 +48,16 @@ audio_output_device=
 ; Shared playback/capture callback size: 256, 512, or 1024 frames.
 audio_buffer_frames=512
 
+[Speakers]
+; Active logical speakers, 1..16. Set 10 for a ten-output setup.
+; Inactive SPK columns are hidden in the Matrix; their routes remain saved.
+; CFG > SPEAKERS edits count, names and physical outputs. SAVE CONFIG persists it.
+Speakers.Count=16
+; Physical outputs are ZERO-BASED in this file (one-based in the UI).
+; Each active speaker needs a distinct output. Omitted slots default to 0..15.
+; Speakers.Output0=0
+; Speakers.Name0=FRONT LEFT
+
 [Audition]
 ; Per-voice note-on de-click ramp in milliseconds (0-20, default 2).
 ; Set to 0 to preserve the waveform's exact hard start.

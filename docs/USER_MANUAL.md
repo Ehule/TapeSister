@@ -1599,10 +1599,13 @@ and Sister source switches do not control an active matrix.
 
 ### Ambisonics output
 
-**Ctrl+F9** opens the existing Ambisonics window. Its speaker field belongs to the
-legacy output path; the matrix's physical output connections bypass it. Matrix
-connections address hardware pairs directly. See [Ambisonics](AMBISONICS.md) for
-the legacy speaker mapping and field controls.
+Set the active speaker count (up to 16), names and hardware outputs in
+**CFG → SPEAKERS**. Inactive speaker columns are hidden in the Matrix; their
+saved connections return when reactivated. **F9 → AMBISONICS** or **Ctrl+F9** opens
+Field / Speakers / Motion. Route selected sources to the Ambisonics column and
+choose 3–16 active speakers for its array. Each speaker can also receive direct
+SPK connections at the same time. Muting Ambisonics leaves direct routes playing.
+See [Ambisonics](AMBISONICS.md) for setup, layering and recording limits.
 
 ### Saving routing
 

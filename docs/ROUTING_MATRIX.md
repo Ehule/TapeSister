@@ -254,7 +254,7 @@ are measured individually, so two signals that cancel when summed can light
 their individual routes while the destination stays dark. Updates are limited
 to 20 Hz while the matrix is visible, and stale indications fade if callbacks stop.
 
-Physical destinations are pairs on the active output device, up to OUT 15/16;
+Physical **OUT** destinations are pairs on the active output device, up to OUT 15/16;
 input rows expose up to four pairs on the active input device. **N/A** means a
 port is not open on the current device. It stays saved but produces silence;
 it is never silently redirected into the main speakers. These physical matrix
@@ -265,6 +265,27 @@ a connected processor from an enabled one. Pedalboard's row is its POST rack;
 PRE/head placements remain local to Sister. Sister POWER, ROLL, HOLD and MONITOR
 remain operational. Its old source trims are replaced by matrix connection
 levels. Local head feedback remains inside Sister.
+
+## Speakers and Ambisonics
+
+**SPEAKERS** opens the same setup as **CFG → SPEAKERS**. Set the active count
+(1–16), name speakers, assign physical output channels and test them. SAVE CONFIG
+keeps this hardware setup across projects. **SPK 1…16** destinations send a mono
+average of each incoming stereo signal to those speakers. Only the configured
+active count appears; hidden speaker routes stay saved for later use. A configured
+speaker whose output is unavailable stays visible as **N/A**, with no fallback.
+The original stereo OUT pairs remain available for direct and hardware-loop use.
+
+**AMBISONICS** opens the separate Field / Speakers / Motion window (Ctrl+F9).
+Connect any source or processor output to the **AMBISONICS** destination, choose
+3–16 active speakers for its array, and enable it. **INPUT ROUTES** returns to the
+Ambisonics column. Array members can simultaneously receive direct SPK routes:
+the decoded field and direct sound add together. Muting Ambisonics affects only
+that layer. Missing array members mute that layer without redirecting it to Main.
+All bus inputs share the same field and motion controls. See the
+[setup and four-speaker layering example](AMBISONICS.md).
+
+![Matrix Ambisonics and individual speaker destinations](images/matrix-spatial-routing.png)
 
 ## Terra to three destinations
 
@@ -302,9 +323,10 @@ are outside the graph and cannot be inferred from port aliases.
 
 ## Saving, recording and compatibility
 
-TSR40 tile files, SISTRK v9 tracker scores, Mosaic format 8 and Sister state v41
+TSR41 tile files, SISTRK v10 tracker scores, Mosaic format 9 and Sister state v42
 preserve the expanded source routes, effect instances and their settings, graph,
-connection levels, row pan/mono and hardware aliases.
+connection levels, row pan/mono, hardware aliases and Ambisonics array settings.
+Speaker count, names and physical mappings remain global CFG preferences.
 Old formats load; older application builds cannot read the new tile/score saves.
 Opening a project replaces its matrix and aliases rather than retaining the
 previous project's graph. The graph and aliases are also in saved configuration.
@@ -314,8 +336,8 @@ Current saves use a named project folder containing the `.tsr`, `sister-state.in
 folder. Older layouts may use an adjacent `<name>.tsr.samples/` folder, which must
 remain beside its TSR. See [project saving](USER_MANUAL.md#saving-moving-and-extracting-a-project).
 
-FILE OUT records the main stereo program (OUT 1/2), before the final linked
-hardware guard. It does not sum every separate speaker/send output. Sister's
+FILE OUT records the main stereo program (OUT 1/2), before the added direct SPK
+and decoded Ambisonics layers and the final linked hardware guard. It does not sum every separate speaker/send output. Sister's
 H1/H2/H3 capture taps remain available. Matrix-routed input to Sister reaches
 its tape directly; a second TRACK/EXT source switch is not required.
 
@@ -350,3 +372,5 @@ For an optional real Mosaic project comparison, set
 It renders 768,000 frames from 5:30, enables Matrix during playback, and compares
 Original/Edited against an uninterrupted legacy render. A Pale Weight measured
 a maximum absolute difference of `2.98023224e-08` per sample (float rounding).
+
+Mosaic OUTPUT uses the same stereo tap; it does not capture the added speaker layers.

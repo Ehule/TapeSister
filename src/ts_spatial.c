@@ -192,7 +192,9 @@ void ts_spatial_test(TsSpatial *s, int speaker)
         s->test_remaining = s->sample_rate;
     } else s->test_remaining = 0;
 }
-static void spatial_tick(TsSpatial *s, unsigned channels, int pair)
+static int spatial_channel(const TsSpatialControls *c,int i,unsigned channels,const TsSpeakerSetup *setup)
+{ return setup?ts_speakers_channel(setup,c->output[i],channels):c->output[i]; }
+static void spatial_tick(TsSpatial *s, unsigned channels, int pair,const TsSpeakerSetup *setup)
 {
     const TsSpatialControls *c = &s->controls;
     double dt = (double)HOP / s->sample_rate;
@@ -226,7 +228,8 @@ static void spatial_tick(TsSpatial *s, unsigned channels, int pair)
     }
     int available = s->layout_valid, conflict = 0;
     for (int i = 0; i < c->speakers; ++i) {
-        if ((unsigned)c->output[i] >= channels) available = 0;
+        int ch=spatial_channel(c,i,channels,setup);
+        if ((unsigned)ch >= channels) available = 0;
         if (pair > 0 && (c->output[i] == pair*2 || c->output[i] == pair*2+1)) conflict = 1;
         for (int j = 0; j < i; ++j) if (c->output[i] == c->output[j]) available = 0;
     }
@@ -254,14 +257,19 @@ static void spatial_tick(TsSpatial *s, unsigned channels, int pair)
         }
     }
 }
-void ts_spatial_process(TsSpatial *s, TsStereoFrame in, float *out, unsigned channels, int pair)
+static void spatial_process(TsSpatial *s, TsStereoFrame in, float *out, unsigned channels, int pair,const TsSpeakerSetup *setup)
 {
     if (!s->ready || channels<2) return;
     const TsSpatialControls *c = &s->controls;
-    if (!s->hop--) { spatial_tick(s, channels, pair); s->hop = HOP-1; }
+    if (!s->hop--) { spatial_tick(s, channels, pair,setup); s->hop = HOP-1; }
     float active = c->enabled && s->view.available ? 1.f : 0.f;
     s->wet += s->smoothing * (active - s->wet);
     if (fabsf(active-s->wet)<.0001f) s->wet=active;
+    if(setup && !c->enabled && !s->wet && !s->test_remaining && s->test_gain<.0001f) {
+        s->view.wet=0;s->view.test_speaker=-1;
+        for(int i=0;i<16;++i)s->view.peak[i]*=s->meter_decay;
+        return;
+    }
     s->view.wet = s->wet;
     in = ts_stereo_frame_sanitize(in);
     int field_active=c->enabled || s->wet>=.00001f;
@@ -292,11 +300,12 @@ void ts_spatial_process(TsSpatial *s, TsStereoFrame in, float *out, unsigned cha
     float spatial[64]={0};
     for (int i=0;i<c->speakers;++i) {
         float v=wet[i]*s->limit_gain*s->wet;
-        unsigned ch=(unsigned)c->output[i];
+        unsigned ch=(unsigned)spatial_channel(c,i,channels,setup);
         if(ch<64 && ch<channels)spatial[ch]+=v;
         s->view.peak[i]=fmaxf(fabsf(v),s->view.peak[i]*s->meter_decay);
     }
     for(unsigned ch=0;ch<64 && ch<channels;++ch) {
+        if(setup){out[ch]+=spatial[ch];continue;}
         int send=pair>0 && (ch==(unsigned)pair*2 || ch==(unsigned)pair*2+1);
         float dry=0;
         for(int j=0;j<2;++j){
@@ -316,9 +325,35 @@ void ts_spatial_process(TsSpatial *s, TsStereoFrame in, float *out, unsigned cha
     if (s->test_speaker >= 0 && s->test_speaker < c->speakers && s->view.available) {
         s->test_phase += 2*PI*440/s->sample_rate;
         if (s->test_phase >= 2*PI) s->test_phase -= 2*PI;
-        unsigned ch = (unsigned)c->output[s->test_speaker];
-        if (ch < channels) out[ch] = bound(out[ch] + sinf((float)s->test_phase)*s->test_gain, -.98f, .98f);
+        unsigned ch = (unsigned)spatial_channel(c,s->test_speaker,channels,setup);
+        if (ch < channels) {
+            float value=out[ch] + sinf((float)s->test_phase)*s->test_gain;
+            out[ch]=setup?value:bound(value,-.98f,.98f);
+        }
     }
+}
+
+void ts_spatial_process(TsSpatial *s,TsStereoFrame in,float *out,unsigned channels,int pair)
+{spatial_process(s,in,out,channels,pair,NULL);}
+void ts_spatial_process_bus(TsSpatial *s,TsStereoFrame in,float *out,unsigned channels,const TsSpeakerSetup *speakers)
+{if(speakers)spatial_process(s,in,out,channels,0,speakers);}
+void ts_spatial_resize(TsSpatialControls *c,int count,int available)
+{
+    if(available<3)return;
+    count=count<3?3:count>available?available:count;
+    if(count>16)count=16;
+    TsSpatialControls ring=*c;ts_spatial_ring(&ring,count,c->point);
+    for(int i=c->speakers;i<count;++i) {
+        int output=-1;
+        for(int candidate=0;candidate<available && candidate<16;++candidate) {
+            int used=0;for(int j=0;j<i;++j)used|=c->output[j]==candidate;
+            if(!used){output=candidate;break;}
+        }
+        if(output<0)return;
+        c->output[i]=output;c->trim_db[i]=c->delay_ms[i]=0;
+        c->azimuth[i]=ring.azimuth[i];
+    }
+    c->speakers=count;if(c->stereo_pair>=count)c->stereo_pair=0;
 }
 
 int ts_spatial_write(FILE *f, const TsSpatialControls *c)

@@ -40,9 +40,13 @@ typedef struct {
     float input_peak[TS_MATRIX_DESTINATIONS], output_peak[TS_MATRIX_ROWS], decay;
     float board_insert_current, mode_follow;
     float hardware_peak[TS_MATRIX_OUTPUTS]; /* After OUT gain and hardware guard. */
-    TsStereoFrame output[TS_MATRIX_OUTPUTS], sidechain;
+    TsStereoFrame output[TS_MATRIX_OUTPUTS], sidechain, spatial_input;
+    float speaker_output[TS_SOURCE_SPEAKERS];
 } TsRoutingMatrix;
 typedef TsStereoFrame (*TsMatrixProcess)(void *,int,TsStereoFrame);
+/* Only the original processor/sidechain destinations can be feedback edges. */
+static inline uint64_t ts_matrix_feedback_bit(int d)
+{ return d>=0 && d<TS_MATRIX_INSTANCE_DESTINATIONS ? UINT64_C(1)<<d : 0; }
 void ts_matrix_default(TsMatrixControls *c);
 int ts_matrix_valid(const TsMatrixControls *c);
 /* Returns 0 for an unapproved loop, -1 for invalid arguments, 1 on success. */

@@ -85,6 +85,7 @@ static void ts_audio_commit_output_layout(AudioState *audio, const SDL_AudioSpec
     ts_insert_duplex_block(&audio->sister.insert,ts_asio_selected,NULL,0,0);
     (void)ts_spatial_prepare(&audio->sister.spatial,(unsigned)spec->freq);
     audio->output_device_channels = spec->channels;
+    audio->speaker_test_remaining=0;audio->speaker_test_gain=0;
     audio->sister.insert.output_channels = spec->channels;
     ts_input_monitor_discard(&audio->sister.insert.return_monitor);
 }

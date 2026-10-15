@@ -2,6 +2,7 @@
 #define TAPESISTER_SPATIAL_H
 
 #include "tapesister/sample.h"
+#include "tapesister/speakers.h"
 #include <stdio.h>
 
 enum { TS_SPATIAL_SPEAKERS = 16, TS_SPATIAL_PARAMS = 5 };
@@ -64,6 +65,12 @@ void ts_spatial_test(TsSpatial *s, int speaker);
    preserved. Caller has already written legacy stereo + external Insert. */
 void ts_spatial_process(TsSpatial *s, TsStereoFrame input, float *output,
                         unsigned channels, int shared_send_pair);
+/* Matrix bus: add decoded feeds to existing hardware audio. Disabled/unavailable
+   mutes only this bus, never folds it into unrelated stereo outputs. */
+void ts_spatial_process_bus(TsSpatial *s,TsStereoFrame input,float *output,
+    unsigned channels,const TsSpeakerSetup *speakers);
+/* Resize preserves assigned speakers/calibration; only new positions are initialized. */
+void ts_spatial_resize(TsSpatialControls *c,int count,int available);
 /* FuMa WXYZ, for the field diagram and future independently encoded sources. */
 void ts_spatial_transform(float field[4], const float value[TS_SPATIAL_PARAMS], int transform);
 const char *ts_spatial_parameter_name(int parameter);

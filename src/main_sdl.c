@@ -849,6 +849,11 @@ typedef struct {
     int playing;
     int output_rate;
     unsigned output_device_channels;
+    TsSpeakerSetup speakers;
+    float speaker_peak[16], speaker_test_gain;
+    double speaker_test_phase;
+    unsigned speaker_test_remaining;
+    int speaker_test_channel;
     int bank_slot;
     size_t attack_frame;
     size_t attack_frames;
@@ -1423,14 +1428,16 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             float peak=fmaxf(fabsf(output.l),fabsf(output.r));
             if(peak>.98f){output.l*=.98f/peak;output.r*=.98f/peak;}
         }
-        /* Mosaic OUTPUT records exactly the stereo speaker program, including
+        /* Mosaic OUTPUT records the stereo program before added Matrix speaker
+           feeds and spatial decode, including
            keyboard/sample voices, Prism, Sister/FX, Master EQ, limiter and OUT gain. */
         if(audio->record_bank_recorder && audio->record_source &&
            atomic_load_explicit(audio->record_source,memory_order_acquire)==TS_RECORD_SOURCE_OUTPUT) {
             (void)ts_external_recorder_write_frame(audio->record_bank_recorder,output);
             synth_block_peak=fmaxf(synth_block_peak,fmaxf(fabsf(output.l),fabsf(output.r)));
         }
-        /* FILE OUT captures the final audible program after ordinary or
+        /* FILE OUT captures the stereo program before added Matrix speaker
+           feeds and spatial decode, after ordinary or
            Sister POST effects, topology fades, Master EQ, the output limiter, and the
            global OUT fader. The optional H1/H2/H3 file stems retain their
            internal taps. Neither path writes to Sister's rolling memory. */
@@ -1455,6 +1462,24 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
                 if(ch<2)value=ch?main_output.r:main_output.l;
                 hardware[ch]=isfinite(value)?value:0;
             }
+            for(int sp=0;sp<audio->speakers.count && sp<16;++sp) {
+                int ch=ts_speakers_channel(&audio->speakers,sp,device_channels);
+                if(ch>=0)hardware[ch]+=audio->sister.matrix.speaker_output[sp]*gain;
+            }
+            TsStereoFrame spatial_input=audio->sister.matrix.spatial_input;
+            spatial_input.l*=gain;spatial_input.r*=gain;
+            uint64_t profile_spatial=ts_profile_begin(TS_PROF_SPATIAL);
+            ts_spatial_process_bus(&audio->sister.spatial,spatial_input,hardware,device_channels,&audio->speakers);
+            ts_profile_end(TS_PROF_SPATIAL,profile_spatial);
+            if(audio->speaker_test_remaining || audio->speaker_test_gain>.00001f) {
+                float target=audio->speaker_test_remaining?.0631f:0;
+                audio->speaker_test_gain+=(target-audio->speaker_test_gain)*.004f;
+                if(audio->speaker_test_remaining)--audio->speaker_test_remaining;
+                audio->speaker_test_phase+=2*M_PI*440/audio->output_rate;
+                if(audio->speaker_test_phase>=2*M_PI)audio->speaker_test_phase-=2*M_PI;
+                if((unsigned)audio->speaker_test_channel<device_channels)
+                    hardware[audio->speaker_test_channel]+=sinf((float)audio->speaker_test_phase)*audio->speaker_test_gain;
+            }
             float peak=0;
             for(unsigned ch=0;ch<device_channels;++ch)peak=fmaxf(peak,fabsf(hardware[ch]));
             float target=peak>.98f?.98f/peak:1;
@@ -1465,6 +1490,11 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
                 hardware[ch]*=audio->clean_output.limit;
                 if(ch<TS_MATRIX_OUTPUTS*2u && fabsf(hardware[ch])>audio->sister.matrix.hardware_peak[ch/2])
                     audio->sister.matrix.hardware_peak[ch/2]=fabsf(hardware[ch]);
+            }
+            for(int sp=0;sp<16;++sp) {
+                int ch=ts_speakers_channel(&audio->speakers,sp,device_channels);
+                float v=ch>=0?fabsf(hardware[ch]):0;
+                audio->speaker_peak[sp]=fmaxf(v,audio->speaker_peak[sp]*.9999f);
             }
             if(audio->sister.insert.duplex)++audio->sister.insert.duplex_position;
         } else {
@@ -11592,6 +11622,7 @@ static int canvas_eq_handling;
 #include "main_sdl_spatial.inc"
 #include "main_sdl_source_route.inc"
 #include "main_sdl_router.inc"
+#include "main_sdl_speakers.inc"
 #include "main_sdl_matrix.inc"
 
 static int midi_sister_hit_from_target(const char *target, float normalized,
@@ -13704,6 +13735,7 @@ int main(int argc, char **argv)
     ts_master_eq_morph_set(&audio.sister.master_eq,&ui.config.eq_morph);
     ts_compressor_set(&audio.sister.compressor,&ui.config.compressor);
     ts_spatial_recall(&audio.sister.spatial,&ui.config.spatial);
+    audio.speakers=ui.config.speakers;
     ts_sister_runtime_set_router(&audio.sister,&ui.config.router);
     ts_matrix_set(&audio.sister.matrix,&ui.config.matrix,(unsigned)audio.output_rate);
     ts_router_performance_set(&audio.sister.router,&ui.config.router_performance);
@@ -14251,9 +14283,18 @@ int main(int argc, char **argv)
             }
             if(canvas_eq_event(&event,window,device,&audio,&ui,&sister_window,&instrument))continue;
             if(performance_event(&event,window,device,&audio,&ui,&sample_pages,audio.workspace_bank?audio.workspace_bank:&instrument,&fm_preview,obtained.freq))continue;
+            if(speakers_event(&event,window,device,&audio,&ui))continue;
             if(matrix_event(&event,window,device,&audio,&ui,&sample_pages,&instrument))continue;
             if(source_route_event(&event,window,device,&audio,&ui,&sample_pages,&instrument))continue;
-            if (spatial_event(&event,window,device,&audio,&ui,&sister_window)) continue;
+            if (spatial_event(&event,window,device,&audio,&ui,&sister_window)) {
+                if(spatial_window.show_routes) {
+                    spatial_window.show_routes=0;
+                    matrix_show(device,&audio,&ui,&sample_pages,&instrument,-1,-1);
+                    matrix_window.destination=TS_MATRIX_AMBISONICS;
+                    matrix_window.column=SDL_clamp(mx_column_position(TS_MATRIX_AMBISONICS),0,SDL_max(0,matrix_window.column_count-MATRIX_COLS));
+                }
+                continue;
+            }
             event_id=event_window_id(&event);
             if (ts_audio_health_event(&event, window, &audio, &ui)) continue;
             if((!ui.tracker_open || event_id!=SDL_GetWindowID(window)) && keyboard_sequence_transport_event(&event,window,device,&audio,&ui,
@@ -18234,6 +18275,7 @@ int main(int argc, char **argv)
         ts_mandala_poll(&audio.sister.mandala,&visual_prefs);
         ui.config.visual_quality=visual_prefs.quality;ui.config.visual_display=visual_prefs.display;ui.config.visual_fullscreen=visual_prefs.fullscreen;
         spatial_window_update(&ui);
+        speakers_update(device,&audio,&ui);
         canvas_eq_poll(device,&audio,&ui,&instrument);
         matrix_update(device,&audio,&ui,&sample_pages,&instrument);performance_update(device,&audio);
         source_route_update(device,&audio,&ui,&sample_pages,&instrument);
@@ -18365,7 +18407,7 @@ int main(int argc, char **argv)
     if (sister_window.texture) SDL_DestroyTexture(sister_window.texture);
     if (sister_window.renderer) SDL_DestroyRenderer(sister_window.renderer);
     if (sister_window.window) SDL_DestroyWindow(sister_window.window);
-    spatial_window_close();
+    spatial_window_close();speakers_close();
     performance_close();matrix_close();source_route_close();
     ts_audio_health_close();
     if (texture) SDL_DestroyTexture(texture);

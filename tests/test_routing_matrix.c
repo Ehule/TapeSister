@@ -104,7 +104,7 @@ static void tracker_bus(void)
     assert(ts_sister_runtime_reconfigure(&r,48000,2,error,sizeof(error)));
     ts_sister_runtime_configure_limiter(&r,0,-1,1,50);
     TsMatrixControls c=r.matrix.controls;c.enabled=1;
-    assert(TS_MATRIX_COMPRESSOR==15 && TS_MATRIX_SIDECHAIN==16 && TS_MATRIX_SHARED_DESTINATIONS==17 && TS_MATRIX_DESTINATIONS==49);
+    assert(TS_MATRIX_COMPRESSOR==15 && TS_MATRIX_SIDECHAIN==16 && TS_MATRIX_SHARED_DESTINATIONS==17 && TS_MATRIX_INSTANCE_DESTINATIONS==49 && TS_MATRIX_AMBISONICS==49 && TS_MATRIX_SPEAKER_BASE==50 && TS_MATRIX_DESTINATIONS==66);
     assert(ts_matrix_set(&r.matrix,&c,48000));
     TsSisterSourceFrames s={.tracker={.2f,-.3f},.preview={.05f,.07f},.fm={.1f,.12f}};
     /* Explicit per-track destinations arrive separately from the group mix. */
@@ -194,4 +194,29 @@ static void import_serial_chain(void)
         for(int i=0;i<2;++i)ts_sister_runtime_free(both[i]);
     }
 }
-int main(void){graph();runtime();physical_inputs();tracker_bus();import_serial_chain();puts("Unified routing graph, TrackSister bus, shared DSP, serial import audio parity, loop isolation, hardware returns and persistence passed");}
+
+static void terminal_destinations(void)
+{
+    TsSourceRoute route={.matrix_enabled=1};
+    route.matrix_gain[TS_MATRIX_AMBISONICS]=1000;
+    route.matrix_gain[TS_MATRIX_SPEAKER_BASE+14]=1000;
+    route.matrix_gain[TS_MATRIX_SPEAKER_BASE+15]=500;
+    TsSourceRouteVoice voice={0};ts_source_route_set(&voice,route,48000);
+    TsSourceRouteMix sums,copy;ts_source_route_mix_init(&sums,NULL);ts_source_route_mix_init(&copy,NULL);
+    ts_source_route_frame(&voice,(TsStereoFrame){.2f,.4f},&sums);
+    assert(sums.graph_mask_high==3 && sums.graph_mask==(UINT64_C(1)<<TS_MATRIX_AMBISONICS));
+    ts_source_route_add(&copy,&sums,.5f);
+    near(copy.graph[TS_MATRIX_SPEAKER_BASE+15].r,.1f);
+    TsRoutingMatrix m;ts_matrix_init(&m);TsMatrixControls c=m.controls;c.enabled=1;
+    assert(ts_matrix_connect(&c,TS_MATRIX_MAIN,TS_MATRIX_SPEAKER_BASE+15,1000)==1);
+    assert(ts_matrix_connect(&c,TS_MATRIX_MAIN,TS_MATRIX_AMBISONICS,1000)==1);
+    assert(!c.delayed[TS_MATRIX_MAIN]);assert(ts_matrix_set(&m,&c,48000));
+    TsStereoFrame live[TS_MATRIX_ROWS-TS_MATRIX_NODES]={{0}};
+    ts_matrix_process(&m,&copy,live,identity,NULL);
+    near(m.spatial_input.l,.1f);near(m.speaker_output[14],.15f);near(m.speaker_output[15],.075f);
+    ts_matrix_cut_feedback(&c);assert(c.row[TS_MATRIX_MAIN].matrix_gain[TS_MATRIX_SPEAKER_BASE+15]==1000);
+    TsSourceRouteHandoff h={0};ts_source_route_handoff(&h,&sums,0,64);
+    ts_source_route_mix_init(&sums,NULL);ts_source_route_handoff(&h,&sums,1,64);
+    near(sums.graph[65].r,.2f);
+}
+int main(void){graph();terminal_destinations();runtime();physical_inputs();tracker_bus();import_serial_chain();puts("Unified routing graph, TrackSister bus, shared DSP, serial import audio parity, loop isolation, hardware returns and persistence passed");}

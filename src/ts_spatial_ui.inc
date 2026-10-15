@@ -30,7 +30,7 @@ static void spatial_speakers(TsFramebuffer *fb,const TsSpatialUi *m,int cx,int c
     const TsSpatialControls *c=&m->controls;
     spatial_grid(fb,cx,cy);
     int l=c->stereo_pair,r=(l+1)%c->speakers;
-    if(!c->enabled){
+    if(!c->enabled && !m->matrix){
         float a=c->azimuth[l]*3.14159265358979323846/180,b=c->azimuth[r]*3.14159265358979323846/180;
         spatial_line(fb,cx-(int)(80*sinf(a)),cy-(int)(80*cosf(a)),
             cx-(int)(80*sinf(b)),cy-(int)(80*cosf(b)),PAL_EFFECT);
@@ -39,11 +39,11 @@ static void spatial_speakers(TsFramebuffer *fb,const TsSpatialUi *m,int cx,int c
         float a=c->azimuth[i]*3.14159265358979323846/180;
         int x=cx-(int)(80*sinf(a)),y=cy-(int)(80*cosf(a));
         uint32_t color=m->speaker==i?PAL_MOUSE:PAL_TEXT;
-        if(!c->enabled&&(i==l||i==r))color=PAL_EFFECT;
+        if(!c->enabled && !m->matrix && (i==l||i==r))color=PAL_EFFECT;
         if(m->view.test_speaker==i)color=PAL_NOTE;
         frame(fb,x-9,y-8,18,16,ts_theme_color(active_palette(), TS_THEME_SPATIAL, TS_COLOR_PANEL, RGB(25,24,30)),color);
         char label[16];snprintf(label,sizeof(label),"%d",i+1);text(fb,x-(i<9?3:6),y-3,label,color,1);
-        snprintf(label,sizeof(label),"OUT %d",c->output[i]+1);
+        snprintf(label,sizeof(label),m->matrix?"SPK %d":"OUT %d",c->output[i]+1);
         text(fb,x-(int)(strlen(label)*3),y+13,label,ts_theme_color(active_palette(), TS_THEME_SPATIAL, TS_COLOR_DIM, RGB(153,150,160)),1);
         int level=(int)(fminf(1,m->view.peak[i])*24);
         if(level)rect(fb,x-12,y-13,level,2,PAL_WAVE_LEFT);
@@ -58,12 +58,12 @@ void ts_spatial_ui_render(TsFramebuffer *fb,const TsSpatialUi *m,const TsPalette
     uint32_t dim=ts_theme_color(active_palette(), TS_THEME_SPATIAL, TS_COLOR_DIM, RGB(158,150,165)),edge=ts_theme_color(active_palette(), TS_THEME_SPATIAL, TS_COLOR_EDGE, RGB(57,50,63));char label[112];
     rect(fb,0,0,640,400,ts_theme_color(active_palette(), TS_THEME_SPATIAL, TS_COLOR_PANEL, RGB(24,21,29)));frame(fb,6,6,628,388,ts_theme_color(active_palette(), TS_THEME_SPATIAL, TS_COLOR_PANEL, RGB(30,26,34)),edge);
     text(fb,18,17,"AMBISONICS",PAL_NOTE,1);
-    button(fb,208,9,96,c->enabled?"ENABLED":"STEREO",c->enabled);
+    button(fb,208,9,96,c->enabled?"ENABLED":m->matrix?"MUTED":"STEREO",c->enabled);
     snprintf(label,sizeof(label),"STEREO %d-%d",c->stereo_pair+1,(c->stereo_pair+1)%c->speakers+1);
-    button(fb,312,9,130,label,0);button(fb,450,9,124,m->learn?"LEARN ON":"MIDI LEARN",m->learn);
+    button(fb,312,9,130,m->matrix?"INPUT ROUTES":label,0);button(fb,450,9,124,m->learn?"LEARN ON":"MIDI LEARN",m->learn);
     button(fb,586,9,40,"X",0);
-    button(fb,12,40,96,"FIELD",m->page==0);button(fb,114,40,96,"ARRAY",m->page==1);button(fb,216,40,96,"MOTION",m->page==2);
-    snprintf(label,sizeof(label),"%d SPEAKERS / FOA / %u OUTPUTS",c->speakers,v->channels);
+    button(fb,12,40,96,"FIELD",m->page==0);button(fb,114,40,96,m->matrix?"SPEAKERS":"ARRAY",m->page==1);button(fb,216,40,96,"MOTION",m->page==2);
+    snprintf(label,sizeof(label),"%d IN ARRAY / %u OUTPUTS",c->speakers,v->channels);
     text(fb,336,48,label,dim,1);
     if(m->page==0){
         spatial_grid(fb,160,164);spatial_speakers(fb,m,480,164);
@@ -104,11 +104,15 @@ void ts_spatial_ui_render(TsFramebuffer *fb,const TsSpatialUi *m,const TsPalette
         button(fb,326,80,138,"SPEAKERS - / +",0);
         snprintf(label,sizeof(label),"%s",c->point?"POINT":"FLAT");button(fb,474,80,142,label,0);
         const char *dec[]={"MAX RE","IN PHASE","BASIC"};snprintf(label,sizeof(label),"DECODER: %s",dec[c->decoder]);button(fb,326,116,290,label,0);
-        snprintf(label,sizeof(label),"<    SPEAKER %02d    >",m->speaker+1);button(fb,326,157,290,label,0);
-        const char *names[]={"HARDWARE OUTPUT","AZIMUTH","TRIM DB","DELAY MS"};
+        snprintf(label,sizeof(label),m->matrix?"<   ARRAY SLOT %02d   >":"<    SPEAKER %02d    >",m->speaker+1);button(fb,326,157,290,label,0);
+        const char *names[]={m->matrix?"CONFIG SPEAKER":"HARDWARE OUTPUT","AZIMUTH","TRIM DB","DELAY MS"};
         int sp=m->speaker<c->speakers?m->speaker:0;
         for(int i=0;i<4;++i){int y=204+i*29;text(fb,326,y,names[i],PAL_TEXT,1);
-            if(i==0)snprintf(label,sizeof(label),"%d",c->output[sp]+1);
+            if(i==0) {
+                int speaker=c->output[sp];
+                if(m->matrix && speaker>=0 && speaker<16)snprintf(label,sizeof(label),"%d %.12s",speaker+1,m->speakers.name[speaker]);
+                else snprintf(label,sizeof(label),"%d",speaker+1);
+            }
             if(i==1)snprintf(label,sizeof(label),"%+.1F",c->azimuth[sp]);
             if(i==2)snprintf(label,sizeof(label),"%+.1F",c->trim_db[sp]);
             if(i==3)snprintf(label,sizeof(label),"%.2F",c->delay_ms[sp]);
@@ -116,8 +120,8 @@ void ts_spatial_ui_render(TsFramebuffer *fb,const TsSpatialUi *m,const TsPalette
         }
         button(fb,326,328,140,"TEST 1 SECOND",v->test_speaker==sp);button(fb,474,328,142,"STOP TEST",0);
         text(fb,18,298,"CLICK A SPEAKER TO SELECT",dim,1);
-        text(fb,18,314,"NUMBERS RUN AROUND THE ROOM",dim,1);
-        text(fb,18,330,"STEREO PAIR: LEFT THEN RIGHT",dim,1);
+        text(fb,18,314,m->matrix?"SPK LABELS MATCH CFG SETUP":"NUMBERS RUN AROUND THE ROOM",dim,1);
+        text(fb,18,330,m->matrix?"DIRECT SOUNDS CAN SHARE ARRAY":"STEREO PAIR: LEFT THEN RIGHT",dim,1);
         text(fb,18,358,"WHEEL: ADJUST   SHIFT: FINE   L/R CLICK: + / -   TEST: -24 DB",dim,1);
     }else{
         text(fb,18,81,"LFO / CONTINUOUS MOTION",PAL_NOTE,1);
@@ -140,11 +144,44 @@ void ts_spatial_ui_render(TsFramebuffer *fb,const TsSpatialUi *m,const TsPalette
         text(fb,18,358,"CAP STORES BASE FIELD / TO MORPHS / WHEEL MORPH TIME / SHIFT FINE",dim,1);
     }
     const char *status=m->message;
+    if(!status[0] && m->matrix)status=c->enabled&&!v->available?
+        "BUS UNAVAILABLE: CHECK CONFIG SPEAKERS, OUTPUTS AND ARRAY GEOMETRY":
+        !c->enabled?"BUS MUTED / DIRECT SPEAKER ROUTES KEEP PLAYING":
+        m->input_peak<.00001f?"BUS ENABLED / NO INPUT: USE INPUT ROUTES TO PATCH SOURCES":
+        "MATRIX INPUT > ENCODE > FIELD > SPEAKERS / ADDED TO DIRECT ROUTES";
     if(!status[0])status=v->conflict&&c->enabled?"SPATIAL BLOCKED: A SPEAKER OUTPUT IS RESERVED BY THE EXTERNAL INSERT":
         c->enabled&&!v->available?"SPATIAL UNAVAILABLE: CHECK OUTPUT CHANNELS, DUPLICATES AND ARRAY GEOMETRY":
         c->enabled?"MAIN MIX > ENCODE > FIELD TRANSFORM > ARRAY DECODE / FILE OUT: STEREO BEFORE SPATIAL":
         !v->stereo_available?"SELECTED STEREO PAIR UNAVAILABLE / USING HARDWARE OUTPUTS 1-2":
         "AMBISONICS OFF / ORDINARY STEREO ON THE SELECTED SPEAKER PAIR";
     snprintf(label,sizeof(label),"%.101s",status);text(fb,14,379,label,PAL_EFFECT,1);
+    render_palette=NULL;
+}
+
+void ts_speakers_ui_render(TsFramebuffer *fb,const TsSpeakersUi *m,const TsPalette *palette)
+{
+    render_palette=palette;render_group=TS_THEME_SPATIAL;
+    uint32_t panel=ts_theme_color(palette,TS_THEME_SPATIAL,TS_COLOR_PANEL,RGB(24,21,29));
+    uint32_t dim=ts_theme_color(palette,TS_THEME_SPATIAL,TS_COLOR_DIM,RGB(158,150,165));
+    rect(fb,0,0,640,400,panel);text(fb,18,17,"SPEAKER SETUP",PAL_NOTE,1);
+    char label[104];snprintf(label,sizeof(label),"SPEAKERS: %d",m->setup.count);
+    button(fb,210,9,156,label,0);button(fb,374,9,110,"TEST 1 SEC",m->test);
+    button(fb,492,9,82,"STOP",0);button(fb,586,9,40,"X",0);
+    snprintf(label,sizeof(label),"%u OUTPUT CHANNELS OPEN / CLICK NAME TO EDIT / WHEEL OUTPUT TO ASSIGN",m->channels);
+    text(fb,18,48,label,dim,1);
+    for(int sp=0;sp<16;++sp) {
+        int x=14+(sp/8)*314,y=76+(sp%8)*32,active=sp<m->setup.count;
+        int available=ts_speakers_channel(&m->setup,sp,m->channels)>=0;
+        uint32_t color=active?(available?PAL_TEXT:PAL_EFFECT):dim;
+        snprintf(label,sizeof(label),"%02d",sp+1);text(fb,x,y+8,label,color,1);
+        button(fb,x+24,y,174,m->editing && m->selected==sp?m->edit:m->setup.name[sp],m->selected==sp);
+        if(m->editing && m->selected==sp && m->caret)rect(fb,x+31+(int)strlen(m->edit)*6,y+5,1,11,PAL_MOUSE);
+        snprintf(label,sizeof(label),"OUT %d%s",m->setup.output[sp]+1,available?"":" !");
+        button(fb,x+206,y,90,label,m->selected==sp && !m->editing);
+        if(active && available)rect(fb,x+24,y+24,(int)(174*fminf(1,m->peak[sp])),2,PAL_WAVE_LEFT);
+    }
+    text(fb,18,341,"SPEAKERS CAN PLAY DIRECT SOUND AND AMBISONICS TOGETHER.",dim,1);
+    text(fb,18,355,"CLICK COUNT LEFT/RIGHT: -/+   RIGHT-CLICK OUTPUT: -   SAVE CONFIG TO KEEP",dim,1);
+    text(fb,18,379,m->message[0]?m->message:"! = INACTIVE OR OUTPUT UNAVAILABLE / SAVED ROUTES ARE NEVER REDIRECTED",PAL_EFFECT,1);
     render_palette=NULL;
 }

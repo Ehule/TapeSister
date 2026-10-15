@@ -14,7 +14,7 @@ FetchContent_Declare(
   SOURCE_SUBDIR _tapesister_header_only)
 FetchContent_MakeAvailable(miniaudio)
 
-add_library(tapesister_core src/ts_mandala.c src/ts_routing_matrix.c src/ts_matrix_effects.c src/ts_matrix_layout.c src/ts_source_route.c src/ts_clean_output.c src/ts_spatial.c src/ts_sample.c src/ts_prism.c src/ts_prism_performance.c src/ts_fm.c src/ts_audition.c src/ts_note_bank.c src/ts_keyboard_sequence.c
+add_library(tapesister_core src/ts_mandala.c src/ts_routing_matrix.c src/ts_matrix_effects.c src/ts_matrix_layout.c src/ts_source_route.c src/ts_clean_output.c src/ts_spatial.c src/ts_speakers.c src/ts_sample.c src/ts_prism.c src/ts_prism_performance.c src/ts_fm.c src/ts_audition.c src/ts_note_bank.c src/ts_keyboard_sequence.c
              src/ts_mosaic.c src/ts_note_event.c src/ts_midi_map.c src/ts_performance.c src/ts_audio_mixer.c
              src/ts_audio_lifecycle.c
              src/ts_realtime_diagnostics.c src/ts_profile.c
@@ -529,6 +529,17 @@ if(TAPESISTER_BUILD_SDL)
     target_link_libraries(tapesister_spatial_controller_tests PRIVATE rt)
   endif()
   add_test(NAME tapesister_spatial_controller_tests COMMAND tapesister_spatial_controller_tests)
+  add_executable(tapesister_matrix_spatial_controller_tests tests/test_matrix_spatial_controller.c
+    src/tape_link.c src/tape_companion.c src/ts_startup_diag.c src/ts_midi_input.c)
+  target_include_directories(tapesister_matrix_spatial_controller_tests PRIVATE third_party)
+  target_link_libraries(tapesister_matrix_spatial_controller_tests PRIVATE tapesister_core tapesister_tapehead SDL2::SDL2)
+  if(UNIX AND NOT APPLE)
+    target_link_libraries(tapesister_matrix_spatial_controller_tests PRIVATE rt)
+  endif()
+  if(MINGW)
+    target_link_options(tapesister_matrix_spatial_controller_tests PRIVATE "-Wl,--stack,16777216")
+  endif()
+  add_test(NAME tapesister_matrix_spatial_controller_tests COMMAND tapesister_matrix_spatial_controller_tests)
 endif()
 add_executable(tapesister_fm_unison_tests tests/test_fm_unison.c)
 target_link_libraries(tapesister_fm_unison_tests PRIVATE tapesister_core)

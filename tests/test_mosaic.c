@@ -158,6 +158,8 @@ static void test_storage(void)
     m->events[0].output_route.matrix_gain[7]=500;
     m->events[0].output_route.matrix_gain[TS_MATRIX_COMPRESSOR]=1000;
     m->events[0].output_route.matrix_gain[TS_MATRIX_SIDECHAIN]=600;
+    m->events[0].output_route.matrix_gain[TS_MATRIX_INSTANCE_DESTINATIONS-1]=777;
+    m->events[0].output_route.matrix_gain[TS_MATRIX_AMBISONICS]=1000;
     m->events[0].output_route.matrix_gain[TS_MATRIX_DESTINATIONS-1]=1234;
     assert(ts_mosaic_save(m,dir,error,sizeof(error)));
     assert(ts_mosaic_load(loaded,dir,error,sizeof(error)));
@@ -165,21 +167,25 @@ static void test_storage(void)
     assert(loaded->events[0].muted && loaded->events[1].solo);
     assert(loaded->events[0].source==loaded->events[1].source);
     assert(!memcmp(m->events[0].source->sample.data,loaded->events[0].source->sample.data,4096*2*sizeof(float)));
-    /* v6 retained EQ, but route records had only the original 15 ports. */
-    FILE *current=fopen("mosaic-storage-test/mosaic.tsm","r"),*v6=fopen("mosaic-storage-test/old.tsm","w");assert(current && v6);
-    char record[1024];assert(fgets(record,sizeof(record),current));fputs("TAPESISTER_MOSAIC 6\n",v6);
-    while(fgets(record,sizeof(record),current)) {
-        if(!strncmp(record,"ROUTE ",6)) {
-            record[strcspn(record,"\r\n")]=0;
-            for(int i=TS_MATRIX_LEGACY_DESTINATIONS;i<TS_MATRIX_DESTINATIONS;++i){char *last=strrchr(record,' ');assert(last);*last=0;}
-            fprintf(v6,"%s\n",record);
-        } else fputs(record,v6);
+    /* Older route widths retain their destinations and zero the added buses. */
+    for(int version=6;version<=8;++version) {
+        int destinations=version==8?TS_MATRIX_INSTANCE_DESTINATIONS:version==7?TS_MATRIX_SHARED_DESTINATIONS:TS_MATRIX_LEGACY_DESTINATIONS;
+        FILE *current=fopen("mosaic-storage-test/mosaic.tsm","r"),*old=fopen("mosaic-storage-test/old.tsm","w");assert(current && old);
+        char record[1024];assert(fgets(record,sizeof(record),current));fprintf(old,"TAPESISTER_MOSAIC %d\n",version);
+        while(fgets(record,sizeof(record),current)) {
+            if(!strncmp(record,"ROUTE ",6)) {
+                record[strcspn(record,"\r\n")]=0;
+                for(int i=destinations;i<TS_MATRIX_DESTINATIONS;++i){char *last=strrchr(record,' ');assert(last);*last=0;}
+                fprintf(old,"%s\n",record);
+            } else fputs(record,old);
+        }
+        fclose(current);fclose(old);remove("mosaic-storage-test/mosaic.tsm");
+        assert(!rename("mosaic-storage-test/old.tsm","mosaic-storage-test/mosaic.tsm"));
+        assert(ts_mosaic_load(loaded,dir,error,sizeof(error)));
+        for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)
+            assert(loaded->events[0].output_route.matrix_gain[d]==(d<destinations?m->events[0].output_route.matrix_gain[d]:0));
+        assert(ts_mosaic_save(m,dir,error,sizeof(error)));
     }
-    fclose(current);fclose(v6);remove("mosaic-storage-test/mosaic.tsm");
-    assert(!rename("mosaic-storage-test/old.tsm","mosaic-storage-test/mosaic.tsm"));
-    assert(ts_mosaic_load(loaded,dir,error,sizeof(error)));
-    assert(loaded->events[0].output_route.matrix_gain[7]==500 && !loaded->events[0].output_route.matrix_gain[TS_MATRIX_COMPRESSOR] && !loaded->events[0].output_route.matrix_gain[TS_MATRIX_SIDECHAIN]);
-    assert(ts_mosaic_save(m,dir,error,sizeof(error)));
     /* Both previous formats load with neutral new controls, preserving the
        second format's mute/solo state. */
     FILE *old=fopen("mosaic-storage-test/mosaic.tsm","r");assert(old);

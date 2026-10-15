@@ -124,9 +124,11 @@ static void persistence(void)
 {
     TsConfig c,loaded;ts_config_init(&c);ts_spatial_ring(&c.spatial,8,1);c.spatial.enabled=1;c.spatial.stereo_pair=7;
     c.spatial.value[3]=.42f;c.spatial.lfo_targets=5;c.spatial.captured=3;c.spatial.state[1][2]=.71f;c.spatial.morph_target=1;
+    c.speakers.count=10;c.speakers.output[9]=15;snprintf(c.speakers.name[9],TS_SPEAKER_NAME,"REAR WALL");
     char error[160];assert(ts_config_save(&c,"spatial-test.ini",error,sizeof(error)));
     int ok=ts_config_load(&loaded,"spatial-test.ini",error,sizeof(error));if(!ok)fprintf(stderr,"%s\n",error);assert(ok);
     assert(!memcmp(&c.spatial,&loaded.spatial,sizeof(c.spatial)));
+    assert(!memcmp(&c.speakers,&loaded.speakers,sizeof(c.speakers)));
     TsSisterProjectState state,read;ts_sister_project_state_init(&state,48000);state.spatial=c.spatial;
     assert(ts_sister_project_state_save_file(&state,"spatial-project.ini",error,sizeof(error)));int present=0;
     assert(ts_sister_project_state_load_file(&read,"spatial-project.ini",48000,&present,error,sizeof(error))&&present);
@@ -135,8 +137,49 @@ static void persistence(void)
     assert(ts_spatial_read(&read.spatial,"Spatial.Output0","2.5")<0);
     remove("spatial-test.ini");remove("spatial-project.ini");
 }
+
+static void additive_bus(void)
+{
+    TsSpeakerSetup setup;ts_speakers_default(&setup);
+    /* Every supported array count, with spatial and fixed signals sharing outputs. */
+    for(int count=3;count<=16;++count) {
+        TsSpatial s;ts_spatial_init(&s);assert(ts_spatial_prepare(&s,48000));
+        TsSpatialControls c=s.controls;ts_spatial_ring(&c,count,0);c.enabled=1;
+        ts_spatial_set(&s,&c);float out[16],pure[16];
+        TsSpatial reference;ts_spatial_init(&reference);assert(ts_spatial_prepare(&reference,48000));ts_spatial_set(&reference,&c);
+        for(int frame=0;frame<14000;++frame) {
+            for(int ch=0;ch<16;++ch){out[ch]=.01f*(ch+1);pure[ch]=0;}
+            ts_spatial_process_bus(&s,(TsStereoFrame){.17f,.09f},out,16,&setup);
+            ts_spatial_process_bus(&reference,(TsStereoFrame){.17f,.09f},pure,16,&setup);
+        }
+        assert(s.view.available);
+        for(int ch=0;ch<16;++ch)close_to(out[ch],pure[ch]+.01f*(ch+1),.000001f);
+        c.enabled=0;ts_spatial_set(&s,&c);
+        for(int frame=0;frame<14000;++frame) {
+            for(int ch=0;ch<16;++ch)out[ch]=.01f*(ch+1);
+            ts_spatial_process_bus(&s,(TsStereoFrame){.17f,.09f},out,16,&setup);
+        }
+        for(int ch=0;ch<16;++ch)close_to(out[ch],.01f*(ch+1),.000001f);
+        /* Missing array output mutes the bus; never falls back to OUT 1/2. */
+        c.enabled=1;ts_spatial_set(&s,&c);setup.count=count-1;
+        memset(out,0,sizeof(out));ts_spatial_process_bus(&s,(TsStereoFrame){.2f,.3f},out,16,&setup);
+        assert(!s.view.available);for(int ch=0;ch<16;++ch)close_to(out[ch],0,.000001f);
+        ts_speakers_default(&setup);ts_spatial_free(&s);ts_spatial_free(&reference);
+    }
+    /* Named logical speaker maps to a different physical socket. */
+    TsSpatial s;ts_spatial_init(&s);assert(ts_spatial_prepare(&s,48000));
+    TsSpatialControls c=s.controls;c.enabled=1;c.output[0]=1;c.output[1]=3;c.output[2]=6;c.output[3]=9;
+    setup.count=10;setup.output[1]=14;assert(ts_speakers_valid(&setup));ts_spatial_set(&s,&c);
+    float out[16];for(int f=0;f<14000;++f){memset(out,0,sizeof(out));ts_spatial_process_bus(&s,(TsStereoFrame){.2f,.1f},out,16,&setup);}
+    assert(s.view.available && fabsf(out[14])>.001f && out[1]==0 && out[0]==0);
+    for(int ch=0;ch<16;++ch)if(ch!=14 && ch!=3 && ch!=6 && ch!=9)assert(out[ch]==0);
+    int old=c.output[0];float trim=c.trim_db[0]=-.7f,angle=c.azimuth[0];
+    ts_spatial_resize(&c,5,10);assert(c.speakers==5 && c.output[0]==old && c.trim_db[0]==trim && c.azimuth[0]==angle);
+    ts_spatial_resize(&c,2,10);assert(c.speakers==3);ts_spatial_resize(&c,16,10);assert(c.speakers==10);
+    ts_spatial_free(&s);
+}
 int main(void)
 {
-    decoders();transform_vectors();routing();transitions_and_motion();persistence();
+    decoders();transform_vectors();routing();transitions_and_motion();persistence();additive_bus();
     puts("Ambisonics: decoder reconstruction, ATK transforms, stereo sides, output ownership, motion, smoothing and persistence passed");return 0;
 }
