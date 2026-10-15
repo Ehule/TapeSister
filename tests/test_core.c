@@ -3437,8 +3437,11 @@ int main(void)
         CHECK(fb.pixels[(TS_CONFIG_FIELD_Y + TS_CONFIG_FIELD_STEP_Y + 3) *
                         TS_UI_WIDTH + TS_CONFIG_FIELD_X + 6 +
                         (int)ui.config_cursor * 6] == 0xffcc830bu);
-        differences = framebuffer_diff_count(&normal, &fb, 0, 229,
-                                             TS_UI_WIDTH, TS_UI_HEIGHT - 229);
+        /* Config now includes physical input/output range rows. Its larger
+           panel must still leave the playback controls and keyboard untouched. */
+        const int config_bottom = TS_CONFIG_ACTION_Y + 40;
+        differences = framebuffer_diff_count(&normal, &fb, 0, config_bottom,
+                                             TS_UI_WIDTH, TS_UI_HEIGHT - config_bottom);
         CHECK(differences == 0);
         CHECK(framebuffer_diff_count(&normal, &fb, TS_MODAL_PANEL_X,
                                      TS_MODAL_PANEL_Y, TS_MODAL_PANEL_W,
