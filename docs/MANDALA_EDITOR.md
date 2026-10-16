@@ -4,16 +4,16 @@ Source revision: `0f7e1d02eceb2a8718355cfff91c60c059a48c44`, based on main
 `fa0c76542c1f27aaa36b59a33cd55753a4a44350`.
 
 **F11 → EDIT VISUALIZER** opens the modeless editor. Its two new palettes are
-Blood and Soak and TapeSister Gold. Seven ink colors plus a backdrop are editable
+Bleed and Soak and TapeSister Gold. Seven ink colors plus a backdrop are editable
 with RGB sliders or hex input. Five shape choices and four form sliders give
 simple control while the original seeded layout and effect response remain.
 [Full controls and project compatibility](IMPERMANENT_MANDALA.md#palette-and-shape-editor).
 
 ![Native visualizer editor](screenshots/mandala/editor/editor.png)
 
-| Blood and Soak / Mixed shapes | TapeSister Gold / Triangles |
+| Bleed and Soak / Mixed shapes | TapeSister Gold / Triangles |
 | --- | --- |
-| ![Blood and Soak](screenshots/mandala/editor/blood-and-soak.png) | ![TapeSister Gold](screenshots/mandala/editor/tapesister-gold.png) |
+| ![Bleed and Soak](screenshots/mandala/editor/bleed-and-soak.png) | ![TapeSister Gold](screenshots/mandala/editor/tapesister-gold.png) |
 
 These are actual native SDL captures, not mockups. Both visuals use seed 314159,
 900 frames / 60 simulated seconds, identical synthetic audio features and
@@ -46,7 +46,7 @@ automatic load shedding:
 
 | Palette / shape | Mean frame ms | Maximum frame ms |
 | --- | ---: | ---: |
-| Blood and Soak / Mixed | 21.733 | 41.255 |
+| Bleed and Soak / Mixed | 21.733 | 41.255 |
 | TapeSister Gold / Triangles | 22.814 | 47.132 |
 | TapeSister Gold / Circles | 25.571 | 58.025 |
 
@@ -70,7 +70,7 @@ Those hardware checks remain manual.
 Reproduce the captures from a normal build:
 
 ```sh
-SDL_VIDEODRIVER=dummy SDL_RENDER_DRIVER=software tapesister --mandala-capture blood.bmp 314159 900 5 3 0
+SDL_VIDEODRIVER=dummy SDL_RENDER_DRIVER=software tapesister --mandala-capture bleed.bmp 314159 900 5 3 0
 SDL_VIDEODRIVER=dummy SDL_RENDER_DRIVER=software tapesister --mandala-capture gold.bmp 314159 900 5 4 1
 tapesister_mandala_controller_tests --editor-capture editor.bmp
 ```

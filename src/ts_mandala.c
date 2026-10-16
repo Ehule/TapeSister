@@ -10,14 +10,14 @@ static const uint32_t mandala_palettes[TS_MANDALA_PRESETS][TS_MANDALA_COLORS]={
     {0xD5B270,0x7EA39C,0x8D7296,0xB59E70,0x497074,0x96765A,0x5C5F78,0x04070A},
     {0x9CB9C5,0x9B8EBF,0x6C9EAA,0xC2B4A0,0x4A6D83,0x8693B6,0x4D6372,0x04070A},
     {0xC79470,0x996F6E,0x839279,0xC7B787,0x666958,0x9F7C93,0x705967,0x04070A},
-    /* Blood and Soak: crimson bodies, scarlet edges, incandescent highlights. */
+    /* Bleed and Soak: crimson bodies, scarlet edges, incandescent highlights. */
     {0xFF5424,0xD91527,0xA50920,0xFFAD49,0x740A1A,0xF13219,0xBB202F,0x0D0104},
     /* TapeSister splash: illuminated brass, copper, plum and violet. */
     {0xF4BD58,0xBC8041,0x9860BD,0xFFE1A1,0x61346F,0xDA993F,0xC589B7,0x08040D}
 };
 const char *ts_mandala_palette_name(unsigned palette)
 {
-    static const char *names[]={"AMBER","LUNAR","EMBER","BLOOD AND SOAK","TAPESISTER GOLD","CUSTOM"};
+    static const char *names[]={"AMBER","LUNAR","EMBER","BLEED AND SOAK","TAPESISTER GOLD","CUSTOM"};
     return palette<=TS_MANDALA_CUSTOM?names[palette]:"UNKNOWN";
 }
 const char *ts_mandala_shape_name(unsigned shape)

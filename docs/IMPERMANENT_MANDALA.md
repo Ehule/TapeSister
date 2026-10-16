@@ -48,7 +48,7 @@ Open **F11 → EDIT VISUALIZER**. The modeless dialog can stay open beside the
 visual window. OPEN VISUALIZER starts the preview; if frozen, its button offers
 RESUME VISUALIZER so changes become visible. Musical playback is unaffected.
 
-The existing Amber, Lunar and Ember palettes are joined by **Blood and Soak**
+The existing Amber, Lunar and Ember palettes are joined by **Bleed and Soak**
 (crimson/scarlet with hot orange highlights) and **TapeSister Gold** (gold,
 copper and violet inspired by the splash artwork). Choosing a palette changes
 colors only; it does not change shape settings, audio or pedal settings.
