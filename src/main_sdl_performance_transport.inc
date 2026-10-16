@@ -1,3 +1,4 @@
+#include "main_sdl_mandala_editor.inc"
 /* Modeless player mixer with a separate live tile bus. Group edits publish at one callback boundary. */
 enum { PERF_ARP=1,PERF_TRACKER=2,PERF_MOSAIC=4,PERF_W=600,PERF_H=548 };
 static struct {SDL_Window *window;SDL_Renderer *renderer;Uint32 id,painted;int visible,drag;} performance_transport;
@@ -127,10 +128,10 @@ static void performance_update(SDL_AudioDeviceID device,AudioState *audio)
     perf_rect(210,454,180,32,ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_EDGE,0xff304047u));perf_text(222,466,ts_mandala_frozen()?"RESUME VISUAL":"FREEZE VISUAL",ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_TEXT,0xffdbe8e3u),1);
     perf_rect(400,454,180,32,ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_EDGE,0xff304047u));perf_text(412,466,"NEW SEED",ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_TEXT,0xffdbe8e3u),1);
     const TsMandalaConfig *v=&audio->sister.mandala;
-    snprintf(line,sizeof(line),"PALETTE: %s",(const char*[]){"AMBER","LUNAR","EMBER"}[v->palette%3]);
+    snprintf(line,sizeof(line),"EDIT VISUALIZER");
     perf_rect(20,494,180,28,ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_EDGE,0xff304047u));perf_text(32,505,line,ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_TEXT,0xffdbe8e3u),1);
     snprintf(line,sizeof(line),"SYMMETRY: %u",v->symmetry);perf_rect(210,494,180,28,ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_EDGE,0xff304047u));perf_text(222,505,line,ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_TEXT,0xffdbe8e3u),1);
-    snprintf(line,sizeof(line),"EVOLUTION: %u MIN",v->cycle_seconds/60);perf_rect(400,494,180,28,ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_EDGE,0xff304047u));perf_text(412,505,line,ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_TEXT,0xffdbe8e3u),1);
+    snprintf(line,sizeof(line),"EVOLUTION: %u:%02u",v->cycle_seconds/60,v->cycle_seconds%60);perf_rect(400,494,180,28,ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_EDGE,0xff304047u));perf_text(412,505,line,ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_TEXT,0xffdbe8e3u),1);
     perf_text(22,534,"IN VISUAL WINDOW: F FULLSCREEN / D DISPLAY / Q QUALITY / ESC EXIT",ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_DIM,0xff94aaa7u),1);
     SDL_RenderPresent(performance_transport.renderer);performance_transport.painted=SDL_GetTicks();
 }
@@ -200,7 +201,7 @@ static int performance_event(SDL_Event *e,SDL_Window *window,SDL_AudioDeviceID d
                 } else if(col==1)ts_mandala_freeze();
                 else ts_mandala_reseed(v);
             } else if(y>=494) {
-                if(col==0)v->palette=(v->palette+1)%3;
+                if(col==0)mandala_editor_show(ui,v);
                 else if(col==1)v->symmetry=v->symmetry>=12?4:v->symmetry+2;
                 else v->cycle_seconds=v->cycle_seconds>=960?60:v->cycle_seconds*2;
             }

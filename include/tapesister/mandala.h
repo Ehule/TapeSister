@@ -5,11 +5,21 @@
 #include <stdatomic.h>
 #include <stdio.h>
 
-/* Project identity, independent of filenames, displays and frame history. */
+enum { TS_MANDALA_PRESETS = 5, TS_MANDALA_CUSTOM = 5, TS_MANDALA_COLORS = 8,
+       TS_MANDALA_BACKGROUND = 7, TS_MANDALA_SHAPES = 5 };
+/* Project identity and appearance, independent of displays and frame history.
+   RGB colors are 0xRRGGBB; the eighth swatch is the background. */
 typedef struct {
     uint64_t seed;
     uint32_t version, palette, symmetry, cycle_seconds;
+    uint32_t shape, density, scale, trails, motion;
+    uint32_t custom_rgb[TS_MANDALA_COLORS];
 } TsMandalaConfig;
+const char *ts_mandala_palette_name(unsigned palette);
+const char *ts_mandala_shape_name(unsigned shape);
+uint32_t ts_mandala_color(const TsMandalaConfig *config, unsigned swatch);
+void ts_mandala_set_color(TsMandalaConfig *config, unsigned swatch, uint32_t rgb);
+void ts_mandala_reset_geometry(TsMandalaConfig *config);
 void ts_mandala_default(TsMandalaConfig *config);
 void ts_mandala_reseed(TsMandalaConfig *config);
 int ts_mandala_valid(const TsMandalaConfig *config);

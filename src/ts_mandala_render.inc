@@ -19,7 +19,7 @@ typedef struct {
     int width, height, quality, shed, fullscreen, display, old_x, old_y, old_w, old_h;
     int dirty, diagnostics, controls, frozen;
     Uint32 pointer_time, next_frame;
-    double time, cost, max_cost, total_cost; unsigned frames, slow_frames;
+    double time, motion_time, cost, max_cost, total_cost; unsigned frames, slow_frames;
     Uint64 rng;
 } Mandala;
 static float mrand(Mandala *m)
@@ -30,6 +30,21 @@ static float mrand(Mandala *m)
 static float smooth(float x) { x = fmaxf(0, fminf(1, x)); return x*x*(3-2*x); }
 static void motif_point(MMotif *m, float x, float y)
 { if (m->count < M_POINTS) m->p[m->count++] = (MPoint){x,y}; }
+static void m_rgb(SDL_Renderer *renderer,uint32_t color,Uint8 alpha)
+{ SDL_SetRenderDrawColor(renderer,(color>>16)&255,(color>>8)&255,color&255,alpha); }
+static void m_polygon(MMotif *motif,unsigned shape,int open)
+{
+    if(shape==2) {
+        static const MPoint square[]={{-1,-1},{1,-1},{1,1},{-1,1},{-1,-1}};
+        for(int i=0;i<(open?4:5);++i)motif_point(motif,square[i].x,square[i].y);
+    } else {
+        int sides=shape==1?3:shape==3?24:6;
+        for(int i=0;i<sides+!open;++i) {
+            float angle=2*M_PI_F*i/sides-M_PI_F*.5f;
+            motif_point(motif,cosf(angle),sinf(angle));
+        }
+    }
+}
 static void m_instance(Mandala *m, unsigned motif, float x, float y, float sx, float sy, float a, unsigned color, unsigned family)
 {
     if (m->count >= M_INSTANCES) return;
@@ -41,7 +56,9 @@ static void m_build(Mandala *m, const TsMandalaConfig *config)
     memset(m->motifs, 0, sizeof(m->motifs));
     for (int k=0;k<M_MOTIFS;++k) {
         MMotif *motive = &m->motifs[k];
-        if (k == 0 || k == 5) { /* square / open mechanical bracket */
+        if(config->shape && (k==0 || (k>=2 && k<=5))) {
+            m_polygon(motive,config->shape,k==5);
+        } else if (k == 0 || k == 5) { /* square / open mechanical bracket */
             static const MPoint square[]={{-1,-1},{1,-1},{1,1},{-1,1},{-1,-1}};
             for (int j=0;j<(k==5?4:5);++j) motif_point(motive,square[j].x,square[j].y);
         } else if (k == 1) {
@@ -115,6 +132,11 @@ static void m_build(Mandala *m, const TsMandalaConfig *config)
     for(int i=0;i<4;++i)m_instance(m,2,0,0,.14f+i*.008f,.14f+i*.008f,0,0,2);
     m->dirty=1;
 }
+static void m_configure(Mandala *m,const TsMandalaConfig *config)
+{
+    if(m->config.seed!=config->seed || m->config.symmetry!=config->symmetry || m->config.shape!=config->shape)m_build(m,config);
+    else {m->config=*config;m->dirty=1;}
+}
 static int m_effect_targets(Mandala *m)
 {
     if(m->veil)SDL_DestroyTexture(m->veil);
@@ -127,7 +149,7 @@ static int m_effect_targets(Mandala *m)
         if(!m->echo[i])ok=0;
         else {
             SDL_SetTextureBlendMode(m->echo[i],SDL_BLENDMODE_BLEND);
-            SDL_SetRenderTarget(m->renderer,m->echo[i]);SDL_SetRenderDrawColor(m->renderer,4,7,10,255);SDL_RenderClear(m->renderer);
+            SDL_SetRenderTarget(m->renderer,m->echo[i]);m_rgb(m->renderer,ts_mandala_color(&m->config,TS_MANDALA_BACKGROUND),255);SDL_RenderClear(m->renderer);
         }
     }
     m->echo_write=m->echo_count=0;m->echo_at=0;
@@ -143,7 +165,7 @@ static int m_target(Mandala *m)
     m->history=SDL_CreateTexture(m->renderer,SDL_PIXELFORMAT_ARGB8888,SDL_TEXTUREACCESS_TARGET,m->width,m->height);
     if(!m->history)return 0;
     SDL_SetTextureBlendMode(m->history,SDL_BLENDMODE_NONE);
-    SDL_SetRenderTarget(m->renderer,m->history);SDL_SetRenderDrawColor(m->renderer,4,7,10,255);SDL_RenderClear(m->renderer);
+    SDL_SetRenderTarget(m->renderer,m->history);m_rgb(m->renderer,ts_mandala_color(&m->config,TS_MANDALA_BACKGROUND),255);SDL_RenderClear(m->renderer);
     SDL_SetRenderTarget(m->renderer,NULL);m->dirty=1;return m_effect_targets(m);
 }
 static void m_haze(Mandala *m)
@@ -156,7 +178,7 @@ static void m_haze(Mandala *m)
         for(int y=0;y<64;++y)for(int x=0;x<64;++x) {
             float dx=(x-31.5f)/31.5f,dy=(y-31.5f)/31.5f;
             float fall=fmaxf(0,1-dx*dx-dy*dy);
-            ((Uint32*)haze->pixels)[y*64+x]=((Uint32)(fall*fall*32)<<24)|0xADA27E;
+            ((Uint32*)haze->pixels)[y*64+x]=((Uint32)(fall*fall*32)<<24)|0xFFFFFF;
         }
         m->haze=SDL_CreateTextureFromSurface(m->renderer,haze);
         if(m->haze)SDL_SetTextureBlendMode(m->haze,SDL_BLENDMODE_BLEND);
@@ -190,12 +212,12 @@ static void m_destroy(Mandala *m)
 }
 static void m_scene(Mandala *m, double dt)
 {
-    static const Uint8 colors[3][7][3]={
-        {{213,178,112},{126,163,156},{141,114,150},{181,158,112},{73,112,116},{150,118,90},{92,95,120}},
-        {{156,185,197},{155,142,191},{108,158,170},{194,180,160},{74,109,131},{134,147,182},{77,99,114}},
-        {{199,148,112},{153,111,110},{131,146,121},{199,183,135},{102,105,88},{159,124,147},{112,89,103}}
-    };
-    m->time+=dt;
+    Uint8 colors[7][3];
+    for(unsigned i=0;i<7;++i) {
+        uint32_t rgb=ts_mandala_color(&m->config,i);
+        colors[i][0]=(rgb>>16)&255;colors[i][1]=(rgb>>8)&255;colors[i][2]=rgb&255;
+    }
+    m->time+=dt;m->motion_time+=dt*m->config.motion/50.0;
     float level=m->features.level;
     const TsMandalaEffects *fx=&m->effects;
     float distortion=fx->wet[TS_MANDALA_DISTORTION]*(.3f+.7f*fx->size[TS_MANDALA_DISTORTION]);
@@ -212,8 +234,8 @@ static void m_scene(Mandala *m, double dt)
     SDL_SetRenderTarget(m->renderer,m->history);
     SDL_SetRenderDrawBlendMode(m->renderer,SDL_BLENDMODE_BLEND);
     /* Frame-rate-independent temporal trace, bounded by one texture. */
-    Uint8 fade=(Uint8)fmax(1,fmin(255,255*(1-exp(-dt/(level>.01f?.55+reverb*fx->character[TS_MANDALA_REVERB]*2:1.6)))));
-    SDL_SetRenderDrawColor(m->renderer,4,7,10,fade);SDL_RenderFillRect(m->renderer,NULL);
+    Uint8 fade=(Uint8)fmax(1,fmin(255,255*(1-exp(-dt/(level>.01f?.55*pow(4,((double)m->config.trails-50)/50)+reverb*fx->character[TS_MANDALA_REVERB]*2:1.6)))));
+    m_rgb(m->renderer,ts_mandala_color(&m->config,TS_MANDALA_BACKGROUND),fade);SDL_RenderFillRect(m->renderer,NULL);
     /* Combine the three time-spaced echoes at 160x100, then one internal-size
        copy. Avoid three large alpha-blended passes on a software renderer. */
     if(delay>.005f && m->echo_count) {
@@ -231,8 +253,10 @@ static void m_scene(Mandala *m, double dt)
         SDL_SetTextureBlendMode(m->veil,SDL_BLENDMODE_ADD);SDL_RenderCopy(m->renderer,m->veil,NULL,NULL);
         SDL_SetTextureBlendMode(m->veil,SDL_BLENDMODE_BLEND);
     }
-    float scale=m->height*.46f,cx=m->width*.5f,cy=m->height*.5f;
+    float scale=m->height*.46f*m->config.scale/100,cx=m->width*.5f,cy=m->height*.5f;
     if(m->haze && presence>.01f) {
+        uint32_t tint=m->config.palette<3?0xADA27Eu:ts_mandala_color(&m->config,0);
+        SDL_SetTextureColorMod(m->haze,(tint>>16)&255,(tint>>8)&255,tint&255);
         SDL_SetTextureAlphaMod(m->haze,(Uint8)(presence*(42+110*reverb)));
         for(int i=0;i<12;++i) {
             float a=i*M_PI_F/6,r=.4f+.18f*sinf(cycle+i);
@@ -242,6 +266,7 @@ static void m_scene(Mandala *m, double dt)
         }
     }
     unsigned budget=(unsigned[]){1152,1792,2304}[m->quality];
+    budget=budget*m->config.density/100;
     if(m->shed)budget=m->shed==1?budget*2/3:budget/2;
     /* Reserve draw cost for the extra refraction strokes. */
     if(prism>.01f)budget=budget*4/5;
@@ -254,14 +279,14 @@ static void m_scene(Mandala *m, double dt)
         if(inst->family==2)life=level*(.25f+.4f*age);
         if(inst->family==1)life*=.6f+.4f*m->features.peak;
         if(inst->family==4)life*=.26f;
-        float drift=sinf((float)m->time*.31f+inst->phase);
+        float drift=sinf((float)m->motion_time*.31f+inst->phase);
         life*=1-distortion*.55f*smooth(inst->threshold+drift*.16f);
         if(life<.006f)continue;
-        const Uint8 *rgb=colors[m->config.palette][inst->color];
+        const Uint8 *rgb=colors[inst->color];
         Uint8 alpha=(Uint8)fminf(200,(22+80*level)*life);
         SDL_SetRenderDrawColor(m->renderer,rgb[0],rgb[1],rgb[2],alpha);
-        float breath=1+.012f*sinf(cycle+inst->phase)+.025f*level;
-        float rotation=inst->angle+distortion*.2f*drift+(inst->family==4?.04f*sinf((float)m->time*.012f+inst->phase):0);
+        float breath=1+.012f*sinf((float)(m->motion_time/m->config.cycle_seconds*2*M_PI_F)+inst->phase)+.025f*level;
+        float rotation=inst->angle+distortion*.2f*drift+(inst->family==4?.04f*sinf((float)m->motion_time*.012f+inst->phase):0);
         float ca=cosf(rotation),sa=sinf(rotation);
         float px=cx+inst->x*scale*breath,py=cy+inst->y*scale*breath;
         if(inst->family==4)px+=m->features.balance*8;
@@ -269,7 +294,7 @@ static void m_scene(Mandala *m, double dt)
         py+=distortion*scale*.12f*drift*sinf(inst->phase);
         float grow=(.75f+.25f*life)*(1+grain*(-.65f+2.1f*fx->size[TS_MANDALA_GRAIN]));
         grow*=1+transient*.12f*attack_shape*m->features.onset;
-        grow*=1+grain*.2f*sinf((float)m->time*(.4f+1.2f*fx->character[TS_MANDALA_GRAIN])+inst->phase);
+        grow*=1+grain*.2f*sinf((float)m->motion_time*(.4f+1.2f*fx->character[TS_MANDALA_GRAIN])+inst->phase);
         const MMotif *motif=&m->motifs[inst->motif];
         SDL_FPoint points[M_POINTS];
         for(int j=0;j<motif->count;++j) {
@@ -279,11 +304,12 @@ static void m_scene(Mandala *m, double dt)
             points[j]=(SDL_FPoint){px+ca*x-sa*y+split,py+sa*x+ca*y-split*.6f};
         }
         if(inst->motif==0 && inst->family!=2) {
-            SDL_Vertex face[4];
+            SDL_Vertex face[M_POINTS];int indices[(M_POINTS-2)*3];
+            int vertices=motif->count-1;
             SDL_Color color={rgb[0],rgb[1],rgb[2],(Uint8)(alpha/3)};
-            for(int j=0;j<4;++j)face[j]=(SDL_Vertex){points[j],color,{0,0}};
-            static const int indices[]={0,1,2,0,2,3};
-            SDL_RenderGeometry(m->renderer,NULL,face,4,indices,6);
+            for(int j=0;j<vertices;++j)face[j]=(SDL_Vertex){points[j],color,{0,0}};
+            for(int j=0;j<vertices-2;++j){indices[j*3]=0;indices[j*3+1]=j+1;indices[j*3+2]=j+2;}
+            SDL_RenderGeometry(m->renderer,NULL,face,vertices,indices,(vertices-2)*3);
         }
         SDL_RenderDrawLinesF(m->renderer,points,motif->count);
         if(inst->family==0 && inst->motif==0 && life>.3f) {
@@ -296,15 +322,15 @@ static void m_scene(Mandala *m, double dt)
         }
         if(prism>.01f && i%4==0) {
             float shift=prism*(3+21*fx->size[TS_MANDALA_PRISM]);
-            SDL_SetRenderDrawColor(m->renderer,91,182,177,(Uint8)(alpha*prism*.65f));
+            m_rgb(m->renderer,m->config.palette<3?0x5BB6B1u:ts_mandala_color(&m->config,1),(Uint8)(alpha*prism*.65f));
             for(int j=0;j<motif->count;++j){points[j].x+=shift;points[j].y-=shift*.38f;}
             SDL_RenderDrawLinesF(m->renderer,points,motif->count);
-            SDL_SetRenderDrawColor(m->renderer,173,107,155,(Uint8)(alpha*prism*.5f));
+            m_rgb(m->renderer,m->config.palette<3?0xAD6B9Bu:ts_mandala_color(&m->config,2),(Uint8)(alpha*prism*.5f));
             for(int j=0;j<motif->count;++j){points[j].x-=2*shift;points[j].y+=shift*.76f;}
             SDL_RenderDrawLinesF(m->renderer,points,motif->count);
         }
         if(inst->family==1 && m->features.width>.05f) {
-            SDL_SetRenderDrawColor(m->renderer,102,155,174,(Uint8)(alpha*m->features.width*.5f));
+            m_rgb(m->renderer,m->config.palette<3?0x669BAEu:ts_mandala_color(&m->config,6),(Uint8)(alpha*m->features.width*.5f));
             for(int j=0;j<motif->count;++j){points[j].x+=3*m->features.width;points[j].y+=2*m->features.width;}
             SDL_RenderDrawLinesF(m->renderer,points,motif->count);
         }
@@ -336,7 +362,7 @@ static void m_text(SDL_Renderer *r,int x,int y,const char *text,Uint8 shade)
 static void m_compose(Mandala *m,SDL_Texture *target,int width,int height)
 {
     SDL_SetRenderTarget(m->renderer,target);
-    SDL_SetRenderDrawColor(m->renderer,4,7,10,255);SDL_RenderClear(m->renderer);
+    m_rgb(m->renderer,ts_mandala_color(&m->config,TS_MANDALA_BACKGROUND),255);SDL_RenderClear(m->renderer);
     float scale=fminf((float)width/m->width,(float)height/m->height);
     SDL_Rect destination={(width-(int)(m->width*scale))/2,(height-(int)(m->height*scale))/2,(int)(m->width*scale),(int)(m->height*scale)};
     SDL_RenderCopy(m->renderer,m->history,NULL,&destination);
@@ -449,7 +475,7 @@ static int mandala_run(VisualShared *shared,
 #endif
         SDL_Event event;while(SDL_PollEvent(&event))m_event(m,shared,&event);
         if(shared_latest(shared,&message)) {
-            if(ts_mandala_valid(&message.config) && memcmp(&m->config,&message.config,sizeof(m->config)))m_build(m,&message.config);
+            if(ts_mandala_valid(&message.config) && memcmp(&m->config,&message.config,sizeof(m->config)))m_configure(m,&message.config);
             if(serial!=message.serial){serial=message.serial;fresh=SDL_GetTicks();}
         }
         int quality=(int)atomic_load(&shared->quality);
@@ -498,6 +524,9 @@ static int mandala_capture(int argc,char **argv)
     config.seed=argc>3?strtoull(argv[3],NULL,0):12345;
     if(!config.seed)config.seed=12345;
     int frames=argc>4?atoi(argv[4]):900;if(frames<1||frames>100000)frames=900;
+    if(argc>6)config.palette=(uint32_t)atoi(argv[6]);
+    if(argc>7)config.shape=(uint32_t)atoi(argv[7]);
+    if(!ts_mandala_valid(&config)){SDL_Quit();return 2;}
     Mandala *m=calloc(1,sizeof(*m));int ok=m && m_init(m,&config,1);
     TsMandalaEffects effects={0};
     int effect=argc>5?atoi(argv[5]):-1;

@@ -247,6 +247,66 @@ static void effect_snapshot_checks(void)
     assert(!atomic_load(&a.sister.snapshot.visual_enabled));
     puts("effect snapshot ownership, disabled publication and signal-activity gate: PASS");
 }
+static void editor_click(int x,int y,int button)
+{
+    SDL_Event e={0};e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=mandala_editor.id;e.button.button=(Uint8)button;e.button.x=x;e.button.y=y;
+    assert(mandala_editor_event(&e,&u,&a.sister.mandala));
+    e.type=SDL_MOUSEBUTTONUP;assert(mandala_editor_event(&e,&u,&a.sister.mandala));
+}
+static void editor_key(SDL_Keycode key,Uint16 mod)
+{
+    SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.windowID=mandala_editor.id;e.key.keysym.sym=key;e.key.keysym.mod=mod;
+    assert(mandala_editor_event(&e,&u,&a.sister.mandala));
+}
+static void editor_checks(SDL_Window *window)
+{
+    TsMandalaConfig original=a.sister.mandala;TsMatrixControls routing=a.sister.matrix.controls;
+    performance_show(&u,&a);
+    SDL_Event e={0};e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=performance_transport.id;e.button.button=SDL_BUTTON_LEFT;e.button.x=60;e.button.y=505;
+    assert(performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));assert(mandala_editor.visible);
+    uint64_t before=paged_project_state_hash(&pages,&bank,NULL,&a.sister,&a.keyboard_sequence);
+    editor_click(40,95,SDL_BUTTON_LEFT);assert(a.sister.mandala.palette==3);
+    assert(before!=paged_project_state_hash(&pages,&bank,NULL,&a.sister,&a.keyboard_sequence));
+    editor_click(260,95,SDL_BUTTON_LEFT);assert(a.sister.mandala.palette==4);
+    editor_click(165,338,SDL_BUTTON_LEFT);assert(a.sister.mandala.shape==1);
+    editor_click(170,415,SDL_BUTTON_LEFT);assert(a.sister.mandala.density==55);
+    editor_key(SDLK_z,KMOD_CTRL);assert(a.sister.mandala.density==100);
+    editor_key(SDLK_y,KMOD_CTRL);assert(a.sister.mandala.density==55);
+    editor_click(170,415,SDL_BUTTON_RIGHT);assert(a.sister.mandala.density==100);
+    editor_click(190,155,SDL_BUTTON_LEFT);assert(mandala_editor.swatch==2);
+    editor_click(490,234,SDL_BUTTON_LEFT);editor_key(SDLK_a,KMOD_CTRL);
+    e=(SDL_Event){0};e.type=SDL_TEXTINPUT;e.text.windowID=mandala_editor.id;snprintf(e.text.text,sizeof(e.text.text),"AA33CC");
+    assert(mandala_editor_event(&e,&u,&a.sister.mandala));editor_key(SDLK_RETURN,0);
+    assert(a.sister.mandala.palette==TS_MANDALA_CUSTOM && ts_mandala_color(&a.sister.mandala,2)==0xAA33CC);
+    editor_click(40,65,SDL_BUTTON_LEFT);editor_click(480,95,SDL_BUTTON_LEFT);
+    assert(ts_mandala_color(&a.sister.mandala,2)==0xAA33CC); /* Custom survives preset visits. */
+    editor_click(100,202,SDL_BUTTON_LEFT);assert((ts_mandala_color(&a.sister.mandala,2)>>16)==0);
+    editor_key(SDLK_z,KMOD_CTRL);assert(ts_mandala_color(&a.sister.mandala,2)==0xAA33CC);
+    editor_click(300,558,SDL_BUTTON_LEFT);assert(!memcmp(&a.sister.mandala,&original,sizeof(original)));
+    editor_key(SDLK_z,KMOD_CTRL);assert(a.sister.mandala.palette==TS_MANDALA_CUSTOM);
+    assert(!memcmp(&routing,&a.sister.matrix.controls,sizeof(routing)));
+    assert(ts_tapehead_running() && a.mosaic->playing && a.keyboard_sequence.running);
+    TsMandalaConfig replacement;ts_mandala_default(&replacement);replacement.palette=3;a.sister.mandala=replacement;
+    mandala_editor_update(&a.sister.mandala);editor_key(SDLK_z,KMOD_CTRL);
+    assert(!memcmp(&replacement,&a.sister.mandala,sizeof(replacement))); /* New project clears prior undo. */
+    editor_click(260,95,SDL_BUTTON_LEFT);editor_key(SDLK_ESCAPE,0);assert(!mandala_editor.visible && a.sister.mandala.palette==4);
+    mandala_editor_show(&u,&a.sister.mandala);editor_click(40,95,SDL_BUTTON_LEFT);editor_click(300,558,SDL_BUTTON_LEFT);
+    assert(a.sister.mandala.palette==4);mw_hide(&a.sister.mandala);mandala_editor_close();performance_close();a.sister.mandala=original;
+
+    Mandala *m=calloc(1,sizeof(*m));assert(m && m_init(m,&original,0));
+    unsigned count=m->count;Uint64 rng=m->rng;
+    TsMandalaConfig edited=original;edited.palette=3;edited.density=33;edited.trails=100;edited.motion=0;
+    m_configure(m,&edited);assert(m->count==count && m->rng==rng);
+    for(unsigned shape=0;shape<TS_MANDALA_SHAPES;++shape) {
+        edited.shape=shape;m_configure(m,&edited);assert(m->count<=M_INSTANCES);
+        assert(m->motifs[0].count==((int[]){5,4,5,25,7})[shape]);
+        for(int k=0;k<M_MOTIFS;++k)assert(m->motifs[k].count<=M_POINTS);
+        m->features=(TsMandalaFeatures){.8f,.8f,.5f,0,.1f};m_scene(m,1.0/15);
+        assert(m->motion_time==0 && m->time>0);
+    }
+    m_destroy(m);free(m);
+    puts("editor presets, custom RGB/hex, shapes, undo/revert, project replacement and bounded renderer: PASS");
+}
 int main(int argc,char **argv)
 {
     SDL_setenv("SDL_VIDEODRIVER","dummy",1);SDL_setenv("SDL_AUDIODRIVER","dummy",1);
@@ -254,7 +314,12 @@ int main(int argc,char **argv)
     assert(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_AUDIO|SDL_INIT_TIMER));
     SDL_Window *window=SDL_CreateWindow("Mandala host fixture",0,0,640,400,0);assert(window);
     setup(window);
-    if(argc>1 && !strcmp(argv[1],"--soak")) {
+    if(argc>2 && !strcmp(argv[1],"--editor-capture")) {
+        a.sister.mandala.palette=4;a.sister.mandala.shape=1;
+        mandala_editor_show(&u,&a.sister.mandala);mandala_editor_update(&a.sister.mandala);
+        SDL_Surface *surface=SDL_CreateRGBSurfaceFrom(mandala_editor.pixels,MW_W,MW_H,32,MW_W*4,0xff0000,0xff00,0xff,0);
+        assert(surface && !SDL_SaveBMP(surface,argv[2]));SDL_FreeSurface(surface);mandala_editor_close();
+    } else if(argc>1 && !strcmp(argv[1],"--soak")) {
         unsigned seconds=argc>2?(unsigned)atoi(argv[2]):240;
         if(argc>3 && !strcmp(argv[3],"--effects")) {
             TsSisterParameters p=a.sister.parameters;
@@ -286,7 +351,7 @@ int main(int argc,char **argv)
         }
         ts_native_pause(device,1);ts_native_close(device);
         printf("soak transport status: tracker=%d mosaic=%d arp=%d time=%.2f\n",ts_tapehead_running(),a.mosaic->playing,a.keyboard_sequence.running,a.mosaic->time);
-    } else {lifecycle(window);external_tap_checks();effect_snapshot_checks();}
+    } else {editor_checks(window);lifecycle(window);external_tap_checks();effect_snapshot_checks();}
     ts_mandala_shutdown();ts_tapehead_stop();ts_tapehead_close();
     ts_keyboard_sequence_source_free(ts_keyboard_sequence_source(&a.keyboard_sequence,NULL));
     ts_sister_runtime_free(&a.sister);ts_mosaic_free(a.mosaic);ts_capture_free(&a.capture);

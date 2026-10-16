@@ -14171,6 +14171,7 @@ int main(int argc, char **argv)
             if (ui.exit_for_new && (ui.exit_confirm_open || ui.exit_after_save) &&
                 event_id && event_id != SDL_GetWindowID(window) &&
                 event.type != SDL_KEYUP && event.type != SDL_MOUSEBUTTONUP) continue;
+            if(mandala_editor_event(&event,&ui,&audio.sister.mandala))continue;
             if(palette_window_event(&event,window,&ui,&sister_window)) {
                 if(palette_window.requested_group) {
                     palette_window_navigate(window,device,&audio,&ui,&sister_window,
@@ -18279,6 +18280,7 @@ int main(int argc, char **argv)
             }
         }
         palette_window_update(window,&ui,&sister_window);
+        mandala_editor_update(&audio.sister.mandala);
         uint64_t profile_aux = ts_profile_begin(TS_PROF_AUX_UI);
         TsMandalaPreferences visual_prefs={ui.config.visual_quality,ui.config.visual_display,ui.config.visual_fullscreen};
         ts_mandala_poll(&audio.sister.mandala,&visual_prefs);
@@ -18308,6 +18310,7 @@ int main(int argc, char **argv)
         int any_visible = !window_minimized ||
             (sister_window.model.visible && window_drawable(sister_window.window)) ||
             ts_audio_health_drawable() ||
+            (mandala_editor.visible && window_drawable(mandala_editor.window)) ||
             (palette_window.visible && window_drawable(palette_window.window)) ||
             window_drawable(spatial_window.window);
         unsigned service_ms = ts_ui_refresh_ms(any_visible, editing, animated);
@@ -18325,6 +18328,7 @@ int main(int argc, char **argv)
     }
 
     palette_window_close();
+    mandala_editor_close();
     ts_mandala_shutdown();
     ts_midi_input_destroy(ts_midi_input);ts_midi_input=NULL;midi_wake_event=0;
     if (ui.amplitude_gesture.active)
