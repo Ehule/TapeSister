@@ -118,6 +118,7 @@ static void perf_button(int x,int y,int width,int height,const char *label,int b
 static void performance_update(SDL_AudioDeviceID device,AudioState *audio)
 {
     /* Runs even when this dialog is hidden, outside its existing device lock. */
+    ts_mandala_follow_audio(audio->realtime_diagnostics_enabled?&audio->realtime_diagnostics:NULL);
     ts_mandala_follow_effects(&audio->sister);
     if(!performance_transport.visible || !window_drawable(performance_transport.window) || SDL_GetTicks()-performance_transport.painted<50)return;
     if(device)SDL_LockAudioDevice(device);

@@ -17,6 +17,7 @@ typedef struct {
     TsMandalaEffects effects;
     double echo_at; unsigned echo_write, echo_count;
     int width, height, quality, shed, fullscreen, display, old_x, old_y, old_w, old_h;
+    int render_shed, audio_guard;
     int dirty, diagnostics, controls, frozen;
     Uint32 pointer_time, next_frame;
     double time, motion_time, cost, max_cost, total_cost; unsigned frames, slow_frames;
@@ -168,6 +169,21 @@ static int m_target(Mandala *m)
     SDL_SetRenderTarget(m->renderer,m->history);m_rgb(m->renderer,ts_mandala_color(&m->config,TS_MANDALA_BACKGROUND),255);SDL_RenderClear(m->renderer);
     SDL_SetRenderTarget(m->renderer,NULL);m->dirty=1;return m_effect_targets(m);
 }
+static int m_budget(Mandala *m,int quality,int audio_guard)
+{
+    if(quality<0 || quality>2)quality=0;
+    if(audio_guard<0 || audio_guard>2)audio_guard=0;
+    int changed=quality!=m->quality;
+    if(changed)m->render_shed=0;
+    int shed=m->render_shed>audio_guard?m->render_shed:audio_guard;
+    int resize=changed || shed!=m->shed;
+    if(m->audio_guard!=audio_guard)m->dirty=1;
+    m->quality=quality;m->audio_guard=audio_guard;m->shed=shed;
+    if(resize){m->slow_frames=0;return m_target(m);}
+    return 1;
+}
+static int m_cadence(const Mandala *m)
+{ return m->shed?(m->shed==1?15:8):(int[]){15,30,60}[m->quality]; }
 static void m_haze(Mandala *m)
 {
     if(m->haze)SDL_DestroyTexture(m->haze);
@@ -370,13 +386,15 @@ static void m_compose(Mandala *m,SDL_Texture *target,int width,int height)
         SDL_Rect bar={8,8,width-16,52};SDL_SetRenderDrawColor(m->renderer,12,18,23,240);SDL_RenderFillRect(m->renderer,&bar);
         m_text(m->renderer,20,18,"ESC EXIT FULLSCREEN / CLOSE   F FULLSCREEN   SPACE FREEZE   D DISPLAY   Q QUALITY",196);
         char line[160];snprintf(line,sizeof(line),"%s%s   DISPLAY %d   %s   CLICK TOP-RIGHT TO EXIT",
-            (const char*[]){"ECONOMY 15","STANDARD 30","ENHANCED 60"}[m->quality],m->shed?" (REDUCED)":"",
+            (const char*[]){"ECONOMY 15","STANDARD 30","ENHANCED 60"}[m->quality],
+            m->audio_guard?" (AUDIO GUARD)":m->shed?" (REDUCED)":"",
             m->display+1,m->frozen?"FROZEN":"EVOLVING");
         m_text(m->renderer,20,36,line,161);
         m_text(m->renderer,width-30,18,"X",220);
     }
     if(m->diagnostics) {
-        char line[120];snprintf(line,sizeof(line),"%u INSTANCES / %.2F MS / %dX%d / I HIDES DIAGNOSTICS",m->count,m->cost,m->width,m->height);
+        char line[120];snprintf(line,sizeof(line),"%u INSTANCES / %.2F MS / %dX%d / %d FPS CAP / AUDIO GUARD %d / I HIDES",
+            m->count,m->cost,m->width,m->height,m_cadence(m),m->audio_guard);
         m_text(m->renderer,20,height-24,line,175);
     }
     m->dirty=0;
@@ -463,6 +481,7 @@ static int mandala_run(VisualShared *shared,
     /* Force initial display placement even when the preferred display is zero. */
     m->display=-1;m_window_mode(m,shared,0);
     SDL_RendererInfo info;SDL_GetRendererInfo(m->renderer,&info);
+    atomic_store(&shared->backend,(info.flags&SDL_RENDERER_ACCELERATED)?1:2);
     fprintf(stderr,"Mandala renderer: %s, %dx%d, %u instances, %zu bytes model\n",info.name,m->width,m->height,m->count,sizeof(*m));
     atomic_store(&shared->ready,1);
     Uint64 previous=SDL_GetPerformanceCounter();double frequency=(double)SDL_GetPerformanceFrequency();
@@ -478,15 +497,14 @@ static int mandala_run(VisualShared *shared,
             if(ts_mandala_valid(&message.config) && memcmp(&m->config,&message.config,sizeof(m->config)))m_configure(m,&message.config);
             if(serial!=message.serial){serial=message.serial;fresh=SDL_GetTicks();}
         }
-        int quality=(int)atomic_load(&shared->quality);
-        if(quality<0 || quality>2)quality=0;
-        if(quality!=m->quality) {m->quality=quality;m->shed=0;m->slow_frames=0;if(!m_target(m))break;}
+        if(!m_budget(m,(int)atomic_load(&shared->quality),(int)atomic_load(&shared->audio_guard)))break;
         m_window_mode(m,shared,0);
         int frozen=atomic_load(&shared->freeze)!=0;
         if(frozen!=m->frozen){m->frozen=frozen;m->dirty=1;}
         Uint32 now=SDL_GetTicks();
         if(m->controls && now-m->pointer_time>2500) {m->controls=0;m->dirty=1;if(m->fullscreen)SDL_ShowCursor(SDL_DISABLE);}
         int hidden=(SDL_GetWindowFlags(m->window)&(SDL_WINDOW_MINIMIZED|SDL_WINDOW_HIDDEN))!=0;
+        atomic_store(&shared->cadence,(m->frozen||hidden)?0:(unsigned)m_cadence(m));
         Uint64 tick=SDL_GetPerformanceCounter();double dt=fmin(.25,(tick-previous)/frequency);
         int due=(Sint32)(now-m->next_frame)>=0;
         if(m->frozen || hidden)previous=tick;
@@ -501,9 +519,13 @@ static int mandala_run(VisualShared *shared,
         if(rendered) {
             m->cost=m->cost*.9+ms*.1;m->max_cost=fmax(m->max_cost,ms);m->total_cost+=ms;++m->frames;
         }
-        int fps=(int[]){15,30,60}[m->quality];if(m->shed)fps=m->shed==1?15:8;
+        int fps=m_cadence(m);
         if(rendered && !m->frozen && ms>500.0/fps)++m->slow_frames;else if(rendered && m->slow_frames)m->slow_frames--;
-        if(m->slow_frames>15 && m->shed<2) {++m->shed;m->slow_frames=0;if(!m_target(m))break;}
+        if(m->slow_frames>15 && m->shed<2) {
+            m->render_shed=m->shed+1;m->slow_frames=0;
+            if(!m_budget(m,m->quality,m->audio_guard))break;
+            fps=m_cadence(m);
+        }
         /* No catch-up frames; a slow present only lowers visual cadence. Freeze
            sleeps on events and services control IPC at 10 Hz without drawing. */
         if(due)m->next_frame=now+(unsigned)((m->frozen||hidden)?100:ceil(1000.0/fps));

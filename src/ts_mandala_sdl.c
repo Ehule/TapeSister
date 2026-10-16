@@ -26,8 +26,14 @@ extern char **environ;
 typedef struct { TsMandalaConfig config; TsMandalaPacket audio; TsMandalaEffects effects; unsigned serial; } VisualMessage;
 typedef struct {
     atomic_uint write, read, quit, ready, freeze, quality, display, fullscreen;
+    atomic_uint audio_guard, cadence, backend;
     VisualMessage message[4];
 } VisualShared;
+typedef struct {
+    unsigned level, initialized, recovering;
+    uint64_t callbacks, overruns, near;
+    Uint32 seen_at, quiet_at;
+} VisualAudioGuard;
 static TsMandalaQueue audio_queue;
 static struct {
     VisualShared *shared;
@@ -38,6 +44,8 @@ static struct {
     TsMandalaPacket last_audio;
     TsMandalaConfig sent_config;
     TsMandalaEffects effects, sent_effects;
+    VisualAudioGuard guard;
+    Uint32 health_at;
 #ifdef _WIN32
     HANDLE mapping, process;
 #else
@@ -50,7 +58,9 @@ static int shared_lock_free(VisualShared *s)
     return atomic_is_lock_free(&s->write) && atomic_is_lock_free(&s->read) &&
         atomic_is_lock_free(&s->quit) && atomic_is_lock_free(&s->ready) &&
         atomic_is_lock_free(&s->freeze) && atomic_is_lock_free(&s->quality) &&
-        atomic_is_lock_free(&s->display) && atomic_is_lock_free(&s->fullscreen);
+        atomic_is_lock_free(&s->display) && atomic_is_lock_free(&s->fullscreen) &&
+        atomic_is_lock_free(&s->audio_guard) && atomic_is_lock_free(&s->cadence) &&
+        atomic_is_lock_free(&s->backend);
 }
 static void shared_init(VisualShared *s, const TsMandalaPreferences *p)
 {
@@ -60,6 +70,64 @@ static void shared_init(VisualShared *s, const TsMandalaPreferences *p)
     atomic_init(&s->quality, p->quality >= 0 && p->quality <= 2 ? p->quality : 0);
     atomic_init(&s->display, p->display >= 0 ? (unsigned)p->display : 0);
     atomic_init(&s->fullscreen, p->fullscreen != 0);
+    atomic_init(&s->audio_guard, 0); atomic_init(&s->cadence, 0);
+    atomic_init(&s->backend, 0);
+}
+static void visual_audio_guard_update(VisualAudioGuard *g,
+    const TsRealtimeDiagnosticsSnapshot *s, Uint32 now)
+{
+    /* Ignore retained maxima and historic overruns at launch/reset. A late
+       start alone is not an overrun: WASAPI may batch otherwise timely work. */
+    int reset=!g->initialized || s->callback_count<g->callbacks;
+    int fresh=s->callback_count && (reset || s->callback_count!=g->callbacks);
+    int over=!reset && s->deadline_overruns>g->overruns;
+    int near=!reset && s->near_overruns>g->near;
+    g->initialized=1;g->callbacks=s->callback_count;
+    g->overruns=s->deadline_overruns;g->near=s->near_overruns;
+    unsigned pressure=0;int healthy=0;
+    if(fresh || over || near) {
+        g->seen_at=now;
+        double load=s->recent_callback_count?s->recent_load_percent:0;
+        double peak=s->recent_callback_count && s->deadline_microseconds>0?
+            s->recent_worst_microseconds/s->deadline_microseconds:0;
+        if(over || load>=85)pressure=2;
+        else if(near || load>=65 || peak>=.85)pressure=1;
+        healthy=s->recent_callback_count && load<=55 && peak<=.75 && !over && !near;
+    } else {
+        /* Paused/disconnected audio must not leave a stale busy sample latched. */
+        if(now-g->seen_at<1000)return;
+        healthy=1;
+    }
+    if(pressure>g->level)g->level=pressure;
+    if(pressure || !healthy)g->recovering=0;
+    else if(g->level) {
+        if(!g->recovering){g->recovering=1;g->quiet_at=now;}
+        else if(now-g->quiet_at>=10000){--g->level;g->quiet_at=now;}
+    }
+}
+void ts_mandala_follow_audio(const TsRealtimeDiagnostics *diagnostics)
+{
+    if(!ts_mandala_active())return;
+    Uint32 now=SDL_GetTicks();
+    if(host.guard.initialized && now-host.health_at<100)return;
+    host.health_at=now;
+    if(diagnostics) {
+        TsRealtimeDiagnosticsSnapshot snapshot;
+        if(ts_realtime_diagnostics_get(diagnostics,&snapshot))
+            visual_audio_guard_update(&host.guard,&snapshot,now);
+    } else memset(&host.guard,0,sizeof(host.guard));
+    atomic_store_explicit(&host.shared->audio_guard,host.guard.level,memory_order_relaxed);
+}
+void ts_mandala_report(char *text, size_t size)
+{
+    if(!ts_mandala_active()){snprintf(text,size,"Visualizer: CLOSED\n");return;}
+    unsigned quality=atomic_load(&host.shared->quality);
+    unsigned backend=atomic_load(&host.shared->backend);
+    snprintf(text,size,"Visualizer: %s; requested %s; cadence cap %u fps; renderer %s; audio guard %u/2\n",
+        ts_mandala_frozen()?"FROZEN":"OPEN",
+        quality<=2?(const char*[]){"Economy","Standard","Enhanced"}[quality]:"unknown",
+        atomic_load(&host.shared->cadence),backend==1?"accelerated":backend==2?"software":"starting",
+        atomic_load(&host.shared->audio_guard));
 }
 static int shared_send(VisualShared *s, const VisualMessage *m)
 {

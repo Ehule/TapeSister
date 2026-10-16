@@ -734,6 +734,15 @@ Buttons light while pressed, and momentary actions such as Return to Start flash
 briefly. Individual players and visualizer toggles also show their active state.
 See [Performance Transport](PERFORMANCE_TRANSPORT.md).
 
+The visualizer automatically lowers its resolution, detail and frame rate when
+audio processing approaches its deadline. **AUDIO GUARD** appears in its controls;
+the strongest reduction caps animation at 8 fps. It recovers gradually after
+sustained audio headroom returns, without changing your saved quality preference.
+Audio Health reports the visualizer state, renderer and current frame-rate cap.
+**Freeze Visual** stops animation while playback continues and can help compare
+audio behavior with rendering paused. Screen recording adds a separate workload;
+the guard cannot guarantee uninterrupted audio on an overloaded system.
+
 Double-click an occupied tile in TrackSister to open its editable canvas on the
 correct Sample page without stopping the tracker. F10 returns.
 

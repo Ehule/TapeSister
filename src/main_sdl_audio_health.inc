@@ -281,6 +281,7 @@ static void ts_audio_health_report(AudioState *audio, char *report, size_t size)
     const TsRealtimeDiagnosticsSnapshot *s = &ts_health.snapshot;
     const char *driver = ts_native_current_driver();
     char setup[3072];
+    char visual[256];ts_mandala_report(visual,sizeof(visual));
     ts_audio_health_setup_report(setup, sizeof(setup), SDL_GetTicks());
     snprintf(report, size,
         "TapeSister Audio Health\n"
@@ -288,6 +289,7 @@ static void ts_audio_health_report(AudioState *audio, char *report, size_t size)
         "Backend: %s\nOutput: %s\nConnection: %s\n"
         "Actual output: %u Hz, %u frames, %u channels\n"
         "Buffer duration: %.3f ms (not round-trip latency)\n"
+        "%s"
         "%s"
         "Measurement age: %.1f s; telemetry: %s\n"
         "Callbacks: %llu; frames: %llu\n"
@@ -311,7 +313,7 @@ static void ts_audio_health_report(AudioState *audio, char *report, size_t size)
         ts_output_endpoint.channels,
         ts_output_endpoint.sample_rate ? 1000.0 * ts_output_endpoint.buffer_frames /
             ts_output_endpoint.sample_rate : 0,
-        setup,
+        setup, visual,
         (SDL_GetTicks() - audio->audio_health_started) / 1000.0,
         audio->realtime_diagnostics_enabled ? "enabled" : "unavailable",
         (unsigned long long)s->callback_count, (unsigned long long)s->frame_count,

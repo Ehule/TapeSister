@@ -132,6 +132,42 @@ static void external_tap_checks(void)
 }
 static int compare_double(const void *a0,const void *b0)
 { double a1=*(const double*)a0,b1=*(const double*)b0;return (a1>b1)-(a1<b1); }
+static void guard_sample(VisualAudioGuard *g,TsRealtimeDiagnosticsSnapshot *s,
+    Uint32 now,double load,double peak)
+{
+    ++s->callback_count;s->recent_callback_count=25;
+    s->recent_load_percent=load;s->deadline_microseconds=10000;
+    s->recent_worst_microseconds=peak*10000;
+    visual_audio_guard_update(g,s,now);
+}
+static void audio_guard_checks(void)
+{
+    VisualAudioGuard g={0};TsRealtimeDiagnosticsSnapshot s={0};
+    s.deadline_overruns=900;s.near_overruns=1200;s.worst_microseconds=900000;
+    guard_sample(&g,&s,100,30,.4);assert(g.level==0); /* Historical maxima ignored. */
+    s.delayed_starts=1000;guard_sample(&g,&s,200,30,.4);assert(g.level==0);
+    guard_sample(&g,&s,300,70,.8);assert(g.level==1);
+    ++s.deadline_overruns;guard_sample(&g,&s,400,30,.4);assert(g.level==2);
+    guard_sample(&g,&s,500,30,.4);
+    guard_sample(&g,&s,10499,30,.4);assert(g.level==2);
+    guard_sample(&g,&s,10500,30,.4);assert(g.level==1);
+    guard_sample(&g,&s,20500,30,.4);assert(g.level==0);
+    ++s.near_overruns;guard_sample(&g,&s,20600,30,.4);assert(g.level==1);
+    guard_sample(&g,&s,20700,30,.4);
+    guard_sample(&g,&s,30500,60,.8); /* Marginal recovery must restart the quiet interval. */
+    guard_sample(&g,&s,30600,30,.4);assert(g.level==1);
+    guard_sample(&g,&s,40600,30,.4);assert(g.level==0);
+    guard_sample(&g,&s,40700,90,.95);assert(g.level==2);
+    /* A stopped stream's old busy window must not prevent eventual recovery. */
+    visual_audio_guard_update(&g,&s,41700);
+    visual_audio_guard_update(&g,&s,51700);assert(g.level==1);
+    visual_audio_guard_update(&g,&s,61700);assert(g.level==0);
+    memset(&s,0,sizeof(s));guard_sample(&g,&s,61800,30,.4);assert(g.level==0);
+    guard_sample(&g,&s,61900,30,.9);assert(g.level==1); /* Recent peak, not just mean. */
+    guard_sample(&g,&s,UINT32_MAX-5000,30,.4);
+    guard_sample(&g,&s,5000,30,.4);assert(g.level==0); /* SDL tick wrap. */
+    puts("audio guard: fresh overruns, recent load/peak, hysteresis, stopped/reset streams and tick wrap: PASS");
+}
 static void report(unsigned start,unsigned end,const char *label)
 {
     assert(end>start);unsigned n=end-start,miss=0,late=0;
@@ -153,6 +189,25 @@ static void lifecycle(SDL_Window *window)
     while(!atomic_load(&host.shared->ready) && SDL_GetTicks()-started<5000) {ts_mandala_poll(&a.sister.mandala,&prefs);SDL_Delay(10);}
     assert(host.shared && atomic_load(&host.shared->ready));
     ts_mandala_poll(&a.sister.mandala,&prefs);assert(prefs.display==0 && !prefs.fullscreen);
+    /* Drive the actual child through the UI-only telemetry path. Audio state,
+       saved quality and lock counts must remain unchanged. */
+    TsRealtimeDiagnostics diagnostic;ts_realtime_diagnostics_init(&diagnostic);
+    for(unsigned i=0;i<25;++i)
+        ts_realtime_diagnostics_record_timed(&diagnostic,i*10000u,7000,1000000,48000,480,0);
+    uint64_t locks=atomic_load(&a.realtime_diagnostics.control_count);
+    ts_mandala_follow_audio(&diagnostic);assert(atomic_load(&host.shared->audio_guard)==1);
+    ts_realtime_diagnostics_record_timed(&diagnostic,250000,11000,1000000,48000,480,0);
+    host.health_at=SDL_GetTicks()-100;ts_mandala_follow_audio(&diagnostic);
+    assert(atomic_load(&host.shared->audio_guard)==2);
+    started=SDL_GetTicks();
+    while(atomic_load(&host.shared->cadence)!=8 && SDL_GetTicks()-started<2000)SDL_Delay(10);
+    assert(atomic_load(&host.shared->cadence)==8);
+    assert(atomic_load(&host.shared->quality)==0 && prefs.quality==0);
+    assert(atomic_load(&a.realtime_diagnostics.control_count)==locks);
+    char health[8192];ts_audio_health_report(&a,health,sizeof(health));
+    assert(strstr(health,"Visualizer: OPEN; requested Economy; cadence cap 8 fps; renderer software; audio guard 2/2"));
+    host.health_at=SDL_GetTicks()-100;ts_mandala_follow_audio(NULL);
+    assert(atomic_load(&host.shared->audio_guard)==0);
     double time=a.mosaic->time;
     for(int i=0;i<20;++i){measured_callback(NULL,(Uint8*)out,sizeof(out));ts_mandala_poll(&a.sister.mandala,&prefs);SDL_Delay(5);}
     assert(a.mosaic->time>time && ts_tapehead_running() && a.keyboard_sequence.running);
@@ -206,6 +261,14 @@ static void lifecycle(SDL_Window *window)
     /* Renderer event behavior, without relying on a real window manager. */
     VisualShared shared;shared_init(&shared,&prefs);
     Mandala *m=calloc(1,sizeof(*m));assert(m && m_init(m,&a.sister.mandala,0));
+    assert(m_budget(m,2,0) && m_cadence(m)==60 && m->width==1280);
+    assert(m_budget(m,2,1) && m_cadence(m)==15 && m->width==960);
+    assert(m_budget(m,2,2) && m_cadence(m)==8 && m->width==512);
+    assert(m_budget(m,0,2) && m_cadence(m)==8 && m->width==512);
+    assert(m_budget(m,0,0) && m_cadence(m)==15 && m->width==768);
+    m->render_shed=1;
+    assert(m_budget(m,0,2) && m_cadence(m)==8);
+    assert(m_budget(m,0,0) && m_cadence(m)==15 && m->shed==1); /* Keep independent GPU backoff. */
     e.type=SDL_KEYDOWN;e.key.keysym.sym=SDLK_SPACE;e.key.repeat=0;m_event(m,&shared,&e);assert(atomic_load(&shared.freeze));
     e.key.keysym.sym=SDLK_q;m_event(m,&shared,&e);assert(atomic_load(&shared.quality)==1);
     e.key.keysym.sym=SDLK_f;m_event(m,&shared,&e);m_window_mode(m,&shared,0);assert(m->fullscreen);
@@ -343,6 +406,7 @@ int main(int argc,char **argv)
             } else ts_mandala_close();
             Uint32 began=SDL_GetTicks();unsigned start=atomic_load(&timing_count);
             while(SDL_GetTicks()-began<(seconds+2)*1000u) {
+                ts_mandala_follow_audio(&a.realtime_diagnostics);
                 ts_mandala_follow_effects(&a.sister);ts_mandala_poll(&a.sister.mandala,&prefs);SDL_Delay(20);
                 if(SDL_GetTicks()-began<2000)start=atomic_load_explicit(&timing_count,memory_order_acquire);
             }
@@ -351,7 +415,7 @@ int main(int argc,char **argv)
         }
         ts_native_pause(device,1);ts_native_close(device);
         printf("soak transport status: tracker=%d mosaic=%d arp=%d time=%.2f\n",ts_tapehead_running(),a.mosaic->playing,a.keyboard_sequence.running,a.mosaic->time);
-    } else {editor_checks(window);lifecycle(window);external_tap_checks();effect_snapshot_checks();}
+    } else {audio_guard_checks();editor_checks(window);lifecycle(window);external_tap_checks();effect_snapshot_checks();}
     ts_mandala_shutdown();ts_tapehead_stop();ts_tapehead_close();
     ts_keyboard_sequence_source_free(ts_keyboard_sequence_source(&a.keyboard_sequence,NULL));
     ts_sister_runtime_free(&a.sister);ts_mosaic_free(a.mosaic);ts_capture_free(&a.capture);
