@@ -1,0 +1,86 @@
+Source revision 0f7e1d02eceb2a8718355cfff91c60c059a48c44
+Command: ctest --test-dir build-editor -R "^(tapesister_mandala.*|tapesister_new_project_tests)$" --output-on-failure
+
+Start testing: Oct 16 10:23 CST
+----------------------------------------------------------
+117/124 Testing: tapesister_mandala_tests
+117/124 Test: tapesister_mandala_tests
+Command: "/workspace/scratch/3e6d2b5c8162/TapeSister/build-editor/tapesister_mandala_tests"
+Directory: /workspace/scratch/3e6d2b5c8162/TapeSister/build-editor
+"tapesister_mandala_tests" start time: Oct 16 10:23 CST
+Output:
+----------------------------------------------------------
+mandala identity, legacy migration, bounds, presentation, queue and analysis: PASS
+<end of output>
+Test time =   0.02 sec
+----------------------------------------------------------
+Test Passed.
+"tapesister_mandala_tests" end time: Oct 16 10:23 CST
+"tapesister_mandala_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+118/124 Testing: tapesister_mandala_queue_tests
+118/124 Test: tapesister_mandala_queue_tests
+Command: "/workspace/scratch/3e6d2b5c8162/TapeSister/build-editor/tapesister_mandala_queue_tests"
+Directory: /workspace/scratch/3e6d2b5c8162/TapeSister/build-editor
+"tapesister_mandala_queue_tests" start time: Oct 16 10:23 CST
+Output:
+----------------------------------------------------------
+SPSC coherent snapshots=17 drops=99937
+producer OFF mean_ns=29.3 p99_ns=31.0 max_ns=122642.0
+producer FULL mean_ns=29.2 p99_ns=31.0 max_ns=121620.0
+producer COPY-16CH mean_ns=567.1 p99_ns=792.0 max_ns=1108263.0
+<end of output>
+Test time =   0.13 sec
+----------------------------------------------------------
+Test Passed.
+"tapesister_mandala_queue_tests" end time: Oct 16 10:23 CST
+"tapesister_mandala_queue_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+119/124 Testing: tapesister_mandala_controller_tests
+119/124 Test: tapesister_mandala_controller_tests
+Command: "/workspace/scratch/3e6d2b5c8162/TapeSister/build-editor/tapesister_mandala_controller_tests"
+Directory: /workspace/scratch/3e6d2b5c8162/TapeSister/build-editor
+"tapesister_mandala_controller_tests" start time: Oct 16 10:23 CST
+Output:
+----------------------------------------------------------
+Could not load external Fast Tracks logo. Using embedded FT2 logo.
+Mandala renderer: software, 768x480, 1563 instances, 97304 bytes model
+Mandala renderer: software, 768x480, 1563 instances, 97304 bytes model
+Mandala renderer: software, 768x480, 1563 instances, 97304 bytes model
+Mandala frames=0 mean=0.000ms max=0.000ms shed=0
+Mandala renderer: software, 768x480, 1563 instances, 97304 bytes model
+Mandala frames=0 mean=0.000ms max=0.000ms shed=0
+Mandala renderer: software, 768x480, 1563 instances, 97304 bytes model
+Mandala frames=0 mean=0.000ms max=0.000ms shed=0
+editor presets, custom RGB/hex, shapes, undo/revert, project replacement and bounded renderer: PASS
+native launch, freeze, stall, kill, close/reopen, transport independence, reseed dirty state, display fallback: PASS
+external-only physical output and post-fader silence in stereo/multichannel: PASS
+effect snapshot ownership, disabled publication and signal-activity gate: PASS
+<end of output>
+Test time =   5.86 sec
+----------------------------------------------------------
+Test Passed.
+"tapesister_mandala_controller_tests" end time: Oct 16 10:23 CST
+"tapesister_mandala_controller_tests" time elapsed: 00:00:05
+----------------------------------------------------------
+
+124/124 Testing: tapesister_new_project_tests
+124/124 Test: tapesister_new_project_tests
+Command: "/workspace/scratch/3e6d2b5c8162/TapeSister/build-editor/tapesister_new_project_tests"
+Directory: /workspace/scratch/3e6d2b5c8162/TapeSister/build-editor
+"tapesister_new_project_tests" start time: Oct 16 10:23 CST
+Output:
+----------------------------------------------------------
+Could not load external Fast Tracks logo. Using embedded FT2 logo.
+New project: confirmation, cancel, save failure/success, allocation failure, workers, banks and silent reset passed
+<end of output>
+Test time =   0.16 sec
+----------------------------------------------------------
+Test Passed.
+"tapesister_new_project_tests" end time: Oct 16 10:23 CST
+"tapesister_new_project_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+End testing: Oct 16 10:23 CST

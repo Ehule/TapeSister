@@ -6,6 +6,41 @@
 #include <string.h>
 #include <time.h>
 
+static const uint32_t mandala_palettes[TS_MANDALA_PRESETS][TS_MANDALA_COLORS]={
+    {0xD5B270,0x7EA39C,0x8D7296,0xB59E70,0x497074,0x96765A,0x5C5F78,0x04070A},
+    {0x9CB9C5,0x9B8EBF,0x6C9EAA,0xC2B4A0,0x4A6D83,0x8693B6,0x4D6372,0x04070A},
+    {0xC79470,0x996F6E,0x839279,0xC7B787,0x666958,0x9F7C93,0x705967,0x04070A},
+    /* Bleed and Soak: crimson bodies, scarlet edges, incandescent highlights. */
+    {0xFF5424,0xD91527,0xA50920,0xFFAD49,0x740A1A,0xF13219,0xBB202F,0x0D0104},
+    /* TapeSister splash: illuminated brass, copper, plum and violet. */
+    {0xF4BD58,0xBC8041,0x9860BD,0xFFE1A1,0x61346F,0xDA993F,0xC589B7,0x08040D}
+};
+const char *ts_mandala_palette_name(unsigned palette)
+{
+    static const char *names[]={"AMBER","LUNAR","EMBER","BLEED AND SOAK","TAPESISTER GOLD","CUSTOM"};
+    return palette<=TS_MANDALA_CUSTOM?names[palette]:"UNKNOWN";
+}
+const char *ts_mandala_shape_name(unsigned shape)
+{
+    static const char *names[]={"MIXED","TRIANGLES","SQUARES","CIRCLES","HEXAGONS"};
+    return shape<TS_MANDALA_SHAPES?names[shape]:"UNKNOWN";
+}
+uint32_t ts_mandala_color(const TsMandalaConfig *c,unsigned swatch)
+{
+    if(!c || swatch>=TS_MANDALA_COLORS)return 0;
+    return c->palette<TS_MANDALA_PRESETS?mandala_palettes[c->palette][swatch]:c->custom_rgb[swatch];
+}
+void ts_mandala_set_color(TsMandalaConfig *c,unsigned swatch,uint32_t rgb)
+{
+    if(!c || swatch>=TS_MANDALA_COLORS)return;
+    if(c->palette<TS_MANDALA_PRESETS)memcpy(c->custom_rgb,mandala_palettes[c->palette],sizeof(c->custom_rgb));
+    c->palette=TS_MANDALA_CUSTOM;c->custom_rgb[swatch]=rgb&0xffffffu;
+}
+void ts_mandala_reset_geometry(TsMandalaConfig *c)
+{
+    c->shape=0;c->density=100;c->scale=100;c->trails=50;c->motion=50;
+    c->symmetry=8;c->cycle_seconds=240;
+}
 void ts_mandala_reseed(TsMandalaConfig *c)
 {
     static atomic_uint serial;
@@ -20,19 +55,28 @@ void ts_mandala_reseed(TsMandalaConfig *c)
 void ts_mandala_default(TsMandalaConfig *c)
 {
     memset(c, 0, sizeof(*c));
-    c->version = 1; c->symmetry = 8; c->cycle_seconds = 240;
+    c->version = 2; ts_mandala_reset_geometry(c);
+    memcpy(c->custom_rgb,mandala_palettes[0],sizeof(c->custom_rgb));
     ts_mandala_reseed(c);
 }
 int ts_mandala_valid(const TsMandalaConfig *c)
 {
-    return c && c->version == 1 && c->seed && c->palette <= 2 &&
-        c->symmetry >= 4 && c->symmetry <= 12 && c->cycle_seconds >= 30 && c->cycle_seconds <= 1800;
+    if(!c || c->version!=2 || !c->seed || c->palette>TS_MANDALA_CUSTOM ||
+        c->symmetry<4 || c->symmetry>12 || c->cycle_seconds<30 || c->cycle_seconds>1800 ||
+        c->shape>=TS_MANDALA_SHAPES || c->density<10 || c->density>100 ||
+        c->scale<50 || c->scale>150 || c->trails>100 || c->motion>100)return 0;
+    for(unsigned i=0;i<TS_MANDALA_COLORS;++i)if(c->custom_rgb[i]>0xffffffu)return 0;
+    return 1;
 }
 int ts_mandala_write(FILE *f, const TsMandalaConfig *c)
 {
-    return ts_mandala_valid(c) && fprintf(f,
-        "Mandala.Version=1\nMandala.Seed=%016" PRIX64 "\nMandala.Palette=%u\nMandala.Symmetry=%u\nMandala.Cycle=%u\n",
-        c->seed, c->palette, c->symmetry, c->cycle_seconds) > 0;
+    if(!ts_mandala_valid(c) || fprintf(f,
+        "Mandala.Version=2\nMandala.Seed=%016" PRIX64 "\nMandala.Palette=%u\nMandala.Symmetry=%u\nMandala.Cycle=%u\n"
+        "Mandala.Shape=%u\nMandala.Density=%u\nMandala.Scale=%u\nMandala.Trails=%u\nMandala.Motion=%u\n",
+        c->seed,c->palette,c->symmetry,c->cycle_seconds,c->shape,c->density,c->scale,c->trails,c->motion)<=0)return 0;
+    for(unsigned i=0;i<TS_MANDALA_COLORS;++i)
+        if(fprintf(f,"Mandala.Color%u=%06X\n",i,c->custom_rgb[i])<=0)return 0;
+    return 1;
 }
 int ts_mandala_read(TsMandalaConfig *c, const char *key, const char *v)
 {
@@ -40,13 +84,21 @@ int ts_mandala_read(TsMandalaConfig *c, const char *key, const char *v)
     key += 8;
     char *end; errno = 0;
     if (!*v || *v == '-' || *v == '+') return -1;
-    uint64_t n = strtoull(v, &end, !strcmp(key, "Seed") ? 16 : 10);
+    int color=!strncmp(key,"Color",5) && key[5]>='0' && key[5]<'0'+TS_MANDALA_COLORS && !key[6];
+    uint64_t n = strtoull(v, &end, (!strcmp(key, "Seed") || color) ? 16 : 10);
     if (errno || *end || end == v) return -1;
     if (!strcmp(key, "Seed")) { if (!n) return -1; c->seed = n; }
-    else if (!strcmp(key, "Version")) { if (n != 1) return -1; c->version = (uint32_t)n; }
-    else if (!strcmp(key, "Palette")) { if (n > 2) return -1; c->palette = (uint32_t)n; }
+    /* Defaults initialize new fields before parsing; v1 keeps its original look. */
+    else if (!strcmp(key, "Version")) { if (n != 1 && n != 2) return -1; c->version = 2; }
+    else if (!strcmp(key, "Palette")) { if (n > TS_MANDALA_CUSTOM) return -1; c->palette = (uint32_t)n; }
     else if (!strcmp(key, "Symmetry")) { if (n < 4 || n > 12) return -1; c->symmetry = (uint32_t)n; }
     else if (!strcmp(key, "Cycle")) { if (n < 30 || n > 1800) return -1; c->cycle_seconds = (uint32_t)n; }
+    else if (!strcmp(key,"Shape")) { if(n>=TS_MANDALA_SHAPES)return -1;c->shape=(uint32_t)n; }
+    else if (!strcmp(key,"Density")) { if(n<10 || n>100)return -1;c->density=(uint32_t)n; }
+    else if (!strcmp(key,"Scale")) { if(n<50 || n>150)return -1;c->scale=(uint32_t)n; }
+    else if (!strcmp(key,"Trails")) { if(n>100)return -1;c->trails=(uint32_t)n; }
+    else if (!strcmp(key,"Motion")) { if(n>100)return -1;c->motion=(uint32_t)n; }
+    else if (color) { if(n>0xffffffu)return -1;c->custom_rgb[key[5]-'0']=(uint32_t)n; }
     else return -1; /* Unknown visual versions/fields do not silently change identity. */
     return 1;
 }
