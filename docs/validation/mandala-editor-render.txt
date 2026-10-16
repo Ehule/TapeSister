@@ -1,0 +1,13 @@
+Source revision 0f7e1d02eceb2a8718355cfff91c60c059a48c44
+Native SDL 2.30 software renderer / dummy video. Standard 960x600.
+All captures: seed 314159, 900 frames / 60 simulated seconds, combined diagnostic effects.
+
+Blood and Soak / Mixed
+capture backend=software frames=900 mean_ms=21.733 max_ms=41.255 instances=1558 model_bytes=97304 history_bytes=2304000 effect_texture_bytes=1088000
+TapeSister Gold / Triangles (initial capture overlapped the controller tests)
+capture backend=software frames=900 mean_ms=21.240 max_ms=124.480 instances=1558 model_bytes=97304 history_bytes=2304000 effect_texture_bytes=1088000
+TapeSister Gold / Circles
+capture backend=software frames=900 mean_ms=25.571 max_ms=58.025 instances=1558 model_bytes=97304 history_bytes=2304000 effect_texture_bytes=1088000
+
+TapeSister Gold / Triangles (isolated repeat; BMP byte-identical to the original)
+capture backend=software frames=900 mean_ms=22.814 max_ms=47.132 instances=1558 model_bytes=97304 history_bytes=2304000 effect_texture_bytes=1088000

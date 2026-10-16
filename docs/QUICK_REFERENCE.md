@@ -820,5 +820,9 @@ title keeps the full filename in every workspace.
 F11 → **VISUALIZE** opens the independent audio-reactive mandala. In that window:
 **F** fullscreen, **D** next display, **Q** quality, **Space** freeze, **Esc** exit
 fullscreen/close, **I** diagnostics. Pointer movement reveals controls. Project
-seed, palette, symmetry and evolution controls are in Performance Transport.
+seed, symmetry and evolution controls are in Performance Transport. **F11 →
+EDIT VISUALIZER** opens live palette/shape controls: Blood and Soak, TapeSister
+Gold and the three original palettes, custom RGB/hex colors, five shape choices,
+density, size, motion and trails. Undo/redo and Revert Opening support experiments;
+save the project to retain the appearance. Done/Close keeps edits.
 Closing/freeze never controls musical playback. See [the visualizer guide](IMPERMANENT_MANDALA.md).

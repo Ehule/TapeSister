@@ -10,7 +10,8 @@ In Performance Transport:
 
 - VISUALIZE / CLOSE VISUALIZER controls the visual process only.
 - FREEZE VISUAL / RESUME VISUAL stops visual evolution and repeated drawing.
-- NEW SEED, PALETTE, SYMMETRY and EVOLUTION change saved project settings.
+- NEW SEED, SYMMETRY and EVOLUTION change saved project settings.
+- EDIT VISUALIZER opens a compact live palette and shape editor.
 
 In the visual window:
 
@@ -32,12 +33,54 @@ recenter a 960x600 window on the primary display. Physical projector, DPI and
 window-manager behavior still require platform testing.
 
 The first-run mode is Economy. Quality, monitor and fullscreen preference live
-in `tapesister.ini`. Project sidecar version 35 stores `Mandala.Version=1`, a
-64-bit nonzero seed, palette 0–2, symmetry 4–12 and evolution period 30–1800
-seconds. Filename changes do not affect identity. Legacy projects initialize an
+in `tapesister.ini`. The project sidecar stores `Mandala.Version=2`, a
+64-bit nonzero seed, palette 0–5, symmetry 4–12, evolution period 30–1800
+seconds and the editor's colors/form controls. Version-1 Mandala projects migrate
+to the same original palette and default form controls; projects saved with
+version 2 require a build that supports the editor. Filename changes do not affect identity. Legacy projects initialize an
 identity that becomes permanent on the next save. Invalid or unknown visual
 fields/versions reject the load transaction rather than partially applying it.
 Frame history and display configuration are never written into a project.
+
+## Palette and shape editor
+
+Open **F11 → EDIT VISUALIZER**. The modeless dialog can stay open beside the
+visual window. OPEN VISUALIZER starts the preview; if frozen, its button offers
+RESUME VISUALIZER so changes become visible. Musical playback is unaffected.
+
+The existing Amber, Lunar and Ember palettes are joined by **Blood and Soak**
+(crimson/scarlet with hot orange highlights) and **TapeSister Gold** (gold,
+copper and violet inspired by the splash artwork). Choosing a palette changes
+colors only; it does not change shape settings, audio or pedal settings.
+
+- Select any of seven ink swatches or the backdrop. Drag/wheel the RGB controls,
+  or click the hex field, enter six hex digits and press Enter. Esc cancels hex
+  entry. Editing a preset copies its colors into Custom. Visiting another preset
+  preserves Custom; editing that preset starts a new custom palette.
+- Choose **Mixed, Triangles, Squares, Circles or Hexagons**. Mixed is the original
+  motif library. The other choices replace its repeated closed shapes and open
+  brackets while preserving the overall seeded arrangement and fine threads.
+- **Density** (10–100%) reduces the quality-dependent draw budget. **Size**
+  (50–150%) scales the composition; larger settings can extend past the viewport.
+  **Motion** (0–100, default 50) slows or speeds local breathing/drift without
+  changing audio response or the independent EVOLUTION cycle. **Trails**
+  (0–100, default 50) adjusts baseline trace length from short to long; reverb
+  and delay still add their own response. Right-click a form slider to reset it.
+- Symmetry and evolution support left-click to increase, right-click to decrease,
+  or wheel adjustment. Evolution changes in 30-second steps and displays minutes
+  and seconds. RESET FORM restores shape, density, size, motion, trails, symmetry
+  and evolution defaults while preserving colors and the seed.
+- UNDO/REDO (Ctrl+Z / Ctrl+Y, also Ctrl+Shift+Z), REVERT OPENING and NEW SEED
+  support experimentation. DONE, Esc and window Close keep the current changes.
+  Save the project to keep them across launches. Loading another project resets
+  the editor's undo/revert origin to that project's appearance.
+
+The editor only paints when dirty and performs no DSP or device locking. Color
+and scalar edits update the renderer without rebuilding its seed library; shape,
+symmetry and seed edits rebuild only the bounded motif/instance arrays. No extra
+renderer textures or audio analysis are introduced. A custom backdrop replaces
+the original near-black silence background. See the
+[editor captures and validation](MANDALA_EDITOR.md).
 
 ## Architecture and bounded cost
 
@@ -163,6 +206,11 @@ synthetic test features at 120 seconds of simulated evolution. Diagnostic
 capture is the only path with readback. Screenshots are implementation evidence,
 not the supplied concept art and not captures of a hardware performance. An optional fifth argument selects
 reverb=0, delay=1, distortion=2, grains=3, Prism=4, or combined=5 for diagnostics.
+Two further optional arguments select palette (0–4, or default Custom=5) and
+shape (Mixed=0, Triangles=1, Squares=2, Circles=3, Hexagons=4). For example,
+`tapesister --mandala-capture capture.bmp 314159 900 5 4 1` captures TapeSister
+Gold with triangles and combined diagnostic effects. These effects are supplied
+by capture mode; choosing that palette during playback does not engage effects.
 
 Measured results and remaining hardware checks are recorded in
 [MANDALA_VALIDATION.md](MANDALA_VALIDATION.md).
