@@ -728,7 +728,11 @@ Group Play can resume or restart checked players together. **ARP Clock** links
 ARP note intervals to TrackSister quarter/eighth/sixteenth notes, including tempo
 changes; Local restores the saved slot timings. Mosaic shares transport while
 keeping its own tape speed and pitch. These settings save with the project.
-**Shift+Space** controls the checked group. See [Performance Transport](PERFORMANCE_TRANSPORT.md).
+**Shift+Space** controls the checked group. Play Group highlights while any checked
+player is running; Stop Group highlights when all checked players are stopped.
+Buttons light while pressed, and momentary actions such as Return to Start flash
+briefly. Individual players and visualizer toggles also show their active state.
+See [Performance Transport](PERFORMANCE_TRANSPORT.md).
 
 Double-click an occupied tile in TrackSister to open its editable canvas on the
 correct Sample page without stopping the tracker. F10 returns.
