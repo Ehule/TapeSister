@@ -8994,6 +8994,8 @@ typedef struct {
     int fallout_preset_modified;
     int parameter_lock_gesture;
     TsUiPointerDrag parameter_drag;
+    int fx_scroll_drag, fx_scroll_grab, fx_scroll_repeat;
+    Uint32 fx_scroll_next;
     TsPrismBank prism_presets;
     int prism_drag_lens, prism_drag_x, prism_drag_y, prism_node_y;
     float prism_drag_pitch, prism_drag_pan, prism_drag_divergence;
@@ -9846,6 +9848,12 @@ static void sister_toggle_parameter_lock(AudioState *audio,
     locked = ts_sister_ui_parameter_locked(&sister->model, parameter);
     audio->sister.parameter_locks = sister->model.parameter_locks;
     audio->sister.parameter_locks_high = sister->model.parameter_locks_high;
+    int offset = ts_sister_ui_slot_offset(parameter);
+    if (offset >= 25) {
+        uint8_t locks = sister->model.parameters.fx.slot[offset/5].parameter_locks;
+        audio->sister.parameters.fx.slot[offset/5].parameter_locks = locks;
+        audio->sister.post_fx.controls.slot[offset/5].parameter_locks = locks;
+    }
     ts_sister_runtime_mark_selected_preset_modified(&audio->sister);
     sister_preset_model_sync(sister, &audio->sister);
     snprintf(sister->model.status, sizeof(sister->model.status), "%s %s",
@@ -10738,6 +10746,8 @@ static void set_output_limiter_enabled(SDL_AudioDeviceID device,
                  enabled ? "ON" : "OFF");
 }
 
+#include "main_sdl_pedalboard.inc"
+
 static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
                                 TsUiState *ui, TsInstrument *instrument,
                                 SisterWindow *sister,
@@ -10763,6 +10773,7 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
     TsSisterPresetBank *preset_bank;
     size_t *preset_index;
     if (audio == NULL || ui == NULL || sister == NULL) return;
+    if (sister_pedalboard_action(device,audio,ui,sister,hit)) return;
     if(audio->sister.matrix.controls.enabled && hit.action>=TS_SISTER_UI_ACTION_SOURCE_TILES &&
        hit.action<=TS_SISTER_UI_ACTION_SOURCE_TRACK) {
         SDL_Event event;SDL_zero(event);event.type=SDL_KEYDOWN;event.key.windowID=SDL_GetWindowID(sister->window);
@@ -11162,6 +11173,7 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         break;
     }
     case TS_SISTER_UI_ACTION_PARAMETER:
+        if (ts_sister_ui_slot_offset(hit.index) >= sister->model.parameters.fx.slot_count * 5) break;
         if (ts_sister_ui_parameter_locked(&sister->model, hit.index)) {
             snprintf(sister->model.status, sizeof(sister->model.status),
                      "%s LOCKED - SHIFT-CLICK TO UNLOCK",
@@ -11247,7 +11259,7 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
     }
     case TS_SISTER_UI_ACTION_FX_SLOT_TOGGLE: {
         TsSisterFxControls *fx = &sister->model.parameters.fx;
-        if (hit.index >= 0 && hit.index < TS_SISTER_FX_SLOT_COUNT) {
+        if (hit.index >= 0 && hit.index < fx->slot_count) {
             fx->slot[hit.index].enabled = !fx->slot[hit.index].enabled;
             ts_sister_runtime_set_parameters(&audio->sister,
                                              &sister->model.parameters);
@@ -11258,7 +11270,7 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
     }
     case TS_SISTER_UI_ACTION_FX_SLOT_TYPE: {
         TsSisterFxControls *fx = &sister->model.parameters.fx;
-        if (hit.index >= 0 && hit.index < TS_SISTER_FX_SLOT_COUNT) {
+        if (hit.index >= 0 && hit.index < fx->slot_count) {
             TsSisterFxType next = (TsSisterFxType)(
                 (fx->slot[hit.index].type + 1) % TS_SISTER_FX_TYPE_COUNT);
             sister_fx_slot_select_type(&fx->slot[hit.index], next);
@@ -11273,7 +11285,7 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         TsSisterFxControls *fx = &sister->model.parameters.fx;
         int slot_index = hit.index >> 8;
         uint8_t place = (uint8_t)(hit.index & 0xff);
-        if (slot_index >= 0 && slot_index < TS_SISTER_FX_SLOT_COUNT &&
+        if (slot_index >= 0 && slot_index < fx->slot_count &&
             (place & TS_SISTER_FX_PLACE_ALL) != 0u) {
             TsSisterFxSlotControls *slot = &fx->slot[slot_index];
             if (place == TS_SISTER_FX_PLACE_PRE ||
@@ -11300,14 +11312,22 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         int slot_index = hit.index >> 8;
         int direction = hit.index & 0xff;
         int other = direction == 0 ? slot_index - 1 : slot_index + 1;
-        if (slot_index >= 0 && slot_index < TS_SISTER_FX_SLOT_COUNT &&
-            other >= 0 && other < TS_SISTER_FX_SLOT_COUNT) {
+        if (slot_index >= 0 && slot_index < fx->slot_count &&
+            other >= 0 && other < fx->slot_count) {
             TsSisterFxSlotControls temporary = fx->slot[slot_index];
+            uint8_t other_locks = fx->slot[other].parameter_locks;
             fx->slot[slot_index] = fx->slot[other];
             fx->slot[other] = temporary;
+            /* Locks and MIDI targets belong to numbered controls, as in slots 1–5. */
+            fx->slot[slot_index].parameter_locks = temporary.parameter_locks;
+            fx->slot[other].parameter_locks = other_locks;
             ts_sister_runtime_set_parameters(&audio->sister,
                                              &sister->model.parameters);
             ts_sister_runtime_mark_selected_preset_modified(&audio->sister);
+            int first = ts_sister_ui_fx_scroll(&sister->model);
+            if (other < first) ts_sister_ui_fx_scroll_set(&sister->model,other);
+            if (other >= first+TS_SISTER_UI_FX_VISIBLE)
+                ts_sister_ui_fx_scroll_set(&sister->model,other-TS_SISTER_UI_FX_VISIBLE+1);
             fx_order_changed = 1;
         }
         break;
@@ -11648,6 +11668,7 @@ static int midi_sister_hit_from_target(const char *target, float normalized,
     }
     if (sscanf(target, "sister.param.%d%c", &parameter, &trailing) == 1 &&
         ((parameter >= 0 && parameter < TS_SISTER_UI_PARAM_COUNT) ||
+         ts_sister_ui_slot_offset(parameter) >= 25 ||
          parameter == TS_SISTER_UI_PARAM_MASTER_FX_TRANSITION ||
          parameter == TS_SISTER_UI_PARAM_FALLOUT_MASTER_TRANSITION)) {
         hit->action = TS_SISTER_UI_ACTION_PARAMETER;
@@ -13785,6 +13806,7 @@ int main(int argc, char **argv)
         parameters.fx.fallout.transition =
             ts_sister_fallout_transition_normalized(
                 (float)ui.config.sister_fallout_transition_ms);
+        parameters.fx.slot_count = ts_sister_fx_slot_count(ui.config.pedalboard_slots);
         parameters.fx.transition = ts_sister_fx_transition_normalized(
             (float)ui.config.sister_fx_effect_transition_ms);
         parameters.fx.master_transition = ts_sister_fx_transition_normalized(
@@ -14096,6 +14118,7 @@ int main(int argc, char **argv)
             if (ui.exit_for_new) ui.new_project_pending = 1;
             else { running = 0; continue; }
         }
+        sister_pedalboard_tick(&sister_window, SDL_GetTicks());
         if (ui.new_project_pending) {
             project_session.record = parked_instrument;
             if (project_new(window, device, input_device, &project_session)) {
@@ -14414,6 +14437,7 @@ int main(int argc, char **argv)
                 continue;
             if (sister_window.window != NULL &&
                 event_id == sister_window.window_id) {
+                if (sister_pedalboard_event(device, &audio, &ui, &sister_window, &event)) continue;
                 if (sister_prism_event(device, &audio, &ui, &sister_window, &event)) continue;
                 if (event.type == SDL_WINDOWEVENT &&
                     event.window.event == SDL_WINDOWEVENT_CLOSE) {

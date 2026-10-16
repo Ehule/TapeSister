@@ -4885,6 +4885,11 @@ static const char *sister_fallout_transition_source_name(
 static const char *sister_fx_transition_source_name(
     TsSisterFxTransitionSource source)
 {
+    static const char *const slots[] = {
+        "SLOT 1","SLOT 2","SLOT 3","SLOT 4","SLOT 5","SLOT 6","SLOT 7","SLOT 8","SLOT 9","SLOT 10",
+        "SLOT 11","SLOT 12","SLOT 13","SLOT 14","SLOT 15","SLOT 16","SLOT 17","SLOT 18","SLOT 19","SLOT 20"};
+    int slot = (int)source - TS_SISTER_FX_TRANSITION_SLOT_1;
+    if (slot >= 0 && slot < TS_SISTER_FX_SLOT_COUNT) return slots[slot];
     switch (source) {
     case TS_SISTER_FX_TRANSITION_MASTER: return "MASTER FX";
     case TS_SISTER_FX_TRANSITION_REVERB: return "REVERB";
@@ -5442,10 +5447,12 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     if (model->fx_page == 1) {
         char effect_transition_caption[24];
         char master_transition_caption[24];
-        for (int row = 0; row < TS_SISTER_FX_SLOT_COUNT; ++row) {
+        int first = ts_sister_ui_fx_scroll(model);
+        for (int visible = 0; visible < TS_SISTER_UI_FX_VISIBLE; ++visible) {
+            int row = first + visible;
             const TsSisterFxSlotControls *slot =
                 &model->parameters.fx.slot[row];
-            int top = TS_SISTER_UI_FX_TOP + row * TS_SISTER_UI_FX_ROW_STEP;
+            int top = TS_SISTER_UI_FX_TOP + visible * TS_SISTER_UI_FX_ROW_STEP;
             int fields = (slot->type == TS_SISTER_FX_GRAIN || slot->type == TS_SISTER_FX_TRANSIENT) ? 5 : 4;
             int field_width = fields == 5 ? 70 : 88;
             int field_step = fields == 5 ? 74 : 92;
@@ -5460,7 +5467,7 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                 "RAT / 2X" : slot->type == TS_SISTER_FX_GRAIN ?
                 "24 VOICES" : slot->type == TS_SISTER_FX_TRANSIENT ?
                 "STEREO ENVELOPE" : "NO PROCESSOR";
-            rect(fb, 10, top, 620, TS_SISTER_UI_FX_ROW_H, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(10, 10, 11)));
+            rect(fb, 10, top, 610, TS_SISTER_UI_FX_ROW_H, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(10, 10, 11)));
             snprintf(number, sizeof(number), "%d", row + 1);
             button(fb, 16, top + 2, 40, number, slot->enabled);
             button(fb, 60, top + 2, 90,
@@ -5534,7 +5541,22 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                 slot->placement & TS_SISTER_FX_PLACE_POST, PAL_WAVE_RIGHT);
             text(fb, 330, top + 31, description, PAL_MOUSE, 1);
             if (row > 0) button(fb, 542, top + 4, 36, "UP", 0);
-            if (row + 1 < TS_SISTER_FX_SLOT_COUNT) button(fb, 584, top + 4, 36, "DN", 0);
+            if (row + 1 < model->parameters.fx.slot_count) button(fb, 584, top + 4, 36, "DN", 0);
+        }
+        {
+            int thumb_y, thumb_h;
+            ts_sister_ui_fx_thumb(model, &thumb_y, &thumb_h);
+            rect(fb, TS_SISTER_UI_FX_SCROLL_X, TS_SISTER_UI_FX_SCROLL_TOP,
+                 TS_SISTER_UI_FX_SCROLL_W, TS_SISTER_UI_FX_SCROLL_H, PAL_DESKTOP);
+            rect(fb, TS_SISTER_UI_FX_SCROLL_X+2, thumb_y,
+                 TS_SISTER_UI_FX_SCROLL_W-4, thumb_h, PAL_MOUSE);
+            button(fb, TS_SISTER_UI_FX_SCROLL_X, TS_SISTER_UI_FX_TOP, TS_SISTER_UI_FX_SCROLL_W, "^", first>0);
+            button(fb, TS_SISTER_UI_FX_SCROLL_X, TS_SISTER_UI_FX_SCROLL_BOTTOM, TS_SISTER_UI_FX_SCROLL_W, "v",
+                   first+TS_SISTER_UI_FX_VISIBLE < model->parameters.fx.slot_count);
+            button(fb,10,332,28,"-",model->parameters.fx.slot_count>TS_SISTER_FX_SLOT_MIN);
+            char count[8]; snprintf(count,sizeof(count),"%d",model->parameters.fx.slot_count);
+            text(fb,46,337,count,PAL_MOUSE,1);
+            button(fb,74,332,28,"+",model->parameters.fx.slot_count<TS_SISTER_FX_SLOT_COUNT);
         }
         {
             char effect_transition[24];
@@ -5564,7 +5586,6 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_MASTER_FX_FEEDBACK));
         text(fb, 420, 337, "0-135%", PAL_MOUSE, 1);
-        text(fb, 10, 337, "1>2>3>4>5", PAL_MOUSE, 1);
         if (model->routing.fx_transition_active) {
             if (model->routing.fx_transition_topology)
                 snprintf(effect_transition_caption,
@@ -5904,7 +5925,16 @@ sister_footer:
             model->file_capture_state==TS_PERFORMANCE_FILE_RECORDING && model->text_cursor_visible);
     } else mini_button(fb,356,350,82,model->keyboard_sustain?"SUSTAIN ON":"SUSTAIN OFF",model->keyboard_sustain);
 
-    if (model->fallout_lfo_open) {
+    if (model->fx_remove_confirmation) {
+        char prompt[72];
+        rect(fb,100,140,440,106,PAL_DESKTOP);
+        rect(fb,100,140,440,1,PAL_MOUSE); rect(fb,100,245,440,1,PAL_MOUSE);
+        snprintf(prompt,sizeof(prompt),"REMOVE SLOT %d (%s)?",model->parameters.fx.slot_count,
+                 ts_sister_fx_type_name(model->parameters.fx.slot[model->parameters.fx.slot_count-1].type));
+        text(fb,120,158,prompt,PAL_TEXT,1);
+        text(fb,120,180,"ITS EFFECT AND SETTINGS WILL BE REMOVED.",PAL_MOUSE,1);
+        button(fb,164,208,132,"REMOVE",0); button(fb,332,208,132,"CANCEL",1);
+    } else if (model->fallout_lfo_open) {
         sister_fallout_lfo_dialog(fb, &model->parameters.fx.fallout);
     } else if (model->preset_manage_open) {
         char preset_count[16];

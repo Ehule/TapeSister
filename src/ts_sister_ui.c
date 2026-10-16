@@ -11,13 +11,16 @@ static int contains(int x, int y, int left, int top, int width, int height)
 
 int ts_sister_ui_parameter_lockable(int parameter)
 {
-    return parameter >= 0 && parameter < TS_SISTER_UI_PARAM_COUNT;
+    return (parameter >= 0 && parameter < TS_SISTER_UI_PARAM_COUNT) ||
+           ts_sister_ui_slot_offset(parameter) >= 25;
 }
 
 int ts_sister_ui_parameter_locked(const TsSisterUiModel *model,
                                   int parameter)
 {
     if (model == NULL || !ts_sister_ui_parameter_lockable(parameter)) return 0;
+    int offset = ts_sister_ui_slot_offset(parameter);
+    if (offset >= 25) return (model->parameters.fx.slot[offset/5].parameter_locks & (1u << (offset%5))) != 0;
     if (parameter < 64)
         return (model->parameter_locks &
                 TS_SISTER_UI_PARAMETER_BIT(parameter)) != 0u;
@@ -30,6 +33,11 @@ int ts_sister_ui_parameter_lock_toggle(TsSisterUiModel *model,
 {
     uint64_t bit;
     if (model == NULL || !ts_sister_ui_parameter_lockable(parameter)) return 0;
+    int offset = ts_sister_ui_slot_offset(parameter);
+    if (offset >= 25) {
+        model->parameters.fx.slot[offset/5].parameter_locks ^= (uint8_t)(1u << (offset%5));
+        return 1;
+    }
     if (parameter < 64) {
         bit = TS_SISTER_UI_PARAMETER_BIT(parameter);
         model->parameter_locks ^= bit;
@@ -139,6 +147,27 @@ int ts_sister_ui_window_point(int raw_x, int raw_y,
     return 1;
 }
 
+int ts_sister_ui_fx_scroll(const TsSisterUiModel *model)
+{
+    if (!model) return 0;
+    int max = ts_sister_fx_slot_count(model->parameters.fx.slot_count) - TS_SISTER_UI_FX_VISIBLE;
+    return model->fx_scroll < 0 ? 0 : model->fx_scroll > max ? max : model->fx_scroll;
+}
+void ts_sister_ui_fx_scroll_set(TsSisterUiModel *model, int first)
+{
+    if (!model) return;
+    model->fx_scroll = first;
+    model->fx_scroll = ts_sister_ui_fx_scroll(model);
+}
+void ts_sister_ui_fx_thumb(const TsSisterUiModel *model, int *top, int *height)
+{
+    int count = ts_sister_fx_slot_count(model->parameters.fx.slot_count);
+    *height = TS_SISTER_UI_FX_SCROLL_H * TS_SISTER_UI_FX_VISIBLE / count;
+    int range = count - TS_SISTER_UI_FX_VISIBLE;
+    *top = TS_SISTER_UI_FX_SCROLL_TOP + (range ?
+        ts_sister_ui_fx_scroll(model) * (TS_SISTER_UI_FX_SCROLL_H - *height) / range : 0);
+}
+
 void ts_sister_ui_model_init(TsSisterUiModel *model, const TsConfig *config)
 {
     if (model == NULL) return;
@@ -190,6 +219,7 @@ void ts_sister_ui_model_init(TsSisterUiModel *model, const TsConfig *config)
         model->parameters.fx.fallout.transition =
             ts_sister_fallout_transition_normalized(
                 (float)config->sister_fallout_transition_ms);
+        model->parameters.fx.slot_count = ts_sister_fx_slot_count(config->pedalboard_slots);
         model->parameters.fx.transition =
             ts_sister_fx_transition_normalized(
                 (float)config->sister_fx_effect_transition_ms);
@@ -391,6 +421,11 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
             hit.action = TS_SISTER_UI_ACTION_PRESET_CANCEL;
         return hit;
     }
+    if (model && model->fx_remove_confirmation) {
+        if (contains(x,y,164,208,132,22)) hit.action = TS_SISTER_UI_ACTION_FX_REMOVE_CONFIRM;
+        else if (contains(x,y,332,208,132,22)) hit.action = TS_SISTER_UI_ACTION_FX_REMOVE_CANCEL;
+        return hit;
+    }
     for (int control = 0; control < 5; ++control) {
         if (contains(x, y, 10 + control * 68, 8, 62, 22)) {
             hit.action = transport[control];
@@ -578,8 +613,21 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
             hit.action = TS_SISTER_UI_ACTION_RECORD_FILE;
             return hit;
         }
-        for (int row = 0; row < TS_SISTER_FX_SLOT_COUNT; ++row) {
-            int top = TS_SISTER_UI_FX_TOP + 4 + row * TS_SISTER_UI_FX_ROW_STEP;
+        if (contains(x,y,10,332,28,22)) { hit.action=TS_SISTER_UI_ACTION_FX_REMOVE; return hit; }
+        if (contains(x,y,74,332,28,22)) { hit.action=TS_SISTER_UI_ACTION_FX_ADD; return hit; }
+        if (contains(x,y,TS_SISTER_UI_FX_SCROLL_X,TS_SISTER_UI_FX_TOP,TS_SISTER_UI_FX_SCROLL_W,240)) {
+            hit.action = TS_SISTER_UI_ACTION_FX_SCROLL;
+            hit.index = y < TS_SISTER_UI_FX_SCROLL_TOP ? -1 : 1;
+            if (y >= TS_SISTER_UI_FX_SCROLL_TOP && y < TS_SISTER_UI_FX_SCROLL_BOTTOM) {
+                hit.action = TS_SISTER_UI_ACTION_FX_SCROLL_TRACK;
+                hit.index = y;
+            }
+            return hit;
+        }
+        int first = ts_sister_ui_fx_scroll(model);
+        for (int visible = 0; visible < TS_SISTER_UI_FX_VISIBLE; ++visible) {
+            int row = first + visible;
+            int top = TS_SISTER_UI_FX_TOP + 4 + visible * TS_SISTER_UI_FX_ROW_STEP;
             int field_count = (model->parameters.fx.slot[row].type == TS_SISTER_FX_GRAIN ||
                                model->parameters.fx.slot[row].type == TS_SISTER_FX_TRANSIENT) ? 5 : 4;
             int field_width = field_count == 5 ? 70 : 88;
@@ -620,7 +668,7 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
                 hit.index = row << 8;
                 return hit;
             }
-            if (row + 1 < TS_SISTER_FX_SLOT_COUNT && contains(x, y, 584, top, 36, 18)) {
+            if (row + 1 < model->parameters.fx.slot_count && contains(x, y, 584, top, 36, 18)) {
                 hit.action = TS_SISTER_UI_ACTION_FX_SLOT_MOVE;
                 hit.index = (row << 8) | 1;
                 return hit;

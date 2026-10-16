@@ -55,7 +55,7 @@ static void node_set(TsMatrixEffectNode *n,const TsMatrixEffectControls *c,int c
             k->attack=k->target_attack;k->release=k->target_release;k->output=k->target_output;
         }
     } else {
-        TsSisterFxSlotControls slot={(TsSisterFxType)c->type,1,TS_SISTER_FX_PLACE_POST,c->gain_db,c->a,c->b,c->c,c->mix};
+        TsSisterFxSlotControls slot={(TsSisterFxType)c->type,1,TS_SISTER_FX_PLACE_POST,c->gain_db,c->a,c->b,c->c,c->mix,0};
         ts_sister_single_fx_set(n->pedal,&slot);
     }
 }

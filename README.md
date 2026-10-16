@@ -262,15 +262,23 @@ CFG applies backend/device/buffer changes without closing the app. ASIO lets you
 select the backend, duplex driver and buffer before saving once. See
 [ASIO setup](docs/ASIO_AUDIO.md) and [JACK setup](docs/JACK_AUDIO.md).
 
-## Four-slot FX pedalboard
+## Expandable FX pedalboard
 
-The pedalboard holds four independent instances of Reverb, Delay, Distortion, Grain,
-or Empty. Effects can be duplicated and reordered. Every slot chooses exactly one
-placement:
+The pedalboard holds **5–20 independent slots**, starting at 10. Choose Reverb, Delay,
+Distortion, Grain, Transient, or Empty in any slot. Effects can be duplicated and
+reordered. Every slot chooses exactly one placement:
 
 - PRE — newly arriving material before the tape write;
 - H1, H2, or H3 — one playback head and its recurrence;
 - POST — the matrix Pedalboard node (or the Pedalboard stage in legacy serial routing).
+
+Five rows remain visible at their original size. Use the right-hand arrows (click or
+hold), scrollbar, or Up/Down keys in the FX window to navigate. The mouse wheel
+continues adjusting parameters and never scrolls the board. **+** appends an empty
+slot; **−** removes the last slot, with confirmation if it contains an effect.
+Projects and Sister presets retain their slot count. `pedalboard_slots=10` in
+`tapesister.ini` sets only the startup/New-project default (clamped to 5–20).
+Opening a 20-slot project keeps all 20 even with an INI default of 5.
 
 Each slot has Mix and ±12 dB Gain. Reverb reaches approximately two-minute decay,
 Delay spans about 8–2000 ms, and Grain ranges from isolated fragments to dense clouds.

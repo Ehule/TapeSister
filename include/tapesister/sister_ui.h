@@ -15,6 +15,9 @@ enum { TS_SISTER_UI_FX_TOP = 48, TS_SISTER_UI_FX_ROW_STEP = 48,
        TS_SISTER_UI_FX_CLOCK_W = 246, TS_SISTER_UI_FX_PROGRESS_Y = 323 };
 enum { TS_SISTER_UI_FX_REC_X = 538, TS_SISTER_UI_FX_REC_Y = 328,
        TS_SISTER_UI_FX_REC_W = 92, TS_SISTER_UI_FX_REC_H = 22 };
+enum { TS_SISTER_UI_FX_VISIBLE = 5, TS_SISTER_UI_FX_SCROLL_X = 622,
+       TS_SISTER_UI_FX_SCROLL_W = 16, TS_SISTER_UI_FX_SCROLL_TOP = 70,
+       TS_SISTER_UI_FX_SCROLL_H = 194, TS_SISTER_UI_FX_SCROLL_BOTTOM = 266 };
 enum { TS_PRISM_SUSTAIN_X = 396, TS_PRISM_SUSTAIN_W = 82,
        TS_PRISM_REC_X = 484, TS_PRISM_REC_W = 74,
        TS_PRISM_FOOTER_Y = 350, TS_PRISM_FOOTER_H = 17 };
@@ -84,7 +87,13 @@ typedef enum {
     TS_SISTER_UI_ACTION_PRESET_CANCEL,
     TS_SISTER_UI_ACTION_RECORD_FILE,
     TS_SISTER_UI_ACTION_PRISM_TOGGLE,
-    TS_SISTER_UI_ACTION_PRISM_MODE
+    TS_SISTER_UI_ACTION_PRISM_MODE,
+    TS_SISTER_UI_ACTION_FX_SCROLL,
+    TS_SISTER_UI_ACTION_FX_SCROLL_TRACK,
+    TS_SISTER_UI_ACTION_FX_ADD,
+    TS_SISTER_UI_ACTION_FX_REMOVE,
+    TS_SISTER_UI_ACTION_FX_REMOVE_CONFIRM,
+    TS_SISTER_UI_ACTION_FX_REMOVE_CANCEL
 } TsSisterUiAction;
 
 typedef enum {
@@ -213,11 +222,13 @@ typedef enum {
     TS_SISTER_UI_PARAM_MASTER_FX_TRANSITION = 1000,
     TS_SISTER_UI_PARAM_FALLOUT_MASTER_TRANSITION,
     /* Global session control: deliberately outside preset-lock storage. */
-    TS_SISTER_UI_PARAM_MASTER_OUTPUT
+    TS_SISTER_UI_PARAM_MASTER_OUTPUT,
+    TS_SISTER_UI_PARAM_SLOT6_GAIN = 2000
 } TsSisterUiParameter;
 
 #define TS_SISTER_UI_SLOT_PARAMETER(slot, field) \
-    ((int)(slot) == 4 ? TS_SISTER_UI_PARAM_SLOT5_GAIN + (int)(field) : \
+    ((int)(slot) >= 5 ? TS_SISTER_UI_PARAM_SLOT6_GAIN + ((int)(slot)-5)*5 + (int)(field) : \
+     (int)(slot) == 4 ? TS_SISTER_UI_PARAM_SLOT5_GAIN + (int)(field) : \
      TS_SISTER_UI_PARAM_SLOT1_GAIN + (int)(slot) * 5 + (int)(field))
 
 /* Return a dense slot/field index while preserving the historic IDs. */
@@ -227,6 +238,8 @@ static inline int ts_sister_ui_slot_offset(int parameter)
         return parameter-TS_SISTER_UI_PARAM_SLOT1_GAIN;
     if(parameter >= TS_SISTER_UI_PARAM_SLOT5_GAIN && parameter <= TS_SISTER_UI_PARAM_SLOT5_MIX)
         return 20+parameter-TS_SISTER_UI_PARAM_SLOT5_GAIN;
+    if(parameter >= TS_SISTER_UI_PARAM_SLOT6_GAIN && parameter < TS_SISTER_UI_PARAM_SLOT6_GAIN + 75)
+        return 25+parameter-TS_SISTER_UI_PARAM_SLOT6_GAIN;
     return -1;
 }
 
@@ -268,6 +281,7 @@ typedef enum {
 
 typedef struct {
     int visible;
+    int fx_scroll, fx_remove_confirmation;
     int matrix_routing;
     int capture_channels;
     int capture_overdub;
@@ -350,6 +364,9 @@ void ts_sister_ui_migrate_legacy_effect_locks(uint64_t *locks,
                                               uint64_t *locks_high);
 
 void ts_sister_ui_model_init(TsSisterUiModel *model, const TsConfig *config);
+int ts_sister_ui_fx_scroll(const TsSisterUiModel *model);
+void ts_sister_ui_fx_scroll_set(TsSisterUiModel *model, int first);
+void ts_sister_ui_fx_thumb(const TsSisterUiModel *model, int *top, int *height);
 void ts_sister_ui_set_capture_channels(TsSisterUiModel *model,
                                        TsConfig *config, int channels);
 void ts_sister_ui_model_show(TsSisterUiModel *model);

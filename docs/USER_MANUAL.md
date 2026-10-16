@@ -1649,8 +1649,34 @@ compensation. Existing serial projects retain the separate
 ![Four independently placed effects with a long topology transition](images/manual/fx-pedalboard.png)
 
 Press the page button in Sister Machine until **FX** is visible. The pedalboard contains
-four independent processor slots. Signal order is always `1 → 2 → 3 → 4`, but each
-slot chooses where it enters Sister's graph.
+5–20 independent processor slots, with 10 for a new project by default. Signal order
+follows slot numbers; each slot chooses where it enters Sister's graph.
+
+Five rows stay visible, with the existing control sizes and transition clocks fixed
+in place. Click or hold the narrow right-hand up/down arrows to move one row at a
+time; drag its thumb or click its track to page through the board. Up/Down keys work
+while the pedalboard has focus, outside dialogs. The mouse wheel only adjusts the
+parameter under the pointer; it never scrolls the board. Offscreen effects keep
+processing and their transitions continue.
+
+**+** appends an empty slot and brings it into view. **−** removes the last slot;
+an effect-bearing slot requires confirmation, even when bypassed. Cancel or Escape
+leaves it intact. To remove a different slot, reorder it to the end first. Remaining
+slots retain their settings, MIDI target numbers and running DSP history. Removal
+uses a short 20 ms handoff; it does not restart the audio device. Empty slots do not
+run effect kernels. Removing active effects reduces their processing load after the
+handoff; changing the count alone does not make the remaining effects cheaper.
+Effect histories remain preallocated for the 20-slot capacity so live slot changes
+require no audio-thread allocation; reducing the count does not shrink that reserved
+storage.
+
+`pedalboard_slots=10` in `tapesister.ini` controls only the next startup/New-project
+slot count. Its accepted range is 5–20; values outside it are clamped. The alternate
+spelling `PedalboardSlots` is accepted on input. Live +/− changes never overwrite
+this default. Projects and Sister presets save the count and every slot's state;
+a shared 20-slot project opens intact on a machine whose default is 5. Older files
+without a count retain five slots. Slots 1–5 retain their historical MIDI and lock
+IDs; added slots have independent learnable controls and Shift-click locks.
 
 ### Slot controls
 
@@ -1664,9 +1690,8 @@ Each row provides:
 - one placement: PRE, H1, H2, H3, or POST;
 - UP/DN controls for reordering.
 
-Cycle a slot's type to choose Empty, Reverb, Delay, Distortion, or Grain. Types may be
-duplicated: four reverbs, two delays around a grain processor, or any other four-slot
-combination are valid. Every slot owns independent state and history.
+Cycle a slot's type to choose Empty, Reverb, Delay, Distortion, Grain, or Transient.
+Types may be duplicated in any combination. Every slot owns independent state and history.
 
 | Processor | Controls | Useful range/character |
 | --- | --- | --- |
@@ -1674,6 +1699,7 @@ combination are valid. Every slot owns independent state and history.
 | Delay | Time, Feedback, Mix, Gain | four-head tape delay, about 8–2000 ms |
 | Distortion | Drive, Tone, Mix, Gain | RAT-like nonlinear stage with 2× oversampling |
 | Grain | Size, Density, Pitch, Mix, Gain | 8–1000 ms grains, 0.25–120 events/s, ±24 semitones, 24 voices |
+| Transient | Attack, Sustain, Response, Mix, Gain | stereo-linked envelope shaping |
 
 ### Placement
 

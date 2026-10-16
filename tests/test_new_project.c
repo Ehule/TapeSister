@@ -78,6 +78,7 @@ static int cancelled_import(void *data)
 }
 static void assert_empty(void)
 {
+    assert(audio.sister.parameters.fx.slot_count==7 && ui.config.pedalboard_slots==7);
     assert(pages.page_count==1 && pages.active_page==0 && pages.active_live);
     assert(!record_active && !bank.current.data && !record.current.data);
     assert(!ts_instrument_bank_count(&bank) && !ts_instrument_bank_count(&record));
@@ -121,6 +122,7 @@ int main(int argc,char **argv)
     transform_controller_init(&transform);import_controller_init(&importer);fm_bank_history_init(&history);
     ui.mosaic=audio.mosaic=pages.mosaic=ts_mosaic_create();assert(ui.mosaic);
     ui.tracker=&pages.tracker;mosaic.pages=&pages;
+    ui.config.pedalboard_slots=7;
     ui.config.master_output_percent=63;ui.config.audio_buffer_frames=512;
     snprintf(ui.config.midi_input_device,sizeof(ui.config.midi_input_device),"PRESERVE MIDI");
     ui.palette.colors[0]=0xff123456;

@@ -1,4 +1,5 @@
 #include "tapesister/config.h"
+#include "tapesister/sister_post_fx.h"
 #include "tapesister/performance.h"
 #include "tapesister/sister_limiter.h"
 
@@ -81,6 +82,7 @@ void ts_config_init(TsConfig *config)
             TS_SISTER_LIMITER_DEFAULT_LOOKAHEAD_MS;
         config->sister_limiter_release_ms =
             TS_SISTER_LIMITER_DEFAULT_RELEASE_MS;
+        config->pedalboard_slots = TS_SISTER_FX_SLOT_DEFAULT;
         config->sister_fx_effect_transition_ms = 240000;
         config->sister_fx_transition_ms = 240000;
         config->sister_fallout_transition_ms = 240000;
@@ -461,6 +463,12 @@ int ts_config_load(TsConfig *config, const char *path,
             if (!parse_clamped_float(value, TS_SISTER_LIMITER_LOOKAHEAD_MS_MIN, TS_SISTER_LIMITER_LOOKAHEAD_MS_MAX, &loaded.sister_limiter_lookahead_ms)) { snprintf(error, error_size, "Invalid limiter lookahead on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "sister_limiter_release_ms") == 0) {
             if (!parse_clamped_float(value, TS_SISTER_LIMITER_RELEASE_MS_MIN, TS_SISTER_LIMITER_RELEASE_MS_MAX, &loaded.sister_limiter_release_ms)) { snprintf(error, error_size, "Invalid limiter release on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "pedalboard_slots") == 0 || strcmp(key, "PedalboardSlots") == 0) {
+            if (!parse_clamped_integer(value, TS_SISTER_FX_SLOT_MIN, TS_SISTER_FX_SLOT_COUNT,
+                                       &loaded.pedalboard_slots)) {
+                snprintf(error, error_size, "Invalid pedalboard slot default on config line %d", line_number);
+                fclose(file); return 0;
+            }
         } else if (strcmp(key, "sister_fx_effect_transition_ms") == 0) {
             if (!parse_clamped_integer(value, 10, 3600000, &loaded.sister_fx_effect_transition_ms)) { snprintf(error, error_size, "Invalid individual FX transition time on config line %d", line_number); fclose(file); return 0; }
             saw_fx_effect_transition = 1;
@@ -676,6 +684,8 @@ int ts_config_save(const TsConfig *config, const char *path,
                 "; Final attenuation after the limiter: 0=mute, 100=unity.\n"
                 "master_output_percent=%d\n"
                 "; Default individual Reverb/Delay/Distortion ramp: 10 ms to 60 minutes.\n"
+                "# Pedalboard slots for NEW projects only (5..20). Saved projects retain their count.\n"
+                "pedalboard_slots=%d\n"
                 "sister_fx_effect_transition_ms=%d\n"
                 "; Default Master FX gate ramp: 10 ms to 60 minutes.\n"
                 "sister_fx_transition_ms=%d\n"
@@ -759,6 +769,7 @@ int ts_config_save(const TsConfig *config, const char *path,
                 config->sister_limiter_lookahead_ms,
                 config->sister_limiter_release_ms,
                 config->master_output_percent,
+                ts_sister_fx_slot_count(config->pedalboard_slots),
                 config->sister_fx_effect_transition_ms,
                 config->sister_fx_transition_ms,
                 config->sister_fallout_transition_ms,

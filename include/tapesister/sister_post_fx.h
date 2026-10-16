@@ -28,7 +28,9 @@ typedef enum {
 } TsSisterFxType;
 
 enum {
-    TS_SISTER_FX_SLOT_COUNT = 5,
+    TS_SISTER_FX_SLOT_MIN = 5,
+    TS_SISTER_FX_SLOT_DEFAULT = 10,
+    TS_SISTER_FX_SLOT_COUNT = 20, /* Storage bound; slot_count is project-owned. */
     TS_SISTER_FX_PLACE_PRE = 1u << 0,
     TS_SISTER_FX_PLACE_H1 = 1u << 1,
     TS_SISTER_FX_PLACE_H2 = 1u << 2,
@@ -57,6 +59,7 @@ typedef struct {
     float parameter_b;
     float parameter_c;
     float mix;
+    uint8_t parameter_locks; /* Additional slots; first five retain historic IDs. */
 } TsSisterFxSlotControls;
 
 typedef struct {
@@ -95,6 +98,7 @@ typedef struct {
     float grain_gain_db;
     uint8_t grain_targets;
     float master_feedback;
+    int slot_count;
     TsSisterFxSlotControls slot[TS_SISTER_FX_SLOT_COUNT];
     TsSisterFalloutControls fallout;
 } TsSisterFxControls;
@@ -284,6 +288,8 @@ typedef struct {
     TsSisterFxSlotControls queued;
     TsSisterFxRamp morph;
     TsSisterFxRamp engage;
+    TsSisterFxRamp removal;
+    int retiring;
     int has_pending;
     int has_queued;
 } TsSisterFxSlotState;
@@ -318,6 +324,7 @@ typedef struct {
     uint32_t transition_frames;
     TsSisterFxControls controls;
     TsSisterFxSlotState slot[TS_SISTER_FX_SLOT_COUNT];
+    int processing_slots; /* Includes a briefly retiring last slot. */
     TsSisterFxRamp master_engage;
     uint32_t sample_rate;
     int ready;
@@ -336,6 +343,8 @@ void ts_sister_fx_controls_migrate_legacy(TsSisterFxControls *controls);
 const char *ts_sister_reverb_type_name(TsSisterReverbType type);
 float ts_sister_reverb_legacy_size(TsSisterReverbType type);
 void ts_sister_fx_controls_default(TsSisterFxControls *controls);
+int ts_sister_fx_slot_count(int count);
+TsSisterFxSlotControls ts_sister_fx_empty_slot(void);
 void ts_sister_fx_controls_sanitize(TsSisterFxControls *controls);
 float ts_sister_delay_time_ms(float normalized);
 float ts_sister_reverb_size_scale(float normalized);

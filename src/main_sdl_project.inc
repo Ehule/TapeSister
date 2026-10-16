@@ -72,6 +72,7 @@ static int project_new(SDL_Window *window, SDL_AudioDeviceID device,
     int prepared = 0;
     if (!next || !view) goto failed;
     ts_sister_runtime_init(&next->sister);
+    next->sister.parameters.fx.slot_count = ts_sister_fx_slot_count(ui->config.pedalboard_slots);
     ts_capture_init(&next->capture);
     ts_note_bank_init(&next->notes);
     ts_keyboard_sequence_init(&next->keyboard_sequence);

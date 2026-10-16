@@ -180,6 +180,7 @@ typedef struct {
     float sister_limiter_lookahead_ms;
     float sister_limiter_release_ms;
     int sister_fx_effect_transition_ms;
+    int pedalboard_slots; /* New-project default only, 5..20. */
     int sister_fx_transition_ms;
     int sister_fallout_transition_ms;
     int sister_fallout_component_transition_ms;

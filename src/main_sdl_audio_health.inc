@@ -8,7 +8,7 @@ typedef struct {
     int tracker, tracker_voices, tracker_row;
     int sister, rolling, tape_hold, monitor;
     unsigned sources;
-    int board, fallout;
+    int board, fallout, slot_count;
     float fallout_mix;
     TsSisterFxSlotControls slot[TS_SISTER_FX_SLOT_COUNT];
     int prism, prism_mode, prism_lenses, prism_sequence, prism_matrix;
@@ -80,6 +80,7 @@ static void ts_audio_health_capture_setup(const AudioState *audio,
     for(int i=0;i<TS_TRACKER_LANES;++i)s->tracker_voices+=audio->tracker.lanes[i].voice.active;
     s->sister = r->enabled; s->rolling = r->rolling; s->tape_hold = r->held;
     s->monitor = r->monitor_enabled; s->sources = r->source_switches;
+    s->slot_count = p->fx.slot_count;
     s->board = p->fx.enabled; s->fallout = p->fx.fallout.enabled;
     s->fallout_mix = p->fx.fallout.mix;
     memcpy(s->slot, p->fx.slot, sizeof(s->slot));
@@ -124,7 +125,7 @@ static void ts_audio_health_setup_report(char *text, size_t size, Uint32 now)
         snprintf(source + used, sizeof(source) - used, "%s%s", used ? ", " : "", names[i]);
     }
     unsigned enabled_slots = 0;
-    for (int i = 0; i < TS_SISTER_FX_SLOT_COUNT; ++i)
+    for (int i = 0; i < s->slot_count; ++i)
         if (s->slot[i].type != TS_SISTER_FX_EMPTY && s->slot[i].enabled) ++enabled_slots;
     snprintf(text, size,
         "Active setup (UI snapshot %.3f s old; not the setup at a retained maximum):\n"
@@ -138,7 +139,7 @@ static void ts_audio_health_setup_report(char *text, size_t size, Uint32 now)
         "  Prism: %s, %s; base mode: %s; base lenses: %d; lens sequence: %s; Matrix: %s\n"
         "  Insert: %s; send assigned: %s; send available: %s; return available: %s\n"
         "  Router order: %s > %s > %s > %s > %s; sequencer: %s\n"
-        "  Pedalboard master: %s, %s; enabled slots: %u/4\n",
+        "  Pedalboard master: %s, %s; enabled slots: %u/%d\n",
         (now - s->captured) / 1000.0, health_on(s->hold), s->keyboard_voices, s->held_voices,
         health_running(s->arp), health_running(s->outer_arp),
         s->arp || s->outer_arp ? s->arp_slot + 1 : 0,
@@ -154,7 +155,7 @@ static void ts_audio_health_setup_report(char *text, size_t size, Uint32 now)
         ts_router_name(s->router.order[0]), ts_router_name(s->router.order[1]),
         ts_router_name(s->router.order[2]), ts_router_name(s->router.order[3]),
         ts_router_name(s->router.order[4]), health_running(s->router_sequence),
-        health_on(s->board), health_route(s, TS_ROUTER_PEDALBOARD), enabled_slots);
+        health_on(s->board), health_route(s, TS_ROUTER_PEDALBOARD), enabled_slots, s->slot_count);
     if(s->matrix.enabled) {
         size_t used=strlen(text);
         snprintf(text+used,size-used,"  Unified routing matrix: ON; legacy order, source switches and Insert assignments above are inactive.\n");
@@ -173,7 +174,7 @@ static void ts_audio_health_setup_report(char *text, size_t size, Uint32 now)
                 ts_matrix_is_processor(row) && (s->matrix.delayed[row]&ts_matrix_feedback_bit(d))?"; feedback delayed 64 samples":"");
         }
     }
-    for (int i = 0; i < TS_SISTER_FX_SLOT_COUNT; ++i) {
+    for (int i = 0; i < s->slot_count; ++i) {
         const TsSisterFxSlotControls *slot = &s->slot[i];
         char places[48] = "";
         const char *labels[] = {"PRE", "H1", "H2", "H3", "POST"};
