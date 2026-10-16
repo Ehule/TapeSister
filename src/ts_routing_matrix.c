@@ -69,18 +69,25 @@ void ts_matrix_default(TsMatrixControls *c)
 }
 static int order_graph(const TsMatrixControls *c,int *order)
 {
+    /* Compile dependencies once per edit. Re-scanning every source/destination
+       for every candidate made a slider edit expensive inside audio exclusion.
+       Bits also deduplicate a processor's ordinary and sidechain dependencies. */
+    uint64_t incoming[TS_MATRIX_ROWS]={0};
+    for(int k=0;k<TS_MATRIX_PROCESSORS;++k) {
+        int s=ts_matrix_processor(k);
+        for(int d=0;d<TS_MATRIX_DESTINATIONS;++d) {
+            int n=dependency(d);
+            if(ts_matrix_is_processor(n) && c->row[s].matrix_gain[d] &&
+               !(c->delayed[s]&ts_matrix_feedback_bit(d)))
+                incoming[n]|=UINT64_C(1)<<s;
+        }
+    }
     uint64_t done=0;
     for(int pos=0;pos<TS_MATRIX_PROCESSORS;++pos) {
         int found=-1;
         for(int k=0;k<TS_MATRIX_PROCESSORS;++k) {
             int n=ts_matrix_processor(k);if(done&(UINT64_C(1)<<n))continue;
-            int incoming=0;
-            for(int j=0;j<TS_MATRIX_PROCESSORS;++j) {
-                int s=ts_matrix_processor(j);if(done&(UINT64_C(1)<<s))continue;
-                for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)
-                    if(dependency(d)==n && c->row[s].matrix_gain[d] && !(c->delayed[s]&ts_matrix_feedback_bit(d)))incoming=1;
-            }
-            if(!incoming){found=n;break;}
+            if(!(incoming[n]&~done)){found=n;break;}
         }
         if(found<0)return 0;
         if(order)order[pos]=found;
@@ -205,8 +212,11 @@ void ts_matrix_process(TsRoutingMatrix *m,TsSourceRouteMix *sums,
         }
         TsStereoFrame output=ts_stereo_frame_sanitize(fn(context,n,input));
         m->output_peak[n]=fmaxf(peak(output),m->output_peak[n]*m->decay);
-        /* A bounded, explicit delay is the only graph feedback path. */
-        m->history[n][m->position]=(TsStereoFrame){tanhf(output.l),tanhf(output.r)};
+        /* Only feedback edges consume this history. Enabling/changing delayed
+           edges clears history in ts_matrix_set, so dormant rows need no tanh
+           or stores. Forward audio and effect tails still run every sample. */
+        if(m->controls.delayed[n])
+            m->history[n][m->position]=(TsStereoFrame){tanhf(output.l),tanhf(output.r)};
         ts_source_route_frame(&m->voice[n],output,sums);
     }
     for(int p=0;p<TS_MATRIX_OUTPUTS;++p)m->output[p]=ts_stereo_frame_sanitize(sums->graph[TS_MATRIX_NODES+p]);

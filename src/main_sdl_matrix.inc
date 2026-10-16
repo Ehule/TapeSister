@@ -228,9 +228,17 @@ static int matrix_show(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,
 }
 static void mx_collect_effects(SDL_AudioDeviceID device,AudioState *audio)
 {
+    /* Pointers are control-thread-owned; the callback only advances atomic
+       countdowns. Do not exclude playback at UI refresh rate when nothing is
+       ready to retire, including while the Matrix window is closed. */
+    int offline=!device || !ts_audio_output_is_available(),ready=offline;
+    for(int i=0;!ready && i<TS_MATRIX_EFFECT_CAPACITY;++i)
+        ready=audio->sister.matrix_effects.previous[i] &&
+            !atomic_load_explicit(&audio->sister.matrix_effects.remaining[i],memory_order_relaxed);
+    if(!ready)return;
     TsMatrixEffectPlan garbage;
     if(device)SDL_LockAudioDevice(device);
-    if(!device || !ts_audio_output_is_available()) {
+    if(offline) {
         /* Offline editing has no callback to finish a lifecycle fade. */
         for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)atomic_store_explicit(&audio->sister.matrix_effects.remaining[i],0,memory_order_relaxed);
         audio->sister.matrix_effects.fading=0;

@@ -39,6 +39,8 @@ add_library(tapesister_core src/ts_mandala.c src/ts_routing_matrix.c src/ts_matr
              third_party/tapehead/ft2_fasttracks_core.c)
 target_include_directories(tapesister_core PUBLIC include PRIVATE ${miniaudio_SOURCE_DIR})
 target_link_libraries(tapesister_core PUBLIC m)
+add_executable(tapesister_matrix_benchmark EXCLUDE_FROM_ALL tools/benchmark_matrix.c)
+target_link_libraries(tapesister_matrix_benchmark PRIVATE tapesister_core)
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(tapesister_core PRIVATE -Wall -Wextra -Wpedantic)
 endif()

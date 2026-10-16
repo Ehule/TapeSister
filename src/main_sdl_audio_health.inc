@@ -110,6 +110,16 @@ static const char *health_route(const TsAudioHealthSetup *s, int stage)
     return active ? "routed" : "bypassed";
 }
 
+static void health_matrix_name(char *text,size_t size,const TsMatrixControls *c,int node,int destination)
+{
+    int sidechain=destination && node>=TS_MATRIX_EFFECT_SC_BASE && node<TS_MATRIX_INSTANCE_DESTINATIONS;
+    int effect=sidechain?node-TS_MATRIX_EFFECT_SC_BASE:ts_matrix_effect_index(node);
+    if(effect>=0) {
+        const TsMatrixEffectControls *fx=&c->effect[effect];
+        snprintf(text,size,"%s #%u%s",ts_matrix_effect_name(fx->type),(unsigned)fx->id,sidechain?" SIDECHAIN":"");
+    } else snprintf(text,size,"%s",ts_matrix_node_name(node));
+}
+
 static void ts_audio_health_setup_report(char *text, size_t size, Uint32 now)
 {
     if (!size) return;
@@ -162,16 +172,22 @@ static void ts_audio_health_setup_report(char *text, size_t size, Uint32 now)
         for(int row=0;row<TS_MATRIX_ROWS;++row)for(int d=0;d<TS_MATRIX_DESTINATIONS;++d) {
             int gain=s->matrix.row[row].matrix_gain[d];if(!gain)continue;
             char from[64],to[64];
-            if(ts_matrix_is_processor(row))snprintf(from,sizeof(from),"%s",ts_matrix_node_name(row));
+            if(ts_matrix_is_processor(row))health_matrix_name(from,sizeof(from),&s->matrix,row,0);
             else if(row<TS_MATRIX_FM)snprintf(from,sizeof(from),"IN %d/%d %.23s",(row-TS_MATRIX_NODES)*2+1,(row-TS_MATRIX_NODES)*2+2,s->matrix.input_name[row-TS_MATRIX_NODES]);
             else snprintf(from,sizeof(from),"%s",row==TS_MATRIX_FM?"FM":row==TS_MATRIX_MOSAIC?"MOSAIC":
                 row==TS_MATRIX_TILES?"LIVE TILE BUS":row==TS_MATRIX_TRACKER?"TRACKSISTER BUS":"LIVE LINK");
             if(d==TS_MATRIX_AMBISONICS)snprintf(to,sizeof(to),"AMBISONICS");
             else if(d>=TS_MATRIX_SPEAKER_BASE)snprintf(to,sizeof(to),"SPEAKER %d",d-TS_MATRIX_SPEAKER_BASE+1);
-            else if(!ts_matrix_is_output(d))snprintf(to,sizeof(to),"%s",ts_matrix_node_name(d));
+            else if(!ts_matrix_is_output(d))health_matrix_name(to,sizeof(to),&s->matrix,d,1);
             else snprintf(to,sizeof(to),"OUT %d/%d %.23s",(d-TS_MATRIX_NODES)*2+1,(d-TS_MATRIX_NODES)*2+2,s->matrix.output_name[d-TS_MATRIX_NODES]);
             used=strlen(text);snprintf(text+used,size-used,"    %s -> %s: %+.1f dB; pan %d%s\n",from,to,20*log10f(gain*.001f),s->matrix.row[row].pan,
                 ts_matrix_is_processor(row) && (s->matrix.delayed[row]&ts_matrix_feedback_bit(d))?"; feedback delayed 64 samples":"");
+        }
+        for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i) {
+            const TsMatrixEffectControls *fx=&s->matrix.effect[i];
+            if(!fx->id)continue;
+            used=strlen(text);snprintf(text+used,size-used,"    Matrix effect #%u: %s; %s; mix %.1f%%\n",
+                (unsigned)fx->id,ts_matrix_effect_name(fx->type),health_on(fx->enabled),fx->mix*100);
         }
     }
     for (int i = 0; i < s->slot_count; ++i) {
@@ -324,7 +340,7 @@ static void ts_audio_profile_draw(TsFramebuffer *fb, uint32_t ink, uint32_t dim)
     for(int i=0;i<TS_PROF_COUNT;i++) {
         TsProfileValue *v=&s.value[i]; double ms=s.frequency?1000.0*v->ticks/s.frequency:0;
         uint64_t parent=s.value[i>=TS_PROF_AUDIO?TS_PROF_AUDIO:TS_PROF_UI].ticks;
-        int y=73+i*10;cfg_text(fb,20,y,ts_profile_name((TsProfileId)i),ink);
+        int y=73+i*(277/(TS_PROF_COUNT-1));cfg_text(fb,20,y,ts_profile_name((TsProfileId)i),ink);
         snprintf(line,sizeof(line),"%.4F",v->calls?ms/v->calls:0);cfg_text(fb,276,y,line,dim);
         snprintf(line,sizeof(line),"%.3F",s.frequency?1000.0*v->peak/s.frequency:0);cfg_text(fb,348,y,line,dim);
         snprintf(line,sizeof(line),"%.0F",s.seconds?v->calls/s.seconds:0);cfg_text(fb,428,y,line,dim);

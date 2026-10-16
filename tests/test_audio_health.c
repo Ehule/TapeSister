@@ -71,6 +71,26 @@ int main(int argc, char **argv)
     ts_audio_endpoint_opened(&ts_output_endpoint, ts_real_output, "Test output", 0,
         got.freq, got.channels, got.samples, "F32");
     ui->config.audio_buffer_frames = 2048; /* Display must use the obtained size. */
+    /* Idle Matrix maintenance must not contend with audio once per UI tick. */
+    ts_matrix_effects_init(&a->sister.matrix_effects);
+    for(int i=0;i<100;++i)mx_collect_effects(TS_AUDIO_LOGICAL_OUTPUT,a);
+    assert(atomic_load(&a->realtime_diagnostics.control_count)==0);
+    TsMatrixControls lifecycle;ts_matrix_default(&lifecycle);
+    assert(ts_matrix_effect_add(&lifecycle,TS_MATRIX_FX_COMPRESSOR)==0);
+    assert(ts_matrix_effects_restore(&a->sister.matrix_effects,&lifecycle,48000));
+    ts_matrix_effect_remove(&lifecycle,0);
+    TsMatrixEffectPlan retirement;
+    assert(ts_matrix_effects_stage(&a->sister.matrix_effects,&lifecycle,48000,&retirement));
+    ts_matrix_effects_commit(&a->sister.matrix_effects,&lifecycle,48000,&retirement);
+    assert(a->sister.matrix_effects.previous[0]);
+    mx_collect_effects(TS_AUDIO_LOGICAL_OUTPUT,a);
+    assert(a->sister.matrix_effects.previous[0]);
+    assert(atomic_load(&a->realtime_diagnostics.control_count)==0);
+    for(int i=0;i<576;++i)ts_matrix_effects_tick(&a->sister.matrix_effects);
+    mx_collect_effects(TS_AUDIO_LOGICAL_OUTPUT,a);
+    assert(!a->sister.matrix_effects.previous[0]);
+    assert(atomic_load(&a->realtime_diagnostics.control_count)==1);
+    ts_realtime_diagnostics_reset(&a->realtime_diagnostics);
     ts_audio_lock_device_at(TS_AUDIO_LOGICAL_OUTPUT, "outer edit");
     ts_audio_lock_device_at(TS_AUDIO_LOGICAL_OUTPUT, "nested edit");
     ts_audio_unlock_device(TS_AUDIO_LOGICAL_OUTPUT);
@@ -194,6 +214,19 @@ int main(int argc, char **argv)
     assert(strstr(setup, "ARP: STOPPED; outer ARP: STOPPED; active slot: 0"));
     assert(strstr(setup, "Sister Machine: OFF") && strstr(setup, "Prism: OFF"));
     assert(strstr(setup, "Matrix: STOPPED"));
+    TsMatrixControls *matrix=&a->sister.matrix.controls;
+    ts_matrix_default(matrix);matrix->enabled=1;
+    int grain=ts_matrix_effect_add(matrix,TS_SISTER_FX_GRAIN);
+    int comp=ts_matrix_effect_add(matrix,TS_MATRIX_FX_COMPRESSOR);
+    assert(grain==0 && comp==1);
+    matrix->row[TS_MATRIX_EFFECT_BASE+grain].matrix_gain[TS_MATRIX_EFFECT_BASE+comp]=500;
+    matrix->row[TS_MATRIX_MOSAIC].matrix_gain[TS_MATRIX_EFFECT_SC_BASE+comp]=1000;
+    ts_audio_health_capture_setup(a,ui,1750);
+    char matrix_report[8192];ts_audio_health_setup_report(matrix_report,sizeof(matrix_report),1750);
+    assert(strstr(matrix_report,"GRAIN #1 -> COMPRESSOR #2"));
+    assert(strstr(matrix_report,"MOSAIC -> COMPRESSOR #2 SIDECHAIN"));
+    assert(strstr(matrix_report,"Matrix effect #1: GRAIN; ON; mix 100.0%"));
+    assert(!strstr(matrix_report,"OUTPUT -> OUTPUT"));
     char short_report[17]; memset(short_report, 'x', sizeof(short_report));
     ts_audio_health_setup_report(short_report, sizeof(short_report) - 1, 1250);
     assert(short_report[15] == '\0' && short_report[16] == 'x');

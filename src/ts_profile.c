@@ -103,7 +103,7 @@ const char *ts_profile_name(TsProfileId id)
         "Texture / damage / copy", "Present / swap", "Event wait", "EQ response drawing", "Tracker scopes", "Waveform analysis/cache",
         "Audio callback", "Voices / ARP / Mosaic", "Tracker DSP", "Sister runtime",
         "Router (incl stages)", "Prism DSP", "Fallout DSP", "Pedalboard DSP",
-        "Insert DSP", "Master EQ / limiter", "Spatial output", "Audio snapshots", "Sister tape stage"};
+        "Insert DSP", "Master EQ / limiter", "Spatial output", "Audio snapshots", "Sister tape stage", "Matrix effects DSP"};
     return id < TS_PROF_COUNT ? names[id] : "Unknown";
 }
 void ts_profile_report(char *text, size_t capacity)
