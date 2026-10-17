@@ -500,6 +500,12 @@ static int mandala_run(VisualShared *shared,
         double ms=(SDL_GetPerformanceCounter()-tick)*1000/frequency;
         if(rendered) {
             m->cost=m->cost*.9+ms*.1;m->max_cost=fmax(m->max_cost,ms);m->total_cost+=ms;++m->frames;
+            /* Child-owned progress, sampled by the host UI/session recorder.
+               This distinguishes silent input from a stalled render/present. */
+            atomic_store(&shared->drawn_audio,serial);
+            atomic_store(&shared->drawn_config,message.revision);
+            atomic_store(&shared->level_milli,(unsigned)lrintf(m->features.level*1000));
+            atomic_store(&shared->frames,m->frames);
         }
         int fps=(int[]){15,30,60}[m->quality];if(m->shed)fps=m->shed==1?15:8;
         if(rendered && !m->frozen && ms>500.0/fps)++m->slow_frames;else if(rendered && m->slow_frames)m->slow_frames--;

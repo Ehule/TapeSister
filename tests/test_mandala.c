@@ -9,8 +9,37 @@
 #include <stdlib.h>
 #include <string.h>
 
+static void wide_packet_bounds(void)
+{
+    TsMandalaQueue q;ts_mandala_queue_init(&q);atomic_store(&q.enabled,1);
+    float *out=malloc(512*255*sizeof(float));assert(out);
+    const unsigned widths[]={1,2,16,17,26,64,128,255},lengths[]={1,73,512};
+    for(unsigned width=0;width<sizeof(widths)/sizeof(*widths);++width)
+    for(unsigned length=0;length<sizeof(lengths)/sizeof(*lengths);++length) {
+        unsigned channels=widths[width],frames=lengths[length];
+        for(unsigned i=0;i<frames;++i)for(unsigned c=0;c<channels;++c)
+            out[i*channels+c]=i*.001f+c*.000001f;
+        ts_mandala_push(&q,out,frames,channels);
+        TsMandalaPacket p;assert(ts_mandala_latest(&q,&p));
+        assert(p.channels==channels && p.count>0 && p.count<=frames &&
+               p.count<=64 && p.count*p.channels<=1024);
+        for(unsigned i=0;i<p.count;++i) {
+            unsigned source=(unsigned)lrintf(p.samples[i*channels]*1000);
+            assert(source>=i*frames/p.count && source<(i+1)*frames/p.count);
+            for(unsigned c=0;c<channels;++c)assert(p.samples[i*channels+c]==out[source*channels+c]);
+        }
+    }
+    unsigned w=atomic_load(&q.write);
+    ts_mandala_push(&q,out,512,0);ts_mandala_push(&q,out,512,256);
+    assert(atomic_load(&q.write)==w);
+    TsMandalaPacket invalid={.count=64,.channels=255};TsMandalaFeatures f={0};
+    ts_mandala_analyze(&invalid,&f,.05f);assert(f.level==0);
+    free(out);
+}
+
 int main(void)
 {
+    wide_packet_bounds();
     TsMandalaConfig a,b;
     ts_mandala_default(&a);ts_mandala_default(&b);
     assert(ts_mandala_valid(&a) && a.seed!=b.seed);
@@ -84,13 +113,13 @@ int main(void)
     packet.channels=2;features=(TsMandalaFeatures){0};
     for(int i=0;i<200;++i)ts_mandala_analyze(&packet,&features,.05f);
     assert(fabsf(multi-features.level)<1e-6f);
-    for(unsigned i=0;i<64;++i)packet.samples[i][1]=-.25f;
+    for(unsigned i=0;i<64;++i)packet.samples[i*packet.channels+1]=-.25f;
     for(int i=0;i<200;++i)ts_mandala_analyze(&packet,&features,.05f);
     assert(features.width>.99f && features.level>.85f); /* Anti-phase cannot cancel the mandala. */
-    for(unsigned i=0;i<64;++i)packet.samples[i][0]=packet.samples[i][1]=.0005f;
+    for(unsigned i=0;i<64;++i)packet.samples[i*packet.channels]=packet.samples[i*packet.channels+1]=.0005f;
     for(int i=0;i<800;++i)ts_mandala_analyze(&packet,&features,.05f);
     assert(features.level<.00001f);
-    packet.samples[0][0]=NAN;packet.samples[0][1]=INFINITY;
+    packet.samples[0]=NAN;packet.samples[1]=INFINITY;
     ts_mandala_analyze(&packet,&features,.05f);assert(isfinite(features.level));
     atomic_store(&q.enabled,0);unsigned w=atomic_load(&q.write);
     ts_mandala_push(&q,out,512,2);assert(atomic_load(&q.write)==w);
@@ -98,6 +127,15 @@ int main(void)
     atomic_store(&q.write,UINT32_MAX-1);atomic_store(&q.read,UINT32_MAX-1);atomic_store(&q.enabled,1);
     for(int i=0;i<4;++i)ts_mandala_push(&q,out,512,2);
     assert(ts_mandala_latest(&q,&packet));
+    /* A 26-channel ASIO device must feed the visualizer, including a signal
+       present only beyond the former 16-channel ceiling. */
+    float wide[73*26]={0};
+    for(unsigned i=0;i<73;++i){wide[i*26+24]=.25f;wide[i*26+25]=-.25f;}
+    ts_mandala_push(&q,wide,73,26);assert(ts_mandala_latest(&q,&packet));
+    assert(packet.channels==26);
+    features=(TsMandalaFeatures){0};
+    for(int i=0;i<200;++i)ts_mandala_analyze(&packet,&features,.05f);
+    assert(features.level>.4f && features.width>.99f && fabsf(features.balance)<1e-6f);
     TsMandalaEffects fx={0},target={0};
     for(int i=0;i<TS_MANDALA_EFFECTS;++i){target.wet[i]=1;target.size[i]=.8f;target.character[i]=.6f;}
     ts_mandala_effects_follow(&fx,&target,0);assert(fx.wet[0]==0);

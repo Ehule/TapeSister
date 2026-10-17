@@ -12,10 +12,11 @@ static atomic_uint done;
 static int produce(void *unused)
 {
     (void)unused;
-    float out[128*16];
+    float out[128*255];
     for(unsigned generation=1;generation<=100000;++generation) {
-        for(unsigned i=0;i<128*16;++i)out[i]=(float)generation;
-        ts_mandala_push(&queue,out,128,16);
+        unsigned channels=((unsigned[]){16,26,255})[generation%3];
+        for(unsigned i=0;i<128*channels;++i)out[i]=(float)generation;
+        ts_mandala_push(&queue,out,128,channels);
     }
     atomic_store(&done,1);return 0;
 }
@@ -29,8 +30,10 @@ int main(int argc,char **argv)
     TsMandalaPacket packet;unsigned received=0;
     while(!atomic_load(&done)) {
         if(ts_mandala_latest(&queue,&packet)) {
-            float value=packet.samples[0][0];
-            for(unsigned i=0;i<packet.count;++i)for(unsigned c=0;c<packet.channels;++c)assert(packet.samples[i][c]==value);
+            float value=packet.samples[0];
+            assert(packet.channels==((unsigned[]){16,26,255})[(unsigned)value%3]);
+            assert(packet.count*packet.channels<=TS_MANDALA_VALUES);
+            for(unsigned i=0;i<packet.count;++i)for(unsigned c=0;c<packet.channels;++c)assert(packet.samples[i*packet.channels+c]==value);
             ++received;
         } else SDL_Delay(1);
     }
