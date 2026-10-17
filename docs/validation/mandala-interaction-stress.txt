@@ -1,0 +1,147 @@
+Application source: 2dd2847 (audio-driven visualizer guard reverted)
+Linux Release / SDL 2.30 dummy audio and video / software renderer
+
+RUN 10
+Could not load external Fast Tracks logo. Using embedded FT2 logo.
+interaction fixture: slots=10 Mosaic=16 ARP=3 Tracker=4 Prism=8 rate=48000 buffer=512 channels=4 seconds/phase=20
+trial=BASELINE callbacks=1380 mean_us=4376.183 p50_us=4167.197 p95_us=5839.176 p99_us=8067.509 max_us=19925.547 deadline_misses=2 gaps_over_16ms=65 visual_dropped=0
+health phase=BASELINE callbacks=1380 overruns=2 near=3 hold_max_ms=0.000000 hold_over=0 wait_max_ms=0.000
+trial=PEDAL_ONLY callbacks=1396 mean_us=4219.911 p50_us=4072.177 p95_us=5036.146 p99_us=6607.304 max_us=12791.862 deadline_misses=1 gaps_over_16ms=37 visual_dropped=0
+health phase=PEDAL_ONLY callbacks=1396 overruns=1 near=0 hold_max_ms=1.138818 hold_over=0 wait_max_ms=7.241
+Mandala renderer: software, 768x480, 1558 instances, 97304 bytes model
+trial=VISUAL_STEADY callbacks=1380 mean_us=4386.132 p50_us=4115.882 p95_us=5656.955 p99_us=7064.432 max_us=16979.260 deadline_misses=2 gaps_over_16ms=35 visual_dropped=0
+health phase=VISUAL_STEADY callbacks=1380 overruns=2 near=0 hold_max_ms=0.000000 hold_over=0 wait_max_ms=0.000
+Mandala frames=175 mean=59.599ms max=81.607ms shed=2
+Mandala renderer: software, 768x480, 1558 instances, 97304 bytes model
+Mandala frames=39 mean=60.941ms max=76.095ms shed=2
+Mandala renderer: software, 768x480, 1558 instances, 97304 bytes model
+Mandala frames=39 mean=62.336ms max=109.199ms shed=2
+Mandala renderer: software, 768x480, 1558 instances, 97304 bytes model
+Mandala frames=39 mean=62.404ms max=78.021ms shed=2
+Mandala renderer: software, 768x480, 1558 instances, 97304 bytes model
+trial=VISUAL_CYCLES callbacks=1386 mean_us=4319.556 p50_us=4083.203 p95_us=5686.680 p99_us=7516.512 max_us=9218.936 deadline_misses=0 gaps_over_16ms=46 visual_dropped=0
+health phase=VISUAL_CYCLES callbacks=1386 overruns=0 near=0 hold_max_ms=0.000000 hold_over=0 wait_max_ms=0.000
+Mandala frames=27 mean=71.835ms max=112.904ms shed=1
+Mandala renderer: software, 768x480, 1558 instances, 97304 bytes model
+Mandala frames=38 mean=64.664ms max=105.988ms shed=2
+Mandala renderer: software, 768x480, 1558 instances, 97304 bytes model
+Mandala frames=39 mean=63.513ms max=85.655ms shed=2
+Mandala renderer: software, 768x480, 1558 instances, 97304 bytes model
+Mandala frames=39 mean=63.277ms max=86.740ms shed=2
+Mandala renderer: software, 768x480, 1558 instances, 97304 bytes model
+trial=COMBINED callbacks=1386 mean_us=4329.651 p50_us=4120.168 p95_us=5650.136 p99_us=6256.675 max_us=9570.051 deadline_misses=0 gaps_over_16ms=19 visual_dropped=0
+health phase=COMBINED callbacks=1386 overruns=0 near=0 hold_max_ms=0.210672 hold_over=0 wait_max_ms=5.520
+Mandala frames=29 mean=64.828ms max=80.091ms shed=1
+Mandala renderer: software, 768x480, 1558 instances, 97304 bytes model
+trial=FROZEN_PEDAL callbacks=1379 mean_us=4394.061 p50_us=4263.580 p95_us=5276.171 p99_us=7286.051 max_us=9660.666 deadline_misses=0 gaps_over_16ms=37 visual_dropped=0
+health phase=FROZEN_PEDAL callbacks=1379 overruns=0 near=1 hold_max_ms=1.353606 hold_over=0 wait_max_ms=5.484
+Mandala frames=1 mean=29.761ms max=29.761ms shed=0
+Mandala renderer: software, 768x480, 1558 instances, 97304 bytes model
+Mandala frames=38 mean=64.030ms max=76.201ms shed=2
+Mandala renderer: software, 768x480, 1558 instances, 97304 bytes model
+Mandala frames=38 mean=65.552ms max=82.603ms shed=2
+Mandala renderer: software, 768x480, 1558 instances, 97304 bytes model
+Mandala frames=38 mean=68.256ms max=93.083ms shed=2
+Mandala renderer: software, 768x480, 1558 instances, 97304 bytes model
+trial=COMBINED_REPEAT callbacks=1361 mean_us=4584.238 p50_us=4341.236 p95_us=5741.341 p99_us=7356.555 max_us=13046.259 deadline_misses=3 gaps_over_16ms=47 visual_dropped=0
+health phase=COMBINED_REPEAT callbacks=1362 overruns=3 near=1 hold_max_ms=0.153137 hold_over=0 wait_max_ms=8.010
+Mandala frames=29 mean=65.010ms max=81.979ms shed=1
+trial=BASELINE_REPEAT callbacks=1381 mean_us=4374.855 p50_us=4200.807 p95_us=5366.936 p99_us=7127.045 max_us=34744.254 deadline_misses=1 gaps_over_16ms=46 visual_dropped=0
+health phase=BASELINE_REPEAT callbacks=1381 overruns=1 near=0 hold_max_ms=0.000000 hold_over=0 wait_max_ms=0.000
+
+RUN 20
+Could not load external Fast Tracks logo. Using embedded FT2 logo.
+interaction fixture: slots=20 Mosaic=16 ARP=3 Tracker=4 Prism=8 rate=48000 buffer=512 channels=4 seconds/phase=20
+trial=BASELINE callbacks=1289 mean_us=5407.747 p50_us=5256.493 p95_us=6533.535 p99_us=8593.669 max_us=11051.277 deadline_misses=1 gaps_over_16ms=159 visual_dropped=0
+health phase=BASELINE callbacks=1289 overruns=1 near=3 hold_max_ms=0.000000 hold_over=0 wait_max_ms=0.000
+trial=PEDAL_ONLY callbacks=1272 mean_us=5607.121 p50_us=5452.052 p95_us=6789.455 p99_us=8817.380 max_us=13495.575 deadline_misses=2 gaps_over_16ms=259 visual_dropped=0
+health phase=PEDAL_ONLY callbacks=1273 overruns=2 near=5 hold_max_ms=0.391360 hold_over=0 wait_max_ms=8.066
+Mandala renderer: software, 768x480, 1558 instances, 97304 bytes model
+trial=VISUAL_STEADY callbacks=1271 mean_us=5625.269 p50_us=5343.391 p95_us=7070.211 p99_us=8527.672 max_us=19532.149 deadline_misses=3 gaps_over_16ms=320 visual_dropped=0
+health phase=VISUAL_STEADY callbacks=1271 overruns=3 near=6 hold_max_ms=0.000000 hold_over=0 wait_max_ms=0.000
+Mandala frames=174 mean=60.253ms max=80.483ms shed=2
+Mandala renderer: software, 768x480, 1558 instances, 97304 bytes model
+Mandala frames=38 mean=68.137ms max=86.206ms shed=2
+Mandala renderer: software, 768x480, 1558 instances, 97304 bytes model
+Mandala frames=38 mean=64.575ms max=78.941ms shed=2
+Mandala renderer: software, 768x480, 1558 instances, 97304 bytes model
+Mandala frames=38 mean=64.280ms max=79.554ms shed=2
+Mandala renderer: software, 768x480, 1558 instances, 97304 bytes model
+trial=VISUAL_CYCLES callbacks=1292 mean_us=5369.816 p50_us=5058.169 p95_us=7035.149 p99_us=8585.722 max_us=13145.797 deadline_misses=2 gaps_over_16ms=220 visual_dropped=0
+health phase=VISUAL_CYCLES callbacks=1293 overruns=2 near=5 hold_max_ms=0.000000 hold_over=0 wait_max_ms=0.000
+Mandala frames=28 mean=66.424ms max=87.631ms shed=1
+Mandala renderer: software, 768x480, 1558 instances, 97304 bytes model
+Mandala frames=38 mean=66.984ms max=90.001ms shed=2
+Mandala renderer: software, 768x480, 1558 instances, 97304 bytes model
+Mandala frames=39 mean=62.935ms max=81.721ms shed=2
+Mandala renderer: software, 768x480, 1558 instances, 97304 bytes model
+Mandala frames=39 mean=60.088ms max=75.065ms shed=2
+Mandala renderer: software, 768x480, 1558 instances, 97304 bytes model
+trial=COMBINED callbacks=1290 mean_us=5397.579 p50_us=5081.903 p95_us=7071.743 p99_us=8641.230 max_us=16282.337 deadline_misses=3 gaps_over_16ms=227 visual_dropped=0
+health phase=COMBINED callbacks=1290 overruns=3 near=5 hold_max_ms=0.280676 hold_over=0 wait_max_ms=6.804
+Mandala frames=29 mean=63.311ms max=92.034ms shed=1
+Mandala renderer: software, 768x480, 1558 instances, 97304 bytes model
+trial=FROZEN_PEDAL callbacks=1309 mean_us=5180.744 p50_us=4987.753 p95_us=6165.850 p99_us=9146.538 max_us=16582.411 deadline_misses=9 gaps_over_16ms=86 visual_dropped=0
+health phase=FROZEN_PEDAL callbacks=1309 overruns=9 near=2 hold_max_ms=0.235178 hold_over=0 wait_max_ms=10.211
+Mandala frames=1 mean=29.652ms max=29.652ms shed=0
+Mandala renderer: software, 768x480, 1558 instances, 97304 bytes model
+Mandala frames=38 mean=65.566ms max=95.302ms shed=2
+Mandala renderer: software, 768x480, 1558 instances, 97304 bytes model
+Mandala frames=39 mean=63.192ms max=92.022ms shed=2
+Mandala renderer: software, 768x480, 1558 instances, 97304 bytes model
+Mandala frames=38 mean=62.653ms max=80.866ms shed=2
+Mandala renderer: software, 768x480, 1558 instances, 97304 bytes model
+trial=COMBINED_REPEAT callbacks=1296 mean_us=5318.644 p50_us=5080.451 p95_us=7041.508 p99_us=8228.273 max_us=14967.548 deadline_misses=1 gaps_over_16ms=167 visual_dropped=0
+health phase=COMBINED_REPEAT callbacks=1297 overruns=1 near=2 hold_max_ms=0.173017 hold_over=0 wait_max_ms=8.117
+Mandala frames=29 mean=64.348ms max=76.026ms shed=1
+trial=BASELINE_REPEAT callbacks=1301 mean_us=5264.621 p50_us=5031.739 p95_us=6294.130 p99_us=8766.716 max_us=21690.804 deadline_misses=10 gaps_over_16ms=109 visual_dropped=0
+health phase=BASELINE_REPEAT callbacks=1301 overruns=10 near=0 hold_max_ms=0.000000 hold_over=0 wait_max_ms=0.000
+
+RUN 48voices
+Could not load external Fast Tracks logo. Using embedded FT2 logo.
+interaction fixture: slots=20 Mosaic=48 ARP=3 Tracker=4 Prism=8 rate=48000 buffer=512 channels=4 seconds/phase=20
+trial=BASELINE callbacks=1221 mean_us=6266.799 p50_us=6021.075 p95_us=7961.993 p99_us=9848.319 max_us=15552.715 deadline_misses=8 gaps_over_16ms=758 visual_dropped=0
+health phase=BASELINE callbacks=1221 overruns=8 near=9 hold_max_ms=0.000000 hold_over=0 wait_max_ms=0.000
+trial=PEDAL_ONLY callbacks=1219 mean_us=6289.097 p50_us=6032.812 p95_us=8090.052 p99_us=10581.035 max_us=21756.551 deadline_misses=11 gaps_over_16ms=762 visual_dropped=0
+health phase=PEDAL_ONLY callbacks=1220 overruns=11 near=15 hold_max_ms=0.470958 hold_over=0 wait_max_ms=11.006
+Mandala renderer: software, 768x480, 1558 instances, 97304 bytes model
+trial=VISUAL_STEADY callbacks=1229 mean_us=6151.962 p50_us=5809.712 p95_us=7837.308 p99_us=10262.788 max_us=14375.740 deadline_misses=7 gaps_over_16ms=540 visual_dropped=0
+health phase=VISUAL_STEADY callbacks=1230 overruns=7 near=10 hold_max_ms=0.000000 hold_over=0 wait_max_ms=0.000
+Mandala frames=174 mean=60.021ms max=82.715ms shed=2
+Mandala renderer: software, 768x480, 1558 instances, 97304 bytes model
+Mandala frames=39 mean=63.539ms max=76.647ms shed=2
+Mandala renderer: software, 768x480, 1558 instances, 97304 bytes model
+Mandala frames=39 mean=60.890ms max=74.635ms shed=2
+Mandala renderer: software, 768x480, 1558 instances, 97304 bytes model
+Mandala frames=38 mean=66.492ms max=86.171ms shed=2
+Mandala renderer: software, 768x480, 1558 instances, 97304 bytes model
+trial=VISUAL_CYCLES callbacks=1250 mean_us=5883.148 p50_us=5676.215 p95_us=7627.457 p99_us=8566.409 max_us=14584.153 deadline_misses=3 gaps_over_16ms=373 visual_dropped=0
+health phase=VISUAL_CYCLES callbacks=1251 overruns=4 near=2 hold_max_ms=0.000000 hold_over=0 wait_max_ms=0.000
+Mandala frames=29 mean=64.874ms max=80.434ms shed=1
+Mandala renderer: software, 768x480, 1558 instances, 97304 bytes model
+Mandala frames=39 mean=63.189ms max=84.421ms shed=2
+Mandala renderer: software, 768x480, 1558 instances, 97304 bytes model
+Mandala frames=38 mean=65.927ms max=81.366ms shed=2
+Mandala renderer: software, 768x480, 1558 instances, 97304 bytes model
+Mandala frames=38 mean=65.001ms max=80.837ms shed=2
+Mandala renderer: software, 768x480, 1558 instances, 97304 bytes model
+trial=COMBINED callbacks=1239 mean_us=6028.361 p50_us=5757.015 p95_us=7817.518 p99_us=8098.425 max_us=13351.092 deadline_misses=1 gaps_over_16ms=464 visual_dropped=0
+health phase=COMBINED callbacks=1240 overruns=1 near=4 hold_max_ms=1.688272 hold_over=0 wait_max_ms=8.460
+Mandala frames=30 mean=61.224ms max=70.709ms shed=1
+Mandala renderer: software, 768x480, 1558 instances, 97304 bytes model
+trial=FROZEN_PEDAL callbacks=1243 mean_us=5979.368 p50_us=5784.515 p95_us=7212.912 p99_us=9419.653 max_us=27521.547 deadline_misses=8 gaps_over_16ms=484 visual_dropped=0
+health phase=FROZEN_PEDAL callbacks=1243 overruns=8 near=2 hold_max_ms=0.245394 hold_over=0 wait_max_ms=20.872
+Mandala frames=1 mean=30.337ms max=30.337ms shed=0
+Mandala renderer: software, 768x480, 1558 instances, 97304 bytes model
+Mandala frames=39 mean=63.135ms max=80.647ms shed=2
+Mandala renderer: software, 768x480, 1558 instances, 97304 bytes model
+Mandala frames=39 mean=61.412ms max=74.943ms shed=2
+Mandala renderer: software, 768x480, 1558 instances, 97304 bytes model
+Mandala frames=38 mean=66.406ms max=82.110ms shed=2
+Mandala renderer: software, 768x480, 1558 instances, 97304 bytes model
+trial=COMBINED_REPEAT callbacks=1227 mean_us=6185.250 p50_us=5885.634 p95_us=7809.717 p99_us=9581.674 max_us=21741.084 deadline_misses=3 gaps_over_16ms=603 visual_dropped=0
+health phase=COMBINED_REPEAT callbacks=1227 overruns=3 near=9 hold_max_ms=0.424990 hold_over=0 wait_max_ms=7.700
+Mandala frames=27 mean=68.756ms max=101.621ms shed=1
+trial=BASELINE_REPEAT callbacks=1252 mean_us=5866.572 p50_us=5710.555 p95_us=6791.879 p99_us=8623.593 max_us=17309.369 deadline_misses=2 gaps_over_16ms=415 visual_dropped=0
+health phase=BASELINE_REPEAT callbacks=1252 overruns=2 near=1 hold_max_ms=0.000000 hold_over=0 wait_max_ms=0.000
+interaction transports: embedded TrackSister, Mosaic and ARP still running

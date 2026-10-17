@@ -21,6 +21,7 @@ static TsSamplePages pages;
 static char error[160];
 static float out[512*4];
 static double timings[200000],arrivals[200000];
+static Uint64 callback_starts[200000];
 static atomic_uint timing_count;
 static Uint64 last_start;
 static unsigned input_phase;
@@ -44,6 +45,7 @@ static void measured_callback(void *unused,Uint8 *output,int bytes)
         double frequency=(double)SDL_GetPerformanceFrequency();
         timings[index]=(SDL_GetPerformanceCounter()-start)*1e6/frequency;
         arrivals[index]=last_start?(start-last_start)*1e6/frequency:0;
+        callback_starts[index]=start;
         atomic_store_explicit(&timing_count,index+1,memory_order_release);
     }
     last_start=start;
@@ -307,6 +309,7 @@ static void editor_checks(SDL_Window *window)
     m_destroy(m);free(m);
     puts("editor presets, custom RGB/hex, shapes, undo/revert, project replacement and bounded renderer: PASS");
 }
+#include "mandala_interaction_fixture.inc"
 int main(int argc,char **argv)
 {
     SDL_setenv("SDL_VIDEODRIVER","dummy",1);SDL_setenv("SDL_AUDIODRIVER","dummy",1);
@@ -314,7 +317,10 @@ int main(int argc,char **argv)
     assert(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_AUDIO|SDL_INIT_TIMER));
     SDL_Window *window=SDL_CreateWindow("Mandala host fixture",0,0,640,400,0);assert(window);
     setup(window);
-    if(argc>2 && !strcmp(argv[1],"--editor-capture")) {
+    if(argc>2 && !strcmp(argv[1],"--interact")) {
+        interaction_run(argv[2],argc>3?(unsigned)atoi(argv[3]):20,
+            argc>4?atoi(argv[4]):10,argc>5?atoi(argv[5]):1);
+    } else if(argc>2 && !strcmp(argv[1],"--editor-capture")) {
         a.sister.mandala.palette=4;a.sister.mandala.shape=1;
         mandala_editor_show(&u,&a.sister.mandala);mandala_editor_update(&a.sister.mandala);
         SDL_Surface *surface=SDL_CreateRGBSurfaceFrom(mandala_editor.pixels,MW_W,MW_H,32,MW_W*4,0xff0000,0xff00,0xff,0);
