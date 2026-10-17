@@ -94,6 +94,9 @@ Additional checks exercise:
   with two accepted project destinations (Save As).
 - Copy failure preserving the prior snapshot and leaving live recording enabled.
 - Project exports surviving recovery-directory pruning; unsaved-project fallback.
+- Earlier session files surviving complete project-bundle replacement, including
+  consecutive saves while an earlier export can still be pending. The writer
+  continues draining events while a project save defers export copying.
 - Ordinary saves preserving clipboard content, explicit Save Session copying its
   path, and completion arriving before the next UI poll.
 
@@ -108,3 +111,9 @@ the 2.6-second control hold is attributed to `load_instrument`. The short idle
 profile peaks below its buffer deadline while the routed effects continue running.
 These observations do not establish or exclude a visualizer/driver scheduling
 cause for the remaining clicks.
+
+The bundle-preservation follow-up also passed the dedicated sample-pages,
+recorder, New/project-save integration and Audio Health suites, a rebuilt Release
+application, and the targeted recorder sanitizer check. Save transactions move
+the old `logs` entry into the staged bundle and restore it on publication failure;
+if rollback itself fails, staging/backup are retained instead of deleting history.

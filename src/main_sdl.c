@@ -8879,9 +8879,13 @@ static void run_pending_file_operation(SDL_AudioDeviceID device,
         sister_state.keyboard_sequence = ts_keyboard_sequence_export(&audio->keyboard_sequence);
         if(device)SDL_UnlockAudioDevice(device);
         ok=ts_tapehead_export(&sample_pages->tracker,error,sizeof(error));
-        if(ok)ok = ts_sample_pages_save_project(sample_pages, active_sample, record_bank,
-                                          &sister_state, pending->path,
-                                          error, sizeof(error));
+        if(ok) {
+            ts_session_log_project_save_begin();
+            ok = ts_sample_pages_save_project(sample_pages, active_sample, record_bank,
+                                             &sister_state, pending->path,
+                                             error, sizeof(error));
+            ts_session_log_project_save_end();
+        }
         if (ok) {
             ui->saved_state_hash = paged_project_state_hash(
                 sample_pages, active_sample, record_bank, &audio->sister, &audio->keyboard_sequence);

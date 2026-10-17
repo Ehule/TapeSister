@@ -145,8 +145,14 @@ int main(int argc,char **argv)
     char *other_directory=SDL_GetPrefPath("TapeSisterTests","Session Save As");assert(other_directory);
     char other[2048];snprintf(other,sizeof(other),"%sOther.tsr",other_directory);
     assert(ts_session_log_export_destination(other,other_saved,sizeof(other_saved)));
+    ts_session_log_project_save_begin();
+    uint64_t before_save_bytes=status().bytes;
     assert(ts_session_log_export_project(project,0));
     assert(ts_session_log_export_project(other,0));
+    assert(ts_session_log_text("during_project_save","writer must continue draining while export is deferred"));
+    for(int i=0;i<500 && status().bytes==before_save_bytes;++i)SDL_Delay(10);
+    assert(status().bytes>before_save_bytes && status().export_result==1);
+    ts_session_log_project_save_end();
     ts_session_log_stop();assert(status().export_result==2 && status().export_serial==4);
     text=read_log(project_saved);assert(strstr(text,"after_project_save"));free(text);
     text=read_log(other_saved);assert(strstr(text,"after_project_save"));free(text);

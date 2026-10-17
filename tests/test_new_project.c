@@ -163,6 +163,12 @@ int main(int argc,char **argv)
     begin_new_confirmation(&session);ui.exit_choice=0;exit_confirmation_activate(&ui);
     run_save("new-project-flow.tsr");
     assert(ui.exit_after_save==2 && ui.exit_for_new && !ui.new_project_pending);
+    for(int i=0;i<500;++i){ts_session_log_status(&log);if(log.export_result!=1)break;SDL_Delay(10);}
+    assert(log.export_result==2);
+    FILE *previous_log=fopen("new-project-flow/logs/previous-session.saved.jsonl","wb");assert(previous_log);
+    fputs("preserve older session\n",previous_log);fclose(previous_log);
+    run_save("new-project-flow.tsr"); /* Complete bundle replacement keeps logs. */
+    run_save("new-project-flow.tsr"); /* A prior export can still be in flight. */
     static TsSamplePages saved;static TsInstrument saved_bank,saved_record;
     assert(ts_sample_pages_init(&saved,error,sizeof(error)));
     ts_instrument_init(&saved_bank);ts_instrument_init(&saved_record);
@@ -175,6 +181,9 @@ int main(int argc,char **argv)
     ts_session_log_stop();ts_session_log_status(&log);assert(log.export_result==2);
     assert(!strncmp(log.export_path,"new-project-flow/logs/health-session-",36));
     SDL_RWops *session_history=SDL_RWFromFile(log.export_path,"rb");assert(session_history);SDL_RWclose(session_history);
+    previous_log=fopen("new-project-flow/logs/previous-session.saved.jsonl","rb");assert(previous_log);
+    char previous_text[40];assert(fgets(previous_text,sizeof(previous_text),previous_log));fclose(previous_log);
+    assert(!strcmp(previous_text,"preserve older session\n"));remove("new-project-flow/logs/previous-session.saved.jsonl");
     remove(log.path);remove(log.export_path);
 
     /* Cancel and join a late decode; its result cannot cross the reset. */

@@ -35,6 +35,10 @@ int ts_session_log_export(void); /* Background snapshot; existing saved copy rep
 int ts_session_log_export_project(const char *project_path, int copy_path);
 /* Pure path calculation, no filesystem access; also used by LOG FOLDER. */
 int ts_session_log_export_destination(const char *project_path, char *path, size_t size);
+/* UI thread, outside audio exclusion: serialize bundle replacement with exports.
+   The writer keeps recording while a project save owns this filesystem guard. */
+void ts_session_log_project_save_begin(void);
+void ts_session_log_project_save_end(void);
 /* One serialized output callback producer. Fixed packet, lock-free SPSC queue;
    no clock calls, allocation, formatting, OS services, locks or retry loops. */
 void ts_session_log_audio(uint64_t started, uint64_t elapsed,

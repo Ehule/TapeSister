@@ -36,6 +36,7 @@ static struct {
     /* Only export requests/status use this mutex. Never held for disk work and
        never touched by audio or control-event producers. */
     SDL_mutex *export_mutex;
+    SDL_mutex *export_files; /* Project bundle replacement versus export copying. */
     ExportRequest exports[EXPORT_CAP];
     unsigned export_read, export_write, export_serial;
     int export_result, export_copy_path;
@@ -364,10 +365,11 @@ static int writer(void *unused)
             request=log_state.exports[log_state.export_read%EXPORT_CAP];have_export=1;
         }
         SDL_UnlockMutex(log_state.export_mutex);
-        if(have_export) {
+        if(have_export && SDL_TryLockMutex(log_state.export_files)==0) {
             window_record(file,&window);
             record(file,now,"export_boundary","\"detail\":\"Snapshot ends here; live session continues\"");
             int result=copy_saved(&file,request.path)?2:3;last_flush=now;
+            SDL_UnlockMutex(log_state.export_files);
             SDL_LockMutex(log_state.export_mutex);
             log_state.export_result=result;log_state.export_copy_path=request.copy_path;
             snprintf(log_state.saved,sizeof(log_state.saved),"%s",request.path);
@@ -400,12 +402,14 @@ int ts_session_log_start(const char *directory,uint64_t limit)
     atomic_store(&log_state.read,0);atomic_store(&log_state.write,0);atomic_store(&log_state.epoch,0);
     atomic_store(&log_state.audio_lost,0);atomic_store(&log_state.event_lost,0);atomic_store(&log_state.bytes,0);
     if(log_state.export_mutex)SDL_DestroyMutex(log_state.export_mutex);
+    if(log_state.export_files)SDL_DestroyMutex(log_state.export_files);
     log_state.export_mutex=SDL_CreateMutex();
+    log_state.export_files=SDL_CreateMutex();
     log_state.export_read=log_state.export_write=log_state.export_serial=0;
     log_state.export_result=log_state.export_copy_path=0;
     atomic_flag_clear(&log_state.gate);log_state.event_read=log_state.event_write=0;log_state.audio_serial=0;
     log_state.path[0]=log_state.saved[0]=0;
-    if(!log_state.export_mutex || !atomic_is_lock_free(&log_state.state) || !atomic_is_lock_free(&log_state.read) || !atomic_is_lock_free(&log_state.write) ||
+    if(!log_state.export_mutex || !log_state.export_files || !atomic_is_lock_free(&log_state.state) || !atomic_is_lock_free(&log_state.read) || !atomic_is_lock_free(&log_state.write) ||
        !atomic_is_lock_free(&log_state.audio_lost) || !atomic_is_lock_free(&log_state.epoch)) {
         atomic_store(&log_state.state,TS_SESSION_ERROR);return 0;
     }
@@ -427,6 +431,10 @@ int ts_session_log_start(const char *directory,uint64_t limit)
 }
 int ts_session_log_export(void)
 { return ts_session_log_export_project(NULL,1); }
+void ts_session_log_project_save_begin(void)
+{ if(log_state.export_files)SDL_LockMutex(log_state.export_files); }
+void ts_session_log_project_save_end(void)
+{ if(log_state.export_files)SDL_UnlockMutex(log_state.export_files); }
 int ts_session_log_export_destination(const char *project_path,char *path,size_t size)
 {
     if(!path || !size)return 0;

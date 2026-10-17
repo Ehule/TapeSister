@@ -101,6 +101,10 @@ snapshot and reports failure in Health and the main status line; it does not und
 a successful project save. Up to eight exports can queue, including Save As while
 an earlier copy is running. Save-and-Exit drains accepted exports before shutdown.
 The export/status mutex never participates in the audio callback or event enqueue.
+Project saves carry the existing `logs` entry into the replacement bundle, so
+earlier sessions survive repeated saves. A separate filesystem guard coordinates
+project replacement with exports; the recorder continues draining events while
+export copying waits for the project save to finish. Audio never takes this guard.
 
 This is diagnostic instrumentation, not a guarantee that every audible artifact
 has a timing fault or that logging has literally zero cost. Its overhead is
