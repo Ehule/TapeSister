@@ -19,18 +19,26 @@
 #include <unistd.h>
 #include <signal.h>
 #include <sys/resource.h>
+#include <sys/stat.h>
 #endif
 
-enum { AUDIO_CAP=8192, EVENT_CAP=32, TEXT_CAP=32768, PATH_CAP=2048 };
+enum { AUDIO_CAP=8192, EVENT_CAP=32, EXPORT_CAP=8, TEXT_CAP=32768, PATH_CAP=2048 };
 typedef struct { uint64_t start, elapsed, serial; uint32_t rate, frames, config, epoch; } AudioPacket;
 typedef struct { uint64_t at; unsigned length; char type[40], text[TEXT_CAP]; } EventPacket;
+typedef struct { char path[PATH_CAP]; int copy_path; } ExportRequest;
 static struct {
-    atomic_uint state, stop, read, write, epoch, audio_lost, event_lost, export_request, export_result;
+    atomic_uint state, stop, read, write, epoch, audio_lost, event_lost;
     atomic_uint_least64_t bytes;
     atomic_flag gate;
     unsigned event_read, event_write;
     AudioPacket audio[AUDIO_CAP]; EventPacket events[EVENT_CAP];
     SDL_Thread *thread;
+    /* Only export requests/status use this mutex. Never held for disk work and
+       never touched by audio or control-event producers. */
+    SDL_mutex *export_mutex;
+    ExportRequest exports[EXPORT_CAP];
+    unsigned export_read, export_write, export_serial;
+    int export_result, export_copy_path;
     uint64_t origin, frequency, limit, audio_serial; /* serial: callback-owned */
     char path[PATH_CAP], saved[PATH_CAP], directory[PATH_CAP-300];
 } log_state = { .gate=ATOMIC_FLAG_INIT };
@@ -43,9 +51,14 @@ const char *ts_session_log_state_name(int s)
 { static const char *names[]={"OFF","STARTING","RECORDING","FULL","WRITE ERROR","STOPPED"};return s>=0 && s<6?names[s]:"UNKNOWN"; }
 void ts_session_log_status(TsSessionLogStatus *s)
 {
-    s->state=atomic_load(&log_state.state);s->export_result=atomic_load(&log_state.export_result);
+    s->state=atomic_load(&log_state.state);
     s->dropped_audio=atomic_load(&log_state.audio_lost);s->dropped_events=atomic_load(&log_state.event_lost);
-    s->bytes=atomic_load(&log_state.bytes);s->path=log_state.path;s->export_path=log_state.saved;
+    s->bytes=atomic_load(&log_state.bytes);s->path=log_state.path;
+    if(log_state.export_mutex)SDL_LockMutex(log_state.export_mutex);
+    s->export_result=log_state.export_write!=log_state.export_read?1:log_state.export_result;
+    s->export_serial=log_state.export_serial;s->export_copy_path=log_state.export_copy_path;
+    snprintf(s->export_path,sizeof(s->export_path),"%s",log_state.saved);
+    if(log_state.export_mutex)SDL_UnlockMutex(log_state.export_mutex);
 }
 static int event_at(uint64_t at,const char *type,const char *text)
 {
@@ -189,7 +202,7 @@ static void text_record(SDL_RWops *file,const EventPacket *p)
 }
 
 typedef struct {
-    uint64_t count,frames,ticks,peak,over,near,gaps,first,last;
+    uint64_t count,frames,ticks,peak,over,near_budget,gaps,first,last;
     uint32_t rate,buffer,epoch;
 } Window;
 static void window_record(SDL_RWops *file,Window *w)
@@ -200,7 +213,7 @@ static void window_record(SDL_RWops *file,Window *w)
         milliseconds(w->first),(unsigned long long)w->count,(unsigned long long)w->frames,w->rate,w->buffer,w->epoch,
         w->ticks*1000.0/log_state.frequency/w->count,w->peak*1000.0/log_state.frequency,
         w->frames?w->ticks*100.0/log_state.frequency*w->rate/w->frames:0,
-        (unsigned long long)w->over,(unsigned long long)w->near,(unsigned long long)w->gaps);
+        (unsigned long long)w->over,(unsigned long long)w->near_budget,(unsigned long long)w->gaps);
     record(file,w->last,"audio_window",fields);memset(w,0,sizeof(*w));
 }
 static void audio_record(SDL_RWops *file,const AudioPacket *p,AudioPacket *previous,Window *w)
@@ -216,7 +229,7 @@ static void audio_record(SDL_RWops *file,const AudioPacket *p,AudioPacket *previ
     }
     ++w->count;w->frames+=p->frames;w->ticks+=p->elapsed;w->last=p->start;
     if(p->elapsed>w->peak)w->peak=p->elapsed;
-    if(elapsed>=budget)++w->over;else if(elapsed>=budget*.9)++w->near;
+    if(elapsed>=budget)++w->over;else if(elapsed>=budget*.9)++w->near_budget;
     if(elapsed>=budget*.9 || gap>0) {
         char fields[512];snprintf(fields,sizeof(fields),"\"duration_ms\":%.6f,\"budget_ms\":%.6f,\"extra_start_gap_ms\":%.6f,\"over_budget\":%s,\"rate\":%u,\"buffer\":%u,\"configuration\":%u,\"epoch\":%u",
             elapsed*1000,budget*1000,gap*1000,elapsed>=budget?"true":"false",p->rate,p->frames,p->config,p->epoch);
@@ -255,28 +268,69 @@ static void system_record(SDL_RWops *file,uint64_t at)
         process,system,(unsigned long long)rss,(unsigned long long)available,atomic_load(&log_state.audio_lost),atomic_load(&log_state.event_lost));
     record(file,at,"system",fields);last_cpu=cpu;last_at=at;last_total=total;last_idle=idle;
 }
-static int copy_saved(SDL_RWops **file)
+static int make_export_directory(const char *path)
+{
+    char directory[PATH_CAP];snprintf(directory,sizeof(directory),"%s",path);
+    char *end=NULL;for(char *s=directory;*s;++s)if(*s=='/' || *s=='\\')end=s;
+    if(!end)return 0;
+    if(end==directory || (end==directory+2 && directory[1]==':'))end[1]=0;
+    else *end=0;
+#ifdef _WIN32
+    WCHAR wide[PATH_CAP];if(!MultiByteToWideChar(CP_UTF8,0,directory,-1,wide,PATH_CAP))return 0;
+    if(CreateDirectoryW(wide,NULL))return 1;
+    DWORD attributes=GetFileAttributesW(wide);
+    return attributes!=INVALID_FILE_ATTRIBUTES && (attributes&FILE_ATTRIBUTE_DIRECTORY)!=0;
+#else
+    if(!mkdir(directory,0775))return 1;
+    struct stat info;return !stat(directory,&info) && S_ISDIR(info.st_mode);
+#endif
+}
+static int replace_utf8(const char *temporary,const char *destination)
+{
+#ifdef _WIN32
+    WCHAR from[PATH_CAP],to[PATH_CAP];
+    return MultiByteToWideChar(CP_UTF8,0,temporary,-1,from,PATH_CAP) &&
+        MultiByteToWideChar(CP_UTF8,0,destination,-1,to,PATH_CAP) &&
+        MoveFileExW(from,to,MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH);
+#else
+    return rename(temporary,destination)==0;
+#endif
+}
+static int copy_saved(SDL_RWops **file,const char *destination)
 {
     /* Close flushes SDL stdio before opening the snapshot. Writer is the only
        file owner; audio keeps using its queue while this copy runs. */
     if(*file){if(SDL_RWclose(*file)){*file=NULL;atomic_store(&log_state.state,TS_SESSION_ERROR);return 0;}*file=NULL;}
-    SDL_RWops *in=SDL_RWFromFile(log_state.path,"rb"),*out=NULL;int ok=in!=NULL;
-    if(ok){out=SDL_RWFromFile(log_state.saved,"wb");ok=out!=NULL;}
+    char temporary[PATH_CAP];int n=snprintf(temporary,sizeof(temporary),"%s.tmp",destination);
+    int ok=n>0 && n<(int)sizeof(temporary) && make_export_directory(destination);
+    SDL_RWops *in=ok?SDL_RWFromFile(log_state.path,"rb"):NULL,*out=NULL;ok=ok && in!=NULL;
+    if(ok){out=SDL_RWFromFile(temporary,"wb");ok=out!=NULL;}
     if(ok){char bytes[16384];Sint64 remaining=SDL_RWsize(in);if(remaining<0)ok=0;
         while(ok && remaining>0){size_t n=remaining>(Sint64)sizeof(bytes)?sizeof(bytes):(size_t)remaining;
             if(SDL_RWread(in,bytes,1,n)!=n || SDL_RWwrite(out,bytes,1,n)!=n)ok=0;
             remaining-=(Sint64)n;}}
     if(in)SDL_RWclose(in);
     if(out && SDL_RWclose(out))ok=0;
+    if(ok)ok=replace_utf8(temporary,destination);
+    if(!ok && out)remove_utf8(temporary);
     *file=SDL_RWFromFile(log_state.path,"ab");if(!*file)atomic_store(&log_state.state,TS_SESSION_ERROR);
-    if(!ok)remove_utf8(log_state.saved);
     return ok;
 }
 static int writer(void *unused)
 {
     (void)unused;SDL_SetThreadPriority(SDL_THREAD_PRIORITY_LOW);prune_logs();
     SDL_RWops *file=SDL_RWFromFile(log_state.path,"wb");
-    if(!file){atomic_store(&log_state.state,TS_SESSION_ERROR);return 0;}
+    if(!file){
+        atomic_store(&log_state.state,TS_SESSION_ERROR);
+        SDL_LockMutex(log_state.export_mutex);
+        if(log_state.export_write!=log_state.export_read) {
+            ExportRequest *request=&log_state.exports[(log_state.export_write-1)%EXPORT_CAP];
+            snprintf(log_state.saved,sizeof(log_state.saved),"%s",request->path);
+            log_state.export_copy_path=request->copy_path;log_state.export_result=3;
+            log_state.export_read=log_state.export_write;++log_state.export_serial;
+        }
+        SDL_UnlockMutex(log_state.export_mutex);return 0;
+    }
     atomic_store(&log_state.state,TS_SESSION_RECORDING);
     EventPacket header={0};header.at=log_state.origin;snprintf(header.type,sizeof(header.type),"session_start");
     header.length=(unsigned)snprintf(header.text,sizeof(header.text),"TapeSister %s (%s %s); schema=1; platform=%s; CPUs=%d; RAM_MB=%d; monotonic_frequency=%llu; UTC start encoded in filename; cap_bytes=%llu; timing observations are not proof of audible dropouts; -1 system metrics mean unavailable; record order may differ from event time; no audio samples recorded",
@@ -304,12 +358,27 @@ static int writer(void *unused)
         uint64_t now=SDL_GetPerformanceCounter();
         if(window.count && now>=window.first && now-window.first>=log_state.frequency)window_record(file,&window);
         if(!last_system || now-last_system>=log_state.frequency){system_record(file,now);last_system=now;}
-        if(atomic_exchange(&log_state.export_request,0)) {
+        ExportRequest request;int have_export=0;
+        SDL_LockMutex(log_state.export_mutex);
+        if(log_state.export_read!=log_state.export_write) {
+            request=log_state.exports[log_state.export_read%EXPORT_CAP];have_export=1;
+        }
+        SDL_UnlockMutex(log_state.export_mutex);
+        if(have_export) {
             window_record(file,&window);
             record(file,now,"export_boundary","\"detail\":\"Snapshot ends here; live session continues\"");
-            atomic_store(&log_state.export_result,copy_saved(&file)?2:3);last_flush=now;
+            int result=copy_saved(&file,request.path)?2:3;last_flush=now;
+            SDL_LockMutex(log_state.export_mutex);
+            log_state.export_result=result;log_state.export_copy_path=request.copy_path;
+            snprintf(log_state.saved,sizeof(log_state.saved),"%s",request.path);
+            ++log_state.export_read;++log_state.export_serial;
+            SDL_UnlockMutex(log_state.export_mutex);
         }
-        if(atomic_load(&log_state.stop))break;
+        /* An immediate Save-and-Exit must finish every accepted export. */
+        SDL_LockMutex(log_state.export_mutex);
+        int pending_exports=log_state.export_read!=log_state.export_write;
+        SDL_UnlockMutex(log_state.export_mutex);
+        if(atomic_load(&log_state.stop) && !pending_exports)break;
         /* Flush at least once a second for recovery after a crash. */
         if(file && now-last_flush>=log_state.frequency) {
             int failed=SDL_RWclose(file);file=SDL_RWFromFile(log_state.path,"ab");
@@ -330,10 +399,13 @@ int ts_session_log_start(const char *directory,uint64_t limit)
     atomic_store(&log_state.state,TS_SESSION_OFF);atomic_store(&log_state.stop,0);
     atomic_store(&log_state.read,0);atomic_store(&log_state.write,0);atomic_store(&log_state.epoch,0);
     atomic_store(&log_state.audio_lost,0);atomic_store(&log_state.event_lost,0);atomic_store(&log_state.bytes,0);
-    atomic_store(&log_state.export_request,0);atomic_store(&log_state.export_result,0);
+    if(log_state.export_mutex)SDL_DestroyMutex(log_state.export_mutex);
+    log_state.export_mutex=SDL_CreateMutex();
+    log_state.export_read=log_state.export_write=log_state.export_serial=0;
+    log_state.export_result=log_state.export_copy_path=0;
     atomic_flag_clear(&log_state.gate);log_state.event_read=log_state.event_write=0;log_state.audio_serial=0;
     log_state.path[0]=log_state.saved[0]=0;
-    if(!atomic_is_lock_free(&log_state.state) || !atomic_is_lock_free(&log_state.read) || !atomic_is_lock_free(&log_state.write) ||
+    if(!log_state.export_mutex || !atomic_is_lock_free(&log_state.state) || !atomic_is_lock_free(&log_state.read) || !atomic_is_lock_free(&log_state.write) ||
        !atomic_is_lock_free(&log_state.audio_lost) || !atomic_is_lock_free(&log_state.epoch)) {
         atomic_store(&log_state.state,TS_SESSION_ERROR);return 0;
     }
@@ -350,15 +422,40 @@ int ts_session_log_start(const char *directory,uint64_t limit)
 #endif
     char date[32];strftime(date,sizeof(date),"%Y%m%d-%H%M%S",&utc);
     snprintf(log_state.path,sizeof(log_state.path),"%s/health-session-%s-%u-%llu.jsonl",log_state.directory,date,process_id(),(unsigned long long)log_state.origin);
-    snprintf(log_state.saved,sizeof(log_state.saved),"%.*s.saved.jsonl",(int)strlen(log_state.path)-6,log_state.path);
     atomic_store(&log_state.state,TS_SESSION_STARTING);log_state.thread=SDL_CreateThread(writer,"session health log",NULL);
     if(!log_state.thread){atomic_store(&log_state.state,TS_SESSION_ERROR);return 0;}return 1;
 }
 int ts_session_log_export(void)
+{ return ts_session_log_export_project(NULL,1); }
+int ts_session_log_export_destination(const char *project_path,char *path,size_t size)
 {
+    if(!path || !size)return 0;
+    path[0]=0;if(!*log_state.path)return 0;
+    int n;
+    if(!project_path || !*project_path)
+        n=snprintf(path,size,"%.*s.saved.jsonl",(int)strlen(log_state.path)-6,log_state.path);
+    else {
+        size_t end=0;
+        for(size_t i=0;project_path[i];++i)if(project_path[i]=='/' || project_path[i]=='\\')end=i+1;
+        if(!project_path[end] || end>=PATH_CAP)return 0;
+        const char *name=log_state.path;
+        for(const char *s=name;*s;++s)if(*s=='/' || *s=='\\')name=s+1;
+        n=snprintf(path,size,"%.*slogs/%.*s.saved.jsonl",end?(int)end:2,end?project_path:"./",(int)strlen(name)-6,name);
+    }
+    if(n<0 || (size_t)n>=size || n>=PATH_CAP-4){path[0]=0;return 0;}
+    return 1;
+}
+int ts_session_log_export_project(const char *project_path,int copy_path)
+{
+    ExportRequest request={.copy_path=copy_path};
     int state=atomic_load(&log_state.state);
-    if(!log_state.thread || state==TS_SESSION_ERROR || state==TS_SESSION_OFF || atomic_load(&log_state.export_result)==1)return 0;
-    atomic_store(&log_state.export_result,1);atomic_store(&log_state.export_request,1);return 1;
+    if(!log_state.thread || state==TS_SESSION_ERROR || state==TS_SESSION_OFF || atomic_load(&log_state.stop) ||
+       !ts_session_log_export_destination(project_path,request.path,sizeof(request.path)))return 0;
+    SDL_LockMutex(log_state.export_mutex);
+    int accepted=atomic_load(&log_state.state)!=TS_SESSION_ERROR && log_state.export_write-log_state.export_read<EXPORT_CAP;
+    if(accepted)log_state.exports[log_state.export_write++%EXPORT_CAP]=request;
+    SDL_UnlockMutex(log_state.export_mutex);
+    return accepted;
 }
 void ts_session_log_stop(void)
 {

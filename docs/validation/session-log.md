@@ -70,3 +70,41 @@ The recorded run used the final recording/event algorithm. Subsequent changes
 made the manual-marker acknowledgement reflect queue acceptance and moved its
 shortcut ahead of auxiliary-window input handlers; the targeted window/recorder
 checks were repeated after those changes.
+
+## Project log location and Windows build follow-up
+
+The native workflow for `5767ae5` passed on Linux but failed to compile on Windows:
+the Windows SDK defines `near` as a macro, conflicting with the recorder's window
+counter. Renamed that member to `near_budget`; the JSON field stays unchanged.
+The user's October 16 21:13:01 build/report predates the recorder (no session
+recorder line or new controls). Its `tapesister-diagnostic.log` contains startup,
+backend and renderer messages, not the new session history.
+
+Successful project saves now queue a snapshot in `logs/` beside the bundled TSR.
+Save As snapshots the new location; manual Save Session follows the current
+project. The recovery timeline continues independently. Copies use a temporary
+file and replacement, and project-side logs are excluded from auto-log pruning.
+
+The Linux Release application and the same seven targeted suites passed again.
+Additional checks exercise:
+
+- UTF-8/space-containing directories, Windows drive/UNC path construction,
+  relative paths and escaped folder URLs.
+- Project save success/failure, New while a copy is queued, and immediate shutdown
+  with two accepted project destinations (Save As).
+- Copy failure preserving the prior snapshot and leaving live recording enabled.
+- Project exports surviving recovery-directory pruning; unsaved-project fallback.
+- Ordinary saves preserving clipboard content, explicit Save Session copying its
+  path, and completion arriving before the next UI poll.
+
+The targeted recorder AddressSanitizer/UndefinedBehaviorSanitizer check passed
+again. A syntax check with the SDK's empty `near`/`far` macros defined also passed;
+this checks the specific collision, not Windows platform execution. Native CI
+must validate the final Windows binary and filesystem branches.
+
+No graphics-quality or DSP changes are included in this follow-up. The new user
+reports retain historical timing maxima and do not timestamp the audible clicks;
+the 2.6-second control hold is attributed to `load_instrument`. The short idle
+profile peaks below its buffer deadline while the routed effects continue running.
+These observations do not establish or exclude a visualizer/driver scheduling
+cause for the remaining clicks.

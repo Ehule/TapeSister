@@ -8932,6 +8932,10 @@ static void run_pending_file_operation(SDL_AudioDeviceID device,
         if (pending->mode == TS_BROWSER_SAVE_RECIPE) {
             snprintf(ui->project_path, sizeof(ui->project_path), "%s",
                      pending->path);
+            ts_session_log_text("project_saved","TSR save succeeded; session snapshot requested beside project");
+            TsSessionLogStatus log;ts_session_log_status(&log);
+            if(log.state!=TS_SESSION_OFF && !ts_session_log_export_project(ui->project_path,0))
+                snprintf(ui->status,sizeof(ui->status),"PROJECT SAVED; SESSION EXPORT UNAVAILABLE - CHECK F12");
             show_overlay(ui, "SAVING", 550u);
         }
         SDL_StopTextInput();
@@ -9045,7 +9049,7 @@ static int ts_audio_health_drawable(void);
 static void ts_audio_health_reset(AudioState *audio);
 static void ts_audio_health_report(AudioState *audio, char *report, size_t size);
 static void ts_audio_health_close(void);
-static void ts_audio_session_update(AudioState *audio,const TsUiState *ui);
+static void ts_audio_session_update(AudioState *audio,TsUiState *ui);
 static int ts_audio_session_shortcut(const SDL_Event *event);
 static void ts_audio_health_capture_setup(const AudioState *audio,
                                          const TsUiState *ui, Uint32 now);

@@ -128,7 +128,7 @@ int main(int argc, char **argv)
         ts_realtime_diagnostics_record_timed(&a->realtime_diagnostics, i * 10000u,
             2500, 1000000, 48000, 480, 0);
     ts_audio_health_update(a, ui);
-    char report[4096]; ts_audio_health_report(a, report, sizeof(report));
+    char report[32768]; ts_audio_health_report(a, report, sizeof(report));
     assert(strstr(report, "48000 Hz, 256 frames, 2 channels"));
     assert(strstr(report, "Build: " TAPESISTER_BUILD_MARKER));
     assert(strstr(report, "Longest hold call site: named_edit_for_health"));
@@ -239,6 +239,14 @@ int main(int argc, char **argv)
         assert(!SDL_SaveBMP(surface, argv[1])); SDL_FreeSurface(surface);
     }
     /* Session recording works with Health hidden; resets retain the timeline. */
+    char folder_url[6160];
+    assert(ts_audio_session_folder_url("C:\\A B\\\xc3\xa9\\logs\\session.jsonl",folder_url,sizeof(folder_url)));
+    assert(!strcmp(folder_url,"file:///C:/A%20B/%C3%A9/logs/"));
+    assert(ts_audio_session_folder_url("\\\\server\\share\\logs\\session.jsonl",folder_url,sizeof(folder_url)));
+    assert(!strcmp(folder_url,"file://server/share/logs/"));
+    assert(ts_audio_session_folder_url("relative/logs/session.jsonl",folder_url,sizeof(folder_url)));
+    assert(!strncmp(folder_url,"file:///",8) && strstr(folder_url,"/relative/logs/"));
+    assert(!ts_audio_session_folder_url("",folder_url,sizeof(folder_url)));
     char *session_dir=SDL_GetPrefPath("TapeSisterTests","Health");assert(session_dir);
     assert(ts_session_log_start(session_dir,0));SDL_free(session_dir);
     ts_health.visible=0;ts_health.setup.valid=0;
@@ -253,6 +261,22 @@ int main(int argc, char **argv)
     TsSessionLogStatus session;
     for(int i=0;i<500;++i){ts_audio_session_update(a,ui);ts_session_log_status(&session);if(session.export_result!=1)break;SDL_Delay(10);}
     assert(session.export_result==2);char *saved_path=SDL_GetClipboardText();assert(!strcmp(saved_path,session.export_path));SDL_free(saved_path);
+    remove(session.export_path);
+    char *project_dir=SDL_GetPrefPath("TapeSisterTests","Health Project");assert(project_dir);
+    snprintf(ui->project_path,sizeof(ui->project_path),"%sShow.tsr",project_dir);SDL_free(project_dir);
+    /* A normal project save must not overwrite the user's clipboard. */
+    assert(!SDL_SetClipboardText("keep my clipboard"));
+    assert(ts_session_log_export_project(ui->project_path,0));
+    for(int i=0;i<500;++i){ts_audio_session_update(a,ui);ts_session_log_status(&session);if(session.export_result!=1)break;SDL_Delay(10);}
+    assert(session.export_result==2 && strstr(session.export_path,"logs/health-session-"));
+    saved_path=SDL_GetClipboardText();assert(!strcmp(saved_path,"keep my clipboard"));SDL_free(saved_path);
+    /* SAVE SESSION follows the active project even after a previous export;
+       completion must be noticed when the writer finishes before UI polling. */
+    assert(ts_audio_health_event(&e,main_window,a,ui));
+    for(int i=0;i<500;++i){ts_session_log_status(&session);if(session.export_result!=1)break;SDL_Delay(10);}
+    ts_audio_session_update(a,ui);
+    saved_path=SDL_GetClipboardText();assert(!strcmp(saved_path,session.export_path));SDL_free(saved_path);
+    ts_audio_health_report(a,report,sizeof(report));assert(strstr(report,"Session export: SAVED"));
     ts_audio_health_reset(a);
     ts_realtime_diagnostics_get(&a->realtime_diagnostics, &s);
     assert(!s.callback_count && !s.control_count && !s.recent_callback_count);

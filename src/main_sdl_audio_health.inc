@@ -331,9 +331,10 @@ static void ts_audio_health_report(AudioState *audio, char *report, size_t size)
     size_t used = strlen(report);
     TsSessionLogStatus session;ts_session_log_status(&session);
     if(used+2<size) {
-        snprintf(report+used,size-used,"Session recorder: %s; bytes: %llu; lost audio records: %u; lost events: %u\nSession file: %s\n",
+        snprintf(report+used,size-used,"Session recorder: %s; bytes: %llu; lost audio records: %u; lost events: %u\nRecovery file: %s\nSession export: %s; last destination: %s\n",
             ts_session_log_state_name(session.state),(unsigned long long)session.bytes,session.dropped_audio,session.dropped_events,
-            *session.path?session.path:"none");
+            *session.path?session.path:"none",session.export_result==1?"PENDING":session.export_result==2?"SAVED":session.export_result==3?"FAILED":"NONE",
+            *session.export_path?session.export_path:"none");
         used=strlen(report);
     }
     if (used + 2 < size) { report[used++] = '\n'; ts_profile_report(report + used, size-used); }
@@ -346,38 +347,63 @@ static void ts_audio_session_marker(void)
     ts_health.message_until=SDL_GetTicks()+2500u;ts_health.last_update=0;
 }
 
-static void ts_audio_session_folder(void)
+static int ts_audio_session_folder_url(const char *path,char *url,size_t size)
 {
-    TsSessionLogStatus s;ts_session_log_status(&s);char url[6144]="file:///";
-    size_t length=strlen(s.path),end=length;while(end && s.path[end-1]!='/' && s.path[end-1]!='\\')--end;
-    size_t n=7; /* POSIX leading slash produces file:///; Windows needs one extra slash. */
+    char absolute[2048];
+    if(!path || !*path || size<9)return 0;
 #ifdef _WIN32
-    n=8;
+    WCHAR input[2048],full[2048];
+    if(!MultiByteToWideChar(CP_UTF8,0,path,-1,input,2048))return 0;
+    DWORD length=GetFullPathNameW(input,2048,full,NULL);
+    if(!length || length>=2048 || !WideCharToMultiByte(CP_UTF8,0,full,-1,absolute,sizeof(absolute),NULL,NULL))return 0;
+#else
+    if(path[0]!='/' && path[0]!='\\' && !(isalpha((unsigned char)path[0]) && path[1]==':')) {
+        char cwd[2048];if(!getcwd(cwd,sizeof(cwd)))return 0;
+        int length=snprintf(absolute,sizeof(absolute),"%s/%s",cwd,path);
+        if(length<0 || length>=(int)sizeof(absolute))return 0;
+    } else {
+        if(strlen(path)>=sizeof(absolute))return 0;
+        snprintf(absolute,sizeof(absolute),"%s",path);
+    }
 #endif
-    for(size_t i=0;i<end && n+4<sizeof(url);++i) {
-        unsigned char c=(unsigned char)s.path[i];if(c=='\\')c='/';
-        if(isalnum(c) || c=='/' || c==':' || c=='-' || c=='_' || c=='.')url[n++]=(char)c;
-        else n+=(size_t)snprintf(url+n,sizeof(url)-n,"%%%02X",c);
+    for(char *s=absolute;*s;++s)if(*s=='\\')*s='/';
+    size_t end=strlen(absolute);while(end && absolute[end-1]!='/')--end;
+    size_t begin=absolute[0]=='/' && absolute[1]=='/'?2:0;
+    size_t n=absolute[1]==':'?8:7;
+    memcpy(url,"file:///",n);
+    for(size_t i=begin;i<end;++i) {
+        if(n+4>=size)return 0;
+        unsigned char c=(unsigned char)absolute[i];
+        if((c<128 && isalnum(c)) || c=='/' || c==':' || c=='-' || c=='_' || c=='.')url[n++]=(char)c;
+        else n+=(size_t)snprintf(url+n,size-n,"%%%02X",c);
     }
     url[n]=0;
-    int ok=end && !SDL_OpenURL(url);
-    snprintf(ts_health.message,sizeof(ts_health.message),"%s",ok?"OPENED SESSION LOG FOLDER":"COULD NOT OPEN LOG FOLDER");
+    return end!=0;
+}
+static void ts_audio_session_folder(const TsUiState *ui)
+{
+    char path[2048],url[6160];
+    int ok=ts_session_log_export_destination(ui->project_path,path,sizeof(path)) &&
+        ts_audio_session_folder_url(path,url,sizeof(url)) && !SDL_OpenURL(url);
+    snprintf(ts_health.message,sizeof(ts_health.message),"%s",ok?"OPENED SESSION LOG FOLDER":"SAVE SESSION FIRST; FOLDER MAY NOT EXIST");
     ts_health.message_until=SDL_GetTicks()+2500u;
 }
 
 /* Called by normal UI service, including while Health is closed/minimized.
    Capture uses the existing voice-state lock; all formatting is after unlock. */
-static void ts_audio_session_update(AudioState *audio,const TsUiState *ui)
+static void ts_audio_session_update(AudioState *audio,TsUiState *ui)
 {
     static Uint32 last_sample;static TsAudioHealthSetup previous;
     static unsigned last_export;static uint32_t generation=UINT32_MAX;
     static int connection=-1;
     TsSessionLogStatus status;ts_session_log_status(&status);
-    if((unsigned)status.export_result!=last_export) {
-        last_export=(unsigned)status.export_result;
-        if(last_export==2 || last_export==3) {
-            int copied=last_export==2 && SDL_SetClipboardText(status.export_path)==0;
-            snprintf(ts_health.message,sizeof(ts_health.message),"%s",last_export==3?"SESSION EXPORT FAILED":copied?"SAVED SESSION; FILE PATH COPIED":"SAVED SESSION IN LOG FOLDER");
+    if(status.export_serial!=last_export && status.export_result!=1) {
+        last_export=status.export_serial;
+        if(status.export_result==2 || status.export_result==3) {
+            int copied=status.export_result==2 && status.export_copy_path && SDL_SetClipboardText(status.export_path)==0;
+            snprintf(ts_health.message,sizeof(ts_health.message),"%s",status.export_result==3?"SESSION EXPORT FAILED; RECOVERY LOG KEPT":copied?"SAVED SESSION; FILE PATH COPIED":"SAVED SESSION IN LOG FOLDER");
+            if(status.export_result==3)
+                snprintf(ui->status,sizeof(ui->status),"SESSION LOG EXPORT FAILED; CHECK F12 REPORT FOR PATH");
             ts_health.message_until=SDL_GetTicks()+5000u;ts_health.last_update=0;
         }
     }
@@ -615,9 +641,9 @@ static int ts_audio_health_event(const SDL_Event *event, SDL_Window *main_window
         if(y>=344 && y<362) {
             if(x>=20 && x<216)ts_audio_session_marker();
             else if(x>=222 && x<418) {
-                snprintf(ts_health.message,sizeof(ts_health.message),"%s",ts_session_log_export()?"SAVING SESSION IN BACKGROUND":"SESSION EXPORT UNAVAILABLE");
+                snprintf(ts_health.message,sizeof(ts_health.message),"%s",ts_session_log_export_project(ui->project_path,1)?"SAVING SESSION IN BACKGROUND":"SESSION EXPORT UNAVAILABLE");
                 ts_health.message_until=SDL_GetTicks()+2500u;
-            } else if(x>=424 && x<620)ts_audio_session_folder();
+            } else if(x>=424 && x<620)ts_audio_session_folder(ui);
             ts_health.last_update=0;return 1;
         }
         if (y >= 367 && y < 386) {

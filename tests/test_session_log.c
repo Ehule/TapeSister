@@ -9,6 +9,12 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
 
 static TsSessionLogStatus status(void)
 {TsSessionLogStatus s;ts_session_log_status(&s);return s;}
@@ -24,6 +30,23 @@ static char *read_log(const char *path)
 }
 static int controls(void *arg)
 {for(int i=0;i<2000;++i)ts_session_log_event("concurrent_edit","producer=%d index=%d",*(int *)arg,i);return 0;}
+static void temporary_directory(const char *path,int create)
+{
+#ifdef _WIN32
+    WCHAR wide[2048];assert(MultiByteToWideChar(CP_UTF8,0,path,-1,wide,2048));
+    assert(create?CreateDirectoryW(wide,NULL):RemoveDirectoryW(wide));
+#else
+    assert(!(create?mkdir(path,0775):rmdir(path)));
+#endif
+}
+static void remove_project_log(const char *path)
+{
+#ifdef _WIN32
+    WCHAR wide[2048];assert(MultiByteToWideChar(CP_UTF8,0,path,-1,wide,2048));assert(DeleteFileW(wide));
+#else
+    assert(!remove(path));
+#endif
+}
 
 int main(int argc,char **argv)
 {
@@ -87,6 +110,52 @@ int main(int argc,char **argv)
     await_state(TS_SESSION_FULL);assert(!ts_session_log_enabled());assert(status().bytes<1280);
     assert(ts_session_log_export());await_export();snprintf(path,sizeof(path),"%s",status().path);snprintf(saved,sizeof(saved),"%s",status().export_path);
     ts_session_log_stop();text=read_log(path);assert(strstr(text,"recording_limit"));free(text);remove(path);remove(saved);
+
+    /* Project snapshots: spaces/UTF-8, Save As, failed replacement preserving
+       the earlier snapshot, and queued saves completed by immediate shutdown. */
+    char app_project[96];snprintf(app_project,sizeof(app_project),"Session Project-\xc3\xa9-%llu",(unsigned long long)SDL_GetPerformanceCounter());
+    char *project_directory=SDL_GetPrefPath("TapeSisterTests",app_project);assert(project_directory);
+    char project[2048],project_saved[2048],other_saved[2048];
+    snprintf(project,sizeof(project),"%sPerformance.tsr",project_directory);
+    assert(ts_session_log_start(directory,0));await_state(TS_SESSION_RECORDING);
+    assert(ts_session_log_export_destination(project,project_saved,sizeof(project_saved)));
+    assert(strstr(project_saved,"/logs/health-session-") || strstr(project_saved,"\\logs/health-session-"));
+    char windows_path[2048];
+    assert(ts_session_log_export_destination("C:\\Music Sessions\\Show.tsr",windows_path,sizeof(windows_path)));
+    assert(!strncmp(windows_path,"C:\\Music Sessions\\logs/",23));
+    assert(ts_session_log_export_destination("\\\\server\\share\\Show.tsr",windows_path,sizeof(windows_path)));
+    assert(!strncmp(windows_path,"\\\\server\\share\\logs/",20));
+    assert(ts_session_log_export_destination("Show.tsr",windows_path,sizeof(windows_path)));
+    assert(!strncmp(windows_path,"./logs/",7));
+    char tiny[8];assert(!ts_session_log_export_destination(project,tiny,sizeof(tiny)) && !*tiny);
+    assert(ts_session_log_text("before_project_save","retained with project"));
+    assert(ts_session_log_export_project(project,0));await_export();
+    assert(!status().export_copy_path && !strcmp(status().export_path,project_saved));
+    text=read_log(project_saved);assert(strstr(text,"before_project_save"));free(text);
+    /* A directory in place of the temporary file forces copy failure without
+       relying on permissions (the suite may run as root). */
+    char blocked[2052];snprintf(blocked,sizeof(blocked),"%s.tmp",project_saved);
+    temporary_directory(blocked,1);
+    assert(ts_session_log_text("after_project_save","new live history"));
+    assert(ts_session_log_export_project(project,1));
+    for(int i=0;i<500 && status().export_result==1;++i)SDL_Delay(10);
+    assert(status().export_result==3 && status().state==TS_SESSION_RECORDING);
+    text=read_log(project_saved);assert(strstr(text,"before_project_save") && !strstr(text,"after_project_save"));free(text);
+    temporary_directory(blocked,0);
+    char *other_directory=SDL_GetPrefPath("TapeSisterTests","Session Save As");assert(other_directory);
+    char other[2048];snprintf(other,sizeof(other),"%sOther.tsr",other_directory);
+    assert(ts_session_log_export_destination(other,other_saved,sizeof(other_saved)));
+    assert(ts_session_log_export_project(project,0));
+    assert(ts_session_log_export_project(other,0));
+    ts_session_log_stop();assert(status().export_result==2 && status().export_serial==4);
+    text=read_log(project_saved);assert(strstr(text,"after_project_save"));free(text);
+    text=read_log(other_saved);assert(strstr(text,"after_project_save"));free(text);
+    /* Pruning the recovery directory must not remove project-side snapshots. */
+    remove(status().path);assert(ts_session_log_start(directory,0));await_state(TS_SESSION_RECORDING);
+    text=read_log(project_saved);assert(strstr(text,"before_project_save"));free(text);
+    ts_session_log_stop();remove(status().path);remove_project_log(project_saved);remove_project_log(other_saved);
+    SDL_free(project_directory);SDL_free(other_directory);
+
     char invalid[2048];snprintf(invalid,sizeof(invalid),"%snonexistent/subdirectory",directory);
     assert(ts_session_log_start(invalid,0));await_state(TS_SESSION_ERROR);
     ts_session_log_audio(start,frequency,48000,512,0);assert(!ts_session_log_export());ts_session_log_stop();

@@ -147,7 +147,10 @@ int main(int argc,char **argv)
     browser_cancel(&ui);
     assert(!ui.exit_after_save && !ui.exit_for_new && project_hash()==before);
     begin_new_confirmation(&session);ui.exit_choice=0;exit_confirmation_activate(&ui);
+    char *logs=SDL_GetPrefPath("TapeSisterTests","New Project Health");assert(logs);
+    assert(ts_session_log_start(logs,0));SDL_free(logs);
     run_save("/__tapesister_missing_parent__/cannot-save.tsr");
+    TsSessionLogStatus log;ts_session_log_status(&log);assert(!log.export_result);
     assert(!ui.exit_after_save && !ui.new_project_pending && !ui.exit_for_new && project_hash()==before);
     browser_cancel(&ui);
 
@@ -167,6 +170,12 @@ int main(int argc,char **argv)
     assert(saved.page_count==2 && saved_bank.current.frames==512);
     ts_sample_pages_free(&saved);ts_instrument_free(&saved_bank);ts_instrument_free(&saved_record);
     assert(project_new(NULL,0,0,&session));assert_empty();
+    /* New clears the active path while the accepted save still targets the
+       previous project's bundle. Immediate shutdown must finish the copy. */
+    ts_session_log_stop();ts_session_log_status(&log);assert(log.export_result==2);
+    assert(!strncmp(log.export_path,"new-project-flow/logs/health-session-",36));
+    SDL_RWops *session_history=SDL_RWFromFile(log.export_path,"rb");assert(session_history);SDL_RWclose(session_history);
+    remove(log.path);remove(log.export_path);
 
     /* Cancel and join a late decode; its result cannot cross the reset. */
     populate();importer.worker=calloc(1,sizeof(*importer.worker));assert(importer.worker);
