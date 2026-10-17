@@ -403,8 +403,10 @@ static void ts_audio_close_device(SDL_AudioDeviceID device)
     else if (device == TS_AUDIO_LOGICAL_CAPTURE) {
         ExternalInputState *input = (ExternalInputState *)ts_capture_userdata;
         ts_real_capture = 0;
-        if (input != NULL)
+        if (input != NULL) {
+            ts_performance_inputs_prepare(&input->performance,0,input->sample_rate,0);
             ts_input_activity_set_available(&input->activity, 0u);
+        }
     }
 }
 

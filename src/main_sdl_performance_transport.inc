@@ -1,13 +1,21 @@
 #include "main_sdl_mandala_editor.inc"
 /* Modeless player mixer with a separate live tile bus. Group edits publish at one callback boundary. */
-enum { PERF_ARP=1,PERF_TRACKER=2,PERF_MOSAIC=4,PERF_W=600,PERF_H=548 };
+enum { PERF_ARP=1,PERF_TRACKER=2,PERF_MOSAIC=4,PERF_W=960,PERF_H=548 };
 enum { PERF_BUTTON_PLAY=1,PERF_BUTTON_STOP,PERF_BUTTON_HOME,
     PERF_BUTTON_ROW_PLAY,PERF_BUTTON_ROW_HOME=PERF_BUTTON_ROW_PLAY+3,
     PERF_BUTTON_CLOCK=PERF_BUTTON_ROW_HOME+3,
     PERF_BUTTON_VISUAL,PERF_BUTTON_FREEZE,PERF_BUTTON_SEED,
-    PERF_BUTTON_EDITOR,PERF_BUTTON_SYMMETRY,PERF_BUTTON_EVOLUTION };
+    PERF_BUTTON_EDITOR,PERF_BUTTON_SYMMETRY,PERF_BUTTON_EVOLUTION,
+    PERF_BUTTON_INPUT_PREV,PERF_BUTTON_INPUT_NEXT,PERF_BUTTON_TUNER,
+    PERF_BUTTON_TUNE_PREV,PERF_BUTTON_TUNE_NEXT };
 static struct {SDL_Window *window;SDL_Renderer *renderer;Uint32 id,painted,flash_until;
-    int visible,drag,pressed,flash;} performance_transport;
+    int visible,drag,pressed,flash,input_page,input_drag,tuner_on;
+    unsigned input_channels,tuner_channel;
+    TsAudioChannelRange input_range;
+    TsPerformanceInputs *inputs;
+    TsInputTuner tuner;
+    Uint32 tuner_tick,tuner_signal;
+    char input_label[128],input_error[160];} performance_transport;
 static TsPalette performance_palette;
 static void performance_feedback(int button,int held)
 {
@@ -74,12 +82,14 @@ static int performance_command(int command,SDL_Window *window,SDL_AudioDeviceID 
 }
 static void performance_close(void)
 {
+    ts_performance_inputs_tuner(performance_transport.inputs,0,0);
     if(performance_transport.renderer)SDL_DestroyRenderer(performance_transport.renderer);
     if(performance_transport.window)SDL_DestroyWindow(performance_transport.window);
     memset(&performance_transport,0,sizeof(performance_transport));
 }
 static void performance_show(TsUiState *ui,AudioState *audio)
 {
+    performance_transport.inputs=audio->performance_inputs;
     performance_palette=ui->palette;
     if(!performance_transport.window) {
         performance_transport.window=SDL_CreateWindow("TapeSister - Performance Transport",SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,PERF_W,PERF_H,SDL_WINDOW_ALLOW_HIGHDPI);
@@ -114,6 +124,7 @@ static void perf_button(int x,int y,int width,int height,const char *label,int b
         pressed?TS_COLOR_FOCUS:TS_COLOR_ACTIVITY,0xfff0c982u));
     perf_text(x+12,y+(height-7)/2,label,foreground,1);
 }
+#include "main_sdl_performance_inputs.inc"
 static void performance_update(SDL_AudioDeviceID device,AudioState *audio)
 {
     /* Runs even when this dialog is hidden, outside its existing device lock. */
@@ -163,6 +174,7 @@ static void performance_update(SDL_AudioDeviceID device,AudioState *audio)
     snprintf(line,sizeof(line),"SYMMETRY: %u",v->symmetry);perf_button(210,494,180,28,line,PERF_BUTTON_SYMMETRY,0,0);
     snprintf(line,sizeof(line),"EVOLUTION: %u:%02u",v->cycle_seconds/60,v->cycle_seconds%60);perf_button(400,494,180,28,line,PERF_BUTTON_EVOLUTION,0,0);
     perf_text(22,534,"IN VISUAL WINDOW: F FULLSCREEN / D DISPLAY / Q QUALITY / ESC EXIT",ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_DIM,0xff94aaa7u),1);
+    performance_inputs_paint(&m);
     SDL_RenderPresent(performance_transport.renderer);performance_transport.painted=SDL_GetTicks();
 }
 static void performance_gain(SDL_AudioDeviceID device,AudioState *audio,int channel,float gain)
@@ -208,12 +220,16 @@ static int performance_event(SDL_Event *e,SDL_Window *window,SDL_AudioDeviceID d
     if(!own)return 0;
     if((e->type==SDL_WINDOWEVENT && e->window.event==SDL_WINDOWEVENT_FOCUS_LOST) || e->type==SDL_MOUSEBUTTONUP) {
         performance_transport.drag=0;SDL_CaptureMouse(SDL_FALSE);
+        performance_transport.input_drag=0;
     }
     if((e->type==SDL_WINDOWEVENT && e->window.event==SDL_WINDOWEVENT_CLOSE) || (key && e->key.keysym.sym==SDLK_ESCAPE)) {
         performance_transport.drag=0;SDL_CaptureMouse(SDL_FALSE);
+        performance_transport.input_drag=0;
         performance_transport.pressed=performance_transport.flash=0;
+        performance_transport.tuner_on=0;ts_performance_inputs_tuner(audio->performance_inputs,0,0);
         performance_transport.visible=0;SDL_HideWindow(performance_transport.window);return 1;
     }
+    if(performance_inputs_event(e,device,audio))return 1;
     if(e->type==SDL_MOUSEMOTION && performance_transport.drag)
         performance_gain(device,audio,performance_transport.drag-1,(e->motion.x-352)/74.f);
     if(e->type==SDL_MOUSEWHEEL) {

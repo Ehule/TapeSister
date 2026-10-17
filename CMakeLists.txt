@@ -16,7 +16,7 @@ FetchContent_MakeAvailable(miniaudio)
 
 add_library(tapesister_core src/ts_mandala.c src/ts_routing_matrix.c src/ts_matrix_effects.c src/ts_matrix_layout.c src/ts_source_route.c src/ts_clean_output.c src/ts_spatial.c src/ts_speakers.c src/ts_sample.c src/ts_prism.c src/ts_prism_performance.c src/ts_fm.c src/ts_audition.c src/ts_note_bank.c src/ts_keyboard_sequence.c
              src/ts_mosaic.c src/ts_note_event.c src/ts_midi_map.c src/ts_performance.c src/ts_audio_mixer.c
-             src/ts_audio_lifecycle.c
+             src/ts_audio_lifecycle.c src/ts_performance_input.c
              src/ts_realtime_diagnostics.c src/ts_profile.c
              src/ts_sister_effects.c src/ts_sister_fallout.c src/ts_sister_post_fx.c
              src/ts_sister_limiter.c src/ts_compressor.c src/ts_transient.c src/ts_master_eq.c src/ts_eq_spectrum.c src/ts_router.c src/ts_router_performance.c src/ts_insert.c
@@ -451,6 +451,9 @@ add_test(NAME tapesister_external_record_tests COMMAND tapesister_external_recor
 add_executable(tapesister_input_monitor_tests tests/test_input_monitor.c)
 target_link_libraries(tapesister_input_monitor_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_input_monitor_tests COMMAND tapesister_input_monitor_tests)
+add_executable(tapesister_performance_input_tests tests/test_performance_input.c)
+target_link_libraries(tapesister_performance_input_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_performance_input_tests COMMAND tapesister_performance_input_tests)
 
 add_executable(tapesister_capture_archive_tests tests/test_capture_archive.c)
 target_link_libraries(tapesister_capture_archive_tests PRIVATE tapesister_core)

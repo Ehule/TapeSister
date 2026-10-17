@@ -321,6 +321,10 @@ int ts_sister_project_state_save_file(const TsSisterProjectState *state,
     if (!failed) failed = fprintf(file,"PerformanceTransport=%u\nPerformance.Restart=%u\nPerformance.ArpSync=%u\nPerformance.AlwaysOnTop=%u\n",
         state->performance_transport&7u,state->performance_mixer.restart,state->performance_mixer.arp_sync,state->performance_mixer.always_on_top)<0;
     for(int i=0;!failed && i<4;++i)failed=fprintf(file,"Performance.Gain%d=%.9g\n",i,state->performance_mixer.gain[i])<0;
+    for(int i=0;!failed && i<TS_PERFORMANCE_INPUTS;++i)
+        if(state->performance_mixer.input_enabled[i] || state->performance_mixer.input_gain[i]!=1)
+            failed=fprintf(file,"Performance.Input%d=%u %.9g\n",i,
+                state->performance_mixer.input_enabled[i],state->performance_mixer.input_gain[i])<0;
     if (!failed) failed = !ts_keyboard_sequence_bank_write(file,&state->keyboard_sequence);
     if (!failed) failed = !ts_insert_write(file,&state->insert);
     if (fclose(file) != 0) failed = 1;
@@ -674,6 +678,13 @@ int ts_sister_project_state_load_file(TsSisterProjectState *state,
             if(ts_mandala_read(&loaded.mandala,key,value)<0)goto malformed;
         } else if (!strcmp(key,"PerformanceTransport")) {
             int mask;if(!parse_int_value(value,&mask) || mask<0 || mask>7)goto malformed;loaded.performance_transport=(unsigned)mask;
+        } else if (!strncmp(key,"Performance.Input",17)) {
+            int channel,enabled;float gain;char extra;
+            if(!parse_int_value(key+17,&channel) || channel<0 || channel>=TS_PERFORMANCE_INPUTS ||
+               sscanf(value,"%d %f %c",&enabled,&gain,&extra)!=2 || (enabled!=0 && enabled!=1) ||
+               !isfinite(gain) || gain<0 || gain>2)goto malformed;
+            loaded.performance_mixer.input_enabled[channel]=(uint8_t)enabled;
+            loaded.performance_mixer.input_gain[channel]=gain;
         } else if (!strncmp(key,"Performance.Gain",16)) {
             int channel;float gain;
             if(!parse_int_value(key+16,&channel) || channel<0 || channel>3 ||

@@ -10,6 +10,7 @@
 #include "tapesister/capture_archive.h"
 #include "tapesister/performance_recorder.h"
 #include "tapesister/input_monitor.h"
+#include "tapesister/performance_input.h"
 #include "tapesister/input_ownership.h"
 #include "tapesister/note_bank.h"
 #include "tapesister/sample_pages.h"
@@ -705,6 +706,8 @@ static uint64_t paged_project_fingerprint(const TsSamplePages *pages,
         state_hash_bytes(&hash,layout->column,sizeof(layout->column));
         state_hash_bytes(&hash,&sister->performance_transport,sizeof(sister->performance_transport));
         state_hash_bytes(&hash,sister->performance_mixer.gain,sizeof(sister->performance_mixer.gain));
+        state_hash_bytes(&hash,sister->performance_mixer.input_gain,sizeof(sister->performance_mixer.input_gain));
+        state_hash_bytes(&hash,sister->performance_mixer.input_enabled,sizeof(sister->performance_mixer.input_enabled));
         state_hash_bytes(&hash,&sister->performance_mixer.restart,sizeof(sister->performance_mixer.restart));
         state_hash_bytes(&hash,&sister->performance_mixer.arp_sync,sizeof(sister->performance_mixer.arp_sync));
         state_hash_bytes(&hash,&sister->performance_mixer.always_on_top,sizeof(sister->performance_mixer.always_on_top));
@@ -891,6 +894,7 @@ typedef struct {
     _Atomic int sister_file_tap;
     TsCaptureRecorder capture;
     TsInputMonitor *input_monitor;
+    TsPerformanceInputs *performance_inputs;
     _Atomic int *external_monitor_enabled;
     TsExternalRecorder *record_bank_recorder;
     _Atomic int *record_source;
@@ -1150,6 +1154,8 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
                                  (uint32_t)audio->output_rate);
     ts_sister_runtime_begin_audio_block(&audio->sister);
     ts_insert_begin_output_block(&audio->sister.insert, (unsigned)frames);
+    ts_performance_inputs_begin(audio->performance_inputs,audio->sister.insert.duplex,
+        audio->sister.insert.duplex_channels,(unsigned)audio->output_rate);
     const float *embedded_block=NULL;
     const TsSourceRouteMix *embedded_clean=NULL;
     int matrix=audio->sister.matrix.controls.enabled;
@@ -1262,9 +1268,16 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         sister_sources.tapehead = buses.tapehead;
         sister_sources.mosaic = buses.mosaic;
         sister_sources.live_tiles = buses.live_tiles;
+        const TsInsert *input_insert=&audio->sister.insert;
+        const float *live_input=input_insert->duplex_input && (unsigned)(i/2)<input_insert->duplex_frames?
+            input_insert->duplex_input+(size_t)(i/2)*input_insert->duplex_channels:NULL;
+        TsStereoFrame performance_input=ts_performance_inputs_read(audio->performance_inputs,
+            input_insert->duplex,live_input,input_insert->duplex_channels,(unsigned)audio->output_rate);
         memcpy(sister_sources.send,audio->clean.send,sizeof(sister_sources.send));
         if(matrix) {
             memcpy(sister_sources.matrix_graph,audio->clean.graph,sizeof(sister_sources.matrix_graph));
+            sister_sources.matrix_graph[TS_MATRIX_MAIN].l+=performance_input.l;
+            sister_sources.matrix_graph[TS_MATRIX_MAIN].r+=performance_input.r;
             /* Source level precedes the graph; returns are never attenuated twice. */
             float gain=audio->mixer.program_gain;
             sister_sources.matrix_program_gain=gain;
@@ -1423,6 +1436,10 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             output.r+=parallel.r*audio->mixer.program_gain;
         }
         if(matrix)output=(TsStereoFrame){sister_frame.monitor_return.l+buses.reference.l,sister_frame.monitor_return.r+buses.reference.r};
+        else {
+            float gain=audio->mixer.program_gain*audio->mixer.master_gain;
+            output.l+=performance_input.l*gain;output.r+=performance_input.r*gain;
+        }
         uint64_t profile_master = ts_profile_begin(TS_PROF_MASTER);
         output = ts_sister_runtime_process_output(&audio->sister, output);
         ts_profile_end(TS_PROF_MASTER, profile_master);
@@ -12201,6 +12218,7 @@ struct ExternalInputState {
     uint64_t mosaic_epoch;
     double mosaic_start, mosaic_x;
     TsInputMonitor monitor;
+    TsPerformanceInputs performance;
     TsInputActivity activity;
     TsInputOwnership ownership;
     TsInsert *insert;
@@ -12253,6 +12271,8 @@ static void external_input_callback(void *userdata, Uint8 *stream, int bytes)
     uint32_t block_activity = 0u;
     if (input == NULL) return;
     ts_audio_range_mask(input->range,(float *)stream,(unsigned)(values/channels),(unsigned)channels);
+    ts_performance_inputs_capture(&input->performance,samples,(size_t)(values/channels),
+        (unsigned)channels,input->sample_rate,input->insert && input->insert->duplex);
     if(input->insert)ts_insert_capture(input->insert,samples,(size_t)(values/channels),(unsigned)channels);
     ts_input_monitor_note_capture_block(
         &input->monitor, (uint32_t)(values / channels));
@@ -12331,6 +12351,7 @@ static int ensure_external_input_open(SDL_AudioDeviceID *input_device,
     if(input->insert)ts_insert_capture_prepare(input->insert,obtained.channels,(unsigned)obtained.freq,obtained.samples);
     input->input_channel = config->record_input_channel;
     input->sample_rate = (uint32_t)obtained.freq;
+    ts_performance_inputs_prepare(&input->performance,obtained.channels,input->sample_rate,obtained.samples);
     ts_input_monitor_set_prime_frames(
         &input->monitor,
         ts_input_monitor_recommended_prime_frames(obtained.samples));
@@ -12363,6 +12384,7 @@ static int sync_external_input_consumers(SDL_AudioDeviceID *input_device,
             *input_device = 0;
         }
         ts_input_ownership_set_device(&input->ownership, 0, 0);
+        ts_performance_inputs_prepare(&input->performance,0,input->sample_rate,0);
         if(input->insert)ts_insert_capture_prepare(input->insert,0,input->sample_rate,0);
         ts_input_activity_set_available(&input->activity, 0u);
         if (audio != NULL) ts_sister_runtime_input_available(&audio->sister, 0);
@@ -13676,6 +13698,7 @@ int main(int argc, char **argv)
     }
     ts_external_recorder_init(&external_input.recorder);
     ts_input_monitor_init(&external_input.monitor);
+    ts_performance_inputs_init(&external_input.performance);
     ts_input_activity_init(&external_input.activity);
     ts_input_ownership_init(&external_input.ownership);
     atomic_init(&external_input.direct_monitor, 0);
@@ -13846,6 +13869,7 @@ int main(int argc, char **argv)
     ts_sister_runtime_input_available(&audio.sister, 0);
     ts_capture_init(&audio.capture);
     audio.input_monitor = &external_input.monitor;
+    audio.performance_inputs = &external_input.performance;
     external_input.insert = &audio.sister.insert;
     audio.external_monitor_enabled = &external_input.direct_monitor;
     audio.record_bank_recorder = &external_input.recorder;
@@ -14155,6 +14179,7 @@ int main(int argc, char **argv)
         }
         sync_sister_ext_consumer(&input_device, &audio, &external_input,
                                  &ui, &sister_window);
+        performance_inputs_sync(device,&input_device,&audio,&external_input,&ui);
         sister_preset_model_sync(&sister_window, &audio.sister);
         if (diagnostic_audio &&
             SDL_GetTicks() - last_audio_diagnostic_log >= 5000u) {
@@ -14270,6 +14295,7 @@ int main(int argc, char **argv)
                 ts_audio_handle_removed(1, "SDL reported capture removal");
                 input_device = 0;
                 ts_insert_capture_prepare(&audio.sister.insert,0,external_input.sample_rate,0);
+                ts_performance_inputs_prepare(&external_input.performance,0,external_input.sample_rate,0);
                 ts_input_ownership_set_device(&external_input.ownership, 0, 0);
                 ts_input_monitor_set_enabled(&external_input.monitor, 0,
                                              external_input.sample_rate);

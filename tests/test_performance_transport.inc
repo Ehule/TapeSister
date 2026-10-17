@@ -1,3 +1,4 @@
+#include "test_performance_inputs.inc"
 static void test_performance_transport(const char *directory)
 {
     TsMosaic *saved=a.mosaic,*m=ts_mosaic_create();assert(m);a.mosaic=m;
@@ -128,5 +129,6 @@ static void test_performance_transport(const char *directory)
     assert(m->playing && m->time>before);
     performance_gain(0,&a,2,1);render(energy);assert(fabsf(a.clean.graph[TS_MATRIX_NODES].l)>0);
     assert(ts_matrix_set(&a.sister.matrix,&matrix,48000));
+    test_performance_inputs(directory);
     performance_close();ts_tapehead_stop();a.sister.performance_transport=mask;a.sister.performance_mixer=controls;a.mosaic=saved;ts_mosaic_free(m);
 }

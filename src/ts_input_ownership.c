@@ -9,7 +9,8 @@ static uint8_t consumer_bit(TsInputConsumer consumer)
            bit == TS_INPUT_CONSUMER_RECORD_ACTIVE ||
            bit == TS_INPUT_CONSUMER_SISTER_EXT ||
            bit == TS_INPUT_CONSUMER_ACTIVITY ||
-           bit == TS_INPUT_CONSUMER_INSERT ? bit : 0u;
+           bit == TS_INPUT_CONSUMER_INSERT ||
+           bit == TS_INPUT_CONSUMER_PERFORMANCE ? bit : 0u;
 }
 
 void ts_input_ownership_init(TsInputOwnership *ownership)

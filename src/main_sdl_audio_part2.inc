@@ -177,6 +177,7 @@ static int ts_reopen_capture_for_config(void)
     input->channels = obtained.channels;
     if(input->insert)ts_insert_capture_prepare(input->insert,obtained.channels,(unsigned)obtained.freq,obtained.samples);
     input->sample_rate = (uint32_t)obtained.freq;
+    ts_performance_inputs_prepare(&input->performance,obtained.channels,input->sample_rate,obtained.samples);
     ts_input_monitor_set_prime_frames(
         &input->monitor,
         ts_input_monitor_recommended_prime_frames(obtained.samples));
