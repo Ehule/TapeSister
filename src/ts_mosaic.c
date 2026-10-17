@@ -435,7 +435,7 @@ int ts_mosaic_save(const TsMosaic *m,const char *dir,char *error,size_t size)
     if(!m)return 1;
     char path[4096];
     if(snprintf(path,sizeof(path),"%s/mosaic.tsm",dir)>=(int)sizeof(path))return 0;
-    FILE *f=fopen(path,"w");if(!f)goto failed;
+    FILE *f=fopen(path,"wb");if(!f)goto failed;
     if(fprintf(f,"TAPESISTER_MOSAIC 9\nSETTINGS %d %.9g %.17g\n",m->repeat,m->gain,m->speed)<0)goto close_failed;
     if(fprintf(f,"VOLUME %d\n",TS_MOSAIC_ENVELOPE_POINTS)<0)goto close_failed;
     for(int i=0;i<TS_MOSAIC_ENVELOPE_POINTS;++i)
@@ -481,12 +481,17 @@ int ts_mosaic_load(TsMosaic *m,const char *dir,char *error,size_t size)
 {
     char path[4096],line[1024];
     if(snprintf(path,sizeof(path),"%s/mosaic.tsm",dir)>=(int)sizeof(path))return 0;
-    FILE *f=fopen(path,"r");
+    FILE *f=fopen(path,"rb");
     if(!f && errno==ENOENT)return 1;
     if(!f){snprintf(error,size,"Could not open Mosaic arrangement");return 0;}
     TsMosaic *next=ts_mosaic_create();if(!next){fclose(f);return 0;}
     TsMosaicSource *sources[TS_MOSAIC_EVENTS]={0};int count=0;
     if(!fgets(line,sizeof(line),f))goto failed;
+    /* Older Windows saves used CRLF; keep strict header matching on every OS. */
+    size_t length=strlen(line);
+    if(length>=2 && line[length-2]=='\r' && line[length-1]=='\n') {
+        line[length-2]='\n';line[length-1]='\0';
+    }
     int version=!strcmp(line,"TAPESISTER_MOSAIC 9\n")?9:!strcmp(line,"TAPESISTER_MOSAIC 8\n")?8:!strcmp(line,"TAPESISTER_MOSAIC 7\n")?7:!strcmp(line,"TAPESISTER_MOSAIC 6\n")?6:!strcmp(line,"TAPESISTER_MOSAIC 5\n")?5:!strcmp(line,"TAPESISTER_MOSAIC 4\n")?4:!strcmp(line,"TAPESISTER_MOSAIC 1\n")?1:!strcmp(line,"TAPESISTER_MOSAIC 2\n")?2:!strcmp(line,"TAPESISTER_MOSAIC 3\n")?3:0;
     if(!version)goto failed;
     char trailing;
