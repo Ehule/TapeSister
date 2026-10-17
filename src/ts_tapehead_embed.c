@@ -1076,12 +1076,16 @@ int ts_tapehead_transport_locked(int command)
         if(!songPlaying)startPlaying(PLAYMODE_SONG,editor.row);
         return songPlaying;
     }
+    /* Pause at the playback row even when Follow is off and the editor is
+       elsewhere. Repeated pauses retain that position. */
     int position=songPlaying?song.songPos:editor.songPos;
     int row=songPlaying?song.row:editor.row;
     stopPlaying();stopVoices();embed.capture_seam_pending=0;
     if(command==2)position=row=0;
     editor.songPos=position;editor.row=row;
     setSongPos(position,row,RESET_SONG_TICK);
+    /* Discard delayed playing-position updates before publishing the pause. */
+    resetSyncQueues();audio.resetSyncTickTimeFlag=true;
     ui.updatePosSections=ui.updatePatternEditor=true;
     return 1;
 }

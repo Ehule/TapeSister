@@ -720,16 +720,18 @@ audio and settings save with the project.
 
 Open **CFG → Transport**, **F11**, or **Ctrl+Shift+Space** for the floating
 three-channel ARP, TrackSister, and Mosaic mixer. **Alt+F11** toggles fullscreen.
-Each channel has group selection, independent Play/Stop/Home, and a smoothed
-Silent-to-+6 dB gain fader. Double-click or right-click a fader for 0 dB.
+Each channel has group selection, independent Play/Pause/Home (ARP uses
+Play/Stop/Home), and a smoothed Silent-to-+6 dB gain fader. Double-click or right-click a fader for 0 dB.
 **Always on Top** keeps the window visible above the workspaces.
 
-Group Play can resume or restart checked players together. **ARP Clock** links
+Play Group resumes checked players; Pause Group holds TrackSister at its current
+row and Mosaic at its current time. Return to Start explicitly rewinds them.
+Legacy Restart Together settings no longer change Play. **ARP Clock** links
 ARP note intervals to TrackSister quarter/eighth/sixteenth notes, including tempo
 changes; Local restores the saved slot timings. Mosaic shares transport while
 keeping its own tape speed and pitch. These settings save with the project.
 **Shift+Space** controls the checked group. Play Group highlights while any checked
-player is running; Stop Group highlights when all checked players are stopped.
+player is running; Pause Group highlights when all checked players are stopped.
 Buttons light while pressed, and momentary actions such as Return to Start flash
 briefly. Individual players and visualizer toggles also show their active state.
 See [Performance Transport](PERFORMANCE_TRANSPORT.md).

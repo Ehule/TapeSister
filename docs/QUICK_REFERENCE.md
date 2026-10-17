@@ -806,7 +806,7 @@ and [Matrix editing](ROUTING_MATRIX.md#selection-undo-and-ab).
 ### Performance mixer shortcuts
 
 - **F11** or **Ctrl+Shift+Space**: open Performance Transport (**Alt+F11** toggles fullscreen).
-- **Shift+Space**: play/stop the checked group; choose Resume or Restart Together.
+- **Shift+Space**: play/pause the checked group; Return to Start explicitly rewinds TrackSister and Mosaic.
 - Each channel has Play/Stop/Home and a gain fader; double/right-click gain for 0 dB.
 - **ARP Clock**: Local or TrackSister 1/4, 1/8, 1/16; Mosaic keeps its tape speed.
 - **Always on Top** and mixer settings save with the project.
