@@ -22,6 +22,10 @@
 #include <sys/stat.h>
 #endif
 
+#ifndef TS_SESSION_LOG_WRITER_PHASE
+#define TS_SESSION_LOG_WRITER_PHASE(phase) ((void)0)
+#endif
+
 enum { AUDIO_CAP=8192, EVENT_CAP=32, EXPORT_CAP=8, TEXT_CAP=32768, PATH_CAP=2048 };
 typedef struct { uint64_t start, elapsed, serial; uint32_t rate, frames, config, epoch; } AudioPacket;
 typedef struct { uint64_t at; unsigned length; char type[40], text[TEXT_CAP]; } EventPacket;
@@ -340,32 +344,40 @@ static int writer(void *unused)
     AudioPacket previous={0};Window window={0};uint64_t last_system=0,last_flush=log_state.origin;
     unsigned seen_loss=0;
     for(;;) {
-        unsigned r=atomic_load_explicit(&log_state.read,memory_order_relaxed),w=atomic_load_explicit(&log_state.write,memory_order_acquire);
-        unsigned loss=atomic_load(&log_state.audio_lost);
-        if(loss!=seen_loss){memset(&previous,0,sizeof(previous));seen_loss=loss;}
-        /* Snapshot a finite batch; a continuously busy producer cannot starve
-           event draining, exporting or shutdown. */
-        while(r!=w){AudioPacket p=log_state.audio[r%AUDIO_CAP];++r;atomic_store_explicit(&log_state.read,r,memory_order_release);audio_record(file,&p,&previous,&window);}
-        for(unsigned i=0;i<EVENT_CAP;++i) {
-            EventPacket event;int have=0;
-            if(!atomic_flag_test_and_set_explicit(&log_state.gate,memory_order_acquire)) {
-                if(log_state.event_read!=log_state.event_write){EventPacket *p=&log_state.events[log_state.event_read%EVENT_CAP];
-                    memcpy(&event,p,offsetof(EventPacket,text)+p->length+1);++log_state.event_read;have=1;}
-                atomic_flag_clear_explicit(&log_state.gate,memory_order_release);
-            }
-            if(!have)break;
-            text_record(file,&event);
-        }
-        uint64_t now=SDL_GetPerformanceCounter();
-        if(window.count && now>=window.first && now-window.first>=log_state.frequency)window_record(file,&window);
-        if(!last_system || now-last_system>=log_state.frequency){system_record(file,now);last_system=now;}
+        /* Select work before draining: a save/stop arriving after a drain must
+           wait for the next batch, which includes its preceding records. */
+        int stopping=atomic_load(&log_state.stop);
         ExportRequest request;int have_export=0;
         SDL_LockMutex(log_state.export_mutex);
         if(log_state.export_read!=log_state.export_write) {
             request=log_state.exports[log_state.export_read%EXPORT_CAP];have_export=1;
         }
         SDL_UnlockMutex(log_state.export_mutex);
-        if(have_export && SDL_TryLockMutex(log_state.export_files)==0) {
+        TS_SESSION_LOG_WRITER_PHASE(1);
+        unsigned r=atomic_load_explicit(&log_state.read,memory_order_relaxed),w=atomic_load_explicit(&log_state.write,memory_order_acquire);
+        unsigned loss=atomic_load(&log_state.audio_lost);
+        if(loss!=seen_loss){memset(&previous,0,sizeof(previous));seen_loss=loss;}
+        /* Snapshot a finite batch; a continuously busy producer cannot starve
+           event draining, exporting or shutdown. */
+        while(r!=w){AudioPacket p=log_state.audio[r%AUDIO_CAP];++r;atomic_store_explicit(&log_state.read,r,memory_order_release);audio_record(file,&p,&previous,&window);}
+        int events_drained=1;
+        for(unsigned i=0;i<EVENT_CAP;++i) {
+            EventPacket event;int have=0;
+            if(!atomic_flag_test_and_set_explicit(&log_state.gate,memory_order_acquire)) {
+                if(log_state.event_read!=log_state.event_write){EventPacket *p=&log_state.events[log_state.event_read%EVENT_CAP];
+                    memcpy(&event,p,offsetof(EventPacket,text)+p->length+1);++log_state.event_read;have=1;}
+                atomic_flag_clear_explicit(&log_state.gate,memory_order_release);
+            } else events_drained=0;
+            if(!have)break;
+            text_record(file,&event);
+        }
+        TS_SESSION_LOG_WRITER_PHASE(2);
+        uint64_t now=SDL_GetPerformanceCounter();
+        if(window.count && now>=window.first && now-window.first>=log_state.frequency)window_record(file,&window);
+        if(!last_system || now-last_system>=log_state.frequency){system_record(file,now);last_system=now;}
+        /* A busy event producer means older accepted events may remain. Defer
+           the snapshot rather than omit them or wait on the producer gate. */
+        if(have_export && events_drained && SDL_TryLockMutex(log_state.export_files)==0) {
             window_record(file,&window);
             record(file,now,"export_boundary","\"detail\":\"Snapshot ends here; live session continues\"");
             int result=copy_saved(&file,request.path)?2:3;last_flush=now;
@@ -380,7 +392,7 @@ static int writer(void *unused)
         SDL_LockMutex(log_state.export_mutex);
         int pending_exports=log_state.export_read!=log_state.export_write;
         SDL_UnlockMutex(log_state.export_mutex);
-        if(atomic_load(&log_state.stop) && !pending_exports)break;
+        if(stopping && events_drained && !pending_exports)break;
         /* Flush at least once a second for recovery after a crash. */
         if(file && now-last_flush>=log_state.frequency) {
             int failed=SDL_RWclose(file);file=SDL_RWFromFile(log_state.path,"ab");

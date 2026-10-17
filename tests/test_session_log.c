@@ -2,7 +2,9 @@
 #undef NDEBUG
 #endif
 #define SDL_MAIN_HANDLED
-#include "tapesister/session_log.h"
+static void session_writer_phase(int phase);
+#define TS_SESSION_LOG_WRITER_PHASE(phase) session_writer_phase(phase)
+#include "../src/ts_session_log.c"
 #include "tapesister/config.h"
 #include <SDL2/SDL.h>
 #include <assert.h>
@@ -16,6 +18,29 @@
 #include <unistd.h>
 #endif
 
+/* Force writer/producer interleavings without relying on machine speed. */
+static SDL_sem *writer_reached,*writer_release;
+static atomic_int writer_phase;
+static void session_writer_phase(int phase)
+{
+    int expected=phase;
+    if(atomic_compare_exchange_strong(&writer_phase,&expected,0)) {
+        assert(!SDL_SemPost(writer_reached));
+        assert(!SDL_SemWaitTimeout(writer_release,5000));
+    }
+}
+static void await_writer(void) {assert(!SDL_SemWaitTimeout(writer_reached,5000));}
+static void release_writer(void) {assert(!SDL_SemPost(writer_release));}
+static void required_event(const char *type,const char *text)
+{
+    /* Producers deliberately use a nonblocking try. Require acceptance before
+       asserting persistence; unrelated writer contention can reject a try. */
+    for(int i=0;i<500;++i) {
+        if(ts_session_log_text(type,text))return;
+        SDL_Delay(10);
+    }
+    assert(!"session event was never accepted");
+}
 static TsSessionLogStatus status(void)
 {TsSessionLogStatus s;ts_session_log_status(&s);return s;}
 static void await_state(int state)
@@ -30,6 +55,8 @@ static char *read_log(const char *path)
 }
 static int controls(void *arg)
 {for(int i=0;i<2000;++i)ts_session_log_event("concurrent_edit","producer=%d index=%d",*(int *)arg,i);return 0;}
+static int stop_recorder(void *unused)
+{(void)unused;ts_session_log_stop();return 0;}
 static void temporary_directory(const char *path,int create)
 {
 #ifdef _WIN32
@@ -51,6 +78,8 @@ static void remove_project_log(const char *path)
 int main(int argc,char **argv)
 {
     assert(SDL_Init(SDL_INIT_TIMER)==0);
+    writer_reached=SDL_CreateSemaphore(0);writer_release=SDL_CreateSemaphore(0);
+    assert(writer_reached && writer_release);
     char *directory=SDL_GetPrefPath("TapeSisterTests","Health");assert(directory);
     TsConfig config,loaded;ts_config_init(&config);assert(config.session_log==1);
     char ini[2048],error[160];snprintf(ini,sizeof(ini),"%ssession-test.ini",directory);
@@ -60,17 +89,21 @@ int main(int argc,char **argv)
     uint64_t frequency=SDL_GetPerformanceFrequency(),start=SDL_GetPerformanceCounter();
     for(int i=0;i<100000;++i)ts_session_log_audio(start,frequency/1000,48000,512,0);
     double off=(SDL_GetPerformanceCounter()-start)*1e9/frequency/100000;
-    assert(ts_session_log_start(directory,0));await_state(TS_SESSION_RECORDING);
-    ts_session_log_text("escaping","quoted \"text\"\\path\nnext\tline");
-    ts_session_log_text("heard_click","manual marker");
+    atomic_store(&writer_phase,2);
+    assert(ts_session_log_start(directory,0));await_state(TS_SESSION_RECORDING);await_writer();
+    /* Queue events and request export after this iteration has drained. The
+       snapshot must wait for the next drain rather than copy stale history. */
+    required_event("escaping","quoted \"text\"\\path\nnext\tline");
+    required_event("heard_click","manual marker");
     start=SDL_GetPerformanceCounter();
     ts_session_log_audio(start,frequency/1000,48000,512,1);
     ts_session_log_audio(start+frequency*512/48000,frequency/80,48000,512,1); /* 12.5 ms overrun */
     ts_session_log_control(start,frequency/500,frequency/100,frequency,"test_control");
-    ts_session_log_text("health_reset","retained history");
+    required_event("health_reset","retained history");
     ts_session_log_discontinuity("device changed");
     ts_session_log_audio(start+frequency,frequency/1000,48000,1024,2);
-    assert(ts_session_log_export());await_export();
+    assert(!status().dropped_events);
+    assert(ts_session_log_export());release_writer();await_export();
     char path[2048],saved[2048];snprintf(path,sizeof(path),"%s",status().path);snprintf(saved,sizeof(saved),"%s",status().export_path);
     char *text=read_log(saved);
     assert(strstr(text,"session_start") && strstr(text,"heard_click") && strstr(text,"health_reset"));
@@ -86,12 +119,33 @@ int main(int argc,char **argv)
     }
     assert(status().dropped_audio==0);
     printf("Session accepted enqueue: %.1f ns/call over 20000 calls\n",accepted_ticks*1e9/frequency/20000);
-    ts_session_log_text("after_export","recording continues");
-    ts_session_log_stop();text=read_log(path);
-    assert(strstr(text,"after_export") && strstr(text,"session_end"));free(text);
+    /* Stop arriving after a drain must also retain its final queued records. */
+    atomic_store(&writer_phase,2);await_writer();
+    required_event("after_export","recording continues");
+    ts_session_log_audio(SDL_GetPerformanceCounter(),frequency/40,48000,512,12345);
+    SDL_Thread *stopper=SDL_CreateThread(stop_recorder,"stop log",NULL);assert(stopper);
+    for(int i=0;i<500 && !atomic_load(&log_state.stop);++i)SDL_Delay(10);
+    assert(atomic_load(&log_state.stop));release_writer();SDL_WaitThread(stopper,NULL);
+    text=read_log(path);
+    assert(strstr(text,"after_export") && strstr(text,"\"configuration\":12345") && strstr(text,"session_end"));free(text);
     text=read_log(saved);assert(!strstr(text,"after_export"));free(text);
     if(argc>1)printf("SESSION_LOG=%s\n",path);else remove(path);
     remove(saved);
+
+    /* A consumer's failed try-lock must defer the export, not skip the marker.
+       Hold the gate across exactly one drain after a request is selected. */
+    atomic_store(&writer_phase,2);
+    assert(ts_session_log_start(directory,0));await_state(TS_SESSION_RECORDING);await_writer();
+    required_event("before_busy_export","accepted before the save request");
+    assert(ts_session_log_export());
+    atomic_store(&writer_phase,1);release_writer();await_writer();
+    assert(!atomic_flag_test_and_set(&log_state.gate));
+    atomic_store(&writer_phase,2);release_writer();await_writer();
+    assert(status().export_result==1);
+    atomic_flag_clear(&log_state.gate);release_writer();await_export();
+    snprintf(path,sizeof(path),"%s",status().path);snprintf(saved,sizeof(saved),"%s",status().export_path);
+    text=read_log(saved);assert(strstr(text,"before_busy_export"));free(text);
+    ts_session_log_stop();remove(path);remove(saved);
 
     /* A slow writer/full queue drops diagnostics, never stalls the producer. */
     assert(ts_session_log_start(directory,0));await_state(TS_SESSION_RECORDING);
@@ -128,7 +182,7 @@ int main(int argc,char **argv)
     assert(ts_session_log_export_destination("Show.tsr",windows_path,sizeof(windows_path)));
     assert(!strncmp(windows_path,"./logs/",7));
     char tiny[8];assert(!ts_session_log_export_destination(project,tiny,sizeof(tiny)) && !*tiny);
-    assert(ts_session_log_text("before_project_save","retained with project"));
+    required_event("before_project_save","retained with project");
     assert(ts_session_log_export_project(project,0));await_export();
     assert(!status().export_copy_path && !strcmp(status().export_path,project_saved));
     text=read_log(project_saved);assert(strstr(text,"before_project_save"));free(text);
@@ -136,7 +190,7 @@ int main(int argc,char **argv)
        relying on permissions (the suite may run as root). */
     char blocked[2052];snprintf(blocked,sizeof(blocked),"%s.tmp",project_saved);
     temporary_directory(blocked,1);
-    assert(ts_session_log_text("after_project_save","new live history"));
+    required_event("after_project_save","new live history");
     assert(ts_session_log_export_project(project,1));
     for(int i=0;i<500 && status().export_result==1;++i)SDL_Delay(10);
     assert(status().export_result==3 && status().state==TS_SESSION_RECORDING);
@@ -149,7 +203,7 @@ int main(int argc,char **argv)
     uint64_t before_save_bytes=status().bytes;
     assert(ts_session_log_export_project(project,0));
     assert(ts_session_log_export_project(other,0));
-    assert(ts_session_log_text("during_project_save","writer must continue draining while export is deferred"));
+    required_event("during_project_save","writer must continue draining while export is deferred");
     for(int i=0;i<500 && status().bytes==before_save_bytes;++i)SDL_Delay(10);
     assert(status().bytes>before_save_bytes && status().export_result==1);
     ts_session_log_project_save_end();
@@ -179,6 +233,7 @@ int main(int argc,char **argv)
     }
     file=SDL_RWFromFile(saved,"rb");assert(file);SDL_RWclose(file);remove(saved);
     ts_session_log_stop();remove(status().path);SDL_free(retention);
+    SDL_DestroySemaphore(writer_reached);SDL_DestroySemaphore(writer_release);
     SDL_free(directory);SDL_Quit();puts("Session recording: events, timing, reset history, asynchronous export, concurrent producers, overflow, storage cap and path failure passed");
     (void)argv;return 0;
 }

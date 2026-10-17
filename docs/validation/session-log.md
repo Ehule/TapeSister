@@ -117,3 +117,31 @@ recorder, New/project-save integration and Audio Health suites, a rebuilt Releas
 application, and the targeted recorder sanitizer check. Save transactions move
 the old `logs` entry into the staged bundle and restore it on publication failure;
 if rollback itself fails, staging/backup are retained instead of deleting history.
+
+## Export/shutdown ordering regression
+
+Windows run 197 built successfully and passed the F11 transport integration
+checks, but failed the recorder assertion requiring earlier markers in the saved
+snapshot. The writer could drain its queues, then observe a newly queued export
+request and copy before draining the records preceding that request. A similar
+late-observed stop could omit the last queued records on shutdown.
+
+The writer now selects export/stop work before taking its finite queue batch.
+A busy event gate defers export/shutdown to the next iteration. Audio and control
+producers retain their existing bounded, nonblocking paths; there is no added
+audio lock or disk work on those paths.
+
+The recorder test includes the production writer with test-only semaphore hooks
+to force these interleavings. Queuing markers/audio and Save Session immediately
+after a drain reproduced the exact Windows assertion on the previous algorithm;
+it passes with the corrected ordering. Additional deterministic cases cover a
+busy event gate after export selection and Stop arriving after the last drain.
+Fixture events whose contents are required now check enqueue acceptance, since
+production intentionally rejects a contended nonblocking attempt.
+
+Local validation: the Release application built; recorder, Audio Health and
+New/project-save integration passed (3/3). The recorder also passed ten consecutive
+runs. Real startup/audio/shutdown passed with the 8 MiB stack. Targeted recorder
+AddressSanitizer/UndefinedBehaviorSanitizer passed; leak scanning was disabled
+because LeakSanitizer could not inspect this environment's process/thread paths.
+Native Windows/Linux validation is tracked in PR #147.
