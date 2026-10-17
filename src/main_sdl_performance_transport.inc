@@ -27,6 +27,7 @@ static int performance_command_for(unsigned selected,int command,int restart,SDL
     selected&=7u;
     if(!selected){snprintf(ui->status,sizeof(ui->status),"PERFORMANCE TRANSPORT: SELECT AT LEAST ONE PLAYER.");return 0;}
     if(command<0)command=(performance_running(audio)&selected)?0:1;
+    ts_session_log_event("transport_request","selected_mask=%u command=%d restart=%d",selected,command,restart);
     /* Preflight before changing any participant. Sample copies and tracker
        binding happen outside the transaction's short exclusion. */
     if(command==1) {

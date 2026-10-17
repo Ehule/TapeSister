@@ -1,3 +1,4 @@
+#include "tapesister/session_log.h"
 #include "tapesister/profile.h"
 #include "tapesister/mandala_sdl.h"
 #include "tapesister/ui_schedule.h"
@@ -1563,13 +1564,17 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             ts_performance_recorder_state(audio->sister_file_recorder) ==
                 TS_PERFORMANCE_FILE_RECORDING)
             configuration |= TS_RT_CONFIG_FILE_CAPTURE;
+        uint64_t diagnostic_elapsed=SDL_GetPerformanceCounter()-diagnostic_started;
         ts_realtime_diagnostics_record_timed(
             &audio->realtime_diagnostics, diagnostic_started,
-            SDL_GetPerformanceCounter() - diagnostic_started,
+            diagnostic_elapsed,
             audio->realtime_counter_frequency,
             audio->output_rate > 0 ? (uint32_t)audio->output_rate : 0u,
             values > 0 ? (uint32_t)((values + 1) / 2) : 0u,
             configuration);
+        ts_session_log_audio(diagnostic_started,diagnostic_elapsed,
+            audio->output_rate>0?(uint32_t)audio->output_rate:0,
+            values>0?(uint32_t)((values+1)/2):0,configuration);
     }
     ts_profile_end(TS_PROF_AUDIO, profile_callback);
     ts_profile_lane_end(1);
@@ -4275,6 +4280,7 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
                            int record_bank_active,
                            const char *path)
 {
+    ts_session_log_event("project_load_request","kind=%s",path_is_tsr(path)?"TSR":path_is_module(path)?"tracker module":"sample/preset");
     if(path_is_module(path))return load_module_instrument(device,audio,ui,instrument,sample_pages,record_bank_active,path);
     char error[160];
     TsSisterProjectState sister_state;
@@ -4431,6 +4437,7 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
             sample_pages, instrument, record_bank, &audio->sister, &audio->keyboard_sequence);
         project_mark_saved(ui,sample_pages,instrument,record_bank,&audio->sister,&audio->keyboard_sequence);
     }
+    ts_session_log_event("project_load_result","success=%d kind=%s",ok,recipe?"TSR":"sample");
     return ok;
 }
 
@@ -9038,6 +9045,8 @@ static int ts_audio_health_drawable(void);
 static void ts_audio_health_reset(AudioState *audio);
 static void ts_audio_health_report(AudioState *audio, char *report, size_t size);
 static void ts_audio_health_close(void);
+static void ts_audio_session_update(AudioState *audio,const TsUiState *ui);
+static int ts_audio_session_shortcut(const SDL_Event *event);
 static void ts_audio_health_capture_setup(const AudioState *audio,
                                          const TsUiState *ui, Uint32 now);
 
@@ -10773,6 +10782,10 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
     TsSisterPresetBank *preset_bank;
     size_t *preset_index;
     if (audio == NULL || ui == NULL || sister == NULL) return;
+    if(ts_session_log_enabled()) {
+        char target[96]="";ts_sister_ui_midi_target(hit,target,sizeof(target));
+        ts_session_log_event("sister_action","action=%d index=%d value=%.6f target=%s (request)",hit.action,hit.index,hit.normalized,target);
+    }
     if (sister_pedalboard_action(device,audio,ui,sister,hit)) return;
     if(audio->sister.matrix.controls.enabled && hit.action>=TS_SISTER_UI_ACTION_SOURCE_TILES &&
        hit.action<=TS_SISTER_UI_ACTION_SOURCE_TRACK) {
@@ -13857,6 +13870,7 @@ int main(int argc, char **argv)
     ts_profile_enable(SDL_getenv("TAPESISTER_PROFILE") != NULL);
     audio.realtime_counter_frequency = SDL_GetPerformanceFrequency();
     audio.audio_health_started = SDL_GetTicks();
+    if(ui.config.session_log)ts_session_log_start(NULL,0);
     {
         char midi_error[160];
         midi_wake_event = SDL_RegisterEvents(1);
@@ -14190,6 +14204,7 @@ int main(int argc, char **argv)
             wheel_event_coalesce(&event);
             if (!wheel_event_prepare(&event)) continue;
             uint32_t event_id = event_window_id(&event);
+            if(ts_audio_session_shortcut(&event))continue;
             if (ui.new_project_pending) { main_paint_invalid = 1; break; }
             if (ui.exit_for_new && (ui.exit_confirm_open || ui.exit_after_save) &&
                 event_id && event_id != SDL_GetWindowID(window) &&
@@ -18314,6 +18329,7 @@ int main(int argc, char **argv)
         canvas_eq_poll(device,&audio,&ui,&instrument);
         matrix_update(device,&audio,&ui,&sample_pages,&instrument);performance_update(device,&audio);
         source_route_update(device,&audio,&ui,&sample_pages,&instrument);
+        ts_audio_session_update(&audio,&ui);
         ts_audio_health_update(&audio, &ui);
         ts_profile_end(TS_PROF_AUX_UI, profile_aux);
         ts_profile_end(TS_PROF_UI, profile_ui);

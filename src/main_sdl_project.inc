@@ -142,6 +142,7 @@ static int project_new(SDL_Window *window, SDL_AudioDeviceID device,
     view->config.matrix = next->sister.matrix.controls;
     view->config.insert = next->sister.insert.controls;
 
+    ts_session_log_discontinuity("new project");
     /* No fallible project allocations remain past this point. Pause before
        joining workers; none may publish into the new document generation. */
     if (input_device) SDL_PauseAudioDevice(input_device, 1);

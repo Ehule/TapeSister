@@ -1,4 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
+#include "tapesister/session_log.h"
 #include "tapesister/mandala_sdl.h"
 #include "tapesister/ui.h"
 #include <SDL2/SDL.h>
@@ -33,7 +34,7 @@ static struct {
     VisualShared *shared;
     char name[96];
     Uint32 sent, launched, closing, followed;
-    int force_stopped, close_requested;
+    int force_stopped, close_requested, ready_logged;
     unsigned serial;
     TsMandalaPacket last_audio;
     TsMandalaConfig sent_config;
@@ -123,12 +124,14 @@ int ts_mandala_frozen(void) { return host.shared && atomic_load(&host.shared->fr
 void ts_mandala_freeze(void)
 {
     if (host.shared) atomic_fetch_xor(&host.shared->freeze, 1);
+    ts_session_log_event("visualizer_freeze","frozen=%d",ts_mandala_frozen());
     atomic_store(&audio_queue.enabled, ts_mandala_active() && !ts_mandala_frozen());
 }
 void ts_mandala_close(void)
 {
     atomic_store(&audio_queue.enabled, 0);
     if (host.shared) {
+        if(!host.close_requested)ts_session_log_text("visualizer_close","requested");
         atomic_store(&host.shared->quit, 1);
         if (!host.close_requested) { host.closing = SDL_GetTicks(); host.close_requested = 1; }
     }
@@ -167,6 +170,7 @@ void ts_mandala_shutdown(void)
 }
 int ts_mandala_open(const TsMandalaConfig *config, const TsMandalaPreferences *prefs, char *error, size_t size)
 {
+    ts_session_log_text("visualizer_open","requested");
     if (host.shared) { snprintf(error, size, "Visualizer is open or closing"); return 0; }
     if (!ts_mandala_lock_free(&audio_queue) || !ts_mandala_valid(config)) {
         snprintf(error, size, "Visualizer requires lock-free atomics and a valid seed"); return 0;
@@ -215,10 +219,12 @@ int ts_mandala_open(const TsMandalaConfig *config, const TsMandalaPreferences *p
     int spawn_error = posix_spawn(&host.pid, executable, NULL, NULL, args, environ);
     if (spawn_error) { SDL_SetError("%s", strerror(spawn_error)); goto failed; }
 #endif
+    ts_session_log_text("visualizer_launch","child started; awaiting renderer");
     host.launched = SDL_GetTicks(); host.sent = host.launched - 100;
     /* Do not enable sampling until the renderer has initialized successfully. */
     return 1;
 failed:
+    ts_session_log_text("visualizer_launch_failed",SDL_GetError());
     snprintf(error, size, "Cannot launch visualizer: %.100s", SDL_GetError());
     host_release(); return 0;
 }
@@ -234,8 +240,9 @@ int ts_mandala_poll(const TsMandalaConfig *config, TsMandalaPreferences *prefs)
     prefs->quality = (int)atomic_load(&host.shared->quality);
     prefs->display = (int)atomic_load(&host.shared->display);
     prefs->fullscreen = (int)atomic_load(&host.shared->fullscreen);
-    if (!alive) { atomic_store(&audio_queue.enabled, 0); host_release(); return 0; }
+    if (!alive) { ts_session_log_text("visualizer_exit","child exited");atomic_store(&audio_queue.enabled, 0); host_release(); return 0; }
     int ready = atomic_load(&host.shared->ready);
+    if(ready && !host.ready_logged){ts_session_log_text("visualizer_ready","renderer initialized");host.ready_logged=1;}
     if (atomic_load(&host.shared->quit) && !host.close_requested) ts_mandala_close();
     if (!ready && SDL_GetTicks() - host.launched > 10000) ts_mandala_close();
     if (host.close_requested && SDL_GetTicks() - host.closing > 1000) host_force_stop();

@@ -1,6 +1,7 @@
 /* Opt-in headless stress probe, not a timing-sensitive CI assertion. Uses the
    real audio callback, pedalboard controller, renderer child and Health reader.
-   All trace file I/O happens after the audio device has stopped. */
+   CSV trace I/O happens after audio stops. TAPESISTER_SESSION_TEST=<directory>
+   additionally exercises the production background session recorder. */
 typedef struct {
     Uint64 at, finished;
     const char *kind;
@@ -18,6 +19,8 @@ static void interaction_note(const char *kind,int phase,Uint64 before,unsigned c
 static void interaction_run(const char *prefix,unsigned seconds,int slots,int notes)
 {
     assert(seconds>=4 && seconds<=60 && slots>=5 && slots<=20 && notes>=1 && notes<=5);
+    const char *session_directory=SDL_getenv("TAPESISTER_SESSION_TEST");
+    if(session_directory)assert(ts_session_log_start(session_directory,0));
     for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(a.mosaic->events[i].id) {
         TsMosaicEvent *e=&a.mosaic->events[i];e->note_count=notes;e->gain=.03f/notes;
         for(int j=0;j<notes;++j)e->notes[j]=36+i+j*7;
@@ -54,6 +57,7 @@ static void interaction_run(const char *prefix,unsigned seconds,int slots,int no
     printf("interaction fixture: slots=%d Mosaic=%d ARP=3 Tracker=4 Prism=8 rate=48000 buffer=512 channels=4 seconds/phase=%u\n",slots,16*notes,seconds);
     fflush(stdout);
     for(int phase=0;phase<8;++phase) {
+        ts_session_log_text("test_phase",names[phase]);
         /* Reap the previous renderer and settle identical controls before each
            measured phase, without stopping any musical transport. */
         ts_mandala_close();
@@ -77,7 +81,7 @@ static void interaction_run(const char *prefix,unsigned seconds,int slots,int no
         Uint32 began=SDL_GetTicks(),next_edit=began,next_visual=began;
         int edits=phase==1 || phase==4 || phase==5 || phase==6;
         int cycles=phase==3 || phase==4 || phase==6;
-        unsigned edit=0;
+        unsigned edit=0;Uint32 last_setup=0;
         while(SDL_GetTicks()-began<seconds*1000u) {
             Uint32 now=SDL_GetTicks();
             if((cycles || phase==2) && (Sint32)(now-next_visual)>=0) {
@@ -106,6 +110,10 @@ static void interaction_run(const char *prefix,unsigned seconds,int slots,int no
                 ++edit;next_edit=now+50; /* Twenty real controller edits per second. */
             }
             ts_mandala_follow_effects(&a.sister);ts_mandala_poll(&a.sister.mandala,&prefs);
+            if(session_directory && (!last_setup || now-last_setup>=250)) {
+                ts_native_lock(ts_real_output);ts_audio_health_capture_setup(&a,&u,now);ts_native_unlock(ts_real_output);
+                ts_audio_session_update(&a,&u);last_setup=now;
+            }
             SDL_Delay(5);
         }
         last[phase]=atomic_load_explicit(&timing_count,memory_order_acquire);
@@ -125,6 +133,10 @@ static void interaction_run(const char *prefix,unsigned seconds,int slots,int no
     assert(ts_tapehead_running() && a.mosaic->playing && a.keyboard_sequence.running);
     puts("interaction transports: embedded TrackSister, Mosaic and ARP still running");
     ts_mandala_close();ts_mandala_follow_effects(&a.sister);
+    if(session_directory) {
+        ts_session_log_stop();TsSessionLogStatus s;ts_session_log_status(&s);
+        printf("SESSION_LOG=%s dropped_audio=%u dropped_events=%u\n",s.path,s.dropped_audio,s.dropped_events);
+    }
     char path[1024];
     snprintf(path,sizeof(path),"%s-callbacks.csv",prefix);FILE *f=fopen(path,"w");assert(f);
     fputs("phase,index,start_ms,processing_us,start_interval_us\n",f);

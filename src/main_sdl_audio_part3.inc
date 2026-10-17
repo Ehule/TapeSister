@@ -380,6 +380,7 @@ static int ts_audio_resolve_output_failure(SDL_Window *window)
 
 static void ts_audio_close_device(SDL_AudioDeviceID device)
 {
+    if(device==TS_AUDIO_LOGICAL_OUTPUT)ts_session_log_discontinuity("output closed");
     AudioState *timed_audio = (AudioState *)ts_output_userdata;
     if (device == TS_AUDIO_LOGICAL_OUTPUT && timed_audio && timed_audio->realtime_diagnostics_enabled)
         ts_realtime_diagnostics_discontinuity(&timed_audio->realtime_diagnostics);
@@ -449,20 +450,25 @@ static void ts_audio_lock_device(SDL_AudioDeviceID device)
 static void ts_audio_unlock_device(SDL_AudioDeviceID device)
 {
     SDL_AudioDeviceID real = ts_audio_real_id(device);
+    uint64_t held=0,started=0,waited=0,frequency=0;const char *site=NULL;
     if (ts_control_timing.depth && ts_audio_lock_affects_output(real) &&
         --ts_control_timing.depth == 0) {
         AudioState *audio = ts_control_timing.audio;
+        started=ts_control_timing.acquired;held=SDL_GetPerformanceCounter()-started;
+        waited=ts_control_timing.wait;frequency=audio->realtime_counter_frequency;site=ts_control_timing.site;
         ts_realtime_diagnostics_record_control(&audio->realtime_diagnostics,
-            SDL_GetPerformanceCounter() - ts_control_timing.acquired,
+            held,
             ts_control_timing.wait, audio->realtime_counter_frequency,
             ts_control_timing.site);
         ts_control_timing.audio = NULL;
     }
     if (real != 0) SDL_UnlockAudioDevice(real);
+    if(frequency)ts_session_log_control(started,held,waited,frequency,site);
 }
 
 static void ts_audio_pause_device(SDL_AudioDeviceID device, int pause_on)
 {
+    if(device==TS_AUDIO_LOGICAL_OUTPUT)ts_session_log_discontinuity(pause_on?"output paused":"output resumed");
     AudioState *timed_audio = (AudioState *)ts_output_userdata;
     if (device == TS_AUDIO_LOGICAL_OUTPUT && timed_audio && timed_audio->realtime_diagnostics_enabled)
         ts_realtime_diagnostics_discontinuity(&timed_audio->realtime_diagnostics);
@@ -493,6 +499,8 @@ static void ts_audio_quit(void)
     ts_midi_input = NULL;
     ts_live_ui = NULL;
     ts_live_config = NULL;
+    SDL_QuitSubSystem(SDL_INIT_AUDIO); /* Stop every SDL callback before draining the recorder. */
+    ts_session_log_stop();
     SDL_Quit();
 }
 

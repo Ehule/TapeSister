@@ -185,6 +185,7 @@ static TsSourceRoute mx_display_route(TsSourceRoute raw)
 }
 static void matrix_hide(void)
 {
+    ts_session_log_text("matrix_window","close");
     matrix_window.visible=0;matrix_window.drag=0;matrix_window.rename=-1;
     SDL_StopTextInput();if(matrix_window.window)SDL_HideWindow(matrix_window.window);
 }
@@ -199,6 +200,7 @@ static void matrix_close(void)
 static int matrix_show(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,
     TsSamplePages *pages,TsInstrument *bank,int track,int slot)
 {
+    ts_session_log_text("matrix_window","open request");
     MatrixWindow *w=&matrix_window;
     if(!w->window) {
         w->window=SDL_CreateWindow("TapeSister - Routing Matrix (F9)",SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,
@@ -409,6 +411,7 @@ static int mx_editable(void)
 static void mx_commit_controls(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui)
 {
     if(!mx_editable()){matrix_window.controls=audio->sister.matrix.controls;return;}
+    ts_session_log_text("matrix_edit","commit controls request");
     TsMatrixEffectPlan plan;
     if(!mx_stage_effects(device,audio,&matrix_window.controls,&plan)){matrix_window.controls=audio->sister.matrix.controls;return;}
     if(device)SDL_LockAudioDevice(device);
@@ -450,6 +453,7 @@ static void mx_commit_route(SDL_AudioDeviceID device,AudioState *audio,TsUiState
 {
     MatrixWindow *w=&matrix_window;if(w->selected<0 || w->selected>=w->count || !mx_editable())return;
     MatrixRow row=w->rows[w->selected];
+    ts_session_log_event("matrix_route","row_kind=%d index=%d tile_id=%llu",row.kind,row.index,(unsigned long long)row.tile);
     if((row.kind==2 || row.kind==4)) {w->controls.row[row.index]=route;mx_commit_controls(device,audio,ui);return;}
     if(!ts_source_route_valid(&route,row.kind==0))return;
     if(row.kind==3) {

@@ -238,6 +238,21 @@ int main(int argc, char **argv)
             640, 400, 32, 640 * 4, SDL_PIXELFORMAT_ARGB8888); assert(surface);
         assert(!SDL_SaveBMP(surface, argv[1])); SDL_FreeSurface(surface);
     }
+    /* Session recording works with Health hidden; resets retain the timeline. */
+    char *session_dir=SDL_GetPrefPath("TapeSisterTests","Health");assert(session_dir);
+    assert(ts_session_log_start(session_dir,0));SDL_free(session_dir);
+    ts_health.visible=0;ts_health.setup.valid=0;
+    ts_audio_health_capture_setup(a,ui,SDL_GetTicks());assert(ts_health.setup.valid);
+    ts_audio_session_update(a,ui);
+    e.type=SDL_KEYDOWN;e.key.windowID=SDL_GetWindowID(main_window);e.key.keysym.sym=SDLK_F12;
+    e.key.keysym.mod=KMOD_LCTRL|KMOD_LSHIFT;e.key.repeat=0;
+    assert(ts_audio_health_event(&e,main_window,a,ui));assert(!ts_health.visible);
+    ts_health.visible=1;
+    e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=ts_health.window_id;e.button.button=SDL_BUTTON_LEFT;
+    e.button.x=400;e.button.y=440;assert(ts_audio_health_event(&e,main_window,a,ui));
+    TsSessionLogStatus session;
+    for(int i=0;i<500;++i){ts_audio_session_update(a,ui);ts_session_log_status(&session);if(session.export_result!=1)break;SDL_Delay(10);}
+    assert(session.export_result==2);char *saved_path=SDL_GetClipboardText();assert(!strcmp(saved_path,session.export_path));SDL_free(saved_path);
     ts_audio_health_reset(a);
     ts_realtime_diagnostics_get(&a->realtime_diagnostics, &s);
     assert(!s.callback_count && !s.control_count && !s.recent_callback_count);
@@ -267,6 +282,11 @@ int main(int argc, char **argv)
     spatial_window_close();
     ts_audio_health_close(); ts_native_close(ts_real_output);
     ts_real_output = 0; ts_output_userdata = NULL;
+    ts_session_log_stop();ts_session_log_status(&session);
+    SDL_RWops *log=SDL_RWFromFile(session.path,"rb");assert(log);size_t log_size=(size_t)SDL_RWsize(log);
+    char *history=calloc(log_size+1,1);assert(history);assert(SDL_RWread(log,history,1,log_size)==log_size);SDL_RWclose(log);
+    assert(strstr(history,"heard_click") && strstr(history,"health_reset") && strstr(history,"setup_snapshot") && strstr(history,"audio_device"));
+    free(history);remove(session.path);remove(session.export_path);
     SDL_DestroyWindow(main_window); free(a); free(ui); SDL_Quit();
     puts("Audio Health: counters, nested locks, concurrent snapshots, actual device, window isolation, reset and clipboard passed");
     return 0;

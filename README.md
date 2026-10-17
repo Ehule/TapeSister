@@ -19,6 +19,7 @@ Its basic creative loop is simple:
   transformations, slow modulation, and stereo playback from any adjacent pair.
 - [Audio Health](docs/AUDIO_HEALTH.md) — live callback load, timing gaps, control stalls,
   and a copyable diagnostic report (F12 or CFG → AUDIO HEALTH).
+  [Automatic session logs](docs/audio-session-log.md) capture ordinary work for later analysis.
 - [Quick Reference](docs/QUICK_REFERENCE.md) — keys, mouse gestures, control ranges,
   capture modes, signal placement, and file types.
 - [Mosaic](docs/MOSAIC.md) — free event placement, independent pitched loops,
