@@ -95,16 +95,19 @@ framework, CDP process or new audio engine is packaged.
 
 The actual callback calls `ts_mandala_audio` once after final physical output is
 written: routing, Master EQ/limiter, OUT gain, spatial decode, clean-output mix
-and the final hardware guard have already run. All physical channels are sampled
-once, up to the existing 16-channel routing limit. Hardware sends are included
+and the final hardware guard have already run. All physical channels are sampled,
+including devices exposing more sockets than the routing grid (up to the
+backend's 255-channel limit). Hardware sends are included
 because they are actual output; the visualizer does not assume which sockets
 feed speakers. RMS is the mean of channel energies, so mirroring a stereo pair
 does not multiply level, and opposite phase cannot cancel the display. Stereo
 width is pairwise difference energy; balance compares odd/even channel energy.
 These are approximate energy measurements, not spectral analysis or true peaks.
 
-The callback copies at most 64 stratified frames × 16 floats into a four-slot
-SPSC ring. The changing positions avoid coherent decimation nulls. No visual
+The callback copies at most 1024 floats into a four-slot SPSC ring: up to 64
+stratified frames, reduced to fit all physical channels on wider devices
+(39 frames for 26 channels). Packet size and maximum copy cost stay bounded at
+the original 64 × 16 floats. The changing positions avoid coherent decimation nulls. No visual
 allocation, sample analysis, clock, file operation, graphics call, wait, retry loop or
 lock runs in the callback. Closed/frozen sampling is gated by one atomic load.
 The sole callback producer writes a slot then release-publishes its index; the
@@ -123,6 +126,14 @@ process exit without waiting, disables sampling and reclaims handles. Startup
 timeout is 10 seconds. A child that cannot honor Close within one second is
 terminated and reaped by nonblocking polling, including a suspended POSIX child.
 Child stall/crash cannot backpressure the callback.
+
+While open, the session recorder receives a `visualizer_sample` about once per
+second from the host UI. It records physical channel count, sent/consumed audio
+serials, sent/drawn configuration revisions, presented-frame count, normalized
+signal level in thousandths and freeze state. The child updates progress after
+presenting a frame; no readback or audio-thread logging is added. These counters
+help distinguish missing audio from a renderer that stopped progressing. See
+[wide-device regression validation](validation/mandala-wide-devices.md).
 
 Analysis and smoothing run only in the child. A fixed -60 dB floor and bounded
 normalization avoid noise-driven gain chasing. Audio changes membership, size,

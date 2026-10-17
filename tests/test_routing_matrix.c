@@ -15,6 +15,7 @@ static TsStereoFrame identity(void *ctx,int n,TsStereoFrame input)
 static void near(float a,float b){assert(fabsf(a-b)<.0001f);}
 static void graph(void)
 {
+    memset(calls,0,sizeof(calls));
     TsRoutingMatrix m;ts_matrix_init(&m);TsMatrixControls c=m.controls;c.enabled=1;
     assert(ts_matrix_connect(&c,TS_MATRIX_NODES,TS_MATRIX_PRISM,1000)==1);
     assert(ts_matrix_connect(&c,TS_MATRIX_NODES,TS_MATRIX_SISTER,500)==1);
@@ -219,4 +220,82 @@ static void terminal_destinations(void)
     ts_source_route_mix_init(&sums,NULL);ts_source_route_handoff(&h,&sums,1,64);
     near(sums.graph[65].r,.2f);
 }
-int main(void){graph();terminal_destinations();runtime();physical_inputs();tracker_bus();import_serial_chain();puts("Unified routing graph, TrackSister bus, shared DSP, serial import audio parity, loop isolation, hardware returns and persistence passed");}
+/* Preserve the established deterministic order, including dual ordinary/key
+   dependencies, while replacing its expensive candidate-by-candidate scan. */
+static int reference_order(const TsMatrixControls *c,int *order)
+{
+    uint64_t done=0;
+    for(int pos=0;pos<TS_MATRIX_PROCESSORS;++pos) {
+        int found=-1;
+        for(int k=0;k<TS_MATRIX_PROCESSORS;++k) {
+            int n=ts_matrix_processor(k),incoming=0;
+            if(done&(UINT64_C(1)<<n))continue;
+            for(int j=0;j<TS_MATRIX_PROCESSORS;++j) {
+                int s=ts_matrix_processor(j);if(done&(UINT64_C(1)<<s))continue;
+                for(int d=0;d<TS_MATRIX_DESTINATIONS;++d) {
+                    int parent=d==TS_MATRIX_SIDECHAIN?TS_MATRIX_COMPRESSOR:
+                        d>=TS_MATRIX_EFFECT_SC_BASE && d<TS_MATRIX_INSTANCE_DESTINATIONS?
+                            TS_MATRIX_EFFECT_BASE+d-TS_MATRIX_EFFECT_SC_BASE:d;
+                    if(parent==n && c->row[s].matrix_gain[d] && !(c->delayed[s]&ts_matrix_feedback_bit(d)))incoming=1;
+                }
+            }
+            if(!incoming){found=n;break;}
+        }
+        if(found<0)return 0;
+        order[pos]=found;done|=UINT64_C(1)<<found;
+    }
+    return 1;
+}
+static unsigned graph_random(unsigned *state)
+{return *state=*state*1664525u+1013904223u;}
+static void ordering_parity(void)
+{
+    TsRoutingMatrix m;ts_matrix_init(&m);unsigned random=19;
+    for(int iteration=0;iteration<80;++iteration) {
+        TsMatrixControls c;ts_matrix_default(&c);c.enabled=1;
+        for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)assert(ts_matrix_effect_add(&c,TS_MATRIX_FX_COMPRESSOR)==i);
+        for(int s=0;s<TS_MATRIX_ROWS;++s)memset(c.row[s].matrix_gain,0,sizeof(c.row[s].matrix_gain));
+        int nodes[TS_MATRIX_PROCESSORS],expected[TS_MATRIX_PROCESSORS];
+        for(int i=0;i<TS_MATRIX_PROCESSORS;++i)nodes[i]=ts_matrix_processor(i);
+        for(int i=TS_MATRIX_PROCESSORS-1;i>0;--i) {
+            int j=(int)(graph_random(&random)%(unsigned)(i+1)),swap=nodes[i];nodes[i]=nodes[j];nodes[j]=swap;
+        }
+        for(int s=0;s<TS_MATRIX_PROCESSORS;++s)for(int d=s+1;d<TS_MATRIX_PROCESSORS;++d) {
+            if(graph_random(&random)%3)continue;
+            c.row[nodes[s]].matrix_gain[nodes[d]]=500;
+            int key=ts_matrix_sidechain_for(nodes[d]);
+            if(key>=0)c.row[nodes[s]].matrix_gain[key]=300;
+        }
+        assert(reference_order(&c,expected));assert(ts_matrix_set(&m,&c,48000));
+        assert(!memcmp(expected,m.order,sizeof(expected)));
+        /* An unapproved self-cycle is still rejected without changing state. */
+        c.row[nodes[0]].matrix_gain[nodes[0]]=250;
+        assert(!reference_order(&c,expected));assert(!ts_matrix_set(&m,&c,48000));
+        c.feedback=1;c.delayed[nodes[0]]=UINT64_C(1)<<nodes[0];
+        assert(reference_order(&c,expected));assert(ts_matrix_set(&m,&c,48000));
+        assert(!memcmp(expected,m.order,sizeof(expected)));
+    }
+}
+static void feedback_history_activation(void)
+{
+    TsRoutingMatrix m;ts_matrix_init(&m);TsMatrixControls c=m.controls;c.enabled=1;
+    TsStereoFrame live[TS_MATRIX_ROWS-TS_MATRIX_NODES]={{0}};
+    assert(ts_matrix_set(&m,&c,48000));
+    for(int cycle=0;cycle<3;++cycle) {
+        c.feedback=1;assert(ts_matrix_connect(&c,TS_MATRIX_MAIN,TS_MATRIX_MAIN,250)==1);
+        assert(ts_matrix_set(&m,&c,48000));
+        for(int i=0;i<TS_MATRIX_DELAY*2;++i) {
+            TsSourceRouteMix sums={0};sums.graph[TS_MATRIX_MAIN]=(TsStereoFrame){.4f,-.3f};
+            ts_matrix_process(&m,&sums,live,identity,NULL);
+            near(received[TS_MATRIX_MAIN].l,.4f+(i<TS_MATRIX_DELAY?0:.25f*tanhf(.4f)));
+            near(received[TS_MATRIX_MAIN].r,-.3f+(i<TS_MATRIX_DELAY?0:.25f*tanhf(-.3f)));
+        }
+        ts_matrix_cut_feedback(&c);assert(ts_matrix_set(&m,&c,48000));
+        for(int i=0;i<300;++i) {
+            TsSourceRouteMix sums={0};sums.graph[TS_MATRIX_MAIN]=(TsStereoFrame){.9f,.7f};
+            ts_matrix_process(&m,&sums,live,identity,NULL);
+            near(received[TS_MATRIX_MAIN].l,.9f);near(received[TS_MATRIX_MAIN].r,.7f);
+        }
+    }
+}
+int main(void){ordering_parity();feedback_history_activation();graph();terminal_destinations();runtime();physical_inputs();tracker_bus();import_serial_chain();puts("Unified routing graph, TrackSister bus, shared DSP, serial import audio parity, loop isolation, hardware returns and persistence passed");}

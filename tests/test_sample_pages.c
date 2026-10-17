@@ -265,6 +265,13 @@ static void test_project_roundtrip_with_record_bank(void)
 
     /* A later save replaces the complete folder, so removed pages, REC BANK
        audio, and their WAV copies cannot survive as stale project members. */
+#ifdef _WIN32
+    CHECK(_mkdir("test-paged-project/logs") == 0);
+#else
+    CHECK(mkdir("test-paged-project/logs",0775) == 0);
+#endif
+    FILE *old_log=fopen("test-paged-project/logs/previous-session.saved.jsonl","wb");
+    CHECK(old_log!=NULL);if(old_log){fputs("previous session\n",old_log);fclose(old_log);}
     CHECK(ts_instrument_bank_clear_all(&record, error, sizeof(error)));
     CHECK(ts_sample_pages_remove_last_and_switch(
         &pages, &active, 0u, error, sizeof(error)));
@@ -272,6 +279,9 @@ static void test_project_roundtrip_with_record_bank(void)
     state.active_page = 0u;
     CHECK(ts_sample_pages_save_project(
         &pages, &active, &record, &state, path, error, sizeof(error)));
+    old_log=fopen("test-paged-project/logs/previous-session.saved.jsonl","rb");CHECK(old_log!=NULL);
+    if(old_log){char line[40];CHECK(fgets(line,sizeof(line),old_log)!=NULL && !strcmp(line,"previous session\n"));fclose(old_log);}
+    remove("test-paged-project/logs/previous-session.saved.jsonl");TS_RMDIR("test-paged-project/logs");
     {
         FILE *stale_page = fopen(
             "test-paged-project/project-data/page-002.tsr", "rb");

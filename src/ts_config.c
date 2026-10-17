@@ -1,4 +1,5 @@
 #include "tapesister/config.h"
+#include "tapesister/sister_post_fx.h"
 #include "tapesister/performance.h"
 #include "tapesister/sister_limiter.h"
 
@@ -81,6 +82,8 @@ void ts_config_init(TsConfig *config)
             TS_SISTER_LIMITER_DEFAULT_LOOKAHEAD_MS;
         config->sister_limiter_release_ms =
             TS_SISTER_LIMITER_DEFAULT_RELEASE_MS;
+        config->session_log = 1;
+        config->pedalboard_slots = TS_SISTER_FX_SLOT_DEFAULT;
         config->sister_fx_effect_transition_ms = 240000;
         config->sister_fx_transition_ms = 240000;
         config->sister_fallout_transition_ms = 240000;
@@ -461,6 +464,14 @@ int ts_config_load(TsConfig *config, const char *path,
             if (!parse_clamped_float(value, TS_SISTER_LIMITER_LOOKAHEAD_MS_MIN, TS_SISTER_LIMITER_LOOKAHEAD_MS_MAX, &loaded.sister_limiter_lookahead_ms)) { snprintf(error, error_size, "Invalid limiter lookahead on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "sister_limiter_release_ms") == 0) {
             if (!parse_clamped_float(value, TS_SISTER_LIMITER_RELEASE_MS_MIN, TS_SISTER_LIMITER_RELEASE_MS_MAX, &loaded.sister_limiter_release_ms)) { snprintf(error, error_size, "Invalid limiter release on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "session_log") == 0) {
+            if (!parse_boolean(value, &loaded.session_log)) { snprintf(error, error_size, "Invalid session log switch on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "pedalboard_slots") == 0 || strcmp(key, "PedalboardSlots") == 0) {
+            if (!parse_clamped_integer(value, TS_SISTER_FX_SLOT_MIN, TS_SISTER_FX_SLOT_COUNT,
+                                       &loaded.pedalboard_slots)) {
+                snprintf(error, error_size, "Invalid pedalboard slot default on config line %d", line_number);
+                fclose(file); return 0;
+            }
         } else if (strcmp(key, "sister_fx_effect_transition_ms") == 0) {
             if (!parse_clamped_integer(value, 10, 3600000, &loaded.sister_fx_effect_transition_ms)) { snprintf(error, error_size, "Invalid individual FX transition time on config line %d", line_number); fclose(file); return 0; }
             saw_fx_effect_transition = 1;
@@ -583,6 +594,7 @@ int ts_config_save(const TsConfig *config, const char *path,
         snprintf(error, error_size, "Could not create config: %s", strerror(errno));
         return 0;
     }
+    int session_write_failed = fprintf(file,"; Automatic local Audio Health session recording (0 disables next launch).\nsession_log=%d\n",config->session_log)<0;
     int visual_write_failed = fprintf(file,"; Visualizer presentation only (project seed lives in sister-state.ini).\nvisual_quality=%d\nvisual_display=%d\nvisual_fullscreen=%d\n",config->visual_quality,config->visual_display,config->visual_fullscreen)<0;
     write_failed = fprintf(file,
                 "; TapeSister paths. Blank values disable that shortcut.\n"
@@ -676,6 +688,8 @@ int ts_config_save(const TsConfig *config, const char *path,
                 "; Final attenuation after the limiter: 0=mute, 100=unity.\n"
                 "master_output_percent=%d\n"
                 "; Default individual Reverb/Delay/Distortion ramp: 10 ms to 60 minutes.\n"
+                "# Pedalboard slots for NEW projects only (5..20). Saved projects retain their count.\n"
+                "pedalboard_slots=%d\n"
                 "sister_fx_effect_transition_ms=%d\n"
                 "; Default Master FX gate ramp: 10 ms to 60 minutes.\n"
                 "sister_fx_transition_ms=%d\n"
@@ -759,6 +773,7 @@ int ts_config_save(const TsConfig *config, const char *path,
                 config->sister_limiter_lookahead_ms,
                 config->sister_limiter_release_ms,
                 config->master_output_percent,
+                ts_sister_fx_slot_count(config->pedalboard_slots),
                 config->sister_fx_effect_transition_ms,
                 config->sister_fx_transition_ms,
                 config->sister_fallout_transition_ms,
@@ -851,7 +866,7 @@ int ts_config_save(const TsConfig *config, const char *path,
     if(!write_failed)write_failed=!ts_insert_write(file,&config->insert);
     if(!write_failed)write_failed=fprintf(file,"insert_send_device=%s\ninsert_return_device=%s\n",
         config->insert_send_device,config->insert_return_device)<0;
-    write_failed |= visual_write_failed;
+    write_failed |= visual_write_failed | session_write_failed;
     if (fclose(file) != 0) write_failed = 1;
     if (write_failed) {
         set_error(error, error_size, "Could not finish writing config");

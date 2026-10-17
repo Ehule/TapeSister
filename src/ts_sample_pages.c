@@ -726,6 +726,20 @@ static int rename_directory(const char *source, const char *destination)
 #endif
 }
 
+/* Unlike stat-based directory checks, preserve a logs entry even if it is a
+   file or a dangling link. An inspection error must not become data deletion. */
+static int path_entry_exists(const char *path)
+{
+#ifdef _WIN32
+    if(GetFileAttributesA(path)!=INVALID_FILE_ATTRIBUTES)return 1;
+    DWORD error=GetLastError();
+    return error==ERROR_FILE_NOT_FOUND || error==ERROR_PATH_NOT_FOUND?0:-1;
+#else
+    struct stat info;if(!lstat(path,&info))return 1;
+    return errno==ENOENT?0:-1;
+#endif
+}
+
 static void sample_safe_name(const char *source, char *safe, size_t size)
 {
     size_t used = 0u;
@@ -892,10 +906,12 @@ int ts_sample_pages_save_project(const TsSamplePages *pages,
     char manifest[TS_PROJECT_PATH_MAX];
     char state_path[TS_PROJECT_PATH_MAX];
     char sample_directory[TS_PROJECT_PATH_MAX];
+    char old_logs[TS_PROJECT_PATH_MAX], staged_logs[TS_PROJECT_PATH_MAX];
     char group[64];
     FILE *file;
     int record_present;
     int had_existing;
+    int carry_logs=0;
     size_t sample_count = 0u;
     const char *project_name = path_name(path);
     if (pages == NULL || path == NULL || path[0] == '\0' ||
@@ -1070,11 +1086,35 @@ int ts_sample_pages_save_project(const TsSamplePages *pages,
             goto failed;
         }
     }
+    /* The project transaction replaces the whole bundle, but diagnostic
+       history belongs to the session, not to the newly serialized project. */
+    if(had_existing) {
+        int n=snprintf(old_logs,sizeof(old_logs),"%s/logs",directory);
+        int m=snprintf(staged_logs,sizeof(staged_logs),"%s/logs",staging);
+        if(n<0 || n>=(int)sizeof(old_logs) || m<0 || m>=(int)sizeof(staged_logs)) {
+            pages_error(error,error_size,"Project log path is too long");goto failed;
+        }
+        carry_logs=path_entry_exists(old_logs);
+        n=snprintf(old_logs,sizeof(old_logs),"%s/logs",backup);
+        if(carry_logs<0 || n<0 || n>=(int)sizeof(old_logs)) {
+            pages_error(error,error_size,"Could not preserve project logs");goto failed;
+        }
+    }
     if (had_existing && !rename_directory(directory, backup)) {
         pages_error(error, error_size, "Could not prepare the existing project for replacement");
         goto failed;
     }
+    if(carry_logs && !rename_directory(old_logs,staged_logs)) {
+        (void)rename_directory(backup,directory);
+        pages_error(error,error_size,"Could not carry project logs into saved bundle");goto failed;
+    }
     if (!rename_directory(staging, directory)) {
+        if(carry_logs && !rename_directory(staged_logs,old_logs)) {
+            /* Keep both recovery folders. In particular, never remove staging
+               while it owns the only copy of the user's previous logs. */
+            pages_error(error,error_size,"Save failed; logs kept in staging and old project kept in backup");
+            return 0;
+        }
         if (had_existing) (void)rename_directory(backup, directory);
         pages_error(error, error_size, "Could not publish the complete project folder");
         goto failed;

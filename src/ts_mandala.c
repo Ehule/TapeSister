@@ -133,6 +133,7 @@ void ts_mandala_push(TsMandalaQueue *q, const float *out, unsigned frames, unsig
     }
     TsMandalaPacket *p = &q->packet[w % TS_MANDALA_QUEUE];
     p->count = frames < TS_MANDALA_SAMPLES ? frames : TS_MANDALA_SAMPLES;
+    if(p->count>TS_MANDALA_VALUES/channels)p->count=TS_MANDALA_VALUES/channels;
     p->channels = channels;
     for (unsigned i = 0; i < p->count; ++i) {
         unsigned start = (unsigned)((uint64_t)i * frames / p->count);
@@ -142,7 +143,7 @@ void ts_mandala_push(TsMandalaQueue *q, const float *out, unsigned frames, unsig
            resampled signal or input to a spectrum analyzer. */
         unsigned phase = (i * 2654435761u) ^ (w * 2246822519u);
         unsigned at = start + phase % (end-start);
-        memcpy(p->samples[i], out + (size_t)at * channels, channels * sizeof(float));
+        memcpy(p->samples+(size_t)i*channels, out + (size_t)at * channels, channels * sizeof(float));
     }
     atomic_store_explicit(&q->write, w + 1, memory_order_release);
 #endif
@@ -160,17 +161,19 @@ void ts_mandala_analyze(const TsMandalaPacket *p, TsMandalaFeatures *f, float dt
 {
     double energy = 0, side = 0, left = 0, right = 0;
     float peak = 0;
-    if (p && (p->count > TS_MANDALA_SAMPLES || p->channels > TS_MANDALA_CHANNELS)) p = NULL;
+    if (p && (p->count > TS_MANDALA_SAMPLES || p->channels > TS_MANDALA_CHANNELS ||
+              p->count*p->channels > TS_MANDALA_VALUES)) p = NULL;
     if (p) {
         for (unsigned i = 0; i < p->count; ++i) for (unsigned c = 0; c < p->channels; ++c) {
-            float v = p->samples[i][c];
+            const float *frame=p->samples+(size_t)i*p->channels;
+            float v = frame[c];
             if (!isfinite(v)) v = 0;
             v = fmaxf(-1, fminf(1, v));
             double e = v * v; energy += e;
             if (c & 1) right += e; else left += e;
             peak = fmaxf(peak, fabsf(v));
-            if ((c & 1) && isfinite(p->samples[i][c-1])) {
-                float d = v - fmaxf(-1, fminf(1, p->samples[i][c-1])); side += d*d;
+            if ((c & 1) && isfinite(frame[c-1])) {
+                float d = v - fmaxf(-1, fminf(1, frame[c-1])); side += d*d;
             }
         }
     }

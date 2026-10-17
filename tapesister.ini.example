@@ -232,3 +232,7 @@ visual_fullscreen=0
 ; Whole-master-EQ A/B sweep range, 1..14400 seconds (four hours per leg).
 ; A/B captures, Loop and Time are written automatically by SAVE CONFIG.
 eq_morph_max_seconds=240
+
+; Automatic Audio Health session logging in the writable per-user Health folder.
+; 0 disables recording next launch; detailed PROFILE remains separately optional.
+session_log=1

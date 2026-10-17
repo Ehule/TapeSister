@@ -15,8 +15,8 @@ static void test_performance_transport(const char *directory)
     a.sister.performance_transport=7;assert(!performance_command(1,window,0,&a,&u,&pages,&bank,NULL,48000));assert(!m->playing);
     a.sister.performance_transport=6;
     a.sister.performance_mixer.restart=1;m->time=3;
-    assert(performance_command(1,window,0,&a,&u,&pages,&bank,NULL,48000));assert(m->playing && m->time==0 && ts_tapehead_running());
-    assert(performance_command_for(PERF_MOSAIC,0,0,window,0,&a,&u,&pages,&bank,NULL,48000));assert(!m->playing && ts_tapehead_running());
+    assert(performance_command(1,window,0,&a,&u,&pages,&bank,NULL,48000));assert(m->playing && m->time==3 && ts_tapehead_running());
+    assert(performance_command_for(PERF_MOSAIC,0,window,0,&a,&u,&pages,&bank,NULL,48000));assert(!m->playing && ts_tapehead_running());
     performance_show(&u,&a);
     SDL_Event e;SDL_zero(e);e.type=SDL_KEYDOWN;e.key.windowID=SDL_GetWindowID(window);e.key.keysym.sym=SDLK_F11;
     int tracker_open=u.tracker_open;u.tracker_open=0;matrix_window.rename=-1;
@@ -37,6 +37,65 @@ static void test_performance_transport(const char *directory)
     e.key.keysym.sym=SDLK_SPACE;e.key.keysym.mod=KMOD_CTRL|KMOD_SHIFT;
     assert(performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));
     e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=performance_transport.id;e.button.button=SDL_BUTTON_LEFT;e.button.clicks=1;
+    /* Real F11 buttons and Shift+Space preserve progressed playback, including
+       old projects saved with Restart Together and a detached editor cursor. */
+    int saved_length=song.songLength,saved_order=song.orders[1];
+    song.songLength=2;song.orders[1]=song.orders[0];
+    double transport_energy[4];
+    for(int legacy_restart=0;legacy_restart<2;++legacy_restart) {
+        a.sister.performance_mixer.restart=legacy_restart;
+        a.sister.performance_transport=PERF_TRACKER|PERF_MOSAIC;
+        setSongPos(1,8,RESET_SONG_TICK);m->time=3;m->playing=1;
+        for(int block=0;block<4;++block)render(transport_energy);
+        int position=song.songPos,row=song.row;double time=m->time;
+        assert(position==1 && row>=8 && time>3);
+        editor.songPos=editor.row=0; /* Follow-off edit cursor must not win. */
+        e.button.x=230;e.button.y=375;
+        assert(performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));
+        assert(performance_transport.flash==PERF_BUTTON_STOP);
+        assert(!ts_tapehead_running() && !m->playing);
+        for(int block=0;block<4;++block)render(transport_energy);
+        ts_tapehead_tick();
+        assert(song.songPos==position && song.row==row && m->time==time);
+        assert(editor.songPos==position && editor.row==row);
+        assert(performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000)); /* pause twice */
+        e.button.x=30;assert(performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));
+        assert(ts_tapehead_running() && m->playing);
+        assert(song.songPos==position && song.row==row && m->time==time);
+        for(int block=0;block<4;++block)render(transport_energy);
+        assert(song.row>row && m->time>time);
+        row=song.row;time=m->time;
+        /* Each row pauses/resumes independently. */
+        e.button.x=230;e.button.y=145;
+        assert(performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));
+        assert(!ts_tapehead_running() && m->playing && song.row==row);
+        e.button.y=200;assert(performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));
+        assert(!m->playing && m->time==time);
+        assert(performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));
+        e.button.y=145;assert(performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));
+        assert(ts_tapehead_running() && m->playing && song.row==row && m->time==time);
+        SDL_Event shortcut;SDL_zero(shortcut);shortcut.type=SDL_KEYDOWN;
+        shortcut.key.windowID=performance_transport.id;shortcut.key.keysym.sym=SDLK_SPACE;
+        shortcut.key.keysym.mod=KMOD_SHIFT;
+        for(int toggle=0;toggle<2;++toggle) {
+            assert(performance_event(&shortcut,window,0,&a,&u,&pages,&bank,NULL,48000));
+            assert(ts_tapehead_running()==toggle && m->playing==toggle);
+            assert(song.songPos==position && song.row==row && m->time==time);
+        }
+        e.button.x=480;e.button.y=375;
+        assert(performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));
+        assert(performance_transport.flash==PERF_BUTTON_HOME);
+        assert(!ts_tapehead_running() && !m->playing && !song.songPos && !song.row && !m->time);
+        e.button.x=30;assert(performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));
+        assert(ts_tapehead_running() && m->playing && !song.songPos && !song.row && !m->time);
+    }
+    ts_tapehead_stop();song.songLength=saved_length;song.orders[1]=saved_order;
+    /* End-of-arrangement Play also waits for an explicit rewind. */
+    m->playing=0;m->time=ts_mosaic_end(m);int repeat=m->repeat;m->repeat=0;
+    assert(performance_command_for(PERF_MOSAIC,1,window,0,&a,&u,&pages,&bank,NULL,48000));
+    render(transport_energy);assert(!m->playing && m->time==ts_mosaic_end(m));
+    assert(performance_command_for(PERF_MOSAIC,2,window,0,&a,&u,&pages,&bank,NULL,48000));
+    assert(!m->time);m->repeat=repeat;
     e.button.x=430;e.button.y=24;assert(performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));assert(a.sister.performance_mixer.always_on_top);
     /* SDL dummy has no window manager; persistence is checked independently. */
     if(strcmp(SDL_GetCurrentVideoDriver(),"dummy"))assert(SDL_GetWindowFlags(performance_transport.window)&SDL_WINDOW_ALWAYS_ON_TOP);

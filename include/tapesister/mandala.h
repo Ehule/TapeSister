@@ -26,10 +26,13 @@ int ts_mandala_valid(const TsMandalaConfig *config);
 int ts_mandala_write(FILE *file, const TsMandalaConfig *config);
 int ts_mandala_read(TsMandalaConfig *config, const char *key, const char *value);
 
-enum { TS_MANDALA_SAMPLES = 64, TS_MANDALA_CHANNELS = 16, TS_MANDALA_QUEUE = 4 };
+enum { TS_MANDALA_SAMPLES = 64, TS_MANDALA_CHANNELS = 255,
+       TS_MANDALA_VALUES = 64*16, TS_MANDALA_QUEUE = 4 };
 typedef struct {
     unsigned count, channels;
-    float samples[TS_MANDALA_SAMPLES][TS_MANDALA_CHANNELS];
+    /* Interleaved physical channels. Wider devices use fewer sampled frames,
+       retaining the original 1024-float copy budget and packet size. */
+    float samples[TS_MANDALA_VALUES];
 } TsMandalaPacket;
 /* Exactly one serialized callback writer and one UI reader. Neither resets
    indices during use. release/acquire transfers exclusive ownership of a slot.

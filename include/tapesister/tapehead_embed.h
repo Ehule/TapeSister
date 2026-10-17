@@ -37,7 +37,7 @@ void ts_tapehead_focus_lost(void);
 int ts_tapehead_midi(const TsMidiEvent *event,int allow_note_on);
 void ts_tapehead_stop(void);
 /* Caller holds ts_tapehead_host_lock across the complete transport group. */
-int ts_tapehead_transport_locked(int command); /* 0 stop, 1 play, 2 rewind */
+int ts_tapehead_transport_locked(int command); /* 0 pause at row, 1 play/resume, 2 rewind */
 const uint32_t *ts_tapehead_frame(void);
 const float *ts_tapehead_render(unsigned frames, unsigned rate);
 void ts_tapehead_route_outputs(unsigned available);

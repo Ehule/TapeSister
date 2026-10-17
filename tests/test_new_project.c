@@ -78,6 +78,7 @@ static int cancelled_import(void *data)
 }
 static void assert_empty(void)
 {
+    assert(audio.sister.parameters.fx.slot_count==7 && ui.config.pedalboard_slots==7);
     assert(pages.page_count==1 && pages.active_page==0 && pages.active_live);
     assert(!record_active && !bank.current.data && !record.current.data);
     assert(!ts_instrument_bank_count(&bank) && !ts_instrument_bank_count(&record));
@@ -121,6 +122,7 @@ int main(int argc,char **argv)
     transform_controller_init(&transform);import_controller_init(&importer);fm_bank_history_init(&history);
     ui.mosaic=audio.mosaic=pages.mosaic=ts_mosaic_create();assert(ui.mosaic);
     ui.tracker=&pages.tracker;mosaic.pages=&pages;
+    ui.config.pedalboard_slots=7;
     ui.config.master_output_percent=63;ui.config.audio_buffer_frames=512;
     snprintf(ui.config.midi_input_device,sizeof(ui.config.midi_input_device),"PRESERVE MIDI");
     ui.palette.colors[0]=0xff123456;
@@ -145,7 +147,10 @@ int main(int argc,char **argv)
     browser_cancel(&ui);
     assert(!ui.exit_after_save && !ui.exit_for_new && project_hash()==before);
     begin_new_confirmation(&session);ui.exit_choice=0;exit_confirmation_activate(&ui);
+    char *logs=SDL_GetPrefPath("TapeSisterTests","New Project Health");assert(logs);
+    assert(ts_session_log_start(logs,0));SDL_free(logs);
     run_save("/__tapesister_missing_parent__/cannot-save.tsr");
+    TsSessionLogStatus log;ts_session_log_status(&log);assert(!log.export_result);
     assert(!ui.exit_after_save && !ui.new_project_pending && !ui.exit_for_new && project_hash()==before);
     browser_cancel(&ui);
 
@@ -158,6 +163,12 @@ int main(int argc,char **argv)
     begin_new_confirmation(&session);ui.exit_choice=0;exit_confirmation_activate(&ui);
     run_save("new-project-flow.tsr");
     assert(ui.exit_after_save==2 && ui.exit_for_new && !ui.new_project_pending);
+    for(int i=0;i<500;++i){ts_session_log_status(&log);if(log.export_result!=1)break;SDL_Delay(10);}
+    assert(log.export_result==2);
+    FILE *previous_log=fopen("new-project-flow/logs/previous-session.saved.jsonl","wb");assert(previous_log);
+    fputs("preserve older session\n",previous_log);fclose(previous_log);
+    run_save("new-project-flow.tsr"); /* Complete bundle replacement keeps logs. */
+    run_save("new-project-flow.tsr"); /* A prior export can still be in flight. */
     static TsSamplePages saved;static TsInstrument saved_bank,saved_record;
     assert(ts_sample_pages_init(&saved,error,sizeof(error)));
     ts_instrument_init(&saved_bank);ts_instrument_init(&saved_record);
@@ -165,6 +176,15 @@ int main(int argc,char **argv)
     assert(saved.page_count==2 && saved_bank.current.frames==512);
     ts_sample_pages_free(&saved);ts_instrument_free(&saved_bank);ts_instrument_free(&saved_record);
     assert(project_new(NULL,0,0,&session));assert_empty();
+    /* New clears the active path while the accepted save still targets the
+       previous project's bundle. Immediate shutdown must finish the copy. */
+    ts_session_log_stop();ts_session_log_status(&log);assert(log.export_result==2);
+    assert(!strncmp(log.export_path,"new-project-flow/logs/health-session-",36));
+    SDL_RWops *session_history=SDL_RWFromFile(log.export_path,"rb");assert(session_history);SDL_RWclose(session_history);
+    previous_log=fopen("new-project-flow/logs/previous-session.saved.jsonl","rb");assert(previous_log);
+    char previous_text[40];assert(fgets(previous_text,sizeof(previous_text),previous_log));fclose(previous_log);
+    assert(!strcmp(previous_text,"preserve older session\n"));remove("new-project-flow/logs/previous-session.saved.jsonl");
+    remove(log.path);remove(log.export_path);
 
     /* Cancel and join a late decode; its result cannot cross the reset. */
     populate();importer.worker=calloc(1,sizeof(*importer.worker));assert(importer.worker);

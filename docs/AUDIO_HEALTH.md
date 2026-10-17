@@ -5,7 +5,12 @@ monitor. It stays on top while you adjust controls in the instrument, so the
 readings remain visible. F12, Escape or the window close button hides it;
 playback continues. Counters continue while it is hidden.
 
-To investigate a crackle, get the notes, ARP and effects running, press **RESET**,
+Normal sessions are now recorded automatically, including while this window is
+closed. Use **SAVE SESSION** and **LOG FOLDER** to share the timeline; optionally
+mark something you heard with **HEARD A CLICK** or **Ctrl+Shift+F12**. See
+[Session recording](audio-session-log.md) for contents, storage limits and controls.
+
+For a controlled comparison, get the notes, ARP and effects running, press **RESET**,
 then repeat the parameter edit or keyboard drag. **COPY REPORT** puts the current
 measurements on the clipboard. Include that report, which control you moved,
 and whether you heard a click. Compare a run with controls stationary against
@@ -13,7 +18,7 @@ one with the same controls moving.
 
 The report's **Active setup** section lists keyboard HOLD and active/held voice
 instances, ARP and outer ARP transport, Sister power/transport/monitor/source
-switches, Fallout, Prism and its Matrix/lens sequence, all four pedalboard slots
+switches, Fallout, Prism and its Matrix/lens sequence, all configured pedalboard slots
 with their types/mixes/placements, Insert availability, and Router order/bypass.
 Enabled switches and effective routing are shown separately: an enabled Prism
 can still be bypassed, and Fallout also depends on the FX master. These are
@@ -29,6 +34,7 @@ actual signal activity, use the softly fading indicators in [F9](ROUTING_MATRIX.
 the setup snapshot reports controls, not measured sound.
 
 Setup is copied at most four times per second while the monitor is visible,
+PROFILE is enabled, or the session recorder is running,
 during the UI's existing locked state read. Formatting happens after that lock
 is released; this adds no audio-callback work or additional lock acquisition.
 The report includes snapshot age. Setup describes the recent state, **not the
@@ -70,8 +76,9 @@ while audio runs; the recent load window is published consistently.
 
 Timing uses two performance-counter reads per output callback and per outer
 control hold (plus one before acquisition to separate wait). Counter updates are
-bounded, with no allocation, logging, extra lock or retry loop added by the
-telemetry. The ASIO adapter separately uses the bounded retry described above.
+bounded, with no allocation, file writing, extra lock or retry loop added by the
+telemetry. The session recorder adds a bounded packet enqueue; its background
+thread handles logging and system counters. The ASIO adapter separately uses the bounded retry described above.
 Instrumentation is enabled only when its atomics are lock-free. Rendering,
 formatting and clipboard work stay on the UI thread. The visible panel updates
 at most four times per second, uses no vsync wait, and does no drawing when hidden

@@ -71,6 +71,26 @@ int main(int argc, char **argv)
     ts_audio_endpoint_opened(&ts_output_endpoint, ts_real_output, "Test output", 0,
         got.freq, got.channels, got.samples, "F32");
     ui->config.audio_buffer_frames = 2048; /* Display must use the obtained size. */
+    /* Idle Matrix maintenance must not contend with audio once per UI tick. */
+    ts_matrix_effects_init(&a->sister.matrix_effects);
+    for(int i=0;i<100;++i)mx_collect_effects(TS_AUDIO_LOGICAL_OUTPUT,a);
+    assert(atomic_load(&a->realtime_diagnostics.control_count)==0);
+    TsMatrixControls lifecycle;ts_matrix_default(&lifecycle);
+    assert(ts_matrix_effect_add(&lifecycle,TS_MATRIX_FX_COMPRESSOR)==0);
+    assert(ts_matrix_effects_restore(&a->sister.matrix_effects,&lifecycle,48000));
+    ts_matrix_effect_remove(&lifecycle,0);
+    TsMatrixEffectPlan retirement;
+    assert(ts_matrix_effects_stage(&a->sister.matrix_effects,&lifecycle,48000,&retirement));
+    ts_matrix_effects_commit(&a->sister.matrix_effects,&lifecycle,48000,&retirement);
+    assert(a->sister.matrix_effects.previous[0]);
+    mx_collect_effects(TS_AUDIO_LOGICAL_OUTPUT,a);
+    assert(a->sister.matrix_effects.previous[0]);
+    assert(atomic_load(&a->realtime_diagnostics.control_count)==0);
+    for(int i=0;i<576;++i)ts_matrix_effects_tick(&a->sister.matrix_effects);
+    mx_collect_effects(TS_AUDIO_LOGICAL_OUTPUT,a);
+    assert(!a->sister.matrix_effects.previous[0]);
+    assert(atomic_load(&a->realtime_diagnostics.control_count)==1);
+    ts_realtime_diagnostics_reset(&a->realtime_diagnostics);
     ts_audio_lock_device_at(TS_AUDIO_LOGICAL_OUTPUT, "outer edit");
     ts_audio_lock_device_at(TS_AUDIO_LOGICAL_OUTPUT, "nested edit");
     ts_audio_unlock_device(TS_AUDIO_LOGICAL_OUTPUT);
@@ -108,7 +128,7 @@ int main(int argc, char **argv)
         ts_realtime_diagnostics_record_timed(&a->realtime_diagnostics, i * 10000u,
             2500, 1000000, 48000, 480, 0);
     ts_audio_health_update(a, ui);
-    char report[4096]; ts_audio_health_report(a, report, sizeof(report));
+    char report[32768]; ts_audio_health_report(a, report, sizeof(report));
     assert(strstr(report, "48000 Hz, 256 frames, 2 channels"));
     assert(strstr(report, "Build: " TAPESISTER_BUILD_MARKER));
     assert(strstr(report, "Longest hold call site: named_edit_for_health"));
@@ -194,6 +214,19 @@ int main(int argc, char **argv)
     assert(strstr(setup, "ARP: STOPPED; outer ARP: STOPPED; active slot: 0"));
     assert(strstr(setup, "Sister Machine: OFF") && strstr(setup, "Prism: OFF"));
     assert(strstr(setup, "Matrix: STOPPED"));
+    TsMatrixControls *matrix=&a->sister.matrix.controls;
+    ts_matrix_default(matrix);matrix->enabled=1;
+    int grain=ts_matrix_effect_add(matrix,TS_SISTER_FX_GRAIN);
+    int comp=ts_matrix_effect_add(matrix,TS_MATRIX_FX_COMPRESSOR);
+    assert(grain==0 && comp==1);
+    matrix->row[TS_MATRIX_EFFECT_BASE+grain].matrix_gain[TS_MATRIX_EFFECT_BASE+comp]=500;
+    matrix->row[TS_MATRIX_MOSAIC].matrix_gain[TS_MATRIX_EFFECT_SC_BASE+comp]=1000;
+    ts_audio_health_capture_setup(a,ui,1750);
+    char matrix_report[8192];ts_audio_health_setup_report(matrix_report,sizeof(matrix_report),1750);
+    assert(strstr(matrix_report,"GRAIN #1 -> COMPRESSOR #2"));
+    assert(strstr(matrix_report,"MOSAIC -> COMPRESSOR #2 SIDECHAIN"));
+    assert(strstr(matrix_report,"Matrix effect #1: GRAIN; ON; mix 100.0%"));
+    assert(!strstr(matrix_report,"OUTPUT -> OUTPUT"));
     char short_report[17]; memset(short_report, 'x', sizeof(short_report));
     ts_audio_health_setup_report(short_report, sizeof(short_report) - 1, 1250);
     assert(short_report[15] == '\0' && short_report[16] == 'x');
@@ -205,6 +238,45 @@ int main(int argc, char **argv)
             640, 400, 32, 640 * 4, SDL_PIXELFORMAT_ARGB8888); assert(surface);
         assert(!SDL_SaveBMP(surface, argv[1])); SDL_FreeSurface(surface);
     }
+    /* Session recording works with Health hidden; resets retain the timeline. */
+    char folder_url[6160];
+    assert(ts_audio_session_folder_url("C:\\A B\\\xc3\xa9\\logs\\session.jsonl",folder_url,sizeof(folder_url)));
+    assert(!strcmp(folder_url,"file:///C:/A%20B/%C3%A9/logs/"));
+    assert(ts_audio_session_folder_url("\\\\server\\share\\logs\\session.jsonl",folder_url,sizeof(folder_url)));
+    assert(!strcmp(folder_url,"file://server/share/logs/"));
+    assert(ts_audio_session_folder_url("relative/logs/session.jsonl",folder_url,sizeof(folder_url)));
+    assert(!strncmp(folder_url,"file:///",8) && strstr(folder_url,"/relative/logs/"));
+    assert(!ts_audio_session_folder_url("",folder_url,sizeof(folder_url)));
+    char *session_dir=SDL_GetPrefPath("TapeSisterTests","Health");assert(session_dir);
+    assert(ts_session_log_start(session_dir,0));SDL_free(session_dir);
+    ts_health.visible=0;ts_health.setup.valid=0;
+    ts_audio_health_capture_setup(a,ui,SDL_GetTicks());assert(ts_health.setup.valid);
+    ts_audio_session_update(a,ui);
+    e.type=SDL_KEYDOWN;e.key.windowID=SDL_GetWindowID(main_window);e.key.keysym.sym=SDLK_F12;
+    e.key.keysym.mod=KMOD_LCTRL|KMOD_LSHIFT;e.key.repeat=0;
+    assert(ts_audio_health_event(&e,main_window,a,ui));assert(!ts_health.visible);
+    ts_health.visible=1;
+    e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=ts_health.window_id;e.button.button=SDL_BUTTON_LEFT;
+    e.button.x=400;e.button.y=440;assert(ts_audio_health_event(&e,main_window,a,ui));
+    TsSessionLogStatus session;
+    for(int i=0;i<500;++i){ts_audio_session_update(a,ui);ts_session_log_status(&session);if(session.export_result!=1)break;SDL_Delay(10);}
+    assert(session.export_result==2);char *saved_path=SDL_GetClipboardText();assert(!strcmp(saved_path,session.export_path));SDL_free(saved_path);
+    remove(session.export_path);
+    char *project_dir=SDL_GetPrefPath("TapeSisterTests","Health Project");assert(project_dir);
+    snprintf(ui->project_path,sizeof(ui->project_path),"%sShow.tsr",project_dir);SDL_free(project_dir);
+    /* A normal project save must not overwrite the user's clipboard. */
+    assert(!SDL_SetClipboardText("keep my clipboard"));
+    assert(ts_session_log_export_project(ui->project_path,0));
+    for(int i=0;i<500;++i){ts_audio_session_update(a,ui);ts_session_log_status(&session);if(session.export_result!=1)break;SDL_Delay(10);}
+    assert(session.export_result==2 && strstr(session.export_path,"logs/health-session-"));
+    saved_path=SDL_GetClipboardText();assert(!strcmp(saved_path,"keep my clipboard"));SDL_free(saved_path);
+    /* SAVE SESSION follows the active project even after a previous export;
+       completion must be noticed when the writer finishes before UI polling. */
+    assert(ts_audio_health_event(&e,main_window,a,ui));
+    for(int i=0;i<500;++i){ts_session_log_status(&session);if(session.export_result!=1)break;SDL_Delay(10);}
+    ts_audio_session_update(a,ui);
+    saved_path=SDL_GetClipboardText();assert(!strcmp(saved_path,session.export_path));SDL_free(saved_path);
+    ts_audio_health_report(a,report,sizeof(report));assert(strstr(report,"Session export: SAVED"));
     ts_audio_health_reset(a);
     ts_realtime_diagnostics_get(&a->realtime_diagnostics, &s);
     assert(!s.callback_count && !s.control_count && !s.recent_callback_count);
@@ -234,6 +306,11 @@ int main(int argc, char **argv)
     spatial_window_close();
     ts_audio_health_close(); ts_native_close(ts_real_output);
     ts_real_output = 0; ts_output_userdata = NULL;
+    ts_session_log_stop();ts_session_log_status(&session);
+    SDL_RWops *log=SDL_RWFromFile(session.path,"rb");assert(log);size_t log_size=(size_t)SDL_RWsize(log);
+    char *history=calloc(log_size+1,1);assert(history);assert(SDL_RWread(log,history,1,log_size)==log_size);SDL_RWclose(log);
+    assert(strstr(history,"heard_click") && strstr(history,"health_reset") && strstr(history,"setup_snapshot") && strstr(history,"audio_device"));
+    free(history);remove(session.path);remove(session.export_path);
     SDL_DestroyWindow(main_window); free(a); free(ui); SDL_Quit();
     puts("Audio Health: counters, nested locks, concurrent snapshots, actual device, window isolation, reset and clipboard passed");
     return 0;

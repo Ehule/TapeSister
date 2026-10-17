@@ -21,6 +21,7 @@ static TsSamplePages pages;
 static char error[160];
 static float out[512*4];
 static double timings[200000],arrivals[200000];
+static Uint64 callback_starts[200000];
 static atomic_uint timing_count;
 static Uint64 last_start;
 static unsigned input_phase;
@@ -44,6 +45,7 @@ static void measured_callback(void *unused,Uint8 *output,int bytes)
         double frequency=(double)SDL_GetPerformanceFrequency();
         timings[index]=(SDL_GetPerformanceCounter()-start)*1e6/frequency;
         arrivals[index]=last_start?(start-last_start)*1e6/frequency:0;
+        callback_starts[index]=start;
         atomic_store_explicit(&timing_count,index+1,memory_order_release);
     }
     last_start=start;
@@ -122,7 +124,7 @@ static void external_tap_checks(void)
     assert(f.level>.1f);
     ts_sister_runtime_set_master_output_gain(&a.sister,0);
     for(int i=0;i<50;++i) {measured_callback(NULL,(Uint8*)out,sizeof(out));ts_mandala_latest(&audio_queue,&packet);}
-    for(unsigned i=0;i<packet.count;++i)for(unsigned ch=0;ch<packet.channels;++ch)assert(packet.samples[i][ch]==0);
+    for(unsigned i=0;i<packet.count;++i)for(unsigned ch=0;ch<packet.channels;++ch)assert(packet.samples[i*packet.channels+ch]==0);
     a.output_device_channels=2;ts_sister_runtime_set_master_output_gain(&a.sister,1);
     for(int i=0;i<50;++i) {
         measured_callback(NULL,(Uint8*)out,512*2*sizeof(float));ts_mandala_latest(&audio_queue,&packet);
@@ -258,6 +260,58 @@ static void editor_key(SDL_Keycode key,Uint16 mod)
     SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.windowID=mandala_editor.id;e.key.keysym.sym=key;e.key.keysym.mod=mod;
     assert(mandala_editor_event(&e,&u,&a.sister.mandala));
 }
+static void wide_render_wait(TsMandalaPreferences *prefs,unsigned revision)
+{
+    float wide[512*26];
+    assert(host.shared);
+    unsigned frames=atomic_load(&host.shared->frames),audio=atomic_load(&host.shared->drawn_audio);
+    Uint32 start=SDL_GetTicks();
+    while(host.shared && SDL_GetTicks()-start<5000) {
+        measured_callback(NULL,(Uint8*)wide,sizeof(wide));
+        ts_mandala_follow_effects(&a.sister);ts_mandala_poll(&a.sister.mandala,prefs);
+        if(host.shared && atomic_load(&host.shared->frames)>=frames+3 &&
+           atomic_load(&host.shared->drawn_audio)>audio &&
+           atomic_load(&host.shared->drawn_config)==revision &&
+           atomic_load(&host.shared->level_milli)>0)break;
+        SDL_Delay(10);
+    }
+    assert(host.shared && atomic_load(&host.shared->ready));
+    assert(atomic_load(&host.shared->frames)>=frames+3);
+    assert(atomic_load(&host.shared->drawn_audio)>audio);
+    assert(atomic_load(&host.shared->drawn_config)==revision);
+    assert(atomic_load(&host.shared->level_milli)>0);
+    assert(host.last_audio.channels==26 && host.last_audio.count==39);
+}
+static void wide_live_editor_checks(void)
+{
+    TsMandalaConfig original=a.sister.mandala;TsMandalaPreferences prefs={0};
+    unsigned channels=a.output_device_channels;double time=a.mosaic->time;
+    a.output_device_channels=26;
+    for(int reopen=0;reopen<2;++reopen) {
+        assert(ts_mandala_open(&a.sister.mandala,&prefs,error,sizeof(error)));
+        wide_render_wait(&prefs,1);
+        if(!reopen) {
+            mandala_editor_show(&u,&a.sister.mandala);
+            unsigned revision=host.revision;
+            editor_click(40,95,SDL_BUTTON_LEFT);assert(a.sister.mandala.palette==3);
+            wide_render_wait(&prefs,++revision);
+            editor_click(165,338,SDL_BUTTON_LEFT);assert(a.sister.mandala.shape==1);
+            wide_render_wait(&prefs,++revision);
+            uint64_t seed=a.sister.mandala.seed;
+            editor_click(430,558,SDL_BUTTON_LEFT);assert(a.sister.mandala.seed!=seed);
+            wide_render_wait(&prefs,++revision);
+            mw_hide(&a.sister.mandala);mandala_editor_close();
+        }
+        ts_mandala_close();Uint32 start=SDL_GetTicks();
+        while(host.shared && SDL_GetTicks()-start<5000) {
+            ts_mandala_poll(&a.sister.mandala,&prefs);SDL_Delay(10);
+        }
+        assert(!host.shared);
+    }
+    assert(a.mosaic->time>time && ts_tapehead_running() && a.keyboard_sequence.running);
+    a.output_device_channels=channels;a.sister.mandala=original;
+    puts("26-channel callback, live child frames/audio, palette/shape/seed edits and reopen: PASS");
+}
 static void editor_checks(SDL_Window *window)
 {
     TsMandalaConfig original=a.sister.mandala;TsMatrixControls routing=a.sister.matrix.controls;
@@ -307,6 +361,7 @@ static void editor_checks(SDL_Window *window)
     m_destroy(m);free(m);
     puts("editor presets, custom RGB/hex, shapes, undo/revert, project replacement and bounded renderer: PASS");
 }
+#include "mandala_interaction_fixture.inc"
 int main(int argc,char **argv)
 {
     SDL_setenv("SDL_VIDEODRIVER","dummy",1);SDL_setenv("SDL_AUDIODRIVER","dummy",1);
@@ -314,7 +369,10 @@ int main(int argc,char **argv)
     assert(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_AUDIO|SDL_INIT_TIMER));
     SDL_Window *window=SDL_CreateWindow("Mandala host fixture",0,0,640,400,0);assert(window);
     setup(window);
-    if(argc>2 && !strcmp(argv[1],"--editor-capture")) {
+    if(argc>2 && !strcmp(argv[1],"--interact")) {
+        interaction_run(argv[2],argc>3?(unsigned)atoi(argv[3]):20,
+            argc>4?atoi(argv[4]):10,argc>5?atoi(argv[5]):1);
+    } else if(argc>2 && !strcmp(argv[1],"--editor-capture")) {
         a.sister.mandala.palette=4;a.sister.mandala.shape=1;
         mandala_editor_show(&u,&a.sister.mandala);mandala_editor_update(&a.sister.mandala);
         SDL_Surface *surface=SDL_CreateRGBSurfaceFrom(mandala_editor.pixels,MW_W,MW_H,32,MW_W*4,0xff0000,0xff00,0xff,0);
@@ -351,7 +409,7 @@ int main(int argc,char **argv)
         }
         ts_native_pause(device,1);ts_native_close(device);
         printf("soak transport status: tracker=%d mosaic=%d arp=%d time=%.2f\n",ts_tapehead_running(),a.mosaic->playing,a.keyboard_sequence.running,a.mosaic->time);
-    } else {editor_checks(window);lifecycle(window);external_tap_checks();effect_snapshot_checks();}
+    } else {editor_checks(window);wide_live_editor_checks();lifecycle(window);external_tap_checks();effect_snapshot_checks();}
     ts_mandala_shutdown();ts_tapehead_stop();ts_tapehead_close();
     ts_keyboard_sequence_source_free(ts_keyboard_sequence_source(&a.keyboard_sequence,NULL));
     ts_sister_runtime_free(&a.sister);ts_mosaic_free(a.mosaic);ts_capture_free(&a.capture);

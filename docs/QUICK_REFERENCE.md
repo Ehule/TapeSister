@@ -26,7 +26,8 @@ For explanations and complete workflows, see the [User Manual](USER_MANUAL.md).
 | `F10` | Open/close the [SisterTracker pattern editor](SISTERTRACKER_PLAYBACK.md); playback continues when closed |
 | `F9` | Open/close the routing matrix, including from TrackSister |
 | `Ctrl+F9` | Open/close the modeless Ambisonics output window |
-| `F12` or CFG → AUDIO HEALTH | Open/close the [Audio Health monitor](AUDIO_HEALTH.md); Reset counters and Copy Report for a crackle investigation |
+| `F12` or CFG → AUDIO HEALTH | Open/close [Audio Health](AUDIO_HEALTH.md); Save Session exports the automatically recorded timeline |
+| `Ctrl+Shift+F12` | Mark an audible click in the session log from a TapeSister host window |
 | `Space` | Main: play/stop audition. Mosaic: play/pause arrangement |
 | `Ctrl+Shift+M` | Enter or leave MIDI Learn in either window |
 | `Ctrl+Shift+I` in TrackSister | Note interpolation preview; Enter applies, Escape cancels |
@@ -805,7 +806,7 @@ and [Matrix editing](ROUTING_MATRIX.md#selection-undo-and-ab).
 ### Performance mixer shortcuts
 
 - **F11** or **Ctrl+Shift+Space**: open Performance Transport (**Alt+F11** toggles fullscreen).
-- **Shift+Space**: play/stop the checked group; choose Resume or Restart Together.
+- **Shift+Space**: play/pause the checked group; Return to Start explicitly rewinds TrackSister and Mosaic.
 - Each channel has Play/Stop/Home and a gain fader; double/right-click gain for 0 dB.
 - **ARP Clock**: Local or TrackSister 1/4, 1/8, 1/16; Mosaic keeps its tape speed.
 - **Always on Top** and mixer settings save with the project.
