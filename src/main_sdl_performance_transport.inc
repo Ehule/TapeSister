@@ -7,7 +7,7 @@ enum { PERF_BUTTON_PLAY=1,PERF_BUTTON_STOP,PERF_BUTTON_HOME,
     PERF_BUTTON_VISUAL,PERF_BUTTON_FREEZE,PERF_BUTTON_SEED,
     PERF_BUTTON_EDITOR,PERF_BUTTON_SYMMETRY,PERF_BUTTON_EVOLUTION,
     PERF_BUTTON_INPUT_PREV,PERF_BUTTON_INPUT_NEXT,PERF_BUTTON_TUNER,
-    PERF_BUTTON_TUNE_PREV,PERF_BUTTON_TUNE_NEXT };
+    PERF_BUTTON_TUNE_PREV,PERF_BUTTON_TUNE_NEXT,PERF_BUTTON_RENDER };
 static struct {SDL_Window *window;SDL_Renderer *renderer;Uint32 id,painted,flash_until;
     int visible,drag,pressed,flash,input_page,input_drag,tuner_on;
     unsigned input_channels,tuner_channel;
@@ -163,8 +163,9 @@ static void performance_update(SDL_AudioDeviceID device,AudioState *audio)
     const char *buttons[]={"PLAY GROUP","PAUSE GROUP","RETURN TO START"};
     for(int i=0;i<3;++i)perf_button(20+i*190,364,180,34,buttons[i],PERF_BUTTON_PLAY+i,
         selected && (i==0?(running&selected)!=0:i==1?(running&selected)==0:0),1);
-    perf_text(22,412,"SHIFT+SPACE: GROUP   F11: OPEN   ALT+F11: FULLSCREEN",ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_DIM,0xff94aaa7u),1);
-    perf_text(22,430,"GAIN: DRAG / WHEEL   DOUBLE-CLICK OR RIGHT-CLICK: 0 DB",ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_DIM,0xff94aaa7u),1);
+    perf_text(22,412,"SHIFT+SPACE: GROUP   ALT+F11: FULLSCREEN",ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_DIM,0xff94aaa7u),1);
+    perf_button(400,407,180,34,offline_job.active?"RENDER PROGRESS...":"RENDER OFFLINE...",PERF_BUTTON_RENDER,offline_job.active,0);
+    perf_text(22,430,"GAIN: DRAG / WHEEL / RIGHT-CLICK RESET",ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_DIM,0xff94aaa7u),1);
     perf_button(20,454,180,32,ts_mandala_active()?"CLOSE VISUALIZER":"VISUALIZE",PERF_BUTTON_VISUAL,ts_mandala_active(),1);
     perf_button(210,454,180,32,ts_mandala_frozen()?"RESUME VISUAL":"FREEZE VISUAL",PERF_BUTTON_FREEZE,ts_mandala_active() && ts_mandala_frozen(),0);
     perf_button(400,454,180,32,"NEW SEED",PERF_BUTTON_SEED,0,0);
@@ -218,6 +219,10 @@ static int performance_event(SDL_Event *e,SDL_Window *window,SDL_AudioDeviceID d
         return 1;
     }
     if(!own)return 0;
+    if(e->type==SDL_MOUSEBUTTONDOWN && e->button.button==SDL_BUTTON_LEFT) {
+        float x,y;SDL_RenderWindowToLogical(performance_transport.renderer,e->button.x,e->button.y,&x,&y);
+        if(x>=400 && x<580 && y>=407 && y<441){performance_feedback(PERF_BUTTON_RENDER,1);offline_show(ui,audio);return 1;}
+    }
     if((e->type==SDL_WINDOWEVENT && e->window.event==SDL_WINDOWEVENT_FOCUS_LOST) || e->type==SDL_MOUSEBUTTONUP) {
         performance_transport.drag=0;SDL_CaptureMouse(SDL_FALSE);
         performance_transport.input_drag=0;

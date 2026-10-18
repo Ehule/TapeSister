@@ -1,3 +1,8 @@
+#ifndef _WIN32
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+#endif
 #include "tapesister/session_log.h"
 #include "tapesister/profile.h"
 #include "tapesister/mandala_sdl.h"
@@ -853,6 +858,7 @@ typedef struct {
     int playing;
     int output_rate;
     unsigned output_device_channels;
+    float *offline_stereo; /* Child-only block tap at the existing FILE OUT point. */
     TsAudioChannelRange output_range, input_range;
     TsSpeakerSetup speakers;
     float speaker_peak[16], speaker_test_gain;
@@ -1474,6 +1480,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             (void)ts_performance_recorder_push_frame(
                 audio->sister_file_recorder, capture_frame);
         }
+        if(audio->offline_stereo){audio->offline_stereo[i]=output.l;audio->offline_stereo[i+1]=output.r;}
         audio->last_output = output;
         audio->mixer.buses.output = output;
         if(matrix) {
@@ -8851,6 +8858,8 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
              ui->file_busy_label, path_basename(path));
 }
 
+static int offline_start(SDL_AudioDeviceID,AudioState *,TsUiState *,TsInstrument *,TsSamplePages *,TsInstrument *,int,const char *,int);
+
 static void run_pending_file_operation(SDL_AudioDeviceID device,
                                        AudioState *audio, TsUiState *ui,
                                        TsInstrument *instrument,
@@ -8910,6 +8919,8 @@ static void run_pending_file_operation(SDL_AudioDeviceID device,
         }
         snprintf(ui->status, sizeof(ui->status), ok ? "SAVED TSR PROJECT %.104s" :
                  "SAVE FAILED: %.135s", ok ? pending->path : error);
+    } else if(pending->mode==TS_BROWSER_RENDER_WAV) {
+        ok=offline_start(device,audio,ui,instrument,sample_pages,parked_record,record_bank_active,pending->path,browser->overwrite_armed);
     } else if(pending->mode==TS_BROWSER_SAVE_XM) {
         ok=save_xm_song(device,audio,ui,instrument,sample_pages,record_bank_active,pending->path,error,sizeof(error));
         snprintf(ui->status,sizeof(ui->status),ok?"SAVED XM SONG %.130s":"XM SAVE FAILED: %.135s",ok?pending->path:error);
@@ -13480,6 +13491,8 @@ static int keyboard_sustain_event(const SDL_Event *event,SDL_Window *window,
 #undef tracker_event
 #undef tracker_refresh
 #include "main_sdl_tracker_embed.inc"
+#include "main_sdl_offline_job.inc"
+#include "main_sdl_offline_ui.inc"
 #include "main_sdl_performance_transport.inc"
 #include "main_sdl_canvas_eq.inc"
 #include "main_sdl_palette.inc"
@@ -13592,9 +13605,12 @@ static int keyboard_note_key_event(const SDL_Event *event, SDL_Window *window,
 
 
 #include "main_sdl_project.inc"
+#include "main_sdl_offline_engine.inc"
 
 int main(int argc, char **argv)
 {
+    int offline_mode=offline_dispatch(argc,argv);
+    if(offline_mode>=0)return offline_mode;
     int visual_dispatch = ts_mandala_dispatch(argc, argv);
     if (visual_dispatch >= 0) return visual_dispatch;
     ts_mandala_host_init();
@@ -14242,6 +14258,7 @@ int main(int argc, char **argv)
             if (ui.exit_for_new && (ui.exit_confirm_open || ui.exit_after_save) &&
                 event_id && event_id != SDL_GetWindowID(window) &&
                 event.type != SDL_KEYUP && event.type != SDL_MOUSEBUTTONUP) continue;
+            if(offline_event(&event,window,&ui))continue;
             if(mandala_editor_event(&event,&ui,&audio.sister.mandala))continue;
             if(palette_window_event(&event,window,&ui,&sister_window)) {
                 if(palette_window.requested_group) {
@@ -18353,6 +18370,7 @@ int main(int argc, char **argv)
             }
         }
         palette_window_update(window,&ui,&sister_window);
+        offline_update();
         mandala_editor_update(&audio.sister.mandala);
         uint64_t profile_aux = ts_profile_begin(TS_PROF_AUX_UI);
         TsMandalaPreferences visual_prefs={ui.config.visual_quality,ui.config.visual_display,ui.config.visual_fullscreen};
@@ -18382,6 +18400,7 @@ int main(int argc, char **argv)
             }
         }
         int any_visible = !window_minimized ||
+            (offline_ui.visible && window_drawable(offline_ui.window)) ||
             (sister_window.model.visible && window_drawable(sister_window.window)) ||
             ts_audio_health_drawable() ||
             (mandala_editor.visible && window_drawable(mandala_editor.window)) ||
@@ -18401,6 +18420,7 @@ int main(int argc, char **argv)
         ts_profile_lane_end(0);
     }
 
+    offline_close();
     palette_window_close();
     mandala_editor_close();
     ts_mandala_shutdown();

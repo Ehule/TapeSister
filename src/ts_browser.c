@@ -62,6 +62,7 @@ const char *ts_browser_mode_title(TsBrowserMode mode)
     if (mode == TS_BROWSER_SAVE_XM) return "SAVE XM SONG";
     if (mode == TS_BROWSER_SAVE_PRESET) return "SAVE PROCESS RECIPE";
     if (mode == TS_BROWSER_EXPORT_WAV) return "EXPORT CURRENT WAV";
+    if (mode == TS_BROWSER_RENDER_WAV) return "RENDER OFFLINE STEREO WAV";
     if (mode == TS_BROWSER_EXPORT_BANK) return "EXPORT SOUND COLLECTION";
     if (mode == TS_BROWSER_SELECT_SAMPLE_DIRECTORY) return "SELECT SAMPLE FOLDER";
     if (mode == TS_BROWSER_SELECT_FASTTRACKER_EXECUTABLE)
@@ -75,7 +76,7 @@ int ts_browser_mode_edits_filename(TsBrowserMode mode)
 {
     if (mode == TS_BROWSER_TRACKER_PALETTE_EXPORT) return 1;
     return mode == TS_BROWSER_SAVE_XM || mode == TS_BROWSER_SAVE_RECIPE || mode == TS_BROWSER_SAVE_PRESET ||
-           mode == TS_BROWSER_EXPORT_WAV || mode == TS_BROWSER_EXPORT_BANK;
+           mode == TS_BROWSER_RENDER_WAV || mode == TS_BROWSER_EXPORT_WAV || mode == TS_BROWSER_EXPORT_BANK;
 }
 
 int ts_browser_edits_text(const TsBrowser *browser)
@@ -103,7 +104,7 @@ int ts_browser_mode_allows_create_directory(TsBrowserMode mode)
 {
     if (mode == TS_BROWSER_TRACKER_PALETTE_EXPORT) return 1;
     return mode == TS_BROWSER_SAVE_XM || mode == TS_BROWSER_SAVE_RECIPE || mode == TS_BROWSER_SAVE_PRESET ||
-           mode == TS_BROWSER_EXPORT_WAV || mode == TS_BROWSER_EXPORT_BANK;
+           mode == TS_BROWSER_RENDER_WAV || mode == TS_BROWSER_EXPORT_WAV || mode == TS_BROWSER_EXPORT_BANK;
 }
 
 static int join_path(const char *directory, const char *name, char *path, size_t path_size)
