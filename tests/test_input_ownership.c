@@ -25,6 +25,11 @@ int main(void)
     CHECK(!ts_input_ownership_should_run(&owner));
     ts_input_ownership_set_device(&owner, 0, 0);
     CHECK(!ts_input_ownership_should_open(&owner));
+    CHECK(ts_input_ownership_request(&owner, TS_INPUT_CONSUMER_PERFORMANCE));
+    CHECK(!ts_input_ownership_request(&owner, TS_INPUT_CONSUMER_SISTER_EXT));
+    CHECK(!ts_input_ownership_release(&owner, TS_INPUT_CONSUMER_PERFORMANCE));
+    CHECK(ts_input_ownership_requested(&owner, TS_INPUT_CONSUMER_SISTER_EXT));
+    CHECK(ts_input_ownership_release(&owner, TS_INPUT_CONSUMER_SISTER_EXT));
     puts("input ownership tests passed");
     return 0;
 }

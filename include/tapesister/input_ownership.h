@@ -8,7 +8,8 @@ typedef enum {
     TS_INPUT_CONSUMER_RECORD_ACTIVE = 1u << 1,
     TS_INPUT_CONSUMER_SISTER_EXT = 1u << 2,
     TS_INPUT_CONSUMER_ACTIVITY = 1u << 3,
-    TS_INPUT_CONSUMER_INSERT = 1u << 4
+    TS_INPUT_CONSUMER_INSERT = 1u << 4,
+    TS_INPUT_CONSUMER_PERFORMANCE = 1u << 5
 } TsInputConsumer;
 
 typedef struct {

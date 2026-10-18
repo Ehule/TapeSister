@@ -72,6 +72,7 @@ static int project_new(SDL_Window *window, SDL_AudioDeviceID device,
     int prepared = 0;
     if (!next || !view) goto failed;
     ts_sister_runtime_init(&next->sister);
+    next->sister.parameters.fx.slot_count = ts_sister_fx_slot_count(ui->config.pedalboard_slots);
     ts_capture_init(&next->capture);
     ts_note_bank_init(&next->notes);
     ts_keyboard_sequence_init(&next->keyboard_sequence);
@@ -141,6 +142,7 @@ static int project_new(SDL_Window *window, SDL_AudioDeviceID device,
     view->config.matrix = next->sister.matrix.controls;
     view->config.insert = next->sister.insert.controls;
 
+    ts_session_log_discontinuity("new project");
     /* No fallible project allocations remain past this point. Pause before
        joining workers; none may publish into the new document generation. */
     if (input_device) SDL_PauseAudioDevice(input_device, 1);

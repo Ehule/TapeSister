@@ -31,6 +31,31 @@ static TsMosaic *fixture(void)
     TsMosaicEvent *e=ts_mosaic_add(m,source,0,0);assert(e);e->duration=5;e->note_count=5;
     int notes[]={48,60,64,67,72};memcpy(e->notes,notes,sizeof(notes));m->playing=1;return m;
 }
+static void storage_line_endings(const char *path,int crlf)
+{
+    FILE *f=fopen(path,"rb");assert(f);
+    assert(!fseek(f,0,SEEK_END));long length=ftell(f);assert(length>=0);rewind(f);
+    char *data=malloc((size_t)length+1);assert(data);
+    assert(fread(data,1,(size_t)length,f)==(size_t)length);assert(!fclose(f));
+    f=fopen(path,"wb");assert(f);
+    for(long i=0;i<length;++i) {
+        if(data[i]=='\r' && i+1<length && data[i+1]=='\n')continue;
+        if(data[i]=='\n' && crlf)assert(fputc('\r',f)!=EOF);
+        assert(fputc(data[i],f)!=EOF);
+    }
+    assert(!fclose(f));free(data);
+}
+static void storage_portable_load(TsMosaic *loaded,const char *dir)
+{
+    char path[1024],error[160];snprintf(path,sizeof(path),"%s/mosaic.tsm",dir);
+    assert(ts_mosaic_load(loaded,dir,error,sizeof(error)));
+    uint64_t hash=ts_mosaic_hash(loaded);
+    for(int crlf=1;crlf>=0;--crlf) {
+        storage_line_endings(path,crlf);
+        assert(ts_mosaic_load(loaded,dir,error,sizeof(error)));
+        assert(ts_mosaic_hash(loaded)==hash);
+    }
+}
 static void test_ownership(void)
 {
     TsMosaic *m=fixture();TsMosaicEvent *a=&m->events[0];
@@ -162,8 +187,12 @@ static void test_storage(void)
     m->events[0].output_route.matrix_gain[TS_MATRIX_AMBISONICS]=1000;
     m->events[0].output_route.matrix_gain[TS_MATRIX_DESTINATIONS-1]=1234;
     assert(ts_mosaic_save(m,dir,error,sizeof(error)));
+    FILE *saved=fopen("mosaic-storage-test/mosaic.tsm","rb");assert(saved);
+    int byte;while((byte=fgetc(saved))!=EOF)assert(byte!='\r');
+    assert(!ferror(saved));assert(!fclose(saved));
     assert(ts_mosaic_load(loaded,dir,error,sizeof(error)));
     assert(ts_mosaic_hash(m)==ts_mosaic_hash(loaded));
+    storage_portable_load(loaded,dir);
     assert(loaded->events[0].muted && loaded->events[1].solo);
     assert(loaded->events[0].source==loaded->events[1].source);
     assert(!memcmp(m->events[0].source->sample.data,loaded->events[0].source->sample.data,4096*2*sizeof(float)));
@@ -182,6 +211,7 @@ static void test_storage(void)
         fclose(current);fclose(old);remove("mosaic-storage-test/mosaic.tsm");
         assert(!rename("mosaic-storage-test/old.tsm","mosaic-storage-test/mosaic.tsm"));
         assert(ts_mosaic_load(loaded,dir,error,sizeof(error)));
+        storage_portable_load(loaded,dir);
         for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)
             assert(loaded->events[0].output_route.matrix_gain[d]==(d<destinations?m->events[0].output_route.matrix_gain[d]:0));
         assert(ts_mosaic_save(m,dir,error,sizeof(error)));
@@ -202,6 +232,7 @@ static void test_storage(void)
             fprintf(old,"%s\n",line);
         }
         fclose(old);assert(ts_mosaic_load(loaded,dir,error,sizeof(error)));
+        storage_portable_load(loaded,dir);
         for(int i=0;i<TS_MOSAIC_ENVELOPE_POINTS;++i)assert(loaded->volume[i]==1);
         if(version==3)assert(loaded->speed==1.5 && loaded->events[0].pan==-.35f);
         else assert(loaded->speed==1 && loaded->speed_current==1 && loaded->events[0].pan==0 && loaded->events[0].fade_in==0 && loaded->events[0].fade_out==0);
@@ -213,6 +244,12 @@ static void test_storage(void)
     f=fopen("mosaic-storage-test/mosaic.tsm","w");assert(f);
     fputs("TAPESISTER_MOSAIC 4\nSETTINGS 0 0.7 1\nVOLUME 257\nnan\n",f);fclose(f);
     assert(!ts_mosaic_load(loaded,dir,error,sizeof(error)) && ts_mosaic_hash(loaded)==before);
+    const char *bad_headers[]={"TAPESISTER_MOSAIC 1\rjunk\n","TAPESISTER_MOSAIC 10\r\n"};
+    for(size_t i=0;i<sizeof(bad_headers)/sizeof(bad_headers[0]);++i) {
+        f=fopen("mosaic-storage-test/mosaic.tsm","wb");assert(f);
+        fputs(bad_headers[i],f);fputs("SETTINGS 0 0.7\r\n",f);assert(!fclose(f));
+        assert(!ts_mosaic_load(loaded,dir,error,sizeof(error)) && ts_mosaic_hash(loaded)==before);
+    }
     remove("mosaic-storage-test/mosaic.tsm");remove("mosaic-storage-test/mosaic-000.wav");RMDIR(dir);
     ts_mosaic_free(m);ts_mosaic_free(loaded);
 }
@@ -227,6 +264,8 @@ static void test_project_transaction(void)
     assert(ts_sample_pages_save_project(&pages,bank,record,NULL,path,error,sizeof(error)));
     uint64_t hash=ts_mosaic_hash(m),sample_hash=ts_sample_hash(&bank->current),epoch=m->epoch;
     m->events[0].start=100;
+    /* A Windows-saved bundle must open intact on Linux, including its audio. */
+    storage_line_endings("mosaic-project-test/project-data/mosaic.tsm",1);
     assert(ts_sample_pages_load_project(&pages,bank,record,path,error,sizeof(error)));
     assert(pages.mosaic==m && ts_mosaic_hash(m)==hash && m->epoch!=epoch);
     assert(ts_sample_hash(&bank->current)==sample_hash);

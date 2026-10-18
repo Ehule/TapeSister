@@ -138,12 +138,18 @@ int main(void)
     assert(ts_matrix_layout_valid(&runtime.matrix_layout));
     runtime.performance_transport = 6u;
     runtime.performance_mixer=(TsPerformanceMixer){{0,.5f,2,.25f},1,3,1};
+    for(int i=0;i<TS_PERFORMANCE_INPUTS;++i)runtime.performance_mixer.input_gain[i]=1;
+    runtime.performance_mixer.input_enabled[0]=runtime.performance_mixer.input_enabled[254]=1;
+    runtime.performance_mixer.input_gain[0]=0;runtime.performance_mixer.input_gain[254]=1.75f;
     ts_sister_project_state_capture(&state, &runtime, 2u, "GHOST FIELD");
     assert(ts_sister_project_state_save(&state, project, error, sizeof(error)));
     assert(ts_sister_project_state_load(&loaded, project, 1000u, &present,
                                         error, sizeof(error)) && present);
     assert(!memcmp(&loaded.matrix_layout,&runtime.matrix_layout,sizeof(TsMatrixLayout)));
     assert(loaded.performance_transport == 6u);
+    assert(loaded.performance_mixer.input_enabled[0] && loaded.performance_mixer.input_gain[0]==0);
+    assert(loaded.performance_mixer.input_enabled[254] && loaded.performance_mixer.input_gain[254]==1.75f);
+    assert(!loaded.performance_mixer.input_enabled[100] && loaded.performance_mixer.input_gain[100]==1);
     assert(loaded.performance_mixer.gain[0]==0 && loaded.performance_mixer.gain[1]==.5f && loaded.performance_mixer.gain[2]==2 && loaded.performance_mixer.gain[3]==.25f);
     assert(loaded.performance_mixer.restart && loaded.performance_mixer.arp_sync==3 && loaded.performance_mixer.always_on_top);
     assert(loaded.page_masks[0] == 1u && loaded.page_masks[1] == 2u);
@@ -227,6 +233,8 @@ int main(void)
     ts_sister_runtime_init(&restored);
     assert(ts_sister_project_state_apply(&loaded, &restored, &instrument));
     assert(restored.performance_transport == 6u);
+    assert(!memcmp(restored.performance_mixer.input_gain,loaded.performance_mixer.input_gain,sizeof(loaded.performance_mixer.input_gain)));
+    assert(!memcmp(restored.performance_mixer.input_enabled,loaded.performance_mixer.input_enabled,sizeof(loaded.performance_mixer.input_enabled)));
     assert(restored.performance_mixer.gain[0]==0 && restored.performance_mixer.gain[1]==.5f && restored.performance_mixer.gain[2]==2 && restored.performance_mixer.gain[3]==.25f);
     assert(restored.performance_mixer.restart && restored.performance_mixer.arp_sync==3 && restored.performance_mixer.always_on_top);
     assert(restored.source_switches == loaded.source_switches);

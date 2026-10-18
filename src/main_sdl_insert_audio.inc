@@ -101,6 +101,7 @@ static void ts_audio_commit_output_layout(AudioState *audio, const SDL_AudioSpec
     audio->output_range=ts_active_ranges[0];
     audio->input_range=ts_active_ranges[1];
     ++audio->audio_health_generation;
+    ts_session_log_discontinuity("output device configuration changed");
     if (audio->realtime_diagnostics_enabled)
         ts_realtime_diagnostics_discontinuity(&audio->realtime_diagnostics);
     ts_insert_duplex_block(&audio->sister.insert,ts_asio_selected,NULL,0,0);

@@ -237,6 +237,7 @@ int ts_sister_preset_delete(TsSisterPresetBank *bank, size_t index,
 
 static int write_parameters(FILE *file, const TsSisterParameters *p)
 {
+    if (p->fx.slot_count < TS_SISTER_FX_SLOT_MIN || p->fx.slot_count > TS_SISTER_FX_SLOT_COUNT) return 0;
     ts_prism_write_extensions(file, &p->prism);
     if (fprintf(file, "prism_input_shape=%d\nprism_output_shape=%d\nprism_color=%.9g\n",
         p->prism.input_shape, p->prism.output_shape, p->prism.color) < 0) return 0;
@@ -328,7 +329,8 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         (unsigned)p->fx.fallout.lfo_targets, p->fx.fallout.rise_mode,
         p->fx.fallout.rise_length, p->fx.fallout.rise_intensity,
         (unsigned)p->fx.fallout.rise_targets) < 0) return 0;
-    for (int index = 0; index < TS_SISTER_FX_SLOT_COUNT; ++index) {
+    if (fprintf(file, "slot_count=%d\n", p->fx.slot_count) < 0) return 0;
+    for (int index = 0; index < p->fx.slot_count; ++index) {
         const TsSisterFxSlotControls *slot = &p->fx.slot[index];
         if (fprintf(file,
             "slot%d_type=%d\nslot%d_enabled=%d\nslot%d_placement=%u\n"
@@ -339,6 +341,7 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
             index + 1, slot->gain_db, index + 1, slot->parameter_a,
             index + 1, slot->parameter_b, index + 1, slot->parameter_c,
             index + 1, slot->mix) < 0) return 0;
+        if (fprintf(file, "slot%d_locks=%u\n", index + 1, (unsigned)slot->parameter_locks) < 0) return 0;
     }
     return 1;
 }
@@ -427,14 +430,24 @@ static int parse_int(const char *text, int *value)
 static int assign_field(TsSisterParameters *p, const char *key,
                         const char *value)
 {
-    int parsed_int;
+    int parsed_int, integer;
     int slot_number;
     char slot_field[32];
 #define FLOAT_FIELD(name, member) if (strcmp(key, name) == 0) return parse_float(value, &p->member)
 #define INT_FIELD(name, member) if (strcmp(key, name) == 0) return parse_int(value, &p->member)
+    if (strcmp(key, "slot_count") == 0) {
+        if (!parse_int(value, &integer) || integer < TS_SISTER_FX_SLOT_MIN || integer > TS_SISTER_FX_SLOT_COUNT) return 0;
+        if (integer > p->fx.slot_count) p->fx.slot_count = integer;
+        return 1;
+    }
     if (sscanf(key, "slot%d_%31s", &slot_number, slot_field) == 2 &&
         slot_number >= 1 && slot_number <= TS_SISTER_FX_SLOT_COUNT) {
+        if (slot_number > p->fx.slot_count) p->fx.slot_count = slot_number;
         TsSisterFxSlotControls *slot = &p->fx.slot[slot_number - 1];
+        if (strcmp(slot_field, "locks") == 0) {
+            if (!parse_int(value, &integer) || integer < 0 || integer > 31) return 0;
+            slot->parameter_locks = (uint8_t)integer; return 1;
+        }
         if (strcmp(slot_field, "type") == 0) {
             if (!parse_int(value, &parsed_int)) return 0;
             slot->type = (TsSisterFxType)parsed_int;
@@ -657,6 +670,7 @@ int ts_sister_preset_load(TsSisterPresetBank *bank, const char *path,
     }
     ts_sister_preset_bank_init(&loaded, sample_rate);
     ts_sister_parameters_default(&current, sample_rate);
+    current.fx.slot_count = TS_SISTER_FX_SLOT_MIN;
     while (fgets(line, sizeof(line), file) != NULL) {
         char *text = trim(line);
         char *equals;
@@ -684,6 +698,7 @@ int ts_sister_preset_load(TsSisterPresetBank *bank, const char *path,
             in_preset = 1;
             current_name[0] = '\0';
             ts_sister_parameters_default(&current, sample_rate);
+            current.fx.slot_count = TS_SISTER_FX_SLOT_MIN;
             current_locks = 0u;
             current_locks_high = 0u;
             continue;

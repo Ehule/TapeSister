@@ -168,6 +168,7 @@ int ts_sister_project_state_apply(const TsSisterProjectState *state,
 
 static int write_parameters(FILE *file, const TsSisterParameters *p)
 {
+    if (p->fx.slot_count < TS_SISTER_FX_SLOT_MIN || p->fx.slot_count > TS_SISTER_FX_SLOT_COUNT) return 0;
     ts_prism_write_extensions(file, &p->prism);
     if (fprintf(file, "PrismInputShape=%d\nPrismOutputShape=%d\nPrismColor=%.9g\n",
         p->prism.input_shape, p->prism.output_shape, p->prism.color) < 0) return 0;
@@ -257,7 +258,8 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         (unsigned)p->fx.fallout.lfo_targets, p->fx.fallout.rise_mode,
         p->fx.fallout.rise_length, p->fx.fallout.rise_intensity,
         (unsigned)p->fx.fallout.rise_targets) < 0) return 0;
-    for (int index = 0; index < TS_SISTER_FX_SLOT_COUNT; ++index) {
+    if (fprintf(file, "SlotCount=%d\n", p->fx.slot_count) < 0) return 0;
+    for (int index = 0; index < p->fx.slot_count; ++index) {
         const TsSisterFxSlotControls *slot = &p->fx.slot[index];
         if (fprintf(file,
             "Slot%dType=%d\nSlot%dEnabled=%d\nSlot%dPlacement=%u\n"
@@ -268,6 +270,7 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
             index + 1, slot->gain_db, index + 1, slot->parameter_a,
             index + 1, slot->parameter_b, index + 1, slot->parameter_c,
             index + 1, slot->mix) < 0) return 0;
+        if (fprintf(file, "Slot%dLocks=%u\n", index + 1, (unsigned)slot->parameter_locks) < 0) return 0;
     }
     return 1;
 }
@@ -318,6 +321,10 @@ int ts_sister_project_state_save_file(const TsSisterProjectState *state,
     if (!failed) failed = fprintf(file,"PerformanceTransport=%u\nPerformance.Restart=%u\nPerformance.ArpSync=%u\nPerformance.AlwaysOnTop=%u\n",
         state->performance_transport&7u,state->performance_mixer.restart,state->performance_mixer.arp_sync,state->performance_mixer.always_on_top)<0;
     for(int i=0;!failed && i<4;++i)failed=fprintf(file,"Performance.Gain%d=%.9g\n",i,state->performance_mixer.gain[i])<0;
+    for(int i=0;!failed && i<TS_PERFORMANCE_INPUTS;++i)
+        if(state->performance_mixer.input_enabled[i] || state->performance_mixer.input_gain[i]!=1)
+            failed=fprintf(file,"Performance.Input%d=%u %.9g\n",i,
+                state->performance_mixer.input_enabled[i],state->performance_mixer.input_gain[i])<0;
     if (!failed) failed = !ts_keyboard_sequence_bank_write(file,&state->keyboard_sequence);
     if (!failed) failed = !ts_insert_write(file,&state->insert);
     if (fclose(file) != 0) failed = 1;
@@ -414,9 +421,19 @@ static int assign_parameter(TsSisterParameters *p, const char *key,
     char slot_field[32];
 #define PF(name, member) if (strcmp(key, name) == 0) return parse_float_value(value, &p->member)
 #define PI(name, member) if (strcmp(key, name) == 0) return parse_int_value(value, &p->member)
+    if (strcmp(key, "SlotCount") == 0) {
+        if (!parse_int_value(value, &integer) || integer < TS_SISTER_FX_SLOT_MIN || integer > TS_SISTER_FX_SLOT_COUNT) return 0;
+        if (integer > p->fx.slot_count) p->fx.slot_count = integer;
+        return 1;
+    }
     if (sscanf(key, "Slot%d%31s", &slot_number, slot_field) == 2 &&
         slot_number >= 1 && slot_number <= TS_SISTER_FX_SLOT_COUNT) {
+        if (slot_number > p->fx.slot_count) p->fx.slot_count = slot_number;
         TsSisterFxSlotControls *slot = &p->fx.slot[slot_number - 1];
+        if (strcmp(slot_field, "Locks") == 0) {
+            if (!parse_int_value(value, &integer) || integer < 0 || integer > 31) return 0;
+            slot->parameter_locks = (uint8_t)integer; return 1;
+        }
         if (strcmp(slot_field, "Type") == 0) {
             if (!parse_int_value(value, &integer)) return 0;
             slot->type = (TsSisterFxType)integer;
@@ -608,6 +625,7 @@ int ts_sister_project_state_load_file(TsSisterProjectState *state,
         return 0;
     }
     ts_sister_project_state_init(&loaded, sample_rate);
+    loaded.parameters.fx.slot_count = TS_SISTER_FX_SLOT_MIN;
     memset(loaded.page_masks, 0, sizeof(loaded.page_masks));
     while (fgets(line, sizeof(line), file) != NULL) {
         char *key = trim(line), *value;
@@ -660,6 +678,13 @@ int ts_sister_project_state_load_file(TsSisterProjectState *state,
             if(ts_mandala_read(&loaded.mandala,key,value)<0)goto malformed;
         } else if (!strcmp(key,"PerformanceTransport")) {
             int mask;if(!parse_int_value(value,&mask) || mask<0 || mask>7)goto malformed;loaded.performance_transport=(unsigned)mask;
+        } else if (!strncmp(key,"Performance.Input",17)) {
+            int channel,enabled;float gain;char extra;
+            if(!parse_int_value(key+17,&channel) || channel<0 || channel>=TS_PERFORMANCE_INPUTS ||
+               sscanf(value,"%d %f %c",&enabled,&gain,&extra)!=2 || (enabled!=0 && enabled!=1) ||
+               !isfinite(gain) || gain<0 || gain>2)goto malformed;
+            loaded.performance_mixer.input_enabled[channel]=(uint8_t)enabled;
+            loaded.performance_mixer.input_gain[channel]=gain;
         } else if (!strncmp(key,"Performance.Gain",16)) {
             int channel;float gain;
             if(!parse_int_value(key+16,&channel) || channel<0 || channel>3 ||

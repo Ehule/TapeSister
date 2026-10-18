@@ -32,6 +32,7 @@ int main(void)
     ts_profile_lane_begin(0);ui=ts_profile_begin(TS_PROF_UI);now+=400;ts_profile_end(TS_PROF_UI,ui);ts_profile_lane_end(0);
     ts_profile_snapshot(&s);assert(s.value[TS_PROF_UI].ticks==400 && !s.value[TS_PROF_AUDIO].calls);
     char report[8192];ts_profile_report(report,sizeof(report));assert(strstr(report,"avg ms") && strstr(report,"Present / swap"));
+    assert(strstr(report,"Matrix effects DSP"));
     char tiny[8];memset(tiny,'!',sizeof(tiny));ts_profile_report(tiny,sizeof(tiny));assert(tiny[7]==0);
     assert(ts_ui_refresh_ms(0,1,1)==100);assert(ts_ui_refresh_ms(1,0,0)==100);
     assert(ts_ui_refresh_ms(1,0,1)==33);assert(ts_ui_refresh_ms(1,1,1)==16);

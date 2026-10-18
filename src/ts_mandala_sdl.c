@@ -1,4 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
+#include "tapesister/session_log.h"
 #include "tapesister/mandala_sdl.h"
 #include "tapesister/ui.h"
 #include <SDL2/SDL.h>
@@ -23,18 +24,19 @@ extern char **environ;
    in this build AND on the mapped addresses; otherwise launch is refused.
    Windows and POSIX shared mappings supply coherent ordinary RAM on the
    supported x86/x64 targets. No atomic_flag/spinlock or process-shared mutex. */
-typedef struct { TsMandalaConfig config; TsMandalaPacket audio; TsMandalaEffects effects; unsigned serial; } VisualMessage;
+typedef struct { TsMandalaConfig config; TsMandalaPacket audio; TsMandalaEffects effects; unsigned serial, revision; } VisualMessage;
 typedef struct {
     atomic_uint write, read, quit, ready, freeze, quality, display, fullscreen;
+    atomic_uint frames, drawn_audio, drawn_config, level_milli;
     VisualMessage message[4];
 } VisualShared;
 static TsMandalaQueue audio_queue;
 static struct {
     VisualShared *shared;
     char name[96];
-    Uint32 sent, launched, closing, followed;
-    int force_stopped, close_requested;
-    unsigned serial;
+    Uint32 sent, launched, closing, followed, reported;
+    int force_stopped, close_requested, ready_logged;
+    unsigned serial, revision;
     TsMandalaPacket last_audio;
     TsMandalaConfig sent_config;
     TsMandalaEffects effects, sent_effects;
@@ -50,7 +52,9 @@ static int shared_lock_free(VisualShared *s)
     return atomic_is_lock_free(&s->write) && atomic_is_lock_free(&s->read) &&
         atomic_is_lock_free(&s->quit) && atomic_is_lock_free(&s->ready) &&
         atomic_is_lock_free(&s->freeze) && atomic_is_lock_free(&s->quality) &&
-        atomic_is_lock_free(&s->display) && atomic_is_lock_free(&s->fullscreen);
+        atomic_is_lock_free(&s->display) && atomic_is_lock_free(&s->fullscreen) &&
+        atomic_is_lock_free(&s->frames) && atomic_is_lock_free(&s->drawn_audio) &&
+        atomic_is_lock_free(&s->drawn_config) && atomic_is_lock_free(&s->level_milli);
 }
 static void shared_init(VisualShared *s, const TsMandalaPreferences *p)
 {
@@ -60,6 +64,8 @@ static void shared_init(VisualShared *s, const TsMandalaPreferences *p)
     atomic_init(&s->quality, p->quality >= 0 && p->quality <= 2 ? p->quality : 0);
     atomic_init(&s->display, p->display >= 0 ? (unsigned)p->display : 0);
     atomic_init(&s->fullscreen, p->fullscreen != 0);
+    atomic_init(&s->frames, 0); atomic_init(&s->drawn_audio, 0);
+    atomic_init(&s->drawn_config, 0); atomic_init(&s->level_milli, 0);
 }
 static int shared_send(VisualShared *s, const VisualMessage *m)
 {
@@ -123,12 +129,14 @@ int ts_mandala_frozen(void) { return host.shared && atomic_load(&host.shared->fr
 void ts_mandala_freeze(void)
 {
     if (host.shared) atomic_fetch_xor(&host.shared->freeze, 1);
+    ts_session_log_event("visualizer_freeze","frozen=%d",ts_mandala_frozen());
     atomic_store(&audio_queue.enabled, ts_mandala_active() && !ts_mandala_frozen());
 }
 void ts_mandala_close(void)
 {
     atomic_store(&audio_queue.enabled, 0);
     if (host.shared) {
+        if(!host.close_requested)ts_session_log_text("visualizer_close","requested");
         atomic_store(&host.shared->quit, 1);
         if (!host.close_requested) { host.closing = SDL_GetTicks(); host.close_requested = 1; }
     }
@@ -167,6 +175,7 @@ void ts_mandala_shutdown(void)
 }
 int ts_mandala_open(const TsMandalaConfig *config, const TsMandalaPreferences *prefs, char *error, size_t size)
 {
+    ts_session_log_text("visualizer_open","requested");
     if (host.shared) { snprintf(error, size, "Visualizer is open or closing"); return 0; }
     if (!ts_mandala_lock_free(&audio_queue) || !ts_mandala_valid(config)) {
         snprintf(error, size, "Visualizer requires lock-free atomics and a valid seed"); return 0;
@@ -199,7 +208,7 @@ int ts_mandala_open(const TsMandalaConfig *config, const TsMandalaPreferences *p
     if (!host.shared) goto failed;
     shared_init(host.shared, prefs);
     if (!shared_lock_free(host.shared)) goto failed;
-    VisualMessage initial = {0}; initial.config = *config;
+    VisualMessage initial = {0}; initial.config = *config;initial.revision=host.revision=1;
     shared_send(host.shared, &initial);
     host.sent_config = *config;
 #ifdef _WIN32
@@ -215,10 +224,12 @@ int ts_mandala_open(const TsMandalaConfig *config, const TsMandalaPreferences *p
     int spawn_error = posix_spawn(&host.pid, executable, NULL, NULL, args, environ);
     if (spawn_error) { SDL_SetError("%s", strerror(spawn_error)); goto failed; }
 #endif
+    ts_session_log_text("visualizer_launch","child started; awaiting renderer");
     host.launched = SDL_GetTicks(); host.sent = host.launched - 100;
     /* Do not enable sampling until the renderer has initialized successfully. */
     return 1;
 failed:
+    ts_session_log_text("visualizer_launch_failed",SDL_GetError());
     snprintf(error, size, "Cannot launch visualizer: %.100s", SDL_GetError());
     host_release(); return 0;
 }
@@ -234,8 +245,9 @@ int ts_mandala_poll(const TsMandalaConfig *config, TsMandalaPreferences *prefs)
     prefs->quality = (int)atomic_load(&host.shared->quality);
     prefs->display = (int)atomic_load(&host.shared->display);
     prefs->fullscreen = (int)atomic_load(&host.shared->fullscreen);
-    if (!alive) { atomic_store(&audio_queue.enabled, 0); host_release(); return 0; }
+    if (!alive) { ts_session_log_text("visualizer_exit","child exited");atomic_store(&audio_queue.enabled, 0); host_release(); return 0; }
     int ready = atomic_load(&host.shared->ready);
+    if(ready && !host.ready_logged){ts_session_log_text("visualizer_ready","renderer initialized");host.ready_logged=1;}
     if (atomic_load(&host.shared->quit) && !host.close_requested) ts_mandala_close();
     if (!ready && SDL_GetTicks() - host.launched > 10000) ts_mandala_close();
     if (host.close_requested && SDL_GetTicks() - host.closing > 1000) host_force_stop();
@@ -249,11 +261,20 @@ int ts_mandala_poll(const TsMandalaConfig *config, TsMandalaPreferences *prefs)
         int fresh = ts_mandala_latest(&audio_queue, &host.last_audio);
         if (fresh) ++host.serial;
         m.audio = host.last_audio; m.serial = host.serial; m.effects = host.effects;
-        if (fresh || memcmp(config, &host.sent_config, sizeof(*config)) ||
+        int changed=memcmp(config,&host.sent_config,sizeof(*config))!=0;
+        m.revision=host.revision+(unsigned)changed;
+        if (fresh || changed ||
             memcmp(&m.effects,&host.sent_effects,sizeof(m.effects))) {
-            if (shared_send(host.shared, &m)) { host.sent_config = *config; host.sent_effects=m.effects; }
+            if (shared_send(host.shared, &m)) { host.sent_config = *config; host.sent_effects=m.effects;host.revision=m.revision; }
         }
         host.sent = now;
+    }
+    if(ready && now-host.reported>=1000u) {
+        ts_session_log_event("visualizer_sample","channels=%u audio_serial=%u drawn_audio=%u config_revision=%u drawn_config=%u frames=%u level_milli=%u frozen=%d",
+            host.last_audio.channels,host.serial,atomic_load(&host.shared->drawn_audio),host.revision,
+            atomic_load(&host.shared->drawn_config),atomic_load(&host.shared->frames),
+            atomic_load(&host.shared->level_milli),ts_mandala_frozen());
+        host.reported=now;
     }
     return ts_mandala_active();
 }

@@ -5,10 +5,10 @@ typedef struct {
     Uint32 captured;
     int hold, keyboard_voices, held_voices, tile_voices;
     int arp, outer_arp, arp_slot, audition, mosaic;
-    int tracker, tracker_voices, tracker_row;
+    int tracker, tracker_voices, tracker_row, embedded_tracker;
     int sister, rolling, tape_hold, monitor;
     unsigned sources;
-    int board, fallout;
+    int board, fallout, slot_count;
     float fallout_mix;
     TsSisterFxSlotControls slot[TS_SISTER_FX_SLOT_COUNT];
     int prism, prism_mode, prism_lenses, prism_sequence, prism_matrix;
@@ -39,13 +39,13 @@ static int ts_audio_health_drawable(void)
 { return ts_health.visible && window_drawable(ts_health.window); }
 
 /* Called on the UI thread while its existing voice-state lock is held. Copy
-   small state only, at most 4 Hz while visible. No new audio-callback work, lock,
+   small state only, at most 4 Hz while visible or session recording. No new audio-callback work, lock,
    allocation, formatting or source ownership is introduced. */
 static void ts_audio_health_capture_setup(const AudioState *audio,
                                          const TsUiState *ui, Uint32 now)
 {
     TsAudioHealthSetup *s = &ts_health.setup;
-    if ((!ts_health.visible && !ts_profile_enabled()) || (s->valid && now - s->captured < 250u)) return;
+    if ((!ts_health.visible && !ts_profile_enabled() && !ts_session_log_enabled()) || (s->valid && now - s->captured < 250u)) return;
     const TsSisterRuntime *r = &audio->sister;
     const TsSisterParameters *p = &r->parameters;
     s->hold = ui->keyboard_hold;
@@ -75,11 +75,13 @@ static void ts_audio_health_capture_setup(const AudioState *audio,
     s->audition = audio->playing;
     s->mosaic = audio->mosaic && audio->mosaic->playing;
     s->tracker=audio->tracker.running?(audio->tracker.paused?2:1):0;
+    s->embedded_tracker=ts_tapehead_running();
     s->tracker_row=audio->tracker.row<0?0:audio->tracker.row;
     s->tracker_voices=0;
     for(int i=0;i<TS_TRACKER_LANES;++i)s->tracker_voices+=audio->tracker.lanes[i].voice.active;
     s->sister = r->enabled; s->rolling = r->rolling; s->tape_hold = r->held;
     s->monitor = r->monitor_enabled; s->sources = r->source_switches;
+    s->slot_count = p->fx.slot_count;
     s->board = p->fx.enabled; s->fallout = p->fx.fallout.enabled;
     s->fallout_mix = p->fx.fallout.mix;
     memcpy(s->slot, p->fx.slot, sizeof(s->slot));
@@ -109,6 +111,16 @@ static const char *health_route(const TsAudioHealthSetup *s, int stage)
     return active ? "routed" : "bypassed";
 }
 
+static void health_matrix_name(char *text,size_t size,const TsMatrixControls *c,int node,int destination)
+{
+    int sidechain=destination && node>=TS_MATRIX_EFFECT_SC_BASE && node<TS_MATRIX_INSTANCE_DESTINATIONS;
+    int effect=sidechain?node-TS_MATRIX_EFFECT_SC_BASE:ts_matrix_effect_index(node);
+    if(effect>=0) {
+        const TsMatrixEffectControls *fx=&c->effect[effect];
+        snprintf(text,size,"%s #%u%s",ts_matrix_effect_name(fx->type),(unsigned)fx->id,sidechain?" SIDECHAIN":"");
+    } else snprintf(text,size,"%s",ts_matrix_node_name(node));
+}
+
 static void ts_audio_health_setup_report(char *text, size_t size, Uint32 now)
 {
     if (!size) return;
@@ -124,26 +136,27 @@ static void ts_audio_health_setup_report(char *text, size_t size, Uint32 now)
         snprintf(source + used, sizeof(source) - used, "%s%s", used ? ", " : "", names[i]);
     }
     unsigned enabled_slots = 0;
-    for (int i = 0; i < TS_SISTER_FX_SLOT_COUNT; ++i)
+    for (int i = 0; i < s->slot_count; ++i)
         if (s->slot[i].type != TS_SISTER_FX_EMPTY && s->slot[i].enabled) ++enabled_slots;
     snprintf(text, size,
         "Active setup (UI snapshot %.3f s old; not the setup at a retained maximum):\n"
         "  Keyboard HOLD: %s; keyboard voice instances: %d; latched/sustained: %d\n"
         "  ARP: %s; outer ARP: %s; active slot: %d\n"
         "  Audition: %s; tile voice instances: %d; Mosaic: %s\n"
-        "  SisterTracker: %s; row: %d; voice instances: %d\n"
+        "  TrackSister (embedded): %s\n"
+        "  SisterTracker: %s; row: %d; voice instances: %d (legacy engine)\n"
         "  Sister Machine: %s, %s; rolling: %s; tape HOLD: %s; monitor: %s\n"
         "  Sister source switches: %s\n"
         "  Fallout: %s, %s; FX master: %s; mix: %.1f%%\n"
         "  Prism: %s, %s; base mode: %s; base lenses: %d; lens sequence: %s; Matrix: %s\n"
         "  Insert: %s; send assigned: %s; send available: %s; return available: %s\n"
         "  Router order: %s > %s > %s > %s > %s; sequencer: %s\n"
-        "  Pedalboard master: %s, %s; enabled slots: %u/4\n",
+        "  Pedalboard master: %s, %s; enabled slots: %u/%d\n",
         (now - s->captured) / 1000.0, health_on(s->hold), s->keyboard_voices, s->held_voices,
         health_running(s->arp), health_running(s->outer_arp),
         s->arp || s->outer_arp ? s->arp_slot + 1 : 0,
         health_running(s->audition), s->tile_voices, health_running(s->mosaic),
-        s->tracker==2?"paused":health_running(s->tracker),s->tracker_row,s->tracker_voices,
+        health_running(s->embedded_tracker),s->tracker==2?"paused":health_running(s->tracker),s->tracker_row,s->tracker_voices,
         health_on(s->sister), health_route(s, TS_ROUTER_SISTER), health_on(s->rolling),
         health_on(s->tape_hold), health_on(s->monitor), source[0] ? source : "none",
         health_on(s->fallout), health_route(s, TS_ROUTER_FALLOUT), health_on(s->board), s->fallout_mix * 100,
@@ -154,26 +167,32 @@ static void ts_audio_health_setup_report(char *text, size_t size, Uint32 now)
         ts_router_name(s->router.order[0]), ts_router_name(s->router.order[1]),
         ts_router_name(s->router.order[2]), ts_router_name(s->router.order[3]),
         ts_router_name(s->router.order[4]), health_running(s->router_sequence),
-        health_on(s->board), health_route(s, TS_ROUTER_PEDALBOARD), enabled_slots);
+        health_on(s->board), health_route(s, TS_ROUTER_PEDALBOARD), enabled_slots, s->slot_count);
     if(s->matrix.enabled) {
         size_t used=strlen(text);
         snprintf(text+used,size-used,"  Unified routing matrix: ON; legacy order, source switches and Insert assignments above are inactive.\n");
         for(int row=0;row<TS_MATRIX_ROWS;++row)for(int d=0;d<TS_MATRIX_DESTINATIONS;++d) {
             int gain=s->matrix.row[row].matrix_gain[d];if(!gain)continue;
             char from[64],to[64];
-            if(ts_matrix_is_processor(row))snprintf(from,sizeof(from),"%s",ts_matrix_node_name(row));
+            if(ts_matrix_is_processor(row))health_matrix_name(from,sizeof(from),&s->matrix,row,0);
             else if(row<TS_MATRIX_FM)snprintf(from,sizeof(from),"IN %d/%d %.23s",(row-TS_MATRIX_NODES)*2+1,(row-TS_MATRIX_NODES)*2+2,s->matrix.input_name[row-TS_MATRIX_NODES]);
             else snprintf(from,sizeof(from),"%s",row==TS_MATRIX_FM?"FM":row==TS_MATRIX_MOSAIC?"MOSAIC":
                 row==TS_MATRIX_TILES?"LIVE TILE BUS":row==TS_MATRIX_TRACKER?"TRACKSISTER BUS":"LIVE LINK");
             if(d==TS_MATRIX_AMBISONICS)snprintf(to,sizeof(to),"AMBISONICS");
             else if(d>=TS_MATRIX_SPEAKER_BASE)snprintf(to,sizeof(to),"SPEAKER %d",d-TS_MATRIX_SPEAKER_BASE+1);
-            else if(!ts_matrix_is_output(d))snprintf(to,sizeof(to),"%s",ts_matrix_node_name(d));
+            else if(!ts_matrix_is_output(d))health_matrix_name(to,sizeof(to),&s->matrix,d,1);
             else snprintf(to,sizeof(to),"OUT %d/%d %.23s",(d-TS_MATRIX_NODES)*2+1,(d-TS_MATRIX_NODES)*2+2,s->matrix.output_name[d-TS_MATRIX_NODES]);
             used=strlen(text);snprintf(text+used,size-used,"    %s -> %s: %+.1f dB; pan %d%s\n",from,to,20*log10f(gain*.001f),s->matrix.row[row].pan,
                 ts_matrix_is_processor(row) && (s->matrix.delayed[row]&ts_matrix_feedback_bit(d))?"; feedback delayed 64 samples":"");
         }
+        for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i) {
+            const TsMatrixEffectControls *fx=&s->matrix.effect[i];
+            if(!fx->id)continue;
+            used=strlen(text);snprintf(text+used,size-used,"    Matrix effect #%u: %s; %s; mix %.1f%%\n",
+                (unsigned)fx->id,ts_matrix_effect_name(fx->type),health_on(fx->enabled),fx->mix*100);
+        }
     }
-    for (int i = 0; i < TS_SISTER_FX_SLOT_COUNT; ++i) {
+    for (int i = 0; i < s->slot_count; ++i) {
         const TsSisterFxSlotControls *slot = &s->slot[i];
         char places[48] = "";
         const char *labels[] = {"PRE", "H1", "H2", "H3", "POST"};
@@ -242,6 +261,7 @@ static void ts_audio_health_sample(AudioState *audio, Uint32 now)
 
 static void ts_audio_health_reset(AudioState *audio)
 {
+    ts_session_log_text("health_reset","Displayed counters reset; session timeline retained");
     /* One brief reset under existing exclusion; normal telemetry reads never
        acquire this lock. Do not count the reset itself as a control edit. */
     SDL_AudioDeviceID real = ts_real_output;
@@ -263,7 +283,7 @@ static void ts_audio_health_report(AudioState *audio, char *report, size_t size)
     ts_audio_health_sample(audio, SDL_GetTicks());
     const TsRealtimeDiagnosticsSnapshot *s = &ts_health.snapshot;
     const char *driver = ts_native_current_driver();
-    char setup[3072];
+    char setup[16384];
     ts_audio_health_setup_report(setup, sizeof(setup), SDL_GetTicks());
     snprintf(report, size,
         "TapeSister Audio Health\n"
@@ -309,7 +329,116 @@ static void ts_audio_health_report(AudioState *audio, char *report, size_t size)
         ts_health.driver_reports, ts_health.control_skips, ts_health.control_recoveries, ts_health.worker_gaps,
         s->active_configuration);
     size_t used = strlen(report);
+    TsSessionLogStatus session;ts_session_log_status(&session);
+    if(used+2<size) {
+        snprintf(report+used,size-used,"Session recorder: %s; bytes: %llu; lost audio records: %u; lost events: %u\nRecovery file: %s\nSession export: %s; last destination: %s\n",
+            ts_session_log_state_name(session.state),(unsigned long long)session.bytes,session.dropped_audio,session.dropped_events,
+            *session.path?session.path:"none",session.export_result==1?"PENDING":session.export_result==2?"SAVED":session.export_result==3?"FAILED":"NONE",
+            *session.export_path?session.export_path:"none");
+        used=strlen(report);
+    }
     if (used + 2 < size) { report[used++] = '\n'; ts_profile_report(report + used, size-used); }
+}
+
+static void ts_audio_session_marker(void)
+{
+    int queued=ts_session_log_text("heard_click","User heard an audible click; reaction time may follow the sound");
+    snprintf(ts_health.message,sizeof(ts_health.message),"%s",queued?"CLICK MARKED IN SESSION LOG":ts_session_log_enabled()?"LOG BUSY; CLICK MARKER NOT QUEUED":"SESSION LOG IS NOT RECORDING");
+    ts_health.message_until=SDL_GetTicks()+2500u;ts_health.last_update=0;
+}
+
+static int ts_audio_session_folder_url(const char *path,char *url,size_t size)
+{
+    char absolute[2048];
+    if(!path || !*path || size<9)return 0;
+#ifdef _WIN32
+    WCHAR input[2048],full[2048];
+    if(!MultiByteToWideChar(CP_UTF8,0,path,-1,input,2048))return 0;
+    DWORD length=GetFullPathNameW(input,2048,full,NULL);
+    if(!length || length>=2048 || !WideCharToMultiByte(CP_UTF8,0,full,-1,absolute,sizeof(absolute),NULL,NULL))return 0;
+#else
+    if(path[0]!='/' && path[0]!='\\' && !(isalpha((unsigned char)path[0]) && path[1]==':')) {
+        char cwd[2048];if(!getcwd(cwd,sizeof(cwd)))return 0;
+        int length=snprintf(absolute,sizeof(absolute),"%s/%s",cwd,path);
+        if(length<0 || length>=(int)sizeof(absolute))return 0;
+    } else {
+        if(strlen(path)>=sizeof(absolute))return 0;
+        snprintf(absolute,sizeof(absolute),"%s",path);
+    }
+#endif
+    for(char *s=absolute;*s;++s)if(*s=='\\')*s='/';
+    size_t end=strlen(absolute);while(end && absolute[end-1]!='/')--end;
+    size_t begin=absolute[0]=='/' && absolute[1]=='/'?2:0;
+    size_t n=absolute[1]==':'?8:7;
+    memcpy(url,"file:///",n);
+    for(size_t i=begin;i<end;++i) {
+        if(n+4>=size)return 0;
+        unsigned char c=(unsigned char)absolute[i];
+        if((c<128 && isalnum(c)) || c=='/' || c==':' || c=='-' || c=='_' || c=='.')url[n++]=(char)c;
+        else n+=(size_t)snprintf(url+n,size-n,"%%%02X",c);
+    }
+    url[n]=0;
+    return end!=0;
+}
+static void ts_audio_session_folder(const TsUiState *ui)
+{
+    char path[2048],url[6160];
+    int ok=ts_session_log_export_destination(ui->project_path,path,sizeof(path)) &&
+        ts_audio_session_folder_url(path,url,sizeof(url)) && !SDL_OpenURL(url);
+    snprintf(ts_health.message,sizeof(ts_health.message),"%s",ok?"OPENED SESSION LOG FOLDER":"SAVE SESSION FIRST; FOLDER MAY NOT EXIST");
+    ts_health.message_until=SDL_GetTicks()+2500u;
+}
+
+/* Called by normal UI service, including while Health is closed/minimized.
+   Capture uses the existing voice-state lock; all formatting is after unlock. */
+static void ts_audio_session_update(AudioState *audio,TsUiState *ui)
+{
+    static Uint32 last_sample;static TsAudioHealthSetup previous;
+    static unsigned last_export;static uint32_t generation=UINT32_MAX;
+    static int connection=-1;
+    TsSessionLogStatus status;ts_session_log_status(&status);
+    if(status.export_serial!=last_export && status.export_result!=1) {
+        last_export=status.export_serial;
+        if(status.export_result==2 || status.export_result==3) {
+            int copied=status.export_result==2 && status.export_copy_path && SDL_SetClipboardText(status.export_path)==0;
+            snprintf(ts_health.message,sizeof(ts_health.message),"%s",status.export_result==3?"SESSION EXPORT FAILED; RECOVERY LOG KEPT":copied?"SAVED SESSION; FILE PATH COPIED":"SAVED SESSION IN LOG FOLDER");
+            if(status.export_result==3)
+                snprintf(ui->status,sizeof(ui->status),"SESSION LOG EXPORT FAILED; CHECK F12 REPORT FOR PATH");
+            ts_health.message_until=SDL_GetTicks()+5000u;ts_health.last_update=0;
+        }
+    }
+    if(!ts_session_log_enabled())return;
+    Uint32 now=SDL_GetTicks();
+    TsAudioHealthSetup current=ts_health.setup;
+    /* Voice counts and current rows belong in one-second samples; routing,
+       controls and transport changes retain their own setup snapshot. */
+    current.captured=0;current.keyboard_voices=current.held_voices=current.tile_voices=0;
+    current.tracker_row=current.tracker_voices=0;
+    if(current.valid && memcmp(&current,&previous,sizeof(current))) {
+        char setup[32768];ts_audio_health_setup_report(setup,sizeof(setup),now);
+        if(strlen(setup)==sizeof(setup)-1)memcpy(setup+sizeof(setup)-14," [TRUNCATED]",13);
+        ts_session_log_text("setup_snapshot",setup);previous=current;
+    }
+    if(last_sample && now-last_sample<1000u)return;
+    last_sample=now;
+    ts_audio_health_sample(audio,now);
+    const TsRealtimeDiagnosticsSnapshot *s=&ts_health.snapshot;
+    ts_session_log_event("health_sample","generation=%u callbacks=%llu over_budget=%llu near_budget=%llu max_hold_ms=%.6f holds_over_buffer=%llu max_ui_wait_ms=%.6f backend_counter_kind=%d driver=%u lock_skips=%u recoveries=%u worker_gaps=%u profile=%d",
+        audio->audio_health_generation,(unsigned long long)s->callback_count,(unsigned long long)s->deadline_overruns,
+        (unsigned long long)s->near_overruns,s->control_worst_microseconds/1000,(unsigned long long)s->control_long_holds,
+        s->control_wait_worst_microseconds/1000,ts_health.native_kind,ts_health.driver_reports,ts_health.control_skips,
+        ts_health.control_recoveries,ts_health.worker_gaps,ts_profile_enabled());
+    ts_session_log_event("workload_sample","setup_age_ms=%u keyboard_voices=%d held=%d tile_voices=%d mosaic=%d arp=%d embedded_tracksister=%d legacy_tracker=%d visualizer=%d frozen=%d quality=%d",
+        now-ts_health.setup.captured,ts_health.setup.keyboard_voices,ts_health.setup.held_voices,ts_health.setup.tile_voices,
+        ts_health.setup.mosaic,ts_health.setup.arp,ts_health.setup.embedded_tracker,ts_health.setup.tracker,
+        ts_mandala_active(),ts_mandala_frozen(),ui->config.visual_quality);
+    if(generation!=audio->audio_health_generation || connection!=(int)ts_output_endpoint.state) {
+        generation=audio->audio_health_generation;connection=ts_output_endpoint.state;
+        ts_session_log_event("audio_device","generation=%u backend=%s output=%.200s connection=%s rate=%u frames=%u channels=%u",
+            generation,ts_native_current_driver()?ts_native_current_driver():"none",ts_output_endpoint.active_name,
+            ts_audio_connection_state_name(ts_output_endpoint.state),ts_output_endpoint.sample_rate,ts_output_endpoint.buffer_frames,ts_output_endpoint.channels);
+    }
+    if(ts_profile_enabled()){char profile[8192];ts_profile_report(profile,sizeof(profile));ts_session_log_text("profile_snapshot",profile);}
 }
 
 static void ts_audio_profile_draw(TsFramebuffer *fb, uint32_t ink, uint32_t dim)
@@ -323,7 +452,7 @@ static void ts_audio_profile_draw(TsFramebuffer *fb, uint32_t ink, uint32_t dim)
     for(int i=0;i<TS_PROF_COUNT;i++) {
         TsProfileValue *v=&s.value[i]; double ms=s.frequency?1000.0*v->ticks/s.frequency:0;
         uint64_t parent=s.value[i>=TS_PROF_AUDIO?TS_PROF_AUDIO:TS_PROF_UI].ticks;
-        int y=73+i*10;cfg_text(fb,20,y,ts_profile_name((TsProfileId)i),ink);
+        int y=73+i*(260/(TS_PROF_COUNT-1));cfg_text(fb,20,y,ts_profile_name((TsProfileId)i),ink);
         snprintf(line,sizeof(line),"%.4F",v->calls?ms/v->calls:0);cfg_text(fb,276,y,line,dim);
         snprintf(line,sizeof(line),"%.3F",s.frequency?1000.0*v->peak/s.frequency:0);cfg_text(fb,348,y,line,dim);
         snprintf(line,sizeof(line),"%.0F",s.seconds?v->calls/s.seconds:0);cfg_text(fb,428,y,line,dim);
@@ -404,8 +533,17 @@ static void ts_audio_health_draw(TsFramebuffer *fb, const TsUiState *ui,
     else snprintf(line, sizeof(line), "DROPOUT COUNTERS NOT EXPOSED BY THIS BACKEND");
     cfg_text(fb, 20, 327, line, ink);
 footer:
-    cfg_text(fb, 20, ts_profile_enabled()?354:347, now < ts_health.message_until ? ts_health.message :
-             "F12: OPEN/CLOSE    RESET STARTS A NEW MEASUREMENT", dim);
+    {
+        TsSessionLogStatus session;ts_session_log_status(&session);
+        snprintf(line,sizeof(line),"LOG: %s%s",ts_session_log_state_name(session.state),
+            session.dropped_audio || session.dropped_events?" / RECORDS LOST":"");
+        if(now<ts_health.message_until)snprintf(line,sizeof(line),"%s",ts_health.message);
+        cfg_rect(fb,180,18,440,12,ts_theme_color(&ui->palette,TS_THEME_HEALTH,TS_COLOR_PANEL,0xff242125u));
+        cfg_text(fb,180,20,line,session.state==TS_SESSION_ERROR || session.state==TS_SESSION_FULL?amber:dim);
+        if(now>=ts_health.message_until && !ts_profile_enabled())cfg_text(fb,490,20,state,active?effect:dim);
+        const char *labels[]={"HEARD A CLICK","SAVE SESSION","LOG FOLDER"};
+        for(int i=0;i<3;++i){int x=20+i*202;cfg_frame(fb,x,344,196,18,ts_theme_color(&ui->palette,TS_THEME_HEALTH,TS_COLOR_PANEL,0xff1b191cu),edge);cfg_text(fb,x+40,350,labels[i],effect);}
+    }
     cfg_frame(fb, 20, 367, 120, 19, ts_theme_color(&ui->palette,TS_THEME_HEALTH,TS_COLOR_PANEL,0xff1b191cu), edge);
     cfg_text(fb, 65, 373, "RESET", accent);
     cfg_frame(fb, 150, 367, 150, 19, ts_theme_color(&ui->palette,TS_THEME_HEALTH,TS_COLOR_PANEL,0xff1b191cu), edge);
@@ -455,11 +593,23 @@ static int ts_audio_health_show(TsUiState *ui)
     return 1;
 }
 
+static int ts_audio_session_shortcut(const SDL_Event *event)
+{
+    if(event->type==SDL_KEYDOWN && event->key.keysym.sym==SDLK_F12 &&
+       (event->key.keysym.mod & KMOD_CTRL) && (event->key.keysym.mod & KMOD_SHIFT) &&
+       !(event->key.keysym.mod & (KMOD_ALT|KMOD_GUI))) {
+        if(!event->key.repeat)ts_audio_session_marker();
+        return 1;
+    }
+    return 0;
+}
+
 static int ts_audio_health_event(const SDL_Event *event, SDL_Window *main_window,
                                   AudioState *audio, TsUiState *ui)
 {
     uint32_t id = event_window_id(event);
     int own = ts_health.window_id && id == ts_health.window_id;
+    if(ts_audio_session_shortcut(event))return 1;
     if (event->type == SDL_KEYDOWN && event->key.keysym.sym == SDLK_F12 &&
         !(event->key.keysym.mod & (KMOD_CTRL | KMOD_SHIFT | KMOD_ALT | KMOD_GUI))) {
         if (!event->key.repeat) {
@@ -488,16 +638,25 @@ static int ts_audio_health_event(const SDL_Event *event, SDL_Window *main_window
         ts_health.visible = 0; SDL_HideWindow(ts_health.window);
     } else if (event->type == SDL_MOUSEBUTTONDOWN && event->button.button == SDL_BUTTON_LEFT) {
         int x, y; logical_mouse(ts_health.window, event->button.x, event->button.y, &x, &y);
+        if(y>=344 && y<362) {
+            if(x>=20 && x<216)ts_audio_session_marker();
+            else if(x>=222 && x<418) {
+                snprintf(ts_health.message,sizeof(ts_health.message),"%s",ts_session_log_export_project(ui->project_path,1)?"SAVING SESSION IN BACKGROUND":"SESSION EXPORT UNAVAILABLE");
+                ts_health.message_until=SDL_GetTicks()+2500u;
+            } else if(x>=424 && x<620)ts_audio_session_folder(ui);
+            ts_health.last_update=0;return 1;
+        }
         if (y >= 367 && y < 386) {
             if (x >= 20 && x < 140) ts_audio_health_reset(audio);
             else if (x >= 150 && x < 300) {
-                char report[16384]; ts_audio_health_report(audio, report, sizeof(report));
+                char report[32768]; ts_audio_health_report(audio, report, sizeof(report));
                 snprintf(ts_health.message, sizeof(ts_health.message), "%s",
                     SDL_SetClipboardText(report) == 0 ? "AUDIO REPORT COPIED" : "COULD NOT COPY REPORT");
                 ts_health.message_until = SDL_GetTicks() + 2500u;
                 ts_health.last_update = 0;
             } else if (x >= 310 && x < 490) {
                 ts_profile_enable(!ts_profile_enabled());
+                ts_session_log_event("profile","enabled=%d",ts_profile_enabled());
                 ts_health.last_update = 0;
             } else if (x >= 500 && x < 620) {
                 ts_health.visible = 0; SDL_HideWindow(ts_health.window);

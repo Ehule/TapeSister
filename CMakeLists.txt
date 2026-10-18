@@ -16,7 +16,7 @@ FetchContent_MakeAvailable(miniaudio)
 
 add_library(tapesister_core src/ts_mandala.c src/ts_routing_matrix.c src/ts_matrix_effects.c src/ts_matrix_layout.c src/ts_source_route.c src/ts_clean_output.c src/ts_spatial.c src/ts_speakers.c src/ts_sample.c src/ts_prism.c src/ts_prism_performance.c src/ts_fm.c src/ts_audition.c src/ts_note_bank.c src/ts_keyboard_sequence.c
              src/ts_mosaic.c src/ts_note_event.c src/ts_midi_map.c src/ts_performance.c src/ts_audio_mixer.c
-             src/ts_audio_lifecycle.c
+             src/ts_audio_lifecycle.c src/ts_performance_input.c
              src/ts_realtime_diagnostics.c src/ts_profile.c
              src/ts_sister_effects.c src/ts_sister_fallout.c src/ts_sister_post_fx.c
              src/ts_sister_limiter.c src/ts_compressor.c src/ts_transient.c src/ts_master_eq.c src/ts_eq_spectrum.c src/ts_router.c src/ts_router_performance.c src/ts_insert.c
@@ -39,6 +39,8 @@ add_library(tapesister_core src/ts_mandala.c src/ts_routing_matrix.c src/ts_matr
              third_party/tapehead/ft2_fasttracks_core.c)
 target_include_directories(tapesister_core PUBLIC include PRIVATE ${miniaudio_SOURCE_DIR})
 target_link_libraries(tapesister_core PUBLIC m)
+add_executable(tapesister_matrix_benchmark EXCLUDE_FROM_ALL tools/benchmark_matrix.c)
+target_link_libraries(tapesister_matrix_benchmark PRIVATE tapesister_core)
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(tapesister_core PRIVATE -Wall -Wextra -Wpedantic)
 endif()
@@ -52,7 +54,10 @@ if(TAPESISTER_BUNDLE_CDP8)
 endif()
 if(TAPESISTER_BUILD_SDL)
   find_package(SDL2 2.0.18 REQUIRED)
-  target_sources(tapesister_core PRIVATE src/ts_mandala_sdl.c)
+  target_sources(tapesister_core PRIVATE src/ts_mandala_sdl.c src/ts_session_log.c)
+  if(WIN32)
+    target_link_libraries(tapesister_core PUBLIC psapi)
+  endif()
   target_link_libraries(tapesister_core PUBLIC SDL2::SDL2)
   include(cmake/TapeHeadEmbedded.cmake)
   enable_language(CXX)
@@ -446,6 +451,9 @@ add_test(NAME tapesister_external_record_tests COMMAND tapesister_external_recor
 add_executable(tapesister_input_monitor_tests tests/test_input_monitor.c)
 target_link_libraries(tapesister_input_monitor_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_input_monitor_tests COMMAND tapesister_input_monitor_tests)
+add_executable(tapesister_performance_input_tests tests/test_performance_input.c)
+target_link_libraries(tapesister_performance_input_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_performance_input_tests COMMAND tapesister_performance_input_tests)
 
 add_executable(tapesister_capture_archive_tests tests/test_capture_archive.c)
 target_link_libraries(tapesister_capture_archive_tests PRIVATE tapesister_core)
@@ -610,6 +618,10 @@ if(TAPESISTER_BUILD_SDL)
   if(UNIX AND NOT APPLE)
     target_link_libraries(tapesister_performance_benchmark PRIVATE rt)
   endif()
+  add_executable(tapesister_session_log_tests tests/test_session_log.c)
+  target_link_libraries(tapesister_session_log_tests PRIVATE tapesister_core SDL2::SDL2)
+  add_test(NAME tapesister_session_log_tests COMMAND tapesister_session_log_tests)
+
   add_executable(tapesister_audio_health_tests tests/test_audio_health.c
                  src/tape_link.c src/tape_companion.c src/ts_startup_diag.c src/ts_midi_input.c)
   target_include_directories(tapesister_audio_health_tests PRIVATE third_party)
@@ -840,4 +852,18 @@ if(TAPESISTER_BUILD_SDL)
     target_link_options(tapesister_new_project_tests PRIVATE "-Wl,--stack,16777216")
   endif()
   add_test(NAME tapesister_new_project_tests COMMAND tapesister_new_project_tests)
+endif()
+
+if(TAPESISTER_BUILD_SDL)
+  add_executable(tapesister_pedalboard_slots_tests tests/test_pedalboard_slots.c
+    src/tape_link.c src/tape_companion.c src/ts_startup_diag.c src/ts_midi_input.c)
+  target_include_directories(tapesister_pedalboard_slots_tests PRIVATE third_party)
+  target_link_libraries(tapesister_pedalboard_slots_tests PRIVATE tapesister_core tapesister_tapehead SDL2::SDL2)
+  if(UNIX AND NOT APPLE)
+    target_link_libraries(tapesister_pedalboard_slots_tests PRIVATE rt)
+  endif()
+  if(MINGW)
+    target_link_options(tapesister_pedalboard_slots_tests PRIVATE "-Wl,--stack,16777216")
+  endif()
+  add_test(NAME tapesister_pedalboard_slots_tests COMMAND tapesister_pedalboard_slots_tests)
 endif()

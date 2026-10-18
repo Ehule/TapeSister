@@ -255,7 +255,7 @@ static TsSisterFxSlotControls slot_controls(
     TsSisterFxType type, int enabled, uint8_t placement, float gain,
     float a, float b, float c, float mix)
 {
-    TsSisterFxSlotControls slot;
+    TsSisterFxSlotControls slot = {0};
     slot.type = type;
     slot.enabled = enabled != 0;
     slot.placement = ts_sister_fx_placement_sanitize(placement);
@@ -273,6 +273,18 @@ static uint8_t legacy_targets_to_placement(uint8_t targets)
     if ((targets & TS_SISTER_EFFECT_TARGET_MIX) != 0u)
         return TS_SISTER_FX_PLACE_POST;
     return (uint8_t)((targets & TS_SISTER_EFFECT_TARGET_HEADS) << 1u);
+}
+
+int ts_sister_fx_slot_count(int count)
+{
+    return count < TS_SISTER_FX_SLOT_MIN ? TS_SISTER_FX_SLOT_MIN :
+           count > TS_SISTER_FX_SLOT_COUNT ? TS_SISTER_FX_SLOT_COUNT : count;
+}
+
+TsSisterFxSlotControls ts_sister_fx_empty_slot(void)
+{
+    return slot_controls(TS_SISTER_FX_EMPTY, 1, TS_SISTER_FX_PLACE_POST,
+                         0, .5f, .5f, .5f, 1);
 }
 
 void ts_sister_fx_controls_migrate_legacy(TsSisterFxControls *controls)
@@ -298,8 +310,9 @@ void ts_sister_fx_controls_migrate_legacy(TsSisterFxControls *controls)
         legacy_targets_to_placement(controls->reverb_targets),
         controls->reverb_gain_db, controls->reverb_size,
         controls->reverb_decay, 0.5f, controls->reverb_mix);
-    controls->slot[4] = slot_controls(TS_SISTER_FX_EMPTY, 1,
-        TS_SISTER_FX_PLACE_POST, 0, .5f, .5f, .5f, 1);
+    controls->slot_count = TS_SISTER_FX_SLOT_MIN;
+    for (int i = 4; i < TS_SISTER_FX_SLOT_COUNT; ++i)
+        controls->slot[i] = ts_sister_fx_empty_slot();
 }
 
 float ts_sister_reverb_legacy_size(TsSisterReverbType type)
@@ -338,12 +351,14 @@ void ts_sister_fx_controls_default(TsSisterFxControls *controls)
     controls->grain_pitch = 0.50f;
     controls->grain_targets = TS_SISTER_EFFECT_TARGET_MIX;
     ts_sister_fx_controls_migrate_legacy(controls);
+    controls->slot_count = TS_SISTER_FX_SLOT_DEFAULT;
     ts_sister_fallout_controls_default(&controls->fallout);
 }
 
 void ts_sister_fx_controls_sanitize(TsSisterFxControls *controls)
 {
     if (controls == NULL) return;
+    controls->slot_count = ts_sister_fx_slot_count(controls->slot_count);
     controls->enabled = controls->enabled != 0;
     controls->reverb_enabled = controls->reverb_enabled != 0;
     controls->delay_enabled = controls->delay_enabled != 0;
@@ -384,6 +399,8 @@ void ts_sister_fx_controls_sanitize(TsSisterFxControls *controls)
     controls->master_feedback = clampf(controls->master_feedback, 0.0f, 1.0f);
     for (size_t i = 0u; i < TS_SISTER_FX_SLOT_COUNT; ++i) {
         TsSisterFxSlotControls *slot = &controls->slot[i];
+        if ((int)i >= controls->slot_count) *slot = ts_sister_fx_empty_slot();
+        slot->parameter_locks &= 31u;
         if (slot->type < TS_SISTER_FX_EMPTY ||
             slot->type >= TS_SISTER_FX_TYPE_COUNT)
             slot->type = TS_SISTER_FX_EMPTY;
@@ -713,6 +730,7 @@ int ts_sister_post_fx_init(TsSisterPostFxEngine *engine,
             next.distortion[slot][location].gain_target = 1.0f;
         }
     }
+    next.processing_slots = next.controls.slot_count;
     next.ready = 1;
     ts_sister_post_fx_free(engine);
     *engine = next;
@@ -742,6 +760,21 @@ static void slot_advance(TsSisterFxSlotState *state, uint32_t frames)
     if (state == NULL) return;
     ramp_advance(&state->engage);
     ramp_advance(&state->morph);
+    if (state->retiring) {
+        ramp_advance(&state->removal);
+        if (state->removal.remaining) return;
+        state->retiring = 0;
+        state->active = ts_sister_fx_empty_slot();
+        state->has_pending = 0;
+        ramp_reset(&state->morph, 0);
+        ramp_reset(&state->engage, state->has_queued ? (float)state->queued.enabled : 1);
+        if (state->has_queued) {
+            TsSisterFxSlotControls queued = state->queued;
+            state->has_queued = 0;
+            if (queued.type != TS_SISTER_FX_EMPTY) slot_begin_morph(state, &queued, frames);
+        }
+        return;
+    }
     if (!state->has_pending || state->morph.remaining != 0u) return;
     if (state->morph.target >= 0.5f) state->active = state->pending;
     state->has_pending = 0;
@@ -786,7 +819,7 @@ void ts_sister_post_fx_set_controls(TsSisterPostFxEngine *engine,
             (float)engine->sample_rate / 1000.0f);
         engine->transition_frames = effect_frames;
         if (next.transition != engine->controls.transition) {
-            for (size_t slot = 0u; slot < TS_SISTER_FX_SLOT_COUNT; ++slot) {
+            for (size_t slot = 0u; slot < (size_t)next.slot_count; ++slot) {
                 ramp_retime(&engine->slot[slot].engage, effect_frames);
                 ramp_retime(&engine->slot[slot].morph, effect_frames);
             }
@@ -799,6 +832,19 @@ void ts_sister_post_fx_set_controls(TsSisterPostFxEngine *engine,
         for (size_t slot = 0u; slot < TS_SISTER_FX_SLOT_COUNT; ++slot) {
             TsSisterFxSlotState *state = &engine->slot[slot];
             const TsSisterFxSlotControls *requested = &next.slot[slot];
+            if ((int)slot >= next.slot_count && (int)slot < engine->controls.slot_count) {
+                state->has_queued = 0;
+                if (!state->retiring) {
+                    state->retiring = 1;
+                    ramp_reset(&state->removal, 0);
+                    ramp_start(&state->removal, 1, (uint32_t)fmaxf(1, engine->sample_rate * .02f));
+                }
+                continue;
+            }
+            if (state->retiring) {
+                if ((int)slot < next.slot_count) { state->queued = *requested; state->has_queued = 1; }
+                continue;
+            }
             if (requested->enabled != engine->controls.slot[slot].enabled)
                 ramp_start(&state->engage,
                            requested->enabled ? 1.0f : 0.0f, effect_frames);
@@ -820,6 +866,8 @@ void ts_sister_post_fx_set_controls(TsSisterPostFxEngine *engine,
             }
         }
     }
+    if (engine->processing_slots < next.slot_count)
+        engine->processing_slots = next.slot_count;
     engine->controls = next;
 }
 
@@ -831,12 +879,13 @@ void ts_sister_post_fx_sync_controls(TsSisterPostFxEngine *engine,
     next = *controls;
     ts_sister_fx_controls_sanitize(&next);
     ts_sister_post_fx_set_controls(engine, &next);
+    engine->processing_slots = next.slot_count;
     ramp_reset(&engine->master_engage, next.enabled ? 1.0f : 0.0f);
     for (size_t slot = 0u; slot < TS_SISTER_FX_SLOT_COUNT; ++slot) {
         const TsSisterFxSlotControls *control = &next.slot[slot];
         TsSisterFxSlotState *slot_state = &engine->slot[slot];
         slot_state->active = *control;
-        slot_state->has_pending = slot_state->has_queued = 0;
+        slot_state->has_pending = slot_state->has_queued = slot_state->retiring = 0;
         ramp_reset(&slot_state->morph, 0.0f);
         ramp_reset(&slot_state->engage, control->enabled ? 1.0f : 0.0f);
         for (size_t location = 0u;
@@ -1431,7 +1480,7 @@ static TsStereoFrame process_location(TsSisterPostFxEngine *engine,
     if (explicit_mono) {
         if (advance_frame) {
             uint32_t frames = engine->transition_frames;
-            for (size_t slot = 0u; slot < TS_SISTER_FX_SLOT_COUNT; ++slot)
+            for (size_t slot = 0u; slot < (size_t)engine->processing_slots; ++slot)
                 slot_advance(&engine->slot[slot], frames);
             ramp_advance(&engine->master_engage);
         }
@@ -1439,8 +1488,10 @@ static TsStereoFrame process_location(TsSisterPostFxEngine *engine,
     }
     placement_bit = (uint8_t)(1u << location);
     output = input;float direct=1;
-    for (size_t slot = 0u; slot < TS_SISTER_FX_SLOT_COUNT; ++slot) {
+    for (size_t slot = 0u; slot < (size_t)engine->processing_slots; ++slot) {
         TsSisterFxSlotState *state = &engine->slot[slot];
+        if (state->active.type == TS_SISTER_FX_EMPTY && !state->has_pending) continue;
+        TsStereoFrame slot_input = output;
         TsStereoFrame active_output = output;
         TsStereoFrame pending_output = output;
         float gate = state->engage.current,active_dry=1,pending_dry=1;
@@ -1456,7 +1507,12 @@ static TsStereoFrame process_location(TsSisterPostFxEngine *engine,
         } else {
             output = active_output;
         }
-        direct*=state->has_pending?active_dry+(pending_dry-active_dry)*state->morph.current:active_dry;
+        float slot_direct = state->has_pending ? active_dry+(pending_dry-active_dry)*state->morph.current : active_dry;
+        if (state->retiring) {
+            output = lerp_frame(output, slot_input, state->removal.current);
+            slot_direct += (1-slot_direct)*state->removal.current;
+        }
+        direct *= slot_direct;
     }
     master_gain = clampf(engine->master_engage.current, 0.0f, 1.0f);
     /* Master is the final return valve. Keep the exact-zero case explicit so
@@ -1474,9 +1530,14 @@ static TsStereoFrame process_location(TsSisterPostFxEngine *engine,
     }
     if (advance_frame) {
         uint32_t frames = engine->transition_frames;
-        for (size_t slot = 0u; slot < TS_SISTER_FX_SLOT_COUNT; ++slot)
+        for (size_t slot = 0u; slot < (size_t)engine->processing_slots; ++slot)
             slot_advance(&engine->slot[slot], frames);
         ramp_advance(&engine->master_engage);
+        while (engine->processing_slots > engine->controls.slot_count) {
+            const TsSisterFxSlotState *last = &engine->slot[engine->processing_slots-1];
+            if (last->retiring || last->has_pending || last->active.type != TS_SISTER_FX_EMPTY) break;
+            --engine->processing_slots;
+        }
     }
     return ts_stereo_frame_sanitize(output);
 }
@@ -1510,7 +1571,7 @@ TsStereoFrame ts_sister_post_fx_process_matrix(TsSisterPostFxEngine *engine, TsS
     return process_location(engine,TS_SISTER_FX_LOCATION_COUNT-1,input,0,1,1-clampf(insert,0,1));
 }
 
-/* Fixed upper bound: five slots, two morph endpoints, five locations.
+/* Fixed upper bound: twenty slots, two morph endpoints, five locations.
    Invoked only for requested block snapshots. No allocation, locks or history. */
 TsSisterFxView ts_sister_post_fx_view(const TsSisterPostFxEngine *engine)
 {
@@ -1553,6 +1614,7 @@ TsSisterFxView ts_sister_post_fx_view(const TsSisterPostFxEngine *engine)
             }
             float weight=master*clampf(s->engage.current,0,1)*clampf(mix,0,1);
             if(s->has_pending)weight*=side?s->morph.current:1-s->morph.current;
+            if(s->retiring)weight*=1-s->removal.current;
             unsigned type=(unsigned)c->type-1;
             view.value[type][0]+=weight;
             view.value[type][1]+=weight*a;
@@ -1677,7 +1739,7 @@ TsSisterSingleFx *ts_sister_single_fx_new(TsSisterFxType type,unsigned rate,uint
     FX_SMOOTH(12);FX_SMOOTH(18);FX_SMOOTH(20);FX_SMOOTH(24);
     FX_SMOOTH(30);FX_SMOOTH(35);FX_SMOOTH(55);
 #undef FX_SMOOTH
-    f->controls=(TsSisterFxSlotControls){type,1,TS_SISTER_FX_PLACE_POST,0,.5f,.5f,.5f,1};
+    f->controls=(TsSisterFxSlotControls){type,1,TS_SISTER_FX_PLACE_POST,0,.5f,.5f,.5f,1,0};
     int ok=1;
     switch(type) {
     case TS_SISTER_FX_REVERB:ok=reverb_init(&f->state.reverb,rate);break;
