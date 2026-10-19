@@ -362,6 +362,48 @@ static void editor_checks(SDL_Window *window)
     puts("editor presets, custom RGB/hex, shapes, undo/revert, project replacement and bounded renderer: PASS");
 }
 #include "mandala_interaction_fixture.inc"
+static void video_pump(unsigned milliseconds,TsMandalaPreferences *prefs)
+{
+    Uint32 start=SDL_GetTicks();
+    do {measured_callback(NULL,(Uint8*)out,sizeof(out));ts_mandala_poll(&a.sister.mandala,prefs);SDL_Delay(10);}while(SDL_GetTicks()-start<milliseconds);
+}
+static void video_checks(SDL_Window *window)
+{
+    TsMandalaConfig original=a.sister.mandala;TsMatrixControls routing=a.sister.matrix.controls;
+    mandala_editor_show(&u,&a.sister.mandala);mandala_editor.host=window;
+    editor_click(370,20,SDL_BUTTON_LEFT);assert(mandala_editor.video_tab);
+    editor_click(170,285,SDL_BUTTON_LEFT);assert(a.sister.mandala.video_mix==50);
+    editor_key(SDLK_z,KMOD_CTRL);assert(a.sister.mandala.video_mix==75);
+    editor_click(390,215,SDL_BUTTON_LEFT);assert(!a.sister.mandala.video_loop);
+    editor_click(40,75,SDL_BUTTON_LEFT);assert(u.browser.mode==TS_BROWSER_LOAD_VIDEO);
+    snprintf(u.browser.directory,sizeof(u.browser.directory),"%s",TS_VIDEO_FIXTURE);
+    char *slash=strrchr(u.browser.directory,'/');assert(slash);*slash=0;
+    assert(ts_browser_refresh(&u.browser));int found=0;
+    for(int i=0;i<u.browser.entry_count;++i)if(!strcmp(u.browser.entries[i].name,"mandala-video.mp4")){ts_browser_select(&u.browser,i);found=1;break;}
+    assert(found);PendingFileOperation pending={0};
+    browser_action(0,&a,&u,&bank,NULL,&pages,NULL,0,&pending,0);
+    assert(u.browser.mode==TS_BROWSER_CLOSED && a.sister.mandala.video_enabled && strstr(a.sister.mandala.video_path,"mandala-video.mp4"));
+    TsMandalaPreferences prefs={0};assert(ts_mandala_open(&a.sister.mandala,&prefs,error,sizeof(error)));
+    Uint32 start=SDL_GetTicks();
+    while(ts_mandala_video_status().state!=TS_VIDEO_PLAYING && SDL_GetTicks()-start<8000)video_pump(20,&prefs);
+    assert(ts_mandala_video_status().state==TS_VIDEO_PLAYING);
+    video_pump(250,&prefs);assert(ts_mandala_video_status().position_ms>0);
+    editor_click(40,215,SDL_BUTTON_LEFT);assert(ts_mandala_video_paused());video_pump(250,&prefs);
+    unsigned held=ts_mandala_video_status().position_ms,frames=atomic_load(&host.shared->frames);
+    video_pump(300,&prefs);assert(ts_mandala_video_status().position_ms==held && atomic_load(&host.shared->frames)>frames);
+    ts_mandala_freeze();video_pump(250,&prefs);frames=atomic_load(&host.shared->frames);
+    video_pump(250,&prefs);assert(atomic_load(&host.shared->frames)==frames);ts_mandala_freeze();
+    editor_click(210,215,SDL_BUTTON_LEFT);assert(!ts_mandala_video_paused());video_pump(250,&prefs);
+    assert(ts_mandala_video_status().position_ms<500);
+    snprintf(a.sister.mandala.video_path,sizeof(a.sister.mandala.video_path),"missing-video.mp4");video_pump(500,&prefs);
+    assert(ts_mandala_video_status().state==TS_VIDEO_ERROR && ts_mandala_active());
+    assert(ts_tapehead_running() && a.mosaic->playing && a.keyboard_sequence.running);
+    assert(!memcmp(&routing,&a.sister.matrix.controls,sizeof(routing)));
+    ts_mandala_close();start=SDL_GetTicks();while(host.shared && SDL_GetTicks()-start<5000)video_pump(20,&prefs);
+    assert(!host.shared);mandala_editor_close();a.sister.mandala=original;
+    puts("video editor, file picker, IPC, pause versus freeze, restart, missing media and musical transport independence: PASS");
+}
+
 int main(int argc,char **argv)
 {
     SDL_setenv("SDL_VIDEODRIVER","dummy",1);SDL_setenv("SDL_AUDIODRIVER","dummy",1);
@@ -374,7 +416,9 @@ int main(int argc,char **argv)
             argc>4?atoi(argv[4]):10,argc>5?atoi(argv[5]):1);
     } else if(argc>2 && !strcmp(argv[1],"--editor-capture")) {
         a.sister.mandala.palette=4;a.sister.mandala.shape=1;
-        mandala_editor_show(&u,&a.sister.mandala);mandala_editor_update(&a.sister.mandala);
+        mandala_editor_show(&u,&a.sister.mandala);
+        if(argc>3){mandala_editor.video_tab=1;snprintf(a.sister.mandala.video_path,sizeof(a.sister.mandala.video_path),"%s",argv[3]);a.sister.mandala.video_enabled=1;TsMandalaPreferences prefs={0};assert(ts_mandala_open(&a.sister.mandala,&prefs,error,sizeof(error)));video_pump(700,&prefs);}
+        mandala_editor_update(&a.sister.mandala);
         SDL_Surface *surface=SDL_CreateRGBSurfaceFrom(mandala_editor.pixels,MW_W,MW_H,32,MW_W*4,0xff0000,0xff00,0xff,0);
         assert(surface && !SDL_SaveBMP(surface,argv[2]));SDL_FreeSurface(surface);mandala_editor_close();
     } else if(argc>1 && !strcmp(argv[1],"--soak")) {
@@ -409,7 +453,7 @@ int main(int argc,char **argv)
         }
         ts_native_pause(device,1);ts_native_close(device);
         printf("soak transport status: tracker=%d mosaic=%d arp=%d time=%.2f\n",ts_tapehead_running(),a.mosaic->playing,a.keyboard_sequence.running,a.mosaic->time);
-    } else {editor_checks(window);wide_live_editor_checks();lifecycle(window);external_tap_checks();effect_snapshot_checks();}
+    } else {editor_checks(window);video_checks(window);wide_live_editor_checks();lifecycle(window);external_tap_checks();effect_snapshot_checks();}
     ts_mandala_shutdown();ts_tapehead_stop();ts_tapehead_close();
     ts_keyboard_sequence_source_free(ts_keyboard_sequence_source(&a.keyboard_sequence,NULL));
     ts_sister_runtime_free(&a.sister);ts_mosaic_free(a.mosaic);ts_capture_free(&a.capture);

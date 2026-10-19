@@ -2,6 +2,7 @@
    bounded values through the existing mailbox; no audio processing is edited. */
 enum { MW_W=680,MW_H=620,MW_HISTORY=32 };
 static struct {
+    SDL_Window *host; int video_tab; Uint32 video_painted;
     SDL_Window *window;SDL_Renderer *renderer;SDL_Texture *texture;Uint32 id;
     uint32_t pixels[MW_W*MW_H];
     TsMandalaConfig original,last,history[MW_HISTORY];
@@ -71,6 +72,8 @@ static void mandala_editor_show(TsUiState *ui,const TsMandalaConfig *c)
     mandala_editor.visible=mandala_editor.dirty=1;mandala_editor.hex_focus=0;mandala_editor.message[0]=0;mw_hex(c);
     SDL_ShowWindow(mandala_editor.window);SDL_RaiseWindow(mandala_editor.window);
 }
+static void mandala_editor_video_loaded(TsUiState *ui,const TsMandalaConfig *c)
+{mw_commit(c);mandala_editor.video_tab=1;mandala_editor_show(ui,c);}
 static void mw_hide(TsMandalaConfig *c)
 {
     if(mandala_editor.drag)mw_commit(c);
@@ -88,11 +91,12 @@ static void mw_visual(TsUiState *ui,const TsMandalaConfig *c)
 }
 static uint32_t *mw_parameter(TsMandalaConfig *c,int index)
 {
-    switch(index){case 0:return &c->density;case 1:return &c->scale;case 2:return &c->motion;default:return &c->trails;}
+    switch(index){case 0:return &c->density;case 1:return &c->scale;case 2:return &c->motion;case 3:return &c->trails;
+        case 4:return &c->video_mix;case 5:return &c->video_scale;case 6:return &c->video_rotation;default:return &c->video_response;}
 }
 static int mw_min(int index){return index==0?10:index==1?50:0;}
 static int mw_max(int index){return index==1?150:100;}
-static int mw_default(int index){return index<2?100:50;}
+static int mw_default(int index){return index<2?100:index==4?75:50;}
 static void mw_slider(TsMandalaConfig *c,int drag,int x)
 {
     if(drag<=3) {
@@ -117,11 +121,39 @@ static void mw_shape_icon(int x,int y,int shape,uint32_t color)
         for(int k=0;k<=24;++k)mw_rect((int)lrintf(x0+(x1-x0)*k/24),(int)lrintf(y0+(y1-y0)*k/24),1,1,color);
     }
 }
+static void mw_video_paint(const TsMandalaConfig *c)
+{
+    char line[110];TsVideoStatus status=ts_mandala_video_status();
+    mw_button(20,64,200,c->video_path[0]?"REPLACE VIDEO FILE":"ADD VIDEO FILE",0);
+    mw_button(234,64,130,c->video_enabled?"VIDEO ON":"VIDEO OFF",c->video_enabled);
+    mw_button(378,64,130,"REMOVE VIDEO",0);
+    const char *name=c->video_path;
+    for(const char *p=name;*p;++p)if(*p=='/' || *p=='\\')name=p+1;
+    mw_rect(20,106,640,83,0x110F15);
+    snprintf(line,sizeof(line),"%.100s",*name?name:"CHOOSE A CLIP TO FOLD INTO THE MANDALA");mw_text(32,119,line,0xFFE1A1,1);
+    mw_text(32,143,!ts_mandala_active()?"OPEN THE VISUALIZER TO PLAY YOUR VIDEO":!c->video_enabled?"VIDEO OFF / MANDALA CONTINUES":ts_mandala_frozen()?"VISUALIZER FROZEN":ts_mandala_video_paused()?"VIDEO PAUSED / MANDALA CONTINUES":status.message,0xC4B6CB,1);
+    snprintf(line,sizeof(line),"%02u:%02u / %02u:%02u   |   VIDEO SOUND OFF",status.position_ms/60000,status.position_ms/1000%60,status.duration_ms/60000,status.duration_ms/1000%60);mw_text(32,167,line,0xBCAFBC,1);
+    mw_button(20,205,146,ts_mandala_video_paused()?"PLAY VIDEO":"PAUSE VIDEO",ts_mandala_video_paused());
+    mw_button(180,205,146,"RESTART",0);
+    mw_button(340,205,146,c->video_loop?"LOOP ON":"LOOP OFF",c->video_loop);
+    TsMandalaConfig values=*c;
+    for(int i=0;i<4;++i) {
+        int x=20+(i%2)*330,y=263+(i/2)*70,value=(int)*mw_parameter(&values,i+4);
+        snprintf(line,sizeof(line),"%s  %d",(const char*[]){"VIDEO BLEND","VIDEO ZOOM","ROTATION","AUDIO RESPONSE"}[i],value);mw_text(x,y,line,0xD9CFDE,1);
+        mw_rect(x,y+19,300,6,0x100D15);mw_rect(x,y+19,value*3,6,0x9776A5);mw_rect(x+value*3-2,y+14,4,16,0xE9C58C);
+    }
+    mw_text(20,402,"THE CLIP KEEPS ITS OWN RHYTHM. YOUR MUSIC SHAPES THE LENS.",0xE9C58C,1);
+    mw_text(20,425,"PAUSE HOLDS A FRAME WHILE THE MANDALA KEEPS MOVING.",0xBCAFBC,1);
+    mw_text(20,448,"ROTATION: 50 IS STILL. LOWER / HIGHER REVERSES DIRECTION.",0xBCAFBC,1);
+    mw_text(20,471,"SAVE YOUR PROJECT TO RECALL THE FILE AND THIS LOOK.",0xBCAFBC,1);
+}
 static void mw_paint(const TsMandalaConfig *c)
 {
     char line[100];mw_rect(0,0,MW_W,MW_H,0x201B24);mw_rect(0,0,MW_W,42,0x110F15);
-    mw_text(20,16,"VISUALIZER EDITOR",0xE9C58C,2);
+    mw_text(20,16,"VISUALIZER",0xE9C58C,2);
+    mw_button(230,9,96,"FORM",!mandala_editor.video_tab);mw_button(334,9,96,"VIDEO",mandala_editor.video_tab);
     mw_button(444,9,216,ts_mandala_active()?(ts_mandala_frozen()?"RESUME VISUALIZER":"CLOSE VISUALIZER"):"OPEN VISUALIZER",0);
+    if(mandala_editor.video_tab){mw_video_paint(c);goto footer;}
     for(unsigned i=0;i<=TS_MANDALA_CUSTOM;++i)mw_button(20+(i%3)*216,54+(i/3)*30,208,ts_mandala_palette_name(i),c->palette==i);
     mw_text(20,121,"PALETTE / SELECT A COLOR TO EDIT",0xBCAFBC,1);
     for(unsigned i=0;i<TS_MANDALA_COLORS;++i) {
@@ -149,6 +181,7 @@ static void mw_paint(const TsMandalaConfig *c)
         snprintf(line,sizeof(line),"%s  %d%s",(const char*[]){"DENSITY","SIZE","MOTION","TRAILS"}[i],value,i<2?"%":"");mw_text(x,y,line,0xD9CFDE,1);
         int pos=(value-mw_min(i))*300/(mw_max(i)-mw_min(i));mw_rect(x,y+19,300,6,0x100D15);mw_rect(x,y+19,pos,6,0x9776A5);mw_rect(x+pos-2,y+14,4,16,0xE9C58C);
     }
+footer:
     snprintf(line,sizeof(line),"SYMMETRY: %u   - / +",c->symmetry);mw_button(20,490,210,line,0);
     snprintf(line,sizeof(line),"EVOLUTION: %u:%02u   - / +",c->cycle_seconds/60,c->cycle_seconds%60);mw_button(240,490,250,line,0);
     mw_button(500,490,160,"RESET FORM",0);
@@ -166,12 +199,18 @@ static void mandala_editor_update(const TsMandalaConfig *c)
     /* Transport/freeze can also change in the visual window. */
     static int active=-1,frozen=-1;
     if(active!=ts_mandala_active() || frozen!=ts_mandala_frozen()){active=ts_mandala_active();frozen=ts_mandala_frozen();mandala_editor.dirty=1;}
+    if(mandala_editor.video_tab && SDL_GetTicks()-mandala_editor.video_painted>=200) {mandala_editor.video_painted=SDL_GetTicks();mandala_editor.dirty=1;}
     if(!mandala_editor.dirty)return;
     mw_paint(c);SDL_UpdateTexture(mandala_editor.texture,NULL,mandala_editor.pixels,MW_W*4);
     SDL_RenderCopy(mandala_editor.renderer,mandala_editor.texture,NULL,NULL);SDL_RenderPresent(mandala_editor.renderer);mandala_editor.dirty=0;
 }
 static int mw_slider_hit(int x,int y)
 {
+    if(mandala_editor.video_tab) {
+        if(x>=16 && x<=654 && y>=271 && y<=372) {int row=(y-271)/70,col=(x-16)/330;
+            if(row<2 && col<2 && (y-271)%70<32 && (x-16)%330<=308)return 8+row*2+col;}
+        return 0;
+    }
     if(x>=94 && x<=376 && y>=194 && y<=274) {int i=(y-194)/29;if(i<3 && (y-194)%29<22)return i+1;}
     if(x>=16 && x<=654 && y>=401 && y<=477) {int row=(y-401)/45,col=(x-16)/330;
         if(row<2 && col<2 && (y-401)%45<32 && (x-16)%330<=308)return 4+row*2+col;}
@@ -198,7 +237,7 @@ static int mandala_editor_event(SDL_Event *e,TsUiState *ui,TsMandalaConfig *c)
     if(e->type==SDL_MOUSEMOTION) {
         int x=e->motion.x,y=e->motion.y;
         if(mandala_editor.drag)mw_slider(c,mandala_editor.drag,x);
-        mandala_editor.hint=y>=140 && y<185?"SEVEN INK COLORS AND A BACKDROP. EDITING CREATES A CUSTOM PALETTE.":
+        mandala_editor.hint=mandala_editor.video_tab?NULL:y>=140 && y<185?"SEVEN INK COLORS AND A BACKDROP. EDITING CREATES A CUSTOM PALETTE.":
             y>=315 && y<370?"CHOOSE THE REPEATING FORMS. AUDIO AND PEDALS KEEP SHAPING THEM.":
             y>=490 && y<515?"SYMMETRY / EVOLUTION: LEFT-CLICK +, RIGHT-CLICK -, OR USE THE WHEEL.":NULL;
         mandala_editor.dirty=1;
@@ -229,6 +268,22 @@ static int mandala_editor_event(SDL_Event *e,TsUiState *ui,TsMandalaConfig *c)
         int x,y,delta=1;
         if(wheel){wheel_event_mouse(e,&x,&y);delta=e->wheel.y;if(e->wheel.direction==SDL_MOUSEWHEEL_FLIPPED)delta=-delta;if(!delta)return 1;}
         else {x=e->button.x;y=e->button.y;if(e->button.button!=SDL_BUTTON_LEFT && e->button.button!=SDL_BUTTON_RIGHT)return 1;delta=e->button.button==SDL_BUTTON_RIGHT?-1:1;}
+        if(!wheel && delta>0 && y>=9 && y<34 && x>=230 && x<430) {
+            mandala_editor.video_tab=x>=334;mandala_editor.hex_focus=0;mandala_editor.hint=NULL;SDL_StopTextInput();mandala_editor.dirty=1;return 1;
+        }
+        if(mandala_editor.video_tab && y>=42 && y<250) {
+            if(!wheel && delta>0) {
+                if(y>=64 && y<89 && x>=20 && x<220) {
+                    browser_open(ui,TS_BROWSER_LOAD_VIDEO);
+                    if(mandala_editor.host){SDL_ShowWindow(mandala_editor.host);SDL_RaiseWindow(mandala_editor.host);}
+                } else if(y>=64 && y<89 && x>=234 && x<364 && c->video_path[0]) {c->video_enabled=!c->video_enabled;mw_commit(c);}
+                else if(y>=64 && y<89 && x>=378 && x<508) {c->video_enabled=0;memset(c->video_path,0,sizeof(c->video_path));mw_commit(c);}
+                else if(y>=205 && y<230 && x>=20 && x<166)ts_mandala_video_pause();
+                else if(y>=205 && y<230 && x>=180 && x<326)ts_mandala_video_restart();
+                else if(y>=205 && y<230 && x>=340 && x<486) {c->video_loop=!c->video_loop;mw_commit(c);}
+            }
+            mandala_editor.dirty=1;return 1;
+        }
         int slider=mw_slider_hit(x,y);
         mandala_editor.hex_focus=0;SDL_StopTextInput();mw_hex(c);
         if(slider) {
@@ -243,7 +298,8 @@ static int mandala_editor_event(SDL_Event *e,TsUiState *ui,TsMandalaConfig *c)
             else if(x>=240)c->cycle_seconds=(uint32_t)SDL_clamp((int)c->cycle_seconds+30*delta,30,1800);
             mw_commit(c);
         } else if(!wheel && delta>0) {
-            if(y>=54 && y<109 && x>=20 && x<660 && (x-20)%216<208 && (y-54)%30<25) {
+            if(mandala_editor.video_tab && y>=42 && y<490) {}
+            else if(y>=54 && y<109 && x>=20 && x<660 && (x-20)%216<208 && (y-54)%30<25) {
                 c->palette=(uint32_t)(((y-54)/30)*3+(x-20)/216);mw_commit(c);
             } else if(y>=140 && y<185 && x>=20 && x<652 && (x-20)%80<72){mandala_editor.swatch=(x-20)/80;mw_hex(c);}
             else if(y>=221 && y<247 && x>=466 && x<660){mandala_editor.hex_focus=mandala_editor.hex_replace=1;SDL_StartTextInput();}

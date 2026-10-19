@@ -55,6 +55,7 @@ const char *ts_browser_mode_extension(TsBrowserMode mode)
 
 const char *ts_browser_mode_title(TsBrowserMode mode)
 {
+    if (mode == TS_BROWSER_LOAD_VIDEO) return "ADD VISUALIZER VIDEO / LOCAL FILE";
     if (mode == TS_BROWSER_TRACKER_PALETTE_IMPORT) return "IMPORT TRACKSISTER / TAPEHEAD PALETTE";
     if (mode == TS_BROWSER_TRACKER_PALETTE_EXPORT) return "EXPORT TRACKSISTER / TAPEHEAD PALETTE";
     if (mode == TS_BROWSER_LOAD_WAV) return "LOAD AUDIO, XM / MOD / IT, TSR, OR TSP";
@@ -149,6 +150,12 @@ int ts_browser_path_exists(const char *path)
 
 static int mode_accepts(const TsBrowser *browser, const char *name)
 {
+    if (browser->mode == TS_BROWSER_LOAD_VIDEO) {
+        const char *extensions[]={".mp4",".m4v",".mov",".mkv",".webm",".avi",".mpg",".mpeg",".ts",".gif"};
+        for(unsigned i=0;i<sizeof(extensions)/sizeof(*extensions);++i)
+            if(ends_with_case(name,extensions[i]))return 1;
+        return 0;
+    }
     if (browser->mode == TS_BROWSER_LOAD_WAV)
         return name != NULL && name[0] != '\0';
     if (browser->mode == TS_BROWSER_EXPORT_BANK) return 0;

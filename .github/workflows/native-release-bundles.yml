@@ -123,7 +123,7 @@ jobs:
         run: ctest --test-dir build --output-on-failure
       - name: Assemble archive
         run: |
-          tar -czf TapeSister-linux-x86_64.tar.gz -C build tapesister assets cdp licenses tapesister.ini.example \
+          tar -czf TapeSister-linux-x86_64.tar.gz -C build tapesister assets cdp licenses video tapesister.ini.example \
             -C .. docs README.md THIRD_PARTY_NOTICES.md -C release PORTABLE_README.txt
           tar -tzf TapeSister-linux-x86_64.tar.gz > archive-contents.txt
           for required in docs/USER_MANUAL.md docs/QUICK_REFERENCE.md docs/ROUTING_MATRIX.md docs/ASIO_AUDIO.md docs/LEGACY_ROUTING.md docs/screenshots/routing-matrix/matrix-signal-activity.png; do

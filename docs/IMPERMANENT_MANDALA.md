@@ -33,11 +33,11 @@ recenter a 960x600 window on the primary display. Physical projector, DPI and
 window-manager behavior still require platform testing.
 
 The first-run mode is Economy. Quality, monitor and fullscreen preference live
-in `tapesister.ini`. The project sidecar stores `Mandala.Version=2`, a
+in `tapesister.ini`. The project sidecar stores `Mandala.Version=3`, a
 64-bit nonzero seed, palette 0–5, symmetry 4–12, evolution period 30–1800
 seconds and the editor's colors/form controls. Version-1 Mandala projects migrate
 to the same original palette and default form controls; projects saved with
-version 2 require a build that supports the editor. Filename changes do not affect identity. Legacy projects initialize an
+version 3 require a build that supports video. Filename changes do not affect identity. Legacy projects initialize an
 identity that becomes permanent on the next save. Invalid or unknown visual
 fields/versions reject the load transaction rather than partially applying it.
 Frame history and display configuration are never written into a project.
@@ -77,10 +77,16 @@ colors only; it does not change shape settings, audio or pedal settings.
 
 The editor only paints when dirty and performs no DSP or device locking. Color
 and scalar edits update the renderer without rebuilding its seed library; shape,
-symmetry and seed edits rebuild only the bounded motif/instance arrays. No extra
-renderer textures or audio analysis are introduced. A custom backdrop replaces
+symmetry and seed edits rebuild only the bounded motif/instance arrays. Form edits introduce no extra
+renderer textures or audio analysis. A custom backdrop replaces
 the original near-black silence background. See the
 [editor captures and validation](MANDALA_EDITOR.md).
+
+## Video kaleidoscope
+
+The **VIDEO** tab adds local footage, loop/pause/restart and lens controls.
+See [Video through the mandala](MANDALA_VIDEO.md) for media formats, project
+recall, controls and performance limits.
 
 ## Architecture and bounded cost
 

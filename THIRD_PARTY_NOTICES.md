@@ -67,3 +67,20 @@ Licensed under LGPL-3.0-or-later. The complete license texts and adaptation
 notes are in `third_party/atk/` and staged in `licenses/atk/` with releases.
 The modified library source is provided and can be rebuilt/relinked using
 TapeSister's CMake build. No convolution or HRTF assets are included.
+
+## FFmpeg video decoder
+
+The optional visualizer player dynamically links FFmpeg 7.1.4 (libavformat,
+libavcodec, libswscale and libavutil), copyright the FFmpeg developers, under
+LGPL 2.1 or later. The bundled build uses no GPL/nonfree components, external
+codec libraries, network protocols, encoders or FFmpeg command-line programs.
+`cmake/VideoRuntime.cmake` pins the unmodified release archive and SHA-256.
+Portable bundles retain that exact source archive, license texts, configuration
+log and build recipe under `licenses/ffmpeg`. The libraries remain replaceable:
+Windows keeps `avformat-61.dll`, `avcodec-61.dll`, `swscale-8.dll`, `avutil-59.dll`
+next to TapeSister.exe; Linux keeps their shared libraries under `video/lib`.
+To rebuild, unpack the supplied archive, configure with the flags in the recipe
+(and a new prefix), run make and make install, then replace the ABI-compatible
+shared libraries. `TAPESISTER_BUNDLE_VIDEO=OFF` links system FFmpeg via pkg-config.
+TapeSister does not restrict modification, replacement, or reverse engineering
+of these libraries for debugging such modifications. See [FFmpeg](https://ffmpeg.org/).

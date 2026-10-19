@@ -54,6 +54,12 @@ if (-not (Test-Path -LiteralPath $Executable -PathType Leaf)) {
 }
 Copy-PortableFile -Source $Executable -Name "TapeSister.exe"
 
+# FFmpeg's minimal decoder has four replaceable DLLs and no external codecs.
+foreach ($Pattern in @("avcodec-*.dll", "avformat-*.dll", "avutil-*.dll", "swscale-*.dll")) {
+    $VideoDll = @(Get-ChildItem -LiteralPath $BuildPath -Filter $Pattern -File)
+    if ($VideoDll.Count -ne 1) { throw "Missing or ambiguous video runtime: $Pattern" }
+    Copy-PortableFile -Source $VideoDll[0].FullName -Name $VideoDll[0].Name
+}
 $RequiredDlls = @("SDL2.dll", "libstdc++-6.dll", "libwinpthread-1.dll")
 foreach ($Dll in $RequiredDlls) {
     Copy-PortableFile -Source (Join-Path $BuildPath $Dll) -Name $Dll

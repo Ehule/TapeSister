@@ -1,3 +1,4 @@
+#define _XOPEN_SOURCE 700
 #include "tapesister/sister_project_state.h"
 #include "tapesister/sister_ui.h"
 
@@ -11,6 +12,8 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#else
+#include <unistd.h>
 #endif
 
 static void state_error(char *error, size_t size, const char *message)
@@ -275,6 +278,63 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
     return 1;
 }
 
+/* Keep clips beside the project portable without copying large media into a
+   save. Missing references stay intact so the editor can replace them. */
+static void video_reference(TsMandalaConfig *config,const char *state_path,int loading)
+{
+    if(!config->video_path[0])return;
+    char directory[2048],absolute[4096],candidate[4096];
+    snprintf(directory,sizeof(directory),"%s",state_path);
+    char *end=NULL;
+    for(char *p=directory;*p;++p)if(*p=='/' || *p=='\\')end=p;
+    if(end)end[1]=0;else snprintf(directory,sizeof(directory),".");
+#ifdef _WIN32
+    if(!_fullpath(absolute,directory,sizeof(absolute)))return;
+#else
+    char *resolved=realpath(directory,NULL);
+    if(!resolved)return;
+    snprintf(absolute,sizeof(absolute),"%s",resolved);free(resolved);
+#endif
+    for(char *p=absolute;*p;++p)if(*p=='\\')*p='/';
+    size_t n=strlen(absolute);
+    if(n && absolute[n-1]!='/'){absolute[n++]='/';absolute[n]=0;}
+    int is_absolute=config->video_path[0]=='/' || config->video_path[0]=='\\' ||
+        (isalpha((unsigned char)config->video_path[0]) && config->video_path[1]==':');
+    if(loading) {
+        if(is_absolute)return;
+        if(snprintf(candidate,sizeof(candidate),"%s%s",absolute,config->video_path)>=(int)sizeof(config->video_path))return;
+#ifdef _WIN32
+        if(_fullpath(absolute,candidate,sizeof(absolute)))snprintf(candidate,sizeof(candidate),"%s",absolute);
+#else
+        char *resolved=realpath(candidate,NULL);
+        if(resolved){snprintf(candidate,sizeof(candidate),"%s",resolved);free(resolved);}
+#endif
+    } else {
+        if(!is_absolute)return;
+        snprintf(candidate,sizeof(candidate),"%s",config->video_path);
+        for(char *p=candidate;*p;++p)if(*p=='\\')*p='/';
+        /* Try the sidecar directory, then its parent (the project folder). */
+        for(int parent=0;parent<2;++parent) {
+#ifdef _WIN32
+            int match=!_strnicmp(candidate,absolute,n);
+#else
+            int match=!strncmp(candidate,absolute,n);
+#endif
+            if(match) {
+                char relative[1024];snprintf(relative,sizeof(relative),"%s%s",parent?"../":"",candidate+n);
+                snprintf(candidate,sizeof(candidate),"%s",relative);break;
+            }
+            if(n<2)return;
+            absolute[--n]=0;char *slash=strrchr(absolute,'/');if(!slash)return;
+            n=(size_t)(slash-absolute)+1;absolute[n]=0;
+            if(parent==1)return;
+        }
+    }
+    if(strlen(candidate)>=sizeof(config->video_path))return;
+    memset(config->video_path,0,sizeof(config->video_path));
+    memcpy(config->video_path,candidate,strlen(candidate));
+}
+
 int ts_sister_project_state_save_file(const TsSisterProjectState *state,
                                       const char *path,
                                       char *error, size_t error_size)
@@ -308,7 +368,7 @@ int ts_sister_project_state_save_file(const TsSisterProjectState *state,
     for (size_t page = 0u; page < state->page_count && !failed; ++page)
         failed = fprintf(file, "Mask.%zu=%04X\n", page,
                          state->page_masks[page]) < 0;
-    if (!failed) failed = !ts_mandala_write(file, &state->mandala);
+    if (!failed) {TsMandalaConfig visual=state->mandala;video_reference(&visual,path,0);failed=!ts_mandala_write(file,&visual);}
     if (!failed) failed = !write_parameters(file, &state->parameters);
     if (!failed) failed = !ts_master_eq_write(file,&state->master_eq);
     if (!failed) failed = !ts_eq_morph_write(file,&state->eq_morph);
@@ -609,7 +669,7 @@ int ts_sister_project_state_load_file(TsSisterProjectState *state,
                                       char *error, size_t error_size)
 {
     TsSisterProjectState loaded;
-    char line[512];
+    char line[4096];
     FILE *file;
     int line_number = 0, header = 0, version = 0, have_pages = 0;
     if (present != NULL) *present = 0;
@@ -729,6 +789,7 @@ int ts_sister_project_state_load_file(TsSisterProjectState *state,
     ts_sister_parameters_sanitize(&loaded.parameters, sample_rate);
     ts_keyboard_sequence_bank_sanitize(&loaded.keyboard_sequence);
     if(version<24)loaded.router.bypass_mask |= 1u<<TS_ROUTER_INSERT;
+    video_reference(&loaded.mandala,path,1);
     *state = loaded;
     if (present != NULL) *present = 1;
     state_error(error, error_size, "");

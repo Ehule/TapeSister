@@ -987,6 +987,8 @@ static void browser_render_themed_impl(TsFramebuffer *fb, const TsBrowser *brows
              module ? "OPEN IMPORTS THE SONG AND SAMPLE TILES - UP TO 32 TRACKS" :
              "AUDIO AUTO-DECODE; SHIFT+CLICK SKIPS PREVIEW; OTHER FILES: RAW",
              PAL_EFFECT, 1);
+    } else if (browser->mode == TS_BROWSER_LOAD_VIDEO) {
+        text(fb, 58, 300, "MP4 / MOV / MKV / WEBM / AVI / MPEG / GIF - VIDEO SOUND OFF", PAL_EFFECT, 1);
     } else if (browser->mode == TS_BROWSER_TRACKER_PALETTE_IMPORT) {
         text(fb, 58, 300, "SELECT A SHARED TAPEHEAD / TAPESISTER .PAL FILE", PAL_EFFECT, 1);
     } else if (ts_browser_mode_selects_directory(browser->mode)) {
@@ -1006,6 +1008,7 @@ static void browser_render_themed_impl(TsFramebuffer *fb, const TsBrowser *brows
            browser->creating_directory ? "CREATE" :
            ts_browser_mode_selects_directory(browser->mode) ? "USE FOLDER" :
            browser->mode == TS_BROWSER_SELECT_FASTTRACKER_EXECUTABLE ? "USE FILE" :
+           browser->mode == TS_BROWSER_LOAD_VIDEO ? "ADD VIDEO" :
            browser->mode == TS_BROWSER_TRACKER_PALETTE_IMPORT ? "IMPORT" :
            browser->mode == TS_BROWSER_LOAD_WAV ? "OPEN" :
            (browser->mode == TS_BROWSER_SAVE_RECIPE ||

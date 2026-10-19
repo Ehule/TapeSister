@@ -1,6 +1,6 @@
 /* Bounded seed library: 12 immutable motifs, <= 2304 manifestations, one
-   <=1280x800 history texture, four 320x200 echoes and a 160x100 veil. No recursion, heap allocation or readback in a
-   performance frame. Capture mode is explicitly offline and may read pixels. */
+   <=1280x800 history texture, four 320x200 echoes and a 160x100 veil. The optional video worker owns decoding and three bounded frames. No readback
+   in a performance frame. Capture mode is explicitly offline and may read pixels. */
 #define M_PI_F 3.14159265358979323846f
 enum { M_MOTIFS = 12, M_POINTS = 49, M_INSTANCES = 2304 };
 typedef struct { float x, y; } MPoint;
@@ -11,6 +11,8 @@ typedef struct {
 } MInstance;
 typedef struct {
     SDL_Window *window; SDL_Renderer *renderer; SDL_Texture *history, *haze, *veil, *echo[4];
+    TsVideo *video; SDL_Texture *video_texture; TsVideoStatus video_status;
+    char video_path[1024]; unsigned video_restart;
     MMotif motifs[M_MOTIFS]; MInstance instances[M_INSTANCES]; unsigned count;
     TsMandalaConfig config;
     TsMandalaFeatures features;
@@ -203,12 +205,68 @@ static int m_init(Mandala *m, const TsMandalaConfig *config, int quality)
 }
 static void m_destroy(Mandala *m)
 {
+    ts_video_close(m->video);if(m->video_texture)SDL_DestroyTexture(m->video_texture);
     if(m->veil)SDL_DestroyTexture(m->veil);
     for(int i=0;i<4;++i)if(m->echo[i])SDL_DestroyTexture(m->echo[i]);
     if(m->history)SDL_DestroyTexture(m->history);
     if(m->haze)SDL_DestroyTexture(m->haze);
     if(m->renderer)SDL_DestroyRenderer(m->renderer);
     if(m->window)SDL_DestroyWindow(m->window);
+}
+/* One current-frame texture supplies every reflected wedge. Independent source
+   playback, seeded crop drift and audio deformations do not reset on a loop. */
+static void m_video_scene(Mandala *m,Uint8 fade,float level)
+{
+    if(!m->video_texture || !m->config.video_enabled || !m->config.video_mix)return;
+    const unsigned sectors=m->config.symmetry,radial=6,angular=4;
+    SDL_Vertex vertices[12*6*4*6];int n=0;
+    float response=m->config.video_response*.01f;
+    float distortion=m->effects.wet[TS_MANDALA_DISTORTION]*response;
+    float grain=m->effects.wet[TS_MANDALA_GRAIN]*response;
+    float radius=m->height*.48f*m->config.scale*.01f*(1+.04f*level*response);
+    float zoom=.8f+m->config.video_scale*.018f+grain*.4f*m->effects.size[TS_MANDALA_GRAIN];
+    float turn=((int)m->config.video_rotation-50)*.0018f*(float)m->motion_time;
+    float seed=(float)(m->config.seed%65536)*.0001f;
+    float cropx=.5f+.12f*sinf((float)m->time*.017f+seed)+m->features.balance*.05f*response;
+    float cropy=.5f+.12f*cosf((float)m->time*.013f+seed);
+    float light=.25f+.75f*fminf(1,level*1.6f);
+    SDL_Color color={255,255,255,(Uint8)fmaxf(1,fade*m->config.video_mix*.01f*light)};
+    for(unsigned sector=0;sector<sectors;++sector)for(unsigned ring=0;ring<radial;++ring)for(unsigned slice=0;slice<angular;++slice) {
+        SDL_Vertex quad[4];
+        for(int j=0;j<4;++j) {
+            float r=(ring+(j>=2))/(float)radial,t=(slice+(j==1||j==2))/(float)angular;
+            float angle=(sector+t)*2*M_PI_F/sectors+turn;
+            float bend=distortion*.10f*sinf(r*9+(float)m->time*.35f);
+            float rr=r*radius*(1+bend);
+            /* Each sector folds at its midpoint; odd symmetry closes cleanly too. */
+            float source_angle=(t<=.5f?t:1-t)*2*M_PI_F/sectors+seed;
+            float u=cropx+cosf(source_angle)*r*.48f/zoom;
+            float v=cropy+sinf(source_angle)*r*.48f/zoom;
+            u+=distortion*.035f*sinf(r*12+(float)m->time*.4f);
+            v+=m->effects.wet[TS_MANDALA_PRISM]*response*.035f*sinf(angle+(float)m->time*.07f);
+            quad[j]=(SDL_Vertex){{m->width*.5f+cosf(angle)*rr,m->height*.5f+sinf(angle)*rr},color,{SDL_clamp(u,0.f,1.f),SDL_clamp(v,0.f,1.f)}};
+        }
+        const int order[]={0,1,2,0,2,3};for(int j=0;j<6;++j)vertices[n++]=quad[order[j]];
+    }
+    SDL_RenderGeometry(m->renderer,m->video_texture,vertices,n,NULL,0);
+}
+static void m_video_poll(Mandala *m,VisualShared *shared,int paused)
+{
+    const char *path=m->config.video_enabled?m->config.video_path:"";
+    unsigned restart=atomic_load(&shared->video_restart);
+    int retry=restart!=m->video_restart && m->video_status.state==TS_VIDEO_ERROR;
+    m->video_restart=restart;
+    if(strcmp(path,m->video_path) || retry) {
+        ts_video_close(m->video);m->video=NULL;
+        SDL_DestroyTexture(m->video_texture);m->video_texture=NULL;
+        snprintf(m->video_path,sizeof(m->video_path),"%s",path);memset(&m->video_status,0,sizeof(m->video_status));
+        if(*path){m->video=ts_video_open(path);if(!m->video){m->video_status.state=TS_VIDEO_ERROR;snprintf(m->video_status.message,sizeof(m->video_status.message),"COULD NOT START VIDEO PLAYER");}}
+    }
+    if(m->video) {
+        ts_video_control(m->video,paused||atomic_load(&shared->video_paused),m->config.video_loop,atomic_load(&shared->video_restart),m->shed?8:m->quality?30:15);
+        if(ts_video_upload(m->video,m->renderer,&m->video_texture,&m->video_status))m->dirty=1;
+    }
+    video_status_send(shared,&m->video_status);
 }
 static void m_scene(Mandala *m, double dt)
 {
@@ -253,6 +311,7 @@ static void m_scene(Mandala *m, double dt)
         SDL_SetTextureBlendMode(m->veil,SDL_BLENDMODE_ADD);SDL_RenderCopy(m->renderer,m->veil,NULL,NULL);
         SDL_SetTextureBlendMode(m->veil,SDL_BLENDMODE_BLEND);
     }
+    m_video_scene(m,fade,level);
     float scale=m->height*.46f*m->config.scale/100,cx=m->width*.5f,cy=m->height*.5f;
     if(m->haze && presence>.01f) {
         uint32_t tint=m->config.palette<3?0xADA27Eu:ts_mandala_color(&m->config,0);
@@ -283,7 +342,7 @@ static void m_scene(Mandala *m, double dt)
         life*=1-distortion*.55f*smooth(inst->threshold+drift*.16f);
         if(life<.006f)continue;
         const Uint8 *rgb=colors[inst->color];
-        Uint8 alpha=(Uint8)fminf(200,(22+80*level)*life);
+        Uint8 alpha=(Uint8)fminf(200,(22+80*level)*life*(m->video_texture && m->config.video_enabled?1-m->config.video_mix*.007f:1));
         SDL_SetRenderDrawColor(m->renderer,rgb[0],rgb[1],rgb[2],alpha);
         float breath=1+.012f*sinf((float)(m->motion_time/m->config.cycle_seconds*2*M_PI_F)+inst->phase)+.025f*level;
         float rotation=inst->angle+distortion*.2f*drift+(inst->family==4?.04f*sinf((float)m->motion_time*.012f+inst->phase):0);
@@ -415,7 +474,7 @@ static void m_event(Mandala *m,VisualShared *s,const SDL_Event *e)
     if(e->type==SDL_QUIT || (e->type==SDL_WINDOWEVENT && e->window.event==SDL_WINDOWEVENT_CLOSE))atomic_store(&s->quit,1);
     if(e->type==SDL_DISPLAYEVENT)m_window_mode(m,s,1);
     if(e->type==SDL_RENDER_TARGETS_RESET || e->type==SDL_RENDER_DEVICE_RESET) {
-        if(e->type==SDL_RENDER_DEVICE_RESET)m_haze(m);
+        if(e->type==SDL_RENDER_DEVICE_RESET){m_haze(m);SDL_DestroyTexture(m->video_texture);m->video_texture=NULL;}
         if(!m_target(m))atomic_store(&s->quit,1);
     }
     if(e->type==SDL_WINDOWEVENT) {
@@ -490,6 +549,7 @@ static int mandala_run(VisualShared *shared,
         Uint64 tick=SDL_GetPerformanceCounter();double dt=fmin(.25,(tick-previous)/frequency);
         int due=(Sint32)(now-m->next_frame)>=0;
         if(m->frozen || hidden)previous=tick;
+        if(due)m_video_poll(m,shared,m->frozen||hidden);
         if(due && !m->frozen && !hidden) {
             ts_mandala_analyze(now-fresh<250?&message.audio:NULL,&m->features,(float)dt);
             ts_mandala_effects_follow(&m->effects,now-fresh<250?&message.effects:NULL,(float)dt);
@@ -532,6 +592,7 @@ static int mandala_capture(int argc,char **argv)
     int frames=argc>4?atoi(argv[4]):900;if(frames<1||frames>100000)frames=900;
     if(argc>6)config.palette=(uint32_t)atoi(argv[6]);
     if(argc>7)config.shape=(uint32_t)atoi(argv[7]);
+    if(argc>8){config.video_enabled=1;snprintf(config.video_path,sizeof(config.video_path),"%s",argv[8]);}
     if(!ts_mandala_valid(&config)){SDL_Quit();return 2;}
     Mandala *m=calloc(1,sizeof(*m));int ok=m && m_init(m,&config,1);
     TsMandalaEffects effects={0};
@@ -540,6 +601,14 @@ static int mandala_capture(int argc,char **argv)
         effects.wet[j]=effect==5?.7f:1;effects.size[j]=.8f;effects.character[j]=.7f;
     }
     double frequency=(double)SDL_GetPerformanceFrequency(),sum=0,max=0;
+    if(ok && config.video_enabled) {
+        m->video=ts_video_open(config.video_path);Uint64 start=SDL_GetTicks64();
+        while(m->video && !m->video_texture && SDL_GetTicks64()-start<8000) {
+            ts_video_upload(m->video,m->renderer,&m->video_texture,&m->video_status);SDL_Delay(10);
+        }
+        if(!m->video_texture)ok=0;
+        ts_video_control(m->video,1,1,0,15);
+    }
     if(ok) {
         for(int i=0;i<frames;++i) {
             m->features=(TsMandalaFeatures){.76f+.15f*sinf(i*.017f),.8f,.6f,.15f*sinf(i*.01f),.12f};
