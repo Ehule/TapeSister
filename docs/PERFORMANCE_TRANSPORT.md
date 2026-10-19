@@ -97,3 +97,7 @@ canvas, including tiles on another Sample page. Single-click still selects the
 tracker instrument. Playback continues; F10 returns to TrackSister. Empty cells,
 page arrows, and gutters do not open a canvas. Finish capture and return from a
 parked Record/Mosaic bank before opening a Sample tile.
+
+**Render Offline…** opens the native headless WAV renderer for Mosaic, TrackSister, or both.
+It initially copies their group checkbox choices; render selection does not change group
+transport. During export the button reads **Render Progress…**. See [Offline rendering](OFFLINE_RENDER.md).
