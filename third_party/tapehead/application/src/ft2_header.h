@@ -3,14 +3,13 @@
 #include <SDL2/SDL.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <limits.h> // also has PATH_MAX
 #ifdef _DEBUG
 #include <assert.h>
 #endif
 #ifdef _WIN32
 #define WIN32_MEAN_AND_LEAN
 #include <windows.h>
-#else
-#include <limits.h> // also has PATH_MAX
 #endif
 #include "ft2_replayer.h"
 #ifdef TAPEHEAD_EMBEDDED
@@ -73,7 +72,9 @@ void ts_tapehead_mark_anchor(int channel,int row);
 #define DIR_DELIMITER '/'
 #else
 #define DIR_DELIMITER '\\'
+#ifndef PATH_MAX
 #define PATH_MAX MAX_PATH
+#endif
 #endif
 
 #ifndef PATH_MAX
