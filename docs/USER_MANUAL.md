@@ -1941,13 +1941,22 @@ and the GR readout together.
 
 ## Presets and parameter locks
 
-Sister Machine has a complete Sister+FX preset bank. Fallout has its own independent
-preset bank. Use the footer arrows to browse and click the preset name to open the
-manager.
+The shared Sister preset files retain complete Sister+FX snapshots. **Recalling from
+the SisterMachine page changes only its tape controls and their parameter locks.**
+It preserves the pedalboard's slot count, order, settings, bypasses, locks and transition
+timers, along with FX MIX, Fallout and Prism. Their running transitions and effect
+histories continue. This applies with SisterMachine power both on and off.
+
+For an intentional full Sister+FX recall, use the footer bank on the **Pedalboard**
+page (the Prism page's bottom footer also retains full recall). Fallout's page has
+its own independent preset bank. Use the footer arrows to browse and click the
+preset name to open the manager. Save As and Overwrite still store a complete
+snapshot, so existing preset files and project saving remain compatible.
 
 User presets support Save As, Overwrite, Rename, and Delete. Factory presets are
 recall-only but can be used as Save As sources. An asterisk marks a recalled preset that
-has been edited.
+has been edited or differs from its full saved snapshot because other effects were
+preserved during a SisterMachine-only recall.
 
 Shift-click an adjustable Sister or FX parameter to lock it. Locked fields dim and
 ignore click, drag, and wheel edits until Shift-clicked again. This is especially useful

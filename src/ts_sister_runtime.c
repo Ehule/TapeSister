@@ -953,8 +953,9 @@ int ts_sister_runtime_reconfigure(TsSisterRuntime *runtime,
     return 1;
 }
 
-void ts_sister_runtime_set_parameters(TsSisterRuntime *runtime,
-                                      const TsSisterParameters *parameters)
+static void runtime_set_parameters(TsSisterRuntime *runtime,
+                                    const TsSisterParameters *parameters,
+                                    int include_global_effects)
 {
     uint32_t sample_rate;
     if (runtime == NULL || parameters == NULL) return;
@@ -982,14 +983,36 @@ void ts_sister_runtime_set_parameters(TsSisterRuntime *runtime,
         ts_sister_machine_set_parameters(&runtime->machine, &runtime->parameters);
         runtime->parameters = runtime->machine.parameters;
     }
-    ts_prism_set_controls(&runtime->prism, &runtime->parameters.prism);
-    ts_sister_post_fx_set_controls(&runtime->post_fx, &runtime->parameters.fx);
-    /* Publish sanitized, authoritative slot state back to the controller and
-       persistence model after every edit. */
-    runtime->parameters.fx = runtime->post_fx.controls;
-    ts_sister_fallout_set_controls(&runtime->fallout,
-                                   &runtime->parameters.fx.fallout);
+    if (include_global_effects) {
+        ts_prism_set_controls(&runtime->prism, &runtime->parameters.prism);
+        ts_sister_post_fx_set_controls(&runtime->post_fx, &runtime->parameters.fx);
+        /* Publish sanitized, authoritative slot state back to the controller and
+           persistence model after every edit. */
+        runtime->parameters.fx = runtime->post_fx.controls;
+        ts_sister_fallout_set_controls(&runtime->fallout,
+                                       &runtime->parameters.fx.fallout);
+    }
     publish_snapshot(runtime);
+}
+
+void ts_sister_runtime_set_parameters(TsSisterRuntime *runtime,
+                                      const TsSisterParameters *parameters)
+{
+    runtime_set_parameters(runtime, parameters, 1);
+}
+
+void ts_sister_runtime_recall_machine_preset(
+    TsSisterRuntime *runtime, const TsSisterParameters *parameters)
+{
+    if (runtime == NULL || parameters == NULL) return;
+    TsSisterParameters next = *parameters;
+    /* The file remains a full snapshot, but the machine page owns only tape
+       controls. Do not even republish the independent effect engines: their
+       live morphs, pending changes, histories and clocks must keep running. */
+    next.fx = runtime->parameters.fx;
+    next.prism = runtime->parameters.prism;
+    next.fx_return_gain = runtime->parameters.fx_return_gain;
+    runtime_set_parameters(runtime, &next, 0);
 }
 
 void ts_sister_runtime_recall_fallout_preset(
