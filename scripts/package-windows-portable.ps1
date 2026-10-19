@@ -35,6 +35,9 @@ if (Test-Path -LiteralPath $ArchivePath) {
 # Write every directory explicitly, including cdp/bin. Compress-Archive emitted
 # only some parent folders, with no DOS directory bit. Keep the portable ZIP's
 # metadata independent of build-machine attributes and access-control settings.
+# Windows PowerShell 5.1 needs both assemblies loaded before resolving the ZIP
+# enums; loading FileSystem alone does not make ZipArchiveMode available.
+Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $Archive = [System.IO.Compression.ZipFile]::Open(
     $ArchivePath, [System.IO.Compression.ZipArchiveMode]::Create)

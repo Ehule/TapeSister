@@ -187,13 +187,20 @@ jobs:
         if: github.event_name != 'pull_request'
         shell: msys2 {0}
         run: ctest --test-dir build --output-on-failure
-      - name: Assemble archive
-        shell: pwsh
+      # Match powershell.exe used by the documented MSYS2 build command.
+      - name: Assemble archive with Windows PowerShell
+        shell: powershell
         run: ./scripts/package-windows-portable.ps1 -BuildDirectory build -OutputDirectory .
       - name: Verify ZIP metadata and Windows shell extraction
         shell: pwsh
         timeout-minutes: 5
         run: ./tests/test_windows_portable.ps1 -ArchivePath TapeSister-Windows-x64.zip -StagingDirectory TapeSister-Windows-x64
+      - name: Verify PowerShell 7 packaging and extraction
+        shell: pwsh
+        timeout-minutes: 5
+        run: |
+          ./scripts/package-windows-portable.ps1 -BuildDirectory build -OutputDirectory pwsh-package-check
+          ./tests/test_windows_portable.ps1 -ArchivePath pwsh-package-check/TapeSister-Windows-x64.zip -StagingDirectory pwsh-package-check/TapeSister-Windows-x64
       # Send our ZIP unchanged; do not put it inside a second artifact ZIP.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         id: windows-artifact
