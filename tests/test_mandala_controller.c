@@ -362,6 +362,22 @@ static void editor_checks(SDL_Window *window)
     puts("editor presets, custom RGB/hex, shapes, undo/revert, project replacement and bounded renderer: PASS");
 }
 #include "mandala_interaction_fixture.inc"
+static void video_lens_checks(void)
+{
+    TsMandalaConfig config;ts_mandala_default(&config);config.seed=42;
+    config.video_enabled=1;config.video_mix=100;config.trails=100;config.symmetry=5;
+    Mandala *m=calloc(1,sizeof(*m));assert(m && m_init(m,&config,0));
+    SDL_Surface *source=SDL_CreateRGBSurfaceWithFormat(0,8,8,32,SDL_PIXELFORMAT_ARGB8888);assert(source);
+    SDL_FillRect(source,NULL,0xFFA04020);m->video_texture=SDL_CreateTextureFromSurface(m->renderer,source);SDL_FreeSurface(source);
+    assert(m->video_texture && !SDL_SetTextureBlendMode(m->video_texture,SDL_BLENDMODE_BLEND));
+    m->features.level=.8f;
+    for(int i=0;i<45;++i)m_scene(m,1.0/30);
+    SDL_SetRenderTarget(m->renderer,m->history);Uint32 pixel=0;SDL_Rect point={m->width/2+20,m->height/2+10,1,1};
+    assert(!SDL_RenderReadPixels(m->renderer,&point,SDL_PIXELFORMAT_ARGB8888,&pixel,4));
+    assert(((pixel>>16)&255)>80 && ((pixel>>8)&255)>20); /* Long trails retain visible video. */
+    SDL_SetRenderTarget(m->renderer,NULL);m_destroy(m);free(m);
+    puts("textured kaleidoscope visible with odd symmetry and maximum trails: PASS");
+}
 static void video_pump(unsigned milliseconds,TsMandalaPreferences *prefs)
 {
     Uint32 start=SDL_GetTicks();
@@ -453,7 +469,7 @@ int main(int argc,char **argv)
         }
         ts_native_pause(device,1);ts_native_close(device);
         printf("soak transport status: tracker=%d mosaic=%d arp=%d time=%.2f\n",ts_tapehead_running(),a.mosaic->playing,a.keyboard_sequence.running,a.mosaic->time);
-    } else {editor_checks(window);video_checks(window);wide_live_editor_checks();lifecycle(window);external_tap_checks();effect_snapshot_checks();}
+    } else {editor_checks(window);video_lens_checks();video_checks(window);wide_live_editor_checks();lifecycle(window);external_tap_checks();effect_snapshot_checks();}
     ts_mandala_shutdown();ts_tapehead_stop();ts_tapehead_close();
     ts_keyboard_sequence_source_free(ts_keyboard_sequence_source(&a.keyboard_sequence,NULL));
     ts_sister_runtime_free(&a.sister);ts_mosaic_free(a.mosaic);ts_capture_free(&a.capture);

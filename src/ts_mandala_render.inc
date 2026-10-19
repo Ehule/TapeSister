@@ -311,7 +311,10 @@ static void m_scene(Mandala *m, double dt)
         SDL_SetTextureBlendMode(m->veil,SDL_BLENDMODE_ADD);SDL_RenderCopy(m->renderer,m->veil,NULL,NULL);
         SDL_SetTextureBlendMode(m->veil,SDL_BLENDMODE_BLEND);
     }
-    m_video_scene(m,fade,level);
+    /* Long geometry trails can fade by only 1/255. A separate, time-based
+       source refresh keeps dark footage from vanishing in 8-bit blending. */
+    Uint8 video_fade=(Uint8)fmax(fade,255*(1-exp(-dt/.18)));
+    m_video_scene(m,video_fade,level);
     float scale=m->height*.46f*m->config.scale/100,cx=m->width*.5f,cy=m->height*.5f;
     if(m->haze && presence>.01f) {
         uint32_t tint=m->config.palette<3?0xADA27Eu:ts_mandala_color(&m->config,0);

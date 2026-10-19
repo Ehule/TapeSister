@@ -75,3 +75,15 @@ checks video-only pause against full visual freeze and error fallback. Existing
 queue, visualizer lifecycle, project-state and audio regression tests remain in
 place. Dummy/software SDL checks do not establish latency or frame rates on a
 physical X220, HP A8, projector or Windows audio interface.
+
+## Captures from the implementation
+
+The editor below is playing the included synthetic test clip. The renderer
+capture uses that clip's first decoded frame, seed 314159, TapeSister Gold,
+triangles and synthetic music/effect features after 240 visual frames. These
+are captures of the implemented SDL code, not the earlier concept mockup.
+No user's performance footage is included.
+
+![Video editor](screenshots/mandala-video/video-editor.png)
+
+![Synthetic footage through the kaleidoscope](screenshots/mandala-video/video-kaleidoscope.png)
