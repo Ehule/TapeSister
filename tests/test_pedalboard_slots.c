@@ -123,6 +123,147 @@ static void dsp_continuity(void)
     ts_sister_post_fx_free(&engine);
 }
 
+static void power_and_preset_independence(void)
+{
+    /* Exercise the real POWER action, including its post-activation edit. */
+    TsSisterParameters p = audio.sister.parameters;
+    p.fx.slot_count = 20;
+    p.fx.transition = ts_sister_fx_transition_normalized(240000);
+    p.fx.master_transition = ts_sister_fx_transition_normalized(180000);
+    for (int i = 0; i < 20; ++i) {
+        p.fx.slot[i] = ts_sister_fx_empty_slot();
+        p.fx.slot[i].type = (TsSisterFxType)(1 + i % 5);
+        p.fx.slot[i].parameter_a = (i + 1) / 21.f;
+        p.fx.slot[i].parameter_b = (20 - i) / 21.f;
+        p.fx.slot[i].mix = .65f;
+        p.fx.slot[i].enabled = i % 2;
+        p.fx.slot[i].parameter_locks = i;
+    }
+    ts_sister_runtime_set_parameters(&audio.sister, &p);
+    sister.model.parameters = audio.sister.parameters;
+    for (int i = 0; i < 64; ++i)
+        ts_sister_runtime_process_ordinary_post_fx(&audio.sister, (TsStereoFrame){.2f,-.1f});
+    TsSisterFxControls expected = audio.sister.parameters.fx;
+    static TsSisterPostFxEngine before;
+    before = audio.sister.post_fx;
+    for (int i = 0; i < 4; ++i) {
+        action(TS_SISTER_UI_ACTION_POWER);
+        assert(audio.sister.enabled == !(i % 2));
+        assert(!memcmp(&expected, &audio.sister.parameters.fx, sizeof(expected)));
+        assert(!memcmp(&before, &audio.sister.post_fx, sizeof(before)));
+        ts_sister_ui_model_update(&sister.model, NULL, NULL, NULL, &audio.sister.parameters);
+        assert(!memcmp(&expected, &sister.model.parameters.fx, sizeof(expected)));
+    }
+    /* Factory and old five-slot user presets are combined snapshots. Their
+       machine-page recall must not replace the independent global engines. */
+    ts_sister_preset_bank_init(&sister.presets,48000);
+    TsSisterParameters old;
+    ts_sister_parameters_default(&old,48000);
+    old.fx.slot_count = 5;
+    old.head1_time_ms = 987;
+    uint64_t machine_lock = TS_SISTER_UI_PARAMETER_BIT(TS_SISTER_UI_PARAM_H1_TIME);
+    uint64_t machine_lock_high = TS_SISTER_UI_PARAMETER_BIT(TS_SISTER_UI_PARAM_TAPEHEAD_GAIN-64);
+    assert(ts_sister_preset_save_new_with_lock_words(&sister.presets,"OLD FIVE SLOT",
+        &old,machine_lock,machine_lock_high,48000,error,sizeof(error)));
+    p = audio.sister.parameters;
+    p.fx_return_gain = .73f;
+    p.fx.fallout.enabled = 1;
+    p.fx.fallout.mix = .6f;
+    p.prism.enabled = 1;
+    ts_prism_capture(&p.prism,0);
+    p.prism.spread = 1.4f;
+    ts_prism_capture(&p.prism,1);
+    p.prism.morph_enabled = 1;
+    p.prism.morph_seconds = 240;
+    p.prism.morph_target = 1;
+    p.prism.morph_trigger = 1;
+    ts_sister_runtime_set_parameters(&audio.sister,&p);
+    TsSisterFalloutControls target = p.fx.fallout;
+    target.noise = .8f;
+    ts_sister_runtime_recall_fallout_preset(&audio.sister,&target);
+    uint64_t effect_locks = TS_SISTER_UI_PARAMETER_BIT(TS_SISTER_UI_PARAM_FX_RETURN_GAIN) |
+        TS_SISTER_UI_PARAMETER_BIT(TS_SISTER_UI_PARAM_FX_TRANSITION) |
+        TS_SISTER_UI_PARAMETER_BIT(TS_SISTER_UI_PARAM_FALLOUT_MIX);
+    uint64_t effect_locks_high = TS_SISTER_UI_PARAMETER_BIT(TS_SISTER_UI_PARAM_SLOT1_A-64) |
+        TS_SISTER_UI_PARAMETER_BIT(TS_SISTER_UI_PARAM_SLOT5_MIX-64) |
+        TS_SISTER_UI_PARAMETER_BIT(TS_SISTER_UI_PARAM_PRISM_MIX-64);
+    audio.sister.parameter_locks = effect_locks;
+    audio.sister.parameter_locks_high = effect_locks_high;
+    sister.model.fx_page = 0;
+    sister.model.prism_matrix_edit = 1;
+    sister.fallout_preset_index = 1;
+    sister.fallout_preset_modified = 1;
+    for (int powered = 0; powered < 2; ++powered) {
+        if (powered) action(TS_SISTER_UI_ACTION_POWER);
+        for (int i = 0; i < 128; ++i)
+            ts_sister_runtime_process_ordinary_post_fx(&audio.sister,(TsStereoFrame){.2f,-.1f});
+        expected = audio.sister.parameters.fx;
+        before = audio.sister.post_fx;
+        static TsPrism prism_before;
+        static TsSisterFalloutEngine fallout_before;
+        prism_before = audio.sister.prism;
+        fallout_before = audio.sister.fallout;
+        assert(before.slot[0].has_pending && before.slot[0].morph.remaining);
+        assert(fallout_before.preset_transition_stage);
+        assert(prism_before.morph_elapsed > 0);
+        audio.sister.post_fx.delay[0][4].data[0] = .4321f;
+        sister.preset_index = SIZE_MAX;
+        for (size_t i = 0; i < sister.presets.count; ++i) {
+            action(TS_SISTER_UI_ACTION_PRESET_NEXT);
+            const TsSisterPreset *preset = &sister.presets.entries[i];
+            assert(sister.preset_index == i);
+            assert(audio.sister.parameters.head1_time_ms == preset->parameters.head1_time_ms);
+            assert(audio.sister.parameters.fx_return_gain == .73f);
+            assert(!memcmp(&expected,&audio.sister.parameters.fx,sizeof(expected)));
+            assert(!memcmp(&expected,&sister.model.parameters.fx,sizeof(expected)));
+            assert(!memcmp(&before,&audio.sister.post_fx,sizeof(before)));
+            assert(!memcmp(&prism_before,&audio.sister.prism,sizeof(prism_before)));
+            assert(!memcmp(&fallout_before,&audio.sister.fallout,sizeof(fallout_before)));
+            assert(audio.sister.post_fx.delay[0][4].data[0] == .4321f);
+            assert(audio.sister.parameter_locks == (effect_locks | preset->parameter_locks));
+            assert(audio.sister.parameter_locks_high == (effect_locks_high | preset->parameter_locks_high));
+            assert(sister.model.parameter_locks == audio.sister.parameter_locks);
+            assert(sister.model.parameter_locks_high == audio.sister.parameter_locks_high);
+            assert(sister.model.prism_matrix_edit && sister.fallout_preset_index == 1);
+            assert(sister.fallout_preset_modified && audio.sister.selected_preset_modified);
+            if (powered) assert(audio.sister.machine.parameters.head1_time_ms == preset->parameters.head1_time_ms);
+        }
+        action(TS_SISTER_UI_ACTION_PRESET_PREVIOUS);
+        assert(sister.preset_index == sister.presets.count-2);
+        assert(!memcmp(&expected,&audio.sister.parameters.fx,sizeof(expected)));
+    }
+    action(TS_SISTER_UI_ACTION_POWER);
+    assert(!audio.sister.enabled);
+    sister.model.fx_page = 1;
+    /* A saved project's board must also survive power and a device-rate change. */
+    static TsSisterProjectState saved, loaded;
+    ts_sister_project_state_capture(&saved, &audio.sister, 1, NULL);
+    assert(ts_sister_project_state_save_file(&saved, "power-board.ini", error, sizeof(error)));
+    int present = 0;
+    assert(ts_sister_project_state_load_file(&loaded, "power-board.ini", 48000, &present, error, sizeof(error)) && present);
+    remove("power-board.ini");
+    ts_sister_runtime_free(&audio.sister);
+    ts_sister_runtime_init(&audio.sister);
+    assert(ts_sister_runtime_reconfigure(&audio.sister,48000,2,error,sizeof(error)));
+    /* The effects-page bank retains explicit full-snapshot compatibility. */
+    sister_recall_preset(0,&audio,&sister,sister.presets.count-1);
+    assert(audio.sister.parameters.fx.slot_count == 5);
+    assert(audio.sister.parameter_locks == machine_lock);
+    assert(audio.sister.parameter_locks_high == machine_lock_high);
+    assert(!audio.sister.selected_preset_modified && !sister.model.prism_matrix_edit);
+    assert(sister.fallout_preset_index == SIZE_MAX);
+    assert(ts_sister_project_state_apply(&loaded, &audio.sister, &bank));
+    expected = audio.sister.parameters.fx;
+    assert(expected.slot_count == 20 && expected.slot[19].mix == .65f);
+    action(TS_SISTER_UI_ACTION_POWER);
+    assert(!memcmp(&expected, &audio.sister.parameters.fx, sizeof(expected)));
+    assert(ts_sister_runtime_reconfigure(&audio.sister,44100,2,error,sizeof(error)));
+    assert(!memcmp(&expected, &audio.sister.parameters.fx, sizeof(expected)));
+    action(TS_SISTER_UI_ACTION_POWER);
+    assert(!memcmp(&expected, &audio.sister.parameters.fx, sizeof(expected)));
+    assert(ts_sister_runtime_reconfigure(&audio.sister,48000,2,error,sizeof(error)));
+}
+
 int main(int argc,char **argv)
 {
     SDL_SetMainReady();SDL_setenv("SDL_VIDEODRIVER","dummy",1);
@@ -132,6 +273,9 @@ int main(int argc,char **argv)
     assert(ts_sister_runtime_reconfigure(&audio.sister,48000,2,error,sizeof(error)));
     ts_sister_ui_model_init(&sister.model,&ui.config);sister.model.fx_page=1;
     sister.window=SDL_CreateWindow("Pedalboard",0,0,640,400,0);assert(sister.window);
+    power_and_preset_independence();
+    ts_sister_parameters_default(&sister.model.parameters,48000);
+    ts_sister_runtime_set_parameters(&audio.sister,&sister.model.parameters);
     assert(sister.model.parameters.fx.slot_count==10);
     assert(TS_SISTER_UI_PARAM_SLOT1_GAIN==71 && TS_SISTER_UI_PARAM_SLOT5_GAIN==107);
     for(int i=0;i<10;++i)action(TS_SISTER_UI_ACTION_FX_ADD);

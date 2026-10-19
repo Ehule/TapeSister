@@ -10248,9 +10248,11 @@ static void sister_recall_preset(SDL_AudioDeviceID device,
     uint64_t parameter_locks;
     uint64_t parameter_locks_high;
     int fallout;
+    int machine_only;
     TsSisterPresetBank *bank;
     if (audio == NULL || sister == NULL) return;
     fallout = sister->model.fx_page == 2;
+    machine_only = sister->model.fx_page == 0;
     bank = fallout ? &sister->fallout_presets : &sister->presets;
     if (!ts_sister_preset_recall_with_lock_words(
             bank, index, &parameters, &parameter_locks,
@@ -10263,24 +10265,53 @@ static void sister_recall_preset(SDL_AudioDeviceID device,
         sister->fallout_preset_index = index;
         sister->fallout_preset_modified = 0;
     } else {
-        ts_sister_runtime_set_parameters(&audio->sister, &parameters);
+        int retained_changes = 0;
+        if (machine_only) {
+            /* Preserve global-effect locks, including the historic slot IDs
+               interleaved with machine controls in the two saved lock words. */
+            const uint64_t machine_locks =
+                (((UINT64_C(1) << (TS_SISTER_UI_PARAM_BLEED + 1)) - 1) &
+                 ~TS_SISTER_UI_PARAMETER_BIT(TS_SISTER_UI_PARAM_FX_RETURN_GAIN)) |
+                TS_SISTER_UI_PARAMETER_BIT(TS_SISTER_UI_PARAM_BUFFER_SECONDS);
+            const uint64_t machine_locks_high =
+                TS_SISTER_UI_PARAMETER_BIT(TS_SISTER_UI_PARAM_TAPEHEAD_GAIN - 64);
+            uint64_t recalled_locks = parameter_locks;
+            uint64_t recalled_locks_high = parameter_locks_high;
+            parameter_locks = (parameter_locks & machine_locks) |
+                (audio->sister.parameter_locks & ~machine_locks);
+            parameter_locks_high = (parameter_locks_high & machine_locks_high) |
+                (audio->sister.parameter_locks_high & ~machine_locks_high);
+            ts_sister_runtime_recall_machine_preset(&audio->sister, &parameters);
+            retained_changes = recalled_locks != parameter_locks ||
+                recalled_locks_high != parameter_locks_high ||
+                parameters.fx_return_gain != audio->sister.parameters.fx_return_gain ||
+                memcmp(&parameters.fx, &audio->sister.parameters.fx, sizeof(parameters.fx)) ||
+                memcmp(&parameters.prism, &audio->sister.parameters.prism, sizeof(parameters.prism));
+        } else {
+            ts_sister_runtime_set_parameters(&audio->sister, &parameters);
+        }
         audio->sister.parameter_locks = parameter_locks;
         audio->sister.parameter_locks_high = parameter_locks_high;
         ts_sister_runtime_set_selected_preset(
             &audio->sister, bank->entries[index].name);
-        sister->fallout_preset_index = SIZE_MAX;
-        sister->fallout_preset_modified = 0;
+        if (retained_changes)
+            ts_sister_runtime_mark_selected_preset_modified(&audio->sister);
+        if (!machine_only) {
+            sister->fallout_preset_index = SIZE_MAX;
+            sister->fallout_preset_modified = 0;
+        }
     }
     if (device) SDL_UnlockAudioDevice(device);
     sister->model.parameters = audio->sister.parameters;
     if (!fallout) {
-        sister->model.prism_matrix_edit=0;
+        if (!machine_only) sister->model.prism_matrix_edit=0;
         sister->model.parameter_locks = parameter_locks;
         sister->model.parameter_locks_high = parameter_locks_high;
     }
     sister_preset_model_sync(sister, &audio->sister);
     snprintf(sister->model.status, sizeof(sister->model.status),
              fallout ? "FALLOUT PRESET TRANSITION STARTED" :
+             machine_only ? "SISTER PRESET RECALLED - PEDALBOARD / FALLOUT / PRISM KEPT" :
                        "PRESET RECALLED - ROLLING MEMORY CONTINUES");
 }
 

@@ -344,6 +344,10 @@ void ts_sister_runtime_set_master_output_gain(TsSisterRuntime *runtime,
                                               float gain);
 void ts_sister_runtime_set_parameters(TsSisterRuntime *runtime,
                                       const TsSisterParameters *parameters);
+/* Recall tape controls without touching Pedalboard, Fallout, Prism or FX MIX.
+   Caller excludes the callback, as for the full parameter setter. */
+void ts_sister_runtime_recall_machine_preset(
+    TsSisterRuntime *runtime, const TsSisterParameters *parameters);
 /* Exclude the callback while editing, as for parameters. Publishes UI state
    immediately even when the output device is stopped or unavailable. */
 void ts_sister_runtime_set_insert(TsSisterRuntime *runtime,const TsInsertControls *controls);
