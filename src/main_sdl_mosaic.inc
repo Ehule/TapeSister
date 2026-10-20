@@ -2,7 +2,7 @@ static void mosaic_poll(SDL_AudioDeviceID device,TsUiState *ui,
                           TsInstrument *instrument,MosaicController *c)
 {
     if(!ui->mosaic)return;
-    if(!ui->mosaic_open || c->active)c->mix_drag=c->mix_changed=c->volume_drag=0;
+    if(!ui->mosaic_open || c->active)c->mix_drag=c->mix_changed=c->volume_drag=c->pan_active=0;
     if(device)SDL_LockAudioDevice(device);
     if(!ui->mosaic_open || c->active)ts_mosaic_audition(ui->mosaic,0);
     ui->mosaic_time=ui->mosaic->time;ui->mosaic_playing=ui->mosaic->playing;
@@ -11,7 +11,7 @@ static void mosaic_poll(SDL_AudioDeviceID device,TsUiState *ui,
         mosaic_sources_refresh(ui,instrument,c);
         int recording=ui->mosaic_recording && ui->capture_state==TS_CAPTURE_RECORDING &&
             ui->input_sample_rate && ui->mosaic_record_preview.epoch==ui->mosaic->epoch;
-        if(ui->mosaic_follow && (ui->mosaic_playing || recording) && !c->drag && !c->volume_drag) {
+        if(ui->mosaic_follow && (ui->mosaic_playing || recording) && !c->drag && !c->volume_drag && !c->pan_active) {
             double target=recording?ui->mosaic_record_preview.start+
                 (double)ui->capture_recorded_frames/ui->input_sample_rate:ui->mosaic_time;
             double offset=(target-ui->mosaic_scroll)*ui->mosaic_scale;
@@ -169,6 +169,7 @@ static void mosaic_source_drag(TsUiState *ui,const TsInstrument *instrument,Mosa
 }
 
 #include "main_sdl_mosaic_arrange.inc"
+#include "main_sdl_mosaic_navigation.inc"
 #include "main_sdl_mosaic_controls.inc"
 #include "main_sdl_mosaic_volume.inc"
 
@@ -285,8 +286,10 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
     }
     if(!ui->mosaic_open)return 0;
     if(main_file_capture_event(event,window,audio,ui,sister,(uint32_t)rate))return 1;
-    if(event->type==SDL_WINDOWEVENT && event->window.event==SDL_WINDOWEVENT_FOCUS_LOST)mosaic_drag_end(ui,c);
+    if(event->type==SDL_WINDOWEVENT && (event->window.event==SDL_WINDOWEVENT_FOCUS_LOST ||
+       event->window.event==SDL_WINDOWEVENT_HIDDEN || event->window.event==SDL_WINDOWEVENT_MINIMIZED))mosaic_drag_end(ui,c);
     mosaic_sources_refresh(ui,instrument,c);
+    if(mosaic_navigation_event(event,device,ui,c,x,y,mod))return 1;
     if(mosaic_arrange_event(event,window,device,ui,instrument,c,x,y,mod))return 1;
     if(mosaic_volume_event(event,device,ui,c,x,y))return 1;
     if(mosaic_controls_event(event,window,device,ui,c,x,y,mod))return 1;
@@ -393,10 +396,6 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
         else ui->mosaic_scroll=fmax(0,ui->mosaic_scroll-amount*36/ui->mosaic_scale);
         return 1;
     }
-    if(down && event->button.button==SDL_BUTTON_MIDDLE && x>=113 && x<631 && y>=66 && y<376) {
-        if(device)SDL_LockAudioDevice(device);ts_mosaic_seek(ui->mosaic,ui->mosaic_scroll+(y-66)/ui->mosaic_scale);
-        if(device)SDL_UnlockAudioDevice(device);return 1;
-    }
     if(down && event->button.button==SDL_BUTTON_LEFT) {
         if(x>=444 && x<538 && y>=381 && y<399) {
             int solos=0;for(int i=0;i<TS_MOSAIC_EVENTS;++i)solos+=ui->mosaic->events[i].id && ui->mosaic->events[i].solo;
@@ -414,18 +413,16 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
             else if(x>=206 && x<270)main_file_capture_toggle(audio,ui,sister,(uint32_t)rate);
             else if(x>=274 && x<318) {if(device)SDL_LockAudioDevice(device);ts_mosaic_checkpoint(ui->mosaic);ts_mosaic_set_repeat(ui->mosaic,!ui->mosaic->repeat);if(device)SDL_UnlockAudioDevice(device);}
             else if(x>=TS_MOSAIC_FOLLOW_X && x<TS_MOSAIC_FOLLOW_X+TS_MOSAIC_FOLLOW_W)ui->mosaic_follow=!ui->mosaic_follow;
-            else if(x>=TS_MOSAIC_FIT_X && x<TS_MOSAIC_FIT_X+TS_MOSAIC_FIT_W){ui->mosaic_scale=fmin(1200,300/fmax(.25,ts_mosaic_end(ui->mosaic)));ui->mosaic_scroll=0;ui->mosaic_xscroll=0;
-                double right=0;for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(ui->mosaic->events[i].id)right=fmax(right,ui->mosaic->events[i].x+ui->mosaic->events[i].width);
-                ui->mosaic_hscale=fmin(1,(TS_MOSAIC_CANVAS_RIGHT-151)/fmax(1,right));}
+            else if(x>=TS_MOSAIC_FIT_X && x<TS_MOSAIC_FIT_X+TS_MOSAIC_FIT_W)mosaic_fit_all(ui,c);
             else if(x>=TS_MOSAIC_ZOOM_OUT_X && x<TS_MOSAIC_ZOOM_OUT_X+TS_MOSAIC_ZOOM_W){ui->mosaic_scale=fmax(.003,ui->mosaic_scale/1.4);ui->mosaic_hscale=fmax(.02,horizontal/1.4);}
             else if(x>=TS_MOSAIC_ZOOM_IN_X && x<TS_MOSAIC_ZOOM_IN_X+TS_MOSAIC_ZOOM_W){ui->mosaic_scale=fmin(1200,ui->mosaic_scale*1.4);ui->mosaic_hscale=fmin(4,horizontal*1.4);}
             return 1;
         }
-        if(x>=10 && x<108 && y>=74 && y<346) {
+        if(x>=10 && x<108 && y>=74 && y<TS_MOSAIC_SOURCE_PAGE_Y) {
             int n=ui->mosaic_source_offset+((y-74)/34)*2+(x-10)/49;
             mosaic_drag_end(ui,c);mosaic_source_drag(ui,instrument,c,n);c->drag_x=x;c->drag_y=y;return 1;
         }
-        if(x>=10 && x<108 && y>=351 && y<373) {
+        if(x>=10 && x<108 && y>=TS_MOSAIC_SOURCE_PAGE_Y && y<TS_MOSAIC_SOURCE_PAGE_Y+18) {
             int pages=ui->mosaic_source_pages;
             if(x<35 && ui->mosaic_source_page>0)--ui->mosaic_source_page;
             if(x>=84 && ui->mosaic_source_page+1<pages)++ui->mosaic_source_page;

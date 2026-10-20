@@ -57,6 +57,13 @@ See the [complete editing reference](SISTERTRACKER_PLAYBACK.md).
 
 ## Mosaic
 
+Navigation: **Shift+Z** fits all; **Z** fits selection/returns; **F** toggles FOLLOW;
+**H** shows the playhead without seeking; **Page Up/Down** move about one screen;
+**middle-drag** pans (middle-click seeks on release). Manual view moves turn FOLLOW
+off. The five numbered buttons beneath Sources save views with the project:
+**click empty = save**, **click stored = recall**, **Shift-click = replace**,
+**middle-click = clear**. Playback and card selection stay intact.
+
 Time runs downward in seconds; horizontal placement and width are visual. Drag an
 occupied source onto the canvas. Sources arrows browse every numbered Sample bank
 (including FM-created pages), then EVENTS pages with event audio versions. Browsing

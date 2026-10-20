@@ -821,8 +821,18 @@ visually at the C4 reference speed, while the chord voices follow their own rate
 | Play / pause; stop and rewind | Space; STOP or Escape when no gesture is active |
 | Seek / return to the beginning | Middle-click canvas or click time ruler / Home |
 | Scroll time / scroll sideways / zoom | Wheel / Shift+wheel / Ctrl+wheel |
-| Keep playhead visible / fit arrangement | FOLLOW / FIT ALL |
+| Keep playhead visible / fit arrangement | F or FOLLOW / Shift+Z or FIT ALL |
 | Repeat the complete arrangement | REPEAT |
+
+**Z** fits the selected cards and returns to the previous view. **H** centers the
+playhead in the view without seeking; **Page Up/Down** move by about one screen.
+Middle-drag pans freely; a middle-click still seeks on release. Fit, page navigation,
+panning, and recalling a view turn FOLLOW off; press **F** to resume it.
+
+Five numbered buttons beneath Sources save positions and zoom levels with the
+project. Click an empty button to save; click a stored button to recall; Shift-click
+to replace; middle-click to clear. Recalling a view leaves playback and selection
+intact. View captures are independent of arrangement undo/redo.
 
 Group moves and copies keep relative timing and spacing. AUTO-SPACE is off for new
 arrangements. When enabled, collision handling shifts the group horizontally while

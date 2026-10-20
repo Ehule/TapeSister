@@ -64,13 +64,36 @@ the EVENTS pages. Shared originals and the original Sample banks remain availabl
 | Play / pause | Space or PLAY/PAUSE |
 | Stop and rewind | Escape or STOP |
 | Seek | Middle-click the canvas or click the time ruler |
-| Scroll with playback | Enable FOLLOW |
+| Scroll with playback | F or FOLLOW |
+| Center the view on the playhead | H (does not seek) |
+| Move the view earlier / later, with overlap | Page Up / Page Down |
+| Pan the view freely | Middle-button drag; a click still seeks on release |
 | Return to the beginning | Home |
 | Scroll through time | Mouse wheel |
 | Scroll horizontally | Shift+wheel |
 | Zoom around the pointer | Ctrl+wheel |
-| Fit the arrangement | FIT ALL |
+| Fit the arrangement | Shift+Z or FIT ALL |
+| Save / recall a view | Click one of the five numbered buttons beneath Sources |
+| Replace / clear a saved view | Shift-click / middle-click its button |
 | Record the final output | REC FILE or Ctrl+Shift+F |
+
+Navigation changes the view while playback and card selection continue. **Shift+Z**
+fits the whole arrangement; **Z** fits the selection and returns on the next press.
+**H** centers the playhead in the view. **Page Up/Down** move by about 90% of a
+screen, leaving some overlap for orientation. Holding a page key repeats the move.
+Fit, page navigation, panning, and recalling a saved view turn FOLLOW off so the
+view stays where you put it; **F** resumes following. A middle press only seeks
+when released without dragging. Escape or loss of window focus cancels the press.
+
+The five numbered buttons beneath Sources store the horizontal and time positions
+and both zoom levels. Click an empty button to save, click a stored one to recall,
+Shift-click to replace, or middle-click to clear. A small underline marks a stored
+view and the matching view is highlighted. Views save with the project; older
+projects open with five empty slots. Capturing or clearing a view marks the project
+modified, but browsing/recalling does not. Saved views are independent of arrangement
+undo/redo and do not store the playback position, selection, or FOLLOW setting.
+
+![Saved view buttons beneath Sources](screenshots/mosaic-performance/navigation.png)
 
 New arrangements start with **AUTO-SPACE off**, allowing cards to overlap visually.
 **Alt-click** cycles through cards at the pointer and brings the selected one forward.
@@ -152,7 +175,7 @@ The status message explains when Repeat already links the endpoints or a ramp
 is flat because the endpoint levels are equal.
 
 Each stroke or tool action is one undo step. **Escape** cancels a stroke, and
-Ctrl+Z / Ctrl+Y undo and redo it. The curve was introduced in Mosaic format 4; current saves use format 6; older
+Ctrl+Z / Ctrl+Y undo and redo it. The curve was introduced in Mosaic format 4; current saves use format 11; older
 arrangements open with a flat, full-level envelope. Failed loads leave the current
 arrangement intact.
 

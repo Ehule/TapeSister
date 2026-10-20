@@ -10,6 +10,12 @@
 #define TS_MOSAIC_GUTTER 8.0
 #define TS_MOSAIC_PEAKS 2048
 #define TS_MOSAIC_ENVELOPE_POINTS 257
+#define TS_MOSAIC_VIEWS 5
+
+typedef struct {
+    int stored;
+    double scroll, xscroll, scale, hscale;
+} TsMosaicView;
 
 typedef enum {
     TS_MOSAIC_ENV_RESET, TS_MOSAIC_ENV_SMOOTH, TS_MOSAIC_ENV_MATCH_START,
@@ -62,6 +68,7 @@ typedef struct TsMosaic {
     float history_volume[TS_MOSAIC_HISTORY][TS_MOSAIC_ENVELOPE_POINTS];
     int history_repeat[TS_MOSAIC_HISTORY], history_auto_space[TS_MOSAIC_HISTORY];
     int auto_space; /* New arrangements allow free placement; older files retain spacing. */
+    TsMosaicView views[TS_MOSAIC_VIEWS]; /* Project navigation only; outside audio/arrangement undo. */
     uint64_t audition_id;
     double audition_time;
     int audition_stopping, audition_rate;

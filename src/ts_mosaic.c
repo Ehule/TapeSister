@@ -467,6 +467,11 @@ uint64_t ts_mosaic_hash(const TsMosaic *m)
     for(const unsigned char *p=(const unsigned char *)speed;*p;++p){hash^=*p;hash*=1099511628211ull;}
     hash^=(uint64_t)m->auto_space;hash*=1099511628211ull;
     hash^=(uint64_t)m->repeat;hash*=1099511628211ull;
+    for(int i=0;i<TS_MOSAIC_VIEWS;++i)if(m->views[i].stored) {
+        const TsMosaicView *v=&m->views[i];char value[160];
+        snprintf(value,sizeof(value),"VIEW %d %.17g %.17g %.17g %.17g",i,v->scroll,v->xscroll,v->scale,v->hscale);
+        for(const unsigned char *p=(const unsigned char *)value;*p;++p){hash^=*p;hash*=1099511628211ull;}
+    }
     return hash;
 }
 
@@ -476,7 +481,11 @@ int ts_mosaic_save(const TsMosaic *m,const char *dir,char *error,size_t size)
     char path[4096];
     if(snprintf(path,sizeof(path),"%s/mosaic.tsm",dir)>=(int)sizeof(path))return 0;
     FILE *f=fopen(path,"wb");if(!f)goto failed;
-    if(fprintf(f,"TAPESISTER_MOSAIC 10\nSETTINGS %d %.9g %.17g\nSPACING %d\n",m->repeat,m->gain,m->speed,m->auto_space)<0)goto close_failed;
+    if(fprintf(f,"TAPESISTER_MOSAIC 11\nSETTINGS %d %.9g %.17g\nSPACING %d\n",m->repeat,m->gain,m->speed,m->auto_space)<0)goto close_failed;
+    for(int i=0;i<TS_MOSAIC_VIEWS;++i) {
+        const TsMosaicView *v=&m->views[i];
+        if(fprintf(f,"VIEW %d %.17g %.17g %.17g %.17g\n",v->stored,v->scroll,v->xscroll,v->scale,v->hscale)<0)goto close_failed;
+    }
     if(fprintf(f,"VOLUME %d\n",TS_MOSAIC_ENVELOPE_POINTS)<0)goto close_failed;
     for(int i=0;i<TS_MOSAIC_ENVELOPE_POINTS;++i)
         if(fprintf(f,"%.9g\n",m->repeat && i==TS_MOSAIC_ENVELOPE_POINTS-1?m->volume[0]:m->volume[i])<0)goto close_failed;
@@ -532,7 +541,7 @@ int ts_mosaic_load(TsMosaic *m,const char *dir,char *error,size_t size)
     if(length>=2 && line[length-2]=='\r' && line[length-1]=='\n') {
         line[length-2]='\n';line[length-1]='\0';
     }
-    int version=!strcmp(line,"TAPESISTER_MOSAIC 10\n")?10:!strcmp(line,"TAPESISTER_MOSAIC 9\n")?9:!strcmp(line,"TAPESISTER_MOSAIC 8\n")?8:!strcmp(line,"TAPESISTER_MOSAIC 7\n")?7:!strcmp(line,"TAPESISTER_MOSAIC 6\n")?6:!strcmp(line,"TAPESISTER_MOSAIC 5\n")?5:!strcmp(line,"TAPESISTER_MOSAIC 4\n")?4:!strcmp(line,"TAPESISTER_MOSAIC 1\n")?1:!strcmp(line,"TAPESISTER_MOSAIC 2\n")?2:!strcmp(line,"TAPESISTER_MOSAIC 3\n")?3:0;
+    int version=!strcmp(line,"TAPESISTER_MOSAIC 11\n")?11:!strcmp(line,"TAPESISTER_MOSAIC 10\n")?10:!strcmp(line,"TAPESISTER_MOSAIC 9\n")?9:!strcmp(line,"TAPESISTER_MOSAIC 8\n")?8:!strcmp(line,"TAPESISTER_MOSAIC 7\n")?7:!strcmp(line,"TAPESISTER_MOSAIC 6\n")?6:!strcmp(line,"TAPESISTER_MOSAIC 5\n")?5:!strcmp(line,"TAPESISTER_MOSAIC 4\n")?4:!strcmp(line,"TAPESISTER_MOSAIC 1\n")?1:!strcmp(line,"TAPESISTER_MOSAIC 2\n")?2:!strcmp(line,"TAPESISTER_MOSAIC 3\n")?3:0;
     if(!version)goto failed;
     char trailing;
     if(!fgets(line,sizeof(line),f))goto failed;
@@ -544,6 +553,16 @@ int ts_mosaic_load(TsMosaic *m,const char *dir,char *error,size_t size)
     next->auto_space=1;
     if(version>=10 && (!fgets(line,sizeof(line),f) || sscanf(line,"SPACING %d %c",&next->auto_space,&trailing)!=1 ||
        (next->auto_space!=0 && next->auto_space!=1)))goto failed;
+    if(version>=11)for(int i=0;i<TS_MOSAIC_VIEWS;++i) {
+        TsMosaicView *v=&next->views[i];
+        if(!fgets(line,sizeof(line),f) || sscanf(line,"VIEW %d %lf %lf %lf %lf %c",
+            &v->stored,&v->scroll,&v->xscroll,&v->scale,&v->hscale,&trailing)!=5 ||
+            (v->stored!=0 && v->stored!=1) || !isfinite(v->scroll) || !isfinite(v->xscroll) ||
+            !isfinite(v->scale) || !isfinite(v->hscale) || v->scroll<0 || v->scroll>1000000 ||
+            v->xscroll<0 || v->xscroll>1000000 ||
+            (v->stored && (v->scale<.000001 || v->scale>1200 || v->hscale<.000001 || v->hscale>4)))goto failed;
+        if(!v->stored)*v=(TsMosaicView){0};
+    }
     if(version>=4) {
         int points;
         if(!fgets(line,sizeof(line),f) || sscanf(line,"VOLUME %d %c",&points,&trailing)!=1 ||

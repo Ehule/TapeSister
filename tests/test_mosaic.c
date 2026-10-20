@@ -186,23 +186,40 @@ static void test_storage(void)
     m->events[0].output_route.matrix_gain[TS_MATRIX_INSTANCE_DESTINATIONS-1]=777;
     m->events[0].output_route.matrix_gain[TS_MATRIX_AMBISONICS]=1000;
     m->events[0].output_route.matrix_gain[TS_MATRIX_DESTINATIONS-1]=1234;
+    m->views[0]=(TsMosaicView){1,725.25,90,.6,1.5};
+    m->views[4]=(TsMosaicView){1,0,0,.125,.5};
     assert(ts_mosaic_save(m,dir,error,sizeof(error)));
     FILE *saved=fopen("mosaic-storage-test/mosaic.tsm","rb");assert(saved);
     int byte;while((byte=fgetc(saved))!=EOF)assert(byte!='\r');
     assert(!ferror(saved));assert(!fclose(saved));
     assert(ts_mosaic_load(loaded,dir,error,sizeof(error)));
     assert(ts_mosaic_hash(m)==ts_mosaic_hash(loaded));
+    assert(loaded->views[0].scroll==725.25 && loaded->views[4].scale==.125 && !loaded->views[1].stored);
     storage_portable_load(loaded,dir);
     assert(loaded->events[0].muted && loaded->events[1].solo);
     assert(loaded->events[0].source==loaded->events[1].source);
     assert(!memcmp(m->events[0].source->sample.data,loaded->events[0].source->sample.data,4096*2*sizeof(float)));
+    /* Invalid view data must fail transactionally, preserving the live project. */
+    const char *bad_views[]={"VIEW 1 0 0 0 1\n","VIEW 1 nan 0 1 1\n","VIEW 1 0 0 1 inf\n"};
+    for(int i=0;i<3;++i) {
+        FILE *current=fopen("mosaic-storage-test/mosaic.tsm","r"),*bad=fopen("mosaic-storage-test/bad.tsm","w");assert(current && bad);
+        char record[1024];int replaced=0;
+        while(fgets(record,sizeof(record),current)) {
+            if(!replaced && !strncmp(record,"VIEW ",5)){fputs(bad_views[i],bad);replaced=1;}
+            else fputs(record,bad);
+        }
+        fclose(current);fclose(bad);assert(replaced);remove("mosaic-storage-test/mosaic.tsm");
+        assert(!rename("mosaic-storage-test/bad.tsm","mosaic-storage-test/mosaic.tsm"));
+        uint64_t before=ts_mosaic_hash(loaded);assert(!ts_mosaic_load(loaded,dir,error,sizeof(error)));
+        assert(ts_mosaic_hash(loaded)==before);assert(ts_mosaic_save(m,dir,error,sizeof(error)));
+    }
     /* Older route widths retain their destinations and zero the added buses. */
-    for(int version=6;version<=8;++version) {
-        int destinations=version==8?TS_MATRIX_INSTANCE_DESTINATIONS:version==7?TS_MATRIX_SHARED_DESTINATIONS:TS_MATRIX_LEGACY_DESTINATIONS;
+    for(int version=6;version<=10;++version) {
+        int destinations=version>=9?TS_MATRIX_DESTINATIONS:version==8?TS_MATRIX_INSTANCE_DESTINATIONS:version==7?TS_MATRIX_SHARED_DESTINATIONS:TS_MATRIX_LEGACY_DESTINATIONS;
         FILE *current=fopen("mosaic-storage-test/mosaic.tsm","r"),*old=fopen("mosaic-storage-test/old.tsm","w");assert(current && old);
         char record[1024];assert(fgets(record,sizeof(record),current));fprintf(old,"TAPESISTER_MOSAIC %d\n",version);
         while(fgets(record,sizeof(record),current)) {
-            if(!strncmp(record,"SPACING ",8))continue;
+            if(!strncmp(record,"VIEW ",5) || (version<10 && !strncmp(record,"SPACING ",8)))continue;
             if(!strncmp(record,"ROUTE ",6)) {
                 record[strcspn(record,"\r\n")]=0;
                 for(int i=destinations;i<TS_MATRIX_DESTINATIONS;++i){char *last=strrchr(record,' ');assert(last);*last=0;}
@@ -212,6 +229,8 @@ static void test_storage(void)
         fclose(current);fclose(old);remove("mosaic-storage-test/mosaic.tsm");
         assert(!rename("mosaic-storage-test/old.tsm","mosaic-storage-test/mosaic.tsm"));
         assert(ts_mosaic_load(loaded,dir,error,sizeof(error)));
+        for(int i=0;i<TS_MOSAIC_VIEWS;++i)assert(!loaded->views[i].stored);
+        assert(loaded->auto_space==(version<10));
         storage_portable_load(loaded,dir);
         for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)
             assert(loaded->events[0].output_route.matrix_gain[d]==(d<destinations?m->events[0].output_route.matrix_gain[d]:0));
@@ -223,6 +242,7 @@ static void test_storage(void)
     char lines[4][1024];
     for(int i=0;i<2;++i)assert(fgets(lines[i],sizeof(lines[i]),old));
     assert(fgets(lines[2],sizeof(lines[2]),old) && !strncmp(lines[2],"SPACING ",8));
+    for(int i=0;i<TS_MOSAIC_VIEWS;++i)assert(fgets(lines[2],sizeof(lines[2]),old) && !strncmp(lines[2],"VIEW ",5));
     for(int i=0;i<=TS_MOSAIC_ENVELOPE_POINTS;++i)assert(fgets(lines[2],sizeof(lines[2]),old));
     for(int i=2;i<4;++i){assert(fgets(lines[i],sizeof(lines[i]),old));char route[1024];assert(fgets(route,sizeof(route),old));assert(fgets(route,sizeof(route),old));}fclose(old);
     for(int version=3;version>=1;--version) {

@@ -294,8 +294,17 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
         }
     }
     int pages=ui->mosaic_source_pages;if(pages<1)pages=1;
-    mosaic_button(fb,10,353,22,"<",0,1);mosaic_button(fb,86,353,22,">",0,1);
-    snprintf(label,sizeof(label),"%02d/%02d",ui->mosaic_source_page+1,pages);text(fb,40,358,label,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DIM, RGB(150,142,160)),1);
+    mosaic_button(fb,10,TS_MOSAIC_SOURCE_PAGE_Y,22,"<",0,1);mosaic_button(fb,86,TS_MOSAIC_SOURCE_PAGE_Y,22,">",0,1);
+    snprintf(label,sizeof(label),"%02d/%02d",ui->mosaic_source_page+1,pages);text(fb,40,TS_MOSAIC_SOURCE_PAGE_Y+5,label,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DIM, RGB(150,142,160)),1);
+    for(int i=0;i<TS_MOSAIC_VIEWS;++i) {
+        const TsMosaicView *v=m?&m->views[i]:NULL;
+        int stored=v && v->stored;
+        int active=stored && fabs(v->scroll-ui->mosaic_scroll)<1e-6 && fabs(v->xscroll-ui->mosaic_xscroll)<1e-6 &&
+            fabs(v->scale-ui->mosaic_scale)<1e-6 && fabs(v->hscale-ui->mosaic_hscale)<1e-6;
+        snprintf(label,sizeof(label),"%d",i+1);
+        mosaic_button(fb,10+i*20,TS_MOSAIC_VIEW_Y,18,label,active,1);
+        if(stored)rect(fb,14+i*20,TS_MOSAIC_VIEW_Y+13,10,1,ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_DATA2,RGB(129,206,200)));
+    }
     rect(fb,113,66,518,310,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_BACKGROUND, RGB(11,13,16)));
     char length[24];
     if(ui->config.mosaic_record_seconds)snprintf(length,sizeof(length),"%02d:%02d",ui->config.mosaic_record_seconds/60,ui->config.mosaic_record_seconds%60);

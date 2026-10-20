@@ -14477,7 +14477,7 @@ int main(int argc, char **argv)
             if(tracker_event(&event,window,device,&audio,&ui,&sample_pages,&instrument,obtained.freq))continue;
             mosaic_commit(device,&ui,&instrument,&mosaic);
             /* Finish an active pointer gesture before Escape can discard a take. */
-            if(!mosaic.drag && !mosaic.mix_drag && !mosaic.volume_drag &&
+            if(!mosaic.drag && !mosaic.mix_drag && !mosaic.volume_drag && !mosaic.pan_active &&
                mosaic_record_tile_event(&event,window,device,&input_device,&audio,
                                        &external_input,&ui,&instrument))continue;
             if(quick_capture_event(&event,window,device,&input_device,&audio,&external_input,&ui,&instrument,&sample_pages))continue;

@@ -187,7 +187,7 @@ static int mosaic_arrange_event(const SDL_Event *event,SDL_Window *window,SDL_Au
         if(ui->mosaic->auto_space) {if(device)SDL_LockAudioDevice(device);ts_mosaic_checkpoint(ui->mosaic);ui->mosaic->auto_space=0;if(device)SDL_UnlockAudioDevice(device);}
         else ui->mosaic_spacing_confirm=1;return 1;
     }
-    if(down && event->button.button==SDL_BUTTON_LEFT && x>=10 && x<108 && y>=74 && y<346) {
+    if(down && event->button.button==SDL_BUTTON_LEFT && x>=10 && x<108 && y>=74 && y<TS_MOSAIC_SOURCE_PAGE_Y) {
         if(mod&KMOD_CTRL) {
             int n=ui->mosaic_source_offset+((y-74)/34)*2+(x-10)/49;
             mosaic_drag_end(ui,c);mosaic_source_drag(ui,instrument,c,n);
