@@ -213,8 +213,8 @@ static void m_destroy(Mandala *m)
     if(m->renderer)SDL_DestroyRenderer(m->renderer);
     if(m->window)SDL_DestroyWindow(m->window);
 }
-/* One current-frame texture supplies every reflected wedge. Independent source
-   playback, seeded crop drift and audio deformations do not reset on a loop. */
+/* Low zoom pulls back to a fitted source frame, then blends into the reflected
+   lens. Zoom 50..100 preserves the original fully folded range. */
 static void m_video_scene(Mandala *m,Uint8 fade,float level)
 {
     if(!m->video_texture || !m->config.video_enabled || !m->config.video_mix)return;
@@ -230,7 +230,25 @@ static void m_video_scene(Mandala *m,Uint8 fade,float level)
     float cropx=.5f+.12f*sinf((float)m->time*.017f+seed)+m->features.balance*.05f*response;
     float cropy=.5f+.12f*cosf((float)m->time*.013f+seed);
     float light=.25f+.75f*fminf(1,level*1.6f);
-    SDL_Color color={255,255,255,(Uint8)fmaxf(1,fade*m->config.video_mix*.01f*light)};
+    float alpha=fmaxf(1,fade*m->config.video_mix*.01f*light);
+    float fold=smooth(m->config.video_scale/50.f);
+    if(fold<1) {
+        int width=0,height=0;SDL_QueryTexture(m->video_texture,NULL,NULL,&width,&height);
+        if(width>0 && height>0) {
+            /* At zero, all four source edges fit, with the original aspect and
+               no crop drift, rotation or Form Size clipping the image. */
+            float fit=fminf(m->width*.94f/width,m->height*.94f/height);
+            SDL_FRect dest={(m->width-width*fit)*.5f,(m->height-height*fit)*.5f,width*fit,height*fit};
+            float pullback=1+.7f*fold;
+            SDL_Rect source={0,0,SDL_max(1,(int)(width/pullback)),SDL_max(1,(int)(height/pullback))};
+            source.x=(width-source.w)/2;source.y=(height-source.h)/2;
+            SDL_SetTextureAlphaMod(m->video_texture,(Uint8)fmaxf(1,alpha*(1-fold)));
+            SDL_RenderCopyF(m->renderer,m->video_texture,&source,&dest);
+            SDL_SetTextureAlphaMod(m->video_texture,255);
+        }
+    }
+    if(fold<=0)return;
+    SDL_Color color={255,255,255,(Uint8)fmaxf(1,alpha*fold)};
     for(unsigned sector=0;sector<sectors;++sector)for(unsigned ring=0;ring<radial;++ring)for(unsigned slice=0;slice<angular;++slice) {
         SDL_Vertex quad[4];
         for(int j=0;j<4;++j) {
@@ -263,6 +281,8 @@ static void m_video_poll(Mandala *m,VisualShared *shared,int paused)
         if(*path){m->video=ts_video_open(path);if(!m->video){m->video_status.state=TS_VIDEO_ERROR;snprintf(m->video_status.message,sizeof(m->video_status.message),"COULD NOT START VIDEO PLAYER");}}
     }
     if(m->video) {
+        uint32_t colors[8];for(unsigned i=0;i<8;++i)colors[i]=ts_mandala_color(&m->config,i);
+        ts_video_palette(m->video,colors,m->config.video_filter);
         ts_video_control(m->video,paused||atomic_load(&shared->video_paused),m->config.video_loop,atomic_load(&shared->video_restart),m->shed?8:m->quality?30:15);
         if(ts_video_upload(m->video,m->renderer,&m->video_texture,&m->video_status))m->dirty=1;
     }
@@ -596,6 +616,8 @@ static int mandala_capture(int argc,char **argv)
     if(argc>6)config.palette=(uint32_t)atoi(argv[6]);
     if(argc>7)config.shape=(uint32_t)atoi(argv[7]);
     if(argc>8){config.video_enabled=1;snprintf(config.video_path,sizeof(config.video_path),"%s",argv[8]);}
+    if(argc>9)config.video_scale=(uint32_t)atoi(argv[9]);
+    if(argc>10)config.video_filter=(uint32_t)atoi(argv[10]);
     if(!ts_mandala_valid(&config)){SDL_Quit();return 2;}
     Mandala *m=calloc(1,sizeof(*m));int ok=m && m_init(m,&config,1);
     TsMandalaEffects effects={0};
@@ -606,6 +628,8 @@ static int mandala_capture(int argc,char **argv)
     double frequency=(double)SDL_GetPerformanceFrequency(),sum=0,max=0;
     if(ok && config.video_enabled) {
         m->video=ts_video_open(config.video_path);Uint64 start=SDL_GetTicks64();
+        uint32_t colors[8];for(unsigned i=0;i<8;++i)colors[i]=ts_mandala_color(&config,i);
+        ts_video_palette(m->video,colors,config.video_filter);
         while(m->video && !m->video_texture && SDL_GetTicks64()-start<8000) {
             ts_video_upload(m->video,m->renderer,&m->video_texture,&m->video_status);SDL_Delay(10);
         }

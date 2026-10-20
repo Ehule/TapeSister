@@ -17,6 +17,11 @@ struct TsVideo {
     atomic_uint stop, paused, loop, restart, fps, write, read;
     TsVideoStatus status;
     char path[1024]; VFrame frame[V_SLOTS];
+    /* Renderer-only cache: never refilter an already filtered frame, and never
+       hold a producer slot while uploading/recoloring a paused image. */
+    VFrame current;
+    uint32_t palette[8], ramp[256]; unsigned strength;
+    int palette_ready, upload_dirty;
 };
 static void status_set(TsVideo *v,unsigned state,const char *message)
 {
@@ -164,24 +169,58 @@ void ts_video_control(TsVideo *v,int paused,int loop,unsigned restart,unsigned f
     if(!v)return;
     atomic_store(&v->paused,paused!=0);atomic_store(&v->loop,loop!=0);atomic_store(&v->restart,restart);atomic_store(&v->fps,fps);
 }
+static unsigned video_luma(uint32_t rgb)
+{return (77*((rgb>>16)&255)+150*((rgb>>8)&255)+29*(rgb&255))>>8;}
+void ts_video_palette(TsVideo *v,const uint32_t colors[8],unsigned strength)
+{
+    if(!v || !colors)return;
+    strength=SDL_min(strength,100u);
+    if(v->palette_ready && v->strength==strength && !memcmp(v->palette,colors,sizeof(v->palette)))return;
+    memcpy(v->palette,colors,sizeof(v->palette));v->strength=strength;v->palette_ready=1;v->upload_dirty=1;
+    /* Continuous luminance gradient, darkest to lightest. No posterization or
+       per-pixel color search; custom swatches participate exactly like presets. */
+    uint32_t sorted[8];memcpy(sorted,colors,sizeof(sorted));
+    for(int i=1;i<8;++i){uint32_t color=sorted[i];int j=i;while(j>0 && video_luma(sorted[j-1])>video_luma(color)){sorted[j]=sorted[j-1];--j;}sorted[j]=color;}
+    for(unsigned y=0;y<256;++y) {
+        unsigned at=y*7,lo=at/255,blend=at%255;uint32_t a=sorted[lo],b=sorted[SDL_min(lo+1,7u)],rgb=0;
+        for(unsigned shift=0;shift<=16;shift+=8)rgb|=(((((a>>shift)&255)*(255-blend)+((b>>shift)&255)*blend)+127)/255)<<shift;
+        v->ramp[y]=rgb;
+    }
+}
 int ts_video_upload(TsVideo *v,SDL_Renderer *renderer,SDL_Texture **texture,TsVideoStatus *status)
 {
     if(!v)return 0;
     if(!SDL_TryLockMutex(v->status_lock)){*status=v->status;SDL_UnlockMutex(v->status_lock);}
     unsigned r=atomic_load_explicit(&v->read,memory_order_relaxed),w=atomic_load_explicit(&v->write,memory_order_acquire);
-    if(w==r || atomic_load(&v->paused))return 0;
-    VFrame *f=&v->frame[(w-1)%V_SLOTS];int width=0,height=0;
-    if(f->restart!=atomic_load(&v->restart)){atomic_store_explicit(&v->read,w,memory_order_release);return 0;}
+    if(w!=r && !atomic_load(&v->paused)) {
+        VFrame *next=&v->frame[(w-1)%V_SLOTS];
+        if(next->restart==atomic_load(&v->restart)) {
+            v->current.width=next->width;v->current.height=next->height;v->current.ms=next->ms;v->current.restart=next->restart;
+            memcpy(v->current.pixels,next->pixels,(size_t)next->width*next->height*4);v->upload_dirty=1;
+        }
+        atomic_store_explicit(&v->read,w,memory_order_release);
+    }
+    VFrame *f=&v->current;int width=0,height=0;
+    if(!f->width || (!v->upload_dirty && *texture))return 0;
     if(*texture)SDL_QueryTexture(*texture,NULL,NULL,&width,&height);
     if(width!=f->width || height!=f->height){SDL_DestroyTexture(*texture);*texture=SDL_CreateTexture(renderer,SDL_PIXELFORMAT_BGRA32,SDL_TEXTUREACCESS_STREAMING,f->width,f->height);}
     int uploaded=0;void *pixels;int pitch;
     if(*texture && !SDL_LockTexture(*texture,NULL,&pixels,&pitch)) {
-        for(int y=0;y<f->height;++y)memcpy((uint8_t*)pixels+y*pitch,f->pixels+y*f->width*4,f->width*4);
+        for(int y=0;y<f->height;++y) {
+            const uint8_t *src=f->pixels+y*f->width*4;uint8_t *dst=(uint8_t*)pixels+y*pitch;
+            if(!v->strength)memcpy(dst,src,f->width*4);
+            else for(int x=0;x<f->width;++x,src+=4,dst+=4) {
+                uint32_t mapped=v->ramp[(77*src[2]+150*src[1]+29*src[0])>>8];
+                for(int c=0;c<3;++c)dst[c]=(uint8_t)((src[c]*(100-v->strength)+((mapped>>(c*8))&255)*v->strength+50)/100);
+                dst[3]=src[3];
+            }
+        }
         SDL_UnlockTexture(*texture);SDL_SetTextureBlendMode(*texture,SDL_BLENDMODE_BLEND);uploaded=1;
+        v->upload_dirty=0;
         status->position_ms=f->ms;
         if(!SDL_TryLockMutex(v->status_lock)){v->status.position_ms=f->ms;SDL_UnlockMutex(v->status_lock);}
     }
-    atomic_store_explicit(&v->read,w,memory_order_release);return uploaded;
+    return uploaded;
 }
 void ts_video_close(TsVideo *v)
 {
