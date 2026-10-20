@@ -28,6 +28,8 @@ typedef struct { TsMandalaConfig config; TsMandalaPacket audio; TsMandalaEffects
 typedef struct {
     atomic_uint write, read, quit, ready, freeze, quality, display, fullscreen;
     atomic_uint frames, drawn_audio, drawn_config, level_milli;
+    atomic_uint video_paused, video_restart, status_write, status_read;
+    TsVideoStatus video_status[4];
     VisualMessage message[4];
 } VisualShared;
 static TsMandalaQueue audio_queue;
@@ -40,6 +42,7 @@ static struct {
     TsMandalaPacket last_audio;
     TsMandalaConfig sent_config;
     TsMandalaEffects effects, sent_effects;
+    TsVideoStatus video_status;
 #ifdef _WIN32
     HANDLE mapping, process;
 #else
@@ -54,7 +57,8 @@ static int shared_lock_free(VisualShared *s)
         atomic_is_lock_free(&s->freeze) && atomic_is_lock_free(&s->quality) &&
         atomic_is_lock_free(&s->display) && atomic_is_lock_free(&s->fullscreen) &&
         atomic_is_lock_free(&s->frames) && atomic_is_lock_free(&s->drawn_audio) &&
-        atomic_is_lock_free(&s->drawn_config) && atomic_is_lock_free(&s->level_milli);
+        atomic_is_lock_free(&s->video_paused) && atomic_is_lock_free(&s->video_restart) &&
+        atomic_is_lock_free(&s->status_write) && atomic_is_lock_free(&s->status_read) && atomic_is_lock_free(&s->drawn_config) && atomic_is_lock_free(&s->level_milli);
 }
 static void shared_init(VisualShared *s, const TsMandalaPreferences *p)
 {
@@ -65,6 +69,7 @@ static void shared_init(VisualShared *s, const TsMandalaPreferences *p)
     atomic_init(&s->display, p->display >= 0 ? (unsigned)p->display : 0);
     atomic_init(&s->fullscreen, p->fullscreen != 0);
     atomic_init(&s->frames, 0); atomic_init(&s->drawn_audio, 0);
+    atomic_init(&s->video_paused,0);atomic_init(&s->video_restart,0);atomic_init(&s->status_write,0);atomic_init(&s->status_read,0);
     atomic_init(&s->drawn_config, 0); atomic_init(&s->level_milli, 0);
 }
 static int shared_send(VisualShared *s, const VisualMessage *m)
@@ -125,6 +130,15 @@ void ts_mandala_host_init(void) { ts_mandala_queue_init(&audio_queue); }
 void ts_mandala_audio(const float *out, unsigned frames, unsigned channels)
 { ts_mandala_push(&audio_queue, out, frames, channels); }
 int ts_mandala_active(void) { return host.shared && !atomic_load(&host.shared->quit); }
+void ts_mandala_video_pause(void){if(host.shared)atomic_fetch_xor(&host.shared->video_paused,1);}
+void ts_mandala_video_restart(void){if(host.shared){atomic_fetch_add(&host.shared->video_restart,1);atomic_store(&host.shared->video_paused,0);}}
+int ts_mandala_video_paused(void){return host.shared && atomic_load(&host.shared->video_paused);}
+TsVideoStatus ts_mandala_video_status(void){return host.video_status;}
+static void video_status_send(VisualShared *s,const TsVideoStatus *status)
+{
+    unsigned w=atomic_load_explicit(&s->status_write,memory_order_relaxed),r=atomic_load_explicit(&s->status_read,memory_order_acquire);
+    if(w-r<4){s->video_status[w%4]=*status;atomic_store_explicit(&s->status_write,w+1,memory_order_release);}
+}
 int ts_mandala_frozen(void) { return host.shared && atomic_load(&host.shared->freeze); }
 void ts_mandala_freeze(void)
 {
@@ -242,6 +256,8 @@ int ts_mandala_poll(const TsMandalaConfig *config, TsMandalaPreferences *prefs)
 #else
     alive = waitpid(host.pid, NULL, WNOHANG) == 0;
 #endif
+    unsigned sr=atomic_load_explicit(&host.shared->status_read,memory_order_relaxed),sw=atomic_load_explicit(&host.shared->status_write,memory_order_acquire);
+    if(sw!=sr){host.video_status=host.shared->video_status[(sw-1)%4];atomic_store_explicit(&host.shared->status_read,sw,memory_order_release);}
     prefs->quality = (int)atomic_load(&host.shared->quality);
     prefs->display = (int)atomic_load(&host.shared->display);
     prefs->fullscreen = (int)atomic_load(&host.shared->fullscreen);

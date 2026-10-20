@@ -1,6 +1,7 @@
 #ifndef TAPESISTER_MANDALA_SDL_H
 #define TAPESISTER_MANDALA_SDL_H
 #include "tapesister/mandala.h"
+#include "tapesister/mandala_video.h"
 #include "tapesister/sister_runtime.h"
 
 /* All functions except audio() run on the host UI thread. No renderer object,
@@ -16,6 +17,10 @@ int ts_mandala_active(void);
 int ts_mandala_frozen(void);
 void ts_mandala_freeze(void);
 void ts_mandala_close(void);
+void ts_mandala_video_pause(void);
+void ts_mandala_video_restart(void);
+int ts_mandala_video_paused(void);
+TsVideoStatus ts_mandala_video_status(void);
 void ts_mandala_shutdown(void);
 /* Dispatch before initializing any audio, MIDI, tracker or application state.
    Returns -1 for normal app arguments. */

@@ -9,6 +9,40 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef _WIN32
+#include <direct.h>
+#define test_mkdir(path) _mkdir(path)
+#define test_getcwd _getcwd
+#define test_rmdir _rmdir
+#else
+#include <sys/stat.h>
+#include <unistd.h>
+#define test_mkdir(path) mkdir(path,0700)
+#define test_getcwd getcwd
+#define test_rmdir rmdir
+#endif
+static void portable_video_reference(void)
+{
+    char cwd[768],media[1024],expected[1024],error[256];int present=0;
+    assert(test_getcwd(cwd,sizeof(cwd)) && !test_mkdir("mandala-portable"));
+    snprintf(media,sizeof(media),"%s/mandala-portable/clip.mp4",cwd);
+    FILE *f=fopen(media,"wb");assert(f);fclose(f);
+    TsSisterProjectState *state=malloc(sizeof(*state)),*loaded=malloc(sizeof(*loaded));assert(state && loaded);
+    ts_sister_project_state_init(state,48000);state->mandala.video_enabled=1;
+    snprintf(state->mandala.video_path,sizeof(state->mandala.video_path),"%s",media);
+    assert(ts_sister_project_state_save_file(state,"mandala-portable/state.ini",error,sizeof(error)));
+    assert(!rename("mandala-portable","mandala-moved"));
+    assert(ts_sister_project_state_load_file(loaded,"mandala-moved/state.ini",48000,&present,error,sizeof(error)) && present);
+    snprintf(expected,sizeof(expected),"%s/mandala-moved/clip.mp4",cwd);
+    for(char *p=expected;*p;++p)if(*p=='\\')*p='/';
+    for(char *p=loaded->mandala.video_path;*p;++p)if(*p=='\\')*p='/';
+    assert(!strcmp(expected,loaded->mandala.video_path) && loaded->mandala.video_enabled);
+    remove("mandala-moved/clip.mp4");
+    assert(ts_sister_project_state_load_file(loaded,"mandala-moved/state.ini",48000,&present,error,sizeof(error)));
+    assert(loaded->mandala.video_enabled && strstr(loaded->mandala.video_path,"clip.mp4"));
+    remove("mandala-moved/state.ini");assert(!test_rmdir("mandala-moved"));free(state);free(loaded);
+}
+
 static void wide_packet_bounds(void)
 {
     TsMandalaQueue q;ts_mandala_queue_init(&q);atomic_store(&q.enabled,1);
@@ -39,7 +73,7 @@ static void wide_packet_bounds(void)
 
 int main(void)
 {
-    wide_packet_bounds();
+    wide_packet_bounds();portable_video_reference();
     TsMandalaConfig a,b;
     ts_mandala_default(&a);ts_mandala_default(&b);
     assert(ts_mandala_valid(&a) && a.seed!=b.seed);
@@ -48,7 +82,7 @@ int main(void)
     assert(ts_mandala_read(&a,"Mandala.Symmetry","0")==-1);
     assert(ts_mandala_read(&a,"Mandala.Cycle","nan")==-1);
     assert(ts_mandala_read(&a,"Mandala.Seed","-1")==-1);
-    assert(ts_mandala_read(&a,"Mandala.Version","3")==-1);
+    assert(ts_mandala_read(&a,"Mandala.Version","4")==-1);
     assert(ts_mandala_read(&a,"Mandala.Future","1")==-1);
     assert(ts_mandala_read(&a,"Mandala.Shape","5")==-1);
     assert(ts_mandala_read(&a,"Mandala.Density","9")==-1);
@@ -58,6 +92,14 @@ int main(void)
     assert(ts_mandala_read(&a,"Mandala.Color0","1000000")==-1);
     assert(ts_mandala_read(&a,"Mandala.Color8","ABCDEF")==-1);
     assert(ts_mandala_read(&a,"Mandala.Color1","FFZZFF")==-1);
+    assert(ts_mandala_read(&a,"Mandala.VideoPath","61003D")==-1);
+    assert(ts_mandala_read(&a,"Mandala.VideoPath","1")==-1);
+    assert(ts_mandala_read(&a,"Mandala.VideoPath","ZZ")==-1);
+    assert(ts_mandala_read(&a,"Mandala.VideoMix","101")==-1);
+    assert(ts_mandala_read(&a,"Mandala.VideoLoop","2")==-1);
+    assert(ts_mandala_read(&a,"Mandala.VideoEnabled","-1")==-1);
+    a.video_enabled=1;a.video_loop=0;a.video_mix=91;a.video_rotation=32;
+    snprintf(a.video_path,sizeof(a.video_path),"/missing/clip = test \xC3\xA9.mp4");
     a.palette=3;uint32_t red=ts_mandala_color(&a,0);
     assert((red>>16)>(red&255));
     a.palette=4;uint32_t gold=ts_mandala_color(&a,0),violet=ts_mandala_color(&a,2);
@@ -74,6 +116,12 @@ int main(void)
     assert(ts_sister_project_state_save_file(state,path,error,sizeof(error)));
     assert(ts_sister_project_state_load_file(loaded,path,48000,&present,error,sizeof(error)) && present);
     assert(!memcmp(&state->mandala,&loaded->mandala,sizeof(a)));
+    /* Worst-case path must survive the complete sidecar line reader. */
+    memset(state->mandala.video_path,'x',sizeof(state->mandala.video_path)-1);
+    state->mandala.video_path[0]='/';state->mandala.video_path[1023]=0;
+    assert(ts_sister_project_state_save_file(state,path,error,sizeof(error)));
+    assert(ts_sister_project_state_load_file(loaded,path,48000,&present,error,sizeof(error)));
+    assert(!strcmp(state->mandala.video_path,loaded->mandala.video_path));
     /* Filename changes never change identity. */
     assert(!rename(path,"mandala-renamed-test.ini"));
     assert(ts_sister_project_state_load_file(loaded,"mandala-renamed-test.ini",48000,&present,error,sizeof(error)));
@@ -88,7 +136,7 @@ int main(void)
     assert(ts_sister_project_state_load_file(loaded,path,48000,&present,error,sizeof(error)) && loaded->mandala.seed==seed);
     f=fopen(path,"wb");assert(f);fputs("TapeSister Sister Project State\nVersion=35\nPageCount=1\nActivePage=0\nMandala.Version=1\nMandala.Seed=314159\nMandala.Palette=2\nMandala.Symmetry=6\nMandala.Cycle=120\n",f);fclose(f);
     assert(ts_sister_project_state_load_file(loaded,path,48000,&present,error,sizeof(error)));
-    assert(loaded->mandala.version==2 && loaded->mandala.seed==0x314159 && loaded->mandala.palette==2);
+    assert(loaded->mandala.version==3 && loaded->mandala.seed==0x314159 && loaded->mandala.palette==2);
     assert(!loaded->mandala.shape && loaded->mandala.density==100 && loaded->mandala.scale==100 && loaded->mandala.motion==50 && loaded->mandala.trails==50);
     remove(path);free(state);free(loaded);
     TsConfig prefs,again;ts_config_init(&prefs);

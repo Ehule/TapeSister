@@ -827,3 +827,7 @@ Gold and the three original palettes, custom RGB/hex colors, five shape choices,
 density, size, motion and trails. Undo/redo and Revert Opening support experiments;
 save the project to retain the appearance. Done/Close keeps edits.
 Closing/freeze never controls musical playback. See [the visualizer guide](IMPERMANENT_MANDALA.md).
+
+The visualizer editor’s **VIDEO** tab accepts local video and offers pause, restart,
+loop, blend, zoom, rotation and audio response. Video sound is off.
+See [Video through the mandala](MANDALA_VIDEO.md).

@@ -3,7 +3,7 @@ TAPESISTER PORTABLE RELEASE
 
 TapeSister is portable software. It does not use an installer and does not need
 administrator access. Keep the complete extracted folder together so the audio
-runtime, artwork, palette, CDP8 programs, and licenses remain available.
+runtime, video decoder, artwork, palette, CDP8 programs, and licenses remain available.
 
 WINDOWS
 -------
@@ -74,3 +74,9 @@ are included under licenses/. Additional notices are in
 THIRD_PARTY_NOTICES.md. TapeSister source is available from:
 
   https://github.com/Ehule/TapeSister
+
+VISUALIZER VIDEO
+----------------
+F11 > EDIT VISUALIZER > VIDEO > ADD VIDEO FILE. Keep all FFmpeg DLLs beside
+TapeSister.exe on Windows and video/lib beside tapesister on Linux. Video sound
+is off. See docs/MANDALA_VIDEO.md for playback, formats and project references.

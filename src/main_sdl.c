@@ -8719,6 +8719,7 @@ static void begin_active_project_save(TsUiState *ui)
 
 #include "main_sdl_browser_audition.inc"
 
+static void mandala_editor_video_loaded(TsUiState *ui,const TsMandalaConfig *c);
 static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
                            TsInstrument *instrument, TsSample *pending_selection_load,
                            TsSamplePages *sample_pages,
@@ -8741,6 +8742,20 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
             !ts_browser_edits_text(browser))
             SDL_StopTextInput();
         return;
+    }
+    if (browser->mode==TS_BROWSER_LOAD_VIDEO) {
+        if(browser->selected>=0 && browser->selected<browser->entry_count && browser->entries[browser->selected].is_directory) {
+            ts_browser_enter_selected_directory(browser);return;
+        }
+        if(!ts_browser_selected_path(browser,path,sizeof(path))) {
+            snprintf(browser->message,sizeof(browser->message),"SELECT A VIDEO FILE");return;
+        }
+        memset(audio->sister.mandala.video_path,0,sizeof(audio->sister.mandala.video_path));
+        snprintf(audio->sister.mandala.video_path,sizeof(audio->sister.mandala.video_path),"%s",path);
+        audio->sister.mandala.video_enabled=1;ts_mandala_video_restart();
+        ts_browser_close(browser);SDL_StopTextInput();
+        mandala_editor_video_loaded(ui,&audio->sister.mandala);
+        snprintf(ui->status,sizeof(ui->status),"VISUALIZER VIDEO ADDED / SOUND OFF");return;
     }
     if (browser->mode==TS_BROWSER_TRACKER_PALETTE_IMPORT || browser->mode==TS_BROWSER_TRACKER_PALETTE_EXPORT) {
         int importing=browser->mode==TS_BROWSER_TRACKER_PALETTE_IMPORT;
@@ -14290,6 +14305,7 @@ int main(int argc, char **argv)
                 event_id && event_id != SDL_GetWindowID(window) &&
                 event.type != SDL_KEYUP && event.type != SDL_MOUSEBUTTONUP) continue;
             if(offline_event(&event,window,&ui))continue;
+            mandala_editor.host=window;
             if(mandala_editor_event(&event,&ui,&audio.sister.mandala))continue;
             if(palette_window_event(&event,window,&ui,&sister_window)) {
                 if(palette_window.requested_group) {

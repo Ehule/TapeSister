@@ -1,0 +1,5 @@
+mandala-video.mp4 is a generated test pattern, not performance footage.
+Generated with FFmpeg testsrc2 (96x64, 12 fps, 1.5 s), H.264 with B-frames,
+and a 440 Hz synthetic AAC audio track. The player must ignore the audio.
+Command:
+ffmpeg -f lavfi -i testsrc2=size=96x64:rate=12 -f lavfi -i sine=frequency=440:sample_rate=8000 -t 1.5 -c:v libx264 -threads 1 -preset veryslow -crf 27 -g 12 -bf 2 -c:a aac -b:a 8k -movflags +faststart mandala-video.mp4

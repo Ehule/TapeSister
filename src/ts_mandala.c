@@ -55,13 +55,14 @@ void ts_mandala_reseed(TsMandalaConfig *c)
 void ts_mandala_default(TsMandalaConfig *c)
 {
     memset(c, 0, sizeof(*c));
-    c->version = 2; ts_mandala_reset_geometry(c);
+    c->version = 3; ts_mandala_reset_geometry(c);
+    c->video_loop=1;c->video_mix=75;c->video_scale=50;c->video_rotation=50;c->video_response=50;
     memcpy(c->custom_rgb,mandala_palettes[0],sizeof(c->custom_rgb));
     ts_mandala_reseed(c);
 }
 int ts_mandala_valid(const TsMandalaConfig *c)
 {
-    if(!c || c->version!=2 || !c->seed || c->palette>TS_MANDALA_CUSTOM ||
+    if(!c || !memchr(c->video_path,0,sizeof(c->video_path)) || c->video_enabled>1 || c->video_loop>1 || c->video_mix>100 || c->video_scale>100 || c->video_rotation>100 || c->video_response>100 || c->version!=3 || !c->seed || c->palette>TS_MANDALA_CUSTOM ||
         c->symmetry<4 || c->symmetry>12 || c->cycle_seconds<30 || c->cycle_seconds>1800 ||
         c->shape>=TS_MANDALA_SHAPES || c->density<10 || c->density>100 ||
         c->scale<50 || c->scale>150 || c->trails>100 || c->motion>100)return 0;
@@ -71,17 +72,26 @@ int ts_mandala_valid(const TsMandalaConfig *c)
 int ts_mandala_write(FILE *f, const TsMandalaConfig *c)
 {
     if(!ts_mandala_valid(c) || fprintf(f,
-        "Mandala.Version=2\nMandala.Seed=%016" PRIX64 "\nMandala.Palette=%u\nMandala.Symmetry=%u\nMandala.Cycle=%u\n"
+        "Mandala.Version=3\nMandala.Seed=%016" PRIX64 "\nMandala.Palette=%u\nMandala.Symmetry=%u\nMandala.Cycle=%u\n"
         "Mandala.Shape=%u\nMandala.Density=%u\nMandala.Scale=%u\nMandala.Trails=%u\nMandala.Motion=%u\n",
         c->seed,c->palette,c->symmetry,c->cycle_seconds,c->shape,c->density,c->scale,c->trails,c->motion)<=0)return 0;
     for(unsigned i=0;i<TS_MANDALA_COLORS;++i)
         if(fprintf(f,"Mandala.Color%u=%06X\n",i,c->custom_rgb[i])<=0)return 0;
-    return 1;
+    if(fprintf(f,"Mandala.VideoEnabled=%u\nMandala.VideoLoop=%u\nMandala.VideoMix=%u\nMandala.VideoScale=%u\nMandala.VideoRotation=%u\nMandala.VideoResponse=%u\nMandala.VideoPath=",c->video_enabled,c->video_loop,c->video_mix,c->video_scale,c->video_rotation,c->video_response)<0)return 0;
+    /* Hex preserves spaces, '=', non-ASCII UTF-8 and line delimiters exactly. */
+    for(const unsigned char *p=(const unsigned char*)c->video_path;*p;++p)if(fprintf(f,"%02X",*p)<0)return 0;
+    return fputc('\n',f)!=EOF;
 }
 int ts_mandala_read(TsMandalaConfig *c, const char *key, const char *v)
 {
     if (strncmp(key, "Mandala.", 8)) return 0;
     key += 8;
+    if(!strcmp(key,"VideoPath")) {
+        size_t n=strlen(v);if(n%2 || n/2>=sizeof(c->video_path))return -1;
+        char path[1024]={0};
+        for(size_t i=0;i<n;i+=2){unsigned byte=0;for(int j=0;j<2;++j){char x=v[i+j];int d=x>='0'&&x<='9'?x-'0':x>='A'&&x<='F'?x-'A'+10:x>='a'&&x<='f'?x-'a'+10:-1;if(d<0)return -1;byte=byte*16+(unsigned)d;}if(!byte)return -1;path[i/2]=(char)byte;}
+        memcpy(c->video_path,path,sizeof(path));return 1;
+    }
     char *end; errno = 0;
     if (!*v || *v == '-' || *v == '+') return -1;
     int color=!strncmp(key,"Color",5) && key[5]>='0' && key[5]<'0'+TS_MANDALA_COLORS && !key[6];
@@ -89,7 +99,7 @@ int ts_mandala_read(TsMandalaConfig *c, const char *key, const char *v)
     if (errno || *end || end == v) return -1;
     if (!strcmp(key, "Seed")) { if (!n) return -1; c->seed = n; }
     /* Defaults initialize new fields before parsing; v1 keeps its original look. */
-    else if (!strcmp(key, "Version")) { if (n != 1 && n != 2) return -1; c->version = 2; }
+    else if (!strcmp(key, "Version")) { if (n != 1 && n != 2 && n != 3) return -1; c->version = 3; }
     else if (!strcmp(key, "Palette")) { if (n > TS_MANDALA_CUSTOM) return -1; c->palette = (uint32_t)n; }
     else if (!strcmp(key, "Symmetry")) { if (n < 4 || n > 12) return -1; c->symmetry = (uint32_t)n; }
     else if (!strcmp(key, "Cycle")) { if (n < 30 || n > 1800) return -1; c->cycle_seconds = (uint32_t)n; }
@@ -98,6 +108,12 @@ int ts_mandala_read(TsMandalaConfig *c, const char *key, const char *v)
     else if (!strcmp(key,"Scale")) { if(n<50 || n>150)return -1;c->scale=(uint32_t)n; }
     else if (!strcmp(key,"Trails")) { if(n>100)return -1;c->trails=(uint32_t)n; }
     else if (!strcmp(key,"Motion")) { if(n>100)return -1;c->motion=(uint32_t)n; }
+    else if (!strcmp(key,"VideoEnabled")) {if(n>1)return -1;c->video_enabled=(uint32_t)n;}
+    else if (!strcmp(key,"VideoLoop")) {if(n>1)return -1;c->video_loop=(uint32_t)n;}
+    else if (!strcmp(key,"VideoMix")) {if(n>100)return -1;c->video_mix=(uint32_t)n;}
+    else if (!strcmp(key,"VideoScale")) {if(n>100)return -1;c->video_scale=(uint32_t)n;}
+    else if (!strcmp(key,"VideoRotation")) {if(n>100)return -1;c->video_rotation=(uint32_t)n;}
+    else if (!strcmp(key,"VideoResponse")) {if(n>100)return -1;c->video_response=(uint32_t)n;}
     else if (color) { if(n>0xffffffu)return -1;c->custom_rgb[key[5]-'0']=(uint32_t)n; }
     else return -1; /* Unknown visual versions/fields do not silently change identity. */
     return 1;
