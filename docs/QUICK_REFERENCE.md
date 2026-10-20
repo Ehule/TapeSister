@@ -460,14 +460,18 @@ Pitch wheel steps land on exact semitones; Shift+wheel adjusts by 0.1 semitone.
 | Grain state action | Gesture |
 | --- | --- |
 | Capture an empty state / recall a saved state | Left-click |
-| Recall for editing | Right-click |
-| Save the current settings over a state | Shift+left-click |
+| Recall immediately for editing (blue) | Right-click |
+| Save the selected blue or amber state | Left-click that state |
+| Overwrite any state with the current settings | Shift+left-click |
 | Clear a state | Middle-click |
 | Set recall duration, 0–600 seconds | GLIDE drag or wheel; Shift+wheel for 0.1 s |
 | Reset recall duration to immediate | Right-click GLIDE |
 
 Grey means empty; dim green means stored; bright green is the active target;
-blue means editing; amber means changed since capture. Recall moves the sound
+blue means editing; amber means changed since capture. Right-click a state, adjust
+the sound, then left-click that same square to save it and return it to green.
+Clicking another saved state recalls it without overwriting either state.
+Performance recall moves the sound
 smoothly without clearing the grain buffer. A new recall redirects from the
 current audible position; manually changing Size, Density or Pitch cancels the
 current glide. The parameter sliders display the destination values. States and

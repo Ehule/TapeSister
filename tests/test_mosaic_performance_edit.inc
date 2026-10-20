@@ -1,3 +1,13 @@
+static void mosaic_arrange_test_frame(void)
+{
+    /* Run the production frame's workspace synchronization between input
+       events: a modal must retain the workspace that renders and owns it. */
+    mosaic_poll(0,&ui,&instrument,&mosaic);
+    ui_sync_dialog_workspaces(&ui);
+    assert(ui.mosaic_open);
+    static TsFramebuffer fb;
+    ts_ui_render(&fb,&ui,&instrument);
+}
 static void test_mosaic_performance_edit(SDL_Window *window)
 {
     TsMosaic *saved=ui.mosaic,*scene=ts_mosaic_create();assert(scene && !scene->auto_space);
@@ -27,11 +37,20 @@ static void test_mosaic_performance_edit(SDL_Window *window)
     key(window,SDLK_z,KMOD_CTRL);key(window,SDLK_z,KMOD_CTRL);
     SDL_SetModState(KMOD_ALT);click(window,180,130,1);SDL_SetModState(KMOD_NONE);assert(ui.mosaic_selected==b->id);
     click(window,120,60,1);assert(ui.mosaic_spacing_confirm && !scene->auto_space);
+    mosaic_arrange_test_frame();release(window,120,60);mosaic_arrange_test_frame();
     key(window,SDLK_ESCAPE,KMOD_NONE);assert(!ui.mosaic_spacing_confirm && !scene->auto_space);
     click(window,120,60,1);key(window,SDLK_RETURN,KMOD_NONE);assert(scene->auto_space && a->start==2 && b->start==2 && a->x!=b->x);
+    uint64_t spaced=ts_mosaic_hash(scene);
+    click(window,120,60,1);release(window,120,60);mosaic_arrange_test_frame();
+    assert(!scene->auto_space && !ui.mosaic_spacing_confirm && a->start==2 && b->start==2);
+    key(window,SDLK_z,KMOD_CTRL);assert(ts_mosaic_hash(scene)==spaced);
+    key(window,SDLK_y,KMOD_CTRL);assert(!scene->auto_space);
+    key(window,SDLK_z,KMOD_CTRL);assert(ts_mosaic_hash(scene)==spaced);
     key(window,SDLK_z,KMOD_CTRL);assert(!scene->auto_space && a->x==20 && b->x==20);
     key(window,SDLK_a,KMOD_CTRL);uint64_t before=ts_mosaic_hash(scene);
     key(window,SDLK_r,KMOD_CTRL);assert(ui.mosaic_scatter_open && ui.mosaic_ghost_count==3);
+    mosaic_arrange_test_frame();mosaic_arrange_test_frame();
+    key(window,SDLK_1,KMOD_NONE);assert(ui.mosaic_scatter_open && ui.mosaic_open);
     assert(ts_mosaic_hash(scene)==before);double first=ui.mosaic_ghosts[0].start;
     click(window,150,280,1);assert(first!=ui.mosaic_ghosts[0].start && ts_mosaic_hash(scene)==before);
     if(getenv("TS_SCATTER_SCREENSHOT")) {static TsFramebuffer fb;ts_ui_render(&fb,&ui,&instrument);assert(ts_ui_write_ppm(&fb,getenv("TS_SCATTER_SCREENSHOT")));}
@@ -42,9 +61,11 @@ static void test_mosaic_performance_edit(SDL_Window *window)
        refresh and is released after Apply. Capacity errors are atomic. */
     SDL_SetModState(KMOD_CTRL);click(window,20,85,1);SDL_SetModState(KMOD_NONE);
     assert(mosaic.picked_count==1);key(window,SDLK_r,KMOD_CTRL);assert(ui.mosaic_scatter_copies);
+    mosaic_arrange_test_frame();
     ui.mosaic_scatter_count=128;mosaic_scatter_preview(&ui,&mosaic);assert(!ui.mosaic_scatter_valid && !ui.mosaic_ghost_count);
     ui.mosaic_scatter_count=5;mosaic_scatter_preview(&ui,&mosaic);assert(ui.mosaic_ghost_count==5);
     click(window,130,120,1);key(window,SDLK_a,KMOD_CTRL);
+    mosaic_arrange_test_frame();
     SDL_Event text;SDL_zero(text);text.type=SDL_TEXTINPUT;strcpy(text.text.text,"1.25");dispatch(&text,window);
     key(window,SDLK_RETURN,KMOD_NONE);assert(ui.mosaic_scatter_start==1.25 && ui.mosaic_scatter_open);
     key(window,SDLK_ESCAPE,KMOD_NONE);assert(mosaic_event_count(scene)==3 && ts_mosaic_hash(scene)==before);

@@ -7211,6 +7211,15 @@ static int ui_dialog_open(const TsUiState *ui)
     return ui->fm_open || ui_blocking_dialog_open_except_fm(ui);
 }
 
+static void ui_sync_dialog_workspaces(TsUiState *ui)
+{
+    /* Mosaic owns these dialogs. Hiding it strands the modal: its renderer
+       and input handler both require mosaic_open, while other input is blocked. */
+    if(ui_dialog_open(ui) && !ui->portal.open &&
+       !ui->mosaic_scatter_open && !ui->mosaic_spacing_confirm)ui->mosaic_open=0;
+    if(ui_dialog_open(ui))ui->tracker_open=0;
+}
+
 static int sister_performance_keys_allowed(const TsUiState *ui)
 {
     if (ui == NULL) return 0;
@@ -18152,8 +18161,7 @@ int main(int argc, char **argv)
             ui.overlay[0] = '\0';
         refresh_workbench_loop(device, &audio, &ui, &instrument);
         mosaic_poll(device,&ui,&instrument,&mosaic);
-        if(ui_dialog_open(&ui) && !ui.portal.open)ui.mosaic_open=0;
-        if(ui_dialog_open(&ui))ui.tracker_open=0;
+        ui_sync_dialog_workspaces(&ui);
         Uint32 health_setup_now = SDL_GetTicks();
         if (device) SDL_LockAudioDevice(device);
         {

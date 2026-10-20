@@ -1049,11 +1049,12 @@ static TsStereoFrame grain_process(const TsSisterFxTiming *engine,
         memcpy(state->state_to,target,sizeof(target));
         state->state_density_from=state->density_hz_current;
         state->state_density_to=ts_sister_grain_density_hz(target[1]);
-        state->state_total=state->state_remaining=state->state_serial?(uint32_t)(control->grain_states.seconds*engine->sample_rate):0;
+        state->state_total=state->state_remaining=state->state_serial && !control->grain_states.editing?
+            (uint32_t)(control->grain_states.seconds*engine->sample_rate):0;
     }
     /* Manual parameter edits cancel the current recall. A subsequent recall
        starts at the audible position, including when the old ramp is unfinished. */
-    if(state->state_remaining && memcmp(state->state_to,target,sizeof(target)))state->state_remaining=0;
+    if(state->state_remaining && (control->grain_states.editing || memcmp(state->state_to,target,sizeof(target))))state->state_remaining=0;
     if(state->state_remaining) {
         float t=1.0f-(float)(--state->state_remaining)/(float)state->state_total;
         for(int p=0;p<3;++p)target[p]=state->state_from[p]+(state->state_to[p]-state->state_from[p])*t;

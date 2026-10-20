@@ -1717,6 +1717,13 @@ Types may be duplicated in any combination. Every slot owns independent state an
 | Grain | Size, Density, Pitch, Mix, Gain | 8–1000 ms grains, 0.25–120 events/s, ±24 semitones, 24 voices |
 | Transient | Attack, Sustain, Response, Mix, Gain | stereo-linked envelope shaping |
 
+Grain's five state squares save Size, Density and Pitch. Left-click an empty square
+to capture; click another saved square to recall it over the GLIDE time. To change
+a saved state, right-click it (blue), adjust the sound (amber), then left-click the
+same square to save (green). Right-click editing interrupts GLIDE so you can hear
+the stored sound immediately. Shift-click explicitly overwrites any square;
+middle-click clears it. The other saved states stay intact.
+
 ### Placement
 
 - **PRE** processes only newly arriving source material before INPUT, the write head,

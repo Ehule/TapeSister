@@ -33,10 +33,12 @@ static int sister_grain_event(SDL_AudioDeviceID device,AudioState *audio,TsUiSta
     TsGrainStates *bank=&slot->grain_states;
     if(hit.action==TS_SISTER_UI_ACTION_GRAIN_STATE) {
         int state=hit.index&255;if(state>=TS_GRAIN_STATES)return 1;
+        int save=(bank->selected==state+1 && (bank->editing || ts_grain_state_changed(slot))) ||
+            !(bank->captured&(1u<<state));
         if(motion) {
             if(bank->captured&(1u<<state))snprintf(sister->model.status,sizeof(sister->model.status),
-                "STATE %d: %.0F MS / %.1F HZ / %+.1F ST / CLICK PLAY / RIGHT EDIT / SHIFT SAVE / MIDDLE CLEAR",state+1,
-                ts_sister_grain_size_ms(bank->value[state][0]),ts_sister_grain_density_hz(bank->value[state][1]),ts_sister_grain_pitch_semitones(bank->value[state][2]));
+                "STATE %d: %.0F MS / %.1F HZ / %+.1F ST / CLICK %s / RIGHT EDIT / SHIFT SAVE / MIDDLE CLEAR",state+1,
+                ts_sister_grain_size_ms(bank->value[state][0]),ts_sister_grain_density_hz(bank->value[state][1]),ts_sister_grain_pitch_semitones(bank->value[state][2]),save?"SAVE":"PLAY");
             else snprintf(sister->model.status,sizeof(sister->model.status),"STATE %d EMPTY / CLICK TO CAPTURE SIZE, DENSITY AND PITCH",state+1);
             return 0;
         }
@@ -45,12 +47,20 @@ static int sister_grain_event(SDL_AudioDeviceID device,AudioState *audio,TsUiSta
         if(event->button.button==SDL_BUTTON_MIDDLE) {
             bank->captured&=(uint8_t)~(1u<<state);
             if(bank->selected==state+1)bank->selected=bank->editing=0;
-        } else if(event->button.button==SDL_BUTTON_RIGHT)ts_grain_state_recall(slot,state,1);
+            snprintf(sister->model.status,sizeof(sister->model.status),"GRAIN STATE %d EMPTY / LIVE SOUND AND OTHER STATES KEPT",state+1);
+        } else if(event->button.button==SDL_BUTTON_RIGHT) {
+            ts_grain_state_recall(slot,state,1);
+            snprintf(sister->model.status,sizeof(sister->model.status),"EDIT GRAIN STATE %d / ADJUST SIZE, DENSITY OR PITCH / LEFT-CLICK THIS STATE TO SAVE",state+1);
+        }
         else if(event->button.button==SDL_BUTTON_LEFT) {
-            if((SDL_GetModState()&KMOD_SHIFT) || !(bank->captured&(1u<<state)))ts_grain_state_capture(slot,state);
-            else ts_grain_state_recall(slot,state,0);
+            if((SDL_GetModState()&KMOD_SHIFT) || save) {
+                ts_grain_state_capture(slot,state);
+                snprintf(sister->model.status,sizeof(sister->model.status),"GRAIN STATE %d SAVED / RIGHT-CLICK TO EDIT / MIDDLE-CLICK TO CLEAR",state+1);
+            } else {
+                ts_grain_state_recall(slot,state,0);
+                snprintf(sister->model.status,sizeof(sister->model.status),"GRAIN STATE %d / GLIDE %.2F S / RIGHT-CLICK TO EDIT",state+1,bank->seconds);
+            }
         } else return 1;
-        snprintf(sister->model.status,sizeof(sister->model.status),"GRAIN STATE %d / RIGHT-CLICK EDIT / SHIFT-CLICK SAVE / MIDDLE-CLICK CLEAR",state+1);
     } else {
         if(motion && !sister->grain_time_drag) {
             snprintf(sister->model.status,sizeof(sister->model.status),"GRAIN GLIDE %.2F S / DRAG OR WHEEL / RIGHT-CLICK INSTANT / MAX 10 MIN",bank->seconds);return 0;

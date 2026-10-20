@@ -24,6 +24,14 @@ static void test_grain_state_dsp(void)
     slot->parameter_c=.5f;ts_sister_post_fx_set_controls(&engine,&controls);
     ts_sister_post_fx_process(&engine,3,(TsStereoFrame){.1f,.2f},0);assert(!grain->state_remaining);
     assert(ts_grain_state_changed(slot));ts_grain_state_capture(slot,1);assert(!ts_grain_state_changed(slot));
+    /* Editing interrupts a long performance glide, even when recalling the
+       same target. Keep dezippering and the existing grain history. */
+    assert(ts_grain_state_recall(slot,0,0));ts_sister_post_fx_set_controls(&engine,&controls);
+    ts_sister_post_fx_process(&engine,3,(TsStereoFrame){.1f,.2f},0);assert(grain->state_remaining==1999);
+    assert(ts_grain_state_recall(slot,0,1));ts_sister_post_fx_set_controls(&engine,&controls);
+    ts_sister_post_fx_process(&engine,3,(TsStereoFrame){.1f,.2f},0);assert(!grain->state_remaining && grain->data==buffer);
+    for(int i=0;i<200;++i)ts_sister_post_fx_process(&engine,3,(TsStereoFrame){.1f,.2f},0);
+    assert(fabsf(grain->pitch_current-.25f)<.001f && slot->grain_states.seconds==2);
     ts_sister_post_fx_free(&engine);
 }
 static void test_grain_state_ui(void)
@@ -46,8 +54,30 @@ static void test_grain_state_ui(void)
     assert(mouse(SDL_MOUSEBUTTONDOWN,395,y));assert(slot->parameter_c==captured && slot->grain_states.selected==1);
     SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.button=SDL_BUTTON_RIGHT;e.button.x=395;e.button.y=y;
     assert(sister_pedalboard_event(0,&audio,&ui,&sister,&e));assert(slot->grain_states.editing);
+    ts_sister_ui_render(&frame,&sister.model,&ui.palette);assert(frame.pixels[y*TS_UI_WIDTH+395]==0xff4387deu); /* blue */
+    slot->parameter_c=.6f;
+    ts_sister_ui_render(&frame,&sister.model,&ui.palette);assert(frame.pixels[y*TS_UI_WIDTH+395]==0xffe5a53au); /* amber */
+    uint32_t recall=slot->grain_states.recall_serial;
+    assert(mouse(SDL_MOUSEBUTTONDOWN,395,y));
+    assert(slot->grain_states.value[0][2]==.6f && !ts_grain_state_changed(slot) && !slot->grain_states.editing);
+    assert(slot->grain_states.recall_serial==recall && slot->grain_states.value[1][2]==.75f);
+    ts_sister_ui_render(&frame,&sister.model,&ui.palette);assert(frame.pixels[y*TS_UI_WIDTH+395]==0xff4ac16cu); /* green */
+    /* A direct live edit is amber too, and saves with the same plain click. */
+    slot->parameter_c=.65f;assert(mouse(SDL_MOUSEBUTTONDOWN,395,y));assert(slot->grain_states.value[0][2]==.65f);
+    assert(mouse(SDL_MOUSEBUTTONDOWN,417,y));assert(slot->parameter_c==.75f);
+    assert(mouse(SDL_MOUSEBUTTONDOWN,395,y));assert(slot->parameter_c==.65f);
+    /* Unchanged blue exits editing on save; Shift still explicitly overwrites
+       any state, and middle clearing keeps the other saved sounds. */
+    assert(sister_pedalboard_event(0,&audio,&ui,&sister,&e));assert(slot->grain_states.editing);
+    assert(mouse(SDL_MOUSEBUTTONDOWN,395,y));assert(!slot->grain_states.editing && slot->parameter_c==.65f);
     slot->parameter_c=.6f;SDL_SetModState(KMOD_SHIFT);assert(mouse(SDL_MOUSEBUTTONDOWN,395,y));SDL_SetModState(KMOD_NONE);
-    assert(slot->grain_states.value[0][2]==.6f && !ts_grain_state_changed(slot));
+    assert(slot->grain_states.value[0][2]==.6f);
+    e.button.x=439;e.button.button=SDL_BUTTON_RIGHT;assert(sister_pedalboard_event(0,&audio,&ui,&sister,&e));
+    assert(slot->parameter_c==.6f && slot->grain_states.editing && slot->grain_states.captured==3);
+    slot->parameter_c=.8f;assert(mouse(SDL_MOUSEBUTTONDOWN,439,y));assert(slot->grain_states.captured==7);
+    e.button.button=SDL_BUTTON_MIDDLE;assert(sister_pedalboard_event(0,&audio,&ui,&sister,&e));
+    assert(slot->grain_states.captured==3 && slot->parameter_c==.8f && !slot->grain_states.selected);
+    e.button.button=SDL_BUTTON_RIGHT;
     assert(mouse(SDL_MOUSEBUTTONDOWN,619,y));assert(slot->grain_states.seconds>599);
     assert(mouse(SDL_MOUSEBUTTONUP,619,y) && !sister.grain_time_drag);
     e.button.x=519;assert(sister_pedalboard_event(0,&audio,&ui,&sister,&e));assert(slot->grain_states.seconds==0);
@@ -71,7 +101,7 @@ static void test_grain_state_ui(void)
     assert(sister.model.parameters.fx.slot[0].grain_states.captured==3);
     if(getenv("TS_GRAIN_SCREENSHOT")) {
         slot=&sister.model.parameters.fx.slot[0];ts_grain_state_capture(slot,2);ts_grain_state_recall(slot,2,1);
-        snprintf(sister.model.status,sizeof(sister.model.status),"GRAIN STATES / CLICK RECALL / RIGHT EDIT / SHIFT SAVE / MIDDLE CLEAR");
+        snprintf(sister.model.status,sizeof(sister.model.status),"GRAIN STATES / RIGHT EDIT / CLICK BLUE OR AMBER TO SAVE / MIDDLE CLEAR");
         ts_sister_ui_render(&frame,&sister.model,&ui.palette);assert(ts_ui_write_ppm(&frame,getenv("TS_GRAIN_SCREENSHOT")));
     }
     sister.model.parameters=saved;ts_sister_runtime_set_parameters(&audio.sister,&saved);
