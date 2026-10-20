@@ -92,11 +92,11 @@ static void mw_visual(TsUiState *ui,const TsMandalaConfig *c)
 static uint32_t *mw_parameter(TsMandalaConfig *c,int index)
 {
     switch(index){case 0:return &c->density;case 1:return &c->scale;case 2:return &c->motion;case 3:return &c->trails;
-        case 4:return &c->video_mix;case 5:return &c->video_scale;case 6:return &c->video_rotation;default:return &c->video_response;}
+        case 4:return &c->video_mix;case 5:return &c->video_scale;case 6:return &c->video_rotation;case 7:return &c->video_response;default:return &c->video_filter;}
 }
 static int mw_min(int index){return index==0?10:index==1?50:0;}
 static int mw_max(int index){return index==1?150:100;}
-static int mw_default(int index){return index<2?100:index==4?75:50;}
+static int mw_default(int index){return index<2?100:index==4?75:index==5?20:index==8?0:50;}
 static void mw_slider(TsMandalaConfig *c,int drag,int x)
 {
     if(drag<=3) {
@@ -137,15 +137,15 @@ static void mw_video_paint(const TsMandalaConfig *c)
     mw_button(180,205,146,"RESTART",0);
     mw_button(340,205,146,c->video_loop?"LOOP ON":"LOOP OFF",c->video_loop);
     TsMandalaConfig values=*c;
-    for(int i=0;i<4;++i) {
+    for(int i=0;i<5;++i) {
         int x=20+(i%2)*330,y=263+(i/2)*70,value=(int)*mw_parameter(&values,i+4);
-        snprintf(line,sizeof(line),"%s  %d",(const char*[]){"VIDEO BLEND","VIDEO ZOOM","ROTATION","AUDIO RESPONSE"}[i],value);mw_text(x,y,line,0xD9CFDE,1);
+        snprintf(line,sizeof(line),"%s  %d",(const char*[]){"VIDEO BLEND","VIDEO ZOOM","ROTATION","AUDIO RESPONSE","PALETTE FILTER"}[i],value);mw_text(x,y,line,0xD9CFDE,1);
         mw_rect(x,y+19,300,6,0x100D15);mw_rect(x,y+19,value*3,6,0x9776A5);mw_rect(x+value*3-2,y+14,4,16,0xE9C58C);
     }
-    mw_text(20,402,"THE CLIP KEEPS ITS OWN RHYTHM. YOUR MUSIC SHAPES THE LENS.",0xE9C58C,1);
-    mw_text(20,425,"PAUSE HOLDS A FRAME WHILE THE MANDALA KEEPS MOVING.",0xBCAFBC,1);
-    mw_text(20,448,"ROTATION: 50 IS STILL. LOWER / HIGHER REVERSES DIRECTION.",0xBCAFBC,1);
-    mw_text(20,471,"SAVE YOUR PROJECT TO RECALL THE FILE AND THIS LOOK.",0xBCAFBC,1);
+    mw_text(350,403,"0 ORIGINAL / 100 MANDALA COLORS",0xBCAFBC,1);
+    snprintf(line,sizeof(line),"PALETTE: %s",ts_mandala_palette_name(c->palette));mw_text(350,424,line,0xE9C58C,1);
+    mw_text(20,451,"ZOOM: 0 FULL FRAME / 20 GENTLE / 50+ KALEIDOSCOPE",0xBCAFBC,1);
+    mw_text(20,471,"CHOOSE FILTER COLORS IN FORM. ROTATION: 50 IS STILL.",0xBCAFBC,1);
 }
 static void mw_paint(const TsMandalaConfig *c)
 {
@@ -207,6 +207,7 @@ static void mandala_editor_update(const TsMandalaConfig *c)
 static int mw_slider_hit(int x,int y)
 {
     if(mandala_editor.video_tab) {
+        if(x>=16 && x<=324 && y>=411 && y<=442)return 12;
         if(x>=16 && x<=654 && y>=271 && y<=372) {int row=(y-271)/70,col=(x-16)/330;
             if(row<2 && col<2 && (y-271)%70<32 && (x-16)%330<=308)return 8+row*2+col;}
         return 0;
@@ -237,7 +238,8 @@ static int mandala_editor_event(SDL_Event *e,TsUiState *ui,TsMandalaConfig *c)
     if(e->type==SDL_MOUSEMOTION) {
         int x=e->motion.x,y=e->motion.y;
         if(mandala_editor.drag)mw_slider(c,mandala_editor.drag,x);
-        mandala_editor.hint=mandala_editor.video_tab?NULL:y>=140 && y<185?"SEVEN INK COLORS AND A BACKDROP. EDITING CREATES A CUSTOM PALETTE.":
+        mandala_editor.hint=mandala_editor.video_tab?(y>=393 && y<443?"PALETTE FILTER: REMAP THE FOOTAGE'S SHADING INTO YOUR FORM COLORS.":
+            y>=253 && y<303 && x>=350?"PULL LEFT TO RECOGNIZE THE FOOTAGE. RIGHT TO FOLD AND MAGNIFY IT.":NULL):y>=140 && y<185?"SEVEN INK COLORS AND A BACKDROP. EDITING CREATES A CUSTOM PALETTE.":
             y>=315 && y<370?"CHOOSE THE REPEATING FORMS. AUDIO AND PEDALS KEEP SHAPING THEM.":
             y>=490 && y<515?"SYMMETRY / EVOLUTION: LEFT-CLICK +, RIGHT-CLICK -, OR USE THE WHEEL.":NULL;
         mandala_editor.dirty=1;

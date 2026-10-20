@@ -33,11 +33,12 @@ recenter a 960x600 window on the primary display. Physical projector, DPI and
 window-manager behavior still require platform testing.
 
 The first-run mode is Economy. Quality, monitor and fullscreen preference live
-in `tapesister.ini`. The project sidecar stores `Mandala.Version=3`, a
+in `tapesister.ini`. The project sidecar stores `Mandala.Version=4`, a
 64-bit nonzero seed, palette 0–5, symmetry 4–12, evolution period 30–1800
 seconds and the editor's colors/form controls. Version-1 Mandala projects migrate
 to the same original palette and default form controls; projects saved with
-version 3 require a build that supports video. Filename changes do not affect identity. Legacy projects initialize an
+version 4 require a build that supports the video palette filter. Version-3
+projects load with their saved video controls and the filter off. Filename changes do not affect identity. Legacy projects initialize an
 identity that becomes permanent on the next save. Invalid or unknown visual
 fields/versions reject the load transaction rather than partially applying it.
 Frame history and display configuration are never written into a project.

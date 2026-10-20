@@ -14,7 +14,7 @@ typedef struct {
     uint32_t version, palette, symmetry, cycle_seconds;
     uint32_t shape, density, scale, trails, motion;
     uint32_t custom_rgb[TS_MANDALA_COLORS];
-    uint32_t video_enabled, video_loop, video_mix, video_scale, video_rotation, video_response;
+    uint32_t video_enabled, video_loop, video_mix, video_scale, video_rotation, video_response, video_filter;
     char video_path[1024];
 } TsMandalaConfig;
 const char *ts_mandala_palette_name(unsigned palette);

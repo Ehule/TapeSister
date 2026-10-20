@@ -365,7 +365,7 @@ static void editor_checks(SDL_Window *window)
 static void video_lens_checks(void)
 {
     TsMandalaConfig config;ts_mandala_default(&config);config.seed=42;
-    config.video_enabled=1;config.video_mix=100;config.trails=100;config.symmetry=5;
+    config.video_enabled=1;config.video_mix=100;config.video_scale=50;config.trails=100;config.symmetry=5;
     Mandala *m=calloc(1,sizeof(*m));assert(m && m_init(m,&config,0));
     SDL_Surface *source=SDL_CreateRGBSurfaceWithFormat(0,8,8,32,SDL_PIXELFORMAT_ARGB8888);assert(source);
     SDL_FillRect(source,NULL,0xFFA04020);m->video_texture=SDL_CreateTextureFromSurface(m->renderer,source);SDL_FreeSurface(source);
@@ -375,8 +375,30 @@ static void video_lens_checks(void)
     SDL_SetRenderTarget(m->renderer,m->history);Uint32 pixel=0;SDL_Rect point={m->width/2+20,m->height/2+10,1,1};
     assert(!SDL_RenderReadPixels(m->renderer,&point,SDL_PIXELFORMAT_ARGB8888,&pixel,4));
     assert(((pixel>>16)&255)>80 && ((pixel>>8)&255)>20); /* Long trails retain visible video. */
+    /* All four source corners survive full pullback, in both aspect ratios,
+       even with maximum Form Size, rotation, stereo drift and deformation. */
+    m->config.video_scale=0;m->config.scale=150;m->config.video_rotation=100;
+    m->time=90;m->motion_time=90;m->features.balance=1;
+    for(int fx=0;fx<TS_MANDALA_EFFECTS;++fx)m->effects.wet[fx]=1;
+    for(int portrait=0;portrait<2;++portrait) {
+        int w=portrait?40:80,h=portrait?80:40;
+        source=SDL_CreateRGBSurfaceWithFormat(0,w,h,32,SDL_PIXELFORMAT_ARGB8888);assert(source);
+        const Uint32 colors[]={0xFFFF0000,0xFF00FF00,0xFF0000FF,0xFFFFFF00};
+        for(int i=0;i<4;++i){SDL_Rect rect={(i%2)*w/2,(i/2)*h/2,w/2,h/2};SDL_FillRect(source,&rect,colors[i]);}
+        SDL_DestroyTexture(m->video_texture);m->video_texture=SDL_CreateTextureFromSurface(m->renderer,source);SDL_FreeSurface(source);
+        SDL_SetTextureBlendMode(m->video_texture,SDL_BLENDMODE_BLEND);
+        SDL_SetRenderDrawColor(m->renderer,0,0,0,255);SDL_RenderClear(m->renderer);m_video_scene(m,255,1);
+        /* Expected fitted extent: landscape 94% width, portrait 94% height. */
+        float fw=portrait?m->height*.94f*.5f:m->width*.94f,fh=portrait?m->height*.94f:m->width*.94f*.5f;
+        for(int i=0;i<4;++i) {
+            point=(SDL_Rect){(int)(m->width*.5f+((i%2)?1:-1)*fw*.45f),(int)(m->height*.5f+((i/2)?1:-1)*fh*.45f),1,1};
+            assert(!SDL_RenderReadPixels(m->renderer,&point,SDL_PIXELFORMAT_ARGB8888,&pixel,4));assert(pixel==colors[i]);
+        }
+        point=(SDL_Rect){portrait?m->width/4:m->width/2,portrait?m->height/2:2,1,1};
+        assert(!SDL_RenderReadPixels(m->renderer,&point,SDL_PIXELFORMAT_ARGB8888,&pixel,4));assert((pixel&0xffffff)==0);
+    }
     SDL_SetRenderTarget(m->renderer,NULL);m_destroy(m);free(m);
-    puts("textured kaleidoscope visible with odd symmetry and maximum trails: PASS");
+    puts("video: odd-symmetry trails and full-frame landscape/portrait framing without clipping or stretching PASS");
 }
 static void video_pump(unsigned milliseconds,TsMandalaPreferences *prefs)
 {
@@ -390,6 +412,12 @@ static void video_checks(SDL_Window *window)
     editor_click(370,20,SDL_BUTTON_LEFT);assert(mandala_editor.video_tab);
     editor_click(170,285,SDL_BUTTON_LEFT);assert(a.sister.mandala.video_mix==50);
     editor_key(SDLK_z,KMOD_CTRL);assert(a.sister.mandala.video_mix==75);
+    editor_click(350,285,SDL_BUTTON_LEFT);assert(!a.sister.mandala.video_scale);
+    editor_click(350,285,SDL_BUTTON_RIGHT);assert(a.sister.mandala.video_scale==20);
+    editor_click(320,425,SDL_BUTTON_LEFT);assert(a.sister.mandala.video_filter==100);
+    editor_key(SDLK_z,KMOD_CTRL);assert(!a.sister.mandala.video_filter);
+    editor_key(SDLK_y,KMOD_CTRL);assert(a.sister.mandala.video_filter==100);
+    editor_click(170,425,SDL_BUTTON_RIGHT);assert(!a.sister.mandala.video_filter);
     editor_click(390,215,SDL_BUTTON_LEFT);assert(!a.sister.mandala.video_loop);
     editor_click(40,75,SDL_BUTTON_LEFT);assert(u.browser.mode==TS_BROWSER_LOAD_VIDEO);
     snprintf(u.browser.directory,sizeof(u.browser.directory),"%s",TS_VIDEO_FIXTURE);
@@ -406,6 +434,7 @@ static void video_checks(SDL_Window *window)
     video_pump(250,&prefs);assert(ts_mandala_video_status().position_ms>0);
     editor_click(40,215,SDL_BUTTON_LEFT);assert(ts_mandala_video_paused());video_pump(250,&prefs);
     unsigned held=ts_mandala_video_status().position_ms,frames=atomic_load(&host.shared->frames);
+    editor_click(230,425,SDL_BUTTON_LEFT);assert(a.sister.mandala.video_filter==70);
     video_pump(300,&prefs);assert(ts_mandala_video_status().position_ms==held && atomic_load(&host.shared->frames)>frames);
     ts_mandala_freeze();video_pump(250,&prefs);frames=atomic_load(&host.shared->frames);
     video_pump(250,&prefs);assert(atomic_load(&host.shared->frames)==frames);ts_mandala_freeze();
@@ -432,6 +461,7 @@ int main(int argc,char **argv)
             argc>4?atoi(argv[4]):10,argc>5?atoi(argv[5]):1);
     } else if(argc>2 && !strcmp(argv[1],"--editor-capture")) {
         a.sister.mandala.palette=4;a.sister.mandala.shape=1;
+        if(argc>4)a.sister.mandala.video_filter=(uint32_t)atoi(argv[4]);
         mandala_editor_show(&u,&a.sister.mandala);
         if(argc>3){mandala_editor.video_tab=1;snprintf(a.sister.mandala.video_path,sizeof(a.sister.mandala.video_path),"%s",argv[3]);a.sister.mandala.video_enabled=1;TsMandalaPreferences prefs={0};assert(ts_mandala_open(&a.sister.mandala,&prefs,error,sizeof(error)));video_pump(700,&prefs);}
         mandala_editor_update(&a.sister.mandala);
