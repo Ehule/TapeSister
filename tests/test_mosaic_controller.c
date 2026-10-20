@@ -84,6 +84,7 @@ static void wait_render(void);
 #include "test_mosaic_scroll.inc"
 #include "test_mosaic_scroll_cards.inc"
 #include "test_mosaic_arranging.inc"
+#include "test_mosaic_performance_edit.inc"
 #include "test_mosaic_controls.inc"
 #include "test_mosaic_volume_controls.inc"
 #include "test_mosaic_routing.inc"
@@ -102,7 +103,7 @@ static void wait_render(void);
 #include "test_fm_preview_controller.inc"
 static void test_canvas_feedback(SDL_Window *window)
 {
-    TsMosaic *saved=ui.mosaic,*scene=ts_mosaic_create();assert(scene);ui.mosaic=audio.mosaic=scene;
+    TsMosaic *saved=ui.mosaic,*scene=ts_mosaic_create();assert(scene);scene->auto_space=1;ui.mosaic=audio.mosaic=scene;
     char error[160];TsMosaicSource *source=ts_mosaic_source(scene,&instrument.current,error,sizeof(error));assert(source);
     TsMosaicEvent *a=ts_mosaic_add(scene,source,.5,20);a->duration=2;
     TsMosaicEvent *b=ts_mosaic_add(scene,source,1,130);b->duration=3;
@@ -408,6 +409,7 @@ int main(int argc,char **argv)
     }
     uint64_t original=ts_sample_hash(&instrument.current);
     ui.mosaic=audio.mosaic=ts_mosaic_create();ui.mosaic_scale=24;ui.mosaic_open=1;
+    if(argc>1 && !strcmp(argv[1],"--arrange")) {test_mosaic_performance_edit(window);goto done;}
     TsMosaicSource *source=ts_mosaic_source(ui.mosaic,&instrument.current,error,sizeof(error));assert(source);
     TsMosaicEvent *a=ts_mosaic_add(ui.mosaic,source,0,0);a->duration=6;
     TsMosaicEvent *b=ts_mosaic_copy(ui.mosaic,a->id,.25,105);b->duration=9;
@@ -450,6 +452,7 @@ int main(int argc,char **argv)
     test_record_file(window,-1,0,0);
     test_record_file(window,580,389,1);
     ts_mosaic_volume_action(ui.mosaic,TS_MOSAIC_ENV_RESET);
+    test_mosaic_performance_edit(window);
     test_canvas_gestures(window);
     test_mosaic_copy_drag(window);
     test_mosaic_external_banks(window);

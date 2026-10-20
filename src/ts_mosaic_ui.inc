@@ -11,6 +11,8 @@ static void mosaic_button(TsFramebuffer *fb,int x,int y,int w,const char *label,
     rect(fb,x,y,w,h,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(64,54,70)));rect(fb,x+2,y+2,w-4,h-4,active?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(45,65,66)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(46,39,51)));
     text(fb,x+(w-(int)strlen(label)*6)/2,y+(h-7)/2,label,active?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DATA2, RGB(134,214,205)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_TEXT, RGB(210,199,217)),1);
 }
+#include "ts_mosaic_arrange_ui.inc"
+
 static void mosaic_canvas_rect(TsFramebuffer *fb,int x,int y,int w,int h,uint32_t color)
 {
     int right=x+w,bottom=y+h;
@@ -266,12 +268,17 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
     mosaic_button(fb,TS_MOSAIC_FIT_X,39,TS_MOSAIC_FIT_W,"FIT ALL",0,1);
     mosaic_button(fb,TS_MOSAIC_ZOOM_OUT_X,39,TS_MOSAIC_ZOOM_W,"-",0,1);
     mosaic_button(fb,TS_MOSAIC_ZOOM_IN_X,39,TS_MOSAIC_ZOOM_W,"+",0,1);
+    rect(fb,118,57,8,8,RGB(112,105,122));rect(fb,119,58,6,6,RGB(26,26,33));
+    if(m && m->auto_space)rect(fb,120,59,4,4,RGB(129,206,200));
+    text(fb,130,58,"AUTO-SPACE",RGB(166,155,178),1);
     static TsWaveformCache source_cache[16];
     (void)instrument;
     for(int i=0;i<16;++i) {
         int x=10+(i%2)*49,y=74+(i/2)*34,n=ui->mosaic_source_offset+i;
         const TsSample *sample=n<ui->mosaic_source_count?ui->mosaic_sources[n].sample:NULL;
         int selected=sample && n==ui->mosaic_source_selected;
+        for(int pick=0;sample && pick<ui->mosaic_source_pick_count;++pick)
+            if(ui->mosaic_source_picks[pick]==ui->mosaic_sources[n].hash)selected=1;
         uint32_t color=sample?mosaic_color(ui->mosaic_sources[n].hash):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DATA2, RGB(135,171,174));
         rect(fb,x,y,44,28,selected?ts_theme_legacy(&ui->palette,TS_THEME_MOSAIC,TS_COLOR_FOCUS,TS_PALETTE_MOSAIC_HIGHLIGHT):sample?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(40,36,44)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(23,23,28)));
         if(selected)rect(fb,x+2,y+2,40,24,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(51,47,59)));
@@ -297,7 +304,7 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
         size_t seconds=ui->input_sample_rate?ui->capture_recorded_frames/ui->input_sample_rate:0;
         snprintf(label,sizeof(label),"%02zu:%02zu / %s",seconds/60,seconds%60,length);
     } else snprintf(label,sizeof(label),"LENGTH %s",length);
-    text(fb,118,58,label,ui->mosaic_recording?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_RECORD, RGB(230,138,100)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DIM, RGB(167,154,179)),1);
+    text(fb,TS_MOSAIC_LENGTH_LABEL_X,58,label,ui->mosaic_recording?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_RECORD, RGB(230,138,100)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DIM, RGB(167,154,179)),1);
     mosaic_slider(fb,TS_MOSAIC_LENGTH_X,58,TS_MOSAIC_LENGTH_W,
         ts_mosaic_record_length_normalized(ui->config.mosaic_record_seconds),0,!ui->mosaic_recording);
     snprintf(label,sizeof(label),"%.54s",ui->status[0]?ui->status:"LENGTH: 10S-60MIN / INF; WHEEL: 10S; SHIFT: 1S");
@@ -318,9 +325,11 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
         /* Keep the logical renderer for disabled/unavailable native surfaces. */
         for(int i=0;i<ui->mosaic_ghost_count;++i)mosaic_card(fb,ui,&ui->mosaic_ghosts[i],0,0,1);
         if(m)for(int i=0;i<TS_MOSAIC_EVENTS;++i) {
-            const TsMosaicEvent *e=&m->events[i];if(!e->id)continue;
+            const TsMosaicEvent *e=&m->events[i];if(!e->id || e->id==ui->mosaic_selected)continue;
             mosaic_card(fb,ui,e,e->id==ui->mosaic_selected || e->id==ui->mosaic_selection[i],e->muted || (any_solo && !e->solo),0);
         }
+        const TsMosaicEvent *primary=m?ts_mosaic_find(ui->mosaic,ui->mosaic_selected):NULL;
+        if(primary)mosaic_card(fb,ui,primary,1,primary->muted || (any_solo && !primary->solo),0);
         mosaic_recording_card(fb,NULL,ui);
     }
     mosaic_detail_sources(fb,ui,interval);
@@ -340,6 +349,7 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
         double seconds=ui->file_record_rate?(double)ui->file_record_frames/ui->file_record_rate:0;
         snprintf(label,sizeof(label),"REC %05.1fs",seconds);text(fb,552,386,label,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_RECORD, RGB(231,122,130)),1);
     }
+    mosaic_arrange_overlay(fb,ui);
 }
 
 void ts_ui_render_mosaic_choice(TsFramebuffer *fb,const TsUiState *ui)

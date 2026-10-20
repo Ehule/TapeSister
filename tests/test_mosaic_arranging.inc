@@ -4,7 +4,7 @@ static int mosaic_event_count(const TsMosaic *m)
 }
 static void test_mosaic_copy_drag(SDL_Window *window)
 {
-    TsMosaic *saved=ui.mosaic,*scene=ts_mosaic_create();assert(scene);ui.mosaic=audio.mosaic=scene;
+    TsMosaic *saved=ui.mosaic,*scene=ts_mosaic_create();assert(scene);scene->auto_space=1;ui.mosaic=audio.mosaic=scene;
     char error[160];TsMosaicSource *source=ts_mosaic_source(scene,&instrument.current,error,sizeof(error));assert(source);
     TsMosaicEvent *a=ts_mosaic_add(scene,source,.5,20);a->duration=2;a->looping=0;
     TsMosaicEvent *b=ts_mosaic_add(scene,source,1,130);b->duration=3;b->note_count=2;b->notes[1]=67;

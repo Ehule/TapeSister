@@ -4,6 +4,7 @@ static void mosaic_poll(SDL_AudioDeviceID device,TsUiState *ui,
     if(!ui->mosaic)return;
     if(!ui->mosaic_open || c->active)c->mix_drag=c->mix_changed=c->volume_drag=0;
     if(device)SDL_LockAudioDevice(device);
+    if(!ui->mosaic_open || c->active)ts_mosaic_audition(ui->mosaic,0);
     ui->mosaic_time=ui->mosaic->time;ui->mosaic_playing=ui->mosaic->playing;
     if(device)SDL_UnlockAudioDevice(device);
     if(ui->mosaic_open && !c->active) {
@@ -39,7 +40,7 @@ static void mosaic_poll(SDL_AudioDeviceID device,TsUiState *ui,
 static void mosaic_transport(SDL_AudioDeviceID device,TsUiState *ui,int stop)
 {
     if(device)SDL_LockAudioDevice(device);
-    if(stop){ui->mosaic->playing=0;ts_mosaic_seek(ui->mosaic,0);ui->mosaic_scroll=0;}
+    if(stop){ts_mosaic_audition(ui->mosaic,0);ui->mosaic->playing=0;ts_mosaic_seek(ui->mosaic,0);ui->mosaic_scroll=0;}
     else {
         if(ui->mosaic->time>=ts_mosaic_end(ui->mosaic))ts_mosaic_seek(ui->mosaic,0);
         ui->mosaic->playing=!ui->mosaic->playing;
@@ -71,7 +72,7 @@ static void mosaic_move_group(TsUiState *ui,double dx,double dt,int snap)
         }
         dt=fmin(86400-maxt,fmax(-mint,dt+adjust));
     }
-    for(int pass=0;pass<TS_MOSAIC_EVENTS;++pass) {
+    for(int pass=0;ui->mosaic->auto_space && pass<TS_MOSAIC_EVENTS;++pass) {
         double shift=0;
         for(int j=0;j<ui->mosaic_ghost_count;++j) {
             const TsMosaicEvent *o=&ui->mosaic_ghosts[j];double t=o->start+dt,x=o->x+dx;
@@ -167,6 +168,7 @@ static void mosaic_source_drag(TsUiState *ui,const TsInstrument *instrument,Mosa
     ui->mosaic_source_selected=n;
 }
 
+#include "main_sdl_mosaic_arrange.inc"
 #include "main_sdl_mosaic_controls.inc"
 #include "main_sdl_mosaic_volume.inc"
 
@@ -233,6 +235,8 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
         }
         return down || up || motion || key || event->type==SDL_KEYUP || event->type==SDL_MOUSEWHEEL;
     }
+    if(ui->mosaic_open && (ui->mosaic_scatter_open || ui->mosaic_spacing_confirm))
+        return mosaic_arrange_event(event,window,device,ui,instrument,c,x,y,mod);
     /* Workspace keys are dispatched before panel input. */
     if(mosaic_toggle_key(event))return 0;
     if(ui->router_open || ui_dialog_open(ui) || ui->master_output_dragging)return 0;
@@ -283,6 +287,7 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
     if(main_file_capture_event(event,window,audio,ui,sister,(uint32_t)rate))return 1;
     if(event->type==SDL_WINDOWEVENT && event->window.event==SDL_WINDOWEVENT_FOCUS_LOST)mosaic_drag_end(ui,c);
     mosaic_sources_refresh(ui,instrument,c);
+    if(mosaic_arrange_event(event,window,device,ui,instrument,c,x,y,mod))return 1;
     if(mosaic_volume_event(event,device,ui,c,x,y))return 1;
     if(mosaic_controls_event(event,window,device,ui,c,x,y,mod))return 1;
     if(down && y<32) {
@@ -295,8 +300,8 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
         SDL_Keycode modifier=event->key.keysym.sym;
         if(modifier==SDLK_LSHIFT || modifier==SDLK_RSHIFT || modifier==SDLK_LALT || modifier==SDLK_RALT ||
            modifier==SDLK_LCTRL || modifier==SDLK_RCTRL || modifier==SDLK_LGUI || modifier==SDLK_RGUI)return 1;
-        if(event->key.repeat)return 1;
-        if(c->drag_moved && (c->drag==1 || c->drag==2 || c->drag==4) && event->key.keysym.sym==SDLK_ESCAPE) {
+        if(event->key.repeat && event->key.keysym.sym!=SDLK_UP && event->key.keysym.sym!=SDLK_DOWN)return 1;
+        if(c->drag_moved && (c->drag==1 || c->drag==2 || c->drag==4 || c->drag==6) && event->key.keysym.sym==SDLK_ESCAPE) {
             if(device)SDL_LockAudioDevice(device);ts_mosaic_undo(ui->mosaic,0);if(device)SDL_UnlockAudioDevice(device);
             mosaic_drag_end(ui,c);mosaic_select_only(ui,0);return 1;
         }
@@ -305,13 +310,32 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
         if(k==SDLK_F11 || k==SDLK_TAB || k==SDLK_BACKQUOTE ||
            (k==SDLK_p && (mod&(KMOD_CTRL|KMOD_SHIFT))==(KMOD_CTRL|KMOD_SHIFT)))return 0;
         if(k==SDLK_SPACE){mosaic_transport(device,ui,0);return 1;}
-        if(k==SDLK_ESCAPE){mosaic_transport(device,ui,1);return 1;}
+        if(k==SDLK_ESCAPE){if(device)SDL_LockAudioDevice(device);ts_mosaic_audition(ui->mosaic,0);if(device)SDL_UnlockAudioDevice(device);mosaic_transport(device,ui,1);return 1;}
         if(k==SDLK_s && (mod&KMOD_CTRL)){ui->mosaic_open=0;return 0;}
         if(k==SDLK_f && (mod&(KMOD_CTRL|KMOD_SHIFT))==(KMOD_CTRL|KMOD_SHIFT)) {
             main_file_capture_toggle(audio,ui,sister,(uint32_t)rate);return 1;
         }
         if(device)SDL_LockAudioDevice(device);
-        if(k==SDLK_c && (mod&KMOD_CTRL)) {
+        if(k==SDLK_a && !(mod&(KMOD_ALT|KMOD_GUI))) {
+            if(mod&KMOD_CTRL) {
+                for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(ui->mosaic->events[i].id) {
+                    ui->mosaic_selection[i]=ui->mosaic->events[i].id;
+                    if(!ui->mosaic_selected)ui->mosaic_selected=ui->mosaic_selection[i];
+                }
+            } else if(mod&KMOD_SHIFT) {
+                TsMosaicEvent *e=ts_mosaic_find(ui->mosaic,ui->mosaic_selected);
+                if(e) {mosaic_select_only(ui,e->id);for(int i=0;i<TS_MOSAIC_EVENTS;++i)
+                    if(ui->mosaic->events[i].id && ui->mosaic->events[i].source==e->source)ui->mosaic_selection[i]=ui->mosaic->events[i].id;}
+            } else ts_mosaic_audition(ui->mosaic,ui->mosaic_selected);
+        } else if(k==SDLK_z && !(mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI)))mosaic_zoom_selection(ui,c);
+        else if((k==SDLK_UP || k==SDLK_DOWN) && !(mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI))) {
+            ui->mosaic_ghost_count=0;
+            for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(mosaic_chosen(ui,i))ui->mosaic_ghosts[ui->mosaic_ghost_count++]=ui->mosaic->events[i];
+            if(ui->mosaic_ghost_count) {ts_mosaic_checkpoint(ui->mosaic);mosaic_move_group(ui,0,
+                (k==SDLK_UP?-1:1)*(mod&KMOD_SHIFT?1.0:.1),0);}
+            ui->mosaic_ghost_count=0;
+        } else if(k==SDLK_t && !(mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI)))mosaic_tidy(ui,0);
+        else if(k==SDLK_c && (mod&KMOD_CTRL)) {
             TsMosaicEvent *e=ts_mosaic_find(ui->mosaic,ui->mosaic_selected);
             if(e) {
                 if(c->clipboard_epoch==ui->mosaic->epoch && c->clipboard.source && c->clipboard.source->pins)--c->clipboard.source->pins;
@@ -413,7 +437,10 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
         }
         if(x>=151 && x<TS_MOSAIC_CANVAS_RIGHT && y>=66 && y<376) {
             double time=ui->mosaic_scroll+(y-66)/ui->mosaic_scale,left=(x-151)/horizontal+ui->mosaic_xscroll;
-            for(int i=TS_MOSAIC_EVENTS-1;i>=0;--i) {
+            TsMosaicEvent *primary=ts_mosaic_find(ui->mosaic,ui->mosaic_selected);
+            for(int pass=TS_MOSAIC_EVENTS;pass>=0;--pass) {
+                int i=pass==TS_MOSAIC_EVENTS?(primary?(int)(primary-ui->mosaic->events):-1):pass;
+                if(i<0 || (pass!=TS_MOSAIC_EVENTS && primary==&ui->mosaic->events[i]))continue;
                 TsMosaicEvent *e=&ui->mosaic->events[i];
                 if(!e->id || time<e->start || time>=e->start+e->duration || left<e->x || left>=e->x+e->width)continue;
                 if(!mosaic_chosen(ui,i))mosaic_select_only(ui,e->id);else ui->mosaic_selected=e->id;
@@ -422,7 +449,7 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
                 mosaic_drag_end(ui,c);ui->mosaic_ghost_count=0;
                 for(int n=0;n<TS_MOSAIC_EVENTS;++n)if(mosaic_chosen(ui,n))ui->mosaic_ghosts[ui->mosaic_ghost_count++]=ui->mosaic->events[n];
                 c->drag_copy=(mod&KMOD_SHIFT)!=0;
-                c->drag=c->drag_copy || ui->mosaic_ghost_count>1?1:e->start+e->duration-time<6/ui->mosaic_scale?2:e->x+e->width-left<5/horizontal?4:1;
+                c->drag=c->drag_copy || ui->mosaic_ghost_count>1?1:e->start+e->duration-time<6/ui->mosaic_scale?2:time-e->start<6/ui->mosaic_scale?6:e->x+e->width-left<5/horizontal?4:1;
                 c->drag_x=x;c->drag_y=y;c->drag_start=e->start;c->drag_duration=e->duration;c->drag_left=e->x;c->drag_width=e->width;
                 return 1;
             }
@@ -476,6 +503,10 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
                 double end=c->drag_start+c->drag_duration+delta;
                 if(mod&KMOD_ALT)end=ts_mosaic_snap(ui->mosaic,e->id,end,7/ui->mosaic_scale);
                 e->duration=fmin(86400,fmax(.005,end-e->start));
+            } else if(c->drag==6) {
+                double end=c->drag_start+c->drag_duration,start=c->drag_start+delta;
+                if(mod&KMOD_ALT)start=ts_mosaic_snap(ui->mosaic,e->id,start,7/ui->mosaic_scale);
+                e->start=fmax(fmax(0,end-86400),fmin(end-.005,start));e->duration=end-e->start;
             } else e->width=fmin(460,fmax(36,c->drag_width+(x-c->drag_x)/horizontal));
             ts_mosaic_space(ui->mosaic,e);
         }

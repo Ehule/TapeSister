@@ -798,11 +798,20 @@ visually at the C4 reference speed, while the chord voices follow their own rate
 
 | Action | Control |
 | --- | --- |
+| Audition selected card at its assigned notes / stop preview | A |
+| Fit selection / restore previous view | Z |
+| Select all / select every instance of the current source | Ctrl+A / Shift+A |
+| Nudge selection by 0.1 s / 1 s | Up/Down / Shift+Up/Down |
+| Cycle through overlapping cards | Alt-click |
+| Enable or disable horizontal collision spacing | AUTO-SPACE; enabling requires confirmation |
+| Tidy selected cards horizontally once | T |
+| Scatter cards or copies with a preview | Ctrl+R |
+| Choose sources for Scatter | Ctrl-click sources, then Ctrl+R |
 | Select an event | Click its body; the highlight border is red by default |
 | Select a group | Shift+left-drag a box on empty canvas |
 | Move the selection | Drag any selected event body |
 | Copy an event or selected group | Hold Shift when starting a drag on a tile |
-| Extend duration / change visual width | Drag the bottom / right edge |
+| Extend duration / change visual width | Drag the top or bottom / right edge |
 | Align starts, ends, or midpoints | Hold Alt during a move or duration resize |
 | Mute / solo the selection | M / S |
 | Copy / paste the last-clicked event at the playhead | Ctrl+C / Ctrl+V |
@@ -815,8 +824,9 @@ visually at the C4 reference speed, while the chord voices follow their own rate
 | Keep playhead visible / fit arrangement | FOLLOW / FIT ALL |
 | Repeat the complete arrangement | REPEAT |
 
-Group moves and copies keep relative timing and spacing. Collision handling shifts
-the group sideways rather than changing its start times. A Shift-click without a
+Group moves and copies keep relative timing and spacing. AUTO-SPACE is off for new
+arrangements. When enabled, collision handling shifts the group horizontally while
+keeping start times fixed. Enabling it requires confirmation and can be undone. A Shift-click without a
 drag creates no copies; one Undo removes a copied group. Ctrl+C/Ctrl+V handles the
 last-clicked event, so use Shift-drag for a whole group.
 

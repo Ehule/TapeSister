@@ -168,9 +168,11 @@ static int mosaic_detail_cards(TsFramebuffer *fb,const TsUiState *ui,int any_sol
     }
     for(int i=0;i<ui->mosaic_ghost_count;++i)mosaic_detail_card(d,ui,&ui->mosaic_ghosts[i],0,0,1);
     if(ui->mosaic)for(int i=0;i<TS_MOSAIC_EVENTS;++i) {
-        const TsMosaicEvent *e=&ui->mosaic->events[i];if(!e->id)continue;
+        const TsMosaicEvent *e=&ui->mosaic->events[i];if(!e->id || e->id==ui->mosaic_selected)continue;
         mosaic_detail_card(d,ui,e,e->id==ui->mosaic_selected || e->id==ui->mosaic_selection[i],e->muted || (any_solo && !e->solo),0);
     }
+    const TsMosaicEvent *primary=ui->mosaic?ts_mosaic_find(ui->mosaic,ui->mosaic_selected):NULL;
+    if(primary)mosaic_detail_card(d,ui,primary,1,primary->muted || (any_solo && !primary->solo),0);
     mosaic_recording_card(fb,d,ui);
     d->valid=1;detail_capture_slot(fb,0);return 1;
 }

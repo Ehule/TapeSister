@@ -18,6 +18,12 @@ typedef struct {
     uint32_t seen_revision;
     size_t seen_frames;
     int audio_dirty, resume_exit;
+    TsMosaicEvent picked_sources[TS_MOSAIC_EVENTS], scatter_pool[TS_MOSAIC_EVENTS];
+    int picked_count, scatter_pool_count, scatter_from_sources;
+    uint64_t picked_epoch, scatter_epoch;
+    uint32_t scatter_seed;
+    int zoom_saved;
+    double zoom_scroll, zoom_xscroll, zoom_scale, zoom_hscale;
     int mix_drag, mix_changed;
     int volume_drag;
     double volume_position, volume_end;
@@ -60,6 +66,8 @@ static void mosaic_sources_refresh(TsUiState *ui,const TsInstrument *instrument,
 {
     if(c->ui_epoch!=ui->mosaic->epoch) {
         mosaic_drag_end(ui,c);mosaic_select_only(ui,0);
+        c->picked_count=c->scatter_pool_count=c->zoom_saved=0;
+        ui->mosaic_source_pick_count=ui->mosaic_scatter_open=ui->mosaic_spacing_confirm=0;
         ui->mosaic_source_selected=-1;ui->mosaic_source_page=0;
         memset(c->bank_data,0,sizeof(c->bank_data));c->ui_epoch=ui->mosaic->epoch;c->browser_initialized=0;
     }

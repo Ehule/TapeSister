@@ -7190,7 +7190,7 @@ static const char *path_basename(const char *path)
 
 static int ui_blocking_dialog_open_except_workspaces(const TsUiState *ui)
 {
-    return ui->mosaic_edit_choice || ui->exit_confirm_open || ui->project_overwrite_confirm_open ||
+    return ui->mosaic_scatter_open || ui->mosaic_spacing_confirm || ui->mosaic_edit_choice || ui->exit_confirm_open || ui->project_overwrite_confirm_open ||
            ui->overdub_confirm_open ||
            ui->file_busy || ui->transform_open || ui->drone_open ||
            ui->import_preview_open || ui->load_selection_choice_open ||
@@ -9052,6 +9052,7 @@ typedef struct {
     int fallout_preset_modified;
     int parameter_lock_gesture;
     TsUiPointerDrag parameter_drag;
+    int grain_time_drag; /* Slot + 1; zero means inactive. */
     int fx_scroll_drag, fx_scroll_grab, fx_scroll_repeat;
     Uint32 fx_scroll_next;
     TsPrismBank prism_presets;
@@ -9662,6 +9663,13 @@ static float sister_parameter_wheel_normalized(
     int steps = wheel > 0 ? wheel : -wheel;
     int value;
     if (parameters == NULL || wheel == 0) return 0.0f;
+    int slot_offset=ts_sister_ui_slot_offset(parameter);
+    if(slot_offset>=0 && slot_offset<TS_SISTER_FX_SLOT_COUNT*5 && slot_offset%5==3 &&
+       parameters->fx.slot[slot_offset/5].type==TS_SISTER_FX_GRAIN) {
+        float pitch=ts_sister_grain_pitch_semitones(parameters->fx.slot[slot_offset/5].parameter_c);
+        pitch=fine_adjustment?pitch+wheel*.1f:roundf(pitch)+wheel;
+        return (fmaxf(-24,fminf(24,pitch))+24)/48;
+    }
     switch ((TsSisterUiParameter)parameter) {
     case TS_SISTER_UI_PARAM_PRISM_OCTAVE:
         value=parameters->prism.group_octave+direction*steps;

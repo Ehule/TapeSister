@@ -146,7 +146,7 @@ static int mosaic_record_length_event(const SDL_Event *event,SDL_Window *window,
         int rx,ry;SDL_GetMouseState(&rx,&ry);logical_mouse(window,rx,ry,&x,&y);
 #endif
     } else return 0;
-    if(!ui->mosaic_record_length_drag && (y<56 || y>=66 || x<118 || x>=TS_MOSAIC_LENGTH_X+TS_MOSAIC_LENGTH_W))return 0;
+    if(!ui->mosaic_record_length_drag && (y<56 || y>=66 || x<TS_MOSAIC_LENGTH_LABEL_X || x>=TS_MOSAIC_LENGTH_X+TS_MOSAIC_LENGTH_W))return 0;
     if(external_capture_busy(input)) {
         ui->mosaic_record_length_drag=0;
         snprintf(ui->status,sizeof(ui->status),"FINISH THE TAKE BEFORE CHANGING ITS LENGTH");return 1;

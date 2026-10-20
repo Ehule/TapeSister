@@ -60,7 +60,12 @@ typedef struct TsMosaic {
     double history_speed[TS_MOSAIC_HISTORY];
     float volume[TS_MOSAIC_ENVELOPE_POINTS];
     float history_volume[TS_MOSAIC_HISTORY][TS_MOSAIC_ENVELOPE_POINTS];
-    int history_repeat[TS_MOSAIC_HISTORY];
+    int history_repeat[TS_MOSAIC_HISTORY], history_auto_space[TS_MOSAIC_HISTORY];
+    int auto_space; /* New arrangements allow free placement; older files retain spacing. */
+    uint64_t audition_id;
+    double audition_time;
+    int audition_stopping, audition_rate;
+    TsMosaicVoice audition_voice;
     float volume_current;
     int history_count, history_cursor;
     TsMosaicSource *sources;
@@ -94,6 +99,7 @@ TsMosaicEvent *ts_mosaic_add(TsMosaic *m, TsMosaicSource *source,
 TsMosaicEvent *ts_mosaic_copy(TsMosaic *m, uint64_t id, double start, double x);
 void ts_mosaic_delete(TsMosaic *m, uint64_t id);
 void ts_mosaic_space(TsMosaic *m, TsMosaicEvent *e);
+void ts_mosaic_audition(TsMosaic *m, uint64_t id);
 double ts_mosaic_snap(const TsMosaic *m, uint64_t id, double time, double tolerance);
 double ts_mosaic_end(const TsMosaic *m);
 void ts_mosaic_seek(TsMosaic *m, double time);

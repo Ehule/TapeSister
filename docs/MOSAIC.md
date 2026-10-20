@@ -33,8 +33,17 @@ the EVENTS pages. Shared originals and the original Sample banks remain availabl
 
 | Action | Gesture |
 | --- | --- |
+| Audition selected card at its assigned notes / stop preview | A |
+| Fit selection / restore previous view | Z |
+| Select all / select every instance of the current source | Ctrl+A / Shift+A |
+| Nudge selection by 0.1 s / 1 s | Up/Down / Shift+Up/Down |
+| Cycle through overlapping cards | Alt-click |
+| Enable or disable horizontal collision spacing | AUTO-SPACE; enabling requires confirmation |
+| Tidy selected cards horizontally once | T |
+| Scatter cards or copies with a preview | Ctrl+R |
+| Choose sources for Scatter | Ctrl-click sources, then Ctrl+R |
 | Select / move an event | Click / drag its body |
-| Extend the event's playback window | Drag its bottom edge |
+| Extend the event's playback window | Drag its top edge earlier or bottom edge later |
 | Change visual width | Drag its right edge |
 | Align starts, ends or midpoints | Hold Alt while moving or extending |
 | Edit the event | Double-click |
@@ -63,14 +72,18 @@ the EVENTS pages. Shared originals and the original Sample banks remain availabl
 | Fit the arrangement | FIT ALL |
 | Record the final output | REC FILE or Ctrl+Shift+F |
 
-Events that overlap in time occupy separate horizontal space, with a small
-invisible gutter. Collision handling moves only the event being placed and
-never changes its time. Group moves preserve all relative times and positions;
-the group shifts sideways together if it meets another event. Shift-dragging a
+New arrangements start with **AUTO-SPACE off**, allowing cards to overlap visually.
+**Alt-click** cycles through cards at the pointer and brings the selected one forward.
+Older projects retain automatic spacing; the preference is stored with the arrangement.
+Enabling AUTO-SPACE asks for confirmation before separating cards horizontally.
+Start times and durations are preserved, and one Undo restores the layout and preference.
+**T** tidies only the selection without enabling ongoing spacing. With AUTO-SPACE on,
+a small invisible gutter separates intersecting cards. Group moves preserve relative
+times and positions, shifting the whole group sideways when necessary. Shift-dragging a
 tile duplicates the selection, keeping its relative timing, spacing and playback
 settings. The originals stay in place. A click without movement creates no copies;
 one Undo removes the copied group. If there is not enough capacity for the whole
-group, nothing is copied. Alt retains optional time alignment during a move or resize. A dashed waveform
+group, nothing is copied. Hold Alt **after starting** a drag for optional time alignment during a move or resize. A dashed waveform
 ghost marks the original position while moving. Events may meet exactly end to end. There are no tracks,
 beats or mandatory snapping. Click an unselected event to return to a single
 selection. Selected tiles and Sources previews use the bright red highlight color by default. Muted events and events excluded by
@@ -487,3 +500,29 @@ bottom right to remove custom routes. The bus appears alongside the cards.
 For quieter QWERTY soloing over the arrangement, open **F11** and lower **Live Tiles**.
 Cards reference audio copies in the arrangement, so that live trim leaves the
 backing intact.
+
+## Audition, selection and Scatter
+
+![Scatter preview](screenshots/mosaic-performance/scatter.png)
+
+**A** auditions the last-selected card from its beginning, at its assigned note or chord,
+through its existing output route. Loop settings, pitch, gain, pan and fades are retained;
+arrangement mute/solo flags are bypassed for the preview. The arrangement playhead and
+play/pause state stay unchanged. Press A again, STOP, or Escape to end the audition.
+
+**Shift+A** selects every card sharing that source. Selecting does not change settings.
+Adjusting LEVEL, PAN, IN or OUT then assigns the edited value across the selection;
+Undo restores each card's original value. Fades are limited to each card's duration.
+
+**Ctrl+R** opens Scatter for the selected cards. Alternatively, Ctrl-click one or more
+Sources (including across bank pages), then press Ctrl+R to create copies from them.
+Set a range of **start times in seconds**, choose Move Selection or Create Copies,
+set the copy count, and choose even scattering or clusters. Cards may extend beyond
+the end of the start-time range. Overlap off separates cards horizontally without
+changing the generated times. Overlap on permits visual intersections and turns off
+AUTO-SPACE when applied.
+
+Click a numeric field to edit it; Ctrl+A clears the field, Enter accepts it, and
+Escape cancels the dialog. **Reroll** changes only the preview. **Apply** commits the
+whole operation as one undo step, including any spacing preference change. Cancel
+leaves the arrangement untouched. The 128-card limit is checked before applying.

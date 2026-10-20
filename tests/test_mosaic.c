@@ -22,7 +22,7 @@
 
 static TsMosaic *fixture(void)
 {
-    TsMosaic *m=ts_mosaic_create();assert(m);
+    TsMosaic *m=ts_mosaic_create();assert(m);m->auto_space=1;
     TsSample s={0};char error[160];s.frames=4096;s.sample_rate=48000;s.channels=2;
     s.data=calloc(s.frames*2,sizeof(float));assert(s.data);strcpy(s.name,"PHASE BLOOM");
     for(size_t i=0;i<s.frames;++i){s.data[i*2]=.4f*sinf((float)i*.019f);s.data[i*2+1]=.15f*cosf((float)i*.031f);}
@@ -174,7 +174,7 @@ static void test_card_routes(void)
 static void test_storage(void)
 {
     const char *dir="mosaic-storage-test";MKDIR(dir);
-    TsMosaic *m=fixture(),*loaded=ts_mosaic_create();char error[160];
+    TsMosaic *m=fixture(),*loaded=ts_mosaic_create();char error[160];m->auto_space=0;
     ts_mosaic_copy(m,m->events[0].id,6,0);
     m->events[0].muted=1;m->events[1].solo=1;
     m->events[0].pan=-.35f;m->events[0].fade_in=1.25;m->events[0].fade_out=2.5;ts_mosaic_set_speed(m,1.5);
@@ -202,6 +202,7 @@ static void test_storage(void)
         FILE *current=fopen("mosaic-storage-test/mosaic.tsm","r"),*old=fopen("mosaic-storage-test/old.tsm","w");assert(current && old);
         char record[1024];assert(fgets(record,sizeof(record),current));fprintf(old,"TAPESISTER_MOSAIC %d\n",version);
         while(fgets(record,sizeof(record),current)) {
+            if(!strncmp(record,"SPACING ",8))continue;
             if(!strncmp(record,"ROUTE ",6)) {
                 record[strcspn(record,"\r\n")]=0;
                 for(int i=destinations;i<TS_MATRIX_DESTINATIONS;++i){char *last=strrchr(record,' ');assert(last);*last=0;}
@@ -221,6 +222,7 @@ static void test_storage(void)
     FILE *old=fopen("mosaic-storage-test/mosaic.tsm","r");assert(old);
     char lines[4][1024];
     for(int i=0;i<2;++i)assert(fgets(lines[i],sizeof(lines[i]),old));
+    assert(fgets(lines[2],sizeof(lines[2]),old) && !strncmp(lines[2],"SPACING ",8));
     for(int i=0;i<=TS_MOSAIC_ENVELOPE_POINTS;++i)assert(fgets(lines[2],sizeof(lines[2]),old));
     for(int i=2;i<4;++i){assert(fgets(lines[i],sizeof(lines[i]),old));char route[1024];assert(fgets(route,sizeof(route),old));assert(fgets(route,sizeof(route),old));}fclose(old);
     for(int version=3;version>=1;--version) {

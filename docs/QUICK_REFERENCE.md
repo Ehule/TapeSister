@@ -64,10 +64,19 @@ does not switch the main bank. See the [Mosaic chapter](USER_MANUAL.md#mosaic).
 
 | Action | Control |
 | --- | --- |
+| Audition selected card at its assigned notes / stop preview | A |
+| Fit selection / restore previous view | Z |
+| Select all / select every instance of the current source | Ctrl+A / Shift+A |
+| Nudge selection by 0.1 s / 1 s | Up/Down / Shift+Up/Down |
+| Cycle through overlapping cards | Alt-click |
+| Enable or disable horizontal collision spacing | AUTO-SPACE; enabling requires confirmation |
+| Tidy selected cards horizontally once | T |
+| Scatter cards or copies with a preview | Ctrl+R |
+| Choose sources for Scatter | Ctrl-click sources, then Ctrl+R |
 | Select / edit | Click / double-click event |
 | Box-select a group | Shift+left-drag on empty canvas |
 | Move group / copy group | Drag a selected tile / hold Shift when starting that drag |
-| Extend duration / change visual width | Drag bottom / right edge |
+| Extend duration / change visual width | Drag top or bottom / right edge |
 | Optional start, end, midpoint alignment | Alt during move or duration resize |
 | Mute / solo selected events | M / S; excluded cards say SOLO OUT |
 | Mute / solo all cards sharing selected sources | Shift+M / Shift+S |
@@ -424,8 +433,8 @@ file recording remains available when Sister is powered off; H1/H2/H3 require Si
 
 ## FX pedalboard
 
-Signal order is slot `1 → 2 → 3 → 4`. Each slot can be Empty, Reverb, Delay,
-Distortion, or Grain; duplicates are allowed.
+Signal follows the numbered slots in order. Each slot can be Empty, Reverb, Delay,
+Distortion, Grain, or Transient Designer; duplicates are allowed.
 
 | Type | Parameters |
 | --- | --- |
@@ -441,6 +450,28 @@ Placement is exactly one of:
 | PRE | new source before INPUT/write/Duck |
 | H1/H2/H3 | after selected head read, before later head character/level |
 | POST | Matrix Pedalboard node; legacy mode: serial Pedalboard stage |
+
+![Grain states and local glide control](screenshots/mosaic-performance/grain-states.png)
+
+Grain has five small local state squares beside the voice count. They store only
+Size, Density and Pitch; gain, mix, placement and bypass remain independent.
+Pitch wheel steps land on exact semitones; Shift+wheel adjusts by 0.1 semitone.
+
+| Grain state action | Gesture |
+| --- | --- |
+| Capture an empty state / recall a saved state | Left-click |
+| Recall for editing | Right-click |
+| Save the current settings over a state | Shift+left-click |
+| Clear a state | Middle-click |
+| Set recall duration, 0–600 seconds | GLIDE drag or wheel; Shift+wheel for 0.1 s |
+| Reset recall duration to immediate | Right-click GLIDE |
+
+Grey means empty; dim green means stored; bright green is the active target;
+blue means editing; amber means changed since capture. Recall moves the sound
+smoothly without clearing the grain buffer. A new recall redirects from the
+current audible position; manually changing Size, Density or Pitch cancels the
+current glide. The parameter sliders display the destination values. States and
+glide time travel with a moved or copied slot and save in projects and user presets.
 
 Effect and Master transitions: 10 ms–60 min. Slot Gain: -12 to +12 dB. FX Feedback:
 0–135%.
