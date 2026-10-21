@@ -59,7 +59,7 @@ See the [complete editing reference](SISTERTRACKER_PLAYBACK.md).
 
 Navigation: **Shift+Z** fits all; **Z** fits selection/returns; **F** toggles FOLLOW;
 **H** shows the playhead without seeking; **Page Up/Down** move about one screen;
-**middle-drag** pans (middle-click seeks on release). Manual view moves turn FOLLOW
+**middle-drag** pans (middle-click seeks on release). Fit, page moves, panning and view recall turn FOLLOW
 off. The five numbered buttons beneath Sources save views with the project:
 **click empty = save**, **click stored = recall**, **Shift-click = replace**,
 **middle-click = clear**. Playback and card selection stay intact.
@@ -100,7 +100,11 @@ does not switch the main bank. See the [Mosaic chapter](USER_MANUAL.md#mosaic).
 | Seek | Middle-click canvas or click time ruler |
 | Return to beginning | Home |
 | Scroll time / sideways / zoom | Wheel / Shift+wheel / Ctrl+wheel |
-| Follow playhead / fit arrangement / repeat arrangement | FOLLOW / FIT ALL / REPEAT |
+| Follow playhead / fit arrangement | F or FOLLOW / Shift+Z or FIT ALL |
+| Select / resize a time range | Shift-drag ruler / drag either range handle |
+| Set range from selected cards | Shift+L |
+| Repeat range, or whole arrangement if none | L or REPEAT |
+| Exact range times / clear range | Double-click ruler / right-click highlighted range |
 | Record final stereo output | Header or footer REC FILE; Ctrl+Shift+F |
 | Record a dry keyboard performance to a card | REC DRY (default); click STOP TILE to keep |
 | Print Prism/effects or bounce Mosaic to a card | REC OUT; identical final signal to REC FILE |
@@ -740,6 +744,16 @@ APPLY saves the active sound and original source with the tile. Edits render in
 the background (**UPDATING**); quiet settings replace the old audio and waveform.
 Unison off restores even a silent original. A deleted or different source does
 not inherit the previous tile's parked FM patch.
+
+### Mosaic loop range
+
+- **Shift-drag ruler:** select time; drag either handle to resize.
+- **Shift+L:** set range from selected cards; **L / REPEAT:** toggle looping.
+- **Double-click ruler:** exact start/end seconds; Tab switches, Ctrl+A clears a
+  field, Enter applies, Escape cancels.
+- **Right-click highlighted range:** clear it; Repeat then uses the whole arrangement.
+- **Space:** play/pause. Range edits support Undo/Redo and save with the project.
+  Escape or focus loss cancels an unfinished drag. Card selection stays independent.
 
 ### Mosaic volume lane
 

@@ -63,6 +63,11 @@ the EVENTS pages. Shared originals and the original Sample banks remain availabl
 | Undo / redo arrangement edits | Ctrl+Z / Ctrl+Shift+Z or Ctrl+Y |
 | Play / pause | Space or PLAY/PAUSE |
 | Stop and rewind | Escape or STOP |
+| Select a time range | Shift-drag the vertical ruler in either direction |
+| Adjust / clear the time range | Drag either ruler handle / right-click the highlighted range |
+| Set range from selected cards | Shift+L |
+| Toggle range or whole-arrangement looping | L or REPEAT |
+| Enter exact start/end times | Double-click the ruler |
 | Seek | Middle-click the canvas or click the time ruler |
 | Scroll with playback | F or FOLLOW |
 | Center the view on the playhead | H (does not seek) |
@@ -137,7 +142,35 @@ Tiles that meet end to end share the same drawn boundary. The time ruler and its
 labels scroll with the grid, keeping their alignment with the tiles.
 Overview drawing reuses cached 2,048-bin peak/RMS envelopes; close zoom reads
 actual sample ranges instead of enlarging those bins. Source thumbnails cache
-extrema at their displayed width. None of this analysis runs in the audio callback. **REPEAT** repeats the complete arrangement at its last event.
+extrema at their displayed width. None of this analysis runs in the audio callback.
+
+## Loop a passage
+
+**Shift-drag the vertical time ruler** to select a passage. Drag either end handle
+to refine it; the status line shows start, end and duration in seconds. Card selection
+is independent. **Shift+L** sets the range to the earliest start and latest end of
+selected cards, including gaps between them. Press **L** or **REPEAT** to loop it.
+Selecting a range does not start playback or enable Repeat; **Space** plays/pauses.
+
+**Double-click the ruler** to enter exact start/end times in seconds. Tab switches
+fields, Ctrl+A clears the current field for replacement, Enter applies, and Escape
+cancels. A range must be at least 0.001 seconds long, within 0–1,000,000 seconds.
+The dialog also shows its duration. Drag previews do not affect playback until
+release; Escape or loss of window focus cancels a drag. FOLLOW pauses during dragging.
+
+**Right-click the highlighted ruler range** to clear it. Repeat then uses the whole
+arrangement again. Toggling Repeat off keeps the range for later. Range edits,
+clearing and Repeat changes support Ctrl+Z/Ctrl+Y. The range and Repeat setting save
+with the project; earlier project formats open with no time range.
+
+With range Repeat on, playback stays within that range, including any selected
+silence after the last card. Starting outside it begins at the range start.
+Crossing cards resume at the correct elapsed source position on each wrap, with
+short audio smoothing on the Mosaic bus and custom routes. The volume envelope
+keeps its position relative to the entire arrangement; it is not stretched to the
+loop selection. STOP/Escape still stop and rewind to zero without clearing the range.
+
+![Mosaic time range](screenshots/mosaic-performance/loop-range.png)
 
 ## Arrangement volume envelope
 
@@ -175,7 +208,7 @@ The status message explains when Repeat already links the endpoints or a ramp
 is flat because the endpoint levels are equal.
 
 Each stroke or tool action is one undo step. **Escape** cancels a stroke, and
-Ctrl+Z / Ctrl+Y undo and redo it. The curve was introduced in Mosaic format 4; current saves use format 11; older
+Ctrl+Z / Ctrl+Y undo and redo it. The curve was introduced in Mosaic format 4; current saves use format 12; older
 arrangements open with a flat, full-level envelope. Failed loads leave the current
 arrangement intact.
 

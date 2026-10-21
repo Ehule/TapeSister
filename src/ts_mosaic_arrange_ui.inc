@@ -1,9 +1,23 @@
 static void mosaic_arrange_overlay(TsFramebuffer *fb,const TsUiState *ui)
 {
-    if(!ui->mosaic_scatter_open && !ui->mosaic_spacing_confirm)return;
+    if(!ui->mosaic_scatter_open && !ui->mosaic_spacing_confirm && !ui->mosaic_loop_open)return;
     uint32_t panel=ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_PANEL,RGB(31,28,38));
     uint32_t ink=ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_TEXT,RGB(224,214,233));
     uint32_t accent=ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_DATA2,RGB(129,206,200));
+    if(ui->mosaic_loop_open) {
+        rect(fb,120,128,400,158,accent);rect(fb,122,130,396,154,panel);
+        text(fb,140,142,"TIME RANGE / SECONDS",ink,1);
+        text(fb,140,160,"START",ink,1);text(fb,330,160,"END",ink,1);
+        for(int i=0;i<2;++i) {
+            char value[34];snprintf(value,sizeof(value),"%.24s%s",ui->mosaic_loop_text[i],ui->mosaic_loop_field==i+1?"_":"");
+            mosaic_button(fb,140+190*i,173,170,value,ui->mosaic_loop_field==i+1,0);
+        }
+        double a=strtod(ui->mosaic_loop_text[0],NULL),b=strtod(ui->mosaic_loop_text[1],NULL);
+        char duration[64];snprintf(duration,sizeof(duration),"DURATION %.6F S",isfinite(a) && isfinite(b)?b-a:0);
+        text(fb,140,208,duration,ink,1);
+        text(fb,140,225,ui->mosaic_loop_status,ink,1);
+        mosaic_button(fb,170,246,140,"APPLY",1,0);mosaic_button(fb,330,246,140,"CANCEL",0,0);return;
+    }
     if(ui->mosaic_spacing_confirm) {
         rect(fb,120,140,400,120,accent);rect(fb,122,142,396,116,panel);
         text(fb,140,158,"ENABLE AUTO-SPACING?",ink,1);

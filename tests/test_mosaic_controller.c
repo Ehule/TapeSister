@@ -86,6 +86,7 @@ static void wait_render(void);
 #include "test_mosaic_arranging.inc"
 #include "test_mosaic_performance_edit.inc"
 #include "test_mosaic_navigation.inc"
+#include "test_mosaic_loop_controls.inc"
 #include "test_mosaic_controls.inc"
 #include "test_mosaic_volume_controls.inc"
 #include "test_mosaic_routing.inc"
@@ -413,6 +414,7 @@ int main(int argc,char **argv)
     uint64_t original=ts_sample_hash(&instrument.current);
     ui.mosaic=audio.mosaic=ts_mosaic_create();ui.mosaic_scale=24;ui.mosaic_open=1;
     if(argc>1 && !strcmp(argv[1],"--arrange")) {test_mosaic_performance_edit(window);goto done;}
+    if(argc>1 && !strcmp(argv[1],"--loop")) {test_mosaic_loop_controls(window);goto done;}
     if(argc>1 && !strcmp(argv[1],"--navigation")) {test_mosaic_navigation(window);goto done;}
     TsMosaicSource *source=ts_mosaic_source(ui.mosaic,&instrument.current,error,sizeof(error));assert(source);
     TsMosaicEvent *a=ts_mosaic_add(ui.mosaic,source,0,0);a->duration=6;
@@ -458,6 +460,7 @@ int main(int argc,char **argv)
     ts_mosaic_volume_action(ui.mosaic,TS_MOSAIC_ENV_RESET);
     test_mosaic_performance_edit(window);
     test_mosaic_navigation(window);
+    test_mosaic_loop_controls(window);
     test_canvas_gestures(window);
     test_mosaic_copy_drag(window);
     test_mosaic_external_banks(window);

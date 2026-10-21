@@ -17,6 +17,10 @@ typedef struct {
     double scroll, xscroll, scale, hscale;
 } TsMosaicView;
 
+typedef struct {
+    double start, end; /* Seconds; 0/0 means no time selection. */
+} TsMosaicRange;
+
 typedef enum {
     TS_MOSAIC_ENV_RESET, TS_MOSAIC_ENV_SMOOTH, TS_MOSAIC_ENV_MATCH_START,
     TS_MOSAIC_ENV_MATCH_END, TS_MOSAIC_ENV_RAMP
@@ -67,6 +71,7 @@ typedef struct TsMosaic {
     float volume[TS_MOSAIC_ENVELOPE_POINTS];
     float history_volume[TS_MOSAIC_HISTORY][TS_MOSAIC_ENVELOPE_POINTS];
     int history_repeat[TS_MOSAIC_HISTORY], history_auto_space[TS_MOSAIC_HISTORY];
+    TsMosaicRange loop_range, history_loop_range[TS_MOSAIC_HISTORY];
     int auto_space; /* New arrangements allow free placement; older files retain spacing. */
     TsMosaicView views[TS_MOSAIC_VIEWS]; /* Project navigation only; outside audio/arrangement undo. */
     uint64_t audition_id;
@@ -115,6 +120,8 @@ void ts_mosaic_set_speed(TsMosaic *m, double speed);
 float ts_mosaic_volume_at(const TsMosaic *m, double position);
 void ts_mosaic_volume_draw(TsMosaic *m, double from, float a, double to, float b);
 void ts_mosaic_volume_action(TsMosaic *m, TsMosaicEnvelopeAction action);
+/* Accepts 0/0 to clear, otherwise a finite range at least 1 ms long. */
+int ts_mosaic_set_loop_range(TsMosaic *m, double start, double end);
 void ts_mosaic_set_repeat(TsMosaic *m, int repeat);
 TsStereoFrame ts_mosaic_read(TsMosaic *m, int output_rate);
 /* Returns the Mosaic bus; custom cards go only into routes. NULL ignores routing. */

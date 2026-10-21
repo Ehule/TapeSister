@@ -557,6 +557,9 @@ typedef struct {
     uint64_t mosaic_selected, mosaic_editing;
     uint64_t mosaic_selection[TS_MOSAIC_EVENTS];
     int mosaic_open, mosaic_playing, mosaic_recording;
+    int mosaic_loop_drag, mosaic_loop_open, mosaic_loop_field;
+    TsMosaicRange mosaic_loop_preview;
+    char mosaic_loop_text[2][32], mosaic_loop_status[80];
     int mosaic_spacing_confirm, mosaic_scatter_open, mosaic_scatter_copies;
     int mosaic_scatter_cluster, mosaic_scatter_overlap, mosaic_scatter_count, mosaic_scatter_valid;
     int mosaic_scatter_field;

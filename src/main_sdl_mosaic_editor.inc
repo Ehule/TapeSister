@@ -24,6 +24,8 @@ typedef struct {
     uint32_t scatter_seed;
     int zoom_saved;
     double zoom_scroll, zoom_xscroll, zoom_scale, zoom_hscale;
+    double loop_anchor;
+    uint64_t loop_epoch;
     int pan_active, pan_moved, pan_x, pan_y;
     double pan_scroll, pan_xscroll, pan_scale, pan_hscale;
     int mix_drag, mix_changed;
@@ -60,7 +62,7 @@ static void mosaic_drag_end(TsUiState *ui,MosaicController *c)
         --c->source_drag.source->pins;
     c->source_drag=(TsMosaicEvent){0};c->drag=0;c->drag_moved=0;c->drag_copy=0;
     ui->mosaic_ghost_count=ui->mosaic_box=0;c->volume_drag=0;
-    c->pan_active=c->pan_moved=0;
+    c->pan_active=c->pan_moved=ui->mosaic_loop_drag=0;
 }
 /* Browse stored sample banks without swapping the live instrument or routing.
    Keep bank slots/page numbers intact; event versions have separate pages after
@@ -71,6 +73,8 @@ static void mosaic_sources_refresh(TsUiState *ui,const TsInstrument *instrument,
         mosaic_drag_end(ui,c);mosaic_select_only(ui,0);
         c->picked_count=c->scatter_pool_count=c->zoom_saved=0;
         ui->mosaic_source_pick_count=ui->mosaic_scatter_open=ui->mosaic_spacing_confirm=0;
+        if(ui->mosaic_loop_open)SDL_StopTextInput();
+        ui->mosaic_loop_open=0;
         ui->mosaic_source_selected=-1;ui->mosaic_source_page=0;
         memset(c->bank_data,0,sizeof(c->bank_data));c->ui_epoch=ui->mosaic->epoch;c->browser_initialized=0;
     }

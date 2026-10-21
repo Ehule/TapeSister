@@ -321,12 +321,26 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
     snprintf(label,sizeof(label),"SPEED %.2fX",m?m->speed:1);text(fb,416,58,label,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DATA2, RGB(129,206,200)),1);
     mosaic_slider(fb,TS_MOSAIC_SPEED_X,58,TS_MOSAIC_SPEED_W,(log2(m?m->speed:1)+1)*.5,1,1);
     double scale=ui->mosaic_scale>0?ui->mosaic_scale:24;
+    TsMosaicRange range=ui->mosaic_loop_drag?ui->mosaic_loop_preview:m?m->loop_range:(TsMosaicRange){0,0};
+    double range_a=66+(range.start-ui->mosaic_scroll)*scale,range_b=66+(range.end-ui->mosaic_scroll)*scale;
+    uint32_t range_ink=ts_theme_color(active_palette(),TS_THEME_MOSAIC,m && m->repeat?TS_COLOR_DATA2:TS_COLOR_DIM,RGB(129,206,200));
+    if(range.end>range.start) {
+        int a=(int)fmax(66,fmin(376,range_a)),b=(int)fmax(66,fmin(376,range_b));
+        rect(fb,113,a,38,b-a,ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_EDGE,RGB(45,65,66)));
+    }
     double decade=pow(10,floor(log10(40/scale))),step=40/scale/decade;
     double interval=(step<=1?1:step<=2?2:step<=5?5:10)*decade;
     for(double t=ceil(ui->mosaic_scroll/interval)*interval;t<ui->mosaic_scroll+310/scale;t+=interval) {
         int y=66+(int)((t-ui->mosaic_scroll)*scale);
         mosaic_time_label(label,sizeof(label),t);mosaic_ruler_label(fb,y+2,label);
         rect(fb,147,y,484,1,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(28,30,35)));
+    }
+    if(range.end>range.start)for(int edge=0;edge<2;++edge) {
+        double y=edge?range_b:range_a;
+        if(y>=66 && y<376) {
+            int top=(int)fmax(66,y-1),bottom=(int)fmin(376,y+2);
+            rect(fb,113,top,38,bottom-top,range_ink);
+        }
     }
     int any_solo=0;
     if(m)for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(m->events[i].id)any_solo|=m->events[i].solo;

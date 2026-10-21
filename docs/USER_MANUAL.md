@@ -822,12 +822,29 @@ visually at the C4 reference speed, while the chord voices follow their own rate
 | Seek / return to the beginning | Middle-click canvas or click time ruler / Home |
 | Scroll time / scroll sideways / zoom | Wheel / Shift+wheel / Ctrl+wheel |
 | Keep playhead visible / fit arrangement | F or FOLLOW / Shift+Z or FIT ALL |
-| Repeat the complete arrangement | REPEAT |
+| Repeat the time range, or whole arrangement if none | L or REPEAT |
+| Select / resize a time range | Shift-drag ruler / drag either range handle |
+| Set time range from selected cards | Shift+L |
+| Exact start/end times / clear range | Double-click ruler / right-click highlighted ruler range |
 
 **Z** fits the selected cards and returns to the previous view. **H** centers the
 playhead in the view without seeking; **Page Up/Down** move by about one screen.
 Middle-drag pans freely; a middle-click still seeks on release. Fit, page navigation,
 panning, and recalling a view turn FOLLOW off; press **F** to resume it.
+
+To loop a passage, Shift-drag the vertical ruler, then press **L** and **Space**.
+**Shift+L** instead uses the selected cards' earliest start and latest end. The time
+selection leaves card selection intact. Drag the handles to adjust; start, end and
+duration appear in the status line. Double-click the ruler for exact seconds:
+Tab switches fields, Ctrl+A clears a field, Enter applies, Escape cancels.
+
+**REPEAT** and **L** share one toggle. Turning it off retains the range; right-clicking
+the highlighted ruler range clears it and restores whole-arrangement repeating.
+Range edits save with the project and support Undo/Redo. Escape or lost window focus
+cancels an unfinished range drag. Crossing cards resume at their correct source
+position, with short smoothing at wraps. The volume envelope still spans the whole
+arrangement. A range can include silence after the last card; STOP rewinds to zero,
+and the next Play with Repeat enabled starts inside the range.
 
 Five numbered buttons beneath Sources save positions and zoom levels with the
 project. Click an empty button to save; click a stored button to recall; Shift-click

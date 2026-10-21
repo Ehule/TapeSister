@@ -102,8 +102,10 @@ void ts_mosaic_checkpoint(TsMosaic *m)
         memmove(m->history_volume,m->history_volume+1,(TS_MOSAIC_HISTORY-1)*sizeof(m->history_volume[0]));
         memmove(m->history_repeat,m->history_repeat+1,(TS_MOSAIC_HISTORY-1)*sizeof(m->history_repeat[0]));
         memmove(m->history_auto_space,m->history_auto_space+1,(TS_MOSAIC_HISTORY-1)*sizeof(m->history_auto_space[0]));
+        memmove(m->history_loop_range,m->history_loop_range+1,(TS_MOSAIC_HISTORY-1)*sizeof(m->history_loop_range[0]));
         --m->history_count;
     }
+    m->history_loop_range[m->history_count]=m->loop_range;
     m->history_auto_space[m->history_count]=m->auto_space;
     m->history_speed[m->history_count]=m->speed;
     m->history_repeat[m->history_count]=m->repeat;
@@ -123,6 +125,7 @@ int ts_mosaic_undo(TsMosaic *m,int redo)
     for(int i=0;i<TS_MOSAIC_ENVELOPE_POINTS;++i) {
         float value=m->volume[i];m->volume[i]=m->history_volume[at][i];m->history_volume[at][i]=value;
     }
+    TsMosaicRange range=m->loop_range;m->loop_range=m->history_loop_range[at];m->history_loop_range[at]=range;
     int spacing=m->auto_space;m->auto_space=m->history_auto_space[at];m->history_auto_space[at]=spacing;
     int repeat=m->repeat;m->repeat=m->history_repeat[at];m->history_repeat[at]=repeat;
     m->history_cursor+=redo?1:-1;m->route_discontinuity=1;memset(m->voices,0,sizeof(m->voices));++m->revision;return 1;
@@ -263,6 +266,12 @@ float ts_mosaic_volume_at(const TsMosaic *m,double position)
     float first=m->repeat && a==TS_MOSAIC_ENVELOPE_POINTS-1?m->volume[0]:m->volume[a];
     return first+(last-first)*(float)(point-a);
 }
+int ts_mosaic_set_loop_range(TsMosaic *m,double start,double end)
+{
+    if(!m || !isfinite(start) || !isfinite(end) || start<0 || end>1000000 ||
+       !((start==0 && end==0) || end>=start+.001))return 0;
+    m->loop_range=(TsMosaicRange){start,end};++m->revision;return 1;
+}
 void ts_mosaic_set_repeat(TsMosaic *m,int repeat)
 {
     if(!m)return;
@@ -369,7 +378,15 @@ static TsStereoFrame mosaic_read(TsMosaic *m,int rate,TsSourceRouteMix *routes)
         end=fmax(end,m->events[i].start+m->events[i].duration);
         any_solo|=m->events[i].solo;
     }
-    if(m->time>=end) {
+    double loop_start=m->loop_range.start,loop_end=m->loop_range.end;
+    int range_repeat=m->repeat && loop_end>loop_start;
+    if(range_repeat && (m->time<loop_start || m->time>=loop_end)) {
+        /* Preserve fractional overshoot so repeated passages never drift.
+           seek reconstructs crossing cards at their elapsed source phase and
+           smooths the Mosaic bus plus custom route handoffs. */
+        ts_mosaic_seek(m,starting || m->time<loop_start?loop_start:
+            loop_start+fmod(m->time-loop_start,loop_end-loop_start));
+    } else if(!range_repeat && m->time>=end) {
         if(m->repeat && end>0)ts_mosaic_seek(m,fmod(m->time,end));
         else {m->playing=0;m->route_discontinuity=1;return out;}
     }
@@ -472,6 +489,10 @@ uint64_t ts_mosaic_hash(const TsMosaic *m)
         snprintf(value,sizeof(value),"VIEW %d %.17g %.17g %.17g %.17g",i,v->scroll,v->xscroll,v->scale,v->hscale);
         for(const unsigned char *p=(const unsigned char *)value;*p;++p){hash^=*p;hash*=1099511628211ull;}
     }
+    if(m->loop_range.end>m->loop_range.start) {
+        char value[96];snprintf(value,sizeof(value),"LOOP %.17g %.17g",m->loop_range.start,m->loop_range.end);
+        for(const unsigned char *p=(const unsigned char *)value;*p;++p){hash^=*p;hash*=1099511628211ull;}
+    }
     return hash;
 }
 
@@ -481,11 +502,12 @@ int ts_mosaic_save(const TsMosaic *m,const char *dir,char *error,size_t size)
     char path[4096];
     if(snprintf(path,sizeof(path),"%s/mosaic.tsm",dir)>=(int)sizeof(path))return 0;
     FILE *f=fopen(path,"wb");if(!f)goto failed;
-    if(fprintf(f,"TAPESISTER_MOSAIC 11\nSETTINGS %d %.9g %.17g\nSPACING %d\n",m->repeat,m->gain,m->speed,m->auto_space)<0)goto close_failed;
+    if(fprintf(f,"TAPESISTER_MOSAIC 12\nSETTINGS %d %.9g %.17g\nSPACING %d\n",m->repeat,m->gain,m->speed,m->auto_space)<0)goto close_failed;
     for(int i=0;i<TS_MOSAIC_VIEWS;++i) {
         const TsMosaicView *v=&m->views[i];
         if(fprintf(f,"VIEW %d %.17g %.17g %.17g %.17g\n",v->stored,v->scroll,v->xscroll,v->scale,v->hscale)<0)goto close_failed;
     }
+    if(fprintf(f,"LOOP %.17g %.17g\n",m->loop_range.start,m->loop_range.end)<0)goto close_failed;
     if(fprintf(f,"VOLUME %d\n",TS_MOSAIC_ENVELOPE_POINTS)<0)goto close_failed;
     for(int i=0;i<TS_MOSAIC_ENVELOPE_POINTS;++i)
         if(fprintf(f,"%.9g\n",m->repeat && i==TS_MOSAIC_ENVELOPE_POINTS-1?m->volume[0]:m->volume[i])<0)goto close_failed;
@@ -541,7 +563,7 @@ int ts_mosaic_load(TsMosaic *m,const char *dir,char *error,size_t size)
     if(length>=2 && line[length-2]=='\r' && line[length-1]=='\n') {
         line[length-2]='\n';line[length-1]='\0';
     }
-    int version=!strcmp(line,"TAPESISTER_MOSAIC 11\n")?11:!strcmp(line,"TAPESISTER_MOSAIC 10\n")?10:!strcmp(line,"TAPESISTER_MOSAIC 9\n")?9:!strcmp(line,"TAPESISTER_MOSAIC 8\n")?8:!strcmp(line,"TAPESISTER_MOSAIC 7\n")?7:!strcmp(line,"TAPESISTER_MOSAIC 6\n")?6:!strcmp(line,"TAPESISTER_MOSAIC 5\n")?5:!strcmp(line,"TAPESISTER_MOSAIC 4\n")?4:!strcmp(line,"TAPESISTER_MOSAIC 1\n")?1:!strcmp(line,"TAPESISTER_MOSAIC 2\n")?2:!strcmp(line,"TAPESISTER_MOSAIC 3\n")?3:0;
+    int version=!strcmp(line,"TAPESISTER_MOSAIC 12\n")?12:!strcmp(line,"TAPESISTER_MOSAIC 11\n")?11:!strcmp(line,"TAPESISTER_MOSAIC 10\n")?10:!strcmp(line,"TAPESISTER_MOSAIC 9\n")?9:!strcmp(line,"TAPESISTER_MOSAIC 8\n")?8:!strcmp(line,"TAPESISTER_MOSAIC 7\n")?7:!strcmp(line,"TAPESISTER_MOSAIC 6\n")?6:!strcmp(line,"TAPESISTER_MOSAIC 5\n")?5:!strcmp(line,"TAPESISTER_MOSAIC 4\n")?4:!strcmp(line,"TAPESISTER_MOSAIC 1\n")?1:!strcmp(line,"TAPESISTER_MOSAIC 2\n")?2:!strcmp(line,"TAPESISTER_MOSAIC 3\n")?3:0;
     if(!version)goto failed;
     char trailing;
     if(!fgets(line,sizeof(line),f))goto failed;
@@ -562,6 +584,11 @@ int ts_mosaic_load(TsMosaic *m,const char *dir,char *error,size_t size)
             v->xscroll<0 || v->xscroll>1000000 ||
             (v->stored && (v->scale<.000001 || v->scale>1200 || v->hscale<.000001 || v->hscale>4)))goto failed;
         if(!v->stored)*v=(TsMosaicView){0};
+    }
+    if(version>=12) {
+        double start,end;
+        if(!fgets(line,sizeof(line),f) || sscanf(line,"LOOP %lf %lf %c",&start,&end,&trailing)!=2 ||
+           !ts_mosaic_set_loop_range(next,start,end))goto failed;
     }
     if(version>=4) {
         int points;
