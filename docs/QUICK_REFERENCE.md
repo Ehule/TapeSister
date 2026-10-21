@@ -64,6 +64,13 @@ off. The five numbered buttons beneath Sources save views with the project:
 **click empty = save**, **click stored = recall**, **Shift-click = replace**,
 **middle-click = clear**. Playback and card selection stay intact.
 
+The first card selected is **primary** (red by default); the rest use a lighter
+border. Shift-click toggles members; Shift-box selection and group copying preserve
+the primary. Shift-select Sources and drag them in as an aligned row, in selection
+order, with the first source primary and all new cards selected. A drop is one undo
+step. Alt+Up/Down with only one card shows **SELECT MORE THAN ONE CARD**; playhead
+alignment still works on one card. Time-range and Scatter fields have a blinking cursor.
+
 Time runs downward in seconds; horizontal placement and width are visual. Drag an
 occupied source onto the canvas. Sources arrows browse every numbered Sample bank
 (including FM-created pages), then EVENTS pages with event audio versions. Browsing
@@ -75,13 +82,17 @@ does not switch the main bank. See the [Mosaic chapter](USER_MANUAL.md#mosaic).
 | Fit selection / restore previous view | Z |
 | Select all / select every instance of the current source | Ctrl+A / Shift+A |
 | Nudge selection by 0.1 s / 1 s | Up/Down / Shift+Up/Down |
+| Nudge selection horizontally by 1 / 10 units | Left/Right / Shift+Left/Right |
+| Align starts / ends to primary | Alt+Up / Alt+Down (at least two cards) |
+| Align every start / end to playhead | Alt+Left / Alt+Right |
+| Add/remove a card in the selection | Shift-click |
 | Cycle through overlapping cards | Alt-click |
 | Enable or disable horizontal collision spacing | AUTO-SPACE; enabling requires confirmation |
 | Tidy selected cards horizontally once | T |
 | Scatter cards or copies with a preview | Ctrl+R |
-| Choose sources for Scatter | Ctrl-click sources, then Ctrl+R |
+| Select multiple sources | Shift-click; drag any selected source to add the row, or Ctrl+R for Scatter |
 | Select / edit | Click / double-click event |
-| Box-select a group | Shift+left-drag on empty canvas |
+| Add a selection box | Shift+left-drag on empty canvas; keeps the primary |
 | Move group / copy group | Drag a selected tile / hold Shift when starting that drag |
 | Extend duration / change visual width | Drag top or bottom / right edge |
 | Optional start, end, midpoint alignment | Alt during move or duration resize |
@@ -91,7 +102,7 @@ does not switch the main bank. See the [Mosaic chapter](USER_MANUAL.md#mosaic).
 | Selection level / pan / fade-in / fade-out | LEVEL / PAN / IN / OUT in footer |
 | Global tape speed | SPEED: 0.5× (−12 st), center 1×, 2× (+12 st) |
 | Fine control / reset | Shift+wheel / right-click or double-click |
-| Copy / paste last-clicked event at playhead | Ctrl+C / Ctrl+V; use Shift-drag for group copies |
+| Copy / paste primary event at playhead | Ctrl+C / Ctrl+V; use Shift-drag for group copies |
 | Delete selection | Delete or Backspace |
 | Undo / redo arrangement edit | Ctrl+Z / Ctrl+Y or Ctrl+Shift+Z |
 | Cancel move/copy drag | Escape |

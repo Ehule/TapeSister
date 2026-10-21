@@ -127,7 +127,7 @@ static void mosaic_detail_card(TsUiWaveformDetail *d,const TsUiState *ui,
         }
         return;
     }
-    uint32_t border=selected?ts_theme_legacy(&ui->palette,TS_THEME_MOSAIC,TS_COLOR_FOCUS,TS_PALETTE_MOSAIC_HIGHLIGHT):color;
+    uint32_t border=selected?mosaic_selection_color(ui,e->id==ui->mosaic_selected):color;
     int64_t edge_y=(int64_t)fmin(h,(selected?2:1)*by);
     mosaic_detail_rect(d,x,y,x+(int64_t)fmin(w,2*bx),bottom,border);
     mosaic_detail_rect(d,right-(int64_t)fmin(w,(selected?2:1)*bx),y,right,bottom,border);
@@ -227,7 +227,7 @@ static void mosaic_detail_sources(TsFramebuffer *fb,const TsUiState *ui,double i
     for(int i=0;i<16;++i) {
         int n=ui->mosaic_source_offset+i;if(n>=ui->mosaic_source_count)break;
         const TsSample *s=ui->mosaic_sources[n].sample;if(!s || !s->data)continue;
-        int x=(i%2)*49,y=(i/2)*34,selected=n==ui->mosaic_source_selected;
+        int x=(i%2)*49,y=(i/2)*34,selected=mosaic_source_selection(ui,n);
         uint32_t fill=selected?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(51,47,59)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(40,36,44));
         uint32_t color=mosaic_color(ui->mosaic_sources[n].hash);
         int first=(int)((x+4)*sx),last=(int)((x+39)*sx);

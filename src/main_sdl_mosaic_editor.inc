@@ -13,6 +13,10 @@ typedef struct {
     size_t bank_frames[TS_BANK_SLOT_COUNT];
     uint64_t bank_hash[TS_BANK_SLOT_COUNT];
     TsMosaicEvent source_drag;
+    TsMosaicSourceKey source_key, picked_keys[TS_MOSAIC_EVENTS];
+    int source_group, source_toggle;
+    uint64_t shift_toggle, box_primary;
+    uint64_t box_selection[TS_MOSAIC_EVENTS], box_order[TS_MOSAIC_EVENTS];
     uint64_t active, pending_id, pending_revision, pending_epoch;
     const float *seen_data;
     uint32_t seen_revision;
@@ -52,14 +56,61 @@ static int mosaic_chosen(const TsUiState *ui,int i)
     uint64_t id=ui->mosaic->events[i].id;
     return id && (id==ui->mosaic_selected || id==ui->mosaic_selection[i]);
 }
+static void mosaic_selection_repair(TsUiState *ui)
+{
+    uint64_t first=0,order=UINT64_MAX;
+    for(int i=0;i<TS_MOSAIC_EVENTS;++i) {
+        uint64_t id=ui->mosaic->events[i].id;
+        if(id && (ui->mosaic_selection[i]==id || ui->mosaic_selected==id)) {
+            ui->mosaic_selection[i]=id;
+            if(!ui->mosaic_selection_order[i])ui->mosaic_selection_order[i]=++ui->mosaic_selection_serial;
+            if(ui->mosaic_selection_order[i]<order){first=id;order=ui->mosaic_selection_order[i];}
+        } else ui->mosaic_selection[i]=ui->mosaic_selection_order[i]=0;
+    }
+    if(!ts_mosaic_find(ui->mosaic,ui->mosaic_selected))ui->mosaic_selected=first;
+}
+static void mosaic_select_add(TsUiState *ui,uint64_t id)
+{
+    TsMosaicEvent *e=ts_mosaic_find(ui->mosaic,id);if(!e)return;
+    int i=(int)(e-ui->mosaic->events);
+    if(ui->mosaic_selection[i]!=id || !ui->mosaic_selection_order[i]) {
+        ui->mosaic_selection[i]=id;ui->mosaic_selection_order[i]=++ui->mosaic_selection_serial;
+    }
+    if(!ts_mosaic_find(ui->mosaic,ui->mosaic_selected))ui->mosaic_selected=id;
+}
 static void mosaic_select_only(TsUiState *ui,uint64_t id)
 {
-    memset(ui->mosaic_selection,0,sizeof(ui->mosaic_selection));ui->mosaic_selected=id;
+    memset(ui->mosaic_selection,0,sizeof(ui->mosaic_selection));
+    memset(ui->mosaic_selection_order,0,sizeof(ui->mosaic_selection_order));
+    ui->mosaic_selection_serial=ui->mosaic_selected=0;mosaic_select_add(ui,id);
+}
+static void mosaic_select_remove(TsUiState *ui,uint64_t id)
+{
+    TsMosaicEvent *e=ts_mosaic_find(ui->mosaic,id);if(!e)return;
+    int i=(int)(e-ui->mosaic->events);ui->mosaic_selection[i]=ui->mosaic_selection_order[i]=0;
+    if(ui->mosaic_selected==id)ui->mosaic_selected=0;
+    mosaic_selection_repair(ui);
+}
+static int mosaic_selected_events(const TsUiState *ui,TsMosaicEvent *events)
+{
+    int count=0,order[TS_MOSAIC_EVENTS],others=0;
+    const TsMosaicEvent *primary=ts_mosaic_find(ui->mosaic,ui->mosaic_selected);
+    if(primary)events[count++]=*primary;
+    for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(mosaic_chosen(ui,i) && &ui->mosaic->events[i]!=primary) {
+        int at=others++;
+        while(at>0 && ui->mosaic_selection_order[order[at-1]]>ui->mosaic_selection_order[i]) {
+            order[at]=order[at-1];--at;
+        }
+        order[at]=i;
+    }
+    for(int i=0;i<others;++i)events[count++]=ui->mosaic->events[order[i]];
+    return count;
 }
 static void mosaic_drag_end(TsUiState *ui,MosaicController *c)
 {
     if(c->drag_epoch==ui->mosaic->epoch && c->source_drag.source && c->source_drag.source->pins)
         --c->source_drag.source->pins;
+    c->source_group=c->source_toggle=0;c->shift_toggle=0;
     c->source_drag=(TsMosaicEvent){0};c->drag=0;c->drag_moved=0;c->drag_copy=0;
     ui->mosaic_ghost_count=ui->mosaic_box=0;c->volume_drag=0;
     c->pan_active=c->pan_moved=ui->mosaic_loop_drag=0;
@@ -72,7 +123,7 @@ static void mosaic_sources_refresh(TsUiState *ui,const TsInstrument *instrument,
     if(c->ui_epoch!=ui->mosaic->epoch) {
         mosaic_drag_end(ui,c);mosaic_select_only(ui,0);
         c->picked_count=c->scatter_pool_count=c->zoom_saved=0;
-        ui->mosaic_source_pick_count=ui->mosaic_scatter_open=ui->mosaic_spacing_confirm=0;
+        ui->mosaic_source_pick_count=ui->mosaic_scatter_open=ui->mosaic_spacing_confirm=ui->mosaic_align_open=0;
         if(ui->mosaic_loop_open)SDL_StopTextInput();
         ui->mosaic_loop_open=0;
         ui->mosaic_source_selected=-1;ui->mosaic_source_page=0;
@@ -124,6 +175,7 @@ static void mosaic_sources_refresh(TsUiState *ui,const TsInstrument *instrument,
         if(sample==selected && !selected_event)selection=i;
     }
     ui->mosaic_source_selected=selection;
+    mosaic_selection_repair(ui);
     ui->mosaic_source_offset=ui->mosaic_source_page<banks?0:TS_BANK_SLOT_COUNT+(ui->mosaic_source_page-banks)*16;
 }
 static void mosaic_source_select_event(TsUiState *ui,const TsMosaicEvent *e)

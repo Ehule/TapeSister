@@ -37,11 +37,15 @@ the EVENTS pages. Shared originals and the original Sample banks remain availabl
 | Fit selection / restore previous view | Z |
 | Select all / select every instance of the current source | Ctrl+A / Shift+A |
 | Nudge selection by 0.1 s / 1 s | Up/Down / Shift+Up/Down |
+| Nudge selection horizontally by 1 / 10 units | Left/Right / Shift+Left/Right |
+| Align starts / ends to primary | Alt+Up / Alt+Down (at least two cards) |
+| Align every start / end to playhead | Alt+Left / Alt+Right |
+| Add/remove a card in the selection | Shift-click |
 | Cycle through overlapping cards | Alt-click |
 | Enable or disable horizontal collision spacing | AUTO-SPACE; enabling requires confirmation |
 | Tidy selected cards horizontally once | T |
 | Scatter cards or copies with a preview | Ctrl+R |
-| Choose sources for Scatter | Ctrl-click sources, then Ctrl+R |
+| Select multiple sources | Shift-click; drag any selected source to add the row, or Ctrl+R for Scatter |
 | Select / move an event | Click / drag its body |
 | Extend the event's playback window | Drag its top edge earlier or bottom edge later |
 | Change visual width | Drag its right edge |
@@ -81,6 +85,41 @@ the EVENTS pages. Shared originals and the original Sample banks remain availabl
 | Save / recall a view | Click one of the five numbered buttons beneath Sources |
 | Replace / clear a saved view | Shift-click / middle-click its button |
 | Record the final output | REC FILE or Ctrl+Shift+F |
+
+The **first selected card is the primary**: its border uses the selection color
+(red by default). Other selected cards use a lighter shade. Shift-click adds a
+card; Shift-clicking an already selected card removes it. Removing the primary
+promotes the earliest remaining selection. Clicking or dragging a selected member
+keeps the primary; clicking an unselected card without Shift starts a new selection.
+Shift-dragging an empty area adds a selection box while retaining the primary.
+Shift-dragging a card still copies the group; the primary's copy becomes primary.
+Audition, Copy and single-card reference values use the primary.
+
+**Left/Right** nudges the whole selection horizontally by one layout unit;
+**Shift+Left/Right** uses ten. These are independent of zoom and support key repeat.
+Relative positions stay fixed, and the group stops at the left edge. AUTO-SPACE
+applies as it does for other group moves.
+
+**Alt+Up/Down** aligns every selected start/end to the primary's start/end, keeping
+card durations. With fewer than two cards, a **SELECT MORE THAN ONE CARD** dialog
+appears and no edit is made. Enter, Escape, Space or OK dismisses it.
+**Alt+Left/Right** aligns every selected start/end to the current playhead, including
+a single card. If any new start would be before zero or beyond 24 hours, nothing
+moves. With AUTO-SPACE on, secondary cards can move horizontally to avoid collisions;
+the primary and unselected cards stay in place. Each nudge/alignment is undoable.
+
+In **Sources**, click the first source, then Shift-click more in the desired order.
+Drag any selected source into the canvas: the row starts at the drop position,
+with all tops aligned, ordered left to right by source selection. All new cards
+are selected, and the first source becomes primary. AUTO-SPACE shifts the row
+horizontally if needed. The whole drop is one undo step; insufficient room adds
+nothing. Source selection is then cleared, so **Ctrl+R** works on the new canvas
+selection. Ctrl-click remains available for selecting sources for Scatter.
+Identical sounds in different source cards remain separately selectable.
+
+Time-range and Scatter number fields show a **blinking cursor** while editing.
+
+![Primary and secondary Mosaic selection](screenshots/mosaic-performance/primary-selection.png)
 
 Navigation changes the view while playback and card selection continue. **Shift+Z**
 fits the whole arrangement; **Z** fits the selection and returns on the next press.

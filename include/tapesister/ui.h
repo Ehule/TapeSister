@@ -41,6 +41,12 @@ enum { TS_TRACKER_LEGACY_LANES=8, TS_TRACKER_LEN_Y=54, TS_TRACKER_RATIO_Y=64,
        TS_TRACKER_FIELD_COUNT=7,
        TS_TRACKER_ROW_HEIGHT=12, TS_TRACKER_VISIBLE_ROWS=19,
        TS_TRACKER_GRID_BOTTOM=TS_TRACKER_GRID_Y+TS_TRACKER_VISIBLE_ROWS*TS_TRACKER_ROW_HEIGHT };
+/* Browser identity distinguishes equal audio in different source cards. */
+typedef struct {
+    int page, slot;
+    uint64_t event;
+} TsMosaicSourceKey;
+
 typedef struct {
     int len_y,ratio_y,mix_y,name_y,grid_y,rows,bottom,help_y,expanded;
 } TsTrackerLayout;
@@ -556,16 +562,18 @@ typedef struct {
     TsMosaic *mosaic;
     uint64_t mosaic_selected, mosaic_editing;
     uint64_t mosaic_selection[TS_MOSAIC_EVENTS];
+    uint64_t mosaic_selection_order[TS_MOSAIC_EVENTS], mosaic_selection_serial;
     int mosaic_open, mosaic_playing, mosaic_recording;
     int mosaic_loop_drag, mosaic_loop_open, mosaic_loop_field;
     TsMosaicRange mosaic_loop_preview;
     char mosaic_loop_text[2][32], mosaic_loop_status[80];
+    int mosaic_align_open;
     int mosaic_spacing_confirm, mosaic_scatter_open, mosaic_scatter_copies;
     int mosaic_scatter_cluster, mosaic_scatter_overlap, mosaic_scatter_count, mosaic_scatter_valid;
     int mosaic_scatter_field;
     double mosaic_scatter_start, mosaic_scatter_end;
     char mosaic_scatter_text[32], mosaic_scatter_status[80];
-    uint64_t mosaic_source_picks[TS_MOSAIC_EVENTS];
+    TsMosaicSourceKey mosaic_source_picks[TS_MOSAIC_EVENTS];
     int mosaic_source_pick_count;
     int mosaic_record_length_drag, mosaic_record_length_before;
     TsMosaicRecordPreview mosaic_record_preview;

@@ -15,6 +15,8 @@ static void test_mosaic_copy_drag(SDL_Window *window)
     assert(mosaic_chosen(&ui,0) && mosaic_chosen(&ui,1));
     int history=scene->history_count;click(window,180,96,1);release(window,180,96);
     assert(mosaic_event_count(scene)==3 && scene->history_count==history); /* Shift-click is not a copy. */
+    assert(!mosaic_chosen(&ui,0) && ui.mosaic_selected==b->id);
+    mosaic_select_only(&ui,a->id);mosaic_select_add(&ui,b->id);
     click(window,180,96,1);assert(mosaic.drag_copy && mosaic.drag==1);
     key(window,SDLK_LSHIFT,KMOD_SHIFT);assert(mosaic.drag==1); /* Modifier events don't end a drag. */
     motion(window,220,120);assert(mosaic_event_count(scene)==5);

@@ -802,19 +802,23 @@ visually at the C4 reference speed, while the chord voices follow their own rate
 | Fit selection / restore previous view | Z |
 | Select all / select every instance of the current source | Ctrl+A / Shift+A |
 | Nudge selection by 0.1 s / 1 s | Up/Down / Shift+Up/Down |
+| Nudge selection horizontally by 1 / 10 units | Left/Right / Shift+Left/Right |
+| Align starts / ends to primary | Alt+Up / Alt+Down (at least two cards) |
+| Align every start / end to playhead | Alt+Left / Alt+Right |
+| Add/remove a card in the selection | Shift-click |
 | Cycle through overlapping cards | Alt-click |
 | Enable or disable horizontal collision spacing | AUTO-SPACE; enabling requires confirmation |
 | Tidy selected cards horizontally once | T |
 | Scatter cards or copies with a preview | Ctrl+R |
-| Choose sources for Scatter | Ctrl-click sources, then Ctrl+R |
-| Select an event | Click its body; the highlight border is red by default |
-| Select a group | Shift+left-drag a box on empty canvas |
+| Select multiple sources | Shift-click; drag any selected source to add the row, or Ctrl+R for Scatter |
+| Select an event | Click its body; the first selected card is primary (red by default) |
+| Select a group | Shift-click cards or Shift+left-drag a box on empty canvas |
 | Move the selection | Drag any selected event body |
 | Copy an event or selected group | Hold Shift when starting a drag on a tile |
 | Extend duration / change visual width | Drag the top or bottom / right edge |
 | Align starts, ends, or midpoints | Hold Alt during a move or duration resize |
 | Mute / solo the selection | M / S |
-| Copy / paste the last-clicked event at the playhead | Ctrl+C / Ctrl+V |
+| Copy / paste the primary event at the playhead | Ctrl+C / Ctrl+V |
 | Delete the selection | Delete or Backspace |
 | Undo / redo arrangement changes | Ctrl+Z / Ctrl+Y or Ctrl+Shift+Z |
 | Cancel a move or copy drag | Escape |
@@ -851,11 +855,31 @@ project. Click an empty button to save; click a stored button to recall; Shift-c
 to replace; middle-click to clear. Recalling a view leaves playback and selection
 intact. View captures are independent of arrangement undo/redo.
 
+The first selected card stays **primary**, with the normal selection color; other
+selected cards have a lighter border. Shift-click adds/removes members. Removing
+the primary promotes the earliest remaining selection. Dragging another selected
+member, adding a selection box, or copying the group preserves the primary role.
+
+**Left/Right** moves the selection horizontally by 1 unit; Shift uses 10.
+**Alt+Up/Down** aligns starts/ends to the primary, preserving durations. With only
+one selected card, a dialog says **SELECT MORE THAN ONE CARD** and nothing changes.
+**Alt+Left/Right** aligns starts/ends to the playhead and works for a single card.
+Alignments that would put any start before zero or beyond 24 hours leave all cards
+unchanged. These operations support Undo/Redo.
+
+Shift-click multiple **Sources**, then drag any selected source into the canvas.
+They arrive as a row at the drop position, with aligned tops and ordered left to
+right by selection. The first source becomes primary, and the whole row is selected
+for alignment, parameter changes or Ctrl+R Scatter. One Undo removes the whole drop.
+AUTO-SPACE may shift the row horizontally while preserving its order and timing.
+If there is insufficient capacity, no cards are added. Ctrl-click source selection
+also remains available. Time-range and Scatter input fields have a blinking cursor.
+
 Group moves and copies keep relative timing and spacing. AUTO-SPACE is off for new
 arrangements. When enabled, collision handling shifts the group horizontally while
 keeping start times fixed. Enabling it requires confirmation and can be undone. A Shift-click without a
 drag creates no copies; one Undo removes a copied group. Ctrl+C/Ctrl+V handles the
-last-clicked event, so use Shift-drag for a whole group.
+primary event, so use Shift-drag for a whole group.
 
 Muted events and events excluded by solo become dim. Multiple events can be soloed;
 mute takes precedence. These switches fade briefly while the voice clocks continue,

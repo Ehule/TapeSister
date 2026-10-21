@@ -71,7 +71,9 @@ static int install_mosaic_take(SDL_AudioDeviceID device,TsUiState *ui,
     /* An open card editor keeps its selection and document. The new take is
        also available through the normal Sample pages. */
     if(!ui->mosaic_editing) {
-        memset(ui->mosaic_selection,0,sizeof(ui->mosaic_selection));ui->mosaic_selected=id;
+        memset(ui->mosaic_selection,0,sizeof(ui->mosaic_selection));
+        memset(ui->mosaic_selection_order,0,sizeof(ui->mosaic_selection_order));
+        ui->mosaic_selection_serial=0;ui->mosaic_selected=id;
     }
     return 1;
 }

@@ -46,6 +46,20 @@ static uint32_t mosaic_mix_color(uint32_t a,uint32_t b,float t)
     unsigned v=(unsigned)((a&255)*(1-t)+(b&255)*t);
     return 0xff000000u|(r<<16)|(g<<8)|v;
 }
+static uint32_t mosaic_selection_color(const TsUiState *ui,int primary)
+{
+    uint32_t focus=ts_theme_legacy(&ui->palette,TS_THEME_MOSAIC,TS_COLOR_FOCUS,TS_PALETTE_MOSAIC_HIGHLIGHT);
+    return primary?focus:mosaic_mix_color(focus,ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_TEXT,RGB(224,214,233)),.55f);
+}
+static int mosaic_source_selection(const TsUiState *ui,int n)
+{
+    for(int i=0;i<ui->mosaic_source_pick_count;++i) {
+        const TsMosaicSourceKey *key=&ui->mosaic_source_picks[i];
+        if(key->event==ui->mosaic_sources[n].event && key->page==ui->mosaic_sources[n].bank_page && key->slot==ui->mosaic_sources[n].bank_slot)
+            return i==0?2:1;
+    }
+    return !ui->mosaic_source_pick_count && n==ui->mosaic_source_selected?2:0;
+}
 static void mosaic_envelope(const TsMosaicSource *s,size_t first,size_t last,float *peak,float *rms)
 {
     if(last<=first)last=first+1;
@@ -103,7 +117,7 @@ static void mosaic_card(TsFramebuffer *fb,const TsUiState *ui,const TsMosaicEven
     if(top>=66)mosaic_canvas_rect(fb,x,y,w,1,color);
     if(bottom<376)mosaic_canvas_rect(fb,x,end-1,w,1,color);
     if(selected) {
-        uint32_t border=ts_theme_legacy(&ui->palette,TS_THEME_MOSAIC,TS_COLOR_FOCUS,TS_PALETTE_MOSAIC_HIGHLIGHT);
+        uint32_t border=mosaic_selection_color(ui,e->id==ui->mosaic_selected);
         mosaic_canvas_rect(fb,x,y,2,h,border);mosaic_canvas_rect(fb,x+w-2,y,2,h,border);
         if(top>=66)mosaic_canvas_rect(fb,x,y,w,2,border);
         if(bottom<376)mosaic_canvas_rect(fb,x,end-2,w,2,border);
@@ -276,11 +290,9 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
     for(int i=0;i<16;++i) {
         int x=10+(i%2)*49,y=74+(i/2)*34,n=ui->mosaic_source_offset+i;
         const TsSample *sample=n<ui->mosaic_source_count?ui->mosaic_sources[n].sample:NULL;
-        int selected=sample && n==ui->mosaic_source_selected;
-        for(int pick=0;sample && pick<ui->mosaic_source_pick_count;++pick)
-            if(ui->mosaic_source_picks[pick]==ui->mosaic_sources[n].hash)selected=1;
+        int selected=sample?mosaic_source_selection(ui,n):0;
         uint32_t color=sample?mosaic_color(ui->mosaic_sources[n].hash):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DATA2, RGB(135,171,174));
-        rect(fb,x,y,44,28,selected?ts_theme_legacy(&ui->palette,TS_THEME_MOSAIC,TS_COLOR_FOCUS,TS_PALETTE_MOSAIC_HIGHLIGHT):sample?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(40,36,44)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(23,23,28)));
+        rect(fb,x,y,44,28,selected?mosaic_selection_color(ui,selected==2):sample?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(40,36,44)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(23,23,28)));
         if(selected)rect(fb,x+2,y+2,40,24,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(51,47,59)));
         snprintf(label,sizeof(label),"%02d",n<16?n+1:n-15);text(fb,x+4,y+4,label,sample?color:ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(74,70,82)),1);
         if(sample && sample->data) {
