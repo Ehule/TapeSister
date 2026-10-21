@@ -418,6 +418,7 @@ int main(int argc,char **argv)
     if(argc>1 && !strcmp(argv[1],"--arrange")) {test_mosaic_performance_edit(window);goto done;}
     if(argc>1 && !strcmp(argv[1],"--selection")) {test_mosaic_selection(window);goto done;}
     if(argc>1 && !strcmp(argv[1],"--copy-drag")) {test_mosaic_copy_gestures(window);goto done;}
+    if(argc>1 && !strcmp(argv[1],"--large-mosaic")) {test_mosaic_large_browser();goto done;}
     if(argc>1 && !strcmp(argv[1],"--loop")) {test_mosaic_loop_controls(window);goto done;}
     if(argc>1 && !strcmp(argv[1],"--navigation")) {test_mosaic_navigation(window);goto done;}
     TsMosaicSource *source=ts_mosaic_source(ui.mosaic,&instrument.current,error,sizeof(error));assert(source);
@@ -467,6 +468,7 @@ int main(int argc,char **argv)
     test_mosaic_loop_controls(window);
     test_mosaic_selection(window);
     test_mosaic_copy_gestures(window);
+    test_mosaic_large_browser();
     test_canvas_gestures(window);
     test_mosaic_copy_drag(window);
     test_mosaic_external_banks(window);

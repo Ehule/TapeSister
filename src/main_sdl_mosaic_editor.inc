@@ -144,10 +144,16 @@ static void mosaic_sources_refresh(TsUiState *ui,const TsInstrument *instrument,
         ui->mosaic_sources[ui->mosaic_source_selected].event:0;
     memset(ui->mosaic_sources,0,sizeof(ui->mosaic_sources));
     ui->mosaic_source_count=TS_BANK_SLOT_COUNT;int selection=-1;
+    /* A source may back hundreds of cards. Resolve each unique pointer in a
+       bounded table instead of searching the growing browser for every card. */
+    int source_index[TS_MOSAIC_EVENTS*2]={0};
     for(int i=0;i<TS_MOSAIC_EVENTS;++i) {
         TsMosaicEvent *e=&ui->mosaic->events[i];if(!e->id)continue;
-        int n=TS_BANK_SLOT_COUNT;for(;n<ui->mosaic_source_count;++n)if(ui->mosaic_sources[n].source==e->source)break;
-        if(n<ui->mosaic_source_count)continue;
+        size_t hash=((uintptr_t)e->source>>4)%(TS_MOSAIC_EVENTS*2);
+        while(source_index[hash] && ui->mosaic_sources[source_index[hash]-1].source!=e->source)
+            hash=(hash+1)%(TS_MOSAIC_EVENTS*2);
+        if(source_index[hash])continue;
+        int n=ui->mosaic_source_count;source_index[hash]=n+1;
         ui->mosaic_sources[n].sample=&e->source->sample;ui->mosaic_sources[n].source=e->source;
         ui->mosaic_sources[n].hash=e->source->hash;
         ui->mosaic_sources[n].event=e->id;ui->mosaic_sources[n].bank_slot=ui->mosaic_sources[n].bank_page=-1;

@@ -882,7 +882,7 @@ drag creates no copies; one Undo removes a copied group. Ctrl+C/Ctrl+V handles t
 primary event, so use Shift-drag for a whole group.
 Rapid Shift-clicks and repeated Shift-drags keep selecting/copying; an unmodified
 double-click opens the editor. Copies stay selected for another drag. A group copy
-must fit within the 128-card arrangement limit; otherwise nothing changes and the
+must fit within the 1,024-card arrangement limit; otherwise nothing changes and the
 status line shows how many free slots are needed and how many remain.
 
 Muted events and events excluded by solo become dim. Multiple events can be soloed;
@@ -1023,7 +1023,7 @@ page is added when existing pages are full. See [Mosaic recording](MOSAIC.md#rec
 SAVE preserves the events, notes, source regions, loop modes, positions, durations,
 mute/solo states, level/pan/fades, global speed, repeat setting, and shared source versions in the project folder.
 Transport position and arrangement/editor undo history are session state. Older
-projects without Mosaic open with an empty arrangement. Capacity is 128 events,
+projects without Mosaic open with an empty arrangement. Capacity is 1,024 events,
 with up to five voices each; practical processing capacity depends on the computer.
 
 The waveform display uses smooth edges and detailed peak/energy previews at the
@@ -2393,7 +2393,7 @@ faders.
 - Matrix patch-state sequencing is not implemented. Matrix colors are available in CFG → PALETTE → Routing / inserts.
 - MIDI output feedback to controller LEDs and motorized controls is not implemented.
 - FT2 Link exchange and direct Tapehead-to-TapeSister Live Link audio are supported.
-- Mosaic holds up to 128 events with five voices per event; these are storage limits,
+- Mosaic holds up to 1,024 events with five voices per event; these are storage limits,
   and available processing capacity depends on the computer and effects in use.
 - Portable builds still need target-machine audio and interaction checks before
   release. See the [Windows audio validation guide](WINDOWS_AUDIO_VALIDATION.md).

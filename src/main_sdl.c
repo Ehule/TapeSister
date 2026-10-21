@@ -1159,6 +1159,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
                                  live_link_frames,
                                  (uint32_t)audio->output_rate);
     ts_sister_runtime_begin_audio_block(&audio->sister);
+    ts_mosaic_begin_block(audio->mosaic,(unsigned)frames);
     ts_insert_begin_output_block(&audio->sister.insert, (unsigned)frames);
     ts_performance_inputs_begin(audio->performance_inputs,audio->sister.insert.duplex,
         audio->sister.insert.duplex_channels,(unsigned)audio->output_rate);
@@ -13710,7 +13711,7 @@ int main(int argc, char **argv)
     ImportController import_controller;
     BrowserAudition browser_audition={0};
     PortalController portal;
-    MosaicController mosaic = {0};
+    static MosaicController mosaic;
     PendingFileOperation pending_file = {0};
     size_t clipboard_origin_first = 0;
     size_t clipboard_source_frames = 0;

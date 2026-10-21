@@ -95,7 +95,7 @@ Shift-dragging an empty area adds a selection box while retaining the primary.
 Shift-dragging a card still copies the group; the primary's copy becomes primary.
 Rapid Shift-clicks and repeated Shift-drags stay in selection/copy mode; only an
 unmodified double-click opens the event editor. Copies remain selected for the
-next drag. If the whole group would exceed the 128-card arrangement limit, nothing
+next drag. If the whole group would exceed the 1,024-card arrangement limit, nothing
 is copied or moved: the status line shows the required and available free slots.
 Audition, Copy and single-card reference values use the primary.
 
@@ -521,9 +521,17 @@ containing Mosaic fails to load if its arrangement file is missing, preserving
 the current session. Transport position and editor/arrangement undo history
 are session state.
 
-The initial capacity is 128 events, with five voices per event. This is a storage
-limit, not a promise that every machine can run 640 voices plus all global
-processing simultaneously. DISTSHIFT and further CDP expansion are unchanged.
+Capacity is 1,024 cards, with up to five notes per card. Copies share their source
+audio. The playback schedule is prepared once per audio buffer, then visits active
+cards and upcoming starts. Total arrangement length/card count and simultaneous
+playback load are separate: dense overlaps and effects still use more CPU.
+
+Undo retains 32 steps in a circular history, avoiding a full-history shift when
+it fills. Source-browser lookup and source cleanup also scale with larger projects.
+Existing Mosaic formats (1–12) remain readable; the saved format stays at 12.
+Older builds capped at 128 cards cannot load projects containing more than 128.
+See [performance validation](validation/mosaic-scheduling.md) for benchmark scope
+and regression coverage.
 
 ## Performance update acceptance
 
@@ -624,4 +632,4 @@ AUTO-SPACE when applied.
 Click a numeric field to edit it; Ctrl+A clears the field, Enter accepts it, and
 Escape cancels the dialog. **Reroll** changes only the preview. **Apply** commits the
 whole operation as one undo step, including any spacing preference change. Cancel
-leaves the arrangement untouched. The 128-card limit is checked before applying.
+leaves the arrangement untouched. The 1,024-card limit is checked before applying.

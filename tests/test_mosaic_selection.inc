@@ -107,7 +107,7 @@ static void test_mosaic_selection(SDL_Window *window)
     key(window,SDLK_ESCAPE,KMOD_NONE);key(window,SDLK_z,KMOD_CTRL);assert(mosaic_event_count(scene)==3);
     key(window,SDLK_y,KMOD_CTRL);assert(mosaic_event_count(scene)==6);
     /* No partial insertion, selection loss or extra undo when the row won't fit. */
-    while(mosaic_event_count(scene)<126)assert(ts_mosaic_add(scene,source,30,0));
+    while(mosaic_event_count(scene)<TS_MOSAIC_EVENTS-2)assert(ts_mosaic_add(scene,source,30,0));
     ui.mosaic_source_page=0;mosaic_sources_refresh(&ui,&instrument,&mosaic);
     mosaic_select_click(window,20,119,KMOD_NONE);mosaic_select_click(window,20,85,KMOD_SHIFT);mosaic_select_click(window,69,85,KMOD_SHIFT);
     history=scene->history_count;uint64_t before=ts_mosaic_hash(scene),parent=ui.mosaic_selected;

@@ -4,7 +4,7 @@
 #include "tapesister/audition.h"
 #include "tapesister/source_route.h"
 
-#define TS_MOSAIC_EVENTS 128
+#define TS_MOSAIC_EVENTS 1024
 #define TS_MOSAIC_NOTES 5
 #define TS_MOSAIC_HISTORY 32
 #define TS_MOSAIC_GUTTER 8.0
@@ -33,6 +33,7 @@ typedef struct TsMosaicSource {
     TsMasterEqControls eq;
     uint64_t hash,eq_dry_hash;
     unsigned pins;
+    int retained; /* UI-thread source collection mark; never used by playback. */
     float peaks[TS_MOSAIC_PEAKS], rms[TS_MOSAIC_PEAKS];
     struct TsMosaicSource *next;
 } TsMosaicSource;
@@ -60,8 +61,19 @@ typedef struct {
     uint64_t attack;
     int active;
     float audible_gain, mix_left, mix_right;
+    float target_left, target_right;
+    uint64_t control_serial;
     TsSourceRouteVoice output_route;
 } TsMosaicVoice;
+
+/* Audio-owned, allocation-free working set. Slots stay in storage order when
+   mixing, preserving floating-point summation and per-card route ownership. */
+typedef struct {
+    int active[TS_MOSAIC_EVENTS], pending[TS_MOSAIC_EVENTS];
+    int active_count, pending_count, any_solo, valid;
+    double end, expected_time;
+    uint64_t revision;
+} TsMosaicSchedule;
 
 typedef struct TsMosaic {
     TsMosaicEvent events[TS_MOSAIC_EVENTS];
@@ -79,7 +91,7 @@ typedef struct TsMosaic {
     int audition_stopping, audition_rate;
     TsMosaicVoice audition_voice;
     float volume_current;
-    int history_count, history_cursor;
+    int history_count, history_cursor, history_first;
     TsMosaicSource *sources;
     uint64_t next_id, revision, epoch;
     double time;
@@ -91,6 +103,10 @@ typedef struct TsMosaic {
     unsigned transition_remaining, transition_total;
     TsSourceRouteHandoff route_handoff;
     int route_discontinuity;
+    TsMosaicSchedule schedule;
+    unsigned block_remaining;
+    uint64_t control_serial;
+    int audition_slot;
 } TsMosaic;
 
 TsMosaic *ts_mosaic_create(void);
@@ -123,6 +139,10 @@ void ts_mosaic_volume_action(TsMosaic *m, TsMosaicEnvelopeAction action);
 /* Accepts 0/0 to clear, otherwise a finite range at least 1 ms long. */
 int ts_mosaic_set_loop_range(TsMosaic *m, double start, double end);
 void ts_mosaic_set_repeat(TsMosaic *m, int repeat);
+/* Call once before each uninterrupted audio buffer, under the host audio lock.
+   No allocation or sorting library calls. Scalar reads without begin_block
+   still observe direct card edits immediately. Seeks rebuild within a buffer. */
+void ts_mosaic_begin_block(TsMosaic *m, unsigned frames);
 TsStereoFrame ts_mosaic_read(TsMosaic *m, int output_rate);
 /* Returns the Mosaic bus; custom cards go only into routes. NULL ignores routing. */
 TsStereoFrame ts_mosaic_read_routed(TsMosaic *m, int output_rate, TsSourceRouteMix *routes);

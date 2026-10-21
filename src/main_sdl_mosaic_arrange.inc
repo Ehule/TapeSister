@@ -139,7 +139,7 @@ static int mosaic_scatter_number(TsUiState *ui,MosaicController *c)
     if(end==ui->mosaic_scatter_text || *end || !isfinite(n) || n<0 || n>86400 ||
        (field==1 && n>=ui->mosaic_scatter_end) || (field==2 && n<=ui->mosaic_scatter_start) ||
        (field==3 && (n<1 || n>TS_MOSAIC_EVENTS || floor(n)!=n))) {
-        snprintf(ui->mosaic_scatter_status,sizeof(ui->mosaic_scatter_status),"ENTER A VALID RANGE OR COUNT (1-128)");return 0;
+        snprintf(ui->mosaic_scatter_status,sizeof(ui->mosaic_scatter_status),"ENTER A VALID RANGE OR COUNT (1-%d)",TS_MOSAIC_EVENTS);return 0;
     }
     if(field==1)ui->mosaic_scatter_start=n;else if(field==2)ui->mosaic_scatter_end=n;else ui->mosaic_scatter_count=(int)n;
     ui->mosaic_scatter_field=0;SDL_StopTextInput();mosaic_scatter_preview(ui,c);return 1;

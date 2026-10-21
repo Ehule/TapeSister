@@ -675,6 +675,9 @@ add_executable(tapesister_render_efficiency_tests tests/test_render_efficiency.c
 target_link_libraries(tapesister_render_efficiency_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_render_efficiency_tests COMMAND tapesister_render_efficiency_tests)
 
+add_executable(tapesister_mosaic_benchmark EXCLUDE_FROM_ALL tests/benchmark_mosaic.c)
+target_link_libraries(tapesister_mosaic_benchmark PRIVATE tapesister_core)
+
 add_executable(tapesister_mosaic_tests tests/test_mosaic.c)
 target_link_libraries(tapesister_mosaic_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_mosaic_tests COMMAND tapesister_mosaic_tests)

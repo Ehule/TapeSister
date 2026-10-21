@@ -151,7 +151,7 @@ a drag; Undo/Redo includes the controls. CLEAR SOLO leaves mute switches intact.
 
 No audio change means no question. Loop and chord changes are immediate and local
 to the event. Background CDP results retain their requesting event. SAVE includes
-the arrangement, level/pan/fades, global speed and shared audio versions; capacity is 128 events, five voices each.
+the arrangement, level/pan/fades, global speed and shared audio versions; capacity is 1,024 events, five voices each.
 
 **CFG → PALETTE → MOSAIC** offers HILITE and colors 1–5. Select a swatch and use
 the existing RGB sliders or Tapehead eyedropper. SAVE SHARED stores them; CANCEL

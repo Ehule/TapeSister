@@ -40,11 +40,12 @@ static void test_mosaic_copy_drag(SDL_Window *window)
     click(window,180,96,1);motion(window,220,120);assert(mosaic_event_count(scene)==5);
     key(window,SDLK_ESCAPE,KMOD_SHIFT);SDL_SetModState(KMOD_NONE);assert(mosaic_event_count(scene)==3 && !mosaic.drag);
     /* No partial group, no movement and no history entry when only one slot remains. */
-    while(mosaic_event_count(scene)<127)assert(ts_mosaic_add(scene,source,20+mosaic_event_count(scene),0));
+    while(mosaic_event_count(scene)<TS_MOSAIC_EVENTS-1)assert(ts_mosaic_add(scene,source,20+mosaic_event_count(scene),0));
     SDL_SetModState(KMOD_SHIFT);click(window,155,70,1);motion(window,385,180);release(window,385,180);
     history=scene->history_count;click(window,180,96,1);motion(window,220,120);release(window,220,120);SDL_SetModState(KMOD_NONE);
-    assert(mosaic_event_count(scene)==127 && a->x==20 && a->start==.5 && scene->history_count==history);
-    assert(!strcmp(ui.status,"COPY NEEDS 2 FREE / 1 AVAILABLE (128 CARD LIMIT)"));
+    assert(mosaic_event_count(scene)==TS_MOSAIC_EVENTS-1 && a->x==20 && a->start==.5 && scene->history_count==history);
+    char message[80];snprintf(message,sizeof(message),"COPY NEEDS 2 FREE / 1 AVAILABLE (%d CARD LIMIT)",TS_MOSAIC_EVENTS);
+    assert(!strcmp(ui.status,message));
     key(window,SDLK_BACKQUOTE,KMOD_NONE);assert(!ui.mosaic_open);
     key(window,SDLK_BACKQUOTE,KMOD_NONE);assert(ui.mosaic_open);
     ui.config_open=1;key(window,SDLK_BACKQUOTE,KMOD_NONE);assert(ui.mosaic_open);ui.config_open=0;

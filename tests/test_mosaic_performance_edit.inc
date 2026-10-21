@@ -62,7 +62,7 @@ static void test_mosaic_performance_edit(SDL_Window *window)
     SDL_SetModState(KMOD_CTRL);click(window,20,85,1);SDL_SetModState(KMOD_NONE);
     assert(mosaic.picked_count==1);key(window,SDLK_r,KMOD_CTRL);assert(ui.mosaic_scatter_copies);
     mosaic_arrange_test_frame();
-    ui.mosaic_scatter_count=128;mosaic_scatter_preview(&ui,&mosaic);assert(!ui.mosaic_scatter_valid && !ui.mosaic_ghost_count);
+    ui.mosaic_scatter_count=TS_MOSAIC_EVENTS;mosaic_scatter_preview(&ui,&mosaic);assert(!ui.mosaic_scatter_valid && !ui.mosaic_ghost_count);
     ui.mosaic_scatter_count=5;mosaic_scatter_preview(&ui,&mosaic);assert(ui.mosaic_ghost_count==5);
     click(window,130,120,1);key(window,SDLK_a,KMOD_CTRL);
     mosaic_arrange_test_frame();
