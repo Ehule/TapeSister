@@ -5,6 +5,7 @@ typedef struct {
     Uint32 captured;
     int hold, keyboard_voices, held_voices, tile_voices;
     int arp, outer_arp, arp_slot, audition, mosaic;
+    int mosaic_cards, mosaic_scheduled, mosaic_notes;
     int tracker, tracker_voices, tracker_row, embedded_tracker;
     int sister, rolling, tape_hold, monitor;
     unsigned sources;
@@ -74,6 +75,14 @@ static void ts_audio_health_capture_setup(const AudioState *audio,
     s->arp_slot = audio->keyboard_sequence.active_slot;
     s->audition = audio->playing;
     s->mosaic = audio->mosaic && audio->mosaic->playing;
+    s->mosaic_cards=s->mosaic_scheduled=s->mosaic_notes=0;
+    if(audio->mosaic)for(int i=0;i<TS_MOSAIC_EVENTS;++i) {
+        const TsMosaicEvent *e=&audio->mosaic->events[i];if(!e->id)continue;
+        ++s->mosaic_cards;
+        if(s->mosaic && audio->mosaic->time+1e-10>=e->start && audio->mosaic->time<e->start+e->duration) {
+            ++s->mosaic_scheduled;s->mosaic_notes+=e->note_count;
+        }
+    }
     s->tracker=audio->tracker.running?(audio->tracker.paused?2:1):0;
     s->embedded_tracker=ts_tapehead_running();
     s->tracker_row=audio->tracker.row<0?0:audio->tracker.row;
@@ -143,6 +152,7 @@ static void ts_audio_health_setup_report(char *text, size_t size, Uint32 now)
         "  Keyboard HOLD: %s; keyboard voice instances: %d; latched/sustained: %d\n"
         "  ARP: %s; outer ARP: %s; active slot: %d\n"
         "  Audition: %s; tile voice instances: %d; Mosaic: %s\n"
+        "  Mosaic cards: %d total; %d at playhead; %d assigned notes (includes muted/finished one-shots)\n"
         "  TrackSister (embedded): %s\n"
         "  SisterTracker: %s; row: %d; voice instances: %d (legacy engine)\n"
         "  Sister Machine: %s, %s; rolling: %s; tape HOLD: %s; monitor: %s\n"
@@ -156,6 +166,7 @@ static void ts_audio_health_setup_report(char *text, size_t size, Uint32 now)
         health_running(s->arp), health_running(s->outer_arp),
         s->arp || s->outer_arp ? s->arp_slot + 1 : 0,
         health_running(s->audition), s->tile_voices, health_running(s->mosaic),
+        s->mosaic_cards,s->mosaic_scheduled,s->mosaic_notes,
         health_running(s->embedded_tracker),s->tracker==2?"paused":health_running(s->tracker),s->tracker_row,s->tracker_voices,
         health_on(s->sister), health_route(s, TS_ROUTER_SISTER), health_on(s->rolling),
         health_on(s->tape_hold), health_on(s->monitor), source[0] ? source : "none",
@@ -413,6 +424,7 @@ static void ts_audio_session_update(AudioState *audio,TsUiState *ui)
     /* Voice counts and current rows belong in one-second samples; routing,
        controls and transport changes retain their own setup snapshot. */
     current.captured=0;current.keyboard_voices=current.held_voices=current.tile_voices=0;
+    current.mosaic_scheduled=current.mosaic_notes=0;
     current.tracker_row=current.tracker_voices=0;
     if(current.valid && memcmp(&current,&previous,sizeof(current))) {
         char setup[32768];ts_audio_health_setup_report(setup,sizeof(setup),now);
@@ -428,9 +440,10 @@ static void ts_audio_session_update(AudioState *audio,TsUiState *ui)
         (unsigned long long)s->near_overruns,s->control_worst_microseconds/1000,(unsigned long long)s->control_long_holds,
         s->control_wait_worst_microseconds/1000,ts_health.native_kind,ts_health.driver_reports,ts_health.control_skips,
         ts_health.control_recoveries,ts_health.worker_gaps,ts_profile_enabled());
-    ts_session_log_event("workload_sample","setup_age_ms=%u keyboard_voices=%d held=%d tile_voices=%d mosaic=%d arp=%d embedded_tracksister=%d legacy_tracker=%d visualizer=%d frozen=%d quality=%d",
+    ts_session_log_event("workload_sample","setup_age_ms=%u keyboard_voices=%d held=%d tile_voices=%d mosaic=%d mosaic_cards=%d mosaic_at_playhead=%d mosaic_notes=%d arp=%d embedded_tracksister=%d legacy_tracker=%d visualizer=%d frozen=%d quality=%d",
         now-ts_health.setup.captured,ts_health.setup.keyboard_voices,ts_health.setup.held_voices,ts_health.setup.tile_voices,
-        ts_health.setup.mosaic,ts_health.setup.arp,ts_health.setup.embedded_tracker,ts_health.setup.tracker,
+        ts_health.setup.mosaic,ts_health.setup.mosaic_cards,ts_health.setup.mosaic_scheduled,ts_health.setup.mosaic_notes,
+        ts_health.setup.arp,ts_health.setup.embedded_tracker,ts_health.setup.tracker,
         ts_mandala_active(),ts_mandala_frozen(),ui->config.visual_quality);
     if(generation!=audio->audio_health_generation || connection!=(int)ts_output_endpoint.state) {
         generation=audio->audio_health_generation;connection=ts_output_endpoint.state;

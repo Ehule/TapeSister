@@ -27,6 +27,12 @@ can continue. Voice counts are instances across playback routes, not distinct
 pitches. Prism's base mode/lens count are configured values; Matrix morphs can
 use different values.
 
+Mosaic reports total arrangement cards, cards crossing the running playhead, and
+the notes assigned to those cards. Muted/solo-excluded cards and finished one-shots
+still count while their card duration crosses the playhead. These are workload
+counts, not detected sound; stopped Mosaic reports zero at the playhead. This
+distinguishes a large sparse arrangement from many simultaneous cards/chords.
+
 With **Unified routing matrix: ON**, the report lists active connections with
 levels and row pan, names the hardware pairs, and labels legacy order/source
 switches/Insert assignments as inactive. Processor power remains relevant. For

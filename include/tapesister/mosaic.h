@@ -62,6 +62,11 @@ typedef struct {
     int active;
     float audible_gain, mix_left, mix_right;
     float target_left, target_right;
+    double fade_in, fade_out, release_frames;
+    float audible_ramp, mix_ramp;
+    size_t attack_frames;
+    TsLoopMode base_mode;
+    int starts_at_sample;
     uint64_t control_serial;
     TsSourceRouteVoice output_route;
 } TsMosaicVoice;

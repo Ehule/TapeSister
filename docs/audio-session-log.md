@@ -60,6 +60,12 @@ recording on the next launch. The setting is a local preference, not project dat
   capture of DSP state at an earlier timing maximum. Fast actions can occur
   between setup snapshots; action records help locate them.
 - Embedded TrackSister transport is reported separately from the legacy tracker.
+- Mosaic workload samples include total cards, cards at the running playhead,
+  and their assigned notes, including muted cards and finished one-shots.
+- Audio configuration transactions record requested backend/devices/buffer,
+  successful application, open/start failure text, and rollback success/failure.
+  Opening the New Project confirmation has its own marker; it does not imply
+  that the project was cleared.
 - Once-per-second host process CPU, total system CPU, resident memory and available
   system memory where supported. Process CPU uses 100% per core; system CPU uses
   100% across the machine. `-1` CPU or zero memory means unavailable. These figures

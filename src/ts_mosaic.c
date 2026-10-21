@@ -221,11 +221,10 @@ static void event_balance(const TsMosaicEvent *e,float *left,float *right)
     *left=e->gain*(e->pan>0?sqrtf(fmaxf(0,1-e->pan)):1);
     *right=e->gain*(e->pan<0?sqrtf(fmaxf(0,1+e->pan)):1);
 }
-static float event_fade(const TsMosaicEvent *e,double elapsed)
+static float event_fade(const TsMosaicEvent *e,const TsMosaicVoice *v,double elapsed)
 {
-    double in=fmax(0,e->fade_in),out=fmax(0,e->fade_out);
-    /* Overlapping fades meet proportionally, including after shortening a tile. */
-    if(in+out>e->duration){double scale=e->duration/(in+out);in*=scale;out*=scale;}
+    double in=v->fade_in,out=v->fade_out;
+    if(in==0 && out==0)return 1;
     double gain=1;
     if(in>0)gain=fmin(gain,elapsed/in);
     if(out>0)gain=fmin(gain,(e->duration-elapsed)/out);
@@ -234,13 +233,13 @@ static float event_fade(const TsMosaicEvent *e,double elapsed)
 /* Derive loop phase from distance travelled. Reverse uses a full sample
    cycle (the legacy helper drops a frame at each reverse wrap). This also
    makes seeks into long ping-pong/START events exact without replaying them. */
-static double voice_position(const TsMosaicEvent *e,double distance,int *direction,int *intro)
+static double voice_position(const TsMosaicEvent *e,const TsMosaicVoice *v,double distance,int *direction,int *intro)
 {
-    TsLoopMode mode=ts_loop_base_mode(e->mode);
+    TsLoopMode mode=v->base_mode;
     double first=(double)e->first,last=(double)e->last;
     *intro=0;*direction=1;
     if(!e->looping)return first+distance;
-    int start=ts_loop_starts_at_sample(e->mode);
+    int start=v->starts_at_sample;
     if(start && distance<first){*intro=1;return distance;}
     if(mode==TS_LOOP_FORWARD) {
         double p=start?distance:first+distance;
@@ -262,6 +261,8 @@ static double voice_position(const TsMosaicEvent *e,double distance,int *directi
 static void voice_begin(TsMosaicVoice *v,const TsMosaicEvent *e,double elapsed,int rate)
 {
     memset(v,0,sizeof(*v));v->active=1;v->id=e->id;v->revision=e->revision;v->start=e->start;
+    v->attack_frames=ts_audition_attack_frames(rate,2);v->release_frames=rate*.002;
+    v->audible_ramp=1.0f/(rate*.005f);v->mix_ramp=2.0f/(rate*.005f);
     event_balance(e,&v->mix_left,&v->mix_right);
     for(int n=0;n<e->note_count;++n) {
         double pitch=ts_tuning_note_pitch(&e->tuning,e->notes[n]-60);
@@ -334,25 +335,32 @@ static TsStereoFrame mosaic_event_read(const TsMosaicEvent *e,TsMosaicVoice *v,d
     }
     if(v->control_serial!=serial) {
         event_balance(e,&v->target_left,&v->target_right);
+        v->base_mode=ts_loop_base_mode(e->mode);v->starts_at_sample=ts_loop_starts_at_sample(e->mode);
+        v->fade_in=fmax(0,e->fade_in);v->fade_out=fmax(0,e->fade_out);
+        /* Fades and loop controls are stable within the host's audio buffer.
+           Preserve the same proportional fades when duration changes live. */
+        if(v->fade_in+v->fade_out>e->duration) {
+            double scale=e->duration/(v->fade_in+v->fade_out);v->fade_in*=scale;v->fade_out*=scale;
+        }
         if(routes && (!v->output_route.ready || v->output_route.rate!=(unsigned)rate ||
            memcmp(&v->output_route.route,&e->output_route,sizeof(e->output_route))))
             ts_source_route_set(&v->output_route,e->output_route,(unsigned)rate);
         v->control_serial=serial;
     }
-    float envelope=ts_audition_attack_gain(v->attack++,ts_audition_attack_frames(rate,2));
+    float envelope=v->attack>=v->attack_frames?1:ts_audition_attack_gain(v->attack,v->attack_frames);
+    ++v->attack;
     double tail=(e->start+e->duration-time)*rate/speed;
-    if(tail<rate*0.002)envelope*=(float)fmax(0,tail/(rate*0.002));
+    if(tail<v->release_frames)envelope*=(float)fmax(0,tail/v->release_frames);
     float target=audible?1.0f:0.0f;
-    float ramp=1.0f/(rate*.005f);
-    v->audible_gain=target>v->audible_gain?fminf(target,v->audible_gain+ramp):fmaxf(target,v->audible_gain-ramp);
-    float mix_ramp=2.0f/(rate*.005f);
-    v->mix_left+=fmaxf(-mix_ramp,fminf(mix_ramp,v->target_left-v->mix_left));
-    v->mix_right+=fmaxf(-mix_ramp,fminf(mix_ramp,v->target_right-v->mix_right));
-    float gain=level*envelope*v->audible_gain*event_fade(e,time-e->start)/e->note_count;
+    if(v->audible_gain!=target)
+        v->audible_gain=target>v->audible_gain?fminf(target,v->audible_gain+v->audible_ramp):fmaxf(target,v->audible_gain-v->audible_ramp);
+    if(v->mix_left!=v->target_left)v->mix_left+=fmaxf(-v->mix_ramp,fminf(v->mix_ramp,v->target_left-v->mix_left));
+    if(v->mix_right!=v->target_right)v->mix_right+=fmaxf(-v->mix_ramp,fminf(v->mix_ramp,v->target_right-v->mix_right));
+    float gain=level*envelope*v->audible_gain*event_fade(e,v,time-e->start)/e->note_count;
     TsStereoFrame card={0,0};
     for(int n=0;n<e->note_count;++n) {
         TsStereoFrame f;
-        v->position[n]=voice_position(e,v->travel[n],&v->direction[n],&v->intro[n]);
+        v->position[n]=voice_position(e,v,v->travel[n],&v->direction[n],&v->intro[n]);
         if(!e->looping) {
             if(v->position[n]>=e->last)continue;
             f=ts_audition_read_frame(&e->source->sample,v->position[n],e->last);

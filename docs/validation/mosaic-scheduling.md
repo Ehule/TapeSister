@@ -91,3 +91,46 @@ builds run separately in GitHub Actions.
 Project format remains 12. Existing formats 1–12 remain readable. Older 128-card
 builds cannot load arrangements containing more than 128 cards. TrackSister
 pattern cards are not part of this change; scheduling is still for sample cards.
+
+## Dense playback follow-up
+
+The 2026-10-21 Windows stress reports showed substantial processing time with
+many simultaneous cards, separately from a failed device switch and a long
+project-load lock hold. Those reports do not establish how many cards were
+crossing the playhead at each retained maximum.
+
+This follow-up caches attack/release lengths and ramp steps per voice/output
+rate, and normalized fades and loop controls per audio buffer. Settled gain/pan
+ramps and completed attacks avoid redundant arithmetic. Pitch, interpolation,
+loop phase, mixing order and voice capacity are unchanged.
+
+The extended Release benchmark adds all 1,024 cards sounding and a 128-card
+five-note chord case with routes, overlapping fades and live mute/gain/pan/fade
+edits. Same development host and methodology as above; before is `5415cb0`.
+
+| Cards | Sounding | Before (ms/buffer) | After (ms/buffer) |
+| ---: | ---: | ---: | ---: |
+| 128 | 16 | 0.555 | 0.360 |
+| 128 | 128 | 4.347 | 2.880 |
+| 1,024 | 1 | 0.060 | 0.052 |
+| 1,024 | 16 | 0.547 | 0.371 |
+| 1,024 | 1,024 | 35.814 | 23.798 |
+| 128, five-note chords and routes | 128 | 14.193 | 12.969 |
+
+The dense single-note cases improve about 33%; the chord/routing case improves
+about 9%. All eight captured streams, including routed data in the last case,
+match byte for byte (20,447,232 bytes). The updated model reserves 21,273,904
+bytes on this 64-bit build. The 1,024-card dense case still exceeds the 10.667 ms
+buffer budget. These measurements are not a full-application or MOTU benchmark.
+
+Audio Health now supplies total-card and playhead card/note counts without adding
+audio-callback work. Session logs retain configuration-switch errors/rollback and
+New Project prompt openings to help diagnose recurrence. The reported Windows
+driver-switch failure, unexpected New prompt and load-time lock hold are not
+claimed fixed by this DSP change.
+
+Linux application build and seven affected suites pass: Mosaic model/storage,
+Mosaic controller, Audio Health, audio reconfiguration, source-route/Matrix
+controller, offline rendering and project reset. Health coverage includes all
+1,024 cards, overlapping chords, muted/finished one-shot counts, stopped transport,
+snapshot throttling and exported workload fields.

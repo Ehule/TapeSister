@@ -179,11 +179,21 @@ int main(int argc, char **argv)
     a->sister.parameters.prism.lenses = 12;
     a->sister.prism.matrix.running = 1;
     a->tracker.lanes[0].voice.active=1;
+    a->mosaic=ts_mosaic_create();assert(a->mosaic);
+    char mosaic_error[160];
+    TsMosaicSource *source=ts_mosaic_source(a->mosaic,&sample,mosaic_error,sizeof(mosaic_error));assert(source);
+    for(int i=0;i<TS_MOSAIC_EVENTS;++i) {
+        TsMosaicEvent *card=ts_mosaic_add(a->mosaic,source,i<3?0:10,0);assert(card);
+        card->duration=2;card->note_count=i<3?i+1:1;
+    }
+    a->mosaic->events[1].muted=1;a->mosaic->events[2].looping=0;
+    a->mosaic->playing=1;a->mosaic->time=1; /* One-shot audio has already ended. */
     ts_audio_health_capture_setup(a, ui, 1000);
     assert(ts_health.setup.tracker_voices==1);
     char setup[3072]; ts_audio_health_setup_report(setup, sizeof(setup), 1020);
     assert(strstr(setup, "Keyboard HOLD: ON; keyboard voice instances: 1; latched/sustained: 1"));
     assert(strstr(setup, "ARP: RUNNING; outer ARP: RUNNING; active slot: 5"));
+    assert(strstr(setup,"Mosaic cards: 1024 total; 3 at playhead; 6 assigned notes"));
     assert(strstr(setup, "Sister Machine: ON, routed"));
     assert(strstr(setup, "Sister source switches: Tiles, FM"));
     assert(strstr(setup, "Fallout: ON, routed; FX master: ON"));
@@ -195,15 +205,18 @@ int main(int argc, char **argv)
     a->sister.router.controls.bypass_mask = 1u << TS_ROUTER_PRISM;
     a->sister.router.wet[TS_ROUTER_PRISM] = 0;
     a->sister.parameters.fx.enabled = 0;
+    a->mosaic->playing=0;
     ts_audio_health_capture_setup(a, ui, 1100); /* Bounded refresh; no live-state reads in report. */
     ts_audio_health_setup_report(setup, sizeof(setup), 1100);
     assert(strstr(setup, "Prism: ON, routed"));
+    assert(strstr(setup,"3 at playhead; 6 assigned notes"));
     ts_audio_health_capture_setup(a, ui, 1250);
     assert(ts_health.setup.tracker_voices==1);
     ts_audio_health_setup_report(setup, sizeof(setup), 1250);
     assert(strstr(setup, "Prism: ON, bypassed"));
     assert(strstr(setup, "Fallout: ON, routed; FX master: OFF"));
     assert(strstr(setup, "Pedalboard master: OFF"));
+    assert(strstr(setup,"1024 total; 0 at playhead; 0 assigned notes"));
     ts_audio_health_report(a, report, sizeof(report));
     assert(strstr(report, "Slot 4:") && strstr(report, "Native counters cover"));
     a->keyboard_sequence.running = a->keyboard_sequence.slot_running = 0;
@@ -310,8 +323,9 @@ int main(int argc, char **argv)
     SDL_RWops *log=SDL_RWFromFile(session.path,"rb");assert(log);size_t log_size=(size_t)SDL_RWsize(log);
     char *history=calloc(log_size+1,1);assert(history);assert(SDL_RWread(log,history,1,log_size)==log_size);SDL_RWclose(log);
     assert(strstr(history,"heard_click") && strstr(history,"health_reset") && strstr(history,"setup_snapshot") && strstr(history,"audio_device"));
+    assert(strstr(history,"mosaic_cards=1024 mosaic_at_playhead=0 mosaic_notes=0"));
     free(history);remove(session.path);remove(session.export_path);
-    SDL_DestroyWindow(main_window); free(a); free(ui); SDL_Quit();
+    SDL_DestroyWindow(main_window);ts_mosaic_free(a->mosaic); free(a); free(ui); SDL_Quit();
     puts("Audio Health: counters, nested locks, concurrent snapshots, actual device, window isolation, reset and clipboard passed");
     return 0;
 }

@@ -525,6 +525,9 @@ Capacity is 1,024 cards, with up to five notes per card. Copies share their sour
 audio. The playback schedule is prepared once per audio buffer, then visits active
 cards and upcoming starts. Total arrangement length/card count and simultaneous
 playback load are separate: dense overlaps and effects still use more CPU.
+F12 Audio Health reports total cards, cards at the running playhead, and their
+assigned note count. The latter includes muted cards and finished one-shots;
+it describes scheduled work rather than detected sound.
 
 Undo retains 32 steps in a circular history, avoiding a full-history shift when
 it fills. Source-browser lookup and source cleanup also scale with larger projects.

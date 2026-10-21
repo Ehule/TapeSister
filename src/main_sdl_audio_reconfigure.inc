@@ -111,15 +111,21 @@ static int ts_audio_reconfigure(const TsConfig *config, char *error, size_t size
     ts_copy_name(previous_driver, sizeof(previous_driver), SDL_GetCurrentAudioDriver());
     int had_output = ts_real_output != 0;
     int had_capture = ts_real_capture != 0 || ts_audio_endpoint_should_retry_capture();
+    ts_session_log_event("audio_reconfigure","request backend=%s output=%.200s input=%.200s frames=%d previous_backend=%s had_output=%d had_capture=%d",
+        ts_audio_backend_name(config->audio_backend),config->audio_output_device,config->record_input_device,
+        config->audio_buffer_frames,ts_audio_backend_name(previous.audio_backend),had_output,had_capture);
     if (audio && ts_live_ui) stop_all_force(TS_AUDIO_LOGICAL_OUTPUT, audio, ts_live_ui);
     ts_audio_session_close();
     if (ts_audio_session_open((TsConfig *)config, had_capture, NULL, error, size)) {
+        ts_session_log_event("audio_reconfigure","applied backend=%s rate=%u frames=%u channels=%u",
+            ts_audio_backend_name(config->audio_backend),ts_output_endpoint.sample_rate,ts_output_endpoint.buffer_frames,ts_output_endpoint.channels);
         ts_capture_reconfigure_error[0] = 0;
         ts_audio_catalog_refresh();
         return 1;
     }
-    char failure[160], restore_error[160];
+    char failure[160], restore_error[160]="Previous output was unavailable";
     snprintf(failure, sizeof(failure), "%.140s", error);
+    ts_session_log_event("audio_reconfigure","failed backend=%s error=%s",ts_audio_backend_name(config->audio_backend),failure);
     ts_audio_session_close();
     int restored = had_output && ts_audio_session_open(&previous, had_capture,
                           previous_driver[0] ? previous_driver : NULL,
@@ -127,6 +133,8 @@ static int ts_audio_reconfigure(const TsConfig *config, char *error, size_t size
     if (restored && audio)
         ts_audio_insert_devices_sync(audio, &previous, 1, restore_error, sizeof(restore_error));
     if (!restored) ts_audio_session_close();
+    ts_session_log_event("audio_reconfigure","rollback restored=%d backend=%s error=%s",
+        restored,ts_audio_backend_name(previous.audio_backend),restored?"":restore_error);
     ts_live_config = (TsConfig *)config;
     ts_started_backend = previous.audio_backend;
     ts_audio_endpoint_configure(&ts_output_endpoint, config->audio_output_device);
