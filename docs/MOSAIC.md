@@ -93,6 +93,10 @@ promotes the earliest remaining selection. Clicking or dragging a selected membe
 keeps the primary; clicking an unselected card without Shift starts a new selection.
 Shift-dragging an empty area adds a selection box while retaining the primary.
 Shift-dragging a card still copies the group; the primary's copy becomes primary.
+Rapid Shift-clicks and repeated Shift-drags stay in selection/copy mode; only an
+unmodified double-click opens the event editor. Copies remain selected for the
+next drag. If the whole group would exceed the 128-card arrangement limit, nothing
+is copied or moved: the status line shows the required and available free slots.
 Audition, Copy and single-card reference values use the primary.
 
 **Left/Right** nudges the whole selection horizontally by one layout unit;

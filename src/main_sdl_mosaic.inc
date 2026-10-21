@@ -102,7 +102,8 @@ static int mosaic_begin_drag_change(TsUiState *ui,MosaicController *c)
         int free_slots=0;
         for(int i=0;i<TS_MOSAIC_EVENTS;++i)free_slots+=!m->events[i].id;
         if(free_slots<ui->mosaic_ghost_count) {
-            snprintf(ui->status,sizeof(ui->status),"NOT ENOUGH ROOM TO COPY THE WHOLE SELECTION");return 0;
+            snprintf(ui->status,sizeof(ui->status),"COPY NEEDS %d FREE / %d AVAILABLE (%d CARD LIMIT)",
+                ui->mosaic_ghost_count,free_slots,TS_MOSAIC_EVENTS);return 0;
         }
     }
     for(int i=0;i<ui->mosaic_ghost_count;++i)
@@ -446,7 +447,11 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
                 else if(!chosen)mosaic_select_only(ui,e->id);
                 mosaic_picks_clear(ui,c);
                 mosaic_source_select_event(ui,e);
-                if(event->button.clicks>=2){mosaic_enter(device,audio,ui,instrument,c,e->id);return 1;}
+                /* SDL counts rapid modified presses as double/triple clicks
+                   too. Selection and copy gestures must keep owning them. */
+                if(event->button.clicks>=2 && !(mod&(KMOD_SHIFT|KMOD_CTRL|KMOD_ALT|KMOD_GUI))) {
+                    mosaic_enter(device,audio,ui,instrument,c,e->id);return 1;
+                }
                 mosaic_drag_end(ui,c);ui->mosaic_ghost_count=0;
                 c->shift_toggle=(mod&KMOD_SHIFT) && chosen?e->id:0;
                 ui->mosaic_ghost_count=mosaic_selected_events(ui,ui->mosaic_ghosts);

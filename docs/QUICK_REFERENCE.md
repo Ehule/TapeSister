@@ -93,7 +93,7 @@ does not switch the main bank. See the [Mosaic chapter](USER_MANUAL.md#mosaic).
 | Select multiple sources | Shift-click; drag any selected source to add the row, or Ctrl+R for Scatter |
 | Select / edit | Click / double-click event |
 | Add a selection box | Shift+left-drag on empty canvas; keeps the primary |
-| Move group / copy group | Drag a selected tile / hold Shift when starting that drag |
+| Move group / copy group | Drag a selected tile / hold Shift when starting that drag; repeat to copy again |
 | Extend duration / change visual width | Drag top or bottom / right edge |
 | Optional start, end, midpoint alignment | Alt during move or duration resize |
 | Mute / solo selected events | M / S; excluded cards say SOLO OUT |

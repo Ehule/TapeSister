@@ -880,6 +880,10 @@ arrangements. When enabled, collision handling shifts the group horizontally whi
 keeping start times fixed. Enabling it requires confirmation and can be undone. A Shift-click without a
 drag creates no copies; one Undo removes a copied group. Ctrl+C/Ctrl+V handles the
 primary event, so use Shift-drag for a whole group.
+Rapid Shift-clicks and repeated Shift-drags keep selecting/copying; an unmodified
+double-click opens the editor. Copies stay selected for another drag. A group copy
+must fit within the 128-card arrangement limit; otherwise nothing changes and the
+status line shows how many free slots are needed and how many remain.
 
 Muted events and events excluded by solo become dim. Multiple events can be soloed;
 mute takes precedence. These switches fade briefly while the voice clocks continue,
