@@ -525,6 +525,10 @@ Capacity is 1,024 cards, with up to five notes per card. Copies share their sour
 audio. The playback schedule is prepared once per audio buffer, then visits active
 cards and upcoming starts. Total arrangement length/card count and simultaneous
 playback load are separate: dense overlaps and effects still use more CPU.
+Ordinary sample interiors and settled per-card routes to the Mosaic bus use
+shorter playback paths; loop splices and route changes retain their smoothing.
+Scatter can still leave many cards sounding together. Performance validation
+includes staggered cards with Matrix routing enabled, as well as aligned rows.
 F12 Audio Health reports total cards, cards at the running playhead, and their
 assigned note count. The latter includes muted cards and finished one-shots;
 it describes scheduled work rather than detected sound.

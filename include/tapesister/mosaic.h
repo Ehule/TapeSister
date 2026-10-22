@@ -71,6 +71,7 @@ typedef struct {
     size_t attack_frames;
     TsLoopMode base_mode;
     int starts_at_sample;
+    int route_passthrough;
     uint64_t control_serial;
     TsSourceRouteVoice output_route;
 } TsMosaicVoice;

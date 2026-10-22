@@ -209,3 +209,72 @@ keyboard HOLD/sequences, and embedded TrackSister/project loading. Address and
 undefined-behavior sanitizer checks instrument the changed Mosaic and Sample
 page modules and their core tests. LeakSanitizer is unavailable in this traced
 container; those checks run with leak detection disabled.
+
+## Scattered playback with Matrix enabled
+
+The October 22 session log from build `95c767c` shows sustained callback overload
+with about 140–174 cards crossing the playhead. It starts before PROFILE is
+enabled. The TSR load's control hold is 1.233 ms, there are no ASIO control-lock
+skips, and no control hold exceeds the 10.667 ms buffer budget. This separates
+the reported playback overload from the earlier load/edit exclusion stalls.
+It does not establish a build-to-build regression: the recent loading and
+portability changes did not change the sample-rendering loop, and the matching
+synthetic streams from `bac0572` and `95c767c` are byte-identical.
+
+The previous benchmark mostly passed NULL for the per-card routing mix. That
+missed work performed with the user's unified Matrix enabled, even for cards
+using the ordinary Mosaic bus. The benchmark now accepts `--routed`, includes
+160 simultaneous cards and staggered starts/ends, and can load external project
+sources with `--project`.
+
+The renderer now:
+
+- Reads ordinary sample interiors locally with the same endpoint sanitization,
+  linear interpolation and arithmetic order. Loop boundaries, crossfade splices
+  and other cases use the existing shared readers.
+- Avoids loop wrapping when a forward phase is already within its valid range.
+- Recognizes settled identity routes once per buffer. It preserves source/send
+  meters and signed-zero arithmetic while avoiding redundant route matrices and
+  zero-valued recording taps. Custom routes and every route transition still use
+  the shared routing implementation.
+- Calculates the two-millisecond release division only near the card's end and
+  skips division by one for single-note cards. The actual release arithmetic,
+  polyphony, pitch, effects and audio quality are unchanged.
+
+Verification covers mono/stereo, all six loop modes, crossfades, fractional pitch
+and speed, 44.1/48 kHz, nonfinite source samples, routing changes away from and back
+to the Mosaic bus, recording taps and activity meters against the shared readers.
+The synthetic and external-project audio/routing captures match their previous
+implementation byte for byte (286,064,640 bytes total). The original project also
+opens twice through the application, retaining all 1,020 cards, 10 sources and
+hash `5617727719280061890`; all 27 supplied files remain unchanged.
+
+The external-project benchmark renders the saved layout, then generates a
+deterministic staggered layout in memory (156.5 mean active cards for the supplied
+project). It is not a reconstruction of the user's exact Scatter seed/settings.
+The final sequential before/after run, using the best of three CPU-time trials
+per layout at 48 kHz / 512 frames, measured:
+
+| Supplied project sources, Matrix enabled | Before | After |
+| --- | ---: | ---: |
+| 1,020 simultaneous cards | 22.538 ms | 14.099 ms |
+| Deterministic scatter, 156.5 mean active | 4.248 ms | 2.615 ms |
+
+Timing varies on the shared development host and does not predict Windows/MOTU
+headroom or prove that dropouts are eliminated. In particular, 1,020 simultaneous
+cards can still exceed the realtime deadline.
+
+Linux application build and five affected suites pass: Mosaic model/storage,
+Mosaic controller, source routing, offline rendering and project Open/reset.
+The changed Mosaic module and model tests also pass AddressSanitizer/UBSan with
+leak detection disabled in the traced container.
+
+```sh
+cmake --build build --target tapesister_mosaic_benchmark
+./build/tapesister_mosaic_benchmark --routed matrix-enabled.f32
+./build/tapesister_mosaic_benchmark --project /path/to/project/project-data project.f32
+```
+
+Both capture paths are optional. Project mode reads the original files and makes
+no changes to them. The benchmark is an explicit measurement tool, not a CI
+timing threshold.

@@ -261,6 +261,7 @@ static double voice_position(const TsMosaicEvent *e,const TsMosaicVoice *v,doubl
     if(start && distance<first){*intro=1;return distance;}
     if(mode==TS_LOOP_FORWARD) {
         double p=start?distance:first+distance;
+        if(e->last>e->first+1 && p>=first && p<last)return p;
         return ts_audition_wrap_position(p,e->first,e->last,e->crossfade);
     }
     if(mode==TS_LOOP_REVERSE) {
@@ -344,6 +345,33 @@ void ts_mosaic_volume_action(TsMosaic *m,TsMosaicEnvelopeAction action)
     ++m->revision;
 }
 
+/* Most reads are inside a sample, outside either loop splice. Keep that path
+   local so each note does not repeat the generic reader's validation and
+   function calls. Boundaries, crossfades and unusual data retain the shared
+   reader. Sanitize each endpoint before interpolation, exactly as it does. */
+static TsStereoFrame mosaic_sample_read(const TsMosaicEvent *e,const TsMosaicVoice *v,int n)
+{
+    const TsSample *s=&e->source->sample;double position=v->position[n];
+    int plain=!e->looping || v->intro[n];
+    int interior=plain || (v->base_mode==TS_LOOP_FORWARD?position<(double)(e->last-e->crossfade):
+        v->base_mode==TS_LOOP_REVERSE?position>=(double)(e->first+e->crossfade):1);
+    if(interior && s->data && (s->channels==1 || s->channels==2) && e->last<=s->frames && e->last>1 &&
+       position>=(plain?0:(double)e->first) && position<(double)(e->last-1)) {
+        size_t at=(size_t)position,offset=at*s->channels;
+        float fraction=(float)(position-(double)at);
+        float a=s->data[offset],b=s->data[offset+s->channels];
+        a=isfinite(a)?a:0;b=isfinite(b)?b:0;
+        TsStereoFrame f;f.l=a+(b-a)*fraction;
+        if(s->channels==2) {
+            a=s->data[offset+1];b=s->data[offset+3];a=isfinite(a)?a:0;b=isfinite(b)?b:0;
+            f.r=a+(b-a)*fraction;
+        } else f.r=f.l;
+        f.l=isfinite(f.l)?f.l:0;f.r=isfinite(f.r)?f.r:0;return f;
+    }
+    return plain?ts_audition_read_frame(s,position,e->last):
+        ts_audition_read_looped_mode_frame(s,position,e->first,e->last,e->crossfade,e->mode);
+}
+
 static TsStereoFrame mosaic_event_read(const TsMosaicEvent *e,TsMosaicVoice *v,double time,
     int rate,double speed,float level,int audible,TsSourceRouteMix *routes,uint64_t serial)
 {
@@ -363,33 +391,50 @@ static TsStereoFrame mosaic_event_read(const TsMosaicEvent *e,TsMosaicVoice *v,d
         if(routes && (!v->output_route.ready || v->output_route.rate!=(unsigned)rate ||
            memcmp(&v->output_route.route,&e->output_route,sizeof(e->output_route))))
             ts_source_route_set(&v->output_route,e->output_route,(unsigned)rate);
+        const TsSourceRouteVoice *r=&v->output_route;
+        v->route_passthrough=r->ready && !r->remaining && !r->active_count && r->main==1 &&
+            r->main_matrix[0]==1 && r->main_matrix[1]==0 && r->main_matrix[2]==0 && r->main_matrix[3]==1;
         v->control_serial=serial;
     }
     float envelope=v->attack>=v->attack_frames?1:ts_audition_attack_gain(v->attack,v->attack_frames);
     ++v->attack;
-    double tail=(e->start+e->duration-time)*rate/speed;
-    if(tail<v->release_frames)envelope*=(float)fmax(0,tail/v->release_frames);
+    double remaining=e->start+e->duration-time;
+    /* The release is 2 ms. Only calculate its division close to the end;
+       the conservative 3 ms gate retains the original boundary arithmetic. */
+    if(remaining<.003*speed) {
+        double tail=remaining*rate/speed;
+        if(tail<v->release_frames)envelope*=(float)fmax(0,tail/v->release_frames);
+    }
     float target=audible?1.0f:0.0f;
     if(v->audible_gain!=target)
         v->audible_gain=target>v->audible_gain?fminf(target,v->audible_gain+v->audible_ramp):fmaxf(target,v->audible_gain-v->audible_ramp);
     if(v->mix_left!=v->target_left)v->mix_left+=fmaxf(-v->mix_ramp,fminf(v->mix_ramp,v->target_left-v->mix_left));
     if(v->mix_right!=v->target_right)v->mix_right+=fmaxf(-v->mix_ramp,fminf(v->mix_ramp,v->target_right-v->mix_right));
-    float gain=level*envelope*v->audible_gain*event_fade(e,v,time-e->start)/e->note_count;
+    float gain=level*envelope*v->audible_gain*event_fade(e,v,time-e->start);
+    if(e->note_count!=1)gain/=e->note_count;
     TsStereoFrame card={0,0};
     for(int n=0;n<e->note_count;++n) {
         TsStereoFrame f;
         v->position[n]=voice_position(e,v,v->travel[n],&v->direction[n],&v->intro[n]);
         if(!e->looping) {
             if(v->position[n]>=e->last)continue;
-            f=ts_audition_read_frame(&e->source->sample,v->position[n],e->last);
+            f=mosaic_sample_read(e,v,n);
             float release=(float)fmin(1,(e->last-v->position[n])/(v->step[n]*speed*rate*0.002));
             f.l*=release;f.r*=release;
-        } else f=v->intro[n]?ts_audition_read_frame(&e->source->sample,v->position[n],e->last):
-            ts_audition_read_looped_mode_frame(&e->source->sample,v->position[n],e->first,e->last,e->crossfade,e->mode);
+        } else f=mosaic_sample_read(e,v,n);
         card.l+=f.l*gain*v->mix_left;card.r+=f.r*gain*v->mix_right;
         v->travel[n]+=v->step[n]*speed;
     }
     if(routes) {
+        /* A settled identity route changes no bus or recording tap. Preserve
+           its meters and signed-zero arithmetic; all transitions/custom routes
+           (and nonfinite input) continue through the general routing code. */
+        if(v->route_passthrough && isfinite(card.l) && isfinite(card.r)) {
+            float left=fabsf(card.l),right=fabsf(card.r),peak=left>right?left:right;
+            if(peak>v->output_route.activity_source)v->output_route.activity_source=peak;
+            if(peak>v->output_route.activity_send)v->output_route.activity_send=peak;
+            return (TsStereoFrame){card.l+card.r*0,card.l*0+card.r};
+        }
         if(!v->output_route.ready)
             ts_source_route_set(&v->output_route,e->output_route,(unsigned)rate);
         card=ts_source_route_frame(&v->output_route,card,routes);

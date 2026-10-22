@@ -349,9 +349,11 @@ static void test_project_transaction(void)
 #include "test_mosaic_volume.inc"
 #include "test_mosaic_loop.inc"
 #include "test_mosaic_schedule.inc"
+#include "test_mosaic_read_paths.inc"
 int main(void)
 {
     test_mosaic_volume();
+    test_mosaic_read_paths();
     test_mosaic_schedule();test_mosaic_large_storage();
     test_mosaic_loop_audio();test_mosaic_loop_history();
     test_card_routes();test_tape_speed();test_event_mix_and_fades();test_mute_solo_phase();test_ownership();test_seek();test_one_shot_and_resize();test_spacing_and_history();test_storage();test_project_transaction();
