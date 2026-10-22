@@ -14,6 +14,8 @@ typedef struct {
     uint64_t bank_hash[TS_BANK_SLOT_COUNT];
     TsMosaicEvent source_drag;
     TsMosaicSourceKey source_key, picked_keys[TS_MOSAIC_EVENTS];
+    TsMosaicSourceKey audition_key;
+    uint64_t audition_epoch;
     int source_group, source_toggle;
     uint64_t shift_toggle, box_primary;
     uint64_t box_selection[TS_MOSAIC_EVENTS], box_order[TS_MOSAIC_EVENTS];

@@ -27,13 +27,24 @@ the audio versions used by placed events. Browsing sources does not switch the
 main editor's active Sample bank or change routing. New banks appear on the next
 refresh; returning from FM shows its active bank with the correct page number.
 
-Drag an occupied source onto the canvas. Click a source to highlight its waveform;
-dragging shows a ghost of the proposed event. An accepted audio edit appears in
+Drag an occupied source onto the canvas. Click a source to select it and clear the
+timeline selection; dragging shows a ghost of the proposed event. **A** previews
+the selected source without adding a card or moving the playhead; press **A** again
+to stop. When a timeline instance is selected, its assigned notes and individual
+settings take priority over the source highlight.
+
+**Right-click a source** to select all of its placed instances, retaining the primary
+when it belongs to that source. **Double-left-click a source** to open its main
+canvas editor: bank sources open their actual Sample bank and tile; EVENTS sources
+open the existing instance editor with its update-instance/update-all choices.
+Modified clicks continue to select and drag source groups. An accepted audio edit appears in
 the EVENTS pages. Shared originals and the original Sample banks remain available.
 
 | Action | Gesture |
 | --- | --- |
-| Audition selected card at its assigned notes / stop preview | A |
+| Audition selected instance, otherwise selected source / stop preview | A |
+| Open a source in the main canvas editor | Double-left-click source |
+| Select every placed instance of a source | Right-click source |
 | Fit selection / restore previous view | Z |
 | Select all / select every instance of the current source | Ctrl+A / Shift+A |
 | Nudge selection by 0.1 s / 1 s | Up/Down / Shift+Up/Down |

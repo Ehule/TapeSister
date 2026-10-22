@@ -350,8 +350,33 @@ static void test_project_transaction(void)
 #include "test_mosaic_loop.inc"
 #include "test_mosaic_schedule.inc"
 #include "test_mosaic_read_paths.inc"
+static void test_source_preview_lifetime(void)
+{
+    TsMosaic *m=fixture();TsMosaicEvent source=m->events[0];
+    memset(m->events,0,sizeof(m->events));m->playing=0;m->time=19;
+    uint64_t hash=ts_mosaic_hash(m);int history=m->history_count;
+    ts_mosaic_audition_source(m,&source);ts_mosaic_collect(m);
+    assert(m->sources==source.source && m->audition_source.source==source.source);
+    double energy=0;
+    for(int i=0;i<512;++i) {TsStereoFrame f=ts_mosaic_read(m,48000);energy+=fabs(f.l)+fabs(f.r);}
+    assert(energy>0 && m->time==19 && !m->playing && ts_mosaic_hash(m)==hash && m->history_count==history);
+    ts_mosaic_audition(m,0);
+    for(int i=0;i<512;++i)ts_mosaic_read(m,48000);
+    assert(!m->audition_id);ts_mosaic_collect(m);assert(m->sources==source.source);
+    ts_mosaic_audition(m,0);assert(!m->audition_source.source);
+    ts_mosaic_collect(m);assert(!m->sources);ts_mosaic_free(m);
+    /* Natural completion and loading a fresh arrangement retire preview ownership. */
+    m=fixture();source=m->events[0];source.duration=.002;m->playing=0;
+    ts_mosaic_audition_source(m,&source);
+    for(int i=0;i<512;++i)ts_mosaic_read(m,48000);
+    assert(!m->audition_id);ts_mosaic_audition(m,0);assert(!m->audition_source.source);
+    ts_mosaic_audition_source(m,&source);TsMosaic *loaded=ts_mosaic_create();assert(loaded);
+    ts_mosaic_publish_loaded(m,loaded);ts_mosaic_free(loaded);
+    assert(!m->audition_id && !m->sources && !m->audition_source.source);ts_mosaic_free(m);
+}
 int main(void)
 {
+    test_source_preview_lifetime();
     test_mosaic_volume();
     test_mosaic_read_paths();
     test_mosaic_schedule();test_mosaic_large_storage();

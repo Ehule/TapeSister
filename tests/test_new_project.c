@@ -140,7 +140,8 @@ int main(int argc,char **argv)
     assert(ts_tapehead_sync(&pages,&bank,48000,error,sizeof(error)));
     assert(ts_tapehead_export(&pages.tracker,error,sizeof(error)));
     /* Optional user-project reproduction through the actual Open path. */
-    if(argc==3 && !strcmp(argv[1],"--open-project")) {
+    if(argc==3 && (!strcmp(argv[1],"--open-project") || !strcmp(argv[1],"--mosaic-revert-mute"))) {
+        uint64_t disk_hash=0;
         for(int pass=0;pass<2;++pass) {
             int ok=load_instrument(0,&audio,&ui,&bank,&pages,&record,0,argv[2]);
             fprintf(stderr,"Project Open: %s\n",ui.status);assert(ok);
@@ -148,12 +149,39 @@ int main(int argc,char **argv)
             for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(ui.mosaic->events[i].id){++cards;max_x=fmax(max_x,ui.mosaic->events[i].x);}
             for(TsMosaicSource *s=ui.mosaic->sources;s;s=s->next)++sources;
             printf("pass=%d cards=%d sources=%d max_x=%.17g hash=%llu\n",pass+1,cards,sources,max_x,(unsigned long long)ts_mosaic_hash(ui.mosaic));
+            if(!pass)disk_hash=ts_mosaic_hash(ui.mosaic);
+            else assert(ts_mosaic_hash(ui.mosaic)==disk_hash);
             ui.mosaic_open=1;mosaic_fit_all(&ui,&mosaic);ts_ui_render(&frame,&ui,&bank);
             ui.mosaic->playing=1;ts_mosaic_begin_block(ui.mosaic,512);double energy=0;
             for(int i=0;i<512;++i) {
                 TsStereoFrame v=ts_mosaic_read(ui.mosaic,48000);assert(isfinite(v.l) && isfinite(v.r));energy+=fabs(v.l)+fabs(v.r);
             }
             assert(!cards || energy>0);
+            if(!strcmp(argv[1],"--mosaic-revert-mute")) {
+                /* Exercise the actual callback/Matrix/effects after the user's key sequence. */
+                ui.mosaic->repeat=1;ts_mosaic_seek(ui.mosaic,0);
+                mosaic_poll(0,&ui,&bank,&mosaic);mosaic_select_only(&ui,ui.mosaic->events[0].id);
+                SDL_Event e;SDL_zero(e);e.type=SDL_KEYDOWN;e.key.keysym.sym=SDLK_m;e.key.keysym.mod=KMOD_SHIFT;
+                for(int stage=0;stage<4;++stage) {
+                    if(stage) {
+                        if(stage==2) {
+                            e.key.keysym.sym=SDLK_a;e.key.keysym.mod=KMOD_CTRL;
+                            assert(mosaic_event(&e,window,0,&audio,&ui,&bank,&mosaic,&portal,&sister,&transform,48000));
+                            e.key.keysym.sym=SDLK_m;e.key.keysym.mod=KMOD_SHIFT;
+                        }
+                        assert(mosaic_event(&e,window,0,&audio,&ui,&bank,&mosaic,&portal,&sister,&transform,48000));
+                    }
+                    double energy=0;float out[1024];
+                    int blocks=stage==2?800:64; /* Let effects decay and the arrangement wrap while muted. */
+                    for(int block=0;block<blocks;++block) {
+                        audio_callback(&audio,(Uint8 *)out,sizeof(out));
+                        if(block==blocks-1)for(int i=0;i<1024;++i) {assert(isfinite(out[i]));energy+=fabs(out[i]);}
+                    }
+                    printf("pass=%d mute-stage=%d callback-energy=%g\n",pass,stage,energy);
+                    if(stage==0 || stage==3)assert(energy>0);
+                }
+                ts_mosaic_checkpoint(ui.mosaic);ui.mosaic->events[0].start=21;ui.mosaic->events[0].muted=1;
+            }
         }
         goto cleanup;
     }
@@ -201,6 +229,21 @@ int main(int argc,char **argv)
        Mosaic transport, tracker editor or Sister runtime state. */
     TsSisterProjectState mismatched;int present=0;
     const char *load_path="new-project-flow/new-project-flow.tsr";
+    /* Reopening the active path is a revert, including live Mosaic edits. */
+    uint64_t saved_mosaic=ts_mosaic_hash(ui.mosaic);
+    for(int pass=0;pass<2;++pass) {
+        TsMosaic *same_model=ui.mosaic;uint64_t previous_epoch=ui.mosaic->epoch;
+        ts_mosaic_checkpoint(ui.mosaic);
+        ui.mosaic->events[0].start=17;ui.mosaic->events[0].muted=1;
+        ui.mosaic->gain=.1f;ui.mosaic->playing=1;
+        assert(ts_mosaic_copy(ui.mosaic,ui.mosaic->events[0].id,20,0));
+        file=(PendingFileOperation){.active=1,.presented=1,.mode=TS_BROWSER_LOAD_WAV};
+        snprintf(file.path,sizeof(file.path),"%s",load_path);
+        run_pending_file_operation(0,&audio,&ui,&bank,&selection,&importer,&pages,&record,0,&file);
+        assert(strstr(ui.status,"OPENED TSR PROJECT"));
+        assert(ui.mosaic==same_model && ui.mosaic->epoch!=previous_epoch);
+        assert(ts_mosaic_hash(ui.mosaic)==saved_mosaic && !ui.mosaic->playing && !ui.mosaic->history_count);
+    }
     assert(ts_sister_project_state_load(&mismatched,load_path,48000,&present,error,sizeof(error)) && present);
     ++mismatched.page_count;
     assert(ts_sister_project_state_save(&mismatched,load_path,error,sizeof(error)));

@@ -4,9 +4,11 @@ static void mosaic_poll(SDL_AudioDeviceID device,TsUiState *ui,
     if(!ui->mosaic)return;
     if(!ui->mosaic_open || c->active)c->mix_drag=c->mix_changed=c->volume_drag=c->pan_active=ui->mosaic_loop_drag=0;
     if(device)SDL_LockAudioDevice(device);
-    if(!ui->mosaic_open || c->active)ts_mosaic_audition(ui->mosaic,0);
+    int release_preview=!ui->mosaic->audition_id && ui->mosaic->audition_source.source!=NULL;
+    if(!ui->mosaic_open || c->active || !ui->mosaic->audition_id)ts_mosaic_audition(ui->mosaic,0);
     ui->mosaic_time=ui->mosaic->time;ui->mosaic_playing=ui->mosaic->playing;
     if(device)SDL_UnlockAudioDevice(device);
+    if(release_preview)ts_mosaic_collect(ui->mosaic);
     if(ui->mosaic_open && !c->active) {
         mosaic_sources_refresh(ui,instrument,c);
         int recording=ui->mosaic_recording && ui->capture_state==TS_CAPTURE_RECORDING &&
@@ -313,7 +315,7 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
     mosaic_sources_refresh(ui,instrument,c);
     if(mosaic_loop_event(event,device,ui,c,x,y,mod))return 1;
     if(mosaic_navigation_event(event,device,ui,c,x,y,mod))return 1;
-    if(mosaic_sources_event(event,device,ui,instrument,c,x,y,mod))return 1;
+    if(mosaic_sources_event(event,device,audio,ui,instrument,c,transform,x,y,mod))return 1;
     if(mosaic_arrange_event(event,window,device,ui,instrument,c,x,y,mod))return 1;
     if(mosaic_volume_event(event,device,ui,c,x,y))return 1;
     if(mosaic_controls_event(event,window,device,ui,c,x,y,mod))return 1;
@@ -345,6 +347,10 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
         if((k==SDLK_UP || k==SDLK_DOWN || k==SDLK_LEFT || k==SDLK_RIGHT) &&
            !(mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI))) {
             mosaic_nudge(device,ui,k,mod);return 1;
+        }
+        if(k==SDLK_a && !(mod&(KMOD_CTRL|KMOD_SHIFT|KMOD_ALT|KMOD_GUI)) &&
+           !ts_mosaic_find(ui->mosaic,ui->mosaic_selected)) {
+            mosaic_source_audition(device,ui,instrument,c);return 1;
         }
         if(device)SDL_LockAudioDevice(device);
         if(k==SDLK_a && !(mod&(KMOD_ALT|KMOD_GUI))) {

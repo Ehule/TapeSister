@@ -97,6 +97,7 @@ typedef struct TsMosaic {
     int auto_space; /* New arrangements allow free placement; older files retain spacing. */
     TsMosaicView views[TS_MOSAIC_VIEWS]; /* Project navigation only; outside audio/arrangement undo. */
     uint64_t audition_id;
+    TsMosaicEvent audition_source; /* Transient source preview, outside arrangement/history. */
     double audition_time;
     int audition_stopping, audition_rate;
     TsMosaicVoice audition_voice;
@@ -144,6 +145,9 @@ TsMosaicEvent *ts_mosaic_copy_unspaced(TsMosaic *m, uint64_t id, double start, d
 void ts_mosaic_delete(TsMosaic *m, uint64_t id);
 void ts_mosaic_space(TsMosaic *m, TsMosaicEvent *e);
 void ts_mosaic_audition(TsMosaic *m, uint64_t id);
+/* Start a source template without inserting a card. Stop with audition(m,0).
+   UI calls audition(m,0) after audition_id retires to release its source reference. */
+void ts_mosaic_audition_source(TsMosaic *m, const TsMosaicEvent *source);
 double ts_mosaic_snap(const TsMosaic *m, uint64_t id, double time, double tolerance);
 double ts_mosaic_end(const TsMosaic *m);
 void ts_mosaic_seek(TsMosaic *m, double time);

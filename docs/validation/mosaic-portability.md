@@ -86,3 +86,41 @@ application. Checking all three with strict C11 and
 passes afterward. Their Release targets rebuild successfully, and all four
 affected tests pass: keyboard HOLD, project Open/reset, and both ordinary and
 realtime embedded TrackSister runs.
+
+## Source actions and reported revert/mute behavior (October 22, 2026)
+
+Source cards now support double-left-click to open the canvas editor, right-click
+to select their placed instances, and A to toggle a source preview. A selected
+timeline instance takes priority. Source previews use a transient event, without
+changing arrangement cards, history, playback position or saved data. The UI
+retains preview audio through the stop fade and releases it after the callback
+has retired the preview; the callback never clears a pointer the UI collector
+is inspecting.
+
+Controller checks cover source/instance audition priority and pitch, repeated A,
+right-click group selection and primary preservation, bank/event-version editor
+opening, continued arrangement playback, and modified double clicks. Model checks
+cover source-only preview retention, stop/completion and project replacement.
+The Mosaic model/controller, project Open/reset and offline-render suites pass.
+The changed Mosaic module and model tests also pass AddressSanitizer/UBSan
+(leak detection disabled in the traced container).
+
+The reported same-project revert failure and persistent silence after Shift+M
+have **not been reproduced**. Added coverage verifies:
+
+- Reopening the active TSR through the pending Load operation restores changed
+  card positions, mute, gain and copies, resets history and stops transport.
+- A 1,020-card, two-source arrangement handles Shift+M, Ctrl+A, Shift+M, Shift+M
+  with actual routed audio, then Undo/Redo. Audio resumes after unmuting.
+- The supplied 1,020-card project reopens twice to the same saved Mosaic hash
+  `5617727719280061890`. Its actual callback and saved Matrix/effects produce
+  audio after the same sequence, including 800 buffers (about 8.5 seconds) fully
+  muted across a loop wrap. Effects can continue producing tails while muted.
+
+These are Linux reproductions, not confirmation of the reported Windows behavior.
+The supplied project is read only; no user samples are committed. Reproduce with:
+
+```sh
+./build/tapesister_mosaic_controller_tests --source-actions
+./build/tapesister_new_project_tests --mosaic-revert-mute /path/to/project/project.tsr
+```

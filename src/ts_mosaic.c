@@ -109,6 +109,9 @@ void ts_mosaic_collect(TsMosaic *m)
     /* Mark references once, instead of rescanning the entire arrangement and
        undo history separately for every immutable source. */
     for(TsMosaicSource *s=m->sources;s;s=s->next)s->retained=s->pins!=0;
+    /* The UI owns this reference until it acknowledges an ended preview.
+       The callback only retires audition_id, never a pointer collect reads. */
+    if(m->audition_source.source)m->audition_source.source->retained=1;
     for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(m->events[i].id)m->events[i].source->retained=1;
     for(int h=0;h<m->history_count;++h)for(int i=0;i<TS_MOSAIC_EVENTS;++i) {
         const TsMosaicEvent *e=&m->history[(m->history_first+h)%TS_MOSAIC_HISTORY][i];
@@ -504,15 +507,27 @@ static TsStereoFrame mosaic_read(TsMosaic *m,int rate,TsSourceRouteMix *routes)
 void ts_mosaic_audition(TsMosaic *m,uint64_t id)
 {
     if(!m)return;
-    if(!id || m->audition_id==id) {m->audition_stopping=1;return;}
+    if(!id || m->audition_id==id) {
+        if(!m->audition_id)m->audition_source=(TsMosaicEvent){0};
+        m->audition_stopping=1;return;
+    }
     if(!ts_mosaic_find(m,id))return;
+    m->audition_source=(TsMosaicEvent){0};
     m->audition_id=id;m->audition_time=0;m->audition_stopping=0;m->audition_rate=0;
+    memset(&m->audition_voice,0,sizeof(m->audition_voice));
+}
+void ts_mosaic_audition_source(TsMosaic *m,const TsMosaicEvent *source)
+{
+    if(!m || !source || !source->source || source->duration<=0)return;
+    m->audition_source=*source;m->audition_source.id=UINT64_MAX;m->audition_source.start=0;
+    m->audition_id=UINT64_MAX;m->audition_time=0;m->audition_stopping=0;m->audition_rate=0;
     memset(&m->audition_voice,0,sizeof(m->audition_voice));
 }
 static TsStereoFrame mosaic_audition_read(TsMosaic *m,int rate,TsSourceRouteMix *routes)
 {
     TsStereoFrame out={0,0};if(!m || !m->audition_id || rate<=0)return out;
-    TsMosaicEvent *e=m->audition_slot>=0 && m->audition_slot<TS_MOSAIC_EVENTS?&m->events[m->audition_slot]:NULL;
+    TsMosaicEvent *e=m->audition_source.source?&m->audition_source:
+        m->audition_slot>=0 && m->audition_slot<TS_MOSAIC_EVENTS?&m->events[m->audition_slot]:NULL;
     if(!e || e->id!=m->audition_id) {
         e=ts_mosaic_find(m,m->audition_id);m->audition_slot=e?(int)(e-m->events):-1;
     }

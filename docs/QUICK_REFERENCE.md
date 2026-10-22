@@ -78,7 +78,9 @@ does not switch the main bank. See the [Mosaic chapter](USER_MANUAL.md#mosaic).
 
 | Action | Control |
 | --- | --- |
-| Audition selected card at its assigned notes / stop preview | A |
+| Audition selected instance, otherwise selected source / stop preview | A |
+| Open a source in the main canvas editor | Double-left-click source |
+| Select every placed instance of a source | Right-click source |
 | Fit selection / restore previous view | Z |
 | Select all / select every instance of the current source | Ctrl+A / Shift+A |
 | Nudge selection by 0.1 s / 1 s | Up/Down / Shift+Up/Down |
