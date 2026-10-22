@@ -70,3 +70,19 @@ To reproduce an external project through the application's Open path:
 ```sh
 ./build/tapesister_new_project_tests --open-project /path/to/project/project.tsr
 ```
+
+## Linux test compilation (October 22, 2026)
+
+Native release run #220 stopped while compiling the embedded TrackSister test:
+`lstat` and `kill` were implicitly declared. Three controller fixtures include
+headers for their call-interposition helpers before including `main_sdl.c`.
+That makes the application's `_POSIX_C_SOURCE` definition too late for libc's
+feature selection, hiding declarations used by the offline renderer.
+
+The embedded TrackSister, keyboard HOLD and project Open fixtures now request
+POSIX.1-2008 before their first header, with the same non-Windows guard as the
+application. Checking all three with strict C11 and
+`-Werror=implicit-function-declaration` reproduced the errors before the fix and
+passes afterward. Their Release targets rebuild successfully, and all four
+affected tests pass: keyboard HOLD, project Open/reset, and both ordinary and
+realtime embedded TrackSister runs.

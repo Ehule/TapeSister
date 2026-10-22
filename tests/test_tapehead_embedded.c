@@ -1,3 +1,7 @@
+/* main_sdl.c needs POSIX declarations; expose them before the interposed headers. */
+#if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
+#define _POSIX_C_SOURCE 200809L
+#endif
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
