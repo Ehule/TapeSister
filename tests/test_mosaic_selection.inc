@@ -44,6 +44,10 @@ static void test_mosaic_selection(SDL_Window *window)
     repeat.key.keysym.sym=SDLK_LEFT;repeat.key.repeat=1;dispatch(&repeat,window);assert(a->x==10);
     key(window,SDLK_LEFT,KMOD_SHIFT);assert(a->x==0 && b->x==110 && c->x==220);
     history=scene->history_count;key(window,SDLK_LEFT,KMOD_NONE);assert(scene->history_count==history);
+    /* Wide layouts must nudge one unit rather than jump back to 100,000. */
+    a->x=110000;b->x=110110;c->x=110220;
+    key(window,SDLK_RIGHT,KMOD_NONE);assert(a->x==110001 && b->x==110111 && c->x==110221);
+    key(window,SDLK_LEFT,KMOD_SHIFT);assert(a->x==109991 && b->x==110101 && c->x==110211);
     a->x=20;b->x=130;c->x=240;
     /* All four alignments preserve lengths, primary, playhead and transport. */
     key(window,SDLK_UP,KMOD_ALT);assert(a->start==4 && b->start==4 && c->start==4);

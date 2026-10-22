@@ -135,6 +135,24 @@ int main(int argc,char **argv)
     pages.tracker.bpm=173;
     assert(ts_tapehead_sync(&pages,&bank,48000,error,sizeof(error)));
     assert(ts_tapehead_export(&pages.tracker,error,sizeof(error)));
+    /* Optional user-project reproduction through the actual Open path. */
+    if(argc==3 && !strcmp(argv[1],"--open-project")) {
+        for(int pass=0;pass<2;++pass) {
+            int ok=load_instrument(0,&audio,&ui,&bank,&pages,&record,0,argv[2]);
+            fprintf(stderr,"Project Open: %s\n",ui.status);assert(ok);
+            int cards=0,sources=0;double far=0;
+            for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(ui.mosaic->events[i].id){++cards;far=fmax(far,ui.mosaic->events[i].x);}
+            for(TsMosaicSource *s=ui.mosaic->sources;s;s=s->next)++sources;
+            printf("pass=%d cards=%d sources=%d max_x=%.17g hash=%llu\n",pass+1,cards,sources,far,(unsigned long long)ts_mosaic_hash(ui.mosaic));
+            ui.mosaic_open=1;mosaic_fit_all(&ui,&mosaic);ts_ui_render(&frame,&ui,&bank);
+            ui.mosaic->playing=1;ts_mosaic_begin_block(ui.mosaic,512);double energy=0;
+            for(int i=0;i<512;++i) {
+                TsStereoFrame v=ts_mosaic_read(ui.mosaic,48000);assert(isfinite(v.l) && isfinite(v.r));energy+=fabs(v.l)+fabs(v.r);
+            }
+            assert(!cards || energy>0);
+        }
+        goto cleanup;
+    }
     uint64_t before=project_hash();
     begin_new_confirmation(&session);
     assert(ui.exit_confirm_open && ui.exit_for_new && ui.exit_has_unsaved && ui.exit_choice==2);
@@ -226,10 +244,13 @@ int main(int argc,char **argv)
     assert(ts_tapehead_sync(&pages,&bank,48000,error,sizeof(error)));
     assert(ts_tapehead_export(&pages.tracker,error,sizeof(error)));
     assert(pages.tracker.bpm!=173 && !ts_tapehead_running());
+cleanup:
     ts_tapehead_close();SDL_DestroyWindow(window);
     project_audio_free(&audio);ts_mosaic_free(ui.mosaic);ts_sample_pages_free(&pages);
     ts_instrument_free(&bank);ts_instrument_free(&record);fm_bank_history_free(&history);
     ts_performance_recorder_free(&sister.performance_recorder);SDL_Quit();
-    puts("New project: confirmation, cancel, save failure/success, allocation failure, workers, banks and silent reset passed");
+    puts(argc==3 && !strcmp(argv[1],"--open-project") ?
+         "Supplied project: Open, repeated replacement, UI render and playback passed" :
+         "New project: confirmation, cancel, save failure/success, allocation failure, workers, banks and silent reset passed");
     return 0;
 }

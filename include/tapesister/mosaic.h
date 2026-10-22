@@ -11,6 +11,10 @@
 #define TS_MOSAIC_PEAKS 2048
 #define TS_MOSAIC_ENVELOPE_POINTS 257
 #define TS_MOSAIC_VIEWS 5
+/* Horizontal layout is independent of time. Leave room for large spaced rows,
+   while bounding native pixel conversions well below their int64_t range. */
+#define TS_MOSAIC_LAYOUT_LIMIT 1000000000.0
+#define TS_MOSAIC_MIN_HSCALE 0.000000001
 
 typedef struct {
     int stored;

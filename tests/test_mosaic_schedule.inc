@@ -81,6 +81,28 @@ static void test_mosaic_large_storage(void)
     assert(ts_mosaic_hash(loaded)==hash);
     for(int i=0;i<TS_MOSAIC_EVENTS;++i)assert(loaded->events[i].id && loaded->events[i].source==loaded->events[0].source);
     assert(!loaded->sources->next); /* Copies save a single audio source. */
+    /* Auto-Space can put a legal dense row beyond the old 100,000-unit
+       reader limit. Include maximum-width legacy cards and a saved far view. */
+    m->auto_space=1;
+    for(int i=0;i<TS_MOSAIC_EVENTS;++i){m->events[i].start=0;m->events[i].x=12000;m->events[i].width=4096;}
+    for(int i=0;i<TS_MOSAIC_EVENTS;++i)ts_mosaic_space(m,&m->events[i]);
+    double far=0;for(int i=0;i<TS_MOSAIC_EVENTS;++i)far=fmax(far,m->events[i].x);assert(far>1000000);
+    m->views[0]=(TsMosaicView){1,0,far,24,400/(far+4096)};
+    hash=ts_mosaic_hash(m);
+    assert(ts_mosaic_save(m,dir,error,sizeof(error)));storage_portable_load(loaded,dir);
+    assert(ts_mosaic_hash(loaded)==hash && loaded->views[0].xscroll==far);
+    for(int i=0;i<TS_MOSAIC_EVENTS;++i)assert(loaded->events[i].x==m->events[i].x);
+    const double bad_x[]={-1,NAN,INFINITY,TS_MOSAIC_LAYOUT_LIMIT+1};
+    for(unsigned i=0;i<sizeof(bad_x)/sizeof(bad_x[0]);++i) {
+        double saved=m->events[0].x;m->events[0].x=bad_x[i];
+        assert(!ts_mosaic_save(m,dir,error,sizeof(error)));m->events[0].x=saved;
+        assert(ts_mosaic_load(loaded,dir,error,sizeof(error)) && ts_mosaic_hash(loaded)==hash);
+    }
+    /* A guard-edge position and its fit view also survive a round trip. */
+    m->events[0].x=TS_MOSAIC_LAYOUT_LIMIT;m->views[0].xscroll=TS_MOSAIC_LAYOUT_LIMIT;
+    m->views[0].hscale=400/(TS_MOSAIC_LAYOUT_LIMIT+4096);
+    assert(ts_mosaic_save(m,dir,error,sizeof(error)) && ts_mosaic_load(loaded,dir,error,sizeof(error)));
+    assert(ts_mosaic_hash(m)==ts_mosaic_hash(loaded));
     for(int i=0;i<40;++i){ts_mosaic_checkpoint(m);m->events[TS_MOSAIC_EVENTS-1].start=1000+i;}
     for(int i=0;i<TS_MOSAIC_HISTORY;++i)assert(ts_mosaic_undo(m,0));
     assert(m->events[TS_MOSAIC_EVENTS-1].start==1007);

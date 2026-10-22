@@ -539,6 +539,9 @@ without copying the unused undo backing store. File/manifest preparation failure
 leave the current project intact. Runtime/effect setup still needs a locked step.
 Existing Mosaic formats (1–12) remain readable; the saved format stays at 12.
 Older builds capped at 128 cards cannot load projects containing more than 128.
+Wide Auto-Space layouts also require a build with the expanded horizontal range;
+earlier loaders reject cards past position 100,000. Current builds preserve those
+positions when opening the original project, with no repair or resave needed.
 See [performance validation](validation/mosaic-scheduling.md) for benchmark scope
 and regression coverage.
 

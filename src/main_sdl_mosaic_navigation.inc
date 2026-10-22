@@ -26,7 +26,7 @@ static int mosaic_navigation_event(const SDL_Event *event,SDL_AudioDeviceID devi
             if(abs(dx)>=4 || abs(dy)>=4)c->pan_moved=1;
             if(c->pan_moved) {
                 ui->mosaic_scroll=fmax(0,fmin(1000000,c->pan_scroll-dy/c->pan_scale));
-                ui->mosaic_xscroll=fmax(0,fmin(1000000,c->pan_xscroll-dx/c->pan_hscale));
+                ui->mosaic_xscroll=fmax(0,fmin(TS_MOSAIC_LAYOUT_LIMIT,c->pan_xscroll-dx/c->pan_hscale));
                 ui->mosaic_follow=0;c->zoom_saved=0;
             }
             if(up) {

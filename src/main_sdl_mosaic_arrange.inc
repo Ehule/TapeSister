@@ -64,9 +64,9 @@ static void mosaic_nudge(SDL_AudioDeviceID device,TsUiState *ui,SDL_Keycode key,
     int horizontal=key==SDLK_LEFT || key==SDLK_RIGHT;
     double delta=(key==SDLK_UP || key==SDLK_LEFT?-1:1)*(mod&KMOD_SHIFT?10:1);
     if(horizontal) {
-        double left=100000,right=0;
+        double left=TS_MOSAIC_LAYOUT_LIMIT,right=0;
         for(int i=0;i<ui->mosaic_ghost_count;++i){left=fmin(left,ui->mosaic_ghosts[i].x);right=fmax(right,ui->mosaic_ghosts[i].x);}
-        delta=fmax(-left,fmin(100000-right,delta));
+        delta=fmax(-left,fmin(fmax(0,TS_MOSAIC_LAYOUT_LIMIT-right),delta));
     }
     if(delta!=0) {
         double dx=horizontal?delta:0,dt=horizontal?0:delta*.1;

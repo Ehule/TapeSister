@@ -549,9 +549,21 @@ uint64_t ts_mosaic_hash(const TsMosaic *m)
     return hash;
 }
 
+static int mosaic_layout_valid(double x)
+{return isfinite(x) && x>=0 && x<=TS_MOSAIC_LAYOUT_LIMIT;}
 int ts_mosaic_save(const TsMosaic *m,const char *dir,char *error,size_t size)
 {
     if(!m)return 1;
+    /* Do not truncate a previous good save if an invalid layout reaches the
+       numerical guard. The writer and reader use the same horizontal range. */
+    for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(m->events[i].id && !mosaic_layout_valid(m->events[i].x)) {
+        snprintf(error,size,"Invalid Mosaic horizontal position (card %llu)",(unsigned long long)m->events[i].id);return 0;
+    }
+    for(int i=0;i<TS_MOSAIC_VIEWS;++i)if(m->views[i].stored &&
+        (!mosaic_layout_valid(m->views[i].xscroll) || !isfinite(m->views[i].hscale) ||
+         m->views[i].hscale<TS_MOSAIC_MIN_HSCALE || m->views[i].hscale>4)) {
+        snprintf(error,size,"Invalid Mosaic horizontal saved view %d",i+1);return 0;
+    }
     char path[4096];
     if(snprintf(path,sizeof(path),"%s/mosaic.tsm",dir)>=(int)sizeof(path))return 0;
     FILE *f=fopen(path,"wb");if(!f)goto failed;
@@ -634,8 +646,8 @@ int ts_mosaic_load(TsMosaic *m,const char *dir,char *error,size_t size)
             &v->stored,&v->scroll,&v->xscroll,&v->scale,&v->hscale,&trailing)!=5 ||
             (v->stored!=0 && v->stored!=1) || !isfinite(v->scroll) || !isfinite(v->xscroll) ||
             !isfinite(v->scale) || !isfinite(v->hscale) || v->scroll<0 || v->scroll>1000000 ||
-            v->xscroll<0 || v->xscroll>1000000 ||
-            (v->stored && (v->scale<.000001 || v->scale>1200 || v->hscale<.000001 || v->hscale>4)))goto failed;
+            !mosaic_layout_valid(v->xscroll) ||
+            (v->stored && (v->scale<.000001 || v->scale>1200 || v->hscale<TS_MOSAIC_MIN_HSCALE || v->hscale>4)))goto failed;
         if(!v->stored)*v=(TsMosaicView){0};
     }
     if(version>=12) {
@@ -678,7 +690,7 @@ int ts_mosaic_load(TsMosaic *m,const char *dir,char *error,size_t size)
         e.id=(uint64_t)id;e.revision=1;e.mode=(TsLoopMode)mode;
         if(!e.id || e.id==UINT64_MAX || ts_mosaic_find(next,e.id) || source<0 || source>=TS_MOSAIC_EVENTS ||
             !isfinite(e.start) || e.start<0 || e.start>86400 || !isfinite(e.duration) || e.duration<=0 || e.duration>86400 ||
-            !isfinite(e.x) || e.x<0 || e.x>100000 || !isfinite(e.width) || e.width<24 || e.width>4096 ||
+            !mosaic_layout_valid(e.x) || !isfinite(e.width) || e.width<24 || e.width>4096 ||
             e.note_count<1 || e.note_count>5 || (e.looping!=0 && e.looping!=1) ||
             mode<0 || mode>TS_LOOP_START_PING_PONG || !isfinite(e.gain) || e.gain<0 || e.gain>2 ||
             e.tuning.root_note<0 || e.tuning.root_note>127 || !isfinite(e.tuning.fine_tune_cents) ||

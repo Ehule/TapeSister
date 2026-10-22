@@ -55,7 +55,7 @@ static int mosaic_source_preview(TsUiState *ui,MosaicController *c,int x,int y)
         if(shift<=0)break;
         for(int i=0;i<count;++i)ui->mosaic_ghosts[i].x+=shift;
     }
-    for(int i=0;i<count;++i)if(ui->mosaic_ghosts[i].x>100000)return 0;
+    for(int i=0;i<count;++i)if(ui->mosaic_ghosts[i].x>TS_MOSAIC_LAYOUT_LIMIT)return 0;
     ui->mosaic_ghost_count=count;return 1;
 }
 static int mosaic_sources_event(const SDL_Event *event,SDL_AudioDeviceID device,
