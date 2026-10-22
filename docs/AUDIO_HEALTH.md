@@ -32,6 +32,18 @@ the notes assigned to those cards. Muted/solo-excluded cards and finished one-sh
 still count while their card duration crosses the playhead. These are workload
 counts, not detected sound; stopped Mosaic reports zero at the playhead. This
 distinguishes a large sparse arrangement from many simultaneous cards/chords.
+The report also includes the exact Mosaic position, repeat/range settings, and
+total muted/solo cards, so repeated reports can distinguish an unmoving clock
+from cards that remain muted.
+
+For silence with a frozen playhead, copy the report **while the problem is
+present**, before Reset or reopening the project. Callback progress uses the
+last measured completion time, even if Health was closed when playback stalled.
+`NO RECENT COMPLETION` means no timed application callback has completed for at
+least one second; it does not identify the cause. Compare it with ASIO control-lock
+skips and the current UI audio lock. A held UI lock includes its nesting depth,
+elapsed hold and original call site. The session timeline records this progress
+once per second while its UI service is running.
 
 With **Unified routing matrix: ON**, the report lists active connections with
 levels and row pan, names the hardware pairs, and labels legacy order/source
@@ -52,6 +64,8 @@ investigate. Before the first UI snapshot it reports that setup is unavailable.
 | Actual output / buffer duration | The opened device's rate and buffer size, which can differ from CFG. Buffer duration is not measured round-trip latency. |
 | Processing load | Callback processing time divided by the duration of audio rendered, over the last completed quarter-second of audio. This is not system-wide CPU utilization. |
 | Recent average / peak | Callback execution time in that recent window. |
+| Callback progress | Age of the last timed callback completion. Recent load figures may be retained from before a stall. |
+| Current UI audio lock | Whether the reporting UI thread still holds the measured output lock. This does not report locks held by other threads. |
 | Maximum / over budget / near | Retained since startup or Reset. Over means execution reached the callback's own buffer duration; near means 90–100%. |
 | Long start gaps | Callback arrival exceeded the previous block's duration by more than the larger of 1 ms and 25% of that duration. The maximum includes smaller excess gaps too. |
 | Maximum hold / over buffer | Time an instrument control held the existing output-device lock after acquiring it. Nested locks count as one outer hold. Holds reaching one buffer duration are counted. |

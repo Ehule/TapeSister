@@ -6,6 +6,9 @@ typedef struct {
     int hold, keyboard_voices, held_voices, tile_voices;
     int arp, outer_arp, arp_slot, audition, mosaic;
     int mosaic_cards, mosaic_scheduled, mosaic_notes;
+    int mosaic_muted, mosaic_solo, mosaic_repeat;
+    double mosaic_time;
+    TsMosaicRange mosaic_range;
     int tracker, tracker_voices, tracker_row, embedded_tracker;
     int sister, rolling, tape_hold, monitor;
     unsigned sources;
@@ -24,8 +27,7 @@ typedef struct {
     SDL_Renderer *renderer;
     SDL_Texture *texture;
     TsFramebuffer *framebuffer;
-    Uint32 window_id, last_update, last_callback, message_until;
-    uint64_t seen_callbacks;
+    Uint32 window_id, last_update, message_until;
     uint32_t device_generation;
     unsigned driver_base, control_base, recovery_base, worker_base;
     unsigned driver_reports, control_skips, control_recoveries, worker_gaps;
@@ -76,9 +78,14 @@ static void ts_audio_health_capture_setup(const AudioState *audio,
     s->audition = audio->playing;
     s->mosaic = audio->mosaic && audio->mosaic->playing;
     s->mosaic_cards=s->mosaic_scheduled=s->mosaic_notes=0;
+    s->mosaic_muted=s->mosaic_solo=0;
+    s->mosaic_time=audio->mosaic?audio->mosaic->time:0;
+    s->mosaic_repeat=audio->mosaic && audio->mosaic->repeat;
+    s->mosaic_range=audio->mosaic?audio->mosaic->loop_range:(TsMosaicRange){0,0};
     if(audio->mosaic)for(int i=0;i<TS_MOSAIC_EVENTS;++i) {
         const TsMosaicEvent *e=&audio->mosaic->events[i];if(!e->id)continue;
         ++s->mosaic_cards;
+        s->mosaic_muted+=e->muted!=0;s->mosaic_solo+=e->solo!=0;
         if(s->mosaic && audio->mosaic->time+1e-10>=e->start && audio->mosaic->time<e->start+e->duration) {
             ++s->mosaic_scheduled;s->mosaic_notes+=e->note_count;
         }
@@ -153,6 +160,8 @@ static void ts_audio_health_setup_report(char *text, size_t size, Uint32 now)
         "  ARP: %s; outer ARP: %s; active slot: %d\n"
         "  Audition: %s; tile voice instances: %d; Mosaic: %s\n"
         "  Mosaic cards: %d total; %d at playhead; %d assigned notes (includes muted/finished one-shots)\n"
+        "  Mosaic position: %.6f s; repeat: %s; loop range: %.6f to %.6f s\n"
+        "  Mosaic switches: %d muted; %d solo (whole arrangement)\n"
         "  TrackSister (embedded): %s\n"
         "  SisterTracker: %s; row: %d; voice instances: %d (legacy engine)\n"
         "  Sister Machine: %s, %s; rolling: %s; tape HOLD: %s; monitor: %s\n"
@@ -167,6 +176,8 @@ static void ts_audio_health_setup_report(char *text, size_t size, Uint32 now)
         s->arp || s->outer_arp ? s->arp_slot + 1 : 0,
         health_running(s->audition), s->tile_voices, health_running(s->mosaic),
         s->mosaic_cards,s->mosaic_scheduled,s->mosaic_notes,
+        s->mosaic_time,health_on(s->mosaic_repeat),s->mosaic_range.start,s->mosaic_range.end,
+        s->mosaic_muted,s->mosaic_solo,
         health_running(s->embedded_tracker),s->tracker==2?"paused":health_running(s->tracker),s->tracker_row,s->tracker_voices,
         health_on(s->sister), health_route(s, TS_ROUTER_SISTER), health_on(s->rolling),
         health_on(s->tape_hold), health_on(s->monitor), source[0] ? source : "none",
@@ -264,10 +275,33 @@ static void ts_audio_health_sample(AudioState *audio, Uint32 now)
     ts_health.control_recoveries = recovered - ts_health.recovery_base;
     ts_health.worker_gaps = worker - ts_health.worker_base;
     ts_realtime_diagnostics_get(&audio->realtime_diagnostics, &ts_health.snapshot);
-    if (ts_health.snapshot.callback_count != ts_health.seen_callbacks) {
-        ts_health.seen_callbacks = ts_health.snapshot.callback_count;
-        ts_health.last_callback = now;
-    }
+    (void)now;
+}
+
+/* Use the callback's clock, not the moment the UI first notices its count.
+   Opening Health after a stall must not make an old callback appear fresh. */
+static double ts_audio_health_callback_age(const TsRealtimeDiagnosticsSnapshot *s,uint64_t now)
+{
+    if(!s->completed_ticks || !s->counter_frequency)return -1;
+    return now>s->completed_ticks?(double)(now-s->completed_ticks)/s->counter_frequency:0;
+}
+
+static void ts_audio_health_progress_report(const AudioState *audio,char *text,size_t size)
+{
+    if(!size)return;
+    uint64_t now=SDL_GetPerformanceCounter();
+    double age=ts_audio_health_callback_age(&ts_health.snapshot,now);
+    if(!audio->realtime_diagnostics_enabled)snprintf(text,size,"Callback progress: telemetry unavailable\n");
+    else if(age<0)snprintf(text,size,"Callback progress: no timed completion observed since reset/device restart\n");
+    else snprintf(text,size,"Callback progress: %s; last completion %.3f s ago\n",
+        age<1?"recent":"NO RECENT COMPLETION",age);
+    size_t used=strlen(text);
+    if(ts_control_timing.depth && ts_control_timing.audio==audio) {
+        double held=audio->realtime_counter_frequency && now>ts_control_timing.acquired?
+            1000.0*(now-ts_control_timing.acquired)/audio->realtime_counter_frequency:0;
+        snprintf(text+used,size-used,"Current UI audio lock: HELD; depth %u; %.3f ms; site %s\n",
+            ts_control_timing.depth,held,ts_control_timing.site?ts_control_timing.site:"unknown");
+    } else snprintf(text+used,size-used,"Current UI audio lock: not held by this UI thread\n");
 }
 
 static void ts_audio_health_reset(AudioState *audio)
@@ -283,8 +317,7 @@ static void ts_audio_health_reset(AudioState *audio)
                           &ts_health.recovery_base, &ts_health.worker_base, &ts_health.native_kind);
     ts_health.device_generation = audio->audio_health_generation;
     ts_profile_reset();
-    ts_health.seen_callbacks = 0;
-    audio->audio_health_started = ts_health.last_callback = SDL_GetTicks();
+    audio->audio_health_started = SDL_GetTicks();
     ts_health.last_update = 0;
     ts_audio_health_sample(audio, SDL_GetTicks());
 }
@@ -294,8 +327,9 @@ static void ts_audio_health_report(AudioState *audio, char *report, size_t size)
     ts_audio_health_sample(audio, SDL_GetTicks());
     const TsRealtimeDiagnosticsSnapshot *s = &ts_health.snapshot;
     const char *driver = ts_native_current_driver();
-    char setup[16384];
+    char setup[16384],progress[512];
     ts_audio_health_setup_report(setup, sizeof(setup), SDL_GetTicks());
+    ts_audio_health_progress_report(audio,progress,sizeof(progress));
     snprintf(report, size,
         "TapeSister Audio Health\n"
         "Build: %s (%s %s)\n"
@@ -305,6 +339,7 @@ static void ts_audio_health_report(AudioState *audio, char *report, size_t size)
         "%s"
         "Measurement age: %.1f s; telemetry: %s\n"
         "Callbacks: %llu; frames: %llu\n"
+        "%s"
         "Recent processing: %.2f%%; average %.3f ms; peak %.3f ms\n"
         "Maximum callback: %.3f ms; near budget: %llu; over budget: %llu\n"
         "Long start gaps: %llu; maximum extra gap: %.3f ms\n"
@@ -329,6 +364,7 @@ static void ts_audio_health_report(AudioState *audio, char *report, size_t size)
         (SDL_GetTicks() - audio->audio_health_started) / 1000.0,
         audio->realtime_diagnostics_enabled ? "enabled" : "unavailable",
         (unsigned long long)s->callback_count, (unsigned long long)s->frame_count,
+        progress,
         s->recent_load_percent, s->recent_average_microseconds / 1000,
         s->recent_worst_microseconds / 1000, s->worst_microseconds / 1000,
         (unsigned long long)s->near_overruns, (unsigned long long)s->deadline_overruns,
@@ -425,6 +461,7 @@ static void ts_audio_session_update(AudioState *audio,TsUiState *ui)
        controls and transport changes retain their own setup snapshot. */
     current.captured=0;current.keyboard_voices=current.held_voices=current.tile_voices=0;
     current.mosaic_scheduled=current.mosaic_notes=0;
+    current.mosaic_time=0;
     current.tracker_row=current.tracker_voices=0;
     if(current.valid && memcmp(&current,&previous,sizeof(current))) {
         char setup[32768];ts_audio_health_setup_report(setup,sizeof(setup),now);
@@ -435,6 +472,10 @@ static void ts_audio_session_update(AudioState *audio,TsUiState *ui)
     last_sample=now;
     ts_audio_health_sample(audio,now);
     const TsRealtimeDiagnosticsSnapshot *s=&ts_health.snapshot;
+    double callback_age=ts_audio_health_callback_age(s,SDL_GetPerformanceCounter());
+    ts_session_log_event("audio_progress","callback_age_s=%.6f ui_lock_depth=%u ui_lock_site=%s mosaic_time=%.6f muted=%d solo=%d",
+        callback_age,ts_control_timing.depth,ts_control_timing.depth && ts_control_timing.site?ts_control_timing.site:"none",
+        ts_health.setup.mosaic_time,ts_health.setup.mosaic_muted,ts_health.setup.mosaic_solo);
     ts_session_log_event("health_sample","generation=%u callbacks=%llu over_budget=%llu near_budget=%llu max_hold_ms=%.6f holds_over_buffer=%llu max_ui_wait_ms=%.6f backend_counter_kind=%d driver=%u lock_skips=%u recoveries=%u worker_gaps=%u profile=%d",
         audio->audio_health_generation,(unsigned long long)s->callback_count,(unsigned long long)s->deadline_overruns,
         (unsigned long long)s->near_overruns,s->control_worst_microseconds/1000,(unsigned long long)s->control_long_holds,
@@ -484,10 +525,11 @@ static void ts_audio_health_draw(TsFramebuffer *fb, const TsUiState *ui,
     uint32_t effect = ts_theme_legacy(&ui->palette,TS_THEME_HEALTH,TS_COLOR_ACTIVITY,TS_PALETTE_PATTERN_EFFECT);
     uint32_t dim = ts_theme_color(&ui->palette,TS_THEME_HEALTH,TS_COLOR_DIM,0xffa5a0aeu), edge = ts_theme_color(&ui->palette,TS_THEME_HEALTH,TS_COLOR_EDGE,0xff48434au);
     uint32_t red = ts_theme_color(&ui->palette,TS_THEME_HEALTH,TS_COLOR_ERROR,0xffeb777du), amber = ts_theme_color(&ui->palette,TS_THEME_HEALTH,TS_COLOR_WARNING,0xffdfbc72u);
-    int active = ts_audio_output_is_available() && s->callback_count &&
-                 now - ts_health.last_callback < 1000u;
+    double age=ts_audio_health_callback_age(s,SDL_GetPerformanceCounter());
+    int active = ts_audio_output_is_available() && age>=0 && age<1;
     const char *state = !audio->realtime_diagnostics_enabled ? "TIMING UNAVAILABLE" :
-        !ts_audio_output_is_available() ? "OUTPUT UNAVAILABLE" : active ? "MONITORING" : "WAITING FOR AUDIO";
+        !ts_audio_output_is_available() ? "OUTPUT UNAVAILABLE" : active ? "MONITORING" :
+        age<0?"WAITING FOR AUDIO":"CALLBACKS STALLED";
     char line[160];
     cfg_rect(fb, 0, 0, 640, 400, ts_theme_color(&ui->palette,TS_THEME_HEALTH,TS_COLOR_BACKGROUND,0xff1b191fu));
     cfg_frame(fb, 8, 8, 624, 384, ts_theme_color(&ui->palette,TS_THEME_HEALTH,TS_COLOR_PANEL,0xff242125u), accent);

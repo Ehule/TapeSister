@@ -87,7 +87,7 @@ passes afterward. Their Release targets rebuild successfully, and all four
 affected tests pass: keyboard HOLD, project Open/reset, and both ordinary and
 realtime embedded TrackSister runs.
 
-## Source actions and reported revert/mute behavior (October 22, 2026)
+## Source actions and reported mute behavior (October 22, 2026)
 
 Source cards now support double-left-click to open the canvas editor, right-click
 to select their placed instances, and A to toggle a source preview. A selected
@@ -105,8 +105,10 @@ The Mosaic model/controller, project Open/reset and offline-render suites pass.
 The changed Mosaic module and model tests also pass AddressSanitizer/UBSan
 (leak detection disabled in the traced container).
 
-The reported same-project revert failure and persistent silence after Shift+M
-have **not been reproduced**. Added coverage verifies:
+Persistent silence after Shift+M has **not been reproduced**. Reopening the
+same project was an attempt to recover sound; the user had not changed card
+positions, so a separate data-revert failure has not been established. Added
+coverage verifies:
 
 - Reopening the active TSR through the pending Load operation restores changed
   card positions, mute, gain and copies, resets history and stops transport.
@@ -124,3 +126,19 @@ The supplied project is read only; no user samples are committed. Reproduce with
 ./build/tapesister_mosaic_controller_tests --source-actions
 ./build/tapesister_new_project_tests --mosaic-revert-mute /path/to/project/project.tsr
 ```
+
+The subsequent report of an unmoving playhead, ineffective stop/start, and
+partial UI responsiveness is still unresolved. A new test drives the production
+ASIO adapter from a separate thread using the fixture driver. It renders 1,020
+cards while actual controller keydown/keyup events repeat the group-mute sequence
+three times, including more than a second muted across a loop wrap. The clock
+advances in every stage, sound resumes, and UI lock nesting returns to zero after
+each key action. This fixture does not reproduce a physical MOTU driver failure.
+
+Audio Health now reports the actual last callback completion age, current UI
+lock depth/hold/site, Mosaic time/range, and total muted/solo cards. Opening the
+window after a stall no longer makes an old callback count look newly active.
+Session logs retain progress once per second, provided UI service continues.
+The Linux application build and diagnostics, Health, and audio reconfiguration
+suites pass, including the new threaded test. These changes improve diagnosis;
+they do not establish or repair the cause of the reported freeze.

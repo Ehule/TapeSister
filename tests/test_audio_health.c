@@ -65,6 +65,26 @@ int main(int argc, char **argv)
     want.samples = 256; want.callback = silence;
     ts_real_output = ts_native_open(NULL, 0, &want, &got, 0); assert(ts_real_output);
     ts_output_userdata = a;
+    /* A freshly opened report must retain the age of the actual callback,
+       instead of treating an old count as new progress. No sleeps needed. */
+    char progress[512];
+    ts_audio_health_sample(a,SDL_GetTicks());
+    ts_audio_health_progress_report(a,progress,sizeof(progress));
+    assert(strstr(progress,"no timed completion observed"));
+    uint64_t frequency=SDL_GetPerformanceFrequency(),now=SDL_GetPerformanceCounter();
+    ts_realtime_diagnostics_record_timed(&a->realtime_diagnostics,now,1,frequency,48000,256,0);
+    ts_audio_health_sample(a,SDL_GetTicks());
+    assert(fabs(ts_audio_health_callback_age(&ts_health.snapshot,now+2*frequency)-2)<.001);
+    ts_audio_health_progress_report(a,progress,sizeof(progress));
+    assert(strstr(progress,"Callback progress: recent"));
+    ts_audio_lock_device_at(TS_AUDIO_LOGICAL_OUTPUT,"unfinished Mosaic edit");
+    ts_audio_lock_device_at(TS_AUDIO_LOGICAL_OUTPUT,"nested edit");
+    ts_audio_health_progress_report(a,progress,sizeof(progress));
+    assert(strstr(progress,"Current UI audio lock: HELD; depth 2") && strstr(progress,"unfinished Mosaic edit"));
+    ts_audio_unlock_device(TS_AUDIO_LOGICAL_OUTPUT);ts_audio_unlock_device(TS_AUDIO_LOGICAL_OUTPUT);
+    ts_audio_health_progress_report(a,progress,sizeof(progress));
+    assert(strstr(progress,"not held by this UI thread"));
+    ts_realtime_diagnostics_reset(&a->realtime_diagnostics);
     ts_audio_endpoints_init();
     ts_audio_endpoint_configure(&ts_output_endpoint, "");
     ts_audio_endpoint_begin_open(&ts_output_endpoint, 0);
@@ -194,6 +214,8 @@ int main(int argc, char **argv)
     assert(strstr(setup, "Keyboard HOLD: ON; keyboard voice instances: 1; latched/sustained: 1"));
     assert(strstr(setup, "ARP: RUNNING; outer ARP: RUNNING; active slot: 5"));
     assert(strstr(setup,"Mosaic cards: 1024 total; 3 at playhead; 6 assigned notes"));
+    assert(strstr(setup,"Mosaic position: 1.000000 s; repeat: OFF"));
+    assert(strstr(setup,"Mosaic switches: 1 muted; 0 solo"));
     assert(strstr(setup, "Sister Machine: ON, routed"));
     assert(strstr(setup, "Sister source switches: Tiles, FM"));
     assert(strstr(setup, "Fallout: ON, routed; FX master: ON"));

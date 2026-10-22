@@ -19,6 +19,7 @@ static void timed_windows(void)
             ts_realtime_diagnostics_record_timed(&d, i * 10000u, 2500, 1000000, rate, frames, 0);
         assert(ts_realtime_diagnostics_get(&d, &s));
         assert(s.recent_callback_count == 25 && s.delayed_starts == 0);
+        assert(s.completed_ticks == 242500);
         assert(fabs(s.recent_load_percent - 25) < .001);
         assert(s.recent_average_microseconds == 2500 && s.recent_worst_microseconds == 2500);
         ts_realtime_diagnostics_record_control(&d, 1000, 50000, 1000000, "short edit");
@@ -38,7 +39,7 @@ static void timed_windows(void)
         assert(s.delayed_starts == 1 && s.recent_callback_count == 0);
         ts_realtime_diagnostics_reset(&d);
         ts_realtime_diagnostics_get(&d, &s);
-        assert(!s.callback_count && !s.control_count && !s.delayed_starts && !s.control_worst_site);
+        assert(!s.callback_count && !s.completed_ticks && !s.control_count && !s.delayed_starts && !s.control_worst_site);
         assert(!s.recent_callback_count && s.recent_load_percent == 0);
     }
 }

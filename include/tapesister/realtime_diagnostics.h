@@ -33,6 +33,7 @@ typedef struct {
     atomic_uint_least64_t deadline_overruns;
     atomic_uint_least64_t near_overruns;
     atomic_uint_least64_t counter_frequency;
+    atomic_uint_least64_t completed_ticks;
     atomic_uint_least32_t sample_rate;
     atomic_uint_least32_t device_buffer_frames;
     atomic_uint_least32_t active_configuration;
@@ -60,6 +61,7 @@ typedef struct {
     uint64_t deadline_overruns;
     uint64_t near_overruns;
     uint64_t counter_frequency;
+    uint64_t completed_ticks; /* Last timed callback completion; zero until observed. */
     uint32_t sample_rate;
     uint32_t device_buffer_frames;
     uint32_t active_configuration;
