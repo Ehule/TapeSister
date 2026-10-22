@@ -116,6 +116,10 @@ typedef struct TsMosaic {
 
 TsMosaic *ts_mosaic_create(void);
 void ts_mosaic_free(TsMosaic *m);
+/* Publish a freshly loaded, stopped model with no undo history under the audio
+   lock. Its source ownership moves to m; loaded receives the retired sources
+   and must be freed after unlocking. The loaded object is consumed. */
+void ts_mosaic_publish_loaded(TsMosaic *m, TsMosaic *loaded);
 TsMosaicEvent *ts_mosaic_find(TsMosaic *m, uint64_t id);
 TsMosaicSource *ts_mosaic_source(TsMosaic *m, const TsSample *sample,
                                 char *error, size_t size);
@@ -130,6 +134,8 @@ int ts_mosaic_undo(TsMosaic *m, int redo);
 TsMosaicEvent *ts_mosaic_add(TsMosaic *m, TsMosaicSource *source,
                             double start, double x);
 TsMosaicEvent *ts_mosaic_copy(TsMosaic *m, uint64_t id, double start, double x);
+/* Group placement resolves spacing once for the rigid selection afterwards. */
+TsMosaicEvent *ts_mosaic_copy_unspaced(TsMosaic *m, uint64_t id, double start, double x);
 void ts_mosaic_delete(TsMosaic *m, uint64_t id);
 void ts_mosaic_space(TsMosaic *m, TsMosaicEvent *e);
 void ts_mosaic_audition(TsMosaic *m, uint64_t id);

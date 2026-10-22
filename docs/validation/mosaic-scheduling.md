@@ -134,3 +134,78 @@ Mosaic controller, Audio Health, audio reconfiguration, source-route/Matrix
 controller, offline rendering and project reset. Health coverage includes all
 1,024 cards, overlapping chords, muted/finished one-shot counts, stopped transport,
 snapshot throttling and exported workload fields.
+
+## Loading and editing lock follow-up
+
+Validated on 2026-10-22 against `bac0572`. The user's running-session logs
+separated sparse playback from simultaneous 1,020-card overload, and retained
+long `load_instrument` and `mosaic_event` holds. This change addresses verified
+work inside those locks; it does not increase simultaneous DSP capacity or claim
+to fix the previously intermittent Windows driver-switch/New prompt issue.
+
+- TSR loading prepares all banks, Record Bank, tracker definitions and Mosaic
+  sources before acquiring the output lock. Sister/page-manifest consistency is
+  checked before publication, so preparation errors preserve the current project.
+- Publication swaps bank ownership and replaces the stable Mosaic model address.
+  Old audio and definitions are destroyed after unlocking. Freshly loaded Mosaic
+  has no live voices or history: publication retires voices and copies definitions
+  and settings without writing the unused 17 MiB undo backing store.
+- Copy drags no longer auto-space each new card twice and then discard its position.
+  Geometry planning includes originals as obstacles on the first copy motion;
+  the checkpoint, new cards and final placement publish under one lock. There is
+  no intermediate audible pile of copies at their originals' positions.
+- Group drag/nudge snapping and spacing run outside the lock, using a compact
+  list of unselected obstacles in the same storage order. Audio only reads card
+  geometry; the UI remains its sole writer. Auto-Space, snap tie ordering,
+  primary selection and Undo/Redo semantics are preserved.
+
+Development-host Release measurements (explicit benchmarks, no CI time gates):
+
+| Operation | Before | After |
+| --- | ---: | ---: |
+| 128-card copy setup, Auto-Space on | 7.782 ms | 0.064 ms |
+| 512-card copy setup, Auto-Space on | 206.245 ms | 0.672 ms |
+| 1,024-card tidy, Auto-Space on | 3.634 ms | 3.496 ms |
+| 1,024-card align, Auto-Space on | 1.813 ms | 1.738 ms |
+
+Copy setup includes checkpointing and creation, excluding source setup and the
+separate group geometry calculation. Values are the best of three wall-time
+runs. Tidy/alignment are controls, essentially unchanged.
+
+The load benchmark uses four populated Sample pages, Record Bank, 16 one-second
+stereo sources and 1,024 Mosaic cards. Before, the core loader's locked work took
+162.759 / 86.188 / 112.012 ms CPU across three trials. After, publication alone
+took **2.711 / 0.159 / 0.433 ms CPU**. Preparation took 97.455 / 83.105 / 158.795 ms
+and retirement 0.199 / 0.088 / 0.205 ms, both outside the lock. The first trial
+includes first-touch page costs. Disk waits are not included in CPU time.
+
+These are synthetic core-loader measurements, not the complete application's
+`load_instrument` hold or a MOTU measurement. Sister runtime reset, effect
+allocation/restoration and note synchronization still occur under that lock.
+Preparation remains synchronous on the UI thread and temporarily retains both
+projects. Dense Auto-Space geometry can still occupy the UI, though playback is
+not excluded while it is calculated.
+
+```sh
+cmake --build build --target tapesister_mosaic_controller_tests tapesister_project_load_benchmark
+./build/tapesister_mosaic_controller_tests --edit-benchmark
+# Writes a synthetic load-benchmark project in the working directory:
+mkdir -p /tmp/tapesister-load-bench
+(cd /tmp/tapesister-load-bench && /absolute/path/to/build/tapesister_project_load_benchmark)
+```
+
+Regression coverage adds staged-load cancellation, rejection of parked targets,
+multi-page/Record Bank replacement, publication after the project folder moves,
+retired sample lifetime, duplicate-publication rejection, and failed preparation
+through the real Open path. Full prior undo/voice state is replaced; the first
+512 routed frames match a fresh load byte for byte, and new Undo starts empty.
+Twenty-four group scenarios compare exact positions against the previous
+algorithm, including copies, snapping, Auto-Space, primary selection, playback
+between planning/publication, and Undo/Redo.
+
+Linux application build and all seven affected suites pass: Mosaic model/storage,
+Mosaic controller, Sample pages, project reset/Open, source-route/Matrix controller,
+keyboard HOLD/sequences, and embedded TrackSister/project loading. Address and
+undefined-behavior sanitizer checks instrument the changed Mosaic and Sample
+page modules and their core tests. LeakSanitizer is unavailable in this traced
+container; those checks run with leak detection disabled.

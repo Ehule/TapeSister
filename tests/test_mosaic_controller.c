@@ -89,6 +89,8 @@ static void wait_render(void);
 #include "test_mosaic_loop_controls.inc"
 #include "test_mosaic_selection.inc"
 #include "test_mosaic_copy_gestures.inc"
+#include "test_mosaic_group_staging.inc"
+#include "benchmark_mosaic_edits.inc"
 #include "test_mosaic_controls.inc"
 #include "test_mosaic_volume_controls.inc"
 #include "test_mosaic_routing.inc"
@@ -415,9 +417,10 @@ int main(int argc,char **argv)
     }
     uint64_t original=ts_sample_hash(&instrument.current);
     ui.mosaic=audio.mosaic=ts_mosaic_create();ui.mosaic_scale=24;ui.mosaic_open=1;
+    if(argc>1 && !strcmp(argv[1],"--edit-benchmark")) {benchmark_mosaic_edits();goto done;}
     if(argc>1 && !strcmp(argv[1],"--arrange")) {test_mosaic_performance_edit(window);goto done;}
     if(argc>1 && !strcmp(argv[1],"--selection")) {test_mosaic_selection(window);goto done;}
-    if(argc>1 && !strcmp(argv[1],"--copy-drag")) {test_mosaic_copy_gestures(window);goto done;}
+    if(argc>1 && !strcmp(argv[1],"--copy-drag")) {test_mosaic_copy_gestures(window);test_mosaic_group_staging();goto done;}
     if(argc>1 && !strcmp(argv[1],"--large-mosaic")) {test_mosaic_large_browser();goto done;}
     if(argc>1 && !strcmp(argv[1],"--loop")) {test_mosaic_loop_controls(window);goto done;}
     if(argc>1 && !strcmp(argv[1],"--navigation")) {test_mosaic_navigation(window);goto done;}
@@ -467,7 +470,7 @@ int main(int argc,char **argv)
     test_mosaic_navigation(window);
     test_mosaic_loop_controls(window);
     test_mosaic_selection(window);
-    test_mosaic_copy_gestures(window);
+    test_mosaic_copy_gestures(window);test_mosaic_group_staging();
     test_mosaic_large_browser();
     test_canvas_gestures(window);
     test_mosaic_copy_drag(window);

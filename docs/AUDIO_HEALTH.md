@@ -70,7 +70,14 @@ outside the application callback, including the ASIO short-lock retry. The monit
 latency, acoustic latency or waveform discontinuities.
 
 The report includes the longest control-hold call site to help locate expensive
-edits. Raw backend/device lifecycle operations are not all covered by these
+edits. TSR loading prepares files and decodes samples before the locked publication
+step, and retires old sample storage after unlocking. Runtime/effect setup still
+contributes to `load_instrument` holds. Mosaic group placement plans outside the
+audio lock; its checkpoint/copies/final coordinates publish together. Compare a
+freshly reset measurement while repeating these operations, since an earlier
+maximum remains in the report until Reset.
+
+Raw backend/device lifecycle operations are not all covered by these
 control-lock measurements. Pause, resume and output replacement restart callback
 cadence and the recent window. Session maxima persist until Reset. Native counts
 restart when their stream is recreated; the report names that scope explicitly.

@@ -55,6 +55,8 @@ recording on the next launch. The setting is a local preference, not project dat
 - Pedalboard/Sister action requests with control IDs, names where available and
   values; routing edits, Matrix window activity, group transport commands,
   project load requests, New, output lifecycle and visualizer launch/ready/close/exit.
+  A TSR `project_load_result` with `success=0 phase=prepare` means file/manifest
+  preparation failed before publishing the replacement project.
 - Changes to the cached active setup, routing and effect states, and one-second
   workload samples. These are UI observations with snapshot age, not an exact
   capture of DSP state at an earlier timing maximum. Fast actions can occur

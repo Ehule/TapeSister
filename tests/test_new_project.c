@@ -175,6 +175,22 @@ int main(int argc,char **argv)
     assert(ts_sample_pages_load_project(&saved,&saved_bank,&saved_record,"new-project-flow/new-project-flow.tsr",error,sizeof(error)));
     assert(saved.page_count==2 && saved_bank.current.frames==512);
     ts_sample_pages_free(&saved);ts_instrument_free(&saved_bank);ts_instrument_free(&saved_record);
+    /* Invalid external project metadata is rejected before touching banks,
+       Mosaic transport, tracker editor or Sister runtime state. */
+    TsSisterProjectState mismatched;int present=0;
+    const char *load_path="new-project-flow/new-project-flow.tsr";
+    assert(ts_sister_project_state_load(&mismatched,load_path,48000,&present,error,sizeof(error)) && present);
+    ++mismatched.page_count;
+    assert(ts_sister_project_state_save(&mismatched,load_path,error,sizeof(error)));
+    before=project_hash();ui.mosaic->playing=1;
+    const float *old_audio=bank.current.data;uint64_t old_epoch=ui.mosaic->epoch;
+    assert(!load_instrument(0,&audio,&ui,&bank,&pages,&record,0,load_path));
+    assert(strstr(ui.status,"does not match") && project_hash()==before);
+    assert(bank.current.data==old_audio && ui.mosaic->epoch==old_epoch && ui.mosaic->playing);
+    --mismatched.page_count;
+    assert(ts_sister_project_state_save(&mismatched,load_path,error,sizeof(error)));
+    assert(!load_instrument(0,&audio,&ui,&bank,&pages,&record,0,"missing-project.tsr"));
+    assert(project_hash()==before && bank.current.data==old_audio && ui.mosaic->playing);
     assert(project_new(NULL,0,0,&session));assert_empty();
     /* New clears the active path while the accepted save still targets the
        previous project's bundle. Immediate shutdown must finish the copy. */

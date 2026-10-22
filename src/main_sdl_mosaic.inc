@@ -50,11 +50,16 @@ static void mosaic_transport(SDL_AudioDeviceID device,TsUiState *ui,int stop)
     }
     if(device)SDL_UnlockAudioDevice(device);
 }
-/* Move a selection as a rigid shape; spacing only shifts the whole group
-   horizontally, preserving every relative start time and gap. */
-static void mosaic_move_group(TsUiState *ui,double dx,double dt,int snap)
+/* Geometry is written only by the UI thread. Plan without excluding audio,
+   then publish the final rigid move under its lock. On the first copy motion,
+   originals are obstacles and the unpublished copies are not in the model. */
+static void mosaic_plan_group(TsUiState *ui,double *move_x,double *move_t,int snap,int copying)
 {
+    double dx=*move_x,dt=*move_t;
     TsMosaic *m=ui->mosaic;double minx=1e30,mint=1e30,maxt=0;
+    const TsMosaicEvent *obstacles[TS_MOSAIC_EVENTS];int obstacle_count=0;
+    for(int i=0;i<TS_MOSAIC_EVENTS;++i)
+        if(m->events[i].id && (copying || !mosaic_chosen(ui,i)))obstacles[obstacle_count++]=&m->events[i];
     for(int i=0;i<ui->mosaic_ghost_count;++i) {
         const TsMosaicEvent *o=&ui->mosaic_ghosts[i];
         minx=fmin(minx,o->x);mint=fmin(mint,o->start);maxt=fmax(maxt,o->start);
@@ -65,8 +70,8 @@ static void mosaic_move_group(TsUiState *ui,double dx,double dt,int snap)
         for(int j=0;j<ui->mosaic_ghost_count;++j)for(int k=0;k<3;++k) {
             const TsMosaicEvent *o=&ui->mosaic_ghosts[j];double t=o->start+dt+o->duration*.5*k;
             if(fabs(t)<best){best=fabs(t);adjust=-t;}
-            for(int i=0;i<TS_MOSAIC_EVENTS;++i) {
-                const TsMosaicEvent *e=&m->events[i];if(!e->id || mosaic_chosen(ui,i))continue;
+            for(int i=0;i<obstacle_count;++i) {
+                const TsMosaicEvent *e=obstacles[i];
                 for(int a=0;a<3;++a) {
                     double d=e->start+e->duration*.5*a-t;
                     if(fabs(d)<best){best=fabs(d);adjust=d;}
@@ -79,8 +84,8 @@ static void mosaic_move_group(TsUiState *ui,double dx,double dt,int snap)
         double shift=0;
         for(int j=0;j<ui->mosaic_ghost_count;++j) {
             const TsMosaicEvent *o=&ui->mosaic_ghosts[j];double t=o->start+dt,x=o->x+dx;
-            for(int i=0;i<TS_MOSAIC_EVENTS;++i) {
-                const TsMosaicEvent *b=&m->events[i];if(!b->id || mosaic_chosen(ui,i))continue;
+            for(int i=0;i<obstacle_count;++i) {
+                const TsMosaicEvent *b=obstacles[i];
                 if(t>=b->start+b->duration-1e-9 || b->start>=t+o->duration-1e-9)continue;
                 if(x<b->x+b->width+TS_MOSAIC_GUTTER && b->x<x+o->width+TS_MOSAIC_GUTTER)
                     shift=fmax(shift,b->x+b->width+TS_MOSAIC_GUTTER-x);
@@ -88,6 +93,12 @@ static void mosaic_move_group(TsUiState *ui,double dx,double dt,int snap)
         }
         if(shift<=0)break;dx+=shift;
     }
+    *move_x=dx;*move_t=dt;
+}
+/* Caller holds the audio lock. This is the only publication of a group move. */
+static void mosaic_move_group(TsUiState *ui,double dx,double dt)
+{
+    TsMosaic *m=ui->mosaic;
     for(int j=0;j<ui->mosaic_ghost_count;++j) {
         const TsMosaicEvent *o=&ui->mosaic_ghosts[j];TsMosaicEvent *e=ts_mosaic_find(m,o->id);
         if(e){e->start=o->start+dt;e->x=o->x+dx;}
@@ -113,7 +124,10 @@ static int mosaic_begin_drag_change(TsUiState *ui,MosaicController *c)
         uint64_t selected=ui->mosaic_selected;mosaic_select_only(ui,0);
         for(int i=0;i<ui->mosaic_ghost_count;++i) {
             TsMosaicEvent *o=&ui->mosaic_ghosts[i];uint64_t old=o->id;
-            TsMosaicEvent *copy=ts_mosaic_copy(m,old,o->start,o->x);
+            /* The following rigid group move computes final spacing. Running
+               per-card spacing here only to overwrite it is cubic for a dense
+               reverse-ordered row, and unnecessarily excludes playback. */
+            TsMosaicEvent *copy=ts_mosaic_copy_unspaced(m,old,o->start,o->x);
             /* Capacity and source IDs are stable under the caller's audio lock. */
             if(!copy)return 0;
             copy->start=o->start;copy->x=o->x;copy->revision=1;o->id=copy->id;
@@ -328,6 +342,10 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
         if(k==SDLK_f && (mod&(KMOD_CTRL|KMOD_SHIFT))==(KMOD_CTRL|KMOD_SHIFT)) {
             main_file_capture_toggle(audio,ui,sister,(uint32_t)rate);return 1;
         }
+        if((k==SDLK_UP || k==SDLK_DOWN || k==SDLK_LEFT || k==SDLK_RIGHT) &&
+           !(mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI))) {
+            mosaic_nudge(device,ui,k,mod);return 1;
+        }
         if(device)SDL_LockAudioDevice(device);
         if(k==SDLK_a && !(mod&(KMOD_ALT|KMOD_GUI))) {
             if(mod&KMOD_CTRL) {
@@ -342,7 +360,6 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
         } else if(k==SDLK_z && !(mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI)))mosaic_zoom_selection(ui,c);
         else if((k==SDLK_UP || k==SDLK_DOWN || k==SDLK_LEFT || k==SDLK_RIGHT) && !(mod&(KMOD_CTRL|KMOD_GUI))) {
             if(mod&KMOD_ALT){if(!event->key.repeat)mosaic_align(ui,k);}
-            else mosaic_nudge(ui,k,mod);
         } else if(k==SDLK_t && !(mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI)))mosaic_tidy(ui,0);
         else if(k==SDLK_c && (mod&KMOD_CTRL)) {
             TsMosaicEvent *e=ts_mosaic_find(ui->mosaic,ui->mosaic_selected);
@@ -493,16 +510,17 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
             return 1;
         }
         TsMosaicEvent *e=ts_mosaic_find(ui->mosaic,ui->mosaic_selected);if(!e)return 1;
-        double delta=(y-c->drag_y)/ui->mosaic_scale;
+        double delta=(y-c->drag_y)/ui->mosaic_scale,dx=(x-c->drag_x)/horizontal,dt=delta;
+        if(!c->drag_moved && abs(x-c->drag_x)<3 && abs(y-c->drag_y)<3)return 1;
+        if(c->drag==1)mosaic_plan_group(ui,&dx,&dt,(mod&KMOD_ALT)!=0,c->drag_copy && !c->drag_moved);
         if(device)SDL_LockAudioDevice(device);
         if(!c->drag_moved) {
-            if(abs(x-c->drag_x)<3 && abs(y-c->drag_y)<3){if(device)SDL_UnlockAudioDevice(device);return 1;}
             if(!mosaic_begin_drag_change(ui,c)) {
                 if(device)SDL_UnlockAudioDevice(device);mosaic_drag_end(ui,c);return 1;
             }
             e=ts_mosaic_find(ui->mosaic,ui->mosaic_selected);
         }
-        if(c->drag==1)mosaic_move_group(ui,(x-c->drag_x)/horizontal,delta,(mod&KMOD_ALT)!=0);
+        if(c->drag==1)mosaic_move_group(ui,dx,dt);
         else {
             if(c->drag==2) {
                 double end=c->drag_start+c->drag_duration+delta;

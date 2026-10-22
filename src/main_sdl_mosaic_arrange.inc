@@ -57,7 +57,7 @@ static void mosaic_align(TsUiState *ui,SDL_Keycode key)
     for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(mosaic_chosen(ui,i) && &m->events[i]!=primary)ts_mosaic_space(m,&m->events[i]);
     snprintf(ui->status,sizeof(ui->status),"ALIGNED %s TO %s / CTRL+Z UNDO",bottom?"ENDS":"STARTS",parent?"PRIMARY":"PLAYHEAD");
 }
-static void mosaic_nudge(TsUiState *ui,SDL_Keycode key,SDL_Keymod mod)
+static void mosaic_nudge(SDL_AudioDeviceID device,TsUiState *ui,SDL_Keycode key,SDL_Keymod mod)
 {
     ui->mosaic_ghost_count=mosaic_selected_events(ui,ui->mosaic_ghosts);
     if(!ui->mosaic_ghost_count)return;
@@ -67,11 +67,14 @@ static void mosaic_nudge(TsUiState *ui,SDL_Keycode key,SDL_Keymod mod)
         double left=100000,right=0;
         for(int i=0;i<ui->mosaic_ghost_count;++i){left=fmin(left,ui->mosaic_ghosts[i].x);right=fmax(right,ui->mosaic_ghosts[i].x);}
         delta=fmax(-left,fmin(100000-right,delta));
-        if(delta!=0) {
-            ts_mosaic_checkpoint(ui->mosaic);
-            mosaic_move_group(ui,delta,0,0);
-        }
-    } else {ts_mosaic_checkpoint(ui->mosaic);mosaic_move_group(ui,0,delta*.1,0);}
+    }
+    if(delta!=0) {
+        double dx=horizontal?delta:0,dt=horizontal?0:delta*.1;
+        mosaic_plan_group(ui,&dx,&dt,0,0);
+        if(device)SDL_LockAudioDevice(device);
+        ts_mosaic_checkpoint(ui->mosaic);mosaic_move_group(ui,dx,dt);
+        if(device)SDL_UnlockAudioDevice(device);
+    }
     ui->mosaic_ghost_count=0;
 }
 static double mosaic_scatter_random(uint32_t *seed)

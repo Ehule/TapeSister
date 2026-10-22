@@ -290,12 +290,49 @@ static void test_project_transaction(void)
     assert(ts_sample_pages_bundle_project_path("mosaic-project-test.tsr",path,sizeof(path),error,sizeof(error)));
     assert(ts_sample_pages_save_project(&pages,bank,record,NULL,path,error,sizeof(error)));
     uint64_t hash=ts_mosaic_hash(m),sample_hash=ts_sample_hash(&bank->current),epoch=m->epoch;
+    for(int i=0;i<TS_MOSAIC_HISTORY;++i)ts_mosaic_checkpoint(m);
+    ts_mosaic_audition(m,m->events[0].id);ts_mosaic_begin_block(m,32);
+    for(int i=0;i<32;++i)ts_mosaic_read(m,48000);
+    assert(m->voices[0].active && m->audition_id);
     m->events[0].start=100;
     /* A Windows-saved bundle must open intact on Linux, including its audio. */
     storage_line_endings("mosaic-project-test/project-data/mosaic.tsm",1);
-    assert(ts_sample_pages_load_project(&pages,bank,record,path,error,sizeof(error)));
+    TsSampleProjectLoad *prepared=ts_sample_pages_prepare_project(path,1,error,sizeof(error));assert(prepared);
+    uint64_t edited=ts_mosaic_hash(m);TsMosaicSource *old_source=m->sources;
+    const float *old_data=bank->current.data;
+    assert(m->epoch==epoch && m->events[0].start==100 && m->playing);
+    assert(ts_sample_pages_prepared_pages(prepared)->page_count==1);
+    /* Cancelling a fully decoded project must not touch the running one. */
+    ts_sample_pages_dispose_project(prepared);
+    assert(ts_mosaic_hash(m)==edited && m->sources==old_source && bank->current.data==old_data);
+    prepared=ts_sample_pages_prepare_project(path,1,error,sizeof(error));assert(prepared);
+    /* Publication does not need the files any more, and retirement happens
+       only after the caller releases its audio lock. */
+    assert(rename("mosaic-project-test","mosaic-project-staged")==0);
+    assert(ts_sample_pages_publish_project(&pages,bank,record,prepared,error,sizeof(error)));
+    assert(!ts_sample_pages_prepared_pages(prepared));
+    assert(old_source->sample.data && old_data[0]==old_source->sample.data[0]);
+    assert(!ts_sample_pages_publish_project(&pages,bank,record,prepared,error,sizeof(error)));
+    ts_sample_pages_dispose_project(prepared);
+    assert(rename("mosaic-project-staged","mosaic-project-test")==0);
     assert(pages.mosaic==m && ts_mosaic_hash(m)==hash && m->epoch!=epoch);
     assert(ts_sample_hash(&bank->current)==sample_hash);
+    assert(!m->history_count && !m->history_cursor && !m->history_first && !m->playing && !m->audition_id);
+    for(int i=0;i<TS_MOSAIC_EVENTS;++i)assert(!m->voices[i].active);
+    /* Retired history/voice backing memory must never retain old ownership or
+       affect the first render after replacement. */
+    ts_mosaic_collect(m);assert(m->sources && !m->sources->next);
+    TsMosaic *expected=ts_mosaic_create();assert(expected);
+    assert(ts_mosaic_load(expected,"mosaic-project-test/project-data",error,sizeof(error)));
+    m->playing=expected->playing=1;ts_mosaic_begin_block(m,512);ts_mosaic_begin_block(expected,512);
+    for(int i=0;i<512;++i) {
+        TsSourceRouteMix a={0},b={0};
+        TsStereoFrame x=ts_mosaic_read_routed(m,48000,&a),y=ts_mosaic_read_routed(expected,48000,&b);
+        assert(!memcmp(&x,&y,sizeof(x)) && !memcmp(&a,&b,sizeof(a)));
+    }
+    ts_mosaic_free(expected);
+    ts_mosaic_checkpoint(m);m->events[0].start=8;
+    assert(ts_mosaic_undo(m,0) && ts_mosaic_hash(m)==hash && !ts_mosaic_undo(m,0));
     /* Missing arrangement must fail, not silently open an empty Mosaic. */
     assert(remove("mosaic-project-test/project-data/mosaic.tsm")==0);
     assert(!ts_sample_pages_load_project(&pages,bank,record,path,error,sizeof(error)));

@@ -81,4 +81,18 @@ int ts_sample_pages_load_project(TsSamplePages *pages,
                                  const char *path,
                                  char *error, size_t error_size);
 
+/* Prepare and validate files on the control thread without excluding playback.
+   Publish under the audio lock; it swaps ownership without file I/O, allocation
+   or destruction. Dispose after unlocking (also disposes an unused load).
+   Publication requires a live Sample page, no Mosaic editor, and the same
+   optional Mosaic presence requested at preparation. A load publishes once. */
+typedef struct TsSampleProjectLoad TsSampleProjectLoad;
+TsSampleProjectLoad *ts_sample_pages_prepare_project(const char *path, int with_mosaic,
+                                                     char *error, size_t error_size);
+const TsSamplePages *ts_sample_pages_prepared_pages(const TsSampleProjectLoad *load);
+int ts_sample_pages_publish_project(TsSamplePages *pages, TsInstrument *active_sample,
+                                    TsInstrument *record_bank, TsSampleProjectLoad *load,
+                                    char *error, size_t error_size);
+void ts_sample_pages_dispose_project(TsSampleProjectLoad *load);
+
 #endif

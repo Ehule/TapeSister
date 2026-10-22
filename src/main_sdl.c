@@ -4309,6 +4309,7 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     if(path_is_module(path))return load_module_instrument(device,audio,ui,instrument,sample_pages,record_bank_active,path);
     char error[160];
     TsSisterProjectState sister_state;
+    TsSampleProjectLoad *prepared_project = NULL;
     TsKeyboardSequenceSource *previous_sequence_source = NULL;
     int sister_state_present = 0;
     int recipe = path_is_tsr(path);
@@ -4372,6 +4373,28 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
                  "LOAD FAILED: %.135s", error);
         return 0;
     }
+    if (recipe) {
+        /* Decode/validate all banks and Mosaic sources while the current
+           project can still render. Failed preparation leaves it untouched. */
+        if (!sample_pages || !sample_pages->active_live || sample_pages->mosaic_bank) {
+            snprintf(ui->status,sizeof(ui->status),"RETURN TO A SAMPLE PAGE BEFORE OPENING A PROJECT");
+            return 0;
+        }
+        prepared_project = ts_sample_pages_prepare_project(path, sample_pages->mosaic != NULL,
+                                                           error, sizeof(error));
+        const TsSamplePages *prepared = ts_sample_pages_prepared_pages(prepared_project);
+        if (prepared && sister_state_present &&
+            (sister_state.page_count != ts_sample_pages_count(prepared) ||
+             sister_state.active_page != ts_sample_pages_active(prepared))) {
+            snprintf(error,sizeof(error),"Sister project state does not match the project page manifest");
+            ts_sample_pages_dispose_project(prepared_project);prepared_project = NULL;
+        }
+        if (!prepared_project) {
+            snprintf(ui->status,sizeof(ui->status),"LOAD FAILED: %.135s",error);
+            ts_session_log_event("project_load_result","success=0 kind=TSR phase=prepare");
+            return 0;
+        }
+    }
     if (ui->workbench_loop_active) stop_all(device, audio, ui);
     lock_edit(device, audio);
     ui->bank_view_slot = -1;
@@ -4386,15 +4409,8 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
         ui->tracker_scroll=0;
         ui->tracker_solo=0;ts_tracker_playback_solo(&audio->tracker,0);
         ts_sister_runtime_project_close(&audio->sister);
-        ok = ts_sample_pages_load_project(sample_pages, instrument, record_bank,
-                                          path, error, sizeof(error));
-        if (ok && sister_state_present &&
-            (sister_state.page_count != ts_sample_pages_count(sample_pages) ||
-             sister_state.active_page != ts_sample_pages_active(sample_pages))) {
-            snprintf(error, sizeof(error),
-                     "Sister project state does not match the project page manifest");
-            ok = 0;
-        }
+        ok = ts_sample_pages_publish_project(sample_pages, instrument, record_bank,
+                                             prepared_project, error, sizeof(error));
         if (ok) {
             previous_sequence_source = ts_keyboard_sequence_source(&audio->keyboard_sequence, NULL);
             ts_keyboard_sequence_set_bank(&audio->keyboard_sequence, &sister_state.keyboard_sequence);
@@ -4441,6 +4457,7 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
              ts_instrument_load_wav(instrument, path, error, sizeof(error));
     }
     unlock_edit(device, audio, ui, instrument);
+    ts_sample_pages_dispose_project(prepared_project);
     ts_keyboard_sequence_source_free(previous_sequence_source);
     if (ok) ts_ui_reset_parent_view(ui, instrument->parent.frames);
     if (ok && recipe) {

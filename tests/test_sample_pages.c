@@ -233,9 +233,20 @@ static void test_project_roundtrip_with_record_bank(void)
     CHECK(state_present && restored_state.page_count == 2u &&
           restored_state.active_page == 1u);
     CHECK(ts_sample_pages_unpark(&pages, &active, error, sizeof(error)));
-    CHECK(ts_sample_pages_load_project(&restored, &restored_active,
-                                       &restored_record, path,
-                                       error, sizeof(error)));
+    /* Stage over a populated two-page destination; its active page and REC
+       BANK must remain owned until publication and be retired exactly once. */
+    CHECK(add_sound(&restored_active, 0, 0.2f));
+    CHECK(ts_sample_pages_append_and_switch(&restored, &restored_active, NULL, error, sizeof(error)));
+    CHECK(add_sound(&restored_active, 2, 0.3f));
+    CHECK(add_sound(&restored_record, 4, 0.4f));
+    TsSampleProjectLoad *prepared=ts_sample_pages_prepare_project(path,0,error,sizeof(error));
+    CHECK(prepared != NULL);
+    CHECK(restored_active.current.data[0]==0.3f && restored_record.current.data[0]==0.4f);
+    CHECK(ts_sample_pages_park(&restored,&restored_active,error,sizeof(error)));
+    CHECK(!ts_sample_pages_publish_project(&restored,&restored_active,&restored_record,prepared,error,sizeof(error)));
+    CHECK(ts_sample_pages_unpark(&restored,&restored_active,error,sizeof(error)));
+    CHECK(ts_sample_pages_publish_project(&restored,&restored_active,&restored_record,prepared,error,sizeof(error)));
+    ts_sample_pages_dispose_project(prepared);
     CHECK(ts_sample_pages_count(&restored) == 2u);
     CHECK(ts_sample_pages_active(&restored) == 1u);
     CHECK(ts_instrument_bank_count(&restored_active) == 2);

@@ -531,6 +531,12 @@ it describes scheduled work rather than detected sound.
 
 Undo retains 32 steps in a circular history, avoiding a full-history shift when
 it fills. Source-browser lookup and source cleanup also scale with larger projects.
+Group drags and arrow nudges calculate snapping/spacing before taking the audio
+lock, then publish the finished placement together. Copy drags skip redundant
+per-card spacing. Project opening decodes banks and Mosaic sources before locking
+audio and frees retired samples afterwards; publication resets transport/history
+without copying the unused undo backing store. File/manifest preparation failures
+leave the current project intact. Runtime/effect setup still needs a locked step.
 Existing Mosaic formats (1–12) remain readable; the saved format stays at 12.
 Older builds capped at 128 cards cannot load projects containing more than 128.
 See [performance validation](validation/mosaic-scheduling.md) for benchmark scope

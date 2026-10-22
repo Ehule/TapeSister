@@ -2,6 +2,7 @@
 #include "tapesister/master_eq.h"
 #include <errno.h>
 #include <math.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -34,6 +35,18 @@ static void mosaic_reset_voices(TsMosaic *m)
         TsMosaicVoice *v=&m->voices[i];v->active=0;v->attack=0;
         v->output_route.activity_source=v->output_route.activity_send=0;
     }
+}
+void ts_mosaic_publish_loaded(TsMosaic *m,TsMosaic *loaded)
+{
+    TsMosaicSource *retired=m->sources;
+    /* A load has no history or live voices. Keep the unreachable history
+       backing store, avoiding 17 MiB of writes/page faults in the audio lock.
+       Copy every other field; voice_begin initializes retired slots on demand. */
+    memcpy(m->events,loaded->events,sizeof(m->events));
+    size_t tail=offsetof(TsMosaic,history_speed);
+    memcpy((unsigned char *)m+tail,(const unsigned char *)loaded+tail,sizeof(*m)-tail);
+    mosaic_reset_voices(m);
+    loaded->sources=retired;
 }
 TsMosaicSource *ts_mosaic_source_eq(TsMosaic *m,const TsSample *sample,const TsSample *dry,const TsMasterEqControls *eq,char *error,size_t size)
 {
@@ -162,7 +175,7 @@ void ts_mosaic_space(TsMosaic *m,TsMosaicEvent *e)
         if(!changed)break;
     }
 }
-TsMosaicEvent *ts_mosaic_add(TsMosaic *m,TsMosaicSource *source,double start,double x)
+static TsMosaicEvent *mosaic_add(TsMosaic *m,TsMosaicSource *source,double start,double x,int space)
 {
     if(!m || !source || !isfinite(start) || !isfinite(x))return NULL;
     for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(!m->events[i].id) {
@@ -172,17 +185,22 @@ TsMosaicEvent *ts_mosaic_add(TsMosaic *m,TsMosaicSource *source,double start,dou
             .x=x,.width=86,.last=source->sample.frames,.looping=1,.note_count=1,
             .notes={60},.gain=1,.tuning={60,0}};
         snprintf(e->name,sizeof(e->name),"%.63s",source->sample.name);
-        ts_mosaic_space(m,e);++m->revision;return e;
+        if(space)ts_mosaic_space(m,e);
+        ++m->revision;return e;
     }
     return NULL;
 }
-TsMosaicEvent *ts_mosaic_copy(TsMosaic *m,uint64_t id,double start,double x)
+TsMosaicEvent *ts_mosaic_add(TsMosaic *m,TsMosaicSource *source,double start,double x)
+{return mosaic_add(m,source,start,x,1);}
+TsMosaicEvent *ts_mosaic_copy_unspaced(TsMosaic *m,uint64_t id,double start,double x)
 {
     TsMosaicEvent *old=ts_mosaic_find(m,id);if(!old)return NULL;
-    TsMosaicEvent copy=*old,*e=ts_mosaic_add(m,old->source,start,x);if(!e)return NULL;
-    uint64_t new_id=e->id;*e=copy;e->id=new_id;e->start=fmax(0,start);e->x=x;
-    ts_mosaic_space(m,e);return e;
+    TsMosaicEvent copy=*old,*e=mosaic_add(m,old->source,start,x,0);if(!e)return NULL;
+    uint64_t new_id=e->id;*e=copy;e->id=new_id;e->start=fmax(0,start);e->x=fmax(0,x);
+    return e;
 }
+TsMosaicEvent *ts_mosaic_copy(TsMosaic *m,uint64_t id,double start,double x)
+{TsMosaicEvent *e=ts_mosaic_copy_unspaced(m,id,start,x);if(e)ts_mosaic_space(m,e);return e;}
 void ts_mosaic_delete(TsMosaic *m,uint64_t id)
 {TsMosaicEvent *e=ts_mosaic_find(m,id);if(e){memset(e,0,sizeof(*e));m->route_discontinuity=1;++m->revision;}}
 double ts_mosaic_snap(const TsMosaic *m,uint64_t id,double time,double tolerance)
@@ -718,8 +736,7 @@ int ts_mosaic_load(TsMosaic *m,const char *dir,char *error,size_t size)
     /* Caller stops/locks audio before replacing a live model. */
     /* Only sources own allocations. Do not put the full arrangement/history
        on the stack while publishing a loaded model. */
-    TsMosaicSource *old_sources=m->sources;*m=*next;
-    next->sources=old_sources;ts_mosaic_free(next);return 1;
+    ts_mosaic_publish_loaded(m,next);ts_mosaic_free(next);return 1;
 failed:
     fclose(f);ts_mosaic_free(next);snprintf(error,size,"Invalid or incomplete Mosaic project data");return 0;
 }
