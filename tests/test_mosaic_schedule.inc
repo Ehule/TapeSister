@@ -86,11 +86,11 @@ static void test_mosaic_large_storage(void)
     m->auto_space=1;
     for(int i=0;i<TS_MOSAIC_EVENTS;++i){m->events[i].start=0;m->events[i].x=12000;m->events[i].width=4096;}
     for(int i=0;i<TS_MOSAIC_EVENTS;++i)ts_mosaic_space(m,&m->events[i]);
-    double far=0;for(int i=0;i<TS_MOSAIC_EVENTS;++i)far=fmax(far,m->events[i].x);assert(far>1000000);
-    m->views[0]=(TsMosaicView){1,0,far,24,400/(far+4096)};
+    double max_x=0;for(int i=0;i<TS_MOSAIC_EVENTS;++i)max_x=fmax(max_x,m->events[i].x);assert(max_x>1000000);
+    m->views[0]=(TsMosaicView){1,0,max_x,24,400/(max_x+4096)};
     hash=ts_mosaic_hash(m);
     assert(ts_mosaic_save(m,dir,error,sizeof(error)));storage_portable_load(loaded,dir);
-    assert(ts_mosaic_hash(loaded)==hash && loaded->views[0].xscroll==far);
+    assert(ts_mosaic_hash(loaded)==hash && loaded->views[0].xscroll==max_x);
     for(int i=0;i<TS_MOSAIC_EVENTS;++i)assert(loaded->events[i].x==m->events[i].x);
     const double bad_x[]={-1,NAN,INFINITY,TS_MOSAIC_LAYOUT_LIMIT+1};
     for(unsigned i=0;i<sizeof(bad_x)/sizeof(bad_x[0]);++i) {

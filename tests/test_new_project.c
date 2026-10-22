@@ -140,10 +140,10 @@ int main(int argc,char **argv)
         for(int pass=0;pass<2;++pass) {
             int ok=load_instrument(0,&audio,&ui,&bank,&pages,&record,0,argv[2]);
             fprintf(stderr,"Project Open: %s\n",ui.status);assert(ok);
-            int cards=0,sources=0;double far=0;
-            for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(ui.mosaic->events[i].id){++cards;far=fmax(far,ui.mosaic->events[i].x);}
+            int cards=0,sources=0;double max_x=0;
+            for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(ui.mosaic->events[i].id){++cards;max_x=fmax(max_x,ui.mosaic->events[i].x);}
             for(TsMosaicSource *s=ui.mosaic->sources;s;s=s->next)++sources;
-            printf("pass=%d cards=%d sources=%d max_x=%.17g hash=%llu\n",pass+1,cards,sources,far,(unsigned long long)ts_mosaic_hash(ui.mosaic));
+            printf("pass=%d cards=%d sources=%d max_x=%.17g hash=%llu\n",pass+1,cards,sources,max_x,(unsigned long long)ts_mosaic_hash(ui.mosaic));
             ui.mosaic_open=1;mosaic_fit_all(&ui,&mosaic);ts_ui_render(&frame,&ui,&bank);
             ui.mosaic->playing=1;ts_mosaic_begin_block(ui.mosaic,512);double energy=0;
             for(int i=0;i<512;++i) {
