@@ -43,6 +43,13 @@
 #include "ft2_random.h"
 #include "mixer/ft2_windowed_sinc.h"
 
+/* Pattern instances isolate channel effects from the foreground transport. */
+#ifdef TAPEHEAD_EMBEDDED
+extern bool tapeheadPatternContext;
+#else
+#define tapeheadPatternContext false
+#endif
+
 static uint32_t logTab[4*12*16], frequencyMulFactor, frequencyDivFactor;
 static uint64_t songTickDuration52fp[(MAX_BPM-MIN_BPM)+1];
 static double dDeltaMul, dScopeDeltaMul, dScopeDrawDeltaMul;
@@ -86,7 +93,8 @@ bool songPlaying = false, audioPaused = false, musicPaused = false;
 volatile bool replayerBusy = false;
 const uint16_t *note2PeriodLUT = NULL;
 int16_t patternNumRows[MAX_PATTERNS];
-channel_t channel[MAX_CHANNELS];
+static channel_t mainChannels[MAX_CHANNELS];
+channel_t *channel=mainChannels;
 uint16_t channelVolumeTrim[MAX_CHANNELS];
 
 /*
@@ -194,7 +202,7 @@ void resetChannels(void)
 	if (audioWasntLocked)
 		lockAudio();
 
-	memset(channel, 0, sizeof (channel));
+	memset(channel, 0, sizeof(mainChannels));
 
 	channel_t *ch = channel;
 	for (int32_t i = 0; i < MAX_CHANNELS; i++, ch++)
@@ -502,7 +510,7 @@ void triggerInstrument(channel_t *ch)
 void keyOff(channel_t *ch)
 {
 #ifdef HAS_MIDI
-	if (!bakerIsOfflineRunning() && ch >= channel && ch < channel + MAX_CHANNELS)
+	if (!tapeheadPatternContext && !bakerIsOfflineRunning() && ch >= channel && ch < channel + MAX_CHANNELS)
 		midiDubNoteOff((uint8_t)(ch - channel));
 #endif
 
@@ -686,7 +694,7 @@ void triggerNote(uint8_t note, uint8_t efx, uint8_t efxData, channel_t *ch)
 	const uint8_t defaultSample = ins->note2SampleLUT[note-1] & 0xF;
 	const uint8_t channelIndex = ch >= channel && ch < channel + MAX_CHANNELS
 		? (uint8_t)(ch - channel) : UINT8_MAX;
-	ch->smpNum = sampleMorphResolve(channelIndex, ch->instrNum, defaultSample);
+	ch->smpNum = tapeheadPatternContext ? defaultSample : sampleMorphResolve(channelIndex, ch->instrNum, defaultSample);
 	sample_t *s = &ins->smp[ch->smpNum];
 
 	ch->smpPtr = s;
@@ -701,7 +709,7 @@ void triggerNote(uint8_t note, uint8_t efx, uint8_t efxData, channel_t *ch)
 
 
 #ifdef HAS_MIDI
-	if (!bakerIsOfflineRunning() && ch >= channel && ch < channel + MAX_CHANNELS)
+	if (!tapeheadPatternContext && !bakerIsOfflineRunning() && ch >= channel && ch < channel + MAX_CHANNELS)
 		midiDubNoteOn((uint8_t)(ch - channel), ch->noteNum,
 		    midiDubVelocityFromNoteVolume(ch, efx, efxData));
 #endif
@@ -1707,10 +1715,10 @@ static void getNewNote(channel_t *ch, const note_t *p)
 		resolvedInstrument <= MAX_INST && instr[resolvedInstrument] != NULL)
 	{
 		resolvedSample = instr[resolvedInstrument]->note2SampleLUT[p->note-1] & 0x0F;
-		resolvedSample = sampleMorphResolve((uint8_t)(ch - channel),
+		resolvedSample = tapeheadPatternContext ? resolvedSample : sampleMorphResolve((uint8_t)(ch - channel),
 			resolvedInstrument, resolvedSample);
 	}
-	bakerCaptureResolvedEvent((int32_t)(ch - channel), p,
+	if (!tapeheadPatternContext) bakerCaptureResolvedEvent((int32_t)(ch - channel), p,
 		resolvedInstrument, resolvedSample);
 
 	// this "inst" variable is used for later if-checks...
@@ -4967,3 +4975,5 @@ void setSyncedReplayerVars(void)
 		ui.updatePatternEditor = true;
 	}
 }
+
+#include "ts_pattern_replayer.inc"

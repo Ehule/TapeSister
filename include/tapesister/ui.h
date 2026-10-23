@@ -591,6 +591,7 @@ typedef struct {
         int bank_slot, bank_page;
         uint64_t hash;
     } mosaic_sources[TS_MOSAIC_EVENTS + TS_BANK_SLOT_COUNT];
+    int mosaic_pattern_tab;
     int mosaic_source_count, mosaic_source_page, mosaic_source_selected;
     int mosaic_bank_count, mosaic_source_pages, mosaic_source_offset;
     double mosaic_time, mosaic_scroll, mosaic_xscroll, mosaic_scale, mosaic_hscale;

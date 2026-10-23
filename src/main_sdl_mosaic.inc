@@ -2,6 +2,10 @@ static void mosaic_poll(SDL_AudioDeviceID device,TsUiState *ui,
                           TsInstrument *instrument,MosaicController *c)
 {
     if(!ui->mosaic)return;
+    if(!ui->mosaic_open)c->pattern_ready=0;
+    if(ui->tracker_open)c->was_tracker=1;
+    if(ui->mosaic_open && c->was_tracker){c->was_tracker=0;c->pattern_ready=0;}
+
     if(!ui->mosaic_open || c->active)c->mix_drag=c->mix_changed=c->volume_drag=c->pan_active=ui->mosaic_loop_drag=0;
     if(device)SDL_LockAudioDevice(device);
     int release_preview=!ui->mosaic->audition_id && ui->mosaic->audition_source.source!=NULL;
@@ -204,6 +208,11 @@ static void mosaic_source_drag(TsUiState *ui,const TsInstrument *instrument,Mosa
     if(n<0 || n>=ui->mosaic_source_count)return;
     char error[160];TsMosaicEvent *e=ts_mosaic_find(ui->mosaic,ui->mosaic_sources[n].event);
     if(e)c->source_drag=*e;
+    else if(ui->mosaic_sources[n].source && ui->mosaic_sources[n].source->pattern){
+        TsMosaicSource *source=ui->mosaic_sources[n].source;
+        c->source_drag=(TsMosaicEvent){.source=source,.width=100,.looping=1,.note_count=1,.notes={60},.gain=1,.last=2,.tuning={60,0}};
+        snprintf(c->source_drag.name,sizeof(c->source_drag.name),"%.63s",source->sample.name);
+    }
     else {
         int slot=ui->mosaic_sources[n].bank_slot;
         const TsSample *sample=ui->mosaic_sources[n].sample;
@@ -234,7 +243,7 @@ static void mosaic_source_drag(TsUiState *ui,const TsInstrument *instrument,Mosa
         if(d->crossfade>(d->last-d->first)/2)d->crossfade=(d->last-d->first)/2;
         snprintf(d->name,sizeof(d->name),"%.63s",sample->name);
     }
-    c->source_drag.duration=(double)(c->source_drag.last-c->source_drag.first)/c->source_drag.source->sample.sample_rate;
+    c->source_drag.duration=c->source_drag.source->pattern?c->source_drag.source->pattern->duration:(double)(c->source_drag.last-c->source_drag.first)/c->source_drag.source->sample.sample_rate;
     c->source_drag.muted=c->source_drag.solo=0;
     ++c->source_drag.source->pins;c->drag_epoch=ui->mosaic->epoch;c->drag=3;c->drag_slot=n;
     ui->mosaic_source_selected=n;
@@ -500,6 +509,10 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
             else if(x>=TS_MOSAIC_ZOOM_OUT_X && x<TS_MOSAIC_ZOOM_OUT_X+TS_MOSAIC_ZOOM_W){ui->mosaic_scale=fmax(.003,ui->mosaic_scale/1.4);ui->mosaic_hscale=fmax(.02,horizontal/1.4);}
             else if(x>=TS_MOSAIC_ZOOM_IN_X && x<TS_MOSAIC_ZOOM_IN_X+TS_MOSAIC_ZOOM_W){ui->mosaic_scale=fmin(1200,ui->mosaic_scale*1.4);ui->mosaic_hscale=fmin(4,horizontal*1.4);}
             return 1;
+        }
+        if(x>=10 && x<108 && y>=37 && y<52){
+            mosaic_drag_end(ui,c);mosaic_picks_clear(ui,c);ui->mosaic_pattern_tab=x>=55;c->pattern_ready=0;ui->mosaic_source_page=0;ui->mosaic_source_selected=-1;
+            mosaic_sources_refresh(ui,instrument,c);return 1;
         }
         if(x>=10 && x<108 && y>=TS_MOSAIC_SOURCE_PAGE_Y && y<TS_MOSAIC_SOURCE_PAGE_Y+18) {
             int pages=ui->mosaic_source_pages;

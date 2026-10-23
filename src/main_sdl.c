@@ -14107,6 +14107,9 @@ int main(int argc, char **argv)
     device = SDL_OpenAudioDevice(NULL, 0, &desired, &obtained, 0);
     audio.output_rate = obtained.freq;
     embedded_host.device=&device;embedded_host.window=window;
+    if(!embedded_open(window,device,&audio,&ui,&sample_pages,&instrument,obtained.freq>0?obtained.freq:48000))
+        fprintf(stderr,"Pattern playback: %s\n",ui.status);
+    if(!ui.mosaic->pattern_engine)ui.mosaic->pattern_engine=ts_pattern_engine_create();
     audio.live_link_buffer_frames = obtained.samples > 0u ?
         obtained.samples : desired.samples;
     audio.live_link_buffer = (float *)calloc(

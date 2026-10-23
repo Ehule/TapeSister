@@ -48,6 +48,7 @@ void ts_tapehead_all_routes_changed(TsSourceRoute route);
 void ts_tapehead_refresh_routes(TsSamplePages *pages,TsInstrument *bank);
 int ts_tapehead_action(void);
 int ts_tapehead_running(void);
+int ts_tapehead_select_pattern(TsPatternId id);
 int ts_tapehead_transport_keys_allowed(void);
 int ts_tapehead_following(void);
 int ts_tapehead_live_editing(void);

@@ -88,13 +88,19 @@ static void mosaic_card(TsFramebuffer *fb,const TsUiState *ui,const TsMosaicEven
     if(e->solo)color=ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_SOLO,color);
     if(ghost)color=mosaic_mix_color(color,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(16,18,24)),.55f);
     if(!ghost)mosaic_canvas_rect(fb,x,y,w,h,fill);
-    double duration=(double)(e->last-e->first)/e->source->sample.sample_rate;
+    double duration=e->source->pattern?e->source->pattern->duration:(double)(e->last-e->first)/e->source->sample.sample_rate;
     int first_row=(int)fmax(66,top+24),last_row=(int)fmin(376,bottom-14);
     for(int yy=first_row;yy<last_row;++yy) {
         if(ghost && (yy&1))continue;
         double elapsed=fmax(0,ui->mosaic_scroll+(yy-66)/scale-e->start);
         if(!e->looping && elapsed>=duration)continue;
         double phase=fmod(elapsed,duration),span=1/scale;
+        if(e->source->pattern){
+            const TsPatternCard *p=e->source->pattern;int row=(int)(phase*p->score.bpm/(2.5*p->score.ticks_per_line));
+            if(row<p->score.patterns[0]->rows)for(int l=0;l<p->score.channel_count;++l){int note=p->cells[row][l][0];if(note>0 && note<=96)mosaic_canvas_rect(fb,x+5+(note-1)*(w-14)/96,yy,4,1,color);}
+            if(e->looping && span<duration && yy>first_row && phase<span)mosaic_canvas_rect(fb,x+4,yy,w-8,1,mosaic_mix_color(color,fill,.75f));
+            continue;
+        }
         size_t first=e->first+(size_t)(phase*e->source->sample.sample_rate);
         size_t last=e->first+(size_t)(fmin(duration,phase+span)*e->source->sample.sample_rate);
         float peak,rms;mosaic_envelope(e->source,first,last,&peak,&rms);
@@ -134,7 +140,9 @@ static void mosaic_card(TsFramebuffer *fb,const TsUiState *ui,const TsMosaicEven
     if(top>=66 && h>=25 && x>=151 && w>=24) {
         char notes[40]="",note[8];
         for(int n=0;n<e->note_count;++n) {
-            size_t used=strlen(notes);snprintf(notes+used,sizeof(notes)-used,"%s%s",n?" ":"",ts_midi_note_name(e->notes[n],note,sizeof(note)));
+            size_t used=strlen(notes);
+            if(e->source->pattern)snprintf(notes+used,sizeof(notes)-used,"%s%+dST",n?" ":"",e->notes[n]-60);
+            else snprintf(notes+used,sizeof(notes)-used,"%s%s",n?" ":"",ts_midi_note_name(e->notes[n],note,sizeof(note)));
         }
         int chars=(int)fmax(0,((x+w>TS_MOSAIC_CANVAS_RIGHT?TS_MOSAIC_CANVAS_RIGHT-x:w)-30)/6);snprintf(label,sizeof(label),"%.*s",chars,notes);
         text(fb,x+6,y+14,label,dim?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(66,64,75)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DIM, RGB(156,147,165)),1);
@@ -257,9 +265,10 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
     mosaic_button(fb,TS_UI_MASTER_LIMITER_X,TS_UI_MASTER_LIMITER_Y,TS_UI_MASTER_LIMITER_W,"EQ",ui->master_eq_open,0);
     master_output_fader(fb,ui->master_output.gain,TS_UI_MASTER_OUTPUT_X,TS_UI_MASTER_OUTPUT_Y);
     master_output_meter(fb,&ui->master_output,TS_UI_MASTER_METER_X,TS_UI_MASTER_METER_Y);
-    text(fb,12,43,"SOURCES",ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_TEXT, RGB(198,186,206)),1);
+    mosaic_button(fb,10,37,44,"AUDIO",!ui->mosaic_pattern_tab,1);mosaic_button(fb,56,37,52,"PATTERN",ui->mosaic_pattern_tab,1);
     char label[100];
-    if(ui->mosaic_source_page<ui->mosaic_bank_count)snprintf(label,sizeof(label),"BANK %02d",ui->mosaic_source_page+1);
+    if(ui->mosaic_pattern_tab)snprintf(label,sizeof(label),"PATTERNS %02d",ui->mosaic_source_page+1);
+    else if(ui->mosaic_source_page<ui->mosaic_bank_count)snprintf(label,sizeof(label),"BANK %02d",ui->mosaic_source_page+1);
     else snprintf(label,sizeof(label),"EVENTS %02d",ui->mosaic_source_page-ui->mosaic_bank_count+1);
     text(fb,12,55,label,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DIM, RGB(133,127,141)),1);
     mosaic_button(fb,118,39,42,ui->mosaic_playing?"PAUSE":"PLAY",ui->mosaic_playing,1);
@@ -301,8 +310,12 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
         uint32_t color=sample?mosaic_color(ui->mosaic_sources[n].hash):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DATA2, RGB(135,171,174));
         rect(fb,x,y,44,28,selected?mosaic_selection_color(ui,selected==2):sample?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(40,36,44)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(23,23,28)));
         if(selected)rect(fb,x+2,y+2,40,24,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(51,47,59)));
-        snprintf(label,sizeof(label),"%02d",n<16?n+1:n-15);text(fb,x+4,y+4,label,sample?color:ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(74,70,82)),1);
-        if(sample && sample->data) {
+        snprintf(label,sizeof(label),"%02d",n<16?n+1:n-15);if(!ui->mosaic_pattern_tab)text(fb,x+4,y+4,label,sample?color:ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(74,70,82)),1);
+        if(sample && ui->mosaic_sources[n].source && ui->mosaic_sources[n].source->pattern){
+            const TsPatternCard *p=ui->mosaic_sources[n].source->pattern;
+            snprintf(label,sizeof(label),"P%03u",p->id);text(fb,x+3,y+4,label,color,1);
+            for(int row=0;row<p->score.patterns[0]->rows;++row)for(int l=0;l<p->score.channel_count;++l){int note=p->cells[row][l][0];if(note>0 && note<=96)rect(fb,x+3+(note-1)*36/96,y+15+row*10/p->score.patterns[0]->rows,3,1,color);}
+        } else if(sample && sample->data) {
             TsWaveformRequest request={.sample=sample,.first=0,.last=sample->frames,.width=35,.revision=(m?m->epoch:0)^ui->mosaic_sources[n].hash};
             ts_waveform_cache_prepare(&source_cache[i],&request);
             for(int px=0;px<35;++px) {

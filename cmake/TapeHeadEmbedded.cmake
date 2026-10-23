@@ -8,8 +8,8 @@ file(GLOB TH_EMBED_SOURCES CONFIGURE_DEPENDS
 list(REMOVE_ITEM TH_EMBED_SOURCES
   "${TH_EMBED_ROOT}/ft2_main.c" "${TH_EMBED_ROOT}/tape_link.c"
   "${TH_EMBED_ROOT}/tape_companion.c" "${TH_EMBED_ROOT}/ft2_fasttracks_core.c")
-add_library(tapesister_tapehead STATIC ${TH_EMBED_SOURCES} src/ts_tapehead_embed.c)
-target_include_directories(tapesister_tapehead PRIVATE ${TH_EMBED_ROOT} include)
+add_library(tapesister_tapehead STATIC ${TH_EMBED_SOURCES} src/ts_tapehead_embed.c src/ts_pattern_tapehead.c)
+target_include_directories(tapesister_tapehead PRIVATE ${TH_EMBED_ROOT} include src)
 target_compile_definitions(tapesister_tapehead PRIVATE TAPEHEAD_EMBEDDED SDL_MAIN_HANDLED _DEFAULT_SOURCE)
 target_compile_definitions(tapesister_tapehead PRIVATE
   textOutTiny=th_textOutTiny patternXToCursorObject=th_patternXToCursorObject

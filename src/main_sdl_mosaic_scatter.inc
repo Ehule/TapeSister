@@ -75,6 +75,7 @@ static void mosaic_scatter_preview(TsUiState *ui,MosaicController *c)
             snprintf(ui->mosaic_scatter_notes+used,sizeof(ui->mosaic_scatter_notes)-used," %s",ts_midi_note_name(note,name,sizeof(name)));
         }
     } else snprintf(ui->mosaic_scatter_notes,sizeof(ui->mosaic_scatter_notes),"EXISTING NOTES / CHORDS PRESERVED");
+    if(c->scatter_pool[0].source->pattern)snprintf(ui->mosaic_scatter_notes,sizeof(ui->mosaic_scatter_notes),pitch->mode==TS_MOSAIC_PITCH_KEEP?"PATTERN NOTES / INSTANCE TRANSPOSE PRESERVED":"PATTERN TRANSPOSE: C4 = ORIGINAL, C5 = +12");
     int notes=0;for(int i=0;i<count;++i)notes+=ui->mosaic_ghosts[i].note_count;
     snprintf(ui->mosaic_scatter_status,sizeof(ui->mosaic_scatter_status),"%d CARDS / %d ASSIGNED NOTES / PREVIEW",count,notes);
 }

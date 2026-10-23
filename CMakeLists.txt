@@ -15,7 +15,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(miniaudio)
 
 add_library(tapesister_core src/ts_mandala.c src/ts_routing_matrix.c src/ts_matrix_effects.c src/ts_matrix_layout.c src/ts_source_route.c src/ts_clean_output.c src/ts_spatial.c src/ts_speakers.c src/ts_sample.c src/ts_prism.c src/ts_prism_performance.c src/ts_fm.c src/ts_audition.c src/ts_note_bank.c src/ts_keyboard_sequence.c
-             src/ts_mosaic.c src/ts_note_event.c src/ts_midi_map.c src/ts_performance.c src/ts_audio_mixer.c
+             src/ts_mosaic.c src/ts_pattern_card.c src/ts_note_event.c src/ts_midi_map.c src/ts_performance.c src/ts_audio_mixer.c
              src/ts_audio_lifecycle.c src/ts_performance_input.c
              src/ts_realtime_diagnostics.c src/ts_profile.c
              src/ts_sister_effects.c src/ts_sister_fallout.c src/ts_sister_post_fx.c
@@ -607,6 +607,12 @@ if(TAPESISTER_BUILD_SDL)
   set_tests_properties(tapesister_tapehead_embedded_realtime_tests PROPERTIES
     ENVIRONMENT "TS_TEST_TRACKER_REALTIME=1"
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/sistertracker-realtime-fixtures")
+
+  file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/mosaic-pattern-fixtures")
+  add_test(NAME tapesister_mosaic_pattern_tests COMMAND tapesister_tapehead_embedded_tests)
+  set_tests_properties(tapesister_mosaic_pattern_tests PROPERTIES
+    ENVIRONMENT "TS_TEST_MOSAIC_PATTERNS=1"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/mosaic-pattern-fixtures")
 
   add_executable(tapesister_midi_wake_tests tests/test_midi_wake.c)
   target_include_directories(tapesister_midi_wake_tests PRIVATE third_party)
