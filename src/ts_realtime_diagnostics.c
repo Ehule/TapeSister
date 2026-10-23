@@ -4,7 +4,7 @@
 
 #define COUNTERS(X) \
     X(callback_count) X(frame_count) X(elapsed_ticks) X(worst_ticks) \
-    X(deadline_overruns) X(near_overruns) X(counter_frequency) \
+    X(deadline_overruns) X(near_overruns) X(counter_frequency) X(completed_ticks) \
     X(sample_rate) X(device_buffer_frames) X(active_configuration) \
     X(recent_elapsed_ticks) X(recent_worst_ticks) X(recent_frame_count) \
     X(recent_callback_count) X(recent_frequency) X(recent_rate) \
@@ -117,6 +117,7 @@ void ts_realtime_diagnostics_record_timed(TsRealtimeDiagnostics *d,
     d->previous_frequency = frequency;
     d->previous_rate = rate;
     ts_realtime_diagnostics_record(d, elapsed, frequency, rate, frames, configuration);
+    atomic_store_explicit(&d->completed_ticks, started + elapsed, memory_order_relaxed);
     d->window_ticks += elapsed;
     d->window_frames += frames;
     ++d->window_callbacks;
@@ -159,7 +160,7 @@ int ts_realtime_diagnostics_get(const TsRealtimeDiagnostics *d,
     if (!d || !s) return 0;
 #define READ(field) s->field = atomic_load_explicit(&d->field, memory_order_relaxed)
     READ(callback_count); READ(frame_count); READ(elapsed_ticks); READ(worst_ticks);
-    READ(deadline_overruns); READ(near_overruns); READ(counter_frequency);
+    READ(deadline_overruns); READ(near_overruns); READ(counter_frequency); READ(completed_ticks);
     READ(sample_rate); READ(device_buffer_frames); READ(active_configuration);
     READ(delayed_starts); READ(control_count); READ(control_long_holds);
 #undef READ

@@ -93,7 +93,7 @@ creates 1–16 sounds (the original plus relatives) in one atomic operation.
 ### Mosaic
 
 Mosaic places sample events freely on a top-to-bottom timeline. Drag sources into
-place, stretch events to allow more loop repetitions, and overlap them side by side.
+place, extend either edge to allow more loop repetitions, and overlap cards freely.
 Each event has its own loop/one-shot setting and up to five pitched notes with
 independent playback speeds. A chord can turn one fragment into an evolving texture
 as its different loop lengths move in and out of alignment.
@@ -108,6 +108,11 @@ sharing that sound and the matching Sample-bank tiles. **CANCEL EDIT** discards
 the pending audio result and returns to Mosaic, while **KEEP EDITING** leaves it
 open. Copies share source audio until an edit creates a new version. Sources
 browses all Sample banks and the event audio versions.
+
+A auditions the selected card at its assigned notes. Z fits the selection; Ctrl+A
+selects all cards and Shift+A selects all instances of the current source. Ctrl+R
+opens Scatter with preview, reroll and one-step undo. AUTO-SPACE optionally separates
+intersecting cards horizontally; new arrangements default to free placement.
 
 Shift-drag a box to select a group; drag to move it or Shift-drag a selected tile to
 copy the group. M/S mutes or solos selected cards; Shift+M/Shift+S affects all

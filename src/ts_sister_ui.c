@@ -655,6 +655,15 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
                     }
                 }
             }
+            if(model->parameters.fx.slot[row].type==TS_SISTER_FX_GRAIN && y>=top+22 && y<top+40) {
+                for(int state=0;state<TS_GRAIN_STATES;++state)if(contains(x,y,392+state*22,top+22,18,18)) {
+                    hit.action=TS_SISTER_UI_ACTION_GRAIN_STATE;hit.index=(row<<8)|state;return hit;
+                }
+                if(contains(x,y,508,top+22,112,18)) {
+                    hit.action=TS_SISTER_UI_ACTION_GRAIN_TIME;hit.index=row;
+                    hit.normalized=(float)(x-508)/111;return hit;
+                }
+            }
             for (int placement = 0; placement < 5; ++placement) {
                 if (contains(x, y, 60 + placement * 52,
                              top + 22, 46, 18)) {

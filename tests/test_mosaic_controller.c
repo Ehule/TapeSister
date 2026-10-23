@@ -84,7 +84,15 @@ static void wait_render(void);
 #include "test_mosaic_scroll.inc"
 #include "test_mosaic_scroll_cards.inc"
 #include "test_mosaic_arranging.inc"
+#include "test_mosaic_performance_edit.inc"
+#include "test_mosaic_navigation.inc"
+#include "test_mosaic_loop_controls.inc"
+#include "test_mosaic_selection.inc"
+#include "test_mosaic_copy_gestures.inc"
+#include "test_mosaic_group_staging.inc"
+#include "benchmark_mosaic_edits.inc"
 #include "test_mosaic_controls.inc"
+#include "test_mosaic_source_actions.inc"
 #include "test_mosaic_volume_controls.inc"
 #include "test_mosaic_routing.inc"
 #include "test_prism_controller.inc"
@@ -102,7 +110,7 @@ static void wait_render(void);
 #include "test_fm_preview_controller.inc"
 static void test_canvas_feedback(SDL_Window *window)
 {
-    TsMosaic *saved=ui.mosaic,*scene=ts_mosaic_create();assert(scene);ui.mosaic=audio.mosaic=scene;
+    TsMosaic *saved=ui.mosaic,*scene=ts_mosaic_create();assert(scene);scene->auto_space=1;ui.mosaic=audio.mosaic=scene;
     char error[160];TsMosaicSource *source=ts_mosaic_source(scene,&instrument.current,error,sizeof(error));assert(source);
     TsMosaicEvent *a=ts_mosaic_add(scene,source,.5,20);a->duration=2;
     TsMosaicEvent *b=ts_mosaic_add(scene,source,1,130);b->duration=3;
@@ -132,6 +140,8 @@ static void test_canvas_feedback(SDL_Window *window)
     /* Middle click seeks through a tile without changing the selected event. */
     SDL_Event seek;SDL_zero(seek);seek.type=SDL_MOUSEBUTTONDOWN;seek.button.windowID=SDL_GetWindowID(window);
     seek.button.button=SDL_BUTTON_MIDDLE;seek.button.x=190;seek.button.y=110;
+    mosaic_event(&seek,window,0,&audio,&ui,&instrument,&mosaic,&portal,&sister,&transform,48000);
+    seek.type=SDL_MOUSEBUTTONUP;
     mosaic_event(&seek,window,0,&audio,&ui,&instrument,&mosaic,&portal,&sister,&transform,48000);
     assert(fabs(scene->time-44.0/24)<1e-9 && ui.mosaic_selected==obstacle->id);
     click(window,TS_MOSAIC_FOLLOW_X+20,46,1);assert(ui.mosaic_follow);scene->playing=1;scene->time=20;
@@ -408,6 +418,14 @@ int main(int argc,char **argv)
     }
     uint64_t original=ts_sample_hash(&instrument.current);
     ui.mosaic=audio.mosaic=ts_mosaic_create();ui.mosaic_scale=24;ui.mosaic_open=1;
+    if(argc>1 && !strcmp(argv[1],"--edit-benchmark")) {benchmark_mosaic_edits();goto done;}
+    if(argc>1 && !strcmp(argv[1],"--arrange")) {test_mosaic_performance_edit(window);goto done;}
+    if(argc>1 && !strcmp(argv[1],"--source-actions")) {test_mosaic_group_mute_audio(window);test_mosaic_source_actions(window);goto done;}
+    if(argc>1 && !strcmp(argv[1],"--selection")) {test_mosaic_selection(window);goto done;}
+    if(argc>1 && !strcmp(argv[1],"--copy-drag")) {test_mosaic_copy_gestures(window);test_mosaic_group_staging();goto done;}
+    if(argc>1 && !strcmp(argv[1],"--large-mosaic")) {test_mosaic_large_browser();goto done;}
+    if(argc>1 && !strcmp(argv[1],"--loop")) {test_mosaic_loop_controls(window);goto done;}
+    if(argc>1 && !strcmp(argv[1],"--navigation")) {test_mosaic_navigation(window);goto done;}
     TsMosaicSource *source=ts_mosaic_source(ui.mosaic,&instrument.current,error,sizeof(error));assert(source);
     TsMosaicEvent *a=ts_mosaic_add(ui.mosaic,source,0,0);a->duration=6;
     TsMosaicEvent *b=ts_mosaic_copy(ui.mosaic,a->id,.25,105);b->duration=9;
@@ -450,11 +468,19 @@ int main(int argc,char **argv)
     test_record_file(window,-1,0,0);
     test_record_file(window,580,389,1);
     ts_mosaic_volume_action(ui.mosaic,TS_MOSAIC_ENV_RESET);
+    test_mosaic_performance_edit(window);
+    test_mosaic_navigation(window);
+    test_mosaic_loop_controls(window);
+    test_mosaic_selection(window);
+    test_mosaic_copy_gestures(window);test_mosaic_group_staging();
+    test_mosaic_large_browser();
     test_canvas_gestures(window);
     test_mosaic_copy_drag(window);
     test_mosaic_external_banks(window);
     test_mosaic_variation_banks(window);
     test_mosaic_live_controls(window);
+    test_mosaic_group_mute_audio(window);
+    test_mosaic_source_actions(window);
     test_mosaic_volume_controls(window);
     test_canvas_feedback(window);
     test_mosaic_scroll_waveforms();

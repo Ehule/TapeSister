@@ -34,6 +34,8 @@ static int mouse(Uint32 type,int x,int y)
     SDL_Event e={0};e.type=type;e.button.button=SDL_BUTTON_LEFT;e.button.x=x;e.button.y=y;
     return sister_pedalboard_event(0,&audio,&ui,&sister,&e);
 }
+#include "test_grain_states.inc"
+
 static void config_and_persistence(void)
 {
     TsConfig config;ts_config_init(&config);assert(config.pedalboard_slots==10);
@@ -268,11 +270,12 @@ int main(int argc,char **argv)
 {
     SDL_SetMainReady();SDL_setenv("SDL_VIDEODRIVER","dummy",1);
     assert(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER));
-    config_and_persistence();dsp_continuity();
+    config_and_persistence();dsp_continuity();test_grain_state_dsp();
     ts_ui_init(&ui);ts_instrument_init(&bank);ts_sister_runtime_init(&audio.sister);
     assert(ts_sister_runtime_reconfigure(&audio.sister,48000,2,error,sizeof(error)));
     ts_sister_ui_model_init(&sister.model,&ui.config);sister.model.fx_page=1;
     sister.window=SDL_CreateWindow("Pedalboard",0,0,640,400,0);assert(sister.window);
+    test_grain_state_ui();
     power_and_preset_independence();
     ts_sister_parameters_default(&sister.model.parameters,48000);
     ts_sister_runtime_set_parameters(&audio.sister,&sister.model.parameters);

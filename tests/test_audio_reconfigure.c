@@ -16,6 +16,8 @@ static TsUiState ui;
 static void silence(void *userdata, Uint8 *stream, int bytes)
 { (void)userdata; memset(stream, 0, (size_t)bytes); }
 
+#include "test_mosaic_asio_mute.inc"
+
 int main(void)
 {
     SDL_setenv("SDL_AUDIODRIVER", "dummy", 1);
@@ -156,6 +158,7 @@ int main(void)
     ts_audio_config_field_from_point(135,TS_AUDIO_CONFIG_OUTPUT_RANGE_Y+5);assert(ui.config.audio_output_range.first==1);
     ts_audio_config_field_from_point(210,TS_AUDIO_CONFIG_OUTPUT_RANGE_Y+5);assert(ui.config.audio_output_range.first==1);
 
+    test_mosaic_asio_mute(window,path);
     ts_audio_session_close(); ts_audio_catalog_free();
     ts_sister_runtime_free(&audio.sister); ts_external_recorder_free(&input.recorder);
     ts_capture_free(&audio.capture); ts_performance_free(&audio.performance);

@@ -1251,13 +1251,30 @@ static int read_manifest(const char *project, char *directory,
     return 1;
 }
 
-int ts_sample_pages_load_project(TsSamplePages *pages,
-                                 TsInstrument *active_sample,
-                                 TsInstrument *record_bank,
-                                 const char *path,
-                                 char *error, size_t error_size)
+struct TsSampleProjectLoad {
+    TsSamplePages pages;
+    TsInstrument record;
+    TsMosaic *mosaic;
+    int published;
+};
+
+void ts_sample_pages_dispose_project(TsSampleProjectLoad *load)
 {
-    TsMosaic *mosaic_target = pages ? pages->mosaic : NULL;
+    if (!load) return;
+    ts_sample_pages_free(&load->pages);
+    ts_instrument_free(&load->record);
+    ts_mosaic_free(load->mosaic);
+    free(load);
+}
+
+const TsSamplePages *ts_sample_pages_prepared_pages(const TsSampleProjectLoad *load)
+{
+    return load && !load->published ? &load->pages : NULL;
+}
+
+TsSampleProjectLoad *ts_sample_pages_prepare_project(const char *path, int with_mosaic,
+                                                     char *error, size_t error_size)
+{
     TsMosaic *mosaic_loaded = NULL;
     TsSamplePages loaded;
     TsInstrument loaded_record;
@@ -1270,11 +1287,10 @@ int ts_sample_pages_load_project(TsSamplePages *pages,
     int tracker_present = 0;
     int layout = 0;
     int loaded_ready = 0;
-    if (pages == NULL || active_sample == NULL || record_bank == NULL ||
-        !pages->active_live || path == NULL || path[0] == '\0') {
-        pages_error(error, error_size,
-                    "Return to a Sample page before opening a project");
-        return 0;
+    TsSampleProjectLoad *load = NULL;
+    if (path == NULL || path[0] == '\0') {
+        pages_error(error, error_size, "Project path is empty");
+        return NULL;
     }
     memset(&loaded, 0, sizeof(loaded));
     ts_instrument_init(&loaded_record);
@@ -1337,9 +1353,12 @@ int ts_sample_pages_load_project(TsSamplePages *pages,
         if(!check){pages_error(error,error_size,"Mosaic arrangement is missing from this project");goto failed;}
         fclose(check);
     }
-    if (mosaic_target) {
+    if (with_mosaic) {
         mosaic_loaded = ts_mosaic_create();
-        if (!mosaic_loaded) goto failed;
+        if (!mosaic_loaded) {
+            pages_error(error, error_size, "Out of memory preparing Mosaic");
+            goto failed;
+        }
         if (layout == 2) {
             if (strlen(directory)+14 >= sizeof(page_path)) goto failed;
             memcpy(page_path,directory,strlen(directory));
@@ -1347,31 +1366,68 @@ int ts_sample_pages_load_project(TsSamplePages *pages,
             if (!ts_mosaic_load(mosaic_loaded, page_path, error, error_size)) goto failed;
         }
     }
-    loaded.mosaic = mosaic_target;
-    loaded.active_page = active_page;
-    ts_instrument_free(active_sample);
-    ts_instrument_init(active_sample);
-    ts_sample_pages_free(pages);
-    ts_instrument_free(record_bank);
-    *record_bank = loaded_record;
-    ts_instrument_init(&loaded_record);
-    *pages = loaded;
-    if (mosaic_loaded) {
-        /* Retire only the old owned sources; history stays off the stack. */
-        TsMosaicSource *old_sources = mosaic_target->sources;
-        *mosaic_target = *mosaic_loaded;
-        mosaic_loaded->sources = old_sources;
-        ts_mosaic_free(mosaic_loaded); mosaic_loaded = NULL;
+    load = malloc(sizeof(*load));
+    if (!load) {
+        pages_error(error, error_size, "Out of memory preparing project");
+        goto failed;
     }
-    memset(&loaded, 0, sizeof(loaded));
-    if (!ts_sample_pages_unpark(pages, active_sample, error, error_size))
-        return 0;
+    loaded.active_page = active_page;
+    *load = (TsSampleProjectLoad){.pages=loaded, .record=loaded_record, .mosaic=mosaic_loaded};
     pages_error(error, error_size, "");
-    return 1;
+    return load;
 
 failed:
     ts_mosaic_free(mosaic_loaded);
     if (loaded_ready) ts_sample_pages_free(&loaded);
     ts_instrument_free(&loaded_record);
-    return 0;
+    return NULL;
+}
+
+int ts_sample_pages_publish_project(TsSamplePages *pages, TsInstrument *active_sample,
+                                    TsInstrument *record_bank, TsSampleProjectLoad *load,
+                                    char *error, size_t error_size)
+{
+    if (!load || load->published || !pages || !active_sample || !record_bank ||
+        !pages->active_live || pages->mosaic_bank || pages->active_page >= pages->page_count ||
+        !!pages->mosaic != !!load->mosaic) {
+        pages_error(error, error_size, "Return to a Sample page before opening a project");
+        return 0;
+    }
+    /* Both registries own their parked slots. Keep the old live bank in its
+       retired registry until disposal, and leave the new active slot empty. */
+    swap_instruments(active_sample, pages->pages[pages->active_page]);
+    swap_instruments(active_sample, load->pages.pages[load->pages.active_page]);
+    swap_instruments(record_bank, &load->record);
+    TsMosaic *target = pages->mosaic;
+    TsSamplePages retired = *pages;
+    *pages = load->pages;
+    load->pages = retired;
+    load->pages.active_live = 0;
+    pages->active_live = 1;
+    pages->mosaic = target;
+    if (target) {
+        /* Keep the model address used by UI/audio; retire old sources later. */
+        ts_mosaic_publish_loaded(target,load->mosaic);
+    }
+    load->published = 1;
+    pages_error(error, error_size, "");
+    return 1;
+}
+
+int ts_sample_pages_load_project(TsSamplePages *pages,
+                                 TsInstrument *active_sample,
+                                 TsInstrument *record_bank,
+                                 const char *path,
+                                 char *error, size_t error_size)
+{
+    if (!pages || !active_sample || !record_bank || !pages->active_live || pages->mosaic_bank) {
+        pages_error(error, error_size, "Return to a Sample page before opening a project");
+        return 0;
+    }
+    TsSampleProjectLoad *load = ts_sample_pages_prepare_project(path, pages->mosaic != NULL,
+                                                               error, error_size);
+    if (!load) return 0;
+    int ok = ts_sample_pages_publish_project(pages, active_sample, record_bank, load, error, error_size);
+    ts_sample_pages_dispose_project(load);
+    return ok;
 }

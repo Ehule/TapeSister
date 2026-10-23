@@ -127,7 +127,7 @@ static void mosaic_detail_card(TsUiWaveformDetail *d,const TsUiState *ui,
         }
         return;
     }
-    uint32_t border=selected?ts_theme_legacy(&ui->palette,TS_THEME_MOSAIC,TS_COLOR_FOCUS,TS_PALETTE_MOSAIC_HIGHLIGHT):color;
+    uint32_t border=selected?mosaic_selection_color(ui,e->id==ui->mosaic_selected):color;
     int64_t edge_y=(int64_t)fmin(h,(selected?2:1)*by);
     mosaic_detail_rect(d,x,y,x+(int64_t)fmin(w,2*bx),bottom,border);
     mosaic_detail_rect(d,right-(int64_t)fmin(w,(selected?2:1)*bx),y,right,bottom,border);
@@ -168,9 +168,11 @@ static int mosaic_detail_cards(TsFramebuffer *fb,const TsUiState *ui,int any_sol
     }
     for(int i=0;i<ui->mosaic_ghost_count;++i)mosaic_detail_card(d,ui,&ui->mosaic_ghosts[i],0,0,1);
     if(ui->mosaic)for(int i=0;i<TS_MOSAIC_EVENTS;++i) {
-        const TsMosaicEvent *e=&ui->mosaic->events[i];if(!e->id)continue;
+        const TsMosaicEvent *e=&ui->mosaic->events[i];if(!e->id || e->id==ui->mosaic_selected)continue;
         mosaic_detail_card(d,ui,e,e->id==ui->mosaic_selected || e->id==ui->mosaic_selection[i],e->muted || (any_solo && !e->solo),0);
     }
+    const TsMosaicEvent *primary=ui->mosaic?ts_mosaic_find(ui->mosaic,ui->mosaic_selected):NULL;
+    if(primary)mosaic_detail_card(d,ui,primary,1,primary->muted || (any_solo && !primary->solo),0);
     mosaic_recording_card(fb,d,ui);
     d->valid=1;detail_capture_slot(fb,0);return 1;
 }
@@ -194,6 +196,10 @@ static void mosaic_detail_ruler(TsUiWaveformDetail *d,const TsUiState *ui,double
     double rate=(ui->mosaic_scale>0?ui->mosaic_scale:24)*sy;
     int64_t pan=mosaic_detail_pixel(ui->mosaic_scroll*rate),line=mosaic_detail_pixel(sy);
     if(line<1)line=1;
+    TsMosaicRange range=ui->mosaic_loop_drag?ui->mosaic_loop_preview:ui->mosaic?ui->mosaic->loop_range:(TsMosaicRange){0,0};
+    int64_t a=mosaic_detail_pixel(range.start*rate)-pan,b=mosaic_detail_pixel(range.end*rate)-pan;
+    if(range.end>range.start)
+        mosaic_detail_rect(d,left,a,d->width,b,ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_EDGE,RGB(45,65,66)));
     int64_t tick=(int64_t)floor(ui->mosaic_scroll/interval);
     for(;;++tick) {
         double time=tick*interval;int64_t y=mosaic_detail_pixel(time*rate)-pan;
@@ -201,6 +207,11 @@ static void mosaic_detail_ruler(TsUiWaveformDetail *d,const TsUiState *ui,double
         char label[32];mosaic_time_label(label,sizeof(label),time);
         mosaic_detail_text(d,label_x,y+mosaic_detail_pixel(2*sy),label,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DIM, RGB(133,127,141)),sx,sy);
         mosaic_detail_rect(d,tick_x,y,d->width,y+line,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(28,30,35)));
+    }
+    if(range.end>range.start) {
+        uint32_t ink=ts_theme_color(active_palette(),TS_THEME_MOSAIC,ui->mosaic && ui->mosaic->repeat?TS_COLOR_DATA2:TS_COLOR_DIM,RGB(129,206,200));
+        if(a>=0 && a<d->height)mosaic_detail_rect(d,left,a-line,d->width,a+2*line,ink);
+        if(b>=0 && b<d->height)mosaic_detail_rect(d,left,b-line,d->width,b+2*line,ink);
     }
 }
 static void mosaic_detail_sources(TsFramebuffer *fb,const TsUiState *ui,double interval)
@@ -216,7 +227,7 @@ static void mosaic_detail_sources(TsFramebuffer *fb,const TsUiState *ui,double i
     for(int i=0;i<16;++i) {
         int n=ui->mosaic_source_offset+i;if(n>=ui->mosaic_source_count)break;
         const TsSample *s=ui->mosaic_sources[n].sample;if(!s || !s->data)continue;
-        int x=(i%2)*49,y=(i/2)*34,selected=n==ui->mosaic_source_selected;
+        int x=(i%2)*49,y=(i/2)*34,selected=mosaic_source_selection(ui,n);
         uint32_t fill=selected?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(51,47,59)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(40,36,44));
         uint32_t color=mosaic_color(ui->mosaic_sources[n].hash);
         int first=(int)((x+4)*sx),last=(int)((x+39)*sx);

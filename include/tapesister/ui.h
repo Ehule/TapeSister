@@ -41,6 +41,12 @@ enum { TS_TRACKER_LEGACY_LANES=8, TS_TRACKER_LEN_Y=54, TS_TRACKER_RATIO_Y=64,
        TS_TRACKER_FIELD_COUNT=7,
        TS_TRACKER_ROW_HEIGHT=12, TS_TRACKER_VISIBLE_ROWS=19,
        TS_TRACKER_GRID_BOTTOM=TS_TRACKER_GRID_Y+TS_TRACKER_VISIBLE_ROWS*TS_TRACKER_ROW_HEIGHT };
+/* Browser identity distinguishes equal audio in different source cards. */
+typedef struct {
+    int page, slot;
+    uint64_t event;
+} TsMosaicSourceKey;
+
 typedef struct {
     int len_y,ratio_y,mix_y,name_y,grid_y,rows,bottom,help_y,expanded;
 } TsTrackerLayout;
@@ -556,7 +562,19 @@ typedef struct {
     TsMosaic *mosaic;
     uint64_t mosaic_selected, mosaic_editing;
     uint64_t mosaic_selection[TS_MOSAIC_EVENTS];
+    uint64_t mosaic_selection_order[TS_MOSAIC_EVENTS], mosaic_selection_serial;
     int mosaic_open, mosaic_playing, mosaic_recording;
+    int mosaic_loop_drag, mosaic_loop_open, mosaic_loop_field;
+    TsMosaicRange mosaic_loop_preview;
+    char mosaic_loop_text[2][32], mosaic_loop_status[80];
+    int mosaic_align_open;
+    int mosaic_spacing_confirm, mosaic_scatter_open, mosaic_scatter_copies;
+    int mosaic_scatter_cluster, mosaic_scatter_overlap, mosaic_scatter_count, mosaic_scatter_valid;
+    int mosaic_scatter_field;
+    double mosaic_scatter_start, mosaic_scatter_end;
+    char mosaic_scatter_text[32], mosaic_scatter_status[80];
+    TsMosaicSourceKey mosaic_source_picks[TS_MOSAIC_EVENTS];
+    int mosaic_source_pick_count;
     int mosaic_record_length_drag, mosaic_record_length_before;
     TsMosaicRecordPreview mosaic_record_preview;
     int mosaic_edit_choice;
@@ -857,11 +875,12 @@ const TsTuning *ts_ui_display_tuning(const TsUiState *ui,
 enum {
     TS_MOSAIC_MIX_X = 10, TS_MOSAIC_MIX_STEP = 108, TS_MOSAIC_MIX_W = 100,
     TS_MOSAIC_CANVAS_RIGHT = 565,
+    TS_MOSAIC_SOURCE_PAGE_Y = 342, TS_MOSAIC_VIEW_Y = 362,
     TS_MOSAIC_ENV_X = 568, TS_MOSAIC_ENV_RIGHT = 630,
     TS_MOSAIC_ENV_TOP = 86, TS_MOSAIC_ENV_BOTTOM = 355,
     TS_MOSAIC_ENV_PAD = 3,
     TS_MOSAIC_MIX_Y = 380, TS_MOSAIC_SPEED_X = 500, TS_MOSAIC_SPEED_W = 128,
-    TS_MOSAIC_LENGTH_X = 230, TS_MOSAIC_LENGTH_W = 170,
+    TS_MOSAIC_LENGTH_LABEL_X = 204, TS_MOSAIC_LENGTH_X = 302, TS_MOSAIC_LENGTH_W = 98,
     TS_MOSAIC_REC_TILE_X = 322, TS_MOSAIC_REC_TILE_Y = 39, TS_MOSAIC_REC_TILE_W = 64,
     TS_MOSAIC_FOLLOW_X = 446, TS_MOSAIC_FOLLOW_W = 52,
     TS_MOSAIC_FIT_X = 504, TS_MOSAIC_FIT_W = 52,

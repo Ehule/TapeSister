@@ -1,3 +1,7 @@
+/* main_sdl.c needs POSIX declarations; expose them before the interposed headers. */
+#if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
+#define _POSIX_C_SOURCE 200809L
+#endif
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
@@ -135,6 +139,64 @@ int main(int argc,char **argv)
     pages.tracker.bpm=173;
     assert(ts_tapehead_sync(&pages,&bank,48000,error,sizeof(error)));
     assert(ts_tapehead_export(&pages.tracker,error,sizeof(error)));
+    /* Optional user-project reproduction through the actual Open path. */
+    if(argc==3 && (!strcmp(argv[1],"--open-project") || !strcmp(argv[1],"--mosaic-revert-mute"))) {
+        uint64_t disk_hash=0;
+        for(int pass=0;pass<2;++pass) {
+            int ok=load_instrument(0,&audio,&ui,&bank,&pages,&record,0,argv[2]);
+            fprintf(stderr,"Project Open: %s\n",ui.status);assert(ok);
+            int cards=0,sources=0;double max_x=0;
+            for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(ui.mosaic->events[i].id){++cards;max_x=fmax(max_x,ui.mosaic->events[i].x);}
+            for(TsMosaicSource *s=ui.mosaic->sources;s;s=s->next)++sources;
+            printf("pass=%d cards=%d sources=%d max_x=%.17g hash=%llu\n",pass+1,cards,sources,max_x,(unsigned long long)ts_mosaic_hash(ui.mosaic));
+            if(!pass)disk_hash=ts_mosaic_hash(ui.mosaic);
+            else assert(ts_mosaic_hash(ui.mosaic)==disk_hash);
+            ui.mosaic_open=1;mosaic_fit_all(&ui,&mosaic);ts_ui_render(&frame,&ui,&bank);
+            ui.mosaic->playing=1;ts_mosaic_begin_block(ui.mosaic,512);double energy=0;
+            for(int i=0;i<512;++i) {
+                TsStereoFrame v=ts_mosaic_read(ui.mosaic,48000);assert(isfinite(v.l) && isfinite(v.r));energy+=fabs(v.l)+fabs(v.r);
+            }
+            assert(!cards || energy>0);
+            if(!strcmp(argv[1],"--mosaic-revert-mute")) {
+                /* Exercise the actual callback/Matrix/effects after the user's key sequence. */
+                ui.mosaic->repeat=1;ts_mosaic_seek(ui.mosaic,0);
+                if(audio.sister.matrix.controls.enabled && !audio.sister.matrix.controls.board_insert &&
+                   !(audio.sister.matrix.controls.serial_mask&(1u<<TS_MATRIX_BOARD)) &&
+                   !audio.sister.parameters.fx.enabled) {
+                    assert(audio.sister.post_fx.master_engage.current==0 &&
+                           !audio.sister.post_fx.master_engage.remaining);
+                    /* The saved OFF/SEND return is intentionally silent. Use
+                       the user's confirmed INSERT workaround in memory so
+                       mute recovery is tested on an audible route. */
+                    TsMatrixControls route=audio.sister.matrix.controls;route.board_insert=1;
+                    assert(ts_matrix_set(&audio.sister.matrix,&route,48000));
+                    puts("Saved OFF/SEND restored without a fade; mute fixture uses INSERT in memory.");
+                }
+                mosaic_poll(0,&ui,&bank,&mosaic);mosaic_select_only(&ui,ui.mosaic->events[0].id);
+                SDL_Event e;SDL_zero(e);e.type=SDL_KEYDOWN;e.key.keysym.sym=SDLK_m;e.key.keysym.mod=KMOD_SHIFT;
+                for(int stage=0;stage<4;++stage) {
+                    if(stage) {
+                        if(stage==2) {
+                            e.key.keysym.sym=SDLK_a;e.key.keysym.mod=KMOD_CTRL;
+                            assert(mosaic_event(&e,window,0,&audio,&ui,&bank,&mosaic,&portal,&sister,&transform,48000));
+                            e.key.keysym.sym=SDLK_m;e.key.keysym.mod=KMOD_SHIFT;
+                        }
+                        assert(mosaic_event(&e,window,0,&audio,&ui,&bank,&mosaic,&portal,&sister,&transform,48000));
+                    }
+                    double energy=0;float out[1024];
+                    int blocks=stage==2?800:64; /* Let effects decay and the arrangement wrap while muted. */
+                    for(int block=0;block<blocks;++block) {
+                        audio_callback(&audio,(Uint8 *)out,sizeof(out));
+                        if(block==blocks-1)for(int i=0;i<1024;++i) {assert(isfinite(out[i]));energy+=fabs(out[i]);}
+                    }
+                    printf("pass=%d mute-stage=%d callback-energy=%g\n",pass,stage,energy);
+                    if(stage==0 || stage==3)assert(energy>0);
+                }
+                ts_mosaic_checkpoint(ui.mosaic);ui.mosaic->events[0].start=21;ui.mosaic->events[0].muted=1;
+            }
+        }
+        goto cleanup;
+    }
     uint64_t before=project_hash();
     begin_new_confirmation(&session);
     assert(ui.exit_confirm_open && ui.exit_for_new && ui.exit_has_unsaved && ui.exit_choice==2);
@@ -175,6 +237,37 @@ int main(int argc,char **argv)
     assert(ts_sample_pages_load_project(&saved,&saved_bank,&saved_record,"new-project-flow/new-project-flow.tsr",error,sizeof(error)));
     assert(saved.page_count==2 && saved_bank.current.frames==512);
     ts_sample_pages_free(&saved);ts_instrument_free(&saved_bank);ts_instrument_free(&saved_record);
+    /* Invalid external project metadata is rejected before touching banks,
+       Mosaic transport, tracker editor or Sister runtime state. */
+    TsSisterProjectState mismatched;int present=0;
+    const char *load_path="new-project-flow/new-project-flow.tsr";
+    /* Reopening the active path is a revert, including live Mosaic edits. */
+    uint64_t saved_mosaic=ts_mosaic_hash(ui.mosaic);
+    for(int pass=0;pass<2;++pass) {
+        TsMosaic *same_model=ui.mosaic;uint64_t previous_epoch=ui.mosaic->epoch;
+        ts_mosaic_checkpoint(ui.mosaic);
+        ui.mosaic->events[0].start=17;ui.mosaic->events[0].muted=1;
+        ui.mosaic->gain=.1f;ui.mosaic->playing=1;
+        assert(ts_mosaic_copy(ui.mosaic,ui.mosaic->events[0].id,20,0));
+        file=(PendingFileOperation){.active=1,.presented=1,.mode=TS_BROWSER_LOAD_WAV};
+        snprintf(file.path,sizeof(file.path),"%s",load_path);
+        run_pending_file_operation(0,&audio,&ui,&bank,&selection,&importer,&pages,&record,0,&file);
+        assert(strstr(ui.status,"OPENED TSR PROJECT"));
+        assert(ui.mosaic==same_model && ui.mosaic->epoch!=previous_epoch);
+        assert(ts_mosaic_hash(ui.mosaic)==saved_mosaic && !ui.mosaic->playing && !ui.mosaic->history_count);
+    }
+    assert(ts_sister_project_state_load(&mismatched,load_path,48000,&present,error,sizeof(error)) && present);
+    ++mismatched.page_count;
+    assert(ts_sister_project_state_save(&mismatched,load_path,error,sizeof(error)));
+    before=project_hash();ui.mosaic->playing=1;
+    const float *old_audio=bank.current.data;uint64_t old_epoch=ui.mosaic->epoch;
+    assert(!load_instrument(0,&audio,&ui,&bank,&pages,&record,0,load_path));
+    assert(strstr(ui.status,"does not match") && project_hash()==before);
+    assert(bank.current.data==old_audio && ui.mosaic->epoch==old_epoch && ui.mosaic->playing);
+    --mismatched.page_count;
+    assert(ts_sister_project_state_save(&mismatched,load_path,error,sizeof(error)));
+    assert(!load_instrument(0,&audio,&ui,&bank,&pages,&record,0,"missing-project.tsr"));
+    assert(project_hash()==before && bank.current.data==old_audio && ui.mosaic->playing);
     assert(project_new(NULL,0,0,&session));assert_empty();
     /* New clears the active path while the accepted save still targets the
        previous project's bundle. Immediate shutdown must finish the copy. */
@@ -210,10 +303,13 @@ int main(int argc,char **argv)
     assert(ts_tapehead_sync(&pages,&bank,48000,error,sizeof(error)));
     assert(ts_tapehead_export(&pages.tracker,error,sizeof(error)));
     assert(pages.tracker.bpm!=173 && !ts_tapehead_running());
+cleanup:
     ts_tapehead_close();SDL_DestroyWindow(window);
     project_audio_free(&audio);ts_mosaic_free(ui.mosaic);ts_sample_pages_free(&pages);
     ts_instrument_free(&bank);ts_instrument_free(&record);fm_bank_history_free(&history);
     ts_performance_recorder_free(&sister.performance_recorder);SDL_Quit();
-    puts("New project: confirmation, cancel, save failure/success, allocation failure, workers, banks and silent reset passed");
+    puts(argc==3 && !strcmp(argv[1],"--open-project") ?
+         "Supplied project: Open, repeated replacement, UI render and playback passed" :
+         "New project: confirmation, cancel, save failure/success, allocation failure, workers, banks and silent reset passed");
     return 0;
 }

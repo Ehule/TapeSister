@@ -47,6 +47,14 @@ enum {
     TS_SISTER_FX_SNAPSHOT_VALUES = TS_SISTER_FX_VIEW_VALUES+2
 };
 
+enum { TS_GRAIN_STATES = 5 };
+typedef struct {
+    float value[TS_GRAIN_STATES][3];
+    float seconds; /* 0..600, independent of effect/master bypass ramps. */
+    uint8_t captured, selected, editing;
+    uint32_t recall_serial; /* Runtime command; never serialized. */
+} TsGrainStates;
+
 /* A slot owns an independent processor instance. The generic A/B/C controls
    map to the visible controls for the selected type: Reverb SIZE/DECAY,
    Delay TIME/FEEDBACK, Distortion DRIVE/TONE, Grain SIZE/DENSITY/PITCH, and Transient ATTACK/SUSTAIN/RESPONSE. */
@@ -60,6 +68,7 @@ typedef struct {
     float parameter_c;
     float mix;
     uint8_t parameter_locks; /* Additional slots; first five retain historic IDs. */
+    TsGrainStates grain_states;
 } TsSisterFxSlotControls;
 
 typedef struct {
@@ -232,6 +241,8 @@ typedef struct {
     float density_hz_target;
     float density_cached;
     float pitch_current;
+    float state_from[3], state_to[3], state_density_from, state_density_to;
+    uint32_t state_serial, state_remaining, state_total;
     float mix_current;
     float gain_current;
     float gain_target;
@@ -342,6 +353,9 @@ uint8_t ts_sister_fx_placement_sanitize(uint8_t placement);
 void ts_sister_fx_controls_migrate_legacy(TsSisterFxControls *controls);
 const char *ts_sister_reverb_type_name(TsSisterReverbType type);
 float ts_sister_reverb_legacy_size(TsSisterReverbType type);
+void ts_grain_state_capture(TsSisterFxSlotControls *slot,int index);
+int ts_grain_state_recall(TsSisterFxSlotControls *slot,int index,int editing);
+int ts_grain_state_changed(const TsSisterFxSlotControls *slot);
 void ts_sister_fx_controls_default(TsSisterFxControls *controls);
 int ts_sister_fx_slot_count(int count);
 TsSisterFxSlotControls ts_sister_fx_empty_slot(void);

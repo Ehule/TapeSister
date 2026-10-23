@@ -57,6 +57,20 @@ See the [complete editing reference](SISTERTRACKER_PLAYBACK.md).
 
 ## Mosaic
 
+Navigation: **Shift+Z** fits all; **Z** fits selection/returns; **F** toggles FOLLOW;
+**H** shows the playhead without seeking; **Page Up/Down** move about one screen;
+**middle-drag** pans (middle-click seeks on release). Fit, page moves, panning and view recall turn FOLLOW
+off. The five numbered buttons beneath Sources save views with the project:
+**click empty = save**, **click stored = recall**, **Shift-click = replace**,
+**middle-click = clear**. Playback and card selection stay intact.
+
+The first card selected is **primary** (red by default); the rest use a lighter
+border. Shift-click toggles members; Shift-box selection and group copying preserve
+the primary. Shift-select Sources and drag them in as an aligned row, in selection
+order, with the first source primary and all new cards selected. A drop is one undo
+step. Alt+Up/Down with only one card shows **SELECT MORE THAN ONE CARD**; playhead
+alignment still works on one card. Time-range and Scatter fields have a blinking cursor.
+
 Time runs downward in seconds; horizontal placement and width are visual. Drag an
 occupied source onto the canvas. Sources arrows browse every numbered Sample bank
 (including FM-created pages), then EVENTS pages with event audio versions. Browsing
@@ -64,10 +78,25 @@ does not switch the main bank. See the [Mosaic chapter](USER_MANUAL.md#mosaic).
 
 | Action | Control |
 | --- | --- |
+| Audition selected instance, otherwise selected source / stop preview | A |
+| Open a source in the main canvas editor | Double-left-click source |
+| Select every placed instance of a source | Right-click source |
+| Fit selection / restore previous view | Z |
+| Select all / select every instance of the current source | Ctrl+A / Shift+A |
+| Nudge selection by 0.1 s / 1 s | Up/Down / Shift+Up/Down |
+| Nudge selection horizontally by 1 / 10 units | Left/Right / Shift+Left/Right |
+| Align starts / ends to primary | Alt+Up / Alt+Down (at least two cards) |
+| Align every start / end to playhead | Alt+Left / Alt+Right |
+| Add/remove a card in the selection | Shift-click |
+| Cycle through overlapping cards | Alt-click |
+| Enable or disable horizontal collision spacing | AUTO-SPACE; enabling requires confirmation |
+| Tidy selected cards horizontally once | T |
+| Scatter cards or copies with a preview | Ctrl+R |
+| Select multiple sources | Shift-click; drag any selected source to add the row, or Ctrl+R for Scatter |
 | Select / edit | Click / double-click event |
-| Box-select a group | Shift+left-drag on empty canvas |
-| Move group / copy group | Drag a selected tile / hold Shift when starting that drag |
-| Extend duration / change visual width | Drag bottom / right edge |
+| Add a selection box | Shift+left-drag on empty canvas; keeps the primary |
+| Move group / copy group | Drag a selected tile / hold Shift when starting that drag; repeat to copy again |
+| Extend duration / change visual width | Drag top or bottom / right edge |
 | Optional start, end, midpoint alignment | Alt during move or duration resize |
 | Mute / solo selected events | M / S; excluded cards say SOLO OUT |
 | Mute / solo all cards sharing selected sources | Shift+M / Shift+S |
@@ -75,7 +104,7 @@ does not switch the main bank. See the [Mosaic chapter](USER_MANUAL.md#mosaic).
 | Selection level / pan / fade-in / fade-out | LEVEL / PAN / IN / OUT in footer |
 | Global tape speed | SPEED: 0.5× (−12 st), center 1×, 2× (+12 st) |
 | Fine control / reset | Shift+wheel / right-click or double-click |
-| Copy / paste last-clicked event at playhead | Ctrl+C / Ctrl+V; use Shift-drag for group copies |
+| Copy / paste primary event at playhead | Ctrl+C / Ctrl+V; use Shift-drag for group copies |
 | Delete selection | Delete or Backspace |
 | Undo / redo arrangement edit | Ctrl+Z / Ctrl+Y or Ctrl+Shift+Z |
 | Cancel move/copy drag | Escape |
@@ -84,7 +113,11 @@ does not switch the main bank. See the [Mosaic chapter](USER_MANUAL.md#mosaic).
 | Seek | Middle-click canvas or click time ruler |
 | Return to beginning | Home |
 | Scroll time / sideways / zoom | Wheel / Shift+wheel / Ctrl+wheel |
-| Follow playhead / fit arrangement / repeat arrangement | FOLLOW / FIT ALL / REPEAT |
+| Follow playhead / fit arrangement | F or FOLLOW / Shift+Z or FIT ALL |
+| Select / resize a time range | Shift-drag ruler / drag either range handle |
+| Set range from selected cards | Shift+L |
+| Repeat range, or whole arrangement if none | L or REPEAT |
+| Exact range times / clear range | Double-click ruler / right-click highlighted range |
 | Record final stereo output | Header or footer REC FILE; Ctrl+Shift+F |
 | Record a dry keyboard performance to a card | REC DRY (default); click STOP TILE to keep |
 | Print Prism/effects or bounce Mosaic to a card | REC OUT; identical final signal to REC FILE |
@@ -120,7 +153,7 @@ a drag; Undo/Redo includes the controls. CLEAR SOLO leaves mute switches intact.
 
 No audio change means no question. Loop and chord changes are immediate and local
 to the event. Background CDP results retain their requesting event. SAVE includes
-the arrangement, level/pan/fades, global speed and shared audio versions; capacity is 128 events, five voices each.
+the arrangement, level/pan/fades, global speed and shared audio versions; capacity is 1,024 events, five voices each.
 
 **CFG → PALETTE → MOSAIC** offers HILITE and colors 1–5. Select a swatch and use
 the existing RGB sliders or Tapehead eyedropper. SAVE SHARED stores them; CANCEL
@@ -424,8 +457,8 @@ file recording remains available when Sister is powered off; H1/H2/H3 require Si
 
 ## FX pedalboard
 
-Signal order is slot `1 → 2 → 3 → 4`. Each slot can be Empty, Reverb, Delay,
-Distortion, or Grain; duplicates are allowed.
+Signal follows the numbered slots in order. Each slot can be Empty, Reverb, Delay,
+Distortion, Grain, or Transient Designer; duplicates are allowed.
 
 | Type | Parameters |
 | --- | --- |
@@ -441,6 +474,32 @@ Placement is exactly one of:
 | PRE | new source before INPUT/write/Duck |
 | H1/H2/H3 | after selected head read, before later head character/level |
 | POST | Matrix Pedalboard node; legacy mode: serial Pedalboard stage |
+
+![Grain states and local glide control](screenshots/mosaic-performance/grain-states.png)
+
+Grain has five small local state squares beside the voice count. They store only
+Size, Density and Pitch; gain, mix, placement and bypass remain independent.
+Pitch wheel steps land on exact semitones; Shift+wheel adjusts by 0.1 semitone.
+
+| Grain state action | Gesture |
+| --- | --- |
+| Capture an empty state / recall a saved state | Left-click |
+| Recall immediately for editing (blue) | Right-click |
+| Save the selected blue or amber state | Left-click that state |
+| Overwrite any state with the current settings | Shift+left-click |
+| Clear a state | Middle-click |
+| Set recall duration, 0–600 seconds | GLIDE drag or wheel; Shift+wheel for 0.1 s |
+| Reset recall duration to immediate | Right-click GLIDE |
+
+Grey means empty; dim green means stored; bright green is the active target;
+blue means editing; amber means changed since capture. Right-click a state, adjust
+the sound, then left-click that same square to save it and return it to green.
+Clicking another saved state recalls it without overwriting either state.
+Performance recall moves the sound
+smoothly without clearing the grain buffer. A new recall redirects from the
+current audible position; manually changing Size, Density or Pitch cancels the
+current glide. The parameter sliders display the destination values. States and
+glide time travel with a moved or copied slot and save in projects and user presets.
 
 Effect and Master transitions: 10 ms–60 min. Slot Gain: -12 to +12 dB. FX Feedback:
 0–135%.
@@ -698,6 +757,16 @@ APPLY saves the active sound and original source with the tile. Edits render in
 the background (**UPDATING**); quiet settings replace the old audio and waveform.
 Unison off restores even a silent original. A deleted or different source does
 not inherit the previous tile's parked FM patch.
+
+### Mosaic loop range
+
+- **Shift-drag ruler:** select time; drag either handle to resize.
+- **Shift+L:** set range from selected cards; **L / REPEAT:** toggle looping.
+- **Double-click ruler:** exact start/end seconds; Tab switches, Ctrl+A clears a
+  field, Enter applies, Escape cancels.
+- **Right-click highlighted range:** clear it; Repeat then uses the whole arrangement.
+- **Space:** play/pause. Range edits support Undo/Redo and save with the project.
+  Escape or focus loss cancels an unfinished drag. Card selection stays independent.
 
 ### Mosaic volume lane
 

@@ -355,6 +355,31 @@ void ts_sister_fx_controls_default(TsSisterFxControls *controls)
     ts_sister_fallout_controls_default(&controls->fallout);
 }
 
+void ts_grain_state_capture(TsSisterFxSlotControls *slot,int index)
+{
+    if(!slot || slot->type!=TS_SISTER_FX_GRAIN || index<0 || index>=TS_GRAIN_STATES)return;
+    TsGrainStates *bank=&slot->grain_states;
+    bank->value[index][0]=slot->parameter_a;bank->value[index][1]=slot->parameter_b;bank->value[index][2]=slot->parameter_c;
+    bank->captured|=(uint8_t)(1u<<index);bank->selected=(uint8_t)(index+1);bank->editing=0;
+}
+int ts_grain_state_recall(TsSisterFxSlotControls *slot,int index,int editing)
+{
+    if(!slot || slot->type!=TS_SISTER_FX_GRAIN || index<0 || index>=TS_GRAIN_STATES)return 0;
+    TsGrainStates *bank=&slot->grain_states;
+    bank->selected=(uint8_t)(index+1);bank->editing=editing!=0;
+    if(!(bank->captured&(1u<<index)))return 0;
+    slot->parameter_a=bank->value[index][0];slot->parameter_b=bank->value[index][1];slot->parameter_c=bank->value[index][2];
+    if(!++bank->recall_serial)++bank->recall_serial;
+    return 1;
+}
+int ts_grain_state_changed(const TsSisterFxSlotControls *slot)
+{
+    if(!slot)return 0;const TsGrainStates *bank=&slot->grain_states;
+    if(!bank->selected || bank->selected>TS_GRAIN_STATES || !(bank->captured&(1u<<(bank->selected-1))))return 0;
+    const float *v=bank->value[bank->selected-1];
+    return fabsf(v[0]-slot->parameter_a)>1e-6f || fabsf(v[1]-slot->parameter_b)>1e-6f || fabsf(v[2]-slot->parameter_c)>1e-6f;
+}
+
 void ts_sister_fx_controls_sanitize(TsSisterFxControls *controls)
 {
     if (controls == NULL) return;
@@ -401,6 +426,12 @@ void ts_sister_fx_controls_sanitize(TsSisterFxControls *controls)
         TsSisterFxSlotControls *slot = &controls->slot[i];
         if ((int)i >= controls->slot_count) *slot = ts_sister_fx_empty_slot();
         slot->parameter_locks &= 31u;
+        TsGrainStates *bank=&slot->grain_states;
+        bank->captured&=31u;if(bank->selected>TS_GRAIN_STATES)bank->selected=0;
+        bank->editing=bank->editing!=0;
+        bank->seconds=isfinite(bank->seconds)?clampf(bank->seconds,0,600):0;
+        for(int state=0;state<TS_GRAIN_STATES;++state)for(int p=0;p<3;++p)
+            bank->value[state][p]=isfinite(bank->value[state][p])?clampf(bank->value[state][p],0,1):.5f;
         if (slot->type < TS_SISTER_FX_EMPTY ||
             slot->type >= TS_SISTER_FX_TYPE_COUNT)
             slot->type = TS_SISTER_FX_EMPTY;
@@ -923,6 +954,7 @@ void ts_sister_post_fx_sync_controls(TsSisterPostFxEngine *engine,
             grain->density_hz_current = grain->density_hz_target =
                 ts_sister_grain_density_hz(control->parameter_b);
             grain->pitch_current = control->parameter_c;
+            grain->state_serial=control->grain_states.recall_serial;grain->state_remaining=0;
             grain->gain_current = grain->gain_target =
                 makeup_gain_linear(control->gain_db);
             TsSisterTransientState *transient = &engine->transient[slot][location];
@@ -1010,18 +1042,31 @@ static TsStereoFrame grain_process(const TsSisterFxTiming *engine,
         state->gain_db_cached = control->gain_db;
         state->gain_target = makeup_gain_linear(control->gain_db);
     }
-    if (state->density_cached != control->parameter_b) {
-        state->density_cached = control->parameter_b;
-        state->density_hz_target = ts_sister_grain_density_hz(control->parameter_b);
+    float target[3]={control->parameter_a,control->parameter_b,control->parameter_c};
+    if(state->state_serial!=control->grain_states.recall_serial) {
+        state->state_serial=control->grain_states.recall_serial;
+        state->state_from[0]=state->size_current;state->state_from[1]=state->density_current;state->state_from[2]=state->pitch_current;
+        memcpy(state->state_to,target,sizeof(target));
+        state->state_density_from=state->density_hz_current;
+        state->state_density_to=ts_sister_grain_density_hz(target[1]);
+        state->state_total=state->state_remaining=state->state_serial && !control->grain_states.editing?
+            (uint32_t)(control->grain_states.seconds*engine->sample_rate):0;
     }
-    state->size_current = approach(state->size_current,
-        control->parameter_a, engine->smooth_30ms);
-    state->density_current = approach(state->density_current,
-        control->parameter_b, engine->smooth_30ms);
-    state->density_hz_current = approach(state->density_hz_current,
-        state->density_hz_target, engine->smooth_30ms);
-    state->pitch_current = approach(state->pitch_current,
-        control->parameter_c, engine->smooth_24ms);
+    /* Manual parameter edits cancel the current recall. A subsequent recall
+       starts at the audible position, including when the old ramp is unfinished. */
+    if(state->state_remaining && (control->grain_states.editing || memcmp(state->state_to,target,sizeof(target))))state->state_remaining=0;
+    if(state->state_remaining) {
+        float t=1.0f-(float)(--state->state_remaining)/(float)state->state_total;
+        for(int p=0;p<3;++p)target[p]=state->state_from[p]+(state->state_to[p]-state->state_from[p])*t;
+        state->density_hz_target=state->state_density_from+(state->state_density_to-state->state_density_from)*t;
+        state->density_cached=target[1];
+    } else if(state->density_cached!=target[1]) {
+        state->density_cached=target[1];state->density_hz_target=ts_sister_grain_density_hz(target[1]);
+    }
+    state->size_current=approach(state->size_current,target[0],engine->smooth_30ms);
+    state->density_current=approach(state->density_current,target[1],engine->smooth_30ms);
+    state->density_hz_current=approach(state->density_hz_current,state->density_hz_target,engine->smooth_30ms);
+    state->pitch_current=approach(state->pitch_current,target[2],engine->smooth_24ms);
     state->mix_current = approach(state->mix_current,
         control->mix, engine->smooth_20ms);
     state->gain_current = approach(state->gain_current,

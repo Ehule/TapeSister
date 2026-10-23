@@ -342,6 +342,11 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
             index + 1, slot->parameter_b, index + 1, slot->parameter_c,
             index + 1, slot->mix) < 0) return 0;
         if (fprintf(file, "slot%d_locks=%u\n", index + 1, (unsigned)slot->parameter_locks) < 0) return 0;
+        const TsGrainStates *bank=&slot->grain_states;
+        if(fprintf(file,"slot%d_state_mask=%u\nslot%d_state_selected=%u\nslot%d_state_seconds=%.9g\n",
+            index+1,(unsigned)bank->captured,index+1,(unsigned)bank->selected,index+1,bank->seconds)<0)return 0;
+        for(int state=0;state<TS_GRAIN_STATES;++state)for(int p=0;p<3;++p)
+            if(fprintf(file,"slot%d_state%d%c=%.9g\n",index+1,state+1,'A'+p,bank->value[state][p])<0)return 0;
     }
     return 1;
 }
@@ -444,6 +449,16 @@ static int assign_field(TsSisterParameters *p, const char *key,
         slot_number >= 1 && slot_number <= TS_SISTER_FX_SLOT_COUNT) {
         if (slot_number > p->fx.slot_count) p->fx.slot_count = slot_number;
         TsSisterFxSlotControls *slot = &p->fx.slot[slot_number - 1];
+        if(!strcmp(slot_field,"state_seconds"))return parse_float(value,&slot->grain_states.seconds);
+        if(!strcmp(slot_field,"state_mask") || !strcmp(slot_field,"state_selected")) {
+            int maximum=!strcmp(slot_field,"state_mask")?31:TS_GRAIN_STATES;
+            if(!parse_int(value,&integer) || integer<0 || integer>maximum)return 0;
+            if(maximum==31)slot->grain_states.captured=(uint8_t)integer;else slot->grain_states.selected=(uint8_t)integer;
+            return 1;
+        }
+        int state;char parameter,extra;
+        if(sscanf(slot_field,"state%d%c%c",&state,&parameter,&extra)==2 && state>=1 && state<=TS_GRAIN_STATES && parameter>='A' && parameter<='C')
+            return parse_float(value,&slot->grain_states.value[state-1][parameter-'A']);
         if (strcmp(slot_field, "locks") == 0) {
             if (!parse_int(value, &integer) || integer < 0 || integer > 31) return 0;
             slot->parameter_locks = (uint8_t)integer; return 1;

@@ -1,7 +1,9 @@
+#include "main_sdl_grain_states.inc"
+
 /* The viewport never changes DSP order or steals the parameter mouse wheel. */
 static void sister_fx_scroll_stop(SisterWindow *sister)
 {
-    sister->fx_scroll_drag = sister->fx_scroll_repeat = 0;
+    sister->fx_scroll_drag = sister->fx_scroll_repeat = sister->grain_time_drag = 0;
 }
 
 static void sister_fx_scroll_to(SisterWindow *sister, int first)
@@ -73,6 +75,7 @@ static int sister_pedalboard_event(SDL_AudioDeviceID device, AudioState *audio,
     if (sister->model.fx_page != 1 || sister->model.preset_manage_open || ui->midi_learn_active) {
         sister_fx_scroll_stop(sister); return 0;
     }
+    if (!sister->model.fx_remove_confirmation && sister_grain_event(device,audio,ui,sister,event)) return 1;
     if (sister->model.fx_remove_confirmation) {
         TsSisterUiHit hit = {0};
         if (event->type == SDL_KEYDOWN) {

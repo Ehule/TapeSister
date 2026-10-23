@@ -1159,6 +1159,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
                                  live_link_frames,
                                  (uint32_t)audio->output_rate);
     ts_sister_runtime_begin_audio_block(&audio->sister);
+    ts_mosaic_begin_block(audio->mosaic,(unsigned)frames);
     ts_insert_begin_output_block(&audio->sister.insert, (unsigned)frames);
     ts_performance_inputs_begin(audio->performance_inputs,audio->sister.insert.duplex,
         audio->sister.insert.duplex_channels,(unsigned)audio->output_rate);
@@ -4308,6 +4309,7 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     if(path_is_module(path))return load_module_instrument(device,audio,ui,instrument,sample_pages,record_bank_active,path);
     char error[160];
     TsSisterProjectState sister_state;
+    TsSampleProjectLoad *prepared_project = NULL;
     TsKeyboardSequenceSource *previous_sequence_source = NULL;
     int sister_state_present = 0;
     int recipe = path_is_tsr(path);
@@ -4371,6 +4373,28 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
                  "LOAD FAILED: %.135s", error);
         return 0;
     }
+    if (recipe) {
+        /* Decode/validate all banks and Mosaic sources while the current
+           project can still render. Failed preparation leaves it untouched. */
+        if (!sample_pages || !sample_pages->active_live || sample_pages->mosaic_bank) {
+            snprintf(ui->status,sizeof(ui->status),"RETURN TO A SAMPLE PAGE BEFORE OPENING A PROJECT");
+            return 0;
+        }
+        prepared_project = ts_sample_pages_prepare_project(path, sample_pages->mosaic != NULL,
+                                                           error, sizeof(error));
+        const TsSamplePages *prepared = ts_sample_pages_prepared_pages(prepared_project);
+        if (prepared && sister_state_present &&
+            (sister_state.page_count != ts_sample_pages_count(prepared) ||
+             sister_state.active_page != ts_sample_pages_active(prepared))) {
+            snprintf(error,sizeof(error),"Sister project state does not match the project page manifest");
+            ts_sample_pages_dispose_project(prepared_project);prepared_project = NULL;
+        }
+        if (!prepared_project) {
+            snprintf(ui->status,sizeof(ui->status),"LOAD FAILED: %.135s",error);
+            ts_session_log_event("project_load_result","success=0 kind=TSR phase=prepare");
+            return 0;
+        }
+    }
     if (ui->workbench_loop_active) stop_all(device, audio, ui);
     lock_edit(device, audio);
     ui->bank_view_slot = -1;
@@ -4385,15 +4409,8 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
         ui->tracker_scroll=0;
         ui->tracker_solo=0;ts_tracker_playback_solo(&audio->tracker,0);
         ts_sister_runtime_project_close(&audio->sister);
-        ok = ts_sample_pages_load_project(sample_pages, instrument, record_bank,
-                                          path, error, sizeof(error));
-        if (ok && sister_state_present &&
-            (sister_state.page_count != ts_sample_pages_count(sample_pages) ||
-             sister_state.active_page != ts_sample_pages_active(sample_pages))) {
-            snprintf(error, sizeof(error),
-                     "Sister project state does not match the project page manifest");
-            ok = 0;
-        }
+        ok = ts_sample_pages_publish_project(sample_pages, instrument, record_bank,
+                                             prepared_project, error, sizeof(error));
         if (ok) {
             previous_sequence_source = ts_keyboard_sequence_source(&audio->keyboard_sequence, NULL);
             ts_keyboard_sequence_set_bank(&audio->keyboard_sequence, &sister_state.keyboard_sequence);
@@ -4440,6 +4457,7 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
              ts_instrument_load_wav(instrument, path, error, sizeof(error));
     }
     unlock_edit(device, audio, ui, instrument);
+    ts_sample_pages_dispose_project(prepared_project);
     ts_keyboard_sequence_source_free(previous_sequence_source);
     if (ok) ts_ui_reset_parent_view(ui, instrument->parent.frames);
     if (ok && recipe) {
@@ -7190,7 +7208,7 @@ static const char *path_basename(const char *path)
 
 static int ui_blocking_dialog_open_except_workspaces(const TsUiState *ui)
 {
-    return ui->mosaic_edit_choice || ui->exit_confirm_open || ui->project_overwrite_confirm_open ||
+    return ui->mosaic_align_open || ui->mosaic_loop_open || ui->mosaic_scatter_open || ui->mosaic_spacing_confirm || ui->mosaic_edit_choice || ui->exit_confirm_open || ui->project_overwrite_confirm_open ||
            ui->overdub_confirm_open ||
            ui->file_busy || ui->transform_open || ui->drone_open ||
            ui->import_preview_open || ui->load_selection_choice_open ||
@@ -7209,6 +7227,15 @@ static int ui_blocking_dialog_open_except_fm(const TsUiState *ui)
 static int ui_dialog_open(const TsUiState *ui)
 {
     return ui->fm_open || ui_blocking_dialog_open_except_fm(ui);
+}
+
+static void ui_sync_dialog_workspaces(TsUiState *ui)
+{
+    /* Mosaic owns these dialogs. Hiding it strands the modal: its renderer
+       and input handler both require mosaic_open, while other input is blocked. */
+    if(ui_dialog_open(ui) && !ui->portal.open &&
+       !ui->mosaic_scatter_open && !ui->mosaic_spacing_confirm && !ui->mosaic_loop_open && !ui->mosaic_align_open)ui->mosaic_open=0;
+    if(ui_dialog_open(ui))ui->tracker_open=0;
 }
 
 static int sister_performance_keys_allowed(const TsUiState *ui)
@@ -9052,6 +9079,7 @@ typedef struct {
     int fallout_preset_modified;
     int parameter_lock_gesture;
     TsUiPointerDrag parameter_drag;
+    int grain_time_drag; /* Slot + 1; zero means inactive. */
     int fx_scroll_drag, fx_scroll_grab, fx_scroll_repeat;
     Uint32 fx_scroll_next;
     TsPrismBank prism_presets;
@@ -9662,6 +9690,13 @@ static float sister_parameter_wheel_normalized(
     int steps = wheel > 0 ? wheel : -wheel;
     int value;
     if (parameters == NULL || wheel == 0) return 0.0f;
+    int slot_offset=ts_sister_ui_slot_offset(parameter);
+    if(slot_offset>=0 && slot_offset<TS_SISTER_FX_SLOT_COUNT*5 && slot_offset%5==3 &&
+       parameters->fx.slot[slot_offset/5].type==TS_SISTER_FX_GRAIN) {
+        float pitch=ts_sister_grain_pitch_semitones(parameters->fx.slot[slot_offset/5].parameter_c);
+        pitch=fine_adjustment?pitch+wheel*.1f:roundf(pitch)+wheel;
+        return (fmaxf(-24,fminf(24,pitch))+24)/48;
+    }
     switch ((TsSisterUiParameter)parameter) {
     case TS_SISTER_UI_PARAM_PRISM_OCTAVE:
         value=parameters->prism.group_octave+direction*steps;
@@ -13693,7 +13728,7 @@ int main(int argc, char **argv)
     ImportController import_controller;
     BrowserAudition browser_audition={0};
     PortalController portal;
-    MosaicController mosaic = {0};
+    static MosaicController mosaic;
     PendingFileOperation pending_file = {0};
     size_t clipboard_origin_first = 0;
     size_t clipboard_source_frames = 0;
@@ -14460,7 +14495,7 @@ int main(int argc, char **argv)
             if(tracker_event(&event,window,device,&audio,&ui,&sample_pages,&instrument,obtained.freq))continue;
             mosaic_commit(device,&ui,&instrument,&mosaic);
             /* Finish an active pointer gesture before Escape can discard a take. */
-            if(!mosaic.drag && !mosaic.mix_drag && !mosaic.volume_drag &&
+            if(!mosaic.drag && !mosaic.mix_drag && !mosaic.volume_drag && !mosaic.pan_active && !ui.mosaic_loop_drag &&
                mosaic_record_tile_event(&event,window,device,&input_device,&audio,
                                        &external_input,&ui,&instrument))continue;
             if(quick_capture_event(&event,window,device,&input_device,&audio,&external_input,&ui,&instrument,&sample_pages))continue;
@@ -18144,8 +18179,7 @@ int main(int argc, char **argv)
             ui.overlay[0] = '\0';
         refresh_workbench_loop(device, &audio, &ui, &instrument);
         mosaic_poll(device,&ui,&instrument,&mosaic);
-        if(ui_dialog_open(&ui) && !ui.portal.open)ui.mosaic_open=0;
-        if(ui_dialog_open(&ui))ui.tracker_open=0;
+        ui_sync_dialog_workspaces(&ui);
         Uint32 health_setup_now = SDL_GetTicks();
         if (device) SDL_LockAudioDevice(device);
         {

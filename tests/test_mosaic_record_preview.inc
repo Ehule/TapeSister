@@ -3,6 +3,7 @@ static void test_mosaic_record_preview(SDL_AudioDeviceID device)
     AudioState *a=routing_audio(0);TsUiState *u=mosaic_record_ui_fixture(a);
     ExternalInputState *input=mosaic_record_input_fixture(a);SDL_AudioDeviceID input_device=0;
     /* A low recording rate keeps the complete long-take snapshot test small. */
+    a->mosaic->auto_space=1; /* This test exercises collision-aware recording follow. */
     a->output_rate=1000;a->mosaic->playing=0;a->mosaic->time=1;
     u->config.record_max_seconds=30;u->mosaic_scale=24;u->mosaic_hscale=1;
     u->mosaic_xscroll=120;u->mosaic_scroll=0;

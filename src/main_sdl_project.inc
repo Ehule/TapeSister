@@ -42,6 +42,7 @@ static void begin_new_confirmation(ProjectSession *s)
     ui->exit_confirm_open = 1;
     ui->exit_choice = 2;
     ui->exit_after_save = 0;
+    ts_session_log_event("project_new_prompt","opened unsaved=%d",ui->exit_has_unsaved);
     snprintf(ui->status, sizeof(ui->status), "NEW PROJECT? SAVE YOUR WORK BEFORE CLEARING");
 }
 

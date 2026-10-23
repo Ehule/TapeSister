@@ -27,14 +27,38 @@ the audio versions used by placed events. Browsing sources does not switch the
 main editor's active Sample bank or change routing. New banks appear on the next
 refresh; returning from FM shows its active bank with the correct page number.
 
-Drag an occupied source onto the canvas. Click a source to highlight its waveform;
-dragging shows a ghost of the proposed event. An accepted audio edit appears in
+Drag an occupied source onto the canvas. Click a source to select it and clear the
+timeline selection; dragging shows a ghost of the proposed event. **A** previews
+the selected source without adding a card or moving the playhead; press **A** again
+to stop. When a timeline instance is selected, its assigned notes and individual
+settings take priority over the source highlight.
+
+**Right-click a source** to select all of its placed instances, retaining the primary
+when it belongs to that source. **Double-left-click a source** to open its main
+canvas editor: bank sources open their actual Sample bank and tile; EVENTS sources
+open the existing instance editor with its update-instance/update-all choices.
+Modified clicks continue to select and drag source groups. An accepted audio edit appears in
 the EVENTS pages. Shared originals and the original Sample banks remain available.
 
 | Action | Gesture |
 | --- | --- |
+| Audition selected instance, otherwise selected source / stop preview | A |
+| Open a source in the main canvas editor | Double-left-click source |
+| Select every placed instance of a source | Right-click source |
+| Fit selection / restore previous view | Z |
+| Select all / select every instance of the current source | Ctrl+A / Shift+A |
+| Nudge selection by 0.1 s / 1 s | Up/Down / Shift+Up/Down |
+| Nudge selection horizontally by 1 / 10 units | Left/Right / Shift+Left/Right |
+| Align starts / ends to primary | Alt+Up / Alt+Down (at least two cards) |
+| Align every start / end to playhead | Alt+Left / Alt+Right |
+| Add/remove a card in the selection | Shift-click |
+| Cycle through overlapping cards | Alt-click |
+| Enable or disable horizontal collision spacing | AUTO-SPACE; enabling requires confirmation |
+| Tidy selected cards horizontally once | T |
+| Scatter cards or copies with a preview | Ctrl+R |
+| Select multiple sources | Shift-click; drag any selected source to add the row, or Ctrl+R for Scatter |
 | Select / move an event | Click / drag its body |
-| Extend the event's playback window | Drag its bottom edge |
+| Extend the event's playback window | Drag its top edge earlier or bottom edge later |
 | Change visual width | Drag its right edge |
 | Align starts, ends or midpoints | Hold Alt while moving or extending |
 | Edit the event | Double-click |
@@ -54,23 +78,94 @@ the EVENTS pages. Shared originals and the original Sample banks remain availabl
 | Undo / redo arrangement edits | Ctrl+Z / Ctrl+Shift+Z or Ctrl+Y |
 | Play / pause | Space or PLAY/PAUSE |
 | Stop and rewind | Escape or STOP |
+| Select a time range | Shift-drag the vertical ruler in either direction |
+| Adjust / clear the time range | Drag either ruler handle / right-click the highlighted range |
+| Set range from selected cards | Shift+L |
+| Toggle range or whole-arrangement looping | L or REPEAT |
+| Enter exact start/end times | Double-click the ruler |
 | Seek | Middle-click the canvas or click the time ruler |
-| Scroll with playback | Enable FOLLOW |
+| Scroll with playback | F or FOLLOW |
+| Center the view on the playhead | H (does not seek) |
+| Move the view earlier / later, with overlap | Page Up / Page Down |
+| Pan the view freely | Middle-button drag; a click still seeks on release |
 | Return to the beginning | Home |
 | Scroll through time | Mouse wheel |
 | Scroll horizontally | Shift+wheel |
 | Zoom around the pointer | Ctrl+wheel |
-| Fit the arrangement | FIT ALL |
+| Fit the arrangement | Shift+Z or FIT ALL |
+| Save / recall a view | Click one of the five numbered buttons beneath Sources |
+| Replace / clear a saved view | Shift-click / middle-click its button |
 | Record the final output | REC FILE or Ctrl+Shift+F |
 
-Events that overlap in time occupy separate horizontal space, with a small
-invisible gutter. Collision handling moves only the event being placed and
-never changes its time. Group moves preserve all relative times and positions;
-the group shifts sideways together if it meets another event. Shift-dragging a
+The **first selected card is the primary**: its border uses the selection color
+(red by default). Other selected cards use a lighter shade. Shift-click adds a
+card; Shift-clicking an already selected card removes it. Removing the primary
+promotes the earliest remaining selection. Clicking or dragging a selected member
+keeps the primary; clicking an unselected card without Shift starts a new selection.
+Shift-dragging an empty area adds a selection box while retaining the primary.
+Shift-dragging a card still copies the group; the primary's copy becomes primary.
+Rapid Shift-clicks and repeated Shift-drags stay in selection/copy mode; only an
+unmodified double-click opens the event editor. Copies remain selected for the
+next drag. If the whole group would exceed the 1,024-card arrangement limit, nothing
+is copied or moved: the status line shows the required and available free slots.
+Audition, Copy and single-card reference values use the primary.
+
+**Left/Right** nudges the whole selection horizontally by one layout unit;
+**Shift+Left/Right** uses ten. These are independent of zoom and support key repeat.
+Relative positions stay fixed, and the group stops at the left edge. AUTO-SPACE
+applies as it does for other group moves.
+
+**Alt+Up/Down** aligns every selected start/end to the primary's start/end, keeping
+card durations. With fewer than two cards, a **SELECT MORE THAN ONE CARD** dialog
+appears and no edit is made. Enter, Escape, Space or OK dismisses it.
+**Alt+Left/Right** aligns every selected start/end to the current playhead, including
+a single card. If any new start would be before zero or beyond 24 hours, nothing
+moves. With AUTO-SPACE on, secondary cards can move horizontally to avoid collisions;
+the primary and unselected cards stay in place. Each nudge/alignment is undoable.
+
+In **Sources**, click the first source, then Shift-click more in the desired order.
+Drag any selected source into the canvas: the row starts at the drop position,
+with all tops aligned, ordered left to right by source selection. All new cards
+are selected, and the first source becomes primary. AUTO-SPACE shifts the row
+horizontally if needed. The whole drop is one undo step; insufficient room adds
+nothing. Source selection is then cleared, so **Ctrl+R** works on the new canvas
+selection. Ctrl-click remains available for selecting sources for Scatter.
+Identical sounds in different source cards remain separately selectable.
+
+Time-range and Scatter number fields show a **blinking cursor** while editing.
+
+![Primary and secondary Mosaic selection](screenshots/mosaic-performance/primary-selection.png)
+
+Navigation changes the view while playback and card selection continue. **Shift+Z**
+fits the whole arrangement; **Z** fits the selection and returns on the next press.
+**H** centers the playhead in the view. **Page Up/Down** move by about 90% of a
+screen, leaving some overlap for orientation. Holding a page key repeats the move.
+Fit, page navigation, panning, and recalling a saved view turn FOLLOW off so the
+view stays where you put it; **F** resumes following. A middle press only seeks
+when released without dragging. Escape or loss of window focus cancels the press.
+
+The five numbered buttons beneath Sources store the horizontal and time positions
+and both zoom levels. Click an empty button to save, click a stored one to recall,
+Shift-click to replace, or middle-click to clear. A small underline marks a stored
+view and the matching view is highlighted. Views save with the project; older
+projects open with five empty slots. Capturing or clearing a view marks the project
+modified, but browsing/recalling does not. Saved views are independent of arrangement
+undo/redo and do not store the playback position, selection, or FOLLOW setting.
+
+![Saved view buttons beneath Sources](screenshots/mosaic-performance/navigation.png)
+
+New arrangements start with **AUTO-SPACE off**, allowing cards to overlap visually.
+**Alt-click** cycles through cards at the pointer and brings the selected one forward.
+Older projects retain automatic spacing; the preference is stored with the arrangement.
+Enabling AUTO-SPACE asks for confirmation before separating cards horizontally.
+Start times and durations are preserved, and one Undo restores the layout and preference.
+**T** tidies only the selection without enabling ongoing spacing. With AUTO-SPACE on,
+a small invisible gutter separates intersecting cards. Group moves preserve relative
+times and positions, shifting the whole group sideways when necessary. Shift-dragging a
 tile duplicates the selection, keeping its relative timing, spacing and playback
 settings. The originals stay in place. A click without movement creates no copies;
 one Undo removes the copied group. If there is not enough capacity for the whole
-group, nothing is copied. Alt retains optional time alignment during a move or resize. A dashed waveform
+group, nothing is copied. Hold Alt **after starting** a drag for optional time alignment during a move or resize. A dashed waveform
 ghost marks the original position while moving. Events may meet exactly end to end. There are no tracks,
 beats or mandatory snapping. Click an unselected event to return to a single
 selection. Selected tiles and Sources previews use the bright red highlight color by default. Muted events and events excluded by
@@ -101,7 +196,35 @@ Tiles that meet end to end share the same drawn boundary. The time ruler and its
 labels scroll with the grid, keeping their alignment with the tiles.
 Overview drawing reuses cached 2,048-bin peak/RMS envelopes; close zoom reads
 actual sample ranges instead of enlarging those bins. Source thumbnails cache
-extrema at their displayed width. None of this analysis runs in the audio callback. **REPEAT** repeats the complete arrangement at its last event.
+extrema at their displayed width. None of this analysis runs in the audio callback.
+
+## Loop a passage
+
+**Shift-drag the vertical time ruler** to select a passage. Drag either end handle
+to refine it; the status line shows start, end and duration in seconds. Card selection
+is independent. **Shift+L** sets the range to the earliest start and latest end of
+selected cards, including gaps between them. Press **L** or **REPEAT** to loop it.
+Selecting a range does not start playback or enable Repeat; **Space** plays/pauses.
+
+**Double-click the ruler** to enter exact start/end times in seconds. Tab switches
+fields, Ctrl+A clears the current field for replacement, Enter applies, and Escape
+cancels. A range must be at least 0.001 seconds long, within 0–1,000,000 seconds.
+The dialog also shows its duration. Drag previews do not affect playback until
+release; Escape or loss of window focus cancels a drag. FOLLOW pauses during dragging.
+
+**Right-click the highlighted ruler range** to clear it. Repeat then uses the whole
+arrangement again. Toggling Repeat off keeps the range for later. Range edits,
+clearing and Repeat changes support Ctrl+Z/Ctrl+Y. The range and Repeat setting save
+with the project; earlier project formats open with no time range.
+
+With range Repeat on, playback stays within that range, including any selected
+silence after the last card. Starting outside it begins at the range start.
+Crossing cards resume at the correct elapsed source position on each wrap, with
+short audio smoothing on the Mosaic bus and custom routes. The volume envelope
+keeps its position relative to the entire arrangement; it is not stretched to the
+loop selection. STOP/Escape still stop and rewind to zero without clearing the range.
+
+![Mosaic time range](screenshots/mosaic-performance/loop-range.png)
 
 ## Arrangement volume envelope
 
@@ -139,7 +262,7 @@ The status message explains when Repeat already links the endpoints or a ramp
 is flat because the endpoint levels are equal.
 
 Each stroke or tool action is one undo step. **Escape** cancels a stroke, and
-Ctrl+Z / Ctrl+Y undo and redo it. The curve was introduced in Mosaic format 4; current saves use format 6; older
+Ctrl+Z / Ctrl+Y undo and redo it. The curve was introduced in Mosaic format 4; current saves use format 12; older
 arrangements open with a flat, full-level envelope. Failed loads leave the current
 arrangement intact.
 
@@ -409,9 +532,33 @@ containing Mosaic fails to load if its arrangement file is missing, preserving
 the current session. Transport position and editor/arrangement undo history
 are session state.
 
-The initial capacity is 128 events, with five voices per event. This is a storage
-limit, not a promise that every machine can run 640 voices plus all global
-processing simultaneously. DISTSHIFT and further CDP expansion are unchanged.
+Capacity is 1,024 cards, with up to five notes per card. Copies share their source
+audio. The playback schedule is prepared once per audio buffer, then visits active
+cards and upcoming starts. Total arrangement length/card count and simultaneous
+playback load are separate: dense overlaps and effects still use more CPU.
+Ordinary sample interiors and settled per-card routes to the Mosaic bus use
+shorter playback paths; loop splices and route changes retain their smoothing.
+Scatter can still leave many cards sounding together. Performance validation
+includes staggered cards with Matrix routing enabled, as well as aligned rows.
+F12 Audio Health reports total cards, cards at the running playhead, and their
+assigned note count. The latter includes muted cards and finished one-shots;
+it describes scheduled work rather than detected sound.
+
+Undo retains 32 steps in a circular history, avoiding a full-history shift when
+it fills. Source-browser lookup and source cleanup also scale with larger projects.
+Group drags and arrow nudges calculate snapping/spacing before taking the audio
+lock, then publish the finished placement together. Copy drags skip redundant
+per-card spacing. Project opening decodes banks and Mosaic sources before locking
+audio and frees retired samples afterwards; publication resets transport/history
+without copying the unused undo backing store. File/manifest preparation failures
+leave the current project intact. Runtime/effect setup still needs a locked step.
+Existing Mosaic formats (1–12) remain readable; the saved format stays at 12.
+Older builds capped at 128 cards cannot load projects containing more than 128.
+Wide Auto-Space layouts also require a build with the expanded horizontal range;
+earlier loaders reject cards past position 100,000. Current builds preserve those
+positions when opening the original project, with no repair or resave needed.
+See [performance validation](validation/mosaic-scheduling.md) for benchmark scope
+and regression coverage.
 
 ## Performance update acceptance
 
@@ -487,3 +634,29 @@ bottom right to remove custom routes. The bus appears alongside the cards.
 For quieter QWERTY soloing over the arrangement, open **F11** and lower **Live Tiles**.
 Cards reference audio copies in the arrangement, so that live trim leaves the
 backing intact.
+
+## Audition, selection and Scatter
+
+![Scatter preview](screenshots/mosaic-performance/scatter.png)
+
+**A** auditions the last-selected card from its beginning, at its assigned note or chord,
+through its existing output route. Loop settings, pitch, gain, pan and fades are retained;
+arrangement mute/solo flags are bypassed for the preview. The arrangement playhead and
+play/pause state stay unchanged. Press A again, STOP, or Escape to end the audition.
+
+**Shift+A** selects every card sharing that source. Selecting does not change settings.
+Adjusting LEVEL, PAN, IN or OUT then assigns the edited value across the selection;
+Undo restores each card's original value. Fades are limited to each card's duration.
+
+**Ctrl+R** opens Scatter for the selected cards. Alternatively, Ctrl-click one or more
+Sources (including across bank pages), then press Ctrl+R to create copies from them.
+Set a range of **start times in seconds**, choose Move Selection or Create Copies,
+set the copy count, and choose even scattering or clusters. Cards may extend beyond
+the end of the start-time range. Overlap off separates cards horizontally without
+changing the generated times. Overlap on permits visual intersections and turns off
+AUTO-SPACE when applied.
+
+Click a numeric field to edit it; Ctrl+A clears the field, Enter accepts it, and
+Escape cancels the dialog. **Reroll** changes only the preview. **Apply** commits the
+whole operation as one undo step, including any spacing preference change. Cancel
+leaves the arrangement untouched. The 1,024-card limit is checked before applying.

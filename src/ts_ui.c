@@ -3007,7 +3007,7 @@ static void live_input_render(TsFramebuffer *fb, const TsUiState *ui)
 int ts_ui_foreground_panel_open(const TsUiState *ui)
 {
     if (ui == NULL) return 0;
-    return ui->router_open || ui->master_eq_open || ui->mosaic_edit_choice || ui->portal.open || ui->exit_confirm_open || ui->project_overwrite_confirm_open ||
+    return ui->router_open || ui->master_eq_open || ui->mosaic_align_open || ui->mosaic_loop_open || ui->mosaic_scatter_open || ui->mosaic_spacing_confirm || ui->mosaic_edit_choice || ui->portal.open || ui->exit_confirm_open || ui->project_overwrite_confirm_open ||
            ui->overdub_confirm_open || ui->fm_open ||
            ui->transform_open || ui->drone_open || ui->import_preview_open ||
            ui->exchange_dialog != TS_UI_EXCHANGE_NONE ||
@@ -5500,7 +5500,7 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                         ts_sister_grain_size_ms(slot->parameter_a));
                     snprintf(b, sizeof(b), "DENS %.1f",
                         ts_sister_grain_density_hz(slot->parameter_b));
-                    snprintf(c, sizeof(c), "PITCH %+.0f",
+                    snprintf(c, sizeof(c), "PITCH %+.1f",
                         ts_sister_grain_pitch_semitones(slot->parameter_c));
                     sister_value_parameter_state(fb, 156 + field_step,
                         top + 4, field_width, a, slot->parameter_a, color,
@@ -5543,6 +5543,24 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
             sister_target_toggle(fb, 268, top + 26, 46, "POST",
                 slot->placement & TS_SISTER_FX_PLACE_POST, PAL_WAVE_RIGHT);
             text(fb, 330, top + 31, description, PAL_MOUSE, 1);
+            if(slot->type==TS_SISTER_FX_GRAIN) {
+                const TsGrainStates *bank=&slot->grain_states;
+                for(int state=0;state<TS_GRAIN_STATES;++state) {
+                    int active=bank->selected==state+1,stored=(bank->captured&(1u<<state))!=0;
+                    uint32_t fill=stored?RGB(48,88,65):RGB(70,68,75);
+                    if(active && stored)fill=RGB(74,193,108);
+                    if(active && bank->editing)fill=RGB(67,135,222);
+                    if(active && ts_grain_state_changed(slot))fill=RGB(229,165,58);
+                    int left=392+state*22;
+                    rect(fb,left,top+26,18,18,active?PAL_TEXT:PAL_DESKTOP);
+                    rect(fb,left+2,top+28,14,14,fill);
+                    if(stored && !active)rect(fb,left+7,top+33,4,4,RGB(110,190,140));
+                }
+                char glide[24];snprintf(glide,sizeof(glide),"GLIDE %.1FS",bank->seconds);
+                text(fb,510,top+28,glide,PAL_MOUSE,1);
+                rect(fb,508,top+40,112,3,PAL_DESKTOP);
+                rect(fb,508,top+40,(int)(112*log1pf(bank->seconds*10)/logf(6001.f)),3,PAL_NOTE);
+            }
             if (row > 0) button(fb, 542, top + 4, 36, "UP", 0);
             if (row + 1 < model->parameters.fx.slot_count) button(fb, 584, top + 4, 36, "DN", 0);
         }
