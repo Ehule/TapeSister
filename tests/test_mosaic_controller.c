@@ -87,6 +87,7 @@ static void wait_render(void);
 #include "test_mosaic_performance_edit.inc"
 #include "test_mosaic_scatter_pitch.inc"
 #include "test_mosaic_navigation.inc"
+#include "test_mosaic_edge_scroll.inc"
 #include "test_mosaic_loop_controls.inc"
 #include "test_mosaic_selection.inc"
 #include "test_mosaic_copy_gestures.inc"
@@ -427,7 +428,7 @@ int main(int argc,char **argv)
     if(argc>1 && !strcmp(argv[1],"--copy-drag")) {test_mosaic_copy_gestures(window);test_mosaic_group_staging();goto done;}
     if(argc>1 && !strcmp(argv[1],"--large-mosaic")) {test_mosaic_large_browser();goto done;}
     if(argc>1 && !strcmp(argv[1],"--loop")) {test_mosaic_loop_controls(window);goto done;}
-    if(argc>1 && !strcmp(argv[1],"--navigation")) {test_mosaic_navigation(window);goto done;}
+    if(argc>1 && !strcmp(argv[1],"--navigation")) {test_mosaic_navigation(window);test_mosaic_edge_scroll(window);test_mosaic_save_view(window);goto done;}
     TsMosaicSource *source=ts_mosaic_source(ui.mosaic,&instrument.current,error,sizeof(error));assert(source);
     TsMosaicEvent *a=ts_mosaic_add(ui.mosaic,source,0,0);a->duration=6;
     TsMosaicEvent *b=ts_mosaic_copy(ui.mosaic,a->id,.25,105);b->duration=9;
@@ -472,7 +473,7 @@ int main(int argc,char **argv)
     ts_mosaic_volume_action(ui.mosaic,TS_MOSAIC_ENV_RESET);
     test_mosaic_performance_edit(window);
     test_mosaic_scatter_pitch(window);
-    test_mosaic_navigation(window);
+    test_mosaic_navigation(window);test_mosaic_edge_scroll(window);test_mosaic_save_view(window);
     test_mosaic_loop_controls(window);
     test_mosaic_selection(window);
     test_mosaic_copy_gestures(window);test_mosaic_group_staging();

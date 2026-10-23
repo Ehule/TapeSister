@@ -57,7 +57,11 @@ See the [complete editing reference](SISTERTRACKER_PLAYBACK.md).
 
 ## Mosaic
 
-Navigation: **Shift+Z** fits all; **Z** fits selection/returns; **F** toggles FOLLOW;
+**Ctrl+S / SAVE** opens the save dialog over Mosaic and preserves the working view.
+Drag selected cards at either horizontal edge to scroll with them; Shift-drag copies
+work too. Release stops scrolling; Escape cancels the single undoable move.
+
+Navigation: **Shift+Z** fits the occupied card bounds; **Z** fits selection/returns; **F** toggles FOLLOW;
 **H** shows the playhead without seeking; **Page Up/Down** move about one screen;
 **middle-drag** pans (middle-click seeks on release). Fit, page moves, panning and view recall turn FOLLOW
 off. The five numbered buttons beneath Sources save views with the project:

@@ -22,6 +22,20 @@ static void test_mosaic_navigation(SDL_Window *window)
     scene->playing=1;scene->time=600;int history=scene->history_count;
     key(window,SDLK_z,KMOD_SHIFT);assert(ui.mosaic_scroll==0 && fabs(ui.mosaic_scale-300./1440)<1e-9);
     assert(!ui.mosaic_follow && ui.mosaic_hscale==1);
+    /* Empty space before offset cards must not squash them against the right.
+       Fit preserves all timing, placement, selection and history. */
+    a->x=6000;b->x=6110;
+    TsMosaicEvent offset_a=*a,offset_b=*b;
+    click(window,TS_MOSAIC_FIT_X+4,45,1);
+    double center=(151+TS_MOSAIC_CANVAS_RIGHT)*.5;
+    assert(fabs(151+((a->x+b->x+b->width)*.5-ui.mosaic_xscroll)*ui.mosaic_hscale-center)<1e-9);
+    assert(ui.mosaic_hscale==1 && scene->time==600 && scene->playing);
+    assert(scene->history_count==history && ui.mosaic_selected==a->id);
+    assert(!memcmp(a,&offset_a,sizeof(*a)) && !memcmp(b,&offset_b,sizeof(*b)));
+    b->x=15000;key(window,SDLK_z,KMOD_SHIFT);
+    assert(fabs(151+(a->x-ui.mosaic_xscroll)*ui.mosaic_hscale-163)<1e-9);
+    assert(fabs(151+(b->x+b->width-ui.mosaic_xscroll)*ui.mosaic_hscale-(TS_MOSAIC_CANVAS_RIGHT-12))<1e-9);
+    *a=before_a;*b=before_b;
     key(window,SDLK_f,KMOD_NONE);assert(ui.mosaic_follow);
     key(window,SDLK_f,KMOD_NONE);assert(!ui.mosaic_follow);
     ui.mosaic_scale=2;ui.mosaic_hscale=.5;ui.mosaic_xscroll=300;

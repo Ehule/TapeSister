@@ -835,6 +835,11 @@ visually at the C4 reference speed, while the chord voices follow their own rate
 
 **Z** fits the selected cards and returns to the previous view. **H** centers the
 playhead in the view without seeking; **Page Up/Down** move by about one screen.
+FIT ALL frames the occupied card bounds, excluding empty horizontal space before
+the arrangement. Dragging selected cards at the left/right canvas edge scrolls
+with the group, including Shift-drag copies; release stops and Escape cancels the
+single undoable move. Ctrl+S and header SAVE keep Mosaic open behind the save dialog
+and retain its zoom, scroll and selection after saving or cancelling.
 Middle-drag pans freely; a middle-click still seeks on release. Fit, page navigation,
 panning, and recalling a view turn FOLLOW off; press **F** to resume it.
 

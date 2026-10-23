@@ -137,7 +137,14 @@ Time-range and Scatter number fields show a **blinking cursor** while editing.
 ![Primary and secondary Mosaic selection](screenshots/mosaic-performance/primary-selection.png)
 
 Navigation changes the view while playback and card selection continue. **Shift+Z**
-fits the whole arrangement; **Z** fits the selection and returns on the next press.
+fits the whole arrangement, framing the cards' horizontal bounds instead of empty
+space before them; **Z** fits the selection and returns on the next press.
+Dragging selected cards into either horizontal canvas edge scrolls the view while
+you hold there. Scrolling speeds up nearer the edge and works for Shift-drag copies.
+The group keeps its spacing; the entire drag remains one undo step. Release stops
+scrolling, and Escape cancels the move. The left edge stops at the layout origin.
+**Ctrl+S** and the header **SAVE** button show the save browser or overwrite dialog
+over Mosaic. Saving or cancelling keeps the workspace, zoom, scroll and selection.
 **H** centers the playhead in the view. **Page Up/Down** move by about 90% of a
 screen, leaving some overlap for orientation. Holding a page key repeats the move.
 Fit, page navigation, panning, and recalling a saved view turn FOLLOW off so the

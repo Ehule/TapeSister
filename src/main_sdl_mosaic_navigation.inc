@@ -2,12 +2,18 @@
    press is held until release so grabbing the canvas cannot accidentally seek. */
 static void mosaic_fit_all(TsUiState *ui,MosaicController *c)
 {
-    double right=0;
-    for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(ui->mosaic->events[i].id)
-        right=fmax(right,ui->mosaic->events[i].x+ui->mosaic->events[i].width);
+    double left=TS_MOSAIC_LAYOUT_LIMIT,right=0;int count=0;
+    for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(ui->mosaic->events[i].id) {
+        const TsMosaicEvent *e=&ui->mosaic->events[i];
+        left=fmin(left,e->x);right=fmax(right,e->x+e->width);++count;
+    }
+    double width=TS_MOSAIC_CANVAS_RIGHT-151;
     ui->mosaic_scale=fmin(1200,300/fmax(.25,ts_mosaic_end(ui->mosaic)));
-    ui->mosaic_hscale=fmin(1,(TS_MOSAIC_CANVAS_RIGHT-151)/fmax(1,right));
-    ui->mosaic_scroll=ui->mosaic_xscroll=0;ui->mosaic_follow=0;c->zoom_saved=0;
+    ui->mosaic_hscale=count?fmin(1,(width-24)/fmax(1,right-left)):1;
+    /* Fit the occupied span, not the empty distance from the origin. Keep
+       the normal left boundary when centering would show negative layout. */
+    ui->mosaic_xscroll=count?fmax(0,(left+right-width/ui->mosaic_hscale)*.5):0;
+    ui->mosaic_scroll=0;ui->mosaic_follow=0;c->zoom_saved=0;
 }
 static int mosaic_navigation_event(const SDL_Event *event,SDL_AudioDeviceID device,
     TsUiState *ui,MosaicController *c,int x,int y,SDL_Keymod mod)
