@@ -907,6 +907,7 @@ static void suspended_tracker_refresh(void) {
 #include "test_tracker_channel_count.inc"
 #include "test_tracker_project_load.inc"
 #include "test_tracker_realtime.inc"
+#include "test_mosaic_patterns.inc"
 
 int main(int argc,char **argv) {
     SDL_SetHint(SDL_HINT_VIDEODRIVER,"dummy");assert(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER));
@@ -932,6 +933,7 @@ int main(int argc,char **argv) {
     press(SDLK_F10,SDL_SCANCODE_F10,KMOD_NONE);assert(test_ui->tracker_open&&test_ui->tracker_embedded_frame);
     assert(test_pages->tracker.embedded_size && ts_sister_tracker_validate(&test_pages->tracker,test_error,sizeof(test_error)));
     if(getenv("TS_TEST_TRACKER_REALTIME")) {tracker_realtime();return 0;}
+    if(getenv("TS_TEST_MOSAIC_PATTERNS")) {mosaic_patterns();return 0;}
     tile_level_parity();
     press(SDLK_z,SDL_SCANCODE_Z,KMOD_NONE);assert(pat()->cells[0][0].note_kind==TS_TRACKER_NOTE_PITCH);
     assert(pat()->cells[0][0].tile_id==tile);assert(test_pages->tracker.editor_row==1);

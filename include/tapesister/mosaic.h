@@ -2,6 +2,7 @@
 #define TAPESISTER_MOSAIC_H
 
 #include "tapesister/audition.h"
+#include "tapesister/pattern_card.h"
 #include "tapesister/source_route.h"
 
 #define TS_MOSAIC_EVENTS 1024
@@ -60,6 +61,7 @@ typedef enum {
    source allocation, collection, project IO and editor work stay on the UI thread. */
 typedef struct TsMosaicSource {
     TsSample sample,eq_dry;
+    TsPatternCard *pattern;
     TsMasterEqControls eq;
     uint64_t hash,eq_dry_hash;
     unsigned pins;
@@ -84,7 +86,7 @@ typedef struct {
 } TsMosaicEvent;
 
 typedef struct {
-    uint64_t id, revision;
+    uint64_t id, revision, generation;
     double start;
     double position[TS_MOSAIC_NOTES], step[TS_MOSAIC_NOTES], travel[TS_MOSAIC_NOTES];
     int direction[TS_MOSAIC_NOTES], intro[TS_MOSAIC_NOTES];
@@ -112,6 +114,7 @@ typedef struct {
 } TsMosaicSchedule;
 
 typedef struct TsMosaic {
+    void *pattern_engine;
     TsMosaicEvent events[TS_MOSAIC_EVENTS];
     TsMosaicVoice voices[TS_MOSAIC_EVENTS];
     TsMosaicEvent history[TS_MOSAIC_HISTORY][TS_MOSAIC_EVENTS];
@@ -165,6 +168,9 @@ void ts_mosaic_checkpoint(TsMosaic *m);
 int ts_mosaic_undo(TsMosaic *m, int redo);
 TsMosaicEvent *ts_mosaic_add(TsMosaic *m, TsMosaicSource *source,
                             double start, double x);
+/* Preflight bulk inserts under the audio lock, before checkpoint/publication.
+   Extra is the number of new pattern cards; failure leaves the document intact. */
+int ts_mosaic_reserve_patterns(TsMosaic *m, int extra);
 TsMosaicEvent *ts_mosaic_copy(TsMosaic *m, uint64_t id, double start, double x);
 /* Group placement resolves spacing once for the rigid selection afterwards. */
 TsMosaicEvent *ts_mosaic_copy_unspaced(TsMosaic *m, uint64_t id, double start, double x);

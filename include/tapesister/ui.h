@@ -571,7 +571,9 @@ typedef struct {
     int mosaic_spacing_confirm, mosaic_scatter_open, mosaic_scatter_copies;
     int mosaic_scatter_cluster, mosaic_scatter_overlap, mosaic_scatter_count, mosaic_scatter_valid;
     int mosaic_scatter_field;
-    int mosaic_scatter_keep_positions;
+    int mosaic_scatter_keep_positions, mosaic_scatter_page;
+    /* Preview recipe only; applied values live in ordinary card mix fields. */
+    struct { int mode; double low, high; } mosaic_scatter_mix[3]; /* IN, OUT, PAN; KEEP/SET/RANDOM. */
     TsMosaicPitchSettings mosaic_scatter_pitch;
     double mosaic_scatter_start, mosaic_scatter_end;
     char mosaic_scatter_text[32], mosaic_scatter_status[80];
@@ -591,6 +593,7 @@ typedef struct {
         int bank_slot, bank_page;
         uint64_t hash;
     } mosaic_sources[TS_MOSAIC_EVENTS + TS_BANK_SLOT_COUNT];
+    int mosaic_pattern_tab;
     int mosaic_source_count, mosaic_source_page, mosaic_source_selected;
     int mosaic_bank_count, mosaic_source_pages, mosaic_source_offset;
     double mosaic_time, mosaic_scroll, mosaic_xscroll, mosaic_scale, mosaic_hscale;

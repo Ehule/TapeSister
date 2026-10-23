@@ -11,6 +11,7 @@
 #include "ft2_video.h"
 #include "ft2_gui.h"
 #include "ft2_audio.h"
+#include "ts_pattern_instance.h"
 #include "ft2_bmp.h"
 #include "ft2_config.h"
 #include "ft2_palette.h"
@@ -205,8 +206,8 @@ void ts_tapehead_mix_tile(void *ptr,unsigned offset,unsigned count) {
         route=embed.tile_routes[v->tileRouteIndex];
     if(v->tileLane>=0 && v->tileLane<TS_TRACKER_LANES)
         route=ts_source_route_resolve(route,embed.track_routes[v->tileLane]);
-    ts_source_route_set(&v->tileRouting,route,embed.rate);
-    if(v->tileRouting.mask || v->tileRouting.main!=1 || v->tileRouting.remaining || route.pan || route.width)embed.clean_used=1;
+    if(!tapeheadPatternContext)ts_source_route_set(&v->tileRouting,route,embed.rate);
+    if(!tapeheadPatternContext && (v->tileRouting.mask || v->tileRouting.main!=1 || v->tileRouting.remaining || route.pan || route.width))embed.clean_used=1;
     for(unsigned i=0;i<count && v->active;++i) {
         TsStereoFrame value;
         if(v->loopType!=LOOP_DISABLED && !v->oneShot) {
@@ -221,8 +222,10 @@ void ts_tapehead_mix_tile(void *ptr,unsigned offset,unsigned count) {
            note/global volume, envelopes and ramps (including fade voices). */
         const float center_gain=1.41421356237f;
         value.l*=v->fCurrVolumeL*center_gain;value.r*=v->fCurrVolumeR*center_gain;
-        embed.clean[offset+i].available=embed.route_available;embed.clean[offset+i].check_outputs=embed.route_check;
-        value=ts_source_route_frame(&v->tileRouting,value,&embed.clean[offset+i]);
+        if(!tapeheadPatternContext) {
+            embed.clean[offset+i].available=embed.route_available;embed.clean[offset+i].check_outputs=embed.route_check;
+            value=ts_source_route_frame(&v->tileRouting,value,&embed.clean[offset+i]);
+        }
         audio.fMixBufferL[offset+i]+=value.l;
         audio.fMixBufferR[offset+i]+=value.r;
         if(v->volumeRampLength) {
@@ -236,6 +239,7 @@ void ts_tapehead_mix_tile(void *ptr,unsigned offset,unsigned count) {
         v->position=(int)v->tilePosition;
         v->positionFrac=(uint64_t)((v->tilePosition-floor(v->tilePosition))*4294967296.0);
     }
+    if(tapeheadPatternContext)return;
     float source=v->tileRouting.activity_source,send=v->tileRouting.activity_send;
     if(v->tileLane>=0 && v->tileLane<TS_TRACKER_LANES) {
         TsRouteActivity *a=&embed.track_activity[v->tileLane];
@@ -383,6 +387,7 @@ static void menu(void) {
 void ts_tapehead_host_redraw(void) {menu();}
 
 int ts_tapehead_init(const TsTapeHeadHost *host,unsigned rate,char *error,size_t size) {
+    ts_tapehead_pattern_install();
     if(embed.initialized)return 1;
     memset(&embed,0,sizeof(embed));atomic_init(&embed.ready,0);
     embed.host=*host;embed.host_cursor=SDL_GetCursor();embed.host_cursor_visible=SDL_ShowCursor(SDL_QUERY);embed.rate=rate?rate:48000;
@@ -1088,4 +1093,10 @@ int ts_tapehead_transport_locked(int command)
     resetSyncQueues();audio.resetSyncTickTimeFlag=true;
     ui.updatePosSections=ui.updatePatternEditor=true;
     return 1;
+}
+
+int ts_tapehead_select_pattern(TsPatternId id) {
+    if(!embed.initialized)return 0;
+    for(int i=0;i<256;++i)if(embed.ids[i]==id){embed.follow=0;editor.editPattern=editor.tmpPattern=i;editor.row=0;ui.updatePatternEditor=true;return 1;}
+    return 0;
 }

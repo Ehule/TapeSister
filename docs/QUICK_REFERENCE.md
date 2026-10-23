@@ -137,6 +137,12 @@ does not switch the main bank. See the [Mosaic chapter](USER_MANUAL.md#mosaic).
 | Follow the growing take, including with playback stopped | Enable FOLLOW |
 | Discard an active Mosaic take | Escape in the arrangement after finishing any active gesture |
 
+**Ctrl+R → Fades / Pan:** Keep, Set, or Random independently for IN, OUT and PAN.
+Use Set for matching fades or pan; Random assigns values within a min/max range.
+Fades use seconds; pan uses −100 (left), 0 (center), +100 (right). Opening this
+page directly keeps the selected arrangement in place. Roll Fades / Pan preserves
+positions and notes; Apply is one Undo step. [Details](MOSAIC.md#scatter-fades-and-pan).
+
 **Ctrl+R pitch:** Keep Notes / Chord per Card / Spread Chord / Spread Scale.
 Click or wheel root, chord/scale, octave bounds and distribution; Shift-click goes
 backward. **Roll Notes** rerolls Random/Shuffled without moving cards; **Roll

@@ -222,7 +222,7 @@ static void test_storage(void)
         FILE *current=fopen("mosaic-storage-test/mosaic.tsm","r"),*old=fopen("mosaic-storage-test/old.tsm","w");assert(current && old);
         char record[1024];assert(fgets(record,sizeof(record),current));fprintf(old,"TAPESISTER_MOSAIC %d\n",version);
         while(fgets(record,sizeof(record),current)) {
-            if(!strncmp(record,"LOOP ",5) || (version<11 && !strncmp(record,"VIEW ",5)) || (version<10 && !strncmp(record,"SPACING ",8)))continue;
+            if(!strncmp(record,"PATTERN ",8) || !strncmp(record,"LOOP ",5) || (version<11 && !strncmp(record,"VIEW ",5)) || (version<10 && !strncmp(record,"SPACING ",8)))continue;
             if(!strncmp(record,"ROUTE ",6)) {
                 record[strcspn(record,"\r\n")]=0;
                 for(int i=destinations;i<TS_MATRIX_DESTINATIONS;++i){char *last=strrchr(record,' ');assert(last);*last=0;}
@@ -249,7 +249,7 @@ static void test_storage(void)
     for(int i=0;i<TS_MOSAIC_VIEWS;++i)assert(fgets(lines[2],sizeof(lines[2]),old) && !strncmp(lines[2],"VIEW ",5));
     assert(fgets(lines[2],sizeof(lines[2]),old) && !strncmp(lines[2],"LOOP ",5));
     for(int i=0;i<=TS_MOSAIC_ENVELOPE_POINTS;++i)assert(fgets(lines[2],sizeof(lines[2]),old));
-    for(int i=2;i<4;++i){assert(fgets(lines[i],sizeof(lines[i]),old));char route[1024];assert(fgets(route,sizeof(route),old));assert(fgets(route,sizeof(route),old));}fclose(old);
+    for(int i=2;i<4;++i){assert(fgets(lines[i],sizeof(lines[i]),old) && !strncmp(lines[i],"PATTERN ",8));assert(fgets(lines[i],sizeof(lines[i]),old));char route[1024];assert(fgets(route,sizeof(route),old));assert(fgets(route,sizeof(route),old));}fclose(old);
     for(int version=3;version>=1;--version) {
         old=fopen("mosaic-storage-test/mosaic.tsm","w");assert(old);
         fprintf(old,"TAPESISTER_MOSAIC %d\nSETTINGS 0 0.7%s\n",version,version==3?" 1.5":"");

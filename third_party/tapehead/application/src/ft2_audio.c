@@ -39,7 +39,13 @@ static uint32_t oldAudioFreq, tickTimeLenInt, randSeed = INITIAL_DITHER_SEED;
 static uint64_t tickTimeLenFrac;
 static float fSqrtPanningTable[256+1], fAudioNormalizeMul;
 static float fPrngState[TAPEHEAD_MAX_OUTPUT_BUSES * 2];
-static voice_t voice[MAX_CHANNELS * 2];
+static voice_t mainVoices[MAX_CHANNELS * 2];
+static voice_t *voice=mainVoices;
+#ifdef TAPEHEAD_EMBEDDED
+extern bool tapeheadPatternContext;
+#else
+#define tapeheadPatternContext false
+#endif
 #define SAMPLE_LAUNCHER_AUDIO_VOICES 5
 static voice_t sampleLauncherVoice[SAMPLE_LAUNCHER_AUDIO_VOICES];
 static voice_t diskOpPreviewVoice;
@@ -660,11 +666,11 @@ void updateVoices(void)
 			** allowing the waveform to keep moving underneath the red X.
 			*/
 			float matrixGain = 1.0f;
-			if (polyMatrixOwnsDestination(i))
+			if (!tapeheadPatternContext && polyMatrixOwnsDestination(i))
 				matrixGain = matrixPolyGain * (1.0f / 256.0f);
-			else if (patternLauncherOwnsDestination(i))
+			else if (!tapeheadPatternContext && patternLauncherOwnsDestination(i))
 				matrixGain = matrixQGain * (1.0f / 256.0f);
-			v->fVolume = performanceMute[i] ? 0.0f :
+			v->fVolume = (!tapeheadPatternContext && performanceMute[i]) ? 0.0f :
 				ch->fFinalVol * matrixGain;
 			v->scopeVolume = (uint8_t)((ch->fFinalVol * (SCOPE_HEIGHT*4.0f)) + 0.5f);
 		}
@@ -2528,3 +2534,5 @@ bool tapeheadEmbeddedTileInUse(const float *data)
     return diskOpPreviewVoice.active && diskOpPreviewVoice.tileData==data;
 }
 #endif
+
+#include "ts_pattern_audio.inc"

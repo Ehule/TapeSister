@@ -109,9 +109,19 @@ the pending audio result and returns to Mosaic, while **KEEP EDITING** leaves it
 open. Copies share source audio until an edit creates a new version. Sources
 browses all Sample banks and the event audio versions.
 
+The **PATTERN** source tab also exposes TrackSister patterns, including XM imports.
+Audition and drag them into Mosaic alongside audio cards. Each card plays an
+immutable pattern snapshot with independent clocks, effects, and voices; copies
+can overlap and transpose without changing the source notes. Pattern cards share
+the fade handles, pan centerline, routing, and arrangement controls. Double-click
+opens the original pattern editor; edits affect new drags. See
+[pattern-card ownership, timing, and validation](docs/mosaic-pattern-cards.md).
+
 A auditions the selected card at its assigned notes. Z fits the selection; Ctrl+A
 selects all cards and Shift+A selects all instances of the current source. Ctrl+R
-opens Scatter with preview, reroll and one-step undo. AUTO-SPACE optionally separates
+opens Scatter with preview, reroll and one-step undo. Its **Fades / Pan** page can
+assign matching values or random ranges across selected audio and pattern cards,
+keeping their positions and pitches. AUTO-SPACE optionally separates
 intersecting cards horizontally; new arrangements default to free placement.
 
 Shift-drag a box to select a group; drag to move it or Shift-drag a selected tile to
@@ -379,6 +389,8 @@ and loop metadata for extraction or interchange.
 
 Mosaic's layout is stored in `project-data/mosaic.tsm`; its shared source versions
 are lossless 32-bit float `mosaic-000.wav`, etc., in the same directory.
+Pattern snapshots additionally store `pattern-*.score`, `.cells`, `.assets`, and
+lossless float WAV assets there.
 
 Move, share, or back up the complete named folder. The persistent `Captures/` archive
 remains outside projects by design.

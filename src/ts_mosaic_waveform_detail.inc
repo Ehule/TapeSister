@@ -34,7 +34,7 @@ static void mosaic_detail_envelope(const TsMosaicSource *s,size_t first,size_t l
    peaks grow and shrink during scrolling. Only visible rows are queried. */
 static void mosaic_detail_event_row(const TsMosaicEvent *e,int64_t row,double rate,float *peak,float *rms)
 {
-    double duration=(double)(e->last-e->first)/e->source->sample.sample_rate;
+    double duration=e->source->pattern?e->source->pattern->duration:(double)(e->last-e->first)/e->source->sample.sample_rate;
     double elapsed=fmax(0,(double)row/rate),span=1/rate;
     *peak=*rms=0;
     if(!e->looping && elapsed>=duration)return;
@@ -99,12 +99,18 @@ static void mosaic_detail_card(TsUiWaveformDetail *d,const TsUiState *ui,
     int last=(int)fmax(0,fmin(d->height,(double)bottom-mosaic_detail_pixel(14*sy)));
     double a=fmax(0,(double)x+2*bx),b=fmin(d->width,(double)right-2*bx);
     double center=x+w*.5,half=fmax(0,(w-14*sx)*.43);
-    double duration=(double)(e->last-e->first)/e->source->sample.sample_rate;
+    double duration=e->source->pattern?e->source->pattern->duration:(double)(e->last-e->first)/e->source->sample.sample_rate;
     if(duration>0 && b>a)for(int py=first;py<last;++py) {
         int64_t row=py-y;
         if(ghost && ((int64_t)(row/sy)&1))continue;
         double elapsed=(double)row/rate;
         if(!e->looping && elapsed>=duration)continue;
+        if(e->source->pattern){
+            const TsPatternCard *p=e->source->pattern;int source_row=(int)(fmod(elapsed,duration)*p->score.bpm/(2.5*p->score.ticks_per_line));
+            if(source_row<p->score.patterns[0]->rows)for(int l=0;l<p->score.channel_count;++l){int note=p->cells[source_row][l][0];if(note>0 && note<=96){int64_t nx=x+mosaic_detail_pixel((5+(note-1)*(e->width-14)/96)*sx*horizontal);mosaic_detail_rect(d,nx,py,nx+4*bx,py+1,color);}}
+            if(e->looping && 1/scale<duration && fmod(elapsed,duration)<1/scale)mosaic_detail_span(d,py,fmax(a,x+4*sx),fmin(b,right-4*sx),mosaic_mix_color(color,fill,.75f));
+            continue;
+        }
         float peak,rms;mosaic_detail_event_row(e,row,rate,&peak,&rms);
         double amplitude=fminf(1,peak)*half,body=fminf(1,rms)*half;
         mosaic_detail_span(d,py,fmax(a,center-amplitude-.5),fmin(b,center+amplitude+.5),outer);
@@ -144,7 +150,9 @@ static void mosaic_detail_card(TsUiWaveformDetail *d,const TsUiState *ui,
     if(chars>0 && h>=mosaic_detail_pixel(25*sy)) {
         char notes[40]="",note[8];
         for(int n=0;n<e->note_count;++n) {
-            size_t used=strlen(notes);snprintf(notes+used,sizeof(notes)-used,"%s%s",n?" ":"",ts_midi_note_name(e->notes[n],note,sizeof(note)));
+            size_t used=strlen(notes);
+            if(e->source->pattern)snprintf(notes+used,sizeof(notes)-used,"%s%+dST",n?" ":"",e->notes[n]-60);
+            else snprintf(notes+used,sizeof(notes)-used,"%s%s",n?" ":"",ts_midi_note_name(e->notes[n],note,sizeof(note)));
         }
         snprintf(label,sizeof(label),"%.*s",chars,notes);
         mosaic_detail_text(d,tx,y+mosaic_detail_pixel(14*sy),label,dim?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(66,64,75)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DIM, RGB(156,147,165)),sx,sy);
@@ -237,6 +245,17 @@ static void mosaic_detail_sources(TsFramebuffer *fb,const TsUiState *ui,double i
         int first=(int)((x+4)*sx),last=(int)((x+39)*sx);
         int top=source_y+(int)((y+15)*sy),bottom=source_y+(int)((y+26)*sy);
         int width=last-first,bins=width<TS_WAVEFORM_CACHE_MAX_COLUMNS?width:TS_WAVEFORM_CACHE_MAX_COLUMNS;
+        const TsMosaicSource *source=ui->mosaic_sources[n].source;
+        if(source && source->pattern){
+            mosaic_detail_rect(d,first,top,last,bottom,fill);
+            const TsPatternCard *p=source->pattern;int rows=p->score.patterns[0]->rows;
+            for(int row=0;row<rows;++row)for(int lane=0;lane<p->score.channel_count;++lane){
+                int note=p->cells[row][lane][0];if(!note || note>96)continue;
+                int nx=first+(note-1)*(last-first-4)/96,ny=top+row*(bottom-top-2)/rows;
+                mosaic_detail_rect(d,nx,ny,nx+fmax(1,3*sx),ny+fmax(1,sy),color);
+            }
+            continue;
+        }
         TsWaveformRequest request={.sample=s,.first=0,.last=s->frames,.width=bins,.revision=(ui->mosaic?ui->mosaic->epoch:0)^ui->mosaic_sources[n].hash};
         if(!ts_waveform_cache_prepare(&cache[i],&request))continue;
         for(int py=top;py<bottom;++py)for(int px=first;px<last;++px)d->pixels[(size_t)py*d->width+px]=fill;

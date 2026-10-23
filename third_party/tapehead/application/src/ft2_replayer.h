@@ -429,7 +429,7 @@ extern bool songPlaying, audioPaused, musicPaused;
 extern volatile bool replayerBusy;
 extern const uint16_t *note2PeriodLUT;
 extern int16_t patternNumRows[MAX_PATTERNS];
-extern channel_t channel[MAX_CHANNELS];
+extern channel_t *channel;
 extern uint16_t channelVolumeTrim[MAX_CHANNELS];
 extern bool performanceMute[MAX_CHANNELS];
 extern song_t song;
