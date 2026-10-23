@@ -915,6 +915,14 @@ a single selection. FOLLOW suspends scrolling during a drag.
 
 ### Live mix, fades, and global speed
 
+Use the two small handles near each card's right edge for visual fades: drag the
+top **IN** handle down or the bottom **OUT** handle up. A diagonal line and darkened
+wedge show the linear attenuation as you drag. The status bar shows seconds, and
+the handles stop when the fades meet. Each gesture changes only that card and is
+one undo step. Right-click or double-click a handle resets that fade; Escape cancels
+the drag. Zoom in if a card is too small to show handles. Footer edits also update
+the shading; the original sample remains unchanged.
+
 Select an event or group and adjust the footer's **LEVEL**, **PAN**, **IN** and **OUT**.
 Level spans silence to +6 dB with 0 dB at center. Pan balances the original channels,
 with both preserved at center. IN/OUT are linear fades in arrangement seconds.

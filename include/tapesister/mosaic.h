@@ -178,6 +178,9 @@ double ts_mosaic_snap(const TsMosaic *m, uint64_t id, double time, double tolera
 double ts_mosaic_end(const TsMosaic *m);
 void ts_mosaic_seek(TsMosaic *m, double time);
 void ts_mosaic_set_speed(TsMosaic *m, double speed);
+/* Effective linear fades: overlapping saved values scale to the card duration.
+   Shared by playback, the card envelope and its drag handles. */
+void ts_mosaic_event_fades(const TsMosaicEvent *event, double *fade_in, double *fade_out);
 /* Envelope positions are fractions of the whole arrangement, not seconds. */
 float ts_mosaic_volume_at(const TsMosaic *m, double position);
 void ts_mosaic_volume_draw(TsMosaic *m, double from, float a, double to, float b);

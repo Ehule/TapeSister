@@ -594,6 +594,8 @@ typedef struct {
     int mosaic_source_count, mosaic_source_page, mosaic_source_selected;
     int mosaic_bank_count, mosaic_source_pages, mosaic_source_offset;
     double mosaic_time, mosaic_scroll, mosaic_xscroll, mosaic_scale, mosaic_hscale;
+    uint64_t mosaic_fade_event;
+    int mosaic_fade_part; /* Hover/drag: 1 fade-in, 2 fade-out. */
     TsKeyboardMask staged_notes;
     uint32_t overlay_until_ms;
     int workbench_loop_active;
@@ -889,6 +891,9 @@ enum {
     TS_MOSAIC_FIT_X = 504, TS_MOSAIC_FIT_W = 52,
     TS_MOSAIC_ZOOM_OUT_X = 560, TS_MOSAIC_ZOOM_IN_X = 588, TS_MOSAIC_ZOOM_W = 24
 };
+/* Logical card-handle coordinates; false when too small or off the viewport. */
+int ts_ui_mosaic_fade_handle(const TsUiState *ui, const TsMosaicEvent *event,
+                            int part, double *x, double *y);
 double ts_ui_mosaic_volume_y(const TsUiState *ui, double time);
 double ts_ui_mosaic_volume_time(const TsUiState *ui, double y);
 void ts_ui_render_mosaic_choice(TsFramebuffer *fb, const TsUiState *ui);

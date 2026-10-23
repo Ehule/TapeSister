@@ -60,6 +60,7 @@ the EVENTS pages. Shared originals and the original Sample banks remain availabl
 | Select / move an event | Click / drag its body |
 | Extend the event's playback window | Drag its top edge earlier or bottom edge later |
 | Change visual width | Drag its right edge |
+| Shape one card's fade | Drag its IN handle down or OUT handle up |
 | Align starts, ends or midpoints | Hold Alt while moving or extending |
 | Edit the event | Double-click |
 | Box-select a group | Shift+left-drag on empty canvas |
@@ -284,6 +285,18 @@ F11 or Ctrl+Shift+Space, groups ARP, SisterTracker and Mosaic under Shift+Space.
 Space remains local. This shares start/stop without changing tempo or tape speed.
 
 ## Performance controls
+
+Each card has two small fade handles near its right edge: **IN** starts at the top,
+**OUT** at the bottom. Drag IN downward to lengthen the fade-in, or OUT upward to
+lengthen the fade-out. The diagonal line and darkened wedge show the linear gain
+envelope immediately; more shading means more attenuation at that point in time.
+The handles stop where the two fades meet. The status bar shows the fade in seconds.
+Right-click or double-click a handle to remove that fade; Escape cancels a drag.
+Each drag edits only that card and is one undo step. Handles appear when the card
+is large enough to grab; zoom in on small cards. The shaded envelope remains visible
+when zoomed out, and existing footer edits update it too.
+
+![Card fade handles and shaded envelopes](screenshots/mosaic-performance/fade-handles.png)
 
 Select an event, then use **LEVEL**, **PAN**, **IN** and **OUT** in the footer.
 A selected group receives the same adjustment in one undoable gesture. These controls

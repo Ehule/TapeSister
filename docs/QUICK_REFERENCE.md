@@ -106,6 +106,8 @@ does not switch the main bank. See the [Mosaic chapter](USER_MANUAL.md#mosaic).
 | Mute / solo all cards sharing selected sources | Shift+M / Shift+S |
 | Clear all solos, including offscreen cards | CLEAR SOLO in footer |
 | Selection level / pan / fade-in / fade-out | LEVEL / PAN / IN / OUT in footer |
+| Visual fade on one card | Drag its top IN handle down / bottom OUT handle up |
+| Reset a card fade / cancel drag | Right-click or double-click handle / Escape |
 | Global tape speed | SPEED: 0.5× (−12 st), center 1×, 2× (+12 st) |
 | Fine control / reset | Shift+wheel / right-click or double-click |
 | Copy / paste primary event at playhead | Ctrl+C / Ctrl+V; use Shift-drag for group copies |
@@ -160,7 +162,8 @@ even when opening a different card. Audio changes accumulate until returning to 
 Speed changes pitch and arrangement timing together. Its wheel moves by semitones;
 Shift+wheel uses tenths. Mix controls apply to the selection without editing audio.
 Pan balances the original stereo channels; IN/OUT are linear fades in arrangement
-seconds. Reset returns to 0 dB, center pan, zero fades, or 1× speed. Escape cancels
+seconds. Card handles show the same fades as a diagonal line and darkened wedge;
+zoom in for handles on small cards. Reset returns to 0 dB, center pan, zero fades, or 1× speed. Escape cancels
 a drag; Undo/Redo includes the controls. CLEAR SOLO leaves mute switches intact.
 
 No audio change means no question. Loop and chord changes are immediate and local

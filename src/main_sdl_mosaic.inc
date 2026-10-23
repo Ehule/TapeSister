@@ -245,6 +245,7 @@ static void mosaic_source_drag(TsUiState *ui,const TsInstrument *instrument,Mosa
 #include "main_sdl_mosaic_loop.inc"
 #include "main_sdl_mosaic_navigation.inc"
 #include "main_sdl_mosaic_controls.inc"
+#include "main_sdl_mosaic_fades.inc"
 #include "main_sdl_mosaic_volume.inc"
 
 static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID device,
@@ -365,6 +366,7 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
     if(event->type==SDL_WINDOWEVENT && (event->window.event==SDL_WINDOWEVENT_FOCUS_LOST ||
        event->window.event==SDL_WINDOWEVENT_HIDDEN || event->window.event==SDL_WINDOWEVENT_MINIMIZED))mosaic_drag_end(ui,c);
     mosaic_sources_refresh(ui,instrument,c);
+    if(mosaic_fades_event(event,device,ui,c,x,y,mod))return 1;
     if(mosaic_loop_event(event,device,ui,c,x,y,mod))return 1;
     if(mosaic_navigation_event(event,device,ui,c,x,y,mod))return 1;
     if(mosaic_sources_event(event,device,audio,ui,instrument,c,transform,x,y,mod))return 1;

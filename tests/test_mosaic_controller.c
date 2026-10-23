@@ -87,6 +87,7 @@ static void wait_render(void);
 #include "test_mosaic_performance_edit.inc"
 #include "test_mosaic_scatter_pitch.inc"
 #include "test_mosaic_navigation.inc"
+#include "test_mosaic_fades.inc"
 #include "test_mosaic_edge_scroll.inc"
 #include "test_mosaic_loop_controls.inc"
 #include "test_mosaic_selection.inc"
@@ -429,6 +430,7 @@ int main(int argc,char **argv)
     if(argc>1 && !strcmp(argv[1],"--large-mosaic")) {test_mosaic_large_browser();goto done;}
     if(argc>1 && !strcmp(argv[1],"--loop")) {test_mosaic_loop_controls(window);goto done;}
     if(argc>1 && !strcmp(argv[1],"--navigation")) {test_mosaic_navigation(window);test_mosaic_edge_scroll(window);test_mosaic_save_view(window);goto done;}
+    if(argc>1 && !strcmp(argv[1],"--fades")) {test_mosaic_fades(window);goto done;}
     TsMosaicSource *source=ts_mosaic_source(ui.mosaic,&instrument.current,error,sizeof(error));assert(source);
     TsMosaicEvent *a=ts_mosaic_add(ui.mosaic,source,0,0);a->duration=6;
     TsMosaicEvent *b=ts_mosaic_copy(ui.mosaic,a->id,.25,105);b->duration=9;
@@ -483,6 +485,7 @@ int main(int argc,char **argv)
     test_mosaic_external_banks(window);
     test_mosaic_variation_banks(window);
     test_mosaic_live_controls(window);
+    test_mosaic_fades(window);
     test_mosaic_group_mute_audio(window);
     test_mosaic_source_actions(window);
     test_mosaic_volume_controls(window);
@@ -529,12 +532,16 @@ int main(int argc,char **argv)
         events[4]=ts_mosaic_add(scene,sources[1],9.1,0);events[4]->duration=2.3;events[4]->looping=0;
         events[5]=ts_mosaic_add(scene,sources[2],10.1,320);events[5]->duration=1.6;
         events[0]->note_count=3;events[0]->notes[1]=64;events[0]->notes[2]=67;
+        events[0]->fade_in=1.4;events[0]->fade_out=2;
+        events[2]->fade_in=.5;events[2]->fade_out=2.2;
         events[3]->gain=.8f;events[3]->pan=.25f;events[3]->fade_in=2;events[3]->fade_out=3.5;
         events[3]->note_count=2;events[3]->notes[1]=72;
         TsMosaic *saved=ui.mosaic;ui.mosaic=scene;
         ui.mosaic_open=1;ui.mosaic_scale=24;ui.mosaic_hscale=1;ui.mosaic_time=4.35;ui.mosaic_playing=1;ui.mosaic_selected=events[3]->id;
-        snprintf(ui.status,sizeof(ui.status),"SELECT A TILE TO SHAPE LEVEL, PAN AND FADES");
+        ui.mosaic_scroll=ui.mosaic_xscroll=0;
+        snprintf(ui.status,sizeof(ui.status),"FADE IN 2.000S / DRAG DOWN / RIGHT CLICK RESET");
         mosaic_sources_refresh(&ui,bank,&mosaic);ui.mosaic_selected=events[3]->id;
+        ui.mosaic_fade_event=events[3]->id;ui.mosaic_fade_part=1;
         mosaic_source_select_event(&ui,events[3]);ui.mosaic_follow=1;
         static TsFramebuffer fb;ts_ui_render(&fb,&ui,bank);assert(ts_ui_write_ppm(&fb,shot));
         mosaic_native_check(bank,getenv("TS_MOSAIC_NATIVE_SCREENSHOT"));

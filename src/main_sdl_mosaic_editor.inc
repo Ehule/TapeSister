@@ -45,6 +45,8 @@ typedef struct {
     double drag_start, drag_duration, drag_left, drag_width, drag_xscroll;
     int drag_pointer_x, drag_pointer_y;
     Uint32 drag_scroll_ms;
+    uint64_t fade_event;
+    double fade_in,fade_out; /* Effective opening values of a direct fade drag. */
     TsMosaicEvent clipboard;
     int fm_parked, fm_edit_exit, portal_return_fm;
     uint64_t fm_owner, fm_epoch;
@@ -117,6 +119,7 @@ static void mosaic_drag_end(TsUiState *ui,MosaicController *c)
     c->source_group=c->source_toggle=0;c->shift_toggle=0;
     c->source_drag=(TsMosaicEvent){0};c->drag=0;c->drag_moved=0;c->drag_copy=0;c->drag_scroll_ms=0;
     ui->mosaic_ghost_count=ui->mosaic_box=0;c->volume_drag=0;
+    c->fade_event=ui->mosaic_fade_event=0;ui->mosaic_fade_part=0;
     c->pan_active=c->pan_moved=ui->mosaic_loop_drag=0;
 }
 /* Browse stored sample banks without swapping the live instrument or routing.

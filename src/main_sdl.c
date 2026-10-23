@@ -18182,10 +18182,10 @@ int main(int argc, char **argv)
             ui.overlay[0] = '\0';
         refresh_workbench_loop(device, &audio, &ui, &instrument);
         mosaic_poll(device,&ui,&instrument,&mosaic);
-        if(mosaic.drag==1) {
+        if(mosaic.drag==1 || mosaic.drag==7 || mosaic.drag==8) {
             if(SDL_GetKeyboardFocus()!=window || !(SDL_GetMouseState(NULL,NULL)&SDL_BUTTON_LMASK) ||
                ui_dialog_open(&ui))mosaic_drag_end(&ui,&mosaic);
-            else mosaic_drag_autoscroll(device,&ui,&mosaic,SDL_GetTicks());
+            else if(mosaic.drag==1)mosaic_drag_autoscroll(device,&ui,&mosaic,SDL_GetTicks());
         }
         ui_sync_dialog_workspaces(&ui);
         Uint32 health_setup_now = SDL_GetTicks();
