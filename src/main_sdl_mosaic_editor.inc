@@ -27,7 +27,7 @@ typedef struct {
     TsMosaicEvent picked_sources[TS_MOSAIC_EVENTS], scatter_pool[TS_MOSAIC_EVENTS];
     int picked_count, scatter_pool_count, scatter_from_sources;
     uint64_t picked_epoch, scatter_epoch;
-    uint32_t scatter_seed;
+    uint32_t scatter_seed, scatter_note_seed;
     int zoom_saved;
     double zoom_scroll, zoom_xscroll, zoom_scale, zoom_hscale;
     double loop_anchor;

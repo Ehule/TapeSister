@@ -129,6 +129,14 @@ does not switch the main bank. See the [Mosaic chapter](USER_MANUAL.md#mosaic).
 | Follow the growing take, including with playback stopped | Enable FOLLOW |
 | Discard an active Mosaic take | Escape in the arrangement after finishing any active gesture |
 
+**Ctrl+R pitch:** Keep Notes / Chord per Card / Spread Chord / Spread Scale.
+Click or wheel root, chord/scale, octave bounds and distribution; Shift-click goes
+backward. **Roll Notes** rerolls Random/Shuffled without moving cards; **Roll
+Positions** preserves notes. Ascending/Descending follow selection/copy order.
+**Edit Selection + Keep Positions** reharmonizes existing cards. Apply is one undo
+step. Primary Chord uses the primary card's intervals; all notes save with the
+project. [Details and example](MOSAIC.md#scatter-pitch).
+
 Each event owns its one-to-five-note chord and **EVENT LOOP / EVENT ONCE** setting.
 C5 plays twice as fast as C4; C3 takes twice as long. Extending a loop allows more
 repetitions at the same pitches. One-shots play once, ending at their own completion

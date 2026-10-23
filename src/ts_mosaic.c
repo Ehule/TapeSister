@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "ts_mosaic_pitch.inc"
 
 TsMosaic *ts_mosaic_create(void)
 {

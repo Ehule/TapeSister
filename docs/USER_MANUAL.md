@@ -877,6 +877,22 @@ AUTO-SPACE may shift the row horizontally while preserving its order and timing.
 If there is insufficient capacity, no cards are added. Ctrl-click source selection
 also remains available. Time-range and Scatter input fields have a blinking cursor.
 
+**Ctrl+R Scatter** can also assign notes while moving or copying cards. Keep Notes
+preserves current notes; Chord per Card assigns a full chord (up to five notes);
+Spread Chord and Spread Scale assign one note per card. Choose root, chord/scale,
+low/high octave and Random, Shuffled, Ascending or Descending distribution. Shuffled
+uses every available pitch before repeating. Ordered distribution follows selection
+or copy order, independently of the generated start times. Primary Chord reuses the
+primary card's voicing; source scattering uses the first selected source.
+
+**Roll Notes** and **Roll Positions** are independent. Enable **Keep Positions** in
+Edit Selection to change only notes. The preview shows initial notes/chord and total
+assigned notes. Click/wheel pitch options; Shift-click steps backward. Apply is one
+undo step, Cancel leaves cards untouched, and notes save with the project. Correct
+source tuning is needed to match the chosen key; full chords require more playback
+voices. See [Scatter pitch](MOSAIC.md#scatter-pitch) for ranges and examples.
+
+
 Group moves and copies keep relative timing and spacing. AUTO-SPACE is off for new
 arrangements. When enabled, collision handling shifts the group horizontally while
 keeping start times fixed. Enabling it requires confirmation and can be undone. A Shift-click without a

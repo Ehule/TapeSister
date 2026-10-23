@@ -571,8 +571,11 @@ typedef struct {
     int mosaic_spacing_confirm, mosaic_scatter_open, mosaic_scatter_copies;
     int mosaic_scatter_cluster, mosaic_scatter_overlap, mosaic_scatter_count, mosaic_scatter_valid;
     int mosaic_scatter_field;
+    int mosaic_scatter_keep_positions;
+    TsMosaicPitchSettings mosaic_scatter_pitch;
     double mosaic_scatter_start, mosaic_scatter_end;
     char mosaic_scatter_text[32], mosaic_scatter_status[80];
+    char mosaic_scatter_notes[80];
     TsMosaicSourceKey mosaic_source_picks[TS_MOSAIC_EVENTS];
     int mosaic_source_pick_count;
     int mosaic_record_length_drag, mosaic_record_length_before;

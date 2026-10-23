@@ -52,9 +52,9 @@ static void test_mosaic_performance_edit(SDL_Window *window)
     mosaic_arrange_test_frame();mosaic_arrange_test_frame();
     key(window,SDLK_1,KMOD_NONE);assert(ui.mosaic_scatter_open && ui.mosaic_open);
     assert(ts_mosaic_hash(scene)==before);double first=ui.mosaic_ghosts[0].start;
-    click(window,150,280,1);assert(first!=ui.mosaic_ghosts[0].start && ts_mosaic_hash(scene)==before);
+    click(window,150,310,1);assert(first!=ui.mosaic_ghosts[0].start && ts_mosaic_hash(scene)==before);
     if(getenv("TS_SCATTER_SCREENSHOT")) {static TsFramebuffer fb;ts_ui_render(&fb,&ui,&instrument);assert(ts_ui_write_ppm(&fb,getenv("TS_SCATTER_SCREENSHOT")));}
-    click(window,270,280,1);assert(!ui.mosaic_scatter_open && ts_mosaic_hash(scene)!=before);
+    click(window,200,342,1);assert(!ui.mosaic_scatter_open && ts_mosaic_hash(scene)!=before);
     uint64_t scattered=ts_mosaic_hash(scene);key(window,SDLK_z,KMOD_CTRL);assert(ts_mosaic_hash(scene)==before);
     key(window,SDLK_y,KMOD_CTRL);assert(ts_mosaic_hash(scene)==scattered);key(window,SDLK_z,KMOD_CTRL);
     /* Cancelling a source scatter never adds cards; source pinning survives
@@ -64,13 +64,13 @@ static void test_mosaic_performance_edit(SDL_Window *window)
     mosaic_arrange_test_frame();
     ui.mosaic_scatter_count=TS_MOSAIC_EVENTS;mosaic_scatter_preview(&ui,&mosaic);assert(!ui.mosaic_scatter_valid && !ui.mosaic_ghost_count);
     ui.mosaic_scatter_count=5;mosaic_scatter_preview(&ui,&mosaic);assert(ui.mosaic_ghost_count==5);
-    click(window,130,120,1);key(window,SDLK_a,KMOD_CTRL);
+    click(window,130,75,1);key(window,SDLK_a,KMOD_CTRL);
     mosaic_arrange_test_frame();
     SDL_Event text;SDL_zero(text);text.type=SDL_TEXTINPUT;strcpy(text.text.text,"1.25");dispatch(&text,window);
     key(window,SDLK_RETURN,KMOD_NONE);assert(ui.mosaic_scatter_start==1.25 && ui.mosaic_scatter_open);
     key(window,SDLK_ESCAPE,KMOD_NONE);assert(mosaic_event_count(scene)==3 && ts_mosaic_hash(scene)==before);
     key(window,SDLK_r,KMOD_CTRL);ui.mosaic_scatter_count=5;
-    click(window,270,280,1);assert(mosaic_event_count(scene)==8 && !mosaic.picked_count);
+    click(window,200,342,1);assert(mosaic_event_count(scene)==8 && !mosaic.picked_count);
     key(window,SDLK_z,KMOD_CTRL);assert(mosaic_event_count(scene)==3 && ts_mosaic_hash(scene)==before);
     mosaic_drag_end(&ui,&mosaic);ui.mosaic=audio.mosaic=saved;ts_mosaic_free(scene);mosaic_poll(0,&ui,&instrument,&mosaic);
 }

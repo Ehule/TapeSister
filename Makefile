@@ -9,6 +9,9 @@ CPPFLAGS ?= -Iinclude -Ithird_party -I$(MINIAUDIO_DIR)
 CORE_SOURCES = src/ts_source_route.c src/ts_clean_output.c src/ts_spatial.c src/ts_speakers.c src/ts_sample.c src/ts_fm.c src/ts_audition.c src/ts_note_bank.c src/ts_note_event.c src/ts_performance.c src/ts_audio_mixer.c src/ts_audio_lifecycle.c src/ts_realtime_diagnostics.c src/ts_sister_effects.c src/ts_sister_fallout.c src/ts_sister_post_fx.c src/ts_transient.c src/ts_sister_limiter.c src/ts_sister_machine.c src/ts_sister_wave_snapshot.c src/ts_sister_runtime.c src/ts_sister_ui.c src/ts_sister_preset.c src/ts_sister_project_state.c src/ts_capture.c src/ts_capture_archive.c src/ts_performance_recorder.c src/ts_input_monitor.c src/ts_input_ownership.c src/ts_sample_pages.c src/ts_browser.c src/ts_config.c src/ts_audio_config.c src/ts_recipe.c src/ts_dsp_recipe.c src/ts_palette.c src/ts_theme.c src/ts_cdp_recipe.c src/ts_cdp_adapter.c src/ts_transform.c src/ts_dsp_transform.c src/ts_exchange.c src/ts_render_damage.c src/ts_waveform_cache.c src/ts_waveform_display.c src/ts_ui.c src/ts_midi_map.c
 CORE_SOURCES += src/ts_cdp_portal.c src/ts_mosaic.c
 tapesister tapesister_portal_controller_tests tapesister_keyboard_sustain_tests: src/main_sdl_mosaic.inc src/main_sdl_mosaic_editor.inc src/main_sdl_mosaic_source_update.inc src/main_sdl_mosaic_volume.inc src/ts_mosaic_ui.inc include/tapesister/mosaic.h
+tapesister tapesister_mosaic_tests tapesister_mosaic_controller_tests: src/ts_mosaic_pitch.inc
+tapesister tapesister_mosaic_controller_tests: src/main_sdl_mosaic_scatter.inc src/main_sdl_mosaic_arrange.inc src/ts_mosaic_arrange_ui.inc
+tapesister_mosaic_controller_tests: tests/test_mosaic_scatter_pitch.inc
 DECODER_OBJ = .deps/ts_audio_import.o
 CORE = $(CORE_SOURCES) $(DECODER_OBJ)
 tapesister tapesister_core_tests tapesister_portal_tests tapesister_portal_controller_tests tapesister_keyboard_sustain_tests: src/ts_cdp_portal_instruments.inc src/ts_cdp_portal_ui.inc include/tapesister/cdp_portal.h
