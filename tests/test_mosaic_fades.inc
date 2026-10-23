@@ -14,7 +14,7 @@ static void test_mosaic_fades(SDL_Window *window)
     ui.mosaic_scale=24;ui.mosaic_hscale=1;ui.mosaic_scroll=ui.mosaic_xscroll=0;
     mosaic_poll(0,&ui,&instrument,&mosaic);mosaic_select_only(&ui,a->id);
     TsMosaicEvent original=*a;int x,y,history=scene->history_count;
-    fade_handle(a,1,&x,&y);motion(window,x,y);assert(ui.mosaic_fade_event==a->id && ui.mosaic_fade_part==1);
+    fade_handle(a,1,&x,&y);motion(window,x,y);assert(ui.mosaic_card_mix_event==a->id && ui.mosaic_card_mix_part==1);
     click(window,x,y,1);assert(mosaic.drag==7);release(window,x,y);
     assert(a->fade_in==0 && scene->history_count==history); /* No jump from the inset zero handle. */
     ui.mosaic_selection[1]=b->id;
@@ -47,7 +47,7 @@ static void test_mosaic_fades(SDL_Window *window)
     assert(a->fade_in==3 && a->fade_out==4);
     key(window,SDLK_z,KMOD_CTRL);assert(a->fade_in==8 && a->fade_out==8);
     /* Shades change only the faded portion; labels remain legible. */
-    a->fade_in=2;a->fade_out=2;b->fade_in=0;ui.mosaic_fade_event=0;
+    a->fade_in=2;a->fade_out=2;b->fade_in=0;ui.mosaic_card_mix_event=0;
     static TsFramebuffer faded,plain;ts_ui_render(&faded,&ui,&instrument);
     a->fade_in=a->fade_out=0;ts_ui_render(&plain,&ui,&instrument);
     assert(faded.pixels[125*640+255]!=plain.pixels[125*640+255]);
@@ -60,7 +60,7 @@ static void test_mosaic_fades(SDL_Window *window)
     assert(mosaic.drag!=7 && mosaic.drag!=8);key(window,SDLK_ESCAPE,KMOD_NONE);SDL_SetModState(KMOD_NONE);
     /* A foreground card masks a covered card's handle. */
     b->start=a->start;b->x=a->x;b->width=a->width;b->duration=a->duration;b->fade_in=2;
-    mosaic_select_only(&ui,b->id);motion(window,x,y);assert(ui.mosaic_fade_event!=a->id);
+    mosaic_select_only(&ui,b->id);motion(window,x,y);assert(ui.mosaic_card_mix_event!=a->id);
     b->x=150;b->start=2;b->duration=6;
     mosaic_select_only(&ui,a->id);
     for(int pass=0;pass<3;++pass) {
@@ -76,8 +76,8 @@ static void test_mosaic_fades(SDL_Window *window)
     ui.mosaic_scale=24;fade_handle(a,1,&x,&y);click(window,x,y,1);assert(mosaic.drag==7);
     SDL_Event lost;SDL_zero(lost);lost.type=SDL_WINDOWEVENT;lost.window.windowID=SDL_GetWindowID(window);
     lost.window.event=SDL_WINDOWEVENT_FOCUS_LOST;dispatch(&lost,window);
-    assert(!mosaic.drag && !ui.mosaic_fade_event);
+    assert(!mosaic.drag && !ui.mosaic_card_mix_event);
     fade_handle(a,1,&x,&y);click(window,x,y,1);assert(mosaic.drag==7);
     ui.mosaic=audio.mosaic=saved;mosaic_poll(0,&ui,&instrument,&mosaic);
-    assert(!mosaic.drag && !ui.mosaic_fade_event);ts_mosaic_free(scene);
+    assert(!mosaic.drag && !ui.mosaic_card_mix_event);ts_mosaic_free(scene);
 }

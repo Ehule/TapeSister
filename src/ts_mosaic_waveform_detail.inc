@@ -153,6 +153,7 @@ static void mosaic_detail_card(TsUiWaveformDetail *d,const TsUiState *ui,
         const char *state=e->muted?"MUTE":e->solo?"SOLO":dim?(chars>=8?"SOLO OUT":"EXCL"):e->looping?"LOOP":"ONCE";
         mosaic_detail_text(d,tx,bottom-mosaic_detail_pixel(11*sy),state,color,sx,sy);
     }
+    mosaic_card_pan(&fades,ui,e,x,y,right,bottom,border);
     mosaic_fade_handles(&fades,ui,e,x,y,right,bottom,border);
 }
 static int mosaic_detail_cards(TsFramebuffer *fb,const TsUiState *ui,int any_solo,double interval)

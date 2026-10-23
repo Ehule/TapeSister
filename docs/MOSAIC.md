@@ -61,6 +61,7 @@ the EVENTS pages. Shared originals and the original Sample banks remain availabl
 | Extend the event's playback window | Drag its top edge earlier or bottom edge later |
 | Change visual width | Drag its right edge |
 | Shape one card's fade | Drag its IN handle down or OUT handle up |
+| Pan one card | Drag the diamond on its pan line left/right; right-click centers |
 | Align starts, ends or midpoints | Hold Alt while moving or extending |
 | Edit the event | Double-click |
 | Box-select a group | Shift+left-drag on empty canvas |
@@ -297,6 +298,17 @@ is large enough to grab; zoom in on small cards. The shaded envelope remains vis
 when zoomed out, and existing footer edits update it too.
 
 ![Card fade handles and shaded envelopes](screenshots/mosaic-performance/fade-handles.png)
+
+Cards also show a **pan line** and a faint dotted **center reference** through the
+waveform. Drag the small diamond just below the card's name/notes left or right to
+balance that card. The line follows the setting, with a small center snap and
+**CENTER**, **L %** or **R %** feedback in the status bar. Right-click or double-click
+the diamond centers it; Escape restores the opening value. A drag is one undo step
+and keeps live playback running. The rest of the waveform remains available for
+moving the card, and fade handles retain priority where controls meet. Zoom in if
+the card is too small for the pan grip. Footer PAN edits update the lines too.
+
+![Pan lines, center references and fade handles](screenshots/mosaic-performance/pan-lines.png)
 
 Select an event, then use **LEVEL**, **PAN**, **IN** and **OUT** in the footer.
 A selected group receives the same adjustment in one undoable gesture. These controls

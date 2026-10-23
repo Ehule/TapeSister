@@ -21,8 +21,10 @@ static void test_mosaic_scroll_cards(void)
             TsMosaicEvent *a=ts_mosaic_add(view.mosaic,s,1.137,20.17);assert(a);
             a->duration=4.137;a->width=100.37;a->looping=0;a->fade_in=.8;a->fade_out=1.2;snprintf(a->name,sizeof(a->name),"TRANSIENT");
             view.mosaic_selected=a->id;
+            a->pan=-.63f;
             TsMosaicEvent *b=ts_mosaic_add(view.mosaic,s,a->start+a->duration,a->x);assert(b);
             b->duration=9.73;b->width=a->width;b->looping=1;b->fade_in=3;b->fade_out=2;
+            b->pan=.72f;
             TsMosaicEvent *c=ts_mosaic_add(view.mosaic,s,3.71,151.73);assert(c);
             c->duration=6.93;c->muted=1;c->note_count=3;c->notes[1]=67;c->notes[2]=72;
             view.mosaic_ghost_count=1;view.mosaic_ghosts[0]=*b;view.mosaic_ghosts[0].x=270.37;

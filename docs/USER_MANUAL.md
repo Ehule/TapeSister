@@ -924,6 +924,11 @@ the drag. Zoom in if a card is too small to show handles. Footer edits also upda
 the shading; the original sample remains unchanged.
 
 Select an event or group and adjust the footer's **LEVEL**, **PAN**, **IN** and **OUT**.
+For direct card panning, drag the diamond on the colored pan line left/right.
+The dotted line marks true center; the status bar reports CENTER or L/R percentage.
+Right-click or double-click the diamond centers it. Escape cancels the drag and
+Undo/Redo restores it. Only the grabbed card changes; footer PAN still edits groups.
+The waveform below the diamond remains a card-move target. Zoom in for small cards.
 Level spans silence to +6 dB with 0 dB at center. Pan balances the original channels,
 with both preserved at center. IN/OUT are linear fades in arrangement seconds.
 Overlapping fades scale proportionally to fit the event. These controls do not change

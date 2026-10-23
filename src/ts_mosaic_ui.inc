@@ -144,6 +144,7 @@ static void mosaic_card(TsFramebuffer *fb,const TsUiState *ui,const TsMosaicEven
         const char *state=e->muted?"MUTE":e->solo?"SOLO":dim?(chars>=8?"SOLO OUT":"EXCL"):e->looping?"LOOP":"ONCE";
         snprintf(label,sizeof(label),"%.*s",chars,state);text(fb,x+6,end-11,label,color,1);
     }
+    mosaic_card_pan(&fades,ui,e,x,(int64_t)top,x+w,(int64_t)bottom,color);
     mosaic_fade_handles(&fades,ui,e,x,(int64_t)top,x+w,(int64_t)bottom,
         selected?mosaic_selection_color(ui,e->id==ui->mosaic_selected):color);
 }

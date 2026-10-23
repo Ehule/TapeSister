@@ -107,6 +107,8 @@ does not switch the main bank. See the [Mosaic chapter](USER_MANUAL.md#mosaic).
 | Clear all solos, including offscreen cards | CLEAR SOLO in footer |
 | Selection level / pan / fade-in / fade-out | LEVEL / PAN / IN / OUT in footer |
 | Visual fade on one card | Drag its top IN handle down / bottom OUT handle up |
+| Visual pan on one card | Drag the pan-line diamond left/right; dotted line = center |
+| Center a card's pan | Right-click or double-click its pan diamond |
 | Reset a card fade / cancel drag | Right-click or double-click handle / Escape |
 | Global tape speed | SPEED: 0.5× (−12 st), center 1×, 2× (+12 st) |
 | Fine control / reset | Shift+wheel / right-click or double-click |
