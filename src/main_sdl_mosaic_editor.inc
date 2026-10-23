@@ -27,7 +27,7 @@ typedef struct {
     TsMosaicEvent picked_sources[TS_MOSAIC_EVENTS], scatter_pool[TS_MOSAIC_EVENTS];
     int picked_count, scatter_pool_count, scatter_from_sources;
     uint64_t picked_epoch, scatter_epoch;
-    uint32_t scatter_seed;
+    uint32_t scatter_seed, scatter_note_seed;
     int zoom_saved;
     double zoom_scroll, zoom_xscroll, zoom_scale, zoom_hscale;
     double loop_anchor;
@@ -42,7 +42,11 @@ typedef struct {
     uint64_t mix_epoch;
     SDL_Event exit_event;
     int drag, drag_slot, drag_x, drag_y, drag_moved, drag_copy;
-    double drag_start, drag_duration, drag_left, drag_width;
+    double drag_start, drag_duration, drag_left, drag_width, drag_xscroll;
+    int drag_pointer_x, drag_pointer_y;
+    Uint32 drag_scroll_ms;
+    uint64_t card_mix_event;
+    double fade_in,fade_out,card_pan,card_pan_span; /* Opening values of direct card mix drags. */
     TsMosaicEvent clipboard;
     int fm_parked, fm_edit_exit, portal_return_fm;
     uint64_t fm_owner, fm_epoch;
@@ -113,8 +117,9 @@ static void mosaic_drag_end(TsUiState *ui,MosaicController *c)
     if(c->drag_epoch==ui->mosaic->epoch && c->source_drag.source && c->source_drag.source->pins)
         --c->source_drag.source->pins;
     c->source_group=c->source_toggle=0;c->shift_toggle=0;
-    c->source_drag=(TsMosaicEvent){0};c->drag=0;c->drag_moved=0;c->drag_copy=0;
+    c->source_drag=(TsMosaicEvent){0};c->drag=0;c->drag_moved=0;c->drag_copy=0;c->drag_scroll_ms=0;
     ui->mosaic_ghost_count=ui->mosaic_box=0;c->volume_drag=0;
+    c->card_mix_event=ui->mosaic_card_mix_event=0;ui->mosaic_card_mix_part=0;
     c->pan_active=c->pan_moved=ui->mosaic_loop_drag=0;
 }
 /* Browse stored sample banks without swapping the live instrument or routing.

@@ -229,7 +229,17 @@ int main(int argc,char **argv)
     assert(log.export_result==2);
     FILE *previous_log=fopen("new-project-flow/logs/previous-session.saved.jsonl","wb");assert(previous_log);
     fputs("preserve older session\n",previous_log);fclose(previous_log);
+    ui.mosaic_open=1;ui.mosaic_scroll=3;ui.mosaic_xscroll=80;ui.mosaic_scale=12;ui.mosaic_hscale=.5;
+    mosaic_select_only(&ui,ui.mosaic->events[0].id);
+    uint64_t save_selection=ui.mosaic_selected;
     run_save("new-project-flow.tsr"); /* Complete bundle replacement keeps logs. */
+    ui_sync_dialog_workspaces(&ui);
+    assert(ui.mosaic_open && ui.mosaic_selected==save_selection && ui.mosaic_scroll==3 && ui.mosaic_xscroll==80);
+    assert(ui.mosaic_scale==12 && ui.mosaic_hscale==.5);
+    run_save("/__tapesister_missing_parent__/cannot-save.tsr");
+    ui_sync_dialog_workspaces(&ui);
+    assert(strstr(ui.status,"SAVE FAILED") && ui.mosaic_open && ui.mosaic_selected==save_selection);
+    assert(ui.mosaic_scroll==3 && ui.mosaic_xscroll==80 && ui.mosaic_scale==12 && ui.mosaic_hscale==.5);
     run_save("new-project-flow.tsr"); /* A prior export can still be in flight. */
     static TsSamplePages saved;static TsInstrument saved_bank,saved_record;
     assert(ts_sample_pages_init(&saved,error,sizeof(error)));

@@ -127,13 +127,15 @@ static void mosaic_detail_card(TsUiWaveformDetail *d,const TsUiState *ui,
         }
         return;
     }
+    MosaicFadeSurface fades={d->pixels,d->width,0,0,d->width,d->height,sx,sy,rate};
+    mosaic_fade_shape(&fades,e,x,y,right,bottom,color);
     uint32_t border=selected?mosaic_selection_color(ui,e->id==ui->mosaic_selected):color;
     int64_t edge_y=(int64_t)fmin(h,(selected?2:1)*by);
     mosaic_detail_rect(d,x,y,x+(int64_t)fmin(w,2*bx),bottom,border);
     mosaic_detail_rect(d,right-(int64_t)fmin(w,(selected?2:1)*bx),y,right,bottom,border);
     mosaic_detail_rect(d,x,y,right,y+edge_y,border);
     mosaic_detail_rect(d,x,bottom-edge_y,right,bottom,border);
-    int chars=(int)((w/sx-12)/6);if(chars>24)chars=24;
+    int chars=(int)((w/sx-30)/6);if(chars>24)chars=24;
     char label[100];int64_t tx=x+mosaic_detail_pixel(6*sx);
     if(chars>0 && h>=mosaic_detail_pixel(14*sy)) {
         snprintf(label,sizeof(label),"%.*s",chars,e->name);
@@ -151,6 +153,8 @@ static void mosaic_detail_card(TsUiWaveformDetail *d,const TsUiState *ui,
         const char *state=e->muted?"MUTE":e->solo?"SOLO":dim?(chars>=8?"SOLO OUT":"EXCL"):e->looping?"LOOP":"ONCE";
         mosaic_detail_text(d,tx,bottom-mosaic_detail_pixel(11*sy),state,color,sx,sy);
     }
+    mosaic_card_pan(&fades,ui,e,x,y,right,bottom,border);
+    mosaic_fade_handles(&fades,ui,e,x,y,right,bottom,border);
 }
 static int mosaic_detail_cards(TsFramebuffer *fb,const TsUiState *ui,int any_solo,double interval)
 {

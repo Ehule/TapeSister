@@ -44,6 +44,7 @@ static void test_event_mix_and_fades(void)
     for(size_t i=0;i<s.frames;++i){s.data[2*i]=.5f;s.data[2*i+1]=.25f;}
     TsMosaicSource *source=ts_mosaic_source(m,&s,error,sizeof(error));assert(source);ts_sample_free(&s);
     TsMosaicEvent *e=ts_mosaic_add(m,source,0,0);e->duration=4;e->gain=.8f;e->fade_in=1;e->fade_out=2;
+    double in,out;ts_mosaic_event_fades(e,&in,&out);assert(in==1 && out==2);
     m->playing=1;TsStereoFrame f={0};
     for(int i=0;i<=500;++i)f=ts_mosaic_read(m,1000);
     assert(fabsf(f.l-.2f)<1e-6f && fabsf(f.r-.1f)<1e-6f);
@@ -65,6 +66,7 @@ static void test_event_mix_and_fades(void)
     /* Long overlapping fades scale to the shortened event rather than creating
        a flat, attenuated middle or discontinuous jump at their crossing. */
     e->pan=0;e->gain=1;e->duration=2;e->fade_in=e->fade_out=2;ts_mosaic_seek(m,0);
+    ts_mosaic_event_fades(e,&in,&out);assert(in==1 && out==1);
     for(int i=0;i<=500;++i)f=ts_mosaic_read(m,1000);assert(fabsf(f.l-.25f)<1e-6f);
     for(int i=501;i<=1000;++i)f=ts_mosaic_read(m,1000);assert(fabsf(f.l-.5f)<1e-6f);
     assert(e->source==source && source->sample.data[0]==.5f);

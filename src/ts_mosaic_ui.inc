@@ -71,6 +71,8 @@ static void mosaic_envelope(const TsMosaicSource *s,size_t first,size_t last,flo
     for(size_t i=a;i<b;++i){*peak=fmaxf(*peak,s->peaks[i]);energy+=(double)s->rms[i]*s->rms[i];}
     *rms=(float)sqrt(energy/(b-a));
 }
+#include "ts_mosaic_fade_ui.inc"
+
 static void mosaic_card(TsFramebuffer *fb,const TsUiState *ui,const TsMosaicEvent *e,int selected,int dim,int ghost)
 {
     if(!e->source)return;
@@ -113,6 +115,8 @@ static void mosaic_card(TsFramebuffer *fb,const TsUiState *ui,const TsMosaicEven
         for(int yy=y;yy<end;yy+=6){mosaic_canvas_rect(fb,x,yy,1,3,color);mosaic_canvas_rect(fb,x+w-1,yy,1,3,color);}
         return;
     }
+    MosaicFadeSurface fades={fb->pixels,TS_UI_WIDTH,151,66,TS_MOSAIC_CANVAS_RIGHT,376,1,1,scale};
+    mosaic_fade_shape(&fades,e,x,(int64_t)top,x+w,(int64_t)bottom,color);
     mosaic_canvas_rect(fb,x,y,2,h,color);mosaic_canvas_rect(fb,x+w-1,y,1,h,color);
     if(top>=66)mosaic_canvas_rect(fb,x,y,w,1,color);
     if(bottom<376)mosaic_canvas_rect(fb,x,end-1,w,1,color);
@@ -124,7 +128,7 @@ static void mosaic_card(TsFramebuffer *fb,const TsUiState *ui,const TsMosaicEven
     }
     char label[100];
     if(top>=66 && h>=14 && x>=151 && w>=24) {
-        int chars=((x+w>631?631-x:w)-12)/6;if(chars>24)chars=24;
+        int chars=(int)fmax(0,((x+w>TS_MOSAIC_CANVAS_RIGHT?TS_MOSAIC_CANVAS_RIGHT-x:w)-30)/6);if(chars>24)chars=24;
         snprintf(label,sizeof(label),"%.*s",chars,e->name);text(fb,x+6,y+4,label,color,1);
     }
     if(top>=66 && h>=25 && x>=151 && w>=24) {
@@ -132,14 +136,17 @@ static void mosaic_card(TsFramebuffer *fb,const TsUiState *ui,const TsMosaicEven
         for(int n=0;n<e->note_count;++n) {
             size_t used=strlen(notes);snprintf(notes+used,sizeof(notes)-used,"%s%s",n?" ":"",ts_midi_note_name(e->notes[n],note,sizeof(note)));
         }
-        int chars=((x+w>631?631-x:w)-12)/6;snprintf(label,sizeof(label),"%.*s",chars,notes);
+        int chars=(int)fmax(0,((x+w>TS_MOSAIC_CANVAS_RIGHT?TS_MOSAIC_CANVAS_RIGHT-x:w)-30)/6);snprintf(label,sizeof(label),"%.*s",chars,notes);
         text(fb,x+6,y+14,label,dim?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(66,64,75)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DIM, RGB(156,147,165)),1);
     }
-    if(h>38 && bottom<376 && x>=151 && x+36<631 && w>=36) {
-        int chars=((x+w>631?631-x:w)-12)/6;
+    if(h>38 && bottom<376 && x>=151 && x+36<TS_MOSAIC_CANVAS_RIGHT && w>=36) {
+        int chars=(int)fmax(0,((x+w>TS_MOSAIC_CANVAS_RIGHT?TS_MOSAIC_CANVAS_RIGHT-x:w)-30)/6);
         const char *state=e->muted?"MUTE":e->solo?"SOLO":dim?(chars>=8?"SOLO OUT":"EXCL"):e->looping?"LOOP":"ONCE";
         snprintf(label,sizeof(label),"%.*s",chars,state);text(fb,x+6,end-11,label,color,1);
     }
+    mosaic_card_pan(&fades,ui,e,x,(int64_t)top,x+w,(int64_t)bottom,color);
+    mosaic_fade_handles(&fades,ui,e,x,(int64_t)top,x+w,(int64_t)bottom,
+        selected?mosaic_selection_color(ui,e->id==ui->mosaic_selected):color);
 }
 
 static void mosaic_recording_card(TsFramebuffer *,TsUiWaveformDetail *,const TsUiState *);

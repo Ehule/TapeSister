@@ -8,6 +8,7 @@ static void mosaic_check_caret(int x,int y,int w)
     int changed=0;
     for(int yy=y;yy<y+24;++yy)for(int xx=x;xx<x+w;++xx)
         changed+=on.pixels[yy*640+xx]!=off.pixels[yy*640+xx];
+    if(changed<=0 || changed>=20)fprintf(stderr,"caret at %d,%d: %d pixels, Scatter field %d\n",x,y,changed,ui.mosaic_scatter_field);
     assert(changed>0 && changed<20);ui.text_cursor_visible=1;
 }
 static void test_mosaic_selection(SDL_Window *window)
@@ -79,9 +80,9 @@ static void test_mosaic_selection(SDL_Window *window)
     key(window,SDLK_z,KMOD_CTRL);assert(mosaic_event_count(scene)==3);
     mosaic_select_only(&ui,b->id);mosaic_select_add(&ui,a->id);mosaic_select_add(&ui,c->id);
     key(window,SDLK_r,KMOD_CTRL);assert(ui.mosaic_scatter_open && mosaic.scatter_pool[0].id==b->id);
-    click(window,140,120,1);mosaic_check_caret(130,115,160);key(window,SDLK_RETURN,KMOD_NONE);
-    click(window,330,120,1);mosaic_check_caret(310,115,180);key(window,SDLK_RETURN,KMOD_NONE);
-    click(window,140,160,1);mosaic_check_caret(130,151,110);key(window,SDLK_ESCAPE,KMOD_NONE);
+    click(window,140,75,1);mosaic_check_caret(96,64,204);key(window,SDLK_RETURN,KMOD_NONE);
+    click(window,330,75,1);mosaic_check_caret(316,64,204);key(window,SDLK_RETURN,KMOD_NONE);
+    click(window,260,105,1);click(window,140,105,1);mosaic_check_caret(96,94,108);key(window,SDLK_ESCAPE,KMOD_NONE);
     click(window,130,150,2);assert(ui.mosaic_loop_open);
     mosaic_check_caret(140,173,170);key(window,SDLK_TAB,KMOD_NONE);mosaic_check_caret(330,173,170);
     key(window,SDLK_ESCAPE,KMOD_NONE);

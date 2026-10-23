@@ -571,8 +571,11 @@ typedef struct {
     int mosaic_spacing_confirm, mosaic_scatter_open, mosaic_scatter_copies;
     int mosaic_scatter_cluster, mosaic_scatter_overlap, mosaic_scatter_count, mosaic_scatter_valid;
     int mosaic_scatter_field;
+    int mosaic_scatter_keep_positions;
+    TsMosaicPitchSettings mosaic_scatter_pitch;
     double mosaic_scatter_start, mosaic_scatter_end;
     char mosaic_scatter_text[32], mosaic_scatter_status[80];
+    char mosaic_scatter_notes[80];
     TsMosaicSourceKey mosaic_source_picks[TS_MOSAIC_EVENTS];
     int mosaic_source_pick_count;
     int mosaic_record_length_drag, mosaic_record_length_before;
@@ -591,6 +594,8 @@ typedef struct {
     int mosaic_source_count, mosaic_source_page, mosaic_source_selected;
     int mosaic_bank_count, mosaic_source_pages, mosaic_source_offset;
     double mosaic_time, mosaic_scroll, mosaic_xscroll, mosaic_scale, mosaic_hscale;
+    uint64_t mosaic_card_mix_event;
+    int mosaic_card_mix_part; /* Hover/drag: 1 fade-in, 2 fade-out, 3 pan. */
     TsKeyboardMask staged_notes;
     uint32_t overlay_until_ms;
     int workbench_loop_active;
@@ -886,6 +891,11 @@ enum {
     TS_MOSAIC_FIT_X = 504, TS_MOSAIC_FIT_W = 52,
     TS_MOSAIC_ZOOM_OUT_X = 560, TS_MOSAIC_ZOOM_IN_X = 588, TS_MOSAIC_ZOOM_W = 24
 };
+/* Logical card-handle coordinates; false when too small or off the viewport. */
+int ts_ui_mosaic_fade_handle(const TsUiState *ui, const TsMosaicEvent *event,
+                            int part, double *x, double *y);
+int ts_ui_mosaic_pan_handle(const TsUiState *ui, const TsMosaicEvent *event,
+                           double *x, double *y, double *span);
 double ts_ui_mosaic_volume_y(const TsUiState *ui, double time);
 double ts_ui_mosaic_volume_time(const TsUiState *ui, double y);
 void ts_ui_render_mosaic_choice(TsFramebuffer *fb, const TsUiState *ui);

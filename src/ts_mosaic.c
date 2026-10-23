@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "ts_mosaic_pitch.inc"
 
 TsMosaic *ts_mosaic_create(void)
 {
@@ -242,6 +243,13 @@ static void event_balance(const TsMosaicEvent *e,float *left,float *right)
     *left=e->gain*(e->pan>0?sqrtf(fmaxf(0,1-e->pan)):1);
     *right=e->gain*(e->pan<0?sqrtf(fmaxf(0,1+e->pan)):1);
 }
+void ts_mosaic_event_fades(const TsMosaicEvent *e,double *in,double *out)
+{
+    *in=fmax(0,e->fade_in);*out=fmax(0,e->fade_out);
+    if(*in+*out>e->duration) {
+        double scale=e->duration/(*in+*out);*in*=scale;*out*=scale;
+    }
+}
 static float event_fade(const TsMosaicEvent *e,const TsMosaicVoice *v,double elapsed)
 {
     double in=v->fade_in,out=v->fade_out;
@@ -385,12 +393,8 @@ static TsStereoFrame mosaic_event_read(const TsMosaicEvent *e,TsMosaicVoice *v,d
     if(v->control_serial!=serial) {
         event_balance(e,&v->target_left,&v->target_right);
         v->base_mode=ts_loop_base_mode(e->mode);v->starts_at_sample=ts_loop_starts_at_sample(e->mode);
-        v->fade_in=fmax(0,e->fade_in);v->fade_out=fmax(0,e->fade_out);
-        /* Fades and loop controls are stable within the host's audio buffer.
-           Preserve the same proportional fades when duration changes live. */
-        if(v->fade_in+v->fade_out>e->duration) {
-            double scale=e->duration/(v->fade_in+v->fade_out);v->fade_in*=scale;v->fade_out*=scale;
-        }
+        /* Fades are stable within this buffer; editing them retains voice phase. */
+        ts_mosaic_event_fades(e,&v->fade_in,&v->fade_out);
         if(routes && (!v->output_route.ready || v->output_route.rate!=(unsigned)rate ||
            memcmp(&v->output_route.route,&e->output_route,sizeof(e->output_route))))
             ts_source_route_set(&v->output_route,e->output_route,(unsigned)rate);

@@ -7234,7 +7234,10 @@ static void ui_sync_dialog_workspaces(TsUiState *ui)
     /* Mosaic owns these dialogs. Hiding it strands the modal: its renderer
        and input handler both require mosaic_open, while other input is blocked. */
     if(ui_dialog_open(ui) && !ui->portal.open &&
-       !ui->mosaic_scatter_open && !ui->mosaic_spacing_confirm && !ui->mosaic_loop_open && !ui->mosaic_align_open)ui->mosaic_open=0;
+       !ui->mosaic_scatter_open && !ui->mosaic_spacing_confirm && !ui->mosaic_loop_open && !ui->mosaic_align_open &&
+       !ui->project_overwrite_confirm_open && ui->browser.mode!=TS_BROWSER_SAVE_RECIPE &&
+       ui->browser.mode!=TS_BROWSER_SAVE_XM &&
+       !(ui->file_busy && !strcmp(ui->file_busy_label,"SAVING")))ui->mosaic_open=0;
     if(ui_dialog_open(ui))ui->tracker_open=0;
 }
 
@@ -17079,7 +17082,7 @@ int main(int argc, char **argv)
                 } else if (y >= 4 && y < 28 && x >= TS_UI_FT2_X && x < TS_UI_FT2_X + TS_UI_FT2_W) {
                     begin_exchange_send(&ui, &instrument, &sample_pages);
                 } else if (y >= 4 && y < 28 && x >= 360 && x < 398) {
-                    browser_open(&ui, ui.show_ingredients ?
+                    browser_open(&ui, ui.show_ingredients && !ui.mosaic_open ?
                                  TS_BROWSER_SAVE_PRESET : TS_BROWSER_SAVE_RECIPE);
                 } else if (y >= 4 && y < 28 && x >= 402 && x < 460) {
                     begin_export_choice(&ui);
@@ -18179,6 +18182,11 @@ int main(int argc, char **argv)
             ui.overlay[0] = '\0';
         refresh_workbench_loop(device, &audio, &ui, &instrument);
         mosaic_poll(device,&ui,&instrument,&mosaic);
+        if(mosaic.drag==1 || (mosaic.drag>=7 && mosaic.drag<=9)) {
+            if(SDL_GetKeyboardFocus()!=window || !(SDL_GetMouseState(NULL,NULL)&SDL_BUTTON_LMASK) ||
+               ui_dialog_open(&ui))mosaic_drag_end(&ui,&mosaic);
+            else if(mosaic.drag==1)mosaic_drag_autoscroll(device,&ui,&mosaic,SDL_GetTicks());
+        }
         ui_sync_dialog_workspaces(&ui);
         Uint32 health_setup_now = SDL_GetTicks();
         if (device) SDL_LockAudioDevice(device);

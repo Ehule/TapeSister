@@ -57,7 +57,11 @@ See the [complete editing reference](SISTERTRACKER_PLAYBACK.md).
 
 ## Mosaic
 
-Navigation: **Shift+Z** fits all; **Z** fits selection/returns; **F** toggles FOLLOW;
+**Ctrl+S / SAVE** opens the save dialog over Mosaic and preserves the working view.
+Drag selected cards at either horizontal edge to scroll with them; Shift-drag copies
+work too. Release stops scrolling; Escape cancels the single undoable move.
+
+Navigation: **Shift+Z** fits the occupied card bounds; **Z** fits selection/returns; **F** toggles FOLLOW;
 **H** shows the playhead without seeking; **Page Up/Down** move about one screen;
 **middle-drag** pans (middle-click seeks on release). Fit, page moves, panning and view recall turn FOLLOW
 off. The five numbered buttons beneath Sources save views with the project:
@@ -102,6 +106,10 @@ does not switch the main bank. See the [Mosaic chapter](USER_MANUAL.md#mosaic).
 | Mute / solo all cards sharing selected sources | Shift+M / Shift+S |
 | Clear all solos, including offscreen cards | CLEAR SOLO in footer |
 | Selection level / pan / fade-in / fade-out | LEVEL / PAN / IN / OUT in footer |
+| Visual fade on one card | Drag its top IN handle down / bottom OUT handle up |
+| Visual pan on one card | Drag the pan-line diamond left/right; dotted line = center |
+| Center a card's pan | Right-click or double-click its pan diamond |
+| Reset a card fade / cancel drag | Right-click or double-click handle / Escape |
 | Global tape speed | SPEED: 0.5× (−12 st), center 1×, 2× (+12 st) |
 | Fine control / reset | Shift+wheel / right-click or double-click |
 | Copy / paste primary event at playhead | Ctrl+C / Ctrl+V; use Shift-drag for group copies |
@@ -129,6 +137,14 @@ does not switch the main bank. See the [Mosaic chapter](USER_MANUAL.md#mosaic).
 | Follow the growing take, including with playback stopped | Enable FOLLOW |
 | Discard an active Mosaic take | Escape in the arrangement after finishing any active gesture |
 
+**Ctrl+R pitch:** Keep Notes / Chord per Card / Spread Chord / Spread Scale.
+Click or wheel root, chord/scale, octave bounds and distribution; Shift-click goes
+backward. **Roll Notes** rerolls Random/Shuffled without moving cards; **Roll
+Positions** preserves notes. Ascending/Descending follow selection/copy order.
+**Edit Selection + Keep Positions** reharmonizes existing cards. Apply is one undo
+step. Primary Chord uses the primary card's intervals; all notes save with the
+project. [Details and example](MOSAIC.md#scatter-pitch).
+
 Each event owns its one-to-five-note chord and **EVENT LOOP / EVENT ONCE** setting.
 C5 plays twice as fast as C4; C3 takes twice as long. Extending a loop allows more
 repetitions at the same pitches. One-shots play once, ending at their own completion
@@ -148,7 +164,8 @@ even when opening a different card. Audio changes accumulate until returning to 
 Speed changes pitch and arrangement timing together. Its wheel moves by semitones;
 Shift+wheel uses tenths. Mix controls apply to the selection without editing audio.
 Pan balances the original stereo channels; IN/OUT are linear fades in arrangement
-seconds. Reset returns to 0 dB, center pan, zero fades, or 1× speed. Escape cancels
+seconds. Card handles show the same fades as a diagonal line and darkened wedge;
+zoom in for handles on small cards. Reset returns to 0 dB, center pan, zero fades, or 1× speed. Escape cancels
 a drag; Undo/Redo includes the controls. CLEAR SOLO leaves mute switches intact.
 
 No audio change means no question. Loop and chord changes are immediate and local

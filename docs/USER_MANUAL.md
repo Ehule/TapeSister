@@ -835,6 +835,11 @@ visually at the C4 reference speed, while the chord voices follow their own rate
 
 **Z** fits the selected cards and returns to the previous view. **H** centers the
 playhead in the view without seeking; **Page Up/Down** move by about one screen.
+FIT ALL frames the occupied card bounds, excluding empty horizontal space before
+the arrangement. Dragging selected cards at the left/right canvas edge scrolls
+with the group, including Shift-drag copies; release stops and Escape cancels the
+single undoable move. Ctrl+S and header SAVE keep Mosaic open behind the save dialog
+and retain its zoom, scroll and selection after saving or cancelling.
 Middle-drag pans freely; a middle-click still seeks on release. Fit, page navigation,
 panning, and recalling a view turn FOLLOW off; press **F** to resume it.
 
@@ -877,6 +882,22 @@ AUTO-SPACE may shift the row horizontally while preserving its order and timing.
 If there is insufficient capacity, no cards are added. Ctrl-click source selection
 also remains available. Time-range and Scatter input fields have a blinking cursor.
 
+**Ctrl+R Scatter** can also assign notes while moving or copying cards. Keep Notes
+preserves current notes; Chord per Card assigns a full chord (up to five notes);
+Spread Chord and Spread Scale assign one note per card. Choose root, chord/scale,
+low/high octave and Random, Shuffled, Ascending or Descending distribution. Shuffled
+uses every available pitch before repeating. Ordered distribution follows selection
+or copy order, independently of the generated start times. Primary Chord reuses the
+primary card's voicing; source scattering uses the first selected source.
+
+**Roll Notes** and **Roll Positions** are independent. Enable **Keep Positions** in
+Edit Selection to change only notes. The preview shows initial notes/chord and total
+assigned notes. Click/wheel pitch options; Shift-click steps backward. Apply is one
+undo step, Cancel leaves cards untouched, and notes save with the project. Correct
+source tuning is needed to match the chosen key; full chords require more playback
+voices. See [Scatter pitch](MOSAIC.md#scatter-pitch) for ranges and examples.
+
+
 Group moves and copies keep relative timing and spacing. AUTO-SPACE is off for new
 arrangements. When enabled, collision handling shifts the group horizontally while
 keeping start times fixed. Enabling it requires confirmation and can be undone. A Shift-click without a
@@ -894,7 +915,20 @@ a single selection. FOLLOW suspends scrolling during a drag.
 
 ### Live mix, fades, and global speed
 
+Use the two small handles near each card's right edge for visual fades: drag the
+top **IN** handle down or the bottom **OUT** handle up. A diagonal line and darkened
+wedge show the linear attenuation as you drag. The status bar shows seconds, and
+the handles stop when the fades meet. Each gesture changes only that card and is
+one undo step. Right-click or double-click a handle resets that fade; Escape cancels
+the drag. Zoom in if a card is too small to show handles. Footer edits also update
+the shading; the original sample remains unchanged.
+
 Select an event or group and adjust the footer's **LEVEL**, **PAN**, **IN** and **OUT**.
+For direct card panning, drag the diamond on the colored pan line left/right.
+The dotted line marks true center; the status bar reports CENTER or L/R percentage.
+Right-click or double-click the diamond centers it. Escape cancels the drag and
+Undo/Redo restores it. Only the grabbed card changes; footer PAN still edits groups.
+The waveform below the diamond remains a card-move target. Zoom in for small cards.
 Level spans silence to +6 dB with 0 dB at center. Pan balances the original channels,
 with both preserved at center. IN/OUT are linear fades in arrangement seconds.
 Overlapping fades scale proportionally to fit the event. These controls do not change

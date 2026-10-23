@@ -16,6 +16,32 @@
 #define TS_MOSAIC_LAYOUT_LIMIT 1000000000.0
 #define TS_MOSAIC_MIN_HSCALE 0.000000001
 
+typedef enum {
+    TS_MOSAIC_PITCH_KEEP, TS_MOSAIC_PITCH_CHORD, TS_MOSAIC_PITCH_SPREAD_CHORD,
+    TS_MOSAIC_PITCH_SPREAD_SCALE, TS_MOSAIC_PITCH_MODE_COUNT
+} TsMosaicPitchMode;
+typedef enum {
+    TS_MOSAIC_CHORD_PRIMARY, TS_MOSAIC_CHORD_MAJOR, TS_MOSAIC_CHORD_MINOR,
+    TS_MOSAIC_CHORD_MAJ7, TS_MOSAIC_CHORD_MIN7, TS_MOSAIC_CHORD_DOM7,
+    TS_MOSAIC_CHORD_SUS2, TS_MOSAIC_CHORD_SUS4, TS_MOSAIC_CHORD_COUNT
+} TsMosaicChord;
+typedef enum {
+    TS_MOSAIC_PITCH_RANDOM, TS_MOSAIC_PITCH_ASCENDING, TS_MOSAIC_PITCH_DESCENDING,
+    TS_MOSAIC_PITCH_SHUFFLED, TS_MOSAIC_PITCH_ORDER_COUNT
+} TsMosaicPitchOrder;
+typedef struct {
+    int mode, root, scale, chord, order, low_octave, high_octave;
+} TsMosaicPitchSettings;
+const char *ts_mosaic_pitch_mode_name(int mode);
+const char *ts_mosaic_chord_name(int chord);
+const char *ts_mosaic_pitch_order_name(int order);
+/* UI-only note planning. Returns sorted note choices (or complete-chord roots)
+   inside C(low octave)..B(high octave), clipped to MIDI 0..127. Zero means no
+   valid choice. Intervals preserve the primary voicing in CHORD mode. */
+int ts_mosaic_pitch_choices(const TsMosaicPitchSettings *settings,
+    const int primary[TS_MOSAIC_NOTES], int primary_count,
+    int choices[128], int intervals[TS_MOSAIC_NOTES], int *voices);
+
 typedef struct {
     int stored;
     double scroll, xscroll, scale, hscale;
@@ -152,6 +178,9 @@ double ts_mosaic_snap(const TsMosaic *m, uint64_t id, double time, double tolera
 double ts_mosaic_end(const TsMosaic *m);
 void ts_mosaic_seek(TsMosaic *m, double time);
 void ts_mosaic_set_speed(TsMosaic *m, double speed);
+/* Effective linear fades: overlapping saved values scale to the card duration.
+   Shared by playback, the card envelope and its drag handles. */
+void ts_mosaic_event_fades(const TsMosaicEvent *event, double *fade_in, double *fade_out);
 /* Envelope positions are fractions of the whole arrangement, not seconds. */
 float ts_mosaic_volume_at(const TsMosaic *m, double position);
 void ts_mosaic_volume_draw(TsMosaic *m, double from, float a, double to, float b);

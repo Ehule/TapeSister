@@ -60,6 +60,8 @@ the EVENTS pages. Shared originals and the original Sample banks remain availabl
 | Select / move an event | Click / drag its body |
 | Extend the event's playback window | Drag its top edge earlier or bottom edge later |
 | Change visual width | Drag its right edge |
+| Shape one card's fade | Drag its IN handle down or OUT handle up |
+| Pan one card | Drag the diamond on its pan line left/right; right-click centers |
 | Align starts, ends or midpoints | Hold Alt while moving or extending |
 | Edit the event | Double-click |
 | Box-select a group | Shift+left-drag on empty canvas |
@@ -137,7 +139,14 @@ Time-range and Scatter number fields show a **blinking cursor** while editing.
 ![Primary and secondary Mosaic selection](screenshots/mosaic-performance/primary-selection.png)
 
 Navigation changes the view while playback and card selection continue. **Shift+Z**
-fits the whole arrangement; **Z** fits the selection and returns on the next press.
+fits the whole arrangement, framing the cards' horizontal bounds instead of empty
+space before them; **Z** fits the selection and returns on the next press.
+Dragging selected cards into either horizontal canvas edge scrolls the view while
+you hold there. Scrolling speeds up nearer the edge and works for Shift-drag copies.
+The group keeps its spacing; the entire drag remains one undo step. Release stops
+scrolling, and Escape cancels the move. The left edge stops at the layout origin.
+**Ctrl+S** and the header **SAVE** button show the save browser or overwrite dialog
+over Mosaic. Saving or cancelling keeps the workspace, zoom, scroll and selection.
 **H** centers the playhead in the view. **Page Up/Down** move by about 90% of a
 screen, leaving some overlap for orientation. Holding a page key repeats the move.
 Fit, page navigation, panning, and recalling a saved view turn FOLLOW off so the
@@ -277,6 +286,29 @@ F11 or Ctrl+Shift+Space, groups ARP, SisterTracker and Mosaic under Shift+Space.
 Space remains local. This shares start/stop without changing tempo or tape speed.
 
 ## Performance controls
+
+Each card has two small fade handles near its right edge: **IN** starts at the top,
+**OUT** at the bottom. Drag IN downward to lengthen the fade-in, or OUT upward to
+lengthen the fade-out. The diagonal line and darkened wedge show the linear gain
+envelope immediately; more shading means more attenuation at that point in time.
+The handles stop where the two fades meet. The status bar shows the fade in seconds.
+Right-click or double-click a handle to remove that fade; Escape cancels a drag.
+Each drag edits only that card and is one undo step. Handles appear when the card
+is large enough to grab; zoom in on small cards. The shaded envelope remains visible
+when zoomed out, and existing footer edits update it too.
+
+![Card fade handles and shaded envelopes](screenshots/mosaic-performance/fade-handles.png)
+
+Cards also show a **pan line** and a faint dotted **center reference** through the
+waveform. Drag the small diamond just below the card's name/notes left or right to
+balance that card. The line follows the setting, with a small center snap and
+**CENTER**, **L %** or **R %** feedback in the status bar. Right-click or double-click
+the diamond centers it; Escape restores the opening value. A drag is one undo step
+and keeps live playback running. The rest of the waveform remains available for
+moving the card, and fade handles retain priority where controls meet. Zoom in if
+the card is too small for the pan grip. Footer PAN edits update the lines too.
+
+![Pan lines, center references and fade handles](screenshots/mosaic-performance/pan-lines.png)
 
 Select an event, then use **LEVEL**, **PAN**, **IN** and **OUT** in the footer.
 A selected group receives the same adjustment in one undoable gesture. These controls
@@ -650,13 +682,61 @@ Undo restores each card's original value. Fades are limited to each card's durat
 
 **Ctrl+R** opens Scatter for the selected cards. Alternatively, Ctrl-click one or more
 Sources (including across bank pages), then press Ctrl+R to create copies from them.
-Set a range of **start times in seconds**, choose Move Selection or Create Copies,
+Set a range of **start times in seconds**, choose Edit Selection or Create Copies,
 set the copy count, and choose even scattering or clusters. Cards may extend beyond
 the end of the start-time range. Overlap off separates cards horizontally without
 changing the generated times. Overlap on permits visual intersections and turns off
 AUTO-SPACE when applied.
 
 Click a numeric field to edit it; Ctrl+A clears the field, Enter accepts it, and
-Escape cancels the dialog. **Reroll** changes only the preview. **Apply** commits the
+Escape cancels the dialog. **Roll Positions** changes only the preview. **Apply** commits the
 whole operation as one undo step, including any spacing preference change. Cancel
 leaves the arrangement untouched. The 1,024-card limit is checked before applying.
+
+
+### Scatter pitch
+
+Scatter opens with **KEEP NOTES**, preserving each card's existing notes. Click the
+pitch mode to choose **CHORD PER CARD**, **SPREAD CHORD** (one chord tone per card),
+or **SPREAD SCALE** (one scale tone per card). Pitch controls also respond to the
+wheel; Shift-click steps backward. Numeric start times and Count remain text fields.
+
+- **ROOT** selects C through B. Chords include major, minor, major/minor/dominant
+  sevenths, sus2, sus4 and **PRIMARY CHORD**. Primary uses the first selected card's
+  intervals above its lowest note; for selected sources it uses the first source.
+  Root transposes that voicing. Spread Chord collapses octave doubles into pitch
+  classes; Chord per Card preserves the full voicing, up to five notes.
+- **SCALE** follows FM's Pitch page: chromatic, major, natural minor, major
+  pentatonic or whole tone. Scale mode distributes single notes; it does not put
+  an entire scale on each card.
+- **LOW / HIGH** bound the pitches from C of the low octave to B of the high
+  octave (MIDI limits are C−1 through G9). A whole chord must fit completely.
+  If none fits, widen the range before applying. Chord per Card may choose
+  different octave placements inside this range.
+- **RANDOM** allows repeated choices; **SHUFFLED** visits every available note
+  before repeating. **ASCENDING / DESCENDING** cycle in pitch order. Distribution
+  follows selection order (primary first), or generated-copy order, independently
+  of start times. With whole chords, these choices select chord octaves.
+- **ROLL NOTES** rerolls Random/Shuffled pitches without moving cards. **ROLL
+  POSITIONS** changes positions without changing notes. Ordered pitches have no
+  random roll. The text preview shows the first notes/chord; the bottom line
+  counts all assigned notes, not the number sounding simultaneously.
+- In **EDIT SELECTION**, enable **KEEP POSITIONS** to reharmonize without moving
+  cards or changing Auto-Space. Time, scatter and overlap controls are inactive
+  in this mode. Create Copies and source scattering generate new positions.
+
+For example, select one card, Ctrl+R, Create Copies, Count 12, Spread Chord,
+Root C and Minor. Set Low C4 / High B4 and Shuffled to distribute C4, D#4 and G4
+across the twelve copies. Choose Chord per Card to give each copy all three notes.
+The interface displays sharps (D# is E-flat).
+
+Pitch assignment preserves source tuning, gain, pan, fades, durations, loop modes,
+mute/solo and routing. Pitched source material needs its correct root tuning;
+Scatter transposes samples and does not detect or retune notes within recorded
+chords. Higher pitches play samples faster, following ordinary Mosaic playback.
+Full chords add playback voices; spreading one note per card keeps the voice count
+lower. Pitch choices are planned on the UI thread, with no new callback work.
+
+Apply commits exactly the preview as one undo step; Escape/Cancel discards it.
+Generated notes use the existing project format and survive save/reopen. Each
+new Scatter dialog starts with Keep Notes so pitch replacement is deliberate.

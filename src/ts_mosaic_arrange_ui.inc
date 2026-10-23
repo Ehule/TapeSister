@@ -1,3 +1,9 @@
+static void mosaic_scatter_button(TsFramebuffer *fb,int x,int y,int w,const char *label,int active,int enabled)
+{
+    if(enabled){mosaic_button(fb,x,y,w,label,active,0);return;}
+    rect(fb,x,y,w,24,ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_PANEL,RGB(31,28,38)));
+    text(fb,x+(w-(int)strlen(label)*6)/2,y+8,label,ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_DIM,RGB(100,100,100)),1);
+}
 static void mosaic_arrange_overlay(TsFramebuffer *fb,const TsUiState *ui)
 {
     if(!ui->mosaic_scatter_open && !ui->mosaic_spacing_confirm && !ui->mosaic_loop_open && !ui->mosaic_align_open)return;
@@ -31,30 +37,52 @@ static void mosaic_arrange_overlay(TsFramebuffer *fb,const TsUiState *ui)
         text(fb,140,195,"TIMES STAY FIXED. CTRL+Z CAN UNDO THIS.",ink,1);
         mosaic_button(fb,180,220,126,"ENABLE",1,0);mosaic_button(fb,330,220,126,"CANCEL",0,0);return;
     }
-    rect(fb,110,78,400,251,accent);rect(fb,112,80,396,247,panel);
-    text(fb,130,92,"SCATTER / START TIMES IN SECONDS",ink,1);
+    rect(fb,80,30,456,350,accent);rect(fb,82,32,452,346,panel);
+    text(fb,96,44,"SCATTER / CLICK OR WHEEL / SHIFT REVERSES",ink,1);
     char label[64];
-    snprintf(label,sizeof(label),"FROM %.3f",ui->mosaic_scatter_start);
+    int keep=ui->mosaic_scatter_keep_positions,pitched=ui->mosaic_scatter_pitch.mode!=TS_MOSAIC_PITCH_KEEP;
+    const TsMosaicPitchSettings *p=&ui->mosaic_scatter_pitch;
+    snprintf(label,sizeof(label),"FROM %.3f S",ui->mosaic_scatter_start);
     if(ui->mosaic_scatter_field==1)snprintf(label,sizeof(label),"%.24s%s",ui->mosaic_scatter_text,ui->text_cursor_visible?"_":" ");
-    mosaic_button(fb,130,115,160,label,ui->mosaic_scatter_field==1,0);
-    snprintf(label,sizeof(label),"TO %.3f",ui->mosaic_scatter_end);
+    mosaic_scatter_button(fb,96,64,204,label,ui->mosaic_scatter_field==1,!keep);
+    snprintf(label,sizeof(label),"TO %.3f S",ui->mosaic_scatter_end);
     if(ui->mosaic_scatter_field==2)snprintf(label,sizeof(label),"%.24s%s",ui->mosaic_scatter_text,ui->text_cursor_visible?"_":" ");
-    mosaic_button(fb,310,115,180,label,ui->mosaic_scatter_field==2,0);
+    mosaic_scatter_button(fb,316,64,204,label,ui->mosaic_scatter_field==2,!keep);
     snprintf(label,sizeof(label),"COUNT %d",ui->mosaic_scatter_count);
+    if(!ui->mosaic_scatter_copies)snprintf(label,sizeof(label),"SELECTED CARDS");
     if(ui->mosaic_scatter_field==3)snprintf(label,sizeof(label),"%.15s%s",ui->mosaic_scatter_text,ui->text_cursor_visible?"_":" ");
-    mosaic_button(fb,130,151,110,label,ui->mosaic_scatter_field==3,0);
-    mosaic_button(fb,260,151,230,ui->mosaic_scatter_copies?"CREATE COPIES":"MOVE SELECTION",ui->mosaic_scatter_copies,0);
-    mosaic_button(fb,130,186,170,ui->mosaic_scatter_cluster?"CLUSTERED":"EVEN SCATTER",ui->mosaic_scatter_cluster,0);
-    mosaic_button(fb,320,186,170,ui->mosaic_scatter_overlap?"OVERLAP ON":"OVERLAP OFF",ui->mosaic_scatter_overlap,0);
-    rect(fb,130,222,360,34,RGB(13,15,20));
-    double span=fmax(.001,ui->mosaic_scatter_end-ui->mosaic_scatter_start);
+    mosaic_scatter_button(fb,96,94,108,label,ui->mosaic_scatter_field==3,ui->mosaic_scatter_copies);
+    mosaic_scatter_button(fb,220,94,140,ui->mosaic_scatter_copies?"CREATE COPIES":"EDIT SELECTION",ui->mosaic_scatter_copies,!ui->mosaic_source_pick_count);
+    mosaic_scatter_button(fb,376,94,144,"KEEP POSITIONS",keep,!ui->mosaic_scatter_copies);
+    mosaic_scatter_button(fb,96,124,204,ui->mosaic_scatter_cluster?"CLUSTERED":"EVEN SCATTER",ui->mosaic_scatter_cluster,!keep);
+    mosaic_scatter_button(fb,316,124,204,ui->mosaic_scatter_overlap?"OVERLAP ON":"OVERLAP OFF",ui->mosaic_scatter_overlap,!keep);
+    mosaic_scatter_button(fb,96,156,204,ts_mosaic_pitch_mode_name(p->mode),pitched,1);
+    static const char *roots[]={"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"};
+    snprintf(label,sizeof(label),"ROOT %s",roots[p->root]);
+    mosaic_scatter_button(fb,316,156,204,label,0,pitched);
+    snprintf(label,sizeof(label),"%s %s",p->mode==TS_MOSAIC_PITCH_SPREAD_SCALE?"SCALE":"CHORD",
+        p->mode==TS_MOSAIC_PITCH_SPREAD_SCALE?ts_fm_pitch_scale_name(p->scale):ts_mosaic_chord_name(p->chord));
+    if(p->mode!=TS_MOSAIC_PITCH_SPREAD_SCALE && p->chord==TS_MOSAIC_CHORD_PRIMARY)snprintf(label,sizeof(label),"PRIMARY CHORD");
+    mosaic_scatter_button(fb,96,186,204,label,0,pitched);
+    mosaic_scatter_button(fb,316,186,204,ts_mosaic_pitch_order_name(p->order),0,pitched);
+    snprintf(label,sizeof(label),"LOW C%d",p->low_octave);mosaic_scatter_button(fb,96,216,204,label,0,pitched);
+    snprintf(label,sizeof(label),"HIGH %s%d",p->high_octave==9?"G":"B",p->high_octave);mosaic_scatter_button(fb,316,216,204,label,0,pitched);
+    text(fb,96,247,ui->mosaic_scatter_notes,ink,1);
+    rect(fb,96,264,424,28,RGB(13,15,20));
+    double first=ui->mosaic_scatter_start,last=ui->mosaic_scatter_end;
+    if(keep && ui->mosaic_ghost_count) {
+        first=last=ui->mosaic_ghosts[0].start;
+        for(int i=0;i<ui->mosaic_ghost_count;++i){first=fmin(first,ui->mosaic_ghosts[i].start);last=fmax(last,ui->mosaic_ghosts[i].start);}
+    }
+    double span=fmax(.001,last-first);
     for(int i=0;i<ui->mosaic_ghost_count;++i) {
         const TsMosaicEvent *e=&ui->mosaic_ghosts[i];
-        int x=132+(int)((e->start-ui->mosaic_scatter_start)/span*352);
-        rect(fb,x,226+(i%4)*6,3,4,mosaic_color(e->source->hash));
+        int x=98+(int)(fmax(0,fmin(1,(e->start-first)/span))*416);
+        rect(fb,x,268+(i%3)*6,3,4,mosaic_color(e->source->hash));
     }
-    mosaic_button(fb,130,272,100,"REROLL",0,0);
-    mosaic_button(fb,250,272,100,"APPLY",ui->mosaic_scatter_valid,0);
-    mosaic_button(fb,370,272,120,"CANCEL",0,0);
-    text(fb,130,307,ui->mosaic_scatter_status,ink,1);
+    mosaic_scatter_button(fb,96,302,204,"ROLL POSITIONS",0,!keep);
+    mosaic_scatter_button(fb,316,302,204,"ROLL NOTES",0,pitched && (p->order==TS_MOSAIC_PITCH_RANDOM || p->order==TS_MOSAIC_PITCH_SHUFFLED));
+    mosaic_scatter_button(fb,96,334,204,"APPLY",ui->mosaic_scatter_valid,ui->mosaic_scatter_valid);
+    mosaic_button(fb,316,334,204,"CANCEL",0,0);
+    text(fb,96,366,ui->mosaic_scatter_status,ink,1);
 }
