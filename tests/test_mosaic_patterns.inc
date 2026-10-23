@@ -109,14 +109,52 @@ static void mosaic_patterns(void)
     pattern_render(m,mixed,n,0);pattern_render(loaded,other,n,0);assert(pattern_difference(mixed,other,n)<1e-6);ts_mosaic_free(loaded);
     /* UI uses the actual source browser, drag model and native renderer. */
     static MosaicController mc;static PortalController pc;static SisterWindow sw;static TransformController tc;
-    mc.pages=test_pages;test_ui->mosaic=test_audio->mosaic=m;test_ui->mosaic_open=1;test_ui->tracker_open=0;test_ui->mosaic_pattern_tab=1;
+    mc.pages=test_pages;test_ui->mosaic=test_audio->mosaic=m;test_ui->mosaic_open=1;test_ui->tracker_open=0;test_ui->mosaic_pattern_tab=0;
     test_ui->mosaic_scale=200;test_ui->mosaic_hscale=1;test_ui->mosaic_scroll=test_ui->mosaic_xscroll=0;m->playing=0;a->x=20;
-    mosaic_poll(0,test_ui,test_bank,&mc);assert(test_ui->mosaic_source_count && test_ui->mosaic_sources[0].source->pattern);
-    test_ui->mosaic_source_selected=0;mosaic_source_audition(0,test_ui,test_bank,&mc);assert(m->audition_id);
-    for(int i=0;i<1000;++i)ts_mosaic_read(m,48000);ts_mosaic_audition(m,0);
-    mosaic_source_drag(test_ui,test_bank,&mc,0);assert(mc.source_drag.source->pattern && mc.source_drag.notes[0]==60);mosaic_drag_end(test_ui,&mc);
+    mosaic_poll(0,test_ui,test_bank,&mc);
+    SDL_Event ev;
+    /* Click the visible tabs through the full dispatcher. The transport row
+       used to consume their center/bottom before the tab handler ran. */
+    const int sizes[][2]={{640,400},{1280,800},{1729,973}};
+    const int tab_y[]={37,38,44,51};
+    for(unsigned scale=0;scale<3;++scale){
+        int width=sizes[scale][0],height=sizes[scale][1];SDL_SetWindowSize(test_window,width,height);
+        for(unsigned pos=0;pos<4;++pos)for(int tab=1;tab>=0;--tab){
+            SDL_zero(ev);ev.type=SDL_MOUSEBUTTONDOWN;ev.button.windowID=SDL_GetWindowID(test_window);
+            ev.button.button=SDL_BUTTON_LEFT;ev.button.clicks=1;
+            ev.button.x=((tab?82:32)*width+639)/640;ev.button.y=(tab_y[pos]*height+399)/400;
+            assert(mosaic_event(&ev,test_window,0,test_audio,test_ui,test_bank,&mc,&pc,&sw,&tc,48000));
+            assert(test_ui->mosaic_pattern_tab==tab && !m->playing);
+            assert(test_ui->mosaic_source_count && test_ui->mosaic_sources[0].sample);
+            if(tab)assert(test_ui->mosaic_sources[0].source && test_ui->mosaic_sources[0].source->pattern);
+            else assert(!test_ui->mosaic_sources[0].source || !test_ui->mosaic_sources[0].source->pattern);
+            ev.type=SDL_MOUSEBUTTONUP;mosaic_event(&ev,test_window,0,test_audio,test_ui,test_bank,&mc,&pc,&sw,&tc,48000);
+        }
+    }
+    SDL_SetWindowSize(test_window,640,400);
+    SDL_zero(ev);ev.type=SDL_MOUSEBUTTONDOWN;ev.button.windowID=SDL_GetWindowID(test_window);
+    ev.button.button=SDL_BUTTON_LEFT;ev.button.clicks=1;ev.button.x=82;ev.button.y=44;
+    assert(mosaic_event(&ev,test_window,0,test_audio,test_ui,test_bank,&mc,&pc,&sw,&tc,48000));assert(test_ui->mosaic_pattern_tab);
+    ev.type=SDL_MOUSEBUTTONUP;mosaic_event(&ev,test_window,0,test_audio,test_ui,test_bank,&mc,&pc,&sw,&tc,48000);
+    /* Select a real source, audition with A, then drag/release it into Mosaic. */
+    ev.type=SDL_MOUSEBUTTONDOWN;ev.button.x=32;ev.button.y=86;
+    assert(mosaic_event(&ev,test_window,0,test_audio,test_ui,test_bank,&mc,&pc,&sw,&tc,48000));assert(mc.drag==3);
+    ev.type=SDL_MOUSEBUTTONUP;mosaic_event(&ev,test_window,0,test_audio,test_ui,test_bank,&mc,&pc,&sw,&tc,48000);
+    SDL_zero(ev);ev.type=SDL_KEYDOWN;ev.key.windowID=SDL_GetWindowID(test_window);ev.key.keysym.sym=SDLK_a;
+    assert(mosaic_event(&ev,test_window,0,test_audio,test_ui,test_bank,&mc,&pc,&sw,&tc,48000));assert(m->audition_id);
+    double preview_power=0;for(int i=0;i<1000;++i){TsStereoFrame f=ts_mosaic_read(m,48000);preview_power+=fabs(f.l)+fabs(f.r);}assert(preview_power>1);ts_mosaic_audition(m,0);
+    SDL_zero(ev);ev.type=SDL_MOUSEBUTTONDOWN;ev.button.windowID=SDL_GetWindowID(test_window);ev.button.button=SDL_BUTTON_LEFT;ev.button.clicks=1;ev.button.x=32;ev.button.y=86;
+    assert(mosaic_event(&ev,test_window,0,test_audio,test_ui,test_bank,&mc,&pc,&sw,&tc,48000));assert(mc.drag==3);
+    ev.type=SDL_MOUSEMOTION;ev.motion.windowID=SDL_GetWindowID(test_window);ev.motion.x=450;ev.motion.y=166;
+    assert(mosaic_event(&ev,test_window,0,test_audio,test_ui,test_bank,&mc,&pc,&sw,&tc,48000));assert(test_ui->mosaic_ghost_count==1);
+    SDL_zero(ev);ev.type=SDL_MOUSEBUTTONUP;ev.button.windowID=SDL_GetWindowID(test_window);ev.button.button=SDL_BUTTON_LEFT;ev.button.x=450;ev.button.y=166;
+    assert(mosaic_event(&ev,test_window,0,test_audio,test_ui,test_bank,&mc,&pc,&sw,&tc,48000));assert(!mc.drag);
+    TsMosaicEvent *dropped=ts_mosaic_find(m,test_ui->mosaic_selected);assert(dropped && dropped->source->pattern && dropped->notes[0]==60 && dropped->start==.5);
+    dropped->solo=1;pattern_render(m,other,n,0);double dropped_power=0;for(int i=0;i<n;++i)dropped_power+=fabs(other[i].l)+fabs(other[i].r);assert(dropped_power>10);
+    SDL_zero(ev);ev.type=SDL_KEYDOWN;ev.key.windowID=SDL_GetWindowID(test_window);ev.key.keysym.sym=SDLK_DELETE;
+    assert(mosaic_event(&ev,test_window,0,test_audio,test_ui,test_bank,&mc,&pc,&sw,&tc,48000));assert(!dropped->id);m->playing=0;
     mosaic_select_only(test_ui,a->id);double hx,hy;assert(ts_ui_mosaic_fade_handle(test_ui,a,1,&hx,&hy));
-    SDL_Event ev;SDL_zero(ev);ev.type=SDL_MOUSEBUTTONDOWN;ev.button.windowID=SDL_GetWindowID(test_window);ev.button.button=SDL_BUTTON_LEFT;ev.button.clicks=1;ev.button.x=round(hx);ev.button.y=round(hy);
+    SDL_zero(ev);ev.type=SDL_MOUSEBUTTONDOWN;ev.button.windowID=SDL_GetWindowID(test_window);ev.button.button=SDL_BUTTON_LEFT;ev.button.clicks=1;ev.button.x=round(hx);ev.button.y=round(hy);
     assert(mosaic_event(&ev,test_window,0,test_audio,test_ui,test_bank,&mc,&pc,&sw,&tc,48000));assert(mc.drag==7);
     ev.type=SDL_MOUSEMOTION;ev.motion.windowID=SDL_GetWindowID(test_window);ev.motion.x=round(hx);ev.motion.y=round(hy)+20;
     mosaic_event(&ev,test_window,0,test_audio,test_ui,test_bank,&mc,&pc,&sw,&tc,48000);assert(a->fade_in>.12);
@@ -189,6 +227,17 @@ SDL_DestroyTexture(texture);for(int i=0;i<2;++i){if(textures[i])SDL_DestroyTextu
     assert(ts_sample_pages_load_project(restored_pages,restored_bank,record,"pattern-project/pattern-project.tsr",test_error,sizeof(test_error)));
     assert(restored_pages->mosaic->events[0].source->pattern && ts_mosaic_hash(restored_pages->mosaic)==ts_mosaic_hash(m));
     pattern_render(m,mixed,n,0);pattern_render(restored_pages->mosaic,other,n,0);assert(pattern_difference(mixed,other,n)<1e-6);
+    /* A freshly loaded TSR can browse its saved patterns without first
+       opening TrackSister, even while the embedded editor owns another model. */
+    static MosaicController restored_mc;restored_mc.pages=restored_pages;
+    test_ui->mosaic=test_audio->mosaic=restored_pages->mosaic;test_ui->mosaic_pattern_tab=0;SDL_SetWindowSize(test_window,640,400);
+    SDL_zero(ev);ev.type=SDL_MOUSEBUTTONDOWN;ev.button.windowID=SDL_GetWindowID(test_window);ev.button.button=SDL_BUTTON_LEFT;ev.button.clicks=1;ev.button.x=82;ev.button.y=44;
+    assert(mosaic_event(&ev,test_window,0,test_audio,test_ui,restored_bank,&restored_mc,&pc,&sw,&tc,48000));
+    assert(test_ui->mosaic_pattern_tab && test_ui->mosaic_source_pages==2);
+    TsMosaicSource *restored_source=test_ui->mosaic_sources[0].source;
+    assert(restored_source && restored_source->pattern && restored_source->pattern->id==restored_pages->tracker.patterns[0]->id);
+    assert(!memcmp(restored_source->pattern->cells,dense->pattern->cells,sizeof(dense->pattern->cells)));
+    test_ui->mosaic=test_audio->mosaic=m;mosaic_sources_refresh(test_ui,test_bank,&mc);
     ts_mosaic_free(restored_pages->mosaic);restored_pages->mosaic=NULL;ts_sample_pages_free(restored_pages);ts_instrument_free(restored_bank);ts_instrument_free(record);free(restored_pages);free(restored_bank);free(record);free(project_state);test_pages->mosaic=NULL;
     /* Existing XM import, including 32 channels, keymaps, Amiga periods,
        envelopes and raw volume-column commands. Replacement cannot retarget

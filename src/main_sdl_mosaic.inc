@@ -499,7 +499,8 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
             }
             return 1;
         }
-        if(y>=39 && y<58) {
+        /* Source tabs share this vertical band; only transport owns x >= 118. */
+        if(x>=118 && y>=39 && y<58) {
             if(x>=118 && x<160)mosaic_transport(device,ui,0);
             else if(x>=164 && x<202)mosaic_transport(device,ui,1);
             else if(x>=206 && x<270)main_file_capture_toggle(audio,ui,sister,(uint32_t)rate);

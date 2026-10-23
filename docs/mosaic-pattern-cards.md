@@ -169,3 +169,14 @@ for undo. Definitions and PCM are shared; very large arrangements should account
 for this instance-state cost as well as samples and history. Seek work scales
 with tracker ticks rather than skipped PCM frames, but very long one-shot-tail
 seeks can still be expensive.
+
+### Source-tab click regression
+
+The initial PR #155 build's transport hit area consumed clicks in most of the
+AUDIO/PATTERN tabs. The transport handler now checks its horizontal bounds.
+The regression fixture first failed on the original handler, then passed with
+the correction. It clicks both tabs at their upper edge, center, and lower edge
+at 640 × 400, 1280 × 800, and 1729 × 973; selects and auditions a source with A;
+drags/releases it into the canvas; and verifies that the placed card renders
+audio. It also clicks PATTERN after loading a TSR with 17 saved patterns before
+opening the TrackSister editor. This load case uses a generated project fixture.
