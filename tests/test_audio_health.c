@@ -161,6 +161,7 @@ int main(int argc, char **argv)
     e.button.button = SDL_BUTTON_LEFT; e.button.x = 250; e.button.y = 470;
     assert(ts_audio_health_event(&e, main_window, a, ui));
     char *copied = SDL_GetClipboardText(); assert(strstr(copied, "TapeSister Audio Health")); SDL_free(copied);
+    ts_audio_health_update(a,ui); /* Include action feedback in the optional screenshot. */
     e.type = SDL_MOUSEWHEEL; e.wheel.windowID = ts_health.window_id; e.wheel.y = 1;
     assert(ts_audio_health_event(&e, main_window, a, ui));
     e.type = SDL_KEYDOWN; e.key.windowID = ts_health.window_id; e.key.keysym.sym = SDLK_z;

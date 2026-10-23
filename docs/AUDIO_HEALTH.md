@@ -16,6 +16,13 @@ measurements on the clipboard. Include that report, which control you moved,
 and whether you heard a click. Compare a run with controls stationary against
 one with the same controls moving.
 
+Action buttons highlight for about a second and show their result: **COPIED**,
+**RESET DONE**, **CLICK MARKED**, or **FOLDER OPENED**. Failed actions show an
+error border and a failure label. **SAVE SESSION** first confirms **SAVE QUEUED**,
+then highlights again as **SESSION SAVED** or **SAVE FAILED** when the background
+export finishes. The profile button stays highlighted while profiling is running.
+These indicators use the Health theme colors and do no audio-thread work.
+
 The report's **Active setup** section lists keyboard HOLD and active/held voice
 instances, ARP and outer ARP transport, Sister power/transport/monitor/source
 switches, Fallout, Prism and its Matrix/lens sequence, all configured pedalboard slots

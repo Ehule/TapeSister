@@ -22,6 +22,12 @@ typedef struct {
     float router_wet[TS_ROUTER_COUNT];
 } TsAudioHealthSetup;
 
+enum {
+    TS_HEALTH_BUTTON_NONE, TS_HEALTH_BUTTON_MARK, TS_HEALTH_BUTTON_SAVE,
+    TS_HEALTH_BUTTON_FOLDER, TS_HEALTH_BUTTON_RESET, TS_HEALTH_BUTTON_COPY,
+    TS_HEALTH_BUTTON_PROFILE, TS_HEALTH_BUTTON_CLOSE
+};
+
 typedef struct {
     SDL_Window *window;
     SDL_Renderer *renderer;
@@ -32,6 +38,9 @@ typedef struct {
     unsigned driver_base, control_base, recovery_base, worker_base;
     unsigned driver_reports, control_skips, control_recoveries, worker_gaps;
     int visible, native_kind;
+    int flash_button, flash_error;
+    Uint32 flash_until;
+    const char *flash_label;
     TsRealtimeDiagnosticsSnapshot snapshot;
     TsAudioHealthSetup setup;
     char message[80];
@@ -40,6 +49,13 @@ static TsAudioHealthWindow ts_health;
 static Uint32 ts_audio_health_window_id(void){return ts_health.window_id;}
 static int ts_audio_health_drawable(void)
 { return ts_health.visible && window_drawable(ts_health.window); }
+
+static void ts_audio_health_flash(int button, int error, const char *label)
+{
+    ts_health.flash_button=button;ts_health.flash_error=error;
+    ts_health.flash_label=label;ts_health.flash_until=SDL_GetTicks()+1250u;
+    ts_health.last_update=0;
+}
 
 /* Called on the UI thread while its existing voice-state lock is held. Copy
    small state only, at most 4 Hz while visible or session recording. No new audio-callback work, lock,
@@ -390,6 +406,7 @@ static void ts_audio_health_report(AudioState *audio, char *report, size_t size)
 static void ts_audio_session_marker(void)
 {
     int queued=ts_session_log_text("heard_click","User heard an audible click; reaction time may follow the sound");
+    ts_audio_health_flash(TS_HEALTH_BUTTON_MARK,!queued,queued?"CLICK MARKED":"NOT RECORDED");
     snprintf(ts_health.message,sizeof(ts_health.message),"%s",queued?"CLICK MARKED IN SESSION LOG":ts_session_log_enabled()?"LOG BUSY; CLICK MARKER NOT QUEUED":"SESSION LOG IS NOT RECORDING");
     ts_health.message_until=SDL_GetTicks()+2500u;ts_health.last_update=0;
 }
@@ -432,6 +449,7 @@ static void ts_audio_session_folder(const TsUiState *ui)
     char path[2048],url[6160];
     int ok=ts_session_log_export_destination(ui->project_path,path,sizeof(path)) &&
         ts_audio_session_folder_url(path,url,sizeof(url)) && !SDL_OpenURL(url);
+    ts_audio_health_flash(TS_HEALTH_BUTTON_FOLDER,!ok,ok?"FOLDER OPENED":"OPEN FAILED");
     snprintf(ts_health.message,sizeof(ts_health.message),"%s",ok?"OPENED SESSION LOG FOLDER":"SAVE SESSION FIRST; FOLDER MAY NOT EXIST");
     ts_health.message_until=SDL_GetTicks()+2500u;
 }
@@ -448,6 +466,9 @@ static void ts_audio_session_update(AudioState *audio,TsUiState *ui)
         last_export=status.export_serial;
         if(status.export_result==2 || status.export_result==3) {
             int copied=status.export_result==2 && status.export_copy_path && SDL_SetClipboardText(status.export_path)==0;
+            if(status.export_copy_path)
+                ts_audio_health_flash(TS_HEALTH_BUTTON_SAVE,status.export_result==3,
+                    status.export_result==3?"SAVE FAILED":"SESSION SAVED");
             snprintf(ts_health.message,sizeof(ts_health.message),"%s",status.export_result==3?"SESSION EXPORT FAILED; RECOVERY LOG KEPT":copied?"SAVED SESSION; FILE PATH COPIED":"SAVED SESSION IN LOG FOLDER");
             if(status.export_result==3)
                 snprintf(ui->status,sizeof(ui->status),"SESSION LOG EXPORT FAILED; CHECK F12 REPORT FOR PATH");
@@ -513,6 +534,24 @@ static void ts_audio_profile_draw(TsFramebuffer *fb, uint32_t ink, uint32_t dim)
         snprintf(line,sizeof(line),"%.1F",s.seconds?ms/s.seconds:0);cfg_text(fb,508,y,line,dim);
         snprintf(line,sizeof(line),"%.1F",i==TS_PROF_WAIT?0:parent?100.0*v->ticks/parent:0);cfg_text(fb,566,y,line,dim);
     }
+}
+
+static void ts_audio_health_button(TsFramebuffer *fb, const TsUiState *ui, Uint32 now,
+                                  int button, int x, int y, int width, int height,
+                                  const char *label, uint32_t text)
+{
+    int flash=ts_health.flash_button==button && !SDL_TICKS_PASSED(now,ts_health.flash_until);
+    int lit=flash || (button==TS_HEALTH_BUTTON_PROFILE && ts_profile_enabled());
+    uint32_t panel=ts_theme_color(&ui->palette,TS_THEME_HEALTH,
+        lit?TS_COLOR_SELECTION:TS_COLOR_PANEL,lit?0xff365746u:0xff1b191cu);
+    uint32_t edge=ts_theme_color(&ui->palette,TS_THEME_HEALTH,
+        flash && ts_health.flash_error?TS_COLOR_ERROR:lit?TS_COLOR_ACTIVITY:TS_COLOR_EDGE,
+        flash && ts_health.flash_error?0xffeb777du:lit?0xff8addb4u:0xff48434au);
+    if(lit)text=ts_theme_color(&ui->palette,TS_THEME_HEALTH,TS_COLOR_SELECTEDTEXT,0xfff4f0f5u);
+    if(flash && ts_health.flash_label)label=ts_health.flash_label;
+    cfg_frame(fb,x,y,width,height,panel,edge);
+    if(lit)cfg_rect(fb,x+1,y+1,width-2,2,edge);
+    cfg_text(fb,x+(width-(int)strlen(label)*6)/2,y+(height-7)/2,label,text);
 }
 
 static void ts_audio_health_draw(TsFramebuffer *fb, const TsUiState *ui,
@@ -597,16 +636,14 @@ footer:
         cfg_text(fb,180,20,line,session.state==TS_SESSION_ERROR || session.state==TS_SESSION_FULL?amber:dim);
         if(now>=ts_health.message_until && !ts_profile_enabled())cfg_text(fb,490,20,state,active?effect:dim);
         const char *labels[]={"HEARD A CLICK","SAVE SESSION","LOG FOLDER"};
-        for(int i=0;i<3;++i){int x=20+i*202;cfg_frame(fb,x,344,196,18,ts_theme_color(&ui->palette,TS_THEME_HEALTH,TS_COLOR_PANEL,0xff1b191cu),edge);cfg_text(fb,x+40,350,labels[i],effect);}
+        for(int i=0;i<3;++i)
+            ts_audio_health_button(fb,ui,now,TS_HEALTH_BUTTON_MARK+i,20+i*202,344,196,18,labels[i],effect);
     }
-    cfg_frame(fb, 20, 367, 120, 19, ts_theme_color(&ui->palette,TS_THEME_HEALTH,TS_COLOR_PANEL,0xff1b191cu), edge);
-    cfg_text(fb, 65, 373, "RESET", accent);
-    cfg_frame(fb, 150, 367, 150, 19, ts_theme_color(&ui->palette,TS_THEME_HEALTH,TS_COLOR_PANEL,0xff1b191cu), edge);
-    cfg_text(fb, 192, 373, "COPY REPORT", effect);
-    cfg_frame(fb, 310, 367, 180, 19, ts_theme_color(&ui->palette,TS_THEME_HEALTH,TS_COLOR_PANEL,0xff1b191cu), edge);
-    cfg_text(fb, 332, 373, ts_profile_enabled() ? "STOP PROFILE" : "START PROFILE", effect);
-    cfg_frame(fb, 500, 367, 120, 19, ts_theme_color(&ui->palette,TS_THEME_HEALTH,TS_COLOR_PANEL,0xff1b191cu), edge);
-    cfg_text(fb, 545, 373, "CLOSE", ink);
+    ts_audio_health_button(fb,ui,now,TS_HEALTH_BUTTON_RESET,20,367,120,19,"RESET",accent);
+    ts_audio_health_button(fb,ui,now,TS_HEALTH_BUTTON_COPY,150,367,150,19,"COPY REPORT",effect);
+    ts_audio_health_button(fb,ui,now,TS_HEALTH_BUTTON_PROFILE,310,367,180,19,
+        ts_profile_enabled()?"STOP PROFILE":"START PROFILE",effect);
+    ts_audio_health_button(fb,ui,now,TS_HEALTH_BUTTON_CLOSE,500,367,120,19,"CLOSE",ink);
 }
 
 static void ts_audio_health_close(void)
@@ -696,23 +733,31 @@ static int ts_audio_health_event(const SDL_Event *event, SDL_Window *main_window
         if(y>=344 && y<362) {
             if(x>=20 && x<216)ts_audio_session_marker();
             else if(x>=222 && x<418) {
-                snprintf(ts_health.message,sizeof(ts_health.message),"%s",ts_session_log_export_project(ui->project_path,1)?"SAVING SESSION IN BACKGROUND":"SESSION EXPORT UNAVAILABLE");
+                int queued=ts_session_log_export_project(ui->project_path,1);
+                ts_audio_health_flash(TS_HEALTH_BUTTON_SAVE,!queued,queued?"SAVE QUEUED":"SAVE UNAVAILABLE");
+                snprintf(ts_health.message,sizeof(ts_health.message),"%s",queued?"SAVING SESSION IN BACKGROUND":"SESSION EXPORT UNAVAILABLE");
                 ts_health.message_until=SDL_GetTicks()+2500u;
             } else if(x>=424 && x<620)ts_audio_session_folder(ui);
             ts_health.last_update=0;return 1;
         }
         if (y >= 367 && y < 386) {
-            if (x >= 20 && x < 140) ts_audio_health_reset(audio);
+            if (x >= 20 && x < 140) {
+                ts_audio_health_reset(audio);
+                ts_audio_health_flash(TS_HEALTH_BUTTON_RESET,0,"RESET DONE");
+            }
             else if (x >= 150 && x < 300) {
                 char report[32768]; ts_audio_health_report(audio, report, sizeof(report));
+                int copied=SDL_SetClipboardText(report)==0;
+                ts_audio_health_flash(TS_HEALTH_BUTTON_COPY,!copied,copied?"COPIED":"COPY FAILED");
                 snprintf(ts_health.message, sizeof(ts_health.message), "%s",
-                    SDL_SetClipboardText(report) == 0 ? "AUDIO REPORT COPIED" : "COULD NOT COPY REPORT");
+                    copied ? "AUDIO REPORT COPIED" : "COULD NOT COPY REPORT");
                 ts_health.message_until = SDL_GetTicks() + 2500u;
                 ts_health.last_update = 0;
             } else if (x >= 310 && x < 490) {
                 ts_profile_enable(!ts_profile_enabled());
                 ts_session_log_event("profile","enabled=%d",ts_profile_enabled());
-                ts_health.last_update = 0;
+                ts_audio_health_flash(TS_HEALTH_BUTTON_PROFILE,0,
+                    ts_profile_enabled()?"PROFILE STARTED":"PROFILE STOPPED");
             } else if (x >= 500 && x < 620) {
                 ts_health.visible = 0; SDL_HideWindow(ts_health.window);
             }
