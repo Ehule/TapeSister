@@ -168,6 +168,9 @@ void ts_mosaic_checkpoint(TsMosaic *m);
 int ts_mosaic_undo(TsMosaic *m, int redo);
 TsMosaicEvent *ts_mosaic_add(TsMosaic *m, TsMosaicSource *source,
                             double start, double x);
+/* Preflight bulk inserts under the audio lock, before checkpoint/publication.
+   Extra is the number of new pattern cards; failure leaves the document intact. */
+int ts_mosaic_reserve_patterns(TsMosaic *m, int extra);
 TsMosaicEvent *ts_mosaic_copy(TsMosaic *m, uint64_t id, double start, double x);
 /* Group placement resolves spacing once for the rigid selection afterwards. */
 TsMosaicEvent *ts_mosaic_copy_unspaced(TsMosaic *m, uint64_t id, double start, double x);

@@ -78,7 +78,11 @@ same event model as audio cards. Scatter **Keep Notes** retains authored pitches
 and any existing instance transposition. Other pitch modes use C4 as zero
 transposition: C5 moves every authored note up 12 semitones. Chord mode layers
 transposed performances with the same normalization as audio-card chords.
-Source pattern cells are never rewritten by Scatter.
+Source pattern cells are never rewritten by Scatter. Its **Fades / Pan** page can
+assign fixed or randomized fades and stereo balance to the combined output of
+each instance, alongside audio cards. Mix-only Apply preserves the running
+instance phase; bulk pattern copies reserve playback capacity before publication.
+See [Scatter fades and pan](MOSAIC.md#scatter-fades-and-pan).
 
 The shared PR #154 navigation/save paths still handle Fit All, edge scrolling,
 Follow suspension, gesture cleanup, Ctrl+S, and preserving view/selection across
@@ -180,3 +184,21 @@ at 640 × 400, 1280 × 800, and 1729 × 973; selects and auditions a source with
 drags/releases it into the canvas; and verifies that the placed card renders
 audio. It also clicks PATTERN after loading a TSR with 17 saved patterns before
 opening the TrackSister editor. This load case uses a generated project fixture.
+
+### Scatter mix validation
+
+The controller fixture clicks the Arrange / Pitch and Fades / Pan tabs at
+1×, 1.5× and 2× scale, enters fixed and random values, exercises fractional
+wheel input, and checks preview stability, independent rolls, validation,
+cancellation, Undo/Redo, save/load and untouched unselected cards. Applying
+mix-only edits preserves audio and pattern voice generations. The embedded
+fixture also creates and renders 24 overlapping pattern copies through Scatter;
+capacity is reserved before the batch is published, with no engine overflow.
+
+The Release build's 1,015-card randomized mix preview averaged **0.032 ms** over
+100 previews on the available Xeon host. Mix planning stays on the UI thread;
+playback uses the existing per-card fades and balance. This measurement does not
+replace the physical X220/X230 playback checks described above.
+
+Rendered dialog and resulting cards are in the
+[Scatter fade/pan guide](MOSAIC.md#scatter-fades-and-pan).

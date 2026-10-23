@@ -11,7 +11,6 @@ static void mosaic_button(TsFramebuffer *fb,int x,int y,int w,const char *label,
     rect(fb,x,y,w,h,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(64,54,70)));rect(fb,x+2,y+2,w-4,h-4,active?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(45,65,66)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(46,39,51)));
     text(fb,x+(w-(int)strlen(label)*6)/2,y+(h-7)/2,label,active?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DATA2, RGB(134,214,205)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_TEXT, RGB(210,199,217)),1);
 }
-#include "ts_mosaic_arrange_ui.inc"
 
 static void mosaic_canvas_rect(TsFramebuffer *fb,int x,int y,int w,int h,uint32_t color)
 {
@@ -72,6 +71,7 @@ static void mosaic_envelope(const TsMosaicSource *s,size_t first,size_t last,flo
     *rms=(float)sqrt(energy/(b-a));
 }
 #include "ts_mosaic_fade_ui.inc"
+#include "ts_mosaic_arrange_ui.inc"
 
 static void mosaic_card(TsFramebuffer *fb,const TsUiState *ui,const TsMosaicEvent *e,int selected,int dim,int ghost)
 {

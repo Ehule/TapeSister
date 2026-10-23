@@ -165,8 +165,9 @@ int ts_mosaic_undo(TsMosaic *m,int redo)
 /* Called by control-thread mutations under the same exclusion as events.
    Reserve the full chord size per pattern card and one audition chord. Undo
    retains this high-water capacity; the audio callback never allocates. */
-static int mosaic_pattern_reserve(TsMosaic *m,int extra)
+int ts_mosaic_reserve_patterns(TsMosaic *m,int extra)
 {
+    if(!m || extra<0 || extra>TS_MOSAIC_EVENTS)return 0;
     unsigned count=1+extra;
     for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(m->events[i].id && m->events[i].source->pattern)++count;
     return ts_pattern_engine_reserve(m->pattern_engine,count*TS_MOSAIC_NOTES);
@@ -194,7 +195,7 @@ void ts_mosaic_space(TsMosaic *m,TsMosaicEvent *e)
 static TsMosaicEvent *mosaic_add(TsMosaic *m,TsMosaicSource *source,double start,double x,int space)
 {
     if(!m || !source || !isfinite(start) || !isfinite(x))return NULL;
-    if(source->pattern && !mosaic_pattern_reserve(m,1))return NULL;
+    if(source->pattern && !ts_mosaic_reserve_patterns(m,1))return NULL;
     for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(!m->events[i].id) {
         TsMosaicEvent *e=&m->events[i];
         *e=(TsMosaicEvent){.id=m->next_id++,.revision=1,.source=source,
@@ -541,7 +542,7 @@ void ts_mosaic_audition(TsMosaic *m,uint64_t id)
 void ts_mosaic_audition_source(TsMosaic *m,const TsMosaicEvent *source)
 {
     if(!m || !source || !source->source || source->duration<=0)return;
-    if(source->source->pattern && !mosaic_pattern_reserve(m,0))return;
+    if(source->source->pattern && !ts_mosaic_reserve_patterns(m,0))return;
     m->audition_source=*source;m->audition_source.id=UINT64_MAX;m->audition_source.start=0;
     m->audition_id=UINT64_MAX;m->audition_time=0;m->audition_stopping=0;m->audition_rate=0;
     memset(&m->audition_voice,0,sizeof(m->audition_voice));
@@ -842,7 +843,7 @@ int ts_mosaic_load(TsMosaic *m,const char *dir,char *error,size_t size)
         }
         next->events[count++]=e;if(e.id>=next->next_id)next->next_id=e.id+1;
     }
-    if(ferror(f) || !mosaic_pattern_reserve(next,0))goto failed;
+    if(ferror(f) || !ts_mosaic_reserve_patterns(next,0))goto failed;
     fclose(f);
     /* Caller stops/locks audio before replacing a live model. */
     /* Only sources own allocations. Do not put the full arrangement/history

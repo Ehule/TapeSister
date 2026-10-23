@@ -86,6 +86,7 @@ static void wait_render(void);
 #include "test_mosaic_arranging.inc"
 #include "test_mosaic_performance_edit.inc"
 #include "test_mosaic_scatter_pitch.inc"
+#include "test_mosaic_scatter_mix.inc"
 #include "test_mosaic_navigation.inc"
 #include "test_mosaic_fades.inc"
 #include "test_mosaic_card_pan.inc"
@@ -423,6 +424,7 @@ int main(int argc,char **argv)
     uint64_t original=ts_sample_hash(&instrument.current);
     ui.mosaic=audio.mosaic=ts_mosaic_create();ui.mosaic_scale=24;ui.mosaic_open=1;
     if(argc>1 && !strcmp(argv[1],"--edit-benchmark")) {benchmark_mosaic_edits();goto done;}
+    if(argc>1 && !strcmp(argv[1],"--scatter-mix")) {test_mosaic_scatter_mix(window);goto done;}
     if(argc>1 && !strcmp(argv[1],"--scatter-pitch")) {test_mosaic_scatter_pitch(window);goto done;}
     if(argc>1 && !strcmp(argv[1],"--arrange")) {test_mosaic_performance_edit(window);goto done;}
     if(argc>1 && !strcmp(argv[1],"--source-actions")) {test_mosaic_group_mute_audio(window);test_mosaic_source_actions(window);goto done;}
@@ -476,7 +478,7 @@ int main(int argc,char **argv)
     test_record_file(window,580,389,1);
     ts_mosaic_volume_action(ui.mosaic,TS_MOSAIC_ENV_RESET);
     test_mosaic_performance_edit(window);
-    test_mosaic_scatter_pitch(window);
+    test_mosaic_scatter_pitch(window);test_mosaic_scatter_mix(window);
     test_mosaic_navigation(window);test_mosaic_edge_scroll(window);test_mosaic_save_view(window);
     test_mosaic_loop_controls(window);
     test_mosaic_selection(window);

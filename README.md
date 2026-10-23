@@ -119,7 +119,9 @@ opens the original pattern editor; edits affect new drags. See
 
 A auditions the selected card at its assigned notes. Z fits the selection; Ctrl+A
 selects all cards and Shift+A selects all instances of the current source. Ctrl+R
-opens Scatter with preview, reroll and one-step undo. AUTO-SPACE optionally separates
+opens Scatter with preview, reroll and one-step undo. Its **Fades / Pan** page can
+assign matching values or random ranges across selected audio and pattern cards,
+keeping their positions and pitches. AUTO-SPACE optionally separates
 intersecting cards horizontally; new arrangements default to free placement.
 
 Shift-drag a box to select a group; drag to move it or Shift-drag a selected tile to

@@ -169,6 +169,36 @@ static void mosaic_patterns(void)
     mosaic_event(&ev,test_window,0,test_audio,test_ui,test_bank,&mc,&pc,&sw,&tc,48000);assert(a->pan==opening_pan && !mc.drag);
     b=ts_mosaic_add(m,source,.15,160);b->duration=.9;b->fade_out=.2;b->pan=.5;b->notes[0]=67;
     TsMosaicEvent *wave=ts_mosaic_add(m,source->pattern->assets[0].audio,.3,300);wave->duration=.6;wave->fade_in=.1;wave->fade_out=.1;
+    /* Scatter mix applies to both kinds of card without resetting live pattern
+       state. Copies reserve enough engines before publishing the whole batch. */
+    mosaic_select_only(test_ui,a->id);mosaic_select_add(test_ui,b->id);mosaic_select_add(test_ui,wave->id);
+    pattern_render(m,other,6000,0);uint64_t live_generation=m->voices[0].generation;
+    double live_time=m->time;uint64_t before_mix=ts_mosaic_hash(m);int mix_history=m->history_cursor;
+    mosaic_scatter_open(test_ui,&mc);
+    SDL_zero(ev);ev.type=SDL_MOUSEBUTTONDOWN;ev.button.button=SDL_BUTTON_LEFT;
+    mosaic_scatter_event(&ev,test_window,0,test_ui,&mc,430,45,KMOD_NONE);
+    assert(test_ui->mosaic_scatter_keep_positions);
+    for(int control=0;control<3;++control) {
+        test_ui->mosaic_scatter_mix[control].mode=1;
+        test_ui->mosaic_scatter_mix[control].low=control==2?-60:.15;
+    }
+    mosaic_scatter_apply(0,test_ui,&mc);
+    assert(!test_ui->mosaic_scatter_open && m->history_cursor==mix_history+1);
+    assert(a->pan==-.6f && b->fade_in==.15 && wave->fade_out==.15);
+    ts_mosaic_begin_block(m,256);ts_mosaic_read(m,48000);
+    assert(m->voices[0].generation==live_generation && m->time>live_time);
+    assert(ts_mosaic_undo(m,0) && ts_mosaic_hash(m)==before_mix);
+    assert(ts_mosaic_undo(m,1));
+    mosaic_select_only(test_ui,a->id);mosaic_scatter_open(test_ui,&mc);
+    test_ui->mosaic_scatter_copies=1;test_ui->mosaic_scatter_count=24;
+    test_ui->mosaic_scatter_start=0;test_ui->mosaic_scatter_end=.001;test_ui->mosaic_scatter_overlap=1;
+    test_ui->mosaic_scatter_mix[2].mode=2;test_ui->mosaic_scatter_mix[2].low=-100;test_ui->mosaic_scatter_mix[2].high=100;
+    mosaic_scatter_apply(0,test_ui,&mc);assert(!test_ui->mosaic_scatter_open);
+    int instances=0;for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(m->events[i].id)++instances;assert(instances==27);
+    pattern_render(m,other,6000,0);assert(!ts_pattern_engine_overflow(m->pattern_engine));
+    for(int i=3;i<27;++i)assert(m->voices[i].active && m->events[i].source==a->source);
+    assert(ts_mosaic_undo(m,0) && ts_mosaic_undo(m,0) && ts_mosaic_hash(m)==before_mix);
+    m->playing=0;mosaic_select_only(test_ui,a->id);
     snprintf(test_ui->status,sizeof(test_ui->status),"PATTERN SNAPSHOTS / INDEPENDENT PLAYHEADS / SHARED SAMPLES");
     snapshot("mosaic-pattern-cards.bmp");
     /* Native pass at fractional scale, used by the desktop renderer. */

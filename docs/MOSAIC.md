@@ -694,6 +694,47 @@ whole operation as one undo step, including any spacing preference change. Cance
 leaves the arrangement untouched. The 1,024-card limit is checked before applying.
 
 
+### Scatter fades and pan
+
+Select cards, press **Ctrl+R**, then open **FADES / PAN**. Opening this page directly
+keeps the selected cards in place. If you have already changed the arrangement
+options, that choice is retained; **KEEP POSITIONS** remains available for Edit
+Selection. Create Copies and selected sources use the positions from Arrange / Pitch.
+
+Each control has an independent mode:
+
+| Mode | Result |
+| --- | --- |
+| **KEEP** | Retains each card's existing value (the default). |
+| **SET** | Assigns the same value to every selected card or generated copy. |
+| **RANDOM** | Chooses a value for each card between the displayed minimum and maximum. |
+
+Fade values are **seconds**. Pan uses **−100 for left, 0 for center, +100 for right**;
+Set displays CENTER or the L/R percentage. Click a number to type, Ctrl+A to replace
+it, and Enter to accept. The wheel adjusts fade values by 0.1 seconds or pan by
+5 percentage points; Shift makes either ten times finer. Click or wheel the mode
+to cycle; Shift-click reverses. Set fades to 0 to remove them, or Set pan to 0 to
+center the selection. Keep preserves the original values instead of resetting them.
+
+The miniature previews show the first twelve cards' normalized fade wedges and
+pan lines. **ROLL FADES / PAN** rerolls only controls in Random mode; position and
+pitch rolls preserve the chosen mix. Changing one mix control does not reroll the
+others. **KEEP ALL MIX** restores Keep for all three controls. You can combine mix,
+pitch, and arrangement changes in one Apply, or use only fades/pan on the existing
+arrangement. Apply is one Undo step; Escape or Cancel discards the preview.
+
+Like the footer controls, each fade is limited to that card's duration, and
+intersecting fades scale proportionally to fit. A shorter card can therefore have
+a shorter effective fade than the requested Set value. Pan keeps Mosaic's stereo
+balance behavior, including the internal panning of pattern tracks. Mix-only
+changes preserve playback phase. Applied settings are ordinary card settings,
+visible in the handles/footer and saved with the project; source patterns and
+samples are untouched.
+
+![Scatter fade and pan ranges](screenshots/mosaic-performance/scatter-mix.png)
+
+![Applied fades and pan on selected cards](screenshots/mosaic-performance/scatter-mix-cards.png)
+
 ### Scatter pitch
 
 Scatter opens with **KEEP NOTES**, preserving each card's existing notes. Click the
@@ -730,8 +771,8 @@ Root C and Minor. Set Low C4 / High B4 and Shuffled to distribute C4, D#4 and G4
 across the twelve copies. Choose Chord per Card to give each copy all three notes.
 The interface displays sharps (D# is E-flat).
 
-Pitch assignment preserves source tuning, gain, pan, fades, durations, loop modes,
-mute/solo and routing. Pitched source material needs its correct root tuning;
+Pitch assignment preserves source tuning, gain, pan, fades (unless changed on
+Fades / Pan), durations, loop modes, mute/solo and routing. Pitched source material needs its correct root tuning;
 Scatter transposes samples and does not detect or retune notes within recorded
 chords. Higher pitches play samples faster, following ordinary Mosaic playback.
 Full chords add playback voices; spreading one note per card keeps the voice count
