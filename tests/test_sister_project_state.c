@@ -35,9 +35,62 @@ static void layout_malformed(void)
     ts_matrix_layout_default(l);l->row_count=1;l->row_kind[0]=2;l->row_id[0]=TS_MATRIX_ROWS;
     assert(!ts_matrix_layout_valid(l));free(l);
 }
+
+static float restored_mosaic_energy(TsSisterRuntime *r)
+{
+    float energy=0;
+    TsSisterSourceFrames input={.matrix_program_gain=1};
+    for(int i=0;i<1000;++i) {
+        float value=.1f*sinf(i*.31f);input.mosaic=(TsStereoFrame){value,-value};
+        TsSisterRuntimeFrame frame=ts_sister_runtime_process_frame(r,&input);
+        /* Let the downstream limiter's old lookahead drain after recall. */
+        if(i>=100)energy+=fabsf(frame.monitor_return.l)+fabsf(frame.monitor_return.r);
+    }
+    return energy;
+}
+
+static void project_restores_pedalboard_without_live_fade(void)
+{
+    TsSisterRuntime *r=calloc(1,sizeof(*r));
+    TsSisterProjectState *s=calloc(1,sizeof(*s));assert(r && s);
+    char error[160];ts_sister_runtime_init(r);
+    assert(ts_sister_runtime_reconfigure(r,1000,2,error,sizeof(error)));
+    ts_sister_project_state_init(s,1000);
+    s->matrix.enabled=1;
+    s->matrix.row[TS_MATRIX_MOSAIC].matrix_gain[TS_MATRIX_MAIN]=0;
+    s->matrix.row[TS_MATRIX_MOSAIC].matrix_gain[TS_MATRIX_BOARD]=1000;
+    s->parameters.fx.enabled=0;
+    s->parameters.fx.master_transition=ts_sister_fx_transition_normalized(240000);
+    s->parameters.fx.transition=ts_sister_fx_transition_normalized(180000);
+    for(int i=0;i<TS_SISTER_FX_SLOT_COUNT;++i)s->parameters.fx.slot[i].type=TS_SISTER_FX_EMPTY;
+    s->parameters.fx.slot[0]=(TsSisterFxSlotControls){
+        .type=TS_SISTER_FX_DISTORTION,.enabled=1,.placement=TS_SISTER_FX_PLACE_POST,
+        .parameter_a=.5f,.parameter_b=.5f,.mix=1};
+    /* Opening the saved OFF/SEND project must not briefly play from the old
+       engine state and fade away minutes later. Restoring ON is immediate too. */
+    assert(ts_sister_project_state_apply(s,r,NULL));
+    assert(restored_mosaic_energy(r)==0);
+    assert(!ts_sister_post_fx_master_transition_status(&r->post_fx).active);
+    s->parameters.fx.enabled=1;assert(ts_sister_project_state_apply(s,r,NULL));
+    assert(restored_mosaic_energy(r)>1);
+    assert(!ts_sister_post_fx_transition_status(&r->post_fx).active);
+    /* Deliberate live changes still use the configured four-minute clock. */
+    TsSisterParameters p=r->parameters;p.fx.enabled=0;
+    ts_sister_runtime_set_parameters(r,&p);
+    assert(ts_sister_post_fx_master_transition_status(&r->post_fx).active);
+    assert(restored_mosaic_energy(r)>1);
+    s->parameters.fx.enabled=0;assert(ts_sister_project_state_apply(s,r,NULL));
+    assert(restored_mosaic_energy(r)==0);
+    assert(!ts_sister_post_fx_master_transition_status(&r->post_fx).active);
+    /* INSERT preserves dry sound with master OFF; loading retains this mode. */
+    s->matrix.board_insert=1;assert(ts_sister_project_state_apply(s,r,NULL));
+    assert(restored_mosaic_energy(r)>100 && r->matrix.controls.board_insert);
+    ts_sister_runtime_free(r);free(r);free(s);
+}
 int main(void)
 {
     layout_malformed();
+    project_restores_pedalboard_without_live_fade();
     static const char project[] = "test-sister-project.tsr";
     static const char directory[] = "test-sister-project.tsr.samples";
     static const char state_path[] = "test-sister-project.tsr.samples/sister-state.ini";

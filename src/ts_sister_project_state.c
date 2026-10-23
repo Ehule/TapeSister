@@ -143,6 +143,11 @@ int ts_sister_project_state_apply(const TsSisterProjectState *state,
            state->page_count * sizeof(state->page_masks[0]));
     runtime->active_page = state->active_page;
     ts_sister_runtime_set_parameters(runtime, &state->parameters);
+    /* Project Open restores a state, not a live pedalboard gesture. Otherwise
+       a saved OFF master inherits the old/default ON level and can fade a
+       wet-only route into silence minutes after loading. Live edits continue
+       to use set_parameters and their configured transition clocks. */
+    ts_sister_post_fx_sync_controls(&runtime->post_fx,&runtime->parameters.fx);
     ts_master_eq_set(&runtime->master_eq,&state->master_eq);
     ts_master_eq_morph_set(&runtime->master_eq,&state->eq_morph);
     ts_compressor_set(&runtime->compressor,&state->compressor);

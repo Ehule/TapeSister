@@ -14,6 +14,7 @@ typedef struct {
     unsigned sources;
     int board, fallout, slot_count;
     float fallout_mix;
+    float board_transition_seconds;
     TsSisterFxSlotControls slot[TS_SISTER_FX_SLOT_COUNT];
     int prism, prism_mode, prism_lenses, prism_sequence, prism_matrix;
     int send_assigned, send_available, return_available, router_sequence;
@@ -43,6 +44,8 @@ typedef struct {
     const char *flash_label;
     TsRealtimeDiagnosticsSnapshot snapshot;
     TsAudioHealthSetup setup;
+    float board_master_gain;
+    double board_fade_remaining;
     char message[80];
 } TsAudioHealthWindow;
 static TsAudioHealthWindow ts_health;
@@ -128,6 +131,10 @@ static void ts_audio_health_capture_setup(const AudioState *audio,
     memcpy(s->router.order, r->router.order, sizeof(s->router.order));
     memcpy(s->router_wet, r->router.wet, sizeof(s->router_wet));
     s->router_sequence = r->router.transport.running;
+    s->board_transition_seconds=ts_sister_fx_transition_ms(p->fx.master_transition)/1000;
+    ts_health.board_master_gain=ts_sister_post_fx_master_engage(&r->post_fx);
+    ts_health.board_fade_remaining=r->post_fx.sample_rate?
+        (double)r->post_fx.master_engage.remaining/r->post_fx.sample_rate:0;
     s->captured = now; s->valid = 1;
 }
 
@@ -208,7 +215,11 @@ static void ts_audio_health_setup_report(char *text, size_t size, Uint32 now)
         health_on(s->board), health_route(s, TS_ROUTER_PEDALBOARD), enabled_slots, s->slot_count);
     if(s->matrix.enabled) {
         size_t used=strlen(text);
-        snprintf(text+used,size-used,"  Unified routing matrix: ON; legacy order, source switches and Insert assignments above are inactive.\n");
+        int board_insert=s->matrix.board_insert || (s->matrix.serial_mask&(1u<<TS_MATRIX_BOARD));
+        snprintf(text+used,size-used,
+            "  Unified routing matrix: ON; legacy order, source switches and external Insert assignments above are inactive. Processor power and Pedalboard master remain active.\n"
+            "  Pedalboard Matrix mode: %s\n",
+            board_insert?"INSERT (full signal; master OFF passes dry)":"SEND (wet return; master OFF silences this return)");
         for(int row=0;row<TS_MATRIX_ROWS;++row)for(int d=0;d<TS_MATRIX_DESTINATIONS;++d) {
             int gain=s->matrix.row[row].matrix_gain[d];if(!gain)continue;
             char from[64],to[64];
@@ -229,6 +240,12 @@ static void ts_audio_health_setup_report(char *text, size_t size, Uint32 now)
             used=strlen(text);snprintf(text+used,size-used,"    Matrix effect #%u: %s; %s; mix %.1f%%\n",
                 (unsigned)fx->id,ts_matrix_effect_name(fx->type),health_on(fx->enabled),fx->mix*100);
         }
+    }
+    {
+        size_t used=strlen(text);
+        snprintf(text+used,size-used,
+            "  Pedalboard master fade: %.2f%% current; target %s; %.3f s remaining; configured transition %.3f s\n",
+            ts_health.board_master_gain*100,health_on(s->board),ts_health.board_fade_remaining,s->board_transition_seconds);
     }
     for (int i = 0; i < s->slot_count; ++i) {
         const TsSisterFxSlotControls *slot = &s->slot[i];
@@ -497,6 +514,10 @@ static void ts_audio_session_update(AudioState *audio,TsUiState *ui)
     ts_session_log_event("audio_progress","callback_age_s=%.6f ui_lock_depth=%u ui_lock_site=%s mosaic_time=%.6f muted=%d solo=%d",
         callback_age,ts_control_timing.depth,ts_control_timing.depth && ts_control_timing.site?ts_control_timing.site:"none",
         ts_health.setup.mosaic_time,ts_health.setup.mosaic_muted,ts_health.setup.mosaic_solo);
+    ts_session_log_event("pedalboard_progress","master_gain=%.6f target=%d fade_remaining_s=%.6f matrix=%d insert=%d",
+        ts_health.board_master_gain,ts_health.setup.board,ts_health.board_fade_remaining,
+        ts_health.setup.matrix.enabled,ts_health.setup.matrix.board_insert ||
+            (ts_health.setup.matrix.serial_mask&(1u<<TS_MATRIX_BOARD))!=0);
     ts_session_log_event("health_sample","generation=%u callbacks=%llu over_budget=%llu near_budget=%llu max_hold_ms=%.6f holds_over_buffer=%llu max_ui_wait_ms=%.6f backend_counter_kind=%d driver=%u lock_skips=%u recoveries=%u worker_gaps=%u profile=%d",
         audio->audio_health_generation,(unsigned long long)s->callback_count,(unsigned long long)s->deadline_overruns,
         (unsigned long long)s->near_overruns,s->control_worst_microseconds/1000,(unsigned long long)s->control_long_holds,

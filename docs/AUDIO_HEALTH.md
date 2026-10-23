@@ -58,6 +58,18 @@ switches/Insert assignments as inactive. Processor power remains relevant. For
 actual signal activity, use the softly fading indicators in [F9](ROUTING_MATRIX.md);
 the setup snapshot reports controls, not measured sound.
 
+The Pedalboard report includes its Matrix **SEND/INSERT** mode, actual master
+fade level, target and remaining seconds. Its master switch still applies in
+the Matrix: **SEND** returns only effects, so master OFF silences that return;
+**INSERT** passes the dry signal when bypassed. If Mosaic's only connection is
+to a SEND Pedalboard, master OFF can silence every card despite zero card mutes
+and healthy callbacks. Select the Pedalboard row in F9 and choose **MODE: INSERT**
+for a full-signal chain that remains audible when bypassed. Save the project to
+retain the mode. Deliberate live master transitions can delay the silence;
+engine changes do not change the saved routing. Project Open restores the saved
+Pedalboard state immediately, without starting the live transition clock.
+Session logs sample the actual master fade once per second.
+
 Setup is copied at most four times per second while the monitor is visible,
 PROFILE is enabled, or the session recorder is running,
 during the UI's existing locked state read. Formatting happens after that lock

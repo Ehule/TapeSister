@@ -160,6 +160,18 @@ int main(int argc,char **argv)
             if(!strcmp(argv[1],"--mosaic-revert-mute")) {
                 /* Exercise the actual callback/Matrix/effects after the user's key sequence. */
                 ui.mosaic->repeat=1;ts_mosaic_seek(ui.mosaic,0);
+                if(audio.sister.matrix.controls.enabled && !audio.sister.matrix.controls.board_insert &&
+                   !(audio.sister.matrix.controls.serial_mask&(1u<<TS_MATRIX_BOARD)) &&
+                   !audio.sister.parameters.fx.enabled) {
+                    assert(audio.sister.post_fx.master_engage.current==0 &&
+                           !audio.sister.post_fx.master_engage.remaining);
+                    /* The saved OFF/SEND return is intentionally silent. Use
+                       the user's confirmed INSERT workaround in memory so
+                       mute recovery is tested on an audible route. */
+                    TsMatrixControls route=audio.sister.matrix.controls;route.board_insert=1;
+                    assert(ts_matrix_set(&audio.sister.matrix,&route,48000));
+                    puts("Saved OFF/SEND restored without a fade; mute fixture uses INSERT in memory.");
+                }
                 mosaic_poll(0,&ui,&bank,&mosaic);mosaic_select_only(&ui,ui.mosaic->events[0].id);
                 SDL_Event e;SDL_zero(e);e.type=SDL_KEYDOWN;e.key.keysym.sym=SDLK_m;e.key.keysym.mod=KMOD_SHIFT;
                 for(int stage=0;stage<4;++stage) {

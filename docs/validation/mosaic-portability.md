@@ -105,7 +105,7 @@ The Mosaic model/controller, project Open/reset and offline-render suites pass.
 The changed Mosaic module and model tests also pass AddressSanitizer/UBSan
 (leak detection disabled in the traced container).
 
-Persistent silence after Shift+M has **not been reproduced**. Reopening the
+The original apparent transport freeze after Shift+M has **not been reproduced**. Reopening the
 same project was an attempt to recover sound; the user had not changed card
 positions, so a separate data-revert failure has not been established. Added
 coverage verifies:
@@ -142,3 +142,43 @@ Session logs retain progress once per second, provided UI service continues.
 The Linux application build and diagnostics, Health, and audio reconfiguration
 suites pass, including the new threaded test. These changes improve diagnosis;
 they do not establish or repair the cause of the reported freeze.
+
+## Silent playback through a Pedalboard SEND (October 22, 2026)
+
+The later 12-card silence report had active WASAPI callbacks, zero deadline
+overruns, no UI audio lock held, no muted/solo cards, and Pedalboard master OFF.
+The user confirmed that playback could continue moving silently. Switching the
+Pedalboard row from SEND to INSERT restored sound; switching back muted it again.
+Mosaic's only bus connection was through the Pedalboard, with no parallel dry path.
+This identifies that occurrence as the wet-return master gate, not card-count
+overload or a stalled callback. It does not establish the cause of the earlier
+reported partial UI freeze.
+
+The previously supplied project also saves SEND mode, master OFF and a 240-second
+master transition. Before this fix, project recall applied that transition from
+the existing or initialized engine state, so a report's OFF target could coexist
+with audible effects until the master reached zero. Short mute/unmute rendering
+checks did not run long enough to exclude this later fade. A reproduction loaded
+the supplied effects/routing state at 1 kHz with continuous synthetic Mosaic-bus
+input: master started at 1 with a 239.999-second fade, output energy fell to zero
+without edits, and switching to INSERT restored it.
+
+Project recall now synchronizes saved Pedalboard master/slot controls immediately,
+matching fresh offline rendering. It retains the saved SEND/INSERT mode; an OFF
+SEND return is silent from the start. Deliberate live toggles retain their stored
+transition clocks. A new project-state regression fails before the fix and checks
+OFF/SEND silence, immediate ON recall, a live four-minute fade, cancellation of
+that fade by project recall, and OFF/INSERT dry audio.
+The optional supplied-project mute fixture now verifies that an OFF/SEND master
+restores at zero, then uses INSERT in memory to test mute recovery on an audible
+route. It never rewrites the supplied project.
+
+Audio Health now includes the
+mode, actual master level and remaining fade time, and clarifies that processor
+power and the Pedalboard master still apply in the Matrix. Session logs retain
+the master level and fade progress once per second.
+
+The existing transient/pedalboard DSP tests verify that master OFF passes dry
+audio in Matrix INSERT mode and returns silence in SEND mode, including a live
+mode change. No routing, bypass behavior or saved user project is changed by
+this update.
