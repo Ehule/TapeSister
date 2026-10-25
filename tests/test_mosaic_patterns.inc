@@ -169,6 +169,25 @@ static void mosaic_patterns(void)
     mosaic_event(&ev,test_window,0,test_audio,test_ui,test_bank,&mc,&pc,&sw,&tc,48000);assert(a->pan==opening_pan && !mc.drag);
     b=ts_mosaic_add(m,source,.15,160);b->duration=.9;b->fade_out=.2;b->pan=.5;b->notes[0]=67;
     TsMosaicEvent *wave=ts_mosaic_add(m,source->pattern->assets[0].audio,.3,300);wave->duration=.6;wave->fade_in=.1;wave->fade_out=.1;
+    /* Group bottom-edge resizing changes each instance boundary without
+       restarting its playhead; Alt equalizes audio and pattern card lengths. */
+    mosaic_select_only(test_ui,a->id);mosaic_select_add(test_ui,b->id);mosaic_select_add(test_ui,wave->id);
+    uint64_t resize_before=ts_mosaic_hash(m);double duration_a=a->duration,duration_b=b->duration,duration_wave=wave->duration;
+    pattern_render(m,other,6000,0);uint64_t resize_generation=m->voices[0].generation;
+    SDL_zero(ev);ev.type=SDL_MOUSEBUTTONDOWN;ev.button.windowID=SDL_GetWindowID(test_window);
+    ev.button.button=SDL_BUTTON_LEFT;ev.button.clicks=1;ev.button.x=190;
+    int resize_y=(int)floor(66+(a->start+a->duration)*test_ui->mosaic_scale)-2;ev.button.y=resize_y;
+    assert(mosaic_event(&ev,test_window,0,test_audio,test_ui,test_bank,&mc,&pc,&sw,&tc,48000) && mc.drag==2);
+    SDL_zero(ev);ev.type=SDL_MOUSEMOTION;ev.motion.windowID=SDL_GetWindowID(test_window);ev.motion.x=190;ev.motion.y=resize_y+20;
+    assert(mosaic_event(&ev,test_window,0,test_audio,test_ui,test_bank,&mc,&pc,&sw,&tc,48000));
+    assert(fabs(a->duration-duration_a-.1)<1e-9 && fabs(b->duration-duration_b-.1)<1e-9 && fabs(wave->duration-duration_wave-.1)<1e-9);
+    SDL_zero(ev);ev.type=SDL_KEYDOWN;ev.key.keysym.sym=SDLK_LALT;ev.key.keysym.mod=KMOD_ALT;
+    assert(mosaic_event(&ev,test_window,0,test_audio,test_ui,test_bank,&mc,&pc,&sw,&tc,48000));
+    assert(a->duration==b->duration && a->duration==wave->duration);
+    ts_mosaic_begin_block(m,256);ts_mosaic_read(m,48000);assert(m->voices[0].generation==resize_generation);
+    SDL_zero(ev);ev.type=SDL_MOUSEBUTTONUP;ev.button.button=SDL_BUTTON_LEFT;ev.button.windowID=SDL_GetWindowID(test_window);ev.button.x=190;ev.button.y=resize_y+20;
+    assert(mosaic_event(&ev,test_window,0,test_audio,test_ui,test_bank,&mc,&pc,&sw,&tc,48000));
+    assert(ts_mosaic_undo(m,0) && ts_mosaic_hash(m)==resize_before);
     /* Scatter mix applies to both kinds of card without resetting live pattern
        state. Copies reserve enough engines before publishing the whole batch. */
     mosaic_select_only(test_ui,a->id);mosaic_select_add(test_ui,b->id);mosaic_select_add(test_ui,wave->id);

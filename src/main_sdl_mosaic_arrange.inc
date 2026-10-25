@@ -112,6 +112,16 @@ static int mosaic_arrange_event(const SDL_Event *event,SDL_Window *window,SDL_Au
                 if(e->id==ui->mosaic_selected)current=count;ids[count++]=e->id;
             }
         }
+        /* A selected duration edge belongs to the resize gesture even with Alt
+           held at mouse-down. Interior Alt-click still cycles covered cards. */
+        if(count && !(mod&KMOD_SHIFT)) {
+            TsMosaicEvent *front=ts_mosaic_find(ui->mosaic,ids[current>=0?current:0]);
+            int part=mosaic_card_drag_part(ui,front,time,left),selected=0;
+            if((part==2 || part==6) && mosaic_chosen(ui,(int)(front-ui->mosaic->events))) {
+                for(int i=0;i<TS_MOSAIC_EVENTS;++i)selected+=mosaic_chosen(ui,i)!=0;
+                if(selected>1)return 0;
+            }
+        }
         if(count>1){mosaic_select_only(ui,ids[(current+1)%count]);return 1;}
         return 0;
     }

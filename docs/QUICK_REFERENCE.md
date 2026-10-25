@@ -101,7 +101,9 @@ does not switch the main bank. See the [Mosaic chapter](USER_MANUAL.md#mosaic).
 | Add a selection box | Shift+left-drag on empty canvas; keeps the primary |
 | Move group / copy group | Drag a selected tile / hold Shift when starting that drag; repeat to copy again |
 | Extend duration / change visual width | Drag top or bottom / right edge |
-| Optional start, end, midpoint alignment | Alt during move or duration resize |
+| Resize selected cards together | Drag a selected card's top/bottom edge; preserves length differences |
+| Match selected card lengths while resizing | Hold Alt; the grabbed card is the parent; release Alt for relative resizing |
+| Optional start, end, midpoint alignment | Alt during move or single-card duration resize |
 | Mute / solo selected events | M / S; excluded cards say SOLO OUT |
 | Mute / solo all cards sharing selected sources | Shift+M / Shift+S |
 | Clear all solos, including offscreen cards | CLEAR SOLO in footer |

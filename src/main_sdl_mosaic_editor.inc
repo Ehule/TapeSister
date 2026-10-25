@@ -47,6 +47,7 @@ typedef struct {
     uint64_t mix_epoch;
     SDL_Event exit_event;
     int drag, drag_slot, drag_x, drag_y, drag_moved, drag_copy;
+    uint64_t drag_event; /* Grabbed card; independent of the selection primary. */
     double drag_start, drag_duration, drag_left, drag_width, drag_xscroll;
     int drag_pointer_x, drag_pointer_y;
     Uint32 drag_scroll_ms;
@@ -122,7 +123,7 @@ static void mosaic_drag_end(TsUiState *ui,MosaicController *c)
     if(c->drag_epoch==ui->mosaic->epoch && c->source_drag.source && c->source_drag.source->pins)
         --c->source_drag.source->pins;
     c->source_group=c->source_toggle=0;c->shift_toggle=0;
-    c->source_drag=(TsMosaicEvent){0};c->drag=0;c->drag_moved=0;c->drag_copy=0;c->drag_scroll_ms=0;
+    c->source_drag=(TsMosaicEvent){0};c->drag=0;c->drag_moved=0;c->drag_copy=0;c->drag_scroll_ms=0;c->drag_event=0;
     ui->mosaic_ghost_count=ui->mosaic_box=0;c->volume_drag=0;
     c->card_mix_event=ui->mosaic_card_mix_event=0;ui->mosaic_card_mix_part=0;
     c->pan_active=c->pan_moved=ui->mosaic_loop_drag=0;

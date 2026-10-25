@@ -56,6 +56,38 @@ static void mosaic_transport(SDL_AudioDeviceID device,TsUiState *ui,int stop)
     }
     if(device)SDL_UnlockAudioDevice(device);
 }
+/* Duration edges have priority over visual width, as on a single card. */
+static int mosaic_card_drag_part(const TsUiState *ui,const TsMosaicEvent *e,double time,double left)
+{
+    double h=ui->mosaic_hscale>0?ui->mosaic_hscale:1;
+    return e->start+e->duration-time<6/ui->mosaic_scale?2:
+        time-e->start<6/ui->mosaic_scale?6:e->x+e->width-left<5/h?4:1;
+}
+/* Rigid horizontal spacing against cards outside the selection. Optional
+   geometry arrays let resize share the move planner without changing ghosts. */
+static double mosaic_group_spacing(const TsUiState *ui,double dx,double dt,int copying,
+                                   const double *starts,const double *durations)
+{
+    if(!ui->mosaic->auto_space)return dx;
+    const TsMosaicEvent *obstacles[TS_MOSAIC_EVENTS];int obstacle_count=0;
+    for(int i=0;i<TS_MOSAIC_EVENTS;++i)
+        if(ui->mosaic->events[i].id && (copying || !mosaic_chosen(ui,i)))obstacles[obstacle_count++]=&ui->mosaic->events[i];
+    for(int pass=0;ui->mosaic->auto_space && pass<TS_MOSAIC_EVENTS;++pass) {
+        double shift=0;
+        for(int j=0;j<ui->mosaic_ghost_count;++j) {
+            const TsMosaicEvent *o=&ui->mosaic_ghosts[j];double t=(starts?starts[j]:o->start)+dt,x=o->x+dx;
+            double duration=durations?durations[j]:o->duration;
+            for(int i=0;i<obstacle_count;++i) {
+                const TsMosaicEvent *b=obstacles[i];
+                if(t>=b->start+b->duration-1e-9 || b->start>=t+duration-1e-9)continue;
+                if(x<b->x+b->width+TS_MOSAIC_GUTTER && b->x<x+o->width+TS_MOSAIC_GUTTER)
+                    shift=fmax(shift,b->x+b->width+TS_MOSAIC_GUTTER-x);
+            }
+        }
+        if(shift<=0)break;dx+=shift;
+    }
+    return dx;
+}
 /* Geometry is written only by the UI thread. Plan without excluding audio,
    then publish the final rigid move under its lock. On the first copy motion,
    originals are obstacles and the unpublished copies are not in the model. */
@@ -86,19 +118,7 @@ static void mosaic_plan_group(TsUiState *ui,double *move_x,double *move_t,int sn
         }
         dt=fmin(86400-maxt,fmax(-mint,dt+adjust));
     }
-    for(int pass=0;ui->mosaic->auto_space && pass<TS_MOSAIC_EVENTS;++pass) {
-        double shift=0;
-        for(int j=0;j<ui->mosaic_ghost_count;++j) {
-            const TsMosaicEvent *o=&ui->mosaic_ghosts[j];double t=o->start+dt,x=o->x+dx;
-            for(int i=0;i<obstacle_count;++i) {
-                const TsMosaicEvent *b=obstacles[i];
-                if(t>=b->start+b->duration-1e-9 || b->start>=t+o->duration-1e-9)continue;
-                if(x<b->x+b->width+TS_MOSAIC_GUTTER && b->x<x+o->width+TS_MOSAIC_GUTTER)
-                    shift=fmax(shift,b->x+b->width+TS_MOSAIC_GUTTER-x);
-            }
-        }
-        if(shift<=0)break;dx+=shift;
-    }
+    dx=mosaic_group_spacing(ui,dx,dt,copying,NULL,NULL);
     *move_x=dx;*move_t=dt;
 }
 /* Caller holds the audio lock. This is the only publication of a group move. */
@@ -144,15 +164,61 @@ static int mosaic_begin_drag_change(TsUiState *ui,MosaicController *c)
     }
     c->drag_moved=1;return 1;
 }
+/* Opening geometry is immutable for the whole gesture. Alt can be pressed
+   and released without accumulating error or changing which card is the parent. */
+static void mosaic_resize_group(SDL_AudioDeviceID device,TsUiState *ui,MosaicController *c,double delta,int match)
+{
+    int top=c->drag==6,count=ui->mosaic_ghost_count;
+    double amount=top?-delta:delta,low=-86400,high=86400,length=0;
+    for(int i=0;i<count;++i) {
+        const TsMosaicEvent *o=&ui->mosaic_ghosts[i];
+        low=fmax(low,.005-o->duration);high=fmin(high,86400-o->duration);
+        if(top)high=fmin(high,o->start);
+    }
+    if(match) {
+        double limit=86400;
+        if(top)for(int i=0;i<count;++i)limit=fmin(limit,ui->mosaic_ghosts[i].start+ui->mosaic_ghosts[i].duration);
+        length=fmax(.005,fmin(limit,c->drag_duration+amount));
+    } else amount=fmax(low,fmin(high,amount));
+    double starts[TS_MOSAIC_EVENTS],durations[TS_MOSAIC_EVENTS];
+    for(int i=0;i<count;++i) {
+        const TsMosaicEvent *o=&ui->mosaic_ghosts[i];
+        durations[i]=match?length:o->duration+amount;
+        starts[i]=top?fmax(0,o->start+o->duration-durations[i]):o->start;
+    }
+    double dx=mosaic_group_spacing(ui,0,0,0,starts,durations);int changed=0;
+    for(int i=0;i<count;++i) {
+        const TsMosaicEvent *o=&ui->mosaic_ghosts[i];TsMosaicEvent *e=ts_mosaic_find(ui->mosaic,o->id);
+        if(!e)return;
+        changed|=fabs(e->start-starts[i])>1e-9 || fabs(e->duration-durations[i])>1e-9 || fabs(e->x-o->x-dx)>1e-9;
+    }
+    if(changed) {
+        if(device)SDL_LockAudioDevice(device);
+        if(!c->drag_moved && !mosaic_begin_drag_change(ui,c)) {
+            if(device)SDL_UnlockAudioDevice(device);mosaic_drag_end(ui,c);return;
+        }
+        for(int i=0;i<count;++i) {
+            const TsMosaicEvent *o=&ui->mosaic_ghosts[i];TsMosaicEvent *e=ts_mosaic_find(ui->mosaic,o->id);
+            e->start=starts[i];e->duration=durations[i];e->x=o->x+dx;
+        }
+        ++ui->mosaic->revision;
+        if(device)SDL_UnlockAudioDevice(device);
+    }
+    if(match)snprintf(ui->status,sizeof(ui->status),"RESIZE %d / MATCH LENGTH %.3FS / RELEASE ALT: RELATIVE",count,length);
+    else snprintf(ui->status,sizeof(ui->status),"RESIZE %d / CHANGE %+.3FS / ALT MATCH LENGTH / ESC CANCEL",count,amount);
+}
 /* Event movement and held-edge scrolling share one undoable group gesture. */
 static void mosaic_drag_motion(SDL_AudioDeviceID device,TsUiState *ui,MosaicController *c,
                                int x,int y,SDL_Keymod mod)
 {
-    TsMosaicEvent *e=ts_mosaic_find(ui->mosaic,ui->mosaic_selected);if(!e)return;
+    TsMosaicEvent *e=ts_mosaic_find(ui->mosaic,(c->drag==2 || c->drag==6)?c->drag_event:ui->mosaic_selected);if(!e)return;
     double horizontal=ui->mosaic_hscale>0?ui->mosaic_hscale:1;
     double delta=(y-c->drag_y)/ui->mosaic_scale;
     double dx=(x-c->drag_x)/horizontal+ui->mosaic_xscroll-c->drag_xscroll,dt=delta;
     if(!c->drag_moved && abs(x-c->drag_x)<3 && abs(y-c->drag_y)<3)return;
+    if((c->drag==2 || c->drag==6) && ui->mosaic_ghost_count>1) {
+        mosaic_resize_group(device,ui,c,delta,(mod&KMOD_ALT)!=0);return;
+    }
     if(c->drag==1)mosaic_plan_group(ui,&dx,&dt,(mod&KMOD_ALT)!=0,c->drag_copy && !c->drag_moved);
     if(device)SDL_LockAudioDevice(device);
     if(!c->drag_moved) {
@@ -375,6 +441,11 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
     if(event->type==SDL_WINDOWEVENT && (event->window.event==SDL_WINDOWEVENT_FOCUS_LOST ||
        event->window.event==SDL_WINDOWEVENT_HIDDEN || event->window.event==SDL_WINDOWEVENT_MINIMIZED))mosaic_drag_end(ui,c);
     mosaic_sources_refresh(ui,instrument,c);
+    if((key || event->type==SDL_KEYUP) && (event->key.keysym.sym==SDLK_LALT || event->key.keysym.sym==SDLK_RALT) &&
+       (c->drag==2 || c->drag==6) && ui->mosaic_ghost_count>1) {
+        if(c->drag_moved)mosaic_drag_motion(device,ui,c,c->drag_pointer_x,c->drag_pointer_y,(SDL_Keymod)event->key.keysym.mod);
+        return 1;
+    }
     if(mosaic_fades_event(event,device,ui,c,x,y,mod))return 1;
     if(mosaic_loop_event(event,device,ui,c,x,y,mod))return 1;
     if(mosaic_navigation_event(event,device,ui,c,x,y,mod))return 1;
@@ -395,7 +466,8 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
         if(event->key.repeat && event->key.keysym.sym!=SDLK_UP && event->key.keysym.sym!=SDLK_DOWN && event->key.keysym.sym!=SDLK_LEFT && event->key.keysym.sym!=SDLK_RIGHT)return 1;
         if(c->drag_moved && (c->drag==1 || c->drag==2 || c->drag==4 || c->drag==6) && event->key.keysym.sym==SDLK_ESCAPE) {
             if(device)SDL_LockAudioDevice(device);ts_mosaic_undo(ui->mosaic,0);if(device)SDL_UnlockAudioDevice(device);
-            mosaic_drag_end(ui,c);mosaic_select_only(ui,0);return 1;
+            int resizing=c->drag==2 || c->drag==6;
+            mosaic_drag_end(ui,c);if(!resizing)mosaic_select_only(ui,0);return 1;
         }
         mosaic_drag_end(ui,c);
         SDL_Keycode k=event->key.keysym.sym;
@@ -547,7 +619,9 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
                 c->shift_toggle=(mod&KMOD_SHIFT) && chosen?e->id:0;
                 ui->mosaic_ghost_count=mosaic_selected_events(ui,ui->mosaic_ghosts);
                 c->drag_copy=(mod&KMOD_SHIFT)!=0;
-                c->drag=c->drag_copy || ui->mosaic_ghost_count>1?1:e->start+e->duration-time<6/ui->mosaic_scale?2:time-e->start<6/ui->mosaic_scale?6:e->x+e->width-left<5/horizontal?4:1;
+                c->drag=c->drag_copy?1:mosaic_card_drag_part(ui,e,time,left);
+                if(c->drag==4 && ui->mosaic_ghost_count>1)c->drag=1;
+                c->drag_event=e->id;
                 c->drag_x=x;c->drag_y=y;c->drag_start=e->start;c->drag_duration=e->duration;c->drag_left=e->x;c->drag_width=e->width;
                 c->drag_xscroll=ui->mosaic_xscroll;c->drag_pointer_x=x;c->drag_pointer_y=y;
                 c->drag_scroll_ms=SDL_GetTicks();

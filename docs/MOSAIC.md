@@ -163,6 +163,30 @@ undo/redo and do not store the playback position, selection, or FOLLOW setting.
 
 ![Saved view buttons beneath Sources](screenshots/mosaic-performance/navigation.png)
 
+**Resize selected cards together:** grab the top or bottom edge of any selected
+card. Normal dragging adds or subtracts the same duration from every selected
+card, preserving their length differences. The bottom edge keeps each start
+fixed; the top edge keeps each end fixed. The entire group stops at the first
+card's minimum duration, maximum duration, or timeline-start limit.
+
+Hold **Alt** during a group resize to make every selected card match the grabbed
+card's current length. That grabbed card is the parent for this gesture, even
+when another card was selected first. Alt can be pressed or released while the
+pointer stays still: releasing it returns to relative length changes calculated
+from the opening geometry. On top-edge drags, the shared length is bounded so no
+card starts before zero. The status line shows the duration change or matched
+length in seconds.
+
+Each completed group resize is one Undo step. Escape restores the opening
+geometry and keeps the group selected; focus loss or a dialog ends the gesture.
+Shift-drag still copies the group, including when it starts on an edge. Fade and
+pan handles still edit only their own card. AUTO-SPACE shifts the group together
+against outside cards, preserving its horizontal spacing. Audio and pattern
+cards use the same operation; loop/one-shot behavior, source material, mix and
+routing settings are retained. Bottom-edge edits preserve running playheads.
+
+![Alt-drag matching three selected card lengths](screenshots/mosaic-performance/group-resize.png)
+
 New arrangements start with **AUTO-SPACE off**, allowing cards to overlap visually.
 **Alt-click** cycles through cards at the pointer and brings the selected one forward.
 Older projects retain automatic spacing; the preference is stored with the arrangement.
@@ -174,7 +198,8 @@ times and positions, shifting the whole group sideways when necessary. Shift-dra
 tile duplicates the selection, keeping its relative timing, spacing and playback
 settings. The originals stay in place. A click without movement creates no copies;
 one Undo removes the copied group. If there is not enough capacity for the whole
-group, nothing is copied. Hold Alt **after starting** a drag for optional time alignment during a move or resize. A dashed waveform
+group, nothing is copied. Hold Alt **after starting** a drag for optional time alignment
+during a move or single-card resize. A dashed waveform
 ghost marks the original position while moving. Events may meet exactly end to end. There are no tracks,
 beats or mandatory snapping. Click an unselected event to return to a single
 selection. Selected tiles and Sources previews use the bright red highlight color by default. Muted events and events excluded by
