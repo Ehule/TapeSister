@@ -12,6 +12,7 @@
 #define TS_MOSAIC_PEAKS 2048
 #define TS_MOSAIC_ENVELOPE_POINTS 257
 #define TS_MOSAIC_VIEWS 5
+#define TS_MOSAIC_MARKERS 16
 /* Horizontal layout is independent of time. Leave room for large spaced rows,
    while bounding native pixel conversions well below their int64_t range. */
 #define TS_MOSAIC_LAYOUT_LIMIT 1000000000.0
@@ -47,6 +48,12 @@ typedef struct {
     int stored;
     double scroll, xscroll, scale, hscale;
 } TsMosaicView;
+
+typedef struct {
+    int stored;
+    double time;
+    char name[32];
+} TsMosaicMarker;
 
 typedef struct {
     double start, end; /* Seconds; 0/0 means no time selection. */
@@ -121,6 +128,8 @@ typedef struct TsMosaic {
     TsMosaicVoice voices[TS_MOSAIC_EVENTS];
     TsMosaicEvent history[TS_MOSAIC_HISTORY][TS_MOSAIC_EVENTS];
     double history_speed[TS_MOSAIC_HISTORY];
+    TsMosaicMarker markers[TS_MOSAIC_MARKERS];
+    TsMosaicMarker history_markers[TS_MOSAIC_HISTORY][TS_MOSAIC_MARKERS];
     float volume[TS_MOSAIC_ENVELOPE_POINTS];
     float history_volume[TS_MOSAIC_HISTORY][TS_MOSAIC_ENVELOPE_POINTS];
     int history_repeat[TS_MOSAIC_HISTORY], history_auto_space[TS_MOSAIC_HISTORY];
@@ -189,6 +198,8 @@ void ts_mosaic_audition_source(TsMosaic *m, const TsMosaicEvent *source);
 double ts_mosaic_snap(const TsMosaic *m, uint64_t id, double time, double tolerance);
 double ts_mosaic_end(const TsMosaic *m);
 void ts_mosaic_seek(TsMosaic *m, double time);
+/* UI-thread metadata, under host audio exclusion; one undo step per change. */
+int ts_mosaic_set_marker(TsMosaic *m, int index, const TsMosaicMarker *marker);
 void ts_mosaic_set_speed(TsMosaic *m, double speed);
 /* Effective linear fades: overlapping saved values scale to the card duration.
    Shared by playback, the card envelope and its drag handles. */

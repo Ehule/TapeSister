@@ -79,7 +79,7 @@ static void mosaic_detail_card(TsUiWaveformDetail *d,const TsUiState *ui,
                                 const TsMosaicEvent *e,int selected,int dim,int ghost)
 {
     if(!e->source)return;
-    double sx=(double)d->width/(TS_MOSAIC_CANVAS_RIGHT-151),sy=(double)d->height/310;
+    double sx=(double)d->width/(TS_MOSAIC_CANVAS_RIGHT-151),sy=(double)d->height/TS_MOSAIC_CANVAS_HEIGHT;
     double horizontal=ui->mosaic_hscale>0?ui->mosaic_hscale:1;
     double scale=ui->mosaic_scale>0?ui->mosaic_scale:24,rate=scale*sy;
     int64_t pan_x=mosaic_detail_pixel(ui->mosaic_xscroll*horizontal*sx),pan_y=mosaic_detail_pixel(ui->mosaic_scroll*rate);
@@ -167,11 +167,11 @@ static void mosaic_detail_card(TsUiWaveformDetail *d,const TsUiState *ui,
 }
 static int mosaic_detail_cards(TsFramebuffer *fb,const TsUiState *ui,int any_solo,double interval)
 {
-    TsUiWaveformDetail *d=detail_region(0,151,66,TS_MOSAIC_CANVAS_RIGHT-151,310);if(!d)return 0;
+    TsUiWaveformDetail *d=detail_region(0,151,66,TS_MOSAIC_CANVAS_RIGHT-151,TS_MOSAIC_CANVAS_HEIGHT);if(!d)return 0;
     /* The whole moving scene shares the native raster. Do not enlarge coarse
        card fragments underneath it; later controls/overlays use the compositor. */
     mosaic_detail_rect(d,0,0,d->width,d->height,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_BACKGROUND, RGB(11,13,16)));
-    double sy=(double)d->height/310,scale=ui->mosaic_scale>0?ui->mosaic_scale:24;
+    double sy=(double)d->height/TS_MOSAIC_CANVAS_HEIGHT,scale=ui->mosaic_scale>0?ui->mosaic_scale:24;
     double rate=scale*sy;int64_t pan=mosaic_detail_pixel(ui->mosaic_scroll*rate);
     int64_t line=mosaic_detail_pixel(sy);if(line<1)line=1;
     int64_t tick=(int64_t)floor(ui->mosaic_scroll/interval);
@@ -205,7 +205,7 @@ static void mosaic_detail_ruler(TsUiWaveformDetail *d,const TsUiState *ui,double
     mosaic_detail_rect(d,left,0,d->width,d->height,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_BACKGROUND, RGB(11,13,16)));
     /* Both surfaces have exactly the same vertical bounds and pixel scale.
        Labels and tick marks use the canvas's world rounding and pan offset. */
-    double sx=(double)(d->width-left)/38,sy=(double)d->height/310;
+    double sx=(double)(d->width-left)/38,sy=(double)d->height/TS_MOSAIC_CANVAS_HEIGHT;
     double rate=(ui->mosaic_scale>0?ui->mosaic_scale:24)*sy;
     int64_t pan=mosaic_detail_pixel(ui->mosaic_scroll*rate),line=mosaic_detail_pixel(sy);
     if(line<1)line=1;
@@ -231,7 +231,7 @@ static void mosaic_detail_sources(TsFramebuffer *fb,const TsUiState *ui,double i
 {
     /* Extend the existing sidebar surface to cover the time ruler. The event
        surface and its raster dimensions stay untouched. */
-    TsUiWaveformDetail *d=detail_region(1,10,66,141,310);if(!d)return;
+    TsUiWaveformDetail *d=detail_region(1,10,66,141,TS_MOSAIC_CANVAS_HEIGHT);if(!d)return;
     static TsWaveformCache cache[16];
     detail_background(d,fb);
     int source_y=mosaic_detail_screen_y(d,74);

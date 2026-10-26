@@ -4,9 +4,9 @@ static void mosaic_record_rect(TsFramebuffer *fb,TsUiWaveformDetail *d,
                                 double x,double y,double right,double bottom,uint32_t color)
 {
     int left=(int)fmax(d?0:151,fmin(d?d->width:TS_MOSAIC_CANVAS_RIGHT,floor(x+.5)));
-    int top=(int)fmax(d?0:66,fmin(d?d->height:376,floor(y+.5)));
+    int top=(int)fmax(d?0:66,fmin(d?d->height:TS_MOSAIC_CANVAS_BOTTOM,floor(y+.5)));
     int end=(int)fmax(d?0:151,fmin(d?d->width:TS_MOSAIC_CANVAS_RIGHT,floor(right+.5)));
-    int last=(int)fmax(d?0:66,fmin(d?d->height:376,floor(bottom+.5)));
+    int last=(int)fmax(d?0:66,fmin(d?d->height:TS_MOSAIC_CANVAS_BOTTOM,floor(bottom+.5)));
     if(end<=left || last<=top)return;
     if(d)mosaic_detail_rect(d,left,top,end,last,color);
     else rect(fb,left,top,end-left,last-top,color);
@@ -25,7 +25,7 @@ static void mosaic_recording_card(TsFramebuffer *fb,TsUiWaveformDetail *d,const 
 {
     const TsMosaicRecordPreview *p=&ui->mosaic_record_preview;
     if(!ui->mosaic_recording || !ui->mosaic || p->epoch!=ui->mosaic->epoch || !ui->input_sample_rate)return;
-    double sx=d?(double)d->width/(TS_MOSAIC_CANVAS_RIGHT-151):1,sy=d?(double)d->height/310:1;
+    double sx=d?(double)d->width/(TS_MOSAIC_CANVAS_RIGHT-151):1,sy=d?(double)d->height/TS_MOSAIC_CANVAS_HEIGHT:1;
     double scale=ui->mosaic_scale>0?ui->mosaic_scale:24,horizontal=ui->mosaic_hscale>0?ui->mosaic_hscale:1;
     double rate=scale*sy,seconds=(double)ui->capture_recorded_frames/ui->input_sample_rate;
     TsMosaicEvent placement={.start=p->start,.duration=seconds,.x=p->x,.width=86};
@@ -34,7 +34,7 @@ static void mosaic_recording_card(TsFramebuffer *fb,TsUiWaveformDetail *d,const 
     double y=(d?0:66)+mosaic_detail_pixel(p->start*rate)-mosaic_detail_pixel(ui->mosaic_scroll*rate);
     double right=x+fmax(1,mosaic_detail_pixel(86*horizontal*sx));
     double bottom=y+fmax(40*sy,mosaic_detail_pixel(seconds*rate));
-    double top_limit=d?0:66,bottom_limit=d?d->height:376;
+    double top_limit=d?0:66,bottom_limit=d?d->height:TS_MOSAIC_CANVAS_BOTTOM;
     if(right<=(d?0:151) || x>=(d?d->width:TS_MOSAIC_CANVAS_RIGHT) || bottom<=top_limit || y>=bottom_limit)return;
     int recording=ui->capture_state==TS_CAPTURE_RECORDING;
     uint32_t border=recording?(ui->text_cursor_visible?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_RECORD, RGB(244,112,117)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_RECORD, RGB(183,78,91))):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DATA1, RGB(225,169,100));

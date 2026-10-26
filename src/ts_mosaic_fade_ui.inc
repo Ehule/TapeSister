@@ -14,7 +14,7 @@ int ts_ui_mosaic_fade_handle(const TsUiState *ui,const TsMosaicEvent *e,int part
     *x=151+(e->x+e->width-ui->mosaic_xscroll)*h-(part==1?15:5);
     *y=66+(e->start-ui->mosaic_scroll)*scale+
         mosaic_fade_handle_y(e->duration*scale,(part==1?in:out)*scale,part,1);
-    return *x>=151 && *x<TS_MOSAIC_CANVAS_RIGHT && *y>=66 && *y<376;
+    return *x>=151 && *x<TS_MOSAIC_CANVAS_RIGHT && *y>=66 && *y<TS_MOSAIC_CANVAS_BOTTOM;
 }
 /* Pan is a balance across the card's width, independent of its placement.
    The grip sits below the text; the rest of the waveform remains a move target. */
@@ -27,7 +27,7 @@ int ts_ui_mosaic_pan_handle(const TsUiState *ui,const TsMosaicEvent *e,double *x
     *span=width*.5-8;
     *x=151+(e->x-ui->mosaic_xscroll)*h+width*.5+fmax(-1,fmin(1,e->pan))*(*span);
     *y=66+(e->start-ui->mosaic_scroll)*scale+30;
-    return *x>=151 && *x<TS_MOSAIC_CANVAS_RIGHT && *y>=66 && *y<376;
+    return *x>=151 && *x<TS_MOSAIC_CANVAS_RIGHT && *y>=66 && *y<TS_MOSAIC_CANVAS_BOTTOM;
 }
 typedef struct {
     uint32_t *pixels;

@@ -38,7 +38,7 @@ static void mosaic_canvas_rect(TsFramebuffer *fb,int x,int y,int w,int h,uint32_
     if(x<151)x=151;
     if(y<66)y=66;
     if(right>TS_MOSAIC_CANVAS_RIGHT)right=TS_MOSAIC_CANVAS_RIGHT;
-    if(bottom>376)bottom=376;
+    if(bottom>TS_MOSAIC_CANVAS_BOTTOM)bottom=TS_MOSAIC_CANVAS_BOTTOM;
     if(right>x && bottom>y)rect(fb,x,y,right-x,bottom-y,color);
 }
 static void mosaic_time_label(char *label,size_t size,double time)
@@ -53,7 +53,7 @@ static void mosaic_ruler_label(TsFramebuffer *fb,int y,const char *label)
     for(int n=0;label[n];++n) {
         char c=label[n];if(c>='a' && c<='z')c=(char)(c-'a'+'A');
         const char *bits=glyph(c);
-        for(int gy=0;gy<7;++gy)if(y+gy>=66 && y+gy<376)
+        for(int gy=0;gy<7;++gy)if(y+gy>=66 && y+gy<TS_MOSAIC_CANVAS_BOTTOM)
             for(int gx=0;gx<5;++gx)if(bits[gy*5+gx]=='1' && 115+n*6+gx<151)
                 rect(fb,115+n*6+gx,y+gy,1,1,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DIM, RGB(133,127,141)));
     }
@@ -99,8 +99,8 @@ static void mosaic_card(TsFramebuffer *fb,const TsUiState *ui,const TsMosaicEven
     double horizontal=ui->mosaic_hscale>0?ui->mosaic_hscale:1,scale=ui->mosaic_scale;
     double left=151+(e->x-ui->mosaic_xscroll)*horizontal,width=e->width*horizontal;
     double top=66+(e->start-ui->mosaic_scroll)*scale,bottom=top+e->duration*scale;
-    if(left+width<=151 || left>=TS_MOSAIC_CANVAS_RIGHT || width<1 || bottom<=66 || top>=376)return;
-    int x=(int)left,w=(int)width,y=(int)fmax(66,top),end=(int)fmin(376,bottom),h=end-y;
+    if(left+width<=151 || left>=TS_MOSAIC_CANVAS_RIGHT || width<1 || bottom<=66 || top>=TS_MOSAIC_CANVAS_BOTTOM)return;
+    int x=(int)left,w=(int)width,y=(int)fmax(66,top),end=(int)fmin(TS_MOSAIC_CANVAS_BOTTOM,bottom),h=end-y;
     if(h<1)h=1;
     uint32_t color=mosaic_color(mosaic_source_color(e->source)),fill=selected?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_SELECTION, RGB(50,46,59)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(32,31,39));
     if(dim){color=mosaic_mix_color(color,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(19,20,26)),.70f);fill=ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(23,24,30));}
@@ -109,7 +109,7 @@ static void mosaic_card(TsFramebuffer *fb,const TsUiState *ui,const TsMosaicEven
     if(ghost)color=mosaic_mix_color(color,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(16,18,24)),.55f);
     if(!ghost)mosaic_canvas_rect(fb,x,y,w,h,fill);
     double duration=e->source->pattern?e->source->pattern->duration:(double)(e->last-e->first)/e->source->sample.sample_rate;
-    int first_row=(int)fmax(66,top+24),last_row=(int)fmin(376,bottom-14);
+    int first_row=(int)fmax(66,top+24),last_row=(int)fmin(TS_MOSAIC_CANVAS_BOTTOM,bottom-14);
     for(int yy=first_row;yy<last_row;++yy) {
         if(ghost && (yy&1))continue;
         double elapsed=fmax(0,ui->mosaic_scroll+(yy-66)/scale-e->start);
@@ -141,16 +141,16 @@ static void mosaic_card(TsFramebuffer *fb,const TsUiState *ui,const TsMosaicEven
         for(int yy=y;yy<end;yy+=6){mosaic_canvas_rect(fb,x,yy,1,3,color);mosaic_canvas_rect(fb,x+w-1,yy,1,3,color);}
         return;
     }
-    MosaicFadeSurface fades={fb->pixels,TS_UI_WIDTH,151,66,TS_MOSAIC_CANVAS_RIGHT,376,1,1,scale};
+    MosaicFadeSurface fades={fb->pixels,TS_UI_WIDTH,151,66,TS_MOSAIC_CANVAS_RIGHT,TS_MOSAIC_CANVAS_BOTTOM,1,1,scale};
     mosaic_fade_shape(&fades,e,x,(int64_t)top,x+w,(int64_t)bottom,color);
     mosaic_canvas_rect(fb,x,y,2,h,color);mosaic_canvas_rect(fb,x+w-1,y,1,h,color);
     if(top>=66)mosaic_canvas_rect(fb,x,y,w,1,color);
-    if(bottom<376)mosaic_canvas_rect(fb,x,end-1,w,1,color);
+    if(bottom<TS_MOSAIC_CANVAS_BOTTOM)mosaic_canvas_rect(fb,x,end-1,w,1,color);
     if(selected) {
         uint32_t border=mosaic_selection_color(ui,e->id==ui->mosaic_selected);
         mosaic_canvas_rect(fb,x,y,2,h,border);mosaic_canvas_rect(fb,x+w-2,y,2,h,border);
         if(top>=66)mosaic_canvas_rect(fb,x,y,w,2,border);
-        if(bottom<376)mosaic_canvas_rect(fb,x,end-2,w,2,border);
+        if(bottom<TS_MOSAIC_CANVAS_BOTTOM)mosaic_canvas_rect(fb,x,end-2,w,2,border);
     }
     char label[100];
     if(top>=66 && h>=14 && x>=151 && w>=24) {
@@ -167,7 +167,7 @@ static void mosaic_card(TsFramebuffer *fb,const TsUiState *ui,const TsMosaicEven
         int chars=(int)fmax(0,((x+w>TS_MOSAIC_CANVAS_RIGHT?TS_MOSAIC_CANVAS_RIGHT-x:w)-30)/6);mosaic_pattern_label(ui,e,notes,sizeof(notes));snprintf(label,sizeof(label),"%.*s",chars,notes);
         text(fb,x+6,y+14,label,dim?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(66,64,75)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DIM, RGB(156,147,165)),1);
     }
-    if(h>38 && bottom<376 && x>=151 && x+36<TS_MOSAIC_CANVAS_RIGHT && w>=36) {
+    if(h>38 && bottom<TS_MOSAIC_CANVAS_BOTTOM && x>=151 && x+36<TS_MOSAIC_CANVAS_RIGHT && w>=36) {
         int chars=(int)fmax(0,((x+w>TS_MOSAIC_CANVAS_RIGHT?TS_MOSAIC_CANVAS_RIGHT-x:w)-30)/6);
         const char *state=e->muted?"MUTE":e->solo?"SOLO":dim?(chars>=8?"SOLO OUT":"EXCL"):e->looping?"LOOP":"ONCE";
         snprintf(label,sizeof(label),"%.*s",chars,state);text(fb,x+6,end-11,label,color,1);
@@ -227,12 +227,12 @@ double ts_ui_mosaic_volume_y(const TsUiState *ui,double time)
 {
     double scale=ui->mosaic_scale>0?ui->mosaic_scale:24;
     return TS_MOSAIC_ENV_TOP+TS_MOSAIC_ENV_PAD+(time-ui->mosaic_scroll)*scale*
-        (TS_MOSAIC_ENV_BOTTOM-TS_MOSAIC_ENV_TOP-2*TS_MOSAIC_ENV_PAD)/310.0;
+        (TS_MOSAIC_ENV_BOTTOM-TS_MOSAIC_ENV_TOP-2*TS_MOSAIC_ENV_PAD)/TS_MOSAIC_CANVAS_HEIGHT;
 }
 double ts_ui_mosaic_volume_time(const TsUiState *ui,double y)
 {
     double scale=ui->mosaic_scale>0?ui->mosaic_scale:24;
-    return ui->mosaic_scroll+(y-TS_MOSAIC_ENV_TOP-TS_MOSAIC_ENV_PAD)*310.0/
+    return ui->mosaic_scroll+(y-TS_MOSAIC_ENV_TOP-TS_MOSAIC_ENV_PAD)*TS_MOSAIC_CANVAS_HEIGHT/
         ((TS_MOSAIC_ENV_BOTTOM-TS_MOSAIC_ENV_TOP-2*TS_MOSAIC_ENV_PAD)*scale);
 }
 static void mosaic_volume_lane(TsFramebuffer *fb,const TsUiState *ui,double interval)
@@ -243,7 +243,7 @@ static void mosaic_volume_lane(TsFramebuffer *fb,const TsUiState *ui,double inte
     rect(fb,left,top,right-left+1,bottom-top+1,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_GRID, RGB(83,68,95)));
     rect(fb,left+1,top+1,right-left-1,bottom-top-1,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_BACKGROUND, RGB(11,13,16)));
     double end=ts_mosaic_end(m),scale=ui->mosaic_scale>0?ui->mosaic_scale:24;
-    for(double t=ceil(ui->mosaic_scroll/interval)*interval;t<ui->mosaic_scroll+310/scale;t+=interval) {
+    for(double t=ceil(ui->mosaic_scroll/interval)*interval;t<ui->mosaic_scroll+TS_MOSAIC_CANVAS_HEIGHT/scale;t+=interval) {
         int y=(int)lrint(ts_ui_mosaic_volume_y(ui,t));
         if(y>top && y<bottom)rect(fb,left+1,y,right-left-1,1,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(28,30,35)));
     }
@@ -269,9 +269,11 @@ static void mosaic_volume_lane(TsFramebuffer *fb,const TsUiState *ui,double inte
     mosaic_button(fb,left+23,68,15,"",0,1);
     for(int i=0;i<4;++i){rect(fb,left+30-i,73+i,1,1,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_TEXT, RGB(210,199,217)));rect(fb,left+30+i,73+i,1,1,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_TEXT, RGB(210,199,217)));}
     mosaic_button(fb,right-15,68,15,"S",0,1);
-    mosaic_button(fb,left,359,15,"/",0,1);
-    mosaic_button(fb,right-15,359,15,"V",0,1);
+    mosaic_button(fb,left,339,15,"/",0,1);
+    mosaic_button(fb,right-15,339,15,"V",0,1);
 }
+
+#include "ts_mosaic_marker_ui.inc"
 
 static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrument *instrument)
 {
@@ -349,16 +351,7 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
     int pages=ui->mosaic_source_pages;if(pages<1)pages=1;
     mosaic_button(fb,10,TS_MOSAIC_SOURCE_PAGE_Y,22,"<",0,1);mosaic_button(fb,86,TS_MOSAIC_SOURCE_PAGE_Y,22,">",0,1);
     snprintf(label,sizeof(label),"%02d/%02d",ui->mosaic_source_page+1,pages);text(fb,40,TS_MOSAIC_SOURCE_PAGE_Y+5,label,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DIM, RGB(150,142,160)),1);
-    for(int i=0;i<TS_MOSAIC_VIEWS;++i) {
-        const TsMosaicView *v=m?&m->views[i]:NULL;
-        int stored=v && v->stored;
-        int active=stored && fabs(v->scroll-ui->mosaic_scroll)<1e-6 && fabs(v->xscroll-ui->mosaic_xscroll)<1e-6 &&
-            fabs(v->scale-ui->mosaic_scale)<1e-6 && fabs(v->hscale-ui->mosaic_hscale)<1e-6;
-        snprintf(label,sizeof(label),"%d",i+1);
-        mosaic_button(fb,10+i*20,TS_MOSAIC_VIEW_Y,18,label,active,1);
-        if(stored)rect(fb,14+i*20,TS_MOSAIC_VIEW_Y+13,10,1,ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_DATA2,RGB(129,206,200)));
-    }
-    rect(fb,113,66,518,310,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_BACKGROUND, RGB(11,13,16)));
+    rect(fb,113,66,518,TS_MOSAIC_CANVAS_HEIGHT,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_BACKGROUND, RGB(11,13,16)));
     char length[24];
     if(ui->config.mosaic_record_seconds)snprintf(length,sizeof(length),"%02d:%02d",ui->config.mosaic_record_seconds/60,ui->config.mosaic_record_seconds%60);
     else snprintf(length,sizeof(length),"INF");
@@ -378,20 +371,20 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
     double range_a=66+(range.start-ui->mosaic_scroll)*scale,range_b=66+(range.end-ui->mosaic_scroll)*scale;
     uint32_t range_ink=ts_theme_color(active_palette(),TS_THEME_MOSAIC,m && m->repeat?TS_COLOR_DATA2:TS_COLOR_DIM,RGB(129,206,200));
     if(range.end>range.start) {
-        int a=(int)fmax(66,fmin(376,range_a)),b=(int)fmax(66,fmin(376,range_b));
+        int a=(int)fmax(66,fmin(TS_MOSAIC_CANVAS_BOTTOM,range_a)),b=(int)fmax(66,fmin(TS_MOSAIC_CANVAS_BOTTOM,range_b));
         rect(fb,113,a,38,b-a,ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_EDGE,RGB(45,65,66)));
     }
     double decade=pow(10,floor(log10(40/scale))),step=40/scale/decade;
     double interval=(step<=1?1:step<=2?2:step<=5?5:10)*decade;
-    for(double t=ceil(ui->mosaic_scroll/interval)*interval;t<ui->mosaic_scroll+310/scale;t+=interval) {
+    for(double t=ceil(ui->mosaic_scroll/interval)*interval;t<ui->mosaic_scroll+TS_MOSAIC_CANVAS_HEIGHT/scale;t+=interval) {
         int y=66+(int)((t-ui->mosaic_scroll)*scale);
         mosaic_time_label(label,sizeof(label),t);mosaic_ruler_label(fb,y+2,label);
         rect(fb,147,y,484,1,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(28,30,35)));
     }
     if(range.end>range.start)for(int edge=0;edge<2;++edge) {
         double y=edge?range_b:range_a;
-        if(y>=66 && y<376) {
-            int top=(int)fmax(66,y-1),bottom=(int)fmin(376,y+2);
+        if(y>=66 && y<TS_MOSAIC_CANVAS_BOTTOM) {
+            int top=(int)fmax(66,y-1),bottom=(int)fmin(TS_MOSAIC_CANVAS_BOTTOM,y+2);
             rect(fb,113,top,38,bottom-top,range_ink);
         }
     }
@@ -417,8 +410,9 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
         mosaic_canvas_rect(fb,x,y,1,h,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DATA2, RGB(129,206,200)));mosaic_canvas_rect(fb,x+w,y,1,h,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DATA2, RGB(129,206,200)));
     }
     mosaic_volume_lane(fb,ui,interval);
+    mosaic_markers_render(fb,ui);
     int py=66+(int)((ui->mosaic_time-ui->mosaic_scroll)*scale);
-    if(py>=66 && py<376){rect(fb,147,py,TS_MOSAIC_CANVAS_RIGHT-147,1,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PLAYHEAD, RGB(129,206,200)));rect(fb,143,py-2,4,5,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PLAYHEAD, RGB(129,206,200)));}
+    if(py>=66 && py<TS_MOSAIC_CANVAS_BOTTOM){rect(fb,147,py,TS_MOSAIC_CANVAS_RIGHT-147,1,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PLAYHEAD, RGB(129,206,200)));rect(fb,143,py-2,4,5,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PLAYHEAD, RGB(129,206,200)));}
     rect(fb,0,380,640,20,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(20,19,25)));
     mosaic_mix_controls(fb,ui,any_solo);
     if(rec) {
@@ -426,6 +420,7 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
         snprintf(label,sizeof(label),"REC %05.1fs",seconds);text(fb,552,386,label,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_RECORD, RGB(231,122,130)),1);
     }
     mosaic_arrange_overlay(fb,ui);
+    mosaic_marker_overlay(fb,ui);
 }
 
 void ts_ui_render_mosaic_choice(TsFramebuffer *fb,const TsUiState *ui)

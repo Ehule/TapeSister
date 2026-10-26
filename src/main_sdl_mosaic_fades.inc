@@ -64,7 +64,7 @@ static int mosaic_fades_event(const SDL_Event *event,SDL_AudioDeviceID device,Ts
     if(motion){ui->mosaic_card_mix_event=0;ui->mosaic_card_mix_part=0;}
     if((!motion && !down) || c->drag || c->mix_drag || c->volume_drag || c->pan_active ||
        ui->mosaic_loop_drag || (mod&(KMOD_SHIFT|KMOD_CTRL|KMOD_ALT|KMOD_GUI)) ||
-       x<151 || x>=TS_MOSAIC_CANVAS_RIGHT || y<66 || y>=376)return 0;
+       x<151 || x>=TS_MOSAIC_CANVAS_RIGHT || y<66 || y>=TS_MOSAIC_CANVAS_BOTTOM)return 0;
     double h=ui->mosaic_hscale>0?ui->mosaic_hscale:1;
     double time=ui->mosaic_scroll+(y-66)/ui->mosaic_scale,left=ui->mosaic_xscroll+(x-151)/h;
     TsMosaicEvent *primary=ts_mosaic_find(ui->mosaic,ui->mosaic_selected);

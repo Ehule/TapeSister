@@ -140,6 +140,7 @@ void ts_mosaic_checkpoint(TsMosaic *m)
     m->history_loop_range[at]=m->loop_range;
     m->history_auto_space[at]=m->auto_space;
     m->history_speed[at]=m->speed;
+    memcpy(m->history_markers[at],m->markers,sizeof(m->markers));
     m->history_repeat[at]=m->repeat;
     memcpy(m->history_volume[at],m->volume,sizeof(m->volume));
     memcpy(m->history[at],m->events,sizeof(m->events));
@@ -155,6 +156,9 @@ int ts_mosaic_undo(TsMosaic *m,int redo)
         TsMosaicEvent e=m->events[i];m->events[i]=m->history[at][i];m->history[at][i]=e;
     }
     double speed=m->speed;ts_mosaic_set_speed(m,m->history_speed[at]);m->history_speed[at]=speed;
+    for(int i=0;i<TS_MOSAIC_MARKERS;++i) {
+        TsMosaicMarker marker=m->markers[i];m->markers[i]=m->history_markers[at][i];m->history_markers[at][i]=marker;
+    }
     for(int i=0;i<TS_MOSAIC_ENVELOPE_POINTS;++i) {
         float value=m->volume[i];m->volume[i]=m->history_volume[at][i];m->history_volume[at][i]=value;
     }
@@ -653,6 +657,10 @@ uint64_t ts_mosaic_hash(const TsMosaic *m)
         snprintf(value,sizeof(value),"VIEW %d %.17g %.17g %.17g %.17g",i,v->scroll,v->xscroll,v->scale,v->hscale);
         for(const unsigned char *p=(const unsigned char *)value;*p;++p){hash^=*p;hash*=1099511628211ull;}
     }
+    for(int i=0;i<TS_MOSAIC_MARKERS;++i)if(m->markers[i].stored) {
+        char value[96];snprintf(value,sizeof(value),"MARKER %d %.17g %s",i,m->markers[i].time,m->markers[i].name);
+        for(const unsigned char *p=(const unsigned char *)value;*p;++p){hash^=*p;hash*=1099511628211ull;}
+    }
     if(m->loop_range.end>m->loop_range.start) {
         char value[96];snprintf(value,sizeof(value),"LOOP %.17g %.17g",m->loop_range.start,m->loop_range.end);
         for(const unsigned char *p=(const unsigned char *)value;*p;++p){hash^=*p;hash*=1099511628211ull;}
@@ -662,6 +670,22 @@ uint64_t ts_mosaic_hash(const TsMosaic *m)
 
 static int mosaic_layout_valid(double x)
 {return isfinite(x) && x>=0 && x<=TS_MOSAIC_LAYOUT_LIMIT;}
+static int mosaic_marker_valid(const TsMosaicMarker *v)
+{
+    if((v->stored!=0 && v->stored!=1) || !isfinite(v->time) || v->time<0 || v->time>1000000 ||
+       !memchr(v->name,0,sizeof(v->name)))return 0;
+    for(const unsigned char *p=(const unsigned char *)v->name;*p;++p)if(*p<32 || *p>126)return 0;
+    return 1;
+}
+int ts_mosaic_set_marker(TsMosaic *m,int index,const TsMosaicMarker *marker)
+{
+    if(!m || index<0 || index>=TS_MOSAIC_MARKERS || !marker || !mosaic_marker_valid(marker))return 0;
+    TsMosaicMarker value={0};
+    if(marker->stored){value.stored=1;value.time=marker->time;snprintf(value.name,sizeof(value.name),"%s",marker->name);}
+    TsMosaicMarker *old=&m->markers[index];
+    if(old->stored==value.stored && old->time==value.time && !strcmp(old->name,value.name))return 1;
+    ts_mosaic_checkpoint(m);*old=value;return 1;
+}
 int ts_mosaic_save(const TsMosaic *m,const char *dir,char *error,size_t size)
 {
     if(!m)return 1;
@@ -675,15 +699,24 @@ int ts_mosaic_save(const TsMosaic *m,const char *dir,char *error,size_t size)
          m->views[i].hscale<TS_MOSAIC_MIN_HSCALE || m->views[i].hscale>4)) {
         snprintf(error,size,"Invalid Mosaic horizontal saved view %d",i+1);return 0;
     }
+    for(int i=0;i<TS_MOSAIC_MARKERS;++i)if(!mosaic_marker_valid(&m->markers[i])) {
+        snprintf(error,size,"Invalid Mosaic marker %d",i+1);return 0;
+    }
     char path[4096];
     if(snprintf(path,sizeof(path),"%s/mosaic.tsm",dir)>=(int)sizeof(path))return 0;
     FILE *f=fopen(path,"wb");if(!f)goto failed;
-    if(fprintf(f,"TAPESISTER_MOSAIC 13\nSETTINGS %d %.9g %.17g\nSPACING %d\n",m->repeat,m->gain,m->speed,m->auto_space)<0)goto close_failed;
+    if(fprintf(f,"TAPESISTER_MOSAIC 14\nSETTINGS %d %.9g %.17g\nSPACING %d\n",m->repeat,m->gain,m->speed,m->auto_space)<0)goto close_failed;
     for(int i=0;i<TS_MOSAIC_VIEWS;++i) {
         const TsMosaicView *v=&m->views[i];
         if(fprintf(f,"VIEW %d %.17g %.17g %.17g %.17g\n",v->stored,v->scroll,v->xscroll,v->scale,v->hscale)<0)goto close_failed;
     }
     if(fprintf(f,"LOOP %.17g %.17g\n",m->loop_range.start,m->loop_range.end)<0)goto close_failed;
+    for(int i=0;i<TS_MOSAIC_MARKERS;++i) {
+        const TsMosaicMarker *v=&m->markers[i];char name[65];
+        size_t length=strlen(v->name);
+        for(int j=0;j<32;++j)snprintf(name+j*2,3,"%02x",j<(int)length?(unsigned char)v->name[j]:0);
+        if(fprintf(f,"MARKER %d %.17g %s\n",v->stored,v->time,name)<0)goto close_failed;
+    }
     if(fprintf(f,"VOLUME %d\n",TS_MOSAIC_ENVELOPE_POINTS)<0)goto close_failed;
     for(int i=0;i<TS_MOSAIC_ENVELOPE_POINTS;++i)
         if(fprintf(f,"%.9g\n",m->repeat && i==TS_MOSAIC_ENVELOPE_POINTS-1?m->volume[0]:m->volume[i])<0)goto close_failed;
@@ -741,7 +774,7 @@ int ts_mosaic_load(TsMosaic *m,const char *dir,char *error,size_t size)
     if(length>=2 && line[length-2]=='\r' && line[length-1]=='\n') {
         line[length-2]='\n';line[length-1]='\0';
     }
-    int version=!strcmp(line,"TAPESISTER_MOSAIC 13\n")?13:!strcmp(line,"TAPESISTER_MOSAIC 12\n")?12:!strcmp(line,"TAPESISTER_MOSAIC 11\n")?11:!strcmp(line,"TAPESISTER_MOSAIC 10\n")?10:!strcmp(line,"TAPESISTER_MOSAIC 9\n")?9:!strcmp(line,"TAPESISTER_MOSAIC 8\n")?8:!strcmp(line,"TAPESISTER_MOSAIC 7\n")?7:!strcmp(line,"TAPESISTER_MOSAIC 6\n")?6:!strcmp(line,"TAPESISTER_MOSAIC 5\n")?5:!strcmp(line,"TAPESISTER_MOSAIC 4\n")?4:!strcmp(line,"TAPESISTER_MOSAIC 1\n")?1:!strcmp(line,"TAPESISTER_MOSAIC 2\n")?2:!strcmp(line,"TAPESISTER_MOSAIC 3\n")?3:0;
+    int version=!strcmp(line,"TAPESISTER_MOSAIC 14\n")?14:!strcmp(line,"TAPESISTER_MOSAIC 13\n")?13:!strcmp(line,"TAPESISTER_MOSAIC 12\n")?12:!strcmp(line,"TAPESISTER_MOSAIC 11\n")?11:!strcmp(line,"TAPESISTER_MOSAIC 10\n")?10:!strcmp(line,"TAPESISTER_MOSAIC 9\n")?9:!strcmp(line,"TAPESISTER_MOSAIC 8\n")?8:!strcmp(line,"TAPESISTER_MOSAIC 7\n")?7:!strcmp(line,"TAPESISTER_MOSAIC 6\n")?6:!strcmp(line,"TAPESISTER_MOSAIC 5\n")?5:!strcmp(line,"TAPESISTER_MOSAIC 4\n")?4:!strcmp(line,"TAPESISTER_MOSAIC 1\n")?1:!strcmp(line,"TAPESISTER_MOSAIC 2\n")?2:!strcmp(line,"TAPESISTER_MOSAIC 3\n")?3:0;
     if(!version)goto failed;
     char trailing;
     if(!fgets(line,sizeof(line),f))goto failed;
@@ -767,6 +800,23 @@ int ts_mosaic_load(TsMosaic *m,const char *dir,char *error,size_t size)
         double start,end;
         if(!fgets(line,sizeof(line),f) || sscanf(line,"LOOP %lf %lf %c",&start,&end,&trailing)!=2 ||
            !ts_mosaic_set_loop_range(next,start,end))goto failed;
+    }
+    if(version>=14)for(int i=0;i<TS_MOSAIC_MARKERS;++i) {
+        TsMosaicMarker *v=&next->markers[i];char name[65];
+        if(!fgets(line,sizeof(line),f) || sscanf(line,"MARKER %d %lf %64s %c",&v->stored,&v->time,name,&trailing)!=3 || strlen(name)!=64)goto failed;
+        for(int j=0;j<32;++j) {
+            unsigned value=0;
+            for(int k=0;k<2;++k) {
+                unsigned char c=(unsigned char)name[j*2+k];
+                if(c>='0' && c<='9')value=value*16+c-'0';
+                else if(c>='a' && c<='f')value=value*16+c-'a'+10;
+                else if(c>='A' && c<='F')value=value*16+c-'A'+10;
+                else goto failed;
+            }
+            v->name[j]=(char)value;
+        }
+        if(!mosaic_marker_valid(v))goto failed;
+        if(!v->stored)*v=(TsMosaicMarker){0};
     }
     if(version>=4) {
         int points;

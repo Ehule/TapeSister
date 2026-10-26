@@ -64,7 +64,7 @@ work too. Release stops scrolling; Escape cancels the single undoable move.
 Navigation: **Shift+Z** fits the occupied card bounds; **Z** fits selection/returns; **F** toggles FOLLOW;
 **H** shows the playhead without seeking; **Page Up/Down** move about one screen;
 **middle-drag** pans (middle-click seeks on release). Fit, page moves, panning and view recall turn FOLLOW
-off. The five numbered buttons beneath Sources save views with the project:
+off. The **VIEWS** popup holds the five original saved canvas views:
 **click empty = save**, **click stored = recall**, **Shift-click = replace**,
 **middle-click = clear**. Playback and card selection stay intact.
 
@@ -104,8 +104,12 @@ does not switch the main bank. See the [Mosaic chapter](USER_MANUAL.md#mosaic).
 | Resize selected cards together | Drag a selected card's top/bottom edge; preserves length differences |
 | Match selected card lengths while resizing | Hold Alt; the grabbed card is the parent; release Alt for relative resizing |
 | Optional start, end, midpoint alignment | Alt during move or single-card duration resize |
-| Mute / solo selected events | M / S; excluded cards say SOLO OUT |
-| Mute / solo all cards sharing selected sources | Shift+M / Shift+S |
+| Add timeline marker / capture a specific slot | M or M:ADD / Shift-click its number |
+| Jump to a marker / move its time | Click number or flag / drag flag |
+| Edit marker name, seconds or delete | Right-click number or flag |
+| Open saved canvas views | VIEWS; Escape closes |
+| Mute / solo selected events | Alt+M / S; excluded cards say SOLO OUT |
+| Mute / solo all cards sharing selected sources | Alt+Shift+M / Shift+S |
 | Clear all solos, including offscreen cards | CLEAR SOLO in footer |
 | Selection level / pan / fade-in / fade-out | LEVEL / PAN / IN / OUT in footer |
 | Visual fade on one card | Drag its top IN handle down / bottom OUT handle up |

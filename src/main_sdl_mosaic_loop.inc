@@ -79,7 +79,7 @@ static int mosaic_loop_event(const SDL_Event *event,SDL_AudioDeviceID device,
             ui->mosaic_loop_drag=0;snprintf(ui->status,sizeof(ui->status),"TIME RANGE EDIT CANCELLED");return 1;
         }
         if(motion || (up && event->button.button==SDL_BUTTON_LEFT)) {
-            double time=fmax(0,fmin(1000000,ui->mosaic_scroll+(fmax(66,fmin(375,y))-66)/ui->mosaic_scale));
+            double time=fmax(0,fmin(1000000,ui->mosaic_scroll+(fmax(66,fmin((TS_MOSAIC_CANVAS_BOTTOM-1),y))-66)/ui->mosaic_scale));
             if(ui->mosaic_loop_drag==1)ui->mosaic_loop_preview=(TsMosaicRange){fmin(time,c->loop_anchor),fmax(time,c->loop_anchor)};
             else if(ui->mosaic_loop_drag==2)ui->mosaic_loop_preview.start=fmin(time,ui->mosaic_loop_preview.end-.001);
             else ui->mosaic_loop_preview.end=fmax(time,ui->mosaic_loop_preview.start+.001);
@@ -102,7 +102,7 @@ static int mosaic_loop_event(const SDL_Event *event,SDL_AudioDeviceID device,
         } else mosaic_loop_toggle(device,ui);
         return 1;
     }
-    int ruler=x>=113 && x<151 && y>=66 && y<376;
+    int ruler=x>=113 && x<151 && y>=66 && y<TS_MOSAIC_CANVAS_BOTTOM;
     if(!ruler || c->drag || c->pan_active || c->mix_drag || c->volume_drag)return 0;
     TsMosaicRange range=ui->mosaic->loop_range;
     double time=ui->mosaic_scroll+(y-66)/ui->mosaic_scale;

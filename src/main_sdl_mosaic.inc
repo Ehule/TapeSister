@@ -6,7 +6,7 @@ static void mosaic_poll(SDL_AudioDeviceID device,TsUiState *ui,
     if(ui->tracker_open)c->was_tracker=1;
     if(ui->mosaic_open && c->was_tracker){c->was_tracker=0;c->pattern_ready=0;}
 
-    if(!ui->mosaic_open || c->active)c->mix_drag=c->mix_changed=c->volume_drag=c->pan_active=ui->mosaic_loop_drag=0;
+    if(!ui->mosaic_open || c->active)c->mix_drag=c->mix_changed=c->volume_drag=c->pan_active=ui->mosaic_loop_drag=ui->mosaic_marker_drag=0;
     if(device)SDL_LockAudioDevice(device);
     ts_mosaic_pattern_retire(ui->mosaic);
     for(int i=0;i<TS_MOSAIC_EVENTS;++i)ui->mosaic_pattern_pending[i]=ui->mosaic->pattern_retired[i]!=NULL;
@@ -20,7 +20,7 @@ static void mosaic_poll(SDL_AudioDeviceID device,TsUiState *ui,
         mosaic_pattern_notices(ui,instrument,c,0);
         int recording=ui->mosaic_recording && ui->capture_state==TS_CAPTURE_RECORDING &&
             ui->input_sample_rate && ui->mosaic_record_preview.epoch==ui->mosaic->epoch;
-        if(ui->mosaic_follow && !ui_dialog_open(ui) && (ui->mosaic_playing || recording) && !c->drag && !c->volume_drag && !c->pan_active && !ui->mosaic_loop_drag) {
+        if(ui->mosaic_follow && !ui_dialog_open(ui) && (ui->mosaic_playing || recording) && !c->drag && !c->volume_drag && !c->pan_active && !ui->mosaic_marker_drag && !ui->mosaic_loop_drag) {
             double target=recording?ui->mosaic_record_preview.start+
                 (double)ui->capture_recorded_frames/ui->input_sample_rate:ui->mosaic_time;
             double offset=(target-ui->mosaic_scroll)*ui->mosaic_scale;
@@ -252,7 +252,7 @@ static void mosaic_drag_autoscroll(SDL_AudioDeviceID device,TsUiState *ui,Mosaic
     if(c->drag!=1 || !c->drag_moved || !ui->mosaic_open || c->active ||
        c->ui_epoch!=ui->mosaic->epoch || ui_dialog_open(ui) || ui->router_open || ui->master_eq_open)return;
     int x=c->drag_pointer_x,y=c->drag_pointer_y;
-    if(y<66 || y>=376)return;
+    if(y<66 || y>=TS_MOSAIC_CANVAS_BOTTOM)return;
     double speed=0,edge=24;
     if(x<151+edge)speed=-fmin(1,(151+edge-x)/edge);
     else if(x>TS_MOSAIC_CANVAS_RIGHT-edge)speed=fmin(1,(x-(TS_MOSAIC_CANVAS_RIGHT-edge))/edge);
@@ -322,6 +322,7 @@ static void mosaic_source_drag(TsUiState *ui,const TsInstrument *instrument,Mosa
 #include "main_sdl_mosaic_arrange.inc"
 #include "main_sdl_mosaic_loop.inc"
 #include "main_sdl_mosaic_navigation.inc"
+#include "main_sdl_mosaic_markers.inc"
 #include "main_sdl_mosaic_controls.inc"
 #include "main_sdl_mosaic_fades.inc"
 #include "main_sdl_mosaic_volume.inc"
@@ -350,6 +351,8 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
     if(down || up)logical_mouse(window,event->button.x,event->button.y,&x,&y);
     if(motion)logical_mouse(window,event->motion.x,event->motion.y,&x,&y);
     SDL_Keymod mod=key?(SDL_Keymod)event->key.keysym.mod:SDL_GetModState();
+    if(ui->mosaic_open && (ui->mosaic_marker_open || ui->mosaic_views_open))
+        return mosaic_marker_event(event,device,ui,c,x,y,mod);
     if(ui->mosaic_pattern_choice) {
         int choice=-1;
         if(key && !event->key.repeat){
@@ -462,6 +465,7 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
         if(c->drag_moved)mosaic_drag_motion(device,ui,c,c->drag_pointer_x,c->drag_pointer_y,(SDL_Keymod)event->key.keysym.mod);
         return 1;
     }
+    if(mosaic_marker_event(event,device,ui,c,x,y,mod))return 1;
     if(mosaic_fades_event(event,device,ui,c,x,y,mod))return 1;
     if(mosaic_loop_event(event,device,ui,c,x,y,mod))return 1;
     if(mosaic_navigation_event(event,device,ui,c,x,y,mod))return 1;
@@ -537,7 +541,7 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
             ts_mosaic_checkpoint(ui->mosaic);
             for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(mosaic_chosen(ui,i))ts_mosaic_delete(ui->mosaic,ui->mosaic->events[i].id);
             mosaic_select_only(ui,0);
-        } else if((k==SDLK_m || k==SDLK_s) && !(mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI))) {
+        } else if(((k==SDLK_m && (mod&KMOD_ALT)) || (k==SDLK_s && !(mod&KMOD_ALT))) && !(mod&(KMOD_CTRL|KMOD_GUI))) {
             int count=0,all=1;unsigned char chosen[TS_MOSAIC_EVENTS]={0};
             for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(mosaic_chosen(ui,i)) {
                 chosen[i]=1;
@@ -612,11 +616,11 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
             mosaic_sources_refresh(ui,instrument,c);
             mosaic_pattern_notices(ui,instrument,c,0);return 1;
         }
-        if(x>=113 && x<151 && y>=66 && y<376) {
+        if(x>=113 && x<151 && y>=66 && y<TS_MOSAIC_CANVAS_BOTTOM) {
             if(device)SDL_LockAudioDevice(device);ts_mosaic_seek(ui->mosaic,ui->mosaic_scroll+(y-66)/ui->mosaic_scale);
             if(device)SDL_UnlockAudioDevice(device);return 1;
         }
-        if(x>=151 && x<TS_MOSAIC_CANVAS_RIGHT && y>=66 && y<376) {
+        if(x>=151 && x<TS_MOSAIC_CANVAS_RIGHT && y>=66 && y<TS_MOSAIC_CANVAS_BOTTOM) {
             double time=ui->mosaic_scroll+(y-66)/ui->mosaic_scale,left=(x-151)/horizontal+ui->mosaic_xscroll;
             TsMosaicEvent *primary=ts_mosaic_find(ui->mosaic,ui->mosaic_selected);
             for(int pass=TS_MOSAIC_EVENTS;pass>=0;--pass) {
@@ -659,7 +663,7 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
     }
     if(motion && c->drag) {
         if(c->drag==5) {
-            ui->mosaic_box_end_x=x<151?151:x>=TS_MOSAIC_CANVAS_RIGHT?TS_MOSAIC_CANVAS_RIGHT-1:x;ui->mosaic_box_end_y=y<66?66:y>375?375:y;
+            ui->mosaic_box_end_x=x<151?151:x>=TS_MOSAIC_CANVAS_RIGHT?TS_MOSAIC_CANVAS_RIGHT-1:x;ui->mosaic_box_end_y=y<66?66:y>(TS_MOSAIC_CANVAS_BOTTOM-1)?(TS_MOSAIC_CANVAS_BOTTOM-1):y;
             double left=ui->mosaic_xscroll+(fmin(ui->mosaic_box_x,ui->mosaic_box_end_x)-151)/horizontal;
             double right=ui->mosaic_xscroll+(fmax(ui->mosaic_box_x,ui->mosaic_box_end_x)-151)/horizontal;
             double top=ui->mosaic_scroll+(fmin(ui->mosaic_box_y,ui->mosaic_box_end_y)-66)/ui->mosaic_scale;
@@ -689,7 +693,7 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
         const TsMosaicSource *source=NULL;
         if(x>=10 && x<108 && y>=74 && y<346){int col=(x-10)/49,row=(y-74)/34;
             int n=ui->mosaic_source_offset+row*2+col;if(col<2 && n<ui->mosaic_source_count)source=ui->mosaic_sources[n].source;
-        }else if(x>=151 && x<TS_MOSAIC_CANVAS_RIGHT && y>=66 && y<376){
+        }else if(x>=151 && x<TS_MOSAIC_CANVAS_RIGHT && y>=66 && y<TS_MOSAIC_CANVAS_BOTTOM){
             double t=ui->mosaic_scroll+(y-66)/ui->mosaic_scale,left=ui->mosaic_xscroll+(x-151)/horizontal;
             for(int i=TS_MOSAIC_EVENTS-1;i>=0;--i){const TsMosaicEvent *e=&ui->mosaic->events[i];
                 if(e->id && t>=e->start && t<e->start+e->duration && left>=e->x && left<e->x+e->width){source=e->source;break;}}

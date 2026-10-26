@@ -40,6 +40,9 @@ typedef struct {
     double loop_anchor;
     uint64_t loop_epoch;
     int pan_active, pan_moved, pan_x, pan_y;
+    int marker_y, marker_moved;
+    double marker_time, marker_scale;
+    uint64_t marker_epoch;
     double pan_scroll, pan_xscroll, pan_scale, pan_hscale;
     int mix_drag, mix_changed;
     int volume_drag;
@@ -128,7 +131,7 @@ static void mosaic_drag_end(TsUiState *ui,MosaicController *c)
     c->source_drag=(TsMosaicEvent){0};c->drag=0;c->drag_moved=0;c->drag_copy=0;c->drag_scroll_ms=0;c->drag_event=0;
     ui->mosaic_ghost_count=ui->mosaic_box=0;c->volume_drag=0;
     c->card_mix_event=ui->mosaic_card_mix_event=0;ui->mosaic_card_mix_part=0;
-    c->pan_active=c->pan_moved=ui->mosaic_loop_drag=0;
+    c->pan_active=c->pan_moved=ui->mosaic_loop_drag=ui->mosaic_marker_drag=0;
 }
 /* Browse stored sample banks without swapping the live instrument or routing.
    Keep bank slots/page numbers intact; event versions have separate pages after
@@ -155,7 +158,8 @@ static void mosaic_sources_refresh(TsUiState *ui,const TsInstrument *instrument,
         c->pattern_ready=c->pattern_count=0;memset(c->pattern_notice,0,sizeof(c->pattern_notice));c->pattern_owner=0;ui->mosaic_pattern_choice=0;memset(c->pattern_sources,0,sizeof(c->pattern_sources));
         c->picked_count=c->scatter_pool_count=c->zoom_saved=0;
         ui->mosaic_source_pick_count=ui->mosaic_scatter_open=ui->mosaic_spacing_confirm=ui->mosaic_align_open=0;
-        if(ui->mosaic_loop_open)SDL_StopTextInput();
+        if(ui->mosaic_loop_open || ui->mosaic_marker_open)SDL_StopTextInput();
+        ui->mosaic_marker_open=ui->mosaic_marker_selected=ui->mosaic_views_open=0;
         ui->mosaic_loop_open=0;
         ui->mosaic_source_selected=-1;ui->mosaic_source_page=0;
         memset(c->bank_data,0,sizeof(c->bank_data));c->ui_epoch=ui->mosaic->epoch;c->browser_initialized=0;
@@ -268,7 +272,7 @@ static TsBankSlot *mosaic_bank_destination(TsSamplePages *pages,TsInstrument *ba
 static void mosaic_reveal_event(TsUiState *ui,const TsMosaicEvent *e)
 {
     double h=ui->mosaic_hscale>0?ui->mosaic_hscale:1,scale=ui->mosaic_scale>0?ui->mosaic_scale:24;
-    double width=(TS_MOSAIC_CANVAS_RIGHT-151)/h,height=310/scale;
+    double width=(TS_MOSAIC_CANVAS_RIGHT-151)/h,height=TS_MOSAIC_CANVAS_HEIGHT/scale;
     if(e->x<ui->mosaic_xscroll || e->x+e->width>ui->mosaic_xscroll+width)
         ui->mosaic_xscroll=fmax(0,e->x-fmax(8/h,(width-e->width)*.5));
     if(e->start<ui->mosaic_scroll || e->start>=ui->mosaic_scroll+height)

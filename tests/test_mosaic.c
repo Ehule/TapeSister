@@ -222,7 +222,7 @@ static void test_storage(void)
         FILE *current=fopen("mosaic-storage-test/mosaic.tsm","r"),*old=fopen("mosaic-storage-test/old.tsm","w");assert(current && old);
         char record[1024];assert(fgets(record,sizeof(record),current));fprintf(old,"TAPESISTER_MOSAIC %d\n",version);
         while(fgets(record,sizeof(record),current)) {
-            if(!strncmp(record,"PATTERN ",8) || !strncmp(record,"LOOP ",5) || (version<11 && !strncmp(record,"VIEW ",5)) || (version<10 && !strncmp(record,"SPACING ",8)))continue;
+            if(!strncmp(record,"MARKER ",7) || !strncmp(record,"PATTERN ",8) || !strncmp(record,"LOOP ",5) || (version<11 && !strncmp(record,"VIEW ",5)) || (version<10 && !strncmp(record,"SPACING ",8)))continue;
             if(!strncmp(record,"ROUTE ",6)) {
                 record[strcspn(record,"\r\n")]=0;
                 for(int i=destinations;i<TS_MATRIX_DESTINATIONS;++i){char *last=strrchr(record,' ');assert(last);*last=0;}
@@ -248,6 +248,7 @@ static void test_storage(void)
     assert(fgets(lines[2],sizeof(lines[2]),old) && !strncmp(lines[2],"SPACING ",8));
     for(int i=0;i<TS_MOSAIC_VIEWS;++i)assert(fgets(lines[2],sizeof(lines[2]),old) && !strncmp(lines[2],"VIEW ",5));
     assert(fgets(lines[2],sizeof(lines[2]),old) && !strncmp(lines[2],"LOOP ",5));
+    for(int i=0;i<TS_MOSAIC_MARKERS;++i)assert(fgets(lines[2],sizeof(lines[2]),old) && !strncmp(lines[2],"MARKER ",7));
     for(int i=0;i<=TS_MOSAIC_ENVELOPE_POINTS;++i)assert(fgets(lines[2],sizeof(lines[2]),old));
     for(int i=2;i<4;++i){assert(fgets(lines[i],sizeof(lines[i]),old) && !strncmp(lines[i],"PATTERN ",8));assert(fgets(lines[i],sizeof(lines[i]),old));char route[1024];assert(fgets(route,sizeof(route),old));assert(fgets(route,sizeof(route),old));}fclose(old);
     for(int version=3;version>=1;--version) {
@@ -374,6 +375,8 @@ static void test_source_preview_lifetime(void)
     ts_mosaic_publish_loaded(m,loaded);ts_mosaic_free(loaded);
     assert(!m->audition_id && !m->sources && !m->audition_source.source);ts_mosaic_free(m);
 }
+#include "test_mosaic_marker_storage.inc"
+
 int main(void)
 {
     test_source_preview_lifetime();
@@ -381,6 +384,6 @@ int main(void)
     test_mosaic_read_paths();
     test_mosaic_schedule();test_mosaic_large_storage();
     test_mosaic_loop_audio();test_mosaic_loop_history();
-    test_card_routes();test_tape_speed();test_event_mix_and_fades();test_mute_solo_phase();test_ownership();test_seek();test_one_shot_and_resize();test_spacing_and_history();test_storage();test_project_transaction();
+    test_card_routes();test_tape_speed();test_event_mix_and_fades();test_mute_solo_phase();test_ownership();test_marker_storage();test_seek();test_one_shot_and_resize();test_spacing_and_history();test_storage();test_project_transaction();
     puts("Mosaic ownership, independent clocks, seeking, geometry and storage passed");return 0;
 }

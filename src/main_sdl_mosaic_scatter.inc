@@ -103,7 +103,7 @@ static void mosaic_scatter_open(TsUiState *ui,MosaicController *c)
     ui->mosaic_follow=0;
     ui->mosaic_scatter_open=1;ui->mosaic_scatter_copies=c->scatter_from_sources;
     ui->mosaic_scatter_start=ui->mosaic_scroll;
-    ui->mosaic_scatter_end=fmin(86400,ui->mosaic_scroll+310/ui->mosaic_scale);
+    ui->mosaic_scatter_end=fmin(86400,ui->mosaic_scroll+TS_MOSAIC_CANVAS_HEIGHT/ui->mosaic_scale);
     ui->mosaic_scatter_count=c->scatter_pool_count;
     ui->mosaic_scatter_overlap=!ui->mosaic->auto_space;ui->mosaic_scatter_field=0;
     ui->mosaic_scatter_keep_positions=ui->mosaic_scatter_page=c->scatter_layout_touched=0;

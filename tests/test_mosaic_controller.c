@@ -88,6 +88,7 @@ static void wait_render(void);
 #include "test_mosaic_scatter_pitch.inc"
 #include "test_mosaic_scatter_mix.inc"
 #include "test_mosaic_navigation.inc"
+#include "test_mosaic_markers.inc"
 #include "test_mosaic_fades.inc"
 #include "test_mosaic_card_pan.inc"
 #include "test_mosaic_edge_scroll.inc"
@@ -138,8 +139,8 @@ static void test_canvas_feedback(SDL_Window *window)
     assert(a->x>=obstacle->x+obstacle->width+TS_MOSAIC_GUTTER);
     release(window,220,120);assert(!ui.mosaic_ghost_count);
     key(window,SDLK_z,KMOD_CTRL);assert(a->start==.5 && b->start==1 && a->x==20 && b->x==130);
-    key(window,SDLK_m,KMOD_NONE);assert(a->muted && b->muted && !obstacle->muted);
-    key(window,SDLK_m,KMOD_NONE);assert(!a->muted && !b->muted);
+    key(window,SDLK_m,KMOD_ALT);assert(a->muted && b->muted && !obstacle->muted);
+    key(window,SDLK_m,KMOD_ALT);assert(!a->muted && !b->muted);
     key(window,SDLK_s,KMOD_NONE);assert(a->solo && b->solo && !obstacle->solo);
     key(window,SDLK_s,KMOD_NONE);assert(!a->solo && !b->solo);
     click(window,430,96,1);release(window,430,96);assert(ui.mosaic_selected==obstacle->id && !mosaic_chosen(&ui,0));
@@ -433,6 +434,8 @@ int main(int argc,char **argv)
     if(argc>1 && !strcmp(argv[1],"--copy-drag")) {test_mosaic_copy_gestures(window);test_mosaic_group_staging();goto done;}
     if(argc>1 && !strcmp(argv[1],"--large-mosaic")) {test_mosaic_large_browser();goto done;}
     if(argc>1 && !strcmp(argv[1],"--loop")) {test_mosaic_loop_controls(window);goto done;}
+    if(argc>1 && !strcmp(argv[1],"--viewport")) {test_mosaic_volume_controls(window);test_mosaic_scroll_waveforms();test_mosaic_scroll_cards();goto done;}
+    if(argc>1 && !strcmp(argv[1],"--markers")) {test_mosaic_markers(window);goto done;}
     if(argc>1 && !strcmp(argv[1],"--navigation")) {test_mosaic_navigation(window);test_mosaic_edge_scroll(window);test_mosaic_save_view(window);goto done;}
     if(argc>1 && !strcmp(argv[1],"--group-resize")) {test_mosaic_group_resize(window);goto done;}
     if(argc>1 && !strcmp(argv[1],"--fades")) {test_mosaic_fades(window);goto done;}
@@ -481,7 +484,7 @@ int main(int argc,char **argv)
     ts_mosaic_volume_action(ui.mosaic,TS_MOSAIC_ENV_RESET);
     test_mosaic_performance_edit(window);
     test_mosaic_scatter_pitch(window);test_mosaic_scatter_mix(window);
-    test_mosaic_navigation(window);test_mosaic_edge_scroll(window);test_mosaic_save_view(window);
+    test_mosaic_markers(window);test_mosaic_navigation(window);test_mosaic_edge_scroll(window);test_mosaic_save_view(window);
     test_mosaic_loop_controls(window);
     test_mosaic_selection(window);
     test_mosaic_copy_gestures(window);test_mosaic_group_staging();

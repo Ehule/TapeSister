@@ -23,13 +23,13 @@ static void test_mosaic_group_mute_audio(SDL_Window *window)
     }
     mosaic_poll(0,&ui,&instrument,&mosaic);mosaic_select_only(&ui,scene->events[0].id);
     scene->playing=1;assert(mosaic_test_audio(scene)>0);
-    key(window,SDLK_m,KMOD_SHIFT);
+    key(window,SDLK_m,(KMOD_ALT|KMOD_SHIFT));
     assert(scene->events[0].muted && !scene->events[1019].muted);
     assert(mosaic_test_audio(scene)>0);
-    key(window,SDLK_a,KMOD_CTRL);key(window,SDLK_m,KMOD_SHIFT);
+    key(window,SDLK_a,KMOD_CTRL);key(window,SDLK_m,(KMOD_ALT|KMOD_SHIFT));
     assert(scene->events[0].muted && scene->events[1019].muted);
     assert(mosaic_test_audio(scene)==0);
-    key(window,SDLK_m,KMOD_SHIFT);
+    key(window,SDLK_m,(KMOD_ALT|KMOD_SHIFT));
     assert(!scene->events[0].muted && !scene->events[1019].muted);
     assert(mosaic_test_audio(scene)>0);
     key(window,SDLK_z,KMOD_CTRL);assert(mosaic_test_audio(scene)==0);
