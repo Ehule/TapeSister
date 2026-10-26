@@ -90,7 +90,7 @@ static void mosaic_detail_card(TsUiWaveformDetail *d,const TsUiState *ui,
     int64_t w=right-x,h=bottom-y,bx=mosaic_detail_pixel(sx),by=mosaic_detail_pixel(sy);
     if(bx<1)bx=1;
     if(by<1)by=1;
-    uint32_t color=mosaic_color(e->source->hash),fill=selected?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(50,46,59)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(32,31,39));
+    uint32_t color=mosaic_color(mosaic_source_color(e->source)),fill=selected?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(50,46,59)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(32,31,39));
     if(dim){color=mosaic_mix_color(color,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(19,20,26)),.70f);fill=ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(23,24,30));}
     if(ghost)color=mosaic_mix_color(color,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(16,18,24)),.55f);
     else mosaic_detail_rect(d,x,y,right,bottom,fill);
@@ -154,6 +154,7 @@ static void mosaic_detail_card(TsUiWaveformDetail *d,const TsUiState *ui,
             if(e->source->pattern)snprintf(notes+used,sizeof(notes)-used,"%s%+dST",n?" ":"",e->notes[n]-60);
             else snprintf(notes+used,sizeof(notes)-used,"%s%s",n?" ":"",ts_midi_note_name(e->notes[n],note,sizeof(note)));
         }
+        mosaic_pattern_label(ui,e,notes,sizeof(notes));
         snprintf(label,sizeof(label),"%.*s",chars,notes);
         mosaic_detail_text(d,tx,y+mosaic_detail_pixel(14*sy),label,dim?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(66,64,75)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DIM, RGB(156,147,165)),sx,sy);
     }
@@ -241,12 +242,13 @@ static void mosaic_detail_sources(TsFramebuffer *fb,const TsUiState *ui,double i
         const TsSample *s=ui->mosaic_sources[n].sample;if(!s || !s->data)continue;
         int x=(i%2)*49,y=(i/2)*34,selected=mosaic_source_selection(ui,n);
         uint32_t fill=selected?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(51,47,59)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(40,36,44));
-        uint32_t color=mosaic_color(ui->mosaic_sources[n].hash);
+        uint32_t color=mosaic_color(ui->mosaic_sources[n].source?mosaic_source_color(ui->mosaic_sources[n].source):ui->mosaic_sources[n].hash);
         int first=(int)((x+4)*sx),last=(int)((x+39)*sx);
         int top=source_y+(int)((y+15)*sy),bottom=source_y+(int)((y+26)*sy);
         int width=last-first,bins=width<TS_WAVEFORM_CACHE_MAX_COLUMNS?width:TS_WAVEFORM_CACHE_MAX_COLUMNS;
         const TsMosaicSource *source=ui->mosaic_sources[n].source;
         if(source && source->pattern){
+            if(mosaic_pattern_changed(ui,source->pattern))continue;
             mosaic_detail_rect(d,first,top,last,bottom,fill);
             const TsPatternCard *p=source->pattern;int rows=p->score.patterns[0]->rows;
             for(int row=0;row<rows;++row)for(int lane=0;lane<p->score.channel_count;++lane){

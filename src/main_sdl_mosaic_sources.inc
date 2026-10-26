@@ -119,6 +119,9 @@ static int mosaic_sources_event(const SDL_Event *event,SDL_AudioDeviceID device,
         int n=ui->mosaic_source_offset+((y-74)/34)*2+(x-10)/49;
         if(n>=ui->mosaic_source_count || !ui->mosaic_sources[n].sample)return 1;
         mosaic_drag_end(ui,c);mosaic_picks_clear(ui,c);ui->mosaic_source_selected=n;
+        if(event->button.button==SDL_BUTTON_RIGHT && ui->mosaic_sources[n].source && ui->mosaic_sources[n].source->pattern && (y-74)%34>=16){
+            mosaic_pattern_notices(ui,instrument,c,2);return 1;
+        }
         if(event->button.button==SDL_BUTTON_LEFT)mosaic_source_open(device,audio,ui,instrument,c,transform,n);
         else {
             uint64_t primary=ui->mosaic_selected;TsMosaicSource *source=ui->mosaic_sources[n].source;

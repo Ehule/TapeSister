@@ -10,8 +10,11 @@ static double pattern_difference(const TsStereoFrame *a,const TsStereoFrame *b,i
 {
     double d=0;for(int i=0;i<n;++i)d=fmax(d,fmax(fabs(a[i].l-b[i].l),fabs(a[i].r-b[i].r)));return d;
 }
+
+#include "test_mosaic_pattern_updates.inc"
 static void mosaic_patterns(void)
 {
+    mosaic_pattern_updates();
     audit_blank_song(16);
     for(size_t i=0;i<test_bank->current.frames;++i){test_bank->current.data[2*i]=.3f*sinf(i*.043f);test_bank->current.data[2*i+1]=.2f*cosf(i*.037f);}
     assert(ts_instrument_sync_selected(test_bank,test_error,sizeof(test_error)));
@@ -112,6 +115,7 @@ static void mosaic_patterns(void)
     mc.pages=test_pages;test_ui->mosaic=test_audio->mosaic=m;test_ui->mosaic_open=1;test_ui->tracker_open=0;test_ui->mosaic_pattern_tab=0;
     test_ui->mosaic_scale=200;test_ui->mosaic_hscale=1;test_ui->mosaic_scroll=test_ui->mosaic_xscroll=0;m->playing=0;a->x=20;
     mosaic_poll(0,test_ui,test_bank,&mc);
+    if(test_ui->mosaic_pattern_choice)mosaic_pattern_resolve(0,test_ui,&mc,0);
     SDL_Event ev;
     /* Click the visible tabs through the full dispatcher. The transport row
        used to consume their center/bottom before the tab handler ran. */

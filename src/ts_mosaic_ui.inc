@@ -5,6 +5,26 @@ static uint32_t mosaic_color(uint64_t id)
     static const int roles[]={TS_COLOR_DATA2,TS_COLOR_DATA1,TS_COLOR_DATA5,TS_COLOR_DATA4,TS_COLOR_DATA3};
     return ts_theme_legacy(active_palette(),TS_THEME_MOSAIC,roles[id%5],TS_PALETTE_MOSAIC_TILE_1+id%5);
 }
+static uint64_t mosaic_source_color(const TsMosaicSource *s)
+{return s->pattern?(s->pattern->lineage*131+s->pattern->id):s->hash;}
+static void mosaic_pattern_label(const TsUiState *ui,const TsMosaicEvent *e,char *label,size_t size)
+{
+    if(!e->source->pattern)return;
+    const TsPatternCard *p=e->source->pattern;int pending=0;
+    const TsMosaicEvent *live=ts_mosaic_find(ui->mosaic,e->id);
+    if(live)pending=ui->mosaic_pattern_pending[live-ui->mosaic->events];
+    if(pending)snprintf(label,size,"PENDING");
+    else if(p->older)snprintf(label,size,"OLD V%u",p->version);
+    else snprintf(label,size,"V%u %+dST",p->version,e->notes[0]-60);
+}
+static int mosaic_pattern_changed(const TsUiState *ui,const TsPatternCard *p)
+{
+    for(int i=0;i<TS_MOSAIC_EVENTS;++i){const TsMosaicEvent *e=&ui->mosaic->events[i];
+        const TsPatternCard *old=e->id?e->source->pattern:NULL;
+        if(old && old->older && old->lineage==p->lineage && old->id==p->id)return 1;
+    }
+    return 0;
+}
 static void mosaic_button(TsFramebuffer *fb,int x,int y,int w,const char *label,int active,int small)
 {
     int h=small?16:24;
@@ -82,7 +102,7 @@ static void mosaic_card(TsFramebuffer *fb,const TsUiState *ui,const TsMosaicEven
     if(left+width<=151 || left>=TS_MOSAIC_CANVAS_RIGHT || width<1 || bottom<=66 || top>=376)return;
     int x=(int)left,w=(int)width,y=(int)fmax(66,top),end=(int)fmin(376,bottom),h=end-y;
     if(h<1)h=1;
-    uint32_t color=mosaic_color(e->source->hash),fill=selected?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_SELECTION, RGB(50,46,59)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(32,31,39));
+    uint32_t color=mosaic_color(mosaic_source_color(e->source)),fill=selected?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_SELECTION, RGB(50,46,59)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(32,31,39));
     if(dim){color=mosaic_mix_color(color,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(19,20,26)),.70f);fill=ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(23,24,30));}
     if(dim)color=ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_MUTED,color);
     if(e->solo)color=ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_SOLO,color);
@@ -144,7 +164,7 @@ static void mosaic_card(TsFramebuffer *fb,const TsUiState *ui,const TsMosaicEven
             if(e->source->pattern)snprintf(notes+used,sizeof(notes)-used,"%s%+dST",n?" ":"",e->notes[n]-60);
             else snprintf(notes+used,sizeof(notes)-used,"%s%s",n?" ":"",ts_midi_note_name(e->notes[n],note,sizeof(note)));
         }
-        int chars=(int)fmax(0,((x+w>TS_MOSAIC_CANVAS_RIGHT?TS_MOSAIC_CANVAS_RIGHT-x:w)-30)/6);snprintf(label,sizeof(label),"%.*s",chars,notes);
+        int chars=(int)fmax(0,((x+w>TS_MOSAIC_CANVAS_RIGHT?TS_MOSAIC_CANVAS_RIGHT-x:w)-30)/6);mosaic_pattern_label(ui,e,notes,sizeof(notes));snprintf(label,sizeof(label),"%.*s",chars,notes);
         text(fb,x+6,y+14,label,dim?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(66,64,75)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DIM, RGB(156,147,165)),1);
     }
     if(h>38 && bottom<376 && x>=151 && x+36<TS_MOSAIC_CANVAS_RIGHT && w>=36) {
@@ -307,14 +327,15 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
         int x=10+(i%2)*49,y=74+(i/2)*34,n=ui->mosaic_source_offset+i;
         const TsSample *sample=n<ui->mosaic_source_count?ui->mosaic_sources[n].sample:NULL;
         int selected=sample?mosaic_source_selection(ui,n):0;
-        uint32_t color=sample?mosaic_color(ui->mosaic_sources[n].hash):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DATA2, RGB(135,171,174));
+        uint32_t color=sample?mosaic_color(ui->mosaic_sources[n].source?mosaic_source_color(ui->mosaic_sources[n].source):ui->mosaic_sources[n].hash):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DATA2, RGB(135,171,174));
         rect(fb,x,y,44,28,selected?mosaic_selection_color(ui,selected==2):sample?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(40,36,44)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(23,23,28)));
         if(selected)rect(fb,x+2,y+2,40,24,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(51,47,59)));
         snprintf(label,sizeof(label),"%02d",n<16?n+1:n-15);if(!ui->mosaic_pattern_tab)text(fb,x+4,y+4,label,sample?color:ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(74,70,82)),1);
         if(sample && ui->mosaic_sources[n].source && ui->mosaic_sources[n].source->pattern){
             const TsPatternCard *p=ui->mosaic_sources[n].source->pattern;
             snprintf(label,sizeof(label),"P%03u",p->id);text(fb,x+3,y+4,label,color,1);
-            for(int row=0;row<p->score.patterns[0]->rows;++row)for(int l=0;l<p->score.channel_count;++l){int note=p->cells[row][l][0];if(note>0 && note<=96)rect(fb,x+3+(note-1)*36/96,y+15+row*10/p->score.patterns[0]->rows,3,1,color);}
+            if(mosaic_pattern_changed(ui,p))text(fb,x+1,y+18,"CHANGED",color,1);
+            else for(int row=0;row<p->score.patterns[0]->rows;++row)for(int l=0;l<p->score.channel_count;++l){int note=p->cells[row][l][0];if(note>0 && note<=96)rect(fb,x+3+(note-1)*36/96,y+15+row*10/p->score.patterns[0]->rows,3,1,color);}
         } else if(sample && sample->data) {
             TsWaveformRequest request={.sample=sample,.first=0,.last=sample->frames,.width=35,.revision=(m?m->epoch:0)^ui->mosaic_sources[n].hash};
             ts_waveform_cache_prepare(&source_cache[i],&request);
@@ -409,9 +430,25 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
 
 void ts_ui_render_mosaic_choice(TsFramebuffer *fb,const TsUiState *ui)
 {
-    if(!fb || !ui || !ui->mosaic_edit_choice)return;
+    if(!fb || !ui || (!ui->mosaic_edit_choice && !ui->mosaic_pattern_choice))return;
     for(int i=0;i<TS_UI_WIDTH*TS_UI_HEIGHT;++i)fb->pixels[i]=mosaic_mix_color(fb->pixels[i],ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_BACKGROUND, RGB(9,10,14)),.66f);
     rect(fb,114,117,386,174,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DIM, RGB(111,95,122)));rect(fb,116,119,382,170,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(31,28,38)));
+    if(ui->mosaic_pattern_choice){
+        uint32_t ink=ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_TEXT,RGB(224,214,233));
+        uint32_t dim=ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_DIM,RGB(178,163,189));
+        char label[80];snprintf(label,sizeof(label),"PATTERN %03u CHANGED / SOURCE V%u",ui->mosaic_pattern_number,ui->mosaic_pattern_version);
+        text(fb,128,132,label,ink,1);
+        snprintf(label,sizeof(label),"%d CARD(S) USE AN OLDER VERSION",ui->mosaic_pattern_all);text(fb,128,153,label,ink,1);
+        text(fb,128,177,"KEEP CARD LENGTH, POSITION, FADES AND MIX.",dim,1);
+        text(fb,128,191,"PLAYING LOOPS SWITCH AT THEIR NEXT REPEAT.",dim,1);
+        text(fb,128,205,"ONE-SHOTS SWITCH ON THEIR NEXT TRIGGER.",dim,1);
+        snprintf(label,sizeof(label),ui->mosaic_pattern_owner?"UPDATE THIS":"SELECTED (%d)",ui->mosaic_pattern_selected);
+        mosaic_button(fb,128,232,114,label,ui->mosaic_pattern_selected>0,0);
+        mosaic_button(fb,250,232,114,"UPDATE ALL",0,0);
+        mosaic_button(fb,372,232,114,"KEEP EXISTING",0,0);
+        text(fb,128,270,"U: THIS/SELECTED   A: ALL   ESC: KEEP",dim,1);
+        return;
+    }
     text(fb,128,132,"RETURN TO MOSAIC",ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_TEXT, RGB(224,214,233)),1);
     const TsMosaicEvent *owner=ts_mosaic_find(ui->mosaic,ui->mosaic_editing);int count=0;
     if(owner)for(int i=0;i<TS_MOSAIC_EVENTS;++i)count+=ui->mosaic->events[i].id && ui->mosaic->events[i].source==owner->source;

@@ -583,6 +583,10 @@ typedef struct {
     int mosaic_record_length_drag, mosaic_record_length_before;
     TsMosaicRecordPreview mosaic_record_preview;
     int mosaic_edit_choice;
+    int mosaic_pattern_choice, mosaic_pattern_all, mosaic_pattern_selected;
+    uint64_t mosaic_pattern_owner;
+    unsigned mosaic_pattern_number, mosaic_pattern_version;
+    uint8_t mosaic_pattern_pending[TS_MOSAIC_EVENTS];
     int mosaic_follow, mosaic_box, mosaic_box_x, mosaic_box_y, mosaic_box_end_x, mosaic_box_end_y;
     int mosaic_ghost_count;
     TsMosaicEvent mosaic_ghosts[TS_MOSAIC_EVENTS];

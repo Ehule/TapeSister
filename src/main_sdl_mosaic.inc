@@ -8,6 +8,8 @@ static void mosaic_poll(SDL_AudioDeviceID device,TsUiState *ui,
 
     if(!ui->mosaic_open || c->active)c->mix_drag=c->mix_changed=c->volume_drag=c->pan_active=ui->mosaic_loop_drag=0;
     if(device)SDL_LockAudioDevice(device);
+    ts_mosaic_pattern_retire(ui->mosaic);
+    for(int i=0;i<TS_MOSAIC_EVENTS;++i)ui->mosaic_pattern_pending[i]=ui->mosaic->pattern_retired[i]!=NULL;
     int release_preview=!ui->mosaic->audition_id && ui->mosaic->audition_source.source!=NULL;
     if(!ui->mosaic_open || c->active || !ui->mosaic->audition_id)ts_mosaic_audition(ui->mosaic,0);
     ui->mosaic_time=ui->mosaic->time;ui->mosaic_playing=ui->mosaic->playing;
@@ -15,6 +17,7 @@ static void mosaic_poll(SDL_AudioDeviceID device,TsUiState *ui,
     if(release_preview)ts_mosaic_collect(ui->mosaic);
     if(ui->mosaic_open && !c->active) {
         mosaic_sources_refresh(ui,instrument,c);
+        mosaic_pattern_notices(ui,instrument,c,0);
         int recording=ui->mosaic_recording && ui->capture_state==TS_CAPTURE_RECORDING &&
             ui->input_sample_rate && ui->mosaic_record_preview.epoch==ui->mosaic->epoch;
         if(ui->mosaic_follow && !ui_dialog_open(ui) && (ui->mosaic_playing || recording) && !c->drag && !c->volume_drag && !c->pan_active && !ui->mosaic_loop_drag) {
@@ -347,6 +350,19 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
     if(down || up)logical_mouse(window,event->button.x,event->button.y,&x,&y);
     if(motion)logical_mouse(window,event->motion.x,event->motion.y,&x,&y);
     SDL_Keymod mod=key?(SDL_Keymod)event->key.keysym.mod:SDL_GetModState();
+    if(ui->mosaic_pattern_choice) {
+        int choice=-1;
+        if(key && !event->key.repeat){
+            if(event->key.keysym.sym==SDLK_ESCAPE || event->key.keysym.sym==SDLK_k)choice=0;
+            if(event->key.keysym.sym==SDLK_u)choice=1;
+            if(event->key.keysym.sym==SDLK_a)choice=2;
+        }
+        if(down && event->button.button==SDL_BUTTON_LEFT && y>=232 && y<256){
+            if(x>=128 && x<242)choice=1;else if(x>=250 && x<364)choice=2;else if(x>=372 && x<486)choice=0;
+        }
+        if(choice>=0)mosaic_pattern_resolve(device,ui,c,choice);
+        return down || up || motion || key || event->type==SDL_KEYUP || event->type==SDL_MOUSEWHEEL;
+    }
     if(ui->mosaic_edit_choice) {
         int choice=-1;
         if(key && !event->key.repeat) {
@@ -473,6 +489,7 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
         SDL_Keycode k=event->key.keysym.sym;
         if(k==SDLK_F11 || k==SDLK_TAB || k==SDLK_BACKQUOTE ||
            (k==SDLK_p && (mod&(KMOD_CTRL|KMOD_SHIFT))==(KMOD_CTRL|KMOD_SHIFT)))return 0;
+        if(k==SDLK_u && !(mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI))){mosaic_pattern_notices(ui,instrument,c,1);return 1;}
         if(k==SDLK_SPACE){mosaic_transport(device,ui,0);return 1;}
         if(k==SDLK_ESCAPE){if(device)SDL_LockAudioDevice(device);ts_mosaic_audition(ui->mosaic,0);if(device)SDL_UnlockAudioDevice(device);mosaic_transport(device,ui,1);return 1;}
         if(k==SDLK_s && (mod&KMOD_CTRL))return 0; /* Save overlays the current workspace. */
@@ -585,13 +602,15 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
         }
         if(x>=10 && x<108 && y>=37 && y<52){
             mosaic_drag_end(ui,c);mosaic_picks_clear(ui,c);ui->mosaic_pattern_tab=x>=55;c->pattern_ready=0;ui->mosaic_source_page=0;ui->mosaic_source_selected=-1;
-            mosaic_sources_refresh(ui,instrument,c);return 1;
+            mosaic_sources_refresh(ui,instrument,c);
+            mosaic_pattern_notices(ui,instrument,c,0);return 1;
         }
         if(x>=10 && x<108 && y>=TS_MOSAIC_SOURCE_PAGE_Y && y<TS_MOSAIC_SOURCE_PAGE_Y+18) {
             int pages=ui->mosaic_source_pages;
             if(x<35 && ui->mosaic_source_page>0)--ui->mosaic_source_page;
             if(x>=84 && ui->mosaic_source_page+1<pages)++ui->mosaic_source_page;
-            mosaic_sources_refresh(ui,instrument,c);return 1;
+            mosaic_sources_refresh(ui,instrument,c);
+            mosaic_pattern_notices(ui,instrument,c,0);return 1;
         }
         if(x>=113 && x<151 && y>=66 && y<376) {
             if(device)SDL_LockAudioDevice(device);ts_mosaic_seek(ui->mosaic,ui->mosaic_scroll+(y-66)/ui->mosaic_scale);
@@ -665,6 +684,21 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
     if(up && event->button.button==SDL_BUTTON_LEFT) {
         if(c->shift_toggle && !c->drag_moved)mosaic_select_remove(ui,c->shift_toggle);
         mosaic_drag_end(ui,c);ts_mosaic_collect(ui->mosaic);mosaic_sources_refresh(ui,instrument,c);return 1;
+    }
+    if(motion && !c->drag){
+        const TsMosaicSource *source=NULL;
+        if(x>=10 && x<108 && y>=74 && y<346){int col=(x-10)/49,row=(y-74)/34;
+            int n=ui->mosaic_source_offset+row*2+col;if(col<2 && n<ui->mosaic_source_count)source=ui->mosaic_sources[n].source;
+        }else if(x>=151 && x<TS_MOSAIC_CANVAS_RIGHT && y>=66 && y<376){
+            double t=ui->mosaic_scroll+(y-66)/ui->mosaic_scale,left=ui->mosaic_xscroll+(x-151)/horizontal;
+            for(int i=TS_MOSAIC_EVENTS-1;i>=0;--i){const TsMosaicEvent *e=&ui->mosaic->events[i];
+                if(e->id && t>=e->start && t<e->start+e->duration && left>=e->x && left<e->x+e->width){source=e->source;break;}}
+        }
+        if(source && source->pattern){const TsPatternCard *p=source->pattern;
+            int i=mosaic_pattern_index(c,p->id);const TsMosaicSource *latest=i>=0?c->pattern_sources[i]:NULL;
+            if(latest && mosaic_pattern_matches(p,latest->pattern))snprintf(ui->status,sizeof(ui->status),"P%03u V%u / SOURCE V%u / U: UPDATE / DOUBLE-CLICK: LATEST SOURCE",p->id,p->version,latest->pattern->version);
+            else snprintf(ui->status,sizeof(ui->status),"P%03u V%u / SOURCE UNAVAILABLE / SNAPSHOT STILL PLAYS",p->id,p->version);
+        }
     }
     return motion || down;
 }

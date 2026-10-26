@@ -15,7 +15,9 @@ typedef struct {
     int pattern_ready,was_tracker;
     TsMosaicSource *pattern_sources[256];
     TsPatternId pattern_ids[256];
-    int pattern_count;
+    int pattern_count, pattern_scan;
+    uint64_t pattern_notice[256], pattern_owner, pattern_epoch;
+    int pattern_prompt;
     TsMosaicEvent source_drag;
     TsMosaicSourceKey source_key, picked_keys[TS_MOSAIC_EVENTS];
     TsMosaicSourceKey audition_key;
@@ -131,18 +133,11 @@ static void mosaic_drag_end(TsUiState *ui,MosaicController *c)
 /* Browse stored sample banks without swapping the live instrument or routing.
    Keep bank slots/page numbers intact; event versions have separate pages after
    the banks. Only one bank's descriptors and hashes are cached at a time. */
+#include "main_sdl_mosaic_pattern_update.inc"
+
 static void mosaic_pattern_sources(TsUiState *ui,const TsInstrument *instrument,MosaicController *c)
 {
     if(!c->pages)return;
-    if(!c->pattern_ready){
-        if(ts_tapehead_frame())ts_tapehead_export(&c->pages->tracker,ui->status,sizeof(ui->status));
-        for(int i=0;i<c->pattern_count;++i)if(c->pattern_sources[i] && c->pattern_sources[i]->pins)--c->pattern_sources[i]->pins;
-        memset(c->pattern_sources,0,sizeof(c->pattern_sources));c->pattern_count=0;
-        const TsSisterTracker *t=&c->pages->tracker;
-        for(int i=0;i<256;++i)if(t->patterns[i])c->pattern_ids[c->pattern_count++]=t->patterns[i]->id;
-        c->pattern_ready=1;
-        if(!ui->mosaic->pattern_engine)ui->mosaic->pattern_engine=ts_pattern_engine_create();
-    }
     int pages=(c->pattern_count+15)/16;if(pages<1)pages=1;
     if(ui->mosaic_source_page>=pages)ui->mosaic_source_page=pages-1;
     memset(ui->mosaic_sources,0,sizeof(ui->mosaic_sources));ui->mosaic_source_count=16;ui->mosaic_source_offset=0;ui->mosaic_source_pages=pages;
@@ -157,7 +152,7 @@ static void mosaic_sources_refresh(TsUiState *ui,const TsInstrument *instrument,
 {
     if(c->ui_epoch!=ui->mosaic->epoch) {
         mosaic_drag_end(ui,c);mosaic_select_only(ui,0);
-        c->pattern_ready=c->pattern_count=0;memset(c->pattern_sources,0,sizeof(c->pattern_sources));
+        c->pattern_ready=c->pattern_count=0;memset(c->pattern_notice,0,sizeof(c->pattern_notice));c->pattern_owner=0;ui->mosaic_pattern_choice=0;memset(c->pattern_sources,0,sizeof(c->pattern_sources));
         c->picked_count=c->scatter_pool_count=c->zoom_saved=0;
         ui->mosaic_source_pick_count=ui->mosaic_scatter_open=ui->mosaic_spacing_confirm=ui->mosaic_align_open=0;
         if(ui->mosaic_loop_open)SDL_StopTextInput();
@@ -165,6 +160,7 @@ static void mosaic_sources_refresh(TsUiState *ui,const TsInstrument *instrument,
         ui->mosaic_source_selected=-1;ui->mosaic_source_page=0;
         memset(c->bank_data,0,sizeof(c->bank_data));c->ui_epoch=ui->mosaic->epoch;c->browser_initialized=0;
     }
+    mosaic_pattern_cache(ui,instrument,c);
     if(ui->mosaic_pattern_tab){mosaic_pattern_sources(ui,instrument,c);return;}
     int banks=c->pages?(int)ts_sample_pages_count(c->pages):1;if(banks<1)banks=1;
     int active=c->pages?(int)ts_sample_pages_active(c->pages):0;
@@ -527,23 +523,20 @@ static int mosaic_pattern_editor(SDL_AudioDeviceID device,TsUiState *ui,MosaicCo
     mosaic_drag_end(ui,c);
     if(device)SDL_LockAudioDevice(device);ts_mosaic_audition(ui->mosaic,0);if(device)SDL_UnlockAudioDevice(device);
     const TsSisterTracker *current=&c->pages->tracker;
-    int same=ts_sister_tracker_pattern_const(current,p->id)!=NULL;
-    /* A new module can reuse numeric pattern IDs. Stable tile identities
-       distinguish that replacement from edits to the original pattern. */
-    for(int k=0;same && k<p->asset_count;++k)for(int a=1;same && a<129;++a)
-        if(p->score.aliases[a]==p->assets[k].tile && p->score.aliases[a]!=current->aliases[a])same=0;
+    int same=p->lineage && p->lineage==current->source_id && ts_sister_tracker_pattern_const(current,p->id)!=NULL;
     if(!same || !ts_tapehead_select_pattern(p->id)){
         snprintf(ui->status,sizeof(ui->status),"ORIGINAL PATTERN IS UNAVAILABLE - SAVED SNAPSHOT STILL PLAYS");return 0;
     }
+    c->pattern_owner=0;c->pattern_epoch=ui->mosaic->epoch;
     ui->tracker_open=1;ui->mosaic_open=0;ui->tracker_embedded_frame=ts_tapehead_frame();c->was_tracker=1;
-    snprintf(ui->status,sizeof(ui->status),"SOURCE PATTERN EDITOR / EXISTING MOSAIC CARDS KEEP THEIR SNAPSHOTS");return 1;
+    snprintf(ui->status,sizeof(ui->status),"EDITING LATEST SOURCE / RETURN TO MOSAIC TO UPDATE CARDS");return 1;
 }
 static int mosaic_enter(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,
                            TsInstrument *instrument,MosaicController *c,uint64_t id)
 {
     TsMosaicEvent *e=ts_mosaic_find(ui->mosaic,id);if(!e)return 0;
     if(e->source->pattern){
-        mosaic_drag_end(ui,c);mosaic_pattern_editor(device,ui,c,e->source->pattern);
+        mosaic_drag_end(ui,c);if(mosaic_pattern_editor(device,ui,c,e->source->pattern))c->pattern_owner=id;
         return 1;
     }
     mosaic_drag_end(ui,c);

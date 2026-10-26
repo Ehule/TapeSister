@@ -1364,6 +1364,7 @@ TsSampleProjectLoad *ts_sample_pages_prepare_project(const char *path, int with_
             memcpy(page_path,directory,strlen(directory));
             strcpy(page_path+strlen(directory),"/project-data");
             if (!ts_mosaic_load(mosaic_loaded, page_path, error, error_size)) goto failed;
+            ts_pattern_link_legacy(mosaic_loaded,&loaded.tracker);
         }
     }
     load = malloc(sizeof(*load));

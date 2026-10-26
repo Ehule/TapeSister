@@ -57,6 +57,14 @@ static int add_asset(TsMosaic *m,TsPatternCard *p,const TsSamplePages *pages,con
     TsAuditionPlan plan={s,a.first,a.last};a.crossfade=a.looping?ts_audition_crossfade_frames(&plan,live?bank->loop_crossfade_ms:slot->loop_crossfade_ms):0;
     p->assets[p->asset_count++]=a;return 1;
 }
+static void pattern_normalize(TsPatternCard *p)
+{
+    /* Hidden rows/lanes are still part of the score and must retain valid
+       display aliases. Ignore only instruments not referenced anywhere. */
+    unsigned char used[129]={0};
+    for(int row=0;row<256;++row)for(int lane=0;lane<32;++lane)used[p->cells[row][lane][1]]=1;
+    for(int a=1;a<129;++a)if(!used[a]){p->score.aliases[a]=0;memset(&p->score.instruments[a],0,sizeof(p->score.instruments[a]));}
+}
 static double pattern_duration(const TsSisterTracker *t)
 {
     int rows=t->patterns[0]->rows;
@@ -86,11 +94,31 @@ uint64_t ts_pattern_hash(const TsPatternCard *p)
     }
     return hash;
 }
+void ts_pattern_link_legacy(TsMosaic *m,TsSisterTracker *t)
+{
+    if(!m || !t)return;
+    if(!t->source_id){
+        /* One-time, conservative migration of pre-lineage projects. Require
+           stable nonempty asset bindings; never infer identity from P00 alone. */
+        t->source_id=ts_tile_id_new();
+        for(TsMosaicSource *s=m->sources;s;s=s->next){
+            TsPatternCard *p=s->pattern;
+            if(!p || p->lineage || !p->asset_count || !ts_sister_tracker_pattern_const(t,p->id))continue;
+            int same=1,bindings=0;
+            for(int a=1;a<129;++a)if(p->score.aliases[a]){
+                ++bindings;if(p->score.aliases[a]!=t->aliases[a])same=0;
+                for(int k=0;k<p->score.instruments[a].sample_count;++k)
+                    if(p->score.instruments[a].tiles[k]!=t->instruments[a].tiles[k])same=0;
+            }
+            if(same && bindings)p->lineage=t->source_id;
+        }
+    }
+}
 TsMosaicSource *ts_pattern_source(TsMosaic *m,const TsSamplePages *pages,const TsInstrument *active,TsPatternId id,char *error,size_t n)
 {
     const TsSisterTracker *t=&pages->tracker;const TsTrackerPattern *pattern=ts_sister_tracker_pattern_const(t,id);if(!pattern)return NULL;
     TsPatternCard *p=calloc(1,sizeof(*p));if(!p)return NULL;
-    ts_sister_tracker_init(&p->score);p->id=id;p->root=60;
+    ts_sister_tracker_init(&p->score);p->id=id;p->root=60;p->lineage=t->source_id;p->version=1;
     p->score.bpm=t->bpm;p->score.ticks_per_line=t->ticks_per_line;p->score.channel_count=t->channel_count;
     p->score.fasttracks_uses_length=t->fasttracks_uses_length;p->score.length_bypass=t->length_bypass;p->score.control_lane=t->control_lane;
     memcpy(p->score.aliases,t->aliases,sizeof(t->aliases));memcpy(p->score.instruments,t->instruments,sizeof(t->instruments));memcpy(p->score.lanes,t->lanes,sizeof(t->lanes));
@@ -107,14 +135,16 @@ TsMosaicSource *ts_pattern_source(TsMosaic *m,const TsSamplePages *pages,const T
         if(t->instruments[a].present){for(int k=0;k<t->instruments[a].sample_count;++k)if(!add_asset(m,p,pages,active,t->instruments[a].tiles[k],error,n))goto fail;}
         else if(!add_asset(m,p,pages,active,t->aliases[a],error,n))goto fail;
     }
+    pattern_normalize(p);
     p->duration=pattern_duration(&p->score);
-    if(!ts_pattern_prepare(p))goto fail;
     TsMosaicSource *s=calloc(1,sizeof(*s));if(!s)goto fail;
     s->sample.data=calloc(2,sizeof(float));if(!s->sample.data){free(s);goto fail;}
     s->sample.frames=2;s->sample.channels=1;s->sample.sample_rate=48000;
     snprintf(s->sample.name,sizeof(s->sample.name),"P%03u %.40s",id,pattern->name);
     s->pattern=p;s->hash=ts_pattern_hash(p);
-    for(TsMosaicSource *old=m->sources;old;old=old->next)if(old->pattern && old->hash==s->hash && old->pattern->id==id && !memcmp(old->pattern->cells,p->cells,sizeof(p->cells))){ts_sample_free(&s->sample);free(s);ts_pattern_free(p);return old;}
+    for(TsMosaicSource *old=m->sources;old;old=old->next)if(old->pattern && old->hash==s->hash && old->pattern->id==id && old->pattern->lineage==p->lineage && !memcmp(old->pattern->cells,p->cells,sizeof(p->cells))){ts_sample_free(&s->sample);free(s);ts_pattern_free(p);return old;}
+    for(TsMosaicSource *old=m->sources;old;old=old->next)if(old->pattern && old->pattern->id==id && old->pattern->lineage==p->lineage && old->pattern->version>=p->version)p->version=old->pattern->version+1;
+    if(!ts_pattern_prepare(p)){ts_sample_free(&s->sample);free(s);goto fail;}
     s->next=m->sources;m->sources=s;return s;
 fail:ts_pattern_free(p);snprintf(error,n,"Unable to prepare pattern card");return NULL;
 }
@@ -125,7 +155,8 @@ int ts_pattern_save(const TsPatternCard *p,const char *dir,int index,char *e,siz
     snprintf(path,sizeof(path),"%s/pattern-%03d.cells",dir,index);FILE *f=fopen(path,"wb");if(!f)return 0;
     int ok=fwrite(p->cells,1,sizeof(p->cells),f)==sizeof(p->cells);if(fclose(f))ok=0;if(!ok)return 0;
     snprintf(path,sizeof(path),"%s/pattern-%03d.assets",dir,index);f=fopen(path,"wb");if(!f)return 0;
-    ok=fprintf(f,"TSPATTERN 1 %u %d %d %.17g %d %d %d %u\n",p->id,p->root,p->linear,p->duration,p->asset_count,p->enabled,p->global_volume,p->selected)>0;
+    ok=fprintf(f,"TSPATTERN 2 %u %d %d %.17g %d %d %d %u\n",p->id,p->root,p->linear,p->duration,p->asset_count,p->enabled,p->global_volume,p->selected)>0;
+    if(ok)ok=fprintf(f,"ORIGIN %llu %u %llu\n",(unsigned long long)p->lineage,p->version,(unsigned long long)p->acknowledged)>0;
     for(int i=0;ok && i<p->asset_count;++i){const TsPatternAsset *a=&p->assets[i];
         ok=fprintf(f,"%llu %d %.9g %zu %zu %zu %d %d\n",(unsigned long long)a->tile,a->tuning.root_note,a->tuning.fine_tune_cents,a->first,a->last,a->crossfade,a->looping,a->mode)>0;
         snprintf(path,sizeof(path),"%s/pattern-%03d-%04d.wav",dir,index,i);if(ok)ok=ts_sample_save_wav32f(&a->audio->sample,path,e,n);
@@ -145,8 +176,14 @@ TsPatternCard *ts_pattern_load(TsMosaic *m,const char *dir,int index,char *e,siz
         if(c[0]>97 || c[1]>128 || c[3]>35 || (c[5] && c[5]!=0x16 && c[5]!=0x17))goto fail;
     }
     snprintf(path,sizeof(path),"%s/pattern-%03d.assets",dir,index);f=fopen(path,"rb");if(!f)goto fail;
-    if(!fgets(line,sizeof(line),f) || sscanf(line,"TSPATTERN 1 %u %d %d %lf %d %d %d %u %c",&p->id,&p->root,&p->linear,&p->duration,&p->asset_count,&p->enabled,&p->global_volume,&p->selected,&tail)!=8 ||
+    int version=0;
+    if(!fgets(line,sizeof(line),f) || sscanf(line,"TSPATTERN %d %u %d %d %lf %d %d %d %u %c",&version,&p->id,&p->root,&p->linear,&p->duration,&p->asset_count,&p->enabled,&p->global_volume,&p->selected,&tail)!=9 || (version!=1 && version!=2) ||
        p->enabled<0 || p->enabled>1 || p->global_volume<0 || p->global_volume>64 || p->asset_count<0 || p->asset_count>2048 || p->root<0 || p->root>127 || (p->linear!=0 && p->linear!=1) || !isfinite(p->duration) || p->duration<=0 || p->duration>86400 || fabs(p->duration-pattern_duration(&p->score))>1e-9 || !ts_sister_tracker_pattern(&p->score,p->id)){fclose(f);goto fail;}
+    p->version=1;
+    if(version>=2){unsigned long long lineage,acknowledged;
+        if(!fgets(line,sizeof(line),f) || sscanf(line,"ORIGIN %llu %u %llu %c",&lineage,&p->version,&acknowledged,&tail)!=3 || !p->version || lineage==UINT64_MAX){fclose(f);goto fail;}
+        p->lineage=lineage;p->acknowledged=acknowledged;ts_tile_id_reserve(p->lineage);
+    }
     p->assets=calloc(p->asset_count?p->asset_count:1,sizeof(*p->assets));if(!p->assets){fclose(f);goto fail;}
     for(int i=0;i<p->asset_count;++i){TsPatternAsset *a=&p->assets[i];unsigned long long id;int mode;
         if(!fgets(line,sizeof(line),f) || sscanf(line,"%llu %d %f %zu %zu %zu %d %d %c",&id,&a->tuning.root_note,&a->tuning.fine_tune_cents,&a->first,&a->last,&a->crossfade,&a->looping,&mode,&tail)!=8 || !id || a->tuning.root_note<0 || a->tuning.root_note>127 || !isfinite(a->tuning.fine_tune_cents) || fabsf(a->tuning.fine_tune_cents)>1200 || a->looping<0 || a->looping>1 || mode<0 || mode>TS_LOOP_START_PING_PONG){fclose(f);goto fail;}
@@ -155,6 +192,8 @@ TsPatternCard *ts_pattern_load(TsMosaic *m,const char *dir,int index,char *e,siz
         a->audio=ts_mosaic_source(m,&sample,e,n);ts_sample_free(&sample);
         if(!a->audio || a->first>=a->last || a->last>a->audio->sample.frames || a->crossfade>(a->last-a->first)/2){fclose(f);goto fail;}
     }
-    ok=fgetc(f)==EOF;fclose(f);if(!ok || !ts_pattern_prepare(p))goto fail;return p;
+    ok=fgetc(f)==EOF;fclose(f);if(!ok)goto fail;
+    pattern_normalize(p);
+    if(!ts_pattern_prepare(p))goto fail;return p;
 fail:ts_pattern_free(p);snprintf(e,n,"Invalid pattern card source");return NULL;
 }

@@ -111,6 +111,7 @@ void ts_mosaic_collect(TsMosaic *m)
     /* Mark references once, instead of rescanning the entire arrangement and
        undo history separately for every immutable source. */
     for(TsMosaicSource *s=m->sources;s;s=s->next)s->retained=s->pins!=0;
+    for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(m->pattern_retired[i])m->pattern_retired[i]->retained=1;
     /* The UI owns this reference until it acknowledges an ended preview.
        The callback only retires audition_id, never a pointer collect reads. */
     if(m->audition_source.source)m->audition_source.source->retained=1;
@@ -302,10 +303,32 @@ static double voice_position(const TsMosaicEvent *e,const TsMosaicVoice *v,doubl
     *direction=phase<span?1:-1;
     return first+(phase<span?phase:2*span-phase);
 }
+void ts_mosaic_pattern_retire(TsMosaic *m)
+{
+    for(int i=0;i<TS_MOSAIC_EVENTS;++i){
+        TsMosaicVoice *v=&m->voices[i];const TsMosaicEvent *e=&m->events[i];
+        if(!m->playing && m->pattern_retired[i])v->active=0;
+        if(!m->playing || !v->active || v->id!=e->id || v->revision!=e->revision || v->pattern_source==e->source)
+            m->pattern_retired[i]=NULL;
+    }
+}
+void ts_mosaic_update_pattern(TsMosaic *m,TsMosaicEvent *e,TsMosaicSource *source)
+{
+    if(!e || !e->id || !source || !source->pattern || !e->source->pattern || e->source==source)return;
+    if(m->audition_id==e->id && !m->audition_source.source){m->audition_source=*e;}
+    int i=(int)(e-m->events);TsMosaicVoice *v=&m->voices[i];
+    if(m->playing && v->active && v->id==e->id && v->revision==e->revision && v->pattern_source){
+        m->pattern_retired[i]=v->pattern_source;
+        double cycle=v->pattern_source->pattern->duration;
+        v->pattern_switch=v->pattern_origin+(floor(fmax(0,m->time-e->start-v->pattern_origin)/cycle)+1)*cycle;
+    }else{v->active=0;m->pattern_retired[i]=NULL;}
+    e->source=source;++m->revision;
+}
 static void voice_begin(TsMosaicVoice *v,const TsMosaicEvent *e,double elapsed,int rate)
 {
     static uint64_t generation;
     memset(v,0,sizeof(*v));v->generation=++generation;v->active=1;v->id=e->id;v->revision=e->revision;v->start=e->start;
+    v->pattern_source=e->source->pattern?e->source:NULL;
     v->attack_frames=ts_audition_attack_frames(rate,2);v->release_frames=rate*.002;
     v->audible_ramp=1.0f/(rate*.005f);v->mix_ramp=2.0f/(rate*.005f);
     event_balance(e,&v->mix_left,&v->mix_right);
@@ -405,6 +428,9 @@ static TsStereoFrame mosaic_event_read(void *pattern_engine,const TsMosaicEvent 
         voice_begin(v,e,fmax(0,time-e->start),rate);
         v->audible_gain=audible?1.0f:0.0f;
     }
+    if(e->source->pattern && v->pattern_source!=e->source && e->looping && time-e->start+1e-9>=v->pattern_switch){
+        v->pattern_source=e->source;v->pattern_origin=v->pattern_switch;
+    }
     if(v->control_serial!=serial) {
         event_balance(e,&v->target_left,&v->target_right);
         v->base_mode=ts_loop_base_mode(e->mode);v->starts_at_sample=ts_loop_starts_at_sample(e->mode);
@@ -437,7 +463,7 @@ static TsStereoFrame mosaic_event_read(void *pattern_engine,const TsMosaicEvent 
     TsStereoFrame card={0,0};
     for(int n=0;n<e->note_count;++n) {
         if(e->source->pattern){
-            TsStereoFrame f=ts_pattern_read(pattern_engine,e->source->pattern,v,v->generation,time-e->start,rate,speed,e->notes[n],e->looping);
+            TsStereoFrame f=ts_pattern_read(pattern_engine,v->pattern_source->pattern,v,v->generation,fmax(0,time-e->start-v->pattern_origin),rate,speed,e->notes[n],e->looping);
             card.l+=f.l*gain*v->mix_left;card.r+=f.r*gain*v->mix_right;continue;
         }
         TsStereoFrame f;

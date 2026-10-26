@@ -87,6 +87,8 @@ typedef struct {
 
 typedef struct {
     uint64_t id, revision, generation;
+    TsMosaicSource *pattern_source;
+    double pattern_origin, pattern_switch;
     double start;
     double position[TS_MOSAIC_NOTES], step[TS_MOSAIC_NOTES], travel[TS_MOSAIC_NOTES];
     int direction[TS_MOSAIC_NOTES], intro[TS_MOSAIC_NOTES];
@@ -133,6 +135,7 @@ typedef struct TsMosaic {
     float volume_current;
     int history_count, history_cursor, history_first;
     TsMosaicSource *sources;
+    TsMosaicSource *pattern_retired[TS_MOSAIC_EVENTS]; /* UI-owned lifetime pins. */
     uint64_t next_id, revision, epoch;
     double time;
     double speed, speed_current; /* Target and smoothed tape speed, 0.5 .. 2. */
@@ -149,6 +152,9 @@ typedef struct TsMosaic {
     int audition_slot;
 } TsMosaic;
 
+/* Called under audio exclusion. Keeps current cycle alive, no event restart. */
+void ts_mosaic_update_pattern(TsMosaic *,TsMosaicEvent *,TsMosaicSource *);
+void ts_mosaic_pattern_retire(TsMosaic *); /* UI thread under audio exclusion. */
 TsMosaic *ts_mosaic_create(void);
 void ts_mosaic_free(TsMosaic *m);
 /* Publish a freshly loaded, stopped model with no undo history under the audio
