@@ -209,7 +209,7 @@ static void mosaic_detail_ruler(TsUiWaveformDetail *d,const TsUiState *ui,double
     double rate=(ui->mosaic_scale>0?ui->mosaic_scale:24)*sy;
     int64_t pan=mosaic_detail_pixel(ui->mosaic_scroll*rate),line=mosaic_detail_pixel(sy);
     if(line<1)line=1;
-    TsMosaicRange range=ui->mosaic_loop_drag?ui->mosaic_loop_preview:ui->mosaic?ui->mosaic->loop_range:(TsMosaicRange){0,0};
+    TsMosaicRange range=ui->mosaic_loop_drag?ui->mosaic_loop_preview:ui->mosaic?(ui->mosaic->marker_loop?ts_mosaic_marker_range(ui->mosaic,ui->mosaic->marker_active-1):ui->mosaic->loop_range):(TsMosaicRange){0,0};
     int64_t a=mosaic_detail_pixel(range.start*rate)-pan,b=mosaic_detail_pixel(range.end*rate)-pan;
     if(range.end>range.start)
         mosaic_detail_rect(d,left,a,d->width,b,ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_EDGE,RGB(45,65,66)));
@@ -218,11 +218,12 @@ static void mosaic_detail_ruler(TsUiWaveformDetail *d,const TsUiState *ui,double
         double time=tick*interval;int64_t y=mosaic_detail_pixel(time*rate)-pan;
         if(y>=d->height)break;
         char label[32];mosaic_time_label(label,sizeof(label),time);
-        mosaic_detail_text(d,label_x,y+mosaic_detail_pixel(2*sy),label,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DIM, RGB(133,127,141)),sx,sy);
+        if(mosaic_ruler_label_visible(ui,time))
+            mosaic_detail_text(d,label_x,y+mosaic_detail_pixel(2*sy),label,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DIM, RGB(133,127,141)),sx,sy);
         mosaic_detail_rect(d,tick_x,y,d->width,y+line,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(28,30,35)));
     }
     if(range.end>range.start) {
-        uint32_t ink=ts_theme_color(active_palette(),TS_THEME_MOSAIC,ui->mosaic && ui->mosaic->repeat?TS_COLOR_DATA2:TS_COLOR_DIM,RGB(129,206,200));
+        uint32_t ink=ts_theme_color(active_palette(),TS_THEME_MOSAIC,ui->mosaic && (ui->mosaic->repeat || ui->mosaic->marker_loop)?TS_COLOR_DATA2:TS_COLOR_DIM,RGB(129,206,200));
         if(a>=0 && a<d->height)mosaic_detail_rect(d,left,a-line,d->width,a+2*line,ink);
         if(b>=0 && b<d->height)mosaic_detail_rect(d,left,b-line,d->width,b+2*line,ink);
     }

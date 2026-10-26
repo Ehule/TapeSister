@@ -125,11 +125,13 @@ keeping their positions and pitches. AUTO-SPACE optionally separates
 intersecting cards horizontally; new arrangements default to free placement.
 
 Shift-drag a box to select a group; drag to move it or Shift-drag a selected tile to
-copy the group. Alt+M / S mutes or solos selected cards; Alt+Shift+M / Shift+S affects all
-cards sharing those sources. **M** places one of 16 timeline markers; the bottom
+copy the group. M / S mutes or solos selected cards; Shift+M / Shift+S affects all
+cards sharing those sources. **Alt+M** places one of 16 timeline markers; the bottom
 numbered buttons jump immediately without changing play/pause. Drag ruler flags
 to move them and right-click to name, retime, or delete. **VIEWS** retains the
-original five canvas views in a popup. Markers save with the project and support
+original five canvas views in a popup. **LOOP** repeats a cue up to the next marker;
+turning it off continues from the current playhead. The 16 cues and LOOP support
+MIDI Learn (Ctrl+Shift+M). Markers save with the project and support
 Undo/Redo. Middle-click seeks, and FOLLOW scrolls with the
 playhead. **grave** visits Mosaic and returns to the previous main or FM
 workspace. The floating **CFG → PALETTE** editor covers all workspaces with

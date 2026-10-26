@@ -47,6 +47,15 @@ static void mosaic_time_label(char *label,size_t size,double time)
     else if(time<10000)snprintf(label,size,"%04.0f",time);
     else snprintf(label,size,"%3.0fm",time/60);
 }
+static int mosaic_ruler_label_visible(const TsUiState *ui,double time)
+{
+    double y=66+(time-ui->mosaic_scroll)*(ui->mosaic_scale>0?ui->mosaic_scale:24)+2;
+    for(int i=0;i<TS_MOSAIC_MARKERS;++i) {
+        int flag=ts_ui_mosaic_marker_y(ui,i);
+        if(flag>=0 && y<flag+10 && y+7>flag)return 0;
+    }
+    return 1;
+}
 static void mosaic_ruler_label(TsFramebuffer *fb,int y,const char *label)
 {
     /* The logical fallback must also clip glyphs at the canvas edges. */
@@ -297,7 +306,7 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
     mosaic_button(fb,164,39,38,"STOP",0,1);
     int rec=ui->file_record_state==TS_PERFORMANCE_FILE_RECORDING;
     mosaic_button(fb,206,39,64,rec?"STOP REC":"REC FILE",rec,1);
-    mosaic_button(fb,274,39,44,"REPEAT",m && m->repeat,1);
+    mosaic_button(fb,274,39,44,"REPEAT",m && (m->repeat || m->marker_loop),1);
     const char *tile_label=ui->mosaic_recording ?
         (ui->capture_state==TS_CAPTURE_RECORDING ? "STOP TILE" :
          ui->capture_state==TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER ? "CANCEL" : "TILE WAIT") :
@@ -367,9 +376,9 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
     snprintf(label,sizeof(label),"SPEED %.2fX",m?m->speed:1);text(fb,416,58,label,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DATA2, RGB(129,206,200)),1);
     mosaic_slider(fb,TS_MOSAIC_SPEED_X,58,TS_MOSAIC_SPEED_W,(log2(m?m->speed:1)+1)*.5,1,1);
     double scale=ui->mosaic_scale>0?ui->mosaic_scale:24;
-    TsMosaicRange range=ui->mosaic_loop_drag?ui->mosaic_loop_preview:m?m->loop_range:(TsMosaicRange){0,0};
+    TsMosaicRange range=ui->mosaic_loop_drag?ui->mosaic_loop_preview:m?(m->marker_loop?ts_mosaic_marker_range(m,m->marker_active-1):m->loop_range):(TsMosaicRange){0,0};
     double range_a=66+(range.start-ui->mosaic_scroll)*scale,range_b=66+(range.end-ui->mosaic_scroll)*scale;
-    uint32_t range_ink=ts_theme_color(active_palette(),TS_THEME_MOSAIC,m && m->repeat?TS_COLOR_DATA2:TS_COLOR_DIM,RGB(129,206,200));
+    uint32_t range_ink=ts_theme_color(active_palette(),TS_THEME_MOSAIC,m && (m->repeat || m->marker_loop)?TS_COLOR_DATA2:TS_COLOR_DIM,RGB(129,206,200));
     if(range.end>range.start) {
         int a=(int)fmax(66,fmin(TS_MOSAIC_CANVAS_BOTTOM,range_a)),b=(int)fmax(66,fmin(TS_MOSAIC_CANVAS_BOTTOM,range_b));
         rect(fb,113,a,38,b-a,ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_EDGE,RGB(45,65,66)));
@@ -378,7 +387,8 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
     double interval=(step<=1?1:step<=2?2:step<=5?5:10)*decade;
     for(double t=ceil(ui->mosaic_scroll/interval)*interval;t<ui->mosaic_scroll+TS_MOSAIC_CANVAS_HEIGHT/scale;t+=interval) {
         int y=66+(int)((t-ui->mosaic_scroll)*scale);
-        mosaic_time_label(label,sizeof(label),t);mosaic_ruler_label(fb,y+2,label);
+        mosaic_time_label(label,sizeof(label),t);
+        if(mosaic_ruler_label_visible(ui,t))mosaic_ruler_label(fb,y+2,label);
         rect(fb,147,y,484,1,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(28,30,35)));
     }
     if(range.end>range.start)for(int edge=0;edge<2;++edge) {

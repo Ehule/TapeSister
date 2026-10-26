@@ -33,6 +33,7 @@ static void mosaic_schedule_prepare(TsMosaic *m)
         m->voices[i].active=0;
     }
     for(int at=s->pending_count/2;at-->0;)mosaic_pending_down(m,at);
+    s->marker_range=m->marker_loop?mosaic_marker_range_at(m,m->marker_active-1,s->end):(TsMosaicRange){0,0};
     s->expected_time=m->time;s->revision=m->revision;s->valid=1;++m->control_serial;
 }
 static void mosaic_schedule_start(TsMosaic *m)

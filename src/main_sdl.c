@@ -11900,6 +11900,8 @@ static int midi_pickup_accept(TsMidiMapping *mapping, TsMidiTakeover takeover,
     return 1;
 }
 
+static void mosaic_marker_jump(SDL_AudioDeviceID device,TsUiState *ui,int index);
+static void mosaic_marker_loop_toggle(SDL_AudioDeviceID device,TsUiState *ui);
 static int midi_apply_target(SDL_AudioDeviceID device, AudioState *audio,
                              TsUiState *ui, TsInstrument *instrument,
                              SisterWindow *sister,
@@ -11910,6 +11912,9 @@ static int midi_apply_target(SDL_AudioDeviceID device, AudioState *audio,
 {
     if(spatial_midi(device,audio,ui,target,normalized))return 1;
     if(router_midi_command(device,audio,ui,target))return 1;
+    int marker=ts_midi_mosaic_marker_slot(target);
+    if(marker>=0){if(ui->mosaic)mosaic_marker_jump(device,ui,marker);return 1;}
+    if(!strcmp(target,"mosaic.marker_loop")){mosaic_marker_loop_toggle(device,ui);return 1;}
     int slot,eq_band,eq_control;
     TsSisterUiHit hit;
     if(!strcmp(target,"main.eq.bypass") || master_eq_midi_band(target,&eq_band,&eq_control)) {

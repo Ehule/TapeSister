@@ -68,10 +68,10 @@ the EVENTS pages. Shared originals and the original Sample banks remain availabl
 | Move a selected group | Drag any selected event body |
 | Copy an event or selected group | Hold Shift when starting a drag on a tile |
 | Cancel a move / copy drag | Escape |
-| Add a timeline marker at the playhead | M |
-| Mute / unmute selected events | Alt+M |
+| Add a timeline marker at the playhead | Alt+M |
+| Mute / unmute selected events | M |
 | Solo / unsolo selected events | S |
-| Mute / solo every instance sharing the selected sources | Alt+Shift+M / Shift+S |
+| Mute / solo every instance sharing the selected sources | Shift+M / Shift+S |
 | Clear every solo, including offscreen events | CLEAR SOLO in footer |
 | Set selection level, pan and fades | LEVEL / PAN / IN / OUT in footer |
 | Global tape speed, 0.5×–2× | SPEED slider above canvas |
@@ -156,8 +156,8 @@ when released without dragging. Escape or loss of window focus cancels the press
 
 ### Timeline markers
 
-The bottom row has 16 numbered timeline cues. **M** or **M:ADD** stores the exact
-current playhead in the next empty slot, whether playing or stopped. Holding M
+The bottom row has 16 numbered timeline cues. **Alt+M** stores the exact
+current playhead in the next empty slot, whether playing or stopped. Holding Alt+M
 adds only once. A full row reports that all slots are used and never overwrites.
 Click a stored number to jump immediately, preserving play/pause and the current
 view/FOLLOW setting. An empty number does nothing; **Shift-click** captures or
@@ -174,7 +174,30 @@ field. Tab switches fields, Ctrl+A clears the field, Enter applies, and Escape
 cancels. Edits, creation, and deletion support arrangement Undo/Redo. Jumps do not
 create undo steps or change the saved project. Markers store absolute seconds;
 card edits and global tape speed changes do not move them. Loop/repeat rules
-continue to apply after a jump. They do not store mute/solo states or MIDI mappings.
+continue to apply after a jump. They do not store mute/solo snapshots.
+
+**LOOP**, beside VIEWS, repeats the triggered marker through the next marker in
+chronological order. Slot numbers stay fixed even when cues are moved. Equal-time
+markers share the same following boundary; the last cue uses the arrangement end.
+A cue with no later endpoint has no loop. Enabling LOOP midway through a phrase
+uses the nearest marker at or before the playhead, without seeking. Click another
+number or trigger its MIDI mapping to switch phrases immediately.
+
+Switch LOOP off, or press **L** / the top **REPEAT** button while cue looping, to
+continue from the current position. Playback crosses the next marker normally:
+there is no rewind, restart, voice reset, or restored old repeat range. Cue looping
+and manual-range Repeat are exclusive. A normal seek/Stop clears the active cue;
+editing a manual time range exits cue-loop mode. Loop mode and the active cue are
+live transport state and reset on project load; the marker positions remain saved.
+
+For MIDI, press **Ctrl+Shift+M**, click a numbered slot, and press a MIDI key or CC
+button. Repeat for any of the sixteen slots; LOOP can also learn a button. Leave
+Learn with Ctrl+Shift+M. Mappings use the existing config save and remain active
+from other workspaces. Note releases and zero-velocity note-ons never stop or
+retrigger a cue. An empty mapped slot does nothing. MIDI recall preserves the
+playing/paused state, just like a mouse click. Click a mapped control in Learn to
+remove its mapping. Each source is assigned to one target, as with other MIDI Learn
+controls; there is no default note range that takes over your keyboard.
 
 **VIEWS** opens the original five saved canvas views. Click an empty slot to save,
 click a filled slot to recall, Shift-click to replace, or middle-click to clear.
@@ -230,7 +253,7 @@ beats or mandatory snapping. Click an unselected event to return to a single
 selection. Selected tiles and Sources previews use the bright red highlight color by default. Muted events and events excluded by
 solo are dim; MUTE/SOLO appears on the relevant cards, and excluded cards say
 SOLO OUT (EXCL on narrow cards). CLEAR SOLO stays visible in the footer whenever any event is soloed,
-including events outside the viewport. Alt+Shift+M / Shift+S target all cards using
+including events outside the viewport. Shift+M / Shift+S target all cards using
 the selected cards' shared audio sources, including offscreen cards. A separately
 edited source is independent. Each action is one undo step. Multiple events may be
 soloed together. Mute takes precedence over solo. These switches use a short

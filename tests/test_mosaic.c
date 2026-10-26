@@ -376,6 +376,7 @@ static void test_source_preview_lifetime(void)
     assert(!m->audition_id && !m->sources && !m->audition_source.source);ts_mosaic_free(m);
 }
 #include "test_mosaic_marker_storage.inc"
+#include "test_mosaic_marker_loop.inc"
 
 int main(void)
 {
@@ -384,6 +385,6 @@ int main(void)
     test_mosaic_read_paths();
     test_mosaic_schedule();test_mosaic_large_storage();
     test_mosaic_loop_audio();test_mosaic_loop_history();
-    test_card_routes();test_tape_speed();test_event_mix_and_fades();test_mute_solo_phase();test_ownership();test_marker_storage();test_seek();test_one_shot_and_resize();test_spacing_and_history();test_storage();test_project_transaction();
+    test_card_routes();test_tape_speed();test_event_mix_and_fades();test_mute_solo_phase();test_ownership();test_marker_storage();test_marker_loop();test_seek();test_one_shot_and_resize();test_spacing_and_history();test_storage();test_project_transaction();
     puts("Mosaic ownership, independent clocks, seeking, geometry and storage passed");return 0;
 }

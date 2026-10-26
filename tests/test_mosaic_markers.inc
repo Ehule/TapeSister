@@ -37,12 +37,12 @@ static void test_mosaic_markers(SDL_Window *window)
     TsMosaicEvent *a=ts_mosaic_add(scene,source,0,20);a->duration=10;a->fade_in=1;a->fade_out=2;
     TsMosaicEvent *b=ts_mosaic_add(scene,source,2,140);b->duration=8;b->pan=.5;
     mosaic_select_only(&ui,a->id);scene->time=4.35;scene->playing=1;
-    uint64_t hash=ts_mosaic_hash(scene);key(window,SDLK_m,KMOD_NONE);
+    uint64_t hash=ts_mosaic_hash(scene);key(window,SDLK_m,KMOD_ALT);
     assert(scene->markers[0].stored && scene->markers[0].time==4.35 && !a->muted && scene->playing);
     assert(ts_mosaic_hash(scene)!=hash);hash=ts_mosaic_hash(scene);
-    SDL_Event e;SDL_zero(e);e.type=SDL_KEYDOWN;e.key.windowID=SDL_GetWindowID(window);e.key.keysym.sym=SDLK_m;e.key.repeat=1;
+    SDL_Event e;SDL_zero(e);e.type=SDL_KEYDOWN;e.key.windowID=SDL_GetWindowID(window);e.key.keysym.sym=SDLK_m;e.key.repeat=1;e.key.keysym.mod=KMOD_ALT;
     dispatch(&e,window);assert(!scene->markers[1].stored && ts_mosaic_hash(scene)==hash);
-    scene->time=8.25;key(window,SDLK_m,KMOD_NONE);assert(scene->markers[1].time==8.25);
+    scene->time=8.25;key(window,SDLK_m,KMOD_ALT);assert(scene->markers[1].time==8.25);
     int history=scene->history_count;scene->playing=0;
     click(window,122,366,1);assert(scene->time==4.35 && !scene->playing && scene->history_count==history);
     scene->playing=1;click(window,154,366,1);assert(scene->time==8.25 && scene->playing);
@@ -82,21 +82,22 @@ static void test_mosaic_markers(SDL_Window *window)
     /* Editor ownership, validation, name/time, delete and undo. */
     mosaic_nav_mouse(window,SDL_MOUSEBUTTONDOWN,SDL_BUTTON_RIGHT,122,366);assert(ui.mosaic_marker_open==1);
     ui_sync_dialog_workspaces(&ui);assert(ui.mosaic_open && !main_waveform_detail_allowed(&ui));
-    history=scene->history_count;key(window,SDLK_m,KMOD_NONE);assert(scene->history_count==history);
+    history=scene->history_count;key(window,SDLK_m,KMOD_ALT);assert(scene->history_count==history);
     marker_text(window,"Low E bloom");key(window,SDLK_TAB,KMOD_NONE);key(window,SDLK_a,KMOD_CTRL);marker_text(window,"nan");
     key(window,SDLK_RETURN,KMOD_NONE);assert(ui.mosaic_marker_open && scene->history_count==history);
     key(window,SDLK_a,KMOD_CTRL);marker_text(window,"3.125");key(window,SDLK_RETURN,KMOD_NONE);
     assert(!ui.mosaic_marker_open && !strcmp(scene->markers[0].name,"Low E bloom") && scene->markers[0].time==3.125);
     mosaic_nav_mouse(window,SDL_MOUSEBUTTONDOWN,SDL_BUTTON_RIGHT,122,366);click(window,280,250,1);assert(!scene->markers[0].stored);
     key(window,SDLK_z,KMOD_CTRL);assert(scene->markers[0].stored);
-    key(window,SDLK_m,KMOD_ALT);assert(a->muted);key(window,SDLK_m,KMOD_ALT);assert(!a->muted);
+    key(window,SDLK_m,KMOD_NONE);assert(a->muted);key(window,SDLK_m,KMOD_NONE);assert(!a->muted);
     /* Capacity never overwrites. Reopen/new-project UI cannot keep stale slots. */
-    for(int i=3;i<TS_MOSAIC_MARKERS;++i){scene->time=i*.5;key(window,SDLK_m,KMOD_NONE);}
-    hash=ts_mosaic_hash(scene);key(window,SDLK_m,KMOD_NONE);assert(ts_mosaic_hash(scene)==hash);
+    for(int i=3;i<TS_MOSAIC_MARKERS;++i){scene->time=i*.5;key(window,SDLK_m,KMOD_ALT);}
+    hash=ts_mosaic_hash(scene);key(window,SDLK_m,KMOD_ALT);assert(ts_mosaic_hash(scene)==hash);
     for(int i=6;i<TS_MOSAIC_MARKERS;++i)scene->markers[i]=(TsMosaicMarker){0};
     for(int i=0;i<6;++i)scene->markers[i].time=i*1.75;
     scene->time=ui.mosaic_time=3.5;ui.mosaic_marker_selected=3;ui.mosaic_playing=1;
-    snprintf(ui.status,sizeof(ui.status),"M: ADD MARKER / CLICK: JUMP / RIGHT: EDIT");
+    snprintf(ui.status,sizeof(ui.status),"ALT+M: ADD MARKER / CLICK: JUMP / RIGHT: EDIT");
+    ts_mosaic_set_marker_loop(scene,1);
     marker_snapshot(&instrument,1280,800,getenv("TS_MOSAIC_MARKER_SCREENSHOT"));
     marker_snapshot(&instrument,1729,973,getenv("TS_MOSAIC_MARKER_FRACTIONAL_SCREENSHOT"));
     mosaic_nav_mouse(window,SDL_MOUSEBUTTONDOWN,SDL_BUTTON_RIGHT,122,366);

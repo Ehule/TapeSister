@@ -128,6 +128,14 @@ int main(void)
         CHECK(ts_midi_mapping_source_parse(
                   formatted, &parsed, &trigger_on_zero));
         CHECK(ts_midi_source_equal(parsed, source) && trigger_on_zero == 1);
+        CHECK(ts_midi_mosaic_marker_slot("mosaic.marker.01.trigger") == 0);
+        CHECK(ts_midi_mosaic_marker_slot("mosaic.marker.16.trigger") == 15);
+        CHECK(ts_midi_mosaic_marker_slot("mosaic.marker.17.trigger") == -1);
+        CHECK(ts_midi_mosaic_marker_slot("mosaic.marker.01") == -1);
+        CHECK(ts_midi_mosaic_marker_slot("mosaic.marker.01.trigger.extra") == -1);
+        CHECK(ts_midi_target_accepts_source("mosaic.marker.01.trigger",TS_MIDI_SOURCE_NOTE));
+        CHECK(ts_midi_target_accepts_source("mosaic.marker.16.trigger",TS_MIDI_SOURCE_CC));
+        CHECK(!ts_midi_target_accepts_source("mosaic.marker.01.trigger",TS_MIDI_SOURCE_PITCH_BEND));
         CHECK(ts_midi_tile_target_slot("tile.16.launch") == 15);
         CHECK(ts_midi_tile_target_slot("tile.17.launch") == -1);
         CHECK(ts_midi_tile_target_slot("tile.01.launch.extra") == -1);

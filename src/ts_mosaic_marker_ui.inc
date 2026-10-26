@@ -24,7 +24,7 @@ static void mosaic_markers_render(TsFramebuffer *fb,const TsUiState *ui)
     }
     rect(fb,0,358,640,22,panel);
     mosaic_button(fb,10,TS_MOSAIC_MARKER_Y,50,"VIEWS",ui->mosaic_views_open,1);
-    mosaic_button(fb,64,TS_MOSAIC_MARKER_Y,44,"M:ADD",0,1);
+    mosaic_button(fb,64,TS_MOSAIC_MARKER_Y,44,"LOOP",ui->mosaic && ui->mosaic->marker_loop,1);
     for(int i=0;i<TS_MOSAIC_MARKERS;++i) {
         char label[4];snprintf(label,sizeof(label),"%02d",i+1);
         int x=TS_MOSAIC_MARKER_X+i*TS_MOSAIC_MARKER_STEP;

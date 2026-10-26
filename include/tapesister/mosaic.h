@@ -119,6 +119,7 @@ typedef struct {
     int active[TS_MOSAIC_EVENTS], pending[TS_MOSAIC_EVENTS];
     int active_count, pending_count, any_solo, valid;
     double end, expected_time;
+    TsMosaicRange marker_range;
     uint64_t revision;
 } TsMosaicSchedule;
 
@@ -149,6 +150,7 @@ typedef struct TsMosaic {
     double time;
     double speed, speed_current; /* Target and smoothed tape speed, 0.5 .. 2. */
     int playing, repeat, rate;
+    int marker_loop, marker_active; /* Performance state; active is a 1-based cue, not saved. */
     float gain;
     TsStereoFrame last_output, transition_from;
     int was_playing;
@@ -200,6 +202,9 @@ double ts_mosaic_end(const TsMosaic *m);
 void ts_mosaic_seek(TsMosaic *m, double time);
 /* UI-thread metadata, under host audio exclusion; one undo step per change. */
 int ts_mosaic_set_marker(TsMosaic *m, int index, const TsMosaicMarker *marker);
+TsMosaicRange ts_mosaic_marker_range(const TsMosaic *m, int index);
+int ts_mosaic_trigger_marker(TsMosaic *m, int index);
+void ts_mosaic_set_marker_loop(TsMosaic *m, int enabled);
 void ts_mosaic_set_speed(TsMosaic *m, double speed);
 /* Effective linear fades: overlapping saved values scale to the card duration.
    Shared by playback, the card envelope and its drag handles. */

@@ -27,7 +27,7 @@ static void mosaic_marker_jump(SDL_AudioDeviceID device,TsUiState *ui,int index)
     const TsMosaicMarker *v=&ui->mosaic->markers[index];
     if(!v->stored){snprintf(ui->status,sizeof(ui->status),"EMPTY MARKER %02d / SHIFT CLICK SET / RIGHT EDIT",index+1);return;}
     if(device)SDL_LockAudioDevice(device);
-    ts_mosaic_seek(ui->mosaic,v->time);ui->mosaic_time=ui->mosaic->time;
+    ts_mosaic_trigger_marker(ui->mosaic,index);ui->mosaic_time=ui->mosaic->time;
     if(device)SDL_UnlockAudioDevice(device);
     ui->mosaic_marker_selected=index+1;
     snprintf(ui->status,sizeof(ui->status),"MARKER %02d / %.3FS / %.31s",index+1,v->time,v->name);
@@ -113,12 +113,15 @@ static int mosaic_marker_event(const SDL_Event *event,SDL_AudioDeviceID device,
         return key || down || up || event->type==SDL_MOUSEWHEEL;
     }
     if(c->drag || c->pan_active || c->mix_drag || c->volume_drag || ui->mosaic_loop_drag)return 0;
-    if(key && k==SDLK_m && !(mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI|KMOD_SHIFT))) {
+    if(key && k==SDLK_m && (mod&KMOD_ALT) && !(mod&(KMOD_CTRL|KMOD_GUI|KMOD_SHIFT))) {
         if(!event->key.repeat)mosaic_marker_add(device,ui);return 1;
+    }
+    if(motion && y>=TS_MOSAIC_MARKER_Y && y<TS_MOSAIC_MARKER_Y+16 && x>=64 && x<108) {
+        snprintf(ui->status,sizeof(ui->status),"CUE LOOP: TOGGLE / OFF CONTINUES / ALT+M ADD / CTRL+SHIFT+M MIDI LEARN");return 1;
     }
     if(left && y>=TS_MOSAIC_MARKER_Y && y<TS_MOSAIC_MARKER_Y+16 && x>=10 && x<108) {
         if(x<60){ui->mosaic_views_open=1;mosaic_drag_end(ui,c);}
-        else mosaic_marker_add(device,ui);
+        else mosaic_marker_loop_toggle(device,ui);
         return 1;
     }
     int slot=-1,flag=0;

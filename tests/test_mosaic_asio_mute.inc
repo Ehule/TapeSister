@@ -80,7 +80,7 @@ static void test_mosaic_asio_mute(SDL_Window *window,const char *path)
             /* Start callbacks first so the real UI mutations can overlap. */
             atomic_store(&f.blocks,stage==2?400:16);SDL_SemPost(f.request);
             if(stage==2)mosaic_asio_key(window,c,bank,portal,sister,transform,SDLK_a,KMOD_CTRL);
-            if(stage)mosaic_asio_key(window,c,bank,portal,sister,transform,SDLK_m,(KMOD_ALT|KMOD_SHIFT));
+            if(stage)mosaic_asio_key(window,c,bank,portal,sister,transform,SDLK_m,KMOD_SHIFT);
             assert(SDL_SemWaitTimeout(f.done,10000)==0);
             /* Render a settled block after the UI action even if a fast worker
                finished before it. Four buffers also complete the mute fade. */

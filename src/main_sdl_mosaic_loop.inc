@@ -1,3 +1,16 @@
+/* Performance loop mode leaves the saved manual time range intact. */
+static void mosaic_marker_loop_toggle(SDL_AudioDeviceID device,TsUiState *ui)
+{
+    if(!ui->mosaic)return;
+    if(device)SDL_LockAudioDevice(device);
+    ts_mosaic_set_marker_loop(ui->mosaic,!ui->mosaic->marker_loop);
+    if(ui->mosaic->marker_loop && ui->mosaic->marker_active)ui->mosaic_marker_selected=ui->mosaic->marker_active;
+    TsMosaicRange range=ts_mosaic_marker_range(ui->mosaic,ui->mosaic->marker_active-1);
+    if(device)SDL_UnlockAudioDevice(device);
+    if(!ui->mosaic->marker_loop)snprintf(ui->status,sizeof(ui->status),"CUE LOOP OFF / PLAYBACK CONTINUES");
+    else if(range.end>range.start)snprintf(ui->status,sizeof(ui->status),"CUE LOOP %.3F - %.3F S / CLICK LOOP OR L TO RELEASE",range.start,range.end);
+    else snprintf(ui->status,sizeof(ui->status),"CUE LOOP ARMED / TRIGGER A MARKER WITH A LATER ENDPOINT");
+}
 /* Ruler gestures preview locally; only release commits a single undo step. */
 static void mosaic_loop_status(TsUiState *ui,TsMosaicRange range)
 {
@@ -19,6 +32,7 @@ static void mosaic_loop_commit(SDL_AudioDeviceID device,TsUiState *ui,TsMosaicRa
 }
 static void mosaic_loop_toggle(SDL_AudioDeviceID device,TsUiState *ui)
 {
+    if(ui->mosaic->marker_loop){mosaic_marker_loop_toggle(device,ui);return;}
     if(device)SDL_LockAudioDevice(device);
     ts_mosaic_checkpoint(ui->mosaic);ts_mosaic_set_repeat(ui->mosaic,!ui->mosaic->repeat);
     if(device)SDL_UnlockAudioDevice(device);

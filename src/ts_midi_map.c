@@ -109,6 +109,14 @@ int ts_midi_tile_target_slot(const char *target)
     return slot - 1;
 }
 
+int ts_midi_mosaic_marker_slot(const char *target)
+{
+    int slot,used=0;
+    if(!target || sscanf(target,"mosaic.marker.%d.trigger%n",&slot,&used)!=1 ||
+       !used || target[used] || slot<1 || slot>16)return -1;
+    return slot-1;
+}
+
 int ts_midi_target_is_continuous(const char *target)
 {
     return target != NULL &&

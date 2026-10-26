@@ -104,12 +104,14 @@ does not switch the main bank. See the [Mosaic chapter](USER_MANUAL.md#mosaic).
 | Resize selected cards together | Drag a selected card's top/bottom edge; preserves length differences |
 | Match selected card lengths while resizing | Hold Alt; the grabbed card is the parent; release Alt for relative resizing |
 | Optional start, end, midpoint alignment | Alt during move or single-card duration resize |
-| Add timeline marker / capture a specific slot | M or M:ADD / Shift-click its number |
+| Add timeline marker / capture a specific slot | Alt+M / Shift-click its number |
 | Jump to a marker / move its time | Click number or flag / drag flag |
 | Edit marker name, seconds or delete | Right-click number or flag |
+| Loop a cue to the next marker / release without seeking | Bottom LOOP; L or REPEAT also releases an active cue loop |
+| Assign MIDI notes/CC buttons to cues or LOOP | Ctrl+Shift+M; click control, press hardware, then leave Learn |
 | Open saved canvas views | VIEWS; Escape closes |
-| Mute / solo selected events | Alt+M / S; excluded cards say SOLO OUT |
-| Mute / solo all cards sharing selected sources | Alt+Shift+M / Shift+S |
+| Mute / solo selected events | M / S; excluded cards say SOLO OUT |
+| Mute / solo all cards sharing selected sources | Shift+M / Shift+S |
 | Clear all solos, including offscreen cards | CLEAR SOLO in footer |
 | Selection level / pan / fade-in / fade-out | LEVEL / PAN / IN / OUT in footer |
 | Visual fade on one card | Drag its top IN handle down / bottom OUT handle up |

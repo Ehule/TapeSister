@@ -541,7 +541,7 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
             ts_mosaic_checkpoint(ui->mosaic);
             for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(mosaic_chosen(ui,i))ts_mosaic_delete(ui->mosaic,ui->mosaic->events[i].id);
             mosaic_select_only(ui,0);
-        } else if(((k==SDLK_m && (mod&KMOD_ALT)) || (k==SDLK_s && !(mod&KMOD_ALT))) && !(mod&(KMOD_CTRL|KMOD_GUI))) {
+        } else if((k==SDLK_m || k==SDLK_s) && !(mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI))) {
             int count=0,all=1;unsigned char chosen[TS_MOSAIC_EVENTS]={0};
             for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(mosaic_chosen(ui,i)) {
                 chosen[i]=1;

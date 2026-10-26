@@ -11,7 +11,9 @@ static void test_marker_storage(void)
     value.time=NAN;assert(!ts_mosaic_set_marker(m,0,&value));value.time=-1;assert(!ts_mosaic_set_marker(m,0,&value));
     value.time=1000001;assert(!ts_mosaic_set_marker(m,0,&value));value.time=0;value.name[0]='\n';assert(!ts_mosaic_set_marker(m,0,&value));
     assert(!ts_mosaic_set_marker(m,16,&m->markers[15]));
+    m->marker_loop=loaded->marker_loop=1;m->marker_active=16;loaded->marker_active=2;
     assert(ts_mosaic_save(m,dir,error,sizeof(error)));storage_portable_load(loaded,dir);
+    assert(!loaded->marker_loop && !loaded->marker_active);
     assert(ts_mosaic_hash(m)==ts_mosaic_hash(loaded) && loaded->markers[15].time==m->markers[15].time);
     assert(!strcmp(loaded->markers[15].name,m->markers[15].name));
     /* Bad metadata cannot partially replace a live document. */
