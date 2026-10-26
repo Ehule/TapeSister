@@ -23,11 +23,14 @@ static void routing_clarity(const char *directory)
     assert(ts_sister_tracker_load_file(&pages.tracker,"clarity-score.tst",error,sizeof(error)));
     assert(embedded_open(window,0,&a,&u,&pages,&bank,48000));startPlaying(PLAYMODE_SONG,0);
     render(energy);assert(energy[0]==0 && energy[1]>1 && energy[2]==0 && energy[3]==0);
-    /* Build a real v5 byte stream: v8 appended 35 matrix bytes to each lane. */
+    /* Build a real v5 byte stream from the current v11 score. Remove the
+       module lineage before using the historical header/lane offsets. */
     FILE *legacy=fopen("clarity-score.tst","rb");assert(legacy);
     assert(!fseek(legacy,0,SEEK_END));long legacy_size=ftell(legacy);rewind(legacy);
     unsigned char *legacy_bytes=malloc((size_t)legacy_size);assert(legacy_bytes);
     assert(fread(legacy_bytes,1,(size_t)legacy_size,legacy)==(size_t)legacy_size);fclose(legacy);
+    assert(legacy_size>=16 && !memcmp(legacy_bytes,"SISTRK\13\0",8));
+    memmove(legacy_bytes+8,legacy_bytes+16,(size_t)legacy_size-16);legacy_size-=8;
     size_t prefix=8+31+TS_TRACKER_ALIASES*8+pages.tracker.order_count*4;
     size_t lane_size=sizeof(pages.tracker.lanes[0].name)+24,read=prefix,write=prefix;
     for(int lane=0;lane<TS_TRACKER_LANES;++lane) {
@@ -38,6 +41,7 @@ static void routing_clarity(const char *directory)
     assert(fwrite(legacy_bytes,1,write,legacy)==write && !fclose(legacy));free(legacy_bytes);
     TsSisterTracker *old_score=malloc(sizeof(*old_score));assert(old_score);ts_sister_tracker_init(old_score);
     assert(ts_sister_tracker_load_file(old_score,"clarity-score.tst",error,sizeof(error)));
+    assert(!old_score->source_id); /* v5 has no module lineage. */
     assert(old_score->lanes[0].output_route.mode==TS_SOURCE_MAIN && old_score->lanes[0].output_route.pan==0);
     ts_sister_tracker_free(old_score);free(old_score);
     assert(source_route_show(0,&a,&u,&pages,&bank,0,0));

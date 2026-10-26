@@ -43,6 +43,7 @@ on:
       - "include/tapesister/*route*.h"
       - "include/tapesister/clean_output.h"
       - "tests/test_source_route*.c"
+      - "tests/test_routing_clarity.inc"
       - "src/*spatial*"
       - "include/tapesister/spatial*.h"
       - "tests/test_spatial*.c"
