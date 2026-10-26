@@ -101,7 +101,9 @@ does not switch the main bank. See the [Mosaic chapter](USER_MANUAL.md#mosaic).
 | Add a selection box | Shift+left-drag on empty canvas; keeps the primary |
 | Move group / copy group | Drag a selected tile / hold Shift when starting that drag; repeat to copy again |
 | Extend duration / change visual width | Drag top or bottom / right edge |
-| Optional start, end, midpoint alignment | Alt during move or duration resize |
+| Resize selected cards together | Drag a selected card's top/bottom edge; preserves length differences |
+| Match selected card lengths while resizing | Hold Alt; the grabbed card is the parent; release Alt for relative resizing |
+| Optional start, end, midpoint alignment | Alt during move or single-card duration resize |
 | Mute / solo selected events | M / S; excluded cards say SOLO OUT |
 | Mute / solo all cards sharing selected sources | Shift+M / Shift+S |
 | Clear all solos, including offscreen cards | CLEAR SOLO in footer |
@@ -136,6 +138,12 @@ does not switch the main bank. See the [Mosaic chapter](USER_MANUAL.md#mosaic).
 | Watch a card recording | Growing live waveform and elapsed time; STOP TILE flashes red |
 | Follow the growing take, including with playback stopped | Enable FOLLOW |
 | Discard an active Mosaic take | Escape in the arrangement after finishing any active gesture |
+
+**Ctrl+R → Fades / Pan:** Keep, Set, or Random independently for IN, OUT and PAN.
+Use Set for matching fades or pan; Random assigns values within a min/max range.
+Fades use seconds; pan uses −100 (left), 0 (center), +100 (right). Opening this
+page directly keeps the selected arrangement in place. Roll Fades / Pan preserves
+positions and notes; Apply is one Undo step. [Details](MOSAIC.md#scatter-fades-and-pan).
 
 **Ctrl+R pitch:** Keep Notes / Chord per Card / Spread Chord / Spread Scale.
 Click or wheel root, chord/scale, octave bounds and distribution; Shift-click goes

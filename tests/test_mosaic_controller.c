@@ -86,10 +86,12 @@ static void wait_render(void);
 #include "test_mosaic_arranging.inc"
 #include "test_mosaic_performance_edit.inc"
 #include "test_mosaic_scatter_pitch.inc"
+#include "test_mosaic_scatter_mix.inc"
 #include "test_mosaic_navigation.inc"
 #include "test_mosaic_fades.inc"
 #include "test_mosaic_card_pan.inc"
 #include "test_mosaic_edge_scroll.inc"
+#include "test_mosaic_group_resize.inc"
 #include "test_mosaic_loop_controls.inc"
 #include "test_mosaic_selection.inc"
 #include "test_mosaic_copy_gestures.inc"
@@ -423,6 +425,7 @@ int main(int argc,char **argv)
     uint64_t original=ts_sample_hash(&instrument.current);
     ui.mosaic=audio.mosaic=ts_mosaic_create();ui.mosaic_scale=24;ui.mosaic_open=1;
     if(argc>1 && !strcmp(argv[1],"--edit-benchmark")) {benchmark_mosaic_edits();goto done;}
+    if(argc>1 && !strcmp(argv[1],"--scatter-mix")) {test_mosaic_scatter_mix(window);goto done;}
     if(argc>1 && !strcmp(argv[1],"--scatter-pitch")) {test_mosaic_scatter_pitch(window);goto done;}
     if(argc>1 && !strcmp(argv[1],"--arrange")) {test_mosaic_performance_edit(window);goto done;}
     if(argc>1 && !strcmp(argv[1],"--source-actions")) {test_mosaic_group_mute_audio(window);test_mosaic_source_actions(window);goto done;}
@@ -431,6 +434,7 @@ int main(int argc,char **argv)
     if(argc>1 && !strcmp(argv[1],"--large-mosaic")) {test_mosaic_large_browser();goto done;}
     if(argc>1 && !strcmp(argv[1],"--loop")) {test_mosaic_loop_controls(window);goto done;}
     if(argc>1 && !strcmp(argv[1],"--navigation")) {test_mosaic_navigation(window);test_mosaic_edge_scroll(window);test_mosaic_save_view(window);goto done;}
+    if(argc>1 && !strcmp(argv[1],"--group-resize")) {test_mosaic_group_resize(window);goto done;}
     if(argc>1 && !strcmp(argv[1],"--fades")) {test_mosaic_fades(window);goto done;}
     if(argc>1 && !strcmp(argv[1],"--card-pan")) {test_mosaic_card_pan(window);goto done;}
     TsMosaicSource *source=ts_mosaic_source(ui.mosaic,&instrument.current,error,sizeof(error));assert(source);
@@ -476,7 +480,7 @@ int main(int argc,char **argv)
     test_record_file(window,580,389,1);
     ts_mosaic_volume_action(ui.mosaic,TS_MOSAIC_ENV_RESET);
     test_mosaic_performance_edit(window);
-    test_mosaic_scatter_pitch(window);
+    test_mosaic_scatter_pitch(window);test_mosaic_scatter_mix(window);
     test_mosaic_navigation(window);test_mosaic_edge_scroll(window);test_mosaic_save_view(window);
     test_mosaic_loop_controls(window);
     test_mosaic_selection(window);
@@ -488,7 +492,7 @@ int main(int argc,char **argv)
     test_mosaic_variation_banks(window);
     test_mosaic_live_controls(window);
     test_mosaic_fades(window);
-    test_mosaic_card_pan(window);
+    test_mosaic_card_pan(window);test_mosaic_group_resize(window);
     test_mosaic_group_mute_audio(window);
     test_mosaic_source_actions(window);
     test_mosaic_volume_controls(window);

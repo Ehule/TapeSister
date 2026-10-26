@@ -8,7 +8,7 @@
 #include <stddef.h>
 
 struct TsMosaic;
-typedef struct {
+typedef struct TsSamplePages {
     TsInstrument **pages;
     size_t page_count;
     size_t page_capacity;

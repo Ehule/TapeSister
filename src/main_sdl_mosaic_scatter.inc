@@ -1,5 +1,5 @@
-/* Independent seeds keep position and note rolls reproducible through preview,
-   Apply and undo. All note planning and spacing happen before the audio lock. */
+/* Independent seeds keep position, note and each mix roll reproducible through
+   preview, Apply and undo. Planning and spacing happen before the audio lock. */
 static double mosaic_scatter_random(uint32_t *seed)
 {
     *seed=*seed*1664525u+1013904223u;return (double)(*seed>>8)/16777216.0;
@@ -21,7 +21,8 @@ static void mosaic_scatter_preview(TsUiState *ui,MosaicController *c)
             snprintf(ui->mosaic_scatter_status,sizeof(ui->mosaic_scatter_status),"NO NOTES FIT / WIDEN THE OCTAVE RANGE");return;
         }
     }
-    uint32_t seed=c->scatter_seed,note_seed=c->scatter_note_seed;
+    uint32_t seed=c->scatter_seed,note_seed=c->scatter_note_seed,mix_seed[3];
+    memcpy(mix_seed,c->scatter_mix_seed,sizeof(mix_seed));
     double clusters[3];for(int i=0;i<3;++i)clusters[i]=mosaic_scatter_random(&seed);
     double span=ui->mosaic_scatter_end-ui->mosaic_scatter_start;
     int keep=ui->mosaic_scatter_keep_positions && !c->scatter_from_sources;
@@ -47,6 +48,14 @@ static void mosaic_scatter_preview(TsUiState *ui,MosaicController *c)
                 }
                 e->x+=shift;
             }
+        }
+        for(int n=0;n<3;++n)if(ui->mosaic_scatter_mix[n].mode) {
+            double value=ui->mosaic_scatter_mix[n].low;
+            if(ui->mosaic_scatter_mix[n].mode==2)
+                value+=mosaic_scatter_random(&mix_seed[n])*(ui->mosaic_scatter_mix[n].high-value);
+            if(n==0)e->fade_in=fmin(e->duration,value);
+            else if(n==1)e->fade_out=fmin(e->duration,value);
+            else e->pan=(float)(value/100);
         }
         if(choice_count) {
             int pick=i%choice_count;
@@ -75,6 +84,7 @@ static void mosaic_scatter_preview(TsUiState *ui,MosaicController *c)
             snprintf(ui->mosaic_scatter_notes+used,sizeof(ui->mosaic_scatter_notes)-used," %s",ts_midi_note_name(note,name,sizeof(name)));
         }
     } else snprintf(ui->mosaic_scatter_notes,sizeof(ui->mosaic_scatter_notes),"EXISTING NOTES / CHORDS PRESERVED");
+    if(c->scatter_pool[0].source->pattern)snprintf(ui->mosaic_scatter_notes,sizeof(ui->mosaic_scatter_notes),pitch->mode==TS_MOSAIC_PITCH_KEEP?"PATTERN NOTES / INSTANCE TRANSPOSE PRESERVED":"PATTERN TRANSPOSE: C4 = ORIGINAL, C5 = +12");
     int notes=0;for(int i=0;i<count;++i)notes+=ui->mosaic_ghosts[i].note_count;
     snprintf(ui->mosaic_scatter_status,sizeof(ui->mosaic_scatter_status),"%d CARDS / %d ASSIGNED NOTES / PREVIEW",count,notes);
 }
@@ -96,7 +106,13 @@ static void mosaic_scatter_open(TsUiState *ui,MosaicController *c)
     ui->mosaic_scatter_end=fmin(86400,ui->mosaic_scroll+310/ui->mosaic_scale);
     ui->mosaic_scatter_count=c->scatter_pool_count;
     ui->mosaic_scatter_overlap=!ui->mosaic->auto_space;ui->mosaic_scatter_field=0;
-    ui->mosaic_scatter_keep_positions=0;
+    ui->mosaic_scatter_keep_positions=ui->mosaic_scatter_page=c->scatter_layout_touched=0;
+    for(int n=0;n<3;++n) {
+        c->scatter_mix_seed[n]=c->scatter_seed^(0xc2b2ae35u*(n+1));
+        ui->mosaic_scatter_mix[n].mode=0;
+        ui->mosaic_scatter_mix[n].low=0;
+        ui->mosaic_scatter_mix[n].high=n==2?50:1;
+    }
     int base=c->scatter_pool[0].notes[0];
     for(int n=1;n<c->scatter_pool[0].note_count;++n)if(c->scatter_pool[0].notes[n]<base)base=c->scatter_pool[0].notes[n];
     ui->mosaic_scatter_pitch=(TsMosaicPitchSettings){.mode=TS_MOSAIC_PITCH_KEEP,.root=base%12,
@@ -109,12 +125,26 @@ static int mosaic_scatter_number(TsUiState *ui,MosaicController *c)
     if(!ui->mosaic_scatter_field)return 1;
     char *end=NULL;double n=strtod(ui->mosaic_scatter_text,&end);
     int field=ui->mosaic_scatter_field;
-    if(end==ui->mosaic_scatter_text || *end || !isfinite(n) || n<0 || n>86400 ||
-       (field==1 && n>=ui->mosaic_scatter_end) || (field==2 && n<=ui->mosaic_scatter_start) ||
-       (field==3 && (n<1 || n>TS_MOSAIC_EVENTS || floor(n)!=n))) {
-        snprintf(ui->mosaic_scatter_status,sizeof(ui->mosaic_scatter_status),"ENTER A VALID RANGE OR COUNT (1-%d)",TS_MOSAIC_EVENTS);return 0;
+    int mix=(field-4)/2,endpoint=(field-4)%2;
+    int invalid=end==ui->mosaic_scatter_text || *end || !isfinite(n);
+    if(field>=4) {
+        invalid|=n<(mix==2?-100:0) || n>(mix==2?100:86400);
+        if(ui->mosaic_scatter_mix[mix].mode==2)
+            invalid|=endpoint?n<ui->mosaic_scatter_mix[mix].low:n>ui->mosaic_scatter_mix[mix].high;
+    } else invalid|=n<0 || n>86400 ||
+        (field==1 && n>=ui->mosaic_scatter_end) || (field==2 && n<=ui->mosaic_scatter_start) ||
+        (field==3 && (n<1 || n>TS_MOSAIC_EVENTS || floor(n)!=n));
+    if(invalid) {
+        snprintf(ui->mosaic_scatter_status,sizeof(ui->mosaic_scatter_status),"%s",
+            field>=4?(mix==2?"PAN -100..100 / MIN MUST NOT EXCEED MAX":"FADE 0..86400 S / MIN MUST NOT EXCEED MAX"):
+            "ENTER VALID TIMES OR COUNT (1-1024)");return 0;
     }
-    if(field==1)ui->mosaic_scatter_start=n;else if(field==2)ui->mosaic_scatter_end=n;else ui->mosaic_scatter_count=(int)n;
+    if(field>=4) {
+        if(endpoint)ui->mosaic_scatter_mix[mix].high=n;else ui->mosaic_scatter_mix[mix].low=n;
+    } else {
+        if(field==1)ui->mosaic_scatter_start=n;else if(field==2)ui->mosaic_scatter_end=n;else ui->mosaic_scatter_count=(int)n;
+        c->scatter_layout_touched=1;
+    }
     ui->mosaic_scatter_field=0;SDL_StopTextInput();mosaic_scatter_preview(ui,c);return 1;
 }
 static void mosaic_scatter_close(TsUiState *ui)
@@ -124,8 +154,14 @@ static void mosaic_scatter_apply(SDL_AudioDeviceID device,TsUiState *ui,MosaicCo
     if(!mosaic_scatter_number(ui,c))return;
     mosaic_scatter_preview(ui,c);if(!ui->mosaic_scatter_valid)return;
     if(device)SDL_LockAudioDevice(device);
+    int patterns=0;
+    if(ui->mosaic_scatter_copies)for(int i=0;i<ui->mosaic_ghost_count;++i)patterns+=ui->mosaic_ghosts[i].source->pattern!=NULL;
+    if(patterns && !ts_mosaic_reserve_patterns(ui->mosaic,patterns)) {
+        if(device)SDL_UnlockAudioDevice(device);
+        snprintf(ui->mosaic_scatter_status,sizeof(ui->mosaic_scatter_status),"NOT ENOUGH MEMORY FOR PATTERN COPIES");return;
+    }
     ts_mosaic_checkpoint(ui->mosaic);
-    /* Keeping positions is a pitch-only edit, including the spacing preference. */
+    /* Keeping positions edits notes/mix without changing the spacing preference. */
     if(ui->mosaic_scatter_overlap && !ui->mosaic_scatter_keep_positions)ui->mosaic->auto_space=0;
     mosaic_select_only(ui,0);
     for(int i=0;i<ui->mosaic_ghost_count;++i) {
@@ -138,6 +174,8 @@ static void mosaic_scatter_apply(SDL_AudioDeviceID device,TsUiState *ui,MosaicCo
             e=ts_mosaic_find(ui->mosaic,preview->id);
             if(e) {
                 e->start=preview->start;e->x=preview->x;
+                e->fade_in=preview->fade_in;e->fade_out=preview->fade_out;e->pan=preview->pan;
+                /* Mix-only edits update control state without restarting voices. */
                 if(e->note_count!=preview->note_count || memcmp(e->notes,preview->notes,sizeof(e->notes))) {
                     e->note_count=preview->note_count;memcpy(e->notes,preview->notes,sizeof(e->notes));++e->revision;
                 }
@@ -170,15 +208,51 @@ static int mosaic_scatter_event(const SDL_Event *event,SDL_Window *window,SDL_Au
         return 1;
     }
     if(key && !event->key.repeat && (k==SDLK_RETURN || k==SDLK_KP_ENTER)){mosaic_scatter_apply(device,ui,c);return 1;}
-    if(wheel){int mx,my;SDL_GetMouseState(&mx,&my);logical_mouse(window,mx,my,&x,&y);}
-    if((down && event->button.button==SDL_BUTTON_LEFT) || (wheel && event->wheel.y)) {
+    if(wheel){int mx,my;wheel_event_mouse(event,&mx,&my);logical_mouse(window,mx,my,&x,&y);}
+    if((down && event->button.button==SDL_BUTTON_LEFT) || (wheel && wheel_event_delta(event,0))) {
         int left=x>=96 && x<300,right=x>=316 && x<520;
         if(down && y>=334 && y<358 && right){mosaic_scatter_close(ui);return 1;}
         if(!mosaic_scatter_number(ui,c))return 1;
-        int delta=wheel?(event->wheel.y>0?1:-1):(mod&KMOD_SHIFT?-1:1);
-        if(wheel && event->wheel.direction==SDL_MOUSEWHEEL_FLIPPED)delta=-delta;
+        int delta=wheel?(wheel_event_delta(event,0)>0?1:-1):(mod&KMOD_SHIFT?-1:1);
+        if(down && y>=38 && y<54 && x>=176 && x<520) {
+            if(x<340)ui->mosaic_scatter_page=0;
+            else if(x>=352) {
+                ui->mosaic_scatter_page=1;
+                if(!c->scatter_from_sources && !ui->mosaic_scatter_copies && !c->scatter_layout_touched)
+                    ui->mosaic_scatter_keep_positions=1;
+            }
+            mosaic_scatter_preview(ui,c);return 1;
+        }
         int field=0,keep=ui->mosaic_scatter_keep_positions;
-        if(down && !keep && y>=64 && y<88){if(left)field=1;else if(right)field=2;}
+        if(ui->mosaic_scatter_page) {
+            for(int n=0;n<3;++n)if(y>=140+n*36 && y<164+n*36) {
+                if(x>=168 && x<268) {
+                    ui->mosaic_scatter_mix[n].mode=mosaic_scatter_cycle(ui->mosaic_scatter_mix[n].mode,3,delta);
+                    if(ui->mosaic_scatter_mix[n].mode==2 && ui->mosaic_scatter_mix[n].high<ui->mosaic_scatter_mix[n].low)
+                        ui->mosaic_scatter_mix[n].high=ui->mosaic_scatter_mix[n].low;
+                }
+                int endpoint=x>=408 && x<520?1:x>=280 && x<392?0:-1;
+                if(endpoint>=0 && ui->mosaic_scatter_mix[n].mode>endpoint) {
+                    if(down) {
+                        ui->mosaic_scatter_field=4+n*2+endpoint;
+                        snprintf(ui->mosaic_scatter_text,sizeof(ui->mosaic_scatter_text),n==2?"%.1f":"%.3f",
+                            endpoint?ui->mosaic_scatter_mix[n].high:ui->mosaic_scatter_mix[n].low);
+                        SDL_StartTextInput();return 1;
+                    }
+                    double *value=endpoint?&ui->mosaic_scatter_mix[n].high:&ui->mosaic_scatter_mix[n].low;
+                    double low=n==2?-100:0,high=n==2?100:86400;
+                    if(ui->mosaic_scatter_mix[n].mode==2) {
+                        if(endpoint)low=ui->mosaic_scatter_mix[n].low;else high=ui->mosaic_scatter_mix[n].high;
+                    }
+                    *value=fmax(low,fmin(high,*value+wheel_event_delta(event,0)*(n==2?5:.1)*((mod&KMOD_SHIFT)?.1:1)));
+                }
+            }
+            if(down && y>=302 && y<326) {
+                if(left)for(int n=0;n<3;++n)if(ui->mosaic_scatter_mix[n].mode==2)c->scatter_mix_seed[n]+=0x9e3779b9u;
+                if(right)for(int n=0;n<3;++n)ui->mosaic_scatter_mix[n].mode=0;
+            }
+        }
+        if(!ui->mosaic_scatter_page && down && !keep && y>=64 && y<88){if(left)field=1;else if(right)field=2;}
         if(down && ui->mosaic_scatter_copies && y>=94 && y<118 && x>=96 && x<204)field=3;
         if(field) {
             ui->mosaic_scatter_field=field;
@@ -187,29 +261,31 @@ static int mosaic_scatter_event(const SDL_Event *event,SDL_Window *window,SDL_Au
             SDL_StartTextInput();return 1;
         }
         if(down && y>=94 && y<118 && !c->scatter_from_sources) {
-            if(x>=220 && x<360){ui->mosaic_scatter_copies=!ui->mosaic_scatter_copies;ui->mosaic_scatter_keep_positions=0;}
-            if(x>=376 && x<520 && !ui->mosaic_scatter_copies)ui->mosaic_scatter_keep_positions=!keep;
+            if(x>=220 && x<360){c->scatter_layout_touched=1;ui->mosaic_scatter_copies=!ui->mosaic_scatter_copies;ui->mosaic_scatter_keep_positions=0;}
+            if(x>=376 && x<520 && !ui->mosaic_scatter_copies){c->scatter_layout_touched=1;ui->mosaic_scatter_keep_positions=!keep;}
         }
-        if(down && !keep && y>=124 && y<148){if(left)ui->mosaic_scatter_cluster=!ui->mosaic_scatter_cluster;else if(right)ui->mosaic_scatter_overlap=!ui->mosaic_scatter_overlap;}
-        TsMosaicPitchSettings *p=&ui->mosaic_scatter_pitch;
-        if(y>=156 && y<180) {
-            if(left)p->mode=mosaic_scatter_cycle(p->mode,TS_MOSAIC_PITCH_MODE_COUNT,delta);
-            if(right && p->mode)p->root=mosaic_scatter_cycle(p->root,12,delta);
-        }
-        if(p->mode && y>=186 && y<210) {
-            if(left) {
-                if(p->mode==TS_MOSAIC_PITCH_SPREAD_SCALE)p->scale=mosaic_scatter_cycle(p->scale,TS_FM_PITCH_SCALE_COUNT,delta);
-                else p->chord=mosaic_scatter_cycle(p->chord,TS_MOSAIC_CHORD_COUNT,delta);
+        if(!ui->mosaic_scatter_page) {
+            if(down && !keep && y>=124 && y<148){if(left || right)c->scatter_layout_touched=1;if(left)ui->mosaic_scatter_cluster=!ui->mosaic_scatter_cluster;else if(right)ui->mosaic_scatter_overlap=!ui->mosaic_scatter_overlap;}
+            TsMosaicPitchSettings *p=&ui->mosaic_scatter_pitch;
+            if(y>=156 && y<180) {
+                if(left)p->mode=mosaic_scatter_cycle(p->mode,TS_MOSAIC_PITCH_MODE_COUNT,delta);
+                if(right && p->mode)p->root=mosaic_scatter_cycle(p->root,12,delta);
             }
-            if(right)p->order=mosaic_scatter_cycle(p->order,TS_MOSAIC_PITCH_ORDER_COUNT,delta);
-        }
-        if(p->mode && y>=216 && y<240) {
-            if(left)p->low_octave=(int)fmax(-1,fmin(p->high_octave,p->low_octave+delta));
-            if(right)p->high_octave=(int)fmax(p->low_octave,fmin(9,p->high_octave+delta));
-        }
-        if(down && y>=302 && y<326) {
-            if(left && !keep)c->scatter_seed+=0x9e3779b9u;
-            if(right && p->mode && (p->order==TS_MOSAIC_PITCH_RANDOM || p->order==TS_MOSAIC_PITCH_SHUFFLED))c->scatter_note_seed+=0x9e3779b9u;
+            if(p->mode && y>=186 && y<210) {
+                if(left) {
+                    if(p->mode==TS_MOSAIC_PITCH_SPREAD_SCALE)p->scale=mosaic_scatter_cycle(p->scale,TS_FM_PITCH_SCALE_COUNT,delta);
+                    else p->chord=mosaic_scatter_cycle(p->chord,TS_MOSAIC_CHORD_COUNT,delta);
+                }
+                if(right)p->order=mosaic_scatter_cycle(p->order,TS_MOSAIC_PITCH_ORDER_COUNT,delta);
+            }
+            if(p->mode && y>=216 && y<240) {
+                if(left)p->low_octave=(int)fmax(-1,fmin(p->high_octave,p->low_octave+delta));
+                if(right)p->high_octave=(int)fmax(p->low_octave,fmin(9,p->high_octave+delta));
+            }
+            if(down && y>=302 && y<326) {
+                if(left && !keep){c->scatter_layout_touched=1;c->scatter_seed+=0x9e3779b9u;}
+                if(right && p->mode && (p->order==TS_MOSAIC_PITCH_RANDOM || p->order==TS_MOSAIC_PITCH_SHUFFLED))c->scatter_note_seed+=0x9e3779b9u;
+            }
         }
         if(down && y>=334 && y<358 && left){mosaic_scatter_apply(device,ui,c);return 1;}
         mosaic_scatter_preview(ui,c);

@@ -1,6 +1,21 @@
 --- a/src/ft2_audio.c
 +++ b/src/ft2_audio.c
-@@ -503,6 +503,21 @@
+@@ -39,7 +39,13 @@
+ static uint64_t tickTimeLenFrac;
+ static float fSqrtPanningTable[256+1], fAudioNormalizeMul;
+ static float fPrngState[TAPEHEAD_MAX_OUTPUT_BUSES * 2];
+-static voice_t voice[MAX_CHANNELS * 2];
++static voice_t mainVoices[MAX_CHANNELS * 2];
++static voice_t *voice=mainVoices;
++#ifdef TAPEHEAD_EMBEDDED
++extern bool tapeheadPatternContext;
++#else
++#define tapeheadPatternContext false
++#endif
+ #define SAMPLE_LAUNCHER_AUDIO_VOICES 5
+ static voice_t sampleLauncherVoice[SAMPLE_LAUNCHER_AUDIO_VOICES];
+ static voice_t diskOpPreviewVoice;
+@@ -503,6 +509,21 @@
  	}
  
  	v->mixFuncOffset = ((int32_t)sample16Bit * 15) + (audio.interpolationType * 3) + loopType;
@@ -22,7 +37,7 @@
  	v->active = true;
  }
  
-@@ -594,6 +609,11 @@
+@@ -594,6 +615,11 @@
  	v->position = 0;
  	v->positionFrac = 0;
  	v->samplingBackwards = reverse;
@@ -34,7 +49,22 @@
  	v->loopType = reverse ? LOOP_PINGPONG : LOOP_DISABLED;
  	if (sample16Bit)
  		v->revBase16 = &v->base16[s->length];
-@@ -759,6 +779,9 @@
+@@ -640,11 +666,11 @@
+ 			** allowing the waveform to keep moving underneath the red X.
+ 			*/
+ 			float matrixGain = 1.0f;
+-			if (polyMatrixOwnsDestination(i))
++			if (!tapeheadPatternContext && polyMatrixOwnsDestination(i))
+ 				matrixGain = matrixPolyGain * (1.0f / 256.0f);
+-			else if (patternLauncherOwnsDestination(i))
++			else if (!tapeheadPatternContext && patternLauncherOwnsDestination(i))
+ 				matrixGain = matrixQGain * (1.0f / 256.0f);
+-			v->fVolume = performanceMute[i] ? 0.0f :
++			v->fVolume = (!tapeheadPatternContext && performanceMute[i]) ? 0.0f :
+ 				ch->fFinalVol * matrixGain;
+ 			v->scopeVolume = (uint8_t)((ch->fFinalVol * (SCOPE_HEIGHT*4.0f)) + 0.5f);
+ 		}
+@@ -759,6 +785,9 @@
  {
  	if (v->active)
  	{
@@ -44,7 +74,7 @@
  		const bool volRampFlag = (v->volumeRampLength > 0);
  		const bool silent = audio.monoOutputMode
  			? v->fCurrVolumeMono == 0.0f
-@@ -770,6 +793,12 @@
+@@ -770,6 +799,12 @@
  				v, bufferPosition, samplesToMix);
  	}
  
@@ -57,7 +87,7 @@
  	if (r->active) // volume ramp fadeout-voice
  		mixFuncTab[mixOffsetBias + r->mixFuncOffset](r, bufferPosition, samplesToMix);
  }
-@@ -885,6 +914,9 @@
+@@ -885,6 +920,9 @@
  
  	for (int32_t i = 0; i < song.numChannels; i++, v++, r++)
  	{
@@ -67,7 +97,7 @@
  		if (audio.monoOutputMode)
  		{
  			/*
-@@ -1465,6 +1497,11 @@
+@@ -1465,6 +1503,11 @@
  
  void lockAudio(void)
  {
@@ -79,7 +109,7 @@
  	if (tapeheadLiveLinkIsOpen())
  		tapeheadLiveLinkLock();
  	else if (tapeheadJackIsOpen())
-@@ -1477,6 +1514,11 @@
+@@ -1477,6 +1520,11 @@
  
  void unlockAudio(void)
  {
@@ -91,7 +121,19 @@
  	if (tapeheadLiveLinkIsOpen())
  		tapeheadLiveLinkUnlock();
  	else if (tapeheadJackIsOpen())
-@@ -1682,6 +1724,10 @@
+@@ -1603,6 +1651,11 @@
+ 	for (int32_t i = 0; i < song.numChannels; i++, c++, s++, v++)
+ 	{
+ 		c->scopeVolume = v->scopeVolume;
++#ifdef TAPEHEAD_EMBEDDED
++		c->scopePan = s->finalPan;
++		c->scopeTileId = v->tileId;
++		c->scopeTileRouteIndex = v->tileRouteIndex;
++#endif
+ 		c->period = s->finalPeriod;
+ 		c->instrNum = s->instrNum;
+ 		c->smpNum = s->smpNum;
+@@ -1682,6 +1735,10 @@
  		const bool blockSeam = audio.tickSampleCounter == 0 &&
  			tapeheadBlockLoopIsActive() && !tapeheadBlockLoopIsOffline() &&
  			tapeheadBlockLoopCycleCompleted();
@@ -102,7 +144,7 @@
  		const float captureNormalizeMultiplier =
  			(config.specialFlags & BITDEPTH_16)
  			? fAudioNormalizeMul / 32768.0f : fAudioNormalizeMul;
-@@ -2075,6 +2121,10 @@
+@@ -2075,6 +2132,10 @@
  
  bool setupAudio(bool showErrorMsg)
  {
@@ -113,7 +155,7 @@
  	SDL_AudioSpec want, have;
  
  	closeAudio();
-@@ -2427,3 +2477,49 @@
+@@ -2427,3 +2488,51 @@
  			updateWindowTitle(true);
  	}
  }
@@ -163,6 +205,8 @@
 +    return diskOpPreviewVoice.active && diskOpPreviewVoice.tileData==data;
 +}
 +#endif
++
++#include "ts_pattern_audio.inc"
 --- a/src/ft2_audio.h
 +++ b/src/ft2_audio.h
 @@ -78,6 +78,21 @@
@@ -1509,7 +1553,80 @@
  		sampleLauncherDeckShown = false;
 --- a/src/ft2_replayer.c
 +++ b/src/ft2_replayer.c
-@@ -4305,8 +4305,11 @@
+@@ -43,6 +43,13 @@
+ #include "ft2_random.h"
+ #include "mixer/ft2_windowed_sinc.h"
+ 
++/* Pattern instances isolate channel effects from the foreground transport. */
++#ifdef TAPEHEAD_EMBEDDED
++extern bool tapeheadPatternContext;
++#else
++#define tapeheadPatternContext false
++#endif
++
+ static uint32_t logTab[4*12*16], frequencyMulFactor, frequencyDivFactor;
+ static uint64_t songTickDuration52fp[(MAX_BPM-MIN_BPM)+1];
+ static double dDeltaMul, dScopeDeltaMul, dScopeDrawDeltaMul;
+@@ -86,7 +93,8 @@
+ volatile bool replayerBusy = false;
+ const uint16_t *note2PeriodLUT = NULL;
+ int16_t patternNumRows[MAX_PATTERNS];
+-channel_t channel[MAX_CHANNELS];
++static channel_t mainChannels[MAX_CHANNELS];
++channel_t *channel=mainChannels;
+ uint16_t channelVolumeTrim[MAX_CHANNELS];
+ 
+ /*
+@@ -194,7 +202,7 @@
+ 	if (audioWasntLocked)
+ 		lockAudio();
+ 
+-	memset(channel, 0, sizeof (channel));
++	memset(channel, 0, sizeof(mainChannels));
+ 
+ 	channel_t *ch = channel;
+ 	for (int32_t i = 0; i < MAX_CHANNELS; i++, ch++)
+@@ -502,7 +510,7 @@
+ void keyOff(channel_t *ch)
+ {
+ #ifdef HAS_MIDI
+-	if (!bakerIsOfflineRunning() && ch >= channel && ch < channel + MAX_CHANNELS)
++	if (!tapeheadPatternContext && !bakerIsOfflineRunning() && ch >= channel && ch < channel + MAX_CHANNELS)
+ 		midiDubNoteOff((uint8_t)(ch - channel));
+ #endif
+ 
+@@ -686,7 +694,7 @@
+ 	const uint8_t defaultSample = ins->note2SampleLUT[note-1] & 0xF;
+ 	const uint8_t channelIndex = ch >= channel && ch < channel + MAX_CHANNELS
+ 		? (uint8_t)(ch - channel) : UINT8_MAX;
+-	ch->smpNum = sampleMorphResolve(channelIndex, ch->instrNum, defaultSample);
++	ch->smpNum = tapeheadPatternContext ? defaultSample : sampleMorphResolve(channelIndex, ch->instrNum, defaultSample);
+ 	sample_t *s = &ins->smp[ch->smpNum];
+ 
+ 	ch->smpPtr = s;
+@@ -701,7 +709,7 @@
+ 
+ 
+ #ifdef HAS_MIDI
+-	if (!bakerIsOfflineRunning() && ch >= channel && ch < channel + MAX_CHANNELS)
++	if (!tapeheadPatternContext && !bakerIsOfflineRunning() && ch >= channel && ch < channel + MAX_CHANNELS)
+ 		midiDubNoteOn((uint8_t)(ch - channel), ch->noteNum,
+ 		    midiDubVelocityFromNoteVolume(ch, efx, efxData));
+ #endif
+@@ -1707,10 +1715,10 @@
+ 		resolvedInstrument <= MAX_INST && instr[resolvedInstrument] != NULL)
+ 	{
+ 		resolvedSample = instr[resolvedInstrument]->note2SampleLUT[p->note-1] & 0x0F;
+-		resolvedSample = sampleMorphResolve((uint8_t)(ch - channel),
++		resolvedSample = tapeheadPatternContext ? resolvedSample : sampleMorphResolve((uint8_t)(ch - channel),
+ 			resolvedInstrument, resolvedSample);
+ 	}
+-	bakerCaptureResolvedEvent((int32_t)(ch - channel), p,
++	if (!tapeheadPatternContext) bakerCaptureResolvedEvent((int32_t)(ch - channel), p,
+ 		resolvedInstrument, resolvedSample);
+ 
+ 	// this "inst" variable is used for later if-checks...
+@@ -4305,8 +4313,11 @@
  	}
  
  	// if song was playing, update local row (fixes certain glitches)
@@ -1523,7 +1640,7 @@
  
  #ifdef HAS_MIDI
  	midiDubPanic();
-@@ -4941,6 +4944,10 @@
+@@ -4941,6 +4952,10 @@
  		ui.drawGlobVolFlag = true;
  	}
  
@@ -1534,6 +1651,12 @@
  	if (editor.songPos != pattSyncEntry->songPos)
  	{
  		editor.songPos = pattSyncEntry->songPos;
+@@ -4960,3 +4975,5 @@
+ 		ui.updatePatternEditor = true;
+ 	}
+ }
++
++#include "ts_pattern_replayer.inc"
 --- a/src/ft2_replayer.h
 +++ b/src/ft2_replayer.h
 @@ -2,6 +2,9 @@
@@ -1546,7 +1669,19 @@
  #include "ft2_unicode.h"
  #include "ft2_microtonal.h"
  #include "mixer/ft2_windowed_sinc.h"
-@@ -228,6 +231,15 @@
+@@ -213,6 +216,11 @@
+ typedef struct syncedChannel_t // used for audio/video sync queue (pack to save RAM)
+ {
+ 	uint8_t status, pianoNoteNum, smpNum, instrNum, scopeVolume;
++#ifdef TAPEHEAD_EMBEDDED
++	uint8_t scopePan;
++	uint64_t scopeTileId;
++	unsigned scopeTileRouteIndex;
++#endif
+ 	uint16_t period;
+ 	int32_t smpStartPos;
+ }
+@@ -228,6 +236,15 @@
  typedef struct sample_t
  {
  	char name[22+1];
@@ -1562,6 +1697,15 @@
  	bool isFixed;
  	int8_t finetune, relativeNote, *dataPtr, *origDataPtr;
  	uint8_t volume, flags, panning;
+@@ -412,7 +429,7 @@
+ extern volatile bool replayerBusy;
+ extern const uint16_t *note2PeriodLUT;
+ extern int16_t patternNumRows[MAX_PATTERNS];
+-extern channel_t channel[MAX_CHANNELS];
++extern channel_t *channel;
+ extern uint16_t channelVolumeTrim[MAX_CHANNELS];
+ extern bool performanceMute[MAX_CHANNELS];
+ extern song_t song;
 --- a/src/ft2_sample_ed.c
 +++ b/src/ft2_sample_ed.c
 @@ -3647,6 +3647,9 @@
@@ -2291,22 +2435,6 @@ diff --git a/src/modloaders/ft2_load_it.c b/src/modloaders/ft2_load_it.c
 
 diff --git a/src/ft2_audio.c b/src/ft2_audio.c
 index c2bf580..c3bb971 100644
---- a/src/ft2_audio.c
-+++ b/src/ft2_audio.c
-@@ -1647,0 +1648,3 @@ static void fillVisualsSyncBuffer(void)
-+#ifdef TAPEHEAD_EMBEDDED
-+		c->scopePan = s->finalPan;
-+#endif
-diff --git a/src/ft2_replayer.h b/src/ft2_replayer.h
-index c7d6098..3077d93 100644
---- a/src/ft2_replayer.h
-+++ b/src/ft2_replayer.h
-@@ -218,0 +219,3 @@ typedef struct syncedChannel_t // used for audio/video sync queue (pack to save
-+#ifdef TAPEHEAD_EMBEDDED
-+	uint8_t scopePan;
-+#endif
-diff --git a/src/scopes/ft2_scopes.c b/src/scopes/ft2_scopes.c
-index b5ac07f..1cb8dba 100644
 --- a/src/scopes/ft2_scopes.c
 +++ b/src/scopes/ft2_scopes.c
 @@ -30,0 +31,4 @@ static SDL_Thread *scopeThread;
@@ -2362,13 +2490,6 @@ index b5ac07f..1cb8dba 100644
 
 diff --git a/src/ft2_audio.c b/src/ft2_audio.c
 index c3bb971..b0c6e61 100644
---- a/src/ft2_audio.c
-+++ b/src/ft2_audio.c
-@@ -1649,0 +1650,2 @@ static void fillVisualsSyncBuffer(void)
-+		c->scopeTileId = v->tileId;
-+		c->scopeTileRouteIndex = v->tileRouteIndex;
-diff --git a/src/ft2_header.h b/src/ft2_header.h
-index 80cca00..bec789d 100644
 --- a/src/ft2_header.h
 +++ b/src/ft2_header.h
 @@ -22,0 +23,2 @@ void ts_tapehead_host_redraw(void);
@@ -2376,13 +2497,6 @@ index 80cca00..bec789d 100644
 +int ts_tapehead_scope_pan(int lane,int source_pan);
 diff --git a/src/ft2_replayer.h b/src/ft2_replayer.h
 index 3077d93..3547842 100644
---- a/src/ft2_replayer.h
-+++ b/src/ft2_replayer.h
-@@ -220,0 +221,2 @@ typedef struct syncedChannel_t // used for audio/video sync queue (pack to save
-+	uint64_t scopeTileId;
-+	unsigned scopeTileRouteIndex;
-diff --git a/src/scopes/ft2_scopes.c b/src/scopes/ft2_scopes.c
-index 1cb8dba..472d0f3 100644
 --- a/src/scopes/ft2_scopes.c
 +++ b/src/scopes/ft2_scopes.c
 @@ -33,0 +34 @@ static uint8_t scopePan[MAX_CHANNELS];

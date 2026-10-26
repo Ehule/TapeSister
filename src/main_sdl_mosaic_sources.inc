@@ -28,6 +28,10 @@ static int mosaic_source_open(SDL_AudioDeviceID device,AudioState *audio,TsUiSta
     TsInstrument *instrument,MosaicController *c,TransformController *transform,int n)
 {
     if(transform->worker) {snprintf(ui->status,sizeof(ui->status),"WAIT FOR THE CURRENT EDIT TO FINISH");return 0;}
+    if(ui->mosaic_sources[n].source && ui->mosaic_sources[n].source->pattern){
+        mosaic_pattern_editor(device,ui,c,ui->mosaic_sources[n].source->pattern);
+        return 1;
+    }
     if(ui->mosaic_sources[n].event)return mosaic_enter(device,audio,ui,instrument,c,ui->mosaic_sources[n].event);
     int page=ui->mosaic_sources[n].bank_page,slot=ui->mosaic_sources[n].bank_slot;
     if(audio->capture.state!=TS_CAPTURE_IDLE || ui->input_meter_active ||
