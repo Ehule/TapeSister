@@ -58,6 +58,9 @@ See the [complete editing reference](SISTERTRACKER_PLAYBACK.md).
 ## Mosaic
 
 **Ctrl+S / SAVE** opens the save dialog over Mosaic and preserves the working view.
+If an interrupted save left recovery folders, the recovery dialog offers Cancel,
+Save Current As, Copy All for Recovery and Copy Paths. Originals stay untouched;
+see [project recovery](PROJECT_RECOVERY.md) before manually cleaning either copy.
 Drag selected cards at either horizontal edge to scroll with them; Shift-drag copies
 work too. Release stops scrolling; Escape cancels the single undoable move.
 

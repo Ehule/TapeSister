@@ -44,6 +44,10 @@ The same reproduction with this saver reports `YES`.
 
 ## Transaction and recovery
 
+Current recovery choices and copy-workspace behavior are documented in
+[Interrupted project-save recovery](../PROJECT_RECOVERY.md). The transaction
+guards and preservation rules below remain in effect.
+
 The original staging writers and reload validation remain. Only after generation,
 validation, inventory and conflict preflight does the old folder become the backup.
 User entries move into staging with a reverse-order rollback journal. Renaming

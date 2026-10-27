@@ -69,6 +69,24 @@ int ts_sample_pages_bundle_project_path(const char *requested_path,
                                         char *project_path,
                                         size_t project_path_size,
                                         char *error, size_t error_size);
+enum { TS_PROJECT_RECOVERY_PATH_MAX = 2048 };
+enum { TS_PROJECT_RECOVERY_CURRENT, TS_PROJECT_RECOVERY_BACKUP,
+       TS_PROJECT_RECOVERY_STAGED, TS_PROJECT_RECOVERY_COUNT };
+typedef struct {
+    char project[TS_PROJECT_RECOVERY_PATH_MAX];
+    char directory[TS_PROJECT_RECOVERY_COUNT][TS_PROJECT_RECOVERY_PATH_MAX];
+    unsigned present, folders, files; /* Existence/type, not validity or recency. Errors count as present. */
+    int attention, from_transaction, current_marker;
+} TsProjectRecovery;
+/* Read-only inspection. A disposable owned stage alone does not need attention.
+   Paths inside a transaction folder are mapped back to the original bundle. */
+int ts_sample_pages_recovery_info(const char *path, TsProjectRecovery *info,
+                                  char *error, size_t error_size);
+/* Copy all present entries to a fresh sibling workspace, never move/delete a
+   source or choose/merge project versions. On failure a created workspace is
+   retained and returned in destination. Links/reparse points are refused. */
+int ts_sample_pages_copy_recovery(const char *path, char *destination, size_t destination_size,
+                                  char *error, size_t error_size);
 int ts_sample_pages_save_project(const TsSamplePages *pages,
                                  const TsInstrument *active_sample,
                                  const TsInstrument *record_bank,

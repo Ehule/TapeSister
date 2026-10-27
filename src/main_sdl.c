@@ -8905,6 +8905,8 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
 
 static int offline_start(SDL_AudioDeviceID,AudioState *,TsUiState *,TsInstrument *,TsSamplePages *,TsInstrument *,int,const char *,int);
 
+#include "main_sdl_recovery.inc"
+
 static void run_pending_file_operation(SDL_AudioDeviceID device,
                                        AudioState *audio, TsUiState *ui,
                                        TsInstrument *instrument,
@@ -8919,6 +8921,7 @@ static void run_pending_file_operation(SDL_AudioDeviceID device,
     char error[160];
     int ok = 0;
     if (pending == NULL || !pending->active) return;
+    if (project_recovery_guard(ui,pending)) return;
     (void)pending_selection_load;
     if (pending->mode == TS_BROWSER_LOAD_WAV &&
         (pending->force_raw || (!path_is_tsr(pending->path) && !path_is_tsp(pending->path) && !path_is_module(pending->path)))) {
@@ -8964,6 +8967,7 @@ static void run_pending_file_operation(SDL_AudioDeviceID device,
         }
         snprintf(ui->status, sizeof(ui->status), ok ? "SAVED TSR PROJECT %.104s" :
                  "SAVE FAILED: %.135s", ok ? pending->path : error);
+        if (!ok && project_recovery_guard(ui,pending)) return;
     } else if(pending->mode==TS_BROWSER_RENDER_WAV) {
         ok=offline_start(device,audio,ui,instrument,sample_pages,parked_record,record_bank_active,pending->path,browser->overwrite_armed);
     } else if(pending->mode==TS_BROWSER_SAVE_XM) {
