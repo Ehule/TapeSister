@@ -14,26 +14,29 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  baseline:
-    name: Baseline (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+  linux:
+    name: Baseline Linux
+    runs-on: ubuntu-latest
     timeout-minutes: 25
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            shell: bash
-          - os: windows-latest
-            shell: 'msys2 {0}'
     steps:
       - uses: actions/checkout@v4
       - name: Install Linux dependencies
-        if: runner.os == 'Linux'
-        shell: bash
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libsdl2-dev libasound2-dev ninja-build
+      - name: Configure without release bundles
+        run: cmake -S . -B build-pr -G Ninja -DCMAKE_BUILD_TYPE=Release -DTAPESISTER_BUNDLE_CDP8=OFF -DTAPESISTER_BUNDLE_VIDEO=OFF
+      - name: Build application and run baseline regressions
+        run: cmake -P .github/pr-checks.cmake
+
+  windows:
+    name: Baseline Windows
+    runs-on: windows-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
       - uses: msys2/setup-msys2@v2
-        if: runner.os == 'Windows'
         with:
           msystem: UCRT64
           update: true
@@ -43,8 +46,6 @@ jobs:
             mingw-w64-ucrt-x86_64-ninja
             mingw-w64-ucrt-x86_64-SDL2
       - name: Configure without release bundles
-        shell: ${{ matrix.shell }}
         run: cmake -S . -B build-pr -G Ninja -DCMAKE_BUILD_TYPE=Release -DTAPESISTER_BUNDLE_CDP8=OFF -DTAPESISTER_BUNDLE_VIDEO=OFF
       - name: Build application and run baseline regressions
-        shell: ${{ matrix.shell }}
         run: cmake -P .github/pr-checks.cmake
