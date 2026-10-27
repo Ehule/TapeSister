@@ -622,6 +622,39 @@ if(TAPESISTER_BUILD_SDL)
   target_include_directories(tapesister_midi_wake_tests PRIVATE third_party)
   target_link_libraries(tapesister_midi_wake_tests PRIVATE tapesister_core SDL2::SDL2)
   add_test(NAME tapesister_midi_wake_tests COMMAND tapesister_midi_wake_tests)
+  add_executable(tapesister_pattern_lookup_tests tests/test_pattern_lookup.c src/tape_companion.c src/tape_link.c)
+  target_include_directories(tapesister_pattern_lookup_tests PRIVATE src ${TH_EMBED_ROOT})
+  target_link_libraries(tapesister_pattern_lookup_tests PRIVATE tapesister_core tapesister_tapehead SDL2::SDL2)
+  add_test(NAME tapesister_mosaic_pattern_lookup_tests COMMAND tapesister_pattern_lookup_tests)
+  add_executable(tapesister_pattern_audio_benchmark tests/benchmark_pattern_audio.c
+                 src/tape_link.c src/tape_companion.c src/ts_startup_diag.c src/ts_midi_input.c)
+  target_include_directories(tapesister_pattern_audio_benchmark PRIVATE third_party)
+  target_link_libraries(tapesister_pattern_audio_benchmark PRIVATE tapesister_core tapesister_tapehead SDL2::SDL2)
+  if(UNIX AND NOT APPLE)
+    target_link_libraries(tapesister_pattern_audio_benchmark PRIVATE rt)
+  endif()
+  set(TAPESISTER_PATTERN_REFERENCE_SOURCE "" CACHE FILEPATH "Optional original pattern backend for in-process comparisons")
+  if(TAPESISTER_PATTERN_REFERENCE_SOURCE)
+    add_library(tapesister_pattern_reference OBJECT ${TAPESISTER_PATTERN_REFERENCE_SOURCE})
+    target_include_directories(tapesister_pattern_reference PRIVATE include src ${TH_EMBED_ROOT})
+    target_link_libraries(tapesister_pattern_reference PRIVATE SDL2::SDL2)
+    target_compile_definitions(tapesister_pattern_reference PRIVATE TAPEHEAD_EMBEDDED SDL_MAIN_HANDLED _DEFAULT_SOURCE
+      ts_tapehead_pattern_install=ts_tapehead_pattern_install_reference)
+    if(WIN32)
+      target_compile_definitions(tapesister_pattern_reference PRIVATE _USE_MATH_DEFINES)
+    endif()
+    add_executable(tapesister_pattern_audio_compare EXCLUDE_FROM_ALL tests/benchmark_pattern_audio.c
+      src/tape_link.c src/tape_companion.c src/ts_startup_diag.c src/ts_midi_input.c
+      $<TARGET_OBJECTS:tapesister_pattern_reference>)
+    target_compile_definitions(tapesister_pattern_audio_compare PRIVATE TS_PATTERN_COMPARE)
+    target_include_directories(tapesister_pattern_audio_compare PRIVATE third_party)
+    target_link_libraries(tapesister_pattern_audio_compare PRIVATE tapesister_core tapesister_tapehead SDL2::SDL2)
+    if(MINGW)
+      target_link_options(tapesister_pattern_audio_compare PRIVATE "-Wl,--stack,16777216")
+    endif()
+  endif()
+  add_test(NAME tapesister_mosaic_pattern_audio_smoke COMMAND tapesister_pattern_audio_benchmark
+           --cards 4 --total 4 --blocks 8 --edits --seek 5.125)
   add_executable(tapesister_performance_benchmark EXCLUDE_FROM_ALL tests/benchmark_performance.c
                  src/tape_link.c src/tape_companion.c src/ts_startup_diag.c src/ts_midi_input.c)
   target_include_directories(tapesister_performance_benchmark PRIVATE third_party)
@@ -747,6 +780,8 @@ add_test(NAME tapesister_insert_tests COMMAND tapesister_insert_tests)
 if(MINGW)
   foreach(project_test IN ITEMS tapesister_source_route_controller_tests
                                test_sister_post_fx
+                               tapesister_pattern_lookup_tests
+                               tapesister_pattern_audio_benchmark
                                test_sister_source_ui
                                tapesister_realtime_controller_tests
                                tapesister_audio_health_tests

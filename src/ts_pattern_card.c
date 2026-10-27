@@ -14,6 +14,12 @@ int ts_pattern_engine_overflow(const void *p){return p && backend.overflow?backe
 void ts_pattern_engine_free(void *p){if(p && backend.free_engine)backend.free_engine(p);}
 TsStereoFrame ts_pattern_read(void *engine,const TsPatternCard *p,const void *voice,uint64_t generation,double time,int rate,double speed,int note,int looping)
 {return engine && p && p->prepared && backend.read?backend.read(engine,p,voice,generation,time,rate,speed,note,looping):(TsStereoFrame){0};}
+TsStereoFrame ts_pattern_read_cached(void *engine,const TsPatternCard *p,const void *voice,uint64_t generation,double time,int rate,double speed,int note,int looping,unsigned *hint)
+{
+    if(engine && p && p->prepared && backend.read_cached)
+        return backend.read_cached(engine,p,voice,generation,time,rate,speed,note,looping,hint);
+    return ts_pattern_read(engine,p,voice,generation,time,rate,speed,note,looping);
+}
 int ts_pattern_prepare(TsPatternCard *p){if(p->prepared)return 1;if(!backend.prepare)return 1;p->prepared=backend.prepare(p);return p->prepared!=NULL;}
 void ts_pattern_free(TsPatternCard *p){if(!p)return;if(p->prepared && backend.free_source)backend.free_source(p->prepared);ts_sister_tracker_free(&p->score);free(p->assets);free(p);}
 static unsigned read_le(const unsigned char *p,int n){unsigned v=0;for(int i=0;i<n;++i)v|=(unsigned)p[i]<<(i*8);return v;}

@@ -16,6 +16,41 @@ measurements on the clipboard. Include that report, which control you moved,
 and whether you heard a click. Compare a run with controls stationary against
 one with the same controls moving.
 
+For a repeatable Mosaic pattern-card comparison on your own computer:
+
+1. Use the same saved project, routing, effects, device, actual sample rate and
+   actual buffer size for both builds. Copy the initial F12 report so the
+   negotiated setup is recorded. Keep PROFILE off for the main comparison;
+   measure profiling separately if needed.
+2. RESET, play the same passage for 30 seconds with controls stationary, then
+   COPY REPORT and SAVE SESSION. Repeat after RESET while playing and releasing
+   QWERTY notes, including a held chord. Check that released notes stop.
+3. Repeat after RESET while editing card gain, pan and fades, then while editing
+   a TrackSister pattern. Include any **UPDATE CARDS** action available in your
+   build as a separate phase. Record the exact gesture and whether audio or
+   note response changed.
+4. Test cue seeks near the start and late in the same pattern, including a seek
+   into overlapping cards and a repeat-range wrap. RESET between cases; the
+   retained maximum helps catch the first callback after the seek. Include the
+   cue position and overlap/note counts with the report.
+5. If testing density, add overlapping pattern cards in small steps (for example
+   1, 4, 8, then 16) while keeping their notes, lanes, effects and routing the
+   same. Stop increasing the load when the sound or controls become unreliable.
+   These are test steps, not supported card-count limits. A large sparse
+   arrangement and many cards crossing the playhead are different workloads.
+
+Mark anything you hear immediately with **Ctrl+Shift+F12**, and save the session
+afterward. Compare callback over-budget counts and maxima, ASIO control-lock
+skips, short-lock recoveries, driver reports, maximum control hold and its call
+site separately. A long UI wait is not a long control hold. ASIO retry time is
+outside the application's callback render timing, so low rendering load can
+coexist with lock skips. Start gaps and counters alone do not establish what
+caused a click. Repeat the comparison on each X220/X230 or HP A8: timings from
+a development host cannot establish their usable buffer size or pattern count.
+
+The callback benchmark and its limits are documented in
+[the pattern audio investigation](validation/realtime-pattern-audio.md).
+
 Action buttons highlight for about a second and show their result: **COPIED**,
 **RESET DONE**, **CLICK MARKED**, or **FOLDER OPENED**. Failed actions show an
 error border and a failure label. **SAVE SESSION** first confirms **SAVE QUEUED**,

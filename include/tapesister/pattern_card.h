@@ -39,6 +39,8 @@ typedef struct {
     void (*frame)(void *);
     int (*overflow)(const void *);
     TsStereoFrame (*read)(void *,const TsPatternCard *,const void *,uint64_t,double,int,double,int,int);
+    /* Optional validated index hint. Null preserves the ordinary backend API. */
+    TsStereoFrame (*read_cached)(void *,const TsPatternCard *,const void *,uint64_t,double,int,double,int,int,unsigned *);
 } TsPatternBackend;
 void ts_pattern_backend(const TsPatternBackend *);
 void *ts_pattern_engine_create(void);
@@ -48,6 +50,7 @@ void ts_pattern_engine_free(void *);
 void ts_pattern_engine_frame(void *);
 int ts_pattern_engine_overflow(const void *);
 TsStereoFrame ts_pattern_read(void *,const TsPatternCard *,const void *,uint64_t,double,int,double,int,int);
+TsStereoFrame ts_pattern_read_cached(void *,const TsPatternCard *,const void *,uint64_t,double,int,double,int,int,unsigned *);
 struct TsMosaicSource *ts_pattern_source(struct TsMosaic *,const struct TsSamplePages *,const TsInstrument *,TsPatternId,char *,size_t);
 void ts_pattern_link_legacy(struct TsMosaic *,TsSisterTracker *);
 void ts_pattern_free(TsPatternCard *);
