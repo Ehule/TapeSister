@@ -10,7 +10,7 @@
 #include "tapesister/mosaic.h"
 
 enum {
-    TS_SISTER_PROJECT_STATE_VERSION = 44,
+    TS_SISTER_PROJECT_STATE_VERSION = 45,
     TS_SISTER_PROJECT_PRESET_NAME_MAX = 47
 };
 
@@ -41,6 +41,9 @@ typedef struct {
     TsMandalaConfig mandala;
     unsigned performance_transport;
     TsPerformanceMixer performance_mixer;
+    TsMasterClockControls clock_controls;
+    /* Restore the displayed clock location, always paused. */
+    double clock_seconds, clock_beats, clock_phase;
     TsRouterPerformance router_performance;
     TsKeyboardSequenceBank keyboard_sequence;
     TsInsertControls insert;

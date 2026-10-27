@@ -20,6 +20,7 @@
 #include <stdatomic.h>
 #include <stddef.h>
 #include "tapesister/performance_transport.h"
+#include "tapesister/master_clock.h"
 #include <stdint.h>
 
 enum {
@@ -258,6 +259,8 @@ typedef struct {
     uint32_t warnings;
     uint8_t source_switches;
     TsPerformanceMixer performance_mixer;
+    TsMasterClockControls clock_controls;
+    TsMasterClock master_clock; /* Audio-owned cursor; group writes use existing exclusion. */
     float performance_gain_current[4]; /* Audio-owned five-ms fader slew. */
     TsMandalaConfig mandala; /* UI-owned project state; never used by audio DSP. */
     unsigned performance_transport; /* ARP=1, SisterTracker=2, Mosaic=4; project setting. */

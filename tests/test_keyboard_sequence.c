@@ -101,6 +101,16 @@ static void test_volume_lfo(void)
     assert(sequence.settings.volume == 0 && sequence.settings.lfo_depth == 1 && sequence.settings.lfo_seconds == .05);
     render(10); assert(render(40) == 0);
 }
+static void test_master_clock_carry(void)
+{
+    prepare(TS_KEYBOARD_SEQUENCE_UP);
+    double interval=60.0/137/4;
+    ts_keyboard_sequence_clock(&sequence,interval);sequence.clock_carry=1;
+    render(600000); /* Ten minutes at the fixture's 1 kHz sample rate. */
+    double distance=fabs(sequence.elapsed-fmod(600,interval));
+    assert(fmin(distance,fabs(distance-interval))<1e-8);
+    assert(sequence.settings.seconds==.04);
+}
 
 static void test_slots_and_projects(void)
 {
@@ -187,6 +197,7 @@ int main(void)
     source.voices[0] = (TsNoteVoice){.sample=&source.sample, .range_last=256,
         .step=1, .gain=1, .active=1, .looping=1, .direction=1};
     test_external_clock();
+    test_master_clock_carry();
     test_volume_lfo();
     test_slots_and_projects();
     test_slot_sequence();

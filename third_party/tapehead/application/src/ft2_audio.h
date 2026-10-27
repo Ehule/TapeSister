@@ -232,3 +232,8 @@ extern chSync_t chSync;
 extern pattSync_t pattSync;
 
 extern volatile bool pattQueueClearing, chQueueClearing;
+#ifdef TAPEHEAD_EMBEDDED
+void tapeheadEmbeddedClockSet(uint16_t bpm);
+uint16_t tapeheadEmbeddedClockBPM(void);
+double tapeheadEmbeddedNativeQuarter(uint16_t bpm);
+#endif

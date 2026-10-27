@@ -86,7 +86,7 @@ int main(int argc,char **argv)
     assert(embedded_open(window,0,&live,&view,&pages,&bank,48000));
     pattern[editor.editPattern][0]=(note_t){.note=49,.instr=1};song.songLength=1;song.orders[0]=editor.editPattern;
     /* Tempo changes and a loop: no fixed-duration score arithmetic is allowed. */
-    pattern[editor.editPattern][MAX_CHANNELS]=(note_t){.efx=0x0f,.efxData=150};
+    pattern[editor.editPattern][MAX_CHANNELS]=(note_t){.note=61,.instr=1,.efx=0x0f,.efxData=150};
     startPlaying(PLAYMODE_SONG,0);live.mosaic->playing=1;live.mosaic->time=.37;
     live.sister.performance_transport=6;view.project_modified=1;
     performance_show(&view,&live);performance_transport.painted=SDL_GetTicks()-100;performance_update(0,&live);shot(performance_transport.renderer,"f11-offline.bmp",PERF_W,PERF_H);
@@ -102,6 +102,22 @@ int main(int argc,char **argv)
     start("mosaic.wav",4,24);wait_render(2);char path[1024];offline_join(path,sizeof(path),root,"mosaic.wav");double mosaic=energy(path,38400,24);assert(mosaic>1);
     start("tracker.wav",2,24);wait_render(2);offline_join(path,sizeof(path),root,"tracker.wav");double tracker=energy(path,38400,24);assert(tracker>1);
     start("both.wav",6,32);wait_render(2);offline_join(path,sizeof(path),root,"both.wav");assert(energy(path,38400,32)>fmax(mosaic,tracker));
+    /* The child restores clock routes too. A slower tracker changes note
+       timing, while a Mosaic-only render retains identical PCM. */
+    live.sister.clock_controls.enabled=1;live.sister.clock_controls.bpm=60;
+    live.sister.clock_controls.tempo_mask=TS_CLOCK_TRACKER;
+    start("clock-tracker.wav",2,24);wait_render(2);
+    TsSample local,clocked;ts_sample_init(&local);ts_sample_init(&clocked);
+    offline_join(path,sizeof(path),root,"tracker.wav");assert(ts_sample_load_wav(&local,path,error,sizeof(error)));
+    offline_join(path,sizeof(path),root,"clock-tracker.wav");assert(ts_sample_load_wav(&clocked,path,error,sizeof(error)));
+    assert(local.frames==clocked.frames);double difference=0;
+    for(size_t i=0;i<local.frames*2;++i)difference+=fabs(local.data[i]-clocked.data[i]);
+    assert(difference>1);ts_sample_free(&local);ts_sample_free(&clocked);
+    start("clock-mosaic.wav",4,24);wait_render(2);
+    offline_join(path,sizeof(path),root,"mosaic.wav");assert(ts_sample_load_wav(&local,path,error,sizeof(error)));
+    offline_join(path,sizeof(path),root,"clock-mosaic.wav");assert(ts_sample_load_wav(&clocked,path,error,sizeof(error)));
+    assert(local.frames==clocked.frames && !memcmp(local.data,clocked.data,local.frames*2*sizeof(float)));
+    ts_sample_free(&local);ts_sample_free(&clocked);live.sister.clock_controls.enabled=0;
     /* Zero gain must silence both native sources in the exported mix. */
     live.sister.performance_mixer.gain[1]=live.sister.performance_mixer.gain[2]=0;
     start("muted.wav",6,24);wait_render(2);offline_join(path,sizeof(path),root,"muted.wav");assert(energy(path,38400,24)<.1);

@@ -28,7 +28,12 @@ static void project_legacy_reopen_controls(void)
     char original[96],saved[TS_BROWSER_PATH_MAX],selected[TS_BROWSER_PATH_MAX];
     snprintf(original,sizeof(original),"Legacy saved %llu.tsr",(unsigned long long)SDL_GetPerformanceCounter());
     assert(ts_instrument_save_recipe(&bank,original,error,sizeof(error)));
+    audio.sister.clock_controls.enabled=1;audio.sister.clock_controls.tempo_mask=3;
+    audio.sister.clock_controls.position_custom=1;audio.sister.clock_controls.home_mask=2;
+    audio.sister.master_clock=(TsMasterClock){.running=1,.seconds=43.25};
     assert(load_instrument(0,&audio,&ui,&bank,&pages,&record,0,original));
+    assert(!audio.sister.clock_controls.enabled && !audio.sister.clock_controls.tempo_mask &&
+        !audio.sister.clock_controls.position_custom && !audio.sister.master_clock.running && !audio.sister.master_clock.seconds);
     uint64_t old_audio=ts_sample_hash(&bank.current);
     TsMosaicSource *source=ts_mosaic_source(ui.mosaic,&bank.current,error,sizeof(error));assert(source);
     TsMosaicEvent *card=ts_mosaic_add(ui.mosaic,source,3,50);assert(card);
@@ -92,6 +97,9 @@ static void project_reopen_controls(SDL_Window *window)
     ui.mosaic_scroll=15.75;ui.mosaic_xscroll=80.5;ui.mosaic_scale=12.25;ui.mosaic_hscale=.5;
     ui.mosaic_follow=1;ui.mosaic_source_page=1;
     ts_mosaic_seek(ui.mosaic,17.375);
+    audio.sister.clock_controls=(TsMasterClockControls){.enabled=1,.bpm=137,.tempo_mask=3,
+        .arp_division=2,.position_custom=1,.home_mask=2};
+    audio.sister.master_clock=(TsMasterClock){.running=1,.seconds=43.25,.beats=98.75,.phase=.75};
     uint64_t primary=ui.mosaic_selected;
     uint64_t expected=ts_mosaic_hash(ui.mosaic);
     ts_browser_close(&ui.browser);ui.file_busy=0;
@@ -117,6 +125,10 @@ static void project_reopen_controls(SDL_Window *window)
     assert(ui.mosaic_scale==12.25 && ui.mosaic_hscale==.5);
     assert(ui.mosaic_selected==primary && mosaic_chosen(&ui,1) && mosaic_chosen(&ui,2));
     assert(ui.mosaic_follow && ui.mosaic_source_page==1 && ui.mosaic->time==17.375 && !ui.mosaic->playing);
+    assert(audio.sister.clock_controls.enabled && audio.sister.clock_controls.bpm==137 &&
+        audio.sister.clock_controls.tempo_mask==3 && audio.sister.clock_controls.home_mask==2);
+    assert(!audio.sister.master_clock.running && audio.sister.master_clock.seconds==43.25 &&
+        audio.sister.master_clock.beats==98.75 && audio.sister.master_clock.phase==.75);
     /* Reopen from an empty session, not just over the already populated UI. */
     assert(project_new(NULL,0,0,&session));assert_empty();
     assert(load_instrument(0,&audio,&ui,&bank,&pages,&record,0,path));
@@ -124,6 +136,8 @@ static void project_reopen_controls(SDL_Window *window)
     assert(ts_mosaic_hash(ui.mosaic)==expected && ui.mosaic_open && ui.mosaic_selected==primary);
     assert(ui.mosaic_scroll==15.75 && ui.mosaic_xscroll==80.5 && ui.mosaic_scale==12.25 && ui.mosaic_hscale==.5);
     assert(ui.mosaic->time==17.375 && !ui.mosaic->playing);
+    assert(audio.sister.clock_controls.bpm==137 && audio.sister.clock_controls.home_mask==2 &&
+        !audio.sister.master_clock.running && audio.sister.master_clock.beats==98.75);
     /* Main canvas range/panel and the TrackSister workspace are project views too. */
     for(int workspace=0;workspace<2;++workspace) {
         ui.mosaic_open=0;ui.tracker_open=workspace;

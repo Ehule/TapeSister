@@ -24,6 +24,13 @@ static void state_error(char *error, size_t size, const char *message)
 
 #include "ts_project_view.inc"
 
+static int state_clock_position_valid(const TsSisterProjectState *s)
+{
+    return isfinite(s->clock_seconds) && s->clock_seconds>=0 && s->clock_seconds<=1e12 &&
+        isfinite(s->clock_beats) && s->clock_beats>=0 && s->clock_beats<=1e15 &&
+        isfinite(s->clock_phase) && s->clock_phase>=0 && s->clock_phase<1;
+}
+
 static int state_path(const char *project, char *path, size_t size)
 {
     const char *slash;
@@ -84,6 +91,7 @@ void ts_sister_project_state_init(TsSisterProjectState *state,
     ts_router_default(&state->router);
     ts_matrix_default(&state->matrix);ts_matrix_layout_default(&state->matrix_layout);state->performance_transport=1;
     ts_performance_mixer_default(&state->performance_mixer);
+    ts_master_clock_default(&state->clock_controls);
     ts_router_performance_default(&state->router_performance);
     ts_keyboard_sequence_bank_default(&state->keyboard_sequence);
     ts_insert_default(&state->insert);
@@ -115,6 +123,10 @@ void ts_sister_project_state_capture(TsSisterProjectState *state,
     state->router = ts_router_export(&runtime->router);
     state->matrix=runtime->matrix.controls;state->matrix_layout=runtime->matrix_layout;state->performance_transport=runtime->performance_transport;
     state->performance_mixer=runtime->performance_mixer;
+    state->clock_controls=runtime->clock_controls;
+    state->clock_seconds=runtime->master_clock.seconds;
+    state->clock_beats=runtime->master_clock.beats;
+    state->clock_phase=runtime->master_clock.phase;
     state->router_performance = runtime->router.performance;
     state->insert = runtime->insert.controls;
     state->spatial = runtime->spatial.controls;
@@ -136,7 +148,7 @@ int ts_sister_project_state_apply(const TsSisterProjectState *state,
 {
     if (state == NULL || runtime == NULL || state->page_count == 0u ||
         state->page_count > TS_SISTER_RUNTIME_PAGE_LIMIT ||
-        state->active_page >= state->page_count || !ts_mandala_valid(&state->mandala) || !ts_matrix_layout_valid(&state->matrix_layout)) return 0;
+        state->active_page >= state->page_count || !ts_master_clock_valid(&state->clock_controls) || !state_clock_position_valid(state) || !ts_mandala_valid(&state->mandala) || !ts_matrix_layout_valid(&state->matrix_layout)) return 0;
     if(!ts_matrix_effects_restore(&runtime->matrix_effects,&state->matrix,
         runtime->router.sample_rate?runtime->router.sample_rate:48000))return 0;
     runtime->source_switches = state->source_switches & TS_SISTER_SOURCE_ALL;
@@ -164,6 +176,9 @@ int ts_sister_project_state_apply(const TsSisterProjectState *state,
     runtime->mandala = state->mandala;
     runtime->performance_transport=state->performance_transport&7u;
     runtime->performance_mixer=state->performance_mixer;
+    runtime->clock_controls=state->clock_controls;
+    runtime->master_clock=(TsMasterClock){.seconds=state->clock_seconds,
+        .beats=state->clock_beats,.phase=state->clock_phase};
     runtime->router.transport.restore_valid=0;
     ts_router_performance_set(&runtime->router,&state->router_performance);
     ts_sister_runtime_set_insert(runtime,&state->insert);
@@ -361,6 +376,7 @@ int ts_sister_project_state_save_file(const TsSisterProjectState *state,
     if (state == NULL || state->page_count == 0u ||
         state->page_count > TS_SISTER_RUNTIME_PAGE_LIMIT ||
         state->active_page >= state->page_count || !project_view_valid(&state->view) ||
+        !ts_master_clock_valid(&state->clock_controls) || !state_clock_position_valid(state) ||
         path == NULL || path[0] == '\0' ||
         snprintf(temporary, sizeof(temporary), "%s.tapesister-tmp", path) < 0 ||
         strlen(path) + 20u >= sizeof(temporary)) {
@@ -372,12 +388,14 @@ int ts_sister_project_state_save_file(const TsSisterProjectState *state,
         state_error(error, error_size, "Could not create Sister project state");
         return 0;
     }
+    const char *state_header=state->clock_controls.enabled || state->clock_controls.position_custom?
+        "TapeSister Sister Project State / Clock Routes 1":"TapeSister Sister Project State";
     failed = fprintf(file,
-        "TapeSister Sister Project State\nVersion=%d\nPageCount=%zu\n"
+        "%s\nVersion=%d\nPageCount=%zu\n"
         "ActivePage=%zu\nRoutes=%u\nSelectedPreset=%s\n"
         "SelectedPresetModified=%d\nParameterLocks=%016" PRIX64
         "\nParameterLocksHigh=%016" PRIX64 "\n",
-        TS_SISTER_PROJECT_STATE_VERSION, state->page_count, state->active_page,
+        state_header, TS_SISTER_PROJECT_STATE_VERSION, state->page_count, state->active_page,
         (unsigned)(state->source_switches & TS_SISTER_SOURCE_ALL),
         state->selected_preset, state->selected_preset_modified != 0,
         state->parameter_locks, state->parameter_locks_high) < 0;
@@ -394,6 +412,9 @@ int ts_sister_project_state_save_file(const TsSisterProjectState *state,
     if (!failed) failed = !ts_matrix_write(file,&state->matrix);
     if (!failed) failed = !ts_matrix_layout_write(file,&state->matrix_layout);
     if (!failed) failed = !ts_router_performance_write(file,&state->router_performance);
+    if (!failed) failed = !ts_master_clock_write(file,&state->clock_controls);
+    if (!failed) failed = fprintf(file,"Clock.Cursor=%.17g %.17g %.17g\n",
+        state->clock_seconds,state->clock_beats,state->clock_phase)<0;
     if (!failed) failed = fprintf(file,"PerformanceTransport=%u\nPerformance.Restart=%u\nPerformance.ArpSync=%u\nPerformance.AlwaysOnTop=%u\n",
         state->performance_transport&7u,state->performance_mixer.restart,state->performance_mixer.arp_sync,state->performance_mixer.always_on_top)<0;
     for(int i=0;!failed && i<4;++i)failed=fprintf(file,"Performance.Gain%d=%.9g\n",i,state->performance_mixer.gain[i])<0;
@@ -720,7 +741,8 @@ int ts_sister_project_state_load_file(TsSisterProjectState *state,
         ++line_number;
         if (*key == '\0' || *key == ';' || *key == '#') continue;
         if (!header) {
-            if (strcmp(key, "TapeSister Sister Project State") != 0) goto malformed;
+            if (strcmp(key, "TapeSister Sister Project State") != 0 &&
+                strcmp(key,"TapeSister Sister Project State / Clock Routes 1") != 0) goto malformed;
             header = 1;
             continue;
         }
@@ -786,6 +808,12 @@ int ts_sister_project_state_load_file(TsSisterProjectState *state,
             if(clock)loaded.performance_mixer.arp_sync=v;
             else if(!strcmp(key,"Performance.Restart"))loaded.performance_mixer.restart=v;
             else loaded.performance_mixer.always_on_top=v;
+        } else if (!strcmp(key,"Clock.Cursor")) {
+            char extra;
+            if(sscanf(value,"%lf %lf %lf %c",&loaded.clock_seconds,
+                &loaded.clock_beats,&loaded.clock_phase,&extra)!=3)goto malformed;
+        } else if (!strncmp(key,"Clock.",6)) {
+            if(ts_master_clock_read(&loaded.clock_controls,key,value)!=1)goto malformed;
         } else if (!strncmp(key,"Arp.",4)) {
             if(ts_keyboard_sequence_bank_read(&loaded.keyboard_sequence,key,value)<0)goto malformed;
         } else if (!strncmp(key,"Spatial.",8)) {
@@ -808,7 +836,7 @@ int ts_sister_project_state_load_file(TsSisterProjectState *state,
             if(ts_master_eq_read(&loaded.master_eq,key,value)<0)goto malformed;
         } else if (!assign_parameter(&loaded.parameters, key, value)) goto malformed;
     }
-    if (ferror(file) || !header || !version || !have_pages || !ts_matrix_valid(&loaded.matrix) || !ts_matrix_layout_valid(&loaded.matrix_layout) ||
+    if (ferror(file) || !header || !version || !have_pages || !ts_master_clock_valid(&loaded.clock_controls) || !state_clock_position_valid(&loaded) || !ts_matrix_valid(&loaded.matrix) || !ts_matrix_layout_valid(&loaded.matrix_layout) ||
         loaded.active_page >= loaded.page_count ||
         (view_fields && (view_fields&31)!=31) || !project_view_valid(&loaded.view)) goto malformed;
     fclose(file);

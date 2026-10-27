@@ -557,7 +557,8 @@ TsStereoFrame ts_keyboard_sequence_read_routed(TsKeyboardSequence *s, int rate,T
                 if (s->settings.loop) s->cursor = 0;
                 else { stop_notes(s); goto fade; }
             }
-            s->elapsed = 0; trigger(s, note_at(s));
+            s->elapsed = s->clock_carry?s->elapsed-note_seconds(s):0;
+            trigger(s, note_at(s));
         }
         double remaining = note_seconds(s) * s->settings.gate - s->elapsed;
         double target_gate = fmax(0.0, fmin(1.0, remaining / .005));

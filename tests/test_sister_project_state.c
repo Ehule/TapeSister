@@ -192,16 +192,31 @@ int main(void)
     runtime.matrix_layout.column[TS_MATRIX_SIDECHAIN]=0;
     assert(ts_matrix_layout_valid(&runtime.matrix_layout));
     runtime.performance_transport = 6u;
+    runtime.clock_controls=(TsMasterClockControls){.enabled=1,.bpm=137,.tempo_mask=3,.arp_division=2,.position_custom=1,.home_mask=2};
+    runtime.master_clock=(TsMasterClock){.running=1,.seconds=43.25,.beats=98.75,.phase=.75};
     runtime.performance_mixer=(TsPerformanceMixer){{0,.5f,2,.25f},1,3,1};
     for(int i=0;i<TS_PERFORMANCE_INPUTS;++i)runtime.performance_mixer.input_gain[i]=1;
     runtime.performance_mixer.input_enabled[0]=runtime.performance_mixer.input_enabled[254]=1;
     runtime.performance_mixer.input_gain[0]=0;runtime.performance_mixer.input_gain[254]=1.75f;
     ts_sister_project_state_capture(&state, &runtime, 2u, "GHOST FIELD");
     assert(ts_sister_project_state_save(&state, project, error, sizeof(error)));
+    {
+        FILE *probe=fopen(state_path,"rb");char header[128];assert(probe && fgets(header,sizeof(header),probe));fclose(probe);
+        assert(!strcmp(header,"TapeSister Sister Project State / Clock Routes 1\n"));
+        /* Older readers require the exact original header. A routed project
+           must be rejected there, rather than silently losing clock routes. */
+        assert(strcmp(header,"TapeSister Sister Project State\n"));
+    }
     assert(ts_sister_project_state_load(&loaded, project, 1000u, &present,
                                         error, sizeof(error)) && present);
     assert(!memcmp(&loaded.matrix_layout,&runtime.matrix_layout,sizeof(TsMatrixLayout)));
     assert(loaded.performance_transport == 6u);
+    assert(!memcmp(&loaded.clock_controls,&runtime.clock_controls,sizeof(loaded.clock_controls)));
+    assert(loaded.clock_seconds==43.25 && loaded.clock_beats==98.75 && loaded.clock_phase==.75);
+    state.clock_phase=NAN;
+    assert(!ts_sister_project_state_save(&state,project,error,sizeof(error)));
+    assert(ts_sister_project_state_load(&loaded,project,1000u,&present,error,sizeof(error)) && loaded.clock_phase==.75);
+    state.clock_phase=.75;
     assert(loaded.performance_mixer.input_enabled[0] && loaded.performance_mixer.input_gain[0]==0);
     assert(loaded.performance_mixer.input_enabled[254] && loaded.performance_mixer.input_gain[254]==1.75f);
     assert(!loaded.performance_mixer.input_enabled[100] && loaded.performance_mixer.input_gain[100]==1);
@@ -288,6 +303,8 @@ int main(void)
     ts_sister_runtime_init(&restored);
     assert(ts_sister_project_state_apply(&loaded, &restored, &instrument));
     assert(restored.performance_transport == 6u);
+    assert(!memcmp(&restored.clock_controls,&loaded.clock_controls,sizeof(restored.clock_controls)) && !restored.master_clock.running);
+    assert(restored.master_clock.seconds==43.25 && restored.master_clock.beats==98.75 && restored.master_clock.phase==.75);
     assert(!memcmp(restored.performance_mixer.input_gain,loaded.performance_mixer.input_gain,sizeof(loaded.performance_mixer.input_gain)));
     assert(!memcmp(restored.performance_mixer.input_enabled,loaded.performance_mixer.input_enabled,sizeof(loaded.performance_mixer.input_enabled)));
     assert(restored.performance_mixer.gain[0]==0 && restored.performance_mixer.gain[1]==.5f && restored.performance_mixer.gain[2]==2 && restored.performance_mixer.gain[3]==.25f);
@@ -318,6 +335,9 @@ int main(void)
                loaded.parameters.ghost_tone == 0.25f);
         assert(loaded.selected_preset_modified == 0);
         assert(loaded.performance_transport == 1u);
+        assert(!loaded.clock_controls.enabled && !loaded.clock_controls.tempo_mask && !loaded.clock_controls.position_custom);
+        assert(!loaded.clock_seconds && !loaded.clock_beats && !loaded.clock_phase);
+        assert(ts_master_clock_home_mask(&loaded.clock_controls,6)==6);
         for(int i=0;i<4;++i)assert(loaded.performance_mixer.gain[i]==1);
         assert(loaded.matrix.row[TS_MATRIX_TILES].matrix_gain[TS_MATRIX_MAIN]==1000);
         assert(!loaded.performance_mixer.restart && !loaded.performance_mixer.arp_sync && !loaded.performance_mixer.always_on_top);
@@ -360,6 +380,20 @@ int main(void)
         fclose(file);
         assert(!ts_sister_project_state_load(&loaded, project, 48000u,
                                              &present, error, sizeof(error)));
+    }
+    remove(state_path);
+    {
+        const char *bad_clock[]={"Clock.BPM=31\n","Clock.Enabled=2\n",
+            "Clock.Source=1\nClock.TempoMask=2\n","Clock.Cursor=nan 0 0\n",
+            "Clock.Cursor=1 -1 0\n","Clock.Cursor=1 2 1\n","Clock.Cursor=1 2 .5 extra\n"};
+        for(unsigned i=0;i<sizeof(bad_clock)/sizeof(*bad_clock);++i) {
+            FILE *file=fopen(state_path,"wb");assert(file);
+            fputs("TapeSister Sister Project State / Clock Routes 1\nVersion=45\nPageCount=1\n",file);
+            fputs(bad_clock[i],file);assert(!fclose(file));
+            loaded.clock_seconds=77;
+            assert(!ts_sister_project_state_load(&loaded,project,48000,&present,error,sizeof(error)));
+            assert(loaded.clock_seconds==77); /* Failed load publishes nothing. */
+        }
     }
     remove(state_path);
     REMOVE_DIR(directory);

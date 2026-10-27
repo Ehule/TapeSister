@@ -86,6 +86,8 @@ static void populate(void)
     assert(slot>=0);
     assert(ts_matrix_effects_restore(&audio.sister.matrix_effects,&audio.sister.matrix.controls,48000));
     audio.tune_reference_enabled=1;audio.tune_reference_target=.2f;
+    audio.sister.clock_controls.enabled=1;audio.sister.clock_controls.bpm=137;
+    audio.sister.master_clock=(TsMasterClock){.running=1,.seconds=43.25,.beats=98.75,.phase=.75};
     snprintf(ui.project_path,sizeof(ui.project_path),"old-project.tsr");
 }
 static uint64_t project_hash(void)
@@ -113,6 +115,8 @@ static void assert_empty(void)
     assert(!clipboard.data && !selection.data && !drone.data && !fm.data);
     assert(!audio.playing && !audio.tune_reference_enabled && !audio.workspace_bank);
     assert(!audio.sister.enabled && !ts_matrix_effects_memory(&audio.sister.matrix_effects));
+    assert(!audio.sister.clock_controls.enabled && !audio.sister.clock_controls.position_custom &&
+        !audio.sister.master_clock.running && !audio.sister.master_clock.seconds);
     assert(!ui.mosaic->playing && !ui.mosaic->events[0].id && !ui.mosaic->history_count);
     assert(!ui.project_path[0] && !ui.project_modified && !ui.new_project_pending && !ui.exit_for_new);
     assert(ui.tracker==&pages.tracker && audio.mosaic==ui.mosaic && pages.mosaic==ui.mosaic);

@@ -14,7 +14,7 @@ joined. Playing, group membership, mute/solo and trim are separate states.
 
 ## Pages and status
 
-The group commands and audio footer remain visible on all four pages. **Tab**
+The group commands and audio footer remain visible on all five pages. **Tab**
 and **Shift+Tab** cycle pages while this window has focus. The original F11 and
 Shift+Space shortcuts remain available from other workspaces, respecting text
 entry, MIDI learn and modal ownership.
@@ -29,6 +29,9 @@ entry, MIDI learn and modal ownership.
 - **Inputs/Tuner:** six physical inputs per page, trims and raw-input tuning.
 - **Visuals:** all existing visualizer, freeze, seed, editor, symmetry and
   evolution controls. Offline Render remains available on every page.
+- **Clock Routing:** optional internal/TrackSister master tempo, individual
+  tempo followers, group start/pause and separate Home choices. See
+  [Clock Routing](CLOCK_ROUTING.md) for playback and project compatibility.
 
 The processor strip separates Sister on/off, rolling/hold and monitoring from
 player transport. The footer reads existing MAIN-tap meter, limiter, routing and
@@ -37,7 +40,7 @@ direct hardware output. Recent callback activity and deadline overruns are
 observations, not proof of acoustic audibility or a dropout. Card counts mean
 cards at the timeline cursor; muted or finished one-shots may be included.
 
-This stage does not introduce a master clock or change any source's timing.
+Master tempo starts off and older projects keep their existing timing.
 Persistent loop cards remain future work; they must be separate clock/transport
 destinations rather than automatically inheriting the main Mosaic playhead.
 
@@ -95,12 +98,12 @@ or per-sample meter work is added by this cockpit.
 | Live Tiles | Shared QWERTY/MIDI and tile-launcher level, independent of the three players |
 | Always on Top | Keeps the transport above other windows |
 | ARP Clock | Local timing, or TrackSister quarter, eighth, or sixteenth notes |
-| Play Group / Pause Group | Resumes or pauses only checked players; running players continue on Play |
-| Return to Start | Stops and rewinds checked players |
+| Play Group / Pause Group | Resumes or pauses checked players and the master cursor; running players continue on Play |
+| Return to Start | Pauses the group and rewinds Home followers; Home initially follows group membership |
 | Shift+Space | Pauses the group if any checked player is running; otherwise resumes it |
 | Space | Keeps the active workspace's existing play/stop or Follow/live-edit behavior |
 
-Selection, gains, clock link, and Always on Top save with the project.
+Selection, gains, clock links, Home choices and Always on Top save with the project.
 Older projects open at 0 dB with ARP alone checked, local timing, and Always
 on Top off. A saved legacy Restart Together setting is ignored. Opening this
 window does not change sound.
@@ -114,7 +117,7 @@ Live Tiles trims manual sample/FM notes, tile launchers and Sister tile groups,
 including their custom outputs and sends; Mosaic audio and card gains stay intact.
 Its default Matrix path is the Live Tile Bus. A silent channel keeps advancing, and shared effects can finish their tails.
 
-The ARP clock link follows TrackSister BPM, including score tempo commands
+The existing direct ARP clock link follows TrackSister BPM, including score tempo commands
 within an audio buffer. A tempo change preserves the current note's beat phase.
 The link temporarily overrides note intervals without replacing saved ARP slot
 timing. Switch back to Local to use those intervals again. ARP slot-change and
@@ -125,7 +128,8 @@ common beginning.
 
 Mosaic shares the group play/pause and explicit rewind. It keeps its seconds
 timeline and tape speed: the ARP clock link does not stretch Mosaic or alter its
-pitch. TrackSister remains the tempo source, with its own pattern timing.
+pitch. The optional master adds internal tempo and rate following without changing
+Mosaic's seconds timeline. Scheduled pattern cards keep their own saved timing.
 
 Group changes publish under one shared output exclusion so checked players begin
 at the same next audio callback boundary. Preparation happens first. If ARP has
@@ -134,7 +138,9 @@ starting the other players. Pause remains available. TrackSister resumes at its
 paused row; Mosaic resumes at its paused time. Repeated Pause does not rewind.
 Only Home or Return to Start rewinds these players in F11, including when Mosaic
 has reached its end. Mosaic repeat mode still loops normally during playback.
-ARP retains its existing pattern-start behavior after Stop.
+ARP retains its existing pattern-start behavior after Stop. With custom Home
+routes, group Return to Start rewinds Home followers separately from group
+membership; a checked player ignoring Home pauses at its current position.
 Text-entry fields and modal dialogs keep shortcut ownership.
 
 In TrackSister, **double-click an occupied tile** to open that tile's editable
