@@ -126,6 +126,9 @@ pending file-operation path and checks Cancel, Save As, Copy All, Copy Paths,
 dialog failure, browser navigation, unchanged live project/dirty state and
 cancelled quit/new continuations. These are control/state tests; native dialog
 appearance varies with the desktop and was not visually verified headlessly.
+It also copies a folder with a damaged project-name manifest field unchanged;
+ordinary project validation then refuses that copied TSR without replacing the
+live session. Copying does not depend on trusting the manifest's project name.
 
 Build and run the relevant cases in an ordinary SDL/FFmpeg environment:
 

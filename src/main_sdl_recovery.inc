@@ -45,14 +45,14 @@ static int project_recovery_guard(TsUiState *ui,PendingFileOperation *pending)
         snprintf(ui->browser.directory,sizeof(ui->browser.directory),"%s",parent);
         ts_browser_refresh(&ui->browser);
         char name[TS_BROWSER_NAME_MAX+1];
-        const char *original=path_basename(info.project);
+        const char *original=path_basename(pending->path);
         size_t length=strlen(original);if(length>4)length-=4;
         snprintf(name,sizeof(name),"%.*s-recovered.tsr",(int)SDL_min(length,sizeof(name)-16),original);
         ts_browser_set_filename(&ui->browser,name);
         snprintf(ui->status,sizeof(ui->status),"SAVE CURRENT PROJECT ELSEWHERE - RECOVERY ORIGINALS KEPT");
     } else if(choice==2) {
         char workspace[TS_BROWSER_PATH_MAX];
-        if(ts_sample_pages_copy_recovery(info.project,workspace,sizeof(workspace),error,sizeof(error))) {
+        if(ts_sample_pages_copy_recovery(pending->path,workspace,sizeof(workspace),error,sizeof(error))) {
             browser_open(ui,TS_BROWSER_LOAD_WAV);
             snprintf(ui->browser.directory,sizeof(ui->browser.directory),"%s",workspace);
             ts_browser_refresh(&ui->browser);

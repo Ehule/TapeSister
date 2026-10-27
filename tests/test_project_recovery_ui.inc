@@ -37,6 +37,25 @@ static void recovery_controls(void)
     recovery_choices[0]=0;recovery_choice_count=1;recovery_choice_at=0;
     run_pending_file_operation(0,&audio,&ui,&bank,&selection,&importer,&pages,&record,0,&file);
     assert(!file.active && !recovery_save_button && project_hash()==before && !strcmp(ui.project_path,original));
-    recovery_choice_count=recovery_choice_at=0;assert(!remove(obstruction));
+    /* A damaged manifest must not turn Copy All into a project-load attempt.
+       Preserve the raw folder even if its advertised project name is invalid. */
+    assert(!remove(obstruction));
+    char original_directory[TS_BROWSER_PATH_MAX];
+    snprintf(original_directory,sizeof(original_directory),"%.*s",(int)(slash-original),original);
+    assert(!rename(original_directory,obstruction));
+    char manifest[TS_PROJECT_RECOVERY_PATH_MAX];snprintf(manifest,sizeof(manifest),"%s/manifest.txt",obstruction);
+    const char broken_manifest[]="TAPESISTER_PROJECT 2\nproject=broken\n";
+    marker=fopen(manifest,"wb");assert(marker);fputs(broken_manifest,marker);assert(!fclose(marker));
+    file=(PendingFileOperation){.active=1,.mode=TS_BROWSER_LOAD_WAV};
+    snprintf(file.path,sizeof(file.path),"%s/%s",obstruction,path_basename(original));
+    recovery_choices[0]=2;recovery_choice_count=1;recovery_choice_at=0;
+    run_pending_file_operation(0,&audio,&ui,&bank,&selection,&importer,&pages,&record,0,&file);
+    assert(!recovery_copy_errors && !file.active && !ui.file_busy && project_hash()==before);
+    assert(strstr(ui.browser.directory,".tapesister-recovery-"));
+    marker=fopen(manifest,"rb");assert(marker);char header[96];size_t bytes=fread(header,1,sizeof(header),marker);fclose(marker);
+    assert(bytes==sizeof(broken_manifest)-1 && !memcmp(header,broken_manifest,bytes));
+    char invalid[TS_PROJECT_RECOVERY_PATH_MAX];snprintf(invalid,sizeof(invalid),"%s/backup/%s",ui.browser.directory,path_basename(original));
+    assert(!load_instrument(0,&audio,&ui,&bank,&pages,&record,0,invalid) && project_hash()==before);
+    recovery_choice_count=recovery_choice_at=0;
     assert(project_new(NULL,0,0,&session));assert_empty();
 }
