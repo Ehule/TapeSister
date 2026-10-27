@@ -85,7 +85,9 @@ off falls back to free rate; waiting launches proceed immediately. Re-enabling
 tempo following changes rate without a phase snap. These are tape-rate controls,
 not pitch-preserving stretch, bar quantization, or external MIDI clock.
 
-Beat-count capture locks its frame length at capture start. Tempo edits during
+Beat-count capture locks its period at capture start, carrying fractional frames
+between complete takes to avoid cumulative rounding drift. Published full takes
+retain the exact chosen integer beat length for playback. Tempo edits during
 that capture do not move its input boundaries; resulting cards can subsequently
 follow the changed master rate. Capture starts immediately; NEXT BEAT applies
 to playback launch, not recording start. Initial beat length is derived from

@@ -21,7 +21,9 @@ full Mosaic controller run and its focused live-loop alias.
 - Capture tests compare every sample across successive automatic/manual frame
   ranges, including a split inside an input buffer and a range read while the
   next layer is recording. Single mode, stop/keep, stop/discard, 60-second cap,
-  pending-layer exhaustion, writer-queue exhaustion and retained prefixes are
+  2000 fractional periods (within half a frame of the ideal cumulative boundary),
+  exact one-beat publication at 137 BPM, pending-layer exhaustion, writer-queue
+  exhaustion and retained prefixes are
   exercised. Normal performance-file recorder tests remain in the checks.
 - SDL controller tests exercise production callbacks, controller MIDI dispatch,
   note-on versus release, dry-source isolation from playing loops, live QWERTY
@@ -122,7 +124,7 @@ separately on each X220/X230 and HP A8; none has been remotely measured here.
 6. With F11 master on, try beat-length capture and NEXT BEAT launch. Change tempo,
    disable/re-enable tempo following, then try GROUP FOLLOW and SEEK RESTART
    separately. Master tape following changes pitch. Capture boundaries retain
-   their session-start frame length across tempo edits.
+   their session-start period across tempo edits.
 7. Save/reopen. Verify source audio, roles, finite lengths, routes, mutes/solos,
    view and controls; live players should open stopped. Test the ordinary project
    copy in the prior build separately, since format 15 needs the new build.

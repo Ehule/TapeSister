@@ -60,5 +60,18 @@ int main(void)
     for(int i=0;i<601;++i){ts_loop_capture_push(&c,(TsStereoFrame){.1f,-.1f});if(i%10==0)drain(&c);}
     assert(!atomic_load(&c.active) && atomic_load(&c.failed)==TS_LOOP_CAPTURE_LENGTH_LIMIT && c.frames==600);drain(&c);
     assert(ts_performance_recorder_load(&c.file,&full,error,sizeof(error)) && full.frames==600);ts_sample_free(&full);ts_loop_capture_free(&c);
+    /* 2000 successive fractional periods: absolute boundaries stay within half
+       a frame rather than accumulating the rounded first layer's error. */
+    assert(ts_loop_capture_start(&c,"loop-capture-test.wav",20,1,10.25,1,error,sizeof(error)));
+    int cycles=0;
+    while(cycles<2000) {
+        ts_loop_capture_push(&c,(TsStereoFrame){.1f,.1f});
+        if(c.frames%20==0)drain(&c);
+        while(ts_loop_capture_peek(&c,&take)) {
+            ++cycles;assert(take.full_length && take.last==(uint64_t)floor(cycles*10.25+.5));
+            assert(fabs((double)take.last-cycles*10.25)<=.5);ts_loop_capture_consume(&c);
+        }
+    }
+    ts_loop_capture_boundary(&c,1,1);drain(&c);assert(!atomic_load(&c.failed));ts_loop_capture_free(&c);
     remove("loop-capture-test.wav");puts("Live capture: contiguous layers, concurrent range reads, partial stop/discard, queue/disk recovery passed");return 0;
 }

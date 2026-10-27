@@ -108,6 +108,22 @@ static void test_mosaic_live_controller(SDL_Window *window,SDL_AudioDeviceID dev
         snprintf(path,sizeof(path),"%s-cards.ppm",shot);live_controller_screenshot(u,path);
         u->mosaic_live_open=1;snprintf(path,sizeof(path),"%s-controls.ppm",shot);live_controller_screenshot(u,path);
     }
+    /* Non-integral master periods remain musical beat lengths in the saved
+       players, despite alternating rounded input-frame boundaries. */
+    a->sister.clock_controls.enabled=1;a->sister.clock_controls.bpm=137;
+    audio_callback(a,(Uint8 *)out,sizeof(out));
+    u->mosaic->live_capture.source=1;u->mosaic->live_capture.units=1;
+    u->mosaic->live_capture.length=1;u->mosaic->live_capture.continuous=1;
+    assert(mosaic_live_command(device,&input_device,a,s,u,"record"));
+    assert(fabs(s->loop_capture.period-48000.0*60/137)<1e-9);
+    for(int block=0;block<165;++block)audio_callback(a,(Uint8 *)out,sizeof(out));
+    mosaic_live_capture_end(device,input_device,s,1);live_controller_wait(device,&input_device,a,s,u,7);
+    TsMosaicEvent *beat=ts_mosaic_find(u->mosaic,5);assert(beat && beat->live_tempo && beat->live_beats==1);
+    TsMosaicEvent *beat2=ts_mosaic_find(u->mosaic,6);assert(beat2 && beat2->live_beats==1);
+    double origin=u->mosaic->live[beat-u->mosaic->events].elapsed;
+    audio_callback(a,(Uint8 *)out,sizeof(out));
+    double speed=ts_mosaic_live_cycle(beat)/(60.0/137);
+    assert(fabs(u->mosaic->live[beat-u->mosaic->events].elapsed-origin-speed*256/48000)<1e-10);
     ts_loop_capture_free(&s->loop_capture);ts_external_recorder_free(&s->recorder);
     free(s);free(u);routing_free(a);
     /* EXT uses the selected raw input rather than monitor/output. Exercise the

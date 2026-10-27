@@ -44,7 +44,7 @@ static int mosaic_live_capture_begin(SDL_AudioDeviceID output,SDL_AudioDeviceID 
     if(m->live_capture.units && (!a->sister.clock_controls.enabled || !m->live_capture.length)) {
         snprintf(error,sizeof(error),"BEAT LENGTH NEEDS MASTER ON AND A NONZERO LENGTH");goto fail;
     }
-    uint64_t target=(uint64_t)llround(rate*m->live_capture.length*(m->live_capture.units?quarter:1));
+    double target=rate*m->live_capture.length*(m->live_capture.units?quarter:1);
     s->loop_source=source; /* UI-only; callbacks use the separately published tap. */
     if(!ts_capture_archive_unique_path(capture_archive_directory(),"LIVE-LOOPS",path,sizeof(path),error,sizeof(error)) ||
        !ts_loop_capture_start(&s->loop_capture,path,rate,channels,target,m->live_capture.continuous,error,sizeof(error)))goto fail;
@@ -128,7 +128,10 @@ static void mosaic_live_poll(SDL_AudioDeviceID output,SDL_AudioDeviceID *input_d
                 if(output)SDL_LockAudioDevice(output);ts_mosaic_checkpoint(m);
                 TsMosaicEvent *e=ts_mosaic_add(m,source,s->loop_start,s->loop_x);
                 if(e){e->live=1;e->looping=1;e->live_tempo=s->loop_tempo;
-                    e->live_beats=e->duration/s->loop_quarter;
+                    /* Preserve the integer beat preset, not the rounded WAV
+                       frame count. Partial/manual cuts keep their measured length. */
+                    e->live_beats=s->loop_tempo && take.full_length?
+                        round(c->period/(c->file.sample_rate*s->loop_quarter)):e->duration/s->loop_quarter;
                     (void)ts_mosaic_live_launch(m,e->id,s->loop_quantize);s->loop_x=e->x+e->width+TS_MOSAIC_GUTTER;
                     if(!ui->mosaic_editing)mosaic_select_only(ui,e->id);ok=1;}
                 if(output)SDL_UnlockAudioDevice(output);
