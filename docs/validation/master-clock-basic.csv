@@ -1,0 +1,25 @@
+variant,trial,case,ms
+before,0,idle,0.604
+before,0,loop,0.602
+before,0,Prism16 + pedalboard,1.295
+before,0,Prism16 + pedalboard + warm zero-mix reverb,1.439
+clock-off,0,idle,0.606
+clock-off,0,loop,0.621
+clock-off,0,Prism16 + pedalboard,1.314
+clock-off,0,Prism16 + pedalboard + warm zero-mix reverb,1.546
+clock-off,1,idle,0.633
+clock-off,1,loop,0.677
+clock-off,1,Prism16 + pedalboard,1.382
+clock-off,1,Prism16 + pedalboard + warm zero-mix reverb,1.525
+before,1,idle,0.634
+before,1,loop,0.628
+before,1,Prism16 + pedalboard,1.247
+before,1,Prism16 + pedalboard + warm zero-mix reverb,1.526
+before,2,idle,0.581
+before,2,loop,0.586
+before,2,Prism16 + pedalboard,1.253
+before,2,Prism16 + pedalboard + warm zero-mix reverb,1.473
+clock-off,2,idle,0.633
+clock-off,2,loop,0.62
+clock-off,2,Prism16 + pedalboard,1.238
+clock-off,2,Prism16 + pedalboard + warm zero-mix reverb,1.423

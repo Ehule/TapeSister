@@ -153,7 +153,8 @@ void ts_tapehead_performance_locked(TsTapeHeadPerformance *s)
     s->order=songPlaying?song.songPos:editor.songPos;
     s->pattern=songPlaying?song.pattNum:editor.editPattern;
     s->row=songPlaying?song.row:editor.row;
-    s->bpm=song.BPM;s->ticks_per_row=song.speed;s->channels=song.numChannels;
+    s->score_bpm=song.BPM;s->bpm=tapeheadEmbeddedClockBPM()?tapeheadEmbeddedClockBPM():song.BPM;
+    s->ticks_per_row=song.speed;s->channels=song.numChannels;
     s->block_loop=tapeheadBlockLoopIsActive();
     s->performance_solo=tapeheadActionGetPerformanceSoloTrack();
     for(int i=0;i<song.numChannels && i<32;++i) {
@@ -163,12 +164,17 @@ void ts_tapehead_performance_locked(TsTapeHeadPerformance *s)
 }
 unsigned ts_tapehead_capture_flags(unsigned frame) {return frame<TH_FRAMES?embed.capture_flags[frame]:0;}
 unsigned ts_tapehead_tempo(unsigned frame) {return frame<TH_FRAMES?embed.tempo[frame]:0;}
+void ts_tapehead_clock(unsigned bpm)
+{if((!bpm || (bpm>=32 && bpm<=255)) && atomic_load_explicit(&embed.ready,memory_order_acquire))tapeheadEmbeddedClockSet((uint16_t)bpm);}
+double ts_tapehead_native_quarter(unsigned bpm)
+{return atomic_load_explicit(&embed.ready,memory_order_acquire)?tapeheadEmbeddedNativeQuarter((uint16_t)bpm):0;}
 TsTileId ts_tapehead_canvas_tile(void) {TsTileId id=embed.canvas_tile;embed.canvas_tile=0;return id;}
 void ts_tapehead_audio_span(unsigned offset,unsigned frames,int seam) {
     unsigned flags=(tapeheadBlockLoopIsActive()?1u:0u)|(songPlaying?4u:0u);
     if(offset+frames<=TH_FRAMES && frames) {
         memset(embed.capture_flags+offset,flags,frames);
-        for(unsigned f=offset;f<offset+frames;++f)embed.tempo[f]=song.BPM;
+        unsigned bpm=tapeheadEmbeddedClockBPM()?tapeheadEmbeddedClockBPM():song.BPM;
+        for(unsigned f=offset;f<offset+frames;++f)embed.tempo[f]=(uint16_t)bpm;
         if(embed.capture_seam_pending) {embed.capture_flags[offset]|=2;embed.capture_seam_pending=0;}
     }
     if(seam)embed.capture_seam_pending=1;
@@ -1110,6 +1116,17 @@ int ts_tapehead_transport_locked(int command)
     resetSyncQueues();audio.resetSyncTickTimeFlag=true;
     ui.updatePosSections=ui.updatePatternEditor=true;
     return 1;
+}
+
+int ts_tapehead_locate_locked(unsigned position,unsigned row)
+{
+    if(!embed.initialized || !atomic_load(&embed.ready))return 0;
+    if(position>=(unsigned)song.songLength || row>=(unsigned)patternNumRows[song.orders[position]])return 0;
+    stopVoices();embed.capture_seam_pending=0;
+    setSongPos((int32_t)position,(int32_t)row,RESET_SONG_TICK);
+    editor.songPos=(int16_t)position;editor.row=(int16_t)row;
+    resetSyncQueues();audio.resetSyncTickTimeFlag=true;
+    ui.updatePosSections=ui.updatePatternEditor=true;return 1;
 }
 
 int ts_tapehead_select_pattern(TsPatternId id) {

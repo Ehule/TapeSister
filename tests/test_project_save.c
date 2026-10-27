@@ -626,6 +626,29 @@ static void test_corrupt_inventory(void)
     CHECK(!save()); CHECK(hash_file(project) == before); check_extras(); no_recovery(); clean_case();
 }
 
+static void test_clock_project_save(void)
+{
+    static TsSisterProjectState state,loaded;
+    new_case();extras();ts_sister_project_state_init(&state,48000);
+    state.clock_controls=(TsMasterClockControls){.enabled=1,.bpm=137,.tempo_mask=3,
+        .arp_division=2,.position_custom=1,.home_mask=2};
+    state.clock_seconds=43.25;state.clock_beats=98.75;state.clock_phase=.75;
+    CHECK(ts_sample_pages_save_project(&pages,&active,&record,&state,project,error,sizeof(error)));
+    check_extras();check_load();int present=0;
+    CHECK(ts_sister_project_state_load(&loaded,project,48000,&present,error,sizeof(error)) && present);
+    CHECK(loaded.clock_controls.bpm==137 && loaded.clock_controls.tempo_mask==3 && loaded.clock_phase==.75);
+    /* Failed replacement retains the previous clock routes and user extras. */
+    state.clock_controls.bpm=80;fault=FAULT_PUBLISH;
+    CHECK(!ts_sample_pages_save_project(&pages,&active,&record,&state,project,error,sizeof(error)));
+    fault=FAULT_NONE;check_extras();no_recovery();
+    CHECK(ts_sister_project_state_load(&loaded,project,48000,&present,error,sizeof(error)) && present);
+    CHECK(loaded.clock_controls.bpm==137 && loaded.clock_seconds==43.25);
+    CHECK(ts_sample_pages_save_project(&pages,&active,&record,&state,project,error,sizeof(error)));
+    CHECK(ts_sister_project_state_load(&loaded,project,48000,&present,error,sizeof(error)) && present);
+    CHECK(loaded.clock_controls.bpm==80 && loaded.clock_beats==98.75 && loaded.clock_phase==.75);
+    check_extras();no_recovery();clean_case();
+}
+
 int main(void)
 {
     char work[128];
@@ -639,6 +662,7 @@ int main(void)
     test_preservation(); test_conflicts(); test_modified_and_stale_files();test_recovery_copy();
     test_failures(); test_failed_rollback(); test_recovery_guards(); test_links(); test_corrupt_inventory();
     test_legacy_migration(); test_interruption(); test_windows_locked_file(); test_ambiguous_move(); test_windows_unicode_entry();
+    test_clock_project_save();
 #ifdef _WIN32
     CHECK(_chdir("..") == 0);
 #else

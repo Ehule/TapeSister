@@ -44,6 +44,10 @@ static void mosaic_patterns(void)
     /* Two copies share definitions, but never playback state. */
     TsMosaicEvent *b=ts_mosaic_add(m,source,0,140);assert(b);b->duration=a->duration;
     pattern_render(m,mixed,n,0);for(int i=0;i<n;++i){if(fabs(mixed[i].l-2*single[i].l)>=1e-5){fprintf(stderr,"overlap mismatch frame %d single %.9g mixed %.9g state ids %llu/%llu gen %llu/%llu\n",i,single[i].l,mixed[i].l,(unsigned long long)m->voices[0].id,(unsigned long long)m->voices[1].id,(unsigned long long)m->voices[0].generation,(unsigned long long)m->voices[1].generation);assert(0);}assert(fabs(mixed[i].r-2*single[i].r)<1e-5);}
+    /* A foreground master-tempo override cannot leak into simultaneous
+       scheduled cards' private ticks, vibrato, envelopes or mix ramps. */
+    ts_tapehead_clock(137);pattern_render(m,other,n,0);
+    assert(pattern_difference(mixed,other,n)<1e-6);ts_tapehead_clock(0);
     b->start=.137;b->duration=.9;
     pattern_render(m,mixed,n,0);a->muted=1;pattern_render(m,other,n,0);a->muted=0;
     for(int i=300;i<n;++i){assert(fabs(mixed[i].l-single[i].l-other[i].l)<1e-5);assert(fabs(mixed[i].r-single[i].r-other[i].r)<1e-5);}

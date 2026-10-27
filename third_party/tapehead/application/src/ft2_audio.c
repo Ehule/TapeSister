@@ -43,6 +43,9 @@ static voice_t mainVoices[MAX_CHANNELS * 2];
 static voice_t *voice=mainVoices;
 #ifdef TAPEHEAD_EMBEDDED
 extern bool tapeheadPatternContext;
+/* Host tempo changes tick scheduling only. song/editor BPM remain the local
+   score request, so saving or capturing a pattern cannot bake in an override. */
+static uint16_t embeddedClockBPM;
 #else
 #define tapeheadPatternContext false
 #endif
@@ -332,7 +335,38 @@ void setMixerBPM(int32_t bpm)
 	// for audio/video sync timestamp
 	tickTimeLenInt = audio.tickTimeIntTab[i];
 	tickTimeLenFrac = audio.tickTimeFracTab[i];
+#ifdef TAPEHEAD_EMBEDDED
+    if(embeddedClockBPM && !tapeheadPatternContext && audio.freq) {
+        double samples=audio.freq*2.5/embeddedClockBPM;
+        audio.samplesPerTickInt=(uint32_t)floor(samples);
+        audio.samplesPerTickFrac=(uint64_t)((samples-floor(samples))*BPM_FRAC_SCALE);
+        audio.fSamplesPerTickIntMul=1.0f/audio.samplesPerTickInt;
+        double ticks=(double)hpcFreq.freq64*2.5/embeddedClockBPM;
+        tickTimeLenInt=(uint32_t)floor(ticks);
+        tickTimeLenFrac=(uint64_t)((ticks-floor(ticks))*TICK_TIME_FRAC_SCALE);
+    }
+#endif
 }
+
+#ifdef TAPEHEAD_EMBEDDED
+void tapeheadEmbeddedClockSet(uint16_t bpm)
+{
+    if(bpm && (bpm<MIN_BPM || bpm>MAX_BPM))return;
+    if(embeddedClockBPM==bpm)return;
+    double old=audio.samplesPerTickInt+(double)audio.samplesPerTickFrac/BPM_FRAC_SCALE;
+    embeddedClockBPM=bpm;setMixerBPM(song.BPM);
+    double next=audio.samplesPerTickInt+(double)audio.samplesPerTickFrac/BPM_FRAC_SCALE;
+    if(audio.tickSampleCounter>0 && old>0 && next>0)
+        audio.tickSampleCounter=(int32_t)llround(audio.tickSampleCounter*next/old);
+}
+uint16_t tapeheadEmbeddedClockBPM(void) {return embeddedClockBPM;}
+double tapeheadEmbeddedNativeQuarter(uint16_t bpm)
+{
+    if(!audio.freq || bpm<MIN_BPM || bpm>MAX_BPM)return 0;
+    int i=bpm-MIN_BPM;
+    return 24*(audio.samplesPerTickIntTab[i]+(double)audio.samplesPerTickFracTab[i]/BPM_FRAC_SCALE)/audio.freq;
+}
+#endif
 
 void audioSetVolRamp(bool volRamp)
 {
@@ -2492,6 +2526,7 @@ void handleAudioDeviceEvent(const SDL_AudioDeviceEvent *event)
 #ifdef TAPEHEAD_EMBEDDED
 bool tapeheadEmbeddedAudioPrepare(uint32_t rate, uint32_t frames)
 {
+    embeddedClockBPM=0;
     freeAudioBuffers();
     if(!setupAudioBuffers(frames)) { freeAudioBuffers(); return false; }
     audio.freq = audio.haveFreq = config.audioFreq = rate;

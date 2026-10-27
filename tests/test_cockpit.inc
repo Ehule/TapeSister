@@ -1,5 +1,7 @@
+#include "test_cockpit_font.inc"
 static void test_cockpit(const char *directory)
 {
+    test_cockpit_font(directory);
     TsMosaic *m=a.mosaic;assert(m);
     PerformanceStatus original=performance_status(0,&a);
     assert(original.tracker.ready);
@@ -64,6 +66,7 @@ static void test_cockpit(const char *directory)
     /* Window/logical coordinate conversion also covers drag and page targets. */
     SDL_SetWindowSize(performance_transport.window,1200,800);
     SDL_RenderSetLogicalSize(performance_transport.renderer,PERF_W,PERF_H);
+    perf_input_shot(directory,"control-center-overview-125");
     int x,y;SDL_RenderLogicalToWindow(performance_transport.renderer,430,118,&x,&y);
     perf_input_click(x,y,SDL_BUTTON_LEFT);assert(performance_transport.page==PERF_INPUTS);
     SDL_SetWindowSize(performance_transport.window,PERF_W,PERF_H);

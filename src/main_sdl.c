@@ -716,6 +716,7 @@ static uint64_t paged_project_fingerprint(const TsSamplePages *pages,
         state_hash_bytes(&hash,&sister->performance_mixer.restart,sizeof(sister->performance_mixer.restart));
         state_hash_bytes(&hash,&sister->performance_mixer.arp_sync,sizeof(sister->performance_mixer.arp_sync));
         state_hash_bytes(&hash,&sister->performance_mixer.always_on_top,sizeof(sister->performance_mixer.always_on_top));
+        state_hash_bytes(&hash,&sister->clock_controls,sizeof(sister->clock_controls));
         TsSpatialControls spatial=sister->spatial.controls;
         spatial.rise_trigger=spatial.morph_trigger=0;
         state_hash_bytes(&hash,&spatial,sizeof(spatial));
@@ -1165,6 +1166,17 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         audio->sister.insert.duplex_channels,(unsigned)audio->output_rate);
     const float *embedded_block=NULL;
     const TsSourceRouteMix *embedded_clean=NULL;
+    /* Control edits share the output exclusion. Snapshot once so calls in
+       the sample loop cannot force repeated loads of the large runtime. */
+    const TsMasterClockControls master_settings=audio->sister.clock_controls;
+    const TsMasterClockControls *master_controls=&master_settings;
+    const int master_from_tracker=master_settings.enabled && master_settings.source==TS_CLOCK_TRACKER_SOURCE;
+    const int master_arp_follow=master_settings.enabled && (master_settings.tempo_mask&TS_CLOCK_ARP);
+    audio->keyboard_sequence.clock_carry=master_controls->enabled && (master_controls->tempo_mask&TS_CLOCK_ARP);
+    ts_tapehead_clock(master_controls->enabled && (master_controls->tempo_mask&TS_CLOCK_TRACKER)?master_controls->bpm:0);
+    unsigned master_span_start=0,master_source_bpm=0;
+    double master_source_quarter=0;
+    double master_arp_interval=master_controls->enabled?60.0/master_controls->bpm/(1u<<master_controls->arp_division):0;
     int matrix=audio->sister.matrix.controls.enabled;
     int matrix_was=atomic_exchange_explicit(&audio->sister.insert.matrix_active,matrix,memory_order_acq_rel);
     if(matrix!=matrix_was && audio->sister.insert.matrix_input)
@@ -1232,7 +1244,17 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         unsigned embedded_index=(unsigned)(i/2)%8192;
         unsigned sync=audio->sister.performance_mixer.arp_sync;
         unsigned bpm=embedded_block?ts_tapehead_tempo(embedded_index):0;
-        ts_keyboard_sequence_clock(&audio->keyboard_sequence,sync && bpm?60.0/bpm/(1u<<(sync-1)):0);
+        if(master_from_tracker && (i==0 || bpm!=master_source_bpm)) {
+            ts_master_clock_advance(&audio->sister.master_clock,master_controls,(unsigned)i/2-master_span_start,
+                (unsigned)audio->output_rate,master_source_quarter);
+            master_span_start=(unsigned)i/2;master_source_bpm=bpm;
+            master_source_quarter=ts_tapehead_native_quarter(bpm);
+            double quarter=master_source_quarter>0?master_source_quarter:60.0/master_controls->bpm;
+            master_arp_interval=quarter/(1u<<master_controls->arp_division);
+        }
+        double arp_interval=master_arp_follow?
+            master_arp_interval:sync && bpm?60.0/bpm/(1u<<(sync-1)):0;
+        ts_keyboard_sequence_clock(&audio->keyboard_sequence,arp_interval);
         float slew=audio->output_rate>0?2.f/(.005f*audio->output_rate):2.f;
         for(int ch=0;ch<4;++ch)audio->sister.performance_gain_current[ch]+=fmaxf(-slew,
             fminf(slew,audio->sister.performance_mixer.gain[ch]-audio->sister.performance_gain_current[ch]));
@@ -1539,6 +1561,8 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         ts_profile_end(TS_PROF_SPATIAL, profile_spatial);
         }
     }
+    ts_master_clock_advance(&audio->sister.master_clock,master_controls,(unsigned)frames-master_span_start,
+        (unsigned)audio->output_rate,master_source_quarter);
     /* Final physical output: after routing, spatial decode, fader and safety limiting. */
     ts_audio_range_mask(audio->output_range,out,(unsigned)frames,device_channels);
     ts_mandala_audio(out, (unsigned)frames, device_channels);
@@ -4436,6 +4460,8 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
                 ts_mandala_default(&audio->sister.mandala);
                 audio->sister.performance_transport=1;
                 ts_performance_mixer_default(&audio->sister.performance_mixer);
+                ts_master_clock_default(&audio->sister.clock_controls);
+                audio->sister.master_clock=(TsMasterClock){0};
                 ts_matrix_effects_free(&audio->sister.matrix_effects);
                 TsMatrixControls matrix;ts_matrix_default(&matrix);ts_matrix_set(&audio->sister.matrix,&matrix,audio->sister.router.sample_rate);
                 TsRouterControls defaults;ts_router_default(&defaults);

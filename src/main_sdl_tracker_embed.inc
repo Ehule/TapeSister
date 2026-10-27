@@ -85,13 +85,15 @@ static void tracker_refresh(SDL_AudioDeviceID device,AudioState *audio,TsUiState
     tracker_native_refresh(device,audio,ui,pages,instrument,rate);return;
 #endif
     (void)device;
-    if(!ts_tapehead_frame() && audio->sister.performance_mixer.arp_sync && embedded_host.window)
+    int clock_source=audio->sister.performance_mixer.arp_sync ||
+        (audio->sister.clock_controls.enabled && audio->sister.clock_controls.source==TS_CLOCK_TRACKER_SOURCE);
+    if(!ts_tapehead_frame() && clock_source && embedded_host.window)
         embedded_open(embedded_host.window,device,audio,ui,pages,instrument,rate);
     if(!ts_tapehead_frame())return;
     /* Reopening explicitly syncs in embedded_open. Hidden playback still
        follows tile edits, but a closed, stopped workspace needs no score
        hashing or alias scan on every service tick. */
-    if(ui->tracker_open || ts_tapehead_running() || ts_tapehead_interpolation_active() || audio->sister.performance_mixer.arp_sync) {
+    if(ui->tracker_open || ts_tapehead_running() || ts_tapehead_interpolation_active() || clock_source) {
         if(!ts_tapehead_refresh(pages,instrument,rate,ui->status,sizeof(ui->status))) {
             ui->tracker_open=0;ui->tracker_embedded_frame=NULL;return;
         }

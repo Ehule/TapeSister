@@ -2,6 +2,7 @@
    Matrix meter reads. Runtime flags use the existing short device exclusion. */
 typedef struct {
     TsTapeHeadPerformance tracker;
+    TsMasterClock master_clock;
     unsigned selected,running;
     double time,speed;
     int repeat,cue_loop,cue,slot,note,notes,held,synth;
@@ -27,6 +28,7 @@ static PerformanceStatus performance_status(SDL_AudioDeviceID device,AudioState 
     PerformanceStatus s={0};
     if(ts_tapehead_frame())ts_tapehead_host_lock();else if(device)SDL_LockAudioDevice(device);
     ts_tapehead_performance_locked(&s.tracker);
+    s.master_clock=a->sister.master_clock;
     s.selected=a->sister.performance_transport;s.running=performance_running(a);
     if(a->mosaic) {
         const TsMosaic *m=a->mosaic;s.time=m->time;s.speed=m->speed;
@@ -133,12 +135,15 @@ static void performance_overview(AudioState *a,const TsPerformanceMixer *m,const
         else snprintf(line,sizeof(line),"NO TRIGGERED CUE / %d CARDS / %d PATTERNS",performance_arrangement.cards,performance_arrangement.patterns);
         perf_small(28,426,line,accent);performance_loop_label(s,mosaic,line,sizeof(line));perf_small(28,447,line,text);
     } else if(performance_transport.selected==1) {
-        snprintf(line,sizeof(line),"TRACKER ORDER %02d / %d BPM / %d TICKS PER ROW / BLOCK LOOP %s",s->tracker.order,s->tracker.bpm,s->tracker.ticks_per_row,s->tracker.block_loop?"ON":"OFF");perf_small(28,426,line,accent);
+        snprintf(line,sizeof(line),"TRACKER ORDER %02d / %d BPM (SCORE %d) / %d TICKS / BLOCK LOOP %s",s->tracker.order,s->tracker.bpm,s->tracker.score_bpm,s->tracker.ticks_per_row,s->tracker.block_loop?"ON":"OFF");perf_small(28,426,line,accent);
         perf_small(28,447,"SCORE MUTES AND LIVE PERFORMANCE MUTES ARE SEPARATE",text);
     } else if(performance_transport.selected==2) {
         const char *clocks[]={"LOCAL NOTE INTERVALS","TRACKSISTER 1/4","TRACKSISTER 1/8","TRACKSISTER 1/16"};
-        snprintf(line,sizeof(line),"ARP CLOCK: %s / SLOT TIMER AND LFO: LOCAL",clocks[m->arp_sync%4]);perf_small(28,426,line,accent);
-        perf_button(28,447,300,30,"CHANGE ARP CLOCK",PERF_BUTTON_CLOCK,m->arp_sync!=0,0);
+        if(a->sister.clock_controls.enabled && (a->sister.clock_controls.tempo_mask&TS_CLOCK_ARP))
+            snprintf(line,sizeof(line),"ARP CLOCK: MASTER 1/%u / SLOT TIMER AND LFO: LOCAL",4u<<a->sister.clock_controls.arp_division);
+        else snprintf(line,sizeof(line),"ARP CLOCK: %s / SLOT TIMER AND LFO: LOCAL",clocks[m->arp_sync%4]);
+        perf_small(28,426,line,accent);
+        perf_button(28,447,300,30,"LOCAL / TRACKER CLOCK",PERF_BUTTON_CLOCK,m->arp_sync!=0,0);
     } else {
         perf_small(28,426,"MANUAL NOTES / LATCHES / FM / TILE LAUNCHERS",accent);
         perf_small(28,447,"INDEPENDENT OF GROUP PAUSE / INPUT MONITOR IS A SEPARATE FEED",text);
@@ -196,12 +201,18 @@ static void performance_update(SDL_AudioDeviceID device,AudioState *audio)
     const char *commands[]={"PLAY GROUP","PAUSE GROUP","RETURN TO START"};
     for(int i=0;i<3;++i)perf_button(20+i*190,54,180,34,commands[i],PERF_BUTTON_PLAY+i,0,1);
     char line[160];snprintf(line,sizeof(line),"%u JOINED / %u RUNNING",performance_popcount(s.selected),performance_popcount(s.running&s.selected));perf_small(606,64,line,dim);
-    const char *tabs[]={"OVERVIEW","CUES","INPUTS / TUNER","VISUALS"};
-    for(int i=0;i<PERF_PAGES;++i)perf_button(20+i*190,104,180,30,tabs[i],PERF_BUTTON_TAB+i,performance_transport.page==i,0);
+    const char *tabs[]={"OVERVIEW","CUES","INPUTS / TUNER","VISUALS","CLOCK ROUTING"};
+    for(int i=0;i<PERF_PAGES;++i)perf_button(20+i*PERF_TAB_STEP,104,PERF_TAB_W,30,tabs[i],PERF_BUTTON_TAB+i,performance_transport.page==i,0);
+    const TsMasterClockControls *clock=&audio->sister.clock_controls;
+    if(clock->enabled) {
+        double bpm=s.master_clock.quarter_seconds>0?60/s.master_clock.quarter_seconds:clock->bpm;
+        snprintf(line,sizeof(line),"MASTER %.2f BPM / %s / MOSAIC TIME REMAINS FREE",bpm,s.master_clock.running?"RUNNING":"PAUSED");perf_small(28,38,line,dim);
+    }
     if(performance_transport.page==PERF_OVERVIEW)performance_overview(audio,&m,&s,&r,text,dim,accent,edge);
     else if(performance_transport.page==PERF_CUES)performance_cues(audio,&s,text,dim);
     else if(performance_transport.page==PERF_INPUTS)performance_inputs_paint(&m);
-    else performance_visuals(audio,dim);
+    else if(performance_transport.page==PERF_VISUALS)performance_visuals(audio,dim);
+    else performance_clock_paint(clock,&s.master_clock,&s.tracker,s.selected,m.arp_sync,text,dim,accent,edge);
     perf_rect(20,542,920,1,dim);
     for(int ch=0;ch<2;++ch) {
         float level=isfinite(r.output_level[ch])?fmaxf(0,r.output_level[ch]):0;
@@ -218,5 +229,5 @@ static void performance_update(SDL_AudioDeviceID device,AudioState *audio)
     perf_button(360,604,180,28,offline_job.active?"RENDER PROGRESS":"RENDER OFFLINE",PERF_BUTTON_RENDER,offline_job.active,0);
     snprintf(line,sizeof(line),"LIVE LINK %s / REC %s",r.live_link_available?"ON":"OFF",audio->sister_file_recorder && ts_performance_recorder_state(audio->sister_file_recorder)==TS_PERFORMANCE_FILE_RECORDING?"ON":"OFF");perf_small(560,612,line,dim);
     SDL_SetWindowAlwaysOnTop(performance_transport.window,m.always_on_top?SDL_TRUE:SDL_FALSE);
-    SDL_RenderPresent(performance_transport.renderer);performance_transport.painted=SDL_GetTicks();
+    perf_present();performance_transport.painted=SDL_GetTicks();
 }

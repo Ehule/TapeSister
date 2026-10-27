@@ -600,6 +600,7 @@ void ts_sister_runtime_init(TsSisterRuntime *runtime)
     ts_matrix_effects_init(&runtime->matrix_effects);
     ts_matrix_init(&runtime->matrix);ts_matrix_layout_default(&runtime->matrix_layout);runtime->performance_transport=1;
     ts_performance_mixer_default(&runtime->performance_mixer);
+    ts_master_clock_default(&runtime->clock_controls);
     for(int i=0;i<4;++i)runtime->performance_gain_current[i]=1;
     ts_insert_init(&runtime->insert);
     ts_spatial_init(&runtime->spatial);

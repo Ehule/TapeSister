@@ -9,10 +9,10 @@ a merge-conflicted PR workflow, or honor a commit-message skip instruction;
 workflow coverage is not the same as an enforced repository merge rule.
 
 Both Linux and Windows build the actual application in Release mode and run the
-15 tests in `.github/pr-regressions.txt`. They cover the core/mixer, project
+17 tests in `.github/pr-regressions.txt`. They cover the core/mixer, project
 save/state/sample pages, tracker playback/edit, Mosaic scheduling and pattern
 cards, pattern-player lookup, native Mosaic/embedded tracker controllers, source
-routing, Matrix processing, and the F11 cockpit. The same list selects build targets and exact
+routing, Matrix processing, the F11 cockpit and master-clock routing. The same list selects build targets and exact
 CTest names (the two columns can differ for shared executables). The CMake
 runner validates every name against CTest's JSON catalog before building;
 empty, malformed, duplicate or unregistered selections fail. `--no-tests=error`

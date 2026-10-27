@@ -52,6 +52,25 @@ extern bool tapeheadPatternContext;
 
 static uint32_t logTab[4*12*16], frequencyMulFactor, frequencyDivFactor;
 static uint64_t songTickDuration52fp[(MAX_BPM-MIN_BPM)+1];
+static uint16_t playbackBPM(void)
+{
+#ifdef TAPEHEAD_EMBEDDED
+    if(!tapeheadPatternContext) {
+        uint16_t master=tapeheadEmbeddedClockBPM();if(master)return master;
+    }
+#endif
+    return song.BPM;
+}
+static uint64_t playbackTickDuration(void)
+{
+#ifdef TAPEHEAD_EMBEDDED
+    if(!tapeheadPatternContext) {
+        uint16_t master=tapeheadEmbeddedClockBPM();
+        if(master)return (uint64_t)llround((double)(UINT64_C(1)<<52)*2.5/master);
+    }
+#endif
+    return songTickDuration52fp[song.BPM-MIN_BPM];
+}
 static double dDeltaMul, dScopeDeltaMul, dScopeDrawDeltaMul;
 static bool bxxOverflow;
 
@@ -2145,7 +2164,7 @@ void updateVolPanAutoVib(channel_t *ch)
 #endif
 	}
 
-	if (microtonalAdvance(&ch->microtonal, song.BPM))
+    if (microtonalAdvance(&ch->microtonal, playbackBPM()))
 		ch->status |= CF_UPDATE_PERIOD;
 }
 
@@ -2823,7 +2842,7 @@ static void tickBlockLoop(void)
 {
 	if (song.BPM >= MIN_BPM && song.BPM <= MAX_BPM)
 	{
-		song.playbackSecondsFrac += songTickDuration52fp[song.BPM-MIN_BPM];
+		song.playbackSecondsFrac += playbackTickDuration();
 		if (song.playbackSecondsFrac >= 1ULL << 52)
 		{
 			song.playbackSecondsFrac &= (1ULL << 52)-1;
@@ -3180,7 +3199,7 @@ void tickReplayer(void) // periodically called from audio callback
 	// for song playback counter (hh:mm:ss)
 	if (song.BPM >= MIN_BPM && song.BPM <= MAX_BPM) // just in case
 	{
-		song.playbackSecondsFrac += songTickDuration52fp[song.BPM-MIN_BPM];
+		song.playbackSecondsFrac += playbackTickDuration();
 		if (song.playbackSecondsFrac >= 1ULL << 52)
 		{
 			song.playbackSecondsFrac &= (1ULL << 52)-1;

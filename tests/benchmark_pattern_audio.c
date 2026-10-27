@@ -20,7 +20,7 @@ extern void ts_tapehead_pattern_install(void);
 #endif
 
 typedef struct {
-    int cards,total,frames,blocks,rate,tracks,notes,edits,silent,fx;
+    int cards,total,frames,blocks,rate,tracks,notes,edits,silent,fx,master_bpm;
     double seek;
     const char *capture;
 } PatternCase;
@@ -79,6 +79,10 @@ static PatternFixture fixture(const PatternCase *c,SDL_Window *window)
     a->fm_output_gain=a->fm_output_target=1;a->output_rate=c->rate;a->output_device_channels=8;
     a->output_range=a->input_range=(TsAudioChannelRange){1,0};ts_speakers_default(&a->speakers);
     assert(ts_sister_runtime_reconfigure(&a->sister,c->rate,2,error,sizeof(error)));
+    if(c->master_bpm) {
+        a->sister.clock_controls.enabled=1;a->sister.clock_controls.bpm=(unsigned)c->master_bpm;
+        a->sister.clock_controls.tempo_mask=TS_CLOCK_TRACKER|TS_CLOCK_ARP;
+    }
     if(c->fx){
         TsSisterParameters p=a->sister.parameters;
         p.prism.enabled=1;p.prism.mode=TS_PRISM_HARMONIC;p.prism.lenses=16;
@@ -141,8 +145,8 @@ static void report(const char *backend,const PatternCase *c,PatternFixture *f,Pa
 {
     TsRealtimeDiagnosticsSnapshot h;assert(ts_realtime_diagnostics_get(&f->audio->realtime_diagnostics,&h));
     qsort(t->cpu,c->blocks,sizeof(double),compare_double);qsort(t->wall,c->blocks,sizeof(double),compare_double);
-    printf("%s,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%.9g,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%u,%u,%.6f,%.6f,%.6f,%.6f,%.6f,%s,%016llx\n",
-        backend,c->cards,c->total,c->frames,c->rate,c->blocks,c->tracks,c->notes,c->fx,c->edits,c->silent,c->seek,
+    printf("%s,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%.9g,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%u,%u,%.6f,%.6f,%.6f,%.6f,%.6f,%s,%016llx\n",
+        backend,c->cards,c->total,c->frames,c->rate,c->blocks,c->tracks,c->notes,c->fx,c->edits,c->silent,c->master_bpm,c->seek,
         t->sum_cpu/c->blocks,t->cpu[c->blocks/2],t->cpu[(c->blocks-1)*95/100],t->cpu[(c->blocks-1)*99/100],t->cpu[c->blocks-1],
         t->sum_wall/c->blocks,t->wall[(c->blocks-1)*95/100],t->wall[(c->blocks-1)*99/100],t->wall[c->blocks-1],
         t->cpu_late,t->wall_late,t->first_cpu,t->first_wall,t->control_cpu*1000,h.control_worst_microseconds/1000,
@@ -162,6 +166,7 @@ int main(int argc,char **argv)
 #define NUMBER(name,field) if(!strcmp(argv[i],name)&&i+1<argc)c.field=atoi(argv[++i]);else
         NUMBER("--cards",cards) NUMBER("--total",total) NUMBER("--frames",frames) NUMBER("--blocks",blocks)
         NUMBER("--rate",rate) NUMBER("--tracks",tracks) NUMBER("--notes",notes)
+        NUMBER("--master-bpm",master_bpm)
         if(!strcmp(argv[i],"--seek")&&i+1<argc)c.seek=atof(argv[++i]);
         else if(!strcmp(argv[i],"--capture")&&i+1<argc)c.capture=argv[++i];
         else if(!strcmp(argv[i],"--edits"))c.edits=1;
@@ -171,7 +176,8 @@ int main(int argc,char **argv)
 #undef NUMBER
     }
     if(!c.total)c.total=c.cards;
-    if(c.cards<1||c.total<c.cards||c.total>1024||c.frames<32||c.frames>2048||c.blocks<2||c.blocks>100000||c.rate<8000||c.rate>192000||c.tracks<2||c.tracks>32||c.tracks%2||c.notes<1||c.notes>5)return 2;
+    if(c.cards<1||c.total<c.cards||c.total>1024||c.frames<32||c.frames>2048||c.blocks<2||c.blocks>100000||c.rate<8000||c.rate>192000||c.tracks<2||c.tracks>32||c.tracks%2||c.notes<1||c.notes>5||
+       (c.master_bpm && (c.master_bpm<32 || c.master_bpm>255)))return 2;
     SDL_SetMainReady();SDL_setenv("SDL_VIDEODRIVER","dummy",1);SDL_setenv("SDL_AUDIODRIVER","dummy",1);
     assert(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_AUDIO|SDL_INIT_TIMER));
     SDL_Window *window=SDL_CreateWindow("Pattern callback benchmark",0,0,640,400,SDL_WINDOW_HIDDEN);assert(window);
@@ -211,7 +217,7 @@ int main(int argc,char **argv)
         if(capture)assert(fwrite(fixtures[0].out,sizeof(float),values,capture)==values);
     }
     if(capture)assert(!fclose(capture));
-    puts("backend,cards,total,frames,rate,blocks,tracks,notes,fx,edits,silent,seek,cpu_avg_ms,cpu_p50_ms,cpu_p95_ms,cpu_p99_ms,cpu_max_ms,wall_avg_ms,wall_p95_ms,wall_p99_ms,wall_max_ms,cpu_over,wall_over,first_cpu_ms,first_wall_ms,control_cpu_ms,max_hold_ms,max_wait_ms,control_site,hash");
+    puts("backend,cards,total,frames,rate,blocks,tracks,notes,fx,edits,silent,master_bpm,seek,cpu_avg_ms,cpu_p50_ms,cpu_p95_ms,cpu_p99_ms,cpu_max_ms,wall_avg_ms,wall_p95_ms,wall_p99_ms,wall_max_ms,cpu_over,wall_over,first_cpu_ms,first_wall_ms,control_cpu_ms,max_hold_ms,max_wait_ms,control_site,hash");
     for(int k=0;k<count;++k){
         select_backend(k);report(k?"reference":"cached",&c,&fixtures[k],&timings[k]);
         dispose(&fixtures[k]);free(timings[k].cpu);free(timings[k].wall);

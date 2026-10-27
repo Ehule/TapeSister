@@ -54,7 +54,7 @@ int ts_tapehead_following(void);
 int ts_tapehead_live_editing(void);
 int ts_tapehead_block_active(void);
 typedef struct {
-    int ready, playing, order, pattern, row, bpm, ticks_per_row, channels;
+    int ready, playing, order, pattern, row, bpm, score_bpm, ticks_per_row, channels;
     int performance_solo, block_loop;
     uint32_t score_mutes, performance_mutes;
 } TsTapeHeadPerformance;
@@ -63,6 +63,11 @@ typedef struct {
 void ts_tapehead_performance_locked(TsTapeHeadPerformance *status);
 unsigned ts_tapehead_capture_flags(unsigned frame);
 unsigned ts_tapehead_tempo(unsigned frame); /* Audio-thread, most recently rendered block. */
+/* Audio-block boundary: zero restores local score timing without rewriting it. */
+void ts_tapehead_clock(unsigned bpm);
+double ts_tapehead_native_quarter(unsigned bpm);
+/* Caller holds host exclusion. Explicit native order/row locate; keep playback. */
+int ts_tapehead_locate_locked(unsigned order,unsigned row);
 TsTileId ts_tapehead_canvas_tile(void); /* UI consumes the double-click target. */
 void ts_tapehead_audio_span(unsigned offset,unsigned frames,int seam);
 /* UI-thread checkpoint for persistence/host views, not a per-note operation.

@@ -57,6 +57,7 @@ typedef struct {
     int running, current_note, cursor, fresh;
     double elapsed;
     double clock_seconds; /* Optional host tempo interval; zero uses saved slot timing. */
+    int clock_carry; /* Explicit master route: retain fractional-sample note timing. */
     uint32_t random;
     TsStereoFrame last, fade_from;
     TsSourceRouteMix clean_last, clean_fade_from;

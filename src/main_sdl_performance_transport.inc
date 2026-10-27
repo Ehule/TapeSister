@@ -1,7 +1,8 @@
 #include "main_sdl_mandala_editor.inc"
 /* Modeless player mixer with a separate live tile bus. Group edits publish at one callback boundary. */
 enum { PERF_ARP=1,PERF_TRACKER=2,PERF_MOSAIC=4,PERF_W=960,PERF_H=640 };
-enum { PERF_OVERVIEW,PERF_CUES,PERF_INPUTS,PERF_VISUALS,PERF_PAGES };
+enum { PERF_OVERVIEW,PERF_CUES,PERF_INPUTS,PERF_VISUALS,PERF_CLOCKS,PERF_PAGES };
+enum { PERF_TAB_STEP=184,PERF_TAB_W=176 };
 enum { PERF_ROWS_Y=178,PERF_ROW_STEP=60,PERF_GAIN_X=780,PERF_GAIN_W=112 };
 enum { PERF_BUTTON_PLAY=1,PERF_BUTTON_STOP,PERF_BUTTON_HOME,
     PERF_BUTTON_ROW_PLAY,PERF_BUTTON_ROW_HOME=PERF_BUTTON_ROW_PLAY+3,
@@ -10,8 +11,11 @@ enum { PERF_BUTTON_PLAY=1,PERF_BUTTON_STOP,PERF_BUTTON_HOME,
     PERF_BUTTON_EDITOR,PERF_BUTTON_SYMMETRY,PERF_BUTTON_EVOLUTION,
     PERF_BUTTON_INPUT_PREV,PERF_BUTTON_INPUT_NEXT,PERF_BUTTON_TUNER,
     PERF_BUTTON_TUNE_PREV,PERF_BUTTON_TUNE_NEXT,PERF_BUTTON_RENDER,
-    PERF_BUTTON_TAB,PERF_BUTTON_CUE=PERF_BUTTON_TAB+PERF_PAGES,PERF_BUTTON_LOOP=PERF_BUTTON_CUE+16 };
-static struct {SDL_Window *window;SDL_Renderer *renderer;Uint32 id,painted,flash_until;
+    PERF_BUTTON_TAB,PERF_BUTTON_CUE=PERF_BUTTON_TAB+PERF_PAGES,PERF_BUTTON_LOOP=PERF_BUTTON_CUE+16,
+    PERF_BUTTON_MASTER,PERF_BUTTON_BPM_MINUS,PERF_BUTTON_BPM_PLUS,PERF_BUTTON_CLOCK_SOURCE,
+    PERF_BUTTON_CLOCK_ROW=64 };
+static struct {SDL_Window *window;SDL_Renderer *renderer;SDL_Texture *image;Uint32 *pixels;
+    Uint32 id,painted,flash_until;
     int visible,drag,pressed,flash,input_page,input_drag,tuner_on,page,selected;
     unsigned input_channels,tuner_channel;
     TsAudioChannelRange input_range;
@@ -32,15 +36,19 @@ static unsigned performance_running(AudioState *audio)
     return (ts_keyboard_sequence_active(&audio->keyboard_sequence)?PERF_ARP:0)|
         (ts_tapehead_running()?PERF_TRACKER:0)|(audio->mosaic && audio->mosaic->playing?PERF_MOSAIC:0);
 }
-static int performance_command_for(unsigned selected,int command,SDL_Window *window,SDL_AudioDeviceID device,AudioState *audio,
+static int performance_command_apply(unsigned selected,int command,unsigned homes,int master,SDL_Window *window,SDL_AudioDeviceID device,AudioState *audio,
     TsUiState *ui,TsSamplePages *pages,const TsInstrument *bank,const TsSample *fm,int rate)
 {
     selected&=7u;
-    if(!selected){snprintf(ui->status,sizeof(ui->status),"PERFORMANCE TRANSPORT: SELECT AT LEAST ONE PLAYER.");return 0;}
+    if(!selected && !(command==2 && homes) && !(master && audio->sister.clock_controls.enabled)) {
+        snprintf(ui->status,sizeof(ui->status),"PERFORMANCE TRANSPORT: SELECT AT LEAST ONE PLAYER.");return 0;
+    }
     if(command<0)command=(performance_running(audio)&selected)?0:1;
     ts_session_log_event("transport_request","selected_mask=%u command=%d",selected,command);
     /* Preflight before changing any participant. Sample copies and tracker
        binding happen outside the transaction's short exclusion. */
+    if(command==2 && (homes&PERF_TRACKER) &&
+       !embedded_open(window,device,audio,ui,pages,bank,rate))return 0;
     if(command==1) {
         if((selected&PERF_MOSAIC) && (!audio->mosaic || ts_mosaic_end(audio->mosaic)<=0)) {
             snprintf(ui->status,sizeof(ui->status),"GROUP NOT STARTED: MOSAIC HAS NO CARDS.");return 0;
@@ -51,34 +59,49 @@ static int performance_command_for(unsigned selected,int command,SDL_Window *win
                 snprintf(ui->status,sizeof(ui->status),"GROUP NOT STARTED: ARP NEEDS NOTES AND A PLAYABLE SOURCE.");return 0;
             }
         }
-        if(((selected&PERF_TRACKER) || ((selected&PERF_ARP) && audio->sister.performance_mixer.arp_sync)) && !embedded_open(window,device,audio,ui,pages,bank,rate))return 0;
+        if(((selected&PERF_TRACKER) || ((selected&PERF_ARP) && audio->sister.performance_mixer.arp_sync) ||
+            ((master || (selected&PERF_ARP)) && audio->sister.clock_controls.enabled && audio->sister.clock_controls.source==TS_CLOCK_TRACKER_SOURCE)) &&
+            !embedded_open(window,device,audio,ui,pages,bank,rate))return 0;
     }
     int embedded=ts_tapehead_frame()!=NULL;
     if(embedded)ts_tapehead_host_lock();else if(device)SDL_LockAudioDevice(device);
     int ok=1;
-    if(selected&PERF_TRACKER)ok=ts_tapehead_transport_locked(command);
+    if(selected&PERF_TRACKER)ok=ts_tapehead_transport_locked(command==2 && !(homes&PERF_TRACKER)?0:command);
+    else if(command==2 && (homes&PERF_TRACKER) && ts_tapehead_frame())ok=ts_tapehead_locate_locked(0,0);
     if(ok) {
         if(selected&PERF_ARP) {
             if(command==1){if(!ts_keyboard_sequence_active(&audio->keyboard_sequence))ts_keyboard_sequence_play(&audio->keyboard_sequence);}
             else ts_keyboard_sequence_stop(&audio->keyboard_sequence);
         }
+        if(command==2 && (homes&PERF_ARP))ts_keyboard_sequence_reset(&audio->keyboard_sequence);
         if((selected&PERF_MOSAIC) && audio->mosaic) {
             TsMosaic *m=audio->mosaic;
             /* Only Home/Return to Start rewinds, including at the end. */
-            if(command==2)ts_mosaic_seek(m,0);
             m->playing=command==1;
         }
+        if(command==2 && (homes&PERF_MOSAIC) && audio->mosaic)ts_mosaic_seek(audio->mosaic,0);
+        if(master)ts_master_clock_transport(&audio->sister.master_clock,command);
     }
     keyboard_sequence_ui(audio,ui);
     if(embedded)ts_tapehead_host_unlock();else if(device)SDL_UnlockAudioDevice(device);
     snprintf(ui->status,sizeof(ui->status),ok?"PERFORMANCE GROUP: %s / SHIFT+SPACE TO PLAY OR PAUSE":"GROUP NOT STARTED: TRACKER IS NOT READY.",command==1?"PLAYING":command==2?"AT START":"PAUSED");
+    if(ok && master && command==2 && audio->sister.clock_controls.position_custom)
+        snprintf(ui->status,sizeof(ui->status),"GROUP PAUSED / HOME FOLLOWERS REWOUND / OTHER POSITIONS RETAINED");
     return ok;
+}
+static int performance_command_for(unsigned selected,int command,SDL_Window *window,SDL_AudioDeviceID device,AudioState *audio,
+    TsUiState *ui,TsSamplePages *pages,const TsInstrument *bank,const TsSample *fm,int rate)
+{
+    return performance_command_apply(selected,command,selected,0,window,device,audio,ui,pages,bank,fm,rate);
 }
 static int performance_command(int command,SDL_Window *window,SDL_AudioDeviceID device,AudioState *audio,
     TsUiState *ui,TsSamplePages *pages,const TsInstrument *bank,const TsSample *fm,int rate)
 {
-    int resolved=command<0?(performance_running(audio)&audio->sister.performance_transport?0:1):command;
-    int ok=performance_command_for(audio->sister.performance_transport,resolved,
+    unsigned selected=audio->sister.performance_transport;
+    int running=selected?(performance_running(audio)&selected)!=0:audio->sister.master_clock.running;
+    int resolved=command<0?(running?0:1):command;
+    unsigned homes=ts_master_clock_home_mask(&audio->sister.clock_controls,selected);
+    int ok=performance_command_apply(selected,resolved,homes,1,
         window,device,audio,ui,pages,bank,fm,rate);
     if(ok)performance_feedback(resolved==1?PERF_BUTTON_PLAY:resolved==0?PERF_BUTTON_STOP:PERF_BUTTON_HOME,0);
     return ok;
@@ -86,6 +109,8 @@ static int performance_command(int command,SDL_Window *window,SDL_AudioDeviceID 
 static void performance_close(void)
 {
     ts_performance_inputs_tuner(performance_transport.inputs,0,0);
+    if(performance_transport.image)SDL_DestroyTexture(performance_transport.image);
+    free(performance_transport.pixels);
     if(performance_transport.renderer)SDL_DestroyRenderer(performance_transport.renderer);
     if(performance_transport.window)SDL_DestroyWindow(performance_transport.window);
     memset(&performance_transport,0,sizeof(performance_transport));
@@ -98,6 +123,14 @@ static void performance_show(TsUiState *ui,AudioState *audio)
         performance_transport.window=SDL_CreateWindow("TapeSister - Control Center",SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,PERF_W,PERF_H,SDL_WINDOW_ALLOW_HIGHDPI);
         if(performance_transport.window)performance_transport.renderer=SDL_CreateRenderer(performance_transport.window,-1,SDL_RENDERER_SOFTWARE);
         if(!performance_transport.renderer){performance_close();snprintf(ui->status,sizeof(ui->status),"CANNOT OPEN PERFORMANCE TRANSPORT");return;}
+        performance_transport.pixels=calloc((size_t)PERF_W*PERF_H,sizeof(*performance_transport.pixels));
+        performance_transport.image=SDL_CreateTexture(performance_transport.renderer,SDL_PIXELFORMAT_ARGB8888,
+            SDL_TEXTUREACCESS_STREAMING,PERF_W,PERF_H);
+        if(!performance_transport.pixels || !performance_transport.image ||
+           SDL_SetTextureBlendMode(performance_transport.image,SDL_BLENDMODE_NONE)<0 ||
+           SDL_SetTextureScaleMode(performance_transport.image,SDL_ScaleModeNearest)<0) {
+            performance_close();snprintf(ui->status,sizeof(ui->status),"CANNOT CREATE CONTROL CENTER IMAGE");return;
+        }
         performance_transport.id=SDL_GetWindowID(performance_transport.window);
         SDL_RenderSetLogicalSize(performance_transport.renderer,PERF_W,PERF_H);
     }
@@ -106,24 +139,36 @@ static void performance_show(TsUiState *ui,AudioState *audio)
 }
 static void perf_rect(int x,int y,int w,int h,Uint32 color)
 {
-    SDL_SetRenderDrawColor(performance_transport.renderer,(color>>16)&255,(color>>8)&255,color&255,255);
-    SDL_Rect r={x,y,w,h};SDL_RenderFillRect(performance_transport.renderer,&r);
+    if(!performance_transport.pixels || w<=0 || h<=0)return;
+    int first=SDL_max(0,x),last=SDL_min(PERF_W,x+w),top=SDL_max(0,y),bottom=SDL_min(PERF_H,y+h);
+    if(first>=last || top>=bottom)return;
+    for(int row=top;row<bottom;++row)
+        SDL_memset4(performance_transport.pixels+(size_t)row*PERF_W+first,color|0xff000000u,(size_t)(last-first));
 }
 static void perf_text(int x,int y,const char *s,Uint32 color,int scale)
 {
     for(;*s;++s,x+=6*scale){const char *g=ts_ui_glyph(*s);for(int r=0;r<7;++r)for(int c=0;c<5;++c)if(g[r*5+c]=='1')perf_rect(x+c*scale,y+r*scale,scale,scale,color);}
 }
-/* Eleven-pixel secondary text, rather than the old seven-pixel labels. */
+/* Hinted 8x12 secondary glyphs: uniform two-pixel strokes, one-pixel letter
+   gaps. Rasterize at integer coordinates before display/DPI scaling. */
 static void perf_small(int x,int y,const char *s,Uint32 color)
 {
-    SDL_SetRenderDrawColor(performance_transport.renderer,(color>>16)&255,(color>>8)&255,color&255,255);
+    static const unsigned column[]={0,1,3,5,6},row[]={0,2,3,5,7,8,10};
     for(;*s;++s,x+=9) {
         const char *g=ts_ui_glyph(*s);
-        for(int r=0;r<7;++r)for(int c=0;c<5;++c)if(g[r*5+c]=='1') {
-            SDL_Rect p={x+c*8/5,y+r*11/7,(c+1)*8/5-c*8/5,(r+1)*11/7-r*11/7};
-            SDL_RenderFillRect(performance_transport.renderer,&p);
-        }
+        for(int r=0;r<7;++r)for(int c=0;c<5;++c)if(g[r*5+c]=='1')
+            perf_rect(x+(int)column[c],y+(int)row[r],2,2,color);
     }
+}
+static void perf_present(void)
+{
+    /* Scaling many tiny SDL rectangles can drop or thin individual strokes.
+       Upload a complete native image, then scale it once like the main UI. */
+    SDL_Renderer *r=performance_transport.renderer;Uint32 background=performance_transport.pixels[0];
+    SDL_UpdateTexture(performance_transport.image,NULL,performance_transport.pixels,PERF_W*sizeof(Uint32));
+    SDL_SetRenderDrawColor(r,(background>>16)&255,(background>>8)&255,background&255,255);
+    SDL_RenderClear(r);SDL_Rect destination={0,0,PERF_W,PERF_H};
+    SDL_RenderCopy(r,performance_transport.image,NULL,&destination);SDL_RenderPresent(r);
 }
 static void perf_pointer(const SDL_Event *e,int *x,int *y)
 {
@@ -146,9 +191,10 @@ static void perf_button(int x,int y,int width,int height,const char *label,int b
     perf_rect(x,y,width,height,background);
     if(lit)perf_rect(x,y,width,2,ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,
         pressed?TS_COLOR_FOCUS:TS_COLOR_ACTIVITY,0xfff0c982u));
-    perf_small(x+8,y+(height-11)/2,label,foreground);
+    perf_small(x+8,y+(height-12)/2,label,foreground);
 }
 #include "main_sdl_performance_inputs.inc"
+#include "main_sdl_clock_routing.inc"
 #include "main_sdl_cockpit.inc"
 static void performance_gain(SDL_AudioDeviceID device,AudioState *audio,int channel,float gain)
 {
@@ -211,6 +257,7 @@ static int performance_event(SDL_Event *e,SDL_Window *window,SDL_AudioDeviceID d
         if(e->key.keysym.sym==SDLK_F12)return ts_audio_health_event(e,window,audio,ui);
     }
     if(performance_inputs_event(e,device,audio))return 1;
+    if(performance_clock_event(e,window,device,audio,ui,pages,bank,rate))return 1;
     if(e->type!=SDL_MOUSEBUTTONDOWN && e->type!=SDL_MOUSEMOTION && e->type!=SDL_MOUSEWHEEL)return 1;
     int x,y;perf_pointer(e,&x,&y);
     if(e->type==SDL_MOUSEMOTION) {
@@ -227,8 +274,8 @@ static int performance_event(SDL_Event *e,SDL_Window *window,SDL_AudioDeviceID d
         return 1;
     }
     int left=e->button.button==SDL_BUTTON_LEFT;
-    if(left && y>=104 && y<134 && x>=20 && x<780 && (x-20)%190<180) {
-        performance_page_set(audio,(x-20)/190);return 1;
+    if(left && y>=104 && y<134 && x>=20 && x<20+PERF_PAGES*PERF_TAB_STEP && (x-20)%PERF_TAB_STEP<PERF_TAB_W) {
+        performance_page_set(audio,(x-20)/PERF_TAB_STEP);return 1;
     }
     if(left && y>=54 && y<88 && x>=20 && x<590 && (x-20)%190<180) {
         int command=(int[]){1,0,2}[(x-20)/190];performance_feedback(PERF_BUTTON_PLAY+(x-20)/190,1);
@@ -260,7 +307,10 @@ static int performance_event(SDL_Event *e,SDL_Window *window,SDL_AudioDeviceID d
         } else if(left && x>=20 && x<200)performance_transport.selected=row;
     } else if(left && performance_transport.page==PERF_OVERVIEW && performance_transport.selected==2 && x>=28 && x<328 && y>=447 && y<477) {
         if(!ts_tapehead_frame() && !embedded_open(window,device,audio,ui,pages,bank,rate))return 1;
-        if(device)SDL_LockAudioDevice(device);audio->sister.performance_mixer.arp_sync=(audio->sister.performance_mixer.arp_sync+1)%4;if(device)SDL_UnlockAudioDevice(device);
+        if(device)SDL_LockAudioDevice(device);
+        audio->sister.clock_controls.tempo_mask&=~TS_CLOCK_ARP;
+        audio->sister.performance_mixer.arp_sync=(audio->sister.performance_mixer.arp_sync+1)%4;
+        if(device)SDL_UnlockAudioDevice(device);
         performance_feedback(PERF_BUTTON_CLOCK,1);
     } else if(left && performance_transport.page==PERF_CUES && audio->mosaic) {
         int cue=-1;

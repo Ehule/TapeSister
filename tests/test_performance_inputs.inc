@@ -11,7 +11,8 @@ static void perf_input_shot(const char *directory,const char *name)
     performance_transport.pressed=performance_transport.flash=0;
     performance_transport.painted=SDL_GetTicks()-100;performance_update(0,&a);
     char path[1024];snprintf(path,sizeof(path),"%s/%s.bmp",directory,name);
-    SDL_Surface *s=SDL_CreateRGBSurfaceWithFormat(0,PERF_W,PERF_H,32,SDL_PIXELFORMAT_ARGB8888);assert(s);
+    int width,height;assert(!SDL_GetRendererOutputSize(performance_transport.renderer,&width,&height));
+    SDL_Surface *s=SDL_CreateRGBSurfaceWithFormat(0,width,height,32,SDL_PIXELFORMAT_ARGB8888);assert(s);
     assert(!SDL_RenderReadPixels(performance_transport.renderer,NULL,SDL_PIXELFORMAT_ARGB8888,s->pixels,s->pitch));
     assert(!SDL_SaveBMP(s,path));SDL_FreeSurface(s);
 }
