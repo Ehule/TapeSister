@@ -38,7 +38,7 @@ add_library(tapesister_core src/ts_mandala.c src/ts_routing_matrix.c src/ts_matr
              src/ts_audio_import.c src/ts_ui.c src/ts_tracker_tapehead.c
              third_party/tapehead/ft2_fasttracks_core.c)
 target_include_directories(tapesister_core PUBLIC include PRIVATE ${miniaudio_SOURCE_DIR})
-target_sources(tapesister_core PRIVATE src/ts_master_clock.c)
+target_sources(tapesister_core PRIVATE src/ts_master_clock.c src/ts_loop_capture.c)
 target_link_libraries(tapesister_core PUBLIC m)
 add_executable(tapesister_matrix_benchmark EXCLUDE_FROM_ALL tools/benchmark_matrix.c)
 target_link_libraries(tapesister_matrix_benchmark PRIVATE tapesister_core)
@@ -730,11 +730,16 @@ add_executable(tapesister_render_efficiency_tests tests/test_render_efficiency.c
 target_link_libraries(tapesister_render_efficiency_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_render_efficiency_tests COMMAND tapesister_render_efficiency_tests)
 
+add_executable(tapesister_mosaic_live_benchmark EXCLUDE_FROM_ALL tests/benchmark_mosaic_live.c)
+target_link_libraries(tapesister_mosaic_live_benchmark PRIVATE tapesister_core)
 add_executable(tapesister_mosaic_benchmark EXCLUDE_FROM_ALL tests/benchmark_mosaic.c)
 target_link_libraries(tapesister_mosaic_benchmark PRIVATE tapesister_core)
 add_executable(tapesister_project_load_benchmark EXCLUDE_FROM_ALL tests/benchmark_project_load.c)
 target_link_libraries(tapesister_project_load_benchmark PRIVATE tapesister_core)
 
+add_executable(tapesister_loop_capture_tests tests/test_loop_capture.c)
+target_link_libraries(tapesister_loop_capture_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_loop_capture_tests COMMAND tapesister_loop_capture_tests)
 add_executable(tapesister_mosaic_tests tests/test_mosaic.c)
 target_link_libraries(tapesister_mosaic_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_mosaic_tests COMMAND tapesister_mosaic_tests)
@@ -748,6 +753,7 @@ if(TAPESISTER_BUILD_SDL)
   endif()
   add_test(NAME tapesister_mosaic_controller_tests COMMAND tapesister_mosaic_controller_tests)
   add_test(NAME tapesister_fm_directions_controller_tests COMMAND tapesister_mosaic_controller_tests --fm-directions)
+  add_test(NAME tapesister_mosaic_live_controller_tests COMMAND tapesister_mosaic_controller_tests --live-loops)
   add_test(NAME tapesister_quick_capture_tests COMMAND tapesister_mosaic_controller_tests --quick-capture)
 endif()
 

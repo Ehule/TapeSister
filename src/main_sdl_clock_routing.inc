@@ -35,7 +35,7 @@ static void performance_clock_paint(const TsMasterClockControls *c,const TsMaste
     else snprintf(line,sizeof(line),"INTERNAL RANGE 32-255 BPM / TEMPO CHANGES KEEP CURRENT TICK PHASE");
     perf_small(28,470,line,dim);
     perf_small(28,496,"SCHEDULED PATTERN CARDS: SAVED CLOCK + MOSAIC TAPE / CUES STAY LOCAL",dim);
-    perf_small(28,520,"FUTURE LOOP CARDS: OWN TEMPO / TRANSPORT / POSITION ROUTES",accent);
+    perf_small(28,520,"LIVE LOOP ROUTES: MOSAIC > LOOPS / TEMPO, GROUP, SEEK SEPARATE",accent);
 }
 static int performance_clock_event(SDL_Event *e,SDL_Window *window,SDL_AudioDeviceID device,AudioState *a,
     TsUiState *ui,TsSamplePages *pages,const TsInstrument *bank,int rate)

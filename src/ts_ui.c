@@ -730,6 +730,21 @@ static void main_midi_learn_overlay(TsFramebuffer *fb, const TsUiState *ui)
     midi_learn_tint(fb, TS_UI_MASTER_OUTPUT_X, TS_UI_MASTER_OUTPUT_Y,
                     TS_UI_MASTER_OUTPUT_W, 22, state);
     if(ui->mosaic_open) {
+        if(ui->mosaic_live_open) {
+            const char *commands[]={"record","stop_capture","discard_partial","stop_all"};
+            for(int i=0;i<4;++i) {
+                snprintf(target,sizeof(target),"mosaic.live.%s",commands[i]);
+                state=midi_learn_target_state(&ui->config.midi_map,ui->midi_learn_pending,target);
+                midi_learn_tint(fb,132+i*104,106,96,16,state);
+            }
+            const char *loop[]={"launch","stop","restart"};
+            for(int i=0;i<3;++i) {
+                snprintf(target,sizeof(target),"mosaic.live.%s",loop[i]);
+                state=midi_learn_target_state(&ui->config.midi_map,ui->midi_learn_pending,target);
+                midi_learn_tint(fb,340+i*98,224,i==2?72:90,16,state);
+            }
+            goto learn_footer;
+        }
         if(!ts_ui_foreground_panel_open(ui) && !ui->file_busy) {
             for(int i=0;i<TS_MOSAIC_MARKERS;++i) {
                 snprintf(target,sizeof(target),"mosaic.marker.%02d.trigger",i+1);
@@ -4394,7 +4409,24 @@ int ts_ui_midi_target_from_point(const TsUiState *ui, int x, int y,
     if(ui->router_open)return router_midi_target(ui,x,y,target,target_size);
     if(ui->master_eq_open)return ts_ui_master_eq_midi_target(ui,x,y,target,target_size);
     if(ui->mosaic_open) {
+        if(ui->mosaic_live_open && y>=106 && y<126) {
+            const char *commands[]={"record","stop_capture","discard_partial","stop_all"};
+            for(int i=0;i<4;++i)if(x>=132+i*104 && x<228+i*104) {
+                snprintf(target,target_size,"mosaic.live.%s",commands[i]);return 1;}
+        }
+        if(ui->mosaic_live_open && y>=224 && y<244 && x>=340 && x<608) {
+            snprintf(target,target_size,"mosaic.live.%s",x<438?"launch":x<536?"stop":"restart");return 1;
+        }
         if(ts_ui_foreground_panel_open(ui) || ui->file_busy)return 0;
+        if(!ui->mosaic_live_open && ui->mosaic)for(int i=TS_MOSAIC_EVENTS;i-->0;) {
+            const TsMosaicEvent *e=&ui->mosaic->events[i];if(!e->id || !e->live)continue;
+            double left=151+(e->x-ui->mosaic_xscroll)*ui->mosaic_hscale;
+            double top=66+(e->start-ui->mosaic_scroll)*ui->mosaic_scale;
+            if(x>=151 && x<TS_MOSAIC_CANVAS_RIGHT && y>=66 && y<TS_MOSAIC_CANVAS_BOTTOM &&
+               x>=left && x<left+e->width*ui->mosaic_hscale && y>=top && y<top+e->duration*ui->mosaic_scale) {
+                snprintf(target,target_size,"mosaic.live.%llu.toggle",(unsigned long long)e->id);return 1;
+            }
+        }
         if(y>=TS_MOSAIC_MARKER_Y && y<TS_MOSAIC_MARKER_Y+16 &&
            x>=TS_MOSAIC_MARKER_X && x<TS_MOSAIC_MARKER_X+TS_MOSAIC_MARKERS*TS_MOSAIC_MARKER_STEP &&
            (x-TS_MOSAIC_MARKER_X)%TS_MOSAIC_MARKER_STEP<30)

@@ -20,11 +20,16 @@ static void mosaic_pending_down(TsMosaic *m,int at)
 static void mosaic_schedule_prepare(TsMosaic *m)
 {
     TsMosaicSchedule *s=&m->schedule;
-    s->active_count=s->pending_count=s->any_solo=0;s->end=0;
+    s->active_count=s->pending_count=s->any_solo=s->live_count=0;s->end=0;
     for(int i=0;i<TS_MOSAIC_EVENTS;++i) {
         const TsMosaicEvent *e=&m->events[i];
         if(e->id) {
             double end=e->start+e->duration;s->end=fmax(s->end,end);s->any_solo|=e->solo;
+            if(e->live) {
+                if(m->live[i].id==e->id && m->live[i].state)s->live[s->live_count++]=i;
+                if(e->start>m->live_trigger_floor+1e-10)s->pending[s->pending_count++]=i;
+                continue;
+            }
             if(m->time<end) {
                 if(m->time+1e-10>=e->start){s->active[s->active_count++]=i;continue;}
                 s->pending[s->pending_count++]=i;
@@ -43,6 +48,9 @@ static void mosaic_schedule_start(TsMosaic *m)
         int slot=s->pending[0];s->pending[0]=s->pending[--s->pending_count];
         if(s->pending_count)mosaic_pending_down(m,0);
         const TsMosaicEvent *e=&m->events[slot];
+        if(e->live) {
+            (void)ts_mosaic_live_launch(m,e->id,0);continue;
+        }
         if(m->time>=e->start+e->duration)continue;
         int at=s->active_count++;
         while(at>0 && s->active[at-1]>slot){s->active[at]=s->active[at-1];--at;}

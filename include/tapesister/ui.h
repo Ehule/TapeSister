@@ -564,6 +564,10 @@ typedef struct {
     uint64_t mosaic_selection[TS_MOSAIC_EVENTS];
     uint64_t mosaic_selection_order[TS_MOSAIC_EVENTS], mosaic_selection_serial;
     int mosaic_open, mosaic_playing, mosaic_recording;
+    int mosaic_live_open, mosaic_live_recording, mosaic_live_finishing, mosaic_live_loops;
+    double mosaic_live_seconds;
+    char mosaic_live_status[160],mosaic_live_archive[1200];
+    TsMosaicLive mosaic_live[TS_MOSAIC_EVENTS]; /* UI snapshot under output exclusion. */
     int mosaic_marker_selected, mosaic_marker_open, mosaic_marker_field;
     int mosaic_marker_drag, mosaic_views_open;
     double mosaic_marker_preview;

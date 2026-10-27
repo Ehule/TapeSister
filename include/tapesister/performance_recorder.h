@@ -31,6 +31,10 @@ typedef struct {
     _Atomic uint_least64_t accepted_frames;
     _Atomic uint_least64_t written_frames;
     _Atomic uint_least64_t dropped_frames;
+    _Atomic uint_least64_t flushed_frames;
+    _Atomic uint_least64_t range_checkpoint;
+    uint64_t range_checkpoint_written;
+    int live_ranges; /* Set before writer starts: publish readable layer ranges. */
     _Atomic TsPerformanceFileState state;
     char path[1200];
     char error[160];
@@ -58,5 +62,9 @@ uint64_t ts_performance_recorder_dropped(
 int ts_performance_recorder_load(const TsPerformanceRecorder *recorder, TsSample *sample,
                                  char *error, size_t error_size);
 int ts_performance_recorder_uses_rf64(uint64_t frames, uint8_t channels);
+/* A live-range writer flushes before publishing flushed_frames. The reader
+   opens its own handle and reads only an immutable, committed prefix. */
+int ts_performance_recorder_load_range(const TsPerformanceRecorder *,uint64_t first,
+    uint64_t last,TsSample *,char *error,size_t size);
 
 #endif

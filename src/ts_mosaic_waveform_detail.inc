@@ -90,7 +90,7 @@ static void mosaic_detail_card(TsUiWaveformDetail *d,const TsUiState *ui,
     int64_t w=right-x,h=bottom-y,bx=mosaic_detail_pixel(sx),by=mosaic_detail_pixel(sy);
     if(bx<1)bx=1;
     if(by<1)by=1;
-    uint32_t color=mosaic_color(mosaic_source_color(e->source)),fill=selected?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(50,46,59)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(32,31,39));
+    uint32_t color=e->live?RGB(245,184,91):mosaic_color(mosaic_source_color(e->source)),fill=selected?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(50,46,59)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(32,31,39));
     if(dim){color=mosaic_mix_color(color,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(19,20,26)),.70f);fill=ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(23,24,30));}
     if(ghost)color=mosaic_mix_color(color,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(16,18,24)),.55f);
     else mosaic_detail_rect(d,x,y,right,bottom,fill);
@@ -159,9 +159,13 @@ static void mosaic_detail_card(TsUiWaveformDetail *d,const TsUiState *ui,
         mosaic_detail_text(d,tx,y+mosaic_detail_pixel(14*sy),label,dim?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(66,64,75)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DIM, RGB(156,147,165)),sx,sy);
     }
     if(chars>=4 && h>mosaic_detail_pixel(38*sy)) {
-        const char *state=e->muted?"MUTE":e->solo?"SOLO":dim?(chars>=8?"SOLO OUT":"EXCL"):e->looping?"LOOP":"ONCE";
+        const char *state=e->muted?"MUTE":e->solo?"SOLO":dim?(chars>=8?"SOLO OUT":"EXCL"):e->live?(e->live_finite?"FINITE":"LIVE INF"):e->looping?"LOOP":"ONCE";
         mosaic_detail_text(d,tx,bottom-mosaic_detail_pixel(11*sy),state,color,sx,sy);
     }
+    if(e->live){const TsMosaicLive *l=mosaic_live_snapshot(ui,e);
+        if(l && l->id==e->id && l->state==TS_MOSAIC_LIVE_PLAYING) {
+            int64_t play=y+(int64_t)(fmax(0,fmin(1,l->phase))*(bottom-y));
+            mosaic_detail_rect(d,x+3*bx,play,right-3*bx,play+2*by,RGB(255,224,150));}}
     mosaic_card_pan(&fades,ui,e,x,y,right,bottom,border);
     mosaic_fade_handles(&fades,ui,e,x,y,right,bottom,border);
 }

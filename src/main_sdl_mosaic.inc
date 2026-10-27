@@ -12,6 +12,8 @@ static void mosaic_poll(SDL_AudioDeviceID device,TsUiState *ui,
     for(int i=0;i<TS_MOSAIC_EVENTS;++i)ui->mosaic_pattern_pending[i]=ui->mosaic->pattern_retired[i]!=NULL;
     int release_preview=!ui->mosaic->audition_id && ui->mosaic->audition_source.source!=NULL;
     if(!ui->mosaic_open || c->active || !ui->mosaic->audition_id)ts_mosaic_audition(ui->mosaic,0);
+    memcpy(ui->mosaic_live,ui->mosaic->live,sizeof(ui->mosaic_live));
+    ui->mosaic_live_loops=ts_mosaic_live_count(ui->mosaic);
     ui->mosaic_time=ui->mosaic->time;ui->mosaic_playing=ui->mosaic->playing;
     if(device)SDL_UnlockAudioDevice(device);
     if(release_preview)ts_mosaic_collect(ui->mosaic);

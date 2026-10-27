@@ -37,6 +37,7 @@ static int mosaic_control_set(SDL_AudioDeviceID device,TsUiState *ui,MosaicContr
     } else {
         for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(mosaic_chosen(ui,i)) {
             TsMosaicEvent *e=&m->events[i];
+            if(field==4 && e->live && !e->live_finite)continue;
             double v=field==1?fmax(0,fmin(2,value)):field==2?fmax(-1,fmin(1,value)):fmax(0,fmin(e->duration,value));
             if(fabs(mosaic_control_value(e,field)-v)<1e-7)continue;
             if(!changed && !c->mix_changed)ts_mosaic_checkpoint(m);

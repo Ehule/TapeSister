@@ -111,6 +111,7 @@ static void wait_render(void);
 #include "test_prism_factory_controller.inc"
 #include "test_mosaic_record_tile.inc"
 #include "test_mosaic_record_routes.inc"
+#include "test_mosaic_live_controller.inc"
 #include "test_quick_capture.inc"
 #include "test_mosaic_record_bank.inc"
 #include "test_mosaic_record_preview.inc"
@@ -426,6 +427,7 @@ int main(int argc,char **argv)
     }
     uint64_t original=ts_sample_hash(&instrument.current);
     ui.mosaic=audio.mosaic=ts_mosaic_create();ui.mosaic_scale=24;ui.mosaic_open=1;
+    if(argc>1 && !strcmp(argv[1],"--live-loops")) {test_mosaic_live_controller(window,device);goto done;}
     if(argc>1 && !strcmp(argv[1],"--edit-benchmark")) {benchmark_mosaic_edits();goto done;}
     if(argc>1 && !strcmp(argv[1],"--scatter-mix")) {test_mosaic_scatter_mix(window);goto done;}
     if(argc>1 && !strcmp(argv[1],"--scatter-pitch")) {test_mosaic_scatter_pitch(window);goto done;}
@@ -471,6 +473,7 @@ int main(int argc,char **argv)
     test_prism_empty_state_edit();
     test_prism_matrix_ui();
     test_prism_factory_controller();
+    test_mosaic_live_controller(window,device);
     test_mosaic_record_tile(window,device);
     test_mosaic_record_routes(window,device);
     test_quick_capture(window,device);

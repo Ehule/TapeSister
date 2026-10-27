@@ -5,7 +5,7 @@ typedef struct {
     TsMasterClock master_clock;
     unsigned selected,running;
     double time,speed;
-    int repeat,cue_loop,cue,slot,note,notes,held,synth;
+    int repeat,cue_loop,cue,slot,note,notes,held,synth,live_loops;
     TsMosaicRange range;
 } PerformanceStatus;
 static struct {
@@ -31,7 +31,7 @@ static PerformanceStatus performance_status(SDL_AudioDeviceID device,AudioState 
     s.master_clock=a->sister.master_clock;
     s.selected=a->sister.performance_transport;s.running=performance_running(a);
     if(a->mosaic) {
-        const TsMosaic *m=a->mosaic;s.time=m->time;s.speed=m->speed;
+        const TsMosaic *m=a->mosaic;s.live_loops=ts_mosaic_live_count(m);s.time=m->time;s.speed=m->speed;
         s.repeat=m->repeat;s.cue_loop=m->marker_loop;s.cue=m->marker_active;s.range=m->loop_range;
     }
     s.slot=a->keyboard_sequence.active_slot;s.note=a->keyboard_sequence.current_note;
@@ -109,7 +109,7 @@ static void performance_overview(AudioState *a,const TsPerformanceMixer *m,const
         if(ch==2) {
             performance_time(position,sizeof(position),s->time);snprintf(line,sizeof(line),"%s / %.2fX",position,s->speed);
             perf_small(282,y+34,line,dim);snprintf(line,sizeof(line),"M %d / S %d",performance_arrangement.muted,performance_arrangement.solo);
-            perf_small(464,y+10,line,text);snprintf(line,sizeof(line),"%d CARDS HERE",performance_arrangement.here);perf_small(464,y+34,line,dim);
+            perf_small(464,y+10,line,text);snprintf(line,sizeof(line),s->live_loops?"%d LIVE LOOPS":"%d CARDS HERE",s->live_loops?s->live_loops:performance_arrangement.here);perf_small(464,y+34,line,dim);
         } else if(ch==1) {
             if(s->tracker.ready)snprintf(line,sizeof(line),"P%02d / ROW %03d",s->tracker.pattern,s->tracker.row);else snprintf(line,sizeof(line),"NOT OPEN");
             perf_small(282,y+34,line,dim);snprintf(line,sizeof(line),"SCORE M %u",performance_popcount(s->tracker.score_mutes));perf_small(464,y+10,line,text);

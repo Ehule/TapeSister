@@ -99,7 +99,7 @@ static int offline_render_engine(const OfflineOptions *o,const char *job,unsigne
     for(uint64_t at=0;at<total;) {
         unsigned frames=(unsigned)((total-at)>512?512:total-at);
         if(at<body && at+frames>body)frames=(unsigned)(body-at);
-        if(at>=body && !stopped){ts_tapehead_stop();a.mosaic->playing=0;stopped=1;}
+        if(at>=body && !stopped){ts_tapehead_stop();a.mosaic->playing=0;ts_mosaic_live_stop(a.mosaic,0);stopped=1;}
         if(SDL_GetTicks()-last>=100) {
             char cancel=0;
             if(!offline_parent_alive(parent) || (job && offline_read_blob(job,"cancel",&cancel,1))) {

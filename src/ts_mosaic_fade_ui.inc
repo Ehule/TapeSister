@@ -7,6 +7,7 @@ static double mosaic_fade_handle_y(double height,double fade,int part,double sy)
 }
 int ts_ui_mosaic_fade_handle(const TsUiState *ui,const TsMosaicEvent *e,int part,double *x,double *y)
 {
+    if(part==2 && e->live && !e->live_finite)return 0;
     double h=ui->mosaic_hscale>0?ui->mosaic_hscale:1;
     double scale=ui->mosaic_scale>0?ui->mosaic_scale:24;
     if(e->width*h<24 || e->duration*scale<14 || part<1 || part>2)return 0;
