@@ -1,0 +1,50 @@
+name: PR build and regressions
+
+# Keep this baseline unfiltered: new source/header/test files must not need a
+# second edit to a workflow path allowlist before they receive build coverage.
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-build-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  baseline:
+    name: Baseline (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            shell: bash
+          - os: windows-latest
+            shell: 'msys2 {0}'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libsdl2-dev libasound2-dev ninja-build
+      - uses: msys2/setup-msys2@v2
+        if: runner.os == 'Windows'
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-SDL2
+      - name: Configure without release bundles
+        shell: ${{ matrix.shell }}
+        run: cmake -S . -B build-pr -G Ninja -DCMAKE_BUILD_TYPE=Release -DTAPESISTER_BUNDLE_CDP8=OFF -DTAPESISTER_BUNDLE_VIDEO=OFF
+      - name: Build application and run baseline regressions
+        shell: ${{ matrix.shell }}
+        run: cmake -P .github/pr-checks.cmake
