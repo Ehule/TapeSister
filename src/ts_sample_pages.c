@@ -6,6 +6,7 @@
 #include "tapesister/mosaic.h"
 
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -15,6 +16,7 @@
 #include <direct.h>
 #include <windows.h>
 #include <wchar.h>
+#include <io.h>
 #define TS_PAGES_MKDIR(path) _mkdir(path)
 #define TS_PAGES_RMDIR(path) _rmdir(path)
 #else
@@ -24,7 +26,7 @@
 #define TS_PAGES_RMDIR(path) rmdir(path)
 #endif
 
-enum { TS_PROJECT_PATH_MAX = 2048, TS_PROJECT_PAGE_LIMIT = 1024 };
+enum { TS_PROJECT_PATH_MAX = TS_PROJECT_RECOVERY_PATH_MAX, TS_PROJECT_PAGE_LIMIT = 1024 };
 
 static void pages_error(char *error, size_t error_size, const char *message)
 {
@@ -871,6 +873,7 @@ static int validate_saved_instrument(const char *path,
 }
 
 #include "ts_project_files.inc"
+#include "ts_project_recovery.inc"
 
 int ts_sample_pages_save_project(const TsSamplePages *pages,
                                  const TsInstrument *active_sample,
@@ -911,6 +914,12 @@ int ts_sample_pages_save_project(const TsSamplePages *pages,
          !bundle_is_owned(directory, project_name))) {
         pages_error(error, error_size,
                     "TSR project must be saved inside its named project folder");
+        return 0;
+    }
+    TsProjectRecovery recovery;
+    if (!ts_sample_pages_recovery_info(path, &recovery, error, error_size)) return 0;
+    if (recovery.from_transaction) {
+        pages_error(error, error_size, "Recovery folders are protected. Open a copy or Save As elsewhere");
         return 0;
     }
     if (snprintf(staging, sizeof(staging), "%s.tapesister-partial", directory) < 0 ||

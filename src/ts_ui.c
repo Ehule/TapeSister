@@ -3048,10 +3048,10 @@ static void project_overwrite_render(TsFramebuffer *fb,const TsUiState *ui)
     if (slash != NULL) name = slash + 1;
     snprintf(shown_name, sizeof(shown_name), "%.48s", name);
     frame(fb, 146, 122, 348, 132, ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(36, 33, 37)), PAL_MOUSE);
-    text(fb, 166, 137, "OVERWRITE ACTIVE PROJECT?", PAL_NOTE, 1);
+    text(fb, 166, 137, ui->project_save_new_bundle?"SAVE IN NEW PROJECT BUNDLE?":"OVERWRITE ACTIVE PROJECT?", PAL_NOTE, 1);
     text(fb, 166, 158, shown_name, PAL_EFFECT, 1);
-    text(fb, 166, 176, "THIS REPLACES THE CURRENT TSR FILE", PAL_VOLUME, 1);
-    button(fb, 166, 200, 136, "OVERWRITE", 1);
+    text(fb, 166, 176, ui->project_save_new_bundle?"THE ORIGINAL TSR WILL BE KEPT":"THIS REPLACES THE CURRENT TSR FILE", PAL_VOLUME, 1);
+    button(fb, 166, 200, 136, ui->project_save_new_bundle?"SAVE BUNDLE":"OVERWRITE", 1);
     button(fb, 318, 200, 156, "CANCEL", 0);
     text(fb, 166, 238, "ENTER/Y/CTRL+S CONFIRM   ESC/N CANCEL",
          ts_theme_color(active_palette(), render_group, TS_COLOR_DIM, RGB(190, 185, 190)), 1);

@@ -6,6 +6,26 @@
 #undef NDEBUG
 #endif
 #include <stdlib.h>
+#include <string.h>
+#include <SDL.h>
+static int recovery_choices[4],recovery_choice_count,recovery_choice_at;
+static int recovery_save_button;
+static int test_recovery_message(const SDL_MessageBoxData *data,int *button)
+{
+    if(recovery_choice_at>=recovery_choice_count)return -1;
+    if(strcmp(data->title,"TapeSister project recovery"))abort();
+    if(!strstr(data->message,"User-added files may be split") ||
+       !strstr(data->message,"BACKUP LOCATION") || !strstr(data->message,"Originals will not be deleted"))abort();
+    recovery_save_button=0;
+    for(int i=0;i<data->numbuttons;++i)if(data->buttons[i].buttonid==1)recovery_save_button=1;
+    *button=recovery_choices[recovery_choice_at++];return *button==-99?-1:0;
+}
+static int recovery_copy_errors;
+static int test_recovery_error(Uint32 flags,const char *title,const char *message,SDL_Window *window)
+{
+    if(!strcmp(title,"Recovery copy incomplete")){++recovery_copy_errors;return 0;}
+    return SDL_ShowSimpleMessageBox(flags,title,message,window);
+}
 /* Fail the staging allocation, before any destructive action. */
 static int fail_new_allocation;
 static void *test_calloc(size_t n, size_t size)
@@ -16,9 +36,13 @@ static void *test_calloc(size_t n, size_t size)
 #define calloc test_calloc
 #define SDL_MAIN_HANDLED
 #define main tapesister_application_main
+#define SDL_ShowMessageBox test_recovery_message
+#define SDL_ShowSimpleMessageBox test_recovery_error
 #include "../src/main_sdl.c"
 #undef main
 #undef calloc
+#undef SDL_ShowMessageBox
+#undef SDL_ShowSimpleMessageBox
 #include <assert.h>
 
 static AudioState audio;
@@ -107,6 +131,9 @@ static void assert_empty(void)
         for(int i=0;i<2048;++i)assert(isfinite(output[i]) && fabsf(output[i])<1e-7f);
     }
 }
+#include "test_project_recovery_ui.inc"
+#include "test_project_reopen_ui.inc"
+
 int main(int argc,char **argv)
 {
     SDL_SetMainReady();SDL_setenv("SDL_VIDEODRIVER","dummy",1);
@@ -289,6 +316,11 @@ int main(int argc,char **argv)
     assert(!strcmp(previous_text,"preserve older session\n"));remove("new-project-flow/logs/previous-session.saved.jsonl");
     remove(log.path);remove(log.export_path);
 
+    populate();project_reopen_controls(window);
+    assert(project_new(NULL,0,0,&session));assert_empty();
+    populate();project_legacy_reopen_controls();
+    assert(project_new(NULL,0,0,&session));assert_empty();
+
     /* Cancel and join a late decode; its result cannot cross the reset. */
     populate();importer.worker=calloc(1,sizeof(*importer.worker));assert(importer.worker);
     importer.worker->thread=SDL_CreateThread(cancelled_import,"new-project-test",importer.worker);
@@ -310,6 +342,7 @@ int main(int argc,char **argv)
     begin_new_confirmation(&session);assert(ui.exit_confirm_open && ui.exit_choice==2 && !ui.exit_has_unsaved);
     exit_confirmation_activate(&ui);
 
+    recovery_controls();
     assert(ts_tapehead_sync(&pages,&bank,48000,error,sizeof(error)));
     assert(ts_tapehead_export(&pages.tracker,error,sizeof(error)));
     assert(pages.tracker.bpm!=173 && !ts_tapehead_running());

@@ -17,7 +17,8 @@
 /* Exercise the real public saver, injecting filesystem failures only at its
    rename boundary. No production fault switches or alternate save code. */
 enum { FAULT_NONE, FAULT_PREPARE, FAULT_MOVE_SECOND, FAULT_PUBLISH,
-       FAULT_ROLLBACK_ENTRY, FAULT_ROLLBACK_ROOT, FAULT_VALIDATION, FAULT_MOVE_AMBIGUOUS };
+       FAULT_ROLLBACK_ENTRY, FAULT_ROLLBACK_ROOT, FAULT_VALIDATION, FAULT_MOVE_AMBIGUOUS,
+       FAULT_RECOVERY_WRITE };
 static int fault, user_moves;
 #ifndef _WIN32
 static int crash_after_move;
@@ -76,7 +77,15 @@ static int test_rename(const char *from, const char *to)
 }
 #define rename test_rename
 #endif
+static FILE *test_recovery_fopen(const char *path,const char *mode)
+{
+    if(fault==FAULT_RECOVERY_WRITE && strstr(path,".tapesister-recovery-") &&
+       strstr(path,"notes.txt") && !strcmp(mode,"wbx")){errno=ENOSPC;return NULL;}
+    return fopen(path,mode);
+}
+#define fopen test_recovery_fopen
 #include "../src/ts_sample_pages.c"
+#undef fopen
 #ifdef _WIN32
 #undef MoveFileExA
 #else
@@ -288,6 +297,20 @@ static void test_failed_rollback(void)
         contents(notes, "personal notes\n");
         /* Restart-equivalent retry must not erase staging with the only copy. */
         CHECK(!save()); CHECK(strstr(error, "backup")); contents(notes, "personal notes\n");
+        /* Lost in-memory journal: export both sides without choosing one. */
+        TsProjectRecovery info;char workspace[TS_PROJECT_PATH_MAX],copy[TS_PROJECT_PATH_MAX];
+        CHECK(ts_sample_pages_recovery_info(project,&info,error,sizeof(error)) && info.attention);
+        CHECK(info.present==((1u<<TS_PROJECT_RECOVERY_BACKUP)|(1u<<TS_PROJECT_RECOVERY_STAGED)));
+        CHECK(ts_sample_pages_copy_recovery(project,workspace,sizeof(workspace),error,sizeof(error)));
+        CHECK(project_join(copy,sizeof(copy),workspace,"backup/Save Project.tsr") && hash_file(copy)==before);
+        TsSampleProjectLoad *loaded=ts_sample_pages_prepare_project(copy,1,error,sizeof(error));CHECK(loaded!=NULL);ts_sample_pages_dispose_project(loaded);
+        CHECK(project_join(copy,sizeof(copy),workspace,"staged/Save Project.tsr"));
+        loaded=ts_sample_pages_prepare_project(copy,1,error,sizeof(error));CHECK(loaded!=NULL);ts_sample_pages_dispose_project(loaded);
+        CHECK(ts_sample_pages_recovery_info(copy,&info,error,sizeof(error)) && info.current_marker && info.attention && !info.from_transaction);
+        CHECK(project_join(copy,sizeof(copy),workspace,f==FAULT_ROLLBACK_ENTRY?"staged/notes.txt":"backup/notes.txt"));
+        contents(copy,"personal notes\n");contents(notes,"personal notes\n");
+        CHECK(hash_file("Save Project.tapesister-backup/Save Project.tsr")==before);
+        CHECK(remove_tree(workspace));
         if (f == FAULT_ROLLBACK_ENTRY) {
             /* Manual recovery may relocate the backup before the next retry.
                The protected stage must still never be auto-cleaned. */
@@ -297,6 +320,105 @@ static void test_failed_rollback(void)
         }
         clean_case();
     }
+}
+
+static void test_recovery_copy(void)
+{
+    TsProjectRecovery info;char first[TS_PROJECT_PATH_MAX],second[TS_PROJECT_PATH_MAX],copy[TS_PROJECT_PATH_MAX];
+    new_case();extras();uint64_t before=hash_file(project);
+    CHECK(ts_sample_pages_recovery_info(project,&info,error,sizeof(error)) && !info.attention);
+    mkdir_checked("Save Project.tapesister-partial");CHECK(write_partial_marker("Save Project.tapesister-partial",0,error,sizeof(error)));
+    CHECK(ts_sample_pages_recovery_info(project,&info,error,sizeof(error)) && !info.attention);
+    CHECK(remove_tree("Save Project.tapesister-partial"));
+    /* A regular file at the backup path is an obstruction, not disposable. */
+    put("Save Project.tapesister-backup","user backup obstruction\n");
+    CHECK(ts_sample_pages_recovery_info(project,&info,error,sizeof(error)) && info.attention);
+    mkdir_checked("Save Project.tapesister-recovery-001");put("Save Project.tapesister-recovery-001/keep.txt","existing workspace\n");
+    CHECK(ts_sample_pages_copy_recovery(project,first,sizeof(first),error,sizeof(error)));
+#ifndef _WIN32
+    struct stat privacy;CHECK(!stat(first,&privacy) && !(privacy.st_mode&0077));
+#endif
+    CHECK(project_join(copy,sizeof(copy),first,"RECOVERY_INCOMPLETE") && project_entry_kind(copy)==PROJECT_ENTRY_MISSING);
+    CHECK(strcmp(first,"Save Project.tapesister-recovery-001"));
+    CHECK(project_join(copy,sizeof(copy),first,"current/notes.txt"));contents(copy,"personal notes\n");
+    CHECK(project_join(copy,sizeof(copy),first,"backup"));contents(copy,"user backup obstruction\n");
+    CHECK(project_join(copy,sizeof(copy),first,"current/recordings/empty") && project_entry_kind(copy)==PROJECT_ENTRY_DIRECTORY);
+    CHECK(project_join(copy,sizeof(copy),first,"current/Save Project.tsr") && hash_file(copy)==before);
+    TsSampleProjectLoad *loaded=ts_sample_pages_prepare_project(copy,1,error,sizeof(error));CHECK(loaded!=NULL);ts_sample_pages_dispose_project(loaded);
+    CHECK(ts_sample_pages_copy_recovery(project,second,sizeof(second),error,sizeof(error)) && strcmp(first,second));
+    contents("Save Project.tapesister-recovery-001/keep.txt","existing workspace\n");
+    CHECK(hash_file(project)==before);check_extras();contents("Save Project.tapesister-backup","user backup obstruction\n");
+    CHECK(remove_tree(first));CHECK(remove_tree(second));CHECK(remove_tree("Save Project.tapesister-recovery-001"));
+    fault=FAULT_RECOVERY_WRITE;
+    CHECK(!ts_sample_pages_copy_recovery(project,first,sizeof(first),error,sizeof(error)));fault=FAULT_NONE;
+    CHECK(first[0] && project_entry_kind(first)==PROJECT_ENTRY_DIRECTORY);
+    CHECK(project_join(copy,sizeof(copy),first,"RECOVERY.txt") && project_entry_kind(copy)==PROJECT_ENTRY_FILE);
+    CHECK(project_join(copy,sizeof(copy),first,"RECOVERY_INCOMPLETE") && project_entry_kind(copy)==PROJECT_ENTRY_FILE);
+    CHECK(hash_file(project)==before);check_extras();contents("Save Project.tapesister-backup","user backup obstruction\n");
+    CHECK(remove_tree(first));
+    char tiny[8];CHECK(!ts_sample_pages_copy_recovery(project,tiny,sizeof(tiny),error,sizeof(error)) && !tiny[0]);
+    clean_case();
+    /* A backup-only project can be inspected after restart, and cannot be
+       overwritten in place through the public save API. */
+    new_case();extras();before=hash_file(project);
+    CHECK(!rename("Save Project","Save Project.tapesister-backup"));
+    const char *backup="Save Project.tapesister-backup/Save Project.tsr";
+    CHECK(ts_sample_pages_recovery_info(backup,&info,error,sizeof(error)) && info.attention && info.from_transaction);
+    CHECK(!strcmp(info.project,project));
+    CHECK(!ts_sample_pages_save_project(&pages,&active,&record,NULL,backup,error,sizeof(error)) && strstr(error,"protected"));
+    CHECK(hash_file(backup)==before);
+    mkdir_checked("Save Project.tapesister-backup/nested");
+    const char *nested="Save Project.tapesister-backup/nested/nested.tsr";
+    CHECK(ts_sample_pages_recovery_info(nested,&info,error,sizeof(error)) && info.from_transaction && !strcmp(info.project,project));
+    CHECK(!ts_sample_pages_save_project(&pages,&active,&record,NULL,nested,error,sizeof(error)) && strstr(error,"protected"));
+    CHECK(ts_sample_pages_copy_recovery(backup,first,sizeof(first),error,sizeof(error)));
+    CHECK(project_join(copy,sizeof(copy),first,"backup/Save Project.tsr") && hash_file(copy)==before);
+    loaded=ts_sample_pages_prepare_project(copy,1,error,sizeof(error));CHECK(loaded!=NULL);ts_sample_pages_dispose_project(loaded);
+    CHECK(remove_tree(first));clean_case();
+    new_case();
+    const char *legitimate="Named.tapesister-backup/Named.tapesister-backup.tsr";
+    CHECK(ts_sample_pages_save_project(&pages,&active,&record,NULL,legitimate,error,sizeof(error)));
+    CHECK(ts_sample_pages_recovery_info(legitimate,&info,error,sizeof(error)) && !info.attention && !info.from_transaction);
+    CHECK(remove_tree("Named.tapesister-backup"));clean_case();
+    /* Published current plus a retained backup: retain two distinct complete
+       projects rather than guessing which one the user wants. */
+    new_case();extras();CHECK(!rename("Save Project","Save Project.tapesister-backup"));
+    mkdir_checked("seed");CHECK(ts_sample_pages_append(&pages,error,sizeof(error)));
+    CHECK(ts_sample_pages_save_project(&pages,&active,&record,NULL,"seed/Save Project/Save Project.tsr",error,sizeof(error)));
+    CHECK(!rename("seed/Save Project","Save Project"));CHECK(TS_PAGES_RMDIR("seed")==0);
+    put("Save Project/current-only.txt","current extra\n");
+    uint64_t backup_manifest=hash_file("Save Project.tapesister-backup/manifest.txt");
+    CHECK(ts_sample_pages_copy_recovery(project,first,sizeof(first),error,sizeof(error)));
+    CHECK(project_join(copy,sizeof(copy),first,"current/Save Project.tsr"));
+    loaded=ts_sample_pages_prepare_project(copy,1,error,sizeof(error));CHECK(loaded && ts_sample_pages_prepared_pages(loaded)->page_count==2);ts_sample_pages_dispose_project(loaded);
+    CHECK(project_join(copy,sizeof(copy),first,"backup/Save Project.tsr"));
+    loaded=ts_sample_pages_prepare_project(copy,1,error,sizeof(error));CHECK(loaded && ts_sample_pages_prepared_pages(loaded)->page_count==1);ts_sample_pages_dispose_project(loaded);
+    CHECK(ts_sample_pages_save_project(&pages,&active,&record,NULL,copy,error,sizeof(error)));
+    CHECK(hash_file("Save Project.tapesister-backup/manifest.txt")==backup_manifest);
+    CHECK(project_join(copy,sizeof(copy),first,"backup/notes.txt"));contents(copy,"personal notes\n");
+    CHECK(project_join(copy,sizeof(copy),first,"current/current-only.txt"));contents(copy,"current extra\n");
+    CHECK(remove_tree(first));clean_case();
+#ifndef _WIN32
+    new_case();put("Save Project.tapesister-backup","keep obstruction\n");
+    CHECK(!symlink("../outside","Save Project/link"));
+    CHECK(!ts_sample_pages_copy_recovery(project,first,sizeof(first),error,sizeof(error)) && strstr(error,"link"));
+    CHECK(project_entry_kind("Save Project/link")==PROJECT_ENTRY_OTHER);CHECK(remove_tree(first));clean_case();
+#endif
+    new_case();put("Save Project.tapesister-backup","keep obstruction\n");
+    char deep[TS_PROJECT_PATH_MAX]="Save Project";
+    for(int i=0;i<65;++i){strcat(deep,"/d");mkdir_checked(deep);}
+    CHECK(!ts_sample_pages_copy_recovery(project,first,sizeof(first),error,sizeof(error)) && strstr(error,"64 levels"));
+    CHECK(project_entry_kind(deep)==PROJECT_ENTRY_DIRECTORY);CHECK(remove_tree(first));clean_case();
+#ifdef _WIN32
+    new_case();extras();put("Save Project.tapesister-backup","keep obstruction\n");
+    HANDLE locked=CreateFileA("Save Project/notes.txt",GENERIC_READ|GENERIC_WRITE,0,NULL,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,NULL);
+    CHECK(locked!=INVALID_HANDLE_VALUE);
+    if(locked!=INVALID_HANDLE_VALUE) {
+        CHECK(!ts_sample_pages_copy_recovery(project,first,sizeof(first),error,sizeof(error)) && strstr(error,"Cannot read"));
+        CHECK(CloseHandle(locked));contents("Save Project/notes.txt","personal notes\n");CHECK(remove_tree(first));
+    }
+    clean_case();
+#endif
 }
 
 static void test_ambiguous_move(void)
@@ -407,6 +529,15 @@ static void test_legacy_migration(void)
     CHECK(loaded->events[0].source->eq_dry.data != NULL);
     CHECK(loaded->events[1].source->pattern && loaded->events[1].source->pattern->asset_count == 1);
     ts_mosaic_free(loaded);
+    put("Save Project.tapesister-backup","keep obstruction\n");
+    char workspace[TS_PROJECT_PATH_MAX],copied[TS_PROJECT_PATH_MAX];
+    CHECK(ts_sample_pages_copy_recovery(project,workspace,sizeof(workspace),error,sizeof(error)));
+    CHECK(project_join(copied,sizeof(copied),workspace,"current/Save Project.tsr"));
+    TsSampleProjectLoad *prepared=ts_sample_pages_prepare_project(copied,1,error,sizeof(error));CHECK(prepared!=NULL);
+    const TsMosaic *recovered=prepared?prepared->mosaic:NULL;
+    CHECK(recovered && recovered->events[0].source && recovered->events[0].source->eq_dry.data);
+    CHECK(recovered && recovered->events[1].source && recovered->events[1].source->pattern && recovered->events[1].source->pattern->asset_count==1);
+    ts_sample_pages_dispose_project(prepared);CHECK(remove_tree(workspace));CHECK(!remove("Save Project.tapesister-backup"));
     strip_inventory();
     TsMosaic *old = pages.mosaic;
     pages.mosaic = NULL;
@@ -474,6 +605,13 @@ static void test_windows_unicode_entry(void)
     if (!supported) { CHECK(strstr(error, "code page")); CHECK(hash_file(project) == before); }
     file = _wfopen(path, L"rb"); CHECK(file != NULL);
     if (file) { CHECK(fgets(text, sizeof(text), file) != NULL); CHECK(!strcmp(text, "Unicode user material\n")); fclose(file); }
+    put("Save Project.tapesister-backup","keep obstruction\n");
+    char workspace[TS_PROJECT_PATH_MAX],copy[TS_PROJECT_PATH_MAX];
+    CHECK(ts_sample_pages_copy_recovery(project,workspace,sizeof(workspace),error,sizeof(error))==supported);
+    if(supported){snprintf(copy,sizeof(copy),"%s/current/%s",workspace,name);contents(copy,"Unicode user material\n");}
+    else CHECK(strstr(error,"code page"));
+    file=_wfopen(path,L"rb");CHECK(file!=NULL);if(file)fclose(file);
+    CHECK(remove_tree(workspace));CHECK(!remove("Save Project.tapesister-backup"));
     no_recovery(); CHECK(DeleteFileW(path));
     CHECK(save()); clean_case();
 #endif
@@ -498,7 +636,7 @@ int main(void)
     snprintf(work, sizeof(work), "project-save-test-XXXXXX");
     CHECK(mkdtemp(work) != NULL); CHECK(chdir(work) == 0);
 #endif
-    test_preservation(); test_conflicts(); test_modified_and_stale_files();
+    test_preservation(); test_conflicts(); test_modified_and_stale_files();test_recovery_copy();
     test_failures(); test_failed_rollback(); test_recovery_guards(); test_links(); test_corrupt_inventory();
     test_legacy_migration(); test_interruption(); test_windows_locked_file(); test_ambiguous_move(); test_windows_unicode_entry();
 #ifdef _WIN32

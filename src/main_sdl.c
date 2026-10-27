@@ -4298,6 +4298,7 @@ static void commit_drone(SDL_AudioDeviceID device, AudioState *audio,
 static void keyboard_sequence_ui(AudioState *audio, TsUiState *ui);
 
 static void matrix_history_clear(void);
+#include "main_sdl_project_view.inc"
 static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
                            TsInstrument *instrument,
                            TsSamplePages *sample_pages,
@@ -4305,7 +4306,7 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
                            int record_bank_active,
                            const char *path)
 {
-    ts_session_log_event("project_load_request","kind=%s",path_is_tsr(path)?"TSR":path_is_module(path)?"tracker module":"sample/preset");
+    ts_session_log_event("project_load_request","kind=%s path=%s",path_is_tsr(path)?"TSR":path_is_module(path)?"tracker module":"sample/preset",path);
     if(path_is_module(path))return load_module_instrument(device,audio,ui,instrument,sample_pages,record_bank_active,path);
     char error[160];
     TsSisterProjectState sister_state;
@@ -4456,11 +4457,14 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
         ok = ts_instrument_select_bank(instrument, destination, error, sizeof(error)) &&
              ts_instrument_load_wav(instrument, path, error, sizeof(error));
     }
+    if(ok && recipe && sister_state.view.present && ui->mosaic)
+        ts_mosaic_seek(ui->mosaic,sister_state.view.time);
     unlock_edit(device, audio, ui, instrument);
     ts_sample_pages_dispose_project(prepared_project);
     ts_keyboard_sequence_source_free(previous_sequence_source);
     if (ok) ts_ui_reset_parent_view(ui, instrument->parent.frames);
     if (ok && recipe) {
+        project_view_apply(ui,instrument,&sister_state.view);
         /* The next tracker refresh must import this host-owned definition,
            including when loading over a running or visible workspace. */
         matrix_history_clear();ts_tapehead_project_replaced();
@@ -4480,6 +4484,7 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
         project_mark_saved(ui,sample_pages,instrument,record_bank,&audio->sister,&audio->keyboard_sequence);
     }
     ts_session_log_event("project_load_result","success=%d kind=%s",ok,recipe?"TSR":"sample");
+    if(ok && recipe)project_log_state("project_opened",path,ui);
     return ok;
 }
 
@@ -8742,9 +8747,14 @@ static void begin_active_project_save(TsUiState *ui)
         browser_open(ui, TS_BROWSER_SAVE_RECIPE);
         return;
     }
+    char bundled[TS_BROWSER_PATH_MAX],error[160];
+    if(!ts_sample_pages_bundle_project_path(ui->project_path,bundled,sizeof(bundled),error,sizeof(error))) {
+        snprintf(ui->status,sizeof(ui->status),"SAVE FAILED: %.135s",error);return;
+    }
+    ui->project_save_new_bundle=strcmp(ui->project_path,bundled)!=0;
     ui->project_overwrite_confirm_open = 1;
-    snprintf(ui->status, sizeof(ui->status),
-             "CONFIRM OVERWRITE OF ACTIVE TSR PROJECT");
+    snprintf(ui->status,sizeof(ui->status),ui->project_save_new_bundle?
+        "SAVE IN NAMED BUNDLE; ORIGINAL TSR KEPT: %.104s":"CONFIRM OVERWRITE OF ACTIVE TSR PROJECT",bundled);
 }
 
 #include "main_sdl_browser_audition.inc"
@@ -8905,6 +8915,8 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
 
 static int offline_start(SDL_AudioDeviceID,AudioState *,TsUiState *,TsInstrument *,TsSamplePages *,TsInstrument *,int,const char *,int);
 
+#include "main_sdl_recovery.inc"
+
 static void run_pending_file_operation(SDL_AudioDeviceID device,
                                        AudioState *audio, TsUiState *ui,
                                        TsInstrument *instrument,
@@ -8919,6 +8931,7 @@ static void run_pending_file_operation(SDL_AudioDeviceID device,
     char error[160];
     int ok = 0;
     if (pending == NULL || !pending->active) return;
+    if (project_recovery_guard(ui,pending)) return;
     (void)pending_selection_load;
     if (pending->mode == TS_BROWSER_LOAD_WAV &&
         (pending->force_raw || (!path_is_tsr(pending->path) && !path_is_tsp(pending->path) && !path_is_module(pending->path)))) {
@@ -8943,14 +8956,19 @@ static void run_pending_file_operation(SDL_AudioDeviceID device,
         const TsInstrument *record_bank = record_bank_active ?
                                           instrument : parked_record;
         TsSisterProjectState sister_state;
+        double saved_mosaic_time;
         if(device)SDL_LockAudioDevice(device);
         ts_sister_project_state_capture(
             &sister_state, &audio->sister,
             ts_sample_pages_count(sample_pages), NULL);
         sister_state.keyboard_sequence = ts_keyboard_sequence_export(&audio->keyboard_sequence);
+        saved_mosaic_time=ui->mosaic?ui->mosaic->time:0;
         if(device)SDL_UnlockAudioDevice(device);
+        project_view_capture(&sister_state.view,ui);
+        sister_state.view.time=saved_mosaic_time;
         ok=ts_tapehead_export(&sample_pages->tracker,error,sizeof(error));
         if(ok) {
+            project_log_state("project_save_request",pending->path,ui);
             ts_session_log_project_save_begin();
             ok = ts_sample_pages_save_project(sample_pages, active_sample, record_bank,
                                              &sister_state, pending->path,
@@ -8964,6 +8982,7 @@ static void run_pending_file_operation(SDL_AudioDeviceID device,
         }
         snprintf(ui->status, sizeof(ui->status), ok ? "SAVED TSR PROJECT %.104s" :
                  "SAVE FAILED: %.135s", ok ? pending->path : error);
+        if (!ok && project_recovery_guard(ui,pending)) return;
     } else if(pending->mode==TS_BROWSER_RENDER_WAV) {
         ok=offline_start(device,audio,ui,instrument,sample_pages,parked_record,record_bank_active,pending->path,browser->overwrite_armed);
     } else if(pending->mode==TS_BROWSER_SAVE_XM) {
@@ -9009,7 +9028,16 @@ static void run_pending_file_operation(SDL_AudioDeviceID device,
         if (pending->mode == TS_BROWSER_SAVE_RECIPE) {
             snprintf(ui->project_path, sizeof(ui->project_path), "%s",
                      pending->path);
-            ts_session_log_text("project_saved","TSR save succeeded; session snapshot requested beside project");
+            /* Saving an old flat TSR creates a named bundle. Keep the next
+               Open pointed at the actual saved file rather than the old copy. */
+            char directory[TS_BROWSER_PATH_MAX];
+            if(parent_directory_of(ui->project_path,directory,sizeof(directory))) {
+                snprintf(browser->directory,sizeof(browser->directory),"%s",directory);
+                browser->mode=TS_BROWSER_LOAD_WAV;
+                if(ts_browser_refresh(browser))for(int i=0;i<browser->entry_count;++i)
+                    if(!strcmp(browser->entries[i].name,path_basename(ui->project_path))) {ts_browser_select(browser,i);break;}
+            }
+            project_log_state("project_saved",ui->project_path,ui);
             TsSessionLogStatus log;ts_session_log_status(&log);
             if(log.state!=TS_SESSION_OFF && !ts_session_log_export_project(ui->project_path,0))
                 snprintf(ui->status,sizeof(ui->status),"PROJECT SAVED; SESSION EXPORT UNAVAILABLE - CHECK F12");

@@ -7,11 +7,24 @@
 
 #include "tapesister/sister_runtime.h"
 #include "tapesister/keyboard_sequence.h"
+#include "tapesister/mosaic.h"
 
 enum {
-    TS_SISTER_PROJECT_STATE_VERSION = 43,
+    TS_SISTER_PROJECT_STATE_VERSION = 44,
     TS_SISTER_PROJECT_PRESET_NAME_MAX = 47
 };
+
+/* Saved editor location, separate from running transport and audio state. */
+enum { TS_PROJECT_VIEW_CANVAS, TS_PROJECT_VIEW_MOSAIC, TS_PROJECT_VIEW_TRACKER };
+typedef struct {
+    int present, workspace, keyboard, ingredients, recipes;
+    size_t parent_first, parent_last;
+    double scroll, xscroll, scale, hscale, time;
+    int follow, pattern_tab, source_page;
+    uint64_t selected, selection[TS_MOSAIC_EVENTS];
+    unsigned selection_count;
+    int tracker_scroll, tracker_expanded, tracker_field;
+} TsProjectView;
 
 typedef struct {
     uint8_t source_switches;
@@ -36,6 +49,7 @@ typedef struct {
     uint64_t parameter_locks_high;
     char selected_preset[TS_SISTER_PROJECT_PRESET_NAME_MAX + 1];
     int selected_preset_modified;
+    TsProjectView view;
 } TsSisterProjectState;
 
 void ts_sister_project_state_init(TsSisterProjectState *state,

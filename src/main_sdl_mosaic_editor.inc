@@ -154,15 +154,18 @@ static void mosaic_pattern_sources(TsUiState *ui,const TsInstrument *instrument,
 static void mosaic_sources_refresh(TsUiState *ui,const TsInstrument *instrument,MosaicController *c)
 {
     if(c->ui_epoch!=ui->mosaic->epoch) {
-        mosaic_drag_end(ui,c);mosaic_select_only(ui,0);
+        int restored=ui->mosaic_loaded_view_epoch==ui->mosaic->epoch;
+        mosaic_drag_end(ui,c);if(!restored)mosaic_select_only(ui,0);
         c->pattern_ready=c->pattern_count=0;memset(c->pattern_notice,0,sizeof(c->pattern_notice));c->pattern_owner=0;ui->mosaic_pattern_choice=0;memset(c->pattern_sources,0,sizeof(c->pattern_sources));
         c->picked_count=c->scatter_pool_count=c->zoom_saved=0;
         ui->mosaic_source_pick_count=ui->mosaic_scatter_open=ui->mosaic_spacing_confirm=ui->mosaic_align_open=0;
         if(ui->mosaic_loop_open || ui->mosaic_marker_open)SDL_StopTextInput();
         ui->mosaic_marker_open=ui->mosaic_marker_selected=ui->mosaic_views_open=0;
         ui->mosaic_loop_open=0;
-        ui->mosaic_source_selected=-1;ui->mosaic_source_page=0;
-        memset(c->bank_data,0,sizeof(c->bank_data));c->ui_epoch=ui->mosaic->epoch;c->browser_initialized=0;
+        ui->mosaic_source_selected=-1;if(!restored)ui->mosaic_source_page=0;
+        memset(c->bank_data,0,sizeof(c->bank_data));c->ui_epoch=ui->mosaic->epoch;
+        c->browser_initialized=restored;c->main_bank=c->pages?(int)ts_sample_pages_active(c->pages):0;
+        ui->mosaic_loaded_view_epoch=0;
     }
     mosaic_pattern_cache(ui,instrument,c);
     if(ui->mosaic_pattern_tab){mosaic_pattern_sources(ui,instrument,c);return;}
