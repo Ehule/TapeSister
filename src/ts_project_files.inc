@@ -119,6 +119,23 @@ static int project_file_hash(const char *path, uint64_t *hash)
     return ok;
 }
 
+#ifdef _WIN32
+/* FindFirstFileA can substitute an unrepresentable filename with the name of
+   another entry. Enumerate in UTF-16 and refuse any lossy conversion before
+   inspecting or moving the old bundle through the existing narrow APIs. */
+static int project_windows_name(const wchar_t *wide, char *name, size_t size)
+{
+    UINT codepage = GetACP();
+    BOOL substituted = FALSE;
+    DWORD flags = codepage == CP_UTF8 ? WC_ERR_INVALID_CHARS : WC_NO_BEST_FIT_CHARS;
+    if (!WideCharToMultiByte(codepage, flags, wide, -1, name, (int)size, NULL,
+                            codepage == CP_UTF8 ? NULL : &substituted) || substituted) return 0;
+    wchar_t check[TS_PROJECT_PATH_MAX];
+    return MultiByteToWideChar(codepage, MB_ERR_INVALID_CHARS, name, -1,
+                              check, TS_PROJECT_PATH_MAX) && !wcscmp(wide, check);
+}
+#endif
+
 typedef int (*ProjectVisitor)(const char *, void *, char *, size_t);
 
 /* Enumerate without following links or reparse points. Enumeration failures
@@ -134,18 +151,27 @@ static int project_children(const char *base, const char *relative,
 #ifdef _WIN32
     char pattern[TS_PROJECT_PATH_MAX];
     if (!project_join(pattern, sizeof(pattern), directory, "*")) return 0;
-    WIN32_FIND_DATAA entry;
-    HANDLE search = FindFirstFileA(pattern, &entry);
+    wchar_t wide_pattern[TS_PROJECT_PATH_MAX];
+    if (!MultiByteToWideChar(GetACP(), MB_ERR_INVALID_CHARS, pattern, -1,
+                            wide_pattern, TS_PROJECT_PATH_MAX))
+        return project_file_error(error, size, "Cannot address Windows project folder", relative);
+    WIN32_FIND_DATAW entry;
+    HANDLE search = FindFirstFileW(wide_pattern, &entry);
     if (search == INVALID_HANDLE_VALUE) {
         if (GetLastError() == ERROR_FILE_NOT_FOUND) return 1;
         return project_file_error(error, size, "Cannot inspect project folder", relative);
     }
     do {
-        if (!strcmp(entry.cFileName, ".") || !strcmp(entry.cFileName, "..")) continue;
+        if (!wcscmp(entry.cFileName, L".") || !wcscmp(entry.cFileName, L"..")) continue;
+        char name[TS_PROJECT_PATH_MAX];
+        if (!project_windows_name(entry.cFileName, name, sizeof(name))) {
+            project_file_error(error, size, "Windows code page cannot safely address a filename in folder", relative);
+            ok = 0; break;
+        }
         int n = snprintf(child, sizeof(child), "%s%s%s", relative,
-                         relative[0] ? "/" : "", entry.cFileName);
+                         relative[0] ? "/" : "", name);
         if (n < 0 || (size_t)n >= sizeof(child) || !visit(child, context, error, size)) { ok = 0; break; }
-    } while (FindNextFileA(search, &entry));
+    } while (FindNextFileW(search, &entry));
     if (ok && GetLastError() != ERROR_NO_MORE_FILES) ok = 0;
     FindClose(search);
 #else

@@ -14,6 +14,7 @@
 #ifdef _WIN32
 #include <direct.h>
 #include <windows.h>
+#include <wchar.h>
 #define TS_PAGES_MKDIR(path) _mkdir(path)
 #define TS_PAGES_RMDIR(path) _rmdir(path)
 #else

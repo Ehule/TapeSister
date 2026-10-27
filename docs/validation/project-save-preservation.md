@@ -100,6 +100,8 @@ at filesystem rename boundaries. It covers:
 - POSIX open-log continuation and read-only-file permissions; a Windows file opened
   without delete sharing must fail safely and save successfully after it is closed.
   Windows symlink checks report a skip if the runner lacks creation privilege.
+  A UTF-16-created Cyrillic filename must either survive exactly or stop Save before
+  replacement when the active Windows code page cannot represent it.
 
 Existing Sample page tests retain multi-page/REC BANK/Sister-state round trips,
 stale generated file removal, moved bundles, legacy layouts, and unrelated-folder
@@ -123,7 +125,9 @@ stack reserve.
   authenticity checks. Keep regular independent backups.
 - This retains the existing rename-based durability model, not a new guarantee
   against disk failure or power loss. No new filesystem fsync protocol is added.
-- Existing Windows ANSI filesystem APIs and path-length limits remain. Inspection,
-  naming, sharing or permission failures stop Save rather than authorizing deletion.
+- Existing Windows ANSI filesystem APIs and path-length limits remain. Preservation
+  enumerates UTF-16 names and rejects lossy code-page conversions, rather than mistaking
+  one user filename for another. Inspection, naming, sharing or permission failures
+  stop Save rather than authorizing deletion.
 - Saving again with an older TapeSister build restores that build's destructive
   folder-replacement behavior, despite its ability to read the extended manifest.

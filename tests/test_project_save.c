@@ -460,6 +460,25 @@ static void test_windows_locked_file(void)
 #endif
 }
 
+static void test_windows_unicode_entry(void)
+{
+#ifdef _WIN32
+    new_case();
+    const wchar_t *path = L"Save Project/\x0416\x0438\x0432\x0430.wav";
+    FILE *file = _wfopen(path, L"wb"); CHECK(file != NULL);
+    if (file) { fputs("Unicode user material\n", file); CHECK(!fclose(file)); }
+    char name[128], text[128] = {0};
+    int supported = project_windows_name(L"\x0416\x0438\x0432\x0430.wav", name, sizeof(name));
+    uint64_t before = hash_file(project);
+    CHECK(save() == supported);
+    if (!supported) { CHECK(strstr(error, "code page")); CHECK(hash_file(project) == before); }
+    file = _wfopen(path, L"rb"); CHECK(file != NULL);
+    if (file) { CHECK(fgets(text, sizeof(text), file) != NULL); CHECK(!strcmp(text, "Unicode user material\n")); fclose(file); }
+    no_recovery(); CHECK(DeleteFileW(path));
+    CHECK(save()); clean_case();
+#endif
+}
+
 static void test_corrupt_inventory(void)
 {
     new_case(); extras();
@@ -481,7 +500,7 @@ int main(void)
 #endif
     test_preservation(); test_conflicts(); test_modified_and_stale_files();
     test_failures(); test_failed_rollback(); test_recovery_guards(); test_links(); test_corrupt_inventory();
-    test_legacy_migration(); test_interruption(); test_windows_locked_file(); test_ambiguous_move();
+    test_legacy_migration(); test_interruption(); test_windows_locked_file(); test_ambiguous_move(); test_windows_unicode_entry();
 #ifdef _WIN32
     CHECK(_chdir("..") == 0);
 #else
