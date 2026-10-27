@@ -110,6 +110,12 @@ on:
     tags:
       - "v*"
 
+# Superseded PR revisions need not finish packaging. Manual and tag runs use
+# unique groups so a PR cannot cancel a requested release build.
+concurrency:
+  group: native-bundles-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   linux:
     runs-on: ubuntu-latest

@@ -1,0 +1,52 @@
+name: PR build and regressions
+
+# Keep this baseline unfiltered: new source/header/test files must not need a
+# second edit to a workflow path allowlist before they receive build coverage.
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-build-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Baseline Linux
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libsdl2-dev libasound2-dev libavformat-dev libavcodec-dev libswscale-dev libavutil-dev ninja-build
+      - name: Configure without release bundles
+        run: cmake -S . -B build-pr -G Ninja -DCMAKE_BUILD_TYPE=Release -DTAPESISTER_BUNDLE_CDP8=OFF -DTAPESISTER_BUNDLE_VIDEO=OFF
+      - name: Build application and run baseline regressions
+        run: cmake -P .github/pr-checks.cmake
+
+  windows:
+    name: Baseline Windows
+    runs-on: windows-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-SDL2
+            mingw-w64-ucrt-x86_64-ffmpeg
+      - name: Configure without release bundles
+        run: cmake -S . -B build-pr -G Ninja -DCMAKE_BUILD_TYPE=Release -DTAPESISTER_BUNDLE_CDP8=OFF -DTAPESISTER_BUNDLE_VIDEO=OFF
+      - name: Build application and run baseline regressions
+        run: cmake -P .github/pr-checks.cmake
