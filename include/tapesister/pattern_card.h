@@ -18,6 +18,9 @@ typedef struct {
 typedef struct TsPatternCard {
     TsSisterTracker score;
     TsPatternId id;
+    uint64_t lineage, acknowledged; /* Last source content explicitly reviewed. */
+    unsigned version; /* Human-readable generation within this project. */
+    unsigned older; /* UI metadata, refreshed on workspace return. */
     int asset_count, root;
     TsPatternAsset *assets;
     /* Exact FT2 cells, including volume-column effects, indexed row/lane. */
@@ -46,6 +49,7 @@ void ts_pattern_engine_frame(void *);
 int ts_pattern_engine_overflow(const void *);
 TsStereoFrame ts_pattern_read(void *,const TsPatternCard *,const void *,uint64_t,double,int,double,int,int);
 struct TsMosaicSource *ts_pattern_source(struct TsMosaic *,const struct TsSamplePages *,const TsInstrument *,TsPatternId,char *,size_t);
+void ts_pattern_link_legacy(struct TsMosaic *,TsSisterTracker *);
 void ts_pattern_free(TsPatternCard *);
 int ts_pattern_prepare(TsPatternCard *);
 int ts_pattern_save(const TsPatternCard *,const char *,int,char *,size_t);

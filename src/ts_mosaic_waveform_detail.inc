@@ -79,7 +79,7 @@ static void mosaic_detail_card(TsUiWaveformDetail *d,const TsUiState *ui,
                                 const TsMosaicEvent *e,int selected,int dim,int ghost)
 {
     if(!e->source)return;
-    double sx=(double)d->width/(TS_MOSAIC_CANVAS_RIGHT-151),sy=(double)d->height/310;
+    double sx=(double)d->width/(TS_MOSAIC_CANVAS_RIGHT-151),sy=(double)d->height/TS_MOSAIC_CANVAS_HEIGHT;
     double horizontal=ui->mosaic_hscale>0?ui->mosaic_hscale:1;
     double scale=ui->mosaic_scale>0?ui->mosaic_scale:24,rate=scale*sy;
     int64_t pan_x=mosaic_detail_pixel(ui->mosaic_xscroll*horizontal*sx),pan_y=mosaic_detail_pixel(ui->mosaic_scroll*rate);
@@ -90,7 +90,7 @@ static void mosaic_detail_card(TsUiWaveformDetail *d,const TsUiState *ui,
     int64_t w=right-x,h=bottom-y,bx=mosaic_detail_pixel(sx),by=mosaic_detail_pixel(sy);
     if(bx<1)bx=1;
     if(by<1)by=1;
-    uint32_t color=mosaic_color(e->source->hash),fill=selected?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(50,46,59)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(32,31,39));
+    uint32_t color=mosaic_color(mosaic_source_color(e->source)),fill=selected?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(50,46,59)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(32,31,39));
     if(dim){color=mosaic_mix_color(color,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(19,20,26)),.70f);fill=ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(23,24,30));}
     if(ghost)color=mosaic_mix_color(color,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(16,18,24)),.55f);
     else mosaic_detail_rect(d,x,y,right,bottom,fill);
@@ -154,6 +154,7 @@ static void mosaic_detail_card(TsUiWaveformDetail *d,const TsUiState *ui,
             if(e->source->pattern)snprintf(notes+used,sizeof(notes)-used,"%s%+dST",n?" ":"",e->notes[n]-60);
             else snprintf(notes+used,sizeof(notes)-used,"%s%s",n?" ":"",ts_midi_note_name(e->notes[n],note,sizeof(note)));
         }
+        mosaic_pattern_label(ui,e,notes,sizeof(notes));
         snprintf(label,sizeof(label),"%.*s",chars,notes);
         mosaic_detail_text(d,tx,y+mosaic_detail_pixel(14*sy),label,dim?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(66,64,75)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DIM, RGB(156,147,165)),sx,sy);
     }
@@ -166,11 +167,11 @@ static void mosaic_detail_card(TsUiWaveformDetail *d,const TsUiState *ui,
 }
 static int mosaic_detail_cards(TsFramebuffer *fb,const TsUiState *ui,int any_solo,double interval)
 {
-    TsUiWaveformDetail *d=detail_region(0,151,66,TS_MOSAIC_CANVAS_RIGHT-151,310);if(!d)return 0;
+    TsUiWaveformDetail *d=detail_region(0,151,66,TS_MOSAIC_CANVAS_RIGHT-151,TS_MOSAIC_CANVAS_HEIGHT);if(!d)return 0;
     /* The whole moving scene shares the native raster. Do not enlarge coarse
        card fragments underneath it; later controls/overlays use the compositor. */
     mosaic_detail_rect(d,0,0,d->width,d->height,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_BACKGROUND, RGB(11,13,16)));
-    double sy=(double)d->height/310,scale=ui->mosaic_scale>0?ui->mosaic_scale:24;
+    double sy=(double)d->height/TS_MOSAIC_CANVAS_HEIGHT,scale=ui->mosaic_scale>0?ui->mosaic_scale:24;
     double rate=scale*sy;int64_t pan=mosaic_detail_pixel(ui->mosaic_scroll*rate);
     int64_t line=mosaic_detail_pixel(sy);if(line<1)line=1;
     int64_t tick=(int64_t)floor(ui->mosaic_scroll/interval);
@@ -204,11 +205,11 @@ static void mosaic_detail_ruler(TsUiWaveformDetail *d,const TsUiState *ui,double
     mosaic_detail_rect(d,left,0,d->width,d->height,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_BACKGROUND, RGB(11,13,16)));
     /* Both surfaces have exactly the same vertical bounds and pixel scale.
        Labels and tick marks use the canvas's world rounding and pan offset. */
-    double sx=(double)(d->width-left)/38,sy=(double)d->height/310;
+    double sx=(double)(d->width-left)/38,sy=(double)d->height/TS_MOSAIC_CANVAS_HEIGHT;
     double rate=(ui->mosaic_scale>0?ui->mosaic_scale:24)*sy;
     int64_t pan=mosaic_detail_pixel(ui->mosaic_scroll*rate),line=mosaic_detail_pixel(sy);
     if(line<1)line=1;
-    TsMosaicRange range=ui->mosaic_loop_drag?ui->mosaic_loop_preview:ui->mosaic?ui->mosaic->loop_range:(TsMosaicRange){0,0};
+    TsMosaicRange range=ui->mosaic_loop_drag?ui->mosaic_loop_preview:ui->mosaic?(ui->mosaic->marker_loop?ts_mosaic_marker_range(ui->mosaic,ui->mosaic->marker_active-1):ui->mosaic->loop_range):(TsMosaicRange){0,0};
     int64_t a=mosaic_detail_pixel(range.start*rate)-pan,b=mosaic_detail_pixel(range.end*rate)-pan;
     if(range.end>range.start)
         mosaic_detail_rect(d,left,a,d->width,b,ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_EDGE,RGB(45,65,66)));
@@ -217,11 +218,12 @@ static void mosaic_detail_ruler(TsUiWaveformDetail *d,const TsUiState *ui,double
         double time=tick*interval;int64_t y=mosaic_detail_pixel(time*rate)-pan;
         if(y>=d->height)break;
         char label[32];mosaic_time_label(label,sizeof(label),time);
-        mosaic_detail_text(d,label_x,y+mosaic_detail_pixel(2*sy),label,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DIM, RGB(133,127,141)),sx,sy);
+        if(mosaic_ruler_label_visible(ui,time))
+            mosaic_detail_text(d,label_x,y+mosaic_detail_pixel(2*sy),label,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DIM, RGB(133,127,141)),sx,sy);
         mosaic_detail_rect(d,tick_x,y,d->width,y+line,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(28,30,35)));
     }
     if(range.end>range.start) {
-        uint32_t ink=ts_theme_color(active_palette(),TS_THEME_MOSAIC,ui->mosaic && ui->mosaic->repeat?TS_COLOR_DATA2:TS_COLOR_DIM,RGB(129,206,200));
+        uint32_t ink=ts_theme_color(active_palette(),TS_THEME_MOSAIC,ui->mosaic && (ui->mosaic->repeat || ui->mosaic->marker_loop)?TS_COLOR_DATA2:TS_COLOR_DIM,RGB(129,206,200));
         if(a>=0 && a<d->height)mosaic_detail_rect(d,left,a-line,d->width,a+2*line,ink);
         if(b>=0 && b<d->height)mosaic_detail_rect(d,left,b-line,d->width,b+2*line,ink);
     }
@@ -230,7 +232,7 @@ static void mosaic_detail_sources(TsFramebuffer *fb,const TsUiState *ui,double i
 {
     /* Extend the existing sidebar surface to cover the time ruler. The event
        surface and its raster dimensions stay untouched. */
-    TsUiWaveformDetail *d=detail_region(1,10,66,141,310);if(!d)return;
+    TsUiWaveformDetail *d=detail_region(1,10,66,141,TS_MOSAIC_CANVAS_HEIGHT);if(!d)return;
     static TsWaveformCache cache[16];
     detail_background(d,fb);
     int source_y=mosaic_detail_screen_y(d,74);
@@ -241,12 +243,13 @@ static void mosaic_detail_sources(TsFramebuffer *fb,const TsUiState *ui,double i
         const TsSample *s=ui->mosaic_sources[n].sample;if(!s || !s->data)continue;
         int x=(i%2)*49,y=(i/2)*34,selected=mosaic_source_selection(ui,n);
         uint32_t fill=selected?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(51,47,59)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(40,36,44));
-        uint32_t color=mosaic_color(ui->mosaic_sources[n].hash);
+        uint32_t color=mosaic_color(ui->mosaic_sources[n].source?mosaic_source_color(ui->mosaic_sources[n].source):ui->mosaic_sources[n].hash);
         int first=(int)((x+4)*sx),last=(int)((x+39)*sx);
         int top=source_y+(int)((y+15)*sy),bottom=source_y+(int)((y+26)*sy);
         int width=last-first,bins=width<TS_WAVEFORM_CACHE_MAX_COLUMNS?width:TS_WAVEFORM_CACHE_MAX_COLUMNS;
         const TsMosaicSource *source=ui->mosaic_sources[n].source;
         if(source && source->pattern){
+            if(mosaic_pattern_changed(ui,source->pattern))continue;
             mosaic_detail_rect(d,first,top,last,bottom,fill);
             const TsPatternCard *p=source->pattern;int rows=p->score.patterns[0]->rows;
             for(int row=0;row<rows;++row)for(int lane=0;lane<p->score.channel_count;++lane){

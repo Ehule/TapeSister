@@ -16,17 +16,49 @@ There is no deck assignment or fixed deck concurrency limit. Playback storage
 is reserved as cards are added, including room for each card's Scatter chord.
 No allocation happens in the sample callback.
 
-Editing the TrackSister source affects subsequent drags. Existing cards, copies,
-and arrangement undo states retain their captured sound. Deleting a pattern,
-replacing an XM module, editing a sample, or changing a sample bank cannot
-invalidate the captured audio. Deleting a card does not delete its source
-pattern. Unreferenced snapshots are reclaimed with ordinary Mosaic sources;
-undo and clipboard pins keep their dependencies alive.
+Double-click a card to edit its **latest TrackSister source**. On returning to
+Mosaic, a changed source offers **Update this**, **Update all**, or **Keep
+existing**. Editing directly in TrackSister instead offers **Selected (N)**
+matching cards. Update all includes older snapshots of the same source pattern,
+not just copies of one particular version. The prompt lists only cards that need
+updating. Each accepted batch is one arrangement Undo step; Undo does not undo
+the source edit.
 
-Double-click a card to reach its original TrackSister pattern editor. Existing
-cards remain snapshots when editing there; drag the edited pattern to place a
-new version. If the original pattern no longer exists, the card continues to
-play and reports that its source editor is unavailable.
+A source tile marked **CHANGED** has placed cards using another version.
+Those cards display **OLD Vn**; current cards show their version and transpose.
+Pattern colors follow source identity rather than note content. Hover a source
+or card to see its captured version and current source version. Press **U** to
+review the selected source/card again, or right-click the lower CHANGED badge of a pattern source tile.
+**Keep existing** records the reviewed content in the project and suppresses
+that notification until the source changes again. Editing only the tracker
+cursor or an unused instrument does not create a new version.
+
+Updates preserve position, length, width, chords/transposition, loop/one-shot,
+gain, fades, pan, mute/solo and routing. Inactive cards use the chosen version
+immediately. Playing loop cards finish their current source cycle, then begin
+the new version at row zero at their own next repeat; changed tempo or length
+applies from that boundary. Playing one-shots keep their current notes/releases
+until the next trigger. **PENDING** marks this temporary state. Seeking,
+restarting or arrangement Undo/Redo starts the chosen version at the requested
+position. Stopping/pause commits a pending version for the next start. Saving
+stores the chosen version, not the transient sounding generation. Reopening is
+stopped and uses that chosen version.
+
+Source lineage is saved with the tracker and each snapshot. Numeric pattern
+IDs alone never link a newly imported module to an old card. Deleting a pattern
+or replacing a module leaves existing cards playable and reports an unavailable
+source when opened. Deleting a card never deletes its source. Duplicating a card
+keeps its lineage; duplicating a tracker pattern creates a different pattern ID.
+Old project formats still load. Pre-lineage snapshots are linked once during
+project loading only when a matching pattern and nonempty stable sample bindings
+can be verified; ambiguous/unbound snapshots remain independent and playable.
+
+Source comparisons/preparation occur on workspace return, outside the audio
+callback. Only placed or visible patterns are prepared. Equal content reuses an
+existing definition; all updated cards share the new definition and PCM while
+keeping private playback clocks/effect state. A sounding old generation remains
+retained until its handoff completes. Unreferenced snapshots are reclaimed with
+ordinary Mosaic sources; undo and clipboard pins retain their dependencies.
 
 ## Timing, repeats, and tails
 

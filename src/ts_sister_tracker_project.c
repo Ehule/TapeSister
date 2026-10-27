@@ -37,11 +37,11 @@ static uint64_t number(TrackerStream *s, uint64_t value, unsigned width)
 static void codec(TrackerStream *s, TsSisterTracker *loaded, const TsSisterTracker *saved)
 {
     const TsSisterTracker *t = s->reading ? loaded : saved;
-    char magic[8] = { 'S','I','S','T','R','K',10,0 };
+    char magic[8] = { 'S','I','S','T','R','K',11,0 };
     char header[8] = {0};
     bytes(s, header, magic, sizeof(header));
     if (s->reading && (memcmp(header, magic, 6) || header[7] ||
-        (header[6]!=1 && header[6]!=2 && header[6]!=3 && header[6]!=4 && header[6]!=5 && header[6]!=6 && header[6]!=7 && header[6]!=8 && header[6]!=9 && header[6]!=10))) { s->failed = 1; return; }
+        (header[6]!=1 && header[6]!=2 && header[6]!=3 && header[6]!=4 && header[6]!=5 && header[6]!=6 && header[6]!=7 && header[6]!=8 && header[6]!=9 && header[6]!=10 && header[6]!=11))) { s->failed = 1; return; }
     unsigned version=s->reading?(unsigned char)header[6]:(unsigned char)magic[6];
     /* Pre-routing scores historically inherited tiles. Preserve that choice. */
     if(s->reading && version<4)for(int i=0;i<TS_TRACKER_LANES;++i)
@@ -51,6 +51,7 @@ static void codec(TrackerStream *s, TsSisterTracker *loaded, const TsSisterTrack
     if (s->reading) (target)->field = value; \
 } while (0)
 #define SONG(field, width) FIELD(t, loaded, field, width)
+    if(version>=11){SONG(source_id,8);}
     SONG(pattern_count, 2); SONG(next_pattern_id, 4); SONG(order_count, 2);
     SONG(restart_order, 2); SONG(bpm, 2); SONG(ticks_per_line, 1); SONG(loop, 1);
     unsigned control = number(s, (unsigned)(t->control_lane + 1), 1);

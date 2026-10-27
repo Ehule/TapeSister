@@ -68,6 +68,7 @@ the EVENTS pages. Shared originals and the original Sample banks remain availabl
 | Move a selected group | Drag any selected event body |
 | Copy an event or selected group | Hold Shift when starting a drag on a tile |
 | Cancel a move / copy drag | Escape |
+| Add a timeline marker at the playhead | Alt+M |
 | Mute / unmute selected events | M |
 | Solo / unsolo selected events | S |
 | Mute / solo every instance sharing the selected sources | Shift+M / Shift+S |
@@ -153,15 +154,62 @@ Fit, page navigation, panning, and recalling a saved view turn FOLLOW off so the
 view stays where you put it; **F** resumes following. A middle press only seeks
 when released without dragging. Escape or loss of window focus cancels the press.
 
-The five numbered buttons beneath Sources store the horizontal and time positions
-and both zoom levels. Click an empty button to save, click a stored one to recall,
-Shift-click to replace, or middle-click to clear. A small underline marks a stored
-view and the matching view is highlighted. Views save with the project; older
-projects open with five empty slots. Capturing or clearing a view marks the project
-modified, but browsing/recalling does not. Saved views are independent of arrangement
-undo/redo and do not store the playback position, selection, or FOLLOW setting.
+### Timeline markers
 
-![Saved view buttons beneath Sources](screenshots/mosaic-performance/navigation.png)
+The bottom row has 16 numbered timeline cues. **Alt+M** stores the exact
+current playhead in the next empty slot, whether playing or stopped. Holding Alt+M
+adds only once. A full row reports that all slots are used and never overwrites.
+Click a stored number to jump immediately, preserving play/pause and the current
+view/FOLLOW setting. An empty number does nothing; **Shift-click** captures or
+replaces that particular slot at the playhead.
+
+Numbered flags mark visible cue positions on the ruler. Click a flag to jump;
+drag it to move the cue without seeking. Release commits one undo step; Escape
+or loss of focus cancels. Shift-drag still belongs to the loop-range selection.
+Overlapping flags can always be addressed individually through the bottom row.
+
+**Right-click** a number or flag to edit its optional name (31 printable ASCII
+characters), exact time in seconds, or delete it. **AT PLAYHEAD** fills the time
+field. Tab switches fields, Ctrl+A clears the field, Enter applies, and Escape
+cancels. Edits, creation, and deletion support arrangement Undo/Redo. Jumps do not
+create undo steps or change the saved project. Markers store absolute seconds;
+card edits and global tape speed changes do not move them. Loop/repeat rules
+continue to apply after a jump. They do not store mute/solo snapshots.
+
+**LOOP**, beside VIEWS, repeats the triggered marker through the next marker in
+chronological order. Slot numbers stay fixed even when cues are moved. Equal-time
+markers share the same following boundary; the last cue uses the arrangement end.
+A cue with no later endpoint has no loop. Enabling LOOP midway through a phrase
+uses the nearest marker at or before the playhead, without seeking. Click another
+number or trigger its MIDI mapping to switch phrases immediately.
+
+Switch LOOP off, or press **L** / the top **REPEAT** button while cue looping, to
+continue from the current position. Playback crosses the next marker normally:
+there is no rewind, restart, voice reset, or restored old repeat range. Cue looping
+and manual-range Repeat are exclusive. A normal seek/Stop clears the active cue;
+editing a manual time range exits cue-loop mode. Loop mode and the active cue are
+live transport state and reset on project load; the marker positions remain saved.
+
+For MIDI, press **Ctrl+Shift+M**, click a numbered slot, and press a MIDI key or CC
+button. Repeat for any of the sixteen slots; LOOP can also learn a button. Leave
+Learn with Ctrl+Shift+M. Mappings use the existing config save and remain active
+from other workspaces. Note releases and zero-velocity note-ons never stop or
+retrigger a cue. An empty mapped slot does nothing. MIDI recall preserves the
+playing/paused state, just like a mouse click. Click a mapped control in Learn to
+remove its mapping. Each source is assigned to one target, as with other MIDI Learn
+controls; there is no default note range that takes over your keyboard.
+
+**VIEWS** opens the original five saved canvas views. Click an empty slot to save,
+click a filled slot to recall, Shift-click to replace, or middle-click to clear.
+Escape or a click outside closes the panel. Views preserve horizontal and time
+scroll positions and both zoom levels; they never seek. Existing saved views
+remain intact and, as before, sit outside arrangement Undo/Redo.
+
+Markers and views save with the project. Mosaic format 14 adds markers; older
+projects open with empty marker slots and retain their views and arrangement.
+Projects saved by this version require a marker-capable build to reopen.
+
+![Timeline marker row at 1280 by 800](screenshots/mosaic-performance/timeline-markers.png)
 
 **Resize selected cards together:** grab the top or bottom edge of any selected
 card. Normal dragging adds or subtracts the same duration from every selected

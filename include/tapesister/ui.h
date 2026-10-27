@@ -564,6 +564,10 @@ typedef struct {
     uint64_t mosaic_selection[TS_MOSAIC_EVENTS];
     uint64_t mosaic_selection_order[TS_MOSAIC_EVENTS], mosaic_selection_serial;
     int mosaic_open, mosaic_playing, mosaic_recording;
+    int mosaic_marker_selected, mosaic_marker_open, mosaic_marker_field;
+    int mosaic_marker_drag, mosaic_views_open;
+    double mosaic_marker_preview;
+    char mosaic_marker_name[32], mosaic_marker_time[32], mosaic_marker_status[80];
     int mosaic_loop_drag, mosaic_loop_open, mosaic_loop_field;
     TsMosaicRange mosaic_loop_preview;
     char mosaic_loop_text[2][32], mosaic_loop_status[80];
@@ -583,6 +587,10 @@ typedef struct {
     int mosaic_record_length_drag, mosaic_record_length_before;
     TsMosaicRecordPreview mosaic_record_preview;
     int mosaic_edit_choice;
+    int mosaic_pattern_choice, mosaic_pattern_all, mosaic_pattern_selected;
+    uint64_t mosaic_pattern_owner;
+    unsigned mosaic_pattern_number, mosaic_pattern_version;
+    uint8_t mosaic_pattern_pending[TS_MOSAIC_EVENTS];
     int mosaic_follow, mosaic_box, mosaic_box_x, mosaic_box_y, mosaic_box_end_x, mosaic_box_end_y;
     int mosaic_ghost_count;
     TsMosaicEvent mosaic_ghosts[TS_MOSAIC_EVENTS];
@@ -883,9 +891,11 @@ const TsTuning *ts_ui_display_tuning(const TsUiState *ui,
 enum {
     TS_MOSAIC_MIX_X = 10, TS_MOSAIC_MIX_STEP = 108, TS_MOSAIC_MIX_W = 100,
     TS_MOSAIC_CANVAS_RIGHT = 565,
-    TS_MOSAIC_SOURCE_PAGE_Y = 342, TS_MOSAIC_VIEW_Y = 362,
+    TS_MOSAIC_SOURCE_PAGE_Y = 342,
+    TS_MOSAIC_CANVAS_BOTTOM = 358, TS_MOSAIC_CANVAS_HEIGHT = 292,
+    TS_MOSAIC_MARKER_Y = 362, TS_MOSAIC_MARKER_X = 118, TS_MOSAIC_MARKER_STEP = 32,
     TS_MOSAIC_ENV_X = 568, TS_MOSAIC_ENV_RIGHT = 630,
-    TS_MOSAIC_ENV_TOP = 86, TS_MOSAIC_ENV_BOTTOM = 355,
+    TS_MOSAIC_ENV_TOP = 86, TS_MOSAIC_ENV_BOTTOM = 335,
     TS_MOSAIC_ENV_PAD = 3,
     TS_MOSAIC_MIX_Y = 380, TS_MOSAIC_SPEED_X = 500, TS_MOSAIC_SPEED_W = 128,
     TS_MOSAIC_LENGTH_LABEL_X = 204, TS_MOSAIC_LENGTH_X = 302, TS_MOSAIC_LENGTH_W = 98,
@@ -895,6 +905,7 @@ enum {
     TS_MOSAIC_ZOOM_OUT_X = 560, TS_MOSAIC_ZOOM_IN_X = 588, TS_MOSAIC_ZOOM_W = 24
 };
 /* Logical card-handle coordinates; false when too small or off the viewport. */
+int ts_ui_mosaic_marker_y(const TsUiState *ui, int index);
 int ts_ui_mosaic_fade_handle(const TsUiState *ui, const TsMosaicEvent *event,
                             int part, double *x, double *y);
 int ts_ui_mosaic_pan_handle(const TsUiState *ui, const TsMosaicEvent *event,

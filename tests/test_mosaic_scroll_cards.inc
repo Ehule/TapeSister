@@ -39,7 +39,7 @@ static void test_mosaic_scroll_cards(void)
             SDL_Texture *textures[2]={0};TsUiWaveformDetail details[2]={0};
             uint32_t *pixels=malloc((size_t)width*height*4),*reference=malloc((size_t)width*height*4);assert(pixels && reference);
             double sx=(double)(TS_MOSAIC_CANVAS_RIGHT*width/640-151*width/640)/(TS_MOSAIC_CANVAS_RIGHT-151);
-            double sy=(double)(376*height/400-66*height/400)/310,rate=view.mosaic_scale*sy;
+            double sy=(double)(TS_MOSAIC_CANVAS_BOTTOM*height/400-66*height/400)/TS_MOSAIC_CANVAS_HEIGHT,rate=view.mosaic_scale*sy;
             unsigned long long changed=0,compared=0,ruler_changed=0,ruler_compared=0;
             /* Forward and backward, with horizontal movement too. Start near
                FOLLOW's activation point in the supplied arrangement. */

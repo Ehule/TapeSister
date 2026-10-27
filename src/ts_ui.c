@@ -729,6 +729,18 @@ static void main_midi_learn_overlay(TsFramebuffer *fb, const TsUiState *ui)
                                     "main.master_output");
     midi_learn_tint(fb, TS_UI_MASTER_OUTPUT_X, TS_UI_MASTER_OUTPUT_Y,
                     TS_UI_MASTER_OUTPUT_W, 22, state);
+    if(ui->mosaic_open) {
+        if(!ts_ui_foreground_panel_open(ui) && !ui->file_busy) {
+            for(int i=0;i<TS_MOSAIC_MARKERS;++i) {
+                snprintf(target,sizeof(target),"mosaic.marker.%02d.trigger",i+1);
+                state=midi_learn_target_state(&ui->config.midi_map,ui->midi_learn_pending,target);
+                midi_learn_tint(fb,TS_MOSAIC_MARKER_X+i*TS_MOSAIC_MARKER_STEP,TS_MOSAIC_MARKER_Y,30,16,state);
+            }
+            state=midi_learn_target_state(&ui->config.midi_map,ui->midi_learn_pending,"mosaic.marker_loop");
+            midi_learn_tint(fb,64,TS_MOSAIC_MARKER_Y,44,16,state);
+        }
+        goto learn_footer;
+    }
     if(ui->tracker_open)goto learn_footer;
     state = midi_learn_target_state(&ui->config.midi_map,
                                     ui->midi_learn_pending,
@@ -3007,7 +3019,7 @@ static void live_input_render(TsFramebuffer *fb, const TsUiState *ui)
 int ts_ui_foreground_panel_open(const TsUiState *ui)
 {
     if (ui == NULL) return 0;
-    return ui->router_open || ui->master_eq_open || ui->mosaic_align_open || ui->mosaic_loop_open || ui->mosaic_scatter_open || ui->mosaic_spacing_confirm || ui->mosaic_edit_choice || ui->portal.open || ui->exit_confirm_open || ui->project_overwrite_confirm_open ||
+    return ui->router_open || ui->master_eq_open || ui->mosaic_marker_open || ui->mosaic_views_open || ui->mosaic_align_open || ui->mosaic_loop_open || ui->mosaic_scatter_open || ui->mosaic_spacing_confirm || ui->mosaic_edit_choice || ui->mosaic_pattern_choice || ui->portal.open || ui->exit_confirm_open || ui->project_overwrite_confirm_open ||
            ui->overdub_confirm_open || ui->fm_open ||
            ui->transform_open || ui->drone_open || ui->import_preview_open ||
            ui->exchange_dialog != TS_UI_EXCHANGE_NONE ||
@@ -4381,6 +4393,18 @@ int ts_ui_midi_target_from_point(const TsUiState *ui, int x, int y,
     target[0] = '\0';
     if(ui->router_open)return router_midi_target(ui,x,y,target,target_size);
     if(ui->master_eq_open)return ts_ui_master_eq_midi_target(ui,x,y,target,target_size);
+    if(ui->mosaic_open) {
+        if(ts_ui_foreground_panel_open(ui) || ui->file_busy)return 0;
+        if(y>=TS_MOSAIC_MARKER_Y && y<TS_MOSAIC_MARKER_Y+16 &&
+           x>=TS_MOSAIC_MARKER_X && x<TS_MOSAIC_MARKER_X+TS_MOSAIC_MARKERS*TS_MOSAIC_MARKER_STEP &&
+           (x-TS_MOSAIC_MARKER_X)%TS_MOSAIC_MARKER_STEP<30)
+            result=snprintf(target,target_size,"mosaic.marker.%02d.trigger",(x-TS_MOSAIC_MARKER_X)/TS_MOSAIC_MARKER_STEP+1);
+        else if(x>=64 && x<108 && y>=TS_MOSAIC_MARKER_Y && y<TS_MOSAIC_MARKER_Y+16)
+            result=snprintf(target,target_size,"mosaic.marker_loop");
+        else if(ts_ui_master_output_contains(x,y))result=snprintf(target,target_size,"main.master_output");
+        else return 0;
+        return result>0 && (size_t)result<target_size;
+    }
     if(ui->tracker_open) {
         if(ui->tracker_expanded || !ts_ui_master_output_contains(x,y))return 0;
         result=snprintf(target,target_size,"main.master_output");

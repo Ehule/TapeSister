@@ -81,6 +81,7 @@ typedef struct {
     TsTrackerPattern *patterns[TS_TRACKER_PATTERNS];
     uint16_t pattern_count;
     TsPatternId next_pattern_id;
+    uint64_t source_id; /* Persistent module lineage; zero in legacy scores. */
     TsPatternId orders[TS_TRACKER_ORDERS];
     uint16_t order_count, restart_order;
     uint16_t bpm;

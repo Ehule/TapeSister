@@ -23,11 +23,11 @@ static void mosaic_native_check(const TsInstrument *doc,const char *shot)
             }
             assert(independent[0]>100 && independent[1]>20);
             int py=66+(int)((ui.mosaic_time-ui.mosaic_scroll)*ui.mosaic_scale);
-            if(py>=66 && py<376)for(int x=147;x<631;++x)
+            if(py>=66 && py<TS_MOSAIC_CANVAS_BOTTOM)for(int x=147;x<631;++x)
                 assert(pixels[(py*3+1)*width+x*3+1]==fb.pixels[py*640+x]);
             for(int y=0;y<height;++y)for(int x=0;x<width;++x) {
                 int lx=x/3,ly=y/3;
-                if(ly<66 || ly>=376 || (lx>=103 && lx<113) || lx>=631)
+                if(ly<66 || ly>=TS_MOSAIC_CANVAS_BOTTOM || (lx>=103 && lx<113) || lx>=631)
                     assert(pixels[(size_t)y*width+x]==fb.pixels[ly*640+lx]);
             }
             if(shot) {

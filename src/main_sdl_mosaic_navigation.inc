@@ -8,7 +8,7 @@ static void mosaic_fit_all(TsUiState *ui,MosaicController *c)
         left=fmin(left,e->x);right=fmax(right,e->x+e->width);++count;
     }
     double width=TS_MOSAIC_CANVAS_RIGHT-151;
-    ui->mosaic_scale=fmin(1200,300/fmax(.25,ts_mosaic_end(ui->mosaic)));
+    ui->mosaic_scale=fmin(1200,(TS_MOSAIC_CANVAS_HEIGHT-10)/fmax(.001,ts_mosaic_end(ui->mosaic)));
     ui->mosaic_hscale=count?fmin(1,(width-24)/fmax(1,right-left)):1;
     /* Fit the occupied span, not the empty distance from the origin. Keep
        the normal left boundary when centering would show negative layout. */
@@ -46,40 +46,12 @@ static int mosaic_navigation_event(const SDL_Event *event,SDL_AudioDeviceID devi
             return 1;
         } else if(event->type==SDL_MOUSEWHEEL)return 1;
     }
-    if(down && event->button.button==SDL_BUTTON_MIDDLE && x>=113 && x<631 && y>=66 && y<376) {
+    if(down && event->button.button==SDL_BUTTON_MIDDLE && x>=113 && x<631 && y>=66 && y<TS_MOSAIC_CANVAS_BOTTOM) {
         if(c->drag || c->mix_drag || c->volume_drag)return 1;
         c->pan_active=1;c->pan_moved=0;c->pan_x=x;c->pan_y=y;
         c->pan_scroll=ui->mosaic_scroll;c->pan_xscroll=ui->mosaic_xscroll;
         c->pan_scale=ui->mosaic_scale>0?ui->mosaic_scale:24;
         c->pan_hscale=ui->mosaic_hscale>0?ui->mosaic_hscale:1;
-        return 1;
-    }
-    if((motion || down) && !c->drag && !c->mix_drag && !c->volume_drag &&
-       x>=10 && x<108 && y>=TS_MOSAIC_VIEW_Y && y<TS_MOSAIC_VIEW_Y+16) {
-        int index=(x-10)/20;if((x-10)%20>=18)return 0;
-        TsMosaicView *v=&ui->mosaic->views[index];
-        if(motion) {
-            snprintf(ui->status,sizeof(ui->status),"VIEW %d / CLICK %s / SHIFT SAVE / MIDDLE CLEAR",index+1,v->stored?"RECALL":"SAVE");return 1;
-        }
-        mosaic_drag_end(ui,c);
-        if(event->button.button==SDL_BUTTON_MIDDLE) {
-            if(device)SDL_LockAudioDevice(device);
-            *v=(TsMosaicView){0};
-            if(device)SDL_UnlockAudioDevice(device);
-            snprintf(ui->status,sizeof(ui->status),"VIEW %d CLEARED",index+1);
-        } else if(event->button.button==SDL_BUTTON_LEFT) {
-            if(!v->stored || (mod&KMOD_SHIFT)) {
-                if(device)SDL_LockAudioDevice(device);
-                *v=(TsMosaicView){1,ui->mosaic_scroll,ui->mosaic_xscroll,ui->mosaic_scale,ui->mosaic_hscale};
-                if(device)SDL_UnlockAudioDevice(device);
-                snprintf(ui->status,sizeof(ui->status),"VIEW %d SAVED / CLICK TO RECALL",index+1);
-            } else {
-                ui->mosaic_scroll=v->scroll;ui->mosaic_xscroll=v->xscroll;
-                ui->mosaic_scale=v->scale;ui->mosaic_hscale=v->hscale;
-                ui->mosaic_follow=0;c->zoom_saved=0;
-                snprintf(ui->status,sizeof(ui->status),"VIEW %d RECALLED / F FOLLOW / H PLAYHEAD",index+1);
-            }
-        }
         return 1;
     }
     if(key && !(mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI))) {
@@ -98,8 +70,8 @@ static int mosaic_navigation_event(const SDL_Event *event,SDL_AudioDeviceID devi
                 if(device)SDL_LockAudioDevice(device);
                 double time=ui->mosaic->time;
                 if(device)SDL_UnlockAudioDevice(device);
-                ui->mosaic_scroll=fmax(0,time-155/ui->mosaic_scale);
-            } else ui->mosaic_scroll=fmax(0,fmin(1000000,ui->mosaic_scroll+(k==SDLK_PAGEUP?-1:1)*280/ui->mosaic_scale));
+                ui->mosaic_scroll=fmax(0,time-(TS_MOSAIC_CANVAS_HEIGHT*.5)/ui->mosaic_scale);
+            } else ui->mosaic_scroll=fmax(0,fmin(1000000,ui->mosaic_scroll+(k==SDLK_PAGEUP?-1:1)*(TS_MOSAIC_CANVAS_HEIGHT-30)/ui->mosaic_scale));
             ui->mosaic_follow=0;c->zoom_saved=0;
             snprintf(ui->status,sizeof(ui->status),"%s / F RESUME FOLLOW",k==SDLK_h?"PLAYHEAD IN VIEW":"VIEW MOVED");
         }

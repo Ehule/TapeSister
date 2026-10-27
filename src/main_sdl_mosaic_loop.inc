@@ -1,3 +1,16 @@
+/* Performance loop mode leaves the saved manual time range intact. */
+static void mosaic_marker_loop_toggle(SDL_AudioDeviceID device,TsUiState *ui)
+{
+    if(!ui->mosaic)return;
+    if(device)SDL_LockAudioDevice(device);
+    ts_mosaic_set_marker_loop(ui->mosaic,!ui->mosaic->marker_loop);
+    if(ui->mosaic->marker_loop && ui->mosaic->marker_active)ui->mosaic_marker_selected=ui->mosaic->marker_active;
+    TsMosaicRange range=ts_mosaic_marker_range(ui->mosaic,ui->mosaic->marker_active-1);
+    if(device)SDL_UnlockAudioDevice(device);
+    if(!ui->mosaic->marker_loop)snprintf(ui->status,sizeof(ui->status),"CUE LOOP OFF / PLAYBACK CONTINUES");
+    else if(range.end>range.start)snprintf(ui->status,sizeof(ui->status),"CUE LOOP %.3F - %.3F S / CLICK LOOP OR L TO RELEASE",range.start,range.end);
+    else snprintf(ui->status,sizeof(ui->status),"CUE LOOP ARMED / TRIGGER A MARKER WITH A LATER ENDPOINT");
+}
 /* Ruler gestures preview locally; only release commits a single undo step. */
 static void mosaic_loop_status(TsUiState *ui,TsMosaicRange range)
 {
@@ -19,6 +32,7 @@ static void mosaic_loop_commit(SDL_AudioDeviceID device,TsUiState *ui,TsMosaicRa
 }
 static void mosaic_loop_toggle(SDL_AudioDeviceID device,TsUiState *ui)
 {
+    if(ui->mosaic->marker_loop){mosaic_marker_loop_toggle(device,ui);return;}
     if(device)SDL_LockAudioDevice(device);
     ts_mosaic_checkpoint(ui->mosaic);ts_mosaic_set_repeat(ui->mosaic,!ui->mosaic->repeat);
     if(device)SDL_UnlockAudioDevice(device);
@@ -79,7 +93,7 @@ static int mosaic_loop_event(const SDL_Event *event,SDL_AudioDeviceID device,
             ui->mosaic_loop_drag=0;snprintf(ui->status,sizeof(ui->status),"TIME RANGE EDIT CANCELLED");return 1;
         }
         if(motion || (up && event->button.button==SDL_BUTTON_LEFT)) {
-            double time=fmax(0,fmin(1000000,ui->mosaic_scroll+(fmax(66,fmin(375,y))-66)/ui->mosaic_scale));
+            double time=fmax(0,fmin(1000000,ui->mosaic_scroll+(fmax(66,fmin((TS_MOSAIC_CANVAS_BOTTOM-1),y))-66)/ui->mosaic_scale));
             if(ui->mosaic_loop_drag==1)ui->mosaic_loop_preview=(TsMosaicRange){fmin(time,c->loop_anchor),fmax(time,c->loop_anchor)};
             else if(ui->mosaic_loop_drag==2)ui->mosaic_loop_preview.start=fmin(time,ui->mosaic_loop_preview.end-.001);
             else ui->mosaic_loop_preview.end=fmax(time,ui->mosaic_loop_preview.start+.001);
@@ -102,7 +116,7 @@ static int mosaic_loop_event(const SDL_Event *event,SDL_AudioDeviceID device,
         } else mosaic_loop_toggle(device,ui);
         return 1;
     }
-    int ruler=x>=113 && x<151 && y>=66 && y<376;
+    int ruler=x>=113 && x<151 && y>=66 && y<TS_MOSAIC_CANVAS_BOTTOM;
     if(!ruler || c->drag || c->pan_active || c->mix_drag || c->volume_drag)return 0;
     TsMosaicRange range=ui->mosaic->loop_range;
     double time=ui->mosaic_scroll+(y-66)/ui->mosaic_scale;

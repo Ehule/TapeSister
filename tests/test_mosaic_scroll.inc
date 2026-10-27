@@ -12,8 +12,8 @@ static void test_mosaic_scroll_waveforms(void)
         TsSample sample;ts_sample_init(&sample);sample.sample_rate=7200;
         sample.channels=1;sample.frames=144000;sample.data=calloc(sample.frames,sizeof(float));assert(sample.data);
         int width=sizes[pass][0],height=sizes[pass][1];
-        int native_height=376*height/400-66*height/400;
-        double rate=24.0*native_height/310;
+        int native_height=TS_MOSAIC_CANVAS_BOTTOM*height/400-66*height/400;
+        double rate=24.0*native_height/TS_MOSAIC_CANVAS_HEIGHT;
         /* A sparse transient makes width-morphing visible. A scroll must keep
            the same raster profile after accounting for whole-pixel movement. */
         sample.data[(size_t)(121.5*sample.sample_rate/rate)]=1;sample.data[2141]=.8f;
@@ -52,12 +52,12 @@ static void test_mosaic_scroll_waveforms(void)
         event->source=constant;event->first=0;event->last=sample.frames;event->looping=1;event->start=0;
         for(int edge=0;edge<2;++edge) {
             view.mosaic_scroll=edge?0:2.0/24;
-            event->duration=edge?(381.0-66)/24:20;
+            event->duration=edge?(TS_MOSAIC_CANVAS_BOTTOM+5.-66)/24:20;
             ts_ui_waveform_details_begin(detail,width,height);ts_ui_render(&fb,&view,&doc);
             assert(ts_ui_waveform_detail_finish(&detail[0],&fb));
-            int y=edge?370:70,x=221;
+            int y=edge?TS_MOSAIC_CANVAS_BOTTOM-6:70,x=221;
             TsUiWaveformDetail *d=&detail[0];
-            int px=(int)((x-151+.5)*d->width/(TS_MOSAIC_CANVAS_RIGHT-151)),py=(int)((y-66+.5)*d->height/310);
+            int px=(int)((x-151+.5)*d->width/(TS_MOSAIC_CANVAS_RIGHT-151)),py=(int)((y-66+.5)*d->height/TS_MOSAIC_CANVAS_HEIGHT);
             assert(d->pixels[(size_t)py*d->width+px]==0xff201f27u);
             /* With native detail disabled the coarse fallback still draws. */
             ts_ui_waveform_detail_begin(NULL);ts_ui_render(&fb,&view,&doc);

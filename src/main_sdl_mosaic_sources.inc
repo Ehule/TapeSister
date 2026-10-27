@@ -82,7 +82,7 @@ static void mosaic_pick_add(TsUiState *ui,MosaicController *c)
 static int mosaic_source_preview(TsUiState *ui,MosaicController *c,int x,int y)
 {
     ui->mosaic_ghost_count=0;
-    if(x<151 || x>=TS_MOSAIC_CANVAS_RIGHT || y<66 || y>=376)return 0;
+    if(x<151 || x>=TS_MOSAIC_CANVAS_RIGHT || y<66 || y>=TS_MOSAIC_CANVAS_BOTTOM)return 0;
     double start=ui->mosaic_scroll+(y-66)/ui->mosaic_scale;
     double left=ui->mosaic_xscroll+(x-151)/(ui->mosaic_hscale>0?ui->mosaic_hscale:1);
     int count=c->source_group?c->picked_count:1;
@@ -119,6 +119,9 @@ static int mosaic_sources_event(const SDL_Event *event,SDL_AudioDeviceID device,
         int n=ui->mosaic_source_offset+((y-74)/34)*2+(x-10)/49;
         if(n>=ui->mosaic_source_count || !ui->mosaic_sources[n].sample)return 1;
         mosaic_drag_end(ui,c);mosaic_picks_clear(ui,c);ui->mosaic_source_selected=n;
+        if(event->button.button==SDL_BUTTON_RIGHT && ui->mosaic_sources[n].source && ui->mosaic_sources[n].source->pattern && (y-74)%34>=16){
+            mosaic_pattern_notices(ui,instrument,c,2);return 1;
+        }
         if(event->button.button==SDL_BUTTON_LEFT)mosaic_source_open(device,audio,ui,instrument,c,transform,n);
         else {
             uint64_t primary=ui->mosaic_selected;TsMosaicSource *source=ui->mosaic_sources[n].source;

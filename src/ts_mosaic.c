@@ -111,6 +111,7 @@ void ts_mosaic_collect(TsMosaic *m)
     /* Mark references once, instead of rescanning the entire arrangement and
        undo history separately for every immutable source. */
     for(TsMosaicSource *s=m->sources;s;s=s->next)s->retained=s->pins!=0;
+    for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(m->pattern_retired[i])m->pattern_retired[i]->retained=1;
     /* The UI owns this reference until it acknowledges an ended preview.
        The callback only retires audition_id, never a pointer collect reads. */
     if(m->audition_source.source)m->audition_source.source->retained=1;
@@ -139,6 +140,7 @@ void ts_mosaic_checkpoint(TsMosaic *m)
     m->history_loop_range[at]=m->loop_range;
     m->history_auto_space[at]=m->auto_space;
     m->history_speed[at]=m->speed;
+    memcpy(m->history_markers[at],m->markers,sizeof(m->markers));
     m->history_repeat[at]=m->repeat;
     memcpy(m->history_volume[at],m->volume,sizeof(m->volume));
     memcpy(m->history[at],m->events,sizeof(m->events));
@@ -154,6 +156,9 @@ int ts_mosaic_undo(TsMosaic *m,int redo)
         TsMosaicEvent e=m->events[i];m->events[i]=m->history[at][i];m->history[at][i]=e;
     }
     double speed=m->speed;ts_mosaic_set_speed(m,m->history_speed[at]);m->history_speed[at]=speed;
+    for(int i=0;i<TS_MOSAIC_MARKERS;++i) {
+        TsMosaicMarker marker=m->markers[i];m->markers[i]=m->history_markers[at][i];m->history_markers[at][i]=marker;
+    }
     for(int i=0;i<TS_MOSAIC_ENVELOPE_POINTS;++i) {
         float value=m->volume[i];m->volume[i]=m->history_volume[at][i];m->history_volume[at][i]=value;
     }
@@ -239,9 +244,40 @@ double ts_mosaic_end(const TsMosaic *m)
 }
 void ts_mosaic_seek(TsMosaic *m,double time)
 {
-    if(m){m->schedule.valid=0;m->route_discontinuity=1;m->time=isfinite(time)?fmax(0,time):0;mosaic_reset_voices(m);
+    if(m){m->marker_active=0;m->schedule.valid=0;m->route_discontinuity=1;m->time=isfinite(time)?fmax(0,time):0;mosaic_reset_voices(m);
         m->transition_from=m->last_output;m->transition_total=m->transition_remaining=(unsigned)(m->rate>0?m->rate/500:0);
         double end=ts_mosaic_end(m);m->volume_current=ts_mosaic_volume_at(m,end>0?m->time/end:0);}
+}
+static TsMosaicRange mosaic_marker_range_at(const TsMosaic *m,int index,double end)
+{
+    if(!m || index<0 || index>=TS_MOSAIC_MARKERS || !m->markers[index].stored)return (TsMosaicRange){0,0};
+    double start=m->markers[index].time,next=INFINITY;
+    for(int i=0;i<TS_MOSAIC_MARKERS;++i)if(m->markers[i].stored && m->markers[i].time>start)
+        next=fmin(next,m->markers[i].time);
+    if(!isfinite(next))next=end;
+    return next>start?(TsMosaicRange){start,next}:(TsMosaicRange){0,0};
+}
+TsMosaicRange ts_mosaic_marker_range(const TsMosaic *m,int index)
+{return mosaic_marker_range_at(m,index,ts_mosaic_end(m));}
+int ts_mosaic_trigger_marker(TsMosaic *m,int index)
+{
+    if(!m || index<0 || index>=TS_MOSAIC_MARKERS || !m->markers[index].stored)return 0;
+    ts_mosaic_seek(m,m->markers[index].time);m->marker_active=index+1;return 1;
+}
+void ts_mosaic_set_marker_loop(TsMosaic *m,int enabled)
+{
+    if(!m)return;
+    /* Switching off never seeks, resets voices, changes the envelope or restores
+       an old range. The current phrase simply runs through its next boundary. */
+    m->marker_loop=enabled!=0;m->repeat=0;
+    if(enabled) {
+        double latest=-1;m->marker_active=0;
+        for(int i=0;i<TS_MOSAIC_MARKERS;++i)if(m->markers[i].stored &&
+            m->markers[i].time<=m->time && m->markers[i].time>latest) {
+            latest=m->markers[i].time;m->marker_active=i+1;
+        }
+    }
+    m->schedule.valid=0;
 }
 void ts_mosaic_set_speed(TsMosaic *m,double speed)
 {
@@ -302,10 +338,32 @@ static double voice_position(const TsMosaicEvent *e,const TsMosaicVoice *v,doubl
     *direction=phase<span?1:-1;
     return first+(phase<span?phase:2*span-phase);
 }
+void ts_mosaic_pattern_retire(TsMosaic *m)
+{
+    for(int i=0;i<TS_MOSAIC_EVENTS;++i){
+        TsMosaicVoice *v=&m->voices[i];const TsMosaicEvent *e=&m->events[i];
+        if(!m->playing && m->pattern_retired[i])v->active=0;
+        if(!m->playing || !v->active || v->id!=e->id || v->revision!=e->revision || v->pattern_source==e->source)
+            m->pattern_retired[i]=NULL;
+    }
+}
+void ts_mosaic_update_pattern(TsMosaic *m,TsMosaicEvent *e,TsMosaicSource *source)
+{
+    if(!e || !e->id || !source || !source->pattern || !e->source->pattern || e->source==source)return;
+    if(m->audition_id==e->id && !m->audition_source.source){m->audition_source=*e;}
+    int i=(int)(e-m->events);TsMosaicVoice *v=&m->voices[i];
+    if(m->playing && v->active && v->id==e->id && v->revision==e->revision && v->pattern_source){
+        m->pattern_retired[i]=v->pattern_source;
+        double cycle=v->pattern_source->pattern->duration;
+        v->pattern_switch=v->pattern_origin+(floor(fmax(0,m->time-e->start-v->pattern_origin)/cycle)+1)*cycle;
+    }else{v->active=0;m->pattern_retired[i]=NULL;}
+    e->source=source;++m->revision;
+}
 static void voice_begin(TsMosaicVoice *v,const TsMosaicEvent *e,double elapsed,int rate)
 {
     static uint64_t generation;
     memset(v,0,sizeof(*v));v->generation=++generation;v->active=1;v->id=e->id;v->revision=e->revision;v->start=e->start;
+    v->pattern_source=e->source->pattern?e->source:NULL;
     v->attack_frames=ts_audition_attack_frames(rate,2);v->release_frames=rate*.002;
     v->audible_ramp=1.0f/(rate*.005f);v->mix_ramp=2.0f/(rate*.005f);
     event_balance(e,&v->mix_left,&v->mix_right);
@@ -328,12 +386,12 @@ int ts_mosaic_set_loop_range(TsMosaic *m,double start,double end)
 {
     if(!m || !isfinite(start) || !isfinite(end) || start<0 || end>1000000 ||
        !((start==0 && end==0) || end>=start+.001))return 0;
-    m->loop_range=(TsMosaicRange){start,end};++m->revision;return 1;
+    m->marker_loop=0;m->loop_range=(TsMosaicRange){start,end};++m->revision;return 1;
 }
 void ts_mosaic_set_repeat(TsMosaic *m,int repeat)
 {
     if(!m)return;
-    m->repeat=repeat!=0;
+    m->marker_loop=0;m->repeat=repeat!=0;
     if(m->repeat)m->volume[TS_MOSAIC_ENVELOPE_POINTS-1]=m->volume[0];
     ++m->revision;
 }
@@ -405,6 +463,9 @@ static TsStereoFrame mosaic_event_read(void *pattern_engine,const TsMosaicEvent 
         voice_begin(v,e,fmax(0,time-e->start),rate);
         v->audible_gain=audible?1.0f:0.0f;
     }
+    if(e->source->pattern && v->pattern_source!=e->source && e->looping && time-e->start+1e-9>=v->pattern_switch){
+        v->pattern_source=e->source;v->pattern_origin=v->pattern_switch;
+    }
     if(v->control_serial!=serial) {
         event_balance(e,&v->target_left,&v->target_right);
         v->base_mode=ts_loop_base_mode(e->mode);v->starts_at_sample=ts_loop_starts_at_sample(e->mode);
@@ -437,7 +498,7 @@ static TsStereoFrame mosaic_event_read(void *pattern_engine,const TsMosaicEvent 
     TsStereoFrame card={0,0};
     for(int n=0;n<e->note_count;++n) {
         if(e->source->pattern){
-            TsStereoFrame f=ts_pattern_read(pattern_engine,e->source->pattern,v,v->generation,time-e->start,rate,speed,e->notes[n],e->looping);
+            TsStereoFrame f=ts_pattern_read(pattern_engine,v->pattern_source->pattern,v,v->generation,fmax(0,time-e->start-v->pattern_origin),rate,speed,e->notes[n],e->looping);
             card.l+=f.l*gain*v->mix_left;card.r+=f.r*gain*v->mix_right;continue;
         }
         TsStereoFrame f;
@@ -491,16 +552,20 @@ static TsStereoFrame mosaic_read(TsMosaic *m,int rate,TsSourceRouteMix *routes)
     double speed=m->speed_current;
     if(!m->schedule.valid || m->schedule.revision!=m->revision || m->time!=m->schedule.expected_time)mosaic_schedule_prepare(m);
     double end=m->schedule.end;int any_solo=m->schedule.any_solo;
-    double loop_start=m->loop_range.start,loop_end=m->loop_range.end;
-    int range_repeat=m->repeat && loop_end>loop_start;
+    int cue_repeat=m->marker_loop && m->schedule.marker_range.end>m->schedule.marker_range.start;
+    TsMosaicRange range=cue_repeat?m->schedule.marker_range:m->loop_range;
+    double loop_start=range.start,loop_end=range.end;
+    int range_repeat=cue_repeat || (!m->marker_loop && m->repeat && loop_end>loop_start);
     if(range_repeat && (m->time<loop_start || m->time>=loop_end)) {
         /* Preserve fractional overshoot so repeated passages never drift.
            seek reconstructs crossing cards at their elapsed source phase and
            smooths the Mosaic bus plus custom route handoffs. */
+        int marker=m->marker_active;
         ts_mosaic_seek(m,starting || m->time<loop_start?loop_start:
             loop_start+fmod(m->time-loop_start,loop_end-loop_start));
+        if(cue_repeat)m->marker_active=marker;
     } else if(!range_repeat && m->time>=end) {
-        if(m->repeat && end>0)ts_mosaic_seek(m,fmod(m->time,end));
+        if(!m->marker_loop && m->repeat && end>0)ts_mosaic_seek(m,fmod(m->time,end));
         else {m->playing=0;m->route_discontinuity=1;return out;}
     }
     if(!m->schedule.valid)mosaic_schedule_prepare(m);
@@ -627,6 +692,10 @@ uint64_t ts_mosaic_hash(const TsMosaic *m)
         snprintf(value,sizeof(value),"VIEW %d %.17g %.17g %.17g %.17g",i,v->scroll,v->xscroll,v->scale,v->hscale);
         for(const unsigned char *p=(const unsigned char *)value;*p;++p){hash^=*p;hash*=1099511628211ull;}
     }
+    for(int i=0;i<TS_MOSAIC_MARKERS;++i)if(m->markers[i].stored) {
+        char value[96];snprintf(value,sizeof(value),"MARKER %d %.17g %s",i,m->markers[i].time,m->markers[i].name);
+        for(const unsigned char *p=(const unsigned char *)value;*p;++p){hash^=*p;hash*=1099511628211ull;}
+    }
     if(m->loop_range.end>m->loop_range.start) {
         char value[96];snprintf(value,sizeof(value),"LOOP %.17g %.17g",m->loop_range.start,m->loop_range.end);
         for(const unsigned char *p=(const unsigned char *)value;*p;++p){hash^=*p;hash*=1099511628211ull;}
@@ -636,6 +705,22 @@ uint64_t ts_mosaic_hash(const TsMosaic *m)
 
 static int mosaic_layout_valid(double x)
 {return isfinite(x) && x>=0 && x<=TS_MOSAIC_LAYOUT_LIMIT;}
+static int mosaic_marker_valid(const TsMosaicMarker *v)
+{
+    if((v->stored!=0 && v->stored!=1) || !isfinite(v->time) || v->time<0 || v->time>1000000 ||
+       !memchr(v->name,0,sizeof(v->name)))return 0;
+    for(const unsigned char *p=(const unsigned char *)v->name;*p;++p)if(*p<32 || *p>126)return 0;
+    return 1;
+}
+int ts_mosaic_set_marker(TsMosaic *m,int index,const TsMosaicMarker *marker)
+{
+    if(!m || index<0 || index>=TS_MOSAIC_MARKERS || !marker || !mosaic_marker_valid(marker))return 0;
+    TsMosaicMarker value={0};
+    if(marker->stored){value.stored=1;value.time=marker->time;snprintf(value.name,sizeof(value.name),"%s",marker->name);}
+    TsMosaicMarker *old=&m->markers[index];
+    if(old->stored==value.stored && old->time==value.time && !strcmp(old->name,value.name))return 1;
+    ts_mosaic_checkpoint(m);*old=value;return 1;
+}
 int ts_mosaic_save(const TsMosaic *m,const char *dir,char *error,size_t size)
 {
     if(!m)return 1;
@@ -649,15 +734,24 @@ int ts_mosaic_save(const TsMosaic *m,const char *dir,char *error,size_t size)
          m->views[i].hscale<TS_MOSAIC_MIN_HSCALE || m->views[i].hscale>4)) {
         snprintf(error,size,"Invalid Mosaic horizontal saved view %d",i+1);return 0;
     }
+    for(int i=0;i<TS_MOSAIC_MARKERS;++i)if(!mosaic_marker_valid(&m->markers[i])) {
+        snprintf(error,size,"Invalid Mosaic marker %d",i+1);return 0;
+    }
     char path[4096];
     if(snprintf(path,sizeof(path),"%s/mosaic.tsm",dir)>=(int)sizeof(path))return 0;
     FILE *f=fopen(path,"wb");if(!f)goto failed;
-    if(fprintf(f,"TAPESISTER_MOSAIC 13\nSETTINGS %d %.9g %.17g\nSPACING %d\n",m->repeat,m->gain,m->speed,m->auto_space)<0)goto close_failed;
+    if(fprintf(f,"TAPESISTER_MOSAIC 14\nSETTINGS %d %.9g %.17g\nSPACING %d\n",m->repeat,m->gain,m->speed,m->auto_space)<0)goto close_failed;
     for(int i=0;i<TS_MOSAIC_VIEWS;++i) {
         const TsMosaicView *v=&m->views[i];
         if(fprintf(f,"VIEW %d %.17g %.17g %.17g %.17g\n",v->stored,v->scroll,v->xscroll,v->scale,v->hscale)<0)goto close_failed;
     }
     if(fprintf(f,"LOOP %.17g %.17g\n",m->loop_range.start,m->loop_range.end)<0)goto close_failed;
+    for(int i=0;i<TS_MOSAIC_MARKERS;++i) {
+        const TsMosaicMarker *v=&m->markers[i];char name[65];
+        size_t length=strlen(v->name);
+        for(int j=0;j<32;++j)snprintf(name+j*2,3,"%02x",j<(int)length?(unsigned char)v->name[j]:0);
+        if(fprintf(f,"MARKER %d %.17g %s\n",v->stored,v->time,name)<0)goto close_failed;
+    }
     if(fprintf(f,"VOLUME %d\n",TS_MOSAIC_ENVELOPE_POINTS)<0)goto close_failed;
     for(int i=0;i<TS_MOSAIC_ENVELOPE_POINTS;++i)
         if(fprintf(f,"%.9g\n",m->repeat && i==TS_MOSAIC_ENVELOPE_POINTS-1?m->volume[0]:m->volume[i])<0)goto close_failed;
@@ -715,7 +809,7 @@ int ts_mosaic_load(TsMosaic *m,const char *dir,char *error,size_t size)
     if(length>=2 && line[length-2]=='\r' && line[length-1]=='\n') {
         line[length-2]='\n';line[length-1]='\0';
     }
-    int version=!strcmp(line,"TAPESISTER_MOSAIC 13\n")?13:!strcmp(line,"TAPESISTER_MOSAIC 12\n")?12:!strcmp(line,"TAPESISTER_MOSAIC 11\n")?11:!strcmp(line,"TAPESISTER_MOSAIC 10\n")?10:!strcmp(line,"TAPESISTER_MOSAIC 9\n")?9:!strcmp(line,"TAPESISTER_MOSAIC 8\n")?8:!strcmp(line,"TAPESISTER_MOSAIC 7\n")?7:!strcmp(line,"TAPESISTER_MOSAIC 6\n")?6:!strcmp(line,"TAPESISTER_MOSAIC 5\n")?5:!strcmp(line,"TAPESISTER_MOSAIC 4\n")?4:!strcmp(line,"TAPESISTER_MOSAIC 1\n")?1:!strcmp(line,"TAPESISTER_MOSAIC 2\n")?2:!strcmp(line,"TAPESISTER_MOSAIC 3\n")?3:0;
+    int version=!strcmp(line,"TAPESISTER_MOSAIC 14\n")?14:!strcmp(line,"TAPESISTER_MOSAIC 13\n")?13:!strcmp(line,"TAPESISTER_MOSAIC 12\n")?12:!strcmp(line,"TAPESISTER_MOSAIC 11\n")?11:!strcmp(line,"TAPESISTER_MOSAIC 10\n")?10:!strcmp(line,"TAPESISTER_MOSAIC 9\n")?9:!strcmp(line,"TAPESISTER_MOSAIC 8\n")?8:!strcmp(line,"TAPESISTER_MOSAIC 7\n")?7:!strcmp(line,"TAPESISTER_MOSAIC 6\n")?6:!strcmp(line,"TAPESISTER_MOSAIC 5\n")?5:!strcmp(line,"TAPESISTER_MOSAIC 4\n")?4:!strcmp(line,"TAPESISTER_MOSAIC 1\n")?1:!strcmp(line,"TAPESISTER_MOSAIC 2\n")?2:!strcmp(line,"TAPESISTER_MOSAIC 3\n")?3:0;
     if(!version)goto failed;
     char trailing;
     if(!fgets(line,sizeof(line),f))goto failed;
@@ -741,6 +835,23 @@ int ts_mosaic_load(TsMosaic *m,const char *dir,char *error,size_t size)
         double start,end;
         if(!fgets(line,sizeof(line),f) || sscanf(line,"LOOP %lf %lf %c",&start,&end,&trailing)!=2 ||
            !ts_mosaic_set_loop_range(next,start,end))goto failed;
+    }
+    if(version>=14)for(int i=0;i<TS_MOSAIC_MARKERS;++i) {
+        TsMosaicMarker *v=&next->markers[i];char name[65];
+        if(!fgets(line,sizeof(line),f) || sscanf(line,"MARKER %d %lf %64s %c",&v->stored,&v->time,name,&trailing)!=3 || strlen(name)!=64)goto failed;
+        for(int j=0;j<32;++j) {
+            unsigned value=0;
+            for(int k=0;k<2;++k) {
+                unsigned char c=(unsigned char)name[j*2+k];
+                if(c>='0' && c<='9')value=value*16+c-'0';
+                else if(c>='a' && c<='f')value=value*16+c-'a'+10;
+                else if(c>='A' && c<='F')value=value*16+c-'A'+10;
+                else goto failed;
+            }
+            v->name[j]=(char)value;
+        }
+        if(!mosaic_marker_valid(v))goto failed;
+        if(!v->stored)*v=(TsMosaicMarker){0};
     }
     if(version>=4) {
         int points;

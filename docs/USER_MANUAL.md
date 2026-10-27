@@ -820,6 +820,9 @@ visually at the C4 reference speed, while the chord voices follow their own rate
 | Extend duration / change visual width | Drag the top or bottom / right edge |
 | Align starts, ends, or midpoints | Hold Alt during a move or duration resize |
 | Mute / solo the selection | M / S |
+| Add a timeline marker at the playhead | Alt+M |
+| Jump to a marker / capture a numbered slot | Click bottom number / Shift-click |
+| Move / name / delete a marker | Drag ruler flag / right-click flag or number |
 | Copy / paste the primary event at the playhead | Ctrl+C / Ctrl+V |
 | Delete the selection | Delete or Backspace |
 | Undo / redo arrangement changes | Ctrl+Z / Ctrl+Y or Ctrl+Shift+Z |
@@ -840,6 +843,13 @@ the arrangement. Dragging selected cards at the left/right canvas edge scrolls
 with the group, including Shift-drag copies; release stops and Escape cancels the
 single undoable move. Ctrl+S and header SAVE keep Mosaic open behind the save dialog
 and retain its zoom, scroll and selection after saving or cancelling.
+Sixteen numbered transport markers sit above the bottom mix controls. They save with
+the project, preserve the current playing/paused state when recalled, and support
+Undo/Redo. The five saved canvas views remain under **VIEWS**. **LOOP** repeats
+from the triggered cue to the next cue in time (the last cue uses the arrangement
+end). Switching it off continues from the current position without restarting.
+**Ctrl+Shift+M** opens MIDI Learn: click a number or LOOP, then press a MIDI note
+or CC button. Mappings persist in config and work from other workspaces.
 Middle-drag pans freely; a middle-click still seeks on release. Fit, page navigation,
 panning, and recalling a view turn FOLLOW off; press **F** to resume it.
 

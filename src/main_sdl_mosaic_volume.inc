@@ -6,7 +6,7 @@ static int mosaic_volume_action_at(int x,int y)
         if(x>=TS_MOSAIC_ENV_X+23 && x<TS_MOSAIC_ENV_X+38)return TS_MOSAIC_ENV_MATCH_START;
         if(x>=TS_MOSAIC_ENV_RIGHT-15 && x<TS_MOSAIC_ENV_RIGHT)return TS_MOSAIC_ENV_SMOOTH;
     }
-    if(y>=359 && y<375) {
+    if(y>=339 && y<355) {
         if(x>=TS_MOSAIC_ENV_X && x<TS_MOSAIC_ENV_X+15)return TS_MOSAIC_ENV_RAMP;
         if(x>=TS_MOSAIC_ENV_RIGHT-15 && x<TS_MOSAIC_ENV_RIGHT)return TS_MOSAIC_ENV_MATCH_END;
     }
@@ -62,7 +62,7 @@ static int mosaic_volume_event(const SDL_Event *event,SDL_AudioDeviceID device,T
         }
         if(event->type==SDL_KEYDOWN)c->volume_drag=0;
     }
-    int inside=x>=TS_MOSAIC_ENV_X && x<=TS_MOSAIC_ENV_RIGHT && y>=66 && y<376;
+    int inside=x>=TS_MOSAIC_ENV_X && x<=TS_MOSAIC_ENV_RIGHT && y>=66 && y<TS_MOSAIC_CANVAS_BOTTOM;
     if(!inside)return 0;
     int action=mosaic_volume_action_at(x,y);
     int drawing=y>=TS_MOSAIC_ENV_TOP && y<=TS_MOSAIC_ENV_BOTTOM;

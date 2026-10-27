@@ -142,13 +142,16 @@ static void test_score_migration(void)
     FILE *f=fopen("migration3.tst","rb");CHECK(f && !fseek(f,0,SEEK_END));
     long length=ftell(f);CHECK(length>0);rewind(f);
     uint8_t *bytes=malloc((size_t)length);CHECK(bytes && fread(bytes,1,(size_t)length,f)==(size_t)length);fclose(f);
+    /* v11 adds the persistent module lineage before the historical header. */
+    CHECK(original.source_id!=0);memmove(bytes+8,bytes+16,(size_t)length-16);length-=8;
+    original.source_id=0;
     /* v3/v4 retained all 32 lanes, but predate the v5 mix fields. */
-    for(int version=3;version<=9;++version) {
+    for(int version=3;version<=10;++version) {
         f=fopen("legacy-score.tst","wb");CHECK(f);bytes[6]=(uint8_t)version;
         size_t offset=39+TS_TRACKER_ALIASES*8+original.order_count*4;
         CHECK(fwrite(bytes,1,offset,f)==offset);
         for(int lane=0;lane<32;++lane) {
-            int destinations=version>=9?TS_MATRIX_INSTANCE_DESTINATIONS:version>=8?TS_MATRIX_SHARED_DESTINATIONS:TS_MATRIX_LEGACY_DESTINATIONS;
+            int destinations=version>=10?TS_MATRIX_DESTINATIONS:version>=9?TS_MATRIX_INSTANCE_DESTINATIONS:version>=8?TS_MATRIX_SHARED_DESTINATIONS:TS_MATRIX_LEGACY_DESTINATIONS;
             size_t fields=TS_TRACKER_NAME_SIZE+14+(version>=4?5:0)+(version>=5?5:0)+(version>=7?1+2*destinations:0);
             CHECK(fwrite(bytes+offset,1,fields,f)==fields);
             offset+=TS_TRACKER_NAME_SIZE+24+1+2*TS_MATRIX_DESTINATIONS;

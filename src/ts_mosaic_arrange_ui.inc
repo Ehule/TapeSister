@@ -86,7 +86,7 @@ static void mosaic_arrange_overlay(TsFramebuffer *fb,const TsUiState *ui)
         for(int i=0;i<ui->mosaic_ghost_count;++i) {
             const TsMosaicEvent *e=&ui->mosaic_ghosts[i];
             int x=98+(int)(fmax(0,fmin(1,(e->start-first)/span))*416);
-            rect(fb,x,268+(i%3)*6,3,4,mosaic_color(e->source->hash));
+            rect(fb,x,268+(i%3)*6,3,4,mosaic_color(mosaic_source_color(e->source)));
         }
         mosaic_scatter_button(fb,96,302,204,"ROLL POSITIONS",0,!keep);
         mosaic_scatter_button(fb,316,302,204,"ROLL NOTES",0,pitched && (p->order==TS_MOSAIC_PITCH_RANDOM || p->order==TS_MOSAIC_PITCH_SHUFFLED));
@@ -116,7 +116,7 @@ static void mosaic_arrange_overlay(TsFramebuffer *fb,const TsUiState *ui)
         int shown=ui->mosaic_ghost_count<12?ui->mosaic_ghost_count:12;
         for(int i=0;i<shown;++i) {
             const TsMosaicEvent *e=&ui->mosaic_ghosts[i];int w=424/shown-4,x=98+i*(424/shown);
-            rect(fb,x,266,w,24,mosaic_color(e->source->hash));
+            rect(fb,x,266,w,24,mosaic_color(mosaic_source_color(e->source)));
             MosaicFadeSurface surface={fb->pixels,TS_UI_WIDTH,x,266,x+w,290,1,1,24/e->duration};
             mosaic_fade_shape(&surface,e,x,266,x+w,290,accent);
             for(int y=268;y<289;y+=4)rect(fb,x+w/2,y,1,2,panel);

@@ -56,6 +56,7 @@ void ts_midi_map_rearm_pickup(TsMidiMap *map);
 int ts_midi_mapping_should_trigger(const TsMidiMapping *mapping,
                                    int value, int maximum);
 int ts_midi_tile_target_slot(const char *target);
+int ts_midi_mosaic_marker_slot(const char *target);
 int ts_midi_target_is_continuous(const char *target);
 int ts_midi_target_accepts_source(const char *target,
                                   TsMidiSourceKind source_kind);

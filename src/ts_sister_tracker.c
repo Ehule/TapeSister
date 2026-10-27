@@ -94,6 +94,7 @@ int ts_sister_tracker_add_pattern(TsSisterTracker *t, uint16_t rows,
         return fail(error, size, "Invalid pattern length or SisterTracker pattern limit reached");
     p = calloc(1, sizeof(*p));
     if (!p) return fail(error, size, "Out of memory creating SisterTracker pattern");
+    if(!t->source_id)t->source_id=ts_tile_id_new();
     p->id = t->next_pattern_id++;
     p->rows = rows;
     snprintf(p->name, sizeof(p->name), "PATTERN %u", p->id);
@@ -284,6 +285,7 @@ int ts_sister_tracker_validate(const TsSisterTracker *t, char *error, size_t siz
 void ts_sister_tracker_reserve_tile_ids(const TsSisterTracker *t)
 {
     if (!t) return;
+    ts_tile_id_reserve(t->source_id);
     for (int i = 1; i < TS_TRACKER_ALIASES; ++i) ts_tile_id_reserve(t->aliases[i]);
     for(int a=1;a<=128;++a)for(int k=0;k<16;++k)ts_tile_id_reserve(t->instruments[a].tiles[k]);
 }

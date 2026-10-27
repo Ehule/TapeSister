@@ -97,6 +97,7 @@ static void test_workspace_routes(SDL_Window *window)
         assert(!sister.model.visible && (SDL_GetWindowFlags(window)&SDL_WINDOW_SHOWN));
     }
     SDL_SetWindowFullscreen(window,0);
+    SDL_SetWindowSize(window,640,400); /* Dummy SDL can retain the fullscreen display size. */
     sister_window_fullscreen(&sister,0);
     assert(!sister.screen_filling && !(SDL_GetWindowFlags(sister.window)&SDL_WINDOW_BORDERLESS));
     SDL_HideWindow(window);sister_window_show(&sister,&ui.palette);
