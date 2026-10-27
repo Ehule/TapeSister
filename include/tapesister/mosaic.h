@@ -110,6 +110,7 @@ typedef struct {
     int starts_at_sample;
     int route_passthrough;
     uint64_t control_serial;
+    unsigned pattern_player[TS_MOSAIC_NOTES]; /* Runtime-only backend index hints. */
     TsSourceRouteVoice output_route;
 } TsMosaicVoice;
 

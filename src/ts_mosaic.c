@@ -498,7 +498,7 @@ static TsStereoFrame mosaic_event_read(void *pattern_engine,const TsMosaicEvent 
     TsStereoFrame card={0,0};
     for(int n=0;n<e->note_count;++n) {
         if(e->source->pattern){
-            TsStereoFrame f=ts_pattern_read(pattern_engine,v->pattern_source->pattern,v,v->generation,fmax(0,time-e->start-v->pattern_origin),rate,speed,e->notes[n],e->looping);
+            TsStereoFrame f=ts_pattern_read_cached(pattern_engine,v->pattern_source->pattern,v,v->generation,fmax(0,time-e->start-v->pattern_origin),rate,speed,e->notes[n],e->looping,&v->pattern_player[n]);
             card.l+=f.l*gain*v->mix_left;card.r+=f.r*gain*v->mix_right;continue;
         }
         TsStereoFrame f;

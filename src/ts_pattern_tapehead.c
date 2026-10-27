@@ -132,12 +132,22 @@ static int engine_reserve(void *ptr,unsigned n)
 static void engine_free(void *ptr){PatternEngine *e=ptr;free(e->players);free(e);}
 static void engine_frame(void *p){++((PatternEngine*)p)->stamp;((PatternEngine*)p)->overflow=0;}
 static int engine_overflow(const void *p){return ((const PatternEngine*)p)->overflow;}
-static TsStereoFrame engine_read(void *ptr,const TsPatternCard *p,const void *owner,uint64_t generation,double time,int rate,double speed,int note,int looping)
+static TsStereoFrame engine_read_cached(void *ptr,const TsPatternCard *p,const void *owner,uint64_t generation,double time,int rate,double speed,int note,int looping,unsigned *hint)
 {
     (void)speed;PatternEngine *engine=ptr;PatternPlayer *v=NULL,*oldest=engine->players;
     if(!engine->capacity){engine->overflow=1;return (TsStereoFrame){0};}
-    for(unsigned i=0;i<engine->capacity;++i){PatternPlayer *q=&engine->players[i];if(q->owner==owner && q->note==note){v=q;break;}if(q->stamp<oldest->stamp)oldest=q;}
-    if(!v){if(oldest->owner && oldest->stamp+1>=engine->stamp){engine->overflow=1;return (TsStereoFrame){0};}v=oldest;}
+    /* The owning Mosaic voice keeps an index, never a relocatable pointer.
+       Validate both parts of the key: seeks, pitch edits, source replacement,
+       model swaps and player reuse must retain the original scan semantics. */
+    if(hint && *hint && *hint<=engine->capacity){
+        PatternPlayer *q=&engine->players[*hint-1];
+        if(q->owner==owner && q->note==note)v=q;
+    }
+    if(!v){
+        for(unsigned i=0;i<engine->capacity;++i){PatternPlayer *q=&engine->players[i];if(q->owner==owner && q->note==note){v=q;break;}if(q->stamp<oldest->stamp)oldest=q;}
+        if(!v){if(oldest->owner && oldest->stamp+1>=engine->stamp){engine->overflow=1;return (TsStereoFrame){0};}v=oldest;}
+        if(hint)*hint=(unsigned)(v-engine->players)+1;
+    }
     double local=looping?fmod(time,p->duration):time;double target=local*rate;
     if(v->source!=p || v->owner!=owner || v->generation!=generation || v->rate!=rate || v->note!=note || v->looping!=looping || target+1e-5<v->last_target){player_reset(v,p,owner,generation,rate,note,looping);}
     v->stamp=engine->stamp;v->last_target=target;
@@ -147,7 +157,11 @@ static TsStereoFrame engine_read(void *ptr,const TsPatternCard *p,const void *ow
     if(looping){double remain=p->duration-local;if(remain<.002){out.l*=remain/.002;out.r*=remain/.002;}}
     return out;
 }
+static TsStereoFrame engine_read(void *ptr,const TsPatternCard *p,const void *owner,uint64_t generation,double time,int rate,double speed,int note,int looping)
+{
+    return engine_read_cached(ptr,p,owner,generation,time,rate,speed,note,looping,NULL);
+}
 void ts_tapehead_pattern_install(void)
 {
-    const TsPatternBackend b={source_prepare,source_free,engine_create,engine_reserve,engine_free,engine_frame,engine_overflow,engine_read};ts_pattern_backend(&b);
+    const TsPatternBackend b={source_prepare,source_free,engine_create,engine_reserve,engine_free,engine_frame,engine_overflow,engine_read,engine_read_cached};ts_pattern_backend(&b);
 }

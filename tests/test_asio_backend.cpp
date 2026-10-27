@@ -15,7 +15,7 @@ static void lock_deadlines() {
   int try_lock() { ++calls;return error?-1:(calls<=busy?1:0); }
   uint64_t now() { ++clocks;return ticks++; }
   void pause() {}
- } fast,shortEdit,longEdit,failed,zero;
+ } fast,shortEdit,longEdit,failed,zero,wrapped;
  assert(ts_asio_callback_lock(fast,10)==TsAsioLock::acquired);
  assert(fast.calls==1 && fast.clocks==0); /* Uncontended path does not read time. */
  shortEdit.busy=4;
@@ -27,6 +27,9 @@ static void lock_deadlines() {
  failed.error=true;
  assert(ts_asio_callback_lock(failed,10)==TsAsioLock::skipped && failed.calls==1);
  zero.busy=1;assert(ts_asio_callback_lock(zero,0)==TsAsioLock::skipped && zero.calls==1);
+ wrapped.ticks=UINT64_MAX-4;wrapped.busy=1000;
+ assert(ts_asio_callback_lock(wrapped,10)==TsAsioLock::skipped);
+ assert(wrapped.calls==10 && wrapped.clocks==11); /* Unsigned elapsed time survives wrap. */
  assert(ts_asio_lock_budget(1024,44100,1000000000)==500000);
  assert(ts_asio_lock_budget(512,44100,1000000000)==500000);
  assert(ts_asio_lock_budget(128,48000,1000000000)==333333);
@@ -91,7 +94,12 @@ int main() {
  for(int block=0;block<200;++block){RtAudio::instance->tick(output,input);for(unsigned f=0;f<128;++f){assert(output[f*16]==-.5f && output[f*16+1]==.25f && output[f*16+2]==.4f && output[f*16+3]==-.3f);for(int ch=4;ch<16;++ch)assert(output[f*16+ch]==0);}}
  assert(captures==200 && plays==200 && ts_asio_xruns()==0);
  SDL_sem *sem=SDL_CreateSemaphore(0);SDL_Thread *thread=SDL_CreateThread(hold,"hold",sem);SDL_SemWait(sem);
- RtAudio::instance->tick(output,input);assert(ts_asio_xruns()==1);for(float x:output)assert(x==0);SDL_WaitThread(thread,nullptr);SDL_DestroySemaphore(sem);
+ Uint64 lockedBegin=SDL_GetPerformanceCounter();
+ RtAudio::instance->tick(output,input);
+ double lockedUs=1e6*(SDL_GetPerformanceCounter()-lockedBegin)/SDL_GetPerformanceFrequency();
+ assert(ts_asio_xruns()==1);for(float x:output)assert(x==0);SDL_WaitThread(thread,nullptr);SDL_DestroySemaphore(sem);
+ printf("ASIO fixture: forced 50 ms control hold, actual 128/48000 period %.3f us, retry budget %.3f us, callback wall %.3f us, skips %u, driver reports %u\n",
+  1e6*got.samples/got.freq,1e6*ts_asio_lock_budget(got.samples,got.freq,SDL_GetPerformanceFrequency())/SDL_GetPerformanceFrequency(),lockedUs,ts_asio_control_skips(),ts_asio_driver_xruns());
  assert(ts_asio_control_skips()==1 && ts_asio_driver_xruns()==0);
  RtAudio::instance->tick(output,input);assert(plays==201);
  RtAudio::instance->tick(output,input,128,1);
