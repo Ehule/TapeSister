@@ -17,11 +17,15 @@ enum { TS_MATRIX_INPUTS=4, TS_MATRIX_OUTPUTS=8,
        TS_MATRIX_EFFECT_BASE=17, TS_MATRIX_ROWS=TS_MATRIX_EFFECT_BASE+TS_MATRIX_EFFECT_CAPACITY,
        TS_MATRIX_EFFECT_SC_BASE=TS_MATRIX_ROWS,
        TS_MATRIX_PROCESSORS=8+TS_MATRIX_EFFECT_CAPACITY, TS_MATRIX_DELAY=64, TS_MATRIX_NAME=24 };
+enum { TS_MATRIX_HEADROOM_AUTO, TS_MATRIX_HEADROOM_FLOAT, TS_MATRIX_HEADROOM_CLIP };
 typedef struct {
     int enabled, feedback;
     /* Imported serial effects retain their full dry/wet output. Bit MAIN
        retains the ordinary program input ceiling; other nodes stay wet-only. */
     unsigned serial_mask;
+    /* AUTO preserves historical files. Overrides change MAIN headroom only,
+       independently of imported processor laws and source-send plumbing. */
+    int main_headroom;
     /* Explicit full-signal pedalboard mode; independent of legacy imports. */
     int board_insert;
     TsSourceRoute row[TS_MATRIX_ROWS];
@@ -31,6 +35,9 @@ typedef struct {
     char input_name[TS_MATRIX_INPUTS][TS_MATRIX_NAME];
     char output_name[TS_MATRIX_OUTPUTS][TS_MATRIX_NAME];
 } TsMatrixControls;
+static inline int ts_matrix_main_clip(const TsMatrixControls *c)
+{return c && (c->main_headroom==TS_MATRIX_HEADROOM_CLIP ||
+    (c->main_headroom==TS_MATRIX_HEADROOM_AUTO && (c->serial_mask&(1u<<TS_MATRIX_MAIN))));}
 typedef struct {
     TsMatrixControls controls;
     TsSourceRouteVoice voice[TS_MATRIX_ROWS];
@@ -38,7 +45,8 @@ typedef struct {
     unsigned position;
     TsStereoFrame history[TS_MATRIX_ROWS][TS_MATRIX_DELAY];
     float input_peak[TS_MATRIX_DESTINATIONS], output_peak[TS_MATRIX_ROWS], decay;
-    float board_insert_current, mode_follow;
+    float board_insert_current, main_clip_current, mode_follow;
+    unsigned main_clip_remaining;
     float hardware_peak[TS_MATRIX_OUTPUTS]; /* After OUT gain and hardware guard. */
     TsStereoFrame output[TS_MATRIX_OUTPUTS], sidechain, spatial_input;
     float speaker_output[TS_SOURCE_SPEAKERS];
@@ -54,6 +62,9 @@ int ts_matrix_connect(TsMatrixControls *c,int row,int destination,int gain);
 void ts_matrix_cut_feedback(TsMatrixControls *c);
 void ts_matrix_init(TsRoutingMatrix *m);
 int ts_matrix_set(TsRoutingMatrix *m,const TsMatrixControls *c,unsigned rate);
+/* Live edits slew the MAIN compatibility clamp. Activation and changed laws
+   still snap through ts_matrix_set(); project recall also resets the fade. */
+int ts_matrix_set_live(TsRoutingMatrix *m,const TsMatrixControls *c,unsigned rate);
 void ts_matrix_process(TsRoutingMatrix *m,TsSourceRouteMix *sums,
     const TsStereoFrame live[TS_MATRIX_ROWS-TS_MATRIX_NODES],TsMatrixProcess fn,void *context);
 int ts_matrix_write(FILE *f,const TsMatrixControls *c);

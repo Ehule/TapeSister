@@ -35,6 +35,7 @@ on:
       - "src/ts_pattern*"
       - "tests/test_pattern_lookup.c"
       - "tests/benchmark_pattern_audio.c"
+      - "tests/benchmark_program_headroom.c"
       - "src/*tapehead*"
       - "include/tapesister/tapehead_embed.h"
       - "src/*source_route*"

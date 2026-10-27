@@ -106,7 +106,8 @@ static int name_valid(const char *s)
 }
 int ts_matrix_valid(const TsMatrixControls *c)
 {
-    if(!c || c->enabled<0 || c->enabled>1 || c->feedback<0 || c->feedback>1 || c->board_insert<0 || c->board_insert>1)return 0;
+    if(!c || c->enabled<0 || c->enabled>1 || c->feedback<0 || c->feedback>1 || c->board_insert<0 || c->board_insert>1 ||
+       c->main_headroom<TS_MATRIX_HEADROOM_AUTO || c->main_headroom>TS_MATRIX_HEADROOM_CLIP)return 0;
     const unsigned serial=(1u<<TS_MATRIX_MAIN)|(1u<<TS_MATRIX_PRISM)|(1u<<TS_MATRIX_BOARD)|(1u<<TS_MATRIX_FALLOUT);
     if(c->serial_mask&~serial)return 0;
     if(!c->next_effect_id)return 0;
@@ -162,6 +163,10 @@ int ts_matrix_set(TsRoutingMatrix *m,const TsMatrixControls *c,unsigned rate)
     int changed=!m->ready || m->controls.enabled!=c->enabled ||
         memcmp(m->controls.delayed,c->delayed,sizeof(c->delayed));
     if(!m->ready || activating)m->board_insert_current=(float)c->board_insert;
+    if(!m->ready || activating || ts_matrix_main_clip(&m->controls)!=ts_matrix_main_clip(c)) {
+        m->main_clip_current=(float)ts_matrix_main_clip(c);
+        m->main_clip_remaining=0;
+    }
     m->mode_follow=rate?1-expf(-1.f/(rate*.012f)):1;
     for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)if(c->effect[i].id && c->effect[i].id!=m->controls.effect[i].id) {
         int n=TS_MATRIX_EFFECT_BASE+i;memset(m->history[n],0,sizeof(m->history[n]));
@@ -179,6 +184,16 @@ int ts_matrix_set(TsRoutingMatrix *m,const TsMatrixControls *c,unsigned rate)
     }
     if(changed)memset(m->history,0,sizeof(m->history));
     m->decay=rate?expf(-1.f/(rate*.15f)):0;m->ready=1;return 1;
+}
+int ts_matrix_set_live(TsRoutingMatrix *m,const TsMatrixControls *c,unsigned rate)
+{
+    if(!m || !c)return 0;
+    int live=m->ready && m->controls.enabled && c->enabled &&
+        ts_matrix_main_clip(&m->controls)!=ts_matrix_main_clip(c);
+    float previous=m->main_clip_current;
+    if(!ts_matrix_set(m,c,rate))return 0;
+    if(live && rate){m->main_clip_current=previous;m->main_clip_remaining=(unsigned)ceil(rate*.012);}
+    return 1;
 }
 static float peak(TsStereoFrame f){return fmaxf(fabsf(f.l),fabsf(f.r));}
 void ts_matrix_process(TsRoutingMatrix *m,TsSourceRouteMix *sums,
@@ -250,6 +265,7 @@ int ts_matrix_write(FILE *f,const TsMatrixControls *c)
 {
     if(!ts_matrix_valid(c))return 0;
     if(fprintf(f,"Matrix.Enabled=%d\nMatrix.Feedback=%d\nMatrix.SerialMask=%u\nMatrix.BoardInsert=%d\n",c->enabled,c->feedback,c->serial_mask,c->board_insert)<0)return 0;
+    if(c->main_headroom && fprintf(f,"Matrix.MainHeadroom=%d\n",c->main_headroom)<0)return 0;
     if(fprintf(f,"Matrix.NextEffectId=%" PRIu32 "\n",c->next_effect_id)<0)return 0;
     for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)if(c->effect[i].id) {
         const TsMatrixEffectControls *v=&c->effect[i];const TsCompressorControls *k=&v->compressor;
@@ -301,6 +317,9 @@ int ts_matrix_read(TsMatrixControls *c,const char *key,const char *v)
         const unsigned serial=(1u<<TS_MATRIX_MAIN)|(1u<<TS_MATRIX_PRISM)|(1u<<TS_MATRIX_BOARD)|(1u<<TS_MATRIX_FALLOUT);
         if(!integer(&v,&n) || *v || n<0 || ((unsigned)n&~serial))return -1;
         next.serial_mask=(unsigned)n;
+    } else if(!strcmp(key,"MainHeadroom")) {
+        if(!integer(&v,&n) || *v || n<TS_MATRIX_HEADROOM_AUTO || n>TS_MATRIX_HEADROOM_CLIP)return -1;
+        next.main_headroom=n;
     } else if(!strcmp(key,"BoardInsert")) {
         if(!integer(&v,&n) || *v || n<0 || n>1)return -1;
         next.board_insert=n;

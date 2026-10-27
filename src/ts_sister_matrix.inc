@@ -38,11 +38,20 @@ int ts_sister_runtime_matrix_import(const TsSisterRuntime *r,
 static TsStereoFrame runtime_matrix_node(void *context,int node,TsStereoFrame input)
 {
     RouterFrameContext *c=context;TsSisterRuntime *r=c->runtime;
-    if(node<TS_MATRIX_NODES && (r->matrix.controls.serial_mask&(1u<<node))) {
-        if(node==TS_MATRIX_MAIN) {
-            float ceiling=fmaxf(0,c->matrix_program_gain);
-            return (TsStereoFrame){fmaxf(-ceiling,fminf(ceiling,input.l)),fmaxf(-ceiling,fminf(ceiling,input.r))};
+    if(node==TS_MATRIX_MAIN) {
+        float target=(float)ts_matrix_main_clip(&r->matrix.controls);
+        float *mix=&r->matrix.main_clip_current;
+        if(r->matrix.main_clip_remaining) {
+            *mix+=(target-*mix)/r->matrix.main_clip_remaining;
+            if(!--r->matrix.main_clip_remaining)*mix=target;
         }
+        if(*mix==0)return input;
+        float ceiling=fmaxf(0,c->matrix_program_gain);
+        TsStereoFrame clipped={fmaxf(-ceiling,fminf(ceiling,input.l)),fmaxf(-ceiling,fminf(ceiling,input.r))};
+        if(*mix==1)return clipped;
+        return (TsStereoFrame){input.l+(clipped.l-input.l)* *mix,input.r+(clipped.r-input.r)* *mix};
+    }
+    if(node<TS_MATRIX_NODES && (r->matrix.controls.serial_mask&(1u<<node))) {
         int stage=node==TS_MATRIX_PRISM?TS_ROUTER_PRISM:node==TS_MATRIX_BOARD?TS_ROUTER_PEDALBOARD:TS_ROUTER_FALLOUT;
         /* Same processor, history, dry/wet law and return trim as before the
            import. Graph connections now own its position. */
@@ -56,7 +65,6 @@ static TsStereoFrame runtime_matrix_node(void *context,int node,TsStereoFrame in
         ts_profile_end(TS_PROF_MATRIX_FX,p);return out;
     }
     switch(node) {
-    case TS_MATRIX_MAIN:return input;
     case TS_MATRIX_SISTER: {
         if(!r->enabled || r->callback_failed)return (TsStereoFrame){0,0};
         TsStereoFrame out=runtime_router_stage(c,TS_ROUTER_SISTER,input);

@@ -120,6 +120,39 @@ explicit ways to build a different patch; neither is a preservation operation.
 The original routing is captured before your first Matrix edit. Original/Edited
 compares it during this session; Restore replaces the edited version with it.
 
+## Main Mix early clipping and headroom
+
+Select the **MAIN MIX** row in F9. Its footer shows **EARLY CLIP** with separate
+**ON** and **OFF** buttons; the highlighted button is the current choice.
+
+- **ON** retains the legacy program ceiling before downstream effects. It can
+  flatten loud sums even when the OUT fader is low.
+- **OFF** lets floating-point peaks pass through Main Mix to later effects,
+  attenuation and limiting. Final output safety remains active.
+
+Existing projects keep their saved sound. A normal Matrix graph starts with
+early clipping OFF. **Use Matrix** imports an eligible legacy chain with early
+clipping ON, preserving its original ceiling. The buttons require an active
+Matrix; an unsupported legacy chain is not silently rewired to enable them.
+The choice affects only paths through Main Mix. Routes directly to another
+processor, a physical output or speakers do not pass through this control.
+Sister's tape/head processing can still saturate independently.
+
+For a direct A/B of one saved project, loop the same passage, select Main Mix,
+and alternate ON/OFF without changing levels, effects or routes. The live
+change fades over 12 ms; listen after that transition. Ctrl+Z/Redo also work.
+If the project already shows OFF, its Main Mix is already preserving headroom;
+this is not evidence that it previously clipped. Keep your normal listening
+level conservative: removing distortion can raise peaks into later processors.
+
+Save the project to retain the chosen mode. Older files infer their historical
+mode automatically; older TapeSister builds ignore the optional new override
+and use their historical mode again. F12's Active setup reports the effective
+Main Mix headroom mode, not a measured clipping count. Internal legacy capture
+taps are unchanged; this control does not promise unclipped audio at every tap.
+See the [controlled callback investigation](validation/program-bus-headroom.md)
+for measurements, routing details and limitations.
+
 ## Selection, undo and A/B
 
 Ctrl-click row labels to select separate sources; Shift-click selects a range.

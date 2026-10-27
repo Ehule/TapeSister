@@ -56,7 +56,7 @@ static int mx_apply(const MatrixSnapshot *s,SDL_AudioDeviceID device,AudioState 
         } else {TsMosaicEvent *e=ts_mosaic_find(w->mosaic,v.row.tile);if(e)e->output_route=v.route;}
     }
     ts_matrix_effects_commit(&audio->sister.matrix_effects,&controls,(unsigned)audio->output_rate,&plan);
-    ts_matrix_set(&audio->sister.matrix,&controls,(unsigned)audio->output_rate);
+    ts_matrix_set_live(&audio->sister.matrix,&controls,(unsigned)audio->output_rate);
     ts_compressor_set(&audio->sister.compressor,&s->compressor);
     w->compressor=ui->config.compressor=s->compressor;
     ts_sister_runtime_set_router(&audio->sister,&s->router);

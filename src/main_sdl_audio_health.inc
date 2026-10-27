@@ -218,7 +218,9 @@ static void ts_audio_health_setup_report(char *text, size_t size, Uint32 now)
         int board_insert=s->matrix.board_insert || (s->matrix.serial_mask&(1u<<TS_MATRIX_BOARD));
         snprintf(text+used,size-used,
             "  Unified routing matrix: ON; legacy order, source switches and external Insert assignments above are inactive. Processor power and Pedalboard master remain active.\n"
+            "  Matrix MAIN MIX headroom: %s (only signals routed through MAIN MIX)\n"
             "  Pedalboard Matrix mode: %s\n",
+            ts_matrix_main_clip(&s->matrix)?"LEGACY CLIP before downstream effects":"FLOAT",
             board_insert?"INSERT (full signal; master OFF passes dry)":"SEND (wet return; master OFF silences this return)");
         for(int row=0;row<TS_MATRIX_ROWS;++row)for(int d=0;d<TS_MATRIX_DESTINATIONS;++d) {
             int gain=s->matrix.row[row].matrix_gain[d];if(!gain)continue;

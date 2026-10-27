@@ -196,6 +196,80 @@ static void import_serial_chain(void)
     }
 }
 
+static void main_headroom(void)
+{
+    static TsSisterRuntime r;char error[200];ts_sister_runtime_init(&r);
+    assert(ts_sister_runtime_reconfigure(&r,48000,2,error,sizeof(error)));
+    TsMatrixControls c=r.matrix.controls;c.enabled=1;
+    c.serial_mask=(1u<<TS_MATRIX_MAIN)|(1u<<TS_MATRIX_PRISM)|(1u<<TS_MATRIX_BOARD);
+    c.row[TS_MATRIX_MAIN].matrix_gain[TS_MATRIX_EQ]=0;
+    c.row[TS_MATRIX_MAIN].matrix_gain[TS_MATRIX_NODES]=1000;
+    assert(ts_matrix_set(&r.matrix,&c,48000));assert(r.matrix.main_clip_current==1);
+    TsSisterSourceFrames s={.preview={1.2f,-.4f},.matrix_program_gain=.8f};
+    TsSisterRuntimeFrame f=ts_sister_runtime_process_frame(&r,&s);near(f.monitor_return.l,.8f);near(f.monitor_return.r,-.4f);
+    unsigned original=c.serial_mask;c.main_headroom=TS_MATRIX_HEADROOM_FLOAT;
+    assert(ts_matrix_set_live(&r.matrix,&c,48000));assert(r.matrix.main_clip_current==1);
+    float last=.8f;
+    for(int i=0;i<12000;++i) {
+        if(i==20){
+            TsMatrixControls pan=r.matrix.controls;pan.row[TS_MATRIX_FM].pan=17;
+            float mix=r.matrix.main_clip_current;assert(ts_matrix_set(&r.matrix,&pan,48000));
+            assert(r.matrix.main_clip_current==mix); /* Other edits cannot snap an active fade. */
+        }
+        f=ts_sister_runtime_process_frame(&r,&s);
+        assert(f.monitor_return.l>=last && f.monitor_return.l-last<.001f);
+        assert(f.monitor_return.r==-.4f);last=f.monitor_return.l;
+    }
+    assert(last==1.2f && r.matrix.main_clip_current==0);
+    assert(r.matrix.controls.serial_mask==original);
+    TsMatrixControls invalid=r.matrix.controls;invalid.row[TS_MATRIX_MAIN].matrix_gain[TS_MATRIX_MAIN]=1000;
+    TsMatrixControls before=r.matrix.controls;assert(!ts_matrix_set_live(&r.matrix,&invalid,48000));
+    assert(!memcmp(&before,&r.matrix.controls,sizeof(before)) && r.matrix.main_clip_current==0);
+    c=r.matrix.controls;c.main_headroom=TS_MATRIX_HEADROOM_CLIP;
+    assert(ts_matrix_set_live(&r.matrix,&c,48000));assert(r.matrix.main_clip_current==0);
+    last=1.2f;
+    for(int i=0;i<12000;++i){f=ts_sister_runtime_process_frame(&r,&s);
+        assert(f.monitor_return.l<=last && last-f.monitor_return.l<.001f);last=f.monitor_return.l;}
+    assert(last==.8f && r.matrix.main_clip_current==1);
+    /* Saved CLIP/FLOAT choices restore immediately, not through a startup
+       fade. Missing MainHeadroom keeps the historical serial-bit behavior. */
+    for(int clip=0;clip<2;++clip){
+        c.main_headroom=clip?TS_MATRIX_HEADROOM_CLIP:TS_MATRIX_HEADROOM_FLOAT;
+        FILE *file=tmpfile();assert(file && ts_matrix_write(file,&c));rewind(file);
+        TsMatrixControls read;ts_matrix_default(&read);char line[512];
+        while(fgets(line,sizeof(line),file)){char *v=strchr(line,'=');assert(v);*v++=0;v[strcspn(v,"\r\n")]=0;assert(ts_matrix_read(&read,line,v)==1);}fclose(file);
+        assert(!memcmp(&c,&read,sizeof(c)) && ts_matrix_set(&r.matrix,&read,48000));
+        assert(r.matrix.main_clip_current==(float)clip);
+        f=ts_sister_runtime_process_frame(&r,&s);assert(f.monitor_return.l==(clip?.8f:1.2f));
+        s.preview=(TsStereoFrame){.4f,-.3f};f=ts_sister_runtime_process_frame(&r,&s);
+        assert(f.monitor_return.l==.4f && f.monitor_return.r==-.3f);s.preview=(TsStereoFrame){1.2f,-.4f};
+        TsSisterProjectState *state=malloc(sizeof(*state)),*loaded=malloc(sizeof(*loaded));assert(state&&loaded);
+        ts_sister_project_state_capture(state,&r,1,NULL);
+        assert(ts_sister_project_state_save_file(state,"headroom-project.ini",error,sizeof(error)));
+        int present=0;assert(ts_sister_project_state_load_file(loaded,"headroom-project.ini",48000,&present,error,sizeof(error)) && present);
+        assert(loaded->matrix.main_headroom==c.main_headroom && loaded->matrix.serial_mask==original);
+        TsMatrixControls opposite=read;opposite.main_headroom=clip?TS_MATRIX_HEADROOM_FLOAT:TS_MATRIX_HEADROOM_CLIP;
+        assert(ts_matrix_set(&r.matrix,&opposite,48000) && ts_matrix_set_live(&r.matrix,&read,48000));
+        ts_sister_runtime_process_frame(&r,&s);
+        assert(r.matrix.main_clip_remaining>0 && r.matrix.main_clip_current!=(float)clip);
+        assert(ts_sister_project_state_apply(loaded,&r,NULL));
+        assert(r.matrix.main_clip_current==(float)clip && !r.matrix.main_clip_remaining);
+        assert(!remove("headroom-project.ini"));free(state);free(loaded);
+    }
+    TsMatrixControls saved=r.matrix.controls;
+    assert(ts_matrix_read(&r.matrix.controls,"Matrix.MainHeadroom","3")==-1);
+    assert(!memcmp(&saved,&r.matrix.controls,sizeof(saved)));
+    assert(ts_matrix_read(&r.matrix.controls,"Matrix.MainHeadroom","-1")==-1);
+    c.main_headroom=TS_MATRIX_HEADROOM_AUTO;assert(ts_matrix_main_clip(&c));
+    assert(ts_matrix_set(&r.matrix,&c,48000) && r.matrix.main_clip_current==1);
+    c.serial_mask=0;assert(!ts_matrix_main_clip(&c));assert(ts_matrix_set(&r.matrix,&c,48000));
+    assert(r.matrix.main_clip_current==0);
+    c.main_headroom=TS_MATRIX_HEADROOM_CLIP;assert(ts_matrix_set_live(&r.matrix,&c,192000));
+    for(int i=0;i<2400;++i)ts_sister_runtime_process_frame(&r,&s);
+    assert(r.matrix.main_clip_remaining==0 && r.matrix.main_clip_current==1);
+    ts_sister_runtime_free(&r);
+}
+
 static void terminal_destinations(void)
 {
     TsSourceRoute route={.matrix_enabled=1};
@@ -298,4 +372,4 @@ static void feedback_history_activation(void)
         }
     }
 }
-int main(void){ordering_parity();feedback_history_activation();graph();terminal_destinations();runtime();physical_inputs();tracker_bus();import_serial_chain();puts("Unified routing graph, TrackSister bus, shared DSP, serial import audio parity, loop isolation, hardware returns and persistence passed");}
+int main(void){ordering_parity();feedback_history_activation();graph();terminal_destinations();runtime();physical_inputs();tracker_bus();import_serial_chain();main_headroom();puts("Unified routing graph, TrackSister bus, shared DSP, serial import audio parity, main headroom fades, loop isolation, hardware returns and persistence passed");}
