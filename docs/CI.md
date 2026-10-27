@@ -20,7 +20,8 @@ also rejects an empty run. The native workflow remains the broader
 regression/packaging check.
 
 The baseline builds only these targets and their dependencies with two compiler
-jobs. It disables CDP8 and video bundling, makes no release archive, and uploads
+jobs. It uses prebuilt system FFmpeg development packages, disables CDP8 and video
+bundling, makes no release archive, and uploads
 no package. This is a smaller check, not a promise about a fixed runner duration.
 It does not replace bundled CDP8/FFmpeg, physical driver, or full release testing.
 
@@ -48,12 +49,17 @@ watched routing file to acquire a build check.
 
 ## Local reproduction
 
-With CMake 3.20+, SDL2 and the platform's ordinary build dependencies installed:
+With CMake 3.20+, SDL2, FFmpeg development libraries and ordinary platform build
+dependencies installed:
 
 ```sh
 cmake -S . -B build-pr -G Ninja -DCMAKE_BUILD_TYPE=Release -DTAPESISTER_BUNDLE_CDP8=OFF -DTAPESISTER_BUNDLE_VIDEO=OFF
 cmake -P .github/pr-checks.cmake
 ```
+
+Use fresh test fixtures for a repeat run. The embedded tracker test can leave
+a modified generated project; reusing that folder can correctly trigger the
+save-protection check. Its clean-fixture rerun passes. CI uses fresh checkouts.
 
 Workflow trigger and cancellation semantics follow GitHub's documentation:
 [triggering workflows](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow)
