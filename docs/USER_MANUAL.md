@@ -2105,6 +2105,18 @@ associated folder members breaks the complete multi-page project. TapeSister wri
 validates a sibling staging folder before replacing an existing project, preventing a
 failed save from publishing a mixed or partial generation.
 
+Saving an existing project preserves user-added files and folders at their original
+relative paths, including extras inside `samples/` and `project-data/`. TapeSister
+tracks its generated files individually. A user entry that conflicts with a file
+needed by the new save stops the save and reports its name; move or rename the entry
+before retrying. After a project has been saved with this protection, externally
+changed generated files receive the same protection. Earlier edits to generated files
+in old projects cannot be detected retroactively. Keep the complete project backed up.
+
+If Save reports recovery is required, keep **both** sibling `.tapesister-partial` and
+`.tapesister-backup` folders. User material may be split between them. See
+[project-save behavior and recovery](validation/project-save-preservation.md).
+
 `Ctrl+S` saves the active project. An existing destination requires overwrite
 confirmation. A short SAVING overlay appears while the folder is built.
 

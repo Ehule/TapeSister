@@ -316,14 +316,23 @@ static void test_project(void)
     CHECK(tracker_hash == ts_sister_tracker_hash(&loaded.tracker));
     CHECK(restored->bank[2].tile_id == active_id && restored_record->bank[3].tile_id == record_id);
     CHECK(loaded.active_page == 1 && loaded.page_count == 2);
+    /* Saving must not overwrite the externally changed tracker fixture. */
+    CHECK(!ts_sample_pages_save_project(&pages, active, record, NULL, path, error, sizeof(error)));
+    CHECK(strstr(error, "sister-tracker.tst"));
+    CHECK(remove(tracker_path) == 0);
     CHECK(ts_sample_pages_save_project(&pages, active, record, NULL, path, error, sizeof(error)));
     CHECK(remove(tracker_path) == 0);
     CHECK(!ts_sample_pages_load_project(&loaded, restored, restored_record, path, error, sizeof(error)));
     CHECK(tracker_hash == ts_sister_tracker_hash(&loaded.tracker));
     /* Old manifest with no tracker field migrates to empty defaults. */
-    f = fopen("tracker-project/manifest.txt", "wb"); CHECK(f);
-    CHECK(fprintf(f, "TAPESISTER_PROJECT 2\nproject=tracker-project.tsr\npage_count=2\nactive_page=1\nrecord_bank=1\n") > 0);
-    CHECK(fclose(f) == 0);
+    f = fopen("tracker-project/manifest.txt", "rb"); CHECK(f);
+    FILE *old_manifest = fopen("tracker-project/manifest.tmp", "wb"); CHECK(old_manifest);
+    char line[4096];
+    while (fgets(line, sizeof(line), f))
+        if (strncmp(line, "sister_tracker=", 15)) CHECK(fputs(line, old_manifest) != EOF);
+    CHECK(!ferror(f) && !fclose(f) && !fclose(old_manifest));
+    CHECK(remove("tracker-project/manifest.txt") == 0);
+    CHECK(rename("tracker-project/manifest.tmp", "tracker-project/manifest.txt") == 0);
     CHECK(ts_sample_pages_load_project(&loaded, restored, restored_record, path, error, sizeof(error)));
     CHECK(!loaded.tracker.pattern_count && loaded.tracker.bpm == 125 && loaded.tracker.control_lane == -1);
     CHECK(ts_sample_pages_save_project(&pages, active, record, NULL, path, error, sizeof(error)));
@@ -344,6 +353,9 @@ static void test_project(void)
     active->bank[2].tile_id = second;
     /* Deleted/missing aliases survive save/load without referring to a refill. */
     CHECK(ts_instrument_bank_clear(first, 0, error, sizeof(error)));
+    CHECK(!ts_sample_pages_save_project(&pages, active, record, NULL, path, error, sizeof(error)));
+    CHECK(strstr(error, "page-002.tsr"));
+    CHECK(remove("tracker-project/project-data/page-002.tsr") == 0);
     CHECK(ts_sample_pages_save_project(&pages, active, record, NULL, path, error, sizeof(error)));
     CHECK(ts_sample_pages_load_project(&loaded, restored, restored_record, path, error, sizeof(error)));
     CHECK(loaded.tracker.aliases[1] == id && !ts_sample_pages_find_tile(&loaded, restored, id, NULL));
