@@ -132,6 +132,7 @@ static void assert_empty(void)
     }
 }
 #include "test_project_recovery_ui.inc"
+#include "test_project_reopen_ui.inc"
 
 int main(int argc,char **argv)
 {
@@ -314,6 +315,11 @@ int main(int argc,char **argv)
     char previous_text[40];assert(fgets(previous_text,sizeof(previous_text),previous_log));fclose(previous_log);
     assert(!strcmp(previous_text,"preserve older session\n"));remove("new-project-flow/logs/previous-session.saved.jsonl");
     remove(log.path);remove(log.export_path);
+
+    populate();project_reopen_controls(window);
+    assert(project_new(NULL,0,0,&session));assert_empty();
+    populate();project_legacy_reopen_controls();
+    assert(project_new(NULL,0,0,&session));assert_empty();
 
     /* Cancel and join a late decode; its result cannot cross the reset. */
     populate();importer.worker=calloc(1,sizeof(*importer.worker));assert(importer.worker);

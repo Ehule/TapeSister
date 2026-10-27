@@ -1,5 +1,8 @@
 # Interrupted project-save recovery
 
+For saved card state, editor view restoration and older flat-file save locations,
+see [PROJECT_SAVE_STATE.md](PROJECT_SAVE_STATE.md).
+
 An interrupted save can leave sibling `.tapesister-backup` and
 `.tapesister-partial` entries. The current project folder may also exist: a
 save can publish successfully and then fail to remove its backup. These names

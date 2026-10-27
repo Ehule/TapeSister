@@ -605,6 +605,8 @@ typedef struct {
     int mosaic_source_count, mosaic_source_page, mosaic_source_selected;
     int mosaic_bank_count, mosaic_source_pages, mosaic_source_offset;
     double mosaic_time, mosaic_scroll, mosaic_xscroll, mosaic_scale, mosaic_hscale;
+    uint64_t mosaic_loaded_view_epoch; /* Preserve restored selection through controller reset. */
+    int project_save_new_bundle; /* The active legacy TSR is retained during migration. */
     uint64_t mosaic_card_mix_event;
     int mosaic_card_mix_part; /* Hover/drag: 1 fade-in, 2 fade-out, 3 pan. */
     TsKeyboardMask staged_notes;

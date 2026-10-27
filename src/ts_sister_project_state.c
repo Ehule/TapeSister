@@ -22,6 +22,8 @@ static void state_error(char *error, size_t size, const char *message)
         snprintf(error, size, "%s", message != NULL ? message : "");
 }
 
+#include "ts_project_view.inc"
+
 static int state_path(const char *project, char *path, size_t size)
 {
     const char *slash;
@@ -358,7 +360,7 @@ int ts_sister_project_state_save_file(const TsSisterProjectState *state,
     int failed;
     if (state == NULL || state->page_count == 0u ||
         state->page_count > TS_SISTER_RUNTIME_PAGE_LIMIT ||
-        state->active_page >= state->page_count ||
+        state->active_page >= state->page_count || !project_view_valid(&state->view) ||
         path == NULL || path[0] == '\0' ||
         snprintf(temporary, sizeof(temporary), "%s.tapesister-tmp", path) < 0 ||
         strlen(path) + 20u >= sizeof(temporary)) {
@@ -400,6 +402,7 @@ int ts_sister_project_state_save_file(const TsSisterProjectState *state,
             failed=fprintf(file,"Performance.Input%d=%u %.9g\n",i,
                 state->performance_mixer.input_enabled[i],state->performance_mixer.input_gain[i])<0;
     if (!failed) failed = !ts_keyboard_sequence_bank_write(file,&state->keyboard_sequence);
+    if (!failed) failed = !project_view_write(file,&state->view);
     if (!failed) failed = !ts_insert_write(file,&state->insert);
     if (fclose(file) != 0) failed = 1;
     if (!failed) {
@@ -696,6 +699,7 @@ int ts_sister_project_state_load_file(TsSisterProjectState *state,
     char line[4096];
     FILE *file;
     int line_number = 0, header = 0, version = 0, have_pages = 0;
+    unsigned view_fields=0;
     if (present != NULL) *present = 0;
     if (state == NULL || path == NULL || path[0] == '\0') return 0;
     file = fopen(path, "rb");
@@ -750,6 +754,8 @@ int ts_sister_project_state_load_file(TsSisterProjectState *state,
         } else if (strcmp(key, "ParameterLocksHigh") == 0) {
             if (!parse_u64_hex_value(value, &loaded.parameter_locks_high))
                 goto malformed;
+        } else if (!strncmp(key,"ProjectView.",12)) {
+            if(!project_view_read(&loaded.view,&view_fields,key,value))goto malformed;
         } else if (strncmp(key, "Mask.", 5u) == 0) {
             size_t page;
             char *end;
@@ -803,7 +809,8 @@ int ts_sister_project_state_load_file(TsSisterProjectState *state,
         } else if (!assign_parameter(&loaded.parameters, key, value)) goto malformed;
     }
     if (ferror(file) || !header || !version || !have_pages || !ts_matrix_valid(&loaded.matrix) || !ts_matrix_layout_valid(&loaded.matrix_layout) ||
-        loaded.active_page >= loaded.page_count) goto malformed;
+        loaded.active_page >= loaded.page_count ||
+        (view_fields && (view_fields&31)!=31) || !project_view_valid(&loaded.view)) goto malformed;
     fclose(file);
     if (version < 12 /* FX slot migration predates Prism */) {
         ts_sister_fx_controls_migrate_legacy(&loaded.parameters.fx);

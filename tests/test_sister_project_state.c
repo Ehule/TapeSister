@@ -87,8 +87,10 @@ static void project_restores_pedalboard_without_live_fade(void)
     assert(restored_mosaic_energy(r)>100 && r->matrix.controls.board_insert);
     ts_sister_runtime_free(r);free(r);free(s);
 }
+#include "test_project_view.inc"
 int main(void)
 {
+    project_view_storage();
     layout_malformed();
     project_restores_pedalboard_without_live_fade();
     static const char project[] = "test-sister-project.tsr";

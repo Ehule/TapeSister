@@ -934,3 +934,9 @@ Closing/freeze never controls musical playback. See [the visualizer guide](IMPER
 The visualizer editor’s **VIDEO** tab accepts local video and offers pause, restart,
 loop, blend, zoom, rotation and audio response. Video sound is off.
 See [Video through the mandala](MANDALA_VIDEO.md).
+
+## Save and reopen
+
+Save records the Canvas/Mosaic/TrackSister view, including Mosaic scroll, zoom,
+card selection and paused playhead position. See [PROJECT_SAVE_STATE.md](PROJECT_SAVE_STATE.md)
+for older flat-TSR migration and save/open verification.
