@@ -534,6 +534,7 @@ if(TAPESISTER_BUILD_SDL)
     target_link_libraries(tapesister_source_route_controller_tests PRIVATE rt)
   endif()
   add_test(NAME tapesister_source_route_controller_tests COMMAND tapesister_source_route_controller_tests)
+  add_test(NAME tapesister_f11_cockpit_tests COMMAND tapesister_source_route_controller_tests --cockpit)
   add_executable(tapesister_spatial_controller_tests tests/test_spatial_controller.c
     src/tape_link.c src/tape_companion.c src/ts_startup_diag.c src/ts_midi_input.c)
   target_include_directories(tapesister_spatial_controller_tests PRIVATE third_party)

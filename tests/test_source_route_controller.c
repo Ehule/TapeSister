@@ -12,6 +12,7 @@
 #include "../third_party/tapehead/application/src/ft2_pattern_draw.h"
 #include "../third_party/tapehead/application/src/ft2_tables.h"
 #include "../third_party/tapehead/application/src/ft2_config.h"
+#include "../third_party/tapehead/application/src/ft2_tapehead_actions.h"
 #include "../third_party/tapehead/application/src/ft2_video.h"
 #include "../third_party/tapehead/application/src/scopes/ft2_scopes.h"
 static AudioState a;
@@ -217,6 +218,13 @@ int main(int argc,char **argv)
     bank.has_loop=1;bank.loop_first=0;bank.loop_last=8192;
     assert(ts_instrument_sync_selected(&bank,error,sizeof(error)));
     assert(ts_instrument_bank_rename(&bank,0,"GLASS RHYTHM",error,sizeof(error)));
+    if(argc>1 && !strcmp(argv[1],"--cockpit")) {
+        assert(embedded_open(window,0,&a,&u,&pages,&bank,48000));u.tracker_open=1;
+        pattern[editor.editPattern][0]=(note_t){.note=49,.instr=1};song.songLength=1;song.orders[0]=editor.editPattern;
+        test_performance_transport(argc>2?argv[2]:NULL);
+        ts_tapehead_close();ts_sister_runtime_free(&a.sister);ts_sample_pages_free(&pages);ts_instrument_free(&bank);
+        SDL_DestroyWindow(window);SDL_Quit();puts("F11 cockpit, independent transport, cue, mute layers and input lifecycle tests passed.");return 0;
+    }
     assert(ts_ui_bank_action(1,0)==TS_UI_BANK_ACTION_ROUTING);
     assert(ts_ui_bank_action(1,TS_UI_BANK_MOD_SHIFT)==TS_UI_BANK_ACTION_CLEAR);
     assert(source_route_show(0,&a,&u,&pages,&bank,-1,0));SDL_SetWindowSize(source_route_window.window,640,400);

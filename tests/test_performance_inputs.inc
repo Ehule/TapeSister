@@ -21,24 +21,25 @@ static void test_performance_inputs(const char *directory)
     ts_input_monitor_init(&input.monitor);ts_input_activity_init(&input.activity);
     ts_external_recorder_init(&input.recorder);
     a.performance_inputs=&input.performance;performance_show(&u,&a);
+    perf_input_click(430,118,SDL_BUTTON_LEFT);assert(performance_transport.page==PERF_INPUTS);
     ts_performance_mixer_default(&a.sister.performance_mixer);
     input.channels=26;input.sample_rate=48000;input.range=(TsAudioChannelRange){1,0};
     ts_performance_inputs_prepare(&input.performance,26,48000,512);
     performance_transport.input_channels=26;performance_transport.input_range=input.range;
     snprintf(performance_transport.input_label,sizeof(performance_transport.input_label),"26-CHANNEL DRIVER TEST");
     assert(!performance_transport.tuner_on);
-    perf_input_click(632,98,SDL_BUTTON_LEFT);assert(a.sister.performance_mixer.input_enabled[0]);
-    perf_input_click(724,98,SDL_BUTTON_LEFT);assert(a.sister.performance_mixer.input_gain[0]==0);
-    perf_input_click(790,98,SDL_BUTTON_RIGHT);assert(a.sister.performance_mixer.input_gain[0]==1);
+    perf_input_click(32,192,SDL_BUTTON_LEFT);assert(a.sister.performance_mixer.input_enabled[0]);
+    perf_input_click(150,192,SDL_BUTTON_LEFT);assert(a.sister.performance_mixer.input_gain[0]==0);
+    perf_input_click(250,192,SDL_BUTTON_RIGHT);assert(a.sister.performance_mixer.input_gain[0]==1);
     uint64_t hash=paged_project_state_hash(&pages,&bank,NULL,&a.sister,&a.keyboard_sequence);
     performance_input_gain(0,&a,0,.5f);assert(hash!=paged_project_state_hash(&pages,&bank,NULL,&a.sister,&a.keyboard_sequence));
-    for(int i=0;i<4;++i)perf_input_click(920,280,SDL_BUTTON_LEFT);
+    for(int i=0;i<4;++i)perf_input_click(480,452,SDL_BUTTON_LEFT);
     assert(performance_transport.input_page==4);
-    perf_input_click(632,128,SDL_BUTTON_LEFT);assert(a.sister.performance_mixer.input_enabled[25]);
+    perf_input_click(32,232,SDL_BUTTON_LEFT);assert(a.sister.performance_mixer.input_enabled[25]);
     performance_input_gain(0,&a,25,0); /* Tuner must still see raw input. */
-    performance_transport.tuner_channel=24;perf_input_click(920,350,SDL_BUTTON_LEFT);
+    performance_transport.tuner_channel=24;perf_input_click(920,192,SDL_BUTTON_LEFT);
     assert(performance_transport.tuner_channel==25);
-    perf_input_click(650,350,SDL_BUTTON_LEFT);assert(performance_transport.tuner_on);
+    perf_input_click(550,192,SDL_BUTTON_LEFT);assert(performance_transport.tuner_on);
     float capture[256*26];
     for(int block=0;block<70;++block) {
         for(int f=0;f<256;++f)for(int ch=0;ch<26;++ch)
@@ -54,7 +55,7 @@ static void test_performance_inputs(const char *directory)
     ts_performance_inputs_prepare(&input.performance,6,48000,512);
     performance_transport.input_channels=6;performance_transport.input_page=0;
     assert(!performance_input_available(25));
-    perf_input_click(920,350,SDL_BUTTON_LEFT);assert(performance_input_available(performance_transport.tuner_channel));
+    perf_input_click(920,192,SDL_BUTTON_LEFT);assert(performance_input_available(performance_transport.tuner_channel));
     performance_transport.tuner_channel=0;ts_performance_inputs_tuner(&input.performance,1,0);
     snprintf(performance_transport.input_label,sizeof(performance_transport.input_label),"6-CHANNEL INPUT TEST / SYNTHETIC A3");
     a.sister.performance_mixer.input_enabled[1]=1;
@@ -68,7 +69,12 @@ static void test_performance_inputs(const char *directory)
     }
     performance_transport.tuner_tick=performance_transport.tuner_signal=SDL_GetTicks();
     perf_input_shot(directory,"performance-inputs-tuner");
-    perf_input_click(650,350,SDL_BUTTON_LEFT);assert(!performance_transport.tuner_on && !(atomic_load(&input.performance.tuner_request)&255));
+    performance_page_set(&a,PERF_OVERVIEW);
+    assert(!(atomic_load(&input.performance.tuner_request)&255));
+    assert(a.sister.performance_mixer.input_enabled[0] && a.sister.performance_mixer.input_enabled[1]);
+    performance_page_set(&a,PERF_INPUTS);
+    ts_performance_inputs_tuner(&input.performance,1,performance_transport.tuner_channel);
+    perf_input_click(550,192,SDL_BUTTON_LEFT);assert(!performance_transport.tuner_on && !(atomic_load(&input.performance.tuner_request)&255));
     perf_input_shot(directory,"performance-inputs-tuner-off");
     /* The actual output callback receives live inputs through MAIN MIX, with
        no dependence on a transport or legacy record-monitor switch. */
@@ -92,7 +98,7 @@ static void test_performance_inputs(const char *directory)
     ts_insert_duplex_block(&a.sister.insert,1,raw,512,6);audio_callback(&a,(Uint8 *)out,sizeof(out));
     assert(out[2000]>.05f); /* F9 raw input routes are independent of the live mixer. */
     ts_insert_duplex_block(&a.sister.insert,0,NULL,0,0);assert(ts_matrix_set(&a.sister.matrix,&saved,48000));
-    perf_input_click(650,350,SDL_BUTTON_LEFT);assert(performance_transport.tuner_on);
+    perf_input_click(550,192,SDL_BUTTON_LEFT);assert(performance_transport.tuner_on);
     SDL_Event close={0};close.type=SDL_WINDOWEVENT;close.window.windowID=performance_transport.id;close.window.event=SDL_WINDOWEVENT_CLOSE;
     assert(performance_event(&close,window,0,&a,&u,&pages,&bank,NULL,48000));
     assert(!performance_transport.tuner_on && !(atomic_load(&input.performance.tuner_request)&255));

@@ -28,6 +28,7 @@
 #include "ft2_hpc.h"
 #include "ft2_random.h"
 #include "ft2_sample_launcher.h"
+#include "ft2_tapehead_actions.h"
 #include "ft2_pattern_launcher_ui.h"
 #include "ft2_multichannel.h"
 #include "ft2_textboxes.h"
@@ -144,6 +145,22 @@ int ts_tapehead_interpolation_active(void) {return embed.initialized && interpol
 int ts_tapehead_transport_keys_allowed(void) {return !embed.initialized || (!editor.editTextFlag && !ui.sysReqShown);}
 int ts_tapehead_running(void) { return atomic_load(&embed.ready)&&songPlaying; }
 int ts_tapehead_block_active(void) { return embed.initialized&&tapeheadBlockLoopIsActive(); }
+void ts_tapehead_performance_locked(TsTapeHeadPerformance *s)
+{
+    *s=(TsTapeHeadPerformance){.performance_solo=-1};
+    if(!embed.initialized || !atomic_load_explicit(&embed.ready,memory_order_acquire))return;
+    s->ready=1;s->playing=songPlaying;
+    s->order=songPlaying?song.songPos:editor.songPos;
+    s->pattern=songPlaying?song.pattNum:editor.editPattern;
+    s->row=songPlaying?song.row:editor.row;
+    s->bpm=song.BPM;s->ticks_per_row=song.speed;s->channels=song.numChannels;
+    s->block_loop=tapeheadBlockLoopIsActive();
+    s->performance_solo=tapeheadActionGetPerformanceSoloTrack();
+    for(int i=0;i<song.numChannels && i<32;++i) {
+        if(editor.channelMuted[i])s->score_mutes|=UINT32_C(1)<<i;
+        if(performanceMute[i])s->performance_mutes|=UINT32_C(1)<<i;
+    }
+}
 unsigned ts_tapehead_capture_flags(unsigned frame) {return frame<TH_FRAMES?embed.capture_flags[frame]:0;}
 unsigned ts_tapehead_tempo(unsigned frame) {return frame<TH_FRAMES?embed.tempo[frame]:0;}
 TsTileId ts_tapehead_canvas_tile(void) {TsTileId id=embed.canvas_tile;embed.canvas_tile=0;return id;}
