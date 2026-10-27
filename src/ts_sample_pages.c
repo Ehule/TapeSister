@@ -475,28 +475,6 @@ rollback:
     return 0;
 }
 
-static int directory_exists(const char *path)
-{
-    struct stat info;
-    if (path == NULL || stat(path, &info) != 0) return 0;
-#ifdef _WIN32
-    return (info.st_mode & _S_IFDIR) != 0;
-#else
-    return S_ISDIR(info.st_mode);
-#endif
-}
-
-static int regular_file_exists(const char *path)
-{
-    struct stat info;
-    if (path == NULL || stat(path, &info) != 0) return 0;
-#ifdef _WIN32
-    return (info.st_mode & _S_IFREG) != 0;
-#else
-    return S_ISREG(info.st_mode);
-#endif
-}
-
 static const char *path_name(const char *path)
 {
     const char *slash = path != NULL ? strrchr(path, '/') : NULL;
@@ -726,20 +704,6 @@ static int rename_directory(const char *source, const char *destination)
 #endif
 }
 
-/* Unlike stat-based directory checks, preserve a logs entry even if it is a
-   file or a dangling link. An inspection error must not become data deletion. */
-static int path_entry_exists(const char *path)
-{
-#ifdef _WIN32
-    if(GetFileAttributesA(path)!=INVALID_FILE_ATTRIBUTES)return 1;
-    DWORD error=GetLastError();
-    return error==ERROR_FILE_NOT_FOUND || error==ERROR_PATH_NOT_FOUND?0:-1;
-#else
-    struct stat info;if(!lstat(path,&info))return 1;
-    return errno==ENOENT?0:-1;
-#endif
-}
-
 static void sample_safe_name(const char *source, char *safe, size_t size)
 {
     size_t used = 0u;
@@ -803,8 +767,23 @@ static int write_partial_marker(const char *directory,
 static int stage_is_owned(const char *directory)
 {
     char marker[TS_PROJECT_PATH_MAX];
-    return snprintf(marker, sizeof(marker), "%s/.tapesister-partial", directory) >= 0 &&
-           strlen(directory) + 21u < sizeof(marker) && regular_file_exists(marker);
+    char text[64];
+    if (snprintf(marker, sizeof(marker), "%s/.tapesister-partial", directory) < 0 ||
+        strlen(directory) + 21u >= sizeof(marker)) return 0;
+#ifdef _WIN32
+    DWORD attributes = GetFileAttributesA(marker);
+    if (attributes == INVALID_FILE_ATTRIBUTES ||
+        (attributes & (FILE_ATTRIBUTE_REPARSE_POINT | FILE_ATTRIBUTE_DIRECTORY))) return 0;
+#else
+    struct stat info;
+    if (lstat(marker, &info) != 0 || !S_ISREG(info.st_mode)) return 0;
+#endif
+    FILE *file = fopen(marker, "rb");
+    if (!file) return 0;
+    int owned = fgets(text, sizeof(text), file) != NULL &&
+                !strcmp(text, "TapeSister partial project\n") && fgetc(file) == EOF && !ferror(file);
+    fclose(file);
+    return owned;
 }
 
 static int bundle_is_owned(const char *directory, const char *project_name)
@@ -889,6 +868,8 @@ static int validate_saved_instrument(const char *path,
     return ok;
 }
 
+#include "ts_project_files.inc"
+
 int ts_sample_pages_save_project(const TsSamplePages *pages,
                                  const TsInstrument *active_sample,
                                  const TsInstrument *record_bank,
@@ -906,12 +887,12 @@ int ts_sample_pages_save_project(const TsSamplePages *pages,
     char manifest[TS_PROJECT_PATH_MAX];
     char state_path[TS_PROJECT_PATH_MAX];
     char sample_directory[TS_PROJECT_PATH_MAX];
-    char old_logs[TS_PROJECT_PATH_MAX], staged_logs[TS_PROJECT_PATH_MAX];
+    ProjectFiles owned = {0}, moves = {0};
+    size_t moved = 0;
     char group[64];
     FILE *file;
     int record_present;
     int had_existing;
-    int carry_logs=0;
     size_t sample_count = 0u;
     const char *project_name = path_name(path);
     if (pages == NULL || path == NULL || path[0] == '\0' ||
@@ -937,19 +918,25 @@ int ts_sample_pages_save_project(const TsSamplePages *pages,
         pages_error(error, error_size, "Project transaction path is too long");
         return 0;
     }
-    had_existing = directory_exists(directory);
+    int existing_kind = project_entry_kind(directory);
+    if (existing_kind != PROJECT_ENTRY_MISSING && existing_kind != PROJECT_ENTRY_DIRECTORY) {
+        pages_error(error, error_size, "Project destination must be a real folder, not a link or file");
+        return 0;
+    }
+    had_existing = existing_kind == PROJECT_ENTRY_DIRECTORY;
     if (had_existing && !bundle_is_owned(directory, project_name)) {
         pages_error(error, error_size,
                     "A folder with that name exists but is not this TapeSister project");
         return 0;
     }
-    if (directory_exists(backup)) {
+    if (project_entry_kind(backup) != PROJECT_ENTRY_MISSING) {
         pages_error(error, error_size,
                     "A previous project backup needs attention before saving");
         return 0;
     }
-    if (directory_exists(staging)) {
-        if (!stage_is_owned(staging) || !remove_tree(staging)) {
+    if (project_entry_kind(staging) != PROJECT_ENTRY_MISSING) {
+        if (project_entry_kind(staging) != PROJECT_ENTRY_DIRECTORY ||
+            !stage_is_owned(staging) || !remove_tree(staging)) {
             pages_error(error, error_size,
                         "A project staging folder already exists and could not be recovered");
             return 0;
@@ -1078,6 +1065,7 @@ int ts_sample_pages_save_project(const TsSamplePages *pages,
         !write_manifest_members(file, record_bank,
                                 "record-bank", "record-bank"))
         goto manifest_failed;
+    if (!project_write_inventory(file, staging, error, error_size)) goto manifest_failed;
     {
         int write_failed = ferror(file);
         int close_failed = fclose(file) != 0;
@@ -1086,50 +1074,60 @@ int ts_sample_pages_save_project(const TsSamplePages *pages,
             goto failed;
         }
     }
-    /* The project transaction replaces the whole bundle, but diagnostic
-       history belongs to the session, not to the newly serialized project. */
-    if(had_existing) {
-        int n=snprintf(old_logs,sizeof(old_logs),"%s/logs",directory);
-        int m=snprintf(staged_logs,sizeof(staged_logs),"%s/logs",staging);
-        if(n<0 || n>=(int)sizeof(old_logs) || m<0 || m>=(int)sizeof(staged_logs)) {
-            pages_error(error,error_size,"Project log path is too long");goto failed;
+    if (had_existing) {
+        ProjectPreservation plan = {directory, staging, &owned, &moves};
+        if (!project_read_ownership(directory, project_name, &owned, error, error_size) ||
+            !project_children(directory, "", project_preserve_visit, &plan, error, error_size)) goto failed;
+        if (!rename_directory(directory, backup)) {
+            pages_error(error, error_size, "Could not prepare the existing project for replacement");
+            goto failed;
         }
-        carry_logs=path_entry_exists(old_logs);
-        n=snprintf(old_logs,sizeof(old_logs),"%s/logs",backup);
-        if(carry_logs<0 || n<0 || n>=(int)sizeof(old_logs)) {
-            pages_error(error,error_size,"Could not preserve project logs");goto failed;
+        for (; moved < moves.count; ++moved) {
+            if (!project_move_user(backup, staging, moves.files[moved].path)) {
+                project_file_error(error, error_size, "Could not preserve user entry", moves.files[moved].path);
+                goto rollback;
+            }
         }
-    }
-    if (had_existing && !rename_directory(directory, backup)) {
-        pages_error(error, error_size, "Could not prepare the existing project for replacement");
-        goto failed;
-    }
-    if(carry_logs && !rename_directory(old_logs,staged_logs)) {
-        (void)rename_directory(backup,directory);
-        pages_error(error,error_size,"Could not carry project logs into saved bundle");goto failed;
     }
     if (!rename_directory(staging, directory)) {
-        if(carry_logs && !rename_directory(staged_logs,old_logs)) {
-            /* Keep both recovery folders. In particular, never remove staging
-               while it owns the only copy of the user's previous logs. */
-            pages_error(error,error_size,"Save failed; logs kept in staging and old project kept in backup");
-            return 0;
-        }
-        if (had_existing) (void)rename_directory(backup, directory);
         pages_error(error, error_size, "Could not publish the complete project folder");
+        if (had_existing) goto rollback;
         goto failed;
     }
     if (snprintf(destination, sizeof(destination), "%s/.tapesister-partial",
                  directory) >= 0 && strlen(directory) + 21u < sizeof(destination))
         (void)remove(destination);
     if (had_existing) (void)remove_tree(backup);
+    project_files_free(&owned);
+    project_files_free(&moves);
     pages_error(error, error_size, "");
     return 1;
+
+rollback:
+    /* Never clean a staging folder that holds the sole copy of a user entry.
+       A retained backup also blocks automatic stage cleanup on the next save. */
+    {
+        int restored = 1;
+        while (moved > 0) {
+            --moved;
+            if (!project_move_user(staging, backup, moves.files[moved].path)) restored = 0;
+        }
+        if (!restored || !rename_directory(backup, directory)) {
+            pages_error(error, error_size,
+                "Save failed; recovery required. Keep both .tapesister-partial and .tapesister-backup folders");
+            project_files_free(&owned);
+            project_files_free(&moves);
+            return 0;
+        }
+    }
+    goto failed;
 
 manifest_failed:
     fclose(file);
     pages_error(error, error_size, "Could not write project page manifest");
 failed:
+    project_files_free(&owned);
+    project_files_free(&moves);
     if (stage_is_owned(staging)) (void)remove_tree(staging);
     return 0;
 }

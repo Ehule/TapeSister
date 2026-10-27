@@ -463,6 +463,10 @@ add_test(NAME tapesister_capture_archive_tests COMMAND tapesister_capture_archiv
 add_executable(tapesister_sample_pages_tests tests/test_sample_pages.c)
 target_link_libraries(tapesister_sample_pages_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_sample_pages_tests COMMAND tapesister_sample_pages_tests)
+
+add_executable(tapesister_project_save_tests tests/test_project_save.c)
+target_link_libraries(tapesister_project_save_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_project_save_tests COMMAND tapesister_project_save_tests)
 add_executable(tapesister_tracker_playback_tests tests/test_tracker_playback.c)
 target_link_libraries(tapesister_tracker_playback_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_tracker_playback_tests COMMAND tapesister_tracker_playback_tests)
@@ -755,6 +759,7 @@ if(MINGW)
                                tapesister_mosaic_tests
                                test_sister_project_state
                                tapesister_sample_pages_tests
+                               tapesister_project_save_tests
                                tapesister_keyboard_hold_tests
                                tapesister_native_waveform_tests
                                tapesister_render_efficiency_tests
