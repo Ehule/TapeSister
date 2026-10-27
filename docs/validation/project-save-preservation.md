@@ -55,7 +55,10 @@ If a user move or final publication fails, moved entries return to the backup an
 the old folder is restored. If any rollback step fails, both recovery folders
 remain, and Save reports that recovery is required. Any existing backup entry
 (including a file, dangling link, reparse point, or inspection error) blocks the
-next save before automatic staging cleanup. An unowned staging folder, a linked
+next save before automatic staging cleanup. A persistent preservation-phase marker also
+protects staging if the backup is relocated during manual recovery. If a filesystem
+reports a failed user-entry rename after it has taken effect, or its outcome cannot
+be inspected, both folders remain for recovery. An unowned staging folder, a linked
 staging root, or an invalid/symlink staging marker is also refused.
 
 After a recovery-required message:
@@ -88,7 +91,8 @@ at filesystem rename boundaries. It covers:
 - Staged reload validation failure, old-folder rename failure, failure after the
   first user entry moved, final publication failure, and successful retry.
 - Failed entry rollback and failed root rollback, followed by another save attempt
-  that must preserve both recovery folders and the user material.
+  that must preserve both recovery folders and the user material, including a retry
+  after manual backup relocation and an error reported after a successful move.
 - An actual POSIX child-process exit immediately after a user move, followed by a
   restart-equivalent save attempt and checks of all user entries across both folders.
 - Unknown/invalid staging markers, ordinary files at the backup path, reserved-name

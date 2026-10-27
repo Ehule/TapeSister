@@ -739,7 +739,7 @@ static int make_directory(const char *path, const char *description,
     return 0;
 }
 
-static int write_partial_marker(const char *directory,
+static int write_partial_marker(const char *directory, int preserving,
                                 char *error, size_t error_size)
 {
     char path[TS_PROJECT_PATH_MAX];
@@ -755,7 +755,8 @@ static int write_partial_marker(const char *directory,
         return 0;
     }
     {
-        int failed = fputs("TapeSister partial project\n", file) == EOF;
+        int failed = fputs(preserving ? "TapeSister preservation pending\n" :
+                           "TapeSister partial project\n", file) == EOF;
         if (fclose(file) != 0) failed = 1;
         if (!failed) return 1;
         remove(path);
@@ -943,7 +944,7 @@ int ts_sample_pages_save_project(const TsSamplePages *pages,
         }
     }
     if (!make_directory(staging, "project staging folder", error, error_size) ||
-        !write_partial_marker(staging, error, error_size)) goto failed;
+        !write_partial_marker(staging, 0, error, error_size)) goto failed;
     if (snprintf(project_data, sizeof(project_data), "%s/project-data", staging) < 0 ||
         snprintf(samples, sizeof(samples), "%s/samples", staging) < 0 ||
         strlen(staging) + 14u >= sizeof(project_data) ||
@@ -1082,8 +1083,19 @@ int ts_sample_pages_save_project(const TsSamplePages *pages,
             pages_error(error, error_size, "Could not prepare the existing project for replacement");
             goto failed;
         }
+        /* A durable phase marker prevents a later retry from mistaking a
+           user-bearing stage for disposable output, even if its backup was
+           moved elsewhere during manual recovery. */
+        if (moves.count && !write_partial_marker(staging, 1, error, error_size)) goto rollback;
         for (; moved < moves.count; ++moved) {
             if (!project_move_user(backup, staging, moves.files[moved].path)) {
+                char from[TS_PROJECT_PATH_MAX], to[TS_PROJECT_PATH_MAX];
+                /* A filesystem can report an I/O failure after a rename has
+                   taken effect. Do not erase an ambiguously moved entry. */
+                if (!project_join(from, sizeof(from), backup, moves.files[moved].path) ||
+                    !project_join(to, sizeof(to), staging, moves.files[moved].path) ||
+                    project_entry_kind(from) <= PROJECT_ENTRY_MISSING ||
+                    project_entry_kind(to) != PROJECT_ENTRY_MISSING) goto recovery_required;
                 project_file_error(error, error_size, "Could not preserve user entry", moves.files[moved].path);
                 goto rollback;
             }
@@ -1112,15 +1124,17 @@ rollback:
             --moved;
             if (!project_move_user(staging, backup, moves.files[moved].path)) restored = 0;
         }
-        if (!restored || !rename_directory(backup, directory)) {
-            pages_error(error, error_size,
-                "Save failed; recovery required. Keep both .tapesister-partial and .tapesister-backup folders");
-            project_files_free(&owned);
-            project_files_free(&moves);
-            return 0;
-        }
+        if (!restored || !rename_directory(backup, directory)) goto recovery_required;
+        if (moves.count) (void)write_partial_marker(staging, 0, NULL, 0);
     }
     goto failed;
+
+recovery_required:
+    pages_error(error, error_size,
+        "Save failed; recovery required. Keep both .tapesister-partial and .tapesister-backup folders");
+    project_files_free(&owned);
+    project_files_free(&moves);
+    return 0;
 
 manifest_failed:
     fclose(file);

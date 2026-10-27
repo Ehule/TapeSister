@@ -71,6 +71,11 @@ static int project_relative_valid(const char *path)
         if (*p && (*p < 32 || *p == 127 || *p == '\\' || *p == ':')) return 0;
         if (!*p || *p == '/') {
             size_t n = (const char *)p - component;
+#ifdef _WIN32
+            /* Win32 strips trailing dots/spaces. Never inspect one entry and
+               then rename/delete a different entry through that alias. */
+            if (n && (component[n - 1] == '.' || component[n - 1] == ' ')) return 0;
+#endif
             if (!n || (n == 1 && component[0] == '.') ||
                 (n == 2 && component[0] == '.' && component[1] == '.')) return 0;
             if (!*p) return 1;
@@ -324,6 +329,8 @@ typedef struct {
 static int project_preserve_visit(const char *relative, void *context, char *error, size_t size)
 {
     ProjectPreservation *plan = context;
+    if (!project_relative_valid(relative))
+        return project_file_error(error, size, "Cannot safely address user entry", relative);
     char old[TS_PROJECT_PATH_MAX], staged[TS_PROJECT_PATH_MAX];
     if (!project_join(old, sizeof(old), plan->old, relative) ||
         !project_join(staged, sizeof(staged), plan->staging, relative))

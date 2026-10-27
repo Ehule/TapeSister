@@ -17,7 +17,7 @@
 /* Exercise the real public saver, injecting filesystem failures only at its
    rename boundary. No production fault switches or alternate save code. */
 enum { FAULT_NONE, FAULT_PREPARE, FAULT_MOVE_SECOND, FAULT_PUBLISH,
-       FAULT_ROLLBACK_ENTRY, FAULT_ROLLBACK_ROOT, FAULT_VALIDATION };
+       FAULT_ROLLBACK_ENTRY, FAULT_ROLLBACK_ROOT, FAULT_VALIDATION, FAULT_MOVE_AMBIGUOUS };
 static int fault, user_moves;
 #ifndef _WIN32
 static int crash_after_move;
@@ -51,7 +51,12 @@ static BOOL WINAPI test_move(const char *from, const char *to, DWORD flags)
 {
     if (fail_rename(from, to)) { SetLastError(ERROR_ACCESS_DENIED); return FALSE; }
     BOOL ok = MoveFileExA(from, to, flags);
-    if (ok) corrupt_for_validation(to);
+    if (ok) {
+        corrupt_for_validation(to);
+        if (fault == FAULT_MOVE_AMBIGUOUS && strstr(from, "Save Project.tapesister-backup/")) {
+            SetLastError(ERROR_WRITE_FAULT); return FALSE;
+        }
+    }
     return ok;
 }
 #define MoveFileExA test_move
@@ -62,6 +67,9 @@ static int test_rename(const char *from, const char *to)
     int result = rename(from, to);
     if (!result) {
         corrupt_for_validation(to);
+        if (fault == FAULT_MOVE_AMBIGUOUS && strstr(from, "Save Project.tapesister-backup/")) {
+            errno = EIO; return -1;
+        }
         if (crash_after_move && strstr(from, "Save Project.tapesister-backup/")) _exit(42);
     }
     return result;
@@ -280,8 +288,27 @@ static void test_failed_rollback(void)
         contents(notes, "personal notes\n");
         /* Restart-equivalent retry must not erase staging with the only copy. */
         CHECK(!save()); CHECK(strstr(error, "backup")); contents(notes, "personal notes\n");
+        if (f == FAULT_ROLLBACK_ENTRY) {
+            /* Manual recovery may relocate the backup before the next retry.
+               The protected stage must still never be auto-cleaned. */
+            CHECK(!rename("Save Project.tapesister-backup", "relocated-backup"));
+            CHECK(!save()); CHECK(strstr(error, "staging")); contents(notes, "personal notes\n");
+            CHECK(remove_tree("relocated-backup"));
+        }
         clean_case();
     }
+}
+
+static void test_ambiguous_move(void)
+{
+    new_case();
+    put("Save Project/notes.txt", "sole user copy\n");
+    fault = FAULT_MOVE_AMBIGUOUS; CHECK(!save()); fault = FAULT_NONE;
+    CHECK(strstr(error, "recovery required"));
+    contents("Save Project.tapesister-partial/notes.txt", "sole user copy\n");
+    CHECK(project_entry_kind("Save Project.tapesister-backup") == PROJECT_ENTRY_DIRECTORY);
+    CHECK(!save()); contents("Save Project.tapesister-partial/notes.txt", "sole user copy\n");
+    clean_case();
 }
 
 static void test_recovery_guards(void)
@@ -454,7 +481,7 @@ int main(void)
 #endif
     test_preservation(); test_conflicts(); test_modified_and_stale_files();
     test_failures(); test_failed_rollback(); test_recovery_guards(); test_links(); test_corrupt_inventory();
-    test_legacy_migration(); test_interruption(); test_windows_locked_file();
+    test_legacy_migration(); test_interruption(); test_windows_locked_file(); test_ambiguous_move();
 #ifdef _WIN32
     CHECK(_chdir("..") == 0);
 #else
