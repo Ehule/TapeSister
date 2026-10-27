@@ -185,9 +185,14 @@ static void mosaic_card(TsFramebuffer *fb,const TsUiState *ui,const TsMosaicEven
         const char *state=e->muted?"MUTE":e->solo?"SOLO":dim?(chars>=8?"SOLO OUT":"EXCL"):e->live?(e->live_finite?"FINITE":"LIVE INF"):e->looping?"LOOP":"ONCE";
         snprintf(label,sizeof(label),"%.*s",chars,state);text(fb,x+6,end-11,label,color,1);
     }
-    if(e->live){const TsMosaicLive *l=mosaic_live_snapshot(ui,e);
+    if(e->live && top>=66 && bottom-top>=28 && w>=24) {
+        const TsMosaicLive *l=mosaic_live_snapshot(ui,e);
+        /* A source phase strip is separate from the timeline waveform: finite
+           cards can show several cycles, and INF height is only a footprint. */
+        mosaic_canvas_rect(fb,x+3,(int)top+24,w-6,1,mosaic_mix_color(color,fill,.6f));
         if(l && l->id==e->id && l->state==TS_MOSAIC_LIVE_PLAYING)
-            mosaic_canvas_rect(fb,x+3,(int)(top+fmax(0,fmin(1,l->phase))*(bottom-top)),w-6,2,RGB(255,224,150));}
+            mosaic_canvas_rect(fb,x+3+(int)(fmax(0,fmin(1,l->phase))*(w-8)),(int)top+22,2,5,RGB(255,224,150));
+    }
     mosaic_card_pan(&fades,ui,e,x,(int64_t)top,x+w,(int64_t)bottom,color);
     mosaic_fade_handles(&fades,ui,e,x,(int64_t)top,x+w,(int64_t)bottom,
         selected?mosaic_selection_color(ui,e->id==ui->mosaic_selected):color);

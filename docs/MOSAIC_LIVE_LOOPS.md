@@ -33,8 +33,9 @@ with the normal Mosaic gestures. Select a card and use **LAUNCH**, **STOP**, or
 timeline ownership and stops that independent player. Pattern cards cannot be
 converted in this stage; they still play alongside live audio loops.
 
-Gold borders, LIVE STOP/WAIT/PLAY/END labels, and a moving cursor distinguish
-live cards. The cursor shows the first voice's position in the source cycle,
+Gold borders, LIVE STOP/WAIT/PLAY/END labels, and a phase strip distinguish
+live cards. Its moving tick below the state label shows the first voice's
+position in the source cycle,
 independently of the main playhead. Muting/solo exclusion can make a playing
 card inaudible without stopping its cursor. F11 reports active live loops even
 when the Mosaic timeline is stopped; F12's setup report includes their count

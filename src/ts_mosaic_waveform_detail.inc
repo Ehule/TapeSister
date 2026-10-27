@@ -162,10 +162,15 @@ static void mosaic_detail_card(TsUiWaveformDetail *d,const TsUiState *ui,
         const char *state=e->muted?"MUTE":e->solo?"SOLO":dim?(chars>=8?"SOLO OUT":"EXCL"):e->live?(e->live_finite?"FINITE":"LIVE INF"):e->looping?"LOOP":"ONCE";
         mosaic_detail_text(d,tx,bottom-mosaic_detail_pixel(11*sy),state,color,sx,sy);
     }
-    if(e->live){const TsMosaicLive *l=mosaic_live_snapshot(ui,e);
+    if(e->live && h>=mosaic_detail_pixel(28*sy) && w>=mosaic_detail_pixel(24*sx)) {
+        const TsMosaicLive *l=mosaic_live_snapshot(ui,e);
+        int64_t row=y+mosaic_detail_pixel(24*sy);
+        mosaic_detail_rect(d,x+3*bx,row,right-3*bx,row+by,mosaic_mix_color(color,fill,.6f));
         if(l && l->id==e->id && l->state==TS_MOSAIC_LIVE_PLAYING) {
-            int64_t play=y+(int64_t)(fmax(0,fmin(1,l->phase))*(bottom-y));
-            mosaic_detail_rect(d,x+3*bx,play,right-3*bx,play+2*by,RGB(255,224,150));}}
+            int64_t play=x+3*bx+(int64_t)(fmax(0,fmin(1,l->phase))*(w-8*bx));
+            mosaic_detail_rect(d,play,y+mosaic_detail_pixel(22*sy),play+2*bx,y+mosaic_detail_pixel(27*sy),RGB(255,224,150));
+        }
+    }
     mosaic_card_pan(&fades,ui,e,x,y,right,bottom,border);
     mosaic_fade_handles(&fades,ui,e,x,y,right,bottom,border);
 }

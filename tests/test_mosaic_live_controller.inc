@@ -100,7 +100,11 @@ static void test_mosaic_live_controller(SDL_Window *window,SDL_AudioDeviceID dev
     assert(u->mosaic->live[second-u->mosaic->events].state==TS_MOSAIC_LIVE_PLAYING);
     /* Native rendered fixture uses the actual app UI and snapshot, with both
        the panel and each loop's independent state available for visual QA. */
+    double main_time=u->mosaic->time;
+    for(int i=0;i<3;++i)audio_callback(a,(Uint8 *)out,sizeof(out));
     MosaicController controller={0};controller.ui_epoch=u->mosaic->epoch;mosaic_poll(device,u,&instrument,&controller);
+    double cursor=u->mosaic_live[second-u->mosaic->events].phase;
+    assert(u->mosaic_time==main_time && cursor>.2 && cursor<.3);
     const char *shot=getenv("TS_TEST_LIVE_LOOPS");
     if(shot) {
         u->mosaic_scale=100;for(int i=0;i<4;++i)u->mosaic->events[i].duration=2;
