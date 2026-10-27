@@ -205,7 +205,9 @@ static int performance_event(SDL_Event *e,SDL_Window *window,SDL_AudioDeviceID d
             if(!e->key.repeat)performance_page_set(audio,(performance_transport.page+((mod&KMOD_SHIFT)?PERF_PAGES-1:1))%PERF_PAGES);
             return 1;
         }
-        if(e->key.keysym.sym==SDLK_F9 && !e->key.repeat){matrix_show(device,audio,ui,pages,bank,-1,-1);return 1;}
+        if(e->key.keysym.sym==SDLK_F9 && !e->key.repeat) {
+            SDL_Event request=*e;request.key.windowID=SDL_GetWindowID(window);SDL_PushEvent(&request);return 1;
+        }
         if(e->key.keysym.sym==SDLK_F12)return ts_audio_health_event(e,window,audio,ui);
     }
     if(performance_inputs_event(e,device,audio))return 1;
@@ -236,7 +238,11 @@ static int performance_event(SDL_Event *e,SDL_Window *window,SDL_AudioDeviceID d
         if(device)SDL_LockAudioDevice(device);audio->sister.performance_mixer.always_on_top^=1;if(device)SDL_UnlockAudioDevice(device);
         SDL_SetWindowAlwaysOnTop(performance_transport.window,audio->sister.performance_mixer.always_on_top?SDL_TRUE:SDL_FALSE);
     } else if(left && y>=604 && y<632) {
-        if(x>=20 && x<180)matrix_show(device,audio,ui,pages,bank,-1,-1);
+        if(x>=20 && x<180) {
+            SDL_Event request={0};request.type=SDL_KEYDOWN;request.key.windowID=SDL_GetWindowID(window);request.key.keysym.sym=SDLK_F9;
+            request.key.state=SDL_PRESSED;
+            SDL_PushEvent(&request);
+        }
         else if(x>=190 && x<350) {
             SDL_Event health={0};health.type=SDL_KEYDOWN;health.key.windowID=performance_transport.id;health.key.keysym.sym=SDLK_F12;
             ts_audio_health_event(&health,window,audio,ui);

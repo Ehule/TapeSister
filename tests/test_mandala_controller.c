@@ -200,7 +200,9 @@ static void lifecycle(SDL_Window *window)
     performance_show(&u,&a);
     uint64_t hash=paged_project_state_hash(&pages,&bank,NULL,&a.sister,&a.keyboard_sequence);
     SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.button=SDL_BUTTON_LEFT;
-    e.button.windowID=performance_transport.id;e.button.x=450;e.button.y=470;
+    e.button.windowID=performance_transport.id;e.button.x=610;e.button.y=118;
+    assert(performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));assert(performance_transport.page==PERF_VISUALS);
+    e.button.x=450;e.button.y=196;
     assert(performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));
     assert(hash!=paged_project_state_hash(&pages,&bank,NULL,&a.sister,&a.keyboard_sequence));
     assert(ts_tapehead_running() && a.mosaic->playing && a.keyboard_sequence.running);
@@ -316,7 +318,9 @@ static void editor_checks(SDL_Window *window)
 {
     TsMandalaConfig original=a.sister.mandala;TsMatrixControls routing=a.sister.matrix.controls;
     performance_show(&u,&a);
-    SDL_Event e={0};e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=performance_transport.id;e.button.button=SDL_BUTTON_LEFT;e.button.x=60;e.button.y=505;
+    SDL_Event e={0};e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=performance_transport.id;e.button.button=SDL_BUTTON_LEFT;e.button.x=610;e.button.y=118;
+    assert(performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));assert(performance_transport.page==PERF_VISUALS);
+    e.button.x=60;e.button.y=248;
     assert(performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));assert(mandala_editor.visible);
     uint64_t before=paged_project_state_hash(&pages,&bank,NULL,&a.sister,&a.keyboard_sequence);
     editor_click(40,95,SDL_BUTTON_LEFT);assert(a.sister.mandala.palette==3);

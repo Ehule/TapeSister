@@ -39,6 +39,10 @@ static void test_cockpit(const char *directory)
     a.sister.performance_transport=PERF_MOSAIC;
     assert(ts_tapehead_transport_locked(1));m->playing=1;
     performance_transport.selected=0;perf_input_shot(directory,"control-center-overview");
+    SDL_FlushEvent(SDL_KEYDOWN);perf_input_click(40,618,SDL_BUTTON_LEFT);
+    SDL_Event routing_request;
+    assert(SDL_PeepEvents(&routing_request,1,SDL_GETEVENT,SDL_KEYDOWN,SDL_KEYDOWN)==1);
+    assert(routing_request.key.keysym.sym==SDLK_F9 && routing_request.key.windowID==SDL_GetWindowID(window));
     /* Explicit software-UI measurement, not a timing-sensitive CI assertion.
        Dense sample-card metadata exercises the UI cache, not pattern audio. */
     if(getenv("TS_COCKPIT_BENCHMARK")) {
