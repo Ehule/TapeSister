@@ -53,6 +53,14 @@ int ts_tapehead_transport_keys_allowed(void);
 int ts_tapehead_following(void);
 int ts_tapehead_live_editing(void);
 int ts_tapehead_block_active(void);
+typedef struct {
+    int ready, playing, order, pattern, row, bpm, ticks_per_row, channels;
+    int performance_solo, block_loop;
+    uint32_t score_mutes, performance_mutes;
+} TsTapeHeadPerformance;
+/* Fixed, non-consuming UI snapshot. Caller holds the host audio lock; never
+   exports/hashes a score or consumes the Matrix's activity meters. */
+void ts_tapehead_performance_locked(TsTapeHeadPerformance *status);
 unsigned ts_tapehead_capture_flags(unsigned frame);
 unsigned ts_tapehead_tempo(unsigned frame); /* Audio-thread, most recently rendered block. */
 TsTileId ts_tapehead_canvas_tile(void); /* UI consumes the double-click target. */

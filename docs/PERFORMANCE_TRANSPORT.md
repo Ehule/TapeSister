@@ -1,14 +1,45 @@
-# Performance Transport
+# F11 Control Center
 
 Open **CFG → Transport**, **F11**, or **Ctrl+Shift+Space**. **Alt+F11** toggles
-fullscreen. This small modeless window mixes ARP,
+fullscreen. This modeless 960x640 window mixes ARP,
 TrackSister (SisterTracker), and Mosaic while you work elsewhere. A fourth
 **Live Tiles** fader controls your live instrument without transport buttons.
-The right-hand panel adds the active device's live inputs and an optional tuner.
+The Inputs/Tuner page adds the active device's live inputs and an optional tuner.
 
-![Performance Transport and live input tuner](screenshots/performance/performance-inputs-tuner.png)
+![Control Center overview](screenshots/performance/control-center-overview.png)
 
-Screenshot uses a synthetic A3 test tone, seven cents sharp.
+The screenshot is a native SDL integration fixture, not a measurement of a user's
+project or hardware. TrackSister is playing outside the group while Mosaic is
+joined. Playing, group membership, mute/solo and trim are separate states.
+
+## Pages and status
+
+The group commands and audio footer remain visible on all four pages. **Tab**
+and **Shift+Tab** cycle pages while this window has focus. The original F11 and
+Shift+Space shortcuts remain available from other workspaces, respecting text
+entry, MIDI learn and modal ownership.
+
+- **Overview:** Mosaic, TrackSister, ARP and Live Tiles; individual transport and
+  pre-route trim. Click a player name for its cue/loop, tracker or ARP detail.
+  The tracker position is the real playback row even with Follow off. Saved
+  score mutes and live performance mutes/solo are reported separately.
+- **Cues:** the existing sixteen Mosaic markers, immediate local seek and cue
+  loop toggle. Releasing a loop continues forward. No other player is sought.
+  A triggered cue label is not a claim that the playhead remains in that region.
+- **Inputs/Tuner:** six physical inputs per page, trims and raw-input tuning.
+- **Visuals:** all existing visualizer, freeze, seed, editor, symmetry and
+  evolution controls. Offline Render remains available on every page.
+
+The processor strip separates Sister on/off, rolling/hold and monitoring from
+player transport. The footer reads existing MAIN-tap meter, limiter, routing and
+callback diagnostics, with F9/F12 access. MAIN level is not a meter of every
+direct hardware output. Recent callback activity and deadline overruns are
+observations, not proof of acoustic audibility or a dropout. Card counts mean
+cards at the timeline cursor; muted or finished one-shots may be included.
+
+This stage does not introduce a master clock or change any source's timing.
+Persistent loop cards remain future work; they must be separate clock/transport
+destinations rather than automatically inheriting the main Mosaic playhead.
 
 ## Live inputs and Terra tuning
 
@@ -32,14 +63,28 @@ through wider devices. Channels outside the configured range are unavailable.
 - The tuner reads before these trims, so its mixer input may be unchecked or
   silent while tuning. Silence or an unreliable pitch produces no note; chords,
   heavy modulation, or noise may not yield a stable fundamental.
-- The tuner starts off, is never enabled by a project load, and stops when F11
-  closes or is minimized. Analysis runs at most ten times per second on the UI
+- The tuner starts off, is never enabled by a project load, and suspends when
+  its page is hidden or F11 is minimized; closing F11 switches it off. Analysis runs at most ten times per second on the UI
   thread. The audio callback only performs bounded sample decimation/copying
   while tuning is enabled; it never performs pitch analysis or allocates memory.
 
 ASIO duplex input uses the current audio block without an additional FIFO.
 Independent capture/output clocks use the existing bounded monitor bridge.
 Unavailable channels retain their saved settings but produce no input audio.
+Opening Overview alone does not request an unused input device. Entering
+Inputs/Tuner requests it; checked monitor feeds remain consumers across pages
+and after closing F11.
+
+![Inputs and tuner](screenshots/performance/control-center-inputs.png)
+
+The tuner screenshot uses a synthetic A3 test tone, seven cents sharp.
+
+Status snapshots use the existing short audio exclusion and never export or
+hash the tracker score. Arrangement metadata is UI-owned, cached at four Hz and
+traversed outside that exclusion. Existing atomic routing/timing snapshots are
+non-consuming; F11 does not drain F9 activity meters. Rendering remains capped
+at twenty Hz and stops when the window is hidden or minimized. No callback DSP
+or per-sample meter work is added by this cockpit.
 
 | Control | Behavior |
 | --- | --- |

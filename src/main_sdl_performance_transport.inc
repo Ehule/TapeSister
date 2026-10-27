@@ -1,15 +1,18 @@
 #include "main_sdl_mandala_editor.inc"
 /* Modeless player mixer with a separate live tile bus. Group edits publish at one callback boundary. */
-enum { PERF_ARP=1,PERF_TRACKER=2,PERF_MOSAIC=4,PERF_W=960,PERF_H=548 };
+enum { PERF_ARP=1,PERF_TRACKER=2,PERF_MOSAIC=4,PERF_W=960,PERF_H=640 };
+enum { PERF_OVERVIEW,PERF_CUES,PERF_INPUTS,PERF_VISUALS,PERF_PAGES };
+enum { PERF_ROWS_Y=178,PERF_ROW_STEP=60,PERF_GAIN_X=780,PERF_GAIN_W=112 };
 enum { PERF_BUTTON_PLAY=1,PERF_BUTTON_STOP,PERF_BUTTON_HOME,
     PERF_BUTTON_ROW_PLAY,PERF_BUTTON_ROW_HOME=PERF_BUTTON_ROW_PLAY+3,
     PERF_BUTTON_CLOCK=PERF_BUTTON_ROW_HOME+3,
     PERF_BUTTON_VISUAL,PERF_BUTTON_FREEZE,PERF_BUTTON_SEED,
     PERF_BUTTON_EDITOR,PERF_BUTTON_SYMMETRY,PERF_BUTTON_EVOLUTION,
     PERF_BUTTON_INPUT_PREV,PERF_BUTTON_INPUT_NEXT,PERF_BUTTON_TUNER,
-    PERF_BUTTON_TUNE_PREV,PERF_BUTTON_TUNE_NEXT,PERF_BUTTON_RENDER };
+    PERF_BUTTON_TUNE_PREV,PERF_BUTTON_TUNE_NEXT,PERF_BUTTON_RENDER,
+    PERF_BUTTON_TAB,PERF_BUTTON_CUE=PERF_BUTTON_TAB+PERF_PAGES,PERF_BUTTON_LOOP=PERF_BUTTON_CUE+16 };
 static struct {SDL_Window *window;SDL_Renderer *renderer;Uint32 id,painted,flash_until;
-    int visible,drag,pressed,flash,input_page,input_drag,tuner_on;
+    int visible,drag,pressed,flash,input_page,input_drag,tuner_on,page,selected;
     unsigned input_channels,tuner_channel;
     TsAudioChannelRange input_range;
     TsPerformanceInputs *inputs;
@@ -92,7 +95,7 @@ static void performance_show(TsUiState *ui,AudioState *audio)
     performance_transport.inputs=audio->performance_inputs;
     performance_palette=ui->palette;
     if(!performance_transport.window) {
-        performance_transport.window=SDL_CreateWindow("TapeSister - Performance Transport",SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,PERF_W,PERF_H,SDL_WINDOW_ALLOW_HIGHDPI);
+        performance_transport.window=SDL_CreateWindow("TapeSister - Control Center",SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,PERF_W,PERF_H,SDL_WINDOW_ALLOW_HIGHDPI);
         if(performance_transport.window)performance_transport.renderer=SDL_CreateRenderer(performance_transport.window,-1,SDL_RENDERER_SOFTWARE);
         if(!performance_transport.renderer){performance_close();snprintf(ui->status,sizeof(ui->status),"CANNOT OPEN PERFORMANCE TRANSPORT");return;}
         performance_transport.id=SDL_GetWindowID(performance_transport.window);
@@ -110,6 +113,27 @@ static void perf_text(int x,int y,const char *s,Uint32 color,int scale)
 {
     for(;*s;++s,x+=6*scale){const char *g=ts_ui_glyph(*s);for(int r=0;r<7;++r)for(int c=0;c<5;++c)if(g[r*5+c]=='1')perf_rect(x+c*scale,y+r*scale,scale,scale,color);}
 }
+/* Eleven-pixel secondary text, rather than the old seven-pixel labels. */
+static void perf_small(int x,int y,const char *s,Uint32 color)
+{
+    SDL_SetRenderDrawColor(performance_transport.renderer,(color>>16)&255,(color>>8)&255,color&255,255);
+    for(;*s;++s,x+=9) {
+        const char *g=ts_ui_glyph(*s);
+        for(int r=0;r<7;++r)for(int c=0;c<5;++c)if(g[r*5+c]=='1') {
+            SDL_Rect p={x+c*8/5,y+r*11/7,(c+1)*8/5-c*8/5,(r+1)*11/7-r*11/7};
+            SDL_RenderFillRect(performance_transport.renderer,&p);
+        }
+    }
+}
+static void perf_pointer(const SDL_Event *e,int *x,int *y)
+{
+    int px,py;
+    if(e->type==SDL_MOUSEWHEEL)wheel_event_mouse(e,&px,&py);
+    else if(e->type==SDL_MOUSEMOTION){px=e->motion.x;py=e->motion.y;}
+    else {px=e->button.x;py=e->button.y;}
+    float lx,ly;SDL_RenderWindowToLogical(performance_transport.renderer,px,py,&lx,&ly);
+    *x=(int)floorf(lx);*y=(int)floorf(ly);
+}
 static void perf_button(int x,int y,int width,int height,const char *label,int button,int active,int primary)
 {
     int pressed=performance_transport.pressed==button ||
@@ -122,62 +146,10 @@ static void perf_button(int x,int y,int width,int height,const char *label,int b
     perf_rect(x,y,width,height,background);
     if(lit)perf_rect(x,y,width,2,ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,
         pressed?TS_COLOR_FOCUS:TS_COLOR_ACTIVITY,0xfff0c982u));
-    perf_text(x+12,y+(height-7)/2,label,foreground,1);
+    perf_small(x+8,y+(height-11)/2,label,foreground);
 }
 #include "main_sdl_performance_inputs.inc"
-static void performance_update(SDL_AudioDeviceID device,AudioState *audio)
-{
-    /* Runs even when this dialog is hidden, outside its existing device lock. */
-    ts_mandala_follow_effects(&audio->sister);
-    if(!performance_transport.visible || !window_drawable(performance_transport.window) || SDL_GetTicks()-performance_transport.painted<50)return;
-    if(device)SDL_LockAudioDevice(device);
-    unsigned selected=audio->sister.performance_transport,running=performance_running(audio);
-    TsPerformanceMixer m=audio->sister.performance_mixer;
-    if(device)SDL_UnlockAudioDevice(device);
-    int top=(SDL_GetWindowFlags(performance_transport.window)&SDL_WINDOW_ALWAYS_ON_TOP)!=0;
-    if(top!=(int)m.always_on_top)SDL_SetWindowAlwaysOnTop(performance_transport.window,m.always_on_top?SDL_TRUE:SDL_FALSE);
-    perf_rect(0,0,PERF_W,PERF_H,ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_PANEL,0xff151c20u));perf_text(22,20,"PERFORMANCE TRANSPORT",ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_DATA4,0xff8addb4u),2);
-    perf_rect(422,20,12,12,m.always_on_top?ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_DATA4,0xff8addb4u):ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_GRID,0xff47605du));perf_text(444,23,"ALWAYS ON TOP",ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_TEXT,0xffdbe8e3u),1);
-    perf_text(22,49,"CHECK PLAYERS FOR GROUP CONTROL",ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_DIM,0xff94aaa7u),1);perf_text(352,49,"CHANNEL GAIN",ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_DIM,0xff94aaa7u),1);
-    const char *names[]={"ARP","TRACKSISTER","MOSAIC","LIVE TILES"};
-    char line[80];
-    for(int i=0;i<4;++i) {
-        int y=76+i*54;unsigned bit=1u<<i;
-        perf_rect(20,y,560,46,ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_EDGE,0xff202b30u));if(i<3)perf_rect(28,y+15,12,12,selected&bit?ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_DATA4,0xff8addb4u):ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_GRID,0xff47605du));
-        perf_text(49,y+9,names[i],ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_TEXT,0xffdbe8e3u),2);
-        perf_text(50,y+30,i==3?"+ LAUNCHERS":running&bit?"PLAYING":"STOPPED",running&bit?ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_DATA4,0xff8addb4u):ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_DIM,0xff94aaa7u),1);
-        if(i<3) {
-        perf_button(206,y+8,76,30,running&bit?(i?"PAUSE":"STOP"):"PLAY",PERF_BUTTON_ROW_PLAY+i,(running&bit)!=0,1);
-        perf_button(290,y+8,48,30,"HOME",PERF_BUTTON_ROW_HOME+i,0,0);
-        } else perf_text(214,y+20,"QWERTY / MIDI",ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_DIM,0xff94aaa7u),1);
-        int position=352+(int)lrintf(m.gain[i]*74);
-        perf_rect(352,y+20,148,6,ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_GRID,0xff47605du));perf_rect(352,y+20,position-352,6,ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_DATA4,0xff8addb4u));
-        perf_rect(425,y+16,2,14,ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_DATA1,0xffb6aa73u));perf_rect(position-3,y+15,6,16,ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_TEXT,0xffdbe8e3u));
-        if(m.gain[i]>0)snprintf(line,sizeof(line),"%+.1f DB",20*log10f(m.gain[i]));else snprintf(line,sizeof(line),"SILENT");
-        perf_text(513,y+20,line,ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_TEXT,0xffdbe8e3u),1);
-    }
-    perf_text(32,309,"PLAY RESUMES / HOME REWINDS",ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_DIM,0xff94aaa7u),1);
-    const char *clocks[]={"ARP CLOCK: LOCAL","ARP CLOCK: TRACKER 1/4","ARP CLOCK: TRACKER 1/8","ARP CLOCK: TRACKER 1/16"};
-    perf_button(294,298,286,30,clocks[m.arp_sync%4],PERF_BUTTON_CLOCK,m.arp_sync!=0,0);
-    perf_text(22,339,"MOSAIC SHARES GROUP START; ITS TAPE SPEED AND PITCH STAY LOCAL.",ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_DIM,0xff94aaa7u),1);
-    const char *buttons[]={"PLAY GROUP","PAUSE GROUP","RETURN TO START"};
-    for(int i=0;i<3;++i)perf_button(20+i*190,364,180,34,buttons[i],PERF_BUTTON_PLAY+i,
-        selected && (i==0?(running&selected)!=0:i==1?(running&selected)==0:0),1);
-    perf_text(22,412,"SHIFT+SPACE: GROUP   ALT+F11: FULLSCREEN",ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_DIM,0xff94aaa7u),1);
-    perf_button(400,407,180,34,offline_job.active?"RENDER PROGRESS...":"RENDER OFFLINE...",PERF_BUTTON_RENDER,offline_job.active,0);
-    perf_text(22,430,"GAIN: DRAG / WHEEL / RIGHT-CLICK RESET",ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_DIM,0xff94aaa7u),1);
-    perf_button(20,454,180,32,ts_mandala_active()?"CLOSE VISUALIZER":"VISUALIZE",PERF_BUTTON_VISUAL,ts_mandala_active(),1);
-    perf_button(210,454,180,32,ts_mandala_frozen()?"RESUME VISUAL":"FREEZE VISUAL",PERF_BUTTON_FREEZE,ts_mandala_active() && ts_mandala_frozen(),0);
-    perf_button(400,454,180,32,"NEW SEED",PERF_BUTTON_SEED,0,0);
-    const TsMandalaConfig *v=&audio->sister.mandala;
-    snprintf(line,sizeof(line),"EDIT VISUALIZER");
-    perf_button(20,494,180,28,line,PERF_BUTTON_EDITOR,mandala_editor.visible,0);
-    snprintf(line,sizeof(line),"SYMMETRY: %u",v->symmetry);perf_button(210,494,180,28,line,PERF_BUTTON_SYMMETRY,0,0);
-    snprintf(line,sizeof(line),"EVOLUTION: %u:%02u",v->cycle_seconds/60,v->cycle_seconds%60);perf_button(400,494,180,28,line,PERF_BUTTON_EVOLUTION,0,0);
-    perf_text(22,534,"IN VISUAL WINDOW: F FULLSCREEN / D DISPLAY / Q QUALITY / ESC EXIT",ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_DIM,0xff94aaa7u),1);
-    performance_inputs_paint(&m);
-    SDL_RenderPresent(performance_transport.renderer);performance_transport.painted=SDL_GetTicks();
-}
+#include "main_sdl_cockpit.inc"
 static void performance_gain(SDL_AudioDeviceID device,AudioState *audio,int channel,float gain)
 {
     if(channel<0 || channel>3)return;
@@ -219,83 +191,102 @@ static int performance_event(SDL_Event *e,SDL_Window *window,SDL_AudioDeviceID d
         return 1;
     }
     if(!own)return 0;
-    if(e->type==SDL_MOUSEBUTTONDOWN && e->button.button==SDL_BUTTON_LEFT) {
-        float x,y;SDL_RenderWindowToLogical(performance_transport.renderer,e->button.x,e->button.y,&x,&y);
-        if(x>=400 && x<580 && y>=407 && y<441){performance_feedback(PERF_BUTTON_RENDER,1);offline_show(ui,audio);return 1;}
-    }
     if((e->type==SDL_WINDOWEVENT && e->window.event==SDL_WINDOWEVENT_FOCUS_LOST) || e->type==SDL_MOUSEBUTTONUP) {
-        performance_transport.drag=0;SDL_CaptureMouse(SDL_FALSE);
-        performance_transport.input_drag=0;
+        performance_transport.drag=performance_transport.input_drag=0;SDL_CaptureMouse(SDL_FALSE);
     }
     if((e->type==SDL_WINDOWEVENT && e->window.event==SDL_WINDOWEVENT_CLOSE) || (key && e->key.keysym.sym==SDLK_ESCAPE)) {
-        performance_transport.drag=0;SDL_CaptureMouse(SDL_FALSE);
-        performance_transport.input_drag=0;
-        performance_transport.pressed=performance_transport.flash=0;
-        performance_transport.tuner_on=0;ts_performance_inputs_tuner(audio->performance_inputs,0,0);
+        performance_transport.drag=performance_transport.input_drag=0;SDL_CaptureMouse(SDL_FALSE);
+        performance_transport.pressed=performance_transport.flash=performance_transport.tuner_on=0;
+        ts_performance_inputs_tuner(audio->performance_inputs,0,0);
         performance_transport.visible=0;SDL_HideWindow(performance_transport.window);return 1;
     }
-    if(performance_inputs_event(e,device,audio))return 1;
-    if(e->type==SDL_MOUSEMOTION && performance_transport.drag)
-        performance_gain(device,audio,performance_transport.drag-1,(e->motion.x-352)/74.f);
-    if(e->type==SDL_MOUSEWHEEL) {
-        int x,y;wheel_event_mouse(e,&x,&y);
-        int row=(y-76)/54;
-        if(x>=346 && x<580 && y>=76 && row<4 && (y-76)%54<46) {
-            float delta=e->wheel.preciseY?e->wheel.preciseY:e->wheel.y;
-            if(e->wheel.direction==SDL_MOUSEWHEEL_FLIPPED)delta=-delta;
-            performance_gain(device,audio,row,audio->sister.performance_mixer.gain[row]+delta*.02f);
-        }
-    }
-    if(e->type==SDL_MOUSEBUTTONDOWN) {
-        int x=e->button.x,y=e->button.y,left=e->button.button==SDL_BUTTON_LEFT;
-        if(left && y>=454 && y<522 && x>=20 && x<580) {
-            int col=(x-20)/190;
-            if((x-20)%190>=180)return 1;
-            TsMandalaConfig *v=&audio->sister.mandala;
-            if(y<486) {
-                performance_feedback(PERF_BUTTON_VISUAL+col,1);
-                if(col==0) {
-                    if(ts_mandala_active())ts_mandala_close();
-                    else {
-                        TsMandalaPreferences prefs={ui->config.visual_quality,ui->config.visual_display,ui->config.visual_fullscreen};
-                        char error[160];
-                        if(!ts_mandala_open(v,&prefs,error,sizeof(error)))snprintf(ui->status,sizeof(ui->status),"VISUALIZER: %.140s",error);
-                    }
-                } else if(col==1)ts_mandala_freeze();
-                else ts_mandala_reseed(v);
-            } else if(y>=494) {
-                performance_feedback(PERF_BUTTON_EDITOR+col,1);
-                if(col==0)mandala_editor_show(ui,v);
-                else if(col==1)v->symmetry=v->symmetry>=12?4:v->symmetry+2;
-                else v->cycle_seconds=v->cycle_seconds>=960?60:v->cycle_seconds*2;
-            }
-            performance_transport.painted=SDL_GetTicks()-100;
+    if(key && !(mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI))) {
+        if(e->key.keysym.sym==SDLK_TAB) {
+            if(!e->key.repeat)performance_page_set(audio,(performance_transport.page+((mod&KMOD_SHIFT)?PERF_PAGES-1:1))%PERF_PAGES);
             return 1;
         }
-        int row=(y-76)/54;
-        if(x>=346 && x<580 && y>=76 && row<4 && (y-76)%54<46) {
-            if(e->button.button==SDL_BUTTON_RIGHT || (left && e->button.clicks>=2))performance_gain(device,audio,row,1);
-            else if(left) {performance_transport.drag=row+1;SDL_CaptureMouse(SDL_TRUE);performance_gain(device,audio,row,(x-352)/74.f);}
-        } else if(left && x>=20 && x<338 && y>=76 && row<3 && (y-76)%54<46) {
-            if(x>=206) {
-                performance_feedback((x>=290?PERF_BUTTON_ROW_HOME:PERF_BUTTON_ROW_PLAY)+row,1);
-                performance_command_for(1u<<row,x>=290?2:-1,window,device,audio,ui,pages,bank,fm,rate);
-            }
-            else {if(device)SDL_LockAudioDevice(device);audio->sister.performance_transport^=1u<<row;if(device)SDL_UnlockAudioDevice(device);}
-        } else if(left && x>=422 && x<580 && y>=16 && y<38) {
-            if(device)SDL_LockAudioDevice(device);audio->sister.performance_mixer.always_on_top^=1;if(device)SDL_UnlockAudioDevice(device);
-            SDL_SetWindowAlwaysOnTop(performance_transport.window,audio->sister.performance_mixer.always_on_top?SDL_TRUE:SDL_FALSE);
-        } else if(left && x>=294 && x<580 && y>=298 && y<328) {
-            performance_feedback(PERF_BUTTON_CLOCK,1);
-            if(!ts_tapehead_frame() && !embedded_open(window,device,audio,ui,pages,bank,rate))return 1;
-            if(device)SDL_LockAudioDevice(device);
-            audio->sister.performance_mixer.arp_sync=(audio->sister.performance_mixer.arp_sync+1)%4;
-            if(device)SDL_UnlockAudioDevice(device);
-        } else if(left && y>=364 && y<398 && x>=20 && x<580 && (x-20)%190<180) {
-            performance_feedback(PERF_BUTTON_PLAY+(x-20)/190,1);
-            performance_command((int[]){1,0,2}[(x-20)/190],window,device,audio,ui,pages,bank,fm,rate);
+        if(e->key.keysym.sym==SDLK_F9 && !e->key.repeat) {
+            SDL_Event request=*e;request.key.windowID=SDL_GetWindowID(window);SDL_PushEvent(&request);return 1;
         }
-        performance_transport.painted=SDL_GetTicks()-100;
+        if(e->key.keysym.sym==SDLK_F12)return ts_audio_health_event(e,window,audio,ui);
     }
-    return 1;
+    if(performance_inputs_event(e,device,audio))return 1;
+    if(e->type!=SDL_MOUSEBUTTONDOWN && e->type!=SDL_MOUSEMOTION && e->type!=SDL_MOUSEWHEEL)return 1;
+    int x,y;perf_pointer(e,&x,&y);
+    if(e->type==SDL_MOUSEMOTION) {
+        if(performance_transport.drag)performance_gain(device,audio,performance_transport.drag-1,(x-PERF_GAIN_X)*2.f/PERF_GAIN_W);
+        return 1;
+    }
+    const int channels[]={2,1,0,3};int row=(y-PERF_ROWS_Y)/PERF_ROW_STEP;
+    int row_hit=performance_transport.page==PERF_OVERVIEW && y>=PERF_ROWS_Y && row<4 && (y-PERF_ROWS_Y)%PERF_ROW_STEP<54;
+    if(e->type==SDL_MOUSEWHEEL) {
+        if(row_hit && x>=PERF_GAIN_X-8 && x<940) {
+            float delta=e->wheel.preciseY?e->wheel.preciseY:e->wheel.y;if(e->wheel.direction==SDL_MOUSEWHEEL_FLIPPED)delta=-delta;
+            int ch=channels[row];performance_gain(device,audio,ch,audio->sister.performance_mixer.gain[ch]+delta*.02f);
+        }
+        return 1;
+    }
+    int left=e->button.button==SDL_BUTTON_LEFT;
+    if(left && y>=104 && y<134 && x>=20 && x<780 && (x-20)%190<180) {
+        performance_page_set(audio,(x-20)/190);return 1;
+    }
+    if(left && y>=54 && y<88 && x>=20 && x<590 && (x-20)%190<180) {
+        int command=(int[]){1,0,2}[(x-20)/190];performance_feedback(PERF_BUTTON_PLAY+(x-20)/190,1);
+        performance_command(command,window,device,audio,ui,pages,bank,fm,rate);return 1;
+    }
+    if(left && x>=786 && x<940 && y>=16 && y<38) {
+        if(device)SDL_LockAudioDevice(device);audio->sister.performance_mixer.always_on_top^=1;if(device)SDL_UnlockAudioDevice(device);
+        SDL_SetWindowAlwaysOnTop(performance_transport.window,audio->sister.performance_mixer.always_on_top?SDL_TRUE:SDL_FALSE);
+    } else if(left && y>=604 && y<632) {
+        if(x>=20 && x<180) {
+            SDL_Event request={0};request.type=SDL_KEYDOWN;request.key.windowID=SDL_GetWindowID(window);request.key.keysym.sym=SDLK_F9;
+            request.key.state=SDL_PRESSED;
+            SDL_PushEvent(&request);
+        }
+        else if(x>=190 && x<350) {
+            SDL_Event health={0};health.type=SDL_KEYDOWN;health.key.windowID=performance_transport.id;health.key.keysym.sym=SDLK_F12;
+            ts_audio_health_event(&health,window,audio,ui);
+        } else if(x>=360 && x<540){performance_feedback(PERF_BUTTON_RENDER,1);offline_show(ui,audio);}
+    } else if(row_hit) {
+        int ch=channels[row];
+        if(x>=PERF_GAIN_X-8 && x<940) {
+            if(e->button.button==SDL_BUTTON_RIGHT || (left && e->button.clicks>=2))performance_gain(device,audio,ch,1);
+            else if(left){performance_transport.drag=ch+1;SDL_CaptureMouse(SDL_TRUE);performance_gain(device,audio,ch,(x-PERF_GAIN_X)*2.f/PERF_GAIN_W);}
+        } else if(left && ch<3 && x>=620 && x<760) {
+            performance_feedback((x>=704?PERF_BUTTON_ROW_HOME:PERF_BUTTON_ROW_PLAY)+ch,1);
+            performance_command_for(1u<<ch,x>=704?2:-1,window,device,audio,ui,pages,bank,fm,rate);
+        } else if(left && ch<3 && x>=200 && x<270) {
+            if(device)SDL_LockAudioDevice(device);audio->sister.performance_transport^=1u<<ch;if(device)SDL_UnlockAudioDevice(device);
+        } else if(left && x>=20 && x<200)performance_transport.selected=row;
+    } else if(left && performance_transport.page==PERF_OVERVIEW && performance_transport.selected==2 && x>=28 && x<328 && y>=447 && y<477) {
+        if(!ts_tapehead_frame() && !embedded_open(window,device,audio,ui,pages,bank,rate))return 1;
+        if(device)SDL_LockAudioDevice(device);audio->sister.performance_mixer.arp_sync=(audio->sister.performance_mixer.arp_sync+1)%4;if(device)SDL_UnlockAudioDevice(device);
+        performance_feedback(PERF_BUTTON_CLOCK,1);
+    } else if(left && performance_transport.page==PERF_CUES && audio->mosaic) {
+        int cue=-1;
+        if(y>=184 && y<348 && x>=20 && x<940 && (x-20)%116<108 && (y-184)%82<68)cue=(y-184)/82*8+(x-20)/116;
+        if(cue>=0 && cue<16 && audio->mosaic->markers[cue].stored) {
+            if(device)SDL_LockAudioDevice(device);ts_mosaic_trigger_marker(audio->mosaic,cue);if(device)SDL_UnlockAudioDevice(device);
+            performance_feedback(PERF_BUTTON_CUE+cue,1);
+        } else if(x>=28 && x<278 && y>=370 && y<404) {
+            if(device)SDL_LockAudioDevice(device);ts_mosaic_set_marker_loop(audio->mosaic,!audio->mosaic->marker_loop);if(device)SDL_UnlockAudioDevice(device);
+            performance_feedback(PERF_BUTTON_LOOP,1);
+        }
+    } else if(left && performance_transport.page==PERF_VISUALS && x>=20 && x<580 && (x-20)%190<180 &&
+        ((y>=180 && y<214) || (y>=232 && y<266))) {
+        int col=(x-20)/190;TsMandalaConfig *v=&audio->sister.mandala;
+        if(y<214) {
+            performance_feedback(PERF_BUTTON_VISUAL+col,1);
+            if(col==0) {
+                if(ts_mandala_active())ts_mandala_close();else {
+                    TsMandalaPreferences prefs={ui->config.visual_quality,ui->config.visual_display,ui->config.visual_fullscreen};char error[160];
+                    if(!ts_mandala_open(v,&prefs,error,sizeof(error)))snprintf(ui->status,sizeof(ui->status),"VISUALIZER: %.140s",error);
+                }
+            } else if(col==1)ts_mandala_freeze();else ts_mandala_reseed(v);
+        } else {
+            performance_feedback(PERF_BUTTON_EDITOR+col,1);
+            if(col==0)mandala_editor_show(ui,v);else if(col==1)v->symmetry=v->symmetry>=12?4:v->symmetry+2;else v->cycle_seconds=v->cycle_seconds>=960?60:v->cycle_seconds*2;
+        }
+    }
+    performance_transport.painted=SDL_GetTicks()-100;return 1;
 }

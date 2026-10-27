@@ -1,4 +1,5 @@
 #include "test_performance_inputs.inc"
+#include "test_cockpit.inc"
 static void test_performance_transport(const char *directory)
 {
     TsMosaic *saved=a.mosaic,*m=ts_mosaic_create();assert(m);a.mosaic=m;
@@ -51,7 +52,9 @@ static void test_performance_transport(const char *directory)
         int position=song.songPos,row=song.row;double time=m->time;
         assert(position==1 && row>=8 && time>3);
         editor.songPos=editor.row=0; /* Follow-off edit cursor must not win. */
-        e.button.x=230;e.button.y=375;
+        PerformanceStatus cockpit=performance_status(0,&a);
+        assert(cockpit.tracker.playing && cockpit.tracker.order==position && cockpit.tracker.row==row);
+        e.button.x=230;e.button.y=64;
         assert(performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));
         assert(performance_transport.flash==PERF_BUTTON_STOP);
         assert(!ts_tapehead_running() && !m->playing);
@@ -67,13 +70,13 @@ static void test_performance_transport(const char *directory)
         assert(song.row>row && m->time>time);
         row=song.row;time=m->time;
         /* Each row pauses/resumes independently. */
-        e.button.x=230;e.button.y=145;
+        e.button.x=640;e.button.y=252;
         assert(performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));
         assert(!ts_tapehead_running() && m->playing && song.row==row);
-        e.button.y=200;assert(performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));
+        e.button.y=192;assert(performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));
         assert(!m->playing && m->time==time);
         assert(performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));
-        e.button.y=145;assert(performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));
+        e.button.y=252;assert(performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));
         assert(ts_tapehead_running() && m->playing && song.row==row && m->time==time);
         SDL_Event shortcut;SDL_zero(shortcut);shortcut.type=SDL_KEYDOWN;
         shortcut.key.windowID=performance_transport.id;shortcut.key.keysym.sym=SDLK_SPACE;
@@ -83,7 +86,7 @@ static void test_performance_transport(const char *directory)
             assert(ts_tapehead_running()==toggle && m->playing==toggle);
             assert(song.songPos==position && song.row==row && m->time==time);
         }
-        e.button.x=480;e.button.y=375;
+        e.button.x=480;e.button.y=64;
         assert(performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));
         assert(performance_transport.flash==PERF_BUTTON_HOME);
         assert(!ts_tapehead_running() && !m->playing && !song.songPos && !song.row && !m->time);
@@ -97,16 +100,18 @@ static void test_performance_transport(const char *directory)
     render(transport_energy);assert(!m->playing && m->time==ts_mosaic_end(m));
     assert(performance_command_for(PERF_MOSAIC,2,window,0,&a,&u,&pages,&bank,NULL,48000));
     assert(!m->time);m->repeat=repeat;
-    e.button.x=430;e.button.y=24;assert(performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));assert(a.sister.performance_mixer.always_on_top);
+    e.button.x=800;e.button.y=24;assert(performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));assert(a.sister.performance_mixer.always_on_top);
     /* SDL dummy has no window manager; persistence is checked independently. */
     if(strcmp(SDL_GetCurrentVideoDriver(),"dummy"))assert(SDL_GetWindowFlags(performance_transport.window)&SDL_WINDOW_ALWAYS_ON_TOP);
-    e.button.x=352;e.button.y=100;assert(performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));assert(a.sister.performance_mixer.gain[0]==0);
-    e.type=SDL_MOUSEMOTION;e.motion.windowID=performance_transport.id;e.motion.x=500;
+    e.button.x=780;e.button.y=310;assert(performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));assert(a.sister.performance_mixer.gain[0]==0);
+    e.type=SDL_MOUSEMOTION;e.motion.windowID=performance_transport.id;e.motion.x=892;
     assert(performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));assert(a.sister.performance_mixer.gain[0]==2);
     e.type=SDL_MOUSEBUTTONUP;e.button.windowID=performance_transport.id;performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000);assert(!performance_transport.drag);
-    e.type=SDL_MOUSEBUTTONDOWN;e.button.button=SDL_BUTTON_RIGHT;e.button.x=400;e.button.y=100;
+    e.type=SDL_MOUSEBUTTONDOWN;e.button.button=SDL_BUTTON_RIGHT;e.button.x=830;e.button.y=310;
     performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000);assert(a.sister.performance_mixer.gain[0]==1);
-    e.button.button=SDL_BUTTON_LEFT;e.button.x=320;e.button.y=304;
+    e.button.button=SDL_BUTTON_LEFT;e.button.x=100;e.button.y=310;
+    assert(performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));
+    e.button.y=462;
     for(int i=1;i<=4;++i) {performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000);assert(a.sister.performance_mixer.arp_sync==(unsigned)i%4);}
     /* Fader edits affect saved-state dirty detection. */
     uint64_t h=paged_project_state_hash(&pages,&bank,NULL,&a.sister,&a.keyboard_sequence);
@@ -129,6 +134,7 @@ static void test_performance_transport(const char *directory)
     assert(m->playing && m->time>before);
     performance_gain(0,&a,2,1);render(energy);assert(fabsf(a.clean.graph[TS_MATRIX_NODES].l)>0);
     assert(ts_matrix_set(&a.sister.matrix,&matrix,48000));
+    test_cockpit(directory);
     test_performance_inputs(directory);
     performance_close();ts_tapehead_stop();a.sister.performance_transport=mask;a.sister.performance_mixer=controls;a.mosaic=saved;ts_mosaic_free(m);
 }
