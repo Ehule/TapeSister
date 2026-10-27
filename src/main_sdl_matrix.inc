@@ -386,11 +386,21 @@ static void mx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
         mx_rect(784,743,260,3,MX_DIM);mx_rect(913,734,2,20,MX_DIM);mx_rect(914,743,r.pan>0?r.pan*130/100:0,3,MX_YELLOW);
         if(r.pan<0)mx_rect(914+r.pan*130/100,743,-r.pan*130/100,3,MX_YELLOW);
         mx_rect(914+r.pan*130/100-3,735,6,19,MX_YELLOW);
-        mx_button(1070,731,170,(row.kind==2 || row.kind==4) && row.index==TS_MATRIX_BOARD?((w->controls.serial_mask&(1u<<TS_MATRIX_BOARD)) || w->controls.board_insert?"MODE: INSERT":"MODE: SEND"):mx_legacy_direct(raw)?"USE MATRIX":row.kind==0?(raw.mode==TS_SOURCE_INHERIT?"USE TRACK":"USE TILE"):row.kind==3?"TO MOSAIC BUS":row.kind==1?"TO TILE BUS":"NAME I/O",(row.kind==3 || row.kind==1) && !raw.matrix_enabled && raw.mode==TS_SOURCE_MAIN);
+        if(row.kind==2 && row.index==TS_MATRIX_MAIN) {
+            int clip=!w->controls.enabled || ts_matrix_main_clip(&w->controls);
+            mx_text(1070,706,"EARLY CLIP",MX_YELLOW,2);
+            mx_button(1070,731,80,"ON",clip);mx_button(1156,731,84,"OFF",!clip);
+        } else {
+            const char *mode=(row.kind==2 || row.kind==4) && row.index==TS_MATRIX_BOARD?((w->controls.serial_mask&(1u<<TS_MATRIX_BOARD)) || w->controls.board_insert?"MODE: INSERT":"MODE: SEND"):
+                mx_legacy_direct(raw)?"USE MATRIX":row.kind==0?(raw.mode==TS_SOURCE_INHERIT?"USE TRACK":"USE TILE"):row.kind==3?"TO MOSAIC BUS":row.kind==1?"TO TILE BUS":"NAME I/O";
+            mx_button(1070,731,170,mode,(row.kind==3 || row.kind==1) && !raw.matrix_enabled && raw.mode==TS_SOURCE_MAIN);
+        }
         if(row.kind==0) {
             mx_button(32,762,170,"TO TRACK BUS",mx_uses_bus(row,raw));
             mx_text(214,769,"LEVEL/PAN: DRAG/WHEEL | SHIFT: FINE | RIGHT-CLICK: RESET | CELL RIGHT-CLICK: SELECT",MX_DIM,1);
-        } else mx_text(32,769,"LEVEL/PAN: DRAG OR WHEEL | SHIFT: FINE | RIGHT-CLICK: 0 dB / CENTER | CELL RIGHT-CLICK: SELECT",MX_DIM,1);
+        } else if(row.kind==2 && row.index==TS_MATRIX_MAIN)
+            mx_text(32,769,"EARLY CLIP IS BEFORE EFFECTS. OFF PRESERVES FLOAT HEADROOM. FINAL OUTPUT SAFETY STAYS ACTIVE.",MX_DIM,1);
+        else mx_text(32,769,"LEVEL/PAN: DRAG OR WHEEL | SHIFT: FINE | RIGHT-CLICK: 0 dB / CENTER | CELL RIGHT-CLICK: SELECT",MX_DIM,1);
         mx_button(1070,762,170,r.width==-100?"MONO":"STEREO",r.width==-100);
     }
     if(w->rename>=0) {
@@ -416,7 +426,7 @@ static void mx_commit_controls(SDL_AudioDeviceID device,AudioState *audio,TsUiSt
     if(!mx_stage_effects(device,audio,&matrix_window.controls,&plan)){matrix_window.controls=audio->sister.matrix.controls;return;}
     if(device)SDL_LockAudioDevice(device);
     ts_matrix_effects_commit(&audio->sister.matrix_effects,&matrix_window.controls,(unsigned)audio->output_rate,&plan);
-    ts_matrix_set(&audio->sister.matrix,&matrix_window.controls,(unsigned)audio->output_rate);
+    ts_matrix_set_live(&audio->sister.matrix,&matrix_window.controls,(unsigned)audio->output_rate);
     ui->config.matrix=audio->sister.matrix.controls;
     if(device)SDL_UnlockAudioDevice(device);
     matrix_window.dirty=1;
@@ -797,6 +807,20 @@ static int matrix_event_inner(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID de
         mx_return_bus(device,audio,ui,pages,bank,0);return 1;
     }
     if(left && x>=1070 && y>=731 && y<759) {
+        if(row.kind==2 && row.index==TS_MATRIX_MAIN) {
+            if(!mx_editable())return 1;
+            if(!w->controls.enabled){snprintf(w->status,sizeof(w->status),"USE MATRIX FIRST. SAVED LEGACY ROUTING KEEPS ITS PROGRAM CLAMP.");return 1;}
+            if(x>=1150 && x<1156)return 1;
+            int headroom=x<1150?TS_MATRIX_HEADROOM_CLIP:TS_MATRIX_HEADROOM_FLOAT;
+            if(ts_matrix_main_clip(&w->controls)==(headroom==TS_MATRIX_HEADROOM_CLIP))return 1;
+            w->controls.main_headroom=headroom;
+            mx_commit_controls(device,audio,ui);
+            if(w->controls.main_headroom!=headroom)return 1;
+            snprintf(w->status,sizeof(w->status),ts_matrix_main_clip(&w->controls)?
+                "MAIN MIX EARLY CLIP: ON (LEGACY SOUND). CTRL+Z TO UNDO.":
+                "MAIN MIX EARLY CLIP: OFF (FLOAT HEADROOM). FINAL OUTPUT SAFETY REMAINS. CTRL+Z TO UNDO.");
+            return 1;
+        }
         if((row.kind==2 || row.kind==4) && row.index==TS_MATRIX_BOARD) {
             if(!mx_editable() || !w->controls.enabled)return 1;
             int was_insert=w->controls.board_insert || (w->controls.serial_mask&(1u<<TS_MATRIX_BOARD));

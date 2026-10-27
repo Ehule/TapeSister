@@ -93,6 +93,13 @@ switches/Insert assignments as inactive. Processor power remains relevant. For
 actual signal activity, use the softly fading indicators in [F9](ROUTING_MATRIX.md);
 the setup snapshot reports controls, not measured sound.
 
+The Matrix setup also reports **MAIN MIX headroom: FLOAT** or **LEGACY CLIP
+before downstream effects**. This applies only to signals routed through Main
+Mix and describes the configured law, not whether the current audio is clipping.
+Use F9's Main Mix **EARLY CLIP ON/OFF** buttons for a direct comparison; see the
+[headroom investigation](validation/program-bus-headroom.md). Clipping distortion
+and a missed audio deadline are different measurements.
+
 The Pedalboard report includes its Matrix **SEND/INSERT** mode, actual master
 fade level, target and remaining seconds. Its master switch still applies in
 the Matrix: **SEND** returns only effects, so master OFF silences that return;

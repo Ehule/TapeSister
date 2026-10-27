@@ -66,3 +66,32 @@ static void matrix_import_controls(void)
     matrix_click(330,34,SDL_BUTTON_LEFT);assert(!a.sister.matrix.controls.enabled);
     matrix_click(430,34,SDL_BUTTON_LEFT);assert(a.sister.matrix.controls.enabled);
 }
+
+static void matrix_headroom_controls(const char *directory)
+{
+    MatrixSnapshot *before=mx_snapshot(0,&a,&pages,&bank);assert(before);matrix_history_clear();
+    assert(matrix_show(0,&a,&u,&pages,&bank,-1,-1));
+    int row=-1;
+    for(int i=0;i<matrix_window.count;++i)if(matrix_window.rows[i].kind==2 && matrix_window.rows[i].index==TS_MATRIX_MAIN){row=i;break;}
+    assert(row>=0);matrix_window.scroll=SDL_max(0,SDL_min(row,matrix_window.count-MATRIX_VISIBLE));
+    matrix_click(80,MATRIX_Y+(row-matrix_window.scroll)*MATRIX_RH+12,SDL_BUTTON_LEFT);
+    assert(matrix_window.selected==row && ts_matrix_main_clip(&a.sister.matrix.controls));
+    TsMatrixControls original=a.sister.matrix.controls;
+    matrix_click(1198,743,SDL_BUTTON_LEFT);
+    assert(a.sister.matrix.controls.main_headroom==TS_MATRIX_HEADROOM_FLOAT);
+    assert(matrix_window.history_count==1 && a.sister.matrix.main_clip_current==1 && a.sister.matrix.main_clip_remaining>0);
+    assert(a.sister.matrix.controls.serial_mask==original.serial_mask);
+    assert(!memcmp(a.sister.matrix.controls.row,original.row,sizeof(original.row)));
+    assert(u.config.matrix.main_headroom==TS_MATRIX_HEADROOM_FLOAT);
+    matrix_shot(directory,"matrix-main-headroom-float");
+    matrix_click(330,34,SDL_BUTTON_LEFT);assert(ts_matrix_main_clip(&a.sister.matrix.controls));
+    matrix_click(430,34,SDL_BUTTON_LEFT);assert(!ts_matrix_main_clip(&a.sister.matrix.controls));
+    matrix_click(540,34,SDL_BUTTON_LEFT);assert(matrix_window.original_active);
+    TsMatrixControls audition=a.sister.matrix.controls;matrix_click(1198,743,SDL_BUTTON_LEFT);
+    assert(!memcmp(&audition,&a.sister.matrix.controls,sizeof(audition)) && matrix_window.history_count==1);
+    matrix_click(540,34,SDL_BUTTON_LEFT);assert(!matrix_window.original_active);
+    assert(!ts_matrix_main_clip(&a.sister.matrix.controls));
+    matrix_click(1108,743,SDL_BUTTON_LEFT);assert(ts_matrix_main_clip(&a.sister.matrix.controls));
+    matrix_shot(directory,"matrix-main-headroom-clip");
+    mx_apply(before,0,&a,&u,&pages,&bank);free(before);matrix_history_clear();
+}

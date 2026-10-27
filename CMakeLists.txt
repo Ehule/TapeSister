@@ -630,8 +630,14 @@ if(TAPESISTER_BUILD_SDL)
                  src/tape_link.c src/tape_companion.c src/ts_startup_diag.c src/ts_midi_input.c)
   target_include_directories(tapesister_pattern_audio_benchmark PRIVATE third_party)
   target_link_libraries(tapesister_pattern_audio_benchmark PRIVATE tapesister_core tapesister_tapehead SDL2::SDL2)
+  add_executable(tapesister_program_headroom_tests tests/benchmark_program_headroom.c
+                 src/tape_link.c src/tape_companion.c src/ts_startup_diag.c src/ts_midi_input.c)
+  target_include_directories(tapesister_program_headroom_tests PRIVATE third_party)
+  target_link_libraries(tapesister_program_headroom_tests PRIVATE tapesister_core tapesister_tapehead SDL2::SDL2)
+  add_test(NAME tapesister_routing_matrix_headroom_tests COMMAND tapesister_program_headroom_tests)
   if(UNIX AND NOT APPLE)
     target_link_libraries(tapesister_pattern_audio_benchmark PRIVATE rt)
+    target_link_libraries(tapesister_program_headroom_tests PRIVATE rt)
   endif()
   set(TAPESISTER_PATTERN_REFERENCE_SOURCE "" CACHE FILEPATH "Optional original pattern backend for in-process comparisons")
   if(TAPESISTER_PATTERN_REFERENCE_SOURCE)
@@ -782,6 +788,7 @@ if(MINGW)
                                test_sister_post_fx
                                tapesister_pattern_lookup_tests
                                tapesister_pattern_audio_benchmark
+                               tapesister_program_headroom_tests
                                test_sister_source_ui
                                tapesister_realtime_controller_tests
                                tapesister_audio_health_tests

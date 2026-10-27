@@ -256,6 +256,7 @@ static void matrix_controller(const char *directory)
     ts_sister_project_state_init(state,48000);assert(ts_sister_project_state_apply(state,&a.sister,&bank));free(state);
     assert(!a.sister.matrix.controls.enabled && !a.sister.matrix.controls.input_name[0][0]);
     matrix_import_controls();
+    matrix_headroom_controls(directory);
     test_matrix_buses(directory);
     test_tracker_bus(directory);
     test_compressor_controller(directory);

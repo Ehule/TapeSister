@@ -263,6 +263,13 @@ int main(int argc, char **argv)
     assert(strstr(matrix_report,"MOSAIC -> COMPRESSOR #2 SIDECHAIN"));
     assert(strstr(matrix_report,"Matrix effect #1: GRAIN; ON; mix 100.0%"));
     assert(!strstr(matrix_report,"OUTPUT -> OUTPUT"));
+    assert(strstr(matrix_report,"Matrix MAIN MIX headroom: FLOAT"));
+    matrix->serial_mask|=1u<<TS_MATRIX_MAIN;
+    ts_audio_health_capture_setup(a,ui,2050);ts_audio_health_setup_report(matrix_report,sizeof(matrix_report),2050);
+    assert(strstr(matrix_report,"Matrix MAIN MIX headroom: LEGACY CLIP"));
+    matrix->main_headroom=TS_MATRIX_HEADROOM_FLOAT;
+    ts_audio_health_capture_setup(a,ui,2350);ts_audio_health_setup_report(matrix_report,sizeof(matrix_report),2350);
+    assert(strstr(matrix_report,"Matrix MAIN MIX headroom: FLOAT"));
     char short_report[17]; memset(short_report, 'x', sizeof(short_report));
     ts_audio_health_setup_report(short_report, sizeof(short_report) - 1, 1250);
     assert(short_report[15] == '\0' && short_report[16] == 'x');

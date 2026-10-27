@@ -154,6 +154,10 @@ int ts_sister_project_state_apply(const TsSisterProjectState *state,
     ts_spatial_recall(&runtime->spatial,&state->spatial);
     ts_sister_runtime_set_router(runtime,&state->router);
     ts_matrix_set(&runtime->matrix,&state->matrix,runtime->router.sample_rate);
+    /* Recall the saved law immediately, even if a live A/B fade was already
+       heading towards that same choice when the project was opened. */
+    runtime->matrix.main_clip_current=(float)ts_matrix_main_clip(&runtime->matrix.controls);
+    runtime->matrix.main_clip_remaining=0;
     runtime->matrix_layout=state->matrix_layout;
     runtime->mandala = state->mandala;
     runtime->performance_transport=state->performance_transport&7u;
