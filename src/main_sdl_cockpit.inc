@@ -229,5 +229,5 @@ static void performance_update(SDL_AudioDeviceID device,AudioState *audio)
     perf_button(360,604,180,28,offline_job.active?"RENDER PROGRESS":"RENDER OFFLINE",PERF_BUTTON_RENDER,offline_job.active,0);
     snprintf(line,sizeof(line),"LIVE LINK %s / REC %s",r.live_link_available?"ON":"OFF",audio->sister_file_recorder && ts_performance_recorder_state(audio->sister_file_recorder)==TS_PERFORMANCE_FILE_RECORDING?"ON":"OFF");perf_small(560,612,line,dim);
     SDL_SetWindowAlwaysOnTop(performance_transport.window,m.always_on_top?SDL_TRUE:SDL_FALSE);
-    SDL_RenderPresent(performance_transport.renderer);performance_transport.painted=SDL_GetTicks();
+    perf_present();performance_transport.painted=SDL_GetTicks();
 }

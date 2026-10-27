@@ -14,7 +14,8 @@ enum { PERF_BUTTON_PLAY=1,PERF_BUTTON_STOP,PERF_BUTTON_HOME,
     PERF_BUTTON_TAB,PERF_BUTTON_CUE=PERF_BUTTON_TAB+PERF_PAGES,PERF_BUTTON_LOOP=PERF_BUTTON_CUE+16,
     PERF_BUTTON_MASTER,PERF_BUTTON_BPM_MINUS,PERF_BUTTON_BPM_PLUS,PERF_BUTTON_CLOCK_SOURCE,
     PERF_BUTTON_CLOCK_ROW=64 };
-static struct {SDL_Window *window;SDL_Renderer *renderer;Uint32 id,painted,flash_until;
+static struct {SDL_Window *window;SDL_Renderer *renderer;SDL_Texture *image;Uint32 *pixels;
+    Uint32 id,painted,flash_until;
     int visible,drag,pressed,flash,input_page,input_drag,tuner_on,page,selected;
     unsigned input_channels,tuner_channel;
     TsAudioChannelRange input_range;
@@ -108,6 +109,8 @@ static int performance_command(int command,SDL_Window *window,SDL_AudioDeviceID 
 static void performance_close(void)
 {
     ts_performance_inputs_tuner(performance_transport.inputs,0,0);
+    if(performance_transport.image)SDL_DestroyTexture(performance_transport.image);
+    free(performance_transport.pixels);
     if(performance_transport.renderer)SDL_DestroyRenderer(performance_transport.renderer);
     if(performance_transport.window)SDL_DestroyWindow(performance_transport.window);
     memset(&performance_transport,0,sizeof(performance_transport));
@@ -120,6 +123,14 @@ static void performance_show(TsUiState *ui,AudioState *audio)
         performance_transport.window=SDL_CreateWindow("TapeSister - Control Center",SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,PERF_W,PERF_H,SDL_WINDOW_ALLOW_HIGHDPI);
         if(performance_transport.window)performance_transport.renderer=SDL_CreateRenderer(performance_transport.window,-1,SDL_RENDERER_SOFTWARE);
         if(!performance_transport.renderer){performance_close();snprintf(ui->status,sizeof(ui->status),"CANNOT OPEN PERFORMANCE TRANSPORT");return;}
+        performance_transport.pixels=calloc((size_t)PERF_W*PERF_H,sizeof(*performance_transport.pixels));
+        performance_transport.image=SDL_CreateTexture(performance_transport.renderer,SDL_PIXELFORMAT_ARGB8888,
+            SDL_TEXTUREACCESS_STREAMING,PERF_W,PERF_H);
+        if(!performance_transport.pixels || !performance_transport.image ||
+           SDL_SetTextureBlendMode(performance_transport.image,SDL_BLENDMODE_NONE)<0 ||
+           SDL_SetTextureScaleMode(performance_transport.image,SDL_ScaleModeNearest)<0) {
+            performance_close();snprintf(ui->status,sizeof(ui->status),"CANNOT CREATE CONTROL CENTER IMAGE");return;
+        }
         performance_transport.id=SDL_GetWindowID(performance_transport.window);
         SDL_RenderSetLogicalSize(performance_transport.renderer,PERF_W,PERF_H);
     }
@@ -128,24 +139,36 @@ static void performance_show(TsUiState *ui,AudioState *audio)
 }
 static void perf_rect(int x,int y,int w,int h,Uint32 color)
 {
-    SDL_SetRenderDrawColor(performance_transport.renderer,(color>>16)&255,(color>>8)&255,color&255,255);
-    SDL_Rect r={x,y,w,h};SDL_RenderFillRect(performance_transport.renderer,&r);
+    if(!performance_transport.pixels || w<=0 || h<=0)return;
+    int first=SDL_max(0,x),last=SDL_min(PERF_W,x+w),top=SDL_max(0,y),bottom=SDL_min(PERF_H,y+h);
+    if(first>=last || top>=bottom)return;
+    for(int row=top;row<bottom;++row)
+        SDL_memset4(performance_transport.pixels+(size_t)row*PERF_W+first,color|0xff000000u,(size_t)(last-first));
 }
 static void perf_text(int x,int y,const char *s,Uint32 color,int scale)
 {
     for(;*s;++s,x+=6*scale){const char *g=ts_ui_glyph(*s);for(int r=0;r<7;++r)for(int c=0;c<5;++c)if(g[r*5+c]=='1')perf_rect(x+c*scale,y+r*scale,scale,scale,color);}
 }
-/* Eleven-pixel secondary text, rather than the old seven-pixel labels. */
+/* Hinted 8x12 secondary glyphs: uniform two-pixel strokes, one-pixel letter
+   gaps. Rasterize at integer coordinates before display/DPI scaling. */
 static void perf_small(int x,int y,const char *s,Uint32 color)
 {
-    SDL_SetRenderDrawColor(performance_transport.renderer,(color>>16)&255,(color>>8)&255,color&255,255);
+    static const unsigned column[]={0,1,3,5,6},row[]={0,2,3,5,7,8,10};
     for(;*s;++s,x+=9) {
         const char *g=ts_ui_glyph(*s);
-        for(int r=0;r<7;++r)for(int c=0;c<5;++c)if(g[r*5+c]=='1') {
-            SDL_Rect p={x+c*8/5,y+r*11/7,(c+1)*8/5-c*8/5,(r+1)*11/7-r*11/7};
-            SDL_RenderFillRect(performance_transport.renderer,&p);
-        }
+        for(int r=0;r<7;++r)for(int c=0;c<5;++c)if(g[r*5+c]=='1')
+            perf_rect(x+(int)column[c],y+(int)row[r],2,2,color);
     }
+}
+static void perf_present(void)
+{
+    /* Scaling many tiny SDL rectangles can drop or thin individual strokes.
+       Upload a complete native image, then scale it once like the main UI. */
+    SDL_Renderer *r=performance_transport.renderer;Uint32 background=performance_transport.pixels[0];
+    SDL_UpdateTexture(performance_transport.image,NULL,performance_transport.pixels,PERF_W*sizeof(Uint32));
+    SDL_SetRenderDrawColor(r,(background>>16)&255,(background>>8)&255,background&255,255);
+    SDL_RenderClear(r);SDL_Rect destination={0,0,PERF_W,PERF_H};
+    SDL_RenderCopy(r,performance_transport.image,NULL,&destination);SDL_RenderPresent(r);
 }
 static void perf_pointer(const SDL_Event *e,int *x,int *y)
 {
@@ -168,7 +191,7 @@ static void perf_button(int x,int y,int width,int height,const char *label,int b
     perf_rect(x,y,width,height,background);
     if(lit)perf_rect(x,y,width,2,ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,
         pressed?TS_COLOR_FOCUS:TS_COLOR_ACTIVITY,0xfff0c982u));
-    perf_small(x+8,y+(height-11)/2,label,foreground);
+    perf_small(x+8,y+(height-12)/2,label,foreground);
 }
 #include "main_sdl_performance_inputs.inc"
 #include "main_sdl_clock_routing.inc"

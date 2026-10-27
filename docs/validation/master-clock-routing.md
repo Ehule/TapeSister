@@ -1,7 +1,10 @@
 # Master-clock foundation validation
 
 Before: F11 cockpit commit `d7c394e4050267c2930cdfbbaba0b6147bfbd0df`
-(PR #162). After: this clock-routing change. This stage adds optional master
+(PR #162). After: clock foundation `4f3a5d894b3e622f8ccf01306b181fd7f231d4f4`.
+The later F11 font/rendering follow-up leaves that audio code unchanged; its
+separate UI measurements are in [font validation](f11-font-legibility.md).
+This stage adds optional master
 tempo and independent group/Home choices. It does not add per-card master clocks,
 linked cues, quantized launches or the future persistent Mosaic looper.
 

@@ -6,6 +6,13 @@ TrackSister (SisterTracker), and Mosaic while you work elsewhere. A fourth
 **Live Tiles** fader controls your live instrument without transport buttons.
 The Inputs/Tuner page adds the active device's live inputs and an optional tuner.
 
+Small labels use a heavier 8x12 pixel font with consistent two-pixel strokes.
+The whole F11 image is drawn on an integer pixel grid before a single nearest
+scaling step, so fractional display scaling does not rasterize each tiny stroke
+separately. Label spacing, window size, hit targets and custom themes stay the
+same. The image buffers belong to the UI; rendering stays capped at twenty Hz
+and adds no audio-callback work. See [font validation](validation/f11-font-legibility.md).
+
 ![Control Center overview](screenshots/performance/control-center-overview.png)
 
 The screenshot is a native SDL integration fixture, not a measurement of a user's
