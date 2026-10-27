@@ -4,6 +4,25 @@ static int project_save_completed(void)
 {
     return strstr(ui.status,"SAVED TSR PROJECT") || strstr(ui.status,"PROJECT SAVED; SESSION EXPORT UNAVAILABLE");
 }
+static int project_same_saved_file(const char *a,const char *b)
+{
+#ifdef _WIN32
+    /* The browser emits native separators; the saver also accepts '/'. File
+       identity verifies the destination instead of comparing path spelling. */
+    HANDLE first=CreateFileA(a,0,FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,NULL,OPEN_EXISTING,0,NULL);
+    HANDLE second=CreateFileA(b,0,FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,NULL,OPEN_EXISTING,0,NULL);
+    BY_HANDLE_FILE_INFORMATION x,y;
+    int same=first!=INVALID_HANDLE_VALUE && second!=INVALID_HANDLE_VALUE &&
+        GetFileInformationByHandle(first,&x) && GetFileInformationByHandle(second,&y) &&
+        x.dwVolumeSerialNumber==y.dwVolumeSerialNumber && x.nFileIndexHigh==y.nFileIndexHigh && x.nFileIndexLow==y.nFileIndexLow;
+    if(first!=INVALID_HANDLE_VALUE)CloseHandle(first);
+    if(second!=INVALID_HANDLE_VALUE)CloseHandle(second);
+    return same;
+#else
+    struct stat x,y;
+    return !stat(a,&x) && !stat(b,&y) && x.st_dev==y.st_dev && x.st_ino==y.st_ino;
+#endif
+}
 static void project_legacy_reopen_controls(void)
 {
     char original[96],saved[TS_BROWSER_PATH_MAX],selected[TS_BROWSER_PATH_MAX];
@@ -24,9 +43,9 @@ static void project_legacy_reopen_controls(void)
     assert(project_save_completed() && strcmp(ui.project_path,original));
     snprintf(saved,sizeof(saved),"%s",ui.project_path);
     browser_open(&ui,TS_BROWSER_LOAD_WAV);
-    assert(ts_browser_selected_path(&ui.browser,selected,sizeof(selected)) && !strcmp(selected,saved));
+    assert(ts_browser_selected_path(&ui.browser,selected,sizeof(selected)) && project_same_saved_file(selected,saved));
     browser_action(0,&audio,&ui,&bank,&selection,&pages,&record,0,&file,0);
-    assert(file.active && !strcmp(file.path,saved));
+    assert(file.active && project_same_saved_file(file.path,saved));
     run_pending_file_operation(0,&audio,&ui,&bank,&selection,&importer,&pages,&record,0,&file);
     mosaic_poll(0,&ui,&bank,&mosaic);
     assert(ts_mosaic_hash(ui.mosaic)==expected && ui.mosaic_open);
