@@ -14,6 +14,8 @@ static void mosaic_poll(SDL_AudioDeviceID device,TsUiState *ui,
     if(!ui->mosaic_open || c->active || !ui->mosaic->audition_id)ts_mosaic_audition(ui->mosaic,0);
     memcpy(ui->mosaic_live,ui->mosaic->live,sizeof(ui->mosaic_live));
     ui->mosaic_live_loops=ts_mosaic_live_count(ui->mosaic);
+    ui->mosaic_live_master=ui->mosaic->live_master;
+    ui->mosaic_live_quarter=ui->mosaic->live_quarter;
     ui->mosaic_time=ui->mosaic->time;ui->mosaic_playing=ui->mosaic->playing;
     if(device)SDL_UnlockAudioDevice(device);
     if(release_preview)ts_mosaic_collect(ui->mosaic);
@@ -320,6 +322,50 @@ static void mosaic_source_drag(TsUiState *ui,const TsInstrument *instrument,Mosa
     ui->mosaic_source_selected=n;
 }
 
+/* Selecting a performance source is separate from selecting/placing a card.
+   Copy on the UI thread once per choice, keep old notes in their immutable
+   snapshot, and preserve the chosen tile/card's route and loop settings. */
+static TsMosaicSourceKey mosaic_source_key(const TsUiState *,int);
+static int mosaic_source_key_equal(TsMosaicSourceKey,TsMosaicSourceKey);
+static void mosaic_keyboard_select(SDL_AudioDeviceID device,AudioState *a,TsUiState *ui,
+    const TsInstrument *instrument,MosaicController *c,int n)
+{
+    if(!ui->mosaic_live_open || n<0 || n>=ui->mosaic_source_count || !c->source_drag.source ||
+       c->source_drag.source->pattern)return;
+    TsMosaicSourceKey key=mosaic_source_key(ui,n);
+    int reuse=a->mosaic_keyboard_sample && a->mosaic_keyboard_epoch==ui->mosaic->epoch &&
+        a->mosaic_keyboard_hash==c->source_drag.source->hash;
+    runtime_note_collect_snapshots(device,a);
+    int slot=reuse?(int)(a->mosaic_keyboard_sample-a->note_snapshots):0;
+    while(!reuse && slot<TS_NOTE_BANK_VOICE_CAPACITY && a->note_snapshots[slot].data)++slot;
+    char error[160];TsSample sample={0};
+    if(slot==TS_NOTE_BANK_VOICE_CAPACITY || (!reuse && !ts_sample_clone(&sample,&c->source_drag.source->sample,error,sizeof(error)))) {
+        snprintf(ui->mosaic_live_status,sizeof(ui->mosaic_live_status),"KEY SOURCE KEPT / NOT ENOUGH MEMORY FOR THE NEW SOURCE");return;
+    }
+    TsMosaicEvent *event=&c->source_drag;
+    TsSourceRoute route=event->output_route;TsTileId tile=0;int loop=event->looping;
+    if(key.slot>=0 && key.page>=0) {
+        const TsInstrument *bank=c->pages?ts_sample_pages_page(c->pages,instrument,(size_t)key.page):instrument;
+        const TsBankSlot *b=&bank->bank[key.slot];
+        route=b->output_route;tile=b->tile_id;loop=key.slot==bank->selected_slot?bank->has_loop:b->has_loop;
+    }
+    if(device)SDL_LockAudioDevice(device);
+    if(!reuse)a->note_snapshots[slot]=sample;
+    a->mosaic_keyboard_sample=&a->note_snapshots[slot];
+    a->mosaic_keyboard_tuning=event->tuning;a->mosaic_keyboard_first=event->first;a->mosaic_keyboard_last=event->last;
+    a->mosaic_keyboard_mode=event->mode;a->mosaic_keyboard_looping=loop;
+    a->mosaic_keyboard_crossfade=event->crossfade;a->mosaic_keyboard_route=route;a->mosaic_keyboard_tile=tile;
+    a->mosaic_keyboard_epoch=ui->mosaic->epoch;a->mosaic_keyboard_key=key;
+    a->mosaic_keyboard_hash=c->source_drag.source->hash;
+    if(device)SDL_UnlockAudioDevice(device);
+    if(key.page>=0)snprintf(a->mosaic_keyboard_label,sizeof(a->mosaic_keyboard_label),"BANK %02d / TILE %02d",key.page+1,key.slot+1);
+    else snprintf(a->mosaic_keyboard_label,sizeof(a->mosaic_keyboard_label),"CARD #%llu / %.20s",(unsigned long long)key.event,event->name);
+    snprintf(ui->mosaic_live_status,sizeof(ui->mosaic_live_status),"QWERTY: %.45s / NEW NOTES USE THIS SOURCE",a->mosaic_keyboard_label);
+    ui->mosaic_live_key=key;ui->mosaic_live_key_valid=1;
+    snprintf(ui->mosaic_live_keyboard,sizeof(ui->mosaic_live_keyboard),"%s",a->mosaic_keyboard_label);
+    runtime_note_collect_snapshots(device,a);
+}
+
 #include "main_sdl_mosaic_sources.inc"
 #include "main_sdl_mosaic_arrange.inc"
 #include "main_sdl_mosaic_loop.inc"
@@ -346,6 +392,7 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
             return 1;
         }
     }
+    if(ui->midi_learn_active)return 0; /* Do not edit/play beneath the global learner. */
     double horizontal=ui->mosaic_hscale>0?ui->mosaic_hscale:1;
     int down=event->type==SDL_MOUSEBUTTONDOWN,up=event->type==SDL_MOUSEBUTTONUP;
     int motion=event->type==SDL_MOUSEMOTION,key=event->type==SDL_KEYDOWN;
@@ -458,6 +505,19 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
         return 0;
     }
     if(!ui->mosaic_open)return 0;
+    /* The performance panel gives QWERTY an explicit owner. Use the same
+       current/parent instrument, tuning, groups and routes as the Canvas;
+       browser source selection continues to belong to card placement. */
+    if(key && ui->mosaic_live_open && ui->mosaic_live_keys &&
+       !(mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI))) {
+        if(event->key.keysym.sym==SDLK_s && (mod&KMOD_SHIFT))return 0; /* Global sustain. */
+        if(note_for_key(event->key.keysym.sym)>=0)
+            return canvas_qwerty_event(event,device,audio,ui,instrument,rate);
+        if(event->key.keysym.sym>=SDLK_F1 && event->key.keysym.sym<=SDLK_F8) {
+            if(!event->key.repeat)set_keyboard_octave(device,audio,ui,(int)(event->key.keysym.sym-SDLK_F1));
+            return 1;
+        }
+    }
     if(main_file_capture_event(event,window,audio,ui,sister,(uint32_t)rate))return 1;
     if(event->type==SDL_WINDOWEVENT && (event->window.event==SDL_WINDOWEVENT_FOCUS_LOST ||
        event->window.event==SDL_WINDOWEVENT_HIDDEN || event->window.event==SDL_WINDOWEVENT_MINIMIZED))mosaic_drag_end(ui,c);

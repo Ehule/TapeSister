@@ -718,6 +718,43 @@ static void midi_learn_tint(TsFramebuffer *fb, int x, int y, int w, int h,
         }
 }
 
+int ts_ui_mosaic_live_contains(const TsUiState *ui,int x,int y)
+{
+    if(!ui || !ui->mosaic_live_open)return 0;
+    return ui->mosaic_live_advanced?x>=120 && x<630 && y>=78 && y<350:
+        x>=TS_MOSAIC_LIVE_X && x<TS_MOSAIC_LIVE_X+TS_MOSAIC_LIVE_W &&
+        y>=TS_MOSAIC_LIVE_Y && y<TS_MOSAIC_LIVE_Y+TS_MOSAIC_LIVE_H;
+}
+/* Share performance hit regions between normal input and MIDI Learn. The
+   central primary target always starts/advances continuous separate layers. */
+const char *ts_ui_mosaic_live_command_at(const TsUiState *ui,int x,int y)
+{
+    if(!ts_ui_mosaic_live_contains(ui,x,y))return NULL;
+    if(!ui->mosaic_live_advanced) {
+        int dx=x-TS_MOSAIC_LIVE_CX,dy=y-TS_MOSAIC_LIVE_CY;
+        if(dx*dx+dy*dy<=TS_MOSAIC_LIVE_RADIUS*TS_MOSAIC_LIVE_RADIUS)return "primary";
+        if(y>=242 && y<258) {
+            if(x>=472 && x<544)return "toggle";
+            if(x>=550 && x<622)return "stop_capture";
+        }
+        if(y>=264 && y<280) {
+            if(x>=472 && x<568)return "stop_all";
+            if(x>=574 && x<622)return "restart";
+        }
+    } else {
+        if(y>=106 && y<122) {
+            const char *commands[]={"record","stop_capture","discard_partial","stop_all"};
+            for(int i=0;i<4;++i)if(x>=132+i*104 && x<228+i*104)return commands[i];
+        }
+        if(y>=224 && y<240) {
+            if(x>=340 && x<430)return "launch";
+            if(x>=438 && x<528)return "stop";
+            if(x>=536 && x<608)return "restart";
+        }
+    }
+    return NULL;
+}
+
 static void main_midi_learn_overlay(TsFramebuffer *fb, const TsUiState *ui)
 {
     char target[TS_MIDI_TARGET_ID_MAX];
@@ -731,6 +768,17 @@ static void main_midi_learn_overlay(TsFramebuffer *fb, const TsUiState *ui)
                     TS_UI_MASTER_OUTPUT_W, 22, state);
     if(ui->mosaic_open) {
         if(ui->mosaic_live_open) {
+            if(!ui->mosaic_live_advanced) {
+                static const struct {int x,y,w,h;const char *command;} controls[]={
+                    {503,125,88,88,"primary"},{472,242,72,16,"toggle"},
+                    {550,242,72,16,"stop_capture"},{472,264,96,16,"stop_all"},{574,264,48,16,"restart"}};
+                for(size_t i=0;i<sizeof(controls)/sizeof(controls[0]);++i) {
+                    snprintf(target,sizeof(target),"mosaic.live.%s",controls[i].command);
+                    state=midi_learn_target_state(&ui->config.midi_map,ui->midi_learn_pending,target);
+                    midi_learn_tint(fb,controls[i].x,controls[i].y,controls[i].w,controls[i].h,state);
+                }
+                goto learn_footer;
+            }
             const char *commands[]={"record","stop_capture","discard_partial","stop_all"};
             for(int i=0;i<4;++i) {
                 snprintf(target,sizeof(target),"mosaic.live.%s",commands[i]);
@@ -839,14 +887,20 @@ static void sister_portal_render(TsFramebuffer *fb, const TsUiState *ui)
                 rect(fb, 7 + x, 2 + y, 1, 1, emblem);
         }
     text(fb, 55, 7, "TAPESISTER", title, 1);
-    text(fb, 55, 18, "SISTER MACHINE", subtitle, 1);
+    if(ui->mosaic_open) {
+        /* Separate labeled targets fit below the title without covering the
+           Sister subtitle or the timeline's status line. Logo still opens Sister. */
+        rect(fb,55,17,46,13,border);rect(fb,56,18,44,11,background);
+        text(fb,60,20,"SISTER",subtitle,1);
+    } else text(fb, 55, 18, "SISTER MACHINE", subtitle, 1);
     text(fb, 121, 7, TAPESISTER_BUILD_MARKER, PAL_EFFECT, 1);
-    if (ui->sister_enabled)
+    if (ui->sister_enabled && !ui->mosaic_open)
         rect(fb, 55, 27, 83, 2,
              palette_blend(background,
                            ui->sister_rolling && !ui->sister_held ?
                            PAL_WAVE_LEFT : PAL_BUTTON,
                            55 + state * 15));
+    if (ui->mosaic_open)return; /* Separate compact buttons own the lower row. */
     if (ui->sister_held) {
         rect(fb, 141, 18, 2, 7, PAL_TUNING);
         rect(fb, 145, 18, 2, 7, PAL_TUNING);
@@ -1989,6 +2043,7 @@ int ts_ui_request_startup_welcome(TsUiState *ui, int splash_complete,
 void ts_ui_init(TsUiState *ui)
 {
     memset(ui, 0, sizeof(*ui));
+    ui->mosaic_live_keys=1;
     ui->play_on_select = 1;
     ts_portal_ui_init(&ui->portal);
     ts_raw_import_settings_default(&ui->import_raw_settings);
@@ -4409,14 +4464,11 @@ int ts_ui_midi_target_from_point(const TsUiState *ui, int x, int y,
     if(ui->router_open)return router_midi_target(ui,x,y,target,target_size);
     if(ui->master_eq_open)return ts_ui_master_eq_midi_target(ui,x,y,target,target_size);
     if(ui->mosaic_open) {
-        if(ui->mosaic_live_open && y>=106 && y<126) {
-            const char *commands[]={"record","stop_capture","discard_partial","stop_all"};
-            for(int i=0;i<4;++i)if(x>=132+i*104 && x<228+i*104) {
-                snprintf(target,target_size,"mosaic.live.%s",commands[i]);return 1;}
+        const char *live_command=ts_ui_mosaic_live_command_at(ui,x,y);
+        if(live_command) {
+            snprintf(target,target_size,"mosaic.live.%s",live_command);return 1;
         }
-        if(ui->mosaic_live_open && y>=224 && y<244 && x>=340 && x<608) {
-            snprintf(target,target_size,"mosaic.live.%s",x<438?"launch":x<536?"stop":"restart");return 1;
-        }
+        if(ts_ui_mosaic_live_contains(ui,x,y))return 0;
         if(ts_ui_foreground_panel_open(ui) || ui->file_busy)return 0;
         if(!ui->mosaic_live_open && ui->mosaic)for(int i=TS_MOSAIC_EVENTS;i-->0;) {
             const TsMosaicEvent *e=&ui->mosaic->events[i];if(!e->id || !e->live)continue;

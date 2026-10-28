@@ -875,6 +875,19 @@ typedef struct {
     TsNoteBank notes;
     TsNoteVoice browser_voice;
     TsSample note_snapshots[TS_NOTE_BANK_VOICE_CAPACITY];
+    /* UI-owned immutable keyboard source chosen in Mosaic. Retired choices
+       share the existing bounded note-snapshot lifetime until held notes end. */
+    const TsSample *mosaic_keyboard_sample;
+    TsTuning mosaic_keyboard_tuning;
+    size_t mosaic_keyboard_first,mosaic_keyboard_last,mosaic_keyboard_crossfade;
+    TsLoopMode mosaic_keyboard_mode;
+    int mosaic_keyboard_looping;
+    TsSourceRoute mosaic_keyboard_route;
+    TsTileId mosaic_keyboard_tile;
+    uint64_t mosaic_keyboard_epoch;
+    uint64_t mosaic_keyboard_hash;
+    TsMosaicSourceKey mosaic_keyboard_key;
+    char mosaic_keyboard_label[48];
     uint64_t workbench_refresh_stamp; /* UI-owned; unchanged HOLD needs no lock. */
     int workbench_refresh_valid;
     const TsInstrument *workspace_bank; /* Parked Sample bank while editing a Mosaic card. */
@@ -1000,6 +1013,7 @@ static TsNoteStartResult runtime_note_start_event(
     AudioState *audio, const TsInstrument *instrument, const TsTuning *tuning,
     TsAuditionSource source, const TsNoteEvent *event, int latched,
     int output_rate);
+static TsNoteStartResult runtime_mosaic_keyboard_start(AudioState *,const TsNoteEvent *,int,int);
 static int runtime_staged_start(AudioState *audio,
                                 const TsInstrument *instrument,
                                 const TsTuning *tuning,
@@ -2108,7 +2122,10 @@ static void begin_note_event(SDL_AudioDeviceID device, AudioState *audio,
     ts_note_bank_set_attack_ms(&audio->notes, ui->config.voice_attack_ms);
     keyboard_loop_policy(audio, ui);
     latched = latched || ui->keyboard_hold;
-    result = runtime_note_start_event(
+    if(event->origin==TS_NOTE_ORIGIN_QWERTY && ui->mosaic_open && ui->mosaic_live_open && ui->mosaic_live_keys &&
+       audio->mosaic_keyboard_sample && ui->mosaic && audio->mosaic_keyboard_epoch==ui->mosaic->epoch)
+        result=runtime_mosaic_keyboard_start(audio,event,latched,output_rate);
+    else result = runtime_note_start_event(
         audio, instrument, ts_ui_audition_tuning(ui, instrument),
         ui->audition_source, event, latched, output_rate);
     if (result == TS_NOTE_STARTED &&
@@ -9441,7 +9458,8 @@ static int main_waveform_detail_allowed(const TsUiState *ui)
     if(ui->portal.open)return !ui->portal.manage_open && !ui->portal.macro_edit;
     /* Color equality cannot identify occlusion when two workspaces share a
        theme. Never composite the hidden canvas signal over these panels. */
-    if(ui->master_eq_open || ui->router_open || (ui->mosaic_open && ui->mosaic_live_open))return 0;
+    if(ui->master_eq_open || ui->router_open ||
+       (ui->mosaic_open && ui->mosaic_live_open && ui->mosaic_live_advanced))return 0;
     return !ui_blocking_dialog_open_except_fm(ui) && !ui->fm_bank_choice_open && !ui->fm_full_choice_open;
 }
 
@@ -18272,6 +18290,7 @@ int main(int argc, char **argv)
             ui.overlay[0] = '\0';
         refresh_workbench_loop(device, &audio, &ui, &instrument);
         mosaic_poll(device,&ui,&instrument,&mosaic);
+        mosaic_live_keyboard_snapshot(&audio,&ui,&instrument);
         if(mosaic.drag==1 || (mosaic.drag>=7 && mosaic.drag<=9)) {
             if(SDL_GetKeyboardFocus()!=window || !(SDL_GetMouseState(NULL,NULL)&SDL_BUTTON_LMASK) ||
                ui_dialog_open(&ui))mosaic_drag_end(&ui,&mosaic);

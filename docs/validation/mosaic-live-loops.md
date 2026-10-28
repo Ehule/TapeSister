@@ -7,8 +7,9 @@ was performed by this work. Behavior is described in
 
 ## Automated coverage
 
-Final local Release pass: **14/14 relevant CTests passed**, including both the
-full Mosaic controller run and its focused live-loop alias.
+Final local Release pass after the compact-controls/source-selection follow-up:
+**16/16 relevant CTests passed** (38.09 seconds), including the full Mosaic
+controller, focused live-loop alias, MIDI and native-waveform regressions.
 
 - Core Mosaic tests cover manual and timeline launch, one player per card,
   main pause/end/speed, seeking over or exactly onto a start, cue jumps, cue
@@ -32,6 +33,15 @@ full Mosaic controller run and its focused live-loop alias.
   exact OUTPUT capture, master tempo changes without player restart, and raw
   44.1 kHz stereo external input with two complete layers and a discarded partial.
   They also check deferred publication during gestures and actual UI captures.
+- Follow-up performance controls use actual Mosaic key/pointer dispatch rather
+  than bypassing it through the Canvas note helper. They cover repeated
+  big-button capture, source-tile changes while holding a note, preserved source
+  routes, dry isolation from earlier loops, capture stop versus loop stop,
+  Edit/QWERTY switching, key releases, snapshot retirement, scene replacement
+  and separate MIDI targets, including passing Learn clicks/Escape to the
+  global learner. Source changes and dry-isolation checks run with SisterMachine
+  both off and on. The native compositor verifies every pixel of the
+  compact panel while keeping both native canvas/source surfaces enabled.
 - Project tests round-trip full bundles with live roles/settings as well as
   ordinary scenes, Windows CRLF files, malformed data rejection, and the
   existing staging/cancellation/load protections. Players reopen stopped.
@@ -113,6 +123,11 @@ separately on each X220/X230 and HP A8; none has been remotely measured here.
    mouse. Repeat with different manual lengths. Verify old loops remain audible,
    NEXT affects only the current take, STOP CAP keeps the partial, and DROP PART
    skips only the partial. COPY WAV should locate the complete session archive.
+   Return to SIMPLE and try the large button with a foot pedal: first press
+   starts capture, every later press finishes a loop and records the next one.
+   STOP CAP retains the partial and leaves previous loops playing. In DRY KEYS,
+   click different source tiles (gold K), play/release QWERTY notes, and verify
+   each new card contains that performance while earlier loops keep their sound.
 4. Play ordinary and overlapping pattern cards through that scene. Hold QWERTY
    notes, edit/move/pan/mute/solo a loop while recording another, and release a
    drag across a recording boundary. New card publication can wait for the drag;
@@ -141,3 +156,7 @@ does not establish immediate or calibrated playback return on a real interface.
 ![Native live cards fixture](../screenshots/mosaic-performance/live-loop-cards.png)
 
 ![Live loop controls](../screenshots/mosaic-performance/live-loop-controls.png)
+
+![Recording the next layer](../screenshots/mosaic-performance/live-loop-recording.png)
+
+![Advanced loop setup](../screenshots/mosaic-performance/live-loop-advanced.png)

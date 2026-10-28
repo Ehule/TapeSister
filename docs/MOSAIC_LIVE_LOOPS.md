@@ -7,21 +7,60 @@ canvas or LoopSister window. Built from main after master-clock PR #163 merged
 
 ## First performance
 
-1. Open Mosaic and click **LOOPS**, beside its transport, or press **Ctrl+L**.
-2. Select **SRC: EXT INPUT**. The channel/pair comes from the existing recording
+1. Open Mosaic and click **LOOPS**, beside **SISTER** in the header, or press
+   **Ctrl+L**. A compact performance panel leaves the source tiles and most of
+   the canvas visible. **ADVANCED** exposes setup and individual card controls;
+   **SIMPLE** returns to performance. Escape returns to Simple, then hides it.
+2. In Advanced, select **SRC: EXT INPUT**. The channel/pair comes from the existing recording
    input configuration. **MONITOR** controls listening, independently of capture.
 3. Choose **SINGLE TAKE** or **CONTINUOUS ON**. Click LENGTH for presets, wheel
    for individual seconds/beats, or select MANUAL. Right-click LENGTH switches
    seconds/beats. Beat lengths require the master clock enabled in F11.
-4. Press **RECORD**. Press the same button/pedal again to finish the layer.
-   In continuous mode the next recording starts at that boundary. A fixed
-   length does this automatically, including inside an input callback buffer.
+4. In Simple, press the **big central button**: first press starts recording;
+   each later press finishes the current take, launches its own loop card after
+   preparation, and immediately records the next separate layer. This button
+   always enables continuous creation, including when a loop card is selected.
+   A fixed length advances automatically, including inside a callback buffer.
+   Advanced's separate **RECORD** action respects SINGLE/CONTINUOUS instead.
 5. **STOP CAP** finishes and keeps the current partial layer. **DROP PART** stops
    creation without making a card for that partial layer. Both leave earlier
    loops playing. Takes shorter than two frames cannot become audio cards.
 6. **STOP LOOPS** releases all currently active/waiting live loops. It does not
    stop recording, held instrument notes, or the Mosaic timeline. Later timeline
    encounters can still launch stopped cards.
+
+The ring shows current-take progress and seconds remaining during fixed-length
+capture. Manual capture shows elapsed seconds against the existing 60-second
+guard. Between recordings it shows the selected live card's first voice/cycle
+and estimated seconds left in that cycle (limited by a finite card's end).
+Tempo-following tape rate and that voice's pitch are included. This is a UI
+snapshot, not a hardware-latency countdown. **PLAY ONE / STOP ONE** controls the
+selected loop separately; **RESET** restarts it. The big button always records.
+
+### Playing source tiles with QWERTY
+
+Simple starts with **QWERTY ON**. Without a source choice, new notes use the
+selected Canvas instrument's Current/Parent choice and existing performance
+group/routing behavior. Click an audio source tile in Mosaic to choose it for
+new QWERTY notes. A gold **K** and BANK/TILE (or CARD) label identify that source,
+separately from the currently selected arrangement card. Source changes can
+happen while recording; the big button establishes each layer's boundary.
+Automatic selection of a newly captured card does not change the keyboard sound.
+
+Each explicit choice snapshots its audio once on the UI thread. Its tuning,
+loop/range/direction and tile/card route are used for new notes; existing held
+notes and already-created loops retain their own sound. Retired source copies
+are collected after their notes release, using the existing bounded snapshot
+pool. Browsing does not rewrite the Canvas parent, bank selection or project.
+Pattern sources remain timeline instruments. MIDI note playing retains the
+existing global instrument/group selection; this source selector is explicitly
+for QWERTY. MIDI Learn performance actions remain usable from any workspace.
+
+**EDIT SHORTCUTS** returns letter keys to Mosaic editing; Ctrl shortcuts and
+pointer edits remain available in QWERTY mode. F1–F8 change keyboard octave and
+Shift+S toggles the normal sustain policy. Key releases still reach held notes
+after switching modes or hiding the panel. Closing/replacing the scene clears
+the temporary keyboard-source choice; it is not a new saved project instrument.
 
 Each completed layer is a separate gold card, initially ongoing. Layers are
 placed side by side at the session's initial timeline position, to the right
@@ -132,8 +171,10 @@ playback, manual/automatic successive capture, MIDI control and persistence.
 
 ## MIDI Learn and persistence
 
-Enable the usual MIDI Learn, open LOOPS, click RECORD/NEXT, STOP CAP, DROP PART,
-STOP LOOPS, LAUNCH, STOP or RESTART, then press the controller. RECORD/NEXT is
+Enable the usual MIDI Learn and click the large central button for the stable
+continuous-layer action (`mosaic.live.primary`). Simple's PLAY ONE / STOP ONE
+has its own selected-card toggle target. Advanced also offers RECORD/NEXT,
+STOP CAP, DROP PART, STOP LOOPS, LAUNCH, STOP and RESTART. RECORD/NEXT is
 one trigger: it arms from idle and advances while recording. Releases do not
 advance unless explicitly learned as release triggers. A mapping continues to
 work from other workspaces. With the panel closed, learning an individual live

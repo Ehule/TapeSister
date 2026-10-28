@@ -4,6 +4,20 @@ static void mosaic_select_only(TsUiState *,uint64_t);
 static void mosaic_reveal_event(TsUiState *,const TsMosaicEvent *);
 static const char *mosaic_live_source_name(int source)
 {return source==1?"DRY KEYS":source==2?"OUTPUT":"EXT INPUT";}
+static void mosaic_live_keyboard_snapshot(AudioState *a,TsUiState *ui,const TsInstrument *instrument)
+{
+    if(a->mosaic_keyboard_sample && (!ui->mosaic || a->mosaic_keyboard_epoch!=ui->mosaic->epoch))a->mosaic_keyboard_sample=NULL;
+    ui->mosaic_live_key_valid=a->mosaic_keyboard_sample!=NULL;
+    if(a->mosaic_keyboard_sample) {
+        ui->mosaic_live_key=a->mosaic_keyboard_key;
+        snprintf(ui->mosaic_live_keyboard,sizeof(ui->mosaic_live_keyboard),"%s",a->mosaic_keyboard_label);
+    }
+    else if(a->sister.enabled && ts_sister_runtime_source_mask(&a->sister))
+        snprintf(ui->mosaic_live_keyboard,sizeof(ui->mosaic_live_keyboard),"KEYS: SISTER GROUP");
+    else if(a->performance_group_latched && a->performance_source_mask)
+        snprintf(ui->mosaic_live_keyboard,sizeof(ui->mosaic_live_keyboard),"KEYS: TILE GROUP");
+    else snprintf(ui->mosaic_live_keyboard,sizeof(ui->mosaic_live_keyboard),"TILE %02d / %s",instrument->selected_slot+1,ts_audition_source_name(ui->audition_source));
+}
 static void toggle_external_monitor(SDL_AudioDeviceID,SDL_AudioDeviceID *,AudioState *,ExternalInputState *,TsUiState *);
 static SDL_AudioDeviceID mosaic_live_capture_device(SDL_AudioDeviceID output,SDL_AudioDeviceID input,const ExternalInputState *s)
 {return s->loop_source==0?input:output;}
@@ -63,6 +77,8 @@ static int mosaic_live_capture_begin(SDL_AudioDeviceID output,SDL_AudioDeviceID 
        the old recorder is retired/reinitialized. */
     atomic_store_explicit(&s->loop_tap,source,memory_order_release);
     ui->mosaic_live_recording=1;ui->mosaic_live_finishing=0;
+    ui->mosaic_live_seconds=0;
+    ui->mosaic_live_duration=target?target/rate:0;
     snprintf(ui->mosaic_live_status,sizeof(ui->mosaic_live_status),"REC %s / %s / NEXT KEEPS LAYER / STOP KEEPS PARTIAL",
         mosaic_live_source_name(source),m->live_capture.continuous?"CONTINUOUS":"SINGLE");
     return 1;
@@ -73,11 +89,25 @@ fail:
 static int mosaic_live_command(SDL_AudioDeviceID output,SDL_AudioDeviceID *input_device,AudioState *a,ExternalInputState *s,TsUiState *ui,const char *command)
 {
     TsMosaic *m=ui->mosaic;if(!m)return 0;
-    if(!strcmp(command,"record") || !strcmp(command,"next")) {
+    int layers=!strcmp(command,"primary");
+    if(layers || !strcmp(command,"record") || !strcmp(command,"next")) {
         if(!s || !input_device)return 0;
+        /* The big performance control always means record another separate
+           layer. SINGLE remains available through Advanced's RECORD action. */
+        if(layers && !m->live_capture.continuous) {
+            if(output)SDL_LockAudioDevice(output);
+            m->live_capture.continuous=1;++m->revision;
+            if(output)SDL_UnlockAudioDevice(output);
+        }
         if(!s->loop_session)return mosaic_live_capture_begin(output,input_device,a,s,ui);
+        if(!atomic_load_explicit(&s->loop_capture.active,memory_order_acquire)) {
+            snprintf(ui->mosaic_live_status,sizeof(ui->mosaic_live_status),"FINISHING CAPTURE / WAIT FOR THE COMPLETED LAYERS");return 1;
+        }
         SDL_AudioDeviceID d=mosaic_live_capture_device(output,*input_device,s);
-        if(d)SDL_LockAudioDevice(d);ts_loop_capture_boundary(&s->loop_capture,0,0);if(d)SDL_UnlockAudioDevice(d);return 1;
+        if(d)SDL_LockAudioDevice(d);
+        if(layers)s->loop_capture.continuous=1;
+        ts_loop_capture_boundary(&s->loop_capture,0,0);
+        if(d)SDL_UnlockAudioDevice(d);return 1;
     }
     if(!strcmp(command,"stop_capture") || !strcmp(command,"discard_partial")) {
         if(s && input_device && s->loop_session)mosaic_live_capture_end(output,*input_device,s,!strcmp(command,"discard_partial"));return 1;
@@ -92,7 +122,7 @@ static int mosaic_live_command(SDL_AudioDeviceID output,SDL_AudioDeviceID *input
         if(!strcmp(command,"restart"))ts_mosaic_live_restart(m,id);
         else if(!strcmp(command,"stop"))ts_mosaic_live_stop(m,id);
         else if(!strcmp(command,"launch"))(void)ts_mosaic_live_launch(m,id,m->live_capture.quantize);
-        else if(named_toggle) {
+        else if(named_toggle || !strcmp(command,"toggle")) {
             if(m->live[e-m->events].state)ts_mosaic_live_stop(m,id);
             else (void)ts_mosaic_live_launch(m,id,m->live_capture.quantize);
         }
@@ -111,6 +141,7 @@ static void mosaic_live_poll(SDL_AudioDeviceID output,SDL_AudioDeviceID *input_d
     ui->mosaic_live_recording=atomic_load(&c->active);
     ui->mosaic_live_finishing=!ui->mosaic_live_recording;
     ui->mosaic_live_seconds=c->file.sample_rate?(double)(c->frames-c->first)/c->file.sample_rate:0;
+    ui->mosaic_live_duration=c->file.sample_rate?(double)c->target/c->file.sample_rate:0;
     if(d)SDL_UnlockAudioDevice(d);
     if(s->loop_epoch!=ui->mosaic->epoch)mosaic_live_capture_end(output,*input_device,s,0);
     if(!defer && ts_loop_capture_peek(c,&take) && take.last<=atomic_load_explicit(&c->file.flushed_frames,memory_order_acquire)) {
@@ -167,26 +198,41 @@ static int mosaic_live_event(const SDL_Event *event,SDL_Window *window,SDL_Audio
     SDL_AudioDeviceID *input_device,AudioState *a,ExternalInputState *s,TsUiState *ui)
 {
     if(!ui->mosaic_open || ui->mosaic_editing || ui->file_busy || ui_dialog_open(ui) || !ui->mosaic)return 0;
+    if(ui->midi_learn_active)return 0; /* Global learner owns clicks and Escape. */
     if(event->type==SDL_KEYDOWN && event->key.windowID==SDL_GetWindowID(window) && !event->key.repeat) {
         if(event->key.keysym.sym==SDLK_l && (event->key.keysym.mod&KMOD_CTRL)) {ui->mosaic_live_open^=1;return 1;}
-        if(ui->mosaic_live_open && event->key.keysym.sym==SDLK_ESCAPE) {ui->mosaic_live_open=0;return 1;}
+        if(ui->mosaic_live_open && event->key.keysym.sym==SDLK_ESCAPE) {
+            if(ui->mosaic_live_advanced)ui->mosaic_live_advanced=0;else ui->mosaic_live_open=0;return 1;
+        }
     }
     int down=event->type==SDL_MOUSEBUTTONDOWN,wheel=event->type==SDL_MOUSEWHEEL;
     if((!down && !wheel) || (down?event->button.windowID:event->wheel.windowID)!=SDL_GetWindowID(window))return 0;
     int x,y;if(down)logical_mouse(window,event->button.x,event->button.y,&x,&y);
     else {int mx,my;wheel_event_mouse(event,&mx,&my);logical_mouse(window,mx,my,&x,&y);}
-    if(ui->midi_learn_active)return 0;
-    if(down && x>=118 && x<160 && y>=20 && y<36) {ui->mosaic_live_open^=1;return 1;}
-    if(!ui->mosaic_live_open || x<120 || x>=630 || y<78 || y>=350)return 0;
-    TsMosaic *m=ui->mosaic;
-    if(down && y>=106 && y<126) {
-        const char *commands[]={"record","stop_capture","discard_partial","stop_all"};
-        for(int i=0;i<4;++i)if(x>=132+i*104 && x<228+i*104) {
-            mosaic_live_command(output,input_device,a,s,ui,commands[i]);return 1;
-        }
+    if(down && event->button.button==SDL_BUTTON_LEFT &&
+       x>=TS_MOSAIC_LIVE_BUTTON_X && x<TS_MOSAIC_LIVE_BUTTON_X+TS_MOSAIC_LIVE_BUTTON_W &&
+       y>=TS_MOSAIC_LIVE_BUTTON_Y && y<TS_MOSAIC_LIVE_BUTTON_Y+TS_MOSAIC_LIVE_BUTTON_H) {
+        ui->mosaic_live_open^=1;return 1;
     }
-    if(down && y>=166 && y<186) {
-        if(x>=526){ui->mosaic_live_open=0;return 1;}
+    if(!ts_ui_mosaic_live_contains(ui,x,y))return 0;
+    TsMosaic *m=ui->mosaic;
+    if(down && event->button.button==SDL_BUTTON_LEFT) {
+        const char *command=ts_ui_mosaic_live_command_at(ui,x,y);
+        if(command){mosaic_live_command(output,input_device,a,s,ui,command);return 1;}
+    }
+    if(!ui->mosaic_live_advanced) {
+        if(down && event->button.button==SDL_BUTTON_LEFT) {
+            if(x>=608 && y>=88 && y<104)ui->mosaic_live_open=0;
+            else if(x>=472 && x<622 && y>=310 && y<326)ui->mosaic_live_advanced=1;
+            else if(x>=472 && x<622 && y>=282 && y<298)ui->mosaic_live_keys^=1;
+        }
+        return 1;
+    }
+    if(down && event->button.button==SDL_BUTTON_LEFT && y>=310 && y<326 && x>=132 && x<276) {
+        ui->mosaic_live_keys^=1;return 1;
+    }
+    if(down && y>=166 && y<182) {
+        if(x>=526 && x<608){ui->mosaic_live_advanced=0;return 1;}
         if(x>=424 && x<520) {
             if(ui->mosaic_live_archive[0]) {SDL_SetClipboardText(ui->mosaic_live_archive);snprintf(ui->mosaic_live_status,sizeof(ui->mosaic_live_status),"SESSION WAV PATH COPIED / COMPLETE LAYERS + CURRENT PARTIAL");}
             return 1;
@@ -196,7 +242,7 @@ static int mosaic_live_event(const SDL_Event *event,SDL_Window *window,SDL_Audio
             toggle_external_monitor(output,input_device,a,s,ui);ui->record_source=source;return 1;
         }
     }
-    if((y>=140 && y<160) || (y>=166 && y<186 && x<282)) {
+    if((y>=140 && y<156 && x>=132 && x<608) || (y>=166 && y<182 && x>=132 && x<282)) {
         if(s->loop_session){snprintf(ui->mosaic_live_status,sizeof(ui->mosaic_live_status),"STOP CAPTURE BEFORE CHANGING ITS SOURCE OR MODE");return 1;}
         if(output)SDL_LockAudioDevice(output);
         if(y>=166)m->live_capture.quantize^=1;
@@ -209,11 +255,7 @@ static int mosaic_live_event(const SDL_Event *event,SDL_Window *window,SDL_Audio
         ++m->revision;
         if(output)SDL_UnlockAudioDevice(output);return 1;
     }
-    if(down && y>=224 && y<244) {
-        if(x>=340) {
-            const char *commands[]={"launch","stop","restart"};int n=(x-340)/98;
-            if(n<3)mosaic_live_command(output,input_device,a,s,ui,commands[n]);return 1;
-        }
+    if(down && y>=224 && y<240 && x>=132 && x<332) {
         if(output)SDL_LockAudioDevice(output);
         TsMosaicEvent *e=ts_mosaic_find(m,ui->mosaic_selected);
         if(e && !e->source->pattern) {
@@ -225,7 +267,7 @@ static int mosaic_live_event(const SDL_Event *event,SDL_Window *window,SDL_Audio
         } else snprintf(ui->mosaic_live_status,sizeof(ui->mosaic_live_status),"SELECT AN AUDIO CARD / PATTERNS KEEP THEIR TIMELINE CLOCK");
         if(output)SDL_UnlockAudioDevice(output);return 1;
     }
-    if(down && y>=254 && y<274) {
+    if(down && y>=254 && y<270 && x>=132 && x<608) {
         if(output)SDL_LockAudioDevice(output);
         TsMosaicEvent *e=ts_mosaic_find(m,ui->mosaic_selected);
         if(e && e->live){ts_mosaic_checkpoint(m);
