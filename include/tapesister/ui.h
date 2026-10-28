@@ -576,6 +576,7 @@ typedef struct {
     int mosaic_live_open, mosaic_live_advanced, mosaic_live_keys;
     int mosaic_live_drag, mosaic_live_grab_x, mosaic_live_grab_y, mosaic_live_play_all;
     int mosaic_live_drag_before_x, mosaic_live_drag_before_y;
+    int mosaic_live_output_width, mosaic_live_output_height; /* Runtime display aspect, never saved. */
     char mosaic_live_hover[40];
     int mosaic_live_recording, mosaic_live_finishing, mosaic_live_loops;
     double mosaic_live_seconds, mosaic_live_duration, mosaic_live_quarter;
@@ -1043,6 +1044,7 @@ int ts_ui_midi_target_from_point(const TsUiState *ui, int x, int y,
                                  char *target, size_t target_size);
 int ts_ui_mosaic_live_contains(const TsUiState *ui,int x,int y);
 void ts_ui_mosaic_live_origin(const TsUiState *ui,int *x,int *y);
+void ts_ui_mosaic_live_circle_scale(const TsUiState *ui,double *x,double *y);
 const char *ts_ui_mosaic_live_transport_command(int index);
 const char *ts_ui_mosaic_live_help(const char *command);
 const char *ts_ui_mosaic_live_command_at(const TsUiState *ui,int x,int y);

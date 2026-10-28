@@ -72,6 +72,13 @@ static void test_mosaic_looper_cockpit(SDL_Window *window,SDL_AudioDeviceID devi
     cockpit_pointer(window,device,a,s,u,&instrument,c,SDL_MOUSEMOTION,-1000,1000,0);
     cockpit_pointer(window,device,a,s,u,&instrument,c,SDL_MOUSEBUTTONUP,-1000,1000,1);
     ts_ui_mosaic_live_origin(u,&px,&py);assert(px==0 && py==TS_UI_HEIGHT-TS_MOSAIC_LIVE_H);
+    /* A resize updates hit geometry before the next paint, including Learn. */
+    SDL_SetWindowSize(window,1280,1024);
+    cockpit_pointer(window,device,a,s,u,&instrument,c,SDL_MOUSEMOTION,(px+83)*2,(int)lrint((py+46)*1024./400),0);
+    assert(u->mosaic_live_output_width==1280 && u->mosaic_live_output_height==1024);
+    assert(ts_ui_mosaic_live_command_at(u,px+83,py+46)==NULL);
+    SDL_SetWindowSize(window,640,400);
+    cockpit_pointer(window,device,a,s,u,&instrument,c,SDL_MOUSEMOTION,px+83,py+86,0);
     mosaic_poll(device,u,&instrument,c);mosaic_live_keyboard_snapshot(a,u,&instrument);
     const char *shot=getenv("TS_TEST_LIVE_LOOPS");char shot_path[1200];
     if(shot){snprintf(shot_path,sizeof(shot_path),"%s-cockpit-moved.ppm",shot);live_controller_screenshot_size(u,shot_path,1366,768);}

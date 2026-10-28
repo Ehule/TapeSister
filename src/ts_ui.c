@@ -724,6 +724,12 @@ void ts_ui_mosaic_live_origin(const TsUiState *ui,int *x,int *y)
     *x=px<0?TS_MOSAIC_LIVE_X:px>TS_UI_WIDTH-TS_MOSAIC_LIVE_W?TS_UI_WIDTH-TS_MOSAIC_LIVE_W:px;
     *y=py<0?TS_MOSAIC_LIVE_Y:py<32?32:py>TS_UI_HEIGHT-TS_MOSAIC_LIVE_H?TS_UI_HEIGHT-TS_MOSAIC_LIVE_H:py;
 }
+void ts_ui_mosaic_live_circle_scale(const TsUiState *ui,double *x,double *y)
+{
+    double sx=ui->mosaic_live_output_width>0?(double)ui->mosaic_live_output_width/TS_UI_WIDTH:1;
+    double sy=ui->mosaic_live_output_height>0?(double)ui->mosaic_live_output_height/TS_UI_HEIGHT:1;
+    double uniform=fmin(sx,sy);*x=uniform/sx;*y=uniform/sy;
+}
 const char *ts_ui_mosaic_live_transport_command(int index)
 {
     static const char *commands[]={"first_loop","previous_loop","play","stop_capture","halt","next_loop","last_loop"};
@@ -758,7 +764,8 @@ const char *ts_ui_mosaic_live_command_at(const TsUiState *ui,int x,int y)
     if(!ts_ui_mosaic_live_contains(ui,x,y))return NULL;
     if(!ui->mosaic_live_advanced) {
         int px,py;ts_ui_mosaic_live_origin(ui,&px,&py);x-=px;y-=py;
-        int dx=x-83,dy=y-86;
+        double sx,sy;ts_ui_mosaic_live_circle_scale(ui,&sx,&sy);
+        double dx=(x-83)/sx,dy=(y-86)/sy;
         if(dx*dx+dy*dy<=TS_MOSAIC_LIVE_RADIUS*TS_MOSAIC_LIVE_RADIUS)return "primary";
         if(y>=TS_MOSAIC_LIVE_TRANSPORT_Y && y<TS_MOSAIC_LIVE_TRANSPORT_Y+TS_MOSAIC_LIVE_TRANSPORT_H && x>=8) {
             int index=(x-8)/TS_MOSAIC_LIVE_TRANSPORT_STEP;
@@ -799,8 +806,13 @@ static void main_midi_learn_overlay(TsFramebuffer *fb, const TsUiState *ui)
         if(ui->mosaic_live_open) {
             if(!ui->mosaic_live_advanced) {
                 int px,py;ts_ui_mosaic_live_origin(ui,&px,&py);
+                double sx,sy;ts_ui_mosaic_live_circle_scale(ui,&sx,&sy);
+                int rx=(int)lrint(TS_MOSAIC_LIVE_RADIUS*sx),ry=(int)lrint(TS_MOSAIC_LIVE_RADIUS*sy);
+                snprintf(target,sizeof(target),"mosaic.live.primary");
+                state=midi_learn_target_state(&ui->config.midi_map,ui->midi_learn_pending,target);
+                midi_learn_tint(fb,px+83-rx,py+86-ry,2*rx+1,2*ry+1,state);
                 static const struct {int x,y,w,h;const char *command;} controls[]={
-                    {39,42,88,88,"primary"},{8,220,72,16,"scope"},{86,220,72,16,"role"}};
+                    {8,220,72,16,"scope"},{86,220,72,16,"role"}};
                 for(size_t i=0;i<sizeof(controls)/sizeof(controls[0]);++i) {
                     snprintf(target,sizeof(target),"mosaic.live.%s",controls[i].command);
                     state=midi_learn_target_state(&ui->config.midi_map,ui->midi_learn_pending,target);

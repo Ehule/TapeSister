@@ -14,6 +14,8 @@ canvas or LoopSister window. Built from main after master-clock PR #163 merged
    Drag the Simple panel's header to move it. Double-click the header to restore
    its right-side dock; Escape during a drag restores its starting position.
    Position is saved in the usual configuration and clamped inside the window.
+   The REC disc, progress ring and click area compensate for the window aspect
+   ratio, including 1280×1024; resizing does not turn the button into an oval.
 2. In Advanced, select **SRC: EXT INPUT**. The channel/pair comes from the existing recording
    input configuration. **MONITOR** controls listening, independently of capture.
 3. Choose **SINGLE TAKE** or **CONTINUOUS ON**. Click LENGTH for presets, wheel

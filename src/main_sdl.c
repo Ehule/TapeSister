@@ -18517,6 +18517,7 @@ int main(int argc, char **argv)
             int force_present=main_paint_invalid || !frame_snapshot_valid;
             last_main_paint=schedule_now;main_paint_invalid=0;
             uint64_t profile_paint = ts_profile_begin(TS_PROF_RENDER);
+            SDL_GetWindowSize(window,&ui.mosaic_live_output_width,&ui.mosaic_live_output_height);
             native_waveform_prepare(renderer,waveform_details,main_waveform_detail_allowed(&ui));
             ts_ui_render(&framebuffer, &ui, &instrument);
             ts_profile_end(TS_PROF_RENDER, profile_paint);

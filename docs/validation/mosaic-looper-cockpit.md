@@ -34,6 +34,11 @@ Mosaic core/native patterns, project save/state, external input, keyboard,
 MIDI, audio config, F11/clock routing, native waveforms, new-project and offline
 render checks. [Full CTest output](mosaic-looper-cockpit-tests.txt).
 
+After the aspect correction, the application and affected controller/render
+targets were rebuilt. **6/6 UI/integration CTests passed in 43.83 seconds**:
+full/focused Mosaic controller, native waveforms, source-route controller, F11
+and clock routing. [Aspect follow-up output](mosaic-looper-aspect-tests.txt).
+
 The new cockpit fixture is part of the full Mosaic controller regression as
 well as its focused `--live-loops` alias. It uses the production SDL event,
 MIDI mapping, audio callback, disk writer, renderer and project save/load paths.
@@ -45,6 +50,10 @@ MIDI mapping, audio callback, disk writer, renderer and project save/load paths.
 - Native opacity over both source and card surfaces at 1280×800, 1366×768 and
   1280×1024. The 1280×800 fixture also checks every panel pixel against the
   logical renderer. Configuration save/load retains the moved position.
+- The red disc is measured in actual rendered pixels at all three dimensions;
+  its width/height must match within pixel-grid rounding. Drawing, mouse and
+  MIDI Learn use one aspect correction for the disc/ring and its hit area.
+  A real SDL resize updates hit geometry before the next paint.
 - Existing audio-card conversion preserves its ID, source range, source-repeat
   choice, notes, gain/pan, fades and Matrix route; no implicit launch. Save/load
   and conversion undo/redo retain the role. Reopening leaves players stopped.
@@ -79,6 +88,14 @@ backlog can delay the visual preview. It is not an exact sample editor or an
 additional recovery copy. Frame pushing in the audio callback is unchanged:
 no new audio-thread peak scan, allocation, disk access or waveform generation.
 The compact waveform redraw is bounded to 148 columns.
+
+TapeSister's surrounding 640×400 layout fills the window nonuniformly. The
+looper now compensates for that scaling so the red disc and progress ring stay
+round at 5:4 and widescreen sizes. At 1280×1024 the native screenshot's red disc
+changes from 126×161 to 126×125 pixels; the residual pixel is raster rounding.
+Bitmap labels retain their full glyph rows. The redundant preset label inside
+the disc is omitted when an extreme aspect leaves too little room; Advanced
+retains the setting and the live timer retains the recording countdown.
 
 Local validation uses a shared Linux development host with SDL dummy devices;
 the native renderer produces screenshots at the listed dimensions. It does

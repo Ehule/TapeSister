@@ -11,6 +11,8 @@ static void live_controller_screenshot_size(TsUiState *u,const char *path,int wi
     SDL_Renderer *renderer=SDL_CreateRenderer(window,-1,SDL_RENDERER_SOFTWARE);assert(renderer);
     SDL_Texture *base=SDL_CreateTexture(renderer,SDL_PIXELFORMAT_ARGB8888,SDL_TEXTUREACCESS_STREAMING,640,400);assert(base);
     TsUiWaveformDetail details[2]={0};SDL_Texture *textures[2]={0};TsFramebuffer *fb=calloc(1,sizeof(*fb));assert(fb);
+    int old_width=u->mosaic_live_output_width,old_height=u->mosaic_live_output_height;
+    u->mosaic_live_output_width=width;u->mosaic_live_output_height=height;
     native_waveform_prepare(renderer,details,main_waveform_detail_allowed(u));ts_audio_ui_render(fb,u,&instrument);
     assert(!SDL_UpdateTexture(base,NULL,fb->pixels,640*sizeof(uint32_t)));
     assert(!SDL_RenderCopy(renderer,base,NULL,NULL));native_waveform_copy(renderer,textures,details,fb);
@@ -19,6 +21,22 @@ static void live_controller_screenshot_size(TsUiState *u,const char *path,int wi
     if(u->mosaic_live_open && !u->mosaic_live_advanced) {
         assert(details[0].valid && details[1].valid); /* Canvas stays native while performing. */
         int px,py;ts_ui_mosaic_live_origin(u,&px,&py);
+        /* Measure the actual rendered red disc, independently of the logical
+           aspect correction: a 5:4 display must not turn it into an oval. */
+        if(!u->mosaic_live_finishing) {
+            int left=width,top=height,right=-1,bottom=-1;
+            for(int y=py*height/400;y<(py+TS_MOSAIC_LIVE_H)*height/400;++y)
+                for(int x=px*width/640;x<(px+TS_MOSAIC_LIVE_W)*width/640;++x)
+                    if((pixels[y*width+x]&0xffffffu)==0xe51820u) {
+                        if(x<left)left=x;if(x>right)right=x;if(y<top)top=y;if(y>bottom)bottom=y;
+                    }
+            assert(right>left && bottom>top);
+            assert(abs((right-left)-(bottom-top))<=(int)ceil(fmax(width/640.,height/400.))*2);
+        }
+        char target[80];double sx,sy;ts_ui_mosaic_live_circle_scale(u,&sx,&sy);
+        assert(ts_ui_midi_target_from_point(u,px+83,py+86,target,sizeof(target)) && !strcmp(target,"mosaic.live.primary"));
+        assert(ts_ui_mosaic_live_command_at(u,px+83,py+86-(int)ceil(45*sy))==NULL);
+        assert(ts_ui_mosaic_live_command_at(u,px+83-(int)ceil(45*sx),py+86)==NULL);
         for(int slot=0;slot<2;++slot) {
             TsUiWaveformDetail *d=&details[slot];
             for(int y=0;y<d->height;++y) {
@@ -41,6 +59,7 @@ static void live_controller_screenshot_size(TsUiState *u,const char *path,int wi
     free(pixels);free(fb);
     for(int i=0;i<2;++i){ts_ui_waveform_detail_free(&details[i]);SDL_DestroyTexture(textures[i]);}
     SDL_DestroyTexture(base);SDL_DestroyRenderer(renderer);SDL_DestroyWindow(window);
+    u->mosaic_live_output_width=old_width;u->mosaic_live_output_height=old_height;
 }
 static void live_controller_screenshot(TsUiState *u,const char *path)
 {live_controller_screenshot_size(u,path,1280,800);}

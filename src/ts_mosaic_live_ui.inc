@@ -11,14 +11,16 @@ static const char *mosaic_live_state_name(const TsUiState *ui,const TsMosaicEven
 }
 static void mosaic_live_center_text(TsFramebuffer *fb,int x,int y,const char *label,uint32_t color)
 {text(fb,x+83-(int)strlen(label)*3,y,label,color,1);}
-static void mosaic_live_circle(TsFramebuffer *fb,int x,int y,int radius,uint32_t fill)
+static void mosaic_live_circle(TsFramebuffer *fb,int x,int y,int radius,double sx,double sy,uint32_t fill)
 {
-    for(int row=-radius;row<=radius;++row) {
-        int half=(int)sqrt(radius*radius-row*row);
+    int rows=(int)floor(radius*sy);
+    for(int row=-rows;row<=rows;++row) {
+        double at=row/sy;
+        int half=(int)floor(sqrt(fmax(0,radius*radius-at*at))*sx);
         rect(fb,x-half,y+row,2*half+1,1,fill);
     }
 }
-static void mosaic_live_ring(TsFramebuffer *fb,int x,int y,double progress,uint32_t color,uint32_t dim)
+static void mosaic_live_ring(TsFramebuffer *fb,int x,int y,double sx,double sy,double progress,uint32_t color,uint32_t dim)
 {
     /* Cached UI geometry, independent of the audio callback. */
     static int ready;static short points[128][2];
@@ -30,7 +32,11 @@ static void mosaic_live_ring(TsFramebuffer *fb,int x,int y,double progress,uint3
         }
         ready=1;
     }
-    for(int i=0;i<128;++i)rect(fb,x+points[i][0]-2,y+points[i][1]-2,5,5,i<progress*128?color:dim);
+    for(int i=0;i<128;++i) {
+        int a=(int)lrint((points[i][0]-2)*sx),b=(int)lrint((points[i][0]+3)*sx);
+        int top=(int)lrint((points[i][1]-2)*sy),bottom=(int)lrint((points[i][1]+3)*sy);
+        rect(fb,x+a,y+top,b-a,bottom-top,i<progress*128?color:dim);
+    }
 }
 static void mosaic_live_transport_icon(TsFramebuffer *fb,int x,int y,int index,int active,uint32_t ink,uint32_t panel)
 {
@@ -101,12 +107,13 @@ static void mosaic_live_compact(TsFramebuffer *fb,const TsUiState *ui,const TsMo
         else if(state==TS_MOSAIC_LIVE_RELEASING)timer="RELEASING";
         else if(!state)timer="READY / CYCLE";
     } else timer="NEW LAYER";
-    mosaic_live_ring(fb,x+83,y+86,phase,color,ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_EDGE,RGB(64,54,70)));
-    mosaic_live_circle(fb,x+83,y+86,31,finishing?RGB(99,49,55):RGB(229,24,32));
-    text(fb,x+65,y+77,finishing?"...":"REC",RGB(255,255,255),2);
+    double sx,sy;ts_ui_mosaic_live_circle_scale(ui,&sx,&sy);
+    mosaic_live_ring(fb,x+83,y+86,sx,sy,phase,color,ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_EDGE,RGB(64,54,70)));
+    mosaic_live_circle(fb,x+83,y+86,31,sx,sy,finishing?RGB(99,49,55):RGB(229,24,32));
+    text(fb,x+65,y+79,finishing?"...":"REC",RGB(255,255,255),2);
     if(m->live_capture.length)snprintf(line,sizeof(line),"%d %s",m->live_capture.length,m->live_capture.units?"BEATS":"SEC");
     else snprintf(line,sizeof(line),"MANUAL");
-    mosaic_live_center_text(fb,x,y+102,line,RGB(255,225,225));
+    if(sx>=.65 && sy>=.65)mosaic_live_center_text(fb,x,y+86+(int)lrint(12*sy),line,RGB(255,225,225));
     snprintf(line,sizeof(line),"%05.1fS %s",remaining,timer);mosaic_live_center_text(fb,x,y+135,line,ink);
     if(capture || finishing)snprintf(line,sizeof(line),"%s / %s",m->live_capture.continuous?"CONTINUOUS":"SINGLE",capture?"RECORDING":"FINISHING");
     else if(e)snprintf(line,sizeof(line),"CARD #%llu / %s",(unsigned long long)e->id,e->muted?"MUTED":e->solo?"SOLO":e->live?"LOOP EVENT":"TIMELINE");
