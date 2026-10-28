@@ -718,12 +718,44 @@ static void midi_learn_tint(TsFramebuffer *fb, int x, int y, int w, int h,
         }
 }
 
+void ts_ui_mosaic_live_origin(const TsUiState *ui,int *x,int *y)
+{
+    int px=ui->config.mosaic_looper_x,py=ui->config.mosaic_looper_y;
+    *x=px<0?TS_MOSAIC_LIVE_X:px>TS_UI_WIDTH-TS_MOSAIC_LIVE_W?TS_UI_WIDTH-TS_MOSAIC_LIVE_W:px;
+    *y=py<0?TS_MOSAIC_LIVE_Y:py<32?32:py>TS_UI_HEIGHT-TS_MOSAIC_LIVE_H?TS_UI_HEIGHT-TS_MOSAIC_LIVE_H:py;
+}
+void ts_ui_mosaic_live_circle_scale(const TsUiState *ui,double *x,double *y)
+{
+    double sx=ui->mosaic_live_output_width>0?(double)ui->mosaic_live_output_width/TS_UI_WIDTH:1;
+    double sy=ui->mosaic_live_output_height>0?(double)ui->mosaic_live_output_height/TS_UI_HEIGHT:1;
+    double uniform=fmin(sx,sy);*x=uniform/sx;*y=uniform/sy;
+}
+const char *ts_ui_mosaic_live_transport_command(int index)
+{
+    static const char *commands[]={"first_loop","previous_loop","play","stop_capture","halt","next_loop","last_loop"};
+    return index>=0 && index<TS_MOSAIC_LIVE_TRANSPORT_COUNT?commands[index]:NULL;
+}
+const char *ts_ui_mosaic_live_help(const char *command)
+{
+    if(!command)return "DRAG HEADER / DOUBLE CLICK TO DOCK";
+    if(!strcmp(command,"primary"))return "RECORD / NEXT LAYER";
+    if(!strcmp(command,"first_loop"))return "FIRST LOOP / PLAY";
+    if(!strcmp(command,"previous_loop"))return "PREVIOUS LOOP / PLAY";
+    if(!strcmp(command,"next_loop"))return "NEXT LOOP / PLAY";
+    if(!strcmp(command,"last_loop"))return "LAST LOOP / PLAY";
+    if(!strcmp(command,"play"))return "PLAY SELECTED / ALL";
+    if(!strcmp(command,"stop_capture"))return "PAUSE / STOP RECORDING";
+    if(!strcmp(command,"halt"))return "STOP RECORDING + ALL LOOPS";
+    if(!strcmp(command,"scope"))return "PLAY SCOPE: ONE / ALL";
+    if(!strcmp(command,"role"))return "TIMELINE / LOOP EVENT";
+    return "LOOPER PERFORMANCE CONTROL";
+}
 int ts_ui_mosaic_live_contains(const TsUiState *ui,int x,int y)
 {
     if(!ui || !ui->mosaic_live_open)return 0;
+    int px,py;ts_ui_mosaic_live_origin(ui,&px,&py);
     return ui->mosaic_live_advanced?x>=120 && x<630 && y>=78 && y<350:
-        x>=TS_MOSAIC_LIVE_X && x<TS_MOSAIC_LIVE_X+TS_MOSAIC_LIVE_W &&
-        y>=TS_MOSAIC_LIVE_Y && y<TS_MOSAIC_LIVE_Y+TS_MOSAIC_LIVE_H;
+        x>=px && x<px+TS_MOSAIC_LIVE_W && y>=py && y<py+TS_MOSAIC_LIVE_H;
 }
 /* Share performance hit regions between normal input and MIDI Learn. The
    central primary target always starts/advances continuous separate layers. */
@@ -731,15 +763,18 @@ const char *ts_ui_mosaic_live_command_at(const TsUiState *ui,int x,int y)
 {
     if(!ts_ui_mosaic_live_contains(ui,x,y))return NULL;
     if(!ui->mosaic_live_advanced) {
-        int dx=x-TS_MOSAIC_LIVE_CX,dy=y-TS_MOSAIC_LIVE_CY;
+        int px,py;ts_ui_mosaic_live_origin(ui,&px,&py);x-=px;y-=py;
+        double sx,sy;ts_ui_mosaic_live_circle_scale(ui,&sx,&sy);
+        double dx=(x-83)/sx,dy=(y-86)/sy;
         if(dx*dx+dy*dy<=TS_MOSAIC_LIVE_RADIUS*TS_MOSAIC_LIVE_RADIUS)return "primary";
-        if(y>=242 && y<258) {
-            if(x>=472 && x<544)return "toggle";
-            if(x>=550 && x<622)return "stop_capture";
+        if(y>=TS_MOSAIC_LIVE_TRANSPORT_Y && y<TS_MOSAIC_LIVE_TRANSPORT_Y+TS_MOSAIC_LIVE_TRANSPORT_H && x>=8) {
+            int index=(x-8)/TS_MOSAIC_LIVE_TRANSPORT_STEP;
+            if((x-8)%TS_MOSAIC_LIVE_TRANSPORT_STEP<TS_MOSAIC_LIVE_TRANSPORT_W)
+                return ts_ui_mosaic_live_transport_command(index);
         }
-        if(y>=264 && y<280) {
-            if(x>=472 && x<568)return "stop_all";
-            if(x>=574 && x<622)return "restart";
+        if(y>=220 && y<236) {
+            if(x>=8 && x<80)return "scope";
+            if(x>=86 && x<158)return "role";
         }
     } else {
         if(y>=106 && y<122) {
@@ -747,6 +782,7 @@ const char *ts_ui_mosaic_live_command_at(const TsUiState *ui,int x,int y)
             for(int i=0;i<4;++i)if(x>=132+i*104 && x<228+i*104)return commands[i];
         }
         if(y>=224 && y<240) {
+            if(x>=132 && x<232)return "role";
             if(x>=340 && x<430)return "launch";
             if(x>=438 && x<528)return "stop";
             if(x>=536 && x<608)return "restart";
@@ -769,13 +805,24 @@ static void main_midi_learn_overlay(TsFramebuffer *fb, const TsUiState *ui)
     if(ui->mosaic_open) {
         if(ui->mosaic_live_open) {
             if(!ui->mosaic_live_advanced) {
+                int px,py;ts_ui_mosaic_live_origin(ui,&px,&py);
+                double sx,sy;ts_ui_mosaic_live_circle_scale(ui,&sx,&sy);
+                int rx=(int)lrint(TS_MOSAIC_LIVE_RADIUS*sx),ry=(int)lrint(TS_MOSAIC_LIVE_RADIUS*sy);
+                snprintf(target,sizeof(target),"mosaic.live.primary");
+                state=midi_learn_target_state(&ui->config.midi_map,ui->midi_learn_pending,target);
+                midi_learn_tint(fb,px+83-rx,py+86-ry,2*rx+1,2*ry+1,state);
                 static const struct {int x,y,w,h;const char *command;} controls[]={
-                    {503,125,88,88,"primary"},{472,242,72,16,"toggle"},
-                    {550,242,72,16,"stop_capture"},{472,264,96,16,"stop_all"},{574,264,48,16,"restart"}};
+                    {8,220,72,16,"scope"},{86,220,72,16,"role"}};
                 for(size_t i=0;i<sizeof(controls)/sizeof(controls[0]);++i) {
                     snprintf(target,sizeof(target),"mosaic.live.%s",controls[i].command);
                     state=midi_learn_target_state(&ui->config.midi_map,ui->midi_learn_pending,target);
-                    midi_learn_tint(fb,controls[i].x,controls[i].y,controls[i].w,controls[i].h,state);
+                    midi_learn_tint(fb,px+controls[i].x,py+controls[i].y,controls[i].w,controls[i].h,state);
+                }
+                for(int i=0;i<TS_MOSAIC_LIVE_TRANSPORT_COUNT;++i) {
+                    snprintf(target,sizeof(target),"mosaic.live.%s",ts_ui_mosaic_live_transport_command(i));
+                    state=midi_learn_target_state(&ui->config.midi_map,ui->midi_learn_pending,target);
+                    midi_learn_tint(fb,px+8+i*TS_MOSAIC_LIVE_TRANSPORT_STEP,py+TS_MOSAIC_LIVE_TRANSPORT_Y,
+                        TS_MOSAIC_LIVE_TRANSPORT_W,TS_MOSAIC_LIVE_TRANSPORT_H,state);
                 }
                 goto learn_footer;
             }

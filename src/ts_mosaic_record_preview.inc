@@ -21,13 +21,13 @@ static void mosaic_record_text(TsFramebuffer *fb,TsUiWaveformDetail *d,
                 x+(n*6+gx+1)*sx,y+(gy+1)*sy,color);
     }
 }
-static void mosaic_recording_card(TsFramebuffer *fb,TsUiWaveformDetail *d,const TsUiState *ui)
+static void mosaic_recording_preview(TsFramebuffer *fb,TsUiWaveformDetail *d,const TsUiState *ui,
+    const TsMosaicRecordPreview *p,unsigned sample_rate,size_t frames,int recording,const char *state)
 {
-    const TsMosaicRecordPreview *p=&ui->mosaic_record_preview;
-    if(!ui->mosaic_recording || !ui->mosaic || p->epoch!=ui->mosaic->epoch || !ui->input_sample_rate)return;
+    if(!ui->mosaic || p->epoch!=ui->mosaic->epoch || !sample_rate)return;
     double sx=d?(double)d->width/(TS_MOSAIC_CANVAS_RIGHT-151):1,sy=d?(double)d->height/TS_MOSAIC_CANVAS_HEIGHT:1;
     double scale=ui->mosaic_scale>0?ui->mosaic_scale:24,horizontal=ui->mosaic_hscale>0?ui->mosaic_hscale:1;
-    double rate=scale*sy,seconds=(double)ui->capture_recorded_frames/ui->input_sample_rate;
+    double rate=scale*sy,seconds=(double)frames/sample_rate;
     TsMosaicEvent placement={.start=p->start,.duration=seconds,.x=p->x,.width=86};
     ts_mosaic_space(ui->mosaic,&placement);
     double x=(d?0:151)+mosaic_detail_pixel(placement.x*horizontal*sx)-mosaic_detail_pixel(ui->mosaic_xscroll*horizontal*sx);
@@ -36,7 +36,6 @@ static void mosaic_recording_card(TsFramebuffer *fb,TsUiWaveformDetail *d,const 
     double bottom=y+fmax(40*sy,mosaic_detail_pixel(seconds*rate));
     double top_limit=d?0:66,bottom_limit=d?d->height:TS_MOSAIC_CANVAS_BOTTOM;
     if(right<=(d?0:151) || x>=(d?d->width:TS_MOSAIC_CANVAS_RIGHT) || bottom<=top_limit || y>=bottom_limit)return;
-    int recording=ui->capture_state==TS_CAPTURE_RECORDING;
     uint32_t border=recording?(ui->text_cursor_visible?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_RECORD, RGB(244,112,117)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_RECORD, RGB(183,78,91))):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DATA1, RGB(225,169,100));
     uint32_t fill=ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(43,26,35)),wave=ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_RECORD, RGB(238,139,149));
     mosaic_record_rect(fb,d,x,y,right,bottom,fill);
@@ -45,8 +44,8 @@ static void mosaic_recording_card(TsFramebuffer *fb,TsUiWaveformDetail *d,const 
     double wave_rate=seconds>0?(bottom-y-28*sy)/seconds:rate;
     if(p->frames_per_peak && p->frames && right-x>12*sx)for(int row=first;row<last;++row) {
         double elapsed=fmax(0,(row-y-16*sy)/wave_rate);
-        size_t a=(size_t)fmin(p->frames,elapsed*ui->input_sample_rate);
-        size_t b=(size_t)fmin(p->frames,(elapsed+1/wave_rate)*ui->input_sample_rate);
+        size_t a=(size_t)fmin(p->frames,elapsed*sample_rate);
+        size_t b=(size_t)fmin(p->frames,(elapsed+1/wave_rate)*sample_rate);
         if(a>=p->frames)continue;
         if(b<=a)b=a+1;
         size_t begin=a/p->frames_per_peak,end=(b-1)/p->frames_per_peak;
@@ -61,12 +60,20 @@ static void mosaic_recording_card(TsFramebuffer *fb,TsUiWaveformDetail *d,const 
     mosaic_record_rect(fb,d,x,bottom-2*sy,right,bottom,border);
     int chars=(int)((right-x)/sx-12)/6;if(chars>24)chars=24;
     if(chars>0) {
-        const char *state=!recording?(ui->capture_state==TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER?"ARMED":"FINISHING"):
-            ui->mosaic_record_source==TS_RECORD_SOURCE_OUTPUT?"REC OUT":
-            ui->mosaic_record_source==TS_RECORD_SOURCE_EXT?"REC EXT":"REC DRY";
         char label[40];snprintf(label,sizeof(label),"%.*s",chars,state);
         mosaic_record_text(fb,d,x+6*sx,y+4*sy,label,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DATA1, RGB(255,215,211)),sx,sy);
         snprintf(label,sizeof(label),"%.1F S",seconds);label[chars]='\0';
         mosaic_record_text(fb,d,x+6*sx,bottom-10*sy,label,border,sx,sy);
     }
+}
+static void mosaic_recording_card(TsFramebuffer *fb,TsUiWaveformDetail *d,const TsUiState *ui)
+{
+    if(ui->mosaic_recording) {
+        int recording=ui->capture_state==TS_CAPTURE_RECORDING;
+        const char *state=!recording?(ui->capture_state==TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER?"ARMED":"FINISHING"):
+            ui->mosaic_record_source==TS_RECORD_SOURCE_OUTPUT?"REC OUT":ui->mosaic_record_source==TS_RECORD_SOURCE_EXT?"REC EXT":"REC DRY";
+        mosaic_recording_preview(fb,d,ui,&ui->mosaic_record_preview,ui->input_sample_rate,ui->capture_recorded_frames,recording,state);
+    }
+    if(ui->mosaic_live_recording)mosaic_recording_preview(fb,d,ui,&ui->mosaic_live_preview,ui->mosaic_live_rate,
+        ui->mosaic_live_preview.frames,1,"REC LOOP");
 }

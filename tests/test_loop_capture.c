@@ -6,7 +6,32 @@
 #include <stdio.h>
 #include <math.h>
 static void drain(TsLoopCapture *c)
-{while(ts_performance_recorder_pump(&c->file,8192)) {if(atomic_load(&c->active))break;}}
+{while(ts_loop_capture_pump(c,8192)) {if(atomic_load(&c->active))break;}}
+static void test_preview(void)
+{
+    TsLoopCapture c;ts_loop_capture_init(&c);char error[160];float peaks[64];
+    assert(ts_loop_capture_start(&c,"loop-preview-test.wav",1000,2,1000,1,error,sizeof(error)));
+    assert(ts_loop_capture_pump(&c,17)); /* Empty writer poll never consumes future frames. */
+    for(int block=0;block<900;++block) {
+        for(int i=0;i<100;++i)ts_loop_capture_push(&c,(TsStereoFrame){.25f,-.75f});
+        for(int i=0;i<6;++i)assert(ts_loop_capture_pump(&c,17));
+        TsLoopTake take;while(ts_loop_capture_peek(&c,&take))ts_loop_capture_consume(&c);
+    }
+    assert(atomic_load(&c.preview_frames)==90000 && atomic_load(&c.file.read_cursor)==90000);
+    ts_loop_capture_preview(&c,89000,90000,peaks,64);
+    for(int i=0;i<64;++i)assert(peaks[i]==.75f);
+    /* Wrapping the bounded overview never presents an old tag as new audio. */
+    ts_loop_capture_preview(&c,0,1000,peaks,64);
+    for(int i=0;i<64;++i)assert(peaks[i]==0);
+    ts_loop_capture_boundary(&c,1,1);drain(&c);ts_loop_capture_free(&c);
+    assert(ts_loop_capture_start(&c,"loop-preview-test.wav",1000,1,0,1,error,sizeof(error)));
+    for(int i=0;i<100;++i)ts_loop_capture_push(&c,(TsStereoFrame){.75f,-.75f});
+    ts_loop_capture_boundary(&c,1,0);drain(&c);ts_loop_capture_preview(&c,0,100,peaks,64);
+    for(int i=0;i<64;++i)assert(peaks[i]==0); /* Match the recorded mono average. */
+    TsSample sample={0};assert(ts_performance_recorder_load(&c.file,&sample,error,sizeof(error)));
+    for(size_t i=0;i<sample.frames;++i)assert(sample.data[i]==0);
+    ts_sample_free(&sample);ts_loop_capture_free(&c);remove("loop-preview-test.wav");
+}
 static void check_take(TsLoopCapture *c,uint64_t first,uint64_t last)
 {
     TsLoopTake take;TsSample sample={0};char error[160];
@@ -21,6 +46,7 @@ static void check_take(TsLoopCapture *c,uint64_t first,uint64_t last)
 }
 int main(void)
 {
+    test_preview();
     TsLoopCapture c;ts_loop_capture_init(&c);char error[160];
     assert(!ts_loop_capture_start(&c,"unusable/directory/take.wav",1000,2,50,1,error,sizeof(error)));
     assert(!ts_loop_capture_start(&c,"loop-capture-test.wav",1000,2,60001,1,error,sizeof(error)));

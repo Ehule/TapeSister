@@ -107,6 +107,7 @@ void ts_config_init(TsConfig *config)
         config->sister_window_maximized = 1;
         config->sister_window_x = -1;
         config->sister_window_y = -1;
+        config->mosaic_looper_x = config->mosaic_looper_y = -1;
         for (size_t recipe = 0; recipe < ts_cdp_factory_recipe_count() &&
                                 recipe < TS_CDP_CATALOG_CAPACITY; ++recipe) {
             const TsCdpRecipe *entry = ts_cdp_factory_recipe_at(recipe);
@@ -531,6 +532,10 @@ int ts_config_load(TsConfig *config, const char *path,
             if (!parse_clamped_integer(value, -32768, 32767, &loaded.sister_window_x)) { snprintf(error, error_size, "Invalid Sister window X on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "sister_window_y") == 0) {
             if (!parse_clamped_integer(value, -32768, 32767, &loaded.sister_window_y)) { snprintf(error, error_size, "Invalid Sister window Y on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "mosaic_looper_x") == 0) {
+            if (!parse_clamped_integer(value, -1, 639, &loaded.mosaic_looper_x)) { snprintf(error,error_size,"Invalid looper X on config line %d",line_number);fclose(file);return 0; }
+        } else if (strcmp(key, "mosaic_looper_y") == 0) {
+            if (!parse_clamped_integer(value, -1, 399, &loaded.mosaic_looper_y)) { snprintf(error,error_size,"Invalid looper Y on config line %d",line_number);fclose(file);return 0; }
         } else if (strcmp(key, "midi_learn_takeover") == 0) {
             if (!ts_midi_takeover_parse(value, &loaded.midi_map.takeover)) {
                 snprintf(error, error_size,
@@ -726,6 +731,10 @@ int ts_config_save(const TsConfig *config, const char *path,
                 "sister_window_maximized=%d\n"
                 "sister_window_x=%d\n"
                 "sister_window_y=%d\n"
+                "\n[Mosaic]\n"
+                "; Floating performance panel position; -1 restores the right-side default.\n"
+                "mosaic_looper_x=%d\n"
+                "mosaic_looper_y=%d\n"
                 "\n[DSP Presets]\n"
                 "; SAVE/UPDATE writes normalized macro values here.\n",
                 config->sample_path, config->fasttracker_path,
@@ -796,7 +805,8 @@ int ts_config_save(const TsConfig *config, const char *path,
                 config->sister_ghost_percent,
                 config->sister_window_maximized ? 1 : 0,
                 config->sister_window_x,
-                config->sister_window_y) < 0;
+                config->sister_window_y,
+                config->mosaic_looper_x, config->mosaic_looper_y) < 0;
     for (int slot = 0; slot < TS_DSP_FACTORY_RECIPE_COUNT && !write_failed; ++slot) {
         if (!config->dsp_factory_overridden[slot]) continue;
         write_failed = fprintf(file, "DspPreset%02d=%.9g,%.9g,%.9g,%.9g\n",

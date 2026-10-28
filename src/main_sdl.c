@@ -12400,7 +12400,7 @@ struct ExternalInputState {
     SDL_Thread *mosaic_writer,*loop_writer;
     TsLoopCapture loop_capture;
     _Atomic int loop_tap; /* -1 disabled; 0 EXT, 1 DRY, 2 OUTPUT. */
-    int loop_session,loop_source,loop_tempo,loop_quantize,loop_import_failed;
+    int loop_session,loop_source,loop_tempo,loop_quantize,loop_import_failed,loop_stop_playback;
     unsigned loop_number;
     uint64_t loop_epoch;
     double loop_start,loop_x,loop_quarter;
@@ -18517,6 +18517,7 @@ int main(int argc, char **argv)
             int force_present=main_paint_invalid || !frame_snapshot_valid;
             last_main_paint=schedule_now;main_paint_invalid=0;
             uint64_t profile_paint = ts_profile_begin(TS_PROF_RENDER);
+            SDL_GetWindowSize(window,&ui.mosaic_live_output_width,&ui.mosaic_live_output_height);
             native_waveform_prepare(renderer,waveform_details,main_waveform_detail_allowed(&ui));
             ts_ui_render(&framebuffer, &ui, &instrument);
             ts_profile_end(TS_PROF_RENDER, profile_paint);

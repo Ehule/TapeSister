@@ -11,6 +11,11 @@ canvas or LoopSister window. Built from main after master-clock PR #163 merged
    **Ctrl+L**. A compact performance panel leaves the source tiles and most of
    the canvas visible. **ADVANCED** exposes setup and individual card controls;
    **SIMPLE** returns to performance. Escape returns to Simple, then hides it.
+   Drag the Simple panel's header to move it. Double-click the header to restore
+   its right-side dock; Escape during a drag restores its starting position.
+   Position is saved in the usual configuration and clamped inside the window.
+   The REC disc, progress ring and click area compensate for the window aspect
+   ratio, including 1280×1024; resizing does not turn the button into an oval.
 2. In Advanced, select **SRC: EXT INPUT**. The channel/pair comes from the existing recording
    input configuration. **MONITOR** controls listening, independently of capture.
 3. Choose **SINGLE TAKE** or **CONTINUOUS ON**. Click LENGTH for presets, wheel
@@ -22,20 +27,51 @@ canvas or LoopSister window. Built from main after master-clock PR #163 merged
    always enables continuous creation, including when a loop card is selected.
    A fixed length advances automatically, including inside a callback buffer.
    Advanced's separate **RECORD** action respects SINGLE/CONTINUOUS instead.
-5. **STOP CAP** finishes and keeps the current partial layer. **DROP PART** stops
+5. **Pause / Stop Recording** finishes and keeps the current partial layer.
+   Earlier loops keep playing while you wait as long as you want. REC starts
+   another take later. **DROP PART** in Advanced stops
    creation without making a card for that partial layer. Both leave earlier
    loops playing. Takes shorter than two frames cannot become audio cards.
-6. **STOP LOOPS** releases all currently active/waiting live loops. It does not
-   stop recording, held instrument notes, or the Mosaic timeline. Later timeline
-   encounters can still launch stopped cards.
+6. Simple's **Stop** finishes recording, preserves complete/partial takes, and
+   stops all live-loop players. Pending cards are published stopped. Held notes,
+   other instruments, and the main Mosaic timeline retain their transports.
+   Later timeline encounters can still launch stopped cards. Advanced's
+   **STOP LOOPS** and existing MIDI `stop_all` action keep their earlier
+   loops-only behavior for compatibility.
 
 The ring shows current-take progress and seconds remaining during fixed-length
 capture. Manual capture shows elapsed seconds against the existing 60-second
 guard. Between recordings it shows the selected live card's first voice/cycle
 and estimated seconds left in that cycle (limited by a finite card's end).
 Tempo-following tape rate and that voice's pitch are included. This is a UI
-snapshot, not a hardware-latency countdown. **PLAY ONE / STOP ONE** controls the
-selected loop separately; **RESET** restarts it. The big button always records.
+snapshot, not a hardware-latency countdown. The large red button always records.
+The current take's waveform grows on the canvas and in the panel's small strip;
+the strip shows the selected audio card between recordings.
+
+The seven icon buttons are First, Previous, Play, Pause/Stop Recording, Stop,
+Next and Last. Hover gives their names; all are MIDI Learn targets. The **ONE /
+ALL** selector sets which loop players Play launches. Launches are additive:
+other loops keep playing, and an already-running player keeps its phase.
+First/Previous/Next/Last select, reveal and launch a card in existing Card-ID
+creation order, independent of canvas position. Previous/Next stop at the ends;
+there is no automatic wrap, timeline seek, or restart of a running player.
+Advanced retains explicit selected-card Stop and Restart.
+
+### Convert an existing audio card
+
+Select any ordinary/imported audio card and enable **LOOP EVENT** in Simple or
+Advanced, then press Play. That switches the card to independent playback;
+the Canvas editor's source-repeat setting remains a separate control.
+Conversion keeps the same Card ID, source range, notes, tuning, gain/pan,
+fades and route. Returning to Timeline restores the original source-repeat
+choice. Conversion is undoable and saved in the existing format 15.
+
+This stage retains forward live playback with exact source periods and short
+edge fades. Source overlap-crossfade metadata is retained for Timeline mode.
+Reverse, ping-pong or sample-intro playback cannot be newly converted silently:
+the card stays unchanged with an explanation. TrackSister pattern cards still
+need independent native players. Those capabilities and assignable/shared Loop
+IDs remain tracked in [MOSAIC_LOOP_ID_PLAN.md](MOSAIC_LOOP_ID_PLAN.md).
 
 ### Playing source tiles with QWERTY
 
@@ -68,8 +104,8 @@ of cards already crossing that insertion line; the view reveals
 the new card when Mosaic is open. Publication waits until an active card/pan/
 fade gesture finishes, while capture and already-running loops continue. Move/resize them
 with the normal Mosaic gestures. Select a card and use **LAUNCH**, **STOP**, or
-**RESTART**. **MAKE LIVE** converts a selected audio card; **TO TIMELINE** restores
-timeline ownership and stops that independent player. Pattern cards cannot be
+**RESTART**. Disabling **LOOP EVENT** restores timeline ownership and stops that
+independent player. Pattern cards cannot be
 converted in this stage; they still play alongside live audio loops.
 
 Gold borders, LIVE STOP/WAIT/PLAY/END labels, and a phase strip distinguish
@@ -155,6 +191,11 @@ Live import stops if total retained Mosaic source audio would exceed 128 MiB
 (including ordinary sources and undo-retained audio), or the 1024-card capacity
 is exhausted. Existing loaded/imported projects are not truncated to that
 budget. Completed cards keep playing when capture creation stops at a limit.
+The waveform adds a fixed 32 KiB overview: 4096 time-tagged peak bins at about
+20 ms resolution. The disk writer computes it from successfully written frames
+before releasing their ring slots. UI reads atomic bins; the audio callback
+does no peak analysis, allocation, waveform construction or disk access.
+Preview can trail capture during writer backlog and is not a recovery promise.
 
 The session WAV remains in **Captures** (or `TAPESISTER_CAPTURES`). **COPY WAV**
 copies its path. It contains complete layers and the current/discarded partial;
@@ -172,9 +213,13 @@ playback, manual/automatic successive capture, MIDI control and persistence.
 ## MIDI Learn and persistence
 
 Enable the usual MIDI Learn and click the large central button for the stable
-continuous-layer action (`mosaic.live.primary`). Simple's PLAY ONE / STOP ONE
-has its own selected-card toggle target. Advanced also offers RECORD/NEXT,
-STOP CAP, DROP PART, STOP LOOPS, LAUNCH, STOP and RESTART. RECORD/NEXT is
+continuous-layer action (`mosaic.live.primary`). The existing selected-card
+toggle remains `mosaic.live.toggle`. The new icon
+targets are `first_loop`, `previous_loop`, `play`, `stop_capture`, `halt`,
+`next_loop` and `last_loop`, all under `mosaic.live.`. Scope and card role are
+also learnable. `halt` stops capture and players; the existing `stop_all` keeps
+its loops-only meaning. Advanced also offers RECORD/NEXT,
+STOP RECORDING, DROP PART, STOP LOOPS, LAUNCH, STOP and RESTART. RECORD/NEXT is
 one trigger: it arms from idle and advances while recording. Releases do not
 advance unless explicitly learned as release triggers. A mapping continues to
 work from other workspaces. With the panel closed, learning an individual live
@@ -197,3 +242,5 @@ use format 15, so old builds reject them instead of silently losing behavior.
 Use a project copy when comparing with an older build.
 
 See [validation and the hardware exercise](validation/mosaic-live-loops.md).
+The draggable transport and growing waveform follow-up has its own
+[validation and performance exercise](validation/mosaic-looper-cockpit.md).

@@ -37,12 +37,12 @@ static void mosaic_detail_event_row(const TsMosaicEvent *e,int64_t row,double ra
     double duration=e->source->pattern?e->source->pattern->duration:(double)(e->last-e->first)/e->source->sample.sample_rate;
     double elapsed=fmax(0,(double)row/rate),span=1/rate;
     *peak=*rms=0;
-    if(!e->looping && elapsed>=duration)return;
+    if(!e->looping && !e->live && elapsed>=duration)return;
     double phase=fmod(elapsed,duration);
     size_t first=e->first+(size_t)(phase*e->source->sample.sample_rate);
     size_t last=e->first+(size_t)(fmin(duration,phase+span)*e->source->sample.sample_rate);
     mosaic_detail_envelope(e->source,first,last,peak,rms);
-    if(e->looping && phase+span>=duration) {
+    if((e->looping || e->live) && phase+span>=duration) {
         float p,r;mosaic_detail_envelope(e->source,e->first,span>=duration?e->last:
             e->first+(size_t)((phase+span-duration)*e->source->sample.sample_rate),&p,&r);
         *peak=fmaxf(*peak,p);*rms=fmaxf(*rms,r);
@@ -108,14 +108,14 @@ static void mosaic_detail_card(TsUiWaveformDetail *d,const TsUiState *ui,
         if(e->source->pattern){
             const TsPatternCard *p=e->source->pattern;int source_row=(int)(fmod(elapsed,duration)*p->score.bpm/(2.5*p->score.ticks_per_line));
             if(source_row<p->score.patterns[0]->rows)for(int l=0;l<p->score.channel_count;++l){int note=p->cells[source_row][l][0];if(note>0 && note<=96){int64_t nx=x+mosaic_detail_pixel((5+(note-1)*(e->width-14)/96)*sx*horizontal);mosaic_detail_rect(d,nx,py,nx+4*bx,py+1,color);}}
-            if(e->looping && 1/scale<duration && fmod(elapsed,duration)<1/scale)mosaic_detail_span(d,py,fmax(a,x+4*sx),fmin(b,right-4*sx),mosaic_mix_color(color,fill,.75f));
+            if((e->looping || e->live) && 1/scale<duration && fmod(elapsed,duration)<1/scale)mosaic_detail_span(d,py,fmax(a,x+4*sx),fmin(b,right-4*sx),mosaic_mix_color(color,fill,.75f));
             continue;
         }
         float peak,rms;mosaic_detail_event_row(e,row,rate,&peak,&rms);
         double amplitude=fminf(1,peak)*half,body=fminf(1,rms)*half;
         mosaic_detail_span(d,py,fmax(a,center-amplitude-.5),fmin(b,center+amplitude+.5),outer);
         mosaic_detail_span(d,py,fmax(a,center-body-.5),fmin(b,center+body+.5),color);
-        if(e->looping && 1/scale<duration && fmod(elapsed,duration)<1/scale)
+        if((e->looping || e->live) && 1/scale<duration && fmod(elapsed,duration)<1/scale)
             mosaic_detail_span(d,py,fmax(a,x+4*sx),fmin(b,right-4*sx),dim?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(35,34,41)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(72,65,77)));
     }
     if(ghost) {

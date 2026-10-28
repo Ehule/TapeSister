@@ -1,0 +1,18 @@
+Internal ctest changing into directory: build-cockpit
+Test project build-cockpit
+    Start  84: tapesister_source_route_controller_tests
+1/6 Test  #84: tapesister_source_route_controller_tests ...   Passed    2.31 sec
+    Start  85: tapesister_f11_cockpit_tests
+2/6 Test  #85: tapesister_f11_cockpit_tests ...............   Passed    0.41 sec
+    Start  86: tapesister_clock_routing_tests
+3/6 Test  #86: tapesister_clock_routing_tests .............   Passed    0.32 sec
+    Start 104: tapesister_native_waveform_tests
+4/6 Test #104: tapesister_native_waveform_tests ...........   Passed    1.58 sec
+    Start 113: tapesister_mosaic_controller_tests
+5/6 Test #113: tapesister_mosaic_controller_tests .........   Passed   38.11 sec
+    Start 115: tapesister_mosaic_live_controller_tests
+6/6 Test #115: tapesister_mosaic_live_controller_tests ....   Passed    1.10 sec
+
+100% tests passed, 0 tests failed out of 6
+
+Total Test time (real) =  43.83 sec

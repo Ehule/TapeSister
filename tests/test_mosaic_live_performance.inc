@@ -22,6 +22,12 @@ static void live_performance_key(SDL_Window *window,SDL_AudioDeviceID device,Aud
     event.key.windowID=SDL_GetWindowID(window);event.key.keysym.sym=key;event.key.keysym.mod=mod;
     assert(live_performance_event(&event,window,device,a,s,u,bank,c));
 }
+static void live_performance_transport(SDL_Window *window,SDL_AudioDeviceID device,AudioState *a,
+    ExternalInputState *s,TsUiState *u,TsInstrument *bank,MosaicController *c,int index)
+{
+    int x,y;ts_ui_mosaic_live_origin(u,&x,&y);
+    live_performance_click(window,device,a,s,u,bank,c,x+8+index*22+10,y+TS_MOSAIC_LIVE_TRANSPORT_Y+10);
+}
 static void test_mosaic_live_performance_mode(SDL_Window *window,SDL_AudioDeviceID device,int powered)
 {
     AudioState *a=routing_audio(powered);a->mosaic->playing=0;
@@ -66,6 +72,11 @@ static void test_mosaic_live_performance_mode(SDL_Window *window,SDL_AudioDevice
     assert(ts_note_bank_count(&a->notes)==1);
     assert(a->notes.voices[0].sample==old && !a->notes.voices[0].synth && a->notes.voices[0].detached);
     float output[512];for(int block=0;block<8;++block)audio_callback(a,(Uint8 *)output,sizeof(output));
+    for(int tries=0;tries<1000 && atomic_load(&s->loop_capture.preview_frames)<2048;++tries)SDL_Delay(1);
+    mosaic_live_poll(device,&input,a,s,u,0);
+    assert(u->mosaic_live_preview.frames==2048 && u->mosaic_live_rate==48000 && u->mosaic->next_id==2);
+    float peak=0;for(int i=0;i<TS_MOSAIC_RECORD_PEAKS;++i)peak=fmaxf(peak,u->mosaic_live_preview.peaks[i]);
+    assert(peak>.2f && peak<.3f);
     live_performance_click(window,device,a,s,u,bank,c,TS_MOSAIC_LIVE_CX,TS_MOSAIC_LIVE_CY);
     live_controller_wait(device,&input,a,s,u,3);
     TsMosaicEvent *first=ts_mosaic_find(u->mosaic,2);assert(first && first->live && ts_mosaic_live_count(u->mosaic)==1);
@@ -93,7 +104,7 @@ static void test_mosaic_live_performance_mode(SDL_Window *window,SDL_AudioDevice
     assert(fabsf(second->source->sample.data[(second->source->sample.frames-10)*2]+.5f)<.005f);
     assert(atomic_load(&s->loop_capture.active) && ts_mosaic_live_count(u->mosaic)>=2);
     audio_callback(a,(Uint8 *)output,sizeof(output));
-    live_performance_click(window,device,a,s,u,bank,c,580,248);
+    live_performance_transport(window,device,a,s,u,bank,c,3);
     live_controller_wait(device,&input,a,s,u,5);
     assert(!s->loop_session && ts_mosaic_live_count(u->mosaic)>=3);
     /* The same central action is a stable foot-controller target. Release is
@@ -111,18 +122,19 @@ static void test_mosaic_live_performance_mode(SDL_Window *window,SDL_AudioDevice
     assert(atomic_load(&s->loop_capture.produced)==1 && atomic_load(&s->loop_capture.active));
     mosaic_live_capture_end(device,input,s,1);live_controller_wait(device,&input,a,s,u,6);
     assert(!s->loop_session && ts_mosaic_live_count(u->mosaic)>=4);
-    /* The playback toggle remains separate, including its MIDI target. */
-    assert(ts_ui_midi_target_from_point(u,500,248,target,sizeof(target)) && !strcmp(target,"mosaic.live.toggle"));
+    /* Playback and recording remain separate MIDI targets. */
+    int px,py;ts_ui_mosaic_live_origin(u,&px,&py);
+    assert(ts_ui_midi_target_from_point(u,px+62,py+193,target,sizeof(target)) && !strcmp(target,"mosaic.live.play"));
     assert(ts_note_bank_count(&a->notes)==1);
-    live_performance_click(window,device,a,s,u,bank,c,500,270);
+    live_performance_transport(window,device,a,s,u,bank,c,4);
     for(int block=0;block<3;++block)audio_callback(a,(Uint8 *)output,sizeof(output));
     assert(!ts_mosaic_live_count(u->mosaic) && ts_note_bank_count(&a->notes)==1);
     /* Mode changes and hiding the panel still release the source that began
        a note. Edit shortcuts continue to edit instead of starting new notes. */
-    live_performance_click(window,device,a,s,u,bank,c,500,290);assert(!u->mosaic_live_keys);
+    live_performance_click(window,device,a,s,u,bank,c,px+30,py+252);assert(!u->mosaic_live_keys);
     live_performance_key(window,device,a,s,u,bank,c,SDLK_x,0,KMOD_NONE);assert(!ts_note_bank_count(&a->notes));
     live_performance_key(window,device,a,s,u,bank,c,SDLK_z,1,KMOD_NONE);assert(!ts_note_bank_count(&a->notes));
-    live_performance_click(window,device,a,s,u,bank,c,500,318);assert(u->mosaic_live_advanced);
+    live_performance_click(window,device,a,s,u,bank,c,px+110,py+252);assert(u->mosaic_live_advanced);
     assert(!main_waveform_detail_allowed(u));
     live_performance_key(window,device,a,s,u,bank,c,SDLK_ESCAPE,1,KMOD_NONE);assert(!u->mosaic_live_advanced && u->mosaic_live_open);
     assert(main_waveform_detail_allowed(u));
