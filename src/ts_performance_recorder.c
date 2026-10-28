@@ -291,7 +291,14 @@ static int write_batch(TsPerformanceRecorder *recorder, uint64_t read,
             at += 8u;
         }
     }
-    return fwrite(output, 4u, scalar_count, recorder->file) == scalar_count;
+    if(fwrite(output,4u,scalar_count,recorder->file)!=scalar_count)return 0;
+    if(recorder->writer_observer) {
+        size_t offset=(size_t)(read%recorder->ring_capacity_frames),first=recorder->ring_capacity_frames-offset;
+        if(first>frames)first=frames;
+        recorder->writer_observer(recorder->writer_userdata,recorder->ring+offset,first,read,recorder->channels);
+        if(first<frames)recorder->writer_observer(recorder->writer_userdata,recorder->ring,frames-first,read+first,recorder->channels);
+    }
+    return 1;
 }
 
 int ts_performance_recorder_pump(TsPerformanceRecorder *recorder,

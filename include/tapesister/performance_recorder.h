@@ -15,6 +15,8 @@ typedef enum {
     TS_PERFORMANCE_FILE_COMPLETED,
     TS_PERFORMANCE_FILE_FAILED
 } TsPerformanceFileState;
+typedef void (*TsPerformanceWriterObserver)(void *userdata,const TsStereoFrame *frames,
+    size_t count,uint64_t first,uint8_t channels);
 
 /* Single-producer/single-consumer recorder. The audio callback only calls
    push_frame(); allocation, filesystem work, and header maintenance belong
@@ -35,6 +37,10 @@ typedef struct {
     _Atomic uint_least64_t range_checkpoint;
     uint64_t range_checkpoint_written;
     int live_ranges; /* Set before writer starts: publish readable layer ranges. */
+    /* Optional observer of successfully written frames, called only by the
+       disk writer before releasing ring slots. Install before starting it. */
+    TsPerformanceWriterObserver writer_observer;
+    void *writer_userdata;
     _Atomic TsPerformanceFileState state;
     char path[1200];
     char error[160];

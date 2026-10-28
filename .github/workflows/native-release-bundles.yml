@@ -34,6 +34,7 @@ on:
       - "include/tapesister/performance_recorder.h"
       - "tests/test_loop_capture.c"
       - "tests/test_mosaic_live*.inc"
+      - "tests/test_mosaic_looper*.inc"
       - "CMakeLists.txt"
       - "build.sh"
       - "cmake/**"

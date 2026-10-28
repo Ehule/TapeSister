@@ -205,6 +205,7 @@ typedef struct {
     int sister_window_maximized;
     int sister_window_x;
     int sister_window_y;
+    int mosaic_looper_x, mosaic_looper_y; /* -1: dock at the right by default. */
     int dsp_factory_overridden[TS_DSP_FACTORY_RECIPE_COUNT];
     float dsp_factory_controls[TS_DSP_FACTORY_RECIPE_COUNT][TS_DSP_CONTROL_COUNT];
     int cdp_process_enabled[TS_CDP_CATALOG_CAPACITY];

@@ -12400,7 +12400,7 @@ struct ExternalInputState {
     SDL_Thread *mosaic_writer,*loop_writer;
     TsLoopCapture loop_capture;
     _Atomic int loop_tap; /* -1 disabled; 0 EXT, 1 DRY, 2 OUTPUT. */
-    int loop_session,loop_source,loop_tempo,loop_quantize,loop_import_failed;
+    int loop_session,loop_source,loop_tempo,loop_quantize,loop_import_failed,loop_stop_playback;
     unsigned loop_number;
     uint64_t loop_epoch;
     double loop_start,loop_x,loop_quarter;

@@ -126,18 +126,18 @@ static void mosaic_card(TsFramebuffer *fb,const TsUiState *ui,const TsMosaicEven
     for(int yy=first_row;yy<last_row;++yy) {
         if(ghost && (yy&1))continue;
         double elapsed=fmax(0,ui->mosaic_scroll+(yy-66)/scale-e->start);
-        if(!e->looping && elapsed>=duration)continue;
+        if(!e->looping && !e->live && elapsed>=duration)continue;
         double phase=fmod(elapsed,duration),span=1/scale;
         if(e->source->pattern){
             const TsPatternCard *p=e->source->pattern;int row=(int)(phase*p->score.bpm/(2.5*p->score.ticks_per_line));
             if(row<p->score.patterns[0]->rows)for(int l=0;l<p->score.channel_count;++l){int note=p->cells[row][l][0];if(note>0 && note<=96)mosaic_canvas_rect(fb,x+5+(note-1)*(w-14)/96,yy,4,1,color);}
-            if(e->looping && span<duration && yy>first_row && phase<span)mosaic_canvas_rect(fb,x+4,yy,w-8,1,mosaic_mix_color(color,fill,.75f));
+            if((e->looping || e->live) && span<duration && yy>first_row && phase<span)mosaic_canvas_rect(fb,x+4,yy,w-8,1,mosaic_mix_color(color,fill,.75f));
             continue;
         }
         size_t first=e->first+(size_t)(phase*e->source->sample.sample_rate);
         size_t last=e->first+(size_t)(fmin(duration,phase+span)*e->source->sample.sample_rate);
         float peak,rms;mosaic_envelope(e->source,first,last,&peak,&rms);
-        if(e->looping && phase+span>=duration) {
+        if((e->looping || e->live) && phase+span>=duration) {
             float p,r;mosaic_envelope(e->source,e->first,span>=duration?e->last:
                 e->first+(size_t)((phase+span-duration)*e->source->sample.sample_rate),&p,&r);
             peak=fmaxf(peak,p);rms=fmaxf(rms,r);
@@ -146,7 +146,7 @@ static void mosaic_card(TsFramebuffer *fb,const TsUiState *ui,const TsMosaicEven
         int amplitude=(int)(fminf(1,peak)*half),body=(int)(fminf(1,rms)*half);
         mosaic_canvas_rect(fb,x+w/2-amplitude,yy,1+amplitude*2,1,mosaic_mix_color(color,fill,.50f));
         mosaic_canvas_rect(fb,x+w/2-body,yy,1+body*2,1,color);
-        if(e->looping && span<duration && yy>first_row && phase<span)
+        if((e->looping || e->live) && span<duration && yy>first_row && phase<span)
             mosaic_canvas_rect(fb,x+4,yy,w-8,1,dim?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(35,34,41)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(72,65,77)));
     }
     if(ghost) {
