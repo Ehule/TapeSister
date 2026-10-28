@@ -39,8 +39,9 @@ static unsigned performance_running(AudioState *audio)
 static int performance_command_apply(unsigned selected,int command,unsigned homes,int master,SDL_Window *window,SDL_AudioDeviceID device,AudioState *audio,
     TsUiState *ui,TsSamplePages *pages,const TsInstrument *bank,const TsSample *fm,int rate)
 {
-    selected&=7u;
-    if(!selected && !(command==2 && homes) && !(master && audio->sister.clock_controls.enabled)) {
+    selected&=7u;int live_group=0;
+    if(audio->mosaic)for(int i=0;i<TS_MOSAIC_EVENTS;++i)live_group|=audio->mosaic->events[i].id && audio->mosaic->events[i].live && audio->mosaic->events[i].live_transport;
+    if(!selected && !(command==2 && homes) && !(master && (audio->sister.clock_controls.enabled || live_group))) {
         snprintf(ui->status,sizeof(ui->status),"PERFORMANCE TRANSPORT: SELECT AT LEAST ONE PLAYER.");return 0;
     }
     if(command<0)command=(performance_running(audio)&selected)?0:1;
@@ -80,7 +81,8 @@ static int performance_command_apply(unsigned selected,int command,unsigned home
             m->playing=command==1;
         }
         if(command==2 && (homes&PERF_MOSAIC) && audio->mosaic)ts_mosaic_seek(audio->mosaic,0);
-        if(master)ts_master_clock_transport(&audio->sister.master_clock,command);
+        if(master){ts_master_clock_transport(&audio->sister.master_clock,command);
+            ts_mosaic_live_transport(audio->mosaic,command);}
     }
     keyboard_sequence_ui(audio,ui);
     if(embedded)ts_tapehead_host_unlock();else if(device)SDL_UnlockAudioDevice(device);

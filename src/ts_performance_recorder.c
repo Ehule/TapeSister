@@ -140,6 +140,8 @@ void ts_performance_recorder_init(TsPerformanceRecorder *recorder)
     atomic_init(&recorder->accepted_frames, 0u);
     atomic_init(&recorder->written_frames, 0u);
     atomic_init(&recorder->dropped_frames, 0u);
+    atomic_init(&recorder->range_checkpoint,0u);
+    atomic_init(&recorder->flushed_frames, 0u);
     atomic_init(&recorder->state, TS_PERFORMANCE_FILE_IDLE);
 }
 
@@ -154,7 +156,7 @@ void ts_performance_recorder_free(TsPerformanceRecorder *recorder)
     recorder->ring = NULL;
     recorder->ring_capacity_frames = 0u;
     recorder->sample_rate = 0u;
-    recorder->channels = 0u;
+    recorder->channels = 0u;recorder->live_ranges=0;
     atomic_store_explicit(&recorder->state, TS_PERFORMANCE_FILE_IDLE,
                           memory_order_release);
 }
@@ -224,6 +226,9 @@ int ts_performance_recorder_start(TsPerformanceRecorder *recorder,
     recorder->checkpoint_frames = sample_rate;
     snprintf(recorder->path, sizeof(recorder->path), "%s", path);
     recorder->error[0] = '\0';
+    recorder->range_checkpoint_written=0;
+    atomic_store_explicit(&recorder->range_checkpoint,0u,memory_order_relaxed);
+    atomic_store_explicit(&recorder->flushed_frames,0u,memory_order_relaxed);
     atomic_store_explicit(&recorder->write_cursor, 0u, memory_order_relaxed);
     atomic_store_explicit(&recorder->read_cursor, 0u, memory_order_relaxed);
     atomic_store_explicit(&recorder->accepted_frames, 0u, memory_order_relaxed);
@@ -326,6 +331,16 @@ int ts_performance_recorder_pump(TsPerformanceRecorder *recorder,
         }
         recorder->checkpoint_frames = read + recorder->sample_rate;
     }
+    if(recorder->live_ranges && recorder->file) {
+        uint64_t boundary=atomic_load_explicit(&recorder->range_checkpoint,memory_order_acquire);
+        if(boundary>recorder->range_checkpoint_written && read>=boundary) {
+            if(!write_header(recorder->file,read,recorder->sample_rate,recorder->channels,0)) {
+                fail_recorder(recorder,"Could not checkpoint completed loop layers");return 0;}
+            recorder->range_checkpoint_written=boundary;
+        }
+        if(fflush(recorder->file)) {fail_recorder(recorder,"Could not flush live layer audio");return 0;}
+        atomic_store_explicit(&recorder->flushed_frames,read,memory_order_release);
+    }
     state = ts_performance_recorder_state(recorder);
     write = atomic_load_explicit(&recorder->write_cursor, memory_order_acquire);
     if (state == TS_PERFORMANCE_FILE_STOPPING && read == write) {
@@ -374,15 +389,22 @@ int ts_performance_recorder_load(const TsPerformanceRecorder *r,TsSample *sample
                                  char *error,size_t size)
 {
     uint64_t frames=r?atomic_load_explicit(&r->written_frames,memory_order_acquire):0;
+    if(!r || r->file) {recorder_error(error,size,"Recording writer is still active");return 0;}
+    return ts_performance_recorder_load_range(r,0,frames,sample,error,size);
+}
+int ts_performance_recorder_load_range(const TsPerformanceRecorder *r,uint64_t first,uint64_t last,TsSample *sample,char *error,size_t size)
+{
+    uint64_t frames=last>=first?last-first:0;
+    uint64_t available=r?atomic_load_explicit(r->live_ranges?&r->flushed_frames:&r->written_frames,memory_order_acquire):0;
     size_t bytes,scalars;
-    if(!r || !sample || r->file || frames<2 || frames>SIZE_MAX ||
+    if(!r || !sample || last>available || frames<2 || frames>SIZE_MAX ||
        !ts_sample_dimensions((size_t)frames,r->channels,&scalars,&bytes)) {
         recorder_error(error,size,"No complete recording to load");return 0;
     }
     float *data=malloc(bytes);
     if(!data) {recorder_error(error,size,"Not enough memory to load the take; WAV retained");return 0;}
     FILE *file=fopen(r->path,"rb");
-    if(!file || !seek_file(file,80)) {if(file)fclose(file);free(data);recorder_error(error,size,"Cannot reopen recorded WAV");return 0;}
+    if(!file || !seek_file(file,80+first*r->channels*4)) {if(file)fclose(file);free(data);recorder_error(error,size,"Cannot reopen recorded WAV");return 0;}
     unsigned char block[4096];size_t at=0;
     while(at<scalars) {
         size_t count=scalars-at;if(count>sizeof(block)/4)count=sizeof(block)/4;

@@ -5,7 +5,7 @@ typedef struct {
     Uint32 captured;
     int hold, keyboard_voices, held_voices, tile_voices;
     int arp, outer_arp, arp_slot, audition, mosaic;
-    int mosaic_cards, mosaic_scheduled, mosaic_notes;
+    int mosaic_cards, mosaic_scheduled, mosaic_notes,mosaic_live,loop_capture;
     int mosaic_muted, mosaic_solo, mosaic_repeat;
     double mosaic_time;
     TsMosaicRange mosaic_range;
@@ -95,7 +95,9 @@ static void ts_audio_health_capture_setup(const AudioState *audio,
     s->outer_arp = audio->keyboard_sequence.slot_running;
     s->arp_slot = audio->keyboard_sequence.active_slot;
     s->audition = audio->playing;
-    s->mosaic = audio->mosaic && audio->mosaic->playing;
+    s->mosaic_live=ts_mosaic_live_count(audio->mosaic);
+    s->loop_capture=ui->mosaic_live_recording;
+    s->mosaic = audio->mosaic && (audio->mosaic->playing || s->mosaic_live);
     s->mosaic_cards=s->mosaic_scheduled=s->mosaic_notes=0;
     s->mosaic_muted=s->mosaic_solo=0;
     s->mosaic_time=audio->mosaic?audio->mosaic->time:0;
@@ -185,6 +187,7 @@ static void ts_audio_health_setup_report(char *text, size_t size, Uint32 now)
         "  Mosaic cards: %d total; %d at playhead; %d assigned notes (includes muted/finished one-shots)\n"
         "  Mosaic position: %.6f s; repeat: %s; loop range: %.6f to %.6f s\n"
         "  Mosaic switches: %d muted; %d solo (whole arrangement)\n"
+        "  Independent live loops: %d; loop capture: %s (F11/Mosaic LOOPS for routes)\n"
         "  TrackSister (embedded): %s\n"
         "  SisterTracker: %s; row: %d; voice instances: %d (legacy engine)\n"
         "  Sister Machine: %s, %s; rolling: %s; tape HOLD: %s; monitor: %s\n"
@@ -200,7 +203,7 @@ static void ts_audio_health_setup_report(char *text, size_t size, Uint32 now)
         health_running(s->audition), s->tile_voices, health_running(s->mosaic),
         s->mosaic_cards,s->mosaic_scheduled,s->mosaic_notes,
         s->mosaic_time,health_on(s->mosaic_repeat),s->mosaic_range.start,s->mosaic_range.end,
-        s->mosaic_muted,s->mosaic_solo,
+        s->mosaic_muted,s->mosaic_solo,s->mosaic_live,health_on(s->loop_capture),
         health_running(s->embedded_tracker),s->tracker==2?"paused":health_running(s->tracker),s->tracker_row,s->tracker_voices,
         health_on(s->sister), health_route(s, TS_ROUTER_SISTER), health_on(s->rolling),
         health_on(s->tape_hold), health_on(s->monitor), source[0] ? source : "none",

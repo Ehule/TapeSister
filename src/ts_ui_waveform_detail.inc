@@ -240,6 +240,23 @@ static void detail_capture_slot(const TsFramebuffer *fb, int slot)
                d->logical_width*sizeof(uint32_t));
 }
 
+/* An opaque performance panel must cover even native scene pixels whose
+   logical color happens to match its fill. Mark the whole rectangle as later
+   ink instead of inferring occlusion from color equality. Mosaic scene
+   surfaces are freshly rasterized each frame, so this needs no cached state. */
+static void detail_opaque_panel(const TsFramebuffer *fb,int x,int y,int w,int h)
+{
+    for(int slot=0;active_waveform_detail && slot<active_detail_count;++slot) {
+        TsUiWaveformDetail *d=&active_waveform_detail[slot];
+        if(!d->valid || d->sample_raster)continue;
+        int left=x>d->x?x:d->x,top=y>d->y?y:d->y;
+        int right=x+w<d->x+d->logical_width?x+w:d->x+d->logical_width;
+        int bottom=y+h<d->y+d->logical_height?y+h:d->y+d->logical_height;
+        for(int py=top;py<bottom;++py)for(int px=left;px<right;++px)
+            d->coarse[(py-d->y)*d->logical_width+px-d->x]=fb->pixels[py*TS_UI_WIDTH+px]^0xff000000u;
+    }
+}
+
 int ts_ui_waveform_detail_finish(TsUiWaveformDetail *d, const TsFramebuffer *fb)
 {
     active_waveform_detail=NULL;

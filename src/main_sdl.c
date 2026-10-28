@@ -14,6 +14,7 @@
 #include "tapesister/capture.h"
 #include "tapesister/capture_archive.h"
 #include "tapesister/performance_recorder.h"
+#include "tapesister/loop_capture.h"
 #include "tapesister/input_monitor.h"
 #include "tapesister/performance_input.h"
 #include "tapesister/input_ownership.h"
@@ -874,6 +875,19 @@ typedef struct {
     TsNoteBank notes;
     TsNoteVoice browser_voice;
     TsSample note_snapshots[TS_NOTE_BANK_VOICE_CAPACITY];
+    /* UI-owned immutable keyboard source chosen in Mosaic. Retired choices
+       share the existing bounded note-snapshot lifetime until held notes end. */
+    const TsSample *mosaic_keyboard_sample;
+    TsTuning mosaic_keyboard_tuning;
+    size_t mosaic_keyboard_first,mosaic_keyboard_last,mosaic_keyboard_crossfade;
+    TsLoopMode mosaic_keyboard_mode;
+    int mosaic_keyboard_looping;
+    TsSourceRoute mosaic_keyboard_route;
+    TsTileId mosaic_keyboard_tile;
+    uint64_t mosaic_keyboard_epoch;
+    uint64_t mosaic_keyboard_hash;
+    TsMosaicSourceKey mosaic_keyboard_key;
+    char mosaic_keyboard_label[48];
     uint64_t workbench_refresh_stamp; /* UI-owned; unchanged HOLD needs no lock. */
     int workbench_refresh_valid;
     const TsInstrument *workspace_bank; /* Parked Sample bank while editing a Mosaic card. */
@@ -904,6 +918,8 @@ typedef struct {
     TsPerformanceInputs *performance_inputs;
     _Atomic int *external_monitor_enabled;
     TsExternalRecorder *record_bank_recorder;
+    TsLoopCapture *loop_capture;
+    _Atomic int *loop_tap;
     _Atomic int *record_source;
     TsStereoFrame keyboard_dry;
     double tune_reference_phase;
@@ -997,6 +1013,7 @@ static TsNoteStartResult runtime_note_start_event(
     AudioState *audio, const TsInstrument *instrument, const TsTuning *tuning,
     TsAuditionSource source, const TsNoteEvent *event, int latched,
     int output_rate);
+static TsNoteStartResult runtime_mosaic_keyboard_start(AudioState *,const TsNoteEvent *,int,int);
 static int runtime_staged_start(AudioState *audio,
                                 const TsInstrument *instrument,
                                 const TsTuning *tuning,
@@ -1174,6 +1191,8 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
     const int master_arp_follow=master_settings.enabled && (master_settings.tempo_mask&TS_CLOCK_ARP);
     audio->keyboard_sequence.clock_carry=master_controls->enabled && (master_controls->tempo_mask&TS_CLOCK_ARP);
     ts_tapehead_clock(master_controls->enabled && (master_controls->tempo_mask&TS_CLOCK_TRACKER)?master_controls->bpm:0);
+    ts_mosaic_live_clock(audio->mosaic,master_controls->enabled,audio->sister.master_clock.running,
+        master_controls->bpm?60.0/master_controls->bpm:.5,audio->sister.master_clock.phase);
     unsigned master_span_start=0,master_source_bpm=0;
     double master_source_quarter=0;
     double master_arp_interval=master_controls->enabled?60.0/master_controls->bpm/(1u<<master_controls->arp_division):0;
@@ -1251,6 +1270,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             master_source_quarter=ts_tapehead_native_quarter(bpm);
             double quarter=master_source_quarter>0?master_source_quarter:60.0/master_controls->bpm;
             master_arp_interval=quarter/(1u<<master_controls->arp_division);
+            ts_mosaic_live_clock(audio->mosaic,1,audio->sister.master_clock.running,quarter,audio->sister.master_clock.phase);
         }
         double arp_interval=master_arp_follow?
             master_arp_interval:sync && bpm?60.0/bpm/(1u<<(sync-1)):0;
@@ -1352,6 +1372,9 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             (void)ts_external_recorder_write_frame(audio->record_bank_recorder,dry);
             synth_block_peak=fmaxf(synth_block_peak,fmaxf(fabsf(dry.l),fabsf(dry.r)));
         }
+        if(audio->loop_capture && atomic_load_explicit(&audio->loop_capture->active,memory_order_acquire) && atomic_load_explicit(audio->loop_tap,memory_order_acquire)==1)
+            ts_loop_capture_push(audio->loop_capture,(TsStereoFrame){audio->keyboard_dry.l+sister_frame.keyboard_dry.l+audio->sister.clean_output.reference.l,
+                audio->keyboard_dry.r+sister_frame.keyboard_dry.r+audio->sister.clean_output.reference.r});
         buses.sister = sister_frame.monitor_return;
         buses.program.l = buses.legacy_preview.l +
                           buses.tile_performance.l + buses.live_tiles.l + buses.fm.l +
@@ -1488,6 +1511,8 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             (void)ts_external_recorder_write_frame(audio->record_bank_recorder,output);
             synth_block_peak=fmaxf(synth_block_peak,fmaxf(fabsf(output.l),fabsf(output.r)));
         }
+        if(audio->loop_capture && atomic_load_explicit(&audio->loop_capture->active,memory_order_acquire) && atomic_load_explicit(audio->loop_tap,memory_order_acquire)==2)
+            ts_loop_capture_push(audio->loop_capture,output);
         /* FILE OUT captures the stereo program before added Matrix speaker
            feeds and spatial decode, after ordinary or
            Sister POST effects, topology fades, Master EQ, the output limiter, and the
@@ -2097,7 +2122,10 @@ static void begin_note_event(SDL_AudioDeviceID device, AudioState *audio,
     ts_note_bank_set_attack_ms(&audio->notes, ui->config.voice_attack_ms);
     keyboard_loop_policy(audio, ui);
     latched = latched || ui->keyboard_hold;
-    result = runtime_note_start_event(
+    if(event->origin==TS_NOTE_ORIGIN_QWERTY && ui->mosaic_open && ui->mosaic_live_open && ui->mosaic_live_keys &&
+       audio->mosaic_keyboard_sample && ui->mosaic && audio->mosaic_keyboard_epoch==ui->mosaic->epoch)
+        result=runtime_mosaic_keyboard_start(audio,event,latched,output_rate);
+    else result = runtime_note_start_event(
         audio, instrument, ts_ui_audition_tuning(ui, instrument),
         ui->audition_source, event, latched, output_rate);
     if (result == TS_NOTE_STARTED &&
@@ -2505,9 +2533,9 @@ static void arm_capture(SDL_AudioDeviceID device, AudioState *audio,
     uint64_t automatic_capacity;
     int destination = instrument->selected_slot;
     int ok;
-    if (ui->mosaic_recording || ui->quick_capture_active) {
+    if (ui->mosaic_recording || ui->quick_capture_active || ui->mosaic_live_recording || ui->mosaic_live_finishing) {
         snprintf(ui->status,sizeof(ui->status),"FINISH OR CANCEL %s BEFORE ANOTHER TILE CAPTURE",
-                 ui->quick_capture_active ? "QUICK CAPTURE" : "MOSAIC REC TILE");
+                 ui->mosaic_live_recording || ui->mosaic_live_finishing ? "MOSAIC LOOP CAPTURE" : ui->quick_capture_active ? "QUICK CAPTURE" : "MOSAIC REC TILE");
         return;
     }
     if (audio->capture.state != TS_CAPTURE_IDLE) {
@@ -9430,7 +9458,8 @@ static int main_waveform_detail_allowed(const TsUiState *ui)
     if(ui->portal.open)return !ui->portal.manage_open && !ui->portal.macro_edit;
     /* Color equality cannot identify occlusion when two workspaces share a
        theme. Never composite the hidden canvas signal over these panels. */
-    if(ui->master_eq_open || ui->router_open)return 0;
+    if(ui->master_eq_open || ui->router_open ||
+       (ui->mosaic_open && ui->mosaic_live_open && ui->mosaic_live_advanced))return 0;
     return !ui_blocking_dialog_open_except_fm(ui) && !ui->fm_bank_choice_open && !ui->fm_full_choice_open;
 }
 
@@ -10780,9 +10809,9 @@ static int sister_begin_capture(SDL_AudioDeviceID device, AudioState *audio,
     int ok;
     if (audio == NULL || ui == NULL || instrument == NULL || sister == NULL ||
         sample_rate == 0u) return 0;
-    if (ui->mosaic_recording || ui->quick_capture_active) {
+    if (ui->mosaic_recording || ui->quick_capture_active || ui->mosaic_live_recording || ui->mosaic_live_finishing) {
         snprintf(sister->model.status,sizeof(sister->model.status),"FINISH OR CANCEL %s BEFORE ANOTHER TILE CAPTURE",
-                 ui->quick_capture_active ? "QUICK CAPTURE" : "MOSAIC REC TILE");
+                 ui->mosaic_live_recording || ui->mosaic_live_finishing ? "MOSAIC LOOP CAPTURE" : ui->quick_capture_active ? "QUICK CAPTURE" : "MOSAIC REC TILE");
         return 0;
     }
     destination = instrument->selected_slot;
@@ -11954,6 +11983,7 @@ static int midi_pickup_accept(TsMidiMapping *mapping, TsMidiTakeover takeover,
     return 1;
 }
 
+static int mosaic_live_command(SDL_AudioDeviceID,SDL_AudioDeviceID *,AudioState *,ExternalInputState *,TsUiState *,const char *);
 static void mosaic_marker_jump(SDL_AudioDeviceID device,TsUiState *ui,int index);
 static void mosaic_marker_loop_toggle(SDL_AudioDeviceID device,TsUiState *ui);
 static int midi_apply_target(SDL_AudioDeviceID device, AudioState *audio,
@@ -11964,6 +11994,7 @@ static int midi_apply_target(SDL_AudioDeviceID device, AudioState *audio,
                              const char *target, float normalized,
                              uint32_t sample_rate, uint8_t output_channels)
 {
+    if(!strncmp(target,"mosaic.live.",12))return mosaic_live_command(device,input_device,audio,external_input,ui,target+12);
     if(spatial_midi(device,audio,ui,target,normalized))return 1;
     if(router_midi_command(device,audio,ui,target))return 1;
     int marker=ts_midi_mosaic_marker_slot(target);
@@ -12366,7 +12397,13 @@ static size_t bank_frame_from_x(const TsBankSlot *slot, int x)
 
 struct ExternalInputState {
     TsExternalRecorder recorder;
-    SDL_Thread *mosaic_writer;
+    SDL_Thread *mosaic_writer,*loop_writer;
+    TsLoopCapture loop_capture;
+    _Atomic int loop_tap; /* -1 disabled; 0 EXT, 1 DRY, 2 OUTPUT. */
+    int loop_session,loop_source,loop_tempo,loop_quantize,loop_import_failed;
+    unsigned loop_number;
+    uint64_t loop_epoch;
+    double loop_start,loop_x,loop_quarter;
     int mosaic_recording;
     int quick_recording, quick_page, quick_slot;
     uint64_t mosaic_epoch;
@@ -12410,7 +12447,7 @@ static int external_input_requested(const ExternalInputState *input,
 static int external_capture_busy(const ExternalInputState *input)
 {
     return input != NULL &&
-           (input->recorder.state == TS_EXTERNAL_CAPTURE_ARMED ||
+           (input->loop_session || input->recorder.state == TS_EXTERNAL_CAPTURE_ARMED ||
             input->recorder.state == TS_EXTERNAL_CAPTURE_RECORDING ||
             input->recorder.state == TS_EXTERNAL_CAPTURE_COMPLETED);
 }
@@ -12439,6 +12476,8 @@ static void external_input_callback(void *userdata, Uint8 *stream, int bytes)
         if (fabsf(selected.r) > block_peak) block_peak = fabsf(selected.r);
         TsStereoFrame monitored=ts_insert_external_frame(input->insert,samples+frame,(unsigned)channels,input->input_channel);
         ts_input_monitor_push_frame(&input->monitor, monitored);
+        if(atomic_load_explicit(&input->loop_capture.active,memory_order_acquire) && atomic_load_explicit(&input->loop_tap,memory_order_acquire)==0)
+            ts_loop_capture_push(&input->loop_capture,selected);
         if (atomic_load_explicit(&input->record_source, memory_order_acquire) ==
             TS_RECORD_SOURCE_EXT)
             (void)ts_external_recorder_write_frame(&input->recorder, selected);
@@ -12725,6 +12764,7 @@ static void sync_external_activity_ui(ExternalInputState *input,
 }
 
 #include "main_sdl_mosaic_record.inc"
+#include "main_sdl_mosaic_live.inc"
 #include "main_sdl_quick_capture.inc"
 
 static int arm_external_capture_to(SDL_AudioDeviceID output_device,
@@ -13855,6 +13895,8 @@ int main(int argc, char **argv)
         }
         ts_instrument_init(parked_instrument);
     }
+    ts_loop_capture_init(&external_input.loop_capture);
+    atomic_init(&external_input.loop_tap,-1);
     ts_external_recorder_init(&external_input.recorder);
     ts_input_monitor_init(&external_input.monitor);
     ts_performance_inputs_init(&external_input.performance);
@@ -14032,6 +14074,7 @@ int main(int argc, char **argv)
     external_input.insert = &audio.sister.insert;
     audio.external_monitor_enabled = &external_input.direct_monitor;
     audio.record_bank_recorder = &external_input.recorder;
+    audio.loop_capture=&external_input.loop_capture;audio.loop_tap=&external_input.loop_tap;
     audio.record_source = &external_input.record_source;
     audio.bank_slot = -1;
     if (!ts_audio_apply_backend_before_sdl(ui.config.audio_backend)) {
@@ -14559,6 +14602,7 @@ int main(int argc, char **argv)
             }
             if(tracker_event(&event,window,device,&audio,&ui,&sample_pages,&instrument,obtained.freq))continue;
             mosaic_commit(device,&ui,&instrument,&mosaic);
+            if(mosaic_live_event(&event,window,device,&input_device,&audio,&external_input,&ui))continue;
             /* Finish an active pointer gesture before Escape can discard a take. */
             if(!mosaic.drag && !mosaic.mix_drag && !mosaic.volume_drag && !mosaic.pan_active && !ui.mosaic_loop_drag &&
                mosaic_record_tile_event(&event,window,device,&input_device,&audio,
@@ -18217,6 +18261,8 @@ int main(int argc, char **argv)
                          "CAPTURE COMMIT FAILED: %.100s", sister_error);
             }
         }
+        mosaic_live_poll(device,&input_device,&audio,&external_input,&ui,
+            mosaic.drag || mosaic.mix_drag || mosaic.volume_drag || mosaic.pan_active || ui.mosaic_marker_drag || ui.mosaic_loop_drag);
         poll_file_capture_ui(&ui,&sister_window);
         if (ts_sister_runtime_can_clear(&audio.sister)) {
             if (device) SDL_LockAudioDevice(device);
@@ -18244,6 +18290,7 @@ int main(int argc, char **argv)
             ui.overlay[0] = '\0';
         refresh_workbench_loop(device, &audio, &ui, &instrument);
         mosaic_poll(device,&ui,&instrument,&mosaic);
+        mosaic_live_keyboard_snapshot(&audio,&ui,&instrument);
         if(mosaic.drag==1 || (mosaic.drag>=7 && mosaic.drag<=9)) {
             if(SDL_GetKeyboardFocus()!=window || !(SDL_GetMouseState(NULL,NULL)&SDL_BUTTON_LMASK) ||
                ui_dialog_open(&ui))mosaic_drag_end(&ui,&mosaic);
@@ -18462,7 +18509,7 @@ int main(int argc, char **argv)
         int animated = ui.playback_active || ui.tracker_running || ui.sister_enabled ||
             (ts_ui_master_eq_visible(&ui) && ui.eq_morph_running) ||
             ui.sister_capture_active || ui.file_busy || ui.midi_activity_until_ms ||
-            (ui.mosaic && ui.mosaic->playing) || ui.capture_state==TS_CAPTURE_RECORDING ||
+            (ui.mosaic && ui.mosaic->playing) || ui.mosaic_live_loops || ui.mosaic_live_recording || ui.capture_state==TS_CAPTURE_RECORDING ||
             audio.live_link_available>0 || ts_input_monitor_enabled(audio.input_monitor);
         unsigned paint_period = ts_ui_refresh_ms(!window_minimized, editing, animated);
         if (!window_minimized && ts_ui_refresh_due(schedule_now,last_main_paint,paint_period,
@@ -18628,6 +18675,12 @@ int main(int argc, char **argv)
         ts_performance_recorder_request_stop(external_input.recorder.stream);
         if(external_input.mosaic_writer)SDL_WaitThread(external_input.mosaic_writer,NULL);
     }
+    if(external_input.loop_session) {
+        ts_loop_capture_boundary(&external_input.loop_capture,1,0);
+        ts_performance_recorder_request_stop(&external_input.loop_capture.file);
+        if(external_input.loop_writer)SDL_WaitThread(external_input.loop_writer,NULL);
+    }
+    ts_loop_capture_free(&external_input.loop_capture);
     ts_external_recorder_free(&external_input.recorder);
     ts_capture_free(&audio.capture);
     discard_fm_preview_job(&ui);

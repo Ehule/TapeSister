@@ -281,6 +281,29 @@ static TsNoteStartResult runtime_note_start_event(
            TS_NOTE_STARTED : result;
 }
 
+/* Start a normal routed sample voice from the selected immutable Mosaic
+   source, without moving or retargeting notes that are already sounding. */
+static TsNoteStartResult runtime_mosaic_keyboard_start(AudioState *audio,const TsNoteEvent *event,int latched,int rate)
+{
+    if(latched && runtime_note_toggle_latched_event(audio,event))return TS_NOTE_TOGGLED_OFF;
+    TsNoteStartResult result=ts_note_bank_start_preview_event(&audio->notes,audio->mosaic_keyboard_sample,
+        &audio->mosaic_keyboard_tuning,event,audio->mosaic_keyboard_first,audio->mosaic_keyboard_last,
+        audio->mosaic_keyboard_looping,rate);
+    if(result==TS_NOTE_STARTED)for(int i=0;i<TS_NOTE_VOICE_LIMIT;++i) {
+        TsNoteVoice *v=&audio->notes.voices[i];
+        if(!v->active || v->serial!=audio->notes.next_serial)continue;
+        v->preview=0;v->synth=0;v->detached=1;v->latched=latched!=0;
+        v->loop_mode=audio->mosaic_keyboard_mode;
+        v->loop_intro=v->looping && ts_loop_starts_at_sample(v->loop_mode);
+        v->direction=v->looping && !v->loop_intro && ts_loop_base_mode(v->loop_mode)==TS_LOOP_REVERSE?-1:1;
+        v->position=v->loop_intro?0:v->direction<0?(double)(v->range_last-1):(double)v->range_first;
+        v->crossfade_frames=v->looping?audio->mosaic_keyboard_crossfade:0;
+        v->route_tile=audio->mosaic_keyboard_tile;
+        ts_source_route_set(&v->output_route,audio->mosaic_keyboard_route,(unsigned)rate);
+    }
+    return result;
+}
+
 static int runtime_staged_start(AudioState *audio,
                                 const TsInstrument *instrument,
                                 const TsTuning *tuning,

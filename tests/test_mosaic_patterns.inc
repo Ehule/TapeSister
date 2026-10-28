@@ -52,6 +52,19 @@ static void mosaic_patterns(void)
     pattern_render(m,mixed,n,0);a->muted=1;pattern_render(m,other,n,0);a->muted=0;
     for(int i=300;i<n;++i){assert(fabs(mixed[i].l-single[i].l-other[i].l)<1e-5);assert(fabs(mixed[i].r-single[i].r-other[i].r)<1e-5);}
     ts_mosaic_delete(m,b->id);
+    /* An independent audio loop sums with the native pattern backend while
+       retaining a separate phase and voice slot. Existing score PCM is exact. */
+    TsMosaicSource *audio_source=ts_mosaic_source(m,&test_bank->current,test_error,sizeof(test_error));assert(audio_source);
+    TsMosaicEvent *live=ts_mosaic_add(m,audio_source,0,260);assert(live);live->live=1;live->duration=1.2;
+    pattern_render(m,mixed,n,0);
+    a->muted=1;ts_mosaic_live_restart(m,live->id);pattern_render(m,other,n,0);a->muted=0;
+    for(int i=300;i<n;++i){assert(fabs(mixed[i].l-single[i].l-other[i].l)<1e-5);assert(fabs(mixed[i].r-single[i].r-other[i].r)<1e-5);}
+    ts_mosaic_live_restart(m,live->id);pattern_render(m,mixed,n,0);
+    assert(ts_mosaic_save(m,".",test_error,sizeof(test_error)));
+    TsMosaic *live_copy=ts_mosaic_create();assert(live_copy && ts_mosaic_load(live_copy,".",test_error,sizeof(test_error)));
+    assert(!ts_mosaic_live_count(live_copy));pattern_render(live_copy,other,n,0);
+    assert(pattern_difference(mixed,other,n)<1e-6);ts_mosaic_free(live_copy);
+    ts_mosaic_delete(m,live->id);
     /* Seek reconstructs effects and sample phase; the standard seek attack
        intentionally differs for the first 2ms. */
     pattern_render(m,other,6000,.197);double difference=pattern_difference(single+9456+300,other+300,5000);

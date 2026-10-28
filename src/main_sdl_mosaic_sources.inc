@@ -138,6 +138,7 @@ static int mosaic_sources_event(const SDL_Event *event,SDL_AudioDeviceID device,
         int n=ui->mosaic_source_offset+((y-74)/34)*2+(x-10)/49;
         mosaic_drag_end(ui,c);mosaic_source_drag(ui,instrument,c,n);
         if(!c->source_drag.source)return 1;
+        if(!(mod&(KMOD_CTRL|KMOD_SHIFT|KMOD_ALT|KMOD_GUI)))mosaic_keyboard_select(device,audio,ui,instrument,c,n);
         mosaic_select_only(ui,0);
         c->source_key=mosaic_source_key(ui,n);c->drag_x=x;c->drag_y=y;
         int at=0;for(;at<c->picked_count;++at)if(mosaic_source_key_equal(c->source_key,c->picked_keys[at]))break;

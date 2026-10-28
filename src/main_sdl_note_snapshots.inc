@@ -12,6 +12,7 @@ static void runtime_note_collect_snapshots(SDL_AudioDeviceID device,AudioState *
     if(device)SDL_LockAudioDevice(device);
     for(int s=0;s<TS_NOTE_BANK_VOICE_CAPACITY;++s) {
         TsSample *sample=&audio->note_snapshots[s];if(!sample->data)continue;
+        if(sample==audio->mosaic_keyboard_sample)continue;
         int used=0;
         for(int i=0;i<TS_NOTE_BANK_VOICE_CAPACITY;++i)
             used|=audio->notes.voices[i].active && audio->notes.voices[i].sample==sample;

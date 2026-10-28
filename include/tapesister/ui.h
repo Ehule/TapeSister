@@ -32,6 +32,12 @@ enum { TS_UI_NEW_X = 214, TS_UI_NEW_W = 28,
        TS_UI_CONFIG_X = 246, TS_UI_CONFIG_W = 28,
        TS_UI_FT2_X = 278, TS_UI_FT2_W = 28,
        TS_UI_MOSAIC_X = 310, TS_UI_MOSAIC_W = 46 };
+enum { TS_MOSAIC_LIVE_BUTTON_X=106, TS_MOSAIC_LIVE_BUTTON_Y=17,
+       TS_MOSAIC_LIVE_BUTTON_W=48, TS_MOSAIC_LIVE_BUTTON_H=13,
+       TS_MOSAIC_LIVE_X=464, TS_MOSAIC_LIVE_Y=84,
+       TS_MOSAIC_LIVE_W=166, TS_MOSAIC_LIVE_H=246,
+       TS_MOSAIC_LIVE_CX=547, TS_MOSAIC_LIVE_CY=169,
+       TS_MOSAIC_LIVE_RADIUS=44 };
 /* The retired native editor fixture has a fixed eight-column drawing layout.
    The embedded TapeHead workspace owns scrolling across all 32 stored tracks. */
 enum { TS_TRACKER_LEGACY_LANES=8, TS_TRACKER_LEN_Y=54, TS_TRACKER_RATIO_Y=64,
@@ -564,6 +570,15 @@ typedef struct {
     uint64_t mosaic_selection[TS_MOSAIC_EVENTS];
     uint64_t mosaic_selection_order[TS_MOSAIC_EVENTS], mosaic_selection_serial;
     int mosaic_open, mosaic_playing, mosaic_recording;
+    int mosaic_live_open, mosaic_live_advanced, mosaic_live_keys;
+    int mosaic_live_recording, mosaic_live_finishing, mosaic_live_loops;
+    double mosaic_live_seconds, mosaic_live_duration, mosaic_live_quarter;
+    int mosaic_live_master;
+    char mosaic_live_keyboard[48];
+    TsMosaicSourceKey mosaic_live_key;
+    int mosaic_live_key_valid;
+    char mosaic_live_status[160],mosaic_live_archive[1200];
+    TsMosaicLive mosaic_live[TS_MOSAIC_EVENTS]; /* UI snapshot under output exclusion. */
     int mosaic_marker_selected, mosaic_marker_open, mosaic_marker_field;
     int mosaic_marker_drag, mosaic_views_open;
     double mosaic_marker_preview;
@@ -1018,6 +1033,8 @@ void ts_ui_finish_palette_edit(TsUiState *ui, int cancel);
 int ts_ui_bank_slot_from_point(int x, int y);
 int ts_ui_midi_target_from_point(const TsUiState *ui, int x, int y,
                                  char *target, size_t target_size);
+int ts_ui_mosaic_live_contains(const TsUiState *ui,int x,int y);
+const char *ts_ui_mosaic_live_command_at(const TsUiState *ui,int x,int y);
 int ts_ui_recipe_slot_from_point(int x, int y);
 int ts_ui_cdp_slot_from_point(int x, int y);
 int ts_ui_cdp_page_from_point(int x, int y);

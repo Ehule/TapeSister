@@ -90,7 +90,20 @@ typedef struct {
     float gain, pan;
     double fade_in, fade_out; /* Seconds on the arrangement timeline. */
     TsSourceRoute output_route; /* matrix_enabled: custom; otherwise Mosaic bus. */
+    /* Live audio loops are independent players, never extra timeline voices.
+       duration is the finite stop length, or only the visible footprint in INF. */
+    int live, live_finite, live_tempo, live_transport, live_position;
+    double live_beats; /* Source cycle in quarter notes when tempo follows master. */
 } TsMosaicEvent;
+
+enum { TS_MOSAIC_LIVE_STOPPED, TS_MOSAIC_LIVE_WAITING, TS_MOSAIC_LIVE_PLAYING,
+       TS_MOSAIC_LIVE_RELEASING };
+typedef struct {
+    uint64_t id;
+    double elapsed, phase;
+    int state;
+    unsigned release;
+} TsMosaicLive;
 
 typedef struct {
     uint64_t id, revision, generation;
@@ -119,6 +132,7 @@ typedef struct {
 typedef struct {
     int active[TS_MOSAIC_EVENTS], pending[TS_MOSAIC_EVENTS];
     int active_count, pending_count, any_solo, valid;
+    int live[TS_MOSAIC_EVENTS], live_count;
     double end, expected_time;
     TsMosaicRange marker_range;
     uint64_t revision;
@@ -162,7 +176,23 @@ typedef struct TsMosaic {
     unsigned block_remaining;
     uint64_t control_serial;
     int audition_slot;
+    TsMosaicLive live[TS_MOSAIC_EVENTS]; /* Audio-owned; not restored as running. */
+    double live_trigger_floor, live_quarter, live_phase;
+    int live_master, live_master_running, live_clock_edge;
+    struct { int source,continuous,units,length,quantize; } live_capture;
 } TsMosaic;
+
+/* Control commands require the same exclusion as event edits. Launch is
+   idempotent; restart is an explicit stop+launch. Quantize waits for a master
+   quarter-note edge, and works while the master transport cursor is paused. */
+int ts_mosaic_live_launch(TsMosaic *,uint64_t id,int quantize);
+void ts_mosaic_live_stop(TsMosaic *,uint64_t id); /* id=0 stops all live loops. */
+void ts_mosaic_live_restart(TsMosaic *,uint64_t id);
+void ts_mosaic_live_transport(TsMosaic *,int command); /* group: 1 play, 0 pause, 2 Home */
+int ts_mosaic_live_count(const TsMosaic *);
+double ts_mosaic_live_cycle(const TsMosaicEvent *);
+/* Host supplies the current audio-frame clock, not a UI timer. */
+void ts_mosaic_live_clock(TsMosaic *,int enabled,int running,double quarter,double phase);
 
 /* Called under audio exclusion. Keeps current cycle alive, no event restart. */
 void ts_mosaic_update_pattern(TsMosaic *,TsMosaicEvent *,TsMosaicSource *);

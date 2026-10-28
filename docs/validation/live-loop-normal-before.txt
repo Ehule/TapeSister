@@ -1,0 +1,11 @@
+capacity=1024 model=21365400 event=528 voice=3360 bytes
+   1 cards /    1 active / Matrix enabled: 0.052 ms/512 frames, 0.49% of one CPU core, checksum 36.25591
+ 128 cards /    1 active / Matrix enabled: 0.051 ms/512 frames, 0.48% of one CPU core, checksum 36.25591
+ 128 cards /   16 active / Matrix enabled: 0.367 ms/512 frames, 3.44% of one CPU core, checksum 663.8897
+ 128 cards /  128 active / Matrix enabled: 3.289 ms/512 frames, 30.84% of one CPU core, checksum 5102.251
+1024 cards /    1 active / Matrix enabled: 0.059 ms/512 frames, 0.56% of one CPU core, checksum 36.25591
+1024 cards /   16 active / Matrix enabled: 0.386 ms/512 frames, 3.62% of one CPU core, checksum 663.8897
+1024 cards / 1024 active / Matrix enabled: 24.987 ms/512 frames, 234.26% of one CPU core, checksum 40091.12
+ 128 cards /  128 active / chords, routes, edits: 12.052 ms/512 frames, 112.99% of one CPU core, checksum 3540.73
+1024 cards /  160 active / Matrix enabled: 3.923 ms/512 frames, 36.78% of one CPU core, checksum 6289.371
+1024 cards /  160 active / staggered: 4.306 ms/512 frames, 40.37% of one CPU core, checksum 5781.459
