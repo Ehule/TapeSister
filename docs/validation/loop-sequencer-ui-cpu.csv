@@ -1,0 +1,4 @@
+workload,median_cpu_ms_per_frame,circle_cache_bytes
+logical_ui,0.473483,0
+logical_ui_plus_native_circle,0.585583,595984
+native_circle_only,0.048653,595984

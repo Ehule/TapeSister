@@ -409,6 +409,17 @@ typedef struct {
     int dirty_x, dirty_y, dirty_w, dirty_h;
 } TsUiWaveformDetail;
 
+typedef struct {
+    uint32_t *pixels,*base;
+    uint8_t *disc_alpha,*ring_alpha;
+    uint16_t *phase;
+    unsigned *ring_pixels,ring_count;
+    int width,height,x,y,valid,changed;
+    double scale;
+    uint32_t keys[8],last_phase;
+    uint64_t raster_count;
+} TsUiLooperCircle;
+
 int ts_ui_waveform_detail_resize(TsUiWaveformDetail *detail, int width, int height);
 void ts_ui_waveform_detail_begin(TsUiWaveformDetail *detail);
 /* Up to two independently cached regions in one native window. */
@@ -577,6 +588,10 @@ typedef struct {
     int mosaic_live_drag, mosaic_live_grab_x, mosaic_live_grab_y, mosaic_live_play_all;
     int mosaic_live_drag_before_x, mosaic_live_drag_before_y;
     int mosaic_live_output_width, mosaic_live_output_height; /* Runtime display aspect, never saved. */
+    int mosaic_sequence_running,mosaic_sequence_finishing,mosaic_sequence_index,mosaic_sequence_count;
+    int mosaic_sequence_selection_owned;
+    uint64_t mosaic_sequence_id;
+    double mosaic_sequence_duration;
     char mosaic_live_hover[40];
     int mosaic_live_recording, mosaic_live_finishing, mosaic_live_loops;
     double mosaic_live_seconds, mosaic_live_duration, mosaic_live_quarter;
@@ -1045,6 +1060,9 @@ int ts_ui_midi_target_from_point(const TsUiState *ui, int x, int y,
 int ts_ui_mosaic_live_contains(const TsUiState *ui,int x,int y);
 void ts_ui_mosaic_live_origin(const TsUiState *ui,int *x,int *y);
 void ts_ui_mosaic_live_circle_scale(const TsUiState *ui,double *x,double *y);
+int ts_ui_mosaic_sequence_list(const TsUiState *ui,int *slots);
+int ts_ui_mosaic_looper_circle(TsUiLooperCircle *,const TsUiState *,int width,int height);
+void ts_ui_mosaic_looper_circle_free(TsUiLooperCircle *);
 const char *ts_ui_mosaic_live_transport_command(int index);
 const char *ts_ui_mosaic_live_help(const char *command);
 const char *ts_ui_mosaic_live_command_at(const TsUiState *ui,int x,int y);

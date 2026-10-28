@@ -40,10 +40,11 @@ static void test_mosaic_looper_cockpit(SDL_Window *window,SDL_AudioDeviceID devi
     live_performance_transport(window,device,a,s,u,&instrument,c,2);audio_callback(a,(Uint8 *)output,sizeof(output));
     assert(ts_mosaic_live_count(u->mosaic)==3 && u->mosaic->voices[one-u->mosaic->events].generation==generation);
     double main_time=u->mosaic->time;
-    live_performance_transport(window,device,a,s,u,&instrument,c,6);assert(u->mosaic_selected==third);
+    SDL_AudioDeviceID legacy_input=0;
+    assert(mosaic_live_command(device,&legacy_input,a,s,u,"last_loop"));assert(u->mosaic_selected==third);
     live_performance_transport(window,device,a,s,u,&instrument,c,5);assert(u->mosaic_selected==third);
     live_performance_transport(window,device,a,s,u,&instrument,c,1);assert(u->mosaic_selected==second);
-    live_performance_transport(window,device,a,s,u,&instrument,c,0);assert(u->mosaic_selected==id);
+    assert(mosaic_live_command(device,&legacy_input,a,s,u,"first_loop"));assert(u->mosaic_selected==id);
     live_performance_transport(window,device,a,s,u,&instrument,c,1);assert(u->mosaic_selected==id);
     assert(u->mosaic->time==main_time && ts_mosaic_live_count(u->mosaic)==3);
     assert(ts_midi_map_assign(&u->config.midi_map,"mosaic.live.next_loop",(TsMidiSource){TS_MIDI_SOURCE_NOTE,9,62}));

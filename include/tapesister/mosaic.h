@@ -94,6 +94,8 @@ typedef struct {
        duration is the finite stop length, or only the visible footprint in INF. */
     int live, live_finite, live_tempo, live_transport, live_position;
     double live_beats; /* Source cycle in quarter notes when tempo follows master. */
+    int live_order; /* 0: Card-ID order; -1: background; positive: explicit sequence order. */
+    double finish_fade; /* Optional musical release; ordinary Stop retains its quick release. */
 } TsMosaicEvent;
 
 enum { TS_MOSAIC_LIVE_STOPPED, TS_MOSAIC_LIVE_WAITING, TS_MOSAIC_LIVE_PLAYING,
@@ -103,7 +105,15 @@ typedef struct {
     double elapsed, phase;
     int state;
     unsigned release;
+    double finish_seconds;
+    float finish_gain;
 } TsMosaicLive;
+
+typedef struct {
+    uint64_t ids[TS_MOSAIC_EVENTS], members[TS_MOSAIC_EVENTS];
+    int slots[TS_MOSAIC_EVENTS], count, index, running, finishing, pending, started;
+    double duration, speed, drain;
+} TsMosaicSequence;
 
 typedef struct {
     uint64_t id, revision, generation;
@@ -180,6 +190,7 @@ typedef struct TsMosaic {
     double live_trigger_floor, live_quarter, live_phase;
     int live_master, live_master_running, live_clock_edge;
     struct { int source,continuous,units,length,quantize; } live_capture;
+    TsMosaicSequence sequence; /* Frozen running order, never resumed by load/undo. */
 } TsMosaic;
 
 /* Control commands require the same exclusion as event edits. Launch is
@@ -191,6 +202,14 @@ void ts_mosaic_live_restart(TsMosaic *,uint64_t id);
 void ts_mosaic_live_transport(TsMosaic *,int command); /* group: 1 play, 0 pause, 2 Home */
 int ts_mosaic_live_count(const TsMosaic *);
 double ts_mosaic_live_cycle(const TsMosaicEvent *);
+void ts_mosaic_live_finish(TsMosaic *,uint64_t id);
+/* Control-thread operations under normal audio exclusion. Order edits apply
+   while stopped; Cycle while running only cancels Finish, preserving phase. */
+int ts_mosaic_sequence_order(const TsMosaic *,int *slots);
+int ts_mosaic_sequence_cycle(TsMosaic *);
+void ts_mosaic_sequence_finish(TsMosaic *);
+void ts_mosaic_sequence_stop(TsMosaic *);
+int ts_mosaic_sequence_owns(const TsMosaic *,int slot);
 /* Host supplies the current audio-frame clock, not a UI timer. */
 void ts_mosaic_live_clock(TsMosaic *,int enabled,int running,double quarter,double phase);
 

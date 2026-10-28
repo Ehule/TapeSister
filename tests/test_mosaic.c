@@ -284,6 +284,7 @@ static void test_storage(void)
 static void test_project_transaction(int live)
 {
     TsMosaic *m=fixture();if(live){m->events[0].live=1;m->events[0].live_finite=1;m->events[0].live_beats=4;m->live_capture.continuous=1;}TsSamplePages pages;char error[160],path[1024];
+    if(live>1){m->events[0].live_order=1;m->events[0].finish_fade=2;}
     TsInstrument *bank=malloc(sizeof(*bank)),*record=malloc(sizeof(*record));assert(bank && record);
     ts_instrument_init(bank);ts_instrument_init(record);assert(ts_sample_pages_init(&pages,error,sizeof(error)));
     pages.mosaic=m;
@@ -295,6 +296,7 @@ static void test_project_transaction(int live)
     ts_mosaic_audition(m,m->events[0].id);ts_mosaic_begin_block(m,32);
     for(int i=0;i<32;++i)ts_mosaic_read(m,48000);
     assert(m->voices[0].active && m->audition_id);
+    if(live>1){assert(ts_mosaic_sequence_cycle(m));for(int i=0;i<16;++i)ts_mosaic_read(m,48000);assert(m->sequence.running);}
     m->events[0].start=100;
     /* A Windows-saved bundle must open intact on Linux, including its audio. */
     storage_line_endings("mosaic-project-test/project-data/mosaic.tsm",1);
@@ -306,6 +308,7 @@ static void test_project_transaction(int live)
     /* Cancelling a fully decoded project must not touch the running one. */
     ts_sample_pages_dispose_project(prepared);
     assert(ts_mosaic_hash(m)==edited && m->sources==old_source && bank->current.data==old_data);
+    if(live>1)assert(m->sequence.running);
     prepared=ts_sample_pages_prepare_project(path,1,error,sizeof(error));assert(prepared);
     /* Publication does not need the files any more, and retirement happens
        only after the caller releases its audio lock. */
@@ -319,6 +322,7 @@ static void test_project_transaction(int live)
     assert(pages.mosaic==m && ts_mosaic_hash(m)==hash && m->epoch!=epoch);
     assert(ts_sample_hash(&bank->current)==sample_hash);
     assert(!m->history_count && !m->history_cursor && !m->history_first && !m->playing && !m->audition_id);
+    assert(!m->sequence.running && !ts_mosaic_live_count(m));
     for(int i=0;i<TS_MOSAIC_EVENTS;++i)assert(!m->voices[i].active);
     /* Retired history/voice backing memory must never retain old ownership or
        affect the first render after replacement. */
@@ -379,15 +383,17 @@ static void test_source_preview_lifetime(void)
 #include "test_mosaic_marker_loop.inc"
 
 #include "test_mosaic_live.inc"
+#include "test_mosaic_sequence.inc"
 
 int main(void)
 {
     test_mosaic_live();test_mosaic_live_storage();test_mosaic_live_mix();
+    test_mosaic_sequence();test_mosaic_finish();test_mosaic_sequence_storage();
     test_source_preview_lifetime();
     test_mosaic_volume();
     test_mosaic_read_paths();
     test_mosaic_schedule();test_mosaic_large_storage();
     test_mosaic_loop_audio();test_mosaic_loop_history();
-    test_card_routes();test_tape_speed();test_event_mix_and_fades();test_mute_solo_phase();test_ownership();test_marker_storage();test_marker_loop();test_seek();test_one_shot_and_resize();test_spacing_and_history();test_storage();test_project_transaction(0);test_project_transaction(1);
+    test_card_routes();test_tape_speed();test_event_mix_and_fades();test_mute_solo_phase();test_ownership();test_marker_storage();test_marker_loop();test_seek();test_one_shot_and_resize();test_spacing_and_history();test_storage();test_project_transaction(0);test_project_transaction(1);test_project_transaction(2);
     puts("Mosaic ownership, independent clocks, seeking, geometry and storage passed");return 0;
 }

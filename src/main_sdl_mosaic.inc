@@ -13,6 +13,12 @@ static void mosaic_poll(SDL_AudioDeviceID device,TsUiState *ui,
     int release_preview=!ui->mosaic->audition_id && ui->mosaic->audition_source.source!=NULL;
     if(!ui->mosaic_open || c->active || !ui->mosaic->audition_id)ts_mosaic_audition(ui->mosaic,0);
     memcpy(ui->mosaic_live,ui->mosaic->live,sizeof(ui->mosaic_live));
+    const TsMosaicSequence *seq=&ui->mosaic->sequence;
+    ui->mosaic_sequence_running=seq->running;ui->mosaic_sequence_finishing=seq->finishing;
+    ui->mosaic_sequence_index=seq->index;ui->mosaic_sequence_count=seq->count;
+    ui->mosaic_sequence_id=seq->running?seq->ids[seq->index]:0;ui->mosaic_sequence_duration=seq->duration;
+    TsMosaicEvent *sequence_selected=ts_mosaic_find(ui->mosaic,ui->mosaic_selected);
+    ui->mosaic_sequence_selection_owned=sequence_selected && ts_mosaic_sequence_owns(ui->mosaic,(int)(sequence_selected-ui->mosaic->events));
     ui->mosaic_live_loops=ts_mosaic_live_count(ui->mosaic);
     ui->mosaic_live_master=ui->mosaic->live_master;
     ui->mosaic_live_quarter=ui->mosaic->live_quarter;
@@ -240,6 +246,10 @@ static void mosaic_drag_motion(SDL_AudioDeviceID device,TsUiState *ui,MosaicCont
             double end=c->drag_start+c->drag_duration+delta;
             if(mod&KMOD_ALT)end=ts_mosaic_snap(ui->mosaic,e->id,end,7/ui->mosaic_scale);
             e->duration=fmin(86400,fmax(.005,end-e->start));
+            double cycle=ts_mosaic_live_cycle(e);
+            if(e->live && cycle>0 && cycle<=86400 && !(mod&KMOD_SHIFT))
+                e->duration=fmin(86400,fmax(cycle,round(e->duration/cycle)*cycle));
+            if(e->live)snprintf(ui->status,sizeof(ui->status),"STEP %.3G BASE CYCLES / SHIFT: FREE LENGTH / RUNNING STEP KEEPS ITS LENGTH",e->duration/fmax(.000001,cycle));
         } else if(c->drag==6) {
             double end=c->drag_start+c->drag_duration,start=c->drag_start+delta;
             if(mod&KMOD_ALT)start=ts_mosaic_snap(ui->mosaic,e->id,start,7/ui->mosaic_scale);

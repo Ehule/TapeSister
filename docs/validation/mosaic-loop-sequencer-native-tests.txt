@@ -1,0 +1,10 @@
+Internal ctest changing into directory: build-cockpit
+Test project build-cockpit
+    Start 104: tapesister_native_waveform_tests
+1/2 Test #104: tapesister_native_waveform_tests ..........   Passed    4.04 sec
+    Start 115: tapesister_mosaic_live_controller_tests
+2/2 Test #115: tapesister_mosaic_live_controller_tests ...   Passed    4.15 sec
+
+100% tests passed, 0 tests failed out of 2
+
+Total Test time (real) =   8.21 sec

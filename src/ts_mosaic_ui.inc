@@ -8,6 +8,8 @@ static uint32_t mosaic_color(uint64_t id)
 static uint64_t mosaic_source_color(const TsMosaicSource *s)
 {return s->pattern?(s->pattern->lineage*131+s->pattern->id):s->hash;}
 static const char *mosaic_live_state_name(const TsUiState *,const TsMosaicEvent *);
+static void mosaic_live_length_label(const TsMosaicEvent *e,char *label,size_t size)
+{snprintf(label,size,"X%.3G %s",e->duration/fmax(.000001,ts_mosaic_live_cycle(e)),e->live_finite?"END":"INF");}
 static void mosaic_pattern_label(const TsUiState *ui,const TsMosaicEvent *e,char *label,size_t size)
 {
     if(e->live){snprintf(label,size,"%s",mosaic_live_state_name(ui,e));return;}
@@ -182,7 +184,8 @@ static void mosaic_card(TsFramebuffer *fb,const TsUiState *ui,const TsMosaicEven
     }
     if(h>38 && bottom<TS_MOSAIC_CANVAS_BOTTOM && x>=151 && x+36<TS_MOSAIC_CANVAS_RIGHT && w>=36) {
         int chars=(int)fmax(0,((x+w>TS_MOSAIC_CANVAS_RIGHT?TS_MOSAIC_CANVAS_RIGHT-x:w)-30)/6);
-        const char *state=e->muted?"MUTE":e->solo?"SOLO":dim?(chars>=8?"SOLO OUT":"EXCL"):e->live?(e->live_finite?"FINITE":"LIVE INF"):e->looping?"LOOP":"ONCE";
+        char repetitions[32];if(e->live)mosaic_live_length_label(e,repetitions,sizeof(repetitions));
+        const char *state=e->muted?"MUTE":e->solo?"SOLO":dim?(chars>=8?"SOLO OUT":"EXCL"):e->live?repetitions:e->looping?"LOOP":"ONCE";
         snprintf(label,sizeof(label),"%.*s",chars,state);text(fb,x+6,end-11,label,color,1);
     }
     if(e->live && top>=66 && bottom-top>=28 && w>=24) {
@@ -231,7 +234,7 @@ static void mosaic_mix_controls(TsFramebuffer *fb,const TsUiState *ui,int any_so
             snprintf(label,sizeof(label),"%s %.2fS",names[i],seconds);
         }
         int enabled=e && !(i==3 && e->live && !e->live_finite);
-        if(e && !enabled)snprintf(label,sizeof(label),"OUT: FINITE ONLY");
+        if(e && !enabled)snprintf(label,sizeof(label),"OUT: SET AN END");
         text(fb,x,382,label,enabled?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DIM, RGB(182,174,190)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_GRID, RGB(97,92,105)),1);
         mosaic_slider(fb,x+2,392,TS_MOSAIC_MIX_W-4,value,i<2,enabled);
     }

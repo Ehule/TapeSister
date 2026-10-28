@@ -159,7 +159,8 @@ static void mosaic_detail_card(TsUiWaveformDetail *d,const TsUiState *ui,
         mosaic_detail_text(d,tx,y+mosaic_detail_pixel(14*sy),label,dim?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(66,64,75)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DIM, RGB(156,147,165)),sx,sy);
     }
     if(chars>=4 && h>mosaic_detail_pixel(38*sy)) {
-        const char *state=e->muted?"MUTE":e->solo?"SOLO":dim?(chars>=8?"SOLO OUT":"EXCL"):e->live?(e->live_finite?"FINITE":"LIVE INF"):e->looping?"LOOP":"ONCE";
+        char repetitions[32];if(e->live)mosaic_live_length_label(e,repetitions,sizeof(repetitions));
+        const char *state=e->muted?"MUTE":e->solo?"SOLO":dim?(chars>=8?"SOLO OUT":"EXCL"):e->live?repetitions:e->looping?"LOOP":"ONCE";
         mosaic_detail_text(d,tx,bottom-mosaic_detail_pixel(11*sy),state,color,sx,sy);
     }
     if(e->live && h>=mosaic_detail_pixel(28*sy) && w>=mosaic_detail_pixel(24*sx)) {
