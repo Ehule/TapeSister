@@ -161,3 +161,34 @@ Synthetic test audio using production rendering, rather than a user project.
 ![Sequence order, membership, length and fades](../screenshots/mosaic-performance/loop-sequencer-setup.png)
 
 ![Moved panel at laptop dimensions](../screenshots/mosaic-performance/loop-sequencer-moved.png)
+
+## Status-disc follow-up
+
+Both renderers now share the same UI-snapshot presentation: red RECORD,
+green play, amber pause-bars/WAIT for a queued beat, amber preparation and
+slate stop. The take length appears inside the disc only while recording.
+Finite players use elapsed/card duration, the sequencer uses its held entry
+duration, and Until Stop players use their source cycle. A stopped selection
+does not hide another running player. Click/MIDI behavior is unchanged.
+
+The Linux Release application, Mosaic core and controller targets built.
+The core test passed (10.63 s); after correcting the new fixture's initial
+scene/selection setup, both general and focused live controller CTests
+passed (34.43 s and 1.84 s). Local configuration used the pinned miniaudio
+headers, system FFmpeg, bundled CDP/video disabled, MIDI backend disabled and
+SDL dummy devices. Physical devices were not exercised.
+
+The added production-render checks play a twelve-second finite event while
+capture is configured for four seconds, compare the native ring against its
+actual elapsed time, and verify matching native/logical colors and symbols.
+They also cover capture configuration changes during playback, Until Stop
+cycle progress, held sequence duration, simultaneous capture/preparation and
+playback, manual capture, waiting-for-beat, a running background against a
+waiting/stopped selection, stop clearing progress, and unchanged raster/buffer
+reuse. Existing controller checks still exercise the central record button,
+learned actions, concurrent captures, smooth coverage and multiple aspects.
+
+[Native state comparison](../screenshots/mosaic-performance/looper-status.png).
+The comparison is cropped from production-rendered synthetic test fixtures.
+Earlier measurements and CI links in this document describe the original
+sequencer head; they are not new measurements of this follow-up.

@@ -24,13 +24,13 @@ static void live_controller_screenshot_size(TsUiState *u,const char *path,int wi
     if(u->mosaic_live_open && !u->mosaic_live_advanced) {
         assert(details[0].valid && details[1].valid); /* Canvas stays native while performing. */
         int px,py;ts_ui_mosaic_live_origin(u,&px,&py);
-        /* Measure the actual rendered red disc, independently of the logical
+        /* Measure the actual rendered status disc, independently of the logical
            aspect correction: a 5:4 display must not turn it into an oval. */
         if(!u->mosaic_live_finishing) {
             int left=width,top=height,right=-1,bottom=-1;
             for(int y=py*height/400;y<(py+TS_MOSAIC_LIVE_H)*height/400;++y)
                 for(int x=px*width/640;x<(px+TS_MOSAIC_LIVE_W)*width/640;++x)
-                    if((pixels[y*width+x]&0xffffffu)==0xe51820u) {
+                    if(pixels[y*width+x]==circle.keys[1]) {
                         if(x<left)left=x;if(x>right)right=x;if(y<top)top=y;if(y>bottom)bottom=y;
                     }
             assert(right>left && bottom>top);
@@ -79,6 +79,7 @@ static void live_controller_screenshot(TsUiState *u,const char *path)
 #include "test_mosaic_live_performance.inc"
 #include "test_mosaic_looper_cockpit.inc"
 #include "test_mosaic_sequence_controller.inc"
+#include "test_mosaic_looper_status.inc"
 static void test_mosaic_live_controller(SDL_Window *window,SDL_AudioDeviceID device)
 {
     AudioState *a=routing_audio(0);TsUiState *u=mosaic_record_ui_fixture(a);
@@ -218,4 +219,5 @@ static void test_mosaic_live_controller(SDL_Window *window,SDL_AudioDeviceID dev
     test_mosaic_live_performance(window,device);
     test_mosaic_looper_cockpit(window,device);
     test_mosaic_sequence_controller(window,device);
+    test_mosaic_looper_status(window,device);
 }

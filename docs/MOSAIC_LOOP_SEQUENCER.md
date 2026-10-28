@@ -120,11 +120,41 @@ and writer/UI return latency remain unchanged.
 
 ## Smooth display and projects
 
-The REC disc and continuous progress ring are rendered at native window
+The status disc and continuous progress ring are rendered at native window
 resolution with antialiased edges. A small cached layer stores coverage and
 angles; moving the panel updates its destination, and progress updates reuse
 the geometry. Labels keep the TapeSister bitmap style. Allocation/raster work
 belongs to the UI. The logical drawing remains an allocation-failure fallback.
+
+The disc reports actual looper activity in both render paths:
+
+- **Red / RECORD**: capturing a new take. Only here does the disc show the
+  configured recording length. The ring/countdown uses the current take;
+  manual capture shows elapsed time without an invented cycle.
+- **Green / play triangle / PLAY**: an active player. Finite loop events use
+  their full card duration; sequences use the held current step duration.
+  Until Stop players use their source cycle. The countdown follows tape rate
+  and source pitch where applicable. A releasing player remains green / END.
+- **Amber / pause bars / WAIT**: queued for its launch beat, with no moving
+  playback ring. **Amber / ... / PREP** means capture is being prepared.
+- **Slate / square / STOP**: no loop player is running or queued. The ring is
+  empty rather than showing a leftover take or playhead position.
+
+![Record, play, wait and stop in the native renderer](screenshots/mosaic-performance/looper-status.png)
+
+Recording takes priority over simultaneous loop playback. Otherwise the
+current sequence step is shown, then the selected active player, then another
+running player (before queued players). Selecting a stopped or ordinary card
+therefore cannot conceal ongoing background playback. The displayed Card ID
+identifies the player whose progress is shown; card editing controls still
+apply to the selection.
+
+The disc still starts a new recording/next layer when clicked, with the same
+MIDI target; the hint beneath it says **CLICK DISC: RECORD / NEXT**. Display
+changes do not change transport behavior. The existing pause-bars button ends
+capture and leaves independent players running; it does not freeze a player's
+playhead. Those players continue to show PLAY. The main timeline's pause also
+does not pause the independent sequence.
 
 Saving stores sequence membership/order and Finish Fade when used; players and
 the sequencer reopen stopped. Nondefault membership/order or Finish Fade uses

@@ -54,28 +54,35 @@ int ts_ui_mosaic_looper_circle(TsUiLooperCircle *d,const TsUiState *ui,int width
     int x,y;ts_ui_mosaic_live_origin(ui,&x,&y);
     d->x=(int)lrint((x+83.5)*width/TS_UI_WIDTH)-side/2;
     d->y=(int)lrint((y+86.5)*height/TS_UI_HEIGHT)-side/2;
-    const TsMosaicEvent *e=ts_mosaic_find(ui->mosaic,ui->mosaic_sequence_running?ui->mosaic_sequence_id:ui->mosaic_selected);
-    const TsMosaicLive *l=e && e->live?mosaic_live_snapshot(ui,e):NULL;
-    int state=l && l->id==e->id?l->state:0;
+    MosaicLooperDisplay display=mosaic_looper_display(ui);
     uint32_t panel=ts_theme_color(&ui->palette,TS_THEME_MOSAIC,TS_COLOR_PANEL,RGB(31,28,38));
-    uint32_t disc=ui->mosaic_live_finishing?RGB(99,49,55):RGB(229,24,32);
+    uint32_t disc=display.disc;
     uint32_t dim=ts_theme_color(&ui->palette,TS_THEME_MOSAIC,TS_COLOR_EDGE,RGB(64,54,70));
-    uint32_t ink=ui->mosaic_live_recording?RGB(255,139,119):state==TS_MOSAIC_LIVE_PLAYING?RGB(129,221,202):RGB(245,184,91);
-    double phase=ui->mosaic_live_recording?ui->mosaic_live_seconds/(ui->mosaic_live_duration>0?ui->mosaic_live_duration:60):
-        ui->mosaic_live_finishing?0:l?l->phase:0;
-    if(!ui->mosaic_live_recording && !ui->mosaic_live_finishing && ui->mosaic_sequence_running)
-        phase=ui->mosaic_sequence_duration>0 && l?l->elapsed/ui->mosaic_sequence_duration:0;
-    uint32_t keys[]={panel,disc,dim,ink,(uint32_t)ui->mosaic_live_finishing,(uint32_t)ui->mosaic->live_capture.length,
-        (uint32_t)ui->mosaic->live_capture.units,1};
+    uint32_t ink=display.ring;
+    uint32_t keys[]={panel,disc,dim,ink,(uint32_t)display.state,
+        display.state==MOSAIC_DISC_RECORD?(uint32_t)ui->mosaic->live_capture.length:0,
+        display.state==MOSAIC_DISC_RECORD?(uint32_t)ui->mosaic->live_capture.units:0,1};
     int base_changed=memcmp(d->keys,keys,sizeof(keys))!=0;
     if(base_changed) {
         for(size_t i=0;i<(size_t)side*side;++i)d->base[i]=looper_blend(panel,disc,d->disc_alpha[i]);
-        looper_native_text(d,side/2-9*scale,ui->mosaic_live_finishing?"...":"REC",2*scale,RGB(255,255,255));
-        char label[24];if(ui->mosaic->live_capture.length)snprintf(label,sizeof(label),"%d %s",ui->mosaic->live_capture.length,ui->mosaic->live_capture.units?"BEATS":"SEC");
-        else snprintf(label,sizeof(label),"MANUAL");
-        looper_native_text(d,side/2+12*scale,label,scale,RGB(255,225,225));memcpy(d->keys,keys,sizeof(keys));
+        if(display.state==MOSAIC_DISC_RECORD || display.state==MOSAIC_DISC_PREPARE)
+            looper_native_text(d,side/2-8*scale,display.state==MOSAIC_DISC_PREPARE?"...":display.label,scale,RGB(255,255,255));
+        else for(int yy=(int)floor(side/2-15*scale);yy<=(int)ceil(side/2+12*scale);++yy)
+            for(int xx=(int)floor(side/2-13*scale);xx<=(int)ceil(side/2+15*scale);++xx) {
+            unsigned coverage=0;
+            for(int sy=0;sy<4;++sy)for(int sx=0;sx<4;++sx)
+                coverage+=mosaic_looper_symbol(display.state,(xx-side/2+(sx+.5)/4-.5)/scale,(yy-side/2+(sy+.5)/4-.5)/scale);
+            size_t at=(size_t)yy*side+xx;
+            if(coverage)d->base[at]=looper_blend(d->base[at],RGB(255,255,255),(coverage*255+8)/16);
+        }
+        char label[24];
+        if(display.state==MOSAIC_DISC_RECORD) {
+            if(ui->mosaic->live_capture.length)snprintf(label,sizeof(label),"%d %s",ui->mosaic->live_capture.length,ui->mosaic->live_capture.units?"BEATS":"SEC");
+            else snprintf(label,sizeof(label),"MANUAL");
+        } else snprintf(label,sizeof(label),"%s",display.label);
+        looper_native_text(d,side/2+12*scale,label,scale,RGB(255,255,255));memcpy(d->keys,keys,sizeof(keys));
     }
-    uint32_t progress=(uint32_t)lrint(fmax(0,fmin(1,phase))*65536);
+    uint32_t progress=(uint32_t)lrint(fmax(0,fmin(1,display.phase))*65536);
     if(base_changed || d->last_phase!=progress) {
         memcpy(d->pixels,d->base,(size_t)side*side*sizeof(uint32_t));
         for(unsigned n=0;n<d->ring_count;++n) {
