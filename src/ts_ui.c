@@ -732,12 +732,21 @@ void ts_ui_mosaic_live_circle_scale(const TsUiState *ui,double *x,double *y)
 }
 const char *ts_ui_mosaic_live_transport_command(int index)
 {
-    static const char *commands[]={"first_loop","previous_loop","play","stop_capture","halt","next_loop","last_loop"};
+    static const char *commands[]={"cycle","previous_loop","play","stop_capture","halt","next_loop","finish_sequence"};
     return index>=0 && index<TS_MOSAIC_LIVE_TRANSPORT_COUNT?commands[index]:NULL;
+}
+int ts_ui_mosaic_sequence_list(const TsUiState *ui,int *slots)
+{
+    const TsMosaic *m=ui->mosaic;int count=ts_mosaic_sequence_order(m,slots);
+    for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(m->events[i].id && m->events[i].live &&
+        !m->events[i].source->pattern && m->events[i].live_order<0)slots[count++]=i;
+    return count;
 }
 const char *ts_ui_mosaic_live_help(const char *command)
 {
     if(!command)return "DRAG HEADER / DOUBLE CLICK TO DOCK";
+    if(!strcmp(command,"cycle"))return "CYCLE / CONTINUE SEQUENCE";
+    if(!strcmp(command,"finish_sequence"))return "FINISH THIS SEQUENCE PASS";
     if(!strcmp(command,"primary"))return "RECORD / NEXT LAYER";
     if(!strcmp(command,"first_loop"))return "FIRST LOOP / PLAY";
     if(!strcmp(command,"previous_loop"))return "PREVIOUS LOOP / PLAY";
@@ -776,7 +785,30 @@ const char *ts_ui_mosaic_live_command_at(const TsUiState *ui,int x,int y)
             if(x>=8 && x<80)return "scope";
             if(x>=86 && x<158)return "role";
         }
+    } else if(ui->mosaic_live_advanced==2) {
+        if(y>=84 && y<100 && x>=500 && x<608)return "capture_setup";
+        if(y>=106 && y<122) {
+            if(x>=132 && x<224)return "sequence_all";
+            if(x>=232 && x<392)return "sequence_member";
+            if(x>=402 && x<490)return "sequence_up";
+            if(x>=500 && x<608)return "sequence_down";
+        }
+        if(y>=240 && y<256) {
+            if(x>=132 && x<282)return "step_length";
+            if(x>=292 && x<442)return "length_mode";
+            if(x>=452 && x<608)return "step_fade";
+        }
+        if(y>=268 && y<284) {
+            if(x>=132 && x<282)return "finish_fade";
+            if(x>=292 && x<442)return "finish_loop";
+        }
+        if(y>=310 && y<326) {
+            if(x>=132 && x<224)return "cycle";
+            if(x>=232 && x<342)return "finish_sequence";
+            if(x>=352 && x<502)return "sequence_stop";
+        }
     } else {
+        if(y>=84 && y<100 && x>=500 && x<608)return "sequence_setup";
         if(y>=106 && y<122) {
             const char *commands[]={"record","stop_capture","discard_partial","stop_all"};
             for(int i=0;i<4;++i)if(x>=132+i*104 && x<228+i*104)return commands[i];
@@ -823,6 +855,19 @@ static void main_midi_learn_overlay(TsFramebuffer *fb, const TsUiState *ui)
                     state=midi_learn_target_state(&ui->config.midi_map,ui->midi_learn_pending,target);
                     midi_learn_tint(fb,px+8+i*TS_MOSAIC_LIVE_TRANSPORT_STEP,py+TS_MOSAIC_LIVE_TRANSPORT_Y,
                         TS_MOSAIC_LIVE_TRANSPORT_W,TS_MOSAIC_LIVE_TRANSPORT_H,state);
+                }
+                goto learn_footer;
+            }
+            if(ui->mosaic_live_advanced==2) {
+                static const struct {int x,y,w;const char *command;} controls[]={
+                    {132,106,92,"sequence_all"},{232,106,160,"sequence_member"},{402,106,88,"sequence_up"},{500,106,108,"sequence_down"},
+                    {132,240,150,"step_length"},{292,240,150,"length_mode"},{452,240,156,"step_fade"},
+                    {132,268,150,"finish_fade"},{292,268,150,"finish_loop"},
+                    {132,310,92,"cycle"},{232,310,110,"finish_sequence"},{352,310,150,"sequence_stop"}};
+                for(size_t n=0;n<sizeof(controls)/sizeof(controls[0]);++n) {
+                    snprintf(target,sizeof(target),"mosaic.live.%s",controls[n].command);
+                    state=midi_learn_target_state(&ui->config.midi_map,ui->midi_learn_pending,target);
+                    midi_learn_tint(fb,controls[n].x,controls[n].y,controls[n].w,16,state);
                 }
                 goto learn_footer;
             }

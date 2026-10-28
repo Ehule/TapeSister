@@ -5,6 +5,10 @@ cockpit PR. Every loop should receive a persistent identity, whether recorded
 live or converted from an existing card. Existing audio/card edits, native
 pattern cards and project compatibility are part of that goal.
 
+The [loop-sequencer follow-up](MOSAIC_LOOP_SEQUENCER.md) now saves a separate
+performance order and background membership while preserving existing Card
+IDs. Shared player identities and linked launchers remain future work.
+
 ## Identity
 
 - Preserve existing internal Card IDs and their MIDI targets.

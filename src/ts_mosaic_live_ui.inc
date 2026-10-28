@@ -45,8 +45,13 @@ static void mosaic_live_transport_icon(TsFramebuffer *fb,int x,int y,int index,i
     if(index==3) {rect(fb,x+5,y+5,3,10,ink);rect(fb,x+12,y+5,3,10,ink);return;}
     if(index==4) {rect(fb,x+5,y+5,10,10,ink);return;}
     int left=index<2;
-    if(index==0)rect(fb,x+3,y+5,2,10,ink);
-    if(index==6)rect(fb,x+15,y+5,2,10,ink);
+    if(index==0 || index==6) {
+        for(int step=0;step<2;++step)for(int i=0;i<5;++i) {
+            int half=index==0?i:4-i;
+            rect(fb,x+4+step*7+i,y+10-half,1,2*half+1,ink);
+        }
+        return;
+    }
     for(int i=0;i<7;++i) {
         int px=x+6+i;
         int half=left?i:6-i;
@@ -73,13 +78,105 @@ static void mosaic_live_wave(TsFramebuffer *fb,int x,int y,const TsUiState *ui,c
         rect(fb,x+1+column,y+9-half,1,2*half+1,color);
     }
 }
-static void mosaic_live_compact(TsFramebuffer *fb,const TsUiState *ui,const TsMosaicEvent *e,
+/* Both renderers use the same UI snapshot and timing. A stopped selection
+   must not hide another running loop, and capture setup is never play time. */
+enum { MOSAIC_DISC_STOP, MOSAIC_DISC_RECORD, MOSAIC_DISC_PREPARE,
+       MOSAIC_DISC_PLAY, MOSAIC_DISC_WAIT, MOSAIC_DISC_RELEASE };
+typedef struct {
+    const TsMosaicEvent *event;
+    int state;
+    uint32_t disc,ring;
+    double phase,remaining;
+    const char *label,*timer;
+} MosaicLooperDisplay;
+static const TsMosaicEvent *mosaic_looper_event(const TsUiState *ui)
+{
+    const TsMosaicEvent *selected=ts_mosaic_find(ui->mosaic,ui->mosaic_selected);
+    const TsMosaicEvent *sequence=ui->mosaic_sequence_running?ts_mosaic_find(ui->mosaic,ui->mosaic_sequence_id):NULL;
+    if(sequence)return sequence;
+    const TsMosaicLive *l=selected && selected->live?mosaic_live_snapshot(ui,selected):NULL;
+    if(l && l->id==selected->id && l->state && l->state!=TS_MOSAIC_LIVE_WAITING)return selected;
+    const TsMosaicEvent *best=selected;int priority=0;
+    for(int i=0;i<TS_MOSAIC_EVENTS;++i) {
+        const TsMosaicEvent *e=&ui->mosaic->events[i];const TsMosaicLive *l=&ui->mosaic_live[i];
+        if(!e->id || !e->live || l->id!=e->id || !l->state)continue;
+        int rank=l->state==TS_MOSAIC_LIVE_WAITING?1:3;
+        if(e==selected)++rank;
+        if(rank>priority){priority=rank;best=e;}
+    }
+    return best;
+}
+static MosaicLooperDisplay mosaic_looper_display(const TsUiState *ui)
+{
+    MosaicLooperDisplay d={.event=mosaic_looper_event(ui),.state=MOSAIC_DISC_STOP,
+        .disc=RGB(78,88,105),.ring=RGB(161,177,199),.label="STOP",.timer="STOPPED"};
+    const TsMosaicEvent *e=d.event;
+    const TsMosaicLive *l=e && e->live?mosaic_live_snapshot(ui,e):NULL;
+    int state=l && l->id==e->id?l->state:TS_MOSAIC_LIVE_STOPPED;
+    if(ui->mosaic_live_recording) {
+        d.state=MOSAIC_DISC_RECORD;d.disc=RGB(229,24,32);d.ring=RGB(255,139,119);d.label="RECORD";
+        if(ui->mosaic_live_duration>0) {
+            d.phase=ui->mosaic_live_seconds/ui->mosaic_live_duration;
+            d.remaining=fmax(0,ui->mosaic_live_duration-ui->mosaic_live_seconds);d.timer="TAKE LEFT";
+        } else {d.remaining=ui->mosaic_live_seconds;d.timer="REC / MANUAL";}
+    } else if(ui->mosaic_live_finishing) {
+        d.state=MOSAIC_DISC_PREPARE;d.disc=RGB(151,101,28);d.ring=RGB(255,200,106);d.label="PREP";d.timer="PREPARING";
+    } else if(state==TS_MOSAIC_LIVE_WAITING) {
+        d.state=MOSAIC_DISC_WAIT;d.disc=RGB(151,101,28);d.ring=RGB(255,200,106);d.label="WAIT";d.timer="WAITING BEAT";
+    } else if(state) {
+        d.state=state==TS_MOSAIC_LIVE_RELEASING?MOSAIC_DISC_RELEASE:MOSAIC_DISC_PLAY;
+        d.disc=RGB(30,139,83);d.ring=RGB(129,221,162);d.label=d.state==MOSAIC_DISC_RELEASE?"END":"PLAY";
+        double cycle=ts_mosaic_live_cycle(e),speed=1;
+        if(e->live_tempo && ui->mosaic_live_master && e->live_beats>0 && ui->mosaic_live_quarter>0)
+            speed=fmax(.03125,fmin(32,cycle/(e->live_beats*ui->mosaic_live_quarter)));
+        if(ui->mosaic_sequence_running || e->live_finite) {
+            double duration=ui->mosaic_sequence_running?ui->mosaic_sequence_duration:e->duration;
+            d.phase=duration>0?l->elapsed/duration:0;
+            d.remaining=fmax(0,(duration-l->elapsed)/speed);
+            d.timer=ui->mosaic_sequence_running?"STEP LEFT":"LOOP LEFT";
+        } else {
+            d.phase=l->phase;
+            double pitch=ts_tuning_note_pitch(&e->tuning,e->notes[0]-60);
+            d.remaining=cycle*(1-d.phase)/fmax(.000001,speed*pitch);d.timer="CYCLE LEFT";
+        }
+        if(state==TS_MOSAIC_LIVE_RELEASING)d.timer="RELEASING";
+    }
+    d.phase=fmax(0,fmin(1,d.phase));return d;
+}
+/* Symbol coordinates in logical circle units, shared with native coverage. */
+static int mosaic_looper_symbol(int state,double x,double y)
+{
+    if(state==MOSAIC_DISC_PLAY || state==MOSAIC_DISC_RELEASE)
+        return x>=-8 && x<=12 && fabs(y+2)<=(12-x)*.6;
+    if(state==MOSAIC_DISC_WAIT)
+        return y>=-12 && y<=8 && ((x>=-9 && x<=-3) || (x>=3 && x<=9));
+    return state==MOSAIC_DISC_STOP && x>=-9 && x<=9 && y>=-12 && y<=6;
+}
+static void mosaic_looper_disc_label(TsFramebuffer *fb,int x,int y,double sx,double sy,const MosaicLooperDisplay *d,const TsUiState *ui)
+{
+    if(d->state==MOSAIC_DISC_RECORD || d->state==MOSAIC_DISC_PREPARE) {
+        mosaic_live_center_text(fb,x,y+78,d->state==MOSAIC_DISC_PREPARE?"...":d->label,RGB(255,255,255));
+    } else {
+        for(int row=(int)floor(-14*sy);row<=(int)ceil(11*sy);++row)
+            for(int col=(int)floor(-12*sx);col<=(int)ceil(14*sx);++col)
+                if(mosaic_looper_symbol(d->state,col/sx,row/sy))rect(fb,x+83+col,y+86+row,1,1,RGB(255,255,255));
+    }
+    char label[24];
+    if(d->state==MOSAIC_DISC_RECORD) {
+        /* The configured take length belongs only to the recording state. */
+        if(ui->mosaic->live_capture.length)snprintf(label,sizeof(label),"%d %s",ui->mosaic->live_capture.length,ui->mosaic->live_capture.units?"BEATS":"SEC");
+        else snprintf(label,sizeof(label),"MANUAL");
+    } else snprintf(label,sizeof(label),"%s",d->label);
+    if(sx>=.65 && sy>=.65)mosaic_live_center_text(fb,x,y+86+(int)lrint(12*sy),label,RGB(255,255,255));
+}
+static void mosaic_live_compact(TsFramebuffer *fb,const TsUiState *ui,
     const char *keyboard,uint32_t ink,uint32_t accent,uint32_t dim,uint32_t panel)
 {
-    const TsMosaic *m=ui->mosaic;const TsMosaicLive *l=e && e->live?mosaic_live_snapshot(ui,e):NULL;
+    const TsMosaic *m=ui->mosaic;const TsMosaicEvent *selected=ts_mosaic_find(ui->mosaic,ui->mosaic_selected);
+    MosaicLooperDisplay display=mosaic_looper_display(ui);const TsMosaicEvent *e=display.event;
+    const TsMosaicLive *l=e && e->live?mosaic_live_snapshot(ui,e):NULL;
     int state=l && l->id==e->id?l->state:TS_MOSAIC_LIVE_STOPPED;
     int capture=ui->mosaic_live_recording,finishing=ui->mosaic_live_finishing;
-    uint32_t color=capture?RGB(255,139,119):state==TS_MOSAIC_LIVE_PLAYING?RGB(129,221,202):accent;
     int x,y;ts_ui_mosaic_live_origin(ui,&x,&y);
     rect(fb,x,y,TS_MOSAIC_LIVE_W,TS_MOSAIC_LIVE_H,accent);
     rect(fb,x+2,y+2,TS_MOSAIC_LIVE_W-4,TS_MOSAIC_LIVE_H-4,panel);
@@ -88,55 +185,38 @@ static void mosaic_live_compact(TsFramebuffer *fb,const TsUiState *ui,const TsMo
     if(!m->live_capture.source)snprintf(line,sizeof(line),"EXT %s / MON %s",ui->config.record_input_channel==TS_INPUT_CHANNEL_STEREO?"L+R":ui->config.record_input_channel==TS_INPUT_CHANNEL_RIGHT?"R":"L",ui->monitor_enabled?"ON":"OFF");
     else snprintf(line,sizeof(line),"SRC: %s",m->live_capture.source==1?"DRY KEYS":"OUTPUT + LOOPS");
     text(fb,x+8,y+25,line,m->live_capture.source==2?accent:dim,1);
-    double phase=state?fmax(0,fmin(1,l->phase)):0,remaining=0;
-    const char *timer="CYCLE LEFT";
-    if(capture) {
-        if(ui->mosaic_live_duration>0) {
-            phase=fmin(1,ui->mosaic_live_seconds/ui->mosaic_live_duration);
-            remaining=fmax(0,ui->mosaic_live_duration-ui->mosaic_live_seconds);timer="TAKE LEFT";
-        } else {phase=fmin(1,ui->mosaic_live_seconds/60);remaining=ui->mosaic_live_seconds;timer="REC / MANUAL";}
-    } else if(finishing) {timer="PREPARING";phase=0;}
-    else if(e && e->live) {
-        double cycle=ts_mosaic_live_cycle(e),speed=1;
-        if(e->live_tempo && ui->mosaic_live_master && e->live_beats>0 && ui->mosaic_live_quarter>0)
-            speed=fmax(.03125,fmin(32,cycle/(e->live_beats*ui->mosaic_live_quarter)));
-        double pitch=ts_tuning_note_pitch(&e->tuning,e->notes[0]-60);
-        remaining=cycle*(1-phase)/fmax(.000001,speed*pitch);
-        if(e->live_finite)remaining=fmin(remaining,fmax(0,(e->duration-(state?l->elapsed:0))/speed));
-        if(state==TS_MOSAIC_LIVE_WAITING)timer="WAITING BEAT";
-        else if(state==TS_MOSAIC_LIVE_RELEASING)timer="RELEASING";
-        else if(!state)timer="READY / CYCLE";
-    } else timer="NEW LAYER";
     double sx,sy;ts_ui_mosaic_live_circle_scale(ui,&sx,&sy);
-    mosaic_live_ring(fb,x+83,y+86,sx,sy,phase,color,ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_EDGE,RGB(64,54,70)));
-    mosaic_live_circle(fb,x+83,y+86,31,sx,sy,finishing?RGB(99,49,55):RGB(229,24,32));
-    text(fb,x+65,y+79,finishing?"...":"REC",RGB(255,255,255),2);
-    if(m->live_capture.length)snprintf(line,sizeof(line),"%d %s",m->live_capture.length,m->live_capture.units?"BEATS":"SEC");
-    else snprintf(line,sizeof(line),"MANUAL");
-    if(sx>=.65 && sy>=.65)mosaic_live_center_text(fb,x,y+86+(int)lrint(12*sy),line,RGB(255,225,225));
-    snprintf(line,sizeof(line),"%05.1fS %s",remaining,timer);mosaic_live_center_text(fb,x,y+135,line,ink);
-    if(capture || finishing)snprintf(line,sizeof(line),"%s / %s",m->live_capture.continuous?"CONTINUOUS":"SINGLE",capture?"RECORDING":"FINISHING");
+    mosaic_live_ring(fb,x+83,y+86,sx,sy,display.phase,display.ring,ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_EDGE,RGB(64,54,70)));
+    mosaic_live_circle(fb,x+83,y+86,31,sx,sy,display.disc);
+    mosaic_looper_disc_label(fb,x,y,sx,sy,&display,ui);
+    snprintf(line,sizeof(line),"%05.1fS %s",display.remaining,display.timer);mosaic_live_center_text(fb,x,y+135,line,ink);
+    if((capture || finishing) && ui->mosaic_sequence_running)snprintf(line,sizeof(line),"%s / %s %d OF %d",capture?"REC":"PREP",ui->mosaic_sequence_finishing?"END":"CYCLE",ui->mosaic_sequence_index+1,ui->mosaic_sequence_count);
+    else if(capture || finishing)snprintf(line,sizeof(line),"%s / %s",m->live_capture.continuous?"CONTINUOUS":"SINGLE",capture?"RECORDING":"FINISHING");
+    else if(ui->mosaic_sequence_running)snprintf(line,sizeof(line),"%s / LOOP %d OF %d",ui->mosaic_sequence_finishing?"FINISHING":"CYCLING",ui->mosaic_sequence_index+1,ui->mosaic_sequence_count);
     else if(e)snprintf(line,sizeof(line),"CARD #%llu / %s",(unsigned long long)e->id,e->muted?"MUTED":e->solo?"SOLO":e->live?"LOOP EVENT":"TIMELINE");
     else snprintf(line,sizeof(line),"SELECT A CARD / REC ADDS ONE");
     char short_line[26];snprintf(short_line,sizeof(short_line),"%.25s",line);
     mosaic_live_center_text(fb,x,y+147,short_line,dim);
     mosaic_live_wave(fb,x+8,y+160,ui,e,capture?RGB(255,139,149):accent);
     for(int i=0;i<TS_MOSAIC_LIVE_TRANSPORT_COUNT;++i) {
-        int active=i==2?(ui->mosaic_live_play_all?ui->mosaic_live_loops>0:state!=0):i==3?capture:0;
+        int active=i==0?ui->mosaic_sequence_running && !ui->mosaic_sequence_finishing:i==6?ui->mosaic_sequence_finishing:
+            i==2?(ui->mosaic_live_play_all?ui->mosaic_live_loops>0:state!=0):i==3?capture:0;
         mosaic_live_transport_icon(fb,x+8+i*22,y+183,i,active,i==4?RGB(255,151,151):ink,panel);
     }
-    snprintf(short_line,sizeof(short_line),"%.25s",ui->mosaic_live_hover[0]?ui->mosaic_live_hover:"REC: NEXT / PAUSE: WAIT");
+    snprintf(short_line,sizeof(short_line),"%.25s",ui->mosaic_live_hover[0]?ui->mosaic_live_hover:"CLICK DISC: RECORD / NEXT");
     mosaic_live_center_text(fb,x,y+207,short_line,accent);
     mosaic_button(fb,x+8,y+220,72,"",0,1);
     rect(fb,x+10+(ui->mosaic_live_play_all?35:0),y+222,33,12,palette_blend(panel,ink,15));
     text(fb,x+16,y+225,"ONE",ui->mosaic_live_play_all?dim:ink,1);
     text(fb,x+51,y+225,"ALL",ui->mosaic_live_play_all?ink:dim,1);
-    mosaic_button(fb,x+86,y+220,72,e && e->source->pattern?"PATTERN":"LOOP EVENT",e && e->live,1);
+    mosaic_button(fb,x+86,y+220,72,selected && selected->source->pattern?"PATTERN":"LOOP EVENT",selected && selected->live,1);
     mosaic_button(fb,x+8,y+244,72,ui->mosaic_live_keys?"KEYS ON":"EDIT",ui->mosaic_live_keys,1);
     mosaic_button(fb,x+86,y+244,72,"ADVANCED",0,1);
     snprintf(line,sizeof(line),"%.24s",keyboard);mosaic_live_center_text(fb,x,y+266,line,dim);
     detail_opaque_panel(fb,x,y,TS_MOSAIC_LIVE_W,TS_MOSAIC_LIVE_H);
 }
+#include "ts_mosaic_sequence_ui.inc"
+#include "ts_mosaic_looper_circle.inc"
 static void mosaic_live_overlay(TsFramebuffer *fb,const TsUiState *ui,const TsInstrument *instrument)
 {
     if(!ui->mosaic_live_open || !ui->mosaic || ts_ui_foreground_panel_open(ui))return;
@@ -146,11 +226,13 @@ static void mosaic_live_overlay(TsFramebuffer *fb,const TsUiState *ui,const TsIn
     uint32_t panel=ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_PANEL,RGB(31,28,38));
     char keyboard[48];snprintf(keyboard,sizeof(keyboard),"%s",ui->mosaic_live_keyboard);
     if(!keyboard[0])snprintf(keyboard,sizeof(keyboard),"TILE %02d / %s",instrument->selected_slot+1,ts_audition_source_name(ui->audition_source));
-    if(!ui->mosaic_live_advanced){mosaic_live_compact(fb,ui,e,keyboard,ink,accent,dim,panel);return;}
+    if(!ui->mosaic_live_advanced){mosaic_live_compact(fb,ui,keyboard,ink,accent,dim,panel);return;}
+    if(ui->mosaic_live_advanced==2){mosaic_sequence_setup(fb,ui,e,ink,accent,dim,panel);return;}
     rect(fb,120,78,510,272,accent);rect(fb,122,80,506,268,panel);
     char line[120];snprintf(line,sizeof(line),"LIVE LOOPS / %d ACTIVE / %s %.2FS",ui->mosaic_live_loops,
         ui->mosaic_live_recording?"RECORDING":ui->mosaic_live_finishing?"FINISHING":"IDLE",ui->mosaic_live_seconds);
     text(fb,132,88,line,ui->mosaic_live_recording?accent:ink,1);
+    mosaic_button(fb,500,84,108,"SEQUENCE",0,1);
     const char *buttons[]={ui->mosaic_live_recording?"NEXT LAYER":"RECORD","STOP RECORDING","DROP PART","STOP LOOPS"};
     for(int i=0;i<4;++i)mosaic_button(fb,132+i*104,106,96,buttons[i],i==0 && ui->mosaic_live_recording,1);
     mosaic_button(fb,132,140,134,(const char *[]){"SRC: EXT INPUT","SRC: DRY KEYS","SRC: OUTPUT"}[m->live_capture.source],0,1);
@@ -171,8 +253,8 @@ static void mosaic_live_overlay(TsFramebuffer *fb,const TsUiState *ui,const TsIn
     mosaic_button(fb,240,224,92,e && e->live_finite?"CARD ENDS":"UNTIL STOP",e && e->live_finite,1);
     mosaic_button(fb,340,224,90,"LAUNCH",0,1);mosaic_button(fb,438,224,90,"STOP",0,1);mosaic_button(fb,536,224,72,"RESTART",0,1);
     mosaic_button(fb,132,254,150,e && e->live_tempo?"TEMPO: MASTER TAPE":"TEMPO: FREE",e && e->live_tempo,1);
-    mosaic_button(fb,292,254,150,e && e->live_transport?"GROUP: FOLLOW":"GROUP: IGNORE",e && e->live_transport,1);
-    mosaic_button(fb,452,254,156,e && e->live_position?"SEEK: RESTART":"SEEK: IGNORE",e && e->live_position,1);
+    mosaic_button(fb,292,254,150,ui->mosaic_sequence_selection_owned?"GROUP: SEQ OWNS":e && e->live_transport?"GROUP: FOLLOW":"GROUP: IGNORE",!ui->mosaic_sequence_selection_owned && e && e->live_transport,1);
+    mosaic_button(fb,452,254,156,ui->mosaic_sequence_selection_owned?"SEEK: SEQ OWNS":e && e->live_position?"SEEK: RESTART":"SEEK: IGNORE",!ui->mosaic_sequence_selection_owned && e && e->live_position,1);
     if(e && e->live)snprintf(line,sizeof(line),"%s / SOURCE %.3FS / CARD %.2FS = %.2FX %s",mosaic_live_state_name(ui,e),ts_mosaic_live_cycle(e),e->duration,e->duration/fmax(.000001,ts_mosaic_live_cycle(e)),e->live_finite?"END":"INF");
     else snprintf(line,sizeof(line),"SELECT AN AUDIO CARD / LIVE LOOPS ARE GOLD WITH OWN PLAYHEADS");
     text(fb,132,286,line,ink,1);

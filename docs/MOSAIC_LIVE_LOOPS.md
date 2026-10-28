@@ -1,9 +1,13 @@
-# Mosaic live loops — stage 1
+# Mosaic live loops
 
 Live loops are audio cards on the existing Mosaic canvas. Ordinary audio and
 TrackSister pattern cards keep their timeline playback. There is no second
 canvas or LoopSister window. Built from main after master-clock PR #163 merged
 (`d11b052285b93f5dcf63c732bb39e8345d53eb00`).
+
+The [loop-sequencer follow-up](MOSAIC_LOOP_SEQUENCER.md) adds Cycle/Finish Pass,
+explicit sequence/background membership, musical Finish Fade and a smooth
+native-resolution REC disc/ring.
 
 ## First performance
 
@@ -48,14 +52,18 @@ snapshot, not a hardware-latency countdown. The large red button always records.
 The current take's waveform grows on the canvas and in the panel's small strip;
 the strip shows the selected audio card between recordings.
 
-The seven icon buttons are First, Previous, Play, Pause/Stop Recording, Stop,
-Next and Last. Hover gives their names; all are MIDI Learn targets. The **ONE /
+The seven icon buttons are Cycle, Previous, Play, Pause/Stop Recording, Stop,
+Next and Finish Pass. Hover gives their names; all are MIDI Learn targets. The **ONE /
 ALL** selector sets which loop players Play launches. Launches are additive:
 other loops keep playing, and an already-running player keeps its phase.
-First/Previous/Next/Last select, reveal and launch a card in existing Card-ID
-creation order, independent of canvas position. Previous/Next stop at the ends;
+Previous/Next select, reveal and launch a card in existing Card-ID
+creation order, independent of canvas position, ending sequence control first. They stop at the ends;
 there is no automatic wrap, timeline seek, or restart of a running player.
 Advanced retains explicit selected-card Stop and Restart.
+Cycle hands over through the configured sequence repeatedly; Finish ends the
+current pass after its last step. Separate background loops keep playing.
+Advanced > Sequence exposes order, membership, step length, End Fade and Finish
+Fade. The ring counts down the current step while sequencing.
 
 ### Convert an existing audio card
 
@@ -215,8 +223,9 @@ playback, manual/automatic successive capture, MIDI control and persistence.
 Enable the usual MIDI Learn and click the large central button for the stable
 continuous-layer action (`mosaic.live.primary`). The existing selected-card
 toggle remains `mosaic.live.toggle`. The new icon
-targets are `first_loop`, `previous_loop`, `play`, `stop_capture`, `halt`,
-`next_loop` and `last_loop`, all under `mosaic.live.`. Scope and card role are
+targets are `cycle`, `previous_loop`, `play`, `stop_capture`, `halt`,
+`next_loop` and `finish_sequence`, all under `mosaic.live.`. The legacy
+`first_loop` / `last_loop` targets remain manual navigation shortcuts. Scope and card role are
 also learnable. `halt` stops capture and players; the existing `stop_all` keeps
 its loops-only meaning. Advanced also offers RECORD/NEXT,
 STOP RECORDING, DROP PART, STOP LOOPS, LAUNCH, STOP and RESTART. RECORD/NEXT is
@@ -239,6 +248,8 @@ the affected player, and undoing a deletion does not resurrect sound.
 Older projects default to ordinary cards and unchanged transport. Saves without
 live cards or changed loop settings retain Mosaic format 14. Live-enabled saves
 use format 15, so old builds reject them instead of silently losing behavior.
+Nondefault sequence order/background membership or Finish Fade uses format 16;
+opening still leaves all players and the sequencer stopped.
 Use a project copy when comparing with an older build.
 
 See [validation and the hardware exercise](validation/mosaic-live-loops.md).

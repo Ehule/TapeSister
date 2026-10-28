@@ -9498,6 +9498,27 @@ static void native_waveform_copy(SDL_Renderer *renderer, SDL_Texture *textures[2
     }
 }
 
+static int native_looper_prepare(SDL_Renderer *renderer,TsUiLooperCircle *circle,const TsUiState *ui)
+{
+    int width=0,height=0;
+    if(SDL_GetRendererOutputSize(renderer,&width,&height)){circle->valid=0;return 0;}
+    return ts_ui_mosaic_looper_circle(circle,ui,width,height) && circle->changed;
+}
+static void native_looper_copy(SDL_Renderer *renderer,SDL_Texture **texture,const TsUiLooperCircle *circle)
+{
+    if(!circle->valid)return;
+    int width=0,height=0,upload=circle->changed;
+    if(*texture)SDL_QueryTexture(*texture,NULL,NULL,&width,&height);
+    if(width!=circle->width || height!=circle->height) {
+        if(*texture)SDL_DestroyTexture(*texture);
+        *texture=SDL_CreateTexture(renderer,SDL_PIXELFORMAT_ARGB8888,SDL_TEXTUREACCESS_STREAMING,circle->width,circle->height);upload=1;
+    }
+    if(!*texture)return;
+    if(upload && SDL_UpdateTexture(*texture,NULL,circle->pixels,circle->width*sizeof(uint32_t))) {
+        SDL_DestroyTexture(*texture);*texture=NULL;return;
+    }
+    SDL_Rect target={circle->x,circle->y,circle->width,circle->height};SDL_RenderCopy(renderer,*texture,NULL,&target);
+}
 static void sister_set_parameter(TsSisterParameters *parameters,
                                  int parameter, float amount)
 {
@@ -13802,6 +13823,7 @@ int main(int argc, char **argv)
     SDL_Texture *texture = NULL;
     SDL_Texture *waveform_textures[2] = {0};
     TsUiWaveformDetail waveform_details[2] = {0};
+    TsUiLooperCircle looper_circle={0};SDL_Texture *looper_texture=NULL;
     SDL_AudioDeviceID device = 0;
     SDL_AudioDeviceID input_device = 0;
     SDL_AudioSpec desired, obtained;
@@ -18520,6 +18542,7 @@ int main(int argc, char **argv)
             SDL_GetWindowSize(window,&ui.mosaic_live_output_width,&ui.mosaic_live_output_height);
             native_waveform_prepare(renderer,waveform_details,main_waveform_detail_allowed(&ui));
             ts_ui_render(&framebuffer, &ui, &instrument);
+            int circle_changed=native_looper_prepare(renderer,&looper_circle,&ui);
             ts_profile_end(TS_PROF_RENDER, profile_paint);
             uint64_t profile_upload = ts_profile_begin(TS_PROF_UPLOAD);
             int upload = update_texture_damage(texture, &framebuffer, frame_snapshot,
@@ -18527,9 +18550,10 @@ int main(int argc, char **argv)
             int detail_changed=0;
             for(int i=0;i<2;i++)detail_changed|=waveform_details[i].valid &&
                 waveform_details[i].analysis_count!=presented_detail_analysis[i];
-            if (upload && (upload==1 || force_present || detail_changed || animated || editing)) {
+            if ((upload || circle_changed) && (upload==1 || force_present || detail_changed || circle_changed || animated || editing)) {
                 SDL_RenderCopy(renderer, texture, NULL, NULL);
                 native_waveform_copy(renderer,waveform_textures,waveform_details,&framebuffer);
+                native_looper_copy(renderer,&looper_texture,&looper_circle);
                 for(int i=0;i<2;i++)presented_detail_analysis[i]=waveform_details[i].analysis_count;
                 ts_profile_end(TS_PROF_UPLOAD, profile_upload);
                 uint64_t profile_present = ts_profile_begin(TS_PROF_PRESENT);
@@ -18710,6 +18734,7 @@ int main(int argc, char **argv)
             fprintf(stderr, "TapeSister config save: %s\n", config_error);
     }
     free(frame_snapshot);
+    ts_ui_mosaic_looper_circle_free(&looper_circle);if(looper_texture)SDL_DestroyTexture(looper_texture);
     for(int i=0;i<2;++i) {
         ts_ui_waveform_detail_free(&waveform_details[i]);
         if(waveform_textures[i])SDL_DestroyTexture(waveform_textures[i]);

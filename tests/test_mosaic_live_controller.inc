@@ -16,22 +16,32 @@ static void live_controller_screenshot_size(TsUiState *u,const char *path,int wi
     native_waveform_prepare(renderer,details,main_waveform_detail_allowed(u));ts_audio_ui_render(fb,u,&instrument);
     assert(!SDL_UpdateTexture(base,NULL,fb->pixels,640*sizeof(uint32_t)));
     assert(!SDL_RenderCopy(renderer,base,NULL,NULL));native_waveform_copy(renderer,textures,details,fb);
+    TsUiLooperCircle circle={0};SDL_Texture *circle_texture=NULL;
+    assert(native_looper_prepare(renderer,&circle,u) || !circle.valid);
+    native_looper_copy(renderer,&circle_texture,&circle);
     uint32_t *pixels=malloc((size_t)width*height*sizeof(*pixels));assert(pixels);
     assert(!SDL_RenderReadPixels(renderer,NULL,SDL_PIXELFORMAT_ARGB8888,pixels,width*sizeof(*pixels)));
     if(u->mosaic_live_open && !u->mosaic_live_advanced) {
         assert(details[0].valid && details[1].valid); /* Canvas stays native while performing. */
         int px,py;ts_ui_mosaic_live_origin(u,&px,&py);
-        /* Measure the actual rendered red disc, independently of the logical
+        /* Measure the actual rendered status disc, independently of the logical
            aspect correction: a 5:4 display must not turn it into an oval. */
         if(!u->mosaic_live_finishing) {
             int left=width,top=height,right=-1,bottom=-1;
             for(int y=py*height/400;y<(py+TS_MOSAIC_LIVE_H)*height/400;++y)
                 for(int x=px*width/640;x<(px+TS_MOSAIC_LIVE_W)*width/640;++x)
-                    if((pixels[y*width+x]&0xffffffu)==0xe51820u) {
+                    if(pixels[y*width+x]==circle.keys[1]) {
                         if(x<left)left=x;if(x>right)right=x;if(y<top)top=y;if(y>bottom)bottom=y;
                     }
             assert(right>left && bottom>top);
-            assert(abs((right-left)-(bottom-top))<=(int)ceil(fmax(width/640.,height/400.))*2);
+            assert(abs((right-left)-(bottom-top))<=2);
+            unsigned blended=0;
+            for(int yy=0;yy<circle.height;++yy)for(int xx=0;xx<circle.width;++xx) {
+                size_t at=(size_t)yy*circle.width+xx;
+                if(circle.disc_alpha[at]>0 && circle.disc_alpha[at]<255)++blended;
+            }
+            assert(blended>100); /* Native edge coverage, not enlarged hard-edged pixels. */
+            uint64_t raster=circle.raster_count;assert(ts_ui_mosaic_looper_circle(&circle,u,width,height) && !circle.changed && circle.raster_count==raster);
         }
         char target[80];double sx,sy;ts_ui_mosaic_live_circle_scale(u,&sx,&sy);
         assert(ts_ui_midi_target_from_point(u,px+83,py+86,target,sizeof(target)) && !strcmp(target,"mosaic.live.primary"));
@@ -49,7 +59,9 @@ static void live_controller_screenshot_size(TsUiState *u,const char *path,int wi
             }
         }
         if(width==1280 && height==800)for(int y=py*2;y<(py+TS_MOSAIC_LIVE_H)*2;++y)
-            for(int x=px*2;x<(px+TS_MOSAIC_LIVE_W)*2;++x)assert(pixels[y*1280+x]==fb->pixels[y/2*640+x/2]);
+            for(int x=px*2;x<(px+TS_MOSAIC_LIVE_W)*2;++x)
+                if(x<circle.x || x>=circle.x+circle.width || y<circle.y || y>=circle.y+circle.height)
+                    assert(pixels[y*1280+x]==fb->pixels[y/2*640+x/2]);
     }
     if(path) {
         FILE *file=fopen(path,"wb");assert(file);fprintf(file,"P6\n%d %d\n255\n",width,height);
@@ -58,6 +70,7 @@ static void live_controller_screenshot_size(TsUiState *u,const char *path,int wi
     }
     free(pixels);free(fb);
     for(int i=0;i<2;++i){ts_ui_waveform_detail_free(&details[i]);SDL_DestroyTexture(textures[i]);}
+    SDL_DestroyTexture(circle_texture);ts_ui_mosaic_looper_circle_free(&circle);
     SDL_DestroyTexture(base);SDL_DestroyRenderer(renderer);SDL_DestroyWindow(window);
     u->mosaic_live_output_width=old_width;u->mosaic_live_output_height=old_height;
 }
@@ -65,6 +78,8 @@ static void live_controller_screenshot(TsUiState *u,const char *path)
 {live_controller_screenshot_size(u,path,1280,800);}
 #include "test_mosaic_live_performance.inc"
 #include "test_mosaic_looper_cockpit.inc"
+#include "test_mosaic_sequence_controller.inc"
+#include "test_mosaic_looper_status.inc"
 static void test_mosaic_live_controller(SDL_Window *window,SDL_AudioDeviceID device)
 {
     AudioState *a=routing_audio(0);TsUiState *u=mosaic_record_ui_fixture(a);
@@ -203,4 +218,6 @@ static void test_mosaic_live_controller(SDL_Window *window,SDL_AudioDeviceID dev
     SDL_setenv("TAPESISTER_CAPTURES","",1);
     test_mosaic_live_performance(window,device);
     test_mosaic_looper_cockpit(window,device);
+    test_mosaic_sequence_controller(window,device);
+    test_mosaic_looper_status(window,device);
 }

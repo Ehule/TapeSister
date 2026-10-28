@@ -17,6 +17,7 @@ int ts_mosaic_live_launch(TsMosaic *m,uint64_t id,int quantize)
     TsMosaicEvent *e=ts_mosaic_find(m,id);
     if(!e || !e->live || e->source->pattern)return 0;
     int slot=(int)(e-m->events);TsMosaicLive *l=&m->live[slot];
+    if(ts_mosaic_sequence_owns(m,slot))return 1; /* Sequence owns its launch boundaries. */
     if(l->id==id && l->state!=TS_MOSAIC_LIVE_STOPPED)return 1;
     *l=(TsMosaicLive){.id=id,.state=quantize && m->live_master?TS_MOSAIC_LIVE_WAITING:TS_MOSAIC_LIVE_PLAYING};
     m->voices[slot].active=0;m->schedule.valid=0;return 1;
@@ -24,16 +25,17 @@ int ts_mosaic_live_launch(TsMosaic *m,uint64_t id,int quantize)
 void ts_mosaic_live_stop(TsMosaic *m,uint64_t id)
 {
     if(!m)return;
+    if(!id || (ts_mosaic_find(m,id) && ts_mosaic_sequence_owns(m,(int)(ts_mosaic_find(m,id)-m->events))))ts_mosaic_sequence_stop(m);
     for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(m->events[i].id && m->events[i].live && (!id || m->events[i].id==id)) {
         TsMosaicLive *l=&m->live[i];
         if(l->id!=m->events[i].id)*l=(TsMosaicLive){.id=m->events[i].id};
-        if(l->state==TS_MOSAIC_LIVE_PLAYING){l->state=TS_MOSAIC_LIVE_RELEASING;l->release=0;}
-        else if(l->state==TS_MOSAIC_LIVE_WAITING)l->state=TS_MOSAIC_LIVE_STOPPED;
+        mosaic_live_release_slot(m,i);
     }
 }
 void ts_mosaic_live_restart(TsMosaic *m,uint64_t id)
 {
     TsMosaicEvent *e=ts_mosaic_find(m,id);if(!e || !e->live)return;
+    if(ts_mosaic_sequence_owns(m,(int)(e-m->events)))ts_mosaic_sequence_stop(m);
     m->live[e-m->events].state=TS_MOSAIC_LIVE_STOPPED;
     (void)ts_mosaic_live_launch(m,id,0);
 }
@@ -42,12 +44,27 @@ void ts_mosaic_live_transport(TsMosaic *m,int command)
     if(!m)return;
     for(int i=0;i<TS_MOSAIC_EVENTS;++i) {
         TsMosaicEvent *e=&m->events[i];if(!e->id || !e->live)continue;
+        if(ts_mosaic_sequence_owns(m,i))continue;
         if(command==2){if(e->live_position && m->live[i].state)ts_mosaic_live_restart(m,e->id);}
         else if(e->live_transport) {
             if(command==1)(void)ts_mosaic_live_launch(m,e->id,0);
             else ts_mosaic_live_stop(m,e->id);
         }
     }
+}
+void ts_mosaic_live_finish(TsMosaic *m,uint64_t id)
+{
+    TsMosaicEvent *e=ts_mosaic_find(m,id);if(!e || !e->live)return;
+    int i=(int)(e-m->events);if(ts_mosaic_sequence_owns(m,i))return;
+    TsMosaicLive *l=&m->live[i];if(l->id!=id || !l->state || l->state==TS_MOSAIC_LIVE_RELEASING)return;
+    if(l->state==TS_MOSAIC_LIVE_WAITING){l->state=0;return;}
+    double in,out;ts_mosaic_event_fades(e,&in,&out);
+    l->finish_gain=(float)fmax(0,fmin(1,fmin(in>0?l->elapsed/in:1,out>0?(e->duration-l->elapsed)/out:1)));
+    TsMosaicVoice *v=&m->voices[i];
+    if(v->attack<v->attack_frames)l->finish_gain*=ts_audition_attack_gain(v->attack,v->attack_frames);
+    v->attack=v->attack_frames;
+    l->finish_seconds=fmax(.005,e->finish_fade);l->release=0;l->state=TS_MOSAIC_LIVE_RELEASING;
+    m->voices[i].control_serial=0;
 }
 void ts_mosaic_live_clock(TsMosaic *m,int enabled,int running,double quarter,double phase)
 {
@@ -66,18 +83,18 @@ static TsStereoFrame mosaic_live_read(TsMosaic *m,int rate,TsSourceRouteMix *rou
             if(m->live_master && !m->live_clock_edge)continue;
             l->state=TS_MOSAIC_LIVE_PLAYING;
         }
-        if(saved->live_finite && l->elapsed+1e-10>=saved->duration){l->state=0;m->voices[i].active=0;continue;}
         TsMosaicEvent e=*saved;e.start=0;e.looping=1;e.mode=TS_LOOP_FORWARD;e.crossfade=0;
+        int sequenced=ts_mosaic_sequence_owns(m,i) && !m->sequence.pending && m->sequence.slots[m->sequence.index]==i;
+        if(sequenced){e.live_finite=1;e.duration=m->sequence.duration;}
+        if(e.live_finite && l->elapsed+1e-10>=e.duration){l->state=0;m->voices[i].active=0;continue;}
         if(!e.live_finite)e.fade_out=0;
-        double speed=1,cycle=ts_mosaic_live_cycle(&e);
-        if(e.live_tempo && m->live_master && e.live_beats>0)
-            speed=cycle/(e.live_beats*m->live_quarter);
         /* Deliberate tape-rate following changes pitch; no hidden stretching.
            Preserve phase when clock following or tempo is edited. */
-        speed=fmax(.03125,fmin(32,speed));
+        double speed=mosaic_live_speed(m,&e);if(sequenced)m->sequence.speed=speed;
         float release=1;
         if(l->state==TS_MOSAIC_LIVE_RELEASING) {
-            release=fmaxf(0,1-(float)++l->release/fmax(1,rate*.005));
+            release=fmaxf(0,1-(float)++l->release/fmax(1,rate*(l->finish_seconds>0?l->finish_seconds:.005)));
+            if(l->finish_seconds>0){release*=l->finish_gain;e.fade_in=e.fade_out=0;}
             if(release==0){l->state=0;m->voices[i].active=0;continue;}
         }
         TsStereoFrame card=mosaic_event_read(m->pattern_engine,&e,&m->voices[i],l->elapsed,rate,speed,

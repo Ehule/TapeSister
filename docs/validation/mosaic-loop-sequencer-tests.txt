@@ -1,0 +1,46 @@
+Internal ctest changing into directory: build-cockpit
+Test project build-cockpit
+      Start  16: test_performance_recorder
+ 1/20 Test  #16: test_performance_recorder ..................   Passed    0.04 sec
+      Start  50: test_sister_project_state
+ 2/20 Test  #50: test_sister_project_state ..................   Passed    0.08 sec
+      Start  64: tapesister_keyboard_sequence_tests
+ 3/20 Test  #64: tapesister_keyboard_sequence_tests .........   Passed    0.09 sec
+      Start  65: tapesister_master_clock_tests
+ 4/20 Test  #65: tapesister_master_clock_tests ..............   Passed    0.00 sec
+      Start  66: tapesister_midi_tests
+ 5/20 Test  #66: tapesister_midi_tests ......................   Passed    0.00 sec
+      Start  67: tapesister_external_record_tests
+ 6/20 Test  #67: tapesister_external_record_tests ...........   Passed    0.02 sec
+      Start  72: tapesister_project_save_tests
+ 7/20 Test  #72: tapesister_project_save_tests ..............   Passed    0.30 sec
+      Start  76: tapesister_audio_config_tests
+ 8/20 Test  #76: tapesister_audio_config_tests ..............   Passed    0.01 sec
+      Start  84: tapesister_source_route_controller_tests
+ 9/20 Test  #84: tapesister_source_route_controller_tests ...   Passed    3.00 sec
+      Start  85: tapesister_f11_cockpit_tests
+10/20 Test  #85: tapesister_f11_cockpit_tests ...............   Passed    0.36 sec
+      Start  86: tapesister_clock_routing_tests
+11/20 Test  #86: tapesister_clock_routing_tests .............   Passed    0.19 sec
+      Start  94: tapesister_tapehead_embedded_tests
+12/20 Test  #94: tapesister_tapehead_embedded_tests .........   Passed    4.83 sec
+      Start  96: tapesister_mosaic_pattern_tests
+13/20 Test  #96: tapesister_mosaic_pattern_tests ............   Passed    3.15 sec
+      Start 104: tapesister_native_waveform_tests
+14/20 Test #104: tapesister_native_waveform_tests ...........   Passed    1.74 sec
+      Start 111: tapesister_loop_capture_tests
+15/20 Test #111: tapesister_loop_capture_tests ..............   Passed    0.02 sec
+      Start 112: tapesister_mosaic_tests
+16/20 Test #112: tapesister_mosaic_tests ....................   Passed   10.01 sec
+      Start 113: tapesister_mosaic_controller_tests
+17/20 Test #113: tapesister_mosaic_controller_tests .........   Passed   37.03 sec
+      Start 115: tapesister_mosaic_live_controller_tests
+18/20 Test #115: tapesister_mosaic_live_controller_tests ....   Passed    2.54 sec
+      Start 137: tapesister_new_project_tests
+19/20 Test #137: tapesister_new_project_tests ...............   Passed    1.31 sec
+      Start 139: tapesister_offline_render_tests
+20/20 Test #139: tapesister_offline_render_tests ............   Passed    3.98 sec
+
+100% tests passed, 0 tests failed out of 20
+
+Total Test time (real) =  68.72 sec

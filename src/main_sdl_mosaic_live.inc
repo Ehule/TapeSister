@@ -100,6 +100,7 @@ fail:
     if(!source){ts_input_ownership_release(&s->ownership,TS_INPUT_CONSUMER_RECORD_ACTIVE);char ignored[160];sync_external_input_consumers(input_device,a,s,&ui->config,ignored,sizeof(ignored));}
     snprintf(ui->mosaic_live_status,sizeof(ui->mosaic_live_status),"LOOP CAPTURE FAILED: %.135s",error);return 0;
 }
+#include "main_sdl_mosaic_sequence.inc"
 static int mosaic_live_command(SDL_AudioDeviceID output,SDL_AudioDeviceID *input_device,AudioState *a,ExternalInputState *s,TsUiState *ui,const char *command)
 {
     TsMosaic *m=ui->mosaic;if(!m)return 0;
@@ -127,6 +128,12 @@ static int mosaic_live_command(SDL_AudioDeviceID output,SDL_AudioDeviceID *input
         if(s && input_device && s->loop_session)mosaic_live_capture_end(output,*input_device,s,!strcmp(command,"discard_partial"));return 1;
     }
     if(!strcmp(command,"scope")) {ui->mosaic_live_play_all^=1;return 1;}
+    if(!strcmp(command,"sequence_setup") || !strcmp(command,"capture_setup")) {
+        ui->mosaic_live_open=1;ui->mosaic_live_advanced=!strcmp(command,"sequence_setup")?2:1;return 1;
+    }
+    if(!strcmp(command,"step_length") || !strcmp(command,"step_fade") || !strcmp(command,"finish_fade") || !strcmp(command,"length_mode")) {
+        mosaic_sequence_parameter(output,ui,command,0,0);return 1;
+    }
     if(!strcmp(command,"halt") && s && input_device && s->loop_session) {
         s->loop_stop_playback=1;mosaic_live_capture_end(output,*input_device,s,0);
     }
@@ -136,7 +143,16 @@ static int mosaic_live_command(SDL_AudioDeviceID output,SDL_AudioDeviceID *input
     if(output)SDL_LockAudioDevice(output);
     TsMosaicEvent *e=ts_mosaic_find(m,id);
     int reveal=0;
-    if(!strcmp(command,"role")) {
+    if(!strcmp(command,"cycle")) {
+        int ok=ts_mosaic_sequence_cycle(m);
+        snprintf(ui->mosaic_live_status,sizeof(ui->mosaic_live_status),"%s",ok?"CYCLING / NEXT STEPS HAND OVER / FINISH ENDS THIS PASS":"NO SEQUENCE MEMBERS / ADVANCED > SEQUENCE TO SET ORDER");
+    } else if(!strcmp(command,"finish_sequence")) {
+        ts_mosaic_sequence_finish(m);
+        snprintf(ui->mosaic_live_status,sizeof(ui->mosaic_live_status),"%s",m->sequence.running?"FINISHING THIS PASS / BACKGROUND LOOPS KEEP PLAYING":"SEQUENCE STOPPED / CYCLE STARTS AT THE FIRST STEP");
+    } else if(!strcmp(command,"sequence_stop"))ts_mosaic_sequence_stop(m);
+    else if(!strncmp(command,"sequence_",9))mosaic_sequence_edit(ui,command);
+    else if(!strcmp(command,"finish_loop"))ts_mosaic_live_finish(m,id);
+    else if(!strcmp(command,"role")) {
         if(!e || e->source->pattern)snprintf(ui->mosaic_live_status,sizeof(ui->mosaic_live_status),"SELECT AN AUDIO CARD / PATTERN LOOP EVENTS NEED THEIR OWN PLAYERS");
         else if(!e->live && (ts_loop_base_mode(e->mode)!=TS_LOOP_FORWARD || (ts_loop_starts_at_sample(e->mode) && e->first)))
             snprintf(ui->mosaic_live_status,sizeof(ui->mosaic_live_status),"CARD KEPT / LIVE LOOPS NEED FORWARD RANGE PLAYBACK / EDIT CARD DIRECTION FIRST");
@@ -160,7 +176,9 @@ static int mosaic_live_command(SDL_AudioDeviceID output,SDL_AudioDeviceID *input
         }
         id=!strcmp(command,"first_loop")?first:!strcmp(command,"last_loop")?last:
             !strcmp(command,"previous_loop")?(id?(before?before:first):last):(id?(after?after:last):first);
-        if(id){mosaic_select_only(ui,id);e=ts_mosaic_find(m,id);(void)ts_mosaic_live_launch(m,id,m->live_capture.quantize);reveal=1;}
+        if(id){TsMosaicEvent *target=ts_mosaic_find(m,id);int was_owned=ts_mosaic_sequence_owns(m,(int)(target-m->events));ts_mosaic_sequence_stop(m);
+            mosaic_select_only(ui,id);e=ts_mosaic_find(m,id);
+            if(was_owned)ts_mosaic_live_restart(m,id);else (void)ts_mosaic_live_launch(m,id,m->live_capture.quantize);reveal=1;}
         else snprintf(ui->mosaic_live_status,sizeof(ui->mosaic_live_status),"NO LOOP EVENTS / SELECT AN AUDIO CARD AND ENABLE LOOP EVENT");
     } else if(!strcmp(command,"play")) {
         if(ui->mosaic_live_play_all) {
@@ -331,6 +349,21 @@ static int mosaic_live_event(const SDL_Event *event,SDL_Window *window,SDL_Audio
     if(down && event->button.button==SDL_BUTTON_LEFT && y>=310 && y<326 && x>=132 && x<276) {
         ui->mosaic_live_keys^=1;return 1;
     }
+    if(ui->mosaic_live_advanced==2) {
+        const char *command=ts_ui_mosaic_live_command_at(ui,x,y);
+        if(command && (wheel || (down && event->button.button==SDL_BUTTON_RIGHT)) &&
+            (!strcmp(command,"step_length") || !strcmp(command,"step_fade") || !strcmp(command,"finish_fade")))
+            mosaic_sequence_parameter(output,ui,command,wheel?wheel_event_delta(event,0):0,!wheel);
+        if((down || wheel) && y>=128 && y<236) {
+            int slots[TS_MOSAIC_EVENTS],count=ts_ui_mosaic_sequence_list(ui,slots),selected=0;
+            while(selected<count && m->events[slots[selected]].id!=ui->mosaic_selected)++selected;
+            if(selected==count)selected=0;
+            int row=wheel?SDL_clamp(selected-wheel_event_delta(event,0),0,SDL_max(0,count-1)):(selected/6)*6+(y-128)/18;
+            if(row<count)mosaic_select_only(ui,m->events[slots[row]].id);
+        }
+        if(down && x>=526 && y>=310 && y<326)ui->mosaic_live_advanced=0;
+        return 1;
+    }
     if(down && y>=166 && y<182) {
         if(x>=526 && x<608){ui->mosaic_live_advanced=0;return 1;}
         if(x>=424 && x<520) {
@@ -368,6 +401,10 @@ static int mosaic_live_event(const SDL_Event *event,SDL_Window *window,SDL_Audio
     if(down && y>=254 && y<270 && x>=132 && x<608) {
         if(output)SDL_LockAudioDevice(output);
         TsMosaicEvent *e=ts_mosaic_find(m,ui->mosaic_selected);
+        if(e && ts_mosaic_sequence_owns(m,(int)(e-m->events)) && x>=292) {
+            snprintf(ui->mosaic_live_status,sizeof(ui->mosaic_live_status),"SEQUENCER OWNS START/STOP AND POSITION / PER-CARD TEMPO REMAINS AVAILABLE");
+            if(output)SDL_UnlockAudioDevice(output);return 1;
+        }
         if(e && e->live){ts_mosaic_checkpoint(m);
             if(x<292){e->live_tempo^=1;if(e->live_beats<=0)e->live_beats=ts_mosaic_live_cycle(e)/(m->live_quarter>0?m->live_quarter:.5);}
             else if(x<452)e->live_transport^=1;

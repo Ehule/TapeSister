@@ -539,6 +539,7 @@ static TsStereoFrame mosaic_event_read(void *pattern_engine,const TsMosaicEvent 
     return card;
 }
 
+#include "ts_mosaic_sequence.inc"
 #include "ts_mosaic_live.inc"
 #include "ts_mosaic_schedule.inc"
 
@@ -650,6 +651,7 @@ TsStereoFrame ts_mosaic_read_routed(TsMosaic *m,int rate,TsSourceRouteMix *route
         m->rate=rate;
     }
     ts_pattern_engine_frame(m->pattern_engine);
+    if(m->sequence.running)mosaic_sequence_tick(m,rate);
     if(m->block_remaining)--m->block_remaining;
     else {m->schedule.valid=0;++m->control_serial;}
     if(!routes) {
@@ -658,7 +660,7 @@ TsStereoFrame ts_mosaic_read_routed(TsMosaic *m,int rate,TsSourceRouteMix *route
         TsStereoFrame live=mosaic_live_read(m,rate,NULL);
         m->rate=rate;out.l+=preview.l+live.l;out.r+=preview.r+live.r;return ts_stereo_frame_sanitize(out);
     }
-    if(!m->playing && !m->audition_id && !m->was_playing && !m->transition_remaining && !m->route_handoff.remaining && !m->schedule.live_count && m->schedule.valid)return (TsStereoFrame){0,0};
+    if(!m->playing && !m->sequence.running && !m->audition_id && !m->was_playing && !m->transition_remaining && !m->route_handoff.remaining && !m->schedule.live_count && m->schedule.valid)return (TsStereoFrame){0,0};
     TsSourceRouteMix mix={0};
     TsStereoFrame out=mosaic_read(m,rate,routes?&mix:NULL);
     TsStereoFrame preview=mosaic_audition_read(m,rate,&mix);
@@ -692,6 +694,8 @@ uint64_t ts_mosaic_hash(const TsMosaic *m)
         }
         if(e->live) {char live[128];snprintf(live,sizeof(live),"LIVE %d %d %d %d %.17g",e->live_finite,e->live_tempo,e->live_transport,e->live_position,e->live_beats);
             for(const unsigned char *p=(const unsigned char *)live;*p;++p){hash^=*p;hash*=1099511628211ull;}}
+        if(e->live_order || e->finish_fade) {char step[96];snprintf(step,sizeof(step),"STEP %d %.17g",e->live_order,e->finish_fade);
+            for(const unsigned char *p=(const unsigned char *)step;*p;++p){hash^=*p;hash*=1099511628211ull;}}
         const TsSourceRoute *r=&e->output_route;
         hash^=(uint64_t)(r->matrix_enabled+2*(r->pan+100)+402*(r->width+100));hash*=1099511628211ull;
         for(int d=0;d<TS_MATRIX_DESTINATIONS;++d){hash^=(uint64_t)r->matrix_gain[d];hash*=1099511628211ull;}
@@ -761,12 +765,19 @@ int ts_mosaic_save(const TsMosaic *m,const char *dir,char *error,size_t size)
     for(int i=0;i<TS_MOSAIC_MARKERS;++i)if(!mosaic_marker_valid(&m->markers[i])) {
         snprintf(error,size,"Invalid Mosaic marker %d",i+1);return 0;
     }
+    for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(m->events[i].id &&
+        (m->events[i].live_order < -1 || m->events[i].live_order>TS_MOSAIC_EVENTS ||
+         !isfinite(m->events[i].finish_fade) || m->events[i].finish_fade<0 || m->events[i].finish_fade>30)) {
+        snprintf(error,size,"Invalid Mosaic sequence/finish settings");return 0;
+    }
     char path[4096];
     if(snprintf(path,sizeof(path),"%s/mosaic.tsm",dir)>=(int)sizeof(path))return 0;
     FILE *f=fopen(path,"wb");if(!f)goto failed;
     int live_format=0;for(int i=0;i<TS_MOSAIC_EVENTS;++i)live_format|=m->events[i].id && m->events[i].live;
     live_format|=m->live_capture.source || m->live_capture.continuous || m->live_capture.units || m->live_capture.length!=4 || m->live_capture.quantize;
-    if(fprintf(f,"TAPESISTER_MOSAIC %d\nSETTINGS %d %.9g %.17g\nSPACING %d\n",live_format?15:14,m->repeat,m->gain,m->speed,m->auto_space)<0)goto close_failed;
+    int sequence_format=0;for(int i=0;i<TS_MOSAIC_EVENTS;++i)sequence_format|=m->events[i].id && (m->events[i].live_order || m->events[i].finish_fade);
+    live_format|=sequence_format;
+    if(fprintf(f,"TAPESISTER_MOSAIC %d\nSETTINGS %d %.9g %.17g\nSPACING %d\n",sequence_format?16:live_format?15:14,m->repeat,m->gain,m->speed,m->auto_space)<0)goto close_failed;
     if(live_format && fprintf(f,"LOOPER %d %d %d %d %d\n",m->live_capture.source,m->live_capture.continuous,m->live_capture.units,m->live_capture.length,m->live_capture.quantize)<0)goto close_failed;
     for(int i=0;i<TS_MOSAIC_VIEWS;++i) {
         const TsMosaicView *v=&m->views[i];
@@ -797,6 +808,7 @@ int ts_mosaic_save(const TsMosaic *m,const char *dir,char *error,size_t size)
             }
         }
         if(live_format && fprintf(f,"LIVE %d %d %d %d %d %.17g\n",e->live,e->live_finite,e->live_tempo,e->live_transport,e->live_position,e->live_beats)<0)goto close_failed;
+        if(sequence_format && fprintf(f,"STEP %d %.17g\n",e->live_order,e->finish_fade)<0)goto close_failed;
         if(fprintf(f,"PATTERN %d\n",e->source->pattern!=NULL)<0)goto close_failed;
         char name[129];
         for(int k=0;k<64;++k)snprintf(name+2*k,3,"%02x",(unsigned char)e->name[k]);
@@ -837,7 +849,7 @@ int ts_mosaic_load(TsMosaic *m,const char *dir,char *error,size_t size)
     if(length>=2 && line[length-2]=='\r' && line[length-1]=='\n') {
         line[length-2]='\n';line[length-1]='\0';
     }
-    int version=!strcmp(line,"TAPESISTER_MOSAIC 15\n")?15:!strcmp(line,"TAPESISTER_MOSAIC 14\n")?14:!strcmp(line,"TAPESISTER_MOSAIC 13\n")?13:!strcmp(line,"TAPESISTER_MOSAIC 12\n")?12:!strcmp(line,"TAPESISTER_MOSAIC 11\n")?11:!strcmp(line,"TAPESISTER_MOSAIC 10\n")?10:!strcmp(line,"TAPESISTER_MOSAIC 9\n")?9:!strcmp(line,"TAPESISTER_MOSAIC 8\n")?8:!strcmp(line,"TAPESISTER_MOSAIC 7\n")?7:!strcmp(line,"TAPESISTER_MOSAIC 6\n")?6:!strcmp(line,"TAPESISTER_MOSAIC 5\n")?5:!strcmp(line,"TAPESISTER_MOSAIC 4\n")?4:!strcmp(line,"TAPESISTER_MOSAIC 1\n")?1:!strcmp(line,"TAPESISTER_MOSAIC 2\n")?2:!strcmp(line,"TAPESISTER_MOSAIC 3\n")?3:0;
+    int version=!strcmp(line,"TAPESISTER_MOSAIC 16\n")?16:!strcmp(line,"TAPESISTER_MOSAIC 15\n")?15:!strcmp(line,"TAPESISTER_MOSAIC 14\n")?14:!strcmp(line,"TAPESISTER_MOSAIC 13\n")?13:!strcmp(line,"TAPESISTER_MOSAIC 12\n")?12:!strcmp(line,"TAPESISTER_MOSAIC 11\n")?11:!strcmp(line,"TAPESISTER_MOSAIC 10\n")?10:!strcmp(line,"TAPESISTER_MOSAIC 9\n")?9:!strcmp(line,"TAPESISTER_MOSAIC 8\n")?8:!strcmp(line,"TAPESISTER_MOSAIC 7\n")?7:!strcmp(line,"TAPESISTER_MOSAIC 6\n")?6:!strcmp(line,"TAPESISTER_MOSAIC 5\n")?5:!strcmp(line,"TAPESISTER_MOSAIC 4\n")?4:!strcmp(line,"TAPESISTER_MOSAIC 1\n")?1:!strcmp(line,"TAPESISTER_MOSAIC 2\n")?2:!strcmp(line,"TAPESISTER_MOSAIC 3\n")?3:0;
     if(!version)goto failed;
     char trailing;
     if(!fgets(line,sizeof(line),f))goto failed;
@@ -905,6 +917,11 @@ int ts_mosaic_load(TsMosaic *m,const char *dir,char *error,size_t size)
                 e.live_transport<0 || e.live_transport>1 || e.live_position<0 || e.live_position>1 ||
                 !isfinite(e.live_beats) || e.live_beats<0 || e.live_beats>1000000 ||
                 (e.live_tempo && e.live_beats<=0) || !fgets(line,sizeof(line),f))goto failed;
+        }
+        if(version>=16) {
+            if(sscanf(line,"STEP %d %lf %c",&e.live_order,&e.finish_fade,&trailing)!=2 ||
+                e.live_order < -1 || e.live_order>TS_MOSAIC_EVENTS || !isfinite(e.finish_fade) || e.finish_fade<0 || e.finish_fade>30 ||
+                !fgets(line,sizeof(line),f))goto failed;
         }
         int pattern_source=0;
         if(version>=13){if(sscanf(line,"PATTERN %d %c",&pattern_source,&trailing)!=1 || pattern_source<0 || pattern_source>1 || !fgets(line,sizeof(line),f))goto failed;}
