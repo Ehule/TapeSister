@@ -56,6 +56,20 @@ static void voice_deactivate(TsPerformanceVoice *voice)
     memset(voice, 0, sizeof(*voice));
 }
 
+void ts_performance_reset(TsPerformanceBank *bank)
+{
+    if(!bank)return;
+    for(int i=0;i<bank->render_limit;++i) {
+        TsPerformanceVoice *v=&bank->voices[i];if(!v->active)continue;
+        generation_release(v->transition_generation);v->transition_generation=NULL;
+        v->transition_frame=v->transition_frames=0;v->turnaround_crossfade_remaining=0;
+        v->previous_frame_valid=0;v->direction=1;v->loop_intro=0;
+        v->position=v->looping?ts_audition_loop_begin(v->range_first,v->range_last,
+            v->loop_mode,&v->direction,&v->loop_intro):(double)v->range_first;
+        v->attack_frame=0;bank->rendered_group[i]=UINT64_MAX;
+    }
+}
+
 static int generation_matches(const TsPerformanceGeneration *generation,
                               const TsSample *sample)
 {

@@ -1,6 +1,7 @@
 #include "test_performance_inputs.inc"
 #include "test_cockpit.inc"
 #include "test_f11_looper.inc"
+#include "test_f11_reset.inc"
 static void test_performance_transport(const char *directory)
 {
     TsMosaic *saved=a.mosaic,*m=ts_mosaic_create();assert(m);a.mosaic=m;
@@ -137,6 +138,7 @@ static void test_performance_transport(const char *directory)
     assert(ts_matrix_set(&a.sister.matrix,&matrix,48000));
     test_cockpit(directory);
     test_f11_looper(directory);
+    test_f11_reset(directory);
     test_performance_inputs(directory);
     performance_close();ts_tapehead_stop();a.sister.performance_transport=mask;a.sister.performance_mixer=controls;a.mosaic=saved;ts_mosaic_free(m);
 }

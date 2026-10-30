@@ -75,6 +75,7 @@ typedef enum {
 void ts_note_bank_read_routed(TsNoteBank *bank, TsStereoFrame *sample, TsStereoFrame *fm, TsStereoFrame *capture, TsSourceRouteMix *clean);
 void ts_note_bank_init(TsNoteBank *bank);
 void ts_note_bank_clear(TsNoteBank *bank);
+void ts_note_bank_reset(TsNoteBank *bank); /* Rewind active voices; preserve held/latch ownership. */
 /* Disabling releases key-up voices, preserving held keys and explicit latches. */
 void ts_note_bank_set_sustain(TsNoteBank *bank, int enabled);
 void ts_note_bank_set_attack_ms(TsNoteBank *bank, int milliseconds);

@@ -195,6 +195,11 @@ typedef struct TsMosaic {
     int live_envelope; /* Saved whole-looper choice: 0 bypass, 1 follow main playhead. */
     int live_envelope_running; /* Runtime: settle silently before a new launch. */
     float live_envelope_gain; /* Runtime 20 ms slew; never resets a player. */
+    uint64_t live_reset_ids[TS_MOSAIC_EVENTS]; /* Armed restart set, not sounding/paused. */
+    int live_reset_sequence;
+    unsigned live_reset_remaining,live_reset_total;
+    TsStereoFrame live_reset_from;
+    TsSourceRouteMix live_reset_routes;
     int live_paused; /* Session-only whole-looper hold, independent of timeline. */
     double live_pause_gain,live_pause_base;
     TsStereoFrame live_pause_last;
@@ -208,7 +213,9 @@ int ts_mosaic_live_launch(TsMosaic *,uint64_t id,int quantize);
 void ts_mosaic_live_stop(TsMosaic *,uint64_t id); /* id=0 stops all live loops. */
 void ts_mosaic_live_restart(TsMosaic *,uint64_t id);
 void ts_mosaic_live_pause(TsMosaic *,int paused); /* Retain every active player/sequence position. */
-void ts_mosaic_live_home(TsMosaic *); /* Pause and reset retained players/sequence; no new launches. */
+void ts_mosaic_live_home(TsMosaic *); /* Stop, rewind and rearm; preserve a manual restart set. */
+int ts_mosaic_live_ready(const TsMosaic *);
+void ts_mosaic_live_resume(TsMosaic *); /* Resume pause or restart the armed set from zero. */
 void ts_mosaic_live_transport(TsMosaic *,int command); /* group: 1 play, 0 pause, 2 Home */
 int ts_mosaic_live_count(const TsMosaic *);
 double ts_mosaic_live_cycle(const TsMosaicEvent *);

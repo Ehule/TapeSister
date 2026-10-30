@@ -13,7 +13,7 @@ enum { PERF_BUTTON_PLAY=1,PERF_BUTTON_STOP,PERF_BUTTON_HOME,
     PERF_BUTTON_TUNE_PREV,PERF_BUTTON_TUNE_NEXT,PERF_BUTTON_RENDER,
     PERF_BUTTON_TAB,PERF_BUTTON_CUE=PERF_BUTTON_TAB+PERF_PAGES,PERF_BUTTON_LOOP=PERF_BUTTON_CUE+16,
     PERF_BUTTON_MASTER,PERF_BUTTON_BPM_MINUS,PERF_BUTTON_BPM_PLUS,PERF_BUTTON_CLOCK_SOURCE,
-    PERF_BUTTON_CLOCK_ROW=64, PERF_BUTTON_LOOPS_PLAY=120,PERF_BUTTON_LOOPS_HOME };
+    PERF_BUTTON_CLOCK_ROW=64, PERF_BUTTON_LOOPS_PLAY=120,PERF_BUTTON_LOOPS_HOME,PERF_BUTTON_LIVE_RESET };
 static struct {SDL_Window *window;SDL_Renderer *renderer;SDL_Texture *image;Uint32 *pixels;
     Uint32 id,painted,flash_until;
     int visible,drag,pressed,flash,input_page,input_drag,tuner_on,page,selected;
@@ -38,6 +38,14 @@ static void performance_loop_owner(AudioState *audio)
     if(performance_transport.loops_owner!=m || performance_transport.loops_epoch!=(m?m->epoch:0)) {
         performance_transport.loops_joined=0;performance_transport.loops_owner=m;performance_transport.loops_epoch=m?m->epoch:0;
     }
+}
+static void performance_live_reset(AudioState *audio)
+{
+    ts_note_bank_reset(&audio->notes);
+    ts_performance_reset(&audio->performance);
+    ts_performance_reset(&audio->mosaic_source_performance);
+    ts_performance_reset(&audio->tile_launchers);
+    ts_performance_reset(&audio->sister.performance);
 }
 static unsigned performance_running(AudioState *audio)
 {
@@ -83,7 +91,11 @@ static int performance_command_apply(unsigned selected,int command,unsigned home
             if(command==1){if(!ts_keyboard_sequence_active(&audio->keyboard_sequence))ts_keyboard_sequence_play(&audio->keyboard_sequence);}
             else ts_keyboard_sequence_stop(&audio->keyboard_sequence);
         }
-        if(command==2 && (homes&PERF_ARP))ts_keyboard_sequence_reset(&audio->keyboard_sequence);
+        if(command==2 && (homes&PERF_ARP)) {
+            int keep_running=!(selected&PERF_ARP) && ts_keyboard_sequence_active(&audio->keyboard_sequence);
+            ts_keyboard_sequence_home(&audio->keyboard_sequence);
+            if(keep_running)ts_keyboard_sequence_play(&audio->keyboard_sequence);
+        }
         if((selected&PERF_MOSAIC) && audio->mosaic) {
             TsMosaic *m=audio->mosaic;
             /* Only Home/Return to Start rewinds, including at the end. */
@@ -92,7 +104,8 @@ static int performance_command_apply(unsigned selected,int command,unsigned home
         if(command==2 && (homes&PERF_MOSAIC) && audio->mosaic)ts_mosaic_seek(audio->mosaic,0);
         if((selected&PERF_LOOPS) && audio->mosaic) {
             if(command==2)ts_mosaic_live_home(audio->mosaic);
-            else ts_mosaic_live_pause(audio->mosaic,command!=1);
+            else if(command==1)ts_mosaic_live_resume(audio->mosaic);
+            else ts_mosaic_live_pause(audio->mosaic,1);
         }
         if(master){ts_master_clock_transport(&audio->sister.master_clock,command);
             if(!(selected&PERF_LOOPS))ts_mosaic_live_transport(audio->mosaic,command);}
@@ -101,7 +114,7 @@ static int performance_command_apply(unsigned selected,int command,unsigned home
     if(embedded)ts_tapehead_host_unlock();else if(device)SDL_UnlockAudioDevice(device);
     snprintf(ui->status,sizeof(ui->status),ok?"PERFORMANCE GROUP: %s / SHIFT+SPACE TO PLAY OR PAUSE":"GROUP NOT STARTED: TRACKER IS NOT READY.",command==1?"PLAYING":command==2?"AT START":"PAUSED");
     if(ok && master && command==2 && audio->sister.clock_controls.position_custom)
-        snprintf(ui->status,sizeof(ui->status),"GROUP PAUSED / HOME FOLLOWERS REWOUND / OTHER POSITIONS RETAINED");
+        snprintf(ui->status,sizeof(ui->status),"GROUP RESET / RESET FOLLOWERS REWOUND / OTHER POSITIONS RETAINED");
     return ok;
 }
 static int performance_command_for(unsigned selected,int command,SDL_Window *window,SDL_AudioDeviceID device,AudioState *audio,
@@ -315,11 +328,17 @@ static int performance_event(SDL_Event *e,SDL_Window *window,SDL_AudioDeviceID d
         if(ch==4) {
             if(left && x>=620 && x<760 && audio->mosaic) {
                 performance_feedback(x>=704?PERF_BUTTON_LOOPS_HOME:PERF_BUTTON_LOOPS_PLAY,1);
-                if(audio->mosaic->sequence.running || ts_mosaic_live_count(audio->mosaic))
+                if(x>=704 || audio->mosaic->sequence.running || ts_mosaic_live_count(audio->mosaic) || ts_mosaic_live_ready(audio->mosaic))
                     performance_command_for(PERF_LOOPS,x>=704?2:-1,window,device,audio,ui,pages,bank,fm,rate);
             } else if(left && x>=200 && x<270) {
                 performance_loop_owner(audio);performance_transport.loops_joined^=1;
             } else if(left && x>=20 && x<200)performance_transport.selected=row;
+        } else if(ch==3 && left && x>=704 && x<760) {
+            if(ts_tapehead_frame())ts_tapehead_host_lock();else if(device)SDL_LockAudioDevice(device);
+            performance_live_reset(audio);
+            if(ts_tapehead_frame())ts_tapehead_host_unlock();else if(device)SDL_UnlockAudioDevice(device);
+            performance_feedback(PERF_BUTTON_LIVE_RESET,1);
+            snprintf(ui->status,sizeof(ui->status),"LIVE TILES RESET / HELD NOTES AND LATCHES RETAINED");
         } else if(x>=PERF_GAIN_X-8 && x<940) {
             if(e->button.button==SDL_BUTTON_RIGHT || (left && e->button.clicks>=2))performance_gain(device,audio,ch,1);
             else if(left){performance_transport.drag=ch+1;SDL_CaptureMouse(SDL_TRUE);performance_gain(device,audio,ch,(x-PERF_GAIN_X)*2.f/PERF_GAIN_W);}

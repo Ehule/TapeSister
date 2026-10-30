@@ -186,7 +186,7 @@ static int mosaic_live_command(SDL_AudioDeviceID output,SDL_AudioDeviceID *input
             if(was_owned)ts_mosaic_live_restart(m,id);else (void)ts_mosaic_live_launch(m,id,m->live_capture.quantize);reveal=1;}
         else snprintf(ui->mosaic_live_status,sizeof(ui->mosaic_live_status),"NO LOOP EVENTS / SELECT AN AUDIO CARD AND ENABLE LOOP EVENT");
     } else if(!strcmp(command,"play")) {
-        if(m->live_paused)ts_mosaic_live_pause(m,0);
+        if(m->live_paused || ts_mosaic_live_ready(m))ts_mosaic_live_resume(m);
         else if(ui->mosaic_live_play_all) {
             for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(m->events[i].id && m->events[i].live)
                 (void)ts_mosaic_live_launch(m,m->events[i].id,m->live_capture.quantize);

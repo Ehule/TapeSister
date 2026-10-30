@@ -1,7 +1,7 @@
 # F11 Looper transport validation
 
 The F11 Overview now has five rows inside the existing 960×640 window. Looper
-has its own Pause/Resume and Home controls, optional session-only group checkbox,
+has its own Pause/Resume and Reset controls, optional session-only group checkbox,
 and no extra gain stage. Its audio retains the Mosaic bus trim and card routes.
 
 ## Behavior checked
@@ -12,8 +12,9 @@ and no extra gain stage. Its audio retains the Mosaic bus trim and card routes.
 - Looper starts outside the group. Group Pause can stop the main Mosaic playhead
   while loops keep advancing. Checking IN lets group Play/Pause hold and resume
   both at the same callback boundary, without changing saved per-card links.
-- Local Home resets only the retained loops and sequence; group Home can also
-  return the selected main playhead. Neither action launches idle loop cards.
+- Local Reset stops and rearms the retained loops and sequence; group Reset can also
+  return the selected main playhead. Neither action launches idle loop cards. Reset releases the pause/sequence ownership;
+  later timeline crossings can start cards, and explicit Play restarts the armed set.
 - The temporary group checkbox does not affect project dirty hashes and resets
   when a different project is published into the same Mosaic instance.
 - A held manual keyboard voice survives F11 Looper Pause. A real dry capture

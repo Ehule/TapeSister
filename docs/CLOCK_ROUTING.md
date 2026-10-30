@@ -3,7 +3,7 @@
 Open **F11 → Clock Routing**. Master clock starts **off**, including when an
 older project is opened. Turning it on alone does not change any player's
 tempo. Choose tempo followers individually; the existing group checkboxes
-control start/pause, and **Home** has its own choice for each player.
+control start/pause, and **Reset** has its own choice for each player.
 
 ![Native Clock Routing page](screenshots/performance/control-center-clock-routing.png)
 
@@ -15,11 +15,11 @@ and actual playback position.
 
 ## Choices in this first clock stage
 
-| Destination | Tempo | Start/pause | Group Return to Start / Home |
+| Destination | Tempo | Start/pause | Group Reset Group / Reset |
 | --- | --- | --- | --- |
-| TrackSister song | Local score or master, retaining ticks per row and lane ratios | Follow group or remain independent | Follow Home or retain its row/order |
-| ARP notes | Local intervals; master quarter/eighth/sixteenth; or the existing direct TrackSister link | Follow group or remain independent | Follow Home or ignore it |
-| Mosaic timeline | Seconds and tape speed, unchanged | Follow group or remain independent | Follow Home or retain its timeline position |
+| TrackSister song | Local score or master, retaining ticks per row and lane ratios | Follow group or remain independent | Follow Reset or retain its row/order |
+| ARP notes | Local intervals; master quarter/eighth/sixteenth; or the existing direct TrackSister link | Follow group or remain independent | Follow Reset or ignore it |
+| Mosaic timeline | Seconds and tape speed, unchanged | Follow group or remain independent | Follow Reset or retain its timeline position |
 | Scheduled Mosaic pattern cards | Each saved pattern clock, further affected by Mosaic tape speed | Existing Mosaic scheduling | Existing Mosaic seek/reconstruction |
 | Manual QWERTY/MIDI notes, Live Tiles | Existing note/sample timing | Independent of group pause | Unaffected |
 | SisterMachine, Router, ARP slot/LFO timers and host effects | Existing local timing | Existing controls | Existing controls |
@@ -30,15 +30,15 @@ an audio buffer and the tracker's existing timing compatibility law. Its current
 tempo remains available when the tracker is stopped. A tracker selected as the
 source cannot follow itself; choosing that source clears its master-tempo route.
 The BPM buttons control only the internal source. Clock power affects tempo
-routes; group and Home choices also work with clock power off.
+routes; group and Reset choices also work with clock power off.
 
-The **Independent** preset clears that player's tempo, group and Home links.
+The **Independent** preset clears that player's tempo, group and Reset links.
 For ARP it also returns the older direct TrackSister link to Local. It does not
 stop, start, rewind or silence the player at the moment it is chosen.
 
 ## During playback
 
-- Tempo, start/pause and Home are separate. For example, an ARP can use master
+- Tempo, start/pause and Reset are separate. For example, an ARP can use master
   tempo while continuing through a group pause. Conversely, Mosaic can follow
   group start/pause while retaining free tape time.
 - Routing edits never automatically start, stop or seek a player. Tempo changes
@@ -52,12 +52,12 @@ stop, start, rewind or silence the player at the moment it is chosen.
   pauses checked players and the cursor. Unchecked players keep their current
   state. Tempo and clock phase remain available to independent followers while
   the master cursor's elapsed seconds/beats are paused.
-- Return to Start pauses the group, zeros the master cursor, and rewinds only
-  Home followers. An unchecked Home follower is rewound while retaining its
-  playing/stopped state. A checked player ignoring Home pauses at its position.
-  Individual channel Home still stops and rewinds just that channel.
-- Until the first explicit Home edit, Home follows the original group selection
-  exactly. That first edit makes all three Home choices independent of later
+- Reset Group pauses the group, zeros the master cursor, and rewinds only
+  Reset followers. An unchecked Reset follower is rewound while retaining its
+  playing/stopped state. A checked player ignoring Reset pauses at its position.
+  Individual channel Reset still stops and rewinds just that channel.
+- Until the first explicit Reset edit, Reset follows the original group selection
+  exactly. That first edit makes all three Reset choices independent of later
   group checkbox changes. ARP retains its existing Stop/start-from-pattern-beginning
   behavior; it does not acquire a seamless pause/resume in this stage.
 
@@ -72,15 +72,15 @@ tempos.
 
 ## Saving, older projects and rendering
 
-Clock power, source, BPM, tempo routes, ARP division, group membership and Home
+Clock power, source, BPM, tempo routes, ARP division, group membership and Reset
 choices save with the project and participate in modified-state detection.
 The displayed master location/phase also saves; reopening restores that location
 **paused**, alongside the existing saved workspace/Mosaic view. Running audio
 voices and effect tails are not serialized.
 
 Older projects retain their original local timing, direct ARP link and legacy
-group/Home behavior. No migration enables master tempo or rewrites card lengths.
-Projects saved with active master clock or custom Home routes require this build
+group/Reset behavior. No migration enables master tempo or rewrites card lengths.
+Projects saved with active master clock or custom Reset routes require this build
 or newer. Their Sister sidecar uses a feature header that older builds reject,
 so an older build cannot silently open and resave them after dropping active
 clock behavior. Keep a separate copy of an important project for comparisons.

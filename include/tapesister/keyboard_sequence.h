@@ -97,6 +97,7 @@ void ts_keyboard_sequence_clock(TsKeyboardSequence *sequence, double seconds);
 void ts_keyboard_sequence_stop(TsKeyboardSequence *sequence);
 int ts_keyboard_sequence_play(TsKeyboardSequence *sequence);
 void ts_keyboard_sequence_reset(TsKeyboardSequence *sequence);
+void ts_keyboard_sequence_home(TsKeyboardSequence *sequence); /* Stop and rewind note/slot sequence and LFO. */
 /* Settings edits preserve the sounding pitch/elapsed phase if still selected. */
 void ts_keyboard_sequence_set(TsKeyboardSequence *sequence,
                                const TsKeyboardSequenceSettings *settings);

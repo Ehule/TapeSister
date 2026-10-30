@@ -172,7 +172,7 @@ its width to the canvas. Hiding changes only the view; Follow continues to work.
 | TEMPO: FREE | Own seconds clock, independent of Mosaic speed and master tempo. |
 | TEMPO: MASTER TAPE | Scale tape rate using the saved source-cycle beat length and the current master quarter-note duration. Tempo changes preserve source progress and also change pitch. |
 | GROUP: FOLLOW | Future F11 group Play launches the card; group Pause releases it. Next Play starts again. Independent of tempo following and the native players' group membership. |
-| SEEK: RESTART | Mosaic seeks/cue/repeat wraps restart a running card. F11 master Home also restarts it. Does not start a stopped card or map arbitrary master positions into a loop. |
+| SEEK: RESTART | Mosaic seeks/cue/repeat wraps restart a running card. F11 master Reset also restarts it. Does not start a stopped card or map arbitrary master positions into a loop. |
 | LAUNCH NEXT BEAT | Manual/newly captured layers wait for a shared quarter-note edge. The master phase runs even with its transport cursor paused. Timeline encounters remain immediate. |
 
 Changing a route flag does not itself launch, stop, or relocate a card. Master
@@ -270,9 +270,11 @@ The draggable transport and growing waveform follow-up has its own
 ## Pause loops from F11
 
 The F11 Control Center has a separate **Looper** row with **Pause / Resume**,
-**Home**, and temporary **IN / OUT** group membership. Pause holds active loops
+**Reset**, and temporary **IN / OUT** group membership. Pause holds active loops
 and the handover sequence without pausing the main playhead, live input voices
-or capture. The main playhead can also pause while loops continue. Home resets
-only the retained loop set; idle cards stay idle. See
+or capture. The main playhead can also pause while loops continue. Reset stops
+and rewinds the retained loop set, releases the pause and rearms timeline
+triggers. Play restarts the previously active set, or the Mosaic playhead can
+trigger cards on another pass. Idle cards stay idle until triggered. See
 [F11 Looper transport](PERFORMANCE_TRANSPORT.md#looper-transport) for shared
 transport and explicit return-to-start behavior.

@@ -13,7 +13,7 @@ static void performance_clock_paint(const TsMasterClockControls *c,const TsMaste
     snprintf(line,sizeof(line),"%s / %.2f EFFECTIVE BPM / TRANSPORT %.2f BEATS / PHASE %.2f",
         !c->enabled?"OFF":runtime->running?"RUNNING":"PAUSED",bpm,runtime->beats,runtime->phase);perf_small(28,214,line,dim);
     perf_small(28,248,"DESTINATION",dim);perf_small(240,248,"TEMPO SOURCE",dim);perf_small(472,248,"START / PAUSE",dim);
-    perf_small(620,248,"HOME",dim);perf_small(780,248,"PRESET",dim);
+    perf_small(620,248,"RESET",dim);perf_small(780,248,"PRESET",dim);
     const int channels[]={2,1,0};const char *names[]={"MOSAIC TIMELINE","TRACKSISTER","ARP NOTES"};
     unsigned homes=ts_master_clock_home_mask(c,group);
     for(int row=0;row<3;++row) {
