@@ -316,6 +316,9 @@ The narrow lane at the right follows the arrangement timeline vertically.
 Click its small **− / +** box at the far right, or press **Shift+V**, to hide/show
 the editor. Hiding expands the usable canvas; the saved curve keeps playing.
 Card positions and zoom stay in place. **SAVE CONFIG** remembers visibility.
+
+![Volume editor hidden, with a card in the expanded canvas](screenshots/mosaic-performance/volume-expanded.png)
+
 **Left-click and drag** to draw volume: left is silence, right is full level.
 The curve has its own border, with every tool button outside it. Small square
 handles mark the start and end when visible; drag sideways at either endpoint

@@ -159,6 +159,8 @@ The Mosaic bus gain/trim, per-card controls, and later routing/effects also appl
 its width to the canvas. Hiding changes only the view; Follow continues to work.
 **SAVE CONFIG** remembers this display preference.
 
+![Advanced looper envelope policy](screenshots/mosaic-performance/looper-envelope-advanced.png)
+
 ## Timeline and clock choices
 
 | Event or control | Default / selected behavior |
