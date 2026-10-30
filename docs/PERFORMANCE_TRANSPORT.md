@@ -4,6 +4,7 @@ Open **CFG → Transport**, **F11**, or **Ctrl+Shift+Space**. **Alt+F11** toggle
 fullscreen. This modeless 960x640 window mixes ARP,
 TrackSister (SisterTracker), and Mosaic while you work elsewhere. A fourth
 **Live Tiles** fader controls your live instrument without transport buttons.
+A separate **Looper** row pauses live loops and their handover sequence.
 The Inputs/Tuner page adds the active device's live inputs and an optional tuner.
 
 Small labels use a heavier 8x12 pixel font with consistent two-pixel strokes.
@@ -26,7 +27,7 @@ and **Shift+Tab** cycle pages while this window has focus. The original F11 and
 Shift+Space shortcuts remain available from other workspaces, respecting text
 entry, MIDI learn and modal ownership.
 
-- **Overview:** Mosaic, TrackSister, ARP and Live Tiles; individual transport and
+- **Overview:** Mosaic, TrackSister, ARP, Live Tiles and Looper; individual transport and
   pre-route trim. Click a player name for its cue/loop, tracker or ARP detail.
   The tracker position is the real playback row even with Follow off. Saved
   score mutes and live performance mutes/solo are reported separately.
@@ -48,8 +49,38 @@ observations, not proof of acoustic audibility or a dropout. Card counts mean
 cards at the timeline cursor; muted or finished one-shots may be included.
 
 Master tempo starts off and older projects keep their existing timing.
-Persistent loop cards remain future work; they must be separate clock/transport
-destinations rather than automatically inheriting the main Mosaic playhead.
+
+## Looper transport
+
+The **Looper** row starts **OUT** of the group. Its **Pause / Resume** button
+holds all active loop players, queued beat launches, release fades and the
+handover sequence at their current positions. Resume continues that retained
+set; it does not launch idle cards. Looper Play or Cycle in Mosaic also releases
+this whole-looper hold. The main Mosaic playhead, live keyboard/MIDI
+voices and recording remain independent. The looper status circle shows amber
+pause bars and holds its progress ring; active recording keeps its red status.
+
+Check **IN** to temporarily include Looper in F11 group Play/Pause and
+**Shift+Space**. Uncheck it to restore independent group control. This checkbox
+lasts for the current project session and resets on New/load; it does not change
+any card's saved transport/position links or save with the project. Closing the
+window keeps the current choice and playback state. Ordinary workspace Space
+and the Mosaic row still control just the timeline. Existing per-card Follow
+choices retain their behavior while Looper is OUT.
+
+Looper **Home** pauses and resets the retained players and running sequence to
+their starts. It does not start idle cards or move the main playhead. With
+Mosaic and Looper both IN, group **Return to Start**, then **Play Group**, returns
+them to their starts together. This is shared transport, not continuous phase
+alignment: loops can have different lengths, and existing beat/tempo links still
+apply. Looper uses the Mosaic bus trim, including custom outputs and sends; it
+has no additional gain stage. Pause/Resume uses a five-millisecond boundary fade;
+shared effects may finish their existing tails.
+
+![Looper paused independently of Mosaic, with a held keyboard voice](screenshots/performance/control-center-looper-paused.png)
+
+This native SDL fixture holds two loop players and their cycle while the manual
+keyboard voice remains active. It does not measure a hardware device.
 
 ## Live inputs and Terra tuning
 
@@ -100,9 +131,10 @@ or per-sample meter work is added by this cockpit.
 | --- | --- |
 | Channel checkbox/name | Includes that player in group commands; it does not mute it |
 | Channel Play/Pause | Resumes or pauses TrackSister at its current row and Mosaic at its current time; ARP retains Play/Stop |
-| Channel Home | Stops and rewinds just that player |
+| Channel Home | Stops and rewinds just that player; Looper retains its active set while paused |
 | Channel Gain | Silent through +6 dB; drag or wheel, double-click or right-click for 0 dB |
-| Live Tiles | Shared QWERTY/MIDI and tile-launcher level, independent of the three players |
+| Live Tiles | Shared QWERTY/MIDI and tile-launcher level, independent of the players |
+| Looper | Pause/Resume all loop players and the handover sequence; optional session group membership |
 | Always on Top | Keeps the transport above other windows |
 | ARP Clock | Local timing, or TrackSister quarter, eighth, or sixteenth notes |
 | Play Group / Pause Group | Resumes or pauses checked players and the master cursor; running players continue on Play |
@@ -110,7 +142,8 @@ or per-sample meter work is added by this cockpit.
 | Shift+Space | Pauses the group if any checked player is running; otherwise resumes it |
 | Space | Keeps the active workspace's existing play/stop or Follow/live-edit behavior |
 
-Selection, gains, clock links, Home choices and Always on Top save with the project.
+Player selection (except the temporary Looper checkbox), gains, clock links,
+Home choices and Always on Top save with the project.
 Older projects open at 0 dB with ARP alone checked, local timing, and Always
 on Top off. A saved legacy Restart Together setting is ignored. Opening this
 window does not change sound.

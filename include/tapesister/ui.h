@@ -595,7 +595,7 @@ typedef struct {
     char mosaic_live_hover[40];
     int mosaic_live_recording, mosaic_live_finishing, mosaic_live_loops;
     double mosaic_live_seconds, mosaic_live_duration, mosaic_live_quarter;
-    int mosaic_live_master;
+    int mosaic_live_master,mosaic_live_paused;
     char mosaic_live_keyboard[48];
     TsMosaicSourceKey mosaic_live_key;
     int mosaic_live_key_valid;

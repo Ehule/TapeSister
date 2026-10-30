@@ -119,10 +119,14 @@ static void test_mosaic_live_controller(SDL_Window *window,SDL_AudioDeviceID dev
     SDL_Event note;SDL_zero(note);note.type=SDL_KEYDOWN;note.key.windowID=SDL_GetWindowID(window);note.key.keysym.sym=SDLK_z;
     assert(mosaic_event(&note,window,device,a,u,&instrument,&controller,&portal,&sister,&transform,48000));
     assert(ts_note_bank_count(&a->notes)>0); /* Real Mosaic dispatch, not a direct Canvas shortcut. */
+    /* Whole-looper Pause leaves the active dry take and real keyboard voice running. */
+    double held_elapsed=u->mosaic->live[0].elapsed;ts_mosaic_live_pause(u->mosaic,1);
     for(int i=0;i<12;++i)audio_callback(a,(Uint8 *)out,sizeof(out));
+    assert(u->mosaic->live[0].elapsed==held_elapsed && atomic_load(&s->loop_capture.active));
     assert(mosaic_live_command(device,&input_device,a,s,u,"next"));live_controller_wait(device,&input_device,a,s,u,4);
     TsMosaicEvent *second=ts_mosaic_find(u->mosaic,3);assert(second && second->source->sample.frames==3072 && second->source!=first->source);
     double energy=0;for(int i=0;i<6144;++i)energy+=fabsf(second->source->sample.data[i]);assert(energy>1);
+    assert(u->mosaic->live_paused && u->mosaic->live[0].elapsed==held_elapsed);ts_mosaic_live_pause(u->mosaic,0);
     audio_callback(a,(Uint8 *)out,sizeof(out));
     assert(mosaic_live_command(device,&input_device,a,s,u,"stop_capture"));live_controller_wait(device,&input_device,a,s,u,5);
     assert(!s->loop_session && !u->mosaic_live_recording && ts_mosaic_live_count(u->mosaic)>=3);

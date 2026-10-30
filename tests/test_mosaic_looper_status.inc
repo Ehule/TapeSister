@@ -43,6 +43,16 @@ static void test_mosaic_looper_status(SDL_Window *window,SDL_AudioDeviceID devic
     int center=circle.width/2;
     assert(circle.pixels[(center-4)*circle.width+center]==0xffffffffu); /* Play triangle. */
     looper_status_shot(u,"playing");
+    ts_mosaic_live_pause(m,1);
+    for(int i=0;i<10;++i)audio_callback(a,(Uint8 *)output,sizeof(output));
+    mosaic_poll(device,u,&instrument,c);looper_status_check(u,&circle,0xff97651cu,phase);
+    assert(circle.pixels[(center-4)*circle.width+center-12]==0xffffffffu);
+    looper_status_shot(u,"paused");
+    /* Capture stays red while playback is held. */
+    u->mosaic_live_recording=1;u->mosaic_live_seconds=1;u->mosaic_live_duration=4;
+    looper_status_check(u,&circle,0xffe51820u,.25);u->mosaic_live_recording=0;
+    live_performance_transport(window,device,a,s,u,&instrument,c,2);assert(!m->live_paused);
+    mosaic_poll(device,u,&instrument,c);
     /* Selecting a stopped ordinary card cannot turn running playback red or
        stopped. Keep the actual selected card's edit/Loop Event controls. */
     TsMosaicEvent *ordinary=ts_mosaic_add(m,e->source,0,250);assert(ordinary);

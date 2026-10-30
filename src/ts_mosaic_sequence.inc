@@ -25,6 +25,7 @@ int ts_mosaic_sequence_owns(const TsMosaic *m,int slot)
 static void mosaic_live_release_slot(TsMosaic *m,int i)
 {
     TsMosaicLive *l=&m->live[i];
+    if(m->live_paused) {l->state=TS_MOSAIC_LIVE_STOPPED;m->voices[i].active=0;m->schedule.valid=0;return;}
     if(l->state==TS_MOSAIC_LIVE_RELEASING && l->finish_seconds<=0)return;
     if(l->state==TS_MOSAIC_LIVE_PLAYING || l->state==TS_MOSAIC_LIVE_RELEASING) {
         /* Interrupting an optional long finish keeps its current gain. */

@@ -1,5 +1,6 @@
 #include "test_performance_inputs.inc"
 #include "test_cockpit.inc"
+#include "test_f11_looper.inc"
 static void test_performance_transport(const char *directory)
 {
     TsMosaic *saved=a.mosaic,*m=ts_mosaic_create();assert(m);a.mosaic=m;
@@ -103,13 +104,13 @@ static void test_performance_transport(const char *directory)
     e.button.x=800;e.button.y=24;assert(performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));assert(a.sister.performance_mixer.always_on_top);
     /* SDL dummy has no window manager; persistence is checked independently. */
     if(strcmp(SDL_GetCurrentVideoDriver(),"dummy"))assert(SDL_GetWindowFlags(performance_transport.window)&SDL_WINDOW_ALWAYS_ON_TOP);
-    e.button.x=780;e.button.y=310;assert(performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));assert(a.sister.performance_mixer.gain[0]==0);
+    e.button.x=780;e.button.y=PERF_ROWS_Y+2*PERF_ROW_STEP+14;assert(performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));assert(a.sister.performance_mixer.gain[0]==0);
     e.type=SDL_MOUSEMOTION;e.motion.windowID=performance_transport.id;e.motion.x=892;
     assert(performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));assert(a.sister.performance_mixer.gain[0]==2);
     e.type=SDL_MOUSEBUTTONUP;e.button.windowID=performance_transport.id;performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000);assert(!performance_transport.drag);
-    e.type=SDL_MOUSEBUTTONDOWN;e.button.button=SDL_BUTTON_RIGHT;e.button.x=830;e.button.y=310;
+    e.type=SDL_MOUSEBUTTONDOWN;e.button.button=SDL_BUTTON_RIGHT;e.button.x=830;e.button.y=PERF_ROWS_Y+2*PERF_ROW_STEP+14;
     performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000);assert(a.sister.performance_mixer.gain[0]==1);
-    e.button.button=SDL_BUTTON_LEFT;e.button.x=100;e.button.y=310;
+    e.button.button=SDL_BUTTON_LEFT;e.button.x=100;e.button.y=PERF_ROWS_Y+2*PERF_ROW_STEP+14;
     assert(performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));
     e.button.y=462;
     for(int i=1;i<=4;++i) {performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000);assert(a.sister.performance_mixer.arp_sync==(unsigned)i%4);}
@@ -135,6 +136,7 @@ static void test_performance_transport(const char *directory)
     performance_gain(0,&a,2,1);render(energy);assert(fabsf(a.clean.graph[TS_MATRIX_NODES].l)>0);
     assert(ts_matrix_set(&a.sister.matrix,&matrix,48000));
     test_cockpit(directory);
+    test_f11_looper(directory);
     test_performance_inputs(directory);
     performance_close();ts_tapehead_stop();a.sister.performance_transport=mask;a.sister.performance_mixer=controls;a.mosaic=saved;ts_mosaic_free(m);
 }
