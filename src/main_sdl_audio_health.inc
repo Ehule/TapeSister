@@ -78,7 +78,7 @@ static void ts_audio_health_capture_setup(const AudioState *audio,
         ++s->keyboard_voices;
         if (v->latched || audio->notes.sustain) ++s->held_voices;
     }
-    const TsPerformanceBank *banks[] = {&audio->performance, &r->performance, &audio->tile_launchers};
+    const TsPerformanceBank *banks[] = {&audio->performance, &r->performance, &audio->tile_launchers,&audio->mosaic_source_performance};
     for (unsigned b = 0; b < sizeof(banks) / sizeof(banks[0]); ++b) {
         const TsPerformanceBank *bank = banks[b];
         for (int i = 0; i < bank->render_limit; ++i) {

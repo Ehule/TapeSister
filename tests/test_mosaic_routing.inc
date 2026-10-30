@@ -155,6 +155,7 @@ static AudioState *routing_audio(int powered)
 }
 static void routing_free(AudioState *a)
 {
+    runtime_mosaic_sources_free(a);
     ts_mosaic_free(a->mosaic);ts_sister_runtime_free(&a->sister);ts_capture_free(&a->capture);
     ts_performance_free(&a->performance);ts_performance_free(&a->tile_launchers);free(a);
 }

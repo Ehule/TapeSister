@@ -109,6 +109,12 @@ the pending audio result and returns to Mosaic, while **KEEP EDITING** leaves it
 open. Copies share source audio until an edit creates a new version. Sources
 browses all Sample banks and the event audio versions.
 
+The AUDIO browser and Canvas share overall sound numbers (page 2 is 17–32).
+Check **KEYS** beside the source heading to play selected audio sources together
+from QWERTY or MIDI with the looper closed; Shift/Ctrl-click selects layers
+across source pages. **REC SRC** records that performance into a new card while
+the arrangement continues. See [source keyboard and recording](docs/MOSAIC_SOURCE_KEYS.md).
+
 The **PATTERN** source tab also exposes TrackSister patterns, including XM imports.
 Audition and drag them into Mosaic alongside audio cards. Each card plays an
 immutable pattern snapshot with independent clocks, effects, and voices; copies

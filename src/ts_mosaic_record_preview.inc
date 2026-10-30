@@ -71,7 +71,7 @@ static void mosaic_recording_card(TsFramebuffer *fb,TsUiWaveformDetail *d,const 
     if(ui->mosaic_recording) {
         int recording=ui->capture_state==TS_CAPTURE_RECORDING;
         const char *state=!recording?(ui->capture_state==TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER?"ARMED":"FINISHING"):
-            ui->mosaic_record_source==TS_RECORD_SOURCE_OUTPUT?"REC OUT":ui->mosaic_record_source==TS_RECORD_SOURCE_EXT?"REC EXT":"REC DRY";
+            ui->mosaic_record_source==TS_RECORD_SOURCE_SOURCES?"REC SRC":ui->mosaic_record_source==TS_RECORD_SOURCE_OUTPUT?"REC OUT":ui->mosaic_record_source==TS_RECORD_SOURCE_EXT?"REC EXT":"REC DRY";
         mosaic_recording_preview(fb,d,ui,&ui->mosaic_record_preview,ui->input_sample_rate,ui->capture_recorded_frames,recording,state);
     }
     if(ui->mosaic_live_recording)mosaic_recording_preview(fb,d,ui,&ui->mosaic_live_preview,ui->mosaic_live_rate,

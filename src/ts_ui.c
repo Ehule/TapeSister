@@ -339,6 +339,11 @@ enum {
     TS_TUNE_DETECT_X = 572
 };
 
+static int sample_tile_number(const TsUiState *ui,int slot)
+{
+    return slot+1+((ui->external_record_bank || ui->mosaic_editing)?0:ui->sample_page*TS_BANK_SLOT_COUNT);
+}
+
 static void clear(TsFramebuffer *fb, uint32_t color)
 {
     for (int i = 0; i < TS_UI_WIDTH * TS_UI_HEIGHT; ++i) fb->pixels[i] = color;
@@ -3323,29 +3328,29 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     frame(fb, 10, 40, 620, 164, ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(42, 39, 42)), ts_theme_color(active_palette(), render_group, TS_COLOR_DIM, RGB(105, 98, 105)));
     if (sample->frames) {
         char tile[96], info[112];
-        int tile_number = showing_bank ? ui->bank_view_slot + 1 :
-                          instrument->selected_slot + 1;
+        int tile_number = showing_bank ? sample_tile_number(ui,ui->bank_view_slot) :
+                          sample_tile_number(ui,instrument->selected_slot);
         snprintf(tile, sizeof(tile), "TILE %02d %c %.24s", tile_number,
                  sample->channels == 2u ? 'S' : 'M', sample->name);
         if(ui->mosaic_editing)snprintf(tile,sizeof(tile),"EVENT %llu  %.24s",(unsigned long long)ui->mosaic_editing,sample->name);
         if (showing_bank && shown_slot->occupied) {
             snprintf(info, sizeof(info), "BANK %02d %s  %.2F SEC",
-                     ui->bank_view_slot + 1,
+                     sample_tile_number(ui,ui->bank_view_slot),
                      ts_bank_capture_name(shown_slot->capture_kind),
                      (double)sample->frames / sample->sample_rate);
         }
         else if (showing_bank)
             snprintf(info, sizeof(info), "BANK %02d EMPTY - SILENCE",
-                     ui->bank_view_slot + 1);
+                     sample_tile_number(ui,ui->bank_view_slot));
         else
             snprintf(info, sizeof(info), "EDITING TILE %02d  %u HZ %.2F SEC",
-                     instrument->selected_slot + 1, sample->sample_rate,
+                     sample_tile_number(ui,instrument->selected_slot), sample->sample_rate,
                      (double)sample->frames / sample->sample_rate);
         text(fb, 20, 49, tile, PAL_INSTRUMENT, 1);
         text(fb, 310, 49, info, PAL_EFFECT, 1);
     } else {
         char empty[40];
-        snprintf(empty, sizeof(empty), "TILE %02d EMPTY", instrument->selected_slot + 1);
+        snprintf(empty, sizeof(empty), "TILE %02d EMPTY", sample_tile_number(ui,instrument->selected_slot));
         text(fb, 20, 49, empty, PAL_INSTRUMENT, 1);
     }
     {
@@ -4173,9 +4178,9 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             int x = 10 + (i % 8) * 77;
             int y = 330 + (i / 8) * 25;
             if (slot->occupied)
-                snprintf(label, sizeof(label), "%02d %.7s", i + 1, slot->sample.name);
+                snprintf(label, sizeof(label), "%02d %.7s", sample_tile_number(ui,i), slot->sample.name);
             else
-                snprintf(label, sizeof(label), "%02d ---", i + 1);
+                snprintf(label, sizeof(label), "%02d ---", sample_tile_number(ui,i));
             button(fb, x, y, 72, label, slot->occupied);
             if (slot->occupied && slot->has_loop)
                 rect(fb, x + 66, y + 4, 3, 15, PAL_TUNING);
@@ -4338,7 +4343,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         if (cursor > first + 62) first = cursor - 62;
         snprintf(shown, sizeof(shown), "%.62s", ui->bank_rename + first);
         frame(fb, 104, 306, 432, 76, ts_theme_color(active_palette(), render_group, TS_COLOR_PANEL, RGB(36, 33, 37)), PAL_MOUSE);
-        snprintf(title, sizeof(title), "RENAME BANK %02d", ui->renaming_bank_slot + 1);
+        snprintf(title, sizeof(title), "RENAME SOUND %02d", sample_tile_number(ui,ui->renaming_bank_slot));
         text(fb, 116, 316, title, PAL_NOTE, 1);
         rect(fb, 116, 332, 408, 23, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(8, 8, 8)));
         text_case(fb, 122, 340, shown, PAL_MOUSE, 1);

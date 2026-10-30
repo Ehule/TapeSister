@@ -427,6 +427,7 @@ int main(int argc,char **argv)
     }
     uint64_t original=ts_sample_hash(&instrument.current);
     ui.mosaic=audio.mosaic=ts_mosaic_create();ui.mosaic_scale=24;ui.mosaic_open=1;
+    if(argc>1 && !strcmp(argv[1],"--source-keys")) {test_mosaic_source_keys(window,device);goto done;}
     if(argc>1 && !strcmp(argv[1],"--live-loops")) {test_mosaic_live_controller(window,device);goto done;}
     if(argc>1 && !strcmp(argv[1],"--edit-benchmark")) {benchmark_mosaic_edits();goto done;}
     if(argc>1 && !strcmp(argv[1],"--scatter-mix")) {test_mosaic_scatter_mix(window);goto done;}

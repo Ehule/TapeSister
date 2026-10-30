@@ -315,9 +315,9 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
     master_output_meter(fb,&ui->master_output,TS_UI_MASTER_METER_X,TS_UI_MASTER_METER_Y);
     mosaic_button(fb,10,37,44,"AUDIO",!ui->mosaic_pattern_tab,1);mosaic_button(fb,56,37,52,"PATTERN",ui->mosaic_pattern_tab,1);
     char label[100];
-    if(ui->mosaic_pattern_tab)snprintf(label,sizeof(label),"PATTERNS %02d",ui->mosaic_source_page+1);
+    if(ui->mosaic_pattern_tab)snprintf(label,sizeof(label),"PAT %02d",ui->mosaic_source_page+1);
     else if(ui->mosaic_source_page<ui->mosaic_bank_count)snprintf(label,sizeof(label),"BANK %02d",ui->mosaic_source_page+1);
-    else snprintf(label,sizeof(label),"EVENTS %02d",ui->mosaic_source_page-ui->mosaic_bank_count+1);
+    else snprintf(label,sizeof(label),"EVT %02d",ui->mosaic_source_page-ui->mosaic_bank_count+1);
     text(fb,12,55,label,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DIM, RGB(133,127,141)),1);
     uint32_t live_ink=ui->mosaic_live_open || ui->mosaic_live_loops || ui->mosaic_live_recording?RGB(245,184,91):
         ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_DIM,RGB(178,163,189));
@@ -333,6 +333,7 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
     const char *tile_label=ui->mosaic_recording ?
         (ui->capture_state==TS_CAPTURE_RECORDING ? "STOP TILE" :
          ui->capture_state==TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER ? "CANCEL" : "TILE WAIT") :
+         ui->mosaic_record_source==TS_RECORD_SOURCE_SOURCES ? "REC SRC" :
          ui->mosaic_record_source==TS_RECORD_SOURCE_OUTPUT ? "REC OUT" :
          ui->mosaic_record_source==TS_RECORD_SOURCE_EXT ? "REC EXT" : "REC DRY";
     mosaic_button(fb,TS_MOSAIC_REC_TILE_X,TS_MOSAIC_REC_TILE_Y,TS_MOSAIC_REC_TILE_W,tile_label,ui->mosaic_recording,1);
@@ -364,7 +365,11 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
         uint32_t color=sample?mosaic_color(ui->mosaic_sources[n].source?mosaic_source_color(ui->mosaic_sources[n].source):ui->mosaic_sources[n].hash):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DATA2, RGB(135,171,174));
         rect(fb,x,y,44,28,selected?mosaic_selection_color(ui,selected==2):sample?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(40,36,44)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(23,23,28)));
         if(selected)rect(fb,x+2,y+2,40,24,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(51,47,59)));
-        snprintf(label,sizeof(label),"%02d",n<16?n+1:n-15);if(!ui->mosaic_pattern_tab)text(fb,x+4,y+4,label,sample?color:ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(74,70,82)),1);
+        if(n<ui->mosaic_source_count && ui->mosaic_sources[n].bank_page>=0 && ui->mosaic_sources[n].bank_slot>=0)
+            snprintf(label,sizeof(label),"%02d",ui->mosaic_sources[n].bank_page*TS_BANK_SLOT_COUNT+ui->mosaic_sources[n].bank_slot+1);
+        else if(n<ui->mosaic_source_count)snprintf(label,sizeof(label),"E%llu",(unsigned long long)ui->mosaic_sources[n].event);
+        else snprintf(label,sizeof(label),"--");
+        if(!ui->mosaic_pattern_tab)text(fb,x+4,y+4,label,sample?color:ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(74,70,82)),1);
         if(sample && ui->mosaic_live_open && ui->mosaic_live_key_valid &&
            ui->mosaic_live_key.page==ui->mosaic_sources[n].bank_page &&
            ui->mosaic_live_key.slot==ui->mosaic_sources[n].bank_slot &&
@@ -388,6 +393,11 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
     int pages=ui->mosaic_source_pages;if(pages<1)pages=1;
     mosaic_button(fb,10,TS_MOSAIC_SOURCE_PAGE_Y,22,"<",0,1);mosaic_button(fb,86,TS_MOSAIC_SOURCE_PAGE_Y,22,">",0,1);
     snprintf(label,sizeof(label),"%02d/%02d",ui->mosaic_source_page+1,pages);text(fb,40,TS_MOSAIC_SOURCE_PAGE_Y+5,label,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DIM, RGB(150,142,160)),1);
+    uint32_t keys_ink=ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_DATA2,RGB(129,206,200));
+    rect(fb,TS_MOSAIC_SOURCE_KEYS_X,TS_MOSAIC_SOURCE_KEYS_Y+2,10,10,keys_ink);
+    rect(fb,TS_MOSAIC_SOURCE_KEYS_X+1,TS_MOSAIC_SOURCE_KEYS_Y+3,8,8,ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_PANEL,RGB(31,28,38)));
+    if(ui->mosaic_source_keys)rect(fb,TS_MOSAIC_SOURCE_KEYS_X+3,TS_MOSAIC_SOURCE_KEYS_Y+5,4,4,keys_ink);
+    text(fb,TS_MOSAIC_SOURCE_KEYS_X+14,TS_MOSAIC_SOURCE_KEYS_Y+4,"KEYS",keys_ink,1);
     rect(fb,113,66,518,TS_MOSAIC_CANVAS_HEIGHT,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_BACKGROUND, RGB(11,13,16)));
     char length[24];
     if(ui->config.mosaic_record_seconds)snprintf(length,sizeof(length),"%02d:%02d",ui->config.mosaic_record_seconds/60,ui->config.mosaic_record_seconds%60);

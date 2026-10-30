@@ -585,6 +585,7 @@ typedef struct {
     uint64_t mosaic_selection_order[TS_MOSAIC_EVENTS], mosaic_selection_serial;
     int mosaic_open, mosaic_playing, mosaic_recording;
     int mosaic_live_open, mosaic_live_advanced, mosaic_live_keys;
+    int mosaic_source_keys, mosaic_source_key_count; /* Explicit Mosaic QWERTY/MIDI owner. */
     int mosaic_live_drag, mosaic_live_grab_x, mosaic_live_grab_y, mosaic_live_play_all;
     int mosaic_live_drag_before_x, mosaic_live_drag_before_y;
     int mosaic_live_output_width, mosaic_live_output_height; /* Runtime display aspect, never saved. */
@@ -933,6 +934,7 @@ enum {
     TS_MOSAIC_MIX_X = 10, TS_MOSAIC_MIX_STEP = 108, TS_MOSAIC_MIX_W = 100,
     TS_MOSAIC_CANVAS_RIGHT = 565,
     TS_MOSAIC_SOURCE_PAGE_Y = 342,
+    TS_MOSAIC_SOURCE_KEYS_X = 64, TS_MOSAIC_SOURCE_KEYS_Y = 53,
     TS_MOSAIC_CANVAS_BOTTOM = 358, TS_MOSAIC_CANVAS_HEIGHT = 292,
     TS_MOSAIC_MARKER_Y = 362, TS_MOSAIC_MARKER_X = 118, TS_MOSAIC_MARKER_STEP = 32,
     TS_MOSAIC_ENV_X = 568, TS_MOSAIC_ENV_RIGHT = 630,

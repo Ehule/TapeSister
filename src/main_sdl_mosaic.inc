@@ -368,7 +368,7 @@ static void mosaic_keyboard_select(SDL_AudioDeviceID device,AudioState *a,TsUiSt
     a->mosaic_keyboard_epoch=ui->mosaic->epoch;a->mosaic_keyboard_key=key;
     a->mosaic_keyboard_hash=c->source_drag.source->hash;
     if(device)SDL_UnlockAudioDevice(device);
-    if(key.page>=0)snprintf(a->mosaic_keyboard_label,sizeof(a->mosaic_keyboard_label),"BANK %02d / TILE %02d",key.page+1,key.slot+1);
+    if(key.page>=0)snprintf(a->mosaic_keyboard_label,sizeof(a->mosaic_keyboard_label),"PAGE %02d / SOUND %02d",key.page+1,key.page*TS_BANK_SLOT_COUNT+key.slot+1);
     else snprintf(a->mosaic_keyboard_label,sizeof(a->mosaic_keyboard_label),"CARD #%llu / %.20s",(unsigned long long)key.event,event->name);
     snprintf(ui->mosaic_live_status,sizeof(ui->mosaic_live_status),"QWERTY: %.45s / NEW NOTES USE THIS SOURCE",a->mosaic_keyboard_label);
     ui->mosaic_live_key=key;ui->mosaic_live_key_valid=1;
@@ -518,7 +518,7 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
     /* The performance panel gives QWERTY an explicit owner. Use the same
        current/parent instrument, tuning, groups and routes as the Canvas;
        browser source selection continues to belong to card placement. */
-    if(key && ui->mosaic_live_open && ui->mosaic_live_keys &&
+    if(key && (ui->mosaic_source_keys || (ui->mosaic_live_open && ui->mosaic_live_keys)) &&
        !(mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI))) {
         if(event->key.keysym.sym==SDLK_s && (mod&KMOD_SHIFT))return 0; /* Global sustain. */
         if(note_for_key(event->key.keysym.sym)>=0)

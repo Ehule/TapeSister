@@ -888,6 +888,13 @@ typedef struct {
     uint64_t mosaic_keyboard_hash;
     TsMosaicSourceKey mosaic_keyboard_key;
     char mosaic_keyboard_label[48];
+    TsPerformanceBank mosaic_source_performance;
+    TsPerformancePreparedSource *mosaic_source_set; /* UI-owned packed selection. */
+    TsMosaicSourceKey *mosaic_source_keys;
+    uint64_t *mosaic_source_hashes;
+    int mosaic_source_count;
+    uint64_t mosaic_source_epoch;
+    TsStereoFrame mosaic_source_dry; /* Selected-source notes, without backing/FX. */
     uint64_t workbench_refresh_stamp; /* UI-owned; unchanged HOLD needs no lock. */
     int workbench_refresh_valid;
     const TsInstrument *workspace_bank; /* Parked Sample bank while editing a Mosaic card. */
@@ -1014,6 +1021,9 @@ static TsNoteStartResult runtime_note_start_event(
     TsAuditionSource source, const TsNoteEvent *event, int latched,
     int output_rate);
 static TsNoteStartResult runtime_mosaic_keyboard_start(AudioState *,const TsNoteEvent *,int,int);
+static void runtime_mosaic_sources_clear_selection(AudioState *);
+static void runtime_mosaic_sources_free(AudioState *);
+static TsNoteStartResult runtime_mosaic_sources_start(AudioState *,const TsNoteEvent *,int,int);
 static int runtime_staged_start(AudioState *audio,
                                 const TsInstrument *instrument,
                                 const TsTuning *tuning,
@@ -1371,6 +1381,11 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
                                audio->keyboard_dry.r+sister_frame.keyboard_dry.r+audio->sister.clean_output.reference.r};
             (void)ts_external_recorder_write_frame(audio->record_bank_recorder,dry);
             synth_block_peak=fmaxf(synth_block_peak,fmaxf(fabsf(dry.l),fabsf(dry.r)));
+        }
+        if(audio->record_bank_recorder && audio->record_source &&
+           atomic_load_explicit(audio->record_source,memory_order_acquire)==TS_RECORD_SOURCE_SOURCES) {
+            (void)ts_external_recorder_write_frame(audio->record_bank_recorder,audio->mosaic_source_dry);
+            synth_block_peak=fmaxf(synth_block_peak,fmaxf(fabsf(audio->mosaic_source_dry.l),fabsf(audio->mosaic_source_dry.r)));
         }
         if(audio->loop_capture && atomic_load_explicit(&audio->loop_capture->active,memory_order_acquire) && atomic_load_explicit(audio->loop_tap,memory_order_acquire)==1)
             ts_loop_capture_push(audio->loop_capture,(TsStereoFrame){audio->keyboard_dry.l+sister_frame.keyboard_dry.l+audio->sister.clean_output.reference.l,
@@ -2122,7 +2137,10 @@ static void begin_note_event(SDL_AudioDeviceID device, AudioState *audio,
     ts_note_bank_set_attack_ms(&audio->notes, ui->config.voice_attack_ms);
     keyboard_loop_policy(audio, ui);
     latched = latched || ui->keyboard_hold;
-    if(event->origin==TS_NOTE_ORIGIN_QWERTY && ui->mosaic_open && ui->mosaic_live_open && ui->mosaic_live_keys &&
+    if(ui->mosaic_open && ui->mosaic_source_keys)
+        result=ui->mosaic && audio->mosaic_source_epoch==ui->mosaic->epoch?
+            runtime_mosaic_sources_start(audio,event,latched,output_rate):TS_NOTE_START_FAILED;
+    else if(event->origin==TS_NOTE_ORIGIN_QWERTY && ui->mosaic_open && ui->mosaic_live_open && ui->mosaic_live_keys &&
        audio->mosaic_keyboard_sample && ui->mosaic && audio->mosaic_keyboard_epoch==ui->mosaic->epoch)
         result=runtime_mosaic_keyboard_start(audio,event,latched,output_rate);
     else result = runtime_note_start_event(
@@ -2142,11 +2160,18 @@ static void begin_note_event(SDL_AudioDeviceID device, AudioState *audio,
         visible_notes >>= 1u;
     }
     SDL_UnlockAudioDevice(device);
-    if (result == TS_NOTE_LIMIT_REACHED)
+    if(result==TS_NOTE_START_FAILED && ui->mosaic_open && ui->mosaic_source_keys)
+        snprintf(ui->status,sizeof(ui->status),"SELECT AUDIO SOURCES IN THIS MOSAIC FIRST");
+    else if (result == TS_NOTE_LIMIT_REACHED && ui->mosaic_open && ui->mosaic_source_keys)
+        snprintf(ui->status,sizeof(ui->status),audio->mosaic_source_count?"SOURCE VOICE POOL FULL / ENTIRE NOTE SKIPPED":"SELECT AUDIO SOURCES TO PLAY");
+    else if (result == TS_NOTE_LIMIT_REACHED)
         snprintf(ui->status, sizeof(ui->status), "CHORD LIMIT %d NOTES", TS_NOTE_VOICE_LIMIT);
     else if (result == TS_NOTE_TOGGLED_OFF)
         snprintf(ui->status, sizeof(ui->status), "CHORD %s REMOVED",
                  ts_midi_note_name(event->midi_note, note_name, sizeof(note_name)));
+    else if(result==TS_NOTE_STARTED && ui->mosaic_open && ui->mosaic_source_keys)
+        snprintf(ui->status,sizeof(ui->status),"SOURCE KEYS / %d LAYERS / %s%s",audio->mosaic_source_count,
+            ts_midi_note_name(event->midi_note,note_name,sizeof(note_name)),latched?" / HOLD":"");
     else if (result == TS_NOTE_STARTED && latched)
         snprintf(ui->status, sizeof(ui->status),
                  "CHORD %s (MIDI %d) %d/%d - SHIFT+CLICK TO TOGGLE",
@@ -4859,8 +4884,8 @@ static void toggle_fm_hold(SDL_AudioDeviceID device, AudioState *audio,
         if (ui->keyboard_hold) v->latched = 1;
         else if (v->latched) v->active = 0;
     }
-    TsPerformanceBank *banks[] = {&audio->performance, &audio->sister.performance};
-    for (int b = 0; b < 2; ++b) {
+    TsPerformanceBank *banks[] = {&audio->performance, &audio->sister.performance,&audio->mosaic_source_performance};
+    for (int b = 0; b < 3; ++b) {
         if (!ui->keyboard_hold) ts_performance_clear_latched(banks[b]);
         else for (int i = 0; i < TS_PERFORMANCE_VOICE_LIMIT; ++i)
             if (banks[b]->voices[i].active) banks[b]->voices[i].latched = 1;
@@ -12802,9 +12827,13 @@ static int arm_external_capture_to(SDL_AudioDeviceID output_device,
     int source = quick_target ? ui->config.quick_capture_source : mosaic_target ? ui->mosaic_record_source : ui->record_source;
     int internal_source = source != TS_RECORD_SOURCE_EXT;
     int output_source = source == TS_RECORD_SOURCE_OUTPUT;
-    int manual_source = output_source || source == TS_RECORD_SOURCE_DRY;
+    int manual_source = output_source || source == TS_RECORD_SOURCE_DRY || source == TS_RECORD_SOURCE_SOURCES;
     uint32_t record_rate;
     uint8_t record_channels;
+    if(source==TS_RECORD_SOURCE_SOURCES && (!ui->mosaic_source_keys || !audio->mosaic_source_count ||
+       !ui->mosaic || audio->mosaic_source_epoch!=ui->mosaic->epoch)) {
+        snprintf(ui->status,sizeof(ui->status),"ENABLE SOURCE KEYS AND SELECT AUDIO SOURCES FIRST");return 0;
+    }
     if (external_capture_busy(input)) {
         snprintf(ui->status, sizeof(ui->status), "FINISH OR CANCEL THE CURRENT REC TAKE FIRST");
         return 0;
@@ -12934,7 +12963,7 @@ static int arm_external_capture_to(SDL_AudioDeviceID output_device,
         (void)sync_external_input_consumers(
             input_device, audio, input, &ui->config, error, sizeof(error));
     diagnostic_log("REC armed: slot=%d source=%s threshold=%d dB", slot + 1,
-                   output_source ? "output" : source==TS_RECORD_SOURCE_DRY ? "dry keyboard" : internal_source ? "synth" : "external",
+                   output_source ? "output" : source==TS_RECORD_SOURCE_SOURCES ? "selected sources" : source==TS_RECORD_SOURCE_DRY ? "dry keyboard" : internal_source ? "synth" : "external",
                    ui->config.record_threshold_db);
     sync_external_capture_ui(output_device, *input_device, input, ui);
     if(!quick_target)show_overlay(ui, (manual_source || streaming) ? "RECORDING" : "REC ARMED", 850u);
@@ -13175,7 +13204,7 @@ static void finalize_external_recording(SDL_AudioDeviceID output_device,
     }
     archived = ts_capture_archive_write_channels(
         capture_archive_directory(), source==TS_RECORD_SOURCE_OUTPUT ? TS_CAPTURE_ARCHIVE_OUTPUT :
-                                    source==TS_RECORD_SOURCE_DRY ? TS_CAPTURE_ARCHIVE_INTERNAL :
+                                    (source==TS_RECORD_SOURCE_DRY || source==TS_RECORD_SOURCE_SOURCES) ? TS_CAPTURE_ARCHIVE_INTERNAL :
                                     source==TS_RECORD_SOURCE_SYNTH ? TS_CAPTURE_ARCHIVE_SYNTH :
                                                     TS_CAPTURE_ARCHIVE_INPUT,
         captured, frames, sample_rate, channels,
@@ -13640,6 +13669,7 @@ static void keyboard_sustain_toggle(SDL_AudioDeviceID device,AudioState *audio,
     if(device)SDL_LockAudioDevice(device);
     ts_note_bank_set_sustain(&audio->notes,enabled);
     ts_performance_set_sustain(&audio->performance,enabled);
+    ts_performance_set_sustain(&audio->mosaic_source_performance,enabled);
     ts_performance_set_sustain(&audio->sister.performance,enabled);
     if(device)SDL_UnlockAudioDevice(device);
     ui->keyboard_sustain=enabled;
@@ -14016,6 +14046,7 @@ int main(int argc, char **argv)
     tapeLinkReaderInit(&audio.live_link);
     audio.live_link_available = -1;
     ts_performance_init(&audio.performance);
+    ts_performance_init(&audio.mosaic_source_performance);
     ts_performance_init(&audio.tile_launchers);
     atomic_init(&audio.tile_launcher_mask, 0u);
     ts_audio_mixer_init(&audio.mixer);
@@ -18341,6 +18372,7 @@ int main(int argc, char **argv)
             ui.tune_reference_active = audio.tune_reference_enabled;
             ui.active_notes = ts_note_bank_visible_mask(
                 &audio.notes, ts_ui_keyboard_base_note(&ui));
+            ui.active_notes |= ts_performance_visible_mask(&audio.mosaic_source_performance,ts_ui_keyboard_base_note(&ui));
             ui.active_notes |= ts_performance_visible_mask(
                 &audio.sister.performance, ts_ui_keyboard_base_note(&ui));
             ui.active_notes |= ts_performance_visible_mask(
@@ -18348,7 +18380,7 @@ int main(int argc, char **argv)
             ui.tile_launcher_mask = (uint16_t)atomic_load_explicit(
                 &audio.tile_launcher_mask, memory_order_acquire);
             ui.fm_held_notes = ts_note_bank_latched_synth_count(&audio.notes);
-            ui.playback_active = audio.playing || voice != NULL ||
+            ui.playback_active = audio.playing || voice != NULL || audio.mosaic_source_performance.render_limit>0 ||
                                  ts_keyboard_sequence_active(&audio.keyboard_sequence) ||
                                  sister_voice != NULL || tile_voice != NULL;
             if (audio.playing) {
@@ -18692,6 +18724,7 @@ int main(int argc, char **argv)
     ts_tracker_playback_free(&audio.tracker);
     ts_tracker_edit_free(ui.tracker_edit);
     ts_performance_free(&audio.performance);
+    runtime_mosaic_sources_free(&audio);
     for(int i=0;i<TS_NOTE_BANK_VOICE_CAPACITY;++i)ts_sample_free(&audio.note_snapshots[i]);
     ts_keyboard_sequence_source_free(audio.keyboard_sequence.source);
     ts_performance_free(&audio.tile_launchers);
