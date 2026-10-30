@@ -1,23 +1,23 @@
 /* One display-only recording card in either the native or logical canvas.
    It has no event ID, source, selection or playback voice. */
-static void mosaic_record_rect(TsFramebuffer *fb,TsUiWaveformDetail *d,
+static void mosaic_record_rect(TsFramebuffer *fb,TsUiWaveformDetail *d,const TsUiState *ui,
                                 double x,double y,double right,double bottom,uint32_t color)
 {
-    int left=(int)fmax(d?0:151,fmin(d?d->width:TS_MOSAIC_CANVAS_RIGHT,floor(x+.5)));
+    int left=(int)fmax(d?0:151,fmin(d?d->width:ts_ui_mosaic_canvas_right(ui),floor(x+.5)));
     int top=(int)fmax(d?0:66,fmin(d?d->height:TS_MOSAIC_CANVAS_BOTTOM,floor(y+.5)));
-    int end=(int)fmax(d?0:151,fmin(d?d->width:TS_MOSAIC_CANVAS_RIGHT,floor(right+.5)));
+    int end=(int)fmax(d?0:151,fmin(d?d->width:ts_ui_mosaic_canvas_right(ui),floor(right+.5)));
     int last=(int)fmax(d?0:66,fmin(d?d->height:TS_MOSAIC_CANVAS_BOTTOM,floor(bottom+.5)));
     if(end<=left || last<=top)return;
     if(d)mosaic_detail_rect(d,left,top,end,last,color);
     else rect(fb,left,top,end-left,last-top,color);
 }
-static void mosaic_record_text(TsFramebuffer *fb,TsUiWaveformDetail *d,
+static void mosaic_record_text(TsFramebuffer *fb,TsUiWaveformDetail *d,const TsUiState *ui,
                                 double x,double y,const char *label,uint32_t color,double sx,double sy)
 {
     for(int n=0;label[n];++n) {
         const char *bits=glyph(label[n]);
         for(int gy=0;gy<7;++gy)for(int gx=0;gx<5;++gx)if(bits[gy*5+gx]=='1')
-            mosaic_record_rect(fb,d,x+(n*6+gx)*sx,y+gy*sy,
+            mosaic_record_rect(fb,d,ui,x+(n*6+gx)*sx,y+gy*sy,
                 x+(n*6+gx+1)*sx,y+(gy+1)*sy,color);
     }
 }
@@ -25,7 +25,7 @@ static void mosaic_recording_preview(TsFramebuffer *fb,TsUiWaveformDetail *d,con
     const TsMosaicRecordPreview *p,unsigned sample_rate,size_t frames,int recording,const char *state)
 {
     if(!ui->mosaic || p->epoch!=ui->mosaic->epoch || !sample_rate)return;
-    double sx=d?(double)d->width/(TS_MOSAIC_CANVAS_RIGHT-151):1,sy=d?(double)d->height/TS_MOSAIC_CANVAS_HEIGHT:1;
+    double sx=d?(double)d->width/(ts_ui_mosaic_canvas_right(ui)-151):1,sy=d?(double)d->height/TS_MOSAIC_CANVAS_HEIGHT:1;
     double scale=ui->mosaic_scale>0?ui->mosaic_scale:24,horizontal=ui->mosaic_hscale>0?ui->mosaic_hscale:1;
     double rate=scale*sy,seconds=(double)frames/sample_rate;
     TsMosaicEvent placement={.start=p->start,.duration=seconds,.x=p->x,.width=86};
@@ -35,10 +35,10 @@ static void mosaic_recording_preview(TsFramebuffer *fb,TsUiWaveformDetail *d,con
     double right=x+fmax(1,mosaic_detail_pixel(86*horizontal*sx));
     double bottom=y+fmax(40*sy,mosaic_detail_pixel(seconds*rate));
     double top_limit=d?0:66,bottom_limit=d?d->height:TS_MOSAIC_CANVAS_BOTTOM;
-    if(right<=(d?0:151) || x>=(d?d->width:TS_MOSAIC_CANVAS_RIGHT) || bottom<=top_limit || y>=bottom_limit)return;
+    if(right<=(d?0:151) || x>=(d?d->width:ts_ui_mosaic_canvas_right(ui)) || bottom<=top_limit || y>=bottom_limit)return;
     uint32_t border=recording?(ui->text_cursor_visible?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_RECORD, RGB(244,112,117)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_RECORD, RGB(183,78,91))):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DATA1, RGB(225,169,100));
     uint32_t fill=ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(43,26,35)),wave=ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_RECORD, RGB(238,139,149));
-    mosaic_record_rect(fb,d,x,y,right,bottom,fill);
+    mosaic_record_rect(fb,d,ui,x,y,right,bottom,fill);
     int first=(int)fmax(top_limit,y+16*sy),last=(int)fmin(bottom_limit,bottom-12*sy);
     double center=(x+right)*.5,half=fmax(0,(right-x-12*sx)*.43);
     double wave_rate=seconds>0?(bottom-y-28*sy)/seconds:rate;
@@ -52,18 +52,18 @@ static void mosaic_recording_preview(TsFramebuffer *fb,TsUiWaveformDetail *d,con
         if(end>=TS_MOSAIC_RECORD_PEAKS)end=TS_MOSAIC_RECORD_PEAKS-1;
         float peak=0;for(size_t bin=begin;bin<=end;++bin)peak=fmaxf(peak,p->peaks[bin]);
         double amplitude=fminf(1,peak)*half;
-        mosaic_record_rect(fb,d,center-amplitude-.5,row,center+amplitude+.5,row+1,wave);
+        mosaic_record_rect(fb,d,ui,center-amplitude-.5,row,center+amplitude+.5,row+1,wave);
     }
-    mosaic_record_rect(fb,d,x,y,x+fmin(2*sx,right-x),bottom,border);
-    mosaic_record_rect(fb,d,right-fmin(sx,right-x),y,right,bottom,border);
-    mosaic_record_rect(fb,d,x,y,right,y+sy,border);
-    mosaic_record_rect(fb,d,x,bottom-2*sy,right,bottom,border);
+    mosaic_record_rect(fb,d,ui,x,y,x+fmin(2*sx,right-x),bottom,border);
+    mosaic_record_rect(fb,d,ui,right-fmin(sx,right-x),y,right,bottom,border);
+    mosaic_record_rect(fb,d,ui,x,y,right,y+sy,border);
+    mosaic_record_rect(fb,d,ui,x,bottom-2*sy,right,bottom,border);
     int chars=(int)((right-x)/sx-12)/6;if(chars>24)chars=24;
     if(chars>0) {
         char label[40];snprintf(label,sizeof(label),"%.*s",chars,state);
-        mosaic_record_text(fb,d,x+6*sx,y+4*sy,label,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DATA1, RGB(255,215,211)),sx,sy);
+        mosaic_record_text(fb,d,ui,x+6*sx,y+4*sy,label,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DATA1, RGB(255,215,211)),sx,sy);
         snprintf(label,sizeof(label),"%.1F S",seconds);label[chars]='\0';
-        mosaic_record_text(fb,d,x+6*sx,bottom-10*sy,label,border,sx,sy);
+        mosaic_record_text(fb,d,ui,x+6*sx,bottom-10*sy,label,border,sx,sy);
     }
 }
 static void mosaic_recording_card(TsFramebuffer *fb,TsUiWaveformDetail *d,const TsUiState *ui)

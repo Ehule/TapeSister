@@ -53,5 +53,34 @@ static void test_mosaic_volume_controls(SDL_Window *window)
         assert(before.pixels[y*TS_UI_WIDTH+x]==after.pixels[y*TS_UI_WIDTH+x]);
     click(window,585,89,1);motion(window,613,206);release(window,613,206);
     assert(!mosaic.volume_drag && fabsf(ts_mosaic_volume_at(scene,.5)-.75f)<.02f);
+    /* Hiding is a view change: envelope, history, selection and geometry stay.
+       The reclaimed strip supports cards, not invisible envelope drawing. */
+    hash=ts_mosaic_hash(scene);history=scene->history_count;
+    ui.mosaic_source_keys=1; /* Shortcut takes priority over the V piano key. */
+    key(window,SDLK_v,KMOD_SHIFT);assert(ui.config.mosaic_volume_hidden && !mosaic.volume_drag);
+    ui.mosaic_source_keys=0;
+    assert(ts_mosaic_hash(scene)==hash && scene->history_count==history && ui.mosaic_selected==a->id);
+    double old_x=a->x;a->x=430;
+    TsUiWaveformDetail details[2]={0};
+    for(int mode=0;mode<2;++mode) {
+        ts_ui_waveform_details_begin(details,1729,973);ts_ui_render(&after,&ui,&instrument);
+        assert(ts_ui_waveform_detail_finish(&details[0],&after));
+        assert(details[0].logical_width==(mode?414:480));
+        if(!mode) {
+            TsUiWaveformDetail *d=&details[0];int y=84*d->height/292;
+            assert(d->pixels[(size_t)y*d->width+449*d->width/480]!=d->pixels[(size_t)y*d->width+249*d->width/480]);
+        }
+        if(!mode){click(window,TS_MOSAIC_ENV_TOGGLE_X+3,TS_MOSAIC_ENV_TOGGLE_Y+4,1);release(window,635,72);}
+    }
+    a->x=old_x;ts_ui_waveform_detail_begin(NULL);
+    for(int i=0;i<2;++i)ts_ui_waveform_detail_free(&details[i]);
+    assert(!ui.config.mosaic_volume_hidden && ts_mosaic_hash(scene)==hash && scene->history_count==history);
+    key(window,SDLK_v,KMOD_SHIFT);
+    a->x=430;a->width=86;ui.mosaic_xscroll=0;ui.mosaic_hscale=1;ui.mosaic_scroll=0;ui.mosaic_scale=10;
+    click(window,600,150,1);release(window,600,150);
+    assert(ui.mosaic_selected==a->id && !mosaic.volume_drag);
+    const char *shot=getenv("TS_TEST_MOSAIC_VOLUME");
+    if(shot){ts_ui_render(&after,&ui,&instrument);assert(ts_ui_write_ppm(&after,shot));}
+    key(window,SDLK_v,KMOD_SHIFT);assert(!ui.config.mosaic_volume_hidden);
     ui.mosaic=audio.mosaic=saved;mosaic_poll(0,&ui,&instrument,&mosaic);ts_mosaic_free(scene);
 }

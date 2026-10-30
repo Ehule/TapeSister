@@ -145,10 +145,19 @@ fade. The displayed source/card ratio describes the source at its original
 pitch; transposition/chords can produce different individual repeat rates.
 Existing ordinary-card playback is unchanged.
 
-The main Mosaic speed and its timeline volume envelope do not advance or
-shape independent players. The Mosaic bus gain/trim, per-card controls, and
-later routing/effects still apply. This lets a timeline fade/pause leave an
-independent loop running while retaining the existing output paths.
+The main Mosaic speed does not advance independent players. In **LOOPS >
+ADVANCED**, **MOSAIC ENVELOPE: BYPASS / FOLLOW** controls all loop players.
+**BYPASS** is the default, including older projects. **FOLLOW** reads the drawn
+arrangement volume at the main playhead; a paused playhead holds its level,
+and Stop/Home follows the rewound position. Switching modes, editing the curve,
+and seeking receive a 20 ms gain slew, so loop phases continue without an abrupt
+volume jump. The setting is saved with the project and affects both the Mosaic
+bus and custom card routes. Whole-looper Pause still holds and fades its players.
+The Mosaic bus gain/trim, per-card controls, and later routing/effects also apply.
+
+**Shift+V** or the small **− / +** box hides/shows the envelope editor and returns
+its width to the canvas. Hiding changes only the view; Follow continues to work.
+**SAVE CONFIG** remembers this display preference.
 
 ## Timeline and clock choices
 

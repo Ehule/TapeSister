@@ -313,6 +313,9 @@ loop selection. STOP/Escape still stop and rewind to zero without clearing the r
 ![Mosaic volume lane](images/mosaic-volume.png)
 
 The narrow lane at the right follows the arrangement timeline vertically.
+Click its small **− / +** box at the far right, or press **Shift+V**, to hide/show
+the editor. Hiding expands the usable canvas; the saved curve keeps playing.
+Card positions and zoom stay in place. **SAVE CONFIG** remembers visibility.
 **Left-click and drag** to draw volume: left is silence, right is full level.
 The curve has its own border, with every tool button outside it. Small square
 handles mark the start and end when visible; drag sideways at either endpoint
@@ -320,7 +323,12 @@ to set its exact level. **FIT ALL** reveals both endpoints. The lane fits the
 same visible time range into its smaller drawing area and has its own time
 guides and playhead marker, keeping the curve clear of the buttons.
 The envelope is multiplied with event levels and fades before Mosaic enters its
-normal effects/recording route. Live curve changes receive a short gain slew.
+normal effects/recording route. Live curve changes receive a short gain slew. Independent loop cards bypass
+the curve by default; **LOOPS > ADVANCED > MOSAIC ENVELOPE** switches all loop
+players between **BYPASS** and **FOLLOW** with a smooth transition. Follow uses
+the main playhead position, including a held level while the timeline is paused.
+Seeks, repeats and curve edits are smoothed without resetting loop phases.
+The choice is saved in the project and applies to custom card routes too.
 
 The curve is stored from 0–100% of the entire arrangement. Moving or resizing
 its last event stretches or shrinks the envelope with the new total duration.

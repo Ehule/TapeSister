@@ -940,6 +940,8 @@ enum {
     TS_MOSAIC_ENV_X = 568, TS_MOSAIC_ENV_RIGHT = 630,
     TS_MOSAIC_ENV_TOP = 86, TS_MOSAIC_ENV_BOTTOM = 335,
     TS_MOSAIC_ENV_PAD = 3,
+    TS_MOSAIC_ENV_TOGGLE_X = 632, TS_MOSAIC_ENV_TOGGLE_Y = 68,
+    TS_MOSAIC_ENV_TOGGLE_W = 8, TS_MOSAIC_ENV_TOGGLE_H = 16,
     TS_MOSAIC_MIX_Y = 380, TS_MOSAIC_SPEED_X = 500, TS_MOSAIC_SPEED_W = 128,
     TS_MOSAIC_LENGTH_LABEL_X = 204, TS_MOSAIC_LENGTH_X = 302, TS_MOSAIC_LENGTH_W = 98,
     TS_MOSAIC_REC_TILE_X = 322, TS_MOSAIC_REC_TILE_Y = 39, TS_MOSAIC_REC_TILE_W = 64,
@@ -947,6 +949,8 @@ enum {
     TS_MOSAIC_FIT_X = 504, TS_MOSAIC_FIT_W = 52,
     TS_MOSAIC_ZOOM_OUT_X = 560, TS_MOSAIC_ZOOM_IN_X = 588, TS_MOSAIC_ZOOM_W = 24
 };
+static inline int ts_ui_mosaic_canvas_right(const TsUiState *ui)
+{return ui->config.mosaic_volume_hidden?TS_MOSAIC_ENV_RIGHT+1:TS_MOSAIC_CANVAS_RIGHT;}
 /* Logical card-handle coordinates; false when too small or off the viewport. */
 int ts_ui_mosaic_marker_y(const TsUiState *ui, int index);
 int ts_ui_mosaic_fade_handle(const TsUiState *ui, const TsMosaicEvent *event,

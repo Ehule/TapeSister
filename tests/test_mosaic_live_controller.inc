@@ -103,6 +103,12 @@ static void test_mosaic_live_controller(SDL_Window *window,SDL_AudioDeviceID dev
     source_change.button.windowID=SDL_GetWindowID(window);source_change.button.button=SDL_BUTTON_LEFT;
     source_change.button.x=140;source_change.button.y=145;
     assert(mosaic_live_event(&source_change,window,device,&input_device,a,s,u) && u->mosaic->live_capture.source==1);
+    source_change.button.x=200;source_change.button.y=130;
+    uint64_t envelope_hash=ts_mosaic_hash(u->mosaic);
+    assert(mosaic_live_event(&source_change,window,device,&input_device,a,s,u) && u->mosaic->live_envelope);
+    assert(ts_mosaic_hash(u->mosaic)!=envelope_hash && s->loop_session);
+    assert(mosaic_live_event(&source_change,window,device,&input_device,a,s,u) && !u->mosaic->live_envelope);
+    assert(ts_mosaic_hash(u->mosaic)==envelope_hash);
     float out[512];audio_callback(a,(Uint8 *)out,sizeof(out));audio_callback(a,(Uint8 *)out,sizeof(out));
     double audible=0;for(int i=0;i<512;++i)audible+=fabsf(out[i]);assert(audible>1);
     assert(ts_midi_decode_short_message(0x89,60,0,&pedal));

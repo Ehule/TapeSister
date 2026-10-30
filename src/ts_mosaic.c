@@ -12,7 +12,7 @@ TsMosaic *ts_mosaic_create(void)
 {
     static uint64_t epoch=0;
     TsMosaic *m=calloc(1,sizeof(*m));
-    if(m) {m->pattern_engine=ts_pattern_engine_create();m->next_id=1;m->gain=0.7f;m->speed=m->speed_current=1;m->epoch=++epoch;m->volume_current=1;m->live_trigger_floor=-1e-9;m->live_capture.length=4;m->live_pause_gain=m->live_pause_base=1;
+    if(m) {m->pattern_engine=ts_pattern_engine_create();m->next_id=1;m->gain=0.7f;m->speed=m->speed_current=1;m->epoch=++epoch;m->volume_current=m->live_envelope_gain=1;m->live_trigger_floor=-1e-9;m->live_capture.length=4;m->live_pause_gain=m->live_pause_base=1;
         for(int i=0;i<TS_MOSAIC_ENVELOPE_POINTS;++i)m->volume[i]=1;}
     return m;
 }
@@ -711,6 +711,7 @@ uint64_t ts_mosaic_hash(const TsMosaic *m)
     }
     {char settings[96];snprintf(settings,sizeof(settings),"LOOPER %d %d %d %d %d",m->live_capture.source,m->live_capture.continuous,m->live_capture.units,m->live_capture.length,m->live_capture.quantize);
         for(const unsigned char *p=(const unsigned char *)settings;*p;++p){hash^=*p;hash*=1099511628211ull;}}
+    if(m->live_envelope){hash^=UINT64_C(0x4c4f4f50454e56);hash*=1099511628211ull;}
     char speed[48];snprintf(speed,sizeof(speed),"%.17g",m->speed);
     for(const unsigned char *p=(const unsigned char *)speed;*p;++p){hash^=*p;hash*=1099511628211ull;}
     hash^=(uint64_t)m->auto_space;hash*=1099511628211ull;
@@ -770,15 +771,17 @@ int ts_mosaic_save(const TsMosaic *m,const char *dir,char *error,size_t size)
          !isfinite(m->events[i].finish_fade) || m->events[i].finish_fade<0 || m->events[i].finish_fade>30)) {
         snprintf(error,size,"Invalid Mosaic sequence/finish settings");return 0;
     }
+    if(m->live_envelope<0 || m->live_envelope>1){snprintf(error,size,"Invalid looper envelope policy");return 0;}
     char path[4096];
     if(snprintf(path,sizeof(path),"%s/mosaic.tsm",dir)>=(int)sizeof(path))return 0;
     FILE *f=fopen(path,"wb");if(!f)goto failed;
     int live_format=0;for(int i=0;i<TS_MOSAIC_EVENTS;++i)live_format|=m->events[i].id && m->events[i].live;
     live_format|=m->live_capture.source || m->live_capture.continuous || m->live_capture.units || m->live_capture.length!=4 || m->live_capture.quantize;
     int sequence_format=0;for(int i=0;i<TS_MOSAIC_EVENTS;++i)sequence_format|=m->events[i].id && (m->events[i].live_order || m->events[i].finish_fade);
-    live_format|=sequence_format;
-    if(fprintf(f,"TAPESISTER_MOSAIC %d\nSETTINGS %d %.9g %.17g\nSPACING %d\n",sequence_format?16:live_format?15:14,m->repeat,m->gain,m->speed,m->auto_space)<0)goto close_failed;
+    live_format|=sequence_format || m->live_envelope;
+    if(fprintf(f,"TAPESISTER_MOSAIC %d\nSETTINGS %d %.9g %.17g\nSPACING %d\n",m->live_envelope?17:sequence_format?16:live_format?15:14,m->repeat,m->gain,m->speed,m->auto_space)<0)goto close_failed;
     if(live_format && fprintf(f,"LOOPER %d %d %d %d %d\n",m->live_capture.source,m->live_capture.continuous,m->live_capture.units,m->live_capture.length,m->live_capture.quantize)<0)goto close_failed;
+    if(m->live_envelope && fprintf(f,"ENVELOPE %d\n",m->live_envelope)<0)goto close_failed;
     for(int i=0;i<TS_MOSAIC_VIEWS;++i) {
         const TsMosaicView *v=&m->views[i];
         if(fprintf(f,"VIEW %d %.17g %.17g %.17g %.17g\n",v->stored,v->scroll,v->xscroll,v->scale,v->hscale)<0)goto close_failed;
@@ -808,7 +811,7 @@ int ts_mosaic_save(const TsMosaic *m,const char *dir,char *error,size_t size)
             }
         }
         if(live_format && fprintf(f,"LIVE %d %d %d %d %d %.17g\n",e->live,e->live_finite,e->live_tempo,e->live_transport,e->live_position,e->live_beats)<0)goto close_failed;
-        if(sequence_format && fprintf(f,"STEP %d %.17g\n",e->live_order,e->finish_fade)<0)goto close_failed;
+        if((sequence_format || m->live_envelope) && fprintf(f,"STEP %d %.17g\n",e->live_order,e->finish_fade)<0)goto close_failed;
         if(fprintf(f,"PATTERN %d\n",e->source->pattern!=NULL)<0)goto close_failed;
         char name[129];
         for(int k=0;k<64;++k)snprintf(name+2*k,3,"%02x",(unsigned char)e->name[k]);
@@ -849,7 +852,7 @@ int ts_mosaic_load(TsMosaic *m,const char *dir,char *error,size_t size)
     if(length>=2 && line[length-2]=='\r' && line[length-1]=='\n') {
         line[length-2]='\n';line[length-1]='\0';
     }
-    int version=!strcmp(line,"TAPESISTER_MOSAIC 16\n")?16:!strcmp(line,"TAPESISTER_MOSAIC 15\n")?15:!strcmp(line,"TAPESISTER_MOSAIC 14\n")?14:!strcmp(line,"TAPESISTER_MOSAIC 13\n")?13:!strcmp(line,"TAPESISTER_MOSAIC 12\n")?12:!strcmp(line,"TAPESISTER_MOSAIC 11\n")?11:!strcmp(line,"TAPESISTER_MOSAIC 10\n")?10:!strcmp(line,"TAPESISTER_MOSAIC 9\n")?9:!strcmp(line,"TAPESISTER_MOSAIC 8\n")?8:!strcmp(line,"TAPESISTER_MOSAIC 7\n")?7:!strcmp(line,"TAPESISTER_MOSAIC 6\n")?6:!strcmp(line,"TAPESISTER_MOSAIC 5\n")?5:!strcmp(line,"TAPESISTER_MOSAIC 4\n")?4:!strcmp(line,"TAPESISTER_MOSAIC 1\n")?1:!strcmp(line,"TAPESISTER_MOSAIC 2\n")?2:!strcmp(line,"TAPESISTER_MOSAIC 3\n")?3:0;
+    int version=!strcmp(line,"TAPESISTER_MOSAIC 17\n")?17:!strcmp(line,"TAPESISTER_MOSAIC 16\n")?16:!strcmp(line,"TAPESISTER_MOSAIC 15\n")?15:!strcmp(line,"TAPESISTER_MOSAIC 14\n")?14:!strcmp(line,"TAPESISTER_MOSAIC 13\n")?13:!strcmp(line,"TAPESISTER_MOSAIC 12\n")?12:!strcmp(line,"TAPESISTER_MOSAIC 11\n")?11:!strcmp(line,"TAPESISTER_MOSAIC 10\n")?10:!strcmp(line,"TAPESISTER_MOSAIC 9\n")?9:!strcmp(line,"TAPESISTER_MOSAIC 8\n")?8:!strcmp(line,"TAPESISTER_MOSAIC 7\n")?7:!strcmp(line,"TAPESISTER_MOSAIC 6\n")?6:!strcmp(line,"TAPESISTER_MOSAIC 5\n")?5:!strcmp(line,"TAPESISTER_MOSAIC 4\n")?4:!strcmp(line,"TAPESISTER_MOSAIC 1\n")?1:!strcmp(line,"TAPESISTER_MOSAIC 2\n")?2:!strcmp(line,"TAPESISTER_MOSAIC 3\n")?3:0;
     if(!version)goto failed;
     char trailing;
     if(!fgets(line,sizeof(line),f))goto failed;
@@ -866,6 +869,8 @@ int ts_mosaic_load(TsMosaic *m,const char *dir,char *error,size_t size)
         next->live_capture.source<0 || next->live_capture.source>2 || next->live_capture.continuous<0 || next->live_capture.continuous>1 ||
         next->live_capture.units<0 || next->live_capture.units>1 || next->live_capture.length<0 || next->live_capture.length>60 ||
         next->live_capture.quantize<0 || next->live_capture.quantize>1))goto failed;
+    if(version>=17 && (!fgets(line,sizeof(line),f) || sscanf(line,"ENVELOPE %d %c",&next->live_envelope,&trailing)!=1 ||
+        next->live_envelope<0 || next->live_envelope>1))goto failed;
     if(version>=11)for(int i=0;i<TS_MOSAIC_VIEWS;++i) {
         TsMosaicView *v=&next->views[i];
         if(!fgets(line,sizeof(line),f) || sscanf(line,"VIEW %d %lf %lf %lf %lf %c",

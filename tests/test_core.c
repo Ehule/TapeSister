@@ -2718,6 +2718,8 @@ int main(void)
         CHECK(config.fm_output_percent == 50);
         CHECK(config.playhead_zero_snap == 1);
         CHECK(config.ripple_cut_crop_canvas == 0);
+        CHECK(config.mosaic_volume_hidden == 0);
+        config.mosaic_volume_hidden = 1;
         config.playhead_zero_snap = 0;
         config.ripple_cut_crop_canvas = 1;
         config.reference_tone_volume = 73;
@@ -2771,6 +2773,7 @@ int main(void)
         CHECK(reopened.rotate_wheel_fine == 5 && reopened.rotate_wheel_coarse == 50);
         CHECK(reopened.reference_tone_volume == 73);
         CHECK(reopened.fm_output_percent == 42);
+        CHECK(reopened.mosaic_volume_hidden == 1);
         CHECK(reopened.playhead_zero_snap == 0);
         CHECK(reopened.ripple_cut_crop_canvas == 1);
         CHECK(reopened.dsp_factory_overridden[4]);

@@ -276,7 +276,7 @@ static TsBankSlot *mosaic_bank_destination(TsSamplePages *pages,TsInstrument *ba
 static void mosaic_reveal_event(TsUiState *ui,const TsMosaicEvent *e)
 {
     double h=ui->mosaic_hscale>0?ui->mosaic_hscale:1,scale=ui->mosaic_scale>0?ui->mosaic_scale:24;
-    double width=(TS_MOSAIC_CANVAS_RIGHT-151)/h,height=TS_MOSAIC_CANVAS_HEIGHT/scale;
+    double width=(ts_ui_mosaic_canvas_right(ui)-151)/h,height=TS_MOSAIC_CANVAS_HEIGHT/scale;
     if(e->x<ui->mosaic_xscroll || e->x+e->width>ui->mosaic_xscroll+width)
         ui->mosaic_xscroll=fmax(0,e->x-fmax(8/h,(width-e->width)*.5));
     if(e->start<ui->mosaic_scroll || e->start>=ui->mosaic_scroll+height)

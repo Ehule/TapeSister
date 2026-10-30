@@ -40,7 +40,7 @@ static void mosaic_poll(SDL_AudioDeviceID device,TsUiState *ui,
                     .duration=target-ui->mosaic_record_preview.start,.x=ui->mosaic_record_preview.x,.width=86};
                 ts_mosaic_space(ui->mosaic,&placement);
                 double horizontal=ui->mosaic_hscale>0?ui->mosaic_hscale:1;
-                double visible=(TS_MOSAIC_CANVAS_RIGHT-151)/horizontal;
+                double visible=(ts_ui_mosaic_canvas_right(ui)-151)/horizontal;
                 if(placement.x+86>ui->mosaic_xscroll+visible)
                     ui->mosaic_xscroll=fmax(0,placement.x+86-visible);
                 if(placement.x<ui->mosaic_xscroll)ui->mosaic_xscroll=placement.x;
@@ -269,7 +269,7 @@ static void mosaic_drag_autoscroll(SDL_AudioDeviceID device,TsUiState *ui,Mosaic
     if(y<66 || y>=TS_MOSAIC_CANVAS_BOTTOM)return;
     double speed=0,edge=24;
     if(x<151+edge)speed=-fmin(1,(151+edge-x)/edge);
-    else if(x>TS_MOSAIC_CANVAS_RIGHT-edge)speed=fmin(1,(x-(TS_MOSAIC_CANVAS_RIGHT-edge))/edge);
+    else if(x>ts_ui_mosaic_canvas_right(ui)-edge)speed=fmin(1,(x-(ts_ui_mosaic_canvas_right(ui)-edge))/edge);
     if(!speed || !elapsed)return;
     double horizontal=ui->mosaic_hscale>0?ui->mosaic_hscale:1;
     double scroll=fmax(0,fmin(TS_MOSAIC_LAYOUT_LIMIT,ui->mosaic_xscroll+
@@ -515,6 +515,7 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
         return 0;
     }
     if(!ui->mosaic_open)return 0;
+    if(mosaic_volume_visibility_event(event,ui,c,x,y,mod))return 1;
     /* The performance panel gives QWERTY an explicit owner. Use the same
        current/parent instrument, tuning, groups and routes as the Canvas;
        browser source selection continues to belong to card placement. */
@@ -639,7 +640,7 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
     if(event->type==SDL_MOUSEWHEEL) {
         if(c->drag)return 1;
         int mx,my;wheel_event_mouse(event,&mx,&my);logical_mouse(window,mx,my,&x,&y);
-        if(x>=TS_MOSAIC_ENV_X && x<=TS_MOSAIC_ENV_RIGHT && y>=TS_MOSAIC_ENV_TOP && y<=TS_MOSAIC_ENV_BOTTOM)
+        if(!ui->config.mosaic_volume_hidden && x>=TS_MOSAIC_ENV_X && x<=TS_MOSAIC_ENV_RIGHT && y>=TS_MOSAIC_ENV_TOP && y<=TS_MOSAIC_ENV_BOTTOM)
             y=66+(int)lrint((ts_ui_mosaic_volume_time(ui,y)-ui->mosaic_scroll)*ui->mosaic_scale);
         double amount=wheel_event_delta(event,0);
         if(mod&KMOD_CTRL) {
@@ -692,7 +693,7 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
             if(device)SDL_LockAudioDevice(device);ts_mosaic_seek(ui->mosaic,ui->mosaic_scroll+(y-66)/ui->mosaic_scale);
             if(device)SDL_UnlockAudioDevice(device);return 1;
         }
-        if(x>=151 && x<TS_MOSAIC_CANVAS_RIGHT && y>=66 && y<TS_MOSAIC_CANVAS_BOTTOM) {
+        if(x>=151 && x<ts_ui_mosaic_canvas_right(ui) && y>=66 && y<TS_MOSAIC_CANVAS_BOTTOM) {
             double time=ui->mosaic_scroll+(y-66)/ui->mosaic_scale,left=(x-151)/horizontal+ui->mosaic_xscroll;
             TsMosaicEvent *primary=ts_mosaic_find(ui->mosaic,ui->mosaic_selected);
             for(int pass=TS_MOSAIC_EVENTS;pass>=0;--pass) {
@@ -735,7 +736,7 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
     }
     if(motion && c->drag) {
         if(c->drag==5) {
-            ui->mosaic_box_end_x=x<151?151:x>=TS_MOSAIC_CANVAS_RIGHT?TS_MOSAIC_CANVAS_RIGHT-1:x;ui->mosaic_box_end_y=y<66?66:y>(TS_MOSAIC_CANVAS_BOTTOM-1)?(TS_MOSAIC_CANVAS_BOTTOM-1):y;
+            ui->mosaic_box_end_x=x<151?151:x>=ts_ui_mosaic_canvas_right(ui)?ts_ui_mosaic_canvas_right(ui)-1:x;ui->mosaic_box_end_y=y<66?66:y>(TS_MOSAIC_CANVAS_BOTTOM-1)?(TS_MOSAIC_CANVAS_BOTTOM-1):y;
             double left=ui->mosaic_xscroll+(fmin(ui->mosaic_box_x,ui->mosaic_box_end_x)-151)/horizontal;
             double right=ui->mosaic_xscroll+(fmax(ui->mosaic_box_x,ui->mosaic_box_end_x)-151)/horizontal;
             double top=ui->mosaic_scroll+(fmin(ui->mosaic_box_y,ui->mosaic_box_end_y)-66)/ui->mosaic_scale;
@@ -765,7 +766,7 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
         const TsMosaicSource *source=NULL;
         if(x>=10 && x<108 && y>=74 && y<346){int col=(x-10)/49,row=(y-74)/34;
             int n=ui->mosaic_source_offset+row*2+col;if(col<2 && n<ui->mosaic_source_count)source=ui->mosaic_sources[n].source;
-        }else if(x>=151 && x<TS_MOSAIC_CANVAS_RIGHT && y>=66 && y<TS_MOSAIC_CANVAS_BOTTOM){
+        }else if(x>=151 && x<ts_ui_mosaic_canvas_right(ui) && y>=66 && y<TS_MOSAIC_CANVAS_BOTTOM){
             double t=ui->mosaic_scroll+(y-66)/ui->mosaic_scale,left=ui->mosaic_xscroll+(x-151)/horizontal;
             for(int i=TS_MOSAIC_EVENTS-1;i>=0;--i){const TsMosaicEvent *e=&ui->mosaic->events[i];
                 if(e->id && t>=e->start && t<e->start+e->duration && left>=e->x && left<e->x+e->width){source=e->source;break;}}

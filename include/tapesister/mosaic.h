@@ -192,6 +192,9 @@ typedef struct TsMosaic {
     struct { int source,continuous,units,length,quantize; } live_capture;
     TsMosaicSequence sequence; /* Frozen running order, never resumed by load/undo. */
     int live_pause_routes_valid;
+    int live_envelope; /* Saved whole-looper choice: 0 bypass, 1 follow main playhead. */
+    int live_envelope_running; /* Runtime: settle silently before a new launch. */
+    float live_envelope_gain; /* Runtime 20 ms slew; never resets a player. */
     int live_paused; /* Session-only whole-looper hold, independent of timeline. */
     double live_pause_gain,live_pause_base;
     TsStereoFrame live_pause_last;

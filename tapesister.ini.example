@@ -236,3 +236,7 @@ eq_morph_max_seconds=240
 ; Automatic Audio Health session logging in the writable per-user Health folder.
 ; 0 disables recording next launch; detailed PROFILE remains separately optional.
 session_log=1
+
+[Mosaic]
+; Shift+V hides the volume editor and expands the canvas. Its envelope stays active.
+mosaic_volume_hidden=0

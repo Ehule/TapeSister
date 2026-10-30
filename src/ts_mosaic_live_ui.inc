@@ -238,6 +238,8 @@ static void mosaic_live_overlay(TsFramebuffer *fb,const TsUiState *ui,const TsIn
     mosaic_button(fb,500,84,108,"SEQUENCE",0,1);
     const char *buttons[]={ui->mosaic_live_recording?"NEXT LAYER":"RECORD","STOP RECORDING","DROP PART","STOP LOOPS"};
     for(int i=0;i<4;++i)mosaic_button(fb,132+i*104,106,96,buttons[i],i==0 && ui->mosaic_live_recording,1);
+    mosaic_button(fb,132,124,276,m->live_envelope?"MOSAIC ENVELOPE: FOLLOW":"MOSAIC ENVELOPE: BYPASS",m->live_envelope,1);
+    text(fb,418,128,"ALL LOOPS / SMOOTH",dim,1);
     mosaic_button(fb,132,140,134,(const char *[]){"SRC: EXT INPUT","SRC: DRY KEYS","SRC: OUTPUT"}[m->live_capture.source],0,1);
     mosaic_button(fb,276,140,130,m->live_capture.continuous?"CONTINUOUS ON":"SINGLE TAKE",m->live_capture.continuous,1);
     if(m->live_capture.length)snprintf(line,sizeof(line),"LENGTH %d %s",m->live_capture.length,m->live_capture.units?"BEATS":"SEC");

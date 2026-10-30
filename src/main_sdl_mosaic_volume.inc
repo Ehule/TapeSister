@@ -1,3 +1,22 @@
+/* Visibility is UI-only: finish an in-progress stroke without changing audio,
+   card coordinates, selection, or the arrangement's undo history. */
+static int mosaic_volume_visibility_event(const SDL_Event *event,TsUiState *ui,MosaicController *c,int x,int y,SDL_Keymod mod)
+{
+    int shortcut=event->type==SDL_KEYDOWN && event->key.keysym.sym==SDLK_v &&
+        (mod&KMOD_SHIFT) && !(mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI));
+    int button=x>=TS_MOSAIC_ENV_TOGGLE_X && x<TS_MOSAIC_ENV_TOGGLE_X+TS_MOSAIC_ENV_TOGGLE_W &&
+        y>=TS_MOSAIC_ENV_TOGGLE_Y && y<TS_MOSAIC_ENV_TOGGLE_Y+TS_MOSAIC_ENV_TOGGLE_H;
+    if(button && event->type==SDL_MOUSEMOTION) {
+        snprintf(ui->status,sizeof(ui->status),"%s VOLUME EDITOR / SHIFT+V / ENVELOPE STAYS ACTIVE",ui->config.mosaic_volume_hidden?"SHOW":"HIDE");return 1;
+    }
+    if(!shortcut && !(button && event->type==SDL_MOUSEBUTTONDOWN && event->button.button==SDL_BUTTON_LEFT))return 0;
+    if(shortcut && event->key.repeat)return 1;
+    if(c->drag || c->mix_drag || c->pan_active || ui->mosaic_loop_drag || ui->mosaic_marker_drag)return 1;
+    c->volume_drag=0;
+    ui->config.mosaic_volume_hidden^=1;
+    snprintf(ui->status,sizeof(ui->status),"VOLUME EDITOR %s / SHIFT+V / ENVELOPE STAYS ACTIVE",ui->config.mosaic_volume_hidden?"HIDDEN":"SHOWN");
+    return 1;
+}
 /* A drag edits normalized arrangement time; one stroke is one undo step. */
 static int mosaic_volume_action_at(int x,int y)
 {
@@ -45,6 +64,7 @@ static void mosaic_volume_point(SDL_AudioDeviceID device,TsUiState *ui,MosaicCon
 }
 static int mosaic_volume_event(const SDL_Event *event,SDL_AudioDeviceID device,TsUiState *ui,MosaicController *c,int x,int y)
 {
+    if(ui->config.mosaic_volume_hidden){c->volume_drag=0;return 0;}
     if(c->volume_epoch!=ui->mosaic->epoch)c->volume_drag=0;
     if(c->volume_drag) {
         if(event->type==SDL_MOUSEMOTION){
