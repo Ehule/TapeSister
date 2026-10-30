@@ -6,8 +6,13 @@ static const char *mosaic_live_source_name(int source)
 {return source==1?"DRY KEYS":source==2?"OUTPUT":"EXT INPUT";}
 static void mosaic_live_keyboard_snapshot(AudioState *a,TsUiState *ui,const TsInstrument *instrument)
 {
+    if(a->mosaic_source_set && (!ui->mosaic || a->mosaic_source_epoch!=ui->mosaic->epoch)) {
+        runtime_mosaic_sources_clear_selection(a);ui->mosaic_source_key_count=0;
+    }
+    if(ui->mosaic_source_keys)snprintf(ui->mosaic_live_keyboard,sizeof(ui->mosaic_live_keyboard),"SOURCE KEYS / %d LAYERS",a->mosaic_source_count);
     if(a->mosaic_keyboard_sample && (!ui->mosaic || a->mosaic_keyboard_epoch!=ui->mosaic->epoch))a->mosaic_keyboard_sample=NULL;
     ui->mosaic_live_key_valid=a->mosaic_keyboard_sample!=NULL;
+    if(ui->mosaic_source_keys)return;
     if(a->mosaic_keyboard_sample) {
         ui->mosaic_live_key=a->mosaic_keyboard_key;
         snprintf(ui->mosaic_live_keyboard,sizeof(ui->mosaic_live_keyboard),"%s",a->mosaic_keyboard_label);

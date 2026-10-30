@@ -154,6 +154,7 @@ static void mosaic_pattern_sources(TsUiState *ui,const TsInstrument *instrument,
 static void mosaic_sources_refresh(TsUiState *ui,const TsInstrument *instrument,MosaicController *c)
 {
     if(c->ui_epoch!=ui->mosaic->epoch) {
+        ui->mosaic_source_keys=ui->mosaic_source_key_count=0;
         int restored=ui->mosaic_loaded_view_epoch==ui->mosaic->epoch;
         mosaic_drag_end(ui,c);if(!restored)mosaic_select_only(ui,0);
         c->pattern_ready=c->pattern_count=0;memset(c->pattern_notice,0,sizeof(c->pattern_notice));c->pattern_owner=0;ui->mosaic_pattern_choice=0;memset(c->pattern_sources,0,sizeof(c->pattern_sources));

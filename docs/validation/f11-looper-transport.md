@@ -34,10 +34,17 @@ libraries; CDP8/video bundling and MIDI backend disabled for the local build.
 The two large controller translation units use `-O0` locally; production
 application and core retain Release optimization.
 
-Seven relevant CTests pass: Mosaic core, Mosaic controller, live-loop controller,
-quick capture, source-route controller, F11 cockpit, and clock routing. The new
+Updated against main `a3bdeed`, including merged PR #167. Eight relevant CTests
+pass: performance, Mosaic core, Mosaic controller, live-loop controller, quick
+capture, source-route controller, F11 cockpit, and clock routing. The new
 pause tests run inside these existing targets. This covers synthetic buffers and
 real SDL dispatch under dummy audio/video, not physical MIDI/audio hardware.
+
+The selected-source integration fixture also runs with F11 Looper paused:
+page-2 sources 17, 22, 25 and 30 remain playable as four layers, F11 reports their
+voices, and REC SRC captures/publishes the expected stereo signal while the
+loop position stays frozen and the main playhead advances. F11 Resume then
+continues the retained loop. The dedicated `--source-keys` case passes too.
 
 ## Screenshots
 

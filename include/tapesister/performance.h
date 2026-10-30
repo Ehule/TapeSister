@@ -115,6 +115,25 @@ typedef struct {
     int keyboard_loop; /* Whole sample fallback for notes without saved loops. */
 } TsPerformanceBank;
 
+/* UI-prepared immutable layers, including sources on other sample pages.
+   The caller retains one generation reference for each selected source. */
+typedef struct {
+    TsPerformanceGeneration *generation;
+    TsTuning tuning;
+    TsSourceRoute route;
+    TsTileId tile;
+    size_t first,last,crossfade;
+    TsLoopMode mode;
+    int looping;
+} TsPerformancePreparedSource;
+TsPerformanceGeneration *ts_performance_prepare_sample(TsPerformanceBank *,const TsSample *);
+void ts_performance_sample_retain(TsPerformanceGeneration *);
+void ts_performance_sample_release(TsPerformanceGeneration *);
+/* No allocation, cloning or sample hashing; an entire layered note starts or
+   none does when the fixed voice pool is full. */
+int ts_performance_trigger_prepared(TsPerformanceBank *,const TsPerformancePreparedSource *,int,
+                                    const TsNoteEvent *,int latched,int output_rate);
+
 void ts_performance_init(TsPerformanceBank *bank);
 void ts_performance_clear(TsPerformanceBank *bank);
 void ts_performance_clear_latched(TsPerformanceBank *bank);

@@ -49,7 +49,8 @@ typedef enum {
     TS_RECORD_SOURCE_EXT = 0,
     TS_RECORD_SOURCE_SYNTH,
     TS_RECORD_SOURCE_OUTPUT,
-    TS_RECORD_SOURCE_DRY
+    TS_RECORD_SOURCE_DRY,
+    TS_RECORD_SOURCE_SOURCES /* Mosaic selected-source keyboard performance. */
 } TsRecordSource;
 
 typedef struct {

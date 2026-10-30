@@ -80,6 +80,7 @@ static void live_controller_screenshot(TsUiState *u,const char *path)
 #include "test_mosaic_looper_cockpit.inc"
 #include "test_mosaic_sequence_controller.inc"
 #include "test_mosaic_looper_status.inc"
+#include "test_mosaic_source_keys.inc"
 static void test_mosaic_live_controller(SDL_Window *window,SDL_AudioDeviceID device)
 {
     AudioState *a=routing_audio(0);TsUiState *u=mosaic_record_ui_fixture(a);
@@ -224,4 +225,5 @@ static void test_mosaic_live_controller(SDL_Window *window,SDL_AudioDeviceID dev
     test_mosaic_looper_cockpit(window,device);
     test_mosaic_sequence_controller(window,device);
     test_mosaic_looper_status(window,device);
+    test_mosaic_source_keys(window,device);
 }

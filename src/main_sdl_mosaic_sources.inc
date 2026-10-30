@@ -51,7 +51,7 @@ static int mosaic_source_open(SDL_AudioDeviceID device,AudioState *audio,TsUiSta
         ts_ui_reset_parent_view(ui,instrument->parent.frames);
     }
     unlock_edit(device,audio,ui,instrument);
-    if(ok)snprintf(ui->status,sizeof(ui->status),"SOURCE TILE %02d / SAMPLE PAGE %02d - CANVAS / CTRL+M RETURNS TO MOSAIC",slot+1,page+1);
+    if(ok)snprintf(ui->status,sizeof(ui->status),"SOURCE SOUND %02d / PAGE %02d - CANVAS / CTRL+M RETURNS TO MOSAIC",page*TS_BANK_SLOT_COUNT+slot+1,page+1);
     return ok;
 }
 static void mosaic_picks_sync(TsUiState *ui,const MosaicController *c)
@@ -107,12 +107,75 @@ static int mosaic_source_preview(TsUiState *ui,MosaicController *c,int x,int y)
     for(int i=0;i<count;++i)if(ui->mosaic_ghosts[i].x>TS_MOSAIC_LAYOUT_LIMIT)return 0;
     ui->mosaic_ghost_count=count;return 1;
 }
+/* Prepare whole sets on the UI thread; notes retain their old generations
+   after a source is deselected, edited, or removed from the browser. */
+static int mosaic_keyboard_group_select(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,
+    const TsInstrument *instrument,MosaicController *c,int seed_selected)
+{
+    int count=c->picked_count;
+    if(!count && seed_selected && ui->mosaic_source_selected>=0) {
+        mosaic_source_drag(ui,instrument,c,ui->mosaic_source_selected);
+        c->source_key=mosaic_source_key(ui,ui->mosaic_source_selected);
+        if(c->source_drag.source)mosaic_pick_add(ui,c);
+        mosaic_drag_end(ui,c);count=c->picked_count;
+    }
+    if(count>TS_PERFORMANCE_VOICE_LIMIT) {
+        snprintf(ui->status,sizeof(ui->status),"SOURCE SET KEPT / AT MOST %d AUDIO LAYERS",TS_PERFORMANCE_VOICE_LIMIT);return 0;
+    }
+    size_t bytes=(size_t)count*(sizeof(TsPerformancePreparedSource)+sizeof(TsMosaicSourceKey)+sizeof(uint64_t));
+    TsPerformancePreparedSource *next=count?calloc(1,bytes):NULL;
+    if(count && !next){snprintf(ui->status,sizeof(ui->status),"SOURCE SET KEPT / NOT ENOUGH MEMORY");return 0;}
+    TsMosaicSourceKey *keys=count?(TsMosaicSourceKey *)(next+count):NULL;
+    uint64_t *hashes=count?(uint64_t *)(keys+count):NULL;
+    int made=0,patterns=0;
+    for(int i=0;i<count;++i) {
+        const TsMosaicEvent *e=&c->picked_sources[i];TsMosaicSourceKey key=c->picked_keys[i];
+        if(e->source->pattern){++patterns;continue;}
+        TsPerformancePreparedSource *to=&next[made];uint64_t hash=e->source->hash;
+        if(audio->mosaic_source_epoch==ui->mosaic->epoch)for(int n=0;n<audio->mosaic_source_count;++n)
+            if(mosaic_source_key_equal(key,audio->mosaic_source_keys[n]) && hash==audio->mosaic_source_hashes[n]) {
+                to->generation=audio->mosaic_source_set[n].generation;ts_performance_sample_retain(to->generation);break;
+            }
+        if(!to->generation)to->generation=ts_performance_prepare_sample(&audio->mosaic_source_performance,&e->source->sample);
+        if(!to->generation)goto failed;
+        to->tuning=e->tuning;to->first=e->first;to->last=e->last;to->crossfade=e->crossfade;to->mode=e->mode;
+        to->looping=e->looping;to->route=e->output_route;
+        if(key.page>=0 && key.slot>=0) {
+            const TsInstrument *bank=c->pages?ts_sample_pages_page(c->pages,instrument,(size_t)key.page):instrument;
+            if(!bank)goto failed;
+            const TsBankSlot *b=&bank->bank[key.slot];to->tile=b->tile_id;to->route=b->output_route;
+            to->looping=key.slot==bank->selected_slot?bank->has_loop:b->has_loop;
+        }
+        keys[made]=key;hashes[made]=hash;++made;
+    }
+    /* UI-only descriptor ownership; callback voices only read retained samples. */
+    if(device)SDL_LockAudioDevice(device);
+    runtime_mosaic_sources_clear_selection(audio);
+    audio->mosaic_source_set=next;audio->mosaic_source_keys=keys;audio->mosaic_source_hashes=hashes;
+    audio->mosaic_source_count=made;audio->mosaic_source_epoch=ui->mosaic->epoch;
+    if(device)SDL_UnlockAudioDevice(device);
+    ui->mosaic_source_key_count=made;
+    snprintf(ui->status,sizeof(ui->status),patterns?"SOURCE KEYS: %d AUDIO LAYERS / PATTERNS REMAIN ARRANGEMENT SOURCES":
+        "SOURCE KEYS: %d AUDIO LAYERS / SHIFT-CLICK ADD / CTRL-CLICK TOGGLE",made);
+    return 1;
+failed:
+    for(int n=0;n<=made && n<count;++n)ts_performance_sample_release(next[n].generation);
+    free(next);ts_performance_collect_retired(&audio->mosaic_source_performance);
+    snprintf(ui->status,sizeof(ui->status),"SOURCE SET KEPT / COULD NOT PREPARE ALL SELECTED SOUNDS");return 0;
+}
 static int mosaic_sources_event(const SDL_Event *event,SDL_AudioDeviceID device,
     AudioState *audio,TsUiState *ui,TsInstrument *instrument,MosaicController *c,
     TransformController *transform,int x,int y,SDL_Keymod mod)
 {
     int down=event->type==SDL_MOUSEBUTTONDOWN,up=event->type==SDL_MOUSEBUTTONUP;
     int motion=event->type==SDL_MOUSEMOTION;
+    if(down && event->button.button==SDL_BUTTON_LEFT && x>=TS_MOSAIC_SOURCE_KEYS_X && x<108 &&
+       y>=TS_MOSAIC_SOURCE_KEYS_Y && y<TS_MOSAIC_SOURCE_KEYS_Y+13) {
+        if(!ui->mosaic_source_keys && !mosaic_keyboard_group_select(device,audio,ui,instrument,c,1))return 1;
+        ui->mosaic_source_keys^=1;
+        snprintf(ui->status,sizeof(ui->status),ui->mosaic_source_keys?
+            "SOURCE KEYS ON / SELECTED AUDIO SOURCES FOLLOW QWERTY AND MIDI":"SOURCE KEYS OFF / MOSAIC EDIT SHORTCUTS RESTORED");return 1;
+    }
     int sidebar=x>=10 && x<108 && y>=74 && y<TS_MOSAIC_SOURCE_PAGE_Y;
     if(down && sidebar && (event->button.button==SDL_BUTTON_RIGHT ||
        (event->button.button==SDL_BUTTON_LEFT && event->button.clicks>=2 && !(mod&(KMOD_CTRL|KMOD_SHIFT|KMOD_ALT|KMOD_GUI))))) {
@@ -122,6 +185,7 @@ static int mosaic_sources_event(const SDL_Event *event,SDL_AudioDeviceID device,
         if(event->button.button==SDL_BUTTON_RIGHT && ui->mosaic_sources[n].source && ui->mosaic_sources[n].source->pattern && (y-74)%34>=16){
             mosaic_pattern_notices(ui,instrument,c,2);return 1;
         }
+        if(ui->mosaic_source_keys)mosaic_keyboard_group_select(device,audio,ui,instrument,c,1);
         if(event->button.button==SDL_BUTTON_LEFT)mosaic_source_open(device,audio,ui,instrument,c,transform,n);
         else {
             uint64_t primary=ui->mosaic_selected;TsMosaicSource *source=ui->mosaic_sources[n].source;
@@ -138,20 +202,24 @@ static int mosaic_sources_event(const SDL_Event *event,SDL_AudioDeviceID device,
         int n=ui->mosaic_source_offset+((y-74)/34)*2+(x-10)/49;
         mosaic_drag_end(ui,c);mosaic_source_drag(ui,instrument,c,n);
         if(!c->source_drag.source)return 1;
-        if(!(mod&(KMOD_CTRL|KMOD_SHIFT|KMOD_ALT|KMOD_GUI)))mosaic_keyboard_select(device,audio,ui,instrument,c,n);
+        if(!ui->mosaic_source_keys && !(mod&(KMOD_CTRL|KMOD_SHIFT|KMOD_ALT|KMOD_GUI)))mosaic_keyboard_select(device,audio,ui,instrument,c,n);
         mosaic_select_only(ui,0);
         c->source_key=mosaic_source_key(ui,n);c->drag_x=x;c->drag_y=y;
         int at=0;for(;at<c->picked_count;++at)if(mosaic_source_key_equal(c->source_key,c->picked_keys[at]))break;
+        if(ui->mosaic_source_keys && !(mod&(KMOD_CTRL|KMOD_SHIFT|KMOD_ALT|KMOD_GUI)) && at<c->picked_count) {
+            --c->picked_sources[at].source->pins;c->picked_sources[at]=c->source_drag;++c->source_drag.source->pins;
+        }
         if(mod&KMOD_CTRL) {
             if(at<c->picked_count)mosaic_pick_remove(ui,c,at);else mosaic_pick_add(ui,c);
             mosaic_drag_end(ui,c);
+            if(ui->mosaic_source_keys)mosaic_keyboard_group_select(device,audio,ui,instrument,c,0);
         } else {
             if(mod&KMOD_SHIFT) {
                 if(at<c->picked_count)c->source_toggle=at+1;else mosaic_pick_add(ui,c);
             } else if(at==c->picked_count)mosaic_picks_clear(ui,c);
             c->source_group=c->picked_count>0;
         }
-        snprintf(ui->status,sizeof(ui->status),"SOURCES: SHIFT CLICK ADD / DRAG ROW / CTRL+R SCATTER");return 1;
+        if(!ui->mosaic_source_keys)snprintf(ui->status,sizeof(ui->status),"SOURCES: SHIFT CLICK ADD / DRAG ROW / CTRL+R SCATTER");return 1;
     }
     if(c->drag!=3)return 0;
     if(motion) {
@@ -172,7 +240,7 @@ static int mosaic_sources_event(const SDL_Event *event,SDL_AudioDeviceID device,
                     uint64_t id=e->id;*e=*preview;e->id=id;e->revision=1;mosaic_select_add(ui,id);
                 }
                 if(device)SDL_UnlockAudioDevice(device);
-                mosaic_picks_clear(ui,c);
+                if(!ui->mosaic_source_keys)mosaic_picks_clear(ui,c);
                 snprintf(ui->status,sizeof(ui->status),"%d CARDS ADDED / FIRST IS PRIMARY / CTRL+R SCATTER",count);
             }
         } else if(!c->drag_moved && sidebar &&
@@ -180,7 +248,8 @@ static int mosaic_sources_event(const SDL_Event *event,SDL_AudioDeviceID device,
             if(c->source_toggle)mosaic_pick_remove(ui,c,c->source_toggle-1);
             else if(!c->source_group)mosaic_pick_add(ui,c);
         }
-        mosaic_drag_end(ui,c);ts_mosaic_collect(ui->mosaic);mosaic_sources_refresh(ui,instrument,c);return 1;
+        mosaic_drag_end(ui,c);ts_mosaic_collect(ui->mosaic);mosaic_sources_refresh(ui,instrument,c);
+        if(ui->mosaic_source_keys)mosaic_keyboard_group_select(device,audio,ui,instrument,c,0);return 1;
     }
     return 0;
 }

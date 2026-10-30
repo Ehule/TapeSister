@@ -50,6 +50,7 @@ static void project_audio_free(AudioState *audio)
 {
     ts_tracker_playback_free(&audio->tracker);
     ts_performance_free(&audio->performance);
+    runtime_mosaic_sources_free(audio);
     ts_performance_free(&audio->tile_launchers);
     for (int i = 0; i < TS_NOTE_BANK_VOICE_CAPACITY; ++i)
         ts_sample_free(&audio->note_snapshots[i]);
@@ -79,6 +80,7 @@ static int project_new(SDL_Window *window, SDL_AudioDeviceID device,
     ts_keyboard_sequence_init(&next->keyboard_sequence);
     ts_tracker_playback_init(&next->tracker);
     ts_performance_init(&next->performance);
+    ts_performance_init(&next->mosaic_source_performance);
     ts_performance_init(&next->tile_launchers);
     ts_audio_mixer_init(&next->mixer);
     atomic_init(&next->tile_launcher_mask, 0u);

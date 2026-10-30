@@ -40,6 +40,9 @@ static PerformanceStatus performance_status(SDL_AudioDeviceID device,AudioState 
     for(int i=0;i<TS_NOTE_BANK_VOICE_CAPACITY;++i)if(a->notes.voices[i].active) {
         ++s.notes;s.held+=a->notes.voices[i].latched!=0;s.synth+=a->notes.voices[i].synth!=0;
     }
+    for(int i=0;i<a->mosaic_source_performance.render_limit;++i)if(a->mosaic_source_performance.voices[i].active) {
+        ++s.notes;s.held+=a->mosaic_source_performance.voices[i].latched!=0;
+    }
     if(ts_tapehead_frame())ts_tapehead_host_unlock();else if(device)SDL_UnlockAudioDevice(device);
     return s;
 }

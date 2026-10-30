@@ -233,6 +233,7 @@ static int runtime_note_toggle_latched_event(AudioState *audio,
 {
     int released = ts_note_bank_release_latched_event(&audio->notes, event);
     released += ts_performance_release_latched_event(&audio->performance, event);
+    released += ts_performance_release_latched_event(&audio->mosaic_source_performance,event);
     released += ts_sister_runtime_release_latched_note(&audio->sister, event);
     if (released > 0 && ts_performance_count(&audio->performance) == 0)
         audio->capture_trigger_ready = 0;
@@ -304,6 +305,27 @@ static TsNoteStartResult runtime_mosaic_keyboard_start(AudioState *audio,const T
     return result;
 }
 
+static void runtime_mosaic_sources_clear_selection(AudioState *audio)
+{
+    for(int i=0;i<audio->mosaic_source_count;++i)
+        ts_performance_sample_release(audio->mosaic_source_set[i].generation);
+    free(audio->mosaic_source_set);audio->mosaic_source_set=NULL;
+    audio->mosaic_source_keys=NULL;audio->mosaic_source_hashes=NULL;audio->mosaic_source_count=0;audio->mosaic_source_epoch=0;
+}
+static void runtime_mosaic_sources_free(AudioState *audio)
+{
+    runtime_mosaic_sources_clear_selection(audio);
+    ts_performance_free(&audio->mosaic_source_performance);
+}
+static TsNoteStartResult runtime_mosaic_sources_start(AudioState *audio,const TsNoteEvent *event,int latched,int rate)
+{
+    if(latched && runtime_note_toggle_latched_event(audio,event))return TS_NOTE_TOGGLED_OFF;
+    TsPerformanceBank *p=&audio->mosaic_source_performance;
+    ts_performance_set_attack_ms(p,audio->notes.attack_ms);
+    return ts_performance_trigger_prepared(p,audio->mosaic_source_set,audio->mosaic_source_count,event,latched,rate)>0?
+        TS_NOTE_STARTED:TS_NOTE_LIMIT_REACHED;
+}
+
 static int runtime_staged_start(AudioState *audio,
                                 const TsInstrument *instrument,
                                 const TsTuning *tuning,
@@ -334,6 +356,7 @@ static void runtime_note_release_event(AudioState *audio,
     if (audio == NULL) return;
     ts_note_bank_release_event(&audio->notes, event);
     ts_performance_release_event(&audio->performance, event);
+    ts_performance_release_event(&audio->mosaic_source_performance,event);
     ts_sister_runtime_note_off(&audio->sister, event);
 }
 
@@ -342,6 +365,7 @@ static void runtime_note_release_midi_channel(AudioState *audio, int channel)
     if (audio == NULL) return;
     ts_note_bank_release_midi_channel(&audio->notes, channel);
     ts_performance_release_midi_channel(&audio->performance, channel);
+    ts_performance_release_midi_channel(&audio->mosaic_source_performance,channel);
     ts_sister_runtime_release_midi_channel(&audio->sister, channel);
 }
 
@@ -350,6 +374,7 @@ static void runtime_note_clear(AudioState *audio)
     if (audio == NULL) return;
     ts_keyboard_sequence_stop(&audio->keyboard_sequence);
     ts_note_bank_clear(&audio->notes);
+    ts_performance_clear(&audio->mosaic_source_performance);
     ts_sister_runtime_panic(&audio->sister);
     audio->capture_trigger_ready = 0;
     if (audio->preserve_release_tails > 0)
@@ -377,6 +402,13 @@ static void runtime_note_render(AudioState *audio, TsAudioBuses *buses,
     buses->legacy_preview.r += browser.r;
     performance = ts_performance_read_routed(
         &audio->performance, &audio->performance_raw_mix,&channel);
+    TsSourceRouteMix selected_route;ts_source_route_mix_init(&selected_route,&audio->clean);
+    TsStereoFrame selected=ts_performance_read_routed(&audio->mosaic_source_performance,NULL,&selected_route);
+    float source_gain=audio->sister.performance_gain_current[3];
+    audio->mosaic_source_dry=(TsStereoFrame){(selected.l+selected_route.reference.l)*source_gain,
+                                            (selected.r+selected_route.reference.r)*source_gain};
+    sample.l+=selected.l;sample.r+=selected.r;
+    ts_source_route_add(&channel,&selected_route,1.f);
     float tile_gain=audio->sister.performance_gain_current[3];
     sample.l*=tile_gain;sample.r*=tile_gain;fm.l*=tile_gain;fm.r*=tile_gain;
     synth.l*=tile_gain;synth.r*=tile_gain;performance.l*=tile_gain;performance.r*=tile_gain;
@@ -432,6 +464,7 @@ static void runtime_note_sync(AudioState *audio,
 {
     if (audio == NULL) return;
     ts_note_bank_sync(&audio->notes, instrument, output_rate);
+    if(audio->mosaic_source_performance.render_limit)ts_performance_sync(&audio->mosaic_source_performance,instrument,output_rate);
     const TsInstrument *bank=audio->workspace_bank?audio->workspace_bank:instrument;
     if (ts_performance_count(&audio->performance) > 0)
         ts_performance_sync(&audio->performance, bank, output_rate);

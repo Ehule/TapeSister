@@ -25,6 +25,8 @@ static void test_mosaic_record_tile(SDL_Window *window,SDL_AudioDeviceID device)
     e.button.x=TS_MOSAIC_REC_TILE_X+10;e.button.y=45;e.button.button=SDL_BUTTON_RIGHT;
     assert(u->mosaic_record_source==TS_RECORD_SOURCE_DRY);
     assert(mosaic_record_tile_event(&e,window,device,&input_device,a,input,u,&instrument));
+    assert(u->mosaic_record_source==TS_RECORD_SOURCE_SOURCES && u->record_source==TS_RECORD_SOURCE_EXT);
+    assert(mosaic_record_tile_event(&e,window,device,&input_device,a,input,u,&instrument));
     assert(u->mosaic_record_source==TS_RECORD_SOURCE_OUTPUT && u->record_source==TS_RECORD_SOURCE_EXT);
     assert(mosaic_record_tile_event(&e,window,device,&input_device,a,input,u,&instrument));
     assert(u->mosaic_record_source==TS_RECORD_SOURCE_EXT);
