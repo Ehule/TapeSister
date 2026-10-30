@@ -16,7 +16,7 @@ static void mosaic_zoom_selection(TsUiState *ui,MosaicController *c)
     c->zoom_scroll=ui->mosaic_scroll;c->zoom_xscroll=ui->mosaic_xscroll;
     c->zoom_scale=ui->mosaic_scale;c->zoom_hscale=ui->mosaic_hscale;c->zoom_saved=1;
     ui->mosaic_scale=fmin(1200,280/fmax(.005,last-first));
-    ui->mosaic_hscale=fmin(4,(TS_MOSAIC_CANVAS_RIGHT-175)/fmax(1,right-left));
+    ui->mosaic_hscale=fmin(4,(ts_ui_mosaic_canvas_right(ui)-175)/fmax(1,right-left));
     ui->mosaic_scroll=fmax(0,first-15/ui->mosaic_scale);
     ui->mosaic_xscroll=fmax(0,left-12/ui->mosaic_hscale);ui->mosaic_follow=0;
 }
@@ -103,7 +103,7 @@ static int mosaic_arrange_event(const SDL_Event *event,SDL_Window *window,SDL_Au
         if(ui->mosaic->auto_space) {if(device)SDL_LockAudioDevice(device);ts_mosaic_checkpoint(ui->mosaic);ui->mosaic->auto_space=0;if(device)SDL_UnlockAudioDevice(device);}
         else ui->mosaic_spacing_confirm=1;return 1;
     }
-    if(down && event->button.button==SDL_BUTTON_LEFT && (mod&KMOD_ALT) && x>=151 && x<TS_MOSAIC_CANVAS_RIGHT && y>=66 && y<TS_MOSAIC_CANVAS_BOTTOM) {
+    if(down && event->button.button==SDL_BUTTON_LEFT && (mod&KMOD_ALT) && x>=151 && x<ts_ui_mosaic_canvas_right(ui) && y>=66 && y<TS_MOSAIC_CANVAS_BOTTOM) {
         double time=ui->mosaic_scroll+(y-66)/ui->mosaic_scale,left=ui->mosaic_xscroll+(x-151)/(ui->mosaic_hscale>0?ui->mosaic_hscale:1);
         uint64_t ids[TS_MOSAIC_EVENTS];int count=0,current=-1;
         for(int i=TS_MOSAIC_EVENTS-1;i>=0;--i) {

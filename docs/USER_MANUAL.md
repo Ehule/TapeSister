@@ -1081,7 +1081,12 @@ See the [dedicated Mosaic guide](MOSAIC.md) for additional details and listening
 
 ### Mosaic volume envelope
 
-The narrow lane at the right of Mosaic controls the arrangement's volume. Left-drag
+The narrow lane at the right of Mosaic controls the arrangement's volume.
+**Shift+V** or its far-right **− / +** box hides/shows the editor and expands the
+canvas; the envelope stays active. **SAVE CONFIG** remembers visibility.
+**LOOPS > ADVANCED > MOSAIC ENVELOPE** sets all loop players to **BYPASS**
+(default) or **FOLLOW**, saved per project. Follow tracks the main playhead,
+holds its envelope level when paused, and smooths switches, seeks and edits. Left-drag
 to draw: left is silence, right is full level. Its shape stretches with the total
 arrangement length and follows scrolling/zooming. REPEAT links its endpoint levels.
 **R** resets, **S** smooths, the top arrow makes the start match the end, **V** makes

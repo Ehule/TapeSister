@@ -83,8 +83,17 @@ static void test_mosaic_live_storage(void)
     storage_portable_load(loaded,"mosaic-live-storage");assert(ts_mosaic_hash(loaded)==hash);
     assert(!loaded->playing && !ts_mosaic_live_count(loaded) && !loaded->live_paused && loaded->live_pause_gain==1);
     assert(loaded->events[0].live_transport && loaded->events[0].live_position);
+    assert(!loaded->live_envelope && loaded->live_envelope_gain==1);
+    loaded->live_envelope=1;storage_portable_load(loaded,"mosaic-live-storage");assert(!loaded->live_envelope);
+    m->live_envelope=1;hash=ts_mosaic_hash(m);
+    assert(ts_mosaic_save(m,"mosaic-live-storage",error,sizeof(error)));
+    storage_portable_load(loaded,"mosaic-live-storage");
+    assert(loaded->live_envelope==1 && ts_mosaic_hash(loaded)==hash && loaded->live_envelope_gain==1);
     /* Invalid live data must not replace a valid in-memory scene. */
     FILE *f=fopen("mosaic-live-storage/mosaic.tsm","wb");assert(f);fputs("TAPESISTER_MOSAIC 15\nSETTINGS 0 .7 1\nSPACING 0\nLOOPER 0 1 0 -1 0\n",f);fclose(f);
+    assert(!ts_mosaic_load(loaded,"mosaic-live-storage",error,sizeof(error)) && ts_mosaic_hash(loaded)==hash);
+    f=fopen("mosaic-live-storage/mosaic.tsm","wb");assert(f);
+    fputs("TAPESISTER_MOSAIC 17\nSETTINGS 0 .7 1\nSPACING 0\nLOOPER 0 1 0 4 0\nENVELOPE 2\n",f);fclose(f);
     assert(!ts_mosaic_load(loaded,"mosaic-live-storage",error,sizeof(error)) && ts_mosaic_hash(loaded)==hash);
     ts_mosaic_free(m);ts_mosaic_free(loaded);
     remove("mosaic-live-storage/mosaic.tsm");remove("mosaic-live-storage/mosaic-000.wav");RMDIR("mosaic-live-storage");
@@ -112,4 +121,54 @@ static void test_mosaic_live_mix(void)
     }
     assert(main<1e-6 && graph>1); /* Loop retains its card route with main paused. */
     ts_mosaic_free(mixed);ts_mosaic_free(timeline);ts_mosaic_free(loop);
+}
+
+/* Compare actual samples/routes against an independent bypass reference.
+   Muting with the envelope must never stop or retrigger a loop's clock. */
+static void test_mosaic_live_envelope(void)
+{
+    TsMosaic *silent=live_fixture();silent->live_envelope=1;
+    ts_mosaic_volume_draw(silent,0,0,1,0);assert(ts_mosaic_live_launch(silent,silent->events[0].id,0));
+    assert(live_render(silent,50)==0 && silent->live[0].elapsed>0);ts_mosaic_free(silent);
+    for(int routed=0;routed<2;++routed)for(int rate=1000;rate<=48000;rate+=47000) {
+        TsMosaic *m=live_fixture(),*reference=live_fixture();
+        for(int k=0;k<2;++k) {
+            TsMosaic *scene=k?reference:m;
+            if(routed){scene->events[0].output_route.matrix_enabled=1;scene->events[0].output_route.matrix_gain[7]=1000;}
+            assert(ts_mosaic_live_launch(scene,scene->events[0].id,0));
+        }
+        ts_mosaic_volume_draw(m,0,0,1,0);
+        uint64_t hash=ts_mosaic_hash(m),generation=0;
+        for(int stage=0;stage<5;++stage) {
+            if(stage==1)m->live_envelope=1; /* Fade to silence with main paused. */
+            if(stage==2){ts_mosaic_volume_draw(m,0,.25f,1,.75f);ts_mosaic_seek(m,ts_mosaic_end(m)*.5);}
+            if(stage==3)m->live_envelope=0;
+            if(stage==4){m->live_envelope=1;m->playing=1;} /* Running timeline. */
+            int frames=rate/10;
+            ts_mosaic_begin_block(m,frames);ts_mosaic_begin_block(reference,frames);
+            double energy=0;
+            float previous=m->live_envelope_gain;
+            for(int i=0;i<frames;++i) {
+                TsSourceRouteMix a={0},b={0};
+                TsStereoFrame x=ts_mosaic_read_routed(m,rate,routed?&a:NULL);
+                TsStereoFrame y=ts_mosaic_read_routed(reference,rate,routed?&b:NULL);
+                if(routed){x=a.graph[7];y=b.graph[7];}
+                assert(fabs(m->live_envelope_gain-previous)<=1.001/(rate*.020));previous=m->live_envelope_gain;
+                if(stage==0 || (stage==3 && i>rate/40)) {
+                    assert(fabsf(x.l-y.l)<1e-6f && fabsf(x.r-y.r)<1e-6f);
+                }
+                if(i>rate/25) {
+                    energy+=fabsf(x.l)+fabsf(x.r);
+                    if(stage==1)assert(x.l==0 && x.r==0);
+                    if(stage==2)assert(fabsf(x.l-y.l*.5f)<1e-6f && fabsf(x.r-y.r*.5f)<1e-6f);
+                }
+            }
+            if(stage!=1)assert(energy>0);
+            assert(fabs(m->live[0].elapsed-reference->live[0].elapsed)<1e-9);
+            if(!stage){assert(ts_mosaic_hash(m)==hash);generation=m->voices[0].generation;}
+            assert(m->voices[0].generation==generation && m->live[0].state==TS_MOSAIC_LIVE_PLAYING);
+            if(stage==2)assert(!m->playing && m->time==ts_mosaic_end(m)*.5);
+        }
+        ts_mosaic_free(m);ts_mosaic_free(reference);
+    }
 }

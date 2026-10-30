@@ -4571,7 +4571,7 @@ int ts_ui_midi_target_from_point(const TsUiState *ui, int x, int y,
             const TsMosaicEvent *e=&ui->mosaic->events[i];if(!e->id || !e->live)continue;
             double left=151+(e->x-ui->mosaic_xscroll)*ui->mosaic_hscale;
             double top=66+(e->start-ui->mosaic_scroll)*ui->mosaic_scale;
-            if(x>=151 && x<TS_MOSAIC_CANVAS_RIGHT && y>=66 && y<TS_MOSAIC_CANVAS_BOTTOM &&
+            if(x>=151 && x<ts_ui_mosaic_canvas_right(ui) && y>=66 && y<TS_MOSAIC_CANVAS_BOTTOM &&
                x>=left && x<left+e->width*ui->mosaic_hscale && y>=top && y<top+e->duration*ui->mosaic_scale) {
                 snprintf(target,target_size,"mosaic.live.%llu.toggle",(unsigned long long)e->id);return 1;
             }

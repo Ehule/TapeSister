@@ -532,6 +532,8 @@ int ts_config_load(TsConfig *config, const char *path,
             if (!parse_clamped_integer(value, -32768, 32767, &loaded.sister_window_x)) { snprintf(error, error_size, "Invalid Sister window X on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "sister_window_y") == 0) {
             if (!parse_clamped_integer(value, -32768, 32767, &loaded.sister_window_y)) { snprintf(error, error_size, "Invalid Sister window Y on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "mosaic_volume_hidden") == 0) {
+            if (!parse_clamped_integer(value, 0, 1, &loaded.mosaic_volume_hidden)) { snprintf(error,error_size,"Invalid Mosaic volume visibility on config line %d",line_number);fclose(file);return 0; }
         } else if (strcmp(key, "mosaic_looper_x") == 0) {
             if (!parse_clamped_integer(value, -1, 639, &loaded.mosaic_looper_x)) { snprintf(error,error_size,"Invalid looper X on config line %d",line_number);fclose(file);return 0; }
         } else if (strcmp(key, "mosaic_looper_y") == 0) {
@@ -732,6 +734,8 @@ int ts_config_save(const TsConfig *config, const char *path,
                 "sister_window_x=%d\n"
                 "sister_window_y=%d\n"
                 "\n[Mosaic]\n"
+                "; Hide volume editor and expand canvas; Shift+V toggles. Envelope stays active.\n"
+                "mosaic_volume_hidden=%d\n"
                 "; Floating performance panel position; -1 restores the right-side default.\n"
                 "mosaic_looper_x=%d\n"
                 "mosaic_looper_y=%d\n"
@@ -806,6 +810,7 @@ int ts_config_save(const TsConfig *config, const char *path,
                 config->sister_window_maximized ? 1 : 0,
                 config->sister_window_x,
                 config->sister_window_y,
+                config->mosaic_volume_hidden ? 1 : 0,
                 config->mosaic_looper_x, config->mosaic_looper_y) < 0;
     for (int slot = 0; slot < TS_DSP_FACTORY_RECIPE_COUNT && !write_failed; ++slot) {
         if (!config->dsp_factory_overridden[slot]) continue;

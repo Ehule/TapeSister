@@ -79,7 +79,7 @@ static void mosaic_detail_card(TsUiWaveformDetail *d,const TsUiState *ui,
                                 const TsMosaicEvent *e,int selected,int dim,int ghost)
 {
     if(!e->source)return;
-    double sx=(double)d->width/(TS_MOSAIC_CANVAS_RIGHT-151),sy=(double)d->height/TS_MOSAIC_CANVAS_HEIGHT;
+    double sx=(double)d->width/(ts_ui_mosaic_canvas_right(ui)-151),sy=(double)d->height/TS_MOSAIC_CANVAS_HEIGHT;
     double horizontal=ui->mosaic_hscale>0?ui->mosaic_hscale:1;
     double scale=ui->mosaic_scale>0?ui->mosaic_scale:24,rate=scale*sy;
     int64_t pan_x=mosaic_detail_pixel(ui->mosaic_xscroll*horizontal*sx),pan_y=mosaic_detail_pixel(ui->mosaic_scroll*rate);
@@ -177,7 +177,7 @@ static void mosaic_detail_card(TsUiWaveformDetail *d,const TsUiState *ui,
 }
 static int mosaic_detail_cards(TsFramebuffer *fb,const TsUiState *ui,int any_solo,double interval)
 {
-    TsUiWaveformDetail *d=detail_region(0,151,66,TS_MOSAIC_CANVAS_RIGHT-151,TS_MOSAIC_CANVAS_HEIGHT);if(!d)return 0;
+    TsUiWaveformDetail *d=detail_region(0,151,66,ts_ui_mosaic_canvas_right(ui)-151,TS_MOSAIC_CANVAS_HEIGHT);if(!d)return 0;
     /* The whole moving scene shares the native raster. Do not enlarge coarse
        card fragments underneath it; later controls/overlays use the compositor. */
     mosaic_detail_rect(d,0,0,d->width,d->height,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_BACKGROUND, RGB(11,13,16)));

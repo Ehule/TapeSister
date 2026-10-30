@@ -804,6 +804,11 @@ not inherit the previous tile's parked FM patch.
 
 ### Mosaic volume lane
 
+**Shift+V** or the far-right **− / +** box hides/shows the volume lane and expands
+the canvas. Its envelope stays active. **LOOPS > ADVANCED > MOSAIC ENVELOPE**
+sets all loop cards to **BYPASS** (default) or **FOLLOW**, with smooth transitions.
+Follow holds the current envelope level when the main playhead pauses.
+
 Left-drag in the right-side lane to draw volume. **R** resets, **S** smooths, the top
 arrow matches start to end, **V** matches end to start, and **/** makes a ramp.
 REPEAT links endpoint levels. The curve scales with the arrangement length.

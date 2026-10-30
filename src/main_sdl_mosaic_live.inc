@@ -330,6 +330,7 @@ static int mosaic_live_event(const SDL_Event *event,SDL_Window *window,SDL_Audio
     int px,py;ts_ui_mosaic_live_origin(ui,&px,&py);
     if(motion) {
         const char *help=ts_ui_mosaic_live_help(ts_ui_mosaic_live_command_at(ui,x,y));
+        if(ui->mosaic_live_advanced==1 && x>=132 && x<408 && y>=124 && y<140)help="ALL LOOPS: BYPASS OR FOLLOW MAIN ENVELOPE / PAUSE HOLDS LEVEL / SMOOTH SWITCH";
         if(!ui->mosaic_live_advanced && y>=py+244 && y<py+260)help=x<px+80?"QWERTY KEYS / EDIT LETTERS":"ADVANCED RECORDING SETUP";
         snprintf(ui->mosaic_live_hover,sizeof(ui->mosaic_live_hover),"%s",help);return 1;
     }
@@ -369,6 +370,12 @@ static int mosaic_live_event(const SDL_Event *event,SDL_Window *window,SDL_Audio
         }
         if(down && x>=526 && y>=310 && y<326)ui->mosaic_live_advanced=0;
         return 1;
+    }
+    if(down && event->button.button==SDL_BUTTON_LEFT && y>=124 && y<140 && x>=132 && x<408) {
+        if(output)SDL_LockAudioDevice(output);
+        m->live_envelope^=1;++m->revision;
+        if(output)SDL_UnlockAudioDevice(output);
+        snprintf(ui->mosaic_live_status,sizeof(ui->mosaic_live_status),"ALL LOOPS: ENVELOPE %s / SMOOTH TRANSITION / PAUSE HOLDS LEVEL",m->live_envelope?"FOLLOW":"BYPASS");return 1;
     }
     if(down && y>=166 && y<182) {
         if(x>=526 && x<608){ui->mosaic_live_advanced=0;return 1;}

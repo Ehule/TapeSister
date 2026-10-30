@@ -111,11 +111,18 @@ static TsStereoFrame mosaic_live_read(TsMosaic *m,int rate,TsSourceRouteMix *rou
         return out;
     }
     m->live_pause_gain=fmin(1,m->live_pause_gain+step);
+    /* Main time can hold, seek or repeat while each loop keeps its own phase.
+       Slew both policy switches and envelope edits before every output route. */
+    float target=m->live_envelope?ts_mosaic_volume_at(m,m->schedule.end>0?m->time/m->schedule.end:0):1;
+    float envelope_step=1.f/fmaxf(1,rate*.020f);
+    if(!m->live_envelope_running)m->live_envelope_gain=target;
+    else m->live_envelope_gain+=fmaxf(-envelope_step,fminf(envelope_step,target-m->live_envelope_gain));
     /* UI commands exclude the whole callback. Capture routes only on its
        final frame (or each standalone read), keeping normal mix order intact. */
     int capture=routes && !m->block_remaining && m->schedule.live_count;
     TsSourceRouteMix before;if(capture)before=*routes;
     if(!m->schedule.live_count || (!routes && !m->block_remaining))m->live_pause_routes_valid=0;
+    m->live_envelope_running=0;
     for(int at=0;at<m->schedule.live_count;++at) {
         int i=m->schedule.live[at];const TsMosaicEvent *saved=&m->events[i];TsMosaicLive *l=&m->live[i];
         if(l->id!=saved->id || !saved->live || saved->source->pattern || !l->state)continue;
@@ -137,8 +144,9 @@ static TsStereoFrame mosaic_live_read(TsMosaic *m,int rate,TsSourceRouteMix *rou
             if(l->finish_seconds>0){release*=l->finish_gain;e.fade_in=e.fade_out=0;}
             if(release==0){l->state=0;m->voices[i].active=0;continue;}
         }
+        m->live_envelope_running=1;
         TsStereoFrame card=mosaic_event_read(m->pattern_engine,&e,&m->voices[i],l->elapsed,rate,speed,
-            m->gain*release*(float)m->live_pause_gain,!e.muted && (!m->schedule.any_solo || e.solo),routes,m->control_serial);
+            m->gain*release*(float)m->live_pause_gain*m->live_envelope_gain,!e.muted && (!m->schedule.any_solo || e.solo),routes,m->control_serial);
         out.l+=card.l;out.r+=card.r;
         l->elapsed+=speed/rate;l->phase=(m->voices[i].position[0]-e.first)/(e.last-e.first);
     }

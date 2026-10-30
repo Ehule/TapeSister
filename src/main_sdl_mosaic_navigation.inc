@@ -7,7 +7,7 @@ static void mosaic_fit_all(TsUiState *ui,MosaicController *c)
         const TsMosaicEvent *e=&ui->mosaic->events[i];
         left=fmin(left,e->x);right=fmax(right,e->x+e->width);++count;
     }
-    double width=TS_MOSAIC_CANVAS_RIGHT-151;
+    double width=ts_ui_mosaic_canvas_right(ui)-151;
     ui->mosaic_scale=fmin(1200,(TS_MOSAIC_CANVAS_HEIGHT-10)/fmax(.001,ts_mosaic_end(ui->mosaic)));
     ui->mosaic_hscale=count?fmin(1,(width-24)/fmax(1,right-left)):1;
     /* Fit the occupied span, not the empty distance from the origin. Keep

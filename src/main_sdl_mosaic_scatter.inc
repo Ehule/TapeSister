@@ -32,7 +32,7 @@ static void mosaic_scatter_preview(TsUiState *ui,MosaicController *c)
             double p=mosaic_scatter_random(&seed);
             if(ui->mosaic_scatter_cluster)p=fmax(0,fmin(1,clusters[i%3]+(p-.5)*.18));
             e->start=ui->mosaic_scatter_start+p*span;
-            e->x=ui->mosaic_xscroll+mosaic_scatter_random(&seed)*fmax(0,(TS_MOSAIC_CANVAS_RIGHT-151)/(ui->mosaic_hscale>0?ui->mosaic_hscale:1)-e->width);
+            e->x=ui->mosaic_xscroll+mosaic_scatter_random(&seed)*fmax(0,(ts_ui_mosaic_canvas_right(ui)-151)/(ui->mosaic_hscale>0?ui->mosaic_hscale:1)-e->width);
             if(!ui->mosaic_scatter_overlap)for(int pass=0;pass<TS_MOSAIC_EVENTS*2;++pass) {
                 double shift=0;
                 for(int j=0;j<TS_MOSAIC_EVENTS+i;++j) {
