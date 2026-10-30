@@ -38,7 +38,7 @@ add_library(tapesister_core src/ts_mandala.c src/ts_routing_matrix.c src/ts_matr
              src/ts_audio_import.c src/ts_ui.c src/ts_tracker_tapehead.c
              third_party/tapehead/ft2_fasttracks_core.c)
 target_include_directories(tapesister_core PUBLIC include PRIVATE ${miniaudio_SOURCE_DIR})
-target_sources(tapesister_core PRIVATE src/ts_master_clock.c src/ts_loop_capture.c)
+target_sources(tapesister_core PRIVATE src/ts_master_clock.c src/ts_loop_capture.c src/ts_mosaic_gallery.c)
 target_link_libraries(tapesister_core PUBLIC m)
 add_executable(tapesister_matrix_benchmark EXCLUDE_FROM_ALL tools/benchmark_matrix.c)
 target_link_libraries(tapesister_matrix_benchmark PRIVATE tapesister_core)
@@ -468,6 +468,11 @@ add_executable(tapesister_sample_pages_tests tests/test_sample_pages.c)
 target_link_libraries(tapesister_sample_pages_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_sample_pages_tests COMMAND tapesister_sample_pages_tests)
 
+add_executable(tapesister_mosaic_gallery_tests tests/test_mosaic_gallery.c)
+target_link_libraries(tapesister_mosaic_gallery_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_mosaic_gallery_tests COMMAND tapesister_mosaic_gallery_tests)
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/gallery-fixtures")
+set_tests_properties(tapesister_mosaic_gallery_tests PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/gallery-fixtures")
 add_executable(tapesister_project_save_tests tests/test_project_save.c)
 target_link_libraries(tapesister_project_save_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_project_save_tests COMMAND tapesister_project_save_tests)
@@ -754,6 +759,7 @@ if(TAPESISTER_BUILD_SDL)
     target_link_libraries(tapesister_mosaic_controller_tests PRIVATE rt)
   endif()
   add_test(NAME tapesister_mosaic_controller_tests COMMAND tapesister_mosaic_controller_tests)
+  add_test(NAME tapesister_mosaic_gallery_controller_tests COMMAND tapesister_mosaic_controller_tests --gallery)
   add_test(NAME tapesister_fm_directions_controller_tests COMMAND tapesister_mosaic_controller_tests --fm-directions)
   add_test(NAME tapesister_mosaic_live_controller_tests COMMAND tapesister_mosaic_controller_tests --live-loops)
   add_test(NAME tapesister_quick_capture_tests COMMAND tapesister_mosaic_controller_tests --quick-capture)
@@ -812,6 +818,7 @@ if(MINGW)
                                tapesister_core_tests
                                tapesister_fm_directions_tests
                                tapesister_mosaic_controller_tests
+                               tapesister_mosaic_gallery_tests
                                tapesister_mosaic_tests
                                test_sister_project_state
                                tapesister_sample_pages_tests

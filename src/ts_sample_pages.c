@@ -4,6 +4,7 @@
 
 #include "tapesister/sample_pages.h"
 #include "tapesister/mosaic.h"
+#include "tapesister/mosaic_gallery.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -90,9 +91,18 @@ int ts_sample_pages_init(TsSamplePages *pages,
     return 1;
 }
 
+int ts_sample_pages_enable_gallery(TsSamplePages *pages,char *error,size_t n)
+{
+    if(!pages || !pages->mosaic){pages_error(error,n,"Mosaic is unavailable");return 0;}
+    if(!pages->gallery)pages->gallery=ts_gallery_create(pages->mosaic);
+    if(!pages->gallery){pages_error(error,n,"Not enough memory for Gallery");return 0;}return 1;
+}
+TsMosaic *ts_sample_pages_mosaic_root(const TsSamplePages *pages)
+{return pages?(pages->gallery?pages->gallery->root:pages->mosaic):NULL;}
 void ts_sample_pages_free(TsSamplePages *pages)
 {
     if (pages == NULL) return;
+    ts_gallery_free(pages->gallery);
     ts_sister_tracker_free(&pages->tracker);
     if (pages->pages != NULL) {
         for (size_t page = 0; page < pages->page_count; ++page) {
@@ -981,7 +991,9 @@ int ts_sample_pages_save_project(const TsSamplePages *pages,
                                     destination, error, error_size) ||
             !validate_saved_instrument(destination, error, error_size)) goto failed;
     }
-    if (!ts_mosaic_save(pages->mosaic, project_data, error, error_size)) goto failed;
+    if(pages->gallery) {
+        if(!ts_gallery_save(pages->gallery,project_data,error,error_size))goto failed;
+    } else if(!ts_mosaic_save(pages->mosaic,project_data,error,error_size))goto failed;
     if (snprintf(destination, sizeof(destination), "%s/sister-tracker.tst", project_data) < 0 ||
         strlen(project_data) + 20u >= sizeof(destination) ||
         !ts_sister_tracker_save_file(&pages->tracker, destination, error, error_size)) goto failed;
@@ -1373,6 +1385,8 @@ TsSampleProjectLoad *ts_sample_pages_prepare_project(const char *path, int with_
         strcpy(page_path,directory);strcat(page_path,"/project-data/mosaic.tsm");
         FILE *check=fopen(page_path,"r");
         if(!check){pages_error(error,error_size,"Mosaic arrangement is missing from this project");goto failed;}
+        if(!with_mosaic){char header[64];int gallery=fgets(header,sizeof(header),check) && !strncmp(header,"TAPESISTER_MOSAIC_GALLERY ",25);
+            if(gallery){fclose(check);pages_error(error,error_size,"Gallery projects require a Mosaic-enabled host");goto failed;}}
         fclose(check);
     }
     if (with_mosaic) {
@@ -1381,12 +1395,15 @@ TsSampleProjectLoad *ts_sample_pages_prepare_project(const char *path, int with_
             pages_error(error, error_size, "Out of memory preparing Mosaic");
             goto failed;
         }
+        loaded.mosaic=mosaic_loaded;
+        if(!ts_sample_pages_enable_gallery(&loaded,error,error_size))goto failed;
         if (layout == 2) {
             if (strlen(directory)+14 >= sizeof(page_path)) goto failed;
             memcpy(page_path,directory,strlen(directory));
             strcpy(page_path+strlen(directory),"/project-data");
-            if (!ts_mosaic_load(mosaic_loaded, page_path, error, error_size)) goto failed;
-            ts_pattern_link_legacy(mosaic_loaded,&loaded.tracker);
+            if (!ts_gallery_load(loaded.gallery,page_path,error,error_size))goto failed;
+            for(int i=0;i<loaded.gallery->count;++i)ts_pattern_link_legacy(loaded.gallery->canvas[i].scene,&loaded.tracker);
+            loaded.mosaic=ts_gallery_active(loaded.gallery);
         }
     }
     load = malloc(sizeof(*load));
@@ -1421,7 +1438,7 @@ int ts_sample_pages_publish_project(TsSamplePages *pages, TsInstrument *active_s
     swap_instruments(active_sample, pages->pages[pages->active_page]);
     swap_instruments(active_sample, load->pages.pages[load->pages.active_page]);
     swap_instruments(record_bank, &load->record);
-    TsMosaic *target = pages->mosaic;
+    TsMosaic *target = ts_sample_pages_mosaic_root(pages);
     TsSamplePages retired = *pages;
     *pages = load->pages;
     load->pages = retired;
@@ -1431,6 +1448,9 @@ int ts_sample_pages_publish_project(TsSamplePages *pages, TsInstrument *active_s
     if (target) {
         /* Keep the model address used by UI/audio; retire old sources later. */
         ts_mosaic_publish_loaded(target,load->mosaic);
+        ts_gallery_rebind_root(pages->gallery,target);
+        ts_gallery_rebind_root(load->pages.gallery,load->mosaic);
+        pages->mosaic=ts_gallery_active(pages->gallery);
     }
     load->published = 1;
     pages_error(error, error_size, "");

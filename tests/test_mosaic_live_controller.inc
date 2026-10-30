@@ -21,7 +21,7 @@ static void live_controller_screenshot_size(TsUiState *u,const char *path,int wi
     native_looper_copy(renderer,&circle_texture,&circle);
     uint32_t *pixels=malloc((size_t)width*height*sizeof(*pixels));assert(pixels);
     assert(!SDL_RenderReadPixels(renderer,NULL,SDL_PIXELFORMAT_ARGB8888,pixels,width*sizeof(*pixels)));
-    if(u->mosaic_live_open && !u->mosaic_live_advanced) {
+    if(u->mosaic_live_open && !u->mosaic_live_advanced && !ts_ui_foreground_panel_open(u)) {
         assert(details[0].valid && details[1].valid); /* Canvas stays native while performing. */
         int px,py;ts_ui_mosaic_live_origin(u,&px,&py);
         /* Measure the actual rendered status disc, independently of the logical

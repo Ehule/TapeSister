@@ -741,6 +741,12 @@ correct Sample page without stopping the tracker. F10 returns.
 
 ## Mosaic
 
+A project can hold up to 16 named canvases. Open **GALLERY** or press **Ctrl+G**
+to create, rename and enter them. **Ctrl+Page Up/Down** turns pages manually,
+crossfading into Start, Resume or a stored marker. Each canvas keeps its own
+cards, loops, envelope and markers; sound banks and effects are shared.
+[Gallery controls and saving](MOSAIC_GALLERY.md).
+
 ![Mosaic with freely placed events and a downward playhead](images/mosaic.png)
 
 Mosaic turns the existing sample playback into an arrangement. Time runs from top

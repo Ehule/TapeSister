@@ -57,6 +57,10 @@ See the [complete editing reference](SISTERTRACKER_PLAYBACK.md).
 
 ## Mosaic
 
+**GALLERY / Ctrl+G** manages named canvases. **Ctrl+Page Up/Down** turns pages
+with the chosen Start/Resume/At Marker entry and 0–30 s crossfade.
+See [Mosaic Gallery](MOSAIC_GALLERY.md).
+
 **Ctrl+S / SAVE** opens the save dialog over Mosaic and preserves the working view.
 If an interrupted save left recovery folders, the recovery dialog offers Cancel,
 Save Current As, Copy All for Recovery and Copy Paths. Originals stay untouched;

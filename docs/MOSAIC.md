@@ -7,6 +7,14 @@ Sister Machine and output recorder.
 
 ![Mosaic in the native renderer](images/mosaic.png)
 
+## Multiple canvases
+
+**GALLERY / Ctrl+G** opens up to 16 named canvases in one project. Turn pages
+manually with an adjustable crossfade and destination entry at Start, Resume or a
+stored marker. **Ctrl+Page Up / Ctrl+Page Down** visits adjacent canvases. Each
+keeps its own cards, loops, envelope, markers and undo history; sound banks and
+effects are shared. See [Mosaic Gallery](MOSAIC_GALLERY.md).
+
 ## Playing and arranging
 
 Open **MOSAIC** in the main toolbar, or press **grave** (the backtick

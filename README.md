@@ -98,6 +98,10 @@ Each event has its own loop/one-shot setting and up to five pitched notes with
 independent playback speeds. A chord can turn one fragment into an evolving texture
 as its different loop lengths move in and out of alignment.
 
+**GALLERY** holds up to 16 named canvases in one project. Turn pages manually
+with an adjustable crossfade and Start, Resume or At Marker entry.
+See [Mosaic Gallery](docs/MOSAIC_GALLERY.md).
+
 ![Mosaic's free canvas with independent pitched events](docs/images/mosaic.png)
 
 Double-click an event to use the familiar waveform editor; existing keyboard

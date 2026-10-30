@@ -96,19 +96,20 @@ static int performance_command_apply(unsigned selected,int command,unsigned home
             ts_keyboard_sequence_home(&audio->keyboard_sequence);
             if(keep_running)ts_keyboard_sequence_play(&audio->keyboard_sequence);
         }
-        if((selected&PERF_MOSAIC) && audio->mosaic) {
-            TsMosaic *m=audio->mosaic;
-            /* Only Home/Return to Start rewinds, including at the end. */
-            m->playing=command==1;
+        TsMosaic *scenes[]={audio->mosaic,audio->gallery && ts_gallery_active(audio->gallery)==audio->mosaic?ts_gallery_outgoing(audio->gallery):NULL};
+        for(int i=0;i<2;++i) {
+            TsMosaic *m=scenes[i];if(!m)continue;
+            if(selected&PERF_MOSAIC)m->playing=command==1;
+            if(command==2 && (homes&PERF_MOSAIC))ts_mosaic_seek(m,0);
+            if(selected&PERF_LOOPS) {
+                if(command==2)ts_mosaic_live_home(m);
+                else if(command==1)ts_mosaic_live_resume(m);
+                else ts_mosaic_live_pause(m,1);
+            }
+            if(master && !(selected&PERF_LOOPS))ts_mosaic_live_transport(m,command);
+            if(i && audio->gallery->outgoing>=0)audio->gallery->canvas[audio->gallery->outgoing].paused=m->live_paused;
         }
-        if(command==2 && (homes&PERF_MOSAIC) && audio->mosaic)ts_mosaic_seek(audio->mosaic,0);
-        if((selected&PERF_LOOPS) && audio->mosaic) {
-            if(command==2)ts_mosaic_live_home(audio->mosaic);
-            else if(command==1)ts_mosaic_live_resume(audio->mosaic);
-            else ts_mosaic_live_pause(audio->mosaic,1);
-        }
-        if(master){ts_master_clock_transport(&audio->sister.master_clock,command);
-            if(!(selected&PERF_LOOPS))ts_mosaic_live_transport(audio->mosaic,command);}
+        if(master)ts_master_clock_transport(&audio->sister.master_clock,command);
     }
     keyboard_sequence_ui(audio,ui);
     if(embedded)ts_tapehead_host_unlock();else if(device)SDL_UnlockAudioDevice(device);

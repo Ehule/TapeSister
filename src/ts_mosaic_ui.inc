@@ -301,12 +301,13 @@ static void mosaic_volume_lane(TsFramebuffer *fb,const TsUiState *ui,double inte
 
 #include "ts_mosaic_marker_ui.inc"
 
+#include "ts_mosaic_gallery_ui.inc"
 static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrument *instrument)
 {
     const TsMosaic *m=ui->mosaic;
     clear(fb,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_BACKGROUND, RGB(15,16,19)));
     rect(fb,0,0,640,32,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_BACKGROUND, RGB(12,12,12)));sister_portal_render(fb,ui);
-    text(fb,164,13,"MOSAIC",ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_TEXT, RGB(198,186,206)),1);
+    mosaic_button(fb,164,4,46,"GALLERY",ui->mosaic_gallery_open,1);
     mosaic_button(fb,214,4,46,"CFG",0,1);mosaic_button(fb,264,4,32,"FT2",0,1);
     mosaic_button(fb,300,4,56,"CANVAS",0,1);mosaic_button(fb,360,4,38,"SAVE",0,1);
     mosaic_button(fb,402,4,58,"EXPORT",0,1);mosaic_button(fb,464,4,28,"CDP",0,1);
@@ -411,6 +412,11 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
         ts_mosaic_record_length_normalized(ui->config.mosaic_record_seconds),0,!ui->mosaic_recording);
     snprintf(label,sizeof(label),"%.54s",ui->mosaic_live_open && ui->mosaic_live_status[0]?ui->mosaic_live_status:
         ui->status[0]?ui->status:"LENGTH: 10S-60MIN / INF; WHEEL: 10S; SHIFT: 1S");
+    if(ui->mosaic_gallery_count>0) {
+        char status[100];snprintf(status,sizeof(status),"%s",label);
+        if(ui->mosaic_gallery_fading)snprintf(label,sizeof(label),"C%02d/%02d %.18s / CROSSFADE %.0f%%",ui->mosaic_gallery_active+1,ui->mosaic_gallery_count,ui->mosaic_gallery_names[ui->mosaic_gallery_active],ui->mosaic_gallery_progress*100);
+        else snprintf(label,sizeof(label),"C%02d/%02d %.18s / %.25s",ui->mosaic_gallery_active+1,ui->mosaic_gallery_count,ui->mosaic_gallery_names[ui->mosaic_gallery_active],status);
+    }
     text(fb,164,24,label,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DIM, RGB(160,149,172)),1);
     snprintf(label,sizeof(label),"SPEED %.2fX",m?m->speed:1);text(fb,416,58,label,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DATA2, RGB(129,206,200)),1);
     mosaic_slider(fb,TS_MOSAIC_SPEED_X,58,TS_MOSAIC_SPEED_W,(log2(m?m->speed:1)+1)*.5,1,1);
@@ -473,6 +479,7 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
     mosaic_arrange_overlay(fb,ui);
     mosaic_marker_overlay(fb,ui);
     mosaic_live_overlay(fb,ui,instrument);
+    mosaic_gallery_overlay(fb,ui);
 }
 
 void ts_ui_render_mosaic_choice(TsFramebuffer *fb,const TsUiState *ui)

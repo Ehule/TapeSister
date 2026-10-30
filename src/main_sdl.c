@@ -20,6 +20,7 @@
 #include "tapesister/input_ownership.h"
 #include "tapesister/note_bank.h"
 #include "tapesister/sample_pages.h"
+#include "tapesister/mosaic_gallery.h"
 #include "tapesister/tracker_playback.h"
 #include "tapesister/tapehead_embed.h"
 #include "tapesister/realtime_diagnostics.h"
@@ -659,7 +660,7 @@ static uint64_t paged_project_fingerprint(const TsSamplePages *pages,
                                          const TsKeyboardSequence *sequence,int quick)
 {
     uint64_t hash = 1469598103934665603ull;
-    uint64_t mosaic_hash = ts_mosaic_hash(pages ? pages->mosaic : NULL);
+    uint64_t mosaic_hash = pages && pages->gallery?ts_gallery_hash(pages->gallery):ts_mosaic_hash(pages ? pages->mosaic : NULL);
     state_hash_bytes(&hash, &mosaic_hash, sizeof(mosaic_hash));
     uint64_t tracker_hash = pages ? ts_sister_tracker_hash(&pages->tracker) : 0;
     state_hash_bytes(&hash, &tracker_hash, sizeof(tracker_hash));
@@ -909,6 +910,7 @@ typedef struct {
     TsSourceRouteVoice audition_route;
     TsTileId audition_route_tile;
     TsMosaic *mosaic;
+    TsMosaicGallery *gallery; /* Non-owning project registry, bound with mosaic. */
     TsPerformanceBank tile_launchers;
     TsStereoFrame tile_launcher_mix;
     int tile_launcher_active;
@@ -1187,7 +1189,8 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
                                  live_link_frames,
                                  (uint32_t)audio->output_rate);
     ts_sister_runtime_begin_audio_block(&audio->sister);
-    ts_mosaic_begin_block(audio->mosaic,(unsigned)frames);
+    if(audio->gallery && ts_gallery_active(audio->gallery)==audio->mosaic)ts_gallery_begin_block(audio->gallery,(unsigned)frames);
+    else ts_mosaic_begin_block(audio->mosaic,(unsigned)frames);
     ts_insert_begin_output_block(&audio->sister.insert, (unsigned)frames);
     ts_performance_inputs_begin(audio->performance_inputs,audio->sister.insert.duplex,
         audio->sister.insert.duplex_channels,(unsigned)audio->output_rate);
@@ -1201,7 +1204,10 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
     const int master_arp_follow=master_settings.enabled && (master_settings.tempo_mask&TS_CLOCK_ARP);
     audio->keyboard_sequence.clock_carry=master_controls->enabled && (master_controls->tempo_mask&TS_CLOCK_ARP);
     ts_tapehead_clock(master_controls->enabled && (master_controls->tempo_mask&TS_CLOCK_TRACKER)?master_controls->bpm:0);
-    ts_mosaic_live_clock(audio->mosaic,master_controls->enabled,audio->sister.master_clock.running,
+    if(audio->gallery && ts_gallery_active(audio->gallery)==audio->mosaic)
+        ts_gallery_clock(audio->gallery,master_controls->enabled,audio->sister.master_clock.running,
+            master_controls->bpm?60.0/master_controls->bpm:.5,audio->sister.master_clock.phase);
+    else ts_mosaic_live_clock(audio->mosaic,master_controls->enabled,audio->sister.master_clock.running,
         master_controls->bpm?60.0/master_controls->bpm:.5,audio->sister.master_clock.phase);
     unsigned master_span_start=0,master_source_bpm=0;
     double master_source_quarter=0;
@@ -1280,7 +1286,9 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             master_source_quarter=ts_tapehead_native_quarter(bpm);
             double quarter=master_source_quarter>0?master_source_quarter:60.0/master_controls->bpm;
             master_arp_interval=quarter/(1u<<master_controls->arp_division);
-            ts_mosaic_live_clock(audio->mosaic,1,audio->sister.master_clock.running,quarter,audio->sister.master_clock.phase);
+            if(audio->gallery && ts_gallery_active(audio->gallery)==audio->mosaic)
+                ts_gallery_clock(audio->gallery,1,audio->sister.master_clock.running,quarter,audio->sister.master_clock.phase);
+            else ts_mosaic_live_clock(audio->mosaic,1,audio->sister.master_clock.running,quarter,audio->sister.master_clock.phase);
         }
         double arp_interval=master_arp_follow?
             master_arp_interval:sync && bpm?60.0/bpm/(1u<<(sync-1)):0;
@@ -4490,6 +4498,10 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
         ok = ts_sample_pages_publish_project(sample_pages, instrument, record_bank,
                                              prepared_project, error, sizeof(error));
         if (ok) {
+            audio->gallery=ui->mosaic_gallery=sample_pages->gallery;
+            ui->mosaic=audio->mosaic=sample_pages->mosaic;
+            ui->mosaic_gallery_open=ui->mosaic_gallery_rename=0;
+            ui->mosaic_gallery_selected=audio->gallery?audio->gallery->active:0;
             previous_sequence_source = ts_keyboard_sequence_source(&audio->keyboard_sequence, NULL);
             ts_keyboard_sequence_set_bank(&audio->keyboard_sequence, &sister_state.keyboard_sequence);
             audio->keyboard_sequence_source_stamp = 0;
@@ -7292,7 +7304,7 @@ static const char *path_basename(const char *path)
 
 static int ui_blocking_dialog_open_except_workspaces(const TsUiState *ui)
 {
-    return ui->mosaic_marker_open || ui->mosaic_views_open || ui->mosaic_align_open || ui->mosaic_loop_open || ui->mosaic_scatter_open || ui->mosaic_spacing_confirm || ui->mosaic_edit_choice || ui->mosaic_pattern_choice || ui->exit_confirm_open || ui->project_overwrite_confirm_open ||
+    return ui->mosaic_gallery_open || ui->mosaic_marker_open || ui->mosaic_views_open || ui->mosaic_align_open || ui->mosaic_loop_open || ui->mosaic_scatter_open || ui->mosaic_spacing_confirm || ui->mosaic_edit_choice || ui->mosaic_pattern_choice || ui->exit_confirm_open || ui->project_overwrite_confirm_open ||
            ui->overdub_confirm_open ||
            ui->file_busy || ui->transform_open || ui->drone_open ||
            ui->import_preview_open || ui->load_selection_choice_open ||
@@ -7318,7 +7330,7 @@ static void ui_sync_dialog_workspaces(TsUiState *ui)
     /* Mosaic owns these dialogs. Hiding it strands the modal: its renderer
        and input handler both require mosaic_open, while other input is blocked. */
     if(ui_dialog_open(ui) && !ui->portal.open &&
-       !ui->mosaic_marker_open && !ui->mosaic_views_open && !ui->mosaic_scatter_open && !ui->mosaic_spacing_confirm && !ui->mosaic_loop_open && !ui->mosaic_align_open && !ui->mosaic_pattern_choice &&
+       !ui->mosaic_gallery_open && !ui->mosaic_marker_open && !ui->mosaic_views_open && !ui->mosaic_scatter_open && !ui->mosaic_spacing_confirm && !ui->mosaic_loop_open && !ui->mosaic_align_open && !ui->mosaic_pattern_choice &&
        !ui->project_overwrite_confirm_open && ui->browser.mode!=TS_BROWSER_SAVE_RECIPE &&
        ui->browser.mode!=TS_BROWSER_SAVE_XM &&
        !(ui->file_busy && !strcmp(ui->file_busy_label,"SAVING")))ui->mosaic_open=0;
@@ -13968,6 +13980,8 @@ int main(int argc, char **argv)
     portal_init(&portal,&ui.portal);
     ui.mosaic = audio.mosaic = sample_pages.mosaic = ts_mosaic_create();
     if(!ui.mosaic) {fprintf(stderr,"Mosaic: out of memory\n");return 1;}
+    {char error[160];if(!ts_sample_pages_enable_gallery(&sample_pages,error,sizeof(error))){fprintf(stderr,"Gallery: %s\n",error);ts_mosaic_free(ui.mosaic);ts_sample_pages_free(&sample_pages);return 1;}}
+    audio.gallery=ui.mosaic_gallery=sample_pages.gallery;
     ui.mosaic_scale=24.0;ui.mosaic_hscale=1.0;
     portal.mosaic=&mosaic;mosaic.pages=&sample_pages;
     portal.create_seeds=&fm_seed_sequence;
@@ -18720,7 +18734,7 @@ int main(int argc, char **argv)
     if (device) SDL_CloseAudioDevice(device);
     portal_free(&portal);
     mosaic_controller_free(&mosaic);
-    ts_mosaic_free(ui.mosaic);
+    ts_mosaic_free(ts_sample_pages_mosaic_root(&sample_pages));
     ts_tracker_playback_free(&audio.tracker);
     ts_tracker_edit_free(ui.tracker_edit);
     ts_performance_free(&audio.performance);

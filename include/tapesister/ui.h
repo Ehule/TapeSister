@@ -584,6 +584,13 @@ typedef struct {
     uint64_t mosaic_selection[TS_MOSAIC_EVENTS];
     uint64_t mosaic_selection_order[TS_MOSAIC_EVENTS], mosaic_selection_serial;
     int mosaic_open, mosaic_playing, mosaic_recording;
+    struct TsMosaicGallery *mosaic_gallery; /* Non-owning transport registry. */
+    int mosaic_gallery_open,mosaic_gallery_selected,mosaic_gallery_rename,mosaic_gallery_delete;
+    int mosaic_gallery_count,mosaic_gallery_active,mosaic_gallery_fading;
+    double mosaic_gallery_fade,mosaic_gallery_progress;
+    char mosaic_gallery_names[16][48],mosaic_gallery_name[48];
+    int mosaic_gallery_entry[16],mosaic_gallery_marker[16],mosaic_gallery_marker_valid[16];
+    char mosaic_gallery_status[160];
     int mosaic_live_open, mosaic_live_advanced, mosaic_live_keys;
     int mosaic_source_keys, mosaic_source_key_count; /* Explicit Mosaic QWERTY/MIDI owner. */
     int mosaic_live_drag, mosaic_live_grab_x, mosaic_live_grab_y, mosaic_live_play_all;
