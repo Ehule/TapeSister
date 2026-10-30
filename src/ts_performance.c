@@ -210,6 +210,56 @@ static int start_slot_event(TsPerformanceBank *bank, const TsBankSlot *slot,
     return 1;
 }
 
+TsPerformanceGeneration *ts_performance_prepare_sample(TsPerformanceBank *bank,const TsSample *sample)
+{
+    if(!bank || !sample || !sample->data || sample->frames<2 || !sample->sample_rate)return NULL;
+    TsPerformanceGeneration *g=calloc(1,sizeof(*g));if(!g)return NULL;
+    if(!ts_sample_clone(&g->sample,sample,NULL,0)){free(g);return NULL;}
+    atomic_init(&g->readers,1);g->id=++bank->next_generation_id;g->source_slot=-1;
+    g->next_retired=bank->retired_generations;bank->retired_generations=g;return g;
+}
+void ts_performance_sample_retain(TsPerformanceGeneration *g){generation_retain(g);}
+void ts_performance_sample_release(TsPerformanceGeneration *g){generation_release(g);}
+int ts_performance_trigger_prepared(TsPerformanceBank *bank,const TsPerformancePreparedSource *sources,int count,
+                                    const TsNoteEvent *event,int latched,int rate)
+{
+    if(!bank || !sources || count<=0 || count>TS_PERFORMANCE_VOICE_LIMIT || !event || rate<=0 ||
+       event->key<0 || event->midi_note<0 || event->midi_note>127 || event->velocity<=0 || event->velocity>127)return 0;
+    int free_count=0,matching=0;
+    for(int i=0;i<TS_PERFORMANCE_VOICE_LIMIT;++i) {
+        const TsPerformanceVoice *v=&bank->voices[i];free_count+=!v->active;
+        matching+=v->active && v->midi_note==event->midi_note &&
+            ts_note_event_same_trigger(event,v->origin,v->note,v->channel);
+    }
+    for(int i=0;i<count;++i)if(!sources[i].generation || sources[i].last<=sources[i].first || sources[i].last-sources[i].first<2 ||
+        sources[i].last>sources[i].generation->sample.frames || !isfinite(sources[i].tuning.fine_tune_cents))return 0;
+    if(latched && ts_performance_release_latched_event(bank,event))return count;
+    /* Repeated Note On replaces the whole prior trigger, even after changing
+       the selected set. MIDI channels and physical QWERTY keys stay distinct. */
+    if(count>free_count+matching)return 0;
+    for(int i=0;i<TS_PERFORMANCE_VOICE_LIMIT;++i) {
+        TsPerformanceVoice *v=&bank->voices[i];
+        if(v->active && v->midi_note==event->midi_note && ts_note_event_same_trigger(event,v->origin,v->note,v->channel))voice_deactivate(v);
+    }
+    uint64_t group=++bank->next_group_id;float gain=1.f/sqrtf((float)count);
+    for(int i=0;i<count;++i) {
+        const TsPerformancePreparedSource *s=&sources[i];
+        TsBankSlot view={.sample=s->generation->sample,.occupied=1,.audible_tuning=s->tuning,
+            .has_loop=s->looping,.loop_first=s->first,.loop_last=s->last,.loop_mode=s->mode,
+            .output_route=s->route,.tile_id=s->tile};
+        int started=start_slot_event(bank,&view,s->generation,i,event,latched,rate,group,gain);
+        if(!started)return 0; /* Prevalidated ranges and reserved capacity. */
+        for(int n=0;n<bank->render_limit;++n) {
+            TsPerformanceVoice *v=&bank->voices[n];
+            if(!v->active || v->group_id!=group || v->source_slot!=i)continue;
+            v->range_first=s->first;v->range_last=s->last;v->crossfade_frames=s->crossfade;
+            v->position=v->looping?ts_audition_loop_begin(s->first,s->last,s->mode,&v->direction,&v->loop_intro):(double)s->first;
+            v->detached=rate;break;
+        }
+    }
+    return count;
+}
+
 static size_t tile_fade_frames(const TsPerformanceVoice *voice,
                                int fade_ms, int output_rate)
 {

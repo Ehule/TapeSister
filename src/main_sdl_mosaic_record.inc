@@ -33,6 +33,7 @@ static int install_mosaic_take(SDL_AudioDeviceID device,TsUiState *ui,
     }
     TsSample sample={.data=(float *)data,.frames=frames,.sample_rate=rate,.channels=channels};
     snprintf(sample.name,sizeof(sample.name),"REC %s %llu",
+        atomic_load_explicit(&input->record_source,memory_order_acquire)==TS_RECORD_SOURCE_SOURCES?"SOURCES":
         atomic_load_explicit(&input->record_source,memory_order_acquire)==TS_RECORD_SOURCE_OUTPUT?"OUTPUT":
         atomic_load_explicit(&input->record_source,memory_order_acquire)==TS_RECORD_SOURCE_DRY?"DRY":
         atomic_load_explicit(&input->record_source,memory_order_acquire)==TS_RECORD_SOURCE_SYNTH?"SYNTH":"INPUT",
@@ -196,9 +197,11 @@ static int mosaic_record_tile_event(const SDL_Event *event,SDL_Window *window,
         if(external_capture_busy(input)) {
             snprintf(ui->status,sizeof(ui->status),"FINISH OR CANCEL THE TAKE BEFORE CHANGING SOURCE");return 1;
         }
-        ui->mosaic_record_source=ui->mosaic_record_source==TS_RECORD_SOURCE_DRY?TS_RECORD_SOURCE_OUTPUT:
+        ui->mosaic_record_source=ui->mosaic_record_source==TS_RECORD_SOURCE_DRY?TS_RECORD_SOURCE_SOURCES:
+            ui->mosaic_record_source==TS_RECORD_SOURCE_SOURCES?TS_RECORD_SOURCE_OUTPUT:
             ui->mosaic_record_source==TS_RECORD_SOURCE_OUTPUT?TS_RECORD_SOURCE_EXT:TS_RECORD_SOURCE_DRY;
         snprintf(ui->status,sizeof(ui->status),"REC TILE: %s / LEFT-CLICK TO RECORD / RIGHT-CLICK TO CHANGE",
+            ui->mosaic_record_source==TS_RECORD_SOURCE_SOURCES?"SELECTED SOURCE KEYS (WITHOUT BACKING/FX)":
             ui->mosaic_record_source==TS_RECORD_SOURCE_OUTPUT?"OUTPUT (WHAT YOU HEAR)":
             ui->mosaic_record_source==TS_RECORD_SOURCE_DRY?"DRY KEYBOARD (BEFORE PRISM/FX)":"EXT INPUT (CONFIGURED DEVICE/CHANNEL)");
     } else if(input->recorder.state==TS_EXTERNAL_CAPTURE_RECORDING)

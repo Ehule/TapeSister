@@ -29,6 +29,9 @@ static void free_slot(TsBankSlot *slot)
     slot->sample.data = NULL;
 }
 
+
+#include "test_performance_prepared.inc"
+
 int main(void)
 {
     TsInstrument instrument;
@@ -316,6 +319,7 @@ int main(void)
 
     ts_performance_free(&performance);
     for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot) free_slot(&instrument.bank[slot]);
+    test_prepared_performance();
     puts("performance tests passed");
     return 0;
 }

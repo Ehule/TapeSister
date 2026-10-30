@@ -2,6 +2,7 @@
    One buffer per distinct source, shared by all notes that were playing it. */
 static void runtime_note_collect_snapshots(SDL_AudioDeviceID device,AudioState *audio)
 {
+    ts_performance_collect_retired(&audio->mosaic_source_performance);
     TsSample retired[TS_NOTE_BANK_VOICE_CAPACITY]={0};int count=0;
     /* Snapshot storage is owned by this UI thread. With nothing to reclaim,
        polling must not exclude the ASIO callback once per display frame. */
