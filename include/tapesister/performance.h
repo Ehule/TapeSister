@@ -136,6 +136,7 @@ int ts_performance_trigger_prepared(TsPerformanceBank *,const TsPerformancePrepa
 
 void ts_performance_init(TsPerformanceBank *bank);
 void ts_performance_clear(TsPerformanceBank *bank);
+void ts_performance_reset(TsPerformanceBank *bank); /* Rewind active voices without new notes/generations. */
 void ts_performance_clear_latched(TsPerformanceBank *bank);
 /* Disabling releases key-up voices, preserving held keys and explicit latches. */
 void ts_performance_set_sustain(TsPerformanceBank *bank, int enabled);

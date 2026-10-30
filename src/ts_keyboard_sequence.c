@@ -151,6 +151,14 @@ void ts_keyboard_sequence_reset(TsKeyboardSequence *s)
     if (s->slot_running) start_slot_cycle(s, s->active_slot);
 }
 
+void ts_keyboard_sequence_home(TsKeyboardSequence *s)
+{
+    if(!s)return;
+    ts_keyboard_sequence_stop(s);
+    ts_keyboard_sequence_select_slot(s,s->bank.selected);
+    reset_notes(s);s->slot_cursor=s->slot_count=0;s->slot_elapsed=s->slot_duration=0;
+}
+
 void ts_keyboard_sequence_settings_sanitize(TsKeyboardSequenceSettings *settings)
 {
     TsKeyboardSequenceSettings next = *settings;

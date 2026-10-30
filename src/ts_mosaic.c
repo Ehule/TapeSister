@@ -660,7 +660,7 @@ TsStereoFrame ts_mosaic_read_routed(TsMosaic *m,int rate,TsSourceRouteMix *route
         TsStereoFrame live=mosaic_live_read(m,rate,NULL);
         m->rate=rate;out.l+=preview.l+live.l;out.r+=preview.r+live.r;return ts_stereo_frame_sanitize(out);
     }
-    if(!m->live_pause_routes_valid && !m->live_paused && !m->playing && !m->sequence.running && !m->audition_id && !m->was_playing && !m->transition_remaining && !m->route_handoff.remaining && !m->schedule.live_count && m->schedule.valid)return (TsStereoFrame){0,0};
+    if(!m->live_reset_remaining && !m->live_pause_routes_valid && !m->live_paused && !m->playing && !m->sequence.running && !m->audition_id && !m->was_playing && !m->transition_remaining && !m->route_handoff.remaining && !m->schedule.live_count && m->schedule.valid)return (TsStereoFrame){0,0};
     TsSourceRouteMix mix={0};
     TsStereoFrame out=mosaic_read(m,rate,routes?&mix:NULL);
     TsStereoFrame preview=mosaic_audition_read(m,rate,&mix);

@@ -35,10 +35,10 @@ static void test_f11_looper(const char *directory)
     assert(performance_command_for(PERF_MOSAIC,0,window,0,&a,&u,&pages,&bank,NULL,48000));
     assert(!m->live_paused);render(energy);assert(m->time==time);
     /* Local Home leaves the main cursor and idle cards alone. */
-    perf_input_click(730,y,SDL_BUTTON_LEFT);assert(m->live_paused && m->time==time && m->live[2].elapsed==0);
+    perf_input_click(730,y,SDL_BUTTON_LEFT);assert(!m->live_paused && ts_mosaic_live_ready(m) && m->time==time && m->live[2].elapsed==0);
     assert(m->sequence.pending && m->sequence.index==0 && !m->live[3].state);
     /* Group Home explicitly returns both selected starts. */
-    perf_input_click(480,64,SDL_BUTTON_LEFT);assert(m->time==0 && m->live_paused);
+    perf_input_click(480,64,SDL_BUTTON_LEFT);assert(m->time==0 && !m->live_paused && ts_mosaic_live_ready(m));
     perf_input_click(30,64,SDL_BUTTON_LEFT);render(energy);assert(m->playing && !m->live_paused && m->live[2].elapsed>0);
     perf_input_click(210,y,SDL_BUTTON_LEFT);assert(!performance_transport.loops_joined);
     /* A new project/load cannot inherit this temporary group membership. */

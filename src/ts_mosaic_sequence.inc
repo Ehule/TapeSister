@@ -38,9 +38,11 @@ static void mosaic_live_release_slot(TsMosaic *m,int i)
 }
 void ts_mosaic_sequence_stop(TsMosaic *m)
 {
-    if(!m || !m->sequence.running)return;
+    if(!m || (!m->sequence.running && !m->live_reset_sequence))return;
+    m->live_reset_sequence=0;
     for(int i=0;i<m->sequence.count;++i) {
         int slot=m->sequence.slots[i];
+        m->live_reset_ids[slot]=0;
         if(m->events[slot].id==m->sequence.ids[i] && m->live[slot].id==m->sequence.ids[i])mosaic_live_release_slot(m,slot);
     }
     m->sequence.running=m->sequence.finishing=0;
@@ -51,10 +53,11 @@ int ts_mosaic_sequence_cycle(TsMosaic *m)
     if(!m)return 0;
     TsMosaicSequence *s=&m->sequence;
     if(s->running){s->finishing=0;return 1;}
+    m->live_reset_sequence=0;
     s->count=ts_mosaic_sequence_order(m,s->slots);if(!s->count)return 0;
     memset(s->members,0,sizeof(s->members));s->index=0;s->finishing=0;s->pending=1;s->started=0;s->drain=0;s->duration=0;s->speed=1;
     for(int n=0;n<s->count;++n) {
-        int i=s->slots[n];s->ids[n]=m->events[i].id;s->members[i]=s->ids[n];
+        int i=s->slots[n];m->live_reset_ids[i]=0;s->ids[n]=m->events[i].id;s->members[i]=s->ids[n];
         if(m->live[i].id==s->ids[n] && m->live[i].state) {
             if(m->live[i].state!=TS_MOSAIC_LIVE_WAITING)s->drain=.005;
             mosaic_live_release_slot(m,i);

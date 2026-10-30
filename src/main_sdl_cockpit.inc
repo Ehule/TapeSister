@@ -5,7 +5,7 @@ typedef struct {
     TsMasterClock master_clock;
     unsigned selected,running;
     double time,speed;
-    int repeat,cue_loop,cue,slot,note,notes,held,synth,live_loops,loops_paused,sequence_running,sequence_index;
+    int repeat,cue_loop,cue,slot,note,notes,held,synth,live_loops,loops_paused,loops_ready,sequence_running,sequence_ready,sequence_index;
     TsMosaicRange range;
 } PerformanceStatus;
 static struct {
@@ -33,7 +33,7 @@ static PerformanceStatus performance_status(SDL_AudioDeviceID device,AudioState 
     s.selected=a->sister.performance_transport|(performance_transport.loops_joined?PERF_LOOPS:0);s.running=performance_running(a);
     if(a->mosaic) {
         const TsMosaic *m=a->mosaic;s.live_loops=ts_mosaic_live_count(m);s.time=m->time;s.speed=m->speed;
-        s.loops_paused=m->live_paused;s.sequence_running=m->sequence.running;s.sequence_index=m->sequence.index;
+        s.loops_paused=m->live_paused;s.loops_ready=ts_mosaic_live_ready(m);s.sequence_running=m->sequence.running;s.sequence_ready=m->live_reset_sequence;s.sequence_index=m->sequence.index;
         s.repeat=m->repeat;s.cue_loop=m->marker_loop;s.cue=m->marker_active;s.range=m->loop_range;
     }
     s.slot=a->keyboard_sequence.active_slot;s.note=a->keyboard_sequence.current_note;
@@ -106,20 +106,21 @@ static void performance_overview(AudioState *a,const TsPerformanceMixer *m,const
         if(ch==4) {
             int active=s->live_loops || s->sequence_running;
             perf_rect(206,y+12,12,12,s->selected&bit?accent:dim);perf_small(226,y+12,s->selected&bit?"IN":"OUT",text);
-            const char *state=!active?"IDLE":s->loops_paused?"PAUSED":"PLAYING";
+            const char *state=!active?(s->loops_ready?"READY":"IDLE"):s->loops_paused?"PAUSED":"PLAYING";
             perf_text(282,y+6,state,active?accent:dim,2);
-            snprintf(line,sizeof(line),"%d PLAYERS / %s",s->live_loops,s->sequence_running?"CYCLE":"MANUAL");perf_small(282,y+27,line,dim);
+            snprintf(line,sizeof(line),"%d %s / %s",active?s->live_loops:s->loops_ready,active?"PLAYERS":"ARMED",s->sequence_running || s->sequence_ready?"CYCLE":"MANUAL");perf_small(282,y+27,line,dim);
             perf_small(464,y+8,"OWN PLAYHEADS",text);perf_small(464,y+27,"CAPTURE SEPARATE",dim);
-            perf_button(620,y+7,76,28,active?(s->loops_paused?"RESUME":"PAUSE"):"IDLE",PERF_BUTTON_LOOPS_PLAY,active && !s->loops_paused,1);
-            perf_button(704,y+7,56,28,"HOME",PERF_BUTTON_LOOPS_HOME,0,0);
+            perf_button(620,y+7,76,28,active?(s->loops_paused?"RESUME":"PAUSE"):(s->loops_ready?"PLAY":"IDLE"),PERF_BUTTON_LOOPS_PLAY,active && !s->loops_paused,1);
+            perf_button(704,y+7,56,28,"RESET",PERF_BUTTON_LOOPS_HOME,0,0);
             perf_small(780,y+10,"MOSAIC BUS",dim);perf_small(780,y+27,"LEVEL ABOVE",dim);
         } else if(ch<3) {
             perf_rect(206,y+12,12,12,s->selected&bit?accent:dim);perf_small(226,y+12,s->selected&bit?"IN":"OUT",text);
             perf_text(282,y+8,s->running&bit?"PLAYING":"STOPPED",s->running&bit?accent:dim,2);
             perf_button(620,y+7,76,28,s->running&bit?(ch?"PAUSE":"STOP"):"PLAY",PERF_BUTTON_ROW_PLAY+ch,(s->running&bit)!=0,1);
-            perf_button(704,y+7,56,28,"HOME",PERF_BUTTON_ROW_HOME+ch,0,0);
+            perf_button(704,y+7,56,28,"RESET",PERF_BUTTON_ROW_HOME+ch,0,0);
         } else {
-            perf_small(208,y+13,"--",dim);perf_text(282,y+8,"MANUAL",text,2);perf_small(620,y+20,"QWERTY / MIDI",dim);
+            perf_small(208,y+13,"--",dim);perf_text(282,y+8,"MANUAL",text,2);perf_small(620,y+16,"MANUAL",dim);
+            perf_button(704,y+7,56,28,"RESET",PERF_BUTTON_LIVE_RESET,0,0);
         }
         if(ch==4)continue;
         if(ch==2) {
@@ -161,8 +162,8 @@ static void performance_overview(AudioState *a,const TsPerformanceMixer *m,const
         perf_small(28,426,line,accent);
         perf_button(28,447,300,30,"LOCAL / TRACKER CLOCK",PERF_BUTTON_CLOCK,m->arp_sync!=0,0);
     } else if(performance_transport.selected==4) {
-        perf_small(28,426,"LOOPER PAUSE KEEPS ALL LOOP AND SEQUENCE POSITIONS",accent);
-        perf_small(28,447,"GROUP IN LINKS F11 PLAY/PAUSE; HOME RESETS THE RETAINED SET",text);
+        perf_small(28,426,"PAUSE HOLDS POSITIONS / RESET REARMS TIMELINE TRIGGERS",accent);
+        perf_small(28,447,"RESET REWINDS / REARMS; PLAY RESTARTS THE PREVIOUS ACTIVE SET",text);
     } else {
         perf_small(28,426,"MANUAL NOTES / LATCHES / FM / TILE LAUNCHERS",accent);
         perf_small(28,447,"INDEPENDENT OF GROUP PAUSE / INPUT MONITOR IS A SEPARATE FEED",text);
@@ -217,7 +218,7 @@ static void performance_update(SDL_AudioDeviceID device,AudioState *audio)
     perf_rect(0,0,PERF_W,PERF_H,ts_theme_color(&performance_palette,TS_THEME_TRANSPORT,TS_COLOR_PANEL,0xff151c20u));
     perf_text(22,20,"TAPESISTER / CONTROL CENTER",accent,2);
     perf_rect(786,20,12,12,m.always_on_top?accent:dim);perf_small(808,20,"ON TOP",text);
-    const char *commands[]={"PLAY GROUP","PAUSE GROUP","RETURN TO START"};
+    const char *commands[]={"PLAY GROUP","PAUSE GROUP","RESET GROUP"};
     for(int i=0;i<3;++i)perf_button(20+i*190,54,180,34,commands[i],PERF_BUTTON_PLAY+i,0,1);
     char line[160];snprintf(line,sizeof(line),"%u JOINED / %u RUNNING",performance_popcount(s.selected),performance_popcount(s.running&s.selected));perf_small(606,64,line,dim);
     const char *tabs[]={"OVERVIEW","CUES","INPUTS / TUNER","VISUALS","CLOCK ROUTING"};

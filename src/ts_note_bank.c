@@ -90,6 +90,18 @@ void ts_note_bank_clear(TsNoteBank *bank)
     bank->play_view=play_view;bank->parent_view_first=parent_first;bank->parent_view_last=parent_last;
 }
 
+void ts_note_bank_reset(TsNoteBank *bank)
+{
+    if(!bank)return;
+    for(int i=0;i<bank->render_limit;++i) {
+        TsNoteVoice *v=&bank->voices[i];if(!v->active)continue;
+        v->direction=1;v->loop_intro=0;
+        v->position=v->looping?ts_audition_loop_begin(v->range_first,v->range_last,
+            v->loop_mode,&v->direction,&v->loop_intro):(double)v->range_first;
+        v->attack_frame=0;bank->rendered_serial[i]=0;
+    }
+}
+
 void ts_note_bank_set_attack_ms(TsNoteBank *bank, int milliseconds)
 {
     if (bank == NULL) return;

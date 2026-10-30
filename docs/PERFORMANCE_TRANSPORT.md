@@ -38,7 +38,7 @@ entry, MIDI learn and modal ownership.
 - **Visuals:** all existing visualizer, freeze, seed, editor, symmetry and
   evolution controls. Offline Render remains available on every page.
 - **Clock Routing:** optional internal/TrackSister master tempo, individual
-  tempo followers, group start/pause and separate Home choices. See
+  tempo followers, group start/pause and separate Reset choices. See
   [Clock Routing](CLOCK_ROUTING.md) for playback and project compatibility.
 
 The processor strip separates Sister on/off, rolling/hold and monitoring from
@@ -68,19 +68,44 @@ window keeps the current choice and playback state. Ordinary workspace Space
 and the Mosaic row still control just the timeline. Existing per-card Follow
 choices retain their behavior while Looper is OUT.
 
-Looper **Home** pauses and resets the retained players and running sequence to
-their starts. It does not start idle cards or move the main playhead. With
-Mosaic and Looper both IN, group **Return to Start**, then **Play Group**, returns
-them to their starts together. This is shared transport, not continuous phase
+Looper **Reset** stops and rewinds its players and handover sequence, clears the
+whole-looper pause, and rearms timeline triggers. **READY / Play** restarts the
+previous active set from zero; idle cards are not added. Alternatively, rewind
+Mosaic and start its timeline: cards trigger again at their actual positions,
+without being trapped in the old paused state. A reset sequence releases its
+ownership until an explicit Play/Cycle, so it cannot block timeline triggers.
+Reset also works with no active loops. Repeated Reset is idempotent. The restart
+plan is session-only, validates event IDs, and is cancelled by explicit Stop;
+loads reopen stopped. It does not move the main playhead. With Mosaic and
+Looper both IN, **Reset Group**, then **Play Group**, starts them together.
+This is shared transport, not continuous phase
 alignment: loops can have different lengths, and existing beat/tempo links still
 apply. Looper uses the Mosaic bus trim, including custom outputs and sends; it
 has no additional gain stage. Pause/Resume uses a five-millisecond boundary fade;
 shared effects may finish their existing tails.
 
+[Reset behavior and validation](validation/f11-reset.md).
+
 ![Looper paused independently of Mosaic, with a held keyboard voice](screenshots/performance/control-center-looper-paused.png)
 
 This native SDL fixture holds two loop players and their cycle while the manual
 keyboard voice remains active. It does not measure a hardware device.
+
+## Reset manual Live Tiles
+
+The Live Tiles **Reset** rewinds currently active sample/FM notes, selected-source
+layers, tile launchers and Sister performance groups to their normal start
+positions, including reverse and sample-intro loop modes. Held keys, MIDI
+channels, latches, source generations and routes stay owned by the same voices;
+normal key-up/pedal release still works. Ended or idle voices are not launched.
+Short existing voice/route handoffs smooth the rewind. It does not reset the ARP,
+Mosaic or recording, and does not erase audio or settings.
+
+Live Tiles remains manual and outside group Play/Pause/Reset. The top **Reset
+Group** retains the existing group and Clock Routing reset-follower choices.
+TrackSister Reset uses the first song order, which may reference a pattern other
+than 00. ARP Reset stops and resets its note cursor, slot-chain cursor and LFO,
+and returns to the last manually selected slot; the next Play starts there.
 
 ## Live inputs and Terra tuning
 
@@ -131,19 +156,19 @@ or per-sample meter work is added by this cockpit.
 | --- | --- |
 | Channel checkbox/name | Includes that player in group commands; it does not mute it |
 | Channel Play/Pause | Resumes or pauses TrackSister at its current row and Mosaic at its current time; ARP retains Play/Stop |
-| Channel Home | Stops and rewinds just that player; Looper retains its active set while paused |
+| Channel Reset | Rewinds that player; Looper stops/rearms, ARP returns to its manual slot anchor, TrackSister returns to song order 0/row 0, and Mosaic returns to time 0 |
 | Channel Gain | Silent through +6 dB; drag or wheel, double-click or right-click for 0 dB |
-| Live Tiles | Shared QWERTY/MIDI and tile-launcher level, independent of the players |
+| Live Tiles | Shared QWERTY/MIDI and tile-launcher level; Reset rewinds active voices while preserving held keys/latches |
 | Looper | Pause/Resume all loop players and the handover sequence; optional session group membership |
 | Always on Top | Keeps the transport above other windows |
 | ARP Clock | Local timing, or TrackSister quarter, eighth, or sixteenth notes |
 | Play Group / Pause Group | Resumes or pauses checked players and the master cursor; running players continue on Play |
-| Return to Start | Pauses the group and rewinds Home followers; Home initially follows group membership |
+| Reset Group | Pauses the group and rewinds Reset followers; Reset initially follows group membership |
 | Shift+Space | Pauses the group if any checked player is running; otherwise resumes it |
 | Space | Keeps the active workspace's existing play/stop or Follow/live-edit behavior |
 
 Player selection (except the temporary Looper checkbox), gains, clock links,
-Home choices and Always on Top save with the project.
+Reset choices and Always on Top save with the project.
 Older projects open at 0 dB with ARP alone checked, local timing, and Always
 on Top off. A saved legacy Restart Together setting is ignored. Opening this
 window does not change sound.
@@ -163,7 +188,7 @@ The link temporarily overrides note intervals without replacing saved ARP slot
 timing. Switch back to Local to use those intervals again. ARP slot-change and
 LFO timers keep their own seconds settings. When TrackSister is stopped, its
 current tempo still supplies the interval. Starting a channel independently does
-not reposition another channel; use Return to Start, then Play Group for a
+not reposition another channel; use Reset Group, then Play Group for a
 common beginning.
 
 Mosaic shares the group play/pause and explicit rewind. It keeps its seconds
@@ -176,11 +201,11 @@ at the same next audio callback boundary. Preparation happens first. If ARP has
 no notes/playable audio or Mosaic is empty, group Play reports the problem before
 starting the other players. Pause remains available. TrackSister resumes at its
 paused row; Mosaic resumes at its paused time. Repeated Pause does not rewind.
-Only Home or Return to Start rewinds these players in F11, including when Mosaic
+Only Reset or Reset Group rewinds these players in F11, including when Mosaic
 has reached its end. Mosaic repeat mode still loops normally during playback.
-ARP retains its existing pattern-start behavior after Stop. With custom Home
-routes, group Return to Start rewinds Home followers separately from group
-membership; a checked player ignoring Home pauses at its current position.
+ARP retains its existing pattern-start behavior after Stop. With custom Reset
+routes, group Reset Group rewinds Reset followers separately from group
+membership; a checked player ignoring Reset pauses at its current position.
 Text-entry fields and modal dialogs keep shortcut ownership.
 
 In TrackSister, **double-click an occupied tile** to open that tile's editable

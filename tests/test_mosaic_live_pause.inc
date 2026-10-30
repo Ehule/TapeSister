@@ -17,10 +17,10 @@ static void test_mosaic_live_pause(void)
     assert(m->live[3].elapsed>live[3].elapsed && m->sequence.index==1);
     /* Home retains only the launched set and frozen sequence membership. */
     TsMosaicEvent *idle=ts_mosaic_copy(m,e->id,10,500);assert(idle);idle->live_order=-1;
-    ts_mosaic_live_home(m);assert(m->live_paused && m->sequence.running && !m->sequence.index);
+    ts_mosaic_live_home(m);assert(!m->live_paused && !m->sequence.running && m->live_reset_sequence && !m->sequence.index);
     assert(m->sequence.pending && m->live[3].elapsed==0 && !m->live[idle-m->events].state);
-    live_render(m,20);assert(m->live[3].elapsed==0 && m->sequence.pending);
-    ts_mosaic_live_pause(m,0);live_render(m,2);assert(m->sequence.index==0 && m->live[3].elapsed>0);
+    live_render(m,20);assert(m->live[3].elapsed==0 && m->sequence.pending && ts_mosaic_live_ready(m));
+    ts_mosaic_live_resume(m);live_render(m,2);assert(m->sequence.index==0 && m->live[3].elapsed>0);
     /* Explicit stop must clear held releases, then a future launch can play. */
     ts_mosaic_live_pause(m,1);ts_mosaic_live_stop(m,0);live_render(m,10);
     assert(!ts_mosaic_live_count(m) && !m->sequence.running && !m->live_paused);
@@ -65,4 +65,23 @@ static void test_mosaic_live_pause_routes(void)
     for(int i=0;i<20;++i){TsSourceRouteMix mix={0};ts_mosaic_read_routed(m,1000,&mix);energy+=fabs(mix.graph[7].l);}
     assert(energy>0 && m->live[0].elapsed>elapsed);
     ts_mosaic_free(m);ts_mosaic_free(timeline);
+}
+
+static void test_mosaic_reset_rearm(void)
+{
+    TsMosaic *m=live_fixture();TsMosaicEvent *e=&m->events[0];e->start=0;
+    assert(ts_mosaic_live_launch(m,e->id,0));live_render(m,50);
+    ts_mosaic_live_pause(m,1);live_render(m,20);assert(live_render(m,10)==0);
+    ts_mosaic_live_home(m);assert(!m->live_paused && !ts_mosaic_live_count(m) && ts_mosaic_live_ready(m));
+    assert(live_render(m,10)==0); /* Reset a silent pause cannot replay its stale last frame. */
+    uint64_t hash=ts_mosaic_hash(m);ts_mosaic_live_home(m);assert(ts_mosaic_hash(m)==hash);
+    ts_mosaic_seek(m,0);m->playing=1;assert(live_render(m,100)>0);
+    assert(m->live[0].elapsed>.099 && !ts_mosaic_live_ready(m));
+    m->playing=0;ts_mosaic_live_home(m);uint64_t id=e->id;ts_mosaic_delete(m,id);
+    e=ts_mosaic_add(m,m->sources,0,0);assert(e);e->live=1;assert(e->id!=id);
+    assert(!ts_mosaic_live_ready(m));ts_mosaic_live_resume(m);assert(!ts_mosaic_live_count(m));
+    assert(ts_mosaic_live_launch(m,e->id,0));live_render(m,20);ts_mosaic_live_home(m);
+    TsMosaic *loaded=ts_mosaic_create();assert(loaded);ts_mosaic_publish_loaded(m,loaded);ts_mosaic_free(loaded);
+    assert(!ts_mosaic_live_ready(m) && !m->live_paused && !m->live_reset_remaining);
+    ts_mosaic_free(m);
 }
