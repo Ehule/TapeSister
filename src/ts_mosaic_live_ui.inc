@@ -6,7 +6,7 @@ static const TsMosaicLive *mosaic_live_snapshot(const TsUiState *ui,const TsMosa
 static const char *mosaic_live_state_name(const TsUiState *ui,const TsMosaicEvent *e)
 {
     const TsMosaicLive *l=mosaic_live_snapshot(ui,e);
-    return !l || l->id!=e->id || !l->state?"LIVE STOP":l->state==TS_MOSAIC_LIVE_WAITING?"LIVE WAIT":
+    return !l || l->id!=e->id || !l->state?"LIVE STOP":ui->mosaic_live_paused?"LIVE PAUSE":l->state==TS_MOSAIC_LIVE_WAITING?"LIVE WAIT":
         l->state==TS_MOSAIC_LIVE_RELEASING?"LIVE END":"LIVE PLAY";
 }
 static void mosaic_live_center_text(TsFramebuffer *fb,int x,int y,const char *label,uint32_t color)
@@ -81,7 +81,7 @@ static void mosaic_live_wave(TsFramebuffer *fb,int x,int y,const TsUiState *ui,c
 /* Both renderers use the same UI snapshot and timing. A stopped selection
    must not hide another running loop, and capture setup is never play time. */
 enum { MOSAIC_DISC_STOP, MOSAIC_DISC_RECORD, MOSAIC_DISC_PREPARE,
-       MOSAIC_DISC_PLAY, MOSAIC_DISC_WAIT, MOSAIC_DISC_RELEASE };
+       MOSAIC_DISC_PLAY, MOSAIC_DISC_WAIT, MOSAIC_DISC_RELEASE, MOSAIC_DISC_PAUSED };
 typedef struct {
     const TsMosaicEvent *event;
     int state;
@@ -141,6 +141,9 @@ static MosaicLooperDisplay mosaic_looper_display(const TsUiState *ui)
         }
         if(state==TS_MOSAIC_LIVE_RELEASING)d.timer="RELEASING";
     }
+    if(!ui->mosaic_live_recording && !ui->mosaic_live_finishing && ui->mosaic_live_paused && (state || ui->mosaic_sequence_running)) {
+        d.state=MOSAIC_DISC_PAUSED;d.disc=RGB(151,101,28);d.ring=RGB(255,200,106);d.label="PAUSE";d.timer="PAUSED";
+    }
     d.phase=fmax(0,fmin(1,d.phase));return d;
 }
 /* Symbol coordinates in logical circle units, shared with native coverage. */
@@ -148,7 +151,7 @@ static int mosaic_looper_symbol(int state,double x,double y)
 {
     if(state==MOSAIC_DISC_PLAY || state==MOSAIC_DISC_RELEASE)
         return x>=-8 && x<=12 && fabs(y+2)<=(12-x)*.6;
-    if(state==MOSAIC_DISC_WAIT)
+    if(state==MOSAIC_DISC_WAIT || state==MOSAIC_DISC_PAUSED)
         return y>=-12 && y<=8 && ((x>=-9 && x<=-3) || (x>=3 && x<=9));
     return state==MOSAIC_DISC_STOP && x>=-9 && x<=9 && y>=-12 && y<=6;
 }

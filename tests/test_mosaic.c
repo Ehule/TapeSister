@@ -384,9 +384,11 @@ static void test_source_preview_lifetime(void)
 
 #include "test_mosaic_live.inc"
 #include "test_mosaic_sequence.inc"
+#include "test_mosaic_live_pause.inc"
 
 int main(void)
 {
+    test_mosaic_live_pause();test_mosaic_live_pause_routes();
     test_mosaic_live();test_mosaic_live_storage();test_mosaic_live_mix();
     test_mosaic_sequence();test_mosaic_finish();test_mosaic_sequence_storage();
     test_source_preview_lifetime();

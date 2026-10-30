@@ -20,7 +20,7 @@ static void mosaic_poll(SDL_AudioDeviceID device,TsUiState *ui,
     TsMosaicEvent *sequence_selected=ts_mosaic_find(ui->mosaic,ui->mosaic_selected);
     ui->mosaic_sequence_selection_owned=sequence_selected && ts_mosaic_sequence_owns(ui->mosaic,(int)(sequence_selected-ui->mosaic->events));
     ui->mosaic_live_loops=ts_mosaic_live_count(ui->mosaic);
-    ui->mosaic_live_master=ui->mosaic->live_master;
+    ui->mosaic_live_master=ui->mosaic->live_master;ui->mosaic_live_paused=ui->mosaic->live_paused;
     ui->mosaic_live_quarter=ui->mosaic->live_quarter;
     ui->mosaic_time=ui->mosaic->time;ui->mosaic_playing=ui->mosaic->playing;
     if(device)SDL_UnlockAudioDevice(device);

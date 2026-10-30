@@ -255,3 +255,13 @@ Use a project copy when comparing with an older build.
 See [validation and the hardware exercise](validation/mosaic-live-loops.md).
 The draggable transport and growing waveform follow-up has its own
 [validation and performance exercise](validation/mosaic-looper-cockpit.md).
+
+## Pause loops from F11
+
+The F11 Control Center has a separate **Looper** row with **Pause / Resume**,
+**Home**, and temporary **IN / OUT** group membership. Pause holds active loops
+and the handover sequence without pausing the main playhead, live input voices
+or capture. The main playhead can also pause while loops continue. Home resets
+only the retained loop set; idle cards stay idle. See
+[F11 Looper transport](PERFORMANCE_TRANSPORT.md#looper-transport) for shared
+transport and explicit return-to-start behavior.

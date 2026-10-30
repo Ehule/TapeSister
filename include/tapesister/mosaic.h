@@ -191,6 +191,11 @@ typedef struct TsMosaic {
     int live_master, live_master_running, live_clock_edge;
     struct { int source,continuous,units,length,quantize; } live_capture;
     TsMosaicSequence sequence; /* Frozen running order, never resumed by load/undo. */
+    int live_pause_routes_valid;
+    int live_paused; /* Session-only whole-looper hold, independent of timeline. */
+    double live_pause_gain,live_pause_base;
+    TsStereoFrame live_pause_last;
+    TsSourceRouteMix live_pause_routes; /* Last callback-boundary source frame. */
 } TsMosaic;
 
 /* Control commands require the same exclusion as event edits. Launch is
@@ -199,6 +204,8 @@ typedef struct TsMosaic {
 int ts_mosaic_live_launch(TsMosaic *,uint64_t id,int quantize);
 void ts_mosaic_live_stop(TsMosaic *,uint64_t id); /* id=0 stops all live loops. */
 void ts_mosaic_live_restart(TsMosaic *,uint64_t id);
+void ts_mosaic_live_pause(TsMosaic *,int paused); /* Retain every active player/sequence position. */
+void ts_mosaic_live_home(TsMosaic *); /* Pause and reset retained players/sequence; no new launches. */
 void ts_mosaic_live_transport(TsMosaic *,int command); /* group: 1 play, 0 pause, 2 Home */
 int ts_mosaic_live_count(const TsMosaic *);
 double ts_mosaic_live_cycle(const TsMosaicEvent *);

@@ -4,7 +4,7 @@ static void source_keys_click(SDL_Window *window,SDL_AudioDeviceID device,AudioS
     int x=20+(slot%2)*49,y=84+(slot/2)*34;
     SDL_SetModState(mod);live_performance_click(window,device,a,s,u,bank,c,x,y);SDL_SetModState(KMOD_NONE);
 }
-static void test_mosaic_source_keys(SDL_Window *window,SDL_AudioDeviceID device)
+static void test_mosaic_source_keys_mode(SDL_Window *window,SDL_AudioDeviceID device,int pause_looper)
 {
     SDL_SetWindowSize(window,640,400);
     AudioState *a=routing_audio(0);TsUiState *u=mosaic_record_ui_fixture(a);
@@ -31,10 +31,27 @@ static void test_mosaic_source_keys(SDL_Window *window,SDL_AudioDeviceID device)
     live_performance_click(window,device,a,s,u,bank,c,TS_MOSAIC_SOURCE_KEYS_X+5,TS_MOSAIC_SOURCE_KEYS_Y+5);
     assert(u->mosaic_source_keys && a->mosaic_source_count==4 && !u->mosaic_live_open);
     for(int n=0;n<4;++n)assert(a->mosaic_source_keys[n].page==1 && a->mosaic_source_keys[n].slot==slots[n]);
+    TsMosaicEvent *loop=NULL;double held_elapsed=0;
+    if(pause_looper) {
+        loop=ts_mosaic_copy(a->mosaic,a->mosaic->events[0].id,3,350);assert(loop);
+        loop->live=1;loop->live_order=-1;assert(ts_mosaic_live_launch(a->mosaic,loop->id,0));
+        float output[512];audio_callback(a,(Uint8 *)output,sizeof(output));
+        held_elapsed=a->mosaic->live[loop-a->mosaic->events].elapsed;assert(held_elapsed>0);
+        performance_show(u,a);assert(performance_transport.window);
+        SDL_Event pause={0};pause.type=SDL_MOUSEBUTTONDOWN;pause.button.windowID=performance_transport.id;
+        pause.button.button=SDL_BUTTON_LEFT;pause.button.x=640;pause.button.y=PERF_ROWS_Y+4*PERF_ROW_STEP+16;
+        assert(performance_event(&pause,window,device,a,u,&pages,bank,NULL,48000));
+        pause.type=SDL_MOUSEBUTTONUP;assert(performance_event(&pause,window,device,a,u,&pages,bank,NULL,48000));
+        assert(a->mosaic->live_paused && a->mosaic->playing && !performance_transport.loops_joined);
+    }
     live_performance_key(window,device,a,s,u,bank,c,SDLK_z,1,KMOD_NONE);
     assert(ts_performance_count(&a->mosaic_source_performance)==4 && !ts_note_bank_count(&a->notes));
     float output[512];for(int n=0;n<16;++n)audio_callback(a,(Uint8 *)output,sizeof(output));
     assert(fabsf(a->mosaic_source_dry.l-.2f)<1e-5f && fabsf(a->mosaic_source_dry.r-.1f)<1e-5f);
+    if(pause_looper) {
+        assert(a->mosaic->live[loop-a->mosaic->events].elapsed==held_elapsed);
+        assert(performance_status(device,a).notes==4); /* Source layers stay visible in F11. */
+    }
     /* Browsing away and back does not change the chosen instrument. Another
        page's source can be added while the old four-layer key stays held. */
     live_performance_click(window,device,a,s,u,bank,c,20,TS_MOSAIC_SOURCE_PAGE_Y+5);
@@ -85,6 +102,17 @@ static void test_mosaic_source_keys(SDL_Window *window,SDL_AudioDeviceID device)
     assert(take->source->sample.frames==5120 && take->source->sample.channels==2);
     assert(fabsf(take->source->sample.data[5118*2]-.2f)<1e-5f && a->mosaic->playing);
     assert(bank->selected_slot==selected && ts_sample_hash(&bank->current)==bank_hash);
+    if(pause_looper) {
+        assert(a->mosaic->live_paused && a->mosaic->live[loop-a->mosaic->events].elapsed==held_elapsed);
+        assert(ts_performance_count(&a->mosaic_source_performance)==4);
+        SDL_Event resume={0};resume.type=SDL_MOUSEBUTTONDOWN;resume.button.windowID=performance_transport.id;
+        resume.button.button=SDL_BUTTON_LEFT;resume.button.x=640;resume.button.y=PERF_ROWS_Y+4*PERF_ROW_STEP+16;
+        assert(performance_event(&resume,window,device,a,u,&pages,bank,NULL,48000));
+        resume.type=SDL_MOUSEBUTTONUP;assert(performance_event(&resume,window,device,a,u,&pages,bank,NULL,48000));
+        assert(!a->mosaic->live_paused);audio_callback(a,(Uint8 *)output,sizeof(output));
+        assert(a->mosaic->live[loop-a->mosaic->events].elapsed>held_elapsed);
+        performance_close();
+    }
     mosaic_poll(device,u,bank,c);
     const char *shot=getenv("TS_TEST_MOSAIC_SOURCE_KEYS");if(shot)live_controller_screenshot_size(u,shot,1280,800);
     if(shot) {
@@ -116,4 +144,10 @@ static void test_mosaic_source_keys(SDL_Window *window,SDL_AudioDeviceID device)
     TsUiState *fresh=malloc(sizeof(*fresh));assert(fresh);ts_ui_init(fresh);assert(!fresh->mosaic_source_keys);free(fresh);
     SDL_setenv("TAPESISTER_CAPTURES","",1);ts_external_recorder_free(&s->recorder);free(s);
     ts_instrument_free(bank);free(bank);ts_sample_pages_free(&pages);free(u);mosaic_controller_free(c);free(c);routing_free(a);
+}
+
+static void test_mosaic_source_keys(SDL_Window *window,SDL_AudioDeviceID device)
+{
+    test_mosaic_source_keys_mode(window,device,0);
+    test_mosaic_source_keys_mode(window,device,1);
 }

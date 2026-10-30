@@ -5,7 +5,7 @@ typedef struct {
     TsMasterClock master_clock;
     unsigned selected,running;
     double time,speed;
-    int repeat,cue_loop,cue,slot,note,notes,held,synth,live_loops;
+    int repeat,cue_loop,cue,slot,note,notes,held,synth,live_loops,loops_paused,sequence_running,sequence_index;
     TsMosaicRange range;
 } PerformanceStatus;
 static struct {
@@ -29,9 +29,11 @@ static PerformanceStatus performance_status(SDL_AudioDeviceID device,AudioState 
     if(ts_tapehead_frame())ts_tapehead_host_lock();else if(device)SDL_LockAudioDevice(device);
     ts_tapehead_performance_locked(&s.tracker);
     s.master_clock=a->sister.master_clock;
-    s.selected=a->sister.performance_transport;s.running=performance_running(a);
+    performance_loop_owner(a);
+    s.selected=a->sister.performance_transport|(performance_transport.loops_joined?PERF_LOOPS:0);s.running=performance_running(a);
     if(a->mosaic) {
         const TsMosaic *m=a->mosaic;s.live_loops=ts_mosaic_live_count(m);s.time=m->time;s.speed=m->speed;
+        s.loops_paused=m->live_paused;s.sequence_running=m->sequence.running;s.sequence_index=m->sequence.index;
         s.repeat=m->repeat;s.cue_loop=m->marker_loop;s.cue=m->marker_active;s.range=m->loop_range;
     }
     s.slot=a->keyboard_sequence.active_slot;s.note=a->keyboard_sequence.current_note;
@@ -93,43 +95,54 @@ static void performance_page_set(AudioState *a,int page)
 static void performance_overview(AudioState *a,const TsPerformanceMixer *m,const PerformanceStatus *s,
     const TsSisterRoutingSnapshot *r,Uint32 text,Uint32 dim,Uint32 accent,Uint32 edge)
 {
-    const int channel[]={2,1,0,3};const char *names[]={"MOSAIC","TRACKSISTER","ARP","LIVE TILES"};
+    const int channel[]={2,1,0,3,4};const char *names[]={"MOSAIC","TRACKSISTER","ARP","LIVE TILES","LOOPER"};
     char line[128],position[32];
     perf_small(28,150,"PLAYER",dim);perf_small(204,150,"GROUP",dim);perf_small(282,150,"STATE / POSITION",dim);
     perf_small(464,150,"MUTE / SOLO",dim);perf_small(620,150,"TRANSPORT",dim);perf_small(780,150,"PRE-ROUTE TRIM",dim);
-    for(int row=0;row<4;++row) {
-        int ch=channel[row],y=PERF_ROWS_Y+row*PERF_ROW_STEP;unsigned bit=1u<<ch;
-        perf_rect(20,y,920,54,edge);if(performance_transport.selected==row)perf_rect(20,y,3,54,accent);
+    for(int row=0;row<5;++row) {
+        int ch=channel[row],y=PERF_ROWS_Y+row*PERF_ROW_STEP;unsigned bit=ch==4?PERF_LOOPS:1u<<ch;
+        perf_rect(20,y,920,PERF_ROW_H,edge);if(performance_transport.selected==row)perf_rect(20,y,3,PERF_ROW_H,accent);
         perf_text(28,y+10,names[row],text,2);
-        if(ch<3) {
+        if(ch==4) {
+            int active=s->live_loops || s->sequence_running;
+            perf_rect(206,y+12,12,12,s->selected&bit?accent:dim);perf_small(226,y+12,s->selected&bit?"IN":"OUT",text);
+            const char *state=!active?"IDLE":s->loops_paused?"PAUSED":"PLAYING";
+            perf_text(282,y+6,state,active?accent:dim,2);
+            snprintf(line,sizeof(line),"%d PLAYERS / %s",s->live_loops,s->sequence_running?"CYCLE":"MANUAL");perf_small(282,y+27,line,dim);
+            perf_small(464,y+8,"OWN PLAYHEADS",text);perf_small(464,y+27,"CAPTURE SEPARATE",dim);
+            perf_button(620,y+7,76,28,active?(s->loops_paused?"RESUME":"PAUSE"):"IDLE",PERF_BUTTON_LOOPS_PLAY,active && !s->loops_paused,1);
+            perf_button(704,y+7,56,28,"HOME",PERF_BUTTON_LOOPS_HOME,0,0);
+            perf_small(780,y+10,"MOSAIC BUS",dim);perf_small(780,y+27,"LEVEL ABOVE",dim);
+        } else if(ch<3) {
             perf_rect(206,y+12,12,12,s->selected&bit?accent:dim);perf_small(226,y+12,s->selected&bit?"IN":"OUT",text);
             perf_text(282,y+8,s->running&bit?"PLAYING":"STOPPED",s->running&bit?accent:dim,2);
-            perf_button(620,y+10,76,32,s->running&bit?(ch?"PAUSE":"STOP"):"PLAY",PERF_BUTTON_ROW_PLAY+ch,(s->running&bit)!=0,1);
-            perf_button(704,y+10,56,32,"HOME",PERF_BUTTON_ROW_HOME+ch,0,0);
+            perf_button(620,y+7,76,28,s->running&bit?(ch?"PAUSE":"STOP"):"PLAY",PERF_BUTTON_ROW_PLAY+ch,(s->running&bit)!=0,1);
+            perf_button(704,y+7,56,28,"HOME",PERF_BUTTON_ROW_HOME+ch,0,0);
         } else {
             perf_small(208,y+13,"--",dim);perf_text(282,y+8,"MANUAL",text,2);perf_small(620,y+20,"QWERTY / MIDI",dim);
         }
+        if(ch==4)continue;
         if(ch==2) {
             performance_time(position,sizeof(position),s->time);snprintf(line,sizeof(line),"%s / %.2fX",position,s->speed);
-            perf_small(282,y+34,line,dim);snprintf(line,sizeof(line),"M %d / S %d",performance_arrangement.muted,performance_arrangement.solo);
-            perf_small(464,y+10,line,text);snprintf(line,sizeof(line),s->live_loops?"%d LIVE LOOPS":"%d CARDS HERE",s->live_loops?s->live_loops:performance_arrangement.here);perf_small(464,y+34,line,dim);
+            perf_small(282,y+27,line,dim);snprintf(line,sizeof(line),"M %d / S %d",performance_arrangement.muted,performance_arrangement.solo);
+            perf_small(464,y+10,line,text);snprintf(line,sizeof(line),s->live_loops?"%d LIVE LOOPS":"%d CARDS HERE",s->live_loops?s->live_loops:performance_arrangement.here);perf_small(464,y+27,line,dim);
         } else if(ch==1) {
             if(s->tracker.ready)snprintf(line,sizeof(line),"P%02d / ROW %03d",s->tracker.pattern,s->tracker.row);else snprintf(line,sizeof(line),"NOT OPEN");
-            perf_small(282,y+34,line,dim);snprintf(line,sizeof(line),"SCORE M %u",performance_popcount(s->tracker.score_mutes));perf_small(464,y+10,line,text);
+            perf_small(282,y+27,line,dim);snprintf(line,sizeof(line),"SCORE M %u",performance_popcount(s->tracker.score_mutes));perf_small(464,y+10,line,text);
             if(s->tracker.performance_solo>=0)snprintf(line,sizeof(line),"PERF SOLO %02d",s->tracker.performance_solo+1);
-            else snprintf(line,sizeof(line),"PERF M %u",performance_popcount(s->tracker.performance_mutes));perf_small(464,y+34,line,dim);
+            else snprintf(line,sizeof(line),"PERF M %u",performance_popcount(s->tracker.performance_mutes));perf_small(464,y+27,line,dim);
         } else if(ch==0) {
-            snprintf(line,sizeof(line),"SLOT %02d / NOTE %d",s->slot+1,s->note);perf_small(282,y+34,line,dim);
-            perf_small(464,y+10,"NOTE SEQUENCE",text);perf_small(464,y+34,"OWN VOICES",dim);
+            snprintf(line,sizeof(line),"SLOT %02d / NOTE %d",s->slot+1,s->note);perf_small(282,y+27,line,dim);
+            perf_small(464,y+10,"NOTE SEQUENCE",text);perf_small(464,y+27,"OWN VOICES",dim);
         } else {
-            snprintf(line,sizeof(line),"KEY VOICES %d",s->notes);perf_small(282,y+34,line,dim);
-            snprintf(line,sizeof(line),"LATCH %d / FM %d",s->held,s->synth);perf_small(464,y+10,line,text);perf_small(464,y+34,"+ TILE LAUNCHERS",dim);
+            snprintf(line,sizeof(line),"KEY VOICES %d",s->notes);perf_small(282,y+27,line,dim);
+            snprintf(line,sizeof(line),"LATCH %d / FM %d",s->held,s->synth);perf_small(464,y+10,line,text);perf_small(464,y+27,"+ TILE LAUNCHERS",dim);
         }
         int x=PERF_GAIN_X+(int)lrintf(m->gain[ch]*PERF_GAIN_W/2);
         perf_rect(PERF_GAIN_X,y+20,PERF_GAIN_W,5,dim);perf_rect(PERF_GAIN_X,y+20,x-PERF_GAIN_X,5,accent);
         perf_rect(PERF_GAIN_X+PERF_GAIN_W/2,y+16,1,14,text);perf_rect(x-2,y+15,5,16,text);
         if(m->gain[ch]>0)snprintf(line,sizeof(line),"%+.1f",20*log10f(m->gain[ch]));else snprintf(line,sizeof(line),"-INF");
-        perf_small(898,y+18,line,text);if(m->gain[ch]==0)perf_small(780,y+37,"TRIM SILENT",accent);
+        perf_small(898,y+18,line,text);if(m->gain[ch]==0)perf_small(780,y+31,"TRIM SILENT",accent);
     }
     if(performance_transport.selected==0) {
         const TsMosaic *mosaic=a->mosaic;
@@ -147,6 +160,9 @@ static void performance_overview(AudioState *a,const TsPerformanceMixer *m,const
         else snprintf(line,sizeof(line),"ARP CLOCK: %s / SLOT TIMER AND LFO: LOCAL",clocks[m->arp_sync%4]);
         perf_small(28,426,line,accent);
         perf_button(28,447,300,30,"LOCAL / TRACKER CLOCK",PERF_BUTTON_CLOCK,m->arp_sync!=0,0);
+    } else if(performance_transport.selected==4) {
+        perf_small(28,426,"LOOPER PAUSE KEEPS ALL LOOP AND SEQUENCE POSITIONS",accent);
+        perf_small(28,447,"GROUP IN LINKS F11 PLAY/PAUSE; HOME RESETS THE RETAINED SET",text);
     } else {
         perf_small(28,426,"MANUAL NOTES / LATCHES / FM / TILE LAUNCHERS",accent);
         perf_small(28,447,"INDEPENDENT OF GROUP PAUSE / INPUT MONITOR IS A SEPARATE FEED",text);

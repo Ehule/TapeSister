@@ -39,6 +39,29 @@ void ts_mosaic_live_restart(TsMosaic *m,uint64_t id)
     m->live[e-m->events].state=TS_MOSAIC_LIVE_STOPPED;
     (void)ts_mosaic_live_launch(m,id,0);
 }
+void ts_mosaic_live_pause(TsMosaic *m,int paused)
+{
+    if(!m || m->live_paused==(paused!=0))return;
+    if(paused && !m->sequence.running && !ts_mosaic_live_count(m))return;
+    if(paused)m->live_pause_base=m->live_pause_gain;
+    m->live_paused=paused!=0;
+}
+void ts_mosaic_live_home(TsMosaic *m)
+{
+    if(!m)return;
+    ts_mosaic_live_pause(m,1);
+    for(int i=0;i<TS_MOSAIC_EVENTS;++i) {
+        const TsMosaicEvent *e=&m->events[i];TsMosaicLive *l=&m->live[i];
+        if(!e->id || !e->live || l->id!=e->id || !l->state)continue;
+        *l=(TsMosaicLive){.id=e->id,.state=TS_MOSAIC_LIVE_PLAYING};m->voices[i].active=0;
+        if(ts_mosaic_sequence_owns(m,i))l->state=TS_MOSAIC_LIVE_STOPPED;
+    }
+    if(m->sequence.running) {
+        TsMosaicSequence *s=&m->sequence;s->index=0;s->pending=1;s->started=s->finishing=0;
+        s->duration=s->drain=0;s->speed=1;
+    }
+    m->schedule.valid=0;
+}
 void ts_mosaic_live_transport(TsMosaic *m,int command)
 {
     if(!m)return;
@@ -76,6 +99,23 @@ void ts_mosaic_live_clock(TsMosaic *m,int enabled,int running,double quarter,dou
 static TsStereoFrame mosaic_live_read(TsMosaic *m,int rate,TsSourceRouteMix *routes)
 {
     TsStereoFrame out={0,0};
+    double step=1./fmax(1,rate*.005);
+    if(m->live_paused) {
+        m->live_pause_gain=fmax(0,m->live_pause_gain-step);
+        float fade=m->live_pause_base>0?(float)(m->live_pause_gain/m->live_pause_base):0;
+        if(routes && fade>0 && m->live_pause_routes_valid)ts_source_route_add(routes,&m->live_pause_routes,fade);
+        out=(TsStereoFrame){m->live_pause_last.l*fade,m->live_pause_last.r*fade};
+        if(!m->schedule.live_count && !m->sequence.running && !m->live_pause_gain) {
+            m->live_paused=0;m->live_pause_gain=m->live_pause_base=1;
+        }
+        return out;
+    }
+    m->live_pause_gain=fmin(1,m->live_pause_gain+step);
+    /* UI commands exclude the whole callback. Capture routes only on its
+       final frame (or each standalone read), keeping normal mix order intact. */
+    int capture=routes && !m->block_remaining && m->schedule.live_count;
+    TsSourceRouteMix before;if(capture)before=*routes;
+    if(!m->schedule.live_count || (!routes && !m->block_remaining))m->live_pause_routes_valid=0;
     for(int at=0;at<m->schedule.live_count;++at) {
         int i=m->schedule.live[at];const TsMosaicEvent *saved=&m->events[i];TsMosaicLive *l=&m->live[i];
         if(l->id!=saved->id || !saved->live || saved->source->pattern || !l->state)continue;
@@ -98,10 +138,12 @@ static TsStereoFrame mosaic_live_read(TsMosaic *m,int rate,TsSourceRouteMix *rou
             if(release==0){l->state=0;m->voices[i].active=0;continue;}
         }
         TsStereoFrame card=mosaic_event_read(m->pattern_engine,&e,&m->voices[i],l->elapsed,rate,speed,
-            m->gain*release,!e.muted && (!m->schedule.any_solo || e.solo),routes,m->control_serial);
+            m->gain*release*(float)m->live_pause_gain,!e.muted && (!m->schedule.any_solo || e.solo),routes,m->control_serial);
         out.l+=card.l;out.r+=card.r;
         l->elapsed+=speed/rate;l->phase=(m->voices[i].position[0]-e.first)/(e.last-e.first);
     }
+    m->live_pause_last=out;
+    if(capture) {m->live_pause_routes_valid=1;m->live_pause_routes=*routes;ts_source_route_add(&m->live_pause_routes,&before,-1.f);}
     if(m->live_master && rate>0) {
         m->live_phase+=1.0/(rate*m->live_quarter);
         m->live_clock_edge=m->live_phase>=1;

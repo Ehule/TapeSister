@@ -78,10 +78,10 @@ static void test_mosaic_live_storage(void)
     e->fade_in=.1;e->fade_out=.2;e->pan=-.4f;e->muted=e->solo=1;
     m->live_capture.continuous=1;m->live_capture.units=1;m->live_capture.length=8;
     m->live_capture.quantize=1;ts_mosaic_live_launch(m,e->id,0);live_render(m,5);
-    MKDIR("mosaic-live-storage");char error[160];uint64_t hash=ts_mosaic_hash(m);
+    MKDIR("mosaic-live-storage");char error[160];uint64_t hash=ts_mosaic_hash(m);ts_mosaic_live_pause(m,1);assert(ts_mosaic_hash(m)==hash);
     assert(ts_mosaic_save(m,"mosaic-live-storage",error,sizeof(error)));
     storage_portable_load(loaded,"mosaic-live-storage");assert(ts_mosaic_hash(loaded)==hash);
-    assert(!loaded->playing && !ts_mosaic_live_count(loaded));
+    assert(!loaded->playing && !ts_mosaic_live_count(loaded) && !loaded->live_paused && loaded->live_pause_gain==1);
     assert(loaded->events[0].live_transport && loaded->events[0].live_position);
     /* Invalid live data must not replace a valid in-memory scene. */
     FILE *f=fopen("mosaic-live-storage/mosaic.tsm","wb");assert(f);fputs("TAPESISTER_MOSAIC 15\nSETTINGS 0 .7 1\nSPACING 0\nLOOPER 0 1 0 -1 0\n",f);fclose(f);

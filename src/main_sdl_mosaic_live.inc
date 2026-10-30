@@ -149,7 +149,7 @@ static int mosaic_live_command(SDL_AudioDeviceID output,SDL_AudioDeviceID *input
     TsMosaicEvent *e=ts_mosaic_find(m,id);
     int reveal=0;
     if(!strcmp(command,"cycle")) {
-        int ok=ts_mosaic_sequence_cycle(m);
+        int ok=ts_mosaic_sequence_cycle(m);if(ok)ts_mosaic_live_pause(m,0);
         snprintf(ui->mosaic_live_status,sizeof(ui->mosaic_live_status),"%s",ok?"CYCLING / NEXT STEPS HAND OVER / FINISH ENDS THIS PASS":"NO SEQUENCE MEMBERS / ADVANCED > SEQUENCE TO SET ORDER");
     } else if(!strcmp(command,"finish_sequence")) {
         ts_mosaic_sequence_finish(m);
@@ -186,7 +186,8 @@ static int mosaic_live_command(SDL_AudioDeviceID output,SDL_AudioDeviceID *input
             if(was_owned)ts_mosaic_live_restart(m,id);else (void)ts_mosaic_live_launch(m,id,m->live_capture.quantize);reveal=1;}
         else snprintf(ui->mosaic_live_status,sizeof(ui->mosaic_live_status),"NO LOOP EVENTS / SELECT AN AUDIO CARD AND ENABLE LOOP EVENT");
     } else if(!strcmp(command,"play")) {
-        if(ui->mosaic_live_play_all) {
+        if(m->live_paused)ts_mosaic_live_pause(m,0);
+        else if(ui->mosaic_live_play_all) {
             for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(m->events[i].id && m->events[i].live)
                 (void)ts_mosaic_live_launch(m,m->events[i].id,m->live_capture.quantize);
         } else if(e && e->live)(void)ts_mosaic_live_launch(m,id,m->live_capture.quantize);

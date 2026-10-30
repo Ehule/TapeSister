@@ -12,7 +12,7 @@ TsMosaic *ts_mosaic_create(void)
 {
     static uint64_t epoch=0;
     TsMosaic *m=calloc(1,sizeof(*m));
-    if(m) {m->pattern_engine=ts_pattern_engine_create();m->next_id=1;m->gain=0.7f;m->speed=m->speed_current=1;m->epoch=++epoch;m->volume_current=1;m->live_trigger_floor=-1e-9;m->live_capture.length=4;
+    if(m) {m->pattern_engine=ts_pattern_engine_create();m->next_id=1;m->gain=0.7f;m->speed=m->speed_current=1;m->epoch=++epoch;m->volume_current=1;m->live_trigger_floor=-1e-9;m->live_capture.length=4;m->live_pause_gain=m->live_pause_base=1;
         for(int i=0;i<TS_MOSAIC_ENVELOPE_POINTS;++i)m->volume[i]=1;}
     return m;
 }
@@ -651,7 +651,7 @@ TsStereoFrame ts_mosaic_read_routed(TsMosaic *m,int rate,TsSourceRouteMix *route
         m->rate=rate;
     }
     ts_pattern_engine_frame(m->pattern_engine);
-    if(m->sequence.running)mosaic_sequence_tick(m,rate);
+    if(m->sequence.running && !m->live_paused)mosaic_sequence_tick(m,rate);
     if(m->block_remaining)--m->block_remaining;
     else {m->schedule.valid=0;++m->control_serial;}
     if(!routes) {
@@ -660,7 +660,7 @@ TsStereoFrame ts_mosaic_read_routed(TsMosaic *m,int rate,TsSourceRouteMix *route
         TsStereoFrame live=mosaic_live_read(m,rate,NULL);
         m->rate=rate;out.l+=preview.l+live.l;out.r+=preview.r+live.r;return ts_stereo_frame_sanitize(out);
     }
-    if(!m->playing && !m->sequence.running && !m->audition_id && !m->was_playing && !m->transition_remaining && !m->route_handoff.remaining && !m->schedule.live_count && m->schedule.valid)return (TsStereoFrame){0,0};
+    if(!m->live_pause_routes_valid && !m->live_paused && !m->playing && !m->sequence.running && !m->audition_id && !m->was_playing && !m->transition_remaining && !m->route_handoff.remaining && !m->schedule.live_count && m->schedule.valid)return (TsStereoFrame){0,0};
     TsSourceRouteMix mix={0};
     TsStereoFrame out=mosaic_read(m,rate,routes?&mix:NULL);
     TsStereoFrame preview=mosaic_audition_read(m,rate,&mix);
