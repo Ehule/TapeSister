@@ -118,7 +118,8 @@ promotes the earliest remaining selection. Clicking or dragging a selected membe
 keeps the primary; clicking an unselected card without Shift starts a new selection.
 Dragging an empty area draws a selection box. Hold Shift to add to the existing
 selection while retaining its primary. After selecting one card or a group, press
-**G** to grab it from the current mouse position without holding a button.
+**G** to grab it from the current mouse position without holding a mouse button
+or the G key. The selected cards follow the mouse until confirmed or cancelled.
 Left click or Enter confirms; Escape or right click cancels. Alt snaps the
 preview using the same alignment rules as ordinary dragging. The preview leaves
 playback and the document unchanged until confirmation, which makes one undo

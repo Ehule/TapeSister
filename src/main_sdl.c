@@ -18396,11 +18396,9 @@ int main(int argc, char **argv)
         refresh_workbench_loop(device, &audio, &ui, &instrument);
         mosaic_poll(device,&ui,&instrument,&mosaic);
         mosaic_live_keyboard_snapshot(&audio,&ui,&instrument);
-        if(mosaic.drag==1 || (mosaic.drag>=7 && mosaic.drag<=9)) {
-            if(SDL_GetKeyboardFocus()!=window || !(SDL_GetMouseState(NULL,NULL)&SDL_BUTTON_LMASK) ||
-               ui_dialog_open(&ui))mosaic_drag_end(&ui,&mosaic);
-            else if(mosaic.drag==1)mosaic_drag_autoscroll(device,&ui,&mosaic,SDL_GetTicks());
-        }
+        if(mosaic.drag==1 || (mosaic.drag>=7 && mosaic.drag<=9))
+            mosaic_drag_service(device,&ui,&mosaic,SDL_GetTicks(),
+                SDL_GetKeyboardFocus()==window,SDL_GetMouseState(NULL,NULL));
         ui_sync_dialog_workspaces(&ui);
         Uint32 health_setup_now = SDL_GetTicks();
         if (device) SDL_LockAudioDevice(device);

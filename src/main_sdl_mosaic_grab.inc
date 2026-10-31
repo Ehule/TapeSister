@@ -1,6 +1,17 @@
 /* G uses the ordinary rigid move planner, but only previews its displacement.
    Confirmation publishes one undoable move; cancellation never touches history,
    source ownership, playback or the selected cards' identities. */
+static void mosaic_drag_service(SDL_AudioDeviceID device,TsUiState *ui,
+                                MosaicController *c,Uint32 now,int focused,Uint32 buttons)
+{
+    if(c->drag!=1 && !(c->drag>=7 && c->drag<=9))return;
+    /* Only pointer drags depend on a held button. G owns the move until
+       confirmation/cancellation, with the same focus and dialog boundaries. */
+    if(!focused || (!ui->mosaic_grab && !(buttons&SDL_BUTTON_LMASK)) ||
+       ui_dialog_open(ui))mosaic_drag_end(ui,c);
+    else if(c->drag==1)mosaic_drag_autoscroll(device,ui,c,now);
+}
+
 static int mosaic_grab_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID device,
                              TsUiState *ui,MosaicController *c,int x,int y,SDL_Keymod mod)
 {
