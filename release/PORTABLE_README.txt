@@ -46,6 +46,14 @@ LINUX
 The GitHub Actions Linux download is the .tar.gz itself, without an outer ZIP.
 Extract the complete TapeSister-linux-x86_64.tar.gz archive to a writable folder
 and run ./tapesister there. Keep assets, cdp and licenses with the executable.
+The x86-64 release targets Ubuntu 22.04 / Linux Mint 21 or newer (glibc 2.35+).
+The SDL2 and ALSA runtime libraries must be installed. On Ubuntu 22.04 / Mint 21:
+
+  sudo apt install libsdl2-2.0-0 libasound2
+
+If double-clicking opens no window, open a terminal in the extracted folder and
+run ./tapesister 2>&1 to see the startup error. A GLIBC or GLIBCXX version error
+means that build needs a newer runtime; use the release built for this baseline.
 The docs folder contains the same manual, quick reference, guides and screenshots.
 JACK users should read docs/JACK_AUDIO.md; the runtime and a running JACK server
 (or the distribution's PipeWire JACK setup) must be available. Audio setup applies
