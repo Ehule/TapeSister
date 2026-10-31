@@ -950,3 +950,8 @@ See [Video through the mandala](MANDALA_VIDEO.md).
 Save records the Canvas/Mosaic/TrackSister view, including Mosaic scroll, zoom,
 card selection and paused playhead position. See [PROJECT_SAVE_STATE.md](PROJECT_SAVE_STATE.md)
 for older flat-TSR migration and save/open verification.
+
+Mosaic **Ctrl+Shift+V** or right-clicking empty canvas space places a video change object. Drop a file/folder, right-click to
+choose random starts and cuts/dissolves, and Ctrl+R to scatter copies. In the
+visualizer VIDEO tab, **MANDALA OFF** shows clean footage. See
+[Mosaic video](MOSAIC_VIDEO.md).

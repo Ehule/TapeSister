@@ -410,6 +410,8 @@ static void test_async_ownership(uint64_t a,uint64_t b,uint64_t original,int sup
     portal_close(0,&audio,&ui,&portal);mosaic_leave(0,&audio,&ui,&instrument,&mosaic);
 }
 #include "test_canvas_eq_controller.inc"
+
+#include "test_mosaic_video_controller.inc"
 int main(int argc,char **argv)
 {
     SDL_SetMainReady();SDL_setenv("SDL_AUDIODRIVER","dummy",1);
@@ -428,6 +430,7 @@ int main(int argc,char **argv)
     }
     uint64_t original=ts_sample_hash(&instrument.current);
     ui.mosaic=audio.mosaic=ts_mosaic_create();ui.mosaic_scale=24;ui.mosaic_open=1;
+    if(argc>1 && !strcmp(argv[1],"--video-cues")) {test_mosaic_video_controller(window);goto done;}
     if(argc>1 && !strcmp(argv[1],"--gallery")) {test_mosaic_gallery_controller(window,device);goto done;}
     if(argc>1 && !strcmp(argv[1],"--source-keys")) {test_mosaic_source_keys(window,device);goto done;}
     if(argc>1 && !strcmp(argv[1],"--live-loops")) {test_mosaic_live_controller(window,device);goto done;}

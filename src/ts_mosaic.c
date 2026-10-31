@@ -12,7 +12,7 @@ TsMosaic *ts_mosaic_create(void)
 {
     static uint64_t epoch=0;
     TsMosaic *m=calloc(1,sizeof(*m));
-    if(m) {m->pattern_engine=ts_pattern_engine_create();m->next_id=1;m->gain=0.7f;m->speed=m->speed_current=1;m->epoch=++epoch;m->volume_current=m->live_envelope_gain=1;m->live_trigger_floor=-1e-9;m->live_capture.length=4;m->live_pause_gain=m->live_pause_base=1;
+    if(m) {m->pattern_engine=ts_pattern_engine_create();m->next_id=1;m->gain=0.7f;m->speed=m->speed_current=1;m->epoch=++epoch;m->volume_current=m->live_envelope_gain=1;m->video_trigger_floor=-1e-9;m->live_trigger_floor=-1e-9;m->live_capture.length=4;m->live_pause_gain=m->live_pause_base=1;
         for(int i=0;i<TS_MOSAIC_ENVELOPE_POINTS;++i)m->volume[i]=1;}
     return m;
 }
@@ -26,6 +26,34 @@ TsMosaicEvent *ts_mosaic_find(TsMosaic *m,uint64_t id)
 {
     if(m && id)for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(m->events[i].id==id)return &m->events[i];
     return NULL;
+}
+TsMosaicSource *ts_mosaic_video_source(TsMosaic *m,const char *path,int pool)
+{
+    if(!m || !path || !*path || strlen(path)>=1024 || (pool!=0 && pool!=1))return NULL;
+    for(TsMosaicSource *s=m->sources;s;s=s->next)
+        if(s->video_pool==pool && !strcmp(s->video_path,path))return s;
+    TsMosaicSource *s=calloc(1,sizeof(*s));if(!s)return NULL;
+    strcpy(s->video_path,path);s->video_pool=pool;s->hash=1469598103934665603ull;
+    for(const unsigned char *p=(const unsigned char *)path;*p;++p){s->hash^=*p;s->hash*=1099511628211ull;}
+    s->hash^=(unsigned)pool;
+    const char *name=path;for(const char *p=path;*p;++p)if(*p=='/' || *p=='\\')name=p+1;
+    snprintf(s->sample.name,sizeof(s->sample.name),"%.63s",*name?name:"VIDEO POOL");
+    s->next=m->sources;m->sources=s;return s;
+}
+int ts_mosaic_video_overridden(const TsMosaic *m,const TsMosaicEvent *e)
+{
+    if(!m || !e || !e->source || !e->source->video_path[0])return 0;
+    for(int i=0;i<TS_MOSAIC_EVENTS;++i){const TsMosaicEvent *b=&m->events[i];
+        if(b->id>e->id && b->source && b->source->video_path[0] && !b->muted && b->start==e->start)return 1;}
+    return 0;
+}
+const TsMosaicEvent *ts_mosaic_video_at(const TsMosaic *m,double time)
+{
+    const TsMosaicEvent *best=NULL;
+    if(m)for(int i=0;i<TS_MOSAIC_EVENTS;++i){const TsMosaicEvent *e=&m->events[i];
+        if(e->id && e->source && e->source->video_path[0] && !e->muted && e->start<=time+1e-10 &&
+           (!best || e->start>best->start || (e->start==best->start && e->id>best->id)))best=e;}
+    return best;
 }
 static void mosaic_reset_voices(TsMosaic *m)
 {
@@ -62,7 +90,7 @@ TsMosaicSource *ts_mosaic_source_eq(TsMosaic *m,const TsSample *sample,const TsS
         if(!s->pattern && (!dry || !dry->data)==(!s->eq_dry.data) &&
            (!dry || !dry->data || (!memcmp(eq,&s->eq,sizeof(*eq)) && dry->frames==s->eq_dry.frames && dry->channels==s->eq_dry.channels &&
              !memcmp(dry->data,s->eq_dry.data,dry->frames*dry->channels*sizeof(float)))) &&
-           s->hash==hash && s->sample.frames==sample->frames &&
+           !s->video_path[0] && s->hash==hash && s->sample.frames==sample->frames &&
            s->sample.sample_rate==sample->sample_rate && s->sample.channels==sample->channels &&
            !memcmp(s->sample.data,sample->data,sample->frames*sample->channels*sizeof(float)))return s;
     TsMosaicSource *s=calloc(1,sizeof(*s));
@@ -102,6 +130,7 @@ TsMosaicSource *ts_mosaic_source_document(TsMosaic *m,const TsInstrument *doc,ch
 }
 int ts_mosaic_import_source(TsInstrument *doc,const TsMosaicSource *s,int loop,size_t first,size_t last,TsLoopMode mode,char *error,size_t size)
 {
+    if(s->video_path[0]){if(error && size)snprintf(error,size,"Video triggers have no audio document");return 0;}
     if(!ts_instrument_import_sample(doc,s->eq_dry.data?&s->eq_dry:&s->sample,loop,first,last,mode,error,size))return 0;
     if(s->eq_dry.data && !ts_instrument_set_tile_eq(doc,&s->eq,error,size))return 0;
     return 1;
@@ -206,7 +235,7 @@ static TsMosaicEvent *mosaic_add(TsMosaic *m,TsMosaicSource *source,double start
     for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(!m->events[i].id) {
         TsMosaicEvent *e=&m->events[i];
         *e=(TsMosaicEvent){.id=m->next_id++,.revision=1,.source=source,
-            .start=fmax(0,start),.duration=source->pattern?source->pattern->duration:(double)source->sample.frames/source->sample.sample_rate,
+            .start=fmax(0,start),.duration=source->video_path[0]?1:source->pattern?source->pattern->duration:(double)source->sample.frames/source->sample.sample_rate,
             .x=x,.width=86,.last=source->sample.frames,.looping=1,.note_count=1,
             .notes={60},.gain=1,.tuning={60,0}};
         snprintf(e->name,sizeof(e->name),"%.63s",source->sample.name);
@@ -246,6 +275,7 @@ double ts_mosaic_end(const TsMosaic *m)
 }
 void ts_mosaic_seek(TsMosaic *m,double time)
 {
+    if(m){double at=isfinite(time)?fmax(0,time):0;const TsMosaicEvent *cue=ts_mosaic_video_at(m,at);m->video_id=cue?cue->id:0;m->video_trigger_floor=at;++m->video_serial;}
     if(m){m->marker_active=0;m->schedule.valid=0;m->route_discontinuity=1;m->time=isfinite(time)?fmax(0,time):0;m->live_trigger_floor=m->time-1e-9;
         ts_mosaic_live_transport(m,2);mosaic_reset_voices(m);
         m->transition_from=m->last_output;m->transition_total=m->transition_remaining=(unsigned)(m->rate>0?m->rate/500:0);
@@ -602,10 +632,11 @@ static TsStereoFrame mosaic_read(TsMosaic *m,int rate,TsSourceRouteMix *routes)
         out.l=out.l*(1-gain)+m->transition_from.l*gain;
         out.r=out.r*(1-gain)+m->transition_from.r*gain;
     }
-    m->live_trigger_floor=m->time;m->time+=speed/rate;m->schedule.expected_time=m->time;m->last_output=ts_stereo_frame_sanitize(out);return m->last_output;
+    m->video_trigger_floor=m->time;m->live_trigger_floor=m->time;m->time+=speed/rate;m->schedule.expected_time=m->time;m->last_output=ts_stereo_frame_sanitize(out);return m->last_output;
 }
 void ts_mosaic_audition(TsMosaic *m,uint64_t id)
 {
+    const TsMosaicEvent *video=ts_mosaic_find(m,id);if(video && video->source->video_path[0])return;
     if(!m)return;
     if(!id || m->audition_id==id) {
         if(!m->audition_id)m->audition_source=(TsMosaicEvent){0};
@@ -618,7 +649,7 @@ void ts_mosaic_audition(TsMosaic *m,uint64_t id)
 }
 void ts_mosaic_audition_source(TsMosaic *m,const TsMosaicEvent *source)
 {
-    if(!m || !source || !source->source || source->duration<=0)return;
+    if(!m || !source || !source->source || source->source->video_path[0] || source->duration<=0)return;
     if(source->source->pattern && !ts_mosaic_reserve_patterns(m,0))return;
     m->audition_source=*source;m->audition_source.id=UINT64_MAX;m->audition_source.start=0;
     m->audition_id=UINT64_MAX;m->audition_time=0;m->audition_stopping=0;m->audition_rate=0;
@@ -684,6 +715,10 @@ uint64_t ts_mosaic_hash(const TsMosaic *m)
             (unsigned long long)e->id,(unsigned long long)e->source->hash,e->start,e->duration,e->x,e->width,
             e->first,e->last,e->crossfade,e->mode,e->looping,e->note_count,e->gain,e->tuning.root_note,
             e->tuning.fine_tune_cents,e->notes[0],e->notes[1],e->notes[2],e->notes[3],e->notes[4]);
+        if(e->source->video_path[0]) {
+            char cue[128];snprintf(cue,sizeof(cue),"%d %d %.17g %d %d",e->video_random_start,e->video_transition,e->video_fade,e->video_bw,e->source->video_pool);
+            for(const unsigned char *p=(const unsigned char *)cue;*p;++p){hash^=*p;hash*=1099511628211ull;}
+        }
         if(e->source->eq_dry.data) {
             hash^=e->source->eq_dry_hash;hash*=1099511628211ull;
             const TsMasterEqControls *eq=&e->source->eq;hash^=eq->enabled;hash*=1099511628211ull;
@@ -772,16 +807,24 @@ int ts_mosaic_save(const TsMosaic *m,const char *dir,char *error,size_t size)
         snprintf(error,size,"Invalid Mosaic sequence/finish settings");return 0;
     }
     if(m->live_envelope<0 || m->live_envelope>1){snprintf(error,size,"Invalid looper envelope policy");return 0;}
+    int video_format=0;
+    for(int i=0;i<TS_MOSAIC_EVENTS;++i){const TsMosaicEvent *e=&m->events[i];if(!e->id || !e->source->video_path[0])continue;
+        video_format=1;
+        if(e->live || e->video_random_start<0 || e->video_random_start>1 || e->video_transition<0 || e->video_transition>2 ||
+           e->video_bw<0 || e->video_bw>1 || !isfinite(e->video_fade) || e->video_fade<0 || e->video_fade>30) {
+            snprintf(error,size,"Invalid video trigger");return 0;
+        }
+    }
     char path[4096];
     if(snprintf(path,sizeof(path),"%s/mosaic.tsm",dir)>=(int)sizeof(path))return 0;
     FILE *f=fopen(path,"wb");if(!f)goto failed;
     int live_format=0;for(int i=0;i<TS_MOSAIC_EVENTS;++i)live_format|=m->events[i].id && m->events[i].live;
     live_format|=m->live_capture.source || m->live_capture.continuous || m->live_capture.units || m->live_capture.length!=4 || m->live_capture.quantize;
     int sequence_format=0;for(int i=0;i<TS_MOSAIC_EVENTS;++i)sequence_format|=m->events[i].id && (m->events[i].live_order || m->events[i].finish_fade);
-    live_format|=sequence_format || m->live_envelope;
-    if(fprintf(f,"TAPESISTER_MOSAIC %d\nSETTINGS %d %.9g %.17g\nSPACING %d\n",m->live_envelope?17:sequence_format?16:live_format?15:14,m->repeat,m->gain,m->speed,m->auto_space)<0)goto close_failed;
+    sequence_format|=video_format;live_format|=sequence_format || m->live_envelope;
+    if(fprintf(f,"TAPESISTER_MOSAIC %d\nSETTINGS %d %.9g %.17g\nSPACING %d\n",video_format?18:m->live_envelope?17:sequence_format?16:live_format?15:14,m->repeat,m->gain,m->speed,m->auto_space)<0)goto close_failed;
     if(live_format && fprintf(f,"LOOPER %d %d %d %d %d\n",m->live_capture.source,m->live_capture.continuous,m->live_capture.units,m->live_capture.length,m->live_capture.quantize)<0)goto close_failed;
-    if(m->live_envelope && fprintf(f,"ENVELOPE %d\n",m->live_envelope)<0)goto close_failed;
+    if((m->live_envelope || video_format) && fprintf(f,"ENVELOPE %d\n",m->live_envelope)<0)goto close_failed;
     for(int i=0;i<TS_MOSAIC_VIEWS;++i) {
         const TsMosaicView *v=&m->views[i];
         if(fprintf(f,"VIEW %d %.17g %.17g %.17g %.17g\n",v->stored,v->scroll,v->xscroll,v->scale,v->hscale)<0)goto close_failed;
@@ -803,12 +846,19 @@ int ts_mosaic_save(const TsMosaic *m,const char *dir,char *error,size_t size)
         if(s==count) {
             sources[count++]=e->source;
             if(e->source->pattern && !ts_pattern_save(e->source->pattern,dir,s,error,size))goto close_failed;
-            if(snprintf(path,sizeof(path),"%s/mosaic-%03d.wav",dir,s)>=(int)sizeof(path) ||
-                !ts_sample_save_wav32f(&e->source->sample,path,error,size))goto close_failed;
+            if(!e->source->video_path[0] && (snprintf(path,sizeof(path),"%s/mosaic-%03d.wav",dir,s)>=(int)sizeof(path) ||
+                !ts_sample_save_wav32f(&e->source->sample,path,error,size)))goto close_failed;
             if(e->source->eq_dry.data) {
                 if(snprintf(path,sizeof(path),"%s/mosaic-%03d-dry.wav",dir,s)>=(int)sizeof(path) ||
                    !ts_sample_save_wav32f(&e->source->eq_dry,path,error,size))goto close_failed;
             }
+        }
+        if(video_format) {
+            if(fprintf(f,"VIDEO %d %d %.17g %d %d ",e->video_random_start,e->video_transition,e->video_fade,e->video_bw,e->source->video_pool)<0)goto close_failed;
+            const unsigned char *p=(const unsigned char *)e->source->video_path;
+            if(!*p && fputc('-',f)==EOF)goto close_failed;
+            for(;*p;++p)if(fprintf(f,"%02x",*p)<0)goto close_failed;
+            if(fputc('\n',f)==EOF)goto close_failed;
         }
         if(live_format && fprintf(f,"LIVE %d %d %d %d %d %.17g\n",e->live,e->live_finite,e->live_tempo,e->live_transport,e->live_position,e->live_beats)<0)goto close_failed;
         if((sequence_format || m->live_envelope) && fprintf(f,"STEP %d %.17g\n",e->live_order,e->finish_fade)<0)goto close_failed;
@@ -839,7 +889,7 @@ failed:
 }
 int ts_mosaic_load(TsMosaic *m,const char *dir,char *error,size_t size)
 {
-    char path[4096],line[1024];
+    char path[4096],line[4096];
     if(snprintf(path,sizeof(path),"%s/mosaic.tsm",dir)>=(int)sizeof(path))return 0;
     FILE *f=fopen(path,"rb");
     if(!f && errno==ENOENT)return 1;
@@ -852,7 +902,7 @@ int ts_mosaic_load(TsMosaic *m,const char *dir,char *error,size_t size)
     if(length>=2 && line[length-2]=='\r' && line[length-1]=='\n') {
         line[length-2]='\n';line[length-1]='\0';
     }
-    int version=!strcmp(line,"TAPESISTER_MOSAIC 17\n")?17:!strcmp(line,"TAPESISTER_MOSAIC 16\n")?16:!strcmp(line,"TAPESISTER_MOSAIC 15\n")?15:!strcmp(line,"TAPESISTER_MOSAIC 14\n")?14:!strcmp(line,"TAPESISTER_MOSAIC 13\n")?13:!strcmp(line,"TAPESISTER_MOSAIC 12\n")?12:!strcmp(line,"TAPESISTER_MOSAIC 11\n")?11:!strcmp(line,"TAPESISTER_MOSAIC 10\n")?10:!strcmp(line,"TAPESISTER_MOSAIC 9\n")?9:!strcmp(line,"TAPESISTER_MOSAIC 8\n")?8:!strcmp(line,"TAPESISTER_MOSAIC 7\n")?7:!strcmp(line,"TAPESISTER_MOSAIC 6\n")?6:!strcmp(line,"TAPESISTER_MOSAIC 5\n")?5:!strcmp(line,"TAPESISTER_MOSAIC 4\n")?4:!strcmp(line,"TAPESISTER_MOSAIC 1\n")?1:!strcmp(line,"TAPESISTER_MOSAIC 2\n")?2:!strcmp(line,"TAPESISTER_MOSAIC 3\n")?3:0;
+    int version=!strcmp(line,"TAPESISTER_MOSAIC 18\n")?18:!strcmp(line,"TAPESISTER_MOSAIC 17\n")?17:!strcmp(line,"TAPESISTER_MOSAIC 16\n")?16:!strcmp(line,"TAPESISTER_MOSAIC 15\n")?15:!strcmp(line,"TAPESISTER_MOSAIC 14\n")?14:!strcmp(line,"TAPESISTER_MOSAIC 13\n")?13:!strcmp(line,"TAPESISTER_MOSAIC 12\n")?12:!strcmp(line,"TAPESISTER_MOSAIC 11\n")?11:!strcmp(line,"TAPESISTER_MOSAIC 10\n")?10:!strcmp(line,"TAPESISTER_MOSAIC 9\n")?9:!strcmp(line,"TAPESISTER_MOSAIC 8\n")?8:!strcmp(line,"TAPESISTER_MOSAIC 7\n")?7:!strcmp(line,"TAPESISTER_MOSAIC 6\n")?6:!strcmp(line,"TAPESISTER_MOSAIC 5\n")?5:!strcmp(line,"TAPESISTER_MOSAIC 4\n")?4:!strcmp(line,"TAPESISTER_MOSAIC 1\n")?1:!strcmp(line,"TAPESISTER_MOSAIC 2\n")?2:!strcmp(line,"TAPESISTER_MOSAIC 3\n")?3:0;
     if(!version)goto failed;
     char trailing;
     if(!fgets(line,sizeof(line),f))goto failed;
@@ -915,7 +965,19 @@ int ts_mosaic_load(TsMosaic *m,const char *dir,char *error,size_t size)
     next->speed_current=next->speed;
     while(fgets(line,sizeof(line),f)) {
         if(count==TS_MOSAIC_EVENTS)goto failed;
-        TsMosaicEvent e={0};
+        TsMosaicEvent e={0};char video_path[1024]={0};int video_pool=0;
+        if(version>=18) {
+            char hex[2049];
+            if(sscanf(line,"VIDEO %d %d %lf %d %d %2048s %c",&e.video_random_start,&e.video_transition,&e.video_fade,&e.video_bw,&video_pool,hex,&trailing)!=6 ||
+               e.video_random_start<0 || e.video_random_start>1 || e.video_transition<0 || e.video_transition>2 ||
+               !isfinite(e.video_fade) || e.video_fade<0 || e.video_fade>30 || e.video_bw<0 || e.video_bw>1 || video_pool<0 || video_pool>1)goto failed;
+            size_t length=strlen(hex);
+            if(strcmp(hex,"-")) {
+                if(length%2 || length>2046 || strspn(hex,"0123456789abcdef")!=length)goto failed;
+                for(size_t k=0;k<length/2;++k){unsigned value;if(sscanf(hex+k*2,"%2x",&value)!=1 || !value)goto failed;video_path[k]=(char)value;}
+            }
+            if(!fgets(line,sizeof(line),f))goto failed;
+        }
         if(version>=15) {
             if(sscanf(line,"LIVE %d %d %d %d %d %lf %c",&e.live,&e.live_finite,&e.live_tempo,&e.live_transport,&e.live_position,&e.live_beats,&trailing)!=6 ||
                 e.live<0 || e.live>1 || e.live_finite<0 || e.live_finite>1 || e.live_tempo<0 || e.live_tempo>1 ||
@@ -962,7 +1024,11 @@ int ts_mosaic_load(TsMosaic *m,const char *dir,char *error,size_t size)
             if(e.notes[n]<0 || e.notes[n]>127)goto failed;
             for(int k=0;k<n;++k)if(e.notes[n]==e.notes[k])goto failed;
         }
-        if(!sources[source]) {
+        if(video_path[0]) {
+            if(pattern_source || e.live)goto failed;
+            if(!sources[source])sources[source]=ts_mosaic_video_source(next,video_path,video_pool);
+            if(!sources[source] || strcmp(sources[source]->video_path,video_path) || sources[source]->video_pool!=video_pool)goto failed;
+        } else if(!sources[source]) {
             TsSample s;ts_sample_init(&s);
             snprintf(path,sizeof(path),"%s/mosaic-%03d.wav",dir,source);
             if(!ts_sample_load_wav(&s,path,error,size)){ts_sample_free(&s);goto failed;}
@@ -980,7 +1046,7 @@ int ts_mosaic_load(TsMosaic *m,const char *dir,char *error,size_t size)
         }
         e.source=sources[source];
         if(pattern_source!=(e.source->pattern!=NULL) || (e.live && pattern_source))goto failed;
-        if(e.first>=e.last || e.last>e.source->sample.frames || e.crossfade>(e.last-e.first)/2)goto failed;
+        if(!video_path[0] && (e.source->video_path[0] || e.first>=e.last || e.last>e.source->sample.frames || e.crossfade>(e.last-e.first)/2))goto failed;
         if(version>=5) {
             int used=0,at=0;
             if(!fgets(line,sizeof(line),f) || sscanf(line,"ROUTE %d %d %d %n",

@@ -621,6 +621,8 @@ typedef struct {
     TsMosaicRange mosaic_loop_preview;
     char mosaic_loop_text[2][32], mosaic_loop_status[80];
     int mosaic_align_open;
+    int mosaic_video_open;uint64_t mosaic_video_id,mosaic_video_epoch;
+    double mosaic_video_time,mosaic_video_x;
     int mosaic_spacing_confirm, mosaic_scatter_open, mosaic_scatter_copies;
     int mosaic_scatter_cluster, mosaic_scatter_overlap, mosaic_scatter_count, mosaic_scatter_valid;
     int mosaic_scatter_field;

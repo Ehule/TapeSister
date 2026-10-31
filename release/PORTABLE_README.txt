@@ -79,4 +79,7 @@ VISUALIZER VIDEO
 ----------------
 F11 > EDIT VISUALIZER > VIDEO > ADD VIDEO FILE. Keep all FFmpeg DLLs beside
 TapeSister.exe on Windows and video/lib beside tapesister on Linux. Video sound
-is off. See docs/MANDALA_VIDEO.md for playback, formats and project references.
+is off. Mosaic file/folder drops or right-clicking empty canvas space create video change objects. Right-click
+for random positions and transitions; Ctrl+R scatters copies. VIDEO tab > MANDALA
+OFF shows clean footage. Local playback copies prepare automatically; keep your
+original video folders available when moving projects. See docs/MANDALA_VIDEO.md for playback, formats and project references.

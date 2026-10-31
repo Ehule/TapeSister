@@ -57,6 +57,8 @@ const char *ts_browser_mode_title(TsBrowserMode mode)
 {
     if (mode == TS_BROWSER_IMPORT_CANVAS) return "IMPORT MOSAIC CANVAS FROM TSR";
     if (mode == TS_BROWSER_EXPORT_CANVAS) return "EXPORT MOSAIC CANVAS / NEW TSR BUNDLE";
+    if (mode == TS_BROWSER_MOSAIC_VIDEO) return "CHOOSE MOSAIC VIDEO FILE";
+    if (mode == TS_BROWSER_MOSAIC_VIDEO_POOL) return "CHOOSE VIDEO POOL / CURRENT FOLDER";
     if (mode == TS_BROWSER_LOAD_VIDEO) return "ADD VISUALIZER VIDEO / LOCAL FILE";
     if (mode == TS_BROWSER_TRACKER_PALETTE_IMPORT) return "IMPORT TRACKSISTER / TAPEHEAD PALETTE";
     if (mode == TS_BROWSER_TRACKER_PALETTE_EXPORT) return "EXPORT TRACKSISTER / TAPEHEAD PALETTE";
@@ -98,7 +100,7 @@ int ts_browser_mode_selects_config(TsBrowserMode mode)
 
 int ts_browser_mode_selects_directory(TsBrowserMode mode)
 {
-    return mode == TS_BROWSER_SELECT_SAMPLE_DIRECTORY ||
+    return mode == TS_BROWSER_MOSAIC_VIDEO_POOL || mode == TS_BROWSER_SELECT_SAMPLE_DIRECTORY ||
            mode == TS_BROWSER_SELECT_EXCHANGE_DIRECTORY ||
            mode == TS_BROWSER_SELECT_CDP_BIN_DIRECTORY;
 }
@@ -152,7 +154,7 @@ int ts_browser_path_exists(const char *path)
 
 static int mode_accepts(const TsBrowser *browser, const char *name)
 {
-    if (browser->mode == TS_BROWSER_LOAD_VIDEO) {
+    if (browser->mode == TS_BROWSER_LOAD_VIDEO || browser->mode == TS_BROWSER_MOSAIC_VIDEO) {
         const char *extensions[]={".mp4",".m4v",".mov",".mkv",".webm",".avi",".mpg",".mpeg",".ts",".gif"};
         for(unsigned i=0;i<sizeof(extensions)/sizeof(*extensions);++i)
             if(ends_with_case(name,extensions[i]))return 1;

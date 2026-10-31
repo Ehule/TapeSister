@@ -94,6 +94,15 @@ static void mosaic_detail_card(TsUiWaveformDetail *d,const TsUiState *ui,
     if(dim){color=mosaic_mix_color(color,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(19,20,26)),.70f);fill=ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(23,24,30));}
     if(ghost)color=mosaic_mix_color(color,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(16,18,24)),.55f);
     else mosaic_detail_rect(d,x,y,right,bottom,fill);
+    if(e->source->video_path[0]) {
+        color=selected?mosaic_selection_color(ui,1):RGB(133,190,239);
+        mosaic_detail_rect(d,x,y,right,y+2*by,color);mosaic_detail_rect(d,x,y,x+2*bx,bottom,color);mosaic_detail_rect(d,x,bottom-2*by,right,bottom,color);
+        const char *label=ts_mosaic_video_overridden(ui->mosaic,e)?"VIDEO / OVERRIDDEN":e->source->video_pool?"VIDEO / RANDOM POOL":"VIDEO / FILE";
+        int chars=(int)fmax(0,fmin(60,(w/sx-10)/6));char line[64];snprintf(line,sizeof(line),"%.*s",chars,label);
+        mosaic_detail_text(d,x+5*bx,y+5*by,line,color,sx,sy);
+        if(h>24*sy){snprintf(line,sizeof(line),"%.*s",chars,e->video_random_start?"RANDOM POSITION":"FROM BEGINNING");mosaic_detail_text(d,x+5*bx,y+15*by,line,color,sx,sy);}
+        return;
+    }
     uint32_t outer=mosaic_mix_color(color,fill,.50f);
     int first=(int)fmax(0,fmin(d->height,(double)y+mosaic_detail_pixel(24*sy)));
     int last=(int)fmax(0,fmin(d->height,(double)bottom-mosaic_detail_pixel(14*sy)));

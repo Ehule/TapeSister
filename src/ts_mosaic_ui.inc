@@ -13,6 +13,7 @@ static void mosaic_live_length_label(const TsMosaicEvent *e,char *label,size_t s
 static void mosaic_pattern_label(const TsUiState *ui,const TsMosaicEvent *e,char *label,size_t size)
 {
     if(e->live){snprintf(label,size,"%s",mosaic_live_state_name(ui,e));return;}
+    if(e->source->video_path[0]){snprintf(label,size,"VIDEO %s",e->video_random_start?"RANDOM START":"FROM START");return;}
     if(!e->source->pattern)return;
     const TsPatternCard *p=e->source->pattern;int pending=0;
     const TsMosaicEvent *live=ts_mosaic_find(ui->mosaic,e->id);
@@ -123,6 +124,14 @@ static void mosaic_card(TsFramebuffer *fb,const TsUiState *ui,const TsMosaicEven
     if(e->solo)color=ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_SOLO,color);
     if(ghost)color=mosaic_mix_color(color,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(16,18,24)),.55f);
     if(!ghost)mosaic_canvas_rect(fb,ui,x,y,w,h,fill);
+    if(e->source->video_path[0]) {
+        color=selected?mosaic_selection_color(ui,1):RGB(133,190,239);
+        mosaic_canvas_rect(fb,ui,x,y,w,2,color);mosaic_canvas_rect(fb,ui,x,y,2,h,color);mosaic_canvas_rect(fb,ui,x,end-2,w,2,color);
+        if(x>=151 && top>=66 && w>=48){char label[64];int chars=(w-10)/6;if(chars>60)chars=60;
+            snprintf(label,sizeof(label),"%.*s",chars,ts_mosaic_video_overridden(ui->mosaic,e)?"VIDEO / OVERRIDDEN":e->source->video_pool?"VIDEO / RANDOM POOL":"VIDEO / FILE");text(fb,x+5,y+5,label,color,1);
+            if(h>23){snprintf(label,sizeof(label),"%.*s",chars,e->video_random_start?"RANDOM POSITION":"FROM BEGINNING");text(fb,x+5,y+15,label,color,1);}}
+        return;
+    }
     double duration=e->source->pattern?e->source->pattern->duration:(double)(e->last-e->first)/e->source->sample.sample_rate;
     int first_row=(int)fmax(66,top+24),last_row=(int)fmin(TS_MOSAIC_CANVAS_BOTTOM,bottom-14);
     for(int yy=first_row;yy<last_row;++yy) {
@@ -216,6 +225,10 @@ static void mosaic_slider(TsFramebuffer *fb,int x,int y,int width,double amount,
 static void mosaic_mix_controls(TsFramebuffer *fb,const TsUiState *ui,int any_solo)
 {
     TsMosaicEvent *e=ts_mosaic_find(ui->mosaic,ui->mosaic_selected);
+    if(e && e->source->video_path[0]) {
+        char label[100];snprintf(label,sizeof(label),"VIDEO / %s / %s",e->source->video_pool?"RANDOM POOL":"FILE",e->video_random_start?"RANDOM POSITION":"BEGINNING");
+        text(fb,10,384,label,RGB(133,190,239),1);text(fb,400,384,"RIGHT-CLICK TO EDIT",RGB(133,190,239),1);return;
+    }
     const char *names[]={"LEVEL","PAN","IN","OUT"};
     for(int i=0;i<4;++i) {
         int x=TS_MOSAIC_MIX_X+i*TS_MOSAIC_MIX_STEP;char label[32];double value=0;
@@ -302,6 +315,7 @@ static void mosaic_volume_lane(TsFramebuffer *fb,const TsUiState *ui,double inte
 #include "ts_mosaic_marker_ui.inc"
 
 #include "ts_mosaic_gallery_ui.inc"
+#include "ts_mosaic_video_ui.inc"
 static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrument *instrument)
 {
     const TsMosaic *m=ui->mosaic;
@@ -444,7 +458,7 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
         }
     }
     int any_solo=0;
-    if(m)for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(m->events[i].id)any_solo|=m->events[i].solo;
+    if(m)for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(m->events[i].id && !m->events[i].source->video_path[0])any_solo|=m->events[i].solo;
     if(!mosaic_detail_cards(fb,ui,any_solo,interval)) {
         /* Keep the logical renderer for disabled/unavailable native surfaces. */
         for(int i=0;i<ui->mosaic_ghost_count;++i)mosaic_card(fb,ui,&ui->mosaic_ghosts[i],0,0,1);
@@ -480,6 +494,7 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
     mosaic_marker_overlay(fb,ui);
     mosaic_live_overlay(fb,ui,instrument);
     mosaic_gallery_overlay(fb,ui);
+    mosaic_video_overlay(fb,ui);
 }
 
 void ts_ui_render_mosaic_choice(TsFramebuffer *fb,const TsUiState *ui)

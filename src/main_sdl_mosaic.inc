@@ -79,6 +79,7 @@ static void mosaic_transport(SDL_AudioDeviceID device,TsUiState *ui,int stop)
 /* Duration edges have priority over visual width, as on a single card. */
 static int mosaic_card_drag_part(const TsUiState *ui,const TsMosaicEvent *e,double time,double left)
 {
+    if(e->source->video_path[0])return 1;
     double h=ui->mosaic_hscale>0?ui->mosaic_hscale:1;
     return e->start+e->duration-time<6/ui->mosaic_scale?2:
         time-e->start<6/ui->mosaic_scale?6:e->x+e->width-left<5/h?4:1;
@@ -392,6 +393,7 @@ static void mosaic_keyboard_select(SDL_AudioDeviceID device,AudioState *a,TsUiSt
 #include "main_sdl_mosaic_fades.inc"
 #include "main_sdl_mosaic_volume.inc"
 #include "main_sdl_mosaic_gallery.inc"
+#include "main_sdl_mosaic_video.inc"
 
 static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID device,
     AudioState *audio,TsUiState *ui,TsInstrument *instrument,MosaicController *c,
@@ -419,6 +421,7 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
     if(motion)logical_mouse(window,event->motion.x,event->motion.y,&x,&y);
     if(event->type==SDL_MOUSEWHEEL){int mx,my;wheel_event_mouse(event,&mx,&my);logical_mouse(window,mx,my,&x,&y);}
     SDL_Keymod mod=key?(SDL_Keymod)event->key.keysym.mod:SDL_GetModState();
+    if(mosaic_video_event(event,device,audio,ui,instrument,c,x,y))return 1;
     if(mosaic_gallery_event(event,device,audio,ui,instrument,c,x,y,mod))return 1;
     if(ui->mosaic_open && (ui->mosaic_marker_open || ui->mosaic_views_open))
         return mosaic_marker_event(event,device,ui,c,x,y,mod);
@@ -627,6 +630,7 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
         } else if((k==SDLK_m || k==SDLK_s) && !(mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI))) {
             int count=0,all=1;unsigned char chosen[TS_MOSAIC_EVENTS]={0};
             for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(mosaic_chosen(ui,i)) {
+                if(k==SDLK_s && ui->mosaic->events[i].source->video_path[0])continue;
                 chosen[i]=1;
                 if(mod&KMOD_SHIFT)for(int j=0;j<TS_MOSAIC_EVENTS;++j)
                     if(ui->mosaic->events[j].id && ui->mosaic->events[j].source==ui->mosaic->events[i].source)chosen[j]=1;

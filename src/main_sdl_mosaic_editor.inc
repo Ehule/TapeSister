@@ -189,7 +189,7 @@ static void mosaic_sources_refresh(TsUiState *ui,const TsInstrument *instrument,
        bounded table instead of searching the growing browser for every card. */
     int source_index[TS_MOSAIC_EVENTS*2]={0};
     for(int i=0;i<TS_MOSAIC_EVENTS;++i) {
-        TsMosaicEvent *e=&ui->mosaic->events[i];if(!e->id)continue;
+        TsMosaicEvent *e=&ui->mosaic->events[i];if(!e->id || e->source->video_path[0])continue;
         size_t hash=((uintptr_t)e->source>>4)%(TS_MOSAIC_EVENTS*2);
         while(source_index[hash] && ui->mosaic_sources[source_index[hash]-1].source!=e->source)
             hash=(hash+1)%(TS_MOSAIC_EVENTS*2);
@@ -543,6 +543,7 @@ static int mosaic_enter(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui
                            TsInstrument *instrument,MosaicController *c,uint64_t id)
 {
     TsMosaicEvent *e=ts_mosaic_find(ui->mosaic,id);if(!e)return 0;
+    if(e->source->video_path[0]){ui->mosaic_video_id=e->id;ui->mosaic_video_epoch=ui->mosaic->epoch;ui->mosaic_video_open=1;return 1;}
     if(e->source->pattern){
         mosaic_drag_end(ui,c);if(mosaic_pattern_editor(device,ui,c,e->source->pattern))c->pattern_owner=id;
         return 1;

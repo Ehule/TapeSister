@@ -12,7 +12,12 @@ typedef struct {
 typedef struct {
     SDL_Window *window; SDL_Renderer *renderer; SDL_Texture *history, *haze, *veil, *echo[4];
     TsVideo *video; SDL_Texture *video_texture; TsVideoStatus video_status;
-    char video_path[1024]; unsigned video_restart;
+    char video_path[1024]; unsigned video_restart,video_restart_base,old_restart;int video_new;
+    TsVideoCache *video_cache;
+    TsVisualCue cue;char cue_path[1024],cue_original[1024],cue_pool_path[1024];double cue_fraction;
+    TsBrowser *cue_pool;int cue_bag[TS_BROWSER_MAX_ENTRIES],cue_bag_count,cue_bag_at,cue_last;
+    TsVideo *old_video;SDL_Texture *old_texture,*cue_snapshot;TsVideoStatus old_status;
+    int cue_fading,cue_transition;double cue_elapsed,cue_fade;
     MMotif motifs[M_MOTIFS]; MInstance instances[M_INSTANCES]; unsigned count;
     TsMandalaConfig config;
     TsMandalaFeatures features;
@@ -205,6 +210,8 @@ static int m_init(Mandala *m, const TsMandalaConfig *config, int quality)
 }
 static void m_destroy(Mandala *m)
 {
+    ts_video_cache_free(m->video_cache);
+    ts_video_close(m->old_video);SDL_DestroyTexture(m->old_texture);SDL_DestroyTexture(m->cue_snapshot);free(m->cue_pool);
     ts_video_close(m->video);if(m->video_texture)SDL_DestroyTexture(m->video_texture);
     if(m->veil)SDL_DestroyTexture(m->veil);
     for(int i=0;i<4;++i)if(m->echo[i])SDL_DestroyTexture(m->echo[i]);
@@ -268,28 +275,46 @@ static void m_video_scene(Mandala *m,Uint8 fade,float level)
     }
     SDL_RenderGeometry(m->renderer,m->video_texture,vertices,n,NULL,0);
 }
+#include "ts_mandala_cues.inc"
 static void m_video_poll(Mandala *m,VisualShared *shared,int paused)
 {
-    const char *path=m->config.video_enabled?m->config.video_path:"";
+    if(m->video_status.state==TS_VIDEO_ERROR && m->cue_original[0]) {
+        char prepared[2048];if(ts_video_cache_path(m->cue_original,prepared,sizeof(prepared)) && strlen(prepared)<sizeof(m->cue_path))memcpy(m->cue_path,prepared,strlen(prepared)+1);
+    }
+    const char *path=m->config.video_enabled?(m->cue_path[0]?m->cue_path:m->config.video_path):"";
     unsigned restart=atomic_load(&shared->video_restart);
     int retry=restart!=m->video_restart && m->video_status.state==TS_VIDEO_ERROR;
     m->video_restart=restart;
-    if(strcmp(path,m->video_path) || retry) {
-        ts_video_close(m->video);m->video=NULL;
-        SDL_DestroyTexture(m->video_texture);m->video_texture=NULL;
-        snprintf(m->video_path,sizeof(m->video_path),"%s",path);memset(&m->video_status,0,sizeof(m->video_status));
-        if(*path){m->video=ts_video_open(path);if(!m->video){m->video_status.state=TS_VIDEO_ERROR;snprintf(m->video_status.message,sizeof(m->video_status.message),"COULD NOT START VIDEO PLAYER");}}
+    if(strcmp(path,m->video_path) || retry)m_video_change(m,path,m->cue_path[0]?m->cue_fraction:0,0,0);
+    if(m->old_video) {
+        ts_video_control(m->old_video,paused||atomic_load(&shared->video_paused),1,m->old_restart,m->shed?8:m->quality?30:15);
+        ts_video_upload(m->old_video,m->renderer,&m->old_texture,&m->old_status);
     }
+    if(m->video_new){m->video_restart_base=restart;m->video_new=0;}
     if(m->video) {
         uint32_t colors[8];for(unsigned i=0;i<8;++i)colors[i]=ts_mandala_color(&m->config,i);
-        ts_video_palette(m->video,colors,m->config.video_filter);
-        ts_video_control(m->video,paused||atomic_load(&shared->video_paused),m->config.video_loop,atomic_load(&shared->video_restart),m->shed?8:m->quality?30:15);
+        int monochrome=m->config.video_monochrome || (m->cue_path[0] && m->cue.monochrome);
+        if(monochrome)for(unsigned i=0;i<8;++i){unsigned c=i*255/7;colors[i]=(c<<16)|(c<<8)|c;}
+        ts_video_palette(m->video,colors,monochrome?100:m->config.geometry_enabled?m->config.video_filter:0);
+        ts_video_control(m->video,paused||atomic_load(&shared->video_paused),m->config.video_loop,atomic_load(&shared->video_restart)-m->video_restart_base,m->shed?8:m->quality?30:15);
         if(ts_video_upload(m->video,m->renderer,&m->video_texture,&m->video_status))m->dirty=1;
     }
-    video_status_send(shared,&m->video_status);
+    TsVideoStatus report=m->video_status;unsigned done=0,total=0,failed=0;
+    if(ts_video_cache_status(m->video_cache,&done,&total,&failed) && report.state!=TS_VIDEO_ERROR)
+        snprintf(report.message,sizeof(report.message),"PLAYING / PREPARING VIDEOS %u OF %u",done,total);
+    video_status_send(shared,&report);
 }
 static void m_scene(Mandala *m, double dt)
 {
+    if(m->cue_fading && m->video_texture) {
+        m->cue_elapsed+=dt;
+        if(!m->cue_transition || m->cue_elapsed>=m->cue_fade)m_video_retire(m);
+    }
+    if(!m->config.geometry_enabled) {
+        SDL_SetRenderTarget(m->renderer,m->history);m_rgb(m->renderer,0,255);SDL_RenderClear(m->renderer);
+        if(m->config.video_enabled)m_video_layers(m,255,1,1);
+        SDL_SetRenderTarget(m->renderer,NULL);m->time+=dt;return;
+    }
     Uint8 colors[7][3];
     for(unsigned i=0;i<7;++i) {
         uint32_t rgb=ts_mandala_color(&m->config,i);
@@ -334,7 +359,7 @@ static void m_scene(Mandala *m, double dt)
     /* Long geometry trails can fade by only 1/255. A separate, time-based
        source refresh keeps dark footage from vanishing in 8-bit blending. */
     Uint8 video_fade=(Uint8)fmax(fade,255*(1-exp(-dt/.18)));
-    m_video_scene(m,video_fade,level);
+    m_video_layers(m,video_fade,level,0);
     float scale=m->height*.46f*m->config.scale/100,cx=m->width*.5f,cy=m->height*.5f;
     if(m->haze && presence>.01f) {
         uint32_t tint=m->config.palette<3?0xADA27Eu:ts_mandala_color(&m->config,0);
@@ -497,7 +522,7 @@ static void m_event(Mandala *m,VisualShared *s,const SDL_Event *e)
     if(e->type==SDL_QUIT || (e->type==SDL_WINDOWEVENT && e->window.event==SDL_WINDOWEVENT_CLOSE))atomic_store(&s->quit,1);
     if(e->type==SDL_DISPLAYEVENT)m_window_mode(m,s,1);
     if(e->type==SDL_RENDER_TARGETS_RESET || e->type==SDL_RENDER_DEVICE_RESET) {
-        if(e->type==SDL_RENDER_DEVICE_RESET){m_haze(m);SDL_DestroyTexture(m->video_texture);m->video_texture=NULL;}
+        if(e->type==SDL_RENDER_DEVICE_RESET){m_haze(m);m_video_retire(m);SDL_DestroyTexture(m->video_texture);m->video_texture=NULL;}
         if(!m_target(m))atomic_store(&s->quit,1);
     }
     if(e->type==SDL_WINDOWEVENT) {
@@ -543,7 +568,7 @@ static int mandala_run(VisualShared *shared,
         if(m){m_destroy(m);free(m);}SDL_Quit();return 1;
     }
     /* Force initial display placement even when the preferred display is zero. */
-    m->display=-1;m_window_mode(m,shared,0);
+    m->display=-1;m_window_mode(m,shared,0);m_cue_request(m,&message.cue);
     SDL_RendererInfo info;SDL_GetRendererInfo(m->renderer,&info);
     fprintf(stderr,"Mandala renderer: %s, %dx%d, %u instances, %zu bytes model\n",info.name,m->width,m->height,m->count,sizeof(*m));
     atomic_store(&shared->ready,1);
@@ -557,6 +582,7 @@ static int mandala_run(VisualShared *shared,
 #endif
         SDL_Event event;while(SDL_PollEvent(&event))m_event(m,shared,&event);
         if(shared_latest(shared,&message)) {
+            m_cue_request(m,&message.cue);
             if(ts_mandala_valid(&message.config) && memcmp(&m->config,&message.config,sizeof(m->config)))m_configure(m,&message.config);
             if(serial!=message.serial){serial=message.serial;fresh=SDL_GetTicks();}
         }

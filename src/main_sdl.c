@@ -7305,7 +7305,7 @@ static const char *path_basename(const char *path)
 
 static int ui_blocking_dialog_open_except_workspaces(const TsUiState *ui)
 {
-    return ui->mosaic_gallery_open || ui->mosaic_marker_open || ui->mosaic_views_open || ui->mosaic_align_open || ui->mosaic_loop_open || ui->mosaic_scatter_open || ui->mosaic_spacing_confirm || ui->mosaic_edit_choice || ui->mosaic_pattern_choice || ui->exit_confirm_open || ui->project_overwrite_confirm_open ||
+    return ui->mosaic_video_open || ui->mosaic_gallery_open || ui->mosaic_marker_open || ui->mosaic_views_open || ui->mosaic_align_open || ui->mosaic_loop_open || ui->mosaic_scatter_open || ui->mosaic_spacing_confirm || ui->mosaic_edit_choice || ui->mosaic_pattern_choice || ui->exit_confirm_open || ui->project_overwrite_confirm_open ||
            ui->overdub_confirm_open ||
            ui->file_busy || ui->transform_open || ui->drone_open ||
            ui->import_preview_open || ui->load_selection_choice_open ||
@@ -7331,7 +7331,7 @@ static void ui_sync_dialog_workspaces(TsUiState *ui)
     /* Mosaic owns these dialogs. Hiding it strands the modal: its renderer
        and input handler both require mosaic_open, while other input is blocked. */
     if(ui_dialog_open(ui) && !ui->portal.open &&
-       !ui->mosaic_gallery_open && !ui->mosaic_marker_open && !ui->mosaic_views_open && !ui->mosaic_scatter_open && !ui->mosaic_spacing_confirm && !ui->mosaic_loop_open && !ui->mosaic_align_open && !ui->mosaic_pattern_choice &&
+       !ui->mosaic_video_open && !ui->mosaic_gallery_open && !ui->mosaic_marker_open && !ui->mosaic_views_open && !ui->mosaic_scatter_open && !ui->mosaic_spacing_confirm && !ui->mosaic_loop_open && !ui->mosaic_align_open && !ui->mosaic_pattern_choice &&
        !ui->project_overwrite_confirm_open && ui->browser.mode!=TS_BROWSER_SAVE_RECIPE &&
        ui->browser.mode!=TS_BROWSER_SAVE_XM && ui->browser.mode!=TS_BROWSER_IMPORT_CANVAS && ui->browser.mode!=TS_BROWSER_EXPORT_CANVAS &&
        !(ui->file_busy && !strcmp(ui->file_busy_label,"SAVING")))ui->mosaic_open=0;
@@ -8852,6 +8852,7 @@ static void begin_active_project_save(TsUiState *ui)
 #include "main_sdl_browser_audition.inc"
 
 static void mandala_editor_video_loaded(TsUiState *ui,const TsMandalaConfig *c);
+static void mosaic_select_only(TsUiState *,uint64_t);
 static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
                            TsInstrument *instrument, TsSample *pending_selection_load,
                            TsSamplePages *sample_pages,
@@ -8874,6 +8875,26 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
             !ts_browser_edits_text(browser))
             SDL_StopTextInput();
         return;
+    }
+    if(browser->mode==TS_BROWSER_MOSAIC_VIDEO || browser->mode==TS_BROWSER_MOSAIC_VIDEO_POOL) {
+        int pool=browser->mode==TS_BROWSER_MOSAIC_VIDEO_POOL;
+        if(!pool && browser->selected>=0 && browser->selected<browser->entry_count && browser->entries[browser->selected].is_directory){ts_browser_enter_selected_directory(browser);return;}
+        if(pool)snprintf(path,sizeof(path),"%s",browser->directory);
+        else if(!ts_browser_selected_path(browser,path,sizeof(path))){snprintf(browser->message,sizeof(browser->message),"SELECT A VIDEO FILE");return;}
+        if(!ui->mosaic || ui->mosaic->epoch!=ui->mosaic_video_epoch){snprintf(browser->message,sizeof(browser->message),"CANVAS CHANGED / CHOOSE AGAIN");return;}
+        TsMosaicEvent *e=ts_mosaic_find(ui->mosaic,ui->mosaic_video_id);
+        if(ui->mosaic_video_id && (!e || !e->source->video_path[0])){snprintf(browser->message,sizeof(browser->message),"VIDEO TRIGGER IS NO LONGER AVAILABLE");return;}
+        TsMosaicSource *source=ts_mosaic_video_source(ui->mosaic,path,pool);if(!source)return;
+        if(device)SDL_LockAudioDevice(device);ts_mosaic_checkpoint(ui->mosaic);
+        if(!e){e=ts_mosaic_add(ui->mosaic,source,ui->mosaic_video_time,ui->mosaic_video_x);if(e){e->duration=1.5;e->width=120;e->video_fade=2;}}
+        else {e->source=source;++e->revision;}
+        if(e){snprintf(e->name,sizeof(e->name),"%.63s",source->sample.name);ui->mosaic_video_id=e->id;}
+        if(device)SDL_UnlockAudioDevice(device);
+        if(!e){snprintf(browser->message,sizeof(browser->message),"CANVAS IS FULL");return;}
+        mosaic_select_only(ui,e->id);
+        audio->sister.mandala.video_enabled=1;
+        ts_browser_close(browser);SDL_StopTextInput();ui->mosaic_video_open=1;
+        snprintf(ui->status,sizeof(ui->status),"VIDEO TRIGGER ADDED / RIGHT-CLICK TO EDIT / CTRL+R TO SCATTER");return;
     }
     if (browser->mode==TS_BROWSER_LOAD_VIDEO) {
         if(browser->selected>=0 && browser->selected<browser->entry_count && browser->entries[browser->selected].is_directory) {
@@ -15120,6 +15141,9 @@ int main(int argc, char **argv)
                          "FINISH OR CANCEL THE OPEN DIALOG FIRST");
                 SDL_free(event.drop.file);
             }
+            else if(event.type==SDL_DROPFILE && ui.mosaic_open && mosaic_video_drop(device,&audio,&ui,&mosaic,event.drop.file,window)) {
+                SDL_free(event.drop.file);
+            }
             else if (event.type == SDL_DROPFILE) {
                 if (audio.capture.state == TS_CAPTURE_COMPLETED)
                     finalize_capture(device, &audio, &ui, &instrument);
@@ -18651,6 +18675,7 @@ int main(int argc, char **argv)
         mandala_editor_update(&audio.sister.mandala);
         uint64_t profile_aux = ts_profile_begin(TS_PROF_AUX_UI);
         TsMandalaPreferences visual_prefs={ui.config.visual_quality,ui.config.visual_display,ui.config.visual_fullscreen};
+        mosaic_video_follow(device,&audio,&ui);
         ts_mandala_poll(&audio.sister.mandala,&visual_prefs);
         ui.config.visual_quality=visual_prefs.quality;ui.config.visual_display=visual_prefs.display;ui.config.visual_fullscreen=visual_prefs.fullscreen;
         spatial_window_update(&ui);

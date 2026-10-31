@@ -72,7 +72,7 @@ static int mosaic_fades_event(const SDL_Event *event,SDL_AudioDeviceID device,Ts
         int i=pass==TS_MOSAIC_EVENTS?(primary?(int)(primary-ui->mosaic->events):-1):pass;
         if(i<0 || (pass!=TS_MOSAIC_EVENTS && primary==&ui->mosaic->events[i]))continue;
         TsMosaicEvent *e=&ui->mosaic->events[i];
-        if(!e->id || time<e->start || time>=e->start+e->duration || left<e->x || left>=e->x+e->width)continue;
+        if(!e->id || e->source->video_path[0] || time<e->start || time>=e->start+e->duration || left<e->x || left>=e->x+e->width)continue;
         for(int part=1;part<=3;++part) {
             double hx,hy,span=0;
             int visible=part==3?ts_ui_mosaic_pan_handle(ui,e,&hx,&hy,&span):ts_ui_mosaic_fade_handle(ui,e,part,&hx,&hy);

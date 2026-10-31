@@ -82,7 +82,7 @@ int main(void)
     assert(ts_mandala_read(&a,"Mandala.Symmetry","0")==-1);
     assert(ts_mandala_read(&a,"Mandala.Cycle","nan")==-1);
     assert(ts_mandala_read(&a,"Mandala.Seed","-1")==-1);
-    assert(ts_mandala_read(&a,"Mandala.Version","5")==-1);
+    assert(ts_mandala_read(&a,"Mandala.Version","6")==-1);
     assert(ts_mandala_read(&a,"Mandala.Future","1")==-1);
     assert(ts_mandala_read(&a,"Mandala.Shape","5")==-1);
     assert(ts_mandala_read(&a,"Mandala.Density","9")==-1);
@@ -101,6 +101,7 @@ int main(void)
     assert(ts_mandala_read(&a,"Mandala.VideoFilter","101")==-1);
     assert(ts_mandala_read(&a,"Mandala.VideoFilter","-1")==-1);
     a.video_filter=101;assert(!ts_mandala_valid(&a));a.video_filter=63;
+    a.geometry_enabled=0;a.video_monochrome=1;
     a.video_enabled=1;a.video_loop=0;a.video_mix=91;a.video_rotation=32;a.video_scale=0;
     snprintf(a.video_path,sizeof(a.video_path),"/missing/clip = test \xC3\xA9.mp4");
     a.palette=3;uint32_t red=ts_mandala_color(&a,0);
@@ -139,12 +140,12 @@ int main(void)
     assert(ts_sister_project_state_load_file(loaded,path,48000,&present,error,sizeof(error)) && loaded->mandala.seed==seed);
     f=fopen(path,"wb");assert(f);fputs("TapeSister Sister Project State\nVersion=35\nPageCount=1\nActivePage=0\nMandala.Version=1\nMandala.Seed=314159\nMandala.Palette=2\nMandala.Symmetry=6\nMandala.Cycle=120\n",f);fclose(f);
     assert(ts_sister_project_state_load_file(loaded,path,48000,&present,error,sizeof(error)));
-    assert(loaded->mandala.version==4 && loaded->mandala.seed==0x314159 && loaded->mandala.palette==2);
+    assert(loaded->mandala.version==5 && loaded->mandala.seed==0x314159 && loaded->mandala.palette==2);
     assert(!loaded->mandala.shape && loaded->mandala.density==100 && loaded->mandala.scale==100 && loaded->mandala.motion==50 && loaded->mandala.trails==50);
-    for(int version=2;version<=3;++version) {
+    for(int version=2;version<=4;++version) {
         f=fopen(path,"wb");assert(f);fprintf(f,"TapeSister Sister Project State\nVersion=35\nPageCount=1\nActivePage=0\nMandala.Version=%d\nMandala.Seed=314159\nMandala.VideoScale=50\n",version);fclose(f);
         assert(ts_sister_project_state_load_file(loaded,path,48000,&present,error,sizeof(error)));
-        assert(loaded->mandala.version==4 && !loaded->mandala.video_filter && loaded->mandala.video_scale==50);
+        assert(loaded->mandala.version==5 && loaded->mandala.geometry_enabled && !loaded->mandala.video_monochrome && !loaded->mandala.video_filter && loaded->mandala.video_scale==50);
     }
     remove(path);free(state);free(loaded);
     TsConfig prefs,again;ts_config_init(&prefs);

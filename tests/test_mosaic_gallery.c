@@ -115,6 +115,8 @@ static void test_storage(void)
     assert(ts_gallery_rename(g,0,"First painting",error,sizeof(error)));
     assert(ts_gallery_rename(g,1,"Second \"painting\"",error,sizeof(error)));
     b->live_envelope=1;b->markers[2]=(TsMosaicMarker){.stored=1,.time=2};g->canvas[1].entry=TS_GALLERY_MARKER;g->canvas[1].marker=2;
+    TsMosaicSource *video=ts_mosaic_video_source(b,"/external/dog footage",1);assert(video);
+    TsMosaicEvent *cue=ts_mosaic_add(b,video,1,240);assert(cue);cue->video_random_start=1;cue->video_transition=2;cue->video_fade=1.25;
     g->active=1;g->fade_seconds=1.25;uint64_t hash=ts_gallery_hash(g);
     assert(ts_gallery_save(g,"gallery-storage",error,sizeof(error)));
     /* Text metadata remains portable after Windows CRLF conversion. */
@@ -140,6 +142,10 @@ static void test_storage(void)
     assert(ts_sample_pages_load_project(&pages,&bank,&record,"Gallery Bundle/Gallery Bundle.tsr",error,sizeof(error)));
     assert(pages.gallery && ts_gallery_hash(pages.gallery)==hash && pages.mosaic==ts_gallery_active(pages.gallery));
     assert(pages.mosaic!=a && ts_sample_pages_mosaic_root(&pages)==a);
+    assert(ts_sample_pages_export_canvas(&pages.gallery->canvas[1],"Video Canvas/Video Canvas.tsr",error,sizeof(error)));
+    TsMosaicCanvas imported={0};assert(ts_sample_pages_load_canvas("Video Canvas/Video Canvas.tsr",0,&imported,error,sizeof(error)));
+    assert(ts_mosaic_hash(imported.scene)==ts_mosaic_hash(pages.gallery->canvas[1].scene));
+    const TsMosaicEvent *imported_video=ts_mosaic_video_at(imported.scene,2);assert(imported_video && imported_video->video_random_start && !strcmp(imported_video->source->video_path,"/external/dog footage"));ts_mosaic_free(imported.scene);
     uint64_t before=ts_gallery_hash(pages.gallery);
     FILE *f=fopen("Gallery Bundle/project-data/gallery.tsg","wb");assert(f);fputs("TAPESISTER_GALLERY 1\nCOUNT 9999 0 1 1\n",f);fclose(f);
     assert(!ts_sample_pages_load_project(&pages,&bank,&record,"Gallery Bundle/Gallery Bundle.tsr",error,sizeof(error)));

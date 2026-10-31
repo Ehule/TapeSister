@@ -95,6 +95,10 @@ effects. These controls transfer the painting; REC FILE exports its finished sou
 
 ![Choose a canvas to import](images/mosaic-gallery-import.png)
 
+Video change cards travel with each canvas as external media references. See
+[Mosaic video changes](MOSAIC_VIDEO.md); moving an exported canvas does not copy
+its original video folder.
+
 ## Saving and rendering
 
 Save/Open and New operate on the entire Gallery. Opening an older single-canvas
