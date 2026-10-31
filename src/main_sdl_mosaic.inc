@@ -4,6 +4,9 @@ static void mosaic_poll(SDL_AudioDeviceID device,TsUiState *ui,
 {
     if(!ui->mosaic)return;
     if(!ui->mosaic_open)c->pattern_ready=0;
+    if(ui->mosaic_grab && (!ui->mosaic_open || c->active || c->ui_epoch!=ui->mosaic->epoch ||
+       ui_dialog_open(ui) || ui->router_open || ui->master_eq_open || ui->midi_learn_active))
+        mosaic_drag_end(ui,c);
     if(ui->tracker_open)c->was_tracker=1;
     if(ui->mosaic_open && c->was_tracker){c->was_tracker=0;c->pattern_ready=0;}
 
@@ -76,13 +79,45 @@ static void mosaic_transport(SDL_AudioDeviceID device,TsUiState *ui,int stop)
     }
     if(device)SDL_UnlockAudioDevice(device);
 }
-/* Duration edges have priority over visual width, as on a single card. */
+/* Pick in screen space. Tiny cards retain an eight-pixel target; exact visible
+   bodies win over nearby padding, then distance and the renderer's front order. */
+static double mosaic_card_distance(const TsUiState *ui,const TsMosaicEvent *e,int x,int y)
+{
+    if(!e->id)return -1;
+    double h=ui->mosaic_hscale>0?ui->mosaic_hscale:1;
+    double left=151+(e->x-ui->mosaic_xscroll)*h,top=66+(e->start-ui->mosaic_scroll)*ui->mosaic_scale;
+    double width=fmax(TS_MOSAIC_CARD_MIN_PIXELS,e->width*h);
+    double height=fmax(TS_MOSAIC_CARD_MIN_PIXELS,e->duration*ui->mosaic_scale);
+    if(left+width<=151 || left>=ts_ui_mosaic_canvas_right(ui) || top+height<=66 || top>=TS_MOSAIC_CANVAS_BOTTOM)return -1;
+    double px=fmax(0,(TS_MOSAIC_CARD_HIT_PIXELS-width)*.5),py=fmax(0,(TS_MOSAIC_CARD_HIT_PIXELS-height)*.5);
+    if(x<left-px || x>=left+width+px || y<top-py || y>=top+height+py)return -1;
+    if(x>=left && x<left+width && y>=top && y<top+height)return 0;
+    double dx=fmax(0,fmax(left-x,x-left-width)),dy=fmax(0,fmax(top-y,y-top-height));
+    return 1e-6+dx*dx+dy*dy;
+}
+static TsMosaicEvent *mosaic_card_at(const TsUiState *ui,int x,int y)
+{
+    TsMosaicEvent *primary=ts_mosaic_find(ui->mosaic,ui->mosaic_selected),*best=NULL;
+    double distance=1e30;
+    for(int pass=TS_MOSAIC_EVENTS;pass>=0;--pass) {
+        int i=pass==TS_MOSAIC_EVENTS?(primary?(int)(primary-ui->mosaic->events):-1):pass;
+        if(i<0 || (pass!=TS_MOSAIC_EVENTS && primary==&ui->mosaic->events[i]))continue;
+        TsMosaicEvent *e=&ui->mosaic->events[i];double d=mosaic_card_distance(ui,e,x,y);
+        if(d>=0 && d<distance){best=e;distance=d;if(d==0)break;}
+    }
+    return best;
+}
+/* Reserve a central move area. At overview zoom, short/narrow cards are move
+   targets throughout; zooming in restores their separate resize edges. */
 static int mosaic_card_drag_part(const TsUiState *ui,const TsMosaicEvent *e,double time,double left)
 {
     if(e->source->video_path[0])return 1;
     double h=ui->mosaic_hscale>0?ui->mosaic_hscale:1;
-    return e->start+e->duration-time<6/ui->mosaic_scale?2:
-        time-e->start<6/ui->mosaic_scale?6:e->x+e->width-left<5/h?4:1;
+    if(e->width*h>=24 && e->duration*ui->mosaic_scale>=24) {
+        if(e->start+e->duration-time<6/ui->mosaic_scale)return 2;
+        if(time-e->start<6/ui->mosaic_scale)return 6;
+    }
+    return e->width*h>=24 && e->duration*ui->mosaic_scale>=24 && e->x+e->width-left<5/h?4:1;
 }
 /* Rigid horizontal spacing against cards outside the selection. Optional
    geometry arrays let resize share the move planner without changing ghosts. */
@@ -241,6 +276,9 @@ static void mosaic_drag_motion(SDL_AudioDeviceID device,TsUiState *ui,MosaicCont
         mosaic_resize_group(device,ui,c,delta,(mod&KMOD_ALT)!=0);return;
     }
     if(c->drag==1)mosaic_plan_group(ui,&dx,&dt,(mod&KMOD_ALT)!=0,c->drag_copy && !c->drag_moved);
+    if(ui->mosaic_grab) {
+        ui->mosaic_grab_x=dx;ui->mosaic_grab_time=dt;c->drag_moved=1;return;
+    }
     if(device)SDL_LockAudioDevice(device);
     if(!c->drag_moved) {
         if(!mosaic_begin_drag_change(ui,c)) {
@@ -287,6 +325,7 @@ static void mosaic_drag_autoscroll(SDL_AudioDeviceID device,TsUiState *ui,Mosaic
     mosaic_drag_motion(device,ui,c,x,y,SDL_GetModState());
 }
 
+#include "main_sdl_mosaic_grab.inc"
 static int mosaic_toggle_key(const SDL_Event *event)
 {
     if(event->type!=SDL_KEYDOWN)return 0;
@@ -421,6 +460,7 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
     if(motion)logical_mouse(window,event->motion.x,event->motion.y,&x,&y);
     if(event->type==SDL_MOUSEWHEEL){int mx,my;wheel_event_mouse(event,&mx,&my);logical_mouse(window,mx,my,&x,&y);}
     SDL_Keymod mod=key?(SDL_Keymod)event->key.keysym.mod:SDL_GetModState();
+    if(mosaic_grab_event(event,window,device,ui,c,x,y,mod))return 1;
     if(mosaic_video_event(event,device,audio,ui,instrument,c,x,y))return 1;
     if(mosaic_gallery_event(event,device,audio,ui,instrument,c,x,y,mod))return 1;
     if(ui->mosaic_open && (ui->mosaic_marker_open || ui->mosaic_views_open))
@@ -546,6 +586,9 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
     if(event->type==SDL_WINDOWEVENT && (event->window.event==SDL_WINDOWEVENT_FOCUS_LOST ||
        event->window.event==SDL_WINDOWEVENT_HIDDEN || event->window.event==SDL_WINDOWEVENT_MINIMIZED))mosaic_drag_end(ui,c);
     mosaic_sources_refresh(ui,instrument,c);
+    if(key && event->key.keysym.sym==SDLK_g && !(mod&(KMOD_CTRL|KMOD_SHIFT|KMOD_ALT|KMOD_GUI))) {
+        if(!event->key.repeat)mosaic_grab_begin(window,ui,c);return 1;
+    }
     if((key || event->type==SDL_KEYUP) && (event->key.keysym.sym==SDLK_LALT || event->key.keysym.sym==SDLK_RALT) &&
        (c->drag==2 || c->drag==6) && ui->mosaic_ghost_count>1) {
         if(c->drag_moved)mosaic_drag_motion(device,ui,c,c->drag_pointer_x,c->drag_pointer_y,(SDL_Keymod)event->key.keysym.mod);
@@ -709,13 +752,9 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
         }
         if(x>=151 && x<ts_ui_mosaic_canvas_right(ui) && y>=66 && y<TS_MOSAIC_CANVAS_BOTTOM) {
             double time=ui->mosaic_scroll+(y-66)/ui->mosaic_scale,left=(x-151)/horizontal+ui->mosaic_xscroll;
-            TsMosaicEvent *primary=ts_mosaic_find(ui->mosaic,ui->mosaic_selected);
-            for(int pass=TS_MOSAIC_EVENTS;pass>=0;--pass) {
-                int i=pass==TS_MOSAIC_EVENTS?(primary?(int)(primary-ui->mosaic->events):-1):pass;
-                if(i<0 || (pass!=TS_MOSAIC_EVENTS && primary==&ui->mosaic->events[i]))continue;
-                TsMosaicEvent *e=&ui->mosaic->events[i];
-                if(!e->id || time<e->start || time>=e->start+e->duration || left<e->x || left>=e->x+e->width)continue;
-                int chosen=mosaic_chosen(ui,i);
+            TsMosaicEvent *e=mosaic_card_at(ui,x,y);
+            if(e) {
+                int chosen=mosaic_chosen(ui,(int)(e-ui->mosaic->events));
                 if(mod&KMOD_SHIFT)mosaic_select_add(ui,e->id);
                 else if(!chosen)mosaic_select_only(ui,e->id);
                 mosaic_picks_clear(ui,c);
@@ -738,13 +777,12 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
                 return 1;
             }
             mosaic_picks_clear(ui,c);
-            if(mod&KMOD_SHIFT) {
-                c->box_primary=ui->mosaic_selected;
-                memcpy(c->box_selection,ui->mosaic_selection,sizeof(c->box_selection));
-                memcpy(c->box_order,ui->mosaic_selection_order,sizeof(c->box_order));
-                c->drag=5;ui->mosaic_box=1;ui->mosaic_box_x=ui->mosaic_box_end_x=x;
-                ui->mosaic_box_y=ui->mosaic_box_end_y=y;
-            } else mosaic_select_only(ui,0);
+            if(!(mod&KMOD_SHIFT))mosaic_select_only(ui,0);
+            c->box_primary=ui->mosaic_selected;
+            memcpy(c->box_selection,ui->mosaic_selection,sizeof(c->box_selection));
+            memcpy(c->box_order,ui->mosaic_selection_order,sizeof(c->box_order));
+            c->drag=5;ui->mosaic_box=1;ui->mosaic_box_x=ui->mosaic_box_end_x=x;
+            ui->mosaic_box_y=ui->mosaic_box_end_y=y;
         }
         return 1;
     }
@@ -781,9 +819,7 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
         if(x>=10 && x<108 && y>=74 && y<346){int col=(x-10)/49,row=(y-74)/34;
             int n=ui->mosaic_source_offset+row*2+col;if(col<2 && n<ui->mosaic_source_count)source=ui->mosaic_sources[n].source;
         }else if(x>=151 && x<ts_ui_mosaic_canvas_right(ui) && y>=66 && y<TS_MOSAIC_CANVAS_BOTTOM){
-            double t=ui->mosaic_scroll+(y-66)/ui->mosaic_scale,left=ui->mosaic_xscroll+(x-151)/horizontal;
-            for(int i=TS_MOSAIC_EVENTS-1;i>=0;--i){const TsMosaicEvent *e=&ui->mosaic->events[i];
-                if(e->id && t>=e->start && t<e->start+e->duration && left>=e->x && left<e->x+e->width){source=e->source;break;}}
+            const TsMosaicEvent *e=mosaic_card_at(ui,x,y);if(e)source=e->source;
         }
         if(source && source->pattern){const TsPatternCard *p=source->pattern;
             int i=mosaic_pattern_index(c,p->id);const TsMosaicSource *latest=i>=0?c->pattern_sources[i]:NULL;

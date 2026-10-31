@@ -65,14 +65,8 @@ static int mosaic_fades_event(const SDL_Event *event,SDL_AudioDeviceID device,Ts
     if((!motion && !down) || c->drag || c->mix_drag || c->volume_drag || c->pan_active ||
        ui->mosaic_loop_drag || (mod&(KMOD_SHIFT|KMOD_CTRL|KMOD_ALT|KMOD_GUI)) ||
        x<151 || x>=ts_ui_mosaic_canvas_right(ui) || y<66 || y>=TS_MOSAIC_CANVAS_BOTTOM)return 0;
-    double h=ui->mosaic_hscale>0?ui->mosaic_hscale:1;
-    double time=ui->mosaic_scroll+(y-66)/ui->mosaic_scale,left=ui->mosaic_xscroll+(x-151)/h;
-    TsMosaicEvent *primary=ts_mosaic_find(ui->mosaic,ui->mosaic_selected);
-    for(int pass=TS_MOSAIC_EVENTS;pass>=0;--pass) {
-        int i=pass==TS_MOSAIC_EVENTS?(primary?(int)(primary-ui->mosaic->events):-1):pass;
-        if(i<0 || (pass!=TS_MOSAIC_EVENTS && primary==&ui->mosaic->events[i]))continue;
-        TsMosaicEvent *e=&ui->mosaic->events[i];
-        if(!e->id || e->source->video_path[0] || time<e->start || time>=e->start+e->duration || left<e->x || left>=e->x+e->width)continue;
+    TsMosaicEvent *e=mosaic_card_at(ui,x,y);
+    if(e && !e->source->video_path[0]) {
         for(int part=1;part<=3;++part) {
             double hx,hy,span=0;
             int visible=part==3?ts_ui_mosaic_pan_handle(ui,e,&hx,&hy,&span):ts_ui_mosaic_fade_handle(ui,e,part,&hx,&hy);

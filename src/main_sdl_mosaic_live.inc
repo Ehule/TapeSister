@@ -289,7 +289,7 @@ static void mosaic_live_poll(SDL_AudioDeviceID output,SDL_AudioDeviceID *input_d
 static int mosaic_live_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID output,
     SDL_AudioDeviceID *input_device,AudioState *a,ExternalInputState *s,TsUiState *ui)
 {
-    if(ui->mosaic_gallery_open)return 0;
+    if(ui->mosaic_gallery_open || ui->mosaic_grab)return 0;
     Uint32 window_id=SDL_GetWindowID(window);
     SDL_GetWindowSize(window,&ui->mosaic_live_output_width,&ui->mosaic_live_output_height);
     if(ui->mosaic_live_drag) {

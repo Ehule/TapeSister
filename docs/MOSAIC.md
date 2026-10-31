@@ -74,8 +74,9 @@ the EVENTS pages. Shared originals and the original Sample banks remain availabl
 | Pan one card | Drag the diamond on its pan line left/right; right-click centers |
 | Align starts, ends or midpoints | Hold Alt while moving or extending |
 | Edit the event | Double-click |
-| Box-select a group | Shift+left-drag on empty canvas |
-| Move a selected group | Drag any selected event body |
+| Box-select a group | Left-drag on empty canvas; Shift adds to the selection |
+| Move a selected card or group | Drag a selected body, or press G and move the mouse |
+| Confirm / cancel G grab | Left click or Enter / Escape or right click |
 | Copy an event or selected group | Hold Shift when starting a drag on a tile |
 | Cancel a move / copy drag | Escape |
 | Add a timeline marker at the playhead | Alt+M |
@@ -115,7 +116,23 @@ The **first selected card is the primary**: its border uses the selection color
 card; Shift-clicking an already selected card removes it. Removing the primary
 promotes the earliest remaining selection. Clicking or dragging a selected member
 keeps the primary; clicking an unselected card without Shift starts a new selection.
-Shift-dragging an empty area adds a selection box while retaining the primary.
+Dragging an empty area draws a selection box. Hold Shift to add to the existing
+selection while retaining its primary. After selecting one card or a group, press
+**G** to grab it from the current mouse position without holding a button.
+Left click or Enter confirms; Escape or right click cancels. Alt snaps the
+preview using the same alignment rules as ordinary dragging. The preview leaves
+playback and the document unchanged until confirmation, which makes one undo
+step. Cancellation, focus loss and leaving Mosaic discard the preview. When
+AUDIO KEYS or looper QWERTY is enabled, G keeps its note-key role; return to
+editing shortcuts to grab cards.
+
+At overview zoom, cards retain a small visible mark and an eight-logical-pixel
+minimum pick target. A visible card wins over a neighbouring card's pick padding;
+nearby tiny cards are picked by distance. Short or narrow cards are move targets
+throughout. Zoom in to expose distinct duration and width resize edges.
+
+![G moves the selection together, with original positions outlined](images/mosaic-grab.png)
+
 Shift-dragging a card still copies the group; the primary's copy becomes primary.
 Rapid Shift-clicks and repeated Shift-drags stay in selection/copy mode; only an
 unmodified double-click opens the event editor. Copies remain selected for the

@@ -112,6 +112,7 @@ static void wait_render(void);
 #include "test_mosaic_record_tile.inc"
 #include "test_mosaic_record_routes.inc"
 #include "test_mosaic_live_controller.inc"
+#include "test_mosaic_grab.inc"
 #include "test_mosaic_gallery_controller.inc"
 #include "test_quick_capture.inc"
 #include "test_mosaic_record_bank.inc"
@@ -430,6 +431,7 @@ int main(int argc,char **argv)
     }
     uint64_t original=ts_sample_hash(&instrument.current);
     ui.mosaic=audio.mosaic=ts_mosaic_create();ui.mosaic_scale=24;ui.mosaic_open=1;
+    if(argc>1 && !strcmp(argv[1],"--grab")) {test_mosaic_grab(window);goto done;}
     if(argc>1 && !strcmp(argv[1],"--video-cues")) {test_mosaic_video_controller(window);goto done;}
     if(argc>1 && !strcmp(argv[1],"--gallery")) {test_mosaic_gallery_controller(window,device);goto done;}
     if(argc>1 && !strcmp(argv[1],"--source-keys")) {test_mosaic_source_keys(window,device);goto done;}

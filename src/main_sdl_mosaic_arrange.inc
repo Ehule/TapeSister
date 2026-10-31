@@ -108,7 +108,7 @@ static int mosaic_arrange_event(const SDL_Event *event,SDL_Window *window,SDL_Au
         uint64_t ids[TS_MOSAIC_EVENTS];int count=0,current=-1;
         for(int i=TS_MOSAIC_EVENTS-1;i>=0;--i) {
             const TsMosaicEvent *e=&ui->mosaic->events[i];
-            if(e->id && time>=e->start && time<e->start+e->duration && left>=e->x && left<e->x+e->width) {
+            if(mosaic_card_distance(ui,e,x,y)>=0) {
                 if(e->id==ui->mosaic_selected)current=count;ids[count++]=e->id;
             }
         }

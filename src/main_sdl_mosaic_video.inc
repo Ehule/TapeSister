@@ -54,12 +54,8 @@ static int mosaic_video_event(const SDL_Event *event,SDL_AudioDeviceID device,Au
        (event->key.keysym.mod&(KMOD_CTRL|KMOD_SHIFT))==(KMOD_CTRL|KMOD_SHIFT) && !(event->key.keysym.mod&(KMOD_ALT|KMOD_GUI))){mosaic_video_open(ui,c,0);return 1;}
     if(down && event->button.button==SDL_BUTTON_RIGHT && x>=151 && x<ts_ui_mosaic_canvas_right(ui) && y>=66 && y<TS_MOSAIC_CANVAS_BOTTOM) {
         double time=ui->mosaic_scroll+(y-66)/ui->mosaic_scale,left=ui->mosaic_xscroll+(x-151)/(ui->mosaic_hscale>0?ui->mosaic_hscale:1);
-        const TsMosaicEvent *primary=ts_mosaic_find(ui->mosaic,ui->mosaic_selected);
-        for(int pass=TS_MOSAIC_EVENTS;pass>=0;--pass) {
-            int i=pass==TS_MOSAIC_EVENTS?(primary?(int)(primary-ui->mosaic->events):-1):pass;
-            if(i<0 || (pass!=TS_MOSAIC_EVENTS && primary==&ui->mosaic->events[i]))continue;
-            const TsMosaicEvent *e=&ui->mosaic->events[i];
-            if(!e->id || time<e->start || time>=e->start+e->duration || left<e->x || left>=e->x+e->width)continue;
+        const TsMosaicEvent *e=mosaic_card_at(ui,x,y);
+        if(e) {
             if(!e->source->video_path[0])return 0;
             mosaic_select_only(ui,e->id);mosaic_video_open(ui,c,e->id);return 1;
         }

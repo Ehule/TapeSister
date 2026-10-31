@@ -644,6 +644,8 @@ typedef struct {
     uint8_t mosaic_pattern_pending[TS_MOSAIC_EVENTS];
     int mosaic_follow, mosaic_box, mosaic_box_x, mosaic_box_y, mosaic_box_end_x, mosaic_box_end_y;
     int mosaic_ghost_count;
+    int mosaic_grab; /* Staged G move; the document changes only on confirmation. */
+    double mosaic_grab_x, mosaic_grab_time;
     TsMosaicEvent mosaic_ghosts[TS_MOSAIC_EVENTS];
     struct {
         const TsSample *sample;
@@ -947,6 +949,7 @@ enum {
     TS_MOSAIC_SOURCE_PAGE_Y = 342,
     TS_MOSAIC_SOURCE_KEYS_X = 64, TS_MOSAIC_SOURCE_KEYS_Y = 53,
     TS_MOSAIC_CANVAS_BOTTOM = 358, TS_MOSAIC_CANVAS_HEIGHT = 292,
+    TS_MOSAIC_CARD_MIN_PIXELS = 2, TS_MOSAIC_CARD_HIT_PIXELS = 8,
     TS_MOSAIC_MARKER_Y = 362, TS_MOSAIC_MARKER_X = 118, TS_MOSAIC_MARKER_STEP = 32,
     TS_MOSAIC_ENV_X = 568, TS_MOSAIC_ENV_RIGHT = 630,
     TS_MOSAIC_ENV_TOP = 86, TS_MOSAIC_ENV_BOTTOM = 335,

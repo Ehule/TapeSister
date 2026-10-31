@@ -112,10 +112,12 @@ static void mosaic_envelope(const TsMosaicSource *s,size_t first,size_t last,flo
 static void mosaic_card(TsFramebuffer *fb,const TsUiState *ui,const TsMosaicEvent *e,int selected,int dim,int ghost)
 {
     if(!e->source)return;
+    TsMosaicEvent preview;
+    if(ui->mosaic_grab && selected && !ghost){preview=*e;preview.x+=ui->mosaic_grab_x;preview.start+=ui->mosaic_grab_time;e=&preview;}
     double horizontal=ui->mosaic_hscale>0?ui->mosaic_hscale:1,scale=ui->mosaic_scale;
-    double left=151+(e->x-ui->mosaic_xscroll)*horizontal,width=e->width*horizontal;
-    double top=66+(e->start-ui->mosaic_scroll)*scale,bottom=top+e->duration*scale;
-    if(left+width<=151 || left>=ts_ui_mosaic_canvas_right(ui) || width<1 || bottom<=66 || top>=TS_MOSAIC_CANVAS_BOTTOM)return;
+    double left=151+(e->x-ui->mosaic_xscroll)*horizontal,width=fmax(TS_MOSAIC_CARD_MIN_PIXELS,e->width*horizontal);
+    double top=66+(e->start-ui->mosaic_scroll)*scale,bottom=top+fmax(TS_MOSAIC_CARD_MIN_PIXELS,e->duration*scale);
+    if(left+width<=151 || left>=ts_ui_mosaic_canvas_right(ui) || bottom<=66 || top>=TS_MOSAIC_CANVAS_BOTTOM)return;
     int x=(int)left,w=(int)width,y=(int)fmax(66,top),end=(int)fmin(TS_MOSAIC_CANVAS_BOTTOM,bottom),h=end-y;
     if(h<1)h=1;
     uint32_t color=e->live?RGB(245,184,91):mosaic_color(mosaic_source_color(e->source)),fill=selected?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_SELECTION, RGB(50,46,59)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(32,31,39));
@@ -124,8 +126,12 @@ static void mosaic_card(TsFramebuffer *fb,const TsUiState *ui,const TsMosaicEven
     if(e->solo)color=ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_SOLO,color);
     if(ghost)color=mosaic_mix_color(color,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(16,18,24)),.55f);
     if(!ghost)mosaic_canvas_rect(fb,ui,x,y,w,h,fill);
+    if(width<8 || bottom-top<8) {
+        mosaic_canvas_rect(fb,ui,x,y,w,h,selected?mosaic_selection_color(ui,e->id==ui->mosaic_selected):color);return;
+    }
     if(e->source->video_path[0]) {
-        color=selected?mosaic_selection_color(ui,1):RGB(133,190,239);
+        color=selected?mosaic_selection_color(ui,e->id==ui->mosaic_selected):RGB(133,190,239);
+        if(ghost)color=mosaic_mix_color(color,RGB(16,18,24),.55f);
         mosaic_canvas_rect(fb,ui,x,y,w,2,color);mosaic_canvas_rect(fb,ui,x,y,2,h,color);mosaic_canvas_rect(fb,ui,x,end-2,w,2,color);
         if(x>=151 && top>=66 && w>=48){char label[64];int chars=(w-10)/6;if(chars>60)chars=60;
             snprintf(label,sizeof(label),"%.*s",chars,ts_mosaic_video_overridden(ui->mosaic,e)?"VIDEO / OVERRIDDEN":e->source->video_pool?"VIDEO / RANDOM POOL":"VIDEO / FILE");text(fb,x+5,y+5,label,color,1);
