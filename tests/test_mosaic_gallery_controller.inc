@@ -97,6 +97,45 @@ static void test_mosaic_gallery_controller(SDL_Window *window,SDL_AudioDeviceID 
     double energy=0;for(size_t i=0;i<captured.frames*2;++i)energy+=fabsf(captured.data[i]);assert(energy>1);
     ts_sample_free(&captured);ts_performance_recorder_free(&rec->performance_recorder);free(rec);a->sister_file_recorder=NULL;
     remove(recorded);SDL_setenv("TAPESISTER_CAPTURES","",1);
+    /* Real Gallery buttons and browser/pending-file pipeline: export a page,
+       then import it without changing the running canvas, banks or effects. */
+    uint64_t scene_hash=ts_mosaic_hash(second),bank_hash=ts_sample_hash(&instrument.current);
+    TsSisterParameters parameters=a->sister.parameters;char project_path[1024];strcpy(project_path,u->project_path);
+    char directory[128];snprintf(directory,sizeof(directory),"canvas-transfer-ui-%llu",(unsigned long long)SDL_GetPerformanceCounter());
+#ifdef _WIN32
+    assert(!_mkdir(directory));
+#else
+    assert(!mkdir(directory,0700));
+#endif
+    gallery_key(window,device,a,s,u,c,SDLK_g,KMOD_CTRL);
+    gallery_pointer(window,device,a,s,u,c,550,90);assert(u->browser.mode==TS_BROWSER_EXPORT_CANVAS && !u->mosaic_gallery_open);
+    ui_sync_dialog_workspaces(u);assert(u->mosaic_open);
+    snprintf(u->browser.directory,sizeof(u->browser.directory),"%s",directory);ts_browser_set_filename(&u->browser,"Room.tsr");
+    PendingFileOperation pending={0};
+    browser_action(device,a,u,&instrument,NULL,&pages,NULL,0,&pending,0);assert(pending.active && u->file_busy);
+    run_pending_file_operation(device,a,u,&instrument,NULL,NULL,&pages,NULL,0,&pending);
+    assert(!u->file_busy && u->mosaic_gallery_open && strstr(u->status,"EXPORTED CANVAS"));
+    assert(a->mosaic==second && !strcmp(project_path,u->project_path));
+    gallery_pointer(window,device,a,s,u,c,465,90);assert(u->browser.mode==TS_BROWSER_IMPORT_CANVAS);
+    snprintf(u->browser.directory,sizeof(u->browser.directory),"%s/Room",directory);assert(ts_browser_refresh(&u->browser));
+    int found=-1;for(int i=0;i<u->browser.entry_count;++i)if(!strcmp(u->browser.entries[i].name,"Room.tsr"))found=i;
+    assert(found>=0);ts_browser_select(&u->browser,found);
+    browser_action(device,a,u,&instrument,NULL,&pages,NULL,0,&pending,0);assert(pending.active);
+    run_pending_file_operation(device,a,u,&instrument,NULL,NULL,&pages,NULL,0,&pending);
+    assert(u->mosaic_gallery_open && u->mosaic_canvas_import_count==1 && g->count==2);
+    if(shot){char path[1200];snprintf(path,sizeof(path),"%s-import.ppm",shot);live_controller_screenshot_size(u,path,1280,800);}
+    gallery_pointer(window,device,a,s,u,c,430,330);assert(u->mosaic_canvas_import_pending && u->file_busy);
+    mosaic_canvas_queue_import(u,&pending);assert(pending.active && !pending.presented);
+    run_pending_file_operation(device,a,u,&instrument,NULL,NULL,&pages,NULL,0,&pending);
+    assert(!u->file_busy && !u->mosaic_canvas_import_count && g->count==3 && g->active==1);
+    assert(ts_mosaic_hash(g->canvas[2].scene)==scene_hash && !strcmp(g->canvas[2].name,"Blue room"));
+    assert(ts_sample_hash(&instrument.current)==bank_hash && !memcmp(&parameters,&a->sister.parameters,sizeof(parameters)));
+    assert(a->mosaic==second && !strcmp(project_path,u->project_path));
+    assert(g->canvas[2].entry==TS_GALLERY_MARKER && g->canvas[2].marker==3);
+    gallery_pointer(window,device,a,s,u,c,190,284);assert(g->canvas[2].entry==TS_GALLERY_START && g->canvas[1].entry==TS_GALLERY_MARKER);
+    gallery_pointer(window,device,a,s,u,c,430,330);assert(g->active==2 && !u->mosaic_gallery_open);
+    for(int i=0;i<24;++i)audio_callback(a,(Uint8 *)output,sizeof(output));
+    assert(g->outgoing<0 && a->mosaic==g->canvas[2].scene && a->mosaic->time>0 && ts_mosaic_live_count(a->mosaic)>0);
     mosaic_controller_free(c);free(c);ts_external_recorder_free(&s->recorder);free(s);free(u);
     a->gallery=NULL;a->mosaic=ts_sample_pages_mosaic_root(&pages);ts_sample_pages_free(&pages);routing_free(a);
 }

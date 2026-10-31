@@ -45,7 +45,7 @@ static int ends_with_case(const char *value, const char *suffix)
 const char *ts_browser_mode_extension(TsBrowserMode mode)
 {
     if (mode == TS_BROWSER_TRACKER_PALETTE_IMPORT || mode == TS_BROWSER_TRACKER_PALETTE_EXPORT) return ".pal";
-    if (mode == TS_BROWSER_SAVE_RECIPE) return ".tsr";
+    if (mode == TS_BROWSER_SAVE_RECIPE || mode == TS_BROWSER_IMPORT_CANVAS || mode == TS_BROWSER_EXPORT_CANVAS) return ".tsr";
     if (mode == TS_BROWSER_SAVE_XM) return ".xm";
     if (mode == TS_BROWSER_SAVE_PRESET) return ".tsp";
     if (mode == TS_BROWSER_EXPORT_BANK) return "";
@@ -55,6 +55,8 @@ const char *ts_browser_mode_extension(TsBrowserMode mode)
 
 const char *ts_browser_mode_title(TsBrowserMode mode)
 {
+    if (mode == TS_BROWSER_IMPORT_CANVAS) return "IMPORT MOSAIC CANVAS FROM TSR";
+    if (mode == TS_BROWSER_EXPORT_CANVAS) return "EXPORT MOSAIC CANVAS / NEW TSR BUNDLE";
     if (mode == TS_BROWSER_LOAD_VIDEO) return "ADD VISUALIZER VIDEO / LOCAL FILE";
     if (mode == TS_BROWSER_TRACKER_PALETTE_IMPORT) return "IMPORT TRACKSISTER / TAPEHEAD PALETTE";
     if (mode == TS_BROWSER_TRACKER_PALETTE_EXPORT) return "EXPORT TRACKSISTER / TAPEHEAD PALETTE";
@@ -76,7 +78,7 @@ const char *ts_browser_mode_title(TsBrowserMode mode)
 int ts_browser_mode_edits_filename(TsBrowserMode mode)
 {
     if (mode == TS_BROWSER_TRACKER_PALETTE_EXPORT) return 1;
-    return mode == TS_BROWSER_SAVE_XM || mode == TS_BROWSER_SAVE_RECIPE || mode == TS_BROWSER_SAVE_PRESET ||
+    return mode == TS_BROWSER_EXPORT_CANVAS || mode == TS_BROWSER_SAVE_XM || mode == TS_BROWSER_SAVE_RECIPE || mode == TS_BROWSER_SAVE_PRESET ||
            mode == TS_BROWSER_RENDER_WAV || mode == TS_BROWSER_EXPORT_WAV || mode == TS_BROWSER_EXPORT_BANK;
 }
 
@@ -104,7 +106,7 @@ int ts_browser_mode_selects_directory(TsBrowserMode mode)
 int ts_browser_mode_allows_create_directory(TsBrowserMode mode)
 {
     if (mode == TS_BROWSER_TRACKER_PALETTE_EXPORT) return 1;
-    return mode == TS_BROWSER_SAVE_XM || mode == TS_BROWSER_SAVE_RECIPE || mode == TS_BROWSER_SAVE_PRESET ||
+    return mode == TS_BROWSER_EXPORT_CANVAS || mode == TS_BROWSER_SAVE_XM || mode == TS_BROWSER_SAVE_RECIPE || mode == TS_BROWSER_SAVE_PRESET ||
            mode == TS_BROWSER_RENDER_WAV || mode == TS_BROWSER_EXPORT_WAV || mode == TS_BROWSER_EXPORT_BANK;
 }
 

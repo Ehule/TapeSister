@@ -54,15 +54,15 @@ int ts_gallery_save(const TsMosaicGallery *g,const char *dir,char *e,size_t n)
     }
     return 1;
 }
-int ts_gallery_load(TsMosaicGallery *g,const char *dir,char *e,size_t n)
+int ts_gallery_catalog(const char *dir,TsMosaicGalleryCatalog *out,char *e,size_t n)
 {
-    if(!g || g->count!=1 || g->canvas[0].scene!=g->root)return gallery_error(e,n,"Gallery load requires fresh staging storage");
-    char path[2048],line[256],extra;
-    if(snprintf(path,sizeof(path),"%s/gallery.tsg",dir)<0 || strlen(dir)+13>=sizeof(path))return gallery_error(e,n,"Gallery path is too long");
+    char path[2048],line[256],extra;TsMosaicGalleryCatalog catalog={0};
+    if(!dir || !out || snprintf(path,sizeof(path),"%s/gallery.tsg",dir)<0 || strlen(dir)+13>=sizeof(path))return gallery_error(e,n,"Gallery path is too long");
     FILE *f=fopen(path,"rb");
     if(!f) {
         if(errno!=ENOENT)return gallery_error(e,n,"Cannot read Gallery manifest");
-        return ts_mosaic_load(g->root,dir,e,n);
+        catalog.count=1;catalog.next_id=2;catalog.fade_seconds=2;catalog.canvas[0].id=1;
+        snprintf(catalog.canvas[0].name,TS_GALLERY_NAME,"Canvas 1");*out=catalog;return 1;
     }
     int count,active;unsigned long long next;double fade;
     if(!gallery_line(f,line,sizeof(line)) || strcmp(line,"TAPESISTER_GALLERY 1") ||
@@ -72,18 +72,29 @@ int ts_gallery_load(TsMosaicGallery *g,const char *dir,char *e,size_t n)
         unsigned long long id;int entry,marker;char name[TS_GALLERY_NAME*2];
         if(!gallery_line(f,line,sizeof(line)) || sscanf(line,"CANVAS %llu %d %d %95s %c",&id,&entry,&marker,name,&extra)!=4 ||
            !id || id>=next || entry<0 || entry>TS_GALLERY_MARKER || marker<0 || marker>=TS_MOSAIC_MARKERS)goto invalid;
-        for(int j=0;j<i;++j)if(g->canvas[j].id==id)goto invalid;
-        if(i && !ts_gallery_add(g,e,n)){fclose(f);return 0;}
-        TsMosaicCanvas *c=&g->canvas[i];c->id=id;c->entry=entry;c->marker=marker;
+        for(int j=0;j<i;++j)if(catalog.canvas[j].id==id)goto invalid;
+        TsMosaicCanvasInfo *c=&catalog.canvas[i];c->id=id;c->entry=entry;c->marker=marker;
         if(!gallery_name_decode(c->name,name))goto invalid;
     }
     if(!gallery_line(f,line,sizeof(line)) || strcmp(line,"END") || fgets(line,sizeof(line),f) || ferror(f))goto invalid;
-    fclose(f);g->active=active;g->next_id=next;g->fade_seconds=fade;
-    for(int i=0;i<count;++i) {
-        if(!gallery_path(path,sizeof(path),dir,count,i))return gallery_error(e,n,"Gallery path is too long");
-        if(!ts_mosaic_load(g->canvas[i].scene,path,e,n))return 0;
-    }
-    return 1;
+    fclose(f);catalog.count=count;catalog.active=active;catalog.next_id=next;catalog.fade_seconds=fade;catalog.present=1;*out=catalog;return 1;
 invalid:
     fclose(f);return gallery_error(e,n,"Malformed or unsupported Gallery manifest");
+}
+int ts_gallery_load(TsMosaicGallery *g,const char *dir,char *e,size_t n)
+{
+    if(!g || g->count!=1 || g->canvas[0].scene!=g->root)return gallery_error(e,n,"Gallery load requires fresh staging storage");
+    TsMosaicGalleryCatalog catalog;if(!ts_gallery_catalog(dir,&catalog,e,n))return 0;
+    if(!catalog.present)return ts_mosaic_load(g->root,dir,e,n);
+    for(int i=0;i<catalog.count;++i) {
+        if(i && !ts_gallery_add(g,e,n))return 0;
+        TsMosaicCanvas *c=&g->canvas[i];TsMosaicCanvasInfo *info=&catalog.canvas[i];
+        c->id=info->id;c->entry=info->entry;c->marker=info->marker;memcpy(c->name,info->name,TS_GALLERY_NAME);
+        char path[2048];if(!gallery_path(path,sizeof(path),dir,catalog.count,i))return gallery_error(e,n,"Gallery path is too long");
+        char file[2048];int wrote=snprintf(file,sizeof(file),"%s/mosaic.tsm",path);
+        if(wrote<0 || (size_t)wrote>=sizeof(file))return gallery_error(e,n,"Gallery path is too long");
+        FILE *check=fopen(file,"rb");if(!check)return gallery_error(e,n,"Canvas arrangement is missing or unreadable");fclose(check);
+        if(!ts_mosaic_load(c->scene,path,e,n))return 0;
+    }
+    g->active=catalog.active;g->next_id=catalog.next_id;g->fade_seconds=catalog.fade_seconds;return 1;
 }

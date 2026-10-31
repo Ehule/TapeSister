@@ -3,6 +3,7 @@
 #endif
 #include "tapesister/mosaic_gallery.h"
 #include "tapesister/sample_pages.h"
+#include "tapesister/pattern_card.h"
 #include <assert.h>
 #include <math.h>
 #include <stdio.h>
@@ -146,11 +147,66 @@ static void test_storage(void)
     ts_sample_pages_free(&pages);ts_mosaic_free(a);ts_instrument_free(&bank);ts_instrument_free(&record);
     free_gallery(loaded);free_gallery(legacy);
 }
+static void test_canvas_transfer(void)
+{
+    char error[256];TsSamplePages pages;TsInstrument bank,record;ts_instrument_init(&bank);ts_instrument_init(&record);
+    assert(ts_sample_pages_init(&pages,error,sizeof(error)));pages.mosaic=scene(.25f,0,0);
+    TsMosaic *root=pages.mosaic;
+    assert(ts_instrument_import_sample(&bank,&root->events[0].source->sample,0,0,0,TS_LOOP_FORWARD,error,sizeof(error)));
+    pages.tracker.source_id=ts_tile_id_new();TsPatternId pattern;
+    assert(ts_sister_tracker_add_pattern(&pages.tracker,16,&pattern,error,sizeof(error)));
+    uint8_t alias;TsTileId tile=bank.bank[0].tile_id;
+    assert(ts_sister_tracker_bind_tile(&pages.tracker,tile,&alias,error,sizeof(error)));
+    pages.tracker.patterns[0]->cells[0][0]=(TsTrackerCell){.tile_id=tile,.note_kind=TS_TRACKER_NOTE_PITCH,.note=60};
+    TsMosaicSource *pattern_source=ts_pattern_source(root,&pages,&bank,pattern,error,sizeof(error));assert(pattern_source);
+    assert(ts_mosaic_add(root,pattern_source,1,80));root->volume[30]=.4f;
+    root->markers[2]=(TsMosaicMarker){.stored=1,.time=2};root->live_envelope=0;
+    /* Pre-Gallery project, then the same legacy project reopened and saved
+       through the new build's full project path. Both must remain importable. */
+    assert(ts_sample_pages_save_project(&pages,&bank,&record,NULL,"Legacy/Legacy.tsr",error,sizeof(error)));
+    FILE *old=fopen("Legacy/project-data/mosaic.tsm","rb");assert(old);char old_header[64];assert(fgets(old_header,sizeof(old_header),old) && !strcmp(old_header,"TAPESISTER_MOSAIC 14\n"));fclose(old);
+    uint64_t hash=ts_mosaic_hash(root);TsMosaicGalleryCatalog catalog;
+    assert(ts_sample_pages_canvas_catalog("Legacy/Legacy.tsr",&catalog,error,sizeof(error)) && catalog.count==1 && !catalog.present);
+    assert(!strcmp(catalog.canvas[0].name,"Legacy"));TsMosaicCanvas legacy={0};
+    assert(ts_sample_pages_load_canvas("Legacy/Legacy.tsr",0,&legacy,error,sizeof(error)) && ts_mosaic_hash(legacy.scene)==hash);
+    assert(ts_sample_pages_load_project(&pages,&bank,&record,"Legacy/Legacy.tsr",error,sizeof(error)));
+    assert(pages.gallery && ts_gallery_rename(pages.gallery,0,"A Pale Weight",error,sizeof(error)));
+    assert(ts_sample_pages_save_project(&pages,&bank,&record,NULL,"Migrated/Migrated.tsr",error,sizeof(error)));
+    TsMosaicCanvas migrated={0};assert(ts_sample_pages_load_canvas("Migrated/Migrated.tsr",0,&migrated,error,sizeof(error)));
+    assert(!strcmp(migrated.name,"A Pale Weight") && ts_mosaic_hash(migrated.scene)==hash);
+    assert(ts_sample_pages_export_canvas(&migrated,"Portable/Portable.tsr",error,sizeof(error)));
+    assert(!ts_sample_pages_export_canvas(&migrated,"Migrated/Migrated.tsr",error,sizeof(error))); /* Never replace a whole project. */
+    assert(ts_sample_pages_canvas_catalog("Portable/Portable.tsr",&catalog,error,sizeof(error)) && catalog.count==1);
+    TsSampleProjectLoad *standalone=ts_sample_pages_prepare_project("Portable/Portable.tsr",1,error,sizeof(error));assert(standalone);
+    const TsSamplePages *exported=ts_sample_pages_prepared_pages(standalone);
+    assert(ts_mosaic_hash(exported->mosaic)==hash && !ts_instrument_bank_count(exported->pages[0]));ts_sample_pages_dispose_project(standalone);
+    /* Remove original locations: the exported bundle owns all used audio and
+       pattern assets. A moved copy can be loaded without either old project. */
+    assert(!rename("Legacy","Legacy-moved") && !rename("Migrated","Migrated-moved"));
+    assert(!rename("Portable","Portable-moved"));TsMosaicCanvas portable={0};
+    assert(ts_sample_pages_load_canvas("Portable-moved/Portable.tsr",0,&portable,error,sizeof(error)) && ts_mosaic_hash(portable.scene)==hash);
+    TsPatternCard *pc=portable.scene->events[1].source->pattern;assert(pc && pc->asset_count==1);
+    assert(pc->assets[0].audio->hash==root->events[1].source->pattern->assets[0].audio->hash);
+    assert(!ts_sample_pages_load_canvas("Portable-moved/Portable.tsr",1,&portable,error,sizeof(error)));
+    assert(ts_mosaic_hash(portable.scene)==hash); /* Failure leaves caller ownership alone. */
+    /* Catalog can inspect several canvases without loading their banks or the
+       other page's PCM. Only choosing a missing/corrupt page must fail. */
+    assert(ts_gallery_add(pages.gallery,error,sizeof(error)));
+    assert(ts_gallery_rename(pages.gallery,1,"Where Weight Dissolves",error,sizeof(error)));
+    assert(ts_sample_pages_save_project(&pages,&bank,&record,NULL,"Combined/Combined.tsr",error,sizeof(error)));
+    assert(!remove("Combined/project-data/canvas-002/mosaic.tsm"));
+    assert(!ts_sample_pages_prepare_project("Combined/Combined.tsr",1,error,sizeof(error)));
+    assert(ts_sample_pages_canvas_catalog("Combined/Combined.tsr",&catalog,error,sizeof(error)) && catalog.count==2);
+    TsMosaicCanvas selected={0};assert(ts_sample_pages_load_canvas("Combined/Combined.tsr",0,&selected,error,sizeof(error)) && ts_mosaic_hash(selected.scene)==hash);
+    assert(!ts_sample_pages_load_canvas("Combined/Combined.tsr",1,&selected,error,sizeof(error)) && ts_mosaic_hash(selected.scene)==hash);
+    ts_mosaic_free(selected.scene);ts_mosaic_free(portable.scene);ts_mosaic_free(migrated.scene);ts_mosaic_free(legacy.scene);
+    ts_sample_pages_free(&pages);ts_mosaic_free(root);ts_instrument_free(&bank);ts_instrument_free(&record);
+}
 int main(void)
 {
     char run[128];int created=0;
     for(int i=0;i<100 && !created;++i){snprintf(run,sizeof(run),"run-%lu-%d",(unsigned long)GALLERY_PID(),i);created=MKDIR(run)==0;}
     assert(created && !GALLERY_CHDIR(run));
-    test_fade();test_loop_resume();test_pages();test_storage();
+    test_fade();test_loop_resume();test_pages();test_storage();test_canvas_transfer();
     puts("Mosaic Gallery fades, routes, loop resume, entry points, identity and transactional project storage passed");return 0;
 }

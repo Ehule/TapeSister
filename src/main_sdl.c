@@ -4501,6 +4501,7 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
             audio->gallery=ui->mosaic_gallery=sample_pages->gallery;
             ui->mosaic=audio->mosaic=sample_pages->mosaic;
             ui->mosaic_gallery_open=ui->mosaic_gallery_rename=0;
+            ui->mosaic_canvas_import_count=ui->mosaic_canvas_import_pending=0;
             ui->mosaic_gallery_selected=audio->gallery?audio->gallery->active:0;
             previous_sequence_source = ts_keyboard_sequence_source(&audio->keyboard_sequence, NULL);
             ts_keyboard_sequence_set_bank(&audio->keyboard_sequence, &sister_state.keyboard_sequence);
@@ -7332,7 +7333,7 @@ static void ui_sync_dialog_workspaces(TsUiState *ui)
     if(ui_dialog_open(ui) && !ui->portal.open &&
        !ui->mosaic_gallery_open && !ui->mosaic_marker_open && !ui->mosaic_views_open && !ui->mosaic_scatter_open && !ui->mosaic_spacing_confirm && !ui->mosaic_loop_open && !ui->mosaic_align_open && !ui->mosaic_pattern_choice &&
        !ui->project_overwrite_confirm_open && ui->browser.mode!=TS_BROWSER_SAVE_RECIPE &&
-       ui->browser.mode!=TS_BROWSER_SAVE_XM &&
+       ui->browser.mode!=TS_BROWSER_SAVE_XM && ui->browser.mode!=TS_BROWSER_IMPORT_CANVAS && ui->browser.mode!=TS_BROWSER_EXPORT_CANVAS &&
        !(ui->file_busy && !strcmp(ui->file_busy_label,"SAVING")))ui->mosaic_open=0;
     if(ui_dialog_open(ui))ui->tracker_open=0;
 }
@@ -8943,13 +8944,13 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
         ts_browser_enter_selected_directory(browser);
         return;
     }
-    if (browser->mode == TS_BROWSER_LOAD_WAV) {
+    if (browser->mode == TS_BROWSER_LOAD_WAV || browser->mode == TS_BROWSER_IMPORT_CANVAS) {
         if (!ts_browser_selected_path(browser, path, sizeof(path))) {
             snprintf(browser->message, sizeof(browser->message),
                      "SELECT AUDIO, XM / MOD / IT, RAW, TSR, OR TSP");
             return;
         }
-        pending->selection_load =
+        pending->selection_load = browser->mode == TS_BROWSER_LOAD_WAV &&
             !bypass_preview && (browser->import_as_raw ||
             (!path_is_tsr(path) && !path_is_tsp(path) && !path_is_module(path))) &&
             instrument->current.data != NULL && instrument->has_selection &&
@@ -8959,7 +8960,7 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
             snprintf(browser->message, sizeof(browser->message), "ENTER A VALID FILENAME");
             return;
         }
-        if (browser->mode == TS_BROWSER_SAVE_RECIPE) {
+        if (browser->mode == TS_BROWSER_SAVE_RECIPE || browser->mode == TS_BROWSER_EXPORT_CANVAS) {
             char bundled[TS_BROWSER_PATH_MAX];
             char bundle_error[160];
             if (!ts_sample_pages_bundle_project_path(
@@ -8970,6 +8971,9 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
                 return;
             }
             snprintf(path, sizeof(path), "%s", bundled);
+        }
+        if (browser->mode == TS_BROWSER_EXPORT_CANVAS && ts_browser_path_exists(path)) {
+            snprintf(browser->message,sizeof(browser->message),"CHOOSE A NEW CANVAS BUNDLE NAME / EXISTING FILES ARE KEPT");return;
         }
         if (browser->mode == TS_BROWSER_EXPORT_BANK && ts_browser_path_exists(path)) {
             snprintf(browser->message, sizeof(browser->message),
@@ -8995,7 +8999,7 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     ui->file_busy = 1;
     ui->file_busy_phase = 2;
     snprintf(ui->file_busy_label, sizeof(ui->file_busy_label), "%s",
-             browser->mode == TS_BROWSER_LOAD_WAV ? "OPENING" :
+             (browser->mode == TS_BROWSER_LOAD_WAV || browser->mode == TS_BROWSER_IMPORT_CANVAS) ? "OPENING" :
              (browser->mode == TS_BROWSER_SAVE_RECIPE ||
               browser->mode == TS_BROWSER_SAVE_PRESET) ? "SAVING" : "EXPORTING");
     snprintf(browser->message, sizeof(browser->message), "%s - PLEASE WAIT",
@@ -9007,6 +9011,7 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
 static int offline_start(SDL_AudioDeviceID,AudioState *,TsUiState *,TsInstrument *,TsSamplePages *,TsInstrument *,int,const char *,int);
 
 #include "main_sdl_recovery.inc"
+#include "main_sdl_canvas_transfer.inc"
 
 static void run_pending_file_operation(SDL_AudioDeviceID device,
                                        AudioState *audio, TsUiState *ui,
@@ -9024,7 +9029,9 @@ static void run_pending_file_operation(SDL_AudioDeviceID device,
     if (pending == NULL || !pending->active) return;
     if (project_recovery_guard(ui,pending)) return;
     (void)pending_selection_load;
-    if (pending->mode == TS_BROWSER_LOAD_WAV &&
+    if(pending->mode==TS_BROWSER_IMPORT_CANVAS || pending->mode==TS_BROWSER_EXPORT_CANVAS) {
+        ok=mosaic_canvas_file_operation(device,audio,ui,sample_pages,pending,error,sizeof(error));
+    } else if (pending->mode == TS_BROWSER_LOAD_WAV &&
         (pending->force_raw || (!path_is_tsr(pending->path) && !path_is_tsp(pending->path) && !path_is_module(pending->path)))) {
         if (audio->capture.state == TS_CAPTURE_COMPLETED)
             finalize_capture(device, audio, ui, instrument);
@@ -14426,6 +14433,7 @@ int main(int argc, char **argv)
         runtime_note_collect_snapshots(device,&audio);
         poll_import_worker(device, &audio, &ui, &instrument,
                            &pending_selection_load, &import_controller);
+        mosaic_canvas_queue_import(&ui,&pending_file);
         if (pending_file.active && pending_file.presented)
             run_pending_file_operation(device, &audio, &ui, &instrument,
                                        &pending_selection_load, &import_controller,

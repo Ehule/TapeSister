@@ -87,11 +87,27 @@ static int mosaic_gallery_event(const SDL_Event *event,SDL_AudioDeviceID device,
         if(!ts_sample_pages_enable_gallery(c->pages,ui->status,sizeof(ui->status)))return 1;
         a->gallery=c->pages->gallery;
         ui->mosaic_gallery_open=1;ui->mosaic_gallery_selected=a->gallery->active;
-        ui->mosaic_gallery_rename=ui->mosaic_gallery_delete=0;
+        ui->mosaic_gallery_rename=ui->mosaic_gallery_delete=0;ui->mosaic_canvas_import_count=0;
         snprintf(ui->mosaic_gallery_status,sizeof(ui->mosaic_gallery_status),"SELECT A CANVAS / ENTRY SETTING / ENTER TO TURN THE PAGE");
         mosaic_gallery_snapshot(ui,a->gallery);return 1;
     }
     TsMosaicGallery *g=c->pages->gallery;if(!g){ui->mosaic_gallery_open=0;return 1;}
+    if(ui->mosaic_canvas_import_count) {
+        int *selected=&ui->mosaic_canvas_import_selected,count=ui->mosaic_canvas_import_count;
+        if((key && k==SDLK_ESCAPE) || (left && y>=319 && y<343 && x>=494 && x<598)) {
+            ui->mosaic_canvas_import_count=0;snprintf(ui->mosaic_gallery_status,sizeof(ui->mosaic_gallery_status),"CANVAS IMPORT CANCELLED");return 1;
+        }
+        if(key && !event->key.repeat && (k==SDLK_UP || k==SDLK_DOWN))*selected=(*selected+(k==SDLK_UP?-1:1)+count)%count;
+        if(left && y>=105 && y<265 && x>=126 && x<610){int index=(x>=370)*8+(y-105)/20;if(index<count)*selected=index;}
+        if((key && !event->key.repeat && (k==SDLK_RETURN || k==SDLK_KP_ENTER)) || (left && y>=319 && y<343 && x>=388 && x<482)) {
+            if(!mosaic_gallery_busy(a,ui,c)) {
+                if(g->count>=TS_GALLERY_LIMIT || ui->mosaic_gallery_fading)snprintf(ui->mosaic_gallery_status,sizeof(ui->mosaic_gallery_status),"GALLERY FULL OR CROSSFADING / TRY AGAIN AFTER THE FADE");
+                else {ui->mosaic_canvas_import_pending=1;ui->file_busy=1;snprintf(ui->file_busy_label,sizeof(ui->file_busy_label),"IMPORTING CANVAS");}
+            }
+        }
+        return event->type==SDL_KEYDOWN || event->type==SDL_KEYUP || event->type==SDL_TEXTINPUT || event->type==SDL_MOUSEWHEEL ||
+            event->type==SDL_MOUSEBUTTONDOWN || event->type==SDL_MOUSEBUTTONUP || event->type==SDL_MOUSEMOTION;
+    }
     if(key && k==SDLK_ESCAPE) {
         if(ui->mosaic_gallery_rename){ui->mosaic_gallery_rename=0;SDL_StopTextInput();}
         else ui->mosaic_gallery_open=0;
@@ -109,6 +125,20 @@ static int mosaic_gallery_event(const SDL_Event *event,SDL_AudioDeviceID device,
             if(ts_gallery_rename(g,selected,ui->mosaic_gallery_name,ui->mosaic_gallery_status,sizeof(ui->mosaic_gallery_status))) {
                 ui->mosaic_gallery_rename=0;SDL_StopTextInput();mosaic_gallery_snapshot(ui,g);
             }
+        }
+        return 1;
+    }
+    if(left && y>=79 && y<103 && x>=430 && x<598) {
+        if(mosaic_gallery_busy(a,ui,c))return 1;
+        int importing=x<508;
+        if(importing && g->count>=TS_GALLERY_LIMIT){snprintf(ui->mosaic_gallery_status,sizeof(ui->mosaic_gallery_status),"GALLERY LIMIT: 16 CANVASES");return 1;}
+        ui->mosaic_gallery_open=0;
+        browser_open(ui,importing?TS_BROWSER_IMPORT_CANVAS:TS_BROWSER_EXPORT_CANVAS);
+        if(!importing) {
+            char filename[64];size_t at=0;
+            for(const unsigned char *p=(const unsigned char *)g->canvas[selected].name;*p && at<47;++p)
+                filename[at++]=isalnum(*p) || *p==' ' || *p=='-' || *p=='_'?(char)*p:'_';
+            if(!at)filename[at++]='C';memcpy(filename+at,".tsr",5);ts_browser_set_filename(&ui->browser,filename);
         }
         return 1;
     }

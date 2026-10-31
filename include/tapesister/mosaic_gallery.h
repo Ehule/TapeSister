@@ -12,6 +12,17 @@ typedef struct {
     int parked,paused;
     double scroll,xscroll,scale,hscale;
 } TsMosaicCanvas;
+typedef struct {
+    uint64_t id;
+    char name[TS_GALLERY_NAME];
+    int entry,marker;
+} TsMosaicCanvasInfo;
+typedef struct TsMosaicGalleryCatalog {
+    TsMosaicCanvasInfo canvas[TS_GALLERY_LIMIT];
+    int count,active,present;
+    uint64_t next_id;
+    double fade_seconds;
+} TsMosaicGalleryCatalog;
 typedef struct TsMosaicGallery {
     TsMosaicCanvas canvas[TS_GALLERY_LIMIT];
     TsMosaic *root; /* Caller-owned original model; all other scenes are owned. */
@@ -39,6 +50,8 @@ uint64_t ts_gallery_hash(const TsMosaicGallery *);
 int ts_gallery_save(const TsMosaicGallery *,const char *,char *,size_t);
 /* Load only into a fresh staging gallery; live replacement is a project transaction. */
 int ts_gallery_load(TsMosaicGallery *,const char *,char *,size_t);
+/* Metadata only: no audio allocation or decoding. */
+int ts_gallery_catalog(const char *,TsMosaicGalleryCatalog *,char *,size_t);
 /* Map the two original model addresses after their contents have been swapped. */
 void ts_gallery_rebind_root(TsMosaicGallery *,TsMosaic *);
 #endif

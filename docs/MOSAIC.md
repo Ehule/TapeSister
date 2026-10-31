@@ -13,7 +13,9 @@ Sister Machine and output recorder.
 manually with an adjustable crossfade and destination entry at Start, Resume or a
 stored marker. **Ctrl+Page Up / Ctrl+Page Down** visits adjacent canvases. Each
 keeps its own cards, loops, envelope, markers and undo history; sound banks and
-effects are shared. See [Mosaic Gallery](MOSAIC_GALLERY.md).
+effects are shared. IMPORT adds a canvas from an existing TSR; EXPORT creates a
+portable single-canvas bundle. Legacy projects saved with the new build remain
+importable. See [Mosaic Gallery](MOSAIC_GALLERY.md).
 
 ## Playing and arranging
 

@@ -55,6 +55,42 @@ keyboard notes keep their existing audio until released; the destination's sourc
 KEYS selection starts cleared so subsequent notes use an explicit new selection.
 Sample/Record banks, TrackSister, ARP, effects and output controls remain shared.
 
+## Importing and exporting a canvas
+
+Use **IMPORT** in Gallery, choose a project's `.tsr`, then select a canvas and
+press **IMPORT**. This appends a new, inactive page; click ENTER when you want to
+turn to it. Importing does not replace the current picture or start new audio.
+The chooser reads names first and only decodes the chosen canvas's assets.
+
+Both pre-Gallery single-canvas bundles and projects opened and saved by the new
+build are supported. To combine older pieces such as *A Pale Weight* and *Where
+Weight Dissolves*:
+
+1. Open each legacy project in the new build and Save As into its own new named
+   bundle, retaining the originals.
+2. Open the Gallery project you want to assemble.
+3. IMPORT the saved TSR for the first piece and choose its canvas. Repeat for the
+   second piece, then save the combined Gallery.
+
+**EXPORT** writes the selected canvas as a portable single-canvas TSR bundle,
+which also opens as its own project. Choose a new name: existing bundle folders
+are protected from replacement. Copy or move the **whole named folder**, including
+`project-data`, rather than only its `.tsr` file.
+
+The bundle includes placed audio, editable EQ originals, immutable pattern scores
+and their sample assets, cards/loop settings, envelope, markers and saved views.
+It does not export unplaced bank sounds, arrangement undo, running loop phases or
+other canvases. A destination assigns a fresh canvas identity when importing.
+
+Global effects, routing-matrix configuration, ARP and the main TrackSister song
+remain part of the destination project. Per-card routes are retained, so inspect
+them if the two projects use different output/effects setups. Imported patterns
+keep their own sample snapshots rather than resolving by destination bank number.
+An imported piece can therefore sound different through another project's shared
+effects. These controls transfer the painting; REC FILE exports its finished sound.
+
+![Choose a canvas to import](images/mosaic-gallery-import.png)
+
 ## Saving and rendering
 
 Save/Open and New operate on the entire Gallery. Opening an older single-canvas
@@ -74,9 +110,17 @@ Built from main `4a4c846` after #170 merged. Linux Release application/core,
 system FFmpeg, CDP/video bundles and physical MIDI backend disabled. Large SDL
 controller harnesses used O0 with assertions; core/application remained Release.
 
-- All 23 checks in `.github/pr-regressions.txt` passed (95.84 seconds), including
+- All 23 checks in `.github/pr-regressions.txt` passed, including
   Gallery core/controller, existing Mosaic/loop, F11, clock, routing, tracker,
-  recording and transactional save regressions.
+  recording and transactional save regressions. The embedded tracker case
+  passed again in a fresh fixture after an earlier saved test bundle blocked
+  its first attempt to save.
+- Canvas transfer tests cover a pre-Gallery Mosaic v14 project, opening/saving
+  it through the new project loader, and importing both versions. They check
+  moved bundles without the original locations, audio/pattern assets, selection
+  from a multi-canvas project, missing-page rejection and protection of existing
+  export folders. The controller case uses actual Gallery/browser/pending-file
+  handlers and checks that banks, effects, active audio and project path survive.
 - The final focused Gallery/loop tests passed after adding CRLF metadata and
   fractional-size modal rendering checks. New-project/reopen and offline export
   integration tests also passed, including a non-root selected canvas.

@@ -1306,6 +1306,8 @@ const TsSamplePages *ts_sample_pages_prepared_pages(const TsSampleProjectLoad *l
     return load && !load->published ? &load->pages : NULL;
 }
 
+#include "ts_canvas_transfer.inc"
+
 TsSampleProjectLoad *ts_sample_pages_prepare_project(const char *path, int with_mosaic,
                                                      char *error, size_t error_size)
 {
