@@ -9,6 +9,8 @@ Video sound is always ignored.
 Drag a local video file or folder into Mosaic. Alternatively, right-click empty canvas space (or press **Ctrl+Shift+V**) and choose a file
 or folder. Folder selection
 uses the browser's current directory; enter the desired folder and confirm it.
+Video file/folder pickers stay above Mosaic. Choosing a source returns to its
+video-card settings; cancelling the picker leaves Mosaic available.
 The new blue card is placed at the drop location, or at the playhead when using
 the shortcut. Its leading time edge is the trigger; horizontal placement only organizes
 cards. Its small height is a visible footprint, not a limit on video playback.

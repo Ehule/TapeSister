@@ -5,11 +5,13 @@ static void test_mosaic_video_controller(SDL_Window *window)
     mosaic_sources_refresh(&ui,&instrument,&mosaic);mosaic_select_only(&ui,audio_id);
     key(window,SDLK_v,(SDL_Keymod)(KMOD_CTRL|KMOD_SHIFT));assert(ui.mosaic_video_open && ts_ui_foreground_panel_open(&ui));
     click(window,180,118,1);assert(ui.browser.mode==TS_BROWSER_MOSAIC_VIDEO);
+    ui_sync_dialog_workspaces(&ui);assert(ui.mosaic_open);
+    gallery_browser_visible(&ui,getenv("TS_TEST_VIDEO"),"video-file");
     snprintf(ui.browser.directory,sizeof(ui.browser.directory),"%s",TS_VIDEO_FIXTURE);
     char *slash=strrchr(ui.browser.directory,'/');assert(slash);*slash=0;assert(ts_browser_refresh(&ui.browser));
     int found=0;for(int i=0;i<ui.browser.entry_count;++i)if(!strcmp(ui.browser.entries[i].name,"mandala-video.mp4")){ts_browser_select(&ui.browser,i);found=1;break;}assert(found);
     PendingFileOperation pending={0};browser_action(0,&audio,&ui,&instrument,NULL,NULL,NULL,0,&pending,0);
-    assert(ui.browser.mode==TS_BROWSER_CLOSED && ui.mosaic_video_open);
+    assert(ui.browser.mode==TS_BROWSER_CLOSED && ui.mosaic_video_open && ui.mosaic_open);
     TsMosaicEvent *e=ts_mosaic_find(ui.mosaic,ui.mosaic_video_id);assert(e && e->source->video_path[0] && !e->source->sample.data);
     assert(ui.mosaic_selected==e->id && !mosaic_chosen(&ui,(int)(audio_card-ui.mosaic->events)));
     ts_mosaic_delete(ui.mosaic,audio_id);
@@ -36,5 +38,21 @@ static void test_mosaic_video_controller(SDL_Window *window)
     right.button.x=500;right.button.y=300;assert(dispatch(&right,window));
     assert(ui.mosaic_video_open && !ui.mosaic_video_id && ui.mosaic_video_time==234.0/24);click(window,450,315,1);
     assert(!mosaic_enter(0,&audio,&ui,&instrument,&mosaic,0));
-    puts("video canvas: file picker, right-click, settings, native render, range scatter, copies and undo PASS");
+    /* Folder picking and cancellation must also preserve the originating workspace. */
+    key(window,SDLK_v,(SDL_Keymod)(KMOD_CTRL|KMOD_SHIFT));click(window,400,118,1);
+    assert(ui.browser.mode==TS_BROWSER_MOSAIC_VIDEO_POOL);ui_sync_dialog_workspaces(&ui);assert(ui.mosaic_open);
+    gallery_browser_visible(&ui,getenv("TS_TEST_VIDEO"),"video-pool");
+    snprintf(ui.browser.directory,sizeof(ui.browser.directory),"%s",TS_VIDEO_FIXTURE);
+    slash=strrchr(ui.browser.directory,'/');assert(slash);*slash=0;assert(ts_browser_refresh(&ui.browser));
+    browser_action(0,&audio,&ui,&instrument,NULL,NULL,NULL,0,&pending,0);ui_sync_dialog_workspaces(&ui);
+    e=ts_mosaic_find(ui.mosaic,ui.mosaic_video_id);assert(e && e->source->video_pool && ui.mosaic_open && ui.mosaic_video_open);
+    click(window,450,315,1);assert(!ui.mosaic_video_open);
+    key(window,SDLK_v,(SDL_Keymod)(KMOD_CTRL|KMOD_SHIFT));click(window,180,118,1);
+    ui_sync_dialog_workspaces(&ui);assert(ui.mosaic_open);ts_browser_close(&ui.browser);ui_sync_dialog_workspaces(&ui);
+    assert(ui.mosaic_open && !ui_dialog_open(&ui));
+    /* The visualizer's older manual file picker keeps Mosaic visible too. */
+    browser_open(&ui,TS_BROWSER_LOAD_VIDEO);ui_sync_dialog_workspaces(&ui);assert(ui.mosaic_open);
+    gallery_browser_visible(&ui,getenv("TS_TEST_VIDEO"),"visualizer-video");ts_browser_close(&ui.browser);
+    ui_sync_dialog_workspaces(&ui);assert(ui.mosaic_open && !ui_dialog_open(&ui));
+    puts("video canvas: file picker, right-click, settings, native render, range scatter, copies, undo and picker workspace retention PASS");
 }

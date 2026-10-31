@@ -7333,7 +7333,8 @@ static void ui_sync_dialog_workspaces(TsUiState *ui)
     if(ui_dialog_open(ui) && !ui->portal.open &&
        !ui->mosaic_video_open && !ui->mosaic_gallery_open && !ui->mosaic_marker_open && !ui->mosaic_views_open && !ui->mosaic_scatter_open && !ui->mosaic_spacing_confirm && !ui->mosaic_loop_open && !ui->mosaic_align_open && !ui->mosaic_pattern_choice &&
        !ui->project_overwrite_confirm_open && ui->browser.mode!=TS_BROWSER_SAVE_RECIPE &&
-       ui->browser.mode!=TS_BROWSER_SAVE_XM && ui->browser.mode!=TS_BROWSER_IMPORT_CANVAS && ui->browser.mode!=TS_BROWSER_EXPORT_CANVAS &&
+       ui->browser.mode!=TS_BROWSER_LOAD_VIDEO && ui->browser.mode!=TS_BROWSER_MOSAIC_VIDEO &&
+       ui->browser.mode!=TS_BROWSER_MOSAIC_VIDEO_POOL && ui->browser.mode!=TS_BROWSER_SAVE_XM && ui->browser.mode!=TS_BROWSER_IMPORT_CANVAS && ui->browser.mode!=TS_BROWSER_EXPORT_CANVAS &&
        !(ui->file_busy && !strcmp(ui->file_busy_label,"SAVING")))ui->mosaic_open=0;
     if(ui_dialog_open(ui))ui->tracker_open=0;
 }
@@ -8893,7 +8894,7 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
         if(!e){snprintf(browser->message,sizeof(browser->message),"CANVAS IS FULL");return;}
         mosaic_select_only(ui,e->id);
         audio->sister.mandala.video_enabled=1;
-        ts_browser_close(browser);SDL_StopTextInput();ui->mosaic_video_open=1;
+        ts_browser_close(browser);SDL_StopTextInput();ui->mosaic_open=1;ui->tracker_open=0;ui->mosaic_video_open=1;
         snprintf(ui->status,sizeof(ui->status),"VIDEO TRIGGER ADDED / RIGHT-CLICK TO EDIT / CTRL+R TO SCATTER");return;
     }
     if (browser->mode==TS_BROWSER_LOAD_VIDEO) {
