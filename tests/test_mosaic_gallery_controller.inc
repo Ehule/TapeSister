@@ -4,6 +4,20 @@ static void gallery_pointer(SDL_Window *window,SDL_AudioDeviceID device,AudioSta
 static void gallery_key(SDL_Window *window,SDL_AudioDeviceID device,AudioState *a,ExternalInputState *s,
     TsUiState *u,MosaicController *c,SDL_Keycode key,SDL_Keymod mod)
 {live_performance_key(window,device,a,s,u,&instrument,c,key,1,mod);}
+/* The browser must actually be painted after a Gallery button opens it.
+   Compare its opaque dialog with the same browser over the ordinary canvas;
+   inspecting browser.mode alone misses an invisible, input-owning dialog. */
+static void gallery_browser_visible(TsUiState *u,const char *shot,const char *name)
+{
+    assert(u->mosaic_open && u->browser.mode!=TS_BROWSER_CLOSED);
+    TsFramebuffer *actual=malloc(sizeof(*actual)),*reference=malloc(sizeof(*reference));assert(actual && reference);
+    ts_ui_render(actual,u,&instrument);
+    u->mosaic_open=0;ts_ui_render(reference,u,&instrument);u->mosaic_open=1;
+    for(int y=34;y<376;++y)assert(!memcmp(actual->pixels+y*640+20,reference->pixels+y*640+20,600*sizeof(uint32_t)));
+    free(actual);free(reference);
+    assert(!main_waveform_detail_allowed(u));
+    if(shot){char path[1200];snprintf(path,sizeof(path),"%s-%s-browser.ppm",shot,name);live_controller_screenshot_size(u,path,1280,800);}
+}
 static void test_mosaic_gallery_controller(SDL_Window *window,SDL_AudioDeviceID device)
 {
     SDL_SetWindowSize(window,640,400);
@@ -109,7 +123,7 @@ static void test_mosaic_gallery_controller(SDL_Window *window,SDL_AudioDeviceID 
 #endif
     gallery_key(window,device,a,s,u,c,SDLK_g,KMOD_CTRL);
     gallery_pointer(window,device,a,s,u,c,550,90);assert(u->browser.mode==TS_BROWSER_EXPORT_CANVAS && !u->mosaic_gallery_open);
-    ui_sync_dialog_workspaces(u);assert(u->mosaic_open);
+    ui_sync_dialog_workspaces(u);assert(u->mosaic_open);gallery_browser_visible(u,shot,"export");
     snprintf(u->browser.directory,sizeof(u->browser.directory),"%s",directory);ts_browser_set_filename(&u->browser,"Room.tsr");
     PendingFileOperation pending={0};
     browser_action(device,a,u,&instrument,NULL,&pages,NULL,0,&pending,0);assert(pending.active && u->file_busy);
@@ -117,6 +131,7 @@ static void test_mosaic_gallery_controller(SDL_Window *window,SDL_AudioDeviceID 
     assert(!u->file_busy && u->mosaic_gallery_open && strstr(u->status,"EXPORTED CANVAS"));
     assert(a->mosaic==second && !strcmp(project_path,u->project_path));
     gallery_pointer(window,device,a,s,u,c,465,90);assert(u->browser.mode==TS_BROWSER_IMPORT_CANVAS);
+    ui_sync_dialog_workspaces(u);gallery_browser_visible(u,shot,"import");
     snprintf(u->browser.directory,sizeof(u->browser.directory),"%s/Room",directory);assert(ts_browser_refresh(&u->browser));
     int found=-1;for(int i=0;i<u->browser.entry_count;++i)if(!strcmp(u->browser.entries[i].name,"Room.tsr"))found=i;
     assert(found>=0);ts_browser_select(&u->browser,found);

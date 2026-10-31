@@ -3251,9 +3251,9 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     if(ui->mosaic_open && ui->mosaic) {
         render_group=TS_THEME_MOSAIC;mosaic_render(fb,ui,instrument);
         master_eq_render(fb,ui);router_render(fb,ui);main_midi_learn_overlay(fb,ui);
-        /* Project saving is modal, but keeps the arrangement underneath. */
+        /* Every active browser owns the foreground over Mosaic too. */
         render_group=TS_THEME_CANVAS;
-        if(ui->browser.mode==TS_BROWSER_SAVE_RECIPE || ui->browser.mode==TS_BROWSER_SAVE_XM)
+        if(ui->browser.mode!=TS_BROWSER_CLOSED)
             browser_render(fb,&ui->browser,ui->text_cursor_visible,ui->file_busy,0);
         if(ui->project_overwrite_confirm_open)project_overwrite_render(fb,ui);
         if(ui->file_busy && !strcmp(ui->file_busy_label,"SAVING"))project_saving_render(fb);

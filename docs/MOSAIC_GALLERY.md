@@ -62,6 +62,8 @@ press **IMPORT**. This appends a new, inactive page; click ENTER when you want t
 turn to it. Importing does not replace the current picture or start new audio.
 The chooser reads names first and only decodes the chosen canvas's assets.
 
+![Import file browser over Mosaic](images/mosaic-gallery-import-browser.png)
+
 Both pre-Gallery single-canvas bundles and projects opened and saved by the new
 build are supported. To combine older pieces such as *A Pale Weight* and *Where
 Weight Dissolves*:
@@ -76,6 +78,8 @@ Weight Dissolves*:
 which also opens as its own project. Choose a new name: existing bundle folders
 are protected from replacement. Copy or move the **whole named folder**, including
 `project-data`, rather than only its `.tsr` file.
+
+![Export file browser over Mosaic](images/mosaic-gallery-export-browser.png)
 
 The bundle includes placed audio, editable EQ originals, immutable pattern scores
 and their sample assets, cards/loop settings, envelope, markers and saved views.
@@ -130,6 +134,10 @@ controller harnesses used O0 with assertions; core/application remained Release.
 - Audio checks compare both renderers' weighted signal and routing taps sample by
   sample, verify a bit-identical single-canvas fast path, test retained loop
   phase, and read back the actual REC FILE WAV after several page turns.
+- Both Gallery file browsers are checked against the ordinary canvas browser
+  pixel for pixel after clicking their buttons. The regression failed with the
+  invisible-browser bug and passes with active browsers drawn above Mosaic.
+  General Mosaic, Gallery and live-loop controller checks passed (37.37 seconds).
 - Screenshots use production rendering with synthetic audio fixtures. No physical
   MIDI, Windows/ASIO, X220 capacity or subjective listening result is claimed.
 
