@@ -1,14 +1,14 @@
 static void cue_render_pump(Mandala *m,VisualShared *shared,unsigned ms)
 {
-    Uint64 start=SDL_GetTicks64();
-    do {m_video_poll(m,shared,0);m_scene(m,.02);SDL_Delay(5);}while(SDL_GetTicks64()-start<ms);
+    Uint64 start=SDL_GetTicks64(),previous=start;
+    do {Uint64 now=SDL_GetTicks64();m_video_poll(m,shared,0);m_scene(m,(now-previous)/1000.0);previous=now;SDL_Delay(5);}while(SDL_GetTicks64()-start<ms);
 }
 static void video_cue_render_checks(void)
 {
     TsMandalaConfig config;ts_mandala_default(&config);config.geometry_enabled=0;config.video_enabled=1;
     Mandala *m=calloc(1,sizeof(*m));assert(m && m_init(m,&config,0));
     VisualShared shared;TsMandalaPreferences prefs={0};shared_init(&shared,&prefs);
-    TsVisualCue cue={.serial=1,.random_start=1,.transition=1,.fade=.5,.monochrome=1};
+    TsVisualCue cue={.serial=1,.random_start=1,.transition=0,.fade=.5,.monochrome=1};
     snprintf(cue.path,sizeof(cue.path),"%s",TS_VIDEO_FIXTURE);m_cue_request(m,&cue);
     cue_render_pump(m,&shared,350);assert(m->video_texture && m->video_status.state!=TS_VIDEO_ERROR);
     /* Clean video ignores mandala blend/zoom and contains only grayscale ink. */
@@ -16,7 +16,7 @@ static void video_cue_render_checks(void)
     uint32_t *pixels=malloc((size_t)m->width*m->height*4);assert(pixels);
     SDL_SetRenderTarget(m->renderer,m->history);assert(!SDL_RenderReadPixels(m->renderer,NULL,SDL_PIXELFORMAT_ARGB8888,pixels,m->width*4));SDL_SetRenderTarget(m->renderer,NULL);
     unsigned nonblack=0;for(int i=0;i<m->width*m->height;++i){uint32_t p=pixels[i];assert(((p>>16)&255)==((p>>8)&255) && ((p>>8)&255)==(p&255));nonblack+=(p&0xffffff)!=0;}assert(nonblack>100);free(pixels);
-    ++cue.serial;cue.random_start=0;m_cue_request(m,&cue);cue_render_pump(m,&shared,130);
+    ++cue.serial;cue.random_start=0;cue.transition=1;m_cue_request(m,&cue);cue_render_pump(m,&shared,130);
     assert(m->cue_fading && m->old_video && m->video_texture);
     ++cue.serial;m_cue_request(m,&cue);assert(m->cue_snapshot && !m->old_video);
     cue_render_pump(m,&shared,650);assert(!m->cue_fading && !m->cue_snapshot && !m->old_video);
