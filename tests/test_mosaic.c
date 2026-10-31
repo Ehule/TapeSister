@@ -349,6 +349,7 @@ static void test_project_transaction(int live)
     remove("mosaic-project-test/samples/page-001/01_PHASE-BLOOM.wav");
     RMDIR("mosaic-project-test/samples/page-001");RMDIR("mosaic-project-test/samples");
     remove("mosaic-project-test/project-data/sister-tracker.tst");
+    remove("mosaic-project-test/project-data/gallery.tsg");
     RMDIR("mosaic-project-test/project-data");RMDIR("mosaic-project-test");
 }
 #include "test_mosaic_volume.inc"
@@ -386,8 +387,10 @@ static void test_source_preview_lifetime(void)
 #include "test_mosaic_sequence.inc"
 #include "test_mosaic_live_pause.inc"
 
+#include "test_mosaic_video.inc"
 int main(void)
 {
+    test_mosaic_video();if(getenv("TS_VIDEO_ONLY"))return 0;
     test_mosaic_live_envelope();test_mosaic_live_pause();test_mosaic_live_pause_routes();test_mosaic_reset_rearm();
     test_mosaic_live();test_mosaic_live_storage();test_mosaic_live_mix();
     test_mosaic_sequence();test_mosaic_finish();test_mosaic_sequence_storage();

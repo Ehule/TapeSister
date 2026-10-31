@@ -584,6 +584,15 @@ typedef struct {
     uint64_t mosaic_selection[TS_MOSAIC_EVENTS];
     uint64_t mosaic_selection_order[TS_MOSAIC_EVENTS], mosaic_selection_serial;
     int mosaic_open, mosaic_playing, mosaic_recording;
+    struct TsMosaicGallery *mosaic_gallery; /* Non-owning transport registry. */
+    int mosaic_gallery_open,mosaic_gallery_selected,mosaic_gallery_rename,mosaic_gallery_delete;
+    int mosaic_gallery_count,mosaic_gallery_active,mosaic_gallery_fading;
+    double mosaic_gallery_fade,mosaic_gallery_progress;
+    char mosaic_gallery_names[16][48],mosaic_gallery_name[48];
+    int mosaic_gallery_entry[16],mosaic_gallery_marker[16],mosaic_gallery_marker_valid[16];
+    char mosaic_gallery_status[160];
+    int mosaic_canvas_import_count,mosaic_canvas_import_selected,mosaic_canvas_import_pending;
+    char mosaic_canvas_import_path[1024],mosaic_canvas_import_names[16][48];
     int mosaic_live_open, mosaic_live_advanced, mosaic_live_keys;
     int mosaic_source_keys, mosaic_source_key_count; /* Explicit Mosaic QWERTY/MIDI owner. */
     int mosaic_live_drag, mosaic_live_grab_x, mosaic_live_grab_y, mosaic_live_play_all;
@@ -612,6 +621,8 @@ typedef struct {
     TsMosaicRange mosaic_loop_preview;
     char mosaic_loop_text[2][32], mosaic_loop_status[80];
     int mosaic_align_open;
+    int mosaic_video_open;uint64_t mosaic_video_id,mosaic_video_epoch;
+    double mosaic_video_time,mosaic_video_x;
     int mosaic_spacing_confirm, mosaic_scatter_open, mosaic_scatter_copies;
     int mosaic_scatter_cluster, mosaic_scatter_overlap, mosaic_scatter_count, mosaic_scatter_valid;
     int mosaic_scatter_field;
@@ -633,6 +644,12 @@ typedef struct {
     uint8_t mosaic_pattern_pending[TS_MOSAIC_EVENTS];
     int mosaic_follow, mosaic_box, mosaic_box_x, mosaic_box_y, mosaic_box_end_x, mosaic_box_end_y;
     int mosaic_ghost_count;
+    int mosaic_grab; /* Staged transform: 1 G move, 2 S duration scale. */
+    double mosaic_grab_x, mosaic_grab_time;
+    int mosaic_scale_anchor; /* 0 top, 1 bottom, 2 center, independently per card. */
+    double mosaic_scale_delta;
+    uint64_t mosaic_resize_event;
+    int mosaic_resize_part; /* Visible duration grip: 1 top edge, 2 bottom edge. */
     TsMosaicEvent mosaic_ghosts[TS_MOSAIC_EVENTS];
     struct {
         const TsSample *sample;
@@ -936,6 +953,7 @@ enum {
     TS_MOSAIC_SOURCE_PAGE_Y = 342,
     TS_MOSAIC_SOURCE_KEYS_X = 64, TS_MOSAIC_SOURCE_KEYS_Y = 53,
     TS_MOSAIC_CANVAS_BOTTOM = 358, TS_MOSAIC_CANVAS_HEIGHT = 292,
+    TS_MOSAIC_CARD_MIN_PIXELS = 2, TS_MOSAIC_CARD_HIT_PIXELS = 8,
     TS_MOSAIC_MARKER_Y = 362, TS_MOSAIC_MARKER_X = 118, TS_MOSAIC_MARKER_STEP = 32,
     TS_MOSAIC_ENV_X = 568, TS_MOSAIC_ENV_RIGHT = 630,
     TS_MOSAIC_ENV_TOP = 86, TS_MOSAIC_ENV_BOTTOM = 335,
@@ -957,6 +975,10 @@ int ts_ui_mosaic_fade_handle(const TsUiState *ui, const TsMosaicEvent *event,
                             int part, double *x, double *y);
 int ts_ui_mosaic_pan_handle(const TsUiState *ui, const TsMosaicEvent *event,
                            double *x, double *y, double *span);
+int ts_ui_mosaic_resize_handle(const TsUiState *,const TsMosaicEvent *,int part,
+                               double *x,double *y,double *radius);
+/* Shared geometry for both renderers and the staged transform controller. */
+void ts_ui_mosaic_transform_event(const TsUiState *,const TsMosaicEvent *,TsMosaicEvent *);
 double ts_ui_mosaic_volume_y(const TsUiState *ui, double time);
 double ts_ui_mosaic_volume_time(const TsUiState *ui, double y);
 void ts_ui_render_mosaic_choice(TsFramebuffer *fb, const TsUiState *ui);

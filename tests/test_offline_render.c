@@ -153,7 +153,19 @@ int main(int argc,char **argv)
     offline_join(path,sizeof(path),root,"automation.wav");TsSample sweep;ts_sample_init(&sweep);assert(ts_sample_load_wav(&sweep,path,error,sizeof(error)));
     double early=0,late_eq=0;for(int i=4800*2;i<9600*2;++i)early+=fabs(sweep.data[i]);
     for(int i=60000*2;i<64800*2;++i)late_eq+=fabs(sweep.data[i]);assert(early>1 && late_eq<early*.05);ts_sample_free(&sweep);
+    /* Offline export uses the selected Gallery canvas, never the parked root. */
+    assert(ts_sample_pages_enable_gallery(&pages,error,sizeof(error)));
+    assert(ts_gallery_add(pages.gallery,error,sizeof(error)));
+    pages.gallery->active=1;live.gallery=pages.gallery;live.mosaic=view.mosaic=pages.mosaic=ts_gallery_active(pages.gallery);
+    TsMosaicSource *gallery_source=ts_mosaic_source(live.mosaic,&bank.current,error,sizeof(error));assert(gallery_source);
+    TsMosaicEvent *gallery_card=ts_mosaic_add(live.mosaic,gallery_source,0,0);assert(gallery_card);gallery_card->duration=2;gallery_card->looping=1;gallery_card->muted=1;
+    strcpy(offline_ui.duration,"0.1");strcpy(offline_ui.tail,"0");
+    start("gallery-empty.wav",4,24);wait_render(2);offline_join(path,sizeof(path),root,"gallery-empty.wav");
+    assert(energy(path,4800,24)==0);
+    gallery_card->muted=0;
+    start("gallery-active.wav",4,24);wait_render(2);offline_join(path,sizeof(path),root,"gallery-active.wav");
+    assert(energy(path,4800,24)>1);
     offline_close();performance_close();ts_tapehead_close();ts_sister_runtime_free(&live.sister);
-    ts_mosaic_free(live.mosaic);pages.mosaic=NULL;ts_sample_pages_free(&pages);ts_instrument_free(&bank);ts_instrument_free(&record);
+    ts_mosaic_free(ts_sample_pages_mosaic_root(&pages));pages.mosaic=NULL;ts_sample_pages_free(&pages);ts_instrument_free(&bank);ts_instrument_free(&record);
     SDL_DestroyWindow(window);SDL_Quit();puts("Offline render integration passed");return 0;
 }

@@ -129,6 +129,9 @@ static void mosaic_drag_end(TsUiState *ui,MosaicController *c)
         --c->source_drag.source->pins;
     c->source_group=c->source_toggle=0;c->shift_toggle=0;
     c->source_drag=(TsMosaicEvent){0};c->drag=0;c->drag_moved=0;c->drag_copy=0;c->drag_scroll_ms=0;c->drag_event=0;
+    ui->mosaic_grab=0;ui->mosaic_grab_x=ui->mosaic_grab_time=0;
+    ui->mosaic_scale_anchor=0;ui->mosaic_scale_delta=0;
+    ui->mosaic_resize_event=0;ui->mosaic_resize_part=0;
     ui->mosaic_ghost_count=ui->mosaic_box=0;c->volume_drag=0;
     c->card_mix_event=ui->mosaic_card_mix_event=0;ui->mosaic_card_mix_part=0;
     c->pan_active=c->pan_moved=ui->mosaic_loop_drag=ui->mosaic_marker_drag=0;
@@ -189,7 +192,7 @@ static void mosaic_sources_refresh(TsUiState *ui,const TsInstrument *instrument,
        bounded table instead of searching the growing browser for every card. */
     int source_index[TS_MOSAIC_EVENTS*2]={0};
     for(int i=0;i<TS_MOSAIC_EVENTS;++i) {
-        TsMosaicEvent *e=&ui->mosaic->events[i];if(!e->id)continue;
+        TsMosaicEvent *e=&ui->mosaic->events[i];if(!e->id || e->source->video_path[0])continue;
         size_t hash=((uintptr_t)e->source>>4)%(TS_MOSAIC_EVENTS*2);
         while(source_index[hash] && ui->mosaic_sources[source_index[hash]-1].source!=e->source)
             hash=(hash+1)%(TS_MOSAIC_EVENTS*2);
@@ -543,6 +546,7 @@ static int mosaic_enter(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui
                            TsInstrument *instrument,MosaicController *c,uint64_t id)
 {
     TsMosaicEvent *e=ts_mosaic_find(ui->mosaic,id);if(!e)return 0;
+    if(e->source->video_path[0]){ui->mosaic_video_id=e->id;ui->mosaic_video_epoch=ui->mosaic->epoch;ui->mosaic_video_open=1;return 1;}
     if(e->source->pattern){
         mosaic_drag_end(ui,c);if(mosaic_pattern_editor(device,ui,c,e->source->pattern))c->pattern_owner=id;
         return 1;

@@ -21,6 +21,7 @@ For explanations and complete workflows, see the [User Manual](USER_MANUAL.md).
 | `2` | Show performance keyboard |
 | `3` | Show CDP; press again to cycle CDP pages |
 | `Ctrl+Shift+P` | Reach CDP Portal from main, FM, Mosaic, or Sister |
+| `Ctrl+Shift+O` | Main/LOAD: import an audio folder into empty unlocked Sample tiles, adding pages as needed |
 | `4` | Show native DSP; press again to cycle DSP pages |
 | `F1`–`F8` | Select keyboard octave |
 | `F10` | Open/close the [SisterTracker pattern editor](SISTERTRACKER_PLAYBACK.md); playback continues when closed |
@@ -56,6 +57,11 @@ project save/open. Track routing lives in F9, and F12 opens Audio Health.
 See the [complete editing reference](SISTERTRACKER_PLAYBACK.md).
 
 ## Mosaic
+
+**GALLERY / Ctrl+G** manages named canvases. **Ctrl+Page Up/Down** turns pages
+with the chosen Start/Resume/At Marker entry and 0–30 s crossfade.
+Gallery **IMPORT / EXPORT** transfers canvases with their audio/pattern assets
+using TSR bundles. See [Mosaic Gallery](MOSAIC_GALLERY.md).
 
 **Ctrl+S / SAVE** opens the save dialog over Mosaic and preserves the working view.
 If an interrupted save left recovery folders, the recovery dialog offers Cancel,
@@ -104,6 +110,7 @@ does not switch the main bank. See the [Mosaic chapter](USER_MANUAL.md#mosaic).
 | Add a selection box | Shift+left-drag on empty canvas; keeps the primary |
 | Move group / copy group | Drag a selected tile / hold Shift when starting that drag; repeat to copy again |
 | Extend duration / change visual width | Drag top or bottom / right edge |
+| Scale duration without grabbing an edge | S; then T top (default), B bottom, C center; click/Enter confirms, Escape/right-click cancels |
 | Resize selected cards together | Drag a selected card's top/bottom edge; preserves length differences |
 | Match selected card lengths while resizing | Hold Alt; the grabbed card is the parent; release Alt for relative resizing |
 | Optional start, end, midpoint alignment | Alt during move or single-card duration resize |
@@ -113,8 +120,8 @@ does not switch the main bank. See the [Mosaic chapter](USER_MANUAL.md#mosaic).
 | Loop a cue to the next marker / release without seeking | Bottom LOOP; L or REPEAT also releases an active cue loop |
 | Assign MIDI notes/CC buttons to cues or LOOP | Ctrl+Shift+M; click control, press hardware, then leave Learn |
 | Open saved canvas views | VIEWS; Escape closes |
-| Mute / solo selected events | M / S; excluded cards say SOLO OUT |
-| Mute / solo all cards sharing selected sources | Shift+M / Shift+S |
+| Mute / solo selected events | M / Alt+S; excluded cards say SOLO OUT |
+| Mute / solo all cards sharing selected sources | Shift+M / Alt+Shift+S |
 | Clear all solos, including offscreen cards | CLEAR SOLO in footer |
 | Selection level / pan / fade-in / fade-out | LEVEL / PAN / IN / OUT in footer |
 | Visual fade on one card | Drag its top IN handle down / bottom OUT handle up |
@@ -945,3 +952,8 @@ See [Video through the mandala](MANDALA_VIDEO.md).
 Save records the Canvas/Mosaic/TrackSister view, including Mosaic scroll, zoom,
 card selection and paused playhead position. See [PROJECT_SAVE_STATE.md](PROJECT_SAVE_STATE.md)
 for older flat-TSR migration and save/open verification.
+
+Mosaic **Ctrl+Shift+V** or right-clicking empty canvas space places a video change object. Drop a file/folder, right-click to
+choose random starts and cuts/dissolves, and Ctrl+R to scatter copies. In the
+visualizer VIDEO tab, **MANDALA OFF** shows clean footage. See
+[Mosaic video](MOSAIC_VIDEO.md).

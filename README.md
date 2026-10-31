@@ -52,6 +52,11 @@ raw sample data with live controls for encoding, byte order, channels, sample ra
 offset, and normalization. That makes arbitrary bytes available as sound material and
 lets the same source be auditioned through several interpretations before import.
 
+**LOAD → IMPORT FOLDER** (or `Ctrl+Shift+O`) imports a folder of WAV, FLAC,
+MP3 and Ogg sounds into empty unlocked tiles, adding Sample pages as needed.
+Each file becomes one tile; existing sounds stay in place. Decoding runs in the
+background and Escape cancels before any tiles are added.
+
 ### Create and Variation
 
 Left-click CREATE to render a fresh deterministic six-voice FM sound. Right-click
@@ -98,6 +103,10 @@ Each event has its own loop/one-shot setting and up to five pitched notes with
 independent playback speeds. A chord can turn one fragment into an evolving texture
 as its different loop lengths move in and out of alignment.
 
+**GALLERY** holds up to 16 named canvases in one project. Turn pages manually
+with an adjustable crossfade and Start, Resume or At Marker entry.
+See [Mosaic Gallery](docs/MOSAIC_GALLERY.md).
+
 ![Mosaic's free canvas with independent pitched events](docs/images/mosaic.png)
 
 Double-click an event to use the familiar waveform editor; existing keyboard
@@ -131,7 +140,10 @@ keeping their positions and pitches. AUTO-SPACE optionally separates
 intersecting cards horizontally; new arrangements default to free placement.
 
 Shift-drag a box to select a group; drag to move it or Shift-drag a selected tile to
-copy the group. M / S mutes or solos selected cards; Shift+M / Shift+S affects all
+copy the group. **S** scales selected card durations: **T** anchors each top
+(default), **B** each bottom, and **C** each center. Click/Enter confirms;
+Escape/right-click cancels. Cyan edge grips also expose mouse resizing.
+M / Alt+S mutes or solos selected cards; Shift+M / Alt+Shift+S affects all
 cards sharing those sources. **Alt+M** places one of 16 timeline markers; the bottom
 numbered buttons jump immediately without changing play/pause. Drag ruler flags
 to move them and right-click to name, retime, or delete. **VIEWS** retains the

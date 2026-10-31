@@ -17,6 +17,13 @@ int ts_mandala_active(void);
 int ts_mandala_frozen(void);
 void ts_mandala_freeze(void);
 void ts_mandala_close(void);
+typedef struct {
+    uint64_t serial;
+    char path[1024];
+    int pool, random_start, transition, monochrome;
+    double fade;
+} TsVisualCue;
+void ts_mandala_video_cue(const TsVisualCue *cue);
 void ts_mandala_video_pause(void);
 void ts_mandala_video_restart(void);
 int ts_mandala_video_paused(void);

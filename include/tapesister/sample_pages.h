@@ -2,12 +2,14 @@
 #define TAPESISTER_SAMPLE_PAGES_H
 
 #include "tapesister/sample.h"
+#include "tapesister/mosaic_gallery.h"
 #include "tapesister/sister_project_state.h"
 #include "tapesister/sister_tracker.h"
 
 #include <stddef.h>
 
 struct TsMosaic;
+struct TsMosaicGallery;
 typedef struct TsSamplePages {
     TsInstrument **pages;
     size_t page_count;
@@ -16,6 +18,7 @@ typedef struct TsSamplePages {
     int active_live;
     const TsInstrument *mosaic_bank; /* Parked bank while the main view edits an event. */
     struct TsMosaic *mosaic; /* Non-owning, optional arrangement in this project. */
+    struct TsMosaicGallery *gallery; /* Owned registry; original Mosaic remains caller-owned. */
     TsSisterTracker tracker; /* Owned definitions; never starts playback on load. */
 } TsSamplePages;
 
@@ -35,6 +38,13 @@ int ts_sample_pages_move_tile(TsSamplePages *pages, TsInstrument *active,
 int ts_sample_pages_init(TsSamplePages *pages,
                          char *error, size_t error_size);
 void ts_sample_pages_free(TsSamplePages *pages);
+int ts_sample_pages_enable_gallery(TsSamplePages *,char *,size_t);
+struct TsMosaic *ts_sample_pages_mosaic_root(const TsSamplePages *);
+/* Portable single-canvas TSR bundles; shared project state is never imported.
+   load_canvas returns a newly owned scene; failure leaves out untouched. */
+int ts_sample_pages_canvas_catalog(const char *,TsMosaicGalleryCatalog *,char *,size_t);
+int ts_sample_pages_load_canvas(const char *,int,TsMosaicCanvas *,char *,size_t);
+int ts_sample_pages_export_canvas(const TsMosaicCanvas *,const char *,char *,size_t);
 size_t ts_sample_pages_count(const TsSamplePages *pages);
 size_t ts_sample_pages_active(const TsSamplePages *pages);
 const TsInstrument *ts_sample_pages_page(const TsSamplePages *pages,

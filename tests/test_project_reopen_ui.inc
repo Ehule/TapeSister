@@ -86,7 +86,7 @@ static void project_reopen_controls(SDL_Window *window)
     SDL_Event key={.type=SDL_KEYDOWN};key.key.windowID=SDL_GetWindowID(window);
     mosaic_select_only(&ui,ui.mosaic->events[0].id);key.key.keysym.sym=SDLK_m;
     assert(mosaic_event(&key,window,0,&audio,&ui,&bank,&mosaic,&portal,&sister,&transform,48000));
-    mosaic_select_only(&ui,ui.mosaic->events[1].id);key.key.keysym.sym=SDLK_s;
+    mosaic_select_only(&ui,ui.mosaic->events[1].id);key.key.keysym.sym=SDLK_s;key.key.keysym.mod=KMOD_ALT;
     assert(mosaic_event(&key,window,0,&audio,&ui,&bank,&mosaic,&portal,&sister,&transform,48000));
     assert(ui.mosaic->events[0].muted && ui.mosaic->events[1].solo);
     TsMosaicEvent *card=&ui.mosaic->events[2];

@@ -5,7 +5,7 @@
 static int mosaic_pending_before(const TsMosaic *m,int a,int b)
 {
     double x=m->events[a].start,y=m->events[b].start;
-    return x<y || (x==y && a<b);
+    return x<y || (x==y && m->events[a].id<m->events[b].id);
 }
 static void mosaic_pending_down(TsMosaic *m,int at)
 {
@@ -24,7 +24,13 @@ static void mosaic_schedule_prepare(TsMosaic *m)
     for(int i=0;i<TS_MOSAIC_EVENTS;++i) {
         const TsMosaicEvent *e=&m->events[i];
         if(e->id) {
-            double end=e->start+e->duration;s->end=fmax(s->end,end);s->any_solo|=e->solo;
+            double end=e->start+e->duration;s->end=fmax(s->end,end);
+            if(e->source->video_path[0]) {
+                m->voices[i].active=0;
+                if(e->start>m->video_trigger_floor+1e-10 && !e->muted)s->pending[s->pending_count++]=i;
+                continue;
+            }
+            s->any_solo|=e->solo;
             if(e->live) {
                 if(m->live[i].id==e->id && m->live[i].state)s->live[s->live_count++]=i;
                 if(e->start>m->live_trigger_floor+1e-10)s->pending[s->pending_count++]=i;
@@ -48,6 +54,9 @@ static void mosaic_schedule_start(TsMosaic *m)
         int slot=s->pending[0];s->pending[0]=s->pending[--s->pending_count];
         if(s->pending_count)mosaic_pending_down(m,0);
         const TsMosaicEvent *e=&m->events[slot];
+        if(e->source->video_path[0]) {
+            m->video_id=e->id;++m->video_serial;continue;
+        }
         if(e->live) {
             (void)ts_mosaic_live_launch(m,e->id,0);continue;
         }

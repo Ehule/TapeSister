@@ -7,6 +7,16 @@ Sister Machine and output recorder.
 
 ![Mosaic in the native renderer](images/mosaic.png)
 
+## Multiple canvases
+
+**GALLERY / Ctrl+G** opens up to 16 named canvases in one project. Turn pages
+manually with an adjustable crossfade and destination entry at Start, Resume or a
+stored marker. **Ctrl+Page Up / Ctrl+Page Down** visits adjacent canvases. Each
+keeps its own cards, loops, envelope, markers and undo history; sound banks and
+effects are shared. IMPORT adds a canvas from an existing TSR; EXPORT creates a
+portable single-canvas bundle. Legacy projects saved with the new build remain
+importable. See [Mosaic Gallery](MOSAIC_GALLERY.md).
+
 ## Playing and arranging
 
 Open **MOSAIC** in the main toolbar, or press **grave** (the backtick
@@ -64,14 +74,17 @@ the EVENTS pages. Shared originals and the original Sample banks remain availabl
 | Pan one card | Drag the diamond on its pan line left/right; right-click centers |
 | Align starts, ends or midpoints | Hold Alt while moving or extending |
 | Edit the event | Double-click |
-| Box-select a group | Shift+left-drag on empty canvas |
-| Move a selected group | Drag any selected event body |
+| Box-select a group | Left-drag on empty canvas; Shift adds to the selection |
+| Move a selected card or group | Drag a selected body, or press G and move the mouse |
+| Confirm / cancel G grab | Left click or Enter / Escape or right click |
+| Scale selected card durations | S, then move the mouse; T top / B bottom / C center |
+| Confirm / cancel S scale | Left click or Enter / Escape or right click |
 | Copy an event or selected group | Hold Shift when starting a drag on a tile |
 | Cancel a move / copy drag | Escape |
 | Add a timeline marker at the playhead | Alt+M |
 | Mute / unmute selected events | M |
-| Solo / unsolo selected events | S |
-| Mute / solo every instance sharing the selected sources | Shift+M / Shift+S |
+| Solo / unsolo selected events | Alt+S |
+| Mute / solo every instance sharing the selected sources | Shift+M / Alt+Shift+S |
 | Clear every solo, including offscreen events | CLEAR SOLO in footer |
 | Set selection level, pan and fades | LEVEL / PAN / IN / OUT in footer |
 | Global tape speed, 0.5×–2× | SPEED slider above canvas |
@@ -105,7 +118,47 @@ The **first selected card is the primary**: its border uses the selection color
 card; Shift-clicking an already selected card removes it. Removing the primary
 promotes the earliest remaining selection. Clicking or dragging a selected member
 keeps the primary; clicking an unselected card without Shift starts a new selection.
-Shift-dragging an empty area adds a selection box while retaining the primary.
+Dragging an empty area draws a selection box. Hold Shift to add to the existing
+selection while retaining its primary. After selecting one card or a group, press
+**G** to grab it from the current mouse position without holding a mouse button
+or the G key. The selected cards follow the mouse until confirmed or cancelled.
+Left click or Enter confirms; Escape or right click cancels. Alt snaps the
+preview using the same alignment rules as ordinary dragging. The preview leaves
+playback and the document unchanged until confirmation, which makes one undo
+step. Cancellation, focus loss and leaving Mosaic discard the preview. When
+AUDIO KEYS or looper QWERTY is enabled, G keeps its note-key role; return to
+editing shortcuts to grab cards.
+
+**S** starts a duration-scale preview for one card or a selection, including cards
+too small to resize with the mouse. Release S, then move the mouse vertically.
+Each selected card receives the same duration change around its own anchor:
+
+| Key after S | Fixed point on each card | Mouse direction to grow |
+| --- | --- | --- |
+| **T** (default) | Top / start | Down |
+| **B** | Bottom / end | Up |
+| **C** | Center | Down; both edges move apart |
+
+Switch T/B/C during the preview without accumulating changes. Bottom and center
+growth stop independently when each card reaches the canvas's time-zero boundary;
+other cards can continue growing. Left-click or Enter commits one Undo step;
+Escape, right-click, focus loss or leaving Mosaic cancels. Existing source audio,
+notes, pitch, mix and playing voices are retained. AUTO-SPACE can move the group
+horizontally as a unit to accommodate the new durations. Audio Keys and looper
+QWERTY keep their note-key role when enabled.
+
+Short cyan bars near each card's top and bottom mark its duration resize grips.
+Hover highlights the active grip; dragging it uses the ordinary edge resize.
+At very small zoom levels, use S. Solo is **Alt+S**; **Alt+Shift+S** solos all
+instances of the selected sources. T outside a scale preview still performs Tidy.
+
+At overview zoom, cards retain a small visible mark and an eight-logical-pixel
+minimum pick target. A visible card wins over a neighbouring card's pick padding;
+nearby tiny cards are picked by distance. Short or narrow cards are move targets
+throughout. Zoom in to expose distinct duration and width resize edges.
+
+![G moves the selection together, with original positions outlined](images/mosaic-grab.png)
+
 Shift-dragging a card still copies the group; the primary's copy becomes primary.
 Rapid Shift-clicks and repeated Shift-drags stay in selection/copy mode; only an
 unmodified double-click opens the event editor. Copies remain selected for the
@@ -253,7 +306,7 @@ beats or mandatory snapping. Click an unselected event to return to a single
 selection. Selected tiles and Sources previews use the bright red highlight color by default. Muted events and events excluded by
 solo are dim; MUTE/SOLO appears on the relevant cards, and excluded cards say
 SOLO OUT (EXCL on narrow cards). CLEAR SOLO stays visible in the footer whenever any event is soloed,
-including events outside the viewport. Shift+M / Shift+S target all cards using
+including events outside the viewport. Shift+M / Alt+Shift+S target all cards using
 the selected cards' shared audio sources, including offscreen cards. A separately
 edited source is independent. Each action is one undo step. Multiple events may be
 soloed together. Mute takes precedence over solo. These switches use a short
