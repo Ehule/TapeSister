@@ -495,3 +495,15 @@ test-fm-directions: tapesister_fm_directions_tests
 	./tapesister_fm_directions_tests
 
 test: test-fm-directions
+
+tapesister tapesister_preview_loop_tests tapesister_mosaic_controller_tests: src/main_sdl_folder_import.inc
+tapesister_preview_loop_tests: tests/test_sample_folder_controller.inc
+
+tapesister_sample_folder_tests: $(CORE) tests/test_sample_folder.c src/ts_sample_folder.inc include/tapesister/sample_folder.h
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(CORE) tests/test_sample_folder.c -o $@ -lm
+
+.PHONY: test-sample-folder
+test-sample-folder: tapesister_sample_folder_tests
+	./tapesister_sample_folder_tests
+
+test: test-sample-folder

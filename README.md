@@ -52,6 +52,11 @@ raw sample data with live controls for encoding, byte order, channels, sample ra
 offset, and normalization. That makes arbitrary bytes available as sound material and
 lets the same source be auditioned through several interpretations before import.
 
+**LOAD → IMPORT FOLDER** (or `Ctrl+Shift+O`) imports a folder of WAV, FLAC,
+MP3 and Ogg sounds into empty unlocked tiles, adding Sample pages as needed.
+Each file becomes one tile; existing sounds stay in place. Decoding runs in the
+background and Escape cancels before any tiles are added.
+
 ### Create and Variation
 
 Left-click CREATE to render a fresh deterministic six-voice FM sound. Right-click

@@ -28,7 +28,8 @@ typedef enum {
     TS_BROWSER_LOAD_VIDEO,
     TS_BROWSER_IMPORT_CANVAS,
     TS_BROWSER_EXPORT_CANVAS,
-    TS_BROWSER_MOSAIC_VIDEO, TS_BROWSER_MOSAIC_VIDEO_POOL
+    TS_BROWSER_MOSAIC_VIDEO, TS_BROWSER_MOSAIC_VIDEO_POOL,
+    TS_BROWSER_IMPORT_AUDIO_FOLDER
 } TsBrowserMode;
 
 typedef struct {
@@ -45,7 +46,7 @@ typedef struct {
     int selected;
     int scroll;
     int filename_focus;
-    /* -2 filename, -1 file list; 0..3 select UP, NEW, PRIMARY, CANCEL. */
+    /* -2 filename, -1 list; 0..3 UP, NEW/FOLDER, PRIMARY, CANCEL. */
     int action_focus;
     size_t filename_cursor;
     int creating_directory;

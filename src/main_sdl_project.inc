@@ -155,6 +155,7 @@ static int project_new(SDL_Window *window, SDL_AudioDeviceID device,
     ts_tapehead_project_replaced();
     browser_audition_stop(device, audio, ui, s->audition, 1);
     discard_import_worker(s->import);
+    discard_folder_import();
     ts_audio_import_free(&s->import->decoded);
     import_controller_init(s->import);
     if (s->transform->worker) {

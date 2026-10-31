@@ -257,6 +257,30 @@ ordinary audio file should be deliberately reinterpreted as bytes. If a waveform
 selection is active, accepting an import proceeds to the existing **PASTE / FIT /
 CANCEL** choice instead of replacing the whole tile.
 
+### Import a folder of sounds
+
+Open **LOAD → IMPORT FOLDER**, or press `Ctrl+Shift+O` from the main workspace
+or LOAD browser. Navigate into the desired folder, then click **IMPORT FOLDER**.
+Double-clicking a directory enters it; **UP DIR** goes back. Cancel returns to
+the ordinary file browser. Dropping a folder on the main sample workspace also
+starts a folder import.
+
+Each WAV, FLAC, MP3 or `.ogg` file directly in that folder becomes a separate
+tile, in case-insensitive filename order. Empty, unlocked destinations are filled
+in Sample page/slot order, and more pages are added when needed. Occupied and
+locked tiles, existing audio buffers, edit histories and routing are preserved.
+Imported files use the same C4-unity playback and loop/stereo handling as LOAD.
+Subfolders, links, unrelated files and unreadable audio are skipped; the status
+bar reports the imported count, destination pages and skipped counts. Raw-data
+and song/project imports continue to use single-file LOAD.
+
+The decoder works in the background while existing playback continues. **Escape**
+or **CANCEL** stops it before any tiles are added. A cancelled import, a folder
+with no readable audio, a capacity failure, or changed destinations leaves the
+collection unchanged. Finish any active tile capture or Mosaic audio edit first.
+While the REC bank is selected, imports still go into the Sample collection.
+Save the project normally to retain all imported tiles and added pages.
+
 ### Lower workspaces
 
 In the main canvas, the number keys choose the lower area:

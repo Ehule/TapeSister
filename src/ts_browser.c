@@ -55,6 +55,7 @@ const char *ts_browser_mode_extension(TsBrowserMode mode)
 
 const char *ts_browser_mode_title(TsBrowserMode mode)
 {
+    if (mode == TS_BROWSER_IMPORT_AUDIO_FOLDER) return "IMPORT AUDIO FOLDER";
     if (mode == TS_BROWSER_IMPORT_CANVAS) return "IMPORT MOSAIC CANVAS FROM TSR";
     if (mode == TS_BROWSER_EXPORT_CANVAS) return "EXPORT MOSAIC CANVAS / NEW TSR BUNDLE";
     if (mode == TS_BROWSER_MOSAIC_VIDEO) return "CHOOSE MOSAIC VIDEO FILE";
@@ -100,7 +101,7 @@ int ts_browser_mode_selects_config(TsBrowserMode mode)
 
 int ts_browser_mode_selects_directory(TsBrowserMode mode)
 {
-    return mode == TS_BROWSER_MOSAIC_VIDEO_POOL || mode == TS_BROWSER_SELECT_SAMPLE_DIRECTORY ||
+    return mode == TS_BROWSER_IMPORT_AUDIO_FOLDER || mode == TS_BROWSER_MOSAIC_VIDEO_POOL || mode == TS_BROWSER_SELECT_SAMPLE_DIRECTORY ||
            mode == TS_BROWSER_SELECT_EXCHANGE_DIRECTORY ||
            mode == TS_BROWSER_SELECT_CDP_BIN_DIRECTORY;
 }
@@ -274,7 +275,10 @@ int ts_browser_refresh(TsBrowser *browser)
     browser->scroll = 0;
     reveal_selection(browser);
     browser->overwrite_armed = 0;
-    snprintf(browser->message, sizeof(browser->message), "%d ITEMS", browser->entry_count);
+    if (browser->mode == TS_BROWSER_IMPORT_AUDIO_FOLDER)
+        snprintf(browser->message, sizeof(browser->message), "CURRENT FOLDER");
+    else
+        snprintf(browser->message, sizeof(browser->message), "%d ITEMS", browser->entry_count);
     return 1;
 }
 

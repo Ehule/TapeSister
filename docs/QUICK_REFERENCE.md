@@ -21,6 +21,7 @@ For explanations and complete workflows, see the [User Manual](USER_MANUAL.md).
 | `2` | Show performance keyboard |
 | `3` | Show CDP; press again to cycle CDP pages |
 | `Ctrl+Shift+P` | Reach CDP Portal from main, FM, Mosaic, or Sister |
+| `Ctrl+Shift+O` | Main/LOAD: import an audio folder into empty unlocked Sample tiles, adding pages as needed |
 | `4` | Show native DSP; press again to cycle DSP pages |
 | `F1`–`F8` | Select keyboard octave |
 | `F10` | Open/close the [SisterTracker pattern editor](SISTERTRACKER_PLAYBACK.md); playback continues when closed |

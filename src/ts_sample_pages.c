@@ -3,10 +3,12 @@
 #endif
 
 #include "tapesister/sample_pages.h"
+#include "tapesister/sample_folder.h"
 #include "tapesister/mosaic.h"
 #include "tapesister/mosaic_gallery.h"
 
 #include <errno.h>
+#include <ctype.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -1476,3 +1478,5 @@ int ts_sample_pages_load_project(TsSamplePages *pages,
     ts_sample_pages_dispose_project(load);
     return ok;
 }
+
+#include "ts_sample_folder.inc"

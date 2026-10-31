@@ -20,6 +20,7 @@
 #include "tapesister/input_ownership.h"
 #include "tapesister/note_bank.h"
 #include "tapesister/sample_pages.h"
+#include "tapesister/sample_folder.h"
 #include "tapesister/mosaic_gallery.h"
 #include "tapesister/tracker_playback.h"
 #include "tapesister/tapehead_embed.h"
@@ -7178,7 +7179,7 @@ static void browser_cycle_focus(TsBrowser *browser, int amount)
         if (focus < -2) focus = 3;
         if (focus > 3) focus = -2;
     } while ((focus == -2 && !ts_browser_edits_text(browser)) ||
-             (focus == 1 &&
+             (focus == 1 && browser->mode != TS_BROWSER_LOAD_WAV &&
               !ts_browser_mode_allows_create_directory(browser->mode)));
     browser->action_focus = focus;
     browser->filename_focus = focus == -2;
@@ -8851,6 +8852,7 @@ static void begin_active_project_save(TsUiState *ui)
 }
 
 #include "main_sdl_browser_audition.inc"
+#include "main_sdl_folder_import.inc"
 
 static void mandala_editor_video_loaded(TsUiState *ui,const TsMandalaConfig *c);
 static void mosaic_select_only(TsUiState *,uint64_t);
@@ -14455,6 +14457,7 @@ int main(int argc, char **argv)
         runtime_note_collect_snapshots(device,&audio);
         poll_import_worker(device, &audio, &ui, &instrument,
                            &pending_selection_load, &import_controller);
+        poll_folder_import(device, &audio, &ui, &instrument, &sample_pages);
         mosaic_canvas_queue_import(&ui,&pending_file);
         if (pending_file.active && pending_file.presented)
             run_pending_file_operation(device, &audio, &ui, &instrument,
@@ -14683,6 +14686,8 @@ int main(int argc, char **argv)
             }
             event_id=event_window_id(&event);
             if (ts_audio_health_event(&event, window, &audio, &ui)) continue;
+            if (folder_import_event(&event,window,device,&audio,&ui,&instrument,
+                                    &sample_pages,&import_controller,&browser_audition)) continue;
             if((!ui.tracker_open || event_id!=SDL_GetWindowID(window)) && keyboard_sequence_transport_event(&event,window,device,&audio,&ui,
                 &sister_window,&instrument,&fm_preview,obtained.freq))continue;
             if(router_event(&event,window,device,&audio,&ui,&sister_window))continue;
@@ -18794,6 +18799,7 @@ int main(int argc, char **argv)
     ts_sample_free(&drone_preview);
     ts_sample_free(&pending_selection_load);
     discard_import_worker(&import_controller);
+    discard_folder_import();
     ts_audio_import_free(&import_controller.decoded);
     ts_sample_free(&clipboard);
     ts_sample_pages_free(&sample_pages);

@@ -409,6 +409,9 @@ add_test(NAME tapesister_wav_channels_tests COMMAND tapesister_wav_channels_test
 add_executable(tapesister_audio_import_tests tests/test_audio_import.c)
 target_link_libraries(tapesister_audio_import_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_audio_import_tests COMMAND tapesister_audio_import_tests)
+add_executable(tapesister_sample_folder_tests tests/test_sample_folder.c)
+target_link_libraries(tapesister_sample_folder_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_sample_folder_tests COMMAND tapesister_sample_folder_tests)
 
 add_executable(tapesister_smear_tests tests/test_smear.c)
 target_link_libraries(tapesister_smear_tests PRIVATE tapesister_core)
