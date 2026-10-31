@@ -130,6 +130,8 @@ static void mosaic_drag_end(TsUiState *ui,MosaicController *c)
     c->source_group=c->source_toggle=0;c->shift_toggle=0;
     c->source_drag=(TsMosaicEvent){0};c->drag=0;c->drag_moved=0;c->drag_copy=0;c->drag_scroll_ms=0;c->drag_event=0;
     ui->mosaic_grab=0;ui->mosaic_grab_x=ui->mosaic_grab_time=0;
+    ui->mosaic_scale_anchor=0;ui->mosaic_scale_delta=0;
+    ui->mosaic_resize_event=0;ui->mosaic_resize_part=0;
     ui->mosaic_ghost_count=ui->mosaic_box=0;c->volume_drag=0;
     c->card_mix_event=ui->mosaic_card_mix_event=0;ui->mosaic_card_mix_part=0;
     c->pan_active=c->pan_moved=ui->mosaic_loop_drag=ui->mosaic_marker_drag=0;

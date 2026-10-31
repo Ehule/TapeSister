@@ -1,4 +1,5 @@
 static void mosaic_gallery_snapshot(TsUiState *,const TsMosaicGallery *);
+static void mosaic_scale_motion(TsUiState *,MosaicController *,int,int);
 static void mosaic_poll(SDL_AudioDeviceID device,TsUiState *ui,
                           TsInstrument *instrument,MosaicController *c)
 {
@@ -109,10 +110,21 @@ static TsMosaicEvent *mosaic_card_at(const TsUiState *ui,int x,int y)
 }
 /* Reserve a central move area. At overview zoom, short/narrow cards are move
    targets throughout; zooming in restores their separate resize edges. */
-static int mosaic_card_drag_part(const TsUiState *ui,const TsMosaicEvent *e,double time,double left)
+static int mosaic_resize_handle_at(const TsUiState *ui,const TsMosaicEvent *e,int x,int y)
 {
+    for(int part=1;part<=2;++part) {
+        double hx,hy,radius;
+        if(ts_ui_mosaic_resize_handle(ui,e,part,&hx,&hy,&radius) &&
+           fabs(x-hx)<=radius+1 && fabs(y-hy)<=3)return part==1?6:2;
+    }
+    return 0;
+}
+static int mosaic_card_drag_part(const TsUiState *ui,const TsMosaicEvent *e,int x,int y)
+{
+    int grip=mosaic_resize_handle_at(ui,e,x,y);if(grip)return grip;
     if(e->source->video_path[0])return 1;
     double h=ui->mosaic_hscale>0?ui->mosaic_hscale:1;
+    double time=ui->mosaic_scroll+(y-66)/ui->mosaic_scale,left=ui->mosaic_xscroll+(x-151)/h;
     if(e->width*h>=24 && e->duration*ui->mosaic_scale>=24) {
         if(e->start+e->duration-time<6/ui->mosaic_scale)return 2;
         if(time-e->start<6/ui->mosaic_scale)return 6;
@@ -267,6 +279,7 @@ static void mosaic_resize_group(SDL_AudioDeviceID device,TsUiState *ui,MosaicCon
 static void mosaic_drag_motion(SDL_AudioDeviceID device,TsUiState *ui,MosaicController *c,
                                int x,int y,SDL_Keymod mod)
 {
+    if(ui->mosaic_grab==2){mosaic_scale_motion(ui,c,x,y);return;}
     TsMosaicEvent *e=ts_mosaic_find(ui->mosaic,(c->drag==2 || c->drag==6)?c->drag_event:ui->mosaic_selected);if(!e)return;
     double horizontal=ui->mosaic_hscale>0?ui->mosaic_hscale:1;
     double delta=(y-c->drag_y)/ui->mosaic_scale;
@@ -310,6 +323,7 @@ static void mosaic_drag_autoscroll(SDL_AudioDeviceID device,TsUiState *ui,Mosaic
 {
     Uint32 elapsed=now-c->drag_scroll_ms;c->drag_scroll_ms=now;
     if(c->drag!=1 || !c->drag_moved || !ui->mosaic_open || c->active ||
+       ui->mosaic_grab==2 ||
        c->ui_epoch!=ui->mosaic->epoch || ui_dialog_open(ui) || ui->router_open || ui->master_eq_open)return;
     int x=c->drag_pointer_x,y=c->drag_pointer_y;
     if(y<66 || y>=TS_MOSAIC_CANVAS_BOTTOM)return;
@@ -586,8 +600,9 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
     if(event->type==SDL_WINDOWEVENT && (event->window.event==SDL_WINDOWEVENT_FOCUS_LOST ||
        event->window.event==SDL_WINDOWEVENT_HIDDEN || event->window.event==SDL_WINDOWEVENT_MINIMIZED))mosaic_drag_end(ui,c);
     mosaic_sources_refresh(ui,instrument,c);
-    if(key && event->key.keysym.sym==SDLK_g && !(mod&(KMOD_CTRL|KMOD_SHIFT|KMOD_ALT|KMOD_GUI))) {
-        if(!event->key.repeat)mosaic_grab_begin(window,ui,c);return 1;
+    if(key && (event->key.keysym.sym==SDLK_g || event->key.keysym.sym==SDLK_s) &&
+       !(mod&(KMOD_CTRL|KMOD_SHIFT|KMOD_ALT|KMOD_GUI))) {
+        if(!event->key.repeat)mosaic_grab_begin(window,ui,c,event->key.keysym.sym==SDLK_s?2:1);return 1;
     }
     if((key || event->type==SDL_KEYUP) && (event->key.keysym.sym==SDLK_LALT || event->key.keysym.sym==SDLK_RALT) &&
        (c->drag==2 || c->drag==6) && ui->mosaic_ghost_count>1) {
@@ -626,6 +641,7 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
         if(k==SDLK_SPACE){mosaic_transport(device,ui,0);return 1;}
         if(k==SDLK_ESCAPE){if(device)SDL_LockAudioDevice(device);ts_mosaic_audition(ui->mosaic,0);if(device)SDL_UnlockAudioDevice(device);mosaic_transport(device,ui,1);return 1;}
         if(k==SDLK_s && (mod&KMOD_CTRL))return 0; /* Save overlays the current workspace. */
+        if(k==SDLK_s && (mod&KMOD_SHIFT) && !(mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI)))return 0; /* Sustain. */
         if(k==SDLK_f && (mod&(KMOD_CTRL|KMOD_SHIFT))==(KMOD_CTRL|KMOD_SHIFT)) {
             main_file_capture_toggle(audio,ui,sister,(uint32_t)rate);return 1;
         }
@@ -670,7 +686,8 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
             ts_mosaic_checkpoint(ui->mosaic);
             for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(mosaic_chosen(ui,i))ts_mosaic_delete(ui->mosaic,ui->mosaic->events[i].id);
             mosaic_select_only(ui,0);
-        } else if((k==SDLK_m || k==SDLK_s) && !(mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI))) {
+        } else if((k==SDLK_m && !(mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI))) ||
+                  (k==SDLK_s && (mod&KMOD_ALT) && !(mod&(KMOD_CTRL|KMOD_GUI)))) {
             int count=0,all=1;unsigned char chosen[TS_MOSAIC_EVENTS]={0};
             for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(mosaic_chosen(ui,i)) {
                 if(k==SDLK_s && ui->mosaic->events[i].source->video_path[0])continue;
@@ -751,7 +768,6 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
             if(device)SDL_UnlockAudioDevice(device);return 1;
         }
         if(x>=151 && x<ts_ui_mosaic_canvas_right(ui) && y>=66 && y<TS_MOSAIC_CANVAS_BOTTOM) {
-            double time=ui->mosaic_scroll+(y-66)/ui->mosaic_scale,left=(x-151)/horizontal+ui->mosaic_xscroll;
             TsMosaicEvent *e=mosaic_card_at(ui,x,y);
             if(e) {
                 int chosen=mosaic_chosen(ui,(int)(e-ui->mosaic->events));
@@ -768,8 +784,9 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
                 c->shift_toggle=(mod&KMOD_SHIFT) && chosen?e->id:0;
                 ui->mosaic_ghost_count=mosaic_selected_events(ui,ui->mosaic_ghosts);
                 c->drag_copy=(mod&KMOD_SHIFT)!=0;
-                c->drag=c->drag_copy?1:mosaic_card_drag_part(ui,e,time,left);
+                c->drag=c->drag_copy?1:mosaic_card_drag_part(ui,e,x,y);
                 if(c->drag==4 && ui->mosaic_ghost_count>1)c->drag=1;
+                if(c->drag==2 || c->drag==6){ui->mosaic_resize_event=e->id;ui->mosaic_resize_part=c->drag==6?1:2;}
                 c->drag_event=e->id;
                 c->drag_x=x;c->drag_y=y;c->drag_start=e->start;c->drag_duration=e->duration;c->drag_left=e->x;c->drag_width=e->width;
                 c->drag_xscroll=ui->mosaic_xscroll;c->drag_pointer_x=x;c->drag_pointer_y=y;

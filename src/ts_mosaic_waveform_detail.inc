@@ -80,7 +80,7 @@ static void mosaic_detail_card(TsUiWaveformDetail *d,const TsUiState *ui,
 {
     if(!e->source)return;
     TsMosaicEvent preview;
-    if(ui->mosaic_grab && selected && !ghost){preview=*e;preview.x+=ui->mosaic_grab_x;preview.start+=ui->mosaic_grab_time;e=&preview;}
+    if(ui->mosaic_grab && selected && !ghost){ts_ui_mosaic_transform_event(ui,e,&preview);e=&preview;}
     double sx=(double)d->width/(ts_ui_mosaic_canvas_right(ui)-151),sy=(double)d->height/TS_MOSAIC_CANVAS_HEIGHT;
     double horizontal=ui->mosaic_hscale>0?ui->mosaic_hscale:1;
     double scale=ui->mosaic_scale>0?ui->mosaic_scale:24,rate=scale*sy;
@@ -109,6 +109,10 @@ static void mosaic_detail_card(TsUiWaveformDetail *d,const TsUiState *ui,
         int chars=(int)fmax(0,fmin(60,(w/sx-10)/6));char line[64];snprintf(line,sizeof(line),"%.*s",chars,label);
         mosaic_detail_text(d,x+5*bx,y+5*by,line,color,sx,sy);
         if(h>24*sy){snprintf(line,sizeof(line),"%.*s",chars,e->video_random_start?"RANDOM POSITION":"FROM BEGINNING");mosaic_detail_text(d,x+5*bx,y+15*by,line,color,sx,sy);}
+        if(!ghost) {
+            MosaicFadeSurface grips={d->pixels,d->width,0,0,d->width,d->height,sx,sy,rate};
+            mosaic_resize_handles(&grips,ui,e,x,y,right,bottom,selected);
+        }
         return;
     }
     uint32_t outer=mosaic_mix_color(color,fill,.50f);
@@ -191,6 +195,7 @@ static void mosaic_detail_card(TsUiWaveformDetail *d,const TsUiState *ui,
     }
     mosaic_card_pan(&fades,ui,e,x,y,right,bottom,border);
     mosaic_fade_handles(&fades,ui,e,x,y,right,bottom,border);
+    mosaic_resize_handles(&fades,ui,e,x,y,right,bottom,selected);
 }
 static int mosaic_detail_cards(TsFramebuffer *fb,const TsUiState *ui,int any_solo,double interval)
 {

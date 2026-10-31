@@ -61,11 +61,20 @@ static int mosaic_fades_event(const SDL_Event *event,SDL_AudioDeviceID device,Ts
             mosaic_drag_end(ui,c);if(key==SDLK_ESCAPE)return 1;
         } else if(down || event->type==SDL_MOUSEWHEEL)return 1;
     }
-    if(motion){ui->mosaic_card_mix_event=0;ui->mosaic_card_mix_part=0;}
+    if(motion){ui->mosaic_card_mix_event=0;ui->mosaic_card_mix_part=0;ui->mosaic_resize_event=0;ui->mosaic_resize_part=0;}
     if((!motion && !down) || c->drag || c->mix_drag || c->volume_drag || c->pan_active ||
        ui->mosaic_loop_drag || (mod&(KMOD_SHIFT|KMOD_CTRL|KMOD_ALT|KMOD_GUI)) ||
        x<151 || x>=ts_ui_mosaic_canvas_right(ui) || y<66 || y>=TS_MOSAIC_CANVAS_BOTTOM)return 0;
     TsMosaicEvent *e=mosaic_card_at(ui,x,y);
+    int grip=e?mosaic_resize_handle_at(ui,e,x,y):0;
+    if(grip) {
+        ui->mosaic_resize_event=e->id;ui->mosaic_resize_part=grip==6?1:2;
+        if(motion) {
+            snprintf(ui->status,sizeof(ui->status),"%s RESIZE GRIP / DRAG / S SCALE / T TOP B BOTTOM C CENTER",grip==6?"TOP":"BOTTOM");
+            return 1;
+        }
+        return 0;
+    }
     if(e && !e->source->video_path[0]) {
         for(int part=1;part<=3;++part) {
             double hx,hy,span=0;

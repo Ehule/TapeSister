@@ -140,7 +140,10 @@ keeping their positions and pitches. AUTO-SPACE optionally separates
 intersecting cards horizontally; new arrangements default to free placement.
 
 Shift-drag a box to select a group; drag to move it or Shift-drag a selected tile to
-copy the group. M / S mutes or solos selected cards; Shift+M / Shift+S affects all
+copy the group. **S** scales selected card durations: **T** anchors each top
+(default), **B** each bottom, and **C** each center. Click/Enter confirms;
+Escape/right-click cancels. Cyan edge grips also expose mouse resizing.
+M / Alt+S mutes or solos selected cards; Shift+M / Alt+Shift+S affects all
 cards sharing those sources. **Alt+M** places one of 16 timeline markers; the bottom
 numbered buttons jump immediately without changing play/pause. Drag ruler flags
 to move them and right-click to name, retime, or delete. **VIEWS** retains the

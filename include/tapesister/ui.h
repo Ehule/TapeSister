@@ -644,8 +644,12 @@ typedef struct {
     uint8_t mosaic_pattern_pending[TS_MOSAIC_EVENTS];
     int mosaic_follow, mosaic_box, mosaic_box_x, mosaic_box_y, mosaic_box_end_x, mosaic_box_end_y;
     int mosaic_ghost_count;
-    int mosaic_grab; /* Staged G move; the document changes only on confirmation. */
+    int mosaic_grab; /* Staged transform: 1 G move, 2 S duration scale. */
     double mosaic_grab_x, mosaic_grab_time;
+    int mosaic_scale_anchor; /* 0 top, 1 bottom, 2 center, independently per card. */
+    double mosaic_scale_delta;
+    uint64_t mosaic_resize_event;
+    int mosaic_resize_part; /* Visible duration grip: 1 top edge, 2 bottom edge. */
     TsMosaicEvent mosaic_ghosts[TS_MOSAIC_EVENTS];
     struct {
         const TsSample *sample;
@@ -971,6 +975,10 @@ int ts_ui_mosaic_fade_handle(const TsUiState *ui, const TsMosaicEvent *event,
                             int part, double *x, double *y);
 int ts_ui_mosaic_pan_handle(const TsUiState *ui, const TsMosaicEvent *event,
                            double *x, double *y, double *span);
+int ts_ui_mosaic_resize_handle(const TsUiState *,const TsMosaicEvent *,int part,
+                               double *x,double *y,double *radius);
+/* Shared geometry for both renderers and the staged transform controller. */
+void ts_ui_mosaic_transform_event(const TsUiState *,const TsMosaicEvent *,TsMosaicEvent *);
 double ts_ui_mosaic_volume_y(const TsUiState *ui, double time);
 double ts_ui_mosaic_volume_time(const TsUiState *ui, double y);
 void ts_ui_render_mosaic_choice(TsFramebuffer *fb, const TsUiState *ui);

@@ -104,7 +104,6 @@ static int mosaic_arrange_event(const SDL_Event *event,SDL_Window *window,SDL_Au
         else ui->mosaic_spacing_confirm=1;return 1;
     }
     if(down && event->button.button==SDL_BUTTON_LEFT && (mod&KMOD_ALT) && x>=151 && x<ts_ui_mosaic_canvas_right(ui) && y>=66 && y<TS_MOSAIC_CANVAS_BOTTOM) {
-        double time=ui->mosaic_scroll+(y-66)/ui->mosaic_scale,left=ui->mosaic_xscroll+(x-151)/(ui->mosaic_hscale>0?ui->mosaic_hscale:1);
         uint64_t ids[TS_MOSAIC_EVENTS];int count=0,current=-1;
         for(int i=TS_MOSAIC_EVENTS-1;i>=0;--i) {
             const TsMosaicEvent *e=&ui->mosaic->events[i];
@@ -116,7 +115,7 @@ static int mosaic_arrange_event(const SDL_Event *event,SDL_Window *window,SDL_Au
            held at mouse-down. Interior Alt-click still cycles covered cards. */
         if(count && !(mod&KMOD_SHIFT)) {
             TsMosaicEvent *front=ts_mosaic_find(ui->mosaic,ids[current>=0?current:0]);
-            int part=mosaic_card_drag_part(ui,front,time,left),selected=0;
+            int part=mosaic_card_drag_part(ui,front,x,y),selected=0;
             if((part==2 || part==6) && mosaic_chosen(ui,(int)(front-ui->mosaic->events))) {
                 for(int i=0;i<TS_MOSAIC_EVENTS;++i)selected+=mosaic_chosen(ui,i)!=0;
                 if(selected>1)return 0;

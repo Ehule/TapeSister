@@ -110,6 +110,7 @@ does not switch the main bank. See the [Mosaic chapter](USER_MANUAL.md#mosaic).
 | Add a selection box | Shift+left-drag on empty canvas; keeps the primary |
 | Move group / copy group | Drag a selected tile / hold Shift when starting that drag; repeat to copy again |
 | Extend duration / change visual width | Drag top or bottom / right edge |
+| Scale duration without grabbing an edge | S; then T top (default), B bottom, C center; click/Enter confirms, Escape/right-click cancels |
 | Resize selected cards together | Drag a selected card's top/bottom edge; preserves length differences |
 | Match selected card lengths while resizing | Hold Alt; the grabbed card is the parent; release Alt for relative resizing |
 | Optional start, end, midpoint alignment | Alt during move or single-card duration resize |
@@ -119,8 +120,8 @@ does not switch the main bank. See the [Mosaic chapter](USER_MANUAL.md#mosaic).
 | Loop a cue to the next marker / release without seeking | Bottom LOOP; L or REPEAT also releases an active cue loop |
 | Assign MIDI notes/CC buttons to cues or LOOP | Ctrl+Shift+M; click control, press hardware, then leave Learn |
 | Open saved canvas views | VIEWS; Escape closes |
-| Mute / solo selected events | M / S; excluded cards say SOLO OUT |
-| Mute / solo all cards sharing selected sources | Shift+M / Shift+S |
+| Mute / solo selected events | M / Alt+S; excluded cards say SOLO OUT |
+| Mute / solo all cards sharing selected sources | Shift+M / Alt+Shift+S |
 | Clear all solos, including offscreen cards | CLEAR SOLO in footer |
 | Selection level / pan / fade-in / fade-out | LEVEL / PAN / IN / OUT in footer |
 | Visual fade on one card | Drag its top IN handle down / bottom OUT handle up |

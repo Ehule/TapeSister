@@ -497,6 +497,8 @@ test-fm-directions: tapesister_fm_directions_tests
 test: test-fm-directions
 
 tapesister tapesister_preview_loop_tests tapesister_mosaic_controller_tests: src/main_sdl_folder_import.inc
+tapesister tapesister_mosaic_controller_tests: src/main_sdl_mosaic_grab.inc
+tapesister_mosaic_controller_tests: tests/test_mosaic_scale.inc
 tapesister_preview_loop_tests: tests/test_sample_folder_controller.inc
 
 tapesister_sample_folder_tests: $(CORE) tests/test_sample_folder.c src/ts_sample_folder.inc include/tapesister/sample_folder.h

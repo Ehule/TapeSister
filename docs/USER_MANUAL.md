@@ -848,8 +848,9 @@ visually at the C4 reference speed, while the chord voices follow their own rate
 | Move the selection | Drag any selected event body |
 | Copy an event or selected group | Hold Shift when starting a drag on a tile |
 | Extend duration / change visual width | Drag the top or bottom / right edge |
+| Scale selected durations without grabbing an edge | S; T top (default), B bottom, C center; click/Enter confirms, Escape/right-click cancels |
 | Align starts, ends, or midpoints | Hold Alt during a move or duration resize |
-| Mute / solo the selection | M / S |
+| Mute / solo the selection | M / Alt+S |
 | Add a timeline marker at the playhead | Alt+M |
 | Jump to a marker / capture a numbered slot | Click bottom number / Shift-click |
 | Move / name / delete a marker | Drag ruler flag / right-click flag or number |
