@@ -16,7 +16,7 @@ static TsFramebuffer framebuffer;
    Both states keep the window hidden to exclude painting from sync/service. */
 static int benchmark_tracker_refresh(void)
 {
-    SDL_SetMainReady(); SDL_SetHint(SDL_HINT_VIDEODRIVER,"dummy");
+    SDL_SetMainReady(); SDL_setenv("SDL_VIDEODRIVER","dummy",1);
     assert(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER));
     SDL_Window *window=SDL_CreateWindow("Tracker benchmark",0,0,640,400,SDL_WINDOW_HIDDEN);
     assert(window);

@@ -1089,7 +1089,8 @@ static void browser_render_themed_impl(TsFramebuffer *fb, const TsBrowser *brows
         button(fb, 34, 39, 108, "FILE BROWSER", 1);
         button(fb, 150, 39, 96,
                import_preview_available ? "PREVIEW" : "PREVIEW --", 0);
-        text(fb, 262, 45, "AUDIO / XM / MOD / IT / TSR / TSP", PAL_NOTE, 1);
+        button(fb, 262, 39, 126, "IMPORT FOLDER", browser->action_focus == 1);
+        text(fb, 402, 45, "AUDIO / SONG / PROJECT", PAL_NOTE, 1);
     } else if(browser->mode==TS_BROWSER_SAVE_RECIPE || browser->mode==TS_BROWSER_SAVE_XM) {
         button(fb,34,39,138,"TSR PROJECT",browser->mode==TS_BROWSER_SAVE_RECIPE);
         button(fb,180,39,110,"XM SONG",browser->mode==TS_BROWSER_SAVE_XM);
@@ -1113,6 +1114,10 @@ static void browser_render_themed_impl(TsFramebuffer *fb, const TsBrowser *brows
         text_case(fb, TS_BROWSER_LIST_X + 6, y + 6, shown,
              index == browser->selected ? PAL_BLOCK_TEXT :
              browser->entries[index].is_directory ? PAL_INSTRUMENT : PAL_TEXT, 1);
+    }
+    if (browser->mode == TS_BROWSER_IMPORT_AUDIO_FOLDER && !browser->entry_count) {
+        text(fb, 64, 104, "AUDIO FILES ARE HIDDEN IN THIS FOLDER PICKER", PAL_TEXT, 1);
+        text(fb, 64, 122, "IMPORT FOLDER LOADS SOUNDS FROM THE CURRENT FOLDER", PAL_EFFECT, 1);
     }
 
     rect(fb, TS_BROWSER_SCROLL_X, TS_BROWSER_LIST_Y, TS_BROWSER_SCROLL_W,
@@ -1165,7 +1170,13 @@ static void browser_render_themed_impl(TsFramebuffer *fb, const TsBrowser *brows
              module ? "OPEN IMPORTS THE SONG AND SAMPLE TILES - UP TO 32 TRACKS" :
              "AUDIO AUTO-DECODE; SHIFT+CLICK SKIPS PREVIEW; OTHER FILES: RAW",
              PAL_EFFECT, 1);
-    } else if (browser->mode == TS_BROWSER_LOAD_VIDEO) {
+    } else if (browser->mode == TS_BROWSER_IMPORT_AUDIO_FOLDER) {
+        text(fb, 58, 282, "WAV / FLAC / MP3 / OGG - THIS FOLDER ONLY", PAL_MOUSE, 1);
+        text(fb, 58, 300, "FILLS EMPTY UNLOCKED TILES; ADDS SAMPLE PAGES AS NEEDED", PAL_EFFECT, 1);
+    } else if (browser->mode == TS_BROWSER_IMPORT_CANVAS) {
+        text(fb,58,282,"CHOOSE A TSR / THEN CHOOSE ONE CANVAS",PAL_MOUSE,1);
+        text(fb,58,300,"ADDS A PAGE / USES THIS PROJECT'S SHARED EFFECTS",PAL_EFFECT,1);
+    } else if (browser->mode == TS_BROWSER_LOAD_VIDEO || browser->mode == TS_BROWSER_MOSAIC_VIDEO) {
         text(fb, 58, 300, "MP4 / MOV / MKV / WEBM / AVI / MPEG / GIF - VIDEO SOUND OFF", PAL_EFFECT, 1);
     } else if (browser->mode == TS_BROWSER_TRACKER_PALETTE_IMPORT) {
         text(fb, 58, 300, "SELECT A SHARED TAPEHEAD / TAPESISTER .PAL FILE", PAL_EFFECT, 1);
@@ -1184,10 +1195,11 @@ static void browser_render_themed_impl(TsFramebuffer *fb, const TsBrowser *brows
            file_busy ? "PLEASE WAIT" :
            browser->overwrite_armed ? "OVERWRITE?" :
            browser->creating_directory ? "CREATE" :
+           browser->mode == TS_BROWSER_IMPORT_AUDIO_FOLDER ? "IMPORT FOLDER" :
            ts_browser_mode_selects_directory(browser->mode) ? "USE FOLDER" :
            browser->mode == TS_BROWSER_SELECT_FASTTRACKER_EXECUTABLE ? "USE FILE" :
-           browser->mode == TS_BROWSER_LOAD_VIDEO ? "ADD VIDEO" :
-           browser->mode == TS_BROWSER_TRACKER_PALETTE_IMPORT ? "IMPORT" :
+           (browser->mode == TS_BROWSER_LOAD_VIDEO || browser->mode == TS_BROWSER_MOSAIC_VIDEO) ? "ADD VIDEO" :
+           (browser->mode == TS_BROWSER_TRACKER_PALETTE_IMPORT || browser->mode == TS_BROWSER_IMPORT_CANVAS) ? "IMPORT" :
            browser->mode == TS_BROWSER_LOAD_WAV ? "OPEN" :
            (browser->mode == TS_BROWSER_SAVE_RECIPE ||
             browser->mode == TS_BROWSER_SAVE_PRESET || browser->mode == TS_BROWSER_SAVE_XM) ? "SAVE" : "EXPORT",
@@ -3186,7 +3198,7 @@ static void live_input_render(TsFramebuffer *fb, const TsUiState *ui)
 int ts_ui_foreground_panel_open(const TsUiState *ui)
 {
     if (ui == NULL) return 0;
-    return ui->router_open || ui->master_eq_open || ui->mosaic_marker_open || ui->mosaic_views_open || ui->mosaic_align_open || ui->mosaic_loop_open || ui->mosaic_scatter_open || ui->mosaic_spacing_confirm || ui->mosaic_edit_choice || ui->mosaic_pattern_choice || ui->portal.open || ui->exit_confirm_open || ui->project_overwrite_confirm_open ||
+    return ui->mosaic_video_open || ui->mosaic_gallery_open || ui->router_open || ui->master_eq_open || ui->mosaic_marker_open || ui->mosaic_views_open || ui->mosaic_align_open || ui->mosaic_loop_open || ui->mosaic_scatter_open || ui->mosaic_spacing_confirm || ui->mosaic_edit_choice || ui->mosaic_pattern_choice || ui->portal.open || ui->exit_confirm_open || ui->project_overwrite_confirm_open ||
            ui->overdub_confirm_open || ui->fm_open ||
            ui->transform_open || ui->drone_open || ui->import_preview_open ||
            ui->exchange_dialog != TS_UI_EXCHANGE_NONE ||
@@ -3248,9 +3260,9 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     if(ui->mosaic_open && ui->mosaic) {
         render_group=TS_THEME_MOSAIC;mosaic_render(fb,ui,instrument);
         master_eq_render(fb,ui);router_render(fb,ui);main_midi_learn_overlay(fb,ui);
-        /* Project saving is modal, but keeps the arrangement underneath. */
+        /* Every active browser owns the foreground over Mosaic too. */
         render_group=TS_THEME_CANVAS;
-        if(ui->browser.mode==TS_BROWSER_SAVE_RECIPE || ui->browser.mode==TS_BROWSER_SAVE_XM)
+        if(ui->browser.mode!=TS_BROWSER_CLOSED)
             browser_render(fb,&ui->browser,ui->text_cursor_visible,ui->file_busy,0);
         if(ui->project_overwrite_confirm_open)project_overwrite_render(fb,ui);
         if(ui->file_busy && !strcmp(ui->file_busy_label,"SAVING"))project_saving_render(fb);

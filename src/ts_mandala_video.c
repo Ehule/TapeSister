@@ -10,13 +10,13 @@
 /* Three scaled frames; codec reference frames are bounded by the input limits.
    Worker owns decoder and conversion. Renderer owns textures. Both may stall
    without touching the host's audio thread or its queues. */
-enum { V_WIDTH=640, V_HEIGHT=400, V_SLOTS=3 };
+enum { V_WIDTH=960, V_HEIGHT=540, V_SLOTS=3 };
 typedef struct { uint8_t pixels[V_WIDTH*V_HEIGHT*4]; int width,height; unsigned ms,restart; } VFrame;
 struct TsVideo {
     SDL_Thread *thread; SDL_mutex *status_lock;
     atomic_uint stop, paused, loop, restart, fps, write, read;
     TsVideoStatus status;
-    char path[1024]; VFrame frame[V_SLOTS];
+    char path[1024]; double fraction; VFrame frame[V_SLOTS];
     /* Renderer-only cache: never refilter an already filtered frame, and never
        hold a producer slot while uploading/recoloring a paused image. */
     VFrame current;
@@ -28,6 +28,10 @@ static void status_set(TsVideo *v,unsigned state,const char *message)
     SDL_LockMutex(v->status_lock);v->status.state=state;
     snprintf(v->status.message,sizeof(v->status.message),"%s",message);
     SDL_UnlockMutex(v->status_lock);
+}
+static enum AVPixelFormat video_scale_format(enum AVPixelFormat format)
+{
+    return format==AV_PIX_FMT_YUVJ420P?AV_PIX_FMT_YUV420P:format==AV_PIX_FMT_YUVJ422P?AV_PIX_FMT_YUV422P:format==AV_PIX_FMT_YUVJ444P?AV_PIX_FMT_YUV444P:format;
 }
 static int interrupt_io(void *p){return atomic_load(&((TsVideo*)p)->stop)!=0;}
 static int decode(void *opaque)
@@ -67,6 +71,14 @@ static int decode(void *opaque)
     double seconds=duration!=AV_NOPTS_VALUE?duration*av_q2d(stream->time_base):format->duration/(double)AV_TIME_BASE;
     if(seconds>0 && seconds<4294967)v->status.duration_ms=(unsigned)(seconds*1000);
     SDL_UnlockMutex(v->status_lock);
+    double seek_target=0;
+    if(v->fraction>0 && isfinite(seconds) && seconds>.1 && seconds<4294967) {
+        seek_target=fmax(0,seconds-.1)*v->fraction;
+        int64_t start=stream->start_time==AV_NOPTS_VALUE?0:stream->start_time;
+        if(av_seek_frame(format,index,start+(int64_t)(seek_target/av_q2d(stream->time_base)),AVSEEK_FLAG_BACKWARD)<0)seek_target=0;
+        else avcodec_flush_buffers(codec);
+    }
+    double position_origin=seek_target;
     status_set(v,TS_VIDEO_PLAYING,"PLAYING / VIDEO SOUND OFF");origin=SDL_GetTicks64();
     while(!atomic_load(&v->stop)) {
         Uint64 now=SDL_GetTicks64();
@@ -87,7 +99,7 @@ static int decode(void *opaque)
                 epoch+=fmax(last+fallback,.001);
                 SDL_LockMutex(v->status_lock);v->status.loops++;SDL_UnlockMutex(v->status_lock);
             }
-            first=NAN;last=0;next_upload=0;draining=eof=frames=0;paused_at=0;
+            seek_target=position_origin=0;first=NAN;last=0;next_upload=0;draining=eof=frames=0;paused_at=0;
             status_set(v,TS_VIDEO_PLAYING,"PLAYING / VIDEO SOUND OFF");
         }
         if(atomic_load(&v->paused)) {if(!paused_at)paused_at=now;SDL_Delay(10);continue;}
@@ -108,7 +120,9 @@ static int decode(void *opaque)
         if(result<0)goto done;
         ++frames;
         double pts=frame->best_effort_timestamp==AV_NOPTS_VALUE?(isnan(first)?0:last+fallback):frame->best_effort_timestamp*av_q2d(stream->time_base);
-        if(isnan(first))first=pts;
+        double absolute=pts-(stream->start_time==AV_NOPTS_VALUE?0:stream->start_time*av_q2d(stream->time_base));
+        if(seek_target>0 && absolute+fallback*.5<seek_target){av_frame_unref(frame);continue;}
+        if(isnan(first)){first=pts;position_origin=fmax(0,absolute);if(seek_target>0){origin=SDL_GetTicks64();seek_target=0;}}
         double local=fmax(0,pts-first);if(frame->best_effort_timestamp==AV_NOPTS_VALUE)local=pts;
         last=local;
         /* Pace by source timestamps, independent of visual frame rate. */
@@ -130,12 +144,15 @@ static int decode(void *opaque)
             AVRational sar=av_guess_sample_aspect_ratio(format,stream,frame);
             double aspect=frame->width*(sar.num>0 && sar.den>0?av_q2d(sar):1)/frame->height;
             if(!isfinite(aspect)||aspect<.05||aspect>20)aspect=(double)frame->width/frame->height;
-            int width=V_WIDTH,height=(int)(width/aspect);
+            int width=SDL_min(V_WIDTH,frame->width),height=(int)(width/aspect);
             if(height>V_HEIGHT){height=V_HEIGHT;width=(int)(height*aspect);}
             width=SDL_clamp(width,2,V_WIDTH);height=SDL_clamp(height,2,V_HEIGHT);
-            VFrame *out=&v->frame[w%V_SLOTS];out->width=width;out->height=height;out->ms=(unsigned)fmin(local*1000,4294967295.0);out->restart=restart;
-            sws=sws_getCachedContext(sws,frame->width,frame->height,(enum AVPixelFormat)frame->format,width,height,AV_PIX_FMT_BGRA,SWS_FAST_BILINEAR,NULL,NULL,NULL);
+            VFrame *out=&v->frame[w%V_SLOTS];out->width=width;out->height=height;out->ms=(unsigned)fmin((position_origin+local)*1000,4294967295.0);out->restart=restart;
+            sws=sws_getCachedContext(sws,frame->width,frame->height,video_scale_format((enum AVPixelFormat)frame->format),width,height,AV_PIX_FMT_BGRA,SWS_FAST_BILINEAR,NULL,NULL,NULL);
             if(!sws){result=AVERROR(ENOMEM);goto done;}
+            const int *coefficients=sws_getCoefficients(SWS_CS_DEFAULT);
+            int full=frame->color_range==AVCOL_RANGE_JPEG || video_scale_format((enum AVPixelFormat)frame->format)!=(enum AVPixelFormat)frame->format;
+            sws_setColorspaceDetails(sws,coefficients,full,coefficients,1,0,1<<16,1<<16);
             uint8_t *dest[4]={out->pixels,NULL,NULL,NULL};int stride[4]={width*4,0,0,0};
             if(sws_scale(sws,(const uint8_t*const*)frame->data,frame->linesize,0,frame->height,dest,stride)!=height){result=AVERROR_INVALIDDATA;goto done;}
             atomic_store_explicit(&v->write,w+1,memory_order_release);
@@ -153,17 +170,18 @@ cleanup:
     sws_freeContext(sws);av_frame_free(&frame);av_packet_free(&packet);avcodec_free_context(&codec);avformat_close_input(&format);
     return 0;
 }
-TsVideo *ts_video_open(const char *path)
+TsVideo *ts_video_open_at(const char *path,double fraction)
 {
     if(!path || !*path || strlen(path)>=1024)return NULL;
     TsVideo *v=calloc(1,sizeof(*v));if(!v)return NULL;
-    snprintf(v->path,sizeof(v->path),"%s",path);
+    snprintf(v->path,sizeof(v->path),"%s",path);v->fraction=isfinite(fraction)?fmax(0,fmin(.999999,fraction)):0;
     atomic_init(&v->stop,0);atomic_init(&v->paused,0);atomic_init(&v->loop,1);atomic_init(&v->restart,0);atomic_init(&v->fps,15);atomic_init(&v->write,0);atomic_init(&v->read,0);
     v->status_lock=SDL_CreateMutex();if(!v->status_lock){free(v);return NULL;}
     status_set(v,TS_VIDEO_OPENING,"OPENING VIDEO...");v->thread=SDL_CreateThread(decode,"mandala-video",v);
     if(!v->thread){SDL_DestroyMutex(v->status_lock);free(v);return NULL;}
     return v;
 }
+TsVideo *ts_video_open(const char *path){return ts_video_open_at(path,0);}
 void ts_video_control(TsVideo *v,int paused,int loop,unsigned restart,unsigned fps)
 {
     if(!v)return;

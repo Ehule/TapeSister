@@ -112,6 +112,9 @@ static void wait_render(void);
 #include "test_mosaic_record_tile.inc"
 #include "test_mosaic_record_routes.inc"
 #include "test_mosaic_live_controller.inc"
+#include "test_mosaic_grab.inc"
+#include "test_mosaic_scale.inc"
+#include "test_mosaic_gallery_controller.inc"
 #include "test_quick_capture.inc"
 #include "test_mosaic_record_bank.inc"
 #include "test_mosaic_record_preview.inc"
@@ -143,8 +146,8 @@ static void test_canvas_feedback(SDL_Window *window)
     key(window,SDLK_z,KMOD_CTRL);assert(a->start==.5 && b->start==1 && a->x==20 && b->x==130);
     key(window,SDLK_m,KMOD_NONE);assert(a->muted && b->muted && !obstacle->muted);
     key(window,SDLK_m,KMOD_NONE);assert(!a->muted && !b->muted);
-    key(window,SDLK_s,KMOD_NONE);assert(a->solo && b->solo && !obstacle->solo);
-    key(window,SDLK_s,KMOD_NONE);assert(!a->solo && !b->solo);
+    key(window,SDLK_s,KMOD_ALT);assert(a->solo && b->solo && !obstacle->solo);
+    key(window,SDLK_s,KMOD_ALT);assert(!a->solo && !b->solo);
     click(window,430,96,1);release(window,430,96);assert(ui.mosaic_selected==obstacle->id && !mosaic_chosen(&ui,0));
     /* Middle click seeks through a tile without changing the selected event. */
     SDL_Event seek;SDL_zero(seek);seek.type=SDL_MOUSEBUTTONDOWN;seek.button.windowID=SDL_GetWindowID(window);
@@ -409,6 +412,8 @@ static void test_async_ownership(uint64_t a,uint64_t b,uint64_t original,int sup
     portal_close(0,&audio,&ui,&portal);mosaic_leave(0,&audio,&ui,&instrument,&mosaic);
 }
 #include "test_canvas_eq_controller.inc"
+
+#include "test_mosaic_video_controller.inc"
 int main(int argc,char **argv)
 {
     SDL_SetMainReady();SDL_setenv("SDL_AUDIODRIVER","dummy",1);
@@ -427,6 +432,10 @@ int main(int argc,char **argv)
     }
     uint64_t original=ts_sample_hash(&instrument.current);
     ui.mosaic=audio.mosaic=ts_mosaic_create();ui.mosaic_scale=24;ui.mosaic_open=1;
+    if(argc>1 && !strcmp(argv[1],"--grab")) {test_mosaic_grab(window);goto done;}
+    if(argc>1 && !strcmp(argv[1],"--scale")) {test_mosaic_scale(window);goto done;}
+    if(argc>1 && !strcmp(argv[1],"--video-cues")) {test_mosaic_video_controller(window);goto done;}
+    if(argc>1 && !strcmp(argv[1],"--gallery")) {test_mosaic_gallery_controller(window,device);goto done;}
     if(argc>1 && !strcmp(argv[1],"--source-keys")) {test_mosaic_source_keys(window,device);goto done;}
     if(argc>1 && !strcmp(argv[1],"--live-loops")) {test_mosaic_live_controller(window,device);goto done;}
     if(argc>1 && !strcmp(argv[1],"--edit-benchmark")) {benchmark_mosaic_edits();goto done;}

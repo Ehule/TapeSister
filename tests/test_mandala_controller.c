@@ -453,6 +453,8 @@ static void video_checks(SDL_Window *window)
     puts("video editor, file picker, IPC, pause versus freeze, restart, missing media and musical transport independence: PASS");
 }
 
+
+#include "test_video_cues_render.inc"
 int main(int argc,char **argv)
 {
     SDL_setenv("SDL_VIDEODRIVER","dummy",1);SDL_setenv("SDL_AUDIODRIVER","dummy",1);
@@ -460,12 +462,15 @@ int main(int argc,char **argv)
     assert(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_AUDIO|SDL_INIT_TIMER));
     SDL_Window *window=SDL_CreateWindow("Mandala host fixture",0,0,640,400,0);assert(window);
     setup(window);
-    if(argc>2 && !strcmp(argv[1],"--interact")) {
+    if(argc>1 && !strcmp(argv[1],"--video-cues")) {video_cue_render_checks();}
+    else if(argc>2 && !strcmp(argv[1],"--interact")) {
         interaction_run(argv[2],argc>3?(unsigned)atoi(argv[3]):20,
             argc>4?atoi(argv[4]):10,argc>5?atoi(argv[5]):1);
     } else if(argc>2 && !strcmp(argv[1],"--editor-capture")) {
         a.sister.mandala.palette=4;a.sister.mandala.shape=1;
         if(argc>4)a.sister.mandala.video_filter=(uint32_t)atoi(argv[4]);
+        if(argc>5)a.sister.mandala.geometry_enabled=(unsigned)atoi(argv[5]);
+        if(argc>6)a.sister.mandala.video_monochrome=(unsigned)atoi(argv[6]);
         mandala_editor_show(&u,&a.sister.mandala);
         if(argc>3){mandala_editor.video_tab=1;snprintf(a.sister.mandala.video_path,sizeof(a.sister.mandala.video_path),"%s",argv[3]);a.sister.mandala.video_enabled=1;TsMandalaPreferences prefs={0};assert(ts_mandala_open(&a.sister.mandala,&prefs,error,sizeof(error)));video_pump(700,&prefs);}
         mandala_editor_update(&a.sister.mandala);

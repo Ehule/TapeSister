@@ -49,7 +49,7 @@ static void mosaic_scatter_preview(TsUiState *ui,MosaicController *c)
                 e->x+=shift;
             }
         }
-        for(int n=0;n<3;++n)if(ui->mosaic_scatter_mix[n].mode) {
+        for(int n=0;n<3;++n)if(!e->source->video_path[0] && ui->mosaic_scatter_mix[n].mode) {
             double value=ui->mosaic_scatter_mix[n].low;
             if(ui->mosaic_scatter_mix[n].mode==2)
                 value+=mosaic_scatter_random(&mix_seed[n])*(ui->mosaic_scatter_mix[n].high-value);
@@ -57,7 +57,7 @@ static void mosaic_scatter_preview(TsUiState *ui,MosaicController *c)
             else if(n==1)e->fade_out=fmin(e->duration,value);
             else e->pan=(float)(value/100);
         }
-        if(choice_count) {
+        if(choice_count && !e->source->video_path[0]) {
             int pick=i%choice_count;
             if(pitch->order==TS_MOSAIC_PITCH_RANDOM)pick=(int)(mosaic_scatter_random(&note_seed)*choice_count);
             else if(pitch->order==TS_MOSAIC_PITCH_DESCENDING)pick=choice_count-1-pick;
@@ -104,6 +104,9 @@ static void mosaic_scatter_open(TsUiState *ui,MosaicController *c)
     ui->mosaic_scatter_open=1;ui->mosaic_scatter_copies=c->scatter_from_sources;
     ui->mosaic_scatter_start=ui->mosaic_scroll;
     ui->mosaic_scatter_end=fmin(86400,ui->mosaic_scroll+TS_MOSAIC_CANVAS_HEIGHT/ui->mosaic_scale);
+    if(ui->mosaic->loop_range.end>ui->mosaic->loop_range.start) {
+        ui->mosaic_scatter_start=ui->mosaic->loop_range.start;ui->mosaic_scatter_end=ui->mosaic->loop_range.end;
+    }
     ui->mosaic_scatter_count=c->scatter_pool_count;
     ui->mosaic_scatter_overlap=!ui->mosaic->auto_space;ui->mosaic_scatter_field=0;
     ui->mosaic_scatter_keep_positions=ui->mosaic_scatter_page=c->scatter_layout_touched=0;

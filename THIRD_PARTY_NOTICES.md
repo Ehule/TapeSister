@@ -68,12 +68,13 @@ notes are in `third_party/atk/` and staged in `licenses/atk/` with releases.
 The modified library source is provided and can be rebuilt/relinked using
 TapeSister's CMake build. No convolution or HRTF assets are included.
 
-## FFmpeg video decoder
+## FFmpeg video playback and preparation
 
 The optional visualizer player dynamically links FFmpeg 7.1.4 (libavformat,
 libavcodec, libswscale and libavutil), copyright the FFmpeg developers, under
 LGPL 2.1 or later. The bundled build uses no GPL/nonfree components, external
-codec libraries, network protocols, encoders or FFmpeg command-line programs.
+codec libraries, network protocols or FFmpeg command-line programs. The native
+LGPL MJPEG encoder and AVI muxer prepare local playback copies for quick seeking.
 `cmake/VideoRuntime.cmake` pins the unmodified release archive and SHA-256.
 Portable bundles retain that exact source archive, license texts, configuration
 log and build recipe under `licenses/ffmpeg`. The libraries remain replaceable:

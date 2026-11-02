@@ -79,6 +79,8 @@ static void mosaic_detail_card(TsUiWaveformDetail *d,const TsUiState *ui,
                                 const TsMosaicEvent *e,int selected,int dim,int ghost)
 {
     if(!e->source)return;
+    TsMosaicEvent preview;
+    if(ui->mosaic_grab && selected && !ghost){ts_ui_mosaic_transform_event(ui,e,&preview);e=&preview;}
     double sx=(double)d->width/(ts_ui_mosaic_canvas_right(ui)-151),sy=(double)d->height/TS_MOSAIC_CANVAS_HEIGHT;
     double horizontal=ui->mosaic_hscale>0?ui->mosaic_hscale:1;
     double scale=ui->mosaic_scale>0?ui->mosaic_scale:24,rate=scale*sy;
@@ -86,6 +88,8 @@ static void mosaic_detail_card(TsUiWaveformDetail *d,const TsUiState *ui,
     int64_t x=mosaic_detail_pixel(e->x*horizontal*sx)-pan_x,y=mosaic_detail_pixel(e->start*rate)-pan_y;
     int64_t right=mosaic_detail_pixel((e->x+e->width)*horizontal*sx)-pan_x;
     int64_t bottom=mosaic_detail_pixel((e->start+e->duration)*rate)-pan_y;
+    right=(int64_t)fmax(right,x+ceil(TS_MOSAIC_CARD_MIN_PIXELS*sx));
+    bottom=(int64_t)fmax(bottom,y+ceil(TS_MOSAIC_CARD_MIN_PIXELS*sy));
     if(right<=0 || x>=d->width || bottom<=0 || y>=d->height || right<=x || bottom<=y)return;
     int64_t w=right-x,h=bottom-y,bx=mosaic_detail_pixel(sx),by=mosaic_detail_pixel(sy);
     if(bx<1)bx=1;
@@ -94,6 +98,23 @@ static void mosaic_detail_card(TsUiWaveformDetail *d,const TsUiState *ui,
     if(dim){color=mosaic_mix_color(color,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(19,20,26)),.70f);fill=ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(23,24,30));}
     if(ghost)color=mosaic_mix_color(color,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(16,18,24)),.55f);
     else mosaic_detail_rect(d,x,y,right,bottom,fill);
+    if(w<8*sx || h<8*sy) {
+        mosaic_detail_rect(d,x,y,right,bottom,selected?mosaic_selection_color(ui,e->id==ui->mosaic_selected):color);return;
+    }
+    if(e->source->video_path[0]) {
+        color=selected?mosaic_selection_color(ui,e->id==ui->mosaic_selected):RGB(133,190,239);
+        if(ghost)color=mosaic_mix_color(color,RGB(16,18,24),.55f);
+        mosaic_detail_rect(d,x,y,right,y+2*by,color);mosaic_detail_rect(d,x,y,x+2*bx,bottom,color);mosaic_detail_rect(d,x,bottom-2*by,right,bottom,color);
+        const char *label=ts_mosaic_video_overridden(ui->mosaic,e)?"VIDEO / OVERRIDDEN":e->source->video_pool?"VIDEO / RANDOM POOL":"VIDEO / FILE";
+        int chars=(int)fmax(0,fmin(60,(w/sx-10)/6));char line[64];snprintf(line,sizeof(line),"%.*s",chars,label);
+        mosaic_detail_text(d,x+5*bx,y+5*by,line,color,sx,sy);
+        if(h>24*sy){snprintf(line,sizeof(line),"%.*s",chars,e->video_random_start?"RANDOM POSITION":"FROM BEGINNING");mosaic_detail_text(d,x+5*bx,y+15*by,line,color,sx,sy);}
+        if(!ghost) {
+            MosaicFadeSurface grips={d->pixels,d->width,0,0,d->width,d->height,sx,sy,rate};
+            mosaic_resize_handles(&grips,ui,e,x,y,right,bottom,selected);
+        }
+        return;
+    }
     uint32_t outer=mosaic_mix_color(color,fill,.50f);
     int first=(int)fmax(0,fmin(d->height,(double)y+mosaic_detail_pixel(24*sy)));
     int last=(int)fmax(0,fmin(d->height,(double)bottom-mosaic_detail_pixel(14*sy)));
@@ -174,6 +195,7 @@ static void mosaic_detail_card(TsUiWaveformDetail *d,const TsUiState *ui,
     }
     mosaic_card_pan(&fades,ui,e,x,y,right,bottom,border);
     mosaic_fade_handles(&fades,ui,e,x,y,right,bottom,border);
+    mosaic_resize_handles(&fades,ui,e,x,y,right,bottom,selected);
 }
 static int mosaic_detail_cards(TsFramebuffer *fb,const TsUiState *ui,int any_solo,double interval)
 {

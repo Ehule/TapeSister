@@ -15,7 +15,7 @@ int ts_mosaic_live_count(const TsMosaic *m)
 int ts_mosaic_live_launch(TsMosaic *m,uint64_t id,int quantize)
 {
     TsMosaicEvent *e=ts_mosaic_find(m,id);
-    if(!e || !e->live || e->source->pattern)return 0;
+    if(!e || !e->live || (e->source->pattern || e->source->video_path[0]))return 0;
     int slot=(int)(e-m->events);TsMosaicLive *l=&m->live[slot];
     m->live_reset_ids[slot]=0;
     /* A fresh timeline/manual trigger takes over from a reset sequence plan. */

@@ -68,6 +68,8 @@ typedef enum {
    source allocation, collection, project IO and editor work stay on the UI thread. */
 typedef struct TsMosaicSource {
     TsSample sample,eq_dry;
+    char video_path[1024]; /* Immutable file/folder reference; video owns no audio. */
+    int video_pool;
     TsPatternCard *pattern;
     TsMasterEqControls eq;
     uint64_t hash,eq_dry_hash;
@@ -95,6 +97,8 @@ typedef struct {
     int live, live_finite, live_tempo, live_transport, live_position;
     double live_beats; /* Source cycle in quarter notes when tempo follows master. */
     int live_order; /* 0: Card-ID order; -1: background; positive: explicit sequence order. */
+    int video_random_start, video_transition, video_bw; /* CUT / DISSOLVE / BLACK */
+    double video_fade;
     double finish_fade; /* Optional musical release; ordinary Stop retains its quick release. */
 } TsMosaicEvent;
 
@@ -172,6 +176,8 @@ typedef struct TsMosaic {
     TsMosaicSource *sources;
     TsMosaicSource *pattern_retired[TS_MOSAIC_EVENTS]; /* UI-owned lifetime pins. */
     uint64_t next_id, revision, epoch;
+    double video_trigger_floor;
+    uint64_t video_id, video_serial; /* Audio-owned trigger latch; UI consumes IDs only. */
     double time;
     double speed, speed_current; /* Target and smoothed tape speed, 0.5 .. 2. */
     int playing, repeat, rate;
@@ -234,6 +240,9 @@ void ts_mosaic_live_clock(TsMosaic *,int enabled,int running,double quarter,doub
 void ts_mosaic_update_pattern(TsMosaic *,TsMosaicEvent *,TsMosaicSource *);
 void ts_mosaic_pattern_retire(TsMosaic *); /* UI thread under audio exclusion. */
 TsMosaic *ts_mosaic_create(void);
+TsMosaicSource *ts_mosaic_video_source(TsMosaic *,const char *path,int pool);
+const TsMosaicEvent *ts_mosaic_video_at(const TsMosaic *,double time);
+int ts_mosaic_video_overridden(const TsMosaic *,const TsMosaicEvent *);
 void ts_mosaic_free(TsMosaic *m);
 /* Publish a freshly loaded, stopped model with no undo history under the audio
    lock. Its source ownership moves to m; loaded receives the retired sources

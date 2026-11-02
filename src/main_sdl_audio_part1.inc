@@ -441,7 +441,9 @@ static void runtime_note_render(AudioState *audio, TsAudioBuses *buses,
     ts_source_route_add(&audio->clean,&channel,tile_gain);
     int matrix=audio->sister.matrix.controls.enabled;
     ts_source_route_mix_init(&channel,&audio->clean);
-    TsStereoFrame mosaic=ts_mosaic_read_routed(audio->mosaic,audio->output_rate,matrix?&channel:NULL);
+    TsStereoFrame mosaic=audio->gallery && ts_gallery_active(audio->gallery)==audio->mosaic?
+        ts_gallery_read(audio->gallery,audio->output_rate,matrix?&channel:NULL):
+        ts_mosaic_read_routed(audio->mosaic,audio->output_rate,matrix?&channel:NULL);
     float mosaic_gain=audio->sister.performance_gain_current[2];
     mosaic.l*=mosaic_gain;mosaic.r*=mosaic_gain;
     if(matrix)ts_source_route_add(&audio->clean,&channel,mosaic_gain);
@@ -752,10 +754,27 @@ static int ts_audio_apply_backend_before_sdl(TsAudioBackend backend)
         fprintf(stderr, "TapeSister audio: %s\n", SDL_GetError());
         return 0;
     }
+#if SDL_VERSION_ATLEAST(2, 24, 0)
     if (driver == NULL) SDL_ResetHint(SDL_HINT_AUDIODRIVER);
-    if (driver != NULL &&
-        !SDL_SetHintWithPriority(SDL_HINT_AUDIODRIVER, driver,
-                                 SDL_HINT_OVERRIDE)) {
+    int requested = driver == NULL ||
+        SDL_SetHintWithPriority(SDL_HINT_AUDIODRIVER, driver, SDL_HINT_OVERRIDE);
+#else
+    /* Older SDL reads the environment directly. Preserve its original Auto
+       choice when CFG switches back from an explicitly selected backend. */
+    static char *original_driver;
+    static int driver_captured;
+    if (!driver_captured) {
+        const char *original = SDL_getenv("SDL_AUDIODRIVER");
+        if (original != NULL && (original_driver = SDL_strdup(original)) == NULL) {
+            SDL_OutOfMemory();
+            return 0;
+        }
+        driver_captured = 1;
+    }
+    int requested = SDL_setenv("SDL_AUDIODRIVER",
+        driver != NULL ? driver : original_driver != NULL ? original_driver : "", 1) == 0;
+#endif
+    if (!requested) {
         fprintf(stderr,
                 "TapeSister audio: could not request configured backend %s\n",
                 ts_audio_backend_name(backend));

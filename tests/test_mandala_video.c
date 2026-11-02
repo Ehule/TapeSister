@@ -3,6 +3,7 @@
 #endif
 #define SDL_MAIN_HANDLED
 #include "tapesister/mandala_video.h"
+#include "tapesister/video_cache.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -65,7 +66,7 @@ int main(int argc,char **argv)
     while(!texture && SDL_GetTicks64()-start<8000)poll_video(video,20);
     assert(texture && status.state!=TS_VIDEO_ERROR);
     int width,height;SDL_QueryTexture(texture,NULL,NULL,&width,&height);
-    assert(width<=640 && height<=400 && width*2==height*3); /* source aspect retained */
+    assert(width<=960 && height<=540 && width*2==height*3); /* source aspect retained */
     assert(poll_video(video,350)>0);unsigned held=status.position_ms;
     ts_video_control(video,1,0,0,15);
     assert(!poll_video(video,250) && status.position_ms==held);
@@ -82,6 +83,16 @@ int main(int argc,char **argv)
     video=ts_video_open("no-such-video-file.mp4");assert(video);
     poll_video(video,300);assert(status.state==TS_VIDEO_ERROR && !texture && status.message[0]);ts_video_close(video);
     for(int i=0;i<8;++i){video=ts_video_open(argv[1]);assert(video);ts_video_close(video);}
+
+    TsVideoCache *cache=ts_video_cache_create();assert(cache);ts_video_cache_begin(cache,argv[1],0);
+    unsigned done=0,total=0,failed=0;start=SDL_GetTicks64();
+    while(ts_video_cache_status(cache,&done,&total,&failed) && SDL_GetTicks64()-start<8000)SDL_Delay(10);
+    assert(!ts_video_cache_status(cache,&done,&total,&failed) && done==1 && total==1 && !failed);
+    char prepared[2048];assert(ts_video_cache_path(argv[1],prepared,sizeof(prepared)));ts_video_cache_free(cache);
+    memset(&status,0,sizeof(status));video=ts_video_open_at(prepared,.65);assert(video);texture=NULL;
+    start=SDL_GetTicks64();while(!texture && SDL_GetTicks64()-start<4000)poll_video(video,10);
+    assert(texture && status.position_ms>700 && status.state!=TS_VIDEO_ERROR);
+    ts_video_close(video);SDL_DestroyTexture(texture);texture=NULL;
     SDL_DestroyRenderer(renderer);SDL_DestroyWindow(window);SDL_Quit();
     puts("video: decode, pacing, pause, palette blend/custom edits, raw restore, texture reset, EOF, loop, restart, backpressure and teardown PASS");return 0;
 }

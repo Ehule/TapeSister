@@ -95,7 +95,12 @@ static void test_mosaic_scatter_mix(SDL_Window *window)
     click(window,410,105,1);assert(ui.mosaic_scatter_keep_positions);
     /* Fractional/flipped wheel and fine movement use event-local coordinates. */
     SDL_Event wheel;SDL_zero(wheel);wheel.type=SDL_MOUSEWHEEL;wheel.wheel.windowID=SDL_GetWindowID(window);
-    wheel.wheel.mouseX=330;wheel.wheel.mouseY=222;wheel.wheel.y=1;wheel.wheel.preciseY=.5f;
+    wheel.wheel.y=1;wheel.wheel.preciseY=.5f;
+#if SDL_VERSION_ATLEAST(2,26,0)
+    wheel.wheel.mouseX=330;wheel.wheel.mouseY=222;
+#else
+    SDL_WarpMouseInWindow(window,330,222);
+#endif
     wheel.wheel.direction=SDL_MOUSEWHEEL_FLIPPED;SDL_SetModState(KMOD_SHIFT);dispatch(&wheel,window);SDL_SetModState(KMOD_NONE);
     assert(ui.mosaic_scatter_mix[2].low==-80.25);
     /* Invalid text cannot publish, but Cancel always works even with an error. */

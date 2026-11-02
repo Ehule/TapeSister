@@ -257,6 +257,30 @@ ordinary audio file should be deliberately reinterpreted as bytes. If a waveform
 selection is active, accepting an import proceeds to the existing **PASTE / FIT /
 CANCEL** choice instead of replacing the whole tile.
 
+### Import a folder of sounds
+
+Open **LOAD → IMPORT FOLDER**, or press `Ctrl+Shift+O` from the main workspace
+or LOAD browser. Navigate into the desired folder, then click **IMPORT FOLDER**.
+Double-clicking a directory enters it; **UP DIR** goes back. Cancel returns to
+the ordinary file browser. Dropping a folder on the main sample workspace also
+starts a folder import.
+
+Each WAV, FLAC, MP3 or `.ogg` file directly in that folder becomes a separate
+tile, in case-insensitive filename order. Empty, unlocked destinations are filled
+in Sample page/slot order, and more pages are added when needed. Occupied and
+locked tiles, existing audio buffers, edit histories and routing are preserved.
+Imported files use the same C4-unity playback and loop/stereo handling as LOAD.
+Subfolders, links, unrelated files and unreadable audio are skipped; the status
+bar reports the imported count, destination pages and skipped counts. Raw-data
+and song/project imports continue to use single-file LOAD.
+
+The decoder works in the background while existing playback continues. **Escape**
+or **CANCEL** stops it before any tiles are added. A cancelled import, a folder
+with no readable audio, a capacity failure, or changed destinations leaves the
+collection unchanged. Finish any active tile capture or Mosaic audio edit first.
+While the REC bank is selected, imports still go into the Sample collection.
+Save the project normally to retain all imported tiles and added pages.
+
 ### Lower workspaces
 
 In the main canvas, the number keys choose the lower area:
@@ -741,6 +765,12 @@ correct Sample page without stopping the tracker. F10 returns.
 
 ## Mosaic
 
+A project can hold up to 16 named canvases. Open **GALLERY** or press **Ctrl+G**
+to create, rename and enter them. **Ctrl+Page Up/Down** turns pages manually,
+crossfading into Start, Resume or a stored marker. Each canvas keeps its own
+cards, loops, envelope and markers; sound banks and effects are shared.
+[Gallery controls and saving](MOSAIC_GALLERY.md).
+
 ![Mosaic with freely placed events and a downward playhead](images/mosaic.png)
 
 Mosaic turns the existing sample playback into an arrangement. Time runs from top
@@ -818,8 +848,9 @@ visually at the C4 reference speed, while the chord voices follow their own rate
 | Move the selection | Drag any selected event body |
 | Copy an event or selected group | Hold Shift when starting a drag on a tile |
 | Extend duration / change visual width | Drag the top or bottom / right edge |
+| Scale selected durations without grabbing an edge | S; T top (default), B bottom, C center; click/Enter confirms, Escape/right-click cancels |
 | Align starts, ends, or midpoints | Hold Alt during a move or duration resize |
-| Mute / solo the selection | M / S |
+| Mute / solo the selection | M / Alt+S |
 | Add a timeline marker at the playhead | Alt+M |
 | Jump to a marker / capture a numbered slot | Click bottom number / Shift-click |
 | Move / name / delete a marker | Drag ruler flag / right-click flag or number |

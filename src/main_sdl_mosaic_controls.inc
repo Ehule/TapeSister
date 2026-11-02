@@ -37,6 +37,7 @@ static int mosaic_control_set(SDL_AudioDeviceID device,TsUiState *ui,MosaicContr
     } else {
         for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(mosaic_chosen(ui,i)) {
             TsMosaicEvent *e=&m->events[i];
+            if(e->source->video_path[0])continue;
             if(field==4 && e->live && !e->live_finite)continue;
             double v=field==1?fmax(0,fmin(2,value)):field==2?fmax(-1,fmin(1,value)):fmax(0,fmin(e->duration,value));
             if(fabs(mosaic_control_value(e,field)-v)<1e-7)continue;
@@ -82,7 +83,7 @@ static int mosaic_controls_event(const SDL_Event *event,SDL_Window *window,SDL_A
     int field=mosaic_control_hit(x,y);
     if(!field)return 0;
     TsMosaicEvent *selected=ts_mosaic_find(ui->mosaic,ui->mosaic_selected);
-    if(field!=5 && !selected)return 1;
+    if(field!=5 && (!selected || selected->source->video_path[0]))return 1;
     mosaic_drag_end(ui,c);c->mix_changed=0;c->mix_epoch=ui->mosaic->epoch;
     if(wheel) {
         double delta=wheel_event_delta(event,0)*((mod&KMOD_SHIFT)?.1:1),value;

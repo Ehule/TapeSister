@@ -48,7 +48,16 @@ int process(void *out, void *in, unsigned n, double, RtAudioStreamStatus status,
     struct LockOps {
         int try_lock() { return SDL_TryLockMutex(mutex); }
         uint64_t now() { return SDL_GetPerformanceCounter(); }
-        void pause() { SDL_CPUPauseInstruction(); }
+        void pause() {
+#ifdef SDL_CPUPauseInstruction
+            SDL_CPUPauseInstruction();
+#elif (defined(__GNUC__) || defined(__clang__)) && (defined(__i386__) || defined(__x86_64__))
+            /* SDL 2.0.20 on the Linux release baseline lacks this macro. */
+            __asm__ __volatile__("pause");
+#else
+            std::atomic_signal_fence(std::memory_order_seq_cst);
+#endif
+        }
     } ops;
     const auto lock = ts_asio_callback_lock(ops, lockRetryTicks);
     if (lock == TsAsioLock::skipped) { ++xruns; ++controlSkips; return 0; }

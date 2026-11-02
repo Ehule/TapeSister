@@ -20,6 +20,8 @@
 #include "tapesister/input_ownership.h"
 #include "tapesister/note_bank.h"
 #include "tapesister/sample_pages.h"
+#include "tapesister/sample_folder.h"
+#include "tapesister/mosaic_gallery.h"
 #include "tapesister/tracker_playback.h"
 #include "tapesister/tapehead_embed.h"
 #include "tapesister/realtime_diagnostics.h"
@@ -659,7 +661,7 @@ static uint64_t paged_project_fingerprint(const TsSamplePages *pages,
                                          const TsKeyboardSequence *sequence,int quick)
 {
     uint64_t hash = 1469598103934665603ull;
-    uint64_t mosaic_hash = ts_mosaic_hash(pages ? pages->mosaic : NULL);
+    uint64_t mosaic_hash = pages && pages->gallery?ts_gallery_hash(pages->gallery):ts_mosaic_hash(pages ? pages->mosaic : NULL);
     state_hash_bytes(&hash, &mosaic_hash, sizeof(mosaic_hash));
     uint64_t tracker_hash = pages ? ts_sister_tracker_hash(&pages->tracker) : 0;
     state_hash_bytes(&hash, &tracker_hash, sizeof(tracker_hash));
@@ -909,6 +911,7 @@ typedef struct {
     TsSourceRouteVoice audition_route;
     TsTileId audition_route_tile;
     TsMosaic *mosaic;
+    TsMosaicGallery *gallery; /* Non-owning project registry, bound with mosaic. */
     TsPerformanceBank tile_launchers;
     TsStereoFrame tile_launcher_mix;
     int tile_launcher_active;
@@ -1187,7 +1190,8 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
                                  live_link_frames,
                                  (uint32_t)audio->output_rate);
     ts_sister_runtime_begin_audio_block(&audio->sister);
-    ts_mosaic_begin_block(audio->mosaic,(unsigned)frames);
+    if(audio->gallery && ts_gallery_active(audio->gallery)==audio->mosaic)ts_gallery_begin_block(audio->gallery,(unsigned)frames);
+    else ts_mosaic_begin_block(audio->mosaic,(unsigned)frames);
     ts_insert_begin_output_block(&audio->sister.insert, (unsigned)frames);
     ts_performance_inputs_begin(audio->performance_inputs,audio->sister.insert.duplex,
         audio->sister.insert.duplex_channels,(unsigned)audio->output_rate);
@@ -1201,7 +1205,10 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
     const int master_arp_follow=master_settings.enabled && (master_settings.tempo_mask&TS_CLOCK_ARP);
     audio->keyboard_sequence.clock_carry=master_controls->enabled && (master_controls->tempo_mask&TS_CLOCK_ARP);
     ts_tapehead_clock(master_controls->enabled && (master_controls->tempo_mask&TS_CLOCK_TRACKER)?master_controls->bpm:0);
-    ts_mosaic_live_clock(audio->mosaic,master_controls->enabled,audio->sister.master_clock.running,
+    if(audio->gallery && ts_gallery_active(audio->gallery)==audio->mosaic)
+        ts_gallery_clock(audio->gallery,master_controls->enabled,audio->sister.master_clock.running,
+            master_controls->bpm?60.0/master_controls->bpm:.5,audio->sister.master_clock.phase);
+    else ts_mosaic_live_clock(audio->mosaic,master_controls->enabled,audio->sister.master_clock.running,
         master_controls->bpm?60.0/master_controls->bpm:.5,audio->sister.master_clock.phase);
     unsigned master_span_start=0,master_source_bpm=0;
     double master_source_quarter=0;
@@ -1280,7 +1287,9 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             master_source_quarter=ts_tapehead_native_quarter(bpm);
             double quarter=master_source_quarter>0?master_source_quarter:60.0/master_controls->bpm;
             master_arp_interval=quarter/(1u<<master_controls->arp_division);
-            ts_mosaic_live_clock(audio->mosaic,1,audio->sister.master_clock.running,quarter,audio->sister.master_clock.phase);
+            if(audio->gallery && ts_gallery_active(audio->gallery)==audio->mosaic)
+                ts_gallery_clock(audio->gallery,1,audio->sister.master_clock.running,quarter,audio->sister.master_clock.phase);
+            else ts_mosaic_live_clock(audio->mosaic,1,audio->sister.master_clock.running,quarter,audio->sister.master_clock.phase);
         }
         double arp_interval=master_arp_follow?
             master_arp_interval:sync && bpm?60.0/bpm/(1u<<(sync-1)):0;
@@ -4490,6 +4499,11 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
         ok = ts_sample_pages_publish_project(sample_pages, instrument, record_bank,
                                              prepared_project, error, sizeof(error));
         if (ok) {
+            audio->gallery=ui->mosaic_gallery=sample_pages->gallery;
+            ui->mosaic=audio->mosaic=sample_pages->mosaic;
+            ui->mosaic_gallery_open=ui->mosaic_gallery_rename=0;
+            ui->mosaic_canvas_import_count=ui->mosaic_canvas_import_pending=0;
+            ui->mosaic_gallery_selected=audio->gallery?audio->gallery->active:0;
             previous_sequence_source = ts_keyboard_sequence_source(&audio->keyboard_sequence, NULL);
             ts_keyboard_sequence_set_bank(&audio->keyboard_sequence, &sister_state.keyboard_sequence);
             audio->keyboard_sequence_source_stamp = 0;
@@ -7165,7 +7179,7 @@ static void browser_cycle_focus(TsBrowser *browser, int amount)
         if (focus < -2) focus = 3;
         if (focus > 3) focus = -2;
     } while ((focus == -2 && !ts_browser_edits_text(browser)) ||
-             (focus == 1 &&
+             (focus == 1 && browser->mode != TS_BROWSER_LOAD_WAV &&
               !ts_browser_mode_allows_create_directory(browser->mode)));
     browser->action_focus = focus;
     browser->filename_focus = focus == -2;
@@ -7292,7 +7306,7 @@ static const char *path_basename(const char *path)
 
 static int ui_blocking_dialog_open_except_workspaces(const TsUiState *ui)
 {
-    return ui->mosaic_marker_open || ui->mosaic_views_open || ui->mosaic_align_open || ui->mosaic_loop_open || ui->mosaic_scatter_open || ui->mosaic_spacing_confirm || ui->mosaic_edit_choice || ui->mosaic_pattern_choice || ui->exit_confirm_open || ui->project_overwrite_confirm_open ||
+    return ui->mosaic_video_open || ui->mosaic_gallery_open || ui->mosaic_marker_open || ui->mosaic_views_open || ui->mosaic_align_open || ui->mosaic_loop_open || ui->mosaic_scatter_open || ui->mosaic_spacing_confirm || ui->mosaic_edit_choice || ui->mosaic_pattern_choice || ui->exit_confirm_open || ui->project_overwrite_confirm_open ||
            ui->overdub_confirm_open ||
            ui->file_busy || ui->transform_open || ui->drone_open ||
            ui->import_preview_open || ui->load_selection_choice_open ||
@@ -7318,9 +7332,10 @@ static void ui_sync_dialog_workspaces(TsUiState *ui)
     /* Mosaic owns these dialogs. Hiding it strands the modal: its renderer
        and input handler both require mosaic_open, while other input is blocked. */
     if(ui_dialog_open(ui) && !ui->portal.open &&
-       !ui->mosaic_marker_open && !ui->mosaic_views_open && !ui->mosaic_scatter_open && !ui->mosaic_spacing_confirm && !ui->mosaic_loop_open && !ui->mosaic_align_open && !ui->mosaic_pattern_choice &&
+       !ui->mosaic_video_open && !ui->mosaic_gallery_open && !ui->mosaic_marker_open && !ui->mosaic_views_open && !ui->mosaic_scatter_open && !ui->mosaic_spacing_confirm && !ui->mosaic_loop_open && !ui->mosaic_align_open && !ui->mosaic_pattern_choice &&
        !ui->project_overwrite_confirm_open && ui->browser.mode!=TS_BROWSER_SAVE_RECIPE &&
-       ui->browser.mode!=TS_BROWSER_SAVE_XM &&
+       ui->browser.mode!=TS_BROWSER_LOAD_VIDEO && ui->browser.mode!=TS_BROWSER_MOSAIC_VIDEO &&
+       ui->browser.mode!=TS_BROWSER_MOSAIC_VIDEO_POOL && ui->browser.mode!=TS_BROWSER_SAVE_XM && ui->browser.mode!=TS_BROWSER_IMPORT_CANVAS && ui->browser.mode!=TS_BROWSER_EXPORT_CANVAS &&
        !(ui->file_busy && !strcmp(ui->file_busy_label,"SAVING")))ui->mosaic_open=0;
     if(ui_dialog_open(ui))ui->tracker_open=0;
 }
@@ -8837,8 +8852,10 @@ static void begin_active_project_save(TsUiState *ui)
 }
 
 #include "main_sdl_browser_audition.inc"
+#include "main_sdl_folder_import.inc"
 
 static void mandala_editor_video_loaded(TsUiState *ui,const TsMandalaConfig *c);
+static void mosaic_select_only(TsUiState *,uint64_t);
 static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
                            TsInstrument *instrument, TsSample *pending_selection_load,
                            TsSamplePages *sample_pages,
@@ -8861,6 +8878,26 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
             !ts_browser_edits_text(browser))
             SDL_StopTextInput();
         return;
+    }
+    if(browser->mode==TS_BROWSER_MOSAIC_VIDEO || browser->mode==TS_BROWSER_MOSAIC_VIDEO_POOL) {
+        int pool=browser->mode==TS_BROWSER_MOSAIC_VIDEO_POOL;
+        if(!pool && browser->selected>=0 && browser->selected<browser->entry_count && browser->entries[browser->selected].is_directory){ts_browser_enter_selected_directory(browser);return;}
+        if(pool)snprintf(path,sizeof(path),"%s",browser->directory);
+        else if(!ts_browser_selected_path(browser,path,sizeof(path))){snprintf(browser->message,sizeof(browser->message),"SELECT A VIDEO FILE");return;}
+        if(!ui->mosaic || ui->mosaic->epoch!=ui->mosaic_video_epoch){snprintf(browser->message,sizeof(browser->message),"CANVAS CHANGED / CHOOSE AGAIN");return;}
+        TsMosaicEvent *e=ts_mosaic_find(ui->mosaic,ui->mosaic_video_id);
+        if(ui->mosaic_video_id && (!e || !e->source->video_path[0])){snprintf(browser->message,sizeof(browser->message),"VIDEO TRIGGER IS NO LONGER AVAILABLE");return;}
+        TsMosaicSource *source=ts_mosaic_video_source(ui->mosaic,path,pool);if(!source)return;
+        if(device)SDL_LockAudioDevice(device);ts_mosaic_checkpoint(ui->mosaic);
+        if(!e){e=ts_mosaic_add(ui->mosaic,source,ui->mosaic_video_time,ui->mosaic_video_x);if(e){e->duration=1.5;e->width=120;e->video_fade=2;}}
+        else {e->source=source;++e->revision;}
+        if(e){snprintf(e->name,sizeof(e->name),"%.63s",source->sample.name);ui->mosaic_video_id=e->id;}
+        if(device)SDL_UnlockAudioDevice(device);
+        if(!e){snprintf(browser->message,sizeof(browser->message),"CANVAS IS FULL");return;}
+        mosaic_select_only(ui,e->id);
+        audio->sister.mandala.video_enabled=1;
+        ts_browser_close(browser);SDL_StopTextInput();ui->mosaic_open=1;ui->tracker_open=0;ui->mosaic_video_open=1;
+        snprintf(ui->status,sizeof(ui->status),"VIDEO TRIGGER ADDED / RIGHT-CLICK TO EDIT / CTRL+R TO SCATTER");return;
     }
     if (browser->mode==TS_BROWSER_LOAD_VIDEO) {
         if(browser->selected>=0 && browser->selected<browser->entry_count && browser->entries[browser->selected].is_directory) {
@@ -8931,13 +8968,13 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
         ts_browser_enter_selected_directory(browser);
         return;
     }
-    if (browser->mode == TS_BROWSER_LOAD_WAV) {
+    if (browser->mode == TS_BROWSER_LOAD_WAV || browser->mode == TS_BROWSER_IMPORT_CANVAS) {
         if (!ts_browser_selected_path(browser, path, sizeof(path))) {
             snprintf(browser->message, sizeof(browser->message),
                      "SELECT AUDIO, XM / MOD / IT, RAW, TSR, OR TSP");
             return;
         }
-        pending->selection_load =
+        pending->selection_load = browser->mode == TS_BROWSER_LOAD_WAV &&
             !bypass_preview && (browser->import_as_raw ||
             (!path_is_tsr(path) && !path_is_tsp(path) && !path_is_module(path))) &&
             instrument->current.data != NULL && instrument->has_selection &&
@@ -8947,7 +8984,7 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
             snprintf(browser->message, sizeof(browser->message), "ENTER A VALID FILENAME");
             return;
         }
-        if (browser->mode == TS_BROWSER_SAVE_RECIPE) {
+        if (browser->mode == TS_BROWSER_SAVE_RECIPE || browser->mode == TS_BROWSER_EXPORT_CANVAS) {
             char bundled[TS_BROWSER_PATH_MAX];
             char bundle_error[160];
             if (!ts_sample_pages_bundle_project_path(
@@ -8958,6 +8995,9 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
                 return;
             }
             snprintf(path, sizeof(path), "%s", bundled);
+        }
+        if (browser->mode == TS_BROWSER_EXPORT_CANVAS && ts_browser_path_exists(path)) {
+            snprintf(browser->message,sizeof(browser->message),"CHOOSE A NEW CANVAS BUNDLE NAME / EXISTING FILES ARE KEPT");return;
         }
         if (browser->mode == TS_BROWSER_EXPORT_BANK && ts_browser_path_exists(path)) {
             snprintf(browser->message, sizeof(browser->message),
@@ -8983,7 +9023,7 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     ui->file_busy = 1;
     ui->file_busy_phase = 2;
     snprintf(ui->file_busy_label, sizeof(ui->file_busy_label), "%s",
-             browser->mode == TS_BROWSER_LOAD_WAV ? "OPENING" :
+             (browser->mode == TS_BROWSER_LOAD_WAV || browser->mode == TS_BROWSER_IMPORT_CANVAS) ? "OPENING" :
              (browser->mode == TS_BROWSER_SAVE_RECIPE ||
               browser->mode == TS_BROWSER_SAVE_PRESET) ? "SAVING" : "EXPORTING");
     snprintf(browser->message, sizeof(browser->message), "%s - PLEASE WAIT",
@@ -8995,6 +9035,7 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
 static int offline_start(SDL_AudioDeviceID,AudioState *,TsUiState *,TsInstrument *,TsSamplePages *,TsInstrument *,int,const char *,int);
 
 #include "main_sdl_recovery.inc"
+#include "main_sdl_canvas_transfer.inc"
 
 static void run_pending_file_operation(SDL_AudioDeviceID device,
                                        AudioState *audio, TsUiState *ui,
@@ -9012,7 +9053,9 @@ static void run_pending_file_operation(SDL_AudioDeviceID device,
     if (pending == NULL || !pending->active) return;
     if (project_recovery_guard(ui,pending)) return;
     (void)pending_selection_load;
-    if (pending->mode == TS_BROWSER_LOAD_WAV &&
+    if(pending->mode==TS_BROWSER_IMPORT_CANVAS || pending->mode==TS_BROWSER_EXPORT_CANVAS) {
+        ok=mosaic_canvas_file_operation(device,audio,ui,sample_pages,pending,error,sizeof(error));
+    } else if (pending->mode == TS_BROWSER_LOAD_WAV &&
         (pending->force_raw || (!path_is_tsr(pending->path) && !path_is_tsp(pending->path) && !path_is_module(pending->path)))) {
         if (audio->capture.state == TS_CAPTURE_COMPLETED)
             finalize_capture(device, audio, ui, instrument);
@@ -13968,6 +14011,8 @@ int main(int argc, char **argv)
     portal_init(&portal,&ui.portal);
     ui.mosaic = audio.mosaic = sample_pages.mosaic = ts_mosaic_create();
     if(!ui.mosaic) {fprintf(stderr,"Mosaic: out of memory\n");return 1;}
+    {char error[160];if(!ts_sample_pages_enable_gallery(&sample_pages,error,sizeof(error))){fprintf(stderr,"Gallery: %s\n",error);ts_mosaic_free(ui.mosaic);ts_sample_pages_free(&sample_pages);return 1;}}
+    audio.gallery=ui.mosaic_gallery=sample_pages.gallery;
     ui.mosaic_scale=24.0;ui.mosaic_hscale=1.0;
     portal.mosaic=&mosaic;mosaic.pages=&sample_pages;
     portal.create_seeds=&fm_seed_sequence;
@@ -14412,6 +14457,8 @@ int main(int argc, char **argv)
         runtime_note_collect_snapshots(device,&audio);
         poll_import_worker(device, &audio, &ui, &instrument,
                            &pending_selection_load, &import_controller);
+        poll_folder_import(device, &audio, &ui, &instrument, &sample_pages);
+        mosaic_canvas_queue_import(&ui,&pending_file);
         if (pending_file.active && pending_file.presented)
             run_pending_file_operation(device, &audio, &ui, &instrument,
                                        &pending_selection_load, &import_controller,
@@ -14639,6 +14686,8 @@ int main(int argc, char **argv)
             }
             event_id=event_window_id(&event);
             if (ts_audio_health_event(&event, window, &audio, &ui)) continue;
+            if (folder_import_event(&event,window,device,&audio,&ui,&instrument,
+                                    &sample_pages,&import_controller,&browser_audition)) continue;
             if((!ui.tracker_open || event_id!=SDL_GetWindowID(window)) && keyboard_sequence_transport_event(&event,window,device,&audio,&ui,
                 &sister_window,&instrument,&fm_preview,obtained.freq))continue;
             if(router_event(&event,window,device,&audio,&ui,&sister_window))continue;
@@ -15096,6 +15145,9 @@ int main(int argc, char **argv)
                       ui.browser.mode != TS_BROWSER_CLOSED)) {
                 snprintf(ui.status, sizeof(ui.status),
                          "FINISH OR CANCEL THE OPEN DIALOG FIRST");
+                SDL_free(event.drop.file);
+            }
+            else if(event.type==SDL_DROPFILE && ui.mosaic_open && mosaic_video_drop(device,&audio,&ui,&mosaic,event.drop.file,window)) {
                 SDL_free(event.drop.file);
             }
             else if (event.type == SDL_DROPFILE) {
@@ -18344,11 +18396,9 @@ int main(int argc, char **argv)
         refresh_workbench_loop(device, &audio, &ui, &instrument);
         mosaic_poll(device,&ui,&instrument,&mosaic);
         mosaic_live_keyboard_snapshot(&audio,&ui,&instrument);
-        if(mosaic.drag==1 || (mosaic.drag>=7 && mosaic.drag<=9)) {
-            if(SDL_GetKeyboardFocus()!=window || !(SDL_GetMouseState(NULL,NULL)&SDL_BUTTON_LMASK) ||
-               ui_dialog_open(&ui))mosaic_drag_end(&ui,&mosaic);
-            else if(mosaic.drag==1)mosaic_drag_autoscroll(device,&ui,&mosaic,SDL_GetTicks());
-        }
+        if(mosaic.drag==1 || (mosaic.drag>=7 && mosaic.drag<=9))
+            mosaic_drag_service(device,&ui,&mosaic,SDL_GetTicks(),
+                SDL_GetKeyboardFocus()==window,SDL_GetMouseState(NULL,NULL));
         ui_sync_dialog_workspaces(&ui);
         Uint32 health_setup_now = SDL_GetTicks();
         if (device) SDL_LockAudioDevice(device);
@@ -18629,6 +18679,7 @@ int main(int argc, char **argv)
         mandala_editor_update(&audio.sister.mandala);
         uint64_t profile_aux = ts_profile_begin(TS_PROF_AUX_UI);
         TsMandalaPreferences visual_prefs={ui.config.visual_quality,ui.config.visual_display,ui.config.visual_fullscreen};
+        mosaic_video_follow(device,&audio,&ui);
         ts_mandala_poll(&audio.sister.mandala,&visual_prefs);
         ui.config.visual_quality=visual_prefs.quality;ui.config.visual_display=visual_prefs.display;ui.config.visual_fullscreen=visual_prefs.fullscreen;
         spatial_window_update(&ui);
@@ -18720,7 +18771,7 @@ int main(int argc, char **argv)
     if (device) SDL_CloseAudioDevice(device);
     portal_free(&portal);
     mosaic_controller_free(&mosaic);
-    ts_mosaic_free(ui.mosaic);
+    ts_mosaic_free(ts_sample_pages_mosaic_root(&sample_pages));
     ts_tracker_playback_free(&audio.tracker);
     ts_tracker_edit_free(ui.tracker_edit);
     ts_performance_free(&audio.performance);
@@ -18746,6 +18797,7 @@ int main(int argc, char **argv)
     ts_sample_free(&drone_preview);
     ts_sample_free(&pending_selection_load);
     discard_import_worker(&import_controller);
+    discard_folder_import();
     ts_audio_import_free(&import_controller.decoded);
     ts_sample_free(&clipboard);
     ts_sample_pages_free(&sample_pages);

@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include "tapesister/session_log.h"
 #include "tapesister/mandala_sdl.h"
+#include "tapesister/video_cache.h"
 #include "tapesister/ui.h"
 #include <SDL2/SDL.h>
 #include <math.h>
@@ -24,7 +25,7 @@ extern char **environ;
    in this build AND on the mapped addresses; otherwise launch is refused.
    Windows and POSIX shared mappings supply coherent ordinary RAM on the
    supported x86/x64 targets. No atomic_flag/spinlock or process-shared mutex. */
-typedef struct { TsMandalaConfig config; TsMandalaPacket audio; TsMandalaEffects effects; unsigned serial, revision; } VisualMessage;
+typedef struct { TsMandalaConfig config; TsMandalaPacket audio; TsMandalaEffects effects; TsVisualCue cue; unsigned serial, revision; } VisualMessage;
 typedef struct {
     atomic_uint write, read, quit, ready, freeze, quality, display, fullscreen;
     atomic_uint frames, drawn_audio, drawn_config, level_milli;
@@ -43,6 +44,7 @@ static struct {
     TsMandalaConfig sent_config;
     TsMandalaEffects effects, sent_effects;
     TsVideoStatus video_status;
+    TsVisualCue cue;uint64_t sent_cue;
 #ifdef _WIN32
     HANDLE mapping, process;
 #else
@@ -130,6 +132,7 @@ void ts_mandala_host_init(void) { ts_mandala_queue_init(&audio_queue); }
 void ts_mandala_audio(const float *out, unsigned frames, unsigned channels)
 { ts_mandala_push(&audio_queue, out, frames, channels); }
 int ts_mandala_active(void) { return host.shared && !atomic_load(&host.shared->quit); }
+void ts_mandala_video_cue(const TsVisualCue *cue){if(cue)host.cue=*cue;}
 void ts_mandala_video_pause(void){if(host.shared)atomic_fetch_xor(&host.shared->video_paused,1);}
 void ts_mandala_video_restart(void){if(host.shared){atomic_fetch_add(&host.shared->video_restart,1);atomic_store(&host.shared->video_paused,0);}}
 int ts_mandala_video_paused(void){return host.shared && atomic_load(&host.shared->video_paused);}
@@ -222,7 +225,7 @@ int ts_mandala_open(const TsMandalaConfig *config, const TsMandalaPreferences *p
     if (!host.shared) goto failed;
     shared_init(host.shared, prefs);
     if (!shared_lock_free(host.shared)) goto failed;
-    VisualMessage initial = {0}; initial.config = *config;initial.revision=host.revision=1;
+    VisualMessage initial = {0}; initial.config = *config;initial.cue=host.cue;host.sent_cue=host.cue.serial;initial.revision=host.revision=1;
     shared_send(host.shared, &initial);
     host.sent_config = *config;
 #ifdef _WIN32
@@ -273,15 +276,15 @@ int ts_mandala_poll(const TsMandalaConfig *config, TsMandalaPreferences *prefs)
     atomic_store(&audio_queue.enabled, ready && ts_mandala_active() && !ts_mandala_frozen());
     Uint32 now = SDL_GetTicks();
     if (now - host.sent >= 30) {
-        VisualMessage m; m.config = *config;
+        VisualMessage m={0}; m.config = *config;m.cue=host.cue;
         int fresh = ts_mandala_latest(&audio_queue, &host.last_audio);
         if (fresh) ++host.serial;
         m.audio = host.last_audio; m.serial = host.serial; m.effects = host.effects;
         int changed=memcmp(config,&host.sent_config,sizeof(*config))!=0;
         m.revision=host.revision+(unsigned)changed;
-        if (fresh || changed ||
+        if (fresh || changed || host.sent_cue!=host.cue.serial ||
             memcmp(&m.effects,&host.sent_effects,sizeof(m.effects))) {
-            if (shared_send(host.shared, &m)) { host.sent_config = *config; host.sent_effects=m.effects;host.revision=m.revision; }
+            if (shared_send(host.shared, &m)) { host.sent_config = *config; host.sent_effects=m.effects;host.revision=m.revision;host.sent_cue=m.cue.serial; }
         }
         host.sent = now;
     }

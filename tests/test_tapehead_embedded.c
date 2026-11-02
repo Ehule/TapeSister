@@ -61,7 +61,12 @@ static void press(SDL_Keycode key,SDL_Scancode sc,SDL_Keymod mod) {
 }
 static void wheel(int x,int y,float delta) {
     SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEWHEEL;e.wheel.windowID=SDL_GetWindowID(test_window);
-    e.wheel.mouseX=x;e.wheel.mouseY=y;e.wheel.y=(int)delta;e.wheel.preciseY=delta;
+    e.wheel.y=(int)delta;e.wheel.preciseY=delta;
+#if SDL_VERSION_ATLEAST(2,26,0)
+    e.wheel.mouseX=x;e.wheel.mouseY=y;
+#else
+    SDL_WarpMouseInWindow(test_window,x,y);
+#endif
     assert(tracker_event(&e,test_window,0,test_audio,test_ui,test_pages,test_bank,48000));
     checkpoint();
 }
@@ -910,7 +915,7 @@ static void suspended_tracker_refresh(void) {
 #include "test_mosaic_patterns.inc"
 
 int main(int argc,char **argv) {
-    SDL_SetHint(SDL_HINT_VIDEODRIVER,"dummy");assert(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER));
+    SDL_setenv("SDL_VIDEODRIVER","dummy",1);assert(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER));
     test_window=SDL_CreateWindow("Embedded fixture",0,0,640,400,SDL_WINDOW_HIDDEN);assert(test_window);
     test_audio=calloc(1,sizeof(*test_audio));test_ui=calloc(1,sizeof(*test_ui));
     test_bank=malloc(sizeof(*test_bank));test_pages=malloc(sizeof(*test_pages));assert(test_audio&&test_ui&&test_bank&&test_pages);

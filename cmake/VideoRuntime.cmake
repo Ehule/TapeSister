@@ -1,5 +1,6 @@
-# Minimal, replaceable LGPL FFmpeg libraries; no network, encoders, GPL codecs,
-# external codec dependencies or player executable. Source accompanies bundles.
+# Minimal, replaceable LGPL FFmpeg libraries; no network, GPL codecs,
+# external codec dependencies or player executable. Native MJPEG/AVI prepares
+# independently decodable playback copies. Source accompanies bundles.
 option(TAPESISTER_BUNDLE_VIDEO "Build and stage the pinned video decoder" ON)
 if(TAPESISTER_BUNDLE_VIDEO)
   include(ExternalProject)
@@ -52,6 +53,7 @@ if(TAPESISTER_BUNDLE_VIDEO)
       --enable-avcodec --enable-avformat --enable-avutil --enable-swscale
       --enable-protocol=file --enable-demuxer=mov,matroska,avi,mpegps,mpegts,gif
       --enable-decoder=h264,hevc,vp8,vp9,mpeg4,mpeg1video,mpeg2video,mjpeg,rawvideo,ffv1,prores,gif
+      --enable-encoder=mjpeg --enable-muxer=avi
       --enable-parser=h264,hevc,vp8,vp9,mpeg4video,mpegvideo,mjpeg
       ${ts_video_platform}
     BUILD_COMMAND ${TS_VIDEO_MAKE} -j2
@@ -77,4 +79,4 @@ else()
   pkg_check_modules(TS_FFMPEG REQUIRED IMPORTED_TARGET libavformat libavcodec libswscale libavutil)
   target_link_libraries(tapesister_core PUBLIC PkgConfig::TS_FFMPEG)
 endif()
-target_sources(tapesister_core PRIVATE src/ts_mandala_video.c)
+target_sources(tapesister_core PRIVATE src/ts_mandala_video.c src/ts_video_cache.c)

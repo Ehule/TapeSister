@@ -104,6 +104,8 @@ static int project_new(SDL_Window *window, SDL_AudioDeviceID device,
     view->tracker = &s->pages->tracker;
     view->sample_page_count = 1;
     view->mosaic = next->mosaic = pages.mosaic = mosaic;
+    if(!ts_sample_pages_enable_gallery(&pages,error,sizeof(error)))goto failed;
+    next->gallery=view->mosaic_gallery=pages.gallery;
     view->mosaic_scale = 24.0;
     view->mosaic_hscale = 1.0;
     /* Invalidate native waveform caches even if the allocator reuses an address. */
@@ -153,6 +155,7 @@ static int project_new(SDL_Window *window, SDL_AudioDeviceID device,
     ts_tapehead_project_replaced();
     browser_audition_stop(device, audio, ui, s->audition, 1);
     discard_import_worker(s->import);
+    discard_folder_import();
     ts_audio_import_free(&s->import->decoded);
     import_controller_init(s->import);
     if (s->transform->worker) {
@@ -192,7 +195,7 @@ static int project_new(SDL_Window *window, SDL_AudioDeviceID device,
     project_audio_free(audio);
     ts_tracker_edit_free(ui->tracker_edit);
     mosaic_controller_free(s->mosaic);
-    ts_mosaic_free(ui->mosaic);
+    ts_mosaic_free(ts_sample_pages_mosaic_root(s->pages));
     ts_sample_pages_free(s->pages);
     ts_instrument_free(s->instrument);
     ts_instrument_init(s->instrument);

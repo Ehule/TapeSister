@@ -1,5 +1,10 @@
 # Video through the mandala
 
+Mosaic can now drive this same window with file/folder change objects. The VIDEO
+editor has **MANDALA ON/OFF** and **COLOR / BLACK & WHITE** controls. See
+[Mosaic video changes](MOSAIC_VIDEO.md) for random positions, scatter, transitions
+and automatic preparation.
+
 Open **F11 → EDIT VISUALIZER → VIDEO → ADD VIDEO FILE**. The existing file
 browser opens in TapeSister's main window. Choose a clip, then **OPEN VISUALIZER**.
 The footage can move from a recognizable full frame into a reflected radial kaleidoscope, underneath
@@ -52,9 +57,10 @@ Missing or unsupported media shows a player message while procedural visuals
 and musical playback remain available. Use Replace Video File to relink it;
 Restart retries a failed source after the file becomes available again.
 
-Mandala settings use version 4. Versions 1 and 2 load with video off and retain
+Mandala settings use version 5. Versions 1 and 2 load with video off and retain
 their original look; version 3 retains saved controls with Palette Filter off.
-Older TapeSister builds reject version-4 visual settings;
+Versions 1–4 retain geometry enabled and global monochrome off.
+Older TapeSister builds reject version-5 visual settings;
 keep a copy before overwriting a project you need to open with an older build.
 
 ## Media and performance
@@ -64,19 +70,19 @@ do not guarantee a supported codec. The bundled decoder supports H.264, HEVC,
 VP8/VP9, MPEG-1/2/4, MJPEG, raw video, FFV1, ProRes and GIF. AV1 is not included.
 For older performance machines, start with a 640×360 or 960×540 H.264 MP4 at
 24–30 fps. Larger inputs still incur their full decode cost before scaling.
-Frames above 4096×2160 are rejected. There is no automatic proxy conversion in
-this version. Clips with unusual rotation metadata are displayed in encoded
+Frames above 4096×2160 are rejected. Mosaic video cues automatically prepare smaller local playback copies in the
+visual child; a manually selected visualizer-only clip still plays directly. Clips with unusual rotation metadata are displayed in encoded
 orientation; prepare a correctly oriented copy if necessary.
 
 Only the visualizer child opens files and decodes video, on one low-priority
 worker thread. The audio callback and its packet size are unchanged. Three
-preallocated BGRA frame slots (about 3 MB) transfer the newest frame without
+preallocated BGRA frame slots (about 6 MB) transfer the newest frame without
 blocking the renderer. One additional bounded raw frame (about 1 MB) lets the
 renderer recolor paused footage without readback or cumulative filtering;
 source decode/reference buffers are additional. A cached 256-entry gradient
 maps pixels only on a new frame, filter/palette edit or texture restoration.
-With the filter off, pixels use a direct copy. One SDL
-texture is at most 640×400. The textured lens has at most 1,728 vertices. Uploads
+With the filter off, pixels use a direct copy. Each source SDL
+texture is at most 960×540. The textured lens has at most 1,728 vertices. Uploads
 are capped at 15 fps in Economy, 30 otherwise, and 8 while shedding load.
 Source timestamps pace playback; late converted frames are skipped. Looping
 never resets the visual seed or the mandala's clock. A stalled visual process

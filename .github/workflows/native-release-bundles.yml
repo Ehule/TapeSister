@@ -135,7 +135,10 @@ concurrency:
 
 jobs:
   linux:
-    runs-on: ubuntu-latest
+    # Release binaries must run on the oldest supported desktop runtime.
+    # ubuntu-latest moved to 26.04 and produced GLIBC_2.43 imports that fail
+    # before main() on Ubuntu 22.04/24.04 and their derivatives.
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - name: Install native build dependencies
@@ -181,7 +184,7 @@ jobs:
             test -x "download-check/extracted/cdp/bin/$(basename "$program")" || exit 1
           done
       - name: Launch the downloaded Linux executable with a desktop stack limit
-        run: python3 tests/test_linux_startup.py download-check/extracted/tapesister
+        run: python3 tests/test_linux_startup.py download-check/extracted/tapesister --check-abi
 
   windows:
     runs-on: windows-latest

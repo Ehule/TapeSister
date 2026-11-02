@@ -275,6 +275,7 @@ static void test_portal_keyboard(SDL_Window *window,SDL_AudioDeviceID device,Aud
 }
 
 #include "test_browser_audition.inc"
+#include "test_sample_folder_controller.inc"
 
 int main(void)
 {
@@ -356,6 +357,7 @@ int main(void)
     test_import(device,&audio,&ui,&c.source,1);
     test_import(device,&audio,&ui,&c.source,2);
     test_browser_audition(window,device,&audio,&ui,&instrument,&c.source);
+    test_folder_browser(window,device,&audio,&c.source);
     portal_free(&c);ts_instrument_free(&instrument);
     ts_performance_free(&audio.performance);ts_performance_free(&audio.tile_launchers);
     ts_sister_runtime_free(&audio.sister);ts_capture_free(&audio.capture);

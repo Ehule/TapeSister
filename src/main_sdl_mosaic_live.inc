@@ -158,7 +158,7 @@ static int mosaic_live_command(SDL_AudioDeviceID output,SDL_AudioDeviceID *input
     else if(!strncmp(command,"sequence_",9))mosaic_sequence_edit(ui,command);
     else if(!strcmp(command,"finish_loop"))ts_mosaic_live_finish(m,id);
     else if(!strcmp(command,"role")) {
-        if(!e || e->source->pattern)snprintf(ui->mosaic_live_status,sizeof(ui->mosaic_live_status),"SELECT AN AUDIO CARD / PATTERN LOOP EVENTS NEED THEIR OWN PLAYERS");
+        if(!e || e->source->pattern || e->source->video_path[0])snprintf(ui->mosaic_live_status,sizeof(ui->mosaic_live_status),"SELECT AN AUDIO CARD / PATTERN LOOP EVENTS NEED THEIR OWN PLAYERS");
         else if(!e->live && (ts_loop_base_mode(e->mode)!=TS_LOOP_FORWARD || (ts_loop_starts_at_sample(e->mode) && e->first)))
             snprintf(ui->mosaic_live_status,sizeof(ui->mosaic_live_status),"CARD KEPT / LIVE LOOPS NEED FORWARD RANGE PLAYBACK / EDIT CARD DIRECTION FIRST");
         else {
@@ -289,6 +289,7 @@ static void mosaic_live_poll(SDL_AudioDeviceID output,SDL_AudioDeviceID *input_d
 static int mosaic_live_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID output,
     SDL_AudioDeviceID *input_device,AudioState *a,ExternalInputState *s,TsUiState *ui)
 {
+    if(ui->mosaic_gallery_open || ui->mosaic_grab)return 0;
     Uint32 window_id=SDL_GetWindowID(window);
     SDL_GetWindowSize(window,&ui->mosaic_live_output_width,&ui->mosaic_live_output_height);
     if(ui->mosaic_live_drag) {
@@ -404,7 +405,7 @@ static int mosaic_live_event(const SDL_Event *event,SDL_Window *window,SDL_Audio
     if(down && y>=224 && y<240 && x>=240 && x<332) {
         if(output)SDL_LockAudioDevice(output);
         TsMosaicEvent *e=ts_mosaic_find(m,ui->mosaic_selected);
-        if(e && !e->source->pattern) {
+        if(e && !e->source->pattern && !e->source->video_path[0]) {
             ts_mosaic_checkpoint(m);
             if(e->live)e->live_finite^=1;
             ++e->revision;++m->revision;

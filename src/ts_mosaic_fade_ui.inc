@@ -1,5 +1,46 @@
 /* Fade ink is drawn in each card's local coordinates, so it translates with
    native waveforms without shimmer. Never scan outside the visible surface. */
+void ts_ui_mosaic_transform_event(const TsUiState *ui,const TsMosaicEvent *source,TsMosaicEvent *out)
+{
+    *out=*source;
+    if(!ui->mosaic_grab)return;
+    out->x+=ui->mosaic_grab_x;
+    if(ui->mosaic_grab==1)out->start+=ui->mosaic_grab_time;
+    else if(ui->mosaic_grab==2 && ui->mosaic_scale_delta!=0) {
+        double low=fmin(.005,source->duration),high=86400,anchor=source->start;
+        if(ui->mosaic_scale_anchor==1) {
+            anchor+=source->duration;
+            low=fmax(low,anchor-86400);high=fmin(high,anchor);
+        } else if(ui->mosaic_scale_anchor==2) {
+            anchor+=source->duration*.5;
+            low=fmax(low,2*(anchor-86400));high=fmin(high,2*anchor);
+        }
+        out->duration=fmax(low,fmin(high,source->duration+ui->mosaic_scale_delta));
+        if(ui->mosaic_scale_anchor==1)out->start=fmax(0,anchor-out->duration);
+        else if(ui->mosaic_scale_anchor==2)out->start=fmax(0,anchor-out->duration*.5);
+    }
+}
+
+static int mosaic_resize_grip(double width,double height,int part,double *x,double *y,double *radius)
+{
+    if(width<12 || height<18 || part<1 || part>2)return 0;
+    /* Keep grips clear of IN/OUT diamonds on narrow cards. */
+    *x=width<24?width*.5:width<40?3:10;
+    *radius=width<24?fmin(6,(width-4)*.5):width<40?1:6;
+    *y=part==1?1:height-2;
+    return 1;
+}
+int ts_ui_mosaic_resize_handle(const TsUiState *ui,const TsMosaicEvent *e,int part,
+                               double *x,double *y,double *radius)
+{
+    double h=ui->mosaic_hscale>0?ui->mosaic_hscale:1;
+    double scale=ui->mosaic_scale>0?ui->mosaic_scale:24;
+    if(!mosaic_resize_grip(e->width*h,e->duration*scale,part,x,y,radius))return 0;
+    *x+=151+(e->x-ui->mosaic_xscroll)*h;
+    *y+=66+(e->start-ui->mosaic_scroll)*scale;
+    return *x>=151 && *x<ts_ui_mosaic_canvas_right(ui) && *y>=66 && *y<TS_MOSAIC_CANVAS_BOTTOM;
+}
+
 static double mosaic_fade_handle_y(double height,double fade,int part,double sy)
 {
     double y=part==1?fade:height-fade;
@@ -40,6 +81,23 @@ static void mosaic_fade_rect(const MosaicFadeSurface *s,int64_t x,int64_t y,int6
     int a=(int)fmax(s->left,fmin(s->right,(double)x)),b=(int)fmax(s->left,fmin(s->right,(double)right));
     int first=(int)fmax(s->top,fmin(s->bottom,(double)y)),last=(int)fmax(s->top,fmin(s->bottom,(double)bottom));
     for(int yy=first;yy<last;++yy)for(int xx=a;xx<b;++xx)s->pixels[(size_t)yy*s->stride+xx]=ink;
+}
+static void mosaic_resize_handles(const MosaicFadeSurface *s,const TsUiState *ui,const TsMosaicEvent *e,
+    int64_t x,int64_t y,int64_t right,int64_t bottom,int selected)
+{
+    for(int part=1;part<=2;++part) {
+        double gx,gy,radius;
+        if(!mosaic_resize_grip((right-x)/s->sx,(bottom-y)/s->sy,part,&gx,&gy,&radius))return;
+        int64_t cx=x+(int64_t)llround(gx*s->sx),cy=y+(int64_t)llround(gy*s->sy);
+        int64_t rx=(int64_t)fmax(1,round(radius*s->sx)),ry=(int64_t)fmax(1,round(s->sy));
+        int hot=(ui->mosaic_resize_event==e->id && ui->mosaic_resize_part==part) ||
+            (selected && ui->mosaic_grab==2 && (ui->mosaic_scale_anchor==2 || part==(ui->mosaic_scale_anchor==1?1:2)));
+        uint32_t ink=ts_theme_color(active_palette(),TS_THEME_MOSAIC,hot?TS_COLOR_TEXT:TS_COLOR_DATA2,
+            hot?RGB(239,232,246):RGB(129,206,200));
+        uint32_t dark=ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_BACKGROUND,RGB(15,16,19));
+        mosaic_fade_rect(s,cx-rx-1,cy-ry-1,cx+rx+2,cy+ry+2,dark);
+        mosaic_fade_rect(s,cx-rx,cy-ry,cx+rx+1,cy+ry+1,ink);
+    }
 }
 static void mosaic_fade_shape(const MosaicFadeSurface *s,const TsMosaicEvent *e,
     int64_t x,int64_t y,int64_t right,int64_t bottom,uint32_t ink)

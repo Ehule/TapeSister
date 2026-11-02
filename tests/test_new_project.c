@@ -346,6 +346,23 @@ int main(int argc,char **argv)
     begin_new_confirmation(&session);assert(ui.exit_confirm_open && ui.exit_choice==2 && !ui.exit_has_unsaved);
     exit_confirmation_activate(&ui);
 
+    /* Open/replace a Gallery whose selected scene is not the stable root,
+       then clear every scene through the real New-project transaction. */
+    populate();assert(ts_sample_pages_enable_gallery(&pages,error,sizeof(error)));
+    assert(ts_gallery_add(pages.gallery,error,sizeof(error)));
+    TsMosaic *root_model=ts_sample_pages_mosaic_root(&pages),*other=pages.gallery->canvas[1].scene;
+    TsMosaicSource *gs=ts_mosaic_source(other,&bank.current,error,sizeof(error));assert(gs);
+    assert(ts_mosaic_add(other,gs,0,0));pages.gallery->active=1;
+    ui.mosaic=audio.mosaic=pages.mosaic=other;audio.gallery=ui.mosaic_gallery=pages.gallery;
+    uint64_t gallery_hash=ts_gallery_hash(pages.gallery);run_save("gallery-reopen.tsr");
+    assert(strstr(ui.status,"SAVED"));
+    assert(load_instrument(0,&audio,&ui,&bank,&pages,&record,0,"gallery-reopen/gallery-reopen.tsr"));
+    assert(ts_sample_pages_mosaic_root(&pages)==root_model && pages.gallery->active==1);
+    assert(audio.gallery==pages.gallery && ui.mosaic_gallery==pages.gallery && audio.mosaic==ui.mosaic && ui.mosaic==pages.mosaic);
+    assert(ts_gallery_hash(pages.gallery)==gallery_hash && ui.mosaic!=root_model);
+    assert(project_new(NULL,0,0,&session));assert_empty();
+    assert(pages.gallery && pages.gallery->count==1 && pages.gallery->active==0);
+
     recovery_controls();
     assert(ts_tapehead_sync(&pages,&bank,48000,error,sizeof(error)));
     assert(ts_tapehead_export(&pages.tracker,error,sizeof(error)));

@@ -49,6 +49,7 @@ static int offline_render_engine(const OfflineOptions *o,const char *job,unsigne
     OFFLINE_REQUIRE(ts_tapehead_init(&pattern_host,o->rate,error,sizeof(error)),"Cannot initialize pattern playback.");
     pages.mosaic=ts_mosaic_create();OFFLINE_REQUIRE(pages.mosaic,"Cannot allocate Mosaic.");a.mosaic=pages.mosaic;
     OFFLINE_REQUIRE(ts_sample_pages_load_project(&pages,&bank,&record,o->project,error,sizeof(error)),"Cannot load project.");
+    a.gallery=pages.gallery;a.mosaic=pages.mosaic;
     int present=0;
     OFFLINE_REQUIRE(ts_sister_project_state_load(&state,o->project,o->rate,&present,error,sizeof(error)),"Cannot load processing state.");
     OFFLINE_REQUIRE(ts_sister_runtime_reconfigure(&a.sister,o->rate,2,error,sizeof(error)),"Cannot prepare effects.");
@@ -127,7 +128,7 @@ finish:
     if(job)offline_write_blob(job,"progress",&progress,sizeof(progress));
     else if(result)fprintf(stderr,"%s\n",progress.message);
     free(hardware);ts_tapehead_close();ts_sister_runtime_free(&a.sister);
-    ts_mosaic_free(pages.mosaic);pages.mosaic=NULL;ts_sample_pages_free(&pages);
+    ts_mosaic_free(ts_sample_pages_mosaic_root(&pages));pages.mosaic=NULL;ts_sample_pages_free(&pages);
     ts_instrument_free(&bank);ts_instrument_free(&record);
     if(window)SDL_DestroyWindow(window);if(initialized)SDL_Quit();return result;
 #undef OFFLINE_REQUIRE

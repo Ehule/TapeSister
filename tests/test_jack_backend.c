@@ -162,7 +162,7 @@ static void mocked(void)
 int main(int argc,char **argv)
 {
     SDL_SetMainReady();
-    SDL_SetHint(SDL_HINT_AUDIODRIVER,"dummy");assert(!SDL_Init(SDL_INIT_AUDIO|SDL_INIT_EVENTS));
+    SDL_setenv("SDL_AUDIODRIVER","dummy",1);assert(!SDL_Init(SDL_INIT_AUDIO|SDL_INIT_EVENTS));
 #if defined(__linux__)
     if (argc>1 && !strcmp(argv[1],"--live")) return live();
     mocked();
