@@ -277,7 +277,7 @@ static void mosaic_detail_sources(TsFramebuffer *fb,const TsUiState *ui,double i
         uint32_t fill=selected?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(51,47,59)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(40,36,44));
         uint32_t color=mosaic_color(ui->mosaic_sources[n].source?mosaic_source_color(ui->mosaic_sources[n].source):ui->mosaic_sources[n].hash);
         int first=(int)((x+4)*sx),last=(int)((x+39)*sx);
-        int top=source_y+(int)((y+15)*sy),bottom=source_y+(int)((y+26)*sy);
+        int top=source_y+(int)((y+20)*sy),bottom=source_y+(int)((y+26)*sy);
         int width=last-first,bins=width<TS_WAVEFORM_CACHE_MAX_COLUMNS?width:TS_WAVEFORM_CACHE_MAX_COLUMNS;
         const TsMosaicSource *source=ui->mosaic_sources[n].source;
         if(source && source->pattern){

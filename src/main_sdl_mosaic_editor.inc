@@ -137,9 +137,8 @@ static void mosaic_drag_end(TsUiState *ui,MosaicController *c)
     ui->mosaic_source_hover[0]=0;
     c->pan_active=c->pan_moved=ui->mosaic_loop_drag=ui->mosaic_marker_drag=0;
 }
-/* Browse stored sample banks without swapping the live instrument or routing.
-   Keep bank slots/page numbers intact; event versions have separate pages after
-   the banks. Only one bank's descriptors and hashes are cached at a time. */
+/* Library pages and placed-card pages have independent counts and positions.
+   Browsing never swaps the live bank or creates a sample/document. */
 #include "main_sdl_mosaic_pattern_update.inc"
 
 static void mosaic_pattern_sources(TsUiState *ui,const TsInstrument *instrument,MosaicController *c)
@@ -151,6 +150,7 @@ static void mosaic_pattern_sources(TsUiState *ui,const TsInstrument *instrument,
     for(int slot=0;slot<16;++slot){int i=ui->mosaic_source_page*16+slot;if(i>=c->pattern_count)break;
         if(!c->pattern_sources[i]){c->pattern_sources[i]=ts_pattern_source(ui->mosaic,c->pages,instrument,c->pattern_ids[i],ui->status,sizeof(ui->status));if(c->pattern_sources[i])++c->pattern_sources[i]->pins;}
         TsMosaicSource *source=c->pattern_sources[i];if(!source)continue;
+        ui->mosaic_sources[slot].name=source->sample.name;
         ui->mosaic_sources[slot].sample=&source->sample;ui->mosaic_sources[slot].source=source;ui->mosaic_sources[slot].hash=source->hash;
         ui->mosaic_sources[slot].bank_page=-2;ui->mosaic_sources[slot].bank_slot=i;
     }
@@ -167,79 +167,110 @@ static void mosaic_sources_refresh(TsUiState *ui,const TsInstrument *instrument,
         if(ui->mosaic_loop_open || ui->mosaic_marker_open)SDL_StopTextInput();
         ui->mosaic_marker_open=ui->mosaic_marker_selected=ui->mosaic_views_open=0;
         ui->mosaic_loop_open=0;
-        ui->mosaic_source_selected=-1;if(!restored)ui->mosaic_source_page=0;
+        ui->mosaic_source_selected=-1;
+        if(!restored) {
+            /* A fresh controller may already have an explicit initial filter.
+               Changing scenes resets an existing controller to original Audio. */
+            if(c->ui_epoch)ui->mosaic_source_filter=TS_MOSAIC_BROWSER_AUDIO;
+            ui->mosaic_source_page=0;
+            memset(ui->mosaic_source_filter_pages,0,sizeof(ui->mosaic_source_filter_pages));
+        }
         memset(c->bank_data,0,sizeof(c->bank_data));c->ui_epoch=ui->mosaic->epoch;
         c->browser_initialized=restored;c->main_bank=c->pages?(int)ts_sample_pages_active(c->pages):0;
         ui->mosaic_loaded_view_epoch=0;
     }
-    mosaic_pattern_cache(ui,instrument,c);
-    if(ui->mosaic_pattern_tab){mosaic_pattern_sources(ui,instrument,c);return;}
     int banks=c->pages?(int)ts_sample_pages_count(c->pages):1;if(banks<1)banks=1;
     int active=c->pages?(int)ts_sample_pages_active(c->pages):0;
     if(!c->browser_initialized || c->main_bank!=active) {
-        ui->mosaic_source_page=active;c->main_bank=active;c->browser_initialized=1;
+        ui->mosaic_source_filter_pages[TS_MOSAIC_BROWSER_AUDIO]=active;
+        if(ui->mosaic_source_filter==TS_MOSAIC_BROWSER_AUDIO)ui->mosaic_source_page=active;
+        c->main_bank=active;c->browser_initialized=1;
     }
-    /* Adding sample pages must not turn an open event-version page into a bank. */
-    else if(ui->mosaic_bank_count && banks!=ui->mosaic_bank_count && ui->mosaic_source_page>=ui->mosaic_bank_count)
-        ui->mosaic_source_page+=banks-ui->mosaic_bank_count;
-    ui->mosaic_bank_count=banks;
+    ui->mosaic_bank_count=banks;mosaic_selection_repair(ui);
+    mosaic_pattern_cache(ui,instrument,c);
+    if(ui->mosaic_source_filter==TS_MOSAIC_BROWSER_PATTERNS) {
+        mosaic_pattern_sources(ui,instrument,c);return;
+    }
     const TsSample *selected=ui->mosaic_source_selected>=0 && ui->mosaic_source_selected<ui->mosaic_source_count?
         ui->mosaic_sources[ui->mosaic_source_selected].sample:NULL;
     uint64_t selected_event=ui->mosaic_source_selected>=0 && ui->mosaic_source_selected<ui->mosaic_source_count?
         ui->mosaic_sources[ui->mosaic_source_selected].event:0;
     memset(ui->mosaic_sources,0,sizeof(ui->mosaic_sources));
     ui->mosaic_source_count=TS_BANK_SLOT_COUNT;int selection=-1;
-    /* A source may back hundreds of cards. Resolve each unique pointer in a
-       bounded table instead of searching the growing browser for every card. */
-    int source_index[TS_MOSAIC_EVENTS*2]={0};
-    for(int i=0;i<TS_MOSAIC_EVENTS;++i) {
-        TsMosaicEvent *e=&ui->mosaic->events[i];if(!e->id || e->source->video_path[0])continue;
-        size_t hash=((uintptr_t)e->source>>4)%(TS_MOSAIC_EVENTS*2);
-        while(source_index[hash] && ui->mosaic_sources[source_index[hash]-1].source!=e->source)
-            hash=(hash+1)%(TS_MOSAIC_EVENTS*2);
-        if(source_index[hash])continue;
-        int n=ui->mosaic_source_count;source_index[hash]=n+1;
-        ui->mosaic_sources[n].sample=&e->source->sample;ui->mosaic_sources[n].source=e->source;
-        ui->mosaic_sources[n].hash=e->source->hash;
-        ui->mosaic_sources[n].event=e->id;ui->mosaic_sources[n].bank_slot=ui->mosaic_sources[n].bank_page=-1;
-        if(e->id==selected_event || &e->source->sample==selected)selection=n;
-        ++ui->mosaic_source_count;
-    }
-    ui->mosaic_source_pages=banks+(ui->mosaic_source_count-TS_BANK_SLOT_COUNT+15)/16;
-    if(ui->mosaic_source_page>=ui->mosaic_source_pages)ui->mosaic_source_page=ui->mosaic_source_pages-1;
-    if(ui->mosaic_source_page<0)ui->mosaic_source_page=0;
-    int page=ui->mosaic_source_page<banks?ui->mosaic_source_page:active;
-    const TsInstrument *bank=c->pages?ts_sample_pages_page(c->pages,instrument,(size_t)page):instrument;
-    if(c->bank_page!=page){memset(c->bank_data,0,sizeof(c->bank_data));c->bank_page=page;}
-    if(bank)for(int i=0;i<TS_BANK_SLOT_COUNT;++i) {
-        const TsSample *sample=i==bank->selected_slot?&bank->current:&bank->bank[i].sample;
-        ui->mosaic_sources[i].bank_slot=i;ui->mosaic_sources[i].bank_page=page;
-        if(!sample->data || sample->frames<2){c->bank_data[i]=NULL;continue;}
-        if(c->bank_data[i]!=sample->data || c->bank_revision[i]!=sample->visual_revision || c->bank_frames[i]!=sample->frames || c->bank_rate[i]!=sample->sample_rate || c->bank_channels[i]!=sample->channels) {
-            c->bank_data[i]=sample->data;c->bank_revision[i]=sample->visual_revision;c->bank_frames[i]=sample->frames;
-            c->bank_rate[i]=sample->sample_rate;c->bank_channels[i]=sample->channels;
-            c->bank_hash[i]=ts_sample_hash(sample);
+    if(ui->mosaic_source_filter==TS_MOSAIC_BROWSER_AUDIO) {
+        ui->mosaic_source_pages=banks;
+        if(ui->mosaic_source_page>=banks)ui->mosaic_source_page=banks-1;
+        if(ui->mosaic_source_page<0)ui->mosaic_source_page=0;
+        int page=ui->mosaic_source_page;
+        const TsInstrument *bank=c->pages?ts_sample_pages_page(c->pages,instrument,(size_t)page):instrument;
+        if(c->bank_page!=page){memset(c->bank_data,0,sizeof(c->bank_data));c->bank_page=page;}
+        if(bank)for(int i=0;i<TS_BANK_SLOT_COUNT;++i) {
+            const TsSample *sample=i==bank->selected_slot?&bank->current:&bank->bank[i].sample;
+            ui->mosaic_sources[i].bank_slot=i;ui->mosaic_sources[i].bank_page=page;
+            if(!sample->data || sample->frames<2){c->bank_data[i]=NULL;continue;}
+            if(c->bank_data[i]!=sample->data || c->bank_revision[i]!=sample->visual_revision || c->bank_frames[i]!=sample->frames || c->bank_rate[i]!=sample->sample_rate || c->bank_channels[i]!=sample->channels) {
+                c->bank_data[i]=sample->data;c->bank_revision[i]=sample->visual_revision;c->bank_frames[i]=sample->frames;
+                c->bank_rate[i]=sample->sample_rate;c->bank_channels[i]=sample->channels;
+                c->bank_hash[i]=ts_sample_hash(sample);
+            }
+            ui->mosaic_sources[i].sample=sample;ui->mosaic_sources[i].name=sample->name;
+            ui->mosaic_sources[i].hash=c->bank_hash[i];
+            /* Match only existing placed sources. Hashes are cached; no PCM
+               cloning or version creation occurs during browsing. */
+            for(int j=0;j<TS_MOSAIC_EVENTS;++j) {
+                const TsMosaicEvent *e=&ui->mosaic->events[j];
+                if(e->id && !e->source->pattern && !e->source->video_path[0] && e->source->hash==c->bank_hash[i]) {
+                    ui->mosaic_sources[i].source=e->source;break;
+                }
+            }
+            if(sample==selected && !selected_event)selection=i;
         }
-        ui->mosaic_sources[i].sample=sample;ui->mosaic_sources[i].hash=c->bank_hash[i];
-        for(int n=TS_BANK_SLOT_COUNT;n<ui->mosaic_source_count;++n)
-            if(ui->mosaic_sources[n].hash==c->bank_hash[i]){ui->mosaic_sources[i].source=ui->mosaic_sources[n].source;break;}
-        if(sample==selected && !selected_event)selection=i;
+        ui->mosaic_source_offset=0;
+    } else {
+        int loops=ui->mosaic_source_filter==TS_MOSAIC_BROWSER_LOOPS;
+        /* One entry per card, even when many cards share an immutable source.
+           A regular card's repeat setting does not make it a live Loop. */
+        for(int i=0;i<TS_MOSAIC_EVENTS;++i) {
+            TsMosaicEvent *e=&ui->mosaic->events[i];if(!e->id || !!e->live!=loops)continue;
+            int n=ui->mosaic_source_count++;
+            ui->mosaic_sources[n].sample=&e->source->sample;ui->mosaic_sources[n].source=e->source;
+            ui->mosaic_sources[n].name=e->name;ui->mosaic_sources[n].hash=e->source->hash;
+            ui->mosaic_sources[n].event=e->id;ui->mosaic_sources[n].bank_slot=ui->mosaic_sources[n].bank_page=-1;
+            if(e->id==selected_event)selection=n;
+        }
+        int pages=(ui->mosaic_source_count-TS_BANK_SLOT_COUNT+15)/16;
+        ui->mosaic_source_pages=pages>0?pages:1;
+        if(ui->mosaic_source_page>=ui->mosaic_source_pages)ui->mosaic_source_page=ui->mosaic_source_pages-1;
+        if(ui->mosaic_source_page<0)ui->mosaic_source_page=0;
+        ui->mosaic_source_offset=TS_BANK_SLOT_COUNT+ui->mosaic_source_page*16;
     }
     ui->mosaic_source_selected=selection;
-    mosaic_selection_repair(ui);
-    ui->mosaic_source_offset=ui->mosaic_source_page<banks?0:TS_BANK_SLOT_COUNT+(ui->mosaic_source_page-banks)*16;
 }
 static void mosaic_source_select_event(TsUiState *ui,const TsMosaicEvent *e)
 {
-    /* Prefer the current bank if it contains this source; otherwise show the
-       placed event's version, without changing which Sample bank is active. */
-    for(int n=ui->mosaic_source_page<ui->mosaic_bank_count?0:TS_BANK_SLOT_COUNT;n<ui->mosaic_source_count;++n)
-        if(ui->mosaic_sources[n].source==e->source) {
-            ui->mosaic_source_selected=n;
-            if(n>=TS_BANK_SLOT_COUNT)ui->mosaic_source_page=ui->mosaic_bank_count+(n-TS_BANK_SLOT_COUNT)/16;
-            ui->mosaic_source_offset=n<TS_BANK_SLOT_COUNT?0:TS_BANK_SLOT_COUNT+((n-TS_BANK_SLOT_COUNT)/16)*16;
-            return;
+    ui->mosaic_source_selected=-1;
+    /* Selecting a timeline card never changes the chosen library/filter. */
+    for(int n=0;n<ui->mosaic_source_count;++n) {
+        int match=ui->mosaic_source_filter>=TS_MOSAIC_BROWSER_LOOPS?
+            ui->mosaic_sources[n].event==e->id:ui->mosaic_sources[n].source==e->source;
+        if(!match)continue;
+        ui->mosaic_source_selected=n;
+        if(ui->mosaic_source_filter>=TS_MOSAIC_BROWSER_LOOPS) {
+            ui->mosaic_source_page=(n-TS_BANK_SLOT_COUNT)/16;
+            ui->mosaic_source_offset=TS_BANK_SLOT_COUNT+ui->mosaic_source_page*16;
         }
+        return;
+    }
+}
+static void mosaic_picks_clear(TsUiState *,MosaicController *);
+static void mosaic_source_filter_set(TsUiState *ui,const TsInstrument *instrument,MosaicController *c,int filter)
+{
+    if((unsigned)filter>=TS_MOSAIC_BROWSER_COUNT)return;
+    ui->mosaic_source_filter_pages[ui->mosaic_source_filter]=ui->mosaic_source_page;
+    mosaic_drag_end(ui,c);mosaic_picks_clear(ui,c);
+    ui->mosaic_source_filter=filter;ui->mosaic_source_page=ui->mosaic_source_filter_pages[filter];
+    ui->mosaic_source_selected=-1;c->pattern_ready=0;
+    mosaic_sources_refresh(ui,instrument,c);
 }
 
 /* Instance and new-card edits publish a reusable bank snapshot.
@@ -485,6 +516,7 @@ static int mosaic_resolve_edit(SDL_AudioDeviceID device,AudioState *audio,TsUiSt
     if(result) {
         mosaic_drag_end(ui,c);mosaic_sources_refresh(ui,instrument,c);
         if(bank_page>=0) {
+            mosaic_source_filter_set(ui,instrument,c,TS_MOSAIC_BROWSER_AUDIO);
             ui->mosaic_source_page=bank_page;mosaic_sources_refresh(ui,instrument,c);
             ui->mosaic_source_selected=bank_slot;
             if(c->pages)ui->sample_page_count=(int)ts_sample_pages_count(c->pages);
@@ -583,7 +615,7 @@ static int mosaic_enter(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui
     c->seen_data=instrument->current.data;c->seen_revision=instrument->current.visual_revision;c->seen_frames=instrument->current.frames;
     ui->bank_view_slot=-1;ui->show_keyboard=1;ui->show_recipes=ui->show_ingredients=0;
     ui->audition_source=TS_AUDITION_CURRENT;
-    snprintf(ui->status,sizeof(ui->status),"EVENT %llu - CLICK KEYS TO SET CHORD; MOSAIC RETURNS TO ARRANGEMENT",(unsigned long long)id);
+    snprintf(ui->status,sizeof(ui->status),"MOSAIC %s %llu COPY - BACK RETURNS TO MOSAIC / ORIGINAL AUDIO STAYS IN AUDIO",e->live?"LOOP":"CARD",(unsigned long long)id);
     return 1;
 }
 static void mosaic_controller_free(MosaicController *c)

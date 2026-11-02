@@ -387,7 +387,7 @@ static void mosaic_source_drag(TsUiState *ui,const TsInstrument *instrument,Mosa
         if(d->crossfade>(d->last-d->first)/2)d->crossfade=(d->last-d->first)/2;
         snprintf(d->name,sizeof(d->name),"%.63s",sample->name);
     }
-    c->source_drag.duration=c->source_drag.source->pattern?c->source_drag.source->pattern->duration:(double)(c->source_drag.last-c->source_drag.first)/c->source_drag.source->sample.sample_rate;
+    if(!e)c->source_drag.duration=c->source_drag.source->pattern?c->source_drag.source->pattern->duration:(double)(c->source_drag.last-c->source_drag.first)/c->source_drag.source->sample.sample_rate;
     c->source_drag.muted=c->source_drag.solo=0;
     ++c->source_drag.source->pins;c->drag_epoch=ui->mosaic->epoch;c->drag=3;c->drag_slot=n;
     ui->mosaic_source_selected=n;
@@ -402,7 +402,7 @@ static void mosaic_keyboard_select(SDL_AudioDeviceID device,AudioState *a,TsUiSt
     const TsInstrument *instrument,MosaicController *c,int n)
 {
     if(!ui->mosaic_live_open || n<0 || n>=ui->mosaic_source_count || !c->source_drag.source ||
-       c->source_drag.source->pattern)return;
+       (c->source_drag.source->pattern || c->source_drag.source->video_path[0]))return;
     TsMosaicSourceKey key=mosaic_source_key(ui,n);
     int reuse=a->mosaic_keyboard_sample && a->mosaic_keyboard_epoch==ui->mosaic->epoch &&
         a->mosaic_keyboard_hash==c->source_drag.source->hash;
@@ -752,9 +752,9 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
             else if(x>=TS_MOSAIC_ZOOM_IN_X && x<TS_MOSAIC_ZOOM_IN_X+TS_MOSAIC_ZOOM_W){ui->mosaic_scale=fmin(1200,ui->mosaic_scale*1.4);ui->mosaic_hscale=fmin(4,horizontal*1.4);}
             return 1;
         }
-        if(x>=10 && x<108 && y>=37 && y<52){
-            mosaic_drag_end(ui,c);mosaic_picks_clear(ui,c);ui->mosaic_pattern_tab=x>=55;c->pattern_ready=0;ui->mosaic_source_page=0;ui->mosaic_source_selected=-1;
-            mosaic_sources_refresh(ui,instrument,c);
+        if(x>=10 && x<110 && y>=33 && y<62){
+            int filter=(y>=48?2:0)+(x>=55);
+            mosaic_source_filter_set(ui,instrument,c,filter);
             mosaic_pattern_notices(ui,instrument,c,0);return 1;
         }
         if(x>=10 && x<108 && y>=TS_MOSAIC_SOURCE_PAGE_Y && y<TS_MOSAIC_SOURCE_PAGE_Y+18) {

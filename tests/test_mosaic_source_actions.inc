@@ -74,7 +74,7 @@ static void test_mosaic_source_actions(SDL_Window *window)
     assert(ts_mosaic_hash(scene)==hash && scene->playing && scene->time==3.5);
     ui.mosaic_open=1;mosaic_poll(0,&ui,&instrument,&mosaic);
     /* Event-version sources open the existing instance editing workflow. */
-    ui.mosaic_source_page=ui.mosaic_bank_count;mosaic_poll(0,&ui,&instrument,&mosaic);
+    mosaic_source_filter_set(&ui,&instrument,&mosaic,TS_MOSAIC_BROWSER_EVENTS);
     click(window,20,85,2);assert(mosaic.active==a->id && ui.mosaic_editing==a->id && !ui.mosaic_open);
     assert(mosaic_leave(0,&audio,&ui,&instrument,&mosaic));
     assert(ts_mosaic_hash(scene)==hash);

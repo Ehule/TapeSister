@@ -653,12 +653,14 @@ typedef struct {
     TsMosaicEvent mosaic_ghosts[TS_MOSAIC_EVENTS];
     struct {
         const TsSample *sample;
+        const char *name; /* Card name for placed entries, filename for originals. */
         TsMosaicSource *source;
         uint64_t event;
         int bank_slot, bank_page;
         uint64_t hash;
     } mosaic_sources[TS_MOSAIC_EVENTS + TS_BANK_SLOT_COUNT];
-    int mosaic_pattern_tab;
+    int mosaic_source_filter;
+    int mosaic_source_filter_pages[TS_MOSAIC_BROWSER_COUNT];
     int mosaic_source_count, mosaic_source_page, mosaic_source_selected;
     int mosaic_bank_count, mosaic_source_pages, mosaic_source_offset;
     double mosaic_time, mosaic_scroll, mosaic_xscroll, mosaic_scale, mosaic_hscale;
@@ -954,7 +956,7 @@ enum {
     TS_MOSAIC_MIX_X = 10, TS_MOSAIC_MIX_STEP = 108, TS_MOSAIC_MIX_W = 100,
     TS_MOSAIC_CANVAS_RIGHT = 565,
     TS_MOSAIC_SOURCE_PAGE_Y = 342,
-    TS_MOSAIC_SOURCE_KEYS_X = 64, TS_MOSAIC_SOURCE_KEYS_Y = 53,
+    TS_MOSAIC_SOURCE_KEYS_X = 64, TS_MOSAIC_SOURCE_KEYS_Y = 62,
     TS_MOSAIC_CANVAS_BOTTOM = 358, TS_MOSAIC_CANVAS_HEIGHT = 292,
     TS_MOSAIC_CARD_MIN_PIXELS = 2, TS_MOSAIC_CARD_HIT_PIXELS = 8,
     TS_MOSAIC_MARKER_Y = 362, TS_MOSAIC_MARKER_X = 118, TS_MOSAIC_MARKER_STEP = 32,

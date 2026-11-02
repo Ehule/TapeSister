@@ -23,7 +23,7 @@ static void mosaic_pattern_updates(void)
     TsMosaic *m=ts_mosaic_create();assert(m);m->gain=1;
     static MosaicController c;memset(&c,0,sizeof(c));c.pages=test_pages;
     test_ui->mosaic=test_audio->mosaic=m;test_ui->mosaic_open=1;test_ui->tracker_open=0;
-    test_ui->mosaic_pattern_tab=1;test_ui->mosaic_source_page=0;test_ui->mosaic_source_selected=-1;
+    test_ui->mosaic_source_filter=1;test_ui->mosaic_source_page=0;test_ui->mosaic_source_selected=-1;
     test_ui->mosaic_scroll=test_ui->mosaic_xscroll=0;test_ui->mosaic_scale=150;test_ui->mosaic_hscale=1;
     mosaic_poll(0,test_ui,test_bank,&c);
     TsMosaicSource *v1=c.pattern_sources[0];assert(v1 && v1->pattern->lineage && v1->pattern->version==1);

@@ -94,10 +94,11 @@ static void test_mosaic_large_browser(void)
         TsMosaicEvent *e=ts_mosaic_add(scene,source,i,0);assert(e);e->duration=1;
     }
     mosaic_arrange_test_frame();
-    assert(ui.mosaic_source_count==TS_BANK_SLOT_COUNT+TS_MOSAIC_EVENTS/2);
-    for(int i=0;i<TS_MOSAIC_EVENTS/2;++i) {
-        assert(ui.mosaic_sources[TS_BANK_SLOT_COUNT+i].event==scene->events[i*2].id);
-        assert(ui.mosaic_sources[TS_BANK_SLOT_COUNT+i].source==scene->events[i*2+1].source);
+    mosaic_source_filter_set(&ui,&instrument,&mosaic,TS_MOSAIC_BROWSER_EVENTS);
+    assert(ui.mosaic_source_count==TS_BANK_SLOT_COUNT+TS_MOSAIC_EVENTS);
+    for(int i=0;i<TS_MOSAIC_EVENTS;++i) {
+        assert(ui.mosaic_sources[TS_BANK_SLOT_COUNT+i].event==scene->events[i].id);
+        assert(ui.mosaic_sources[TS_BANK_SLOT_COUNT+i].source==scene->events[i].source);
     }
     mosaic_select_only(&ui,scene->events[TS_MOSAIC_EVENTS-1].id);
     mosaic_source_select_event(&ui,&scene->events[TS_MOSAIC_EVENTS-1]);mosaic_arrange_test_frame();
@@ -111,6 +112,6 @@ static void test_mosaic_large_browser(void)
     ts_mosaic_delete(scene,scene->events[0].id);ts_mosaic_delete(scene,scene->events[1].id);ts_mosaic_collect(scene);
     int sources=0;for(TsMosaicSource *s=scene->sources;s;s=s->next)++sources;
     assert(sources==TS_MOSAIC_EVENTS/2-1);mosaic_arrange_test_frame();
-    assert(ui.mosaic_source_count==TS_BANK_SLOT_COUNT+sources);
+    assert(ui.mosaic_source_count==TS_BANK_SLOT_COUNT+TS_MOSAIC_EVENTS-2);
     ui.mosaic=audio.mosaic=saved;ts_mosaic_free(scene);mosaic_poll(0,&ui,&instrument,&mosaic);
 }
