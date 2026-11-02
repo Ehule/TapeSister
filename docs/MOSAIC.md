@@ -70,8 +70,8 @@ the EVENTS pages. Shared originals and the original Sample banks remain availabl
 | Select / move an event | Click / drag its body |
 | Extend the event's playback window | Drag its top edge earlier or bottom edge later |
 | Change visual width | Drag its right edge |
-| Shape one card's fade | Drag its IN handle down or OUT handle up |
-| Pan one card | Drag the diamond on its pan line left/right; right-click centers |
+| Shape selected fades | Drag IN down or OUT up; Alt starts at zero and matches |
+| Pan selected cards | Drag a pan diamond left/right; Alt starts at center and matches |
 | Align starts, ends or midpoints | Hold Alt while moving or extending |
 | Edit the event | Double-click |
 | Box-select a group | Left-drag on empty canvas; Shift adds to the selection |
@@ -281,7 +281,8 @@ length in seconds.
 Each completed group resize is one Undo step. Escape restores the opening
 geometry and keeps the group selected; focus loss or a dialog ends the gesture.
 Shift-drag still copies the group, including when it starts on an edge. Fade and
-pan handles still edit only their own card. AUTO-SPACE shifts the group together
+pan handles retain and edit the selected audio group; see the group-handle controls
+below. AUTO-SPACE shifts the group together
 against outside cards, preserving its horizontal spacing. Audio and pattern
 cards use the same operation; loop/one-shot behavior, source material, mix and
 routing settings are retained. Bottom-edge edits preserve running playheads.
@@ -430,7 +431,9 @@ lengthen the fade-out. The diagonal line and darkened wedge show the linear gain
 envelope immediately; more shading means more attenuation at that point in time.
 The handles stop where the two fades meet. The status bar shows the fade in seconds.
 Right-click or double-click a handle to remove that fade; Escape cancels a drag.
-Each drag edits only that card and is one undo step. Handles appear when the card
+Each drag edits the selected audio group from its opening fade values and is one
+Undo step. Alt starts the chosen end at zero and matches its value across the
+selection. Handles appear when the card
 is large enough to grab; zoom in on small cards. The shaded envelope remains visible
 when zoomed out, and existing footer edits update it too.
 
@@ -438,7 +441,8 @@ when zoomed out, and existing footer edits update it too.
 
 Cards also show a **pan line** and a faint dotted **center reference** through the
 waveform. Drag the small diamond just below the card's name/notes left or right to
-balance that card. The line follows the setting, with a small center snap and
+balance the selected audio cards from their opening pan values. Alt starts at
+center and matches the values. The lines follow the settings, with a center snap and
 **CENTER**, **L %** or **R %** feedback in the status bar. Right-click or double-click
 the diamond centers it; Escape restores the opening value. A drag is one undo step
 and keeps live playback running. The rest of the waveform remains available for
