@@ -1,5 +1,5 @@
 static void mosaic_gallery_snapshot(TsUiState *,const TsMosaicGallery *);
-static void mosaic_scale_motion(TsUiState *,MosaicController *,int,int);
+static void mosaic_scale_motion(TsUiState *,MosaicController *,int,int,SDL_Keymod);
 static void mosaic_poll(SDL_AudioDeviceID device,TsUiState *ui,
                           TsInstrument *instrument,MosaicController *c)
 {
@@ -279,7 +279,7 @@ static void mosaic_resize_group(SDL_AudioDeviceID device,TsUiState *ui,MosaicCon
 static void mosaic_drag_motion(SDL_AudioDeviceID device,TsUiState *ui,MosaicController *c,
                                int x,int y,SDL_Keymod mod)
 {
-    if(ui->mosaic_grab==2){mosaic_scale_motion(ui,c,x,y);return;}
+    if(ui->mosaic_grab==2){mosaic_scale_motion(ui,c,x,y,mod);return;}
     TsMosaicEvent *e=ts_mosaic_find(ui->mosaic,(c->drag==2 || c->drag==6)?c->drag_event:ui->mosaic_selected);if(!e)return;
     double horizontal=ui->mosaic_hscale>0?ui->mosaic_hscale:1;
     double delta=(y-c->drag_y)/ui->mosaic_scale;
@@ -452,6 +452,7 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
     AudioState *audio,TsUiState *ui,TsInstrument *instrument,MosaicController *c,
     PortalController *portal,SisterWindow *sister,TransformController *transform,int rate)
 {
+    if(event->type==SDL_MOUSEMOTION)ui->mosaic_source_hover[0]=0;
     if(!ui->mosaic)return 0;
     /* Notes started in another workspace still own their key/pointer releases.
        Handle these before Mosaic's panel and edit dialog consume input. */

@@ -193,8 +193,8 @@ static void mosaic_detail_card(TsUiWaveformDetail *d,const TsUiState *ui,
             mosaic_detail_rect(d,play,y+mosaic_detail_pixel(22*sy),play+2*bx,y+mosaic_detail_pixel(27*sy),RGB(255,224,150));
         }
     }
-    mosaic_card_pan(&fades,ui,e,x,y,right,bottom,border);
-    mosaic_fade_handles(&fades,ui,e,x,y,right,bottom,border);
+    mosaic_card_pan(&fades,ui,e,x,y,right,bottom,border,selected);
+    mosaic_fade_handles(&fades,ui,e,x,y,right,bottom,border,selected);
     mosaic_resize_handles(&fades,ui,e,x,y,right,bottom,selected);
 }
 static int mosaic_detail_cards(TsFramebuffer *fb,const TsUiState *ui,int any_solo,double interval)
@@ -291,13 +291,14 @@ static void mosaic_detail_sources(TsFramebuffer *fb,const TsUiState *ui,double i
             }
             continue;
         }
+        top=source_y+(int)((y+20)*sy);
         TsWaveformRequest request={.sample=s,.first=0,.last=s->frames,.width=bins,.revision=(ui->mosaic?ui->mosaic->epoch:0)^ui->mosaic_sources[n].hash};
         if(!ts_waveform_cache_prepare(&cache[i],&request))continue;
         for(int py=top;py<bottom;++py)for(int px=first;px<last;++px)d->pixels[(size_t)py*d->width+px]=fill;
         for(int px=first;px<last;++px) {
             const TsWaveformColumn *c=&cache[i].columns[(px-first)*bins/width];
-            double lo=source_y+(y+20.5-fmaxf(-1,fminf(1,c->maximum))*5)*sy;
-            double hi=source_y+(y+20.5-fmaxf(-1,fminf(1,c->minimum))*5)*sy;
+            double lo=source_y+(y+23.5-fmaxf(-1,fminf(1,c->maximum))*3)*sy;
+            double hi=source_y+(y+23.5-fmaxf(-1,fminf(1,c->minimum))*3)*sy;
             detail_line(d,px,lo,px,hi,color);
         }
     }

@@ -666,6 +666,8 @@ typedef struct {
     int project_save_new_bundle; /* The active legacy TSR is retained during migration. */
     uint64_t mosaic_card_mix_event;
     int mosaic_card_mix_part; /* Hover/drag: 1 fade-in, 2 fade-out, 3 pan. */
+    int mosaic_card_mix_group;
+    char mosaic_source_hover[128];
     TsKeyboardMask staged_notes;
     uint32_t overlay_until_ms;
     int workbench_loop_active;
@@ -979,6 +981,7 @@ int ts_ui_mosaic_pan_handle(const TsUiState *ui, const TsMosaicEvent *event,
 int ts_ui_mosaic_resize_handle(const TsUiState *,const TsMosaicEvent *,int part,
                                double *x,double *y,double *radius);
 /* Shared geometry for both renderers and the staged transform controller. */
+void ts_ui_mosaic_scale_event(const TsMosaicEvent *,TsMosaicEvent *,double delta,int anchor);
 void ts_ui_mosaic_transform_event(const TsUiState *,const TsMosaicEvent *,TsMosaicEvent *);
 double ts_ui_mosaic_volume_y(const TsUiState *ui, double time);
 double ts_ui_mosaic_volume_time(const TsUiState *ui, double y);

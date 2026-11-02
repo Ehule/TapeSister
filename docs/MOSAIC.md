@@ -918,3 +918,33 @@ lower. Pitch choices are planned on the UI thread, with no new callback work.
 Apply commits exactly the preview as one undo step; Escape/Cancel discards it.
 Generated notes use the existing project format and survive save/reopen. Each
 new Scatter dialog starts with Keep Notes so pitch replacement is deliberate.
+
+
+## Alt scaling and group handles
+
+During **S** scaling, hold **Alt** to snap the moving start/end to another card's
+start/end within seven logical pixels. T keeps each start fixed, B keeps each end
+fixed, and C scales around each center. The selected group is excluded from snap
+targets. Releasing Alt returns to the unsnapped mouse position; Enter/click commits
+one Undo step and Escape cancels. Timeline limits still apply. Ordinary edge
+resize retains its existing single-card snap and group match-length controls.
+
+Drag a fade or pan handle on any selected card to edit the selected audio cards
+as one gesture. Selection and its primary card remain unchanged. Each value starts
+from that card's opening value: fade drags add the same number of seconds, and
+pan drags add the same normalized displacement, independently of card width.
+Values clamp to their legal ranges without accumulating drift. Video instructions
+are left alone. The matching handles light together in logical and native views.
+
+**Alt-drag** starts the chosen fade at zero or pan at center, and applies matching
+values to all selected audio cards. The opposite fade is retained. A matching fade
+is limited by the shortest available space across the selection so that all edited
+ends remain equal. Press/release Alt during a drag to switch between matching and
+relative values. Right-click/double-click resets the chosen control across the
+selection. Each gesture has one Undo step; Escape restores every affected card.
+
+Audio source tiles keep their IDs, show the first six characters of their retained
+sample/file name above the waveform, and display the full retained name in the
+Mosaic info area on hover. Long names wrap to a second line, without Gallery or
+looper status truncating them. Imported names are retained by the existing sample
+metadata (up to 127 bytes); original filesystem paths are not stored there.

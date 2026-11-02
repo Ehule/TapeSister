@@ -114,6 +114,7 @@ static void wait_render(void);
 #include "test_mosaic_live_controller.inc"
 #include "test_mosaic_grab.inc"
 #include "test_mosaic_scale.inc"
+#include "test_mosaic_handle_groups.inc"
 #include "test_mosaic_gallery_controller.inc"
 #include "test_quick_capture.inc"
 #include "test_mosaic_record_bank.inc"
@@ -433,6 +434,7 @@ int main(int argc,char **argv)
     uint64_t original=ts_sample_hash(&instrument.current);
     ui.mosaic=audio.mosaic=ts_mosaic_create();ui.mosaic_scale=24;ui.mosaic_open=1;
     if(argc>1 && !strcmp(argv[1],"--grab")) {test_mosaic_grab(window);goto done;}
+    if(argc>1 && !strcmp(argv[1],"--handles")) {test_mosaic_handle_groups(window);test_mosaic_scale_snap(window);goto done;}
     if(argc>1 && !strcmp(argv[1],"--scale")) {test_mosaic_scale(window);goto done;}
     if(argc>1 && !strcmp(argv[1],"--video-cues")) {test_mosaic_video_controller(window);goto done;}
     if(argc>1 && !strcmp(argv[1],"--gallery")) {test_mosaic_gallery_controller(window,device);goto done;}
@@ -510,6 +512,7 @@ int main(int argc,char **argv)
     test_mosaic_live_controls(window);
     test_mosaic_fades(window);
     test_mosaic_card_pan(window);test_mosaic_group_resize(window);
+    test_mosaic_handle_groups(window);test_mosaic_scale_snap(window);
     test_mosaic_group_mute_audio(window);
     test_mosaic_source_actions(window);
     test_mosaic_volume_controls(window);

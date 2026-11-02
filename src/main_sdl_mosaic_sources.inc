@@ -177,6 +177,13 @@ static int mosaic_sources_event(const SDL_Event *event,SDL_AudioDeviceID device,
             "SOURCE KEYS ON / SELECTED AUDIO SOURCES FOLLOW QWERTY AND MIDI":"SOURCE KEYS OFF / MOSAIC EDIT SHORTCUTS RESTORED");return 1;
     }
     int sidebar=x>=10 && x<108 && y>=74 && y<TS_MOSAIC_SOURCE_PAGE_Y;
+    if(motion && sidebar && !c->drag && !c->mix_drag && !c->volume_drag && !c->pan_active) {
+        int local=((y-74)/34)*2+(x-10)/49,n=ui->mosaic_source_offset+local;
+        if(local<16 && (x-10)%49<44 && (y-74)%34<28 && n<ui->mosaic_source_count) {
+            const TsSample *sample=ui->mosaic_sources[n].sample;
+            if(sample){snprintf(ui->mosaic_source_hover,sizeof(ui->mosaic_source_hover),"%s",sample->name);return 1;}
+        }
+    }
     if(down && sidebar && (event->button.button==SDL_BUTTON_RIGHT ||
        (event->button.button==SDL_BUTTON_LEFT && event->button.clicks>=2 && !(mod&(KMOD_CTRL|KMOD_SHIFT|KMOD_ALT|KMOD_GUI))))) {
         int n=ui->mosaic_source_offset+((y-74)/34)*2+(x-10)/49;

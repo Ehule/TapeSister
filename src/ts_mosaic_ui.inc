@@ -215,9 +215,9 @@ static void mosaic_card(TsFramebuffer *fb,const TsUiState *ui,const TsMosaicEven
         if(l && l->id==e->id && l->state==TS_MOSAIC_LIVE_PLAYING)
             mosaic_canvas_rect(fb,ui,x+3+(int)(fmax(0,fmin(1,l->phase))*(w-8)),(int)top+22,2,5,RGB(255,224,150));
     }
-    mosaic_card_pan(&fades,ui,e,x,(int64_t)top,x+w,(int64_t)bottom,color);
+    mosaic_card_pan(&fades,ui,e,x,(int64_t)top,x+w,(int64_t)bottom,color,selected);
     mosaic_fade_handles(&fades,ui,e,x,(int64_t)top,x+w,(int64_t)bottom,
-        selected?mosaic_selection_color(ui,e->id==ui->mosaic_selected):color);
+        selected?mosaic_selection_color(ui,e->id==ui->mosaic_selected):color,selected);
     mosaic_resize_handles(&fades,ui,e,x,(int64_t)top,x+w,(int64_t)bottom,selected);
 }
 
@@ -407,12 +407,14 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
             if(mosaic_pattern_changed(ui,p))text(fb,x+1,y+18,"CHANGED",color,1);
             else for(int row=0;row<p->score.patterns[0]->rows;++row)for(int l=0;l<p->score.channel_count;++l){int note=p->cells[row][l][0];if(note>0 && note<=96)rect(fb,x+3+(note-1)*36/96,y+15+row*10/p->score.patterns[0]->rows,3,1,color);}
         } else if(sample && sample->data) {
+            char prefix[7];snprintf(prefix,sizeof(prefix),"%.6s",sample->name);
+            text(fb,x+4,y+12,prefix,color,1);
             TsWaveformRequest request={.sample=sample,.first=0,.last=sample->frames,.width=35,.revision=(m?m->epoch:0)^ui->mosaic_sources[n].hash};
             ts_waveform_cache_prepare(&source_cache[i],&request);
             for(int px=0;px<35;++px) {
                 const TsWaveformColumn *column=&source_cache[i].columns[px];
-                int a=(int)(fminf(1,fabsf(column->minimum))*5),b=(int)(fminf(1,fabsf(column->maximum))*5);
-                rect(fb,x+4+px,y+20-b,1,1+a+b,color);
+                int a=(int)(fminf(1,fabsf(column->minimum))*3),b=(int)(fminf(1,fabsf(column->maximum))*3);
+                rect(fb,x+4+px,y+23-b,1,1+a+b,color);
             }
         }
     }
@@ -443,7 +445,14 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
         if(ui->mosaic_gallery_fading)snprintf(label,sizeof(label),"C%02d/%02d %.18s / CROSSFADE %.0f%%",ui->mosaic_gallery_active+1,ui->mosaic_gallery_count,ui->mosaic_gallery_names[ui->mosaic_gallery_active],ui->mosaic_gallery_progress*100);
         else snprintf(label,sizeof(label),"C%02d/%02d %.18s / %.25s",ui->mosaic_gallery_active+1,ui->mosaic_gallery_count,ui->mosaic_gallery_names[ui->mosaic_gallery_active],status);
     }
+    if(ui->mosaic_source_hover[0]) {
+        snprintf(label,sizeof(label),"%.77s",ui->mosaic_source_hover);
+        text(fb,164,24,label,ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_TEXT,RGB(224,214,233)),1);
+        if(strlen(ui->mosaic_source_hover)>77)
+            text(fb,164,32,ui->mosaic_source_hover+77,ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_TEXT,RGB(224,214,233)),1);
+    } else {
     text(fb,164,24,label,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DIM, RGB(160,149,172)),1);
+    }
     snprintf(label,sizeof(label),"SPEED %.2fX",m?m->speed:1);text(fb,416,58,label,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DATA2, RGB(129,206,200)),1);
     mosaic_slider(fb,TS_MOSAIC_SPEED_X,58,TS_MOSAIC_SPEED_W,(log2(m?m->speed:1)+1)*.5,1,1);
     double scale=ui->mosaic_scale>0?ui->mosaic_scale:24;

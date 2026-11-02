@@ -133,7 +133,8 @@ static void mosaic_drag_end(TsUiState *ui,MosaicController *c)
     ui->mosaic_scale_anchor=0;ui->mosaic_scale_delta=0;
     ui->mosaic_resize_event=0;ui->mosaic_resize_part=0;
     ui->mosaic_ghost_count=ui->mosaic_box=0;c->volume_drag=0;
-    c->card_mix_event=ui->mosaic_card_mix_event=0;ui->mosaic_card_mix_part=0;
+    c->card_mix_event=ui->mosaic_card_mix_event=0;ui->mosaic_card_mix_part=ui->mosaic_card_mix_group=0;
+    ui->mosaic_source_hover[0]=0;
     c->pan_active=c->pan_moved=ui->mosaic_loop_drag=ui->mosaic_marker_drag=0;
 }
 /* Browse stored sample banks without swapping the live instrument or routing.
