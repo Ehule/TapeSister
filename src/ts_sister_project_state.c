@@ -58,7 +58,7 @@ static int state_path(const char *project, char *path, size_t size)
             if (probe != NULL) {
                 const char *name = separator + 1;
                 int matched = fgets(line, sizeof(line), probe) != NULL &&
-                              strcmp(line, "TAPESISTER_PROJECT 2\n") == 0 &&
+                              (strcmp(line, "TAPESISTER_PROJECT 2\n") == 0 || strcmp(line, "TAPESISTER_PROJECT 3\n") == 0) &&
                               fgets(line, sizeof(line), probe) != NULL;
                 if (matched) {
                     snprintf(expected, sizeof(expected), "project=%s\n", name);

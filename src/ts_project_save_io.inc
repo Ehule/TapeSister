@@ -35,6 +35,7 @@ static int project_save_reuse(void *context,const char *path,uint64_t signature)
     if(!project_files_add(&r->current,relative,signature,1))return -1;
     ProjectFile *source=project_files_find(&r->previous,relative),*owned=project_files_find(&r->owned,relative);
     if(!source || source->hash!=signature || !owned || !owned->fingerprint)return 0;
+    if(!strncmp(relative,"samples/audio/",14) && owned->hash!=signature)return 0;
     char old[TS_PROJECT_PATH_MAX];uint64_t hash;
     if(!project_join(old,sizeof(old),r->old,relative) || project_entry_kind(old)!=PROJECT_ENTRY_FILE ||
        !project_file_hash(old,&hash) || hash!=owned->hash || !ts_save_io_poll(0))return 0;
