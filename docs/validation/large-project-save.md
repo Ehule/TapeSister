@@ -78,8 +78,8 @@ be a completed project. Rollback ambiguity keeps both protected locations.
 ## Executed validation
 
 Linux Release application/core built with SDL and system FFmpeg. Bundled CDP/video
-builds and physical MIDI were disabled locally. The PR manifest registers 37
-regressions on Windows and Linux; local execution passes all 37. Native release
+builds and physical MIDI were disabled locally. The PR manifest registers 38
+regressions on Windows and Linux; local execution passes all 38. Native release
 CI also includes the added codec, portable-save and worker tests. Check the PR's
 CI results for Windows/release status; the measurements below are Linux results.
 
