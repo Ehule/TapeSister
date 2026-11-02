@@ -35,9 +35,9 @@ static void begin_new_confirmation(ProjectSession *s)
     }
     /* Opening or cancelling the prompt never discards a document or take. */
     int exported = ts_tapehead_export(ui->tracker, ui->status, sizeof(ui->status));
-    ui->exit_has_unsaved = !exported || runtime_project_state_hash(
-        s->pages, s->instrument, s->record, *s->record_active,
-        &s->audio->sister, &s->audio->keyboard_sequence) != ui->saved_state_hash;
+    ui->exit_has_unsaved = !exported || paged_project_fingerprint(s->pages,
+        *s->record_active?NULL:s->instrument,*s->record_active?s->instrument:s->record,
+        &s->audio->sister,&s->audio->keyboard_sequence,1) != ui->saved_ui_hash;
     ui->exit_for_new = 1;
     ui->exit_confirm_open = 1;
     ui->exit_choice = 2;

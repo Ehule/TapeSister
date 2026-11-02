@@ -173,6 +173,13 @@ static void test_keyboard_sequence_projects(void)
     PendingFileOperation pending = {0}; pending.active = 1; pending.mode = TS_BROWSER_SAVE_RECIPE;
     snprintf(pending.path, sizeof(pending.path), "%s", path);
     run_pending_file_operation(device, &audio, &ui, &instrument, NULL, NULL, &pages, &record, 0, &pending);
+    Uint32 save_deadline=SDL_GetTicks()+15000u;
+    while(project_save_worker && !SDL_TICKS_PASSED(SDL_GetTicks(),save_deadline)) {
+        assert(s->running);
+        SDL_Delay(1);
+        run_pending_file_operation(device,&audio,&ui,&instrument,NULL,NULL,&pages,&record,0,&pending);
+    }
+    assert(!project_save_worker);
     assert(!pending.active && s->running && !strcmp(ui.project_path, path));
     assert(strstr(ui.status, "SAVED TSR PROJECT"));
     uint64_t saved = paged_project_state_hash(&pages, &instrument, &record, &audio.sister, s);

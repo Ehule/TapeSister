@@ -8,6 +8,15 @@
 #include <stdlib.h>
 #include <string.h>
 #include <SDL.h>
+#include "tapesister/sample_pages.h"
+static SDL_atomic_t save_test_gate;
+static int gated_project_save(const TsSamplePages *p,const TsInstrument *a,const TsInstrument *r,
+    const TsSisterProjectState *s,const char *path,TsSaveControl *c,char *error,size_t size)
+{
+    while(SDL_AtomicGet(&save_test_gate))SDL_Delay(1);
+    return ts_sample_pages_save_project_controlled(p,a,r,s,path,c,error,size);
+}
+#define ts_sample_pages_save_project_controlled gated_project_save
 static int recovery_choices[4],recovery_choice_count,recovery_choice_at;
 static int recovery_save_button;
 static int test_recovery_message(const SDL_MessageBoxData *data,int *button)
@@ -43,6 +52,7 @@ static void *test_calloc(size_t n, size_t size)
 #undef calloc
 #undef SDL_ShowMessageBox
 #undef SDL_ShowSimpleMessageBox
+#undef ts_sample_pages_save_project_controlled
 #include <assert.h>
 
 static AudioState audio;
@@ -99,6 +109,9 @@ static void run_save(const char *path)
     file=(PendingFileOperation){.active=1,.presented=1,.mode=TS_BROWSER_SAVE_RECIPE};
     assert(ts_sample_pages_bundle_project_path(path,file.path,sizeof(file.path),error,sizeof(error)));
     run_pending_file_operation(0,&audio,&ui,&bank,&selection,&importer,&pages,&record,record_active,&file);
+    {Uint32 deadline=SDL_GetTicks()+15000;while(project_save_worker && !SDL_TICKS_PASSED(SDL_GetTicks(),deadline)) {
+        SDL_Delay(1);run_pending_file_operation(0,&audio,&ui,&bank,&selection,&importer,&pages,&record,record_active,&file);
+    }assert(!project_save_worker);}
 }
 static int cancelled_import(void *data)
 {
@@ -137,6 +150,7 @@ static void assert_empty(void)
 }
 #include "test_project_recovery_ui.inc"
 #include "test_project_reopen_ui.inc"
+#include "test_project_save_worker.inc"
 
 int main(int argc,char **argv)
 {
@@ -171,6 +185,12 @@ int main(int argc,char **argv)
     assert(ts_tapehead_sync(&pages,&bank,48000,error,sizeof(error)));
     assert(ts_tapehead_export(&pages.tracker,error,sizeof(error)));
     /* Optional user-project reproduction through the actual Open path. */
+    if(argc==2 && !strcmp(argv[1],"--save-worker")){test_project_save_worker(window);goto cleanup;}
+    if(argc==3 && !strcmp(argv[1],"--profile-library")){profile_project_library(argv[2]);goto cleanup;}
+    if(argc==3 && !strcmp(argv[1],"--save-large-worker")) {
+        assert(load_instrument(0,&audio,&ui,&bank,&pages,&record,0,argv[2]));
+        save_test_timeout=300000;test_project_save_worker(window);goto cleanup;
+    }
     if(argc==3 && (!strcmp(argv[1],"--open-project") || !strcmp(argv[1],"--mosaic-revert-mute"))) {
         uint64_t disk_hash=0;
         for(int pass=0;pass<2;++pass) {

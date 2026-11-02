@@ -110,9 +110,11 @@ static int project_file_hash(const char *path, uint64_t *hash)
     if (!file) return 0;
     uint64_t value = UINT64_C(14695981039346656037);
     size_t n;
-    while ((n = fread(buffer, 1, sizeof(buffer), file)) != 0)
+    while ((n = fread(buffer, 1, sizeof(buffer), file)) != 0) {
+        if(!ts_save_io_poll(0)){fclose(file);return 0;}
         for (size_t i = 0; i < n; ++i)
             value = (value ^ buffer[i]) * UINT64_C(1099511628211);
+    }
     int ok = !ferror(file);
     if (fclose(file)) ok = 0;
     *hash = value;

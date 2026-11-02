@@ -1,5 +1,26 @@
 # Interrupted project-save recovery
 
+## Failed or cancelled large saves
+
+Before replacing an existing project, TapeSister writes and validates a sibling
+`.tapesister-partial` directory. The last valid project stays in place until this
+work succeeds. An ordinary failure or cancellation retains the new output under
+a fresh `.tapesister-partial-failed-<time>-<number>` sibling. A subsequent Save
+does not erase that retained output. An owned staging directory left by an
+interruption is also retained before a retry begins.
+
+Retained output is marked incomplete. A TSR inside it may be incomplete or valid;
+the folder name alone does not establish which assets were finished. Keep it for
+inspection or recovery, and continue using the last successfully saved bundle.
+The independent Health `project-save-*.log` records the full recovery path and
+failure stage. If retaining the stage itself fails, TapeSister keeps the original
+stage protected and refuses destructive automatic cleanup.
+
+Failures after moving user entries into staging continue to use the protected
+backup/staging recovery flow below. If publishing succeeds but removal of the
+old backup or transaction marker fails, the project is reported saved with
+recovery files retained; those locations remain protected for the next operation.
+
 For saved card state, editor view restoration and older flat-file save locations,
 see [PROJECT_SAVE_STATE.md](PROJECT_SAVE_STATE.md).
 

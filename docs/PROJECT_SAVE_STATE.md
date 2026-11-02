@@ -1,5 +1,44 @@
 # Saving and reopening a project
 
+## Large portable saves
+
+Save keeps the complete imported Sample collection, including sounds unused by
+Mosaic, and the Record bank. Audio stays inside the named project bundle. Original
+import files are never moved or deleted. Copy the whole bundle when moving to
+another machine; video references retain their existing relinking behavior.
+
+Saving runs on a background worker. The dialog shows its stage, current sound,
+completed/total bank assets and encoded audio payload bytes. Editing pauses while
+the document is pinned; playback continues. Finish captures, background edits and
+uncommitted Mosaic tile edits before saving. Repeated Save requests do not start
+additional workers.
+
+Escape or the cancel row requests cancellation. Close cancels before commit,
+waits for the worker to release the document, then opens the usual exit confirmation.
+If committing has already succeeded, Close finishes the successful save and exits.
+Cancellation is checked between bounded audio/I/O blocks. The short directory
+commit/rollback phase finishes before accepting another operation. A completed
+save reports success; failures clear the busy and exit-after-save flags and
+retain the live project.
+
+The TSR41 audio representation and project manifest version remain unchanged.
+Unchanged generated files can be reused after their recorded file fingerprints
+are checked. Exact float audio, rather than the quantized audition hash, enters
+the reuse signature. Filesystems without hard links use bounded copying. Reuse
+is conservative: reopening or changing bank metadata can require rewriting a
+bank's embedded PCM. Integrity checks still read large assets on repeated saves.
+
+TSR's existing 100,000,000-frame limit per sound is now checked before writing
+banks, with the offending tile named in the error. This is a per-sound format
+constraint, not a 1/2/4 GiB limit on the project or its aggregate assets.
+
+Every background save writes an independent `project-save-*.log` in the Health
+directory used by F12 diagnostics, even when session recording is off. It records
+stages, current assets, progress, final result and recovery location. These text
+logs contain paths and diagnostics, not sample audio. See
+[project recovery](PROJECT_RECOVERY.md) and the
+[large-project validation report](validation/large-project-save.md).
+
 A successful project save includes Mosaic card content and properties, mute and
 solo states, routing, sample banks, the tracker definition and Sister settings.
 Unknown ordinary files and folders inside an existing named bundle are retained

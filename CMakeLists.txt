@@ -27,7 +27,7 @@ add_library(tapesister_core src/ts_mandala.c src/ts_routing_matrix.c src/ts_matr
              src/ts_capture_archive.c src/ts_performance_recorder.c
              src/ts_input_monitor.c
              src/ts_input_ownership.c
-             src/ts_sample_pages.c
+             src/ts_sample_pages.c src/ts_save_io.c
              src/ts_tile_id.c src/ts_sister_tracker.c src/ts_sister_tracker_project.c src/ts_tracker_embedded_codec.c src/ts_tracker_playback.c src/ts_tracker_edit.c
              src/ts_browser.c src/ts_config.c src/ts_audio_config.c
              src/ts_recipe.c src/ts_dsp_recipe.c
@@ -479,6 +479,15 @@ set_tests_properties(tapesister_mosaic_gallery_tests PROPERTIES WORKING_DIRECTOR
 add_executable(tapesister_project_save_tests tests/test_project_save.c)
 target_link_libraries(tapesister_project_save_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_project_save_tests COMMAND tapesister_project_save_tests)
+add_executable(tapesister_save_codecs_tests tests/test_save_codecs.c)
+target_include_directories(tapesister_save_codecs_tests PRIVATE ${miniaudio_SOURCE_DIR})
+target_link_libraries(tapesister_save_codecs_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_save_codecs_tests COMMAND tapesister_save_codecs_tests)
+add_executable(tapesister_portable_save_tests tests/test_portable_save.c)
+target_link_libraries(tapesister_portable_save_tests PRIVATE tapesister_core)
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/portable-save-test")
+add_test(NAME tapesister_portable_save_tests COMMAND tapesister_portable_save_tests)
+set_tests_properties(tapesister_portable_save_tests PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/portable-save-test")
 add_executable(tapesister_tracker_playback_tests tests/test_tracker_playback.c)
 target_link_libraries(tapesister_tracker_playback_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_tracker_playback_tests COMMAND tapesister_tracker_playback_tests)
@@ -830,6 +839,8 @@ if(MINGW)
                                test_sister_project_state
                                tapesister_sample_pages_tests
                                tapesister_project_save_tests
+                               tapesister_save_codecs_tests
+                               tapesister_portable_save_tests
                                tapesister_keyboard_hold_tests
                                tapesister_native_waveform_tests
                                tapesister_render_efficiency_tests
@@ -944,6 +955,7 @@ if(TAPESISTER_BUILD_SDL)
     target_link_options(tapesister_new_project_tests PRIVATE "-Wl,--stack,16777216")
   endif()
   add_test(NAME tapesister_new_project_tests COMMAND tapesister_new_project_tests)
+  add_test(NAME tapesister_project_save_worker_tests COMMAND tapesister_new_project_tests --save-worker)
 endif()
 
 if(TAPESISTER_BUILD_SDL)

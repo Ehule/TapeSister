@@ -3235,17 +3235,22 @@ static void project_overwrite_render(TsFramebuffer *fb,const TsUiState *ui)
     text(fb, 166, 238, "ENTER/Y/CTRL+S CONFIRM   ESC/N CANCEL",
          ts_theme_color(active_palette(), render_group, TS_COLOR_DIM, RGB(190, 185, 190)), 1);
 }
-static void project_saving_render(TsFramebuffer *fb)
+static void project_saving_render(TsFramebuffer *fb,const TsUiState *ui)
 {
-    frame(fb, 210, 146, 220, 84, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(12, 12, 12)), PAL_VOLUME);
-    text(fb, 272, 181, "SAVING", PAL_VOLUME, 2);
+    frame(fb, 34, 130, 572, 150, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(12,12,12)), PAL_VOLUME);
+    text(fb, 54, 146, "SAVING PORTABLE PROJECT", PAL_VOLUME, 2);
+    text(fb, 54, 182, ui->file_busy_detail, PAL_VOLUME, 1);
+    char asset[85];snprintf(asset,sizeof(asset),"%.84s",ui->file_busy_asset);
+    text(fb, 54, 204, asset, PAL_NOTE, 1);
+    text(fb, 54, 246, "ESC / CLICK TO CANCEL - CLOSE CANCELS THEN ASKS ABOUT UNSAVED WORK", PAL_VOLUME, 1);
+
 }
 
 void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *instrument)
 {
     render_palette = &ui->palette;
     render_group = TS_THEME_CANVAS;
-    if(ui->portal.open) { render_group=TS_THEME_PORTAL; portal_render(fb,ui); return; }
+    if(ui->portal.open) { render_group=TS_THEME_PORTAL; portal_render(fb,ui); if(ui->file_busy && !strcmp(ui->file_busy_label,"SAVING"))project_saving_render(fb,ui); return; }
     if(ui->tracker_open && ui->tracker) {
         render_group=TS_THEME_TRACKER;
         if(ui->tracker_embedded_frame) {
@@ -3255,7 +3260,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         } else tracker_render(fb,ui,instrument);
         if(ui->browser.mode!=TS_BROWSER_CLOSED)
             browser_render(fb,&ui->browser,ui->text_cursor_visible,ui->file_busy,0);
-        master_eq_render(fb,ui);router_render(fb,ui);main_midi_learn_overlay(fb,ui);return;
+        master_eq_render(fb,ui);router_render(fb,ui);main_midi_learn_overlay(fb,ui);if(ui->file_busy && !strcmp(ui->file_busy_label,"SAVING"))project_saving_render(fb,ui);return;
     }
     if(ui->mosaic_open && ui->mosaic) {
         render_group=TS_THEME_MOSAIC;mosaic_render(fb,ui,instrument);
@@ -3265,7 +3270,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         if(ui->browser.mode!=TS_BROWSER_CLOSED)
             browser_render(fb,&ui->browser,ui->text_cursor_visible,ui->file_busy,0);
         if(ui->project_overwrite_confirm_open)project_overwrite_render(fb,ui);
-        if(ui->file_busy && !strcmp(ui->file_busy_label,"SAVING"))project_saving_render(fb);
+        if(ui->file_busy && !strcmp(ui->file_busy_label,"SAVING"))project_saving_render(fb,ui);
         return;
     }
     const TsTuning *display_tuning = &ui->tune_reference;
@@ -4415,7 +4420,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         char busy[64];
         int dots = ui->file_busy_phase % 4 + 1;
         if (strcmp(ui->file_busy_label, "SAVING") == 0) {
-            project_saving_render(fb);
+            project_saving_render(fb,ui);
             return;
         }
         snprintf(busy, sizeof(busy), "%s%.*s",

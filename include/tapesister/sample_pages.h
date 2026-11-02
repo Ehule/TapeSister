@@ -5,6 +5,7 @@
 #include "tapesister/mosaic_gallery.h"
 #include "tapesister/sister_project_state.h"
 #include "tapesister/sister_tracker.h"
+#include "tapesister/save_io.h"
 
 #include <stddef.h>
 
@@ -103,6 +104,8 @@ int ts_sample_pages_save_project(const TsSamplePages *pages,
                                  const TsSisterProjectState *sister_state,
                                  const char *path,
                                  char *error, size_t error_size);
+int ts_sample_pages_save_project_controlled(const TsSamplePages *,const TsInstrument *,
+    const TsInstrument *,const TsSisterProjectState *,const char *,TsSaveControl *,char *,size_t);
 int ts_sample_pages_load_project(TsSamplePages *pages,
                                  TsInstrument *active_sample,
                                  TsInstrument *record_bank,

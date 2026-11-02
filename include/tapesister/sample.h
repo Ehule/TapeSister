@@ -596,6 +596,13 @@ int ts_instrument_render_tile_eq(TsSample *out,const TsInstrument *instrument,co
 int ts_instrument_set_tile_eq(TsInstrument *instrument,const TsMasterEqControls *eq,char *error,size_t size);
 int ts_sample_apply_eq(TsSample *sample,const TsMasterEqControls *eq);
 int ts_sample_clone(TsSample *destination, const TsSample *source, char *error, size_t error_size);
+/* Exact (unquantized) audio fingerprint for incremental portable saving. */
+uint64_t ts_sample_save_signature(const TsSample *sample);
+uint64_t ts_instrument_save_signature(const TsInstrument *instrument);
+/* Validate native TSR structure/hashes without allocating decoded audio or
+   rendering the selected tile. Existing TSR readers remain unchanged. */
+int ts_instrument_validate_recipe(const char *path, char *error, size_t size);
+int ts_instrument_check_save(const TsInstrument *,char *,size_t);
 int ts_sample_load_wav(TsSample *sample, const char *path, char *error, size_t error_size);
 int ts_sample_load_wav_tuned(TsSample *sample, TsTuning *tuning, const char *path,
                              char *error, size_t error_size);

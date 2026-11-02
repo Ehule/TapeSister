@@ -2903,9 +2903,11 @@ static void begin_exit_confirmation(SDL_AudioDeviceID device, AudioState *audio,
     sync_capture_ui(device, audio, ui);
     /* Include live tracker edits even when the workspace has not been closed. */
     int tracker_saved=ts_tapehead_export(ui->tracker,ui->status,sizeof(ui->status));
-    ui->exit_has_unsaved = runtime_project_state_hash(
-        sample_pages, instrument, parked_record,
-        record_bank_active, &audio->sister, &audio->keyboard_sequence) != ui->saved_state_hash || !tracker_saved;
+    /* The title already uses revision fingerprints. Scanning every PCM frame
+       again just to open Close can itself freeze a large project's UI. */
+    ui->exit_has_unsaved = paged_project_fingerprint(sample_pages,
+        record_bank_active?NULL:instrument,record_bank_active?instrument:parked_record,
+        &audio->sister,&audio->keyboard_sequence,1) != ui->saved_ui_hash || !tracker_saved;
     ui->exit_confirm_open = 1;
     ui->exit_for_new = 0;
     ui->exit_choice = ui->exit_has_unsaved ? 2 : 1;
@@ -9036,6 +9038,8 @@ static int offline_start(SDL_AudioDeviceID,AudioState *,TsUiState *,TsInstrument
 
 #include "main_sdl_recovery.inc"
 #include "main_sdl_canvas_transfer.inc"
+#include "main_sdl_project_save.inc"
+static int project_save_blocked;
 
 static void run_pending_file_operation(SDL_AudioDeviceID device,
                                        AudioState *audio, TsUiState *ui,
@@ -9051,7 +9055,7 @@ static void run_pending_file_operation(SDL_AudioDeviceID device,
     char error[160];
     int ok = 0;
     if (pending == NULL || !pending->active) return;
-    if (project_recovery_guard(ui,pending)) return;
+    if (!project_save_worker && project_recovery_guard(ui,pending)) return;
     (void)pending_selection_load;
     if(pending->mode==TS_BROWSER_IMPORT_CANVAS || pending->mode==TS_BROWSER_EXPORT_CANVAS) {
         ok=mosaic_canvas_file_operation(device,audio,ui,sample_pages,pending,error,sizeof(error));
@@ -9077,34 +9081,63 @@ static void run_pending_file_operation(SDL_AudioDeviceID device,
         const TsInstrument *active_sample = record_bank_active ? NULL : instrument;
         const TsInstrument *record_bank = record_bank_active ?
                                           instrument : parked_record;
-        TsSisterProjectState sister_state;
-        double saved_mosaic_time;
-        if(device)SDL_LockAudioDevice(device);
-        ts_sister_project_state_capture(
-            &sister_state, &audio->sister,
-            ts_sample_pages_count(sample_pages), NULL);
-        sister_state.keyboard_sequence = ts_keyboard_sequence_export(&audio->keyboard_sequence);
-        saved_mosaic_time=ui->mosaic?ui->mosaic->time:0;
-        if(device)SDL_UnlockAudioDevice(device);
-        project_view_capture(&sister_state.view,ui);
-        sister_state.view.time=saved_mosaic_time;
-        ok=ts_tapehead_export(&sample_pages->tracker,error,sizeof(error));
-        if(ok) {
-            project_log_state("project_save_request",pending->path,ui);
-            ts_session_log_project_save_begin();
-            ok = ts_sample_pages_save_project(sample_pages, active_sample, record_bank,
-                                             &sister_state, pending->path,
-                                             error, sizeof(error));
-            ts_session_log_project_save_end();
+        if(project_save_worker) {
+            ProjectSaveWorker *w=project_save_worker;
+            if(!SDL_AtomicGet(&w->done)) {
+                SDL_LockMutex(w->mutex);
+                if(w->message[0])snprintf(ui->file_busy_detail,sizeof(ui->file_busy_detail),"%s",w->message);
+                if(w->asset[0])snprintf(ui->file_busy_asset,sizeof(ui->file_busy_asset),"%s",w->asset);
+                SDL_UnlockMutex(w->mutex);return;
+            }
+            SDL_WaitThread(w->thread,NULL);ok=w->ok;
+            snprintf(error,sizeof(error),"%.159s",w->error);
+            if(ok) {
+                ui->saved_state_hash=w->saved_hash;
+                ui->saved_ui_hash=w->saved_ui_hash;ui->project_check_ms=0;
+                ui->project_modified=paged_project_fingerprint(sample_pages,active_sample,record_bank,
+                    &audio->sister,&audio->keyboard_sequence,1)!=w->saved_ui_hash;
+                ts_tapehead_project_saved(&sample_pages->tracker);
+            }
+            if(w->close_requested) {
+                if(ok && !ui->project_modified)ui->exit_after_save=1;
+                else {
+                    ui->exit_confirm_open=1;ui->exit_for_new=0;
+                    ui->exit_has_unsaved=paged_project_fingerprint(sample_pages,active_sample,record_bank,
+                        &audio->sister,&audio->keyboard_sequence,1)!=ui->saved_ui_hash || ts_tapehead_project_dirty(&sample_pages->tracker);
+                    ui->exit_choice=ui->exit_has_unsaved?2:1;
+                }
+            }
+            if(ok && ui->exit_after_save==1 && ui->project_modified) {
+                ui->exit_after_save=0;ui->exit_confirm_open=1;
+                ui->exit_has_unsaved=1;ui->exit_choice=2;
+            }
+            snprintf(ui->status,sizeof(ui->status),ok?"SAVED TSR PROJECT %.104s":"SAVE FAILED: %.135s",ok?pending->path:error);
+            if(ok && w->control.recovery[0])snprintf(ui->status,sizeof(ui->status),
+                "SAVED TSR PROJECT; RECOVERY FILES KEPT: %.110s",path_basename(w->control.recovery));
+            project_save_worker=NULL;project_save_worker_free(w);
+        }else {
+            if(project_save_blocked || sample_pages->mosaic_bank ||
+               audio->capture.state!=TS_CAPTURE_IDLE || audio->sister.capture.state!=TS_CAPTURE_IDLE) {
+                snprintf(error,sizeof(error),"Finish capture / background edit / Mosaic tile edit before saving");
+            }else {
+                TsSisterProjectState sister_state;double saved_mosaic_time;
+                if(device)SDL_LockAudioDevice(device);
+                ts_sister_project_state_capture(&sister_state,&audio->sister,ts_sample_pages_count(sample_pages),NULL);
+                sister_state.keyboard_sequence=ts_keyboard_sequence_export(&audio->keyboard_sequence);
+                saved_mosaic_time=ui->mosaic?ui->mosaic->time:0;
+                if(device)SDL_UnlockAudioDevice(device);
+                project_view_capture(&sister_state.view,ui);sister_state.view.time=saved_mosaic_time;
+                if(ts_tapehead_export(&sample_pages->tracker,error,sizeof(error))) {
+                    project_log_state("project_save_request",pending->path,ui);
+                    if(project_save_start(device,audio,ui,sample_pages,active_sample,record_bank,&sister_state,pending->path,error,sizeof(error)))return;
+                }
+            }
+            snprintf(ui->status,sizeof(ui->status),"SAVE FAILED: %.135s",error);
         }
-        if (ok) {
-            ui->saved_state_hash = paged_project_state_hash(
-                sample_pages, active_sample, record_bank, &audio->sister, &audio->keyboard_sequence);
-            project_mark_saved(ui,sample_pages,active_sample,record_bank,&audio->sister,&audio->keyboard_sequence);
+        if(!ok) {
+            ui->exit_after_save=0;ui->exit_for_new=0;
+            if(project_recovery_guard(ui,pending))return;
         }
-        snprintf(ui->status, sizeof(ui->status), ok ? "SAVED TSR PROJECT %.104s" :
-                 "SAVE FAILED: %.135s", ok ? pending->path : error);
-        if (!ok && project_recovery_guard(ui,pending)) return;
     } else if(pending->mode==TS_BROWSER_RENDER_WAV) {
         ok=offline_start(device,audio,ui,instrument,sample_pages,parked_record,record_bank_active,pending->path,browser->overwrite_armed);
     } else if(pending->mode==TS_BROWSER_SAVE_XM) {
@@ -9163,7 +9196,7 @@ static void run_pending_file_operation(SDL_AudioDeviceID device,
             TsSessionLogStatus log;ts_session_log_status(&log);
             if(log.state!=TS_SESSION_OFF && !ts_session_log_export_project(ui->project_path,0))
                 snprintf(ui->status,sizeof(ui->status),"PROJECT SAVED; SESSION EXPORT UNAVAILABLE - CHECK F12");
-            show_overlay(ui, "SAVING", 550u);
+            show_overlay(ui, "SAVED", 550u);
         }
         SDL_StopTextInput();
         ts_browser_close(browser);
@@ -14447,6 +14480,7 @@ int main(int argc, char **argv)
         Uint64 frame_started = SDL_GetPerformanceCounter();
         int service_due = (Uint32)(SDL_GetTicks()-last_service_ms)>=TS_UI_ACTIVE_MS || main_paint_invalid;
         if (service_due) {
+        if(!project_save_worker) {
         insert_sync(device,&input_device,&audio,&external_input,&ui);
         (void)tapeCompanionPump(&companion_focus);
         /* Reader counts are atomic; retired immutable generations are owned
@@ -14459,6 +14493,10 @@ int main(int argc, char **argv)
                            &pending_selection_load, &import_controller);
         poll_folder_import(device, &audio, &ui, &instrument, &sample_pages);
         mosaic_canvas_queue_import(&ui,&pending_file);
+        }
+        project_save_blocked=portal.worker || transform.worker || import_controller.worker ||
+            external_capture_busy(&external_input) || external_input.mosaic_writer || external_input.loop_writer ||
+            mosaic.drag || mosaic.mix_drag || mosaic.volume_drag || mosaic.pan_active || portal_edit_gesture_active(&ui);
         if (pending_file.active && pending_file.presented)
             run_pending_file_operation(device, &audio, &ui, &instrument,
                                        &pending_selection_load, &import_controller,
@@ -14469,6 +14507,7 @@ int main(int argc, char **argv)
             if (ui.exit_for_new) ui.new_project_pending = 1;
             else { running = 0; continue; }
         }
+        if(!project_save_worker) {
         sister_pedalboard_tick(&sister_window, SDL_GetTicks());
         if (ui.new_project_pending) {
             project_session.record = parked_instrument;
@@ -14529,6 +14568,7 @@ int main(int argc, char **argv)
         ts_asio_poll();
 #endif
         }
+        }
         ts_profile_end(TS_PROF_CONTROL, profile_control);
         uint64_t profile_events = ts_profile_begin(TS_PROF_EVENTS);
         while (event_pending ? (event = pending_event, event_pending = 0, 1) : SDL_PollEvent(&event)) {
@@ -14542,6 +14582,7 @@ int main(int argc, char **argv)
             wheel_event_coalesce(&event);
             if (!wheel_event_prepare(&event)) continue;
             uint32_t event_id = event_window_id(&event);
+            if(project_save_event(&event,window,device,&audio,&ui))continue;
             if(ts_audio_session_shortcut(&event))continue;
             if (ui.new_project_pending) { main_paint_invalid = 1; break; }
             if (ui.exit_for_new && (ui.exit_confirm_open || ui.exit_after_save) &&
@@ -18253,7 +18294,7 @@ int main(int argc, char **argv)
         if (ts_midi_input != NULL) {
             TsMidiEvent midi;
             while (ts_midi_input_poll(ts_midi_input, &midi)) {
-                if (ui.exit_for_new || ui.new_project_pending) {
+                if (project_save_worker || ui.exit_for_new || ui.new_project_pending) {
                     if (midi.action == TS_MIDI_ACTION_NOTE_OFF || midi.action == TS_MIDI_ACTION_PANIC)
                         handle_midi_event(device, &audio, &ui, &instrument, &fm_preview, &midi, obtained.freq, 0);
                     continue;
@@ -18288,6 +18329,7 @@ int main(int argc, char **argv)
         }
         last_service_ms=SDL_GetTicks();
         profile_control = ts_profile_begin(TS_PROF_CONTROL);
+        if(!project_save_worker) {
         /* Some window managers can drop the button-up event after a captured,
            warped drag. Never leave the resize gesture owning the pointer once
            SDL reports that the physical button is no longer down. */
@@ -18569,6 +18611,7 @@ int main(int argc, char **argv)
                 routing.limiter_gain_reduction_db;
             ui.master_output.gain = routing.master_output_gain;
         }
+        }
         project_refresh_title(window,&ui,&sample_pages,record_bank_active?NULL:&instrument,
             record_bank_active?&instrument:parked_instrument,&audio.sister,&audio.keyboard_sequence,SDL_GetTicks());
         master_eq_spectrum_tick(&audio,&ui,!window_minimized,SDL_GetTicks());
@@ -18726,6 +18769,10 @@ int main(int argc, char **argv)
         ts_profile_lane_end(0);
     }
 
+    if(project_save_worker) {
+        project_save_cancel(1);SDL_WaitThread(project_save_worker->thread,NULL);
+        project_save_worker_free(project_save_worker);project_save_worker=NULL;
+    }
     offline_close();
     palette_window_close();
     mandala_editor_close();
