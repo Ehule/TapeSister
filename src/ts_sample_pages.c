@@ -14,6 +14,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <time.h>
+#include <stdatomic.h>
 
 #ifdef _WIN32
 #include <direct.h>
@@ -30,6 +32,7 @@
 #endif
 
 enum { TS_PROJECT_PATH_MAX = TS_PROJECT_RECOVERY_PATH_MAX, TS_PROJECT_PAGE_LIMIT = 1024 };
+static void project_save_completed(void);
 
 static void pages_error(char *error, size_t error_size, const char *message)
 {
@@ -623,7 +626,6 @@ static int finish_atomic(const char *temporary, const char *destination,
     if (error != NULL && error_size > 0u)
         snprintf(error, error_size, "Could not replace project file: %s",
                  strerror(errno));
-    remove(temporary);
     return 0;
 }
 
@@ -632,6 +634,12 @@ static int save_instrument_atomic(const TsInstrument *instrument,
                                   char *error, size_t error_size)
 {
     char temporary[TS_PROJECT_PATH_MAX + 32];
+    if(!ts_instrument_check_save(instrument,error,error_size))return 0;
+    if(!ts_save_io_stage("Saving bank",destination))return 0;
+    uint64_t signature=ts_instrument_save_signature(instrument);
+    if(!ts_save_io_stage("Checking saved bank",destination))return 0;
+    int reused=ts_save_io_reuse(destination,signature);
+    if(reused)return reused>0;
     int written = snprintf(temporary, sizeof(temporary),
                            "%s.tapesister-tmp", destination);
     if (written < 0 || (size_t)written >= sizeof(temporary)) {
@@ -639,7 +647,6 @@ static int save_instrument_atomic(const TsInstrument *instrument,
         return 0;
     }
     if (!ts_instrument_save_recipe(instrument, temporary, error, error_size)) {
-        remove(temporary);
         return 0;
     }
     return finish_atomic(temporary, destination, error, error_size);
@@ -845,6 +852,7 @@ static int write_instrument_wavs(const TsInstrument *instrument,
                 &member->sample, &member->audible_tuning,
                 member->has_loop, member->loop_first, member->loop_last,
                 member->loop_mode, path, error, error_size)) return 0;
+        project_save_completed();
     }
     return 1;
 }
@@ -876,18 +884,15 @@ static int write_manifest_members(FILE *file, const TsInstrument *instrument,
 static int validate_saved_instrument(const char *path,
                                      char *error, size_t error_size)
 {
-    TsInstrument loaded;
-    int ok;
-    ts_instrument_init(&loaded);
-    ok = ts_instrument_load_recipe(&loaded, path, error, error_size);
-    ts_instrument_free(&loaded);
-    return ok;
+    return ts_save_io_stage("Validating bank",path) &&
+        ts_instrument_validate_recipe(path,error,error_size);
 }
 
 #include "ts_project_files.inc"
 #include "ts_project_recovery.inc"
+#include "ts_project_save_io.inc"
 
-int ts_sample_pages_save_project(const TsSamplePages *pages,
+static int save_project_transaction(const TsSamplePages *pages,
                                  const TsInstrument *active_sample,
                                  const TsInstrument *record_bank,
                                  const TsSisterProjectState *sister_state,
@@ -896,7 +901,7 @@ int ts_sample_pages_save_project(const TsSamplePages *pages,
 {
     char directory[TS_PROJECT_PATH_MAX];
     char stem[512];
-    char staging[TS_PROJECT_PATH_MAX];
+    char staging[TS_PROJECT_PATH_MAX] = {0};
     char backup[TS_PROJECT_PATH_MAX];
     char project_data[TS_PROJECT_PATH_MAX];
     char samples[TS_PROJECT_PATH_MAX];
@@ -911,7 +916,7 @@ int ts_sample_pages_save_project(const TsSamplePages *pages,
     int record_present;
     int had_existing;
     size_t sample_count = 0u;
-    const char *project_name = path_name(path);
+    const char *project_name = path ? path_name(path) : NULL;
     if (pages == NULL || path == NULL || path[0] == '\0' ||
         pages->page_count == 0u ||
         (pages->active_live && active_sample == NULL)) {
@@ -920,6 +925,9 @@ int ts_sample_pages_save_project(const TsSamplePages *pages,
     }
     if (!ts_sample_pages_validate_tile_ids(pages, active_sample, error, error_size) ||
         !ts_sister_tracker_validate(&pages->tracker, error, error_size)) return 0;
+    for(size_t page=0;page<pages->page_count;++page)
+        if(!ts_instrument_check_save(ts_sample_pages_page(pages,active_sample,page),error,error_size))return 0;
+    if(record_bank && !ts_instrument_check_save(record_bank,error,error_size))return 0;
     if (!path_directory(path, directory, sizeof(directory)) ||
         !project_stem(path, stem, sizeof(stem)) ||
         (!path_component_equal(path_name(directory), stem) &&
@@ -959,11 +967,16 @@ int ts_sample_pages_save_project(const TsSamplePages *pages,
     }
     if (project_entry_kind(staging) != PROJECT_ENTRY_MISSING) {
         if (project_entry_kind(staging) != PROJECT_ENTRY_DIRECTORY ||
-            !stage_is_owned(staging) || !remove_tree(staging)) {
+            !stage_is_owned(staging)) {
             pages_error(error, error_size,
                         "A project staging folder already exists and could not be recovered");
             return 0;
         }
+        project_save_retain(staging,NULL,0);
+        if(project_entry_kind(staging)!=PROJECT_ENTRY_MISSING) {
+            pages_error(error,error_size,"Could not preserve the earlier interrupted save; recovery required");return 0;
+        }
+        (void)ts_save_io_stage("Retained earlier attempt",ts_save_io_control()?ts_save_io_control()->recovery:staging);
     }
     if (!make_directory(staging, "project staging folder", error, error_size) ||
         !write_partial_marker(staging, 0, error, error_size)) goto failed;
@@ -982,6 +995,7 @@ int ts_sample_pages_save_project(const TsSamplePages *pages,
     if (!save_instrument_atomic(ts_sample_pages_page(pages, active_sample, 0u),
                                 destination, error, error_size) ||
         !validate_saved_instrument(destination, error, error_size)) goto failed;
+    project_save_completed();
     for (size_t page = 1u; page < pages->page_count; ++page) {
         if (snprintf(destination, sizeof(destination), "%s/page-%03zu.tsr",
                      project_data, page + 1u) < 0 ||
@@ -992,7 +1006,9 @@ int ts_sample_pages_save_project(const TsSamplePages *pages,
         if (!save_instrument_atomic(ts_sample_pages_page(pages, active_sample, page),
                                     destination, error, error_size) ||
             !validate_saved_instrument(destination, error, error_size)) goto failed;
+        project_save_completed();
     }
+    if(!ts_save_io_stage("Saving arrangement",project_data))goto failed;
     if(pages->gallery) {
         if(!ts_gallery_save(pages->gallery,project_data,error,error_size))goto failed;
     } else if(!ts_mosaic_save(pages->mosaic,project_data,error,error_size))goto failed;
@@ -1016,6 +1032,7 @@ int ts_sample_pages_save_project(const TsSamplePages *pages,
         }
         if (!save_instrument_atomic(record_bank, destination, error, error_size) ||
             !validate_saved_instrument(destination, error, error_size)) goto failed;
+        project_save_completed();
     }
     for (size_t page = 0u; page < pages->page_count; ++page) {
         const TsInstrument *instrument = ts_sample_pages_page(
@@ -1090,7 +1107,9 @@ int ts_sample_pages_save_project(const TsSamplePages *pages,
         !write_manifest_members(file, record_bank,
                                 "record-bank", "record-bank"))
         goto manifest_failed;
-    if (!project_write_inventory(file, staging, error, error_size)) goto manifest_failed;
+    if(!ts_save_io_stage("Verifying files",staging) ||
+       !project_save_reuse_manifest(file) ||
+       !project_write_inventory(file, staging, error, error_size)) goto manifest_failed;
     {
         int write_failed = ferror(file);
         int close_failed = fclose(file) != 0;
@@ -1099,10 +1118,15 @@ int ts_sample_pages_save_project(const TsSamplePages *pages,
             goto failed;
         }
     }
+    if(!ts_save_io_stage("Checking previous save",directory))goto failed;
     if (had_existing) {
         ProjectPreservation plan = {directory, staging, &owned, &moves};
         if (!project_read_ownership(directory, project_name, &owned, error, error_size) ||
             !project_children(directory, "", project_preserve_visit, &plan, error, error_size)) goto failed;
+        if(!ts_save_io_poll(0))goto failed;
+        /* The short commit/rollback transaction is deliberately not cancellable. */
+        if(ts_save_io_control())ts_save_io_control()->committing=1;
+        (void)ts_save_io_stage("Committing",directory);
         if (!rename_directory(directory, backup)) {
             pages_error(error, error_size, "Could not prepare the existing project for replacement");
             goto failed;
@@ -1125,15 +1149,18 @@ int ts_sample_pages_save_project(const TsSamplePages *pages,
             }
         }
     }
+    if(ts_save_io_control())ts_save_io_control()->committing=1;
+    (void)ts_save_io_stage("Committing",directory);
     if (!rename_directory(staging, directory)) {
         pages_error(error, error_size, "Could not publish the complete project folder");
         if (had_existing) goto rollback;
         goto failed;
     }
     if (snprintf(destination, sizeof(destination), "%s/.tapesister-partial",
-                 directory) >= 0 && strlen(directory) + 21u < sizeof(destination))
-        (void)remove(destination);
-    if (had_existing) (void)remove_tree(backup);
+                 directory) >= 0 && strlen(directory) + 21u < sizeof(destination) && remove(destination)!=0)
+        if(ts_save_io_control())snprintf(ts_save_io_control()->recovery,sizeof(ts_save_io_control()->recovery),"%s",directory);
+    if (had_existing && !remove_tree(backup))
+        if(ts_save_io_control())snprintf(ts_save_io_control()->recovery,sizeof(ts_save_io_control()->recovery),"%s",backup);
     project_files_free(&owned);
     project_files_free(&moves);
     pages_error(error, error_size, "");
@@ -1166,9 +1193,36 @@ manifest_failed:
 failed:
     project_files_free(&owned);
     project_files_free(&moves);
-    if (stage_is_owned(staging)) (void)remove_tree(staging);
+    if (staging[0] && stage_is_owned(staging)) project_save_retain(staging,error,error_size);
     return 0;
 }
+
+int ts_sample_pages_save_project_controlled(const TsSamplePages *pages,
+    const TsInstrument *active,const TsInstrument *record,const TsSisterProjectState *state,
+    const char *path,TsSaveControl *control,char *error,size_t size)
+{
+    TsSaveControl local={0};if(!control)control=&local;
+    control->bytes=0;control->completed=0;control->was_cancelled=0;control->committing=0;
+    control->recovery[0]=0;
+    TsSaveControl *previous=ts_save_io_bind(control);
+    ProjectSaveReuse reuse={0};project_save_reuse_begin(&reuse,path);
+    control->reuse=project_save_reuse;control->reuse_userdata=&reuse;
+    control->total=pages?pages->page_count:0;
+    if(pages)for(size_t i=0;i<pages->page_count;++i)
+        control->total+=(size_t)ts_instrument_bank_count(ts_sample_pages_page(pages,active,i));
+    if(record && ts_instrument_bank_count(record))control->total+=1u+(size_t)ts_instrument_bank_count(record);
+    if(error && size)error[0]=0;
+    int ok=ts_save_io_stage("Preparing",path) && save_project_transaction(pages,active,record,state,path,error,size);
+    if(control->was_cancelled && error && size)snprintf(error,size,"Save cancelled; previous project kept");
+    if(!ok && error && size && !error[0])snprintf(error,size,"Project save failed (I/O or invalid state)");
+    (void)ts_save_io_stage(ok?"Saved":control->was_cancelled?"Cancelled":"Failed",control->recovery[0]?control->recovery:path);
+    project_save_reuse_end(&reuse);control->reuse=NULL;control->reuse_userdata=NULL;
+    ts_save_io_bind(previous);return ok;
+}
+
+int ts_sample_pages_save_project(const TsSamplePages *pages,const TsInstrument *active,
+    const TsInstrument *record,const TsSisterProjectState *state,const char *path,char *error,size_t size)
+{return ts_sample_pages_save_project_controlled(pages,active,record,state,path,NULL,error,size);}
 
 static int read_manifest(const char *project, char *directory,
                          size_t directory_size, int *layout,

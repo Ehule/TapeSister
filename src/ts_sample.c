@@ -1,5 +1,6 @@
 #include "tapesister/master_eq.h"
 #include "tapesister/sample.h"
+#include "tapesister/save_io.h"
 #include "tapesister/source_route.h"
 
 #include <errno.h>
@@ -40,6 +41,8 @@ static void set_error(char *dst, size_t size, const char *message)
 {
     if (dst != NULL && size > 0) snprintf(dst, size, "%s", message);
 }
+static void sample_io_error(char *dst,size_t size,const char *message)
+{if(dst && size)snprintf(dst,size,"%s: %s",message,strerror(errno?errno:EIO));}
 
 static uint16_t le16(const unsigned char *p)
 {
@@ -418,6 +421,72 @@ int ts_sample_scalar_count(const TsSample *sample, size_t *scalar_count)
 static float finite_sample(float value)
 {
     return isfinite(value) ? value : 0.0f;
+}
+
+/* Bounded little-endian blocks replace four stdio calls per scalar. This is
+   byte-for-byte TSR41/WAV compatible, including non-finite sanitization. */
+static int write_audio32(FILE *f,const TsSample *sample)
+{
+    unsigned char buffer[65536];size_t count;
+    if(!ts_sample_scalar_count(sample,&count))return 0;
+    for(size_t first=0;first<count;) {
+        size_t n=count-first;if(n>sizeof(buffer)/4)n=sizeof(buffer)/4;
+        if(!ts_save_io_poll(0))return 0;
+        for(size_t i=0;i<n;++i) {
+            float value=finite_sample(sample->data[first+i]);uint32_t bits;
+            memcpy(&bits,&value,4);
+            for(int b=0;b<4;++b)buffer[i*4+b]=(unsigned char)(bits>>(b*8));
+        }
+        if(fwrite(buffer,4,n,f)!=n || !ts_save_io_poll(n*4))return 0;
+        first+=n;
+    }
+    return 1;
+}
+
+uint64_t ts_sample_save_signature(const TsSample *sample)
+{
+    uint64_t h=UINT64_C(14695981039346656037);size_t count;
+    if(!ts_save_io_stage("Fingerprinting audio",sample->name))return 0;
+    h=ts_save_io_hash(h,&sample->frames,sizeof(sample->frames));
+    h=ts_save_io_hash(h,&sample->channels,sizeof(sample->channels));
+    h=ts_save_io_hash(h,&sample->sample_rate,sizeof(sample->sample_rate));
+    h=ts_save_io_hash(h,sample->name,sizeof(sample->name));
+    if(sample->data && ts_sample_scalar_count(sample,&count)) {
+        const unsigned char *p=(const unsigned char *)sample->data;
+        for(size_t left=count*4;left;) {
+            size_t n=left>65536?65536:left;
+            if(!ts_save_io_poll(0))return 0;
+            h=ts_save_io_hash(h,p,n);p+=n;left-=n;
+        }
+    }
+    return h;
+}
+
+uint64_t ts_instrument_save_signature(const TsInstrument *instrument)
+{
+    /* Pointer values can cause conservative cache misses after reopening,
+       never lost edits. Exact PCM, histories and patches enter the signature;
+       the quantized audition hash is insufficient for persistence. */
+    uint64_t h=ts_save_io_hash(UINT64_C(14695981039346656037),instrument,sizeof(*instrument));
+    const TsSample *sample[]={&instrument->current,&instrument->parent};
+    for(size_t i=0;i<2;++i){uint64_t v=ts_sample_save_signature(sample[i]);h=ts_save_io_hash(h,&v,sizeof(v));}
+    for(int i=0;i<TS_BANK_SLOT_COUNT;++i) {
+        const TsBankSlot *s=&instrument->bank[i];if(!s->occupied)continue;
+        if(s->undo_count<0 || s->undo_count>TS_HISTORY_DEPTH ||
+           s->redo_count<0 || s->redo_count>TS_HISTORY_DEPTH ||
+           s->patch_count<0 || s->patch_count>TS_AUDIO_PATCH_DEPTH ||
+           (s->undo_count && !s->undo) || (s->redo_count && !s->redo) ||
+           (s->patch_count && !s->patches))return 0;
+        uint64_t v=ts_sample_save_signature(&s->sample);h=ts_save_io_hash(h,&v,sizeof(v));
+        v=ts_sample_save_signature(&s->edit_parent);h=ts_save_io_hash(h,&v,sizeof(v));
+        h=ts_save_io_hash(h,s->undo,(size_t)s->undo_count*sizeof(*s->undo));
+        h=ts_save_io_hash(h,s->redo,(size_t)s->redo_count*sizeof(*s->redo));
+        for(int p=0;p<s->patch_count;++p) {
+            h=ts_save_io_hash(h,&s->patches[p],sizeof(s->patches[p]));
+            v=ts_sample_save_signature(&s->patches[p].sample);h=ts_save_io_hash(h,&v,sizeof(v));
+        }
+    }
+    return h;
 }
 
 TsStereoFrame ts_stereo_frame_from_mono(float value)
@@ -937,6 +1006,16 @@ int ts_sample_save_wav16_tuned_looped(const TsSample *sample,
         set_error(error, error_size, "Sample is too long for a RIFF WAV");
         return 0;
     }
+    if(!ts_save_io_stage("Collecting audio",sample->name))return 0;
+    if(ts_save_io_control() && ts_save_io_control()->reuse) {
+    uint64_t signature=ts_sample_save_signature(sample);
+    signature=ts_save_io_hash(signature,&actual,sizeof(actual));
+    signature=ts_save_io_hash(signature,&has_loop,sizeof(has_loop));
+    signature=ts_save_io_hash(signature,&loop_first,sizeof(loop_first));
+    signature=ts_save_io_hash(signature,&loop_last,sizeof(loop_last));
+    signature=ts_save_io_hash(signature,&loop_mode,sizeof(loop_mode));
+    int reused=ts_save_io_reuse(path,signature);if(reused)return reused>0;
+    }
     FILE *f = fopen(path, "wb");
     if (f == NULL) {
         set_error(error, error_size, "Could not create WAV");
@@ -981,15 +1060,19 @@ int ts_sample_save_wav16_tuned_looped(const TsSample *sample,
         fwrite("tslp",1,4,f); put32(f,8); put32(f,1); put32(f,(uint32_t)loop_mode);
     }
     fwrite("data", 1, 4, f); put32(f, data_bytes);
-    for (size_t i = 0; i < scalar_count; ++i) {
-        float value = clampf(finite_sample(sample->data[i]), -1.0f, 1.0f);
-        int32_t quantized = (int32_t)lrintf(value * 32767.0f);
-        put16(f, (uint16_t)(int16_t)quantized);
+    unsigned char buffer[65536];int audio_ok=1;
+    for(size_t first=0;first<scalar_count && audio_ok;) {
+        size_t n=scalar_count-first;if(n>sizeof(buffer)/2)n=sizeof(buffer)/2;
+        if(!ts_save_io_poll(0)){audio_ok=0;break;}
+        for(size_t i=0;i<n;++i) {
+            float v=clampf(finite_sample(sample->data[first+i]),-1.0f,1.0f);
+            uint16_t q=(uint16_t)(int16_t)lrintf(v*32767.0f);
+            buffer[i*2]=(unsigned char)q;buffer[i*2+1]=(unsigned char)(q>>8);
+        }
+        audio_ok=fwrite(buffer,2,n,f)==n && ts_save_io_poll(n*2);first+=n;
     }
-    if (fclose(f) != 0) {
-        set_error(error, error_size, "Could not finish WAV export");
-        return 0;
-    }
+    int failed=!audio_ok || ferror(f);if(fclose(f))failed=1;
+    if(failed){sample_io_error(error,error_size,"Could not finish WAV export");return 0;}
     set_error(error, error_size, "");
     return 1;
 }
@@ -1027,6 +1110,10 @@ int ts_sample_save_wav32f(const TsSample *sample, const char *path,
         set_error(error, error_size, "Capture is too long for a RIFF WAV");
         return 0;
     }
+    if(!ts_save_io_stage("Saving Mosaic audio",sample->name))return 0;
+    if(ts_save_io_control() && ts_save_io_control()->reuse) {
+    int reused=ts_save_io_reuse(path,ts_sample_save_signature(sample));if(reused)return reused>0;
+    }
     f = fopen(path, "wb");
     if (f == NULL) {
         set_error(error, error_size, "Could not create capture WAV");
@@ -1039,15 +1126,12 @@ int ts_sample_save_wav32f(const TsSample *sample, const char *path,
     put32(f, sample->sample_rate * bytes_per_frame);
     put16(f, (uint16_t)bytes_per_frame); put16(f, 32u);
     fwrite("data", 1, 4, f); put32(f, data_bytes);
-    for (size_t scalar = 0; scalar < scalar_count; ++scalar) {
-        float value = finite_sample(sample->data[scalar]);
-        put_float(f, value);
-    }
+    int audio_ok=write_audio32(f,sample);
     {
-        int write_failed = ferror(f);
+        int write_failed = !audio_ok || ferror(f);
         int close_failed = fclose(f) != 0;
         if (write_failed || close_failed) {
-            set_error(error, error_size, "Could not finish capture WAV");
+            sample_io_error(error, error_size, "Could not finish capture WAV");
             return 0;
         }
     }
@@ -1644,6 +1728,11 @@ static uint64_t sample_hash_version(const TsSample *sample, int include_channels
     uint64_t hash = 1469598103934665603ull;
     size_t scalar_count;
     if (sample == NULL) return hash;
+    TsSaveControl *control=ts_save_io_control();uint64_t cached;
+    if(control && !strcmp(control->stage,"Fingerprinting project state"))
+        (void)ts_save_io_stage("Fingerprinting project state",sample->name);
+    if(include_channels && sample->data && control && control->sample_hash &&
+       control->sample_hash(control->userdata,sample->data,sample->frames,sample->sample_rate,sample->channels,&cached,0))return cached;
     hash ^= sample->sample_rate; hash *= 1099511628211ull;
     hash ^= sample->frames; hash *= 1099511628211ull;
     if (include_channels) {
@@ -1652,11 +1741,14 @@ static uint64_t sample_hash_version(const TsSample *sample, int include_channels
     if (sample->data == NULL || !ts_sample_scalar_count(sample, &scalar_count))
         return hash;
     for (size_t i = 0; i < scalar_count; ++i) {
+        if(control && !(i&16383u) && !ts_save_io_poll(0))return 0;
         int32_t q = (int32_t)lrintf(clampf(finite_sample(sample->data[i]),
                                            -1.0f, 1.0f) * 8388607.0f);
         hash ^= (uint32_t)q;
         hash *= 1099511628211ull;
     }
+    if(include_channels && control && control->sample_hash)
+        (void)control->sample_hash(control->userdata,sample->data,sample->frames,sample->sample_rate,sample->channels,&hash,1);
     return hash;
 }
 
@@ -9998,16 +10090,16 @@ static int put_sample_block(FILE *f, const TsSample *sample)
     name_end = memchr(sample->name, '\0', sizeof(sample->name));
     if (name_end == NULL) return 0;
     name_length = (size_t)(name_end - sample->name);
+    if(!ts_save_io_stage("Encoding bank audio",sample->name))return 0;
     put32(f, sample->sample_rate); put64(f, sample->frames);
     put32(f, sample->channels);
     put32(f, (uint32_t)name_length); fwrite(sample->name, 1, name_length, f);
-    for (size_t scalar = 0; scalar < scalar_count; ++scalar)
-        put_float(f, finite_sample(sample->data[scalar]));
+    if(!write_audio32(f,sample))return 0;
     put64(f, ts_sample_hash(sample));
     return !ferror(f);
 }
 
-static int get_sample_block(FILE *f, TsSample *sample, int version)
+static int get_sample_block(FILE *f, TsSample *sample, int version, int validate_only)
 {
     uint32_t name_length;
     uint32_t channels = 1u;
@@ -10027,12 +10119,29 @@ static int get_sample_block(FILE *f, TsSample *sample, int version)
     sample->channels = (uint8_t)channels;
     if (fread(sample->name, 1, name_length, f) != name_length) return 0;
     sample->name[name_length] = '\0';
-    sample->data = (float *)malloc(byte_count);
-    if (sample->data == NULL) return -1;
-    for (size_t scalar = 0; scalar < scalar_count; ++scalar)
-        if (!get_float(f, &sample->data[scalar])) return 0;
-    return get64(f, &stored_hash) &&
-           stored_hash == sample_hash_version(sample, version >= 27);
+    if(validate_only && !ts_save_io_stage("Validating bank audio",sample->name))return 0;
+    if(!validate_only) {
+        sample->data = (float *)malloc(byte_count);
+        if(sample->data == NULL)return -1;
+    }
+    uint64_t hash=1469598103934665603ull;
+    hash=(hash^sample->sample_rate)*1099511628211ull;
+    hash=(hash^sample->frames)*1099511628211ull;
+    if(version>=27)hash=(hash^sample->channels)*1099511628211ull;
+    unsigned char buffer[65536];
+    for(size_t first=0;first<scalar_count;) {
+        size_t n=scalar_count-first;if(n>sizeof(buffer)/4)n=sizeof(buffer)/4;
+        if(!ts_save_io_poll(0) || fread(buffer,4,n,f)!=n)return 0;
+        for(size_t i=0;i<n;++i) {
+            uint32_t bits=le32(buffer+i*4);float v;memcpy(&v,&bits,4);
+            if(!isfinite(v))return 0;
+            if(!validate_only)sample->data[first+i]=v;
+            int32_t q=(int32_t)lrintf(clampf(v,-1.0f,1.0f)*8388607.0f);
+            hash=(hash^(uint32_t)q)*1099511628211ull;
+        }
+        first+=n;
+    }
+    return get64(f,&stored_hash) && stored_hash==hash;
 }
 
 static int snapshot_fits_tile(const TsEditSnapshot *state, const TsBankSlot *slot)
@@ -10177,7 +10286,7 @@ static int snapshot_patches_valid(const TsEditSnapshot *state, const TsBankSlot 
     return 1;
 }
 
-static int load_tsr15_or_newer(FILE *f, int version, TsInstrument *instrument,
+static int load_tsr15_or_newer(FILE *f, int version, TsInstrument *instrument, int validate_only,
                             char *error, size_t error_size)
 {
     TsInstrument loaded;
@@ -10279,10 +10388,10 @@ static int load_tsr15_or_newer(FILE *f, int version, TsInstrument *instrument,
         if (!get64(f, &wide) || wide > SIZE_MAX) goto malformed;
         slot->loop_last = (size_t)wide;
         if (!get_float(f, &slot->loop_crossfade_ms)) goto malformed;
-        sample_result = get_sample_block(f, &slot->sample, version);
+        sample_result = get_sample_block(f, &slot->sample, version, validate_only);
         if (sample_result < 0) goto out_of_memory;
         if (!sample_result) goto malformed;
-        sample_result = get_sample_block(f, &slot->edit_parent, version);
+        sample_result = get_sample_block(f, &slot->edit_parent, version, validate_only);
         if (sample_result < 0) goto out_of_memory;
         if (!sample_result) goto malformed;
         if (version >= 16) {
@@ -10299,7 +10408,7 @@ static int load_tsr15_or_newer(FILE *f, int version, TsInstrument *instrument,
                 if (slot->patches[patch].has_generator &&
                     !get_generator_recipe(f, &slot->patches[patch].generator, version)) goto malformed;
                 sample_result = get_sample_block(f, &slot->patches[patch].sample,
-                                                 version);
+                                                 version, validate_only);
                 if (sample_result < 0) goto out_of_memory;
                 if (!sample_result) goto malformed;
                 if (version >= 31 && (!get32(f, &slot->patches[patch].amplitude_source) ||
@@ -10364,7 +10473,8 @@ static int load_tsr15_or_newer(FILE *f, int version, TsInstrument *instrument,
         for (int h = 0; h < slot->redo_count; ++h)
             if (!snapshot_patches_valid(&slot->redo[h], slot)) goto malformed;
     }
-    if (fgetc(f) != EOF) goto malformed;
+    if (fgetc(f) != EOF || ferror(f)) goto malformed;
+    if(validate_only){ts_instrument_free(&loaded);return 1;}
     loaded.selected_slot = selected;
     if (!ts_instrument_select_bank(&loaded, selected, error, error_size)) goto failed;
     for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i)
@@ -10383,6 +10493,37 @@ failed:
     return 0;
 }
 
+int ts_instrument_validate_recipe(const char *path,char *error,size_t size)
+{
+    FILE *f=fopen(path,"rb");char magic[8];
+    if(!f){set_error(error,size,"Cannot open staged TSR for validation");return 0;}
+    int ok=fread(magic,1,8,f)==8 && !memcmp(magic,"TSR41\r\n\032",8);
+    if(ok)ok=load_tsr15_or_newer(f,41,NULL,1,error,size);
+    else set_error(error,size,"Invalid staged TSR41 header");
+    if(fclose(f))ok=0;
+    return ok;
+}
+
+int ts_instrument_check_save(const TsInstrument *instrument,char *error,size_t error_size)
+{
+    if(!instrument){set_error(error,error_size,"No project to save");return 0;}
+    for(int i=0;i<TS_BANK_SLOT_COUNT;++i) {
+        const TsBankSlot *slot=&instrument->bank[i];if(!slot->occupied)continue;
+        const TsSample *samples[]={i==instrument->selected_slot && instrument->current.data?&instrument->current:&slot->sample,
+            i==instrument->selected_slot && instrument->parent.data?&instrument->parent:slot->edit_parent.data?&slot->edit_parent:&slot->sample};
+        for(int j=0;j<2+slot->patch_count;++j) {
+            const TsSample *sample=j<2?samples[j]:&slot->patches[j-2].sample;
+            size_t scalar_count;
+            if(!sample->data || !sample->frames || sample->frames>100000000u ||
+               sample->sample_rate<1000u || !ts_sample_scalar_count(sample,&scalar_count)) {
+                if(error && error_size)snprintf(error,error_size,"Tile %d (%.63s): native TSR needs mono/stereo audio, rate >=1000, 1-100000000 frames",i+1,sample->name);
+                return 0;
+            }
+        }
+    }
+    return 1;
+}
+
 int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
                               char *error, size_t error_size)
 {
@@ -10391,6 +10532,7 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
         set_error(error, error_size, "No project to save");
         return 0;
     }
+    if(!ts_instrument_check_save(instrument,error,error_size))return 0;
     f = fopen(path, "wb");
     if (f == NULL) {
         set_error(error, error_size, "Could not create recipe file");
@@ -10398,11 +10540,12 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
     }
     if (!save_tsr34(instrument, f)) {
         fclose(f);
-        set_error(error, error_size, "Could not write TSR41 project");
+        sample_io_error(error, error_size, "Could not write TSR41 project");
         return 0;
     }
-    if (fclose(f) != 0) {
-        set_error(error, error_size, "Could not finish TSR41 project");
+    int failed=ferror(f);if(fclose(f))failed=1;
+    if (failed) {
+        sample_io_error(error, error_size, "Could not finish TSR41 project");
         return 0;
     }
     set_error(error, error_size, "");
@@ -10490,7 +10633,7 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
                                      magic[4] == '8' ? 18 :
                                      magic[4] == '7' ? 17 :
                                      magic[4] == '6' ? 16 : 15;
-        int ok = load_tsr15_or_newer(f, self_contained_version, instrument,
+        int ok = load_tsr15_or_newer(f, self_contained_version, instrument, 0,
                                   error, error_size);
         fclose(f);
         ts_instrument_free(&loaded);

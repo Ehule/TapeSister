@@ -275,7 +275,9 @@ static void test_failures(void)
     for (size_t i = 0; i < sizeof(faults) / sizeof(faults[0]); ++i) {
         new_case(); extras();
         uint64_t before = hash_file(project), manifest = hash_file("Save Project/manifest.txt");
+        if(faults[i]==FAULT_VALIDATION)++active.family_sequence;
         fault = faults[i]; CHECK(!save()); CHECK(error[0]); fault = FAULT_NONE;
+        if(faults[i]==FAULT_VALIDATION)--active.family_sequence;
         CHECK(hash_file(project) == before); CHECK(hash_file("Save Project/manifest.txt") == manifest);
         check_extras(); check_load(); no_recovery();
         CHECK(save()); check_extras(); clean_case();
@@ -649,6 +651,28 @@ static void test_clock_project_save(void)
     check_extras();no_recovery();clean_case();
 }
 
+static int clean_retained(const char *path,void *context,char *err,size_t size)
+{
+    (void)context;(void)err;(void)size;
+    if(!strncmp(path,"Save Project.tapesister-partial-failed-",38)) {
+        CHECK(stage_is_owned(path));CHECK(remove_tree(path));
+    }
+    return 1;
+}
+static void test_earlier_staging_is_retained(void)
+{
+    new_case();
+    mkdir_checked("Save Project.tapesister-partial");
+    CHECK(write_partial_marker("Save Project.tapesister-partial",0,error,sizeof(error)));
+    put("Save Project.tapesister-partial/interrupted.tsr","interrupted output kept on retry\n");
+    TsSaveControl c={0};
+    CHECK(ts_sample_pages_save_project_controlled(&pages,&active,&record,NULL,project,&c,error,sizeof(error)));
+    CHECK(c.recovery[0]);char path[TS_PROJECT_PATH_MAX];
+    CHECK(project_join(path,sizeof(path),c.recovery,"interrupted.tsr"));
+    contents(path,"interrupted output kept on retry\n");
+    check_load();no_recovery();clean_case();
+}
+
 int main(void)
 {
     char work[128];
@@ -663,6 +687,8 @@ int main(void)
     test_failures(); test_failed_rollback(); test_recovery_guards(); test_links(); test_corrupt_inventory();
     test_legacy_migration(); test_interruption(); test_windows_locked_file(); test_ambiguous_move(); test_windows_unicode_entry();
     test_clock_project_save();
+    test_earlier_staging_is_retained();
+    CHECK(project_children(".","",clean_retained,NULL,error,sizeof(error)));
 #ifdef _WIN32
     CHECK(_chdir("..") == 0);
 #else

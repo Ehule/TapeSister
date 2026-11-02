@@ -45,6 +45,9 @@ static void project_legacy_reopen_controls(void)
     assert(ui.project_overwrite_confirm_open && ui.project_save_new_bundle);
     queue_active_project_save(&ui,&file);
     run_pending_file_operation(0,&audio,&ui,&bank,&selection,&importer,&pages,&record,0,&file);
+    {Uint32 deadline=SDL_GetTicks()+15000;while(project_save_worker && !SDL_TICKS_PASSED(SDL_GetTicks(),deadline)) {
+        SDL_Delay(1);run_pending_file_operation(0,&audio,&ui,&bank,&selection,&importer,&pages,&record,0,&file);
+    }assert(!project_save_worker);}
     assert(project_save_completed() && strcmp(ui.project_path,original));
     snprintf(saved,sizeof(saved),"%s",ui.project_path);
     browser_open(&ui,TS_BROWSER_LOAD_WAV);
@@ -52,6 +55,9 @@ static void project_legacy_reopen_controls(void)
     browser_action(0,&audio,&ui,&bank,&selection,&pages,&record,0,&file,0);
     assert(file.active && project_same_saved_file(file.path,saved));
     run_pending_file_operation(0,&audio,&ui,&bank,&selection,&importer,&pages,&record,0,&file);
+    {Uint32 deadline=SDL_GetTicks()+15000;while(project_save_worker && !SDL_TICKS_PASSED(SDL_GetTicks(),deadline)) {
+        SDL_Delay(1);run_pending_file_operation(0,&audio,&ui,&bank,&selection,&importer,&pages,&record,0,&file);
+    }assert(!project_save_worker);}
     mosaic_poll(0,&ui,&bank,&mosaic);
     assert(ts_mosaic_hash(ui.mosaic)==expected && ui.mosaic_open);
     /* Migration leaves the original flat TSR intact and independently readable. */
@@ -105,12 +111,18 @@ static void project_reopen_controls(SDL_Window *window)
     ts_browser_close(&ui.browser);ui.file_busy=0;
     queue_active_project_save(&ui,&file);assert(file.active && !strcmp(file.path,path));
     run_pending_file_operation(0,&audio,&ui,&bank,&selection,&importer,&pages,&record,0,&file);
+    {Uint32 deadline=SDL_GetTicks()+15000;while(project_save_worker && !SDL_TICKS_PASSED(SDL_GetTicks(),deadline)) {
+        SDL_Delay(1);run_pending_file_operation(0,&audio,&ui,&bank,&selection,&importer,&pages,&record,0,&file);
+    }assert(!project_save_worker);}
     assert(project_save_completed() && ts_mosaic_hash(ui.mosaic)==expected);
     ui.mosaic->events[0].muted=0;ui.mosaic->events[1].solo=0;card->start=1;
     ui.mosaic_open=0;ui.mosaic_scroll=ui.mosaic_xscroll=0;ui.mosaic_scale=24;ui.mosaic_hscale=1;
     file=(PendingFileOperation){.active=1,.mode=TS_BROWSER_LOAD_WAV};
     snprintf(file.path,sizeof(file.path),"%s",path);
     run_pending_file_operation(0,&audio,&ui,&bank,&selection,&importer,&pages,&record,0,&file);
+    {Uint32 deadline=SDL_GetTicks()+15000;while(project_save_worker && !SDL_TICKS_PASSED(SDL_GetTicks(),deadline)) {
+        SDL_Delay(1);run_pending_file_operation(0,&audio,&ui,&bank,&selection,&importer,&pages,&record,0,&file);
+    }assert(!project_save_worker);}
     assert(strstr(ui.status,"OPENED TSR PROJECT"));
     mosaic_poll(0,&ui,&bank,&mosaic);
     assert(ts_mosaic_hash(ui.mosaic)==expected);

@@ -682,6 +682,7 @@ typedef struct {
     int file_busy;
     int file_busy_phase;
     char file_busy_label[24];
+    char file_busy_detail[160],file_busy_asset[160];
     TsUiExchangeDialog exchange_dialog;
     TsExchangeLayout exchange_layout;
     int exchange_item_count;
