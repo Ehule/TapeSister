@@ -1617,7 +1617,7 @@ static void publish_snapshot(TsSisterMachine *machine)
         const TsDarkMatterBank *b=&machine->dark.bank[j];
         atomic_store_explicit(&snapshot->dark_position_bits[j], float_bits(b->length?(float)b->write/b->length:0), memory_order_relaxed);
         atomic_store_explicit(&snapshot->dark_peak_bits[j], float_bits(b->peak), memory_order_relaxed);
-        atomic_store_explicit(&snapshot->dark_seconds_bits[j], float_bits((float)b->length/machine->buffer.sample_rate), memory_order_relaxed);
+        atomic_store_explicit(&snapshot->dark_seconds_bits[j], float_bits(j<machine->dark.active_banks?(float)b->length/machine->buffer.sample_rate:0), memory_order_relaxed);
     }
     atomic_store_explicit(&snapshot->rolling, machine->rolling, memory_order_relaxed);
     atomic_store_explicit(&snapshot->held, machine->held, memory_order_relaxed);

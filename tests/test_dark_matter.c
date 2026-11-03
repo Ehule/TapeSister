@@ -111,19 +111,23 @@ static void persistence(void)
     static TsSisterPresetBank bank,read_bank;
     char error[256];const char *project="dark-matter-test.sister",*preset="dark-matter-test.presets",*ini="dark-matter-test.ini";
     int present=0;ts_sister_project_state_init(&state,48000);state.parameters.memory_mode=TS_SISTER_MEMORY_DARK;
-    state.parameters.dark.feedback=1.02f;state.parameters.dark.reverse=1;state.parameters.dark.locks=255;
+    state.parameters.dark.feedback=1.02f;state.parameters.dark.reverse=1;state.parameters.dark.locks=1023;
+    state.parameters.dark.algorithm=TS_DARK_GRANULAR;state.parameters.dark.size=2;
     assert(ts_sister_project_state_save_file(&state,project,error,sizeof(error)));
     assert(ts_sister_project_state_load_file(&loaded,project,48000,&present,error,sizeof(error)));
-    assert(loaded.parameters.memory_mode==TS_SISTER_MEMORY_DARK && loaded.parameters.dark.reverse && loaded.parameters.dark.locks==255);
+    assert(loaded.parameters.memory_mode==TS_SISTER_MEMORY_DARK && loaded.parameters.dark.reverse && loaded.parameters.dark.locks==1023);
+    assert(loaded.parameters.dark.algorithm==TS_DARK_GRANULAR && loaded.parameters.dark.size==2);
     ts_sister_preset_bank_init(&bank,48000);
     assert(ts_sister_preset_save_new(&bank,"DARK TEST",&state.parameters,48000,error,sizeof(error)));
     assert(ts_sister_preset_save(&bank,preset,error,sizeof(error)));
     assert(ts_sister_preset_load(&read_bank,preset,48000,error,sizeof(error)));
     assert(read_bank.entries[read_bank.count-1].parameters.memory_mode==TS_SISTER_MEMORY_DARK);
-    assert(read_bank.entries[read_bank.count-1].parameters.dark.locks==255);
+    assert(read_bank.entries[read_bank.count-1].parameters.dark.locks==1023);
+    assert(read_bank.entries[read_bank.count-1].parameters.dark.algorithm==TS_DARK_GRANULAR && read_bank.entries[read_bank.count-1].parameters.dark.size==2);
     ts_config_init(&config);config.sister_memory_mode=TS_SISTER_MEMORY_DARK;config.sister_dark=state.parameters.dark;
     assert(ts_config_save(&config,ini,error,sizeof(error)) && ts_config_load(&loaded_config,ini,error,sizeof(error)));
-    assert(loaded_config.sister_memory_mode==TS_SISTER_MEMORY_DARK && loaded_config.sister_dark.reverse && loaded_config.sister_dark.locks==255);
+    assert(loaded_config.sister_memory_mode==TS_SISTER_MEMORY_DARK && loaded_config.sister_dark.reverse && loaded_config.sister_dark.locks==1023);
+    assert(loaded_config.sister_dark.algorithm==TS_DARK_GRANULAR && loaded_config.sister_dark.size==2);
     FILE *legacy=fopen(project,"w");assert(legacy);
     fputs("TapeSister Sister Project State\nVersion=46\nPageCount=1\nActivePage=0\n",legacy);fclose(legacy);
     assert(ts_sister_project_state_load_file(&loaded,project,48000,&present,error,sizeof(error)) && present);
@@ -134,11 +138,77 @@ static void persistence(void)
     assert(read_bank.entries[read_bank.count-1].parameters.memory_mode==TS_SISTER_MEMORY_TAPE);
     legacy=fopen(ini,"w");assert(legacy);fputs("[Sister Machine]\nsister_buffer_seconds=40\n",legacy);fclose(legacy);
     assert(ts_config_load(&loaded_config,ini,error,sizeof(error)) && loaded_config.sister_memory_mode==TS_SISTER_MEMORY_TAPE);
-    TsDarkMatterControls c;assert(!ts_dark_matter_controls_read(&c,"nan,0,0,0,0,0,0,0"));
+    TsDarkMatterControls c;
+    assert(ts_dark_matter_controls_read(&c,".9,0,0,0,0,0,0,255") && c.algorithm==TS_DARK_LEGACY && c.size==0);
+    assert(!ts_dark_matter_controls_read(&c,".9,0,0,0,0,0,0,0,5,0"));
+    assert(!ts_dark_matter_controls_read(&c,".9,0,0,0,0,0,0,0,4,3"));
+    assert(!ts_dark_matter_controls_read(&c,"nan,0,0,0,0,0,0,0"));
     assert(!ts_dark_matter_controls_read(&c,".9,0,0,0,0,0,0,0 trailing"));
     assert(!ts_dark_matter_controls_read(&c,".9,0,0,0,0,0,0,4294967296000000000000000"));
     assert(!ts_dark_matter_controls_read(&c,".9,0,0,0,0,0,4294967296,0"));
     remove(project);remove(preset);remove(ini);
+}
+static void algorithm_bank(void)
+{
+    double hall_density=0,delay_density=0;
+    const double two[3]={2.5,9.5,22},four[3]={2.5,8.5,11.5};
+    for(int algorithm=TS_DARK_TWO_DELAYS;algorithm<TS_DARK_ALGORITHM_COUNT;++algorithm) {
+        size_t previous=0;
+        for(int size=0;size<3;++size) {
+            TsDarkMatter d;TsStereoFrame h[3];assert(ts_dark_matter_init(&d,1000,40));
+            TsDarkMatterControls c=d.controls;c.algorithm=algorithm;c.size=size;
+            c.replace=c.drive=c.damp=c.blur=c.drift=0;c.feedback=.86f;
+            ts_dark_matter_set(&d,&c,40);ts_dark_matter_clear(&d);
+            assert(d.algorithm==algorithm && d.size==size);
+            int count=algorithm==TS_DARK_TWO_DELAYS?2:algorithm==TS_DARK_GRANULAR?(size==2?3:2):4;
+            assert(d.active_banks==count);
+            size_t total=0;
+            for(int j=0;j<count;++j) {
+                assert(d.bank[j].length<d.bank[j].capacity);total+=d.bank[j].length;
+            }
+            assert(total>previous);previous=total;
+            if(algorithm==TS_DARK_TWO_DELAYS)assert(fabs(total/1000.-two[size])<.05);
+            if(algorithm==TS_DARK_FOUR_DELAYS)assert(fabs(total/1000.-four[size])<.05);
+            double energy=0,squares=0;
+            for(int i=0;i<35000;++i) {
+                /* Impulse distinguishes a diffuse hall from discrete echoes;
+                   a short phrase makes every grain variant observable. */
+                float v=algorithm==TS_DARK_GRANULAR?(i<2000?.2f*sinf(i*.129f):0):(i==0?.2f:0);
+                ts_dark_matter_process(&d,(TsStereoFrame){v,0},1,0,h);finite_heads(h);
+                float sample=h[0].l+h[1].l+h[2].l;
+                for(int j=0;j<3;++j)assert(h[j].r==0);
+                energy+=fabs(sample);squares+=(double)sample*sample;
+            }
+            assert(energy>.001);
+            /* Participation ratio weights meaningful reflections; simply
+               counting nonzero samples also counts the delay DC-filter tail. */
+            double density=energy*energy/squares;
+            if(size==0 && algorithm==TS_DARK_GIANT_REVERB)hall_density=density;
+            if(size==0 && algorithm==TS_DARK_FOUR_DELAYS)delay_density=density;
+            TsStereoFrame *saved=malloc(d.storage_frames*sizeof(*saved));assert(saved);
+            memcpy(saved,d.storage,d.storage_frames*sizeof(*saved));
+            c.algorithm=(algorithm+1)%TS_DARK_ALGORITHM_COUNT;c.size=(size+1)%3;
+            ts_dark_matter_set(&d,&c,40);
+            for(int i=0;i<300;++i){ts_dark_matter_process(&d,(TsStereoFrame){.9f,-.8f},0,0,h);finite_heads(h);}
+            assert(d.algorithm==c.algorithm && d.size==c.size && d.program_gain==1);
+            assert(!memcmp(saved,d.storage,d.storage_frames*sizeof(*saved)));free(saved);
+            ts_dark_matter_clear(&d);
+            for(int i=0;i<500;++i){ts_dark_matter_process(&d,(TsStereoFrame){.1f,-.5f},1,1,h);for(int j=0;j<3;++j)assert(h[j].l==h[j].r);}
+            ts_dark_matter_free(&d);
+        }
+    }
+    printf("Impulse density: hall %.0f frames, four delays %.0f frames\n",hall_density,delay_density);
+    assert(hall_density>delay_density*2);
+    const uint32_t rates[]={8,44100,48000,96000,192000};
+    for(unsigned r=0;r<sizeof(rates)/sizeof(*rates);++r) {
+        TsDarkMatter d;TsStereoFrame h[3];assert(ts_dark_matter_init(&d,rates[r],40));
+        for(int algorithm=1;algorithm<TS_DARK_ALGORITHM_COUNT;++algorithm)for(int size=0;size<3;++size) {
+            TsDarkMatterControls c=d.controls;c.algorithm=algorithm;c.size=size;c.feedback=1.05f;c.blur=c.drift=c.drive=c.reverse=1;
+            ts_dark_matter_set(&d,&c,40);
+            for(unsigned i=0;i<rates[r]/8+300;++i){float v=.9f*sinf(i*.21f);ts_dark_matter_process(&d,(TsStereoFrame){v,-v},1,0,h);finite_heads(h);}
+        }
+        ts_dark_matter_free(&d);
+    }
 }
 static void mode_level_matching(void)
 {
@@ -190,6 +260,47 @@ static void mode_level_matching(void)
            m.mode_meter_frames<(uint64_t)rate && m.dark_output_gain.current==1);
     ts_sister_machine_free(&m);
 }
+static void program_modulation_and_handoffs(void)
+{
+    TsDarkMatter a,b;TsStereoFrame x[3],y[3];
+    assert(ts_dark_matter_init(&a,1000,40) && ts_dark_matter_init(&b,1000,40));
+    TsDarkMatterControls c=a.controls;c.algorithm=TS_DARK_GRANULAR;c.size=1;c.replace=0;
+    ts_dark_matter_set(&a,&c,40);ts_dark_matter_set(&b,&c,40);
+    ts_dark_matter_clear(&a);ts_dark_matter_clear(&b);
+    for(int i=0;i<6000;++i) {
+        TsStereoFrame v={.2f*sinf(i*.13f),.15f*cosf(i*.17f)};
+        ts_dark_matter_process(&a,v,1,0,x);ts_dark_matter_process(&b,v,1,0,y);
+        assert(!memcmp(x,y,sizeof(x)));
+    }
+    c.blur=1;c.drift=1;ts_dark_matter_set(&b,&c,40);
+    double difference=0;
+    for(int i=0;i<6000;++i) {
+        ts_dark_matter_process(&a,(TsStereoFrame){0,0},0,0,x);
+        ts_dark_matter_process(&b,(TsStereoFrame){0,0},0,0,y);
+        difference+=fabs(x[0].l-y[0].l);
+    }
+    assert(difference>.1); /* Scatter and grain motion change what is read. */
+    c.algorithm=TS_DARK_GIANT_REVERB;c.size=0;c.reverse=0;
+    ts_dark_matter_set(&a,&c,40);ts_dark_matter_set(&b,&c,40);
+    ts_dark_matter_clear(&a);ts_dark_matter_clear(&b);
+    c.blur=c.drift=0;ts_dark_matter_set(&a,&c,40);
+    for(int i=0;i<6000;++i) {
+        TsStereoFrame v={.2f*sinf(i*.13f),.15f*cosf(i*.17f)};
+        ts_dark_matter_process(&a,v,1,0,x);ts_dark_matter_process(&b,v,1,0,y);
+        assert(!memcmp(x,y,sizeof(x))); /* N/A controls leave the hall exact. */
+    }
+    TsStereoFrame *saved=malloc(a.diffusion_frames*sizeof(*saved));assert(saved);
+    memcpy(saved,a.diffusion_storage,a.diffusion_frames*sizeof(*saved));
+    for(int request=0;request<40;++request) {
+        c.algorithm=request%TS_DARK_ALGORITHM_COUNT;c.size=request%3;
+        ts_dark_matter_set(&a,&c,40);
+        for(int i=0;i<7;++i){ts_dark_matter_process(&a,(TsStereoFrame){1,-1},0,0,x);finite_heads(x);}
+    }
+    for(int i=0;i<300;++i)ts_dark_matter_process(&a,(TsStereoFrame){0,0},0,0,x);
+    assert(a.algorithm==c.algorithm && a.size==c.size && a.program_gain==1 && !a.program_pending);
+    assert(!memcmp(saved,a.diffusion_storage,a.diffusion_frames*sizeof(*saved)));free(saved);
+    ts_dark_matter_free(&a);ts_dark_matter_free(&b);
+}
 static void trim_feedback_isolation(void)
 {
     TsSisterMachine a,b;
@@ -217,18 +328,18 @@ static void trim_feedback_isolation(void)
 static void benchmark(void)
 {
     TsDarkMatter d;assert(ts_dark_matter_init(&d,48000,40));TsStereoFrame h[3];
-    for(int reverse=0;reverse<=1;++reverse) {
-        TsDarkMatterControls c=d.controls;c.reverse=reverse;c.drift=c.blur=1;
+    for(int algorithm=0;algorithm<TS_DARK_ALGORITHM_COUNT;++algorithm)for(int reverse=0;reverse<=1;++reverse) {
+        TsDarkMatterControls c=d.controls;c.algorithm=algorithm;c.size=2;c.reverse=reverse;c.drift=c.blur=1;
         ts_dark_matter_set(&d,&c,40);clock_t start=clock();
         for(int i=0;i<1024000;++i)ts_dark_matter_process(&d,(TsStereoFrame){.15f*sinf(i*.07f),.1f*cosf(i*.03f)},1,0,h);
         double us=(double)(clock()-start)*1e6/CLOCKS_PER_SEC/4000;
-        printf("Dark Matter reverse=%d: %.2f CPU us / 256 frames at 48 kHz; %.2f MiB storage\n",reverse,us,d.storage_frames*sizeof(TsStereoFrame)/1048576.);
+        printf("Dark Matter %s reverse=%d: %.2f CPU us / 256 frames at 48 kHz; %.2f MiB storage\n",ts_dark_matter_algorithm_name(algorithm),reverse,us,(d.storage_frames+d.diffusion_frames)*sizeof(TsStereoFrame)/1048576.);
     }
     ts_dark_matter_free(&d);
 }
 int main(int argc,char **argv)
 {
     if(argc>1 && !strcmp(argv[1],"--bench")){benchmark();return 0;}
-    streaming();memory_topology();deterministic_stereo();integrated_machine();mode_level_matching();trim_feedback_isolation();persistence();
+    streaming();memory_topology();deterministic_stereo();integrated_machine();mode_level_matching();trim_feedback_isolation();persistence();algorithm_bank();program_modulation_and_handoffs();
     puts("Dark Matter: memory exchange, replace, reverse, stereo, lifecycle and persistence passed.");return 0;
 }
