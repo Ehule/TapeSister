@@ -1922,7 +1922,7 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
     float dark_gain = ramp_advance(&machine->dark_output_gain);
     if (dark_mix > 0) {
         for (size_t i=0;i<TS_SISTER_HEAD_COUNT;++i)
-            raw[i]=frame_lerp(raw[i], frame_scale(dark_heads[i],dark_gain), dark_mix);
+            raw[i]=frame_lerp(raw[i], dark_heads[i], dark_mix);
         feedback1_gain *= 1-dark_mix; feedback2_gain *= 1-dark_mix;
     }
 
@@ -1955,6 +1955,14 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
     if (dark_mix > 0) level += dark_mix * (1-level);
     output.head[2] = frame_scale(apply_decorrelation(
         machine, 2u, frame_scale(raw[2], drop3 + dark_mix*(1-drop3)), stereo_width), level);
+
+    /* Output-only compensation: neither head inserts nor the raw feedback
+       sends may write the calibrated gain back into either memory. */
+    if (dark_mix > 0) {
+        float gain = 1.f + dark_mix*(dark_gain-1.f);
+        for (size_t i=0;i<TS_SISTER_HEAD_COUNT;++i)
+            output.head[i] = frame_scale(output.head[i],gain);
+    }
 
     feedback1.l = hard_feedback(raw[0].l, feedback1_gain,
                                 &machine->overload_count) * clear_gain;

@@ -190,6 +190,30 @@ static void mode_level_matching(void)
            m.mode_meter_frames<(uint64_t)rate && m.dark_output_gain.current==1);
     ts_sister_machine_free(&m);
 }
+static void trim_feedback_isolation(void)
+{
+    TsSisterMachine a,b;
+    assert(ts_sister_machine_init(&a,1000,2,5));
+    assert(ts_sister_machine_init(&b,1000,2,5));
+    for(int i=0;i<6000;++i) {
+        TsStereoFrame v={.1f*sinf(i*.123f),.08f*cosf(i*.147f)};
+        ts_sister_machine_process_frame(&a,v,v);
+        ts_sister_machine_process_frame(&b,v,v);
+    }
+    TsSisterParameters p=a.parameters;p.memory_mode=TS_SISTER_MEMORY_DARK;
+    ts_sister_machine_set_parameters(&a,&p);ts_sister_machine_set_parameters(&b,&p);
+    a.dark_output_gain=(TsSisterRamp){1,1,0,0};
+    b.dark_output_gain=(TsSisterRamp){4,4,0,0};
+    for(int i=0;i<6000;++i) {
+        TsStereoFrame v={.1f*sinf(i*.123f),.08f*cosf(i*.147f)};
+        TsSisterOutput x=ts_sister_machine_process_frame(&a,v,v);
+        TsSisterOutput y=ts_sister_machine_process_frame(&b,v,v);
+        assert(!memcmp(&x.write,&y.write,sizeof(x.write)));
+    }
+    assert(!memcmp(a.buffer.data,b.buffer.data,a.buffer.storage_frames*2*sizeof(float)));
+    assert(!memcmp(a.dark.storage,b.dark.storage,a.dark.storage_frames*sizeof(TsStereoFrame)));
+    ts_sister_machine_free(&a);ts_sister_machine_free(&b);
+}
 static void benchmark(void)
 {
     TsDarkMatter d;assert(ts_dark_matter_init(&d,48000,40));TsStereoFrame h[3];
@@ -205,6 +229,6 @@ static void benchmark(void)
 int main(int argc,char **argv)
 {
     if(argc>1 && !strcmp(argv[1],"--bench")){benchmark();return 0;}
-    streaming();memory_topology();deterministic_stereo();integrated_machine();mode_level_matching();persistence();
+    streaming();memory_topology();deterministic_stereo();integrated_machine();mode_level_matching();trim_feedback_isolation();persistence();
     puts("Dark Matter: memory exchange, replace, reverse, stereo, lifecycle and persistence passed.");return 0;
 }
