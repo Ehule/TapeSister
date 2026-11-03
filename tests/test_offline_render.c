@@ -90,7 +90,7 @@ int main(int argc,char **argv)
     startPlaying(PLAYMODE_SONG,0);live.mosaic->playing=1;live.mosaic->time=.37;
     live.sister.performance_transport=6;view.project_modified=1;
     performance_show(&view,&live);performance_transport.painted=SDL_GetTicks()-100;performance_update(0,&live);shot(performance_transport.renderer,"f11-offline.bmp",PERF_W,PERF_H);
-    SDL_Event click={0};click.type=SDL_MOUSEBUTTONDOWN;click.button.button=SDL_BUTTON_LEFT;
+    SDL_Event click;SDL_zero(click);click.type=SDL_MOUSEBUTTONDOWN;click.button.button=SDL_BUTTON_LEFT;
     click.button.windowID=performance_transport.id;click.button.x=450;click.button.y=618;
     assert(performance_event(&click,window,0,&live,&view,&pages,&bank,NULL,48000));
     assert(offline_ui.visible && offline_ui.sources==6);

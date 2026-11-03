@@ -38,7 +38,7 @@ static void test_mosaic_source_keys_mode(SDL_Window *window,SDL_AudioDeviceID de
         float output[512];audio_callback(a,(Uint8 *)output,sizeof(output));
         held_elapsed=a->mosaic->live[loop-a->mosaic->events].elapsed;assert(held_elapsed>0);
         performance_show(u,a);assert(performance_transport.window);
-        SDL_Event pause={0};pause.type=SDL_MOUSEBUTTONDOWN;pause.button.windowID=performance_transport.id;
+        SDL_Event pause;SDL_zero(pause);pause.type=SDL_MOUSEBUTTONDOWN;pause.button.windowID=performance_transport.id;
         pause.button.button=SDL_BUTTON_LEFT;pause.button.x=640;pause.button.y=PERF_ROWS_Y+4*PERF_ROW_STEP+16;
         assert(performance_event(&pause,window,device,a,u,&pages,bank,NULL,48000));
         pause.type=SDL_MOUSEBUTTONUP;assert(performance_event(&pause,window,device,a,u,&pages,bank,NULL,48000));
@@ -105,7 +105,7 @@ static void test_mosaic_source_keys_mode(SDL_Window *window,SDL_AudioDeviceID de
     if(pause_looper) {
         assert(a->mosaic->live_paused && a->mosaic->live[loop-a->mosaic->events].elapsed==held_elapsed);
         assert(ts_performance_count(&a->mosaic_source_performance)==4);
-        SDL_Event resume={0};resume.type=SDL_MOUSEBUTTONDOWN;resume.button.windowID=performance_transport.id;
+        SDL_Event resume;SDL_zero(resume);resume.type=SDL_MOUSEBUTTONDOWN;resume.button.windowID=performance_transport.id;
         resume.button.button=SDL_BUTTON_LEFT;resume.button.x=640;resume.button.y=PERF_ROWS_Y+4*PERF_ROW_STEP+16;
         assert(performance_event(&resume,window,device,a,u,&pages,bank,NULL,48000));
         resume.type=SDL_MOUSEBUTTONUP;assert(performance_event(&resume,window,device,a,u,&pages,bank,NULL,48000));

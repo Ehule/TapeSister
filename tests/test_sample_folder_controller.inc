@@ -30,7 +30,7 @@ static void test_folder_browser(SDL_Window *window, SDL_AudioDeviceID device,
     }
     snprintf(ui.browser.directory, sizeof(ui.browser.directory), "%s", directory);
     browser_open(&ui, TS_BROWSER_LOAD_WAV);
-    SDL_Event event = {0};
+    SDL_Event event;SDL_zero(event);
     event.type = SDL_MOUSEBUTTONDOWN; event.button.windowID = SDL_GetWindowID(window);
     event.button.button = SDL_BUTTON_LEFT; event.button.x = 280; event.button.y = 48;
 #define FOLDER_EVENT() folder_import_event(&event,window,device,audio,&ui,&instrument,&pages,&import,&audition)

@@ -253,13 +253,13 @@ static void effect_snapshot_checks(void)
 }
 static void editor_click(int x,int y,int button)
 {
-    SDL_Event e={0};e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=mandala_editor.id;e.button.button=(Uint8)button;e.button.x=x;e.button.y=y;
+    SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=mandala_editor.id;e.button.button=(Uint8)button;e.button.x=x;e.button.y=y;
     assert(mandala_editor_event(&e,&u,&a.sister.mandala));
     e.type=SDL_MOUSEBUTTONUP;assert(mandala_editor_event(&e,&u,&a.sister.mandala));
 }
 static void editor_key(SDL_Keycode key,Uint16 mod)
 {
-    SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.windowID=mandala_editor.id;e.key.keysym.sym=key;e.key.keysym.mod=mod;
+    SDL_Event e;SDL_zero(e);e.type=SDL_KEYDOWN;e.key.windowID=mandala_editor.id;e.key.keysym.sym=key;e.key.keysym.mod=mod;
     assert(mandala_editor_event(&e,&u,&a.sister.mandala));
 }
 static void wide_render_wait(TsMandalaPreferences *prefs,unsigned revision)
@@ -318,7 +318,7 @@ static void editor_checks(SDL_Window *window)
 {
     TsMandalaConfig original=a.sister.mandala;TsMatrixControls routing=a.sister.matrix.controls;
     performance_show(&u,&a);
-    SDL_Event e={0};e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=performance_transport.id;e.button.button=SDL_BUTTON_LEFT;e.button.x=610;e.button.y=118;
+    SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=performance_transport.id;e.button.button=SDL_BUTTON_LEFT;e.button.x=610;e.button.y=118;
     assert(performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));assert(performance_transport.page==PERF_VISUALS);
     e.button.x=60;e.button.y=248;
     assert(performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));assert(mandala_editor.visible);

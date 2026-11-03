@@ -1,6 +1,6 @@
 static void perf_input_click(int x,int y,int button)
 {
-    SDL_Event e={0};e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=performance_transport.id;
+    SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=performance_transport.id;
     e.button.x=x;e.button.y=y;e.button.button=button;e.button.clicks=1;
     assert(performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));
     e.type=SDL_MOUSEBUTTONUP;assert(performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));
@@ -100,7 +100,7 @@ static void test_performance_inputs(const char *directory)
     assert(out[2000]>.05f); /* F9 raw input routes are independent of the live mixer. */
     ts_insert_duplex_block(&a.sister.insert,0,NULL,0,0);assert(ts_matrix_set(&a.sister.matrix,&saved,48000));
     perf_input_click(550,192,SDL_BUTTON_LEFT);assert(performance_transport.tuner_on);
-    SDL_Event close={0};close.type=SDL_WINDOWEVENT;close.window.windowID=performance_transport.id;close.window.event=SDL_WINDOWEVENT_CLOSE;
+    SDL_Event close;SDL_zero(close);close.type=SDL_WINDOWEVENT;close.window.windowID=performance_transport.id;close.window.event=SDL_WINDOWEVENT_CLOSE;
     assert(performance_event(&close,window,0,&a,&u,&pages,&bank,NULL,48000));
     assert(!performance_transport.tuner_on && !(atomic_load(&input.performance.tuner_request)&255));
     a.performance_inputs=NULL;

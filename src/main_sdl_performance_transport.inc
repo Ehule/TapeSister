@@ -316,12 +316,12 @@ static int performance_event(SDL_Event *e,SDL_Window *window,SDL_AudioDeviceID d
         SDL_SetWindowAlwaysOnTop(performance_transport.window,audio->sister.performance_mixer.always_on_top?SDL_TRUE:SDL_FALSE);
     } else if(left && y>=604 && y<632) {
         if(x>=20 && x<180) {
-            SDL_Event request={0};request.type=SDL_KEYDOWN;request.key.windowID=SDL_GetWindowID(window);request.key.keysym.sym=SDLK_F9;
+            SDL_Event request;SDL_zero(request);request.type=SDL_KEYDOWN;request.key.windowID=SDL_GetWindowID(window);request.key.keysym.sym=SDLK_F9;
             request.key.state=SDL_PRESSED;
             SDL_PushEvent(&request);
         }
         else if(x>=190 && x<350) {
-            SDL_Event health={0};health.type=SDL_KEYDOWN;health.key.windowID=performance_transport.id;health.key.keysym.sym=SDLK_F12;
+            SDL_Event health;SDL_zero(health);health.type=SDL_KEYDOWN;health.key.windowID=performance_transport.id;health.key.keysym.sym=SDLK_F12;
             ts_audio_health_event(&health,window,audio,ui);
         } else if(x>=360 && x<540){performance_feedback(PERF_BUTTON_RENDER,1);offline_show(ui,audio);}
     } else if(row_hit) {

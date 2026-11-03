@@ -1,7 +1,7 @@
 static void browser_mouse(SDL_Window *window,AudioState *a,TsUiState *u,TsInstrument *bank,
     MosaicController *c,PortalController *p,TransformController *t,int type,int x,int y,int clicks)
 {
-    SDL_Event e={0};e.type=type;e.button.windowID=SDL_GetWindowID(window);
+    SDL_Event e;SDL_zero(e);e.type=type;e.button.windowID=SDL_GetWindowID(window);
     e.button.button=SDL_BUTTON_LEFT;e.button.x=x;e.button.y=y;e.button.clicks=(Uint8)clicks;
     assert(mosaic_event(&e,window,0,a,u,bank,c,p,&sister,t,48000));
 }

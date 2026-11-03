@@ -13,17 +13,17 @@ static TsFramebuffer fb;
 static SDL_Window *host;
 static void click(int x,int y)
 {
-    SDL_Event e={0};e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=palette_window.id;e.button.button=SDL_BUTTON_LEFT;e.button.x=x;e.button.y=y;
+    SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=palette_window.id;e.button.button=SDL_BUTTON_LEFT;e.button.x=x;e.button.y=y;
     assert(palette_window_event(&e,host,&u,&sister));e.type=SDL_MOUSEBUTTONUP;assert(palette_window_event(&e,host,&u,&sister));
 }
 static void key(SDL_Keycode sym,Uint16 mod)
 {
-    SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.windowID=palette_window.id;e.key.keysym.sym=sym;e.key.keysym.mod=mod;
+    SDL_Event e;SDL_zero(e);e.type=SDL_KEYDOWN;e.key.windowID=palette_window.id;e.key.keysym.sym=sym;e.key.keysym.mod=mod;
     assert(palette_window_event(&e,host,&u,&sister));
 }
 static void hex(const char *value)
 {
-    click(355,410);key(SDLK_a,KMOD_CTRL);SDL_Event e={0};e.type=SDL_TEXTINPUT;e.text.windowID=palette_window.id;
+    click(355,410);key(SDLK_a,KMOD_CTRL);SDL_Event e;SDL_zero(e);e.type=SDL_TEXTINPUT;e.text.windowID=palette_window.id;
     snprintf(e.text.text,sizeof(e.text.text),"%s",value);assert(palette_window_event(&e,host,&u,&sister));key(SDLK_RETURN,0);
 }
 static void snapshot(const char *path,const uint32_t *pixels,int width,int height)
@@ -160,13 +160,13 @@ int main(int argc,char **argv)
     key(SDLK_z,KMOD_CTRL);assert(u.palette.theme.overrides[0][TS_COLOR_BACKGROUND]==0xffabcdef); /* whole drag is one history step */
     click(590,566);assert(palette_window.page==3);hex("aabbcc");assert(u.palette.colors[TS_PALETTE_PATTERN_TEXT]==0xffaabbcc);
     click(400,18);assert(palette_window.follow);u.tracker_open=1;pw_follow(host,&u,&sister,SDL_GetWindowID(host));assert(palette_window.group==TS_THEME_TRACKER);
-    SDL_Event outside={0};outside.type=SDL_MOUSEBUTTONDOWN;outside.button.windowID=SDL_GetWindowID(host);
+    SDL_Event outside;SDL_zero(outside);outside.type=SDL_MOUSEBUTTONDOWN;outside.button.windowID=SDL_GetWindowID(host);
     assert(!palette_window_event(&outside,host,&u,&sister)); /* modeless event ownership */
     TsPalette edited=u.palette;click(210,566);palette_window_hide(&u,0);assert(!memcmp(&u.palette,&edited,sizeof(edited))); /* close Before keeps edited */
     palette_window_show(&u);click(360,566);assert(!memcmp(&u.palette,&edited,sizeof(edited)));
     char err[160],saved_path[TS_BROWSER_PATH_MAX];TsPalette loaded;
     click(220,599);assert(palette_window.browser.mode==TS_BROWSER_TRACKER_PALETTE_EXPORT);
-    key(SDLK_a,KMOD_CTRL);SDL_Event name={0};name.type=SDL_TEXTINPUT;name.text.windowID=palette_window.id;
+    key(SDLK_a,KMOD_CTRL);SDL_Event name;SDL_zero(name);name.type=SDL_TEXTINPUT;name.text.windowID=palette_window.id;
     strcpy(name.text.text,"Palette Window Fixture.pal");assert(palette_window_event(&name,host,&u,&sister));
     assert(ts_browser_destination_path(&palette_window.browser,saved_path,sizeof(saved_path)));remove(saved_path);
     click(40,590);if(palette_window.browser.mode!=TS_BROWSER_CLOSED)fprintf(stderr,"Palette file action: %s\n",palette_window.browser.message);assert(palette_window.browser.mode==TS_BROWSER_CLOSED);
@@ -181,7 +181,7 @@ int main(int argc,char **argv)
     assert(shared_palette_path(&u,saved_path,sizeof(saved_path))&&!strcmp(saved_path,"palette-shared-fixture.pal"));
     click(360,599);assert(ts_palette_load(&loaded,"palette-shared-fixture.pal",err,sizeof(err)));assert(!memcmp(&loaded,&edited,sizeof(loaded)));
     click(360,599);assert(palette_window.overwrite_shared);click(360,599);assert(!palette_window.overwrite_shared);remove("palette-shared-fixture.pal");
-    palette_window_hide(&u,0);SDL_Event shortcut={0};shortcut.type=SDL_KEYDOWN;shortcut.key.windowID=SDL_GetWindowID(host);shortcut.key.keysym.sym=SDLK_p;
+    palette_window_hide(&u,0);SDL_Event shortcut;SDL_zero(shortcut);shortcut.type=SDL_KEYDOWN;shortcut.key.windowID=SDL_GetWindowID(host);shortcut.key.keysym.sym=SDLK_p;
     shortcut.key.keysym.mod=KMOD_LCTRL|KMOD_LSHIFT;assert(!palette_window_event(&shortcut,host,&u,&sister)); /* CDP shortcut stays available */
     shortcut.key.keysym.mod=KMOD_LCTRL|KMOD_LALT;assert(palette_window_event(&shortcut,host,&u,&sister));assert(palette_window.visible);
     /* Native application hook changes pixels, not saved tracker preferences. */
