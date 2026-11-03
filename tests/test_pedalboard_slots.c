@@ -24,14 +24,21 @@ static void hit(int x,int y)
     sister_apply_action(0,&audio,&ui,&bank,&sister,NULL,NULL,
         ts_sister_ui_hit_test_model(&sister.model,x,y),48000,2);
 }
+static int key_repeat(SDL_Keycode key, Uint8 repeat)
+{
+    /* SDL_Event is a union: {0} need only initialize its first member.
+       Clear the whole event so repeat/modifier bytes are deterministic. */
+    SDL_Event e;SDL_zero(e); e.type=SDL_KEYDOWN; e.key.keysym.sym=key;
+    e.key.repeat=repeat;
+    return sister_pedalboard_event(0,&audio,&ui,&sister,&e);
+}
 static int key(SDL_Keycode key)
 {
-    SDL_Event e={0}; e.type=SDL_KEYDOWN; e.key.keysym.sym=key;
-    return sister_pedalboard_event(0,&audio,&ui,&sister,&e);
+    return key_repeat(key,0);
 }
 static int mouse(Uint32 type,int x,int y)
 {
-    SDL_Event e={0};e.type=type;e.button.button=SDL_BUTTON_LEFT;e.button.x=x;e.button.y=y;
+    SDL_Event e;SDL_zero(e);e.type=type;e.button.button=SDL_BUTTON_LEFT;e.button.x=x;e.button.y=y;
     return sister_pedalboard_event(0,&audio,&ui,&sister,&e);
 }
 #include "test_grain_states.inc"
@@ -292,10 +299,10 @@ int main(int argc,char **argv)
     assert(mouse(SDL_MOUSEBUTTONUP,630,54));assert(!sister.fx_scroll_repeat);
     sister_fx_scroll_to(&sister,0);
     assert(mouse(SDL_MOUSEBUTTONDOWN,630,75));assert(sister.fx_scroll_drag);
-    SDL_Event motion={0};motion.type=SDL_MOUSEMOTION;motion.motion.x=630;motion.motion.y=260;motion.motion.state=SDL_BUTTON_LMASK;
+    SDL_Event motion;SDL_zero(motion);motion.type=SDL_MOUSEMOTION;motion.motion.x=630;motion.motion.y=260;motion.motion.state=SDL_BUTTON_LMASK;
     assert(sister_pedalboard_event(0,&audio,&ui,&sister,&motion));assert(sister.model.fx_scroll==15);
     mouse(SDL_MOUSEBUTTONUP,630,260);
-    SDL_Event wheel={0};wheel.type=SDL_MOUSEWHEEL;wheel.wheel.y=-1;
+    SDL_Event wheel;SDL_zero(wheel);wheel.type=SDL_MOUSEWHEEL;wheel.wheel.y=-1;
     assert(!sister_pedalboard_event(0,&audio,&ui,&sister,&wheel) && sister.model.fx_scroll==15);
 
     hit(80,248); /* Visible fifth row is slot 20, not slot 5. */
@@ -334,7 +341,12 @@ int main(int argc,char **argv)
     }
     action(TS_SISTER_UI_ACTION_FX_REMOVE);assert(sister.model.fx_remove_confirmation);
     assert(key(SDLK_ESCAPE) && sister.model.parameters.fx.slot_count==20);
-    action(TS_SISTER_UI_ACTION_FX_REMOVE);assert(key(SDLK_RETURN));
+    assert(!sister.model.fx_remove_confirmation);
+    action(TS_SISTER_UI_ACTION_FX_REMOVE);
+    assert(key_repeat(SDLK_RETURN,1));
+    assert(sister.model.fx_remove_confirmation && sister.model.parameters.fx.slot_count==20 && sister.model.fx_scroll==15);
+    assert(key(SDLK_RETURN));
+    assert(!sister.model.fx_remove_confirmation);
     assert(sister.model.parameters.fx.slot_count==19 && sister.model.fx_scroll==14);
     for(int i=19;i>5;--i)action(TS_SISTER_UI_ACTION_FX_REMOVE);
     assert(sister.model.parameters.fx.slot_count==5 && sister.model.fx_scroll==0);

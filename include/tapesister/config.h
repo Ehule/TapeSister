@@ -1,6 +1,7 @@
 #ifndef TAPESISTER_CONFIG_H
 #define TAPESISTER_CONFIG_H
 #include "tapesister/audio_channels.h"
+#include "tapesister/dark_matter.h"
 
 #include "tapesister/compressor.h"
 #include <stddef.h>
@@ -172,6 +173,8 @@ typedef struct {
     float prism_morph_seconds, prism_step_seconds;
     int mosaic_record_seconds; /* 0 = unlimited; otherwise 10..3600. */
     int mosaic_silence_seconds, mosaic_silence_db;
+    int sister_memory_mode;
+    TsDarkMatterControls sister_dark;
     int sister_buffer_seconds;
     int sister_buffer_channels;
     int sister_clear_ms;

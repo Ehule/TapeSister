@@ -19,7 +19,7 @@ static void click(int x,int y)
 { action(ts_sister_ui_hit_test_model(&sister.model,x,y)); }
 static void state_click(int x,int y,Uint8 button)
 {
-    SDL_Event event={0};event.type=SDL_MOUSEBUTTONDOWN;
+    SDL_Event event;SDL_zero(event);event.type=SDL_MOUSEBUTTONDOWN;
     event.button.button=button;event.button.x=x;event.button.y=y;
     assert(sister_pedalboard_event(0,&audio,&ui,&sister,&event));
 }
@@ -97,7 +97,7 @@ int main(int argc,char **argv)
     matrix_window.outputs=2;matrix_window.processors=0xffffffff;matrix_window.palette=ui.palette;
     mx_rows(&pages,&bank);
     for(int i=0;i<matrix_window.count;++i)if(matrix_window.rows[i].kind==2 && matrix_window.rows[i].index==TS_MATRIX_BOARD)matrix_window.selected=i;
-    SDL_Event event={0};event.type=SDL_MOUSEBUTTONDOWN;event.button.windowID=matrix_window.id;
+    SDL_Event event;SDL_zero(event);event.type=SDL_MOUSEBUTTONDOWN;event.button.windowID=matrix_window.id;
     event.button.button=SDL_BUTTON_LEFT;event.button.x=1100;event.button.y=742;
     assert(matrix_event(&event,NULL,0,&audio,&ui,&pages,&bank));
     assert(audio.sister.matrix.controls.board_insert && !audio.sister.matrix.controls.serial_mask);

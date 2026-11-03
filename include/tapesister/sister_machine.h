@@ -2,6 +2,7 @@
 #define TAPESISTER_SISTER_MACHINE_H
 
 #include "tapesister/prism.h"
+#include "tapesister/dark_matter.h"
 #include "tapesister/sample.h"
 #include "tapesister/sister_effects.h"
 #include "tapesister/sister_post_fx.h"
@@ -104,6 +105,8 @@ typedef struct {
 } TsSisterBiquadState;
 
 typedef struct {
+    int memory_mode;
+    TsDarkMatterControls dark;
     float head1_level;
     float head1_time_ms;
     float head1_feedback;
@@ -199,6 +202,7 @@ typedef struct {
     double duration_seconds;
     double target_duration_seconds;
     int resize_pending;
+    float dark_position[4], dark_peak[4], dark_seconds[4], dark_blend;
     uint64_t revision;
 } TsSisterSnapshot;
 
@@ -223,10 +227,16 @@ typedef struct {
     atomic_uint_least64_t duration_bits;
     atomic_uint_least64_t target_duration_bits;
     atomic_int resize_pending;
+    atomic_uint_least32_t dark_position_bits[4], dark_peak_bits[4], dark_seconds_bits[4], dark_blend_bits;
 } TsSisterSnapshotAtomic;
 
 typedef struct {
     TsSisterBuffer buffer;
+    TsDarkMatter dark;
+    TsSisterRamp dark_blend;
+    TsSisterRamp dark_output_gain;
+    float mode_energy[2], mode_energy_coefficient;
+    uint64_t mode_meter_frames;
     TsSisterParameters parameters;
     TsSisterParameters applied_parameters;
     TsSisterHeadState head[TS_SISTER_HEAD_COUNT];

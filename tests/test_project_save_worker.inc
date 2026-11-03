@@ -39,7 +39,7 @@ static void test_project_save_worker(SDL_Window *window)
     for(int i=0;i<8;++i) {
         Uint64 begin=SDL_GetPerformanceCounter();worker_poll(device);ts_ui_render(&fb,&ui,&bank);
         double elapsed=1000.0*(SDL_GetPerformanceCounter()-begin)/SDL_GetPerformanceFrequency();peak=fmax(peak,elapsed);
-        SDL_Event event={0};event.type=SDL_KEYDOWN;event.key.keysym.sym=SDLK_DELETE;
+        SDL_Event event;SDL_zero(event);event.type=SDL_KEYDOWN;event.key.keysym.sym=SDLK_DELETE;
         uint64_t hash=project_hash();assert(project_save_event(&event,window,device,&audio,&ui));assert(project_hash()==hash);
         SDL_Delay(10);
     }
@@ -64,7 +64,7 @@ static void test_project_save_worker(SDL_Window *window)
     ++bank.family_sequence;
     SDL_AtomicSet(&save_test_gate,1);queue_active_project_save(&ui,&file);worker_poll(device);
     assert(project_save_worker);char log_path[2048];snprintf(log_path,sizeof(log_path),"%s",project_save_worker->journal_path);
-    SDL_Event close={0};close.type=SDL_QUIT;assert(project_save_event(&close,window,device,&audio,&ui));
+    SDL_Event close;SDL_zero(close);close.type=SDL_QUIT;assert(project_save_event(&close,window,device,&audio,&ui));
     assert(project_save_worker->close_requested && SDL_AtomicGet(&project_save_worker->cancel));
     SDL_AtomicSet(&save_test_gate,0);worker_finish(device);
     assert(ui.exit_confirm_open && ui.exit_has_unsaved && !ui.exit_after_save);

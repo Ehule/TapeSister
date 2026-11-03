@@ -32,7 +32,7 @@ static void test_mosaic_video_controller(SDL_Window *window)
     if(shot){char path[1200];snprintf(path,sizeof(path),"%s-scatter.ppm",shot);live_controller_screenshot_size(&ui,path,1729,973);}
     key(window,SDLK_z,KMOD_CTRL);count=0;for(int i=0;i<TS_MOSAIC_EVENTS;++i)count+=ui.mosaic->events[i].id!=0;assert(count==1);
     e=ts_mosaic_find(ui.mosaic,id);assert(e);mosaic_select_only(&ui,id);
-    SDL_Event right={0};right.type=SDL_MOUSEBUTTONDOWN;right.button.windowID=SDL_GetWindowID(window);right.button.button=SDL_BUTTON_RIGHT;right.button.x=160;right.button.y=74;
+    SDL_Event right;SDL_zero(right);right.type=SDL_MOUSEBUTTONDOWN;right.button.windowID=SDL_GetWindowID(window);right.button.button=SDL_BUTTON_RIGHT;right.button.x=160;right.button.y=74;
     assert(dispatch(&right,window));assert(ui.mosaic_video_open && ui.mosaic_video_id==id);
     click(window,450,315,1);assert(!ui.mosaic_video_open);
     right.button.x=500;right.button.y=300;assert(dispatch(&right,window));

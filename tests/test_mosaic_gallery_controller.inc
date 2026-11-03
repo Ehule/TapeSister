@@ -39,7 +39,7 @@ static void test_mosaic_gallery_controller(SDL_Window *window,SDL_AudioDeviceID 
     gallery_pointer(window,device,a,s,u,c,156,330);assert(g->count==2 && g->active==0 && u->mosaic_gallery_selected==1);
     gallery_pointer(window,device,a,s,u,c,245,330);assert(u->mosaic_gallery_rename);
     gallery_key(window,device,a,s,u,c,SDLK_a,KMOD_CTRL);
-    SDL_Event text={0};text.type=SDL_TEXTINPUT;snprintf(text.text.text,sizeof(text.text.text),"Blue room");
+    SDL_Event text;SDL_zero(text);text.type=SDL_TEXTINPUT;snprintf(text.text.text,sizeof(text.text.text),"Blue room");
     assert(live_performance_event(&text,window,device,a,s,u,&instrument,c));
     gallery_key(window,device,a,s,u,c,SDLK_RETURN,KMOD_NONE);
     assert(!u->mosaic_gallery_rename && !strcmp(g->canvas[1].name,"Blue room"));

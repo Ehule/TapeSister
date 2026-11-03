@@ -89,7 +89,7 @@ static void project_reopen_controls(SDL_Window *window)
         assert(ts_mosaic_copy(ui.mosaic,ui.mosaic->events[0].id,1,100));
     ui.mosaic_open=1;ui.tracker_open=0;
     mosaic_poll(0,&ui,&bank,&mosaic);
-    SDL_Event key={.type=SDL_KEYDOWN};key.key.windowID=SDL_GetWindowID(window);
+    SDL_Event key;SDL_zero(key);key.type=SDL_KEYDOWN;key.key.windowID=SDL_GetWindowID(window);
     mosaic_select_only(&ui,ui.mosaic->events[0].id);key.key.keysym.sym=SDLK_m;
     assert(mosaic_event(&key,window,0,&audio,&ui,&bank,&mosaic,&portal,&sister,&transform,48000));
     mosaic_select_only(&ui,ui.mosaic->events[1].id);key.key.keysym.sym=SDLK_s;key.key.keysym.mod=KMOD_ALT;

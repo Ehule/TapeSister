@@ -1,7 +1,7 @@
 static void browser_mouse(SDL_Window *window,AudioState *a,TsUiState *u,TsInstrument *bank,
     MosaicController *c,PortalController *p,TransformController *t,int type,int x,int y,int clicks)
 {
-    SDL_Event e={0};e.type=type;e.button.windowID=SDL_GetWindowID(window);
+    SDL_Event e;SDL_zero(e);e.type=type;e.button.windowID=SDL_GetWindowID(window);
     e.button.button=SDL_BUTTON_LEFT;e.button.x=x;e.button.y=y;e.button.clicks=(Uint8)clicks;
     assert(mosaic_event(&e,window,0,a,u,bank,c,p,&sister,t,48000));
 }
@@ -68,7 +68,7 @@ static void test_mosaic_browser(SDL_Window *window)
     assert(c->active==cards[2]->id && u->mosaic_editing==cards[2]->id && !u->mosaic_open);
     assert(strstr(u->status,"MOSAIC CARD") && strstr(u->status,"COPY"));
     assert(c->bank->current.data!=bank->current.data && cards[2]->source->sample.data!=bank->current.data);
-    SDL_Event back={.type=SDL_MOUSEBUTTONDOWN};back.button.windowID=SDL_GetWindowID(window);
+    SDL_Event back;SDL_zero(back);back.type=SDL_MOUSEBUTTONDOWN;back.button.windowID=SDL_GetWindowID(window);
     back.button.button=SDL_BUTTON_LEFT;back.button.x=TS_UI_MOSAIC_X+10;back.button.y=10;
     assert(workspace_event(&back,window,0,a,u,bank,c,&p,&sister,&t,&workspace_preview));
     assert(!c->active && !u->mosaic_editing && u->mosaic_open && ts_sample_hash(&bank->current)==bank_hash);

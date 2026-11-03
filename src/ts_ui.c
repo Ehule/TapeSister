@@ -5339,6 +5339,18 @@ static void sister_target_toggle(TsFramebuffer *fb, int x, int y, int width,
     text(fb, x + 8, y + 5, label, active ? color : PAL_MOUSE, 1);
 }
 
+static void sister_compact_button(TsFramebuffer *fb, int x, int y, int width,
+                                   const char *label, int active)
+{
+    bevel_frame(fb, x, y, width, TS_SISTER_UI_HEADER_H,
+        active ? PAL_BLOCK : PAL_BUTTON,
+        contrast_color(PAL_BUTTON, active_palette()->buttons_contrast, 1.5f),
+        contrast_color(PAL_BUTTON, active_palette()->buttons_contrast, 0.5f));
+    text(fb, x + (width - (int)strlen(label)*6)/2, y + 5, label,
+        active ? PAL_BLOCK_TEXT : ts_theme_color(active_palette(), render_group,
+            TS_COLOR_TEXT, RGB(245, 242, 235)), 1);
+}
+
 static uint32_t sister_spirit_hash(int x, int y)
 {
     uint32_t value = (uint32_t)x * UINT32_C(0x45d9f3b) ^
@@ -5518,6 +5530,7 @@ static void sister_spirit_render(TsFramebuffer *fb,
 }
 
 #include "ts_prism_ui.inc"
+#include "ts_dark_matter_ui.inc"
 
 void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                          const TsPalette *palette)
@@ -5536,11 +5549,17 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     master_output = master_output_from_routing(&model->routing);
     clear(fb, PAL_DESKTOP);
     rect(fb, 0, 0, TS_SISTER_UI_WIDTH, 36, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(12, 12, 12)));
-    button(fb, 10, 8, 62, model->routing.enabled ? "POWER ON" : "POWER", model->routing.enabled);
-    button(fb, 78, 8, 62, "ROLL", model->routing.rolling);
-    button(fb, 146, 8, 62, "HOLD", model->routing.held);
-    button(fb, 214, 8, 62, "CLEAR", model->engine.clear_state != TS_SISTER_CLEAR_IDLE);
-    button(fb, 282, 8, 62, "MONITOR", model->routing.monitor_enabled);
+    sister_compact_button(fb, TS_SISTER_UI_POWER_X, TS_SISTER_UI_HEADER_Y,
+        TS_SISTER_UI_POWER_W, "POWER", model->routing.enabled);
+    sister_compact_button(fb, TS_SISTER_UI_MODE_X, TS_SISTER_UI_HEADER_Y,
+        TS_SISTER_UI_MODE_W, model->parameters.memory_mode==TS_SISTER_MEMORY_DARK ?
+        "DARK MATTER" : "TAPE", model->parameters.memory_mode==TS_SISTER_MEMORY_DARK);
+    if (ts_sister_ui_parameter_locked(model,TS_DARK_PARAM_MODE))
+        rect(fb,TS_SISTER_UI_MODE_X+2,TS_SISTER_UI_HEADER_Y+2,2,2,PAL_MOUSE);
+    sister_compact_button(fb, 152, 8, 38, "ROLL", model->routing.rolling);
+    sister_compact_button(fb, 194, 8, 38, "HOLD", model->routing.held);
+    sister_compact_button(fb, 236, 8, 44, "CLEAR", model->engine.clear_state != TS_SISTER_CLEAR_IDLE);
+    sister_compact_button(fb, 284, 8, 50, "MONITOR", model->routing.monitor_enabled);
     {
         float target = model->parameters.buffer_seconds;
         float current = (float)model->engine.duration_seconds;
@@ -5556,15 +5575,15 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
             snprintf(canvas, sizeof(canvas), "BUFFER %.0FS", target);
         sister_choice_parameter_state(fb, 350, 8, 86, "", canvas,
             model->engine.resize_pending, PAL_TUNING, locked);
-        rect(fb, 351, 25, (int)lrintf(84.0f * sister_clamp(amount)), 3,
+        rect(fb, 351, 23, (int)lrintf(84.0f * sister_clamp(amount)), 3,
              color);
     }
-    button(fb, 440, 8, 50,
+    sister_compact_button(fb, 440, 8, 50,
            model->fx_page == 0 ? "FX" :
            model->fx_page == 1 ? "FALL" :
            model->fx_page == 2 ? "PRISM" : "TAPE",
            model->fx_page != 0);
-    button(fb, 494, 8, 30, "EQ", 0);
+    sister_compact_button(fb, 494, 8, 30, "EQ", 0);
     master_output_fader(fb, model->routing.master_output_gain, 528, 8);
     master_output_meter(fb, &master_output, 580, 8);
     rect(fb, 576, 12, 3, 9,
@@ -5900,7 +5919,8 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     }
 
     rect(fb, 10, 40, 620, 126, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(7, 7, 8)));
-    if (model->routing.enabled &&
+    if (model->parameters.memory_mode==TS_SISTER_MEMORY_DARK) sister_dark_memories(fb,model);
+    else if (model->routing.enabled &&
         model->power_visual == TS_SISTER_UI_POWER_VISUAL_NONE) {
         mode = ts_waveform_display_sanitize(model->waveform_mode);
         if (mode == TS_WAVEFORM_DISPLAY_STEREO && model->waveform.channels == 2u) {
@@ -5924,10 +5944,11 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     if (!model->routing.enabled ||
         model->power_visual != TS_SISTER_UI_POWER_VISUAL_NONE)
         sister_spirit_render(fb, model);
-    button(fb, 600, 144, 24,
+    if(model->parameters.memory_mode!=TS_SISTER_MEMORY_DARK) button(fb, 600, 144, 24,
            ts_waveform_display_letter(model->waveform_mode),
            model->waveform_mode != TS_WAVEFORM_DISPLAY_STEREO);
-    if(model->matrix_routing)button(fb,10,172,208,"F9 ROUTING MATRIX",1);
+    if(model->matrix_routing)sister_compact_button(fb,TS_SISTER_UI_ROUTE_X,
+        TS_SISTER_UI_ROUTE_Y,TS_SISTER_UI_ROUTE_W,"F9 ROUTE",1);
     else {
     button(fb, 10, 172, 44, "TILES",
            model->routing.source_switches & TS_SISTER_SOURCE_TILES);
@@ -5942,8 +5963,9 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     }
     button(fb, 222, 172, 52, "TH SONG", model->tapehead_song_playing);
     button(fb, 278, 172, 52, "TH PATT", model->tapehead_pattern_playing);
-    button(fb, 334, 172, 44, model->matrix_routing?"F9":"TRACK",
-           model->routing.source_switches & TS_SISTER_SOURCE_TRACK);
+    if (!model->matrix_routing)
+        button(fb, 334, 172, 44, "TRACK",
+               model->routing.source_switches & TS_SISTER_SOURCE_TRACK);
     /* Diagnostics share a bounded two-line well beside the source buttons.
        The TRACK switch occupies the old head-meter text position. */
     char source_status[35];
@@ -5963,6 +5985,8 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
              model->routing.overload_count > 9999u ? "+" : "");
     tracker_tiny(fb, 384, 186, source_status,
          model->routing.overload_count != 0u ? PAL_VOLUME : PAL_TUNING);
+    if(model->parameters.memory_mode==TS_SISTER_MEMORY_DARK) sister_dark_controls(fb,model);
+    else {
     sister_vertical_mixer(fb, 526, 172, model);
 
     text(fb, 10, 207, "H1", PAL_NOTE, 1);
@@ -6051,6 +6075,8 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     sister_percent_parameter_state(fb, 525, 308, 99, "GHOST",
         model->parameters.ghost_tone, 100, PAL_EFFECT,
         ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_GHOST_TONE));
+
+    }
 
     sister_percent_parameter_state(fb, 10, 330, 124, "SOAK",
         model->parameters.soak, 100, PAL_WAVE_RIGHT,

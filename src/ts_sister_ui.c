@@ -11,7 +11,8 @@ static int contains(int x, int y, int left, int top, int width, int height)
 
 int ts_sister_ui_parameter_lockable(int parameter)
 {
-    return (parameter >= 0 && parameter < TS_SISTER_UI_PARAM_COUNT) ||
+    return (parameter>=TS_DARK_PARAM_MODE && parameter<TS_DARK_PARAM_END) ||
+           (parameter >= 0 && parameter < TS_SISTER_UI_PARAM_COUNT) ||
            ts_sister_ui_slot_offset(parameter) >= 25;
 }
 
@@ -19,6 +20,8 @@ int ts_sister_ui_parameter_locked(const TsSisterUiModel *model,
                                   int parameter)
 {
     if (model == NULL || !ts_sister_ui_parameter_lockable(parameter)) return 0;
+    if (parameter>=TS_DARK_PARAM_MODE && parameter<TS_DARK_PARAM_END)
+        return (model->parameters.dark.locks & (1u<<(parameter-TS_DARK_PARAM_MODE)))!=0;
     int offset = ts_sister_ui_slot_offset(parameter);
     if (offset >= 25) return (model->parameters.fx.slot[offset/5].parameter_locks & (1u << (offset%5))) != 0;
     if (parameter < 64)
@@ -33,6 +36,9 @@ int ts_sister_ui_parameter_lock_toggle(TsSisterUiModel *model,
 {
     uint64_t bit;
     if (model == NULL || !ts_sister_ui_parameter_lockable(parameter)) return 0;
+    if (parameter>=TS_DARK_PARAM_MODE && parameter<TS_DARK_PARAM_END) {
+        model->parameters.dark.locks ^= 1u<<(parameter-TS_DARK_PARAM_MODE); return 1;
+    }
     int offset = ts_sister_ui_slot_offset(parameter);
     if (offset >= 25) {
         model->parameters.fx.slot[offset/5].parameter_locks ^= (uint8_t)(1u << (offset%5));
@@ -189,6 +195,8 @@ void ts_sister_ui_model_init(TsSisterUiModel *model, const TsConfig *config)
     model->destination_slot = -1;
     ts_sister_parameters_default(&model->parameters, 48000u);
     if (config != NULL) {
+        model->parameters.memory_mode=config->sister_memory_mode;
+        model->parameters.dark=config->sister_dark;
         model->parameters.buffer_seconds =
             (float)config->sister_buffer_seconds;
         model->parameters.input_gain =
@@ -427,12 +435,15 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
         return hit;
     }
     for (int control = 0; control < 5; ++control) {
-        if (contains(x, y, 10 + control * 68, 8, 62, 22)) {
+        static const int left[5] = {TS_SISTER_UI_POWER_X, 152, 194, 236, 284};
+        static const int width[5] = {TS_SISTER_UI_POWER_W, 38, 38, 44, 50};
+        if (contains(x, y, left[control], TS_SISTER_UI_HEADER_Y,
+                     width[control], TS_SISTER_UI_HEADER_H)) {
             hit.action = transport[control];
             return hit;
         }
     }
-    if (contains(x, y, 494, 8, 30, 22)) {
+    if (contains(x, y, 494, 8, 30, TS_SISTER_UI_HEADER_H)) {
         hit.action = TS_SISTER_UI_ACTION_LIMITER_TOGGLE;
         return hit;
     }
@@ -442,18 +453,24 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
         hit.normalized = (float)(x - 528) / 47.0f;
         return hit;
     }
+    if (contains(x,y,TS_SISTER_UI_MODE_X,TS_SISTER_UI_HEADER_Y,
+                 TS_SISTER_UI_MODE_W,TS_SISTER_UI_HEADER_H)) {
+        hit.action=TS_SISTER_UI_ACTION_PARAMETER; hit.index=TS_DARK_PARAM_MODE;
+        hit.normalized=model && model->parameters.memory_mode==TS_SISTER_MEMORY_DARK?0:1; return hit;
+    }
     if (model != NULL && model->fx_page == 0 &&
+        model->parameters.memory_mode!=TS_SISTER_MEMORY_DARK &&
         contains(x, y, 600, 144, 24, 18)) {
         hit.action = TS_SISTER_UI_ACTION_WAVE_MODE;
         return hit;
     }
-    if (contains(x, y, 350, 8, 86, 22)) {
+    if (contains(x, y, 350, 8, 86, TS_SISTER_UI_HEADER_H)) {
         hit.action = TS_SISTER_UI_ACTION_PARAMETER;
         hit.index = TS_SISTER_UI_PARAM_BUFFER_SECONDS;
         hit.normalized = (float)(x - 350) / 85.0f;
         return hit;
     }
-    if (contains(x, y, 440, 8, 50, 22)) {
+    if (contains(x, y, 440, 8, 50, TS_SISTER_UI_HEADER_H)) {
         hit.action = TS_SISTER_UI_ACTION_PAGE;
         return hit;
     }
@@ -717,10 +734,15 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
         return hit;
     }
     {
-        if(model && model->matrix_routing && contains(x,y,10,172,208,20)){hit.action=TS_SISTER_UI_ACTION_SOURCE_TILES;return hit;}
+        if(model && model->matrix_routing &&
+           contains(x,y,TS_SISTER_UI_ROUTE_X,TS_SISTER_UI_ROUTE_Y,
+                    TS_SISTER_UI_ROUTE_W,TS_SISTER_UI_ROUTE_H)) {
+            hit.action=TS_SISTER_UI_ACTION_SOURCE_TILES;return hit;
+        }
         static const int source_left[6] = {10, 58, 90, 128, 170, 334};
         static const int source_width[6] = {44, 28, 34, 38, 48, 44};
         for (int source = 0; source < TS_SISTER_SOURCE_COUNT; ++source) {
+            if (model && model->matrix_routing) break;
             if (!contains(x, y, source_left[source], 172,
                           source_width[source], 20)) continue;
             hit.action = (TsSisterUiAction)(TS_SISTER_UI_ACTION_SOURCE_TILES + source);
@@ -735,6 +757,31 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
     if (contains(x, y, 278, 172, 52, 20)) {
         hit.action = TS_SISTER_UI_ACTION_TAPEHEAD_PATTERN;
         return hit;
+    }
+    if (model && model->parameters.memory_mode==TS_SISTER_MEMORY_DARK) {
+        static const int ids[3][4]={
+            {TS_DARK_PARAM_FEEDBACK,TS_DARK_PARAM_BLUR,TS_DARK_PARAM_DRIFT,TS_DARK_PARAM_DRIVE},
+            {TS_DARK_PARAM_REPLACE,TS_DARK_PARAM_DAMP,TS_DARK_PARAM_REVERSE,TS_SISTER_UI_PARAM_WIDTH},
+            {TS_SISTER_UI_PARAM_FILTER_TYPE,TS_SISTER_UI_PARAM_FILTER_CUTOFF,TS_SISTER_UI_PARAM_FILTER_Q,TS_SISTER_UI_PARAM_FILTER_GAIN}};
+        for(int row=0;row<3;++row) for(int col=0;col<4;++col) {
+            int left=10+col*155,top=202+row*28;
+            if(contains(x,y,left,top,148,18)) {
+                hit.action=TS_SISTER_UI_ACTION_PARAMETER;hit.index=ids[row][col];
+                hit.normalized=(float)(x-left)/147;
+                if(hit.index==TS_DARK_PARAM_REVERSE)hit.normalized=model->parameters.dark.reverse?0:1;
+                return hit;
+            }
+        }
+        for(int col=0;col<4;++col) if(contains(x,y,10+col*155,308,148,18)) {
+            static const int ids2[4]={TS_SISTER_UI_PARAM_INPUT_GAIN,TS_SISTER_UI_PARAM_MONITOR_DRY,TS_SISTER_UI_PARAM_MONITOR_WET,TS_SISTER_UI_PARAM_MIX_OUTPUT};
+            hit.action=TS_SISTER_UI_ACTION_PARAMETER;hit.index=ids2[col];hit.normalized=(float)(x-10-col*155)/147;return hit;
+        }
+        for(int col=0;col<2;++col) if(contains(x,y,10+col*155,286,148,18)) {
+            hit.action=TS_SISTER_UI_ACTION_PARAMETER;
+            hit.index=col?TS_SISTER_UI_PARAM_DECORRELATE:TS_SISTER_UI_PARAM_DUCK;
+            hit.normalized=(float)(x-10-col*155)/147;return hit;
+        }
+        if(y>=194 && y<328)return hit;
     }
     for (int control = 0; control < 6; ++control) {
         if(model && model->matrix_routing && control<5)continue;

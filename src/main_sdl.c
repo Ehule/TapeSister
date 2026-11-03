@@ -9661,6 +9661,14 @@ static void sister_set_parameter(TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_PRISM_TIME: parameters->prism.morph_seconds=ts_prism_time_from_normalized(amount);break;
     case TS_SISTER_UI_PARAM_PRISM_SEQ_RATE: parameters->prism.seq_rate=.05f*powf(640,amount);break;
     case TS_SISTER_UI_PARAM_PRISM_OUTPUT: parameters->prism.output_db = -12 + amount * 24; break;
+    case TS_DARK_PARAM_MODE: parameters->memory_mode=amount>=.5f?TS_SISTER_MEMORY_DARK:TS_SISTER_MEMORY_TAPE; break;
+    case TS_DARK_PARAM_FEEDBACK: parameters->dark.feedback=amount*1.05f; break;
+    case TS_DARK_PARAM_BLUR: parameters->dark.blur=amount; break;
+    case TS_DARK_PARAM_DRIFT: parameters->dark.drift=amount; break;
+    case TS_DARK_PARAM_REPLACE: parameters->dark.replace=amount; break;
+    case TS_DARK_PARAM_DRIVE: parameters->dark.drive=amount; break;
+    case TS_DARK_PARAM_DAMP: parameters->dark.damp=amount; break;
+    case TS_DARK_PARAM_REVERSE: parameters->dark.reverse=amount>=.5f; break;
     case TS_SISTER_UI_PARAM_H1_LEVEL: parameters->head1_level = amount; break;
     case TS_SISTER_UI_PARAM_H1_TIME: parameters->head1_time_ms = amount * 4000.0f; break;
     case TS_SISTER_UI_PARAM_H1_FEEDBACK: parameters->head1_feedback = amount; break;
@@ -9800,6 +9808,14 @@ static float sister_parameter_normalized(const TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_PRISM_TIME: value=ts_prism_time_normalized(parameters->prism.morph_seconds);break;
     case TS_SISTER_UI_PARAM_PRISM_SEQ_RATE: value=logf(parameters->prism.seq_rate/.05f)/logf(640);break;
     case TS_SISTER_UI_PARAM_PRISM_OUTPUT: value = (parameters->prism.output_db + 12) / 24.f; break;
+    case TS_DARK_PARAM_MODE: value=parameters->memory_mode==TS_SISTER_MEMORY_DARK; break;
+    case TS_DARK_PARAM_FEEDBACK: value=parameters->dark.feedback/1.05f; break;
+    case TS_DARK_PARAM_BLUR: value=parameters->dark.blur; break;
+    case TS_DARK_PARAM_DRIFT: value=parameters->dark.drift; break;
+    case TS_DARK_PARAM_REPLACE: value=parameters->dark.replace; break;
+    case TS_DARK_PARAM_DRIVE: value=parameters->dark.drive; break;
+    case TS_DARK_PARAM_DAMP: value=parameters->dark.damp; break;
+    case TS_DARK_PARAM_REVERSE: value=(float)parameters->dark.reverse; break;
     case TS_SISTER_UI_PARAM_H1_LEVEL: value = parameters->head1_level; break;
     case TS_SISTER_UI_PARAM_H1_TIME: value = parameters->head1_time_ms / 4000.0f; break;
     case TS_SISTER_UI_PARAM_H1_FEEDBACK: value = parameters->head1_feedback; break;
@@ -9895,6 +9911,7 @@ static float sister_parameter_wheel_normalized(
     int fine_adjustment)
 {
     int direction = wheel > 0 ? 1 : -1;
+    if(parameter==TS_DARK_PARAM_MODE || parameter==TS_DARK_PARAM_REVERSE)return direction>0?1.f:0.f;
     int steps = wheel > 0 ? wheel : -wheel;
     int value;
     if (parameters == NULL || wheel == 0) return 0.0f;
@@ -10061,6 +10078,14 @@ static const char *sister_parameter_name(int parameter)
     case TS_SISTER_UI_PARAM_PRISM_TIME: return "PRISM MORPH TIME";
     case TS_SISTER_UI_PARAM_PRISM_SEQ_RATE: return "PRISM SEQUENCE RATE";
     case TS_SISTER_UI_PARAM_PRISM_OUTPUT: return "PRISM OUTPUT";
+    case TS_DARK_PARAM_MODE: return "MEMORY MODE";
+    case TS_DARK_PARAM_FEEDBACK: return "DARK FEEDBACK";
+    case TS_DARK_PARAM_BLUR: return "DARK BLUR";
+    case TS_DARK_PARAM_DRIFT: return "DARK DRIFT";
+    case TS_DARK_PARAM_REPLACE: return "DARK REPLACE";
+    case TS_DARK_PARAM_DRIVE: return "DARK DRIVE";
+    case TS_DARK_PARAM_DAMP: return "DARK DAMP";
+    case TS_DARK_PARAM_REVERSE: return "DARK REVERSE";
     case TS_SISTER_UI_PARAM_H1_LEVEL: return "H1 LEVEL";
     case TS_SISTER_UI_PARAM_H1_TIME: return "H1 TIME";
     case TS_SISTER_UI_PARAM_H1_FEEDBACK: return "H1 FEED";
@@ -10151,6 +10176,10 @@ static void sister_toggle_parameter_lock(AudioState *audio,
     locked = ts_sister_ui_parameter_locked(&sister->model, parameter);
     audio->sister.parameter_locks = sister->model.parameter_locks;
     audio->sister.parameter_locks_high = sister->model.parameter_locks_high;
+    if (parameter>=TS_DARK_PARAM_MODE && parameter<TS_DARK_PARAM_END) {
+        audio->sister.parameters.dark.locks=sister->model.parameters.dark.locks;
+        audio->sister.machine.parameters.dark.locks=sister->model.parameters.dark.locks;
+    }
     int offset = ts_sister_ui_slot_offset(parameter);
     if (offset >= 25) {
         uint8_t locks = sister->model.parameters.fx.slot[offset/5].parameter_locks;
@@ -11753,6 +11782,10 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
                  ts_sister_fx_transition_ms(fx->transition) / 1000.0f);
     }
     if (parameter_changed >= 0) {
+        if(parameter_changed>=TS_DARK_PARAM_MODE && parameter_changed<TS_DARK_PARAM_END) {
+            ui->config.sister_memory_mode=sister->model.parameters.memory_mode;
+            ui->config.sister_dark=sister->model.parameters.dark;
+        }
         /* Mouse-wheel bursts can publish many bounded DSP targets. Keep the
            audio-device critical section to the state transfer itself; preset
            label work and UI/config bookkeeping do not belong on its clock. */
@@ -12008,7 +12041,8 @@ static int midi_sister_hit_from_target(const char *target, float normalized,
         ((parameter >= 0 && parameter < TS_SISTER_UI_PARAM_COUNT) ||
          ts_sister_ui_slot_offset(parameter) >= 25 ||
          parameter == TS_SISTER_UI_PARAM_MASTER_FX_TRANSITION ||
-         parameter == TS_SISTER_UI_PARAM_FALLOUT_MASTER_TRANSITION)) {
+         parameter == TS_SISTER_UI_PARAM_FALLOUT_MASTER_TRANSITION ||
+         (parameter>=TS_DARK_PARAM_MODE && parameter<TS_DARK_PARAM_END))) {
         hit->action = TS_SISTER_UI_ACTION_PARAMETER;
         hit->index = parameter;
         return 1;
@@ -14179,6 +14213,8 @@ int main(int argc, char **argv)
         parameters.prism.morph_seconds = ui.config.prism_morph_seconds;
         parameters.prism.matrix.step_seconds = ui.config.prism_step_seconds;
         parameters.buffer_seconds = (float)ui.config.sister_buffer_seconds;
+        parameters.memory_mode=ui.config.sister_memory_mode;
+        parameters.dark=ui.config.sister_dark;
         parameters.fx.fallout.transition =
             ts_sister_fallout_transition_normalized(
                 (float)ui.config.sister_fallout_transition_ms);
@@ -14998,6 +15034,7 @@ int main(int argc, char **argv)
                                 sister_window.parameter_lock_gesture = 0;
                             if ((hit.action == TS_SISTER_UI_ACTION_PARAMETER ||
                                  hit.action == TS_SISTER_UI_ACTION_MASTER_OUTPUT) &&
+                                hit.index!=TS_DARK_PARAM_MODE && hit.index!=TS_DARK_PARAM_REVERSE &&
                                 !ts_sister_ui_parameter_locked(
                                     &sister_window.model, hit.index)) {
                                 uint32_t button_mask =
