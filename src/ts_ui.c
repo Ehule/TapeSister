@@ -4759,9 +4759,8 @@ static void sister_wave_column(const TsSisterWaveSnapshot *wave, int px, int wid
 static void sister_wave_lane(TsFramebuffer *fb,
                              const TsSisterWaveSnapshot *wave,
                              int x, int y, int width, int height,
-                             int channel, uint32_t color)
+                             int slot, int channel, uint32_t color)
 {
-    int slot=y==103?1:0;
     int middle=y+height/2;
     rect(fb,x,middle,width,1,ts_theme_color(active_palette(), render_group, TS_COLOR_EDGE, RGB(55,52,57)));
     TsUiWaveformDetail *d=detail_region(slot,x,y,width,height);
@@ -5950,15 +5949,15 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
         if (mode == TS_WAVEFORM_DISPLAY_STEREO && model->waveform.channels == 2u) {
             text(fb, 14, 67, "L", PAL_WAVE_LEFT, 1);
             text(fb, 14, 120, "R", PAL_WAVE_RIGHT, 1);
-            sister_wave_lane(fb, &model->waveform, 26, 62, 600, 49, 0, PAL_WAVE_LEFT);
-            sister_wave_lane(fb, &model->waveform, 26, 115, 600, 51, 1, PAL_WAVE_RIGHT);
+            sister_wave_lane(fb, &model->waveform, 26, 62, 600, 49, 0, 0, PAL_WAVE_LEFT);
+            sister_wave_lane(fb, &model->waveform, 26, 115, 600, 51, 1, 1, PAL_WAVE_RIGHT);
         } else {
             int channel = mode == TS_WAVEFORM_DISPLAY_RIGHT ? 1 :
                           mode == TS_WAVEFORM_DISPLAY_MONO_SUM ? 2 : 0;
             uint32_t color = mode == TS_WAVEFORM_DISPLAY_RIGHT ? PAL_WAVE_RIGHT :
                              mode == TS_WAVEFORM_DISPLAY_MONO_SUM ? PAL_WAVE_SUM :
                              PAL_WAVE_LEFT;
-            sister_wave_lane(fb, &model->waveform, 14, 62, 612, 104, channel, color);
+            sister_wave_lane(fb, &model->waveform, 14, 62, 612, 104, 0, channel, color);
         }
         sister_marker(fb, model->engine.write_normalized, 26, 600, 62, 104,
                       PAL_VOLUME, 0, 0);

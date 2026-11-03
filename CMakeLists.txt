@@ -1018,6 +1018,12 @@ add_executable(test_character_filter tests/test_character_filter.c)
 target_link_libraries(test_character_filter PRIVATE tapesister_core)
 add_test(NAME test_character_filter COMMAND test_character_filter)
 set_tests_properties(test_character_filter PROPERTIES TIMEOUT 120)
+# These fixtures exercise the full project/preset codecs. Match the native
+# application's reserve, as for the other multi-runtime DSP/project tests.
+if(MINGW)
+ target_link_options(test_dark_matter PRIVATE "-Wl,--stack,16777216")
+ target_link_options(test_character_filter PRIVATE "-Wl,--stack,16777216")
+endif()
 if(TAPESISTER_BUILD_SDL)
  add_executable(tapesister_character_filter_controller_tests tests/test_character_filter_controller.c
    src/tape_link.c src/tape_companion.c src/ts_startup_diag.c src/ts_midi_input.c)

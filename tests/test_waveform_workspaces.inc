@@ -192,6 +192,8 @@ static void test_workspace_waveforms(void)
     assert(!SDL_RenderCopy(sister.renderer,sister.texture,NULL,NULL));
     native_waveform_copy(sister.renderer,sister.waveform_textures,sister.waveform_details,&sister.framebuffer);
     assert(sister.waveform_details[0].valid && sister.waveform_details[1].valid);
+    assert(sister.waveform_details[0].y==62 && sister.waveform_details[0].logical_height==49);
+    assert(sister.waveform_details[1].y==115 && sister.waveform_details[1].logical_height==51);
     uint32_t *pixels=malloc(2560u*1600u*sizeof(uint32_t));assert(pixels);
     assert(!SDL_RenderReadPixels(sister.renderer,NULL,SDL_PIXELFORMAT_ARGB8888,pixels,2560*sizeof(uint32_t)));
     native_pixels_shot("sister-native-detail",pixels,2560,1600);free(pixels);
