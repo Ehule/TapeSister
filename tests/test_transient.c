@@ -107,6 +107,7 @@ static void persistence(void)
     assert(ts_sister_project_state_save_file(&a,"transient-state.ini",error,sizeof(error)));
     assert(ts_sister_project_state_load_file(&b,"transient-state.ini",48000,&present,error,sizeof(error)) && present);
     assert(b.parameters.fx.slot[4].type==TS_SISTER_FX_TRANSIENT && b.parameters.fx.slot[4].parameter_a==.8f);
+    assert(!b.parameters.fx.slot[4].transient_power && !b.parameters.fx.slot[4].transient_states.captured);
     assert(b.matrix.board_insert==1 && b.parameter_locks_high==a.parameter_locks_high);
     FILE *f=fopen("transient-state.ini","r"),*old=fopen("transient-old.ini","w");assert(f && old);char line[2048];
     while(fgets(line,sizeof(line),f)) {
@@ -185,8 +186,97 @@ static void matrix(void)
     assert(ts_matrix_read(&c,"Matrix.BoardInsert","2")==-1 && !c.board_insert);
     ts_sister_runtime_free(&r);
 }
+static void extreme_states(void)
+{
+    TsMatrixControls ordinary,more;ts_matrix_default(&ordinary);
+    assert(ts_matrix_effect_add(&ordinary,TS_SISTER_FX_TRANSIENT)==0);
+    ordinary.effect[0].a=1;more=ordinary;more.effect[0].transient_power=3;
+    TsMatrixEffects normal_bank,extreme_bank;ts_matrix_effects_init(&normal_bank);ts_matrix_effects_init(&extreme_bank);
+    assert(ts_matrix_effects_restore(&normal_bank,&ordinary,48000));assert(ts_matrix_effects_restore(&extreme_bank,&more,48000));
+    for(int i=0;i<5000;++i) {
+        ts_matrix_effects_process(&normal_bank,0,(TsStereoFrame){0,0},(TsStereoFrame){0,0},1);
+        ts_matrix_effects_process(&extreme_bank,0,(TsStereoFrame){0,0},(TsStereoFrame){0,0},1);
+    }
+    TsStereoFrame a=ts_matrix_effects_process(&normal_bank,0,(TsStereoFrame){.001f,-.0005f},(TsStereoFrame){0,0},1);
+    TsStereoFrame b=ts_matrix_effects_process(&extreme_bank,0,(TsStereoFrame){.001f,-.0005f},(TsStereoFrame){0,0},1);
+    assert(b.l>a.l*50);ts_matrix_effects_free(&normal_bank);ts_matrix_effects_free(&extreme_bank);
+    const unsigned rates[]={8000,44100,48000,96000,192000};
+    for(unsigned r=0;r<sizeof(rates)/sizeof(*rates);++r) {
+        TsTransient normal,extreme,cut;unsigned rate=rates[r];
+        ts_transient_init(&normal,rate);ts_transient_init(&extreme,rate);ts_transient_init(&cut,rate);
+        ts_transient_sync(&normal,(TsTransientControls){15,24,1});
+        ts_transient_sync(&extreme,(TsTransientControls){60,96,1});
+        ts_transient_sync(&cut,(TsTransientControls){-60,-96,1});
+        double normal_tail=0,extreme_tail=0;
+        for(unsigned i=0;i<rate;++i) {
+            float x=hit(i,rate);TsStereoFrame in={x,-.37f*x};
+            TsStereoFrame a=ts_transient_process(&normal,in),b=ts_transient_process(&extreme,in),c=ts_transient_process(&cut,in);
+            assert(isfinite(b.l) && isfinite(b.r) && isfinite(c.l) && isfinite(c.r));
+            near(b.r,-.37f*b.l,1e-5f*(1+fabsf(b.l)));
+            if(!i){assert(b.l>a.l*50);assert(c.l<x*.002f);}
+            if(i>rate/10 && i<rate/2){normal_tail+=a.l*a.l;extreme_tail+=b.l*b.l;}
+        }
+        assert(extreme_tail>normal_tail*10);
+        for(unsigned i=0;i<rate;++i) {
+            TsStereoFrame out=ts_transient_process(&extreme,(TsStereoFrame){0,0});assert(out.l==0 && out.r==0);
+        }
+    }
+    static TsSisterPostFxEngine engine;TsSisterFxControls controls=fifth();
+    assert(ts_sister_post_fx_init(&engine,1000));
+    TsSisterFxSlotControls *slot=&controls.slot[4];
+    slot->parameter_a=.2f;slot->parameter_b=.3f;slot->parameter_c=.25f;ts_grain_state_capture(slot,0);
+    slot->parameter_a=.8f;slot->parameter_b=.7f;slot->parameter_c=.75f;slot->transient_power=3;ts_grain_state_capture(slot,1);
+    assert(slot->transient_states.power[1]==3 && !slot->grain_states.captured);
+    assert(ts_grain_state_recall(slot,0,0) && !slot->transient_power);
+    slot->transient_states.seconds=2;ts_sister_post_fx_sync_controls(&engine,&controls);
+    assert(ts_grain_state_recall(slot,1,0));ts_sister_post_fx_set_controls(&engine,&controls);
+    for(int i=0;i<500;++i)ts_sister_post_fx_process(&engine,3,(TsStereoFrame){.001f,-.0005f},0);
+    TsSisterTransientState *state=&engine.transient[4][4];
+    assert(state->state_remaining==1500 && state->dsp.attack_db>1.5 && state->dsp.attack_db<2.5);
+    double audible=state->dsp.attack_db;
+    assert(ts_grain_state_recall(slot,0,0));ts_sister_post_fx_set_controls(&engine,&controls);
+    ts_sister_post_fx_process(&engine,3,(TsStereoFrame){.001f,-.0005f},0);
+    assert(fabs(state->dsp.attack_db-audible)<.1 && state->state_remaining==1999);
+    /* A manual edit or edit recall interrupts the glide; it keeps detector history. */
+    double history=state->dsp.attack_fast;
+    assert(ts_grain_state_recall(slot,0,1));ts_sister_post_fx_set_controls(&engine,&controls);
+    ts_sister_post_fx_process(&engine,3,(TsStereoFrame){.001f,-.0005f},0);
+    assert(!state->state_remaining && state->dsp.attack_fast>=history*.99);
+    slot->transient_power=2;assert(ts_grain_state_changed(slot));ts_grain_state_capture(slot,0);
+    assert(!ts_grain_state_changed(slot) && slot->transient_states.power[0]==2);
+    /* Neutral remains exact at every power and Mix. */
+    slot->parameter_a=slot->parameter_b=.5f;
+    for(int power=0;power<4;++power)for(int mix=0;mix<=4;++mix) {
+        slot->transient_power=(uint8_t)power;slot->mix=mix*.25f;ts_sister_post_fx_sync_controls(&engine,&controls);
+        TsStereoFrame in={.013f,-.007f},out=ts_sister_post_fx_process(&engine,3,in,0);assert(out.l==in.l && out.r==in.r);
+    }
+    ts_sister_post_fx_free(&engine);
+    static TsSisterProjectState project,loaded;char error[200];int present;
+    ts_sister_project_state_init(&project,48000);project.parameters.fx=controls;
+    int instance=ts_matrix_effect_add(&project.matrix,TS_SISTER_FX_TRANSIENT);assert(instance>=0);
+    project.matrix.effect[instance].transient_power=3;project.matrix.effect[instance].transient_states=slot->transient_states;
+    assert(ts_sister_project_state_save_file(&project,"transient-extreme.ini",error,sizeof(error)));
+    assert(ts_sister_project_state_load_file(&loaded,"transient-extreme.ini",48000,&present,error,sizeof(error)) && present);
+    assert(loaded.parameters.fx.slot[4].transient_power==3 && loaded.parameters.fx.slot[4].transient_states.power[0]==2);
+    assert(loaded.parameters.fx.slot[4].transient_states.seconds==2 && loaded.parameters.fx.slot[4].transient_states.captured==3);
+    assert(!loaded.parameters.fx.slot[4].transient_states.recall_serial && !loaded.parameters.fx.slot[4].transient_states.editing);
+    assert(loaded.matrix.effect[instance].transient_power==3 && loaded.matrix.effect[instance].transient_states.power[1]==3);
+    TsConfig config,restored;ts_config_init(&config);config.matrix=project.matrix;
+    assert(ts_config_save(&config,"transient-extreme-config.ini",error,sizeof(error)));
+    assert(ts_config_load(&restored,"transient-extreme-config.ini",error,sizeof(error)));
+    assert(restored.matrix.effect[instance].transient_power==3 && restored.matrix.effect[instance].transient_states.power[0]==2);
+    static TsSisterPresetBank bank,copy;ts_sister_preset_bank_init(&bank,48000);
+    assert(ts_sister_preset_save_new(&bank,"EXTREME STATES",&project.parameters,48000,error,sizeof(error)));
+    assert(ts_sister_preset_save(&bank,"transient-extreme-presets.ini",error,sizeof(error)));
+    assert(ts_sister_preset_load(&copy,"transient-extreme-presets.ini",48000,error,sizeof(error)));
+    assert(copy.entries[copy.count-1].parameters.fx.slot[4].transient_states.power[0]==2);
+    uint8_t power=0;TsGrainStates empty={0};
+    assert(!ts_transient_states_read("4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",&power,&empty));
+    assert(!power && !empty.captured);
+    remove("transient-extreme.ini");remove("transient-extreme-presets.ini");remove("transient-extreme-config.ini");
+}
 int main(void)
 {
-    envelopes();pedalboard();persistence();long_fades();matrix();
+    envelopes();pedalboard();persistence();long_fades();matrix();extreme_states();
     puts("Transient envelopes, stereo, fifth slot, recall and matrix Insert/Send passed");return 0;
 }

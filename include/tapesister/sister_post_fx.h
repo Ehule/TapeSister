@@ -8,6 +8,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 
 typedef enum {
     TS_SISTER_REVERB_HALL = 0,
@@ -52,6 +53,7 @@ typedef struct {
     float value[TS_GRAIN_STATES][3];
     float seconds; /* 0..600, independent of effect/master bypass ramps. */
     uint8_t captured, selected, editing;
+    uint8_t power[TS_GRAIN_STATES]; /* Transient only: 0..3 means 1x..4x. */
     uint32_t recall_serial; /* Runtime command; never serialized. */
 } TsGrainStates;
 
@@ -69,6 +71,8 @@ typedef struct {
     float mix;
     uint8_t parameter_locks; /* Additional slots; first five retain historic IDs. */
     TsGrainStates grain_states;
+    uint8_t transient_power; /* Zero preserves the original ATK/SUS ranges. */
+    TsGrainStates transient_states;
 } TsSisterFxSlotControls;
 
 typedef struct {
@@ -255,6 +259,9 @@ typedef struct {
     TsTransient dsp;
     float mix_current, gain_current, gain_target, gain_db_cached;
     float response_cached;
+    float state_from[3], state_to[3]; /* Effective attack/sustain dB, response. */
+    uint32_t state_serial, state_remaining, state_total;
+    unsigned response_countdown;
 } TsSisterTransientState;
 
 typedef struct {
@@ -356,6 +363,10 @@ float ts_sister_reverb_legacy_size(TsSisterReverbType type);
 void ts_grain_state_capture(TsSisterFxSlotControls *slot,int index);
 int ts_grain_state_recall(TsSisterFxSlotControls *slot,int index,int editing);
 int ts_grain_state_changed(const TsSisterFxSlotControls *slot);
+/* Grain and Transient share capture gestures but retain separate banks. */
+int ts_transient_states_valid(uint8_t power,const TsGrainStates *bank);
+int ts_transient_states_write(FILE *file,const char *key,uint8_t power,const TsGrainStates *bank);
+int ts_transient_states_read(const char *text,uint8_t *power,TsGrainStates *bank);
 void ts_sister_fx_controls_default(TsSisterFxControls *controls);
 int ts_sister_fx_slot_count(int count);
 TsSisterFxSlotControls ts_sister_fx_empty_slot(void);

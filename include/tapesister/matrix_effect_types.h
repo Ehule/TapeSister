@@ -9,6 +9,8 @@ typedef struct {
     int type,enabled;
     float a,b,c,mix,gain_db,transition;
     TsCompressorControls compressor;
+    uint8_t transient_power;
+    TsGrainStates transient_states;
 } TsMatrixEffectControls;
 void ts_matrix_effect_default(TsMatrixEffectControls *c,int type,uint32_t id);
 int ts_matrix_effect_valid(const TsMatrixEffectControls *c);

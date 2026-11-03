@@ -34,7 +34,8 @@ int ts_matrix_effect_valid(const TsMatrixEffectControls *c)
         isfinite(c->a) && c->a>=0 && c->a<=1 && isfinite(c->b) && c->b>=0 && c->b<=1 &&
         isfinite(c->c) && c->c>=0 && c->c<=1 && isfinite(c->mix) && c->mix>=0 && c->mix<=1 &&
         isfinite(c->gain_db) && c->gain_db>=-12 && c->gain_db<=12 &&
-        isfinite(c->transition) && c->transition>=0 && c->transition<=1 && ts_compressor_valid(&c->compressor);
+        isfinite(c->transition) && c->transition>=0 && c->transition<=1 && ts_compressor_valid(&c->compressor) &&
+        ts_transient_states_valid(c->transient_power,&c->transient_states);
 }
 static void node_free(TsMatrixEffectNode *n)
 {if(n){ts_sister_single_fx_free(n->pedal);free(n);}}
@@ -56,6 +57,7 @@ static void node_set(TsMatrixEffectNode *n,const TsMatrixEffectControls *c,int c
         }
     } else {
         TsSisterFxSlotControls slot={(TsSisterFxType)c->type,1,TS_SISTER_FX_PLACE_POST,c->gain_db,c->a,c->b,c->c,c->mix,0};
+        slot.transient_power=c->transient_power;slot.transient_states=c->transient_states;
         ts_sister_single_fx_set(n->pedal,&slot);
     }
 }

@@ -14,8 +14,8 @@ static double envelope(double x, double input, double rise, double fall)
 void ts_transient_set(TsTransient *s, TsTransientControls c)
 {
     if(!s)return;
-    c.attack_db=(float)bounded(c.attack_db,-15,15,0);
-    c.sustain_db=(float)bounded(c.sustain_db,-24,24,0);
+    c.attack_db=(float)bounded(c.attack_db,-60,60,0);
+    c.sustain_db=(float)bounded(c.sustain_db,-96,96,0);
     c.response=(float)bounded(c.response,.25,4,1);
     if(c.response!=s->controls.response) {
         /* Fast onset, reference onset, body release, and two adaptive tail
