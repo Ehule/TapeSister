@@ -1021,6 +1021,7 @@ set_tests_properties(test_character_filter PROPERTIES TIMEOUT 120)
 # These fixtures exercise the full project/preset codecs. Match the native
 # application's reserve, as for the other multi-runtime DSP/project tests.
 if(MINGW)
+ target_link_options(test_sister_preset PRIVATE "-Wl,--stack,16777216")
  target_link_options(test_dark_matter PRIVATE "-Wl,--stack,16777216")
  target_link_options(test_character_filter PRIVATE "-Wl,--stack,16777216")
 endif()
