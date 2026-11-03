@@ -13,9 +13,38 @@ static TsSamplePages pages;
 static SisterWindow sister;
 static void input(int x,int y,Uint8 button)
 {
- SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=character_filter_window.id;e.button.x=x*3/2;e.button.y=y*3/2;e.button.button=button;
+ int width,height;SDL_GetWindowSize(character_filter_window.window,&width,&height);
+ SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=character_filter_window.id;e.button.x=x*width/640;e.button.y=y*height/400;e.button.button=button;
  assert(character_filter_event(&e,0,&audio,&ui,&sister,&pages,&bank));
- e.type=SDL_MOUSEBUTTONUP;assert(character_filter_event(&e,0,&audio,&ui,&sister,&pages,&bank));
+ e.type=SDL_MOUSEBUTTONUP;int visible=character_filter_window.visible;
+ assert(character_filter_event(&e,0,&audio,&ui,&sister,&pages,&bank)==visible);
+}
+static void footer_controls(TsCharacterFilterControls *c)
+{
+ const int sizes[][2]={{960,600},{1280,720},{800,900}};
+ int source=character_filter_window.source;uint32_t node=character_filter_window.node;
+ TsCharacterFilterControls *resolved;float *gain,*mix;int *enabled;
+ assert(character_filter_resolve(&audio,&ui,&sister,&resolved,&gain,&mix,&enabled) && resolved==c);
+ for(int size=0;size<3;++size){
+  SDL_SetWindowSize(character_filter_window.window,sizes[size][0],sizes[size][1]);
+  for(int route=0;route<3;++route){
+   input(120+route*100,16,SDL_BUTTON_LEFT);assert(c->value[TS_CF_ROUTE]==route*.5f);
+   /* The shared controls remain editable below a disabled right bank. */
+   input(600,312,SDL_BUTTON_LEFT);
+   assert(*gain>10);
+   input(600,278,SDL_BUTTON_LEFT);assert(c->value[TS_CF_ENV_RELEASE]>.5f);
+   int preset=c->preset;
+   input(600,349,SDL_BUTTON_LEFT);assert(c->preset==(preset+1)%TS_CF_PRESETS);
+   input(120+route*100,16,SDL_BUTTON_LEFT);
+   input(34,349,SDL_BUTTON_LEFT);assert(c->preset==preset);
+   input(120+route*100,16,SDL_BUTTON_LEFT);
+   /* Disabling right-bank edits must still protect its model selector. */
+   if(route!=TS_CF_DUAL){float model=c->value[TS_CF_R_MODEL];input(420,74,SDL_BUTTON_LEFT);assert(c->value[TS_CF_R_MODEL]==model);}
+   input(590,383,SDL_BUTTON_LEFT);assert(!character_filter_window.visible);
+   if(source)character_filter_matrix_open(node);else character_filter_open(&sister,2);
+  }
+ }
+ SDL_SetWindowSize(character_filter_window.window,960,600);
 }
 static void shot(const char *path)
 {
@@ -53,6 +82,7 @@ int main(int argc,char **argv)
  sister.model.parameters.fx.slot[2].filter.locks=0;
  ts_character_filter_preset(&sister.model.parameters.fx.slot[2].filter,3);character_filter_publish(0,&audio,&ui,&sister);
  if(argc>1)shot(argv[1]);
+ footer_controls(&sister.model.parameters.fx.slot[2].filter);
  character_filter_hide();sister.model.fx_page=0;
  TsSisterUiHit blend=ts_sister_ui_hit_test_model(&sister.model,164,48);assert(blend.index==TS_MEMORY_PARAM_BLEND);
  sister_apply_action(0,&audio,&ui,&bank,&sister,NULL,NULL,blend,48000,2);assert(audio.sister.parameters.memory_blend>.4f && audio.sister.parameters.memory_blend<.6f);
@@ -65,6 +95,7 @@ int main(int argc,char **argv)
  assert(audio.sister.matrix.controls.effect[slot].filter.value[TS_CF_R_MODEL]==1);
  snprintf(target,sizeof(target),"matrix.filter.%u.%d",controls.effect[slot].id,TS_CF_L_CUT);
  assert(ts_midi_target_is_continuous(target));assert(character_filter_matrix_midi(0,&audio,&ui,target,.27f));assert(audio.sister.matrix.controls.effect[slot].filter.value[TS_CF_L_CUT]==.27f);
+ footer_controls(&matrix_window.controls.effect[slot].filter);
  character_filter_close();matrix_history_clear();ts_sister_runtime_disable(&audio.sister);ts_sample_pages_free(&pages);ts_instrument_free(&bank);SDL_Quit();
  puts("Character filter native editor, MIDI, locks, states, Matrix and crossfade controls passed.");return 0;
 }

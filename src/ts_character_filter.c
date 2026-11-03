@@ -194,7 +194,8 @@ int ts_character_filter_hit(const TsCharacterFilterControls *c,int x,int y,float
   for(int i=0;i<3;++i)if(x>=82+i*100 && x<176+i*100){*value=i*.5f;return TS_CF_ROUTE;}}
  if(y>=46 && y<62){if(x<310){*value=0;return TS_CF_FOCUS;}if(x>=330){*value=1;return TS_CF_FOCUS;}}
  for(int ch=0;ch<2;++ch){int left=18+ch*312,b=ch*8;if(x<left || x>=left+292)continue;
-  if(ch && c->value[TS_CF_ROUTE]<.75f)return -1;
+  /* Skip this bank's edits without blocking the shared controls below it. */
+  if(ch && c->value[TS_CF_ROUTE]<.75f)continue;
   if(y>=66 && y<84){*value=c->value[TS_CF_L_MODEL+b]>=.5f?0:1;return TS_CF_L_MODEL+b;}
   int right=x>=left+148,field=-1;
   if(y>=100 && y<118){
