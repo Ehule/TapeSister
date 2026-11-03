@@ -6,7 +6,8 @@
 #include <stdint.h>
 #include <stdio.h>
 
-enum { TS_DARK_MATTER_BANKS = 4, TS_SISTER_MEMORY_TAPE = 0, TS_SISTER_MEMORY_DARK = 1 };
+enum { TS_DARK_MATTER_BANKS = 4, TS_DARK_MATTER_SEAMS = 32,
+       TS_SISTER_MEMORY_TAPE = 0, TS_SISTER_MEMORY_DARK = 1 };
 /* Separate IDs/locks leave every existing MIDI target and preset bit intact. */
 enum { TS_DARK_PARAM_MODE = 3000, TS_DARK_PARAM_FEEDBACK, TS_DARK_PARAM_BLUR,
        TS_DARK_PARAM_DRIFT, TS_DARK_PARAM_REPLACE, TS_DARK_PARAM_DRIVE,
@@ -31,9 +32,15 @@ typedef struct {
     double phase, reverse_phase;
     uint32_t random;
     float chaos, chaos_target, pan, peak;
-    TsStereoFrame low, last, handoff, dc_x, dc_y;
-    uint32_t fade_remaining;
+    TsStereoFrame low, last, dc_x, dc_y;
     double grain_position[2], grain_phase;
+    /* Read-only splices protect retained audio at old/new ring joins. */
+    size_t seam[TS_DARK_MATTER_SEAMS], seam_writes_remaining, frontier;
+    float seam_gain[TS_DARK_MATTER_SEAMS];
+    unsigned seam_count;
+    double seam_anchor[TS_DARK_MATTER_SEAMS], seam_alternate[TS_DARK_MATTER_SEAMS];
+    double seam_width[TS_DARK_MATTER_SEAMS];
+    int frontier_valid, seam_releasing;
 } TsDarkMatterBank;
 typedef struct {
     TsStereoFrame *storage;
@@ -52,6 +59,8 @@ typedef struct {
     int algorithm, size, active_banks, target_banks, program_pending;
     float program_gain;
     double grain_frames;
+    uint32_t fade_position;
+    int was_writing;
 } TsDarkMatter;
 
 const char *ts_dark_matter_algorithm_name(int algorithm);

@@ -50,11 +50,25 @@ Legacy Memory is the original Dark Matter engine and remains the default,
 including when older projects, presets or INI files are loaded.
 
 Algorithm and size changes fade the outgoing return down over 50 ms, reconfigure
-the read layout at silence, then fade back over 50 ms. This is a short soft gap,
+the read layout at silence, then fade back over 50 ms. The envelope has flat
+slopes at both ends. This is a short soft gap,
 not simultaneous playback of both algorithms. Storage and reverb diffusion
 memory are retained, never cleared or allocated during a program change.
 Rapid requests coalesce to the latest choice. HOLD freezes both memory writes
 and the reverb diffuser writes while readers keep running.
+
+The write path follows the transition envelope too: changing an internal
+feedback network must not record a pulse that returns after the output fade.
+Bypassed reverb diffusion continues aging with silence while writing is on.
+
+Retained ring joins use short read-only audio crossfades (up to 12 ms either
+side). Each splice combines two moving reads away from known joins and fades
+away from the live write frontier, including during reverse/grain playback.
+No last-sample/DC plateau is fed back into the memory. Splices survive HOLD and
+protect dormant outer memory when programs shrink; once new audio has replaced
+an active period, its guards fade away over 50 ms. Up to 32 join records per
+bank are preallocated; no shadow audio buffer or program-change allocation is
+needed. Recorded memory under HOLD remains byte-exact.
 
 For Legacy Memory, start with the defaults: Feedback 92%, Blur 35%, Drift 35%, Replace 30%, Drive
 8% and Damp 25%. Play a short phrase, leave space, then add another sound.
@@ -110,8 +124,8 @@ request a boost. Clear and device resets discard the live level measurements.
 
 HOLD or ROLL off freezes writes in both memories; reads and modulation continue.
 CLEAR clears both through the existing fade/control-thread handshake. Changing
-BUFFER reuses the allocation, retains stored audio and fades each changed bank's
-read boundary over 50 ms. Retained material outside a shortened bank can return
+BUFFER reuses the allocation, retains stored audio and uses the same guarded
+50 ms fade-out/fade-in handoff for Dark Matter's changed periods. Retained material outside a shortened bank can return
 if it is expanded again. Device reconfiguration and POWER reset start empty
 memories, as the existing tape does.
 
@@ -132,8 +146,8 @@ Slow motion is computed at bounded 64-frame control intervals, independent of
 window visibility. Random seeds and fresh-start processing are deterministic.
 
 On this shared Linux host, a 48 kHz probe across the five families, forward and
-reverse, measured roughly 88–252 CPU microseconds per 256-frame block,
-including the probe's source generation, during concurrent compilation.
+reverse, measured roughly 71–255 CPU microseconds per 256-frame block,
+including the probe's source generation.
 These are engine CPU measurements,
 not whole-application latency or an X220/device deadline guarantee. Run
 `build/test_dark_matter --bench` to measure the current build.
@@ -178,6 +192,11 @@ device reconfiguration and all three persistence paths. Rates include 8 Hz
 It also exercises all twelve programs, increasing size periods, hall impulse
 density versus discrete delays, stereo isolation, mono, high-feedback/reverse
 stress, and program changes under HOLD with byte-exact retained memory.
+Continuity checks cover all 156 directed changes between the 13 programs,
+12 recording transitions at 98% feedback, and nine consecutive changes with
+reverse, hall re-entry, shrinking and expansion. They inspect low-frequency
+signal curvature through two complete incoming memory periods, catching late
+clicks after the initial fade and when temporary guards release.
 
 `tapesister_dark_matter_controller_tests` exercises the actual application mode
 switch, controls, locks, MIDI routing and native renderer. It accepts an optional

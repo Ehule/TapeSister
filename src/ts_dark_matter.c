@@ -88,6 +88,45 @@ void ts_dark_matter_seed(TsDarkMatter *d, uint32_t seed)
     if (!d) return;
     for (int i=0;i<4;++i) d->bank[i].random=(seed?seed:1u) ^ (0x9e3779b9u*(unsigned)(i+1));
 }
+static void seam_geometry(TsDarkMatter *d, TsDarkMatterBank *b,
+                          double *anchor, double *alternate, double *width)
+{
+    /* Pick the middle of the widest undamaged interval for the alternate
+       moving read. No held samples and no changes to the remembered audio. */
+    size_t sorted[TS_DARK_MATTER_SEAMS];
+    unsigned count=0;
+    for(unsigned j=0;j<b->seam_count;++j)if(b->seam[j]<b->length) {
+        unsigned k=count++;
+        while(k && sorted[k-1]>b->seam[j]){sorted[k]=sorted[k-1];--k;}
+        sorted[k]=b->seam[j];
+    }
+    double gap=0,start=0;
+    for(unsigned j=0;j<count;++j) {
+        double next=j+1<count?(double)sorted[j+1]:(double)sorted[0]+b->length;
+        if(next-sorted[j]>gap){gap=next-sorted[j];start=sorted[j];}
+    }
+    *anchor=start+gap*.25;*alternate=start+gap*.75;
+    if(*anchor>=b->length)*anchor-=b->length;
+    if(*alternate>=b->length)*alternate-=b->length;
+    *width=fmax(1,fmin(.012*d->sample_rate,fmin(b->length/32.,gap*.125)));
+}
+static void add_seam(TsDarkMatter *d, TsDarkMatterBank *b, size_t position, float gain)
+{
+    if(position>=b->capacity)return;
+    b->seam_writes_remaining=b->length;b->seam_releasing=0;
+    for(unsigned j=0;j<b->seam_count;++j)if(b->seam[j]==position)return;
+    if(b->seam_count==TS_DARK_MATTER_SEAMS) {
+        memmove(b->seam,b->seam+1,(TS_DARK_MATTER_SEAMS-1)*sizeof(*b->seam));
+        memmove(b->seam_gain,b->seam_gain+1,(TS_DARK_MATTER_SEAMS-1)*sizeof(*b->seam_gain));
+        memmove(b->seam_anchor,b->seam_anchor+1,(TS_DARK_MATTER_SEAMS-1)*sizeof(*b->seam_anchor));
+        memmove(b->seam_alternate,b->seam_alternate+1,(TS_DARK_MATTER_SEAMS-1)*sizeof(*b->seam_alternate));
+        memmove(b->seam_width,b->seam_width+1,(TS_DARK_MATTER_SEAMS-1)*sizeof(*b->seam_width));
+        --b->seam_count;
+    }
+    b->seam[b->seam_count]=position;b->seam_gain[b->seam_count++]=gain;
+    seam_geometry(d,b,&b->seam_anchor[b->seam_count-1],
+        &b->seam_alternate[b->seam_count-1],&b->seam_width[b->seam_count-1]);
+}
 static void apply_layout(TsDarkMatter *d)
 {
     d->algorithm=d->controls.algorithm;d->size=d->controls.size;
@@ -96,12 +135,27 @@ static void apply_layout(TsDarkMatter *d)
     d->grain_frames=fmax(2,grain_seconds[d->size]*d->sample_rate);
     for(int i=0;i<4;++i) {
         TsDarkMatterBank *b=&d->bank[i];
+        size_t old_length=b->length;
         b->length=d->target_length[i];b->write%=b->length;
+        if(d->clock) {
+            if(old_length!=b->length) {
+                add_seam(d,b,0,1);
+                add_seam(d,b,old_length,1);
+            }
+            if(b->frontier_valid)add_seam(d,b,b->frontier,1);
+            /* The new writer may enter a different point in retained audio. */
+            if(d->was_writing)add_seam(d,b,b->write,1);
+            b->seam_writes_remaining=b->length;
+            b->seam_releasing=0;
+            double anchor,alternate,width;seam_geometry(d,b,&anchor,&alternate,&width);
+            for(unsigned j=0;j<b->seam_count;++j) {
+                b->seam_anchor[j]=anchor;b->seam_alternate[j]=alternate;b->seam_width[j]=width;
+            }
+        }
         b->grain_position[0]=(double)b->write-b->length*.35;
         b->grain_position[1]=(double)b->write-b->length*.65;
         b->grain_phase=i*.137;
         /* Diffusers and stored audio survive program changes. */
-        b->handoff=b->last;b->fade_remaining=d->fade_frames;
     }
     d->program_pending=0;
 }
@@ -130,14 +184,12 @@ void ts_dark_matter_set(TsDarkMatter *d, const TsDarkMatterControls *c, float se
         size_t n=prime_below((size_t)(duration*d->sample_rate));
         if (n>=b->capacity) n=prime_below(b->capacity-1);
         d->target_length[i]=n;
-        if (algorithm==d->algorithm && size==d->size && n!=b->length) {
-            b->handoff=b->last; b->fade_remaining=d->fade_frames;
-            b->length=n; b->write%=n;
-        }
     }
     if(!d->clock)apply_layout(d);
-    else if(algorithm!=d->algorithm || size!=d->size)d->program_pending=1;
-    else d->program_pending=0;
+    else {
+        d->program_pending=algorithm!=d->algorithm || size!=d->size;
+        for(int i=0;i<4;++i)if(d->bank[i].length!=d->target_length[i])d->program_pending=1;
+    }
 }
 int ts_dark_matter_init(TsDarkMatter *d, uint32_t rate, float seconds)
 {
@@ -180,11 +232,12 @@ void ts_dark_matter_clear(TsDarkMatter *d)
     memset(d->storage,0,d->storage_frames*sizeof(*d->storage));
     if(d->diffusion_storage)memset(d->diffusion_storage,0,d->diffusion_frames*sizeof(*d->diffusion_storage));
     for(int i=0;i<4;++i)for(int j=0;j<3;++j)d->diffuser[i][j].write=0;
-    apply_layout(d);d->program_gain=1;
+    apply_layout(d);d->program_gain=1;d->fade_position=d->fade_frames;d->was_writing=0;
     for (int i=0;i<4;++i) {
         TsDarkMatterBank *b=&d->bank[i];
         b->write=0; b->phase=i*.211; b->reverse_phase=i*.173;
-        b->low=b->last=b->handoff=(TsStereoFrame){0,0}; b->fade_remaining=0;
+        b->low=b->last=(TsStereoFrame){0,0};
+        b->seam_count=0;b->seam_writes_remaining=0;b->frontier=0;b->frontier_valid=0;b->seam_releasing=0;
         b->dc_x=b->dc_y=(TsStereoFrame){0,0};
         b->chaos=b->chaos_target=b->pan=b->peak=0;
         b->grain_position[0]=-(double)b->length*.35;b->grain_position[1]=-(double)b->length*.65;b->grain_phase=i*.137;
@@ -196,13 +249,49 @@ void ts_dark_matter_clear(TsDarkMatter *d)
     d->damp_coefficient=d->damp_target;
     d->dc_x=d->dc_y=(TsStereoFrame){0,0};ts_dark_matter_seed(d,0x81c4d31bu);
 }
-static TsStereoFrame read_bank(const TsDarkMatterBank *b, double position)
+static TsStereoFrame read_raw(const TsDarkMatterBank *b, double position)
 {
     while (position<0) position+=b->length;
     while (position>=b->length) position-=b->length;
     size_t a=(size_t)position,c=a+1==b->length?0:a+1;float f=(float)(position-a);
     return (TsStereoFrame){b->data[a].l+(b->data[c].l-b->data[a].l)*f,
                            b->data[a].r+(b->data[c].r-b->data[a].r)*f};
+}
+static float frontier_weight(const TsDarkMatterBank *b, double position, double width)
+{
+    if(!b->frontier_valid || b->frontier>=b->length)return 1;
+    if(position<0)position+=b->length;
+    if(position>=b->length)position-=b->length;
+    double distance=fabs(position-b->frontier);
+    if(distance>b->length*.5)distance=b->length-distance;
+    float t=(float)fmin(1,distance/(2*width));
+    return t*t*(3-2*t);
+}
+static TsStereoFrame read_bank(const TsDarkMatterBank *b, double position)
+{
+    while(position<0)position+=b->length;
+    while(position>=b->length)position-=b->length;
+    TsStereoFrame result=read_raw(b,position);
+    for(unsigned j=0;j<b->seam_count;++j) {
+        if(b->seam[j]>=b->length)continue;
+        double distance=position-b->seam[j];
+        if(distance>b->length*.5)distance-=b->length;
+        if(distance<-(double)b->length*.5)distance+=b->length;
+        if(fabs(distance)>=b->seam_width[j])continue;
+        float t=(float)(fabs(distance)/b->seam_width[j]);
+        float mix=(1-t*t*(3-2*t))*b->seam_gain[j];
+        /* Either alternate can meet the moving write head during reverse or
+           grain playback. Use two separated reads, fading away from that
+           frontier so its old/new-data boundary cannot become another click. */
+        double a=b->seam_anchor[j]+distance,z=b->seam_alternate[j]+distance;
+        float wa=frontier_weight(b,a,b->seam_width[j]),wz=frontier_weight(b,z,b->seam_width[j]);
+        float sum=wa+wz;
+        if(sum<1e-6f){wa=wz=.5f;sum=1;} /* Degenerate low-rate stress layouts. */
+        TsStereoFrame first=read_raw(b,a),second=read_raw(b,z);
+        TsStereoFrame other={(first.l*wa+second.l*wz)/sum,(first.r*wa+second.r*wz)/sum};
+        result.l+=(other.l-result.l)*mix;result.r+=(other.r-result.r)*mix;
+    }
+    return result;
 }
 static float random_signed(TsDarkMatterBank *b)
 {
@@ -249,11 +338,12 @@ void ts_dark_matter_process(TsDarkMatter *d, TsStereoFrame input, int writing,
     memset(heads,0,3*sizeof(*heads));if (!d || !d->storage) return;
     /* Layout switches occur at silence. Repeated requests coalesce to the
        latest target without resetting or clearing any remembered audio. */
-    float step=1.f/d->fade_frames;
     if(d->program_pending) {
-        d->program_gain=fmaxf(0,d->program_gain-step);
-        if(d->program_gain==0)apply_layout(d);
-    } else d->program_gain=fminf(1,d->program_gain+step);
+        if(d->fade_position)--d->fade_position;
+        if(!d->fade_position)apply_layout(d);
+    } else if(d->fade_position<d->fade_frames)++d->fade_position;
+    float fade=(float)d->fade_position/d->fade_frames;
+    d->program_gain=fade*fade*(3-2*fade);
     input.l=bound(input.l);input.r=mono?input.l:bound(input.r);
     TsStereoFrame clean={input.l-d->dc_x.l+d->dc_radius*d->dc_y.l,
                          input.r-d->dc_x.r+d->dc_radius*d->dc_y.r};
@@ -275,6 +365,26 @@ void ts_dark_matter_process(TsDarkMatter *d, TsStereoFrame input, int writing,
     for (int i=0;i<4;++i) {
         TsDarkMatterBank *b=&d->bank[i];
         if(i>=count){b->peak=0;continue;}
+        if(writing!=d->was_writing && b->frontier_valid)
+            add_seam(d,b,writing?b->write:b->frontier,0);
+        int any_seam=0;
+        for(unsigned j=0;j<b->seam_count;++j) {
+            if(b->seam[j]>=b->length)continue;
+            float step=1.f/fmaxf(1,(b->seam_releasing?.05f:.02f)*d->sample_rate);
+            b->seam_gain[j]=b->seam_releasing?fmaxf(0,b->seam_gain[j]-step):fminf(1,b->seam_gain[j]+step);
+            if(b->seam_gain[j]>0)any_seam=1;
+        }
+        if(b->seam_releasing && !any_seam) {
+            /* A short program has not overwritten dormant outer memory.
+               Keep its splice history for a later expansion. */
+            unsigned keep=0;
+            for(unsigned j=0;j<b->seam_count;++j)if(b->seam[j]>=b->length) {
+                b->seam[keep]=b->seam[j];b->seam_gain[keep]=b->seam_gain[j];
+                b->seam_anchor[keep]=b->seam_anchor[j];b->seam_alternate[keep]=b->seam_alternate[j];
+                b->seam_width[keep++]=b->seam_width[j];
+            }
+            b->seam_count=keep;b->seam_releasing=0;
+        }
         if (!(d->clock%64)) {
             if (!(d->clock%((uint32_t)(d->sample_rate/64+1)*64))) {
                 uint32_t r=b->random;r^=r<<13;r^=r>>17;r^=r<<5;b->random=r;
@@ -287,7 +397,7 @@ void ts_dark_matter_process(TsDarkMatter *d, TsStereoFrame input, int writing,
                 (reverb || d->algorithm==TS_DARK_GRANULAR?0:.35f*d->smooth[2]*sinf((float)(6.28318530718*b->phase)));
             b->pan=fmaxf(-1,fminf(1,b->pan));
         }
-        read[i]=d->algorithm==TS_DARK_GRANULAR?granular_read(d,b):b->data[b->write];
+        read[i]=d->algorithm==TS_DARK_GRANULAR?granular_read(d,b):read_bank(b,(double)b->write);
         /* Complementary reverse grains avoid a hard jump at each wrap. */
         if (d->algorithm!=TS_DARK_GRANULAR && d->reverse_mix>1e-5f) {
             double span=fmax(2,b->length*.5-2),p=b->reverse_phase;
@@ -299,12 +409,6 @@ void ts_dark_matter_process(TsDarkMatter *d, TsStereoFrame input, int writing,
         }
         b->reverse_phase+=2/fmax(2,b->length*.5-2);
         if (b->reverse_phase>=1) b->reverse_phase-=1;
-        if (b->fade_remaining) {
-            float t=1-(float)b->fade_remaining/d->fade_frames;
-            read[i].l=b->handoff.l+(read[i].l-b->handoff.l)*t;
-            read[i].r=b->handoff.r+(read[i].r-b->handoff.r)*t;
-            --b->fade_remaining;
-        }
         b->last=read[i];sum.l+=read[i].l;sum.r+=read[i].r;
         b->peak=fmaxf(fmaxf(fabsf(read[i].l),fabsf(read[i].r)),b->peak*.9995f);
         int h=i<2?i:2;
@@ -322,7 +426,11 @@ void ts_dark_matter_process(TsDarkMatter *d, TsStereoFrame input, int writing,
             if(reverb)old=(TsStereoFrame){.5f*sum.l-read[i].l,.5f*sum.r-read[i].r};
             b->low.l=normal(b->low.l+d->damp_coefficient*(old.l-b->low.l));
             b->low.r=normal(b->low.r+d->damp_coefficient*(old.r-b->low.r));
-            float l=clean.l+feedback*b->low.l,r=clean.r+feedback*b->low.r;
+            /* Fade the write path as well as the speakers. Otherwise an
+               abrupt topology change excites the reverb/damping histories
+               and stores a click that returns after the audible fade. */
+            float l=(clean.l+feedback*b->low.l)*d->program_gain;
+            float r=(clean.r+feedback*b->low.r)*d->program_gain;
             if(reverb) {
                 TsStereoFrame diffused=diffuse(d,i,(TsStereoFrame){l,r});
                 l=diffused.l;r=diffused.r;
@@ -333,10 +441,18 @@ void ts_dark_matter_process(TsDarkMatter *d, TsStereoFrame input, int writing,
             TsStereoFrame dc={normal(l-b->dc_x.l+d->dc_radius*b->dc_y.l),
                                normal(r-b->dc_x.r+d->dc_radius*b->dc_y.r)};
             b->dc_x=(TsStereoFrame){l,r};b->dc_y=dc;l=dc.l;r=dc.r;
+            l*=d->program_gain;r*=d->program_gain;
             b->data[b->write]=(TsStereoFrame){bound(l),mono?bound(l):bound(r)};
+            b->frontier=b->write+1==b->length?0:b->write+1;b->frontier_valid=1;
+            if(b->seam_writes_remaining && !--b->seam_writes_remaining)b->seam_releasing=1;
         }
         if (++b->write==b->length) b->write=0;
     }
+    /* A bypassed hall keeps aging toward silence. Resuming a paused allpass
+       clock would bring back a discontinuity in its old input history. */
+    if(writing && !reverb)
+        for(int i=0;i<4;++i)(void)diffuse(d,i,(TsStereoFrame){0,0});
     for(int i=0;i<3;++i){heads[i].l*=d->program_gain;heads[i].r*=d->program_gain;}
+    d->was_writing=!!writing;
     ++d->clock;
 }

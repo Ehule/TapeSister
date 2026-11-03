@@ -325,6 +325,96 @@ static void trim_feedback_isolation(void)
     assert(!memcmp(a.dark.storage,b.dark.storage,a.dark.storage_frames*sizeof(TsStereoFrame)));
     ts_sister_machine_free(&a);ts_sister_machine_free(&b);
 }
+static int program_algorithm(int program)
+{ return program?1+(program-1)/3:TS_DARK_LEGACY; }
+static int program_size(int program)
+{ return program?(program-1)%3:0; }
+static float continuity_sample(TsDarkMatter *d, TsStereoFrame input, int writing)
+{
+    TsStereoFrame h[3];ts_dark_matter_process(d,input,writing,0,h);finite_heads(h);
+    return h[0].l+h[1].l+h[2].l;
+}
+static void program_transition_continuity(void)
+{
+    /* Seed smooth but different phases in each old period. A new period cuts
+       across those waves: the original fade hid only the first discontinuity,
+       and subsequent wraps clicked loudly, even with HOLD on. Check the
+       curvature of low-frequency audio for two complete incoming periods. */
+    const int rate=4000;
+    float worst=0;
+    for(int from=0;from<13;++from)for(int to=0;to<13;++to)if(from!=to) {
+        TsDarkMatter d;assert(ts_dark_matter_init(&d,rate,5));
+        TsDarkMatterControls c=d.controls;c.algorithm=program_algorithm(from);c.size=program_size(from);
+        c.feedback=.98f;c.replace=c.drive=c.damp=c.drift=0;c.blur=.6f;c.reverse=from&1;
+        ts_dark_matter_set(&d,&c,5);ts_dark_matter_clear(&d);
+        for(int bank=0;bank<4;++bank) {
+            TsDarkMatterBank *b=&d.bank[bank];
+            double cycles=fmax(1,floor((29.+bank*11)*b->length/rate));
+            for(size_t i=0;i<b->capacity;++i) {
+                float v=.13f*(float)sin(6.283185307179586*cycles*i/b->length);
+                b->data[i]=(TsStereoFrame){v,0};
+            }
+        }
+        float prev=0,older=0;
+        for(int i=0;i<rate/5;++i){older=prev;prev=continuity_sample(&d,(TsStereoFrame){0,0},0);}
+        c.algorithm=program_algorithm(to);c.size=program_size(to);ts_dark_matter_set(&d,&c,5);
+        size_t longest=0;
+        for(int i=0;i<d.target_banks;++i)if(d.target_length[i]>longest)longest=d.target_length[i];
+        for(size_t i=0;i<longest*2+rate/5;++i) {
+            float v=continuity_sample(&d,(TsStereoFrame){0,0},0);
+            float spike=fabsf(v-2*prev+older);if(spike>worst)worst=spike;
+            if(spike>=.006f)fprintf(stderr,"Held switch %d -> %d clicks at %.6fs: %.6f\n",from,to,(double)i/rate,spike);
+            assert(spike<.006f);older=prev;prev=v;
+        }
+        ts_dark_matter_free(&d);
+    }
+    /* Active feedback must stay clean when the old audio has been replaced
+       and the temporary splice guards fade away, not just during the switch. */
+    for(int to=1;to<13;++to) {
+        TsDarkMatter d;assert(ts_dark_matter_init(&d,8000,5));
+        TsDarkMatterControls c=d.controls;c.feedback=.98f;c.replace=c.drive=c.damp=c.drift=0;c.blur=.6f;
+        ts_dark_matter_set(&d,&c,5);float prev=0,older=0;
+        for(int i=0;i<8000*8;++i) {
+            older=prev;prev=continuity_sample(&d,(TsStereoFrame){.2f*(float)sin(6.283185307179586*37*i/8000),0},1);
+        }
+        c.algorithm=program_algorithm(to);c.size=program_size(to);ts_dark_matter_set(&d,&c,5);
+        size_t longest=0;
+        for(int i=0;i<d.target_banks;++i)if(d.target_length[i]>longest)longest=d.target_length[i];
+        for(size_t i=0;i<longest*2+8000;++i) {
+            float input=.2f*(float)sin(6.283185307179586*37*(i+8000*8)/8000);
+            float v=continuity_sample(&d,(TsStereoFrame){input,0},1);
+            float spike=fabsf(v-2*prev+older);if(spike>worst)worst=spike;
+            if(spike>=.006f)fprintf(stderr,"Recording switch -> %d clicks at %.6fs: %.6f\n",to,(double)i/8000,spike);
+            assert(spike<.006f);older=prev;prev=v;
+        }
+        ts_dark_matter_free(&d);
+    }
+    {
+        /* Re-enter halls after their histories have aged in other programs;
+           also shrink and expand memories without discarding dormant joins. */
+        const int sequence[]={7,10,8,12,1,9,4,7,0};
+        TsDarkMatter d;assert(ts_dark_matter_init(&d,8000,5));
+        TsDarkMatterControls c=d.controls;c.feedback=.98f;c.replace=c.drive=c.damp=c.drift=0;c.blur=.6f;
+        ts_dark_matter_set(&d,&c,5);float prev=0,older=0;size_t clock=0;
+        for(;clock<8000*8;++clock) {
+            older=prev;prev=continuity_sample(&d,(TsStereoFrame){.2f*(float)sin(6.283185307179586*37*clock/8000),0},1);
+        }
+        for(unsigned j=0;j<sizeof(sequence)/sizeof(*sequence);++j) {
+            int to=sequence[j];c.algorithm=program_algorithm(to);c.size=program_size(to);c.reverse=j&1;
+            ts_dark_matter_set(&d,&c,5);size_t longest=0;
+            for(int i=0;i<d.target_banks;++i)if(d.target_length[i]>longest)longest=d.target_length[i];
+            for(size_t i=0;i<longest*2+8000;++i,++clock) {
+                float input=.2f*(float)sin(6.283185307179586*37*clock/8000);
+                float v=continuity_sample(&d,(TsStereoFrame){input,0},1);
+                float spike=fabsf(v-2*prev+older);if(spike>worst)worst=spike;
+                if(spike>=.006f)fprintf(stderr,"Chained switch -> %d clicks at %.6fs: %.6f\n",to,(double)i/8000,spike);
+                assert(spike<.006f);older=prev;prev=v;
+            }
+        }
+        ts_dark_matter_free(&d);
+    }
+    printf("156 held, 12 recording and 9 chained transitions: peak curvature %.6f\n",worst);
+}
 static void benchmark(void)
 {
     TsDarkMatter d;assert(ts_dark_matter_init(&d,48000,40));TsStereoFrame h[3];
@@ -340,6 +430,6 @@ static void benchmark(void)
 int main(int argc,char **argv)
 {
     if(argc>1 && !strcmp(argv[1],"--bench")){benchmark();return 0;}
-    streaming();memory_topology();deterministic_stereo();integrated_machine();mode_level_matching();trim_feedback_isolation();persistence();algorithm_bank();program_modulation_and_handoffs();
+    streaming();memory_topology();deterministic_stereo();integrated_machine();mode_level_matching();trim_feedback_isolation();persistence();algorithm_bank();program_modulation_and_handoffs();program_transition_continuity();
     puts("Dark Matter: memory exchange, replace, reverse, stereo, lifecycle and persistence passed.");return 0;
 }
