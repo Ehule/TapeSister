@@ -53,7 +53,7 @@ static void mosaic_pattern_notices(TsUiState *ui,const TsInstrument *instrument,
                 snprintf(ui->status,sizeof(ui->status),"SOURCE UNAVAILABLE / SAVED SNAPSHOT STILL PLAYS");return;
             }
             requested=mosaic_pattern_index(c,primary->source->pattern->id);
-        }else if(ui->mosaic_pattern_tab && n>=0 && n<ui->mosaic_source_count && ui->mosaic_sources[n].source && ui->mosaic_sources[n].source->pattern)
+        }else if(ui->mosaic_source_filter==TS_MOSAIC_BROWSER_PATTERNS && n>=0 && n<ui->mosaic_source_count && ui->mosaic_sources[n].source && ui->mosaic_sources[n].source->pattern)
             requested=mosaic_pattern_index(c,ui->mosaic_sources[n].source->pattern->id);
         owner=NULL;
     }

@@ -22,12 +22,13 @@ static void test_mosaic_card_pan(SDL_Window *window)
     scene->playing=1;ts_mosaic_seek(scene,1.5);for(int i=0;i<300;++i)ts_mosaic_read(scene,48000);
     uint64_t attack=scene->voices[0].attack;
     click(window,x,y,1);motion(window,x+10,y);motion(window,x+21,y);release(window,x+21,y);
-    assert(a->pan==.5f && b->pan==0 && !mosaic_chosen(&ui,1));
+    assert(a->pan==.5f && b->pan==.5f && mosaic_chosen(&ui,1));
     assert(scene->history_count==history+1 && strstr(ui.status,"PAN R 50%"));
     TsMosaicEvent edited=*a;edited.pan=0;assert(!memcmp(&original,&edited,sizeof(edited)));
     ts_mosaic_read(scene,48000);assert(scene->voices[0].attack==attack+1 && a->revision==original.revision);
     scene->playing=0;
     key(window,SDLK_z,KMOD_CTRL);assert(a->pan==0);key(window,SDLK_y,KMOD_CTRL);assert(a->pan==.5f);
+    mosaic_select_only(&ui,a->id);
     pan_handle(a,&x,&y,&span);click(window,x,y,1);motion(window,x-200,y);release(window,x-200,y);assert(a->pan==-1);
     pan_handle(a,&x,&y,&span);click(window,x,y,1);motion(window,x+200,y);release(window,x+200,y);assert(a->pan==1);
     pan_handle(a,&x,&y,&span);click(window,x,y,1);motion(window,x-42,y);assert(a->pan==0);

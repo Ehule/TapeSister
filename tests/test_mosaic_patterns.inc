@@ -129,7 +129,7 @@ static void mosaic_patterns(void)
     pattern_render(m,mixed,n,0);pattern_render(loaded,other,n,0);assert(pattern_difference(mixed,other,n)<1e-6);ts_mosaic_free(loaded);
     /* UI uses the actual source browser, drag model and native renderer. */
     static MosaicController mc;static PortalController pc;static SisterWindow sw;static TransformController tc;
-    mc.pages=test_pages;test_ui->mosaic=test_audio->mosaic=m;test_ui->mosaic_open=1;test_ui->tracker_open=0;test_ui->mosaic_pattern_tab=0;
+    mc.pages=test_pages;test_ui->mosaic=test_audio->mosaic=m;test_ui->mosaic_open=1;test_ui->tracker_open=0;test_ui->mosaic_source_filter=0;
     test_ui->mosaic_scale=200;test_ui->mosaic_hscale=1;test_ui->mosaic_scroll=test_ui->mosaic_xscroll=0;m->playing=0;a->x=20;
     mosaic_poll(0,test_ui,test_bank,&mc);
     if(test_ui->mosaic_pattern_choice)mosaic_pattern_resolve(0,test_ui,&mc,0);
@@ -137,7 +137,7 @@ static void mosaic_patterns(void)
     /* Click the visible tabs through the full dispatcher. The transport row
        used to consume their center/bottom before the tab handler ran. */
     const int sizes[][2]={{640,400},{1280,800},{1729,973}};
-    const int tab_y[]={37,38,44,51};
+    const int tab_y[]={33,34,40,46};
     for(unsigned scale=0;scale<3;++scale){
         int width=sizes[scale][0],height=sizes[scale][1];SDL_SetWindowSize(test_window,width,height);
         for(unsigned pos=0;pos<4;++pos)for(int tab=1;tab>=0;--tab){
@@ -145,7 +145,7 @@ static void mosaic_patterns(void)
             ev.button.button=SDL_BUTTON_LEFT;ev.button.clicks=1;
             ev.button.x=((tab?82:32)*width+639)/640;ev.button.y=(tab_y[pos]*height+399)/400;
             assert(mosaic_event(&ev,test_window,0,test_audio,test_ui,test_bank,&mc,&pc,&sw,&tc,48000));
-            assert(test_ui->mosaic_pattern_tab==tab && !m->playing);
+            assert(test_ui->mosaic_source_filter==tab && !m->playing);
             assert(test_ui->mosaic_source_count && test_ui->mosaic_sources[0].sample);
             if(tab)assert(test_ui->mosaic_sources[0].source && test_ui->mosaic_sources[0].source->pattern);
             else assert(!test_ui->mosaic_sources[0].source || !test_ui->mosaic_sources[0].source->pattern);
@@ -155,7 +155,7 @@ static void mosaic_patterns(void)
     SDL_SetWindowSize(test_window,640,400);
     SDL_zero(ev);ev.type=SDL_MOUSEBUTTONDOWN;ev.button.windowID=SDL_GetWindowID(test_window);
     ev.button.button=SDL_BUTTON_LEFT;ev.button.clicks=1;ev.button.x=82;ev.button.y=44;
-    assert(mosaic_event(&ev,test_window,0,test_audio,test_ui,test_bank,&mc,&pc,&sw,&tc,48000));assert(test_ui->mosaic_pattern_tab);
+    assert(mosaic_event(&ev,test_window,0,test_audio,test_ui,test_bank,&mc,&pc,&sw,&tc,48000));assert(test_ui->mosaic_source_filter);
     ev.type=SDL_MOUSEBUTTONUP;mosaic_event(&ev,test_window,0,test_audio,test_ui,test_bank,&mc,&pc,&sw,&tc,48000);
     /* Select a real source, audition with A, then drag/release it into Mosaic. */
     ev.type=SDL_MOUSEBUTTONDOWN;ev.button.x=32;ev.button.y=86;
@@ -300,10 +300,10 @@ SDL_DestroyTexture(texture);for(int i=0;i<2;++i){if(textures[i])SDL_DestroyTextu
     /* A freshly loaded TSR can browse its saved patterns without first
        opening TrackSister, even while the embedded editor owns another model. */
     static MosaicController restored_mc;restored_mc.pages=restored_pages;
-    test_ui->mosaic=test_audio->mosaic=restored_pages->mosaic;test_ui->mosaic_pattern_tab=0;SDL_SetWindowSize(test_window,640,400);
+    test_ui->mosaic=test_audio->mosaic=restored_pages->mosaic;test_ui->mosaic_source_filter=0;SDL_SetWindowSize(test_window,640,400);
     SDL_zero(ev);ev.type=SDL_MOUSEBUTTONDOWN;ev.button.windowID=SDL_GetWindowID(test_window);ev.button.button=SDL_BUTTON_LEFT;ev.button.clicks=1;ev.button.x=82;ev.button.y=44;
     assert(mosaic_event(&ev,test_window,0,test_audio,test_ui,restored_bank,&restored_mc,&pc,&sw,&tc,48000));
-    assert(test_ui->mosaic_pattern_tab && test_ui->mosaic_source_pages==2);
+    assert(test_ui->mosaic_source_filter && test_ui->mosaic_source_pages==2);
     TsMosaicSource *restored_source=test_ui->mosaic_sources[0].source;
     assert(restored_source && restored_source->pattern && restored_source->pattern->id==restored_pages->tracker.patterns[0]->id);
     assert(!memcmp(restored_source->pattern->cells,dense->pattern->cells,sizeof(dense->pattern->cells)));

@@ -1,3 +1,4 @@
+#include "tapesister/audio_assets.h"
 #include "tapesister/pattern_card.h"
 #include "tapesister/mosaic.h"
 #include "tapesister/sample_pages.h"
@@ -161,11 +162,11 @@ int ts_pattern_save(const TsPatternCard *p,const char *dir,int index,char *e,siz
     snprintf(path,sizeof(path),"%s/pattern-%03d.cells",dir,index);FILE *f=fopen(path,"wb");if(!f)return 0;
     int ok=fwrite(p->cells,1,sizeof(p->cells),f)==sizeof(p->cells);if(fclose(f))ok=0;if(!ok)return 0;
     snprintf(path,sizeof(path),"%s/pattern-%03d.assets",dir,index);f=fopen(path,"wb");if(!f)return 0;
-    ok=fprintf(f,"TSPATTERN 2 %u %d %d %.17g %d %d %d %u\n",p->id,p->root,p->linear,p->duration,p->asset_count,p->enabled,p->global_volume,p->selected)>0;
+    ok=fprintf(f,"TSPATTERN %d %u %d %d %.17g %d %d %d %u\n",ts_audio_assets_writing()?3:2,p->id,p->root,p->linear,p->duration,p->asset_count,p->enabled,p->global_volume,p->selected)>0;
     if(ok)ok=fprintf(f,"ORIGIN %llu %u %llu\n",(unsigned long long)p->lineage,p->version,(unsigned long long)p->acknowledged)>0;
     for(int i=0;ok && i<p->asset_count;++i){const TsPatternAsset *a=&p->assets[i];
         ok=fprintf(f,"%llu %d %.9g %zu %zu %zu %d %d\n",(unsigned long long)a->tile,a->tuning.root_note,a->tuning.fine_tune_cents,a->first,a->last,a->crossfade,a->looping,a->mode)>0;
-        snprintf(path,sizeof(path),"%s/pattern-%03d-%04d.wav",dir,index,i);if(ok)ok=ts_sample_save_wav32f(&a->audio->sample,path,e,n);
+        snprintf(path,sizeof(path),"%s/pattern-%03d-%04d.%s",dir,index,i,ts_audio_assets_writing()?"tsa":"wav");if(ok)ok=ts_audio_assets_writing()?ts_audio_assets_save_ref(&a->audio->sample,path,e,n):ts_sample_save_wav32f(&a->audio->sample,path,e,n);
     }
     if(fclose(f))ok=0;
     return ok;
@@ -183,7 +184,7 @@ TsPatternCard *ts_pattern_load(TsMosaic *m,const char *dir,int index,char *e,siz
     }
     snprintf(path,sizeof(path),"%s/pattern-%03d.assets",dir,index);f=fopen(path,"rb");if(!f)goto fail;
     int version=0;
-    if(!fgets(line,sizeof(line),f) || sscanf(line,"TSPATTERN %d %u %d %d %lf %d %d %d %u %c",&version,&p->id,&p->root,&p->linear,&p->duration,&p->asset_count,&p->enabled,&p->global_volume,&p->selected,&tail)!=9 || (version!=1 && version!=2) ||
+    if(!fgets(line,sizeof(line),f) || sscanf(line,"TSPATTERN %d %u %d %d %lf %d %d %d %u %c",&version,&p->id,&p->root,&p->linear,&p->duration,&p->asset_count,&p->enabled,&p->global_volume,&p->selected,&tail)!=9 || (version!=1 && version!=2 && version!=3) ||
        p->enabled<0 || p->enabled>1 || p->global_volume<0 || p->global_volume>64 || p->asset_count<0 || p->asset_count>2048 || p->root<0 || p->root>127 || (p->linear!=0 && p->linear!=1) || !isfinite(p->duration) || p->duration<=0 || p->duration>86400 || fabs(p->duration-pattern_duration(&p->score))>1e-9 || !ts_sister_tracker_pattern(&p->score,p->id)){fclose(f);goto fail;}
     p->version=1;
     if(version>=2){unsigned long long lineage,acknowledged;
@@ -193,8 +194,8 @@ TsPatternCard *ts_pattern_load(TsMosaic *m,const char *dir,int index,char *e,siz
     p->assets=calloc(p->asset_count?p->asset_count:1,sizeof(*p->assets));if(!p->assets){fclose(f);goto fail;}
     for(int i=0;i<p->asset_count;++i){TsPatternAsset *a=&p->assets[i];unsigned long long id;int mode;
         if(!fgets(line,sizeof(line),f) || sscanf(line,"%llu %d %f %zu %zu %zu %d %d %c",&id,&a->tuning.root_note,&a->tuning.fine_tune_cents,&a->first,&a->last,&a->crossfade,&a->looping,&mode,&tail)!=8 || !id || a->tuning.root_note<0 || a->tuning.root_note>127 || !isfinite(a->tuning.fine_tune_cents) || fabsf(a->tuning.fine_tune_cents)>1200 || a->looping<0 || a->looping>1 || mode<0 || mode>TS_LOOP_START_PING_PONG){fclose(f);goto fail;}
-        a->tile=id;a->mode=mode;TsSample sample={0};snprintf(path,sizeof(path),"%s/pattern-%03d-%04d.wav",dir,index,i);
-        if(!ts_sample_load_wav(&sample,path,e,n)){fclose(f);goto fail;}
+        a->tile=id;a->mode=mode;TsSample sample={0};snprintf(path,sizeof(path),"%s/pattern-%03d-%04d.%s",dir,index,i,version>=3?"tsa":"wav");
+        if(!(version>=3?ts_audio_assets_load_ref(&sample,path,e,n):ts_sample_load_wav(&sample,path,e,n))){fclose(f);goto fail;}
         a->audio=ts_mosaic_source(m,&sample,e,n);ts_sample_free(&sample);
         if(!a->audio || a->first>=a->last || a->last>a->audio->sample.frames || a->crossfade>(a->last-a->first)/2){fclose(f);goto fail;}
     }

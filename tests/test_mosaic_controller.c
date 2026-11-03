@@ -112,8 +112,10 @@ static void wait_render(void);
 #include "test_mosaic_record_tile.inc"
 #include "test_mosaic_record_routes.inc"
 #include "test_mosaic_live_controller.inc"
+#include "test_mosaic_browser.inc"
 #include "test_mosaic_grab.inc"
 #include "test_mosaic_scale.inc"
+#include "test_mosaic_handle_groups.inc"
 #include "test_mosaic_gallery_controller.inc"
 #include "test_quick_capture.inc"
 #include "test_mosaic_record_bank.inc"
@@ -128,7 +130,7 @@ static void test_canvas_feedback(SDL_Window *window)
     TsMosaicEvent *b=ts_mosaic_add(scene,source,1,130);b->duration=3;
     TsMosaicEvent *obstacle=ts_mosaic_add(scene,source,1,250);obstacle->duration=3;
     ui.mosaic_open=1;ui.mosaic_scale=24;ui.mosaic_hscale=1;ui.mosaic_scroll=ui.mosaic_xscroll=0;
-    mosaic_poll(0,&ui,&instrument,&mosaic);assert(ui.mosaic_source_count==17 && ui.mosaic_source_pages==2);
+    mosaic_poll(0,&ui,&instrument,&mosaic);assert(ui.mosaic_source_count==16 && ui.mosaic_source_pages==1);
     /* Source click, waveform preview and drag cancellation keep the pin safe. */
     click(window,20,85,1);assert(ui.mosaic_source_selected==0 && source->pins==1);
     motion(window,530,190);assert(ui.mosaic_ghost_count==1 && ui.mosaic_ghosts[0].source==source);
@@ -169,7 +171,8 @@ static void test_canvas_feedback(SDL_Window *window)
     assert(ui.mosaic_edit_choice && a->source==source && b->source==source);
     key(window,SDLK_u,KMOD_NONE);assert(!ui.mosaic_edit_choice);
     assert(mosaic_leave(0,&audio,&ui,&instrument,&mosaic));mosaic_poll(0,&ui,&instrument,&mosaic);
-    assert(ui.mosaic_source_count==18 && ui.mosaic_sources[16].source==a->source);
+    mosaic_source_filter_set(&ui,&instrument,&mosaic,TS_MOSAIC_BROWSER_EVENTS);
+    assert(ui.mosaic_source_count==19 && ui.mosaic_sources[16].source==a->source);
     assert(ui.mosaic_sources[17].source==source && b->source==source);
     double peaks=0,original=0;for(int i=0;i<TS_MOSAIC_PEAKS;++i){peaks+=a->source->peaks[i];original+=source->peaks[i];}
     assert(peaks<original*.101 && peaks>original*.099);
@@ -275,10 +278,11 @@ static void test_canvas_feedback(SDL_Window *window)
         extra.data[0]=.01f*(i+1);TsMosaicSource *version=ts_mosaic_source(scene,&extra,error,sizeof(error));assert(version);
         assert(ts_mosaic_add(scene,version,20+i*4,0));
     }
-    ts_sample_free(&extra);mosaic_poll(0,&ui,&instrument,&mosaic);assert(ui.mosaic_source_count>16);
+    ts_sample_free(&extra);mosaic_poll(0,&ui,&instrument,&mosaic);
+    mosaic_source_filter_set(&ui,&instrument,&mosaic,TS_MOSAIC_BROWSER_EVENTS);assert(ui.mosaic_source_count>16);
     ui.mosaic_source_page=0;mosaic_poll(0,&ui,&instrument,&mosaic);
     click(window,97,359,1);assert(ui.mosaic_source_page==1);
-    click(window,20,85,1);assert(ui.mosaic_source_selected==16 && mosaic.source_drag.source==ui.mosaic_sources[16].source);
+    click(window,20,85,1);assert(ui.mosaic_source_selected==32 && mosaic.source_drag.source==ui.mosaic_sources[32].source);
     release(window,110,190);click(window,20,359,1);assert(ui.mosaic_source_page==0);
     ui.mosaic=audio.mosaic=saved;mosaic_poll(0,&ui,&instrument,&mosaic);ts_mosaic_free(scene);
 }
@@ -433,6 +437,8 @@ int main(int argc,char **argv)
     uint64_t original=ts_sample_hash(&instrument.current);
     ui.mosaic=audio.mosaic=ts_mosaic_create();ui.mosaic_scale=24;ui.mosaic_open=1;
     if(argc>1 && !strcmp(argv[1],"--grab")) {test_mosaic_grab(window);goto done;}
+    if(argc>1 && !strcmp(argv[1],"--browser")) {test_mosaic_browser(window);goto done;}
+    if(argc>1 && !strcmp(argv[1],"--handles")) {test_mosaic_handle_groups(window);test_mosaic_scale_snap(window);goto done;}
     if(argc>1 && !strcmp(argv[1],"--scale")) {test_mosaic_scale(window);goto done;}
     if(argc>1 && !strcmp(argv[1],"--video-cues")) {test_mosaic_video_controller(window);goto done;}
     if(argc>1 && !strcmp(argv[1],"--gallery")) {test_mosaic_gallery_controller(window,device);goto done;}
@@ -510,6 +516,7 @@ int main(int argc,char **argv)
     test_mosaic_live_controls(window);
     test_mosaic_fades(window);
     test_mosaic_card_pan(window);test_mosaic_group_resize(window);
+    test_mosaic_handle_groups(window);test_mosaic_scale_snap(window);
     test_mosaic_group_mute_audio(window);
     test_mosaic_source_actions(window);
     test_mosaic_volume_controls(window);

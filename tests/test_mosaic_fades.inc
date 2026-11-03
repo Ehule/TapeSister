@@ -21,13 +21,14 @@ static void test_mosaic_fades(SDL_Window *window)
     scene->playing=1;ts_mosaic_seek(scene,1.5);for(int i=0;i<300;++i)ts_mosaic_read(scene,48000);
     uint64_t attack=scene->voices[0].attack;
     click(window,x,y,1);motion(window,x,y+24);motion(window,x,y+48);release(window,x,y+48);
-    assert(a->fade_in==2 && a->fade_out==0 && b->fade_in==0 && !mosaic_chosen(&ui,1));
+    assert(a->fade_in==2 && a->fade_out==0 && b->fade_in==2 && mosaic_chosen(&ui,1));
     assert(scene->history_count==history+1 && !mosaic.drag);
     TsMosaicEvent edited=*a;edited.fade_in=0;assert(!memcmp(&original,&edited,sizeof(edited)));
     ts_mosaic_read(scene,48000);assert(scene->voices[0].attack==attack+1 && a->revision==original.revision);
     scene->playing=0;
     key(window,SDLK_z,KMOD_CTRL);assert(a->fade_in==0);
     key(window,SDLK_y,KMOD_CTRL);assert(a->fade_in==2);
+    mosaic_select_only(&ui,a->id);
     fade_handle(a,2,&x,&y);click(window,x,y,1);assert(mosaic.drag==8);
     motion(window,x,y-72);release(window,x,y-72);assert(a->fade_out==3);
     fade_handle(a,1,&x,&y);click(window,x,y,1);motion(window,x,y+240);release(window,x,y+240);

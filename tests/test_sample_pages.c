@@ -2,13 +2,22 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
+#include <time.h>
 #include <sys/stat.h>
 
 #ifdef _WIN32
 #include <direct.h>
+#include <process.h>
+#define TEST_PID _getpid
+#define TEST_MKDIR(p) _mkdir(p)
+#define TEST_CHDIR(p) _chdir(p)
 #define TS_RMDIR(path) _rmdir(path)
 #else
 #include <unistd.h>
+#define TEST_PID getpid
+#define TEST_MKDIR(p) mkdir(p,0700)
+#define TEST_CHDIR(p) chdir(p)
 #define TS_RMDIR(path) rmdir(path)
 #endif
 
@@ -59,6 +68,17 @@ static void remove_project(const char *path, size_t pages, int record)
         if (directory_length >= sizeof(directory)) return;
         memcpy(directory, path, directory_length);
         directory[directory_length] = '\0';
+        /* Shared WAVs have content names rather than tile names. */
+        snprintf(made,sizeof(made),"%s/manifest.txt",directory);
+        FILE *inventory=fopen(made,"rb");
+        if(inventory){char line[2048];while(fgets(line,sizeof(line),inventory)) {
+            char *relative=strchr(line,',');
+            if(!strncmp(line,"managed=",8) && relative && !strncmp(relative+1,"samples/audio/",14)) {
+                relative++;relative[strcspn(relative,"\r\n")]=0;
+                snprintf(made,sizeof(made),"%s/%s",directory,relative);remove(made);
+            }
+        }fclose(inventory);}
+        snprintf(made,sizeof(made),"%s/samples/audio",directory);TS_RMDIR(made);
         remove(path);
         for (size_t page = 0u; page < pages; ++page) {
             if (page > 0u) {
@@ -68,11 +88,11 @@ static void remove_project(const char *path, size_t pages, int record)
             }
             for (int slot = 1; slot <= 16; ++slot) {
                 snprintf(made, sizeof(made),
-                         "%s/samples/page-%03zu/%02d_SOUND-%02d.wav",
+                         "%s/samples/page-%03zu/%02d_SOUND-%02d.tsa",
                          directory, page + 1u, slot, slot);
                 remove(made);
                 snprintf(made, sizeof(made),
-                         "%s/samples/page-%03zu/%02d_SILENCE.wav",
+                         "%s/samples/page-%03zu/%02d_SILENCE.tsa",
                          directory, page + 1u, slot);
                 remove(made);
             }
@@ -86,11 +106,11 @@ static void remove_project(const char *path, size_t pages, int record)
             remove(made);
             for (int slot = 1; slot <= 16; ++slot) {
                 snprintf(made, sizeof(made),
-                         "%s/samples/record-bank/%02d_SOUND-%02d.wav",
+                         "%s/samples/record-bank/%02d_SOUND-%02d.tsa",
                          directory, slot, slot);
                 remove(made);
                 snprintf(made, sizeof(made),
-                         "%s/samples/record-bank/%02d_SILENCE.wav",
+                         "%s/samples/record-bank/%02d_SILENCE.tsa",
                          directory, slot);
                 remove(made);
             }
@@ -218,7 +238,7 @@ static void test_project_roundtrip_with_record_bank(void)
     {
         FILE *manifest = fopen("test-paged-project/manifest.txt", "rb");
         FILE *wav = fopen(
-            "test-paged-project/samples/page-001/01_SOUND-01.wav", "rb");
+            "test-paged-project/samples/page-001/01_SOUND-01.tsa", "rb");
         FILE *sister = fopen("test-paged-project/sister-state.ini", "rb");
         CHECK(manifest != NULL);
         CHECK(wav != NULL);
@@ -297,7 +317,7 @@ static void test_project_roundtrip_with_record_bank(void)
         FILE *stale_page = fopen(
             "test-paged-project/project-data/page-002.tsr", "rb");
         FILE *stale_wav = fopen(
-            "test-paged-project/samples/record-bank/04_SILENCE.wav", "rb");
+            "test-paged-project/samples/record-bank/04_SILENCE.tsa", "rb");
         CHECK(stale_page == NULL);
         CHECK(stale_wav == NULL);
         if (stale_page != NULL) fclose(stale_page);
@@ -437,6 +457,9 @@ static void test_unrelated_folder_is_never_replaced(void)
 
 int main(void)
 {
+    char fixture[128];snprintf(fixture,sizeof(fixture),"pages-%lu-%lu",(unsigned long)TEST_PID(),(unsigned long)time(NULL));
+    if(TEST_MKDIR(fixture) || TEST_CHDIR(fixture))return 1;
+
     test_bundle_path();
     test_page_cycle_and_keep();
     test_project_roundtrip_with_record_bank();

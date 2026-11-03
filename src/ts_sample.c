@@ -1,6 +1,7 @@
 #include "tapesister/master_eq.h"
 #include "tapesister/sample.h"
 #include "tapesister/save_io.h"
+#include "tapesister/audio_assets.h"
 #include "tapesister/source_route.h"
 
 #include <errno.h>
@@ -10079,8 +10080,11 @@ static int get_edit_snapshot(FILE *f, TsEditSnapshot *state, int version)
            tuning_valid(&state->tuning) && tuning_valid(&state->audible_tuning);
 }
 
+#include "ts_audio_assets.inc"
+
 static int put_sample_block(FILE *f, const TsSample *sample)
 {
+    if(ts_audio_assets_writing())return ts_audio_assets_put_block(f,sample);
     const char *name_end;
     size_t name_length;
     size_t scalar_count;
@@ -10101,6 +10105,7 @@ static int put_sample_block(FILE *f, const TsSample *sample)
 
 static int get_sample_block(FILE *f, TsSample *sample, int version, int validate_only)
 {
+    if(version>=42)return ts_audio_assets_get_block(f,sample,validate_only);
     uint32_t name_length;
     uint32_t channels = 1u;
     uint64_t frames;
@@ -10161,9 +10166,10 @@ static int snapshot_fits_tile(const TsEditSnapshot *state, const TsBankSlot *slo
            state->grid_snap < TS_GRID_SNAP_MODE_COUNT;
 }
 
-static int save_tsr34(const TsInstrument *instrument, FILE *f)
+static int save_tsr34(const TsInstrument *instrument, FILE *f, int depth)
 {
-    fwrite("TSR41\r\n\032", 1, 8, f);
+    fwrite(ts_audio_assets_writing()?"TSR42\r\n\032":"TSR41\r\n\032", 1, 8, f);
+    if(ts_audio_assets_writing())put32(f,(uint32_t)depth);
     put32(f, (uint32_t)instrument->selected_slot);
     put_float(f, instrument->family_mutation);
     put32(f, instrument->family_sequence);
@@ -10484,10 +10490,12 @@ static int load_tsr15_or_newer(FILE *f, int version, TsInstrument *instrument, i
     set_error(error, error_size, "");
     return 1;
 out_of_memory:
-    set_error(error, error_size, "Out of memory while loading TSR15-TSR41 project");
+    set_error(error, error_size, "Out of memory while loading TSR15-TSR42 project");
     goto failed;
 malformed:
-    set_error(error, error_size, "Malformed or unsupported TSR15-TSR41 project");
+    set_error(error, error_size, version>=42?
+        "Missing or corrupt shared audio, or malformed TSR42 project":
+        "Malformed or unsupported TSR15-TSR41 project");
 failed:
     ts_instrument_free(&loaded);
     return 0;
@@ -10495,13 +10503,21 @@ failed:
 
 int ts_instrument_validate_recipe(const char *path,char *error,size_t size)
 {
-    FILE *f=fopen(path,"rb");char magic[8];
+    FILE *f=fopen(path,"rb");char magic[8],root[2048];TsAudioAssets *assets=NULL;
     if(!f){set_error(error,size,"Cannot open staged TSR for validation");return 0;}
-    int ok=fread(magic,1,8,f)==8 && !memcmp(magic,"TSR41\r\n\032",8);
-    if(ok)ok=load_tsr15_or_newer(f,41,NULL,1,error,size);
-    else set_error(error,size,"Invalid staged TSR41 header");
+    int version=0,ok=fread(magic,1,8,f)==8;
+    if(ok && !memcmp(magic,"TSR41\r\n\032",8))version=41;
+    else if(ok && !memcmp(magic,"TSR42\r\n\032",8)) {
+        uint32_t depth;
+        if(get32(f,&depth) && ts_audio_assets_root(root,sizeof(root),path,depth)) {
+            if(audio_assets && !strcmp(audio_assets->root,root))version=42;
+            else if((assets=ts_audio_assets_begin(root,0)))version=42;
+        }
+    }
+    ok=version && load_tsr15_or_newer(f,version,NULL,1,error,size);
+    if(!version)set_error(error,size,"Invalid staged TSR41/TSR42 header or asset root");
     if(fclose(f))ok=0;
-    return ok;
+    ts_audio_assets_end(assets);return ok;
 }
 
 int ts_instrument_check_save(const TsInstrument *instrument,char *error,size_t error_size)
@@ -10533,19 +10549,20 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
         return 0;
     }
     if(!ts_instrument_check_save(instrument,error,error_size))return 0;
+    if(ts_audio_assets_writing() && ts_audio_assets_depth(path)<0){set_error(error,error_size,"Shared bank is outside its project");return 0;}
     f = fopen(path, "wb");
     if (f == NULL) {
         set_error(error, error_size, "Could not create recipe file");
         return 0;
     }
-    if (!save_tsr34(instrument, f)) {
+    if (!save_tsr34(instrument, f, ts_audio_assets_writing()?ts_audio_assets_depth(path):0)) {
         fclose(f);
-        sample_io_error(error, error_size, "Could not write TSR41 project");
+        sample_io_error(error, error_size, "Could not write TSR project");
         return 0;
     }
     int failed=ferror(f);if(fclose(f))failed=1;
     if (failed) {
-        sample_io_error(error, error_size, "Could not finish TSR41 project");
+        sample_io_error(error, error_size, "Could not finish TSR project");
         return 0;
     }
     set_error(error, error_size, "");
@@ -10579,6 +10596,17 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         ts_instrument_free(&loaded);
         set_error(error, error_size, "Truncated TSR project");
         return 0;
+    }
+    if(!memcmp(magic,"TSR42\r\n\032",8)) {
+        uint32_t depth;char root[2048];TsAudioAssets *assets=NULL;
+        int ok=get32(f,&depth) && ts_audio_assets_root(root,sizeof(root),path,depth);
+        if(ok && (!audio_assets || strcmp(audio_assets->root,root))) {
+            assets=ts_audio_assets_begin(root,0);ok=assets!=NULL;
+        }
+        if(ok)ok=load_tsr15_or_newer(f,42,instrument,0,error,error_size);
+        else set_error(error,error_size,"Invalid TSR42 project asset root");
+        if(fclose(f))ok=0;
+        ts_audio_assets_end(assets);ts_instrument_free(&loaded);return ok;
     }
     if (memcmp(magic, "TSR41\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR40\r\n\032", 8) == 0 ||
@@ -10652,7 +10680,7 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         fclose(f);
         ts_instrument_free(&loaded);
         set_error(error, error_size,
-                  "Not a self-contained TSR6-TSR41 project");
+                  "Not a supported TSR6-TSR42 project");
         return 0;
     }
 #define GET_U32(dst) do { if (!get32(f, &u32)) goto malformed; (dst) = u32; } while (0)
