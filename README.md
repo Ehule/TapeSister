@@ -227,6 +227,8 @@ Every completed real-time take is also preserved as a timestamped 32-bit float W
 [Dark Matter](docs/DARK_MATTER.md) adds an optional COSMOS-inspired four-memory
 mode with cross-feedback Blur, drifting stereo, input-driven Replace and reverse.
 Use the Tape / Dark Matter switch on Sister's main page.
+The blend fader parks between the two memories; MODE FADE sets endpoint
+transitions from 20 ms to 120 seconds.
 
 Sister Machine is a live 5–60 second rolling stereo tape memory with one moving write
 head and three playback heads. It accepts selected tiles, FM, external input,
@@ -261,7 +263,7 @@ New configurations use **Main Mix → EQ → limiter → OUT 1/2**; inputs/effec
 start disconnected. Track routes take precedence; **Use Tile** enables inheritance.
 
 **Add Effect +** creates independent Reverb, Delay, Distortion, Grain, Transient,
-or Compressor instances, up to 16 added nodes alongside the five-slot pedalboard.
+Compressor or Filter instances, up to 16 added nodes alongside the pedalboard.
 Patch their input columns and output rows into chains or parallel paths. Each
 compressor has its own sidechain column. Click an instance row for its controls;
 **Back to Routes** returns to connection editing. Removal clears its connections
@@ -309,7 +311,7 @@ select the backend, duplex driver and buffer before saving once. See
 ## Expandable FX pedalboard
 
 The pedalboard holds **5–20 independent slots**, starting at 10. Choose Reverb, Delay,
-Distortion, Grain, Transient, or Empty in any slot. Effects can be duplicated and
+Distortion, Grain, Transient, Filter, or Empty in any slot. Effects can be duplicated and
 reordered. Every slot chooses exactly one placement:
 
 - PRE — newly arriving material before the tape write;
@@ -326,6 +328,10 @@ Opening a 20-slot project keeps all 20 even with an INI default of 5.
 
 Each slot has Mix and ±12 dB Gain. Reverb reaches approximately two-minute decay,
 Delay spans about 8–2000 ms, and Grain ranges from isolated fragments to dense clouds.
+
+[Stereo character filters](docs/STEREO_FILTERS.md) add MS-20- and Polivoks-inspired
+models with linked, spread and dual mono operation. **EDIT FILTER** opens the
+native editor with LFO/envelope modulation, seven presets and five A–E captures.
 
 Effect and Master transitions span 10 ms to 60 minutes. Live type, placement, and order
 changes morph without stopping audio. FX Feedback returns the effect contribution into

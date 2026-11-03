@@ -485,9 +485,8 @@ static void test_reverb_level_density_and_width(void)
 
 static void test_targets_mono_and_ordinary(void)
 {
-    TsSisterRuntime runtime;
-    TsSisterRuntime full_runtime;
-    TsSisterRuntime half_runtime;
+    /* Three complete pedalboards exceed an ordinary thread stack. */
+    static TsSisterRuntime runtime, full_runtime, half_runtime;
     TsSisterFxControls controls;
     char error[128];
     ts_sister_runtime_init(&runtime);
@@ -1107,8 +1106,7 @@ static void test_four_slot_pedalboard(void)
 
 static void test_pre_is_recorded_post_is_not(void)
 {
-    TsSisterRuntime pre;
-    TsSisterRuntime post;
+    static TsSisterRuntime pre, post;
     TsSisterParameters parameters;
     TsSisterSourceFrames source = {0};
     TsSisterRuntimeFrame pre_frame;

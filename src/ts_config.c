@@ -73,6 +73,7 @@ void ts_config_init(TsConfig *config)
         config->mosaic_silence_seconds = 120;
         config->mosaic_silence_db = -60;
         config->sister_memory_mode = TS_SISTER_MEMORY_TAPE;
+        config->sister_memory_blend=-1;config->sister_memory_fade_seconds=.2f;
         ts_dark_matter_controls_default(&config->sister_dark);
         config->sister_buffer_seconds = 40;
         config->sister_buffer_channels = 2;
@@ -268,7 +269,7 @@ int ts_config_load(TsConfig *config, const char *path,
                    char *error, size_t error_size)
 {
     FILE *file;
-    char line[TS_CONFIG_PATH_MAX + 80];
+    char line[4096];
     TsConfig loaded;
     int line_number = 0;
     int saw_insert = 0;
@@ -453,6 +454,10 @@ int ts_config_load(TsConfig *config, const char *path,
             }
         } else if (!strcmp(key,"sister_memory_mode")) {
             if (!parse_clamped_integer(value,0,1,&loaded.sister_memory_mode)) { fclose(file); snprintf(error,error_size,"Invalid Sister memory mode"); return 0; }
+        } else if (!strcmp(key,"sister_memory_blend") || !strcmp(key,"sister_memory_fade_seconds")) {
+            char *end;float v=strtof(value,&end);
+            if(end==value || *end || !isfinite(v) || (!strcmp(key,"sister_memory_blend")?(v < -1 || v > 1):(v < .02f || v > 120))){fclose(file);snprintf(error,error_size,"Invalid Sister crossfade");return 0;}
+            if(!strcmp(key,"sister_memory_blend"))loaded.sister_memory_blend=v;else loaded.sister_memory_fade_seconds=v;
         } else if (!strcmp(key,"sister_dark_matter")) {
             if (!ts_dark_matter_controls_read(&loaded.sister_dark,value)) { fclose(file); snprintf(error,error_size,"Invalid Dark Matter controls"); return 0; }
         } else if (strcmp(key, "sister_buffer_seconds") == 0) {
@@ -818,6 +823,7 @@ int ts_config_save(const TsConfig *config, const char *path,
                 config->sister_window_y,
                 config->mosaic_volume_hidden ? 1 : 0,
                 config->mosaic_looper_x, config->mosaic_looper_y) < 0;
+    if(fprintf(file,"sister_memory_blend=%.9g\nsister_memory_fade_seconds=%.9g\n",config->sister_memory_blend,config->sister_memory_fade_seconds)<0)write_failed=1;
     for (int slot = 0; slot < TS_DSP_FACTORY_RECIPE_COUNT && !write_failed; ++slot) {
         if (!config->dsp_factory_overridden[slot]) continue;
         write_failed = fprintf(file, "DspPreset%02d=%.9g,%.9g,%.9g,%.9g\n",

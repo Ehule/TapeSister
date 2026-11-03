@@ -102,7 +102,8 @@ typedef enum {
     TS_SISTER_UI_ACTION_FX_REMOVE_CANCEL,
     TS_SISTER_UI_ACTION_GRAIN_STATE,
     TS_SISTER_UI_ACTION_GRAIN_TIME,
-    TS_SISTER_UI_ACTION_TRANSIENT_POWER
+    TS_SISTER_UI_ACTION_TRANSIENT_POWER,
+    TS_SISTER_UI_ACTION_FILTER_EDIT
 } TsSisterUiAction;
 
 typedef enum {
@@ -399,5 +400,7 @@ int ts_sister_ui_midi_target(TsSisterUiHit hit, char *target,
 void ts_sister_ui_render(TsFramebuffer *framebuffer,
                          const TsSisterUiModel *model,
                          const TsPalette *palette);
+
+void ts_sister_filter_render(TsFramebuffer *,const TsCharacterFilterControls *,float gain,float mix,int enabled,unsigned shared_locks,const TsPalette *);
 
 #endif

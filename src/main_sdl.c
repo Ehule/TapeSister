@@ -9274,6 +9274,9 @@ typedef struct {
     TsPerformanceRecorder performance_recorder;
     SDL_Thread *performance_writer;
 } SisterWindow;
+static void character_filter_open(SisterWindow *,int);
+static void character_filter_hide(void);
+static void character_filter_matrix_open(uint32_t);
 
 typedef enum {
     SISTER_PRESET_OPERATION_NONE = 0,
@@ -9627,9 +9630,17 @@ static void sister_set_parameter(TsSisterParameters *parameters,
     if (parameters == NULL) return;
     if (amount < 0.0f) amount = 0.0f;
     if (amount > 1.0f) amount = 1.0f;
+    if(parameter>=TS_CF_MIDI_BASE && parameter<TS_CF_MIDI_BASE+TS_SISTER_FX_SLOT_COUNT*32) {
+        int at=(parameter-TS_CF_MIDI_BASE)/32,field=(parameter-TS_CF_MIDI_BASE)%32;
+        if(parameters->fx.slot[at].type==TS_SISTER_FX_FILTER)ts_character_filter_set(&parameters->fx.slot[at].filter,field,amount);
+        return;
+    }
     slot_offset = ts_sister_ui_slot_offset(parameter);
     if (slot_offset >= 0 && slot_offset < TS_SISTER_FX_SLOT_COUNT * 5) {
         TsSisterFxSlotControls *slot = &parameters->fx.slot[slot_offset / 5];
+        if(slot->type==TS_SISTER_FX_FILTER && slot_offset%5>=1 && slot_offset%5<=3){
+            int focus=slot->filter.value[TS_CF_ROUTE]>=.75f && slot->filter.value[TS_CF_FOCUS]>=.5f?8:0;
+            ts_character_filter_set(&slot->filter,(int[]){TS_CF_L_CUT,TS_CF_L_RES,TS_CF_L_DRIVE}[slot_offset%5-1]+focus,amount);return;}
         switch (slot_offset % 5) {
         case 0: slot->gain_db = -12.0f + amount * 24.0f; break;
         case 1: slot->parameter_a = amount; break;
@@ -9661,7 +9672,9 @@ static void sister_set_parameter(TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_PRISM_TIME: parameters->prism.morph_seconds=ts_prism_time_from_normalized(amount);break;
     case TS_SISTER_UI_PARAM_PRISM_SEQ_RATE: parameters->prism.seq_rate=.05f*powf(640,amount);break;
     case TS_SISTER_UI_PARAM_PRISM_OUTPUT: parameters->prism.output_db = -12 + amount * 24; break;
-    case TS_DARK_PARAM_MODE: parameters->memory_mode=amount>=.5f?TS_SISTER_MEMORY_DARK:TS_SISTER_MEMORY_TAPE; break;
+    case TS_DARK_PARAM_MODE: parameters->memory_mode=amount>=.5f?TS_SISTER_MEMORY_DARK:TS_SISTER_MEMORY_TAPE; parameters->memory_blend=-1; break;
+    case TS_MEMORY_PARAM_BLEND: parameters->memory_blend=amount;break;
+    case TS_MEMORY_PARAM_FADE: parameters->memory_fade_seconds=.02f*powf(6000,amount);break;
     case TS_DARK_PARAM_FEEDBACK: parameters->dark.feedback=amount*1.05f; break;
     case TS_DARK_PARAM_BLUR: parameters->dark.blur=amount; break;
     case TS_DARK_PARAM_DRIFT: parameters->dark.drift=amount; break;
@@ -9777,10 +9790,17 @@ static float sister_parameter_normalized(const TsSisterParameters *parameters,
     float value = 0.0f;
     int slot_offset;
     if (parameters == NULL) return 0.0f;
+    if(parameter>=TS_CF_MIDI_BASE && parameter<TS_CF_MIDI_BASE+TS_SISTER_FX_SLOT_COUNT*32) {
+        int field=(parameter-TS_CF_MIDI_BASE)%32;
+        return field<TS_CF_COUNT?parameters->fx.slot[(parameter-TS_CF_MIDI_BASE)/32].filter.value[field]:0;
+    }
     slot_offset = ts_sister_ui_slot_offset(parameter);
     if (slot_offset >= 0 && slot_offset < TS_SISTER_FX_SLOT_COUNT * 5) {
         const TsSisterFxSlotControls *slot =
             &parameters->fx.slot[slot_offset / 5];
+        if(slot->type==TS_SISTER_FX_FILTER && slot_offset%5>=1 && slot_offset%5<=3){
+            int focus=slot->filter.value[TS_CF_ROUTE]>=.75f && slot->filter.value[TS_CF_FOCUS]>=.5f?8:0;
+            return slot->filter.value[(int[]){TS_CF_L_CUT,TS_CF_L_RES,TS_CF_L_DRIVE}[slot_offset%5-1]+focus];}
         switch (slot_offset % 5) {
         case 0: value = (slot->gain_db + 12.0f) / 24.0f; break;
         case 1: value = slot->parameter_a; break;
@@ -9809,6 +9829,8 @@ static float sister_parameter_normalized(const TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_PRISM_SEQ_RATE: value=logf(parameters->prism.seq_rate/.05f)/logf(640);break;
     case TS_SISTER_UI_PARAM_PRISM_OUTPUT: value = (parameters->prism.output_db + 12) / 24.f; break;
     case TS_DARK_PARAM_MODE: value=parameters->memory_mode==TS_SISTER_MEMORY_DARK; break;
+    case TS_MEMORY_PARAM_BLEND: value=parameters->memory_blend>=0?parameters->memory_blend:(float)parameters->memory_mode;break;
+    case TS_MEMORY_PARAM_FADE: value=logf(parameters->memory_fade_seconds/.02f)/logf(6000);break;
     case TS_DARK_PARAM_FEEDBACK: value=parameters->dark.feedback/1.05f; break;
     case TS_DARK_PARAM_BLUR: value=parameters->dark.blur; break;
     case TS_DARK_PARAM_DRIFT: value=parameters->dark.drift; break;
@@ -10179,6 +10201,10 @@ static void sister_toggle_parameter_lock(AudioState *audio,
     if (parameter>=TS_DARK_PARAM_MODE && parameter<TS_DARK_PARAM_END) {
         audio->sister.parameters.dark.locks=sister->model.parameters.dark.locks;
         audio->sister.machine.parameters.dark.locks=sister->model.parameters.dark.locks;
+    }
+    if(parameter>=TS_CF_MIDI_BASE && parameter<TS_CF_MIDI_BASE+TS_SISTER_FX_SLOT_COUNT*32){
+        int slot=(parameter-TS_CF_MIDI_BASE)/32;audio->sister.parameters.fx.slot[slot].filter.locks=sister->model.parameters.fx.slot[slot].filter.locks;
+        audio->sister.machine.parameters.fx.slot[slot].filter.locks=sister->model.parameters.fx.slot[slot].filter.locks;
     }
     int offset = ts_sister_ui_slot_offset(parameter);
     if (offset >= 25) {
@@ -11023,6 +11049,8 @@ static void sister_fx_slot_select_type(TsSisterFxSlotControls *slot,
     if (slot == NULL) return;
     slot->type = type;
     switch (type) {
+    case TS_SISTER_FX_FILTER:
+        if(!slot->filter.initialized)ts_character_filter_default(&slot->filter);slot->parameter_a=.98f;slot->parameter_b=.1f;slot->parameter_c=0;slot->mix=1;break;
     case TS_SISTER_FX_TRANSIENT:
         slot->parameter_a = slot->parameter_b = slot->parameter_c = .5f;
         break;
@@ -11140,6 +11168,8 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         char target[96]="";ts_sister_ui_midi_target(hit,target,sizeof(target));
         ts_session_log_event("sister_action","action=%d index=%d value=%.6f target=%s (request)",hit.action,hit.index,hit.normalized,target);
     }
+    if(hit.action==TS_SISTER_UI_ACTION_FX_SLOT_TYPE || hit.action==TS_SISTER_UI_ACTION_FX_SLOT_MOVE)character_filter_hide();
+    if(hit.action==TS_SISTER_UI_ACTION_FILTER_EDIT){character_filter_open(sister,hit.index);return;}
     if (sister_pedalboard_action(device,audio,ui,sister,hit)) return;
     if(audio->sister.matrix.controls.enabled && hit.action>=TS_SISTER_UI_ACTION_SOURCE_TILES &&
        hit.action<=TS_SISTER_UI_ACTION_SOURCE_TRACK) {
@@ -11782,8 +11812,10 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
                  ts_sister_fx_transition_ms(fx->transition) / 1000.0f);
     }
     if (parameter_changed >= 0) {
-        if(parameter_changed>=TS_DARK_PARAM_MODE && parameter_changed<TS_DARK_PARAM_END) {
+        if((parameter_changed>=TS_DARK_PARAM_MODE && parameter_changed<TS_DARK_PARAM_END) || parameter_changed==TS_MEMORY_PARAM_BLEND || parameter_changed==TS_MEMORY_PARAM_FADE) {
             ui->config.sister_memory_mode=sister->model.parameters.memory_mode;
+            ui->config.sister_memory_blend=sister->model.parameters.memory_blend;
+            ui->config.sister_memory_fade_seconds=sister->model.parameters.memory_fade_seconds;
             ui->config.sister_dark=sister->model.parameters.dark;
         }
         /* Mouse-wheel bursts can publish many bounded DSP targets. Keep the
@@ -12022,6 +12054,7 @@ static int canvas_eq_handling;
 #include "main_sdl_router.inc"
 #include "main_sdl_speakers.inc"
 #include "main_sdl_matrix.inc"
+#include "main_sdl_character_filter.inc"
 
 static int midi_sister_hit_from_target(const char *target, float normalized,
                                        TsSisterUiHit *hit)
@@ -12042,7 +12075,8 @@ static int midi_sister_hit_from_target(const char *target, float normalized,
          ts_sister_ui_slot_offset(parameter) >= 25 ||
          parameter == TS_SISTER_UI_PARAM_MASTER_FX_TRANSITION ||
          parameter == TS_SISTER_UI_PARAM_FALLOUT_MASTER_TRANSITION ||
-         (parameter>=TS_DARK_PARAM_MODE && parameter<TS_DARK_PARAM_END))) {
+         (parameter>=TS_DARK_PARAM_MODE && parameter<TS_DARK_PARAM_END) || parameter==TS_MEMORY_PARAM_BLEND || parameter==TS_MEMORY_PARAM_FADE ||
+         (parameter>=TS_CF_MIDI_BASE && parameter<TS_CF_MIDI_BASE+TS_SISTER_FX_SLOT_COUNT*32 && (parameter-TS_CF_MIDI_BASE)%32<TS_CF_COUNT))) {
         hit->action = TS_SISTER_UI_ACTION_PARAMETER;
         hit->index = parameter;
         return 1;
@@ -12186,6 +12220,7 @@ static int midi_apply_target(SDL_AudioDeviceID device, AudioState *audio,
                  ui->config.tile_fade_ms);
         return 1;
     }
+    if(character_filter_matrix_midi(device,audio,ui,target,normalized))return 1;
     if (!midi_sister_hit_from_target(target, normalized, &hit)) return 0;
     sister_apply_action(device, audio, ui, instrument, sister, input_device,
                         external_input, hit, sample_rate, output_channels);
@@ -14214,6 +14249,7 @@ int main(int argc, char **argv)
         parameters.prism.matrix.step_seconds = ui.config.prism_step_seconds;
         parameters.buffer_seconds = (float)ui.config.sister_buffer_seconds;
         parameters.memory_mode=ui.config.sister_memory_mode;
+        parameters.memory_blend=ui.config.sister_memory_blend;parameters.memory_fade_seconds=ui.config.sister_memory_fade_seconds;
         parameters.dark=ui.config.sister_dark;
         parameters.fx.fallout.transition =
             ts_sister_fallout_transition_normalized(
@@ -14750,6 +14786,7 @@ int main(int argc, char **argv)
             if(canvas_eq_event(&event,window,device,&audio,&ui,&sister_window,&instrument))continue;
             if(performance_event(&event,window,device,&audio,&ui,&sample_pages,audio.workspace_bank?audio.workspace_bank:&instrument,&fm_preview,obtained.freq))continue;
             if(speakers_event(&event,window,device,&audio,&ui))continue;
+            if(character_filter_event(&event,device,&audio,&ui,&sister_window,&sample_pages,&instrument))continue;
             if(matrix_event(&event,window,device,&audio,&ui,&sample_pages,&instrument))continue;
             if(source_route_event(&event,window,device,&audio,&ui,&sample_pages,&instrument))continue;
             if (spatial_event(&event,window,device,&audio,&ui,&sister_window)) {
@@ -18765,6 +18802,7 @@ int main(int argc, char **argv)
         spatial_window_update(&ui);
         speakers_update(device,&audio,&ui);
         canvas_eq_poll(device,&audio,&ui,&instrument);
+        character_filter_paint(&audio,&ui,&sister_window);
         matrix_update(device,&audio,&ui,&sample_pages,&instrument);performance_update(device,&audio);
         source_route_update(device,&audio,&ui,&sample_pages,&instrument);
         ts_audio_session_update(&audio,&ui);
@@ -18912,6 +18950,7 @@ int main(int argc, char **argv)
     }
     if (sister_window.texture) SDL_DestroyTexture(sister_window.texture);
     if (sister_window.renderer) SDL_DestroyRenderer(sister_window.renderer);
+    character_filter_close();
     if (sister_window.window) SDL_DestroyWindow(sister_window.window);
     spatial_window_close();speakers_close();
     performance_close();matrix_close();source_route_close();

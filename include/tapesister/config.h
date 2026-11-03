@@ -174,6 +174,7 @@ typedef struct {
     int mosaic_record_seconds; /* 0 = unlimited; otherwise 10..3600. */
     int mosaic_silence_seconds, mosaic_silence_db;
     int sister_memory_mode;
+    float sister_memory_blend, sister_memory_fade_seconds;
     TsDarkMatterControls sister_dark;
     int sister_buffer_seconds;
     int sister_buffer_channels;

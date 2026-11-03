@@ -4,7 +4,10 @@ Dark Matter is an optional, native drifting-memory mode inspired by SOMA COSMOS.
 Click the compact **TAPE / DARK MATTER** switch beside **POWER** in Sister's
 top row to select the memory engine. It is available on every Sister page and
 leaves the waveform unobstructed. Click again to return. The mode is MIDI-learnable and changes
-over a 200 ms fade. It does not clear either memory or allocate on a mode change.
+over the **MODE FADE** time (200 ms by default, adjustable from 20 ms to 120 s).
+The **TAPE / DARK** fader parks anywhere between both memories with a short
+smoothing ramp. See [blend controls](STEREO_FILTERS.md#tape--dark-matter-crossfade).
+It does not clear either memory or allocate on a mode change.
 
 Use F9 to route a tile, synth, TrackSister or external input into Sister and
 route Sister's return to the destination you want. POWER, ROLL, HOLD, MONITOR,
@@ -60,7 +63,8 @@ clearing or pretending that the two different layouts are interchangeable.
 
 When both memories have established audible material, switching modes matches
 their recent stereo RMS levels with a bounded output trim (up to 18 dB either
-way), faded over the same 200 ms transition. The trim stays fixed between
+way), faded over the selected transition time. Matching is latched only when
+leaving a settled endpoint. The trim stays fixed between
 switches: it does not compress Dark Matter's swells or alter the stored audio,
 feedback, dry monitor, or shared OUT control. Empty/near-silent memories do not
 request a boost. Clear and device resets discard the live level measurements.
@@ -97,6 +101,7 @@ not whole-application latency or an X220/device deadline guarantee. Run
 Sister project state version 47 and Sister preset version 24 store mode, sound
 controls and the separate eight-bit Dark Matter lock mask. Older states/presets
 default to Tape mode. Older application builds cannot reproduce the new engine.
+Project v48 and preset v25 also preserve the manual blend and fade time.
 Startup preferences use `[Dark Matter]` in the INI. Rolling
 audio, phases and memory cursors remain live state and are not serialized; use
 Capture or REC FILE to preserve the performance.

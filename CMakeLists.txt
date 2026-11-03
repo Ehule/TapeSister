@@ -19,7 +19,7 @@ add_library(tapesister_core src/ts_mandala.c src/ts_routing_matrix.c src/ts_matr
              src/ts_audio_lifecycle.c src/ts_performance_input.c
              src/ts_realtime_diagnostics.c src/ts_profile.c
              src/ts_sister_effects.c src/ts_sister_fallout.c src/ts_sister_post_fx.c
-             src/ts_sister_limiter.c src/ts_compressor.c src/ts_transient.c src/ts_master_eq.c src/ts_eq_spectrum.c src/ts_router.c src/ts_router_performance.c src/ts_insert.c
+             src/ts_sister_limiter.c src/ts_compressor.c src/ts_transient.c src/ts_character_filter.c src/ts_master_eq.c src/ts_eq_spectrum.c src/ts_router.c src/ts_router_performance.c src/ts_insert.c
              src/ts_sister_machine.c src/ts_dark_matter.c src/ts_sister_wave_snapshot.c
              src/ts_sister_runtime.c src/ts_sister_ui.c
              src/ts_sister_preset.c src/ts_sister_project_state.c
@@ -1012,4 +1012,30 @@ if(TAPESISTER_BUILD_SDL)
   endif()
   add_test(NAME tapesister_dark_matter_controller_tests COMMAND tapesister_dark_matter_controller_tests)
   set_tests_properties(tapesister_dark_matter_controller_tests PROPERTIES TIMEOUT 120)
+endif()
+
+add_executable(test_character_filter tests/test_character_filter.c)
+target_link_libraries(test_character_filter PRIVATE tapesister_core)
+add_test(NAME test_character_filter COMMAND test_character_filter)
+set_tests_properties(test_character_filter PROPERTIES TIMEOUT 120)
+# These fixtures exercise the full project/preset codecs. Match the native
+# application's reserve, as for the other multi-runtime DSP/project tests.
+if(MINGW)
+ target_link_options(test_sister_preset PRIVATE "-Wl,--stack,16777216")
+ target_link_options(test_dark_matter PRIVATE "-Wl,--stack,16777216")
+ target_link_options(test_character_filter PRIVATE "-Wl,--stack,16777216")
+endif()
+if(TAPESISTER_BUILD_SDL)
+ add_executable(tapesister_character_filter_controller_tests tests/test_character_filter_controller.c
+   src/tape_link.c src/tape_companion.c src/ts_startup_diag.c src/ts_midi_input.c)
+ target_include_directories(tapesister_character_filter_controller_tests PRIVATE third_party)
+ target_link_libraries(tapesister_character_filter_controller_tests PRIVATE tapesister_core tapesister_tapehead SDL2::SDL2)
+ if(UNIX AND NOT APPLE)
+  target_link_libraries(tapesister_character_filter_controller_tests PRIVATE rt)
+ endif()
+ if(WIN32)
+  target_link_options(tapesister_character_filter_controller_tests PRIVATE "-Wl,--stack,16777216")
+ endif()
+ add_test(NAME tapesister_character_filter_controller_tests COMMAND tapesister_character_filter_controller_tests)
+ set_tests_properties(tapesister_character_filter_controller_tests PROPERTIES TIMEOUT 120)
 endif()

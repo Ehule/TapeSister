@@ -11,7 +11,8 @@ static int contains(int x, int y, int left, int top, int width, int height)
 
 int ts_sister_ui_parameter_lockable(int parameter)
 {
-    return (parameter>=TS_DARK_PARAM_MODE && parameter<TS_DARK_PARAM_END) ||
+    return (parameter>=TS_CF_MIDI_BASE && parameter<TS_CF_MIDI_BASE+TS_SISTER_FX_SLOT_COUNT*TS_CF_MIDI_STRIDE && (parameter-TS_CF_MIDI_BASE)%TS_CF_MIDI_STRIDE<TS_CF_COUNT) ||
+           (parameter>=TS_DARK_PARAM_MODE && parameter<TS_DARK_PARAM_END) ||
            (parameter >= 0 && parameter < TS_SISTER_UI_PARAM_COUNT) ||
            ts_sister_ui_slot_offset(parameter) >= 25;
 }
@@ -20,6 +21,8 @@ int ts_sister_ui_parameter_locked(const TsSisterUiModel *model,
                                   int parameter)
 {
     if (model == NULL || !ts_sister_ui_parameter_lockable(parameter)) return 0;
+    if(parameter>=TS_CF_MIDI_BASE && parameter<TS_CF_MIDI_BASE+TS_SISTER_FX_SLOT_COUNT*TS_CF_MIDI_STRIDE)
+        return (model->parameters.fx.slot[(parameter-TS_CF_MIDI_BASE)/32].filter.locks&(1u<<((parameter-TS_CF_MIDI_BASE)%32)))!=0;
     if (parameter>=TS_DARK_PARAM_MODE && parameter<TS_DARK_PARAM_END)
         return (model->parameters.dark.locks & (1u<<(parameter-TS_DARK_PARAM_MODE)))!=0;
     int offset = ts_sister_ui_slot_offset(parameter);
@@ -36,6 +39,8 @@ int ts_sister_ui_parameter_lock_toggle(TsSisterUiModel *model,
 {
     uint64_t bit;
     if (model == NULL || !ts_sister_ui_parameter_lockable(parameter)) return 0;
+    if(parameter>=TS_CF_MIDI_BASE && parameter<TS_CF_MIDI_BASE+TS_SISTER_FX_SLOT_COUNT*TS_CF_MIDI_STRIDE){
+        model->parameters.fx.slot[(parameter-TS_CF_MIDI_BASE)/32].filter.locks^=1u<<((parameter-TS_CF_MIDI_BASE)%32);return 1;}
     if (parameter>=TS_DARK_PARAM_MODE && parameter<TS_DARK_PARAM_END) {
         model->parameters.dark.locks ^= 1u<<(parameter-TS_DARK_PARAM_MODE); return 1;
     }
@@ -196,6 +201,7 @@ void ts_sister_ui_model_init(TsSisterUiModel *model, const TsConfig *config)
     ts_sister_parameters_default(&model->parameters, 48000u);
     if (config != NULL) {
         model->parameters.memory_mode=config->sister_memory_mode;
+        model->parameters.memory_blend=config->sister_memory_blend;model->parameters.memory_fade_seconds=config->sister_memory_fade_seconds;
         model->parameters.dark=config->sister_dark;
         model->parameters.buffer_seconds =
             (float)config->sister_buffer_seconds;
@@ -460,10 +466,13 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
     }
     if (model != NULL && model->fx_page == 0 &&
         model->parameters.memory_mode!=TS_SISTER_MEMORY_DARK &&
-        contains(x, y, 600, 144, 24, 18)) {
+        contains(x, y, 600, 40, 24, 18)) {
         hit.action = TS_SISTER_UI_ACTION_WAVE_MODE;
         return hit;
     }
+    if((!model || model->fx_page==0) && y>=40 && y<58 && x>=10 && x<582){
+        hit.action=TS_SISTER_UI_ACTION_PARAMETER;hit.index=x<330?TS_MEMORY_PARAM_BLEND:TS_MEMORY_PARAM_FADE;
+        hit.normalized=x<330?(x-10)/307.f:(x-338)/243.f;return hit;}
     if (contains(x, y, 350, 8, 86, TS_SISTER_UI_HEADER_H)) {
         hit.action = TS_SISTER_UI_ACTION_PARAMETER;
         hit.index = TS_SISTER_UI_PARAM_BUFFER_SECONDS;
@@ -646,7 +655,8 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
             int row = first + visible;
             int top = TS_SISTER_UI_FX_TOP + 4 + visible * TS_SISTER_UI_FX_ROW_STEP;
             int field_count = (model->parameters.fx.slot[row].type == TS_SISTER_FX_GRAIN ||
-                               model->parameters.fx.slot[row].type == TS_SISTER_FX_TRANSIENT) ? 5 : 4;
+                               model->parameters.fx.slot[row].type == TS_SISTER_FX_TRANSIENT ||
+                               model->parameters.fx.slot[row].type == TS_SISTER_FX_FILTER) ? 5 : 4;
             int field_width = field_count == 5 ? 70 : 88;
             int field_step = field_count == 5 ? 74 : 92;
             if (contains(x, y, 16, top - 2, 40, 22)) {
@@ -672,6 +682,7 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
                     }
                 }
             }
+            if(model->parameters.fx.slot[row].type==TS_SISTER_FX_FILTER && contains(x,y,330,top+22,80,18)){hit.action=TS_SISTER_UI_ACTION_FILTER_EDIT;hit.index=row;return hit;}
             if(model->parameters.fx.slot[row].type==TS_SISTER_FX_TRANSIENT && contains(x,y,320,top+22,66,18)) {
                 hit.action=TS_SISTER_UI_ACTION_TRANSIENT_POWER;hit.index=row;return hit;
             }

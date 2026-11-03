@@ -3,6 +3,7 @@
 
 #include "tapesister/sample.h"
 #include "tapesister/transient.h"
+#include "tapesister/character_filter.h"
 #include "tapesister/sister_effects.h"
 #include "tapesister/sister_fallout.h"
 
@@ -25,6 +26,7 @@ typedef enum {
     TS_SISTER_FX_DISTORTION,
     TS_SISTER_FX_GRAIN,
     TS_SISTER_FX_TRANSIENT,
+    TS_SISTER_FX_FILTER,
     TS_SISTER_FX_TYPE_COUNT
 } TsSisterFxType;
 
@@ -73,6 +75,7 @@ typedef struct {
     TsGrainStates grain_states;
     uint8_t transient_power; /* Zero preserves the original ATK/SUS ranges. */
     TsGrainStates transient_states;
+    TsCharacterFilterControls filter;
 } TsSisterFxSlotControls;
 
 typedef struct {
@@ -337,6 +340,7 @@ typedef struct {
         grain[TS_SISTER_FX_SLOT_COUNT][TS_SISTER_FX_LOCATION_COUNT];
     TsSisterTransientState
         transient[TS_SISTER_FX_SLOT_COUNT][TS_SISTER_FX_LOCATION_COUNT];
+    TsCharacterFilter filter[TS_SISTER_FX_SLOT_COUNT][TS_SISTER_FX_LOCATION_COUNT];
     /* Prepared on init/reconfigure, never recomputed per audio sample. */
     TsSisterFxTiming timing;
     uint32_t transition_frames;
