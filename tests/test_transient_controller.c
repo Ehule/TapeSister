@@ -119,7 +119,8 @@ int main(int argc,char **argv)
     instance->transient_power=1;event.button.button=SDL_BUTTON_LEFT;assert(matrix_event(&event,NULL,0,&audio,&ui,&pages,&bank));
     assert(instance->transient_states.power[0]==1 && !instance->transient_states.editing);
     event.button.x=880;assert(matrix_event(&event,NULL,0,&audio,&ui,&pages,&bank));assert(instance->transient_states.seconds>500);
-    matrix_window.drag=0;event.button.x=720;event.button.button=SDL_BUTTON_RIGHT;assert(matrix_event(&event,NULL,0,&audio,&ui,&pages,&bank));
+    event.type=SDL_MOUSEBUTTONUP;assert(matrix_event(&event,NULL,0,&audio,&ui,&pages,&bank));
+    event.type=SDL_MOUSEBUTTONDOWN;event.button.x=720;event.button.button=SDL_BUTTON_RIGHT;assert(matrix_event(&event,NULL,0,&audio,&ui,&pages,&bank));
     assert(!instance->transient_states.seconds);
     mx_undo(0,&audio,&ui,&pages,&bank,0);assert(matrix_window.controls.effect[matrix_slot].transient_states.seconds>500);
     mx_undo(0,&audio,&ui,&pages,&bank,1);assert(!matrix_window.controls.effect[matrix_slot].transient_states.seconds);
