@@ -238,7 +238,7 @@ int ts_sister_preset_delete(TsSisterPresetBank *bank, size_t index,
 static int write_parameters(FILE *file, const TsSisterParameters *p)
 {
     if (p->fx.slot_count < TS_SISTER_FX_SLOT_MIN || p->fx.slot_count > TS_SISTER_FX_SLOT_COUNT) return 0;
-    if (fprintf(file,"memory_mode=%d\n",p->memory_mode)<0 ||
+    if (fprintf(file,"memory_mode=%d\nmemory_blend=%.9g\nmemory_fade_seconds=%.9g\n",p->memory_mode,p->memory_blend,p->memory_fade_seconds)<0 ||
         !ts_dark_matter_controls_write(file,"dark_matter",&p->dark)) return 0;
     ts_prism_write_extensions(file, &p->prism);
     if (fprintf(file, "prism_input_shape=%d\nprism_output_shape=%d\nprism_color=%.9g\n",
@@ -346,6 +346,7 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         if (fprintf(file, "slot%d_locks=%u\n", index + 1, (unsigned)slot->parameter_locks) < 0) return 0;
         char transient_key[40];snprintf(transient_key,sizeof(transient_key),"slot%d_transient",index+1);
         if(!ts_transient_states_write(file,transient_key,slot->transient_power,&slot->transient_states))return 0;
+        if(slot->type==TS_SISTER_FX_FILTER || slot->filter.captured){snprintf(transient_key,sizeof(transient_key),"slot%d_filter",index+1);if(!ts_character_filter_write(file,transient_key,&slot->filter))return 0;}
         const TsGrainStates *bank=&slot->grain_states;
         if(fprintf(file,"slot%d_state_mask=%u\nslot%d_state_selected=%u\nslot%d_state_seconds=%.9g\n",
             index+1,(unsigned)bank->captured,index+1,(unsigned)bank->selected,index+1,bank->seconds)<0)return 0;
@@ -453,6 +454,7 @@ static int assign_field(TsSisterParameters *p, const char *key,
         slot_number >= 1 && slot_number <= TS_SISTER_FX_SLOT_COUNT) {
         if (slot_number > p->fx.slot_count) p->fx.slot_count = slot_number;
         TsSisterFxSlotControls *slot = &p->fx.slot[slot_number - 1];
+        if(!strcmp(slot_field,"filter"))return ts_character_filter_read(&slot->filter,value);
         if(!strcmp(slot_field,"transient"))return ts_transient_states_read(value,&slot->transient_power,&slot->transient_states);
         if(!strcmp(slot_field,"state_seconds"))return parse_float(value,&slot->grain_states.seconds);
         if(!strcmp(slot_field,"state_mask") || !strcmp(slot_field,"state_selected")) {
@@ -520,6 +522,8 @@ static int assign_field(TsSisterParameters *p, const char *key,
     FLOAT_FIELD("prism_mix", prism.mix);
     FLOAT_FIELD("prism_output_db", prism.output_db);
     INT_FIELD("memory_mode", memory_mode);
+    FLOAT_FIELD("memory_blend", memory_blend);
+    FLOAT_FIELD("memory_fade_seconds", memory_fade_seconds);
     if (!strcmp(key,"dark_matter")) return ts_dark_matter_controls_read(&p->dark,value);
     FLOAT_FIELD("h1_level", head1_level); FLOAT_FIELD("h1_time_ms", head1_time_ms);
     FLOAT_FIELD("h1_feedback", head1_feedback); FLOAT_FIELD("h2_level", head2_level);
@@ -672,7 +676,7 @@ int ts_sister_preset_load(TsSisterPresetBank *bank, const char *path,
     uint64_t current_locks = 0u;
     uint64_t current_locks_high = 0u;
     char current_name[TS_SISTER_PRESET_NAME_MAX + 1] = "";
-    char line[512];
+    char line[4096];
     FILE *file;
     int line_number = 0;
     int saw_header = 0;

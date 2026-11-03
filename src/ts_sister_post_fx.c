@@ -236,6 +236,7 @@ const char *ts_sister_fx_type_name(TsSisterFxType type)
     case TS_SISTER_FX_DISTORTION: return "DISTORTION";
     case TS_SISTER_FX_GRAIN: return "GRAIN";
     case TS_SISTER_FX_TRANSIENT: return "TRANSIENT";
+    case TS_SISTER_FX_FILTER: return "FILTER";
     default: return "EMPTY";
     }
 }
@@ -264,6 +265,7 @@ static TsSisterFxSlotControls slot_controls(
     slot.parameter_b = b;
     slot.parameter_c = c;
     slot.mix = mix;
+    ts_character_filter_default(&slot.filter);
     return slot;
 }
 
@@ -478,6 +480,7 @@ void ts_sister_fx_controls_sanitize(TsSisterFxControls *controls)
         TsSisterFxSlotControls *slot = &controls->slot[i];
         if ((int)i >= controls->slot_count) *slot = ts_sister_fx_empty_slot();
         slot->parameter_locks &= 31u;
+        ts_character_filter_sanitize(&slot->filter);
         TsGrainStates *bank=&slot->grain_states;
         bank->captured&=31u;if(bank->selected>TS_GRAIN_STATES)bank->selected=0;
         bank->editing=bank->editing!=0;
@@ -812,6 +815,7 @@ int ts_sister_post_fx_init(TsSisterPostFxEngine *engine,
                 ts_sister_post_fx_free(&next);
                 return 0;
             }
+            ts_character_filter_init(&next.filter[slot][location],sample_rate);
             ts_transient_init(&next.transient[slot][location].dsp, sample_rate);
             next.transient[slot][location].response_cached = .5f;
             next.transient[slot][location].gain_current = 1;
@@ -1018,6 +1022,9 @@ void ts_sister_post_fx_sync_controls(TsSisterPostFxEngine *engine,
             grain->state_serial=control->grain_states.recall_serial;grain->state_remaining=0;
             grain->gain_current = grain->gain_target =
                 makeup_gain_linear(control->gain_db);
+            TsCharacterFilter *filter=&engine->filter[slot][location];
+            memcpy(filter->smooth,control->filter.value,sizeof(filter->smooth));filter->initialized=1;
+            filter->mix=control->mix;filter->gain=filter->gain_target=makeup_gain_linear(control->gain_db);
             TsSisterTransientState *transient = &engine->transient[slot][location];
             transient->gain_db_cached = control->gain_db;
             transient->gain_current = transient->gain_target = makeup_gain_linear(control->gain_db);
@@ -1585,6 +1592,11 @@ static TsStereoFrame slot_effect_process(TsSisterPostFxEngine *engine,
     case TS_SISTER_FX_DISTORTION:
         return distortion_process(&engine->timing,
             &engine->distortion[slot][location], control, input, gate, direct);
+    case TS_SISTER_FX_FILTER: {
+        TsCharacterFilter *f=&engine->filter[slot][location];
+        TsStereoFrame out=ts_character_filter_process(f,&control->filter,input,control->mix,control->gain_db,gate);
+        *direct=(1-f->mix)*(1+(f->gain-1)*gate);return out;
+    }
     case TS_SISTER_FX_TRANSIENT:
         return transient_process(&engine->timing, &engine->transient[slot][location],
                                  control, input, gate, direct);
@@ -1734,6 +1746,9 @@ TsSisterFxView ts_sister_post_fx_view(const TsSisterPostFxEngine *engine)
                     y=.5f+(float)t->dsp.sustain_db/48;
                     wet=t->mix_current*fmaxf(fabsf(2*x-1),fabsf(2*y-1));break;
                 }
+                case TS_SISTER_FX_FILTER:
+                    wet=engine->filter[slot][loc].mix;
+                    x=engine->filter[slot][loc].smooth[TS_CF_L_CUT];y=engine->filter[slot][loc].smooth[TS_CF_L_RES];break;
                 case TS_SISTER_FX_GRAIN:
                     wet=engine->grain[slot][loc].mix_current;
                     x=engine->grain[slot][loc].size_current;y=engine->grain[slot][loc].density_current;break;
@@ -1858,6 +1873,7 @@ struct TsSisterSingleFx {
         TsSisterDistortionState distortion;
         TsSisterGrainState grain;
         TsSisterTransientState transient;
+        TsCharacterFilter filter;
     } state;
 };
 TsSisterSingleFx *ts_sister_single_fx_new(TsSisterFxType type,unsigned rate,uint32_t seed)
@@ -1878,6 +1894,8 @@ TsSisterSingleFx *ts_sister_single_fx_new(TsSisterFxType type,unsigned rate,uint
     case TS_SISTER_FX_DISTORTION:
         f->state.distortion.drive_current=.25f;f->state.distortion.tone_current=.55f;
         f->state.distortion.gain_current=f->state.distortion.gain_target=1;break;
+    case TS_SISTER_FX_FILTER:
+        ts_character_filter_default(&f->controls.filter);ts_character_filter_init(&f->state.filter,rate);break;
     case TS_SISTER_FX_TRANSIENT:
         ts_transient_init(&f->state.transient.dsp,rate);f->state.transient.response_cached=.5f;
         f->state.transient.gain_current=f->state.transient.gain_target=1;break;
@@ -1896,7 +1914,7 @@ void ts_sister_single_fx_free(TsSisterSingleFx *f)
 void ts_sister_single_fx_set(TsSisterSingleFx *f,const TsSisterFxSlotControls *c)
 {
     if(!f || !c || c->type!=f->controls.type)return;
-    f->controls=*c;f->controls.gain_db=clampf(c->gain_db,-12,12);
+    f->controls=*c;ts_character_filter_sanitize(&f->controls.filter);f->controls.gain_db=clampf(c->gain_db,-12,12);
     f->controls.parameter_a=clampf(c->parameter_a,0,1);f->controls.parameter_b=clampf(c->parameter_b,0,1);
     f->controls.parameter_c=clampf(c->parameter_c,0,1);f->controls.mix=clampf(c->mix,0,1);
     f->controls.transient_power=c->transient_power>3?3:c->transient_power;
@@ -1911,6 +1929,7 @@ TsStereoFrame ts_sister_single_fx_process(TsSisterSingleFx *f,TsStereoFrame inpu
     case TS_SISTER_FX_DELAY:return delay_process(&f->timing,&f->state.delay,&f->controls,input,gate,&direct);
     case TS_SISTER_FX_DISTORTION:return distortion_process(&f->timing,&f->state.distortion,&f->controls,input,gate,&direct);
     case TS_SISTER_FX_GRAIN:return grain_process(&f->timing,&f->state.grain,&f->controls,input,gate,&direct);
+    case TS_SISTER_FX_FILTER:return ts_character_filter_process(&f->state.filter,&f->controls.filter,input,f->controls.mix,f->controls.gain_db,gate);
     case TS_SISTER_FX_TRANSIENT:return transient_process(&f->timing,&f->state.transient,&f->controls,input,gate,&direct);
     default:return input;
     }

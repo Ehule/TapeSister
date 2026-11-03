@@ -274,6 +274,7 @@ int ts_matrix_write(FILE *f,const TsMatrixControls *c)
             k->enabled,k->external,k->threshold_db,k->ratio,k->attack_ms,k->release_ms,k->output_db)<0)return 0;
         char key[40];snprintf(key,sizeof(key),"Matrix.Transient%d",i);
         if(!ts_transient_states_write(f,key,v->transient_power,&v->transient_states))return 0;
+        if(v->type==TS_MATRIX_FX_FILTER){snprintf(key,sizeof(key),"Matrix.Filter%d",i);if(!ts_character_filter_write(f,key,&v->filter))return 0;}
     }
     for(int s=0;s<TS_MATRIX_ROWS;++s) {
         if(fprintf(f,"Matrix.Row%d=%d,%d,%" PRIu64,s,c->row[s].pan,c->row[s].width,ts_matrix_is_processor(s)?c->delayed[s]:UINT64_C(0))<0)return 0;
@@ -298,6 +299,8 @@ int ts_matrix_read(TsMatrixControls *c,const char *key,const char *v)
         char *end;errno=0;unsigned long long id=strtoull(v,&end,10);
         if(*v<'0' || *v>'9' || errno || end==v || *end || !id || id>UINT32_MAX)return -1;
         next.next_effect_id=(uint32_t)id;
+    } else if(sscanf(key,"Filter%d%n",&n,&used)==1 && !key[used] && n>=0 && n<TS_MATRIX_EFFECT_CAPACITY) {
+        if(!ts_character_filter_read(&next.effect[n].filter,v))return -1;
     } else if(sscanf(key,"Transient%d%n",&n,&used)==1 && !key[used] && n>=0 && n<TS_MATRIX_EFFECT_CAPACITY) {
         if(!ts_transient_states_read(v,&next.effect[n].transient_power,&next.effect[n].transient_states))return -1;
     } else if(sscanf(key,"Effect%d%n",&n,&used)==1 && !key[used] && n>=0 && n<TS_MATRIX_EFFECT_CAPACITY) {
@@ -315,6 +318,7 @@ int ts_matrix_read(TsMatrixControls *c,const char *key,const char *v)
         TsMatrixEffectControls e={0};e.id=(uint32_t)x[0];e.type=(int)x[1];e.enabled=(int)x[2];
         e.a=x[3];e.b=x[4];e.c=x[5];e.mix=x[6];e.gain_db=x[7];e.transition=x[8];
         e.compressor=(TsCompressorControls){(int)x[9],(int)x[10],x[11],x[12],x[13],x[14],x[15]};
+        e.filter=next.effect[n].filter;if(!e.filter.initialized)ts_character_filter_default(&e.filter);
         e.transient_power=next.effect[n].transient_power;e.transient_states=next.effect[n].transient_states;
         if(!ts_matrix_effect_valid(&e))return -1;
         next.effect[n]=e;

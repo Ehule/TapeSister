@@ -106,6 +106,8 @@ typedef struct {
 
 typedef struct {
     int memory_mode;
+    float memory_blend; /* -1: selected endpoint; 0..1: manual blend. */
+    float memory_fade_seconds;
     TsDarkMatterControls dark;
     float head1_level;
     float head1_time_ms;

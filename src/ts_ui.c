@@ -5531,6 +5531,7 @@ static void sister_spirit_render(TsFramebuffer *fb,
 
 #include "ts_prism_ui.inc"
 #include "ts_dark_matter_ui.inc"
+#include "ts_character_filter_ui.inc"
 
 void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                          const TsPalette *palette)
@@ -5721,7 +5722,7 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
             const TsSisterFxSlotControls *slot =
                 &model->parameters.fx.slot[row];
             int top = TS_SISTER_UI_FX_TOP + visible * TS_SISTER_UI_FX_ROW_STEP;
-            int fields = (slot->type == TS_SISTER_FX_GRAIN || slot->type == TS_SISTER_FX_TRANSIENT) ? 5 : 4;
+            int fields = (slot->type == TS_SISTER_FX_GRAIN || slot->type == TS_SISTER_FX_TRANSIENT || slot->type == TS_SISTER_FX_FILTER) ? 5 : 4;
             int field_width = fields == 5 ? 70 : 88;
             int field_step = fields == 5 ? 74 : 92;
             uint32_t color = slot->type == TS_SISTER_FX_REVERB ?
@@ -5746,7 +5747,17 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                 sister_db_parameter_state(fb, 156, top + 4, field_width,
                     "GAIN", slot->gain_db, color,
                     ts_sister_ui_parameter_locked(model, parameter));
-                if (slot->type == TS_SISTER_FX_TRANSIENT) {
+                if(slot->type==TS_SISTER_FX_FILTER) {
+                    const TsCharacterFilterControls *c=&slot->filter;
+                    int focus=c->value[TS_CF_ROUTE]>=.75f && c->value[TS_CF_FOCUS]>=.5f?8:0;
+                    const int ids[3]={TS_CF_L_CUT+focus,TS_CF_L_RES+focus,TS_CF_L_DRIVE+focus};
+                    for(int k=0;k<3;++k){char s[32];float v=c->value[ids[k]];
+                        if(k==0){float hz=ts_character_filter_cutoff(v);if(hz>=1000)snprintf(s,sizeof(s),"CUT %.1FK",hz/1000);else snprintf(s,sizeof(s),"CUT %.0F",hz);}
+                        else if(k==1)snprintf(s,sizeof(s),"RES %.0F%%",100*v);else snprintf(s,sizeof(s),"DRV +%.1F",24*v);
+                        sister_value_parameter_state(fb,156+field_step*(k+1),top+4,field_width,s,c->value[ids[k]],PAL_WAVE_RIGHT,
+                            ts_sister_ui_parameter_locked(model,parameter+k+1) || (c->locks&(1u<<ids[k])));}
+                    sister_percent_parameter_state(fb,156+field_step*4,top+4,field_width,"MIX",slot->mix,100,PAL_WAVE_RIGHT,ts_sister_ui_parameter_locked(model,parameter+4));
+                } else if (slot->type == TS_SISTER_FX_TRANSIENT) {
                     char label[24];
                     snprintf(label,sizeof(label),"ATK %+.1f",(slot->parameter_a-.5f)*30*(1+slot->transient_power));
                     sister_value_parameter_state(fb,156+field_step,top+4,field_width,
@@ -5810,6 +5821,9 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
             if(slot->type==TS_SISTER_FX_TRANSIENT) {
                 char power[16];snprintf(power,sizeof(power),"PWR %uX",1u+slot->transient_power);
                 button(fb,320,top+26,66,power,slot->transient_power!=0);
+            } else if(slot->type==TS_SISTER_FX_FILTER) {
+                sister_compact_button(fb,330,top+26,80,"EDIT FILTER",0);
+                char s[32];ts_character_filter_label(&slot->filter,TS_CF_ROUTE,s,sizeof(s));text(fb,420,top+31,s,PAL_WAVE_RIGHT,1);
             } else text(fb, 330, top + 31, description, PAL_MOUSE, 1);
             if(slot->type==TS_SISTER_FX_GRAIN || slot->type==TS_SISTER_FX_TRANSIENT) {
                 const TsGrainStates *bank=slot->type==TS_SISTER_FX_TRANSIENT?&slot->transient_states:&slot->grain_states;
@@ -5918,33 +5932,43 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
         goto sister_footer;
     }
 
-    rect(fb, 10, 40, 620, 126, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(7, 7, 8)));
+    {
+        float blend=model->parameters.memory_blend>=0?model->parameters.memory_blend:(float)model->parameters.memory_mode;
+        float heard=model->routing.enabled?sister_clamp(model->engine.dark_blend):blend;
+        char label[64];snprintf(label,sizeof(label),"TAPE %.0F%% / DARK %.0F%%",100*(1-heard),100*heard);
+        sister_value_parameter_state(fb,10,40,308,label,heard,PAL_WAVE_RIGHT,0);
+        int cursor=11+(int)(305*heard);rect(fb,cursor,41,2,16,PAL_VOLUME);
+        rect(fb,11+(int)(305*blend),55,2,3,PAL_MOUSE);
+        snprintf(label,sizeof(label),"MODE FADE %.2F S",model->parameters.memory_fade_seconds);
+        sister_value_parameter_state(fb,338,40,244,label,logf(model->parameters.memory_fade_seconds/.02f)/logf(6000),PAL_TUNING,0);
+    }
+    rect(fb, 10, 62, 620, 104, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(7, 7, 8)));
     if (model->parameters.memory_mode==TS_SISTER_MEMORY_DARK) sister_dark_memories(fb,model);
     else if (model->routing.enabled &&
         model->power_visual == TS_SISTER_UI_POWER_VISUAL_NONE) {
         mode = ts_waveform_display_sanitize(model->waveform_mode);
         if (mode == TS_WAVEFORM_DISPLAY_STEREO && model->waveform.channels == 2u) {
-            text(fb, 14, 45, "L", PAL_WAVE_LEFT, 1);
-            text(fb, 14, 108, "R", PAL_WAVE_RIGHT, 1);
-            sister_wave_lane(fb, &model->waveform, 26, 40, 600, 61, 0, PAL_WAVE_LEFT);
-            sister_wave_lane(fb, &model->waveform, 26, 103, 600, 63, 1, PAL_WAVE_RIGHT);
+            text(fb, 14, 67, "L", PAL_WAVE_LEFT, 1);
+            text(fb, 14, 120, "R", PAL_WAVE_RIGHT, 1);
+            sister_wave_lane(fb, &model->waveform, 26, 62, 600, 49, 0, PAL_WAVE_LEFT);
+            sister_wave_lane(fb, &model->waveform, 26, 115, 600, 51, 1, PAL_WAVE_RIGHT);
         } else {
             int channel = mode == TS_WAVEFORM_DISPLAY_RIGHT ? 1 :
                           mode == TS_WAVEFORM_DISPLAY_MONO_SUM ? 2 : 0;
             uint32_t color = mode == TS_WAVEFORM_DISPLAY_RIGHT ? PAL_WAVE_RIGHT :
                              mode == TS_WAVEFORM_DISPLAY_MONO_SUM ? PAL_WAVE_SUM :
                              PAL_WAVE_LEFT;
-            sister_wave_lane(fb, &model->waveform, 14, 40, 612, 126, channel, color);
+            sister_wave_lane(fb, &model->waveform, 14, 62, 612, 104, channel, color);
         }
-        sister_marker(fb, model->engine.write_normalized, 26, 600, 40, 126,
+        sister_marker(fb, model->engine.write_normalized, 26, 600, 62, 104,
                       PAL_VOLUME, 0, 0);
         sister_head_markers(fb, model->engine.head_normalized,
-                            26, 600, 40, 126);
+                            26, 600, 62, 104);
     }
     if (!model->routing.enabled ||
         model->power_visual != TS_SISTER_UI_POWER_VISUAL_NONE)
         sister_spirit_render(fb, model);
-    if(model->parameters.memory_mode!=TS_SISTER_MEMORY_DARK) button(fb, 600, 144, 24,
+    if(model->parameters.memory_mode!=TS_SISTER_MEMORY_DARK) button(fb, 600, 40, 24,
            ts_waveform_display_letter(model->waveform_mode),
            model->waveform_mode != TS_WAVEFORM_DISPLAY_STEREO);
     if(model->matrix_routing)sister_compact_button(fb,TS_SISTER_UI_ROUTE_X,

@@ -15,11 +15,13 @@ static float mx_effect_value(const TsMatrixEffectControls *c,int position)
 {
     int k=mx_effect_control_id(c,position);
     if(c->type==TS_MATRIX_FX_COMPRESSOR)return k<5?ts_compressor_normalized(&c->compressor,k):k==5?c->mix:c->transition;
+    if(c->type==TS_MATRIX_FX_FILTER && k<3){int focus=c->filter.value[TS_CF_ROUTE]>=.75f && c->filter.value[TS_CF_FOCUS]>=.5f?8:0;return c->filter.value[(int[]){TS_CF_L_CUT,TS_CF_L_RES,TS_CF_L_DRIVE}[k]+focus];}
     return k==0?c->a:k==1?c->b:k==2?c->c:k==3?c->mix:k==4?(c->gain_db+12)/24:c->transition;
 }
 static void mx_effect_value_set(TsMatrixEffectControls *c,int position,float value)
 {
     float v=SDL_clamp(value,0,1);int k=mx_effect_control_id(c,position);
+    if(c->type==TS_MATRIX_FX_FILTER && k<3){int focus=c->filter.value[TS_CF_ROUTE]>=.75f && c->filter.value[TS_CF_FOCUS]>=.5f?8:0;ts_character_filter_set(&c->filter,(int[]){TS_CF_L_CUT,TS_CF_L_RES,TS_CF_L_DRIVE}[k]+focus,v);return;}
     if(c->type==TS_MATRIX_FX_COMPRESSOR) {
         if(k<5)ts_compressor_set_normalized(&c->compressor,k,v);else if(k==5)c->mix=v;else c->transition=v;
     } else if(k==0)c->a=v;else if(k==1)c->b=v;else if(k==2)c->c=v;else if(k==3)c->mix=v;else if(k==4)c->gain_db=v*24-12;else c->transition=v;
@@ -51,7 +53,7 @@ static void mx_effect_paint(void)
         int used=0;for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)used+=w->controls.effect[i].id!=0;
         snprintf(text,sizeof(text),"ADD AN INDEPENDENT EFFECT (%d / %d)",used,TS_MATRIX_EFFECT_CAPACITY);mx_text(32,703,text,MX_GREEN,2);
         mx_button(1080,696,160,"CLOSE",0);
-        for(int type=1;type<TS_MATRIX_FX_TYPES;++type)mx_button(32+(type-1)*202,736,192,ts_matrix_effect_name(type),0);
+        for(int type=1;type<TS_MATRIX_FX_TYPES;++type)mx_button(32+(type-1)*172,736,162,ts_matrix_effect_name(type),0);
         mx_text(32,779,"NEW EFFECTS START UNPATCHED. CONNECT A SOURCE TO THEIR COLUMN, THEN THEIR ROW TO A DESTINATION.",MX_DIM,1);return;
     }
     int slot=mx_effect_slot();if(slot<0){mx_text(32,703,"INSTANCE REMOVED - SELECT ANOTHER ROW",MX_DIM,2);return;}
@@ -72,7 +74,8 @@ static void mx_effect_paint(void)
             if(selected)mx_rect(518+i*34,722,28,2,c->transient_states.editing?MX_AMBER:MX_GREEN);
         }
         snprintf(text,sizeof(text),"GLIDE %.1F S",c->transient_states.seconds);mx_button(694,696,190,text,0);
-    } else mx_text(418,704,"INDEPENDENT INSTANCE",MX_DIM,1);
+    } else if(c->type==TS_MATRIX_FX_FILTER)mx_button(410,696,200,"EDIT FILTER",0);
+    else mx_text(418,704,"INDEPENDENT INSTANCE",MX_DIM,1);
     mx_button(898,696,138,"REMOVE",0);mx_button(1048,696,192,"BACK TO ROUTES",0);
     if(w->effect_progress<1 && c->type!=TS_SISTER_FX_TRANSIENT){mx_rect(630,715,240,3,MX_DIM);mx_rect(630,715,(int)(240*w->effect_progress),3,MX_AMBER);}
     int count=mx_effect_controls(c),width=1204/count;
@@ -140,7 +143,7 @@ static void mx_effect_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioSta
     if(left && y>=696 && y<724 && x>=1048){w->effect_menu=0;w->effect_open=0;w->drag=0;return;}
     if(!mx_editable())return;
     if(w->effect_menu) {
-        if(left && y>=736 && y<764 && x>=32 && x<1244)mx_effect_add(device,audio,ui,pages,bank,1+(x-32)/202);
+        if(left && y>=736 && y<764 && x>=32 && x<1244)mx_effect_add(device,audio,ui,pages,bank,1+(x-32)/172);
         return;
     }
     int slot=mx_effect_slot();if(slot<0)return;
@@ -180,6 +183,7 @@ static void mx_effect_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioSta
         return;
     }
     if(left && y>=696 && y<724) {
+        if(c->type==TS_MATRIX_FX_FILTER && x>=410 && x<610){character_filter_matrix_open(c->id);return;}
         if(x>=272 && x<398){c->enabled=!c->enabled;change=1;}
         if(c->type==TS_MATRIX_FX_COMPRESSOR && x>=410 && x<610){c->compressor.external=!c->compressor.external;if(c->compressor.external)mx_reveal_column(TS_MATRIX_EFFECT_SC_BASE+slot);change=1;}
         if(x>=898 && x<1036){mx_effect_remove(device,audio,ui,pages,bank,slot);return;}

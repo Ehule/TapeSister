@@ -132,14 +132,14 @@ int main(void)
     CHECK(hit.action == TS_SISTER_UI_ACTION_MASTER_OUTPUT &&
           hit.index == TS_SISTER_UI_PARAM_MASTER_OUTPUT &&
           hit.normalized > 0.4f && hit.normalized < 0.6f);
-    CHECK(ts_sister_ui_hit_test_model(&model, 610, 150).action ==
+    CHECK(ts_sister_ui_hit_test_model(&model, 610, 50).action ==
           TS_SISTER_UI_ACTION_WAVE_MODE);
     CHECK(ts_sister_ui_hit_test_model(&model, 540, 150).action ==
           TS_SISTER_UI_ACTION_NONE);
     CHECK(ts_sister_ui_hit_test(455, 10).action == TS_SISTER_UI_ACTION_PAGE);
     hit=ts_sister_ui_hit_test_model(&model,100,16);
     CHECK(hit.action==TS_SISTER_UI_ACTION_PARAMETER && hit.index==TS_DARK_PARAM_MODE);
-    CHECK(ts_sister_ui_hit_test_model(&model,70,50).action==TS_SISTER_UI_ACTION_NONE);
+    CHECK(ts_sister_ui_hit_test_model(&model,70,50).index==TS_MEMORY_PARAM_BLEND);
     CHECK(ts_sister_ui_hit_test_model(&model,165,16).action==TS_SISTER_UI_ACTION_ROLL);
     CHECK(ts_sister_ui_hit_test_model(&model,210,16).action==TS_SISTER_UI_ACTION_HOLD);
     CHECK(ts_sister_ui_hit_test_model(&model,250,16).action==TS_SISTER_UI_ACTION_CLEAR);
@@ -399,11 +399,11 @@ int main(void)
        the last plot column.  The ordinary-canvas line clip begins at y=64
        and ends at x=619, so these pixels guard against accidentally reusing
        that canvas-only helper here. */
-    CHECK(framebuffer.pixels[43u * TS_UI_WIDTH + 100u] ==
+    CHECK(framebuffer.pixels[65u * TS_UI_WIDTH + 100u] ==
           palette.colors[TS_PALETTE_STEREO_WAVE_LEFT]);
-    CHECK(framebuffer.pixels[43u * TS_UI_WIDTH + 625u] ==
+    CHECK(framebuffer.pixels[65u * TS_UI_WIDTH + 625u] ==
           palette.colors[TS_PALETTE_STEREO_WAVE_LEFT]);
-    CHECK(framebuffer.pixels[106u * TS_UI_WIDTH + 625u] ==
+    CHECK(framebuffer.pixels[118u * TS_UI_WIDTH + 625u] ==
           palette.colors[TS_PALETTE_STEREO_WAVE_RIGHT]);
     /* PR8's default MIX target has its stereo-role top/under lines. H1 is
        inactive, while the default 25-percent BLEED bar is visibly filled. */
@@ -418,7 +418,7 @@ int main(void)
     memset(model.waveform.bins,0,sizeof(model.waveform.bins));
     model.waveform.bins[700].left_maximum=.75f;
     ts_sister_ui_render(&framebuffer,&model,&palette);
-    CHECK(framebuffer.pixels[55u*TS_UI_WIDTH+128u]==palette.colors[TS_PALETTE_STEREO_WAVE_LEFT]);
+    CHECK(framebuffer.pixels[70u*TS_UI_WIDTH+128u]==palette.colors[TS_PALETTE_STEREO_WAVE_LEFT]);
     model.routing.capture_state = TS_CAPTURE_RECORDING;
     model.routing.capture_recorded_frames = 25u;
     model.routing.capture_capacity_frames = 100u;

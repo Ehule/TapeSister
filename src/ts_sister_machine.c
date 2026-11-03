@@ -241,6 +241,7 @@ void ts_sister_parameters_default(TsSisterParameters *parameters,
     if (parameters == NULL) return;
     memset(parameters, 0, sizeof(*parameters));
     ts_dark_matter_controls_default(&parameters->dark);
+    parameters->memory_blend=-1;parameters->memory_fade_seconds=.2f;
     parameters->head1_level = 0.45f;
     parameters->head1_time_ms = 500.0f;
     parameters->head1_feedback = 0.25f;
@@ -666,6 +667,8 @@ static TsSisterParameters sanitize_parameters(const TsSisterMachine *machine,
     result = *input;
     result.memory_mode = result.memory_mode == TS_SISTER_MEMORY_DARK ? TS_SISTER_MEMORY_DARK : TS_SISTER_MEMORY_TAPE;
     ts_dark_matter_controls_sanitize(&result.dark);
+    result.memory_blend=isfinite(result.memory_blend) && result.memory_blend>=0?clampf(result.memory_blend,0,1):-1;
+    result.memory_fade_seconds=clampf(result.memory_fade_seconds,.02f,120);
     result.head1_level = clampf(result.head1_level, 0.0f, 1.0f);
     result.head1_time_ms = clampf(result.head1_time_ms, 0.0f, 4000.0f);
     result.head1_feedback = clampf(result.head1_feedback, 0.0f, 1.0f);
@@ -761,7 +764,7 @@ static void reset_runtime_state(TsSisterMachine *machine, int clear_buffer,
     if (machine == NULL || machine->buffer.data == NULL) return;
     if (clear_buffer) { ts_sister_buffer_clear(&machine->buffer); ts_dark_matter_clear(&machine->dark); }
     ts_dark_matter_set(&machine->dark, &machine->parameters.dark, machine->parameters.buffer_seconds);
-    ramp_reset(&machine->dark_blend, machine->parameters.memory_mode == TS_SISTER_MEMORY_DARK ? 1.f : 0.f);
+    ramp_reset(&machine->dark_blend, machine->parameters.memory_blend>=0?machine->parameters.memory_blend:(machine->parameters.memory_mode == TS_SISTER_MEMORY_DARK ? 1.f : 0.f));
     ramp_reset(&machine->dark_output_gain, 1.f);
     memset(machine->mode_energy, 0, sizeof(machine->mode_energy));
     machine->mode_meter_frames = 0;
@@ -1075,18 +1078,21 @@ void ts_sister_machine_set_parameters(TsSisterMachine *machine,
     if (machine == NULL || machine->buffer.data == NULL || parameters == NULL) return;
     next = sanitize_parameters(machine, parameters);
     ts_dark_matter_set(&machine->dark, &next.dark, next.buffer_seconds);
-    float dark_target = next.memory_mode == TS_SISTER_MEMORY_DARK ? 1.f : 0.f;
-    if (machine->dark_blend.target != dark_target) {
-        uint32_t frames = milliseconds_frames(machine->buffer.sample_rate, 200);
+    float dark_target = next.memory_blend>=0?next.memory_blend:(next.memory_mode == TS_SISTER_MEMORY_DARK ? 1.f : 0.f);
+    if (machine->dark_blend.target != dark_target || (machine->dark_blend.remaining && next.memory_fade_seconds!=machine->parameters.memory_fade_seconds)) {
+        uint32_t frames = milliseconds_frames(machine->buffer.sample_rate, next.memory_blend>=0?50:1000*next.memory_fade_seconds);
         /* Match the two live memories only at a mode change. Freeze the trim
            between changes so swells and decays are not compressed away.
            Empty/quiet memories never cause an automatic gain boost. */
-        if (machine->mode_meter_frames > machine->dark.bank[3].length + machine->buffer.sample_rate &&
+        if (next.memory_blend<0 && (machine->dark_blend.current==0 || machine->dark_blend.current==1) &&
+            machine->mode_meter_frames > machine->dark.bank[3].length + machine->buffer.sample_rate &&
             machine->mode_energy[0] > 1e-8f && machine->mode_energy[1] > 1e-8f) {
             float gain = sqrtf(machine->mode_energy[0] / machine->mode_energy[1]);
             ramp_set(&machine->dark_output_gain, clampf(gain, .125f, 8.f), frames);
         }
-        ramp_set(&machine->dark_blend, dark_target, frames);
+        if(machine->dark_blend.target==dark_target && machine->dark_blend.remaining){
+            machine->dark_blend.step=(dark_target-machine->dark_blend.current)/frames;machine->dark_blend.remaining=frames;
+        }else ramp_set(&machine->dark_blend, dark_target, frames);
     }
     if ((double)machine->buffer.capacity_frames /
             machine->buffer.sample_rate >= TS_SISTER_MIN_SECONDS &&

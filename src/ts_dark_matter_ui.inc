@@ -1,9 +1,9 @@
 /* Native Sister controls and audio-owned meters; no UI-driven modulation. */
 static void sister_dark_memories(TsFramebuffer *fb, const TsSisterUiModel *m)
 {
-    text(fb,162,49,"DARK MATTER / FOUR DRIFTING MEMORIES",PAL_TUNING,1);
+    text(fb,162,65,"DARK MATTER / FOUR DRIFTING MEMORIES",PAL_TUNING,1);
     for(int i=0;i<4;++i) {
-        int top=74+i*22;
+        int top=84+i*20;
         uint32_t color=i&1?PAL_WAVE_RIGHT:PAL_WAVE_LEFT;
         char label[32];float seconds=m->engine.dark_seconds[i];
         if(seconds<=0) { static const float share[4]={.17f,.23f,.27f,.33f};seconds=m->parameters.buffer_seconds*share[i]; }
