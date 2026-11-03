@@ -6,15 +6,46 @@ static void mosaic_scale_status(TsUiState *ui)
     TsMosaicEvent preview;
     ts_ui_mosaic_transform_event(ui,&ui->mosaic_ghosts[0],&preview);
     const char *anchor=ui->mosaic_scale_anchor==1?"BOTTOM":ui->mosaic_scale_anchor==2?"CENTER":"TOP";
-    snprintf(ui->status,sizeof(ui->status),"S %s %.3GS / T:TOP B:BOT C:CTR / ENTER OK ESC CANCEL",anchor,preview.duration);
+    snprintf(ui->status,sizeof(ui->status),"S %s %.3GS / T:TOP B:BOT C:CTR / ALT SNAP / ENTER OK ESC CANCEL",anchor,preview.duration);
 }
 
-static void mosaic_scale_motion(TsUiState *ui,MosaicController *c,int x,int y)
+/* Snap only the moving edges, excluding the selected opening snapshots.
+   Candidate geometry goes through the same clamps as the visible preview. */
+static double mosaic_scale_snap(TsUiState *ui,double delta)
+{
+    int anchor=ui->mosaic_scale_anchor;
+    double best=7/ui->mosaic_scale,result=delta;
+    for(int j=0;j<ui->mosaic_ghost_count;++j) {
+        const TsMosaicEvent *o=&ui->mosaic_ghosts[j];TsMosaicEvent preview;
+        ts_ui_mosaic_scale_event(o,&preview,delta,anchor);
+        for(int edge=0;edge<2;++edge) {
+            if((anchor==0 && !edge) || (anchor==1 && edge))continue;
+            double time=preview.start+edge*preview.duration;
+            if(delta!=0 && fabs(time-o->start-edge*o->duration)<1e-12)continue;
+            double slope=anchor==2?(edge?.5:-.5):anchor==1?-1:1;
+            for(int i=-1;i<TS_MOSAIC_EVENTS;++i) {
+                const TsMosaicEvent *e=i<0?NULL:&ui->mosaic->events[i];
+                if(e && (!e->id || mosaic_chosen(ui,i)))continue;
+                for(int endpoint=0;endpoint<(e?2:1);++endpoint) {
+                    double target=e?e->start+endpoint*e->duration:0,d=target-time;
+                    if(fabs(d)>=best)continue;
+                    double candidate=delta+d/slope;TsMosaicEvent snapped;
+                    ts_ui_mosaic_scale_event(o,&snapped,candidate,anchor);
+                    if(fabs(snapped.start+edge*snapped.duration-target)>1e-8)continue;
+                    best=fabs(d);result=candidate;
+                }
+            }
+        }
+    }
+    return result;
+}
+static void mosaic_scale_motion(TsUiState *ui,MosaicController *c,int x,int y,SDL_Keymod mod)
 {
     c->drag_pointer_x=x;c->drag_pointer_y=y;
     if(!c->drag_moved && abs(y-c->drag_y)<3)return;
     double delta=(y-c->drag_y)/ui->mosaic_scale;
     ui->mosaic_scale_delta=delta*(ui->mosaic_scale_anchor==1?-1:ui->mosaic_scale_anchor==2?2:1);
+    if(mod&KMOD_ALT)ui->mosaic_scale_delta=mosaic_scale_snap(ui,ui->mosaic_scale_delta);
     ui->mosaic_grab_x=0;
     if(ui->mosaic->auto_space && fabs(ui->mosaic_scale_delta)>1e-9) {
         double starts[TS_MOSAIC_EVENTS],durations[TS_MOSAIC_EVENTS];
@@ -67,7 +98,7 @@ static int mosaic_grab_event(const SDL_Event *event,SDL_Window *window,SDL_Audio
     if(scaling && key && !event->key.repeat && !(mod&(KMOD_CTRL|KMOD_SHIFT|KMOD_ALT|KMOD_GUI)) &&
        (k==SDLK_t || k==SDLK_b || k==SDLK_c)) {
         ui->mosaic_scale_anchor=k==SDLK_b?1:k==SDLK_c?2:0;
-        mosaic_scale_motion(ui,c,c->drag_pointer_x,c->drag_pointer_y);
+        mosaic_scale_motion(ui,c,c->drag_pointer_x,c->drag_pointer_y,mod);
         mosaic_scale_status(ui);return 1;
     }
     if(cancel || confirm) {

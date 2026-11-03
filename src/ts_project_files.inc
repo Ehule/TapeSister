@@ -105,6 +105,7 @@ static int project_files_add(ProjectFiles *list, const char *path,
 
 static int project_file_hash(const char *path, uint64_t *hash)
 {
+    if(ts_audio_assets_known_hash(path,hash))return 1;
     unsigned char buffer[16384];
     FILE *file = fopen(path, "rb");
     if (!file) return 0;
@@ -294,9 +295,10 @@ static int project_read_ownership(const char *directory, const char *project,
     if (!file) return project_file_error(error, size, "Cannot read ownership manifest", path);
     ProjectFiles legacy = {0};
     size_t pages = 0, end = 0, managed_count = 0;
-    int managed = 0, ended = 0, mosaic = 0, ok = 1;
+    int managed = 0, ended = 0, mosaic = 0, ok = 1, shared = 0;
     while (ok && fgets(line, sizeof(line), file)) {
         line[strcspn(line, "\r\n")] = '\0';
+        if(!strcmp(line,"TAPESISTER_PROJECT 3"))shared=1;
         if (!strncmp(line, "managed_files=", 14)) {
             if (managed || strcmp(line, "managed_files=1")) { ok = 0; break; }
             managed = 1;
@@ -336,6 +338,7 @@ static int project_read_ownership(const char *directory, const char *project,
     if (ferror(file)) ok = 0;
     fclose(file);
     if (managed && (!ended || managed_count != end)) ok = 0;
+    if(shared && !managed)ok=0;
     if (ok && !managed) {
         if (!pages) ok = 0;
         if (ok && mosaic) ok = project_files_add(&legacy, "project-data/mosaic.tsm", 0, 0) &&

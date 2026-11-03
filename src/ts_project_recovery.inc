@@ -20,7 +20,7 @@ static int project_recovery_manifest_name(const char *directory,char *name,size_
     if(project_entry_kind(directory)!=PROJECT_ENTRY_DIRECTORY || !project_join(path,sizeof(path),directory,"manifest.txt") ||
        project_entry_kind(path)!=PROJECT_ENTRY_FILE)return 0;
     FILE *file=fopen(path,"rb");if(!file)return 0;
-    int ok=fgets(line,sizeof(line),file) && !strcmp(line,"TAPESISTER_PROJECT 2\n") &&
+    int ok=fgets(line,sizeof(line),file) && (!strcmp(line,"TAPESISTER_PROJECT 2\n") || !strcmp(line,"TAPESISTER_PROJECT 3\n")) &&
         fgets(line,sizeof(line),file) && !strncmp(line,"project=",8);
     fclose(file);if(!ok)return 0;
     line[strcspn(line,"\r\n")]=0;const char *value=line+8;

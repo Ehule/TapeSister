@@ -344,9 +344,17 @@ static void test_project_transaction(int live)
     assert(ts_mosaic_hash(m)==hash && ts_sample_hash(&bank->current)==sample_hash);
     assert(ts_sample_pages_save_project(&pages,bank,record,NULL,path,error,sizeof(error)));
     ts_sample_pages_free(&pages);ts_mosaic_free(m);ts_instrument_free(bank);ts_instrument_free(record);free(bank);free(record);
-    remove("mosaic-project-test/project-data/mosaic.tsm");remove("mosaic-project-test/project-data/mosaic-000.wav");
+    FILE *inventory=fopen("mosaic-project-test/manifest.txt","rb");assert(inventory);
+    char entry[2048],generated[2300];
+    while(fgets(entry,sizeof(entry),inventory))if(!strncmp(entry,"managed=",8)) {
+        char *relative=strchr(entry,',');assert(relative);++relative;
+        relative[strcspn(relative,"\r\n")]=0;
+        snprintf(generated,sizeof(generated),"mosaic-project-test/%s",relative);remove(generated);
+    }
+    fclose(inventory);RMDIR("mosaic-project-test/samples/audio");
+    remove("mosaic-project-test/project-data/mosaic.tsm");remove("mosaic-project-test/project-data/mosaic-000.tsa");
     remove("mosaic-project-test/mosaic-project-test.tsr");remove("mosaic-project-test/manifest.txt");
-    remove("mosaic-project-test/samples/page-001/01_PHASE-BLOOM.wav");
+    remove("mosaic-project-test/samples/page-001/01_PHASE-BLOOM.tsa");
     RMDIR("mosaic-project-test/samples/page-001");RMDIR("mosaic-project-test/samples");
     remove("mosaic-project-test/project-data/sister-tracker.tst");
     remove("mosaic-project-test/project-data/gallery.tsg");

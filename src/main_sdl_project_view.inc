@@ -1,13 +1,13 @@
 static void project_view_capture(TsProjectView *v,const TsUiState *ui)
 {
-    memset(v,0,sizeof(*v));v->present=1;
+    memset(v,0,sizeof(*v));v->present=1;v->version=2;
     v->workspace=ui->mosaic_open?TS_PROJECT_VIEW_MOSAIC:ui->tracker_open?TS_PROJECT_VIEW_TRACKER:TS_PROJECT_VIEW_CANVAS;
     v->keyboard=!!ui->show_keyboard;v->ingredients=!!ui->show_ingredients;v->recipes=!!ui->show_recipes;
     v->parent_first=ui->parent_view_first;v->parent_last=ui->parent_view_last;
     v->scroll=ui->mosaic_scroll;v->xscroll=ui->mosaic_xscroll;
     v->scale=ui->mosaic_scale>0?ui->mosaic_scale:24;v->hscale=ui->mosaic_hscale>0?ui->mosaic_hscale:1;
     v->follow=!!ui->mosaic_follow;
-    v->pattern_tab=!!ui->mosaic_pattern_tab;v->source_page=ui->mosaic_source_page;
+    v->source_filter=ui->mosaic_source_filter;v->source_page=ui->mosaic_source_page;
     v->tracker_scroll=ui->tracker_scroll;v->tracker_expanded=!!ui->tracker_expanded;v->tracker_field=ui->tracker_field;
     uint64_t orders[TS_MOSAIC_EVENTS];
     if(ui->mosaic)for(int i=0;i<TS_MOSAIC_EVENTS;++i) {
@@ -33,7 +33,15 @@ static void project_view_apply(TsUiState *ui,const TsInstrument *instrument,cons
     }
     ui->mosaic_scroll=v->scroll;ui->mosaic_xscroll=v->xscroll;ui->mosaic_scale=v->scale;ui->mosaic_hscale=v->hscale;
     ui->mosaic_time=v->time;ui->mosaic_follow=v->follow;
-    ui->mosaic_pattern_tab=v->pattern_tab;ui->mosaic_source_page=v->source_page;
+    ui->mosaic_source_filter=v->source_filter;ui->mosaic_source_page=v->source_page;
+    /* V1 appended unique audio versions after the bank pages. Keep old saved
+       projects usable with a separate Events list. */
+    if(v->version==1 && v->source_filter==TS_MOSAIC_BROWSER_AUDIO &&
+       v->source_page>=(ui->sample_page_count>0?ui->sample_page_count:1)) {
+        ui->mosaic_source_filter=TS_MOSAIC_BROWSER_EVENTS;ui->mosaic_source_page=0;
+    }
+    memset(ui->mosaic_source_filter_pages,0,sizeof(ui->mosaic_source_filter_pages));
+    ui->mosaic_source_filter_pages[ui->mosaic_source_filter]=ui->mosaic_source_page;
     ui->tracker_scroll=v->tracker_scroll;ui->tracker_expanded=v->tracker_expanded;ui->tracker_field=v->tracker_field;
     memset(ui->mosaic_selection,0,sizeof(ui->mosaic_selection));
     memset(ui->mosaic_selection_order,0,sizeof(ui->mosaic_selection_order));

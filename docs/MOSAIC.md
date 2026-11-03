@@ -30,25 +30,46 @@ application window. Escape from an event editor still returns to Mosaic.
 **Ctrl+Shift+P** also reaches the Portal from these workspaces. Destination dialogs
 retain keyboard focus until resolved.
 
-Sources browses **all Sample banks**, including banks created in FM or the main
-canvas. **BANK 01**, **BANK 02**, etc. retain their original slot numbers and empty
-slots. The arrows underneath move through banks, then **EVENTS** pages containing
-the audio versions used by placed events. Browsing sources does not switch the
-main editor's active Sample bank or change routing. New banks appear on the next
-refresh; returning from FM shows its active bank with the correct page number.
+The browser separates reusable sources from placed cards:
 
-Drag an occupied source onto the canvas. Click a source to select it and clear the
-timeline selection; dragging shows a ghost of the proposed event. **A** previews
-the selected source without adding a card or moving the playhead; press **A** again
-to stop. When a timeline instance is selected, its assigned notes and individual
-settings take priority over the source highlight.
+| Filter | Contents | Double-click opens |
+| --- | --- | --- |
+| **Audio** | Original tiles in all Sample banks, including imported recordings and FM banks | The real original bank and tile in Canvas |
+| **Patterns** | Reusable TrackSister source patterns | The source pattern editor |
+| **Loops** | Independent live/recorded loop cards | That loop's own editor |
+| **Events** | Regular placed cards, including repeating audio, pattern instances and video | That card's own editor |
 
-**Right-click a source** to select all of its placed instances, retaining the primary
-when it belongs to that source. **Double-left-click a source** to open its main
-canvas editor: bank sources open their actual Sample bank and tile; EVENTS sources
-open the existing instance editor with its update-instance/update-all choices.
-Modified clicks continue to select and drag source groups. An accepted audio edit appears in
-the EVENTS pages. Shared originals and the original Sample banks remain available.
+Audio and Patterns form the source library; Loops and Events show placed objects.
+Each filter has its own pages and remembers its browsing position. Audio retains
+original slot numbers and empty slots. Importing 75 files occupies five Audio
+pages: dragging, copying, scaling, fading or panning those cards does not add Audio
+pages or make extra original files. A regular card's repeat setting does not move
+it into Loops. Recorded live loops appear in Loops; ordinary recording cards
+appear in Events. An explicit **Create Tile** action can add reusable Audio.
+
+Browsing does not switch the active Sample bank, change routing or clone PCM.
+Selecting a timeline card keeps the chosen filter. Normal **CANVAS** navigation
+returns to the original Sample bank. **BANK 01**, **BANK 02**, etc. refer only to
+Audio; the arrows never continue into placed-card pages.
+
+Drag an occupied entry onto the canvas. Placed entries copy that exact card,
+including duration, notes, fades and pan, while sharing immutable audio. Click an
+entry to select it and clear the timeline selection; dragging previews a ghost.
+**A** auditions the selected source without adding a card or moving the playhead;
+press **A** again to stop. A selected timeline instance's notes and settings take
+priority over its source highlight. Shift/Ctrl clicks still build source groups.
+
+**Right-click Audio** to select all matching placed instances, retaining a matching
+primary; right-click a Loops/Events entry selects that particular card.
+**Double-click Audio** edits the original. **Double-click Loops/Events** edits the
+individual placed object: audio editors say **CARD/LOOP … COPY** and the **BACK**
+button returns to Mosaic. Existing update-instance, update-all and Create Tile
+choices still control how audio edits are applied. Pattern instances retain their
+own update choices. Names help identify entries; IDs remain visible and hovering
+shows the name/source in the info area.
+
+Older projects still load. Saved Audio/Pattern positions from the previous browser
+are accepted; old appended event-version pages open the separate Events filter.
 
 | Action | Gesture |
 | --- | --- |
@@ -70,8 +91,8 @@ the EVENTS pages. Shared originals and the original Sample banks remain availabl
 | Select / move an event | Click / drag its body |
 | Extend the event's playback window | Drag its top edge earlier or bottom edge later |
 | Change visual width | Drag its right edge |
-| Shape one card's fade | Drag its IN handle down or OUT handle up |
-| Pan one card | Drag the diamond on its pan line left/right; right-click centers |
+| Shape selected fades | Drag IN down or OUT up; Alt starts at zero and matches |
+| Pan selected cards | Drag a pan diamond left/right; Alt starts at center and matches |
 | Align starts, ends or midpoints | Hold Alt while moving or extending |
 | Edit the event | Double-click |
 | Box-select a group | Left-drag on empty canvas; Shift adds to the selection |
@@ -281,7 +302,8 @@ length in seconds.
 Each completed group resize is one Undo step. Escape restores the opening
 geometry and keeps the group selected; focus loss or a dialog ends the gesture.
 Shift-drag still copies the group, including when it starts on an edge. Fade and
-pan handles still edit only their own card. AUTO-SPACE shifts the group together
+pan handles retain and edit the selected audio group; see the group-handle controls
+below. AUTO-SPACE shifts the group together
 against outside cards, preserving its horizontal spacing. Audio and pattern
 cards use the same operation; loop/one-shot behavior, source material, mix and
 routing settings are retained. Bottom-edge edits preserve running playheads.
@@ -430,7 +452,9 @@ lengthen the fade-out. The diagonal line and darkened wedge show the linear gain
 envelope immediately; more shading means more attenuation at that point in time.
 The handles stop where the two fades meet. The status bar shows the fade in seconds.
 Right-click or double-click a handle to remove that fade; Escape cancels a drag.
-Each drag edits only that card and is one undo step. Handles appear when the card
+Each drag edits the selected audio group from its opening fade values and is one
+Undo step. Alt starts the chosen end at zero and matches its value across the
+selection. Handles appear when the card
 is large enough to grab; zoom in on small cards. The shaded envelope remains visible
 when zoomed out, and existing footer edits update it too.
 
@@ -438,7 +462,8 @@ when zoomed out, and existing footer edits update it too.
 
 Cards also show a **pan line** and a faint dotted **center reference** through the
 waveform. Drag the small diamond just below the card's name/notes left or right to
-balance that card. The line follows the setting, with a small center snap and
+balance the selected audio cards from their opening pan values. Alt starts at
+center and matches the values. The lines follow the settings, with a center snap and
 **CENTER**, **L %** or **R %** feedback in the status bar. Right-click or double-click
 the diamond centers it; Escape restores the opening value. A drag is one undo step
 and keeps live playback running. The rest of the waveform remains available for
@@ -714,7 +739,7 @@ assigned note count. The latter includes muted cards and finished one-shots;
 it describes scheduled work rather than detected sound.
 
 Undo retains 32 steps in a circular history, avoiding a full-history shift when
-it fills. Source-browser lookup and source cleanup also scale with larger projects.
+it fills. Placed-card browsing and source cleanup also scale with larger projects.
 Group drags and arrow nudges calculate snapping/spacing before taking the audio
 lock, then publish the finished placement together. Copy drags skip redundant
 per-card spacing. Project opening decodes banks and Mosaic sources before locking
@@ -918,3 +943,33 @@ lower. Pitch choices are planned on the UI thread, with no new callback work.
 Apply commits exactly the preview as one undo step; Escape/Cancel discards it.
 Generated notes use the existing project format and survive save/reopen. Each
 new Scatter dialog starts with Keep Notes so pitch replacement is deliberate.
+
+
+## Alt scaling and group handles
+
+During **S** scaling, hold **Alt** to snap the moving start/end to another card's
+start/end within seven logical pixels. T keeps each start fixed, B keeps each end
+fixed, and C scales around each center. The selected group is excluded from snap
+targets. Releasing Alt returns to the unsnapped mouse position; Enter/click commits
+one Undo step and Escape cancels. Timeline limits still apply. Ordinary edge
+resize retains its existing single-card snap and group match-length controls.
+
+Drag a fade or pan handle on any selected card to edit the selected audio cards
+as one gesture. Selection and its primary card remain unchanged. Each value starts
+from that card's opening value: fade drags add the same number of seconds, and
+pan drags add the same normalized displacement, independently of card width.
+Values clamp to their legal ranges without accumulating drift. Video instructions
+are left alone. The matching handles light together in logical and native views.
+
+**Alt-drag** starts the chosen fade at zero or pan at center, and applies matching
+values to all selected audio cards. The opposite fade is retained. A matching fade
+is limited by the shortest available space across the selection so that all edited
+ends remain equal. Press/release Alt during a drag to switch between matching and
+relative values. Right-click/double-click resets the chosen control across the
+selection. Each gesture has one Undo step; Escape restores every affected card.
+
+Audio source tiles keep their IDs, show the first six characters of their retained
+sample/file name above the waveform, and display the full retained name in the
+Mosaic info area on hover. Long names wrap to a second line, without Gallery or
+looper status truncating them. Imported names are retained by the existing sample
+metadata (up to 127 bytes); original filesystem paths are not stored there.

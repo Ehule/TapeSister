@@ -1,5 +1,10 @@
 # Large portable project saving
 
+This report describes the compatible TSR41 save fix in PR #172. The subsequent
+[shared-audio migration](../PROJECT_SAMPLE_STORAGE.md) changes project saves to
+TSR42 and manifest 3; its measurements and compatibility tests are documented
+separately.
+
 ## Scope and evidence
 
 Audited the connected repository, not the uploaded source archives. `main` was

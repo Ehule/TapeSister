@@ -1,24 +1,21 @@
 /* Fade ink is drawn in each card's local coordinates, so it translates with
    native waveforms without shimmer. Never scan outside the visible surface. */
+void ts_ui_mosaic_scale_event(const TsMosaicEvent *source,TsMosaicEvent *out,double delta,int mode)
+{
+    *out=*source;if(delta==0)return;
+    double low=fmin(.005,source->duration),high=86400,anchor=source->start;
+    if(mode==1){anchor+=source->duration;low=fmax(low,anchor-86400);high=fmin(high,anchor);}
+    else if(mode==2){anchor+=source->duration*.5;low=fmax(low,2*(anchor-86400));high=fmin(high,2*anchor);}
+    out->duration=fmax(low,fmin(high,source->duration+delta));
+    if(mode==1)out->start=fmax(0,anchor-out->duration);
+    else if(mode==2)out->start=fmax(0,anchor-out->duration*.5);
+}
 void ts_ui_mosaic_transform_event(const TsUiState *ui,const TsMosaicEvent *source,TsMosaicEvent *out)
 {
-    *out=*source;
-    if(!ui->mosaic_grab)return;
+    *out=*source;if(!ui->mosaic_grab)return;
+    if(ui->mosaic_grab==2)ts_ui_mosaic_scale_event(source,out,ui->mosaic_scale_delta,ui->mosaic_scale_anchor);
     out->x+=ui->mosaic_grab_x;
     if(ui->mosaic_grab==1)out->start+=ui->mosaic_grab_time;
-    else if(ui->mosaic_grab==2 && ui->mosaic_scale_delta!=0) {
-        double low=fmin(.005,source->duration),high=86400,anchor=source->start;
-        if(ui->mosaic_scale_anchor==1) {
-            anchor+=source->duration;
-            low=fmax(low,anchor-86400);high=fmin(high,anchor);
-        } else if(ui->mosaic_scale_anchor==2) {
-            anchor+=source->duration*.5;
-            low=fmax(low,2*(anchor-86400));high=fmin(high,2*anchor);
-        }
-        out->duration=fmax(low,fmin(high,source->duration+ui->mosaic_scale_delta));
-        if(ui->mosaic_scale_anchor==1)out->start=fmax(0,anchor-out->duration);
-        else if(ui->mosaic_scale_anchor==2)out->start=fmax(0,anchor-out->duration*.5);
-    }
 }
 
 static int mosaic_resize_grip(double width,double height,int part,double *x,double *y,double *radius)
@@ -123,7 +120,7 @@ static void mosaic_fade_shape(const MosaicFadeSurface *s,const TsMosaicEvent *e,
     }
 }
 static void mosaic_fade_handles(const MosaicFadeSurface *s,const TsUiState *ui,const TsMosaicEvent *e,
-    int64_t x,int64_t y,int64_t right,int64_t bottom,uint32_t ink)
+    int64_t x,int64_t y,int64_t right,int64_t bottom,uint32_t ink,int selected)
 {
     if((right-x)/s->sx<24 || (bottom-y)/s->sy<14)return;
     double in,out;ts_mosaic_event_fades(e,&in,&out);
@@ -132,7 +129,7 @@ static void mosaic_fade_handles(const MosaicFadeSurface *s,const TsUiState *ui,c
         int64_t hx=right-(int64_t)floor((part==1?15:5)*s->sx+.5);
         int64_t hy=y+(int64_t)floor(mosaic_fade_handle_y(bottom-y,(part==1?in:out)*s->rate,part,s->sy)+.5);
         int64_t rx=(int64_t)fmax(2,floor(3*s->sx+.5)),ry=(int64_t)fmax(2,floor(3*s->sy+.5));
-        uint32_t color=ui->mosaic_card_mix_event==e->id && ui->mosaic_card_mix_part==part?
+        uint32_t color=(ui->mosaic_card_mix_event==e->id || (ui->mosaic_card_mix_group && selected)) && ui->mosaic_card_mix_part==part?
             ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_TEXT,RGB(224,214,233)):ink;
         mosaic_fade_rect(s,hx-rx,hy-ry,hx+rx+1,hy+ry+1,dark);
         mosaic_fade_rect(s,hx-rx+1,hy-ry+1,hx+rx,hy+ry,color);
@@ -142,7 +139,7 @@ static void mosaic_fade_handles(const MosaicFadeSurface *s,const TsUiState *ui,c
     }
 }
 static void mosaic_card_pan(const MosaicFadeSurface *s,const TsUiState *ui,const TsMosaicEvent *e,
-    int64_t x,int64_t y,int64_t right,int64_t bottom,uint32_t source)
+    int64_t x,int64_t y,int64_t right,int64_t bottom,uint32_t source,int selected)
 {
     if((right-x)/s->sx<40 || (bottom-y)/s->sy<48)return;
     int64_t center=x+(int64_t)floor((right-x)*.5+.5);
@@ -151,7 +148,7 @@ static void mosaic_card_pan(const MosaicFadeSurface *s,const TsUiState *ui,const
     int64_t width=(int64_t)fmax(1,round(s->sx)),dash=(int64_t)fmax(1,round(6*s->sy));
     uint32_t ink=ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_DATA2,RGB(129,206,200));
     uint32_t dim=ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_EDGE,RGB(66,60,77));
-    int hot=ui->mosaic_card_mix_event==e->id && ui->mosaic_card_mix_part==3;
+    int hot=(ui->mosaic_card_mix_event==e->id || (ui->mosaic_card_mix_group && selected)) && ui->mosaic_card_mix_part==3;
     /* Dashes are card-relative and work is bounded even when deeply zoomed. */
     int64_t from=first<s->top?first+(s->top-first)/dash*dash:first;
     for(int64_t yy=from;yy<last && yy<s->bottom;yy+=dash)

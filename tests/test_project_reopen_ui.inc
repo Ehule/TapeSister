@@ -101,7 +101,7 @@ static void project_reopen_controls(SDL_Window *window)
     snprintf(card->name,sizeof(card->name),"edited card");
     mosaic_select_add(&ui,ui.mosaic->events[2].id);
     ui.mosaic_scroll=15.75;ui.mosaic_xscroll=80.5;ui.mosaic_scale=12.25;ui.mosaic_hscale=.5;
-    ui.mosaic_follow=1;ui.mosaic_source_page=1;
+    ui.mosaic_follow=1;mosaic_source_filter_set(&ui,&bank,&mosaic,TS_MOSAIC_BROWSER_EVENTS);ui.mosaic_source_page=1;
     ts_mosaic_seek(ui.mosaic,17.375);
     audio.sister.clock_controls=(TsMasterClockControls){.enabled=1,.bpm=137,.tempo_mask=3,
         .arp_division=2,.position_custom=1,.home_mask=2};
@@ -136,7 +136,7 @@ static void project_reopen_controls(SDL_Window *window)
     assert(ui.mosaic_open && ui.mosaic_scroll==15.75 && ui.mosaic_xscroll==80.5);
     assert(ui.mosaic_scale==12.25 && ui.mosaic_hscale==.5);
     assert(ui.mosaic_selected==primary && mosaic_chosen(&ui,1) && mosaic_chosen(&ui,2));
-    assert(ui.mosaic_follow && ui.mosaic_source_page==1 && ui.mosaic->time==17.375 && !ui.mosaic->playing);
+    assert(ui.mosaic_source_filter==TS_MOSAIC_BROWSER_EVENTS && ui.mosaic_follow && ui.mosaic_source_page==1 && ui.mosaic->time==17.375 && !ui.mosaic->playing);
     assert(audio.sister.clock_controls.enabled && audio.sister.clock_controls.bpm==137 &&
         audio.sister.clock_controls.tempo_mask==3 && audio.sister.clock_controls.home_mask==2);
     assert(!audio.sister.master_clock.running && audio.sister.master_clock.seconds==43.25 &&
@@ -168,7 +168,7 @@ static void project_reopen_controls(SDL_Window *window)
     }
     /* Invalid editor state is rejected before publishing any project data. */
     snprintf(extra,sizeof(extra),"%.*s/sister-state.ini",(int)(strrchr(path,'/')-path),path);
-    f=fopen(extra,"ab");assert(f);fputs("ProjectView.Version=2\n",f);assert(!fclose(f));
+    f=fopen(extra,"ab");assert(f);fputs("ProjectView.Version=3\n",f);assert(!fclose(f));
     uint64_t before=project_hash(),epoch=ui.mosaic->epoch;
     assert(!load_instrument(0,&audio,&ui,&bank,&pages,&record,0,path));
     assert(project_hash()==before && ui.mosaic->epoch==epoch && ui.tracker_open);

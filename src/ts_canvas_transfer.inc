@@ -41,7 +41,12 @@ int ts_sample_pages_load_canvas(const char *project,int index,TsMosaicCanvas *ou
     strcpy(arrangement,path);strcat(arrangement,"/mosaic.tsm");FILE *f=fopen(arrangement,"rb");
     if(!f){pages_error(error,n,"Selected canvas arrangement is missing");return 0;}fclose(f);
     TsMosaic *scene=ts_mosaic_create();if(!scene){pages_error(error,n,"Not enough memory for imported canvas");return 0;}
-    if(!ts_mosaic_load(scene,path,error,n)){ts_mosaic_free(scene);return 0;}
+    char root[TS_PROJECT_PATH_MAX];
+    if(!path_directory(project,root,sizeof(root))){ts_mosaic_free(scene);return 0;}
+    TsAudioAssets *assets=ts_audio_assets_begin(root,0);
+    if(!assets){ts_mosaic_free(scene);pages_error(error,n,"Not enough memory for canvas audio");return 0;}
+    int loaded=ts_mosaic_load(scene,path,error,n);ts_audio_assets_end(assets);
+    if(!loaded){ts_mosaic_free(scene);return 0;}
     TsMosaicCanvas canvas={.scene=scene,.entry=catalog.canvas[index].entry,.marker=catalog.canvas[index].marker,.scale=24,.hscale=1};
     memcpy(canvas.name,catalog.canvas[index].name,TS_GALLERY_NAME);*out=canvas;return 1;
 }

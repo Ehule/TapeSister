@@ -169,7 +169,12 @@ static void test_canvas_transfer(void)
     root->markers[2]=(TsMosaicMarker){.stored=1,.time=2};root->live_envelope=0;
     /* Pre-Gallery project, then the same legacy project reopened and saved
        through the new build's full project path. Both must remain importable. */
-    assert(ts_sample_pages_save_project(&pages,&bank,&record,NULL,"Legacy/Legacy.tsr",error,sizeof(error)));
+    assert(!MKDIR("Legacy"));assert(!MKDIR("Legacy/project-data"));
+    assert(ts_instrument_save_recipe(&bank,"Legacy/Legacy.tsr",error,sizeof(error)));
+    assert(ts_mosaic_save(root,"Legacy/project-data",error,sizeof(error)));
+    assert(ts_sister_tracker_save_file(&pages.tracker,"Legacy/project-data/sister-tracker.tst",error,sizeof(error)));
+    FILE *legacy_manifest=fopen("Legacy/manifest.txt","wb");assert(legacy_manifest);
+    assert(fputs("TAPESISTER_PROJECT 2\nproject=Legacy.tsr\npage_count=1\nactive_page=0\nrecord_bank=0\nmosaic=1\nsister_tracker=1\n",legacy_manifest)>=0);assert(!fclose(legacy_manifest));
     FILE *old=fopen("Legacy/project-data/mosaic.tsm","rb");assert(old);char old_header[64];assert(fgets(old_header,sizeof(old_header),old) && !strcmp(old_header,"TAPESISTER_MOSAIC 14\n"));fclose(old);
     uint64_t hash=ts_mosaic_hash(root);TsMosaicGalleryCatalog catalog;
     assert(ts_sample_pages_canvas_catalog("Legacy/Legacy.tsr",&catalog,error,sizeof(error)) && catalog.count==1 && !catalog.present);

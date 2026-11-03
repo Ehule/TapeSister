@@ -237,7 +237,7 @@ static void test_conflicts(void)
     no_recovery(); clean_case();
 
     new_case();
-    CHECK(!remove("Save Project/samples/page-001/01_SILENCE.wav"));
+    CHECK(!remove("Save Project/samples/page-001/01_SILENCE.tsa"));
     CHECK(TS_PAGES_RMDIR("Save Project/samples/page-001") == 0);
     put("Save Project/samples/page-001", "user file blocks required directory\n");
     CHECK(!save()); contents("Save Project/samples/page-001", "user file blocks required directory\n");
@@ -251,12 +251,12 @@ static void test_conflicts(void)
 static void test_modified_and_stale_files(void)
 {
     new_case();
-    put("Save Project/samples/page-001/01_SILENCE.wav", "externally edited audio\n");
-    CHECK(!save()); contents("Save Project/samples/page-001/01_SILENCE.wav", "externally edited audio\n");
+    put("Save Project/samples/page-001/01_SILENCE.tsa", "externally edited audio\n");
+    CHECK(!save()); contents("Save Project/samples/page-001/01_SILENCE.tsa", "externally edited audio\n");
     /* If the next project no longer writes this name, retain the edited file. */
     CHECK(ts_instrument_bank_clear_all(&active, error, sizeof(error)));
-    CHECK(save()); contents("Save Project/samples/page-001/01_SILENCE.wav", "externally edited audio\n");
-    CHECK(save()); contents("Save Project/samples/page-001/01_SILENCE.wav", "externally edited audio\n");
+    CHECK(save()); contents("Save Project/samples/page-001/01_SILENCE.tsa", "externally edited audio\n");
+    CHECK(save()); contents("Save Project/samples/page-001/01_SILENCE.tsa", "externally edited audio\n");
     clean_case();
 
     new_case();
@@ -479,27 +479,37 @@ static void test_links(void)
     CHECK(!save()); contents("outside/keep.txt", "outside the project\n");
     CHECK(!unlink("Save Project.tapesister-partial"));
     /* A symlink replacing a managed output is user material, not an owner. */
-    CHECK(!remove("Save Project/samples/page-001/01_SILENCE.wav"));
-    CHECK(!symlink("../../../outside/keep.txt", "Save Project/samples/page-001/01_SILENCE.wav"));
+    CHECK(!remove("Save Project/samples/page-001/01_SILENCE.tsa"));
+    CHECK(!symlink("../../../outside/keep.txt", "Save Project/samples/page-001/01_SILENCE.tsa"));
     CHECK(!save()); contents("outside/keep.txt", "outside the project\n");
 #endif
     clean_case(); CHECK(remove_tree("outside"));
 }
 
+/* Build an actual pre-asset-store bundle, rather than stripping the mandatory
+   ownership inventory from a new-format project. */
 static void strip_inventory(void)
 {
-    FILE *input = fopen("Save Project/manifest.txt", "rb");
-    FILE *output = fopen("legacy-manifest.txt", "wb");
-    char line[4096];
-    CHECK(input && output);
-    if (input && output) while (fgets(line, sizeof(line), input)) {
-        if (!strncmp(line, "managed_files=", 14)) break;
-        fputs(line, output);
+    ProjectFiles generated={0};char path[TS_PROJECT_PATH_MAX],safe[96];
+    CHECK(project_read_ownership(bundle,"Save Project.tsr",&generated,error,sizeof(error)));
+    for(size_t i=0;i<generated.count;++i) {
+        const char *p=generated.files[i].path;
+        if(strstr(p,".tsa") || !strncmp(p,"samples/audio/",14)) {
+            CHECK(project_join(path,sizeof(path),bundle,p));CHECK(!remove(path));
+        }
     }
-    if (input) fclose(input);
-    if (output) fclose(output);
-    CHECK(!remove("Save Project/manifest.txt"));
-    CHECK(!rename("legacy-manifest.txt", "Save Project/manifest.txt"));
+    project_files_free(&generated);
+    CHECK(ts_instrument_save_recipe(&active,project,error,sizeof(error)));
+    CHECK(ts_mosaic_save(pages.mosaic,"Save Project/project-data",error,sizeof(error)));
+    FILE *f=fopen("Save Project/manifest.txt","wb");CHECK(f!=NULL);if(!f)return;
+    CHECK(fprintf(f,"TAPESISTER_PROJECT 2\nproject=Save Project.tsr\npage_count=1\nactive_page=0\nrecord_bank=0\nmosaic=1\nsister_tracker=1\n")>0);
+    for(int i=0;i<TS_BANK_SLOT_COUNT;++i)if(active.bank[i].occupied) {
+        TsBankSlot *slot=&active.bank[i];sample_safe_name(slot->sample.name,safe,sizeof(safe));
+        snprintf(path,sizeof(path),"Save Project/samples/page-001/%02d_%s.wav",i+1,safe);
+        CHECK(ts_sample_save_wav16(&slot->sample,path,error,sizeof(error)));
+        CHECK(fprintf(f,"sample=page-001,%d,samples/page-001/%02d_%s.wav,1,48000,32\n",i+1,i+1,safe)>0);
+    }
+    CHECK(!fclose(f));
 }
 
 static void test_legacy_migration(void)

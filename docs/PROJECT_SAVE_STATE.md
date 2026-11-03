@@ -21,12 +21,14 @@ commit/rollback phase finishes before accepting another operation. A completed
 save reports success; failures clear the busy and exit-after-save flags and
 retain the live project.
 
-The TSR41 audio representation and project manifest version remain unchanged.
-Unchanged generated files can be reused after their recorded file fingerprints
-are checked. Exact float audio, rather than the quantized audition hash, enters
-the reuse signature. Filesystems without hard links use bounded copying. Reuse
-is conservative: reopening or changing bank metadata can require rewriting a
-bank's embedded PCM. Integrity checks still read large assets on repeated saves.
+New project saves use TSR42 and manifest version 3. Each distinct full-precision
+WAV is stored once in `samples/audio`; banks, Mosaic, pattern assets and the sample
+collection reference it. An arrangement or bank-metadata edit rewrites small
+metadata files. A sound edit writes only its new audio version. Verified existing
+assets use hard links, with bounded copying where links are unavailable. Integrity
+checks still read large assets on repeated saves. Legacy TSR6–TSR41 files continue
+to open; opening does not convert them. See [shared sample storage](PROJECT_SAMPLE_STORAGE.md)
+for migration, portability, integrity and the current RAM-loading behavior.
 
 TSR's existing 100,000,000-frame limit per sound is now checked before writing
 banks, with the offending tile named in the error. This is a per-sound format
@@ -69,7 +71,7 @@ The section has its own version and is staged, parsed and validated with the
 existing Sister sidecar before publication. Invalid, incomplete or duplicate
 records reject the load before replacing the live project. Older projects
 without this section still load normally, but have no saved viewport to recall.
-The Sister state version is 44; bundle and Mosaic format versions are unchanged.
+The Sister state version is 44; shared-audio projects use manifest 3 and Mosaic 19.
 
 ## Older flat TSRs and save locations
 

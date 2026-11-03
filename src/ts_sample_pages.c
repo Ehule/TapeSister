@@ -4,6 +4,7 @@
 
 #include "tapesister/sample_pages.h"
 #include "tapesister/sample_folder.h"
+#include "tapesister/audio_assets.h"
 #include "tapesister/mosaic.h"
 #include "tapesister/mosaic_gallery.h"
 
@@ -636,10 +637,13 @@ static int save_instrument_atomic(const TsInstrument *instrument,
     char temporary[TS_PROJECT_PATH_MAX + 32];
     if(!ts_instrument_check_save(instrument,error,error_size))return 0;
     if(!ts_save_io_stage("Saving bank",destination))return 0;
-    uint64_t signature=ts_instrument_save_signature(instrument);
-    if(!ts_save_io_stage("Checking saved bank",destination))return 0;
-    int reused=ts_save_io_reuse(destination,signature);
-    if(reused)return reused>0;
+    /* Shared banks are small metadata records. Always rewrite them so every
+       referenced asset is registered in this transaction before publication. */
+    if(!ts_audio_assets_writing()) {
+        uint64_t signature=ts_instrument_save_signature(instrument);
+        if(!ts_save_io_stage("Checking saved bank",destination))return 0;
+        int reused=ts_save_io_reuse(destination,signature);if(reused)return reused>0;
+    }
     int written = snprintf(temporary, sizeof(temporary),
                            "%s.tapesister-tmp", destination);
     if (written < 0 || (size_t)written >= sizeof(temporary)) {
@@ -820,7 +824,7 @@ static int bundle_is_owned(const char *directory, const char *project_name)
     file = fopen(manifest, "rb");
     if (file == NULL) return 0;
     if (fgets(line, sizeof(line), file) != NULL &&
-        strcmp(line, "TAPESISTER_PROJECT 2\n") == 0 &&
+        (strcmp(line, "TAPESISTER_PROJECT 2\n") == 0 || strcmp(line, "TAPESISTER_PROJECT 3\n") == 0) &&
         fgets(line, sizeof(line), file) != NULL) {
         char expected[768];
         snprintf(expected, sizeof(expected), "project=%s\n", project_name);
@@ -830,7 +834,7 @@ static int bundle_is_owned(const char *directory, const char *project_name)
     return matched;
 }
 
-static int write_instrument_wavs(const TsInstrument *instrument,
+static int write_instrument_references(const TsInstrument *instrument,
                                  const char *directory,
                                  char *error, size_t error_size)
 {
@@ -841,17 +845,16 @@ static int write_instrument_wavs(const TsInstrument *instrument,
     for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot) {
         const TsBankSlot *member = &instrument->bank[slot];
         if (!member->occupied) continue;
-        sample_safe_name(member->sample.name, safe, sizeof(safe));
-        if (snprintf(path, sizeof(path), "%s/%02d_%s.wav", directory,
+        int live=slot==instrument->selected_slot && instrument->current.data;
+        const TsSample *audio=live?&instrument->current:&member->sample;
+        sample_safe_name(audio->name, safe, sizeof(safe));
+        if (snprintf(path, sizeof(path), "%s/%02d_%s.tsa", directory,
                      slot + 1, safe) < 0 ||
             strlen(directory) + strlen(safe) + 9u >= sizeof(path)) {
             pages_error(error, error_size, "Project WAV path is too long");
             return 0;
         }
-        if (!ts_sample_save_wav16_tuned_looped(
-                &member->sample, &member->audible_tuning,
-                member->has_loop, member->loop_first, member->loop_last,
-                member->loop_mode, path, error, error_size)) return 0;
+        if (!ts_audio_assets_save_ref(audio,path,error,error_size)) return 0;
         project_save_completed();
     }
     return 1;
@@ -864,18 +867,25 @@ static int write_manifest_members(FILE *file, const TsInstrument *instrument,
     for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot) {
         const TsBankSlot *member = &instrument->bank[slot];
         if (!member->occupied) continue;
-        sample_safe_name(member->sample.name, safe, sizeof(safe));
+        int live=slot==instrument->selected_slot && instrument->current.data;
+        const TsSample *audio=live?&instrument->current:&member->sample;
+        sample_safe_name(audio->name, safe, sizeof(safe));
+        TsTuning tuning=live?instrument->tuning:member->tuning;
+        TsTuning audible=live?instrument->audible_tuning:member->audible_tuning;
+        int has_loop=live?instrument->has_loop:member->has_loop;
+        size_t first=live?instrument->loop_first:member->loop_first;
+        size_t last=live?instrument->loop_last:member->loop_last;
+        TsLoopMode mode=live?instrument->loop_mode:member->loop_mode;
+        float crossfade=live?instrument->loop_crossfade_ms:member->loop_crossfade_ms;
         if (fprintf(file,
-                    "sample=%s,%d,samples/%s/%02d_%s.wav,%u,%u,%zu,%d,%.9g,%d,%.9g,%d,%zu,%zu,%d,%.9g\n",
+                    "sample=%s,%d,samples/%s/%02d_%s.tsa,%u,%u,%zu,%d,%.9g,%d,%.9g,%d,%zu,%zu,%d,%.9g\n",
                     group, slot + 1, directory, slot + 1, safe,
-                    (unsigned)member->sample.channels,
-                    (unsigned)member->sample.sample_rate,
-                    member->sample.frames,
-                    member->tuning.root_note, member->tuning.fine_tune_cents,
-                    member->audible_tuning.root_note,
-                    member->audible_tuning.fine_tune_cents,
-                    member->has_loop, member->loop_first, member->loop_last,
-                    member->loop_mode, member->loop_crossfade_ms) < 0)
+                    (unsigned)audio->channels,
+                    (unsigned)audio->sample_rate,
+                    audio->frames,
+                    tuning.root_note, tuning.fine_tune_cents,
+                    audible.root_note, audible.fine_tune_cents,
+                    has_loop, first, last, mode, crossfade) < 0)
             return 0;
     }
     return 1;
@@ -985,7 +995,10 @@ static int save_project_transaction(const TsSamplePages *pages,
         strlen(staging) + 14u >= sizeof(project_data) ||
         strlen(staging) + 9u >= sizeof(samples) ||
         !make_directory(project_data, "project data folder", error, error_size) ||
-        !make_directory(samples, "project WAV folder", error, error_size)) goto failed;
+        !make_directory(samples, "project sample folder", error, error_size)) goto failed;
+    char asset_directory[TS_PROJECT_PATH_MAX];
+    if(!project_join(asset_directory,sizeof(asset_directory),samples,"audio") ||
+       !make_directory(asset_directory,"shared audio folder",error,error_size))goto failed;
     if (snprintf(destination, sizeof(destination), "%s/%s", staging,
                  project_name) < 0 ||
         strlen(staging) + strlen(project_name) + 2u >= sizeof(destination)) {
@@ -1041,7 +1054,7 @@ static int save_project_transaction(const TsSamplePages *pages,
         if (snprintf(sample_directory, sizeof(sample_directory), "%s/%s",
                      samples, group) < 0 ||
             strlen(samples) + strlen(group) + 2u >= sizeof(sample_directory) ||
-            !write_instrument_wavs(instrument, sample_directory,
+            !write_instrument_references(instrument, sample_directory,
                                    error, error_size)) goto failed;
         sample_count += (size_t)ts_instrument_bank_count(instrument);
     }
@@ -1049,7 +1062,7 @@ static int save_project_transaction(const TsSamplePages *pages,
         if (snprintf(sample_directory, sizeof(sample_directory),
                      "%s/record-bank", samples) < 0 ||
             strlen(samples) + 13u >= sizeof(sample_directory) ||
-            !write_instrument_wavs(record_bank, sample_directory,
+            !write_instrument_references(record_bank, sample_directory,
                                    error, error_size)) goto failed;
         sample_count += (size_t)ts_instrument_bank_count(record_bank);
     }
@@ -1091,9 +1104,9 @@ static int save_project_transaction(const TsSamplePages *pages,
         goto failed;
     }
     if (fprintf(file,
-                "TAPESISTER_PROJECT 2\nproject=%s\npage_count=%zu\n"
+                "TAPESISTER_PROJECT 3\nproject=%s\npage_count=%zu\n"
                 "active_page=%zu\nrecord_bank=%d\n"
-                "sister_state=%d\nsample_format=WAV_PCM16\nsample_count=%zu\nmosaic=%d\nsister_tracker=1\n",
+                "sister_state=%d\nsample_format=WAV_FLOAT32_SHARED\nsample_count=%zu\nmosaic=%d\nsister_tracker=1\n",
                 project_name, pages->page_count, pages->active_page,
                 record_present, sister_state != NULL, sample_count, pages->mosaic != NULL) < 0)
         goto manifest_failed;
@@ -1206,16 +1219,18 @@ int ts_sample_pages_save_project_controlled(const TsSamplePages *pages,
     control->recovery[0]=0;
     TsSaveControl *previous=ts_save_io_bind(control);
     ProjectSaveReuse reuse={0};project_save_reuse_begin(&reuse,path);
+    TsAudioAssets *assets=reuse.staging[0]?ts_audio_assets_begin(reuse.staging,1):NULL;
     control->reuse=project_save_reuse;control->reuse_userdata=&reuse;
     control->total=pages?pages->page_count:0;
     if(pages)for(size_t i=0;i<pages->page_count;++i)
         control->total+=(size_t)ts_instrument_bank_count(ts_sample_pages_page(pages,active,i));
     if(record && ts_instrument_bank_count(record))control->total+=1u+(size_t)ts_instrument_bank_count(record);
     if(error && size)error[0]=0;
-    int ok=ts_save_io_stage("Preparing",path) && save_project_transaction(pages,active,record,state,path,error,size);
+    int ok=assets && ts_save_io_stage("Preparing",path) && save_project_transaction(pages,active,record,state,path,error,size);
     if(control->was_cancelled && error && size)snprintf(error,size,"Save cancelled; previous project kept");
     if(!ok && error && size && !error[0])snprintf(error,size,"Project save failed (I/O or invalid state)");
     (void)ts_save_io_stage(ok?"Saved":control->was_cancelled?"Cancelled":"Failed",control->recovery[0]?control->recovery:path);
+    ts_audio_assets_end(assets);
     project_save_reuse_end(&reuse);control->reuse=NULL;control->reuse_userdata=NULL;
     ts_save_io_bind(previous);return ok;
 }
@@ -1248,7 +1263,7 @@ static int read_manifest(const char *project, char *directory,
         if (fgets(line, sizeof(line), file) != NULL &&
             strncmp(line, "TAPESISTER_PROJECT ", 19u) == 0) {
             if (sscanf(line, "TAPESISTER_PROJECT %d", &version) != 1 ||
-                version != 2) {
+                (version != 2 && version != 3)) {
                 fclose(file);
                 pages_error(error, error_size,
                             "Unsupported TapeSister project manifest version");
@@ -1368,6 +1383,7 @@ TsSampleProjectLoad *ts_sample_pages_prepare_project(const char *path, int with_
                                                      char *error, size_t error_size)
 {
     TsMosaic *mosaic_loaded = NULL;
+    TsAudioAssets *assets = NULL;
     TsSamplePages loaded;
     TsInstrument loaded_record;
     char directory[TS_PROJECT_PATH_MAX];
@@ -1389,11 +1405,29 @@ TsSampleProjectLoad *ts_sample_pages_prepare_project(const char *path, int with_
     if (!ts_sample_pages_init(&loaded, error, error_size)) goto failed;
     loaded_ready = 1;
     loaded.active_live = 0;
+    if(!path_directory(path,directory,sizeof(directory)) || !(assets=ts_audio_assets_begin(directory,0))) {
+        pages_error(error,error_size,"Could not prepare project audio storage");goto failed;
+    }
     if (!ts_instrument_load_recipe(loaded.pages[0], path, error, error_size))
         goto failed;
     if (!read_manifest(path, directory, sizeof(directory), &layout,
                        &page_count, &active_page, &record_present,
                        &manifest_found, &mosaic_present, &tracker_present, error, error_size)) goto failed;
+    /* A shared bank is never a complete standalone project. Losing its
+       manifest must fail instead of silently opening only page one. */
+    FILE *native_header=fopen(path,"rb");char native_magic[8];
+    int shared_native=native_header && fread(native_magic,1,8,native_header)==8 && !memcmp(native_magic,"TSR42\r\n\032",8);
+    if(native_header)fclose(native_header);
+    if(shared_native) {
+        char manifest_path[TS_PROJECT_PATH_MAX],header[64];
+        FILE *project_manifest=NULL;
+        if(project_join(manifest_path,sizeof(manifest_path),directory,"manifest.txt"))project_manifest=fopen(manifest_path,"rb");
+        int complete=project_manifest && fgets(header,sizeof(header),project_manifest) && !strcmp(header,"TAPESISTER_PROJECT 3\n");
+        if(project_manifest)fclose(project_manifest);
+        if(!manifest_found || layout!=2 || !complete) {
+            pages_error(error,error_size,"TSR42 needs its complete project folder and version 3 manifest");goto failed;
+        }
+    }
     if (manifest_found) {
         while (loaded.page_count < page_count)
             if (!ts_sample_pages_append(&loaded, error, error_size)) goto failed;
@@ -1471,10 +1505,12 @@ TsSampleProjectLoad *ts_sample_pages_prepare_project(const char *path, int with_
     }
     loaded.active_page = active_page;
     *load = (TsSampleProjectLoad){.pages=loaded, .record=loaded_record, .mosaic=mosaic_loaded};
+    ts_audio_assets_end(assets);
     pages_error(error, error_size, "");
     return load;
 
 failed:
+    ts_audio_assets_end(assets);
     ts_mosaic_free(mosaic_loaded);
     if (loaded_ready) ts_sample_pages_free(&loaded);
     ts_instrument_free(&loaded_record);

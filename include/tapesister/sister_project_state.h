@@ -17,10 +17,10 @@ enum {
 /* Saved editor location, separate from running transport and audio state. */
 enum { TS_PROJECT_VIEW_CANVAS, TS_PROJECT_VIEW_MOSAIC, TS_PROJECT_VIEW_TRACKER };
 typedef struct {
-    int present, workspace, keyboard, ingredients, recipes;
+    int present, version, workspace, keyboard, ingredients, recipes;
     size_t parent_first, parent_last;
     double scroll, xscroll, scale, hscale, time;
-    int follow, pattern_tab, source_page;
+    int follow, source_filter, source_page;
     uint64_t selected, selection[TS_MOSAIC_EVENTS];
     unsigned selection_count;
     int tracker_scroll, tracker_expanded, tracker_field;

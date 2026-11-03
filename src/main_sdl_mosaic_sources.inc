@@ -28,11 +28,11 @@ static int mosaic_source_open(SDL_AudioDeviceID device,AudioState *audio,TsUiSta
     TsInstrument *instrument,MosaicController *c,TransformController *transform,int n)
 {
     if(transform->worker) {snprintf(ui->status,sizeof(ui->status),"WAIT FOR THE CURRENT EDIT TO FINISH");return 0;}
+    if(ui->mosaic_sources[n].event)return mosaic_enter(device,audio,ui,instrument,c,ui->mosaic_sources[n].event);
     if(ui->mosaic_sources[n].source && ui->mosaic_sources[n].source->pattern){
         mosaic_pattern_editor(device,ui,c,ui->mosaic_sources[n].source->pattern);
         return 1;
     }
-    if(ui->mosaic_sources[n].event)return mosaic_enter(device,audio,ui,instrument,c,ui->mosaic_sources[n].event);
     int page=ui->mosaic_sources[n].bank_page,slot=ui->mosaic_sources[n].bank_slot;
     if(audio->capture.state!=TS_CAPTURE_IDLE || ui->input_meter_active ||
        (c->pages && (!c->pages->active_live || c->pages->mosaic_bank))) {
@@ -130,7 +130,7 @@ static int mosaic_keyboard_group_select(SDL_AudioDeviceID device,AudioState *aud
     int made=0,patterns=0;
     for(int i=0;i<count;++i) {
         const TsMosaicEvent *e=&c->picked_sources[i];TsMosaicSourceKey key=c->picked_keys[i];
-        if(e->source->pattern){++patterns;continue;}
+        if(e->source->pattern || e->source->video_path[0]){++patterns;continue;}
         TsPerformancePreparedSource *to=&next[made];uint64_t hash=e->source->hash;
         if(audio->mosaic_source_epoch==ui->mosaic->epoch)for(int n=0;n<audio->mosaic_source_count;++n)
             if(mosaic_source_key_equal(key,audio->mosaic_source_keys[n]) && hash==audio->mosaic_source_hashes[n]) {
@@ -170,24 +170,43 @@ static int mosaic_sources_event(const SDL_Event *event,SDL_AudioDeviceID device,
     int down=event->type==SDL_MOUSEBUTTONDOWN,up=event->type==SDL_MOUSEBUTTONUP;
     int motion=event->type==SDL_MOUSEMOTION;
     if(down && event->button.button==SDL_BUTTON_LEFT && x>=TS_MOSAIC_SOURCE_KEYS_X && x<108 &&
-       y>=TS_MOSAIC_SOURCE_KEYS_Y && y<TS_MOSAIC_SOURCE_KEYS_Y+13) {
+       y>=TS_MOSAIC_SOURCE_KEYS_Y && y<TS_MOSAIC_SOURCE_KEYS_Y+11) {
         if(!ui->mosaic_source_keys && !mosaic_keyboard_group_select(device,audio,ui,instrument,c,1))return 1;
         ui->mosaic_source_keys^=1;
         snprintf(ui->status,sizeof(ui->status),ui->mosaic_source_keys?
             "SOURCE KEYS ON / SELECTED AUDIO SOURCES FOLLOW QWERTY AND MIDI":"SOURCE KEYS OFF / MOSAIC EDIT SHORTCUTS RESTORED");return 1;
     }
     int sidebar=x>=10 && x<108 && y>=74 && y<TS_MOSAIC_SOURCE_PAGE_Y;
+    if(motion && sidebar && !c->drag && !c->mix_drag && !c->volume_drag && !c->pan_active) {
+        int local=((y-74)/34)*2+(x-10)/49,n=ui->mosaic_source_offset+local;
+        if(local<16 && (x-10)%49<44 && (y-74)%34<28 && n<ui->mosaic_source_count) {
+            const TsSample *sample=ui->mosaic_sources[n].sample;
+            if(sample) {
+                const char *name=ui->mosaic_sources[n].name;
+                if(ui->mosaic_sources[n].event)snprintf(ui->mosaic_source_hover,sizeof(ui->mosaic_source_hover),
+                    "%s %llu / %.63s / SOURCE: %.35s",ui->mosaic_source_filter==TS_MOSAIC_BROWSER_LOOPS?"LOOP":"CARD",
+                    (unsigned long long)ui->mosaic_sources[n].event,name?name:sample->name,sample->name);
+                else snprintf(ui->mosaic_source_hover,sizeof(ui->mosaic_source_hover),"%s",sample->name);
+                return 1;
+            }
+        }
+    }
     if(down && sidebar && (event->button.button==SDL_BUTTON_RIGHT ||
        (event->button.button==SDL_BUTTON_LEFT && event->button.clicks>=2 && !(mod&(KMOD_CTRL|KMOD_SHIFT|KMOD_ALT|KMOD_GUI))))) {
         int n=ui->mosaic_source_offset+((y-74)/34)*2+(x-10)/49;
         if(n>=ui->mosaic_source_count || !ui->mosaic_sources[n].sample)return 1;
         mosaic_drag_end(ui,c);mosaic_picks_clear(ui,c);ui->mosaic_source_selected=n;
-        if(event->button.button==SDL_BUTTON_RIGHT && ui->mosaic_sources[n].source && ui->mosaic_sources[n].source->pattern && (y-74)%34>=16){
+        if(event->button.button==SDL_BUTTON_RIGHT && !ui->mosaic_sources[n].event && ui->mosaic_sources[n].source && ui->mosaic_sources[n].source->pattern && (y-74)%34>=16){
             mosaic_pattern_notices(ui,instrument,c,2);return 1;
         }
         if(ui->mosaic_source_keys)mosaic_keyboard_group_select(device,audio,ui,instrument,c,1);
         if(event->button.button==SDL_BUTTON_LEFT)mosaic_source_open(device,audio,ui,instrument,c,transform,n);
         else {
+            if(ui->mosaic_sources[n].event) {
+                mosaic_select_only(ui,ui->mosaic_sources[n].event);
+                snprintf(ui->status,sizeof(ui->status),"PLACED CARD %llu SELECTED / DOUBLE CLICK TO EDIT ITS COPY",(unsigned long long)ui->mosaic_sources[n].event);
+                return 1;
+            }
             uint64_t primary=ui->mosaic_selected;TsMosaicSource *source=ui->mosaic_sources[n].source;
             mosaic_select_only(ui,0);int count=0;
             for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(ui->mosaic->events[i].id && ui->mosaic->events[i].source==source) {

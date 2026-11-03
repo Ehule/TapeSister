@@ -86,11 +86,13 @@ static void test_mosaic_external_banks(SDL_Window *window)
     assert(placed->first==100 && placed->last==1000 && placed->mode==TS_LOOP_REVERSE && placed->tuning.root_note==65);
     e.type=SDL_MOUSEBUTTONDOWN;e.button.x=97;e.button.y=359;assert(PAGE_EVENT());
     assert(view->mosaic_source_page==1 && view->mosaic_sources[0].hash==fm);
-    assert(PAGE_EVENT());assert(view->mosaic_source_page==2 && view->mosaic_source_offset==16 && view->mosaic_sources[16].event==placed->id);
+    assert(PAGE_EVENT());assert(view->mosaic_source_page==1 && view->mosaic_source_pages==2);
+    mosaic_source_filter_set(view,bank,&browser,TS_MOSAIC_BROWSER_EVENTS);
+    assert(view->mosaic_source_page==0 && view->mosaic_source_offset==16 && view->mosaic_sources[16].event==placed->id);
     /* Bank growth while viewing events keeps the event browser's identity. */
     size_t new_page;assert(ts_sample_pages_append_and_switch(&pages,bank,&new_page,error,sizeof(error)));
     assert(ts_sample_pages_switch(&pages,bank,1,error,sizeof(error)));mosaic_poll(0,view,bank,&browser);
-    assert(view->mosaic_bank_count==3 && view->mosaic_source_page==3 && view->mosaic_source_offset==16);
+    assert(view->mosaic_bank_count==3 && view->mosaic_source_page==0 && view->mosaic_source_offset==16);
     /* All pages survive normal project persistence, including the original. */
     TsInstrument *record=malloc(sizeof(*record));assert(record);ts_instrument_init(record);
     pages.mosaic=view->mosaic;

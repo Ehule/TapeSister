@@ -3337,7 +3337,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     button(fb, TS_UI_NEW_X, 4, TS_UI_NEW_W, "NEW", ui->exit_for_new);
     button(fb, TS_UI_CONFIG_X, 4, TS_UI_CONFIG_W, "CFG", ui->config_open);
     button(fb, TS_UI_FT2_X, 4, TS_UI_FT2_W, "FT2", ui->exchange_dialog != TS_UI_EXCHANGE_NONE);
-    button(fb, TS_UI_MOSAIC_X, 4, TS_UI_MOSAIC_W, "MOSAIC", ui->mosaic_editing != 0 || ui->mosaic_playing);
+    button(fb, TS_UI_MOSAIC_X, 4, TS_UI_MOSAIC_W, ui->mosaic_editing?"BACK":"MOSAIC", ui->mosaic_editing != 0 || ui->mosaic_playing);
     button(fb, 360, 4, 38, "SAVE", 0);
     button(fb, 402, 4, 58, "EXPORT", 0);
     button(fb, 464, 4, 28, "CDP", 0);
@@ -3349,7 +3349,10 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                           sample_tile_number(ui,instrument->selected_slot);
         snprintf(tile, sizeof(tile), "TILE %02d %c %.24s", tile_number,
                  sample->channels == 2u ? 'S' : 'M', sample->name);
-        if(ui->mosaic_editing)snprintf(tile,sizeof(tile),"EVENT %llu  %.24s",(unsigned long long)ui->mosaic_editing,sample->name);
+        if(ui->mosaic_editing) {
+            const TsMosaicEvent *owner=ui->mosaic?ts_mosaic_find(ui->mosaic,ui->mosaic_editing):NULL;
+            snprintf(tile,sizeof(tile),"%s %llu COPY %.24s",owner && owner->live?"LOOP":"CARD",(unsigned long long)ui->mosaic_editing,sample->name);
+        }
         if (showing_bank && shown_slot->occupied) {
             snprintf(info, sizeof(info), "BANK %02d %s  %.2F SEC",
                      sample_tile_number(ui,ui->bank_view_slot),
@@ -3359,8 +3362,10 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         else if (showing_bank)
             snprintf(info, sizeof(info), "BANK %02d EMPTY - SILENCE",
                      sample_tile_number(ui,ui->bank_view_slot));
+        else if(ui->mosaic_editing)
+            snprintf(info,sizeof(info),"MOSAIC COPY / BACK TO MOSAIC");
         else
-            snprintf(info, sizeof(info), "EDITING TILE %02d  %u HZ %.2F SEC",
+            snprintf(info, sizeof(info), "ORIGINAL TILE %02d  %u HZ %.2F SEC",
                      sample_tile_number(ui,instrument->selected_slot), sample->sample_rate,
                      (double)sample->frames / sample->sample_rate);
         text(fb, 20, 49, tile, PAL_INSTRUMENT, 1);
