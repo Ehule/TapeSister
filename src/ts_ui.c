@@ -5518,6 +5518,7 @@ static void sister_spirit_render(TsFramebuffer *fb,
 }
 
 #include "ts_prism_ui.inc"
+#include "ts_dark_matter_ui.inc"
 
 void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                          const TsPalette *palette)
@@ -5900,7 +5901,8 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     }
 
     rect(fb, 10, 40, 620, 126, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(7, 7, 8)));
-    if (model->routing.enabled &&
+    if (model->parameters.memory_mode==TS_SISTER_MEMORY_DARK) sister_dark_memories(fb,model);
+    else if (model->routing.enabled &&
         model->power_visual == TS_SISTER_UI_POWER_VISUAL_NONE) {
         mode = ts_waveform_display_sanitize(model->waveform_mode);
         if (mode == TS_WAVEFORM_DISPLAY_STEREO && model->waveform.channels == 2u) {
@@ -5924,7 +5926,8 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     if (!model->routing.enabled ||
         model->power_visual != TS_SISTER_UI_POWER_VISUAL_NONE)
         sister_spirit_render(fb, model);
-    button(fb, 600, 144, 24,
+    button(fb,14,44,134,model->parameters.memory_mode==TS_SISTER_MEMORY_DARK?"DARK MATTER":"TAPE MODE",model->parameters.memory_mode==TS_SISTER_MEMORY_DARK);
+    if(model->parameters.memory_mode!=TS_SISTER_MEMORY_DARK) button(fb, 600, 144, 24,
            ts_waveform_display_letter(model->waveform_mode),
            model->waveform_mode != TS_WAVEFORM_DISPLAY_STEREO);
     if(model->matrix_routing)button(fb,10,172,208,"F9 ROUTING MATRIX",1);
@@ -5963,6 +5966,8 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
              model->routing.overload_count > 9999u ? "+" : "");
     tracker_tiny(fb, 384, 186, source_status,
          model->routing.overload_count != 0u ? PAL_VOLUME : PAL_TUNING);
+    if(model->parameters.memory_mode==TS_SISTER_MEMORY_DARK) sister_dark_controls(fb,model);
+    else {
     sister_vertical_mixer(fb, 526, 172, model);
 
     text(fb, 10, 207, "H1", PAL_NOTE, 1);
@@ -6051,6 +6056,8 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     sister_percent_parameter_state(fb, 525, 308, 99, "GHOST",
         model->parameters.ghost_tone, 100, PAL_EFFECT,
         ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_GHOST_TONE));
+
+    }
 
     sister_percent_parameter_state(fb, 10, 330, 124, "SOAK",
         model->parameters.soak, 100, PAL_WAVE_RIGHT,

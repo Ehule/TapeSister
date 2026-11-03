@@ -240,6 +240,7 @@ void ts_sister_parameters_default(TsSisterParameters *parameters,
 {
     if (parameters == NULL) return;
     memset(parameters, 0, sizeof(*parameters));
+    ts_dark_matter_controls_default(&parameters->dark);
     parameters->head1_level = 0.45f;
     parameters->head1_time_ms = 500.0f;
     parameters->head1_feedback = 0.25f;
@@ -510,6 +511,12 @@ static void snapshot_atomic_init(TsSisterSnapshotAtomic *snapshot)
     atomic_init(&snapshot->duration_bits, double_bits(0.0));
     atomic_init(&snapshot->target_duration_bits, double_bits(0.0));
     atomic_init(&snapshot->resize_pending, 0);
+    atomic_init(&snapshot->dark_blend_bits, float_bits(0));
+    for (int j=0;j<4;++j) {
+        atomic_init(&snapshot->dark_position_bits[j], float_bits(0));
+        atomic_init(&snapshot->dark_peak_bits[j], float_bits(0));
+        atomic_init(&snapshot->dark_seconds_bits[j], float_bits(0));
+    }
 }
 
 static int allocate_decorrelators(TsSisterDecorrelator decorrelator[TS_SISTER_HEAD_COUNT],
@@ -657,6 +664,8 @@ static TsSisterParameters sanitize_parameters(const TsSisterMachine *machine,
         return result;
     }
     result = *input;
+    result.memory_mode = result.memory_mode == TS_SISTER_MEMORY_DARK ? TS_SISTER_MEMORY_DARK : TS_SISTER_MEMORY_TAPE;
+    ts_dark_matter_controls_sanitize(&result.dark);
     result.head1_level = clampf(result.head1_level, 0.0f, 1.0f);
     result.head1_time_ms = clampf(result.head1_time_ms, 0.0f, 4000.0f);
     result.head1_feedback = clampf(result.head1_feedback, 0.0f, 1.0f);
@@ -750,7 +759,9 @@ static void reset_runtime_state(TsSisterMachine *machine, int clear_buffer,
     double h2_offset;
     double h3_offset;
     if (machine == NULL || machine->buffer.data == NULL) return;
-    if (clear_buffer) ts_sister_buffer_clear(&machine->buffer);
+    if (clear_buffer) { ts_sister_buffer_clear(&machine->buffer); ts_dark_matter_clear(&machine->dark); }
+    ts_dark_matter_set(&machine->dark, &machine->parameters.dark, machine->parameters.buffer_seconds);
+    ramp_reset(&machine->dark_blend, machine->parameters.memory_mode == TS_SISTER_MEMORY_DARK ? 1.f : 0.f);
     if (reset_clock) machine->master_clock = 0u;
     h1_delay = clampd((double)machine->parameters.head1_time_ms *
                       (double)machine->buffer.sample_rate / 1000.0,
@@ -877,6 +888,9 @@ int ts_sister_machine_init(TsSisterMachine *machine, uint32_t sample_rate,
             return 0;
         }
     }
+    if (!ts_dark_matter_init(&machine->dark, sample_rate, (float)duration_seconds)) {
+        ts_sister_machine_free(machine); return 0;
+    }
     ts_sister_parameters_default(&machine->parameters, sample_rate);
     machine->parameters.buffer_seconds = (float)duration_seconds;
     machine->rolling = 1;
@@ -890,6 +904,7 @@ void ts_sister_machine_free(TsSisterMachine *machine)
 {
     if (machine == NULL) return;
     ts_sister_buffer_free(&machine->buffer);
+    ts_dark_matter_free(&machine->dark);
     free_decorrelators(machine->decorrelator);
     for (size_t i = 0u; i < TS_SISTER_EFFECT_PROCESSOR_COUNT; ++i)
         ts_sister_weave_free(&machine->soak_weave[i]);
@@ -901,6 +916,7 @@ int ts_sister_machine_reconfigure(TsSisterMachine *machine,
                                   double duration_seconds)
 {
     TsSisterBuffer replacement;
+    TsDarkMatter replacement_dark = {0};
     TsSisterDecorrelator replacement_decor[TS_SISTER_HEAD_COUNT];
     TsSisterWeaveState replacement_weave[TS_SISTER_EFFECT_PROCESSOR_COUNT];
     TsSisterParameters parameters;
@@ -928,14 +944,20 @@ int ts_sister_machine_reconfigure(TsSisterMachine *machine,
             return 0;
         }
     }
+    if (!ts_dark_matter_init(&replacement_dark, sample_rate, (float)duration_seconds)) {
+        for (size_t i=0;i<TS_SISTER_EFFECT_PROCESSOR_COUNT;++i) ts_sister_weave_free(&replacement_weave[i]);
+        free_decorrelators(replacement_decor); ts_sister_buffer_free(&replacement); return 0;
+    }
     parameters = machine->parameters;
     rolling = machine->rolling;
     held = machine->held;
     ts_sister_buffer_free(&machine->buffer);
+    ts_dark_matter_free(&machine->dark);
     free_decorrelators(machine->decorrelator);
     for (size_t i = 0u; i < TS_SISTER_EFFECT_PROCESSOR_COUNT; ++i)
         ts_sister_weave_free(&machine->soak_weave[i]);
     machine->buffer = replacement;
+    machine->dark = replacement_dark;
     memcpy(machine->decorrelator, replacement_decor, sizeof(replacement_decor));
     memcpy(machine->soak_weave, replacement_weave, sizeof(replacement_weave));
     machine->parameters = sanitize_parameters(machine, &parameters);
@@ -1048,6 +1070,10 @@ void ts_sister_machine_set_parameters(TsSisterMachine *machine,
     size_t i;
     if (machine == NULL || machine->buffer.data == NULL || parameters == NULL) return;
     next = sanitize_parameters(machine, parameters);
+    ts_dark_matter_set(&machine->dark, &next.dark, next.buffer_seconds);
+    float dark_target = next.memory_mode == TS_SISTER_MEMORY_DARK ? 1.f : 0.f;
+    if (machine->dark_blend.target != dark_target)
+        ramp_set(&machine->dark_blend, dark_target, milliseconds_frames(machine->buffer.sample_rate, 200));
     if ((double)machine->buffer.capacity_frames /
             machine->buffer.sample_rate >= TS_SISTER_MIN_SECONDS &&
         fabsf(next.buffer_seconds -
@@ -1140,6 +1166,7 @@ void ts_sister_machine_seed(TsSisterMachine *machine, uint32_t seed)
 {
     if (machine == NULL) return;
     if (seed == 0u) seed = UINT32_C(0x6d2b79f5);
+    ts_dark_matter_seed(&machine->dark, seed);
     machine->wow_prng = seed ^ UINT32_C(0x243f6a88);
     machine->drop[0].prng = seed ^ UINT32_C(0xa341316c);
     machine->drop[1].prng = seed ^ UINT32_C(0xc8013ea4);
@@ -1179,6 +1206,7 @@ int ts_sister_machine_perform_clear(TsSisterMachine *machine)
     size_t i;
     if (!ts_sister_machine_can_clear(machine)) return 0;
     ts_sister_buffer_clear(&machine->buffer);
+    ts_dark_matter_clear(&machine->dark);
     memset(machine->dc_input_x1, 0, sizeof(machine->dc_input_x1));
     memset(machine->dc_input_y1, 0, sizeof(machine->dc_input_y1));
     memset(machine->filter_state, 0, sizeof(machine->filter_state));
@@ -1561,6 +1589,13 @@ static void publish_snapshot(TsSisterMachine *machine)
                               float_bits(frame_peak(machine->last_output.head[i])),
                               memory_order_relaxed);
     }
+    atomic_store_explicit(&snapshot->dark_blend_bits, float_bits(machine->dark_blend.current), memory_order_relaxed);
+    for (int j=0;j<4;++j) {
+        const TsDarkMatterBank *b=&machine->dark.bank[j];
+        atomic_store_explicit(&snapshot->dark_position_bits[j], float_bits(b->length?(float)b->write/b->length:0), memory_order_relaxed);
+        atomic_store_explicit(&snapshot->dark_peak_bits[j], float_bits(b->peak), memory_order_relaxed);
+        atomic_store_explicit(&snapshot->dark_seconds_bits[j], float_bits((float)b->length/machine->buffer.sample_rate), memory_order_relaxed);
+    }
     atomic_store_explicit(&snapshot->rolling, machine->rolling, memory_order_relaxed);
     atomic_store_explicit(&snapshot->held, machine->held, memory_order_relaxed);
     atomic_store_explicit(&snapshot->clear_state, machine->clear_state,
@@ -1652,6 +1687,12 @@ int ts_sister_machine_get_snapshot(const TsSisterMachine *machine,
                 &snapshot->head_normalized_bits[i], memory_order_relaxed));
             result->head_peak[i] = bits_float((uint32_t)atomic_load_explicit(
                 &snapshot->head_peak_bits[i], memory_order_relaxed));
+        }
+        result->dark_blend=bits_float((uint32_t)atomic_load_explicit(&snapshot->dark_blend_bits,memory_order_relaxed));
+        for (int j=0;j<4;++j) {
+            result->dark_position[j]=bits_float((uint32_t)atomic_load_explicit(&snapshot->dark_position_bits[j],memory_order_relaxed));
+            result->dark_peak[j]=bits_float((uint32_t)atomic_load_explicit(&snapshot->dark_peak_bits[j],memory_order_relaxed));
+            result->dark_seconds[j]=bits_float((uint32_t)atomic_load_explicit(&snapshot->dark_seconds_bits[j],memory_order_relaxed));
         }
         result->rolling = atomic_load_explicit(&snapshot->rolling, memory_order_relaxed);
         result->held = atomic_load_explicit(&snapshot->held, memory_order_relaxed);
@@ -1837,6 +1878,18 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
     machine->head[2].logical_age = ts_sister_positive_modulo(
         head3_age, machine->buffer.capacity_frames);
 
+    float dark_mix = ramp_advance(&machine->dark_blend);
+    TsStereoFrame dark_heads[3];
+    TsStereoFrame dark_input = frame_add(input, causal_fx_return);
+    dark_input = frame_scale(dark_input, clear_gain);
+    ts_dark_matter_process(&machine->dark, dark_input,
+        machine->rolling && !machine->held && machine->clear_state != TS_SISTER_CLEAR_WAITING,
+        machine->buffer.channels == 1u, dark_heads);
+    if (dark_mix > 0) {
+        for (size_t i=0;i<TS_SISTER_HEAD_COUNT;++i) raw[i]=frame_lerp(raw[i], dark_heads[i], dark_mix);
+        feedback1_gain *= 1-dark_mix; feedback2_gain *= 1-dark_mix;
+    }
+
     /* Head-target effects own independent histories. The insertion is after
        the completed interpolated read and before both the established raw
        feedback send and the later Drop/Decor/Width/Level audible path. */
@@ -1855,14 +1908,17 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
     drop2 = update_drop(machine, &machine->drop[0], drop_amount);
     drop3 = update_drop(machine, &machine->drop[1], drop_amount);
     level = ramp_advance(&machine->head[0].level);
+    if (dark_mix > 0) level += dark_mix * (1-level);
     output.head[0] = frame_scale(
         apply_decorrelation(machine, 0u, raw[0], stereo_width), level);
     level = ramp_advance(&machine->head[1].level);
+    if (dark_mix > 0) level += dark_mix * (1-level);
     output.head[1] = frame_scale(apply_decorrelation(
-        machine, 1u, frame_scale(raw[1], drop2), stereo_width), level);
+        machine, 1u, frame_scale(raw[1], drop2 + dark_mix*(1-drop2)), stereo_width), level);
     level = ramp_advance(&machine->head[2].level);
+    if (dark_mix > 0) level += dark_mix * (1-level);
     output.head[2] = frame_scale(apply_decorrelation(
-        machine, 2u, frame_scale(raw[2], drop3), stereo_width), level);
+        machine, 2u, frame_scale(raw[2], drop3 + dark_mix*(1-drop3)), stereo_width), level);
 
     feedback1.l = hard_feedback(raw[0].l, feedback1_gain,
                                 &machine->overload_count) * clear_gain;

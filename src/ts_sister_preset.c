@@ -238,6 +238,8 @@ int ts_sister_preset_delete(TsSisterPresetBank *bank, size_t index,
 static int write_parameters(FILE *file, const TsSisterParameters *p)
 {
     if (p->fx.slot_count < TS_SISTER_FX_SLOT_MIN || p->fx.slot_count > TS_SISTER_FX_SLOT_COUNT) return 0;
+    if (fprintf(file,"memory_mode=%d\n",p->memory_mode)<0 ||
+        !ts_dark_matter_controls_write(file,"dark_matter",&p->dark)) return 0;
     ts_prism_write_extensions(file, &p->prism);
     if (fprintf(file, "prism_input_shape=%d\nprism_output_shape=%d\nprism_color=%.9g\n",
         p->prism.input_shape, p->prism.output_shape, p->prism.color) < 0) return 0;
@@ -517,6 +519,8 @@ static int assign_field(TsSisterParameters *p, const char *key,
     FLOAT_FIELD("prism_body", prism.body);
     FLOAT_FIELD("prism_mix", prism.mix);
     FLOAT_FIELD("prism_output_db", prism.output_db);
+    INT_FIELD("memory_mode", memory_mode);
+    if (!strcmp(key,"dark_matter")) return ts_dark_matter_controls_read(&p->dark,value);
     FLOAT_FIELD("h1_level", head1_level); FLOAT_FIELD("h1_time_ms", head1_time_ms);
     FLOAT_FIELD("h1_feedback", head1_feedback); FLOAT_FIELD("h2_level", head2_level);
     FLOAT_FIELD("h2_scrub", head2_scrub); INT_FIELD("h2_rate", head2_rate_index);

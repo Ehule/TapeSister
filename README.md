@@ -224,6 +224,10 @@ Every completed real-time take is also preserved as a timestamped 32-bit float W
 
 ## Sister Machine
 
+[Dark Matter](docs/DARK_MATTER.md) adds an optional COSMOS-inspired four-memory
+mode with cross-feedback Blur, drifting stereo, input-driven Replace and reverse.
+Use the Tape / Dark Matter switch on Sister's main page.
+
 Sister Machine is a live 5–60 second rolling stereo tape memory with one moving write
 head and three playback heads. It accepts selected tiles, FM, external input,
 audition/preview audio, tracks and Tapehead's direct Live Link. In F9, patch sources

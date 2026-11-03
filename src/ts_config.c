@@ -72,6 +72,8 @@ void ts_config_init(TsConfig *config)
         config->mosaic_record_seconds = 0;
         config->mosaic_silence_seconds = 120;
         config->mosaic_silence_db = -60;
+        config->sister_memory_mode = TS_SISTER_MEMORY_TAPE;
+        ts_dark_matter_controls_default(&config->sister_dark);
         config->sister_buffer_seconds = 40;
         config->sister_buffer_channels = 2;
         config->sister_clear_ms = 20;
@@ -449,6 +451,10 @@ int ts_config_load(TsConfig *config, const char *path,
                 fclose(file);
                 return 0;
             }
+        } else if (!strcmp(key,"sister_memory_mode")) {
+            if (!parse_clamped_integer(value,0,1,&loaded.sister_memory_mode)) { fclose(file); snprintf(error,error_size,"Invalid Sister memory mode"); return 0; }
+        } else if (!strcmp(key,"sister_dark_matter")) {
+            if (!ts_dark_matter_controls_read(&loaded.sister_dark,value)) { fclose(file); snprintf(error,error_size,"Invalid Dark Matter controls"); return 0; }
         } else if (strcmp(key, "sister_buffer_seconds") == 0) {
             if (!parse_clamped_integer(value, 1, 120, &loaded.sister_buffer_seconds)) { snprintf(error, error_size, "Invalid Sister duration on config line %d", line_number); fclose(file); return 0; }
             if (loaded.sister_buffer_seconds < 5) loaded.sister_buffer_seconds = 5;
@@ -821,6 +827,8 @@ int ts_config_save(const TsConfig *config, const char *path,
                                config->dsp_factory_controls[slot][2],
                                config->dsp_factory_controls[slot][3]) < 0;
     }
+    if (!write_failed) write_failed = fprintf(file,"\n[Dark Matter]\nsister_memory_mode=%d\n",config->sister_memory_mode)<0 ||
+        !ts_dark_matter_controls_write(file,"sister_dark_matter",&config->sister_dark);
     if (!write_failed)
         write_failed = fprintf(file,
                                "\n[CDP Processes]\n"

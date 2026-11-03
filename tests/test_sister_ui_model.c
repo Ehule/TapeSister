@@ -402,11 +402,12 @@ int main(void)
           palette.colors[TS_PALETTE_PATTERN_NOTE]);
     CHECK(framebuffer.pixels[344u * TS_UI_WIDTH + 145u] ==
           palette.colors[TS_PALETTE_PATTERN_EFFECT]);
-    /* A peak between the old sampled bins must survive width reduction. */
+    /* A peak between the old sampled bins must survive width reduction.
+       Probe outside the memory-mode button above the left waveform. */
     memset(model.waveform.bins,0,sizeof(model.waveform.bins));
-    model.waveform.bins[700].left_maximum=.75f;
+    model.waveform.bins[1400].left_maximum=.75f;
     ts_sister_ui_render(&framebuffer,&model,&palette);
-    CHECK(framebuffer.pixels[55u*TS_UI_WIDTH+128u]==palette.colors[TS_PALETTE_STEREO_WAVE_LEFT]);
+    CHECK(framebuffer.pixels[55u*TS_UI_WIDTH+231u]==palette.colors[TS_PALETTE_STEREO_WAVE_LEFT]);
     model.routing.capture_state = TS_CAPTURE_RECORDING;
     model.routing.capture_recorded_frames = 25u;
     model.routing.capture_capacity_frames = 100u;

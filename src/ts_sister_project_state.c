@@ -198,6 +198,8 @@ int ts_sister_project_state_apply(const TsSisterProjectState *state,
 static int write_parameters(FILE *file, const TsSisterParameters *p)
 {
     if (p->fx.slot_count < TS_SISTER_FX_SLOT_MIN || p->fx.slot_count > TS_SISTER_FX_SLOT_COUNT) return 0;
+    if (fprintf(file,"MemoryMode=%d\n",p->memory_mode)<0 ||
+        !ts_dark_matter_controls_write(file,"DarkMatter",&p->dark)) return 0;
     ts_prism_write_extensions(file, &p->prism);
     if (fprintf(file, "PrismInputShape=%d\nPrismOutputShape=%d\nPrismColor=%.9g\n",
         p->prism.input_shape, p->prism.output_shape, p->prism.color) < 0) return 0;
@@ -596,6 +598,8 @@ static int assign_parameter(TsSisterParameters *p, const char *key,
     PF("PrismBody", prism.body);
     PF("PrismMix", prism.mix);
     PF("PrismOutputDb", prism.output_db);
+    PI("MemoryMode", memory_mode);
+    if (!strcmp(key,"DarkMatter")) return ts_dark_matter_controls_read(&p->dark,value);
     PF("H1Level", head1_level); PF("H1TimeMs", head1_time_ms); PF("H1Feedback", head1_feedback);
     PF("H2Level", head2_level); PF("H2Scrub", head2_scrub); PI("H2Rate", head2_rate_index);
     PF("H2Feedback", head2_feedback); PF("H3Level", head3_level); PF("H3Span", head3_span);
