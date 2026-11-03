@@ -137,6 +137,17 @@ int main(void)
     CHECK(ts_sister_ui_hit_test_model(&model, 540, 150).action ==
           TS_SISTER_UI_ACTION_NONE);
     CHECK(ts_sister_ui_hit_test(455, 10).action == TS_SISTER_UI_ACTION_PAGE);
+    hit=ts_sister_ui_hit_test_model(&model,100,16);
+    CHECK(hit.action==TS_SISTER_UI_ACTION_PARAMETER && hit.index==TS_DARK_PARAM_MODE);
+    CHECK(ts_sister_ui_hit_test_model(&model,70,50).action==TS_SISTER_UI_ACTION_NONE);
+    CHECK(ts_sister_ui_hit_test_model(&model,165,16).action==TS_SISTER_UI_ACTION_ROLL);
+    CHECK(ts_sister_ui_hit_test_model(&model,210,16).action==TS_SISTER_UI_ACTION_HOLD);
+    CHECK(ts_sister_ui_hit_test_model(&model,250,16).action==TS_SISTER_UI_ACTION_CLEAR);
+    CHECK(ts_sister_ui_hit_test_model(&model,300,16).action==TS_SISTER_UI_ACTION_MONITOR);
+    model.matrix_routing=1;
+    CHECK(ts_sister_ui_hit_test_model(&model,50,180).action==TS_SISTER_UI_ACTION_SOURCE_TILES);
+    CHECK(ts_sister_ui_hit_test_model(&model,150,180).action==TS_SISTER_UI_ACTION_NONE);
+    model.matrix_routing=0;
     hit = ts_sister_ui_hit_test(360, 10);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_BUFFER_SECONDS);
@@ -402,12 +413,12 @@ int main(void)
           palette.colors[TS_PALETTE_PATTERN_NOTE]);
     CHECK(framebuffer.pixels[344u * TS_UI_WIDTH + 145u] ==
           palette.colors[TS_PALETTE_PATTERN_EFFECT]);
-    /* A peak between the old sampled bins must survive width reduction.
-       Probe outside the memory-mode button above the left waveform. */
+    /* A peak between sampled bins survives width reduction, including the
+       area formerly covered by the oversized memory-mode button. */
     memset(model.waveform.bins,0,sizeof(model.waveform.bins));
-    model.waveform.bins[1400].left_maximum=.75f;
+    model.waveform.bins[700].left_maximum=.75f;
     ts_sister_ui_render(&framebuffer,&model,&palette);
-    CHECK(framebuffer.pixels[55u*TS_UI_WIDTH+231u]==palette.colors[TS_PALETTE_STEREO_WAVE_LEFT]);
+    CHECK(framebuffer.pixels[55u*TS_UI_WIDTH+128u]==palette.colors[TS_PALETTE_STEREO_WAVE_LEFT]);
     model.routing.capture_state = TS_CAPTURE_RECORDING;
     model.routing.capture_recorded_frames = 25u;
     model.routing.capture_capacity_frames = 100u;

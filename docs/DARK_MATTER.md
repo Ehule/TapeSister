@@ -1,8 +1,9 @@
 # Sister Machine: Dark Matter
 
 Dark Matter is an optional, native drifting-memory mode inspired by SOMA COSMOS.
-On the Sister tape page, click **TAPE MODE** above the waveform to select
-**DARK MATTER**. Click again to return. The mode is MIDI-learnable and changes
+Click the compact **TAPE / DARK MATTER** switch beside **POWER** in Sister's
+top row to select the memory engine. It is available on every Sister page and
+leaves the waveform unobstructed. Click again to return. The mode is MIDI-learnable and changes
 over a 200 ms fade. It does not clear either memory or allocate on a mode change.
 
 Use F9 to route a tile, synth, TrackSister or external input into Sister and
@@ -56,6 +57,13 @@ storage. While POWER and ROLL are on, both hear the same incoming performance,
 so a first mode change can reveal existing material. Each continues its own
 memory evolution. Switching modes crossfades playback, rather than copying,
 clearing or pretending that the two different layouts are interchangeable.
+
+When both memories have established audible material, switching modes matches
+their recent stereo RMS levels with a bounded output trim (up to 18 dB either
+way), faded over the same 200 ms transition. The trim stays fixed between
+switches: it does not compress Dark Matter's swells or alter the stored audio,
+feedback, dry monitor, or shared OUT control. Empty/near-silent memories do not
+request a boost. Clear and device resets discard the live level measurements.
 
 HOLD or ROLL off freezes writes in both memories; reads and modulation continue.
 CLEAR clears both through the existing fade/control-thread handshake. Changing

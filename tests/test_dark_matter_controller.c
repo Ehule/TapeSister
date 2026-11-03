@@ -27,7 +27,7 @@ int main(int argc,char **argv)
     ts_sister_ui_model_init(&sister.model,&ui.config);sister.model.fx_page=0;
     sister.model.parameters=a.sister.parameters;
     TsStereoFrame *storage=a.sister.machine.dark.storage;
-    click(70,50);assert(a.sister.parameters.memory_mode==TS_SISTER_MEMORY_DARK);
+    click(100,16);assert(a.sister.parameters.memory_mode==TS_SISTER_MEMORY_DARK);
     assert(ui.config.sister_memory_mode==TS_SISTER_MEMORY_DARK);
     for(int i=0;i<7;++i) {
         int id=TS_DARK_PARAM_FEEDBACK+i;
@@ -43,7 +43,7 @@ int main(int argc,char **argv)
     TsSisterUiHit midi;assert(midi_sister_hit_from_target("sister.param.3002",.4f,&midi));
     sister_apply_action(0,&a,&ui,&instrument,&sister,NULL,NULL,midi,48000,2);
     assert(a.sister.parameters.dark.blur==.4f);
-    char target[80];assert(ts_sister_ui_midi_target(ts_sister_ui_hit_test_model(&sister.model,70,50),target,sizeof(target)));
+    char target[80];assert(ts_sister_ui_midi_target(ts_sister_ui_hit_test_model(&sister.model,100,16),target,sizeof(target)));
     assert(!strcmp(target,"sister.param.3000"));
     for(int i=0;i<48000*6;++i) {
         TsStereoFrame v={.2f*sinf(i*.03f),.15f*sinf(i*.041f)};
@@ -62,8 +62,9 @@ int main(int argc,char **argv)
         SDL_Surface *surface=SDL_CreateRGBSurfaceFrom(fb.pixels,640,400,32,640*4,0xff0000,0xff00,0xff,0);
         assert(surface && !SDL_SaveBMP(surface,argv[1]));SDL_FreeSurface(surface);
     }
+    click(100,16);assert(a.sister.parameters.memory_mode==TS_SISTER_MEMORY_TAPE);
     click(70,50);assert(a.sister.parameters.memory_mode==TS_SISTER_MEMORY_TAPE);
-    click(70,50);assert(a.sister.parameters.memory_mode==TS_SISTER_MEMORY_DARK);
+    click(100,16);assert(a.sister.parameters.memory_mode==TS_SISTER_MEMORY_DARK);
     assert(a.sister.machine.dark.storage==storage);
     ts_sister_runtime_disable(&a.sister);ts_instrument_free(&instrument);SDL_Quit();
     puts("Dark Matter native switch, controls, MIDI and rendering passed.");return 0;

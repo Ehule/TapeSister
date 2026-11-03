@@ -8,6 +8,12 @@
 #include "tapesister/ui.h"
 
 enum { TS_SISTER_UI_WIDTH = 640, TS_SISTER_UI_HEIGHT = 400 };
+/* Compact shared header; no mode control belongs inside the waveform. */
+enum { TS_SISTER_UI_HEADER_Y = 8, TS_SISTER_UI_HEADER_H = 18,
+       TS_SISTER_UI_POWER_X = 10, TS_SISTER_UI_POWER_W = 46,
+       TS_SISTER_UI_MODE_X = 60, TS_SISTER_UI_MODE_W = 88,
+       TS_SISTER_UI_ROUTE_X = 10, TS_SISTER_UI_ROUTE_Y = 172,
+       TS_SISTER_UI_ROUTE_W = 76, TS_SISTER_UI_ROUTE_H = 18 };
 /* Shared by rendering and hit testing; keep text and control heights intact. */
 enum { TS_SISTER_UI_FX_TOP = 48, TS_SISTER_UI_FX_ROW_STEP = 48,
        TS_SISTER_UI_FX_ROW_H = 46, TS_SISTER_UI_FX_CLOCK_Y = 294,

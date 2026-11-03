@@ -234,6 +234,9 @@ typedef struct {
     TsSisterBuffer buffer;
     TsDarkMatter dark;
     TsSisterRamp dark_blend;
+    TsSisterRamp dark_output_gain;
+    float mode_energy[2], mode_energy_coefficient;
+    uint64_t mode_meter_frames;
     TsSisterParameters parameters;
     TsSisterParameters applied_parameters;
     TsSisterHeadState head[TS_SISTER_HEAD_COUNT];

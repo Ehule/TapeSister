@@ -435,12 +435,15 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
         return hit;
     }
     for (int control = 0; control < 5; ++control) {
-        if (contains(x, y, 10 + control * 68, 8, 62, 22)) {
+        static const int left[5] = {TS_SISTER_UI_POWER_X, 152, 194, 236, 284};
+        static const int width[5] = {TS_SISTER_UI_POWER_W, 38, 38, 44, 50};
+        if (contains(x, y, left[control], TS_SISTER_UI_HEADER_Y,
+                     width[control], TS_SISTER_UI_HEADER_H)) {
             hit.action = transport[control];
             return hit;
         }
     }
-    if (contains(x, y, 494, 8, 30, 22)) {
+    if (contains(x, y, 494, 8, 30, TS_SISTER_UI_HEADER_H)) {
         hit.action = TS_SISTER_UI_ACTION_LIMITER_TOGGLE;
         return hit;
     }
@@ -450,7 +453,8 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
         hit.normalized = (float)(x - 528) / 47.0f;
         return hit;
     }
-    if ((!model || model->fx_page==0) && contains(x,y,14,44,134,22)) {
+    if (contains(x,y,TS_SISTER_UI_MODE_X,TS_SISTER_UI_HEADER_Y,
+                 TS_SISTER_UI_MODE_W,TS_SISTER_UI_HEADER_H)) {
         hit.action=TS_SISTER_UI_ACTION_PARAMETER; hit.index=TS_DARK_PARAM_MODE;
         hit.normalized=model && model->parameters.memory_mode==TS_SISTER_MEMORY_DARK?0:1; return hit;
     }
@@ -460,13 +464,13 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
         hit.action = TS_SISTER_UI_ACTION_WAVE_MODE;
         return hit;
     }
-    if (contains(x, y, 350, 8, 86, 22)) {
+    if (contains(x, y, 350, 8, 86, TS_SISTER_UI_HEADER_H)) {
         hit.action = TS_SISTER_UI_ACTION_PARAMETER;
         hit.index = TS_SISTER_UI_PARAM_BUFFER_SECONDS;
         hit.normalized = (float)(x - 350) / 85.0f;
         return hit;
     }
-    if (contains(x, y, 440, 8, 50, 22)) {
+    if (contains(x, y, 440, 8, 50, TS_SISTER_UI_HEADER_H)) {
         hit.action = TS_SISTER_UI_ACTION_PAGE;
         return hit;
     }
@@ -730,10 +734,15 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
         return hit;
     }
     {
-        if(model && model->matrix_routing && contains(x,y,10,172,208,20)){hit.action=TS_SISTER_UI_ACTION_SOURCE_TILES;return hit;}
+        if(model && model->matrix_routing &&
+           contains(x,y,TS_SISTER_UI_ROUTE_X,TS_SISTER_UI_ROUTE_Y,
+                    TS_SISTER_UI_ROUTE_W,TS_SISTER_UI_ROUTE_H)) {
+            hit.action=TS_SISTER_UI_ACTION_SOURCE_TILES;return hit;
+        }
         static const int source_left[6] = {10, 58, 90, 128, 170, 334};
         static const int source_width[6] = {44, 28, 34, 38, 48, 44};
         for (int source = 0; source < TS_SISTER_SOURCE_COUNT; ++source) {
+            if (model && model->matrix_routing) break;
             if (!contains(x, y, source_left[source], 172,
                           source_width[source], 20)) continue;
             hit.action = (TsSisterUiAction)(TS_SISTER_UI_ACTION_SOURCE_TILES + source);

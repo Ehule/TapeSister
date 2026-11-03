@@ -140,6 +140,56 @@ static void persistence(void)
     assert(!ts_dark_matter_controls_read(&c,".9,0,0,0,0,0,4294967296,0"));
     remove(project);remove(preset);remove(ini);
 }
+static void mode_level_matching(void)
+{
+    /* Reproduce the large jump with a sustained sound and several Tape heads.
+       Matching must act on the audible return, never on either memory. */
+    const int rate=8000;
+    TsSisterMachine m;assert(ts_sister_machine_init(&m,rate,2,5));
+    TsSisterParameters p=m.parameters;p.buffer_seconds=5;
+    p.head1_level=.58f;p.head2_level=.42f;p.head3_level=.32f;
+    ts_sister_machine_set_parameters(&m,&p);
+    for(int i=0;i<rate*12;++i) {
+        float v=.1f*sinf(i*6.28318530718f*223/rate);
+        ts_sister_machine_process_frame(&m,(TsStereoFrame){v,v*.8f},(TsStereoFrame){0,0});
+    }
+    ts_sister_machine_set_hold(&m,1);
+    double tape=0,dark=0;
+    for(int i=0;i<rate*4;++i) {
+        TsSisterOutput out=ts_sister_machine_process_frame(&m,(TsStereoFrame){0,0},(TsStereoFrame){0,0});
+        if(i>=rate*2)tape+=out.mix.l*out.mix.l+out.mix.r*out.mix.r;
+    }
+    TsStereoFrame retained=m.dark.storage[0];
+    p.memory_mode=TS_SISTER_MEMORY_DARK;ts_sister_machine_set_parameters(&m,&p);
+    float trim=m.dark_output_gain.target;
+    assert(trim>2 && trim<=8); /* Old uncalibrated path is much quieter here. */
+    for(int i=0;i<rate*4;++i) {
+        TsSisterOutput out=ts_sister_machine_process_frame(&m,(TsStereoFrame){0,0},(TsStereoFrame){0,0});
+        assert(isfinite(out.mix.l) && fabsf(out.mix.l)<=1);
+        if(i>=rate*2)dark+=out.mix.l*out.mix.l+out.mix.r*out.mix.r;
+    }
+    float difference=10*log10(dark/tape);
+    printf("Mode level match: %+.2f dB, trim %.2f\n",difference,trim);
+    assert(fabsf(difference)<3);
+    assert(m.dark_output_gain.current==trim); /* Frozen between switches. */
+    assert(!memcmp(&retained,&m.dark.storage[0],sizeof(retained)));
+    /* Dynamics stay intact: even a later feedback/drive change cannot
+       continuously chase the output and flatten Dark Matter's evolution. */
+    p.dark.drive=.9f;ts_sister_machine_set_parameters(&m,&p);
+    assert(m.dark_output_gain.target==trim);
+    p.memory_mode=TS_SISTER_MEMORY_TAPE;ts_sister_machine_set_parameters(&m,&p);
+    assert(m.dark_output_gain.target>=.125f && m.dark_output_gain.target<=8);
+    ts_sister_machine_free(&m);
+
+    assert(ts_sister_machine_init(&m,rate,2,5));p=m.parameters;
+    for(int i=0;i<rate*4;++i)ts_sister_machine_process_frame(&m,(TsStereoFrame){0,0},(TsStereoFrame){0,0});
+    p.memory_mode=TS_SISTER_MEMORY_DARK;ts_sister_machine_set_parameters(&m,&p);
+    assert(m.dark_output_gain.target==1); /* Silence cannot request a boost. */
+    assert(ts_sister_machine_clear_offline(&m));
+    assert(m.mode_energy[0]==0 && m.mode_energy[1]==0 &&
+           m.mode_meter_frames<(uint64_t)rate && m.dark_output_gain.current==1);
+    ts_sister_machine_free(&m);
+}
 static void benchmark(void)
 {
     TsDarkMatter d;assert(ts_dark_matter_init(&d,48000,40));TsStereoFrame h[3];
@@ -155,6 +205,6 @@ static void benchmark(void)
 int main(int argc,char **argv)
 {
     if(argc>1 && !strcmp(argv[1],"--bench")){benchmark();return 0;}
-    streaming();memory_topology();deterministic_stereo();integrated_machine();persistence();
+    streaming();memory_topology();deterministic_stereo();integrated_machine();mode_level_matching();persistence();
     puts("Dark Matter: memory exchange, replace, reverse, stereo, lifecycle and persistence passed.");return 0;
 }

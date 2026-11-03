@@ -762,6 +762,10 @@ static void reset_runtime_state(TsSisterMachine *machine, int clear_buffer,
     if (clear_buffer) { ts_sister_buffer_clear(&machine->buffer); ts_dark_matter_clear(&machine->dark); }
     ts_dark_matter_set(&machine->dark, &machine->parameters.dark, machine->parameters.buffer_seconds);
     ramp_reset(&machine->dark_blend, machine->parameters.memory_mode == TS_SISTER_MEMORY_DARK ? 1.f : 0.f);
+    ramp_reset(&machine->dark_output_gain, 1.f);
+    memset(machine->mode_energy, 0, sizeof(machine->mode_energy));
+    machine->mode_meter_frames = 0;
+    machine->mode_energy_coefficient = 1.f - expf(-1.f / machine->buffer.sample_rate);
     if (reset_clock) machine->master_clock = 0u;
     h1_delay = clampd((double)machine->parameters.head1_time_ms *
                       (double)machine->buffer.sample_rate / 1000.0,
@@ -1072,8 +1076,18 @@ void ts_sister_machine_set_parameters(TsSisterMachine *machine,
     next = sanitize_parameters(machine, parameters);
     ts_dark_matter_set(&machine->dark, &next.dark, next.buffer_seconds);
     float dark_target = next.memory_mode == TS_SISTER_MEMORY_DARK ? 1.f : 0.f;
-    if (machine->dark_blend.target != dark_target)
-        ramp_set(&machine->dark_blend, dark_target, milliseconds_frames(machine->buffer.sample_rate, 200));
+    if (machine->dark_blend.target != dark_target) {
+        uint32_t frames = milliseconds_frames(machine->buffer.sample_rate, 200);
+        /* Match the two live memories only at a mode change. Freeze the trim
+           between changes so swells and decays are not compressed away.
+           Empty/quiet memories never cause an automatic gain boost. */
+        if (machine->mode_meter_frames > machine->dark.bank[3].length + machine->buffer.sample_rate &&
+            machine->mode_energy[0] > 1e-8f && machine->mode_energy[1] > 1e-8f) {
+            float gain = sqrtf(machine->mode_energy[0] / machine->mode_energy[1]);
+            ramp_set(&machine->dark_output_gain, clampf(gain, .125f, 8.f), frames);
+        }
+        ramp_set(&machine->dark_blend, dark_target, frames);
+    }
     if ((double)machine->buffer.capacity_frames /
             machine->buffer.sample_rate >= TS_SISTER_MIN_SECONDS &&
         fabsf(next.buffer_seconds -
@@ -1207,6 +1221,9 @@ int ts_sister_machine_perform_clear(TsSisterMachine *machine)
     if (!ts_sister_machine_can_clear(machine)) return 0;
     ts_sister_buffer_clear(&machine->buffer);
     ts_dark_matter_clear(&machine->dark);
+    memset(machine->mode_energy, 0, sizeof(machine->mode_energy));
+    machine->mode_meter_frames = 0;
+    ramp_reset(&machine->dark_output_gain, 1.f);
     memset(machine->dc_input_x1, 0, sizeof(machine->dc_input_x1));
     memset(machine->dc_input_y1, 0, sizeof(machine->dc_input_y1));
     memset(machine->filter_state, 0, sizeof(machine->filter_state));
@@ -1885,8 +1902,27 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
     ts_dark_matter_process(&machine->dark, dark_input,
         machine->rolling && !machine->held && machine->clear_state != TS_SISTER_CLEAR_WAITING,
         machine->buffer.channels == 1u, dark_heads);
+    {
+        TsStereoFrame tape = {0,0}, dark = {0,0};
+        for (size_t i=0;i<TS_SISTER_HEAD_COUNT;++i) {
+            float gain = machine->head[i].level.current;
+            if (i > 0) gain *= machine->drop[i-1].gain.current;
+            tape = frame_add(tape, frame_scale(raw[i], gain));
+            dark = frame_add(dark, dark_heads[i]);
+        }
+        const TsStereoFrame meter[2] = {tape,dark};
+        for (int i=0;i<2;++i) {
+            float energy = .5f*(meter[i].l*meter[i].l + meter[i].r*meter[i].r);
+            machine->mode_energy[i] += machine->mode_energy_coefficient *
+                (energy - machine->mode_energy[i]);
+            if (machine->mode_energy[i] < 1e-20f) machine->mode_energy[i] = 0;
+        }
+        ++machine->mode_meter_frames;
+    }
+    float dark_gain = ramp_advance(&machine->dark_output_gain);
     if (dark_mix > 0) {
-        for (size_t i=0;i<TS_SISTER_HEAD_COUNT;++i) raw[i]=frame_lerp(raw[i], dark_heads[i], dark_mix);
+        for (size_t i=0;i<TS_SISTER_HEAD_COUNT;++i)
+            raw[i]=frame_lerp(raw[i], frame_scale(dark_heads[i],dark_gain), dark_mix);
         feedback1_gain *= 1-dark_mix; feedback2_gain *= 1-dark_mix;
     }
 
