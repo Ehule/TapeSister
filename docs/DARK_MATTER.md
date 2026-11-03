@@ -17,7 +17,60 @@ capture, dry/wet levels and master safety retain their existing ownership.
 
 ## Play it
 
-Start with the defaults: Feedback 92%, Blur 35%, Drift 35%, Replace 30%, Drive
+The **ALGORITHM** choice above the memories cycles through **Legacy Memory**,
+**Two Delays**, **Four Delays**, **Giant Reverb**, and **Granular**. **SIZE**
+cycles Small / Medium / Large. Mouse wheel chooses adjacent entries; Shift-click
+locks either choice. These are processing programs: changing family changes
+the memory topology or read/write algorithm, while retaining the sound controls.
+
+![Dark Matter granular program and size choices](images/dark-matter-programs.png)
+
+| Family | Small | Medium | Large |
+| --- | --- | --- | --- |
+| Two Delays | About 2.5 s across two unequal memories | About 9.5 s | About 22 s |
+| Four Delays | About 2.5 s across four unequal memories | About 8.5 s | About 11.5 s |
+| Giant Reverb | Huge hall | Larger hall | Largest hall |
+| Granular | 60 ms grains, short delays | 180 ms grains, medium delays | 600 ms grains, long delays plus a centered third bank |
+
+The delay time totals follow the approximate program descriptions in SOMA's
+[main manual](https://somasynths.com/cosmos_specs-manual/). The individual splits,
+reverb network, grain sizes and control curves are original TapeSister choices.
+They are not recovered firmware tables or claims of matching COSMOS audio.
+The reverb uses four long feedback delays, an orthogonal mixing matrix and
+three short allpass diffusion stages per line. Its original aggregate long-delay
+times are approximately 3.6 / 8.4 / 15 s; these are not decay-time specifications.
+Granular uses overlapping Hann-windowed reads, noise-based position scatter
+(**BLUR / SCATTER**), and slow asynchronous grain movement (**DRIFT / GRAIN
+MOTION**). Blur and Drift are labeled N/A in the hall programs, matching their
+documented absence from COSMOS's reverb controls.
+
+The twelve programs use fixed size settings. **BUFFER** continues to set Tape's
+window and the Legacy Memory bank; it does not stretch the twelve programs.
+Legacy Memory is the original Dark Matter engine and remains the default,
+including when older projects, presets or INI files are loaded.
+
+Algorithm and size changes fade the outgoing return down over 50 ms, reconfigure
+the read layout at silence, then fade back over 50 ms. The envelope has flat
+slopes at both ends. This is a short soft gap,
+not simultaneous playback of both algorithms. Storage and reverb diffusion
+memory are retained, never cleared or allocated during a program change.
+Rapid requests coalesce to the latest choice. HOLD freezes both memory writes
+and the reverb diffuser writes while readers keep running.
+
+The write path follows the transition envelope too: changing an internal
+feedback network must not record a pulse that returns after the output fade.
+Bypassed reverb diffusion continues aging with silence while writing is on.
+
+Retained ring joins use short read-only audio crossfades (up to 12 ms either
+side). Each splice combines two moving reads away from known joins and fades
+away from the live write frontier, including during reverse/grain playback.
+No last-sample/DC plateau is fed back into the memory. Splices survive HOLD and
+protect dormant outer memory when programs shrink; once new audio has replaced
+an active period, its guards fade away over 50 ms. Up to 32 join records per
+bank are preallocated; no shadow audio buffer or program-change allocation is
+needed. Recorded memory under HOLD remains byte-exact.
+
+For Legacy Memory, start with the defaults: Feedback 92%, Blur 35%, Drift 35%, Replace 30%, Drive
 8% and Damp 25%. Play a short phrase, leave space, then add another sound.
 The four different memory periods let those phrases separate and recombine.
 With the default 40-second total, the individual memories are about 6.8, 9.2,
@@ -25,7 +78,7 @@ With the default 40-second total, the individual memories are about 6.8, 9.2,
 
 | Control | Behavior |
 | --- | --- |
-| BUFFER | Total approximate memory time, 5–60 seconds, divided across four banks |
+| BUFFER | Legacy's total approximate memory time, 5–60 seconds, divided across four banks |
 | Feedback | Recirculation per memory pass, 0–105%; higher values meet bounded saturation |
 | Blur | Convex exchange between the four feedback returns, before writing |
 | Drift | Independent slow stereo movement with smoothly changing, seeded rates |
@@ -50,7 +103,7 @@ Dark Matter has its own controls; the Tape head levels/rates, Wow, Drop, Erase
 and Ghost are retained for Tape. They are hidden while Dark Matter is selected.
 Switching back restores their controls. Use Shift-click locks and the standard
 wheel/drag gestures. Mode and Reverse are click/wheel choices, not drag sliders.
-Ctrl+Shift+M learns the mode and sound controls using IDs 3000–3007; existing
+Ctrl+Shift+M learns the mode and sound controls using IDs 3000–3009 (Algorithm 3008, Size 3009); existing
 MIDI IDs and the two original preset lock words are unchanged.
 
 ## Memory and transitions
@@ -71,35 +124,40 @@ request a boost. Clear and device resets discard the live level measurements.
 
 HOLD or ROLL off freezes writes in both memories; reads and modulation continue.
 CLEAR clears both through the existing fade/control-thread handshake. Changing
-BUFFER reuses the allocation, retains stored audio and fades each changed bank's
-read boundary over 50 ms. Retained material outside a shortened bank can return
+BUFFER reuses the allocation, retains stored audio and uses the same guarded
+50 ms fade-out/fade-in handoff for Dark Matter's changed periods. Retained material outside a shortened bank can return
 if it is expanded again. Device reconfiguration and POWER reset start empty
 memories, as the existing tape does.
 
-Four unequal prime sample counts are selected below 17%, 23%, 27% and 33% of
+In Legacy Memory, four unequal prime sample counts are selected below 17%, 23%, 27% and 33% of
 the total requested frames. These are original choices, not recovered COSMOS
 delay tables. Stereo channels remain independent; an explicitly mono Sister
 buffer gives exact dual mono. All bank reads happen before any bank writes.
-The feedback exchange has nonnegative weights summing to one per destination.
+Delay feedback exchange has nonnegative weights summing to one per destination;
+the hall uses its orthogonal feedback matrix instead.
 Per-bank low-pass/DC conditioning and bounded nonlinear writes protect memory;
 the established linked output safety still protects the final program.
 
 Storage adds approximately another 60 seconds of stereo floating-point audio:
-22 MiB at 48 kHz and 88 MiB at 192 kHz. Storage is prepared off the audio thread;
+22 MiB at 48 kHz and 88 MiB at 192 kHz, plus roughly 0.14 / 0.56 MiB of reverb
+diffusion storage. Storage is prepared off the audio thread;
 frame processing has no allocation, freeing, file I/O, locking or buffer clears.
 Slow motion is computed at bounded 64-frame control intervals, independent of
 window visibility. Random seeds and fresh-start processing are deterministic.
 
-On this shared Linux host, the initial 48 kHz probe averaged roughly 31 CPU
-microseconds per 256-frame block forward and 47 microseconds in reverse,
-including the probe's source generation. These are engine CPU measurements,
+On this shared Linux host, a 48 kHz probe across the five families, forward and
+reverse, measured roughly 71–255 CPU microseconds per 256-frame block,
+including the probe's source generation.
+These are engine CPU measurements,
 not whole-application latency or an X220/device deadline guarantee. Run
 `build/test_dark_matter --bench` to measure the current build.
 
 ## Saves
 
-Sister project state version 47 and Sister preset version 24 store mode, sound
-controls and the separate eight-bit Dark Matter lock mask. Older states/presets
+Sister project state version 49 and Sister preset version 26 store mode, sound
+controls, algorithm, size and the separate ten-bit Dark Matter lock mask. The
+original eight-value Dark Matter control record still loads as Legacy Memory.
+Older states/presets
 default to Tape mode. Older application builds cannot reproduce the new engine.
 Project v48 and preset v25 also preserve the manual blend and fade time.
 Startup preferences use `[Dark Matter]` in the INI. Rolling
@@ -131,13 +189,22 @@ streaming, reverse playback, hold, clear, resize, mode fades, Tape isolation,
 device reconfiguration and all three persistence paths. Rates include 8 Hz
 (bounds stress), 44.1, 48, 96 and 192 kHz.
 
+It also exercises all twelve programs, increasing size periods, hall impulse
+density versus discrete delays, stereo isolation, mono, high-feedback/reverse
+stress, and program changes under HOLD with byte-exact retained memory.
+Continuity checks cover all 156 directed changes between the 13 programs,
+12 recording transitions at 98% feedback, and nine consecutive changes with
+reverse, hall re-entry, shrinking and expansion. They inspect low-frequency
+signal curvature through two complete incoming memory periods, catching late
+clicks after the initial fade and when temporary guards release.
+
 `tapesister_dark_matter_controller_tests` exercises the actual application mode
 switch, controls, locks, MIDI routing and native renderer. It accepts an optional
 BMP output path for visual inspection. Both are baseline PR gates. Physical
 Windows/Linux interface listening remains necessary to judge the musical feel
 and verify real device deadlines.
 
-The implementation passed all 47 baseline PR regressions and 22 focused Sister
-checks (overlapping suites), plus an AddressSanitizer/UndefinedBehaviorSanitizer
-run instrumenting the new engine and Sister machine. LeakSanitizer was disabled
-for that run. The screenshot above comes from the native controller test.
+AddressSanitizer/UndefinedBehaviorSanitizer checks instrument the new engine and
+Sister machine; LeakSanitizer is disabled for that run. The native controller
+test also verifies that changing programs retains a manually positioned
+Tape/Dark Matter crossfade. The screenshot above comes from that controller.

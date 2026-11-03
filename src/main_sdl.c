@@ -9682,6 +9682,8 @@ static void sister_set_parameter(TsSisterParameters *parameters,
     case TS_DARK_PARAM_DRIVE: parameters->dark.drive=amount; break;
     case TS_DARK_PARAM_DAMP: parameters->dark.damp=amount; break;
     case TS_DARK_PARAM_REVERSE: parameters->dark.reverse=amount>=.5f; break;
+    case TS_DARK_PARAM_ALGORITHM: parameters->dark.algorithm=(int)lrintf(amount*(TS_DARK_ALGORITHM_COUNT-1)); break;
+    case TS_DARK_PARAM_SIZE: parameters->dark.size=(int)lrintf(amount*2); break;
     case TS_SISTER_UI_PARAM_H1_LEVEL: parameters->head1_level = amount; break;
     case TS_SISTER_UI_PARAM_H1_TIME: parameters->head1_time_ms = amount * 4000.0f; break;
     case TS_SISTER_UI_PARAM_H1_FEEDBACK: parameters->head1_feedback = amount; break;
@@ -9838,6 +9840,8 @@ static float sister_parameter_normalized(const TsSisterParameters *parameters,
     case TS_DARK_PARAM_DRIVE: value=parameters->dark.drive; break;
     case TS_DARK_PARAM_DAMP: value=parameters->dark.damp; break;
     case TS_DARK_PARAM_REVERSE: value=(float)parameters->dark.reverse; break;
+    case TS_DARK_PARAM_ALGORITHM: value=parameters->dark.algorithm/(float)(TS_DARK_ALGORITHM_COUNT-1); break;
+    case TS_DARK_PARAM_SIZE: value=parameters->dark.size/2.f; break;
     case TS_SISTER_UI_PARAM_H1_LEVEL: value = parameters->head1_level; break;
     case TS_SISTER_UI_PARAM_H1_TIME: value = parameters->head1_time_ms / 4000.0f; break;
     case TS_SISTER_UI_PARAM_H1_FEEDBACK: value = parameters->head1_feedback; break;
@@ -9934,6 +9938,10 @@ static float sister_parameter_wheel_normalized(
 {
     int direction = wheel > 0 ? 1 : -1;
     if(parameter==TS_DARK_PARAM_MODE || parameter==TS_DARK_PARAM_REVERSE)return direction>0?1.f:0.f;
+    if(parameters && parameter==TS_DARK_PARAM_ALGORITHM)
+        return SDL_clamp(parameters->dark.algorithm+wheel,0,TS_DARK_ALGORITHM_COUNT-1)/(float)(TS_DARK_ALGORITHM_COUNT-1);
+    if(parameters && parameter==TS_DARK_PARAM_SIZE)
+        return SDL_clamp(parameters->dark.size+wheel,0,2)/2.f;
     int steps = wheel > 0 ? wheel : -wheel;
     int value;
     if (parameters == NULL || wheel == 0) return 0.0f;
@@ -10108,6 +10116,8 @@ static const char *sister_parameter_name(int parameter)
     case TS_DARK_PARAM_DRIVE: return "DARK DRIVE";
     case TS_DARK_PARAM_DAMP: return "DARK DAMP";
     case TS_DARK_PARAM_REVERSE: return "DARK REVERSE";
+    case TS_DARK_PARAM_ALGORITHM: return "DARK ALGORITHM";
+    case TS_DARK_PARAM_SIZE: return "DARK SIZE";
     case TS_SISTER_UI_PARAM_H1_LEVEL: return "H1 LEVEL";
     case TS_SISTER_UI_PARAM_H1_TIME: return "H1 TIME";
     case TS_SISTER_UI_PARAM_H1_FEEDBACK: return "H1 FEED";
@@ -15072,6 +15082,7 @@ int main(int argc, char **argv)
                             if ((hit.action == TS_SISTER_UI_ACTION_PARAMETER ||
                                  hit.action == TS_SISTER_UI_ACTION_MASTER_OUTPUT) &&
                                 hit.index!=TS_DARK_PARAM_MODE && hit.index!=TS_DARK_PARAM_REVERSE &&
+                                hit.index!=TS_DARK_PARAM_ALGORITHM && hit.index!=TS_DARK_PARAM_SIZE &&
                                 !ts_sister_ui_parameter_locked(
                                     &sister_window.model, hit.index)) {
                                 uint32_t button_mask =

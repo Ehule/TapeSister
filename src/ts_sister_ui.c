@@ -770,6 +770,15 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
         return hit;
     }
     if (model && model->parameters.memory_mode==TS_SISTER_MEMORY_DARK) {
+        if(contains(x,y,10,62,303,18)) {
+            hit.action=TS_SISTER_UI_ACTION_PARAMETER;hit.index=TS_DARK_PARAM_ALGORITHM;
+            hit.normalized=((model->parameters.dark.algorithm+1)%TS_DARK_ALGORITHM_COUNT)/(float)(TS_DARK_ALGORITHM_COUNT-1);
+            return hit;
+        }
+        if(contains(x,y,322,62,148,18) && model->parameters.dark.algorithm!=TS_DARK_LEGACY) {
+            hit.action=TS_SISTER_UI_ACTION_PARAMETER;hit.index=TS_DARK_PARAM_SIZE;
+            hit.normalized=((model->parameters.dark.size+1)%3)/2.f;return hit;
+        }
         static const int ids[3][4]={
             {TS_DARK_PARAM_FEEDBACK,TS_DARK_PARAM_BLUR,TS_DARK_PARAM_DRIFT,TS_DARK_PARAM_DRIVE},
             {TS_DARK_PARAM_REPLACE,TS_DARK_PARAM_DAMP,TS_DARK_PARAM_REVERSE,TS_SISTER_UI_PARAM_WIDTH},

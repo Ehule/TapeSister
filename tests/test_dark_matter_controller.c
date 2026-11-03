@@ -45,6 +45,29 @@ int main(int argc,char **argv)
     assert(a.sister.parameters.dark.blur==.4f);
     char target[80];assert(ts_sister_ui_midi_target(ts_sister_ui_hit_test_model(&sister.model,100,16),target,sizeof(target)));
     assert(!strcmp(target,"sister.param.3000"));
+    /* Algorithm and size are real choices with stable MIDI IDs and locks. */
+    click(120,68);assert(a.sister.parameters.dark.algorithm==TS_DARK_TWO_DELAYS);
+    click(370,68);assert(a.sister.parameters.dark.size==1);
+    click(370,68);assert(a.sister.parameters.dark.size==2);
+    click(370,68);assert(a.sister.parameters.dark.size==0);
+    assert(ts_sister_ui_parameter_lock_toggle(&sister.model,TS_DARK_PARAM_ALGORITHM));
+    click(120,68);assert(a.sister.parameters.dark.algorithm==TS_DARK_TWO_DELAYS);
+    assert(ts_sister_ui_parameter_lock_toggle(&sister.model,TS_DARK_PARAM_ALGORITHM));
+    assert(midi_sister_hit_from_target("sister.param.3008",1,&midi));
+    sister_apply_action(0,&a,&ui,&instrument,&sister,NULL,NULL,midi,48000,2);
+    assert(a.sister.parameters.dark.algorithm==TS_DARK_GRANULAR);
+    assert(midi_sister_hit_from_target("sister.param.3009",1,&midi));
+    sister_apply_action(0,&a,&ui,&instrument,&sister,NULL,NULL,midi,48000,2);
+    assert(a.sister.parameters.dark.size==2 && ui.config.sister_dark.algorithm==TS_DARK_GRANULAR);
+    assert(sister_parameter_wheel_normalized(&a.sister.parameters,TS_DARK_PARAM_ALGORITHM,-1,0)==.75f);
+    assert(sister_parameter_wheel_normalized(&a.sister.parameters,TS_DARK_PARAM_SIZE,-1,0)==.5f);
+    assert(ts_sister_ui_midi_target(ts_sister_ui_hit_test_model(&sister.model,120,68),target,sizeof(target)));
+    assert(!strcmp(target,"sister.param.3008"));
+    assert(midi_sister_hit_from_target("sister.param.3010",.4f,&midi));
+    sister_apply_action(0,&a,&ui,&instrument,&sister,NULL,NULL,midi,48000,2);
+    click(370,68);assert(a.sister.parameters.dark.size==0);
+    click(370,68);click(370,68);
+    assert(a.sister.parameters.memory_blend==.4f); /* Program choices preserve the live memory crossfade. */
     for(int i=0;i<48000*6;++i) {
         TsStereoFrame v={.2f*sinf(i*.03f),.15f*sinf(i*.041f)};
         TsSisterOutput out=ts_sister_machine_process_frame(&a.sister.machine,v,v);
@@ -56,7 +79,7 @@ int main(int argc,char **argv)
     sister.model.power_visual=TS_SISTER_UI_POWER_VISUAL_NONE;
     sister.model.parameters=a.sister.parameters;
     TsPalette palette;ts_palette_default(&palette);
-    snprintf(sister.model.status,sizeof(sister.model.status),"DARK MATTER / FOUR MEMORIES / SWITCH MODES WITHOUT CLEARING");
+    snprintf(sister.model.status,sizeof(sister.model.status),"DARK MATTER / 12 PROGRAMS + LEGACY / MEMORIES RETAINED");
     ts_sister_ui_render(&fb,&sister.model,&palette);
     if(argc>1) {
         SDL_Surface *surface=SDL_CreateRGBSurfaceFrom(fb.pixels,640,400,32,640*4,0xff0000,0xff00,0xff,0);

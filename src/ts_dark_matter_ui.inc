@@ -1,12 +1,29 @@
 /* Native Sister controls and audio-owned meters; no UI-driven modulation. */
 static void sister_dark_memories(TsFramebuffer *fb, const TsSisterUiModel *m)
 {
-    text(fb,162,65,"DARK MATTER / FOUR DRIFTING MEMORIES",PAL_TUNING,1);
+    const TsDarkMatterControls *d=&m->parameters.dark;
+    sister_choice_parameter_state(fb,10,62,303,"ALGORITHM",ts_dark_matter_algorithm_name(d->algorithm),1,PAL_TUNING,
+        ts_sister_ui_parameter_locked(m,TS_DARK_PARAM_ALGORITHM));
+    char size_label[24];
+    snprintf(size_label,sizeof(size_label),"%s",d->algorithm==TS_DARK_LEGACY?"BUFFER":ts_dark_matter_size_name(d->size));
+    if(d->algorithm==TS_DARK_GRANULAR) {
+        static const int ms[3]={60,180,600};
+        snprintf(size_label,sizeof(size_label),"%s %dMS",ts_dark_matter_size_name(d->size),ms[d->size]);
+    }
+    if(d->algorithm==TS_DARK_TWO_DELAYS || d->algorithm==TS_DARK_FOUR_DELAYS) {
+        static const float durations[2][3]={{2.5f,9.5f,22.f},{2.5f,8.5f,11.5f}};
+        snprintf(size_label,sizeof(size_label),"%s %.1FS",ts_dark_matter_size_name(d->size),durations[d->algorithm-TS_DARK_TWO_DELAYS][d->size]);
+    }
+    sister_choice_parameter_state(fb,322,62,148,"SIZE",size_label,
+        d->algorithm!=TS_DARK_LEGACY,PAL_TUNING,ts_sister_ui_parameter_locked(m,TS_DARK_PARAM_SIZE));
+    tracker_tiny(fb,480,66,"CLICK / WHEEL",PAL_MOUSE);
+    int count=d->algorithm==TS_DARK_TWO_DELAYS?2:d->algorithm==TS_DARK_GRANULAR?(d->size==2?3:2):4;
     for(int i=0;i<4;++i) {
         int top=84+i*20;
         uint32_t color=i&1?PAL_WAVE_RIGHT:PAL_WAVE_LEFT;
         char label[32];float seconds=m->engine.dark_seconds[i];
-        if(seconds<=0) { static const float share[4]={.17f,.23f,.27f,.33f};seconds=m->parameters.buffer_seconds*share[i]; }
+        if(i>=count){text(fb,18,top+3,"INACTIVE",PAL_MOUSE,1);continue;}
+        if(seconds<=0 && d->algorithm==TS_DARK_LEGACY) { static const float share[4]={.17f,.23f,.27f,.33f};seconds=m->parameters.buffer_seconds*share[i]; }
         snprintf(label,sizeof(label),"M%d %5.2FS",i+1,seconds);
         text(fb,18,top+3,label,color,1);
         rect(fb,112,top,448,15,ts_theme_color(active_palette(),render_group,TS_COLOR_PANEL,RGB(20,20,24)));
@@ -21,7 +38,8 @@ static void sister_dark_memories(TsFramebuffer *fb, const TsSisterUiModel *m)
 static void sister_dark_controls(TsFramebuffer *fb, const TsSisterUiModel *m)
 {
     const TsDarkMatterControls *d=&m->parameters.dark;
-    const char *names[3][4]={{"FEEDBACK","BLUR","DRIFT","DRIVE"},
+    int hall=d->algorithm==TS_DARK_GIANT_REVERB,grain=d->algorithm==TS_DARK_GRANULAR;
+    const char *names[3][4]={{"FEEDBACK",hall?"BLUR N/A":grain?"SCATTER":"BLUR",hall?"DRIFT N/A":grain?"GRAIN MOTION":"DRIFT","DRIVE"},
         {"REPLACE","DAMP","REVERSE","WIDTH"},{"FILTER","CUTOFF","Q","GAIN"}};
     const int ids[3][4]={{TS_DARK_PARAM_FEEDBACK,TS_DARK_PARAM_BLUR,TS_DARK_PARAM_DRIFT,TS_DARK_PARAM_DRIVE},
         {TS_DARK_PARAM_REPLACE,TS_DARK_PARAM_DAMP,TS_DARK_PARAM_REVERSE,TS_SISTER_UI_PARAM_WIDTH},
@@ -44,7 +62,7 @@ static void sister_dark_controls(TsFramebuffer *fb, const TsSisterUiModel *m)
         PAL_VOLUME,ts_sister_ui_parameter_locked(m,TS_SISTER_UI_PARAM_DUCK));
     sister_choice_parameter_state(fb,165,286,148,"DECOR",m->parameters.decorrelation_enabled?"ON":"OFF",
         m->parameters.decorrelation_enabled,PAL_WAVE_RIGHT,ts_sister_ui_parameter_locked(m,TS_SISTER_UI_PARAM_DECORRELATE));
-    tracker_tiny(fb,324,285,"H1=M1  H2=M2  H3=M3+M4",PAL_MOUSE);
+    tracker_tiny(fb,324,285,hall?"DIFFUSE FEEDBACK HALL":grain?"H1=LEFT H2=RIGHT H3=CENTER":"H1=M1  H2=M2  H3=M3+M4",PAL_MOUSE);
     tracker_tiny(fb,324,295,"HOLD FREEZES MEMORY WRITES",PAL_MOUSE);
     const int ids2[4]={TS_SISTER_UI_PARAM_INPUT_GAIN,TS_SISTER_UI_PARAM_MONITOR_DRY,
         TS_SISTER_UI_PARAM_MONITOR_WET,TS_SISTER_UI_PARAM_MIX_OUTPUT};
