@@ -655,7 +655,10 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
                     }
                 }
             }
-            if(model->parameters.fx.slot[row].type==TS_SISTER_FX_GRAIN && y>=top+22 && y<top+40) {
+            if(model->parameters.fx.slot[row].type==TS_SISTER_FX_TRANSIENT && contains(x,y,320,top+22,66,18)) {
+                hit.action=TS_SISTER_UI_ACTION_TRANSIENT_POWER;hit.index=row;return hit;
+            }
+            if((model->parameters.fx.slot[row].type==TS_SISTER_FX_GRAIN || model->parameters.fx.slot[row].type==TS_SISTER_FX_TRANSIENT) && y>=top+22 && y<top+40) {
                 for(int state=0;state<TS_GRAIN_STATES;++state)if(contains(x,y,392+state*22,top+22,18,18)) {
                     hit.action=TS_SISTER_UI_ACTION_GRAIN_STATE;hit.index=(row<<8)|state;return hit;
                 }

@@ -5724,10 +5724,10 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                     ts_sister_ui_parameter_locked(model, parameter));
                 if (slot->type == TS_SISTER_FX_TRANSIENT) {
                     char label[24];
-                    snprintf(label,sizeof(label),"ATK %+.1f",(slot->parameter_a-.5f)*30);
+                    snprintf(label,sizeof(label),"ATK %+.1f",(slot->parameter_a-.5f)*30*(1+slot->transient_power));
                     sister_value_parameter_state(fb,156+field_step,top+4,field_width,
                         label,slot->parameter_a,color,ts_sister_ui_parameter_locked(model,parameter+1));
-                    snprintf(label,sizeof(label),"SUS %+.1f",(slot->parameter_b-.5f)*48);
+                    snprintf(label,sizeof(label),"SUS %+.1f",(slot->parameter_b-.5f)*48*(1+slot->transient_power));
                     sister_value_parameter_state(fb,156+field_step*2,top+4,field_width,
                         label,slot->parameter_b,color,ts_sister_ui_parameter_locked(model,parameter+2));
                     snprintf(label,sizeof(label),"RESP %.2fX",.25f*powf(16,slot->parameter_c));
@@ -5783,9 +5783,12 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                 slot->placement & TS_SISTER_FX_PLACE_H3, PAL_TUNING);
             sister_target_toggle(fb, 268, top + 26, 46, "POST",
                 slot->placement & TS_SISTER_FX_PLACE_POST, PAL_WAVE_RIGHT);
-            text(fb, 330, top + 31, description, PAL_MOUSE, 1);
-            if(slot->type==TS_SISTER_FX_GRAIN) {
-                const TsGrainStates *bank=&slot->grain_states;
+            if(slot->type==TS_SISTER_FX_TRANSIENT) {
+                char power[16];snprintf(power,sizeof(power),"PWR %uX",1u+slot->transient_power);
+                button(fb,320,top+26,66,power,slot->transient_power!=0);
+            } else text(fb, 330, top + 31, description, PAL_MOUSE, 1);
+            if(slot->type==TS_SISTER_FX_GRAIN || slot->type==TS_SISTER_FX_TRANSIENT) {
+                const TsGrainStates *bank=slot->type==TS_SISTER_FX_TRANSIENT?&slot->transient_states:&slot->grain_states;
                 for(int state=0;state<TS_GRAIN_STATES;++state) {
                     int active=bank->selected==state+1,stored=(bank->captured&(1u<<state))!=0;
                     uint32_t fill=stored?RGB(48,88,65):RGB(70,68,75);
@@ -5796,6 +5799,9 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                     rect(fb,left,top+26,18,18,active?PAL_TEXT:PAL_DESKTOP);
                     rect(fb,left+2,top+28,14,14,fill);
                     if(stored && !active)rect(fb,left+7,top+33,4,4,RGB(110,190,140));
+                    if(slot->type==TS_SISTER_FX_TRANSIENT) {
+                        char digit[2]={(char)('1'+state),0};text(fb,left+6,top+31,digit,PAL_TEXT,1);
+                    }
                 }
                 char glide[24];snprintf(glide,sizeof(glide),"GLIDE %.1FS",bank->seconds);
                 text(fb,510,top+28,glide,PAL_MOUSE,1);

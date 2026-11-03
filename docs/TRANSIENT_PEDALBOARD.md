@@ -1,13 +1,13 @@
 # Transient pedalboard
 
-The pedalboard has five interchangeable slots. Click a slot's type button until
-**TRANSIENT** appears. Slot 5 starts empty; loading an older project or preset
-keeps its original four slots and sound.
+Click any pedalboard slot's type button until **TRANSIENT** appears, or add an
+independent **TRANSIENT** instance in the routing matrix.
 
 | Control | Range | Use |
 | --- | --- | --- |
-| ATK | −15 to +15 dB | Soften or emphasize the start of a sound |
-| SUS | −24 to +24 dB | Shorten or emphasize its decay |
+| ATK | ±15 dB at 1×, up to ±60 dB at 4× | Soften or emphasize the start of a sound |
+| SUS | ±24 dB at 1×, up to ±96 dB at 4× | Shorten or emphasize its decay |
+| PWR | 1× / 2× / 3× / 4× | Multiply attack and sustain shaping; 1× retains the original behavior |
 | RESP | 0.25× to 4× | Scale detector timing; 1× is the starting point |
 | MIX | 0–100% | Blend the shaped signal with its input |
 | GAIN | −12 to +12 dB | Match the resulting level |
@@ -17,6 +17,36 @@ processor adds no audio delay. Both channels share one detector and gain, so
 opposite-polarity stereo material still triggers correctly and keeps its balance.
 Sustain increases existing decay; it does not generate a reverb tail from silence.
 Higher RESP values follow longer events; lower values suit shorter ones.
+
+Click **PWR** to cycle its four strengths, use the wheel to step, or right-click
+to restore 1×. The ATK/SUS readouts show the effective dB values at the chosen
+power. This multiplies the envelope-shaping amount; it is not a cascade of
+independent detectors and does not promise the exact sound of several stacked
+instances. Neutral ATK/SUS remain exact unity at every power. Existing projects
+and presets load at 1×. Boosts at 3×/4× can produce large level changes; MIX and
+GAIN remain available for balancing the result.
+
+## Five saved states
+
+Each Transient slot and independent Matrix instance has five state buttons and
+its own **GLIDE** time, using Grain's capture/recall gestures:
+
+- Click an empty state to capture ATK, SUS, RESP and PWR.
+- Click a stored state to recall it. Right-click it to enter editing.
+- Click the edited/changed selected state to save, or Shift-click any state to overwrite it.
+- Middle-click a state to clear it while retaining the current sound.
+- Drag or wheel GLIDE from instant to 600 seconds; right-click for instant.
+
+MIX, GAIN, routing and bypass fades stay independent of these shape states.
+State recalls glide through effective attack/sustain dB and Response, including
+when the destination uses a different power. A new recall starts from the
+audible in-progress setting. Manual shape/power edits or edit recalls interrupt
+the glide while keeping detector history and normal control smoothing.
+
+State banks and power survive project and user-preset save/load, device changes
+and slot reordering. Grain and Transient retain separate banks when the slot's
+type changes. Runtime edit flags and recall commands are not saved. Matrix
+instances also retain their states in configuration and routing Undo/Redo.
 
 A useful first experiment is a dry drum loop, MIX 100%, RESP 1× and GAIN 0 dB.
 Try ATK +6 dB, then −6 dB. Return ATK to zero and try SUS −12 dB, then +6 dB.
@@ -97,6 +127,9 @@ stereo linking, silence, nonfinite input, Response timing, steady carriers,
 8/44.1/48/96/192 kHz processing, independent head history, fifth-slot project and
 preset recall, legacy project/preset defaults, sample-rate reconfiguration, three-minute
 slot and independent master fades, and matrix Insert/Send audio behavior.
+It also checks the extended ranges at five sample rates, stronger onset/tail
+shaping, independent Matrix power, neutral unity at every power/Mix, interrupted
+state glides and project/preset/configuration state recall.
 
 `tapesister_transient_controller_tests` drives the native controller, checking
 all fifth-row fields, MIDI targets, stable IDs, parameter locks, reorder, both
@@ -105,6 +138,9 @@ framebuffer screenshots. The legacy hit-test helper also guards its optional mod
 existing Sister UI fixtures to run. The Mandala controller fixture checks distinct Prism
 and Transient channels. Both new fixtures are mandatory Linux/Windows release
 gates.
+The same controller fixture checks Transient power, capture/edit/clear, glide,
+reorder and Matrix state Undo/Redo. These fixtures, the Grain/pedalboard fixture
+and the independent Matrix instance fixture are also baseline PR gates.
 
 The routing and source-route controller fixtures additionally check TrackSister
 group audio, independent track overrides, live tile isolation, F11 trim, bus

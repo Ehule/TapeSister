@@ -342,6 +342,8 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
             index + 1, slot->parameter_b, index + 1, slot->parameter_c,
             index + 1, slot->mix) < 0) return 0;
         if (fprintf(file, "slot%d_locks=%u\n", index + 1, (unsigned)slot->parameter_locks) < 0) return 0;
+        char transient_key[40];snprintf(transient_key,sizeof(transient_key),"slot%d_transient",index+1);
+        if(!ts_transient_states_write(file,transient_key,slot->transient_power,&slot->transient_states))return 0;
         const TsGrainStates *bank=&slot->grain_states;
         if(fprintf(file,"slot%d_state_mask=%u\nslot%d_state_selected=%u\nslot%d_state_seconds=%.9g\n",
             index+1,(unsigned)bank->captured,index+1,(unsigned)bank->selected,index+1,bank->seconds)<0)return 0;
@@ -449,6 +451,7 @@ static int assign_field(TsSisterParameters *p, const char *key,
         slot_number >= 1 && slot_number <= TS_SISTER_FX_SLOT_COUNT) {
         if (slot_number > p->fx.slot_count) p->fx.slot_count = slot_number;
         TsSisterFxSlotControls *slot = &p->fx.slot[slot_number - 1];
+        if(!strcmp(slot_field,"transient"))return ts_transient_states_read(value,&slot->transient_power,&slot->transient_states);
         if(!strcmp(slot_field,"state_seconds"))return parse_float(value,&slot->grain_states.seconds);
         if(!strcmp(slot_field,"state_mask") || !strcmp(slot_field,"state_selected")) {
             int maximum=!strcmp(slot_field,"state_mask")?31:TS_GRAIN_STATES;

@@ -40,7 +40,7 @@ static void mx_effect_label(char *s,size_t n,const TsMatrixEffectControls *c,int
         const float v[]={c->compressor.threshold_db,c->compressor.ratio,c->compressor.attack_ms,c->compressor.release_ms,c->compressor.output_db};
         snprintf(s,n,k==1?"%s %.1f:1":k==2 || k==3?"%s %.1f MS":"%s %+.1f DB",cn[k],v[k]);
     } else if(k==4)snprintf(s,n,"OUTPUT %+.1f DB",c->gain_db);
-    else if(c->type==TS_SISTER_FX_TRANSIENT && k<2)snprintf(s,n,"%s %+.1f DB",names[c->type][k],((k?c->b:c->a)-.5f)*(k?48:30));
+    else if(c->type==TS_SISTER_FX_TRANSIENT && k<2)snprintf(s,n,"%s %+.1f DB",names[c->type][k],((k?c->b:c->a)-.5f)*(k?48:30)*(1+c->transient_power));
     else if(c->type==TS_SISTER_FX_TRANSIENT && k==2)snprintf(s,n,"RESPONSE %.2fX",.25f*powf(16,c->c));
     else snprintf(s,n,"%s %.0f%%",names[c->type][k],mx_effect_value(c,position)*100);
 }
@@ -61,15 +61,28 @@ static void mx_effect_paint(void)
     if(c->type==TS_MATRIX_FX_COMPRESSOR) {
         mx_button(410,696,200,c->compressor.external?"SC: EXTERNAL":"SC: INTERNAL",c->compressor.external);
         snprintf(text,sizeof(text),"REDUCTION %.1f DB",w->effect_gr);mx_text(626,704,text,MX_AMBER,1);
+    } else if(c->type==TS_SISTER_FX_TRANSIENT) {
+        snprintf(text,sizeof(text),"PWR %uX",1u+c->transient_power);mx_button(410,696,94,text,c->transient_power!=0);
+        TsSisterFxSlotControls control={.type=TS_SISTER_FX_TRANSIENT,.parameter_a=c->a,.parameter_b=c->b,.parameter_c=c->c,
+            .transient_power=c->transient_power,.transient_states=c->transient_states};
+        for(int i=0;i<TS_GRAIN_STATES;++i) {
+            int selected=c->transient_states.selected==i+1,stored=(c->transient_states.captured&(1u<<i))!=0;
+            snprintf(text,sizeof(text),"%d%s",i+1,selected && ts_grain_state_changed(&control)?"*":"");
+            mx_button(518+i*34,696,28,text,stored);
+            if(selected)mx_rect(518+i*34,722,28,2,c->transient_states.editing?MX_AMBER:MX_GREEN);
+        }
+        snprintf(text,sizeof(text),"GLIDE %.1F S",c->transient_states.seconds);mx_button(694,696,190,text,0);
     } else mx_text(418,704,"INDEPENDENT INSTANCE",MX_DIM,1);
     mx_button(898,696,138,"REMOVE",0);mx_button(1048,696,192,"BACK TO ROUTES",0);
-    if(w->effect_progress<1){mx_rect(630,715,240,3,MX_DIM);mx_rect(630,715,(int)(240*w->effect_progress),3,MX_AMBER);}
+    if(w->effect_progress<1 && c->type!=TS_SISTER_FX_TRANSIENT){mx_rect(630,715,240,3,MX_DIM);mx_rect(630,715,(int)(240*w->effect_progress),3,MX_AMBER);}
     int count=mx_effect_controls(c),width=1204/count;
     for(int i=0;i<count;++i) {
         int x=32+i*width;mx_effect_label(text,sizeof(text),c,i);mx_text(x,735,text,MX_TEXT,1);
         mx_rect(x,758,width-18,6,MX_DIM);mx_rect(x+(int)((width-22)*mx_effect_value(c,i)),753,4,16,MX_GREEN);
     }
-    mx_text(32,779,"DRAG / WHEEL: ADJUST | SHIFT+WHEEL: FINE | RIGHT-CLICK: DEFAULT | BYPASS FADE: 10 MS TO 60 MIN",MX_DIM,1);
+    mx_text(32,779,c->type==TS_SISTER_FX_TRANSIENT?
+        "STATES: CLICK CAPTURE/PLAY | SHIFT SAVE | RIGHT EDIT | MIDDLE CLEAR | GLIDE: DRAG/WHEEL, RIGHT INSTANT":
+        "DRAG / WHEEL: ADJUST | SHIFT+WHEEL: FINE | RIGHT-CLICK: DEFAULT | BYPASS FADE: 10 MS TO 60 MIN",MX_DIM,1);
 }
 static void mx_append_port(TsMatrixLayout *l,int d)
 {
@@ -132,6 +145,40 @@ static void mx_effect_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioSta
     }
     int slot=mx_effect_slot();if(slot<0)return;
     TsMatrixEffectControls *c=&w->controls.effect[slot];int change=0,count=mx_effect_controls(c),width=1204/count;
+    if(c->type==TS_SISTER_FX_TRANSIENT && (w->drag==40 || (y>=696 && y<724 && x>=410 && x<884))) {
+        TsSisterFxSlotControls control={.type=TS_SISTER_FX_TRANSIENT,.parameter_a=c->a,.parameter_b=c->b,.parameter_c=c->c,
+            .transient_power=c->transient_power,.transient_states=c->transient_states};
+        TsGrainStates *bank=&control.transient_states;
+        if(w->drag==40 || x>=694) {
+            if(wheel){bank->seconds=SDL_clamp(bank->seconds+wheel*((SDL_GetModState()&KMOD_SHIFT)?.1f:1.f),0,600);change=1;}
+            else if(click && e->button.button==SDL_BUTTON_RIGHT){bank->seconds=0;change=1;}
+            else if(left || (w->drag==40 && e->type==SDL_MOUSEMOTION)) {
+                bank->seconds=(powf(6001.f,SDL_clamp((x-694)/189.f,0,1))-1)*.1f;w->drag=40;change=1;
+            }
+        } else if(x<504) {
+            if(wheel){control.transient_power=(uint8_t)SDL_clamp(control.transient_power+wheel,0,3);change=1;}
+            else if(click && e->button.button==SDL_BUTTON_RIGHT){control.transient_power=0;change=1;}
+            else if(left){control.transient_power=(control.transient_power+1)%4;change=1;}
+        } else if(x>=518 && x<688 && (x-518)%34<28 && click) {
+            int index=(x-518)/34;
+            if(e->button.button==SDL_BUTTON_MIDDLE) {
+                bank->captured&=(uint8_t)~(1u<<index);
+                if(bank->selected==index+1)bank->selected=bank->editing=0;
+            } else if(e->button.button==SDL_BUTTON_RIGHT)ts_grain_state_recall(&control,index,1);
+            else if(left) {
+                if((SDL_GetModState()&KMOD_SHIFT) || !(bank->captured&(1u<<index)) ||
+                   (bank->selected==index+1 && (bank->editing || ts_grain_state_changed(&control))))ts_grain_state_capture(&control,index);
+                else ts_grain_state_recall(&control,index,0);
+            } else return;
+            change=1;
+        }
+        if(change) {
+            c->a=control.parameter_a;c->b=control.parameter_b;c->c=control.parameter_c;
+            c->transient_power=control.transient_power;c->transient_states=control.transient_states;
+            mx_commit_controls(device,audio,ui);
+        }
+        return;
+    }
     if(left && y>=696 && y<724) {
         if(x>=272 && x<398){c->enabled=!c->enabled;change=1;}
         if(c->type==TS_MATRIX_FX_COMPRESSOR && x>=410 && x<610){c->compressor.external=!c->compressor.external;if(c->compressor.external)mx_reveal_column(TS_MATRIX_EFFECT_SC_BASE+slot);change=1;}

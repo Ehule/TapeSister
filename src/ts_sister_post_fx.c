@@ -357,27 +357,79 @@ void ts_sister_fx_controls_default(TsSisterFxControls *controls)
 
 void ts_grain_state_capture(TsSisterFxSlotControls *slot,int index)
 {
-    if(!slot || slot->type!=TS_SISTER_FX_GRAIN || index<0 || index>=TS_GRAIN_STATES)return;
-    TsGrainStates *bank=&slot->grain_states;
+    if(!slot || (slot->type!=TS_SISTER_FX_GRAIN && slot->type!=TS_SISTER_FX_TRANSIENT) || index<0 || index>=TS_GRAIN_STATES)return;
+    TsGrainStates *bank=slot->type==TS_SISTER_FX_TRANSIENT?&slot->transient_states:&slot->grain_states;
     bank->value[index][0]=slot->parameter_a;bank->value[index][1]=slot->parameter_b;bank->value[index][2]=slot->parameter_c;
+    bank->power[index]=slot->type==TS_SISTER_FX_TRANSIENT?slot->transient_power:0;
     bank->captured|=(uint8_t)(1u<<index);bank->selected=(uint8_t)(index+1);bank->editing=0;
 }
 int ts_grain_state_recall(TsSisterFxSlotControls *slot,int index,int editing)
 {
-    if(!slot || slot->type!=TS_SISTER_FX_GRAIN || index<0 || index>=TS_GRAIN_STATES)return 0;
-    TsGrainStates *bank=&slot->grain_states;
+    if(!slot || (slot->type!=TS_SISTER_FX_GRAIN && slot->type!=TS_SISTER_FX_TRANSIENT) || index<0 || index>=TS_GRAIN_STATES)return 0;
+    TsGrainStates *bank=slot->type==TS_SISTER_FX_TRANSIENT?&slot->transient_states:&slot->grain_states;
     bank->selected=(uint8_t)(index+1);bank->editing=editing!=0;
     if(!(bank->captured&(1u<<index)))return 0;
     slot->parameter_a=bank->value[index][0];slot->parameter_b=bank->value[index][1];slot->parameter_c=bank->value[index][2];
+    if(slot->type==TS_SISTER_FX_TRANSIENT)slot->transient_power=bank->power[index];
     if(!++bank->recall_serial)++bank->recall_serial;
     return 1;
 }
 int ts_grain_state_changed(const TsSisterFxSlotControls *slot)
 {
-    if(!slot)return 0;const TsGrainStates *bank=&slot->grain_states;
+    if(!slot)return 0;
+    const TsGrainStates *bank=slot->type==TS_SISTER_FX_TRANSIENT?&slot->transient_states:&slot->grain_states;
     if(!bank->selected || bank->selected>TS_GRAIN_STATES || !(bank->captured&(1u<<(bank->selected-1))))return 0;
     const float *v=bank->value[bank->selected-1];
-    return fabsf(v[0]-slot->parameter_a)>1e-6f || fabsf(v[1]-slot->parameter_b)>1e-6f || fabsf(v[2]-slot->parameter_c)>1e-6f;
+    return fabsf(v[0]-slot->parameter_a)>1e-6f || fabsf(v[1]-slot->parameter_b)>1e-6f || fabsf(v[2]-slot->parameter_c)>1e-6f ||
+        (slot->type==TS_SISTER_FX_TRANSIENT && bank->power[bank->selected-1]!=slot->transient_power);
+}
+
+int ts_transient_states_valid(uint8_t power,const TsGrainStates *bank)
+{
+    if(power>3 || bank->captured>31 || bank->selected>TS_GRAIN_STATES ||
+       !isfinite(bank->seconds) || bank->seconds<0 || bank->seconds>600)return 0;
+    for(int i=0;i<TS_GRAIN_STATES;++i) {
+        if(bank->power[i]>3)return 0;
+        for(int p=0;p<3;++p)if(!isfinite(bank->value[i][p]) || bank->value[i][p]<0 || bank->value[i][p]>1)return 0;
+    }
+    return 1;
+}
+/* A compact optional record shared by project, preset and Matrix writers.
+   Live edit flags and recall command serials deliberately do not persist. */
+int ts_transient_states_write(FILE *file,const char *key,uint8_t power,const TsGrainStates *bank)
+{
+    if(!ts_transient_states_valid(power,bank))return 0;
+    if(!power && !bank->captured && !bank->selected && !bank->seconds)return 1;
+    if(fprintf(file,"%s=%u,%u,%u,%.9g",key,(unsigned)power,(unsigned)bank->captured,(unsigned)bank->selected,bank->seconds)<0)return 0;
+    for(int i=0;i<TS_GRAIN_STATES;++i)
+        if(fprintf(file,",%.9g,%.9g,%.9g,%u",bank->value[i][0],bank->value[i][1],bank->value[i][2],(unsigned)bank->power[i])<0)return 0;
+    return fputc('\n',file)!=EOF;
+}
+int ts_transient_states_read(const char *text,uint8_t *power,TsGrainStates *bank)
+{
+    double value[4+TS_GRAIN_STATES*4];
+    for(int i=0;i<4+TS_GRAIN_STATES*4;++i) {
+        char *end;value[i]=strtod(text,&end);
+        if(end==text || !isfinite(value[i]) || (i<23?*end!=',':*end!=0))return 0;
+        text=end+(i<23);
+    }
+    const int integer_index[]={0,1,2,7,11,15,19,23};
+    for(unsigned i=0;i<sizeof(integer_index)/sizeof(*integer_index);++i) {
+        double v=value[integer_index[i]],maximum=i==1?31:i==2?TS_GRAIN_STATES:3;
+        if(v<0 || v>maximum || floor(v)!=v)return 0;
+    }
+    TsGrainStates next={0};
+    next.captured=(uint8_t)value[1];next.selected=(uint8_t)value[2];
+    if(value[3]<0 || value[3]>600)return 0;
+    next.seconds=(float)value[3];
+    for(int i=0;i<TS_GRAIN_STATES;++i) {
+        for(int p=0;p<3;++p) {
+            double v=value[4+i*4+p];if(v<0 || v>1)return 0;
+            next.value[i][p]=(float)v;
+        }
+        next.power[i]=(uint8_t)value[7+i*4];
+    }
+    *power=(uint8_t)value[0];*bank=next;return 1;
 }
 
 void ts_sister_fx_controls_sanitize(TsSisterFxControls *controls)
@@ -432,6 +484,15 @@ void ts_sister_fx_controls_sanitize(TsSisterFxControls *controls)
         bank->seconds=isfinite(bank->seconds)?clampf(bank->seconds,0,600):0;
         for(int state=0;state<TS_GRAIN_STATES;++state)for(int p=0;p<3;++p)
             bank->value[state][p]=isfinite(bank->value[state][p])?clampf(bank->value[state][p],0,1):.5f;
+        slot->transient_power=slot->transient_power>3?3:slot->transient_power;
+        bank=&slot->transient_states;
+        bank->captured&=31u;if(bank->selected>TS_GRAIN_STATES)bank->selected=0;
+        bank->editing=bank->editing!=0;
+        bank->seconds=isfinite(bank->seconds)?clampf(bank->seconds,0,600):0;
+        for(int state=0;state<TS_GRAIN_STATES;++state) {
+            bank->power[state]=bank->power[state]>3?3:bank->power[state];
+            for(int p=0;p<3;++p)bank->value[state][p]=isfinite(bank->value[state][p])?clampf(bank->value[state][p],0,1):.5f;
+        }
         if (slot->type < TS_SISTER_FX_EMPTY ||
             slot->type >= TS_SISTER_FX_TYPE_COUNT)
             slot->type = TS_SISTER_FX_EMPTY;
@@ -962,9 +1023,12 @@ void ts_sister_post_fx_sync_controls(TsSisterPostFxEngine *engine,
             transient->gain_current = transient->gain_target = makeup_gain_linear(control->gain_db);
             transient->mix_current = control->mix;
             transient->response_cached = control->parameter_c;
+            transient->state_serial=control->transient_states.recall_serial;
+            transient->state_remaining=transient->response_countdown=0;
             if(control->type == TS_SISTER_FX_TRANSIENT)
                 ts_transient_sync(&transient->dsp, (TsTransientControls){
-                    (control->parameter_a-.5f)*30, (control->parameter_b-.5f)*48,
+                    (control->parameter_a-.5f)*30*(1+control->transient_power),
+                    (control->parameter_b-.5f)*48*(1+control->transient_power),
                     .25f*powf(16,control->parameter_c)});
         }
     }
@@ -1459,11 +1523,32 @@ static TsStereoFrame transient_process(const TsSisterFxTiming *engine,
     TsSisterTransientState *state, const TsSisterFxSlotControls *control,
     TsStereoFrame input, float gate, float *direct)
 {
-    TsTransientControls c={(control->parameter_a-.5f)*30,
-                          (control->parameter_b-.5f)*48,state->dsp.controls.response};
-    if(state->response_cached!=control->parameter_c) {
-        state->response_cached=control->parameter_c;
-        c.response=.25f*powf(16,control->parameter_c);
+    float power=1+control->transient_power;
+    float target[3]={(control->parameter_a-.5f)*30*power,
+        (control->parameter_b-.5f)*48*power,control->parameter_c};
+    const TsGrainStates *bank=&control->transient_states;
+    if(state->state_serial!=bank->recall_serial) {
+        state->state_serial=bank->recall_serial;
+        state->state_from[0]=(float)state->dsp.attack_db;
+        state->state_from[1]=(float)state->dsp.sustain_db;
+        state->state_from[2]=state->response_cached;
+        memcpy(state->state_to,target,sizeof(target));
+        state->state_total=state->state_remaining=state->state_serial && !bank->editing?
+            (uint32_t)(bank->seconds*engine->sample_rate):0;
+    }
+    if(state->state_remaining && (bank->editing || memcmp(state->state_to,target,sizeof(target))))state->state_remaining=0;
+    if(state->state_remaining) {
+        float t=1-(float)(--state->state_remaining)/state->state_total;
+        for(int p=0;p<3;++p)target[p]=state->state_from[p]+(state->state_to[p]-state->state_from[p])*t;
+    }
+    TsTransientControls c={target[0],target[1],state->dsp.controls.response};
+    /* Response coefficients update at most once per millisecond during a
+       timed glide. The existing 12 ms slew keeps these updates continuous. */
+    if(state->response_countdown)--state->response_countdown;
+    if(state->response_cached!=target[2] && (!state->state_remaining || !state->response_countdown)) {
+        state->response_cached=target[2];
+        c.response=.25f*powf(16,target[2]);
+        state->response_countdown=engine->sample_rate/1000;
     }
     ts_transient_set(&state->dsp,c);
     if(state->gain_db_cached!=control->gain_db) {
@@ -1814,6 +1899,9 @@ void ts_sister_single_fx_set(TsSisterSingleFx *f,const TsSisterFxSlotControls *c
     f->controls=*c;f->controls.gain_db=clampf(c->gain_db,-12,12);
     f->controls.parameter_a=clampf(c->parameter_a,0,1);f->controls.parameter_b=clampf(c->parameter_b,0,1);
     f->controls.parameter_c=clampf(c->parameter_c,0,1);f->controls.mix=clampf(c->mix,0,1);
+    f->controls.transient_power=c->transient_power>3?3:c->transient_power;
+    if(!ts_transient_states_valid(f->controls.transient_power,&c->transient_states))
+        memset(&f->controls.transient_states,0,sizeof(f->controls.transient_states));
 }
 TsStereoFrame ts_sister_single_fx_process(TsSisterSingleFx *f,TsStereoFrame input,float gate)
 {
