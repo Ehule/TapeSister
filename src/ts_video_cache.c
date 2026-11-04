@@ -3,6 +3,7 @@
    Completed proxies are keyed by path + file size/mtime + format revision. */
 #include "tapesister/video_cache.h"
 #include "tapesister/browser.h"
+#include "tapesister/visual_media.h"
 #include <SDL2/SDL.h>
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
@@ -33,6 +34,7 @@ static int cache_name(const char *source,char *out,size_t n)
 }
 int ts_video_cache_path(const char *source,char *out,size_t n)
 {
+    if(ts_visual_image_path(source))return 0;
     if(!cache_name(source,out,n))return 0;
     struct stat st;return !stat(out,&st) && S_ISREG(st.st_mode) && st.st_size>0;
 }
@@ -48,6 +50,7 @@ static int cache_packets(AVCodecContext *encoder,AVFormatContext *output,AVPacke
 }
 static int cache_prepare(TsVideoCache *cache,const char *path)
 {
+    if(ts_visual_image_path(path))return 1; /* Stills decode once; never transcode them. */
     char destination[2048],temporary[2112];if(ts_video_cache_path(path,destination,sizeof(destination)))return 1;
     if(!cache_name(path,destination,sizeof(destination)))return 0;
     snprintf(temporary,sizeof(temporary),"%s.%llu.part.avi",destination,(unsigned long long)SDL_GetPerformanceCounter());

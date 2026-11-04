@@ -54,6 +54,30 @@ static void palette_checks(TsVideo *video)
     ts_video_palette(video,colors,0);assert(poll_video(video,25)==1);
     assert(status.position_ms==held);
 }
+static void still_checks(const char *fixture)
+{
+    char path[1200];snprintf(path,sizeof(path),"%s",fixture);char *name=strrchr(path,'/');assert(name);++name;
+    const char *formats[]={"png","jpg","bmp","tga"};
+    for(unsigned i=0;i<4;++i) {
+        snprintf(name,sizeof(path)-(size_t)(name-path),"visual-still.%s",formats[i]);
+        memset(&status,0,sizeof(status));TsVideo *v=ts_video_open_at(path,.8);assert(v);texture=NULL;
+        Uint64 start=SDL_GetTicks64();while(!texture && SDL_GetTicks64()-start<4000)poll_video(v,10);
+        assert(texture && status.is_image && status.state==TS_VIDEO_PLAYING);
+        assert(!poll_video(v,80) && !status.loops); /* No continuous decode/upload. */
+        ts_video_control(v,1,1,0,15);palette_checks(v);
+        ts_video_control(v,0,1,1,15);assert(!poll_video(v,50) && status.is_image);
+        ts_video_close(v);SDL_DestroyTexture(texture);texture=NULL;
+        char proxy[2048];assert(!ts_video_cache_path(path,proxy,sizeof(proxy)));
+    }
+    /* A video frame is seeked once, held, and keeps the same palette controls. */
+    TsVideo *v=ts_video_open_frame(fixture,.65);assert(v);Uint64 start=SDL_GetTicks64();
+    while(!texture && SDL_GetTicks64()-start<4000)poll_video(v,10);
+    assert(texture && status.is_image && status.state==TS_VIDEO_PLAYING && status.position_ms>700);
+    unsigned held=status.position_ms;assert(!poll_video(v,200) && status.position_ms==held);
+    ts_video_control(v,1,1,0,15);palette_checks(v);ts_video_close(v);SDL_DestroyTexture(texture);texture=NULL;
+    v=ts_video_open("no-such-image.png");assert(v);poll_video(v,100);
+    assert(status.is_image && status.state==TS_VIDEO_ERROR && !texture);ts_video_close(v);
+}
 int main(int argc,char **argv)
 {
     assert(argc==2);
@@ -93,6 +117,7 @@ int main(int argc,char **argv)
     start=SDL_GetTicks64();while(!texture && SDL_GetTicks64()-start<4000)poll_video(video,10);
     assert(texture && status.position_ms>700 && status.state!=TS_VIDEO_ERROR);
     ts_video_close(video);SDL_DestroyTexture(texture);texture=NULL;
+    still_checks(argv[1]);
     SDL_DestroyRenderer(renderer);SDL_DestroyWindow(window);SDL_Quit();
     puts("video: decode, pacing, pause, palette blend/custom edits, raw restore, texture reset, EOF, loop, restart, backpressure and teardown PASS");return 0;
 }

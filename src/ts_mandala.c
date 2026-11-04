@@ -57,12 +57,13 @@ void ts_mandala_default(TsMandalaConfig *c)
     memset(c, 0, sizeof(*c));
     c->version = 5;c->geometry_enabled=1; ts_mandala_reset_geometry(c);
     c->video_loop=1;c->video_mix=75;c->video_scale=20;c->video_rotation=50;c->video_response=50;
+    c->image_seconds=4;
     memcpy(c->custom_rgb,mandala_palettes[0],sizeof(c->custom_rgb));
     ts_mandala_reseed(c);
 }
 int ts_mandala_valid(const TsMandalaConfig *c)
 {
-    if(!c || !memchr(c->video_path,0,sizeof(c->video_path)) || c->video_enabled>1 || c->video_loop>1 || c->video_mix>100 || c->video_scale>100 || c->video_rotation>100 || c->video_response>100 || c->video_filter>100 || c->version!=5 || c->geometry_enabled>1 || c->video_monochrome>1 || !c->seed || c->palette>TS_MANDALA_CUSTOM ||
+    if(!c || !memchr(c->video_path,0,sizeof(c->video_path)) || c->video_stills>1 || c->image_seconds>60 || c->video_glitch>100 || c->video_enabled>1 || c->video_loop>1 || c->video_mix>100 || c->video_scale>100 || c->video_rotation>100 || c->video_response>100 || c->video_filter>100 || c->version!=5 || c->geometry_enabled>1 || c->video_monochrome>1 || !c->seed || c->palette>TS_MANDALA_CUSTOM ||
         c->symmetry<4 || c->symmetry>12 || c->cycle_seconds<30 || c->cycle_seconds>1800 ||
         c->shape>=TS_MANDALA_SHAPES || c->density<10 || c->density>100 ||
         c->scale<50 || c->scale>150 || c->trails>100 || c->motion>100)return 0;
@@ -78,6 +79,8 @@ int ts_mandala_write(FILE *f, const TsMandalaConfig *c)
     for(unsigned i=0;i<TS_MANDALA_COLORS;++i)
         if(fprintf(f,"Mandala.Color%u=%06X\n",i,c->custom_rgb[i])<=0)return 0;
     if(fprintf(f,"Mandala.GeometryEnabled=%u\nMandala.VideoMonochrome=%u\n",c->geometry_enabled,c->video_monochrome)<0)return 0;
+    if(fprintf(f,"Mandala.ImageSeconds=%u\nMandala.VideoGlitch=%u\n",c->image_seconds,c->video_glitch)<0)return 0;
+    if(fprintf(f,"Mandala.VideoStills=%u\n",c->video_stills)<0)return 0;
     if(fprintf(f,"Mandala.VideoEnabled=%u\nMandala.VideoLoop=%u\nMandala.VideoMix=%u\nMandala.VideoScale=%u\nMandala.VideoRotation=%u\nMandala.VideoResponse=%u\nMandala.VideoFilter=%u\nMandala.VideoPath=",c->video_enabled,c->video_loop,c->video_mix,c->video_scale,c->video_rotation,c->video_response,c->video_filter)<0)return 0;
     /* Hex preserves spaces, '=', non-ASCII UTF-8 and line delimiters exactly. */
     for(const unsigned char *p=(const unsigned char*)c->video_path;*p;++p)if(fprintf(f,"%02X",*p)<0)return 0;
@@ -118,6 +121,9 @@ int ts_mandala_read(TsMandalaConfig *c, const char *key, const char *v)
     else if (!strcmp(key,"VideoRotation")) {if(n>100)return -1;c->video_rotation=(uint32_t)n;}
     else if (!strcmp(key,"VideoResponse")) {if(n>100)return -1;c->video_response=(uint32_t)n;}
     else if (!strcmp(key,"VideoFilter")) {if(n>100)return -1;c->video_filter=(uint32_t)n;}
+    else if (!strcmp(key,"ImageSeconds")) {if(n>60)return -1;c->image_seconds=(uint32_t)n;}
+    else if (!strcmp(key,"VideoGlitch")) {if(n>100)return -1;c->video_glitch=(uint32_t)n;}
+    else if (!strcmp(key,"VideoStills")) {if(n>1)return -1;c->video_stills=(uint32_t)n;}
     else if (color) { if(n>0xffffffu)return -1;c->custom_rgb[key[5]-'0']=(uint32_t)n; }
     else return -1; /* Unknown visual versions/fields do not silently change identity. */
     return 1;

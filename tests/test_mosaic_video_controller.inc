@@ -54,5 +54,13 @@ static void test_mosaic_video_controller(SDL_Window *window)
     browser_open(&ui,TS_BROWSER_LOAD_VIDEO);ui_sync_dialog_workspaces(&ui);assert(ui.mosaic_open);
     gallery_browser_visible(&ui,getenv("TS_TEST_VIDEO"),"visualizer-video");ts_browser_close(&ui.browser);
     ui_sync_dialog_workspaces(&ui);assert(ui.mosaic_open && !ui_dialog_open(&ui));
+    assert(mosaic_video_path("photo.PNG") && mosaic_video_path("photo.JPEG") && !mosaic_video_path("audio.wav"));
+    key(window,SDLK_v,(SDL_Keymod)(KMOD_CTRL|KMOD_SHIFT));click(window,180,118,1);
+    snprintf(ui.browser.directory,sizeof(ui.browser.directory),"%s",TS_VIDEO_FIXTURE);
+    slash=strrchr(ui.browser.directory,'/');assert(slash);*slash=0;assert(ts_browser_refresh(&ui.browser));
+    found=0;for(int i=0;i<ui.browser.entry_count;++i)if(!strcmp(ui.browser.entries[i].name,"visual-still.png")){ts_browser_select(&ui.browser,i);found=1;break;}assert(found);
+    browser_action(0,&audio,&ui,&instrument,NULL,NULL,NULL,0,&pending,0);
+    e=ts_mosaic_find(ui.mosaic,ui.mosaic_video_id);assert(e && strstr(e->source->video_path,"visual-still.png") && !e->source->sample.data);
+    click(window,450,315,1);
     puts("video canvas: file picker, right-click, settings, native render, range scatter, copies, undo and picker workspace retention PASS");
 }

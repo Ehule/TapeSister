@@ -20,7 +20,7 @@ static void mosaic_live_length_label(const TsMosaicEvent *e,char *label,size_t s
 static void mosaic_pattern_label(const TsUiState *ui,const TsMosaicEvent *e,char *label,size_t size)
 {
     if(e->live){snprintf(label,size,"%s",mosaic_live_state_name(ui,e));return;}
-    if(e->source->video_path[0]){snprintf(label,size,"VIDEO %s",e->video_random_start?"RANDOM START":"FROM START");return;}
+    if(e->source->video_path[0]){snprintf(label,size,"VISUAL %s",e->video_random_start?"RANDOM START":"FROM START");return;}
     if(!e->source->pattern)return;
     const TsPatternCard *p=e->source->pattern;int pending=0;
     const TsMosaicEvent *live=ts_mosaic_find(ui->mosaic,e->id);
@@ -141,7 +141,7 @@ static void mosaic_card(TsFramebuffer *fb,const TsUiState *ui,const TsMosaicEven
         if(ghost)color=mosaic_mix_color(color,RGB(16,18,24),.55f);
         mosaic_canvas_rect(fb,ui,x,y,w,2,color);mosaic_canvas_rect(fb,ui,x,y,2,h,color);mosaic_canvas_rect(fb,ui,x,end-2,w,2,color);
         if(x>=151 && top>=66 && w>=48){char label[64];int chars=(w-10)/6;if(chars>60)chars=60;
-            snprintf(label,sizeof(label),"%.*s",chars,ts_mosaic_video_overridden(ui->mosaic,e)?"VIDEO / OVERRIDDEN":e->source->video_pool?"VIDEO / RANDOM POOL":"VIDEO / FILE");text(fb,x+5,y+5,label,color,1);
+            snprintf(label,sizeof(label),"%.*s",chars,ts_mosaic_video_overridden(ui->mosaic,e)?"VISUAL / OVERRIDDEN":e->source->video_pool?"VISUAL / RANDOM POOL":"VISUAL / FILE");text(fb,x+5,y+5,label,color,1);
             if(h>23){snprintf(label,sizeof(label),"%.*s",chars,e->video_random_start?"RANDOM POSITION":"FROM BEGINNING");text(fb,x+5,y+15,label,color,1);}}
         if(!ghost) {
             MosaicFadeSurface grips={fb->pixels,TS_UI_WIDTH,151,66,ts_ui_mosaic_canvas_right(ui),TS_MOSAIC_CANVAS_BOTTOM,1,1,scale};
@@ -244,7 +244,7 @@ static void mosaic_mix_controls(TsFramebuffer *fb,const TsUiState *ui,int any_so
 {
     TsMosaicEvent *e=ts_mosaic_find(ui->mosaic,ui->mosaic_selected);
     if(e && e->source->video_path[0]) {
-        char label[100];snprintf(label,sizeof(label),"VIDEO / %s / %s",e->source->video_pool?"RANDOM POOL":"FILE",e->video_random_start?"RANDOM POSITION":"BEGINNING");
+        char label[100];snprintf(label,sizeof(label),"VISUAL / %s / %s",e->source->video_pool?"RANDOM POOL":"FILE",e->video_random_start?"RANDOM POSITION":"BEGINNING");
         text(fb,10,384,label,RGB(133,190,239),1);text(fb,400,384,"RIGHT-CLICK TO EDIT",RGB(133,190,239),1);return;
     }
     const char *names[]={"LEVEL","PAN","IN","OUT"};

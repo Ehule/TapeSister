@@ -1,0 +1,1 @@
+Original synthetic 120 x 80 color/shape fixture, generated for TapeSister image decoder tests in PNG, JPEG, BMP and TGA. No third-party media. The same picture tests still upload caching, recoloring, texture recreation, browser filtering, folder slideshow, native rendering and video-frame sampling.
