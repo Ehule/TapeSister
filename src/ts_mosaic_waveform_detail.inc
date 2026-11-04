@@ -105,7 +105,7 @@ static void mosaic_detail_card(TsUiWaveformDetail *d,const TsUiState *ui,
         color=selected?mosaic_selection_color(ui,e->id==ui->mosaic_selected):RGB(133,190,239);
         if(ghost)color=mosaic_mix_color(color,RGB(16,18,24),.55f);
         mosaic_detail_rect(d,x,y,right,y+2*by,color);mosaic_detail_rect(d,x,y,x+2*bx,bottom,color);mosaic_detail_rect(d,x,bottom-2*by,right,bottom,color);
-        const char *label=ts_mosaic_video_overridden(ui->mosaic,e)?"VIDEO / OVERRIDDEN":e->source->video_pool?"VIDEO / RANDOM POOL":"VIDEO / FILE";
+        const char *label=ts_mosaic_video_overridden(ui->mosaic,e)?"VISUAL / OVERRIDDEN":e->source->video_pool?"VISUAL / RANDOM POOL":"VISUAL / FILE";
         int chars=(int)fmax(0,fmin(60,(w/sx-10)/6));char line[64];snprintf(line,sizeof(line),"%.*s",chars,label);
         mosaic_detail_text(d,x+5*bx,y+5*by,line,color,sx,sy);
         if(h>24*sy){snprintf(line,sizeof(line),"%.*s",chars,e->video_random_start?"RANDOM POSITION":"FROM BEGINNING");mosaic_detail_text(d,x+5*bx,y+15*by,line,color,sx,sy);}

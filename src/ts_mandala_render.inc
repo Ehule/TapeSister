@@ -15,9 +15,10 @@ typedef struct {
     char video_path[1024]; unsigned video_restart,video_restart_base,old_restart;int video_new;
     TsVideoCache *video_cache;
     TsVisualCue cue;char cue_path[1024],cue_original[1024],cue_pool_path[1024];double cue_fraction;
-    TsBrowser *cue_pool;int cue_bag[TS_BROWSER_MAX_ENTRIES],cue_bag_count,cue_bag_at,cue_last;
+    TsBrowser *cue_pool;int cue_bag[TS_BROWSER_MAX_ENTRIES],cue_bag_count,cue_bag_at,cue_last,cue_has_images;
     TsVideo *old_video;SDL_Texture *old_texture,*cue_snapshot;TsVideoStatus old_status;
     int cue_fading,cue_transition;double cue_elapsed,cue_fade;
+    double image_elapsed,glitch_time;int media_paused,video_stills;
     MMotif motifs[M_MOTIFS]; MInstance instances[M_INSTANCES]; unsigned count;
     TsMandalaConfig config;
     TsMandalaFeatures features;
@@ -278,14 +279,16 @@ static void m_video_scene(Mandala *m,Uint8 fade,float level)
 #include "ts_mandala_cues.inc"
 static void m_video_poll(Mandala *m,VisualShared *shared,int paused)
 {
+    m->media_paused=paused || atomic_load(&shared->video_paused);
     if(m->video_status.state==TS_VIDEO_ERROR && m->cue_original[0]) {
         char prepared[2048];if(ts_video_cache_path(m->cue_original,prepared,sizeof(prepared)) && strlen(prepared)<sizeof(m->cue_path))memcpy(m->cue_path,prepared,strlen(prepared)+1);
     }
     const char *path=m->config.video_enabled?(m->cue_path[0]?m->cue_path:m->config.video_path):"";
     unsigned restart=atomic_load(&shared->video_restart);
-    int retry=restart!=m->video_restart && m->video_status.state==TS_VIDEO_ERROR;
+    int retry=restart!=m->video_restart && (m->video_status.state==TS_VIDEO_ERROR || m->config.video_stills);
+    if(restart!=m->video_restart)m->image_elapsed=0;
     m->video_restart=restart;
-    if(strcmp(path,m->video_path) || retry)m_video_change(m,path,m->cue_path[0]?m->cue_fraction:0,0,0);
+    if(strcmp(path,m->video_path) || retry || m->video_stills!=(int)m->config.video_stills)m_video_change(m,path,m->cue_path[0]?m->cue_fraction:0,0,0);
     if(m->old_video) {
         ts_video_control(m->old_video,paused||atomic_load(&shared->video_paused),1,m->old_restart,m->shed?8:m->quality?30:15);
         ts_video_upload(m->old_video,m->renderer,&m->old_texture,&m->old_status);
@@ -296,7 +299,8 @@ static void m_video_poll(Mandala *m,VisualShared *shared,int paused)
         int monochrome=m->config.video_monochrome || (m->cue_path[0] && m->cue.monochrome);
         if(monochrome)for(unsigned i=0;i<8;++i){unsigned c=i*255/7;colors[i]=(c<<16)|(c<<8)|c;}
         ts_video_palette(m->video,colors,monochrome?100:m->config.geometry_enabled?m->config.video_filter:0);
-        ts_video_control(m->video,paused||atomic_load(&shared->video_paused),m->config.video_loop,atomic_load(&shared->video_restart)-m->video_restart_base,m->shed?8:m->quality?30:15);
+        int slideshow=m->cue_path[0] && m->cue.pool && (m->cue_has_images || m->config.video_stills) && m->config.image_seconds;
+        ts_video_control(m->video,m->media_paused,slideshow?0:m->config.video_loop,atomic_load(&shared->video_restart)-m->video_restart_base,m->shed?8:m->quality?30:15);
         if(ts_video_upload(m->video,m->renderer,&m->video_texture,&m->video_status))m->dirty=1;
     }
     TsVideoStatus report=m->video_status;unsigned done=0,total=0,failed=0;
@@ -306,10 +310,12 @@ static void m_video_poll(Mandala *m,VisualShared *shared,int paused)
 }
 static void m_scene(Mandala *m, double dt)
 {
+    if(!m->media_paused)m->glitch_time+=dt;
     if(m->cue_fading && m->video_texture) {
         m->cue_elapsed+=dt;
         if(!m->cue_transition || m->cue_elapsed>=m->cue_fade)m_video_retire(m);
     }
+    m_slideshow_tick(m,dt);
     if(!m->config.geometry_enabled) {
         SDL_SetRenderTarget(m->renderer,m->history);m_rgb(m->renderer,0,255);SDL_RenderClear(m->renderer);
         if(m->config.video_enabled)m_video_layers(m,255,1,1);

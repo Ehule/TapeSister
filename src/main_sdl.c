@@ -8888,10 +8888,10 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
         int pool=browser->mode==TS_BROWSER_MOSAIC_VIDEO_POOL;
         if(!pool && browser->selected>=0 && browser->selected<browser->entry_count && browser->entries[browser->selected].is_directory){ts_browser_enter_selected_directory(browser);return;}
         if(pool)snprintf(path,sizeof(path),"%s",browser->directory);
-        else if(!ts_browser_selected_path(browser,path,sizeof(path))){snprintf(browser->message,sizeof(browser->message),"SELECT A VIDEO FILE");return;}
+        else if(!ts_browser_selected_path(browser,path,sizeof(path))){snprintf(browser->message,sizeof(browser->message),"SELECT AN IMAGE OR VIDEO FILE");return;}
         if(!ui->mosaic || ui->mosaic->epoch!=ui->mosaic_video_epoch){snprintf(browser->message,sizeof(browser->message),"CANVAS CHANGED / CHOOSE AGAIN");return;}
         TsMosaicEvent *e=ts_mosaic_find(ui->mosaic,ui->mosaic_video_id);
-        if(ui->mosaic_video_id && (!e || !e->source->video_path[0])){snprintf(browser->message,sizeof(browser->message),"VIDEO TRIGGER IS NO LONGER AVAILABLE");return;}
+        if(ui->mosaic_video_id && (!e || !e->source->video_path[0])){snprintf(browser->message,sizeof(browser->message),"VISUAL TRIGGER IS NO LONGER AVAILABLE");return;}
         TsMosaicSource *source=ts_mosaic_video_source(ui->mosaic,path,pool);if(!source)return;
         if(device)SDL_LockAudioDevice(device);ts_mosaic_checkpoint(ui->mosaic);
         if(!e){e=ts_mosaic_add(ui->mosaic,source,ui->mosaic_video_time,ui->mosaic_video_x);if(e){e->duration=1.5;e->width=120;e->video_fade=2;}}
@@ -8902,21 +8902,21 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
         mosaic_select_only(ui,e->id);
         audio->sister.mandala.video_enabled=1;
         ts_browser_close(browser);SDL_StopTextInput();ui->mosaic_open=1;ui->tracker_open=0;ui->mosaic_video_open=1;
-        snprintf(ui->status,sizeof(ui->status),"VIDEO TRIGGER ADDED / RIGHT-CLICK TO EDIT / CTRL+R TO SCATTER");return;
+        snprintf(ui->status,sizeof(ui->status),"VISUAL TRIGGER ADDED / RIGHT-CLICK TO EDIT / CTRL+R TO SCATTER");return;
     }
     if (browser->mode==TS_BROWSER_LOAD_VIDEO) {
         if(browser->selected>=0 && browser->selected<browser->entry_count && browser->entries[browser->selected].is_directory) {
             ts_browser_enter_selected_directory(browser);return;
         }
         if(!ts_browser_selected_path(browser,path,sizeof(path))) {
-            snprintf(browser->message,sizeof(browser->message),"SELECT A VIDEO FILE");return;
+            snprintf(browser->message,sizeof(browser->message),"SELECT AN IMAGE OR VIDEO FILE");return;
         }
         memset(audio->sister.mandala.video_path,0,sizeof(audio->sister.mandala.video_path));
         snprintf(audio->sister.mandala.video_path,sizeof(audio->sister.mandala.video_path),"%s",path);
         audio->sister.mandala.video_enabled=1;ts_mandala_video_restart();
         ts_browser_close(browser);SDL_StopTextInput();
         mandala_editor_video_loaded(ui,&audio->sister.mandala);
-        snprintf(ui->status,sizeof(ui->status),"VISUALIZER VIDEO ADDED / SOUND OFF");return;
+        snprintf(ui->status,sizeof(ui->status),"VISUALIZER IMAGE / VIDEO ADDED / SOUND OFF");return;
     }
     if (browser->mode==TS_BROWSER_TRACKER_PALETTE_IMPORT || browser->mode==TS_BROWSER_TRACKER_PALETTE_EXPORT) {
         int importing=browser->mode==TS_BROWSER_TRACKER_PALETTE_IMPORT;

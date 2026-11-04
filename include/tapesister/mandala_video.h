@@ -2,12 +2,15 @@
 #define TAPESISTER_MANDALA_VIDEO_H
 #include <SDL2/SDL.h>
 #include <stdint.h>
+#include "tapesister/visual_media.h"
 /* Renderer-process only. Never constructed or called by the audio host. */
 typedef struct TsVideo TsVideo;
 enum { TS_VIDEO_CLOSED, TS_VIDEO_OPENING, TS_VIDEO_PLAYING, TS_VIDEO_ENDED, TS_VIDEO_ERROR };
-typedef struct { unsigned state, position_ms, duration_ms, loops; char message[96]; } TsVideoStatus;
+typedef struct { unsigned state, position_ms, duration_ms, loops, is_image; char message[96]; } TsVideoStatus;
 TsVideo *ts_video_open(const char *path);
 TsVideo *ts_video_open_at(const char *path,double fraction);
+/* Decode one frame at a fractional video position, then release the decoder. */
+TsVideo *ts_video_open_frame(const char *path,double fraction);
 void ts_video_control(TsVideo *v, int paused, int loop, unsigned restart, unsigned fps);
 /* Renderer-thread palette mapping. Eight RGB swatches, strength 0..100.
    Recolors the retained source frame even while video playback is paused. */

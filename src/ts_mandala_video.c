@@ -7,6 +7,25 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Private decoder symbols avoid the host's PNG-only splash implementation.
+   Same vendored stb_image, no new runtime dependencies or proxy files. */
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
+#endif
+#define STB_IMAGE_STATIC
+#define STB_IMAGE_IMPLEMENTATION
+#define STBI_ONLY_PNG
+#define STBI_ONLY_JPEG
+#define STBI_ONLY_BMP
+#define STBI_ONLY_TGA
+#define STBI_NO_GIF
+#define STBI_MAX_DIMENSIONS 8192
+#include "../third_party/stb_image.h"
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
+
 /* Three scaled frames; codec reference frames are bounded by the input limits.
    Worker owns decoder and conversion. Renderer owns textures. Both may stall
    without touching the host's audio thread or its queues. */
@@ -16,7 +35,7 @@ struct TsVideo {
     SDL_Thread *thread; SDL_mutex *status_lock;
     atomic_uint stop, paused, loop, restart, fps, write, read;
     TsVideoStatus status;
-    char path[1024]; double fraction; VFrame frame[V_SLOTS];
+    char path[1024]; double fraction;int still_frame; VFrame frame[V_SLOTS];
     /* Renderer-only cache: never refilter an already filtered frame, and never
        hold a producer slot while uploading/recoloring a paused image. */
     VFrame current;
@@ -34,9 +53,36 @@ static enum AVPixelFormat video_scale_format(enum AVPixelFormat format)
     return format==AV_PIX_FMT_YUVJ420P?AV_PIX_FMT_YUV420P:format==AV_PIX_FMT_YUVJ422P?AV_PIX_FMT_YUV422P:format==AV_PIX_FMT_YUVJ444P?AV_PIX_FMT_YUV444P:format;
 }
 static int interrupt_io(void *p){return atomic_load(&((TsVideo*)p)->stop)!=0;}
+static int decode_image(TsVideo *v)
+{
+    int width=0,height=0,channels=0;
+    SDL_SetThreadPriority(SDL_THREAD_PRIORITY_LOW);
+    if(!stbi_info(v->path,&width,&height,&channels)) {
+        status_set(v,TS_VIDEO_ERROR,"IMAGE CANNOT OPEN: TRY PNG, JPG, BMP OR TGA");return 0;
+    }
+    if(width<=0 || height<=0 || width>8192 || height>8192 || (uint64_t)width*height>16777216) {
+        status_set(v,TS_VIDEO_ERROR,"IMAGE TOO LARGE: USE A COPY AT 16 MEGAPIXELS OR LOWER");return 0;
+    }
+    stbi_uc *pixels=stbi_load(v->path,&width,&height,&channels,4);
+    if(!pixels){status_set(v,TS_VIDEO_ERROR,"IMAGE DECODE FAILED");return 0;}
+    double ratio=fmin(1,fmin((double)V_WIDTH/width,(double)V_HEIGHT/height));
+    VFrame *out=&v->frame[0];out->width=SDL_max(1,(int)(width*ratio));out->height=SDL_max(1,(int)(height*ratio));
+    out->restart=atomic_load(&v->restart);out->ms=0;
+    struct SwsContext *scale=sws_getContext(width,height,AV_PIX_FMT_RGBA,out->width,out->height,AV_PIX_FMT_BGRA,SWS_BILINEAR,NULL,NULL,NULL);
+    const uint8_t *source[4]={pixels,NULL,NULL,NULL};int stride[4]={width*4,0,0,0};
+    uint8_t *dest[4]={out->pixels,NULL,NULL,NULL};int pitch[4]={out->width*4,0,0,0};
+    int ok=scale && sws_scale(scale,source,stride,0,height,dest,pitch)==out->height;
+    sws_freeContext(scale);stbi_image_free(pixels);
+    if(!ok){status_set(v,TS_VIDEO_ERROR,"IMAGE SCALING FAILED");return 0;}
+    /* Decode and publish once. The renderer retains the original scaled frame
+       for palette edits, pause/resume and texture recreation. */
+    atomic_store_explicit(&v->write,1,memory_order_release);
+    status_set(v,TS_VIDEO_PLAYING,"STILL IMAGE / FOLDER TIMING IN MEDIA CONTROLS");return 0;
+}
 static int decode(void *opaque)
 {
-    TsVideo *v=opaque;AVFormatContext *format=avformat_alloc_context();
+    TsVideo *v=opaque;if(ts_visual_image_path(v->path))return decode_image(v);
+    AVFormatContext *format=avformat_alloc_context();
     AVCodecContext *codec=NULL;AVPacket *packet=NULL;AVFrame *frame=NULL;struct SwsContext *sws=NULL;
     int result=-1,index=-1,draining=0,eof=0,frames=0;double first=NAN,last=0,fallback=1.0/25,epoch=0,next_upload=0;
     unsigned restart=atomic_load(&v->restart);Uint64 origin=SDL_GetTicks64(),paused_at=0;
@@ -156,6 +202,7 @@ static int decode(void *opaque)
             uint8_t *dest[4]={out->pixels,NULL,NULL,NULL};int stride[4]={width*4,0,0,0};
             if(sws_scale(sws,(const uint8_t*const*)frame->data,frame->linesize,0,frame->height,dest,stride)!=height){result=AVERROR_INVALIDDATA;goto done;}
             atomic_store_explicit(&v->write,w+1,memory_order_release);
+            if(v->still_frame){status_set(v,TS_VIDEO_PLAYING,"VIDEO FRAME / STILL IMAGE");goto cleanup;}
             unsigned fps=atomic_load(&v->fps);next_upload=local+1.0/SDL_clamp(fps,8u,30u);
         }
         av_frame_unref(frame);
@@ -170,17 +217,20 @@ cleanup:
     sws_freeContext(sws);av_frame_free(&frame);av_packet_free(&packet);avcodec_free_context(&codec);avformat_close_input(&format);
     return 0;
 }
-TsVideo *ts_video_open_at(const char *path,double fraction)
+static TsVideo *video_open_mode(const char *path,double fraction,int still_frame)
 {
     if(!path || !*path || strlen(path)>=1024)return NULL;
     TsVideo *v=calloc(1,sizeof(*v));if(!v)return NULL;
-    snprintf(v->path,sizeof(v->path),"%s",path);v->fraction=isfinite(fraction)?fmax(0,fmin(.999999,fraction)):0;
+    snprintf(v->path,sizeof(v->path),"%s",path);v->fraction=isfinite(fraction)?fmax(0,fmin(.999999,fraction)):0;v->still_frame=still_frame;
     atomic_init(&v->stop,0);atomic_init(&v->paused,0);atomic_init(&v->loop,1);atomic_init(&v->restart,0);atomic_init(&v->fps,15);atomic_init(&v->write,0);atomic_init(&v->read,0);
     v->status_lock=SDL_CreateMutex();if(!v->status_lock){free(v);return NULL;}
-    status_set(v,TS_VIDEO_OPENING,"OPENING VIDEO...");v->thread=SDL_CreateThread(decode,"mandala-video",v);
+    v->status.is_image=ts_visual_image_path(path) || still_frame;
+    status_set(v,TS_VIDEO_OPENING,v->status.is_image?"OPENING IMAGE...":"OPENING VIDEO...");v->thread=SDL_CreateThread(decode,"mandala-video",v);
     if(!v->thread){SDL_DestroyMutex(v->status_lock);free(v);return NULL;}
     return v;
 }
+TsVideo *ts_video_open_at(const char *path,double fraction){return video_open_mode(path,fraction,0);}
+TsVideo *ts_video_open_frame(const char *path,double fraction){return video_open_mode(path,fraction,1);}
 TsVideo *ts_video_open(const char *path){return ts_video_open_at(path,0);}
 void ts_video_control(TsVideo *v,int paused,int loop,unsigned restart,unsigned fps)
 {
@@ -212,7 +262,7 @@ int ts_video_upload(TsVideo *v,SDL_Renderer *renderer,SDL_Texture **texture,TsVi
     unsigned r=atomic_load_explicit(&v->read,memory_order_relaxed),w=atomic_load_explicit(&v->write,memory_order_acquire);
     if(w!=r && !atomic_load(&v->paused)) {
         VFrame *next=&v->frame[(w-1)%V_SLOTS];
-        if(next->restart==atomic_load(&v->restart)) {
+        if(v->status.is_image || next->restart==atomic_load(&v->restart)) {
             v->current.width=next->width;v->current.height=next->height;v->current.ms=next->ms;v->current.restart=next->restart;
             memcpy(v->current.pixels,next->pixels,(size_t)next->width*next->height*4);v->upload_dirty=1;
         }

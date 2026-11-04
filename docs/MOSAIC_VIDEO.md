@@ -1,4 +1,4 @@
-# Mosaic video changes
+# Mosaic image and video changes
 
 Use the existing visualizer as a video instrument. Feed it a folder of footage,
 place change objects in Mosaic, then let the timeline choose when pictures change.
@@ -6,7 +6,7 @@ Video sound is always ignored.
 
 ## Place and edit
 
-Drag a local video file or folder into Mosaic. Alternatively, right-click empty canvas space (or press **Ctrl+Shift+V**) and choose a file
+Drag a local image, video file or folder into Mosaic. Alternatively, right-click empty canvas space (or press **Ctrl+Shift+V**) and choose a file
 or folder. Folder selection
 uses the browser's current directory; enter the desired folder and confirm it.
 Video file/folder pickers stay above Mosaic. Choosing a source returns to its
@@ -27,11 +27,10 @@ Right-click or double-click a video card to edit:
 | Fade | 0–30 seconds, in quarter-second steps; click/wheel, right-click decreases. Cut ignores this duration. |
 | Preview | Audition the visual instruction and open the existing visualizer if closed. It does not seek or start the musical transport. |
 
-The clip plays and wraps within the same file until another trigger arrives.
-Reaching its end does not draw a different clip. Main transport Pause leaves the
+Video-only folders play and wrap within the same clip until another trigger arrives. Folders containing images can instead advance as a slideshow. Use **Media → Image Hold** for timing and **Video as Stills** to sample video frames into the slideshow. See [images and video](MANDALA_VIDEO.md#image-folders-and-sampled-video-frames). Main transport Pause leaves the
 video running; use the visualizer's video Pause or Freeze Visual to hold it.
 
-**VISUALIZER / MANDALA SWITCH** opens the existing editor's VIDEO tab. **MANDALA
+**VISUALIZER / MANDALA SWITCH** opens the existing editor's MEDIA tab. **MANDALA
 OFF** presents clean, aspect-correct footage on black, without geometry, mirrored
 folds, audio response, palette coloring, haze or effect trails. The global Black &
 White switch remains available. Turn Mandala back on to restore its treatment of
@@ -39,7 +38,7 @@ the same video. Fullscreen/projector controls are unchanged.
 
 ![Video trigger settings](images/mosaic-video-dialog.png)
 
-![The existing editor with Mandala off](images/mosaic-video-editor.png)
+![The existing editor with Mandala off](images/visualizer-media-editor.png)
 
 ## Scatter and performance
 
@@ -77,7 +76,7 @@ old copies. Original footage can play while preparation proceeds; later triggers
 reuse completed copies. A source that exceeds the direct player's size limit can
 recover automatically after its prepared copy becomes ready.
 
-The VIDEO editor reports preparation progress. The initial conversion uses CPU
+The MEDIA editor reports preparation progress. The initial conversion uses CPU
 and additional disk space. It is not manual editing and needs no separate FFmpeg
 program. Prepared media lives in SDL's application preference directory under
 `TapeSister/VideoCache`; it is regenerable and is not a project asset. The bundled

@@ -3,8 +3,62 @@ static void cue_render_pump(Mandala *m,VisualShared *shared,unsigned ms)
     Uint64 start=SDL_GetTicks64(),previous=start;
     do {Uint64 now=SDL_GetTicks64();m_video_poll(m,shared,0);m_scene(m,(now-previous)/1000.0);previous=now;SDL_Delay(5);}while(SDL_GetTicks64()-start<ms);
 }
+static void still_fixture_copy(const char *name,const char *destination)
+{
+    char path[1200];snprintf(path,sizeof(path),"%s",TS_VIDEO_FIXTURE);char *base=strrchr(path,'/');assert(base);
+    snprintf(base+1,sizeof(path)-(size_t)(base+1-path),"%s",name);
+    FILE *in=fopen(path,"rb"),*out=fopen(destination,"wb");assert(in && out);char bytes[4096];size_t count;
+    while((count=fread(bytes,1,sizeof(bytes),in)))assert(fwrite(bytes,1,count,out)==count);
+    assert(!ferror(in));fclose(in);assert(!fclose(out));
+}
+static void image_slideshow_checks(void)
+{
+    #ifdef _WIN32
+    assert(!_mkdir("image-pool-test"));
+    #else
+    assert(!mkdir("image-pool-test",0700));
+    #endif
+    still_fixture_copy("visual-still.png","image-pool-test/a.PNG");
+    still_fixture_copy("visual-still.jpg","image-pool-test/b.jpg");
+    TsMandalaConfig config;ts_mandala_default(&config);config.geometry_enabled=0;config.video_enabled=1;config.image_seconds=1;
+    Mandala *m=calloc(1,sizeof(*m));assert(m && m_init(m,&config,0));
+    VisualShared shared;TsMandalaPreferences prefs={0};shared_init(&shared,&prefs);
+    TsVisualCue cue={.serial=1,.pool=1,.transition=1,.fade=.05};strcpy(cue.path,"image-pool-test");m_cue_request(m,&cue);
+    cue_render_pump(m,&shared,200);assert(m->video_texture && m->video_status.is_image && m->cue_has_images && m->cue_bag_count==2);
+    char first[1024];strcpy(first,m->cue_original);m->image_elapsed=.9;
+    atomic_store(&shared.video_paused,1);m_video_poll(m,&shared,0);m_scene(m,2);
+    assert(!strcmp(first,m->cue_original) && m->image_elapsed==.9);
+    atomic_store(&shared.video_paused,0);m_video_poll(m,&shared,0);m_scene(m,.2);
+    assert(strcmp(first,m->cue_original));cue_render_pump(m,&shared,150);assert(!m->cue_fading);
+    config.image_seconds=0;m_configure(m,&config);strcpy(first,m->cue_original);m_scene(m,5);assert(!strcmp(first,m->cue_original));
+    config.image_seconds=1;config.video_loop=0;m_configure(m,&config);m->cue_bag_at=m->cue_bag_count;m_scene(m,5);
+    assert(!strcmp(first,m->cue_original));
+    /* Glitch changes pixels in the native renderer, then restores clean media. */
+    size_t size=(size_t)m->width*m->height*4;uint32_t *clean=malloc(size),*glitch=malloc(size);assert(clean && glitch);
+    SDL_SetRenderTarget(m->renderer,m->history);assert(!SDL_RenderReadPixels(m->renderer,NULL,SDL_PIXELFORMAT_ARGB8888,clean,m->width*4));SDL_SetRenderTarget(m->renderer,NULL);
+    config.video_glitch=100;m_configure(m,&config);int changed=0;
+    for(int i=0;i<30 && !changed;++i){m_scene(m,.09);SDL_SetRenderTarget(m->renderer,m->history);assert(!SDL_RenderReadPixels(m->renderer,NULL,SDL_PIXELFORMAT_ARGB8888,glitch,m->width*4));SDL_SetRenderTarget(m->renderer,NULL);changed=memcmp(clean,glitch,size)!=0;}
+    assert(changed);config.video_glitch=0;m_configure(m,&config);m_scene(m,0);
+    SDL_SetRenderTarget(m->renderer,m->history);assert(!SDL_RenderReadPixels(m->renderer,NULL,SDL_PIXELFORMAT_ARGB8888,glitch,m->width*4));SDL_SetRenderTarget(m->renderer,NULL);assert(!memcmp(clean,glitch,size));free(clean);free(glitch);
+    assert(m->video_cache);config.video_stills=1;m_configure(m,&config);m_video_poll(m,&shared,0);assert(!m->video_cache);
+    m_destroy(m);free(m);assert(!remove("image-pool-test/a.PNG"));assert(!remove("image-pool-test/b.jpg"));
+    /* A video-only folder becomes a slideshow of sampled frames in still mode. */
+    still_fixture_copy("mandala-video.mp4","image-pool-test/clip.mp4");
+    config.video_stills=1;config.video_loop=1;m=calloc(1,sizeof(*m));assert(m && m_init(m,&config,0));shared_init(&shared,&prefs);m_cue_request(m,&cue);
+    cue_render_pump(m,&shared,350);assert(m->video_texture && m->video_status.is_image && !m->cue_has_images && !m->video_cache);
+    TsVideo *held=m->video;
+    m->image_elapsed=.95;m_scene(m,.1);assert(m->video!=held || !m->video_texture); /* Reopens at another sampled position. */
+    cue_render_pump(m,&shared,200);assert(m->video_texture && m->video_status.is_image);
+    m_destroy(m);free(m);assert(!remove("image-pool-test/clip.mp4"));
+    #ifdef _WIN32
+    assert(!_rmdir("image-pool-test"));
+    #else
+    assert(!rmdir("image-pool-test"));
+    #endif
+}
 static void video_cue_render_checks(void)
 {
+    image_slideshow_checks();
     TsMandalaConfig config;ts_mandala_default(&config);config.geometry_enabled=0;config.video_enabled=1;
     Mandala *m=calloc(1,sizeof(*m));assert(m && m_init(m,&config,0));
     VisualShared shared;TsMandalaPreferences prefs={0};shared_init(&shared,&prefs);
@@ -46,6 +100,11 @@ static void video_cue_render_checks(void)
     mandala_editor_video_loaded(&u,&a.sister.mandala);unsigned geometry=a.sister.mandala.geometry_enabled;
     editor_click(570,215,SDL_BUTTON_LEFT);assert(a.sister.mandala.geometry_enabled!=geometry);
     editor_click(580,76,SDL_BUTTON_LEFT);assert(a.sister.mandala.video_monochrome);mandala_editor_close();
+    mandala_editor_video_loaded(&u,&a.sister.mandala);a.sister.mandala.geometry_enabled=0;
+    editor_click(170,472,SDL_BUTTON_LEFT);assert(a.sister.mandala.image_seconds==30);
+    editor_click(500,472,SDL_BUTTON_LEFT);assert(a.sister.mandala.video_glitch==50);
+    editor_click(500,415,SDL_BUTTON_LEFT);assert(a.sister.mandala.video_stills);
+    editor_key(SDLK_z,KMOD_CTRL);assert(!a.sister.mandala.video_stills);mandala_editor_close();
     /* Full audio-frame latch -> main UI follower -> IPC -> child decode. */
     a.sister.mandala.geometry_enabled=0;a.sister.mandala.video_enabled=1;
     TsMosaicSource *source=ts_mosaic_video_source(a.mosaic,TS_VIDEO_FIXTURE,0);assert(source);
