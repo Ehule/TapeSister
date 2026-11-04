@@ -92,11 +92,12 @@ static void mw_visual(TsUiState *ui,const TsMandalaConfig *c)
 static uint32_t *mw_parameter(TsMandalaConfig *c,int index)
 {
     switch(index){case 0:return &c->density;case 1:return &c->scale;case 2:return &c->motion;case 3:return &c->trails;
-        case 4:return &c->video_mix;case 5:return &c->video_scale;case 6:return &c->video_rotation;case 7:return &c->video_response;default:return &c->video_filter;}
+        case 4:return &c->video_mix;case 5:return &c->video_scale;case 6:return &c->video_rotation;case 7:return &c->video_response;
+        case 9:return &c->image_seconds;case 10:return &c->video_glitch;default:return &c->video_filter;}
 }
 static int mw_min(int index){return index==0?10:index==1?50:0;}
-static int mw_max(int index){return index==1?150:100;}
-static int mw_default(int index){return index<2?100:index==4?75:index==5?20:index==8?0:50;}
+static int mw_max(int index){return index==1?150:index==9?60:100;}
+static int mw_default(int index){return index<2?100:index==4?75:index==5?20:index==9?4:index==8 || index==10?0:50;}
 static void mw_slider(TsMandalaConfig *c,int drag,int x)
 {
     if(drag<=3) {
@@ -104,7 +105,7 @@ static void mw_slider(TsMandalaConfig *c,int drag,int x)
         rgb=(rgb&~(255u<<shift))|((uint32_t)SDL_clamp((x-100)*255/270,0,255)<<shift);
         ts_mandala_set_color(c,(unsigned)mandala_editor.swatch,rgb);
     } else {
-        int index=drag-4,origin=20+(index%2)*330;
+        int index=drag-4,origin=20+(index>=9?index-9:index%2)*330;
         *mw_parameter(c,index)=(uint32_t)(mw_min(index)+SDL_clamp(x-origin,0,300)*(mw_max(index)-mw_min(index))/300);
     }
     mw_changed(c);
@@ -124,18 +125,18 @@ static void mw_shape_icon(int x,int y,int shape,uint32_t color)
 static void mw_video_paint(const TsMandalaConfig *c)
 {
     char line[110];TsVideoStatus status=ts_mandala_video_status();
-    mw_button(20,64,200,c->video_path[0]?"REPLACE VIDEO FILE":"ADD VIDEO FILE",0);
-    mw_button(234,64,130,c->video_enabled?"VIDEO ON":"VIDEO OFF",c->video_enabled);
-    mw_button(378,64,130,"REMOVE VIDEO",0);
+    mw_button(20,64,200,c->video_path[0]?"REPLACE IMAGE / VIDEO":"ADD IMAGE / VIDEO",0);
+    mw_button(234,64,130,c->video_enabled?"MEDIA ON":"MEDIA OFF",c->video_enabled);
+    mw_button(378,64,130,"REMOVE MEDIA",0);
     mw_button(520,64,140,c->video_monochrome?"BLACK & WHITE":"COLOR",c->video_monochrome);
     mw_button(500,205,160,c->geometry_enabled?"MANDALA ON":"MANDALA OFF",c->geometry_enabled);
     const char *name=c->video_path;
     for(const char *p=name;*p;++p)if(*p=='/' || *p=='\\')name=p+1;
     mw_rect(20,106,640,83,0x110F15);
-    snprintf(line,sizeof(line),"%.100s",*name?name:status.state==TS_VIDEO_PLAYING?"MOSAIC VIDEO TRIGGERS / VIDEO SOUND OFF":"CHOOSE A CLIP OR PLACE A MOSAIC VIDEO TRIGGER");mw_text(32,119,line,0xFFE1A1,1);
-    mw_text(32,143,!ts_mandala_active()?"OPEN THE VISUALIZER TO PLAY YOUR VIDEO":!c->video_enabled?"VIDEO OFF / MANDALA CONTINUES":ts_mandala_frozen()?"VISUALIZER FROZEN":ts_mandala_video_paused()?"VIDEO PAUSED / MANDALA CONTINUES":status.message,0xC4B6CB,1);
+    snprintf(line,sizeof(line),"%.100s",*name?name:status.state==TS_VIDEO_PLAYING?"MOSAIC IMAGE / VIDEO TRIGGERS / SOUND OFF":"CHOOSE AN IMAGE / VIDEO OR A MOSAIC TRIGGER");mw_text(32,119,line,0xFFE1A1,1);
+    mw_text(32,143,!ts_mandala_active()?"OPEN THE VISUALIZER TO SHOW YOUR MEDIA":!c->video_enabled?"MEDIA OFF / MANDALA CONTINUES":ts_mandala_frozen()?"VISUALIZER FROZEN":ts_mandala_video_paused()?"MEDIA PAUSED / MANDALA CONTINUES":status.message,0xC4B6CB,1);
     snprintf(line,sizeof(line),"%02u:%02u / %02u:%02u   |   VIDEO SOUND OFF",status.position_ms/60000,status.position_ms/1000%60,status.duration_ms/60000,status.duration_ms/1000%60);mw_text(32,167,line,0xBCAFBC,1);
-    mw_button(20,205,146,ts_mandala_video_paused()?"PLAY VIDEO":"PAUSE VIDEO",ts_mandala_video_paused());
+    mw_button(20,205,146,ts_mandala_video_paused()?"PLAY MEDIA":"PAUSE MEDIA",ts_mandala_video_paused());
     mw_button(180,205,146,"RESTART",0);
     mw_button(340,205,146,c->video_loop?"LOOP ON":"LOOP OFF",c->video_loop);
     TsMandalaConfig values=*c;
@@ -144,16 +145,21 @@ static void mw_video_paint(const TsMandalaConfig *c)
         snprintf(line,sizeof(line),"%s  %d",(const char*[]){"VIDEO BLEND","VIDEO ZOOM","ROTATION","AUDIO RESPONSE","PALETTE FILTER"}[i],value);mw_text(x,y,line,c->geometry_enabled?0xD9CFDE:0x6F6775,1);
         mw_rect(x,y+19,300,6,0x100D15);mw_rect(x,y+19,value*3,6,c->geometry_enabled?0x9776A5:0x423B48);mw_rect(x+value*3-2,y+14,4,16,0xE9C58C);
     }
-    mw_text(350,403,"0 ORIGINAL / 100 MANDALA COLORS",0xBCAFBC,1);
-    snprintf(line,sizeof(line),"PALETTE: %s",ts_mandala_palette_name(c->palette));mw_text(350,424,line,0xE9C58C,1);
-    mw_text(20,451,c->geometry_enabled?"ZOOM: 0 FULL FRAME / 20 GENTLE / 50+ KALEIDOSCOPE":"MANDALA OFF: CLEAN VIDEO / BLACK & WHITE IS OPTIONAL",0xBCAFBC,1);
-    mw_text(20,471,c->geometry_enabled?"CHOOSE FILTER COLORS IN FORM. ROTATION: 50 IS STILL.":"LOOK SLIDERS APPLY WHEN MANDALA IS ON.",0xBCAFBC,1);
+    mw_button(350,403,310,c->video_stills?"VIDEO AS STILLS: RANDOM FRAMES":"VIDEO AS STILLS: OFF / PLAY CLIPS",c->video_stills);
+    mw_text(350,434,"HOLD FRAMES LIKE PHOTOS IN THE SLIDESHOW",0xBCAFBC,1);
+    for(int i=0;i<2;++i) {
+        int x=20+i*330,value=i?(int)c->video_glitch:(int)c->image_seconds,pos=value*300/(i?100:60);
+        if(i)snprintf(line,sizeof(line),"GLITCH  %d",value);
+        else if(value)snprintf(line,sizeof(line),"IMAGE HOLD  %d SEC / FOLDER",value);
+        else snprintf(line,sizeof(line),"IMAGE HOLD  MANUAL / TRIGGERS");
+        mw_text(x,451,line,0xD9CFDE,1);mw_rect(x,470,300,6,0x100D15);mw_rect(x,470,pos,6,0x9776A5);mw_rect(x+pos-2,465,4,16,0xE9C58C);
+    }
 }
 static void mw_paint(const TsMandalaConfig *c)
 {
     char line[100];mw_rect(0,0,MW_W,MW_H,0x201B24);mw_rect(0,0,MW_W,42,0x110F15);
     mw_text(20,16,"VISUALIZER",0xE9C58C,2);
-    mw_button(230,9,96,"FORM",!mandala_editor.video_tab);mw_button(334,9,96,"VIDEO",mandala_editor.video_tab);
+    mw_button(230,9,96,"FORM",!mandala_editor.video_tab);mw_button(334,9,96,"MEDIA",mandala_editor.video_tab);
     mw_button(444,9,216,ts_mandala_active()?(ts_mandala_frozen()?"RESUME VISUALIZER":"CLOSE VISUALIZER"):"OPEN VISUALIZER",0);
     if(mandala_editor.video_tab){mw_video_paint(c);goto footer;}
     for(unsigned i=0;i<=TS_MANDALA_CUSTOM;++i)mw_button(20+(i%3)*216,54+(i/3)*30,208,ts_mandala_palette_name(i),c->palette==i);
@@ -209,6 +215,7 @@ static void mandala_editor_update(const TsMandalaConfig *c)
 static int mw_slider_hit(int x,int y)
 {
     if(mandala_editor.video_tab) {
+        if(x>=16 && x<=654 && y>=459 && y<=488 && (x-16)%330<=308)return 13+(x-16)/330;
         if(x>=16 && x<=324 && y>=411 && y<=442)return 12;
         if(x>=16 && x<=654 && y>=271 && y<=372) {int row=(y-271)/70,col=(x-16)/330;
             if(row<2 && col<2 && (y-271)%70<32 && (x-16)%330<=308)return 8+row*2+col;}
@@ -240,7 +247,7 @@ static int mandala_editor_event(SDL_Event *e,TsUiState *ui,TsMandalaConfig *c)
     if(e->type==SDL_MOUSEMOTION) {
         int x=e->motion.x,y=e->motion.y;
         if(mandala_editor.drag)mw_slider(c,mandala_editor.drag,x);
-        mandala_editor.hint=mandala_editor.video_tab?(y>=393 && y<443?"PALETTE FILTER: REMAP THE FOOTAGE'S SHADING INTO YOUR FORM COLORS.":
+        mandala_editor.hint=mandala_editor.video_tab?(y>=445 && y<489?(x<340?"IMAGE FOLDERS: HOLD EACH SLIDE. 0 = CHANGE ONLY AT MOSAIC TRIGGERS.":"GLITCH: BRIEF HORIZONTAL TEARS AND DISPLACED FRAGMENTS. 0 = CLEAN."):y>=393 && y<443?"PALETTE FILTER: REMAP THE FOOTAGE'S SHADING INTO YOUR FORM COLORS.":
             y>=253 && y<303 && x>=350?"PULL LEFT TO RECOGNIZE THE FOOTAGE. RIGHT TO FOLD AND MAGNIFY IT.":NULL):y>=140 && y<185?"SEVEN INK COLORS AND A BACKDROP. EDITING CREATES A CUSTOM PALETTE.":
             y>=315 && y<370?"CHOOSE THE REPEATING FORMS. AUDIO AND PEDALS KEEP SHAPING THEM.":
             y>=490 && y<515?"SYMMETRY / EVOLUTION: LEFT-CLICK +, RIGHT-CLICK -, OR USE THE WHEEL.":NULL;
@@ -291,8 +298,11 @@ static int mandala_editor_event(SDL_Event *e,TsUiState *ui,TsMandalaConfig *c)
             mandala_editor.dirty=1;return 1;
         }
         int slider=mw_slider_hit(x,y);
+        if(mandala_editor.video_tab && y>=403 && y<428 && x>=350 && x<660) {
+            if(!wheel && delta>0){c->video_stills^=1;mw_commit(c);}return 1;
+        }
         mandala_editor.hex_focus=0;SDL_StopTextInput();mw_hex(c);
-        if(slider && mandala_editor.video_tab && !c->geometry_enabled)return 1;
+        if(slider && slider<13 && mandala_editor.video_tab && !c->geometry_enabled)return 1;
         if(slider) {
             if(wheel) {
                 if(slider<=3){unsigned shift=(unsigned)(3-slider)*8;uint32_t rgb=ts_mandala_color(c,(unsigned)mandala_editor.swatch);int value=(rgb>>shift)&255;

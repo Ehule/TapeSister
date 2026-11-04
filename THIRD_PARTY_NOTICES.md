@@ -85,3 +85,7 @@ To rebuild, unpack the supplied archive, configure with the flags in the recipe
 shared libraries. `TAPESISTER_BUNDLE_VIDEO=OFF` links system FFmpeg via pkg-config.
 TapeSister does not restrict modification, replacement, or reverse engineering
 of these libraries for debugging such modifications. See [FFmpeg](https://ffmpeg.org/).
+
+## Still-image decoding
+
+The visual child uses the existing vendored `third_party/stb_image.h` by Sean Barrett and contributors for PNG, JPEG, BMP and TGA decoding. This copy is available under the MIT license or public-domain alternative in the header. The private implementation is independent of the host's PNG splash decoder and adds no runtime dependency.

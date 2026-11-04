@@ -1,12 +1,12 @@
-# Video through the mandala
+# Images and video through the mandala
 
-Mosaic can now drive this same window with file/folder change objects. The VIDEO
+Mosaic can now drive this same window with file/folder change objects. The MEDIA
 editor has **MANDALA ON/OFF** and **COLOR / BLACK & WHITE** controls. See
 [Mosaic video changes](MOSAIC_VIDEO.md) for random positions, scatter, transitions
 and automatic preparation.
 
-Open **F11 → EDIT VISUALIZER → VIDEO → ADD VIDEO FILE**. The existing file
-browser opens in TapeSister's main window. Choose a clip, then **OPEN VISUALIZER**.
+Open **F11 → EDIT VISUALIZER → MEDIA → ADD IMAGE / VIDEO**. The existing file
+browser opens in TapeSister's main window. Choose a photo or clip, then **OPEN VISUALIZER**. PNG, JPG/JPEG, BMP and TGA stills are supported alongside the existing video formats and animated GIF.
 The footage can move from a recognizable full frame into a reflected radial kaleidoscope, underneath
 the mandala's geometry and inside its trails, haze and echo treatment. The clip's
 movement, seeded crop drift and musical activity evolve independently, so a loop
@@ -14,10 +14,10 @@ need not repeat the same visual composition.
 
 | Control | Behavior |
 | --- | --- |
-| Add / Replace Video File | Reference a local clip; no upload or copy |
-| Video On / Off | Enable the source or return to procedural geometry |
-| Remove Video | Clear the project reference; never delete the file |
-| Pause / Play Video | Hold/release the source frame while music and geometry continue |
+| Add / Replace Image / Video | Reference a local picture or clip |
+| Media On / Off | Enable the source or return to procedural geometry |
+| Remove Media | Clear the project reference; never delete the file |
+| Pause / Play Media | Hold/release the source frame while music and geometry continue |
 | Restart | Return to the beginning and resume video |
 | Loop | Restart at EOF, on by default; off holds the last frame |
 | Video Blend | Mix the footage into the geometric mandala |
@@ -25,6 +25,9 @@ need not repeat the same visual composition.
 | Rotation | 50 is still; either side changes direction and speed |
 | Audio Response | Amount of level, stereo and effect-driven deformation |
 | Palette Filter | 0 keeps original colors; 100 maps shading into the current mandala palette; values between blend the two |
+| Image Hold | 1–60 seconds per photo or sampled video frame in a Mosaic folder; 0 leaves changes to Mosaic triggers |
+| Video as Stills | Sample a random frame from each selected video and hold it like a photograph; Restart samples another frame |
+| Glitch | 0 is clean; higher values introduce brief horizontal tears and displaced image fragments, with audio level increasing activity |
 | Symmetry | Number of reflected sectors, including continuous odd symmetry |
 
 Video sound is always ignored. Existing final-output audio features drive the
@@ -137,3 +140,13 @@ SDL_VIDEODRIVER=dummy SDL_RENDER_DRIVER=software build/tapesister \
   --mandala-capture output.bmp 314159 240 -1 4 1 \
   tests/fixtures/mandala-framing.mp4 zoom filter
 ```
+
+## Image folders and sampled video frames
+
+Right-click Mosaic, choose **Random from folder**, then use **Visualizer / Mandala switch → Media**. With the default **Image Hold: 4 sec**, a folder containing photos advances through a shuffled slideshow. Images and videos can share a folder: photos hold for the chosen interval; videos play to the end before advancing. The next Mosaic trigger always takes over. Video-only folders retain their existing trigger-driven looping until **Video as Stills** is enabled.
+
+Enable **Video as Stills** to scrub to a random position in each video, decode one frame and use it as a slide. A folder containing just one video can supply successive frames. Disable it to play clips again. GIF also supplies a still in this mode. **Loop Off** stops after the current shuffled pass. **Image Hold: 0** disables automatic advances. A single photo holds until another trigger; a single manually loaded video can supply a new frame with **Restart**.
+
+**Pause Media**, visual freeze, and a hidden visual window hold the slideshow clock. **Glitch** works in both Mandala and full-frame modes; zero restores the clean picture. Image Hold, Video as Stills, and Glitch are project settings with editor Undo/Redo. Existing projects load with a four-second image hold, clips playing normally, and glitch at zero.
+
+Photos decode once in the low-priority visual child and retain a scaled frame (up to 960×540); they are never converted to video proxies. Images above 16 megapixels or an 8192-pixel edge report an error; resize a copy first. PNG transparency is retained. Video grabs release codec buffers after publishing a single frame. Missing/corrupt entries in an automatic slideshow are retried/skipped at a bounded one-second interval. Keep referenced media with the project when moving it; project saves retain paths rather than embedding the pictures.

@@ -15,6 +15,28 @@ static void m_video_layer(Mandala *m,SDL_Texture *texture,Uint8 alpha,float leve
     if(plain){m_video_fit(m,texture,alpha);return;}
     SDL_Texture *saved=m->video_texture;m->video_texture=texture;m_video_scene(m,alpha,level);m->video_texture=saved;
 }
+static void m_media_glitch(Mandala *m,Uint8 alpha,float level)
+{
+    unsigned amount=m->config.video_glitch;
+    if(!amount || !m->video_texture || !m->config.video_enabled || !alpha)return;
+    /* A few texture copies per burst. No frame readback, per-pixel animation,
+       additional decoder, RNG consumption or work in the audio process. */
+    uint32_t seed=(uint32_t)(m->glitch_time*12)^((uint32_t)m->config.seed);
+    seed=(seed^(seed>>16))*0x7feb352du;seed=(seed^(seed>>15))*0x846ca68bu;seed^=seed>>16;
+    unsigned chance=amount/3+(unsigned)(fminf(1,level)*amount*.4f);
+    if(seed%100>=chance)return;
+    int w=0,h=0;SDL_QueryTexture(m->video_texture,NULL,NULL,&w,&h);if(!w || !h)return;
+    float scale=fminf((float)m->width/w,(float)m->height/h),left=(m->width-w*scale)*.5f,top=(m->height-h*scale)*.5f;
+    SDL_SetTextureAlphaMod(m->video_texture,(Uint8)(alpha*.75f));
+    for(unsigned i=0;i<2+amount/25;++i) {
+        seed=1664525u*seed+1013904223u;
+        int y=(int)(seed%(unsigned)h),height=SDL_min(h-y,1+(int)((seed>>16)%(unsigned)SDL_max(1,h/14)));
+        float offset=((int)((seed>>8)%201)-100)*amount*.000025f*m->width;
+        SDL_Rect source={0,y,w,height};SDL_FRect dest={left+offset,top+y*scale,w*scale,height*scale};
+        SDL_RenderCopyF(m->renderer,m->video_texture,&source,&dest);
+    }
+    SDL_SetTextureAlphaMod(m->video_texture,255);
+}
 static void m_video_layers(Mandala *m,Uint8 alpha,float level,int plain)
 {
     double fraction=m->cue_fading && m->video_texture?fmin(1,m->cue_elapsed/fmax(.001,m->cue_fade)):m->cue_fading?0:1;
@@ -25,6 +47,7 @@ static void m_video_layers(Mandala *m,Uint8 alpha,float level,int plain)
     else m_video_layer(m,m->old_texture,(Uint8)(alpha*outgoing),level,plain);
     m_video_layer(m,m->video_texture,(Uint8)(alpha*incoming),level,plain);
     if(plain){if(m->cue_snapshot)SDL_SetTextureBlendMode(m->cue_snapshot,SDL_BLENDMODE_BLEND);if(m->old_texture)SDL_SetTextureBlendMode(m->old_texture,SDL_BLENDMODE_BLEND);if(m->video_texture)SDL_SetTextureBlendMode(m->video_texture,SDL_BLENDMODE_BLEND);}
+    m_media_glitch(m,(Uint8)(alpha*incoming*(plain?1:m->config.video_mix*.01f)),plain?m->features.level:level);
 }
 static int m_cue_path(Mandala *m,const TsVisualCue *cue,char path[1024])
 {
@@ -36,7 +59,8 @@ static int m_cue_path(Mandala *m,const TsVisualCue *cue,char path[1024])
         snprintf(m->cue_pool->directory,sizeof(m->cue_pool->directory),"%s",cue->path);
         if(!ts_browser_refresh(m->cue_pool))return 0;
         snprintf(m->cue_pool_path,sizeof(m->cue_pool_path),"%s",cue->path);
-        m->cue_bag_count=m->cue_bag_at=0;m->cue_last=-1;
+        m->cue_bag_count=m->cue_bag_at=0;m->cue_last=-1;m->cue_has_images=0;
+        for(int i=0;i<m->cue_pool->entry_count;++i)if(!m->cue_pool->entries[i].is_directory && ts_visual_image_path(m->cue_pool->entries[i].name))m->cue_has_images=1;
     }
     if(m->cue_bag_at>=m->cue_bag_count) {
         m->cue_bag_count=0;
@@ -58,6 +82,7 @@ static void m_video_retire(Mandala *m)
 }
 static void m_video_change(Mandala *m,const char *path,double position,int transition,double fade)
 {
+    m->video_stills=(int)m->config.video_stills;
     int interrupted=m->cue_fading;
     SDL_Texture *snapshot=NULL;
     if(interrupted) {
@@ -69,19 +94,16 @@ static void m_video_change(Mandala *m,const char *path,double position,int trans
     else {m->old_restart=m->video_restart-m->video_restart_base;m->old_video=m->video;m->old_texture=m->video_texture;m->old_status=m->video_status;}
     m->video=NULL;m->video_texture=NULL;m->video_new=1;memset(&m->video_status,0,sizeof(m->video_status));
     snprintf(m->video_path,sizeof(m->video_path),"%s",path);
-    m->cue_transition=transition;m->cue_fade=transition?fade:0;m->cue_elapsed=0;m->cue_fading=1;
+    m->cue_transition=transition;m->cue_fade=transition?fade:0;m->cue_elapsed=0;m->cue_fading=1;m->image_elapsed=0;
     if(!*path){m_video_retire(m);m->video_status.state=TS_VIDEO_CLOSED;return;}
-    m->video=ts_video_open_at(path,position);
+    m->video=m->config.video_stills?ts_video_open_frame(path,mrand(m)):ts_video_open_at(path,position);
     if(!m->video){m->video_status.state=TS_VIDEO_ERROR;snprintf(m->video_status.message,sizeof(m->video_status.message),"VIDEO MISSING OR PLAYER UNAVAILABLE");}
 }
-static void m_cue_request(Mandala *m,const TsVisualCue *cue)
+static void m_cue_load(Mandala *m,const TsVisualCue *cue)
 {
-    if(cue->serial==m->cue.serial)return;
-    m->cue=*cue;
-    if(!cue->path[0]){m->cue_path[0]=m->cue_original[0]=0;return;}
     char path[1024];
     if(!m_cue_path(m,cue,path)) {
-        m->video_status.state=TS_VIDEO_ERROR;snprintf(m->video_status.message,sizeof(m->video_status.message),"VIDEO POOL EMPTY OR PATH TOO LONG");return;
+        m->video_status.state=TS_VIDEO_ERROR;snprintf(m->video_status.message,sizeof(m->video_status.message),"MEDIA FOLDER EMPTY OR PATH TOO LONG");return;
     }
     snprintf(m->cue_original,sizeof(m->cue_original),"%s",path);m->cue_fraction=cue->random_start?mrand(m):0;
     if(!m->video_cache)m->video_cache=ts_video_cache_create();
@@ -89,4 +111,25 @@ static void m_cue_request(Mandala *m,const TsVisualCue *cue)
     char prepared[2048];if(ts_video_cache_path(path,prepared,sizeof(prepared)) && strlen(prepared)<sizeof(path))memcpy(path,prepared,strlen(prepared)+1);
     snprintf(m->cue_path,sizeof(m->cue_path),"%s",path);
     if(m->config.video_enabled)m_video_change(m,path,m->cue_fraction,cue->transition,cue->fade);
+}
+static void m_cue_request(Mandala *m,const TsVisualCue *cue)
+{
+    if(cue->serial==m->cue.serial)return;
+    m->cue=*cue;m->image_elapsed=0;
+    if(!cue->path[0]){m->cue_path[0]=m->cue_original[0]=0;return;}
+    m_cue_load(m,cue);
+}
+static void m_slideshow_tick(Mandala *m,double dt)
+{
+    if(m->media_paused || !m->config.video_enabled || !m->cue.pool || !m->cue_path[0] ||
+       (!m->cue_has_images && !m->config.video_stills) || !m->config.image_seconds ||
+       (!m->config.video_loop && m->cue_bag_at>=m->cue_bag_count))return;
+    int failed=m->video_status.state==TS_VIDEO_ERROR;
+    if(!failed && (m->cue_fading || !m->video_texture || m->video_status.state==TS_VIDEO_OPENING))return;
+    m->image_elapsed+=dt;
+    int next=failed?m->image_elapsed>=1:m->video_status.is_image?m->image_elapsed>=m->config.image_seconds:
+        m->video_status.state==TS_VIDEO_ENDED;
+    /* A single still simply holds. Bad files get a bounded retry interval. */
+    if(next && (failed || m->cue_bag_count>1 || !m->video_status.is_image ||
+        (m->config.video_stills && !ts_visual_image_path(m->cue_original))))m_cue_load(m,&m->cue);
 }

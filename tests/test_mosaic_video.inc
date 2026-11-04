@@ -15,11 +15,15 @@ static void test_mosaic_video(void)
     for(int i=0;i<300;++i){TsStereoFrame v=ts_mosaic_read(m,48000);assert(v.l==0 && v.r==0);}
     uint64_t serial=m->video_serial;ts_mosaic_seek(m,0);assert(m->video_serial==serial+1);ts_mosaic_read(m,48000);assert(m->video_serial==serial+1);
     assert(!ts_mosaic_live_launch(m,a->id,0));
+    const char *image_path="/a folder/still photo.png";
+    TsMosaicSource *image=ts_mosaic_video_source(m,image_path,0);assert(image && !image->sample.data);
+    assert(ts_mosaic_add(m,image,8,0));
     assert(!MKDIR("mosaic-video-test"));assert(ts_mosaic_save(m,"mosaic-video-test",error,sizeof(error)));
     TsMosaic *loaded=ts_mosaic_create();assert(loaded);assert(ts_mosaic_load(loaded,"mosaic-video-test",error,sizeof(error)));
     assert(ts_mosaic_hash(m)==ts_mosaic_hash(loaded));
     assert(loaded->events[0].video_random_start && loaded->events[0].video_bw && loaded->events[0].video_fade==2.75);
     assert(!strcmp(loaded->events[0].source->video_path,path));assert(!loaded->events[0].source->sample.data);
+    assert(!strcmp(loaded->events[2].source->video_path,image_path) && !loaded->events[2].source->sample.data);
     storage_line_endings("mosaic-video-test/mosaic.tsm",1);assert(ts_mosaic_load(loaded,"mosaic-video-test",error,sizeof(error)));
     assert(ts_mosaic_hash(m)==ts_mosaic_hash(loaded));
     remove("mosaic-video-test/mosaic.tsm");assert(!RMDIR("mosaic-video-test"));ts_mosaic_free(loaded);ts_mosaic_free(m);

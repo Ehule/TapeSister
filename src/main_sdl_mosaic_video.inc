@@ -1,9 +1,6 @@
 static int mosaic_video_path(const char *path)
 {
-    const char *extension=strrchr(path,'.');if(!extension)return 0;
-    const char *types[]={".mp4",".m4v",".mov",".mkv",".webm",".avi",".mpg",".mpeg",".ts",".gif"};
-    for(unsigned i=0;i<sizeof(types)/sizeof(*types);++i)if(!SDL_strcasecmp(extension,types[i]))return 1;
-    return 0;
+    return ts_visual_media_path(path);
 }
 static void mosaic_video_open(TsUiState *ui,MosaicController *c,uint64_t id)
 {
@@ -67,7 +64,7 @@ static int mosaic_video_drop(SDL_AudioDeviceID device,AudioState *audio,TsUiStat
 {
     struct stat info;if(stat(path,&info))return 0;
     int pool=S_ISDIR(info.st_mode);if(!pool && !mosaic_video_path(path))return 0;
-    if(ts_ui_foreground_panel_open(ui)){snprintf(ui->status,sizeof(ui->status),"CLOSE THE OPEN PANEL BEFORE ADDING VIDEO");return 1;}
+    if(ts_ui_foreground_panel_open(ui)){snprintf(ui->status,sizeof(ui->status),"CLOSE THE OPEN PANEL BEFORE ADDING MEDIA");return 1;}
     TsMosaicSource *source=ts_mosaic_video_source(ui->mosaic,path,pool);if(!source)return 1;
     int px,py,x,y;SDL_GetMouseState(&px,&py);logical_mouse(window,px,py,&x,&y);
     double time=ui->mosaic_time,left=ui->mosaic_xscroll;
