@@ -82,6 +82,9 @@ static void m_video_retire(Mandala *m)
 }
 static void m_video_change(Mandala *m,const char *path,double position,int transition,double fade)
 {
+    /* Frame sampling must not prepare every frame of an entire movie. Stop an
+       existing preparation pass when switching from playback into stills. */
+    if(m->config.video_stills && m->video_cache){ts_video_cache_free(m->video_cache);m->video_cache=NULL;}
     m->video_stills=(int)m->config.video_stills;
     int interrupted=m->cue_fading;
     SDL_Texture *snapshot=NULL;
@@ -106,8 +109,10 @@ static void m_cue_load(Mandala *m,const TsVisualCue *cue)
         m->video_status.state=TS_VIDEO_ERROR;snprintf(m->video_status.message,sizeof(m->video_status.message),"MEDIA FOLDER EMPTY OR PATH TOO LONG");return;
     }
     snprintf(m->cue_original,sizeof(m->cue_original),"%s",path);m->cue_fraction=cue->random_start?mrand(m):0;
-    if(!m->video_cache)m->video_cache=ts_video_cache_create();
-    ts_video_cache_begin(m->video_cache,cue->path,cue->pool);
+    if(!m->config.video_stills) {
+        if(!m->video_cache)m->video_cache=ts_video_cache_create();
+        ts_video_cache_begin(m->video_cache,cue->path,cue->pool);
+    }
     char prepared[2048];if(ts_video_cache_path(path,prepared,sizeof(prepared)) && strlen(prepared)<sizeof(path))memcpy(path,prepared,strlen(prepared)+1);
     snprintf(m->cue_path,sizeof(m->cue_path),"%s",path);
     if(m->config.video_enabled)m_video_change(m,path,m->cue_fraction,cue->transition,cue->fade);

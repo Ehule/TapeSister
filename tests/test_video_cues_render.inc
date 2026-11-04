@@ -40,11 +40,12 @@ static void image_slideshow_checks(void)
     for(int i=0;i<30 && !changed;++i){m_scene(m,.09);SDL_SetRenderTarget(m->renderer,m->history);assert(!SDL_RenderReadPixels(m->renderer,NULL,SDL_PIXELFORMAT_ARGB8888,glitch,m->width*4));SDL_SetRenderTarget(m->renderer,NULL);changed=memcmp(clean,glitch,size)!=0;}
     assert(changed);config.video_glitch=0;m_configure(m,&config);m_scene(m,0);
     SDL_SetRenderTarget(m->renderer,m->history);assert(!SDL_RenderReadPixels(m->renderer,NULL,SDL_PIXELFORMAT_ARGB8888,glitch,m->width*4));SDL_SetRenderTarget(m->renderer,NULL);assert(!memcmp(clean,glitch,size));free(clean);free(glitch);
+    assert(m->video_cache);config.video_stills=1;m_configure(m,&config);m_video_poll(m,&shared,0);assert(!m->video_cache);
     m_destroy(m);free(m);assert(!remove("image-pool-test/a.PNG"));assert(!remove("image-pool-test/b.jpg"));
     /* A video-only folder becomes a slideshow of sampled frames in still mode. */
     still_fixture_copy("mandala-video.mp4","image-pool-test/clip.mp4");
     config.video_stills=1;config.video_loop=1;m=calloc(1,sizeof(*m));assert(m && m_init(m,&config,0));shared_init(&shared,&prefs);m_cue_request(m,&cue);
-    cue_render_pump(m,&shared,350);assert(m->video_texture && m->video_status.is_image && !m->cue_has_images);
+    cue_render_pump(m,&shared,350);assert(m->video_texture && m->video_status.is_image && !m->cue_has_images && !m->video_cache);
     TsVideo *held=m->video;
     m->image_elapsed=.95;m_scene(m,.1);assert(m->video!=held || !m->video_texture); /* Reopens at another sampled position. */
     cue_render_pump(m,&shared,200);assert(m->video_texture && m->video_status.is_image);
