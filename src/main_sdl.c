@@ -1175,6 +1175,11 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
     for(int sp=0;sp<16;++sp)
         if(!ts_audio_range_contains(audio->output_range,(unsigned)enabled_speakers.output[sp],device_channels))
             enabled_speakers.output[sp]=-1;
+    int speaker_channels[TS_SOURCE_SPEAKERS];
+    for(int sp=0;sp<TS_SOURCE_SPEAKERS;++sp)
+        speaker_channels[sp]=ts_speakers_channel(&enabled_speakers,sp,device_channels);
+    const float fm_slew=audio->output_rate>0?1.f/(.005f*audio->output_rate):1.f;
+    const float performance_slew=audio->output_rate>0?2.f/(.005f*audio->output_rate):2.f;
     int values=frames*2;
     memset(stream,0,(size_t)bytes);
     float synth_block_peak = 0.0f;
@@ -1268,7 +1273,6 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         buses.legacy_preview=ts_source_route_frame(&audio->audition_route,buses.legacy_preview,&audio->clean);
 
         /* Five-ms trim slew, shared by monitor and all dry capture taps. */
-        float fm_slew = audio->output_rate > 0 ? 1.0f / (0.005f * audio->output_rate) : 1.0f;
         audio->fm_output_gain += fmaxf(-fm_slew,
             fminf(fm_slew, audio->fm_output_target - audio->fm_output_gain));
         uint64_t profile_tracker = ts_profile_begin(TS_PROF_TRACKER);
@@ -1294,9 +1298,8 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         double arp_interval=master_arp_follow?
             master_arp_interval:sync && bpm?60.0/bpm/(1u<<(sync-1)):0;
         ts_keyboard_sequence_clock(&audio->keyboard_sequence,arp_interval);
-        float slew=audio->output_rate>0?2.f/(.005f*audio->output_rate):2.f;
-        for(int ch=0;ch<4;++ch)audio->sister.performance_gain_current[ch]+=fmaxf(-slew,
-            fminf(slew,audio->sister.performance_mixer.gain[ch]-audio->sister.performance_gain_current[ch]));
+        for(int ch=0;ch<4;++ch)audio->sister.performance_gain_current[ch]+=fmaxf(-performance_slew,
+            fminf(performance_slew,audio->sister.performance_mixer.gain[ch]-audio->sister.performance_gain_current[ch]));
         uint64_t profile_voices = ts_profile_begin(TS_PROF_VOICES);
         runtime_note_render(audio, &buses, &synth_capture);
         ts_profile_end(TS_PROF_VOICES, profile_voices);
@@ -1565,7 +1568,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
                 hardware[ch]=isfinite(value)?value:0;
             }
             for(int sp=0;sp<audio->speakers.count && sp<16;++sp) {
-                int ch=ts_speakers_channel(&enabled_speakers,sp,device_channels);
+                int ch=speaker_channels[sp];
                 if(ch>=0)hardware[ch]+=audio->sister.matrix.speaker_output[sp]*gain;
             }
             TsStereoFrame spatial_input=audio->sister.matrix.spatial_input;
@@ -1595,7 +1598,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
                     audio->sister.matrix.hardware_peak[ch/2]=fabsf(hardware[ch]);
             }
             for(int sp=0;sp<16;++sp) {
-                int ch=ts_speakers_channel(&enabled_speakers,sp,device_channels);
+                int ch=speaker_channels[sp];
                 float v=ch>=0?fabsf(hardware[ch]):0;
                 audio->speaker_peak[sp]=fmaxf(v,audio->speaker_peak[sp]*.9999f);
             }

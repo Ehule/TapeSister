@@ -29,6 +29,7 @@ typedef struct {
 } TsSourceRouteHandoff;
 void ts_source_route_handoff(TsSourceRouteHandoff *h,TsSourceRouteMix *mix,int changed,unsigned frames);
 
+/* Reset audio buses, retaining only map's output availability. map may be to. */
 void ts_source_route_mix_init(TsSourceRouteMix *to,const TsSourceRouteMix *map);
 int ts_source_route_valid(const TsSourceRoute *r, int allow_inherit);
 TsSourceRoute ts_source_route_resolve(TsSourceRoute tile, TsSourceRoute track);

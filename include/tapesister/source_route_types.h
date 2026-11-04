@@ -33,6 +33,8 @@ typedef struct {
     float matrix[TS_SOURCE_COEFFICIENTS][2], target[TS_SOURCE_COEFFICIENTS][2];
     unsigned remaining, rate;
     unsigned mask; /* Physical speaker outputs only. */
+    uint64_t graph_mask, graph_mask_high;
+    unsigned send_mask; /* Compiled destinations, also valid for silent input. */
     unsigned active_count;
     unsigned char active[TS_SOURCE_COEFFICIENTS]; /* Compiled sparse coefficient indices. */
     int ready;
