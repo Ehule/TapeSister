@@ -1,0 +1,28 @@
+{
+  "status": "seven final core suites and 120-second audio comparison pass; CPU benefit inconclusive",
+  "base_commit": "e0f9203497d3993c1086c743268400093e13e40d",
+  "implementation_commit": "39d858de2d5ab86eba3a3103a7ea3e6d0baf3b00",
+  "fixture": "A Pale Weight 02 opening 120 seconds; 48000 Hz, 512 frames, stereo",
+  "pcm_format": "interleaved stereo float32, 5760000 frames",
+  "baseline_and_candidate_pcm_sha256": "c310a24c838038a1a3f67b1cd4e2ff58a443d54ceaf6514b4374bac88b76bee0",
+  "comparison": "cmp over all 46080000 bytes passed, including startup and warmup",
+  "finite_stereo_and_hardware_outputs": true,
+  "passed_final_core_suites": [
+    "source_route (including silent input and live slews)",
+    "source_sends",
+    "spatial",
+    "routing_matrix",
+    "routing_matrix_instances",
+    "profile",
+    "master_clock"
+  ],
+  "callback_benchmark_build": "Release, MIDI/CDP8/video bundles off; real audio_callback, no device/GUI/video",
+  "limitations": [
+    "One source composition and its opening two minutes; no claim of universal bit equivalence.",
+    "No X230 measurements; no physical audio-device underrun validation.",
+    "Disconnected local execution sessions interrupted exploratory timing. Those results are not performance evidence.",
+    "Linux/Windows CI and X230 hardware validation are pending."
+  ],
+  "cpu_assessment": "Inconclusive. Serial, reversed-order trial ranges overlap and the unchanged baseline varies more than twofold. Do not interpret the numerical median difference as a verified speedup.",
+  "paired_timing_record": "sunvox-routing-efficiency-benchmarks.json"
+}

@@ -163,3 +163,15 @@ A change is accepted for its measured behavior on the relevant projects, not
 because its structure resembles SunVox. Set performance targets after these
 baselines; the earlier reconstruction does not justify promising SunVox's CPU
 percentage for TapeSister's larger DSP workload.
+
+## Validation record
+
+The final seven core suites pass, including the new silent-route and zero-input
+slew checks. The complete opening 120-second float render matches the baseline
+byte for byte, including startup/warmup. See the [validation record](../validation/sunvox-routing-efficiency.json)
+for the input scope, PCM hash, checks and outstanding hardware/CI limitations.
+
+The subsequent serial CPU trials remain inconclusive: baseline readings range
+from 32.85% to 75.63%, and candidate readings from 24.79% to 42.77%. Their
+numerical median difference is not a verified gain. The raw trials are retained
+in the validation record; do not use them to promise an X230 speedup.
