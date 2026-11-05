@@ -109,7 +109,7 @@ static TsSisterRuntimeFrame runtime_matrix_frame(TsSisterRuntime *r,
 {
     TsSourceRouteMix sums={0};
     memcpy(sums.graph,s->matrix_graph,sizeof(sums.graph));
-    for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)sums.graph[d]=frame_add(sums.graph[d],frame_scale(r->clean_output.graph[d],s->matrix_program_gain));
+    ts_source_route_add(&sums,&r->clean_output,s->matrix_program_gain);
     sums.graph[TS_MATRIX_MAIN]=frame_add(sums.graph[TS_MATRIX_MAIN],frame_add(tiles,s->preview));
     if(!r->matrix.controls.serial_mask) {
         sums.graph[TS_MATRIX_PRISM]=frame_add(sums.graph[TS_MATRIX_PRISM],r->send_input[TS_SEND_PRISM]);

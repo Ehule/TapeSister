@@ -4,8 +4,11 @@
 
 void ts_source_route_mix_init(TsSourceRouteMix *to,const TsSourceRouteMix *map)
 {
+    /* Allow a persistent mix to reset itself without copying its audio buses. */
+    unsigned available=map?map->available:0;
+    int check_outputs=map?map->check_outputs:0;
     memset(to,0,sizeof(*to));
-    if(map){to->available=map->available;to->check_outputs=map->check_outputs;}
+    to->available=available;to->check_outputs=check_outputs;
 }
 
 int ts_source_route_valid(const TsSourceRoute *r, int inherit)
@@ -26,10 +29,16 @@ TsSourceRoute ts_source_route_resolve(TsSourceRoute tile, TsSourceRoute track)
 static void route_active(TsSourceRouteVoice *v,int target)
 {
     v->mask=0;v->active_count=0;
+    v->graph_mask=v->graph_mask_high=0;v->send_mask=0;
     for(int i=0;i<TS_SOURCE_COEFFICIENTS;++i)
         if(v->matrix[i][0] || v->matrix[i][1] || (target && (v->target[i][0] || v->target[i][1]))) {
             v->active[v->active_count++]=(unsigned char)i;
             if(i<TS_SOURCE_SPEAKERS)v->mask|=1u<<i;
+            else if(i>=TS_SOURCE_GRAPH_OFFSET) {
+                int d=(i-TS_SOURCE_GRAPH_OFFSET)/2;
+                if(d<64)v->graph_mask|=UINT64_C(1)<<d;
+                else v->graph_mask_high|=UINT64_C(1)<<(d-64);
+            } else if(i>=18)v->send_mask|=1u<<((i-18)/2);
         }
 }
 void ts_source_route_set(TsSourceRouteVoice *v, TsSourceRoute r, unsigned rate)
@@ -96,6 +105,16 @@ TsStereoFrame ts_source_route_frame(TsSourceRouteVoice *v, TsStereoFrame in, TsS
     float source=fmaxf(fabsf(in.l),fabsf(in.r));
     if(isfinite(source) && source>v->activity_source)v->activity_source=source;
     if(!clean || !v->ready)return in;
+    if(!in.l && !in.r && !v->remaining) {
+        /* Silence needs destination ownership, but no coefficient products.
+           A live slew still runs below, even while its source is silent. */
+        unsigned missing=clean->check_outputs?(v->mask&65535u)&~clean->available:0;
+        clean->mask|=v->mask&65535u;clean->missing|=missing;
+        clean->graph_mask|=v->graph_mask;clean->graph_mask_high|=v->graph_mask_high;
+        clean->send_mask|=v->send_mask;
+        if(v->activity_send<0)v->activity_send=0;
+        return main_frame(v,in);
+    }
     if(!v->active_count && !v->remaining) {
         TsStereoFrame main=main_frame(v,in);
         float sent=fmaxf(fabsf(main.l),fabsf(main.r));
@@ -148,13 +167,33 @@ TsStereoFrame ts_source_route_frame(TsSourceRouteVoice *v, TsStereoFrame in, TsS
     clean->mask|=v->mask&65535u;clean->missing|=missing;
     return main;
 }
+static unsigned first_destination(uint64_t mask)
+{
+#if defined(__GNUC__) || defined(__clang__)
+    return (unsigned)__builtin_ctzll(mask);
+#else
+    unsigned bit=0;
+    while(!(mask&1)){mask>>=1;++bit;}
+    return bit;
+#endif
+}
+static void add_graph(TsSourceRouteMix *to,const TsSourceRouteMix *from,
+    float gain,uint64_t mask,unsigned offset)
+{
+    /* Ascending set bits retain the dense loop's accumulation order. */
+    while(mask) {
+        unsigned d=offset+first_destination(mask);mask&=mask-1;
+        to->graph[d].l+=from->graph[d].l*gain;
+        to->graph[d].r+=from->graph[d].r*gain;
+    }
+}
 void ts_source_route_add(TsSourceRouteMix *to, const TsSourceRouteMix *from, float gain)
 {
     if(!to || !from || (!from->graph_mask && !from->graph_mask_high && !from->mask && !from->send_mask && !from->reference.l && !from->reference.r &&
                        !from->tape_input.l && !from->tape_input.r))return;
-    for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)if(d<64?(from->graph_mask&(UINT64_C(1)<<d)):(from->graph_mask_high&(UINT64_C(1)<<(d-64)))) {
-        to->graph[d].l+=from->graph[d].l*gain;to->graph[d].r+=from->graph[d].r*gain;
-    }
+    add_graph(to,from,gain,from->graph_mask,0);
+    add_graph(to,from,gain,from->graph_mask_high&
+        ((UINT64_C(1)<<(TS_MATRIX_DESTINATIONS-64))-1),64);
     to->graph_mask|=from->graph_mask;to->graph_mask_high|=from->graph_mask_high;
     for(int i=0;i<TS_SOURCE_SPEAKERS;++i)if(from->mask&(UINT64_C(1)<<i)) {
         to->speaker[i]+=from->speaker[i]*gain;

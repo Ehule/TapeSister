@@ -98,6 +98,18 @@ if(TAPESISTER_BUILD_SDL)
   if(UNIX AND NOT APPLE)
     target_link_libraries(tapesister_compose PRIVATE rt)
   endif()
+  # Explicit headless project benchmark. Validation/hashing/file I/O are kept
+  # outside callback timing; this is not a physical-device underrun test.
+  add_executable(tapesister_audio_benchmark EXCLUDE_FROM_ALL tools/benchmark_audio_callback.c
+    src/tape_link.c src/tape_companion.c src/ts_startup_diag.c src/ts_midi_input.c)
+  target_include_directories(tapesister_audio_benchmark PRIVATE third_party)
+  target_link_libraries(tapesister_audio_benchmark PRIVATE tapesister_core tapesister_tapehead SDL2::SDL2)
+  if(UNIX AND NOT APPLE)
+    target_link_libraries(tapesister_audio_benchmark PRIVATE rt)
+  endif()
+  if(MINGW)
+    target_link_options(tapesister_audio_benchmark PRIVATE "-Wl,--stack,16777216")
+  endif()
   add_custom_command(TARGET tapesister POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:tapesister>/licenses/tapehead"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different

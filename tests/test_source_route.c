@@ -112,4 +112,79 @@ static void activity(void)
     ts_source_route_frame(&v,(TsStereoFrame){.3f,.3f},&mix);
     NEAR(v.activity_source,.3f);NEAR(v.activity_send,0); /* An unpatched source still has input. */
 }
-int main(void){matrix();hardware();voices_and_storage();activity();puts("Source routing: coefficients, ramps, output ownership, voices, signal activity and persistence passed");return 0;}
+static void sparse_accumulation(void)
+{
+    /* Dense oracle covers both mask words, dense routing, ignored bus data,
+       negative handoff gains and adding a mix to itself. */
+    uint64_t random=UINT64_C(0x54a285e9da713f01);
+    const float gains[]={0,1,-1,.37f,2};
+    for(int trial=0;trial<300;++trial) {
+        TsSourceRouteMix from={0},to={0};
+        random=random*UINT64_C(6364136223846793005)+1;from.graph_mask=random;
+        random=random*UINT64_C(6364136223846793005)+1;from.graph_mask_high=random;
+        if(trial==0)from.graph_mask=from.graph_mask_high=0;
+        if(trial==1)from.graph_mask=from.graph_mask_high=UINT64_MAX;
+        if(trial==2){from.graph_mask=UINT64_C(1)<<63;from.graph_mask_high=3;}
+        for(int d=0;d<TS_MATRIX_DESTINATIONS;++d) {
+            from.graph[d]=(TsStereoFrame){(d-30)*.017f,(30-d)*.023f};
+            to.graph[d]=(TsStereoFrame){(d-12)*.031f,(12-d)*.019f};
+        }
+        if(trial&1)to=from;
+        TsSourceRouteMix want=to;
+        const TsSourceRouteMix *input=trial&1?&to:&from;
+        float gain=gains[trial%5];
+        for(int d=0;d<TS_MATRIX_DESTINATIONS;++d) {
+            int active=d<64?!!(input->graph_mask&(UINT64_C(1)<<d)):
+                !!(input->graph_mask_high&(UINT64_C(1)<<(d-64)));
+            if(active) {
+                want.graph[d].l+=input->graph[d].l*gain;
+                want.graph[d].r+=input->graph[d].r*gain;
+            }
+        }
+        uint64_t low=to.graph_mask|input->graph_mask,high=to.graph_mask_high|input->graph_mask_high;
+        ts_source_route_add(&to,input,gain);
+        assert(!memcmp(to.graph,want.graph,sizeof(to.graph)));
+        assert(to.graph_mask==low && to.graph_mask_high==high);
+    }
+    TsSourceRouteMix mix,expected;memset(&expected,0,sizeof(expected));memset(&mix,0x7f,sizeof(mix));
+    mix.available=0x91;mix.check_outputs=1;expected.available=0x91;expected.check_outputs=1;
+    ts_source_route_mix_init(&mix,&mix);
+    assert(!memcmp(&mix,&expected,sizeof(mix)));
+    ts_source_route_mix_init(&mix,NULL);expected.available=expected.check_outputs=0;
+    assert(!memcmp(&mix,&expected,sizeof(mix)));
+}
+static void silent_routing(void)
+{
+    TsSourceRoute routes[4]={{0},pair,pair,{.matrix_enabled=1}};
+    routes[1].pan=-30;routes[1].width=-70;
+    routes[2].mix_enabled=1;routes[2].clean_level=43;
+    for(int b=0;b<TS_SOURCE_SENDS;++b)routes[2].send_level[b]=10+b*17;
+    for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)routes[3].matrix_gain[d]=600;
+    const TsStereoFrame zeros[]={{0,0},{-0.f,0},{0,-0.f},{-0.f,-0.f}};
+    for(int route=0;route<4;++route)for(int z=0;z<4;++z) {
+        TsSourceRouteVoice fast={0};ts_source_route_set(&fast,routes[route],48000);
+        TsSourceRouteVoice ordinary=fast;ordinary.remaining=1;
+        /* The one-frame, zero-distance ramp forces the arithmetic path. */
+        TsSourceRouteMix got={.available=1,.check_outputs=1},want=got;
+        TsStereoFrame a=ts_source_route_frame(&fast,zeros[z],&got);
+        TsStereoFrame b=ts_source_route_frame(&ordinary,zeros[z],&want);
+        NEAR(a.l,b.l);NEAR(a.r,b.r);
+        assert(got.graph_mask==want.graph_mask && got.graph_mask_high==want.graph_mask_high);
+        assert(got.send_mask==want.send_mask && got.mask==want.mask && got.missing==want.missing);
+        for(int d=0;d<TS_MATRIX_DESTINATIONS;++d){NEAR(got.graph[d].l,want.graph[d].l);NEAR(got.graph[d].r,want.graph[d].r);}
+        for(int sp=0;sp<TS_SOURCE_SPEAKERS;++sp){NEAR(got.speaker[sp],want.speaker[sp]);NEAR(got.matrix_speaker[sp],want.matrix_speaker[sp]);}
+        for(int send=0;send<TS_SOURCE_SENDS;++send){NEAR(got.send[send].l,want.send[send].l);NEAR(got.send[send].r,want.send[send].r);}
+        NEAR(got.reference.l,want.reference.l);NEAR(got.reference.r,want.reference.r);
+        NEAR(got.tape_input.l,want.tape_input.l);NEAR(got.tape_input.r,want.tape_input.r);
+        NEAR(got.monitor.l,want.monitor.l);NEAR(got.monitor.r,want.monitor.r);
+        NEAR(got.fallback.l,want.fallback.l);NEAR(got.fallback.r,want.fallback.r);
+        ts_source_route_set(&fast,routes[(route+1)%4],48000);
+        for(unsigned frame=0;frame<240;++frame) {
+            TsSourceRouteMix mix={0};unsigned before=fast.remaining;assert(before);
+            ts_source_route_frame(&fast,(TsStereoFrame){0,0},&mix);
+            assert(fast.remaining==before-1);
+        }
+        assert(!fast.remaining && !memcmp(fast.matrix,fast.target,sizeof(fast.matrix)));
+    }
+}
+int main(void){matrix();hardware();voices_and_storage();activity();sparse_accumulation();silent_routing();puts("Source routing: coefficients, ramps, output ownership, voices, signal activity, sparse/silent sums and persistence passed");return 0;}
