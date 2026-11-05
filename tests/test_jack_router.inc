@@ -3,6 +3,7 @@
 static TsRouter live_router;
 static TsInsert live_insert;
 static _Atomic unsigned live_frames,live_returned;
+static unsigned live_master_channels;
 static TsStereoFrame live_stage(void *unused,int stage,TsStereoFrame in)
 {
     (void)unused;
@@ -11,11 +12,11 @@ static TsStereoFrame live_stage(void *unused,int stage,TsStereoFrame in)
 }
 static void live_master(void *userdata,Uint8 *bytes,int size)
 {
-    (void)userdata;float *out=(float *)bytes;int frames=size/(8*(int)sizeof(float));
+    (void)userdata;float *out=(float *)bytes;int frames=size/((int)live_master_channels*(int)sizeof(float));
     ts_insert_begin_output_block(&live_insert,(unsigned)frames);
     for(int i=0;i<frames;++i) {
         TsStereoFrame y=ts_router_process(&live_router,(TsStereoFrame){.25f,-.5f},live_stage,NULL);
-        ts_insert_write_output(&live_insert,out+i*8,8,y);
+        ts_insert_write_output(&live_insert,out+i*live_master_channels,live_master_channels,y);
         assert(isfinite(y.l+y.r));
         if(live_router.wet[TS_ROUTER_INSERT]>.999f && fabsf(y.l-.25f)<.01f && fabsf(y.r+.5f)<.01f)
             atomic_fetch_add(&live_returned,1);
@@ -33,7 +34,7 @@ static void live_performance(SDL_AudioDeviceID master,SDL_AudioDeviceID send,SDL
     TsJackClient *clients[]={me->client,se->client,re->client};
     unsigned rate=(unsigned)me->spec.freq,period=me->spec.samples;
     ts_router_init(&live_router);ts_router_prepare(&live_router,rate);
-    ts_insert_init(&live_insert);ts_insert_prepare(&live_insert,rate);live_insert.output_channels=8;
+    ts_insert_init(&live_insert);ts_insert_prepare(&live_insert,rate);live_master_channels=me->spec.channels;live_insert.output_channels=live_master_channels;
     TsInsertControls ports={1,0,0,0};ts_insert_set(&live_insert,&ports);
     ts_insert_io_mode(&live_insert,1,1);
     ts_insert_send_prepare(&live_insert,2,rate,period);ts_insert_capture_prepare_from(&live_insert,2,rate,period,1);

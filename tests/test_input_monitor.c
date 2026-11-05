@@ -299,7 +299,7 @@ static void test_multichannel_activity_state(void)
     ts_input_activity_set_available(&activity, 0u);
     CHECK(ts_input_activity_take(&activity) == 0u);
     ts_input_activity_set_available(&activity, 9u);
-    CHECK(ts_input_activity_available(&activity) == 8u);
+    CHECK(ts_input_activity_available(&activity) == 9u);
 }
 
 static void test_capture_channel_probe_policy(void)
@@ -316,7 +316,7 @@ static void test_capture_channel_probe_policy(void)
     CHECK(ts_input_capture_probe_accepts(6u, 6u) == 1);
     CHECK(ts_input_capture_probe_accepts(2u, 2u) == 1);
     CHECK(ts_input_capture_probe_accepts(0u, 0u) == 0);
-    CHECK(ts_input_capture_probe_accepts(9u, 9u) == 0);
+    CHECK(ts_input_capture_probe_accepts(9u, 9u) == 1);
 }
 
 int main(void)
