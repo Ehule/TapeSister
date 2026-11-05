@@ -264,7 +264,7 @@ static void test_multichannel_activity_state(void)
     CHECK(ts_input_activity_available(&activity) == 0u);
     CHECK(ts_input_activity_detect_frame(frame, 8u) == 0u);
 
-    for (size_t channel = 0u; channel < TS_INPUT_DEVICE_CHANNEL_MAX;
+    for (size_t channel = 0u; channel < 8;
          ++channel) {
         frame[channel] = channel & 1u ? -0.01f : 0.01f;
         mask |= UINT32_C(1) << channel;

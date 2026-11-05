@@ -6,7 +6,7 @@
 
 typedef struct {
     TsStereoFrame graph[TS_MATRIX_DESTINATIONS];
-    uint64_t graph_mask, graph_mask_high;
+    uint64_t graph_mask, graph_mask_high, graph_mask_top;
     float speaker[TS_SOURCE_SPEAKERS];
     TsStereoFrame monitor, fallback;
     TsStereoFrame reference; /* Pre-routing dry recording tap, counted once. */

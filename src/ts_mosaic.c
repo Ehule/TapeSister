@@ -808,8 +808,9 @@ int ts_mosaic_save(const TsMosaic *m,const char *dir,char *error,size_t size)
         snprintf(error,size,"Invalid Mosaic sequence/finish settings");return 0;
     }
     if(m->live_envelope<0 || m->live_envelope>1){snprintf(error,size,"Invalid looper envelope policy");return 0;}
+    int extended=0;for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(m->events[i].id)extended|=ts_source_route_extended(m->events[i].output_route.matrix_gain);
     int shared_audio=ts_audio_assets_writing();
-    int video_format=shared_audio;
+    int video_format=shared_audio || extended;
     for(int i=0;i<TS_MOSAIC_EVENTS;++i){const TsMosaicEvent *e=&m->events[i];if(!e->id || !e->source->video_path[0])continue;
         video_format=1;
         if(e->live || e->video_random_start<0 || e->video_random_start>1 || e->video_transition<0 || e->video_transition>2 ||
@@ -824,7 +825,7 @@ int ts_mosaic_save(const TsMosaic *m,const char *dir,char *error,size_t size)
     live_format|=m->live_capture.source || m->live_capture.continuous || m->live_capture.units || m->live_capture.length!=4 || m->live_capture.quantize;
     int sequence_format=0;for(int i=0;i<TS_MOSAIC_EVENTS;++i)sequence_format|=m->events[i].id && (m->events[i].live_order || m->events[i].finish_fade);
     sequence_format|=video_format;live_format|=sequence_format || m->live_envelope;
-    if(fprintf(f,"TAPESISTER_MOSAIC %d\nSETTINGS %d %.9g %.17g\nSPACING %d\n",shared_audio?19:video_format?18:m->live_envelope?17:sequence_format?16:live_format?15:14,m->repeat,m->gain,m->speed,m->auto_space)<0)goto close_failed;
+    if(fprintf(f,"TAPESISTER_MOSAIC %d\nSETTINGS %d %.9g %.17g\nSPACING %d\n",extended?(shared_audio?21:20):shared_audio?19:video_format?18:m->live_envelope?17:sequence_format?16:live_format?15:14,m->repeat,m->gain,m->speed,m->auto_space)<0)goto close_failed;
     if(live_format && fprintf(f,"LOOPER %d %d %d %d %d\n",m->live_capture.source,m->live_capture.continuous,m->live_capture.units,m->live_capture.length,m->live_capture.quantize)<0)goto close_failed;
     if((m->live_envelope || video_format) && fprintf(f,"ENVELOPE %d\n",m->live_envelope)<0)goto close_failed;
     for(int i=0;i<TS_MOSAIC_VIEWS;++i) {
@@ -873,7 +874,7 @@ int ts_mosaic_save(const TsMosaic *m,const char *dir,char *error,size_t size)
             e->notes[0],e->notes[1],e->notes[2],e->notes[3],e->notes[4],name,e->muted,e->solo,e->pan,e->fade_in,e->fade_out)<0)goto close_failed;
         const TsSourceRoute *r=&e->output_route;
         if(fprintf(f,"ROUTE %d %d %d",r->matrix_enabled,r->pan,r->width)<0)goto close_failed;
-        for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)if(fprintf(f," %d",r->matrix_gain[d])<0)goto close_failed;
+        for(int d=0;d<(extended?TS_MATRIX_DESTINATIONS:TS_MATRIX_PRE_IO_DESTINATIONS);++d)if(fprintf(f," %d",r->matrix_gain[d])<0)goto close_failed;
         if(fputc('\n',f)==EOF)goto close_failed;
         int editable=e->source->eq_dry.data!=NULL;
         if(fprintf(f,"EQ %d %d\n",editable,e->source->eq.enabled)<0)goto close_failed;
@@ -904,7 +905,7 @@ static int mosaic_load_audio(TsMosaic *m,const char *dir,char *error,size_t size
     if(length>=2 && line[length-2]=='\r' && line[length-1]=='\n') {
         line[length-2]='\n';line[length-1]='\0';
     }
-    int version=!strcmp(line,"TAPESISTER_MOSAIC 19\n")?19:!strcmp(line,"TAPESISTER_MOSAIC 18\n")?18:!strcmp(line,"TAPESISTER_MOSAIC 17\n")?17:!strcmp(line,"TAPESISTER_MOSAIC 16\n")?16:!strcmp(line,"TAPESISTER_MOSAIC 15\n")?15:!strcmp(line,"TAPESISTER_MOSAIC 14\n")?14:!strcmp(line,"TAPESISTER_MOSAIC 13\n")?13:!strcmp(line,"TAPESISTER_MOSAIC 12\n")?12:!strcmp(line,"TAPESISTER_MOSAIC 11\n")?11:!strcmp(line,"TAPESISTER_MOSAIC 10\n")?10:!strcmp(line,"TAPESISTER_MOSAIC 9\n")?9:!strcmp(line,"TAPESISTER_MOSAIC 8\n")?8:!strcmp(line,"TAPESISTER_MOSAIC 7\n")?7:!strcmp(line,"TAPESISTER_MOSAIC 6\n")?6:!strcmp(line,"TAPESISTER_MOSAIC 5\n")?5:!strcmp(line,"TAPESISTER_MOSAIC 4\n")?4:!strcmp(line,"TAPESISTER_MOSAIC 1\n")?1:!strcmp(line,"TAPESISTER_MOSAIC 2\n")?2:!strcmp(line,"TAPESISTER_MOSAIC 3\n")?3:0;
+    int version=!strcmp(line,"TAPESISTER_MOSAIC 21\n")?21:!strcmp(line,"TAPESISTER_MOSAIC 20\n")?20:!strcmp(line,"TAPESISTER_MOSAIC 19\n")?19:!strcmp(line,"TAPESISTER_MOSAIC 18\n")?18:!strcmp(line,"TAPESISTER_MOSAIC 17\n")?17:!strcmp(line,"TAPESISTER_MOSAIC 16\n")?16:!strcmp(line,"TAPESISTER_MOSAIC 15\n")?15:!strcmp(line,"TAPESISTER_MOSAIC 14\n")?14:!strcmp(line,"TAPESISTER_MOSAIC 13\n")?13:!strcmp(line,"TAPESISTER_MOSAIC 12\n")?12:!strcmp(line,"TAPESISTER_MOSAIC 11\n")?11:!strcmp(line,"TAPESISTER_MOSAIC 10\n")?10:!strcmp(line,"TAPESISTER_MOSAIC 9\n")?9:!strcmp(line,"TAPESISTER_MOSAIC 8\n")?8:!strcmp(line,"TAPESISTER_MOSAIC 7\n")?7:!strcmp(line,"TAPESISTER_MOSAIC 6\n")?6:!strcmp(line,"TAPESISTER_MOSAIC 5\n")?5:!strcmp(line,"TAPESISTER_MOSAIC 4\n")?4:!strcmp(line,"TAPESISTER_MOSAIC 1\n")?1:!strcmp(line,"TAPESISTER_MOSAIC 2\n")?2:!strcmp(line,"TAPESISTER_MOSAIC 3\n")?3:0;
     if(!version)goto failed;
     char trailing;
     if(!fgets(line,sizeof(line),f))goto failed;
@@ -1032,8 +1033,8 @@ static int mosaic_load_audio(TsMosaic *m,const char *dir,char *error,size_t size
             if(!sources[source] || strcmp(sources[source]->video_path,video_path) || sources[source]->video_pool!=video_pool)goto failed;
         } else if(!sources[source]) {
             TsSample s;ts_sample_init(&s);
-            snprintf(path,sizeof(path),"%s/mosaic-%03d.%s",dir,source,version>=19?"tsa":"wav");
-            if(!(version>=19?ts_audio_assets_load_ref(&s,path,error,size):ts_sample_load_wav(&s,path,error,size))){ts_sample_free(&s);goto failed;}
+            snprintf(path,sizeof(path),"%s/mosaic-%03d.%s",dir,source,(version==19 || version>=21)?"tsa":"wav");
+            if(!((version==19 || version>=21)?ts_audio_assets_load_ref(&s,path,error,size):ts_sample_load_wav(&s,path,error,size))){ts_sample_free(&s);goto failed;}
             sources[source]=ts_mosaic_source(next,&s,error,size);ts_sample_free(&s);
             if(!sources[source])goto failed;
             if(pattern_source){
@@ -1053,7 +1054,7 @@ static int mosaic_load_audio(TsMosaic *m,const char *dir,char *error,size_t size
             int used=0,at=0;
             if(!fgets(line,sizeof(line),f) || sscanf(line,"ROUTE %d %d %d %n",
                 &e.output_route.matrix_enabled,&e.output_route.pan,&e.output_route.width,&at)!=3)goto failed;
-            for(int d=0;d<(version>=9?TS_MATRIX_DESTINATIONS:version>=8?TS_MATRIX_INSTANCE_DESTINATIONS:version>=7?TS_MATRIX_SHARED_DESTINATIONS:TS_MATRIX_LEGACY_DESTINATIONS);++d) {
+            for(int d=0;d<(version>=20?TS_MATRIX_DESTINATIONS:version>=9?TS_MATRIX_PRE_IO_DESTINATIONS:version>=8?TS_MATRIX_INSTANCE_DESTINATIONS:version>=7?TS_MATRIX_SHARED_DESTINATIONS:TS_MATRIX_LEGACY_DESTINATIONS);++d) {
                 if(sscanf(line+at,"%d %n",&e.output_route.matrix_gain[d],&used)!=1)goto failed;
                 at+=used;
             }
@@ -1073,8 +1074,8 @@ static int mosaic_load_audio(TsMosaic *m,const char *dir,char *error,size_t size
                        !isfinite(v->q) || v->q<.3f || v->q>8)goto failed;
                 }
                 if(!sources[source]->eq_dry.data) {
-                    TsSample dry={0};snprintf(path,sizeof(path),"%s/mosaic-%03d-dry.%s",dir,source,version>=19?"tsa":"wav");
-                    if(!(version>=19?ts_audio_assets_load_ref(&dry,path,error,size):ts_sample_load_wav(&dry,path,error,size)))goto failed;
+                    TsSample dry={0};snprintf(path,sizeof(path),"%s/mosaic-%03d-dry.%s",dir,source,(version==19 || version>=21)?"tsa":"wav");
+                    if(!((version==19 || version>=21)?ts_audio_assets_load_ref(&dry,path,error,size):ts_sample_load_wav(&dry,path,error,size)))goto failed;
                     if(dry.frames!=e.source->sample.frames || dry.channels!=e.source->sample.channels || dry.sample_rate!=e.source->sample.sample_rate){ts_sample_free(&dry);goto failed;}
                     sources[source]=ts_mosaic_source_eq(next,&e.source->sample,&dry,&eq,error,size);ts_sample_free(&dry);
                     if(!sources[source])goto failed;

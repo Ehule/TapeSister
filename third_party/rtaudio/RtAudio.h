@@ -294,6 +294,7 @@ class RTAUDIO_DLL_PUBLIC RtAudio
     std::string name;               /*!< Character string device name. */
     unsigned int outputChannels{};  /*!< Maximum output channels supported by device. */
     unsigned int inputChannels{};   /*!< Maximum input channels supported by device. */
+    std::vector<std::string> inputNames, outputNames; /* TapeSister: absolute ASIO channel metadata. */
     unsigned int duplexChannels{};  /*!< Maximum simultaneous input/output channels supported by device. */
     bool isDefaultOutput{false};         /*!< true if this is the default output device. */
     bool isDefaultInput{false};          /*!< true if this is the default input device. */

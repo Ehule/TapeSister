@@ -11,23 +11,23 @@ constexpr unsigned RTAUDIO_FLOAT32 = 16;
 class RtAudio {
 public:
  enum Api { WINDOWS_ASIO };
- struct DeviceInfo { unsigned ID{},outputChannels{},inputChannels{},currentSampleRate{},preferredSampleRate{};std::string name; };
+ struct DeviceInfo { unsigned ID{},outputChannels{},inputChannels{},currentSampleRate{},preferredSampleRate{};std::string name;std::vector<std::string> inputNames,outputNames; };
  struct StreamParameters { unsigned deviceId{},nChannels{},firstChannel{}; };
  struct StreamOptions { std::string streamName; };
  using Callback = int (*)(void *,void *,unsigned,double,RtAudioStreamStatus,void *);
  static RtAudio *instance;
- static unsigned opens,closes,probes;
+ static unsigned opens,closes,probes,maxInputs,maxOutputs;
  static bool failStart;
  bool open{},running{};Callback callback{};void *userdata{};unsigned frames{},channels{},inputChannels{},outputFirst{},inputFirst{};
  RtAudio(Api,RtAudioErrorCallback &&) { instance=this; }
  ~RtAudio() {instance=nullptr;}
  std::vector<unsigned> getDeviceIds() { assert(!open);++probes;return {7,9}; }
- DeviceInfo getDeviceInfo(unsigned id) {DeviceInfo d;d.ID=id;d.outputChannels=d.inputChannels=16;d.currentSampleRate=48000;d.preferredSampleRate=44100;d.name=id==7?"Test MOTU ASIO":"Test Matrix ASIO";return d;}
+ DeviceInfo getDeviceInfo(unsigned id) {DeviceInfo d;d.ID=id;d.outputChannels=maxOutputs;d.inputChannels=maxInputs;d.inputNames.resize(maxInputs);d.outputNames.resize(maxOutputs);if(maxInputs>11){d.inputNames[10]="SPDIF L";d.inputNames[11]="SPDIF R";}d.currentSampleRate=48000;d.preferredSampleRate=44100;d.name=id==7?"Test MOTU ASIO":"Test Matrix ASIO";return d;}
  bool isStreamOpen() {return open;}
  bool isStreamRunning() {return running;}
  unsigned getStreamSampleRate() {return 48000;}
  RtAudioErrorType openStream(StreamParameters *op,StreamParameters *ip,unsigned fmt,unsigned rate,unsigned *n,Callback cb,void *u,StreamOptions *) {
-  assert(!open && op && ip && op->deviceId==ip->deviceId && op->nChannels>0 && op->firstChannel+op->nChannels<=16 && ip->nChannels>0 && ip->firstChannel+ip->nChannels<=16 && rate==48000 && fmt==RTAUDIO_FLOAT32);
+  assert(!open && op && ip && op->deviceId==ip->deviceId && op->nChannels>0 && op->firstChannel+op->nChannels<=maxOutputs && ip->nChannels>0 && ip->firstChannel+ip->nChannels<=maxInputs && rate==48000 && fmt==RTAUDIO_FLOAT32);
   open=true;++opens;*n=frames=128;channels=op->nChannels;inputChannels=ip->nChannels;outputFirst=op->firstChannel;inputFirst=ip->firstChannel;callback=cb;userdata=u;return RTAUDIO_NO_ERROR;
  }
  RtAudioErrorType startStream() { running=!failStart;return running?RTAUDIO_NO_ERROR:RTAUDIO_SYSTEM_ERROR; }

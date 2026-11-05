@@ -29,15 +29,16 @@ TsSourceRoute ts_source_route_resolve(TsSourceRoute tile, TsSourceRoute track)
 static void route_active(TsSourceRouteVoice *v,int target)
 {
     v->mask=0;v->active_count=0;
-    v->graph_mask=v->graph_mask_high=0;v->send_mask=0;
+    v->graph_mask=v->graph_mask_high=v->graph_mask_top=0;v->send_mask=0;
     for(int i=0;i<TS_SOURCE_COEFFICIENTS;++i)
         if(v->matrix[i][0] || v->matrix[i][1] || (target && (v->target[i][0] || v->target[i][1]))) {
-            v->active[v->active_count++]=(unsigned char)i;
+            v->active[v->active_count++]=(uint16_t)i;
             if(i<TS_SOURCE_SPEAKERS)v->mask|=1u<<i;
             else if(i>=TS_SOURCE_GRAPH_OFFSET) {
                 int d=(i-TS_SOURCE_GRAPH_OFFSET)/2;
                 if(d<64)v->graph_mask|=UINT64_C(1)<<d;
-                else v->graph_mask_high|=UINT64_C(1)<<(d-64);
+                else if(d<128)v->graph_mask_high|=UINT64_C(1)<<(d-64);
+                else v->graph_mask_top|=UINT64_C(1)<<(d-128);
             } else if(i>=18)v->send_mask|=1u<<((i-18)/2);
         }
 }
@@ -111,6 +112,7 @@ TsStereoFrame ts_source_route_frame(TsSourceRouteVoice *v, TsStereoFrame in, TsS
         unsigned missing=clean->check_outputs?(v->mask&65535u)&~clean->available:0;
         clean->mask|=v->mask&65535u;clean->missing|=missing;
         clean->graph_mask|=v->graph_mask;clean->graph_mask_high|=v->graph_mask_high;
+        clean->graph_mask_top|=v->graph_mask_top;
         clean->send_mask|=v->send_mask;
         if(v->activity_send<0)v->activity_send=0;
         return main_frame(v,in);
@@ -157,7 +159,8 @@ TsStereoFrame ts_source_route_frame(TsSourceRouteVoice *v, TsStereoFrame in, TsS
             int d=(i-TS_SOURCE_GRAPH_OFFSET)/2;
             if(i&1)clean->graph[d].r+=value;else clean->graph[d].l+=value;
             if(d<64)clean->graph_mask|=UINT64_C(1)<<d;
-            else clean->graph_mask_high|=UINT64_C(1)<<(d-64);
+            else if(d<128)clean->graph_mask_high|=UINT64_C(1)<<(d-64);
+            else clean->graph_mask_top|=UINT64_C(1)<<(d-128);
         } else {
             int bus=(i-18)/2;
             if(i&1)clean->send[bus].r+=value;else clean->send[bus].l+=value;
@@ -189,12 +192,13 @@ static void add_graph(TsSourceRouteMix *to,const TsSourceRouteMix *from,
 }
 void ts_source_route_add(TsSourceRouteMix *to, const TsSourceRouteMix *from, float gain)
 {
-    if(!to || !from || (!from->graph_mask && !from->graph_mask_high && !from->mask && !from->send_mask && !from->reference.l && !from->reference.r &&
+    if(!to || !from || (!from->graph_mask && !from->graph_mask_high && !from->graph_mask_top && !from->mask && !from->send_mask && !from->reference.l && !from->reference.r &&
                        !from->tape_input.l && !from->tape_input.r))return;
     add_graph(to,from,gain,from->graph_mask,0);
-    add_graph(to,from,gain,from->graph_mask_high&
-        ((UINT64_C(1)<<(TS_MATRIX_DESTINATIONS-64))-1),64);
-    to->graph_mask|=from->graph_mask;to->graph_mask_high|=from->graph_mask_high;
+    add_graph(to,from,gain,from->graph_mask_high,64);
+    add_graph(to,from,gain,from->graph_mask_top&
+        ((UINT64_C(1)<<(TS_MATRIX_DESTINATIONS-128))-1),128);
+    to->graph_mask|=from->graph_mask;to->graph_mask_high|=from->graph_mask_high;to->graph_mask_top|=from->graph_mask_top;
     for(int i=0;i<TS_SOURCE_SPEAKERS;++i)if(from->mask&(UINT64_C(1)<<i)) {
         to->speaker[i]+=from->speaker[i]*gain;
         to->matrix_speaker[i]+=from->matrix_speaker[i]*gain;
@@ -226,9 +230,9 @@ TsStereoFrame ts_source_route_take_master(TsSourceRouteMix *mix)
 /* Match Main's residual fade on voice removal and normalization changes. */
 void ts_source_route_handoff(TsSourceRouteHandoff *h,TsSourceRouteMix *mix,int changed,unsigned frames)
 {
-    int previous=h->last.graph_mask || h->last.graph_mask_high || h->last.mask || h->last.send_mask || h->last.reference.l || h->last.reference.r ||
+    int previous=h->last.graph_mask || h->last.graph_mask_high || h->last.graph_mask_top || h->last.mask || h->last.send_mask || h->last.reference.l || h->last.reference.r ||
         h->last.tape_input.l || h->last.tape_input.r;
-    if(!mix->graph_mask && !mix->graph_mask_high && !mix->mask && !mix->send_mask && !mix->reference.l && !mix->reference.r &&
+    if(!mix->graph_mask && !mix->graph_mask_high && !mix->graph_mask_top && !mix->mask && !mix->send_mask && !mix->reference.l && !mix->reference.r &&
        !mix->tape_input.l && !mix->tape_input.r && !previous)return;
     if(changed && frames && previous) {
         ts_source_route_mix_init(&h->residual,mix);
@@ -247,6 +251,6 @@ void ts_source_route_handoff(TsSourceRouteHandoff *h,TsSourceRouteMix *mix,int c
         for(int i=0;i<16;++i)active|=mix->speaker[i]!=0;
         for(int i=0;i<TS_SOURCE_SENDS;++i)active|=mix->send[i].l!=0 || mix->send[i].r!=0;
         for(int i=0;i<TS_MATRIX_DESTINATIONS;++i)active|=mix->graph[i].l!=0 || mix->graph[i].r!=0;
-        if(!active)h->last.graph_mask=h->last.graph_mask_high=h->last.mask=h->last.send_mask=0;
+        if(!active)h->last.graph_mask=h->last.graph_mask_high=h->last.graph_mask_top=h->last.mask=h->last.send_mask=0;
     }
 }

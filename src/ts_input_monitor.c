@@ -2,6 +2,7 @@
 
 #include <math.h>
 #include <string.h>
+#include <stdio.h>
 
 static uint32_t level_to_q(float level)
 {
@@ -17,11 +18,14 @@ static float q_to_level(uint32_t value)
 
 int ts_input_channel_mode_valid(int mode)
 {
-    return mode >= TS_INPUT_CHANNEL_MIX && mode <= TS_INPUT_CHANNEL_STEREO;
+    return mode >= TS_INPUT_CHANNEL_MIX && mode <= TS_INPUT_MODE_MAX;
 }
 
 const char *ts_input_channel_mode_name(int mode)
 {
+    static _Thread_local char name[32];
+    if(mode>=TS_INPUT_PAIR_BASE){int p=mode-TS_INPUT_PAIR_BASE;snprintf(name,sizeof(name),"IN %d/%d",p*2+1,p*2+2);return name;}
+    if(mode>=TS_INPUT_MONO_BASE){snprintf(name,sizeof(name),"IN %d",mode-TS_INPUT_MONO_BASE+1);return name;}
     if (mode == TS_INPUT_CHANNEL_LEFT) return "LEFT";
     if (mode == TS_INPUT_CHANNEL_RIGHT) return "RIGHT";
     if (mode == TS_INPUT_CHANNEL_STEREO) return "STEREO";
@@ -30,7 +34,7 @@ const char *ts_input_channel_mode_name(int mode)
 
 uint8_t ts_input_channel_record_channels(int mode)
 {
-    return mode == TS_INPUT_CHANNEL_STEREO ? 2u : 1u;
+    return (mode == TS_INPUT_CHANNEL_STEREO || mode>=TS_INPUT_PAIR_BASE) ? 2u : 1u;
 }
 
 uint8_t ts_input_capture_probe_request(uint8_t maximum, uint8_t attempt)
@@ -52,9 +56,10 @@ TsStereoFrame ts_input_channel_select(const float *device_frame,
     return ts_input_channel_select_excluding(device_frame, device_channels, mode, 0);
 }
 
-TsStereoFrame ts_input_channel_select_excluding(const float *device_frame,
-    size_t device_channels, int mode, unsigned excluded)
+static TsStereoFrame channel_select(const float *device_frame,
+    size_t device_channels, int mode, unsigned excluded, unsigned pair)
 {
+    if(pair<16)excluded|=3u<<(pair*2u);
     TsStereoFrame result = {0.0f, 0.0f};
     float mono = 0.0f;
     if (device_frame == NULL || device_channels == 0u ||
@@ -63,6 +68,14 @@ TsStereoFrame ts_input_channel_select_excluding(const float *device_frame,
        above eight; retain a defensive bound for direct callers and tests. */
     if (device_channels > TS_INPUT_DEVICE_CHANNEL_MAX)
         device_channels = TS_INPUT_DEVICE_CHANNEL_MAX;
+    if(mode>=TS_INPUT_MONO_BASE) {
+        unsigned first=mode>=TS_INPUT_PAIR_BASE?(unsigned)(mode-TS_INPUT_PAIR_BASE)*2u:(unsigned)(mode-TS_INPUT_MONO_BASE);
+        if(first>=device_channels || first/2==pair || (first<32 && (excluded&(1u<<first))))return result;
+        result.l=isfinite(device_frame[first])?device_frame[first]:0;
+        if(mode<TS_INPUT_PAIR_BASE)return ts_stereo_frame_from_mono(result.l);
+        if(first+1<device_channels && !(first+1<32 && (excluded&(1u<<(first+1)))))result.r=isfinite(device_frame[first+1])?device_frame[first+1]:0;
+        return result;
+    }
     if (mode == TS_INPUT_CHANNEL_STEREO) {
         size_t left_count = 0u;
         size_t right_count = 0u;
@@ -73,7 +86,7 @@ TsStereoFrame ts_input_channel_select_excluding(const float *device_frame,
            side gives deterministic headroom and leaves ordinary stereo at
            unity gain. */
         for (size_t channel = 0u; channel < device_channels; ++channel) {
-            if (excluded & (1u << channel)) continue;
+            if (channel/2==pair || (channel<32 && (excluded & (1u << channel)))) continue;
             float value = isfinite(device_frame[channel]) ?
                           device_frame[channel] : 0.0f;
             if ((channel & 1u) == 0u) {
@@ -91,7 +104,7 @@ TsStereoFrame ts_input_channel_select_excluding(const float *device_frame,
     if (mode == TS_INPUT_CHANNEL_MIX) {
         size_t count = 0;
         for (size_t channel = 0u; channel < device_channels; ++channel) {
-            if (excluded & (1u << channel)) continue;
+            if (channel/2==pair || (channel<32 && (excluded & (1u << channel)))) continue;
             float value = isfinite(device_frame[channel]) ?
                           device_frame[channel] : 0.0f;
             mono += value;
@@ -107,6 +120,11 @@ TsStereoFrame ts_input_channel_select_excluding(const float *device_frame,
     return ts_stereo_frame_from_mono(mono);
 }
 
+TsStereoFrame ts_input_channel_select_excluding(const float *f,size_t n,int mode,unsigned excluded)
+{return channel_select(f,n,mode,excluded,UINT32_MAX);}
+TsStereoFrame ts_input_channel_select_without_pair(const float *f,size_t n,int mode,unsigned pair)
+{return channel_select(f,n,mode,0,pair);}
+
 uint32_t ts_input_activity_detect_frame(const float *device_frame,
                                         size_t device_channels)
 {
@@ -117,7 +135,7 @@ uint32_t ts_input_activity_detect_frame(const float *device_frame,
     for (size_t channel = 0u; channel < device_channels; ++channel) {
         float value = device_frame[channel];
         if (isfinite(value) && fabsf(value) >= TS_INPUT_ACTIVITY_THRESHOLD)
-            mask |= UINT32_C(1) << channel;
+            if(channel<32)mask |= UINT32_C(1) << channel;
     }
     return mask;
 }
@@ -153,7 +171,7 @@ void ts_input_activity_publish(TsInputActivity *activity, uint32_t mask)
     uint32_t valid;
     if (activity == NULL || mask == 0u) return;
     channels = ts_input_activity_available(activity);
-    valid = channels == 0u ? 0u : (UINT32_C(1) << channels) - 1u;
+    valid = channels >=32?UINT32_MAX:channels == 0u ? 0u : (UINT32_C(1) << channels) - 1u;
     mask &= valid;
     if (mask != 0u)
         (void)atomic_fetch_or_explicit(&activity->pending_activity_mask, mask,

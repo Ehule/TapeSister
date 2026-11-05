@@ -1372,7 +1372,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
                 if(ch<0 || ch>=TS_MATRIX_OUTPUTS*2)continue;
                 float value=audio->clean.speaker[sp];
                 if(audio->sister.router.controls.master_mix)value-=audio->clean.matrix_speaker[sp];
-                TsStereoFrame *to=&sister_sources.matrix_graph[TS_MATRIX_NODES+ch/2];
+                TsStereoFrame *to=&sister_sources.matrix_graph[ts_matrix_output_destination(ch/2)];
                 if(ch&1)to->r+=value*gain;else to->l+=value*gain;
             }
             ts_insert_matrix_read(&audio->sister.insert,sister_sources.matrix_input);
@@ -9357,7 +9357,7 @@ static void sync_sister_ext_consumer(SDL_AudioDeviceID *input_device,
     if(audio->sister.matrix.controls.enabled) {
         desired=0;
         for(int p=0;p<TS_MATRIX_INPUTS;++p)for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)
-            desired|=audio->sister.matrix.controls.row[TS_MATRIX_NODES+p].matrix_gain[d]!=0;
+            desired|=audio->sister.matrix.controls.row[ts_matrix_input_row(p)].matrix_gain[d]!=0;
     }
     current = external_input_requested(input, TS_INPUT_CONSUMER_SISTER_EXT);
     if (desired == current) return;
@@ -12066,6 +12066,9 @@ static int canvas_eq_handling;
 #include "main_sdl_source_route.inc"
 #include "main_sdl_router.inc"
 #include "main_sdl_speakers.inc"
+static const char *ts_native_channel_name(int capture,unsigned channel);
+static int ts_native_is_jack(void);
+static unsigned ts_audio_range_offered(const TsConfig *,int);
 #include "main_sdl_matrix.inc"
 #include "main_sdl_character_filter.inc"
 

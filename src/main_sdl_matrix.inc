@@ -9,7 +9,7 @@ typedef struct {
     SDL_Window *window;SDL_Renderer *renderer;SDL_Texture *texture;uint32_t *pixels;
     Uint32 id,presented;int visible,dirty,scroll,column,filter,selected,destination,drag;
     MatrixRow rows[MATRIX_CAPACITY],selection[MATRIX_CAPACITY];int count,selection_count,anchor;
-    TsMatrixLayout *layout,full_layout;int columns[TS_MATRIX_DESTINATIONS],column_count;int layout_focus; /* 1=row label, 2=column header. */
+    TsMatrixLayout *layout,full_layout;int columns[TS_MATRIX_DESTINATIONS],column_count;unsigned char assigned[TS_MATRIX_DESTINATIONS];int layout_focus; /* 1=row label, 2=column header. */
     TsMosaic *mosaic;uint64_t epoch;
     MatrixSnapshot *history[32],*pending,*original,*edited;int history_count,history_cursor,original_active,history_skip;
     TsPalette palette;
@@ -18,7 +18,7 @@ typedef struct {
     TsCompressorControls compressor;int compressor_open;float compressor_gr,compressor_key;
     TsRouterControls legacy;TsSpatialControls array;TsSpeakerSetup speakers;
     int rename;Uint32 rename_blink_started;char name[TS_MATRIX_NAME],status[150];
-    float peaks[TS_MATRIX_ROWS];unsigned inputs,outputs;
+    float peaks[TS_MATRIX_ROWS];unsigned inputs,outputs,input_ports;
     TsAudioChannelRange input_range,output_range;
     float sends[TS_MATRIX_ROWS],receiving[TS_MATRIX_DESTINATIONS];
     float card_source[TS_MOSAIC_EVENTS],card_send[TS_MOSAIC_EVENTS];
@@ -123,9 +123,21 @@ static void mx_rows(TsSamplePages *pages,TsInstrument *bank)
     }
     for(int i=TS_MATRIX_NODES;i<TS_MATRIX_COMPRESSOR;++i) {
         if(f && !(f==3 && i<TS_MATRIX_MOSAIC) && !(f==5 && i==TS_MATRIX_MOSAIC) && !(f==2 && i==TS_MATRIX_TILES))continue;
+        if(i<TS_MATRIX_FM && (unsigned)(i-TS_MATRIX_NODES)*2>=w->input_ports) {
+            int used=w->controls.input_name[i-TS_MATRIX_NODES][0]!=0;
+            for(int d=0;d<TS_MATRIX_DESTINATIONS && !used;++d)used=w->controls.row[i].matrix_gain[d]!=0;
+            if(!used)continue;
+        }
         MatrixRow *r=&w->rows[w->count++];*r=(MatrixRow){.kind=2,.index=i};
         if(i<TS_MATRIX_FM)snprintf(r->name,sizeof(r->name),"IN %d/%d %.12s",(i-TS_MATRIX_NODES)*2+1,(i-TS_MATRIX_NODES)*2+2,w->controls.input_name[i-TS_MATRIX_NODES]);
         else snprintf(r->name,sizeof(r->name),"%s",i==TS_MATRIX_FM?"FM SYNTH":i==TS_MATRIX_MOSAIC?"MOSAIC BUS":i==TS_MATRIX_TILES?"LIVE TILE BUS":"TAPEHEAD LIVE LINK");
+    }
+    for(int p=4;p<TS_MATRIX_INPUTS;++p) {
+        int index=ts_matrix_input_row(p),used=w->controls.input_name[p][0]!=0;
+        for(int d=0;d<TS_MATRIX_DESTINATIONS && !used;++d)used=w->controls.row[index].matrix_gain[d]!=0;
+        if((unsigned)p*2>=w->input_ports && !used)continue;
+        MatrixRow *r=&w->rows[w->count++];*r=(MatrixRow){.kind=2,.index=index};
+        snprintf(r->name,sizeof(r->name),"IN %d/%d %.23s",p*2+1,p*2+2,w->controls.input_name[p]);
     }
     if(!f || f==4)for(int k=0;k<TS_MATRIX_PROCESSORS;++k) {
         int i=ts_matrix_processor(k),slot=ts_matrix_effect_index(i);
@@ -140,6 +152,14 @@ static void mx_rows(TsSamplePages *pages,TsInstrument *bank)
     if((!f || f==5) && w->mosaic)for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(w->mosaic->events[i].id) {
         MatrixRow *r=&w->rows[w->count++];*r=(MatrixRow){.kind=3,.index=i,.tile=w->mosaic->events[i].id};
         snprintf(r->name,sizeof(r->name),"CARD %03d %.12s",i+1,w->mosaic->events[i].name);
+    }
+    memset(w->assigned,0,sizeof(w->assigned));
+    for(int s=0;s<w->count;++s) {
+        MatrixRow row=w->rows[s];const TsSourceRoute *route=NULL;
+        if(row.kind==0)route=&pages->tracker.lanes[row.index].output_route;
+        else if(row.kind==1){TsBankSlot *slot=mx_tile(pages,bank,row.tile);if(slot)route=&slot->output_route;}
+        else if(row.kind==3)route=&w->mosaic->events[row.index].output_route;
+        if(route)for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)w->assigned[d]|=route->matrix_gain[d]!=0;
     }
     mx_columns();mx_layout_rows();
     w->selected=-1;w->anchor=0;
@@ -216,11 +236,14 @@ static int matrix_show(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,
     if(device)SDL_LockAudioDevice(device);
     w->controls=audio->sister.matrix.controls;w->legacy=audio->sister.router.controls;w->array=audio->sister.spatial.controls;w->speakers=audio->speakers;
     w->output_range=audio->output_range;w->input_range=audio->input_range;w->outputs=audio->output_device_channels;
+    w->inputs=atomic_load(&audio->sister.insert.matrix_channels);
     w->compressor=audio->sister.compressor.controls;
     w->activity_ready=0;w->activity_frame=audio->sister.processed_frames;
     memset(w->row_source,0,sizeof(w->row_source));memset(w->row_send,0,sizeof(w->row_send));
     memset(w->receiving,0,sizeof(w->receiving));
     if(device)SDL_UnlockAudioDevice(device);
+    w->input_ports=ts_audio_range_offered(&ui->config,1);
+    w->input_ports=SDL_max(w->input_ports,w->inputs);
     w->layout=&audio->sister.matrix_layout;w->layout_focus=0;
     w->selection_count=0;w->filter=track>=0?1:slot>=0?2:0;w->scroll=0;mx_rows(pages,bank);
     for(int i=0;i<w->count;++i)if((track>=0 && w->rows[i].kind==0 && w->rows[i].index==track) ||
@@ -260,7 +283,7 @@ static void mx_destination(char *name,size_t size,int d,int full)
 {
     const char *shorts[]={"MAIN","SISTER","PRISM","PEDALS","FALLOUT","EQ","LIMITER"};
     if(d==TS_MATRIX_AMBISONICS)snprintf(name,size,"%s",full?"AMBISONICS BUS":"AMBISONIC");
-    else if(d>=TS_MATRIX_SPEAKER_BASE) {
+    else if(d>=TS_MATRIX_SPEAKER_BASE && d<TS_MATRIX_EXTRA_OUTPUT_BASE) {
         int sp=d-TS_MATRIX_SPEAKER_BASE;
         if(full)snprintf(name,size,"SPK %d %s / OUT %d",sp+1,matrix_window.speakers.name[sp],matrix_window.speakers.output[sp]+1);
         else snprintf(name,size,"SPK %d",sp+1);
@@ -273,7 +296,7 @@ static void mx_destination(char *name,size_t size,int d,int full)
     else if(d==TS_MATRIX_COMPRESSOR || d==TS_MATRIX_SIDECHAIN)snprintf(name,size,"%s",full?ts_matrix_node_name(d):d==TS_MATRIX_COMPRESSOR?"COMP IN":"COMP SC");
     else if(d<TS_MATRIX_NODES)snprintf(name,size,"%s",full?ts_matrix_node_name(d):shorts[d]);
     else {
-        int p=d-TS_MATRIX_NODES;MatrixWindow *w=&matrix_window;
+        int p=ts_matrix_output_pair(d);MatrixWindow *w=&matrix_window;
         int left=ts_audio_range_contains(w->output_range,p*2,w->outputs),right=ts_audio_range_contains(w->output_range,p*2+1,w->outputs);
         if(left!=right)snprintf(name,size,full?"OUT %d %s":"OUT%d",p*2+(left?1:2),w->controls.output_name[p]);
         else snprintf(name,size,full?"OUT %d/%d %s":"OUT%d/%d",p*2+1,p*2+2,w->controls.output_name[p]);
@@ -285,9 +308,9 @@ static void mx_commit_controls(SDL_AudioDeviceID,AudioState *,TsUiState *);
 static int mx_destination_available(int d)
 {
     MatrixWindow *w=&matrix_window;
-    if(d>=TS_MATRIX_SPEAKER_BASE)return ts_speakers_enabled_channel(&w->speakers,d-TS_MATRIX_SPEAKER_BASE,w->outputs,w->output_range)>=0;
+    if(d>=TS_MATRIX_SPEAKER_BASE && d<TS_MATRIX_EXTRA_OUTPUT_BASE)return ts_speakers_enabled_channel(&w->speakers,d-TS_MATRIX_SPEAKER_BASE,w->outputs,w->output_range)>=0;
     if(!ts_matrix_is_output(d))return 1;
-    unsigned ch=(unsigned)(d-TS_MATRIX_NODES)*2;
+    unsigned ch=(unsigned)ts_matrix_output_pair(d)*2;
     return ts_audio_range_contains(w->output_range,ch,w->outputs) || ts_audio_range_contains(w->output_range,ch+1,w->outputs);
 }
 static void mx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
@@ -315,14 +338,14 @@ static void mx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
         mx_rect(x,128,MATRIX_CW-2,44,d==w->destination?ts_theme_color(&matrix_window.palette,TS_THEME_ROUTER,TS_COLOR_SELECTION,0xff4a4532u):MX_PANEL);
         mx_destination(label,sizeof(label),d,0);
         mx_text(x+5,133,label,d==w->destination?MX_YELLOW:MX_TEXT,strlen(label)>7?1:2);
-        const char *detail=d==TS_MATRIX_AMBISONICS?"SPATIAL BUS":d>=TS_MATRIX_SPEAKER_BASE?"MONO SPEAKER":d>=TS_MATRIX_EFFECT_SC_BASE?"DETECTOR ONLY":d>=TS_MATRIX_EFFECT_BASE?"INSTANCE IN":d==TS_MATRIX_COMPRESSOR?"AUDIO IN":d==TS_MATRIX_SIDECHAIN?"DETECTOR ONLY":d<TS_MATRIX_NODES?(d==0?"SUM":d==1?"TAPE IN":d<=4?"FX IN":"IN"):w->controls.output_name[d-TS_MATRIX_NODES];
-        if(d>=TS_MATRIX_SPEAKER_BASE) {
+        const char *detail=ts_matrix_is_output(d)?w->controls.output_name[ts_matrix_output_pair(d)]:d==TS_MATRIX_AMBISONICS?"SPATIAL BUS":d>=TS_MATRIX_SPEAKER_BASE?"MONO SPEAKER":d>=TS_MATRIX_EFFECT_SC_BASE?"DETECTOR ONLY":d>=TS_MATRIX_EFFECT_BASE?"INSTANCE IN":d==TS_MATRIX_COMPRESSOR?"AUDIO IN":d==TS_MATRIX_SIDECHAIN?"DETECTOR ONLY":d<TS_MATRIX_NODES?(d==0?"SUM":d==1?"TAPE IN":d<=4?"FX IN":"IN"):"";
+        if(d>=TS_MATRIX_SPEAKER_BASE && d<TS_MATRIX_EXTRA_OUTPUT_BASE) {
             int sp=d-TS_MATRIX_SPEAKER_BASE;
             snprintf(label,sizeof(label),"%.10s%s",w->speakers.name[sp],ts_speakers_enabled_channel(&w->speakers,sp,w->outputs,w->output_range)<0?" N/A":"");detail=label;
         }
         else snprintf(label,sizeof(label),"%.14s",detail);
         mx_text(x+5,151,label,MX_DIM,1);
-        if(ts_matrix_is_output(d) && (unsigned)(d-TS_MATRIX_NODES)*2>=w->outputs)mx_text(x+68,153,"N/A",MX_YELLOW,1);
+        if(ts_matrix_is_output(d) && !mx_destination_available(d))mx_text(x+68,153,"N/A",MX_YELLOW,1);
         mx_signal(x+5,165,MATRIX_CW-12,3,w->receiving[d],MX_AMBER);
         if(w->layout_focus==2 && d==w->destination)mx_focus_rect(x,128,MATRIX_CW-2,44);
     }
@@ -337,8 +360,8 @@ static void mx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
         if((row.kind==2 || row.kind==4)) {
             int off=row.index>=TS_MATRIX_SISTER && row.index<=TS_MATRIX_FALLOUT && !(w->processors&(1u<<row.index));
             if(off)mx_text(225,y+19,"OFF",ts_theme_color(&w->palette,TS_THEME_ROUTER,TS_COLOR_MUTED,MX_YELLOW),1);
-            if(row.index>=TS_MATRIX_NODES && row.index<TS_MATRIX_FM) {
-                unsigned ch=(unsigned)(row.index-TS_MATRIX_NODES)*2;
+            if(ts_matrix_input_pair(row.index)>=0) {
+                unsigned ch=(unsigned)ts_matrix_input_pair(row.index)*2;
                 if(!ts_audio_range_contains(w->input_range,ch,w->inputs) && !ts_audio_range_contains(w->input_range,ch+1,w->inputs))
                     mx_text(225,y+19,"N/A",MX_YELLOW,1);
             }
@@ -402,6 +425,17 @@ static void mx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
             mx_text(32,769,"EARLY CLIP IS BEFORE EFFECTS. OFF PRESERVES FLOAT HEADROOM. FINAL OUTPUT SAFETY STAYS ACTIVE.",MX_DIM,1);
         else mx_text(32,769,"LEVEL/PAN: DRAG OR WHEEL | SHIFT: FINE | RIGHT-CLICK: 0 dB / CENTER | CELL RIGHT-CLICK: SELECT",MX_DIM,1);
         mx_button(1070,762,170,r.width==-100?"MONO":"STEREO",r.width==-100);
+    }
+    if(w->selected>=0 && w->selected<w->count && !w->effect_open && !w->compressor_open) {
+        MatrixRow row=w->rows[w->selected];int capture=(row.kind==2 && ts_matrix_input_pair(row.index)>=0);
+        int pair=capture?ts_matrix_input_pair(row.index):ts_matrix_output_pair(w->destination);
+        if(pair>=0) {
+            const char *a=ts_native_channel_name(capture,pair*2),*b=ts_native_channel_name(capture,pair*2+1);
+            snprintf(label,sizeof(label),"%s %s %d: %.32s / %d: %.32s | %.23s%s",
+                ts_native_is_jack()?"JACK APP":capture?"DRIVER":"SOFTWARE",capture?"IN":"OUT",pair*2+1,a&&*a?a:"NUMBERED CHANNEL",pair*2+2,b&&*b?b:"NUMBERED CHANNEL",
+                capture?w->controls.input_name[pair]:w->controls.output_name[pair],ts_native_is_jack()?" | PATCHBAY REQUIRED":"");
+            mx_text(24,789,label,MX_DIM,1);
+        }
     }
     if(w->rename>=0) {
         mx_rect(252,730,792,51,ts_theme_color(&matrix_window.palette,TS_THEME_ROUTER,TS_COLOR_CONTROL,0xff33443du));snprintf(label,sizeof(label),"NAME: %.23s",w->name);mx_text(266,738,label,MX_YELLOW,2);
@@ -598,11 +632,12 @@ static void mx_capture_activity(SDL_AudioDeviceID device,AudioState *audio,TsSam
     int fresh=w->activity_ready && audio->sister.processed_frames!=w->activity_frame;
     w->activity_frame=audio->sister.processed_frames;w->activity_ready=1;
     memcpy(destinations,audio->sister.matrix.input_peak,sizeof(destinations));
+    w->inputs=atomic_load(&audio->sister.insert.matrix_channels);
     w->compressor=audio->sister.compressor.controls;w->compressor_gr=audio->sister.compressor.reduction_db;
     w->compressor_key=audio->sister.compressor.key_peak;
     int effect=mx_effect_slot();w->effect_gr=ts_matrix_effects_reduction(&audio->sister.matrix_effects,effect);
     w->effect_progress=ts_matrix_effects_progress(&audio->sister.matrix_effects,effect);
-    memcpy(destinations+TS_MATRIX_NODES,audio->sister.matrix.hardware_peak,sizeof(audio->sister.matrix.hardware_peak));
+    for(int p=0;p<TS_MATRIX_OUTPUTS;++p)destinations[ts_matrix_output_destination(p)]=audio->sister.matrix.hardware_peak[p];
     memset(audio->sister.matrix.hardware_peak,0,sizeof(audio->sister.matrix.hardware_peak));
     for(int sp=0;sp<16;++sp)destinations[TS_MATRIX_SPEAKER_BASE+sp]=audio->speaker_peak[sp];
     for(int i=0;i<TS_MATRIX_ROWS;++i) {
@@ -776,7 +811,7 @@ static int matrix_event_inner(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID de
     }
     if(click && y>=128 && y<MATRIX_Y && x>=MATRIX_X && x<MATRIX_X+MATRIX_COLS*MATRIX_CW) {
         int d=mx_column((x-MATRIX_X)/MATRIX_CW+w->column);
-        if(d>=0){w->layout_focus=2;w->destination=d;w->status[0]=0;if(left && (SDL_GetModState()&KMOD_CTRL) && w->selection_count>1)mx_toggle(device,audio,ui,pages,bank);if(middle && ts_matrix_is_output(d))mx_name(TS_MATRIX_INPUTS+d-TS_MATRIX_NODES);}return 1;
+        if(d>=0){w->layout_focus=2;w->destination=d;w->status[0]=0;if(left && (SDL_GetModState()&KMOD_CTRL) && w->selection_count>1)mx_toggle(device,audio,ui,pages,bank);if(middle && ts_matrix_is_output(d))mx_name(TS_MATRIX_INPUTS+ts_matrix_output_pair(d));}return 1;
     }
     int at=(y-MATRIX_Y)/MATRIX_RH+w->scroll;
     if(y>=MATRIX_Y && y<MATRIX_Y+MATRIX_RH*MATRIX_VISIBLE && x>=20 && x<MATRIX_X+MATRIX_COLS*MATRIX_CW) {
@@ -793,7 +828,7 @@ static int matrix_event_inner(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID de
             w->selected=at;w->status[0]=0;MatrixRow row=w->rows[at];
             if(x<MATRIX_X) {w->layout_focus=1;
                 if(left){w->effect_menu=0;w->effect_open=row.kind==4?(uint32_t)row.tile:0;if(row.kind==4)w->compressor_open=0;}
-                if(left && (row.kind==2 || row.kind==4) && row.index==TS_MATRIX_COMPRESSOR){w->compressor_open=1;mx_reveal_column(TS_MATRIX_SIDECHAIN);}if(middle && (row.kind==2 || row.kind==4) && row.index>=TS_MATRIX_NODES && row.index<TS_MATRIX_FM)mx_name(row.index-TS_MATRIX_NODES);}
+                if(left && (row.kind==2 || row.kind==4) && row.index==TS_MATRIX_COMPRESSOR){w->compressor_open=1;mx_reveal_column(TS_MATRIX_SIDECHAIN);}if(middle && (row.kind==2 || row.kind==4) && ts_matrix_input_pair(row.index)>=0)mx_name(ts_matrix_input_pair(row.index));}
             else {int d=mx_column((x-MATRIX_X)/MATRIX_CW+w->column);if(d>=0){w->destination=d;TsSourceRoute r=mx_display_route(mx_route(row,pages,bank));if(left)mx_toggle(device,audio,ui,pages,bank);}}
         }return 1;
     }
@@ -841,8 +876,8 @@ static int matrix_event_inner(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID de
         if(row.kind==3 || row.kind==1)mx_return_bus(device,audio,ui,pages,bank,row.kind);
         else if(mx_legacy_direct(raw)){mx_commit_route(device,audio,ui,pages,bank,(TsSourceRoute){0});return 1;}
         else if(row.kind==0) {if(raw.mode==TS_SOURCE_INHERIT)raw=(TsSourceRoute){0};else raw.mode=TS_SOURCE_INHERIT;mx_commit_route(device,audio,ui,pages,bank,raw);}
-        else if((row.kind==2 || row.kind==4) && row.index>=TS_MATRIX_NODES && row.index<TS_MATRIX_FM)mx_name(row.index-TS_MATRIX_NODES);
-        else if(ts_matrix_is_output(w->destination))mx_name(TS_MATRIX_INPUTS+w->destination-TS_MATRIX_NODES);
+        else if((row.kind==2 || row.kind==4) && ts_matrix_input_pair(row.index)>=0)mx_name(ts_matrix_input_pair(row.index));
+        else if(ts_matrix_is_output(w->destination))mx_name(TS_MATRIX_INPUTS+ts_matrix_output_pair(w->destination));
         else snprintf(w->status,sizeof(w->status),"SELECT AN INPUT ROW OR OUTPUT COLUMN TO NAME ITS HARDWARE.");return 1;
     }
     if(left && x>=1070 && y>=762 && y<790 && raw.mode!=TS_SOURCE_INHERIT && !mx_legacy_direct(raw) && w->controls.enabled) {
@@ -887,6 +922,8 @@ static int matrix_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,A
     MatrixWindow *w=&matrix_window;
     if(w->mosaic!=ui->mosaic || (ui->mosaic && w->epoch!=ui->mosaic->epoch))matrix_history_clear();
     w->mosaic=ui->mosaic;w->epoch=ui->mosaic?ui->mosaic->epoch:0;
+    w->input_ports=ts_audio_range_offered(&ui->config,1);
+    w->input_ports=SDL_max(w->input_ports,w->inputs);
     w->layout=&audio->sister.matrix_layout;
     int own=w->visible && event_window_id(e)==w->id;
     int edit=own && (e->type==SDL_MOUSEBUTTONDOWN || e->type==SDL_MOUSEWHEEL ||

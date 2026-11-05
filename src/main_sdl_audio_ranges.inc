@@ -5,7 +5,11 @@ static unsigned ts_audio_range_offered(const TsConfig *config,int capture)
     const char *name=capture?config->record_input_device:config->audio_output_device;
     if(config->audio_backend==TS_AUDIO_BACKEND_JACK) {
         if(strstr(name,"Insert"))return 2;
-        return capture?8:16;
+#if defined(__linux__)
+        ts_jack_discover();return ts_jack_channels[capture!=0];
+#else
+        return 0;
+#endif
     }
     SDL_AudioSpec spec;
 #if defined(TAPESISTER_HAS_ASIO)
@@ -52,7 +56,7 @@ static void ts_audio_range_render(TsFramebuffer *fb,const TsConfig *config,int c
         } else snprintf(label,sizeof(label),"%s %d",last?"LAST":"FIRST",last?range.last:range.first);
         cfg_text(fb,x+21,y+5,label,color);
     }
-    if(offered && !ts_audio_range_fits(range,offered))snprintf(label,sizeof(label),"DEVICE HAS %u",offered);
+    if(config->audio_backend!=TS_AUDIO_BACKEND_JACK && offered && !ts_audio_range_fits(range,offered))snprintf(label,sizeof(label),"DEVICE HAS %u",offered);
     else if(offered || range.last)snprintf(label,sizeof(label),"%d-%u ENABLED",range.first,range.last?(unsigned)range.last:offered);
     else snprintf(label,sizeof(label),"SAVE TO APPLY");
     cfg_text(fb,455,y+5,label,color);

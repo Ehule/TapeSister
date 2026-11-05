@@ -1,6 +1,10 @@
 #ifndef TAPESISTER_AUDIO_CHANNELS_H
 #define TAPESISTER_AUDIO_CHANNELS_H
 
+/* SDL endpoint channel counts use an 8-bit field. This is an API capacity,
+   never a device layout; active capture and playback counts are independent. */
+enum { TS_AUDIO_CHANNEL_CAPACITY=255, TS_AUDIO_PAIR_CAPACITY=128 };
+
 /* One-based physical channel numbers. Last == 0 follows the device (ALL).
    The callback stride keeps absolute channel numbers; ranges never renumber
    saved routes. Zero-initialized runtime views also mean all channels. */

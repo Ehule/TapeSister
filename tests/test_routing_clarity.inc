@@ -34,7 +34,7 @@ static void routing_clarity(const char *directory)
     size_t prefix=8+31+TS_TRACKER_ALIASES*8+pages.tracker.order_count*4;
     size_t lane_size=sizeof(pages.tracker.lanes[0].name)+24,read=prefix,write=prefix;
     for(int lane=0;lane<TS_TRACKER_LANES;++lane) {
-        memmove(legacy_bytes+write,legacy_bytes+read,lane_size);write+=lane_size;read+=lane_size+1+2*TS_MATRIX_DESTINATIONS;
+        memmove(legacy_bytes+write,legacy_bytes+read,lane_size);write+=lane_size;read+=lane_size+1+2*TS_MATRIX_PRE_IO_DESTINATIONS;
     }
     memmove(legacy_bytes+write,legacy_bytes+read,(size_t)legacy_size-read);write+=(size_t)legacy_size-read;
     legacy_bytes[6]=5;legacy=fopen("clarity-score.tst","wb");assert(legacy);

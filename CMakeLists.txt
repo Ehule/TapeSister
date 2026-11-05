@@ -1051,3 +1051,7 @@ if(TAPESISTER_BUILD_SDL)
  add_test(NAME tapesister_character_filter_controller_tests COMMAND tapesister_character_filter_controller_tests)
  set_tests_properties(tapesister_character_filter_controller_tests PROPERTIES TIMEOUT 120)
 endif()
+
+add_executable(tapesister_interface_io_tests tests/test_interface_io.c)
+target_link_libraries(tapesister_interface_io_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_interface_io_tests COMMAND tapesister_interface_io_tests)

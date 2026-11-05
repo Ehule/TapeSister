@@ -122,6 +122,14 @@ int ts_asio_count(int capture)
 }
 const char *ts_asio_name(int index, int capture)
 { const auto *d = deviceAt(index, capture); return d ? d->name.c_str() : nullptr; }
+const char *ts_asio_channel_name(int capture,unsigned channel)
+{
+    for(const auto &d:devices)if(d.name==active) {
+        const auto &names=capture?d.inputNames:d.outputNames;
+        return channel<names.size()?names[channel].c_str():nullptr;
+    }
+    return nullptr;
+}
 int ts_asio_spec(int index, int capture, SDL_AudioSpec *spec)
 {
     const auto *d = deviceAt(index, capture);
@@ -160,6 +168,7 @@ SDL_AudioDeviceID ts_asio_open(const char *name, int capture,
             if (!(capture ? d.inputChannels : d.outputChannels)) continue;
             if (requested.empty() || requested == d.name) { choice = &d; break; }
         }
+        if(choice && (choice->inputChannels>255 || choice->outputChannels>255)) {SDL_SetError("ASIO layout exceeds SDL endpoint capacity (255 channels per direction)");return 0;}
         if (!choice) { SDL_SetError("ASIO driver unavailable; choose an installed 64-bit driver in CFG"); return 0; }
         if (driver->isStreamOpen() && choice->name != active) {
             SDL_SetError("ASIO uses one driver for main I/O and Insert; set INPUT to SYSTEM DEFAULT"); return 0;

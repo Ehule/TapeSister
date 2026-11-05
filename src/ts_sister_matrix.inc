@@ -107,6 +107,8 @@ static TsStereoFrame runtime_matrix_node(void *context,int node,TsStereoFrame in
 static TsSisterRuntimeFrame runtime_matrix_frame(TsSisterRuntime *r,
     const TsSisterSourceFrames *s,TsStereoFrame tiles,TsSisterRuntimeFrame frame)
 {
+    unsigned channels=r->insert.duplex?r->insert.duplex_channels:atomic_load_explicit(&r->insert.matrix_channels,memory_order_relaxed);
+    r->matrix.input_pairs=(channels+1)/2;
     TsSourceRouteMix sums={0};
     memcpy(sums.graph,s->matrix_graph,sizeof(sums.graph));
     ts_source_route_add(&sums,&r->clean_output,s->matrix_program_gain);
@@ -117,7 +119,7 @@ static TsSisterRuntimeFrame runtime_matrix_frame(TsSisterRuntime *r,
         sums.graph[TS_MATRIX_FALLOUT]=frame_add(sums.graph[TS_MATRIX_FALLOUT],r->send_input[TS_SEND_FALLOUT]);
     }
     TsStereoFrame live[TS_MATRIX_ROWS-TS_MATRIX_NODES]={0};
-    for(int i=0;i<TS_MATRIX_INPUTS;++i)live[i]=s->matrix_input[i];
+    for(int i=0;i<TS_MATRIX_INPUTS;++i)live[ts_matrix_input_row(i)-TS_MATRIX_NODES]=s->matrix_input[i];
     live[TS_MATRIX_FM-TS_MATRIX_NODES]=s->fm;live[TS_MATRIX_LINK-TS_MATRIX_NODES]=s->tapehead;
     live[TS_MATRIX_MOSAIC-TS_MATRIX_NODES]=s->mosaic;
     live[TS_MATRIX_TILES-TS_MATRIX_NODES]=s->live_tiles;

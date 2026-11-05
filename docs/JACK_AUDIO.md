@@ -13,6 +13,9 @@ Saved names remain explicit; failed setup changes attempt rollback and stay unsa
 CFG **SCAN** refreshes input/output lists without interrupting active streams.
 Legacy Insert has its own RESCAN/APPLY PORTS controls.
 
+See [complete I/O and the 48 kHz digital reverb example](EXTERNAL_DIGITAL_REVERB.md)
+for channel identity, aliases, wet/dry routing and hardware clock checks.
+
 ## JACK routing
 
 JACK presents these application endpoints. Connect hardware and other programs
@@ -21,10 +24,16 @@ corresponding stream opens. TapeSister does not connect them automatically.
 
 | Selector | Endpoint | JACK port names | Purpose |
 | --- | --- | --- | --- |
-| CFG output | TapeSister Master | `master_1` … `master_16` | Matrix OUT pairs; legacy Master on 1/2 plus spare sends/spatial outputs |
-| CFG input | TapeSister Input | `input_1` … `input_8` | Matrix IN pairs; legacy EXT/shared Insert return |
+| CFG output | TapeSister Master | `master_1` … `master_N` | Matrix OUT pairs; legacy Master on 1/2 plus spare sends/spatial outputs |
+| CFG input | TapeSister Input | `input_1` … `input_N` | Matrix IN pairs; legacy EXT/shared Insert return |
 | Legacy Insert SEND | TapeSister Insert Send | `send_1`, `send_2` | Dedicated stereo output to the external processor |
 | Legacy Insert RETURN | TapeSister Insert Return | `return_1`, `return_2` | Dedicated stereo input from the external processor |
+
+ALL discovers JACK physical capture/playback port counts independently on setup
+(with a two-port fallback when none are discoverable). An explicit CFG LAST may
+provision more application ports for a software graph. FIRST/LAST keep absolute
+**application** port names; they never select hardware ports. Newly registered
+ports remain unconnected until patched.
 
 ### Matrix path
 
@@ -50,7 +59,7 @@ active matrix. For a legacy software Insert:
 
 Ordinary input stays independent when using the dedicated return. To monitor or
 record EXT, select TapeSister Input and connect the required physical/software
-sources to its input ports. Those eight ports are application channels, not a
+sources to its input ports. Those ports are application channels, not a
 claim about the physical interface's channel count. Separate application instances
 may receive JACK client-name suffixes; use the actual patchbay names.
 
@@ -74,8 +83,8 @@ Insert now attempts explicit devices even when SDL cannot report their channel
 layout before opening. General capture accepts the first valid negotiated layout
 instead of repeatedly rejecting it for differing from the request. Native layouts
 larger than eight channels are accepted and traversed at their actual stride;
-EXT and legacy Insert selectors address the first eight channels; matrix outputs
-address up to sixteen. Unassigned outputs are silent. General mono output folds Master to mono; Insert endpoints
+record/monitor selectors can address individual channels or stereo pairs, and legacy
+Insert selectors reach all complete stereo pairs. F9 exposes the full layout. Unassigned outputs are silent. General mono output folds Master to mono; Insert endpoints
 still require a stereo pair. Missing named endpoints never substitute another
 physical device.
 

@@ -185,7 +185,7 @@ static void mosaic_live_compact(TsFramebuffer *fb,const TsUiState *ui,
     rect(fb,x+2,y+2,TS_MOSAIC_LIVE_W-4,TS_MOSAIC_LIVE_H-4,panel);
     char line[80];snprintf(line,sizeof(line),"LOOPER / %d ON",ui->mosaic_live_loops);text(fb,x+8,y+9,line,ink,1);
     mosaic_button(fb,x+144,y+4,14,"X",0,1);
-    if(!m->live_capture.source)snprintf(line,sizeof(line),"EXT %s / MON %s",ui->config.record_input_channel==TS_INPUT_CHANNEL_STEREO?"L+R":ui->config.record_input_channel==TS_INPUT_CHANNEL_RIGHT?"R":"L",ui->monitor_enabled?"ON":"OFF");
+    if(!m->live_capture.source)snprintf(line,sizeof(line),"EXT %s / MON %s",ts_input_channel_mode_name(ui->config.record_input_channel),ui->monitor_enabled?"ON":"OFF");
     else snprintf(line,sizeof(line),"SRC: %s",m->live_capture.source==1?"DRY KEYS":"OUTPUT + LOOPS");
     text(fb,x+8,y+25,line,m->live_capture.source==2?accent:dim,1);
     double sx,sy;ts_ui_mosaic_live_circle_scale(ui,&sx,&sy);
