@@ -218,7 +218,7 @@ void ts_matrix_process(TsRoutingMatrix *m,TsSourceRouteMix *sums,
         TsStereoFrame old=m->history[s][m->position];
         const TsSourceRoute *r=&m->controls.row[s];
         float l=r->pan>0?1-r->pan*.01f:1,rh=r->pan<0?1+r->pan*.01f:1;
-        for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)if(m->controls.delayed[s]&ts_matrix_feedback_bit(d)) {
+        for(int d=0;d<TS_MATRIX_INSTANCE_DESTINATIONS;++d)if(m->controls.delayed[s]&(UINT64_C(1)<<d)) {
             float g=r->matrix_gain[d]*.001f;
             sums->graph[d].l+=old.l*g*l;sums->graph[d].r+=old.r*g*rh;
             float activity=fmaxf(fabsf(old.l*g*l),fabsf(old.r*g*rh));

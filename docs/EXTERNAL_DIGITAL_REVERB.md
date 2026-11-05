@@ -108,7 +108,8 @@ checked 2026-11-04. It is a setup procedure, not a hardware test result.
    independent internal clocks is not synchronization.
 5. On the t630 select the S2 Digi as SunVox's audio input/output device, enable
    stereo live input, connect Input → reverb processing → Output, and set the
-   effect to **100% wet**. Avoid an additional dry Input → Output connection.
+   effect to **100% wet** (Reverb: Dry = 0, Wet = the desired level). Avoid an
+   additional dry Input → Output connection.
    Start at a conservative buffer such as 512 frames and verify both channels.
    JACK on the t630 can explicitly patch S2 capture → SunVox input and SunVox
    output → S2 playback if needed. Use one duplex S2 device, not unrelated USB
@@ -175,6 +176,7 @@ setting alone.
 - [Focusrite digital modes](https://support.focusrite.com/hc/en-gb/articles/23955710708242-Digital-I-O-Modes)
 - [Focusrite routing and clock source](https://userguides.focusrite.com/hc/en-gb/articles/21616151554578-Using-Focusrite-Control-2-with-your-Scarlett-18i20-4th-Gen)
 - [Focusrite hardware/headphone routing](https://userguides.focusrite.com/hc/en-gb/articles/21616151329810-Scarlett-18i20-4th-Gen-hardware-features)
+- [SunVox manual: Input, Reverb and audio preferences](https://www.warmplace.ru/soft/sunvox/manual.php)
 - [Hifime S2 Digi simultaneous optical I/O](https://hifimediy.com/product/s2-digi/)
 
 ## Saved identity and format notes

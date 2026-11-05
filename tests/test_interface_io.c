@@ -6,6 +6,7 @@
 #include "tapesister/insert.h"
 #include "tapesister/sister_tracker.h"
 #include "tapesister/mosaic.h"
+#include "tapesister/audio_assets.h"
 #include <sys/stat.h>
 #ifdef _WIN32
 #include <direct.h>
@@ -64,6 +65,7 @@ static void channel_layout(void)
     /* Disabled range retains absolute positions and never substitutes 1/2. */
     frame[0]=.9f;frame[1]=-.9f;ts_audio_range_mask((TsAudioChannelRange){11,12},frame,1,26);
     render(m,io,frame,26);near(m->output[0].l,.1f);near(m->output[13].l,0);
+    frame[0]=.73f;frame[1]=-.61f; /* A missing return must not substitute these live inputs. */
     render(m,io,frame,2);near(m->output[0].l,0);near(m->output[0].r,0);
     selected=ts_input_channel_select(frame,2,TS_INPUT_PAIR_BASE+5);near(selected.l,0);near(selected.r,0);
     /* Last representable odd channel and third destination mask word. */
@@ -114,6 +116,11 @@ static void persistence(void)
     assert(ts_instrument_validate_recipe("io-extended.tsr",error,sizeof(error)));
     assert(ts_instrument_load_recipe(&loaded,"io-extended.tsr",error,sizeof(error)));
     assert(loaded.bank[0].output_route.matrix_gain[destination]==725);remove("io-extended.tsr");
+    MKDIR("io-shared");MKDIR("io-shared/samples");MKDIR("io-shared/samples/audio");TsAudioAssets *assets=ts_audio_assets_begin("io-shared",1);assert(assets);
+    assert(ts_instrument_save_recipe(&bank,"io-shared/bank.tsr",error,sizeof(error)));ts_audio_assets_end(assets);
+    assert(ts_instrument_validate_recipe("io-shared/bank.tsr",error,sizeof(error)));
+    assert(ts_instrument_load_recipe(&loaded,"io-shared/bank.tsr",error,sizeof(error)));
+    assert(loaded.bank[0].output_route.matrix_gain[destination]==725);remove("io-shared/bank.tsr");
     ts_instrument_free(&bank);ts_instrument_free(&loaded);
     static TsSisterTracker t,copy;ts_sister_tracker_init(&t);ts_sister_tracker_init(&copy);
     t.lanes[0].output_route=(TsSourceRoute){.matrix_enabled=1};t.lanes[0].output_route.matrix_gain[destination]=650;
@@ -128,6 +135,12 @@ static void persistence(void)
     MKDIR("io-mosaic");assert(ts_mosaic_save(m,"io-mosaic",error,sizeof(error)));
     if(!ts_mosaic_load(other,"io-mosaic",error,sizeof(error))){fprintf(stderr,"Mosaic: %s\n",error);assert(0);}
     assert(other->events[0].output_route.matrix_gain[destination]==800);
+    MKDIR("io-mosaic-shared");MKDIR("io-mosaic-shared/samples");MKDIR("io-mosaic-shared/samples/audio");remove("io-mosaic-shared/mosaic-000.tsa");
+    assets=ts_audio_assets_begin("io-mosaic-shared",1);assert(assets);
+    assert(ts_mosaic_save(m,"io-mosaic-shared",error,sizeof(error)));ts_audio_assets_end(assets);
+    assert(ts_mosaic_load(other,"io-mosaic-shared",error,sizeof(error)));
+    assert(other->events[0].output_route.matrix_gain[destination]==800);
+    remove("io-mosaic-shared/mosaic.tsm");remove("io-mosaic-shared/mosaic-000.tsa");
     ts_mosaic_free(m);ts_mosaic_free(other);remove("io-mosaic/mosaic.tsm");remove("io-mosaic/mosaic-000.wav");
 }
 int main(void){channel_layout();legacy_insert();persistence();puts("Complete interface I/O: physical identity, stereo stride, parallel/serial, migration and unavailable ports passed (simulated)");return 0;}

@@ -127,7 +127,9 @@ static SDL_AudioDeviceID ts_audio_open_capture_widest(
     if (!ts_audio_range_valid(range) || (!ts_jack_selected && preferred && !ts_audio_range_fits(range,preferred))) {
         SDL_SetError("Input range exceeds this device's %u available channels",preferred); return 0;
     }
-    maximum = preferred ? preferred : 2;
+    /* Preserve the legacy bounded probe on opaque SDL backends. ASIO/JACK
+       supply their complete independent layouts through the native catalog. */
+    maximum = preferred ? preferred : 8;
     if (obtained != NULL) SDL_zero(*obtained);
 
     /*

@@ -18,7 +18,7 @@ typedef struct {
     TsCompressorControls compressor;int compressor_open;float compressor_gr,compressor_key;
     TsRouterControls legacy;TsSpatialControls array;TsSpeakerSetup speakers;
     int rename;Uint32 rename_blink_started;char name[TS_MATRIX_NAME],status[150];
-    float peaks[TS_MATRIX_ROWS];unsigned inputs,outputs,input_ports;
+    float peaks[TS_MATRIX_ROWS];unsigned inputs,outputs,input_ports,io_generation;const TsConfig *io_config;
     TsAudioChannelRange input_range,output_range;
     float sends[TS_MATRIX_ROWS],receiving[TS_MATRIX_DESTINATIONS];
     float card_source[TS_MOSAIC_EVENTS],card_send[TS_MOSAIC_EVENTS];
@@ -242,6 +242,7 @@ static int matrix_show(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,
     memset(w->row_source,0,sizeof(w->row_source));memset(w->row_send,0,sizeof(w->row_send));
     memset(w->receiving,0,sizeof(w->receiving));
     if(device)SDL_UnlockAudioDevice(device);
+    w->io_config=&ui->config;w->io_generation=audio->audio_health_generation;
     w->input_ports=ts_audio_range_offered(&ui->config,1);
     w->input_ports=SDL_max(w->input_ports,w->inputs);
     w->layout=&audio->sister.matrix_layout;w->layout_focus=0;
@@ -623,6 +624,7 @@ static void mx_take_voice(TsSourceRouteVoice *voice,TsTileId tile,float gain)
    Matching rows, smoothing, logs and painting all happen after unlocking. */
 static void mx_capture_activity(SDL_AudioDeviceID device,AudioState *audio,TsSamplePages *pages,TsInstrument *bank,Uint32 elapsed)
 {
+    unsigned previous_inputs=matrix_window.inputs;
     MatrixWindow *w=&matrix_window;float destinations[TS_MATRIX_DESTINATIONS];
     MatrixRow old_rows[MATRIX_VISIBLE];float old_source[MATRIX_VISIBLE],old_send[MATRIX_VISIBLE];
     memcpy(old_rows,w->activity_rows,sizeof(old_rows));memcpy(old_source,w->row_source,sizeof(old_source));memcpy(old_send,w->row_send,sizeof(old_send));
@@ -674,6 +676,10 @@ static void mx_capture_activity(SDL_AudioDeviceID device,AudioState *audio,TsSam
     w->inputs=audio->sister.insert.duplex?atomic_load(&audio->sister.insert.input_channels):atomic_load(&audio->sister.insert.matrix_channels);
     w->outputs=audio->output_device_channels;
     if(device)SDL_UnlockAudioDevice(device);
+    if(w->io_config && (w->io_generation!=audio->audio_health_generation || previous_inputs!=w->inputs)) {
+        unsigned offered=ts_audio_range_offered(w->io_config,1);
+        w->input_ports=offered?offered:w->inputs;w->io_generation=audio->audio_health_generation;
+    }
     mx_rows(pages,bank);
     float release=expf(-(float)SDL_min(elapsed,1000u)/150.f);
     for(int d=0;d<TS_MATRIX_DESTINATIONS;++d) {
@@ -922,6 +928,7 @@ static int matrix_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,A
     MatrixWindow *w=&matrix_window;
     if(w->mosaic!=ui->mosaic || (ui->mosaic && w->epoch!=ui->mosaic->epoch))matrix_history_clear();
     w->mosaic=ui->mosaic;w->epoch=ui->mosaic?ui->mosaic->epoch:0;
+    w->io_config=&ui->config;w->io_generation=audio->audio_health_generation;
     w->input_ports=ts_audio_range_offered(&ui->config,1);
     w->input_ports=SDL_max(w->input_ports,w->inputs);
     w->layout=&audio->sister.matrix_layout;
