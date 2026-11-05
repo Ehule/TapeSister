@@ -1219,6 +1219,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
     double master_source_quarter=0;
     double master_arp_interval=master_controls->enabled?60.0/master_controls->bpm/(1u<<master_controls->arp_division):0;
     int matrix=audio->sister.matrix.controls.enabled;
+    const int matrix_tile_audition=matrix && audio->audition_route_tile;
     int matrix_was=atomic_exchange_explicit(&audio->sister.insert.matrix_active,matrix,memory_order_acq_rel);
     if(matrix!=matrix_was && audio->sister.insert.matrix_input)
         for(int p=0;p<TS_MATRIX_INPUTS;++p)ts_input_monitor_discard(&audio->sister.insert.matrix_input[p]);
@@ -1300,6 +1301,11 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         ts_keyboard_sequence_clock(&audio->keyboard_sequence,arp_interval);
         for(int ch=0;ch<4;++ch)audio->sister.performance_gain_current[ch]+=fmaxf(-performance_slew,
             fminf(performance_slew,audio->sister.performance_mixer.gain[ch]-audio->sister.performance_gain_current[ch]));
+        /* A bank tile's Space/PLAY preview follows the same Live Tile bus as
+           QWERTY. Separate it before browser previews enter this accumulator;
+           explicit tile destinations have already entered audio->clean. */
+        TsStereoFrame tile_audition=matrix_tile_audition?buses.legacy_preview:(TsStereoFrame){0,0};
+        if(matrix_tile_audition)buses.legacy_preview=(TsStereoFrame){0,0};
         uint64_t profile_voices = ts_profile_begin(TS_PROF_VOICES);
         runtime_note_render(audio, &buses, &synth_capture);
         ts_profile_end(TS_PROF_VOICES, profile_voices);
@@ -1339,6 +1345,13 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         sister_sources.tapehead = buses.tapehead;
         sister_sources.mosaic = buses.mosaic;
         sister_sources.live_tiles = buses.live_tiles;
+        if(matrix_tile_audition) {
+            sister_sources.live_tiles.l+=tile_audition.l;
+            sister_sources.live_tiles.r+=tile_audition.r;
+            /* Retain the original pre-routing audition tap for CAPTURE. */
+            buses.legacy_preview.l+=tile_audition.l;
+            buses.legacy_preview.r+=tile_audition.r;
+        }
         const TsInsert *input_insert=&audio->sister.insert;
         const float *live_input=input_insert->duplex_input && (unsigned)(i/2)<input_insert->duplex_frames?
             input_insert->duplex_input+(size_t)(i/2)*input_insert->duplex_channels:NULL;
