@@ -25,7 +25,7 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
-static void near(float a,float b){assert(fabsf(a-b)<.0001f);}
+static void sample_near(float a,float b){assert(fabsf(a-b)<.0001f);}
 static TsStereoFrame identity(void *u,int node,TsStereoFrame f){(void)u;(void)node;return f;}
 static void render(TsRoutingMatrix *m,TsInsert *io,const float *data,unsigned channels)
 {
@@ -55,33 +55,33 @@ static void channel_layout(void)
     assert(ts_matrix_set(m,&c,48000));
     float frame[255]={0};frame[10]=.1f;frame[11]=-.15f;frame[24]=.4f;frame[25]=-.45f;
     render(m,io,frame,26);
-    near(m->output[0].l,.25f);near(m->output[0].r,.225f); /* dry + selected wet */
-    near(m->output[9].l,.05f);near(m->output[9].r,.075f); /* no return fed back to send */
-    near(m->output[13].l,.4f);near(m->output[13].r,-.45f); /* high ADAT -> output 27/28 */
+    sample_near(m->output[0].l,.25f);sample_near(m->output[0].r,.225f); /* dry + selected wet */
+    sample_near(m->output[9].l,.05f);sample_near(m->output[9].r,.075f); /* no return fed back to send */
+    sample_near(m->output[13].l,.4f);sample_near(m->output[13].r,-.45f); /* high ADAT -> output 27/28 */
     TsStereoFrame selected=ts_input_channel_select(frame,26,TS_INPUT_PAIR_BASE+5);
-    near(selected.l,.1f);near(selected.r,-.15f);
-    selected=ts_input_channel_select(frame,26,TS_INPUT_MONO_BASE+25);near(selected.l,-.45f);near(selected.r,-.45f);
+    sample_near(selected.l,.1f);sample_near(selected.r,-.15f);
+    selected=ts_input_channel_select(frame,26,TS_INPUT_MONO_BASE+25);sample_near(selected.l,-.45f);sample_near(selected.r,-.45f);
     /* Muting wet preserves dry; serial removes dry, while the send stays live. */
     assert(ts_matrix_connect(&c,ret,TS_MATRIX_EQ,0)==1);assert(ts_matrix_set(m,&c,48000));render(m,io,frame,26);
-    near(m->output[0].l,.2f);near(m->output[0].r,.3f);
+    sample_near(m->output[0].l,.2f);sample_near(m->output[0].r,.3f);
     assert(ts_matrix_connect(&c,ret,TS_MATRIX_EQ,1000)==1);
     assert(ts_matrix_connect(&c,TS_MATRIX_FM,TS_MATRIX_MAIN,0)==1);
     assert(ts_matrix_set(m,&c,48000));render(m,io,frame,26);
-    near(m->output[0].l,.1f);near(m->output[0].r,-.15f);near(m->output[9].l,.05f);
+    sample_near(m->output[0].l,.1f);sample_near(m->output[0].r,-.15f);sample_near(m->output[9].l,.05f);
     /* Disabled range retains absolute positions and never substitutes 1/2. */
     frame[0]=.9f;frame[1]=-.9f;ts_audio_range_mask((TsAudioChannelRange){11,12},frame,1,26);
-    render(m,io,frame,26);near(m->output[0].l,.1f);near(m->output[13].l,0);
+    render(m,io,frame,26);sample_near(m->output[0].l,.1f);sample_near(m->output[13].l,0);
     frame[0]=.73f;frame[1]=-.61f; /* A missing return must not substitute these live inputs. */
-    render(m,io,frame,2);near(m->output[0].l,0);near(m->output[0].r,0);
-    selected=ts_input_channel_select(frame,2,TS_INPUT_PAIR_BASE+5);near(selected.l,0);near(selected.r,0);
+    render(m,io,frame,2);sample_near(m->output[0].l,0);sample_near(m->output[0].r,0);
+    selected=ts_input_channel_select(frame,2,TS_INPUT_PAIR_BASE+5);sample_near(selected.l,0);sample_near(selected.r,0);
     /* Last representable odd channel and third destination mask word. */
     c.row[ts_matrix_input_row(127)].matrix_gain[ts_matrix_output_destination(127)]=1000;
     assert(ts_matrix_set(m,&c,48000));memset(frame,0,sizeof(frame));frame[254]=.37f;
-    render(m,io,frame,255);near(m->output[127].l,.37f);near(m->output[127].r,0);
+    render(m,io,frame,255);sample_near(m->output[127].l,.37f);sample_near(m->output[127].r,0);
     TsSourceRouteVoice voice={0};TsSourceRoute r={.matrix_enabled=1};r.matrix_gain[ts_matrix_output_destination(127)]=1000;
     ts_source_route_set(&voice,r,48000);TsSourceRouteMix a={0},b={0};
     ts_source_route_frame(&voice,(TsStereoFrame){.2f,-.3f},&a);ts_source_route_add(&b,&a,1);
-    near(b.graph[ts_matrix_output_destination(127)].r,-.3f);
+    sample_near(b.graph[ts_matrix_output_destination(127)].r,-.3f);
     /* Matrix names and routes round-trip while their device is unavailable. */
     FILE *f=tmpfile();assert(f&&ts_matrix_write(f,&c));rewind(f);TsMatrixControls saved;ts_matrix_default(&saved);
     char line[2048];while(fgets(line,sizeof(line),f)){char *v=strchr(line,'=');assert(v);*v++=0;v[strcspn(v,"\r\n")]=0;assert(ts_matrix_read(&saved,line,v)==1);}fclose(f);
@@ -102,14 +102,14 @@ static void legacy_insert(void)
     float input[26]={0},output[28];input[10]=.2f;input[11]=-.4f;
     ts_insert_duplex_block(io,1,input,1,26);
     TsStereoFrame returned=ts_insert_process(io,(TsStereoFrame){.3f,.5f},1);
-    near(returned.l,.2f);near(returned.r,-.4f);
+    sample_near(returned.l,.2f);sample_near(returned.r,-.4f);
     ts_insert_write_output(io,output,28,(TsStereoFrame){.1f,.15f});
-    near(output[0],.1f);near(output[18],.3f);near(output[19],.5f);near(output[20],0);
+    sample_near(output[0],.1f);sample_near(output[18],.3f);sample_near(output[19],.5f);sample_near(output[20],0);
     assert(ts_insert_reserved_port(io)==6);
     /* Generation and pair encoding do not alias high pairs to the low ports. */
     c.return_pair=100;c.send_pair=100;ts_insert_set(io,&c);assert(ts_insert_reserved_port(io)==101);
     ts_insert_duplex_block(io,1,input,1,26);returned=ts_insert_process(io,(TsStereoFrame){.3f,.5f},1);
-    near(returned.l,0);near(returned.r,0);
+    sample_near(returned.l,0);sample_near(returned.r,0);
     ts_insert_free(io);free(io);
 }
 static void persistence(void)
