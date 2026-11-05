@@ -1055,3 +1055,16 @@ endif()
 add_executable(tapesister_interface_io_tests tests/test_interface_io.c)
 target_link_libraries(tapesister_interface_io_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_interface_io_tests COMMAND tapesister_interface_io_tests)
+
+# Wide routes enlarge the banks/configurations retained by the native fixtures.
+# Test main threads must match the application's reserve, rather than MinGW's
+# 2 MiB default (a performance bank alone can exceed that). Callback threads and
+# the application's existing stack settings are unchanged.
+if(MINGW)
+  get_property(interface_test_targets DIRECTORY PROPERTY TESTS)
+  foreach(interface_test IN LISTS interface_test_targets)
+    if(TARGET ${interface_test})
+      target_link_options(${interface_test} PRIVATE "-Wl,--stack,16777216")
+    endif()
+  endforeach()
+endif()
