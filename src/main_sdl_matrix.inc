@@ -928,9 +928,7 @@ static int matrix_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,A
     MatrixWindow *w=&matrix_window;
     if(w->mosaic!=ui->mosaic || (ui->mosaic && w->epoch!=ui->mosaic->epoch))matrix_history_clear();
     w->mosaic=ui->mosaic;w->epoch=ui->mosaic?ui->mosaic->epoch:0;
-    w->io_config=&ui->config;w->io_generation=audio->audio_health_generation;
-    w->input_ports=ts_audio_range_offered(&ui->config,1);
-    w->input_ports=SDL_max(w->input_ports,w->inputs);
+    w->io_config=&ui->config;
     w->layout=&audio->sister.matrix_layout;
     int own=w->visible && event_window_id(e)==w->id;
     int edit=own && (e->type==SDL_MOUSEBUTTONDOWN || e->type==SDL_MOUSEWHEEL ||

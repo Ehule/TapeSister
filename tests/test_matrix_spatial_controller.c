@@ -105,13 +105,18 @@ int main(int argc,char **argv)
     for(int i=0;i<matrix_window.column_count;++i)found|=mx_column(i)==TS_MATRIX_SPEAKER_BASE+9;
     assert(found && bank.bank[0].output_route.matrix_gain[TS_MATRIX_SPEAKER_BASE+9]==500);
     a.output_range=(TsAudioChannelRange){3,10};mx_capture_activity(0,&a,&pages,&bank,50);
-    int visible_speakers=0;
+    int visible_speakers=0,unavailable_outputs=0;
     for(int i=0;i<matrix_window.column_count;++i) {
-        int d=mx_column(i);assert(mx_destination_available(d));
+        int d=mx_column(i);
+        /* The saved main-output route stays visible and silent outside the
+           enabled range. Logical speaker visibility retains its old rules. */
+        if(!mx_destination_available(d)) {
+            assert(d==ts_matrix_output_destination(0));++unavailable_outputs;continue;
+        }
         if(d>=TS_MATRIX_SPEAKER_BASE){++visible_speakers;assert(d>=TS_MATRIX_SPEAKER_BASE+2 && d<TS_MATRIX_SPEAKER_BASE+9);}
         if(ts_matrix_is_output(d))assert(d>=TS_MATRIX_NODES+1 && d<TS_MATRIX_NODES+5);
     }
-    assert(visible_speakers==7 && bank.bank[0].output_route.matrix_gain[TS_MATRIX_SPEAKER_BASE+9]==500);
+    assert(unavailable_outputs==1 && visible_speakers==7 && bank.bank[0].output_route.matrix_gain[TS_MATRIX_SPEAKER_BASE+9]==500);
     a.output_range=(TsAudioChannelRange){1,0};a.output_device_channels=10;mx_capture_activity(0,&a,&pages,&bank,50);
     for(int i=0;i<matrix_window.column_count;++i)assert(mx_column(i)!=TS_MATRIX_SPEAKER_BASE+9); /* mapped to absent OUT16 */
     a.output_device_channels=16;mx_capture_activity(0,&a,&pages,&bank,50);found=0;

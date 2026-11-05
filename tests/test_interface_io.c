@@ -1,4 +1,7 @@
 /* Simulated driver layouts, not a listening/clock/latency test. */
+#ifndef _WIN32
+#define _POSIX_C_SOURCE 200809L
+#endif
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
@@ -10,10 +13,13 @@
 #include <sys/stat.h>
 #ifdef _WIN32
 #include <direct.h>
+#include <windows.h>
 #define MKDIR(p) _mkdir(p)
+#define CHDIR(p) _chdir(p)
 #else
 #include <unistd.h>
 #define MKDIR(p) mkdir(p,0700)
+#define CHDIR(p) chdir(p)
 #endif
 #include <assert.h>
 #include <math.h>
@@ -143,4 +149,17 @@ static void persistence(void)
     remove("io-mosaic-shared/mosaic.tsm");remove("io-mosaic-shared/mosaic-000.tsa");
     ts_mosaic_free(m);ts_mosaic_free(other);remove("io-mosaic/mosaic.tsm");remove("io-mosaic/mosaic-000.wav");
 }
-int main(void){channel_layout();legacy_insert();persistence();puts("Complete interface I/O: physical identity, stereo stride, parallel/serial, migration and unavailable ports passed (simulated)");return 0;}
+int main(void)
+{
+    /* Shared-asset ownership is scoped to a save transaction. Each invocation
+       needs its own fixture root, including repeated release-suite runs. */
+    char work[128];
+#ifdef _WIN32
+    snprintf(work,sizeof(work),"interface-io-%lu-%lu",(unsigned long)GetCurrentProcessId(),(unsigned long)GetTickCount());
+    assert(!MKDIR(work));
+#else
+    strcpy(work,"interface-io-XXXXXX");assert(mkdtemp(work));
+#endif
+    assert(!CHDIR(work));channel_layout();legacy_insert();persistence();
+    puts("Complete interface I/O: physical identity, stereo stride, parallel/serial, migration and unavailable ports passed (simulated)");return 0;
+}
