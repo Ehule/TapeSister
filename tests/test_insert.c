@@ -75,7 +75,7 @@ static void all_orders(int separate)
         for(int i=0;i<200;++i)out=ts_router_process(&loop.router,source,stage,&loop);
         expected=source;for(int i=0;i<TS_ROUTER_COUNT;++i)if(c.order[i]!=TS_ROUTER_INSERT)expected=internal(c.order[i],expected);
         close_frame(out,expected);close_frame(loop.insert.send,(TsStereoFrame){0,0});
-        ts_router_toggle_bypass(&c,TS_ROUTER_INSERT);++count;
+        ts_router_toggle_bypass(&c,TS_ROUTER_INSERT);++count;ts_insert_free(&loop.insert);
     }while(next_order(c.order));
     assert(count==120);puts("120 serial orders: external replacement, stereo SEND, bypass and activity passed");
 }
@@ -116,6 +116,7 @@ static void levels_failures_and_solo(void)
         assert(isfinite(out.l+out.r) && fabsf(out.l)<=1 && fabsf(out.r)<=1);
         assert(isfinite(loop.insert.send.l+loop.insert.send.r) && fabsf(loop.insert.send.l)<=1 && fabsf(loop.insert.send.r)<=1);
     }
+    ts_insert_free(&loop.insert);
 }
 
 static void independent_clocks(void)
@@ -145,6 +146,7 @@ static void independent_clocks(void)
     ts_insert_render_send(&s,sent,480,8,48000);
     for(int i=0;i<480*8;++i)assert(sent[i]==0);
     assert(atomic_load(&s.send_monitor.dropped_frame_count)==0);
+    ts_insert_free(&s);
 }
 
 /* Schedule real-sized callback bursts on independent clocks. A constant/DC
@@ -225,6 +227,7 @@ static void callback_bursts(void)
         assert(!send.dropped_frame_count && !ret.dropped_frame_count);
         /* Matching streams now need two blocks, not four capture blocks. */
         if(test==1 || test==2)assert(ret.prime_frames==2*c[1]);
+        ts_insert_free(&s);
     }
 }
 
@@ -263,6 +266,7 @@ static void isolation_and_persistence(void)
     assert(ts_insert_read(&c,"Insert.SendDb","nan")==-1);
     assert(ts_insert_read(&c,"Insert.ReturnDb","1000000000")==-1);
     remove("test-insert.ini");remove("test-insert-project.ini");
+    ts_insert_free(&insert);
 }
 
 static void sister_serial_monitor(void)
@@ -331,6 +335,7 @@ static void stalled_bridges_and_wide_devices(void)
     assert(send.dropped_frame_count>10000 && ret.dropped_frame_count>10000);
     for (int i=0;i<128*16;++i) assert(isfinite(out[i]));
     puts("Both stalled bridges recovered to bounded latency; 16-channel stride stayed isolated");
+    ts_insert_free(&s);
 }
 
 static void synchronous_unity(void)
@@ -359,6 +364,7 @@ static void synchronous_unity(void)
     assert(atomic_load(&s.return_monitor.underrun_count)==0);
     assert(atomic_load(&s.send_monitor.captured_frame_count)==0);
     puts("Synchronous Insert: unity level equals bypass, no bridge queues, no stale return, 16-channel isolation");
+    ts_insert_free(&s);
 }
 
 int main(void)

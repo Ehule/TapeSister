@@ -409,3 +409,15 @@ Original/Edited against an uninterrupted legacy render. A Pale Weight measured
 a maximum absolute difference of `2.98023224e-08` per sample (float rounding).
 
 Mosaic OUTPUT uses the same stereo tap; it does not capture the added speaker layers.
+
+## Full interface channels and digital reverb
+
+F9 now exposes the active capture/playback layout independently, beyond input 8
+and output 16, with saved unavailable assignments retained as N/A. Existing node
+IDs and speaker limits are unchanged. The selected I/O identity strip shows channel
+numbers, direction, ASIO names where supplied and aliases; JACK is labeled APP
+and needs patchbay connections. Middle-click I/O labels to rename them.
+
+See [external digital reverb](EXTERNAL_DIGITAL_REVERB.md) for parallel/serial
+routing tables, recording a selected stereo return, the Scarlett/Hifime 48 kHz
+setup, clock synchronization, format migration and the hardware test checklist.

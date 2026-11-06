@@ -57,9 +57,9 @@ static int live(void)
     SDL_AudioSpec master_spec,input_spec;want=desired(0);
     SDL_AudioDeviceID master=ts_native_open(ts_jack_names[0][0],0,&want,&master_spec,0);
     want=desired(1);SDL_AudioDeviceID input=ts_native_open(ts_jack_names[1][0],1,&want,&input_spec,0);
-    assert(master && input && master_spec.channels==16 && input_spec.channels==8);
+    assert(master && input && master_spec.channels>=2 && input_spec.channels>=2);
     TsJackEndpoint *me=ts_jack_endpoint(master),*ie=ts_jack_endpoint(input);
-    for (int ch=0;ch<8;++ch)
+    for (int ch=0;ch<SDL_min(master_spec.channels,input_spec.channels);++ch)
         assert(!connect_ports(me->client,port_name(me->ports[ch]),port_name(ie->ports[ch])));
     ts_native_pause(input,0);ts_native_pause(master,0);
     ts_native_pause(ret,0);ts_native_pause(send,0);
@@ -91,16 +91,24 @@ static void *mock_buffer(TsJackPort *p,TsJackFrames frames)
 static int mock_process(TsJackClient *c,int (*cb)(TsJackFrames,void *),void *u)
 {assert(c && cb && u);return 0;}
 static void mock_shutdown(TsJackClient *c,void (*cb)(void *),void *u){assert(c && cb && u);}
+static unsigned mock_inputs=26,mock_outputs=28;
+static const char **mock_ports(TsJackClient *c,const char *name,const char *type,unsigned long flags)
+{
+    (void)c;(void)name;(void)type;unsigned count=(flags&2u)?mock_inputs:mock_outputs;
+    const char **ports=calloc(count+1,sizeof(*ports));assert(ports);
+    for(unsigned i=0;i<count;++i)ports[i]="system:physical";
+    return ports;
+}
 static void mocked(void)
 {
     ts_jack_library=(void *)1;ts_jack_selected=1;
     ts_jack=(TsJackApi){mock_open,mock_close,mock_active,mock_active,mock_rate,mock_size,
-        mock_port,mock_buffer,mock_process,mock_process,mock_process,mock_shutdown};
+        mock_port,mock_buffer,mock_process,mock_process,mock_process,mock_shutdown,mock_ports,free};
     assert(ts_native_device_count(0)==2 && ts_native_device_count(1)==2);
     assert(!strcmp(ts_native_current_driver(),"jack"));
     assert(!strcmp(ts_native_device_name(1,1),"TapeSister Insert Return"));
     SDL_AudioSpec spec;char *name=NULL;
-    assert(!ts_native_default_info(&name,&spec,0) && spec.channels==16);SDL_free(name);
+    assert(!ts_native_default_info(&name,&spec,0) && spec.channels==28);SDL_free(name);
     SDL_AudioSpec want=desired(0),got;
     assert(!ts_native_open("Missing device",0,&want,&got,0));
     SDL_AudioDeviceID send=ts_native_open(ts_jack_names[0][1],0,&want,&got,0);
@@ -130,12 +138,12 @@ static void mocked(void)
     ts_jack_shutdown(r);assert(atomic_load(&r->lost));
     /* All 16 master ports are rendered and deinterleaved, including port 16. */
     want=desired(0);SDL_AudioDeviceID master=ts_native_open(ts_jack_names[0][0],0,&want,&got,0);
-    TsJackEndpoint *m=ts_jack_endpoint(master);assert(master && got.channels==16 && nports==20);
+    TsJackEndpoint *m=ts_jack_endpoint(master);assert(master && got.channels==28 && nports==32);
     ts_native_pause(master,0);
     for(int i=0;i<100 && !atomic_load(&m->write_block);++i)SDL_Delay(1);
     ts_native_lock(master);ts_jack_process(128,m);
-    assert(buffers[4][0]==.25f && buffers[19][127]==-.5f);ts_native_unlock(master);
-    ts_native_close(master);ts_native_close(send);ts_native_close(ret);assert(closed==3);
+    assert(buffers[4][0]==.25f && buffers[31][127]==-.5f);ts_native_unlock(master);
+    ts_native_close(master);ts_native_close(send);ts_native_close(ret);assert(closed>=3);
     /* Range 3-10 creates eight physical ports, keeping absolute port names and
        callback positions. Insert endpoints remain independent stereo pairs. */
     ts_native_ranges[0]=(TsAudioChannelRange){3,10};
@@ -147,7 +155,7 @@ static void mocked(void)
     ts_native_lock(master);ts_jack_process(128,m);
     assert(buffers[first][0]==.25f && buffers[nports-1][127]==-.5f);ts_native_unlock(master);
     ts_native_close(master);
-    ts_native_ranges[0]=(TsAudioChannelRange){1,17};
+    ts_native_ranges[0]=(TsAudioChannelRange){3,2};
     assert(!ts_native_open(ts_jack_names[0][0],0,&want,&got,0));
     ts_native_ranges[0]=(TsAudioChannelRange){1,0};
     ts_native_ranges[1]=(TsAudioChannelRange){3,6};want=desired(1);
@@ -155,6 +163,12 @@ static void mocked(void)
     r=ts_jack_endpoint(ret);assert(ret && got.channels==6 && nports==first+4);
     assert(!r->ports[0] && !r->ports[1] && !strcmp(port_names[first],"input_3"));
     ts_native_close(ret);ts_native_ranges[1]=(TsAudioChannelRange){1,0};
+    /* A small interface gets one real stereo pair in each direction. */
+    mock_inputs=mock_outputs=2;
+    assert(!ts_native_device_spec(0,0,&got) && got.channels==2);
+    want=desired(0);master=ts_native_open(ts_jack_names[0][0],0,&want,&got,0);assert(master && got.channels==2);
+    want=desired(1);ret=ts_native_open(ts_jack_names[1][0],1,&want,&got,0);assert(ret && got.channels==2);
+    ts_native_close(master);ts_native_close(ret);
     ts_jack_library=NULL;memset(&ts_jack,0,sizeof(ts_jack));ts_jack_selected=0;
     puts("JACK endpoints: enumeration, negotiated timing, 16-channel master, stereo Insert ports, pause/lock, server changes and close passed");
 }

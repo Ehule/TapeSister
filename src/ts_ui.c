@@ -99,7 +99,7 @@ void ts_ui_update_input_activity(TsUiState *ui,
     if (ui == NULL || hold_until_ms == NULL) return;
     if (available_channels > TS_INPUT_DEVICE_CHANNEL_MAX)
         available_channels = 0u;
-    for (uint32_t channel = 0u; channel < TS_INPUT_DEVICE_CHANNEL_MAX;
+    for (uint32_t channel = 0u; channel < 8;
          ++channel) {
         uint32_t bit = UINT32_C(1) << channel;
         if (channel >= available_channels) {
@@ -3314,10 +3314,10 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         uint8_t channels = ui->input_available_channels <=
                            TS_INPUT_DEVICE_CHANNEL_MAX ?
                            ui->input_available_channels : 0u;
-        char input_label[4] = {'I', 'N', (char)('0' + channels), '\0'};
+        char input_label[8];snprintf(input_label,sizeof(input_label),"IN%u",channels);
         text(fb,160,13,ui->sister_capture_active?"REC":input_label,ui->sister_capture_active?PAL_VOLUME:PAL_TEXT,1);
     }
-    for (int channel = 0; channel < TS_INPUT_DEVICE_CHANNEL_MAX; ++channel) {
+    for (int channel = 0; channel < 8; ++channel) {
         int x = TS_UI_INPUT_LED_X + channel * TS_UI_INPUT_LED_STEP_X;
         uint32_t color = channel >= ui->input_available_channels ?
                          ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(22, 22, 22)) :

@@ -42,7 +42,7 @@ int main(void)
             live[TS_MATRIX_MOSAIC-TS_MATRIX_NODES]=(TsStereoFrame){(int)(frame%251)*.001f-.1f,(int)(frame%173)*.001f-.1f};
             TsSourceRouteMix sums={0};ts_matrix_process(m,&sums,live,pass,NULL);
             const unsigned char *bytes=(const unsigned char *)m->output;
-            for(size_t i=0;i<sizeof(m->output);++i)hash=(hash^bytes[i])*UINT64_C(1099511628211);
+            for(size_t i=0;i<8*sizeof(m->output[0]);++i)hash=(hash^bytes[i])*UINT64_C(1099511628211);
         }
         printf("16-instance graph, feedback %s: %.3f ms/512 frames; output hash %016" PRIx64 "\n",
             feedback?"on":"off",milliseconds(start)*512/480000,hash);

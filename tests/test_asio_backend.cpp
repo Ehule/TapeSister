@@ -7,6 +7,7 @@
 #include <cstring>
 RtAudio *RtAudio::instance;
 unsigned RtAudio::opens,RtAudio::closes,RtAudio::probes;
+unsigned RtAudio::maxInputs=16,RtAudio::maxOutputs=16;
 bool RtAudio::failStart;
 static unsigned captures,plays;
 static void lock_deadlines() {
@@ -75,6 +76,30 @@ static void ranges() {
  assert(ts_asio_set_ranges({1,17},{1,0}));assert(!ts_asio_open(nullptr,0,&w,&got));
  assert(ts_asio_set_ranges({1,0},{1,0}));
 }
+static void highCapture(void *,Uint8 *bytes,int n) {
+ assert(n==128*12*4);const float *data=(float *)bytes;
+ for(unsigned f=0;f<128;++f)for(unsigned ch=0;ch<12;++ch)
+  assert(data[f*12+ch]==(ch==10?.125f:ch==11?-.25f:0.f));
+}
+static void highPlayback(void *,Uint8 *bytes,int n) {
+ assert(n==128*28*4);float *data=(float *)bytes;unsigned frames,channels;
+ const float *in=ts_asio_input_block(&frames,&channels);assert(in && channels==12);
+ for(unsigned f=0;f<frames;++f){data[f*28+26]=in[f*12+10];data[f*28+27]=in[f*12+11];}
+}
+static void highLayout() {
+ RtAudio::maxInputs=26;RtAudio::maxOutputs=28;ts_asio_rescan();
+ assert(ts_asio_set_ranges({17,28},{11,12}));
+ SDL_AudioSpec w{},got{};w.format=AUDIO_F32SYS;w.callback=highPlayback;w.samples=128;
+ auto out=ts_asio_open("Test Matrix ASIO",0,&w,&got);assert(out && got.channels==28);
+ assert(!strcmp(ts_asio_channel_name(1,10),"SPDIF L"));
+ w.callback=highCapture;auto in=ts_asio_open(nullptr,1,&w,&got);assert(in && got.channels==12);
+ ts_asio_pause(in,0);ts_asio_pause(out,0);float capture[128*2],playback[128*12];
+ for(unsigned f=0;f<128;++f){capture[f*2]=.125f;capture[f*2+1]=-.25f;}
+ RtAudio::instance->tick(playback,capture);
+ for(unsigned f=0;f<128;++f)for(unsigned ch=0;ch<12;++ch)
+  assert(playback[f*12+ch]==(ch==10?.125f:ch==11?-.25f:0.f));
+ ts_asio_close(in);ts_asio_close(out);assert(ts_asio_set_ranges({1,0},{1,0}));
+}
 static int hold(void *semaphore) { ts_asio_lock();SDL_SemPost((SDL_sem *)semaphore);SDL_Delay(50);ts_asio_unlock();return 0; }
 int main() {
  lock_deadlines();
@@ -110,5 +135,5 @@ int main() {
  assert(!ts_asio_xruns() && !ts_asio_control_skips() && !ts_asio_driver_xruns() && !ts_asio_control_recoveries());
  ts_asio_close(out);assert(RtAudio::instance->isStreamOpen());
  RtAudio::failStart=true;ts_asio_pause(next,0);ts_asio_poll();removed=0;while(SDL_PollEvent(&e))if(e.type==SDL_AUDIODEVICEREMOVED){++removed;ts_asio_close(e.adevice.which);}assert(removed==1);
- ranges();ts_asio_quit();SDL_Quit();puts("ASIO adapter: one clock, native stride, exact unity, callback order, stalls, reset, start failure and stale handles passed");
+ ranges();highLayout();ts_asio_quit();SDL_Quit();puts("ASIO adapter: one clock, native stride, exact unity, callback order, stalls, reset, start failure and stale handles passed");
 }

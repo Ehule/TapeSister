@@ -1219,6 +1219,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
     double master_source_quarter=0;
     double master_arp_interval=master_controls->enabled?60.0/master_controls->bpm/(1u<<master_controls->arp_division):0;
     int matrix=audio->sister.matrix.controls.enabled;
+    const int matrix_tile_audition=matrix && audio->audition_route_tile;
     int matrix_was=atomic_exchange_explicit(&audio->sister.insert.matrix_active,matrix,memory_order_acq_rel);
     if(matrix!=matrix_was && audio->sister.insert.matrix_input)
         for(int p=0;p<TS_MATRIX_INPUTS;++p)ts_input_monitor_discard(&audio->sister.insert.matrix_input[p]);
@@ -1300,6 +1301,11 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         ts_keyboard_sequence_clock(&audio->keyboard_sequence,arp_interval);
         for(int ch=0;ch<4;++ch)audio->sister.performance_gain_current[ch]+=fmaxf(-performance_slew,
             fminf(performance_slew,audio->sister.performance_mixer.gain[ch]-audio->sister.performance_gain_current[ch]));
+        /* A bank tile's Space/PLAY preview follows the same Live Tile bus as
+           QWERTY. Separate it before browser previews enter this accumulator;
+           explicit tile destinations have already entered audio->clean. */
+        TsStereoFrame tile_audition=matrix_tile_audition?buses.legacy_preview:(TsStereoFrame){0,0};
+        if(matrix_tile_audition)buses.legacy_preview=(TsStereoFrame){0,0};
         uint64_t profile_voices = ts_profile_begin(TS_PROF_VOICES);
         runtime_note_render(audio, &buses, &synth_capture);
         ts_profile_end(TS_PROF_VOICES, profile_voices);
@@ -1339,6 +1345,13 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         sister_sources.tapehead = buses.tapehead;
         sister_sources.mosaic = buses.mosaic;
         sister_sources.live_tiles = buses.live_tiles;
+        if(matrix_tile_audition) {
+            sister_sources.live_tiles.l+=tile_audition.l;
+            sister_sources.live_tiles.r+=tile_audition.r;
+            /* Retain the original pre-routing audition tap for CAPTURE. */
+            buses.legacy_preview.l+=tile_audition.l;
+            buses.legacy_preview.r+=tile_audition.r;
+        }
         const TsInsert *input_insert=&audio->sister.insert;
         const float *live_input=input_insert->duplex_input && (unsigned)(i/2)<input_insert->duplex_frames?
             input_insert->duplex_input+(size_t)(i/2)*input_insert->duplex_channels:NULL;
@@ -1372,7 +1385,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
                 if(ch<0 || ch>=TS_MATRIX_OUTPUTS*2)continue;
                 float value=audio->clean.speaker[sp];
                 if(audio->sister.router.controls.master_mix)value-=audio->clean.matrix_speaker[sp];
-                TsStereoFrame *to=&sister_sources.matrix_graph[TS_MATRIX_NODES+ch/2];
+                TsStereoFrame *to=&sister_sources.matrix_graph[ts_matrix_output_destination(ch/2)];
                 if(ch&1)to->r+=value*gain;else to->l+=value*gain;
             }
             ts_insert_matrix_read(&audio->sister.insert,sister_sources.matrix_input);
@@ -9358,7 +9371,7 @@ static void sync_sister_ext_consumer(SDL_AudioDeviceID *input_device,
     if(audio->sister.matrix.controls.enabled) {
         desired=0;
         for(int p=0;p<TS_MATRIX_INPUTS;++p)for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)
-            desired|=audio->sister.matrix.controls.row[TS_MATRIX_NODES+p].matrix_gain[d]!=0;
+            desired|=audio->sister.matrix.controls.row[ts_matrix_input_row(p)].matrix_gain[d]!=0;
     }
     current = external_input_requested(input, TS_INPUT_CONSUMER_SISTER_EXT);
     if (desired == current) return;
@@ -12071,6 +12084,9 @@ static int canvas_eq_handling;
 #include "main_sdl_source_route.inc"
 #include "main_sdl_router.inc"
 #include "main_sdl_speakers.inc"
+static const char *ts_native_channel_name(int capture,unsigned channel);
+static int ts_native_is_jack(void);
+static unsigned ts_audio_range_offered(const TsConfig *,int);
 #include "main_sdl_matrix.inc"
 #include "main_sdl_character_filter.inc"
 #include "main_sdl_meta_fx.inc"

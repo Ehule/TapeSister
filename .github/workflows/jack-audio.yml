@@ -3,6 +3,10 @@ on:
   pull_request:
     paths:
       - 'src/main_sdl_jack.inc'
+      - 'src/ts_insert.c'
+      - 'include/tapesister/insert.h'
+      - 'include/tapesister/audio_channels.h'
+      - 'include/tapesister/routing_matrix.h'
       - 'tests/test_jack_backend.c'
       - 'tests/test_jack_router.inc'
       - 'src/*router*'

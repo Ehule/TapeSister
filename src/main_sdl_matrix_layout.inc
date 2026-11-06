@@ -56,7 +56,12 @@ static void mx_columns(void)
     MatrixWindow *w=&matrix_window;w->column_count=0;
     for(int i=0;i<TS_MATRIX_DESTINATIONS;++i) {
         int d=w->layout?w->layout->column[i]:i;
-        if(!mx_destination_available(d))continue;
+        if(!mx_destination_available(d)) {
+            int p=ts_matrix_output_pair(d),used=p>=0 && w->controls.output_name[p][0];
+            for(int s=0;s<TS_MATRIX_ROWS && !used;++s)used=w->controls.row[s].matrix_gain[d]!=0;
+            used|=w->assigned[d];
+            if(p<0 || !used)continue;
+        }
         if(ts_matrix_destination_active(&w->controls,d))w->columns[w->column_count++]=d;
     }
     w->column=SDL_clamp(w->column,0,SDL_max(0,w->column_count-MATRIX_COLS));

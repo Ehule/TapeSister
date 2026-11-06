@@ -151,10 +151,10 @@ static void test_score_migration(void)
         size_t offset=39+TS_TRACKER_ALIASES*8+original.order_count*4;
         CHECK(fwrite(bytes,1,offset,f)==offset);
         for(int lane=0;lane<32;++lane) {
-            int destinations=version>=10?TS_MATRIX_DESTINATIONS:version>=9?TS_MATRIX_INSTANCE_DESTINATIONS:version>=8?TS_MATRIX_SHARED_DESTINATIONS:TS_MATRIX_LEGACY_DESTINATIONS;
+            int destinations=version>=10?TS_MATRIX_PRE_IO_DESTINATIONS:version>=9?TS_MATRIX_INSTANCE_DESTINATIONS:version>=8?TS_MATRIX_SHARED_DESTINATIONS:TS_MATRIX_LEGACY_DESTINATIONS;
             size_t fields=TS_TRACKER_NAME_SIZE+14+(version>=4?5:0)+(version>=5?5:0)+(version>=7?1+2*destinations:0);
             CHECK(fwrite(bytes+offset,1,fields,f)==fields);
-            offset+=TS_TRACKER_NAME_SIZE+24+1+2*TS_MATRIX_DESTINATIONS;
+            offset+=TS_TRACKER_NAME_SIZE+24+1+2*TS_MATRIX_PRE_IO_DESTINATIONS;
         }
         CHECK(fwrite(bytes+offset,1,(size_t)length-offset,f)==(size_t)length-offset);CHECK(!fclose(f));
         CHECK(ts_sister_tracker_load_file(&loaded,"legacy-score.tst",error,sizeof(error)));
@@ -170,7 +170,7 @@ static void test_score_migration(void)
         size_t lane_bytes=TS_TRACKER_NAME_SIZE+14;
         for(int lane=0;lane<32;++lane) {
             if(lane<8)CHECK(fwrite(bytes+offset,1,lane_bytes,f)==lane_bytes);
-            offset+=lane_bytes+10+1+2*TS_MATRIX_DESTINATIONS; /* v4 routing plus v5 clean/send levels. */
+            offset+=lane_bytes+10+1+2*TS_MATRIX_PRE_IO_DESTINATIONS; /* v4 routing plus v5 clean/send levels. */
         }
         for(int i=0;i<original.pattern_count;++i) {
             size_t header_bytes=6+TS_TRACKER_NAME_SIZE;

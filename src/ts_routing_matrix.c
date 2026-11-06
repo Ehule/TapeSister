@@ -6,16 +6,16 @@
 #include <inttypes.h>
 
 int ts_matrix_is_processor(int n)
-{ return (n>=0 && n<TS_MATRIX_NODES) || n==TS_MATRIX_COMPRESSOR || (n>=TS_MATRIX_EFFECT_BASE && n<TS_MATRIX_ROWS); }
+{ return (n>=0 && n<TS_MATRIX_NODES) || n==TS_MATRIX_COMPRESSOR || (n>=TS_MATRIX_EFFECT_BASE && n<TS_MATRIX_PROCESSOR_END); }
 int ts_matrix_is_output(int n)
-{ return n>=TS_MATRIX_NODES && n<TS_MATRIX_NODES+TS_MATRIX_OUTPUTS; }
+{ return ts_matrix_output_pair(n)>=0; }
 int ts_matrix_processor(int index)
 { return index<TS_MATRIX_NODES?index:index==7?TS_MATRIX_COMPRESSOR:TS_MATRIX_EFFECT_BASE+index-8; }
 static int dependency(int destination)
 { return destination==TS_MATRIX_SIDECHAIN?TS_MATRIX_COMPRESSOR:destination>=TS_MATRIX_EFFECT_SC_BASE && destination<TS_MATRIX_INSTANCE_DESTINATIONS?TS_MATRIX_EFFECT_BASE+destination-TS_MATRIX_EFFECT_SC_BASE:destination; }
 
 int ts_matrix_effect_index(int n)
-{return n>=TS_MATRIX_EFFECT_BASE && n<TS_MATRIX_ROWS?n-TS_MATRIX_EFFECT_BASE:-1;}
+{return n>=TS_MATRIX_EFFECT_BASE && n<TS_MATRIX_PROCESSOR_END?n-TS_MATRIX_EFFECT_BASE:-1;}
 int ts_matrix_sidechain_for(int n)
 {return n==TS_MATRIX_COMPRESSOR?TS_MATRIX_SIDECHAIN:ts_matrix_effect_index(n)>=0?TS_MATRIX_EFFECT_SC_BASE+n-TS_MATRIX_EFFECT_BASE:-1;}
 int ts_matrix_destination_active(const TsMatrixControls *c,int d)
@@ -182,6 +182,9 @@ int ts_matrix_set(TsRoutingMatrix *m,const TsMatrixControls *c,unsigned rate)
         if(activating)m->voice[i].ready=0;
         ts_source_route_set(&m->voice[i],route,rate);
     }
+    m->source_count=0;
+    for(int s=TS_MATRIX_NODES;s<TS_MATRIX_ROWS;++s)if(!ts_matrix_is_processor(s) &&
+        (m->voice[s].active_count || m->voice[s].remaining))m->sources[m->source_count++]=(uint16_t)s;
     if(changed)memset(m->history,0,sizeof(m->history));
     m->decay=rate?expf(-1.f/(rate*.15f)):0;m->ready=1;return 1;
 }
@@ -199,16 +202,23 @@ static float peak(TsStereoFrame f){return fmaxf(fabsf(f.l),fabsf(f.r));}
 void ts_matrix_process(TsRoutingMatrix *m,TsSourceRouteMix *sums,
     const TsStereoFrame live[TS_MATRIX_ROWS-TS_MATRIX_NODES],TsMatrixProcess fn,void *context)
 {
-    for(int s=TS_MATRIX_NODES;s<TS_MATRIX_ROWS;++s)if(!ts_matrix_is_processor(s)) {
+    /* Compile routed sources on edits; unused interface capacity costs no DSP. */
+    for(unsigned p=0;p<m->input_pairs && p<TS_MATRIX_INPUTS;++p) {
+        int row=ts_matrix_input_row(p);
+        m->output_peak[row]=fmaxf(peak(live[row-TS_MATRIX_NODES]),m->output_peak[row]*m->decay);
+    }
+    for(unsigned at=0;at<m->source_count;++at) {
+        int s=m->sources[at];
         TsStereoFrame input=ts_stereo_frame_sanitize(live[s-TS_MATRIX_NODES]);
         m->output_peak[s]=fmaxf(peak(input),m->output_peak[s]*m->decay);
         ts_source_route_frame(&m->voice[s],input,sums);
     }
-    for(int s=0;s<TS_MATRIX_ROWS;++s)if(m->controls.delayed[s]) {
+    for(int k=0;k<TS_MATRIX_PROCESSORS;++k) {
+        int s=ts_matrix_processor(k);if(!m->controls.delayed[s])continue;
         TsStereoFrame old=m->history[s][m->position];
         const TsSourceRoute *r=&m->controls.row[s];
         float l=r->pan>0?1-r->pan*.01f:1,rh=r->pan<0?1+r->pan*.01f:1;
-        for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)if(m->controls.delayed[s]&ts_matrix_feedback_bit(d)) {
+        for(int d=0;d<TS_MATRIX_INSTANCE_DESTINATIONS;++d)if(m->controls.delayed[s]&(UINT64_C(1)<<d)) {
             float g=r->matrix_gain[d]*.001f;
             sums->graph[d].l+=old.l*g*l;sums->graph[d].r+=old.r*g*rh;
             float activity=fmaxf(fabsf(old.l*g*l),fabsf(old.r*g*rh));
@@ -234,7 +244,7 @@ void ts_matrix_process(TsRoutingMatrix *m,TsSourceRouteMix *sums,
             m->history[n][m->position]=(TsStereoFrame){tanhf(output.l),tanhf(output.r)};
         ts_source_route_frame(&m->voice[n],output,sums);
     }
-    for(int p=0;p<TS_MATRIX_OUTPUTS;++p)m->output[p]=ts_stereo_frame_sanitize(sums->graph[TS_MATRIX_NODES+p]);
+    for(int p=0;p<TS_MATRIX_OUTPUTS;++p)m->output[p]=ts_stereo_frame_sanitize(sums->graph[ts_matrix_output_destination(p)]);
     m->spatial_input=ts_stereo_frame_sanitize(sums->graph[TS_MATRIX_AMBISONICS]);
     m->input_peak[TS_MATRIX_AMBISONICS]=fmaxf(peak(m->spatial_input),m->input_peak[TS_MATRIX_AMBISONICS]*m->decay);
     for(int i=0;i<TS_SOURCE_SPEAKERS;++i) {
@@ -250,7 +260,7 @@ TsSourceRoute ts_matrix_source_route(TsSourceRoute old)
     TsSourceRoute r={.matrix_enabled=1,.pan=old.pan,.width=old.width};
     if(old.mode==TS_SOURCE_MAIN || old.mode==TS_SOURCE_INHERIT)r.matrix_gain[TS_MATRIX_MAIN]=1000;
     else {
-        int d=TS_MATRIX_NODES+old.speaker/2;
+        int d=ts_matrix_output_destination(old.speaker/2);
         r.matrix_gain[d]=old.mix_enabled?old.clean_level*10:1000;
         if(old.mode==TS_SOURCE_SPEAKER) {r.width=-100;r.pan=(old.speaker&1)?100:-100;}
     }
@@ -264,7 +274,7 @@ TsSourceRoute ts_matrix_source_route(TsSourceRoute old)
 int ts_matrix_write(FILE *f,const TsMatrixControls *c)
 {
     if(!ts_matrix_valid(c))return 0;
-    if(fprintf(f,"Matrix.Enabled=%d\nMatrix.Feedback=%d\nMatrix.SerialMask=%u\nMatrix.BoardInsert=%d\n",c->enabled,c->feedback,c->serial_mask,c->board_insert)<0)return 0;
+    if(fprintf(f,"Matrix.IOVersion=1\nMatrix.Enabled=%d\nMatrix.Feedback=%d\nMatrix.SerialMask=%u\nMatrix.BoardInsert=%d\n",c->enabled,c->feedback,c->serial_mask,c->board_insert)<0)return 0;
     if(c->main_headroom && fprintf(f,"Matrix.MainHeadroom=%d\n",c->main_headroom)<0)return 0;
     if(fprintf(f,"Matrix.NextEffectId=%" PRIu32 "\n",c->next_effect_id)<0)return 0;
     for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)if(c->effect[i].id) {
@@ -278,8 +288,14 @@ int ts_matrix_write(FILE *f,const TsMatrixControls *c)
         if(v->type==TS_MATRIX_FX_FILTER){snprintf(key,sizeof(key),"Matrix.Filter%d",i);if(!ts_character_filter_write(f,key,&v->filter))return 0;}
     }
     for(int s=0;s<TS_MATRIX_ROWS;++s) {
+        int extra=ts_source_route_extended(c->row[s].matrix_gain);
+        if(s>=TS_MATRIX_EXTRA_INPUT_BASE) {
+            int used=c->row[s].pan || c->row[s].width;
+            for(int d=0;d<TS_MATRIX_DESTINATIONS && !used;++d)used=c->row[s].matrix_gain[d]!=0;
+            if(!used)continue;
+        }
         if(fprintf(f,"Matrix.Row%d=%d,%d,%" PRIu64,s,c->row[s].pan,c->row[s].width,ts_matrix_is_processor(s)?c->delayed[s]:UINT64_C(0))<0)return 0;
-        for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)if(fprintf(f,",%d",c->row[s].matrix_gain[d])<0)return 0;
+        for(int d=0;d<(extra?TS_MATRIX_DESTINATIONS:TS_MATRIX_PRE_IO_DESTINATIONS);++d)if(fprintf(f,",%d",c->row[s].matrix_gain[d])<0)return 0;
         if(fputc('\n',f)==EOF)return 0;
     }
     for(int p=0;p<TS_MATRIX_INPUTS;++p)if(fprintf(f,"Matrix.In%d=%s\n",p,c->input_name[p])<0)return 0;
@@ -296,7 +312,9 @@ int ts_matrix_read(TsMatrixControls *c,const char *key,const char *v)
 {
     if(strncmp(key,"Matrix.",7))return 0;
     key+=7;int n=-1,used=0;TsMatrixControls next=*c;
-    if(!strcmp(key,"NextEffectId")) {
+    if(!strcmp(key,"IOVersion")) {
+        if(strcmp(v,"1"))return -1;
+    } else if(!strcmp(key,"NextEffectId")) {
         char *end;errno=0;unsigned long long id=strtoull(v,&end,10);
         if(*v<'0' || *v>'9' || errno || end==v || *end || !id || id>UINT32_MAX)return -1;
         next.next_effect_id=(uint32_t)id;
@@ -350,7 +368,7 @@ int ts_matrix_read(TsMatrixControls *c,const char *key,const char *v)
         next.row[n].pan=pan;next.row[n].width=width;if(ts_matrix_is_processor(n))next.delayed[n]=delay;else if(delay)return -1;
         memset(next.row[n].matrix_gain,0,sizeof(next.row[n].matrix_gain));
         for(int d=0;d<TS_MATRIX_DESTINATIONS;++d) {
-            if(!*v && (d==TS_MATRIX_LEGACY_DESTINATIONS || d==TS_MATRIX_SHARED_DESTINATIONS || d==TS_MATRIX_INSTANCE_DESTINATIONS))break; /* Old 15-port sessions. */
+            if(!*v && (d==TS_MATRIX_LEGACY_DESTINATIONS || d==TS_MATRIX_SHARED_DESTINATIONS || d==TS_MATRIX_INSTANCE_DESTINATIONS || d==TS_MATRIX_PRE_IO_DESTINATIONS))break; /* Old 15-port sessions. */
             if(*v++!=',' || !integer(&v,&next.row[n].matrix_gain[d]) || next.row[n].matrix_gain[d]<0 || next.row[n].matrix_gain[d]>2000)return -1;
         }
         if(*v)return -1;

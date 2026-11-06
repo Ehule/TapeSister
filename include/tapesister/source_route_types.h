@@ -2,6 +2,7 @@
 #define TAPESISTER_SOURCE_ROUTE_TYPES_H
 
 #include <stdint.h>
+#include "tapesister/audio_channels.h"
 typedef struct {uint64_t tile;float source,send;} TsRouteActivity;
 
 enum { TS_SOURCE_MAIN, TS_SOURCE_PAIR, TS_SOURCE_SPEAKER, TS_SOURCE_INHERIT };
@@ -10,8 +11,13 @@ enum { TS_SEND_PRISM, TS_SEND_PEDALBOARD, TS_SEND_FALLOUT, TS_SOURCE_SENDS };
 enum { TS_MATRIX_LEGACY_DESTINATIONS = 15, TS_MATRIX_SHARED_DESTINATIONS = 17,
        TS_MATRIX_EFFECT_CAPACITY = 16, TS_MATRIX_INSTANCE_DESTINATIONS = 49,
        TS_MATRIX_AMBISONICS = 49, TS_MATRIX_SPEAKER_BASE = 50,
-       TS_MATRIX_DESTINATIONS = TS_MATRIX_SPEAKER_BASE+TS_SOURCE_SPEAKERS, TS_SOURCE_GRAPH_OFFSET=24,
+       TS_MATRIX_PRE_IO_DESTINATIONS = 66,
+       TS_MATRIX_EXTRA_OUTPUT_BASE = 66,
+       TS_MATRIX_DESTINATIONS = TS_MATRIX_EXTRA_OUTPUT_BASE+TS_AUDIO_PAIR_CAPACITY-8, TS_SOURCE_GRAPH_OFFSET=24,
        TS_SOURCE_COEFFICIENTS = TS_SOURCE_GRAPH_OFFSET + TS_MATRIX_DESTINATIONS*2 };
+static inline int ts_source_route_extended(const int32_t *g)
+{for(int d=TS_MATRIX_PRE_IO_DESTINATIONS;d<TS_MATRIX_DESTINATIONS;++d)if(g[d])return 1;return 0;}
+
 /* Zero is the legacy Main route. Width is an offset from the original 100%.
    Speaker numbers are logical array positions, never hardware channel IDs. */
 typedef struct {
@@ -33,10 +39,10 @@ typedef struct {
     float matrix[TS_SOURCE_COEFFICIENTS][2], target[TS_SOURCE_COEFFICIENTS][2];
     unsigned remaining, rate;
     unsigned mask; /* Physical speaker outputs only. */
-    uint64_t graph_mask, graph_mask_high;
+    uint64_t graph_mask, graph_mask_high, graph_mask_top;
     unsigned send_mask; /* Compiled destinations, also valid for silent input. */
     unsigned active_count;
-    unsigned char active[TS_SOURCE_COEFFICIENTS]; /* Compiled sparse coefficient indices. */
+    uint16_t active[TS_SOURCE_COEFFICIENTS]; /* Compiled sparse coefficient indices. */
     int ready;
     /* Audio accumulates signal peaks; the matrix UI consumes under exclusion. */
     float activity_source, activity_send;

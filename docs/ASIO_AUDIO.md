@@ -45,14 +45,16 @@ See the [legacy reference](LEGACY_ROUTING.md#legacy-external-insert).
 
 The matrix's physical outputs and inputs share one full-duplex ASIO stream,
 sample clock and callback size, without independent Insert queues. Matrix outputs
-address up to sixteen channels and inputs up to eight; N/A pairs stay silent.
+address the driver’s complete active playback and capture layouts independently; N/A
+pairs stay silent. F9 shows channel numbers, editable pair aliases and the ASIO
+names in its identity strip. See [digital reverb setup](EXTERNAL_DIGITAL_REVERB.md).
 
 In legacy routing, Master, ordinary input, Insert Send and Insert Return share
 that same stream. SEND writes directly to the selected
 spare output pair in the Master callback. RETURN reads the corresponding input
 block without the independent-device FIFO, resampler or clock-drift correction.
-The legacy Insert controls address channels 1–8; wider device strides are
-preserved and unused outputs are silent. Legacy Master remains channel 1/2.
+The legacy Insert controls address all available complete stereo pairs; wider device
+strides are preserved and unused outputs are silent. Legacy Master remains channel 1/2.
 ASIO drivers using common PCM integer or floating formats are converted by the
 vendored RtAudio ASIO backend. Unsupported driver formats fail to open.
 
@@ -113,4 +115,5 @@ Selecting 3–10 opens physical outputs 3–10 and retains those channel numbers
 saved routes. Inputs outside the input range are silent, including Insert reads;
 outputs outside the output range are not sent to the driver. Invalid ranges are
 rejected; failed reconfiguration attempts restore the previous working ranges.
-The routing matrix shows only available enabled speakers and output pairs.
+The routing matrix shows available output pairs plus saved unavailable assignments
+marked N/A. Speaker visibility and the 16-speaker limit remain separate.

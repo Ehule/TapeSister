@@ -52,7 +52,7 @@ static void graph(void)
     near(m.output[0].r,-.15f);near(m.output[1].l,.5f);
     c.row[TS_MATRIX_NODES].width=-100;
     FILE *f=tmpfile();assert(f&&ts_matrix_write(f,&c));rewind(f);TsMatrixControls copy;ts_matrix_default(&copy);
-    char line[512];while(fgets(line,sizeof(line),f)){char *v=strchr(line,'=');assert(v);*v++=0;v[strcspn(v,"\r\n")]=0;assert(ts_matrix_read(&copy,line,v)==1);}fclose(f);
+    char line[2048];while(fgets(line,sizeof(line),f)){char *v=strchr(line,'=');assert(v);*v++=0;v[strcspn(v,"\r\n")]=0;assert(ts_matrix_read(&copy,line,v)==1);}fclose(f);
     assert(ts_matrix_valid(&copy));assert(!memcmp(&copy,&c,sizeof(c)));
     copy.row[TS_MATRIX_EQ].matrix_gain[TS_MATRIX_EQ]=1000;assert(!ts_matrix_valid(&copy));
     assert(ts_matrix_read(&copy,"Matrix.In0","A name that is much too long for a port")<0);
@@ -91,7 +91,7 @@ static void physical_inputs(void)
     ts_insert_capture_prepare(io,6,48000,512);ts_insert_begin_output_block(io,512);
     atomic_store(&io->matrix_active,1);static float samples[4096*6];
     for(int f=0;f<4096;++f)for(int ch=0;ch<6;++ch)samples[f*6+ch]=(ch+1)*.1f;
-    ts_insert_capture(io,samples,4096,6);TsStereoFrame pairs[4];
+    ts_insert_capture(io,samples,4096,6);TsStereoFrame pairs[TS_AUDIO_PAIR_CAPACITY];
     for(int f=0;f<500;++f)ts_insert_matrix_read(io,pairs);
     near(pairs[0].l,.1f);near(pairs[0].r,.2f);near(pairs[2].l,.5f);near(pairs[2].r,.6f);near(pairs[3].l,0);
     assert(!io->controls.send_pair); /* No special insert reservation. */
@@ -105,7 +105,7 @@ static void tracker_bus(void)
     assert(ts_sister_runtime_reconfigure(&r,48000,2,error,sizeof(error)));
     ts_sister_runtime_configure_limiter(&r,0,-1,1,50);
     TsMatrixControls c=r.matrix.controls;c.enabled=1;
-    assert(TS_MATRIX_COMPRESSOR==15 && TS_MATRIX_SIDECHAIN==16 && TS_MATRIX_SHARED_DESTINATIONS==17 && TS_MATRIX_INSTANCE_DESTINATIONS==49 && TS_MATRIX_AMBISONICS==49 && TS_MATRIX_SPEAKER_BASE==50 && TS_MATRIX_DESTINATIONS==66);
+    assert(TS_MATRIX_COMPRESSOR==15 && TS_MATRIX_SIDECHAIN==16 && TS_MATRIX_SHARED_DESTINATIONS==17 && TS_MATRIX_INSTANCE_DESTINATIONS==49 && TS_MATRIX_AMBISONICS==49 && TS_MATRIX_SPEAKER_BASE==50 && TS_MATRIX_PRE_IO_DESTINATIONS==66);
     assert(ts_matrix_set(&r.matrix,&c,48000));
     TsSisterSourceFrames s={.tracker={.2f,-.3f},.preview={.05f,.07f},.fm={.1f,.12f}};
     /* Explicit per-track destinations arrive separately from the group mix. */
@@ -171,7 +171,7 @@ static void import_serial_chain(void)
                 assert(ts_matrix_set(&edited.matrix,&c,48000));
                 for(int row=0;row<TS_MATRIX_ROWS;++row)assert(!edited.matrix.voice[row].remaining);
                 FILE *file=tmpfile();assert(file&&ts_matrix_write(file,&c));rewind(file);
-                TsMatrixControls copy;ts_matrix_default(&copy);char line[512];
+                TsMatrixControls copy;ts_matrix_default(&copy);char line[2048];
                 while(fgets(line,sizeof(line),file)){char *v=strchr(line,'=');assert(v);*v++=0;v[strcspn(v,"\r\n")]=0;assert(ts_matrix_read(&copy,line,v)==1);}
                 fclose(file);assert(!memcmp(&copy,&c,sizeof(c)));
             }
@@ -236,7 +236,7 @@ static void main_headroom(void)
     for(int clip=0;clip<2;++clip){
         c.main_headroom=clip?TS_MATRIX_HEADROOM_CLIP:TS_MATRIX_HEADROOM_FLOAT;
         FILE *file=tmpfile();assert(file && ts_matrix_write(file,&c));rewind(file);
-        TsMatrixControls read;ts_matrix_default(&read);char line[512];
+        TsMatrixControls read;ts_matrix_default(&read);char line[2048];
         while(fgets(line,sizeof(line),file)){char *v=strchr(line,'=');assert(v);*v++=0;v[strcspn(v,"\r\n")]=0;assert(ts_matrix_read(&read,line,v)==1);}fclose(file);
         assert(!memcmp(&c,&read,sizeof(c)) && ts_matrix_set(&r.matrix,&read,48000));
         assert(r.matrix.main_clip_current==(float)clip);

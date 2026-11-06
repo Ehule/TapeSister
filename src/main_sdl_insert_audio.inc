@@ -69,7 +69,7 @@ static SDL_AudioDeviceID ts_audio_open_output_native(const char *device,
 #endif
     {
         unsigned channels = ts_audio_output_channels_for(device);
-        if (channels && !ts_audio_range_fits(ts_native_ranges[0],channels)) {
+        if (!ts_jack_selected && channels && !ts_audio_range_fits(ts_native_ranges[0],channels)) {
             SDL_SetError("Output range exceeds this device's %u channels",channels); return 0;
         }
         if (channels >= 2 && channels <= 255) {

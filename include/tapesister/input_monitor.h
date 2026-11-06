@@ -15,7 +15,8 @@ enum {
     TS_INPUT_MONITOR_FADE_FRAMES = 32,
     TS_INPUT_MONITOR_SERVO_INTERVAL_FRAMES = 64,
     TS_LIVE_WAVEFORM_COLUMNS = 576,
-    TS_INPUT_DEVICE_CHANNEL_MAX = 8
+    TS_INPUT_DEVICE_CHANNEL_MAX = 255,
+    TS_INPUT_MONO_BASE = 4, TS_INPUT_PAIR_BASE = 259, TS_INPUT_MODE_MAX = 386
 };
 
 #define TS_INPUT_ACTIVITY_THRESHOLD 0.001f
@@ -127,6 +128,7 @@ TsStereoFrame ts_input_channel_select(const float *device_frame,
                                        size_t device_channels, int mode);
 TsStereoFrame ts_input_channel_select_excluding(const float *device_frame,
     size_t device_channels, int mode, unsigned excluded);
+TsStereoFrame ts_input_channel_select_without_pair(const float *frame,size_t channels,int mode,unsigned pair);
 uint32_t ts_input_activity_detect_frame(const float *device_frame,
                                         size_t device_channels);
 void ts_input_activity_init(TsInputActivity *activity);
