@@ -2524,3 +2524,10 @@ F9 → ADD EFFECT + → META FX creates an independent eight-stage rack.
 EDIT META FX opens its chain, four shared macros, A/B macro states and portable
 `.tsmfx` presets. Dispersion and Resonator are also available individually in
 the pedalboard and Matrix. See [Meta FX](META_FX.md) for controls and routing.
+
+## Credits
+
+Open **F11 → CREDITS** or **Shift+F12** for the illustrated credits list.
+Any key or click closes it; audio keeps running. The same screen appears for two
+seconds after a confirmed quit. Set `exit_credits=0` in `tapesister.ini` to disable
+the farewell. See [Credits](CREDITS.md) for acknowledgments and details.
