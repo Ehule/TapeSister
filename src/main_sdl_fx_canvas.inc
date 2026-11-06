@@ -435,6 +435,16 @@ static void fx_paint_cables(TsSamplePages *pages,TsInstrument *bank)
 {
     MatrixWindow *w=&matrix_window;
     int cable_selected=fx_canvas.wire>=0 && fx_canvas.destination>=0;
+    if(cable_selected) {
+        int source=fx_source_at(fx_canvas.source);
+        int dest=fx_canvas.destination;
+        if(source<0 || fx_canvas.dest[dest]<0 ||
+           !mx_display_route(mx_route(w->rows[source],pages,bank)).matrix_gain[dest]) {
+            /* Undo may remove the inspected cable between frames. */
+            fx_canvas.wire=fx_canvas.destination=-1;
+            cable_selected=0;
+        }
+    }
     int node_selected=0;
     if(w->selection_count==1)for(int i=0;i<fx_canvas.count;++i)
         if(mx_same(fx_canvas.node[i].row,w->selection[0])){node_selected=1;break;}

@@ -365,6 +365,10 @@ int main(int argc,char **argv)
     pointer(SDL_MOUSEBUTTONDOWN,sx,sy,SDL_BUTTON_LEFT,1);assert(matrix_window.drag==FX_DRAG_WIRE);
     pointer(SDL_MOUSEBUTTONUP,tx,ty,SDL_BUTTON_LEFT,1);
     assert(audio.sister.matrix.controls.row[TS_MATRIX_MOSAIC].matrix_gain[TS_MATRIX_EFFECT_BASE+comp]==1000);
+    key(SDLK_z,KMOD_CTRL);
+    SDL_Surface *undone=rendered_frame();
+    assert(fx_canvas.wire<0 && !audio.sister.matrix.controls.row[TS_MATRIX_MOSAIC].matrix_gain[TS_MATRIX_EFFECT_BASE+comp]);
+    SDL_FreeSurface(undone);key(SDLK_y,KMOD_CTRL);
     fx_canvas.source=source->row;fx_canvas.wire=0;fx_canvas.destination=TS_MATRIX_EFFECT_BASE+comp;
     key(SDLK_DELETE,0);assert(!audio.sister.matrix.controls.row[TS_MATRIX_MOSAIC].matrix_gain[TS_MATRIX_EFFECT_BASE+comp]);
     key(SDLK_z,KMOD_CTRL);assert(audio.sister.matrix.controls.row[TS_MATRIX_MOSAIC].matrix_gain[TS_MATRIX_EFFECT_BASE+comp]==1000);
