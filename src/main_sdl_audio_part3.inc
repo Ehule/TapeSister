@@ -513,6 +513,7 @@ static void ts_audio_quit(void)
 static void ts_audio_fresh_matrix(TsMatrixControls *matrix)
 {
     TsMatrixControls defaults;ts_matrix_default(&defaults);
+    defaults.enabled=1; /* Fresh sessions use the editable Matrix, as in ts_config_init. */
     memcpy(defaults.input_name,matrix->input_name,sizeof(defaults.input_name));
     memcpy(defaults.output_name,matrix->output_name,sizeof(defaults.output_name));
     *matrix=defaults;

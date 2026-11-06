@@ -102,7 +102,7 @@ static void canvas_gestures(uint32_t id)
     click(700,80,1);assert(!l->canvas_straight);
     assert(fx_cable(100,200,400,400,0,0,250,300)<1);
     /* Every available endpoint plus successive additions must fit below 20%. */
-    w->input_ports=64;mx_rows(&pages,&bank);fx_canvas.all=1;fx_build(&pages,&bank);
+    w->input_ports=64;mx_rows(&pages,&bank);fx_build(&pages,&bank);
     for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)if(!w->controls.effect[i].id)mx_effect_add(0,&audio,&ui,&pages,&bank,TS_SISTER_FX_DELAY);
     w->filter=0;mx_rows(&pages,&bank);fx_build(&pages,&bank);
     key(SDLK_a,KMOD_CTRL);assert(w->selection_count==fx_canvas.count);key(SDLK_z,KMOD_SHIFT);
@@ -116,6 +116,130 @@ static void canvas_gestures(uint32_t id)
     fx_view(0,&pages,&bank);click(100,65,1);assert(w->canvas);
     assert(TS_MOSAIC_FX_X+TS_MOSAIC_FX_W<=530);
 }
+static TsStereoFrame through(void *context,int node,TsStereoFrame input)
+{
+    (void)context;(void)node;
+    return input;
+}
+
+static float settled_output(void)
+{
+    TsStereoFrame live[TS_MATRIX_ROWS-TS_MATRIX_NODES]={0};
+    live[TS_MATRIX_MOSAIC-TS_MATRIX_NODES]=(TsStereoFrame){.25f,.25f};
+    for(int i=0;i<4096;++i) {
+        TsSourceRouteMix mix={0};
+        ts_matrix_process(&audio.sister.matrix,&mix,live,through,NULL);
+    }
+    return audio.sister.matrix.output[0].l;
+}
+
+static void disconnect_main_prism(void)
+{
+    MatrixWindow *w=&matrix_window;
+    static TsMatrixControls patch,just_one_cable,expected;
+    patch=w->controls;
+    for(int i=0;i<TS_MATRIX_ROWS;++i) {
+        memset(patch.row[i].matrix_gain,0,sizeof(patch.row[i].matrix_gain));
+        patch.delayed[i]=0;
+    }
+    int fx_from=TS_MATRIX_EFFECT_BASE,fx_to=TS_MATRIX_EFFECT_BASE+1;
+    assert(patch.effect[0].id && patch.effect[1].id);
+    patch.row[fx_from].matrix_gain[fx_to]=730;
+    patch.serial_mask=(1u<<TS_MATRIX_MAIN)|(1u<<TS_MATRIX_PRISM);
+    patch.main_headroom=TS_MATRIX_HEADROOM_FLOAT;patch.board_insert=1;
+    patch.row[TS_MATRIX_PRISM].pan=-20;
+    patch.row[TS_MATRIX_MOSAIC].matrix_gain[TS_MATRIX_MAIN]=1000;
+    patch.row[TS_MATRIX_MAIN].matrix_gain[TS_MATRIX_PRISM]=1000;
+    patch.row[TS_MATRIX_PRISM].matrix_gain[TS_MATRIX_BOARD]=750;
+    patch.row[TS_MATRIX_BOARD].matrix_gain[TS_MATRIX_EQ]=900;
+    patch.row[TS_MATRIX_EQ].matrix_gain[TS_MATRIX_LIMITER]=1000;
+    patch.row[TS_MATRIX_LIMITER].matrix_gain[TS_MATRIX_NODES]=1000;
+    assert(ts_matrix_set(&audio.sister.matrix,&patch,48000));
+    w->controls=ui.config.matrix=patch;
+    assert(settled_output()>.1f);
+    w->input_ports=2;mx_rows(&pages,&bank);
+    ts_matrix_layout_default(w->layout);
+    /* Leave downstream processors in their automatic positions. */
+    TsFxCanvasPosition *main_pos=fx_position((MatrixRow){.kind=2,.index=TS_MATRIX_MAIN},1);
+    TsFxCanvasPosition *prism_pos=fx_position((MatrixRow){.kind=2,.index=TS_MATRIX_PRISM},1);
+    main_pos->x=0;main_pos->y=0;prism_pos->x=400;prism_pos->y=0;
+    TsFxCanvasPosition *fx_source_pos=fx_position((MatrixRow){.kind=4,.tile=patch.effect[0].id},1);
+    TsFxCanvasPosition *fx_target_pos=fx_position((MatrixRow){.kind=4,.tile=patch.effect[1].id},1);
+    fx_source_pos->x=0;fx_source_pos->y=240;fx_target_pos->x=400;fx_target_pos->y=240;
+    w->layout->canvas_view=1;w->layout->canvas_x=30;w->layout->canvas_y=80;w->layout->canvas_zoom=1;
+    fx_build(&pages,&bank);
+    int count=fx_canvas.count;
+    FxCanvasNode *before=malloc(count*sizeof(*before));assert(before);
+    memcpy(before,fx_canvas.node,count*sizeof(*before));
+    /* Select modules first, then click their cable and hit Delete twice. */
+    key(SDLK_a,KMOD_CTRL);
+    click(fx_x(305),fx_y(240+FX_NODE_H*.5f),1);
+    assert(fx_canvas.wire>=0 && fx_canvas.source.index==fx_from && fx_canvas.destination==fx_to);
+    key(SDLK_DELETE,0);key(SDLK_DELETE,0);
+    just_one_cable=patch;just_one_cable.row[fx_from].matrix_gain[fx_to]=0;
+    assert(!memcmp(&just_one_cable,&audio.sister.matrix.controls,sizeof(patch)));
+    key(SDLK_z,KMOD_CTRL);
+    assert(!memcmp(&patch,&audio.sister.matrix.controls,sizeof(patch)));
+    for(int alternate=0;alternate<=1;++alternate) {
+        if(alternate) {
+            /* Patch Main directly to EQ while Main -> Prism still exists. */
+            FxCanvasNode *eq=node(TS_MATRIX_EQ);assert(eq);
+            pointer(SDL_MOUSEBUTTONDOWN,fx_x(FX_NODE_W),fx_y(FX_NODE_H*.5f),SDL_BUTTON_LEFT,1);
+            pointer(SDL_MOUSEBUTTONUP,fx_x(eq->x),fx_y(eq->y+FX_NODE_H*.5f),SDL_BUTTON_LEFT,1);
+            patch.row[TS_MATRIX_MAIN].matrix_gain[TS_MATRIX_EQ]=1000;
+            assert(!memcmp(&patch,&audio.sister.matrix.controls,sizeof(patch)));
+        }
+        click(fx_x(305),fx_y(FX_NODE_H*.5f),1);
+        assert(fx_canvas.wire>=0 && fx_canvas.source.index==TS_MATRIX_MAIN && fx_canvas.destination==TS_MATRIX_PRISM);
+        key(SDLK_DELETE,0);
+        expected=patch;
+        expected.row[TS_MATRIX_MAIN].matrix_gain[TS_MATRIX_PRISM]=0;
+        assert(!memcmp(&expected,&audio.sister.matrix.controls,sizeof(expected)));
+        fx_build(&pages,&bank);
+        assert(fx_canvas.count==count);
+        for(int i=0;i<count;++i) {
+            assert(mx_same(before[i].row,fx_canvas.node[i].row));
+            assert(before[i].x==fx_canvas.node[i].x && before[i].y==fx_canvas.node[i].y);
+        }
+        assert(alternate?settled_output()>.1f:settled_output()==0);
+        key(SDLK_DELETE,0); /* A second Delete after a disconnect has no module target. */
+        assert(!memcmp(&expected,&audio.sister.matrix.controls,sizeof(expected)));
+        key(SDLK_z,KMOD_CTRL);
+        assert(!memcmp(&patch,&audio.sister.matrix.controls,sizeof(patch)));
+    }
+    click(1000,82,1);
+    for(int i=0;i<TS_MATRIX_ROWS;++i)for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)
+        assert(!w->controls.row[i].matrix_gain[d]);
+    assert(settled_output()==0);
+    assert(w->controls.serial_mask==patch.serial_mask && w->controls.board_insert==patch.board_insert);
+    assert(w->controls.main_headroom==patch.main_headroom && w->controls.row[TS_MATRIX_PRISM].pan==-20);
+    fx_build(&pages,&bank);
+    /* Clearing also exposes explicit, empty track rows. Every old node still exists. */
+    for(int i=0;i<count;++i) {
+        int j=0;while(j<fx_canvas.count && !mx_same(before[i].row,fx_canvas.node[j].row))++j;
+        assert(j<fx_canvas.count && before[i].x==fx_canvas.node[j].x && before[i].y==fx_canvas.node[j].y);
+    }
+    assert(!memcmp(patch.effect,w->controls.effect,sizeof(patch.effect)));
+    view_codec();
+    static TsSisterProjectState saved,loaded;
+    const char *file="fx-disconnected-project-test.ini";
+    char error[256];int present=0;
+    ts_sister_project_state_capture(&saved,&audio.sister,1,"unpatched");
+    assert(ts_sister_project_state_save_file(&saved,file,error,sizeof(error)));
+    assert(ts_sister_project_state_load_file(&loaded,file,48000,&present,error,sizeof(error)) && present);
+    assert(!memcmp(loaded.matrix.row,w->controls.row,sizeof(loaded.matrix.row)));
+    assert(!memcmp(loaded.matrix.effect,w->controls.effect,sizeof(loaded.matrix.effect)));
+    assert(!memcmp(&loaded.matrix_layout,w->layout,sizeof(loaded.matrix_layout)));
+    TsSisterRuntime *reopened=malloc(sizeof(*reopened));assert(reopened);
+    ts_sister_runtime_init(reopened);
+    assert(ts_sister_project_state_apply(&loaded,reopened,NULL));
+    assert(!memcmp(reopened->matrix.controls.row,w->controls.row,sizeof(w->controls.row)));
+    assert(!memcmp(reopened->matrix.controls.effect,w->controls.effect,sizeof(w->controls.effect)));
+    ts_sister_runtime_free(reopened);free(reopened);remove(file);
+    key(SDLK_z,KMOD_CTRL);
+    assert(!memcmp(&patch,&audio.sister.matrix.controls,sizeof(patch)));
+    free(before);
+}
 static void routing_preferences(void)
 {
     static TsConfig loaded;char error[256];const char *path="test-fx-session-preferences.ini";
@@ -123,12 +247,12 @@ static void routing_preferences(void)
     snprintf(ui.config.matrix.output_name[0],TS_MATRIX_NAME,"MAIN OUTPUT");
     assert(ts_audio_main_config_write(&ui.config,path,error,sizeof(error)));
     assert(ts_audio_config_load(&loaded,path,error,sizeof(error)));
-    assert(!loaded.matrix.enabled && !loaded.matrix.effect[0].id);
+    assert(loaded.matrix.enabled && !loaded.matrix.effect[0].id);
     assert(!strcmp(loaded.matrix.input_name[0],"REVERB RETURN"));
     /* Also ignore a pre-fix INI containing a live graph on startup. */
     assert(ts_audio_config_save(&ui.config,path,error,sizeof(error)));
     assert(ts_audio_main_config_load(&loaded,path,error,sizeof(error)));
-    assert(!loaded.matrix.enabled && !loaded.matrix.effect[0].id);
+    assert(loaded.matrix.enabled && !loaded.matrix.effect[0].id);
     assert(!strcmp(loaded.matrix.output_name[0],"MAIN OUTPUT"));
     assert(ui.config.matrix.enabled && ui.config.matrix.effect[0].id);
     ts_live_config=&ui.config;remove(path);
@@ -168,10 +292,11 @@ int main(int argc,char **argv)
     }
     /* A spatial drag is saved/undoable without replacing a live processor. */
     FxCanvasNode *n=instance(c.effect[meta].id);int x=fx_x(n->x)+20,y=fx_y(n->y)+20;
+    int placed=matrix_window.layout->canvas_count;float original_x=n->x;
     pointer(SDL_MOUSEBUTTONDOWN,x,y,SDL_BUTTON_LEFT,1);pointer(SDL_MOUSEMOTION,x+30,y+20,0,0);pointer(SDL_MOUSEBUTTONUP,x+30,y+20,SDL_BUTTON_LEFT,1);
-    assert(matrix_window.layout->canvas_count==1 && audio.sister.matrix_effects.current[rev]==history);
-    view_codec();key(SDLK_z,KMOD_CTRL);assert(!matrix_window.layout->canvas_count && audio.sister.matrix_effects.current[rev]==history);
-    key(SDLK_y,KMOD_CTRL);assert(matrix_window.layout->canvas_count==1);fx_build(&pages,&bank);
+    assert(fx_position(n->row,0)->x!=original_x && audio.sister.matrix_effects.current[rev]==history);
+    view_codec();key(SDLK_z,KMOD_CTRL);assert(matrix_window.layout->canvas_count==placed && fx_position(n->row,0)->x==original_x && audio.sister.matrix_effects.current[rev]==history);
+    key(SDLK_y,KMOD_CTRL);assert(fx_position(n->row,0)->x!=original_x);fx_build(&pages,&bank);
     n=instance(c.effect[meta].id);click(fx_x(n->x)+20,fx_y(n->y)+20,2);assert(fx_canvas.meta==c.effect[meta].id);
     float before=matrix_window.controls.effect[meta].meta.macro[0];click(230,744,1);
     assert(matrix_window.controls.effect[meta].meta.macro[0]>before && audio.sister.matrix_effects.current[rev]==history);
@@ -208,7 +333,7 @@ int main(int argc,char **argv)
     SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=SDL_GetWindowID(main_window);e.button.button=SDL_BUTTON_LEFT;
     e.button.x=(TS_MOSAIC_FX_X+10)*2;e.button.y=(TS_MOSAIC_FX_Y+5)*2;assert(event(&e));assert(matrix_window.visible && matrix_window.canvas);
     SDL_SetWindowSize(matrix_window.window,1001,701);fx_paint(&audio,&pages,&bank);
-    canvas_gestures(c.effect[dist].id);routing_preferences();
+    canvas_gestures(c.effect[dist].id);disconnect_main_prism();routing_preferences();
     matrix_close();meta_fx_close();ts_sister_runtime_free(&audio.sister);ts_sample_pages_free(&pages);ts_instrument_free(&bank);SDL_DestroyWindow(main_window);SDL_Quit();
-    puts("FX Canvas graph sharing, view history, stable identities, nested chain, macros and entry points passed.");return 0;
+    puts("FX Canvas controller passed, including single-cable disconnect, alternative path, silent clear, undo and project recall.");return 0;
 }

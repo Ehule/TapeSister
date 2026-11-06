@@ -9,7 +9,10 @@
    Tracks and fixed buses use their index; tiles/cards/effect instances use their stable identity. */
 enum { TS_MATRIX_LAYOUT_PAGES=1024,
        TS_MATRIX_LAYOUT_ROWS=TS_TRACKER_LANES+TS_MATRIX_LAYOUT_PAGES*TS_BANK_SLOT_COUNT+TS_MATRIX_ROWS+TS_MOSAIC_EVENTS };
-enum { TS_FX_CANVAS_POSITIONS=256 };
+/* Keep room for all processors and interface endpoints even when the player
+   has positioned the full complement of individual track/tile/card sources. */
+enum { TS_FX_CANVAS_SOURCE_POSITIONS=256,
+       TS_FX_CANVAS_POSITIONS=TS_FX_CANVAS_SOURCE_POSITIONS+TS_MATRIX_ROWS+TS_MATRIX_DESTINATIONS };
 typedef struct { uint64_t id; int kind; float x,y; } TsFxCanvasPosition;
 typedef struct {
     uint64_t row_id[TS_MATRIX_LAYOUT_ROWS];

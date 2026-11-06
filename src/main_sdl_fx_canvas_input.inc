@@ -18,7 +18,7 @@ static void fx_delete_selection(SDL_AudioDeviceID device,AudioState *audio,TsUiS
         MatrixRow row={.kind=4,.tile=w->controls.effect[i].id};
         if(fx_chosen(row))ids[count++]=(uint32_t)row.tile;
     }
-    if(!count){snprintf(w->status,sizeof(w->status),"SELECT AN ADDED EFFECT TO DELETE. FIXED BUSES AND OUTPUTS ARE PROTECTED.");return;}
+    if(!count){snprintf(w->status,sizeof(w->status),"SELECT A CABLE TO DISCONNECT OR AN ADDED EFFECT TO REMOVE.");return;}
     for(int i=0;i<count;++i)for(int slot=0;slot<TS_MATRIX_EFFECT_CAPACITY;++slot)
         if(w->controls.effect[slot].id==ids[i]){mx_effect_remove(device,audio,ui,pages,bank,slot);break;}
     fx_clear_selection();fx_canvas.wire=-1;fx_build(pages,bank);
@@ -56,12 +56,27 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
         if(key==SDLK_m){if(mx_editable())fx_bypass_selection(device,audio,ui);return 1;}
         if(key==SDLK_DELETE || key==SDLK_BACKSPACE) {
             if(!mx_editable())return 1;
-            if(fx_canvas.wire>=0 && fx_canvas.destination>=0){int at=fx_source_at(fx_canvas.source);
-                if(at>=0){mx_select(at,0);w->destination=fx_canvas.destination;mx_gain(device,audio,ui,pages,bank,0);}fx_canvas.wire=-1;}
+            if(fx_canvas.wire>=0) {
+                int at=fx_source_at(fx_canvas.source);
+                int dest=fx_canvas.destination;
+                if(at>=0 && dest>=0) {
+                    mx_select(at,0);
+                    w->destination=dest;
+                    mx_gain(device,audio,ui,pages,bank,0);
+                    fx_clear_selection();
+                    if(mx_display_route(mx_route(fx_canvas.source,pages,bank)).matrix_gain[dest])return 1;
+                    int target=fx_canvas.dest[dest];
+                    if(target>=0)snprintf(w->status,sizeof(w->status),"DISCONNECTED %.40s > %.40s / CTRL+Z: UNDO",
+                        fx_canvas.source.name,fx_canvas.node[target].row.name);
+                }
+                fx_clear_selection();
+                w->drag=0;
+                fx_canvas.wire=fx_canvas.destination=-1;
+            }
             else if(!fx_canvas.meta)fx_delete_selection(device,audio,ui,pages,bank);
             return 1;
         }
-        if((mod&KMOD_CTRL) && key==SDLK_a){if(!fx_canvas.meta){fx_clear_selection();fx_build(pages,bank);
+        if((mod&KMOD_CTRL) && key==SDLK_a){if(!fx_canvas.meta){fx_canvas.wire=fx_canvas.destination=-1;fx_clear_selection();fx_build(pages,bank);
             for(int i=0;i<fx_canvas.count;++i)w->selection[w->selection_count++]=fx_canvas.node[i].row;}return 1;}
         if((mod&KMOD_CTRL) && key==SDLK_n){if(!fx_canvas.meta)fx_popup_open(400,220);return 1;}
         e->key.windowID=SDL_GetWindowID(main);return 0;
@@ -71,15 +86,19 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
     if(e->type==SDL_MOUSEBUTTONUP) {
         if(w->drag==FX_DRAG_WIRE && fx_canvas.wire>=0) {
             int at=fx_source_at(fx_canvas.source);fx_build(pages,bank);
+            fx_canvas.destination=-1;
             for(int i=0;i<fx_canvas.count;++i) {
                 FxCanvasNode *n=&fx_canvas.node[i];int xx=fx_x(n->x),yy=fx_y(n->y+FX_NODE_H*.5f),dest=n->destination;
                 int sc=dest>=0?ts_matrix_sidechain_for(dest):-1;
                 if(sc>=0 && ts_matrix_destination_active(&w->controls,sc) && abs(y-fx_y(n->y+FX_NODE_H*.8f))<13 && abs(y-fx_y(n->y+FX_NODE_H*.8f))<abs(y-yy)){yy=fx_y(n->y+FX_NODE_H*.8f);dest=sc;}
                 int body=fx_canvas.move_count==-1 && x>=xx && x<=fx_x(n->x+FX_NODE_W) && y>=fx_y(n->y) && y<=fx_y(n->y+FX_NODE_H);
                 if(at>=0 && dest>=0 && (body || (abs(x-xx)<18 && abs(y-yy)<18))){mx_select(at,0);w->destination=dest;
-                    if(body)mx_toggle(device,audio,ui,pages,bank);else mx_gain(device,audio,ui,pages,bank,1000);break;}
+                    if(body)mx_toggle(device,audio,ui,pages,bank);else mx_gain(device,audio,ui,pages,bank,1000);
+                    if(mx_display_route(mx_route(fx_canvas.source,pages,bank)).matrix_gain[dest])fx_canvas.destination=dest;
+                    break;}
             }
-            fx_canvas.wire=-1;
+            fx_clear_selection();w->effect_open=0;w->compressor_open=0;
+            if(fx_canvas.destination<0)fx_canvas.wire=-1;
         }
         if(w->drag==FX_DRAG_BOX)fx_box_select(x,y);
         w->drag=0;return 1;
@@ -105,7 +124,10 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
     if(left && y>=70 && y<98 && !fx_canvas.meta) {
         if(!w->controls.enabled && x>=300 && x<584)mx_activate(device,audio,ui,pages,bank);
         else if(x>=660 && x<856)l->canvas_straight=!l->canvas_straight;
-        else if(x>=866){fx_canvas.all=!fx_canvas.all;fx_canvas.fit=1;}return 1;
+        else if(x>=866 && x<1254){
+            mx_reset_routes(device,audio,ui,pages,bank,0);
+            fx_clear_selection();fx_canvas.wire=fx_canvas.destination=-1;
+        }return 1;
     }
     TsMatrixEffectControls *meta=fx_meta();
     if(meta) {
@@ -160,7 +182,8 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
         if(fx_canvas.wire>=0 && fx_canvas.destination>=0) {
             int at=fx_source_at(fx_canvas.source);
             if(at>=0){mx_select(at,0);w->destination=fx_canvas.destination;int gain=mx_display_route(mx_route(w->rows[at],pages,bank)).matrix_gain[w->destination];
-                if(gain)mx_gain(device,audio,ui,pages,bank,(int)lrintf(gain*powf(10,wheel*((SDL_GetModState()&KMOD_SHIFT)?.005f:.05f))));}
+                if(gain)mx_gain(device,audio,ui,pages,bank,(int)lrintf(gain*powf(10,wheel*((SDL_GetModState()&KMOD_SHIFT)?.005f:.05f))));
+                fx_clear_selection();}
         } else {float old=l->canvas_zoom,next=SDL_clamp(old*powf(1.12f,wheel),.001f,2.f);
             l->canvas_x+=(x-20)*(1/next-1/old);l->canvas_y+=(y-FX_TOP)*(1/next-1/old);l->canvas_zoom=next;l->canvas_view=1;}return 1;
     }
@@ -195,7 +218,8 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
             float distance=fx_cable(fx_x(n->x+FX_NODE_W),fx_y(n->y+FX_NODE_H*.5f),fx_x(to->x),fx_y(to->y+(d==to->destination?FX_NODE_H*.5f:FX_NODE_H*.8f)),0,0,x,y);
             if(distance<nearest){nearest=distance;found=i;destination=d;}}}
     fx_canvas.wire=found;fx_canvas.destination=destination;
-    if(found>=0){fx_canvas.source=fx_canvas.node[found].row;snprintf(w->status,sizeof(w->status),"CABLE SELECTED / WHEEL: LEVEL / DELETE: DISCONNECT / CLICK EMPTY SPACE: RELEASE");}
+    if(found>=0){fx_clear_selection();w->effect_open=0;w->compressor_open=0;fx_canvas.source=fx_canvas.node[found].row;snprintf(w->status,sizeof(w->status),"%.40s > %.40s / WHEEL: LEVEL / DELETE: DISCONNECT",
+            fx_canvas.source.name,fx_canvas.node[fx_canvas.dest[destination]].row.name);}
     else {fx_canvas.before_count=(SDL_GetModState()&(KMOD_CTRL|KMOD_SHIFT))?w->selection_count:0;
         memcpy(fx_canvas.before,w->selection,fx_canvas.before_count*sizeof(MatrixRow));
         if(!fx_canvas.before_count)fx_clear_selection();w->effect_open=0;w->compressor_open=0;w->status[0]=0;
