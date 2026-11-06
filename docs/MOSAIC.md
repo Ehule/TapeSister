@@ -194,6 +194,10 @@ priority. Hover is refreshed after view scrolling and cleared when the
 pointer leaves the window or a modal editor covers the canvas. Long-project
 ruler labels use minutes and seconds, for example **08:20** instead of **0500**.
 
+![A dense 24-minute overview with compact names and hover details](screenshots/mosaic-performance/overview-cards.png)
+
+![Compact cards reveal waveform detail at an intermediate zoom](screenshots/mosaic-performance/compact-cards.png)
+
 ![G moves the selection together, with original positions outlined](images/mosaic-grab.png)
 
 Shift-dragging a card still copies the group; the primary's copy becomes primary.
