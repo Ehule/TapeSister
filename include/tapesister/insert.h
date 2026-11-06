@@ -2,13 +2,14 @@
 #define TAPESISTER_INSERT_H
 
 #include "tapesister/input_monitor.h"
+#include "tapesister/audio_channels.h"
 #include <stdio.h>
 
-enum { TS_INSERT_MAX_CHANNELS = 8 };
+enum { TS_INSERT_MAX_CHANNELS = TS_AUDIO_CHANNEL_CAPACITY };
 typedef struct {
     int send_pair;   /* 0 = unassigned. Shared Master: 1 = 3/4, 3 = 7/8.
                        Separate SEND device: 1 = 1/2, 4 = 7/8. */
-    int return_pair; /* 0 = inputs 1/2, through 3 = 7/8. */
+    int return_pair; /* zero-based absolute capture pair, 0 = inputs 1/2. */
     float send_db, return_db;
 } TsInsertControls;
 
@@ -44,7 +45,7 @@ void ts_insert_default(TsInsertControls *controls);
 int ts_insert_valid(const TsInsertControls *controls);
 void ts_insert_init(TsInsert *insert);
 void ts_insert_free(TsInsert *insert);
-void ts_insert_matrix_read(TsInsert *insert,TsStereoFrame input[4]);
+void ts_insert_matrix_read(TsInsert *insert,TsStereoFrame input[TS_AUDIO_PAIR_CAPACITY]);
 void ts_insert_prepare(TsInsert *insert, unsigned sample_rate);
 /* Master callback, before processing its frames. Sizes the RETURN bridge in
    capture-rate frames and publishes the producer burst size for separate SEND. */

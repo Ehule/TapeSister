@@ -124,10 +124,12 @@ static SDL_AudioDeviceID ts_audio_open_capture_widest(
         maximum = TS_INPUT_DEVICE_CHANNEL_MAX;
     TsAudioChannelRange range = ts_active_ranges[1];
     preferred = ts_audio_capture_preferred_channels(device);
-    if (!ts_audio_range_valid(range) || (preferred && !ts_audio_range_fits(range,preferred))) {
+    if (!ts_audio_range_valid(range) || (!ts_jack_selected && preferred && !ts_audio_range_fits(range,preferred))) {
         SDL_SetError("Input range exceeds this device's %u available channels",preferred); return 0;
     }
-    if (preferred != 0u) maximum = preferred;
+    /* Preserve the legacy bounded probe on opaque SDL backends. ASIO/JACK
+       supply their complete independent layouts through the native catalog. */
+    maximum = preferred ? preferred : 8;
     if (obtained != NULL) SDL_zero(*obtained);
 
     /*
@@ -139,7 +141,7 @@ static SDL_AudioDeviceID ts_audio_open_capture_widest(
      * negotiation remain enabled. This is a
      * control-thread device-open path; no probing reaches either callback.
      */
-    for (uint8_t probe = 0u; ; ++probe) {
+    for (unsigned probe = 0u; probe<=maximum; ++probe) {
         uint8_t channels = probe==0 ? maximum : ts_input_capture_probe_request(maximum, probe-1);
         if (channels == 0u) break;
         attempt = *desired;
@@ -558,7 +560,7 @@ static int ts_audio_main_config_save(const TsConfig *config, const char *path,
     for(int capture=0;capture<2;++capture) {
         TsAudioChannelRange range=capture?config->audio_input_range:config->audio_output_range;
         unsigned offered=ts_audio_range_offered(config,capture);
-        if(!ts_audio_range_valid(range) || (offered && !ts_audio_range_fits(range,offered))) {
+        if(!ts_audio_range_valid(range) || (config->audio_backend!=TS_AUDIO_BACKEND_JACK && offered && !ts_audio_range_fits(range,offered))) {
             snprintf(error,error_size,"%s range unavailable: device exposes %u channels",capture?"Input":"Output",offered);
             return 0;
         }

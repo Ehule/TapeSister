@@ -119,7 +119,7 @@ static void test_insert_devices(void)
     assert(!error[0] && audio.sister.insert.send_channels==16);
     assert(atomic_load(&audio.sister.insert.input_channels)==16);
     snprintf(ui.insert_return_device,sizeof(ui.insert_return_device),"%s",mock_insert_names[1][1]);
-    assert(ts_audio_insert_choice_channels(&ui,1)==8);
+    assert(ts_audio_insert_choice_channels(&ui,1)==16);
     mock_insert_channels=0;mock_insert_no_enumeration=1;
     ts_audio_insert_cycle_device(&ui,0,1);assert(!ui.insert_send_device[0]);
     mock_insert_no_enumeration=0;

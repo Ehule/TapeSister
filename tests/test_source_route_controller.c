@@ -200,6 +200,7 @@ static void routing_pan_scope(const char *directory)
 #include "test_matrix_controller.inc"
 #include "test_clock_controller.inc"
 #include "test_matrix_import.inc"
+#include "test_tile_audition_routing.inc"
 
 int main(int argc,char **argv)
 {
@@ -220,6 +221,11 @@ int main(int argc,char **argv)
     bank.has_loop=1;bank.loop_first=0;bank.loop_last=8192;
     assert(ts_instrument_sync_selected(&bank,error,sizeof(error)));
     assert(ts_instrument_bank_rename(&bank,0,"GLASS RHYTHM",error,sizeof(error)));
+    if(argc>1 && !strcmp(argv[1],"--tile-audition")) {
+        tile_audition_routing();
+        ts_sister_runtime_free(&a.sister);ts_sample_pages_free(&pages);ts_instrument_free(&bank);
+        SDL_DestroyWindow(window);SDL_Quit();puts("Tile audition matrix routing passed.");return 0;
+    }
     if(argc>1 && (!strcmp(argv[1],"--cockpit") || !strcmp(argv[1],"--clock"))) {
         assert(embedded_open(window,0,&a,&u,&pages,&bank,48000));u.tracker_open=1;
         pattern[editor.editPattern][0]=(note_t){.note=49,.instr=1};song.songLength=1;song.orders[0]=editor.editPattern;

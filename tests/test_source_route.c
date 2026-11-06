@@ -114,7 +114,7 @@ static void activity(void)
 }
 static void sparse_accumulation(void)
 {
-    /* Dense oracle covers both mask words, dense routing, ignored bus data,
+    /* Dense oracle covers all three mask words, dense routing, ignored bus data,
        negative handoff gains and adding a mix to itself. */
     uint64_t random=UINT64_C(0x54a285e9da713f01);
     const float gains[]={0,1,-1,.37f,2};
@@ -122,9 +122,11 @@ static void sparse_accumulation(void)
         TsSourceRouteMix from={0},to={0};
         random=random*UINT64_C(6364136223846793005)+1;from.graph_mask=random;
         random=random*UINT64_C(6364136223846793005)+1;from.graph_mask_high=random;
-        if(trial==0)from.graph_mask=from.graph_mask_high=0;
-        if(trial==1)from.graph_mask=from.graph_mask_high=UINT64_MAX;
-        if(trial==2){from.graph_mask=UINT64_C(1)<<63;from.graph_mask_high=3;}
+        random=random*UINT64_C(6364136223846793005)+1;from.graph_mask_top=random;
+        if(trial==0)from.graph_mask=from.graph_mask_high=from.graph_mask_top=0;
+        if(trial==1)from.graph_mask=from.graph_mask_high=from.graph_mask_top=UINT64_MAX;
+        if(trial==2){from.graph_mask=UINT64_C(1)<<63;from.graph_mask_high=3;from.graph_mask_top=1;}
+        if(trial==3){from.graph_mask=from.graph_mask_high=0;from.graph_mask_top=1;}
         for(int d=0;d<TS_MATRIX_DESTINATIONS;++d) {
             from.graph[d]=(TsStereoFrame){(d-30)*.017f,(30-d)*.023f};
             to.graph[d]=(TsStereoFrame){(d-12)*.031f,(12-d)*.019f};
@@ -135,16 +137,18 @@ static void sparse_accumulation(void)
         float gain=gains[trial%5];
         for(int d=0;d<TS_MATRIX_DESTINATIONS;++d) {
             int active=d<64?!!(input->graph_mask&(UINT64_C(1)<<d)):
-                !!(input->graph_mask_high&(UINT64_C(1)<<(d-64)));
+                d<128?!!(input->graph_mask_high&(UINT64_C(1)<<(d-64))):
+                !!(input->graph_mask_top&(UINT64_C(1)<<(d-128)));
             if(active) {
                 want.graph[d].l+=input->graph[d].l*gain;
                 want.graph[d].r+=input->graph[d].r*gain;
             }
         }
         uint64_t low=to.graph_mask|input->graph_mask,high=to.graph_mask_high|input->graph_mask_high;
+        uint64_t top=to.graph_mask_top|input->graph_mask_top;
         ts_source_route_add(&to,input,gain);
         assert(!memcmp(to.graph,want.graph,sizeof(to.graph)));
-        assert(to.graph_mask==low && to.graph_mask_high==high);
+        assert(to.graph_mask==low && to.graph_mask_high==high && to.graph_mask_top==top);
     }
     TsSourceRouteMix mix,expected;memset(&expected,0,sizeof(expected));memset(&mix,0x7f,sizeof(mix));
     mix.available=0x91;mix.check_outputs=1;expected.available=0x91;expected.check_outputs=1;
@@ -169,7 +173,8 @@ static void silent_routing(void)
         TsStereoFrame a=ts_source_route_frame(&fast,zeros[z],&got);
         TsStereoFrame b=ts_source_route_frame(&ordinary,zeros[z],&want);
         NEAR(a.l,b.l);NEAR(a.r,b.r);
-        assert(got.graph_mask==want.graph_mask && got.graph_mask_high==want.graph_mask_high);
+        assert(got.graph_mask==want.graph_mask && got.graph_mask_high==want.graph_mask_high &&
+               got.graph_mask_top==want.graph_mask_top);
         assert(got.send_mask==want.send_mask && got.mask==want.mask && got.missing==want.missing);
         for(int d=0;d<TS_MATRIX_DESTINATIONS;++d){NEAR(got.graph[d].l,want.graph[d].l);NEAR(got.graph[d].r,want.graph[d].r);}
         for(int sp=0;sp<TS_SOURCE_SPEAKERS;++sp){NEAR(got.speaker[sp],want.speaker[sp]);NEAR(got.matrix_speaker[sp],want.matrix_speaker[sp]);}
@@ -187,4 +192,26 @@ static void silent_routing(void)
         assert(!fast.remaining && !memcmp(fast.matrix,fast.target,sizeof(fast.matrix)));
     }
 }
-int main(void){matrix();hardware();voices_and_storage();activity();sparse_accumulation();silent_routing();puts("Source routing: coefficients, ramps, output ownership, voices, signal activity, sparse/silent sums and persistence passed");return 0;}
+static void extended_output_ownership(void)
+{
+    /* A settled silent source owns exactly its route, including at each mask
+       boundary. A high output must never alias a lower output's bit. */
+    const int destinations[]={63,64,127,128,TS_MATRIX_DESTINATIONS-1};
+    for(unsigned at=0;at<sizeof(destinations)/sizeof(destinations[0]);++at) {
+        int d=destinations[at];TsSourceRoute r={.matrix_enabled=1};r.matrix_gain[d]=1000;
+        TsSourceRouteVoice voice={0};ts_source_route_set(&voice,r,48000);
+        TsSourceRouteMix silent={0},signal={0},sum={0};
+        ts_source_route_frame(&voice,(TsStereoFrame){0,0},&silent);
+        uint64_t low=d<64?UINT64_C(1)<<d:0;
+        uint64_t high=d>=64 && d<128?UINT64_C(1)<<(d-64):0;
+        uint64_t top=d>=128?UINT64_C(1)<<(d-128):0;
+        assert(silent.graph_mask==low && silent.graph_mask_high==high && silent.graph_mask_top==top);
+        ts_source_route_frame(&voice,(TsStereoFrame){.25f,-.5f},&signal);
+        assert(signal.graph_mask==low && signal.graph_mask_high==high && signal.graph_mask_top==top);
+        ts_source_route_add(&sum,&silent,1);ts_source_route_add(&sum,&signal,1);
+        for(int i=0;i<TS_MATRIX_DESTINATIONS;++i) {
+            NEAR(sum.graph[i].l,i==d?.25f:0);NEAR(sum.graph[i].r,i==d?-.5f:0);
+        }
+    }
+}
+int main(void){matrix();hardware();voices_and_storage();activity();sparse_accumulation();silent_routing();extended_output_ownership();puts("Source routing: coefficients, ramps, output ownership, voices, signal activity, sparse/silent sums and persistence passed");return 0;}

@@ -218,11 +218,11 @@ static void test_storage(void)
     }
     /* Older route widths retain their destinations and zero the added buses. */
     for(int version=6;version<=11;++version) {
-        int destinations=version>=9?TS_MATRIX_DESTINATIONS:version==8?TS_MATRIX_INSTANCE_DESTINATIONS:version==7?TS_MATRIX_SHARED_DESTINATIONS:TS_MATRIX_LEGACY_DESTINATIONS;
+        int destinations=version>=9?TS_MATRIX_PRE_IO_DESTINATIONS:version==8?TS_MATRIX_INSTANCE_DESTINATIONS:version==7?TS_MATRIX_SHARED_DESTINATIONS:TS_MATRIX_LEGACY_DESTINATIONS;
         FILE *current=fopen("mosaic-storage-test/mosaic.tsm","r"),*old=fopen("mosaic-storage-test/old.tsm","w");assert(current && old);
         char record[1024];assert(fgets(record,sizeof(record),current));fprintf(old,"TAPESISTER_MOSAIC %d\n",version);
         while(fgets(record,sizeof(record),current)) {
-            if(!strncmp(record,"MARKER ",7) || !strncmp(record,"PATTERN ",8) || !strncmp(record,"LOOP ",5) || (version<11 && !strncmp(record,"VIEW ",5)) || (version<10 && !strncmp(record,"SPACING ",8)))continue;
+            if(!strncmp(record,"VIDEO ",6) || !strncmp(record,"LIVE ",5) || !strncmp(record,"STEP ",5) || !strncmp(record,"ENVELOPE ",9) || !strncmp(record,"LOOPER ",7) || !strncmp(record,"MARKER ",7) || !strncmp(record,"PATTERN ",8) || !strncmp(record,"LOOP ",5) || (version<11 && !strncmp(record,"VIEW ",5)) || (version<10 && !strncmp(record,"SPACING ",8)))continue;
             if(!strncmp(record,"ROUTE ",6)) {
                 record[strcspn(record,"\r\n")]=0;
                 for(int i=destinations;i<TS_MATRIX_DESTINATIONS;++i){char *last=strrchr(record,' ');assert(last);*last=0;}
@@ -240,6 +240,9 @@ static void test_storage(void)
             assert(loaded->events[0].output_route.matrix_gain[d]==(d<destinations?m->events[0].output_route.matrix_gain[d]:0));
         assert(ts_mosaic_save(m,dir,error,sizeof(error)));
     }
+    /* Build the older fixture from the pre-I/O width and feature set. */
+    for(int d=TS_MATRIX_PRE_IO_DESTINATIONS;d<TS_MATRIX_DESTINATIONS;++d)m->events[0].output_route.matrix_gain[d]=0;
+    assert(ts_mosaic_save(m,dir,error,sizeof(error)));
     /* Both previous formats load with neutral new controls, preserving the
        second format's mute/solo state. */
     FILE *old=fopen("mosaic-storage-test/mosaic.tsm","r");assert(old);

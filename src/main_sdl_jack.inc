@@ -21,6 +21,8 @@ typedef struct {
     int (*set_buffer_size_callback)(TsJackClient *,int (*)(TsJackFrames,void *),void *);
     int (*set_sample_rate_callback)(TsJackClient *,int (*)(TsJackFrames,void *),void *);
     void (*on_shutdown)(TsJackClient *,void (*)(void *),void *);
+    const char **(*get_ports)(TsJackClient *,const char *,const char *,unsigned long);
+    void (*free)(void *);
 } TsJackApi;
 static TsJackApi ts_jack;
 static void *ts_jack_library;
@@ -28,7 +30,7 @@ static int ts_jack_selected;
 enum { TS_JACK_SLOTS=8, TS_JACK_MAX_FRAMES=16384, TS_JACK_BLOCKS=4, TS_JACK_ID_BASE=0x40000000 };
 typedef struct {
     TsJackClient *client;
-    TsJackPort *ports[16];
+    TsJackPort *ports[TS_AUDIO_CHANNEL_CAPACITY];
     SDL_AudioSpec spec;
     float *interleaved, *blocks;
     SDL_Thread *worker;
@@ -39,6 +41,7 @@ typedef struct {
     _Atomic unsigned read_block, write_block, xruns;
 } TsJackEndpoint;
 static TsJackEndpoint ts_jack_endpoints[TS_JACK_SLOTS];
+static unsigned ts_jack_channels[2]={2,2}; /* no hardware metadata: honest stereo fallback */
 static const char *const ts_jack_names[2][2] = {
     {"TapeSister Master", "TapeSister Insert Send"},
     {"TapeSister Input", "TapeSister Insert Return"}
@@ -63,6 +66,7 @@ static int ts_jack_load(void)
     TS_JACK_LOAD(port_register);TS_JACK_LOAD(port_get_buffer);
     TS_JACK_LOAD(set_process_callback);TS_JACK_LOAD(set_buffer_size_callback);
     TS_JACK_LOAD(set_sample_rate_callback);TS_JACK_LOAD(on_shutdown);
+    TS_JACK_LOAD(get_ports);TS_JACK_LOAD(free);
 #undef TS_JACK_LOAD
     return 1;
 failed:
@@ -110,7 +114,7 @@ static int ts_jack_worker(void *userdata)
 static int ts_jack_process(TsJackFrames frames,void *userdata)
 {
     TsJackEndpoint *e=userdata;
-    float *ports[16]={0};
+    float *ports[TS_AUDIO_CHANNEL_CAPACITY]={0};
     for (unsigned ch=0;ch<e->spec.channels;++ch) {
         ports[ch]=e->ports[ch]?ts_jack.port_get_buffer(e->ports[ch],frames):NULL;
         if (!e->capture && ports[ch]) memset(ports[ch],0,frames*sizeof(float));
@@ -185,9 +189,7 @@ static SDL_AudioDeviceID ts_jack_open(const char *name,int capture,
         SDL_SetError("JACK requires a float audio callback");return 0;
     }
     TsAudioChannelRange range = role ? (TsAudioChannelRange){1,0} : ts_native_ranges[capture];
-    if (!ts_audio_range_fits(range, capture ? 8u : 16u)) {
-        SDL_SetError("JACK %s range exceeds %d ports",capture?"input":"output",capture?8:16); return 0;
-    }
+    if(!ts_audio_range_valid(range)){SDL_SetError("Invalid JACK application port range");return 0;}
     if (!ts_jack_load()) return 0;
     for (slot=0;slot<TS_JACK_SLOTS && ts_jack_endpoints[slot].client;++slot) {}
     if (slot==TS_JACK_SLOTS) {SDL_SetError("Too many TapeSister JACK streams");return 0;}
@@ -200,9 +202,15 @@ static SDL_AudioDeviceID ts_jack_open(const char *name,int capture,
     if (!e->client) {
         SDL_SetError("JACK server unavailable (status 0x%x); start JACK or use pw-jack",status);return 0;
     }
+    if(!role && ts_jack.get_ports && ts_jack.free)for(int side=0;side<2;++side) {
+        const char **ports=ts_jack.get_ports(e->client,NULL,"32 bit float mono audio",4u|(side?2u:1u));
+        unsigned count=0;if(ports){while(ports[count])++count;ts_jack.free((void *)ports);}
+        if(count>TS_AUDIO_CHANNEL_CAPACITY){SDL_SetError("JACK physical layout exceeds 255 channels per direction");ts_jack_close(e);return 0;}
+        ts_jack_channels[side]=count?count:2;
+    }
     e->spec.freq=(int)ts_jack.get_sample_rate(e->client);
     unsigned frames=ts_jack.get_buffer_size(e->client);
-    e->spec.channels=role?2:(Uint8)ts_audio_range_end(range,capture?8:16);e->spec.samples=(Uint16)frames;
+    e->spec.channels=role?2:(Uint8)(range.last?range.last:SDL_max((unsigned)range.first,ts_jack_channels[capture]));e->spec.samples=(Uint16)frames;
     e->spec.size=frames*e->spec.channels*sizeof(float);e->spec.silence=0;
     if (!frames || frames>TS_JACK_MAX_FRAMES || e->spec.freq<=0) goto failed;
     e->interleaved=calloc(1,e->spec.size);e->blocks=calloc(TS_JACK_BLOCKS,e->spec.size);
@@ -268,6 +276,20 @@ static const char *ts_native_device_name(int index,int capture)
 #endif
     return SDL_GetAudioDeviceName(index,capture);
 }
+static void ts_jack_discover(void)
+{
+#if defined(__linux__)
+    if(!ts_jack_selected || !ts_jack_load() || !ts_jack.get_ports || !ts_jack.free)return;
+    unsigned status=0;TsJackClient *client=ts_jack.client_open("TapeSister port discovery",1u,&status);
+    if(!client)return;
+    for(int side=0;side<2;++side) {
+        const char **ports=ts_jack.get_ports(client,NULL,"32 bit float mono audio",4u|(side?2u:1u));
+        unsigned count=0;if(ports){while(ports[count])++count;ts_jack.free((void *)ports);}
+        ts_jack_channels[side]=count?SDL_min(count,255u):2;
+    }
+    ts_jack.client_close(client);
+#endif
+}
 static int ts_native_device_spec(int index,int capture,SDL_AudioSpec *spec)
 {
 #if defined(TAPESISTER_HAS_ASIO)
@@ -276,7 +298,8 @@ static int ts_native_device_spec(int index,int capture,SDL_AudioSpec *spec)
 #if defined(__linux__)
     if (ts_jack_selected) {
         if (index<0 || index>1) return SDL_SetError("Invalid JACK device");
-        SDL_zero(*spec);spec->channels=index?2:(capture?8:16);spec->format=AUDIO_F32SYS;
+        ts_jack_discover();
+        SDL_zero(*spec);spec->channels=index?2:ts_jack_channels[capture!=0];spec->format=AUDIO_F32SYS;
         return 0; /* Actual rate/quantum are read from JACK on open. */
     }
 #endif
@@ -361,6 +384,15 @@ static void ts_native_pause(SDL_AudioDeviceID id,int paused)
     }
 #endif
     SDL_PauseAudioDevice(id,paused);
+}
+
+static int ts_native_is_jack(void){return ts_jack_selected;}
+static const char *ts_native_channel_name(int capture,unsigned channel)
+{
+#if defined(TAPESISTER_HAS_ASIO)
+    if(ts_asio_selected)return ts_asio_channel_name(capture,channel);
+#endif
+    (void)capture;(void)channel;return NULL;
 }
 
 static unsigned ts_native_worker_xruns(SDL_AudioDeviceID id)

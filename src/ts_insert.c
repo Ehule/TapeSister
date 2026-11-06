@@ -9,8 +9,8 @@ void ts_insert_default(TsInsertControls *c)
 
 int ts_insert_valid(const TsInsertControls *c)
 {
-    return c && c->send_pair >= 0 && c->send_pair <= 4 &&
-        c->return_pair >= 0 && c->return_pair <= 3 &&
+    return c && c->send_pair >= 0 && c->send_pair < TS_AUDIO_PAIR_CAPACITY &&
+        c->return_pair >= 0 && c->return_pair < TS_AUDIO_PAIR_CAPACITY &&
         isfinite(c->send_db) && c->send_db >= -24 && c->send_db <= 12 &&
         isfinite(c->return_db) && c->return_db >= -24 && c->return_db <= 12;
 }
@@ -19,8 +19,8 @@ void ts_insert_init(TsInsert *s)
 {
     memset(s, 0, sizeof(*s));
     ts_insert_default(&s->controls);
-    s->matrix_input=calloc(4,sizeof(*s->matrix_input));
-    if(s->matrix_input)for(int p=0;p<4;++p)ts_input_monitor_init(&s->matrix_input[p]);
+    s->matrix_input=calloc(TS_AUDIO_PAIR_CAPACITY,sizeof(*s->matrix_input));
+    if(s->matrix_input)for(int p=0;p<TS_AUDIO_PAIR_CAPACITY;++p)ts_input_monitor_init(&s->matrix_input[p]);
     atomic_init(&s->matrix_channels,0);atomic_init(&s->matrix_active,0);
     ts_input_monitor_init(&s->return_monitor);
     ts_input_monitor_init(&s->send_monitor);
@@ -38,10 +38,11 @@ void ts_insert_init(TsInsert *s)
 
 void ts_insert_free(TsInsert *s)
 { free(s->matrix_input);s->matrix_input=NULL; }
-void ts_insert_matrix_read(TsInsert *s,TsStereoFrame input[4])
+void ts_insert_matrix_read(TsInsert *s,TsStereoFrame input[TS_AUDIO_PAIR_CAPACITY])
 {
-    for(unsigned p=0;p<4;++p) {
-        input[p]=(TsStereoFrame){0,0};
+    memset(input,0,TS_AUDIO_PAIR_CAPACITY*sizeof(*input));
+    unsigned channels=s->duplex?s->duplex_channels:atomic_load(&s->matrix_channels);
+    for(unsigned p=0;p<TS_AUDIO_PAIR_CAPACITY && p*2<channels;++p) {
         if(s->duplex) {
             if(s->duplex_input && s->duplex_position<s->duplex_frames && p*2<s->duplex_channels) {
                 const float *f=s->duplex_input+s->duplex_position*s->duplex_channels+p*2;
@@ -75,7 +76,7 @@ void ts_insert_begin_output_block(TsInsert *s, unsigned frames)
 {
     atomic_store_explicit(&s->output_buffer_frames, frames, memory_order_release);
     if (s->duplex) return;
-    if(s->matrix_input)for(int p=0;p<4;++p) {
+    if(s->matrix_input)for(unsigned p=0;p<TS_AUDIO_PAIR_CAPACITY && p*2<atomic_load(&s->matrix_channels);++p) {
         unsigned rate=atomic_load(&s->matrix_input[p].input_rate);
         ts_input_monitor_set_prime_frames(&s->matrix_input[p],bridge_prime(
             atomic_load(&s->return_buffer_frames),frames,rate,s->sample_rate));
@@ -106,10 +107,10 @@ void ts_insert_set(TsInsert *s, const TsInsertControls *c)
     if (!ts_insert_valid(&next)) ts_insert_default(&next);
     if (next.return_pair != s->controls.return_pair ||
         next.send_pair != s->controls.send_pair) {
-        unsigned generation = (atomic_load(&s->port_request) & ~7u) + 8u;
+        unsigned generation = (atomic_load(&s->port_request) & ~255u) + 256u;
         unsigned port = next.send_pair ? (unsigned)next.return_pair + 1u : 0u;
         atomic_store_explicit(&s->port_request, generation | port, memory_order_release);
-        generation = (atomic_load(&s->send_request) & ~7u) + 8u;
+        generation = (atomic_load(&s->send_request) & ~255u) + 256u;
         atomic_store_explicit(&s->send_request, generation | (unsigned)next.send_pair, memory_order_release);
     }
     s->controls = next;
@@ -126,7 +127,7 @@ void ts_insert_capture_prepare_from(TsInsert *s, unsigned channels,
 {
     if(!dedicated && s->matrix_input) {
         atomic_store(&s->matrix_channels,channels);
-        for(unsigned p=0;p<4;++p)ts_input_monitor_set_enabled(&s->matrix_input[p],p*2<channels,rate);
+        for(unsigned p=0;p<TS_AUDIO_PAIR_CAPACITY;++p)ts_input_monitor_set_enabled(&s->matrix_input[p],p*2<channels,rate);
     }
     if (atomic_load_explicit(&s->dedicated_return, memory_order_acquire) != dedicated) return;
     if (channels > 255) channels = 0;
@@ -143,7 +144,7 @@ void ts_insert_capture_prepare_from(TsInsert *s, unsigned channels,
     atomic_store(&s->return_monitor.captured_frame_count, 0);
     atomic_store(&s->return_monitor.largest_capture_block_frames, 0);
     unsigned request=atomic_load_explicit(&s->port_request,memory_order_relaxed);
-    atomic_store_explicit(&s->port_request,request+8u,memory_order_release);
+    atomic_store_explicit(&s->port_request,request+256u,memory_order_release);
     atomic_store_explicit(&s->return_monitor.enabled, channels >= 2, memory_order_release);
     atomic_store_explicit(&s->input_channels, channels, memory_order_release);
 }
@@ -158,7 +159,7 @@ void ts_insert_capture_from(TsInsert *s, const float *input, size_t frames,
     if (!s || !input || channels < 1 || channels > 255) return;
     if (s->duplex) return;
     if(!dedicated && s->matrix_input && atomic_load(&s->matrix_active) && atomic_load(&s->matrix_channels)==channels) {
-        for(unsigned p=0;p<4 && p*2<channels;++p) {
+        for(unsigned p=0;p<TS_AUDIO_PAIR_CAPACITY && p*2<channels;++p) {
             ts_input_monitor_note_capture_block(&s->matrix_input[p],(uint32_t)frames);
             for(size_t i=0;i<frames;++i)ts_input_monitor_push_frame(&s->matrix_input[p],
                 (TsStereoFrame){input[i*channels+p*2],p*2+1<channels?input[i*channels+p*2+1]:0});
@@ -167,7 +168,7 @@ void ts_insert_capture_from(TsInsert *s, const float *input, size_t frames,
     if (atomic_load_explicit(&s->dedicated_return, memory_order_acquire) != dedicated) return;
     if(atomic_load_explicit(&s->input_channels,memory_order_acquire)!=channels)return;
     unsigned request = atomic_load_explicit(&s->port_request, memory_order_acquire);
-    unsigned port = request & 7u;
+    unsigned port = request & 255u;
     atomic_store_explicit(&s->port_ack, request, memory_order_release);
     if (!port || port * 2u > channels) return;
     unsigned first = (port - 1u) * 2u;
@@ -186,7 +187,7 @@ TsStereoFrame ts_insert_external_frame(const TsInsert *s,
     if (!s) return ts_input_channel_select(frame, channels, mode);
     unsigned port = ts_insert_reserved_port(s);
     if (!port) return ts_input_channel_select(frame, channels, mode);
-    return ts_input_channel_select_excluding(frame, channels, mode, 3u << ((port - 1u) * 2u));
+    return ts_input_channel_select_without_pair(frame, channels, mode, port-1u);
 }
 
 int ts_insert_send_available(const TsInsert *s)
@@ -264,7 +265,7 @@ void ts_insert_write_output(TsInsert *s, float *frame, unsigned channels, TsSter
 unsigned ts_insert_reserved_port(const TsInsert *s)
 {
     return atomic_load_explicit(&s->dedicated_return, memory_order_acquire) ? 0u :
-        atomic_load_explicit(&s->port_request, memory_order_acquire) & 7u;
+        atomic_load_explicit(&s->port_request, memory_order_acquire) & 255u;
 }
 
 void ts_insert_io_mode(TsInsert *s, int separate_send, int dedicated_return)
@@ -272,7 +273,7 @@ void ts_insert_io_mode(TsInsert *s, int separate_send, int dedicated_return)
     s->separate_send = separate_send != 0;
     atomic_store_explicit(&s->dedicated_return, dedicated_return != 0, memory_order_release);
     atomic_store_explicit(&s->input_channels, 0, memory_order_release);
-    atomic_fetch_add_explicit(&s->port_request, 8u, memory_order_release);
+    atomic_fetch_add_explicit(&s->port_request, 256u, memory_order_release);
 }
 
 void ts_insert_send_prepare(TsInsert *s, unsigned channels, unsigned rate, unsigned buffer_frames)
@@ -283,7 +284,7 @@ void ts_insert_send_prepare(TsInsert *s, unsigned channels, unsigned rate, unsig
     ts_input_monitor_set_prime_frames(&s->send_monitor,
         bridge_prime(buffer_frames, 0, rate, rate));
     ts_input_monitor_discard(&s->send_monitor);
-    unsigned generation = (atomic_load(&s->send_request) & ~7u) + 8u;
+    unsigned generation = (atomic_load(&s->send_request) & ~255u) + 256u;
     atomic_store_explicit(&s->send_request, generation | (unsigned)s->controls.send_pair, memory_order_release);
 }
 
@@ -300,7 +301,7 @@ void ts_insert_render_send(TsInsert *s, float *out, size_t frames, unsigned chan
         s->send_seen = request;
         return;
     }
-    unsigned pair = request & 7u;
+    unsigned pair = request & 255u;
     if (!pair || pair * 2u > channels) return;
     unsigned first = (pair - 1u) * 2u;
     ts_input_monitor_recover_backlog(&s->send_monitor);
@@ -325,7 +326,7 @@ int ts_insert_read(TsInsertControls *c, const char *key, const char *value)
     if (errno || end == value || *end || !isfinite(n)) return -1;
     TsInsertControls next = *c;
     if (!strcmp(key, "Insert.SendPair") || !strcmp(key, "Insert.ReturnPair")) {
-        int maximum = !strcmp(key, "Insert.SendPair") ? 4 : 3;
+        int maximum = TS_AUDIO_PAIR_CAPACITY-1;
         if (n < 0 || n > maximum || n != floor(n)) return -1;
         if (!strcmp(key, "Insert.SendPair")) next.send_pair = (int)n;
         else next.return_pair = (int)n;

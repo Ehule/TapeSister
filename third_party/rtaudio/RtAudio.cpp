@@ -3497,6 +3497,17 @@ bool RtApiAsio :: probeDeviceInfo( RtAudio::DeviceInfo &info )
 
   info.outputChannels = outputChannels;
   info.inputChannels = inputChannels;
+  for(int side=0;side<2;++side) {
+    auto &names=side?info.inputNames:info.outputNames;
+    const unsigned count=side?info.inputChannels:info.outputChannels;
+    names.resize(count);
+    for(unsigned ch=0;ch<count;++ch) {
+      ASIOChannelInfo metadata={};metadata.channel=ch;metadata.isInput=side?ASIOTrue:ASIOFalse;
+      if(ASIOGetChannelInfo(&metadata)==ASE_OK) {
+        metadata.name[sizeof(metadata.name)-1]=0;names[ch]=metadata.name;
+      }
+    }
+  }
   // TapeSister: keep the interface/Matrix clock already selected by its owner.
   ASIOSampleRate deviceRate = 0;
   if ( ASIOGetSampleRate( &deviceRate ) == ASE_OK && deviceRate > 0 )

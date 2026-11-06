@@ -11,11 +11,12 @@
    TS_MATRIX_NODES remains the legacy output/input offset, not a node count. */
 enum { TS_MATRIX_MAIN, TS_MATRIX_SISTER, TS_MATRIX_PRISM, TS_MATRIX_BOARD,
        TS_MATRIX_FALLOUT, TS_MATRIX_EQ, TS_MATRIX_LIMITER, TS_MATRIX_NODES };
-enum { TS_MATRIX_INPUTS=4, TS_MATRIX_OUTPUTS=8,
-       TS_MATRIX_FM=TS_MATRIX_NODES+TS_MATRIX_INPUTS, TS_MATRIX_LINK, TS_MATRIX_MOSAIC, TS_MATRIX_TILES,
+enum { TS_MATRIX_INPUTS=TS_AUDIO_PAIR_CAPACITY, TS_MATRIX_OUTPUTS=TS_AUDIO_PAIR_CAPACITY,
+       TS_MATRIX_FM=11, TS_MATRIX_LINK, TS_MATRIX_MOSAIC, TS_MATRIX_TILES,
        TS_MATRIX_COMPRESSOR, TS_MATRIX_TRACKER, TS_MATRIX_SHARED_ROWS, TS_MATRIX_SIDECHAIN=16,
-       TS_MATRIX_EFFECT_BASE=17, TS_MATRIX_ROWS=TS_MATRIX_EFFECT_BASE+TS_MATRIX_EFFECT_CAPACITY,
-       TS_MATRIX_EFFECT_SC_BASE=TS_MATRIX_ROWS,
+       TS_MATRIX_EFFECT_BASE=17, TS_MATRIX_PROCESSOR_END=33,
+       TS_MATRIX_EXTRA_INPUT_BASE=33, TS_MATRIX_ROWS=TS_MATRIX_EXTRA_INPUT_BASE+TS_AUDIO_PAIR_CAPACITY-4,
+       TS_MATRIX_EFFECT_SC_BASE=33,
        TS_MATRIX_PROCESSORS=8+TS_MATRIX_EFFECT_CAPACITY, TS_MATRIX_DELAY=64, TS_MATRIX_NAME=24 };
 enum { TS_MATRIX_HEADROOM_AUTO, TS_MATRIX_HEADROOM_FLOAT, TS_MATRIX_HEADROOM_CLIP };
 typedef struct {
@@ -42,6 +43,7 @@ typedef struct {
     TsMatrixControls controls;
     TsSourceRouteVoice voice[TS_MATRIX_ROWS];
     int order[TS_MATRIX_PROCESSORS], ready;
+    uint16_t sources[TS_MATRIX_ROWS];unsigned source_count,input_pairs;
     unsigned position;
     TsStereoFrame history[TS_MATRIX_ROWS][TS_MATRIX_DELAY];
     float input_peak[TS_MATRIX_DESTINATIONS], output_peak[TS_MATRIX_ROWS], decay;
@@ -71,6 +73,15 @@ int ts_matrix_write(FILE *f,const TsMatrixControls *c);
 int ts_matrix_read(TsMatrixControls *c,const char *key,const char *value);
 const char *ts_matrix_node_name(int node);
 /* IDs 0..14 retain their original saved meaning. New ports are appended. */
+/* Pair indices are zero based; these functions preserve every pre-I/O ID. */
+static inline int ts_matrix_input_row(int pair)
+{return pair<4?TS_MATRIX_NODES+pair:TS_MATRIX_EXTRA_INPUT_BASE+pair-4;}
+static inline int ts_matrix_input_pair(int row)
+{return row>=TS_MATRIX_NODES && row<11?row-TS_MATRIX_NODES:row>=TS_MATRIX_EXTRA_INPUT_BASE && row<TS_MATRIX_ROWS?row-TS_MATRIX_EXTRA_INPUT_BASE+4:-1;}
+static inline int ts_matrix_output_destination(int pair)
+{return pair<8?TS_MATRIX_NODES+pair:TS_MATRIX_EXTRA_OUTPUT_BASE+pair-8;}
+static inline int ts_matrix_output_pair(int destination)
+{return destination>=TS_MATRIX_NODES && destination<15?destination-TS_MATRIX_NODES:destination>=TS_MATRIX_EXTRA_OUTPUT_BASE && destination<TS_MATRIX_DESTINATIONS?destination-TS_MATRIX_EXTRA_OUTPUT_BASE+8:-1;}
 int ts_matrix_is_processor(int id);
 int ts_matrix_is_output(int id);
 int ts_matrix_processor(int index);

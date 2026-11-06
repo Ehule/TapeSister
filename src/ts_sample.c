@@ -10105,7 +10105,7 @@ static int put_sample_block(FILE *f, const TsSample *sample)
 
 static int get_sample_block(FILE *f, TsSample *sample, int version, int validate_only)
 {
-    if(version>=42)return ts_audio_assets_get_block(f,sample,validate_only);
+    if(version==42 || version>=44)return ts_audio_assets_get_block(f,sample,validate_only);
     uint32_t name_length;
     uint32_t channels = 1u;
     uint64_t frames;
@@ -10168,7 +10168,8 @@ static int snapshot_fits_tile(const TsEditSnapshot *state, const TsBankSlot *slo
 
 static int save_tsr34(const TsInstrument *instrument, FILE *f, int depth)
 {
-    fwrite(ts_audio_assets_writing()?"TSR42\r\n\032":"TSR41\r\n\032", 1, 8, f);
+    int extended=0;for(int i=0;i<TS_BANK_SLOT_COUNT;++i)extended|=ts_source_route_extended(instrument->bank[i].output_route.matrix_gain);
+    fwrite(ts_audio_assets_writing()?(extended?"TSR44\r\n\032":"TSR42\r\n\032"):(extended?"TSR43\r\n\032":"TSR41\r\n\032"),1,8,f);
     if(ts_audio_assets_writing())put32(f,(uint32_t)depth);
     put32(f, (uint32_t)instrument->selected_slot);
     put_float(f, instrument->family_mutation);
@@ -10206,7 +10207,7 @@ static int save_tsr34(const TsInstrument *instrument, FILE *f, int depth)
         put32(f,slot->output_route.mix_enabled);put32(f,slot->output_route.clean_level);
         for(int bus=0;bus<TS_SOURCE_SENDS;++bus)put32(f,slot->output_route.send_level[bus]);
         put32(f,slot->output_route.matrix_enabled);
-        for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)put32(f,slot->output_route.matrix_gain[d]);
+        for(int d=0;d<(extended?TS_MATRIX_DESTINATIONS:TS_MATRIX_PRE_IO_DESTINATIONS);++d)put32(f,slot->output_route.matrix_gain[d]);
         put32(f, (uint32_t)slot->locked);
         audio = &slot->sample;
         baseline = slot->edit_parent.data != NULL ? &slot->edit_parent : &slot->sample;
@@ -10354,7 +10355,7 @@ static int load_tsr15_or_newer(FILE *f, int version, TsInstrument *instrument, i
                 uint32_t enabled=0,gain=0;
                 if(!get32(f,&enabled) || enabled>1)goto malformed;
                 slot->output_route.matrix_enabled=enabled;
-                for(int d=0;d<(version>=41?TS_MATRIX_DESTINATIONS:version>=40?TS_MATRIX_INSTANCE_DESTINATIONS:version>=39?TS_MATRIX_SHARED_DESTINATIONS:TS_MATRIX_LEGACY_DESTINATIONS);++d) {
+                for(int d=0;d<(version>=43?TS_MATRIX_DESTINATIONS:version>=41?TS_MATRIX_PRE_IO_DESTINATIONS:version>=40?TS_MATRIX_INSTANCE_DESTINATIONS:version>=39?TS_MATRIX_SHARED_DESTINATIONS:TS_MATRIX_LEGACY_DESTINATIONS);++d) {
                     if(!get32(f,&gain) || gain>2000)goto malformed;
                     slot->output_route.matrix_gain[d]=gain;
                 }
@@ -10506,12 +10507,13 @@ int ts_instrument_validate_recipe(const char *path,char *error,size_t size)
     FILE *f=fopen(path,"rb");char magic[8],root[2048];TsAudioAssets *assets=NULL;
     if(!f){set_error(error,size,"Cannot open staged TSR for validation");return 0;}
     int version=0,ok=fread(magic,1,8,f)==8;
-    if(ok && !memcmp(magic,"TSR41\r\n\032",8))version=41;
-    else if(ok && !memcmp(magic,"TSR42\r\n\032",8)) {
+    if(ok && !memcmp(magic,"TSR43\r\n\032",8))version=43;
+    else if(ok && !memcmp(magic,"TSR41\r\n\032",8))version=41;
+    else if(ok && (!memcmp(magic,"TSR42\r\n\032",8) || !memcmp(magic,"TSR44\r\n\032",8))) {
         uint32_t depth;
         if(get32(f,&depth) && ts_audio_assets_root(root,sizeof(root),path,depth)) {
-            if(audio_assets && !strcmp(audio_assets->root,root))version=42;
-            else if((assets=ts_audio_assets_begin(root,0)))version=42;
+            if(audio_assets && !strcmp(audio_assets->root,root))version=magic[4]=='4'?44:42;
+            else if((assets=ts_audio_assets_begin(root,0)))version=magic[4]=='4'?44:42;
         }
     }
     ok=version && load_tsr15_or_newer(f,version,NULL,1,error,size);
@@ -10597,18 +10599,19 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Truncated TSR project");
         return 0;
     }
-    if(!memcmp(magic,"TSR42\r\n\032",8)) {
+    if(!memcmp(magic,"TSR42\r\n\032",8) || !memcmp(magic,"TSR44\r\n\032",8)) {
         uint32_t depth;char root[2048];TsAudioAssets *assets=NULL;
         int ok=get32(f,&depth) && ts_audio_assets_root(root,sizeof(root),path,depth);
         if(ok && (!audio_assets || strcmp(audio_assets->root,root))) {
             assets=ts_audio_assets_begin(root,0);ok=assets!=NULL;
         }
-        if(ok)ok=load_tsr15_or_newer(f,42,instrument,0,error,error_size);
+        if(ok)ok=load_tsr15_or_newer(f,magic[4]=='4'?44:42,instrument,0,error,error_size);
         else set_error(error,error_size,"Invalid TSR42 project asset root");
         if(fclose(f))ok=0;
         ts_audio_assets_end(assets);ts_instrument_free(&loaded);return ok;
     }
-    if (memcmp(magic, "TSR41\r\n\032", 8) == 0 ||
+    if (memcmp(magic, "TSR43\r\n\032", 8) == 0 ||
+        memcmp(magic, "TSR41\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR40\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR39\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR38\r\n\032", 8) == 0 ||
@@ -10635,7 +10638,7 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         memcmp(magic, "TSR17\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR16\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR15\r\n\032", 8) == 0) {
-        int self_contained_version = memcmp(magic, "TSR41\r\n\032", 8) == 0 ? 41 :
+        int self_contained_version = !memcmp(magic,"TSR43\r\n\032",8)?43:memcmp(magic, "TSR41\r\n\032", 8) == 0 ? 41 :
                                      memcmp(magic, "TSR40\r\n\032", 8) == 0 ? 40 :
             memcmp(magic, "TSR39\r\n\032", 8) == 0 ? 39 :
             memcmp(magic, "TSR38\r\n\032", 8) == 0 ? 38 :

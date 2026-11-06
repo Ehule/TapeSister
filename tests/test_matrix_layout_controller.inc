@@ -7,6 +7,8 @@ static void matrix_key(SDL_Keycode key,SDL_Keymod modifiers)
 static void matrix_layout_controller(const char *directory)
 {
     MatrixWindow *w=&matrix_window;ts_matrix_layout_default(&a.sister.matrix_layout);
+    /* This ordering fixture has a four-input interface; provide its catalog. */
+    ts_insert_capture_prepare(&a.sister.insert,4,48000,128);
     matrix_history_clear();assert(matrix_show(0,&a,&u,&pages,&bank,-1,-1));
     w->compressor_open=0;w->column=0;
     TsRoutingMatrix *dsp=malloc(sizeof(*dsp));assert(dsp);*dsp=a.sister.matrix;

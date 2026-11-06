@@ -9,6 +9,7 @@ extern "C" {
    that stream; capture is delivered immediately before playback each period. */
 int ts_asio_count(int capture);
 const char *ts_asio_name(int index, int capture);
+const char *ts_asio_channel_name(int capture,unsigned channel);
 int ts_asio_spec(int index, int capture, SDL_AudioSpec *spec);
 int ts_asio_default_info(char **name, SDL_AudioSpec *spec, int capture);
 void ts_asio_rescan(void);

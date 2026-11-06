@@ -10,7 +10,7 @@ static int failures;
 
 int main(void)
 {
-    TsSisterRuntime runtime;
+    static TsSisterRuntime runtime;
     TsInstrument instrument;
     TsSisterRoutingSnapshot routing;
     TsSisterUiModel model;

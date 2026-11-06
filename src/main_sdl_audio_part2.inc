@@ -87,6 +87,12 @@ static void ts_cycle_input_channel(int direction)
     else
         channel = channel <= TS_RECORD_INPUT_CHANNEL_MIN ?
                   TS_RECORD_INPUT_CHANNEL_MAX : channel - 1;
+    unsigned count=ts_capture_endpoint.channels;
+    for(int tries=0;tries<=TS_RECORD_INPUT_CHANNEL_MAX;++tries) {
+        int valid=channel<4 || (channel<TS_INPUT_PAIR_BASE?(unsigned)(channel-TS_INPUT_MONO_BASE)<count:(unsigned)(channel-TS_INPUT_PAIR_BASE)*2u<count);
+        if(valid)break;
+        channel=(channel+(direction>=0?1:TS_RECORD_INPUT_CHANNEL_MAX))%(TS_RECORD_INPUT_CHANNEL_MAX+1);
+    }
     ts_live_config->record_input_channel = channel;
     if (input != NULL) {
         int monitor_enabled = ts_input_monitor_enabled(&input->monitor);

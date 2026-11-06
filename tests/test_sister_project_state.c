@@ -96,9 +96,9 @@ int main(void)
     static const char project[] = "test-sister-project.tsr";
     static const char directory[] = "test-sister-project.tsr.samples";
     static const char state_path[] = "test-sister-project.tsr.samples/sister-state.ini";
-    TsSisterRuntime runtime, restored;
+    static TsSisterRuntime runtime, restored;
     TsInstrument instrument;
-    TsSisterProjectState state, loaded;
+    static TsSisterProjectState state, loaded;
     char error[160];
     int present;
     (void)MAKE_DIR(directory);
