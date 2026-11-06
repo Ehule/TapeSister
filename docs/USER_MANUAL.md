@@ -2517,3 +2517,10 @@ SPEAKER SETUP controls speaker names, count and output assignments. The matrix
 shows only enabled speakers mapped to available outputs in the saved range;
 hidden routes are retained. REC selects the recording input mode separately.
 See [channel setup and JACK/ASIO behavior](AUDIO_CHANNEL_RANGES.md).
+
+### Meta FX racks
+
+F9 → ADD EFFECT + → META FX creates an independent eight-stage rack.
+EDIT META FX opens its chain, four shared macros, A/B macro states and portable
+`.tsmfx` presets. Dispersion and Resonator are also available individually in
+the pedalboard and Matrix. See [Meta FX](META_FX.md) for controls and routing.

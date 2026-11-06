@@ -656,7 +656,7 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
             int top = TS_SISTER_UI_FX_TOP + 4 + visible * TS_SISTER_UI_FX_ROW_STEP;
             int field_count = (model->parameters.fx.slot[row].type == TS_SISTER_FX_GRAIN ||
                                model->parameters.fx.slot[row].type == TS_SISTER_FX_TRANSIENT ||
-                               model->parameters.fx.slot[row].type == TS_SISTER_FX_FILTER) ? 5 : 4;
+                               model->parameters.fx.slot[row].type >= TS_SISTER_FX_FILTER) ? 5 : 4;
             int field_width = field_count == 5 ? 70 : 88;
             int field_step = field_count == 5 ? 74 : 92;
             if (contains(x, y, 16, top - 2, 40, 22)) {

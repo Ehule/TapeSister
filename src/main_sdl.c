@@ -9278,6 +9278,7 @@ typedef struct {
     SDL_Thread *performance_writer;
 } SisterWindow;
 static void character_filter_open(SisterWindow *,int);
+static void meta_fx_open(uint32_t);
 static void character_filter_hide(void);
 static void character_filter_matrix_open(uint32_t);
 
@@ -11062,6 +11063,10 @@ static void sister_fx_slot_select_type(TsSisterFxSlotControls *slot,
     if (slot == NULL) return;
     slot->type = type;
     switch (type) {
+    case TS_SISTER_FX_DISPERSION:
+        slot->parameter_a=.5f;slot->parameter_b=.2f;slot->parameter_c=.5f;slot->mix=1;break;
+    case TS_SISTER_FX_RESONATOR:
+        slot->parameter_a=.25f;slot->parameter_b=.5f;slot->parameter_c=.5f;slot->mix=.5f;break;
     case TS_SISTER_FX_FILTER:
         if(!slot->filter.initialized)ts_character_filter_default(&slot->filter);slot->parameter_a=.98f;slot->parameter_b=.1f;slot->parameter_c=0;slot->mix=1;break;
     case TS_SISTER_FX_TRANSIENT:
@@ -12068,6 +12073,7 @@ static int canvas_eq_handling;
 #include "main_sdl_speakers.inc"
 #include "main_sdl_matrix.inc"
 #include "main_sdl_character_filter.inc"
+#include "main_sdl_meta_fx.inc"
 
 static int midi_sister_hit_from_target(const char *target, float normalized,
                                        TsSisterUiHit *hit)
@@ -12147,6 +12153,10 @@ static float midi_target_current_value(const char *target,
     int parameter;
     char trailing;
     if (target == NULL || ui == NULL || sister == NULL) return 0.0f;
+    unsigned meta_id;int meta_field;
+    if(sscanf(target,"matrix.meta.%u.%d%c",&meta_id,&meta_field,&trailing)==2 && meta_field>=0 && meta_field<=6)
+        for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)if(ui->config.matrix.effect[i].id==meta_id && ui->config.matrix.effect[i].type==TS_MATRIX_FX_META)
+            return meta_fx_get(&ui->config.matrix.effect[i],meta_field);
     int sp=spatial_midi_index(target);
     if(sp>=0)return ui->config.spatial.value[sp];
     int eq_band,eq_control;
@@ -12233,6 +12243,7 @@ static int midi_apply_target(SDL_AudioDeviceID device, AudioState *audio,
                  ui->config.tile_fade_ms);
         return 1;
     }
+    if(meta_fx_matrix_midi(device,audio,ui,target,normalized))return 1;
     if(character_filter_matrix_midi(device,audio,ui,target,normalized))return 1;
     if (!midi_sister_hit_from_target(target, normalized, &hit)) return 0;
     sister_apply_action(device, audio, ui, instrument, sister, input_device,
@@ -14799,6 +14810,7 @@ int main(int argc, char **argv)
             if(canvas_eq_event(&event,window,device,&audio,&ui,&sister_window,&instrument))continue;
             if(performance_event(&event,window,device,&audio,&ui,&sample_pages,audio.workspace_bank?audio.workspace_bank:&instrument,&fm_preview,obtained.freq))continue;
             if(speakers_event(&event,window,device,&audio,&ui))continue;
+            if(meta_fx_event(&event,device,&audio,&ui,&sister_window,&sample_pages,&instrument))continue;
             if(character_filter_event(&event,device,&audio,&ui,&sister_window,&sample_pages,&instrument))continue;
             if(matrix_event(&event,window,device,&audio,&ui,&sample_pages,&instrument))continue;
             if(source_route_event(&event,window,device,&audio,&ui,&sample_pages,&instrument))continue;
@@ -18817,6 +18829,7 @@ int main(int argc, char **argv)
         speakers_update(device,&audio,&ui);
         canvas_eq_poll(device,&audio,&ui,&instrument);
         character_filter_paint(&audio,&ui,&sister_window);
+        meta_fx_paint(&ui);
         matrix_update(device,&audio,&ui,&sample_pages,&instrument);performance_update(device,&audio);
         source_route_update(device,&audio,&ui,&sample_pages,&instrument);
         ts_audio_session_update(&audio,&ui);
@@ -18965,6 +18978,7 @@ int main(int argc, char **argv)
     if (sister_window.texture) SDL_DestroyTexture(sister_window.texture);
     if (sister_window.renderer) SDL_DestroyRenderer(sister_window.renderer);
     character_filter_close();
+    meta_fx_close();
     if (sister_window.window) SDL_DestroyWindow(sister_window.window);
     spatial_window_close();speakers_close();
     performance_close();matrix_close();source_route_close();

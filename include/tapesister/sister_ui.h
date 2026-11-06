@@ -403,4 +403,5 @@ void ts_sister_ui_render(TsFramebuffer *framebuffer,
 
 void ts_sister_filter_render(TsFramebuffer *,const TsCharacterFilterControls *,float gain,float mix,int enabled,unsigned shared_locks,const TsPalette *);
 
+void ts_meta_render(TsFramebuffer *,const TsMetaControls *,int,int,int,float,float,const char *,const char *,const TsPalette *);
 #endif

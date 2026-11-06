@@ -237,6 +237,8 @@ const char *ts_sister_fx_type_name(TsSisterFxType type)
     case TS_SISTER_FX_GRAIN: return "GRAIN";
     case TS_SISTER_FX_TRANSIENT: return "TRANSIENT";
     case TS_SISTER_FX_FILTER: return "FILTER";
+    case TS_SISTER_FX_DISPERSION: return "DISPERSE";
+    case TS_SISTER_FX_RESONATOR: return "RESONATOR";
     default: return "EMPTY";
     }
 }
@@ -775,6 +777,7 @@ void ts_sister_post_fx_free(TsSisterPostFxEngine *engine)
             reverb_free(&engine->reverb[slot][location]);
             free(engine->delay[slot][location].data);
             free(engine->grain[slot][location].data);
+            ts_resonator_free(&engine->resonator[slot][location]);
         }
     memset(engine, 0, sizeof(*engine));
 }
@@ -808,7 +811,8 @@ int ts_sister_post_fx_init(TsSisterPostFxEngine *engine,
             uint32_t seed = UINT32_C(0x9e3779b9) ^
                 (uint32_t)(slot + 1u) * UINT32_C(0x85ebca6b) ^
                 (uint32_t)(location + 1u) * UINT32_C(0xc2b2ae35);
-            if (!reverb_init(&next.reverb[slot][location], sample_rate) ||
+            if (!ts_resonator_init(&next.resonator[slot][location],sample_rate) ||
+                !reverb_init(&next.reverb[slot][location], sample_rate) ||
                 !delay_init_state(&next.delay[slot][location], sample_rate) ||
                 !grain_init_state(&next.grain[slot][location], sample_rate,
                                   seed)) {
@@ -816,6 +820,7 @@ int ts_sister_post_fx_init(TsSisterPostFxEngine *engine,
                 return 0;
             }
             ts_character_filter_init(&next.filter[slot][location],sample_rate);
+            ts_dispersion_init(&next.dispersion[slot][location],sample_rate);
             ts_transient_init(&next.transient[slot][location].dsp, sample_rate);
             next.transient[slot][location].response_cached = .5f;
             next.transient[slot][location].gain_current = 1;
@@ -1025,6 +1030,14 @@ void ts_sister_post_fx_sync_controls(TsSisterPostFxEngine *engine,
             TsCharacterFilter *filter=&engine->filter[slot][location];
             memcpy(filter->smooth,control->filter.value,sizeof(filter->smooth));filter->initialized=1;
             filter->mix=control->mix;filter->gain=filter->gain_target=makeup_gain_linear(control->gain_db);
+            TsDispersion *dispersion=&engine->dispersion[slot][location];
+            TsResonator *resonator=&engine->resonator[slot][location];
+            dispersion->a=resonator->a=control->parameter_a;
+            dispersion->b=resonator->b=control->parameter_b;
+            dispersion->c=resonator->c=control->parameter_c;
+            dispersion->mix=resonator->mix=control->mix;
+            dispersion->gain=resonator->gain=dispersion->gain_target=resonator->gain_target=makeup_gain_linear(control->gain_db);
+            dispersion->gain_db=resonator->gain_db=control->gain_db;
             TsSisterTransientState *transient = &engine->transient[slot][location];
             transient->gain_db_cached = control->gain_db;
             transient->gain_current = transient->gain_target = makeup_gain_linear(control->gain_db);
@@ -1592,6 +1605,10 @@ static TsStereoFrame slot_effect_process(TsSisterPostFxEngine *engine,
     case TS_SISTER_FX_DISTORTION:
         return distortion_process(&engine->timing,
             &engine->distortion[slot][location], control, input, gate, direct);
+    case TS_SISTER_FX_DISPERSION:
+        return ts_dispersion_process(&engine->dispersion[slot][location],input,control->parameter_a,control->parameter_b,control->parameter_c,control->mix,control->gain_db,gate,direct);
+    case TS_SISTER_FX_RESONATOR:
+        return ts_resonator_process(&engine->resonator[slot][location],input,control->parameter_a,control->parameter_b,control->parameter_c,control->mix,control->gain_db,gate,direct);
     case TS_SISTER_FX_FILTER: {
         TsCharacterFilter *f=&engine->filter[slot][location];
         TsStereoFrame out=ts_character_filter_process(f,&control->filter,input,control->mix,control->gain_db,gate);
@@ -1852,6 +1869,7 @@ size_t ts_sister_post_fx_memory_bytes(const TsSisterPostFxEngine *engine)
     for (size_t slot = 0u; slot < TS_SISTER_FX_SLOT_COUNT; ++slot)
         for (size_t location = 0u;
              location < TS_SISTER_FX_LOCATION_COUNT; ++location) {
+            bytes += engine->resonator[slot][location].capacity*12*sizeof(float);
             bytes += engine->delay[slot][location].capacity_frames *
                      2u * sizeof(float);
             bytes += engine->grain[slot][location].capacity_frames *
@@ -1874,6 +1892,8 @@ struct TsSisterSingleFx {
         TsSisterGrainState grain;
         TsSisterTransientState transient;
         TsCharacterFilter filter;
+        TsDispersion dispersion;
+        TsResonator resonator;
     } state;
 };
 TsSisterSingleFx *ts_sister_single_fx_new(TsSisterFxType type,unsigned rate,uint32_t seed)
@@ -1888,6 +1908,8 @@ TsSisterSingleFx *ts_sister_single_fx_new(TsSisterFxType type,unsigned rate,uint
     f->controls=(TsSisterFxSlotControls){type,1,TS_SISTER_FX_PLACE_POST,0,.5f,.5f,.5f,1,0};
     int ok=1;
     switch(type) {
+    case TS_SISTER_FX_DISPERSION:ts_dispersion_init(&f->state.dispersion,rate);break;
+    case TS_SISTER_FX_RESONATOR:ok=ts_resonator_init(&f->state.resonator,rate);break;
     case TS_SISTER_FX_REVERB:ok=reverb_init(&f->state.reverb,rate);break;
     case TS_SISTER_FX_DELAY:ok=delay_init_state(&f->state.delay,rate);break;
     case TS_SISTER_FX_GRAIN:ok=grain_init_state(&f->state.grain,rate,seed);break;
@@ -1909,6 +1931,7 @@ void ts_sister_single_fx_free(TsSisterSingleFx *f)
     if(f->controls.type==TS_SISTER_FX_REVERB)reverb_free(&f->state.reverb);
     if(f->controls.type==TS_SISTER_FX_DELAY)free(f->state.delay.data);
     if(f->controls.type==TS_SISTER_FX_GRAIN)free(f->state.grain.data);
+    if(f->controls.type==TS_SISTER_FX_RESONATOR)ts_resonator_free(&f->state.resonator);
     free(f);
 }
 void ts_sister_single_fx_set(TsSisterSingleFx *f,const TsSisterFxSlotControls *c)
@@ -1929,6 +1952,8 @@ TsStereoFrame ts_sister_single_fx_process(TsSisterSingleFx *f,TsStereoFrame inpu
     case TS_SISTER_FX_DELAY:return delay_process(&f->timing,&f->state.delay,&f->controls,input,gate,&direct);
     case TS_SISTER_FX_DISTORTION:return distortion_process(&f->timing,&f->state.distortion,&f->controls,input,gate,&direct);
     case TS_SISTER_FX_GRAIN:return grain_process(&f->timing,&f->state.grain,&f->controls,input,gate,&direct);
+    case TS_SISTER_FX_DISPERSION:return ts_dispersion_process(&f->state.dispersion,input,f->controls.parameter_a,f->controls.parameter_b,f->controls.parameter_c,f->controls.mix,f->controls.gain_db,gate,&direct);
+    case TS_SISTER_FX_RESONATOR:return ts_resonator_process(&f->state.resonator,input,f->controls.parameter_a,f->controls.parameter_b,f->controls.parameter_c,f->controls.mix,f->controls.gain_db,gate,&direct);
     case TS_SISTER_FX_FILTER:return ts_character_filter_process(&f->state.filter,&f->controls.filter,input,f->controls.mix,f->controls.gain_db,gate);
     case TS_SISTER_FX_TRANSIENT:return transient_process(&f->timing,&f->state.transient,&f->controls,input,gate,&direct);
     default:return input;
@@ -1940,5 +1965,6 @@ size_t ts_sister_single_fx_memory(const TsSisterSingleFx *f)
     if(f->controls.type==TS_SISTER_FX_REVERB)for(int i=0;i<TS_SISTER_REVERB_LINES;++i)n+=f->state.reverb.line[i].capacity_frames*2*sizeof(float);
     if(f->controls.type==TS_SISTER_FX_DELAY)n+=f->state.delay.capacity_frames*2*sizeof(float);
     if(f->controls.type==TS_SISTER_FX_GRAIN)n+=f->state.grain.capacity_frames*2*sizeof(float);
+    if(f->controls.type==TS_SISTER_FX_RESONATOR)n+=f->state.resonator.capacity*12*sizeof(float);
     return n;
 }
