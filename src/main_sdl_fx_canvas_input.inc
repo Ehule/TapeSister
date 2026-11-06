@@ -157,7 +157,7 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
             if(left && y>=178 && y<206){c->enabled=!c->enabled;mx_commit_controls(device,audio,ui);return 1;}
             if(c->type==TS_MATRIX_FX_META && left && y>=480 && y<508){fx_canvas.meta=c->id;return 1;}
             int i=(y-230)/53;
-            if(x>=1028 && x<=1236 && y>=230 && i<count && (y-230)%53<40) {
+            if(x>=1028 && x<=1236 && y>=230 && i<count && (y-230)%53<49) {
                 float v=c->type==TS_MATRIX_FX_META?(c->meta.scene_mode && c->meta.captured==3?c->meta.scene[0][i]+(c->meta.scene[1][i]-c->meta.scene[0][i])*c->meta.morph:c->meta.macro[i]):mx_effect_value(c,i);
                 if(wheel)v+=wheel*((SDL_GetModState()&KMOD_SHIFT)?.002f:.02f);else if(left)v=(x-1028)/208.f;
                 else if(click && e->button.button==SDL_BUTTON_RIGHT){TsMatrixEffectControls defaults;ts_matrix_effect_default(&defaults,c->type,c->id);v=c->type==TS_MATRIX_FX_META?defaults.meta.macro[i]:mx_effect_value(&defaults,i);}else return 1;

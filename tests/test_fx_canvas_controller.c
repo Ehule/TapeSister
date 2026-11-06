@@ -29,12 +29,69 @@ static FxCanvasNode *node(int row)
 {for(int i=0;i<fx_canvas.count;++i)if(fx_canvas.node[i].row.kind==2 && fx_canvas.node[i].row.index==row)return &fx_canvas.node[i];return NULL;}
 static FxCanvasNode *instance(uint32_t id)
 {for(int i=0;i<fx_canvas.count;++i)if(fx_canvas.node[i].row.kind==4 && fx_canvas.node[i].row.tile==id)return &fx_canvas.node[i];return NULL;}
+static SDL_Surface *rendered_frame(void)
+{
+    MatrixWindow *w=&matrix_window;w->palette=ui.palette;
+    mx_draw_frame(&audio,&pages,&bank);
+    int width,height;assert(SDL_GetRendererOutputSize(w->renderer,&width,&height)==0);
+    SDL_Surface *surface=SDL_CreateRGBSurfaceWithFormat(0,width,height,32,SDL_PIXELFORMAT_ARGB8888);
+    assert(surface && SDL_RenderReadPixels(w->renderer,NULL,surface->format->format,surface->pixels,surface->pitch)==0);
+    return surface;
+}
 static void screenshot(const char *path)
 {
-    matrix_window.palette=ui.palette;
-    fx_paint(&audio,&pages,&bank);
-    SDL_Surface *s=SDL_CreateRGBSurfaceFrom(matrix_window.pixels,MATRIX_W,MATRIX_H,32,MATRIX_W*4,0xff0000,0xff00,0xff,0);
-    assert(s && !SDL_SaveBMP(s,path));SDL_FreeSurface(s);
+    SDL_Surface *frame=rendered_frame();
+    assert(!SDL_SaveBMP(frame,path));SDL_FreeSurface(frame);
+}
+/* Check the 5 x 7 letter from pixels actually presented by SDL, including the
+   smaller parameter font and the second line of a wrapped graph-node title. */
+static void check_letter(SDL_Surface *frame,int x,int y,char letter,int scale,uint32_t ink)
+{
+    FxFontMetrics f=fx_font(scale);
+    const char *bits=ts_ui_glyph(letter);
+    for(int r=0;r<7;++r)for(int c=0;c<5;++c) {
+        assert(f.rows[r+1]>f.rows[r] && f.columns[c+1]>f.columns[c]);
+        int px=mx_px(x)+(f.columns[c]+f.columns[c+1]-1)/2;
+        int py=mx_py(y)+(f.rows[r]+f.rows[r+1]-1)/2;
+        assert(px>=0 && px<frame->w && py>=0 && py<frame->h);
+        const uint32_t *row=(const uint32_t *)((const char *)frame->pixels+py*frame->pitch);
+        assert(((row[px]&0xffffff)==(ink&0xffffff))==(bits[r*5+c]=='1'));
+    }
+}
+static void laptop_legibility(const char *dir,uint32_t effect_id)
+{
+    MatrixWindow *w=&matrix_window;
+    static TsMatrixLayout saved;saved=*w->layout;
+    int oldw,oldh;SDL_GetWindowSize(w->window,&oldw,&oldh);
+    uint32_t old_effect=w->effect_open;
+    const int sizes[][2]={{1366,699},{960,630},{1920,1080}};
+    for(size_t i=0;i<sizeof(sizes)/sizeof(*sizes);++i) {
+        SDL_SetWindowSize(w->window,sizes[i][0],sizes[i][1]);
+        w->layout->canvas_zoom=.70f;w->layout->canvas_x=40;w->layout->canvas_y=40;
+        w->effect_open=0;fx_clear_selection();
+        SDL_Surface *frame=rendered_frame();
+        assert(frame->w==w->pixel_w && frame->h==w->pixel_h);
+        FxCanvasNode *bus=node(TS_MATRIX_TRACKER);assert(bus);
+        check_letter(frame,fx_x(bus->x)+7,fx_y(bus->y)+7+fx_line_height(fx_font(2)),'B',2,FX_TEXT);
+        char path[1024];
+        if(dir && !i){snprintf(path,sizeof(path),"%s/idle.bmp",dir);assert(!SDL_SaveBMP(frame,path));}
+        SDL_FreeSurface(frame);
+        w->effect_open=effect_id;fx_select(instance(effect_id),0);
+        frame=rendered_frame();
+        check_letter(frame,32,735,'M',1,ts_theme_color(&w->palette,TS_THEME_MOSAIC,TS_COLOR_TEXT,0xffdbe8e3u));
+        if(dir && !i){snprintf(path,sizeof(path),"%s/effect.bmp",dir);assert(!SDL_SaveBMP(frame,path));}
+        SDL_FreeSurface(frame);
+        int slot=mx_effect_slot();assert(slot>=0);
+        float before=w->controls.effect[slot].meta.macro[3];
+        click(1200,430,1);assert(!w->drag && w->controls.effect[slot].meta.macro[3]>before);
+        key(SDLK_z,KMOD_CTRL);assert(w->controls.effect[slot].meta.macro[3]==before);
+        fx_view(0,&pages,&bank);frame=rendered_frame();
+        assert(w->pixel_w==MATRIX_W && w->pixel_h==MATRIX_H);
+        SDL_FreeSurface(frame);fx_view(1,&pages,&bank);
+    }
+    w->effect_open=old_effect;*w->layout=saved;SDL_SetWindowSize(w->window,oldw,oldh);
+    fx_build(&pages,&bank);
+    if(instance(old_effect))fx_select(instance(old_effect),0);
 }
 static void view_codec(void)
 {
@@ -286,6 +343,7 @@ int main(int argc,char **argv)
     matrix_window.effect_open=c.effect[meta].id;
     for(int i=0;i<fx_canvas.count;++i)if(fx_canvas.node[i].row.kind==4 && fx_canvas.node[i].row.tile==c.effect[meta].id)fx_select(&fx_canvas.node[i],0);
     if(argc>1)screenshot(argv[1]);
+    laptop_legibility(getenv("TS_FX_PREVIEW"),c.effect[meta].id);
     if(argc>3) {
         static TsFramebuffer fb;ts_ui_render(&fb,&ui,&bank);
         SDL_Surface *s=SDL_CreateRGBSurfaceFrom(fb.pixels,640,400,32,640*4,0xff0000,0xff00,0xff,0);assert(s && !SDL_SaveBMP(s,argv[3]));SDL_FreeSurface(s);

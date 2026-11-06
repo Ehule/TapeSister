@@ -7,6 +7,7 @@ typedef struct {int kind,index,order;TsTileId tile;char name[48];} MatrixRow;
 typedef struct MatrixSnapshot MatrixSnapshot;
 typedef struct {
     SDL_Window *window;SDL_Renderer *renderer;SDL_Texture *texture;uint32_t *pixels;
+    int pixel_w,pixel_h;
     Uint32 id,presented;int visible,dirty,scroll,column,filter,selected,destination,drag,canvas;
     MatrixRow rows[MATRIX_CAPACITY],selection[MATRIX_CAPACITY+TS_MATRIX_DESTINATIONS];int count,selection_count,anchor;
     TsMatrixLayout *layout,full_layout;int columns[TS_MATRIX_DESTINATIONS],column_count;unsigned char assigned[TS_MATRIX_DESTINATIONS];int layout_focus; /* 1=row label, 2=column header. */
@@ -67,14 +68,59 @@ static void mx_select(int at,int modifiers)
 #define MX_GREEN (ts_theme_color(&matrix_window.palette, matrix_window.canvas?TS_THEME_MOSAIC:TS_THEME_ROUTER, TS_COLOR_DATA2, 0xff8addb4u))
 #define MX_YELLOW (ts_theme_color(&matrix_window.palette, matrix_window.canvas?TS_THEME_MOSAIC:TS_THEME_ROUTER, TS_COLOR_FOCUS, 0xffffce69u))
 #define MX_FEEDBACK (ts_theme_color(&matrix_window.palette, matrix_window.canvas?TS_THEME_MOSAIC:TS_THEME_ROUTER, TS_COLOR_WARNING, 0xffffce69u))
+/* The matrix uses its original logical surface. FX uses a drawable-sized
+   surface while retaining the same logical controls and mouse coordinates. */
+static int mx_pixel_w(void){return matrix_window.pixel_w?matrix_window.pixel_w:MATRIX_W;}
+static int mx_pixel_h(void){return matrix_window.pixel_h?matrix_window.pixel_h:MATRIX_H;}
+static int mx_px(int x){int width=mx_pixel_w();return width==MATRIX_W?x:(int)((int64_t)x*width/MATRIX_W);}
+static int mx_py(int y){int height=mx_pixel_h();return height==MATRIX_H?y:(int)((int64_t)y*height/MATRIX_H);}
+static void mx_fill_pixels(int left,int top,int right,int bottom,uint32_t color)
+{
+    int stride=mx_pixel_w();
+    left=SDL_max(0,left);right=SDL_min(stride,right);
+    top=SDL_max(0,top);bottom=SDL_min(mx_pixel_h(),bottom);
+    if(right<=left)return;
+    for(int y=top;y<bottom;++y) {
+        uint32_t *line=matrix_window.pixels+(size_t)y*stride;
+        for(int x=left;x<right;++x)line[x]=color;
+    }
+}
 static void mx_rect(int x,int y,int width,int height,uint32_t color)
 {
-    MatrixWindow *w=&matrix_window;
-    for(int yy=SDL_max(0,y);yy<SDL_min(MATRIX_H,y+height);++yy)
-        for(int xx=SDL_max(0,x);xx<SDL_min(MATRIX_W,x+width);++xx)w->pixels[yy*MATRIX_W+xx]=color;
+    mx_fill_pixels(mx_px(x),mx_py(y),mx_px(x+width),mx_py(y+height),color);
+}
+typedef struct {int columns[6],rows[8],advance;} FxFontMetrics;
+static FxFontMetrics fx_font(int scale)
+{
+    double fit=fmin(mx_pixel_w()/(double)MATRIX_W,1.25*mx_pixel_h()/MATRIX_H);
+    double unit=fmax(1.0,fit*(scale==1?1.5:scale));
+    FxFontMetrics f;
+    for(int i=0;i<=5;++i)f.columns[i]=(int)lround(i*unit);
+    for(int i=0;i<=7;++i)f.rows[i]=(int)lround(i*unit);
+    f.advance=(int)lround(6*unit);
+    return f;
+}
+static void fx_text_clipped(int x,int y,const char *text,uint32_t color,FxFontMetrics f,SDL_Rect clip)
+{
+    int left=mx_px(clip.x),right=mx_px(clip.x+clip.w);
+    int top=mx_py(clip.y),bottom=mx_py(clip.y+clip.h);
+    int px=mx_px(x),py=mx_py(y);
+    if(py>=bottom || py+f.rows[7]<=top)return;
+    for(;*text && px<right;++text,px+=f.advance) {
+        if(px+f.columns[5]<=left)continue;
+        const char *glyph=ts_ui_glyph(*text);
+        for(int row=0;row<7;++row)for(int col=0;col<5;++col)if(glyph[row*5+col]=='1') {
+            mx_fill_pixels(SDL_max(left,px+f.columns[col]),SDL_max(top,py+f.rows[row]),
+                SDL_min(right,px+f.columns[col+1]),SDL_min(bottom,py+f.rows[row+1]),color);
+        }
+    }
 }
 static void mx_text(int x,int y,const char *text,uint32_t color,int scale)
 {
+    if(matrix_window.canvas) {
+        fx_text_clipped(x,y,text,color,fx_font(scale),(SDL_Rect){0,0,MATRIX_W,MATRIX_H});
+        return;
+    }
     for(;*text;++text,x+=6*scale) {
         const char *glyph=ts_ui_glyph(*text);
         for(int r=0;r<7;++r)for(int c=0;c<5;++c)if(glyph[r*5+c]=='1')mx_rect(x+c*scale,y+r*scale,scale,scale,color);
@@ -228,6 +274,7 @@ static int matrix_show(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,
         w->window=SDL_CreateWindow("TapeSister - Routing Matrix (F9)",SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,
             MATRIX_W,MATRIX_H,SDL_WINDOW_RESIZABLE|SDL_WINDOW_ALLOW_HIGHDPI);
         if(w->window){SDL_SetWindowMinimumSize(w->window,960,630);w->renderer=SDL_CreateRenderer(w->window,-1,SDL_RENDERER_SOFTWARE);}
+        w->pixel_w=MATRIX_W;w->pixel_h=MATRIX_H;
         if(w->renderer)w->texture=SDL_CreateTexture(w->renderer,SDL_PIXELFORMAT_ARGB8888,SDL_TEXTUREACCESS_STREAMING,MATRIX_W,MATRIX_H);
         w->pixels=calloc(MATRIX_W*MATRIX_H,sizeof(uint32_t));
         if(!w->window || !w->renderer || !w->texture || !w->pixels){matrix_close();snprintf(ui->status,sizeof(ui->status),"MATRIX WINDOW FAILED: %.110s",SDL_GetError());return 0;}
@@ -728,6 +775,28 @@ static void mx_capture_activity(SDL_AudioDeviceID device,AudioState *audio,TsSam
     }
 }
 #include "main_sdl_fx_canvas.inc"
+static void mx_prepare_surface(MatrixWindow *w)
+{
+    int width=MATRIX_W,height=MATRIX_H;
+    if(w->canvas && SDL_GetRendererOutputSize(w->renderer,&width,&height)<0)return;
+    if(width==w->pixel_w && height==w->pixel_h)return;
+    if(width<1 || height<1 || width>INT_MAX/4 || (size_t)width>SIZE_MAX/sizeof(uint32_t)/(size_t)height)return;
+    SDL_Texture *texture=SDL_CreateTexture(w->renderer,SDL_PIXELFORMAT_ARGB8888,SDL_TEXTUREACCESS_STREAMING,width,height);
+    if(!texture)return;
+    uint32_t *pixels=malloc((size_t)width*height*sizeof(*pixels));
+    if(!pixels){SDL_DestroyTexture(texture);return;}
+    SDL_DestroyTexture(w->texture);free(w->pixels);
+    w->texture=texture;w->pixels=pixels;w->pixel_w=width;w->pixel_h=height;
+}
+static void mx_draw_frame(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
+{
+    MatrixWindow *w=&matrix_window;
+    mx_prepare_surface(w);
+    if(w->canvas)fx_paint(audio,pages,bank);else mx_paint(audio,pages,bank);
+    SDL_UpdateTexture(w->texture,NULL,w->pixels,w->pixel_w*4);
+    SDL_RenderClear(w->renderer);
+    SDL_RenderCopy(w->renderer,w->texture,NULL,NULL);
+}
 static void matrix_update(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsSamplePages *pages,TsInstrument *bank)
 {
     mx_collect_effects(device,audio);
@@ -736,9 +805,8 @@ static void matrix_update(SDL_AudioDeviceID device,AudioState *audio,TsUiState *
     if(!w->visible || !window_drawable(w->window) || elapsed<50)return;
     if(w->canvas)w->filter=0;
     mx_capture_activity(device,audio,pages,bank,elapsed);
-    if(w->canvas)fx_paint(audio,pages,bank);else mx_paint(audio,pages,bank);
-    SDL_UpdateTexture(w->texture,NULL,w->pixels,MATRIX_W*4);SDL_RenderClear(w->renderer);
-    SDL_RenderCopy(w->renderer,w->texture,NULL,NULL);SDL_RenderPresent(w->renderer);w->presented=SDL_GetTicks();w->dirty=0;
+    mx_draw_frame(audio,pages,bank);
+    SDL_RenderPresent(w->renderer);w->presented=SDL_GetTicks();w->dirty=0;
 }
 static void mx_name(int port)
 {
