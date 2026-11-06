@@ -192,7 +192,7 @@ int main(void)
     runtime.matrix_layout.column[TS_MATRIX_SIDECHAIN]=0;
     runtime.matrix_layout.canvas_view=1;
     runtime.matrix_layout.canvas_x=-126.25f;runtime.matrix_layout.canvas_y=48.5f;
-    runtime.matrix_layout.canvas_zoom=.75f;runtime.matrix_layout.canvas_count=2;
+    runtime.matrix_layout.canvas_straight=1;runtime.matrix_layout.canvas_zoom=.03f;runtime.matrix_layout.canvas_count=2;
     runtime.matrix_layout.canvas[0]=(TsFxCanvasPosition){123,4,440.5f,-12.25f};
     runtime.matrix_layout.canvas[1]=(TsFxCanvasPosition){TS_MATRIX_NODES,5,1200,320};
     assert(ts_matrix_layout_valid(&runtime.matrix_layout));

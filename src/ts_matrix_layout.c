@@ -28,10 +28,10 @@ int ts_matrix_layout_valid(const TsMatrixLayout *l)
         if(d>=TS_MATRIX_DESTINATIONS || seen[d])return 0;
         seen[d]=1;
     }
-    if(l->canvas_count<0 || l->canvas_count>TS_FX_CANVAS_POSITIONS || l->canvas_view<0 || l->canvas_view>1 ||
+    if(l->canvas_count<0 || l->canvas_count>TS_FX_CANVAS_POSITIONS || l->canvas_view<0 || l->canvas_view>1 || l->canvas_straight<0 || l->canvas_straight>1 ||
        !isfinite(l->canvas_x) || !isfinite(l->canvas_y) ||
        fabsf(l->canvas_x)>1000000 || fabsf(l->canvas_y)>1000000 ||
-       !isfinite(l->canvas_zoom) || l->canvas_zoom<.2f || l->canvas_zoom>2)return 0;
+       !isfinite(l->canvas_zoom) || l->canvas_zoom<.001f || l->canvas_zoom>2)return 0;
     for(int i=0;i<l->canvas_count;++i) {
         const TsFxCanvasPosition *p=&l->canvas[i];
         if(p->kind<0 || p->kind>5 || !isfinite(p->x) || !isfinite(p->y) ||
@@ -61,6 +61,7 @@ int ts_matrix_layout_write(FILE *f,const TsMatrixLayout *l)
 {
     if(!ts_matrix_layout_valid(l))return 0;
     if(l->canvas_view && fprintf(f,"FxCanvas.View=%.9g,%.9g,%.9g\n",l->canvas_x,l->canvas_y,l->canvas_zoom)<0)return 0;
+    if(fprintf(f,"FxCanvas.Straight=%d\n",l->canvas_straight)<0)return 0;
     for(int i=0;i<l->canvas_count;++i) {
         const TsFxCanvasPosition *p=&l->canvas[i];
         if(fprintf(f,"FxCanvas.Node%d=%d,%" PRIu64 ",%.9g,%.9g\n",i,p->kind,p->id,p->x,p->y)<0)return 0;
@@ -83,10 +84,14 @@ static int layout_number(const char **cursor,uint64_t maximum,uint64_t *number)
 int ts_matrix_layout_read(TsMatrixLayout *l,const char *key,const char *value)
 {
     uint64_t i,d,kind,id;const char *s;
+    if(!strcmp(key,"FxCanvas.Straight")) {
+        if(!strcmp(value,"0"))l->canvas_straight=0;else if(!strcmp(value,"1"))l->canvas_straight=1;else return -1;
+        return 1;
+    }
     if(!strcmp(key,"FxCanvas.View")) {
         float x,y,z;char extra;
         if(sscanf(value,"%f,%f,%f%c",&x,&y,&z,&extra)!=3 || !isfinite(x) || !isfinite(y) ||
-           fabsf(x)>1000000 || fabsf(y)>1000000 || !isfinite(z) || z<.2f || z>2)return -1;
+           fabsf(x)>1000000 || fabsf(y)>1000000 || !isfinite(z) || z<.001f || z>2)return -1;
         l->canvas_x=x;l->canvas_y=y;l->canvas_zoom=z;l->canvas_view=1;return 1;
     }
     if(!strncmp(key,"FxCanvas.Node",13)) {

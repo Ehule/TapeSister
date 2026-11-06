@@ -467,13 +467,14 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
         else snprintf(label,sizeof(label),"C%02d/%02d %.18s / %.25s",ui->mosaic_gallery_active+1,ui->mosaic_gallery_count,ui->mosaic_gallery_names[ui->mosaic_gallery_active],status);
     }
     if(ui->mosaic_source_hover[0]) {
-        snprintf(label,sizeof(label),"%.62s",ui->mosaic_source_hover);
+        snprintf(label,sizeof(label),"%.45s",ui->mosaic_source_hover);
         text(fb,164,24,label,ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_TEXT,RGB(224,214,233)),1);
-        if(strlen(ui->mosaic_source_hover)>62) {
-            snprintf(label,sizeof(label),"%.62s",ui->mosaic_source_hover+62);
+        if(strlen(ui->mosaic_source_hover)>45) {
+            snprintf(label,sizeof(label),"%.45s",ui->mosaic_source_hover+45);
             text(fb,164,32,label,ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_TEXT,RGB(224,214,233)),1);
         }
     } else {
+    label[45]=0;
     text(fb,164,24,label,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DIM, RGB(160,149,172)),1);
     }
     mosaic_card_info(fb,ui);

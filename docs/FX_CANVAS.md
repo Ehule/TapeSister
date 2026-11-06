@@ -1,6 +1,7 @@
 # FX Canvas
 
-Open **Mosaic → FX CANVAS**, beside the current sound information, or press
+Open **Mosaic → FX CANVAS** (left of the output meter),
+**Routing Matrix → FX CANVAS**, or press
 **Shift+F9** from any workspace. **F9** switches to the routing matrix; Shift+F9
 switches back. The same window, graph, stable processor identities, audio
 histories and undo stack are used by both views. Opening either view does not
@@ -20,11 +21,14 @@ Inherited track-to-tile routing remains inspectable in the Matrix.
   edges are amber. The Matrix's cycle validation and feedback policy apply.
 - Click a cable, then wheel to change its level (Shift: fine). Delete disconnects
   the selected cable. Click empty space to release cable selection before zooming.
-- Select an added effect to reveal its existing parameter controls below the
-  canvas. Filter also opens its complete editor on double-click. Fixed processors
+- Select an added effect to reveal the right-hand inspector and its full
+  parameter controls below the canvas. All four Meta FX macros are available in
+  the inspector. Sliders release on mouse-up, including outside their controls. Filter also opens its complete editor on double-click. Fixed processors
   retain their existing editors; the Matrix exposes their ordinary routing controls.
-- Drag a node to organize it. Middle-drag pans; wheel zooms around the pointer.
-  FIT or Home frames the graph. Layout, pan and zoom save with the project.
+- Drag selected nodes to organize them together. Middle-drag pans; wheel zooms
+  around the pointer. **Z** frames selected nodes; **Shift+Z**, FIT or Home frames
+  the whole graph. Fit includes all endpoints and can zoom below 20%.
+  Layout, pan, zoom and cable style save with the project.
   View edits are undoable and never reset processor histories. Up to 256 manually
   positioned nodes are retained; other nodes use the automatic layout. Positions
   use stable effect identities so a replacement instance cannot inherit an old
@@ -33,6 +37,43 @@ Inherited track-to-tile routing remains inspectable in the Matrix.
   fixed processors and available input endpoints. Closed output ports say N/A.
 - Undo/Redo and Ctrl+Z/Ctrl+Y are shared with the Matrix. Audition keys pass through
   to the instrument. MOSAIC / CLOSE returns to Mosaic without stopping audio.
+
+## Canvas controls and SunVox audit
+
+Reviewed the official [SunVox manual](https://warmplace.ru/soft/sunvox/manual.php),
+particularly **Control**, **Keyboard shortcuts**, and **Modules**. These desktop
+editing gestures apply to the FX workspace; Z, Shift+Z and M follow Mosaic.
+
+| Gesture | FX Canvas behavior |
+|---|---|
+| Double-click empty space | Effect picker; choosing a type places it at that world position |
+| Right-click empty space, + EFFECT or Ctrl+N | Open the effect picker; Escape cancels |
+| Left-drag empty space | Box-select intersecting modules |
+| Ctrl+click | Add/remove a module from the selection |
+| Ctrl/Shift + box-select | Extend the selection |
+| Ctrl+A | Select all visible nodes, including endpoints |
+| Drag a selected module | Move the selection together |
+| Shift+drag a module onto another | Connect/disconnect that route using Matrix validation |
+| Drag output port to input port | Connect; the lower purple port receives sidechain audio |
+| Middle-drag / wheel | Pan / zoom around the pointer |
+| Z / Shift+Z | Frame selection / frame all |
+| M | Bypass selected added effects; gray blocks remain patched |
+| Delete / Backspace | Remove selected added effects and their incoming/outgoing routes, or disconnect a selected cable |
+| Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z | Shared Matrix undo/redo |
+| Double-click Meta FX | Enter its chain; Escape or BACK TO FX returns |
+
+Delete protects fixed buses and hardware endpoints. Their selection still supports
+positioning and framing. Fixed processors retain their existing power controls.
+Generators, sample editing and pattern operations remain in their source editors.
+
+## Project routing and fresh sessions
+
+Routing and added effects belong to the saved project. Quitting without saving
+and restarting begins with default routing. Loading a saved project restores its
+graph, effects, node positions, zoom and cable style. General settings saves no
+longer write the live graph into `tapesister.ini`; startup also ignores graph data
+from older settings files. Hardware port names and audio-device settings persist.
+The standalone configuration codec remains compatible with existing files.
 
 ## Entering a Meta FX
 
@@ -47,8 +88,12 @@ branches are fully supported on the outer canvas. Packaging arbitrary parallel
 subgraphs, nested racks, and editing internal connection topology are subsequent
 extensions; the canvas does not silently flatten a branched graph into a chain.
 
-The preview design board illustrates the direction. The native screenshots below
-are captures of this implementation, including its current internal-rack scope.
+The canvas uses Mosaic's dark background, purple panels and colored module
+accents. Audio cables are teal, sidechains purple, and delayed feedback amber.
+Selected modules have an amber border; bypassed effects are gray. STRAIGHT /
+SPLINES switches the cable path used for both drawing and selection.
+
+The screenshots below are native application captures.
 
 ![FX Canvas](screenshots/fx-canvas/canvas.png)
 ![Inside a Meta FX](screenshots/fx-canvas/inside.png)
