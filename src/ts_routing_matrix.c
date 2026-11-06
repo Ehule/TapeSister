@@ -321,10 +321,12 @@ int ts_matrix_read(TsMatrixControls *c,const char *key,const char *v)
         TsMatrixEffectControls e={0};e.id=(uint32_t)x[0];e.type=(int)x[1];e.enabled=(int)x[2];
         e.a=x[3];e.b=x[4];e.c=x[5];e.mix=x[6];e.gain_db=x[7];e.transition=x[8];
         e.compressor=(TsCompressorControls){(int)x[9],(int)x[10],x[11],x[12],x[13],x[14],x[15]};
-        e.meta=next.effect[n].meta;if(e.type==TS_MATRIX_FX_META && !e.meta.initialized)ts_meta_default(&e.meta);
+        e.meta=next.effect[n].meta;int pending_meta=e.type==TS_MATRIX_FX_META && !e.meta.initialized;
+        if(pending_meta)ts_meta_default(&e.meta);
         e.filter=next.effect[n].filter;if(!e.filter.initialized)ts_character_filter_default(&e.filter);
         e.transient_power=next.effect[n].transient_power;e.transient_states=next.effect[n].transient_states;
         if(!ts_matrix_effect_valid(&e))return -1;
+        if(pending_meta)e.meta.initialized=2; /* Require a complete rack before final graph validation. */
         next.effect[n]=e;
     } else if(!strcmp(key,"SerialMask")) {
         const unsigned serial=(1u<<TS_MATRIX_MAIN)|(1u<<TS_MATRIX_PRISM)|(1u<<TS_MATRIX_BOARD)|(1u<<TS_MATRIX_FALLOUT);

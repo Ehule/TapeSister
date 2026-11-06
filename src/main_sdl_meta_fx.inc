@@ -224,6 +224,18 @@ static int meta_fx_event(const SDL_Event *e, SDL_AudioDeviceID device, AudioStat
         }
         return 1;
     }
+    if (e->type == SDL_KEYDOWN && (e->key.keysym.mod & KMOD_CTRL) &&
+        (e->key.keysym.sym == SDLK_z || e->key.keysym.sym == SDLK_y)) {
+        meta_fx_history_finish(device, audio, pages, bank);
+        if (!e->key.repeat)
+            mx_undo(device, audio, ui, pages, bank,
+                    e->key.keysym.sym == SDLK_y || (e->key.keysym.mod & KMOD_SHIFT));
+        return 1;
+    }
+    /* Audition keys and their releases continue to the application's input
+       owner when no text field is being edited. */
+    if (e->type == SDL_KEYDOWN || e->type == SDL_KEYUP)
+        return 0;
     int down = e->type == SDL_MOUSEBUTTONDOWN, left = down && e->button.button == SDL_BUTTON_LEFT,
         wheel = e->type == SDL_MOUSEWHEEL, motion = e->type == SDL_MOUSEMOTION;
     if (!down && !wheel && !motion)

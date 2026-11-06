@@ -90,6 +90,23 @@ int main(int argc, char **argv) {
     drag(70, 44, 50);
     assert(rack->macro[0] > before &&
            audio.sister.matrix.controls.effect[slot].meta.macro[0] == rack->macro[0]);
+    SDL_Event key;
+    SDL_zero(key);
+    key.type = SDL_KEYDOWN;
+    key.key.windowID = meta_fx_window.id;
+    key.key.keysym.sym = SDLK_q;
+    assert(!meta_fx_event(&key, 0, &audio, &ui, &sister, &pages, &bank));
+    key.type = SDL_KEYUP;
+    assert(!meta_fx_event(&key, 0, &audio, &ui, &sister, &pages, &bank));
+    float changed = rack->macro[0];
+    key.type = SDL_KEYDOWN;
+    key.key.keysym.sym = SDLK_z;
+    key.key.keysym.mod = KMOD_CTRL;
+    assert(meta_fx_event(&key, 0, &audio, &ui, &sister, &pages, &bank));
+    assert(rack->macro[0] == before);
+    key.key.keysym.sym = SDLK_y;
+    assert(meta_fx_event(&key, 0, &audio, &ui, &sister, &pages, &bank));
+    assert(rack->macro[0] == changed);
     click(32, 280, SDL_BUTTON_LEFT);
     click(100, 280, SDL_BUTTON_LEFT);
     assert(rack->captured == 3);

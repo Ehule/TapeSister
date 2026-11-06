@@ -14,7 +14,7 @@ static int mx_effect_control_id(const TsMatrixEffectControls *c,int position)
 static float mx_effect_value(const TsMatrixEffectControls *c,int position)
 {
     int k=mx_effect_control_id(c,position);
-    if(c->type==TS_MATRIX_FX_META && k<3)return c->meta.macro[k];
+    if(c->type==TS_MATRIX_FX_META && k<3)return c->meta.scene_mode && c->meta.captured==3?c->meta.scene[0][k]+(c->meta.scene[1][k]-c->meta.scene[0][k])*c->meta.morph:c->meta.macro[k];
     if(c->type==TS_MATRIX_FX_COMPRESSOR)return k<5?ts_compressor_normalized(&c->compressor,k):k==5?c->mix:c->transition;
     if(c->type==TS_MATRIX_FX_FILTER && k<3){int focus=c->filter.value[TS_CF_ROUTE]>=.75f && c->filter.value[TS_CF_FOCUS]>=.5f?8:0;return c->filter.value[(int[]){TS_CF_L_CUT,TS_CF_L_RES,TS_CF_L_DRIVE}[k]+focus];}
     return k==0?c->a:k==1?c->b:k==2?c->c:k==3?c->mix:k==4?(c->gain_db+12)/24:c->transition;

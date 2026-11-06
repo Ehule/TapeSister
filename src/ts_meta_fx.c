@@ -165,7 +165,11 @@ void ts_meta_macro_set(TsMetaControls *c, int i, float v) {
 void ts_meta_capture(TsMetaControls *c, int i) {
     if (i < 0 || i > 1)
         return;
-    effective(c, c->scene[i]);
+    float audible[TS_META_MACROS];
+    effective(c, audible);
+    memcpy(c->scene[i], audible, sizeof(audible));
+    memcpy(c->macro, audible, sizeof(audible));
+    c->scene_mode = 0;
     c->captured |= 1 << i;
 }
 static const char *preset_names[] = {"ARC",         "PALE CLOUD",   "SHIMMER ASH", "IRON CHOIR",
@@ -197,6 +201,7 @@ void ts_meta_preset(TsMetaControls *c, int preset) {
         if (s->type == TS_SISTER_FX_TRANSIENT) {
             map_add(c, 0, i, 0, .48f, .9f);
             map_add(c, 1, i, 1, .35f, .72f);
+            map_add(c, 2, i, 2, .85f, .15f);
             s->power = 1;
         }
         if (s->type == TS_SISTER_FX_GRAIN) {
@@ -204,8 +209,10 @@ void ts_meta_preset(TsMetaControls *c, int preset) {
             map_add(c, 1, i, 1, .25f, .8f);
             s->value[2] = preset == 2 ? .75f : .5f;
         }
-        if (s->type == TS_SISTER_FX_FILTER)
+        if (s->type == TS_SISTER_FX_FILTER) {
             map_add(c, 3, i, 5 + TS_CF_L_CUT, .92f, .5f);
+            map_add(c, 0, i, 5 + TS_CF_L_DRIVE, 0, .35f);
+        }
         if (s->type == TS_SISTER_FX_DISTORTION) {
             map_add(c, 0, i, 0, .08f, .65f);
             s->value[4] = .32f;

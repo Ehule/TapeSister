@@ -51,6 +51,8 @@ replaces the path. Files contain the complete rack, mappings and macro states;
 no external samples or SunVox installation are needed. Writes replace the
 file atomically. Malformed or incomplete imports leave the current rack
 unchanged. Project/config persistence and Matrix Undo/Redo include the rack.
+Ctrl+Z/Ctrl+Y also work in the rack editor; audition keys pass through when
+no text field is being edited.
 
 ## New building blocks
 
