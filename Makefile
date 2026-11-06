@@ -513,3 +513,6 @@ test-sample-folder: tapesister_sample_folder_tests
 	./tapesister_sample_folder_tests
 
 test: test-sample-folder
+
+# Both startup and farewell presentation share the native SDL translation unit.
+tapesister: src/main_sdl_credits.inc assets/tapesister_credits.png
