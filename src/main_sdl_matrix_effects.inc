@@ -147,7 +147,7 @@ static void mx_effect_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioSta
     if(left && y>=696 && y<724 && x>=1048){w->effect_menu=0;w->effect_open=0;w->drag=0;return;}
     if(!mx_editable())return;
     if(w->effect_menu) {
-        if(left && y>=736 && y<798 && (y-736)%34<28 && x>=32 && x<1236 && (x-32)%172<162){int type=1+(x-32)/172+7*((y-736)/34);if(type<TS_MATRIX_FX_TYPES)mx_effect_add(device,audio,ui,pages,bank,type);}
+        if(left && y>=736 && y<798 && (y-736)%34<28 && x>=32 && x<1244){int type=1+(x-32)/172+7*((y-736)/34);if(type<TS_MATRIX_FX_TYPES)mx_effect_add(device,audio,ui,pages,bank,type);}
         return;
     }
     int slot=mx_effect_slot();if(slot<0)return;
