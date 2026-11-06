@@ -29,12 +29,15 @@ Inherited track-to-tile routing remains inspectable in the Matrix.
   around the pointer. **Z** frames selected nodes; **Shift+Z**, FIT or Home frames
   the whole graph. Fit includes all endpoints and can zoom below 20%.
   Layout, pan, zoom and cable style save with the project.
-  View edits are undoable and never reset processor histories. Up to 256 manually
-  positioned nodes are retained; other nodes use the automatic layout. Positions
+  View edits are undoable and never reset processor histories. The project stores processor and I/O positions, plus up to 256 manually
+  positioned track, tile or card sources. Additional sources occupy their own lane. Positions
   use stable effect identities so a replacement instance cannot inherit an old
   processor's placement.
-- CONNECTED / BUSES shows the working network. ALL ENDPOINTS also exposes the
-  fixed processors and available input endpoints. Closed output ports say N/A.
+- Every processor stays on the canvas, including a completely isolated effect
+  or a chain disconnected from Main. Select a cable and press Delete to remove
+  that one connection. You can leave any module unpatched. CLEAR CABLES runs
+  the Matrix’s Clear All command and can be undone. Open and named interface
+  ports are available to patch. Closed output ports say N/A.
 - Undo/Redo and Ctrl+Z/Ctrl+Y are shared with the Matrix. Audition keys pass through
   to the instrument. MOSAIC / CLOSE returns to Mosaic without stopping audio.
 

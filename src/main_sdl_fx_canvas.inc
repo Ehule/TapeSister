@@ -4,12 +4,12 @@ enum { FX_NODE_W=210, FX_NODE_H=86, FX_TOP=116, FX_BOTTOM=682, FX_RIGHT=1000, FX
 typedef struct { MatrixRow row; int at,destination,rank; float x,y; } FxCanvasNode;
 static struct {
     FxCanvasNode node[MATRIX_CAPACITY+TS_MATRIX_DESTINATIONS];
-    int count,dest[TS_MATRIX_DESTINATIONS],all,fit,wire,destination,mouse_x,mouse_y;
+    int count,dest[TS_MATRIX_DESTINATIONS],fit,wire,destination,mouse_x,mouse_y;
     MatrixRow source,moving;
     float origin_x,origin_y,pointer_x,pointer_y;
     uint32_t meta;
     TsFxCanvasPosition move[TS_FX_CANVAS_POSITIONS];int move_count;
-    MatrixRow before[MATRIX_CAPACITY];int before_count;
+    MatrixRow before[MATRIX_CAPACITY+TS_MATRIX_DESTINATIONS];int before_count;
     int popup,popup_x,popup_y;float place_x,place_y;
 } fx_canvas={.wire=-1,.destination=-1};
 static void fx_context_reset(void)
@@ -32,23 +32,48 @@ static TsFxCanvasPosition *fx_position(MatrixRow row,int create)
     if(kind==5)id=(uint64_t)row.index;
     for(int i=0;i<l->canvas_count;++i)if(l->canvas[i].kind==kind && l->canvas[i].id==id)return &l->canvas[i];
     if(!create)return NULL;
+    if(kind==0 || kind==1 || kind==3) {
+        int sources=0;
+        for(int i=0;i<l->canvas_count;++i) {
+            int k=l->canvas[i].kind;
+            if(k==0 || k==1 || k==3)++sources;
+        }
+        if(sources>=TS_FX_CANVAS_SOURCE_POSITIONS)return NULL;
+    }
     if(l->canvas_count==TS_FX_CANVAS_POSITIONS) {
         /* Reclaim positions of deleted instances before reusing a view slot. */
         for(int i=l->canvas_count-1;i>=0;--i)if(l->canvas[i].kind==4) {
             int alive=0;for(int j=0;j<TS_MATRIX_EFFECT_CAPACITY;++j)alive|=matrix_window.controls.effect[j].id==l->canvas[i].id;
-            if(!alive)l->canvas[i]=l->canvas[--l->canvas_count];
+            if(!alive) {
+                l->canvas[i]=l->canvas[--l->canvas_count];
+                memset(&l->canvas[l->canvas_count],0,sizeof(l->canvas[0]));
+            }
         }
     }
     if(l->canvas_count==TS_FX_CANVAS_POSITIONS)return NULL;
     TsFxCanvasPosition *p=&l->canvas[l->canvas_count++];memset(p,0,sizeof(*p));p->kind=kind;p->id=id;return p;
 }
+/* A newly visible module can enter a column already occupied by a hand-placed
+   node. Find an open spot once, then save it with the other world positions. */
+static void fx_store_initial_position(TsFxCanvasPosition *position,float x,float y)
+{
+    TsMatrixLayout *layout=matrix_window.layout;
+    for(int i=0;i<layout->canvas_count;) {
+        TsFxCanvasPosition *other=&layout->canvas[i++];
+        if(other==position || fabsf(x-other->x)>=FX_NODE_W+12 ||
+           fabsf(y-other->y)>=FX_NODE_H+12)continue;
+        y+=120.f;
+        i=0;
+    }
+    position->x=x;
+    position->y=y;
+}
+
 static void fx_build(TsSamplePages *pages,TsInstrument *bank)
 {
     MatrixWindow *w=&matrix_window;int wanted[TS_MATRIX_DESTINATIONS]={0};
     if(w->filter){w->filter=0;mx_rows(pages,bank);}
     fx_canvas.count=0;for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)fx_canvas.dest[d]=-1;
-    wanted[TS_MATRIX_MAIN]=1;
-    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)if(w->controls.effect[i].id)wanted[TS_MATRIX_EFFECT_BASE+i]=1;
     /* Sources are endpoints, not copies of sample/generator editors. Ordinary
        tile/card/track membership remains represented by its source bus. */
     for(int i=0;i<w->count;++i) {
@@ -58,8 +83,7 @@ static void fx_build(TsSamplePages *pages,TsInstrument *bank)
         int keep=row.kind==2?(row.index>=TS_MATRIX_FM && row.index<=TS_MATRIX_TRACKER):
             raw.matrix_enabled || raw.mix_enabled;
         if(row.kind==2 && ts_matrix_input_pair(row.index)>=0) {
-            keep=fx_canvas.all;
-            for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)keep|=raw.matrix_gain[d]!=0;
+            keep=1; /* mx_rows already enumerated the physical/named input pairs. */
         }
         if(!keep || (raw.mode==TS_SOURCE_INHERIT && !raw.matrix_enabled))continue;
         FxCanvasNode *n=&fx_canvas.node[fx_canvas.count++];*n=(FxCanvasNode){.row=row,.at=i,.destination=-1};
@@ -69,31 +93,36 @@ static void fx_build(TsSamplePages *pages,TsInstrument *bank)
     for(int i=0;i<fx_canvas.count;++i)if(fx_canvas.node[i].row.kind==2 && fx_canvas.node[i].row.index==TS_MATRIX_MOSAIC) {
         FxCanvasNode first=fx_canvas.node[0];fx_canvas.node[0]=fx_canvas.node[i];fx_canvas.node[i]=first;break;
     }
-    for(int k=0;k<TS_MATRIX_PROCESSORS;++k) {
-        int p=ts_matrix_processor(k),sc=ts_matrix_sidechain_for(p);
-        if(sc>=0 && wanted[sc])wanted[p]=1;
-    }
-    for(int pass=0;pass<TS_MATRIX_PROCESSORS;++pass)for(int k=0;k<TS_MATRIX_PROCESSORS;++k) {
-        int p=ts_matrix_processor(k),sc=ts_matrix_sidechain_for(p);
-        if(sc>=0 && wanted[sc] && ts_matrix_destination_active(&w->controls,sc))wanted[p]=1;
-        if(!wanted[p] && !fx_canvas.all)continue;
-        for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)wanted[d]|=w->controls.row[p].matrix_gain[d]!=0;
-    }
     for(int i=0;i<w->count;++i) {
         MatrixRow row=w->rows[i];
         if((row.kind!=2 && row.kind!=4) || !ts_matrix_is_processor(row.index))continue;
-        if(!wanted[row.index] && !fx_canvas.all)continue;
+        /* Membership comes from the Matrix inventory, even for isolated chains. */
+        for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)
+            if(w->controls.row[row.index].matrix_gain[d])wanted[d]=1;
         FxCanvasNode *n=&fx_canvas.node[fx_canvas.count];*n=(FxCanvasNode){.row=row,.at=i,.destination=row.index};
         fx_canvas.dest[row.index]=fx_canvas.count++;
         int sc=ts_matrix_sidechain_for(row.index);if(sc>=0 && ts_matrix_destination_active(&w->controls,sc))fx_canvas.dest[sc]=fx_canvas.count-1;
     }
-    for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)if(fx_canvas.dest[d]<0 && wanted[d] &&
-        ts_matrix_destination_active(&w->controls,d)) {
+    for(int d=0;d<TS_MATRIX_DESTINATIONS;++d) {
+        if(fx_canvas.dest[d]>=0 || !ts_matrix_destination_active(&w->controls,d))continue;
+        if(!ts_matrix_is_output(d) && d<TS_MATRIX_AMBISONICS)continue;
+        MatrixRow sink={.kind=5,.index=d};
+        int pair=ts_matrix_output_pair(d);
+        int named=pair>=0 && w->controls.output_name[pair][0];
+        if(!wanted[d] && !named && d!=TS_MATRIX_NODES && !mx_destination_available(d) && !fx_position(sink,0))continue;
         FxCanvasNode *n=&fx_canvas.node[fx_canvas.count];
         *n=(FxCanvasNode){.row={.kind=5,.index=d},.at=-1,.destination=d};
         mx_destination(n->row.name,sizeof(n->row.name),d,1);fx_canvas.dest[d]=fx_canvas.count++;
     }
-    for(int pass=0;pass<TS_MATRIX_PROCESSORS+1;++pass) {
+    /* Seed a new patch from its signal flow once. Keep each module's position
+       in the project thereafter, including when the last incident wire goes. */
+    int arrange=0;
+    for(int i=0;i<fx_canvas.count;++i) {
+        FxCanvasNode *n=&fx_canvas.node[i];
+        if(n->row.kind<2 || n->row.kind==3)continue;
+        if(!fx_position(n->row,0)){arrange=1;break;}
+    }
+    for(int pass=0;arrange && pass<TS_MATRIX_PROCESSORS+1;++pass) {
         int changed=0;
         for(int i=0;i<fx_canvas.count;++i) {
             FxCanvasNode *n=&fx_canvas.node[i];if(n->at<0)continue;
@@ -107,10 +136,31 @@ static void fx_build(TsSamplePages *pages,TsInstrument *bank)
         }
         if(!changed)break;
     }
-    int rows[TS_MATRIX_PROCESSORS+3]={0};
+    int rows[TS_MATRIX_PROCESSORS+3]={0},source_row=0;
     for(int i=0;i<fx_canvas.count;++i) {
-        FxCanvasNode *n=&fx_canvas.node[i];n->x=n->rank*260.f;n->y=rows[n->rank]++*120.f;
-        TsFxCanvasPosition *p=fx_position(n->row,0);if(p){n->x=p->x;n->y=p->y;}
+        FxCanvasNode *n=&fx_canvas.node[i];
+        if(n->row.kind==0 || n->row.kind==1 || n->row.kind==3) {
+            TsFxCanvasPosition *saved=fx_position(n->row,0);
+            n->x=saved?saved->x:-260.f;
+            n->y=saved?saved->y:source_row*120.f;
+            ++source_row;
+            continue;
+        }
+        n->x=n->rank*260.f;
+        n->y=rows[n->rank]++*120.f;
+        TsFxCanvasPosition *p=fx_position(n->row,0);
+        if(!p) {
+            p=fx_position(n->row,1);
+            if(p)fx_store_initial_position(p,n->x,n->y);
+            else {
+                /* A project can use every saved position. Give excess nodes
+                   deterministic slots that are independent of their wires. */
+                n->x=(n->row.kind==5?7:1+n->row.index%6)*260.f;
+                n->y=(1+n->row.index/6)*120.f;
+            }
+        }
+        if(p){n->x=p->x;n->y=p->y;}
+
     }
 }
 static int fx_chosen(MatrixRow row)
@@ -363,7 +413,7 @@ static void fx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
     fx_button(706,18,192,"+ EFFECT",0);fx_button(908,18,100,"FIT",0);
     fx_button(1018,18,238,"MOSAIC / CLOSE",0);
     if(!meta){fx_button(660,70,196,w->layout->canvas_straight?"STRAIGHT":"SPLINES",0);
-        fx_button(866,70,388,fx_canvas.all?"ALL ENDPOINTS":"CONNECTED / BUSES",fx_canvas.all);}
+        fx_button(866,70,388,"CLEAR CABLES",0);}
     if(!w->controls.enabled)fx_button(300,70,284,"USE SAVED CHAIN",0);
     if(w->status[0])mx_text(24,816,w->status,FX_FOCUS,1);
     else mx_text(24,816,"SHIFT+F9: FX CANVAS / F9: MATRIX / ESC: BACK OR CLOSE / CTRL+Z: UNDO",FX_DIM,1);

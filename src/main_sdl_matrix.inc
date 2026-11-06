@@ -8,7 +8,7 @@ typedef struct MatrixSnapshot MatrixSnapshot;
 typedef struct {
     SDL_Window *window;SDL_Renderer *renderer;SDL_Texture *texture;uint32_t *pixels;
     Uint32 id,presented;int visible,dirty,scroll,column,filter,selected,destination,drag,canvas;
-    MatrixRow rows[MATRIX_CAPACITY],selection[MATRIX_CAPACITY];int count,selection_count,anchor;
+    MatrixRow rows[MATRIX_CAPACITY],selection[MATRIX_CAPACITY+TS_MATRIX_DESTINATIONS];int count,selection_count,anchor;
     TsMatrixLayout *layout,full_layout;int columns[TS_MATRIX_DESTINATIONS],column_count;unsigned char assigned[TS_MATRIX_DESTINATIONS];int layout_focus; /* 1=row label, 2=column header. */
     TsMosaic *mosaic;uint64_t epoch;
     MatrixSnapshot *history[32],*pending,*original,*edited;int history_count,history_cursor,original_active,history_skip;
@@ -32,6 +32,7 @@ static MatrixWindow matrix_window={.selected=-1,.rename=-1};
 static int mx_destination_available(int d);
 static void matrix_history_clear(void);
 static void fx_context_reset(void);
+static TsFxCanvasPosition *fx_position(MatrixRow row,int create);
 static int mx_same(MatrixRow a,MatrixRow b)
 {return a.kind==b.kind && (a.kind==1 || a.kind==3 || a.kind==4?a.tile==b.tile:a.index==b.index);}
 static int mx_chosen(int at)
@@ -127,7 +128,7 @@ static void mx_rows(TsSamplePages *pages,TsInstrument *bank)
         if(i<TS_MATRIX_FM && (unsigned)(i-TS_MATRIX_NODES)*2>=w->input_ports) {
             int used=w->controls.input_name[i-TS_MATRIX_NODES][0]!=0;
             for(int d=0;d<TS_MATRIX_DESTINATIONS && !used;++d)used=w->controls.row[i].matrix_gain[d]!=0;
-            if(!used)continue;
+            if(!used && !(w->canvas && w->layout && fx_position((MatrixRow){.kind=2,.index=i},0)))continue;
         }
         MatrixRow *r=&w->rows[w->count++];*r=(MatrixRow){.kind=2,.index=i};
         if(i<TS_MATRIX_FM)snprintf(r->name,sizeof(r->name),"IN %d/%d %.12s",(i-TS_MATRIX_NODES)*2+1,(i-TS_MATRIX_NODES)*2+2,w->controls.input_name[i-TS_MATRIX_NODES]);
@@ -136,7 +137,7 @@ static void mx_rows(TsSamplePages *pages,TsInstrument *bank)
     for(int p=4;p<TS_MATRIX_INPUTS;++p) {
         int index=ts_matrix_input_row(p),used=w->controls.input_name[p][0]!=0;
         for(int d=0;d<TS_MATRIX_DESTINATIONS && !used;++d)used=w->controls.row[index].matrix_gain[d]!=0;
-        if((unsigned)p*2>=w->input_ports && !used)continue;
+        if((unsigned)p*2>=w->input_ports && !used && !(w->canvas && w->layout && fx_position((MatrixRow){.kind=2,.index=index},0)))continue;
         MatrixRow *r=&w->rows[w->count++];*r=(MatrixRow){.kind=2,.index=index};
         snprintf(r->name,sizeof(r->name),"IN %d/%d %.23s",p*2+1,p*2+2,w->controls.input_name[p]);
     }
@@ -592,7 +593,16 @@ static void mx_reset_routes(SDL_AudioDeviceID device,AudioState *audio,TsUiState
     ts_matrix_default(&controls);controls.enabled=1;
     controls.next_effect_id=w->controls.next_effect_id;
     memcpy(controls.effect,w->controls.effect,sizeof(controls.effect));
-    if(!defaults)for(int i=0;i<TS_MATRIX_ROWS;++i)controls.row[i]=route;
+    if(!defaults) {
+        controls.serial_mask=w->controls.serial_mask;
+        controls.main_headroom=w->controls.main_headroom;
+        controls.board_insert=w->controls.board_insert;
+        for(int i=0;i<TS_MATRIX_ROWS;++i) {
+            controls.row[i]=route;
+            controls.row[i].pan=w->controls.row[i].pan;
+            controls.row[i].width=w->controls.row[i].width;
+        }
+    }
     if(device)SDL_LockAudioDevice(device);
     memcpy(controls.input_name,audio->sister.matrix.controls.input_name,sizeof(controls.input_name));
     memcpy(controls.output_name,audio->sister.matrix.controls.output_name,sizeof(controls.output_name));
