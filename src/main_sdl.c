@@ -9292,6 +9292,7 @@ typedef struct {
 } SisterWindow;
 static void character_filter_open(SisterWindow *,int);
 static void meta_fx_open(uint32_t);
+static void meta_fx_stage_open(uint32_t,int);
 static void character_filter_hide(void);
 static void character_filter_matrix_open(uint32_t);
 

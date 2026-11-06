@@ -70,6 +70,7 @@ static int mx_apply(const MatrixSnapshot *s,SDL_AudioDeviceID device,AudioState 
 }
 static void matrix_history_clear(void)
 {
+    fx_context_reset();
     MatrixWindow *w=&matrix_window;
     for(int i=0;i<w->history_count;++i)free(w->history[i]);
     free(w->pending);free(w->original);free(w->edited);

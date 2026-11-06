@@ -190,6 +190,11 @@ int main(void)
     runtime.matrix_layout.row_kind[3]=3;runtime.matrix_layout.row_id[3]=UINT64_MAX;
     runtime.matrix_layout.column[0]=TS_MATRIX_SIDECHAIN;
     runtime.matrix_layout.column[TS_MATRIX_SIDECHAIN]=0;
+    runtime.matrix_layout.canvas_view=1;
+    runtime.matrix_layout.canvas_x=-126.25f;runtime.matrix_layout.canvas_y=48.5f;
+    runtime.matrix_layout.canvas_zoom=.75f;runtime.matrix_layout.canvas_count=2;
+    runtime.matrix_layout.canvas[0]=(TsFxCanvasPosition){123,4,440.5f,-12.25f};
+    runtime.matrix_layout.canvas[1]=(TsFxCanvasPosition){TS_MATRIX_NODES,5,1200,320};
     assert(ts_matrix_layout_valid(&runtime.matrix_layout));
     runtime.performance_transport = 6u;
     runtime.clock_controls=(TsMasterClockControls){.enabled=1,.bpm=137,.tempo_mask=3,.arp_division=2,.position_custom=1,.home_mask=2};

@@ -7,7 +7,7 @@ typedef struct {int kind,index,order;TsTileId tile;char name[48];} MatrixRow;
 typedef struct MatrixSnapshot MatrixSnapshot;
 typedef struct {
     SDL_Window *window;SDL_Renderer *renderer;SDL_Texture *texture;uint32_t *pixels;
-    Uint32 id,presented;int visible,dirty,scroll,column,filter,selected,destination,drag;
+    Uint32 id,presented;int visible,dirty,scroll,column,filter,selected,destination,drag,canvas;
     MatrixRow rows[MATRIX_CAPACITY],selection[MATRIX_CAPACITY];int count,selection_count,anchor;
     TsMatrixLayout *layout,full_layout;int columns[TS_MATRIX_DESTINATIONS],column_count;unsigned char assigned[TS_MATRIX_DESTINATIONS];int layout_focus; /* 1=row label, 2=column header. */
     TsMosaic *mosaic;uint64_t epoch;
@@ -31,6 +31,7 @@ typedef struct {
 static MatrixWindow matrix_window={.selected=-1,.rename=-1};
 static int mx_destination_available(int d);
 static void matrix_history_clear(void);
+static void fx_context_reset(void);
 static int mx_same(MatrixRow a,MatrixRow b)
 {return a.kind==b.kind && (a.kind==1 || a.kind==3 || a.kind==4?a.tile==b.tile:a.index==b.index);}
 static int mx_chosen(int at)
@@ -229,7 +230,7 @@ static int matrix_show(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,
         if(w->renderer)w->texture=SDL_CreateTexture(w->renderer,SDL_PIXELFORMAT_ARGB8888,SDL_TEXTUREACCESS_STREAMING,MATRIX_W,MATRIX_H);
         w->pixels=calloc(MATRIX_W*MATRIX_H,sizeof(uint32_t));
         if(!w->window || !w->renderer || !w->texture || !w->pixels){matrix_close();snprintf(ui->status,sizeof(ui->status),"MATRIX WINDOW FAILED: %.110s",SDL_GetError());return 0;}
-        w->id=SDL_GetWindowID(w->window);
+    w->id=SDL_GetWindowID(w->window);
     }
     if(w->mosaic!=ui->mosaic || (ui->mosaic && w->epoch!=ui->mosaic->epoch))matrix_history_clear();
     w->mosaic=ui->mosaic;w->epoch=ui->mosaic?ui->mosaic->epoch:0;
@@ -715,13 +716,16 @@ static void mx_capture_activity(SDL_AudioDeviceID device,AudioState *audio,TsSam
         w->activity_rows[line]=row;w->row_source[line]=source;w->row_send[line]=send;
     }
 }
+#include "main_sdl_fx_canvas.inc"
 static void matrix_update(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsSamplePages *pages,TsInstrument *bank)
 {
     mx_collect_effects(device,audio);
     if(memcmp(&matrix_window.palette,&ui->palette,sizeof(ui->palette))) {matrix_window.palette=ui->palette;matrix_window.dirty=1;}
     MatrixWindow *w=&matrix_window;(void)ui;Uint32 elapsed=SDL_GetTicks()-w->presented;
     if(!w->visible || !window_drawable(w->window) || elapsed<50)return;
-    mx_capture_activity(device,audio,pages,bank,elapsed);mx_paint(audio,pages,bank);
+    if(w->canvas)w->filter=0;
+    mx_capture_activity(device,audio,pages,bank,elapsed);
+    if(w->canvas)fx_paint(audio,pages,bank);else mx_paint(audio,pages,bank);
     SDL_UpdateTexture(w->texture,NULL,w->pixels,MATRIX_W*4);SDL_RenderClear(w->renderer);
     SDL_RenderCopy(w->renderer,w->texture,NULL,NULL);SDL_RenderPresent(w->renderer);w->presented=SDL_GetTicks();w->dirty=0;
 }
@@ -735,7 +739,17 @@ static int matrix_event_inner(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID de
 {
     MatrixWindow *w=&matrix_window;int own=w->window&&event_window_id(e)==w->id;
     if(e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_F9 && !(e->key.keysym.mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI))) {
-        if(!e->key.repeat){if(w->visible)matrix_hide();else matrix_show(device,audio,ui,pages,bank,-1,-1);}return 1;
+        if(!e->key.repeat){int canvas=(e->key.keysym.mod&KMOD_SHIFT)!=0;
+            if(w->visible && w->canvas==canvas)matrix_hide();
+            else if(w->visible || matrix_show(device,audio,ui,pages,bank,-1,-1))fx_view(canvas,pages,bank);}
+        return 1;
+    }
+    if(!own && ui->mosaic_open && !ts_ui_foreground_panel_open(ui) && event_window_id(e)==SDL_GetWindowID(main) &&
+       e->type==SDL_MOUSEBUTTONDOWN && e->button.button==SDL_BUTTON_LEFT) {
+        int x,y;logical_mouse(main,e->button.x,e->button.y,&x,&y);
+        if(x>=TS_MOSAIC_FX_X && x<TS_MOSAIC_FX_X+TS_MOSAIC_FX_W && y>=TS_MOSAIC_FX_Y && y<TS_MOSAIC_FX_Y+TS_MOSAIC_FX_H) {
+            if(matrix_show(device,audio,ui,pages,bank,-1,-1))fx_view(1,pages,bank);return 1;
+        }
     }
     if(!own && ui->master_eq_open && event_window_id(e)==SDL_GetWindowID(main) &&
        e->type==SDL_MOUSEBUTTONDOWN && e->button.button==SDL_BUTTON_LEFT) {
@@ -773,6 +787,7 @@ static int matrix_event_inner(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID de
         if(e->type==SDL_KEYDOWN && !w->drag)mx_layout_move(e->key.keysym.sym,pages,bank);
         return 1;
     }
+    if(w->canvas && (e->type==SDL_KEYDOWN || e->type==SDL_KEYUP))return fx_event(e,main,device,audio,ui,pages,bank,0,0,0);
     if(e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_ESCAPE){
         if(w->effect_menu || w->effect_open){w->effect_menu=0;w->effect_open=0;w->drag=0;w->dirty=1;}else matrix_hide();return 1;
     }
@@ -784,6 +799,7 @@ static int matrix_event_inner(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID de
     x=rx*MATRIX_W/SDL_max(1,ww);y=ry*MATRIX_H/SDL_max(1,hh);w->dirty=1;
     int wheel=e->type==SDL_MOUSEWHEEL?wheel_event_detents(e,0):0;
     int fine=(SDL_GetModState()&KMOD_SHIFT)!=0;
+    if(w->canvas)return fx_event(e,main,device,audio,ui,pages,bank,x,y,wheel);
     if(e->type==SDL_MOUSEBUTTONUP){w->drag=0;return 1;}
     int click=e->type==SDL_MOUSEBUTTONDOWN,left=click&&e->button.button==SDL_BUTTON_LEFT,middle=click&&e->button.button==SDL_BUTTON_MIDDLE;
     if(click)w->layout_focus=0;
@@ -932,6 +948,7 @@ static int matrix_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,A
     w->layout=&audio->sister.matrix_layout;
     int own=w->visible && event_window_id(e)==w->id;
     int edit=own && (e->type==SDL_MOUSEBUTTONDOWN || e->type==SDL_MOUSEWHEEL ||
+        (w->canvas && e->type==SDL_KEYDOWN && (e->key.keysym.sym==SDLK_DELETE || e->key.keysym.sym==SDLK_HOME)) ||
         (w->rename>=0 && e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_RETURN) ||
         (w->rename<0 && e->type==SDL_KEYDOWN && mx_layout_key(e)));
     if(edit && !w->pending){mx_original(device,audio,pages,bank);w->pending=mx_snapshot(device,audio,pages,bank);}

@@ -239,12 +239,40 @@ static void matrix_lifecycle(void) {
     ts_matrix_effects_free(&engine);
     assert(!ts_matrix_effects_memory(&engine));
 }
+static void gain_staging(void) {
+    /* Sustained, decorrelated stereo noise exposes serial losses that an
+       impulse/nonzero test cannot catch. No adaptive normalization is used. */
+    for(int p=-2;p<TS_META_PRESETS;++p) {
+        TsMetaControls c;TsMetaEngine *rack=NULL;TsSisterSingleFx *single=NULL;
+        if(p>=0){ts_meta_preset(&c,p);rack=ts_meta_new(&c,48000,42);assert(rack);}
+        else {
+            int type=p==-2?TS_SISTER_FX_DISPERSION:TS_SISTER_FX_RESONATOR;
+            single=ts_sister_single_fx_new(type,48000,42);assert(single);
+            TsSisterFxSlotControls control={.type=type,.enabled=1,.parameter_a=p==-2?.5f:.25f,
+                .parameter_b=.5f,.parameter_c=.5f,.mix=1};ts_sister_single_fx_set(single,&control);
+        }
+        uint32_t seed=42;double in_energy=0,out_energy=0;
+        for(int i=0;i<360000;++i) {
+            seed=seed*1664525u+1013904223u;float l=((seed>>8)/8388608.f-1)*.12f;
+            seed=seed*1664525u+1013904223u;float r=((seed>>8)/8388608.f-1)*.12f;
+            TsStereoFrame out=rack?ts_meta_process(rack,(TsStereoFrame){l,r}):ts_sister_single_fx_process(single,(TsStereoFrame){l,r},1);
+            assert(isfinite(out.l) && isfinite(out.r) && fabsf(out.l)<2 && fabsf(out.r)<2);
+            if(i>=240000){in_energy+=l*l+r*r;out_energy+=out.l*out.l+out.r*out.r;}
+        }
+        double ratio=out_energy/in_energy;
+        if(p==-2)assert(fabs(10*log10(ratio))<.15);
+        else assert(ratio>.16 && ratio<4);
+        printf("Gain staging %s: %+.2f dB RMS\n",p==-2?"Disperse":p==-1?"Resonator":c.name,10*log10(ratio));
+        ts_meta_free(rack);ts_sister_single_fx_free(single);
+    }
+}
 int main(void) {
     primitives();
     racks();
     serial_equivalence();
     persistence();
     matrix_lifecycle();
+    gain_staging();
     puts("Meta FX audio, stereo, persistence and lifecycle passed.");
     return 0;
 }

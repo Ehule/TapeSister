@@ -4,10 +4,12 @@
 #include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 void ts_matrix_layout_default(TsMatrixLayout *l)
 {
     memset(l,0,sizeof(*l));
+    l->canvas_zoom=1;
     for(int i=0;i<TS_MATRIX_DESTINATIONS;++i)l->column[i]=(unsigned char)i;
 }
 typedef struct { uint64_t id;unsigned kind; } LayoutKey;
@@ -25,6 +27,20 @@ int ts_matrix_layout_valid(const TsMatrixLayout *l)
         unsigned d=l->column[i];
         if(d>=TS_MATRIX_DESTINATIONS || seen[d])return 0;
         seen[d]=1;
+    }
+    if(l->canvas_count<0 || l->canvas_count>TS_FX_CANVAS_POSITIONS || l->canvas_view<0 || l->canvas_view>1 ||
+       !isfinite(l->canvas_x) || !isfinite(l->canvas_y) ||
+       fabsf(l->canvas_x)>1000000 || fabsf(l->canvas_y)>1000000 ||
+       !isfinite(l->canvas_zoom) || l->canvas_zoom<.2f || l->canvas_zoom>2)return 0;
+    for(int i=0;i<l->canvas_count;++i) {
+        const TsFxCanvasPosition *p=&l->canvas[i];
+        if(p->kind<0 || p->kind>5 || !isfinite(p->x) || !isfinite(p->y) ||
+           fabsf(p->x)>1000000 || fabsf(p->y)>1000000 ||
+           (p->kind==0 && p->id>=TS_TRACKER_LANES) ||
+           (p->kind==2 && p->id>=TS_MATRIX_ROWS) ||
+           (p->kind==5 && p->id>=TS_MATRIX_DESTINATIONS) ||
+           ((p->kind==1 || p->kind==3 || p->kind==4) && !p->id))return 0;
+        for(int j=0;j<i;++j)if(l->canvas[j].kind==p->kind && l->canvas[j].id==p->id)return 0;
     }
     if(!l->row_count)return 1;
     LayoutKey *keys=malloc((size_t)l->row_count*sizeof(*keys));if(!keys)return 0;
@@ -44,6 +60,11 @@ int ts_matrix_layout_valid(const TsMatrixLayout *l)
 int ts_matrix_layout_write(FILE *f,const TsMatrixLayout *l)
 {
     if(!ts_matrix_layout_valid(l))return 0;
+    if(l->canvas_view && fprintf(f,"FxCanvas.View=%.9g,%.9g,%.9g\n",l->canvas_x,l->canvas_y,l->canvas_zoom)<0)return 0;
+    for(int i=0;i<l->canvas_count;++i) {
+        const TsFxCanvasPosition *p=&l->canvas[i];
+        if(fprintf(f,"FxCanvas.Node%d=%d,%" PRIu64 ",%.9g,%.9g\n",i,p->kind,p->id,p->x,p->y)<0)return 0;
+    }
     for(int i=0;i<TS_MATRIX_DESTINATIONS;++i)
         if(fprintf(f,"MatrixLayout.Column%d=%u\n",i,(unsigned)l->column[i])<0)return 0;
     for(int i=0;i<l->row_count;++i)
@@ -62,6 +83,20 @@ static int layout_number(const char **cursor,uint64_t maximum,uint64_t *number)
 int ts_matrix_layout_read(TsMatrixLayout *l,const char *key,const char *value)
 {
     uint64_t i,d,kind,id;const char *s;
+    if(!strcmp(key,"FxCanvas.View")) {
+        float x,y,z;char extra;
+        if(sscanf(value,"%f,%f,%f%c",&x,&y,&z,&extra)!=3 || !isfinite(x) || !isfinite(y) ||
+           fabsf(x)>1000000 || fabsf(y)>1000000 || !isfinite(z) || z<.2f || z>2)return -1;
+        l->canvas_x=x;l->canvas_y=y;l->canvas_zoom=z;l->canvas_view=1;return 1;
+    }
+    if(!strncmp(key,"FxCanvas.Node",13)) {
+        s=key+13;float x,y;char extra;
+        if(!layout_number(&s,TS_FX_CANVAS_POSITIONS-1,&i) || *s || i!=(uint64_t)l->canvas_count ||
+           !layout_number(&value,5,&kind) || *value++!=',' || !layout_number(&value,UINT64_MAX,&id) ||
+           *value++!=',' || sscanf(value,"%f,%f%c",&x,&y,&extra)!=2 || !isfinite(x) || !isfinite(y) ||
+           fabsf(x)>1000000 || fabsf(y)>1000000)return -1;
+        l->canvas[l->canvas_count++]=(TsFxCanvasPosition){id,(int)kind,x,y};return 1;
+    }
     if(!strncmp(key,"MatrixLayout.Column",19)) {
         s=key+19;
         if(!layout_number(&s,TS_MATRIX_DESTINATIONS-1,&i) || *s ||
