@@ -127,6 +127,14 @@ int main(int argc, char **argv) {
     float low = rack->map[0].low;
     drag(430, 90, 30);
     assert(rack->map[0].low > low);
+    /* Cycling skips unused C on two-parameter pedals and targets already
+       owned by another macro, so Mix and Output remain reachable. */
+    for (int i = 0; i < rack->map_count; ++i)
+        if (rack->stage[rack->map[i].stage].type == TS_SISTER_FX_DELAY && rack->map[i].field == 1) {
+            int f = meta_fx_next_target(rack, i, rack->map[i].stage, 1, 1);
+            assert(f == 4);
+            break;
+        }
     if (argc > 2)
         shot(argv[2]);
     snprintf(meta_fx_window.path, sizeof(meta_fx_window.path), "native-meta-test.tsmfx");

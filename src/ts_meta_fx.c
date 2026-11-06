@@ -124,8 +124,10 @@ int ts_meta_valid(const TsMetaControls *c) {
     }
     for (int i = 0; i < c->map_count; ++i) {
         const TsMetaMap *m = &c->map[i];
-        if (m->macro >= TS_META_MACROS || m->stage >= c->count || m->field >= 5 + TS_CF_COUNT ||
+        if (m->macro >= TS_META_MACROS || m->stage >= c->count || m->field >= 5 + TS_CF_FOCUS ||
             !isfinite(m->low) || !isfinite(m->high) || m->low < 0 || m->low > 1 || m->high < 0 || m->high > 1)
+            return 0;
+        if (!c->stage[m->stage].type)
             return 0;
         if (m->field >= 5 && c->stage[m->stage].type != TS_SISTER_FX_FILTER)
             return 0;

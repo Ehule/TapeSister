@@ -106,6 +106,28 @@ static void meta_fx_map_remove(TsMetaControls *c, int i) {
     memmove(&c->map[i], &c->map[i + 1], (c->map_count - i - 1) * sizeof(c->map[0]));
     memset(&c->map[--c->map_count], 0, sizeof(c->map[0]));
 }
+static int meta_fx_target_available(const TsMetaControls *c, int index, int stage, int field) {
+    if (stage < 0 || stage >= c->count || !c->stage[stage].type)
+        return 0;
+    int type = c->stage[stage].type;
+    if (field < 0 || field >= 5 + (type == TS_SISTER_FX_FILTER ? TS_CF_FOCUS : 0) ||
+        (field < 3 && !*ts_meta_parameter_name(type, field)))
+        return 0;
+    for (int i = 0; i < c->map_count; ++i)
+        if (i != index && c->map[i].stage == stage &&
+            ts_meta_target_field(type, c->map[i].field) == ts_meta_target_field(type, field))
+            return 0;
+    return 1;
+}
+static int meta_fx_next_target(const TsMetaControls *c, int index, int stage, int from, int direction) {
+    int fields = c->stage[stage].type == TS_SISTER_FX_FILTER ? 5 + TS_CF_FOCUS : 5;
+    for (int step = 1; step <= fields; ++step) {
+        int f = ((from + step * direction) % fields + fields) % fields;
+        if (meta_fx_target_available(c, index, stage, f))
+            return f;
+    }
+    return -1;
+}
 static void meta_fx_stage_remove(TsMetaControls *c, int i) {
     for (int j = c->map_count - 1; j >= 0; --j) {
         if (c->map[j].stage == i)
@@ -375,13 +397,26 @@ static int meta_fx_event(const SDL_Event *e, SDL_AudioDeviceID device, AudioStat
                     m->macro = (m->macro + 1) % 4;
                     changed = 1;
                 } else if (left && x >= 154 && x < 286 && c->count) {
-                    m->stage = (m->stage + 1) % c->count;
-                    changed = 1;
+                    for (int step = 1; step <= c->count; ++step) {
+                        int stage = (m->stage + step) % c->count;
+                        int f = meta_fx_target_available(c, index, stage, m->field)
+                                    ? m->field
+                                    : meta_fx_next_target(c, index, stage, -1, 1);
+                        if (f >= 0) {
+                            m->stage = stage;
+                            m->field = f;
+                            changed = 1;
+                            break;
+                        }
+                    }
+
                 } else if ((left || wheel) && x >= 292 && x < 402) {
-                    int fields = c->stage[m->stage].type == TS_SISTER_FX_FILTER ? 5 + TS_CF_COUNT : 5;
-                    m->field =
-                        (m->field + (wheel ? (int)lrintf(wheel_event_delta(e, 0)) : 1) + fields) % fields;
-                    changed = 1;
+                    int f = meta_fx_next_target(c, index, m->stage, m->field,
+                                                wheel && wheel_event_delta(e, 0) < 0 ? -1 : 1);
+                    if (f >= 0) {
+                        m->field = f;
+                        changed = 1;
+                    }
                 } else if (x >= 410 && x < 496)
                     field = 200 + index * 2;
                 else if (x >= 504 && x < 590)
@@ -394,16 +429,8 @@ static int meta_fx_event(const SDL_Event *e, SDL_AudioDeviceID device, AudioStat
         }
     } else if (left && y >= 304 && y < 328 && meta_fx_window.maps && x >= 168 && x < 258) {
         if (c->count && c->map_count < TS_META_MAPS) {
-            int stage = SDL_clamp(meta_fx_window.selected, 0, c->count - 1), found = -1;
-            for (int f = 0; f < 5; ++f) {
-                int used = 0;
-                for (int j = 0; j < c->map_count; ++j)
-                    used |= c->map[j].stage == stage && c->map[j].field == f;
-                if (!used && (f >= 3 || *ts_meta_parameter_name(c->stage[stage].type, f))) {
-                    found = f;
-                    break;
-                }
-            }
+            int stage = SDL_clamp(meta_fx_window.selected, 0, c->count - 1);
+            int found = meta_fx_next_target(c, -1, stage, -1, 1);
             if (found >= 0) {
                 c->map[c->map_count++] = (TsMetaMap){0, (uint8_t)stage, (uint8_t)found, 0, 1};
                 meta_fx_window.page = (c->map_count - 1) / 8;
