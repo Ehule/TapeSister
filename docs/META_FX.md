@@ -1,5 +1,9 @@
 # Meta FX and texture processors
 
+**Shift+F9** opens the [FX Canvas](FX_CANVAS.md). Double-click a Meta FX node
+to enter its internal chain and access its macros. F9 shows the same outer graph
+as a matrix. See the canvas guide for Resonator makeup and factory output trims.
+
 Meta FX is an independent F9 Matrix processor with an editable serial rack of
 up to eight stages. Each stage uses TapeSister's existing DSP: Reverb, Delay,
 Distortion, Transient, Grain or Filter, plus the new Dispersion and Resonator.

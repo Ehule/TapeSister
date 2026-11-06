@@ -119,6 +119,9 @@ TsStereoFrame ts_resonator_process(TsResonator *s, TsStereoFrame in, float a, fl
             s->delay[j] = s->rate / (440 * pow(2., (ts_resonator_note(s->a) + interval[j] - 69) / 12.));
     }
     TsStereoFrame wet = {0, 0};
+    /* The six-voice average and .35 excitation previously lost ~17 dB for
+       broadband input. Fixed wet makeup preserves the feedback law and
+       dynamics; it does not normalize the input or increase recirculation. */
     float feedback = .15f + .835f * s->b, damping = .03f + .92f * (1 - s->c);
     for (int j = 0; j < 6; ++j) {
         double p = s->position - s->delay[j];
@@ -133,9 +136,9 @@ TsStereoFrame ts_resonator_process(TsResonator *s, TsStereoFrame in, float a, fl
             float write = (ch ? in.r : in.l) * .35f + s->damp[j][ch] * feedback;
             buf[s->position] = isfinite(write) ? write / (1 + fabsf(write) * .1f) : 0;
             if (ch)
-                wet.r += v / 6;
+                wet.r += v * (4.f / 6);
             else
-                wet.l += v / 6;
+                wet.l += v * (4.f / 6);
         }
     }
     s->position = (s->position + 1) % s->capacity;

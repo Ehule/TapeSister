@@ -13,6 +13,8 @@ Its basic creative loop is simple:
 
 ## Documentation
 
+- [FX Canvas](docs/FX_CANVAS.md) — spatial effects routing, parallel branches,
+  Meta FX chain navigation, and texture processor gain calibration (Shift+F9).
 - [Complete User Manual](docs/USER_MANUAL.md) — workflows, every major instrument,
   recording, routing, saving, and performance techniques.
 - [Ambisonics output](docs/AMBISONICS.md) — optional 3–16-speaker output, field

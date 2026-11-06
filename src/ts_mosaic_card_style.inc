@@ -40,16 +40,17 @@ static void mosaic_card_info(TsFramebuffer *fb,const TsUiState *ui)
        hints and Gallery/crossfade status visible when the pointer moves away. */
     uint32_t background=ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_BACKGROUND,RGB(11,13,16));
     if(!hovering) {
-        rect(fb,164,32,476,7,background);text(fb,164,32,e->name,ink,1);return;
+        char name[46];snprintf(name,sizeof(name),"%.45s",e->name);
+        rect(fb,164,32,274,7,background);text(fb,164,32,name,ink,1);return;
     }
-    rect(fb,164,24,476,15,background);
+    rect(fb,164,24,274,15,background);
     char line[100];
     if(ui->mosaic_gallery_count>0)snprintf(line,sizeof(line),"C%02d / %s",ui->mosaic_gallery_active+1,e->name);
     else snprintf(line,sizeof(line),"%s",e->name);
-    text(fb,164,24,line,ink,1);
+    line[45]=0;text(fb,164,24,line,ink,1);
     unsigned minutes=(unsigned)(e->start/60);double seconds=e->start-minutes*60;
     const char *state=e->muted?"MUTE":e->solo?"SOLO":e->source && e->source->video_path[0]?"VISUAL":e->live?"LIVE":e->looping?"LOOP":"ONCE";
     snprintf(line,sizeof(line),"CARD %llu / %02u:%06.3F / %.3FS / %s",
         (unsigned long long)e->id,minutes,seconds,e->duration,state);
-    text(fb,164,32,line,ink,1);
+    line[45]=0;text(fb,164,32,line,ink,1);
 }

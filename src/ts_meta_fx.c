@@ -238,6 +238,10 @@ void ts_meta_preset(TsMetaControls *c, int preset) {
             s->value[3] = .45f;
         }
     }
+    /* Visible, saved factory output trims, calibrated with sustained noise
+       and pitched material. Custom racks keep exact serial-chain gain. */
+    static const float makeup_db[TS_META_PRESETS]={0,4,2,6,5,2,4,3,0,5};
+    if(c->count)c->stage[c->count-1].value[4]=.5f+makeup_db[preset]/24;
     for (int i = 0; i < 4; ++i) {
         c->macro[i] = .3f;
         c->scene[0][i] = .15f;

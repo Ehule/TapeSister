@@ -26,6 +26,7 @@ For explanations and complete workflows, see the [User Manual](USER_MANUAL.md).
 | `F1`–`F8` | Select keyboard octave |
 | `F10` | Open/close the [SisterTracker pattern editor](SISTERTRACKER_PLAYBACK.md); playback continues when closed |
 | `F9` | Open/close the routing matrix, including from TrackSister |
+| `Shift+F9` | Open/close the FX Canvas; F9 switches to the same graph in Matrix view |
 | `Ctrl+F9` | Open/close the modeless Ambisonics output window |
 | `F12` or CFG → AUDIO HEALTH | Open/close [Audio Health](AUDIO_HEALTH.md); Save Session exports the automatically recorded timeline |
 | `Ctrl+Shift+F12` | Mark an audible click in the session log from a TapeSister host window |

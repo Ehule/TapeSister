@@ -144,6 +144,7 @@ static void mx_effect_remove(SDL_AudioDeviceID device,AudioState *audio,TsUiStat
 static void mx_effect_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsSamplePages *pages,TsInstrument *bank,int x,int y,int wheel)
 {
     MatrixWindow *w=&matrix_window;int click=e->type==SDL_MOUSEBUTTONDOWN,left=click && e->button.button==SDL_BUTTON_LEFT;
+    if(e->type==SDL_MOUSEBUTTONUP){w->drag=0;return;}
     if(left && y>=696 && y<724 && x>=1048){w->effect_menu=0;w->effect_open=0;w->drag=0;return;}
     if(!mx_editable())return;
     if(w->effect_menu) {

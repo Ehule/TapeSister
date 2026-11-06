@@ -508,11 +508,23 @@ static void ts_audio_quit(void)
     SDL_Quit();
 }
 
+/* Routing belongs to a saved project, never to the application preferences.
+   Keep user-named hardware ports when starting a fresh session. */
+static void ts_audio_fresh_matrix(TsMatrixControls *matrix)
+{
+    TsMatrixControls defaults;ts_matrix_default(&defaults);
+    defaults.enabled=1; /* Fresh sessions use the editable Matrix, as in ts_config_init. */
+    memcpy(defaults.input_name,matrix->input_name,sizeof(defaults.input_name));
+    memcpy(defaults.output_name,matrix->output_name,sizeof(defaults.output_name));
+    *matrix=defaults;
+}
+
 static int ts_audio_main_config_load(TsConfig *config, const char *path,
                                      char *error, size_t error_size)
 {
     int ok = ts_audio_config_load(config, path, error, error_size);
     if (ok) {
+        ts_audio_fresh_matrix(&config->matrix);
         ts_live_config = config;
         ts_audio_endpoints_init();
         ts_audio_endpoint_configure(&ts_output_endpoint,
@@ -527,7 +539,11 @@ static int ts_audio_main_config_load(TsConfig *config, const char *path,
 static int ts_audio_main_config_write(const TsConfig *config, const char *path,
                                       char *error, size_t error_size)
 {
-    if (!ts_audio_config_save(config, path, error, error_size)) return 0;
+    TsConfig *preferences=malloc(sizeof(*preferences));
+    if(!preferences){snprintf(error,error_size,"Cannot allocate application preferences");return 0;}
+    *preferences=*config;ts_audio_fresh_matrix(&preferences->matrix);
+    int saved=ts_audio_config_save(preferences,path,error,error_size);
+    free(preferences);if(!saved)return 0;
     {
         FILE *display = fopen(path, "ab");
         if (display != NULL) {

@@ -833,7 +833,7 @@ int ts_sister_project_state_load_file(TsSisterProjectState *state,
             if(ts_insert_read(&loaded.insert,key,value)<0)goto malformed;
         } else if (!strncmp(key,"RouterPerf.",11)) {
             if(ts_router_performance_read(&loaded.router_performance,key,value)<0)goto malformed;
-        } else if (!strncmp(key,"MatrixLayout.",13)) {
+        } else if ((!strncmp(key,"MatrixLayout.",13) || !strncmp(key,"FxCanvas.",9))) {
             if(ts_matrix_layout_read(&loaded.matrix_layout,key,value)<0)goto malformed;
         } else if (!strncmp(key,"Matrix.",7)) {
             if(ts_matrix_read(&loaded.matrix,key,value)<0)goto malformed;
