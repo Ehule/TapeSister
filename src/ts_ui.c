@@ -5531,6 +5531,7 @@ static void sister_spirit_render(TsFramebuffer *fb,
 #include "ts_prism_ui.inc"
 #include "ts_dark_matter_ui.inc"
 #include "ts_character_filter_ui.inc"
+#include "ts_meta_fx_ui.inc"
 
 void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                          const TsPalette *palette)
@@ -5721,7 +5722,7 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
             const TsSisterFxSlotControls *slot =
                 &model->parameters.fx.slot[row];
             int top = TS_SISTER_UI_FX_TOP + visible * TS_SISTER_UI_FX_ROW_STEP;
-            int fields = (slot->type == TS_SISTER_FX_GRAIN || slot->type == TS_SISTER_FX_TRANSIENT || slot->type == TS_SISTER_FX_FILTER) ? 5 : 4;
+            int fields = (slot->type == TS_SISTER_FX_GRAIN || slot->type == TS_SISTER_FX_TRANSIENT || slot->type >= TS_SISTER_FX_FILTER) ? 5 : 4;
             int field_width = fields == 5 ? 70 : 88;
             int field_step = fields == 5 ? 74 : 92;
             uint32_t color = slot->type == TS_SISTER_FX_REVERB ?
@@ -5734,7 +5735,7 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                 "4-HEAD TAPE" : slot->type == TS_SISTER_FX_DISTORTION ?
                 "RAT / 2X" : slot->type == TS_SISTER_FX_GRAIN ?
                 "24 VOICES" : slot->type == TS_SISTER_FX_TRANSIENT ?
-                "STEREO ENVELOPE" : "NO PROCESSOR";
+                "STEREO ENVELOPE" : slot->type==TS_SISTER_FX_DISPERSION?"8 ALL-PASS STAGES":slot->type==TS_SISTER_FX_RESONATOR?"6 TUNED COMBS":"NO PROCESSOR";
             rect(fb, 10, top, 610, TS_SISTER_UI_FX_ROW_H, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(10, 10, 11)));
             snprintf(number, sizeof(number), "%d", row + 1);
             button(fb, 16, top + 2, 40, number, slot->enabled);
@@ -5756,6 +5757,13 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                         sister_value_parameter_state(fb,156+field_step*(k+1),top+4,field_width,s,c->value[ids[k]],PAL_WAVE_RIGHT,
                             ts_sister_ui_parameter_locked(model,parameter+k+1) || (c->locks&(1u<<ids[k])));}
                     sister_percent_parameter_state(fb,156+field_step*4,top+4,field_width,"MIX",slot->mix,100,PAL_WAVE_RIGHT,ts_sister_ui_parameter_locked(model,parameter+4));
+                } else if (slot->type == TS_SISTER_FX_DISPERSION || slot->type == TS_SISTER_FX_RESONATOR) {
+                    const char *names[2][3]={{"FREQ","Q","SPREAD"},{"ROOT","DECAY","DAMP"}};
+                    for(int k=0;k<3;++k){float value=k==0?slot->parameter_a:k==1?slot->parameter_b:slot->parameter_c;char label[24];
+                        if(slot->type==TS_SISTER_FX_RESONATOR && !k)snprintf(label,sizeof(label),"NOTE %.1F",ts_resonator_note(value));
+                        else snprintf(label,sizeof(label),"%s %.0F%%",names[slot->type==TS_SISTER_FX_RESONATOR][k],value*100);
+                        sister_value_parameter_state(fb,156+field_step*(k+1),top+4,field_width,label,value,color,ts_sister_ui_parameter_locked(model,parameter+k+1));}
+                    sister_percent_parameter_state(fb,156+field_step*4,top+4,field_width,"MIX",slot->mix,100,color,ts_sister_ui_parameter_locked(model,parameter+4));
                 } else if (slot->type == TS_SISTER_FX_TRANSIENT) {
                     char label[24];
                     snprintf(label,sizeof(label),"ATK %+.1f",(slot->parameter_a-.5f)*30*(1+slot->transient_power));

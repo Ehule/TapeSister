@@ -19,7 +19,7 @@ add_library(tapesister_core src/ts_mandala.c src/ts_routing_matrix.c src/ts_matr
              src/ts_audio_lifecycle.c src/ts_performance_input.c
              src/ts_realtime_diagnostics.c src/ts_profile.c
              src/ts_sister_effects.c src/ts_sister_fallout.c src/ts_sister_post_fx.c
-             src/ts_sister_limiter.c src/ts_compressor.c src/ts_transient.c src/ts_character_filter.c src/ts_master_eq.c src/ts_eq_spectrum.c src/ts_router.c src/ts_router_performance.c src/ts_insert.c
+             src/ts_sister_limiter.c src/ts_compressor.c src/ts_transient.c src/ts_texture_fx.c src/ts_meta_fx.c src/ts_character_filter.c src/ts_master_eq.c src/ts_eq_spectrum.c src/ts_router.c src/ts_router_performance.c src/ts_insert.c
              src/ts_sister_machine.c src/ts_dark_matter.c src/ts_sister_wave_snapshot.c
              src/ts_sister_runtime.c src/ts_sister_ui.c
              src/ts_sister_preset.c src/ts_sister_project_state.c
@@ -1038,6 +1038,28 @@ if(MINGW)
  target_link_options(test_sister_preset PRIVATE "-Wl,--stack,16777216")
  target_link_options(test_dark_matter PRIVATE "-Wl,--stack,16777216")
  target_link_options(test_character_filter PRIVATE "-Wl,--stack,16777216")
+endif()
+
+add_executable(tapesister_meta_fx_tests tests/test_meta_fx.c)
+target_link_libraries(tapesister_meta_fx_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_meta_fx_tests COMMAND tapesister_meta_fx_tests)
+set_tests_properties(tapesister_meta_fx_tests PROPERTIES TIMEOUT 120)
+if(MINGW)
+ target_link_options(tapesister_meta_fx_tests PRIVATE "-Wl,--stack,16777216")
+endif()
+if(TAPESISTER_BUILD_SDL)
+ add_executable(tapesister_meta_fx_controller_tests tests/test_meta_fx_controller.c
+   src/tape_link.c src/tape_companion.c src/ts_startup_diag.c src/ts_midi_input.c)
+ target_include_directories(tapesister_meta_fx_controller_tests PRIVATE third_party)
+ target_link_libraries(tapesister_meta_fx_controller_tests PRIVATE tapesister_core tapesister_tapehead SDL2::SDL2)
+ if(UNIX AND NOT APPLE)
+  target_link_libraries(tapesister_meta_fx_controller_tests PRIVATE rt)
+ endif()
+ if(WIN32)
+  target_link_options(tapesister_meta_fx_controller_tests PRIVATE "-Wl,--stack,16777216")
+ endif()
+ add_test(NAME tapesister_meta_fx_controller_tests COMMAND tapesister_meta_fx_controller_tests)
+ set_tests_properties(tapesister_meta_fx_controller_tests PROPERTIES TIMEOUT 120)
 endif()
 if(TAPESISTER_BUILD_SDL)
  add_executable(tapesister_character_filter_controller_tests tests/test_character_filter_controller.c

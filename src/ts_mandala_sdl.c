@@ -99,7 +99,7 @@ static TsMandalaEffects visual_effects(const TsSisterRoutingSnapshot *s)
     /* Activity is only a soft gate, not a claim to isolate each effect's audio. */
     float board=visual_unit((s->visual_fx_peak-.001f)*200);
     for(int i=0;i<TS_SISTER_FX_TYPE_COUNT-1;++i) {
-        if(i==TS_SISTER_FX_FILTER-1)continue; /* Preserve existing visual-role indices. */
+        if(i>=TS_SISTER_FX_FILTER-1)continue; /* Preserve existing visual-role indices. */
         int effect=i==TS_SISTER_FX_TRANSIENT-1?TS_MANDALA_TRANSIENT:i;
         float weight=s->visual_fx.value[i][0];
         e.wet[effect]=visual_unit(weight)*board;

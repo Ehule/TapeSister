@@ -89,3 +89,34 @@ of these libraries for debugging such modifications. See [FFmpeg](https://ffmpeg
 ## Still-image decoding
 
 The visual child uses the existing vendored `third_party/stb_image.h` by Sean Barrett and contributors for PNG, JPEG, BMP and TGA decoding. This copy is available under the MIT license or public-domain alternative in the header. The private implementation is independent of the host's PNG splash decoder and adds no runtime dependency.
+
+## SunVox all-pass DSP
+
+Dispersion coefficient construction in `src/ts_texture_fx.c` is adapted from
+`lib_sunvox/psynth/psynth_dsp.cpp` in the official SunVox 2.1.4d developer
+package: https://warmplace.ru/soft/sunvox/sunvox_lib-2.1.4d.zip.
+The complete SunVox runtime is not linked or distributed.
+The following notice applies to this adaptation:
+
+SunVox library is distributed under the MIT license:
+
+Copyright (c) 2007 - 2025, Alexander Zolotov <nightradio@gmail.com>
+WarmPlace.ru
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to
+deal in the Software without restriction, including without limitation the
+rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+IN THE SOFTWARE.

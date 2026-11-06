@@ -14,6 +14,7 @@ static int mx_effect_control_id(const TsMatrixEffectControls *c,int position)
 static float mx_effect_value(const TsMatrixEffectControls *c,int position)
 {
     int k=mx_effect_control_id(c,position);
+    if(c->type==TS_MATRIX_FX_META && k<3)return c->meta.scene_mode && c->meta.captured==3?c->meta.scene[0][k]+(c->meta.scene[1][k]-c->meta.scene[0][k])*c->meta.morph:c->meta.macro[k];
     if(c->type==TS_MATRIX_FX_COMPRESSOR)return k<5?ts_compressor_normalized(&c->compressor,k):k==5?c->mix:c->transition;
     if(c->type==TS_MATRIX_FX_FILTER && k<3){int focus=c->filter.value[TS_CF_ROUTE]>=.75f && c->filter.value[TS_CF_FOCUS]>=.5f?8:0;return c->filter.value[(int[]){TS_CF_L_CUT,TS_CF_L_RES,TS_CF_L_DRIVE}[k]+focus];}
     return k==0?c->a:k==1?c->b:k==2?c->c:k==3?c->mix:k==4?(c->gain_db+12)/24:c->transition;
@@ -21,6 +22,7 @@ static float mx_effect_value(const TsMatrixEffectControls *c,int position)
 static void mx_effect_value_set(TsMatrixEffectControls *c,int position,float value)
 {
     float v=SDL_clamp(value,0,1);int k=mx_effect_control_id(c,position);
+    if(c->type==TS_MATRIX_FX_META && k<3){ts_meta_macro_set(&c->meta,k,v);return;}
     if(c->type==TS_MATRIX_FX_FILTER && k<3){int focus=c->filter.value[TS_CF_ROUTE]>=.75f && c->filter.value[TS_CF_FOCUS]>=.5f?8:0;ts_character_filter_set(&c->filter,(int[]){TS_CF_L_CUT,TS_CF_L_RES,TS_CF_L_DRIVE}[k]+focus,v);return;}
     if(c->type==TS_MATRIX_FX_COMPRESSOR) {
         if(k<5)ts_compressor_set_normalized(&c->compressor,k,v);else if(k==5)c->mix=v;else c->transition=v;
@@ -29,7 +31,8 @@ static void mx_effect_value_set(TsMatrixEffectControls *c,int position,float val
 static void mx_effect_label(char *s,size_t n,const TsMatrixEffectControls *c,int position)
 {
     static const char *names[][3]={{"","",""},{"SIZE","DECAY",""},{"TIME","FEEDBACK",""},
-        {"DRIVE","TONE",""},{"SIZE","DENSITY","PITCH"},{"ATTACK","SUSTAIN","RESPONSE"}};
+        {"DRIVE","TONE",""},{"SIZE","DENSITY","PITCH"},{"ATTACK","SUSTAIN","RESPONSE"},
+        {"","",""},{"CUTOFF","RESONANCE","DRIVE"},{"FREQUENCY","Q","SPREAD"},{"ROOT","DECAY","DAMPING"},{"MACRO 1","MACRO 2","MACRO 3"}};
     int k=mx_effect_control_id(c,position),comp=c->type==TS_MATRIX_FX_COMPRESSOR;
     if(k==(comp?6:5)) {
         float ms=ts_sister_fx_transition_ms(c->transition);
@@ -53,8 +56,8 @@ static void mx_effect_paint(void)
         int used=0;for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)used+=w->controls.effect[i].id!=0;
         snprintf(text,sizeof(text),"ADD AN INDEPENDENT EFFECT (%d / %d)",used,TS_MATRIX_EFFECT_CAPACITY);mx_text(32,703,text,MX_GREEN,2);
         mx_button(1080,696,160,"CLOSE",0);
-        for(int type=1;type<TS_MATRIX_FX_TYPES;++type)mx_button(32+(type-1)*172,736,162,ts_matrix_effect_name(type),0);
-        mx_text(32,779,"NEW EFFECTS START UNPATCHED. CONNECT A SOURCE TO THEIR COLUMN, THEN THEIR ROW TO A DESTINATION.",MX_DIM,1);return;
+        for(int type=1;type<TS_MATRIX_FX_TYPES;++type)mx_button(32+(type-1)%7*172,736+(type-1)/7*34,162,ts_matrix_effect_name(type),0);
+        mx_text(32,813,"NEW EFFECTS START UNPATCHED. CONNECT THEIR INPUT COLUMN AND OUTPUT ROW.",MX_DIM,1);return;
     }
     int slot=mx_effect_slot();if(slot<0){mx_text(32,703,"INSTANCE REMOVED - SELECT ANOTHER ROW",MX_DIM,2);return;}
     const TsMatrixEffectControls *c=&w->controls.effect[slot];
@@ -74,7 +77,8 @@ static void mx_effect_paint(void)
             if(selected)mx_rect(518+i*34,722,28,2,c->transient_states.editing?MX_AMBER:MX_GREEN);
         }
         snprintf(text,sizeof(text),"GLIDE %.1F S",c->transient_states.seconds);mx_button(694,696,190,text,0);
-    } else if(c->type==TS_MATRIX_FX_FILTER)mx_button(410,696,200,"EDIT FILTER",0);
+    } else if(c->type==TS_MATRIX_FX_META)mx_button(410,696,200,"EDIT META FX",0);
+    else if(c->type==TS_MATRIX_FX_FILTER)mx_button(410,696,200,"EDIT FILTER",0);
     else mx_text(418,704,"INDEPENDENT INSTANCE",MX_DIM,1);
     mx_button(898,696,138,"REMOVE",0);mx_button(1048,696,192,"BACK TO ROUTES",0);
     if(w->effect_progress<1 && c->type!=TS_SISTER_FX_TRANSIENT){mx_rect(630,715,240,3,MX_DIM);mx_rect(630,715,(int)(240*w->effect_progress),3,MX_AMBER);}
@@ -143,7 +147,7 @@ static void mx_effect_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioSta
     if(left && y>=696 && y<724 && x>=1048){w->effect_menu=0;w->effect_open=0;w->drag=0;return;}
     if(!mx_editable())return;
     if(w->effect_menu) {
-        if(left && y>=736 && y<764 && x>=32 && x<1244)mx_effect_add(device,audio,ui,pages,bank,1+(x-32)/172);
+        if(left && y>=736 && y<798 && (y-736)%34<28 && x>=32 && x<1244){int type=1+(x-32)/172+7*((y-736)/34);if(type<TS_MATRIX_FX_TYPES)mx_effect_add(device,audio,ui,pages,bank,type);}
         return;
     }
     int slot=mx_effect_slot();if(slot<0)return;
@@ -183,6 +187,7 @@ static void mx_effect_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioSta
         return;
     }
     if(left && y>=696 && y<724) {
+        if(c->type==TS_MATRIX_FX_META && x>=410 && x<610){meta_fx_open(c->id);return;}
         if(c->type==TS_MATRIX_FX_FILTER && x>=410 && x<610){character_filter_matrix_open(c->id);return;}
         if(x>=272 && x<398){c->enabled=!c->enabled;change=1;}
         if(c->type==TS_MATRIX_FX_COMPRESSOR && x>=410 && x<610){c->compressor.external=!c->compressor.external;if(c->compressor.external)mx_reveal_column(TS_MATRIX_EFFECT_SC_BASE+slot);change=1;}

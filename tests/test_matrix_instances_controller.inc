@@ -57,6 +57,16 @@ static void matrix_instances_controller(const char *directory)
     ts_note_bank_clear(&a.notes);render(energy);
     for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)if(w->controls.effect[i].id){mx_effect_remove(0,&a,&u,&pages,&bank,i);render(energy);}
     mx_collect_effects(0,&a);assert(!ts_matrix_effects_memory(&a.sister.matrix_effects));
+    /* The added second menu row must remain reachable without narrowing the
+       historical first-row hit targets above. Exercise the real add/remove path. */
+    const int new_types[]={TS_MATRIX_FX_DISPERSION,TS_MATRIX_FX_RESONATOR,TS_MATRIX_FX_META};
+    for(int kind=0;kind<3;++kind){int type=new_types[kind];
+        matrix_click(1130,66,SDL_BUTTON_LEFT);assert(w->effect_menu);
+        matrix_click(32+(type-1)%7*172+80,736+(type-1)/7*34+14,SDL_BUTTON_LEFT);
+        assert(w->controls.effect[0].type==type && w->effect_open==w->controls.effect[0].id);
+        render(energy);mx_effect_remove(0,&a,&u,&pages,&bank,0);render(energy);mx_collect_effects(0,&a);
+        assert(!ts_matrix_effects_memory(&a.sister.matrix_effects));
+    }
     /* A deliberately excessive 16-stage transient patch still reaches the
        actual callback's linked hardware guard, including its first sample. */
     TsMatrixControls chain=w->controls;
