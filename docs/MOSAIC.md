@@ -178,6 +178,26 @@ minimum pick target. A visible card wins over a neighbouring card's pick padding
 nearby tiny cards are picked by distance. Short or narrow cards are move targets
 throughout. Zoom in to expose distinct duration and width resize edges.
 
+Cards adapt to their visible size. The smallest remain solid source-colored
+bars. Intermediate cards use a subtle source tint, a single shortened name and
+a waveform when space permits; larger cards restore notes and playback state.
+Names use a bright text color and reduced margins in compact cards. Fade, pan
+and resize grips appear on selected or hovered cards, keeping dense overviews
+clear while retaining the existing hit targets and G/S gestures.
+
+Hover outlines the card under the pointer without selecting it. The two lines
+above the transport show its complete card name, event number, start time,
+duration and mute/solo/loop state. With no card or source under the pointer,
+the spare row shows the primary selection's full name, preserving operation
+warnings and Gallery status above it. Handle and staged-transform hints take
+priority. Hover is refreshed after view scrolling and cleared when the
+pointer leaves the window or a modal editor covers the canvas. Long-project
+ruler labels use minutes and seconds, for example **08:20** instead of **0500**.
+
+![A dense 24-minute overview with compact names and hover details](screenshots/mosaic-performance/overview-cards.png)
+
+![Compact cards reveal waveform detail at an intermediate zoom](screenshots/mosaic-performance/compact-cards.png)
+
 ![G moves the selection together, with original positions outlined](images/mosaic-grab.png)
 
 Shift-dragging a card still copies the group; the primary's copy becomes primary.

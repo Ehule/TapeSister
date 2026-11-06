@@ -667,6 +667,7 @@ typedef struct {
     uint64_t mosaic_loaded_view_epoch; /* Preserve restored selection through controller reset. */
     int project_save_new_bundle; /* The active legacy TSR is retained during migration. */
     uint64_t mosaic_card_mix_event;
+    uint64_t mosaic_hover_event; /* Screen-space pick; never changes the selection. */
     int mosaic_card_mix_part; /* Hover/drag: 1 fade-in, 2 fade-out, 3 pan. */
     int mosaic_card_mix_group;
     char mosaic_source_hover[128];

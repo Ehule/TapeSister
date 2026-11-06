@@ -96,6 +96,7 @@ static void wait_render(void);
 #include "test_mosaic_group_resize.inc"
 #include "test_mosaic_loop_controls.inc"
 #include "test_mosaic_selection.inc"
+#include "test_mosaic_overview.inc"
 #include "test_mosaic_copy_gestures.inc"
 #include "test_mosaic_group_staging.inc"
 #include "benchmark_mosaic_edits.inc"
@@ -450,6 +451,7 @@ int main(int argc,char **argv)
     if(argc>1 && !strcmp(argv[1],"--arrange")) {test_mosaic_performance_edit(window);goto done;}
     if(argc>1 && !strcmp(argv[1],"--source-actions")) {test_mosaic_group_mute_audio(window);test_mosaic_source_actions(window);goto done;}
     if(argc>1 && !strcmp(argv[1],"--selection")) {test_mosaic_selection(window);goto done;}
+    if(argc>1 && !strcmp(argv[1],"--overview")) {test_mosaic_overview(window);goto done;}
     if(argc>1 && !strcmp(argv[1],"--copy-drag")) {test_mosaic_copy_gestures(window);test_mosaic_group_staging();goto done;}
     if(argc>1 && !strcmp(argv[1],"--large-mosaic")) {test_mosaic_large_browser();goto done;}
     if(argc>1 && !strcmp(argv[1],"--loop")) {test_mosaic_loop_controls(window);goto done;}

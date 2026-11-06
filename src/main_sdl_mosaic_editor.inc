@@ -40,6 +40,7 @@ typedef struct {
     double loop_anchor;
     uint64_t loop_epoch;
     int pan_active, pan_moved, pan_x, pan_y;
+    int hover_valid, hover_x, hover_y;
     int marker_y, marker_moved;
     double marker_time, marker_scale;
     uint64_t marker_epoch;
@@ -135,6 +136,7 @@ static void mosaic_drag_end(TsUiState *ui,MosaicController *c)
     ui->mosaic_ghost_count=ui->mosaic_box=0;c->volume_drag=0;
     c->card_mix_event=ui->mosaic_card_mix_event=0;ui->mosaic_card_mix_part=ui->mosaic_card_mix_group=0;
     ui->mosaic_source_hover[0]=0;
+    ui->mosaic_hover_event=0;c->hover_valid=0;
     c->pan_active=c->pan_moved=ui->mosaic_loop_drag=ui->mosaic_marker_drag=0;
 }
 /* Library pages and placed-card pages have independent counts and positions.

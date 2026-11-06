@@ -1,5 +1,18 @@
 static void mosaic_gallery_snapshot(TsUiState *,const TsMosaicGallery *);
 static void mosaic_scale_motion(TsUiState *,MosaicController *,int,int,SDL_Keymod);
+static TsMosaicEvent *mosaic_card_at(const TsUiState *,int,int);
+static void mosaic_hover(TsUiState *ui,const MosaicController *c)
+{
+    ui->mosaic_hover_event=0;
+    if(!ui->mosaic_open || !c->hover_valid || c->active || c->drag || c->mix_drag || c->volume_drag ||
+       c->pan_active || ui->mosaic_grab || ui_dialog_open(ui) || ui->router_open || ui->master_eq_open ||
+       ui->mosaic_marker_open || ui->mosaic_views_open || ui->mosaic_gallery_open || ui->mosaic_live_open ||
+       ui->mosaic_scatter_open || ui->mosaic_loop_open || ui->mosaic_align_open || ui->mosaic_spacing_confirm ||
+       c->hover_x<151 || c->hover_x>=ts_ui_mosaic_canvas_right(ui) ||
+       c->hover_y<66 || c->hover_y>=TS_MOSAIC_CANVAS_BOTTOM)return;
+    const TsMosaicEvent *e=mosaic_card_at(ui,c->hover_x,c->hover_y);
+    if(e)ui->mosaic_hover_event=e->id;
+}
 static void mosaic_poll(SDL_AudioDeviceID device,TsUiState *ui,
                           TsInstrument *instrument,MosaicController *c)
 {
@@ -62,6 +75,7 @@ static void mosaic_poll(SDL_AudioDeviceID device,TsUiState *ui,
         }
         (void)instrument;
     }
+    mosaic_hover(ui,c);
 }
 static void mosaic_transport(SDL_AudioDeviceID device,TsUiState *ui,int stop)
 {
@@ -452,7 +466,14 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
     AudioState *audio,TsUiState *ui,TsInstrument *instrument,MosaicController *c,
     PortalController *portal,SisterWindow *sister,TransformController *transform,int rate)
 {
-    if(event->type==SDL_MOUSEMOTION)ui->mosaic_source_hover[0]=0;
+    if(event->type==SDL_MOUSEMOTION || event->type==SDL_MOUSEWHEEL) {
+        ui->mosaic_source_hover[0]=0;ui->mosaic_hover_event=0;
+    }
+    if(event->type==SDL_WINDOWEVENT && (event->window.event==SDL_WINDOWEVENT_LEAVE ||
+       event->window.event==SDL_WINDOWEVENT_FOCUS_LOST || event->window.event==SDL_WINDOWEVENT_HIDDEN ||
+       event->window.event==SDL_WINDOWEVENT_MINIMIZED)) {
+        c->hover_valid=0;ui->mosaic_hover_event=0;ui->mosaic_source_hover[0]=0;
+    }
     if(!ui->mosaic)return 0;
     /* Notes started in another workspace still own their key/pointer releases.
        Handle these before Mosaic's panel and edit dialog consume input. */
@@ -583,6 +604,9 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
         return 0;
     }
     if(!ui->mosaic_open)return 0;
+    if(motion || down || event->type==SDL_MOUSEWHEEL) {
+        c->hover_valid=1;c->hover_x=x;c->hover_y=y;mosaic_hover(ui,c);
+    }
     if(mosaic_volume_visibility_event(event,ui,c,x,y,mod))return 1;
     /* The performance panel gives QWERTY an explicit owner. Use the same
        current/parent instrument, tuning, groups and routes as the Canvas;
