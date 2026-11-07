@@ -13,7 +13,7 @@ static struct {
     int popup,popup_x,popup_y;float place_x,place_y;
 } fx_canvas={.wire=-1,.destination=-1};
 static void fx_context_reset(void)
-{fx_canvas.meta=0;fx_canvas.wire=fx_canvas.destination=-1;fx_canvas.fit=fx_canvas.popup=0;}
+{svfx_close();fx_canvas.meta=0;fx_canvas.wire=fx_canvas.destination=-1;fx_canvas.fit=fx_canvas.popup=0;}
 static int fx_source_at(MatrixRow key)
 {
     for(int i=0;i<matrix_window.count;++i)if(mx_same(matrix_window.rows[i],key))return i;
@@ -207,9 +207,9 @@ static void fx_fit(void){fx_fit_selection(0);}
 static uint32_t fx_color(int type)
 {
     static const int roles[]={TS_COLOR_DATA4,TS_COLOR_DATA3,TS_COLOR_DATA1,TS_COLOR_DATA1,
-        TS_COLOR_DATA5,TS_COLOR_DATA3,TS_COLOR_DATA4,TS_COLOR_DATA5,TS_COLOR_DATA3,TS_COLOR_DATA4,TS_COLOR_DATA5};
+        TS_COLOR_DATA5,TS_COLOR_DATA3,TS_COLOR_DATA4,TS_COLOR_DATA5,TS_COLOR_DATA3,TS_COLOR_DATA4,TS_COLOR_DATA5,TS_COLOR_DATA3};
     static const uint32_t colors[]={0xffc9b3d4u,0xff9ed2b2u,0xffe6c17du,0xffe5b36bu,
-        0xffb990c6u,0xff95c6dfu,0xffc294d2u,0xff9fcea7u,0xffb6d38du,0xffd19ebdu,0xffc499c9u};
+        0xffb990c6u,0xff95c6dfu,0xffc294d2u,0xff9fcea7u,0xffb6d38du,0xffd19ebdu,0xffc499c9u,0xff9ed2b2u};
     type=SDL_clamp(type,0,TS_MATRIX_FX_TYPES-1);
     return FX_THEME(roles[type],colors[type]);
 }
@@ -402,7 +402,7 @@ static void fx_inspector_paint(TsSamplePages *pages,TsInstrument *bank)
         return;
     }
     const TsMatrixEffectControls *c=&w->controls.effect[slot];
-    fx_panel_text(1028,125,213,47,c->type==TS_MATRIX_FX_META?c->meta.name:ts_matrix_effect_name(c->type),
+    fx_panel_text(1028,125,213,47,c->type==TS_MATRIX_FX_SUNVOX?ts_sunvox_name(&c->sunvox):c->type==TS_MATRIX_FX_META?c->meta.name:ts_matrix_effect_name(c->type),
         c->enabled?fx_color(c->type):FX_MUTED,2,2);
     fx_button(1028,178,208,c->enabled?"ACTIVE / M":"BYPASS / M",c->enabled);
     int count=c->type==TS_MATRIX_FX_META?4:mx_effect_controls(c);
@@ -413,6 +413,7 @@ static void fx_inspector_paint(TsSamplePages *pages,TsInstrument *bank)
         fx_panel_text(1028,y,208,38,label,FX_TEXT,2,2);mx_rect(1028,y+39,208,7,FX_EDGE);
         mx_rect(1028,y+39,(int)(208*v),7,fx_color(c->type));mx_rect(1028+(int)(204*v),y+36,4,13,FX_CABLE);
     }
+    if(c->type==TS_MATRIX_FX_SUNVOX)fx_button(1028,480,208,"BROWSE SUNVOX",0);
     if(c->type==TS_MATRIX_FX_META)fx_button(1028,480,208,"OPEN CHAIN",0);
     fx_panel_text(1028,625,212,54,"Delete removes this effect.",FX_DIM,2,2);
 }
@@ -485,7 +486,7 @@ static void fx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
             int slot=n->row.kind==4?ts_matrix_effect_index(n->row.index):-1;
             const TsMatrixEffectControls *c=slot>=0?&w->controls.effect[slot]:NULL;
             const char *detail=n->at<0?(mx_destination_available(n->destination)?"OUTPUT / RECEIVER":"N/A / PORT NOT OPEN"):c?(c->enabled?(c->type==TS_MATRIX_FX_META?"DOUBLE-CLICK TO ENTER":"ACTIVE / SELECT TO EDIT"):"BYPASS"):"BUS / PATCH ENDPOINT";
-            const char *title=c && c->type==TS_MATRIX_FX_META?c->meta.name:n->row.name;
+            const char *title=c && c->type==TS_MATRIX_FX_SUNVOX?ts_sunvox_name(&c->sunvox):c && c->type==TS_MATRIX_FX_META?c->meta.name:n->row.name;
             char compact[48];
             if(c)snprintf(compact,sizeof(compact),"%s %u",ts_matrix_effect_short_name(c->type),(unsigned)c->id);
             else if(n->row.kind==2 && n->row.index==TS_MATRIX_TRACKER)snprintf(compact,sizeof(compact),"TRK BUS");
@@ -531,7 +532,7 @@ static void fx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
 }
 static void fx_view(int canvas,TsSamplePages *pages,TsInstrument *bank)
 {
-    MatrixWindow *w=&matrix_window;w->canvas=canvas;w->drag=0;w->effect_menu=0;fx_canvas.popup=0;fx_canvas.meta=0;fx_canvas.wire=-1;
+    svfx_close();MatrixWindow *w=&matrix_window;w->canvas=canvas;w->drag=0;w->effect_menu=0;fx_canvas.popup=0;fx_canvas.meta=0;fx_canvas.wire=-1;
     if(canvas){w->filter=0;mx_rows(pages,bank);fx_build(pages,bank);if(!w->layout->canvas_view)fx_canvas.fit=1;}
     SDL_SetWindowTitle(w->window,canvas?"TapeSister - FX Canvas (Shift+F9)":"TapeSister - Routing Matrix (F9)");w->dirty=1;
 }

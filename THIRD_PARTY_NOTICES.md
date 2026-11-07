@@ -90,13 +90,22 @@ of these libraries for debugging such modifications. See [FFmpeg](https://ffmpeg
 
 The visual child uses the existing vendored `third_party/stb_image.h` by Sean Barrett and contributors for PNG, JPEG, BMP and TGA decoding. This copy is available under the MIT license or public-domain alternative in the header. The private implementation is independent of the host's PNG splash decoder and adds no runtime dependency.
 
-## SunVox all-pass DSP
+## SunVox DSP engine and factory effects
 
 Dispersion coefficient construction in `src/ts_texture_fx.c` is adapted from
 `lib_sunvox/psynth/psynth_dsp.cpp` in the official SunVox 2.1.4d developer
 package: https://warmplace.ru/soft/sunvox/sunvox_lib-2.1.4d.zip.
-The complete SunVox runtime is not linked or distributed.
-The following notice applies to this adaptation:
+TapeSister also compiles the headless SunVox engine and embeds the 235 loadable
+effects from the pinned official distribution. No separate SunVox installation
+is required. Patch names retain their original authors' credits.
+
+Powered by SunVox (modular synth & tracker)
+Copyright (c) 2008 - 2026, Alexander Zolotov <nightradio@gmail.com>, WarmPlace.ru
+
+The source archive, checksums and distribution terms are described in
+`third_party/sunvox/PROVENANCE.md`. Additional SDK and decoder notices ship under
+`licenses/sunvox/` (source copies: `third_party/sunvox/licenses/`).
+The following notice applies to the SunVox source and the coefficient adaptation:
 
 SunVox library is distributed under the MIT license:
 

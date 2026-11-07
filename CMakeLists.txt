@@ -5,6 +5,8 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
+include(cmake/SunVox.cmake)
+
 include(FetchContent)
 FetchContent_Declare(
   miniaudio
@@ -37,7 +39,8 @@ add_library(tapesister_core src/ts_mandala.c src/ts_routing_matrix.c src/ts_matr
              src/ts_dsp_transform.c src/ts_exchange.c src/ts_waveform_display.c
              src/ts_audio_import.c src/ts_ui.c src/ts_tracker_tapehead.c
              third_party/tapehead/ft2_fasttracks_core.c)
-target_include_directories(tapesister_core PUBLIC include PRIVATE ${miniaudio_SOURCE_DIR})
+target_include_directories(tapesister_core PUBLIC include PRIVATE ${miniaudio_SOURCE_DIR} ${CMAKE_BINARY_DIR})
+target_link_libraries(tapesister_core PRIVATE tapesister_sunvox)
 target_sources(tapesister_core PRIVATE src/ts_master_clock.c src/ts_loop_capture.c src/ts_mosaic_gallery.c)
 target_link_libraries(tapesister_core PUBLIC m)
 add_executable(tapesister_matrix_benchmark EXCLUDE_FROM_ALL tools/benchmark_matrix.c)
@@ -1110,3 +1113,22 @@ endif()
 # Reproducible steady-state RMS/peak report; no audio device required.
 add_executable(tapesister_fx_gain_probe EXCLUDE_FROM_ALL tools/probe_fx_gain.c)
 target_link_libraries(tapesister_fx_gain_probe PRIVATE tapesister_core)
+
+add_executable(tapesister_sunvox_tests tests/test_sunvox.c)
+target_link_libraries(tapesister_sunvox_tests PRIVATE tapesister_core)
+add_test(NAME sunvox_fx COMMAND tapesister_sunvox_tests)
+add_test(NAME sunvox_project_write COMMAND tapesister_sunvox_tests write)
+add_test(NAME sunvox_project_read COMMAND tapesister_sunvox_tests read)
+set_tests_properties(sunvox_project_write PROPERTIES FIXTURES_SETUP sunvox_project)
+set_tests_properties(sunvox_project_read PROPERTIES FIXTURES_REQUIRED sunvox_project)
+set_tests_properties(sunvox_fx sunvox_project_write sunvox_project_read PROPERTIES RESOURCE_LOCK sunvox_files TIMEOUT 120)
+if(MINGW)
+  target_link_options(tapesister_sunvox_tests PRIVATE "-Wl,--stack,16777216")
+endif()
+if(TAPESISTER_BUILD_SDL)
+  add_custom_command(TARGET tapesister POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:tapesister>/licenses/sunvox"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sunvox/licenses" "$<TARGET_FILE_DIR:tapesister>/licenses/sunvox"
+    COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sunvox/LICENSE" "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sunvox/PROVENANCE.md" "$<TARGET_FILE_DIR:tapesister>/licenses/sunvox"
+    COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/THIRD_PARTY_NOTICES.md" "$<TARGET_FILE_DIR:tapesister>/licenses/")
+endif()

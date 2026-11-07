@@ -314,6 +314,45 @@ static void routing_preferences(void)
     assert(ui.config.matrix.enabled && ui.config.matrix.effect[0].id);
     ts_live_config=&ui.config;remove(path);
 }
+static void sunvox_browser(const char *dir)
+{
+    MatrixWindow *w=&matrix_window;w->original_active=0;
+    for(int f=0;f<1024;++f) {
+        ts_matrix_effects_tick(&audio.sister.matrix_effects);
+        for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)ts_matrix_effects_process(&audio.sister.matrix_effects,i,(TsStereoFrame){0},(TsStereoFrame){0},0);
+    }
+    mx_collect_effects(0,&audio);
+    mx_effect_remove(0,&audio,&ui,&pages,&bank,TS_MATRIX_EFFECT_CAPACITY-1);
+    mx_effect_add(0,&audio,&ui,&pages,&bank,TS_MATRIX_FX_SUNVOX);
+    int slot=svfx_slot();assert(slot>=0 && sunvox_editor.node);
+    uint32_t id=w->controls.effect[slot].id;uint64_t original=w->controls.effect[slot].sunvox.patch;
+    assert(ts_matrix_connect(&w->controls,TS_MATRIX_MOSAIC,TS_MATRIX_EFFECT_BASE+slot,1000)==1);
+    mx_commit_controls(0,&audio,&ui);
+    SDL_SetWindowSize(w->window,1366,699);
+    SDL_Surface *frame=rendered_frame();SDL_FreeSurface(frame);
+    if(dir){char path[1024];snprintf(path,sizeof(path),"%s/sunvox-browser.bmp",dir);screenshot(path);}
+    click(60,110,1);assert(sunvox_editor.focus==1);
+    SDL_Event text;SDL_zero(text);text.type=SDL_TEXTINPUT;text.text.windowID=w->id;
+    snprintf(text.text.text,sizeof(text.text.text),"NR Stereo Swap");assert(event(&text));
+    int list[235],nc;const char *categories[32];assert(svfx_catalog(list,categories,&nc)==1);
+    click(100,192,1);assert(w->controls.effect[slot].sunvox.patch!=original);
+    assert(w->controls.effect[slot].id==id && audio.sister.matrix.controls.row[TS_MATRIX_MOSAIC].matrix_gain[TS_MATRIX_EFFECT_BASE+slot]==1000);
+    for(int f=0;f<1024;++f){ts_matrix_effects_tick(&audio.sister.matrix_effects);ts_matrix_effects_process(&audio.sister.matrix_effects,slot,(TsStereoFrame){0},(TsStereoFrame){0},0);}
+    mx_collect_effects(0,&audio);
+    click(790,210,1);int changed=w->controls.effect[slot].sunvox.value[0];assert(changed>=0);
+    key(SDLK_z,KMOD_CTRL);assert(w->controls.effect[slot].sunvox.value[0]==-1);
+    key(SDLK_y,KMOD_CTRL);assert(w->controls.effect[slot].sunvox.value[0]==changed);
+    pointer(SDL_MOUSEBUTTONDOWN,790,210,SDL_BUTTON_RIGHT,1);pointer(SDL_MOUSEBUTTONUP,790,210,SDL_BUTTON_RIGHT,1);
+    assert(w->controls.effect[slot].sunvox.value[0]==-1);
+    click(80,800,1);assert(w->controls.effect[slot].sunvox.held);
+    click(1100,30,1);assert(!sunvox_editor.node && w->canvas);
+    fx_build(&pages,&bank);assert(instance(id));
+    key(SDLK_F9,0);assert(!w->canvas && w->visible);
+    w->effect_open=id;click(480,707,1);assert(sunvox_editor.node==id);
+    key(SDLK_ESCAPE,0);assert(!sunvox_editor.node && w->visible);
+    puts("SunVox browser search, patch replacement, controls, undo/redo and shared Matrix instance passed.");
+}
+
 int main(int argc,char **argv)
 {
     SDL_SetMainReady();SDL_setenv("SDL_VIDEODRIVER","dummy",1);SDL_setenv("SDL_AUDIODRIVER","dummy",1);
@@ -395,7 +434,7 @@ int main(int argc,char **argv)
     SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=SDL_GetWindowID(main_window);e.button.button=SDL_BUTTON_LEFT;
     e.button.x=(TS_MOSAIC_FX_X+10)*2;e.button.y=(TS_MOSAIC_FX_Y+5)*2;assert(event(&e));assert(matrix_window.visible && matrix_window.canvas);
     SDL_SetWindowSize(matrix_window.window,1001,701);fx_paint(&audio,&pages,&bank);
-    canvas_gestures(c.effect[dist].id);disconnect_main_prism();routing_preferences();
+    canvas_gestures(c.effect[dist].id);disconnect_main_prism();routing_preferences();sunvox_browser(getenv("TS_FX_PREVIEW"));
     matrix_close();meta_fx_close();ts_sister_runtime_free(&audio.sister);ts_sample_pages_free(&pages);ts_instrument_free(&bank);SDL_DestroyWindow(main_window);SDL_Quit();
     puts("FX Canvas controller passed, including single-cable disconnect, alternative path, silent clear, undo and project recall.");return 0;
 }
