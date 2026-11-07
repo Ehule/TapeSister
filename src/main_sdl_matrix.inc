@@ -33,6 +33,7 @@ static MatrixWindow matrix_window={.selected=-1,.rename=-1};
 static int mx_destination_available(int d);
 static void matrix_history_clear(void);
 static void fx_context_reset(void);
+static void fx_cancel_gesture(void);
 static struct { uint32_t node; int scroll,category,page,focus; char filter[96],path[1024],status[192]; } sunvox_editor;
 static TsBrowser sunvox_files;
 static void svfx_open(uint32_t id);
@@ -94,16 +95,17 @@ static void mx_rect(int x,int y,int width,int height,uint32_t color)
     mx_fill_pixels(mx_px(x),mx_py(y),mx_px(x+width),mx_py(y+height),color);
 }
 typedef struct {int columns[6],rows[8],advance;} FxFontMetrics;
-static FxFontMetrics fx_font(int scale)
+static FxFontMetrics fx_font_scaled(int scale,float factor)
 {
     double fit=fmin(mx_pixel_w()/(double)MATRIX_W,1.25*mx_pixel_h()/MATRIX_H);
-    double unit=fmax(1.0,fit*(scale==1?1.5:scale));
+    double unit=fmax(1.0,fit*(scale==1?1.5:scale)*factor);
     FxFontMetrics f;
     for(int i=0;i<=5;++i)f.columns[i]=(int)lround(i*unit);
     for(int i=0;i<=7;++i)f.rows[i]=(int)lround(i*unit);
     f.advance=(int)lround(6*unit);
     return f;
 }
+static FxFontMetrics fx_font(int scale){return fx_font_scaled(scale,1);}
 static void fx_text_clipped(int x,int y,const char *text,uint32_t color,FxFontMetrics f,SDL_Rect clip)
 {
     int left=mx_px(clip.x),right=mx_px(clip.x+clip.w);
@@ -258,6 +260,7 @@ static TsSourceRoute mx_display_route(TsSourceRoute raw)
 static void matrix_hide(void)
 {
     ts_session_log_text("matrix_window","close");
+    fx_cancel_gesture();
     svfx_close();matrix_window.visible=0;matrix_window.drag=0;matrix_window.rename=-1;
     SDL_StopTextInput();if(matrix_window.window)SDL_HideWindow(matrix_window.window);
 }
@@ -846,11 +849,12 @@ static int matrix_event_inner(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID de
     if(!own)return 0;
     if(e->type==SDL_WINDOWEVENT) {
         if(e->window.event==SDL_WINDOWEVENT_CLOSE)matrix_hide();
-        if(e->window.event==SDL_WINDOWEVENT_FOCUS_LOST)w->drag=0;
+        if(e->window.event==SDL_WINDOWEVENT_FOCUS_LOST)fx_cancel_gesture();
         w->dirty=1;return 1;
     }
     if(!w->visible)return 1;
     if(sunvox_editor.node)return svfx_event(e,device,audio,ui,pages,bank);
+    if(w->canvas && fx_modal() && (e->type==SDL_KEYDOWN || e->type==SDL_KEYUP))return fx_event(e,main,device,audio,ui,pages,bank,0,0,0);
     if(w->rename>=0) {
         if(e->type==SDL_TEXTINPUT || (e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_BACKSPACE))
             w->rename_blink_started=SDL_GetTicks();
@@ -1035,7 +1039,7 @@ static int matrix_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,A
     w->layout=&audio->sister.matrix_layout;
     int own=w->visible && event_window_id(e)==w->id;
     int edit=own && ((sunvox_editor.node && (e->type==SDL_DROPFILE || (e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_RETURN))) || e->type==SDL_MOUSEBUTTONDOWN || e->type==SDL_MOUSEWHEEL ||
-        (w->canvas && e->type==SDL_KEYDOWN && (e->key.keysym.sym==SDLK_DELETE || e->key.keysym.sym==SDLK_BACKSPACE || e->key.keysym.sym==SDLK_HOME || e->key.keysym.sym==SDLK_m || e->key.keysym.sym==SDLK_z)) ||
+        (w->canvas && e->type==SDL_KEYDOWN && (fx_canvas_key(e->key.keysym.sym) || ((e->key.keysym.mod&KMOD_CTRL) && e->key.keysym.sym==SDLK_v))) ||
         (w->rename>=0 && e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_RETURN) ||
         (w->rename<0 && e->type==SDL_KEYDOWN && mx_layout_key(e)));
     if(edit && !w->pending){mx_original(device,audio,pages,bank);w->pending=mx_snapshot(device,audio,pages,bank);}
@@ -1043,7 +1047,7 @@ static int matrix_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,A
     if(edit && !w->pending){snprintf(w->status,sizeof(w->status),"EDIT NOT APPLIED: CANNOT ALLOCATE UNDO SNAPSHOT.");return 1;}
     int original=w->original_active;
     int result=matrix_event_inner(e,main,device,audio,ui,pages,bank);
-    if(w->pending && (!w->drag || e->type==SDL_MOUSEBUTTONUP)) {
+    if(w->pending && (!w->drag || (e->type==SDL_MOUSEBUTTONUP && !fx_modal()))) {
         MatrixSnapshot *after=mx_snapshot(device,audio,pages,bank);
         if(!after && !w->history_skip) {
             mx_apply(w->pending,device,audio,ui,pages,bank);w->history_skip=1;
