@@ -39,6 +39,11 @@ on:
       - "CMakeLists.txt"
       - "build.sh"
       - "cmake/**"
+      - "third_party/sunvox/**"
+      - "src/*sunvox*"
+      - "include/tapesister/sunvox_fx.h"
+      - "tools/build_sunvox_catalog.py"
+      - "tests/test_sunvox.c"
       - "scripts/**"
       - "src/tapesister.rc.in"
       - "src/*keyboard_sequence*"
@@ -207,6 +212,7 @@ jobs:
             make
             mingw-w64-ucrt-x86_64-cmake
             mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-python
             mingw-w64-ucrt-x86_64-ninja
             mingw-w64-ucrt-x86_64-SDL2
       - name: Configure bundled release

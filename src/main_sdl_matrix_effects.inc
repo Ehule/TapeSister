@@ -8,9 +8,9 @@ static int mx_effect_slot(void)
     return -1;
 }
 static int mx_effect_controls(const TsMatrixEffectControls *c)
-{return c->type==TS_MATRIX_FX_COMPRESSOR?7:c->type>=TS_SISTER_FX_GRAIN?6:5;}
+{return c->type==TS_MATRIX_FX_SUNVOX?3:c->type==TS_MATRIX_FX_COMPRESSOR?7:c->type>=TS_SISTER_FX_GRAIN?6:5;}
 static int mx_effect_control_id(const TsMatrixEffectControls *c,int position)
-{return c->type!=TS_MATRIX_FX_COMPRESSOR && c->type<TS_SISTER_FX_GRAIN && position>=2?position+1:position;}
+{return c->type==TS_MATRIX_FX_SUNVOX?position+3:c->type!=TS_MATRIX_FX_COMPRESSOR && c->type<TS_SISTER_FX_GRAIN && position>=2?position+1:position;}
 static float mx_effect_value(const TsMatrixEffectControls *c,int position)
 {
     int k=mx_effect_control_id(c,position);
@@ -78,6 +78,7 @@ static void mx_effect_paint(void)
         }
         snprintf(text,sizeof(text),"GLIDE %.1F S",c->transient_states.seconds);mx_button(694,696,190,text,0);
     } else if(c->type==TS_MATRIX_FX_META)mx_button(410,696,200,"EDIT META FX",0);
+    else if(c->type==TS_MATRIX_FX_SUNVOX)mx_button(410,696,200,"BROWSE SUNVOX",0);
     else if(c->type==TS_MATRIX_FX_FILTER)mx_button(410,696,200,"EDIT FILTER",0);
     else mx_text(418,704,"INDEPENDENT INSTANCE",MX_DIM,1);
     mx_button(898,696,138,"REMOVE",0);mx_button(1048,696,192,"BACK TO ROUTES",0);
@@ -113,6 +114,7 @@ static void mx_effect_add(SDL_AudioDeviceID device,AudioState *audio,TsUiState *
     w->filter=4;mx_rows(pages,bank);
     for(int i=0;i<w->count;++i)if(w->rows[i].kind==4 && w->rows[i].tile==w->effect_open){mx_select(i,0);w->scroll=SDL_max(0,i-MATRIX_VISIBLE+1);}
     w->destination=TS_MATRIX_EFFECT_BASE+slot;mx_reveal_column(type==TS_MATRIX_FX_COMPRESSOR?TS_MATRIX_EFFECT_SC_BASE+slot:w->destination);
+    if(type==TS_MATRIX_FX_SUNVOX)svfx_open(w->effect_open);
     snprintf(w->status,sizeof(w->status),"ADDED %s #%u. PATCH ITS INPUT COLUMN AND OUTPUT ROW. CTRL+Z TO UNDO.",ts_matrix_effect_name(type),(unsigned)w->effect_open);
 }
 static int mx_clear_effect_route(TsSourceRoute *r,int slot)
@@ -188,6 +190,7 @@ static void mx_effect_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioSta
         return;
     }
     if(left && y>=696 && y<724) {
+        if(c->type==TS_MATRIX_FX_SUNVOX && x>=410 && x<610){svfx_open(c->id);return;}
         if(c->type==TS_MATRIX_FX_META && x>=410 && x<610){meta_fx_open(c->id);return;}
         if(c->type==TS_MATRIX_FX_FILTER && x>=410 && x<610){character_filter_matrix_open(c->id);return;}
         if(x>=272 && x<398){c->enabled=!c->enabled;change=1;}

@@ -155,6 +155,7 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
         if(slot>=0 && mx_editable()) {
             TsMatrixEffectControls *c=&w->controls.effect[slot];int count=c->type==TS_MATRIX_FX_META?4:mx_effect_controls(c);
             if(left && y>=178 && y<206){c->enabled=!c->enabled;mx_commit_controls(device,audio,ui);return 1;}
+            if(c->type==TS_MATRIX_FX_SUNVOX && left && y>=480 && y<508){svfx_open(c->id);return 1;}
             if(c->type==TS_MATRIX_FX_META && left && y>=480 && y<508){fx_canvas.meta=c->id;return 1;}
             int i=(y-230)/53;
             if(x>=1028 && x<=1236 && y>=230 && i<count && (y-230)%53<49) {
@@ -199,6 +200,7 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
         w->compressor_open=n->row.kind==2 && n->row.index==TS_MATRIX_COMPRESSOR;
         if(e->button.clicks>=2 && n->row.kind==4) {
             TsMatrixEffectControls *c=&w->controls.effect[ts_matrix_effect_index(n->row.index)];
+            if(c->type==TS_MATRIX_FX_SUNVOX){svfx_open(c->id);return 1;}
             if(c->type==TS_MATRIX_FX_META){fx_canvas.meta=c->id;w->effect_open=0;return 1;}
             if(c->type==TS_MATRIX_FX_FILTER){character_filter_matrix_open(c->id);return 1;}}
         if(mx_editable() && fx_chosen(n->row)) {

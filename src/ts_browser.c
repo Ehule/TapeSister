@@ -45,6 +45,7 @@ static int ends_with_case(const char *value, const char *suffix)
 
 const char *ts_browser_mode_extension(TsBrowserMode mode)
 {
+    if (mode == TS_BROWSER_LOAD_SUNSYNTH) return ".sunsynth";
     if (mode == TS_BROWSER_TRACKER_PALETTE_IMPORT || mode == TS_BROWSER_TRACKER_PALETTE_EXPORT) return ".pal";
     if (mode == TS_BROWSER_SAVE_RECIPE || mode == TS_BROWSER_IMPORT_CANVAS || mode == TS_BROWSER_EXPORT_CANVAS) return ".tsr";
     if (mode == TS_BROWSER_SAVE_XM) return ".xm";
@@ -56,6 +57,7 @@ const char *ts_browser_mode_extension(TsBrowserMode mode)
 
 const char *ts_browser_mode_title(TsBrowserMode mode)
 {
+    if (mode == TS_BROWSER_LOAD_SUNSYNTH) return "CHOOSE SUNVOX PATCH";
     if (mode == TS_BROWSER_IMPORT_AUDIO_FOLDER) return "IMPORT AUDIO FOLDER";
     if (mode == TS_BROWSER_IMPORT_CANVAS) return "IMPORT MOSAIC CANVAS FROM TSR";
     if (mode == TS_BROWSER_EXPORT_CANVAS) return "EXPORT MOSAIC CANVAS / NEW TSR BUNDLE";

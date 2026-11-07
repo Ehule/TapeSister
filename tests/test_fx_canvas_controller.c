@@ -314,6 +314,81 @@ static void routing_preferences(void)
     assert(ui.config.matrix.enabled && ui.config.matrix.effect[0].id);
     ts_live_config=&ui.config;remove(path);
 }
+static void sunvox_browser(const char *dir)
+{
+    MatrixWindow *w=&matrix_window;w->original_active=0;
+    for(int f=0;f<1024;++f) {
+        ts_matrix_effects_tick(&audio.sister.matrix_effects);
+        for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)ts_matrix_effects_process(&audio.sister.matrix_effects,i,(TsStereoFrame){0},(TsStereoFrame){0},0);
+    }
+    mx_collect_effects(0,&audio);
+    mx_effect_remove(0,&audio,&ui,&pages,&bank,TS_MATRIX_EFFECT_CAPACITY-1);
+    mx_effect_add(0,&audio,&ui,&pages,&bank,TS_MATRIX_FX_SUNVOX);
+    int slot=svfx_slot();assert(slot>=0 && sunvox_editor.node);
+    uint32_t id=w->controls.effect[slot].id;uint64_t original=w->controls.effect[slot].sunvox.patch;
+    assert(ts_matrix_connect(&w->controls,TS_MATRIX_MOSAIC,TS_MATRIX_EFFECT_BASE+slot,1000)==1);
+    mx_commit_controls(0,&audio,&ui);
+    SDL_SetWindowSize(w->window,1366,699);
+    SDL_Surface *frame=rendered_frame();SDL_FreeSurface(frame);
+    if(dir){char path[1024];snprintf(path,sizeof(path),"%s/sunvox-browser.bmp",dir);screenshot(path);}
+    click(60,110,1);assert(sunvox_editor.focus==1);
+    SDL_Event text;SDL_zero(text);text.type=SDL_TEXTINPUT;text.text.windowID=w->id;
+    snprintf(text.text.text,sizeof(text.text.text),"NR Stereo Swap");assert(event(&text));
+    int list[235],nc;const char *categories[32];assert(svfx_catalog(list,categories,&nc)==1);
+    click(100,192,1);assert(w->controls.effect[slot].sunvox.patch!=original);
+    assert(w->controls.effect[slot].id==id && audio.sister.matrix.controls.row[TS_MATRIX_MOSAIC].matrix_gain[TS_MATRIX_EFFECT_BASE+slot]==1000);
+    for(int f=0;f<1024;++f){ts_matrix_effects_tick(&audio.sister.matrix_effects);ts_matrix_effects_process(&audio.sister.matrix_effects,slot,(TsStereoFrame){0},(TsStereoFrame){0},0);}
+    mx_collect_effects(0,&audio);
+    click(790,210,1);int changed=w->controls.effect[slot].sunvox.value[0];assert(changed>=0);
+    key(SDLK_z,KMOD_CTRL);assert(w->controls.effect[slot].sunvox.value[0]==-1);
+    key(SDLK_y,KMOD_CTRL);assert(w->controls.effect[slot].sunvox.value[0]==changed);
+    pointer(SDL_MOUSEBUTTONDOWN,790,210,SDL_BUTTON_RIGHT,1);pointer(SDL_MOUSEBUTTONUP,790,210,SDL_BUTTON_RIGHT,1);
+    assert(w->controls.effect[slot].sunvox.value[0]==-1);
+    click(80,800,1);assert(w->controls.effect[slot].sunvox.held);
+    uint64_t previous=w->controls.effect[slot].sunvox.patch;
+    int history=w->history_count;
+    sunvox_editor.path[0]=0;click(1100,760,1);
+    assert(sunvox_files.mode==TS_BROWSER_LOAD_SUNSYNTH);
+    assert(w->history_count==history && !strstr(sunvox_editor.status,"cache"));
+    key(SDLK_ESCAPE,0);assert(!sunvox_files.mode && sunvox_editor.node==id);
+    /* The custom chooser lists modules and folders, not songs or unrelated files. */
+    FILE *patch=fopen("browser patch.sunsynth","wb");assert(patch);
+    const char bytes[]="SSYN\0\0\0\0STYP\x0a\0\0\0Amplifier\0SNAM\x0f\0\0\0Browser import\0SEND\0\0\0\0";
+    assert(fwrite(bytes,1,sizeof(bytes)-1,patch)==sizeof(bytes)-1);fclose(patch);
+    patch=fopen("browser-song.sunvox","wb");assert(patch);fclose(patch);
+    click(900,760,1);assert(sunvox_files.mode==TS_BROWSER_LOAD_SUNSYNTH);
+    int found=-1;
+    for(int i=0;i<sunvox_files.entry_count;++i) {
+        assert(strcmp(sunvox_files.entries[i].name,"browser-song.sunvox"));
+        if(!strcmp(sunvox_files.entries[i].name,"browser patch.sunsynth"))found=i;
+    }
+    assert(found>=0);ts_browser_select(&sunvox_files,found);
+    frame=rendered_frame();SDL_FreeSurface(frame);
+    if(dir){char path[1024];snprintf(path,sizeof(path),"%s/sunvox-file-picker.bmp",dir);screenshot(path);}
+    key(SDLK_RETURN,0);assert(!sunvox_files.mode);
+    assert(!strcmp(ts_sunvox_name(&w->controls.effect[slot].sunvox),"Browser import"));
+    assert(w->controls.effect[slot].id==id && w->controls.row[TS_MATRIX_MOSAIC].matrix_gain[TS_MATRIX_EFFECT_BASE+slot]==1000);
+    uint64_t imported=w->controls.effect[slot].sunvox.patch;
+    for(int f=0;f<1024;++f){ts_matrix_effects_tick(&audio.sister.matrix_effects);ts_matrix_effects_process(&audio.sister.matrix_effects,slot,(TsStereoFrame){0},(TsStereoFrame){0},0);}
+    mx_collect_effects(0,&audio);
+    key(SDLK_z,KMOD_CTRL);assert(w->controls.effect[slot].sunvox.patch==previous);
+    for(int f=0;f<1024;++f){ts_matrix_effects_tick(&audio.sister.matrix_effects);ts_matrix_effects_process(&audio.sister.matrix_effects,slot,(TsStereoFrame){0},(TsStereoFrame){0},0);}
+    mx_collect_effects(0,&audio);
+    click(60,760,1);assert(sunvox_editor.focus==2);
+    assert(!SDL_SetClipboardText("\"browser patch.sunsynth\""));key(SDLK_v,KMOD_CTRL);key(SDLK_RETURN,0);
+    assert(w->controls.effect[slot].sunvox.patch==imported);
+    snprintf(sunvox_editor.path,sizeof(sunvox_editor.path),"missing-browser-patch.sunsynth");
+    click(1100,760,1);assert(strstr(sunvox_editor.status,"not found"));
+    assert(w->controls.effect[slot].sunvox.patch==imported && w->controls.effect[slot].id==id);
+    remove("browser patch.sunsynth");remove("browser-song.sunvox");
+    click(1100,30,1);assert(!sunvox_editor.node && w->canvas);
+    fx_build(&pages,&bank);assert(instance(id));
+    key(SDLK_F9,0);assert(!w->canvas && w->visible);
+    w->effect_open=id;click(480,707,1);assert(sunvox_editor.node==id);
+    key(SDLK_ESCAPE,0);assert(!sunvox_editor.node && w->visible);
+    puts("SunVox factory/file browsers, quoted-path import, failure retention, controls and undo/redo passed.");
+}
+
 int main(int argc,char **argv)
 {
     SDL_SetMainReady();SDL_setenv("SDL_VIDEODRIVER","dummy",1);SDL_setenv("SDL_AUDIODRIVER","dummy",1);
@@ -395,7 +470,7 @@ int main(int argc,char **argv)
     SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=SDL_GetWindowID(main_window);e.button.button=SDL_BUTTON_LEFT;
     e.button.x=(TS_MOSAIC_FX_X+10)*2;e.button.y=(TS_MOSAIC_FX_Y+5)*2;assert(event(&e));assert(matrix_window.visible && matrix_window.canvas);
     SDL_SetWindowSize(matrix_window.window,1001,701);fx_paint(&audio,&pages,&bank);
-    canvas_gestures(c.effect[dist].id);disconnect_main_prism();routing_preferences();
+    canvas_gestures(c.effect[dist].id);disconnect_main_prism();routing_preferences();sunvox_browser(getenv("TS_FX_PREVIEW"));
     matrix_close();meta_fx_close();ts_sister_runtime_free(&audio.sister);ts_sample_pages_free(&pages);ts_instrument_free(&bank);SDL_DestroyWindow(main_window);SDL_Quit();
     puts("FX Canvas controller passed, including single-cable disconnect, alternative path, silent clear, undo and project recall.");return 0;
 }
