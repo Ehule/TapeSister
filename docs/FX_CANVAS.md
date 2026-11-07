@@ -96,7 +96,12 @@ accents. Audio cables are teal, sidechains purple, and delayed feedback amber.
 Selected modules have an amber border; bypassed effects are gray. STRAIGHT /
 SPLINES switches the cable path used for both drawing and selection.
 
-The screenshots below are native application captures.
+Node titles wrap across two lines when space permits. The inspector shows the full
+selected name or cable endpoints and level. Selecting a node emphasizes its cables;
+selecting a cable highlights that path. The FX window draws its bitmap lettering
+at the display resolution so small strokes remain visible on a laptop screen.
+
+The screenshots below are native application captures. The [laptop overview](screenshots/fx-canvas/laptop.png) shows the inspector and shortcuts at 1366 × 699 and 70% zoom.
 
 ![FX Canvas](screenshots/fx-canvas/canvas.png)
 ![Inside a Meta FX](screenshots/fx-canvas/inside.png)
