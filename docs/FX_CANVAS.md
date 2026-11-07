@@ -126,6 +126,18 @@ selected name or cable endpoints and level. Selecting a node emphasizes its cabl
 selecting a cable highlights that path. The FX window draws its bitmap lettering
 at the display resolution so small strokes remain visible on a laptop screen.
 
+Cables and arrowheads also draw directly at the display resolution. Enlarging
+the window gives curves finer detail instead of enlarging their stair steps.
+Stroke width follows display density independently of canvas zoom; a narrow
+antialiased edge surrounds the solid stroke without filtering the rest of the
+interface. Direction arrows follow each curve, including returning connections.
+Clicking retains the existing generous selection distance, and wire box
+selection follows the same curve used for drawing. Meta FX chain cables and
+selection outlines use the same fine strokes.
+Quiet cables reuse their rendered image until the view or connections change.
+[Rendering validation and performance notes](validation/fx-canvas-strokes.md)
+describe the scaling checks and dense-graph benchmark.
+
 The screenshots below are native application captures. The [laptop overview](screenshots/fx-canvas/laptop.png) shows the inspector and shortcuts at 1366 × 699 and 70% zoom.
 
 ![FX Canvas](screenshots/fx-canvas/canvas.png)

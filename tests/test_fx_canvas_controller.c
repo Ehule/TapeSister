@@ -104,6 +104,7 @@ static void view_codec(void)
     assert(ts_matrix_layout_read(&read,"FxCanvas.Node9999","4,1,0,0")==-1);
 }
 #include "test_fx_canvas_edit_controls.inc"
+#include "test_fx_canvas_drawing.inc"
 static void canvas_gestures(uint32_t id)
 {
     MatrixWindow *w=&matrix_window;TsMatrixLayout *l=w->layout;
@@ -420,6 +421,7 @@ int main(int argc,char **argv)
     for(int i=0;i<fx_canvas.count;++i)if(fx_canvas.node[i].row.kind==4 && fx_canvas.node[i].row.tile==c.effect[meta].id)fx_select(&fx_canvas.node[i],0);
     if(argc>1)screenshot(argv[1]);
     laptop_legibility(getenv("TS_FX_PREVIEW"),c.effect[meta].id);
+    cable_drawing(getenv("TS_FX_PREVIEW"));
     if(argc>3) {
         static TsFramebuffer fb;ts_ui_render(&fb,&ui,&bank);
         SDL_Surface *s=SDL_CreateRGBSurfaceFrom(fb.pixels,640,400,32,640*4,0xff0000,0xff00,0xff,0);assert(s && !SDL_SaveBMP(s,argv[3]));SDL_FreeSurface(s);

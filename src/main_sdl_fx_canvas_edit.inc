@@ -119,17 +119,12 @@ static void fx_transform_motion(int x,int y)
         }
     }
 }
-static int fx_cable_crosses(int x,int y,int xx,int yy,SDL_Rect box)
+static int fx_cable_crosses(float x,float y,float xx,float yy,SDL_Rect box)
 {
-    int segments=matrix_window.layout->canvas_straight?1:32;
-    float bend=fmaxf(40,fabsf((float)xx-x)*.45f);int oldx=x,oldy=y;
-    for(int i=1;i<=segments;++i) {
-        float t=i/(float)segments,u=1-t;
-        int nx=segments==1?xx:(int)lrintf(u*u*u*x+3*u*u*t*(x+bend)+3*u*t*t*(xx-bend)+t*t*t*xx);
-        int ny=segments==1?yy:(int)lrintf(u*u*u*y+3*u*u*t*y+3*u*t*t*yy+t*t*t*yy);
-        int ax=oldx,ay=oldy,bx=nx,by=ny;
-        if(SDL_IntersectRectAndLine(&box,&ax,&ay,&bx,&by))return 1;
-        oldx=nx;oldy=ny;
+    FxCablePath path;fx_cable_path(&path,x,y,xx,yy);
+    for(int i=1;i<path.count;++i) {
+        FxPoint a=path.point[i-1],b=path.point[i];
+        if(fx_clip_segment(&a,&b,box.x,box.y,box.x+box.w,box.y+box.h))return 1;
     }
     return 0;
 }
@@ -168,8 +163,8 @@ static void fx_box_update(int x,int y,TsSamplePages *pages,TsInstrument *bank)
             TsSourceRoute route=mx_display_route(mx_route(n->row,pages,bank));
             for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)if(route.matrix_gain[d] && fx_canvas.dest[d]>=0) {
                 FxCanvasNode *to=&fx_canvas.node[fx_canvas.dest[d]];
-                if(fx_cable_crosses(fx_x(n->x+fx_node_w(n)),fx_y(n->y+fx_node_h(n)*.5f),
-                    fx_x(to->x),fx_y(to->y+fx_node_h(to)*(d==to->destination?.5f:.8f)),box) && !fx_select_wire(n->row,d,0)) {
+                if(fx_cable_crosses(fx_xf(n->x+fx_node_w(n)),fx_yf(n->y+fx_node_h(n)*.5f),
+                    fx_xf(to->x),fx_yf(to->y+fx_node_h(to)*(d==to->destination?.5f:.8f)),box) && !fx_select_wire(n->row,d,0)) {
                     fx_cancel_gesture();return;
                 }
             }

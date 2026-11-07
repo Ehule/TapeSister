@@ -197,7 +197,7 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
         FxCanvasNode *n=&fx_canvas.node[i];if(n->at<0)continue;TsSourceRoute r=mx_display_route(mx_route(n->row,pages,bank));
         for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)if(r.matrix_gain[d] && fx_canvas.dest[d]>=0) {
             FxCanvasNode *to=&fx_canvas.node[fx_canvas.dest[d]];
-            float distance=fx_cable(fx_x(n->x+fx_node_w(n)),fx_y(n->y+fx_node_h(n)*.5f),fx_x(to->x),fx_y(to->y+fx_node_h(to)*(d==to->destination?.5f:.8f)),0,0,x,y);
+            float distance=fx_cable(fx_xf(n->x+fx_node_w(n)),fx_yf(n->y+fx_node_h(n)*.5f),fx_xf(to->x),fx_yf(to->y+fx_node_h(to)*(d==to->destination?.5f:.8f)),0,0,x,y);
             if(distance<nearest){nearest=distance;found=i;destination=d;}}}
     if(found>=0) {
         if(!(modifiers&KMOD_SHIFT)){fx_clear_selection();fx_clear_wires();}

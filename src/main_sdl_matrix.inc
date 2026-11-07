@@ -33,6 +33,8 @@ static MatrixWindow matrix_window={.selected=-1,.rename=-1};
 static int mx_destination_available(int d);
 static void matrix_history_clear(void);
 static void fx_context_reset(void);
+static void fx_stroke_free(void);
+static void fx_cables_free(void);
 static void fx_cancel_gesture(void);
 static struct { uint32_t node; int scroll,category,page,focus; char filter[96],path[1024],status[192]; } sunvox_editor;
 static TsBrowser sunvox_files;
@@ -270,7 +272,7 @@ static void matrix_close(void)
     if(w->texture)SDL_DestroyTexture(w->texture);
     if(w->renderer)SDL_DestroyRenderer(w->renderer);
     if(w->window)SDL_DestroyWindow(w->window);
-    matrix_history_clear();free(w->pixels);memset(w,0,sizeof(*w));w->selected=w->rename=-1;
+    matrix_history_clear();fx_stroke_free();fx_cables_free();free(w->pixels);memset(w,0,sizeof(*w));w->selected=w->rename=-1;
 }
 static int matrix_show(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,
     TsSamplePages *pages,TsInstrument *bank,int track,int slot)
