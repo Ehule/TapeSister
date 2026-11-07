@@ -34,6 +34,7 @@ static int mx_destination_available(int d);
 static void matrix_history_clear(void);
 static void fx_context_reset(void);
 static struct { uint32_t node; int scroll,category,page,focus; char filter[96],path[1024],status[192]; } sunvox_editor;
+static TsBrowser sunvox_files;
 static void svfx_open(uint32_t id);
 static void svfx_close(void);
 static TsFxCanvasPosition *fx_position(MatrixRow row,int create);

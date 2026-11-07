@@ -9,6 +9,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
+#include <wchar.h>
+#endif
 static void near(float a,float b) { assert(fabsf(a-b)<1e-5f); }
 static void block(FILE *f,const char *id,const void *data,unsigned size) {
     unsigned char n[]={size&255,(size>>8)&255,(size>>16)&255,(size>>24)&255};
@@ -24,6 +27,80 @@ static TsSunVoxControls amplifier(void) {
     block(f,"SEND",NULL,0);assert(!fclose(f));
     TsSunVoxControls c;assert(ts_sunvox_import(&c,"sunvox-test.sunsynth"));
     remove("sunvox-test.sunsynth");return c;
+}
+static void imports(void) {
+    char error[192];TsSunVoxControls c=amplifier(),before=c;
+    assert(!ts_sunvox_import_ex(&c,"",error,sizeof(error)) && strstr(error,"Choose"));
+    assert(!ts_sunvox_import_ex(&c,NULL,error,sizeof(error)) && strstr(error,"Choose"));
+    assert(!ts_sunvox_import_ex(&c,"missing-sunvox-file.sunsynth",error,sizeof(error)) && strstr(error,"not found"));
+    FILE *f=fopen("quoted patch.sunsynth","wb");assert(f);
+    fwrite("SVOX\0\0\0\0\0\0\0\0\0\0\0\0",1,16,f);fclose(f);
+    assert(!ts_sunvox_import_ex(&c,"quoted patch.sunsynth",error,sizeof(error)) && strstr(error,"MetaModule"));
+    f=fopen("quoted patch.sunsynth","wb");assert(f);fwrite("SSYN\0\0\0\0",1,8,f);
+    block(f,"STYP","Amplifier",10);fclose(f); /* SEND is missing. */
+    assert(!ts_sunvox_import_ex(&c,"quoted patch.sunsynth",error,sizeof(error)) && strstr(error,"truncated"));
+    assert(!memcmp(&c,&before,sizeof(c)));
+    f=fopen("quoted patch.sunsynth","wb");assert(f);fwrite("SSYN\0\0\0\0",1,8,f);
+    block(f,"STYP","Amplifier",10);block(f,"SNAM","Quoted path",12);block(f,"SEND",NULL,0);fclose(f);
+    assert(ts_sunvox_import_ex(&c,"  \"quoted patch.sunsynth\"\r\n",error,sizeof(error)) && !*error);
+    assert(!strcmp(ts_sunvox_name(&c),"Quoted path"));
+    uint64_t key=c.patch;
+    for(int i=0;i<200;++i)assert(ts_sunvox_import(&c,"'quoted patch.sunsynth'") && c.patch==key);
+    remove("quoted patch.sunsynth");
+    /* SDL drop/clipboard paths are UTF-8, including on Windows. */
+    const char *unicode_path="sunvox-\xc3\xa9-\xe9\x9f\xb3.sunsynth";
+#ifdef _WIN32
+    f=_wfopen(L"sunvox-\u00e9-\u97f3.sunsynth",L"wb");
+#else
+    f=fopen(unicode_path,"wb");
+#endif
+    assert(f);fwrite("SSYN\0\0\0\0",1,8,f);block(f,"STYP","Amplifier",10);block(f,"SEND",NULL,0);fclose(f);
+    assert(ts_sunvox_import_ex(&c,unicode_path,error,sizeof(error)));
+#ifdef _WIN32
+    _wremove(L"sunvox-\u00e9-\u97f3.sunsynth");
+#else
+    remove(unicode_path);
+#endif
+    f=fopen("oversize.sunsynth","wb");assert(f);assert(!fseek(f,8*1024*1024,SEEK_SET));fputc(0,f);fclose(f);
+    assert(!ts_sunvox_import_ex(&c,"oversize.sunsynth",error,sizeof(error)) && strstr(error,"8 MiB"));
+    remove("oversize.sunsynth");
+    /* A partial project read must not poison a later file import of that key. */
+    const unsigned char patch[]="SSYN\0\0\0\0STYP\x0a\0\0\0Amplifier\0SNAM\x07\0\0\0Repair\0SEND\0\0\0\0";
+    size_t size=sizeof(patch)-1;uint64_t hash=UINT64_C(14695981039346656037);
+    for(size_t i=0;i<size;++i)hash=(hash^patch[i])*UINT64_C(1099511628211);
+    TsSunVoxControls partial;char value[32];
+    assert(ts_sunvox_read(&partial,"Format","1")==1);
+    snprintf(value,sizeof(value),"%016llx",(unsigned long long)hash);assert(ts_sunvox_read(&partial,"Patch",value)==1);
+    snprintf(value,sizeof(value),"%zu",size);assert(ts_sunvox_read(&partial,"Size",value)==1);
+    assert(ts_sunvox_read(&partial,"Data0","5353594e")==1);
+    f=fopen("repair.sunsynth","wb");assert(f);assert(fwrite(patch,1,size,f)==size);fclose(f);
+    assert(ts_sunvox_import_ex(&c,"repair.sunsynth",error,sizeof(error)) && c.patch==hash);
+    assert(!ts_sunvox_valid(&partial) && ts_sunvox_valid(&c));
+    TsSunVoxEngine *engine=ts_sunvox_new(&c,48000);assert(engine);ts_sunvox_free(engine);
+    remove("repair.sunsynth");
+    puts("Quoted paths, precise import failures, deduplication and incomplete-cache recovery passed.");
+}
+static void cache_limit(void) {
+    char error[192];TsSunVoxControls c=amplifier(),before=c;
+    size_t bytes=8*1024*1024;
+    unsigned char *padding=calloc(bytes,1);assert(padding);
+    int loaded=0;
+    for(int i=0;i<17;++i) {
+        FILE *f=fopen("cache-limit.sunsynth","wb");assert(f);
+        fwrite("SSYN\0\0\0\0",1,8,f);block(f,"STYP","Amplifier",10);
+        padding[0]=(unsigned char)i;
+        block(f,"JUNK",padding,(unsigned)(bytes-42));block(f,"SEND",NULL,0);fclose(f);
+        before=c;
+        if(!ts_sunvox_import_ex(&c,"cache-limit.sunsynth",error,sizeof(error))) {
+            assert(strstr(error,"128 MiB") && !memcmp(&c,&before,sizeof(c)));break;
+        }
+        ++loaded;
+        assert(ts_sunvox_import_ex(&c,"cache-limit.sunsynth",error,sizeof(error)));
+    }
+    assert(loaded>=15 && loaded<=16);free(padding);remove("cache-limit.sunsynth");
+    /* Existing imports and the factory bank still work at the cache limit. */
+    c=amplifier();assert(ts_sunvox_valid(&c));assert(ts_sunvox_select(&c,234));
+    puts("Actual cache exhaustion reports its limit and preserves existing patches.");
 }
 static void catalog(void) {
     assert(ts_sunvox_factory_count()==235);
@@ -144,5 +221,5 @@ int main(int argc,char **argv) {
     }
     if(argc>1 && !strcmp(argv[1],"write")){write_project();return 0;}
     if(argc>1 && !strcmp(argv[1],"read")){read_project();return 0;}
-    stereo_controls();catalog();matrix();write_project();read_project();return 0;
+    imports();stereo_controls();catalog();matrix();write_project();read_project();cache_limit();return 0;
 }

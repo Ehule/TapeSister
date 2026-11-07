@@ -3,12 +3,16 @@
 #define SVH_INLINES
 #include "sunvox_engine_helper.h"
 #include <algorithm>
+#include <cerrno>
 #include <climits>
 #include <cmath>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <vector>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 const char *g_app_config[] = { nullptr };
 const char *g_app_log = nullptr;
@@ -146,24 +150,63 @@ void ts_sunvox_default(TsSunVoxControls *c) {
     ts_sunvox_select(c,at);
 }
 int ts_sunvox_import(TsSunVoxControls *c,const char *path) {
-    FILE *f=fopen(path,"rb");if(!f)return 0;
-    if(fseek(f,0,SEEK_END)){fclose(f);return 0;}
+    return ts_sunvox_import_ex(c,path,nullptr,0);
+}
+int ts_sunvox_import_ex(TsSunVoxControls *c,const char *path,char *error,size_t error_size) {
+    if(error && error_size)error[0]=0;
+    auto fail=[&](const char *message)->int {
+        if(error && error_size)snprintf(error,error_size,"%s",message);
+        return 0;
+    };
+    if(!c)return fail("No SunVox effect selected.");
+    try {
+    std::string filename=path?path:"";
+    size_t first=filename.find_first_not_of(" \t\r\n"),last=filename.find_last_not_of(" \t\r\n");
+    filename=first==std::string::npos?"":filename.substr(first,last-first+1);
+    if(filename.size()>=2 && ((filename.front()=='\"' && filename.back()=='\"') ||
+        (filename.front()=='\'' && filename.back()=='\'')))filename=filename.substr(1,filename.size()-2);
+    if(filename.empty())return fail("Choose a .sunsynth file with BROWSE, paste its path, or drop it here.");
+#ifdef _WIN32
+    int count=MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,filename.c_str(),-1,nullptr,0);
+    if(!count)return fail("The patch path is not valid UTF-8. Choose the file again.");
+    std::vector<wchar_t> wide((size_t)count);
+    MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,filename.c_str(),-1,wide.data(),count);
+    FILE *f=_wfopen(wide.data(),L"rb");
+#else
+    FILE *f=fopen(filename.c_str(),"rb");
+#endif
+    if(!f)return fail(errno==ENOENT?"Patch file not found. Check the path or choose it with BROWSE.":
+        errno==EACCES?"Permission denied reading the patch file.":"Cannot open the patch file for reading.");
+    std::unique_ptr<FILE,decltype(&fclose)> file(f,fclose);
+    if(fseek(f,0,SEEK_END))return fail("Cannot read the patch file. Choose a regular .sunsynth file.");
     long bytes=ftell(f);rewind(f);
-    if(bytes<16 || (size_t)bytes>max_patch){fclose(f);return 0;}
+    if(bytes<0)return fail("Cannot determine the patch file size.");
+    if((size_t)bytes>max_patch)return fail("Patch exceeds the 8 MiB per-file limit.");
+    if(bytes<16)return fail("Patch is empty or truncated; expected a .sunsynth module.");
     std::vector<unsigned char> data((size_t)bytes);
-    bool ok=fread(data.data(),1,data.size(),f)==data.size();fclose(f);
-    if(!ok || !patch_shape(data.data(),data.size()))return 0;
+    if(fread(data.data(),1,data.size(),f)!=data.size())return fail("Could not read the complete patch file.");
+    if(!memcmp(data.data(),"SVOX",4))return fail("This is a .sunvox song. Export it as a .sunsynth MetaModule first.");
+    if(!patch_shape(data.data(),data.size()))return fail("Invalid or truncated .sunsynth module. Export it again from SunVox.");
     globals();std::lock_guard<std::mutex> guard(resources_mutex);
     uint64_t key=hash_bytes(data.data(),data.size());Resource *r=find_resource(key);
-    if(r && (!r->complete || r->size!=data.size() || memcmp(r->data,data.data(),data.size())))return 0;
+    if(r && (r->size!=data.size() || (r->complete && memcmp(r->data,data.data(),data.size()))))
+        return fail("Patch identity conflicts with a cached file. Save your project and restart TapeSister.");
     if(!r) {
-        if(imported_bytes+data.size()>max_imports)return 0;
+        if(imported_bytes+data.size()>max_imports)return fail("Imported patches reached the 128 MiB cache limit. Save your project and restart TapeSister.");
         std::unique_ptr<Resource> next(new Resource);r=next.get();
         r->key=key;r->name=patch_name(data.data(),data.size());r->category="Imported";
         r->size=data.size();r->owned=std::move(data);r->data=r->owned.data();r->complete=true;
-        imported_bytes+=r->size;resources.push_back(std::move(next));
+        resources.push_back(std::move(next));imported_bytes+=r->size;
+    } else if(!r->complete) {
+        // A failed project load may have reserved this key with partial bytes.
+        // A fully validated import repairs it without charging the cache twice.
+        r->name=patch_name(data.data(),data.size());r->owned=std::move(data);
+        r->data=r->owned.data();r->received=0;r->complete=true;
     }
     select_resource(c,r);return 1;
+    } catch(const std::bad_alloc &) {
+        return fail("Not enough memory to import this patch.");
+    }
 }
 const char *ts_sunvox_name(const TsSunVoxControls *c) {
     globals();std::lock_guard<std::mutex> guard(resources_mutex);

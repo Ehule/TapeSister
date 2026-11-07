@@ -20,8 +20,12 @@ F9 shows the same instance and connections in the Routing Matrix. Patch changes
 retain the instance ID and its external routes. Parameter edits support Matrix
 undo/redo. Multiple copies have separate audio inputs and DSP histories.
 
-To load a custom compound patch, drop a `.sunsynth` file onto the open SunVox
-browser, or paste its path into the field and select LOAD PATCH. Its bytes and
+To load a custom compound patch, select **BROWSE** to choose a `.sunsynth` file,
+drop it onto the open SunVox browser, or paste its path into the field and select
+**LOAD PATCH**. Windows **Copy as path** quotation marks are accepted. LOAD PATCH
+with an empty path opens the file chooser. In the chooser, double-click a folder
+or file, or select it and press Enter / OPEN. UP or Backspace goes to the parent
+folder; Esc / FACTORY PATCHES returns to the factory bank. Its bytes and
 controller overrides are embedded in the TapeSister project, so the original
 file is unnecessary when reopening or moving the project. A `.sunvox` song must
 first be packaged as a `.sunsynth` MetaModule; this host does not import songs or
@@ -57,6 +61,10 @@ The immutable imported-patch cache is process-local, capped at 128 MiB with an
 8 MiB limit per file. This retains data referenced by undo history and project
 snapshots. Restarting clears it. Factory patches are embedded separately. DSP
 working memory can be substantially larger than the patch file.
+Import errors identify missing/unreadable files, invalid modules, the per-file
+size limit, and an actually full cache separately. Failed imports retain the
+current patch and routes. Reimporting identical bytes reuses the cached resource;
+a valid file can repair a partial cache entry left by an interrupted project load.
 
 ## Source and validation
 

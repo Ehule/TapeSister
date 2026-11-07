@@ -25,6 +25,8 @@ const char *ts_sunvox_factory_category(int index);
 void ts_sunvox_default(TsSunVoxControls *c);
 int ts_sunvox_select(TsSunVoxControls *c,int index);
 int ts_sunvox_import(TsSunVoxControls *c,const char *path);
+/* UTF-8 paths; accepts quoted clipboard paths. Failure leaves c unchanged. */
+int ts_sunvox_import_ex(TsSunVoxControls *c,const char *path,char *error,size_t error_size);
 const char *ts_sunvox_name(const TsSunVoxControls *c);
 const char *ts_sunvox_category(const TsSunVoxControls *c);
 int ts_sunvox_valid(const TsSunVoxControls *c);

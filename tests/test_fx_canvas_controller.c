@@ -345,12 +345,48 @@ static void sunvox_browser(const char *dir)
     pointer(SDL_MOUSEBUTTONDOWN,790,210,SDL_BUTTON_RIGHT,1);pointer(SDL_MOUSEBUTTONUP,790,210,SDL_BUTTON_RIGHT,1);
     assert(w->controls.effect[slot].sunvox.value[0]==-1);
     click(80,800,1);assert(w->controls.effect[slot].sunvox.held);
+    uint64_t previous=w->controls.effect[slot].sunvox.patch;
+    int history=w->history_count;
+    sunvox_editor.path[0]=0;click(1100,760,1);
+    assert(sunvox_files.mode==TS_BROWSER_LOAD_SUNSYNTH);
+    assert(w->history_count==history && !strstr(sunvox_editor.status,"cache"));
+    key(SDLK_ESCAPE,0);assert(!sunvox_files.mode && sunvox_editor.node==id);
+    /* The custom chooser lists modules and folders, not songs or unrelated files. */
+    FILE *patch=fopen("browser patch.sunsynth","wb");assert(patch);
+    const char bytes[]="SSYN\0\0\0\0STYP\x0a\0\0\0Amplifier\0SNAM\x0f\0\0\0Browser import\0SEND\0\0\0\0";
+    assert(fwrite(bytes,1,sizeof(bytes)-1,patch)==sizeof(bytes)-1);fclose(patch);
+    patch=fopen("browser-song.sunvox","wb");assert(patch);fclose(patch);
+    click(900,760,1);assert(sunvox_files.mode==TS_BROWSER_LOAD_SUNSYNTH);
+    int found=-1;
+    for(int i=0;i<sunvox_files.entry_count;++i) {
+        assert(strcmp(sunvox_files.entries[i].name,"browser-song.sunvox"));
+        if(!strcmp(sunvox_files.entries[i].name,"browser patch.sunsynth"))found=i;
+    }
+    assert(found>=0);ts_browser_select(&sunvox_files,found);
+    frame=rendered_frame();SDL_FreeSurface(frame);
+    if(dir){char path[1024];snprintf(path,sizeof(path),"%s/sunvox-file-picker.bmp",dir);screenshot(path);}
+    key(SDLK_RETURN,0);assert(!sunvox_files.mode);
+    assert(!strcmp(ts_sunvox_name(&w->controls.effect[slot].sunvox),"Browser import"));
+    assert(w->controls.effect[slot].id==id && w->controls.row[TS_MATRIX_MOSAIC].matrix_gain[TS_MATRIX_EFFECT_BASE+slot]==1000);
+    uint64_t imported=w->controls.effect[slot].sunvox.patch;
+    for(int f=0;f<1024;++f){ts_matrix_effects_tick(&audio.sister.matrix_effects);ts_matrix_effects_process(&audio.sister.matrix_effects,slot,(TsStereoFrame){0},(TsStereoFrame){0},0);}
+    mx_collect_effects(0,&audio);
+    key(SDLK_z,KMOD_CTRL);assert(w->controls.effect[slot].sunvox.patch==previous);
+    for(int f=0;f<1024;++f){ts_matrix_effects_tick(&audio.sister.matrix_effects);ts_matrix_effects_process(&audio.sister.matrix_effects,slot,(TsStereoFrame){0},(TsStereoFrame){0},0);}
+    mx_collect_effects(0,&audio);
+    click(60,760,1);assert(sunvox_editor.focus==2);
+    assert(!SDL_SetClipboardText("\"browser patch.sunsynth\""));key(SDLK_v,KMOD_CTRL);key(SDLK_RETURN,0);
+    assert(w->controls.effect[slot].sunvox.patch==imported);
+    snprintf(sunvox_editor.path,sizeof(sunvox_editor.path),"missing-browser-patch.sunsynth");
+    click(1100,760,1);assert(strstr(sunvox_editor.status,"not found"));
+    assert(w->controls.effect[slot].sunvox.patch==imported && w->controls.effect[slot].id==id);
+    remove("browser patch.sunsynth");remove("browser-song.sunvox");
     click(1100,30,1);assert(!sunvox_editor.node && w->canvas);
     fx_build(&pages,&bank);assert(instance(id));
     key(SDLK_F9,0);assert(!w->canvas && w->visible);
     w->effect_open=id;click(480,707,1);assert(sunvox_editor.node==id);
     key(SDLK_ESCAPE,0);assert(!sunvox_editor.node && w->visible);
-    puts("SunVox browser search, patch replacement, controls, undo/redo and shared Matrix instance passed.");
+    puts("SunVox factory/file browsers, quoted-path import, failure retention, controls and undo/redo passed.");
 }
 
 int main(int argc,char **argv)
