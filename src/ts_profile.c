@@ -45,7 +45,12 @@ void ts_profile_lane_begin(int audio)
         memset(p->value, 0, sizeof(p->value)); p->epoch = next; p->blocks = 0;
     }
     int active = ts_profile_enabled();
-    if (audio) ts_profile_audio_active = active && (p->blocks++ % 32u == 0u);
+    if (audio) {
+        /* One sample per group, rotating through every phase in 1024 blocks.
+           A fixed phase can miss every expensive alternating render quantum. */
+        unsigned block = p->blocks++;
+        ts_profile_audio_active = active && ((block & 31u) == ((block >> 5) & 31u));
+    }
     else ts_profile_ui_active = active;
 }
 void ts_profile_record(TsProfileId id, uint64_t start)
@@ -113,7 +118,7 @@ void ts_profile_report(char *text, size_t capacity)
     size_t used = (size_t)snprintf(text, capacity,
         "Performance profile: %s; %.1f s\n"
         "Inclusive wall timings; nested rows overlap. Present includes driver/VSync wait.\n"
-        "Audio children sample 1/32 blocks: estimated totals/rates, observed peaks.\n"
+        "Audio children sample 1/32 blocks (rotating phase): estimated totals/rates, observed peaks.\n"
         "Subsystem | avg ms | peak ms | calls/s | ms/s | %% parent\n",
         s.enabled ? "ON" : "OFF (enable PROFILE in Audio Health)", s.seconds);
     for (int i = 0; i < TS_PROF_COUNT && used < capacity; ++i) {

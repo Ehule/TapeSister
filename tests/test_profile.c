@@ -31,6 +31,21 @@ int main(void)
     assert(!s.value[TS_PROF_AUDIO].calls && !s.value[TS_PROF_RENDER].calls);
     ts_profile_lane_begin(0);ui=ts_profile_begin(TS_PROF_UI);now+=400;ts_profile_end(TS_PROF_UI,ui);ts_profile_lane_end(0);
     ts_profile_snapshot(&s);assert(s.value[TS_PROF_UI].ticks==400 && !s.value[TS_PROF_AUDIO].calls);
+    /* Periodic render work must be represented at every phase, including the
+       opposite parity to the first callback. Check weighted totals and peaks. */
+    for (unsigned phase=0;phase<32;++phase) {
+        ts_profile_reset();
+        for (unsigned block=0;block<1024;++block) {
+            ts_profile_lane_begin(1);
+            uint64_t start=ts_profile_begin(TS_PROF_PRISM);
+            now += (block%32==phase) ? 500 : 10;
+            ts_profile_end(TS_PROF_PRISM,start);ts_profile_lane_end(1);
+        }
+        ts_profile_snapshot(&s);
+        assert(s.value[TS_PROF_PRISM].calls==1024);
+        assert(s.value[TS_PROF_PRISM].ticks==32*(500+31*10));
+        assert(s.value[TS_PROF_PRISM].peak==500);
+    }
     char report[8192];ts_profile_report(report,sizeof(report));assert(strstr(report,"avg ms") && strstr(report,"Present / swap"));
     assert(strstr(report,"Matrix effects DSP"));
     char tiny[8];memset(tiny,'!',sizeof(tiny));ts_profile_report(tiny,sizeof(tiny));assert(tiny[7]==0);

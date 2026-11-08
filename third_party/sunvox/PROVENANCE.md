@@ -20,7 +20,13 @@ No precompiled library or standalone SunVox application is included.
 
 CMake verifies this archive, compiles the headless float32 engine and decoders,
 and embeds the patches into the application. The host is `src/ts_sunvox_fx.cpp`;
-upstream source files are not patched. Main-thread loading and independent engines
+the extracted build sources receive two bounded allocation changes from
+`tools/prepare_sunvox_realtime.py`: event storage is reserved during engine
+initialization (including nested engines), and Reverb delay capacity is reserved
+for the legal room-size/seed range during module setup. The pinned archive is
+unchanged. Logical delay lengths, processing equations and event order are
+unchanged; this trades additional per-instance memory for fewer callback allocations.
+Other modules and oversized internal event bursts can still allocate. Main-thread loading and independent engines
 allow multiple Matrix instances with separate input, controls and DSP history.
 
 The engine and SunDog source notices are MIT. The SDK's additional attribution
