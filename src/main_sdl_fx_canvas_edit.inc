@@ -104,6 +104,12 @@ static void fx_transform_motion(int x,int y)
 {
     float dx=x-fx_canvas.pointer_x,dy=y-fx_canvas.pointer_y;
     float factor=powf(2.f,SDL_clamp((dx-dy)/200.f,-8.f,8.f));
+    float move_x=dx/fx_canvas.gesture_zoom,move_y=dy/fx_canvas.gesture_zoom;
+    if(matrix_window.layout->canvas_snap && !(SDL_GetModState()&KMOD_ALT) && fx_canvas.move_count) {
+        /* Snap the group anchor; retain spacing between selected modules. */
+        move_x=fx_snap(fx_canvas.move[0].x+move_x)-fx_canvas.move[0].x;
+        move_y=fx_snap(fx_canvas.move[0].y+move_y)-fx_canvas.move[0].y;
+    }
     for(int i=0;i<fx_canvas.move_count;++i) {
         const TsFxCanvasPosition *from=&fx_canvas.move[i];
         TsFxCanvasPosition *p=fx_position((MatrixRow){.kind=from->kind,.tile=from->id,.index=(int)from->id},0);
@@ -114,8 +120,8 @@ static void fx_transform_motion(int x,int y)
             p->x=from->x+FX_NODE_W*(old-p->scale)*.5f;
             p->y=from->y+FX_NODE_H*(old-p->scale)*.5f;
         } else {
-            p->x=SDL_clamp(from->x+dx/fx_canvas.gesture_zoom,-100000.f,100000.f);
-            p->y=SDL_clamp(from->y+dy/fx_canvas.gesture_zoom,-100000.f,100000.f);
+            p->x=SDL_clamp(from->x+move_x,-100000.f,100000.f);
+            p->y=SDL_clamp(from->y+move_y,-100000.f,100000.f);
         }
     }
 }
@@ -273,8 +279,13 @@ static void fx_paste(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,Ts
         if(!live){s->layout.canvas[i]=s->layout.canvas[--s->layout.canvas_count];memset(&s->layout.canvas[s->layout.canvas_count],0,sizeof(s->layout.canvas[0]));}
     }
     if(s->layout.canvas_count+fx_clipboard.count>TS_FX_CANVAS_POSITIONS){free(s);snprintf(w->status,sizeof(w->status),"NOTHING PASTED: CANVAS POSITION STORAGE IS FULL.");return;}
+    float dx=40*(fx_clipboard.pastes+1),dy=dx;
+    if(s->layout.canvas_snap && !(SDL_GetModState()&KMOD_ALT)) {
+        dx=fx_snap(fx_clipboard.position[0].x+dx)-fx_clipboard.position[0].x;
+        dy=fx_snap(fx_clipboard.position[0].y+dy)-fx_clipboard.position[0].y;
+    }
     for(int i=0;i<fx_clipboard.count;++i) {
-        TsFxCanvasPosition p=fx_clipboard.position[i];p.id=ids[i];p.x=SDL_clamp(p.x+40*(fx_clipboard.pastes+1),-100000.f,100000.f);p.y=SDL_clamp(p.y+40*(fx_clipboard.pastes+1),-100000.f,100000.f);
+        TsFxCanvasPosition p=fx_clipboard.position[i];p.id=ids[i];p.x=SDL_clamp(p.x+dx,-100000.f,100000.f);p.y=SDL_clamp(p.y+dy,-100000.f,100000.f);
         s->layout.canvas[s->layout.canvas_count++]=p;
         mx_append_port(&s->layout,TS_MATRIX_EFFECT_BASE+slots[i]);
         if(fx_clipboard.effect[i].type==TS_MATRIX_FX_COMPRESSOR)mx_append_port(&s->layout,TS_MATRIX_EFFECT_SC_BASE+slots[i]);

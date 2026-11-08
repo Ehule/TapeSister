@@ -88,8 +88,27 @@ static int test_release_and_pathological_input(void)
     return 1;
 }
 
+static int test_live_controls_preserve_audio(void)
+{
+    TsSisterLimiter l;ts_sister_limiter_init(&l);CHECK(ts_sister_limiter_reconfigure(&l,48000));
+    for(int i=0;i<1000;++i)ts_sister_limiter_process(&l,(TsStereoFrame){.2f,-.1f},NULL,NULL);
+    TsStereoFrame *storage=l.delay;uint64_t frame=l.processed_frames;
+    const float lookahead[]={10,.1f,5,1};
+    for(int j=0;j<4;++j) {
+        ts_sister_limiter_set_live_controls(&l,1,-6,lookahead[j],20+j*150);
+        CHECK(l.delay==storage && l.processed_frames==frame);
+        for(int i=0;i<1200;++i) {
+            TsStereoFrame out=ts_sister_limiter_process(&l,(TsStereoFrame){.2f,-.1f},NULL,NULL);
+            CHECK(close_enough(out.l,.2f,.00001f) && close_enough(out.r,-.1f,.00001f));
+        }
+        CHECK(!l.delay_ramp && l.live_delay==l.delay_frames);frame=l.processed_frames;
+    }
+    ts_sister_limiter_free(&l);return 1;
+}
+
 int main(void)
 {
+    if (!test_live_controls_preserve_audio()) return 1;
     if (!test_constant_latency_and_bypass()) return 1;
     if (!test_ceiling_and_stereo_link()) return 1;
     if (!test_release_and_pathological_input()) return 1;

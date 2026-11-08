@@ -22,7 +22,9 @@ enum {
 
 typedef struct {
     TsStereoFrame *delay;
-    size_t delay_frames;
+    size_t delay_frames, delay_capacity;
+    double live_delay, delay_step;
+    uint32_t delay_ramp;
     size_t delay_position;
     uint32_t sample_rate;
     uint64_t processed_frames;
@@ -48,6 +50,9 @@ int ts_sister_limiter_reconfigure(TsSisterLimiter *limiter,
 void ts_sister_limiter_set_controls(TsSisterLimiter *limiter, int enabled,
                                     float ceiling_db, float lookahead_ms,
                                     float release_ms);
+/* Live controls retain delay history; lookahead slews without allocation. */
+void ts_sister_limiter_set_live_controls(TsSisterLimiter *, int enabled,
+    float ceiling_db, float lookahead_ms, float release_ms);
 void ts_sister_limiter_set_enabled(TsSisterLimiter *limiter, int enabled);
 float ts_sister_limiter_gain_reduction_db(const TsSisterLimiter *limiter);
 TsStereoFrame ts_sister_limiter_process(TsSisterLimiter *limiter,

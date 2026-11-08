@@ -105,9 +105,10 @@ static void view_codec(void)
 }
 #include "test_fx_canvas_edit_controls.inc"
 #include "test_fx_canvas_drawing.inc"
+#include "test_fx_canvas_inspector.inc"
 static void canvas_gestures(uint32_t id)
 {
-    MatrixWindow *w=&matrix_window;TsMatrixLayout *l=w->layout;
+    MatrixWindow *w=&matrix_window;TsMatrixLayout *l=w->layout;l->canvas_snap=0;
     fx_build(&pages,&bank);FxCanvasNode *n=instance(id);assert(n);MatrixRow row=n->row;
     /* Slider release must work even outside its control or graph. */
     fx_select(n,0);w->effect_open=id;int slot=mx_effect_slot();assert(slot>=0);
@@ -266,7 +267,8 @@ static void disconnect_main_prism(void)
         key(SDLK_z,KMOD_CTRL);
         assert(!memcmp(&patch,&audio.sister.matrix.controls,sizeof(patch)));
     }
-    click(1000,82,1);
+    click(1100,82,1);assert(fx_canvas.confirm_clear);
+    click(800,458,1);assert(!fx_canvas.confirm_clear);
     for(int i=0;i<TS_MATRIX_ROWS;++i)for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)
         assert(!w->controls.row[i].matrix_gain[d]);
     assert(settled_output()==0);
@@ -479,7 +481,7 @@ int main(int argc,char **argv)
     SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=SDL_GetWindowID(main_window);e.button.button=SDL_BUTTON_LEFT;
     e.button.x=(TS_MOSAIC_FX_X+10)*2;e.button.y=(TS_MOSAIC_FX_Y+5)*2;assert(event(&e));assert(matrix_window.visible && matrix_window.canvas);
     SDL_SetWindowSize(matrix_window.window,1001,701);fx_paint(&audio,&pages,&bank);
-    edit_controls();canvas_gestures(c.effect[dist].id);disconnect_main_prism();routing_preferences();sunvox_browser(getenv("TS_FX_PREVIEW"));
+    inspector_controls(getenv("TS_FX_PREVIEW"));edit_controls();canvas_gestures(c.effect[dist].id);disconnect_main_prism();routing_preferences();sunvox_browser(getenv("TS_FX_PREVIEW"));
     matrix_close();meta_fx_close();ts_sister_runtime_free(&audio.sister);ts_sample_pages_free(&pages);ts_instrument_free(&bank);SDL_DestroyWindow(main_window);SDL_Quit();
     puts("FX Canvas controller passed, including single-cable disconnect, alternative path, silent clear, undo and project recall.");return 0;
 }

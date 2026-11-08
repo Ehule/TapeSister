@@ -6,6 +6,10 @@ enum { MATRIX_W=1280,MATRIX_H=840,MATRIX_X=264,MATRIX_Y=176,
 typedef struct {int kind,index,order;TsTileId tile;char name[48];} MatrixRow;
 typedef struct MatrixSnapshot MatrixSnapshot;
 typedef struct {
+    TsSisterParameters parameters;TsMasterEqControls eq;TsEqMorph morph;
+    int limiter_enabled;float ceiling,lookahead,release;
+} FxProcessorState;
+typedef struct {
     SDL_Window *window;SDL_Renderer *renderer;SDL_Texture *texture;uint32_t *pixels;
     int pixel_w,pixel_h;
     Uint32 id,presented;int visible,dirty,scroll,column,filter,selected,destination,drag,canvas;
@@ -14,7 +18,7 @@ typedef struct {
     TsMosaic *mosaic;uint64_t epoch;
     MatrixSnapshot *history[32],*pending,*original,*edited;int history_count,history_cursor,original_active,history_skip;
     TsPalette palette;
-    TsMatrixControls controls;TsSourceRoute route;
+    TsMatrixControls controls;TsSourceRoute route;FxProcessorState fixed;unsigned sample_rate;
     uint32_t effect_open;int effect_menu;float effect_gr,effect_progress;
     TsCompressorControls compressor;int compressor_open;float compressor_gr,compressor_key;
     TsRouterControls legacy;TsSpatialControls array;TsSpeakerSetup speakers;
@@ -30,6 +34,7 @@ typedef struct {
     uint64_t activity_frame;
 } MatrixWindow;
 static MatrixWindow matrix_window={.selected=-1,.rename=-1};
+#include "main_sdl_fx_processors.inc"
 static int mx_destination_available(int d);
 static void matrix_history_clear(void);
 static void fx_context_reset(void);
@@ -298,6 +303,7 @@ static int matrix_show(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,
     if(w->mosaic!=ui->mosaic || (ui->mosaic && w->epoch!=ui->mosaic->epoch))matrix_history_clear();
     w->mosaic=ui->mosaic;w->epoch=ui->mosaic?ui->mosaic->epoch:0;
     if(device)SDL_LockAudioDevice(device);
+    mx_processor_read(audio,&w->fixed);
     w->controls=audio->sister.matrix.controls;w->legacy=audio->sister.router.controls;w->array=audio->sister.spatial.controls;w->speakers=audio->speakers;
     w->output_range=audio->output_range;w->input_range=audio->input_range;w->outputs=audio->output_device_channels;
     w->inputs=atomic_load(&audio->sister.insert.matrix_channels);
@@ -703,6 +709,7 @@ static void mx_capture_activity(SDL_AudioDeviceID device,AudioState *audio,TsSam
     MatrixRow old_rows[MATRIX_VISIBLE];float old_source[MATRIX_VISIBLE],old_send[MATRIX_VISIBLE];
     memcpy(old_rows,w->activity_rows,sizeof(old_rows));memcpy(old_source,w->row_source,sizeof(old_source));memcpy(old_send,w->row_send,sizeof(old_send));
     if(device)SDL_LockAudioDevice(device);
+    mx_processor_read(audio,&w->fixed);
     w->controls=audio->sister.matrix.controls;w->legacy=audio->sister.router.controls;w->array=audio->sister.spatial.controls;w->speakers=audio->speakers;
     w->output_range=audio->output_range;w->input_range=audio->input_range;w->outputs=audio->output_device_channels;memcpy(w->peaks,audio->sister.matrix.output_peak,sizeof(w->peaks));
     int fresh=w->activity_ready && audio->sister.processed_frames!=w->activity_frame;
@@ -862,7 +869,7 @@ static int matrix_event_inner(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID de
     }
     if(!w->visible)return 1;
     if(sunvox_editor.node)return svfx_event(e,device,audio,ui,pages,bank);
-    if(w->canvas && fx_modal() && (e->type==SDL_KEYDOWN || e->type==SDL_KEYUP))return fx_event(e,main,device,audio,ui,pages,bank,0,0,0);
+    if(w->canvas && (fx_modal() || fx_canvas.confirm_clear || fx_canvas.popup) && (e->type==SDL_KEYDOWN || e->type==SDL_KEYUP))return fx_event(e,main,device,audio,ui,pages,bank,0,0,0);
     if(w->rename>=0) {
         if(e->type==SDL_TEXTINPUT || (e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_BACKSPACE))
             w->rename_blink_started=SDL_GetTicks();
@@ -1046,7 +1053,7 @@ static int matrix_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,A
     w->io_config=&ui->config;
     w->layout=&audio->sister.matrix_layout;
     int own=w->visible && event_window_id(e)==w->id;
-    int edit=own && ((sunvox_editor.node && (e->type==SDL_DROPFILE || (e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_RETURN))) || e->type==SDL_MOUSEBUTTONDOWN || e->type==SDL_MOUSEWHEEL ||
+    int edit=own && ((w->canvas && fx_canvas.popup && e->type==SDL_KEYDOWN && (e->key.keysym.sym==SDLK_RETURN || e->key.keysym.sym==SDLK_KP_ENTER)) || (sunvox_editor.node && (e->type==SDL_DROPFILE || (e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_RETURN))) || e->type==SDL_MOUSEBUTTONDOWN || e->type==SDL_MOUSEWHEEL ||
         (w->canvas && e->type==SDL_KEYDOWN && (fx_canvas_key(e->key.keysym.sym) || ((e->key.keysym.mod&KMOD_CTRL) && e->key.keysym.sym==SDLK_v))) ||
         (w->rename>=0 && e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_RETURN) ||
         (w->rename<0 && e->type==SDL_KEYDOWN && mx_layout_key(e)));
