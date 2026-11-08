@@ -35,6 +35,7 @@ int ts_matrix_layout_valid(const TsMatrixLayout *l)
     for(int i=0;i<l->canvas_count;++i) {
         const TsFxCanvasPosition *p=&l->canvas[i];
         if(p->kind<0 || p->kind>5 || !isfinite(p->x) || !isfinite(p->y) ||
+           !isfinite(p->scale) || (p->scale!=0 && (p->scale<.25f || p->scale>4.f)) ||
            fabsf(p->x)>1000000 || fabsf(p->y)>1000000 ||
            (p->kind==0 && p->id>=TS_TRACKER_LANES) ||
            (p->kind==2 && p->id>=TS_MATRIX_ROWS) ||
@@ -64,7 +65,9 @@ int ts_matrix_layout_write(FILE *f,const TsMatrixLayout *l)
     if(fprintf(f,"FxCanvas.Straight=%d\n",l->canvas_straight)<0)return 0;
     for(int i=0;i<l->canvas_count;++i) {
         const TsFxCanvasPosition *p=&l->canvas[i];
-        if(fprintf(f,"FxCanvas.Node%d=%d,%" PRIu64 ",%.9g,%.9g\n",i,p->kind,p->id,p->x,p->y)<0)return 0;
+        if(fprintf(f,"FxCanvas.Node%d=%d,%" PRIu64 ",%.9g,%.9g",i,p->kind,p->id,p->x,p->y)<0)return 0;
+        if(p->scale!=0 && fprintf(f,",%.9g",p->scale)<0)return 0;
+        if(fputc('\n',f)==EOF)return 0;
     }
     for(int i=0;i<TS_MATRIX_DESTINATIONS;++i)
         if(fprintf(f,"MatrixLayout.Column%d=%u\n",i,(unsigned)l->column[i])<0)return 0;
@@ -95,12 +98,13 @@ int ts_matrix_layout_read(TsMatrixLayout *l,const char *key,const char *value)
         l->canvas_x=x;l->canvas_y=y;l->canvas_zoom=z;l->canvas_view=1;return 1;
     }
     if(!strncmp(key,"FxCanvas.Node",13)) {
-        s=key+13;float x,y;char extra;
+        s=key+13;float x,y,scale=0;char extra;int end=0;
         if(!layout_number(&s,TS_FX_CANVAS_POSITIONS-1,&i) || *s || i!=(uint64_t)l->canvas_count ||
            !layout_number(&value,5,&kind) || *value++!=',' || !layout_number(&value,UINT64_MAX,&id) ||
-           *value++!=',' || sscanf(value,"%f,%f%c",&x,&y,&extra)!=2 || !isfinite(x) || !isfinite(y) ||
+           *value++!=',' || sscanf(value,"%f,%f%n",&x,&y,&end)!=2 || !isfinite(x) || !isfinite(y) ||
            fabsf(x)>1000000 || fabsf(y)>1000000)return -1;
-        l->canvas[l->canvas_count++]=(TsFxCanvasPosition){id,(int)kind,x,y};return 1;
+        if(value[end] && (sscanf(value+end,",%f%c",&scale,&extra)!=1 || !isfinite(scale) || scale<.25f || scale>4.f))return -1;
+        l->canvas[l->canvas_count++]=(TsFxCanvasPosition){id,(int)kind,x,y,scale};return 1;
     }
     if(!strncmp(key,"MatrixLayout.Column",19)) {
         s=key+19;

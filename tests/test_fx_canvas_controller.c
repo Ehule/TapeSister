@@ -103,6 +103,8 @@ static void view_codec(void)
     assert(ts_matrix_layout_read(&read,"FxCanvas.View","0,0,0")==-1);
     assert(ts_matrix_layout_read(&read,"FxCanvas.Node9999","4,1,0,0")==-1);
 }
+#include "test_fx_canvas_edit_controls.inc"
+#include "test_fx_canvas_drawing.inc"
 static void canvas_gestures(uint32_t id)
 {
     MatrixWindow *w=&matrix_window;TsMatrixLayout *l=w->layout;
@@ -419,6 +421,7 @@ int main(int argc,char **argv)
     for(int i=0;i<fx_canvas.count;++i)if(fx_canvas.node[i].row.kind==4 && fx_canvas.node[i].row.tile==c.effect[meta].id)fx_select(&fx_canvas.node[i],0);
     if(argc>1)screenshot(argv[1]);
     laptop_legibility(getenv("TS_FX_PREVIEW"),c.effect[meta].id);
+    cable_drawing(getenv("TS_FX_PREVIEW"));
     if(argc>3) {
         static TsFramebuffer fb;ts_ui_render(&fb,&ui,&bank);
         SDL_Surface *s=SDL_CreateRGBSurfaceFrom(fb.pixels,640,400,32,640*4,0xff0000,0xff00,0xff,0);assert(s && !SDL_SaveBMP(s,argv[3]));SDL_FreeSurface(s);
@@ -444,7 +447,7 @@ int main(int argc,char **argv)
     SDL_Surface *undone=rendered_frame();
     assert(fx_canvas.wire<0 && !audio.sister.matrix.controls.row[TS_MATRIX_MOSAIC].matrix_gain[TS_MATRIX_EFFECT_BASE+comp]);
     SDL_FreeSurface(undone);key(SDLK_y,KMOD_CTRL);
-    fx_canvas.source=source->row;fx_canvas.wire=0;fx_canvas.destination=TS_MATRIX_EFFECT_BASE+comp;
+    fx_clear_wires();fx_select_wire(source->row,TS_MATRIX_EFFECT_BASE+comp,0);
     key(SDLK_DELETE,0);assert(!audio.sister.matrix.controls.row[TS_MATRIX_MOSAIC].matrix_gain[TS_MATRIX_EFFECT_BASE+comp]);
     key(SDLK_z,KMOD_CTRL);assert(audio.sister.matrix.controls.row[TS_MATRIX_MOSAIC].matrix_gain[TS_MATRIX_EFFECT_BASE+comp]==1000);
     /* A self-loop is rejected by the shared validator, not silently delayed. */
@@ -470,7 +473,7 @@ int main(int argc,char **argv)
     SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=SDL_GetWindowID(main_window);e.button.button=SDL_BUTTON_LEFT;
     e.button.x=(TS_MOSAIC_FX_X+10)*2;e.button.y=(TS_MOSAIC_FX_Y+5)*2;assert(event(&e));assert(matrix_window.visible && matrix_window.canvas);
     SDL_SetWindowSize(matrix_window.window,1001,701);fx_paint(&audio,&pages,&bank);
-    canvas_gestures(c.effect[dist].id);disconnect_main_prism();routing_preferences();sunvox_browser(getenv("TS_FX_PREVIEW"));
+    edit_controls();canvas_gestures(c.effect[dist].id);disconnect_main_prism();routing_preferences();sunvox_browser(getenv("TS_FX_PREVIEW"));
     matrix_close();meta_fx_close();ts_sister_runtime_free(&audio.sister);ts_sample_pages_free(&pages);ts_instrument_free(&bank);SDL_DestroyWindow(main_window);SDL_Quit();
     puts("FX Canvas controller passed, including single-cable disconnect, alternative path, silent clear, undo and project recall.");return 0;
 }

@@ -19,8 +19,12 @@ Inherited track-to-tile routing remains inspectable in the Matrix.
   for parallel branches and reconnect their outputs to combine them.
 - Purple ports/cables are compressor sidechains. Existing delayed feedback
   edges are amber. The Matrix's cycle validation and feedback policy apply.
-- Click a cable, then wheel to change its level (Shift: fine). Delete disconnects
-  the selected cable. Click empty space to release cable selection before zooming.
+- Click a cable to select it. **Plain wheel always zooms the outer canvas**,
+  including over the inspector; it never changes a cable gain. **Shift+wheel**
+  adjusts selected cables together by 0.5 dB per step. The group stops at the
+  first gain limit to preserve its balance (subject to integer gain rounding).
+  Delayed feedback cables retain their lower safety ceiling. X or Delete removes
+  only the explicitly selected cables and added effects.
 - Select an added effect to reveal the right-hand inspector and its full
   parameter controls below the canvas. All four Meta FX macros are available in
   the inspector. Sliders release on mouse-up, including outside their controls. Filter also opens its complete editor on double-click. Fixed processors
@@ -28,7 +32,13 @@ Inherited track-to-tile routing remains inspectable in the Matrix.
 - Drag selected nodes to organize them together. Middle-drag pans; wheel zooms
   around the pointer. **Z** frames selected nodes; **Shift+Z**, FIT or Home frames
   the whole graph. Fit includes all endpoints and can zoom below 20%.
-  Layout, pan, zoom and cable style save with the project.
+  **G** moves the selected modules with the pointer; **S** resizes each card
+  around its own center, including its lettering. Move right/up to enlarge,
+  left/down to shrink (25–400% of default size). Click or Enter confirms; Escape
+  or right-click cancels. Losing focus or leaving the canvas cancels an active
+  grab/resize. Ports and cables follow the resized geometry.
+  Layout, card sizes, pan, zoom and cable style save with the project. Older
+  projects without card sizes load at the default size.
   View edits are undoable and never reset processor histories. The project stores processor and I/O positions, plus up to 256 manually
   positioned track, tile or card sources. Additional sources occupy their own lane. Positions
   use stable effect identities so a replacement instance cannot inherit an old
@@ -52,22 +62,37 @@ editing gestures apply to the FX workspace; Z, Shift+Z and M follow Mosaic.
 | Double-click empty space | Effect picker; choosing a type places it at that world position |
 | Right-click empty space, + EFFECT or Ctrl+N | Open the effect picker; Escape cancels |
 | Left-drag empty space | Box-select intersecting modules |
-| Ctrl+click | Add/remove a module from the selection |
-| Ctrl/Shift + box-select | Extend the selection |
+| Shift+click | Add/remove a module or cable; mixed selections are supported |
+| Ctrl+click a module | Also add/remove that module |
+| Ctrl+left-drag empty canvas | Select cables crossing the box, including spline bends |
+| Shift+box-select / Ctrl+Shift+box-select | Extend module / cable selection |
 | Ctrl+A | Select all visible nodes, including endpoints |
-| Drag a selected module | Move the selection together |
+| Drag a selected module | Move the selection together; release to place, Escape to cancel |
+| G / S | Grab / resize selected modules; click or Enter confirms, Escape cancels |
+| Ctrl+C / Ctrl+V | Copy / paste independent effects with settings and internal wiring |
 | Shift+drag a module onto another | Connect/disconnect that route using Matrix validation |
 | Drag output port to input port | Connect; the lower purple port receives sidechain audio |
-| Middle-drag / wheel | Pan / zoom around the pointer |
+| Middle-drag / wheel | Pan / zoom around the pointer, regardless of cable selection |
+| Shift+wheel | Adjust all selected cables by the same dB amount within gain limits |
 | Z / Shift+Z | Frame selection / frame all |
 | M | Bypass selected added effects; gray blocks remain patched |
-| Delete / Backspace | Remove selected added effects and their incoming/outgoing routes, or disconnect a selected cable |
+| X / Delete / Backspace | Remove explicitly selected added effects and/or cables; fixed buses and endpoints are protected |
 | Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z | Shared Matrix undo/redo |
 | Double-click Meta FX | Enter its chain; Escape or BACK TO FX returns |
 
 Delete protects fixed buses and hardware endpoints. Their selection still supports
-positioning and framing. Fixed processors retain their existing power controls.
+positioning, resizing and framing. Cable selection does not select either endpoint.
+Fixed processors retain their existing power controls.
 Generators, sample editing and pattern operations remain in their source editors.
+
+Copy/paste includes added effects, Meta FX racks, and SunVox instances. The copies
+have new identities and independent DSP state, with the same saved parameters,
+card sizes, internal audio/sidechain routes and explicitly delayed feedback edges.
+Connections to anything outside the copied group are omitted. Fixed processors,
+buses and hardware endpoints are not copied. Pasted modules are selected and
+slightly offset; press G to place the branch. The whole paste or mixed deletion
+is one undo step. If there is insufficient capacity, nothing is pasted. A copied
+feedback branch requires Matrix feedback to be enabled in the destination project.
 
 ## Project routing and fresh sessions
 
@@ -100,6 +125,18 @@ Node titles wrap across two lines when space permits. The inspector shows the fu
 selected name or cable endpoints and level. Selecting a node emphasizes its cables;
 selecting a cable highlights that path. The FX window draws its bitmap lettering
 at the display resolution so small strokes remain visible on a laptop screen.
+
+Cables and arrowheads also draw directly at the display resolution. Enlarging
+the window gives curves finer detail instead of enlarging their stair steps.
+Stroke width follows display density independently of canvas zoom; a narrow
+antialiased edge surrounds the solid stroke without filtering the rest of the
+interface. Direction arrows follow each curve, including returning connections.
+Clicking retains the existing generous selection distance, and wire box
+selection follows the same curve used for drawing. Meta FX chain cables and
+selection outlines use the same fine strokes.
+Quiet cables reuse their rendered image until the view or connections change.
+[Rendering validation and performance notes](validation/fx-canvas-strokes.md)
+describe the scaling checks and dense-graph benchmark.
 
 The screenshots below are native application captures. The [laptop overview](screenshots/fx-canvas/laptop.png) shows the inspector and shortcuts at 1366 × 699 and 70% zoom.
 
