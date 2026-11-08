@@ -289,6 +289,9 @@ if(TAPESISTER_BUILD_SDL)
             "${CMAKE_CURRENT_SOURCE_DIR}/assets/tapesister_splash.png"
             "$<TARGET_FILE_DIR:tapesister>/assets/tapesister_splash.png"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/assets/tapesister_credits.png"
+            "$<TARGET_FILE_DIR:tapesister>/assets/tapesister_credits.png"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_CURRENT_SOURCE_DIR}/assets/palette.pal"
             "$<TARGET_FILE_DIR:tapesister>/assets/palette.pal"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -1131,4 +1134,20 @@ if(TAPESISTER_BUILD_SDL)
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sunvox/licenses" "$<TARGET_FILE_DIR:tapesister>/licenses/sunvox"
     COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sunvox/LICENSE" "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sunvox/PROVENANCE.md" "$<TARGET_FILE_DIR:tapesister>/licenses/sunvox"
     COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/THIRD_PARTY_NOTICES.md" "$<TARGET_FILE_DIR:tapesister>/licenses/")
+endif()
+
+if(TAPESISTER_BUILD_SDL)
+  add_executable(tapesister_credits_tests tests/test_credits.c
+    src/tape_link.c src/tape_companion.c src/ts_startup_diag.c src/ts_midi_input.c)
+  target_include_directories(tapesister_credits_tests PRIVATE third_party)
+  target_link_libraries(tapesister_credits_tests PRIVATE tapesister_core tapesister_tapehead SDL2::SDL2)
+  if(UNIX AND NOT APPLE)
+    target_link_libraries(tapesister_credits_tests PRIVATE rt)
+  endif()
+  if(MINGW)
+    target_link_options(tapesister_credits_tests PRIVATE "-Wl,--stack,16777216")
+  endif()
+  add_test(NAME tapesister_credits_tests COMMAND tapesister_credits_tests)
+  set_tests_properties(tapesister_credits_tests PROPERTIES
+    TIMEOUT 60 WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
 endif()

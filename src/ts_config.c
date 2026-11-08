@@ -22,6 +22,7 @@ void ts_config_init(TsConfig *config)
         memset(config, 0, sizeof(*config));
         config->startup_welcome_sample = 1;
         config->startup_welcome_autoplay = 1;
+        config->exit_credits = 1;
         config->playhead_zero_snap = 1;
         config->rotate_wheel_fine = TS_ROTATE_WHEEL_FINE_DEFAULT;
         config->rotate_wheel_coarse = TS_ROTATE_WHEEL_COARSE_DEFAULT;
@@ -369,6 +370,8 @@ int ts_config_load(TsConfig *config, const char *path,
             if (!parse_boolean(value, &loaded.startup_welcome_sample)) { snprintf(error, error_size, "Invalid boolean on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "startup_welcome_autoplay") == 0) {
             if (!parse_boolean(value, &loaded.startup_welcome_autoplay)) { snprintf(error, error_size, "Invalid boolean on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "exit_credits") == 0) {
+            if (!parse_boolean(value, &loaded.exit_credits)) { snprintf(error, error_size, "Invalid boolean on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "playhead_zero_snap") == 0) {
             if (!parse_boolean(value, &loaded.playhead_zero_snap)) { snprintf(error, error_size, "Invalid boolean on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "rotate_wheel_fine") == 0) {
@@ -625,6 +628,9 @@ int ts_config_save(const TsConfig *config, const char *path,
                 "\n[Startup]\n"
                 "startup_welcome_sample=%d\n"
                 "startup_welcome_autoplay=%d\n"
+                "\n[Credits]\n"
+                "; Two-second farewell after a confirmed quit; Shift+F12 always opens credits.\n"
+                "exit_credits=%d\n"
                 "\n[Waveform]\n"
                 "playhead_zero_snap=%d\n"
                 "rotate_wheel_fine=%d\n"
@@ -755,7 +761,7 @@ int ts_config_save(const TsConfig *config, const char *path,
                 config->sample_path, config->fasttracker_path,
                 config->exchange_path, config->cdp_bin_path,
                 config->startup_welcome_sample,
-                config->startup_welcome_autoplay, config->playhead_zero_snap,
+                config->startup_welcome_autoplay, config->exit_credits, config->playhead_zero_snap,
                 config->rotate_wheel_fine,
                 config->rotate_wheel_coarse,
                 config->drone_crossfade_ms,

@@ -93,6 +93,7 @@ $RequiredLayout = @(
     "TapeSister.exe",
     "SDL2.dll",
     "assets/tapesister_splash.png",
+    "assets/tapesister_credits.png",
     "assets/palette.pal",
     "cdp/bin",
     "licenses/THIRD_PARTY_NOTICES.md",

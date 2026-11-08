@@ -13,7 +13,7 @@ enum { PERF_BUTTON_PLAY=1,PERF_BUTTON_STOP,PERF_BUTTON_HOME,
     PERF_BUTTON_TUNE_PREV,PERF_BUTTON_TUNE_NEXT,PERF_BUTTON_RENDER,
     PERF_BUTTON_TAB,PERF_BUTTON_CUE=PERF_BUTTON_TAB+PERF_PAGES,PERF_BUTTON_LOOP=PERF_BUTTON_CUE+16,
     PERF_BUTTON_MASTER,PERF_BUTTON_BPM_MINUS,PERF_BUTTON_BPM_PLUS,PERF_BUTTON_CLOCK_SOURCE,
-    PERF_BUTTON_CLOCK_ROW=64, PERF_BUTTON_LOOPS_PLAY=120,PERF_BUTTON_LOOPS_HOME,PERF_BUTTON_LIVE_RESET };
+    PERF_BUTTON_CLOCK_ROW=64, PERF_BUTTON_LOOPS_PLAY=120,PERF_BUTTON_LOOPS_HOME,PERF_BUTTON_LIVE_RESET,PERF_BUTTON_CREDITS };
 static struct {SDL_Window *window;SDL_Renderer *renderer;SDL_Texture *image;Uint32 *pixels;
     Uint32 id,painted,flash_until;
     int visible,drag,pressed,flash,input_page,input_drag,tuner_on,page,selected;
@@ -324,6 +324,7 @@ static int performance_event(SDL_Event *e,SDL_Window *window,SDL_AudioDeviceID d
             SDL_Event health;SDL_zero(health);health.type=SDL_KEYDOWN;health.key.windowID=performance_transport.id;health.key.keysym.sym=SDLK_F12;
             ts_audio_health_event(&health,window,audio,ui);
         } else if(x>=360 && x<540){performance_feedback(PERF_BUTTON_RENDER,1);offline_show(ui,audio);}
+        else if(x>=550 && x<710){performance_feedback(PERF_BUTTON_CREDITS,1);credits_show(window);}
     } else if(row_hit) {
         int ch=channels[row];
         if(ch==4) {

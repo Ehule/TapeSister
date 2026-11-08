@@ -124,6 +124,7 @@ typedef struct {
     char midi_input_device[TS_CONFIG_PATH_MAX];
     int startup_welcome_sample;
     int startup_welcome_autoplay;
+    int exit_credits; /* Brief, dismissible credits after a confirmed quit. */
     int playhead_zero_snap;
     int rotate_wheel_fine;
     int rotate_wheel_coarse;
