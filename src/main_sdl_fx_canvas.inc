@@ -210,7 +210,7 @@ static void fx_fit_selection(int selected)
         if(selected && !fx_chosen(n->row))continue;
         left=fminf(left,n->x);top=fminf(top,n->y);right=fmaxf(right,n->x+fx_node_w(n));bottom=fmaxf(bottom,n->y+fx_node_h(n));++count;}
     fx_canvas.fit=0;if(!count)return;
-    TsMatrixLayout *l=matrix_window.layout;float width=fx_right()-20,height=FX_BOTTOM-FX_TOP;
+    TsMatrixLayout *l=matrix_window.layout;float width=fx_split()-20,height=FX_BOTTOM-FX_TOP;
     l->canvas_zoom=SDL_clamp(fminf((width-48)/(right-left),(height-48)/(bottom-top)),.001f,selected?2.f:1.f);
     l->canvas_x=-left+(width/l->canvas_zoom-(right-left))*.5f;
     l->canvas_y=-top+(height/l->canvas_zoom-(bottom-top))*.5f;l->canvas_view=1;

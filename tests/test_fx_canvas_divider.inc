@@ -59,7 +59,9 @@ static void divider_controls(const char *dir,uint32_t effect_id)
     }
     SDL_SetWindowSize(w->window,MATRIX_W,MATRIX_H);click(784,400,2);
     assert(l->canvas_split==TS_FX_CANVAS_SPLIT_DEFAULT && !w->drag && !w->pending);
-    l->canvas_split=TS_FX_CANVAS_SPLIT_MIN;fx_fit();
+    l->canvas_split=TS_FX_CANVAS_SPLIT_MIN;
+    /* FIT from the inner Meta view still frames the outer graph for its own pane. */
+    fx_canvas.meta=effect_id;assert(fx_right()==1260);fx_fit();fx_canvas.meta=0;
     for(int i=0;i<fx_canvas.count;++i){n=&fx_canvas.node[i];assert(fx_x(n->x)>=20 && fx_x(n->x+fx_node_w(n))<=fx_right());}
     view_codec();
     assert(ts_matrix_layout_read(l,"FxCanvas.Split","639")==-1);
