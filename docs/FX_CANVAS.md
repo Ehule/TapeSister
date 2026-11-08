@@ -164,8 +164,8 @@ Parameter and note changes are applied at the instance's next processing boundar
 Some patches can respond differently to block boundaries, so old project recall
 is not silently migrated.
 
-Changing BLOCK stages a replacement instance with the existing short lifecycle
-crossfade, restarting its internal state/tail. Set this before a performance.
+Changing BLOCK warms a replacement instance before the existing short lifecycle
+crossfade, restarting its internal state/tail without an unfilled-buffer gap. Set this before a performance.
 Undo/redo restores the setting. Projects using 256 or 1024 require this version
 or newer; 64-frame instances omit the new save key and remain readable by the
 previous SunVox integration.

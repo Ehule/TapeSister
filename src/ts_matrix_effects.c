@@ -120,7 +120,10 @@ void ts_matrix_effects_commit(TsMatrixEffects *f,const TsMatrixControls *c,unsig
         if(p->changed&(1u<<i)) {
             f->previous[i]=f->current[i];f->current[i]=p->node[i];p->node[i]=NULL;
             f->total[i]=rate*12/1000;if(!f->total[i])f->total[i]=1;
-            atomic_store_explicit(&f->remaining[i],f->total[i],memory_order_relaxed);f->fading|=1u<<i;
+            /* Let a newly buffered processor fill before moving the crossfade.
+               Its wet and dry outputs are initially silent for one quantum. */
+            unsigned warmup=f->current[i] && f->current[i]->sunvox?f->current[i]->sunvox_quantum:0;
+            atomic_store_explicit(&f->remaining[i],f->total[i]+warmup,memory_order_relaxed);f->fading|=1u<<i;
         }
         node_set(f->current[i],&c->effect[i],0);
     }
@@ -187,7 +190,7 @@ TsStereoFrame ts_matrix_effects_process(TsMatrixEffects *f,int i,TsStereoFrame i
     unsigned remaining=atomic_load_explicit(&f->remaining[i],memory_order_relaxed);
     if(!remaining)return next;
     TsStereoFrame old=node_process(f->previous[i],in,key,connected);
-    float t=1-(float)remaining/f->total[i];
+    float t=fmaxf(0,1-(float)remaining/f->total[i]);
     return (TsStereoFrame){old.l+(next.l-old.l)*t,old.r+(next.r-old.r)*t};
 }
 float ts_matrix_effects_reduction(const TsMatrixEffects *f,int i)

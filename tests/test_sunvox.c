@@ -187,8 +187,12 @@ static void matrix(void) {
     c.effect[0].sunvox.quantum=1024;
     assert(ts_matrix_effects_stage(&engines,&c,48000,&plan) && plan.changed==1);
     ts_matrix_effects_commit(&engines,&c,48000,&plan);
-    for(int f=0;f<4096;++f){ts_matrix_effects_tick(&engines);out=ts_matrix_effects_process(&engines,0,(TsStereoFrame){.2f,-.1f},(TsStereoFrame){0},1);}
-    near(out.l,.2f);near(out.r,-.1f);
+    for(int f=0;f<4096;++f) {
+        ts_matrix_effects_tick(&engines);
+        out=ts_matrix_effects_process(&engines,0,(TsStereoFrame){.2f,-.1f},(TsStereoFrame){0},1);
+        /* Bypass must remain constant while the larger dry buffer fills. */
+        near(out.l,.2f);near(out.r,-.1f);
+    }
     assert(c.effect[0].sunvox.patch==original_patch && c.effect[0].sunvox.value[0]==4096);
     ts_matrix_effects_collect(&engines,&plan);ts_matrix_effects_discard(&plan);
     assert(ts_matrix_effects_stage(&engines,&c,48000,&plan) && !plan.changed);
