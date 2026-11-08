@@ -19,6 +19,7 @@ typedef struct {
     MatrixSnapshot *history[32],*pending,*original,*edited;int history_count,history_cursor,original_active,history_skip;
     TsPalette palette;
     TsMatrixControls controls;TsSourceRoute route;FxProcessorState fixed;unsigned sample_rate;
+    TsMasterEqControls live_eq;int eq_morph_owned;
     uint32_t effect_open;int effect_menu;float effect_gr,effect_progress;
     TsCompressorControls compressor;int compressor_open;float compressor_gr,compressor_key;
     TsRouterControls legacy;TsSpatialControls array;TsSpeakerSetup speakers;

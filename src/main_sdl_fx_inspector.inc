@@ -100,7 +100,7 @@ static int fx_inspector_build(void)
             TsMasterEqControls flat;ts_master_eq_default(&flat);
 
             for(int b=0;b<TS_MASTER_EQ_BANDS;++b)for(int k=0;k<5;++k) {
-                const TsEqBand *q=&f->eq.band[b];float v=k==0?q->enabled:k==1?q->type/(float)(TS_EQ_TYPE_COUNT-1):ts_master_eq_normalized(q,k-2,w->sample_rate);
+                const TsEqBand *q=&w->live_eq.band[b];float v=k==0?q->enabled:k==1?q->type/(float)(TS_EQ_TYPE_COUNT-1):ts_master_eq_normalized(q,k-2,w->sample_rate);
                 float reset=k==0?flat.band[b].enabled:k==1?flat.band[b].type/(float)(TS_EQ_TYPE_COUNT-1):ts_master_eq_normalized(&flat.band[b],k-2,w->sample_rate);
                 if(k==0)snprintf(label,sizeof(label),"BAND %d %s",b+1,q->enabled?"ON":"OFF");
                 else if(k==1)snprintf(label,sizeof(label),"BAND %d %s",b+1,ts_master_eq_type_name(q->type));
@@ -109,8 +109,8 @@ static int fx_inspector_build(void)
                 else snprintf(label,sizeof(label),"BAND %d Q %.2f",b+1,q->q);
                 fx_control(FX_CONTROL_EQ,b,k,v,reset,k==0?1:k==1?TS_EQ_TYPE_COUNT-1:0,label);
             }
-            snprintf(label,sizeof(label),"SOLO BAND %d (0 = ALL)",f->eq.solo_band);
-            fx_control(FX_CONTROL_EQ_SOLO,0,0,f->eq.solo_band/(float)TS_MASTER_EQ_BANDS,0,TS_MASTER_EQ_BANDS,label);
+            snprintf(label,sizeof(label),"SOLO BAND %d (0 = ALL)",w->live_eq.solo_band);
+            fx_control(FX_CONTROL_EQ_SOLO,0,0,w->live_eq.solo_band/(float)TS_MASTER_EQ_BANDS,0,TS_MASTER_EQ_BANDS,label);
         } else if(node==TS_MATRIX_LIMITER) {
             snprintf(label,sizeof(label),"CEILING %+.1f DB",f->ceiling);fx_control(FX_CONTROL_LIMITER,0,0,(f->ceiling+12)/12,11.f/12,0,label);
             snprintf(label,sizeof(label),"LOOKAHEAD %.2f MS",f->lookahead);fx_control(FX_CONTROL_LIMITER,0,1,logf(f->lookahead/.1f)/logf(100),.5f,0,label);
@@ -167,7 +167,7 @@ static int fx_inspector_enabled(void)
     const MatrixWindow *w=&matrix_window;
     if(fx_inspector.slot>=0)return w->controls.effect[fx_inspector.slot].enabled;
     switch(fx_inspector.node) {
-    case TS_MATRIX_EQ:return w->fixed.eq.enabled;
+    case TS_MATRIX_EQ:return w->live_eq.enabled;
     case TS_MATRIX_LIMITER:return w->fixed.limiter_enabled;
     case TS_MATRIX_COMPRESSOR:return w->compressor.enabled;
     case TS_MATRIX_PRISM:return w->fixed.parameters.prism.enabled;
@@ -184,7 +184,8 @@ static void fx_inspector_controls_paint(void)
     uint32_t color=c?fx_color(c->type):FX_CABLE;
     fx_panel_text(1028,125,213,47,title,FX_FOCUS,2,2);
     int enabled=fx_inspector_enabled();
-    if(enabled>=0)fx_button(1028,178,208,enabled?"ACTIVE":"BYPASS",enabled);
+    if(fx_inspector.node==TS_MATRIX_EQ && w->eq_morph_owned)fx_button(1028,178,208,"STOP MORPH",1);
+    else if(enabled>=0)fx_button(1028,178,208,enabled?"ACTIVE":"BYPASS",enabled);
     else fx_panel_text(1028,178,208,36,"PARAMETERS",FX_DIM,2,1);
     int start=fx_canvas.inspector_page*FX_INSPECT_ROWS;
     for(int row=0;row<FX_INSPECT_ROWS && start+row<fx_inspector.count;++row) {
@@ -199,7 +200,7 @@ static void fx_inspector_controls_paint(void)
     }
     if(c && c->type==TS_MATRIX_FX_SUNVOX)fx_button(1028,648,208,"BROWSE SUNVOX",0);
     else if(c && c->type==TS_MATRIX_FX_META)fx_button(1028,648,208,"OPEN CHAIN",0);
-    else fx_panel_text(1028,648,208,32,"Wheel: adjust / Shift: fine / Right-click: reset",FX_DIM,1,2);
+    else fx_panel_text(1028,648,208,32,"Wheel: edit / Shift: fine / RMB: reset",FX_DIM,1,2);
 }
 static void fx_inspector_set(const FxInspectorControl *control,float value,int reset,int wheel,
     SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui)
@@ -228,6 +229,10 @@ static void fx_inspector_set(const FxInspectorControl *control,float value,int r
     }
     if(device)SDL_LockAudioDevice(device);
     FxProcessorState next;mx_processor_read(audio,&next);
+    if((kind==FX_CONTROL_EQ || kind==FX_CONTROL_EQ_SOLO) && w->eq_morph_owned) {
+        if(device)SDL_UnlockAudioDevice(device);
+        snprintf(w->status,sizeof(w->status),"EQ MORPH OWNS THIS CURVE / CLICK STOP MORPH TO HOLD IT AND EDIT.");return;
+    }
     if(kind==FX_CONTROL_EQ) {
         TsEqBand *b=&next.eq.band[at];
         if(k==0)b->enabled=v>=.5f;else if(k==1)b->type=(int)lroundf(v*(TS_EQ_TYPE_COUNT-1));
@@ -276,7 +281,10 @@ static void fx_inspector_toggle(SDL_AudioDeviceID device,AudioState *audio,TsUiS
     if(device)SDL_LockAudioDevice(device);
     FxProcessorState next;mx_processor_read(audio,&next);
     switch(fx_inspector.node) {
-    case TS_MATRIX_EQ:next.eq.enabled=!next.eq.enabled;break;
+    case TS_MATRIX_EQ:
+        if(w->eq_morph_owned){ts_master_eq_morph_stop(&audio->sister.master_eq);mx_processor_read(audio,&next);}
+        else next.eq.enabled=!next.eq.enabled;
+        break;
     case TS_MATRIX_LIMITER:next.limiter_enabled=!next.limiter_enabled;break;
     case TS_MATRIX_PRISM:next.parameters.prism.enabled=!next.parameters.prism.enabled;break;
     case TS_MATRIX_BOARD:next.parameters.fx.enabled=!next.parameters.fx.enabled;break;

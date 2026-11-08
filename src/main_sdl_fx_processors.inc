@@ -5,6 +5,11 @@ static void mx_processor_read(AudioState *audio,FxProcessorState *state)
     memset(state,0,sizeof(*state));
     state->parameters=audio->sister.parameters;state->eq=audio->sister.master_eq.controls;
     state->morph=audio->sister.master_eq.morph;
+    /* The changing curve is display-only: navigation must not record the
+       audio clock as an undoable edit. Stop adopts that curve explicitly. */
+    matrix_window.live_eq=audio->sister.master_eq.live;
+    matrix_window.eq_morph_owned=audio->sister.master_eq.morph_running ||
+        !ts_master_eq_matches(&state->eq,&matrix_window.live_eq);
     const TsSisterLimiter *l=&audio->sister.limiter;
     state->limiter_enabled=l->enabled;state->ceiling=l->ceiling_db;
     state->lookahead=l->lookahead_ms;state->release=l->release_ms;

@@ -23,6 +23,21 @@ static void inspector_controls(const char *directory)
     fx_inspector_build();click(1200,623,1);assert(fx_canvas.inspector_page==1);
     old=audio.sister.master_eq.controls.band[1].frequency;edit_wheel(1110,250,1,0);
     assert(audio.sister.master_eq.controls.band[1].frequency>old);key(SDLK_z,KMOD_CTRL);
+    /* Display morphing EQ values without adding the audio clock to history.
+       Stop adopts the audible curve before manual edits or undo. */
+    TsMasterEq *eq=&audio.sister.master_eq;TsMasterEqControls eq_before=eq->controls;TsEqMorph morph_before=eq->morph;
+    ts_master_eq_prepare(eq,48000);ts_master_eq_morph_capture(eq,0);
+    TsMasterEqControls endpoint=eq_before;endpoint.band[0].gain_db=9;ts_master_eq_set(eq,&endpoint);ts_master_eq_morph_capture(eq,1);
+    assert(ts_master_eq_morph_start(eq));
+    for(int i=0;i<1024;++i)ts_master_eq_process(eq,(TsStereoFrame){.1f,.1f});
+    mx_processor_read(&audio,&w->fixed);fx_canvas.inspector_page=0;fx_inspector_build();
+    assert(w->eq_morph_owned && w->live_eq.band[0].gain_db!=w->fixed.eq.band[0].gain_db);
+    old=eq->live.band[0].gain_db;undo=w->history_cursor;edit_wheel(1110,230+3*53+20,1,0);
+    assert(eq->morph_running && eq->live.band[0].gain_db==old && w->history_cursor==undo);
+    click(1110,190,1);assert(!eq->morph_running && eq->controls.band[0].gain_db==old);
+    edit_wheel(1110,230+3*53+20,1,0);assert(eq->controls.band[0].gain_db>old);
+    key(SDLK_z,KMOD_CTRL);assert(eq->controls.band[0].gain_db==old);
+    ts_master_eq_morph_set(eq,&morph_before);ts_master_eq_set(eq,&eq_before);matrix_history_clear();
     const int fixed[]={TS_MATRIX_MAIN,TS_MATRIX_SISTER,TS_MATRIX_PRISM,TS_MATRIX_BOARD,TS_MATRIX_FALLOUT,TS_MATRIX_LIMITER,TS_MATRIX_COMPRESSOR};
     for(size_t i=0;i<sizeof(fixed)/sizeof(*fixed);++i)inspector_select(fixed[i]);
     inspector_select(TS_MATRIX_LIMITER);
