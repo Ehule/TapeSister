@@ -2,6 +2,7 @@
 #define TAPESISTER_SISTER_MACHINE_H
 
 #include "tapesister/prism.h"
+#include "tapesister/dsp_coefficient.h"
 #include "tapesister/dark_matter.h"
 #include "tapesister/sample.h"
 #include "tapesister/sister_effects.h"
@@ -272,6 +273,7 @@ typedef struct {
     TsSisterRamp width;
     TsSisterRamp headroom;
     float ghost_lowpass_state[2];
+    TsDspCoefficient ghost_coefficient, duck_threshold;
     uint32_t wow_prng;
     uint64_t wow_next_event_clock;
     float wow_target;

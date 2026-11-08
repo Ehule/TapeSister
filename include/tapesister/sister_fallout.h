@@ -2,6 +2,7 @@
 #define TAPESISTER_SISTER_FALLOUT_H
 
 #include "tapesister/sample.h"
+#include "tapesister/dsp_coefficient.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -150,6 +151,8 @@ typedef struct {
     float pan_step;
     uint32_t pan_remaining;
     float held[2];
+    TsDspCoefficient lfo_frequency, rise_duration, pan_coefficient, bit_levels;
+    float pan_right;
     float bit_quality_current;
     uint32_t hold_remaining;
     float pink_state[2][3];
