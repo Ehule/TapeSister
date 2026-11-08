@@ -74,6 +74,26 @@ static void test_mosaic_save_view(SDL_Window *window)
     ui.mosaic_open=1;ui.mosaic_follow=0;ui.mosaic_scroll=7;ui.mosaic_xscroll=850;
     ui.mosaic_scale=12;ui.mosaic_hscale=.5;
     uint64_t selected=ui.mosaic_selected,hash=ts_mosaic_hash(ui.mosaic);
+    /* Toggle while transport is running: labels change, playback/view do not. */
+    int old_playing=ui.mosaic->playing;double old_time=ui.mosaic->time;
+    ui.mosaic->playing=1;ui.mosaic->time=ui.mosaic_time=125.5;
+    ui.mosaic_scroll=120;ui.mosaic_seconds_only=0;
+    static TsFramebuffer minutes,seconds;
+    ts_ui_render(&minutes,&ui,&instrument);
+    click(window,TS_MOSAIC_TIME_X+5,TS_MOSAIC_TIME_Y+5,1);
+    assert(ui.mosaic_seconds_only && ui.mosaic->playing && ui.mosaic->time==125.5);
+    assert(ui.mosaic_scroll==120 && ui.mosaic_scale==12 && ui.mosaic_hscale==.5);
+    assert(ui.mosaic_selected==selected && ts_mosaic_hash(ui.mosaic)==hash);
+    ts_ui_render(&seconds,&ui,&instrument);
+    int different=0;
+    for(int y=66;y<TS_MOSAIC_CANVAS_BOTTOM;++y)for(int x=115;x<151;++x)
+        different+=minutes.pixels[y*640+x]!=seconds.pixels[y*640+x];
+    assert(different>0);
+    if(getenv("TS_MOSAIC_TIME_MINUTES"))assert(ts_ui_write_ppm(&minutes,getenv("TS_MOSAIC_TIME_MINUTES")));
+    if(getenv("TS_MOSAIC_TIME_SECONDS"))assert(ts_ui_write_ppm(&seconds,getenv("TS_MOSAIC_TIME_SECONDS")));
+    click(window,TS_MOSAIC_TIME_X+5,TS_MOSAIC_TIME_Y+5,1);
+    assert(!ui.mosaic_seconds_only && ui.mosaic->playing && ui.mosaic->time==125.5);
+    ui.mosaic->playing=old_playing;ui.mosaic->time=ui.mosaic_time=old_time;ui.mosaic_scroll=7;
     SDL_Event save;SDL_zero(save);save.type=SDL_KEYDOWN;save.key.windowID=SDL_GetWindowID(window);
     save.key.keysym.sym=SDLK_s;save.key.keysym.mod=KMOD_CTRL;
     assert(!dispatch(&save,window) && ui.mosaic_open); /* Falls through to global Save. */

@@ -10,7 +10,7 @@ static int project_view_valid(const TsProjectView *v)
        !isfinite(v->scale) || v->scale<.000001 || v->scale>1200 ||
        !isfinite(v->hscale) || v->hscale<TS_MOSAIC_MIN_HSCALE || v->hscale>4 ||
        !isfinite(v->time) || v->time<0 || v->time>1000000 ||
-       (unsigned)v->follow>1 || (unsigned)v->source_filter>=(v->version==1?2:TS_MOSAIC_BROWSER_COUNT) || v->source_page<0 || v->source_page>TS_MOSAIC_EVENTS ||
+       (unsigned)v->follow>1 || (unsigned)v->mosaic_seconds_only>1 || (unsigned)v->source_filter>=(v->version==1?2:TS_MOSAIC_BROWSER_COUNT) || v->source_page<0 || v->source_page>TS_MOSAIC_EVENTS ||
        v->selection_count>TS_MOSAIC_EVENTS || v->tracker_scroll<0 || v->tracker_scroll>65535 ||
        (unsigned)v->tracker_expanded>1 || v->tracker_field<0 || v->tracker_field>64)return 0;
     int primary=v->selected==0;
@@ -32,6 +32,8 @@ static int project_view_write(FILE *f,const TsProjectView *v)
         v->workspace,v->keyboard,v->ingredients,v->recipes,v->parent_first,v->parent_last,
         v->scroll,v->xscroll,v->scale,v->hscale,v->time,v->follow,v->source_filter,v->source_page,v->selected,
         v->tracker_scroll,v->tracker_expanded,v->tracker_field)<0)return 0;
+    /* Omit the default so ordinary saves retain the previous view schema. */
+    if(v->mosaic_seconds_only && fprintf(f,"ProjectView.MosaicSeconds=1\n")<0)return 0;
     for(unsigned i=0;i<v->selection_count;++i)
         if(fprintf(f,"ProjectView.Card=%" PRIu64 "\n",v->selection[i])<0)return 0;
     return 1;
@@ -48,6 +50,8 @@ static int project_view_read(TsProjectView *v,unsigned *fields,const char *key,c
     } else if(!strcmp(key,"ProjectView.Mosaic")) {
         bit=8;ok=sscanf(value,"%lf %lf %lf %lf %lf %d %d %d %" SCNu64 " %n",
             &v->scroll,&v->xscroll,&v->scale,&v->hscale,&v->time,&v->follow,&v->source_filter,&v->source_page,&v->selected,&n)==9;
+    } else if(!strcmp(key,"ProjectView.MosaicSeconds")) {
+        bit=64;ok=sscanf(value,"%d %n",&v->mosaic_seconds_only,&n)==1;
     } else if(!strcmp(key,"ProjectView.Tracker")) {
         bit=16;ok=sscanf(value,"%d %d %d %n",&v->tracker_scroll,&v->tracker_expanded,&v->tracker_field,&n)==3;
     } else if(!strcmp(key,"ProjectView.Card") && v->selection_count<TS_MOSAIC_EVENTS) {

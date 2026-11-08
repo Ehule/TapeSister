@@ -6,7 +6,7 @@ static void project_view_capture(TsProjectView *v,const TsUiState *ui)
     v->parent_first=ui->parent_view_first;v->parent_last=ui->parent_view_last;
     v->scroll=ui->mosaic_scroll;v->xscroll=ui->mosaic_xscroll;
     v->scale=ui->mosaic_scale>0?ui->mosaic_scale:24;v->hscale=ui->mosaic_hscale>0?ui->mosaic_hscale:1;
-    v->follow=!!ui->mosaic_follow;
+    v->follow=!!ui->mosaic_follow;v->mosaic_seconds_only=!!ui->mosaic_seconds_only;
     v->source_filter=ui->mosaic_source_filter;v->source_page=ui->mosaic_source_page;
     v->tracker_scroll=ui->tracker_scroll;v->tracker_expanded=!!ui->tracker_expanded;v->tracker_field=ui->tracker_field;
     uint64_t orders[TS_MOSAIC_EVENTS];
@@ -23,6 +23,7 @@ static void project_view_capture(TsProjectView *v,const TsUiState *ui)
 static void project_view_apply(TsUiState *ui,const TsInstrument *instrument,const TsProjectView *v)
 {
     ui->mosaic_loaded_view_epoch=0;
+    ui->mosaic_seconds_only=0;
     if(!v->present)return;
     ui->mosaic_open=v->workspace==TS_PROJECT_VIEW_MOSAIC;
     ui->tracker_open=v->workspace==TS_PROJECT_VIEW_TRACKER;
@@ -32,7 +33,7 @@ static void project_view_apply(TsUiState *ui,const TsInstrument *instrument,cons
         ui->parent_view_first=v->parent_first;ui->parent_view_last=v->parent_last;
     }
     ui->mosaic_scroll=v->scroll;ui->mosaic_xscroll=v->xscroll;ui->mosaic_scale=v->scale;ui->mosaic_hscale=v->hscale;
-    ui->mosaic_time=v->time;ui->mosaic_follow=v->follow;
+    ui->mosaic_time=v->time;ui->mosaic_follow=v->follow;ui->mosaic_seconds_only=v->mosaic_seconds_only;
     ui->mosaic_source_filter=v->source_filter;ui->mosaic_source_page=v->source_page;
     /* V1 appended unique audio versions after the bank pages. Keep old saved
        projects usable with a separate Events list. */

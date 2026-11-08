@@ -642,6 +642,7 @@ typedef struct {
     uint64_t mosaic_pattern_owner;
     unsigned mosaic_pattern_number, mosaic_pattern_version;
     uint8_t mosaic_pattern_pending[TS_MOSAIC_EVENTS];
+    int mosaic_seconds_only; /* Project display preference; no effect on timing. */
     int mosaic_follow, mosaic_box, mosaic_box_x, mosaic_box_y, mosaic_box_end_x, mosaic_box_end_y;
     int mosaic_ghost_count;
     int mosaic_grab; /* Staged transform: 1 G move, 2 S duration scale. */
@@ -970,6 +971,7 @@ enum {
     TS_MOSAIC_LENGTH_LABEL_X = 204, TS_MOSAIC_LENGTH_X = 302, TS_MOSAIC_LENGTH_W = 98,
     TS_MOSAIC_REC_TILE_X = 322, TS_MOSAIC_REC_TILE_Y = 39, TS_MOSAIC_REC_TILE_W = 64,
     TS_MOSAIC_FX_X=442, TS_MOSAIC_FX_Y=22, TS_MOSAIC_FX_W=82, TS_MOSAIC_FX_H=16,
+    TS_MOSAIC_TIME_X=530, TS_MOSAIC_TIME_Y=22, TS_MOSAIC_TIME_W=100, TS_MOSAIC_TIME_H=16,
     TS_MOSAIC_FOLLOW_X = 446, TS_MOSAIC_FOLLOW_W = 52,
     TS_MOSAIC_FIT_X = 504, TS_MOSAIC_FIT_W = 52,
     TS_MOSAIC_ZOOM_OUT_X = 560, TS_MOSAIC_ZOOM_IN_X = 588, TS_MOSAIC_ZOOM_W = 24
