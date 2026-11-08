@@ -2405,11 +2405,19 @@ static void toggle_tile_launcher(SDL_AudioDeviceID device, AudioState *audio,
                                  const TsInstrument *instrument, int slot,
                                  int output_rate)
 {
-    TsPerformanceTileResult result;
+    /* Generation copies and hashes belong to the UI. Existing voices read
+       their immutable generations while a new tile is prepared. */
+    int valid_slot = slot >= 0 && slot < TS_BANK_SLOT_COUNT;
+    int prepared = valid_slot && ts_performance_prepare_sources(
+        &audio->tile_launchers, instrument, (uint16_t)(1u << slot));
+    TsPerformanceTileResult result = TS_PERFORMANCE_TILE_FAILED;
     if (device) SDL_LockAudioDevice(device);
-    result = ts_performance_toggle_tile(
-        &audio->tile_launchers, instrument, slot,
-        ui->config.tile_fade_ms, output_rate);
+    /* A failed allocation must not prevent releasing an existing tile. */
+    if (prepared || (valid_slot &&
+        (ts_performance_tile_mask(&audio->tile_launchers) & (1u << slot))))
+        result = ts_performance_toggle_tile(
+            &audio->tile_launchers, instrument, slot,
+            ui->config.tile_fade_ms, output_rate);
     ui->tile_launcher_mask =
         ts_performance_tile_mask(&audio->tile_launchers);
     audio->tile_launcher_active = ui->tile_launcher_mask != 0u;
@@ -18076,10 +18084,16 @@ int main(int argc, char **argv)
                                          bank_slot + 1);
                                 continue;
                             }
-                            lock_edit_at(device, &audio, "sample bank selection");
+                            TsNativeSampleEdit selection_edit;
+                            begin_native_sample_edit_at(device, &audio, &instrument,
+                                                        &selection_edit, "sample bank selection");
                             selected = ts_ui_execute_bank_action(
                                 &instrument, bank_slot, action,
                                 select_error, sizeof(select_error));
+                            /* Selection clones the editor's sample buffers.
+                               Rejoin audio only for capture/voice metadata. */
+                            publish_native_sample_edit(device, &audio, &instrument,
+                                                       &selection_edit);
                             if (selected &&
                                 (audio.capture.state ==
                                      TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER ||
@@ -18100,7 +18114,8 @@ int main(int argc, char **argv)
                                     &instrument, silent_frames, silent_rate,
                                     select_error, sizeof(select_error));
                             }
-                            unlock_edit(device, &audio, &ui, &instrument);
+                            finish_native_sample_edit(device, &audio, &ui, &instrument,
+                                                      &selection_edit);
                             if (selected) ui.has_stretch_readout = 0;
                             if (capture_source_selected) {
                                 ui.audition_source = TS_AUDITION_CURRENT;
