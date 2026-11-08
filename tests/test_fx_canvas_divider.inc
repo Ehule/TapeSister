@@ -17,6 +17,13 @@ static void divider_controls(const char *dir,uint32_t effect_id)
     FxFontMetrics after=fx_font(2);assert(!memcmp(&font,&after,sizeof(font)));
     assert(audio.sister.matrix_effects.current[mx_effect_slot()]==engine);
     view_codec();
+    /* Cancelling a graph gesture restores its coordinates without resetting the pane. */
+    key(SDLK_g,0);assert(w->drag==FX_DRAG_GRAB);
+    pointer(SDL_MOUSEMOTION,500,300,0,0);key(SDLK_ESCAPE,0);
+    assert(l->canvas_split==780 && !w->drag && !w->pending);
+    pointer(SDL_MOUSEBUTTONDOWN,600,400,SDL_BUTTON_MIDDLE,1);
+    pointer(SDL_MOUSEMOTION,640,450,0,0);key(SDLK_ESCAPE,0);
+    assert(l->canvas_split==780 && l->canvas_x==saved.canvas_x && l->canvas_y==saved.canvas_y);
     matrix_hide();assert(matrix_show(0,&audio,&ui,&pages,&bank,-1,-1));fx_view(1,&pages,&bank);
     assert(l->canvas_split==780);fx_build(&pages,&bank);fx_select(instance(effect_id),0);w->effect_open=effect_id;
     /* The widened inspector consumes wheel and slider input; the graph cannot zoom underneath it. */

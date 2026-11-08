@@ -23,7 +23,6 @@ static MatrixSnapshot *mx_snapshot(SDL_AudioDeviceID device,AudioState *audio,Ts
     s->compressor=audio->sister.compressor.controls;
     mx_processor_read(audio,&s->fixed);matrix_window.fixed=s->fixed;
     s->layout=audio->sister.matrix_layout;
-    s->layout.canvas_split=TS_FX_CANVAS_SPLIT_DEFAULT; /* Divider is not an undo edit. */
     s->insert=audio->sister.insert.controls;s->sources=audio->sister.source_switches;
     if(device)SDL_UnlockAudioDevice(device);
     for(int i=0;i<TS_TRACKER_LANES;++i)s->routes[s->count++]=(MatrixSavedRoute){.row={.kind=0,.index=i},.route=pages->tracker.lanes[i].output_route};
