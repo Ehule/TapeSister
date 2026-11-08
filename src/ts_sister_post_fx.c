@@ -27,7 +27,7 @@ static TsStereoFrame lerp_frame(TsStereoFrame a, TsStereoFrame b, float t)
 {
     TsStereoFrame result = {a.l + (b.l - a.l) * t,
                             a.r + (b.r - a.r) * t};
-    return ts_stereo_frame_sanitize(result);
+    return ts_stereo_frame_sanitize_inline(result);
 }
 
 static TsStereoFrame effect_mix(TsStereoFrame dry, TsStereoFrame wet,
@@ -37,8 +37,8 @@ static TsStereoFrame effect_mix(TsStereoFrame dry, TsStereoFrame wet,
     float dry_gain;
     float wet_gain;
     amount = clampf(amount, 0.0f, 1.0f);
-    if (amount <= 0.0f) return ts_stereo_frame_sanitize(dry);
-    if (amount >= 1.0f) return ts_stereo_frame_sanitize(wet);
+    if (amount <= 0.0f) return ts_stereo_frame_sanitize_inline(dry);
+    if (amount >= 1.0f) return ts_stereo_frame_sanitize_inline(wet);
     if (!cache->valid || cache->amount != amount) {
         cache->amount = amount;
         cache->dry_gain = cosf(amount * (float)(M_PI * 0.5));
@@ -49,7 +49,7 @@ static TsStereoFrame effect_mix(TsStereoFrame dry, TsStereoFrame wet,
     wet_gain = cache->wet_gain;
     result.l = dry.l * dry_gain + wet.l * wet_gain;
     result.r = dry.r * dry_gain + wet.r * wet_gain;
-    return ts_stereo_frame_sanitize(result);
+    return ts_stereo_frame_sanitize_inline(result);
 }
 
 static float makeup_gain_linear(float decibels)
@@ -63,7 +63,7 @@ static TsStereoFrame effect_makeup(TsStereoFrame frame, float gain,
     float multiplier = 1.0f + (gain - 1.0f) * clampf(active, 0.0f, 1.0f);
     frame.l *= multiplier;
     frame.r *= multiplier;
-    return ts_stereo_frame_sanitize(frame);
+    return ts_stereo_frame_sanitize_inline(frame);
 }
 
 /* Reverb is most often used as a surrounding field rather than an insert
@@ -76,8 +76,8 @@ static TsStereoFrame reverb_effect_mix(TsStereoFrame dry, TsStereoFrame wet,
     float dry_gain;
     float wet_gain;
     amount = clampf(amount, 0.0f, 1.0f);
-    if (amount <= 0.0f) return ts_stereo_frame_sanitize(dry);
-    if (amount >= 1.0f) return ts_stereo_frame_sanitize(wet);
+    if (amount <= 0.0f) return ts_stereo_frame_sanitize_inline(dry);
+    if (amount >= 1.0f) return ts_stereo_frame_sanitize_inline(wet);
     if (!cache->valid || cache->amount != amount) {
         cache->amount = amount;
         cache->dry_gain = cosf(amount * amount * (float)(M_PI * 0.5));
@@ -88,7 +88,7 @@ static TsStereoFrame reverb_effect_mix(TsStereoFrame dry, TsStereoFrame wet,
     wet_gain = cache->wet_gain;
     result.l = dry.l * dry_gain + wet.l * wet_gain;
     result.r = dry.r * dry_gain + wet.r * wet_gain;
-    return ts_stereo_frame_sanitize(result);
+    return ts_stereo_frame_sanitize_inline(result);
 }
 
 /* Track only the explicit dry path through the existing serial slot chain.
@@ -1109,7 +1109,7 @@ static TsStereoFrame distortion_process(const TsSisterFxTiming *engine,
         state->dc_y1[channel] = dc;
         *outputs[channel] = soft_clip(dc * (1.35f - 0.35f * state->drive_current));
     }
-    wet = ts_stereo_frame_sanitize(wet);
+    wet = ts_stereo_frame_sanitize_inline(wet);
     return slot_mix(input,wet,clampf(state->mix_current*active,0,1),
         &state->mix_cache,state->gain_current,active,0,direct);
 }
@@ -1208,7 +1208,7 @@ static TsStereoFrame grain_process(const TsSisterFxTiming *engine,
     }
     wet.l = feedback_condition(wet.l * 0.86f);
     wet.r = feedback_condition(wet.r * 0.86f);
-    wet = ts_stereo_frame_sanitize(wet);
+    wet = ts_stereo_frame_sanitize_inline(wet);
 
     state->data[state->write_index * 2u] = input.l * active;
     state->data[state->write_index * 2u + 1u] = input.r * active;
@@ -1533,7 +1533,7 @@ static TsStereoFrame reverb_process(const TsSisterFxTiming *engine,
     }
     wet.l = feedback_condition(wet.l);
     wet.r = feedback_condition(wet.r);
-    wet = ts_stereo_frame_sanitize(wet);
+    wet = ts_stereo_frame_sanitize_inline(wet);
     wet = read_handoff_apply(&state->read_handoff, wet);
     return slot_mix(input,wet,clampf(state->mix_current*active,0,1),
         &state->mix_cache,state->gain_current,active,1,direct);
@@ -1634,8 +1634,8 @@ static TsStereoFrame process_location(TsSisterPostFxEngine *engine,
     TsStereoFrame output;
     if (engine == NULL || !engine->ready ||
         location >= TS_SISTER_FX_LOCATION_COUNT)
-        return ts_stereo_frame_sanitize(input);
-    input = ts_stereo_frame_sanitize(input);
+        return ts_stereo_frame_sanitize_inline(input);
+    input = ts_stereo_frame_sanitize_inline(input);
     if (explicit_mono) {
         if (advance_frame) {
             uint32_t frames = engine->transition_frames;
@@ -1698,7 +1698,7 @@ static TsStereoFrame process_location(TsSisterPostFxEngine *engine,
             --engine->processing_slots;
         }
     }
-    return ts_stereo_frame_sanitize(output);
+    return ts_stereo_frame_sanitize_inline(output);
 }
 
 TsStereoFrame ts_sister_post_fx_process_pre(TsSisterPostFxEngine *engine,
@@ -1714,7 +1714,7 @@ TsStereoFrame ts_sister_post_fx_process(TsSisterPostFxEngine *engine,
                                         int explicit_mono)
 {
     if (target_index >= TS_SISTER_EFFECT_PROCESSOR_COUNT)
-        return ts_stereo_frame_sanitize(input);
+        return ts_stereo_frame_sanitize_inline(input);
     return process_location(engine, target_index + 1u, input, explicit_mono,
                             target_index == TS_SISTER_EFFECT_PROCESSOR_COUNT - 1u, 0);
 }

@@ -20,7 +20,7 @@ static void runtime_router_begin(RouterFrameContext *c)
         frame_scale(r->fallout_feedback_previous,
             master>0 && !(r->router.send_mask&(1u<<TS_SEND_FALLOUT)) && ts_sister_fallout_engage(&r->fallout)>0?r->router.wet[TS_ROUTER_FALLOUT]:0));
     c->causal=frame_scale(c->causal,r->router.wet[TS_ROUTER_SISTER]);
-    c->causal=ts_stereo_frame_sanitize(c->causal);
+    c->causal=ts_stereo_frame_sanitize_inline(c->causal);
     float peak=frame_peak(c->causal);
     if(peak>1.5f)c->causal=frame_scale(c->causal,1.5f/peak);
 }
@@ -78,14 +78,14 @@ static TsStereoFrame runtime_router_stage_impl(void *context,int stage,TsStereoF
         }
         ts_sister_wave_publisher_push(&r->waveform,out.write,out.write_position,
             r->machine.buffer.capacity_frames,r->machine.buffer.channels,out.wrote);
-        c->frame->input=ts_stereo_frame_sanitize(out.input);
+        c->frame->input=ts_stereo_frame_sanitize_inline(out.input);
         c->frame->duck_sidechain=c->frame->input;
         c->sister_feedback=out.post_fx;
         c->passed_sister=1;
         c->dry_monitor=frame_scale(monitor_input,
             r->machine.input_gain.current*r->monitor_dry_current);
         for(int i=0;i<TS_SISTER_HEAD_COUNT;++i)
-            c->frame->tap[TS_SISTER_TAP_H1+i]=ts_stereo_frame_sanitize(out.head[i]);
+            c->frame->tap[TS_SISTER_TAP_H1+i]=ts_stereo_frame_sanitize_inline(out.head[i]);
         return out.mix;
     }
     case TS_ROUTER_FALLOUT: {
@@ -152,9 +152,9 @@ static void runtime_router_finish(RouterFrameContext *c)
            Pedalboard is downstream, retain its established post-effect tap;
            upstream effects are already printed into the tape input. The dry
            monitor never becomes a feedback send after a routing change. */
-        TsStereoFrame f=frame_scale(ts_stereo_frame_sanitize(c->sister_feedback),r->master_feedback_current);
+        TsStereoFrame f=frame_scale(ts_stereo_frame_sanitize_inline(c->sister_feedback),r->master_feedback_current);
         float peak=frame_peak(f);if(peak>1.5f)f=frame_scale(f,1.5f/peak);
-        r->master_feedback_previous=ts_stereo_frame_sanitize((TsStereoFrame){tanhf(f.l),tanhf(f.r)});
+        r->master_feedback_previous=ts_stereo_frame_sanitize_inline((TsStereoFrame){tanhf(f.l),tanhf(f.r)});
     }
     runtime_fallout_feedback(r,c->fallout_wet);
     if(r->router.wet[TS_ROUTER_FALLOUT]<=0) {

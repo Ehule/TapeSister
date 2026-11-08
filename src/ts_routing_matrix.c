@@ -209,7 +209,7 @@ void ts_matrix_process(TsRoutingMatrix *m,TsSourceRouteMix *sums,
     }
     for(unsigned at=0;at<m->source_count;++at) {
         int s=m->sources[at];
-        TsStereoFrame input=ts_stereo_frame_sanitize(live[s-TS_MATRIX_NODES]);
+        TsStereoFrame input=ts_stereo_frame_sanitize_inline(live[s-TS_MATRIX_NODES]);
         m->output_peak[s]=fmaxf(peak(input),m->output_peak[s]*m->decay);
         ts_source_route_frame(&m->voice[s],input,sums);
     }
@@ -228,14 +228,14 @@ void ts_matrix_process(TsRoutingMatrix *m,TsSourceRouteMix *sums,
     for(int i=0;i<TS_MATRIX_PROCESSORS;++i) {
         int n=m->order[i];
         if(n>=TS_MATRIX_EFFECT_BASE && !m->controls.effect[n-TS_MATRIX_EFFECT_BASE].id && !m->voice[n].remaining)continue;
-        TsStereoFrame input=ts_stereo_frame_sanitize(sums->graph[n]);
+        TsStereoFrame input=ts_stereo_frame_sanitize_inline(sums->graph[n]);
         m->input_peak[n]=fmaxf(peak(input),m->input_peak[n]*m->decay);
         int sc=ts_matrix_sidechain_for(n);
         if(sc>=0) {
-            m->sidechain=ts_stereo_frame_sanitize(sums->graph[sc]);
+            m->sidechain=ts_stereo_frame_sanitize_inline(sums->graph[sc]);
             m->input_peak[sc]=fmaxf(peak(m->sidechain),m->input_peak[sc]*m->decay);
         }
-        TsStereoFrame output=ts_stereo_frame_sanitize(fn(context,n,input));
+        TsStereoFrame output=ts_stereo_frame_sanitize_inline(fn(context,n,input));
         m->output_peak[n]=fmaxf(peak(output),m->output_peak[n]*m->decay);
         /* Only feedback edges consume this history. Enabling/changing delayed
            edges clears history in ts_matrix_set, so dormant rows need no tanh
@@ -244,11 +244,11 @@ void ts_matrix_process(TsRoutingMatrix *m,TsSourceRouteMix *sums,
             m->history[n][m->position]=(TsStereoFrame){tanhf(output.l),tanhf(output.r)};
         ts_source_route_frame(&m->voice[n],output,sums);
     }
-    for(int p=0;p<TS_MATRIX_OUTPUTS;++p)m->output[p]=ts_stereo_frame_sanitize(sums->graph[ts_matrix_output_destination(p)]);
-    m->spatial_input=ts_stereo_frame_sanitize(sums->graph[TS_MATRIX_AMBISONICS]);
+    for(int p=0;p<TS_MATRIX_OUTPUTS;++p)m->output[p]=ts_stereo_frame_sanitize_inline(sums->graph[ts_matrix_output_destination(p)]);
+    m->spatial_input=ts_stereo_frame_sanitize_inline(sums->graph[TS_MATRIX_AMBISONICS]);
     m->input_peak[TS_MATRIX_AMBISONICS]=fmaxf(peak(m->spatial_input),m->input_peak[TS_MATRIX_AMBISONICS]*m->decay);
     for(int i=0;i<TS_SOURCE_SPEAKERS;++i) {
-        TsStereoFrame f=ts_stereo_frame_sanitize(sums->graph[TS_MATRIX_SPEAKER_BASE+i]);
+        TsStereoFrame f=ts_stereo_frame_sanitize_inline(sums->graph[TS_MATRIX_SPEAKER_BASE+i]);
         m->speaker_output[i]=.5f*(f.l+f.r);
         m->input_peak[TS_MATRIX_SPEAKER_BASE+i]=fmaxf(fabsf(m->speaker_output[i]),m->input_peak[TS_MATRIX_SPEAKER_BASE+i]*m->decay);
     }

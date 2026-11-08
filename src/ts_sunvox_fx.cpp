@@ -95,7 +95,7 @@ bool patch_shape(const unsigned char *data,size_t size) {
     return at==size && type && finish;
 }
 void select_resource(TsSunVoxControls *c,const Resource *r) {
-    memset(c,0,sizeof(*c));c->patch=r->key;c->note=60;c->velocity=128;c->ready=1;
+    memset(c,0,sizeof(*c));c->patch=r->key;c->note=60;c->velocity=128;c->ready=1;c->quantum=TS_SUNVOX_DEFAULT_QUANTUM;
     std::fill(c->value,c->value+TS_SUNVOX_CONTROLS,-1);
 }
 int stream_control(sunvox_stream_command,void *,sunvox_engine *) { return 0; }
@@ -121,12 +121,12 @@ std::string patch_name(const unsigned char *data,size_t size) {
 struct TsSunVoxEngine {
     sunvox_engine engine{};
     TsSunVoxControls requested{}, applied{};
-    unsigned rate=0, cursor=0;
+    unsigned rate=0, cursor=0, quantum=TS_SUNVOX_QUANTUM;
     int patch=-1, input=-1;
     uint64_t frames=0;
-    float input_buffer[TS_SUNVOX_QUANTUM*2]{};
-    float output_buffer[TS_SUNVOX_QUANTUM*2]{};
-    float dry_buffer[TS_SUNVOX_QUANTUM*2]{};
+    float input_buffer[TS_SUNVOX_MAX_QUANTUM*2]{};
+    float output_buffer[TS_SUNVOX_MAX_QUANTUM*2]{};
+    float dry_buffer[TS_SUNVOX_MAX_QUANTUM*2]{};
     size_t patch_bytes=0;
     int initial[TS_SUNVOX_CONTROLS]{};
 };
@@ -216,9 +216,13 @@ const char *ts_sunvox_category(const TsSunVoxControls *c) {
     globals();std::lock_guard<std::mutex> guard(resources_mutex);
     Resource *r=find_resource(c->patch);return r && r->complete?r->category.c_str():"";
 }
+unsigned ts_sunvox_quantum(const TsSunVoxControls *c) {
+    return c && c->quantum?(unsigned)c->quantum:TS_SUNVOX_QUANTUM;
+}
 int ts_sunvox_valid(const TsSunVoxControls *c) {
     if(!c || !c->patch || !c->ready || c->note<0 || c->note>119 || c->velocity<0 || c->velocity>256 ||
-        c->held<0 || c->held>1)return 0;
+        c->held<0 || c->held>1 ||
+        (c->quantum && c->quantum!=64 && c->quantum!=256 && c->quantum!=1024))return 0;
     for(int v:c->value)if(v < -1 || v>32768)return 0;
     globals();std::lock_guard<std::mutex> guard(resources_mutex);
     Resource *r=find_resource(c->patch);return r && r->complete;
@@ -238,7 +242,7 @@ TsSunVoxEngine *ts_sunvox_new(const TsSunVoxControls *c,unsigned rate) {
     Resource *r;
     {std::lock_guard<std::mutex> guard(resources_mutex);r=find_resource(c->patch);}
     std::unique_ptr<TsSunVoxEngine> s(new TsSunVoxEngine);
-    s->rate=rate;s->patch_bytes=r->size;
+    s->rate=rate;s->quantum=ts_sunvox_quantum(c);s->patch_bytes=r->size;
     sunvox_engine_init(SUNVOX_FLAG_CREATE_MODULES|SUNVOX_FLAG_ONE_THREAD|SUNVOX_FLAG_MAIN|
         SUNVOX_FLAG_NO_GUI|SUNVOX_FLAG_NO_SCOPE|SUNVOX_FLAG_NO_MIDI,rate,
         nullptr,nullptr,stream_control,nullptr,&s->engine);
@@ -289,7 +293,7 @@ void ts_sunvox_process(TsSunVoxEngine *s,float l,float r,float wet[2],float dry[
     wet[0]=s->output_buffer[at];wet[1]=s->output_buffer[at+1];
     dry[0]=s->dry_buffer[at];dry[1]=s->dry_buffer[at+1];
     s->input_buffer[at]=std::isfinite(l)?l:0;s->input_buffer[at+1]=std::isfinite(r)?r:0;
-    if(++s->cursor<TS_SUNVOX_QUANTUM)return;
+    if(++s->cursor<s->quantum)return;
     s->cursor=0;
     stime_ticks_t t=(stime_ticks_t)(s->frames*stime_ticks_per_second()/s->rate);
     psynth_module *m=psynth_get_module(s->patch,s->engine.net);
@@ -314,12 +318,13 @@ void ts_sunvox_process(TsSunVoxEngine *s,float l,float r,float wet[2],float dry[
     sunvox_render_data data{};
     data.in_type=sound_buffer_float32;data.in_buffer=s->input_buffer;data.in_channels=2;
     data.buffer_type=sound_buffer_float32;data.buffer=s->output_buffer;
-    data.frames=TS_SUNVOX_QUANTUM;data.channels=2;data.out_time=t;
+    data.frames=s->quantum;data.channels=2;data.out_time=t;
     if(!sunvox_render_piece_of_sound(&data,&s->engine) || data.silence)
-        memset(s->output_buffer,0,sizeof(s->output_buffer));
-    for(float &value:s->output_buffer)if(!std::isfinite(value))value=0;
-    memcpy(s->dry_buffer,s->input_buffer,sizeof(s->dry_buffer));
-    s->frames+=TS_SUNVOX_QUANTUM;
+        memset(s->output_buffer,0,s->quantum*2*sizeof(float));
+    for(unsigned i=0;i<s->quantum*2;++i)
+        if(!std::isfinite(s->output_buffer[i]))s->output_buffer[i]=0;
+    memcpy(s->dry_buffer,s->input_buffer,s->quantum*2*sizeof(float));
+    s->frames+=s->quantum;
 }
 size_t ts_sunvox_memory(const TsSunVoxEngine *s) { return s?sizeof(*s)+s->patch_bytes:0; }
 
@@ -338,6 +343,8 @@ int ts_sunvox_write(FILE *file,const char *prefix,const TsSunVoxControls *c) {
         }
         if(fprintf(file,"%s.Complete=1\n",prefix)<0)return 0;
     }
+    if(ts_sunvox_quantum(c)!=TS_SUNVOX_QUANTUM &&
+       fprintf(file,"%s.Quantum=%u\n",prefix,ts_sunvox_quantum(c))<0)return 0;
     for(int i=0;i<TS_SUNVOX_CONTROLS;++i)
         if(c->value[i]>=0 && fprintf(file,"%s.Ctl%d=%d\n",prefix,i,c->value[i])<0)return 0;
     return fprintf(file,"%s.Note=%d,%d,%d\n",prefix,c->note,c->velocity,c->held)>=0;
@@ -347,7 +354,7 @@ int ts_sunvox_read(TsSunVoxControls *c,const char *key,const char *value) {
     if(!strcmp(key,"Format")) {
         if(strcmp(value,"1"))return -1;
         memset(c,0,sizeof(*c));std::fill(c->value,c->value+TS_SUNVOX_CONTROLS,-1);
-        c->note=60;c->velocity=128;return 1;
+        c->note=60;c->velocity=128;c->quantum=TS_SUNVOX_QUANTUM;return 1;
     }
     char extra;unsigned long long number=0;
     if(!strcmp(key,"Patch")) {
@@ -405,6 +412,11 @@ int ts_sunvox_read(TsSunVoxControls *c,const char *key,const char *value) {
         if(sscanf(key+3,"%d%c",&at,&extra)!=1 || at<0 || at>=TS_SUNVOX_CONTROLS ||
             sscanf(value,"%d%c",&v,&extra)!=1 || v<0 || v>32768)return -1;
         c->value[at]=v;return 1;
+    }
+    if(!strcmp(key,"Quantum")) {
+        int v;
+        if(sscanf(value,"%d%c",&v,&extra)!=1 || (v!=64 && v!=256 && v!=1024))return -1;
+        c->quantum=v;return 1;
     }
     if(!strcmp(key,"Note")) {
         int note,velocity,held;

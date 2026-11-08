@@ -142,3 +142,46 @@ across the final five seconds. This is signal-dependent calibration, not a claim
 that all sources or macro settings have identical perceived loudness. The regular
 Meta FX DSP gate checks steady broadband level, stereo isolation, bypass, preset
 bounds, serial equivalence, persistence and lifecycle behavior.
+
+## SunVox processing blocks
+
+The SunVox editor's **BLOCK** button cycles through 64, 256 and 1024 frames.
+256 is the default for a newly selected factory or imported patch. Each instance
+saves its own choice; older projects without this setting retain 64 frames.
+Audio Health lists the patch name and processing block for each SunVox instance.
+
+| Block | Added delay per instance at 48 kHz | Use |
+| --- | --- | --- |
+| 64 | 1.33 ms | Low latency and exact legacy block behavior |
+| 256 | 5.33 ms | Balanced CPU cost and response |
+| 1024 | 21.33 ms | Heavy sustained processing where more latency is acceptable |
+
+Larger blocks amortize SunVox graph traversal and module dispatch. They do not
+change sample rate, effect quality settings, module count, or render audio ahead
+of live input. Wet and dry/bypass are delayed together. Delay accumulates through
+serial instances; parallel branches are not globally latency compensated.
+Parameter and note changes are applied at the instance's next processing boundary.
+Some patches can respond differently to block boundaries, so old project recall
+is not silently migrated.
+
+Changing BLOCK stages a replacement instance with the existing short lifecycle
+crossfade, restarting its internal state/tail. Set this before a performance.
+Undo/redo restores the setting. Projects using 256 or 1024 require this version
+or newer; 64-frame instances omit the new save key and remain readable by the
+previous SunVox integration.
+
+The callback benchmark accepts an optional last `SUNVOX_BLOCK` argument (0 keeps
+saved settings), with `-` for no PCM dump:
+
+```sh
+build/tapesister_audio_benchmark song.tsr 600 400 48000 1024 4 - 256
+```
+
+Compare 64, 256 and 1024 serially with the same project and device layout. The
+headless fixture excludes UI/device scheduling; hardware stability must also be
+checked with Audio Health during real playback.
+
+Very large effect blocks with a much smaller device buffer concentrate work into
+fewer callbacks. If callback peaks worsen, use a smaller effect block or a larger
+device buffer. The initial Keter measurements are recorded in
+[the validation data](validation/keter-live-fx.json).
