@@ -642,6 +642,13 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
     if(mosaic_arrange_event(event,window,device,ui,instrument,c,x,y,mod))return 1;
     if(mosaic_volume_event(event,device,ui,c,x,y))return 1;
     if(mosaic_controls_event(event,window,device,ui,c,x,y,mod))return 1;
+    if(down && event->button.button==SDL_BUTTON_LEFT &&
+       x>=TS_MOSAIC_TIME_X && x<TS_MOSAIC_TIME_X+TS_MOSAIC_TIME_W &&
+       y>=TS_MOSAIC_TIME_Y && y<TS_MOSAIC_TIME_Y+TS_MOSAIC_TIME_H) {
+        ui->mosaic_seconds_only=!ui->mosaic_seconds_only;
+        snprintf(ui->status,sizeof(ui->status),"TIMELINE: %s / SAVED WITH PROJECT",ui->mosaic_seconds_only?"SECONDS":"MINUTES:SECONDS");
+        return 1;
+    }
     if(down && y<32) {
         if(x>=402 && x<494 && ui->mosaic_selected)
             (void)mosaic_enter(device,audio,ui,instrument,c,ui->mosaic_selected);
@@ -754,12 +761,6 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
         return 1;
     }
     if(down && event->button.button==SDL_BUTTON_LEFT) {
-        if(x>=TS_MOSAIC_TIME_X && x<TS_MOSAIC_TIME_X+TS_MOSAIC_TIME_W &&
-           y>=TS_MOSAIC_TIME_Y && y<TS_MOSAIC_TIME_Y+TS_MOSAIC_TIME_H) {
-            ui->mosaic_seconds_only=!ui->mosaic_seconds_only;
-            snprintf(ui->status,sizeof(ui->status),"TIMELINE: %s / SAVED WITH PROJECT",ui->mosaic_seconds_only?"SECONDS":"MINUTES:SECONDS");
-            return 1;
-        }
         if(x>=444 && x<538 && y>=381 && y<399) {
             int solos=0;for(int i=0;i<TS_MOSAIC_EVENTS;++i)solos+=ui->mosaic->events[i].id && ui->mosaic->events[i].solo;
             if(solos) {
