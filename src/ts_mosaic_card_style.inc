@@ -50,7 +50,9 @@ static void mosaic_card_info(TsFramebuffer *fb,const TsUiState *ui)
     line[45]=0;text(fb,164,24,line,ink,1);
     unsigned minutes=(unsigned)(e->start/60);double seconds=e->start-minutes*60;
     const char *state=e->muted?"MUTE":e->solo?"SOLO":e->source && e->source->video_path[0]?"VISUAL":e->live?"LIVE":e->looping?"LOOP":"ONCE";
-    snprintf(line,sizeof(line),"CARD %llu / %02u:%06.3F / %.3FS / %s",
+    if(ui->mosaic_seconds_only)snprintf(line,sizeof(line),"CARD %llu / %.3FS / %.3FS / %s",
+        (unsigned long long)e->id,e->start,e->duration,state);
+    else snprintf(line,sizeof(line),"CARD %llu / %02u:%06.3F / %.3FS / %s",
         (unsigned long long)e->id,minutes,seconds,e->duration,state);
     line[45]=0;text(fb,164,32,line,ink,1);
 }

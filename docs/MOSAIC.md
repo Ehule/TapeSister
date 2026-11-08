@@ -17,6 +17,17 @@ effects are shared. IMPORT adds a canvas from an existing TSR; EXPORT creates a
 portable single-canvas bundle. Legacy projects saved with the new build remain
 importable. See [Mosaic Gallery](MOSAIC_GALLERY.md).
 
+## Time display
+
+Click **TIME M:SS / TIME SEC**, beside **FX CANVAS**, to switch the ruler,
+playhead readout and hovered card start between minutes:seconds and total
+seconds. The ruler retains fractional seconds near the beginning. The choice
+is saved with the project and shared across Gallery canvases; it changes only
+labels, so playback, card positions, zoom and marker/loop values stay put.
+Duration and time-entry fields remain explicitly labeled in seconds. Older
+projects open in the current minutes:seconds mode. Saves made in seconds mode
+require this build or newer; switching back to M:SS omits the new view field.
+
 ## Playing and arranging
 
 Open **MOSAIC** in the main toolbar, or press **grave** (the backtick

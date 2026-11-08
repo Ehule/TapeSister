@@ -20,7 +20,7 @@ typedef struct {
     int present, version, workspace, keyboard, ingredients, recipes;
     size_t parent_first, parent_last;
     double scroll, xscroll, scale, hscale, time;
-    int follow, source_filter, source_page;
+    int follow, source_filter, source_page, mosaic_seconds_only;
     uint64_t selected, selection[TS_MOSAIC_EVENTS];
     unsigned selection_count;
     int tracker_scroll, tracker_expanded, tracker_field;

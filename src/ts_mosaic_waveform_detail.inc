@@ -255,9 +255,9 @@ static void mosaic_detail_ruler(TsUiWaveformDetail *d,const TsUiState *ui,double
     for(;;++tick) {
         double time=tick*interval;int64_t y=mosaic_detail_pixel(time*rate)-pan;
         if(y>=d->height)break;
-        char label[32];mosaic_time_label(label,sizeof(label),time);
+        char label[32];mosaic_time_label(label,sizeof(label),time,ui->mosaic_seconds_only);
         if(mosaic_ruler_label_visible(ui,time))
-            mosaic_detail_text(d,label_x,y+mosaic_detail_pixel(2*sy),label,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DIM, RGB(133,127,141)),sx,sy);
+            mosaic_detail_text(d,label_x,y+mosaic_detail_pixel(2*sy),label,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DIM, RGB(133,127,141)),sx*fmin(1.0,36.0/fmax(1,strlen(label)*6)),sy);
         mosaic_detail_rect(d,tick_x,y,d->width,y+line,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(28,30,35)));
     }
     if(range.end>range.start) {
