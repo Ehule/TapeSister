@@ -23,6 +23,7 @@ static MatrixSnapshot *mx_snapshot(SDL_AudioDeviceID device,AudioState *audio,Ts
     s->compressor=audio->sister.compressor.controls;
     mx_processor_read(audio,&s->fixed);matrix_window.fixed=s->fixed;
     s->layout=audio->sister.matrix_layout;
+    s->layout.canvas_split=TS_FX_CANVAS_SPLIT_DEFAULT; /* Divider is not an undo edit. */
     s->insert=audio->sister.insert.controls;s->sources=audio->sister.source_switches;
     if(device)SDL_UnlockAudioDevice(device);
     for(int i=0;i<TS_TRACKER_LANES;++i)s->routes[s->count++]=(MatrixSavedRoute){.row={.kind=0,.index=i},.route=pages->tracker.lanes[i].output_route};
@@ -46,7 +47,8 @@ static int mx_apply(const MatrixSnapshot *s,SDL_AudioDeviceID device,AudioState 
     TsMatrixControls controls=s->controls;
     if(controls.next_effect_id<audio->sister.matrix.controls.next_effect_id)controls.next_effect_id=audio->sister.matrix.controls.next_effect_id;
     TsMatrixEffectPlan plan;if(!mx_stage_effects(device,audio,&controls,&plan))return 0;
-    audio->sister.matrix_layout=s->layout;
+    int split=audio->sister.matrix_layout.canvas_split;
+    audio->sister.matrix_layout=s->layout;audio->sister.matrix_layout.canvas_split=split;
     if(device)SDL_LockAudioDevice(device);
     for(int i=0;i<s->count;++i) {
         MatrixSavedRoute v=s->routes[i];
@@ -101,7 +103,8 @@ static void mx_undo(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsS
     if(saved->count==now->count && !memcmp(saved,now,offsetof(MatrixSnapshot,layout)) &&
        !memcmp(saved->routes,now->routes,now->count*sizeof(now->routes[0]))) {
         /* Undoing a view edit must not reapply controls or touch DSP history. */
-        audio->sister.matrix_layout=saved->layout;mx_rows(pages,bank);mx_reveal_column(w->destination);
+        int split=audio->sister.matrix_layout.canvas_split;
+        audio->sister.matrix_layout=saved->layout;audio->sister.matrix_layout.canvas_split=split;mx_rows(pages,bank);mx_reveal_column(w->destination);
         if(w->layout_focus==1 && w->selected>=0)w->scroll=SDL_clamp(w->selected-MATRIX_VISIBLE+1,0,SDL_max(0,w->count-MATRIX_VISIBLE));
         w->dirty=1;
     } else if(!mx_apply(saved,device,audio,ui,pages,bank)){free(now);return;}

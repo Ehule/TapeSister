@@ -179,28 +179,29 @@ static int fx_inspector_enabled(void)
 static void fx_inspector_controls_paint(void)
 {
     MatrixWindow *w=&matrix_window;char label[192];int slot=fx_inspector.slot;
+    int x=fx_inspector_x(),width=fx_inspector_width();
     const TsMatrixEffectControls *c=slot>=0?&w->controls.effect[slot]:NULL;
     const char *title=c?(c->type==TS_MATRIX_FX_SUNVOX?ts_sunvox_name(&c->sunvox):c->type==TS_MATRIX_FX_META?c->meta.name:ts_matrix_effect_name(c->type)):ts_matrix_node_name(fx_inspector.node);
     uint32_t color=c?fx_color(c->type):FX_CABLE;
-    fx_panel_text(1028,125,213,47,title,FX_FOCUS,2,2);
+    fx_panel_text(x,125,width+5,47,title,FX_FOCUS,2,2);
     int enabled=fx_inspector_enabled();
-    if(fx_inspector.node==TS_MATRIX_EQ && w->eq_morph_owned)fx_button(1028,178,208,"STOP MORPH",1);
-    else if(enabled>=0)fx_button(1028,178,208,enabled?"ACTIVE":"BYPASS",enabled);
-    else fx_panel_text(1028,178,208,36,"PARAMETERS",FX_DIM,2,1);
+    if(fx_inspector.node==TS_MATRIX_EQ && w->eq_morph_owned)fx_button(x,178,width,"STOP MORPH",1);
+    else if(enabled>=0)fx_button(x,178,width,enabled?"ACTIVE":"BYPASS",enabled);
+    else fx_panel_text(x,178,width,36,"PARAMETERS",FX_DIM,2,1);
     int start=fx_canvas.inspector_page*FX_INSPECT_ROWS;
     for(int row=0;row<FX_INSPECT_ROWS && start+row<fx_inspector.count;++row) {
         const FxInspectorControl *p=&fx_inspector.control[start+row];int y=230+row*53;
-        fx_panel_text(1028,y,208,38,p->label,FX_TEXT,2,2);
-        mx_rect(1028,y+39,208,7,FX_EDGE);mx_rect(1028,y+39,(int)(208*p->value),7,color);mx_rect(1028+(int)(204*p->value),y+36,4,13,FX_CABLE);
+        fx_panel_text(x,y,width,38,p->label,FX_TEXT,2,2);
+        mx_rect(x,y+39,width,7,FX_EDGE);mx_rect(x,y+39,(int)(width*p->value),7,color);mx_rect(x+(int)((width-4)*p->value),y+36,4,13,FX_CABLE);
     }
     if(fx_inspector.count>FX_INSPECT_ROWS) {
-        fx_button(1028,610,52,"<",0);fx_button(1184,610,52,">",0);
+        fx_button(x,610,52,"<",0);fx_button(1184,610,52,">",0);
         snprintf(label,sizeof(label),"%d / %d",fx_canvas.inspector_page+1,(fx_inspector.count+FX_INSPECT_ROWS-1)/FX_INSPECT_ROWS);
-        fx_panel_text(1090,617,86,24,label,FX_DIM,1,1);
+        fx_panel_text(x+62,617,width-122,24,label,FX_DIM,1,1);
     }
-    if(c && c->type==TS_MATRIX_FX_SUNVOX)fx_button(1028,648,208,"BROWSE SUNVOX",0);
-    else if(c && c->type==TS_MATRIX_FX_META)fx_button(1028,648,208,"OPEN CHAIN",0);
-    else fx_panel_text(1028,648,208,32,"Wheel: edit / Shift: fine / RMB: reset",FX_DIM,1,2);
+    if(c && c->type==TS_MATRIX_FX_SUNVOX)fx_button(x,648,width,"BROWSE SUNVOX",0);
+    else if(c && c->type==TS_MATRIX_FX_META)fx_button(x,648,width,"OPEN CHAIN",0);
+    else fx_panel_text(x,648,width,32,"Wheel: edit / Shift: fine / RMB: reset",FX_DIM,1,2);
 }
 static void fx_inspector_set(const FxInspectorControl *control,float value,int reset,int wheel,
     SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui)
@@ -299,18 +300,19 @@ static void fx_inspector_toggle(SDL_AudioDeviceID device,AudioState *audio,TsUiS
 static int fx_inspector_event(SDL_Event *e,int x,int y,int wheel,SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui)
 {
     MatrixWindow *w=&matrix_window;int dragging=w->drag>=FX_DRAG_CONTROL && w->drag<FX_DRAG_CONTROL+FX_INSPECT_ROWS;
-    if(!dragging && (x<1008 || y<FX_TOP || y>=FX_BOTTOM))return 0;
+    int left_x=fx_inspector_x(),width=fx_inspector_width();
+    if(!dragging && (x<fx_split()+8 || y<FX_TOP || y>=FX_BOTTOM))return 0;
     int count=fx_inspector_build();if(!count)return 1;
     int click=e->type==SDL_MOUSEBUTTONDOWN,left=click && e->button.button==SDL_BUTTON_LEFT;
     if(dragging) {
         if(e->type==SDL_MOUSEMOTION && fx_canvas.inspector_drag<count)
-            fx_inspector_set(&fx_inspector.control[fx_canvas.inspector_drag],(x-1028)/208.f,0,0,device,audio,ui);
+            fx_inspector_set(&fx_inspector.control[fx_canvas.inspector_drag],(x-left_x)/(float)width,0,0,device,audio,ui);
         return 1;
     }
-    if(left && y>=178 && y<206 && x>=1028 && x<1236){fx_inspector_toggle(device,audio,ui);return 1;}
+    if(left && y>=178 && y<206 && x>=left_x && x<1236){fx_inspector_toggle(device,audio,ui);return 1;}
     if(y>=610 && y<638 && count>FX_INSPECT_ROWS) {
         if(wheel)fx_canvas.inspector_page-=wheel;
-        else if(left && x>=1028 && x<1080)--fx_canvas.inspector_page;
+        else if(left && x>=left_x && x<left_x+52)--fx_canvas.inspector_page;
         else if(left && x>=1184 && x<1236)++fx_canvas.inspector_page;
         fx_canvas.inspector_page=SDL_clamp(fx_canvas.inspector_page,0,(count-1)/FX_INSPECT_ROWS);return 1;
     }
@@ -320,7 +322,7 @@ static int fx_inspector_event(SDL_Event *e,int x,int y,int wheel,SDL_AudioDevice
         return 1;
     }
     int row=(y-230)/53,at=fx_canvas.inspector_page*FX_INSPECT_ROWS+row;
-    if(x>=1028 && x<1236 && y>=230 && row<FX_INSPECT_ROWS && at<count && (y-230)%53<49) {
+    if(x>=left_x && x<1236 && y>=230 && row<FX_INSPECT_ROWS && at<count && (y-230)%53<49) {
         FxInspectorControl c=fx_inspector.control[at];
         if(wheel) {
             float step=c.steps?1.f/c.steps:(SDL_GetModState()&KMOD_SHIFT)?.002f:.02f;
@@ -328,7 +330,7 @@ static int fx_inspector_event(SDL_Event *e,int x,int y,int wheel,SDL_AudioDevice
         } else if(click && e->button.button==SDL_BUTTON_RIGHT)fx_inspector_set(&c,0,1,0,device,audio,ui);
         else if(left) {
             fx_canvas.inspector_drag=at;w->drag=FX_DRAG_CONTROL+row;
-            fx_inspector_set(&c,(x-1028)/208.f,0,0,device,audio,ui);SDL_CaptureMouse(SDL_TRUE);
+            fx_inspector_set(&c,(x-left_x)/(float)width,0,0,device,audio,ui);SDL_CaptureMouse(SDL_TRUE);
         }
     }
     return 1;

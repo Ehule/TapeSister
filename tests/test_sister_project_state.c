@@ -190,6 +190,7 @@ int main(void)
     runtime.matrix_layout.row_kind[3]=3;runtime.matrix_layout.row_id[3]=UINT64_MAX;
     runtime.matrix_layout.column[0]=TS_MATRIX_SIDECHAIN;
     runtime.matrix_layout.column[TS_MATRIX_SIDECHAIN]=0;
+    runtime.matrix_layout.canvas_split=780;
     runtime.matrix_layout.canvas_view=1;
     runtime.matrix_layout.canvas_x=-126.25f;runtime.matrix_layout.canvas_y=48.5f;
     runtime.matrix_layout.canvas_straight=1;runtime.matrix_layout.canvas_zoom=.03f;runtime.matrix_layout.canvas_count=2;

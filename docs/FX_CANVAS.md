@@ -1,6 +1,6 @@
 # FX Canvas
 
-Open **Mosaic → FX CANVAS** (left of the output meter),
+Open **Mosaic → FX CANVAS** (below the master controls),
 **Routing Matrix → FX CANVAS**, or press
 **Shift+F9** from any workspace. **F9** switches to the routing matrix; Shift+F9
 switches back. The same window, graph, stable processor identities, audio
@@ -20,7 +20,7 @@ Inherited track-to-tile routing remains inspectable in the Matrix.
 - Purple ports/cables are compressor sidechains. Existing delayed feedback
   edges are amber. The Matrix's cycle validation and feedback policy apply.
 - Click a cable to select it. **Plain wheel always zooms the outer canvas**,
-  including over the inspector; it never changes a cable gain. **Shift+wheel**
+  inside the graph; over an inspector parameter it edits that parameter. It never changes a cable gain. **Shift+wheel**
   adjusts selected cables together by 0.5 dB per step. The group stops at the
   first gain limit to preserve its balance (subject to integer gain rounding).
   Delayed feedback cables retain their lower safety ceiling. X or Delete removes
@@ -50,6 +50,19 @@ Inherited track-to-tile routing remains inspectable in the Matrix.
   ports are available to patch. Closed output ports say N/A.
 - Undo/Redo and Ctrl+Z/Ctrl+Y are shared with the Matrix. Audition keys pass through
   to the instrument. MOSAIC / CLOSE returns to Mosaic without stopping audio.
+
+## Pane widths
+
+Drag the grip between the graph and inspector to resize the panes. Release to
+keep the width, press Escape to cancel, or double-click the divider to reset it.
+The position is saved with the project and survives closing/reopening the FX
+window. Older projects use the original width.
+
+Pane resizing keeps text size, graph zoom, pan and module positions unchanged.
+The inspector's labels wrap and its sliders expand to use the space. Fit and
+zoom operate within the resized graph. Pane width is separate from routing
+Undo/Redo and A/B, and dragging the divider does not acquire the audio lock.
+The inner Meta FX chain keeps its full-width view.
 
 ## Canvas controls and SunVox audit
 

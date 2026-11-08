@@ -13,6 +13,7 @@ enum { TS_MATRIX_LAYOUT_PAGES=1024,
    has positioned the full complement of individual track/tile/card sources. */
 enum { TS_FX_CANVAS_SOURCE_POSITIONS=256,
        TS_FX_CANVAS_POSITIONS=TS_FX_CANVAS_SOURCE_POSITIONS+TS_MATRIX_ROWS+TS_MATRIX_DESTINATIONS };
+enum { TS_FX_CANVAS_SPLIT_MIN=640, TS_FX_CANVAS_SPLIT_DEFAULT=1000, TS_FX_CANVAS_SPLIT_MAX=1040 };
 /* Zero scale is the legacy/default size; saved custom sizes use .25..4. */
 typedef struct { uint64_t id; int kind; float x,y,scale; } TsFxCanvasPosition;
 typedef struct {
@@ -21,7 +22,7 @@ typedef struct {
     int row_count;
     unsigned char column[TS_MATRIX_DESTINATIONS];
     /* View metadata; stable effect IDs survive removal and slot reuse. */
-    int canvas_count,canvas_view,canvas_straight,canvas_snap;
+    int canvas_count,canvas_view,canvas_straight,canvas_snap,canvas_split;
     float canvas_x,canvas_y,canvas_zoom;
     TsFxCanvasPosition canvas[TS_FX_CANVAS_POSITIONS];
 } TsMatrixLayout;
