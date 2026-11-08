@@ -75,7 +75,7 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
         } else if((w->drag==FX_DRAG_WIRE || w->drag==FX_DRAG_SHIFT_NODE) && fx_canvas.wire>=0) {
             int at=fx_source_at(fx_canvas.source);MatrixRow source=fx_canvas.source;
             int body_drag=w->drag==FX_DRAG_SHIFT_NODE;fx_build(pages,bank);int connected=-1;
-            for(int i=0;i<fx_canvas.count;++i) {
+            for(int i=0;x>=20 && x<fx_right() && y>=FX_TOP && y<FX_BOTTOM && i<fx_canvas.count;++i) {
                 FxCanvasNode *n=&fx_canvas.node[i];int xx=fx_x(n->x),yy=fx_y(n->y+fx_node_h(n)*.5f),dest=n->destination;
                 int sc=dest>=0?ts_matrix_sidechain_for(dest):-1;
                 if(sc>=0 && ts_matrix_destination_active(&w->controls,sc) && abs(y-fx_y(n->y+fx_node_h(n)*.8f))<13 && abs(y-fx_y(n->y+fx_node_h(n)*.8f))<abs(y-yy)){yy=fx_y(n->y+fx_node_h(n)*.8f);dest=sc;}
@@ -100,12 +100,12 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
         else if(w->drag==FX_DRAG_SHIFT_NODE && abs(x-(int)fx_canvas.pointer_x)+abs(y-(int)fx_canvas.pointer_y)>5)fx_canvas.shift_moved=1;
         return 1;
     }
-    if(!fx_canvas.meta && !fx_canvas.popup && x>=20 && x<FX_RIGHT && y>=FX_TOP && y<FX_BOTTOM && wheel && !(SDL_GetModState()&KMOD_SHIFT)) {
+    if(!fx_canvas.meta && !fx_canvas.popup && x>=20 && x<fx_right() && y>=FX_TOP && y<FX_BOTTOM && wheel && !(SDL_GetModState()&KMOD_SHIFT)) {
         float old=l->canvas_zoom,next=SDL_clamp(old*powf(1.12f,wheel),.001f,2.f);
-        x=SDL_clamp(x,20,FX_RIGHT);y=SDL_clamp(y,FX_TOP,FX_BOTTOM);
+        x=SDL_clamp(x,20,fx_right());y=SDL_clamp(y,FX_TOP,FX_BOTTOM);
         l->canvas_x+=(x-20)*(1/next-1/old);l->canvas_y+=(y-FX_TOP)*(1/next-1/old);l->canvas_zoom=next;l->canvas_view=1;return 1;
     }
-    if(!fx_canvas.meta && !fx_canvas.popup && x>=20 && x<FX_RIGHT && y>=FX_TOP && y<FX_BOTTOM && wheel && (SDL_GetModState()&KMOD_SHIFT) && fx_canvas.wires.count) {
+    if(!fx_canvas.meta && !fx_canvas.popup && x>=20 && x<fx_right() && y>=FX_TOP && y<FX_BOTTOM && wheel && (SDL_GetModState()&KMOD_SHIFT) && fx_canvas.wires.count) {
         fx_edit_selection(0,wheel,device,audio,ui,pages,bank);return 1;
     }
     if(left && y>=18 && y<46) {
@@ -143,7 +143,7 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
     if(w->effect_open && (y>=692 || (w->drag>=20 && w->drag<=40))){mx_effect_event(e,device,audio,ui,pages,bank,x,y,wheel);return 1;}
     if(w->compressor_open && (y>=692 || (w->drag>=10 && w->drag<20))){mx_compressor_event(e,device,audio,ui,x,y,wheel);return 1;}
     fx_build(pages,bank);
-    if(y<FX_TOP || y>=FX_BOTTOM || x<20 || x>FX_RIGHT)return 1;
+    if(y<FX_TOP || y>=FX_BOTTOM || x<20 || x>=fx_right())return 1;
     if(click && e->button.button==SDL_BUTTON_MIDDLE){w->drag=FX_DRAG_PAN;fx_canvas.origin_x=l->canvas_x;fx_canvas.origin_y=l->canvas_y;fx_canvas.pointer_x=x;fx_canvas.pointer_y=y;return 1;}
     if(wheel)return 1;
     if(!click)return 1;

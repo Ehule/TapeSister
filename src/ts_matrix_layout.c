@@ -9,7 +9,7 @@
 void ts_matrix_layout_default(TsMatrixLayout *l)
 {
     memset(l,0,sizeof(*l));
-    l->canvas_zoom=1;l->canvas_snap=1;
+    l->canvas_zoom=1;l->canvas_snap=1;l->canvas_split=TS_FX_CANVAS_SPLIT_DEFAULT;
     for(int i=0;i<TS_MATRIX_DESTINATIONS;++i)l->column[i]=(unsigned char)i;
 }
 typedef struct { uint64_t id;unsigned kind; } LayoutKey;
@@ -29,6 +29,7 @@ int ts_matrix_layout_valid(const TsMatrixLayout *l)
         seen[d]=1;
     }
     if(l->canvas_count<0 || l->canvas_count>TS_FX_CANVAS_POSITIONS || l->canvas_view<0 || l->canvas_view>1 || l->canvas_straight<0 || l->canvas_straight>1 || l->canvas_snap<0 || l->canvas_snap>1 ||
+       l->canvas_split<TS_FX_CANVAS_SPLIT_MIN || l->canvas_split>TS_FX_CANVAS_SPLIT_MAX ||
        !isfinite(l->canvas_x) || !isfinite(l->canvas_y) ||
        fabsf(l->canvas_x)>1000000 || fabsf(l->canvas_y)>1000000 ||
        !isfinite(l->canvas_zoom) || l->canvas_zoom<.001f || l->canvas_zoom>2)return 0;
@@ -64,6 +65,7 @@ int ts_matrix_layout_write(FILE *f,const TsMatrixLayout *l)
     if(l->canvas_view && fprintf(f,"FxCanvas.View=%.9g,%.9g,%.9g\n",l->canvas_x,l->canvas_y,l->canvas_zoom)<0)return 0;
     if(fprintf(f,"FxCanvas.Straight=%d\n",l->canvas_straight)<0)return 0;
     if(fprintf(f,"FxCanvas.Snap=%d\n",l->canvas_snap)<0)return 0;
+    if(fprintf(f,"FxCanvas.Split=%d\n",l->canvas_split)<0)return 0;
     for(int i=0;i<l->canvas_count;++i) {
         const TsFxCanvasPosition *p=&l->canvas[i];
         if(fprintf(f,"FxCanvas.Node%d=%d,%" PRIu64 ",%.9g,%.9g",i,p->kind,p->id,p->x,p->y)<0)return 0;
@@ -95,6 +97,10 @@ int ts_matrix_layout_read(TsMatrixLayout *l,const char *key,const char *value)
     if(!strcmp(key,"FxCanvas.Snap")) {
         if(!strcmp(value,"0"))l->canvas_snap=0;else if(!strcmp(value,"1"))l->canvas_snap=1;else return -1;
         return 1;
+    }
+    if(!strcmp(key,"FxCanvas.Split")) {
+        if(!layout_number(&value,TS_FX_CANVAS_SPLIT_MAX,&i) || *value || i<TS_FX_CANVAS_SPLIT_MIN)return -1;
+        l->canvas_split=(int)i;return 1;
     }
     if(!strcmp(key,"FxCanvas.View")) {
         float x,y,z;char extra;

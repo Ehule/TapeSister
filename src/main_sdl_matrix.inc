@@ -917,7 +917,7 @@ static int matrix_event_inner(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID de
         mx_effect_event(e,device,audio,ui,pages,bank,x,y,wheel);return 1;
     }
     if(left && x>=22 && x<250 && y>=128 && y<156) {
-        if(mx_editable()){ts_matrix_layout_default(w->layout);w->column=0;w->scroll=0;mx_rows(pages,bank);
+        if(mx_editable()){int split=w->layout->canvas_split;ts_matrix_layout_default(w->layout);w->layout->canvas_split=split;w->column=0;w->scroll=0;mx_rows(pages,bank);
             snprintf(w->status,sizeof(w->status),"DEFAULT LAYOUT RESTORED. ROUTING UNCHANGED. CTRL+Z TO UNDO.");}
         return 1;
     }
@@ -1045,6 +1045,7 @@ static int matrix_event_inner(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID de
     }
     return 1;
 }
+#include "main_sdl_fx_canvas_divider.inc"
 /* One pointer gesture is one transaction. Unchanged clicks never enter history. */
 static int matrix_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsSamplePages *pages,TsInstrument *bank)
 {
@@ -1053,6 +1054,7 @@ static int matrix_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,A
     w->mosaic=ui->mosaic;w->epoch=ui->mosaic?ui->mosaic->epoch:0;
     w->io_config=&ui->config;
     w->layout=&audio->sister.matrix_layout;
+    if(fx_divider_event(e))return 1;
     int own=w->visible && event_window_id(e)==w->id;
     int edit=own && ((w->canvas && fx_canvas.popup && e->type==SDL_KEYDOWN && (e->key.keysym.sym==SDLK_RETURN || e->key.keysym.sym==SDLK_KP_ENTER)) || (sunvox_editor.node && (e->type==SDL_DROPFILE || (e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_RETURN))) || e->type==SDL_MOUSEBUTTONDOWN || e->type==SDL_MOUSEWHEEL ||
         (w->canvas && e->type==SDL_KEYDOWN && (fx_canvas_key(e->key.keysym.sym) || ((e->key.keysym.mod&KMOD_CTRL) && e->key.keysym.sym==SDLK_v))) ||

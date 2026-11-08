@@ -67,6 +67,8 @@ static int fx_modal(void)
 static void fx_cancel_gesture(void)
 {
     MatrixWindow *w=&matrix_window;
+    if(w->drag==FX_DRAG_DIVIDER && w->layout)w->layout->canvas_split=fx_canvas.divider_start;
+    fx_divider_cursor(0);
     if((fx_modal() || w->drag==FX_DRAG_NODE || w->drag==FX_DRAG_PAN) && w->pending && w->layout)
         *w->layout=w->pending->layout;
     if(w->drag==FX_DRAG_BOX || w->drag==FX_DRAG_WIRE_BOX) {

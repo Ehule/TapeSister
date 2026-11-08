@@ -37,12 +37,15 @@ static int mosaic_pattern_changed(const TsUiState *ui,const TsPatternCard *p)
     }
     return 0;
 }
-static void mosaic_button(TsFramebuffer *fb,int x,int y,int w,const char *label,int active,int small)
+static void mosaic_button_height(TsFramebuffer *fb,int x,int y,int w,int h,const char *label,int active)
 {
-    int h=small?16:24;
-    rect(fb,x,y,w,h,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(64,54,70)));rect(fb,x+2,y+2,w-4,h-4,active?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(45,65,66)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(46,39,51)));
+    int inset=h<12?1:2;
+    rect(fb,x,y,w,h,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(64,54,70)));rect(fb,x+inset,y+inset,w-2*inset,h-2*inset,active?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(45,65,66)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(46,39,51)));
     text(fb,x+(w-(int)strlen(label)*6)/2,y+(h-7)/2,label,active?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DATA2, RGB(134,214,205)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_TEXT, RGB(210,199,217)),1);
 }
+
+static void mosaic_button(TsFramebuffer *fb,int x,int y,int w,const char *label,int active,int small)
+{mosaic_button_height(fb,x,y,w,small?16:24,label,active);}
 
 #include "ts_mosaic_live_ui.inc"
 
@@ -354,7 +357,7 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
     mosaic_button(fb,214,4,46,"CFG",0,1);mosaic_button(fb,264,4,32,"FT2",0,1);
     mosaic_button(fb,300,4,56,"CANVAS",0,1);mosaic_button(fb,360,4,38,"SAVE",0,1);
     mosaic_button(fb,402,4,58,"EXPORT",0,1);mosaic_button(fb,464,4,28,"CDP",0,1);
-    mosaic_button(fb,TS_UI_MASTER_LIMITER_X,TS_UI_MASTER_LIMITER_Y,TS_UI_MASTER_LIMITER_W,"EQ",ui->master_eq_open,0);
+    mosaic_button_height(fb,TS_UI_MASTER_LIMITER_X,TS_UI_MASTER_LIMITER_Y,TS_UI_MASTER_LIMITER_W,22,"EQ",ui->master_eq_open);
     master_output_fader(fb,ui->master_output.gain,TS_UI_MASTER_OUTPUT_X,TS_UI_MASTER_OUTPUT_Y);
     master_output_meter(fb,&ui->master_output,TS_UI_MASTER_METER_X,TS_UI_MASTER_METER_Y);
     mosaic_filter_button(fb,10,33,44,"AUDIO",ui->mosaic_source_filter==TS_MOSAIC_BROWSER_AUDIO,0);
@@ -487,8 +490,8 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
     text(fb,164,24,label,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DIM, RGB(160,149,172)),1);
     }
     mosaic_card_info(fb,ui);
-    mosaic_button(fb,TS_MOSAIC_FX_X,TS_MOSAIC_FX_Y,TS_MOSAIC_FX_W,"FX CANVAS",0,1);
-    mosaic_button(fb,TS_MOSAIC_TIME_X,TS_MOSAIC_TIME_Y,TS_MOSAIC_TIME_W,ui->mosaic_seconds_only?"TIME SEC":"TIME M:SS",0,1);
+    mosaic_button_height(fb,TS_MOSAIC_FX_X,TS_MOSAIC_FX_Y,TS_MOSAIC_FX_W,TS_MOSAIC_FX_H,"FX CANVAS",0);
+    mosaic_button_height(fb,TS_MOSAIC_TIME_X,TS_MOSAIC_TIME_Y,TS_MOSAIC_TIME_W,TS_MOSAIC_TIME_H,ui->mosaic_seconds_only?"TIME SEC":"TIME M:SS",0);
     snprintf(label,sizeof(label),"SPEED %.2fX",m?m->speed:1);text(fb,416,58,label,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DATA2, RGB(129,206,200)),1);
     mosaic_slider(fb,TS_MOSAIC_SPEED_X,58,TS_MOSAIC_SPEED_W,(log2(m?m->speed:1)+1)*.5,1,1);
     double scale=ui->mosaic_scale>0?ui->mosaic_scale:24;

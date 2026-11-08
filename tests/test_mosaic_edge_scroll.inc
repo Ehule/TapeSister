@@ -80,6 +80,17 @@ static void test_mosaic_save_view(SDL_Window *window)
     ui.mosaic_scroll=120;ui.mosaic_seconds_only=0;
     static TsFramebuffer minutes,seconds;
     ts_ui_render(&minutes,&ui,&instrument);
+    /* The compact second row must neither paint over nor intercept the master
+       output fader/EQ. The right-channel label previously lost its lower rows. */
+    const int buttons[][4]={{TS_MOSAIC_FX_X,TS_MOSAIC_FX_Y,TS_MOSAIC_FX_W,TS_MOSAIC_FX_H},
+        {TS_MOSAIC_TIME_X,TS_MOSAIC_TIME_Y,TS_MOSAIC_TIME_W,TS_MOSAIC_TIME_H}};
+    for(int b=0;b<2;++b)for(int y=buttons[b][1];y<buttons[b][1]+buttons[b][3];++y)
+        for(int x=buttons[b][0];x<buttons[b][0]+buttons[b][2];++x)
+            assert(!ts_ui_master_output_contains(x,y) && !ts_ui_master_limiter_contains(x,y));
+    const char *glyph=ts_ui_glyph('R');
+    uint32_t ink=ts_theme_legacy(&ui.palette,TS_THEME_MOSAIC,TS_COLOR_FOCUS,TS_PALETTE_MOUSE);
+    for(int r=0;r<7;++r)for(int c=0;c<5;++c)if(glyph[r*5+c]=='1')
+        assert(minutes.pixels[(TS_UI_MASTER_METER_Y+11+r)*640+TS_UI_MASTER_METER_X+c]==ink);
     click(window,TS_MOSAIC_TIME_X+5,TS_MOSAIC_TIME_Y+5,1);
     assert(ui.mosaic_seconds_only && ui.mosaic->playing && ui.mosaic->time==125.5);
     assert(ui.mosaic_scroll==120 && ui.mosaic_scale==12 && ui.mosaic_hscale==.5);

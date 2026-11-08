@@ -103,6 +103,7 @@ static void view_codec(void)
     assert(ts_matrix_layout_read(&read,"FxCanvas.View","0,0,0")==-1);
     assert(ts_matrix_layout_read(&read,"FxCanvas.Node9999","4,1,0,0")==-1);
 }
+#include "test_fx_canvas_divider.inc"
 #include "test_fx_canvas_edit_controls.inc"
 #include "test_fx_canvas_drawing.inc"
 #include "test_fx_canvas_inspector.inc"
@@ -223,6 +224,9 @@ static void disconnect_main_prism(void)
     TsFxCanvasPosition *main_pos=fx_position((MatrixRow){.kind=2,.index=TS_MATRIX_MAIN},1);
     TsFxCanvasPosition *prism_pos=fx_position((MatrixRow){.kind=2,.index=TS_MATRIX_PRISM},1);
     main_pos->x=0;main_pos->y=0;prism_pos->x=400;prism_pos->y=0;
+    /* The alternative route must end at a visible port, not behind the inspector. */
+    TsFxCanvasPosition *eq_pos=fx_position((MatrixRow){.kind=2,.index=TS_MATRIX_EQ},1);
+    eq_pos->x=700;eq_pos->y=120;
     TsFxCanvasPosition *fx_source_pos=fx_position((MatrixRow){.kind=4,.tile=patch.effect[0].id},1);
     TsFxCanvasPosition *fx_target_pos=fx_position((MatrixRow){.kind=4,.tile=patch.effect[1].id},1);
     fx_source_pos->x=0;fx_source_pos->y=240;fx_target_pos->x=400;fx_target_pos->y=240;
@@ -430,6 +434,7 @@ int main(int argc,char **argv)
     if(argc>1)screenshot(argv[1]);
     laptop_legibility(getenv("TS_FX_PREVIEW"),c.effect[meta].id);
     cable_drawing(getenv("TS_FX_PREVIEW"));
+    divider_controls(getenv("TS_FX_PREVIEW"),c.effect[meta].id);
     if(argc>3) {
         static TsFramebuffer fb;ts_ui_render(&fb,&ui,&bank);
         SDL_Surface *s=SDL_CreateRGBSurfaceFrom(fb.pixels,640,400,32,640*4,0xff0000,0xff00,0xff,0);assert(s && !SDL_SaveBMP(s,argv[3]));SDL_FreeSurface(s);
