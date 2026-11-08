@@ -12,7 +12,7 @@ typedef struct {
 typedef struct {
     SDL_Window *window;SDL_Renderer *renderer;SDL_Texture *texture;uint32_t *pixels;
     int pixel_w,pixel_h;
-    Uint32 id,presented;int visible,dirty,scroll,column,filter,selected,destination,drag,canvas;
+    Uint32 id,presented,polled;int visible,dirty,scroll,column,filter,selected,destination,drag,canvas;
     MatrixRow rows[MATRIX_CAPACITY],selection[MATRIX_CAPACITY+TS_MATRIX_DESTINATIONS];int count,selection_count,anchor;
     TsMatrixLayout *layout,full_layout;int columns[TS_MATRIX_DESTINATIONS],column_count;unsigned char assigned[TS_MATRIX_DESTINATIONS];int layout_focus; /* 1=row label, 2=column header. */
     TsMosaic *mosaic;uint64_t epoch;
@@ -767,7 +767,7 @@ static void mx_capture_activity(SDL_AudioDeviceID device,AudioState *audio,TsSam
     for(int d=0;d<TS_MATRIX_DESTINATIONS;++d) {
         float value=fresh && w->controls.enabled?destinations[d]:0;
         w->receiving[d]=w->controls.enabled?fmaxf(value,w->receiving[d]*release):0;
-        if(!mx_destination_available(d))w->receiving[d]=0;
+        if(!mx_destination_available(d) || w->receiving[d]<=.0001f)w->receiving[d]=0;
 
     }
     for(int line=0;line<MATRIX_VISIBLE;++line) {
@@ -794,7 +794,7 @@ static void mx_capture_activity(SDL_AudioDeviceID device,AudioState *audio,TsSam
                     source=fmaxf(source,old_source[i]*release);send=fmaxf(send,old_send[i]*release);break;
                 }
         }
-        w->activity_rows[line]=row;w->row_source[line]=source;w->row_send[line]=send;
+        w->activity_rows[line]=row;w->row_source[line]=source>.0001f?source:0;w->row_send[line]=send>.0001f?send:0;
     }
 }
 #include "main_sdl_fx_canvas.inc"
@@ -810,7 +810,7 @@ static void mx_prepare_surface(MatrixWindow *w)
     uint32_t *pixels=malloc((size_t)width*height*sizeof(*pixels));
     if(!pixels){SDL_DestroyTexture(texture);return;}
     SDL_DestroyTexture(w->texture);free(w->pixels);
-    w->texture=texture;w->pixels=pixels;w->pixel_w=width;w->pixel_h=height;
+    w->texture=texture;w->pixels=pixels;w->pixel_w=width;w->pixel_h=height;w->dirty=1;
 }
 static void mx_draw_frame(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
 {
@@ -822,16 +822,39 @@ static void mx_draw_frame(AudioState *audio,TsSamplePages *pages,TsInstrument *b
     SDL_RenderClear(w->renderer);
     SDL_RenderCopy(w->renderer,w->texture,NULL,NULL);
 }
+/* Paint only when the captured view changes. Keep polling meters at 20 Hz,
+   even after a long idle, so their release uses the poll interval. */
+static uint64_t mx_present_count;
+static int mx_paint_changed(TsSamplePages *pages,TsInstrument *bank)
+{
+    static MatrixWindow previous,current;
+    static TsSourceRoute routes[MATRIX_CAPACITY];
+    MatrixWindow *w=&matrix_window;
+    memcpy(&current,w,sizeof(current));
+    current.presented=current.polled=0;current.dirty=0;
+    current.activity_frame=0;current.activity_ready=0;
+    int changed=memcmp(&previous,&current,sizeof(current))!=0;
+    memcpy(&previous,&current,sizeof(previous));
+    /* Matrix cells can change outside this window without changing its rows. */
+    if(!w->canvas)for(int i=0;i<w->count;++i) {
+        TsSourceRoute route=mx_route(w->rows[i],pages,bank);
+        changed|=memcmp(&routes[i],&route,sizeof(route))!=0;routes[i]=route;
+    }
+    return changed || w->dirty || w->rename>=0;
+}
 static void matrix_update(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsSamplePages *pages,TsInstrument *bank)
 {
     mx_collect_effects(device,audio);
     if(memcmp(&matrix_window.palette,&ui->palette,sizeof(ui->palette))) {matrix_window.palette=ui->palette;matrix_window.dirty=1;}
-    MatrixWindow *w=&matrix_window;(void)ui;Uint32 elapsed=SDL_GetTicks()-w->presented;
+    MatrixWindow *w=&matrix_window;(void)ui;Uint32 elapsed=SDL_GetTicks()-w->polled;
     if(!w->visible || !window_drawable(w->window) || elapsed<50)return;
     if(w->canvas)w->filter=0;
-    mx_capture_activity(device,audio,pages,bank,elapsed);
+    mx_capture_activity(device,audio,pages,bank,elapsed);w->polled=SDL_GetTicks();
+    if(w->canvas)fx_build(pages,bank);
+    mx_prepare_surface(w);
+    if(!mx_paint_changed(pages,bank))return;
     mx_draw_frame(audio,pages,bank);
-    SDL_RenderPresent(w->renderer);w->presented=SDL_GetTicks();w->dirty=0;
+    SDL_RenderPresent(w->renderer);++mx_present_count;w->presented=SDL_GetTicks();w->dirty=0;
 }
 static void mx_name(int port)
 {
@@ -902,7 +925,7 @@ static int matrix_event_inner(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID de
     if(e->type==SDL_MOUSEBUTTONDOWN || e->type==SDL_MOUSEBUTTONUP){rx=e->button.x;ry=e->button.y;}
     else if(e->type==SDL_MOUSEMOTION){rx=e->motion.x;ry=e->motion.y;}
     else if(e->type==SDL_MOUSEWHEEL)wheel_event_mouse(e,&rx,&ry);else return 1;
-    x=rx*MATRIX_W/SDL_max(1,ww);y=ry*MATRIX_H/SDL_max(1,hh);w->dirty=1;
+    x=rx*MATRIX_W/SDL_max(1,ww);y=ry*MATRIX_H/SDL_max(1,hh);if(e->type!=SDL_MOUSEMOTION || w->drag)w->dirty=1;
     int wheel=e->type==SDL_MOUSEWHEEL?wheel_event_detents(e,0):0;
     int fine=(SDL_GetModState()&KMOD_SHIFT)!=0;
     if(w->canvas)return fx_event(e,main,device,audio,ui,pages,bank,x,y,wheel);
@@ -1056,6 +1079,7 @@ static int matrix_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,A
     w->layout=&audio->sister.matrix_layout;
     if(fx_divider_event(e))return 1;
     int own=w->visible && event_window_id(e)==w->id;
+    if(own && e->type!=SDL_MOUSEMOTION)w->dirty=1;
     int edit=own && ((w->canvas && fx_canvas.popup && e->type==SDL_KEYDOWN && (e->key.keysym.sym==SDLK_RETURN || e->key.keysym.sym==SDLK_KP_ENTER)) || (sunvox_editor.node && (e->type==SDL_DROPFILE || (e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_RETURN))) || e->type==SDL_MOUSEBUTTONDOWN || e->type==SDL_MOUSEWHEEL ||
         (w->canvas && e->type==SDL_KEYDOWN && (fx_canvas_key(e->key.keysym.sym) || ((e->key.keysym.mod&KMOD_CTRL) && e->key.keysym.sym==SDLK_v))) ||
         (w->rename>=0 && e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_RETURN) ||

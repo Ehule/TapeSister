@@ -762,6 +762,7 @@ static void reset_runtime_state(TsSisterMachine *machine, int clear_buffer,
     double h2_offset;
     double h3_offset;
     if (machine == NULL || machine->buffer.data == NULL) return;
+    machine->ghost_coefficient.valid = machine->duck_threshold.valid = 0;
     if (clear_buffer) { ts_sister_buffer_clear(&machine->buffer); ts_dark_matter_clear(&machine->dark); }
     ts_dark_matter_set(&machine->dark, &machine->parameters.dark, machine->parameters.buffer_seconds);
     ramp_reset(&machine->dark_blend, machine->parameters.memory_blend>=0?machine->parameters.memory_blend:(machine->parameters.memory_mode == TS_SISTER_MEMORY_DARK ? 1.f : 0.f));
@@ -1449,11 +1450,15 @@ static TsStereoFrame ghost_filter_retained(TsSisterMachine *machine,
         }
         return previous;
     }
-    cutoff = ts_sister_ghost_cutoff_hz(amount,
-                                       machine->buffer.sample_rate);
-    coefficient = 1.0f - expf((float)(-2.0 * M_PI) * cutoff /
-                              (float)machine->buffer.sample_rate);
-    coefficient = clampf(coefficient, 0.0f, 1.0f);
+    if (!ts_dsp_coefficient_matches(&machine->ghost_coefficient, amount,
+                                    machine->buffer.sample_rate)) {
+        cutoff = ts_sister_ghost_cutoff_hz(amount, machine->buffer.sample_rate);
+        coefficient = 1.0f - expf((float)(-2.0 * M_PI) * cutoff /
+                                  (float)machine->buffer.sample_rate);
+        ts_dsp_coefficient_store(&machine->ghost_coefficient, amount,
+            machine->buffer.sample_rate, clampf(coefficient, 0.0f, 1.0f));
+    }
+    coefficient = machine->ghost_coefficient.value;
     machine->ghost_lowpass_state[0] +=
         (previous.l - machine->ghost_lowpass_state[0]) * coefficient;
     machine->ghost_lowpass_state[1] +=
@@ -1515,8 +1520,10 @@ static float update_duck(TsSisterMachine *machine, TsStereoFrame sidechain,
     if (machine->parameters.duck_mode == TS_SISTER_DUCK_KAFKA_BIAS) {
         desired = clampf(1.0f - envelope, 0.0f, 1.0f);
     } else {
-        float threshold = powf(10.0f,
-            (-6.0f - 54.0f * sensitivity) / 20.0f);
+        if (!ts_dsp_coefficient_matches(&machine->duck_threshold, sensitivity, 0))
+            ts_dsp_coefficient_store(&machine->duck_threshold, sensitivity, 0,
+                powf(10.0f, (-6.0f - 54.0f * sensitivity) / 20.0f));
+        float threshold = machine->duck_threshold.value;
         desired = envelope <= threshold || envelope <= FLT_EPSILON
                     ? 1.0f : clampf(threshold / envelope, 0.0f, 1.0f);
     }

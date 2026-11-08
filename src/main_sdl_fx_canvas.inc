@@ -84,10 +84,13 @@ static void fx_store_initial_position(TsFxCanvasPosition *position,float x,float
     position->y=y;
 }
 
+#include "main_sdl_fx_canvas_cache.inc"
 static void fx_build(TsSamplePages *pages,TsInstrument *bank)
 {
     MatrixWindow *w=&matrix_window;int wanted[TS_MATRIX_DESTINATIONS]={0};
     if(w->filter){w->filter=0;mx_rows(pages,bank);}
+    if(!fx_graph_changed(pages,bank))return;
+    ++fx_graph_cache.builds;w->dirty=1;
     fx_canvas.count=0;for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)fx_canvas.dest[d]=-1;
     /* Sources are endpoints, not copies of sample/generator editors. Ordinary
        tile/card/track membership remains represented by its source bus. */
@@ -178,6 +181,8 @@ static void fx_build(TsSamplePages *pages,TsInstrument *bank)
         if(p){n->x=p->x;n->y=p->y;n->scale=p->scale?p->scale:1;}
 
     }
+    /* Initial placement can create saved positions during this build. */
+    fx_graph_cache.layout=*w->layout;
 }
 static int fx_chosen(MatrixRow row)
 {
