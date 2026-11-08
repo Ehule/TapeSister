@@ -282,7 +282,13 @@ static int matrix_show(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,
     if(!w->window) {
         w->window=SDL_CreateWindow("TapeSister - Routing Matrix (F9)",SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,
             MATRIX_W,MATRIX_H,SDL_WINDOW_RESIZABLE|SDL_WINDOW_ALLOW_HIGHDPI);
-        if(w->window){SDL_SetWindowMinimumSize(w->window,960,630);w->renderer=SDL_CreateRenderer(w->window,-1,SDL_RENDERER_SOFTWARE);}
+        if(w->window) {
+            SDL_SetWindowMinimumSize(w->window,960,630);
+            /* Keep native-pixel drawing, but let the GPU present its texture.
+               This auxiliary window must not add a second VSync wait. */
+            w->renderer=SDL_CreateRenderer(w->window,-1,SDL_RENDERER_ACCELERATED);
+            if(!w->renderer)w->renderer=SDL_CreateRenderer(w->window,-1,SDL_RENDERER_SOFTWARE);
+        }
         w->pixel_w=MATRIX_W;w->pixel_h=MATRIX_H;
         if(w->renderer)w->texture=SDL_CreateTexture(w->renderer,SDL_PIXELFORMAT_ARGB8888,SDL_TEXTUREACCESS_STREAMING,MATRIX_W,MATRIX_H);
         w->pixels=calloc(MATRIX_W*MATRIX_H,sizeof(uint32_t));

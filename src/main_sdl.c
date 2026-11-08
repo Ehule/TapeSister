@@ -14108,7 +14108,7 @@ int main(int argc, char **argv)
     int window_minimized = 0;
     SDL_Event pending_event;
     int event_pending = 0;
-    Uint32 last_input_ms = 0, last_main_paint = 0, last_service_ms = 0;
+    Uint32 last_input_ms = 0, last_main_input_ms = 0, last_main_paint = 0, last_service_ms = 0;
     int main_paint_invalid = 1;
     uint64_t presented_detail_analysis[2] = {0};
     int renderer_vsync = 0;
@@ -14696,8 +14696,13 @@ int main(int argc, char **argv)
             if (event.type == SDL_KEYDOWN || event.type == SDL_KEYUP ||
                 event.type == SDL_MOUSEBUTTONDOWN || event.type == SDL_MOUSEBUTTONUP ||
                 event.type == SDL_MOUSEWHEEL || event.type == SDL_MOUSEMOTION ||
-                event.type == SDL_TEXTINPUT || event.type == midi_wake_event)
+                event.type == SDL_TEXTINPUT || event.type == midi_wake_event) {
                 last_input_ms = SDL_GetTicks();
+                /* Editing an auxiliary window must not also accelerate a
+                   full Mosaic repaint. Global input still wakes service. */
+                if(event_window_id(&event)==SDL_GetWindowID(window) || event.type==midi_wake_event)
+                    last_main_input_ms=last_input_ms;
+            }
             if (event.type == SDL_WINDOWEVENT && event.window.windowID == SDL_GetWindowID(window))
                 main_paint_invalid = 1;
             wheel_event_coalesce(&event);
@@ -18779,12 +18784,14 @@ int main(int argc, char **argv)
         }
         Uint32 schedule_now = SDL_GetTicks();
         int editing = (Uint32)(schedule_now-last_input_ms)<250u || SDL_GetMouseState(NULL,NULL)!=0u;
+        int main_editing = (Uint32)(schedule_now-last_main_input_ms)<250u ||
+            (SDL_GetMouseFocus()==window && SDL_GetMouseState(NULL,NULL)!=0u);
         int animated = ui.playback_active || ui.tracker_running || ui.sister_enabled ||
             (ts_ui_master_eq_visible(&ui) && ui.eq_morph_running) ||
             ui.sister_capture_active || ui.file_busy || ui.midi_activity_until_ms ||
             (ui.mosaic && ui.mosaic->playing) || ui.mosaic_live_loops || ui.mosaic_live_recording || ui.capture_state==TS_CAPTURE_RECORDING ||
             audio.live_link_available>0 || ts_input_monitor_enabled(audio.input_monitor);
-        unsigned paint_period = ts_ui_refresh_ms(!window_minimized, editing, animated);
+        unsigned paint_period = ts_ui_refresh_ms(!window_minimized, main_editing, animated);
         if (!window_minimized && ts_ui_refresh_due(schedule_now,last_main_paint,paint_period,
                 main_paint_invalid || !frame_snapshot_valid)) {
             int force_present=main_paint_invalid || !frame_snapshot_valid;
@@ -18801,7 +18808,7 @@ int main(int argc, char **argv)
             int detail_changed=0;
             for(int i=0;i<2;i++)detail_changed|=waveform_details[i].valid &&
                 waveform_details[i].analysis_count!=presented_detail_analysis[i];
-            if ((upload || circle_changed) && (upload==1 || force_present || detail_changed || circle_changed || animated || editing)) {
+            if ((upload || circle_changed) && (upload==1 || force_present || detail_changed || circle_changed || animated || main_editing)) {
                 SDL_RenderCopy(renderer, texture, NULL, NULL);
                 native_waveform_copy(renderer,waveform_textures,waveform_details,&framebuffer);
                 native_looper_copy(renderer,&looper_texture,&looper_circle);
