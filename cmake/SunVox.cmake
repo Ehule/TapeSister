@@ -1,4 +1,4 @@
-# Pinned, unmodified engine sources and factory effects. All DSP is compiled
+# Pinned engine sources and unmodified factory effects. All DSP is compiled
 # into the application so project recall never depends on an installed SunVox.
 enable_language(CXX)
 set(CMAKE_CXX_STANDARD 11)
@@ -6,13 +6,15 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(SV_ROOT "${CMAKE_BINARY_DIR}/sunvox")
 set(SV_ARCHIVE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sunvox/sunvox-2.1.4d.tar.gz")
 set(SV_GENERATOR "${CMAKE_CURRENT_SOURCE_DIR}/tools/build_sunvox_catalog.py")
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${SV_ARCHIVE}" "${SV_GENERATOR}")
+set(SV_PREPARE "${CMAKE_CURRENT_SOURCE_DIR}/tools/prepare_sunvox_realtime.py")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${SV_ARCHIVE}" "${SV_GENERATOR}" "${SV_PREPARE}")
 file(SHA256 "${SV_ARCHIVE}" SV_ARCHIVE_HASH)
 if(NOT SV_ARCHIVE_HASH STREQUAL "cbe39f7fdbee6ab51ab832b7ea693d027e7d294666f397870281bc2177e71d75")
   message(FATAL_ERROR "Bundled SunVox archive does not match its pinned hash")
 endif()
 file(SHA256 "${SV_GENERATOR}" SV_GENERATOR_HASH)
-set(SV_STAMP "${SV_ARCHIVE_HASH}-${SV_GENERATOR_HASH}")
+file(SHA256 "${SV_PREPARE}" SV_PREPARE_HASH)
+set(SV_STAMP "${SV_ARCHIVE_HASH}-${SV_GENERATOR_HASH}-${SV_PREPARE_HASH}")
 set(SV_PREVIOUS "")
 if(EXISTS "${SV_ROOT}/stamp")
   file(READ "${SV_ROOT}/stamp" SV_PREVIOUS)
@@ -30,6 +32,8 @@ if(NOT SV_PREVIOUS STREQUAL SV_STAMP OR NOT EXISTS "${CMAKE_BINARY_DIR}/sunvox_c
   if(NOT SV_CATALOG EQUAL 0)
     message(FATAL_ERROR "Cannot build the SunVox effect catalog")
   endif()
+  execute_process(COMMAND "${Python3_EXECUTABLE}" "${SV_PREPARE}" "${SV_ROOT}"
+    COMMAND_ERROR_IS_FATAL ANY)
   file(WRITE "${SV_ROOT}/stamp" "${SV_STAMP}")
 endif()
 file(GLOB SV_ENGINE "${SV_ROOT}/lib_sunvox/*.cpp" "${SV_ROOT}/lib_sunvox/psynth/*.cpp"
