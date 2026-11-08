@@ -142,6 +142,7 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
     if(fx_inspector_event(e,x,y,wheel,device,audio,ui))return 1;
     if(w->effect_open && (y>=692 || (w->drag>=20 && w->drag<=40))){mx_effect_event(e,device,audio,ui,pages,bank,x,y,wheel);return 1;}
     if(w->compressor_open && (y>=692 || (w->drag>=10 && w->drag<20))){mx_compressor_event(e,device,audio,ui,x,y,wheel);return 1;}
+    if(!click)return 1; /* Passive motion needs no graph rebuild or hit test. */
     fx_build(pages,bank);
     if(y<FX_TOP || y>=FX_BOTTOM || x<20 || x>=fx_right())return 1;
     if(click && e->button.button==SDL_BUTTON_MIDDLE){w->drag=FX_DRAG_PAN;fx_canvas.origin_x=l->canvas_x;fx_canvas.origin_y=l->canvas_y;fx_canvas.pointer_x=x;fx_canvas.pointer_y=y;return 1;}

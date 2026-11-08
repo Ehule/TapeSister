@@ -103,6 +103,7 @@ static void view_codec(void)
     assert(ts_matrix_layout_read(&read,"FxCanvas.View","0,0,0")==-1);
     assert(ts_matrix_layout_read(&read,"FxCanvas.Node9999","4,1,0,0")==-1);
 }
+#include "test_fx_canvas_cache.inc"
 #include "test_fx_canvas_divider.inc"
 #include "test_fx_canvas_edit_controls.inc"
 #include "test_fx_canvas_drawing.inc"
@@ -429,6 +430,7 @@ int main(int argc,char **argv)
     fx_build(&pages,&bank);fx_fit();assert(node(TS_MATRIX_MOSAIC) && instance(c.effect[meta].id));
     assert(fx_canvas.dest[TS_MATRIX_EFFECT_SC_BASE+rev]==-1);
     assert(fx_canvas.dest[TS_MATRIX_EFFECT_SC_BASE+comp]>=0);
+    canvas_cache();
     matrix_window.effect_open=c.effect[meta].id;
     for(int i=0;i<fx_canvas.count;++i)if(fx_canvas.node[i].row.kind==4 && fx_canvas.node[i].row.tile==c.effect[meta].id)fx_select(&fx_canvas.node[i],0);
     if(argc>1)screenshot(argv[1]);
