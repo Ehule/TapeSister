@@ -6,6 +6,7 @@ on:
       - '.github/workflows/sunvox-parity.yml'
       - 'scripts/run_sunvox_audit.py'
       - 'tools/benchmark_sunvox_native.c'
+      - 'tools/prepare_sunvox_realtime.py'
       - 'src/ts_sunvox_fx.cpp'
       - 'cmake/SunVox.cmake'
 permissions:

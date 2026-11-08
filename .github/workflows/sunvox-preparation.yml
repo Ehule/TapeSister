@@ -1,0 +1,35 @@
+name: SunVox preparation encoding
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/sunvox-preparation.yml'
+      - 'tools/prepare_sunvox_realtime.py'
+      - 'tests/test_prepare_sunvox.py'
+      - 'third_party/sunvox/sunvox-2.1.4d.tar.gz'
+      - 'cmake/SunVox.cmake'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  preparation:
+    name: Native Python 3.14 (${{ matrix.os }}, UTF8=${{ matrix.utf8 }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        utf8: ['0', '1']
+    env:
+      PYTHONUTF8: ${{ matrix.utf8 }}
+      PYTHONWARNDEFAULTENCODING: '1'
+    steps:
+      - uses: actions/checkout@v4
+      # Native Windows Python, deliberately independent of MSYS2's Python.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - name: Record interpreter and default encoding
+        run: python -c "import locale, sys; print(sys.version); print('locale=', locale.getencoding(), 'UTF8 mode=', sys.flags.utf8_mode)"
+      - name: Prepare pinned SDK with native and simulated CP1252 defaults
+        run: python -W error::EncodingWarning tests/test_prepare_sunvox.py

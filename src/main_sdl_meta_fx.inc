@@ -91,7 +91,7 @@ static void meta_fx_stage_open(uint32_t id,int stage) {
     meta_fx_open(id);meta_fx_window.selected=stage;meta_fx_window.maps=0;
 }
 static void meta_fx_paint(TsUiState *ui) {
-    if (!meta_fx_window.visible || SDL_GetTicks() - meta_fx_window.painted < 33)
+    if (!meta_fx_window.visible || !window_drawable(meta_fx_window.window) || SDL_GetTicks() - meta_fx_window.painted < 33)
         return;
     TsMatrixEffectControls *c = meta_fx_resolve(ui);
     if (!c)

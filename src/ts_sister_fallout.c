@@ -435,6 +435,8 @@ void ts_sister_fallout_clear(TsSisterFalloutEngine *engine)
 {
     uint32_t seed;
     if (engine == NULL) return;
+    engine->lfo_frequency.valid = engine->rise_duration.valid = 0;
+    engine->pan_coefficient.valid = engine->bit_levels.valid = 0;
     seed = engine->prng != 0u ? engine->prng : 0x46414c4cu;
     if (engine->buffer != NULL)
         memset(engine->buffer, 0, engine->capacity_frames * 2u * sizeof(float));
@@ -998,11 +1000,15 @@ static TsSisterFalloutControls modulated_controls(
     float value = sinf((float)(engine->lfo_phase * 2.0 * M_PI));
     float rise = 0.0f;
     float rise_step;
-    double increment = (double)ts_sister_fallout_lfo_hz(out.lfo_rate) /
-                       (double)engine->sample_rate;
+    if (!ts_dsp_coefficient_matches(&engine->lfo_frequency, out.lfo_rate, 0))
+        ts_dsp_coefficient_store(&engine->lfo_frequency, out.lfo_rate, 0,
+            ts_sister_fallout_lfo_hz(out.lfo_rate));
+    if (!ts_dsp_coefficient_matches(&engine->rise_duration, out.rise_length, 0))
+        ts_dsp_coefficient_store(&engine->rise_duration, out.rise_length, 0,
+            ts_sister_fallout_rise_seconds(out.rise_length));
+    double increment = (double)engine->lfo_frequency.value / (double)engine->sample_rate;
     double rise_increment = 1.0 /
-        ((double)ts_sister_fallout_rise_seconds(out.rise_length) *
-         (double)engine->sample_rate);
+        ((double)engine->rise_duration.value * (double)engine->sample_rate);
     engine->lfo_phase += increment;
     if (engine->lfo_phase >= 1.0) engine->lfo_phase -= floor(engine->lfo_phase);
     engine->lfo_value = value;
@@ -1224,8 +1230,13 @@ TsSisterFalloutResult ts_sister_fallout_process(
     }
     pan = advance(&engine->pan, engine->pan_target,
                   engine->pan_step, &engine->pan_remaining);
-    left = cosf(pan * (float)(M_PI * 0.5));
-    right = sinf(pan * (float)(M_PI * 0.5));
+    if (!ts_dsp_coefficient_matches(&engine->pan_coefficient, pan, 0)) {
+        ts_dsp_coefficient_store(&engine->pan_coefficient, pan, 0,
+            cosf(pan * (float)(M_PI * 0.5)));
+        engine->pan_right = sinf(pan * (float)(M_PI * 0.5));
+    }
+    left = engine->pan_coefficient.value;
+    right = engine->pan_right;
     wet.l *= left * 1.41421356f;
     wet.r *= right * 1.41421356f;
     wet = frame_lerp(stage_dry, wet, pan_blend);
@@ -1249,7 +1260,9 @@ TsSisterFalloutResult ts_sister_fallout_process(
         }
         --engine->hold_remaining;
         bits = 8.0f + 16.0f * controls.bit_resolution;
-        levels = powf(2.0f, bits - 1.0f);
+        if (!ts_dsp_coefficient_matches(&engine->bit_levels, bits, 0))
+            ts_dsp_coefficient_store(&engine->bit_levels, bits, 0, powf(2.0f, bits - 1.0f));
+        levels = engine->bit_levels.value;
         wet.l = roundf(engine->held[0] * levels) / levels;
         wet.r = roundf(engine->held[1] * levels) / levels;
     } else {

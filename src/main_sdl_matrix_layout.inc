@@ -27,10 +27,32 @@ static int mx_filter_row(MatrixRow r,int f)
     if(r.index==TS_MATRIX_MOSAIC)return f==5;
     return f==3;
 }
+static struct {
+    int valid,count,saved,filter,ordered_count;
+    MatrixRow input[MATRIX_CAPACITY],ordered[MATRIX_CAPACITY];
+    TsMatrixLayout layout,full;
+    uint64_t sorts;
+} mx_order_cache;
 static void mx_layout_rows(void)
 {
     MatrixWindow *w=&matrix_window;const TsMatrixLayout *l=w->layout;
     int saved=l?l->row_count:0;
+    if(mx_order_cache.valid && mx_order_cache.count==w->count &&
+       mx_order_cache.saved==saved && mx_order_cache.filter==w->filter &&
+       !memcmp(mx_order_cache.input,w->rows,w->count*sizeof(w->rows[0])) &&
+       (!saved || (!memcmp(mx_order_cache.layout.row_kind,l->row_kind,saved*sizeof(l->row_kind[0])) &&
+                   !memcmp(mx_order_cache.layout.row_id,l->row_id,saved*sizeof(l->row_id[0]))))) {
+        w->count=mx_order_cache.ordered_count;
+        memcpy(w->rows,mx_order_cache.ordered,w->count*sizeof(w->rows[0]));
+        w->full_layout.row_count=mx_order_cache.full.row_count;
+        memcpy(w->full_layout.row_kind,mx_order_cache.full.row_kind,sizeof(w->full_layout.row_kind));
+        memcpy(w->full_layout.row_id,mx_order_cache.full.row_id,sizeof(w->full_layout.row_id));
+        return;
+    }
+    mx_order_cache.valid=1;mx_order_cache.count=w->count;mx_order_cache.saved=saved;
+    mx_order_cache.filter=w->filter;if(l)mx_order_cache.layout=*l;
+    memcpy(mx_order_cache.input,w->rows,w->count*sizeof(w->rows[0]));
+    ++mx_order_cache.sorts;w->dirty=1;
     for(int i=0;i<w->count;++i)w->rows[i].order=saved+i;
     if(saved) {
         qsort(w->rows,w->count,sizeof(w->rows[0]),mx_identity_compare);
@@ -50,6 +72,8 @@ static void mx_layout_rows(void)
     int count=0;
     for(int i=0;i<w->count;++i)if(mx_filter_row(w->rows[i],w->filter))w->rows[count++]=w->rows[i];
     w->count=count;
+    mx_order_cache.ordered_count=w->count;mx_order_cache.full=w->full_layout;
+    memcpy(mx_order_cache.ordered,w->rows,w->count*sizeof(w->rows[0]));
 }
 static void mx_columns(void)
 {
