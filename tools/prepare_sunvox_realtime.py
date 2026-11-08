@@ -2,6 +2,8 @@
 
 Fail closed if the upstream text changes. The archive itself remains pristine.
 No DSP equations, logical delay lengths, or event ordering are changed.
+Patch ASCII markers as bytes so the SDK's UTF-8 text and original line endings
+survive unchanged, independent of the Python interpreter's Windows code page.
 """
 import pathlib
 import sys
@@ -9,10 +11,11 @@ import sys
 root = pathlib.Path(sys.argv[1])
 def replace(path, before, after, count=1):
     file = root / path
-    source = file.read_text()
+    before, after = before.encode("ascii"), after.encode("ascii")
+    source = file.read_bytes()
     if source.count(before) != count:
         raise SystemExit(f"Unexpected pinned SunVox source: {path}")
-    file.write_text(source.replace(before, after))
+    file.write_bytes(source.replace(before, after))
 
 replace("lib_sunvox/sunvox_engine.cpp",
         "    s->stream_control = stream_control;",
@@ -34,13 +37,13 @@ static size_t tapesister_reverb_capacity( int base, bool right, int rate )
     return ( ( largest * (16 * MAX_BUF_SCALE) * delta ) >> 11 ) / 16 + 128;
 }
 static void realloc_filter_bufs( MODULE_DATA* data, psynth_net* pnet )""")
-needle = "f->buf = SMEM_ZALLOC2( PS_STYPE2, f->buf_size );"
+needle = b"f->buf = SMEM_ZALLOC2( PS_STYPE2, f->buf_size );"
 file = root / path
-source = file.read_text()
+source = file.read_bytes()
 if source.count(needle) != 2:
     raise SystemExit("Unexpected pinned Reverb setup")
 for kind in ("COMBS", "ALLPASSES"):
     base = "comb" if kind == "COMBS" else "allpass"
     source = source.replace(needle,
-        f"f->buf = SMEM_ZALLOC2( PS_STYPE2, tapesister_reverb_capacity( g_{base}_base_size[ i % MAX_{kind} ], i >= MAX_{kind}, pnet->sampling_freq ) );", 1)
-file.write_text(source)
+        f"f->buf = SMEM_ZALLOC2( PS_STYPE2, tapesister_reverb_capacity( g_{base}_base_size[ i % MAX_{kind} ], i >= MAX_{kind}, pnet->sampling_freq ) );".encode("ascii"), 1)
+file.write_bytes(source)
