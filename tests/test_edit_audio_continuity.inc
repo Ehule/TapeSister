@@ -13,6 +13,7 @@ static int edit_callback_probe(void *userdata)
 
 static int probe_control_renders;
 static unsigned control_render_callbacks;
+static int probe_tile_preparation, fail_tile_preparation;
 
 static void check_render_callback(void)
 {
@@ -28,6 +29,88 @@ static void check_render_callback(void)
     }
     assert(energy > .001);
     ++control_render_callbacks;
+}
+
+static int checked_prepare_sources(TsPerformanceBank *bank, const TsInstrument *source, uint16_t mask)
+{
+    if (probe_tile_preparation) check_render_callback();
+    int ok = fail_tile_preparation ? 0 : ts_performance_prepare_sources(bank, source, mask);
+    if (probe_tile_preparation) check_render_callback();
+    return ok;
+}
+
+static void test_tile_preparation_continuity(void)
+{
+    reset_route(0);
+    ts_sister_runtime_disable(&audio.sister);
+    ui.workbench_loop_active = ui.workbench_loop_persistent = ui.play_view = 0;
+    ui.keyboard_hold = 1;
+    keyboard_loop_policy(&audio, &ui);
+    click_note(0, 0);
+    assert(voices() == 1 && power_audio_energy() > .01);
+    ts_performance_free(&audio.tile_launchers);
+    ts_performance_init(&audio.tile_launchers);
+    int slot = instrument.selected_slot;
+    int old_fade = ui.config.tile_fade_ms;
+    ui.config.tile_fade_ms = 0;
+    uint64_t hash = ts_sample_hash(&instrument.current);
+    control_render_callbacks = 0;
+    probe_control_renders = probe_tile_preparation = 1;
+    toggle_tile_launcher(device, &audio, &ui, &instrument, slot, 44100);
+    assert(control_render_callbacks == 2 && (ui.tile_launcher_mask & (1u << slot)));
+    assert(ts_sample_hash(&instrument.current) == hash && voices() == 1);
+    /* Allocation failure still permits stopping a playing tile, but must
+       not retry its expensive preparation under the output lock. */
+    fail_tile_preparation = 1;
+    toggle_tile_launcher(device, &audio, &ui, &instrument, slot, 44100);
+    assert(!ui.tile_launcher_mask && control_render_callbacks == 4);
+    toggle_tile_launcher(device, &audio, &ui, &instrument, slot, 44100);
+    assert(!ui.tile_launcher_mask && control_render_callbacks == 6);
+    fail_tile_preparation = probe_tile_preparation = probe_control_renders = 0;
+    ui.config.tile_fade_ms = old_fade;
+    stop_all_force(device, &audio, &ui);
+    char error[160];
+    assert(ts_sister_runtime_enable(&audio.sister, 44100, 2, 2, 1.0, error, sizeof(error)));
+}
+
+static void test_bank_selection_continuity(void)
+{
+    reset_route(0);
+    ts_sister_runtime_disable(&audio.sister);
+    char error[160];
+    int original_slot = instrument.selected_slot;
+    assert(!instrument.bank[1].occupied);
+    assert(ts_instrument_copy_selected(&instrument, 1, error, sizeof(error)));
+    assert(ts_instrument_apply_sample_edit(&instrument, TS_SAMPLE_EDIT_GAIN, .3f, error, sizeof(error)));
+    uint64_t selected_hash = ts_sample_hash(&instrument.current);
+    assert(ts_instrument_select_bank(&instrument, original_slot, error, sizeof(error)));
+    ui.workbench_loop_active = ui.workbench_loop_persistent = ui.play_view = 0;
+    ui.keyboard_hold = 1;
+    keyboard_loop_policy(&audio, &ui);
+    click_note(0, 0);
+    assert(voices() == 1 && power_audio_energy() > .01);
+    const TsNoteVoice *voice = ts_note_bank_display_voice(&audio.notes);
+    uint64_t serial = voice->serial, old_hash = ts_sample_hash(voice->sample);
+    TsNativeSampleEdit edit;
+    begin_native_sample_edit_at(device, &audio, &instrument, &edit, "sample bank selection");
+    assert(edit.unlocked && edit.needed[0]);
+    assert(ts_ui_execute_bank_action(&instrument, 1, TS_UI_BANK_ACTION_AUDITION, error, sizeof(error)));
+    /* The callback still owns the old sound while selection replaces/frees
+       Current and Parent. It must advance without waiting for the UI. */
+    assert(voice->sample == &edit.copy[0] && ts_sample_hash(voice->sample) == old_hash);
+    control_render_callbacks = 0; probe_control_renders = 1;
+    check_render_callback();
+    probe_control_renders = 0;
+    assert(control_render_callbacks == 1);
+    double position = voice->position;
+    publish_native_sample_edit(device, &audio, &instrument, &edit);
+    finish_native_sample_edit(device, &audio, &ui, &instrument, &edit);
+    assert(voice->sample == &instrument.current && voice->serial == serial && voices() == 1);
+    assert(ts_sample_hash(voice->sample) == selected_hash && voice->position == position);
+    stop_all_force(device, &audio, &ui);
+    assert(ts_instrument_select_bank(&instrument, original_slot, error, sizeof(error)));
+    assert(ts_instrument_bank_clear(&instrument, 1, error, sizeof(error)));
+    assert(ts_sister_runtime_enable(&audio.sister, 44100, 2, 2, 1.0, error, sizeof(error)));
 }
 
 static int checked_material_preview(TsInstrument *instrument, TsMaterialMacroGesture *gesture,

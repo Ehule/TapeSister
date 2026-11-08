@@ -28,8 +28,10 @@ static void limiter_reset_audio(TsSisterLimiter *limiter)
     if (limiter == NULL) return;
     if (limiter->delay != NULL && limiter->delay_frames > 0u)
         memset(limiter->delay, 0,
-               limiter->delay_frames * sizeof(*limiter->delay));
+               limiter->delay_capacity * sizeof(*limiter->delay));
     limiter->delay_position = 0u;
+    limiter->live_delay = limiter->delay_frames;
+    limiter->delay_step = 0;limiter->delay_ramp = 0;
     limiter->processed_frames = 0u;
     limiter->hold_until_frame = 0u;
     limiter->gain = 1.0f;
@@ -67,7 +69,7 @@ void ts_sister_limiter_free(TsSisterLimiter *limiter)
     if (limiter == NULL) return;
     free(limiter->delay);
     limiter->delay = NULL;
-    limiter->delay_frames = 0u;
+    limiter->delay_frames = limiter->delay_capacity = 0u;
     limiter->delay_position = 0u;
     limiter->sample_rate = 0u;
     limiter->ready = 0;
@@ -77,22 +79,24 @@ int ts_sister_limiter_reconfigure(TsSisterLimiter *limiter,
                                   uint32_t sample_rate)
 {
     TsStereoFrame *delay;
-    size_t frames;
+    size_t frames, capacity;
     if (limiter == NULL || sample_rate == 0u) return 0;
     frames = (size_t)lrintf(limiter->lookahead_ms * 0.001f *
                             (float)sample_rate);
     if (frames < 1u) frames = 1u;
+    capacity = (size_t)ceilf(TS_SISTER_LIMITER_LOOKAHEAD_MS_MAX * .001f * sample_rate) + 1u;
     if (limiter->ready && limiter->sample_rate == sample_rate &&
-        limiter->delay_frames == frames) {
+        limiter->delay_capacity == capacity) {
+        limiter->delay_frames = frames;
         limiter_update_coefficients(limiter);
         limiter_reset_audio(limiter);
         return 1;
     }
-    delay = (TsStereoFrame *)calloc(frames, sizeof(*delay));
+    delay = (TsStereoFrame *)calloc(capacity, sizeof(*delay));
     if (delay == NULL) return 0;
     free(limiter->delay);
     limiter->delay = delay;
-    limiter->delay_frames = frames;
+    limiter->delay_frames = frames;limiter->delay_capacity = capacity;
     limiter->sample_rate = sample_rate;
     limiter->ready = 1;
     limiter_update_coefficients(limiter);
@@ -152,6 +156,26 @@ void ts_sister_limiter_set_enabled(TsSisterLimiter *limiter, int enabled)
     }
 }
 
+void ts_sister_limiter_set_live_controls(TsSisterLimiter *l, int enabled,
+    float ceiling_db, float lookahead_ms, float release_ms)
+{
+    if (!l) return;
+    l->ceiling_db=limiter_clamp(ceiling_db,TS_SISTER_LIMITER_CEILING_DB_MIN,
+        TS_SISTER_LIMITER_CEILING_DB_MAX,TS_SISTER_LIMITER_DEFAULT_CEILING_DB);
+    l->release_ms=limiter_clamp(release_ms,TS_SISTER_LIMITER_RELEASE_MS_MIN,
+        TS_SISTER_LIMITER_RELEASE_MS_MAX,TS_SISTER_LIMITER_DEFAULT_RELEASE_MS);
+    l->lookahead_ms=limiter_clamp(lookahead_ms,TS_SISTER_LIMITER_LOOKAHEAD_MS_MIN,
+        TS_SISTER_LIMITER_LOOKAHEAD_MS_MAX,TS_SISTER_LIMITER_DEFAULT_LOOKAHEAD_MS);
+    size_t frames=(size_t)lrintf(l->lookahead_ms*.001f*l->sample_rate);
+    if(frames<1)frames=1;
+    if(l->ready && frames<l->delay_capacity && frames!=l->delay_frames) {
+        l->delay_frames=frames;l->delay_ramp=(uint32_t)ceilf(.020f*l->sample_rate);
+        if(!l->delay_ramp)l->delay_ramp=1;
+        l->delay_step=((double)frames-l->live_delay)/l->delay_ramp;
+    }
+    limiter_update_coefficients(l);ts_sister_limiter_set_enabled(l,enabled);
+}
+
 float ts_sister_limiter_gain_reduction_db(const TsSisterLimiter *limiter)
 {
     float gain;
@@ -182,15 +206,31 @@ TsStereoFrame ts_sister_limiter_process(TsSisterLimiter *limiter,
         return input;
     }
 
-    delayed = limiter->delay[limiter->delay_position];
+    /* Keep all lookahead history warm; the ordinary fixed tap stays cheap. */
+    size_t hold=limiter->delay_frames;
+    if(limiter->delay_ramp) {
+        double read=(double)limiter->delay_position-limiter->live_delay;
+        if(read<0)read+=limiter->delay_capacity;
+        size_t first=(size_t)read,next=first+1u;
+        if(next==limiter->delay_capacity)next=0;
+        float fraction=(float)(read-first);
+        delayed.l=limiter->delay[first].l+(limiter->delay[next].l-limiter->delay[first].l)*fraction;
+        delayed.r=limiter->delay[first].r+(limiter->delay[next].r-limiter->delay[first].r)*fraction;
+        if(limiter->live_delay>hold)hold=(size_t)ceil(limiter->live_delay);
+        if(!--limiter->delay_ramp)limiter->live_delay=limiter->delay_frames;
+        else limiter->live_delay+=limiter->delay_step;
+    } else {
+        size_t read=limiter->delay_position>=hold?limiter->delay_position-hold:
+            limiter->delay_position+limiter->delay_capacity-hold;
+        delayed=limiter->delay[read];
+    }
     limiter->delay[limiter->delay_position] = input;
-    limiter->delay_position = (limiter->delay_position + 1u) %
-                              limiter->delay_frames;
+    if(++limiter->delay_position==limiter->delay_capacity)limiter->delay_position=0;
 
     if (peak > limiter->ceiling_linear && peak > 0.0f) {
         requested_gain = limiter->ceiling_linear / peak;
         limiter->hold_until_frame = limiter->processed_frames +
-                                    limiter->delay_frames;
+                                    hold;
     }
     if (requested_gain < limiter->gain)
         limiter->gain = requested_gain;

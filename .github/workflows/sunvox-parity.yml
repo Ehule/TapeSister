@@ -1,0 +1,46 @@
+name: SunVox native DSP comparison
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/sunvox-parity.yml'
+      - 'scripts/run_sunvox_audit.py'
+      - 'tools/benchmark_sunvox_native.c'
+      - 'src/ts_sunvox_fx.cpp'
+      - 'cmake/SunVox.cmake'
+permissions:
+  contents: read
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ninja-build g++ cmake python3
+      - run: python3 scripts/run_sunvox_audit.py --work audit --upstream-flags
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sunvox-parity-linux
+          path: audit/results.json
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-python
+            mingw-w64-ucrt-x86_64-ninja
+      - run: python scripts/run_sunvox_audit.py --work audit --upstream-flags
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sunvox-parity-windows
+          path: audit/results.json

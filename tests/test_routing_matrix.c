@@ -372,4 +372,21 @@ static void feedback_history_activation(void)
         }
     }
 }
-int main(void){ordering_parity();feedback_history_activation();graph();terminal_destinations();runtime();physical_inputs();tracker_bus();import_serial_chain();main_headroom();puts("Unified routing graph, TrackSister bus, shared DSP, serial import audio parity, main headroom fades, loop isolation, hardware returns and persistence passed");}
+static void meter_input_guard(void)
+{
+    /* Invalid interface samples must not poison an input meter or playback.
+       Its finite channel still meters; all-NaN input retains the decay. */
+    TsRoutingMatrix m;ts_matrix_init(&m);m.input_pairs=1;
+    TsStereoFrame live[TS_MATRIX_ROWS-TS_MATRIX_NODES]={{0}};
+    const TsStereoFrame inputs[]={{NAN,-.5f},{.75f,NAN},{NAN,NAN},{-0.f,0.f},{.125f,-.25f}};
+    float expected=0;
+    for(unsigned i=0;i<sizeof(inputs)/sizeof(inputs[0]);++i) {
+        live[0]=inputs[i];
+        expected=fmaxf(fmaxf(fabsf(inputs[i].l),fabsf(inputs[i].r)),expected*m.decay);
+        TsSourceRouteMix sums={0};ts_matrix_process(&m,&sums,live,identity,NULL);
+        assert(isfinite(m.output_peak[TS_MATRIX_NODES]));
+        assert(m.output_peak[TS_MATRIX_NODES]==expected);
+        for(int p=0;p<TS_MATRIX_OUTPUTS;++p)assert(isfinite(m.output[p].l) && isfinite(m.output[p].r));
+    }
+}
+int main(void){meter_input_guard();ordering_parity();feedback_history_activation();graph();terminal_destinations();runtime();physical_inputs();tracker_bus();import_serial_chain();main_headroom();puts("Unified routing graph, TrackSister bus, shared DSP, serial import audio parity, main headroom fades, loop isolation, hardware returns and persistence passed");}

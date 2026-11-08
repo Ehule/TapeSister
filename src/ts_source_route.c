@@ -248,9 +248,11 @@ void ts_source_route_handoff(TsSourceRouteHandoff *h,TsSourceRouteMix *mix,int c
     if(!h->remaining) {
         int active=mix->monitor.l!=0 || mix->monitor.r!=0 || mix->fallback.l!=0 || mix->fallback.r!=0 ||
             mix->reference.l!=0 || mix->reference.r!=0 || mix->tape_input.l!=0 || mix->tape_input.r!=0;
-        for(int i=0;i<16;++i)active|=mix->speaker[i]!=0;
-        for(int i=0;i<TS_SOURCE_SENDS;++i)active|=mix->send[i].l!=0 || mix->send[i].r!=0;
-        for(int i=0;i<TS_MATRIX_DESTINATIONS;++i)active|=mix->graph[i].l!=0 || mix->graph[i].r!=0;
+        /* One nonzero bus is enough to retain history. Do not scan every
+           unused destination for each sample of an already audible route. */
+        for(int i=0;!active && i<16;++i)active=mix->speaker[i]!=0;
+        for(int i=0;!active && i<TS_SOURCE_SENDS;++i)active=mix->send[i].l!=0 || mix->send[i].r!=0;
+        for(int i=0;!active && i<TS_MATRIX_DESTINATIONS;++i)active=mix->graph[i].l!=0 || mix->graph[i].r!=0;
         if(!active)h->last.graph_mask=h->last.graph_mask_high=h->last.graph_mask_top=h->last.mask=h->last.send_mask=0;
     }
 }

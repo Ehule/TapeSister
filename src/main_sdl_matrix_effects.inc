@@ -97,12 +97,13 @@ static void mx_append_port(TsMatrixLayout *l,int d)
     int at=0;while(at<TS_MATRIX_DESTINATIONS && l->column[at]!=d)++at;
     if(at<TS_MATRIX_DESTINATIONS){memmove(l->column+at,l->column+at+1,TS_MATRIX_DESTINATIONS-at-1);l->column[TS_MATRIX_DESTINATIONS-1]=(unsigned char)d;}
 }
-static void mx_effect_add(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsSamplePages *pages,TsInstrument *bank,int type)
+static void mx_effect_add_patch(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsSamplePages *pages,TsInstrument *bank,int type,const TsSunVoxControls *patch)
 {
     MatrixWindow *w=&matrix_window;if(!mx_editable())return;
     if(!w->controls.enabled){snprintf(w->status,sizeof(w->status),"SELECT USE MATRIX FIRST, THEN ADD AN EFFECT.");return;}
     TsMatrixControls next=w->controls;int slot=ts_matrix_effect_add(&next,type);
     if(slot<0){snprintf(w->status,sizeof(w->status),"INSTANCE LIMIT REACHED (%d). REMOVE AN EFFECT TO ADD ANOTHER.",TS_MATRIX_EFFECT_CAPACITY);return;}
+    if(patch && type==TS_MATRIX_FX_SUNVOX)next.effect[slot].sunvox=*patch;
     TsMatrixEffectPlan plan;if(!mx_stage_effects(device,audio,&next,&plan))return;
     if(device)SDL_LockAudioDevice(device);
     ts_matrix_effects_commit(&audio->sister.matrix_effects,&next,(unsigned)audio->output_rate,&plan);
@@ -114,9 +115,11 @@ static void mx_effect_add(SDL_AudioDeviceID device,AudioState *audio,TsUiState *
     w->filter=4;mx_rows(pages,bank);
     for(int i=0;i<w->count;++i)if(w->rows[i].kind==4 && w->rows[i].tile==w->effect_open){mx_select(i,0);w->scroll=SDL_max(0,i-MATRIX_VISIBLE+1);}
     w->destination=TS_MATRIX_EFFECT_BASE+slot;mx_reveal_column(type==TS_MATRIX_FX_COMPRESSOR?TS_MATRIX_EFFECT_SC_BASE+slot:w->destination);
-    if(type==TS_MATRIX_FX_SUNVOX)svfx_open(w->effect_open);
+    if(type==TS_MATRIX_FX_SUNVOX && !patch)svfx_open(w->effect_open);
     snprintf(w->status,sizeof(w->status),"ADDED %s #%u. PATCH ITS INPUT COLUMN AND OUTPUT ROW. CTRL+Z TO UNDO.",ts_matrix_effect_name(type),(unsigned)w->effect_open);
 }
+static void mx_effect_add(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsSamplePages *pages,TsInstrument *bank,int type)
+{mx_effect_add_patch(device,audio,ui,pages,bank,type,NULL);}
 static int mx_clear_effect_route(TsSourceRoute *r,int slot)
 {
     int n=TS_MATRIX_EFFECT_BASE+slot,sc=TS_MATRIX_EFFECT_SC_BASE+slot;

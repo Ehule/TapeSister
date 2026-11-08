@@ -3,7 +3,7 @@
 typedef struct { MatrixRow row;TsSourceRoute route; } MatrixSavedRoute;
 struct MatrixSnapshot {
     TsMatrixControls controls;TsRouterControls router;TsSpatialControls spatial;
-    TsCompressorControls compressor;
+    TsCompressorControls compressor;FxProcessorState fixed;
     TsInsertControls insert;uint16_t sources;int count;
     TsMatrixLayout layout;
     MatrixSavedRoute routes[];
@@ -21,6 +21,7 @@ static MatrixSnapshot *mx_snapshot(SDL_AudioDeviceID device,AudioState *audio,Ts
     if(device)SDL_LockAudioDevice(device);
     s->controls=audio->sister.matrix.controls;s->router=audio->sister.router.controls;s->spatial=audio->sister.spatial.controls;
     s->compressor=audio->sister.compressor.controls;
+    mx_processor_read(audio,&s->fixed);matrix_window.fixed=s->fixed;
     s->layout=audio->sister.matrix_layout;
     s->insert=audio->sister.insert.controls;s->sources=audio->sister.source_switches;
     if(device)SDL_UnlockAudioDevice(device);
@@ -58,6 +59,7 @@ static int mx_apply(const MatrixSnapshot *s,SDL_AudioDeviceID device,AudioState 
     ts_matrix_effects_commit(&audio->sister.matrix_effects,&controls,(unsigned)audio->output_rate,&plan);
     ts_matrix_set_live(&audio->sister.matrix,&controls,(unsigned)audio->output_rate);
     ts_compressor_set(&audio->sister.compressor,&s->compressor);
+    mx_processor_apply(audio,ui,&s->fixed);
     w->compressor=ui->config.compressor=s->compressor;
     ts_sister_runtime_set_router(&audio->sister,&s->router);
     ts_spatial_recall(&audio->sister.spatial,&s->spatial);

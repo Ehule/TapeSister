@@ -33,7 +33,7 @@ static void edit_controls(void)
     for(int i=0;i<5;++i){assert(ts_matrix_effect_add(c,types[i])==i);id[i]=c->effect[i].id;}
     assert(ts_matrix_connect(c,TS_MATRIX_EFFECT_BASE,TS_MATRIX_EFFECT_BASE+1,1000)==1);
     assert(ts_matrix_connect(c,TS_MATRIX_EFFECT_BASE,TS_MATRIX_EFFECT_SC_BASE+2,500)==1);
-    ts_matrix_layout_default(&fixture->layout);assert(mx_apply(fixture,0,&audio,&ui,&pages,&bank));free(fixture);
+    ts_matrix_layout_default(&fixture->layout);fixture->layout.canvas_snap=0;assert(mx_apply(fixture,0,&audio,&ui,&pages,&bank));free(fixture);
     matrix_history_clear();w->layout=&audio.sister.matrix_layout;fx_view(1,&pages,&bank);fx_canvas.fit=0;
     SDL_SetWindowSize(w->window,1280,840);TsMatrixLayout *l=w->layout;l->canvas_x=l->canvas_y=0;l->canvas_zoom=1;l->canvas_view=1;
     fx_build(&pages,&bank);
@@ -96,9 +96,9 @@ static void edit_controls(void)
     assert(w->controls.row[TS_MATRIX_EFFECT_BASE].matrix_gain[TS_MATRIX_EFFECT_BASE+1]==1000);
     assert(w->controls.row[TS_MATRIX_EFFECT_BASE].matrix_gain[TS_MATRIX_EFFECT_SC_BASE+2]==500);
     key(SDLK_z,KMOD_CTRL);assert(l->canvas_zoom==zoom);
-    /* Inspector wheel also zooms, with no effect or cable parameter change. */
+    /* Inspector wheel edits its parameter; cable gain and canvas zoom stay put. */
     static TsMatrixEffectControls before_effect;before_effect=w->controls.effect[0];w->effect_open=id[0];
-    edit_wheel(1100,265,1,0);assert(l->canvas_zoom>zoom && !memcmp(&before_effect,&w->controls.effect[0],sizeof(before_effect)));
+    edit_wheel(1100,265,1,0);assert(l->canvas_zoom==zoom && memcmp(&before_effect,&w->controls.effect[0],sizeof(before_effect)));
     assert(w->controls.row[TS_MATRIX_EFFECT_BASE].matrix_gain[TS_MATRIX_EFFECT_BASE+1]==1000);
     key(SDLK_z,KMOD_CTRL);w->effect_open=0;
     edit_wheel(340,210,2,KMOD_SHIFT);

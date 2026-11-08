@@ -540,7 +540,6 @@ void ts_note_bank_read_routed(TsNoteBank *bank,
                              TsStereoFrame *fm_output,
                              TsStereoFrame *synth_capture, TsSourceRouteMix *clean)
 {
-    TsSourceRouteMix direct;ts_source_route_mix_init(&direct,clean);
     TsStereoFrame sample = {0.0f, 0.0f};
     TsStereoFrame synth = {0.0f, 0.0f};
     int count = 0;
@@ -554,6 +553,8 @@ void ts_note_bank_read_routed(TsNoteBank *bank,
         ts_voice_handoff_idle(&bank->sample_handoff) &&
         ts_voice_handoff_idle(&bank->fm_handoff) &&
         ts_voice_handoff_idle(&bank->capture_handoff)) return;
+    /* Idle keyboards need no per-sample routing scratch clear. */
+    TsSourceRouteMix direct;ts_source_route_mix_init(&direct,clean);
     for (int i = 0; i < bank->render_limit; ++i) {
         TsNoteVoice *voice = &bank->voices[i];
         TsStereoFrame value = voice->active ? ts_note_voice_read(voice) : (TsStereoFrame){0};

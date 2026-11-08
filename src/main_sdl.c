@@ -2405,11 +2405,19 @@ static void toggle_tile_launcher(SDL_AudioDeviceID device, AudioState *audio,
                                  const TsInstrument *instrument, int slot,
                                  int output_rate)
 {
-    TsPerformanceTileResult result;
+    /* Generation copies and hashes belong to the UI. Existing voices read
+       their immutable generations while a new tile is prepared. */
+    int valid_slot = slot >= 0 && slot < TS_BANK_SLOT_COUNT;
+    int prepared = valid_slot && ts_performance_prepare_sources(
+        &audio->tile_launchers, instrument, (uint16_t)(1u << slot));
+    TsPerformanceTileResult result = TS_PERFORMANCE_TILE_FAILED;
     if (device) SDL_LockAudioDevice(device);
-    result = ts_performance_toggle_tile(
-        &audio->tile_launchers, instrument, slot,
-        ui->config.tile_fade_ms, output_rate);
+    /* A failed allocation must not prevent releasing an existing tile. */
+    if (prepared || (valid_slot &&
+        (ts_performance_tile_mask(&audio->tile_launchers) & (1u << slot))))
+        result = ts_performance_toggle_tile(
+            &audio->tile_launchers, instrument, slot,
+            ui->config.tile_fade_ms, output_rate);
     ui->tile_launcher_mask =
         ts_performance_tile_mask(&audio->tile_launchers);
     audio->tile_launcher_active = ui->tile_launcher_mask != 0u;
@@ -14108,7 +14116,7 @@ int main(int argc, char **argv)
     int window_minimized = 0;
     SDL_Event pending_event;
     int event_pending = 0;
-    Uint32 last_input_ms = 0, last_main_paint = 0, last_service_ms = 0;
+    Uint32 last_input_ms = 0, last_main_input_ms = 0, last_main_paint = 0, last_service_ms = 0;
     int main_paint_invalid = 1;
     uint64_t presented_detail_analysis[2] = {0};
     int renderer_vsync = 0;
@@ -14696,8 +14704,13 @@ int main(int argc, char **argv)
             if (event.type == SDL_KEYDOWN || event.type == SDL_KEYUP ||
                 event.type == SDL_MOUSEBUTTONDOWN || event.type == SDL_MOUSEBUTTONUP ||
                 event.type == SDL_MOUSEWHEEL || event.type == SDL_MOUSEMOTION ||
-                event.type == SDL_TEXTINPUT || event.type == midi_wake_event)
+                event.type == SDL_TEXTINPUT || event.type == midi_wake_event) {
                 last_input_ms = SDL_GetTicks();
+                /* Editing an auxiliary window must not also accelerate a
+                   full Mosaic repaint. Global input still wakes service. */
+                if(event_window_id(&event)==SDL_GetWindowID(window) || event.type==midi_wake_event)
+                    last_main_input_ms=last_input_ms;
+            }
             if (event.type == SDL_WINDOWEVENT && event.window.windowID == SDL_GetWindowID(window))
                 main_paint_invalid = 1;
             wheel_event_coalesce(&event);
@@ -18071,10 +18084,16 @@ int main(int argc, char **argv)
                                          bank_slot + 1);
                                 continue;
                             }
-                            lock_edit_at(device, &audio, "sample bank selection");
+                            TsNativeSampleEdit selection_edit;
+                            begin_native_sample_edit_at(device, &audio, &instrument,
+                                                        &selection_edit, "sample bank selection");
                             selected = ts_ui_execute_bank_action(
                                 &instrument, bank_slot, action,
                                 select_error, sizeof(select_error));
+                            /* Selection clones the editor's sample buffers.
+                               Rejoin audio only for capture/voice metadata. */
+                            publish_native_sample_edit(device, &audio, &instrument,
+                                                       &selection_edit);
                             if (selected &&
                                 (audio.capture.state ==
                                      TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER ||
@@ -18095,7 +18114,8 @@ int main(int argc, char **argv)
                                     &instrument, silent_frames, silent_rate,
                                     select_error, sizeof(select_error));
                             }
-                            unlock_edit(device, &audio, &ui, &instrument);
+                            finish_native_sample_edit(device, &audio, &ui, &instrument,
+                                                      &selection_edit);
                             if (selected) ui.has_stretch_readout = 0;
                             if (capture_source_selected) {
                                 ui.audition_source = TS_AUDITION_CURRENT;
@@ -18779,12 +18799,14 @@ int main(int argc, char **argv)
         }
         Uint32 schedule_now = SDL_GetTicks();
         int editing = (Uint32)(schedule_now-last_input_ms)<250u || SDL_GetMouseState(NULL,NULL)!=0u;
+        int main_editing = (Uint32)(schedule_now-last_main_input_ms)<250u ||
+            (SDL_GetMouseFocus()==window && SDL_GetMouseState(NULL,NULL)!=0u);
         int animated = ui.playback_active || ui.tracker_running || ui.sister_enabled ||
             (ts_ui_master_eq_visible(&ui) && ui.eq_morph_running) ||
             ui.sister_capture_active || ui.file_busy || ui.midi_activity_until_ms ||
             (ui.mosaic && ui.mosaic->playing) || ui.mosaic_live_loops || ui.mosaic_live_recording || ui.capture_state==TS_CAPTURE_RECORDING ||
             audio.live_link_available>0 || ts_input_monitor_enabled(audio.input_monitor);
-        unsigned paint_period = ts_ui_refresh_ms(!window_minimized, editing, animated);
+        unsigned paint_period = ts_ui_refresh_ms(!window_minimized, main_editing, animated);
         if (!window_minimized && ts_ui_refresh_due(schedule_now,last_main_paint,paint_period,
                 main_paint_invalid || !frame_snapshot_valid)) {
             int force_present=main_paint_invalid || !frame_snapshot_valid;
@@ -18801,7 +18823,7 @@ int main(int argc, char **argv)
             int detail_changed=0;
             for(int i=0;i<2;i++)detail_changed|=waveform_details[i].valid &&
                 waveform_details[i].analysis_count!=presented_detail_analysis[i];
-            if ((upload || circle_changed) && (upload==1 || force_present || detail_changed || circle_changed || animated || editing)) {
+            if ((upload || circle_changed) && (upload==1 || force_present || detail_changed || circle_changed || animated || main_editing)) {
                 SDL_RenderCopy(renderer, texture, NULL, NULL);
                 native_waveform_copy(renderer,waveform_textures,waveform_details,&framebuffer);
                 native_looper_copy(renderer,&looper_texture,&looper_circle);
