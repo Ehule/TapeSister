@@ -30,6 +30,7 @@ For explanations and complete workflows, see the [User Manual](USER_MANUAL.md).
 | `Ctrl+F9` | Open/close the modeless Ambisonics output window |
 | `F12` or CFG → AUDIO HEALTH | Open/close [Audio Health](AUDIO_HEALTH.md); Save Session exports the automatically recorded timeline |
 | `Ctrl+Shift+F12` | Mark an audible click in the session log from a TapeSister host window |
+| `Shift+F12` or F11 → CREDITS | Open [Credits](CREDITS.md); any key or click closes |
 | `Space` | Main: play/stop audition. Mosaic: play/pause arrangement |
 | `Ctrl+Shift+M` | Enter or leave MIDI Learn in either window |
 | `Ctrl+Shift+I` in TrackSister | Note interpolation preview; Enter applies, Escape cancels |

@@ -102,9 +102,9 @@ typedef struct {
     int added_page;
 } FmBankHistory;
 
-static SDL_Texture *load_splash_texture(SDL_Renderer *renderer, int *width, int *height)
+static SDL_Texture *load_presentation_texture(SDL_Renderer *renderer,
+    const char *relative_path, int *width, int *height)
 {
-    static const char relative_path[] = "assets/tapesister_splash.png";
     SDL_Texture *texture = NULL;
     SDL_Surface *surface = NULL;
     unsigned char *pixels = NULL;
@@ -121,7 +121,7 @@ static SDL_Texture *load_splash_texture(SDL_Renderer *renderer, int *width, int 
     if (pixels == NULL)
         pixels = stbi_load(relative_path, width, height, &channels, STBI_rgb_alpha);
     if (pixels == NULL) {
-        fprintf(stderr, "TapeSister splash: %s\n", stbi_failure_reason());
+        fprintf(stderr, "TapeSister artwork %s: %s\n", relative_path, stbi_failure_reason());
         return NULL;
     }
 
@@ -133,6 +133,11 @@ static SDL_Texture *load_splash_texture(SDL_Renderer *renderer, int *width, int 
     if (surface != NULL) SDL_FreeSurface(surface);
     stbi_image_free(pixels);
     return texture;
+}
+
+static SDL_Texture *load_splash_texture(SDL_Renderer *renderer, int *width, int *height)
+{
+    return load_presentation_texture(renderer, "assets/tapesister_splash.png", width, height);
 }
 
 static int show_splash(SDL_Renderer *renderer)
@@ -181,6 +186,8 @@ static int show_splash(SDL_Renderer *renderer)
     SDL_DestroyTexture(splash);
     return 1;
 }
+
+#include "main_sdl_credits.inc"
 
 static int runtime_asset_path(const char *relative_path, char *path, size_t path_size)
 {
@@ -14106,6 +14113,7 @@ int main(int argc, char **argv)
     uint64_t presented_detail_analysis[2] = {0};
     int renderer_vsync = 0;
     int running = 1;
+    int exit_confirmed = 0;
     uint32_t last_audio_diagnostic_log = 0u;
 
     initialize_runtime_paths(argc > 0 ? argv[0] : NULL);
@@ -14618,7 +14626,7 @@ int main(int argc, char **argv)
                                        &pending_file);
         if (ui.exit_after_save == 2) {
             if (ui.exit_for_new) ui.new_project_pending = 1;
-            else { running = 0; continue; }
+            else { exit_confirmed = 1; running = 0; continue; }
         }
         if(!project_save_worker) {
         sister_pedalboard_tick(&sister_window, SDL_GetTicks());
@@ -14695,6 +14703,7 @@ int main(int argc, char **argv)
             wheel_event_coalesce(&event);
             if (!wheel_event_prepare(&event)) continue;
             uint32_t event_id = event_window_id(&event);
+            if(credits_event(&event,window))continue;
             if(project_save_event(&event,window,device,&audio,&ui))continue;
             if(ts_audio_session_shortcut(&event))continue;
             if (ui.new_project_pending) { main_paint_invalid = 1; break; }
@@ -15468,7 +15477,7 @@ int main(int argc, char **argv)
                         (void)exit_confirmation_activate(&ui);
                     } else if (key == SDLK_y) {
                         ui.exit_choice = (ui.exit_has_unsaved || ui.exit_for_new) ? 1 : 0;
-                        if (exit_confirmation_activate(&ui)) running = 0;
+                        if (exit_confirmation_activate(&ui)) { exit_confirmed = 1; running = 0; }
                     } else if (key == SDLK_TAB || key == SDLK_LEFT ||
                                key == SDLK_RIGHT || key == SDLK_UP ||
                                key == SDLK_DOWN) {
@@ -15478,7 +15487,7 @@ int main(int argc, char **argv)
                                      -1 : 1;
                         ui.exit_choice = (ui.exit_choice + amount + count) % count;
                     } else if (key == SDLK_RETURN || key == SDLK_KP_ENTER) {
-                        if (exit_confirmation_activate(&ui)) running = 0;
+                        if (exit_confirmation_activate(&ui)) { exit_confirmed = 1; running = 0; }
                     }
                 } else if (ui.project_overwrite_confirm_open) {
                     if (key == SDLK_ESCAPE || key == SDLK_n) {
@@ -16925,13 +16934,13 @@ int main(int argc, char **argv)
                         else if (x >= 266 && x < 354) ui.exit_choice = 1;
                         else if (x >= 360 && x < 468) ui.exit_choice = 2;
                         else continue;
-                        if (exit_confirmation_activate(&ui)) running = 0;
+                        if (exit_confirmation_activate(&ui)) { exit_confirmed = 1; running = 0; }
                     } else if (!ui.exit_has_unsaved &&
                                y >= 188 && y < 211) {
                         if (x >= 172 && x < 308) ui.exit_choice = 0;
                         else if (x >= 324 && x < 468) ui.exit_choice = 1;
                         else continue;
-                        if (exit_confirmation_activate(&ui)) running = 0;
+                        if (exit_confirmation_activate(&ui)) { exit_confirmed = 1; running = 0; }
                     }
                 } else if (ui.project_overwrite_confirm_open) {
                     if (x >= 166 && x < 302 && y >= 200 && y < 223)
@@ -19000,6 +19009,10 @@ int main(int argc, char **argv)
     spatial_window_close();speakers_close();
     performance_close();matrix_close();source_route_close();
     ts_audio_health_close();
+    credits_close();
+    if (exit_confirmed && ui.config.exit_credits &&
+        !diagnostic_bank_stress && !diagnostic_audio && !diagnostic_performance)
+        credits_farewell(window, renderer, TS_CREDITS_MS);
     if (texture) SDL_DestroyTexture(texture);
     if (renderer) SDL_DestroyRenderer(renderer);
     if (window) SDL_DestroyWindow(window);
