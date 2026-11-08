@@ -104,8 +104,8 @@ static void cache_limit(void) {
 }
 static void catalog(void) {
     assert(ts_sunvox_factory_count()==235);
-    for(int p=0;p<235;++p) {
-        TsSunVoxControls c;assert(ts_sunvox_select(&c,p));
+    for(int q=64;q<=1024;q*=4) for(int p=0;p<235;++p) {
+        TsSunVoxControls c;assert(ts_sunvox_select(&c,p));c.quantum=q;
         TsSunVoxEngine *s=ts_sunvox_new(&c,48000);assert(s);
         for(int i=0;i<24000;++i) {
             float wet[2],dry[2];
@@ -114,18 +114,30 @@ static void catalog(void) {
         }
         ts_sunvox_free(s);
     }
-    puts("All 235 factory patches load and render.");
+    puts("All 235 factory patches load and render at 64, 256 and 1024 frames.");
+}
+static void quantum_codec(void) {
+    TsSunVoxControls c=amplifier();assert(ts_sunvox_quantum(&c)==256);
+    c.quantum=0;assert(ts_sunvox_valid(&c) && ts_sunvox_quantum(&c)==64);
+    c.quantum=65;assert(!ts_sunvox_valid(&c) && !ts_sunvox_new(&c,48000));
+    assert(ts_sunvox_read(&c,"Format","1")==1 && ts_sunvox_quantum(&c)==64);
+    assert(ts_sunvox_read(&c,"Quantum","1024")==1 && ts_sunvox_quantum(&c)==1024);
+    const char *invalid[]={"0","-1","65","128","2048","256x",""};
+    for(unsigned i=0;i<sizeof(invalid)/sizeof(*invalid);++i) {
+        assert(ts_sunvox_read(&c,"Quantum",invalid[i])==-1);
+        assert(ts_sunvox_quantum(&c)==1024);
+    }
 }
 static void stereo_controls(void) {
     unsigned rates[]={8000,44100,48000,96000,192000};
-    for(unsigned r=0;r<sizeof(rates)/sizeof(*rates);++r) {
-        TsSunVoxControls c=amplifier();
+    for(int q=64;q<=1024;q*=4) for(unsigned r=0;r<sizeof(rates)/sizeof(*rates);++r) {
+        TsSunVoxControls c=amplifier();c.quantum=q;
         TsSunVoxEngine *a=ts_sunvox_new(&c,rates[r]),*b=ts_sunvox_new(&c,rates[r]);assert(a && b);
         float wet[2],dry[2],other[2],odry[2];
-        for(int i=0;i<1024;++i) {
+        for(int i=0;i<q+256;++i) {
             float l=i==0?.25f:0,rr=i==1?-.125f:0;
             ts_sunvox_process(a,l,rr,wet,dry);ts_sunvox_process(b,0,0,other,odry);
-            near(wet[0],i==64?.25f:0);near(wet[1],i==65?-.125f:0);
+            near(wet[0],i==q?.25f:0);near(wet[1],i==q+1?-.125f:0);
             near(wet[0],dry[0]);near(wet[1],dry[1]);near(other[0],0);near(other[1],0);
         }
         c.value[0]=4096; /* volume 128 of 1024: half of unity */
@@ -141,7 +153,7 @@ static void stereo_controls(void) {
         near(wet[0],.25f);near(wet[1],-.125f);
         ts_sunvox_free(a);ts_sunvox_free(b);
     }
-    puts("Stereo isolation, 64-frame alignment, controls and reset passed at five rates.");
+    puts("Stereo isolation, all three block latencies, controls and reset passed at five rates.");
 }
 static TsRoutingMatrix graph;
 static TsMatrixEffects engines;
@@ -171,6 +183,19 @@ static void matrix(void) {
     for(int f=0;f<1024;++f)ts_matrix_effects_process(&engines,0,(TsStereoFrame){.2f,-.1f},(TsStereoFrame){0},1);
     TsStereoFrame out=ts_matrix_effects_process(&engines,0,(TsStereoFrame){.2f,-.1f},(TsStereoFrame){0},1);
     near(out.l,.2f);near(out.r,-.1f);
+    uint64_t original_patch=c.effect[0].sunvox.patch;
+    c.effect[0].sunvox.quantum=1024;
+    assert(ts_matrix_effects_stage(&engines,&c,48000,&plan) && plan.changed==1);
+    ts_matrix_effects_commit(&engines,&c,48000,&plan);
+    for(int f=0;f<4096;++f) {
+        ts_matrix_effects_tick(&engines);
+        out=ts_matrix_effects_process(&engines,0,(TsStereoFrame){.2f,-.1f},(TsStereoFrame){0},1);
+        /* Bypass must remain constant while the larger dry buffer fills. */
+        near(out.l,.2f);near(out.r,-.1f);
+    }
+    assert(c.effect[0].sunvox.patch==original_patch && c.effect[0].sunvox.value[0]==4096);
+    ts_matrix_effects_collect(&engines,&plan);ts_matrix_effects_discard(&plan);
+    assert(ts_matrix_effects_stage(&engines,&c,48000,&plan) && !plan.changed);
     assert(ts_sunvox_select(&c.effect[0].sunvox,0));
     assert(ts_matrix_effects_stage(&engines,&c,48000,&plan) && plan.changed);
     ts_matrix_effects_commit(&engines,&c,48000,&plan);
@@ -185,8 +210,10 @@ static void write_project(void) {
     ts_sister_project_state_init(&s,48000);
     assert(ts_matrix_effect_add(&s.matrix,TS_MATRIX_FX_SUNVOX)==0);
     s.matrix.effect[0].sunvox=amplifier();s.matrix.effect[0].sunvox.value[0]=4096;
+    s.matrix.effect[0].sunvox.quantum=1024;
     assert(ts_matrix_effect_add(&s.matrix,TS_MATRIX_FX_SUNVOX)==1);
     assert(ts_sunvox_select(&s.matrix.effect[1].sunvox,234));
+    s.matrix.effect[1].sunvox.quantum=64;
     assert(ts_sister_project_state_save_file(&s,"sunvox-project.tsr",error,sizeof(error)));
 }
 static void read_project(void) {
@@ -195,6 +222,8 @@ static void read_project(void) {
     assert(!strcmp(ts_sunvox_name(&s.matrix.effect[0].sunvox),"Test amplifier"));
     assert(!strcmp(ts_sunvox_name(&s.matrix.effect[1].sunvox),ts_sunvox_factory_name(234)));
     assert(s.matrix.effect[0].sunvox.value[0]==4096);
+    assert(ts_sunvox_quantum(&s.matrix.effect[0].sunvox)==1024);
+    assert(ts_sunvox_quantum(&s.matrix.effect[1].sunvox)==64);
     TsSunVoxEngine *a=ts_sunvox_new(&s.matrix.effect[0].sunvox,48000);assert(a);
     float wet[2],dry[2];for(int i=0;i<4096;++i)ts_sunvox_process(a,.2f,-.1f,wet,dry);
     near(wet[0],.1f);near(wet[1],-.05f);ts_sunvox_free(a);
@@ -221,5 +250,5 @@ int main(int argc,char **argv) {
     }
     if(argc>1 && !strcmp(argv[1],"write")){write_project();return 0;}
     if(argc>1 && !strcmp(argv[1],"read")){read_project();return 0;}
-    imports();stereo_controls();catalog();matrix();write_project();read_project();cache_limit();return 0;
+    imports();quantum_codec();stereo_controls();catalog();matrix();write_project();read_project();cache_limit();return 0;
 }

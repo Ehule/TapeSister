@@ -244,6 +244,10 @@ static void ts_audio_health_setup_report(char *text, size_t size, Uint32 now)
             if(!fx->id)continue;
             used=strlen(text);snprintf(text+used,size-used,"    Matrix effect #%u: %s; %s; mix %.1f%%\n",
                 (unsigned)fx->id,ts_matrix_effect_name(fx->type),health_on(fx->enabled),fx->mix*100);
+            if(fx->type==TS_MATRIX_FX_SUNVOX) {
+                used=strlen(text);snprintf(text+used,size-used,"      %s; processing block: %u frames\n",
+                    ts_sunvox_name(&fx->sunvox),ts_sunvox_quantum(&fx->sunvox));
+            }
         }
     }
     {

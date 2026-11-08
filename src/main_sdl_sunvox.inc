@@ -103,7 +103,9 @@ static void svfx_paint(void)
     if(sunvox_files.mode)svfx_files_paint();
     fx_panel_text(626,78,616,62,ts_sunvox_name(&c->sunvox),MX_GREEN,2,2);
     snprintf(label,sizeof(label),"%s / INSTANCE #%u",ts_sunvox_category(&c->sunvox),(unsigned)c->id);
-    fx_panel_text(626,137,616,28,label,MX_DIM,1,1);
+    fx_panel_text(626,137,366,28,label,MX_DIM,1,1);
+    snprintf(label,sizeof(label),"BLOCK %u",ts_sunvox_quantum(&c->sunvox));
+    mx_button(1010,137,228,label,0);
     int count=ts_sunvox_parameter_count(&c->sunvox),last=SDL_max(0,(count-1)/10);
     sunvox_editor.page=SDL_clamp(sunvox_editor.page,0,last);
     for(int row=0;row<10;++row) {
@@ -254,6 +256,13 @@ static int svfx_event(SDL_Event *e,SDL_AudioDeviceID device,AudioState *audio,Ts
     if(left && y>=672 && y<700 && x>=626){if(x<736)--sunvox_editor.page;else if(x>=1122)++sunvox_editor.page;}
     if(!mx_editable())return 1;
     int changed=0;
+    if(left && x>=1010 && x<1238 && y>=137 && y<165) {
+        unsigned q=ts_sunvox_quantum(c);
+        c->quantum=q==64?256:q==256?1024:64;changed=1;
+        snprintf(sunvox_editor.status,sizeof(sunvox_editor.status),
+            "%u frames: %.2f ms per effect at %u Hz. 64 = low latency; 256/1024 = lower CPU. Restarts this effect.",
+            ts_sunvox_quantum(c),1000.0*ts_sunvox_quantum(c)/(audio->output_rate?audio->output_rate:48000),audio->output_rate?audio->output_rate:48000);
+    }
     if(wheel && (SDL_GetModState()&KMOD_SHIFT) && x>=626 && x<1238 && y>=180 && y<660) {
         int at=sunvox_editor.page*10+(y-180)/48;TsSunVoxParameter p;
         if(ts_sunvox_parameter(c,at,&p)) {

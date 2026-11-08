@@ -346,6 +346,12 @@ static void sunvox_browser(const char *dir)
     key(SDLK_y,KMOD_CTRL);assert(w->controls.effect[slot].sunvox.value[0]==changed);
     pointer(SDL_MOUSEBUTTONDOWN,790,210,SDL_BUTTON_RIGHT,1);pointer(SDL_MOUSEBUTTONUP,790,210,SDL_BUTTON_RIGHT,1);
     assert(w->controls.effect[slot].sunvox.value[0]==-1);
+    assert(ts_sunvox_quantum(&w->controls.effect[slot].sunvox)==256);
+    click(1110,150,1);assert(ts_sunvox_quantum(&w->controls.effect[slot].sunvox)==1024);
+    key(SDLK_z,KMOD_CTRL);assert(ts_sunvox_quantum(&w->controls.effect[slot].sunvox)==256);
+    key(SDLK_y,KMOD_CTRL);assert(ts_sunvox_quantum(&w->controls.effect[slot].sunvox)==1024);
+    click(1110,150,1);assert(ts_sunvox_quantum(&w->controls.effect[slot].sunvox)==64);
+    click(1110,150,1);assert(ts_sunvox_quantum(&w->controls.effect[slot].sunvox)==256);
     click(80,800,1);assert(w->controls.effect[slot].sunvox.held);
     uint64_t previous=w->controls.effect[slot].sunvox.patch;
     int history=w->history_count;

@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <math.h>
 #include "tapesister/tile_id.h"
 #include "tapesister/source_route_types.h"
 #include "tapesister/eq_types.h"
@@ -62,6 +63,14 @@ int ts_sample_dimensions(size_t frames, uint8_t channels,
 int ts_sample_scalar_count(const TsSample *sample, size_t *scalar_count);
 TsStereoFrame ts_stereo_frame_from_mono(float value);
 TsStereoFrame ts_stereo_frame_sanitize(TsStereoFrame frame);
+/* Same finite-value guard as the public function, visible to inner-loop
+   callers so every bus does not pay an out-of-line call per sample. */
+static inline TsStereoFrame ts_stereo_frame_sanitize_inline(TsStereoFrame frame)
+{
+    frame.l = isfinite(frame.l) ? frame.l : 0.0f;
+    frame.r = isfinite(frame.r) ? frame.r : 0.0f;
+    return frame;
+}
 float ts_stereo_frame_fold_mono(TsStereoFrame frame);
 float ts_sample_read_channel(const TsSample *sample, size_t frame,
                              uint8_t channel);

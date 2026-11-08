@@ -14,14 +14,14 @@ static void runtime_error(char *error, size_t error_size, const char *message)
 
 static TsStereoFrame frame_add(TsStereoFrame a, TsStereoFrame b)
 {
-    return ts_stereo_frame_sanitize(
+    return ts_stereo_frame_sanitize_inline(
         (TsStereoFrame){a.l + b.l, a.r + b.r});
 }
 
 static TsStereoFrame frame_scale(TsStereoFrame value, float gain)
 {
     if (!isfinite(gain)) gain = 0.0f;
-    return ts_stereo_frame_sanitize(
+    return ts_stereo_frame_sanitize_inline(
         (TsStereoFrame){value.l * gain, value.r * gain});
 }
 
@@ -33,14 +33,14 @@ static TsStereoFrame frame_effect_return(TsStereoFrame dry,
         dry.l + (processed.l - dry.l) * gain,
         dry.r + (processed.r - dry.r) * gain
     };
-    return ts_stereo_frame_sanitize(result);
+    return ts_stereo_frame_sanitize_inline(result);
 }
 
 static float frame_peak(TsStereoFrame value)
 {
     float left;
     float right;
-    value = ts_stereo_frame_sanitize(value);
+    value = ts_stereo_frame_sanitize_inline(value);
     left = fabsf(value.l);
     right = fabsf(value.r);
     return left > right ? left : right;
@@ -571,8 +571,8 @@ TsStereoFrame ts_sister_runtime_file_capture_frame(
     TsStereoFrame final_output)
 {
     if (tap <= TS_SISTER_TAP_MIX || tap >= TS_SISTER_TAP_COUNT)
-        return ts_stereo_frame_sanitize(final_output);
-    return ts_stereo_frame_sanitize(selected_tap(frame, tap));
+        return ts_stereo_frame_sanitize_inline(final_output);
+    return ts_stereo_frame_sanitize_inline(selected_tap(frame, tap));
 }
 
 static TsBankCaptureKind capture_kind_for_tap(TsSisterTap tap)
@@ -1428,7 +1428,7 @@ static void runtime_fallout_feedback(TsSisterRuntime *runtime, TsStereoFrame wet
             runtime->fallout_feedback_current < 0.000001f)
             runtime->fallout_feedback_current = 0.0f;
         TsStereoFrame feedback = frame_scale(
-            ts_stereo_frame_sanitize(wet),
+            ts_stereo_frame_sanitize_inline(wet),
             runtime->fallout_feedback_current);
         float peak = fmaxf(fabsf(feedback.l), fabsf(feedback.r));
         if (!isfinite(peak)) feedback = (TsStereoFrame){0.0f, 0.0f};
@@ -1436,7 +1436,7 @@ static void runtime_fallout_feedback(TsSisterRuntime *runtime, TsStereoFrame wet
         feedback.l = tanhf(feedback.l);
         feedback.r = tanhf(feedback.r);
         runtime->fallout_feedback_previous =
-            ts_stereo_frame_sanitize(feedback);
+            ts_stereo_frame_sanitize_inline(feedback);
     }
 }
 
@@ -1458,13 +1458,13 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
     if (runtime == NULL) return frame;
     ts_matrix_effects_tick(&runtime->matrix_effects);
     if (sources != NULL) source = *sources;
-    source.tiles = ts_stereo_frame_sanitize(source.tiles);
-    source.fm = ts_stereo_frame_sanitize(source.fm);
-    source.external = ts_stereo_frame_sanitize(source.external);
-    source.preview = ts_stereo_frame_sanitize(source.preview);
-    source.tapehead = ts_stereo_frame_sanitize(source.tapehead);
-    source.tracker = ts_stereo_frame_sanitize(source.tracker);
-    source.tracker_tape = ts_stereo_frame_sanitize(source.tracker_tape);
+    source.tiles = ts_stereo_frame_sanitize_inline(source.tiles);
+    source.fm = ts_stereo_frame_sanitize_inline(source.fm);
+    source.external = ts_stereo_frame_sanitize_inline(source.external);
+    source.preview = ts_stereo_frame_sanitize_inline(source.preview);
+    source.tapehead = ts_stereo_frame_sanitize_inline(source.tapehead);
+    source.tracker = ts_stereo_frame_sanitize_inline(source.tracker);
+    source.tracker_tape = ts_stereo_frame_sanitize_inline(source.tracker_tape);
     /* This is the untrimmed, pre-Sister Live Link stream. It remains available
        as a recorder tap even when Sister processing itself is bypassed. */
     frame.tap[TS_SISTER_TAP_TAPEHEAD] = source.tapehead;
@@ -1476,12 +1476,12 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
     tile_bus=frame_scale(tile_bus,live_gain);
     ts_source_route_add(&runtime->clean_output,&manual,live_gain);
     for(int bus=0;bus<TS_SOURCE_SENDS;++bus)
-        runtime->send_input[bus]=ts_stereo_frame_sanitize(frame_add(source.send[bus],runtime->clean_output.send[bus]));
+        runtime->send_input[bus]=ts_stereo_frame_sanitize_inline(frame_add(source.send[bus],runtime->clean_output.send[bus]));
     frame.keyboard_dry = tile_bus;
     tile_bus = frame_add(tile_bus, source.tiles);
     (void)tile_raw;
     if(runtime->matrix.controls.enabled) {
-        source.live_tiles=frame_add(ts_stereo_frame_sanitize(source.live_tiles),frame_scale(frame.keyboard_dry,source.matrix_program_gain));
+        source.live_tiles=frame_add(ts_stereo_frame_sanitize_inline(source.live_tiles),frame_scale(frame.keyboard_dry,source.matrix_program_gain));
         return runtime_matrix_frame(runtime,&source,source.tiles,frame);
     }
     if (!runtime->enabled || runtime->callback_failed) {
@@ -1543,7 +1543,7 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
 
 TsStereoFrame ts_sister_runtime_process_ordinary_post_fx(TsSisterRuntime *runtime,TsStereoFrame input)
 {
-    if(!runtime || !runtime->post_fx.ready)return ts_stereo_frame_sanitize(input);
+    if(!runtime || !runtime->post_fx.ready)return ts_stereo_frame_sanitize_inline(input);
     RouterFrameContext context={.runtime=runtime};runtime_router_begin(&context);
     TsStereoFrame output=ts_router_process_with_prepare(&runtime->router,input,runtime_router_stage,runtime_router_prepare_stage,&context);
     runtime_router_finish(&context);publish_frame_snapshot(runtime);return output;
@@ -1554,7 +1554,7 @@ TsStereoFrame ts_sister_runtime_process_output(TsSisterRuntime *runtime,
 {
     TsStereoFrame output;
     float pre_peak = 0.0f;
-    if (runtime == NULL) return ts_stereo_frame_sanitize(input);
+    if (runtime == NULL) return ts_stereo_frame_sanitize_inline(input);
     if(!runtime->matrix.controls.enabled && runtime->router.master_mix) {
         float wet=runtime->router.wet[TS_ROUTER_INSERT];
         uint64_t profile_insert=ts_profile_begin(TS_PROF_INSERT);

@@ -1,0 +1,88 @@
+{
+  "project": "Tree-of-Life / Keter - The Unstruck Crown",
+  "baseline_commit": "58c6dc9ce624e57e3ec0f2ac75aac412d395f429",
+  "scope": "Headless callback and isolated effects on a Linux server, not ASIO hardware or GUI playback. Thread CPU percentages are fractions of a single real-time core budget.",
+  "legacy_comparison": {
+    "seconds": 60,
+    "rate": 48000,
+    "callback_frames": 1024,
+    "channels": 4,
+    "sunvox_frames": 64,
+    "fixed_sunvox_seed_clock_ns": 123456789000000,
+    "hardware_float_bytes_identical": true,
+    "baseline": {
+      "rate": 48000,
+      "block": 1024,
+      "channels": 4,
+      "audio_seconds": 49.994667,
+      "warmup_seconds": 10.0,
+      "thread_cpu_percent": 29.930259,
+      "mean_callback_cpu_ms": 6.38376,
+      "mean_callback_wall_ms": 6.38169,
+      "p95_callback_wall_ms": 8.972796,
+      "rms": 0.119139961,
+      "peak": 0.310457498,
+      "stereo_hash": "a02801a627fe8ab1",
+      "hardware_hash": "885cda7767f8a651"
+    },
+    "candidate": {
+      "rate": 48000,
+      "block": 1024,
+      "channels": 4,
+      "sunvox_block_override": 0,
+      "audio_seconds": 49.994667,
+      "warmup_seconds": 10.0,
+      "thread_cpu_percent": 25.039129,
+      "mean_callback_cpu_ms": 5.340541,
+      "mean_callback_wall_ms": 5.343694,
+      "p95_callback_wall_ms": 6.032008,
+      "rms": 0.119139961,
+      "peak": 0.310457498,
+      "stereo_hash": "a02801a627fe8ab1",
+      "hardware_hash": "885cda7767f8a651"
+    }
+  },
+  "isolated_effects": {
+    "seconds_per_effect": 30,
+    "rate": 48000,
+    "input": "0.1*sin(i*0.04), repeating 1024-frame source, right channel shifted 240 frames",
+    "controls": "Saved Keter SunVox controls, unchanged apart from block size",
+    "cpu_percent": {
+      "64": [
+        1.256915,
+        8.371258,
+        0.512824
+      ],
+      "256": [
+        1.192858,
+        4.12753,
+        0.457423
+      ],
+      "1024": [
+        1.118331,
+        3.287743,
+        0.453172
+      ]
+    },
+    "patch_order": [
+      "RAGINGCOAST Ensemble",
+      "echo2 Velvet Reverb 3",
+      "cube48 ShimmerClassic"
+    ]
+  },
+  "validation": [
+    "All 235 factory patches rendered at each of 64, 256 and 1024 frames",
+    "Impulse latency, dry/wet alignment and stereo isolation at 8, 44.1, 48, 96 and 192 kHz",
+    "Legacy omitted setting restores 64 frames; new factory/import defaults are 256",
+    "Invalid block values rejected; staged replacement and bypass tested",
+    "Full callback legacy output compared with cmp; test-only linker wrap fixes stime_ns for factory LFO seeds",
+    "SunVox block-button cycling and undo/redo passed in controller test"
+  ],
+  "reproduce_callback": "build/tapesister_audio_benchmark PROJECT 600 400 48000 1024 4 - 256",
+  "limitations": [
+    "Changing block size changes latency and can change block-sensitive patch behavior; new modes are not claimed bit-identical to 64 frames",
+    "SunVox factory random modulation can differ between runs; deterministic byte comparison used a test-only fixed stime_ns linker wrapper",
+    "No physical MOTU/ASIO or listening check in this environment",
+    "Full-suite and Windows/Linux CI results are tracked on the pull request"
+  ]
+}
