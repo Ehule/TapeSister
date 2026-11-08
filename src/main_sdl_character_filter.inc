@@ -78,7 +78,7 @@ static void character_filter_history_finish(SDL_AudioDeviceID device,AudioState 
 }
 static void character_filter_paint(AudioState *audio,TsUiState *ui,SisterWindow *sister)
 {
- if(!character_filter_window.visible || SDL_GetTicks()-character_filter_window.painted<33)return;
+ if(!character_filter_window.visible || !window_drawable(character_filter_window.window) || SDL_GetTicks()-character_filter_window.painted<33)return;
  TsCharacterFilterControls *c;float *gain,*mix;int *enabled;
  if(!character_filter_resolve(audio,ui,sister,&c,&gain,&mix,&enabled))return;
  unsigned shared_locks=0;
