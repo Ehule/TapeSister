@@ -2,6 +2,7 @@
 #define TAPESISTER_PROFILE_H
 #include <stddef.h>
 #include <stdint.h>
+#include "tapesister/source_route_types.h"
 
 /* One writer per lane: main/UI and output callback. Nested timings are
    inclusive. Audio children sample one complete block in 32; totals and
@@ -17,8 +18,21 @@ typedef enum {
     TS_PROF_COUNT
 } TsProfileId;
 typedef struct { uint64_t calls, ticks, peak; } TsProfileValue;
+/* Immutable engine identity, prepared off the audio thread. A generation is
+   new even when a project/device reload reuses the same saved effect ID. */
+typedef struct {
+    uint64_t generation, patch;
+    uint32_t id, type, quantum;
+} TsProfileEffectIdentity;
+typedef struct {
+    TsProfileEffectIdentity identity;
+    TsProfileValue blocks; /* Estimated processed blocks/ticks; observed block peak. */
+    uint64_t samples, transitions, last;
+} TsProfileEffectValue;
 typedef struct {
     TsProfileValue value[TS_PROF_COUNT];
+    TsProfileEffectValue effect[TS_MATRIX_EFFECT_CAPACITY];
+    uint64_t now;
     double seconds, frequency;
     int enabled;
 } TsProfileSnapshot;
@@ -32,6 +46,13 @@ void ts_profile_lane_end(int audio);
 extern int ts_profile_ui_active, ts_profile_audio_active;
 uint64_t ts_profile_clock(void);
 void ts_profile_record(TsProfileId id, uint64_t start);
+/* Reuses the aggregate Matrix FX clock pair; sums all frames of a sampled
+   callback before retaining its per-effect peak. No strings or allocation. */
+void ts_profile_effect_end(int slot, const TsProfileEffectIdentity *identity,
+                           uint64_t start, int transitioning);
+/* UI thread only, including SunVox catalog/name lookup. */
+void ts_profile_effect_label(const TsProfileEffectIdentity *identity,
+                             char *text, size_t capacity);
 static inline uint64_t ts_profile_begin(TsProfileId id)
 {
     return (id < TS_PROF_AUDIO ? ts_profile_ui_active :

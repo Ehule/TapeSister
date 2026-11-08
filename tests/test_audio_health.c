@@ -28,6 +28,37 @@ static int publish(void *data)
     return 0;
 }
 
+static atomic_int profile_done;
+static int publish_effect_profiles(void *unused)
+{
+    (void)unused;
+    for(uint32_t i=1;i<=100000;++i) {
+        ts_profile_lane_begin(1);
+        TsProfileEffectIdentity id={.generation=i,.id=i,.patch=i*3,.type=3,.quantum=i*2};
+        uint64_t start=ts_profile_begin(TS_PROF_MATRIX_FX);
+        ts_profile_effect_end(15,&id,start,1);ts_profile_lane_end(1);
+    }
+    atomic_store(&profile_done,1);return 0;
+}
+static void check_concurrent_profiles(void)
+{
+    ts_profile_enable(1);atomic_store(&profile_done,0);
+    SDL_Thread *thread=SDL_CreateThread(publish_effect_profiles,"effect profiles",NULL);assert(thread);
+    unsigned reads=0;
+    do {
+        TsProfileSnapshot s;ts_profile_snapshot(&s);const TsProfileEffectValue *v=&s.effect[15];
+        if(v->samples) {
+            assert(v->identity.id==v->identity.generation);
+            assert(v->identity.patch==v->identity.generation*3);
+            assert(v->identity.quantum==v->identity.generation*2);
+            assert(v->samples==1 && v->transitions==1 && v->blocks.calls==32);
+            assert(v->blocks.ticks==v->blocks.peak*32);
+        }
+        if(++reads%200==0)ts_profile_reset();
+    } while(!atomic_load(&profile_done));
+    SDL_WaitThread(thread,NULL);ts_profile_enable(0);
+}
+
 int main(int argc, char **argv)
 {
     SDL_setenv("SDL_VIDEODRIVER", "dummy", 1);
@@ -143,6 +174,30 @@ int main(int argc, char **argv)
         SDL_Surface *surface=SDL_CreateRGBSurfaceFrom(ts_health.framebuffer->pixels,640,400,32,640*4,0x00ff0000u,0x0000ff00u,0x000000ffu,0xff000000u);
         assert(surface);assert(!SDL_SaveBMP(surface,SDL_getenv("TAPESISTER_PROFILE_SCREENSHOT")));SDL_FreeSurface(surface);
     }
+    /* The secondary view uses the same logical window coordinates and never
+       alters the instrument. Populate every slot to exercise the full panel. */
+    ts_profile_lane_begin(1);
+    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i) {
+        TsSunVoxControls c;ts_sunvox_default(&c);
+        if(i<3)assert(ts_sunvox_select(&c,i));
+        TsProfileEffectIdentity id={.generation=(uint64_t)i+1,.id=(uint32_t)i+1,
+            .type=i<3?TS_MATRIX_FX_SUNVOX:TS_SISTER_FX_GRAIN,.patch=c.patch,.quantum=256};
+        uint64_t start=ts_profile_begin(TS_PROF_MATRIX_FX);
+        ts_profile_effect_end(i,&id,start,0);
+    }
+    ts_profile_lane_end(1);
+    SDL_Event effects_event=profile_event;effects_event.button.x=700;effects_event.button.y=55;
+    assert(ts_audio_health_event(&effects_event,main_window,a,ui));assert(ts_health.profile_effects);
+    ts_audio_health_update(a,ui);
+    if(SDL_getenv("TAPESISTER_MATRIX_PROFILE_SCREENSHOT")) {
+        SDL_Surface *surface=SDL_CreateRGBSurfaceFrom(ts_health.framebuffer->pixels,640,400,32,640*4,0x00ff0000u,0x0000ff00u,0x000000ffu,0xff000000u);
+        assert(surface);assert(!SDL_SaveBMP(surface,SDL_getenv("TAPESISTER_MATRIX_PROFILE_SCREENSHOT")));SDL_FreeSurface(surface);
+    }
+    SDL_Event profile_copy=profile_event;profile_copy.button.x=250;
+    assert(ts_audio_health_event(&profile_copy,main_window,a,ui));
+    char *profile_report=SDL_GetClipboardText();
+    assert(strstr(profile_report,"#16 GRAIN") && strstr(profile_report,"peak ms/block"));SDL_free(profile_report);
+    assert(ts_audio_health_event(&effects_event,main_window,a,ui));assert(!ts_health.profile_effects);
     assert(ts_audio_health_event(&profile_event,main_window,a,ui));assert(!ts_profile_enabled());
     for (unsigned i = 0; i < 25; ++i)
         ts_realtime_diagnostics_record_timed(&a->realtime_diagnostics, i * 10000u,
@@ -294,7 +349,12 @@ int main(int argc, char **argv)
     assert(ts_session_log_start(session_dir,0));SDL_free(session_dir);
     ts_health.visible=0;ts_health.setup.valid=0;
     ts_audio_health_capture_setup(a,ui,SDL_GetTicks());assert(ts_health.setup.valid);
+    ts_profile_enable(1);ts_profile_lane_begin(1);
+    TsProfileEffectIdentity log_effect={.generation=777,.id=16,.type=TS_SISTER_FX_GRAIN};
+    uint64_t log_start=ts_profile_begin(TS_PROF_MATRIX_FX);
+    ts_profile_effect_end(15,&log_effect,log_start,0);ts_profile_lane_end(1);
     ts_audio_session_update(a,ui);
+    ts_profile_enable(0);
     e.type=SDL_KEYDOWN;e.key.windowID=SDL_GetWindowID(main_window);e.key.keysym.sym=SDLK_F12;
     e.key.keysym.mod=KMOD_LCTRL|KMOD_LSHIFT;e.key.repeat=0;
     assert(ts_audio_health_event(&e,main_window,a,ui));assert(!ts_health.visible);
@@ -341,6 +401,7 @@ int main(int argc, char **argv)
         assert(s.recent_load_percent == 0 || fabs(s.recent_load_percent - 25) < .00001);
     }
     SDL_WaitThread(thread, NULL);
+    check_concurrent_profiles();
     assert(spatial_show(0,a,ui));
     SDL_HideWindow(spatial_window.window);spatial_window.presented=0;
     spatial_window.framebuffer->pixels[0]=0x12345678u;
@@ -354,6 +415,7 @@ int main(int argc, char **argv)
     char *history=calloc(log_size+1,1);assert(history);assert(SDL_RWread(log,history,1,log_size)==log_size);SDL_RWclose(log);
     assert(strstr(history,"heard_click") && strstr(history,"health_reset") && strstr(history,"setup_snapshot") && strstr(history,"audio_device"));
     assert(strstr(history,"mosaic_cards=1024 mosaic_at_playhead=0 mosaic_notes=0"));
+    assert(strstr(history,"profile_snapshot") && strstr(history,"#16 GRAIN") && strstr(history,"peak ms/block"));
     free(history);remove(session.path);remove(session.export_path);
     SDL_DestroyWindow(main_window);ts_mosaic_free(a->mosaic); free(a); free(ui); SDL_Quit();
     puts("Audio Health: counters, nested locks, concurrent snapshots, actual device, window isolation, reset and clipboard passed");
