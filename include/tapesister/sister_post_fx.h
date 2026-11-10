@@ -170,6 +170,7 @@ typedef struct {
     float modulation_step_cos[TS_SISTER_REVERB_LINES];
     uint32_t modulation_renormalize;
     int has_history;
+    size_t nonzero_samples; /* Exact ring occupancy, for silent work elision. */
     TsSisterFxReadHandoff read_handoff;
     float feedback_gain[TS_SISTER_REVERB_LINES];
     float feedback_decay_cached, feedback_size_cached;
@@ -205,6 +206,7 @@ typedef struct {
     float gain_db_cached;
     float route_current;
     int has_history;
+    size_t nonzero_samples; /* Exact ring occupancy, for silent work elision. */
     TsSisterFxMixCache mix_cache;
 } TsSisterDelayState;
 

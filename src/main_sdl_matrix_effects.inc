@@ -138,7 +138,10 @@ static void mx_effect_remove(SDL_AudioDeviceID device,AudioState *audio,TsUiStat
         for(int i=0;i<TS_BANK_SLOT_COUNT;++i)if(page->bank[i].occupied && mx_clear_effect_route(&page->bank[i].output_route,slot))
             source_route_update_voices(audio,page->bank[i].tile_id,page->bank[i].output_route);
     }
-    if(w->mosaic)for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(w->mosaic->events[i].id && mx_clear_effect_route(&w->mosaic->events[i].output_route,slot))++w->mosaic->revision;
+    for(int c=0;c<mx_scene_count();++c) {
+        TsMosaic *m=mx_scene_at(c);if(!m)continue;
+        for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(m->events[i].id && mx_clear_effect_route(&m->events[i].output_route,slot))++m->revision;
+    }
     ts_matrix_effects_commit(&audio->sister.matrix_effects,&next,(unsigned)audio->output_rate,&plan);
     ts_matrix_set(&audio->sister.matrix,&next,(unsigned)audio->output_rate);
     if(device)SDL_UnlockAudioDevice(device);

@@ -19,6 +19,22 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
     MatrixWindow *w=&matrix_window;TsMatrixLayout *l=w->layout;
     if(e->type==SDL_KEYUP){if(fx_canvas_key(e->key.keysym.sym) || ((e->key.keysym.mod&KMOD_CTRL) && (e->key.keysym.sym==SDLK_a || e->key.keysym.sym==SDLK_n || e->key.keysym.sym==SDLK_c || e->key.keysym.sym==SDLK_v)))return 1;
         e->key.windowID=SDL_GetWindowID(main);return 0;}
+    if(fx_canvas.movement_popup) {
+        if(e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_ESCAPE)fx_canvas.movement_popup=0;
+        if(e->type==SDL_MOUSEBUTTONDOWN) {
+            if(e->button.button==SDL_BUTTON_LEFT && x>=300 && x<800 && y>=104 && w->gallery) {
+                int row=(y-104)/32;
+                if(row<=w->gallery->count) {
+                    fx_canvas.movement=row?w->gallery->canvas[row-1].id:0;
+                    fx_clear_selection();fx_clear_wires();w->effect_open=w->compressor_open=0;
+                    fx_build(pages,bank);fx_fit();
+                    snprintf(w->status,sizeof(w->status),"VIEW FILTER ONLY / PLAYBACK AND ROUTING UNCHANGED");
+                }
+            }
+            fx_canvas.movement_popup=0;
+        }
+        return 1;
+    }
     if(fx_canvas.confirm_clear) {
         if(e->type==SDL_KEYDOWN && (e->key.keysym.sym==SDLK_ESCAPE || e->key.keysym.sym==SDLK_RETURN))fx_canvas.confirm_clear=0;
         if(e->type==SDL_MOUSEBUTTONDOWN && e->button.button==SDL_BUTTON_LEFT) {
@@ -116,7 +132,8 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
         else if(x>=1018){ui->mosaic_open=1;matrix_hide();SDL_RaiseWindow(main);}return 1;
     }
     if(left && y>=70 && y<98 && !fx_canvas.meta) {
-        if(!w->controls.enabled && x>=300 && x<584)mx_activate(device,audio,ui,pages,bank);
+        if(w->controls.enabled && w->gallery && x>=300 && x<650)fx_canvas.movement_popup=1;
+        else if(!w->controls.enabled && x>=300 && x<584)mx_activate(device,audio,ui,pages,bank);
         else if(x>=660 && x<856)l->canvas_straight=!l->canvas_straight;
         else if(x>=866 && x<998){l->canvas_snap=!l->canvas_snap;
             snprintf(w->status,sizeof(w->status),l->canvas_snap?"GRID SNAP ON / ALT WHILE MOVING: FREE PLACEMENT":"GRID SNAP OFF / FREE PLACEMENT");}
@@ -173,7 +190,9 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
     if(modifiers&KMOD_CTRL){fx_begin_box(x,y,1,(modifiers&KMOD_SHIFT)!=0);return 1;}
     float nearest=64;int found=-1,destination=-1;
     for(int i=0;i<fx_canvas.count;++i) {
-        FxCanvasNode *n=&fx_canvas.node[i];if(n->at<0)continue;TsSourceRoute r=mx_display_route(mx_route(n->row,pages,bank));
+        FxCanvasNode *n=&fx_canvas.node[i];if(n->at<0)continue;
+        TsSourceRoute raw=mx_route(n->row,pages,bank);if(n->row.kind==3 && !raw.matrix_enabled)continue;
+        TsSourceRoute r=mx_display_route(raw);
         for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)if(r.matrix_gain[d] && fx_canvas.dest[d]>=0) {
             FxCanvasNode *to=&fx_canvas.node[fx_canvas.dest[d]];
             float distance=fx_cable(fx_xf(n->x+fx_node_w(n)),fx_yf(n->y+fx_node_h(n)*.5f),fx_xf(to->x),fx_yf(to->y+fx_node_h(to)*(d==to->destination?.5f:.8f)),0,0,x,y);

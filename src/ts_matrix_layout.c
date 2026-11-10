@@ -38,11 +38,12 @@ int ts_matrix_layout_valid(const TsMatrixLayout *l)
         if(p->kind<0 || p->kind>5 || !isfinite(p->x) || !isfinite(p->y) ||
            !isfinite(p->scale) || (p->scale!=0 && (p->scale<.25f || p->scale>4.f)) ||
            fabsf(p->x)>1000000 || fabsf(p->y)>1000000 ||
+           (p->canvas && p->kind!=3) ||
            (p->kind==0 && p->id>=TS_TRACKER_LANES) ||
            (p->kind==2 && p->id>=TS_MATRIX_ROWS) ||
            (p->kind==5 && p->id>=TS_MATRIX_DESTINATIONS) ||
            ((p->kind==1 || p->kind==3 || p->kind==4) && !p->id))return 0;
-        for(int j=0;j<i;++j)if(l->canvas[j].kind==p->kind && l->canvas[j].id==p->id)return 0;
+        for(int j=0;j<i;++j)if(l->canvas[j].kind==p->kind && l->canvas[j].id==p->id && l->canvas[j].canvas==p->canvas)return 0;
     }
     if(!l->row_count)return 1;
     LayoutKey *keys=malloc((size_t)l->row_count*sizeof(*keys));if(!keys)return 0;
@@ -71,6 +72,7 @@ int ts_matrix_layout_write(FILE *f,const TsMatrixLayout *l)
         if(fprintf(f,"FxCanvas.Node%d=%d,%" PRIu64 ",%.9g,%.9g",i,p->kind,p->id,p->x,p->y)<0)return 0;
         if(p->scale!=0 && fprintf(f,",%.9g",p->scale)<0)return 0;
         if(fputc('\n',f)==EOF)return 0;
+        if(p->canvas && fprintf(f,"FxCanvas.Scene%d=%" PRIu64 "\n",i,p->canvas)<0)return 0;
     }
     for(int i=0;i<TS_MATRIX_DESTINATIONS;++i)
         if(fprintf(f,"MatrixLayout.Column%d=%u\n",i,(unsigned)l->column[i])<0)return 0;
@@ -107,6 +109,12 @@ int ts_matrix_layout_read(TsMatrixLayout *l,const char *key,const char *value)
         if(sscanf(value,"%f,%f,%f%c",&x,&y,&z,&extra)!=3 || !isfinite(x) || !isfinite(y) ||
            fabsf(x)>1000000 || fabsf(y)>1000000 || !isfinite(z) || z<.001f || z>2)return -1;
         l->canvas_x=x;l->canvas_y=y;l->canvas_zoom=z;l->canvas_view=1;return 1;
+    }
+    if(!strncmp(key,"FxCanvas.Scene",14)) {
+        s=key+14;
+        if(!layout_number(&s,TS_FX_CANVAS_POSITIONS-1,&i) || *s || i>=(uint64_t)l->canvas_count ||
+           l->canvas[i].kind!=3 || l->canvas[i].canvas || !layout_number(&value,UINT64_MAX,&id) || !id || *value)return -1;
+        l->canvas[i].canvas=id;return 1;
     }
     if(!strncmp(key,"FxCanvas.Node",13)) {
         s=key+13;float x,y,scale=0;char extra;int end=0;

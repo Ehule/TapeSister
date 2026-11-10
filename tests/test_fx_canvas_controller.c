@@ -108,6 +108,7 @@ static void view_codec(void)
 #include "test_fx_canvas_edit_controls.inc"
 #include "test_fx_canvas_drawing.inc"
 #include "test_fx_canvas_inspector.inc"
+#include "test_fx_canvas_gallery.inc"
 static void canvas_gestures(uint32_t id)
 {
     MatrixWindow *w=&matrix_window;TsMatrixLayout *l=w->layout;l->canvas_snap=0;
@@ -489,6 +490,7 @@ int main(int argc,char **argv)
     e.button.x=(TS_MOSAIC_FX_X+10)*2;e.button.y=(TS_MOSAIC_FX_Y+5)*2;assert(event(&e));assert(matrix_window.visible && matrix_window.canvas);
     SDL_SetWindowSize(matrix_window.window,1001,701);fx_paint(&audio,&pages,&bank);
     inspector_controls(getenv("TS_FX_PREVIEW"));edit_controls();canvas_gestures(c.effect[dist].id);disconnect_main_prism();routing_preferences();sunvox_browser(getenv("TS_FX_PREVIEW"));
+    gallery_view();
     matrix_close();meta_fx_close();ts_sister_runtime_free(&audio.sister);ts_sample_pages_free(&pages);ts_instrument_free(&bank);SDL_DestroyWindow(main_window);SDL_Quit();
     puts("FX Canvas controller passed, including single-cable disconnect, alternative path, silent clear, undo and project recall.");return 0;
 }

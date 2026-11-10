@@ -11,12 +11,13 @@ static struct {
     TsMatrixLayout layout;
     TsAudioChannelRange output_range;
     unsigned outputs;
-    uint64_t builds;
+    uint64_t builds,movement;
 } fx_graph_cache;
 static int fx_graph_changed(TsSamplePages *pages,TsInstrument *bank)
 {
     MatrixWindow *w=&matrix_window;
-    int changed=!fx_graph_cache.valid || fx_graph_cache.count!=w->count;
+    int changed=!fx_graph_cache.valid || fx_graph_cache.count!=w->count || fx_graph_cache.movement!=fx_canvas.movement;
+    fx_graph_cache.movement=fx_canvas.movement;
 #define FX_KEY(field) do { \
     changed|=memcmp(&fx_graph_cache.field,&w->field,sizeof(w->field))!=0; \
     memcpy(&fx_graph_cache.field,&w->field,sizeof(w->field)); \
@@ -24,8 +25,10 @@ static int fx_graph_changed(TsSamplePages *pages,TsInstrument *bank)
     FX_KEY(controls);FX_KEY(legacy);FX_KEY(array);FX_KEY(speakers);
     FX_KEY(output_range);FX_KEY(outputs);
 #undef FX_KEY
-    changed|=memcmp(&fx_graph_cache.layout,w->layout,sizeof(*w->layout))!=0;
-    fx_graph_cache.layout=*w->layout;
+    /* Compare used view positions, not the unused capacity for sixteen canvases. */
+    size_t layout_bytes=offsetof(TsMatrixLayout,canvas)+(size_t)w->layout->canvas_count*sizeof(w->layout->canvas[0]);
+    changed|=memcmp(&fx_graph_cache.layout,w->layout,layout_bytes)!=0;
+    memcpy(&fx_graph_cache.layout,w->layout,layout_bytes);
     changed|=memcmp(fx_graph_cache.rows,w->rows,w->count*sizeof(w->rows[0]))!=0;
     memcpy(fx_graph_cache.rows,w->rows,w->count*sizeof(w->rows[0]));
     for(int i=0;i<w->count;++i) {

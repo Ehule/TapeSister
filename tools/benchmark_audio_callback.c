@@ -77,9 +77,41 @@ int main(int argc,char **argv)
     audio.sister.master_output_gain=(TsSisterRamp){.current=1,.target=1};
     memcpy(audio.sister.performance_gain_current,state.performance_mixer.gain,sizeof(audio.sister.performance_gain_current));
     ts_sister_post_fx_sync_controls(&audio.sister.post_fx,&state.parameters.fx);
-    ts_mosaic_seek(audio.mosaic,0);audio.mosaic->playing=1;
+    /* Optional native graph inventory and snapshots of the actual project. */
+    const char *canvas_dir=getenv("TS_BENCH_CANVAS");
+    if(canvas_dir) {
+        ui.mosaic=pages.mosaic;REQUIRE(matrix_show(0,&audio,&ui,&pages,&bank,-1,-1));fx_view(1,&pages,&bank);
+        uint64_t gallery_hash=ts_gallery_hash(pages.gallery);
+        for(int c=-1;c<(pages.gallery?pages.gallery->count:0);++c) {
+            fx_canvas.movement=c<0?0:pages.gallery->canvas[c].id;fx_build(&pages,&bank);fx_fit();
+            int cards=0,effects=0;
+            for(int i=0;i<fx_canvas.count;++i){cards+=fx_canvas.node[i].row.kind==3;effects+=fx_canvas.node[i].row.kind==4;}
+            fprintf(stderr,"Canvas view %d: %d cards / %d effects / %d nodes\n",c,cards,effects,fx_canvas.count);
+            mx_draw_frame(&audio,&pages,&bank);
+            int width,height;REQUIRE(!SDL_GetRendererOutputSize(matrix_window.renderer,&width,&height));
+            SDL_Surface *frame=SDL_CreateRGBSurfaceWithFormat(0,width,height,32,SDL_PIXELFORMAT_ARGB8888);REQUIRE(frame);
+            REQUIRE(!SDL_RenderReadPixels(matrix_window.renderer,NULL,frame->format->format,frame->pixels,frame->pitch));
+            char file[2048];snprintf(file,sizeof(file),"%s/gallery-%d.bmp",canvas_dir,c);
+            REQUIRE(!SDL_SaveBMP(frame,file));SDL_FreeSurface(frame);
+        }
+        REQUIRE(gallery_hash==ts_gallery_hash(pages.gallery));matrix_close();
+    }
+    /* Optional deterministic page turns for Gallery audits. These call the same
+       allocation-free core switch used by the controller, not its UI refresh. */
+    const char *sequence=getenv("TS_BENCH_GALLERY");
+    int turns[64],turn_count=0,turn_next=1;
+    if(sequence) {char *end;while(*sequence && turn_count<64) {
+        long index=strtol(sequence,&end,10);REQUIRE(end!=sequence && index>=0 && audio.gallery && index<audio.gallery->count);
+        turns[turn_count++]=(int)index;sequence=end;if(*sequence==',')++sequence;else REQUIRE(!*sequence);
+    }}
+    double turn_seconds=getenv("TS_BENCH_TURN_SECONDS")?strtod(getenv("TS_BENCH_TURN_SECONDS"),NULL):30;
+    REQUIRE(isfinite(turn_seconds) && turn_seconds>0);
+    if(turn_count){REQUIRE(ts_gallery_switch(audio.gallery,turns[0],error,sizeof(error)));audio.mosaic=ts_gallery_active(audio.gallery);}
+    double position=getenv("TS_BENCH_POSITION")?strtod(getenv("TS_BENCH_POSITION"),NULL):0;
+    REQUIRE(isfinite(position) && position>=0);ts_mosaic_seek(audio.mosaic,position);audio.mosaic->playing=1;
+    if(getenv("TS_BENCH_PROFILE")){ts_profile_init(SDL_GetPerformanceCounter,SDL_GetPerformanceFrequency());ts_profile_enable(1);}
     uint64_t total=(uint64_t)llround(seconds*rate),skip=(uint64_t)llround(warmup*rate);
-    size_t capacity=(size_t)((total+block-1)/block),count=0;
+    size_t capacity=(size_t)((total+block-1)/block)+64,count=0;
     double *wall=calloc(capacity,sizeof(double));float *out=calloc((size_t)block*channels,sizeof(float));
     float *stereo=calloc((size_t)block*2,sizeof(float));REQUIRE(wall && out && stereo);audio.offline_stereo=stereo;
     const char *dump_path=argc>7 && strcmp(argv[7],"-")?argv[7]:NULL;
@@ -88,6 +120,16 @@ int main(int argc,char **argv)
     double sum_cpu=0,sum_wall=0,energy=0,peak=0,frequency=(double)SDL_GetPerformanceFrequency();
     for(uint64_t at=0;at<total;) {
         unsigned n=(unsigned)fmin(block,total-at);
+        if(turn_next<turn_count) {
+            uint64_t boundary=(uint64_t)llround(turn_next*turn_seconds*rate);
+            if(at==boundary) {
+                double started=thread_seconds();
+                REQUIRE(ts_gallery_switch(audio.gallery,turns[turn_next],error,sizeof(error)));
+                audio.mosaic=pages.mosaic=ts_gallery_active(audio.gallery);
+                fprintf(stderr,"Gallery turn %d -> %d at %.3fs: %.6f ms\n",turn_next,turns[turn_next],at/(double)rate,(thread_seconds()-started)*1000);
+                ++turn_next;
+            } else if(at<boundary && at+n>boundary)n=(unsigned)(boundary-at);
+        }
         double cpu=thread_seconds();Uint64 start=SDL_GetPerformanceCounter();
         audio_callback(&audio,(Uint8 *)out,(int)(n*channels*sizeof(float)));
         double elapsed=(SDL_GetPerformanceCounter()-start)/frequency,cost=thread_seconds()-cpu;
@@ -109,6 +151,7 @@ int main(int argc,char **argv)
         "\"rms\":%.9g,\"peak\":%.9g,\"stereo_hash\":\"%016" PRIx64 "\",\"hardware_hash\":\"%016" PRIx64 "\"}\n",
         rate,block,channels,sunvox_block,frames/(double)rate,warmup,sum_cpu/(frames/(double)rate)*100,sum_cpu*1000/count,
         sum_wall*1000/count,wall[(size_t)(count*.95)],sqrt(energy/(frames*2)),peak,hash,hardware_hash);
+    if(getenv("TS_BENCH_PROFILE")){char report[16384];ts_profile_report(report,sizeof(report));fprintf(stderr,"%s\n",report);}
     if(dump)REQUIRE(!fclose(dump));
     ts_tapehead_close();ts_sister_runtime_free(&audio.sister);
     ts_mosaic_free(ts_sample_pages_mosaic_root(&pages));pages.mosaic=NULL;ts_sample_pages_free(&pages);

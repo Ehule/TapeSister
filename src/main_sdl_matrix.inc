@@ -1,9 +1,9 @@
 /* F9: one modeless patch matrix. No DSP or project export in paint/input. */
 enum { MATRIX_W=1280,MATRIX_H=840,MATRIX_X=264,MATRIX_Y=176,
        MATRIX_CW=98,MATRIX_RH=28,MATRIX_VISIBLE=17,MATRIX_COLS=10,
-       MATRIX_CAPACITY=TS_TRACKER_LANES+TS_SISTER_RUNTIME_PAGE_LIMIT*TS_BANK_SLOT_COUNT+TS_MATRIX_ROWS+TS_MOSAIC_EVENTS,
+       MATRIX_CAPACITY=TS_TRACKER_LANES+TS_SISTER_RUNTIME_PAGE_LIMIT*TS_BANK_SLOT_COUNT+TS_MATRIX_ROWS+TS_GALLERY_LIMIT*TS_MOSAIC_EVENTS,
        MATRIX_ACTIVITY_VOICES=TS_NOTE_BANK_VOICE_CAPACITY+3*TS_PERFORMANCE_VOICE_LIMIT+TS_BANK_SLOT_COUNT+1 };
-typedef struct {int kind,index,order;TsTileId tile;char name[48];} MatrixRow;
+typedef struct {int kind,index,order;TsTileId tile;char name[48];uint64_t canvas;} MatrixRow;
 typedef struct MatrixSnapshot MatrixSnapshot;
 typedef struct {
     TsSisterParameters parameters;TsMasterEqControls eq;TsEqMorph morph;
@@ -15,7 +15,7 @@ typedef struct {
     Uint32 id,presented,polled;int visible,dirty,scroll,column,filter,selected,destination,drag,canvas;
     MatrixRow rows[MATRIX_CAPACITY],selection[MATRIX_CAPACITY+TS_MATRIX_DESTINATIONS];int count,selection_count,anchor;
     TsMatrixLayout *layout,full_layout;int columns[TS_MATRIX_DESTINATIONS],column_count;unsigned char assigned[TS_MATRIX_DESTINATIONS];int layout_focus; /* 1=row label, 2=column header. */
-    TsMosaic *mosaic;uint64_t epoch;
+    TsMosaic *mosaic;uint64_t epoch;TsMosaicGallery *gallery;uint64_t root_epoch;
     MatrixSnapshot *history[32],*pending,*original,*edited;int history_count,history_cursor,original_active,history_skip;
     TsPalette palette;
     TsMatrixControls controls;TsSourceRoute route;FxProcessorState fixed;unsigned sample_rate;
@@ -48,7 +48,7 @@ static void svfx_open(uint32_t id);
 static void svfx_close(void);
 static TsFxCanvasPosition *fx_position(MatrixRow row,int create);
 static int mx_same(MatrixRow a,MatrixRow b)
-{return a.kind==b.kind && (a.kind==1 || a.kind==3 || a.kind==4?a.tile==b.tile:a.index==b.index);}
+{return a.kind==b.kind && (a.kind!=3 || a.canvas==b.canvas) && (a.kind==1 || a.kind==3 || a.kind==4?a.tile==b.tile:a.index==b.index);}
 static int mx_chosen(int at)
 {
     MatrixWindow *w=&matrix_window;
@@ -159,6 +159,33 @@ static void mx_signal(int x,int y,int width,int height,float peak,uint32_t color
 }
 static TsBankSlot *mx_tile(TsSamplePages *pages,TsInstrument *bank,TsTileId id)
 { return (TsBankSlot *)ts_sample_pages_find_tile(pages,bank,id,NULL); }
+/* Card identities are local to a canvas; never resolve a parked card through
+   the currently playing page. The canvas pointer is not a persisted identity. */
+static int mx_scene_count(void){return matrix_window.gallery?matrix_window.gallery->count:1;}
+static TsMosaic *mx_scene_at(int c){return matrix_window.gallery?matrix_window.gallery->canvas[c].scene:matrix_window.mosaic;}
+static uint64_t mx_scene_id(int c){return matrix_window.gallery?matrix_window.gallery->canvas[c].id:0;}
+static TsMosaic *mx_card_scene(MatrixRow row)
+{
+    if(row.canvas) {
+        TsMosaicGallery *g=matrix_window.gallery;
+        if(g)for(int c=0;c<g->count;++c)if(g->canvas[c].id==row.canvas)return g->canvas[c].scene;
+        return NULL;
+    }
+    return matrix_window.mosaic;
+}
+static TsMosaicEvent *mx_card(MatrixRow row)
+{
+    TsMosaic *m=mx_card_scene(row);if(!m)return NULL;
+    if(row.index>=0 && row.index<TS_MOSAIC_EVENTS && m->events[row.index].id==row.tile)return &m->events[row.index];
+    return ts_mosaic_find(m,row.tile);
+}
+static void mx_bind_mosaic(TsUiState *ui,TsSamplePages *pages)
+{
+    MatrixWindow *w=&matrix_window;TsMosaicGallery *g=pages->gallery;
+    uint64_t epoch=g && g->root?g->root->epoch:ui->mosaic?ui->mosaic->epoch:0;
+    if(w->gallery!=g || w->root_epoch!=epoch || (!g && w->mosaic!=ui->mosaic))matrix_history_clear();
+    w->gallery=g;w->root_epoch=epoch;w->mosaic=ui->mosaic;w->epoch=ui->mosaic?ui->mosaic->epoch:0;
+}
 static void mx_rows(TsSamplePages *pages,TsInstrument *bank);
 static int mx_editable(void);
 #include "main_sdl_matrix_layout.inc"
@@ -211,16 +238,20 @@ static void mx_rows(TsSamplePages *pages,TsInstrument *bank)
         MatrixRow *r=&w->rows[w->count++];*r=(MatrixRow){.kind=2,.index=i};
         snprintf(r->name,sizeof(r->name),"%s%s",ts_matrix_node_name(i),i==TS_MATRIX_BOARD?((w->controls.serial_mask&(1u<<i)) || w->controls.board_insert?" INSERT":" SEND"):i>=1 && i<=4?(w->controls.serial_mask&(1u<<i)?" MIX":" WET"):"");
     }
-    if((!f || f==5) && w->mosaic)for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(w->mosaic->events[i].id) {
-        MatrixRow *r=&w->rows[w->count++];*r=(MatrixRow){.kind=3,.index=i,.tile=w->mosaic->events[i].id};
-        snprintf(r->name,sizeof(r->name),"CARD %03d %.12s",i+1,w->mosaic->events[i].name);
+    for(int c=0;c<mx_scene_count();++c) {
+        TsMosaic *m=mx_scene_at(c);if(!m || (!w->canvas && m!=w->mosaic))continue;
+        for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(m->events[i].id) {
+            MatrixRow *r=&w->rows[w->count++];*r=(MatrixRow){.kind=3,.index=i,.tile=m->events[i].id,.canvas=mx_scene_id(c)};
+            if(w->gallery)snprintf(r->name,sizeof(r->name),"C%02d %.40s",c+1,m->events[i].name);
+            else snprintf(r->name,sizeof(r->name),"CARD %03d %.12s",i+1,m->events[i].name);
+        }
     }
     memset(w->assigned,0,sizeof(w->assigned));
     for(int s=0;s<w->count;++s) {
         MatrixRow row=w->rows[s];const TsSourceRoute *route=NULL;
         if(row.kind==0)route=&pages->tracker.lanes[row.index].output_route;
         else if(row.kind==1){TsBankSlot *slot=mx_tile(pages,bank,row.tile);if(slot)route=&slot->output_route;}
-        else if(row.kind==3)route=&w->mosaic->events[row.index].output_route;
+        else if(row.kind==3){TsMosaicEvent *e=mx_card(row);if(e)route=&e->output_route;}
         if(route)for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)w->assigned[d]|=route->matrix_gain[d]!=0;
     }
     mx_columns();mx_layout_rows();
@@ -235,7 +266,7 @@ static void mx_rows(TsSamplePages *pages,TsInstrument *bank)
 static TsSourceRoute mx_route(MatrixRow row,TsSamplePages *pages,TsInstrument *bank)
 {
     if((row.kind==2 || row.kind==4))return matrix_window.controls.row[row.index];
-    if(row.kind==3){TsMosaicEvent *e=ts_mosaic_find(matrix_window.mosaic,row.tile);return e?e->output_route:(TsSourceRoute){0};}
+    if(row.kind==3){TsMosaicEvent *e=mx_card(row);return e?e->output_route:(TsSourceRoute){0};}
     TsBankSlot *slot=row.kind==1?mx_tile(pages,bank,row.tile):NULL;
     return row.kind==0?pages->tracker.lanes[row.index].output_route:slot?slot->output_route:(TsSourceRoute){0};
 }
@@ -301,8 +332,7 @@ static int matrix_show(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,
         if(!w->window || !w->renderer || !w->texture || !w->pixels){matrix_close();snprintf(ui->status,sizeof(ui->status),"MATRIX WINDOW FAILED: %.110s",SDL_GetError());return 0;}
     w->id=SDL_GetWindowID(w->window);
     }
-    if(w->mosaic!=ui->mosaic || (ui->mosaic && w->epoch!=ui->mosaic->epoch))matrix_history_clear();
-    w->mosaic=ui->mosaic;w->epoch=ui->mosaic?ui->mosaic->epoch:0;
+    mx_bind_mosaic(ui,pages);
     if(device)SDL_LockAudioDevice(device);
     mx_processor_read(audio,&w->fixed);
     w->controls=audio->sister.matrix.controls;w->legacy=audio->sister.router.controls;w->array=audio->sister.spatial.controls;w->speakers=audio->speakers;
@@ -553,7 +583,7 @@ static void mx_activate(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui
         const TsInstrument *page=ts_sample_pages_page(pages,bank,p);if(!page)continue;
         for(int i=0;i<TS_BANK_SLOT_COUNT;++i)if(page->bank[i].occupied)supported&=mx_importable_source(page->bank[i].output_route);
     }
-    if(w->mosaic)for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(w->mosaic->events[i].id)supported&=!w->mosaic->events[i].output_route.matrix_enabled;
+    for(int c=0;c<mx_scene_count();++c){TsMosaic *m=mx_scene_at(c);if(m)for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(m->events[i].id)supported&=!m->events[i].output_route.matrix_enabled;}
     if(!supported){snprintf(w->status,sizeof(w->status),"UNCHANGED: CUSTOM SOURCE / MONITOR ROUTING CANNOT YET BE IMPORTED WITHOUT CHANGING THE SOUND.");return;}
     TsMatrixControls next;
     if(device)SDL_LockAudioDevice(device);
@@ -575,7 +605,7 @@ static void mx_commit_route(SDL_AudioDeviceID device,AudioState *audio,TsUiState
     if(!ts_source_route_valid(&route,row.kind==0))return;
     if(row.kind==3) {
         if(device)SDL_LockAudioDevice(device);
-        TsMosaicEvent *e=ts_mosaic_find(w->mosaic,row.tile);if(e){e->output_route=route;++w->mosaic->revision;}
+        TsMosaicEvent *e=mx_card(row);if(e){e->output_route=route;++mx_card_scene(row)->revision;}
         if(device)SDL_UnlockAudioDevice(device);w->dirty=1;return;
     }
     if(device)SDL_LockAudioDevice(device);
@@ -596,11 +626,10 @@ static void mx_return_bus(SDL_AudioDeviceID device,AudioState *audio,TsUiState *
     for(int i=0;i<w->count;++i)if(mx_chosen(i)) {
         MatrixRow row=w->rows[i];
         if(kind==0)pages->tracker.lanes[row.index].output_route=route;
-        else if(kind==3) {TsMosaicEvent *e=ts_mosaic_find(w->mosaic,row.tile);if(e)e->output_route=route;}
+        else if(kind==3) {TsMosaicEvent *e=mx_card(row);if(e){e->output_route=route;++mx_card_scene(row)->revision;}}
         else {TsBankSlot *slot=mx_tile(pages,bank,row.tile);if(slot){slot->output_route=route;source_route_update_voices(audio,row.tile,route);}}
         ++count;
     }
-    if(kind==3 && count)++w->mosaic->revision;
     if(device)SDL_UnlockAudioDevice(device);
     if(kind==0 || kind==1)mx_refresh_tracker(pages,bank);
     w->dirty=1;
@@ -632,7 +661,7 @@ static void mx_bulk(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsS
         if((row.kind==2 || row.kind==4)){if(pan)next.row[row.index].pan=r.pan;}
         else if(row.kind==0)pages->tracker.lanes[row.index].output_route=r;
         else if(row.kind==1){TsBankSlot *slot=mx_tile(pages,bank,row.tile);if(slot){slot->output_route=r;source_route_update_voices(audio,row.tile,r);}}
-        else {TsMosaicEvent *e=ts_mosaic_find(w->mosaic,row.tile);if(e)e->output_route=r;}
+        else {TsMosaicEvent *e=mx_card(row);if(e)e->output_route=r;}
     }
     w->controls=next;ts_matrix_set(&audio->sister.matrix,&next,(unsigned)audio->output_rate);ui->config.matrix=next;
     if(device)SDL_UnlockAudioDevice(device);
@@ -681,8 +710,11 @@ static void mx_reset_routes(SDL_AudioDeviceID device,AudioState *audio,TsUiState
         for(int slot=0;slot<TS_BANK_SLOT_COUNT;++slot)if(page->bank[slot].occupied)
             page->bank[slot].output_route=route;
     }
-    if(w->mosaic)for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(w->mosaic->events[i].id)
-        w->mosaic->events[i].output_route=defaults?(TsSourceRoute){0}:route;
+    for(int c=0;c<mx_scene_count();++c) {
+        TsMosaic *m=mx_scene_at(c);if(!m)continue;
+        for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(m->events[i].id)m->events[i].output_route=defaults?(TsSourceRoute){0}:route;
+        ++m->revision;
+    }
     source_route_update_voices(audio,0,route);
     ts_matrix_set(&audio->sister.matrix,&controls,(unsigned)audio->output_rate);
     ui->config.matrix=w->controls=audio->sister.matrix.controls;
@@ -777,7 +809,7 @@ static void mx_capture_activity(SDL_AudioDeviceID device,AudioState *audio,TsSam
             if(fresh && w->controls.enabled) {
                 if((row.kind==2 || row.kind==4)){source=w->peaks[row.index];send=w->sends[row.index];}
                 else if(row.kind==3) {
-                    source=w->card_source[row.index];send=w->card_send[row.index];
+                    if(mx_card_scene(row)==w->mosaic){source=w->card_source[row.index];send=w->card_send[row.index];}
                 }
                 else if(row.kind==0){source=w->tracks[row.index].source*program*audio->sister.performance_gain_current[1];send=w->tracks[row.index].send*program*audio->sister.performance_gain_current[1];}
                 else {
@@ -848,6 +880,7 @@ static void matrix_update(SDL_AudioDeviceID device,AudioState *audio,TsUiState *
     if(memcmp(&matrix_window.palette,&ui->palette,sizeof(ui->palette))) {matrix_window.palette=ui->palette;matrix_window.dirty=1;}
     MatrixWindow *w=&matrix_window;(void)ui;Uint32 elapsed=SDL_GetTicks()-w->polled;
     if(!w->visible || !window_drawable(w->window) || elapsed<50)return;
+    mx_bind_mosaic(ui,pages);
     if(w->canvas)w->filter=0;
     mx_capture_activity(device,audio,pages,bank,elapsed);w->polled=SDL_GetTicks();
     if(w->canvas)fx_build(pages,bank);
@@ -1073,8 +1106,7 @@ static int matrix_event_inner(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID de
 static int matrix_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsSamplePages *pages,TsInstrument *bank)
 {
     MatrixWindow *w=&matrix_window;
-    if(w->mosaic!=ui->mosaic || (ui->mosaic && w->epoch!=ui->mosaic->epoch))matrix_history_clear();
-    w->mosaic=ui->mosaic;w->epoch=ui->mosaic?ui->mosaic->epoch:0;
+    mx_bind_mosaic(ui,pages);
     w->io_config=&ui->config;
     w->layout=&audio->sister.matrix_layout;
     if(fx_divider_event(e))return 1;

@@ -77,3 +77,4 @@ test_dsp_cache test_dsp_cache
 test_sister_ghost_tone test_sister_ghost_tone
 test_sister_duck_filter test_sister_duck_filter
 test_sister_fallout test_sister_fallout
+tapesister_fx_silence_tests fx_silence_exact
