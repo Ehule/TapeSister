@@ -26,7 +26,7 @@ static MatrixSnapshot *mx_snapshot(SDL_AudioDeviceID device,AudioState *audio,Ts
     if(device)SDL_LockAudioDevice(device);
     s->controls=audio->sister.matrix.controls;s->router=audio->sister.router.controls;s->spatial=audio->sister.spatial.controls;
     s->compressor=audio->sister.compressor.controls;
-    matrix_window.controls=s->controls;matrix_window.legacy=s->router;matrix_window.array=s->spatial;matrix_window.compressor=s->compressor;
+    /* Capture committed state without replacing a pending UI edit. */
     mx_processor_read(audio,&s->fixed);matrix_window.fixed=s->fixed;
     s->insert=audio->sister.insert.controls;s->sources=audio->sister.source_switches;
     if(device)SDL_UnlockAudioDevice(device);
