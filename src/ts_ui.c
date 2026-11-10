@@ -1176,6 +1176,9 @@ static void browser_render_themed_impl(TsFramebuffer *fb, const TsBrowser *brows
     } else if (browser->mode == TS_BROWSER_IMPORT_CANVAS) {
         text(fb,58,282,"CHOOSE A TSR / THEN CHOOSE ONE CANVAS",PAL_MOUSE,1);
         text(fb,58,300,"ADDS A PAGE / USES THIS PROJECT'S SHARED EFFECTS",PAL_EFFECT,1);
+    } else if (browser->mode == TS_BROWSER_LOAD_VISUAL_FOLDER) {
+        text(fb,58,282,"PHOTOS + VIDEOS / SHUFFLED / THIS FOLDER ONLY",PAL_MOUSE,1);
+        text(fb,58,300,"OPEN THE FOLDER, THEN CHOOSE USE FOLDER",PAL_EFFECT,1);
     } else if (browser->mode == TS_BROWSER_LOAD_VIDEO || browser->mode == TS_BROWSER_MOSAIC_VIDEO) {
         text(fb, 58, 300, "PNG / JPG / BMP / TGA + VIDEO / GIF - SOUND OFF", PAL_EFFECT, 1);
     } else if (browser->mode == TS_BROWSER_TRACKER_PALETTE_IMPORT) {

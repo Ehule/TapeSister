@@ -125,7 +125,8 @@ static void mw_shape_icon(int x,int y,int shape,uint32_t color)
 static void mw_video_paint(const TsMandalaConfig *c)
 {
     char line[110];TsVideoStatus status=ts_mandala_video_status();
-    mw_button(20,64,200,c->video_path[0]?"REPLACE IMAGE / VIDEO":"ADD IMAGE / VIDEO",0);
+    mw_button(20,64,96,"ADD FILE",0);
+    mw_button(124,64,96,"ADD FOLDER",0);
     mw_button(234,64,130,c->video_enabled?"MEDIA ON":"MEDIA OFF",c->video_enabled);
     mw_button(378,64,130,"REMOVE MEDIA",0);
     mw_button(520,64,140,c->video_monochrome?"BLACK & WHITE":"COLOR",c->video_monochrome);
@@ -133,7 +134,7 @@ static void mw_video_paint(const TsMandalaConfig *c)
     const char *name=c->video_path;
     for(const char *p=name;*p;++p)if(*p=='/' || *p=='\\')name=p+1;
     mw_rect(20,106,640,83,0x110F15);
-    snprintf(line,sizeof(line),"%.100s",*name?name:status.state==TS_VIDEO_PLAYING?"MOSAIC IMAGE / VIDEO TRIGGERS / SOUND OFF":"CHOOSE AN IMAGE / VIDEO OR A MOSAIC TRIGGER");mw_text(32,119,line,0xFFE1A1,1);
+    snprintf(line,sizeof(line),"%.100s",*name?name:status.state==TS_VIDEO_PLAYING?"MOSAIC IMAGE / VIDEO TRIGGERS / SOUND OFF":"CHOOSE A FILE / FOLDER OR A MOSAIC TRIGGER");mw_text(32,119,line,0xFFE1A1,1);
     mw_text(32,143,!ts_mandala_active()?"OPEN THE VISUALIZER TO SHOW YOUR MEDIA":!c->video_enabled?"MEDIA OFF / MANDALA CONTINUES":ts_mandala_frozen()?"VISUALIZER FROZEN":ts_mandala_video_paused()?"MEDIA PAUSED / MANDALA CONTINUES":status.message,0xC4B6CB,1);
     snprintf(line,sizeof(line),"%02u:%02u / %02u:%02u   |   VIDEO SOUND OFF",status.position_ms/60000,status.position_ms/1000%60,status.duration_ms/60000,status.duration_ms/1000%60);mw_text(32,167,line,0xBCAFBC,1);
     mw_button(20,205,146,ts_mandala_video_paused()?"PLAY MEDIA":"PAUSE MEDIA",ts_mandala_video_paused());
@@ -150,7 +151,7 @@ static void mw_video_paint(const TsMandalaConfig *c)
     for(int i=0;i<2;++i) {
         int x=20+i*330,value=i?(int)c->video_glitch:(int)c->image_seconds,pos=value*300/(i?100:60);
         if(i)snprintf(line,sizeof(line),"GLITCH  %d",value);
-        else if(value)snprintf(line,sizeof(line),"IMAGE HOLD  %d SEC / FOLDER",value);
+        else if(value)snprintf(line,sizeof(line),"IMAGE HOLD  %d SEC",value);
         else snprintf(line,sizeof(line),"IMAGE HOLD  MANUAL / TRIGGERS");
         mw_text(x,451,line,0xD9CFDE,1);mw_rect(x,470,300,6,0x100D15);mw_rect(x,470,pos,6,0x9776A5);mw_rect(x+pos-2,465,4,16,0xE9C58C);
     }
@@ -247,7 +248,7 @@ static int mandala_editor_event(SDL_Event *e,TsUiState *ui,TsMandalaConfig *c)
     if(e->type==SDL_MOUSEMOTION) {
         int x=e->motion.x,y=e->motion.y;
         if(mandala_editor.drag)mw_slider(c,mandala_editor.drag,x);
-        mandala_editor.hint=mandala_editor.video_tab?(y>=445 && y<489?(x<340?"IMAGE FOLDERS: HOLD EACH SLIDE. 0 = CHANGE ONLY AT MOSAIC TRIGGERS.":"GLITCH: BRIEF HORIZONTAL TEARS AND DISPLACED FRAGMENTS. 0 = CLEAN."):y>=393 && y<443?"PALETTE FILTER: REMAP THE FOOTAGE'S SHADING INTO YOUR FORM COLORS.":
+        mandala_editor.hint=mandala_editor.video_tab?(y>=64 && y<89 && x<220?"ADD A FILE OR ALL MEDIA IN A FOLDER. REPLACES THE CURRENT MEDIA SOURCE.":y>=445 && y<489?(x<340?"HOLD PHOTOS / RANDOM VIDEO FRAMES. 0 = RESTART OR MOSAIC TRIGGERS.":"GLITCH: BRIEF HORIZONTAL TEARS AND DISPLACED FRAGMENTS. 0 = CLEAN."):y>=393 && y<443?(x<340?"PALETTE FILTER: REMAP THE FOOTAGE'S SHADING INTO YOUR FORM COLORS.":"RANDOM VIDEO FRAMES: IMAGE HOLD SETS THE INTERVAL. LOOP REPEATS."):
             y>=253 && y<303 && x>=350?"PULL LEFT TO RECOGNIZE THE FOOTAGE. RIGHT TO FOLD AND MAGNIFY IT.":NULL):y>=140 && y<185?"SEVEN INK COLORS AND A BACKDROP. EDITING CREATES A CUSTOM PALETTE.":
             y>=315 && y<370?"CHOOSE THE REPEATING FORMS. AUDIO AND PEDALS KEEP SHAPING THEM.":
             y>=490 && y<515?"SYMMETRY / EVOLUTION: LEFT-CLICK +, RIGHT-CLICK -, OR USE THE WHEEL.":NULL;
@@ -284,11 +285,11 @@ static int mandala_editor_event(SDL_Event *e,TsUiState *ui,TsMandalaConfig *c)
         }
         if(mandala_editor.video_tab && y>=42 && y<250) {
             if(!wheel && delta>0) {
-                if(y>=64 && y<89 && x>=20 && x<220) {
-                    browser_open(ui,TS_BROWSER_LOAD_VIDEO);
+                if(y>=64 && y<89 && ((x>=20 && x<116) || (x>=124 && x<220))) {
+                    browser_open(ui,x<116?TS_BROWSER_LOAD_VIDEO:TS_BROWSER_LOAD_VISUAL_FOLDER);
                     if(mandala_editor.host){SDL_ShowWindow(mandala_editor.host);SDL_RaiseWindow(mandala_editor.host);}
                 } else if(y>=64 && y<89 && x>=234 && x<364) {c->video_enabled=!c->video_enabled;mw_commit(c);}
-                else if(y>=64 && y<89 && x>=378 && x<508) {c->video_enabled=0;memset(c->video_path,0,sizeof(c->video_path));mw_commit(c);}
+                else if(y>=64 && y<89 && x>=378 && x<508) {c->video_enabled=0;memset(c->video_path,0,sizeof(c->video_path));TsVisualCue clear_cue={0};ts_mandala_video_cue(&clear_cue);mw_commit(c);}
                 else if(y>=205 && y<230 && x>=20 && x<166)ts_mandala_video_pause();
                 else if(y>=205 && y<230 && x>=180 && x<326)ts_mandala_video_restart();
                 else if(y>=64 && y<89 && x>=520 && x<660){c->video_monochrome^=1;mw_commit(c);}
