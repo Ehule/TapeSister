@@ -516,9 +516,11 @@ static void fx_paint_movements(void)
         }
         if(!count)continue;
         const char *label=c<0?"OTHER SOURCES":g->canvas[c].name;
-        int scale=matrix_window.layout->canvas_zoom<.4f?1:2,height=scale==1?10:24;
+        int compact=!fx_canvas.movement && matrix_window.layout->canvas_zoom<.4f;
+        int scale=compact?1:2;float factor=compact?2.f/3:1;
+        int height=fx_line_height(fx_font_scaled(scale,factor))+1;
         int x=fx_x(left),y=fx_y(top)-height;
-        fx_text_box((SDL_Rect){x,y,480,height},graph,label,FX_CABLE,scale,1);
+        fx_text_box_scaled((SDL_Rect){x,y,480,height},graph,label,FX_CABLE,scale,1,factor);
     }
 }
 static void fx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)

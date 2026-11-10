@@ -16,6 +16,25 @@ Prism, Pedalboard and Fallout rows contain only the processed contribution.
 Sister's row contains its tape/head mix. Dry audio needs its own connection;
 checking a processor does not secretly add another dry copy.
 
+## Gallery movements in FX Canvas
+
+**Shift+F9** opens one map containing the cards from **all Gallery movements**,
+with movement labels and their saved spatial positions. Selecting or playing a
+movement does not hide the others. Its cards can be patched or moved while that
+movement is parked.
+
+Use **VIEW: ALL MOVEMENTS** to choose a movement filter. This shows that movement's
+cards and the effects/output paths they feed, including shared finishing stages.
+Choose **ALL MOVEMENTS** again for the full map. The filter changes the view only;
+it does not switch, mute or pause playback. **FIT** frames the visible map;
+wheel zoom and drag/pan remain available. Unpatched modules remain visible in
+ALL MOVEMENTS. A card using the implicit Mosaic bus has a read-only bus cable;
+make an explicit patch to give it independent routing.
+
+The table Matrix's card rows still follow the active movement. Removing an effect
+or using **Clear Cables** includes sources in every Gallery movement, even when
+filtered. Undo restores those routes to the correct cards.
+
 ## Independent effect instances
 
 In Matrix mode, click **Add Effect +** and choose **Reverb, Delay, Distortion,
