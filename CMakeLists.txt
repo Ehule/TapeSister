@@ -1122,6 +1122,8 @@ add_executable(tapesister_sunvox_patch_benchmark EXCLUDE_FROM_ALL tools/benchmar
 add_executable(tapesister_sunvox_patch_reference EXCLUDE_FROM_ALL tools/benchmark_sunvox_patch.c
   "${SV_ROOT}/reference/psynths_delay.cpp")
 foreach(probe tapesister_sunvox_patch_benchmark tapesister_sunvox_patch_reference)
+  # Match the SDK even when the desktop/MIDI configuration disables extensions.
+  set_target_properties(${probe} PROPERTIES CXX_EXTENSIONS ON)
   target_include_directories(${probe} PRIVATE
     $<TARGET_PROPERTY:tapesister_sunvox,INCLUDE_DIRECTORIES> "${SV_ROOT}/lib_sunvox/psynth")
   target_compile_definitions(${probe} PRIVATE $<TARGET_PROPERTY:tapesister_sunvox,COMPILE_DEFINITIONS>)
@@ -1145,6 +1147,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang
 endif()
 add_test(NAME sunvox_realtime COMMAND tapesister_sunvox_realtime_tests)
 add_executable(tapesister_sunvox_delay_tests tests/test_sunvox_delay.cpp)
+set_target_properties(tapesister_sunvox_delay_tests PROPERTIES CXX_EXTENSIONS ON)
 target_link_libraries(tapesister_sunvox_delay_tests PRIVATE tapesister_sunvox)
 target_include_directories(tapesister_sunvox_delay_tests PRIVATE
   $<TARGET_PROPERTY:tapesister_sunvox,INCLUDE_DIRECTORIES> "${SV_ROOT}" "${SV_ROOT}/lib_sunvox/psynth")
