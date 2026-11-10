@@ -54,3 +54,18 @@ feature branch. Keep the full chain until the final merge is verified.
 - The main graph still advances sample by sample. This phase moves immutable
   bookkeeping to edits and collects already-buffered work; it does not claim
   a complete block rewrite of the instrument.
+
+## Phase 2: exact empty granular history
+
+- An exact ring occupancy counter allows silent granular interpolation/window
+  work to be skipped. Grain births, PRNG, positions, ages, history cursor,
+  control smoothing and gain/mix advance normally, including during bypass.
+- Forty-second comparisons at 8 and 48 kHz pass against the full kernel, with
+  maximum density, pitch/size changes, bypass, tiny impulses, tails and re-entry.
+  Every grain state and periodic full ring contents match; output is exact.
+  Existing Delay/Reverb parity and the phase-1 graph oracle also pass.
+- The optional `tapesister_fx_silence_tests --benchmark` reports hashes and
+  silent/active timings. Silent grain work is substantially cheaper; active
+  timings must be assessed separately on the target hardware.
+- A distortion shortcut was tested and rejected because the active-path cost
+  was less convincing. No arbitrary SunVox engine is suspended.

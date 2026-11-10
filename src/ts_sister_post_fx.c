@@ -1117,7 +1117,7 @@ static TsStereoFrame distortion_process(const TsSisterFxTiming *engine,
 static TsStereoFrame grain_process(const TsSisterFxTiming *engine,
                                    TsSisterGrainState *state,
                                    const TsSisterFxSlotControls *control,
-                                   TsStereoFrame input, float gate, float *direct)
+                                   TsStereoFrame input, float gate, float *direct, int fast_silence)
 {
     TsStereoFrame wet = {0.0f, 0.0f};
     float energy = 0.0f;
@@ -1173,6 +1173,22 @@ static TsStereoFrame grain_process(const TsSisterFxTiming *engine,
             (state->mix_current > FLT_EPSILON || control->mix > 0.0f))
             grain_spawn(state);
     }
+    /* All reads precede this frame's write. Exact empty history means every
+       interpolation is zero, even when input resumes on this sample. */
+    int empty=fast_silence && !state->nonzero_samples;
+    if(empty) {
+        /* Advance voice positions/ages exactly; never freeze the schedule. */
+        for(size_t i=0;i<TS_SISTER_GRAIN_VOICES;++i) {
+            TsSisterGrainVoice *voice=&state->voice[i];
+            if(!voice->active)continue;
+            if(voice->age>=voice->total){voice->active=0;continue;}
+            voice->read_position+=voice->read_step;
+            while(voice->read_position>=(double)state->capacity_frames)
+                voice->read_position-=(double)state->capacity_frames;
+            ++voice->age;
+            if(voice->age>=voice->total)voice->active=0;
+        }
+    } else {
     for (size_t i = 0u; i < TS_SISTER_GRAIN_VOICES; ++i) {
         TsSisterGrainVoice *voice = &state->voice[i];
         float phase;
@@ -1201,6 +1217,7 @@ static TsStereoFrame grain_process(const TsSisterFxTiming *engine,
         ++voice->age;
         if (voice->age >= voice->total) voice->active = 0;
     }
+    }
     if (energy > 1.0f) {
         float normalization = 1.0f / sqrtf(energy);
         wet.l *= normalization;
@@ -1210,8 +1227,10 @@ static TsStereoFrame grain_process(const TsSisterFxTiming *engine,
     wet.r = feedback_condition(wet.r * 0.86f);
     wet = ts_stereo_frame_sanitize_inline(wet);
 
+    state->nonzero_samples-=(state->data[state->write_index*2]!=0)+(state->data[state->write_index*2+1]!=0);
     state->data[state->write_index * 2u] = input.l * active;
     state->data[state->write_index * 2u + 1u] = input.r * active;
+    state->nonzero_samples+=(state->data[state->write_index*2]!=0)+(state->data[state->write_index*2+1]!=0);
     state->write_index = (state->write_index + 1u) % state->capacity_frames;
     if (state->history_frames < state->capacity_frames)
         ++state->history_frames;
@@ -1640,7 +1659,7 @@ static TsStereoFrame slot_effect_process(TsSisterPostFxEngine *engine,
                                  control, input, gate, direct);
     case TS_SISTER_FX_GRAIN:
         return grain_process(&engine->timing, &engine->grain[slot][location],
-                             control, input, gate, direct);
+                             control, input, gate, direct, 1);
     default:
         return input;
     }
@@ -1972,7 +1991,7 @@ TsStereoFrame ts_sister_single_fx_process(TsSisterSingleFx *f,TsStereoFrame inpu
     case TS_SISTER_FX_REVERB:return reverb_process(&f->timing,&f->state.reverb,&f->controls,input,gate,&direct,1);
     case TS_SISTER_FX_DELAY:return delay_process(&f->timing,&f->state.delay,&f->controls,input,gate,&direct,1);
     case TS_SISTER_FX_DISTORTION:return distortion_process(&f->timing,&f->state.distortion,&f->controls,input,gate,&direct);
-    case TS_SISTER_FX_GRAIN:return grain_process(&f->timing,&f->state.grain,&f->controls,input,gate,&direct);
+    case TS_SISTER_FX_GRAIN:return grain_process(&f->timing,&f->state.grain,&f->controls,input,gate,&direct,1);
     case TS_SISTER_FX_DISPERSION:return ts_dispersion_process(&f->state.dispersion,input,f->controls.parameter_a,f->controls.parameter_b,f->controls.parameter_c,f->controls.mix,f->controls.gain_db,gate,&direct);
     case TS_SISTER_FX_RESONATOR:return ts_resonator_process(&f->state.resonator,input,f->controls.parameter_a,f->controls.parameter_b,f->controls.parameter_c,f->controls.mix,f->controls.gain_db,gate,&direct);
     case TS_SISTER_FX_FILTER:return ts_character_filter_process(&f->state.filter,&f->controls.filter,input,f->controls.mix,f->controls.gain_db,gate);
