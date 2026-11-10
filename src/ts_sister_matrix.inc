@@ -129,7 +129,9 @@ static TsSisterRuntimeFrame runtime_matrix_frame(TsSisterRuntime *r,
     if(!r->matrix.controls.serial_mask)r->router.wet[TS_ROUTER_SISTER]=r->router.wet[TS_ROUTER_PEDALBOARD]=1;
     else runtime_router_begin(&context);
     uint64_t p=ts_profile_begin(TS_PROF_ROUTER);
+    ts_matrix_effects_begin_frame(&r->matrix_effects);
     ts_matrix_process(&r->matrix,&sums,live,runtime_matrix_node,&context);
+    ts_matrix_effects_end_frame(&r->matrix_effects);
     if(r->matrix.controls.serial_mask)runtime_router_finish(&context);
     ts_profile_end(TS_PROF_ROUTER,p);
     frame.monitor_return=r->matrix.output[0];

@@ -5,8 +5,9 @@
 #include "tapesister/source_route_types.h"
 
 /* One writer per lane: main/UI and output callback. Nested timings are
-   inclusive. Audio children sample one complete block in 32; totals and
-   call rates are estimates, peaks are observed samples, never deadlines. */
+   inclusive. Each audio child samples one complete block in 32, staggered so
+   one callback never instruments every per-sample stage/effect together.
+   Totals/call rates are estimates; peaks are observed samples, never deadlines. */
 typedef enum {
     TS_PROF_UI, TS_PROF_CONTROL, TS_PROF_EVENTS, TS_PROF_TRACKER_UI,
     TS_PROF_RENDER, TS_PROF_WAVEFORM, TS_PROF_SISTER_UI, TS_PROF_PRISM_UI,
@@ -44,6 +45,7 @@ void ts_profile_reset(void); /* Epoch request: neither lane is locked. */
 void ts_profile_lane_begin(int audio);
 void ts_profile_lane_end(int audio);
 extern int ts_profile_ui_active, ts_profile_audio_active;
+extern unsigned ts_profile_audio_phase;
 uint64_t ts_profile_clock(void);
 void ts_profile_record(TsProfileId id, uint64_t start);
 /* Reuses the aggregate Matrix FX clock pair; sums all frames of a sampled
@@ -56,8 +58,16 @@ void ts_profile_effect_label(const TsProfileEffectIdentity *identity,
 static inline uint64_t ts_profile_begin(TsProfileId id)
 {
     return (id < TS_PROF_AUDIO ? ts_profile_ui_active :
-        (id == TS_PROF_AUDIO ? ts_profile_enabled() : ts_profile_audio_active)) ?
+        (id == TS_PROF_AUDIO ? ts_profile_enabled() :
+            ts_profile_audio_phase == (unsigned)(id - TS_PROF_VOICES))) ?
         ts_profile_clock() : 0;
+}
+/* Slots have distinct sampling phases, separate from the stage phases. Keep
+   complete callbacks: sampling individual frames misses buffered SunVox work. */
+static inline uint64_t ts_profile_effect_begin(int slot)
+{
+    return slot >= 0 && slot < TS_MATRIX_EFFECT_CAPACITY &&
+        ts_profile_audio_phase == 16u + (unsigned)slot ? ts_profile_clock() : 0;
 }
 static inline void ts_profile_end(TsProfileId id, uint64_t start)
 { if (start) ts_profile_record(id, start); }

@@ -42,6 +42,11 @@ void ts_sunvox_free(TsSunVoxEngine *s);
 void ts_sunvox_set(TsSunVoxEngine *s,const TsSunVoxControls *c);
 /* Returns delayed wet and dry together so wet/dry and bypass stay aligned. */
 void ts_sunvox_process(TsSunVoxEngine *s,float left,float right,float wet[2],float dry[2]);
+/* Buffered boundary: stage returns 1 when a complete input quantum is ready.
+   Render it before staging the next sample. Independent engines may render in
+   any order; output latency remains exactly one existing quantum. */
+int ts_sunvox_stage_frame(TsSunVoxEngine *s,float left,float right,float wet[2],float dry[2]);
+void ts_sunvox_render_pending(TsSunVoxEngine *s);
 size_t ts_sunvox_memory(const TsSunVoxEngine *s);
 #ifdef __cplusplus
 }

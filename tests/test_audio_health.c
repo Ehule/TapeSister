@@ -35,7 +35,7 @@ static int publish_effect_profiles(void *unused)
     for(uint32_t i=1;i<=100000;++i) {
         ts_profile_lane_begin(1);
         TsProfileEffectIdentity id={.generation=i,.id=i,.patch=i*3,.type=3,.quantum=i*2};
-        uint64_t start=ts_profile_begin(TS_PROF_MATRIX_FX);
+        uint64_t start=ts_profile_effect_begin(15);
         ts_profile_effect_end(15,&id,start,1);ts_profile_lane_end(1);
     }
     atomic_store(&profile_done,1);return 0;
@@ -175,17 +175,28 @@ int main(int argc, char **argv)
         assert(surface);assert(!SDL_SaveBMP(surface,SDL_getenv("TAPESISTER_PROFILE_SCREENSHOT")));SDL_FreeSurface(surface);
     }
     /* The secondary view uses the same logical window coordinates and never
-       alters the instrument. Populate every slot to exercise the full panel. */
-    ts_profile_lane_begin(1);
+       alters the instrument. Exercise every slot over complete sampling cycles:
+       effect timings now have staggered phases, not one shared callback. */
+    TsProfileEffectIdentity identities[TS_MATRIX_EFFECT_CAPACITY];
     for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i) {
         TsSunVoxControls c;ts_sunvox_default(&c);
         if(i<3)assert(ts_sunvox_select(&c,i));
-        TsProfileEffectIdentity id={.generation=(uint64_t)i+1,.id=(uint32_t)i+1,
+        identities[i]=(TsProfileEffectIdentity){.generation=(uint64_t)i+1,.id=(uint32_t)i+1,
             .type=i<3?TS_MATRIX_FX_SUNVOX:TS_SISTER_FX_GRAIN,.patch=c.patch,.quantum=256};
-        uint64_t start=ts_profile_begin(TS_PROF_MATRIX_FX);
-        ts_profile_effect_end(i,&id,start,0);
     }
-    ts_profile_lane_end(1);
+    for(int block=0;block<64;++block) {
+        ts_profile_lane_begin(1);
+        for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i) {
+            uint64_t start=ts_profile_effect_begin(i);
+            ts_profile_effect_end(i,&identities[i],start,0);
+        }
+        ts_profile_lane_end(1);
+    }
+    TsProfileSnapshot effect_snapshot;ts_profile_snapshot(&effect_snapshot);
+    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i) {
+        assert(effect_snapshot.effect[i].samples>0);
+        assert(effect_snapshot.effect[i].identity.id==(uint32_t)i+1);
+    }
     SDL_Event effects_event=profile_event;effects_event.button.x=700;effects_event.button.y=55;
     assert(ts_audio_health_event(&effects_event,main_window,a,ui));assert(ts_health.profile_effects);
     ts_audio_health_update(a,ui);
@@ -349,10 +360,13 @@ int main(int argc, char **argv)
     assert(ts_session_log_start(session_dir,0));SDL_free(session_dir);
     ts_health.visible=0;ts_health.setup.valid=0;
     ts_audio_health_capture_setup(a,ui,SDL_GetTicks());assert(ts_health.setup.valid);
-    ts_profile_enable(1);ts_profile_lane_begin(1);
+    ts_profile_enable(1);
     TsProfileEffectIdentity log_effect={.generation=777,.id=16,.type=TS_SISTER_FX_GRAIN};
-    uint64_t log_start=ts_profile_begin(TS_PROF_MATRIX_FX);
-    ts_profile_effect_end(15,&log_effect,log_start,0);ts_profile_lane_end(1);
+    for(int block=0;block<64;++block) {
+        ts_profile_lane_begin(1);
+        uint64_t log_start=ts_profile_effect_begin(15);
+        ts_profile_effect_end(15,&log_effect,log_start,0);ts_profile_lane_end(1);
+    }
     ts_audio_session_update(a,ui);
     ts_profile_enable(0);
     e.type=SDL_KEYDOWN;e.key.windowID=SDL_GetWindowID(main_window);e.key.keysym.sym=SDLK_F12;

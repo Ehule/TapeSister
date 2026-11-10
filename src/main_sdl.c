@@ -7367,7 +7367,7 @@ static void ui_sync_dialog_workspaces(TsUiState *ui)
     if(ui_dialog_open(ui) && !ui->portal.open &&
        !ui->mosaic_video_open && !ui->mosaic_gallery_open && !ui->mosaic_marker_open && !ui->mosaic_views_open && !ui->mosaic_scatter_open && !ui->mosaic_spacing_confirm && !ui->mosaic_loop_open && !ui->mosaic_align_open && !ui->mosaic_pattern_choice &&
        !ui->project_overwrite_confirm_open && ui->browser.mode!=TS_BROWSER_SAVE_RECIPE &&
-       ui->browser.mode!=TS_BROWSER_LOAD_VIDEO && ui->browser.mode!=TS_BROWSER_MOSAIC_VIDEO &&
+       ui->browser.mode!=TS_BROWSER_LOAD_VIDEO && ui->browser.mode!=TS_BROWSER_LOAD_VISUAL_FOLDER && ui->browser.mode!=TS_BROWSER_MOSAIC_VIDEO &&
        ui->browser.mode!=TS_BROWSER_MOSAIC_VIDEO_POOL && ui->browser.mode!=TS_BROWSER_SAVE_XM && ui->browser.mode!=TS_BROWSER_IMPORT_CANVAS && ui->browser.mode!=TS_BROWSER_EXPORT_CANVAS &&
        !(ui->file_busy && !strcmp(ui->file_busy_label,"SAVING")))ui->mosaic_open=0;
     if(ui_dialog_open(ui))ui->tracker_open=0;
@@ -8932,19 +8932,22 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
         ts_browser_close(browser);SDL_StopTextInput();ui->mosaic_open=1;ui->tracker_open=0;ui->mosaic_video_open=1;
         snprintf(ui->status,sizeof(ui->status),"VISUAL TRIGGER ADDED / RIGHT-CLICK TO EDIT / CTRL+R TO SCATTER");return;
     }
-    if (browser->mode==TS_BROWSER_LOAD_VIDEO) {
-        if(browser->selected>=0 && browser->selected<browser->entry_count && browser->entries[browser->selected].is_directory) {
+    if (browser->mode==TS_BROWSER_LOAD_VIDEO || browser->mode==TS_BROWSER_LOAD_VISUAL_FOLDER) {
+        int folder=browser->mode==TS_BROWSER_LOAD_VISUAL_FOLDER;
+        if(!folder && browser->selected>=0 && browser->selected<browser->entry_count && browser->entries[browser->selected].is_directory) {
             ts_browser_enter_selected_directory(browser);return;
         }
-        if(!ts_browser_selected_path(browser,path,sizeof(path))) {
+        if(folder)snprintf(path,sizeof(path),"%s",browser->directory);
+        else if(!ts_browser_selected_path(browser,path,sizeof(path))) {
             snprintf(browser->message,sizeof(browser->message),"SELECT AN IMAGE OR VIDEO FILE");return;
         }
         memset(audio->sister.mandala.video_path,0,sizeof(audio->sister.mandala.video_path));
         snprintf(audio->sister.mandala.video_path,sizeof(audio->sister.mandala.video_path),"%s",path);
-        audio->sister.mandala.video_enabled=1;ts_mandala_video_restart();
+        audio->sister.mandala.video_enabled=1;
+        TsVisualCue clear_cue={0};ts_mandala_video_cue(&clear_cue);ts_mandala_video_restart();
         ts_browser_close(browser);SDL_StopTextInput();
         mandala_editor_video_loaded(ui,&audio->sister.mandala);
-        snprintf(ui->status,sizeof(ui->status),"VISUALIZER IMAGE / VIDEO ADDED / SOUND OFF");return;
+        snprintf(ui->status,sizeof(ui->status),folder?"VISUALIZER FOLDER ADDED / IMAGE HOLD CONTROLS SLIDESHOW":"VISUALIZER IMAGE / VIDEO ADDED / SOUND OFF");return;
     }
     if (browser->mode==TS_BROWSER_TRACKER_PALETTE_IMPORT || browser->mode==TS_BROWSER_TRACKER_PALETTE_EXPORT) {
         int importing=browser->mode==TS_BROWSER_TRACKER_PALETTE_IMPORT;
@@ -9068,7 +9071,10 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
 static int offline_start(SDL_AudioDeviceID,AudioState *,TsUiState *,TsInstrument *,TsSamplePages *,TsInstrument *,int,const char *,int);
 
 #include "main_sdl_recovery.inc"
-#include "main_sdl_canvas_transfer.inc"
+typedef struct MosaicController MosaicController;
+static void mosaic_canvas_queue_import(TsUiState *,PendingFileOperation *);
+static int mosaic_canvas_file_operation(SDL_AudioDeviceID,AudioState *,TsUiState *,TsInstrument *,MosaicController *,
+    TsSamplePages *,const PendingFileOperation *,char *,size_t);
 #include "main_sdl_project_save.inc"
 static int project_save_blocked;
 
@@ -9080,7 +9086,7 @@ static void run_pending_file_operation(SDL_AudioDeviceID device,
                                        TsSamplePages *sample_pages,
                                        TsInstrument *parked_record,
                                        int record_bank_active,
-                                       PendingFileOperation *pending)
+                                       PendingFileOperation *pending,MosaicController *mosaic)
 {
     TsBrowser *browser = &ui->browser;
     char error[160];
@@ -9089,7 +9095,7 @@ static void run_pending_file_operation(SDL_AudioDeviceID device,
     if (!project_save_worker && project_recovery_guard(ui,pending)) return;
     (void)pending_selection_load;
     if(pending->mode==TS_BROWSER_IMPORT_CANVAS || pending->mode==TS_BROWSER_EXPORT_CANVAS) {
-        ok=mosaic_canvas_file_operation(device,audio,ui,sample_pages,pending,error,sizeof(error));
+        ok=mosaic_canvas_file_operation(device,audio,ui,instrument,mosaic,sample_pages,pending,error,sizeof(error));
     } else if (pending->mode == TS_BROWSER_LOAD_WAV &&
         (pending->force_raw || (!path_is_tsr(pending->path) && !path_is_tsp(pending->path) && !path_is_module(pending->path)))) {
         if (audio->capture.state == TS_CAPTURE_COMPLETED)
@@ -13849,6 +13855,7 @@ static void keep_record_bank(SDL_AudioDeviceID output_device,
 #include "main_sdl_mosaic_editor.inc"
 #include "main_sdl_portal.inc"
 #include "main_sdl_mosaic.inc"
+#include "main_sdl_canvas_transfer.inc"
 #include "main_sdl_workspaces.inc"
 
 /* One session-wide release policy. Explicit Shift+click latches and tile
@@ -14631,7 +14638,7 @@ int main(int argc, char **argv)
                                        &pending_selection_load, &import_controller,
                                        &sample_pages,
                                        parked_instrument, record_bank_active,
-                                       &pending_file);
+                                       &pending_file,&mosaic);
         if (ui.exit_after_save == 2) {
             if (ui.exit_for_new) ui.new_project_pending = 1;
             else { exit_confirmed = 1; running = 0; continue; }

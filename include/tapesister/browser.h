@@ -30,7 +30,8 @@ typedef enum {
     TS_BROWSER_EXPORT_CANVAS,
     TS_BROWSER_MOSAIC_VIDEO, TS_BROWSER_MOSAIC_VIDEO_POOL,
     TS_BROWSER_IMPORT_AUDIO_FOLDER,
-    TS_BROWSER_LOAD_SUNSYNTH
+    TS_BROWSER_LOAD_SUNSYNTH,
+    TS_BROWSER_LOAD_VISUAL_FOLDER
 } TsBrowserMode;
 
 typedef struct {
@@ -79,6 +80,7 @@ void ts_browser_set_filename_cursor(TsBrowser *browser, size_t position);
 int ts_browser_selected_path(const TsBrowser *browser, char *path, size_t path_size);
 int ts_browser_destination_path(const TsBrowser *browser, char *path, size_t path_size);
 int ts_browser_path_exists(const char *path);
+int ts_browser_path_is_directory(const char *path);
 int ts_browser_mode_allows_create_directory(TsBrowserMode mode);
 int ts_browser_begin_create_directory(TsBrowser *browser);
 void ts_browser_cancel_create_directory(TsBrowser *browser);

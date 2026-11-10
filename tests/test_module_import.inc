@@ -174,7 +174,7 @@ static void raw_module_imports(void) {
         assert(pending.active && pending.force_raw);
         /* Queued choice owns the mode; later UI changes cannot reroute it. */
         test_ui->browser.import_as_raw=0;
-        run_pending_file_operation(0,test_audio,test_ui,test_bank,&selection,&controller,test_pages,NULL,0,&pending);
+        run_pending_file_operation(0,test_audio,test_ui,test_bank,&selection,&controller,test_pages,NULL,0,&pending,NULL);
         assert(controller.worker);
         for(unsigned wait=0;wait<5000 && controller.worker;++wait) {
             SDL_Delay(1);poll_import_worker(0,test_audio,test_ui,test_bank,&selection,&controller);
