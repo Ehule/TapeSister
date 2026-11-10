@@ -29,6 +29,16 @@ unchanged; this trades additional per-instance memory for fewer callback allocat
 Other modules and oversized internal event bursts can still allocate. Main-thread loading and independent engines
 allow multiple Matrix instances with separate input, controls and DSP history.
 
+The same preparation script splits the non-feedback, nonzero-wet Delay sample
+loop into contiguous spans at read/write ring boundaries. This removes per-sample
+wrap checks without changing arithmetic, read-before-write order, history, or
+control/event handling. Feedback/allpass and zero-wet paths remain upstream.
+The compiler retains alias checks; no fast-math or architecture-specific flags
+are added. `sunvox_delay_exact` compiles the pristine handler from the archive as
+an independent oracle and compares output and delay history. Native paired probes
+also compare complete factory-patch PCM, including tails. See
+`docs/audits/sunvox-velvet-delay.md` for measurements and reproduction.
+
 The engine and SunDog source notices are MIT. The SDK's additional attribution
 requirements and its accompanying notices are copied to `licenses/`, including
 Tremor, Ogg, FLAC and dr_mp3. Release bundles include this folder, this provenance

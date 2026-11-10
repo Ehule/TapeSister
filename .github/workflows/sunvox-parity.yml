@@ -6,6 +6,10 @@ on:
       - '.github/workflows/sunvox-parity.yml'
       - 'scripts/run_sunvox_audit.py'
       - 'tools/benchmark_sunvox_native.c'
+      - 'tools/benchmark_sunvox_patch.c'
+      - 'tools/sunvox_benchmark_seed.cpp'
+      - 'scripts/compare_sunvox_delay.py'
+      - 'tests/test_sunvox_delay.cpp'
       - 'tools/prepare_sunvox_realtime.py'
       - 'src/ts_sunvox_fx.cpp'
       - 'cmake/SunVox.cmake'
@@ -22,7 +26,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: sunvox-parity-linux
-          path: audit/results.json
+          path: |
+            audit/results.json
+            audit/delay-results.json
   windows:
     runs-on: windows-latest
     timeout-minutes: 20
@@ -44,4 +50,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: sunvox-parity-windows
-          path: audit/results.json
+          path: |
+            audit/results.json
+            audit/delay-results.json

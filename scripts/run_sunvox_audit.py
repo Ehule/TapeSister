@@ -54,6 +54,15 @@ for variant in ["current"] + (["upstream-dsp-flags"] if args.upstream_flags else
          "-DTAPESISTER_BUILD_SDL=OFF", "-DTAPESISTER_BUNDLE_CDP8=OFF", "-DTAPESISTER_ENABLE_MIDI=OFF",
          "-DCMAKE_PROJECT_INCLUDE=" + (str(override).replace("\\", "/") if variant != "current" else "")])
     run(["cmake", "--build", build, "--parallel", "2", "--target", "tapesister_sunvox"])
+    if variant == "current":
+        # Exact Delay comparison must use production math flags, before the
+        # optional upstream-flags experiment mutates this build directory.
+        run(["cmake", "--build", build, "--parallel", "2", "--target",
+             "tapesister_sunvox_patch_benchmark", "tapesister_sunvox_patch_reference",
+             "tapesister_sunvox_delay_tests"])
+        run(["ctest", "--test-dir", build, "--output-on-failure", "-R", "^sunvox_delay_exact$"])
+        run([sys.executable, root / "scripts/compare_sunvox_delay.py", "--build", build,
+             "--output", work / "delay-results.json"])
     obj = work / "audit.o"
     binary = work / ("audit.exe" if windows else "audit")
     run([shutil.which("gcc") or "cc", "-O3", "-std=c11", "-I", root / "include", "-I", work / "sdk/headers",
