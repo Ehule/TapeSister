@@ -69,3 +69,19 @@ feature branch. Keep the full chain until the final merge is verified.
   timings must be assessed separately on the target hardware.
 - A distortion shortcut was tested and rejected because the active-path cost
   was less convincing. No arbitrary SunVox engine is suspended.
+
+## Phase 3: exact Echo ring spans
+
+- Split the unfiltered SunVox Echo loop at logical ring boundaries, retaining
+  read-before-write order and independent dry/wet/feedback arithmetic. Filtered
+  paths are unchanged. Both shifted and unshifted right-channel inputs work.
+- A separately compiled pristine SDK handler matches output and internal state
+  in 117 cases over 8/48/192 kHz and 64/256/1024-frame blocks: one-sample rings,
+  wrap boundaries, split events, automation, filters and tails.
+- Six paired kernel runs: reference 95–268 ms versus candidate 34–98 ms for
+  the same 100,000 blocks. This is a kernel result, not whole-project capacity.
+- Velvet, Ensemble and Shimmer hashes match at all three quanta with fixed
+  probe seeds. Full-patch timing is noisy; no whole-patch percentage is claimed.
+  Linux/Windows DSP CI now also compares the full patches against pristine Echo.
+- Preparation remains byte-based and fails closed on changed pinned input.
+  Native/default CP1252 encoding and pristine-oracle checks cover Echo too.

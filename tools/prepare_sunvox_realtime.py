@@ -89,3 +89,77 @@ replace(path, """			    if( data->ctl_inverse ) ctl_wet = -ctl_wet;
                         buf_ptr += count;
                         if( buf_ptr >= buf_size ) buf_ptr = 0;
                     }""")
+
+# Echo's unfiltered ring path: preserve read/feedback/write order, splitting
+# only at the logical ring boundaries (including a shifted right input).
+path = "lib_sunvox/psynth/psynths_echo.cpp"
+(root / "reference/psynths_echo.cpp").write_bytes((root / path).read_bytes())
+replace(path, """\t\t\t    for( int i = 0; i < frames; i++ )
+\t\t\t    {
+\t\t\t        PS_STYPE2 v = cbuf[ buf_ptr ];
+\t\t\t        out[ i ] = PS_NORM_STYPE_MUL( v, ctl_wet, 256 );
+\t\t\t        v = PS_NORM_STYPE_MUL( v, ctl_feedback, 256 );
+\t\t\t        psynth_denorm_add_white_noise( v );
+\t\t\t        cbuf[ buf_ptr ] = v;
+\t\t\t        if( ch && roffset )
+\t\t\t        {
+\t\t\t\t    int ptr2 = buf_ptr + roffset;
+\t\t\t    \t    if( ptr2 >= data->delay_len ) ptr2 -= data->delay_len;
+\t\t\t    \t    cbuf[ ptr2 ] += in[ i ];
+\t\t\t\t}
+\t\t\t\telse
+\t\t\t\t{
+\t\t\t    \t    cbuf[ buf_ptr ] += in[ i ];
+\t\t\t\t}
+\t\t\t\tbuf_ptr++;
+\t\t\t\tif( buf_ptr >= data->delay_len ) buf_ptr = 0;
+\t\t\t    }""",
+        """                    int write_offset = ch ? roffset : 0;
+                    int write_ptr = buf_ptr + write_offset;
+                    if( write_ptr >= data->delay_len ) write_ptr -= data->delay_len;
+                    for( int i = 0; i < frames; )
+                    {
+                        int count = frames - i;
+                        if( count > data->delay_len - buf_ptr ) count = data->delay_len - buf_ptr;
+                        if( count > data->delay_len - write_ptr ) count = data->delay_len - write_ptr;
+                        for( int j = 0; j < count; ++j )
+                        {
+                            PS_STYPE2 v = cbuf[ buf_ptr + j ];
+                            out[ i + j ] = PS_NORM_STYPE_MUL( v, ctl_wet, 256 );
+                            v = PS_NORM_STYPE_MUL( v, ctl_feedback, 256 );
+                            psynth_denorm_add_white_noise( v );
+                            cbuf[ buf_ptr + j ] = v;
+                            cbuf[ write_ptr + j ] += in[ i + j ];
+                        }
+                        i += count;
+                        buf_ptr += count;
+                        if( buf_ptr >= data->delay_len ) buf_ptr = 0;
+                        write_ptr += count;
+                        if( write_ptr >= data->delay_len ) write_ptr = 0;
+                    }""")
+replace(path, """\t\t\t    for( int i = 0; i < frames; i++ )
+\t\t\t    {
+\t\t\t        PS_STYPE2 v = cbuf[ buf_ptr ];
+\t\t\t        out[ i ] = PS_NORM_STYPE_MUL( v, ctl_wet, 256 );
+\t\t\t        v = PS_NORM_STYPE_MUL( v, ctl_feedback, 256 );
+\t\t\t        psynth_denorm_add_white_noise( v );
+\t\t\t        cbuf[ buf_ptr ] = v;
+\t\t\t        buf_ptr++;
+\t\t\t        if( buf_ptr >= data->delay_len ) buf_ptr = 0;
+\t\t\t    }""",
+        """                    for( int i = 0; i < frames; )
+                    {
+                        int count = frames - i;
+                        if( count > data->delay_len - buf_ptr ) count = data->delay_len - buf_ptr;
+                        for( int j = 0; j < count; ++j )
+                        {
+                            PS_STYPE2 v = cbuf[ buf_ptr + j ];
+                            out[ i + j ] = PS_NORM_STYPE_MUL( v, ctl_wet, 256 );
+                            v = PS_NORM_STYPE_MUL( v, ctl_feedback, 256 );
+                            psynth_denorm_add_white_noise( v );
+                            cbuf[ buf_ptr + j ] = v;
+                        }
+                        i += count;
+                        buf_ptr += count;
+                        if( buf_ptr >= data->delay_len ) buf_ptr = 0;
+                    }""")

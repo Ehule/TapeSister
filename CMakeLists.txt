@@ -1127,7 +1127,9 @@ add_executable(tapesister_sunvox_patch_benchmark EXCLUDE_FROM_ALL tools/benchmar
 # searched, so this executable uses the pristine handler and identical host/DSP.
 add_executable(tapesister_sunvox_patch_reference EXCLUDE_FROM_ALL tools/benchmark_sunvox_patch.c
   "${SV_ROOT}/reference/psynths_delay.cpp")
-foreach(probe tapesister_sunvox_patch_benchmark tapesister_sunvox_patch_reference)
+add_executable(tapesister_sunvox_echo_reference EXCLUDE_FROM_ALL tools/benchmark_sunvox_patch.c
+  "${SV_ROOT}/reference/psynths_echo.cpp")
+foreach(probe tapesister_sunvox_patch_benchmark tapesister_sunvox_patch_reference tapesister_sunvox_echo_reference)
   # Match the SDK even when the desktop/MIDI configuration disables extensions.
   set_target_properties(${probe} PROPERTIES CXX_EXTENSIONS ON)
   target_include_directories(${probe} PRIVATE
@@ -1164,6 +1166,14 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 add_test(NAME sunvox_delay_exact COMMAND tapesister_sunvox_delay_tests)
 set_tests_properties(sunvox_delay_exact PROPERTIES TIMEOUT 120)
+add_executable(tapesister_sunvox_echo_tests tests/test_sunvox_echo.cpp)
+set_target_properties(tapesister_sunvox_echo_tests PROPERTIES CXX_EXTENSIONS ON)
+target_link_libraries(tapesister_sunvox_echo_tests PRIVATE tapesister_sunvox)
+target_include_directories(tapesister_sunvox_echo_tests PRIVATE
+  $<TARGET_PROPERTY:tapesister_sunvox,INCLUDE_DIRECTORIES> "${SV_ROOT}" "${SV_ROOT}/lib_sunvox/psynth")
+target_compile_definitions(tapesister_sunvox_echo_tests PRIVATE $<TARGET_PROPERTY:tapesister_sunvox,COMPILE_DEFINITIONS>)
+add_test(NAME sunvox_echo_exact COMMAND tapesister_sunvox_echo_tests)
+set_tests_properties(sunvox_echo_exact PROPERTIES TIMEOUT 120)
 add_executable(tapesister_fx_silence_tests tests/test_fx_silence.c)
 target_link_libraries(tapesister_fx_silence_tests PRIVATE tapesister_core)
 add_test(NAME fx_silence_exact COMMAND tapesister_fx_silence_tests)

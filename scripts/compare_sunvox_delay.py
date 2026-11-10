@@ -1,6 +1,6 @@
 """Paired native render timings and exact PCM comparison; no audio device needed.
 
-The reference executable links the pristine Delay handler from the pinned SDK.
+The reference executable links the pristine selected handler from the pinned SDK.
 All other engine/host code and compiler flags must match the candidate build.
 Timings are observations, never CI speed thresholds. PCM equality is required.
 """
@@ -14,10 +14,12 @@ import tempfile
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--build", type=Path, required=True)
+parser.add_argument("--kernel", choices=["delay", "echo"], default="delay")
 parser.add_argument("--output", type=Path, required=True)
 args = parser.parse_args()
 suffix = ".exe" if platform.system() == "Windows" else ""
-before = args.build.resolve() / ("tapesister_sunvox_patch_reference" + suffix)
+reference = "tapesister_sunvox_echo_reference" if args.kernel == "echo" else "tapesister_sunvox_patch_reference"
+before = args.build.resolve() / (reference + suffix)
 after = args.build.resolve() / ("tapesister_sunvox_patch_benchmark" + suffix)
 velvet = "echo2 Velvet Reverb 3"
 cases = []
