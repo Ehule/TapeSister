@@ -53,7 +53,8 @@ int main(void)
                 ts_matrix_effects_commit(&bank,&controls,48000,&plan);
                 ts_matrix_effects_discard(&plan);
             }
-            ts_profile_lane_begin(1);uint64_t cb=ts_profile_begin(TS_PROF_AUDIO);
+            ts_profile_lane_begin(1);uint64_t block_reads=reads;
+            uint64_t cb=ts_profile_begin(TS_PROF_AUDIO);
             for(int frame=0;frame<FRAMES;++frame) {
                 int n=block*FRAMES+frame;
                 TsStereoFrame out={.2f*sinf(n*.02f),.15f*cosf(n*.023f)};
@@ -63,6 +64,7 @@ int main(void)
                 else reference[n]=out;
             }
             ts_profile_end(TS_PROF_AUDIO,cb);ts_profile_lane_end(1);
+            assert(reads-block_reads<=FRAMES*2+2);
         }
         if(!profiled)assert(reads==before); /* No performance-clock reads when OFF. */
         else {
@@ -71,8 +73,8 @@ int main(void)
             assert(s.effect[15].identity.generation!=original_generation);
             assert(s.effect[15].identity.id==controls.effect[15].id && s.effect[15].identity.quantum==1024);
             for(int i=0;i<3;++i)assert(s.effect[i].samples==4);
-            /* 4 sampled callbacks, 4 effects, 512 frames: exactly the existing
-               two reads per frame, plus callback pairs and two snapshots. */
+            /* Each effect still samples four complete callbacks, but at most one
+               effect per callback. Total reads stay unchanged; peak work falls. */
             assert(reads-before==4*4*FRAMES*2+BLOCKS*2+2);
             char report[16384];ts_profile_report(report,sizeof(report));
             assert(strstr(report,"#4 SUNVOX Profile probe (1024 frames)"));

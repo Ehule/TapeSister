@@ -9068,7 +9068,10 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
 static int offline_start(SDL_AudioDeviceID,AudioState *,TsUiState *,TsInstrument *,TsSamplePages *,TsInstrument *,int,const char *,int);
 
 #include "main_sdl_recovery.inc"
-#include "main_sdl_canvas_transfer.inc"
+typedef struct MosaicController MosaicController;
+static void mosaic_canvas_queue_import(TsUiState *,PendingFileOperation *);
+static int mosaic_canvas_file_operation(SDL_AudioDeviceID,AudioState *,TsUiState *,TsInstrument *,MosaicController *,
+    TsSamplePages *,const PendingFileOperation *,char *,size_t);
 #include "main_sdl_project_save.inc"
 static int project_save_blocked;
 
@@ -9080,7 +9083,7 @@ static void run_pending_file_operation(SDL_AudioDeviceID device,
                                        TsSamplePages *sample_pages,
                                        TsInstrument *parked_record,
                                        int record_bank_active,
-                                       PendingFileOperation *pending)
+                                       PendingFileOperation *pending,MosaicController *mosaic)
 {
     TsBrowser *browser = &ui->browser;
     char error[160];
@@ -9089,7 +9092,7 @@ static void run_pending_file_operation(SDL_AudioDeviceID device,
     if (!project_save_worker && project_recovery_guard(ui,pending)) return;
     (void)pending_selection_load;
     if(pending->mode==TS_BROWSER_IMPORT_CANVAS || pending->mode==TS_BROWSER_EXPORT_CANVAS) {
-        ok=mosaic_canvas_file_operation(device,audio,ui,sample_pages,pending,error,sizeof(error));
+        ok=mosaic_canvas_file_operation(device,audio,ui,instrument,mosaic,sample_pages,pending,error,sizeof(error));
     } else if (pending->mode == TS_BROWSER_LOAD_WAV &&
         (pending->force_raw || (!path_is_tsr(pending->path) && !path_is_tsp(pending->path) && !path_is_module(pending->path)))) {
         if (audio->capture.state == TS_CAPTURE_COMPLETED)
@@ -13849,6 +13852,7 @@ static void keep_record_bank(SDL_AudioDeviceID output_device,
 #include "main_sdl_mosaic_editor.inc"
 #include "main_sdl_portal.inc"
 #include "main_sdl_mosaic.inc"
+#include "main_sdl_canvas_transfer.inc"
 #include "main_sdl_workspaces.inc"
 
 /* One session-wide release policy. Explicit Shift+click latches and tile
@@ -14631,7 +14635,7 @@ int main(int argc, char **argv)
                                        &pending_selection_load, &import_controller,
                                        &sample_pages,
                                        parked_instrument, record_bank_active,
-                                       &pending_file);
+                                       &pending_file,&mosaic);
         if (ui.exit_after_save == 2) {
             if (ui.exit_for_new) ui.new_project_pending = 1;
             else { exit_confirmed = 1; running = 0; continue; }

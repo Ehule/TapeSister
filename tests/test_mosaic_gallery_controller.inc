@@ -127,7 +127,7 @@ static void test_mosaic_gallery_controller(SDL_Window *window,SDL_AudioDeviceID 
     snprintf(u->browser.directory,sizeof(u->browser.directory),"%s",directory);ts_browser_set_filename(&u->browser,"Room.tsr");
     PendingFileOperation pending={0};
     browser_action(device,a,u,&instrument,NULL,&pages,NULL,0,&pending,0);assert(pending.active && u->file_busy);
-    run_pending_file_operation(device,a,u,&instrument,NULL,NULL,&pages,NULL,0,&pending);
+    run_pending_file_operation(device,a,u,&instrument,NULL,NULL,&pages,NULL,0,&pending,c);
     assert(!u->file_busy && u->mosaic_gallery_open && strstr(u->status,"EXPORTED CANVAS"));
     assert(a->mosaic==second && !strcmp(project_path,u->project_path));
     gallery_pointer(window,device,a,s,u,c,465,90);assert(u->browser.mode==TS_BROWSER_IMPORT_CANVAS);
@@ -136,12 +136,12 @@ static void test_mosaic_gallery_controller(SDL_Window *window,SDL_AudioDeviceID 
     int found=-1;for(int i=0;i<u->browser.entry_count;++i)if(!strcmp(u->browser.entries[i].name,"Room.tsr"))found=i;
     assert(found>=0);ts_browser_select(&u->browser,found);
     browser_action(device,a,u,&instrument,NULL,&pages,NULL,0,&pending,0);assert(pending.active);
-    run_pending_file_operation(device,a,u,&instrument,NULL,NULL,&pages,NULL,0,&pending);
+    run_pending_file_operation(device,a,u,&instrument,NULL,NULL,&pages,NULL,0,&pending,c);
     assert(u->mosaic_gallery_open && u->mosaic_canvas_import_count==1 && g->count==2);
     if(shot){char path[1200];snprintf(path,sizeof(path),"%s-import.ppm",shot);live_controller_screenshot_size(u,path,1280,800);}
     gallery_pointer(window,device,a,s,u,c,430,330);assert(u->mosaic_canvas_import_pending && u->file_busy);
     mosaic_canvas_queue_import(u,&pending);assert(pending.active && !pending.presented);
-    run_pending_file_operation(device,a,u,&instrument,NULL,NULL,&pages,NULL,0,&pending);
+    run_pending_file_operation(device,a,u,&instrument,NULL,NULL,&pages,NULL,0,&pending,c);
     assert(!u->file_busy && !u->mosaic_canvas_import_count && g->count==3 && g->active==1);
     assert(ts_mosaic_hash(g->canvas[2].scene)==scene_hash && !strcmp(g->canvas[2].name,"Blue room"));
     assert(ts_sample_hash(&instrument.current)==bank_hash && !memcmp(&parameters,&a->sister.parameters,sizeof(parameters)));
@@ -151,6 +151,46 @@ static void test_mosaic_gallery_controller(SDL_Window *window,SDL_AudioDeviceID 
     gallery_pointer(window,device,a,s,u,c,430,330);assert(g->active==2 && !u->mosaic_gallery_open);
     for(int i=0;i<24;++i)audio_callback(a,(Uint8 *)output,sizeof(output));
     assert(g->outgoing<0 && a->mosaic==g->canvas[2].scene && a->mosaic->time>0 && ts_mosaic_live_count(a->mosaic)>0);
+    /* Moving the active page preserves its scene, time, identity and view. */
+    gallery_key(window,device,a,s,u,c,SDLK_g,KMOD_CTRL);
+    TsMosaic *playing=a->mosaic;uint64_t playing_id=g->canvas[2].id;double time=playing->time;
+    gallery_key(window,device,a,s,u,c,SDLK_UP,KMOD_ALT);
+    assert(g->active==1 && g->canvas[1].id==playing_id && a->mosaic==playing && playing->time==time);
+    gallery_pointer(window,device,a,s,u,c,290,361);
+    assert(g->active==2 && g->canvas[2].id==playing_id && playing->time==time);
+    /* A full Gallery still opens import, and an empty selected slot can be
+       overwritten without appending or disturbing the active transport. */
+    while(g->count<TS_GALLERY_LIMIT)assert(ts_gallery_add(g,error,sizeof(error)));
+    u->mosaic_gallery_selected=3;mosaic_gallery_snapshot(u,g);
+    uint64_t empty_id=g->canvas[3].id;char saved_import[1024];strcpy(saved_import,u->mosaic_canvas_import_path);
+    gallery_pointer(window,device,a,s,u,c,465,90);assert(u->browser.mode==TS_BROWSER_IMPORT_CANVAS);
+    pending=(PendingFileOperation){.active=1,.mode=TS_BROWSER_IMPORT_CANVAS};strcpy(pending.path,saved_import);
+    run_pending_file_operation(device,a,u,&instrument,NULL,NULL,&pages,NULL,0,&pending,c);
+    assert(u->mosaic_canvas_import_count==1 && u->mosaic_canvas_import_target==empty_id);
+    gallery_pointer(window,device,a,s,u,c,430,330);
+    assert(!u->mosaic_canvas_import_pending && strstr(u->mosaic_gallery_status,"FULL"));
+    gallery_pointer(window,device,a,s,u,c,400,284);assert(u->mosaic_canvas_import_replace);
+    gallery_pointer(window,device,a,s,u,c,430,330);assert(u->mosaic_canvas_import_pending);
+    mosaic_canvas_queue_import(u,&pending);run_pending_file_operation(device,a,u,&instrument,NULL,NULL,&pages,NULL,0,&pending,c);
+    assert(g->count==16 && g->active==2 && g->canvas[3].id!=empty_id && u->mosaic_gallery_selected==3);
+    assert(ts_mosaic_hash(g->canvas[3].scene)==scene_hash && a->mosaic==playing && playing->time==time);
+    /* Populated active replacement first refuses playback, then requires a
+       second confirmation, rebinds UI/audio and clears stale source pins. */
+    u->mosaic_gallery_selected=2;
+    pending=(PendingFileOperation){.active=1,.mode=TS_BROWSER_IMPORT_CANVAS};strcpy(pending.path,saved_import);
+    run_pending_file_operation(device,a,u,&instrument,NULL,NULL,&pages,NULL,0,&pending,c);
+    gallery_pointer(window,device,a,s,u,c,400,284);gallery_pointer(window,device,a,s,u,c,430,330);
+    assert(!u->mosaic_canvas_import_pending && strstr(u->mosaic_gallery_status,"STOP"));
+    playing->playing=0;playing->live_paused=1;
+    gallery_pointer(window,device,a,s,u,c,430,330);assert(u->mosaic_canvas_import_confirm && !u->mosaic_canvas_import_pending);
+    gallery_pointer(window,device,a,s,u,c,430,330);assert(u->mosaic_canvas_import_pending);
+    mosaic_canvas_queue_import(u,&pending);run_pending_file_operation(device,a,u,&instrument,NULL,NULL,&pages,NULL,0,&pending,c);
+    assert(g->active==2 && g->count==16 && g->canvas[2].id!=playing_id);
+    assert(a->mosaic==g->canvas[2].scene && a->mosaic!=playing && u->mosaic==a->mosaic && pages.mosaic==a->mosaic);
+    assert(ts_mosaic_hash(a->mosaic)==scene_hash && !a->mosaic->playing && !c->clipboard_epoch && !u->mosaic_source_keys);
+    mosaic_poll(device,u,&instrument,c);audio_callback(a,(Uint8 *)output,sizeof(output));
+    if(shot){char path[1200];snprintf(path,sizeof(path),"%s-reordered.ppm",shot);live_controller_screenshot_size(u,path,1280,800);}
+    matrix_history_clear();matrix_window.gallery=NULL;matrix_window.mosaic=NULL;matrix_window.layout=NULL;
     mosaic_controller_free(c);free(c);ts_external_recorder_free(&s->recorder);free(s);free(u);
     a->gallery=NULL;a->mosaic=ts_sample_pages_mosaic_root(&pages);ts_sample_pages_free(&pages);routing_free(a);
 }

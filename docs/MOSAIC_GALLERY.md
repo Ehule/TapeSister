@@ -55,12 +55,37 @@ keyboard notes keep their existing audio until released; the destination's sourc
 KEYS selection starts cleared so subsequent notes use an explicit new selection.
 Sample/Record banks, TrackSister, ARP, effects and output controls remain shared.
 
+## Reordering canvases
+
+Select a canvas and click **MOVE EARLIER** / **MOVE LATER**, or use **Alt+Up** /
+**Alt+Down**. Its name, cards, entry setting and saved FX positions follow it.
+Playback and both sides of a running crossfade retain their current positions.
+Save the project to keep the new playlist order.
+
 ## Importing and exporting a canvas
 
 Use **IMPORT** in Gallery, choose a project's `.tsr`, then select a canvas and
-press **IMPORT**. This appends a new, inactive page; click ENTER when you want to
-turn to it. Importing does not replace the current picture or start new audio.
-The chooser reads names first and only decodes the chosen canvas's assets.
+choose **ADD TO END** or **REPLACE [selected canvas]**, then press **IMPORT**.
+ADD TO END creates an inactive page; click ENTER when you want to turn to it.
+REPLACE keeps the selected playlist position and works even when all 16 slots
+are occupied. A populated destination requires a second **CONFIRM**. Stop its
+playback, audition and live loops before replacing the active canvas; an inactive
+canvas can be replaced while another plays. Imports wait for a Gallery fade to
+finish. Replacement receives a fresh identity so old card selections cannot
+address the newly imported cards. It starts stopped when replacing the active page.
+
+The chooser reads names first and only decodes the chosen canvas's audio. Audio,
+pattern snapshots and all downstream Matrix effect instances connected directly
+to those cards are staged before publication. Instance destinations and sidechains
+are remapped to fresh effect IDs/slots, including embedded SunVox patches and
+settings. Saved card/effect groups are placed below existing FX Canvas positions.
+Missing effects, insufficient effect capacity or a conflicting graph cancel the
+import without replacing cards or changing live routing.
+
+Replacement recycles effect slots used exclusively by the replaced canvas. Effects
+fed by other canvases, tiles, tracks or fixed buses remain intact. Existing FX undo
+and A/B snapshots reset after a successful import so recalling an old graph cannot
+remove the newly imported processors. The application's 16-effect limit remains.
 
 ![Import file browser over Mosaic](images/mosaic-gallery-import-browser.png)
 
@@ -86,12 +111,18 @@ and their sample assets, cards/loop settings, envelope, markers and saved views.
 It does not export unplaced bank sounds, arrangement undo, running loop phases or
 other canvases. A destination assigns a fresh canvas identity when importing.
 
-Global effects, routing-matrix configuration, ARP and the main TrackSister song
-remain part of the destination project. Per-card routes are retained, so inspect
-them if the two projects use different output/effects setups. Imported patterns
-keep their own sample snapshots rather than resolving by destination bank number.
-An imported piece can therefore sound different through another project's shared
-effects. These controls transfer the painting; REC FILE exports its finished sound.
+Gallery EXPORT now includes Matrix routing and embedded effect definitions so
+later imports can reconstruct the selected cards' linked instance chains. ARP,
+fixed-processor settings, master controls and the main TrackSister song remain
+part of the destination project. Fixed buses (including the shared Mosaic bus)
+and physical outputs keep their destination meanings; these are not private
+per-canvas processors. Enable destination Matrix routing before importing a canvas
+that needs instance effects. Older exports made without their linked effects
+cannot reconstruct those missing processors and report an import error.
+
+Imported patterns keep their own sample snapshots rather than resolving by
+destination bank number. A piece can still sound different through another
+project's shared buses or finishing chain. REC FILE exports its finished sound.
 
 ![Choose a canvas to import](images/mosaic-gallery-import.png)
 

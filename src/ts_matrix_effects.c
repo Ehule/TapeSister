@@ -194,7 +194,7 @@ static TsStereoFrame node_process(TsMatrixEffectNode *n,TsStereoFrame in,TsStere
 TsStereoFrame ts_matrix_effects_process(TsMatrixEffects *f,int i,TsStereoFrame in,TsStereoFrame key,int connected)
 {
     if(i<0 || i>=TS_MATRIX_EFFECT_CAPACITY)return (TsStereoFrame){0,0};
-    uint64_t started=ts_profile_begin(TS_PROF_MATRIX_FX);
+    uint64_t started=ts_profile_effect_begin(i);
     TsStereoFrame next=node_process(f->current[i],in,key,connected);
     unsigned remaining=atomic_load_explicit(&f->remaining[i],memory_order_relaxed);
     if(remaining) {
