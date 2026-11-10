@@ -19,6 +19,7 @@
 #include <SDL2/SDL.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <math.h>
 #include "ft2_hpc.h"
 
 #define DURATION_FRAC_BITS 52 /* more makes little sense */
