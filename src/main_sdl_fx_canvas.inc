@@ -230,7 +230,7 @@ static void fx_build(TsSamplePages *pages,TsInstrument *bank)
         for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)fx_canvas.dest[d]=-1;
         for(int i=0;i<count;++i)if(fx_canvas.node[i].destination>=0) {
             int n=fx_canvas.node[i].destination;fx_canvas.dest[n]=i;
-            int sc=ts_matrix_sidechain_for(n);if(sc>=0)fx_canvas.dest[sc]=i;
+            int sc=ts_matrix_sidechain_for(n);if(sc>=0 && ts_matrix_destination_active(&w->controls,sc))fx_canvas.dest[sc]=i;
         }
     }
     /* Initial placement can create saved positions during this build. */

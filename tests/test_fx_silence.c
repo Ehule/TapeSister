@@ -33,6 +33,7 @@ static void check(int type,unsigned rate)
             for(int l=0;l<TS_SISTER_REVERB_LINES;++l) {
                 /* Numerically equal zero may carry a different sign. */
                 aa.line[l].data=bb.line[l].data=NULL;
+                assert(aa.line[l].damping[0]==bb.line[l].damping[0] && aa.line[l].damping[1]==bb.line[l].damping[1]);
                 if(!aa.line[l].damping[0])aa.line[l].damping[0]=bb.line[l].damping[0]=0;
                 if(!aa.line[l].damping[1])aa.line[l].damping[1]=bb.line[l].damping[1]=0;
             }

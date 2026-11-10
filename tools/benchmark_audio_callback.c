@@ -83,7 +83,7 @@ int main(int argc,char **argv)
         ui.mosaic=pages.mosaic;REQUIRE(matrix_show(0,&audio,&ui,&pages,&bank,-1,-1));fx_view(1,&pages,&bank);
         uint64_t gallery_hash=ts_gallery_hash(pages.gallery);
         for(int c=-1;c<(pages.gallery?pages.gallery->count:0);++c) {
-            fx_canvas.movement=c<0?0:pages.gallery->canvas[c].id;fx_build(&pages,&bank);fx_fit();
+            fx_clear_selection();fx_clear_wires();fx_canvas.movement=c<0?0:pages.gallery->canvas[c].id;fx_build(&pages,&bank);fx_fit();
             int cards=0,effects=0;
             for(int i=0;i<fx_canvas.count;++i){cards+=fx_canvas.node[i].row.kind==3;effects+=fx_canvas.node[i].row.kind==4;}
             fprintf(stderr,"Canvas view %d: %d cards / %d effects / %d nodes\n",c,cards,effects,fx_canvas.count);

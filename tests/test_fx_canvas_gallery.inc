@@ -48,6 +48,16 @@ static void gallery_view(void)
     TsFxCanvasPosition *p=fx_position(first,1),*q=fx_position(second,1);assert(p!=q);
     p->x=-310;p->y=100;q->x=-200;q->y=410;
     view_codec();
+    /* Overview headers must still paint at the scale needed for all movements. */
+    w->layout->canvas_zoom=.2f;w->layout->canvas_x=500;w->layout->canvas_y=100;
+    SDL_Surface *frame=rendered_frame();FxFontMetrics font=fx_font_scaled(1,2.f/3);
+    int hx=mx_px(fx_x(p->x)),hy=mx_py(fx_y(p->y)-fx_line_height(font)-1);
+    const char *glyph=ts_ui_glyph(g->canvas[0].name[0]);
+    for(int y=0;y<7;++y)for(int x=0;x<5;++x) {
+        const uint32_t *pixels=(const uint32_t *)((const char *)frame->pixels+(hy+font.rows[y])*frame->pitch);
+        assert(((pixels[hx+font.columns[x]]&0xffffff)==(FX_CABLE&0xffffff))==(glyph[y*5+x]=='1'));
+    }
+    SDL_FreeSurface(frame);
     TsMatrixEffectNode *live=audio.sister.matrix_effects.current[a];
     TsSourceRoute saved=cards[1]->output_route;
     /* Real dropdown events filter the view without switching or editing audio. */

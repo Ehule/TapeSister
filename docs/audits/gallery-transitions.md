@@ -81,6 +81,21 @@ profile timings must not be compared with unprofiled measurements.
 and card/effect counts for ALL and each movement, verifying that filtering did
 not mutate Gallery content.
 
+Two consecutive paired runs (baseline, candidate, candidate, baseline) of the
+128-second sequence after local builds completed gave:
+
+| Callback measurement | Main after #198 | This change |
+| --- | ---: | ---: |
+| Mean thread CPU per callback, run 1 | 5.038 ms | 4.399 ms |
+| Mean thread CPU per callback, run 2 | 4.674 ms | 4.467 ms |
+| Average of those means | 4.856 ms | 4.433 ms |
+| Thread CPU / audio duration, average | 45.52% | 41.56% |
+| 95th-percentile wall time, range | 6.667–8.337 ms | 6.112–6.285 ms |
+
+That is about **8.7% less mean callback CPU time** in this specific sequence.
+Raw runs are in `gallery-transition-timings.json`. The repeated runs show host variation; this is not a universal savings claim.
+Both versions returned finite output with the same reported RMS (0.0716162499).
+
 These are offline host measurements, not physical-device underrun measurements.
 Driver, GUI activity, CPU frequency and scheduling remain factors. Output hashes
 between independent project runs can differ because SunVox seeds modulation at
