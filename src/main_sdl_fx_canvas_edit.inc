@@ -114,7 +114,7 @@ static void fx_transform_motion(int x,int y)
     }
     for(int i=0;i<fx_canvas.move_count;++i) {
         const TsFxCanvasPosition *from=&fx_canvas.move[i];
-        TsFxCanvasPosition *p=fx_position((MatrixRow){.kind=from->kind,.tile=from->id,.index=(int)from->id},0);
+        TsFxCanvasPosition *p=fx_position((MatrixRow){.kind=from->kind,.tile=from->id,.index=(int)from->id,.canvas=from->canvas},0);
         if(!p)continue;
         if(matrix_window.drag==FX_DRAG_SCALE) {
             float old=from->scale?from->scale:1;
@@ -168,7 +168,8 @@ static void fx_box_update(int x,int y,TsSamplePages *pages,TsInstrument *bank)
             SDL_Rect rect={fx_x(n->x),fx_y(n->y),SDL_max(1,(int)(fx_node_w(n)*w->layout->canvas_zoom)),SDL_max(1,(int)(fx_node_h(n)*w->layout->canvas_zoom))};
             if(SDL_HasIntersection(&box,&rect) && !fx_chosen(n->row))w->selection[w->selection_count++]=n->row;
         } else if(n->at>=0) {
-            TsSourceRoute route=mx_display_route(mx_route(n->row,pages,bank));
+            TsSourceRoute raw=mx_route(n->row,pages,bank);if(n->row.kind==3 && !raw.matrix_enabled)continue;
+            TsSourceRoute route=mx_display_route(raw);
             for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)if(route.matrix_gain[d] && fx_canvas.dest[d]>=0) {
                 FxCanvasNode *to=&fx_canvas.node[fx_canvas.dest[d]];
                 if(fx_cable_crosses(fx_xf(n->x+fx_node_w(n)),fx_yf(n->y+fx_node_h(n)*.5f),

@@ -193,9 +193,11 @@ int main(void)
     runtime.matrix_layout.canvas_split=780;
     runtime.matrix_layout.canvas_view=1;
     runtime.matrix_layout.canvas_x=-126.25f;runtime.matrix_layout.canvas_y=48.5f;
-    runtime.matrix_layout.canvas_straight=1;runtime.matrix_layout.canvas_zoom=.03f;runtime.matrix_layout.canvas_count=2;
+    runtime.matrix_layout.canvas_straight=1;runtime.matrix_layout.canvas_zoom=.03f;runtime.matrix_layout.canvas_count=4;
     runtime.matrix_layout.canvas[0]=(TsFxCanvasPosition){123,4,440.5f,-12.25f,1.75f};
     runtime.matrix_layout.canvas[1]=(TsFxCanvasPosition){TS_MATRIX_NODES,5,1200,320};
+    runtime.matrix_layout.canvas[2]=(TsFxCanvasPosition){.kind=3,.id=8,.canvas=1,.x=10,.y=20};
+    runtime.matrix_layout.canvas[3]=(TsFxCanvasPosition){.kind=3,.id=8,.canvas=2,.x=10,.y=120};
     assert(ts_matrix_layout_valid(&runtime.matrix_layout));
     runtime.performance_transport = 6u;
     runtime.clock_controls=(TsMasterClockControls){.enabled=1,.bpm=137,.tempo_mask=3,.arp_division=2,.position_custom=1,.home_mask=2};

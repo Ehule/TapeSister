@@ -12,17 +12,20 @@ static void mx_refresh_tracker(TsSamplePages *pages,TsInstrument *bank)
 {ts_tapehead_refresh_routes(pages,bank);}
 static MatrixSnapshot *mx_snapshot(SDL_AudioDeviceID device,AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
 {
-    size_t count=TS_TRACKER_LANES+TS_MOSAIC_EVENTS;
+    size_t count=TS_TRACKER_LANES;
+    for(int c=0;c<mx_scene_count();++c) {
+        TsMosaic *m=mx_scene_at(c);if(m)for(int i=0;i<TS_MOSAIC_EVENTS;++i)count+=m->events[i].id!=0;
+    }
     for(size_t p=0;p<ts_sample_pages_count(pages);++p) {
         const TsInstrument *page=ts_sample_pages_page(pages,bank,p);if(!page)continue;
         for(int i=0;i<TS_BANK_SLOT_COUNT;++i)count+=page->bank[i].occupied!=0;
     }
     MatrixSnapshot *s=calloc(1,sizeof(*s)+count*sizeof(s->routes[0]));if(!s)return NULL;
+    s->layout=audio->sister.matrix_layout; /* Presentation metadata is UI-owned. */
     if(device)SDL_LockAudioDevice(device);
     s->controls=audio->sister.matrix.controls;s->router=audio->sister.router.controls;s->spatial=audio->sister.spatial.controls;
     s->compressor=audio->sister.compressor.controls;
     mx_processor_read(audio,&s->fixed);matrix_window.fixed=s->fixed;
-    s->layout=audio->sister.matrix_layout;
     s->insert=audio->sister.insert.controls;s->sources=audio->sister.source_switches;
     if(device)SDL_UnlockAudioDevice(device);
     for(int i=0;i<TS_TRACKER_LANES;++i)s->routes[s->count++]=(MatrixSavedRoute){.row={.kind=0,.index=i},.route=pages->tracker.lanes[i].output_route};
@@ -31,9 +34,11 @@ static MatrixSnapshot *mx_snapshot(SDL_AudioDeviceID device,AudioState *audio,Ts
         for(int i=0;i<TS_BANK_SLOT_COUNT;++i)if(page->bank[i].occupied)
             s->routes[s->count++]=(MatrixSavedRoute){.row={.kind=1,.tile=page->bank[i].tile_id},.route=page->bank[i].output_route};
     }
-    TsMosaic *m=matrix_window.mosaic;
-    if(m)for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(m->events[i].id)
-        s->routes[s->count++]=(MatrixSavedRoute){.row={.kind=3,.tile=m->events[i].id},.route=m->events[i].output_route};
+    for(int c=0;c<mx_scene_count();++c) {
+        TsMosaic *m=mx_scene_at(c);if(!m)continue;
+        for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(m->events[i].id)
+            s->routes[s->count++]=(MatrixSavedRoute){.row={.kind=3,.index=i,.tile=m->events[i].id,.canvas=mx_scene_id(c)},.route=m->events[i].output_route};
+    }
     return s;
 }
 static int mx_equal(const MatrixSnapshot *a,const MatrixSnapshot *b)
@@ -55,7 +60,7 @@ static int mx_apply(const MatrixSnapshot *s,SDL_AudioDeviceID device,AudioState 
         else if(v.row.kind==1) {
             TsBankSlot *tile=mx_tile(pages,bank,v.row.tile);
             if(tile){tile->output_route=v.route;source_route_update_voices(audio,v.row.tile,v.route);}
-        } else {TsMosaicEvent *e=ts_mosaic_find(w->mosaic,v.row.tile);if(e)e->output_route=v.route;}
+        } else {TsMosaicEvent *e=mx_card(v.row);if(e){e->output_route=v.route;++mx_card_scene(v.row)->revision;}}
     }
     ts_matrix_effects_commit(&audio->sister.matrix_effects,&controls,(unsigned)audio->output_rate,&plan);
     ts_matrix_set_live(&audio->sister.matrix,&controls,(unsigned)audio->output_rate);

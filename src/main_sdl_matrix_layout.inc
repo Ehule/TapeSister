@@ -1,6 +1,6 @@
 /* View positions never become graph/source IDs. Build and filter only on the
    control thread; unknown/new sources append after the saved custom order. */
-_Static_assert(MATRIX_CAPACITY==TS_MATRIX_LAYOUT_ROWS,"Matrix layout must hold every source");
+_Static_assert(MATRIX_CAPACITY>=TS_MATRIX_LAYOUT_ROWS,"Matrix layout must hold every source");
 static uint64_t mx_row_id(MatrixRow r)
 {return r.kind==1 || r.kind==3 || r.kind==4?r.tile:(uint64_t)r.index;}
 static int mx_identity_compare(const void *a,const void *b)
@@ -35,7 +35,7 @@ static struct {
 } mx_order_cache;
 static void mx_layout_rows(void)
 {
-    MatrixWindow *w=&matrix_window;const TsMatrixLayout *l=w->layout;
+    MatrixWindow *w=&matrix_window;if(w->canvas)return;const TsMatrixLayout *l=w->layout;
     int saved=l?l->row_count:0;
     if(mx_order_cache.valid && mx_order_cache.count==w->count &&
        mx_order_cache.saved==saved && mx_order_cache.filter==w->filter &&

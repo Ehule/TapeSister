@@ -2,7 +2,7 @@
 #define TAPESISTER_MATRIX_LAYOUT_H
 
 #include "tapesister/routing_matrix.h"
-#include "tapesister/mosaic.h"
+#include "tapesister/mosaic_gallery.h"
 #include "tapesister/sister_tracker.h"
 
 /* Presentation metadata only. Neither the graph nor the audio callback reads it.
@@ -11,11 +11,11 @@ enum { TS_MATRIX_LAYOUT_PAGES=1024,
        TS_MATRIX_LAYOUT_ROWS=TS_TRACKER_LANES+TS_MATRIX_LAYOUT_PAGES*TS_BANK_SLOT_COUNT+TS_MATRIX_ROWS+TS_MOSAIC_EVENTS };
 /* Keep room for all processors and interface endpoints even when the player
    has positioned the full complement of individual track/tile/card sources. */
-enum { TS_FX_CANVAS_SOURCE_POSITIONS=256,
+enum { TS_FX_CANVAS_SOURCE_POSITIONS=TS_GALLERY_LIMIT*TS_MOSAIC_EVENTS+256,
        TS_FX_CANVAS_POSITIONS=TS_FX_CANVAS_SOURCE_POSITIONS+TS_MATRIX_ROWS+TS_MATRIX_DESTINATIONS };
 enum { TS_FX_CANVAS_SPLIT_MIN=640, TS_FX_CANVAS_SPLIT_DEFAULT=1000, TS_FX_CANVAS_SPLIT_MAX=1040 };
 /* Zero scale is the legacy/default size; saved custom sizes use .25..4. */
-typedef struct { uint64_t id; int kind; float x,y,scale; } TsFxCanvasPosition;
+typedef struct { uint64_t id; int kind; float x,y,scale; uint64_t canvas; } TsFxCanvasPosition;
 typedef struct {
     uint64_t row_id[TS_MATRIX_LAYOUT_ROWS];
     unsigned char row_kind[TS_MATRIX_LAYOUT_ROWS];

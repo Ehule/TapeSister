@@ -1,0 +1,83 @@
+{
+  "baseline_commit": "16a107030411f6e1f6283d3f66a7e10667fcbc00",
+  "project": "Tree-of-Life-Live-FX-04 revision 3",
+  "sequence": [
+    2,
+    0,
+    1,
+    2
+  ],
+  "turn_seconds": 32,
+  "initial_seek_seconds": 120,
+  "note": "Offline callback measurements on the same Linux host, not a physical-device underrun test. SunVox modulation seeds vary between loads.",
+  "runs": [
+    {
+      "rate": 48000,
+      "block": 512,
+      "channels": 4,
+      "sunvox_block_override": 0,
+      "audio_seconds": 128.0,
+      "warmup_seconds": 0.0,
+      "thread_cpu_percent": 47.231729,
+      "mean_callback_cpu_ms": 5.038051,
+      "mean_callback_wall_ms": 5.040874,
+      "p95_callback_wall_ms": 8.336626,
+      "rms": 0.0716162499,
+      "peak": 0.330920815,
+      "stereo_hash": "543bd7a5e96815de",
+      "hardware_hash": "ce4329b70a6d2f1e",
+      "variant": "baseline"
+    },
+    {
+      "rate": 48000,
+      "block": 512,
+      "channels": 4,
+      "sunvox_block_override": 0,
+      "audio_seconds": 128.0,
+      "warmup_seconds": 0.0,
+      "thread_cpu_percent": 41.241101,
+      "mean_callback_cpu_ms": 4.399051,
+      "mean_callback_wall_ms": 4.399738,
+      "p95_callback_wall_ms": 6.111652,
+      "rms": 0.0716162499,
+      "peak": 0.330920786,
+      "stereo_hash": "87edd50895d15154",
+      "hardware_hash": "9d0ede6c7bf91f34",
+      "variant": "native_idle"
+    },
+    {
+      "rate": 48000,
+      "block": 512,
+      "channels": 4,
+      "sunvox_block_override": 0,
+      "audio_seconds": 128.0,
+      "warmup_seconds": 0.0,
+      "thread_cpu_percent": 41.875527,
+      "mean_callback_cpu_ms": 4.466723,
+      "mean_callback_wall_ms": 4.471164,
+      "p95_callback_wall_ms": 6.285094,
+      "rms": 0.0716162499,
+      "peak": 0.330920786,
+      "stereo_hash": "fbf28ddb09c976a3",
+      "hardware_hash": "d00c6199f98bc043",
+      "variant": "native_idle"
+    },
+    {
+      "rate": 48000,
+      "block": 512,
+      "channels": 4,
+      "sunvox_block_override": 0,
+      "audio_seconds": 128.0,
+      "warmup_seconds": 0.0,
+      "thread_cpu_percent": 43.815799,
+      "mean_callback_cpu_ms": 4.673685,
+      "mean_callback_wall_ms": 4.676432,
+      "p95_callback_wall_ms": 6.667456,
+      "rms": 0.0716162499,
+      "peak": 0.330920815,
+      "stereo_hash": "8c7b137803c38985",
+      "hardware_hash": "1845e433fe42eaa5",
+      "variant": "baseline"
+    }
+  ]
+}
