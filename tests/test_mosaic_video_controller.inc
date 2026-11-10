@@ -55,6 +55,8 @@ static void test_mosaic_video_controller(SDL_Window *window)
     gallery_browser_visible(&ui,getenv("TS_TEST_VIDEO"),"visualizer-video");ts_browser_close(&ui.browser);
     ui_sync_dialog_workspaces(&ui);assert(ui.mosaic_open && !ui_dialog_open(&ui));
     assert(mosaic_video_path("photo.PNG") && mosaic_video_path("photo.JPEG") && !mosaic_video_path("audio.wav"));
+    browser_open(&ui,TS_BROWSER_LOAD_VISUAL_FOLDER);ui_sync_dialog_workspaces(&ui);assert(ui.mosaic_open);
+    ts_browser_close(&ui.browser);ui_sync_dialog_workspaces(&ui);assert(ui.mosaic_open && !ui_dialog_open(&ui));
     key(window,SDLK_v,(SDL_Keymod)(KMOD_CTRL|KMOD_SHIFT));click(window,180,118,1);
     snprintf(ui.browser.directory,sizeof(ui.browser.directory),"%s",TS_VIDEO_FIXTURE);
     slash=strrchr(ui.browser.directory,'/');assert(slash);*slash=0;assert(ts_browser_refresh(&ui.browser));
