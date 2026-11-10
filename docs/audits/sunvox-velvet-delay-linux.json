@@ -1,0 +1,504 @@
+{
+  "platform": "Linux-6.18.57-x86_64-with-glibc2.41",
+  "rows": [
+    {
+      "patch": "echo2 Velvet Reverb 3",
+      "rate": 48000,
+      "quantum": 64,
+      "audio_seconds": 15,
+      "controls": "defaults",
+      "trial": 1,
+      "exact_pcm": true,
+      "reference": {
+        "cpu_percent": 17.511746,
+        "rms": 0.042930174,
+        "fnv64": "7e4450bcc2d46c4d"
+      },
+      "optimized": {
+        "cpu_percent": 14.752766,
+        "rms": 0.042930174,
+        "fnv64": "7e4450bcc2d46c4d"
+      }
+    },
+    {
+      "patch": "echo2 Velvet Reverb 3",
+      "rate": 48000,
+      "quantum": 256,
+      "audio_seconds": 60,
+      "controls": "defaults",
+      "trial": 1,
+      "exact_pcm": true,
+      "reference": {
+        "cpu_percent": 6.925004,
+        "rms": 0.042539325,
+        "fnv64": "fdfc72ae9cbb8d86"
+      },
+      "optimized": {
+        "cpu_percent": 5.65406,
+        "rms": 0.042539325,
+        "fnv64": "fdfc72ae9cbb8d86"
+      }
+    },
+    {
+      "patch": "echo2 Velvet Reverb 3",
+      "rate": 48000,
+      "quantum": 256,
+      "audio_seconds": 60,
+      "controls": "defaults",
+      "trial": 2,
+      "exact_pcm": true,
+      "optimized": {
+        "cpu_percent": 5.978492,
+        "rms": 0.042539325,
+        "fnv64": "fdfc72ae9cbb8d86"
+      },
+      "reference": {
+        "cpu_percent": 6.950362,
+        "rms": 0.042539325,
+        "fnv64": "fdfc72ae9cbb8d86"
+      }
+    },
+    {
+      "patch": "echo2 Velvet Reverb 3",
+      "rate": 48000,
+      "quantum": 256,
+      "audio_seconds": 60,
+      "controls": "defaults",
+      "trial": 3,
+      "exact_pcm": true,
+      "reference": {
+        "cpu_percent": 8.297701,
+        "rms": 0.042539325,
+        "fnv64": "fdfc72ae9cbb8d86"
+      },
+      "optimized": {
+        "cpu_percent": 5.854773,
+        "rms": 0.042539325,
+        "fnv64": "fdfc72ae9cbb8d86"
+      }
+    },
+    {
+      "patch": "echo2 Velvet Reverb 3",
+      "rate": 48000,
+      "quantum": 1024,
+      "audio_seconds": 15,
+      "controls": "defaults",
+      "trial": 1,
+      "exact_pcm": true,
+      "reference": {
+        "cpu_percent": 8.308005,
+        "rms": 0.042972629,
+        "fnv64": "7b2bad568c7372c4"
+      },
+      "optimized": {
+        "cpu_percent": 4.407791,
+        "rms": 0.042972629,
+        "fnv64": "7b2bad568c7372c4"
+      }
+    },
+    {
+      "patch": "echo2 Velvet Reverb 3",
+      "rate": 48000,
+      "quantum": 64,
+      "audio_seconds": 15,
+      "controls": "audit",
+      "trial": 1,
+      "exact_pcm": true,
+      "reference": {
+        "cpu_percent": 15.861383,
+        "rms": 0.043166989,
+        "fnv64": "8b29c39ff7ddb548"
+      },
+      "optimized": {
+        "cpu_percent": 14.753319,
+        "rms": 0.043166989,
+        "fnv64": "8b29c39ff7ddb548"
+      }
+    },
+    {
+      "patch": "echo2 Velvet Reverb 3",
+      "rate": 48000,
+      "quantum": 256,
+      "audio_seconds": 60,
+      "controls": "audit",
+      "trial": 1,
+      "exact_pcm": true,
+      "reference": {
+        "cpu_percent": 6.700947,
+        "rms": 0.0427072,
+        "fnv64": "7c8b0191526011d4"
+      },
+      "optimized": {
+        "cpu_percent": 6.71004,
+        "rms": 0.0427072,
+        "fnv64": "7c8b0191526011d4"
+      }
+    },
+    {
+      "patch": "echo2 Velvet Reverb 3",
+      "rate": 48000,
+      "quantum": 256,
+      "audio_seconds": 60,
+      "controls": "audit",
+      "trial": 2,
+      "exact_pcm": true,
+      "optimized": {
+        "cpu_percent": 6.164272,
+        "rms": 0.0427072,
+        "fnv64": "7c8b0191526011d4"
+      },
+      "reference": {
+        "cpu_percent": 9.201379,
+        "rms": 0.0427072,
+        "fnv64": "7c8b0191526011d4"
+      }
+    },
+    {
+      "patch": "echo2 Velvet Reverb 3",
+      "rate": 48000,
+      "quantum": 256,
+      "audio_seconds": 60,
+      "controls": "audit",
+      "trial": 3,
+      "exact_pcm": true,
+      "reference": {
+        "cpu_percent": 7.047656,
+        "rms": 0.0427072,
+        "fnv64": "7c8b0191526011d4"
+      },
+      "optimized": {
+        "cpu_percent": 6.16712,
+        "rms": 0.0427072,
+        "fnv64": "7c8b0191526011d4"
+      }
+    },
+    {
+      "patch": "echo2 Velvet Reverb 3",
+      "rate": 48000,
+      "quantum": 1024,
+      "audio_seconds": 15,
+      "controls": "audit",
+      "trial": 1,
+      "exact_pcm": true,
+      "reference": {
+        "cpu_percent": 5.681371,
+        "rms": 0.043209842,
+        "fnv64": "74240061ab9f6904"
+      },
+      "optimized": {
+        "cpu_percent": 5.187664,
+        "rms": 0.043209842,
+        "fnv64": "74240061ab9f6904"
+      }
+    },
+    {
+      "patch": "RAGINGCOAST Ensemble",
+      "rate": 48000,
+      "quantum": 64,
+      "audio_seconds": 15,
+      "controls": "defaults",
+      "trial": 1,
+      "exact_pcm": true,
+      "reference": {
+        "cpu_percent": 2.452734,
+        "rms": 0.042784699,
+        "fnv64": "18f4790ecdc917f1"
+      },
+      "optimized": {
+        "cpu_percent": 2.391445,
+        "rms": 0.042784699,
+        "fnv64": "18f4790ecdc917f1"
+      }
+    },
+    {
+      "patch": "RAGINGCOAST Ensemble",
+      "rate": 48000,
+      "quantum": 256,
+      "audio_seconds": 15,
+      "controls": "defaults",
+      "trial": 1,
+      "exact_pcm": true,
+      "reference": {
+        "cpu_percent": 2.272662,
+        "rms": 0.042791774,
+        "fnv64": "902447ebee8ca227"
+      },
+      "optimized": {
+        "cpu_percent": 2.331651,
+        "rms": 0.042791774,
+        "fnv64": "902447ebee8ca227"
+      }
+    },
+    {
+      "patch": "RAGINGCOAST Ensemble",
+      "rate": 48000,
+      "quantum": 1024,
+      "audio_seconds": 15,
+      "controls": "defaults",
+      "trial": 1,
+      "exact_pcm": true,
+      "reference": {
+        "cpu_percent": 2.216136,
+        "rms": 0.042824304,
+        "fnv64": "09a1e18ec7998dac"
+      },
+      "optimized": {
+        "cpu_percent": 2.168789,
+        "rms": 0.042824304,
+        "fnv64": "09a1e18ec7998dac"
+      }
+    },
+    {
+      "patch": "RAGINGCOAST Ensemble",
+      "rate": 48000,
+      "quantum": 64,
+      "audio_seconds": 15,
+      "controls": "audit",
+      "trial": 1,
+      "exact_pcm": true,
+      "reference": {
+        "cpu_percent": 2.610203,
+        "rms": 0.044112782,
+        "fnv64": "58e23759bd569c72"
+      },
+      "optimized": {
+        "cpu_percent": 2.569088,
+        "rms": 0.044112782,
+        "fnv64": "58e23759bd569c72"
+      }
+    },
+    {
+      "patch": "RAGINGCOAST Ensemble",
+      "rate": 48000,
+      "quantum": 256,
+      "audio_seconds": 15,
+      "controls": "audit",
+      "trial": 1,
+      "exact_pcm": true,
+      "reference": {
+        "cpu_percent": 1.517146,
+        "rms": 0.044121138,
+        "fnv64": "50045b51fc27ee64"
+      },
+      "optimized": {
+        "cpu_percent": 2.312651,
+        "rms": 0.044121138,
+        "fnv64": "50045b51fc27ee64"
+      }
+    },
+    {
+      "patch": "RAGINGCOAST Ensemble",
+      "rate": 48000,
+      "quantum": 1024,
+      "audio_seconds": 15,
+      "controls": "audit",
+      "trial": 1,
+      "exact_pcm": true,
+      "reference": {
+        "cpu_percent": 2.273151,
+        "rms": 0.044174978,
+        "fnv64": "ec959d0ba37c2076"
+      },
+      "optimized": {
+        "cpu_percent": 2.224418,
+        "rms": 0.044174978,
+        "fnv64": "ec959d0ba37c2076"
+      }
+    },
+    {
+      "patch": "cube48 ShimmerClassic",
+      "rate": 48000,
+      "quantum": 64,
+      "audio_seconds": 15,
+      "controls": "defaults",
+      "trial": 1,
+      "exact_pcm": true,
+      "reference": {
+        "cpu_percent": 1.112305,
+        "rms": 0.053838581,
+        "fnv64": "4f3312084ba04b91"
+      },
+      "optimized": {
+        "cpu_percent": 1.019403,
+        "rms": 0.053838581,
+        "fnv64": "4f3312084ba04b91"
+      }
+    },
+    {
+      "patch": "cube48 ShimmerClassic",
+      "rate": 48000,
+      "quantum": 256,
+      "audio_seconds": 15,
+      "controls": "defaults",
+      "trial": 1,
+      "exact_pcm": true,
+      "reference": {
+        "cpu_percent": 0.885872,
+        "rms": 0.0538487,
+        "fnv64": "a3006f63e8853ada"
+      },
+      "optimized": {
+        "cpu_percent": 0.861939,
+        "rms": 0.0538487,
+        "fnv64": "a3006f63e8853ada"
+      }
+    },
+    {
+      "patch": "cube48 ShimmerClassic",
+      "rate": 48000,
+      "quantum": 1024,
+      "audio_seconds": 15,
+      "controls": "defaults",
+      "trial": 1,
+      "exact_pcm": true,
+      "reference": {
+        "cpu_percent": 0.821442,
+        "rms": 0.053882668,
+        "fnv64": "969de5f93d1a30a5"
+      },
+      "optimized": {
+        "cpu_percent": 0.86559,
+        "rms": 0.053882668,
+        "fnv64": "969de5f93d1a30a5"
+      }
+    },
+    {
+      "patch": "cube48 ShimmerClassic",
+      "rate": 48000,
+      "quantum": 64,
+      "audio_seconds": 15,
+      "controls": "audit",
+      "trial": 1,
+      "exact_pcm": true,
+      "reference": {
+        "cpu_percent": 1.037771,
+        "rms": 0.045072214,
+        "fnv64": "41304322107f8ca1"
+      },
+      "optimized": {
+        "cpu_percent": 1.058737,
+        "rms": 0.045072214,
+        "fnv64": "41304322107f8ca1"
+      }
+    },
+    {
+      "patch": "cube48 ShimmerClassic",
+      "rate": 48000,
+      "quantum": 256,
+      "audio_seconds": 15,
+      "controls": "audit",
+      "trial": 1,
+      "exact_pcm": true,
+      "reference": {
+        "cpu_percent": 0.988479,
+        "rms": 0.045078594,
+        "fnv64": "0fa244e0ef5757b7"
+      },
+      "optimized": {
+        "cpu_percent": 0.907241,
+        "rms": 0.045078594,
+        "fnv64": "0fa244e0ef5757b7"
+      }
+    },
+    {
+      "patch": "cube48 ShimmerClassic",
+      "rate": 48000,
+      "quantum": 1024,
+      "audio_seconds": 15,
+      "controls": "audit",
+      "trial": 1,
+      "exact_pcm": true,
+      "reference": {
+        "cpu_percent": 0.795744,
+        "rms": 0.045116481,
+        "fnv64": "c89cd9a9a7c2054d"
+      },
+      "optimized": {
+        "cpu_percent": 0.931813,
+        "rms": 0.045116481,
+        "fnv64": "c89cd9a9a7c2054d"
+      }
+    },
+    {
+      "patch": "echo2 Velvet Reverb 3",
+      "rate": 8000,
+      "quantum": 256,
+      "audio_seconds": 15,
+      "controls": "defaults",
+      "trial": 1,
+      "exact_pcm": true,
+      "reference": {
+        "cpu_percent": 1.69929,
+        "rms": 0.043669836,
+        "fnv64": "717ffc52633a9650"
+      },
+      "optimized": {
+        "cpu_percent": 1.33483,
+        "rms": 0.043669836,
+        "fnv64": "717ffc52633a9650"
+      }
+    },
+    {
+      "patch": "echo2 Velvet Reverb 3",
+      "rate": 44100,
+      "quantum": 256,
+      "audio_seconds": 15,
+      "controls": "defaults",
+      "trial": 1,
+      "exact_pcm": true,
+      "reference": {
+        "cpu_percent": 7.450967,
+        "rms": 0.041120311,
+        "fnv64": "2cfbdec5abe51b3d"
+      },
+      "optimized": {
+        "cpu_percent": 5.525442,
+        "rms": 0.041120311,
+        "fnv64": "2cfbdec5abe51b3d"
+      }
+    },
+    {
+      "patch": "echo2 Velvet Reverb 3",
+      "rate": 96000,
+      "quantum": 256,
+      "audio_seconds": 15,
+      "controls": "defaults",
+      "trial": 1,
+      "exact_pcm": true,
+      "reference": {
+        "cpu_percent": 14.620002,
+        "rms": 0.045921412,
+        "fnv64": "b53e4d4c04c9c75e"
+      },
+      "optimized": {
+        "cpu_percent": 12.441903,
+        "rms": 0.045921412,
+        "fnv64": "b53e4d4c04c9c75e"
+      }
+    },
+    {
+      "patch": "echo2 Velvet Reverb 3",
+      "rate": 192000,
+      "quantum": 256,
+      "audio_seconds": 15,
+      "controls": "defaults",
+      "trial": 1,
+      "exact_pcm": true,
+      "reference": {
+        "cpu_percent": 31.415187,
+        "rms": 0.046873454,
+        "fnv64": "4d5aa58c0351e504"
+      },
+      "optimized": {
+        "cpu_percent": 30.18899,
+        "rms": 0.046873454,
+        "fnv64": "4d5aa58c0351e504"
+      }
+    }
+  ],
+  "baseline": "a8a3c04817eb0043cd6250de164c54b62dcd74ed",
+  "cpu": "AMD EPYC 7763 (shared virtualized host)",
+  "compiler": "GCC 14.2.0",
+  "release_flags": "-O3 -g -DNDEBUG; no fast-math or CPU extensions",
+  "fixed_seed": true
+}

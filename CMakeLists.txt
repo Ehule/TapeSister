@@ -1119,6 +1119,27 @@ endif()
 # Reproducible steady-state RMS/peak report; no audio device required.
 add_executable(tapesister_fx_gain_probe EXCLUDE_FROM_ALL tools/probe_fx_gain.c)
 target_link_libraries(tapesister_fx_gain_probe PRIVATE tapesister_core)
+add_executable(tapesister_sunvox_patch_benchmark EXCLUDE_FROM_ALL tools/benchmark_sunvox_patch.c)
+# A direct object definition resolves psynth_delay before the static library is
+# searched, so this executable uses the pristine handler and identical host/DSP.
+add_executable(tapesister_sunvox_patch_reference EXCLUDE_FROM_ALL tools/benchmark_sunvox_patch.c
+  "${SV_ROOT}/reference/psynths_delay.cpp")
+foreach(probe tapesister_sunvox_patch_benchmark tapesister_sunvox_patch_reference)
+  # Match the SDK even when the desktop/MIDI configuration disables extensions.
+  set_target_properties(${probe} PROPERTIES CXX_EXTENSIONS ON)
+  target_include_directories(${probe} PRIVATE
+    $<TARGET_PROPERTY:tapesister_sunvox,INCLUDE_DIRECTORIES> "${SV_ROOT}/lib_sunvox/psynth")
+  target_compile_definitions(${probe} PRIVATE $<TARGET_PROPERTY:tapesister_sunvox,COMPILE_DEFINITIONS>)
+  target_link_libraries(${probe} PRIVATE tapesister_sunvox)
+  if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" AND (WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux"))
+    target_sources(${probe} PRIVATE tools/sunvox_benchmark_seed.cpp)
+    target_compile_definitions(${probe} PRIVATE TS_SUNVOX_BENCHMARK_SEED)
+    target_link_options(${probe} PRIVATE "-Wl,--wrap=_Z8stime_nsv")
+  endif()
+  if(NOT WIN32)
+    target_link_libraries(${probe} PRIVATE m)
+  endif()
+endforeach()
 
 add_executable(tapesister_sunvox_realtime_tests tests/test_sunvox_realtime.c)
 target_link_libraries(tapesister_sunvox_realtime_tests PRIVATE tapesister_core)
@@ -1128,6 +1149,18 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang
     "-Wl,--wrap=malloc,--wrap=calloc,--wrap=realloc,--wrap=free")
 endif()
 add_test(NAME sunvox_realtime COMMAND tapesister_sunvox_realtime_tests)
+add_executable(tapesister_sunvox_delay_tests tests/test_sunvox_delay.cpp)
+set_target_properties(tapesister_sunvox_delay_tests PROPERTIES CXX_EXTENSIONS ON)
+target_link_libraries(tapesister_sunvox_delay_tests PRIVATE tapesister_sunvox)
+target_include_directories(tapesister_sunvox_delay_tests PRIVATE
+  $<TARGET_PROPERTY:tapesister_sunvox,INCLUDE_DIRECTORIES> "${SV_ROOT}" "${SV_ROOT}/lib_sunvox/psynth")
+target_compile_definitions(tapesister_sunvox_delay_tests PRIVATE
+  $<TARGET_PROPERTY:tapesister_sunvox,COMPILE_DEFINITIONS>)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(tapesister_sunvox_delay_tests PRIVATE -Wno-multichar)
+endif()
+add_test(NAME sunvox_delay_exact COMMAND tapesister_sunvox_delay_tests)
+set_tests_properties(sunvox_delay_exact PROPERTIES TIMEOUT 120)
 add_executable(tapesister_sunvox_tests tests/test_sunvox.c)
 target_link_libraries(tapesister_sunvox_tests PRIVATE tapesister_core)
 add_test(NAME sunvox_fx COMMAND tapesister_sunvox_tests)

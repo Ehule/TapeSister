@@ -30,7 +30,7 @@ jobs:
   windows:
     name: Baseline Windows
     runs-on: windows-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     defaults:
       run:
         shell: msys2 {0}
@@ -41,13 +41,20 @@ jobs:
           msystem: UCRT64
           update: true
           install: >-
+            git
+            make
+            diffutils
             mingw-w64-ucrt-x86_64-cmake
             mingw-w64-ucrt-x86_64-gcc
             mingw-w64-ucrt-x86_64-python
             mingw-w64-ucrt-x86_64-ninja
             mingw-w64-ucrt-x86_64-SDL2
-            mingw-w64-ucrt-x86_64-ffmpeg
-      - name: Configure without release bundles
-        run: cmake -S . -B build-pr -G Ninja -DCMAKE_BUILD_TYPE=Release -DTAPESISTER_BUNDLE_CDP8=OFF -DTAPESISTER_BUNDLE_VIDEO=OFF
+      # The distro FFmpeg package pulls lowercase sdl2 (sdl2-compat), replacing
+      # native SDL2 and changing synthetic event delivery. Use the same pinned
+      # video decoder and native SDL2 as our supported Windows release build.
+      - name: Configure with native SDL2 and bundled video
+        run: |
+          pacman -Q mingw-w64-ucrt-x86_64-SDL2
+          cmake -S . -B build-pr -G Ninja -DCMAKE_BUILD_TYPE=Release -DTAPESISTER_BUNDLE_CDP8=OFF -DTAPESISTER_BUNDLE_VIDEO=ON
       - name: Build application and run baseline regressions
         run: cmake -P .github/pr-checks.cmake
