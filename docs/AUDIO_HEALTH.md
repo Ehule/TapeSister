@@ -58,6 +58,50 @@ then highlights again as **SESSION SAVED** or **SAVE FAILED** when the backgroun
 export finishes. The profile button stays highlighted while profiling is running.
 These indicators use the Health theme colors and do no audio-thread work.
 
+### Timing individual Matrix effects
+
+Choose **START PROFILE**, then **MATRIX FX** near the top right to see a row
+for each measured effect instance. **SUBSYSTEMS** returns to the overview.
+Both views are included in **COPY REPORT** and the session log's
+`profile_snapshot` records, regardless of which view is visible. The copied
+report includes SunVox preset names and processing block sizes; long names are
+shortened only in the window.
+
+Each row uses the effect's saved ID (the same number as the FX Canvas), plus
+an engine generation in the report. Replacing an engine (for example, choosing
+a different SunVox preset or processing block size), or reloading a
+project/device creates a new generation and restarts that slot's row.
+Old peaks are never relabeled as the new preset.
+Parameter changes that keep the same engine retain its measurements. Rows
+show the **last measured instance** in each slot, even after deletion or when
+the Matrix stops processing; the report includes time since last observation.
+RESET or starting a new profile clears all rows.
+
+| Matrix FX reading | Meaning |
+| --- | --- |
+| AVG/BLOCK | Average total work for this effect within a sampled output callback that processed it, in milliseconds. This sums individual frame calls, including buffered SunVox render bursts. |
+| PEAK/BLOCK | Largest observed sum for one sampled callback, in milliseconds. The displayed effects' peaks may come from different callbacks. |
+| MS/S and AUDIO% | Estimated effect time per second of the whole profile, and as a percentage of measured callback time. A replaced row covers only its new generation, while the denominator still covers the whole profile. |
+| SAMPLES | Actual sampled callbacks in this row, not an extrapolated count. |
+| Crossfade samples (report) | Sampled callbacks that included a slot lifecycle crossfade or warm-up. Their cost includes both the old and new engines when both are present. |
+
+These are children of **Matrix effects DSP**, which is itself inside **Router**
+and **Sister runtime**; do not add nested percentages. The profiler samples one
+callback per 32, with rotating phase. It can miss a rare spike, and the observed
+peak is not a worst-case bound or proof of a click's cause. Reset before comparing
+the same passage with a fixed patch, device, rate and buffer size. For the main
+listening comparison, leave profiling off; turn it on for a separate diagnostic
+pass and mark clicks with **Ctrl+Shift+F12**.
+
+The per-effect measurements reuse the existing Matrix DSP performance-counter
+pair rather than adding another pair for each frame. Accumulation is bounded
+and uses preallocated storage. Only changed sampled results are published;
+report formatting and preset-name lookup run on the UI thread. Profiling off
+does not read the performance clock in effect processing. DSP equations,
+buffering, tails and lifecycle fades are unchanged.
+
+### Reading the setup snapshot
+
 The report's **Active setup** section lists keyboard HOLD and active/held voice
 instances, ARP and outer ARP transport, Sister power/transport/monitor/source
 switches, Fallout, Prism and its Matrix/lens sequence, all configured pedalboard slots

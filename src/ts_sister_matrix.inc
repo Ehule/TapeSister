@@ -59,10 +59,8 @@ static TsStereoFrame runtime_matrix_node(void *context,int node,TsStereoFrame in
     }
     int effect=ts_matrix_effect_index(node);
     if(effect>=0) {
-        uint64_t p=ts_profile_begin(TS_PROF_MATRIX_FX);
-        TsStereoFrame out=ts_matrix_effects_process(&r->matrix_effects,effect,input,r->matrix.sidechain,
+        return ts_matrix_effects_process(&r->matrix_effects,effect,input,r->matrix.sidechain,
             r->matrix.voice[node].active_count!=0 || r->matrix.controls.delayed[node]!=0);
-        ts_profile_end(TS_PROF_MATRIX_FX,p);return out;
     }
     switch(node) {
     case TS_MATRIX_SISTER: {

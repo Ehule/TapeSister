@@ -1,9 +1,11 @@
 #include "tapesister/matrix_effects.h"
+#include "tapesister/profile.h"
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
 
 struct TsMatrixEffectNode {
+    TsProfileEffectIdentity profile;
     uint32_t id;int type;unsigned rate;
     TsSisterSingleFx *pedal;
     TsSunVoxEngine *sunvox;uint64_t sunvox_patch;unsigned sunvox_quantum;
@@ -12,6 +14,9 @@ struct TsMatrixEffectNode {
     float transition,mix_target;
     float gate,target,start,mix;unsigned remaining,total;
 };
+/* Engine construction happens on control/offline threads, never in process.
+   IDs survive project saves; this process-local generation must not. */
+static atomic_uint_least64_t profile_generation;
 static TsSisterFxType pedal_type(int type)
 {return type==TS_MATRIX_FX_FILTER?TS_SISTER_FX_FILTER:type==TS_MATRIX_FX_DISPERSION?TS_SISTER_FX_DISPERSION:type==TS_MATRIX_FX_RESONATOR?TS_SISTER_FX_RESONATOR:(TsSisterFxType)type;}
 const char *ts_matrix_effect_name(int type)
@@ -85,6 +90,9 @@ static TsMatrixEffectNode *node_new(const TsMatrixEffectControls *c,unsigned rat
     else if(c->type==TS_MATRIX_FX_META){if(!(n->meta=ts_meta_new(&c->meta,rate,c->id))){free(n);return NULL;}}
     else if(c->type==TS_MATRIX_FX_COMPRESSOR){ts_compressor_init(&n->compressor);ts_compressor_prepare(&n->compressor,rate);}
     else if(!(n->pedal=ts_sister_single_fx_new(pedal_type(c->type),rate,c->id*UINT32_C(0x9e3779b9)))){free(n);return NULL;}
+    n->profile = (TsProfileEffectIdentity){
+        .generation=atomic_fetch_add_explicit(&profile_generation,1,memory_order_relaxed)+1,
+        .patch=n->sunvox_patch,.id=c->id,.type=(uint32_t)c->type,.quantum=n->sunvox_quantum};
     node_set(n,c,1);return n;
 }
 void ts_matrix_effects_init(TsMatrixEffects *f)
@@ -186,12 +194,20 @@ static TsStereoFrame node_process(TsMatrixEffectNode *n,TsStereoFrame in,TsStere
 TsStereoFrame ts_matrix_effects_process(TsMatrixEffects *f,int i,TsStereoFrame in,TsStereoFrame key,int connected)
 {
     if(i<0 || i>=TS_MATRIX_EFFECT_CAPACITY)return (TsStereoFrame){0,0};
+    uint64_t started=ts_profile_begin(TS_PROF_MATRIX_FX);
     TsStereoFrame next=node_process(f->current[i],in,key,connected);
     unsigned remaining=atomic_load_explicit(&f->remaining[i],memory_order_relaxed);
-    if(!remaining)return next;
-    TsStereoFrame old=node_process(f->previous[i],in,key,connected);
-    float t=fmaxf(0,1-(float)remaining/f->total[i]);
-    return (TsStereoFrame){old.l+(next.l-old.l)*t,old.r+(next.r-old.r)*t};
+    if(remaining) {
+        TsStereoFrame old=node_process(f->previous[i],in,key,connected);
+        float t=fmaxf(0,1-(float)remaining/f->total[i]);
+        next=(TsStereoFrame){old.l+(next.l-old.l)*t,old.r+(next.r-old.r)*t};
+    }
+    if(started) {
+        const TsMatrixEffectNode *n=f->current[i]?f->current[i]:f->previous[i];
+        if(n)ts_profile_effect_end(i,&n->profile,started,remaining!=0);
+        else ts_profile_end(TS_PROF_MATRIX_FX,started);
+    }
+    return next;
 }
 float ts_matrix_effects_reduction(const TsMatrixEffects *f,int i)
 {return i>=0 && i<TS_MATRIX_EFFECT_CAPACITY && f->current[i]?f->current[i]->compressor.reduction_db:0;}
