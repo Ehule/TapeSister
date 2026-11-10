@@ -1,18 +1,23 @@
-/* Caller holds the device lock. These are controls only, never DSP history. */
-static void mx_processor_read(AudioState *audio,FxProcessorState *state)
+/* Caller owns audio, or holds output exclusion. No UI fields are accessed. */
+static void mx_processor_snapshot(AudioState *audio,FxProcessorState *state,
+    TsMasterEqControls *live_eq,int *morph_owned,unsigned *sample_rate)
 {
-    matrix_window.sample_rate=audio->output_rate>0?(unsigned)audio->output_rate:48000;
+    *sample_rate=audio->output_rate>0?(unsigned)audio->output_rate:48000;
     memset(state,0,sizeof(*state));
     state->parameters=audio->sister.parameters;state->eq=audio->sister.master_eq.controls;
     state->morph=audio->sister.master_eq.morph;
     /* The changing curve is display-only: navigation must not record the
        audio clock as an undoable edit. Stop adopts that curve explicitly. */
-    matrix_window.live_eq=audio->sister.master_eq.live;
-    matrix_window.eq_morph_owned=audio->sister.master_eq.morph_running ||
-        !ts_master_eq_matches(&state->eq,&matrix_window.live_eq);
+    *live_eq=audio->sister.master_eq.live;
+    *morph_owned=audio->sister.master_eq.morph_running ||
+        !ts_master_eq_matches(&state->eq,live_eq);
     const TsSisterLimiter *l=&audio->sister.limiter;
     state->limiter_enabled=l->enabled;state->ceiling=l->ceiling_db;
     state->lookahead=l->lookahead_ms;state->release=l->release_ms;
+}
+static void mx_processor_read(AudioState *audio,FxProcessorState *state)
+{
+    mx_processor_snapshot(audio,state,&matrix_window.live_eq,&matrix_window.eq_morph_owned,&matrix_window.sample_rate);
 }
 static void mx_processor_apply(AudioState *audio,TsUiState *ui,const FxProcessorState *state)
 {

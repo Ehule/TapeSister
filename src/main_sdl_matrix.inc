@@ -1,14 +1,9 @@
 /* F9: one modeless patch matrix. No DSP or project export in paint/input. */
 enum { MATRIX_W=1280,MATRIX_H=840,MATRIX_X=264,MATRIX_Y=176,
        MATRIX_CW=98,MATRIX_RH=28,MATRIX_VISIBLE=17,MATRIX_COLS=10,
-       MATRIX_CAPACITY=TS_TRACKER_LANES+TS_SISTER_RUNTIME_PAGE_LIMIT*TS_BANK_SLOT_COUNT+TS_MATRIX_ROWS+TS_GALLERY_LIMIT*TS_MOSAIC_EVENTS,
-       MATRIX_ACTIVITY_VOICES=TS_NOTE_BANK_VOICE_CAPACITY+3*TS_PERFORMANCE_VOICE_LIMIT+TS_BANK_SLOT_COUNT+1 };
+       MATRIX_CAPACITY=TS_TRACKER_LANES+TS_SISTER_RUNTIME_PAGE_LIMIT*TS_BANK_SLOT_COUNT+TS_MATRIX_ROWS+TS_GALLERY_LIMIT*TS_MOSAIC_EVENTS };
 typedef struct {int kind,index,order;TsTileId tile;char name[48];uint64_t canvas;} MatrixRow;
 typedef struct MatrixSnapshot MatrixSnapshot;
-typedef struct {
-    TsSisterParameters parameters;TsMasterEqControls eq;TsEqMorph morph;
-    int limiter_enabled;float ceiling,lookahead,release;
-} FxProcessorState;
 typedef struct {
     SDL_Window *window;SDL_Renderer *renderer;SDL_Texture *texture;uint32_t *pixels;
     int pixel_w,pixel_h;
@@ -33,6 +28,7 @@ typedef struct {
     TsRouteActivity activity[MATRIX_ACTIVITY_VOICES],tracks[TS_TRACKER_LANES],tiles[TS_TAPEHEAD_ROUTE_ACTIVITY_COUNT];
     int activity_count,activity_ready;unsigned processors;
     uint64_t activity_frame;
+    float activity_program,activity_tracker_gain;
 } MatrixWindow;
 static MatrixWindow matrix_window={.selected=-1,.rename=-1};
 #include "main_sdl_fx_processors.inc"
@@ -726,36 +722,34 @@ static void mx_reset_routes(SDL_AudioDeviceID device,AudioState *audio,TsUiState
         "DEFAULT: TRACKS > TRACKSISTER BUS > MAIN. TILES + FM/LINK > MAIN > EQ > LIMITER > OUT 1/2. I/O NAMES KEPT.":
         "ALL CONNECTIONS CLEARED, INCLUDING HIDDEN TRACKS/TILES AND FEEDBACK. I/O NAMES KEPT. PATCH A NEW PATH TO HEAR AUDIO.");
 }
-static void mx_take_voice(TsSourceRouteVoice *voice,TsTileId tile,float gain)
+static void mx_snapshot_voice(MatrixActivitySnapshot *w,TsSourceRouteVoice *voice,TsTileId tile,float gain)
 {
-    MatrixWindow *w=&matrix_window;
     if(tile && voice->activity_source>0 && w->activity_count<MATRIX_ACTIVITY_VOICES)
         w->activity[w->activity_count++]=(TsRouteActivity){tile,voice->activity_source*gain,voice->activity_send*gain};
     voice->activity_source=voice->activity_send=0;
 }
-/* Fixed-size copies and bounded voice reads under the existing exclusion.
-   Matching rows, smoothing, logs and painting all happen after unlocking. */
-static void mx_capture_activity(SDL_AudioDeviceID device,AudioState *audio,TsSamplePages *pages,TsInstrument *bank,Uint32 elapsed)
+static void matrix_audio_publish(AudioState *audio)
 {
-    unsigned previous_inputs=matrix_window.inputs;
-    MatrixWindow *w=&matrix_window;float destinations[TS_MATRIX_DESTINATIONS];
-    MatrixRow old_rows[MATRIX_VISIBLE];float old_source[MATRIX_VISIBLE],old_send[MATRIX_VISIBLE];
-    memcpy(old_rows,w->activity_rows,sizeof(old_rows));memcpy(old_source,w->row_source,sizeof(old_source));memcpy(old_send,w->row_send,sizeof(old_send));
-    if(device)SDL_LockAudioDevice(device);
-    mx_processor_read(audio,&w->fixed);
+    MatrixActivityMailbox *box=&audio->matrix_activity;
+    if(atomic_load_explicit(&box->state,memory_order_acquire)!=1)return;
+    int expected=1;
+    if(!atomic_compare_exchange_strong_explicit(&box->state,&expected,2,memory_order_acquire,memory_order_relaxed))return;
+    MatrixActivitySnapshot *w=&box->value;
+    mx_processor_snapshot(audio,&w->fixed,&w->live_eq,&w->eq_morph_owned,&w->sample_rate);
     w->controls=audio->sister.matrix.controls;w->legacy=audio->sister.router.controls;w->array=audio->sister.spatial.controls;w->speakers=audio->speakers;
     w->output_range=audio->output_range;w->input_range=audio->input_range;w->outputs=audio->output_device_channels;memcpy(w->peaks,audio->sister.matrix.output_peak,sizeof(w->peaks));
-    int fresh=w->activity_ready && audio->sister.processed_frames!=w->activity_frame;
-    w->activity_frame=audio->sister.processed_frames;w->activity_ready=1;
-    memcpy(destinations,audio->sister.matrix.input_peak,sizeof(destinations));
+    w->frame=audio->sister.processed_frames;w->epoch=audio->matrix_activity.requested_epoch;
+    memcpy(w->destinations,audio->sister.matrix.input_peak,sizeof(w->destinations));
     w->inputs=atomic_load(&audio->sister.insert.matrix_channels);
     w->compressor=audio->sister.compressor.controls;w->compressor_gr=audio->sister.compressor.reduction_db;
     w->compressor_key=audio->sister.compressor.key_peak;
-    int effect=mx_effect_slot();w->effect_gr=ts_matrix_effects_reduction(&audio->sister.matrix_effects,effect);
-    w->effect_progress=ts_matrix_effects_progress(&audio->sister.matrix_effects,effect);
-    for(int p=0;p<TS_MATRIX_OUTPUTS;++p)destinations[ts_matrix_output_destination(p)]=audio->sister.matrix.hardware_peak[p];
+    for(int effect=0;effect<TS_MATRIX_EFFECT_CAPACITY;++effect) {
+        w->effect_gr[effect]=ts_matrix_effects_reduction(&audio->sister.matrix_effects,effect);
+        w->effect_progress[effect]=ts_matrix_effects_progress(&audio->sister.matrix_effects,effect);
+    }
+    for(int p=0;p<TS_MATRIX_OUTPUTS;++p)w->destinations[ts_matrix_output_destination(p)]=audio->sister.matrix.hardware_peak[p];
     memset(audio->sister.matrix.hardware_peak,0,sizeof(audio->sister.matrix.hardware_peak));
-    for(int sp=0;sp<16;++sp)destinations[TS_MATRIX_SPEAKER_BASE+sp]=audio->speaker_peak[sp];
+    for(int sp=0;sp<16;++sp)w->destinations[TS_MATRIX_SPEAKER_BASE+sp]=audio->speaker_peak[sp];
     for(int i=0;i<TS_MATRIX_ROWS;++i) {
         TsSourceRouteVoice *v=&audio->sister.matrix.voice[i];w->sends[i]=v->activity_send;
         v->activity_source=v->activity_send=0;
@@ -765,9 +759,10 @@ static void mx_capture_activity(SDL_AudioDeviceID device,AudioState *audio,TsSam
         (audio->sister.parameters.fx.enabled?1u<<TS_MATRIX_BOARD:0)|
         (audio->sister.parameters.fx.enabled && audio->sister.parameters.fx.fallout.enabled?1u<<TS_MATRIX_FALLOUT:0);
     w->activity_count=0;
-    float program=audio->mixer.program_gain;
+    float program=w->program=audio->mixer.program_gain;
+    w->tracker_gain=audio->sister.performance_gain_current[1];
     for(int i=0;i<TS_NOTE_BANK_VOICE_CAPACITY;++i)
-        mx_take_voice(&audio->notes.voices[i].output_route,audio->notes.voices[i].route_tile,program*audio->sister.performance_gain_current[3]*audio->notes.normalization_gain);
+        mx_snapshot_voice(w,&audio->notes.voices[i].output_route,audio->notes.voices[i].route_tile,program*audio->sister.performance_gain_current[3]*audio->notes.normalization_gain);
     TsPerformanceBank *voices[]={&audio->performance,&audio->tile_launchers,&audio->sister.performance};
     for(int b=0;b<3;++b) {
         for(int i=0;i<TS_PERFORMANCE_VOICE_LIMIT;++i) {
@@ -779,17 +774,70 @@ static void mx_capture_activity(SDL_AudioDeviceID device,AudioState *audio,TsSam
         memset(voices[b]->activity,0,sizeof(voices[b]->activity));
     }
     for(int i=0;i<TS_BANK_SLOT_COUNT;++i)
-        mx_take_voice(&audio->keyboard_sequence.voices[i].output_route,audio->keyboard_sequence.voices[i].route_tile,program*audio->sister.performance_gain_current[0]);
-    mx_take_voice(&audio->audition_route,audio->audition_route_tile,program);
+        mx_snapshot_voice(w,&audio->keyboard_sequence.voices[i].output_route,audio->keyboard_sequence.voices[i].route_tile,program*audio->sister.performance_gain_current[0]);
+    mx_snapshot_voice(w,&audio->audition_route,audio->audition_route_tile,program);
     ts_tapehead_take_route_activity(w->tracks,w->tiles);
+    w->mosaic=audio->mosaic;
+    memset(w->card_id,0,sizeof(w->card_id));
+    memset(w->card_source,0,sizeof(w->card_source));memset(w->card_send,0,sizeof(w->card_send));
     if(w->mosaic)for(int i=0;i<TS_MOSAIC_EVENTS;++i) {
+        w->card_id[i]=w->mosaic->events[i].id;
         TsSourceRouteVoice *v=&w->mosaic->voices[i].output_route;
         w->card_source[i]=v->activity_source*program*audio->sister.performance_gain_current[2];w->card_send[i]=v->activity_send*program*audio->sister.performance_gain_current[2];
         v->activity_source=v->activity_send=0;
     }
     w->inputs=audio->sister.insert.duplex?atomic_load(&audio->sister.insert.input_channels):atomic_load(&audio->sister.insert.matrix_channels);
     w->outputs=audio->output_device_channels;
-    if(device)SDL_UnlockAudioDevice(device);
+    atomic_store_explicit(&box->state,3,memory_order_release);
+}
+/* Passive refresh owns no output lock. Only the stopped/offline fallback uses
+   exclusion, since there is then no callback to fulfill the request. */
+static void mx_capture_activity(SDL_AudioDeviceID device,AudioState *audio,TsSamplePages *pages,TsInstrument *bank,Uint32 elapsed)
+{
+    unsigned previous_inputs=matrix_window.inputs;
+    MatrixWindow *w=&matrix_window;float destinations[TS_MATRIX_DESTINATIONS]={0};
+    MatrixRow old_rows[MATRIX_VISIBLE];float old_source[MATRIX_VISIBLE],old_send[MATRIX_VISIBLE];
+    memcpy(old_rows,w->activity_rows,sizeof(old_rows));memcpy(old_source,w->row_source,sizeof(old_source));memcpy(old_send,w->row_send,sizeof(old_send));
+    MatrixActivityMailbox *box=&audio->matrix_activity;
+    int offline=!device || !ts_audio_output_is_running();
+    if(offline) {
+        if(device)SDL_LockAudioDevice(device);
+        box->requested_epoch=mx_activity_epoch;
+        atomic_store_explicit(&box->state,1,memory_order_release);
+        matrix_audio_publish(audio);
+        if(device)SDL_UnlockAudioDevice(device);
+    }
+    int fresh=0;
+    if(atomic_load_explicit(&box->state,memory_order_acquire)==3) {
+        const MatrixActivitySnapshot *v=&box->value;
+        fresh=w->activity_ready && v->frame!=w->activity_frame;
+        w->activity_frame=v->frame;w->activity_ready=1;
+        if(v->epoch==mx_activity_epoch && !w->drag) {
+            w->fixed=v->fixed;w->controls=v->controls;w->legacy=v->legacy;w->array=v->array;
+            w->speakers=v->speakers;w->compressor=v->compressor;
+        }
+        w->live_eq=v->live_eq;w->eq_morph_owned=v->eq_morph_owned;w->sample_rate=v->sample_rate;
+        w->inputs=v->inputs;w->outputs=v->outputs;w->input_range=v->input_range;w->output_range=v->output_range;
+        w->compressor_gr=v->compressor_gr;w->compressor_key=v->compressor_key;
+        int effect=mx_effect_slot();w->effect_gr=effect>=0?v->effect_gr[effect]:0;
+        w->effect_progress=effect>=0?v->effect_progress[effect]:0;
+        w->processors=v->processors;w->activity_count=v->activity_count;
+        w->activity_program=v->program;w->activity_tracker_gain=v->tracker_gain;
+#define MX_COPY(field) memcpy(w->field,v->field,sizeof(w->field))
+        MX_COPY(peaks);MX_COPY(sends);MX_COPY(activity);MX_COPY(tracks);MX_COPY(tiles);
+#undef MX_COPY
+        memcpy(destinations,v->destinations,sizeof(destinations));
+        for(int i=0;i<TS_MOSAIC_EVENTS;++i) {
+            int same=w->mosaic && w->mosaic==v->mosaic && w->mosaic->events[i].id==v->card_id[i];
+            w->card_source[i]=same?v->card_source[i]:0;w->card_send[i]=same?v->card_send[i]:0;
+        }
+        atomic_store_explicit(&box->state,0,memory_order_release);
+    }
+    if(!offline && atomic_load_explicit(&box->state,memory_order_acquire)==0) {
+        box->requested_epoch=mx_activity_epoch;
+        atomic_store_explicit(&box->state,1,memory_order_release);
+    }
+    float program=w->activity_program;
     if(w->io_config && (w->io_generation!=audio->audio_health_generation || previous_inputs!=w->inputs)) {
         unsigned offered=ts_audio_range_offered(w->io_config,1);
         w->input_ports=offered?offered:w->inputs;w->io_generation=audio->audio_health_generation;
@@ -811,7 +859,7 @@ static void mx_capture_activity(SDL_AudioDeviceID device,AudioState *audio,TsSam
                 else if(row.kind==3) {
                     if(mx_card_scene(row)==w->mosaic){source=w->card_source[row.index];send=w->card_send[row.index];}
                 }
-                else if(row.kind==0){source=w->tracks[row.index].source*program*audio->sister.performance_gain_current[1];send=w->tracks[row.index].send*program*audio->sister.performance_gain_current[1];}
+                else if(row.kind==0){source=w->tracks[row.index].source*program*w->activity_tracker_gain;send=w->tracks[row.index].send*program*w->activity_tracker_gain;}
                 else {
                     for(int i=0;i<w->activity_count;++i)if(w->activity[i].tile==row.tile) {
                         source=fmaxf(source,w->activity[i].source);send=fmaxf(send,w->activity[i].send);
@@ -1116,6 +1164,7 @@ static int matrix_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,A
         (w->canvas && e->type==SDL_KEYDOWN && (fx_canvas_key(e->key.keysym.sym) || ((e->key.keysym.mod&KMOD_CTRL) && e->key.keysym.sym==SDLK_v))) ||
         (w->rename>=0 && e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_RETURN) ||
         (w->rename<0 && e->type==SDL_KEYDOWN && mx_layout_key(e)));
+    if(edit || w->drag)++mx_activity_epoch;
     if(edit && !w->pending){mx_original(device,audio,pages,bank);w->pending=mx_snapshot(device,audio,pages,bank);}
     w->history_skip=0;
     if(edit && !w->pending){snprintf(w->status,sizeof(w->status),"EDIT NOT APPLIED: CANNOT ALLOCATE UNDO SNAPSHOT.");return 1;}

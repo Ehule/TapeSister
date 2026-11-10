@@ -85,3 +85,17 @@ feature branch. Keep the full chain until the final merge is verified.
   Linux/Windows DSP CI now also compares the full patches against pristine Echo.
 - Preparation remains byte-based and fails closed on changed pinned input.
   Native/default CP1252 encoding and pristine-oracle checks cover Echo too.
+
+## Phase 4: callback-owned Matrix/FX Canvas snapshots
+
+- Passive refresh now requests a bounded snapshot. Audio publishes at the end
+  of a callback and never waits for the UI; a READY slot remains immutable until
+  the UI releases it. No allocation, painting or row matching occurs in audio.
+- A 2,000-publication concurrency test verifies coherent meters and zero UI
+  output-lock acquisitions. The existing full FX Canvas controller suite passes.
+  Pending controls are invalidated by edits; card IDs prevent reused slots from
+  inheriting stale activity. Paused/offline output retains synchronous refresh.
+- Actual edits, opening a window and retiring DSP still use their required
+  exclusion. This does not claim all UI/audio locking has been removed.
+- The callback benchmark supports `TS_BENCH_METERS=1` and fixed SunVox seeds
+  (benchmark only) to compare publisher cost and PCM with the window closed/open.

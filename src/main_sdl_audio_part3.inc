@@ -486,6 +486,7 @@ static void ts_audio_pause_device(SDL_AudioDeviceID device, int pause_on)
         SDL_AudioDeviceID real = ts_audio_real_id(device);
         if (real != 0) SDL_PauseAudioDevice(real, pause_on);
     }
+    if(device==TS_AUDIO_LOGICAL_OUTPUT)ts_output_paused=pause_on!=0;
 }
 
 static void ts_audio_quit(void)

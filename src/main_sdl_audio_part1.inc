@@ -507,6 +507,7 @@ typedef struct {
 } TsAudioDeviceCatalog;
 
 static SDL_AudioDeviceID ts_real_output;
+static int ts_output_paused; /* UI-owned, updated after backend pause/resume. */
 static SDL_AudioDeviceID ts_real_capture;
 static TsAudioEndpoint ts_output_endpoint;
 static TsAudioEndpoint ts_capture_endpoint;
@@ -860,6 +861,8 @@ static int ts_audio_output_is_available(void)
 {
     return ts_real_output != 0;
 }
+static int ts_audio_output_is_running(void)
+{ return ts_real_output!=0 && !ts_output_paused; }
 
 static char *ts_audio_name_copy(const char *name)
 {

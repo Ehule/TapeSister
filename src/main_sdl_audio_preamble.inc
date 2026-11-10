@@ -40,6 +40,7 @@ static int ts_audio_endpoint_should_retry_output(void);
 static int ts_audio_endpoint_should_retry_capture(void);
 static int ts_audio_retry_capture_for_event(char *error, size_t error_size);
 static int ts_audio_output_is_available(void);
+static int ts_audio_output_is_running(void);
 static unsigned ts_audio_insert_offered_channels(void);
 static uint8_t ts_audio_capture_preferred_channels(const char *device);
 static void ts_audio_insert_devices_sync(void *audio,const TsConfig *config,int force,char *error,size_t size);

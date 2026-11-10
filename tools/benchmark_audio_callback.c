@@ -15,6 +15,9 @@ static int tapesister_application_main(int,char **);
 #undef main
 #include <inttypes.h>
 #include <time.h>
+#ifdef TS_SUNVOX_BENCHMARK_SEED
+void ts_sunvox_benchmark_seed(void);
+#endif
 
 static AudioState audio;
 static TsUiState ui;
@@ -53,6 +56,9 @@ int main(int argc,char **argv)
     REQUIRE(rate>=8000 && rate<=384000 && block>=16 && block<=8192 && channels>=2 && channels<=32);
     SDL_setenv("SDL_VIDEODRIVER","dummy",1);
     REQUIRE(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER));
+#ifdef TS_SUNVOX_BENCHMARK_SEED
+    (void)ts_sunvox_factory_count();ts_sunvox_benchmark_seed();
+#endif
     SDL_Window *window=SDL_CreateWindow("Audio benchmark",0,0,640,400,SDL_WINDOW_HIDDEN);REQUIRE(window);
     ts_ui_init(&ui);ts_instrument_init(&bank);ts_instrument_init(&record);
     ts_note_bank_init(&audio.notes);ts_performance_init(&audio.performance);ts_performance_init(&audio.tile_launchers);
@@ -130,9 +136,17 @@ int main(int argc,char **argv)
                 ++turn_next;
             } else if(at<boundary && at+n>boundary)n=(unsigned)(boundary-at);
         }
+        /* Request at approximately 20 Hz, like FX Canvas. This measures the
+           actual callback publisher; consume only after ownership is returned. */
+        if(getenv("TS_BENCH_METERS") && (at/block)%5==0) {
+            REQUIRE(atomic_load(&audio.matrix_activity.state)==0);
+            atomic_store_explicit(&audio.matrix_activity.state,1,memory_order_release);
+        }
         double cpu=thread_seconds();Uint64 start=SDL_GetPerformanceCounter();
         audio_callback(&audio,(Uint8 *)out,(int)(n*channels*sizeof(float)));
         double elapsed=(SDL_GetPerformanceCounter()-start)/frequency,cost=thread_seconds()-cpu;
+        if(atomic_load_explicit(&audio.matrix_activity.state,memory_order_acquire)==3)
+            atomic_store_explicit(&audio.matrix_activity.state,0,memory_order_release);
         /* Hash the complete render, including startup and warmup. */
         for(unsigned i=0;i<n*channels;++i)REQUIRE(isfinite(out[i]));
         for(unsigned i=0;i<n*2;++i)REQUIRE(isfinite(stereo[i]));
