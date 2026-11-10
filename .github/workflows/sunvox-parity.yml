@@ -13,6 +13,8 @@ on:
       - 'tests/test_sunvox_echo.cpp'
       - 'tools/prepare_sunvox_realtime.py'
       - 'src/ts_sunvox_fx.cpp'
+      - 'src/ts_sunvox_jobs.cpp'
+      - 'tests/test_sunvox_jobs.c'
       - 'cmake/SunVox.cmake'
 permissions:
   contents: read

@@ -20,6 +20,18 @@ typedef struct {
     int minimum, maximum, initial, offset, discrete;
 } TsSunVoxParameter;
 typedef struct TsSunVoxEngine TsSunVoxEngine;
+typedef struct TsSunVoxBatch TsSunVoxBatch;
+typedef struct { TsSunVoxEngine *engine; uint64_t ticks; int timed; } TsSunVoxJob;
+/* Optional one-worker scheduler. Construction/destruction are control-only.
+   Default is serial. Every submitted quantum finishes before render returns. */
+void ts_sunvox_workers_configure(unsigned workers);
+unsigned ts_sunvox_workers_configured(void);
+TsSunVoxBatch *ts_sunvox_batch_new(unsigned workers);
+void ts_sunvox_batch_free(TsSunVoxBatch *batch);
+void ts_sunvox_batch_render(TsSunVoxBatch *batch,TsSunVoxJob *jobs,unsigned count,uint64_t (*clock)(void));
+unsigned ts_sunvox_parallel_cost(const TsSunVoxEngine *engine);
+uint64_t ts_sunvox_batch_dispatched(const TsSunVoxBatch *batch);
+uint64_t ts_sunvox_batch_stolen(const TsSunVoxBatch *batch);
 int ts_sunvox_factory_count(void);
 const char *ts_sunvox_factory_name(int index);
 const char *ts_sunvox_factory_category(int index);
@@ -43,8 +55,9 @@ void ts_sunvox_set(TsSunVoxEngine *s,const TsSunVoxControls *c);
 /* Returns delayed wet and dry together so wet/dry and bypass stay aligned. */
 void ts_sunvox_process(TsSunVoxEngine *s,float left,float right,float wet[2],float dry[2]);
 /* Buffered boundary: stage returns 1 when a complete input quantum is ready.
-   Render it before staging the next sample. Independent engines may render in
-   any order; output latency remains exactly one existing quantum. */
+   Render it before staging the next sample. Preserve job order unless the
+   scheduler's SDK admission check permits parallel work. Output latency remains
+   exactly one existing quantum. */
 int ts_sunvox_stage_frame(TsSunVoxEngine *s,float left,float right,float wet[2],float dry[2]);
 void ts_sunvox_render_pending(TsSunVoxEngine *s);
 size_t ts_sunvox_memory(const TsSunVoxEngine *s);

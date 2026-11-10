@@ -99,3 +99,50 @@ feature branch. Keep the full chain until the final merge is verified.
   exclusion. This does not claim all UI/audio locking has been removed.
 - The callback benchmark supports `TS_BENCH_METERS=1` and fixed SunVox seeds
   (benchmark only) to compare publisher cost and PCM with the window closed/open.
+- CI's existing transient controller test caught an undo-snapshot read replacing
+  a pending UI edit. Snapshot capture now leaves those controls alone; transient
+  state editing and the complete FX Canvas controller test both pass locally.
+
+## Phase 5: optional independent SunVox worker
+
+- `[Audio] audio_fx_workers=0` remains the default. Set it to `1` and restart to
+  opt in. A worker is prepared off the audio thread only when the bank contains
+  at least two SunVox engines and one sufficiently expensive eligible graph.
+  Creation failure, single-core hardware, 64-frame quanta and small jobs retain
+  serial rendering. No quantum or saved sound-quality setting is changed.
+- Admission recursively inspects the pinned MetaModule engine. Reverb, Delay,
+  Echo, Amplifier, Input, Pitch2Ctl, MultiSynth and MultiCtl are audited for
+  instance-local rendering state. Unknown modules and filters stay serial;
+  filter LFOs can consume process-global random state. SDK builds using denormal
+  noise also stay serial. All serial-only engines keep their relative order.
+- At an existing quantum boundary, the worker takes one eligible job while the
+  audio thread renders the remaining jobs. The audio thread reclaims a job the
+  worker has not started. Completion is joined before consuming another frame.
+  The floating-point environment follows the caller, including FTZ/DAZ and
+  rounding. Profiling results are merged by audio, never written to its counters
+  from the worker. Construction, retirement and shutdown remain control work.
+- Exact comparisons cover 64/256/1024-frame buffering, independent and serial
+  paths, SYBERIA's nested graph, a serial-only Velvet patch, controls, tails,
+  nondefault rounding, allocation-wrapped rendering and repeated shutdown.
+  The complete routing oracle also runs with workers and Reverb engines,
+  including feedback, sidechains, live replacement, bypass and deletion.
+  Worker profiling preserves PCM and retains sampled effect identities.
+- Three alternating four-Reverb microbenchmarks retained both PCM hashes.
+  At 1024 frames, serial render totals were 127–163 ms and worker totals
+  116–149 ms; results overlap and are not a guaranteed gain. At 256 frames the
+  wake-up cost was less convincing. Admission now scales with quantum size,
+  so single-Reverb jobs at 256 frames stay serial. The optional benchmark is
+  `tapesister_sunvox_jobs_tests --benchmark`.
+- `TS_BENCH_WORKERS=1` opts the callback benchmark in. It reports process CPU
+  as well as audio-thread CPU, p95/p99/max callback wall time and dispatch/steal
+  counts. Lower audio-thread CPU alone must never be reported as a total saving.
+- A worker already rendering must finish; this is not a hard deadline guarantee.
+  Scheduling and real-time priority behavior still need target ASIO/JACK hardware
+  measurements. Keep the default serial mode on unmeasured low-powered systems.
+
+## Review and merge order
+
+The review chain is #202 → #203 → #204 → #205 → the phase-5 PR. Each child targets
+its preceding branch. Merge #202 into main first, then retarget the next PR to
+main and merge it after its checks pass. Repeat in order. Do not merge a child
+into a feature branch whose earlier version has already reached main.

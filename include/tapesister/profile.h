@@ -52,6 +52,9 @@ void ts_profile_record(TsProfileId id, uint64_t start);
    callback before retaining its per-effect peak. No strings or allocation. */
 void ts_profile_effect_end(int slot, const TsProfileEffectIdentity *identity,
                            uint64_t start, int transitioning);
+/* Merge worker timing on the audio thread; workers never touch profile lanes. */
+void ts_profile_effect_duration(int slot,const TsProfileEffectIdentity *identity,
+    uint64_t ticks,uint64_t ended,int transitioning);
 /* UI thread only, including SunVox catalog/name lookup. */
 void ts_profile_effect_label(const TsProfileEffectIdentity *identity,
                              char *text, size_t capacity);

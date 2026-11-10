@@ -67,6 +67,12 @@ static int load_device_settings(TsConfig *config, const char *path,
             }
             continue;
         }
+        if (!strcmp(key,"audio_fx_workers")) {
+            if(strcmp(value,"0") && strcmp(value,"1")) {
+                fclose(file);set_error(error,error_size,"audio_fx_workers must be 0 or 1");return 0;
+            }
+            config->audio_fx_workers=value[0]-'0';continue;
+        }
         if (strcmp(key, "audio_buffer_frames") == 0) {
             char *end;
             long frames = strtol(value, &end, 10);
@@ -177,6 +183,8 @@ int ts_audio_config_save(const TsConfig *config, const char *path,
                 "audio_output_device=%s\n"
                 "; Shared playback/capture callback size: 128, 256, 512, or 1024 frames.\n"
                 "audio_buffer_frames=%d\n"
+                "; Optional independent SunVox worker; 0=serial, 1=enabled. Restart required.\n"
+                "audio_fx_workers=%d\n"
                 "; Physical channel numbers; last=0 uses all device channels.\n"
                 "audio_input_first=%d\naudio_input_last=%d\n"
                 "audio_output_first=%d\naudio_output_last=%d\n"
@@ -187,6 +195,7 @@ int ts_audio_config_save(const TsConfig *config, const char *path,
                 "midi_input_channel=%d\n",
                 ts_audio_backend_name(config->audio_backend),
                 config->audio_output_device, config->audio_buffer_frames,
+                config->audio_fx_workers,
                 config->audio_input_range.first, config->audio_input_range.last,
                 config->audio_output_range.first, config->audio_output_range.last,
                 config->midi_input_device,

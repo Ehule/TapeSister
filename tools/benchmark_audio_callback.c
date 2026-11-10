@@ -39,6 +39,19 @@ static double thread_seconds(void)
     return t.tv_sec+t.tv_nsec*1e-9;
 #endif
 }
+static double process_seconds(void)
+{
+#ifdef _WIN32
+    FILETIME created,exited,kernel,user;
+    REQUIRE(GetProcessTimes(GetCurrentProcess(),&created,&exited,&kernel,&user));
+    ULARGE_INTEGER k,u;k.LowPart=kernel.dwLowDateTime;k.HighPart=kernel.dwHighDateTime;
+    u.LowPart=user.dwLowDateTime;u.HighPart=user.dwHighDateTime;
+    return (k.QuadPart+u.QuadPart)*1e-7;
+#else
+    struct timespec t;REQUIRE(!clock_gettime(CLOCK_PROCESS_CPUTIME_ID,&t));
+    return t.tv_sec+t.tv_nsec*1e-9;
+#endif
+}
 static int sort_double(const void *a,const void *b)
 {double x=*(const double *)a,y=*(const double *)b;return (x>y)-(x<y);}
 static uint64_t hash_bytes(uint64_t hash,const void *buffer,size_t size)
@@ -55,6 +68,7 @@ int main(int argc,char **argv)
     REQUIRE(!sunvox_block || sunvox_block==64 || sunvox_block==256 || sunvox_block==1024);
     REQUIRE(rate>=8000 && rate<=384000 && block>=16 && block<=8192 && channels>=2 && channels<=32);
     SDL_setenv("SDL_VIDEODRIVER","dummy",1);
+    ts_sunvox_workers_configure(getenv("TS_BENCH_WORKERS")?1:0);
     REQUIRE(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER));
 #ifdef TS_SUNVOX_BENCHMARK_SEED
     (void)ts_sunvox_factory_count();ts_sunvox_benchmark_seed();
@@ -123,7 +137,7 @@ int main(int argc,char **argv)
     const char *dump_path=argc>7 && strcmp(argv[7],"-")?argv[7]:NULL;
     FILE *dump=dump_path?fopen(dump_path,"wb"):NULL;if(dump_path)REQUIRE(dump);
     uint64_t frames=0,hash=UINT64_C(14695981039346656037),hardware_hash=hash;
-    double sum_cpu=0,sum_wall=0,energy=0,peak=0,frequency=(double)SDL_GetPerformanceFrequency();
+    double sum_cpu=0,sum_process=0,sum_wall=0,energy=0,peak=0,frequency=(double)SDL_GetPerformanceFrequency();
     for(uint64_t at=0;at<total;) {
         unsigned n=(unsigned)fmin(block,total-at);
         if(turn_next<turn_count) {
@@ -142,9 +156,10 @@ int main(int argc,char **argv)
             REQUIRE(atomic_load(&audio.matrix_activity.state)==0);
             atomic_store_explicit(&audio.matrix_activity.state,1,memory_order_release);
         }
-        double cpu=thread_seconds();Uint64 start=SDL_GetPerformanceCounter();
+        double process_cpu=process_seconds(),cpu=thread_seconds();Uint64 start=SDL_GetPerformanceCounter();
         audio_callback(&audio,(Uint8 *)out,(int)(n*channels*sizeof(float)));
         double elapsed=(SDL_GetPerformanceCounter()-start)/frequency,cost=thread_seconds()-cpu;
+        double process_cost=process_seconds()-process_cpu;
         if(atomic_load_explicit(&audio.matrix_activity.state,memory_order_acquire)==3)
             atomic_store_explicit(&audio.matrix_activity.state,0,memory_order_release);
         /* Hash the complete render, including startup and warmup. */
@@ -154,17 +169,22 @@ int main(int argc,char **argv)
         hardware_hash=hash_bytes(hardware_hash,out,n*channels*sizeof(float));
         if(dump)REQUIRE(fwrite(out,channels*sizeof(float),n,dump)==n);
         if(at>=skip) {
-            sum_cpu+=cost;sum_wall+=elapsed;wall[count++]=elapsed*1000;frames+=n;
+            sum_cpu+=cost;sum_process+=process_cost;sum_wall+=elapsed;wall[count++]=elapsed*1000;frames+=n;
             for(unsigned i=0;i<n*2;++i){energy+=(double)stereo[i]*stereo[i];peak=fmax(peak,fabs(stereo[i]));}
         }
         at+=n;
     }
     REQUIRE(count && frames);qsort(wall,count,sizeof(double),sort_double);
     printf("{\"rate\":%u,\"block\":%u,\"channels\":%u,\"sunvox_block_override\":%u,\"audio_seconds\":%.6f,\"warmup_seconds\":%.3f,"
-        "\"thread_cpu_percent\":%.6f,\"mean_callback_cpu_ms\":%.6f,\"mean_callback_wall_ms\":%.6f,\"p95_callback_wall_ms\":%.6f,"
+        "\"thread_cpu_percent\":%.6f,\"process_cpu_percent\":%.6f,\"mean_callback_cpu_ms\":%.6f,\"mean_callback_wall_ms\":%.6f,\"p95_callback_wall_ms\":%.6f,"
+        "\"p99_callback_wall_ms\":%.6f,\"max_callback_wall_ms\":%.6f,\"workers_requested\":%u,"
+        "\"master_jobs_dispatched\":%llu,\"master_jobs_audio_claimed\":%llu,"
         "\"rms\":%.9g,\"peak\":%.9g,\"stereo_hash\":\"%016" PRIx64 "\",\"hardware_hash\":\"%016" PRIx64 "\"}\n",
-        rate,block,channels,sunvox_block,frames/(double)rate,warmup,sum_cpu/(frames/(double)rate)*100,sum_cpu*1000/count,
-        sum_wall*1000/count,wall[(size_t)(count*.95)],sqrt(energy/(frames*2)),peak,hash,hardware_hash);
+        rate,block,channels,sunvox_block,frames/(double)rate,warmup,sum_cpu/(frames/(double)rate)*100,
+        sum_process/(frames/(double)rate)*100,sum_cpu*1000/count,
+        sum_wall*1000/count,wall[(size_t)(count*.95)],wall[(size_t)(count*.99)],wall[count-1],
+        ts_sunvox_workers_configured(),(unsigned long long)ts_sunvox_batch_dispatched(audio.sister.matrix_effects.worker),
+        (unsigned long long)ts_sunvox_batch_stolen(audio.sister.matrix_effects.worker),sqrt(energy/(frames*2)),peak,hash,hardware_hash);
     if(getenv("TS_BENCH_PROFILE")){char report[16384];ts_profile_report(report,sizeof(report));fprintf(stderr,"%s\n",report);}
     if(dump)REQUIRE(!fclose(dump));
     ts_tapehead_close();ts_sister_runtime_free(&audio.sister);

@@ -12,8 +12,9 @@ typedef struct {
     struct {TsMatrixEffectNode *node;int slot,transitioning;} jobs[2*TS_MATRIX_EFFECT_CAPACITY];
     unsigned jobs_count;
     int batching;
+    TsSunVoxBatch *worker;
 } TsMatrixEffects;
-typedef struct {TsMatrixEffectNode *node[TS_MATRIX_EFFECT_CAPACITY];unsigned changed;} TsMatrixEffectPlan;
+typedef struct {TsMatrixEffectNode *node[TS_MATRIX_EFFECT_CAPACITY];unsigned changed;TsSunVoxBatch *worker;} TsMatrixEffectPlan;
 void ts_matrix_effects_init(TsMatrixEffects *fx);
 void ts_matrix_effects_free(TsMatrixEffects *fx);
 /* Prepare on the control thread, before acquiring the device lock. The

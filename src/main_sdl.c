@@ -14197,6 +14197,7 @@ int main(int argc, char **argv)
         else if (path_is_directory(ui.config.sample_path))
             snprintf(ui.browser.directory, sizeof(ui.browser.directory), "%s",
                      ui.config.sample_path);
+        ts_sunvox_workers_configure((unsigned)ui.config.audio_fx_workers);
         ts_ui_refresh_cdp_catalog(&ui);
         if (ui.cdp_catalog.truncated)
             fprintf(stderr,
