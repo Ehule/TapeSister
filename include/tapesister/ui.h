@@ -592,6 +592,8 @@ typedef struct {
     int mosaic_gallery_entry[16],mosaic_gallery_marker[16],mosaic_gallery_marker_valid[16];
     char mosaic_gallery_status[160];
     int mosaic_canvas_import_count,mosaic_canvas_import_selected,mosaic_canvas_import_pending;
+    int mosaic_canvas_import_replace,mosaic_canvas_import_confirm;
+    uint64_t mosaic_canvas_import_target;
     char mosaic_canvas_import_path[1024],mosaic_canvas_import_names[16][48];
     int mosaic_live_open, mosaic_live_advanced, mosaic_live_keys;
     int mosaic_source_keys, mosaic_source_key_count; /* Explicit Mosaic QWERTY/MIDI owner. */

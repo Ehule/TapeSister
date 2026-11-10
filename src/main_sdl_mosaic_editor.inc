@@ -1,6 +1,6 @@
 /* The main window is a view of one event document. Park the sample bank while
    editing; callback voices always read Mosaic's immutable sources. */
-typedef struct {
+struct MosaicController {
     TsSamplePages *pages;
     TsInstrument *bank;
     TsInstrument *documents[TS_MOSAIC_EVENTS];
@@ -62,7 +62,7 @@ typedef struct {
     TsMosaicEvent clipboard;
     int fm_parked, fm_edit_exit, portal_return_fm;
     uint64_t fm_owner, fm_epoch;
-} MosaicController;
+};
 
 static int mosaic_same_audio(const TsSample *a,const TsSample *b)
 {

@@ -107,6 +107,120 @@ static void test_pages(void)
     assert(ts_gallery_remove(g,0,error,sizeof(error)) && g->root==m && g->active==0);
     free_gallery(g);
 }
+static void test_move_replace(void)
+{
+    char error[256];TsMosaic *root=scene(.2f,0,0),*second=scene(.3f,0,0);
+    TsMosaicGallery *g=ts_gallery_create(root);assert(g && ts_gallery_append_prepared(g,second,error,sizeof(error)));
+    assert(ts_gallery_add(g,error,sizeof(error)));g->fade_seconds=.1;
+    uint64_t root_id=g->canvas[0].id,second_id=g->canvas[1].id;
+    g->canvas[0].scroll=13;g->canvas[0].entry=TS_GALLERY_RESUME;
+    assert(ts_gallery_switch(g,1,error,sizeof(error)));render(g,20);
+    double from_time=root->time,to_time=second->time,fade=g->fade_position;
+    assert(ts_gallery_move(g,0,2,error,sizeof(error)));
+    assert(g->active==0 && g->outgoing==2 && g->canvas[2].id==root_id && g->canvas[0].id==second_id);
+    assert(g->canvas[2].scroll==13 && g->canvas[2].entry==TS_GALLERY_RESUME);
+    assert(root->time==from_time && second->time==to_time && g->fade_position==fade);
+    TsMosaic *made=scene(.7f,0,0),*retired=NULL;made->playing=0;uint64_t before=ts_gallery_hash(g);
+    assert(!ts_gallery_replace_prepared(g,2,made,&retired,error,sizeof(error)) && !retired && ts_gallery_hash(g)==before);
+    render(g,80);assert(g->outgoing<0);
+    assert(!ts_gallery_replace_prepared(g,0,made,&retired,error,sizeof(error))); /* Active playback. */
+    second->playing=0;
+    assert(ts_gallery_replace_prepared(g,0,made,&retired,error,sizeof(error)) && retired==second);
+    assert(g->active==0 && ts_gallery_active(g)==made && g->canvas[0].id>second_id && g->count==3);
+    ts_mosaic_free(retired);
+    TsMosaic *replacement=ts_mosaic_create();assert(replacement);
+    assert(ts_gallery_replace_prepared(g,2,replacement,&retired,error,sizeof(error)) && !retired && g->root==root);
+    assert(ts_gallery_move(g,2,0,error,sizeof(error)) && g->active==1);
+    assert(!ts_gallery_move(g,0,3,error,sizeof(error)) && !ts_gallery_move(g,-1,0,error,sizeof(error)));
+    assert(ts_gallery_rename(g,0,"Replacement",error,sizeof(error)));
+    assert(ts_gallery_rename(g,1,"Moved active",error,sizeof(error)));
+    assert(ts_gallery_rename(g,2,"Last",error,sizeof(error)));
+    MKDIR("gallery-reordered");assert(ts_gallery_save(g,"gallery-reordered",error,sizeof(error)));
+    TsMosaicGallery *loaded=ts_gallery_create(ts_mosaic_create());assert(loaded);
+    assert(ts_gallery_load(loaded,"gallery-reordered",error,sizeof(error)) && ts_gallery_hash(loaded)==ts_gallery_hash(g));
+    free_gallery(loaded);free_gallery(g);
+}
+static void test_routed_transfer(void)
+{
+    char error[256];TsMosaicCanvas original={.scene=scene(.25f,0,0),.id=1,.scale=24,.hscale=1};
+    strcpy(original.name,"Binah route fixture");original.scene->playing=0;
+    TsSisterProjectState *state=malloc(sizeof(*state));TsCanvasRoutingImport *routing=malloc(sizeof(*routing));
+    TsMatrixLayout *layout=calloc(1,sizeof(*layout));assert(state && routing && layout);
+    ts_sister_project_state_init(state,48000);state->matrix.enabled=1;
+    for(int i=0;i<14;++i)assert(ts_matrix_effect_add(&state->matrix,TS_SISTER_FX_DISTORTION)==i);
+    ts_matrix_effect_default(&state->matrix.effect[10],TS_MATRIX_FX_FILTER,11);
+    ts_matrix_effect_default(&state->matrix.effect[11],TS_MATRIX_FX_SUNVOX,12);
+    ts_matrix_effect_default(&state->matrix.effect[13],TS_SISTER_FX_REVERB,14);
+    state->matrix.effect[11].mix=.42f;state->matrix.effect[12].mix=.697f;
+    state->matrix.row[29].matrix_gain[28]=1000;state->matrix.row[28].matrix_gain[27]=900;
+    state->matrix.row[27].matrix_gain[30]=1000;state->matrix.row[30].matrix_gain[TS_MATRIX_EQ]=1000;
+    TsMosaicEvent *card=&original.scene->events[0];card->output_route=(TsSourceRoute){.matrix_enabled=1};card->output_route.matrix_gain[29]=1000;
+    state->matrix_layout.canvas_count=2;
+    state->matrix_layout.canvas[0]=(TsFxCanvasPosition){.kind=3,.id=card->id,.canvas=1,.x=100,.y=200,.scale=1};
+    state->matrix_layout.canvas[1]=(TsFxCanvasPosition){.kind=4,.id=12,.x=400,.y=200,.scale=1};
+    assert(ts_sample_pages_export_canvas_with_state(&original,state,"Routed/Routed.tsr",error,sizeof(error)));
+    TsMatrixControls destination;ts_matrix_default(&destination);destination.enabled=1;
+    destination.main_headroom=TS_MATRIX_HEADROOM_FLOAT;
+    for(int i=0;i<6;++i)assert(ts_matrix_effect_add(&destination,TS_SISTER_FX_DELAY)==i);
+    TsMatrixControls before=destination;ts_matrix_layout_default(layout);
+    layout->canvas_count=2;layout->canvas[0]=(TsFxCanvasPosition){.kind=3,.id=99,.canvas=8,.x=20,.y=100};
+    layout->canvas[1]=(TsFxCanvasPosition){.kind=3,.id=88,.canvas=3,.x=20,.y=200};
+    TsMosaicCanvas imported={0};
+    assert(ts_sample_pages_load_canvas_routed("Routed/Routed.tsr",0,&destination,layout,19,3,&imported,routing,error,sizeof(error)));
+    assert(!memcmp(&destination,&before,sizeof(before)) && routing->effects==4 && imported.id==19);
+    assert(imported.scene->events[0].output_route.matrix_gain[25]==1000 && !imported.scene->events[0].output_route.matrix_gain[29]);
+    assert(routing->matrix.row[25].matrix_gain[24]==1000 && routing->matrix.row[24].matrix_gain[23]==900);
+    assert(routing->matrix.row[23].matrix_gain[26]==1000 && routing->matrix.row[26].matrix_gain[TS_MATRIX_EQ]==1000);
+    for(int i=0;i<6;++i)assert(!memcmp(&routing->matrix.effect[i],&before.effect[i],sizeof(before.effect[i])));
+    for(int i=0;i<TS_MATRIX_ROWS;++i)if(i<23 || i>26)assert(!memcmp(&routing->matrix.row[i],&before.row[i],sizeof(before.row[i])));
+    for(int i=0;i<4;++i){TsMatrixEffectControls expected=state->matrix.effect[10+i];expected.id=7+i;assert(!memcmp(&expected,&routing->matrix.effect[6+i],sizeof(expected)));}
+    assert(routing->layout.canvas_count==3 && routing->layout.canvas[0].canvas==8);
+    assert(routing->layout.canvas[1].canvas==19 && routing->layout.canvas[2].id==8);
+    assert(routing->layout.canvas[1].y==routing->layout.canvas[2].y);
+    assert(ts_sample_hash(&imported.scene->events[0].source->sample)==ts_sample_hash(&card->source->sample));
+    /* Saving the merged result embeds the imported PCM and SunVox patch;
+       deleting/moving the source bundle must not be necessary for playback. */
+    state->matrix=routing->matrix;state->matrix_layout=routing->layout;
+    assert(ts_sample_pages_export_canvas_with_state(&imported,state,"Routed Copy/Routed Copy.tsr",error,sizeof(error)));
+    assert(!rename("Routed","Routed-moved"));TsMosaicCanvas copy={0};
+    assert(ts_sample_pages_load_canvas("Routed Copy/Routed Copy.tsr",0,&copy,error,sizeof(error)));
+    assert(ts_mosaic_hash(copy.scene)==ts_mosaic_hash(imported.scene));ts_mosaic_free(copy.scene);
+    int present=0;assert(ts_sister_project_state_load(state,"Routed Copy/Routed Copy.tsr",48000,&present,error,sizeof(error)) && present);
+    assert(state->matrix.effect[7].sunvox.patch==routing->matrix.effect[7].sunvox.patch);
+    /* Replacement recycles only this movement's exclusive processors. Other
+       canvases, tile routes and fixed-bus feeds protect shared chains. */
+    TsSamplePages pages;TsInstrument bank;ts_instrument_init(&bank);assert(ts_sample_pages_init(&pages,error,sizeof(error)));
+    pages.mosaic=imported.scene;assert(ts_sample_pages_enable_gallery(&pages,error,sizeof(error)));
+    unsigned chain=(1u<<6)|(1u<<7)|(1u<<8)|(1u<<9);
+    assert(ts_sample_pages_canvas_exclusive_effects(&pages,&bank,imported.scene,&routing->matrix)==chain);
+    assert(ts_gallery_add(pages.gallery,error,sizeof(error)));
+    TsMosaic *other=pages.gallery->canvas[1].scene;
+    TsMosaicSource *shared=ts_mosaic_source(other,&card->source->sample,error,sizeof(error));assert(shared);
+    TsMosaicEvent *shared_card=ts_mosaic_add(other,shared,0,0);assert(shared_card);
+    shared_card->output_route=(TsSourceRoute){.matrix_enabled=1};shared_card->output_route.matrix_gain[24]=1000;
+    assert(ts_sample_pages_canvas_exclusive_effects(&pages,&bank,imported.scene,&routing->matrix)==(1u<<8));
+    assert(ts_instrument_import_sample(&bank,&card->source->sample,0,0,0,TS_LOOP_FORWARD,error,sizeof(error)));
+    bank.bank[0].output_route=(TsSourceRoute){.matrix_enabled=1};bank.bank[0].output_route.matrix_gain[25]=1000;
+    assert(!ts_sample_pages_canvas_exclusive_effects(&pages,&bank,imported.scene,&routing->matrix));
+    bank.bank[0].output_route=(TsSourceRoute){0};shared_card->output_route=(TsSourceRoute){0};
+    TsMatrixControls recycled=routing->matrix;
+    for(int i=10;i<16;++i)assert(ts_matrix_effect_add(&recycled,TS_SISTER_FX_DELAY)==i);
+    unsigned exclusive=ts_sample_pages_canvas_exclusive_effects(&pages,&bank,imported.scene,&recycled);assert(exclusive==chain);
+    for(int i=0;i<16;++i)if(exclusive&(1u<<i))ts_matrix_effect_remove(&recycled,i);
+    TsMosaicCanvas replacement={0};TsCanvasRoutingImport *reused=malloc(sizeof(*reused));assert(reused);
+    assert(ts_sample_pages_load_canvas_routed("Routed-moved/Routed.tsr",0,&recycled,layout,20,19,&replacement,reused,error,sizeof(error)));
+    assert(reused->effects==4 && reused->matrix.effect[6].id==17 && reused->matrix.effect[10].id==11);
+    ts_mosaic_free(replacement.scene);free(reused);ts_sample_pages_free(&pages);ts_instrument_free(&bank);
+    /* Slot exhaustion and missing source FX cannot partially publish either model. */
+    for(int i=6;i<16;++i)assert(ts_matrix_effect_add(&destination,TS_SISTER_FX_DELAY)==i);
+    uint64_t hash=ts_mosaic_hash(imported.scene);uint32_t next=routing->matrix.next_effect_id;
+    assert(!ts_sample_pages_load_canvas_routed("Routed-moved/Routed.tsr",0,&destination,layout,20,0,&imported,routing,error,sizeof(error)));
+    assert(strstr(error,"free effect slots") && ts_mosaic_hash(imported.scene)==hash && routing->matrix.next_effect_id==next);
+    assert(ts_sample_pages_export_canvas(&original,"Missing FX/Missing FX.tsr",error,sizeof(error)));
+    assert(!ts_sample_pages_load_canvas_routed("Missing FX/Missing FX.tsr",0,&before,layout,20,0,&imported,routing,error,sizeof(error)));
+    assert(strstr(error,"missing effect") && ts_mosaic_hash(imported.scene)==hash);
+    ts_mosaic_free(imported.scene);ts_mosaic_free(original.scene);free(state);free(routing);free(layout);
+}
 static void test_storage(void)
 {
     char error[256];MKDIR("gallery-storage");MKDIR("gallery-legacy");
@@ -218,6 +332,6 @@ int main(void)
     char run[128];int created=0;
     for(int i=0;i<100 && !created;++i){snprintf(run,sizeof(run),"run-%lu-%d",(unsigned long)GALLERY_PID(),i);created=MKDIR(run)==0;}
     assert(created && !GALLERY_CHDIR(run));
-    test_fade();test_loop_resume();test_pages();test_storage();test_canvas_transfer();
+    test_fade();test_loop_resume();test_pages();test_move_replace();test_storage();test_canvas_transfer();test_routed_transfer();
     puts("Mosaic Gallery fades, routes, loop resume, entry points, identity and transactional project storage passed");return 0;
 }

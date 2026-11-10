@@ -41,11 +41,24 @@ int ts_sample_pages_init(TsSamplePages *pages,
 void ts_sample_pages_free(TsSamplePages *pages);
 int ts_sample_pages_enable_gallery(TsSamplePages *,char *,size_t);
 struct TsMosaic *ts_sample_pages_mosaic_root(const TsSamplePages *);
-/* Portable single-canvas TSR bundles; shared project state is never imported.
+/* Portable single-canvas TSR bundles; shared buses/master remain destination-owned.
    load_canvas returns a newly owned scene; failure leaves out untouched. */
 int ts_sample_pages_canvas_catalog(const char *,TsMosaicGalleryCatalog *,char *,size_t);
 int ts_sample_pages_load_canvas(const char *,int,TsMosaicCanvas *,char *,size_t);
 int ts_sample_pages_export_canvas(const TsMosaicCanvas *,const char *,char *,size_t);
+typedef struct {
+    TsMatrixControls matrix;
+    TsMatrixLayout layout;
+    int effects;
+} TsCanvasRoutingImport;
+/* Stage audio plus the selected cards' downstream instance effects. Existing
+   buses/master/output settings stay destination-owned. No live mutation. */
+/* Effects reachable only from this canvas, with no other card/bank/track/bus
+   feeding them. Replacement can recycle these slots; shared effects survive. */
+unsigned ts_sample_pages_canvas_exclusive_effects(const TsSamplePages *,const TsInstrument *,const TsMosaic *,const TsMatrixControls *);
+int ts_sample_pages_load_canvas_routed(const char *,int,const TsMatrixControls *,const TsMatrixLayout *,
+    uint64_t,uint64_t,TsMosaicCanvas *,TsCanvasRoutingImport *,char *,size_t);
+int ts_sample_pages_export_canvas_with_state(const TsMosaicCanvas *,const TsSisterProjectState *,const char *,char *,size_t);
 size_t ts_sample_pages_count(const TsSamplePages *pages);
 size_t ts_sample_pages_active(const TsSamplePages *pages);
 const TsInstrument *ts_sample_pages_page(const TsSamplePages *pages,

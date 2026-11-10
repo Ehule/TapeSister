@@ -46,6 +46,32 @@ int ts_gallery_add(TsMosaicGallery *g,char *e,size_t n)
     if(ts_gallery_append_prepared(g,m,e,n))return 1;
     ts_mosaic_free(m);return 0;
 }
+int ts_gallery_move(TsMosaicGallery *g,int from,int to,char *e,size_t n)
+{
+    if(!g || from<0 || from>=g->count || to<0 || to>=g->count)
+        return gallery_error(e,n,"CANVAS POSITION IS NOT AVAILABLE");
+    TsMosaic *active=ts_gallery_active(g),*outgoing=ts_gallery_outgoing(g);
+    TsMosaicCanvas moved=g->canvas[from];
+    if(from<to)memmove(g->canvas+from,g->canvas+from+1,(size_t)(to-from)*sizeof(moved));
+    else if(from>to)memmove(g->canvas+to+1,g->canvas+to,(size_t)(from-to)*sizeof(moved));
+    g->canvas[to]=moved;
+    for(int i=0;i<g->count;++i){if(g->canvas[i].scene==active)g->active=i;if(g->canvas[i].scene==outgoing)g->outgoing=i;}
+    return 1;
+}
+int ts_gallery_replace_prepared(TsMosaicGallery *g,int i,TsMosaic *m,TsMosaic **retired,char *e,size_t n)
+{
+    if(retired)*retired=NULL;
+    if(!g || !m || i<0 || i>=g->count)return gallery_error(e,n,"CANVAS IS NOT AVAILABLE");
+    if(g->outgoing>=0)return gallery_error(e,n,"WAIT FOR THE CURRENT CROSSFADE");
+    TsMosaic *old=g->canvas[i].scene;
+    if(i==g->active && (old->playing || old->audition_id || (ts_mosaic_live_count(old) && !old->live_paused)))
+        return gallery_error(e,n,"STOP PLAYBACK, AUDITION AND LIVE LOOPS BEFORE REPLACING THE ACTIVE CANVAS");
+    if(!g->next_id || g->next_id>=UINT64_MAX-1)return gallery_error(e,n,"CANVAS IDENTITIES EXHAUSTED");
+    for(int j=0;j<g->count;++j)if(g->canvas[j].scene==m)return gallery_error(e,n,"CANVAS IS ALREADY IN THIS GALLERY");
+    g->canvas[i]=(TsMosaicCanvas){.scene=m,.id=g->next_id++,.scale=24,.hscale=1};
+    if(retired && old!=g->root)*retired=old;
+    return 1;
+}
 int ts_gallery_detach(TsMosaicGallery *g,int i,TsMosaic **retired,char *e,size_t n)
 {
     if(retired)*retired=NULL;

@@ -108,9 +108,9 @@ static void run_save(const char *path)
 {
     file=(PendingFileOperation){.active=1,.presented=1,.mode=TS_BROWSER_SAVE_RECIPE};
     assert(ts_sample_pages_bundle_project_path(path,file.path,sizeof(file.path),error,sizeof(error)));
-    run_pending_file_operation(0,&audio,&ui,&bank,&selection,&importer,&pages,&record,record_active,&file);
+    run_pending_file_operation(0,&audio,&ui,&bank,&selection,&importer,&pages,&record,record_active,&file,NULL);
     {Uint32 deadline=SDL_GetTicks()+15000;while(project_save_worker && !SDL_TICKS_PASSED(SDL_GetTicks(),deadline)) {
-        SDL_Delay(1);run_pending_file_operation(0,&audio,&ui,&bank,&selection,&importer,&pages,&record,record_active,&file);
+        SDL_Delay(1);run_pending_file_operation(0,&audio,&ui,&bank,&selection,&importer,&pages,&record,record_active,&file,NULL);
     }assert(!project_save_worker);}
 }
 static int cancelled_import(void *data)
@@ -312,7 +312,7 @@ int main(int argc,char **argv)
         assert(ts_mosaic_copy(ui.mosaic,ui.mosaic->events[0].id,20,0));
         file=(PendingFileOperation){.active=1,.presented=1,.mode=TS_BROWSER_LOAD_WAV};
         snprintf(file.path,sizeof(file.path),"%s",load_path);
-        run_pending_file_operation(0,&audio,&ui,&bank,&selection,&importer,&pages,&record,0,&file);
+        run_pending_file_operation(0,&audio,&ui,&bank,&selection,&importer,&pages,&record,0,&file,NULL);
         assert(strstr(ui.status,"OPENED TSR PROJECT"));
         assert(ui.mosaic==same_model && ui.mosaic->epoch!=previous_epoch);
         assert(ts_mosaic_hash(ui.mosaic)==saved_mosaic && !ui.mosaic->playing && !ui.mosaic->history_count);
