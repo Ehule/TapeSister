@@ -159,6 +159,9 @@ protect the loaded project from saving the temporary diagnostic state.
 The offline callback probe also accepts `TS_BENCH_INTERVAL=30`, emitting per-
 interval callback CPU and wall time, plus interval profiles when
 `TS_BENCH_PROFILE=1`. Set `TS_BENCH_GALLERY=0` to select Keter and render from zero
-through 608 seconds. This executes the canonical callback with deterministic
+through 608 seconds. To match mode 2, use a disposable project copy with the
+same preparation: repeat and marker loops off, speed 1, and Gallery fade 0.
+The original saved project has repeat on; leaving it on restarts Keter during
+what should be the final eight-second tail. This executes the canonical callback with deterministic
 SunVox benchmark seeds, without the physical driver or UI; it cannot certify
 MOTU/ASIO deadlines. PCM hashing covers the complete render including warmup.

@@ -57,18 +57,18 @@ __attribute__((noinline))
 #endif
 static TsStereoFrame reference(void *p,const TsMosaicEvent *e,TsMosaicVoice *v,double t,int r,double s,float l,int a,TsSourceRouteMix *m,uint64_t n)
 {return reference_mosaic_event_read(p,e,v,t,r,s,l,a,m,n);}
-static double timed(Read read)
+static double timed(Read read,int fading)
 {
     TsMosaicSource source={.sample={.data=data,.frames=65536,.channels=2,.sample_rate=48000}};
-    TsMosaicEvent e={.id=1,.source=&source,.last=65536,.duration=100,.gain=.5f,.note_count=1,
+    TsMosaicEvent e={.id=1,.source=&source,.last=65536,.duration=1000,.gain=.5f,.note_count=1,
         .looping=1,.fade_in=.01,.fade_out=.01};
-    e.tuning.root_note=60;e.notes[0]=60;
+    e.tuning.root_note=60;e.notes[0]=60;if(fading)e.fade_in=100;
     TsMosaicVoice v[19];for(int i=0;i<19;++i)voice_begin(&v[i],&e,0,48000);
-    clock_t begin=clock();float sum=0;
-    for(int i=0;i<512*128;++i)for(int j=0;j<19;++j) {
+    const int blocks=2048;clock_t begin=clock();float sum=0;
+    for(int i=0;i<512*blocks;++i)for(int j=0;j<19;++j) {
         TsStereoFrame f=read(NULL,&e,&v[j],1+i/48000.0,48000,1,1,1,NULL,i/512+1);sum+=f.l;
     }
-    sink=sum;return 1000.0*(clock()-begin)/CLOCKS_PER_SEC/128;
+    sink=sum;return 1000.0*(clock()-begin)/CLOCKS_PER_SEC/blocks;
 }
 int main(int argc,char **argv)
 {
@@ -78,10 +78,10 @@ int main(int argc,char **argv)
     for(int mode=-1;mode<TS_LOOP_MODE_COUNT;++mode)for(int notes=1;notes<=5;notes+=4)
         for(int channels=1;channels<=2;++channels)render(mode&1?48000:8000,mode,notes,channels);
     puts("Exact #208 Mosaic fade, release, PCM, phase and routing parity passed");
-    if(argc>1 && !strcmp(argv[1],"--benchmark"))for(int i=0;i<5;++i) {
+    if(argc>1 && !strcmp(argv[1],"--benchmark"))for(int fading=0;fading<2;++fading)for(int i=0;i<5;++i) {
         double old,new;
-        if(i&1){new=timed(candidate);old=timed(reference);}else{old=timed(reference);new=timed(candidate);}
-        printf("19 cards trial %d: reference %.6f candidate %.6f ms/512 frames\n",i+1,old,new);
+        if(i&1){new=timed(candidate,fading);old=timed(reference,fading);}else{old=timed(reference,fading);new=timed(candidate,fading);}
+        printf("19 cards %s trial %d: reference %.6f candidate %.6f ms/512 frames\n",fading?"fading":"interior",i+1,old,new);
     }
     return 0;
 }

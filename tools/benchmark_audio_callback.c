@@ -131,7 +131,7 @@ int main(int argc,char **argv)
     REQUIRE(isfinite(position) && position>=0);ts_mosaic_seek(audio.mosaic,position);audio.mosaic->playing=1;
     if(getenv("TS_BENCH_PROFILE")){ts_profile_init(SDL_GetPerformanceCounter,SDL_GetPerformanceFrequency());ts_profile_enable(1);}
     double interval=getenv("TS_BENCH_INTERVAL")?strtod(getenv("TS_BENCH_INTERVAL"),NULL):0;
-    REQUIRE(isfinite(interval) && interval>=0 && (!interval || interval>=1));
+    REQUIRE(isfinite(interval) && interval>=0 && interval<=86400 && (!interval || interval>=1));
     uint64_t interval_frames=(uint64_t)llround(interval*rate),interval_at=0,interval_calls=0;
     double interval_cpu=0,interval_wall=0;
     uint64_t total=(uint64_t)llround(seconds*rate),skip=(uint64_t)llround(warmup*rate);

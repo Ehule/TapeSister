@@ -338,13 +338,15 @@ static float event_fade(const TsMosaicEvent *e,const TsMosaicVoice *v,double ela
 {
     double in=v->fade_in,out=v->fade_out;
     if(in==0 && out==0)return 1;
-    /* In the full-level interior both original ratios clamp to one. Avoid
-       divisions and min/max calls there, retaining the exact edge arithmetic. */
-    if(elapsed>=in && (out==0 || e->duration-elapsed>=out))return 1;
+    /* Ratios outside their fade edge clamp to one. Evaluate only active
+       edges; gain starts at one and can only decrease, so no final upper
+       clamp is needed. Preserve the original divisions/minimum at overlap. */
+    double remaining=e->duration-elapsed;
+    if(elapsed>=in && (out==0 || remaining>=out))return 1;
     double gain=1;
-    if(in>0)gain=fmin(gain,elapsed/in);
-    if(out>0)gain=fmin(gain,(e->duration-elapsed)/out);
-    return (float)fmax(0,fmin(1,gain));
+    if(in>0 && elapsed<in)gain=elapsed/in;
+    if(out>0 && remaining<out)gain=fmin(gain,remaining/out);
+    return (float)fmax(0,gain);
 }
 /* Derive loop phase from distance travelled. Reverse uses a full sample
    cycle (the legacy helper drops a frame at each reverse wrap). This also
