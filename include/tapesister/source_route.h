@@ -31,6 +31,9 @@ void ts_source_route_handoff(TsSourceRouteHandoff *h,TsSourceRouteMix *mix,int c
 
 /* Reset audio buses, retaining only map's output availability. map may be to. */
 void ts_source_route_mix_init(TsSourceRouteMix *to,const TsSourceRouteMix *map);
+/* Reuse an initialized mix produced by frame/add/handoff. Unmarked graph
+   destinations must be zero. Clears audio and availability, like {0}. */
+void ts_source_route_mix_reset(TsSourceRouteMix *mix);
 int ts_source_route_valid(const TsSourceRoute *r, int allow_inherit);
 TsSourceRoute ts_source_route_resolve(TsSourceRoute tile, TsSourceRoute track);
 void ts_source_route_set(TsSourceRouteVoice *v, TsSourceRoute route, unsigned rate);

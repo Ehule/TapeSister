@@ -571,6 +571,11 @@ float ts_sister_grain_pitch_semitones(float normalized)
     return -24.0f + 48.0f * clampf(normalized, 0.0f, 1.0f);
 }
 
+/* Ring positions are already bounded. Advancing one frame cannot require
+   division; keep this exact for non-power-of-two capacities as well. */
+static size_t ring_next(size_t at,size_t capacity)
+{return at+1u<capacity?at+1u:0u;}
+
 static float delay_read(const float *data, size_t capacity, size_t write,
                         float delay_frames, size_t channel)
 {
@@ -582,8 +587,8 @@ static float delay_read(const float *data, size_t capacity, size_t write,
     position = (double)write - (double)delay_frames;
     while (position < 0.0) position += (double)capacity;
     while (position >= (double)capacity) position -= (double)capacity;
-    i0 = (size_t)floor(position);
-    i1 = (i0 + 1u) % capacity;
+    i0 = (size_t)position; /* Wrapped position is nonnegative. */
+    i1 = ring_next(i0,capacity);
     fraction = (float)(position - (double)i0);
     return data[i0 * 2u + channel] +
         (data[i1 * 2u + channel] - data[i0 * 2u + channel]) * fraction;
@@ -723,7 +728,7 @@ static float grain_read(const TsSisterGrainState *state, double position,
     while (position >= (double)state->capacity_frames)
         position -= (double)state->capacity_frames;
     i0 = (size_t)position;
-    i1 = (i0 + 1u) % state->capacity_frames;
+    i1 = ring_next(i0,state->capacity_frames);
     fraction = (float)(position - (double)i0);
     return state->data[i0 * 2u + channel] +
         (state->data[i1 * 2u + channel] -
@@ -1231,7 +1236,7 @@ static TsStereoFrame grain_process(const TsSisterFxTiming *engine,
     state->data[state->write_index * 2u] = input.l * active;
     state->data[state->write_index * 2u + 1u] = input.r * active;
     state->nonzero_samples+=(state->data[state->write_index*2]!=0)+(state->data[state->write_index*2+1]!=0);
-    state->write_index = (state->write_index + 1u) % state->capacity_frames;
+    state->write_index = ring_next(state->write_index,state->capacity_frames);
     if (state->history_frames < state->capacity_frames)
         ++state->history_frames;
 
@@ -1363,7 +1368,7 @@ static TsStereoFrame delay_process(const TsSisterFxTiming *engine,
         state->feedback_tone[1] * (state->feedback_current * 1.08f)));
     state->nonzero_samples+=(state->data[state->write_index*2]!=0)+(state->data[state->write_index*2+1]!=0);
 delay_advance:
-    state->write_index = (state->write_index + 1u) % state->capacity_frames;
+    state->write_index = ring_next(state->write_index,state->capacity_frames);
     {
         float wow_sin = state->wow_sin;
         float wow_cos = state->wow_cos;
@@ -1546,7 +1551,7 @@ static TsStereoFrame reverb_process(const TsSisterFxTiming *engine,
     wet.r += mean_r * 1.15f + mean_l * 0.08f;
     for (size_t line = 0u; line < TS_SISTER_REVERB_LINES; ++line) {
         TsSisterReverbLine *delay = &state->line[line];
-        if(empty){delay->write_index=(delay->write_index+1u)%delay->capacity_frames;continue;}
+        if(empty){delay->write_index=ring_next(delay->write_index,delay->capacity_frames);continue;}
         float gain = state->feedback_gain[line];
         float matrix_l = 2.0f * mean_l - read_l[line];
         float matrix_r = 2.0f * mean_r - read_r[line];
@@ -1569,7 +1574,7 @@ static TsStereoFrame reverb_process(const TsSisterFxTiming *engine,
         delay->data[delay->write_index * 2u + 1u] = reverb_saturate(
             inject_r + delay->damping[1] * gain);
         state->nonzero_samples+=(delay->data[delay->write_index*2]!=0)+(delay->data[delay->write_index*2+1]!=0);
-        delay->write_index = (delay->write_index + 1u) % delay->capacity_frames;
+        delay->write_index = ring_next(delay->write_index,delay->capacity_frames);
     }
     wet.l = feedback_condition(wet.l);
     wet.r = feedback_condition(wet.r);
