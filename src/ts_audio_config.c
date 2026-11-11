@@ -68,8 +68,8 @@ static int load_device_settings(TsConfig *config, const char *path,
             continue;
         }
         if (!strcmp(key,"diagnostic_live_test")) {
-            if(strcmp(value,"0") && strcmp(value,"1") && strcmp(value,"2")) {
-                fclose(file);set_error(error,error_size,"diagnostic_live_test must be 0, 1 or 2");return 0;
+            if(strcmp(value,"0") && strcmp(value,"1") && strcmp(value,"2") && strcmp(value,"3")) {
+                fclose(file);set_error(error,error_size,"diagnostic_live_test must be 0, 1, 2 or 3");return 0;
             }
             config->diagnostic_live_test=value[0]-'0';continue;
         }

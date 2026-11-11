@@ -338,6 +338,9 @@ static float event_fade(const TsMosaicEvent *e,const TsMosaicVoice *v,double ela
 {
     double in=v->fade_in,out=v->fade_out;
     if(in==0 && out==0)return 1;
+    /* In the full-level interior both original ratios clamp to one. Avoid
+       divisions and min/max calls there, retaining the exact edge arithmetic. */
+    if(elapsed>=in && (out==0 || e->duration-elapsed>=out))return 1;
     double gain=1;
     if(in>0)gain=fmin(gain,elapsed/in);
     if(out>0)gain=fmin(gain,(e->duration-elapsed)/out);
@@ -540,7 +543,9 @@ static TsStereoFrame mosaic_event_read(void *pattern_engine,const TsMosaicEvent 
         if(!e->looping) {
             if(v->position[n]>=e->last)continue;
             f=mosaic_sample_read(e,v,n);
-            float release=(float)fmin(1,(e->last-v->position[n])/(v->step[n]*speed*rate*0.002));
+            double left=e->last-v->position[n],release_span=v->step[n]*speed*rate*0.002;
+            float release=release_span>0 && left>=release_span?1:
+                (float)fmin(1,left/release_span);
             f.l*=release;f.r*=release;
         } else f=mosaic_sample_read(e,v,n);
         if(e->live) {

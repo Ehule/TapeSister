@@ -127,18 +127,51 @@ int main(int argc,char **argv)
         assert(live_test.next==step+1);
     }
     assert(live_test.state==LT_DONE && !u.mosaic->playing);
+    /* Mode 3 must retain full playback history and log interval profiles without
+       changing mode 2 or leaving profiling on/off differently after abort. */
+    pages.gallery->active=2;a.mosaic=u.mosaic=pages.mosaic=ts_gallery_active(pages.gallery);
+    u.config.diagnostic_live_test=3;ts_profile_enable(0);
+    live_test_loaded(0,&a,&u,&pages,u.project_path);
+    assert(live_test.state==LT_PREPARING && live_test.count==22);
+    assert(!strcmp(live_test_scenario(),"tree04-keter-profile-v1"));
+    live_test_poll(window,0,&a,&u,&pages,&bank,&mosaic,&portal,&sister,&transform,SDL_GetPerformanceCounter());
+    assert(strstr(u.status,"KETER PROFILE TEST ARMED") && u.mosaic->time==0);
+    mosaic_transport(0,&u,0);assert(ts_profile_enabled());
+    live_test_poll(window,0,&a,&u,&pages,&bank,&mosaic,&portal,&sister,&transform,live_test.started);
+    ts_profile_lane_begin(1);
+    uint64_t timer=ts_profile_begin(TS_PROF_AUDIO);SDL_Delay(1);
+    ts_profile_end(TS_PROF_AUDIO,timer);ts_profile_lane_end(1);
+    SDL_Delay(50);
+    live_test_poll(window,0,&a,&u,&pages,&bank,&mosaic,&portal,&sister,&transform,
+        live_test.started+30*live_test.frequency);
+    assert(live_test.next==2 && u.mosaic->playing && u.mosaic->time==0);
+    for(int step=live_test.next;step<live_test.count;++step) {
+        SDL_Delay(50);
+        live_test_poll(window,0,&a,&u,&pages,&bank,&mosaic,&portal,&sister,&transform,
+            live_test.started+(Uint64)ceil(live_test.steps[step].ms*live_test.frequency/1000.0));
+        assert(live_test.next==step+1);
+    }
+    assert(live_test.state==LT_DONE && !u.mosaic->playing && !ts_profile_enabled());
+    pages.gallery->active=2;a.mosaic=u.mosaic=pages.mosaic=ts_gallery_active(pages.gallery);
+    live_test_loaded(0,&a,&u,&pages,u.project_path);
+    live_test_poll(window,0,&a,&u,&pages,&bank,&mosaic,&portal,&sister,&transform,SDL_GetPerformanceCounter());
+    mosaic_transport(0,&u,0);assert(ts_profile_enabled());
+    SDL_Delay(50);
+    assert(live_test_input(&escape,0,&a,&u) && live_test.state==LT_ABORTED && !ts_profile_enabled());
     ts_session_log_stop();
     TsSessionLogStatus log;ts_session_log_status(&log);
     assert(log.export_result==2 && log.export_serial>=1);
     FILE *saved=fopen(log.export_path,"rb");assert(saved);
-    char line[1024];int found_abort=0,found_start=0,found_keter=0,found_complete=0;
+    char line[1024];int found_abort=0,found_start=0,found_keter=0,found_complete=0,found_profile=0,found_interval=0;
     while(fgets(line,sizeof(line),saved)) {
+        found_profile|=strstr(line,"scenario=tree04-keter-profile-v1")!=NULL;
+        found_interval|=strstr(line,"\"type\":\"live_test_profile\"")!=NULL;
         found_abort|=strstr(line,"\"type\":\"live_test_abort\"")!=NULL;
         found_start|=strstr(line,"\"type\":\"live_test_start\"")!=NULL;
         found_keter|=strstr(line,"scenario=tree04-keter-full-v1")!=NULL;
         found_complete|=strstr(line,"\"type\":\"live_test_complete\"")!=NULL;
     }
-    fclose(saved);assert(found_abort && found_start && found_keter && found_complete);
+    fclose(saved);assert(found_abort && found_start && found_keter && found_complete && found_profile && found_interval);
     TsMosaic *root=ts_sample_pages_mosaic_root(&pages);ts_sample_pages_free(&pages);ts_mosaic_free(root);
     ts_sister_runtime_free(&a.sister);ts_instrument_free(&bank);
     SDL_DestroyWindow(window);SDL_Quit();

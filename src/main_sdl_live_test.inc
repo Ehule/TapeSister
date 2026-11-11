@@ -9,8 +9,8 @@ enum { LT_CHECK, LT_FX, LT_MATRIX, LT_CLOSE, LT_MIX, LT_GRAIN, LT_MUTE,
        LT_SOLO, LT_BYPASS, LT_TRACKER, LT_MOSAIC, LT_HEALTH, LT_GALLERY, LT_END };
 typedef struct { unsigned ms; int action,target; float value; } LiveTestStep;
 static struct {
-    int state,touched,count,next,profile,mode;
-    double keter_end;
+    int state,touched,count,next,profile,mode,profile_failed;
+    double keter_end,profile_from_ms;
     unsigned duration_ms;
     Uint64 started,frequency;
     uint32_t generation;
@@ -22,7 +22,8 @@ static struct {
     char project[TS_BROWSER_PATH_MAX];
 } live_test;
 static const char *live_test_scenario(void)
-{return live_test.mode==2?"tree04-keter-full-v1":"tree04-live-v1";}
+{return live_test.mode==3?"tree04-keter-profile-v1":
+    live_test.mode>=2?"tree04-keter-full-v1":"tree04-live-v1";}
 static const char *live_test_action_name(int a)
 {
     static const char *names[]={"checkpoint","fx_canvas","routing_matrix","close_matrix",
@@ -53,7 +54,7 @@ static void live_test_plan(void)
 {
     live_test.count=0;
     live_test_add(0,LT_CHECK,0,0);
-    if(live_test.mode==2) {
+    if(live_test.mode>=2) {
         /* Preserve the entire buildup, not just a seek into the late section.
            Checkpoints do not edit sound or open windows. */
         for(unsigned ms=30000;ms<live_test.duration_ms;ms+=30000)
@@ -119,9 +120,11 @@ static int live_test_matches(const TsMatrixControls *m,const TsSamplePages *page
 }
 static void live_test_loaded(SDL_AudioDeviceID device,AudioState *a,TsUiState *ui,TsSamplePages *pages,const char *path)
 {
-    if(live_test.state==LT_RUNNING || live_test.state==LT_PENDING)
+    if(live_test.state==LT_RUNNING || live_test.state==LT_PENDING) {
         ts_session_log_text("live_test_abort","reason=project_replaced");
-    live_test.state=LT_OFF;live_test.next=0;
+        ts_profile_enable(live_test.profile);
+    }
+    live_test.state=LT_OFF;live_test.next=0;live_test.profile_failed=0;
     if(!ui->config.diagnostic_live_test)return;
     if(!live_test_matches(&a->sister.matrix.controls,pages,path)) {
         snprintf(ui->status,sizeof(ui->status),"LIVE TEST: NEED ORIGINAL TREE OF LIFE 04 (53/48/43 CARDS, 14 FX, BINAH SELECTED)");
@@ -132,47 +135,67 @@ static void live_test_loaded(SDL_AudioDeviceID device,AudioState *a,TsUiState *u
     }
     live_test.mode=ui->config.diagnostic_live_test;
     live_test.keter_end=ts_mosaic_end(pages->gallery->canvas[0].scene);
-    if(live_test.mode==2 && (!isfinite(live_test.keter_end) || live_test.keter_end<=0 || live_test.keter_end>3600)) {
+    if(live_test.mode>=2 && (!isfinite(live_test.keter_end) || live_test.keter_end<=0 || live_test.keter_end>3600)) {
         snprintf(ui->status,sizeof(ui->status),"KETER TEST: EXPECTED A MOVEMENT UNDER ONE HOUR");return;
     }
-    live_test.duration_ms=live_test.mode==2?(unsigned)ceil(live_test.keter_end*1000)+8000:216000;
+    live_test.duration_ms=live_test.mode>=2?(unsigned)ceil(live_test.keter_end*1000)+8000:216000;
     live_test.project_hash=ui->saved_state_hash;
     snprintf(live_test.project,sizeof(live_test.project),"%s",path);
-    live_test_plan();live_test.state=live_test.mode==2?LT_PREPARING:LT_ARMED;live_test.touched=1;
+    live_test_plan();live_test.state=live_test.mode>=2?LT_PREPARING:LT_ARMED;live_test.touched=1;
     if(device)SDL_LockAudioDevice(device);
     for(int p=0;p<3;++p) {
         TsMosaic *m=pages->gallery->canvas[p].scene;
-        ts_mosaic_seek(m,live_test.mode==2?0:300);m->repeat=0;m->playing=0;
-        if(live_test.mode==2){ts_mosaic_set_speed(m,1);m->marker_loop=0;}
+        ts_mosaic_seek(m,live_test.mode>=2?0:300);m->repeat=0;m->playing=0;
+        if(live_test.mode>=2){ts_mosaic_set_speed(m,1);m->marker_loop=0;}
         pages->gallery->canvas[p].entry=TS_GALLERY_RESUME;
     }
-    pages->gallery->fade_seconds=live_test.mode==2?0:8;
+    pages->gallery->fade_seconds=live_test.mode>=2?0:8;
     if(device)SDL_UnlockAudioDevice(device);
     ui->mosaic_open=1;ui->tracker_open=ui->fm_open=0;
-    ui->mosaic_scroll=live_test.mode==2?0:295;ui->mosaic_scale=4;ui->mosaic_hscale=1;
+    ui->mosaic_scroll=live_test.mode>=2?0:295;ui->mosaic_scale=4;ui->mosaic_hscale=1;
     ui->project_check_ms=0;
     snprintf(ui->status,sizeof(ui->status),"TREE 04 LIVE TEST ARMED: PRESS MOSAIC PLAY / 3:36 / ESC ABORTS / RELOAD TO REPEAT");
-    if(live_test.mode==2)snprintf(ui->status,sizeof(ui->status),"PREPARING UNINTERRUPTED KETER TEST / PRESS PLAY WHEN ARMED");
+    if(live_test.mode>=2)snprintf(ui->status,sizeof(ui->status),"PREPARING UNINTERRUPTED KETER TEST / PRESS PLAY WHEN ARMED");
     ts_session_log_event("live_test_armed","scenario=%s steps=%d project_hash=%016llx cards=%llu,%llu,%llu start_s=%d fade_s=%d keter_end_s=%.6f duration_ms=%u",
         live_test_scenario(),live_test.count,(unsigned long long)live_test.project_hash,
         (unsigned long long)live_test.card[0],(unsigned long long)live_test.card[1],(unsigned long long)live_test.card[2],
-        live_test.mode==2?0:300,live_test.mode==2?0:8,live_test.keter_end,live_test.duration_ms);
+        live_test.mode>=2?0:300,live_test.mode>=2?0:8,live_test.keter_end,live_test.duration_ms);
 }
 static void live_test_transport(TsUiState *ui,int playing)
 {
     (void)ui;
     if(live_test.state==LT_ARMED && playing) {
-        live_test.profile=ts_profile_enabled();ts_profile_enable(0);
+        live_test.profile=ts_profile_enabled();ts_profile_enable(live_test.mode==3);
+        if(live_test.mode==3)ts_profile_reset();
+        live_test.profile_from_ms=0;
         live_test.started=SDL_GetPerformanceCounter();live_test.frequency=SDL_GetPerformanceFrequency();
         live_test.state=LT_PENDING;
     }
 }
+/* UI thread only: one bounded log record per interval, no disk I/O or
+   formatting in the callback. Reset measurement counters, never DSP history.
+   Epoch publication is asynchronous; a boundary can straddle one callback. */
+static void live_test_profile_interval(int phase,double elapsed_ms)
+{
+    if(live_test.mode!=3 || phase==0)return;
+    char text[16384];
+    int n=snprintf(text,sizeof(text),
+        "scenario=%s from_ms=%.3f to_ms=%.3f phase=%d profile=1\n",
+        live_test_scenario(),live_test.profile_from_ms,elapsed_ms,phase);
+    if(n>0 && (size_t)n<sizeof(text)) {
+        ts_profile_report(text+n,sizeof(text)-(size_t)n);
+        if(!ts_session_log_text("live_test_profile",text))live_test.profile_failed=1;
+    }
+    live_test.profile_from_ms=elapsed_ms;ts_profile_reset();
+}
 static void live_test_checkpoint(AudioState *a,int phase)
 {
+    double elapsed=1000.0*(SDL_GetPerformanceCounter()-live_test.started)/live_test.frequency;
+    live_test_profile_interval(phase,elapsed);
     TsRealtimeDiagnosticsSnapshot s={0};ts_realtime_diagnostics_get(&a->realtime_diagnostics,&s);
     ts_session_log_event("live_test_checkpoint",
         "phase=%d elapsed_ms=%.3f callbacks=%llu frames=%llu over_budget=%llu near_budget=%llu max_ms=%.6f generation=%u",
-        phase,1000.0*(SDL_GetPerformanceCounter()-live_test.started)/live_test.frequency,
+        phase,elapsed,
         (unsigned long long)s.callback_count,(unsigned long long)s.frame_count,
         (unsigned long long)s.deadline_overruns,(unsigned long long)s.near_overruns,s.worst_microseconds/1000,a->audio_health_generation);
 }
@@ -180,6 +203,7 @@ static void live_test_finish(SDL_AudioDeviceID device,AudioState *a,TsUiState *u
 {
     if(live_test.state!=LT_RUNNING && live_test.state!=LT_PENDING)return;
     live_test_checkpoint(a,complete?8:-1);
+    if(live_test.profile_failed){complete=0;reason="profile_log_unavailable";}
     live_test.state=complete?LT_DONE:LT_ABORTED; /* Stop cannot rearm the run. */
     mosaic_transport(device,ui,1);ts_profile_enable(live_test.profile);
     ts_session_log_event(complete?"live_test_complete":"live_test_abort",
@@ -283,8 +307,8 @@ static void live_test_poll(SDL_Window *window,SDL_AudioDeviceID device,AudioStat
         }
         ui->mosaic_scroll=0;ui->mosaic_scale=4;ui->mosaic_hscale=1;
         live_test.state=LT_ARMED;
-        snprintf(ui->status,sizeof(ui->status),"KETER FULL TEST ARMED: MOSAIC PLAY / %u:%02u / ESC ABORTS",
-            live_test.duration_ms/60000,(live_test.duration_ms/1000)%60);
+        snprintf(ui->status,sizeof(ui->status),"KETER %s TEST ARMED: MOSAIC PLAY / %u:%02u / ESC ABORTS",
+            live_test.mode==3?"PROFILE":"FULL",live_test.duration_ms/60000,(live_test.duration_ms/1000)%60);
         return;
     }
     if(live_test.exporting && (live_test.state==LT_DONE || live_test.state==LT_ABORTED)) {
@@ -304,12 +328,15 @@ static void live_test_poll(SDL_Window *window,SDL_AudioDeviceID device,AudioStat
         live_test.state=LT_RUNNING;
         TsRealtimeDiagnosticsSnapshot initial={0};ts_realtime_diagnostics_get(&a->realtime_diagnostics,&initial);
         ts_session_log_event("live_test_start",
-            "scenario=%s steps=%d project_hash=%016llx start_ticks=%llu frequency=%llu backend=%s rate=%u frames=%u channels=%u workers=%u profile=0 revision=%s build=%s %s",
+            "scenario=%s steps=%d project_hash=%016llx start_ticks=%llu frequency=%llu backend=%s rate=%u frames=%u channels=%u workers=%u profile=%d revision=%s build=%s %s",
             live_test_scenario(),live_test.count,(unsigned long long)live_test.project_hash,
             (unsigned long long)live_test.started,(unsigned long long)live_test.frequency,
             ts_native_current_driver()?ts_native_current_driver():"none",
             (unsigned)a->output_rate,initial.device_buffer_frames,(unsigned)a->output_device_channels,
-            ts_sunvox_workers_configured(),TS_LIVE_TEST_REVISION,__DATE__,__TIME__);
+            ts_sunvox_workers_configured(),ts_profile_enabled(),TS_LIVE_TEST_REVISION,__DATE__,__TIME__);
+    }
+    if(live_test.mode==3 && !ts_profile_enabled()) {
+        live_test_finish(device,a,ui,0,"profile_unavailable");return;
     }
     if(a->audio_health_generation!=live_test.generation || strcmp(ui->project_path,live_test.project)) {
         live_test_finish(device,a,ui,0,"device_or_project_changed");return;
@@ -332,6 +359,7 @@ static void live_test_poll(SDL_Window *window,SDL_AudioDeviceID device,AudioStat
     ts_session_log_event("live_test_action_end","index=%d success=%d duration_ms=%.3f gallery=%d",
         live_test.next,ok,duration,pages->gallery?pages->gallery->active:-1);
     ++live_test.next;
+    if(live_test.profile_failed){live_test_finish(device,a,ui,0,"profile_log_unavailable");return;}
     if(!ok){live_test_finish(device,a,ui,0,"action_failed");return;}
     if(s->action==LT_END){live_test_finish(device,a,ui,1,"finished");return;}
     /* Do not silently move the schedule to hide stalls. One action per UI

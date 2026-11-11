@@ -136,3 +136,29 @@ logging and completion where no display/audio interface is available. Label
 such runs accordingly; they cannot certify ASIO/JACK or physical GPU/USB timing.
 Run timed comparisons without builds or other controlled load changing between
 the two measurements.
+
+## Profile the full Keter buildup
+
+Set `diagnostic_live_test=3`, restart, open the same original project, and press
+Mosaic Play after **KETER PROFILE TEST ARMED**. This uses exactly mode 2's
+uninterrupted playback and 30-second checkpoints, including the full buildup.
+The JSONL identifies `tree04-keter-profile-v1` and `profile=1` and contains a
+`live_test_profile` report for every interval and the final tail (or partial
+interval on abort). Each report includes elapsed run boundaries, the callback,
+Mosaic/voices, router, native effects and individually named SunVox instances.
+Nested rows overlap; do not add them together. Only profiling counters reset at
+checkpoints; audio state, source positions, effect histories and transport do not.
+Profiler epoch publication can straddle one callback at an interval boundary.
+The previous profiler on/off state is restored when the run ends or aborts.
+
+Profiling adds timer/publication overhead. Use mode 3 to locate costs, then mode 2
+with profiling off to compare deadline performance. Modes 1 and 2 retain their
+existing schedules. All modes automatically record/export the health log and
+protect the loaded project from saving the temporary diagnostic state.
+
+The offline callback probe also accepts `TS_BENCH_INTERVAL=30`, emitting per-
+interval callback CPU and wall time, plus interval profiles when
+`TS_BENCH_PROFILE=1`. Set `TS_BENCH_GALLERY=0` to select Keter and render from zero
+through 608 seconds. This executes the canonical callback with deterministic
+SunVox benchmark seeds, without the physical driver or UI; it cannot certify
+MOTU/ASIO deadlines. PCM hashing covers the complete render including warmup.
