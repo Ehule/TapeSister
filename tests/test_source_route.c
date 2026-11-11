@@ -224,6 +224,10 @@ static void reusable_mix(void)
             from.graph[d]=(TsStereoFrame){-.375f,.1875f};
             ts_source_route_graph_mark(&from,(unsigned)d);
         }
+        if(frame%5==0)for(int i=0;i<TS_MATRIX_DESTINATIONS;++i) {
+            from.graph[i]=(TsStereoFrame){i*.001f,-i*.002f};
+            ts_source_route_graph_mark(&from,(unsigned)i);
+        }
         from.available=frame&65535;from.check_outputs=1;
         ts_source_route_mix_reuse(&to,&from);
         ts_source_route_graph_copy(&to,&from);

@@ -414,6 +414,10 @@ static void reusable_graph_parity(void)
             int d=f%TS_MATRIX_DESTINATIONS;
             fresh.graph[d]=(TsStereoFrame){.17f,-.21f};
             work.graph[d]=fresh.graph[d];ts_source_route_graph_mark(&work,(unsigned)d);
+            if(f%71==0)for(int full=0;full<TS_MATRIX_DESTINATIONS;++full) {
+                fresh.graph[full]=(TsStereoFrame){.07f,-.03f};
+                work.graph[full]=fresh.graph[full];ts_source_route_graph_mark(&work,(unsigned)full);
+            }
         }
         TsStereoFrame live[TS_MATRIX_ROWS-TS_MATRIX_NODES]={{0}};
         if(f<3072)live[TS_MATRIX_MOSAIC-TS_MATRIX_NODES]=(TsStereoFrame){.125f,-.25f};

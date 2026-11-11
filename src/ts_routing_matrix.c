@@ -228,7 +228,8 @@ static void matrix_outputs(TsRoutingMatrix *m,const TsSourceRouteMix *sums,int s
     static const uint64_t physical[3]={UINT64_C(0x7f80),UINT64_MAX<<2,
         (UINT64_C(1)<<(TS_MATRIX_DESTINATIONS-128))-1};
     uint64_t owned[3]={sums->graph_mask,sums->graph_mask_high,sums->graph_mask_top};
-    if(!sparse) {
+    if(!sparse || (owned[1]&physical[1])==physical[1] ||
+       (owned[2]&physical[2])==physical[2]) {
         for(int p=0;p<TS_MATRIX_OUTPUTS;++p)
             m->output[p]=ts_stereo_frame_sanitize_inline(sums->graph[ts_matrix_output_destination(p)]);
         memcpy(m->output_destinations,physical,sizeof(physical));

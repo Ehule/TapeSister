@@ -5,6 +5,7 @@ This change builds on `95ca22ac15c2a51ce321ccbde502202e6587b501` and targets the
 ## Runtime changes
 
 - Reuse audio-owned route mixes for the host, manual source groups and Sister runtime. Reset destinations owned by the previous frame; retain hardware availability where required.
+- Retain bulk clearing, copying, scaling and output finalization for densely owned graphs, including the dense compatibility API.
 - Pass a borrowed, explicitly owned graph into Sister rather than copying the entire source packet. Existing dense `matrix_graph` callers remain supported, including offline/core callers.
 - Preserve the original accumulation order: performance input enters MAIN before program gain, then legacy parallel/speaker contributions are added. There is no reassociation of source sums.
 - Refresh matrix live-input rows read by current routes and input meters, rather than copying unused interface capacity. Routed high-numbered inputs still work for dense callers even without an active physical device.
