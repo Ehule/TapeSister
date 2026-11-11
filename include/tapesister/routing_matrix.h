@@ -56,6 +56,7 @@ typedef struct {
     unsigned main_clip_remaining;
     float hardware_peak[TS_MATRIX_OUTPUTS]; /* After OUT gain and hardware guard. */
     TsStereoFrame output[TS_MATRIX_OUTPUTS], sidechain, spatial_input;
+    uint64_t output_destinations[3]; /* Previous frame's owned physical outputs. */
     float speaker_output[TS_SOURCE_SPEAKERS];
 } TsRoutingMatrix;
 typedef TsStereoFrame (*TsMatrixProcess)(void *,int,TsStereoFrame);
@@ -73,6 +74,10 @@ int ts_matrix_set(TsRoutingMatrix *m,const TsMatrixControls *c,unsigned rate);
    still snap through ts_matrix_set(); project recall also resets the fade. */
 int ts_matrix_set_live(TsRoutingMatrix *m,const TsMatrixControls *c,unsigned rate);
 void ts_matrix_process(TsRoutingMatrix *m,TsSourceRouteMix *sums,
+    const TsStereoFrame live[TS_MATRIX_ROWS-TS_MATRIX_NODES],TsMatrixProcess fn,void *context);
+/* Same processing/order, with complete graph ownership metadata in sums.
+   Newly disconnected output pairs are explicitly cleared on their next frame. */
+void ts_matrix_process_sparse(TsRoutingMatrix *m,TsSourceRouteMix *sums,
     const TsStereoFrame live[TS_MATRIX_ROWS-TS_MATRIX_NODES],TsMatrixProcess fn,void *context);
 int ts_matrix_write(FILE *f,const TsMatrixControls *c);
 int ts_matrix_read(TsMatrixControls *c,const char *key,const char *value);

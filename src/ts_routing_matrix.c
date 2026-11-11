@@ -223,8 +223,35 @@ int ts_matrix_set_live(TsRoutingMatrix *m,const TsMatrixControls *c,unsigned rat
    without a library call for every meter, on every audio sample. */
 static float meter_max(float a,float b){return a>b || isnan(b)?a:b;}
 static float peak(TsStereoFrame f){return meter_max(fabsf(f.l),fabsf(f.r));}
-void ts_matrix_process(TsRoutingMatrix *m,TsSourceRouteMix *sums,
-    const TsStereoFrame live[TS_MATRIX_ROWS-TS_MATRIX_NODES],TsMatrixProcess fn,void *context)
+static void matrix_outputs(TsRoutingMatrix *m,const TsSourceRouteMix *sums,int sparse)
+{
+    static const uint64_t physical[3]={UINT64_C(0x7f80),UINT64_MAX<<2,
+        (UINT64_C(1)<<(TS_MATRIX_DESTINATIONS-128))-1};
+    uint64_t owned[3]={sums->graph_mask,sums->graph_mask_high,sums->graph_mask_top};
+    if(!sparse) {
+        for(int p=0;p<TS_MATRIX_OUTPUTS;++p)
+            m->output[p]=ts_stereo_frame_sanitize_inline(sums->graph[ts_matrix_output_destination(p)]);
+        memcpy(m->output_destinations,physical,sizeof(physical));
+        return;
+    }
+    for(unsigned word=0;word<3;++word) {
+        owned[word]&=physical[word];
+        uint64_t mask=owned[word]|m->output_destinations[word];
+        while(mask) {
+#if defined(__GNUC__) || defined(__clang__)
+            unsigned bit=(unsigned)__builtin_ctzll(mask);
+#else
+            unsigned bit=0;uint64_t scan=mask;while(!(scan&1)){scan>>=1;++bit;}
+#endif
+            mask&=mask-1;
+            int d=(int)(word*64+bit),pair=ts_matrix_output_pair(d);
+            m->output[pair]=ts_stereo_frame_sanitize_inline(sums->graph[d]);
+        }
+        m->output_destinations[word]=owned[word];
+    }
+}
+static void matrix_process(TsRoutingMatrix *m,TsSourceRouteMix *sums,
+    const TsStereoFrame live[TS_MATRIX_ROWS-TS_MATRIX_NODES],TsMatrixProcess fn,void *context,int sparse)
 {
     /* Compile routed sources on edits; unused interface capacity costs no DSP. */
     for(unsigned p=0;p<m->input_pairs && p<TS_MATRIX_INPUTS;++p) {
@@ -242,6 +269,7 @@ void ts_matrix_process(TsRoutingMatrix *m,TsSourceRouteMix *sums,
         TsStereoFrame old=m->history[s][m->position];
         float l=m->edges[e].left,rh=m->edges[e].right,g=m->edges[e].gain;
             sums->graph[d].l+=old.l*g*l;sums->graph[d].r+=old.r*g*rh;
+            ts_source_route_graph_mark(sums,(unsigned)d);
             float activity=meter_max(fabsf(old.l*g*l),fabsf(old.r*g*rh));
             if(activity>m->voice[s].activity_send)m->voice[s].activity_send=activity;
     }
@@ -264,7 +292,7 @@ void ts_matrix_process(TsRoutingMatrix *m,TsSourceRouteMix *sums,
             m->history[n][m->position]=(TsStereoFrame){tanhf(output.l),tanhf(output.r)};
         ts_source_route_frame(&m->voice[n],output,sums);
     }
-    for(int p=0;p<TS_MATRIX_OUTPUTS;++p)m->output[p]=ts_stereo_frame_sanitize_inline(sums->graph[ts_matrix_output_destination(p)]);
+    matrix_outputs(m,sums,sparse);
     m->spatial_input=ts_stereo_frame_sanitize_inline(sums->graph[TS_MATRIX_AMBISONICS]);
     m->input_peak[TS_MATRIX_AMBISONICS]=meter_max(peak(m->spatial_input),m->input_peak[TS_MATRIX_AMBISONICS]*m->decay);
     for(int i=0;i<TS_SOURCE_SPEAKERS;++i) {
@@ -274,6 +302,12 @@ void ts_matrix_process(TsRoutingMatrix *m,TsSourceRouteMix *sums,
     }
     m->position=(m->position+1)%TS_MATRIX_DELAY;
 }
+void ts_matrix_process(TsRoutingMatrix *m,TsSourceRouteMix *sums,
+    const TsStereoFrame live[TS_MATRIX_ROWS-TS_MATRIX_NODES],TsMatrixProcess fn,void *context)
+{matrix_process(m,sums,live,fn,context,0);}
+void ts_matrix_process_sparse(TsRoutingMatrix *m,TsSourceRouteMix *sums,
+    const TsStereoFrame live[TS_MATRIX_ROWS-TS_MATRIX_NODES],TsMatrixProcess fn,void *context)
+{matrix_process(m,sums,live,fn,context,1);}
 TsSourceRoute ts_matrix_source_route(TsSourceRoute old)
 {
     if(old.matrix_enabled)return old;

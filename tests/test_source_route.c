@@ -214,4 +214,29 @@ static void extended_output_ownership(void)
         }
     }
 }
-int main(void){matrix();hardware();voices_and_storage();activity();sparse_accumulation();silent_routing();extended_output_ownership();puts("Source routing: coefficients, ramps, output ownership, voices, signal activity, sparse/silent sums and persistence passed");return 0;}
+static void reusable_mix(void)
+{
+    TsSourceRouteMix from={0},to={0},expected={0};
+    for(int frame=0;frame<4*TS_MATRIX_DESTINATIONS;++frame) {
+        ts_source_route_mix_reset(&from);
+        int d=frame%TS_MATRIX_DESTINATIONS;
+        if(frame&1) {
+            from.graph[d]=(TsStereoFrame){-.375f,.1875f};
+            ts_source_route_graph_mark(&from,(unsigned)d);
+        }
+        from.available=frame&65535;from.check_outputs=1;
+        ts_source_route_mix_reuse(&to,&from);
+        ts_source_route_graph_copy(&to,&from);
+        expected=from;
+        float gain=(frame%7)*.25f;
+        for(int i=0;i<TS_MATRIX_DESTINATIONS;++i) {
+            expected.graph[i].l*=gain;expected.graph[i].r*=gain;
+        }
+        ts_source_route_graph_scale(&to,gain);
+        assert(!memcmp(&to,&expected,sizeof(to)));
+        ts_source_route_mix_reuse(&to,&to);
+        memset(&expected,0,sizeof(expected));expected.available=from.available;expected.check_outputs=1;
+        assert(!memcmp(&to,&expected,sizeof(to)));
+    }
+}
+int main(void){reusable_mix();matrix();hardware();voices_and_storage();activity();sparse_accumulation();silent_routing();extended_output_ownership();puts("Source routing: coefficients, ramps, output ownership, voices, signal activity, sparse/silent sums and persistence passed");return 0;}

@@ -107,30 +107,49 @@ static TsSisterRuntimeFrame runtime_matrix_frame(TsSisterRuntime *r,
 {
     unsigned channels=r->insert.duplex?r->insert.duplex_channels:atomic_load_explicit(&r->insert.matrix_channels,memory_order_relaxed);
     r->matrix.input_pairs=(channels+1)/2;
-    TsSourceRouteMix sums={0};
-    memcpy(sums.graph,s->matrix_graph,sizeof(sums.graph));
-    ts_source_route_add(&sums,&r->clean_output,s->matrix_program_gain);
-    sums.graph[TS_MATRIX_MAIN]=frame_add(sums.graph[TS_MATRIX_MAIN],frame_add(tiles,s->preview));
-    if(!r->matrix.controls.serial_mask) {
-        sums.graph[TS_MATRIX_PRISM]=frame_add(sums.graph[TS_MATRIX_PRISM],r->send_input[TS_SEND_PRISM]);
-        sums.graph[TS_MATRIX_BOARD]=frame_add(sums.graph[TS_MATRIX_BOARD],r->send_input[TS_SEND_PEDALBOARD]);
-        sums.graph[TS_MATRIX_FALLOUT]=frame_add(sums.graph[TS_MATRIX_FALLOUT],r->send_input[TS_SEND_FALLOUT]);
+    TsSourceRouteMix *sums=&r->matrix_sums;
+    ts_source_route_mix_reset(sums);
+    if(s->matrix_routes)ts_source_route_graph_copy(sums,s->matrix_routes);
+    else {
+        /* Dense callers may write any destination without ownership metadata. */
+        memcpy(sums->graph,s->matrix_graph,sizeof(sums->graph));
+        sums->graph_mask=sums->graph_mask_high=UINT64_MAX;
+        sums->graph_mask_top=(UINT64_C(1)<<(TS_MATRIX_DESTINATIONS-128))-1;
     }
-    TsStereoFrame live[TS_MATRIX_ROWS-TS_MATRIX_NODES]={0};
-    for(int i=0;i<TS_MATRIX_INPUTS;++i)live[ts_matrix_input_row(i)-TS_MATRIX_NODES]=s->matrix_input[i];
-    live[TS_MATRIX_FM-TS_MATRIX_NODES]=s->fm;live[TS_MATRIX_LINK-TS_MATRIX_NODES]=s->tapehead;
+    ts_source_route_add(sums,&r->clean_output,s->matrix_program_gain);
+    sums->graph[TS_MATRIX_MAIN]=frame_add(sums->graph[TS_MATRIX_MAIN],frame_add(tiles,ts_stereo_frame_sanitize_inline(s->preview)));
+    ts_source_route_graph_mark(sums,TS_MATRIX_MAIN);
+    if(!r->matrix.controls.serial_mask) {
+        sums->graph[TS_MATRIX_PRISM]=frame_add(sums->graph[TS_MATRIX_PRISM],r->send_input[TS_SEND_PRISM]);
+        ts_source_route_graph_mark(sums,TS_MATRIX_PRISM);
+        sums->graph[TS_MATRIX_BOARD]=frame_add(sums->graph[TS_MATRIX_BOARD],r->send_input[TS_SEND_PEDALBOARD]);
+        ts_source_route_graph_mark(sums,TS_MATRIX_BOARD);
+        sums->graph[TS_MATRIX_FALLOUT]=frame_add(sums->graph[TS_MATRIX_FALLOUT],r->send_input[TS_SEND_FALLOUT]);
+        ts_source_route_graph_mark(sums,TS_MATRIX_FALLOUT);
+    }
+    /* Refresh every row the graph or input meters will read. Unused interface
+       capacity needs no per-sample clearing/copying. Include routed inputs
+       outside the current device count for dense/offline callers too. */
+    TsStereoFrame *live=r->matrix_live;
+    for(unsigned i=0;i<r->matrix.input_pairs && i<TS_MATRIX_INPUTS;++i)
+        live[ts_matrix_input_row((int)i)-TS_MATRIX_NODES]=s->matrix_input[i];
+    for(unsigned at=0;at<r->matrix.source_count;++at) {
+        int row=r->matrix.sources[at],pair=ts_matrix_input_pair(row);
+        if(pair>=0)live[row-TS_MATRIX_NODES]=s->matrix_input[pair];
+    }
+    live[TS_MATRIX_FM-TS_MATRIX_NODES]=ts_stereo_frame_sanitize_inline(s->fm);live[TS_MATRIX_LINK-TS_MATRIX_NODES]=ts_stereo_frame_sanitize_inline(s->tapehead);
     live[TS_MATRIX_MOSAIC-TS_MATRIX_NODES]=s->mosaic;
-    live[TS_MATRIX_TILES-TS_MATRIX_NODES]=s->live_tiles;
+    live[TS_MATRIX_TILES-TS_MATRIX_NODES]=frame_add(ts_stereo_frame_sanitize_inline(s->live_tiles),frame_scale(frame.keyboard_dry,s->matrix_program_gain));
     /* Only the ordinary tracker mix reaches this bus. Explicit track/tile
        routes have already been removed by the voice router and stay direct. */
-    live[TS_MATRIX_TRACKER-TS_MATRIX_NODES]=s->tracker;
+    live[TS_MATRIX_TRACKER-TS_MATRIX_NODES]=ts_stereo_frame_sanitize_inline(s->tracker);
     RouterFrameContext context={.runtime=r,.frame=&frame,.matrix_program_gain=s->matrix_program_gain};
     /* Matrix controls supersede legacy chain placement and source switches. */
     if(!r->matrix.controls.serial_mask)r->router.wet[TS_ROUTER_SISTER]=r->router.wet[TS_ROUTER_PEDALBOARD]=1;
     else runtime_router_begin(&context);
     uint64_t p=ts_profile_begin(TS_PROF_ROUTER);
     ts_matrix_effects_begin_frame(&r->matrix_effects);
-    ts_matrix_process(&r->matrix,&sums,live,runtime_matrix_node,&context);
+    ts_matrix_process_sparse(&r->matrix,sums,live,runtime_matrix_node,&context);
     ts_matrix_effects_end_frame(&r->matrix_effects);
     if(r->matrix.controls.serial_mask)runtime_router_finish(&context);
     ts_profile_end(TS_PROF_ROUTER,p);

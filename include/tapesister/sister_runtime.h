@@ -86,6 +86,9 @@ typedef struct {
     TsStereoFrame matrix_graph[TS_MATRIX_DESTINATIONS], matrix_input[TS_MATRIX_INPUTS];
     float matrix_program_gain; /* Gain for runtime-owned tile voices; host sums are already trimmed. */
     TsStereoFrame send[TS_SOURCE_SENDS];
+    /* Optional borrowed graph with explicit destination ownership. If NULL,
+       matrix_graph remains the dense compatibility input. Never retained. */
+    const TsSourceRouteMix *matrix_routes;
 } TsSisterSourceFrames;
 
 typedef struct {
@@ -246,6 +249,8 @@ typedef struct {
     TsSisterParameters parameters;
     TsPerformanceBank performance;
     TsSourceRouteMix clean_output;
+    TsSourceRouteMix manual_routes, matrix_sums; /* Audio-owned reusable scratch. */
+    TsStereoFrame matrix_live[TS_MATRIX_ROWS-TS_MATRIX_NODES];
     /* Current sample's aux inputs and independently placed wet-only returns.
        Source sums are prepared by the host, never by running another rack. */
     TsStereoFrame send_input[TS_SOURCE_SENDS];

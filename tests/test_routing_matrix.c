@@ -389,4 +389,88 @@ static void meter_input_guard(void)
         for(int p=0;p<TS_MATRIX_OUTPUTS;++p)assert(isfinite(m.output[p].l) && isfinite(m.output[p].r));
     }
 }
-int main(void){meter_input_guard();ordering_parity();feedback_history_activation();graph();terminal_destinations();runtime();physical_inputs();tracker_bus();import_serial_chain();main_headroom();puts("Unified routing graph, TrackSister bus, shared DSP, serial import audio parity, main headroom fades, loop isolation, hardware returns and persistence passed");}
+/* Dense per-frame initialization is the oracle for persistent sparse scratch.
+   Exercise every output bank, disconnects, slew retirement and feedback-only
+   destinations. Output and meter histories must survive the optimization. */
+static void reusable_graph_parity(void)
+{
+    static TsRoutingMatrix dense, sparse;
+    ts_matrix_init(&dense);ts_matrix_init(&sparse);
+    TsMatrixControls c=dense.controls;c.enabled=1;c.feedback=1;
+    c.row[TS_MATRIX_MOSAIC].matrix_gain[TS_MATRIX_MAIN]=1000;
+    c.row[TS_MATRIX_MAIN].matrix_gain[ts_matrix_output_destination(127)]=500;
+    assert(ts_matrix_connect(&c,TS_MATRIX_EQ,TS_MATRIX_MAIN,200)==1);
+    assert(ts_matrix_set(&dense,&c,48000));assert(ts_matrix_set(&sparse,&c,48000));
+    TsSourceRouteMix work={0};
+    for(int f=0;f<4096;++f) {
+        if(f==1024 || f==2048) {
+            c.row[TS_MATRIX_MAIN].matrix_gain[ts_matrix_output_destination(127)]=f==1024?0:700;
+            if(f==2048)ts_matrix_cut_feedback(&c);
+            assert(ts_matrix_set(&dense,&c,48000));assert(ts_matrix_set(&sparse,&c,48000));
+        }
+        TsSourceRouteMix fresh={0};ts_source_route_mix_reset(&work);
+        /* Clear all direct sources at 3072, leaving route slew/tail history. */
+        if(f<3072) {
+            int d=f%TS_MATRIX_DESTINATIONS;
+            fresh.graph[d]=(TsStereoFrame){.17f,-.21f};
+            work.graph[d]=fresh.graph[d];ts_source_route_graph_mark(&work,(unsigned)d);
+        }
+        TsStereoFrame live[TS_MATRIX_ROWS-TS_MATRIX_NODES]={{0}};
+        if(f<3072)live[TS_MATRIX_MOSAIC-TS_MATRIX_NODES]=(TsStereoFrame){.125f,-.25f};
+        ts_matrix_process(&dense,&fresh,live,identity,NULL);
+        /* Also switch API mode: first sparse call must clear dense outputs. */
+        if(f%257==0)ts_matrix_process(&sparse,&work,live,identity,NULL);
+        else ts_matrix_process_sparse(&sparse,&work,live,identity,NULL);
+        assert(!memcmp(fresh.graph,work.graph,sizeof(work.graph)));
+        assert(!memcmp(dense.output,sparse.output,sizeof(dense.output)));
+        assert(!memcmp(dense.history,sparse.history,sizeof(dense.history)));
+        assert(!memcmp(dense.voice,sparse.voice,sizeof(dense.voice)));
+        assert(!memcmp(dense.input_peak,sparse.input_peak,sizeof(dense.input_peak)));
+        assert(!memcmp(dense.output_peak,sparse.output_peak,sizeof(dense.output_peak)));
+        for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)if(work.graph[d].l || work.graph[d].r) {
+            uint64_t mask=d<64?work.graph_mask:d<128?work.graph_mask_high:work.graph_mask_top;
+            assert(mask&(UINT64_C(1)<<(d%64)));
+        }
+    }
+}
+static void borrowed_graph_parity(void)
+{
+    static TsSisterRuntime dense,sparse;
+    ts_sister_runtime_init(&dense);ts_sister_runtime_init(&sparse);
+    char error[200];
+    assert(ts_sister_runtime_reconfigure(&dense,48000,2,error,sizeof(error)));
+    assert(ts_sister_runtime_reconfigure(&sparse,48000,2,error,sizeof(error)));
+    TsMatrixControls c=dense.matrix.controls;c.enabled=1;c.feedback=1;
+    c.row[TS_MATRIX_TILES].matrix_gain[ts_matrix_output_destination(127)]=500;
+    c.row[ts_matrix_input_row(127)].matrix_gain[TS_MATRIX_EQ]=300;
+    assert(ts_matrix_connect(&c,TS_MATRIX_EQ,TS_MATRIX_MAIN,100)==1);
+    assert(ts_matrix_set(&dense.matrix,&c,48000));assert(ts_matrix_set(&sparse.matrix,&c,48000));
+    ts_sister_runtime_begin_audio_block(&dense);ts_sister_runtime_begin_audio_block(&sparse);
+    TsSourceRouteMix routes={0};
+    for(int f=0;f<2048;++f) {
+        TsSisterSourceFrames a={.tiles={.02f,.03f},.live_tiles={.125f,-.25f},
+            .tracker={.07f,-.03f},.matrix_program_gain=.7f};
+        ts_source_route_mix_reset(&routes);
+        if(f<1024) {
+            int d=f%TS_MATRIX_DESTINATIONS;
+            a.matrix_graph[d]=(TsStereoFrame){.13f,-.14f};
+            routes.graph[d]=a.matrix_graph[d];ts_source_route_graph_mark(&routes,(unsigned)d);
+        }
+        a.matrix_input[127]=(TsStereoFrame){f<1024?.15f:0,f<1024?-.12f:0};
+        if(f==512 || f==1536) {
+            atomic_store(&dense.insert.matrix_channels,f==512?255:0);
+            atomic_store(&sparse.insert.matrix_channels,f==512?255:0);
+        }
+        if(f%13==0)a.fm=(TsStereoFrame){NAN,.1f};
+        TsSisterSourceFrames b=a;b.matrix_routes=&routes;
+        TsSisterRuntimeFrame x=ts_sister_runtime_process_frame(&dense,&a);
+        TsSisterRuntimeFrame y=ts_sister_runtime_process_frame(&sparse,&b);
+        assert(!memcmp(&x,&y,sizeof(x)));
+        assert(!memcmp(dense.matrix.output,sparse.matrix.output,sizeof(dense.matrix.output)));
+        assert(!memcmp(dense.matrix.history,sparse.matrix.history,sizeof(dense.matrix.history)));
+        assert(!memcmp(dense.matrix.input_peak,sparse.matrix.input_peak,sizeof(dense.matrix.input_peak)));
+    }
+    ts_sister_runtime_end_audio_block(&dense);ts_sister_runtime_end_audio_block(&sparse);
+    ts_sister_runtime_free(&dense);ts_sister_runtime_free(&sparse);
+}
+int main(void){reusable_graph_parity();borrowed_graph_parity();meter_input_guard();ordering_parity();feedback_history_activation();graph();terminal_destinations();runtime();physical_inputs();tracker_bus();import_serial_chain();main_headroom();puts("Unified routing graph, TrackSister bus, shared DSP, serial import audio parity, main headroom fades, loop isolation, hardware returns and persistence passed");}

@@ -118,6 +118,17 @@ int main(int argc,char **argv)
     }
     /* Optional deterministic page turns for Gallery audits. These call the same
        allocation-free core switch used by the controller, not its UI refresh. */
+    /* Match the live Keter scenario without rewriting the supplied project. */
+    if(getenv("TS_BENCH_NORMALIZE_TRANSPORT")) {
+        REQUIRE(audio.gallery);
+        for(int p=0;p<audio.gallery->count;++p) {
+            TsMosaic *m=audio.gallery->canvas[p].scene;
+            ts_mosaic_seek(m,0);m->repeat=0;m->playing=0;m->marker_loop=0;
+            ts_mosaic_set_speed(m,1);
+            audio.gallery->canvas[p].entry=TS_GALLERY_RESUME;
+        }
+        audio.gallery->fade_seconds=0;
+    }
     const char *sequence=getenv("TS_BENCH_GALLERY");
     int turns[64],turn_count=0,turn_next=1;
     if(sequence) {char *end;while(*sequence && turn_count<64) {

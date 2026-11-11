@@ -196,6 +196,39 @@ void ts_source_route_mix_reset(TsSourceRouteMix *mix)
     memset((char *)mix+offsetof(TsSourceRouteMix,graph_mask),0,
         sizeof(*mix)-offsetof(TsSourceRouteMix,graph_mask));
 }
+void ts_source_route_mix_reuse(TsSourceRouteMix *mix,const TsSourceRouteMix *map)
+{
+    unsigned available=map?map->available:0;
+    int check=map?map->check_outputs:0;
+    ts_source_route_mix_reset(mix);
+    mix->available=available;mix->check_outputs=check;
+}
+void ts_source_route_graph_copy(TsSourceRouteMix *to,const TsSourceRouteMix *from)
+{
+    uint64_t masks[3]={from->graph_mask,from->graph_mask_high,from->graph_mask_top};
+    for(unsigned word=0;word<3;++word) {
+        uint64_t mask=masks[word];
+        while(mask) {
+            unsigned d=word*64+first_destination(mask);mask&=mask-1;
+            if(d<TS_MATRIX_DESTINATIONS)to->graph[d]=from->graph[d];
+        }
+    }
+    to->graph_mask=from->graph_mask;to->graph_mask_high=from->graph_mask_high;
+    to->graph_mask_top=from->graph_mask_top;
+}
+void ts_source_route_graph_scale(TsSourceRouteMix *mix,float gain)
+{
+    uint64_t masks[3]={mix->graph_mask,mix->graph_mask_high,mix->graph_mask_top};
+    for(unsigned word=0;word<3;++word) {
+        uint64_t mask=masks[word];
+        while(mask) {
+            unsigned d=word*64+first_destination(mask);mask&=mask-1;
+            if(d<TS_MATRIX_DESTINATIONS) {
+                mix->graph[d].l*=gain;mix->graph[d].r*=gain;
+            }
+        }
+    }
+}
 static void add_graph(TsSourceRouteMix *to,const TsSourceRouteMix *from,
     float gain,uint64_t mask,unsigned offset)
 {

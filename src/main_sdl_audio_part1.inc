@@ -395,32 +395,32 @@ static void runtime_note_render(AudioState *audio, TsAudioBuses *buses,
     TsStereoFrame launcher;
     if (audio == NULL || buses == NULL) return;
     TsStereoFrame clean_before=audio->clean.reference;
-    TsSourceRouteMix channel;ts_source_route_mix_init(&channel,&audio->clean);
-    ts_note_bank_read_routed(&audio->notes, &sample, &fm, &synth,&channel);
+    TsSourceRouteMix *channel=&audio->channel_routes;ts_source_route_mix_reuse(channel,&audio->clean);
+    ts_note_bank_read_routed(&audio->notes, &sample, &fm, &synth,channel);
     TsStereoFrame browser = ts_note_voice_read(&audio->browser_voice);
     buses->legacy_preview.l += browser.l;
     buses->legacy_preview.r += browser.r;
     performance = ts_performance_read_routed(
-        &audio->performance, &audio->performance_raw_mix,&channel);
-    TsSourceRouteMix selected_route;ts_source_route_mix_init(&selected_route,&audio->clean);
-    TsStereoFrame selected=ts_performance_read_routed(&audio->mosaic_source_performance,NULL,&selected_route);
+        &audio->performance, &audio->performance_raw_mix,channel);
+    TsSourceRouteMix *selected_route=&audio->selected_routes;ts_source_route_mix_reuse(selected_route,&audio->clean);
+    TsStereoFrame selected=ts_performance_read_routed(&audio->mosaic_source_performance,NULL,selected_route);
     float source_gain=audio->sister.performance_gain_current[3];
-    audio->mosaic_source_dry=(TsStereoFrame){(selected.l+selected_route.reference.l)*source_gain,
-                                            (selected.r+selected_route.reference.r)*source_gain};
+    audio->mosaic_source_dry=(TsStereoFrame){(selected.l+selected_route->reference.l)*source_gain,
+                                            (selected.r+selected_route->reference.r)*source_gain};
     sample.l+=selected.l;sample.r+=selected.r;
-    ts_source_route_add(&channel,&selected_route,1.f);
+    ts_source_route_add(channel,selected_route,1.f);
     float tile_gain=audio->sister.performance_gain_current[3];
     sample.l*=tile_gain;sample.r*=tile_gain;fm.l*=tile_gain;fm.r*=tile_gain;
     synth.l*=tile_gain;synth.r*=tile_gain;performance.l*=tile_gain;performance.r*=tile_gain;
     audio->performance_raw_mix.l*=tile_gain;audio->performance_raw_mix.r*=tile_gain;
-    ts_source_route_add(&audio->clean,&channel,tile_gain);
+    ts_source_route_add(&audio->clean,channel,tile_gain);
     TsStereoFrame live_sample=sample,sequence_sample={0,0};
     TsStereoFrame sequence_before=audio->clean.reference;
-    ts_source_route_mix_init(&channel,&audio->clean);
-    TsStereoFrame sequence = ts_keyboard_sequence_read_routed(&audio->keyboard_sequence, audio->output_rate,&channel);
+    ts_source_route_mix_reuse(channel,&audio->clean);
+    TsStereoFrame sequence = ts_keyboard_sequence_read_routed(&audio->keyboard_sequence, audio->output_rate,channel);
     float arp_gain=audio->sister.performance_gain_current[0];
     sequence.l*=arp_gain;sequence.r*=arp_gain;
-    ts_source_route_add(&audio->clean,&channel,arp_gain);
+    ts_source_route_add(&audio->clean,channel,arp_gain);
     if (audio->keyboard_sequence.source && audio->keyboard_sequence.source->fm) {
         fm.l += sequence.l; fm.r += sequence.r;
         synth.l += sequence.l; synth.r += sequence.r;
@@ -433,20 +433,20 @@ static void runtime_note_render(AudioState *audio, TsAudioBuses *buses,
        preview out of the dry instrument recording. FM's own level is retained. */
     audio->keyboard_dry=(TsStereoFrame){sample.l+performance.l+fm.l*audio->fm_output_gain+audio->clean.reference.l-clean_before.l,
                                        sample.r+performance.r+fm.r*audio->fm_output_gain+audio->clean.reference.r-clean_before.r};
-    ts_source_route_mix_init(&channel,&audio->clean);
+    ts_source_route_mix_reuse(channel,&audio->clean);
     launcher = audio->tile_launcher_active ?
-        ts_performance_read_routed(&audio->tile_launchers, NULL,&channel) :
+        ts_performance_read_routed(&audio->tile_launchers, NULL,channel) :
         (TsStereoFrame){0.0f, 0.0f};
     launcher.l*=tile_gain;launcher.r*=tile_gain;
-    ts_source_route_add(&audio->clean,&channel,tile_gain);
+    ts_source_route_add(&audio->clean,channel,tile_gain);
     int matrix=audio->sister.matrix.controls.enabled;
-    ts_source_route_mix_init(&channel,&audio->clean);
+    ts_source_route_mix_reuse(channel,&audio->clean);
     TsStereoFrame mosaic=audio->gallery && ts_gallery_active(audio->gallery)==audio->mosaic?
-        ts_gallery_read(audio->gallery,audio->output_rate,matrix?&channel:NULL):
-        ts_mosaic_read_routed(audio->mosaic,audio->output_rate,matrix?&channel:NULL);
+        ts_gallery_read(audio->gallery,audio->output_rate,matrix?channel:NULL):
+        ts_mosaic_read_routed(audio->mosaic,audio->output_rate,matrix?channel:NULL);
     float mosaic_gain=audio->sister.performance_gain_current[2];
     mosaic.l*=mosaic_gain;mosaic.r*=mosaic_gain;
-    if(matrix)ts_source_route_add(&audio->clean,&channel,mosaic_gain);
+    if(matrix)ts_source_route_add(&audio->clean,channel,mosaic_gain);
     audio->tile_launcher_mix=(TsStereoFrame){launcher.l+mosaic.l,launcher.r+mosaic.r};
     if(matrix) {
         buses->mosaic=mosaic;
