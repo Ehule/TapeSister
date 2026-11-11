@@ -113,8 +113,17 @@ int main(int argc,char **argv)
     origin=live_test.started;
     for(int step=0;step<live_test.count;++step) {
         unsigned ms=live_test.steps[step].ms;
+        /* Virtual time jumps 30 seconds, but the real log writer still wakes
+           every 25 ms. Let it drain between steps; do not defeat the production
+           dropped-record abort by flooding its 32-event queue in this test. */
+        SDL_Delay(50);
         live_test_poll(window,0,&a,&u,&pages,&bank,&mosaic,&portal,&sister,&transform,
             origin+(Uint64)ceil(ms*live_test.frequency/1000.0));
+        if(live_test.next!=step+1) {
+            TsSessionLogStatus failed;ts_session_log_status(&failed);
+            fprintf(stderr,"Keter step %d: next=%d state=%d lost=%u/%u status=%s\n",
+                step,live_test.next,live_test.state,failed.dropped_audio,failed.dropped_events,u.status);
+        }
         assert(live_test.next==step+1);
     }
     assert(live_test.state==LT_DONE && !u.mosaic->playing);

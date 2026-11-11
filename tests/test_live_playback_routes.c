@@ -5,6 +5,16 @@
 #include "tapesister/mosaic_gallery.h"
 #include <assert.h>
 #include <time.h>
+/* The production Gallery and Mosaic entry points live in separate object
+   files. Keep the reference's equivalent boundary out of line as well; an
+   inlined oracle would understate the old host's routing overhead. */
+#if defined(__GNUC__) || defined(__clang__)
+#define LIVE_NOINLINE __attribute__((noinline))
+#else
+#define LIVE_NOINLINE
+#endif
+static TsStereoFrame reference_mosaic_read(TsMosaic *,int,TsSourceRouteMix *) LIVE_NOINLINE;
+static TsStereoFrame reference_gallery_read(TsMosaicGallery *,int,TsSourceRouteMix *) LIVE_NOINLINE;
 #include "reference/live_routes_207.inc"
 
 typedef TsStereoFrame (*Read)(TsMosaicGallery *,int,TsSourceRouteMix *);
@@ -32,7 +42,7 @@ static TsMosaicGallery *fixture(unsigned rate,int cards)
                 e->output_route.matrix_gain[TS_MATRIX_DESTINATIONS-1]=100;}
             if(i%4==1)e->output_route=(TsSourceRoute){.mode=TS_SOURCE_PAIR,.speaker=2,.second=5,
                 .mix_enabled=1,.clean_level=70,.send_level={20,30,40},.pan=-30,.width=20};
-            if(i==2){e->live=1;assert(ts_mosaic_live_launch(m,e->id,0));}
+            if(i==2){e->live=1;e->live_transport=1;assert(ts_mosaic_live_launch(m,e->id,0));}
         }
         g->canvas[scene].entry=TS_GALLERY_RESUME;m->playing=1;
     }
@@ -58,6 +68,8 @@ static void controls(TsMosaicGallery *g,unsigned block)
     if(block==21)ts_mosaic_live_transport(m,0);
     if(block==22)m->playing=0;
     if(block==23)m->playing=1;
+    if(block==24)ts_mosaic_live_pause(m,1);
+    if(block==26)ts_mosaic_live_pause(m,0);
     if(block==25){assert(ts_mosaic_set_loop_range(m,.02,.05));ts_mosaic_set_repeat(m,1);}
     if(block==28)ts_mosaic_set_repeat(m,0);
     if(block==34)ts_mosaic_set_speed(m,.75);

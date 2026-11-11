@@ -18,6 +18,17 @@ static TsStereoFrame old_process(TsSisterSingleFx *f,TsStereoFrame in,float gate
     default:return reference_reverb_process(&f->timing,&f->state.reverb,&f->controls,in,gate,&direct,1);
     }
 }
+/* Equal dispatch for timing: compare kernels through the same three-way
+   wrapper. Correctness above still exercises the production entry point. */
+static TsStereoFrame new_process(TsSisterSingleFx *f,TsStereoFrame in,float gate)
+{
+    float direct;
+    switch(f->controls.type) {
+    case TS_SISTER_FX_GRAIN:return grain_process(&f->timing,&f->state.grain,&f->controls,in,gate,&direct,1);
+    case TS_SISTER_FX_DELAY:return delay_process(&f->timing,&f->state.delay,&f->controls,in,gate,&direct,1);
+    default:return reverb_process(&f->timing,&f->state.reverb,&f->controls,in,gate,&direct,1);
+    }
+}
 static void state_equal(TsSisterSingleFx *a,TsSisterSingleFx *b,int buffers)
 {
     if(a->controls.type==TS_SISTER_FX_GRAIN) {
@@ -81,7 +92,7 @@ static double timed(int type,int old)
     const int blocks=256;double sum=0;clock_t start=clock();
     for(unsigned i=0;i<(unsigned)blocks*512;++i) {
         TsStereoFrame in={((int)(i%251)-125)*.001f,((int)(i%113)-56)*.002f};
-        TsStereoFrame out=old?old_process(f,in,1):ts_sister_single_fx_process(f,in,1);sum+=out.l;
+        TsStereoFrame out=old?old_process(f,in,1):new_process(f,in,1);sum+=out.l;
     }
     double ms=(double)(clock()-start)*1000/CLOCKS_PER_SEC/blocks;sink=sum;ts_sister_single_fx_free(f);return ms;
 }
