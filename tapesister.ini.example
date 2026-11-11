@@ -241,6 +241,9 @@ eq_morph_max_seconds=240
 ; Automatic Audio Health session logging in the writable per-user Health folder.
 ; 0 disables recording next launch; detailed PROFILE remains separately optional.
 session_log=1
+; Opt-in Tree-of-Life-Live-FX-04 live diagnostic: 1 arms on load, Mosaic Play runs.
+; Automatically records/exports health logs. Restart with 0 for normal editing.
+diagnostic_live_test=0
 
 [Mosaic]
 ; Shift+V hides the volume editor and expands the canvas. Its envelope stays active.

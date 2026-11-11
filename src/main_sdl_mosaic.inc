@@ -93,6 +93,7 @@ static void mosaic_transport(SDL_AudioDeviceID device,TsUiState *ui,int stop)
         }
     }
     if(device)SDL_UnlockAudioDevice(device);
+    live_test_transport(ui,!stop && playing);
 }
 /* Pick in screen space. Tiny cards retain an eight-pixel target; exact visible
    bodies win over nearby padding, then distance and the renderer's front order. */

@@ -53,6 +53,8 @@
 #endif
 #include <ctype.h>
 #include <errno.h>
+static const char *live_test_label(void);
+static int live_test_save_blocked(void);
 #include <limits.h>
 #include <math.h>
 #include <stdio.h>
@@ -769,7 +771,7 @@ static void project_refresh_title(SDL_Window *window,TsUiState *ui,const TsSampl
     ui->project_check_ms=now;
     ui->project_modified=paged_project_fingerprint(pages,active,record,sister,sequence,1)!=ui->saved_ui_hash || ts_tapehead_project_dirty(&pages->tracker);
     const char *name=ui->project_path;for(const char *s=name;*s;++s)if(*s=='/' || *s=='\\')name=s+1;
-    char title[TS_BROWSER_PATH_MAX+32];snprintf(title,sizeof(title),"TapeSister - %s%s",*name?name:"Untitled",ui->project_modified?" *":"");
+    char title[TS_BROWSER_PATH_MAX+128];snprintf(title,sizeof(title),"TapeSister - %s%s%s",*name?name:"Untitled",ui->project_modified?" *":"",live_test_label());
     if(window && strcmp(SDL_GetWindowTitle(window),title))SDL_SetWindowTitle(window,title);
 }
 
@@ -970,6 +972,8 @@ typedef struct {
     uint32_t topology_crossfade_remaining;
     uint32_t topology_crossfade_total;
 } AudioState;
+static void live_test_loaded(SDL_AudioDeviceID,AudioState *,TsUiState *,TsSamplePages *,const char *);
+static void live_test_transport(TsUiState *,int);
 static void matrix_audio_publish(AudioState *audio);
 
 static void runtime_clear_group(AudioState *audio);
@@ -4614,7 +4618,7 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
         project_mark_saved(ui,sample_pages,instrument,record_bank,&audio->sister,&audio->keyboard_sequence);
     }
     ts_session_log_event("project_load_result","success=%d kind=%s",ok,recipe?"TSR":"sample");
-    if(ok && recipe)project_log_state("project_opened",path,ui);
+    if(ok && recipe){project_log_state("project_opened",path,ui);live_test_loaded(device,audio,ui,sample_pages,path);}
     return ok;
 }
 
@@ -7051,6 +7055,7 @@ static void cancel_config(TsUiState *ui)
 
 static void save_config(TsUiState *ui)
 {
+    if(live_test_save_blocked()){snprintf(ui->status,sizeof(ui->status),"LIVE TEST: RESTART BEFORE SAVING CONFIG");return;}
     char error[160];
     if (!ts_config_save(&ui->config, config_file_path(), error, sizeof(error))) {
         snprintf(ui->status, sizeof(ui->status), "CONFIG SAVE FAILED: %.130s", error);
@@ -14051,6 +14056,7 @@ static int keyboard_note_key_event(const SDL_Event *event, SDL_Window *window,
 
 
 #include "main_sdl_project.inc"
+#include "main_sdl_live_test.inc"
 #include "main_sdl_offline_engine.inc"
 
 int main(int argc, char **argv)
@@ -14376,7 +14382,7 @@ int main(int argc, char **argv)
     ts_profile_enable(SDL_getenv("TAPESISTER_PROFILE") != NULL);
     audio.realtime_counter_frequency = SDL_GetPerformanceFrequency();
     audio.audio_health_started = SDL_GetTicks();
-    if(ui.config.session_log)ts_session_log_start(NULL,0);
+    if(ui.config.session_log || ui.config.diagnostic_live_test)ts_session_log_start(NULL,0);
     {
         char midi_error[160];
         midi_wake_event = SDL_RegisterEvents(1);
@@ -14436,7 +14442,11 @@ int main(int argc, char **argv)
         fprintf(stderr, "Video setup failed: %s\n", SDL_GetError());
         running = 0;
     }
-    if (running && !diagnostic_bank_stress && !diagnostic_performance && !show_splash(renderer)) {
+    if (running && !diagnostic_bank_stress && !diagnostic_performance &&
+#ifdef TS_LIVE_TEST_HARNESS
+        0 &&
+#endif
+        !show_splash(renderer)) {
         SDL_DestroyTexture(texture);
         SDL_DestroyRenderer(renderer);
         SDL_DestroyWindow(window);
@@ -14613,6 +14623,12 @@ int main(int argc, char **argv)
         audit_started=SDL_GetTicks();
     }
 
+    /* The integration executable enters this same application loop. Its only
+       driver conveniences are pressing Play and exiting after the replay. */
+#ifdef TS_LIVE_TEST_HARNESS
+    if(live_test.state!=LT_ARMED){fprintf(stderr,"Live test did not arm: %s\n",ui.status);running=0;diagnostic_failed=1;}
+    else {SDL_Event play=live_test_key(window,SDLK_SPACE,KMOD_NONE);SDL_PushEvent(&play);}
+#endif
     while (running) {
         ts_profile_lane_begin(0);
         uint64_t profile_ui = ts_profile_begin(TS_PROF_UI);
@@ -14731,6 +14747,7 @@ int main(int argc, char **argv)
             if(credits_event(&event,window))continue;
             if(project_save_event(&event,window,device,&audio,&ui))continue;
             if(ts_audio_session_shortcut(&event))continue;
+            if(live_test_input(&event,device,&audio,&ui))continue;
             if (ui.new_project_pending) { main_paint_invalid = 1; break; }
             if (ui.exit_for_new && (ui.exit_confirm_open || ui.exit_after_save) &&
                 event_id && event_id != SDL_GetWindowID(window) &&
@@ -18877,6 +18894,10 @@ int main(int argc, char **argv)
                 sister_window.last_present_ms = SDL_GetTicks();
             }
         }
+        live_test_poll(window,device,&audio,&ui,&sample_pages,&instrument,&mosaic,&portal,&sister_window,&transform,SDL_GetPerformanceCounter());
+#ifdef TS_LIVE_TEST_HARNESS
+        if(live_test.state==LT_DONE || live_test.state==LT_ABORTED){diagnostic_failed=live_test.state!=LT_DONE;running=0;}
+#endif
         palette_window_update(window,&ui,&sister_window);
         offline_update();
         mandala_editor_update(&audio.sister.mandala);
@@ -19023,7 +19044,7 @@ int main(int argc, char **argv)
                               &ui.config.sister_window_y);
     {
         char config_error[160];
-        if (!diagnostic_performance && !ts_audio_main_config_write(&ui.config, config_file_path(),
+        if (!diagnostic_performance && !live_test_save_blocked() && !ts_audio_main_config_write(&ui.config, config_file_path(),
                             config_error, sizeof(config_error)))
             fprintf(stderr, "TapeSister config save: %s\n", config_error);
     }

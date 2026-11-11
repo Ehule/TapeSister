@@ -124,6 +124,7 @@ static int project_save_start(SDL_AudioDeviceID device,AudioState *audio,TsUiSta
     TsSamplePages *pages,const TsInstrument *active,const TsInstrument *record,
     const TsSisterProjectState *state,const char *path,char *error,size_t size)
 {
+    if(live_test_save_blocked()){snprintf(error,size,"Live diagnostic changes are temporary; restart before saving");return 0;}
     char journal_path[2048];FILE *journal=project_save_open_journal(path,journal_path,sizeof(journal_path));
     ProjectSaveWorker *w=calloc(1,sizeof(*w));if(!w)goto failed;
     w->journal=journal;snprintf(w->journal_path,sizeof(w->journal_path),"%s",journal_path);
