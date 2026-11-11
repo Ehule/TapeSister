@@ -42,6 +42,26 @@ routing/parameter/view changes cannot overwrite the baseline or become startup
 settings. Restart before doing ordinary editing/saving. This deliberately small
 diagnostic is not a general-purpose project scripting system.
 
+## Uninterrupted Keter test
+
+Use `diagnostic_live_test=2` to test the reported clicking later in Keter.
+Open the same original Tree-of-Life-Live-FX-04 project. The diagnostic selects
+Keter through the normal Gallery controller while stopped, then announces
+**KETER FULL TEST ARMED**. Press Mosaic Play once.
+
+This mode plays Keter from **0:00 through its saved end**, followed by eight
+seconds for the tails (10:08 for a ten-minute movement). It does not seek into
+the ending: the earlier playback builds the real effect history. There are no
+scripted parameter or window edits during this run; checkpoints every 30 seconds
+let the log show how the load changes, including the final three minutes.
+Automatic health recording/export, profile-off measurement, Escape abort and
+save protection work as in mode 1.
+
+The log identifies this as `tree04-keter-full-v1`. Compare it with another
+run of that same mode and project. Mode `1` retains the original 240-action,
+3:36 `tree04-live-v1` schedule unchanged, for comparison with the existing
+transition log. Restart after switching modes; use `0` for normal editing.
+
 ## Versioned scenario: tree04-live-v1
 
 All three populated movements are prepared at 300 seconds, with repeat off,

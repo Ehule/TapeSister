@@ -45,6 +45,13 @@ thresholds. They exclude the full application, UI, SunVox graph and physical
 audio driver; they must not be presented as ASIO improvements.
 
 Linux and Windows native bundle workflows run these comparisons explicitly,
-alongside the existing regressions. The opt-in `tree04-live-v1` test and its
+alongside the existing regressions. The original mode-1 `tree04-live-v1` test and its
 automatic log export remain unchanged. A fresh saved JSONL from the same
 physical setup is required to determine whether deadline headroom improved.
+
+The user's additional report of late Keter clicks is covered by a separate
+mode-2 `tree04-keter-full-v1` replay. It plays Keter from the beginning through
+the saved end plus eight seconds, preserving the full effect-history buildup,
+without parameter/window edits. It records checkpoints every 30 seconds and
+exports automatically. This separate scenario must be compared against itself,
+not the original transition replay. See `docs/audits/live-test.md`.
