@@ -256,9 +256,14 @@ static void mosaic_patterns(void)
         assert(!SDL_SaveBMP(surface,pass?"mosaic-pattern-cards-fractional.bmp":"mosaic-pattern-cards-native.bmp"));SDL_FreeSurface(surface);
         /* Card pixels must translate together at the native pixel scale. */
         test_ui->mosaic_time=-1;native_waveform_prepare(renderer,details,1);ts_audio_ui_render(fb,test_ui,test_bank);
-        TsUiWaveformDetail *d=&details[0];size_t bytes=(size_t)d->width*d->height*4;uint32_t *prior=malloc(bytes);assert(prior);memcpy(prior,d->pixels,bytes);
+        TsUiWaveformDetail *d=&details[0];
+        /* Cached native surfaces restore departing overlays in the compositor.
+           Inspect the completed pixels, as the production uploader does. */
+        assert(ts_ui_waveform_detail_finish(d,fb));
+        size_t bytes=(size_t)d->width*d->height*4;uint32_t *prior=malloc(bytes);assert(prior);memcpy(prior,d->pixels,bytes);
         test_ui->mosaic_scroll+=1.0/(test_ui->mosaic_scale*d->height/TS_MOSAIC_CANVAS_HEIGHT);
         native_waveform_prepare(renderer,details,1);ts_audio_ui_render(fb,test_ui,test_bank);
+        assert(ts_ui_waveform_detail_finish(d,fb));
         for(int y=0;y<d->height-1;++y)for(int x=0;x<d->width;++x)assert(d->pixels[y*d->width+x]==prior[(y+1)*d->width+x]);
         free(prior);
     }
