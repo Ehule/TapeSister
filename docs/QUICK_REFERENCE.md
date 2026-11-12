@@ -29,6 +29,7 @@ For explanations and complete workflows, see the [User Manual](USER_MANUAL.md).
 | `Shift+F9` | Open/close the FX Canvas; F9 switches to the same graph in Matrix view |
 | `Ctrl+F9` | Open/close the modeless Ambisonics output window |
 | `F12` or CFG → AUDIO HEALTH | Open/close [Audio Health](AUDIO_HEALTH.md); Save Session exports the automatically recorded timeline |
+| Click `CPU` in main/Mosaic or FX Canvas | Open Audio Health at module usage; readout shows recent audio buffer load |
 | `Ctrl+Shift+F12` | Mark an audible click in the session log from a TapeSister host window |
 | `Shift+F12` or F11 → CREDITS | Open [Credits](CREDITS.md); any key or click closes |
 | `Space` | Main: play/stop audition. Mosaic: play/pause arrangement |

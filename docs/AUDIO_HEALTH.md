@@ -5,6 +5,20 @@ monitor. It stays on top while you adjust controls in the instrument, so the
 readings remain visible. F12, Escape or the window close button hides it;
 playback continues. Counters continue while it is hidden.
 
+The **CPU** readout in the main/Mosaic footer and the FX Canvas footer shows
+recent audio callback processing as a percentage of the available buffer time.
+It refreshes four times per second using the existing timing counters, including
+while the transport is idle. Amber starts at 90%; red starts at 100%. Values can
+exceed 100%. **CPU --** means timing/output is unavailable, callbacks are stale,
+or a fresh measurement window has not arrived. This is audio processing load,
+not the operating system's whole-computer CPU percentage.
+
+Click **CPU** to open Audio Health directly at **MATRIX FX** and start sampled
+module profiling. The busiest recent effects appear first. Closing/hiding Health
+stops profiling if that click started it; an already running manual or diagnostic
+profile keeps running and retains its counters. The small CPU readout remains
+active with profiling off. F12 and CFG → AUDIO HEALTH retain their existing behavior.
+
 Normal sessions are now recorded automatically, including while this window is
 closed. Use **SAVE SESSION** and **LOG FOLDER** to share the timeline; optionally
 mark something you heard with **HEARD A CLICK** or **Ctrl+Shift+F12**. See
@@ -81,13 +95,16 @@ RESET or starting a new profile clears all rows.
 | --- | --- |
 | AVG/BLOCK | Average total work for this effect within a sampled output callback that processed it, in milliseconds. This sums individual frame calls, including buffered SunVox render bursts. |
 | PEAK/BLOCK | Largest observed sum for one sampled callback, in milliseconds. The displayed effects' peaks may come from different callbacks. |
-| MS/S and AUDIO% | Estimated effect time per second of the whole profile, and as a percentage of measured callback time. A replaced row covers only its new generation, while the denominator still covers the whole profile. |
+| CPU% | Estimated effect processing time as a percentage of the most recent approximately one-second wall-time interval. Rows sort by this value. `--` means the first interval is still being collected or the instance was replaced. An idle row falls to zero after a fresh interval. |
+| AUDIO% | Estimated effect time as a percentage of measured callback time since profile start/reset. A replaced row covers only its new generation, while the denominator still covers the whole profile. The report also retains full-profile MS/S. |
 | SAMPLES | Actual sampled callbacks in this row, not an extrapolated count. |
 | Crossfade samples (report) | Sampled callbacks that included a slot lifecycle crossfade or warm-up. Their cost includes both the old and new engines when both are present. |
 
 These are children of **Matrix effects DSP**, which is itself inside **Router**
-and **Sister runtime**; do not add nested percentages. The profiler samples one
-callback per 32, with rotating phase. It can miss a rare spike, and the observed
+and **Sister runtime**; do not add nested percentages. CPU% is a sampled estimate
+and parallel effects can overlap in wall time, so module percentages need not
+sum to the footer's callback load. The profiler samples one callback per 32,
+with rotating phase. It can miss a rare spike, and the observed
 peak is not a worst-case bound or proof of a click's cause. Reset before comparing
 the same passage with a fixed patch, device, rate and buffer size. For the main
 listening comparison, leave profiling off; turn it on for a separate diagnostic

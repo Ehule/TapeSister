@@ -2155,6 +2155,7 @@ int ts_ui_request_startup_welcome(TsUiState *ui, int splash_complete,
 void ts_ui_init(TsUiState *ui)
 {
     memset(ui, 0, sizeof(*ui));
+    ui->audio_cpu_percent=-1;
     ui->mosaic_live_keys=1;
     ui->play_on_select = 1;
     ts_portal_ui_init(&ui->portal);
@@ -3212,6 +3213,31 @@ int ts_ui_foreground_panel_open(const TsUiState *ui)
 }
 
 #include "ts_cdp_portal_ui.inc"
+void ts_ui_cpu_label(char *label, size_t size, double percent)
+{
+    if(!isfinite(percent) || percent<0)snprintf(label,size,"CPU --");
+    else if(percent>999.9)snprintf(label,size,"CPU >999%%");
+    else snprintf(label,size,"CPU %.1F%%",percent);
+}
+
+int ts_ui_cpu_contains(const TsUiState *ui,int x,int y)
+{
+    if(!ui || ui->tracker_open || ui->portal.open)return 0;
+    return x>=8 && x<94 && y>=386 && y<398;
+}
+
+static void cpu_readout_render(TsFramebuffer *fb,const TsUiState *ui,int y)
+{
+    char label[24];ts_ui_cpu_label(label,sizeof(label),ui->audio_cpu_percent);
+    uint32_t color=ts_theme_color(active_palette(),render_group,
+        ui->audio_cpu_percent<0?TS_COLOR_DIM:ui->audio_cpu_percent>=100?TS_COLOR_ERROR:
+        ui->audio_cpu_percent>=90?TS_COLOR_WARNING:TS_COLOR_ACTIVITY,
+        ui->audio_cpu_percent<0?RGB(160,149,172):ui->audio_cpu_percent>=100?RGB(235,119,125):
+        ui->audio_cpu_percent>=90?RGB(223,188,114):RGB(138,221,180));
+    rect(fb,8,y,86,398-y,ts_theme_color(active_palette(),render_group,TS_COLOR_PANEL,RGB(24,23,29)));
+    text(fb,12,y+2,label,color,1);
+}
+
 #include "ts_mosaic_ui.inc"
 #include "ts_tracker_ui.inc"
 #include "ts_keyboard_sequence_ui.inc"
@@ -4247,11 +4273,12 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         master_output_diagnostic(output_info,sizeof(output_info),&ui->master_output);
         snprintf(diagnostic,sizeof(diagnostic),"UNDO %02d/%02d  %s",instrument->undo_count,TS_HISTORY_DEPTH,output_info);
         int diagnostic_x=402-(int)strlen(diagnostic)*6;
-        int status_chars=(diagnostic_x-16)/6;
+        int status_chars=(diagnostic_x-108)/6;
         snprintf(status_line,sizeof(status_line),"%.*s",status_chars,ui->performance_tooltip[0]?ui->performance_tooltip:ui->status);
-        text(fb,8,389,status_line,PAL_MOUSE,1);
+        text(fb,100,389,status_line,PAL_MOUSE,1);
         text(fb,diagnostic_x,389,diagnostic,ui->master_output.limiter_gain_reduction_db>.05f?PAL_VOLUME:PAL_EFFECT,1);
         text(fb,418,389,filename,ui->project_modified?PAL_VOLUME:PAL_NOTE,1);
+        cpu_readout_render(fb,ui,386);
     }
 
     if (ui->exit_confirm_open && ui->exit_for_new) {
@@ -4466,8 +4493,9 @@ void ts_ui_render_file_recording(TsFramebuffer *fb, const TsUiState *ui)
             rect(fb,0,0,2,400,recording);rect(fb,638,0,2,400,recording);
         }
         if(ui->tracker_open && ui->tracker_embedded_frame)return;
-        rect(fb,3,382,634,15,ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(12,12,12)));text(fb,10,387,label,recording,1);
-        mini_button(fb,544,382,86,"STOP TILE",ui->text_cursor_visible);return;
+        rect(fb,3,382,634,15,ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(12,12,12)));text(fb,104,387,label,recording,1);
+        mini_button(fb,544,382,86,"STOP TILE",ui->text_cursor_visible);
+        if(!ui->tracker_open && !ui->portal.open)cpu_readout_render(fb,ui,386);return;
     }
     if(ui->tracker_open && ui->tracker_embedded_frame) {
         /* Keep the full pattern grid visible. The embedded panel owns its
@@ -4505,9 +4533,10 @@ void ts_ui_render_file_recording(TsFramebuffer *fb, const TsUiState *ui)
     int pulse=(int)((ui->file_record_frames/1024u)%620u);
     rect(fb,3+pulse,32,14,3,color);
     rect(fb,3,382,634,15,ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(12,12,12)));
-    text(fb,10,387,label,color,1);
+    text(fb,104,387,label,color,1);
     mini_button(fb,544,382,86,ui->file_record_state==TS_PERFORMANCE_FILE_STOPPING?"WAIT":"STOP FILE",
                 ui->text_cursor_visible);
+    if(!ui->tracker_open && !ui->portal.open)cpu_readout_render(fb,ui,386);
 }
 
 int ts_ui_write_ppm(const TsFramebuffer *fb, const char *path)

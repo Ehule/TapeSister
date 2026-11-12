@@ -36,6 +36,7 @@ typedef struct {
     uint64_t now;
     double seconds, frequency;
     int enabled;
+    unsigned epoch; /* UI readers can discard intervals across a reset. */
 } TsProfileSnapshot;
 /* Initialize before opening audio. Disabled if publication is not lock free. */
 int ts_profile_init(uint64_t (*clock)(void), uint64_t frequency);

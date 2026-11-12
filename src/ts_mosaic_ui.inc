@@ -259,7 +259,7 @@ static void mosaic_mix_controls(TsFramebuffer *fb,const TsUiState *ui,int any_so
     TsMosaicEvent *e=ts_mosaic_find(ui->mosaic,ui->mosaic_selected);
     if(e && e->source->video_path[0]) {
         char label[100];snprintf(label,sizeof(label),"VISUAL / %s / %s",e->source->video_pool?"RANDOM POOL":"FILE",e->video_random_start?"RANDOM POSITION":"BEGINNING");
-        text(fb,10,384,label,RGB(133,190,239),1);text(fb,400,384,"RIGHT-CLICK TO EDIT",RGB(133,190,239),1);return;
+        text(fb,104,384,label,RGB(133,190,239),1);text(fb,400,384,"RIGHT-CLICK TO EDIT",RGB(133,190,239),1);return;
     }
     const char *names[]={"LEVEL","PAN","IN","OUT"};
     for(int i=0;i<4;++i) {
@@ -279,7 +279,7 @@ static void mosaic_mix_controls(TsFramebuffer *fb,const TsUiState *ui,int any_so
             snprintf(label,sizeof(label),"%s %.2fS",names[i],seconds);
         }
         int enabled=e && !(i==3 && e->live && !e->live_finite);
-        if(e && !enabled)snprintf(label,sizeof(label),"OUT: SET AN END");
+        if(e && !enabled)snprintf(label,sizeof(label),"OUT: LIVE");
         text(fb,x,382,label,enabled?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DIM, RGB(182,174,190)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_GRID, RGB(97,92,105)),1);
         mosaic_slider(fb,x+2,392,TS_MOSAIC_MIX_W-4,value,i<2,enabled);
     }
@@ -550,6 +550,7 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
         double seconds=ui->file_record_rate?(double)ui->file_record_frames/ui->file_record_rate:0;
         snprintf(label,sizeof(label),"REC %05.1fs",seconds);text(fb,552,386,label,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_RECORD, RGB(231,122,130)),1);
     }
+    cpu_readout_render(fb,ui,386);
     mosaic_arrange_overlay(fb,ui);
     mosaic_marker_overlay(fb,ui);
     mosaic_live_overlay(fb,ui,instrument);

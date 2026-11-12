@@ -611,8 +611,14 @@ static void fx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
         fx_button(866,70,132,w->layout->canvas_snap?"SNAP ON":"SNAP OFF",w->layout->canvas_snap);
         fx_button(1008,70,200,"CLEAR CABLES",0);}
     if(!w->controls.enabled)fx_button(300,70,284,"USE SAVED CHAIN",0);
-    if(w->status[0])fx_panel_text(24,meta?814:801,1230,meta?25:38,w->status,FX_FOCUS,2,meta?1:2);
+    if(w->status[0])fx_panel_text(24,meta?814:801,1010,meta?25:38,w->status,FX_FOCUS,2,meta?1:2);
     else mx_text(24,815,"Shift+F9: FX Canvas     F9: Matrix     Esc: back     Ctrl+Z: undo",FX_DIM,2);
+    ts_ui_cpu_label(label,sizeof(label),ts_audio_cpu_percent);
+    fx_button(1060,806,196,"",0);
+    mx_text(1060+(196-(int)strlen(label)*12)/2,814,label,ts_audio_cpu_percent<0?FX_DIM:
+        ts_theme_color(&w->palette,TS_THEME_MOSAIC,
+            ts_audio_cpu_percent>=100?TS_COLOR_ERROR:ts_audio_cpu_percent>=90?TS_COLOR_WARNING:TS_COLOR_ACTIVITY,
+            ts_audio_cpu_percent>=100?0xffeb777du:ts_audio_cpu_percent>=90?0xffdfbc72u:0xff8addb4u),2);
     if(fx_canvas.popup)fx_popup_paint();
     if(fx_canvas.label_editing)fx_label_editor_paint();
     if(fx_canvas.properties)fx_properties_paint();

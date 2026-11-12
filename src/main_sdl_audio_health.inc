@@ -40,6 +40,9 @@ typedef struct {
     unsigned driver_reports, control_skips, control_recoveries, worker_gaps;
     int visible, native_kind;
     int profile_effects;
+    int owns_profile, recent_profile_valid, recent_profile_ready;
+    TsProfileSnapshot previous_profile;
+    double effect_cpu[TS_MATRIX_EFFECT_CAPACITY];
     int flash_button, flash_error;
     Uint32 flash_until;
     const char *flash_label;
@@ -329,6 +332,56 @@ static double ts_audio_health_callback_age(const TsRealtimeDiagnosticsSnapshot *
     return now>s->completed_ticks?(double)(now-s->completed_ticks)/s->counter_frequency:0;
 }
 
+static double ts_audio_cpu_load(const TsRealtimeDiagnosticsSnapshot *s,uint64_t now,
+                                int timing,int output)
+{
+    double age=ts_audio_health_callback_age(s,now);
+    return timing && output && age>=0 && age<1 && s->recent_callback_count &&
+        isfinite(s->recent_load_percent)?s->recent_load_percent:-1;
+}
+
+/* Four UI reads/second of the already published counters. No profiling, audio
+   lock, extra callback clocks or renderer work is needed for the small meter. */
+static void ts_audio_cpu_update(AudioState *audio,TsUiState *ui,Uint32 now)
+{
+    static Uint32 last;static uint32_t generation;static int sampled;
+    if(sampled && generation==audio->audio_health_generation && now-last<250u)return;
+    sampled=1;last=now;generation=audio->audio_health_generation;
+    TsRealtimeDiagnosticsSnapshot s;
+    ts_realtime_diagnostics_get(&audio->realtime_diagnostics,&s);
+    double percent=ts_audio_cpu_load(&s,SDL_GetPerformanceCounter(),
+        audio->realtime_diagnostics_enabled,ts_audio_output_is_available());
+    if(floor(percent*10+.5)!=floor(ts_audio_cpu_percent*10+.5) ||
+       (percent>=90)!=(ts_audio_cpu_percent>=90) ||
+       (percent>=100)!=(ts_audio_cpu_percent>=100))matrix_window.dirty=1;
+    ui->audio_cpu_percent=ts_audio_cpu_percent=percent;
+}
+
+/* Derive a recent module window from the existing sampled profiler totals.
+   Replacement generations start their own row; reset never underflows deltas. */
+static void ts_audio_profile_recent(const TsProfileSnapshot *s)
+{
+    TsProfileSnapshot *previous=&ts_health.previous_profile;
+    int reset=!ts_health.recent_profile_valid || s->epoch!=previous->epoch || s->seconds<previous->seconds ||
+        s->frequency!=previous->frequency;
+    if(reset) {
+        *previous=*s;ts_health.recent_profile_valid=1;ts_health.recent_profile_ready=0;
+        memset(ts_health.effect_cpu,0,sizeof(ts_health.effect_cpu));return;
+    }
+    double seconds=s->seconds-previous->seconds;
+    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)
+        if(s->effect[i].identity.generation!=previous->effect[i].identity.generation)
+            ts_health.effect_cpu[i]=-1;
+    if(seconds<1)return;
+    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i) {
+        const TsProfileEffectValue *v=&s->effect[i],*old=&previous->effect[i];
+        uint64_t before=v->identity.generation==old->identity.generation?old->blocks.ticks:0;
+        ts_health.effect_cpu[i]=s->frequency>0 && v->blocks.ticks>=before?
+            100.0*(v->blocks.ticks-before)/s->frequency/seconds:0;
+    }
+    *previous=*s;ts_health.recent_profile_ready=1;
+}
+
 static void ts_audio_health_progress_report(const AudioState *audio,char *text,size_t size)
 {
     if(!size)return;
@@ -360,6 +413,7 @@ static void ts_audio_health_reset(AudioState *audio)
                           &ts_health.recovery_base, &ts_health.worker_base, &ts_health.native_kind);
     ts_health.device_generation = audio->audio_health_generation;
     ts_profile_reset();
+    ts_health.recent_profile_valid=0;
     audio->audio_health_started = SDL_GetTicks();
     ts_health.last_update = 0;
     ts_audio_health_sample(audio, SDL_GetTicks());
@@ -550,27 +604,38 @@ static void ts_audio_session_update(AudioState *audio,TsUiState *ui)
 static void ts_audio_profile_draw(TsFramebuffer *fb, uint32_t ink, uint32_t dim)
 {
     TsProfileSnapshot s; ts_profile_snapshot(&s); char line[160];
+    ts_audio_profile_recent(&s);
     snprintf(line,sizeof(line),"%.1F S  %s; SAMPLED 1/32 AUDIO BLOCKS",s.seconds,
         ts_health.profile_effects?"MATRIX FX":"INCLUSIVE WALL TIME");
     cfg_text(fb,20,42,line,dim);
     if(ts_health.profile_effects) {
         cfg_text(fb,20,58,"EFFECT / PRESET",ink);
         cfg_text(fb,276,58,"AVG/BLOCK",ink);cfg_text(fb,350,58,"PEAK/BLOCK",ink);
-        cfg_text(fb,430,58,"MS/S",ink);cfg_text(fb,500,58,"AUDIO%",ink);cfg_text(fb,564,58,"SAMPLES",ink);
-        int row=0;
+        cfg_text(fb,430,58,"CPU%",ink);cfg_text(fb,500,58,"AUDIO%",ink);cfg_text(fb,564,58,"SAMPLES",ink);
+        int order[TS_MATRIX_EFFECT_CAPACITY];
         for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i) {
+            int j=i;order[i]=i;
+            while(j>0 && ts_health.effect_cpu[order[j]]>ts_health.effect_cpu[order[j-1]]) {
+                int tmp=order[j];order[j]=order[j-1];order[--j]=tmp;
+            }
+        }
+        int row=0;
+        for(int at=0;at<TS_MATRIX_EFFECT_CAPACITY;++at) {
+            int i=order[at];
             const TsProfileEffectValue *v=&s.effect[i];if(!v->samples)continue;
             double ms=s.frequency?1000.0*v->blocks.ticks/s.frequency:0;
             int y=77+15*row++;char label[256];ts_profile_effect_label(&v->identity,label,sizeof(label));
             snprintf(line,sizeof(line),"%.40s",label);cfg_text(fb,20,y,line,ink);
             snprintf(line,sizeof(line),"%.3F",v->blocks.calls?ms/v->blocks.calls:0);cfg_text(fb,276,y,line,dim);
             snprintf(line,sizeof(line),"%.3F",s.frequency?1000.0*v->blocks.peak/s.frequency:0);cfg_text(fb,350,y,line,dim);
-            snprintf(line,sizeof(line),"%.1F",s.seconds?ms/s.seconds:0);cfg_text(fb,430,y,line,dim);
+            if(ts_health.recent_profile_ready && ts_health.effect_cpu[i]>=0)snprintf(line,sizeof(line),"%.1F",ts_health.effect_cpu[i]);
+            else snprintf(line,sizeof(line),"--");
+            cfg_text(fb,430,y,line,dim);
             snprintf(line,sizeof(line),"%.1F",s.value[TS_PROF_AUDIO].ticks?100.0*v->blocks.ticks/s.value[TS_PROF_AUDIO].ticks:0);cfg_text(fb,500,y,line,dim);
             snprintf(line,sizeof(line),"%llu",(unsigned long long)v->samples);cfg_text(fb,564,y,line,dim);
         }
         if(!row)cfg_text(fb,20,92,"WAITING FOR SAMPLED MATRIX EFFECT PROCESSING",dim);
-        cfg_text(fb,20,320,"LAST MEASURED INSTANCES; REPLACEMENT RESTARTS ITS ROW.",dim);
+        cfg_text(fb,20,320,"CPU%: RECENT ~1S; OTHER COLUMNS: SINCE PROFILE START / RESET.",dim);
         cfg_text(fb,20,332,"SAMPLED PEAKS. COPY / SAVE INCLUDES NAMES AND CROSSFADE COUNTS.",dim);
         return;
     }
@@ -706,6 +771,7 @@ footer:
 
 static void ts_audio_health_close(void)
 {
+    if(ts_health.owns_profile)ts_profile_enable(0);
     if (ts_health.texture) SDL_DestroyTexture(ts_health.texture);
     if (ts_health.renderer) SDL_DestroyRenderer(ts_health.renderer);
     if (ts_health.window) SDL_DestroyWindow(ts_health.window);
@@ -743,6 +809,27 @@ static int ts_audio_health_show(TsUiState *ui)
     return 1;
 }
 
+static void ts_audio_health_hide(void)
+{
+    ts_health.visible=0;SDL_HideWindow(ts_health.window);
+    if(ts_health.owns_profile) {
+        ts_profile_enable(0);ts_health.owns_profile=0;
+        ts_session_log_event("profile","enabled=0; CPU monitor closed");
+    }
+}
+
+static int ts_audio_health_show_modules(TsUiState *ui)
+{
+    if(!ts_audio_health_show(ui))return 0;
+    ts_health.recent_profile_valid=0;
+    if(!ts_profile_enabled()) {
+        ts_profile_enable(1);ts_health.owns_profile=ts_profile_enabled();
+        ts_session_log_event("profile","enabled=%d; CPU monitor",ts_profile_enabled());
+    }
+    ts_health.profile_effects=1;ts_health.last_update=0;
+    return 1;
+}
+
 static int ts_audio_session_shortcut(const SDL_Event *event)
 {
     if(event->type==SDL_KEYDOWN && event->key.keysym.sym==SDLK_F12 &&
@@ -764,10 +851,15 @@ static int ts_audio_health_event(const SDL_Event *event, SDL_Window *main_window
         !(event->key.keysym.mod & (KMOD_CTRL | KMOD_SHIFT | KMOD_ALT | KMOD_GUI))) {
         if (!event->key.repeat) {
             if (ts_health.visible) {
-                ts_health.visible = 0; SDL_HideWindow(ts_health.window);
+                ts_audio_health_hide();
             } else ts_audio_health_show(ui);
         }
         return 1;
+    }
+    if (event->type == SDL_MOUSEBUTTONDOWN && event->button.button == SDL_BUTTON_LEFT &&
+        id == SDL_GetWindowID(main_window) && sister_performance_keys_allowed(ui)) {
+        int x,y;logical_mouse(main_window,event->button.x,event->button.y,&x,&y);
+        if(ts_ui_cpu_contains(ui,x,y)){ts_audio_health_show_modules(ui);return 1;}
     }
     if (event->type == SDL_MOUSEBUTTONDOWN && event->button.button == SDL_BUTTON_LEFT &&
         id == SDL_GetWindowID(main_window) && ui->config_open) {
@@ -785,7 +877,7 @@ static int ts_audio_health_event(const SDL_Event *event, SDL_Window *main_window
     }
     if ((event->type == SDL_WINDOWEVENT && event->window.event == SDL_WINDOWEVENT_CLOSE) ||
         (event->type == SDL_KEYDOWN && event->key.keysym.sym == SDLK_ESCAPE)) {
-        ts_health.visible = 0; SDL_HideWindow(ts_health.window);
+        ts_audio_health_hide();
     } else if (event->type == SDL_MOUSEBUTTONDOWN && event->button.button == SDL_BUTTON_LEFT) {
         int x, y; logical_mouse(ts_health.window, event->button.x, event->button.y, &x, &y);
         if(ts_profile_enabled() && x>=500 && x<620 && y>=37 && y<55) {
@@ -815,12 +907,13 @@ static int ts_audio_health_event(const SDL_Event *event, SDL_Window *main_window
                 ts_health.message_until = SDL_GetTicks() + 2500u;
                 ts_health.last_update = 0;
             } else if (x >= 310 && x < 490) {
+                ts_health.owns_profile=0;ts_health.recent_profile_valid=0;
                 ts_profile_enable(!ts_profile_enabled());
                 ts_session_log_event("profile","enabled=%d",ts_profile_enabled());
                 ts_audio_health_flash(TS_HEALTH_BUTTON_PROFILE,0,
                     ts_profile_enabled()?"PROFILE STARTED":"PROFILE STOPPED");
             } else if (x >= 500 && x < 620) {
-                ts_health.visible = 0; SDL_HideWindow(ts_health.window);
+                ts_audio_health_hide();
             }
         }
     } else if (event->type == SDL_WINDOWEVENT && event->window.event == SDL_WINDOWEVENT_EXPOSED)

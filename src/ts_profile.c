@@ -142,6 +142,7 @@ void ts_profile_lane_end(int audio)
 void ts_profile_snapshot(TsProfileSnapshot *s)
 {
     memset(s, 0, sizeof(*s)); s->enabled = ts_profile_enabled();
+    s->epoch = atomic_load_explicit(&epoch,memory_order_acquire);
     s->frequency = (double)frequency;
     uint64_t now = s->enabled ? ts_profile_clock() : stopped;
     s->now = now;

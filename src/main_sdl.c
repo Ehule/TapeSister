@@ -9492,6 +9492,9 @@ static int sync_external_input_consumers(SDL_AudioDeviceID *input_device,
 static int ts_audio_health_event(const SDL_Event *event, SDL_Window *main_window,
                                   AudioState *audio, TsUiState *ui);
 static void ts_audio_health_update(AudioState *audio, const TsUiState *ui);
+static void ts_audio_cpu_update(AudioState *audio, TsUiState *ui, Uint32 now);
+static int ts_audio_health_show_modules(TsUiState *ui);
+static double ts_audio_cpu_percent = -1; /* UI thread only; shared with FX Canvas. */
 static int ts_audio_health_drawable(void);
 static void ts_audio_health_reset(AudioState *audio);
 static void ts_audio_health_report(AudioState *audio, char *report, size_t size);
@@ -18969,6 +18972,7 @@ int main(int argc, char **argv)
             ts_tapehead_theme_apply(&ui.palette);
         }
         Uint32 schedule_now = SDL_GetTicks();
+        ts_audio_cpu_update(&audio, &ui, schedule_now);
         int editing = (Uint32)(schedule_now-last_input_ms)<250u || SDL_GetMouseState(NULL,NULL)!=0u;
         int main_editing = (Uint32)(schedule_now-last_main_input_ms)<250u ||
             (SDL_GetMouseFocus()==window && SDL_GetMouseState(NULL,NULL)!=0u);

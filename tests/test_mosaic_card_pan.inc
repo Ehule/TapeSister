@@ -38,7 +38,7 @@ static void test_mosaic_card_pan(SDL_Window *window)
     /* The center detent is stable despite a one-pixel rounded mouse position. */
     a->pan=.5f;pan_handle(a,&x,&y,&span);click(window,x,y,1);motion(window,x-20,y);release(window,x-20,y);assert(a->pan==0);
     /* Footer group edits immediately move each card's displayed pan. */
-    ui.mosaic_selection[1]=b->id;click(window,215,390,1);release(window,215,390);assert(a->pan==1 && b->pan==1);
+    ui.mosaic_selection[1]=b->id;click(window,262,390,1);release(window,262,390);assert(a->pan==1 && b->pan==1);
     pan_handle(a,&x,&y,&span);assert(x==263);
     mosaic_select_only(&ui,a->id);
     /* Only the diamond owns pan drags; the lower line/body remains movable. */
