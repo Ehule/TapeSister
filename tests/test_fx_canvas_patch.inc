@@ -24,12 +24,13 @@ static void patch_workflow(void)
     key(SDLK_DELETE,0);key(SDLK_n,0);assert(edit_slot(id)<0 && !w->controls.row[TS_MATRIX_MOSAIC].matrix_gain[TS_MATRIX_EFFECT_BASE+comp]);
     edit_settle();key(SDLK_z,KMOD_CTRL);edit_settle();fx_build(&pages,&bank);fx_select(instance(id),0);
     /* F2 properties commit once and survive layout persistence and undo. */
+    int split=w->layout->canvas_split;w->layout->canvas_split=TS_FX_CANVAS_SPLIT_MIN;
     key(SDLK_F2,0);assert(fx_canvas.properties);
     SDL_Event text;SDL_zero(text);text.type=SDL_TEXTINPUT;text.text.windowID=w->id;
     snprintf(text.text.text,sizeof(text.text.text),"ANGELIC DRIVE");assert(event(&text));
     click(324+8*39+10,385,1);uint32_t color=fx_canvas.properties_color;assert(color==fx_swatch(8));
     const char *preview=getenv("TS_FX_PREVIEW");if(preview){char path[1024];snprintf(path,sizeof(path),"%s/card-properties.bmp",preview);screenshot(path);}
-    key(SDLK_RETURN,0);TsFxCanvasPosition *position=fx_position(instance(id)->row,0);assert(position);
+    key(SDLK_RETURN,0);w->layout->canvas_split=split;TsFxCanvasPosition *position=fx_position(instance(id)->row,0);assert(position);
     assert(!strcmp(position->name,"ANGELIC DRIVE") && position->color==color);view_codec();
     key(SDLK_z,KMOD_CTRL);assert(!position->name[0] && !position->color);key(SDLK_y,KMOD_CTRL);view_codec();
     /* Native replacement uses the actual picker and preserves all main cables. */
