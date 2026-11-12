@@ -15,6 +15,7 @@ ARCHIVE = REPO / "third_party/sunvox/sunvox-2.1.4d.tar.gz"
 # Known-good output from the audio-validated SDK preparation.
 # These hashes cover whole files, including their non-ASCII source strings.
 PREPARED = {
+    "lib_sunvox/psynth/psynths_echo.cpp": "84db3f8975bdccdb03a0ceae46aa717123fc919b0dd09bd097f1cf7e581e71cb",
     "lib_sunvox/sunvox_engine.cpp": "02e10a346b1274ec81548bf86021571136b23633483374f88fdcd3c0e60faffd",
     "lib_sunvox/psynth/psynths_reverb.cpp": "6fe70d983acb191bdb5719d2876272c8396fecd8a39faf2705cf128cbbcdea90",
     "lib_sunvox/psynth/psynths_delay.cpp": "4095544f408df585243a11f02af66f371cfb648c6dc96ff8a441f0a1f2667c36",
@@ -81,11 +82,18 @@ class PrepareSunVoxTest(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, "Unexpected pinned SunVox source"):
             self.prepare_and_check()
 
+    def test_changed_echo_is_rejected(self):
+        path = self.root / "lib_sunvox/psynth/psynths_echo.cpp"
+        path.write_bytes(path.read_bytes().replace(b"psynth_denorm_add_white_noise( v );", b""))
+        with self.assertRaisesRegex(SystemExit, "Unexpected pinned SunVox source"):
+            self.prepare_and_check()
+
     def test_reference_is_pristine(self):
         self.prepare_and_check()
         with tarfile.open(ARCHIVE, "r:gz") as archive:
-            with archive.extractfile("lib_sunvox/psynth/psynths_delay.cpp") as source:
-                self.assertEqual((self.root / "reference/psynths_delay.cpp").read_bytes(), source.read())
+            for name in ("delay", "echo"):
+                with archive.extractfile(f"lib_sunvox/psynth/psynths_{name}.cpp") as source:
+                    self.assertEqual((self.root / f"reference/psynths_{name}.cpp").read_bytes(), source.read())
 
 
 if __name__ == "__main__":

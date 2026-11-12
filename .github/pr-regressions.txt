@@ -79,3 +79,4 @@ test_sister_duck_filter test_sister_duck_filter
 test_sister_fallout test_sister_fallout
 tapesister_fx_silence_tests fx_silence_exact
 tapesister_matrix_blocks_tests matrix_blocks_exact
+tapesister_sunvox_echo_tests sunvox_echo_exact
