@@ -47,7 +47,9 @@ static void test_mosaic_scroll_cards(void)
             for(int step=0;step<48;++step) {
                 double travel=(step<24?step:47-step)*.613;
                 view.mosaic_scroll=(scene==2?9.37:.37)+travel/rate;
-                view.mosaic_xscroll=3.17+(scene==1?0:travel*.53/sx);
+                /* Marker dashes span the viewport, so their horizontal phase
+                   does not follow card panning. Test vertical motion with markers. */
+                view.mosaic_xscroll=3.17+(scene?0:travel*.53/sx);
                 native_waveform_prepare(r,details,1);ts_ui_render(&fb,&view,&doc);
                 assert(!SDL_UpdateTexture(base,NULL,fb.pixels,640*4));
                 assert(!SDL_RenderCopy(r,base,NULL,NULL));native_waveform_copy(r,textures,details,&fb);
@@ -73,12 +75,16 @@ static void test_mosaic_scroll_cards(void)
             if(!getenv("TS_MOSAIC_SCROLL_COMPARE"))assert(changed==0);
             printf("Mosaic ruler %s %dx%d scale %.2f: %llu/%llu translated pixels changed\n",scene==2?"local project":scene==1?"synthetic markers":"synthetic",width,height,view.mosaic_scale,ruler_changed,ruler_compared);
             if(!getenv("TS_MOSAIC_SCROLL_COMPARE"))assert(ruler_changed==0);
-            if(scene==2 && (pass==1 || pass==3)) {
+            if(scene && (pass==1 || pass==3)) {
                 /* Run the real audio clock and FOLLOW controller across the
                    scroll threshold, masking only the independent playhead ink. */
                 const char *frames=getenv("TS_MOSAIC_SCROLL_FRAMES");
                 MosaicController follow={0};view.mosaic_follow=1;view.mosaic_scroll=view.mosaic_xscroll=0;
-                int from=pass==3?70:7,pixel_scale=height/400;
+                int from=pass==3?70:7;
+                if(scene==1) {
+                    view.mosaic->events[0].duration=200;view.mosaic->repeat=0;
+                    view.mosaic->markers[0].time=from+2;view.mosaic->markers[1].time=from+4;
+                }
                 ts_mosaic_seek(view.mosaic,from);view.mosaic->playing=1;
                 int previous_pan=0,previous_head=0;changed=compared=ruler_changed=ruler_compared=0;
                 for(int frame=0;frame<210;++frame) {
@@ -90,11 +96,13 @@ static void test_mosaic_scroll_cards(void)
                     assert(!SDL_RenderReadPixels(r,NULL,SDL_PIXELFORMAT_ARGB8888,pixels,width*4));
                     TsUiWaveformDetail *d=&details[0];
                     int pan=(int)floor(view.mosaic_scroll*rate+.5);
-                    int head=(int)((view.mosaic_time-view.mosaic_scroll)*view.mosaic_scale)*pixel_scale;
+                    int head=(int)((view.mosaic_time-view.mosaic_scroll)*view.mosaic_scale);
                     if(frame) {
                         int dy=pan-previous_pan;assert(dy>=0);
                         for(int y=0;y<d->height-dy;++y) {
-                            if((y>=head && y<head+pixel_scale) || (y+dy>=previous_head && y+dy<previous_head+pixel_scale))continue;
+                            int logical=(int)((2LL*y+1)*d->logical_height/(2LL*d->height));
+                            int previous=(int)((2LL*(y+dy)+1)*d->logical_height/(2LL*d->height));
+                            if(logical==head || previous==previous_head)continue;
                             for(int x=0;x<d->width;++x) {
                                 size_t at=(size_t)(d->output_y+y)*width+d->output_x+x;
                                 changed+=pixels[at]!=reference[at+(size_t)dy*width];++compared;
@@ -103,8 +111,10 @@ static void test_mosaic_scroll_cards(void)
                         for(int y=0;y<d->height-dy;++y) {
                             /* Include the ruler and tick stubs, excluding the
                                arrow which is two logical rows above the line. */
-                            if((y>=head-2*pixel_scale && y<head+3*pixel_scale) ||
-                               (y+dy>=previous_head-2*pixel_scale && y+dy<previous_head+3*pixel_scale))continue;
+                            int logical=(int)((2LL*y+1)*d->logical_height/(2LL*d->height));
+                            int previous=(int)((2LL*(y+dy)+1)*d->logical_height/(2LL*d->height));
+                            if((logical>=head-2 && logical<head+3) ||
+                               (previous>=previous_head-2 && previous<previous_head+3))continue;
                             for(int x=113*width/640;x<151*width/640;++x) {
                                 size_t at=(size_t)(d->output_y+y)*width+x;
                                 ruler_changed+=pixels[at]!=reference[at+(size_t)dy*width];++ruler_compared;
