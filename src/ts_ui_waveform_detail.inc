@@ -281,6 +281,9 @@ int ts_ui_waveform_detail_finish(TsUiWaveformDetail *d, const TsFramebuffer *fb)
                 int xfirst=(int)((2LL*lx*d->width+d->logical_width-1)/(2LL*d->logical_width));
                 int xlast=(int)((2LL*(lx+1)*d->width+d->logical_width-1)/(2LL*d->logical_width));
                 int overlay=row[lx]!=d->coarse[ly*d->logical_width+lx];
+                /* A freshly painted scene already contains its base pixels.
+                   Only later overlays need compositing on a cache miss. */
+                if(d->scene_raster && d->raster_changed && !overlay)continue;
                 for(int py=first;py<last;++py)for(int px=xfirst;px<xlast;++px) {
                     size_t at=(size_t)py*d->width+px;
                     uint32_t color=overlay?row[lx]:d->raster[at];
