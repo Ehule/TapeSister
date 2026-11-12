@@ -75,6 +75,7 @@ static int mx_apply(const MatrixSnapshot *s,SDL_AudioDeviceID device,AudioState 
     ts_sister_runtime_set_sources(&audio->sister,s->sources);
     w->controls=ui->config.matrix=controls;w->legacy=ui->config.router=s->router;
     w->array=ui->config.spatial=s->spatial;ui->config.insert=s->insert;
+    audio->gallery_external_roots=ts_sample_pages_external_effect_roots(pages,bank);
     if(device)SDL_UnlockAudioDevice(device);
     mx_refresh_tracker(pages,bank);mx_rows(pages,bank);mx_reveal_column(w->destination);w->dirty=1;return 1;
 }

@@ -327,11 +327,46 @@ static void test_canvas_transfer(void)
     ts_mosaic_free(selected.scene);ts_mosaic_free(portable.scene);ts_mosaic_free(migrated.scene);ts_mosaic_free(legacy.scene);
     ts_sample_pages_free(&pages);ts_mosaic_free(root);ts_instrument_free(&bank);ts_instrument_free(&record);
 }
+static void test_effect_ownership(void)
+{
+    char error[160];TsSamplePages pages={0};TsInstrument *bank=calloc(1,sizeof(*bank));assert(bank);
+    assert(ts_sample_pages_init(&pages,error,sizeof(error)));ts_instrument_init(bank);
+    TsMosaic *root=scene(.2f,0,0);pages.mosaic=root;assert(ts_sample_pages_enable_gallery(&pages,error,sizeof(error)));
+    TsMosaicGallery *g=pages.gallery;
+    assert(ts_gallery_append_prepared(g,scene(.3f,0,0),error,sizeof(error)));
+    assert(ts_gallery_append_prepared(g,scene(.4f,0,0),error,sizeof(error)));
+    TsMatrixControls matrix;ts_matrix_default(&matrix);matrix.enabled=1;
+    for(int i=0;i<TS_MATRIX_ROWS;++i)matrix.row[i]=(TsSourceRoute){.matrix_enabled=1};
+    for(int i=0;i<5;++i)assert(ts_matrix_effect_add(&matrix,TS_SISTER_FX_DELAY)==i);
+    for(int i=0;i<3;++i){g->canvas[i].scene->events[0].output_route=(TsSourceRoute){.matrix_enabled=1};g->canvas[i].scene->events[0].output_route.matrix_gain[TS_MATRIX_EFFECT_BASE+i]=1000;}
+    matrix.row[TS_MATRIX_EFFECT_BASE].matrix_gain[TS_MATRIX_EFFECT_BASE+4]=1000;
+    matrix.row[TS_MATRIX_EFFECT_BASE+1].matrix_gain[TS_MATRIX_EFFECT_BASE+4]=1000;
+    matrix.row[TS_MATRIX_EFFECT_BASE+1].matrix_gain[TS_MATRIX_EFFECT_SC_BASE+3]=1000;
+    matrix.row[TS_MATRIX_EFFECT_BASE+2].matrix_gain[TS_MATRIX_EFFECT_BASE+3]=1000;
+    TsGalleryEffectActivity cache={0};
+#define PARKED() ts_sample_pages_gallery_suspended_effects(&pages,bank,&matrix,&cache,0)
+    assert(PARKED()==14); /* active 0 protects shared 4; inactive 1,2,3 sleep */
+    assert(ts_gallery_switch(g,1,error,sizeof(error)));assert(PARKED()==4); /* both sides of fade awake */
+    g->outgoing=-1;assert(PARKED()==5); /* 0 and 2 sleep; shared 3 stays awake */
+    g->canvas[1].scene->playing=0;assert(PARKED()==5); /* Space leaves tails */
+    matrix.row[TS_MATRIX_LINK].matrix_gain[TS_MATRIX_EFFECT_BASE+2]=1000;assert(PARKED()==1);
+    matrix.row[TS_MATRIX_LINK].matrix_gain[TS_MATRIX_EFFECT_BASE+2]=0;
+    bank->bank[0].occupied=1;bank->bank[0].output_route=(TsSourceRoute){.matrix_enabled=1};
+    bank->bank[0].output_route.matrix_gain[TS_MATRIX_EFFECT_BASE]=1000;assert(PARKED()==4);
+    bank->bank[0].occupied=0;pages.tracker.lanes[0].output_route=bank->bank[0].output_route;assert(PARKED()==4);
+    pages.tracker.lanes[0].output_route=(TsSourceRoute){0};
+    assert(ts_sample_pages_gallery_suspended_effects(&pages,bank,&matrix,&cache,1)==4); /* held external voice */
+    g->canvas[1].scene->events[0].output_route.matrix_gain[TS_MATRIX_EFFECT_BASE]=1000;
+    ++g->canvas[1].scene->revision;assert(PARKED()==4); /* route edit invalidates cached ownership */
+    matrix.enabled=0;assert(!PARKED());
+#undef PARKED
+    ts_sample_pages_free(&pages);ts_mosaic_free(root);ts_instrument_free(bank);free(bank);
+}
 int main(void)
 {
     char run[128];int created=0;
     for(int i=0;i<100 && !created;++i){snprintf(run,sizeof(run),"run-%lu-%d",(unsigned long)GALLERY_PID(),i);created=MKDIR(run)==0;}
     assert(created && !GALLERY_CHDIR(run));
-    test_fade();test_loop_resume();test_pages();test_move_replace();test_storage();test_canvas_transfer();test_routed_transfer();
+    test_effect_ownership();test_fade();test_loop_resume();test_pages();test_move_replace();test_storage();test_canvas_transfer();test_routed_transfer();
     puts("Mosaic Gallery fades, routes, loop resume, entry points, identity and transactional project storage passed");return 0;
 }

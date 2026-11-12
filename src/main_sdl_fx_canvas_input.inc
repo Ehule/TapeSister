@@ -1,6 +1,6 @@
 /* Canvas gestures use their own drag range; parameter editors already use 10..40. */
 static int fx_canvas_key(SDL_Keycode key)
-{return key==SDLK_ESCAPE || key==SDLK_DELETE || key==SDLK_BACKSPACE || key==SDLK_HOME || key==SDLK_z || key==SDLK_m || key==SDLK_g || key==SDLK_s || key==SDLK_x;}
+{return key==SDLK_t || key==SDLK_F2 || key==SDLK_ESCAPE || key==SDLK_DELETE || key==SDLK_BACKSPACE || key==SDLK_HOME || key==SDLK_z || key==SDLK_m || key==SDLK_g || key==SDLK_s || key==SDLK_x;}
 static void fx_bypass_selection(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui)
 {
     MatrixWindow *w=&matrix_window;int any=0,count=0;
@@ -17,6 +17,9 @@ static void fx_bypass_selection(SDL_AudioDeviceID device,AudioState *audio,TsUiS
 static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsSamplePages *pages,TsInstrument *bank,int x,int y,int wheel)
 {
     MatrixWindow *w=&matrix_window;TsMatrixLayout *l=w->layout;
+    if(fx_canvas.label_editing)return fx_label_edit_event(e);
+    if(fx_label_drag_event(e,x,y))return 1;
+    if(fx_canvas.label_selected>=l->label_count)fx_canvas.label_selected=-1;
     if(e->type==SDL_KEYUP){if(fx_canvas_key(e->key.keysym.sym) || ((e->key.keysym.mod&KMOD_CTRL) && (e->key.keysym.sym==SDLK_a || e->key.keysym.sym==SDLK_n || e->key.keysym.sym==SDLK_c || e->key.keysym.sym==SDLK_v)))return 1;
         e->key.windowID=SDL_GetWindowID(main);return 0;}
     if(fx_canvas.movement_popup) {
@@ -58,6 +61,23 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
     if(e->type==SDL_KEYDOWN) {
         SDL_Keycode key=e->key.keysym.sym;int mod=e->key.keysym.mod;
         if(e->key.repeat && (fx_canvas_key(key) || (mod&KMOD_CTRL)))return 1;
+        if(key==SDLK_t && !(mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI)) && !fx_canvas.meta) {
+            fx_canvas.place_x=(SDL_clamp(fx_canvas.mouse_x,20,fx_right())-20)/l->canvas_zoom-l->canvas_x;
+            fx_canvas.place_y=(SDL_clamp(fx_canvas.mouse_y,FX_TOP,FX_BOTTOM)-FX_TOP)/l->canvas_zoom-l->canvas_y;
+            fx_label_begin(-1);return 1;
+        }
+        if(fx_canvas.label_selected>=0 && !fx_canvas.meta) {
+            int i=fx_canvas.label_selected;
+            if(key==SDLK_F2){fx_label_begin(i);return 1;}
+            if(key==SDLK_DELETE || key==SDLK_BACKSPACE || key==SDLK_x) {
+                memmove(l->labels+i,l->labels+i+1,(size_t)(l->label_count-i-1)*sizeof(l->labels[0]));
+                memset(l->labels+--l->label_count,0,sizeof(l->labels[0]));fx_canvas.label_selected=-1;return 1;
+            }
+            if(!(mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI)) && (key==SDLK_g || key==SDLK_s)) {
+                fx_label_drag(key==SDLK_g?FX_DRAG_LABEL_GRAB:FX_DRAG_LABEL_SCALE,fx_canvas.mouse_x,fx_canvas.mouse_y);return 1;
+            }
+            if(key==SDLK_ESCAPE){fx_canvas.label_selected=-1;return 1;}
+        }
         if(key==SDLK_ESCAPE) {
             if(fx_canvas.popup){fx_canvas.popup=0;return 1;}
             if(w->drag){fx_cancel_gesture();return 1;}
@@ -165,6 +185,15 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
     if(click && e->button.button==SDL_BUTTON_MIDDLE){w->drag=FX_DRAG_PAN;fx_canvas.origin_x=l->canvas_x;fx_canvas.origin_y=l->canvas_y;fx_canvas.pointer_x=x;fx_canvas.pointer_y=y;return 1;}
     if(wheel)return 1;
     if(!click)return 1;
+    for(int i=l->label_count-1;i>=0;--i) {
+        SDL_Rect r=fx_label_rect(&l->labels[i]);
+        if(left && x>=r.x && x<r.x+r.w && y>=r.y && y<r.y+r.h) {
+            fx_clear_selection();fx_clear_wires();fx_canvas.label_selected=i;w->effect_open=w->compressor_open=0;
+            if(e->button.clicks>=2)fx_label_begin(i);else fx_label_drag(FX_DRAG_LABEL,x,y);
+            snprintf(w->status,sizeof(w->status),"TEXT LABEL / DOUBLE-CLICK OR F2: EDIT / G: MOVE / S: SIZE / DELETE: REMOVE");return 1;
+        }
+    }
+    fx_canvas.label_selected=-1;
     for(int i=fx_canvas.count-1;i>=0;--i) {
         FxCanvasNode *n=&fx_canvas.node[i];int xx=fx_x(n->x),yy=fx_y(n->y),ww=(int)(fx_node_w(n)*l->canvas_zoom),hh=(int)(fx_node_h(n)*l->canvas_zoom);
         if(left && n->at>=0 && abs(x-(xx+ww))<12 && abs(y-(yy+hh/2))<12){fx_canvas.source=n->row;fx_canvas.wire=i;fx_canvas.destination=-1;w->drag=FX_DRAG_WIRE;fx_canvas.move_count=0;fx_canvas.mouse_x=x;fx_canvas.mouse_y=y;return 1;}

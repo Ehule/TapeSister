@@ -22,6 +22,13 @@ static int key_compare(const void *a,const void *b)
 int ts_matrix_layout_valid(const TsMatrixLayout *l)
 {
     if(!l || l->row_count<0 || l->row_count>TS_MATRIX_LAYOUT_ROWS)return 0;
+    if(l->label_count<0 || l->label_count>TS_FX_LABEL_LIMIT)return 0;
+    for(int i=0;i<l->label_count;++i) {
+        const TsFxCanvasLabel *p=&l->labels[i];
+        if(!isfinite(p->x) || !isfinite(p->y) || fabsf(p->x)>1000000 || fabsf(p->y)>1000000 ||
+           !isfinite(p->scale) || p->scale<.25f || p->scale>4 || !memchr(p->text,0,sizeof(p->text)))return 0;
+        for(const unsigned char *s=(const unsigned char *)p->text;*s;++s)if(*s!='\n' && (*s<32 || *s>126))return 0;
+    }
     unsigned char seen[TS_MATRIX_DESTINATIONS]={0};
     for(int i=0;i<TS_MATRIX_DESTINATIONS;++i) {
         unsigned d=l->column[i];
@@ -67,6 +74,12 @@ int ts_matrix_layout_write(FILE *f,const TsMatrixLayout *l)
     if(fprintf(f,"FxCanvas.Straight=%d\n",l->canvas_straight)<0)return 0;
     if(fprintf(f,"FxCanvas.Snap=%d\n",l->canvas_snap)<0)return 0;
     if(fprintf(f,"FxCanvas.Split=%d\n",l->canvas_split)<0)return 0;
+    for(int i=0;i<l->label_count;++i) {
+        const TsFxCanvasLabel *p=&l->labels[i];
+        if(fprintf(f,"FxCanvas.Label%d=%.9g,%.9g,%.9g,",i,p->x,p->y,p->scale)<0)return 0;
+        for(const unsigned char *s=(const unsigned char *)p->text;*s;++s)if(fprintf(f,"%02x",*s)<0)return 0;
+        if(fputc('\n',f)==EOF)return 0;
+    }
     for(int i=0;i<l->canvas_count;++i) {
         const TsFxCanvasPosition *p=&l->canvas[i];
         if(fprintf(f,"FxCanvas.Node%d=%d,%" PRIu64 ",%.9g,%.9g",i,p->kind,p->id,p->x,p->y)<0)return 0;
@@ -92,6 +105,20 @@ static int layout_number(const char **cursor,uint64_t maximum,uint64_t *number)
 int ts_matrix_layout_read(TsMatrixLayout *l,const char *key,const char *value)
 {
     uint64_t i,d,kind,id;const char *s;
+    if(!strncmp(key,"FxCanvas.Label",14)) {
+        s=key+14;TsFxCanvasLabel p={0};int end=0;
+        if(!layout_number(&s,TS_FX_LABEL_LIMIT-1,&i) || *s || i!=(uint64_t)l->label_count ||
+           sscanf(value,"%f,%f,%f,%n",&p.x,&p.y,&p.scale,&end)!=3 || !end ||
+           !isfinite(p.x) || !isfinite(p.y) || fabsf(p.x)>1000000 || fabsf(p.y)>1000000 ||
+           !isfinite(p.scale) || p.scale<.25f || p.scale>4)return -1;
+        s=value+end;size_t len=strlen(s);if(len%2 || len/2>=sizeof(p.text))return -1;
+        for(size_t j=0;j<len;j+=2) {
+            if(!isxdigit((unsigned char)s[j]) || !isxdigit((unsigned char)s[j+1]))return -1;
+            char byte[3]={s[j],s[j+1],0};unsigned v=(unsigned)strtoul(byte,NULL,16);
+            if(v!='\n' && (v<32 || v>126))return -1;p.text[j/2]=(char)v;
+        }
+        l->labels[l->label_count++]=p;return 1;
+    }
     if(!strcmp(key,"FxCanvas.Straight")) {
         if(!strcmp(value,"0"))l->canvas_straight=0;else if(!strcmp(value,"1"))l->canvas_straight=1;else return -1;
         return 1;

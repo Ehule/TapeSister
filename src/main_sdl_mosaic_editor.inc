@@ -1,6 +1,8 @@
 /* The main window is a view of one event document. Park the sample bank while
    editing; callback voices always read Mosaic's immutable sources. */
 struct MosaicController {
+    Uint32 escape_ms;
+    int escape_armed;
     TsSamplePages *pages;
     TsInstrument *bank;
     TsInstrument *documents[TS_MOSAIC_EVENTS];

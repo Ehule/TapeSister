@@ -38,7 +38,18 @@ browsing changes pages immediately. A zero-second fade is an immediate switch.
 During a fade, the outgoing picture continues while the destination enters. Only
 these two canvases render. A further page turn waits until the fade finishes; it
 is not queued. The outgoing canvas then parks, retaining its runtime position for
-RESUME. Each canvas retains its own cards, loop definitions, sequences, envelope,
+RESUME. Its exclusive Matrix effect chains then fade out over 5 ms and suspend
+processing, retaining their DSP history in memory until the canvas returns. The
+ownership check runs at audio-block boundaries, so suspension starts no later
+than the next callback after the page fade. Both canvases remain awake throughout
+the fade. Even never-visited canvases have their exclusive engines suspended.
+
+Shared effects stay awake when used by the active canvas, a held source note, a
+configured tile/tracker route, or a fixed bus. Sidechain and feedback connections
+are included. Unowned effects and global buses remain project-wide. This is
+independent of the FX Canvas view filter, bypass and wet/dry settings.
+
+Each canvas retains its own cards, loop definitions, sequences, envelope,
 markers, saved views and arrangement undo history. The current zoom/scroll also
 returns when revisiting a canvas during the session. Runtime playheads, sounding
 notes, undo history and current scroll are not restored when reopening a project.

@@ -73,7 +73,7 @@ int main(int argc,char **argv)
     assert(live_test.state==LT_ARMED && !live_test.next);
     /* A press of the real transport arms the monotonic schedule. */
     ts_profile_enable(1);
-    mosaic_transport(0,&u,0);assert(live_test.state==LT_PENDING && u.mosaic->playing && !ts_profile_enabled());
+    mosaic_transport(0,&a,&u,0);assert(live_test.state==LT_PENDING && u.mosaic->playing && !ts_profile_enabled());
     live_test_poll(window,0,&a,&u,&pages,&bank,&mosaic,&portal,&sister,&transform,live_test.started);
     assert(live_test.state==LT_RUNNING && live_test.next==1);
     Uint64 origin=live_test.started;
@@ -90,7 +90,7 @@ int main(int argc,char **argv)
     solo.value=0;assert(live_test_action(&solo,window,0,&a,&u,&pages,&bank,&mosaic,&portal,&sister,&transform));
     SDL_Event escape=live_test_key(window,SDLK_ESCAPE,KMOD_NONE);
     assert(live_test_input(&escape,0,&a,&u) && live_test.state==LT_ABORTED && !u.mosaic->playing && ts_profile_enabled());
-    mosaic_transport(0,&u,0);assert(live_test.state==LT_ABORTED);mosaic_transport(0,&u,1);
+    mosaic_transport(0,&a,&u,0);assert(live_test.state==LT_ABORTED);mosaic_transport(0,&a,&u,1);
     /* Saving a diagnostic edit must stop before allocating/writing a journal. */
     assert(!project_save_start(0,&a,&u,&pages,&bank,NULL,NULL,"must-not-exist.tsr",error,sizeof(error)));
     assert(strstr(error,"temporary"));
@@ -109,7 +109,7 @@ int main(int argc,char **argv)
     live_test_poll(window,0,&a,&u,&pages,&bank,&mosaic,&portal,&sister,&transform,SDL_GetPerformanceCounter());
     assert(live_test.state==LT_ARMED && pages.gallery->active==0 && pages.mosaic==u.mosaic && a.mosaic==u.mosaic);
     assert(u.mosaic->time==0 && !u.mosaic->playing && pages.gallery->outgoing<0);
-    mosaic_transport(0,&u,0);assert(live_test.state==LT_PENDING && u.mosaic->playing);
+    mosaic_transport(0,&a,&u,0);assert(live_test.state==LT_PENDING && u.mosaic->playing);
     origin=live_test.started;
     for(int step=0;step<live_test.count;++step) {
         unsigned ms=live_test.steps[step].ms;
@@ -136,7 +136,7 @@ int main(int argc,char **argv)
     assert(!strcmp(live_test_scenario(),"tree04-keter-profile-v1"));
     live_test_poll(window,0,&a,&u,&pages,&bank,&mosaic,&portal,&sister,&transform,SDL_GetPerformanceCounter());
     assert(strstr(u.status,"KETER PROFILE TEST ARMED") && u.mosaic->time==0);
-    mosaic_transport(0,&u,0);assert(ts_profile_enabled());
+    mosaic_transport(0,&a,&u,0);assert(ts_profile_enabled());
     live_test_poll(window,0,&a,&u,&pages,&bank,&mosaic,&portal,&sister,&transform,live_test.started);
     ts_profile_lane_begin(1);
     uint64_t timer=ts_profile_begin(TS_PROF_AUDIO);SDL_Delay(1);
@@ -155,7 +155,7 @@ int main(int argc,char **argv)
     pages.gallery->active=2;a.mosaic=u.mosaic=pages.mosaic=ts_gallery_active(pages.gallery);
     live_test_loaded(0,&a,&u,&pages,u.project_path);
     live_test_poll(window,0,&a,&u,&pages,&bank,&mosaic,&portal,&sister,&transform,SDL_GetPerformanceCounter());
-    mosaic_transport(0,&u,0);assert(ts_profile_enabled());
+    mosaic_transport(0,&a,&u,0);assert(ts_profile_enabled());
     SDL_Delay(50);
     assert(live_test_input(&escape,0,&a,&u) && live_test.state==LT_ABORTED && !ts_profile_enabled());
     ts_session_log_stop();

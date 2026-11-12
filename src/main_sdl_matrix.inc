@@ -35,6 +35,7 @@ static MatrixWindow matrix_window={.selected=-1,.rename=-1};
 static int mx_destination_available(int d);
 static void matrix_history_clear(void);
 static void fx_context_reset(void);
+static void fx_label_cancel(void);
 static void fx_stroke_free(void);
 static void fx_cables_free(void);
 static void fx_cancel_gesture(void);
@@ -295,7 +296,7 @@ static TsSourceRoute mx_display_route(TsSourceRoute raw)
 static void matrix_hide(void)
 {
     ts_session_log_text("matrix_window","close");
-    fx_cancel_gesture();
+    fx_cancel_gesture();fx_label_cancel();
     svfx_close();matrix_window.visible=0;matrix_window.drag=0;matrix_window.rename=-1;
     SDL_StopTextInput();if(matrix_window.window)SDL_HideWindow(matrix_window.window);
 }
@@ -607,6 +608,7 @@ static void mx_commit_route(SDL_AudioDeviceID device,AudioState *audio,TsUiState
     if(device)SDL_LockAudioDevice(device);
     if(row.kind==0)pages->tracker.lanes[row.index].output_route=route;
     else {TsBankSlot *slot=mx_tile(pages,bank,row.tile);if(slot){slot->output_route=route;source_route_update_voices(audio,row.tile,route);}}
+    audio->gallery_external_roots=ts_sample_pages_external_effect_roots(pages,bank);
     if(device)SDL_UnlockAudioDevice(device);
     ts_tapehead_routes_changed(row.kind==1?row.tile:0,route);w->dirty=1;
 }
@@ -626,6 +628,7 @@ static void mx_return_bus(SDL_AudioDeviceID device,AudioState *audio,TsUiState *
         else {TsBankSlot *slot=mx_tile(pages,bank,row.tile);if(slot){slot->output_route=route;source_route_update_voices(audio,row.tile,route);}}
         ++count;
     }
+    audio->gallery_external_roots=ts_sample_pages_external_effect_roots(pages,bank);
     if(device)SDL_UnlockAudioDevice(device);
     if(kind==0 || kind==1)mx_refresh_tracker(pages,bank);
     w->dirty=1;
@@ -657,9 +660,10 @@ static void mx_bulk(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsS
         if((row.kind==2 || row.kind==4)){if(pan)next.row[row.index].pan=r.pan;}
         else if(row.kind==0)pages->tracker.lanes[row.index].output_route=r;
         else if(row.kind==1){TsBankSlot *slot=mx_tile(pages,bank,row.tile);if(slot){slot->output_route=r;source_route_update_voices(audio,row.tile,r);}}
-        else {TsMosaicEvent *e=mx_card(row);if(e)e->output_route=r;}
+        else {TsMosaicEvent *e=mx_card(row);if(e){e->output_route=r;++mx_card_scene(row)->revision;}}
     }
     w->controls=next;ts_matrix_set(&audio->sister.matrix,&next,(unsigned)audio->output_rate);ui->config.matrix=next;
+    audio->gallery_external_roots=ts_sample_pages_external_effect_roots(pages,bank);
     if(device)SDL_UnlockAudioDevice(device);
     mx_refresh_tracker(pages,bank);w->selected=selected;w->dirty=1;
     snprintf(w->status,sizeof(w->status),"%d ROW%s UPDATED - CTRL+Z TO UNDO.",count,count==1?"":"S");
@@ -714,6 +718,7 @@ static void mx_reset_routes(SDL_AudioDeviceID device,AudioState *audio,TsUiState
     source_route_update_voices(audio,0,route);
     ts_matrix_set(&audio->sister.matrix,&controls,(unsigned)audio->output_rate);
     ui->config.matrix=w->controls=audio->sister.matrix.controls;
+    audio->gallery_external_roots=ts_sample_pages_external_effect_roots(pages,bank);
     if(device)SDL_UnlockAudioDevice(device);
     /* One cache refresh, not a score hash and host lock for every tile. */
     ts_tapehead_all_routes_changed(route);
@@ -973,6 +978,7 @@ static int matrix_event_inner(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID de
         w->dirty=1;return 1;
     }
     if(!w->visible)return 1;
+    if(w->canvas && fx_canvas.label_editing)return fx_label_edit_event(e);
     if(sunvox_editor.node)return svfx_event(e,device,audio,ui,pages,bank);
     if(w->canvas && (fx_modal() || fx_canvas.confirm_clear || fx_canvas.popup) && (e->type==SDL_KEYDOWN || e->type==SDL_KEYUP))return fx_event(e,main,device,audio,ui,pages,bank,0,0,0);
     if(w->rename>=0) {
@@ -1160,7 +1166,7 @@ static int matrix_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,A
     if(fx_divider_event(e))return 1;
     int own=w->visible && event_window_id(e)==w->id;
     if(own && e->type!=SDL_MOUSEMOTION)w->dirty=1;
-    int edit=own && ((w->canvas && fx_canvas.popup && e->type==SDL_KEYDOWN && (e->key.keysym.sym==SDLK_RETURN || e->key.keysym.sym==SDLK_KP_ENTER)) || (sunvox_editor.node && (e->type==SDL_DROPFILE || (e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_RETURN))) || e->type==SDL_MOUSEBUTTONDOWN || e->type==SDL_MOUSEWHEEL ||
+    int edit=own && ((w->canvas && fx_canvas.label_editing && e->type==SDL_KEYDOWN && (e->key.keysym.sym==SDLK_RETURN || e->key.keysym.sym==SDLK_KP_ENTER)) || (w->canvas && fx_canvas.popup && e->type==SDL_KEYDOWN && (e->key.keysym.sym==SDLK_RETURN || e->key.keysym.sym==SDLK_KP_ENTER)) || (sunvox_editor.node && (e->type==SDL_DROPFILE || (e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_RETURN))) || e->type==SDL_MOUSEBUTTONDOWN || e->type==SDL_MOUSEWHEEL ||
         (w->canvas && e->type==SDL_KEYDOWN && (fx_canvas_key(e->key.keysym.sym) || ((e->key.keysym.mod&KMOD_CTRL) && e->key.keysym.sym==SDLK_v))) ||
         (w->rename>=0 && e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_RETURN) ||
         (w->rename<0 && e->type==SDL_KEYDOWN && mx_layout_key(e)));

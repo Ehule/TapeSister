@@ -134,6 +134,7 @@ static void source_route_commit(SDL_AudioDeviceID device,AudioState *audio,TsSam
         if(slot){slot->output_route=route;source_route_update_voices(audio,w->tile,route);}
     }
     source_route_capture(audio,pages,instrument);
+    audio->gallery_external_roots=ts_sample_pages_external_effect_roots(pages,instrument);
     if(device)SDL_UnlockAudioDevice(device);
     ts_tapehead_routes_changed(w->track<0?w->tile:0,route);
 }

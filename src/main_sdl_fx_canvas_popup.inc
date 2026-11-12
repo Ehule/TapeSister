@@ -31,14 +31,15 @@ static void fx_popup_open(int x,int y)
 }
 static void fx_popup_paint(void)
 {
-    int x=fx_canvas.popup_x,y=fx_canvas.popup_y,h=fx_canvas.popup==2?FX_POPUP_SUNVOX_H:40+(TS_MATRIX_FX_TYPES-1)*30;
+    int x=fx_canvas.popup_x,y=fx_canvas.popup_y,h=fx_canvas.popup==2?FX_POPUP_SUNVOX_H:40+TS_MATRIX_FX_TYPES*30;
     mx_rect(x,y,FX_POPUP_W,h,FX_CABLE);mx_rect(x+2,y+2,FX_POPUP_W-4,h-4,FX_PANEL);
-    fx_panel_text(x+12,y+8,174,24,fx_canvas.popup==2?"SUNVOX FX":"ADD EFFECT",FX_TEXT,2,1);
+    fx_panel_text(x+12,y+8,174,24,fx_canvas.popup==2?"SUNVOX FX":"ADD TO CANVAS",FX_TEXT,2,1);
     /* A separate, clipped back target keeps a real inset at every UI scale. */
     fx_panel_text(x+190,y+8,68,24,"< BACK",FX_DIM,1,1);
     if(fx_canvas.popup==1) {
         for(int type=1;type<TS_MATRIX_FX_TYPES;++type){int yy=y+32+(type-1)*30;
             mx_rect(x+9,yy+4,5,18,fx_color(type));fx_panel_text(x+24,yy+6,234,24,ts_matrix_effect_name(type),FX_TEXT,2,1);}
+        fx_panel_text(x+24,y+38+(TS_MATRIX_FX_TYPES-1)*30,234,24,"TEXT LABEL",FX_FOCUS,2,1);
         return;
     }
     int list[512],nc;const char *categories[32];int n=fx_popup_catalog(list,categories,&nc);char label[96];
@@ -93,7 +94,8 @@ static int fx_popup_event(SDL_Event *e,int x,int y,int wheel,SDL_AudioDeviceID d
     if(y<py+32){if(x>=px+184)fx_canvas.popup=fx_canvas.popup==2?1:0;return 1;}
     if(fx_canvas.popup==1) {
         int type=1+(y-py-32)/30;
-        if(type>=TS_MATRIX_FX_TYPES){fx_canvas.popup=0;return 1;}
+        if(type==TS_MATRIX_FX_TYPES){fx_label_begin(-1);return 1;}
+        if(type>TS_MATRIX_FX_TYPES){fx_canvas.popup=0;return 1;}
         if(type==TS_MATRIX_FX_SUNVOX)fx_canvas.popup=2;
         else fx_popup_add(type,-1,device,audio,ui,pages,bank);
     } else if(y<py+64) {

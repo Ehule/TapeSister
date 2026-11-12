@@ -46,6 +46,7 @@ static int mosaic_gallery_enter(SDL_AudioDeviceID device,AudioState *a,TsUiState
     if(device)SDL_LockAudioDevice(device);
     int ok=ts_gallery_switch(g,index,ui->mosaic_gallery_status,sizeof(ui->mosaic_gallery_status));
     if(ok) {
+        a->gallery_external_roots=ts_sample_pages_external_effect_roots(pages,bank);
         ui->mosaic=a->mosaic=pages->mosaic=ts_gallery_active(g);a->gallery=ui->mosaic_gallery=g;
         a->mosaic_keyboard_sample=NULL;ui->mosaic_live_key_valid=0;
         ui->mosaic_source_keys=ui->mosaic_source_key_count=0;

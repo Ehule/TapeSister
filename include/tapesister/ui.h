@@ -585,7 +585,7 @@ typedef struct {
     uint64_t mosaic_selected, mosaic_editing;
     uint64_t mosaic_selection[TS_MOSAIC_EVENTS];
     uint64_t mosaic_selection_order[TS_MOSAIC_EVENTS], mosaic_selection_serial;
-    int mosaic_open, mosaic_playing, mosaic_recording;
+    int mosaic_open, mosaic_playing, mosaic_recording, mosaic_engine_stopped;
     struct TsMosaicGallery *mosaic_gallery; /* Non-owning transport registry. */
     int mosaic_gallery_open,mosaic_gallery_selected,mosaic_gallery_rename,mosaic_gallery_delete;
     int mosaic_gallery_count,mosaic_gallery_active,mosaic_gallery_fading;

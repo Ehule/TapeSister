@@ -88,6 +88,7 @@ int main(int argc,char **argv)
     TsTapeHeadHost host={.window=window};REQUIRE(ts_tapehead_init(&host,rate,error,sizeof(error)));
     pages.mosaic=ts_mosaic_create();REQUIRE(pages.mosaic);audio.mosaic=pages.mosaic;
     REQUIRE(ts_sample_pages_load_project(&pages,&bank,&record,argv[1],error,sizeof(error)));
+    audio.gallery_external_roots=ts_sample_pages_external_effect_roots(&pages,&bank);
     audio.gallery=pages.gallery;audio.mosaic=pages.mosaic;
     int present=0;REQUIRE(ts_sister_project_state_load(&state,argv[1],rate,&present,error,sizeof(error)));REQUIRE(present);
     if(sunvox_block)for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)

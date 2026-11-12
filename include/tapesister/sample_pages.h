@@ -56,6 +56,17 @@ typedef struct {
 /* Effects reachable only from this canvas, with no other card/bank/track/bus
    feeding them. Replacement can recycle these slots; shared effects survive. */
 unsigned ts_sample_pages_canvas_exclusive_effects(const TsSamplePages *,const TsInstrument *,const TsMosaic *,const TsMatrixControls *);
+/* Audio-owned cache: editing a scene invalidates only its direct route roots.
+   No allocation, engine replacement, or project serialization. */
+typedef struct {
+    struct {const TsMosaic *scene;uint64_t epoch,revision;unsigned roots;} canvas[TS_GALLERY_LIMIT];
+} TsGalleryEffectActivity;
+/* Control thread: read configured bank/tracker owners before publishing mask. */
+unsigned ts_sample_pages_external_effect_roots(const TsSamplePages *,const TsInstrument *);
+/* Audio thread: inspect only the already published Gallery scenes and graph. */
+unsigned ts_gallery_suspended_effects(const TsMosaicGallery *,const TsMatrixControls *,TsGalleryEffectActivity *,unsigned);
+unsigned ts_sample_pages_gallery_suspended_effects(const TsSamplePages *,const TsInstrument *,
+    const TsMatrixControls *,TsGalleryEffectActivity *,unsigned external_roots);
 int ts_sample_pages_load_canvas_routed(const char *,int,const TsMatrixControls *,const TsMatrixLayout *,
     uint64_t,uint64_t,TsMosaicCanvas *,TsCanvasRoutingImport *,char *,size_t);
 int ts_sample_pages_export_canvas_with_state(const TsMosaicCanvas *,const TsSisterProjectState *,const char *,char *,size_t);

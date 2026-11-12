@@ -858,7 +858,9 @@ visually at the C4 reference speed, while the chord voices follow their own rate
 | Delete the selection | Delete or Backspace |
 | Undo / redo arrangement changes | Ctrl+Z / Ctrl+Y or Ctrl+Shift+Z |
 | Cancel a move or copy drag | Escape |
-| Play / pause; stop and rewind | Space; STOP or Escape when no gesture is active |
+| Play / pause with effect tails | Space or PLAY/PAUSE |
+| Stop engine at the current position | STOP or Escape when no gesture is active |
+| Stop and return to the start | Double-click STOP or double Escape within 500 ms |
 | Seek / return to the beginning | Middle-click canvas or click time ruler / Home |
 | Scroll time / scroll sideways / zoom | Wheel / Shift+wheel / Ctrl+wheel |
 | Keep playhead visible / fit arrangement | F or FOLLOW / Shift+Z or FIT ALL |
@@ -1047,7 +1049,10 @@ describes the full background-render behavior.
 
 Opening Mosaic or parking FM with the workspace shortcuts preserves playing
 keyboard notes, FM latches, and tile launches. Mosaic Play adds the arrangement to
-those sources; its Stop affects only the arrangement. Physical key releases still
+those sources. Space pauses the arrangement while effect tails continue. STOP or
+Escape in idle Mosaic suspends the whole audio engine, including other sources,
+without moving the playhead; its STOP button stays highlighted. Space, PLAY, or
+F11 Play resumes processing. Physical key releases still
 reach notes started in the previous view. Opening or closing an event's sample
 editor can still stop its audition when the underlying sample document is replaced.
 
@@ -1055,7 +1060,11 @@ Active dialogs retain focus until resolved. Portal uses Tab for source/result A-
 audition. Workspace navigation leaves the arrangement playing; the MOSAIC toolbar
 button stays highlighted during background playback. Stopping an editor audition
 can report **AUDITION STOPPED - MOSAIC CONTINUES**. Use Mosaic's STOP or Escape in
-the arrangement to stop and rewind it.
+the arrangement to stop the engine at its current position. Double Escape within
+500 ms also returns the playhead to the start. Active gestures and dialogs consume
+Escape first. The engine uses a 5 ms output ramp to avoid a sudden cut; after that
+there is no source or DSP advancement. The device remains open, and running output
+recorders receive silence. Effect histories remain in memory for resumption.
 
 ### Shared effects, recording, and saving
 

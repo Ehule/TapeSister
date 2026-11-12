@@ -97,7 +97,19 @@ static TsMatrixEffectNode *node_new(const TsMatrixEffectControls *c,unsigned rat
 }
 void ts_matrix_effects_init(TsMatrixEffects *f)
 {
-    memset(f,0,sizeof(*f));for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)atomic_init(&f->remaining[i],0);
+    memset(f,0,sizeof(*f));for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i){atomic_init(&f->remaining[i],0);f->activity[i]=1;}
+}
+void ts_matrix_effects_suspend(TsMatrixEffects *f,unsigned mask)
+{f->suspended=mask;}
+static int effect_asleep(const TsMatrixEffects *f,int i)
+{return (f->suspended&(1u<<i)) && f->activity[i]<=0;}
+static float effect_activity(TsMatrixEffects *f,int i)
+{
+    float target=(f->suspended&(1u<<i))?0:1;
+    if(f->activity[i]==target)return target;
+    float step=f->rate?1.f/(.005f*f->rate):1;
+    f->activity[i]=target?fminf(1,f->activity[i]+step):fmaxf(0,f->activity[i]-step);
+    return f->activity[i];
 }
 void ts_matrix_effects_free(TsMatrixEffects *f)
 {
@@ -214,6 +226,7 @@ static TsStereoFrame node_process(TsMatrixEffects *f,int slot,TsMatrixEffectNode
 TsStereoFrame ts_matrix_effects_process(TsMatrixEffects *f,int i,TsStereoFrame in,TsStereoFrame key,int connected)
 {
     if(i<0 || i>=TS_MATRIX_EFFECT_CAPACITY)return (TsStereoFrame){0,0};
+    if(effect_asleep(f,i))return (TsStereoFrame){0,0};
     uint64_t started=ts_profile_effect_begin(i);
     unsigned remaining=atomic_load_explicit(&f->remaining[i],memory_order_relaxed);
     TsStereoFrame next=node_process(f,i,f->current[i],in,key,connected,remaining!=0);
@@ -227,12 +240,16 @@ TsStereoFrame ts_matrix_effects_process(TsMatrixEffects *f,int i,TsStereoFrame i
         if(n)ts_profile_effect_end(i,&n->profile,started,remaining!=0);
         else ts_profile_end(TS_PROF_MATRIX_FX,started);
     }
+    float activity=effect_activity(f,i);if(activity!=1){next.l*=activity;next.r*=activity;}
     return next;
 }
 unsigned ts_matrix_effects_span_limit(const TsMatrixEffects *f,unsigned frames)
 {
     if(f->fading || f->jobs_count)return 1;
     for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i) {
+        if(effect_asleep(f,i))continue;
+        if(!f->current[i] && !f->previous[i])continue;
+        if(f->activity[i]<1 || (f->suspended&(1u<<i)))return 1;
         const TsMatrixEffectNode *n=f->current[i];
         if(n && n->sunvox) {
             unsigned limit=ts_sunvox_span_limit(n->sunvox);
@@ -249,6 +266,11 @@ void ts_matrix_effects_process_span(TsMatrixEffects *f,int i,
        ready only at the last frame; all jobs drain in graph order afterward,
        preserving SDK-global random state and the existing worker policy. */
     TsMatrixEffectNode *n=f->current[i];
+    if(effect_asleep(f,i)){memset(out,0,frames*sizeof(*out));return;}
+    if(f->activity[i]<1 || (f->suspended&(1u<<i))) {
+        for(unsigned j=0;j<frames;++j)out[j]=ts_matrix_effects_process(f,i,in[j],key[j],connected);
+        return;
+    }
     uint64_t started=ts_profile_effect_begin(i);
     if(n && n->sunvox) {
         float input[TS_MATRIX_DELAY*2],wet[TS_MATRIX_DELAY*2],dry[TS_MATRIX_DELAY*2];

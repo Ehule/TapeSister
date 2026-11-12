@@ -205,7 +205,7 @@ static void live_test_finish(SDL_AudioDeviceID device,AudioState *a,TsUiState *u
     live_test_checkpoint(a,complete?8:-1);
     if(live_test.profile_failed){complete=0;reason="profile_log_unavailable";}
     live_test.state=complete?LT_DONE:LT_ABORTED; /* Stop cannot rearm the run. */
-    mosaic_transport(device,ui,1);ts_profile_enable(live_test.profile);
+    mosaic_transport(device,a,ui,1);ts_profile_enable(live_test.profile);
     ts_session_log_event(complete?"live_test_complete":"live_test_abort",
         "scenario=%s completed=%d total=%d reason=%s",live_test_scenario(),live_test.next,live_test.count,reason);
     TsSessionLogStatus log;ts_session_log_status(&log);live_test.export_serial=log.export_serial;
@@ -300,7 +300,7 @@ static void live_test_poll(SDL_Window *window,SDL_AudioDeviceID device,AudioStat
     if(live_test.state==LT_PREPARING) {
         /* Use the normal Gallery publication and cache-retirement controller
            while stopped, before arming Play or starting the measurement. */
-        mosaic_transport(device,ui,1);
+        mosaic_transport(device,a,ui,1);
         if(!mosaic_gallery_enter(device,a,ui,bank,mosaic,0)) {
             live_test.state=LT_ABORTED;
             snprintf(ui->status,sizeof(ui->status),"KETER TEST COULD NOT SELECT CANVAS / RELOAD TO RETRY");return;

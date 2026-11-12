@@ -892,6 +892,12 @@ typedef struct {
     int playing;
     int output_rate;
     unsigned output_device_channels;
+    int engine_stopped,engine_was_stopped;
+    unsigned engine_ramp;
+    float engine_last[TS_AUDIO_CHANNEL_CAPACITY];
+    TsStereoFrame engine_last_stereo;
+    unsigned gallery_external_roots;
+    TsGalleryEffectActivity gallery_effect_activity;
     float *offline_stereo; /* Child-only block tap at the existing FILE OUT point. */
     TsAudioChannelRange output_range, input_range;
     TsSpeakerSetup speakers;
@@ -1191,6 +1197,39 @@ static int tracker_capture_frame_allowed(AudioState *audio)
     return capture==2 || capture==3 || capture==5;
 }
 
+/* Live source snapshots may outlive their original canvas or tile. */
+static unsigned audio_external_effect_roots(const AudioState *a)
+{
+    uint64_t graph=0;
+    for(int i=0;i<a->notes.render_limit;++i)if(a->notes.voices[i].active)graph|=a->notes.voices[i].output_route.graph_mask;
+    const TsPerformanceBank *banks[]={&a->performance,&a->tile_launchers,&a->mosaic_source_performance,&a->sister.performance};
+    for(int b=0;b<4;++b)for(int i=0;i<banks[b]->render_limit;++i)
+        if(banks[b]->voices[i].active)graph|=banks[b]->voices[i].output_route.graph_mask;
+    for(int i=0;i<TS_TRACKER_LANES;++i)if(a->tracker.lanes[i].voice.active)graph|=a->tracker.lanes[i].voice.output_route.graph_mask;
+    if(a->playing)graph|=a->audition_route.graph_mask;
+    return (unsigned)((graph>>TS_MATRIX_EFFECT_BASE)|(graph>>TS_MATRIX_EFFECT_SC_BASE))&((1u<<TS_MATRIX_EFFECT_CAPACITY)-1);
+}
+/* The device remains open while stopped. No source/clock/FX state advances;
+   recorders receive silence after a short ramp from the last rendered frame. */
+static void audio_engine_stopped_block(AudioState *a,float *out,unsigned frames,unsigned channels)
+{
+    unsigned ramp=(unsigned)fmax(1,a->output_rate*.005);
+    if(!a->engine_was_stopped)a->engine_ramp=ramp;
+    a->engine_was_stopped=1;
+    for(unsigned i=0;i<frames;++i) {
+        float gain=a->engine_ramp?(float)--a->engine_ramp/ramp:0;
+        for(unsigned ch=0;ch<channels && ch<TS_AUDIO_CHANNEL_CAPACITY;++ch)out[i*channels+ch]=a->engine_last[ch]*gain;
+        TsStereoFrame v={a->engine_last_stereo.l*gain,a->engine_last_stereo.r*gain};
+        if(a->offline_stereo){a->offline_stereo[2*i]=v.l;a->offline_stereo[2*i+1]=v.r;}
+        if(a->record_bank_recorder && a->record_source && atomic_load(a->record_source)!=TS_RECORD_SOURCE_EXT)
+            ts_external_recorder_write_frame(a->record_bank_recorder,
+                atomic_load(a->record_source)==TS_RECORD_SOURCE_OUTPUT?v:(TsStereoFrame){0,0});
+        if(a->loop_capture && a->loop_tap && atomic_load(a->loop_tap)!=0 && atomic_load(&a->loop_capture->active))ts_loop_capture_push(a->loop_capture,(TsStereoFrame){0,0});
+        if(a->sister_file_recorder && ts_performance_recorder_state(a->sister_file_recorder)==TS_PERFORMANCE_FILE_RECORDING && tracker_capture_frame_allowed(a))
+            ts_performance_recorder_push_frame(a->sister_file_recorder,atomic_load(&a->sister_file_tap)==TS_SISTER_TAP_MIX?v:(TsStereoFrame){0,0});
+        a->last_output=a->mixer.buses.output=v;
+    }
+}
 static void audio_callback(void *userdata, Uint8 *stream, int bytes)
 {
     /* Subnormal tails are far below the output's noise floor but can make
@@ -1234,6 +1273,26 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
     ts_insert_begin_output_block(&audio->sister.insert, (unsigned)frames);
     ts_performance_inputs_begin(audio->performance_inputs,audio->sister.insert.duplex,
         audio->sister.insert.duplex_channels,(unsigned)audio->output_rate);
+    /* Transport starts can also arrive through MIDI, automation and editors.
+       An explicit engine stop always clears playing under the same exclusion. */
+    if(audio->engine_stopped && audio->mosaic && audio->mosaic->playing)audio->engine_stopped=0;
+    if(audio->engine_stopped) {
+        if(audio->sister.insert.duplex)audio->sister.insert.duplex_position=(unsigned)frames;
+        else {
+            ts_input_monitor_discard(&audio->sister.insert.return_monitor);
+            ts_input_monitor_discard(&audio->sister.insert.send_monitor);
+            if(audio->sister.insert.matrix_input)for(int p=0;p<TS_AUDIO_PAIR_CAPACITY;++p)
+                ts_input_monitor_discard(&audio->sister.insert.matrix_input[p]);
+        }
+        if(audio->input_monitor)ts_input_monitor_discard(audio->input_monitor);
+        audio_engine_stopped_block(audio,out,(unsigned)frames,device_channels);
+        goto audio_block_finish;
+    }
+    if(audio->engine_was_stopped){audio->engine_was_stopped=0;audio->engine_ramp=(unsigned)fmax(1,audio->output_rate*.005);}
+    ts_matrix_effects_suspend(&audio->sister.matrix_effects,
+        audio->gallery && ts_gallery_active(audio->gallery)==audio->mosaic?
+        ts_gallery_suspended_effects(audio->gallery,&audio->sister.matrix.controls,
+            &audio->gallery_effect_activity,audio->gallery_external_roots|audio_external_effect_roots(audio)):0);
     const float *embedded_block=NULL;
     const TsSourceRouteMix *embedded_clean=NULL;
     /* Control edits share the output exclusion. Snapshot once so calls in
@@ -1605,6 +1664,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         uint64_t profile_master = ts_profile_begin(TS_PROF_MASTER);
         output = ts_sister_runtime_process_output(&audio->sister, output);
         ts_profile_end(TS_PROF_MASTER, profile_master);
+        float engine_gain=audio->engine_ramp?1-(float)--audio->engine_ramp/(float)fmax(1,audio->output_rate*.005):1;
         TsStereoFrame main_output=output;
         float clean_gain=audio->mixer.program_gain*audio->sister.master_output_gain.current;
         if(!matrix && audio->clean.mask) {
@@ -1613,6 +1673,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             float peak=fmaxf(fabsf(output.l),fabsf(output.r));
             if(peak>.98f){output.l*=.98f/peak;output.r*=.98f/peak;}
         }
+        output.l*=engine_gain;output.r*=engine_gain;
         /* Mosaic OUTPUT records the stereo program before added Matrix speaker
            feeds and spatial decode, including
            keyboard/sample voices, Prism, Sister/FX, Master EQ, limiter and OUT gain. */
@@ -1695,6 +1756,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             clean_gain,out+(i/2)*device_channels,device_channels,reserved_pair,(unsigned)audio->output_rate);
         ts_profile_end(TS_PROF_SPATIAL, profile_spatial);
         }
+        if(engine_gain!=1)for(unsigned ch=0;ch<device_channels;++ch)out[(i/2)*device_channels+ch]*=engine_gain;
         }
         if(!phase && count>1) {
             uint64_t profile_sister=ts_profile_begin(TS_PROF_SISTER);
@@ -1707,8 +1769,13 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
     }
     ts_master_clock_advance(&audio->sister.master_clock,master_controls,(unsigned)frames-master_span_start,
         (unsigned)audio->output_rate,master_source_quarter);
+audio_block_finish:
     /* Final physical output: after routing, spatial decode, fader and safety limiting. */
     ts_audio_range_mask(audio->output_range,out,(unsigned)frames,device_channels);
+    if(!audio->engine_stopped && frames>0) {
+        for(unsigned ch=0;ch<device_channels && ch<TS_AUDIO_CHANNEL_CAPACITY;++ch)audio->engine_last[ch]=out[(frames-1)*device_channels+ch];
+        audio->engine_last_stereo=audio->last_output;
+    }
     ts_mandala_audio(out, (unsigned)frames, device_channels);
     ts_tracker_playback_end_block(&audio->tracker);
     ts_sister_runtime_end_audio_block(&audio->sister);
@@ -4605,6 +4672,9 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
         ok = ts_sample_pages_publish_project(sample_pages, instrument, record_bank,
                                              prepared_project, error, sizeof(error));
         if (ok) {
+            audio->gallery_external_roots=ts_sample_pages_external_effect_roots(sample_pages,instrument);
+            ui->mosaic_engine_stopped=audio->engine_stopped=audio->engine_was_stopped=0;audio->engine_ramp=0;
+            memset(&audio->gallery_effect_activity,0,sizeof(audio->gallery_effect_activity));
             audio->gallery=ui->mosaic_gallery=sample_pages->gallery;
             ui->mosaic=audio->mosaic=sample_pages->mosaic;
             ui->mosaic_gallery_open=ui->mosaic_gallery_rename=0;
@@ -14253,6 +14323,7 @@ int main(int argc, char **argv)
     ui.mosaic = audio.mosaic = sample_pages.mosaic = ts_mosaic_create();
     if(!ui.mosaic) {fprintf(stderr,"Mosaic: out of memory\n");return 1;}
     {char error[160];if(!ts_sample_pages_enable_gallery(&sample_pages,error,sizeof(error))){fprintf(stderr,"Gallery: %s\n",error);ts_mosaic_free(ui.mosaic);ts_sample_pages_free(&sample_pages);return 1;}}
+    audio.gallery_external_roots=ts_sample_pages_external_effect_roots(&sample_pages,&instrument);
     audio.gallery=ui.mosaic_gallery=sample_pages.gallery;
     ui.mosaic_scale=24.0;ui.mosaic_hscale=1.0;
     portal.mosaic=&mosaic;mosaic.pages=&sample_pages;
@@ -18678,6 +18749,10 @@ int main(int argc, char **argv)
             (Sint32)(SDL_GetTicks() - ui.overlay_until_ms) >= 0)
             ui.overlay[0] = '\0';
         refresh_workbench_loop(device, &audio, &ui, &instrument);
+        unsigned gallery_external=ts_sample_pages_external_effect_roots(&sample_pages,&instrument);
+        if(device)SDL_LockAudioDevice(device);
+        audio.gallery_external_roots=gallery_external;ui.mosaic_engine_stopped=audio.engine_stopped;
+        if(device)SDL_UnlockAudioDevice(device);
         mosaic_poll(device,&ui,&instrument,&mosaic);
         mosaic_live_keyboard_snapshot(&audio,&ui,&instrument);
         if(mosaic.drag==1 || (mosaic.drag>=7 && mosaic.drag<=9))
