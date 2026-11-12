@@ -1,6 +1,7 @@
 #include "tapesister/source_route.h"
 #include <string.h>
 #include <math.h>
+#include <stddef.h>
 
 void ts_source_route_mix_init(TsSourceRouteMix *to,const TsSourceRouteMix *map)
 {
@@ -179,6 +180,21 @@ static unsigned first_destination(uint64_t mask)
     while(!(mask&1)){mask>>=1;++bit;}
     return bit;
 #endif
+}
+void ts_source_route_mix_reset(TsSourceRouteMix *mix)
+{
+    /* Only graph destinations with ownership can contain accumulated audio.
+       Keep the rest physically zero so dense output readers remain valid. */
+    uint64_t masks[3]={mix->graph_mask,mix->graph_mask_high,mix->graph_mask_top};
+    for(unsigned word=0;word<3;++word) {
+        uint64_t mask=masks[word];
+        while(mask) {
+            unsigned d=word*64+first_destination(mask);mask&=mask-1;
+            if(d<TS_MATRIX_DESTINATIONS)mix->graph[d]=(TsStereoFrame){0,0};
+        }
+    }
+    memset((char *)mix+offsetof(TsSourceRouteMix,graph_mask),0,
+        sizeof(*mix)-offsetof(TsSourceRouteMix,graph_mask));
 }
 static void add_graph(TsSourceRouteMix *to,const TsSourceRouteMix *from,
     float gain,uint64_t mask,unsigned offset)

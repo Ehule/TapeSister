@@ -67,7 +67,7 @@ int main(int argc,char **argv)
     a.sister.matrix.controls=u.config.matrix;
     u.config.diagnostic_live_test=1;live_test_loaded(0,&a,&u,&pages,u.project_path);
     assert(live_test.state==LT_ARMED && live_test_save_blocked() && !u.mosaic->playing && u.mosaic->time==300);
-    assert(live_test.count>200 && live_test.count<256 && live_test.steps[live_test.count-1].ms==216000);
+    assert(live_test.count==240 && !strcmp(live_test_scenario(),"tree04-live-v1") && live_test.steps[live_test.count-1].ms==216000);
     for(int i=1;i<live_test.count;++i)assert(live_test.steps[i].ms>live_test.steps[i-1].ms);
     live_test_poll(window,0,&a,&u,&pages,&bank,&mosaic,&portal,&sister,&transform,SDL_GetPerformanceCounter());
     assert(live_test.state==LT_ARMED && !live_test.next);
@@ -98,16 +98,47 @@ int main(int argc,char **argv)
     ++a.audio_health_generation;
     live_test_poll(window,0,&a,&u,&pages,&bank,&mosaic,&portal,&sister,&transform,SDL_GetPerformanceCounter());
     assert(live_test.state==LT_ABORTED);
+    /* The second mode starts Keter at zero through the real Gallery controller.
+       It never edits parameters or windows during the measurement. */
+    u.config.diagnostic_live_test=2;
+    live_test_loaded(0,&a,&u,&pages,u.project_path);
+    assert(live_test.state==LT_PREPARING && live_test.duration_ms==608000);
+    assert(live_test.count==22 && !strcmp(live_test_scenario(),"tree04-keter-full-v1"));
+    for(int i=0;i<live_test.count-1;++i)assert(live_test.steps[i].action==LT_CHECK);
+    assert(live_test.steps[live_test.count-1].action==LT_END);
+    live_test_poll(window,0,&a,&u,&pages,&bank,&mosaic,&portal,&sister,&transform,SDL_GetPerformanceCounter());
+    assert(live_test.state==LT_ARMED && pages.gallery->active==0 && pages.mosaic==u.mosaic && a.mosaic==u.mosaic);
+    assert(u.mosaic->time==0 && !u.mosaic->playing && pages.gallery->outgoing<0);
+    mosaic_transport(0,&u,0);assert(live_test.state==LT_PENDING && u.mosaic->playing);
+    origin=live_test.started;
+    for(int step=0;step<live_test.count;++step) {
+        unsigned ms=live_test.steps[step].ms;
+        /* Virtual time jumps 30 seconds, but the real log writer still wakes
+           every 25 ms. Let it drain between steps; do not defeat the production
+           dropped-record abort by flooding its 32-event queue in this test. */
+        SDL_Delay(50);
+        live_test_poll(window,0,&a,&u,&pages,&bank,&mosaic,&portal,&sister,&transform,
+            origin+(Uint64)ceil(ms*live_test.frequency/1000.0));
+        if(live_test.next!=step+1) {
+            TsSessionLogStatus failed;ts_session_log_status(&failed);
+            fprintf(stderr,"Keter step %d: next=%d state=%d lost=%u/%u status=%s\n",
+                step,live_test.next,live_test.state,failed.dropped_audio,failed.dropped_events,u.status);
+        }
+        assert(live_test.next==step+1);
+    }
+    assert(live_test.state==LT_DONE && !u.mosaic->playing);
     ts_session_log_stop();
     TsSessionLogStatus log;ts_session_log_status(&log);
     assert(log.export_result==2 && log.export_serial>=1);
     FILE *saved=fopen(log.export_path,"rb");assert(saved);
-    char line[1024];int found_abort=0,found_start=0;
+    char line[1024];int found_abort=0,found_start=0,found_keter=0,found_complete=0;
     while(fgets(line,sizeof(line),saved)) {
         found_abort|=strstr(line,"\"type\":\"live_test_abort\"")!=NULL;
         found_start|=strstr(line,"\"type\":\"live_test_start\"")!=NULL;
+        found_keter|=strstr(line,"scenario=tree04-keter-full-v1")!=NULL;
+        found_complete|=strstr(line,"\"type\":\"live_test_complete\"")!=NULL;
     }
-    fclose(saved);assert(found_abort && found_start);
+    fclose(saved);assert(found_abort && found_start && found_keter && found_complete);
     TsMosaic *root=ts_sample_pages_mosaic_root(&pages);ts_sample_pages_free(&pages);ts_mosaic_free(root);
     ts_sister_runtime_free(&a.sister);ts_instrument_free(&bank);
     SDL_DestroyWindow(window);SDL_Quit();

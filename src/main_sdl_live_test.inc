@@ -4,12 +4,14 @@
 #ifndef TS_LIVE_TEST_REVISION
 #define TS_LIVE_TEST_REVISION "unknown"
 #endif
-enum { LT_OFF, LT_ARMED, LT_PENDING, LT_RUNNING, LT_DONE, LT_ABORTED };
+enum { LT_OFF, LT_ARMED, LT_PENDING, LT_RUNNING, LT_DONE, LT_ABORTED, LT_PREPARING };
 enum { LT_CHECK, LT_FX, LT_MATRIX, LT_CLOSE, LT_MIX, LT_GRAIN, LT_MUTE,
        LT_SOLO, LT_BYPASS, LT_TRACKER, LT_MOSAIC, LT_HEALTH, LT_GALLERY, LT_END };
 typedef struct { unsigned ms; int action,target; float value; } LiveTestStep;
 static struct {
-    int state,touched,count,next,profile;
+    int state,touched,count,next,profile,mode;
+    double keter_end;
+    unsigned duration_ms;
     Uint64 started,frequency;
     uint32_t generation;
     uint64_t card[3],project_hash;
@@ -19,6 +21,8 @@ static struct {
     int exporting;
     char project[TS_BROWSER_PATH_MAX];
 } live_test;
+static const char *live_test_scenario(void)
+{return live_test.mode==2?"tree04-keter-full-v1":"tree04-live-v1";}
 static const char *live_test_action_name(int a)
 {
     static const char *names[]={"checkpoint","fx_canvas","routing_matrix","close_matrix",
@@ -28,7 +32,8 @@ static const char *live_test_action_name(int a)
 }
 static const char *live_test_label(void)
 {
-    return live_test.state==LT_ARMED?" [LIVE TEST ARMED: MOSAIC PLAY]":
+    return live_test.state==LT_PREPARING?" [PREPARING KETER TEST]":
+        live_test.state==LT_ARMED?" [LIVE TEST ARMED: MOSAIC PLAY]":
         live_test.state==LT_RUNNING || live_test.state==LT_PENDING?" [LIVE TEST RUNNING: ESC TO ABORT]":
         live_test.state==LT_DONE?" [LIVE TEST COMPLETE: RELOAD TO REPEAT]":
         live_test.state==LT_ABORTED?" [LIVE TEST ABORTED: RELOAD TO REPEAT]":"";
@@ -48,6 +53,13 @@ static void live_test_plan(void)
 {
     live_test.count=0;
     live_test_add(0,LT_CHECK,0,0);
+    if(live_test.mode==2) {
+        /* Preserve the entire buildup, not just a seek into the late section.
+           Checkpoints do not edit sound or open windows. */
+        for(unsigned ms=30000;ms<live_test.duration_ms;ms+=30000)
+            live_test_add(ms,LT_CHECK,(int)(ms/30000),0);
+        live_test_add(live_test.duration_ms,LT_END,0,0);return;
+    }
     /* Twenty seconds of warmup, followed by the same controls in three scenes.
        Stable effect/card identities are resolved before playback, not from
        whatever happens to be selected when a scheduled action is late. */
@@ -118,24 +130,33 @@ static void live_test_loaded(SDL_AudioDeviceID device,AudioState *a,TsUiState *u
     if(!a->realtime_diagnostics_enabled || !ts_session_log_enabled()) {
         snprintf(ui->status,sizeof(ui->status),"LIVE TEST: AUDIO TELEMETRY AND SESSION RECORDER REQUIRED");return;
     }
+    live_test.mode=ui->config.diagnostic_live_test;
+    live_test.keter_end=ts_mosaic_end(pages->gallery->canvas[0].scene);
+    if(live_test.mode==2 && (!isfinite(live_test.keter_end) || live_test.keter_end<=0 || live_test.keter_end>3600)) {
+        snprintf(ui->status,sizeof(ui->status),"KETER TEST: EXPECTED A MOVEMENT UNDER ONE HOUR");return;
+    }
+    live_test.duration_ms=live_test.mode==2?(unsigned)ceil(live_test.keter_end*1000)+8000:216000;
     live_test.project_hash=ui->saved_state_hash;
     snprintf(live_test.project,sizeof(live_test.project),"%s",path);
-    live_test_plan();live_test.state=LT_ARMED;live_test.touched=1;
+    live_test_plan();live_test.state=live_test.mode==2?LT_PREPARING:LT_ARMED;live_test.touched=1;
     if(device)SDL_LockAudioDevice(device);
     for(int p=0;p<3;++p) {
         TsMosaic *m=pages->gallery->canvas[p].scene;
-        ts_mosaic_seek(m,300);m->repeat=0;m->playing=0;
+        ts_mosaic_seek(m,live_test.mode==2?0:300);m->repeat=0;m->playing=0;
+        if(live_test.mode==2){ts_mosaic_set_speed(m,1);m->marker_loop=0;}
         pages->gallery->canvas[p].entry=TS_GALLERY_RESUME;
     }
-    pages->gallery->fade_seconds=8;
+    pages->gallery->fade_seconds=live_test.mode==2?0:8;
     if(device)SDL_UnlockAudioDevice(device);
     ui->mosaic_open=1;ui->tracker_open=ui->fm_open=0;
-    ui->mosaic_scroll=295;ui->mosaic_scale=4;ui->mosaic_hscale=1;
+    ui->mosaic_scroll=live_test.mode==2?0:295;ui->mosaic_scale=4;ui->mosaic_hscale=1;
     ui->project_check_ms=0;
     snprintf(ui->status,sizeof(ui->status),"TREE 04 LIVE TEST ARMED: PRESS MOSAIC PLAY / 3:36 / ESC ABORTS / RELOAD TO REPEAT");
-    ts_session_log_event("live_test_armed","scenario=tree04-live-v1 steps=%d project_hash=%016llx cards=%llu,%llu,%llu start_s=300 fade_s=8",
-        live_test.count,(unsigned long long)live_test.project_hash,
-        (unsigned long long)live_test.card[0],(unsigned long long)live_test.card[1],(unsigned long long)live_test.card[2]);
+    if(live_test.mode==2)snprintf(ui->status,sizeof(ui->status),"PREPARING UNINTERRUPTED KETER TEST / PRESS PLAY WHEN ARMED");
+    ts_session_log_event("live_test_armed","scenario=%s steps=%d project_hash=%016llx cards=%llu,%llu,%llu start_s=%d fade_s=%d keter_end_s=%.6f duration_ms=%u",
+        live_test_scenario(),live_test.count,(unsigned long long)live_test.project_hash,
+        (unsigned long long)live_test.card[0],(unsigned long long)live_test.card[1],(unsigned long long)live_test.card[2],
+        live_test.mode==2?0:300,live_test.mode==2?0:8,live_test.keter_end,live_test.duration_ms);
 }
 static void live_test_transport(TsUiState *ui,int playing)
 {
@@ -162,7 +183,7 @@ static void live_test_finish(SDL_AudioDeviceID device,AudioState *a,TsUiState *u
     live_test.state=complete?LT_DONE:LT_ABORTED; /* Stop cannot rearm the run. */
     mosaic_transport(device,ui,1);ts_profile_enable(live_test.profile);
     ts_session_log_event(complete?"live_test_complete":"live_test_abort",
-        "scenario=tree04-live-v1 completed=%d total=%d reason=%s",live_test.next,live_test.count,reason);
+        "scenario=%s completed=%d total=%d reason=%s",live_test_scenario(),live_test.next,live_test.count,reason);
     TsSessionLogStatus log;ts_session_log_status(&log);live_test.export_serial=log.export_serial;
     int saved=ts_session_log_export_project(live_test.project,0);live_test.exporting=saved;
     snprintf(ui->status,sizeof(ui->status),"LIVE TEST %s / LOG %s / RELOAD PROJECT TO REPEAT",
@@ -252,6 +273,20 @@ static void live_test_poll(SDL_Window *window,SDL_AudioDeviceID device,AudioStat
     TsSamplePages *pages,TsInstrument *bank,MosaicController *mosaic,PortalController *portal,
     SisterWindow *sister,TransformController *transform,Uint64 now)
 {
+    if(live_test.state==LT_PREPARING) {
+        /* Use the normal Gallery publication and cache-retirement controller
+           while stopped, before arming Play or starting the measurement. */
+        mosaic_transport(device,ui,1);
+        if(!mosaic_gallery_enter(device,a,ui,bank,mosaic,0)) {
+            live_test.state=LT_ABORTED;
+            snprintf(ui->status,sizeof(ui->status),"KETER TEST COULD NOT SELECT CANVAS / RELOAD TO RETRY");return;
+        }
+        ui->mosaic_scroll=0;ui->mosaic_scale=4;ui->mosaic_hscale=1;
+        live_test.state=LT_ARMED;
+        snprintf(ui->status,sizeof(ui->status),"KETER FULL TEST ARMED: MOSAIC PLAY / %u:%02u / ESC ABORTS",
+            live_test.duration_ms/60000,(live_test.duration_ms/1000)%60);
+        return;
+    }
     if(live_test.exporting && (live_test.state==LT_DONE || live_test.state==LT_ABORTED)) {
         TsSessionLogStatus log;ts_session_log_status(&log);
         if(log.export_serial!=live_test.export_serial && log.export_result!=1) {
@@ -269,8 +304,8 @@ static void live_test_poll(SDL_Window *window,SDL_AudioDeviceID device,AudioStat
         live_test.state=LT_RUNNING;
         TsRealtimeDiagnosticsSnapshot initial={0};ts_realtime_diagnostics_get(&a->realtime_diagnostics,&initial);
         ts_session_log_event("live_test_start",
-            "scenario=tree04-live-v1 steps=%d project_hash=%016llx start_ticks=%llu frequency=%llu backend=%s rate=%u frames=%u channels=%u workers=%u profile=0 revision=%s build=%s %s",
-            live_test.count,(unsigned long long)live_test.project_hash,
+            "scenario=%s steps=%d project_hash=%016llx start_ticks=%llu frequency=%llu backend=%s rate=%u frames=%u channels=%u workers=%u profile=0 revision=%s build=%s %s",
+            live_test_scenario(),live_test.count,(unsigned long long)live_test.project_hash,
             (unsigned long long)live_test.started,(unsigned long long)live_test.frequency,
             ts_native_current_driver()?ts_native_current_driver():"none",
             (unsigned)a->output_rate,initial.device_buffer_frames,(unsigned)a->output_device_channels,

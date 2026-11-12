@@ -674,7 +674,7 @@ static TsStereoFrame mosaic_audition_read(TsMosaic *m,int rate,TsSourceRouteMix 
     if(m->audition_stopping && m->audition_voice.audible_gain<=0)m->audition_id=0;
     return out;
 }
-TsStereoFrame ts_mosaic_read_routed(TsMosaic *m,int rate,TsSourceRouteMix *routes)
+TsStereoFrame ts_mosaic_read_routed_gain(TsMosaic *m,int rate,TsSourceRouteMix *routes,float route_gain)
 {
     if(!m || rate<=0)return (TsStereoFrame){0,0};
     if(m->rate!=rate) {
@@ -693,17 +693,17 @@ TsStereoFrame ts_mosaic_read_routed(TsMosaic *m,int rate,TsSourceRouteMix *route
         m->rate=rate;out.l+=preview.l+live.l;out.r+=preview.r+live.r;return ts_stereo_frame_sanitize(out);
     }
     if(!m->live_reset_remaining && !m->live_pause_routes_valid && !m->live_paused && !m->playing && !m->sequence.running && !m->audition_id && !m->was_playing && !m->transition_remaining && !m->route_handoff.remaining && !m->schedule.live_count && m->schedule.valid)return (TsStereoFrame){0,0};
-    TsSourceRouteMix mix={0};
-    TsStereoFrame out=mosaic_read(m,rate,routes?&mix:NULL);
-    TsStereoFrame preview=mosaic_audition_read(m,rate,&mix);
+    TsSourceRouteMix *mix=&m->route_work;ts_source_route_mix_reset(mix);
+    TsStereoFrame out=mosaic_read(m,rate,mix);
+    TsStereoFrame preview=mosaic_audition_read(m,rate,mix);
     if(!m->schedule.valid)mosaic_schedule_prepare(m);
-    TsStereoFrame live=mosaic_live_read(m,rate,&mix);m->rate=rate;out.l+=preview.l+live.l;out.r+=preview.r+live.r;
-    if(m && routes && rate>0) {
-        ts_source_route_handoff(&m->route_handoff,&mix,m->route_discontinuity,(unsigned)rate/500);
-        m->route_discontinuity=0;ts_source_route_add(routes,&mix,1);
-    }
+    TsStereoFrame live=mosaic_live_read(m,rate,mix);m->rate=rate;out.l+=preview.l+live.l;out.r+=preview.r+live.r;
+    ts_source_route_handoff(&m->route_handoff,mix,m->route_discontinuity,(unsigned)rate/500);
+    m->route_discontinuity=0;ts_source_route_add(routes,mix,route_gain);
     return out;
 }
+TsStereoFrame ts_mosaic_read_routed(TsMosaic *m,int rate,TsSourceRouteMix *routes)
+{return ts_mosaic_read_routed_gain(m,rate,routes,1);}
 TsStereoFrame ts_mosaic_read(TsMosaic *m,int rate)
 {return ts_mosaic_read_routed(m,rate,NULL);}
 uint64_t ts_mosaic_hash(const TsMosaic *m)
