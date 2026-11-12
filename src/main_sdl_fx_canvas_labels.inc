@@ -38,7 +38,7 @@ static int fx_label_edit_event(SDL_Event *e)
         }
         if(i>=0 && i<l->label_count) {
             memset(l->labels[i].text,0,TS_FX_LABEL_TEXT);memcpy(l->labels[i].text,s,(size_t)n);
-            fx_canvas.label_selected=i;fx_clear_selection();fx_clear_wires();
+            fx_clear_selection();fx_clear_wires();fx_canvas.label_selected=i;
         }
         fx_label_cancel();return 1;
     }

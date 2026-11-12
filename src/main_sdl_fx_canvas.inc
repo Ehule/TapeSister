@@ -246,10 +246,11 @@ static int fx_chosen(MatrixRow row)
     return 0;
 }
 static void fx_clear_selection(void)
-{matrix_window.selection_count=0;matrix_window.selected=-1;}
+{fx_canvas.label_selected=-1;matrix_window.selection_count=0;matrix_window.selected=-1;}
 static void fx_select(FxCanvasNode *n,int add)
 {
     MatrixWindow *w=&matrix_window;
+    fx_canvas.label_selected=-1;
     if(!add)fx_clear_selection();
     int i=0;while(i<w->selection_count && !mx_same(n->row,w->selection[i]))++i;
     if(i==w->selection_count)w->selection[w->selection_count++]=n->row;

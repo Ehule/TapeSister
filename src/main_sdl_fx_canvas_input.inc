@@ -188,7 +188,7 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
     for(int i=l->label_count-1;i>=0;--i) {
         SDL_Rect r=fx_label_rect(&l->labels[i]);
         if(left && x>=r.x && x<r.x+r.w && y>=r.y && y<r.y+r.h) {
-            fx_canvas.label_selected=i;fx_clear_selection();fx_clear_wires();w->effect_open=w->compressor_open=0;
+            fx_clear_selection();fx_clear_wires();fx_canvas.label_selected=i;w->effect_open=w->compressor_open=0;
             if(e->button.clicks>=2)fx_label_begin(i);else fx_label_drag(FX_DRAG_LABEL,x,y);
             snprintf(w->status,sizeof(w->status),"TEXT LABEL / DOUBLE-CLICK OR F2: EDIT / G: MOVE / S: SIZE / DELETE: REMOVE");return 1;
         }

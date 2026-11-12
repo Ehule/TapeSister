@@ -131,6 +131,12 @@ static void text_labels(void)
     SDL_Surface *frame=rendered_frame();assert(frame);const char *dir=getenv("TS_FX_PREVIEW");
     if(dir){char path[1024];snprintf(path,sizeof(path),"%s/text-labels.bmp",dir);assert(!SDL_SaveBMP(frame,path));}SDL_FreeSurface(frame);
     view_codec();
+    fx_canvas.label_selected=count;key(SDLK_a,KMOD_CTRL);assert(fx_canvas.label_selected<0);
+    fx_clear_selection();
+    for(int i=0;i<fx_canvas.count;++i)if(fx_canvas.node[i].row.kind==4) {
+        fx_canvas.label_selected=count;fx_select(&fx_canvas.node[i],0);assert(fx_canvas.label_selected<0);
+        key(SDLK_DELETE,0);assert(l->label_count==count+1);key(SDLK_z,KMOD_CTRL);break;
+    }
     static TsMatrixLayout invalid;ts_matrix_layout_default(&invalid);
     assert(ts_matrix_layout_read(&invalid,"FxCanvas.Label0","nan,0,1,4142")==-1);
     assert(ts_matrix_layout_read(&invalid,"FxCanvas.Label0","0,0,1,00")==-1);
