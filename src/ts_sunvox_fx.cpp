@@ -129,7 +129,43 @@ struct TsSunVoxEngine {
     float dry_buffer[TS_SUNVOX_MAX_QUANTUM*2]{};
     size_t patch_bytes=0;
     int initial[TS_SUNVOX_CONTROLS]{};
+    unsigned parallel_cost=0;
 };
+// Read-only inspection hook in the pinned MetaModule translation unit.
+sunvox_engine *tapesister_metamodule_engine(psynth_module *mod);
+static unsigned parallel_cost(psynth_net *net,unsigned depth=0)
+{
+#ifdef DENORMAL_NUMBERS
+    // This SDK configuration uses process-global noise state in DSP loops.
+    (void)net;(void)depth;return 0;
+#else
+    if(!net || depth>32)return 0;
+    unsigned total=0;
+    for(int i=1;i<net->mods_num;++i) {
+        psynth_module *m=&net->mods[i];if(!(m->flags&PSYNTH_FLAG_EXISTS))continue;
+        if(!m->handler)return 0;
+        psynth_event e{};e.command=PS_CMD_GET_NAME;
+        const char *name=(const char *)m->handler(i,&e,net);if(!name)return 0;
+        if(!strcmp(name,"MetaModule")) {
+            sunvox_engine *child=tapesister_metamodule_engine(m);
+            unsigned nested=child?parallel_cost(child->net,depth+1):0;
+            if(!nested)return 0;total+=nested;
+        } else if(!strcmp(name,"Reverb"))total+=32;
+        else if(!strcmp(name,"Echo") || !strcmp(name,"Delay"))total+=4;
+        else if(!strcmp(name,"Amplifier") || !strcmp(name,"Pitch2Ctl") || !strcmp(name,"MultiSynth") || !strcmp(name,"MultiCtl"))++total;
+        else if(strcmp(name,"Input"))return 0;
+        // Unknown modules and filters stay serial: some filter LFO modes
+        // consume the SDK's process-global random generator.
+    }
+    return total;
+#endif
+}
+unsigned ts_sunvox_parallel_cost(const TsSunVoxEngine *s)
+{
+    // Weight admission by work per wake-up. A single 256-frame Reverb is
+    // cheaper inline in repeated measurements; larger nested graphs may qualify.
+    return s && s->quantum>=256?s->parallel_cost*(s->quantum/256)/4:0;
+}
 
 int ts_sunvox_factory_count() { return sizeof(factories)/sizeof(factories[0]); }
 const char *ts_sunvox_factory_name(int i) {
@@ -282,6 +318,7 @@ TsSunVoxEngine *ts_sunvox_new(const TsSunVoxControls *c,unsigned rate) {
     s->requested=*c;s->applied=*c;
     std::fill(s->applied.value,s->applied.value+TS_SUNVOX_CONTROLS,-2);
     s->applied.held=0;
+    s->parallel_cost=parallel_cost(s->engine.net);
     return s.release();
 }
 void ts_sunvox_free(TsSunVoxEngine *s) {

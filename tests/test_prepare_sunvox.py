@@ -15,6 +15,7 @@ ARCHIVE = REPO / "third_party/sunvox/sunvox-2.1.4d.tar.gz"
 # Known-good output from the audio-validated SDK preparation.
 # These hashes cover whole files, including their non-ASCII source strings.
 PREPARED = {
+    "lib_sunvox/psynth/psynths_metamodule.cpp": "00e71f9720aae0b813c500101813dbaa3873ffa12c8f189f0484c55f04dc1524",
     "lib_sunvox/psynth/psynths_echo.cpp": "84db3f8975bdccdb03a0ceae46aa717123fc919b0dd09bd097f1cf7e581e71cb",
     "lib_sunvox/sunvox_engine.cpp": "02e10a346b1274ec81548bf86021571136b23633483374f88fdcd3c0e60faffd",
     "lib_sunvox/psynth/psynths_reverb.cpp": "6fe70d983acb191bdb5719d2876272c8396fecd8a39faf2705cf128cbbcdea90",

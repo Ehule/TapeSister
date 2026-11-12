@@ -91,7 +91,13 @@ void ts_profile_effect_end(int slot, const TsProfileEffectIdentity *identity,
     if (!start || !ts_profile_audio_active || slot < 0 || slot >= TS_MATRIX_EFFECT_CAPACITY) return;
     uint64_t end = ts_profile_clock();
     if (end < start) return;
-    record_elapsed(TS_PROF_MATRIX_FX, end - start);
+    ts_profile_effect_duration(slot,identity,end-start,end,transitioning);
+}
+void ts_profile_effect_duration(int slot,const TsProfileEffectIdentity *identity,
+    uint64_t ticks,uint64_t end,int transitioning)
+{
+    if(!ts_profile_audio_active || slot<0 || slot>=TS_MATRIX_EFFECT_CAPACITY)return;
+    record_elapsed(TS_PROF_MATRIX_FX, ticks);
     TsProfileEffectValue *v = &effects.value[slot];
     if (v->identity.generation != identity->generation) {
         memset(v, 0, sizeof(*v)); v->identity = *identity;
@@ -101,7 +107,7 @@ void ts_profile_effect_end(int slot, const TsProfileEffectIdentity *identity,
     effects.seen |= 1u << slot;
     effects.dirty = 1;
     if (transitioning) effects.transitioning |= 1u << slot;
-    effects.ticks[slot] += end - start; v->last = end;
+    effects.ticks[slot] += ticks; v->last = end;
 }
 void ts_profile_lane_end(int audio)
 {

@@ -17,6 +17,17 @@ def replace(path, before, after, count=1):
         raise SystemExit(f"Unexpected pinned SunVox source: {path}")
     file.write_bytes(source.replace(before, after))
 
+# Control-thread admission inspection; no DSP change or duplicated private
+# layout. MetaModule creates exactly one child engine in this pinned version.
+replace("lib_sunvox/psynth/psynths_metamodule.cpp",
+        "static void metamodule_unpack_user_ctls( int mod_num, psynth_net* pnet );",
+        """sunvox_engine* tapesister_metamodule_engine( psynth_module* mod )
+{
+    MODULE_DATA* data = (MODULE_DATA*)mod->data_ptr;
+    return data && data->ps && data->ps->s_cnt == 1 ? data->ps->s[0] : nullptr;
+}
+static void metamodule_unpack_user_ctls( int mod_num, psynth_net* pnet );""")
+
 replace("lib_sunvox/sunvox_engine.cpp",
         "    s->stream_control = stream_control;",
         """    // TapeSister: reserve control bursts before any audio rendering, including

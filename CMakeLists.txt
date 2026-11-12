@@ -897,6 +897,7 @@ add_test(NAME tapesister_profile_matrix_tests COMMAND tapesister_profile_matrix_
 add_executable(tapesister_matrix_blocks_tests tests/test_matrix_blocks.c)
 target_link_libraries(tapesister_matrix_blocks_tests PRIVATE tapesister_core)
 add_test(NAME matrix_blocks_exact COMMAND tapesister_matrix_blocks_tests)
+set_tests_properties(matrix_blocks_exact PROPERTIES TIMEOUT 120)
 
 # Several older fixtures put their setup in assert(). Release must exercise
 # those checks too, while the linked production DSP stays fully optimized.
@@ -1160,6 +1161,14 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang
     "-Wl,--wrap=malloc,--wrap=calloc,--wrap=realloc,--wrap=free")
 endif()
 add_test(NAME sunvox_realtime COMMAND tapesister_sunvox_realtime_tests)
+add_executable(tapesister_sunvox_jobs_tests tests/test_sunvox_jobs.c)
+target_link_libraries(tapesister_sunvox_jobs_tests PRIVATE tapesister_core)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_definitions(tapesister_sunvox_jobs_tests PRIVATE TS_WRAP_ALLOCATIONS)
+  target_link_options(tapesister_sunvox_jobs_tests PRIVATE "-Wl,--wrap=malloc,--wrap=calloc,--wrap=realloc,--wrap=free")
+endif()
+add_test(NAME sunvox_jobs_exact COMMAND tapesister_sunvox_jobs_tests)
+set_tests_properties(sunvox_jobs_exact PROPERTIES TIMEOUT 120)
 add_executable(tapesister_sunvox_delay_tests tests/test_sunvox_delay.cpp)
 set_target_properties(tapesister_sunvox_delay_tests PROPERTIES CXX_EXTENSIONS ON)
 target_link_libraries(tapesister_sunvox_delay_tests PRIVATE tapesister_sunvox)

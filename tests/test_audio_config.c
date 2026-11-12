@@ -18,6 +18,7 @@ static int test_defaults(void)
 {
     TsConfig config;
     ts_config_init(&config);
+    if(!expect(config.audio_fx_workers==0,"FX worker defaults to serial"))return 0;
     return expect(config.arp_slot_max_seconds == 240 && !config.arp_slot_min_full_pattern,
                   "ARP slot range and truncation policy defaults") &&
            expect(config.record_input_device[0] == '\0',
@@ -107,6 +108,7 @@ static int test_roundtrip(void)
     saved.audio_backend = TS_AUDIO_BACKEND_JACK;
     saved.record_input_channel = 3;
     saved.audio_buffer_frames = 128;
+    saved.audio_fx_workers = 1;
     saved.fm_output_percent = 37;
     saved.master_output_percent = 63;
     saved.midi_input_channel = 7;
@@ -168,7 +170,8 @@ static int test_roundtrip(void)
         return 0;
     }
 
-    ok = expect(strcmp(loaded.record_input_device, "Test Capture Device") == 0,
+    ok = expect(loaded.audio_fx_workers==1,"FX worker preference roundtrip") &&
+         expect(strcmp(loaded.record_input_device, "Test Capture Device") == 0,
                 "named input device should roundtrip") &&
          expect(strcmp(loaded.audio_output_device, "Test Playback Device") == 0,
                 "named output device should roundtrip") &&
