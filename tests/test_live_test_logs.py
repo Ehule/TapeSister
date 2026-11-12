@@ -23,6 +23,19 @@ def fixture():
 
 
 class Comparison(unittest.TestCase):
+    def test_idle_windows_exclude_boundaries_and_settling(self):
+        run = [{"type": "live_test_phase", "t_ms": 100, "detail": "mode=stopped fx_canvas=1 settle_ms=2000"},
+               {"type": "live_test_phase", "t_ms": 6100, "detail": "mode=playing fx_canvas=0 settle_ms=2000"},
+               {"type": "live_test_complete", "t_ms": 12000}]
+        def window(a, b, average, count):
+            return {"from_ms": a, "t_ms": b, "average_ms": average, "callbacks": count, "peak_ms": average * 2}
+        windows = [window(0, 3000, 999, 100), window(2100, 4000, .1, 100), window(4000, 6000, .2, 200),
+                   window(6000, 9000, 999, 100), window(9000, 11000, 2, 100)]
+        result = {r["mode"]: r for r in module.phase_usage(run, windows)}
+        self.assertEqual(result["stopped"]["windows"], 2)
+        self.assertAlmostEqual(result["stopped"]["average_callback_ms"], 1 / 6)
+        self.assertEqual(result["playing"]["peak_callback_ms"], 4)
+
     def test_matched_and_changed(self):
         with tempfile.TemporaryDirectory() as folder:
             a, b = Path(folder) / "a.jsonl", Path(folder) / "b.jsonl"

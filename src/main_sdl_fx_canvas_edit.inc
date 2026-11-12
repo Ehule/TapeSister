@@ -247,6 +247,8 @@ static void fx_copy(void)
         fx_clipboard.effect[at]=w->controls.effect[slot];fx_clipboard.route[at]=w->controls.row[n->row.index];
         fx_clipboard.delayed[at]=w->controls.delayed[n->row.index];fx_clipboard.slot[at]=slot;
         fx_clipboard.position[at]=(TsFxCanvasPosition){n->row.tile,4,n->x,n->y,n->scale};
+        TsFxCanvasPosition *style=fx_position(n->row,0);
+        if(style){fx_clipboard.position[at].color=style->color;memcpy(fx_clipboard.position[at].name,style->name,sizeof(style->name));}
     }
     snprintf(w->status,sizeof(w->status),fx_clipboard.count?"COPIED %d EFFECTS WITH INTERNAL WIRING / CTRL+V: PASTE":"SELECT ADDED EFFECTS TO COPY. FIXED BUSES AND ENDPOINTS ARE NOT COPIED.",fx_clipboard.count);
 }

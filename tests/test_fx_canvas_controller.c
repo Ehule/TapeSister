@@ -135,7 +135,7 @@ static void text_labels(void)
     fx_clear_selection();
     for(int i=0;i<fx_canvas.count;++i)if(fx_canvas.node[i].row.kind==4) {
         fx_canvas.label_selected=count;fx_select(&fx_canvas.node[i],0);assert(fx_canvas.label_selected<0);
-        key(SDLK_DELETE,0);assert(l->label_count==count+1);key(SDLK_z,KMOD_CTRL);break;
+        key(SDLK_DELETE,0);key(SDLK_n,0);assert(l->label_count==count+1);key(SDLK_z,KMOD_CTRL);break;
     }
     static TsMatrixLayout invalid;ts_matrix_layout_default(&invalid);
     assert(ts_matrix_layout_read(&invalid,"FxCanvas.Label0","nan,0,1,4142")==-1);
@@ -173,7 +173,7 @@ static void canvas_gestures(uint32_t id)
     click(fx_canvas.popup_x+55,fx_canvas.popup_y+40,1);assert(!fx_canvas.popup && w->effect_open);
     uint32_t added=w->effect_open;assert(added!=id);fx_build(&pages,&bank);n=instance(added);assert(n);
     TsFxCanvasPosition *pos=fx_position(n->row,0);assert(pos && pos->x==px && pos->y==py);
-    key(SDLK_DELETE,0);fx_build(&pages,&bank);assert(!instance(added));
+    key(SDLK_DELETE,0);key(SDLK_n,0);fx_build(&pages,&bank);assert(!instance(added));
     key(SDLK_z,KMOD_CTRL);fx_build(&pages,&bank);assert(instance(added));
     key(SDLK_z,KMOD_CTRL);fx_build(&pages,&bank);assert(!instance(added));
     /* Real marquee gesture, additive Ctrl selection, group drag and cancellation. */
@@ -214,7 +214,7 @@ static void canvas_gestures(uint32_t id)
     for(int i=0;i<fx_canvas.count;++i){n=&fx_canvas.node[i];assert(fx_x(n->x)>=20 && fx_x(n->x+FX_NODE_W)<=FX_RIGHT);assert(fx_y(n->y)>=FX_TOP && fx_y(n->y+FX_NODE_H)<=FX_BOTTOM);}
     l->canvas_straight=1;view_codec();
     /* Mixed multi-selection removes effects, preserves fixed endpoints, undo restores. */
-    key(SDLK_DELETE,0);for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)assert(!w->controls.effect[i].id);
+    key(SDLK_DELETE,0);key(SDLK_n,0);for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)assert(!w->controls.effect[i].id);
     assert(node(TS_MATRIX_MOSAIC));key(SDLK_z,KMOD_CTRL);assert(w->controls.effect[slot].id==id);
     /* Matrix has an independent entry into this same canvas. */
     fx_view(0,&pages,&bank);click(100,65,1);assert(w->canvas);
@@ -446,6 +446,8 @@ static void sunvox_browser(const char *dir)
     puts("SunVox factory/file browsers, quoted-path import, failure retention, controls and undo/redo passed.");
 }
 
+ #include "test_fx_canvas_patch.inc"
+
 int main(int argc,char **argv)
 {
     SDL_SetMainReady();SDL_setenv("SDL_VIDEODRIVER","dummy",1);SDL_setenv("SDL_AUDIODRIVER","dummy",1);
@@ -532,7 +534,7 @@ int main(int argc,char **argv)
     e.button.x=(TS_MOSAIC_FX_X+10)*2;e.button.y=(TS_MOSAIC_FX_Y+5)*2;assert(event(&e));assert(matrix_window.visible && matrix_window.canvas);
     SDL_SetWindowSize(matrix_window.window,1001,701);fx_paint(&audio,&pages,&bank);
     inspector_controls(getenv("TS_FX_PREVIEW"));edit_controls();canvas_gestures(c.effect[dist].id);disconnect_main_prism();routing_preferences();sunvox_browser(getenv("TS_FX_PREVIEW"));
-    gallery_view();text_labels();
+    gallery_view();text_labels();patch_workflow();patch_twenty_cards();
     matrix_close();meta_fx_close();ts_sister_runtime_free(&audio.sister);ts_sample_pages_free(&pages);ts_instrument_free(&bank);SDL_DestroyWindow(main_window);SDL_Quit();
     puts("FX Canvas controller passed, including single-cable disconnect, alternative path, silent clear, undo and project recall.");return 0;
 }

@@ -5,7 +5,7 @@ static void fx_label_begin(int index)
 {
     TsMatrixLayout *l=matrix_window.layout;
     if(index<0 && l->label_count==TS_FX_LABEL_LIMIT){snprintf(matrix_window.status,sizeof(matrix_window.status),"TEXT LABEL LIMIT REACHED (64).");return;}
-    fx_canvas.label_target=index;fx_canvas.label_editing=1;fx_canvas.label_all=1;
+    fx_canvas.text_blink=SDL_GetTicks();fx_canvas.label_target=index;fx_canvas.label_editing=1;fx_canvas.label_all=1;
     snprintf(fx_canvas.label_text,sizeof(fx_canvas.label_text),"%s",index>=0?l->labels[index].text:"Text label");
     fx_canvas.label_cursor=(int)strlen(fx_canvas.label_text);
     fx_canvas.popup=0;matrix_window.effect_open=matrix_window.compressor_open=0;
@@ -23,6 +23,7 @@ static void fx_label_insert(const char *text)
 }
 static int fx_label_edit_event(SDL_Event *e)
 {
+    if(e->type==SDL_TEXTINPUT || e->type==SDL_KEYDOWN)fx_canvas.text_blink=SDL_GetTicks();
     if(e->type==SDL_TEXTINPUT){fx_label_insert(e->text.text);return 1;}
     if(e->type!=SDL_KEYDOWN)return 1;
     SDL_Keycode k=e->key.keysym.sym;int mod=e->key.keysym.mod;char *s=fx_canvas.label_text;
@@ -73,14 +74,31 @@ static void fx_labels_paint(void)
         fx_text_box_scaled(text,clip,p->text,FX_TEXT,2,16,fmaxf(.4f,l->canvas_zoom*p->scale));
     }
 }
+/* A caret is overlay ink: it never inserts a character or shifts the text. */
+static void fx_edit_text(SDL_Rect box,const char *text,int cursor)
+{
+    FxFontMetrics f=fx_font(2);int left=mx_px(box.x),top=mx_py(box.y),right=mx_px(box.x+box.w),bottom=mx_py(box.y+box.h);
+    int cols=SDL_max(1,(right-left-2)/f.advance),line=f.rows[7]+mx_py(8),x=0,y=0,cx=0,cy=0;
+    for(int at=0;;++at) {
+        if(x>=cols){x=0;++y;}
+        if(at==cursor){cx=x;cy=y;}
+        char c=text[at];if(!c)break;
+        if(c=='\n'){x=0;++y;continue;}
+        const char *glyph=ts_ui_glyph(c);
+        for(int row=0;row<7;++row)for(int col=0;col<5;++col)if(glyph[row*5+col]=='1')
+            mx_fill_pixels(left+x*f.advance+f.columns[col],SDL_min(bottom,top+y*line+f.rows[row]),
+                SDL_min(right,left+x*f.advance+f.columns[col+1]),SDL_min(bottom,top+y*line+f.rows[row+1]),FX_TEXT);
+        ++x;
+    }
+    if((SDL_GetTicks()-fx_canvas.text_blink)/500%2==0 && top+cy*line<bottom)
+        mx_fill_pixels(left+cx*f.advance,top+cy*line,left+cx*f.advance+SDL_max(1,mx_px(1)),SDL_min(bottom,top+cy*line+f.rows[7]),FX_FOCUS);
+}
 static void fx_label_editor_paint(void)
 {
     mx_rect(250,220,780,370,FX_FOCUS);mx_rect(252,222,776,366,FX_PANEL);
     fx_panel_text(270,238,740,28,"TEXT LABEL",FX_FOCUS,2,1);
     mx_rect(270,282,740,230,fx_canvas.label_all?FX_EDGE:FX_BG);
-    char text[TS_FX_LABEL_TEXT+2];int at=fx_canvas.label_cursor;
-    memcpy(text,fx_canvas.label_text,(size_t)at);text[at]='|';snprintf(text+at+1,sizeof(text)-at-1,"%s",fx_canvas.label_text+at);
-    fx_panel_text(280,292,720,210,text,FX_TEXT,2,8);
+    fx_edit_text((SDL_Rect){280,292,720,210},fx_canvas.label_text,fx_canvas.label_cursor);
     fx_panel_text(270,528,740,24,"ENTER: SAVE   SHIFT+ENTER: NEW LINE   ESC: CANCEL",FX_TEXT,1,1);
     fx_panel_text(270,554,740,24,"CTRL+A: SELECT ALL   CTRL+V: PASTE   ARROWS: CURSOR",FX_DIM,1,1);
 }

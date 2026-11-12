@@ -158,6 +158,38 @@ int main(int argc,char **argv)
     mosaic_transport(0,&a,&u,0);assert(ts_profile_enabled());
     SDL_Delay(50);
     assert(live_test_input(&escape,0,&a,&u) && live_test.state==LT_ABORTED && !ts_profile_enabled());
+    /* The new composition uses option 1, ten canvases, interval profiling,
+       and the real Space/Escape/seek controllers, while legacy schedules stay fixed. */
+    static const char *angelic_names[]={"KETER","CHOKHMAH","BINAH","CHESED","GEVURAH","TIFERET","NETZACH","HOD","YESOD","MALKHUT"};
+    for(int c=0;c<10;++c) {
+        TsMosaic *m=pages.gallery->canvas[c].scene;
+        snprintf(pages.gallery->canvas[c].name,TS_GALLERY_NAME,"%s",angelic_names[c]);
+        if(c>=3)m->events[0]=(TsMosaicEvent){.id=100+c,.source=&source,.duration=600,.width=50,.gain=1};
+        m->playing=0;m->audition_id=0;m->markers[0]=(TsMosaicMarker){.stored=1,.time=210};
+    }
+    snprintf(u.project_path,sizeof(u.project_path),"Tree-of-Life-Angelic-Noise.tsr");
+    assert(live_test_angelic_matches(&u.config.matrix,&pages,u.project_path));
+    pages.gallery->canvas[9].scene->events[0].solo=1;
+    assert(!live_test_angelic_matches(&u.config.matrix,&pages,u.project_path));
+    pages.gallery->canvas[9].scene->events[0].solo=0;
+    u.config.diagnostic_live_test=1;live_test_loaded(0,&a,&u,&pages,u.project_path);
+    assert(live_test.angelic && live_test.state==LT_PREPARING && live_test.duration_ms==792100);
+    assert(!strcmp(live_test_scenario(),"angelic-noise-live-v1") && live_test.count>500);
+    int visited[10]={1},actions[LT_ASSERT+1]={0};
+    for(int i=0;i<live_test.count;++i){LiveTestStep step=live_test.steps[i];++actions[step.action];
+        if(i)assert(step.ms>live_test.steps[i-1].ms);
+        if(step.action==LT_GALLERY)visited[step.target]=1;
+    }
+    for(int c=0;c<10;++c)assert(visited[c]);
+    assert(actions[LT_ESCAPE]>=30 && actions[LT_SPACE]>=30 && actions[LT_ASSERT]>=60);
+    live_test_poll(window,0,&a,&u,&pages,&bank,&mosaic,&portal,&sister,&transform,SDL_GetPerformanceCounter());
+    assert(live_test.state==LT_ARMED && pages.gallery->active==0 && u.mosaic->time==0);
+    mosaic_transport(0,&a,&u,0);assert(ts_profile_enabled());
+    LiveTestStep steps[]={ {0,LT_SPACE,0,0},{0,LT_ASSERT,1,0},{0,LT_ESCAPE,0,0},{0,LT_ASSERT,2,0},
+        {0,LT_ESCAPE,1,0},{0,LT_ASSERT,3,0},{0,LT_SPACE,1,0},{0,LT_SEEK,0,.5f},{0,LT_SEEK,1,.35f} };
+    for(size_t i=0;i<sizeof(steps)/sizeof(*steps);++i){SDL_Delay(30);assert(live_test_action(&steps[i],window,0,&a,&u,&pages,&bank,&mosaic,&portal,&sister,&transform));}
+    assert(u.mosaic->time==210 && !a.engine_stopped && u.mosaic->playing);
+    assert(live_test_input(&escape,0,&a,&u) && live_test.state==LT_ABORTED && !ts_profile_enabled());
     ts_session_log_stop();
     TsSessionLogStatus log;ts_session_log_status(&log);
     assert(log.export_result==2 && log.export_serial>=1);

@@ -162,7 +162,7 @@ static void edit_controls(void)
     view_codec();edit_settle();key(SDLK_z,KMOD_CTRL);assert(edit_slot(clone[0])<0);edit_settle();key(SDLK_y,KMOD_CTRL);assert(edit_slot(clone[0])>=0);edit_settle();
     /* Mixed deletion is one edit; a wire alone never implies its endpoint. */
     fx_build(&pages,&bank);fx_clear_selection();fx_select(instance(clone[0]),0);fx_clear_wires();fx_select_wire(instance(id[0])->row,TS_MATRIX_EFFECT_BASE+1,0);
-    undo=w->history_cursor;key(SDLK_DELETE,0);assert(edit_slot(clone[0])<0 && edit_slot(id[0])>=0 && edit_slot(id[1])>=0);
+    undo=w->history_cursor;key(SDLK_DELETE,0);assert(fx_canvas.confirm_delete);key(SDLK_n,0);assert(edit_slot(clone[0])<0 && edit_slot(id[0])>=0 && edit_slot(id[1])>=0);
     assert(!w->controls.row[TS_MATRIX_EFFECT_BASE].matrix_gain[TS_MATRIX_EFFECT_BASE+1] && w->history_cursor==undo+1);
     edit_settle();key(SDLK_z,KMOD_CTRL);assert(edit_slot(clone[0])>=0 && w->controls.row[TS_MATRIX_EFFECT_BASE].matrix_gain[TS_MATRIX_EFFECT_BASE+1]==700);edit_settle();
     /* Not enough room must not paste a partial branch or spend instance IDs. */

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Summarize one or compare two TapeSister tree04-live-v1 session exports.
+"""Summarize one or compare two TapeSister live diagnostic session exports.
 
 Uses counter differences inside the run, never the session's retained maxima.
 Action order/targets are checked before timing comparisons are described as matched.
@@ -13,6 +13,27 @@ from pathlib import Path
 
 def fields(row):
     return dict(re.findall(r"(\w+)=(.*?)(?=\s+\w+=|$)", row.get("detail", "")))
+
+
+def phase_usage(run, windows):
+    """Use complete windows after settling; never mix transition boundaries."""
+    phases = [r for r in run if r.get("type") == "live_test_phase"]
+    groups = {}
+    for i, row in enumerate(phases):
+        state = fields(row)
+        begin = row["t_ms"] + float(state.get("settle_ms", 0))
+        end = phases[i + 1]["t_ms"] if i + 1 < len(phases) else run[-1]["t_ms"]
+        key = (state["mode"], state["fx_canvas"])
+        groups.setdefault(key, []).extend(w for w in windows if w["from_ms"] >= begin and w["t_ms"] <= end)
+    result = []
+    for (mode, canvas), samples in sorted(groups.items()):
+        callbacks = sum(w.get("callbacks", 0) for w in samples)
+        result.append({"mode": mode, "fx_canvas": canvas == "1", "windows": len(samples),
+                       "callbacks": callbacks,
+                       "average_callback_ms": sum(w.get("average_ms", 0) * w.get("callbacks", 0) for w in samples) / callbacks if callbacks else None,
+                       "peak_callback_ms": max((w["peak_ms"] for w in samples), default=None),
+                       "over_budget": sum(w.get("over_budget", 0) for w in samples)})
+    return result
 
 
 def summarize(path):
@@ -63,6 +84,7 @@ def summarize(path):
         "callbacks": callbacks, "over_budget": overruns,
         "over_budget_percent": 100 * overruns / callbacks if callbacks else None,
         "observed_peak_ms_in_complete_windows": observed_peak,
+        "phase_usage": phase_usage(run, windows),
         "max_action_lateness_ms": max((float(x["late_ms"]) for x in begins), default=0),
         "max_action_duration_ms": max((float(x["duration_ms"]) for x in ends), default=0),
         "slowest_actions": sorted(

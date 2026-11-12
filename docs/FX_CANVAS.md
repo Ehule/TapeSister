@@ -99,6 +99,7 @@ editing gestures apply to the FX workspace; Z, Shift+Z and M follow Mosaic.
 | G / S | Grab / resize selected modules; click or Enter confirms, Escape cancels |
 | Ctrl+C / Ctrl+V | Copy / paste independent effects with settings and internal wiring |
 | Shift+drag a module onto another | Connect/disconnect that route using Matrix validation |
+| Ctrl+Shift+click destination | Connect every selected source to it; one undo removes the new links and keeps the source selection |
 | Drag output port to input port | Connect; the lower purple port receives sidechain audio |
 | Middle-drag / wheel | Pan / zoom around the pointer, regardless of cable selection |
 | Shift+wheel | Adjust all selected cables by the same dB amount within gain limits |
@@ -107,6 +108,30 @@ editing gestures apply to the FX workspace; Z, Shift+Z and M follow Mosaic.
 | X / Delete / Backspace | Remove explicitly selected added effects and/or cables; fixed buses and endpoints are protected |
 | Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z | Shared Matrix undo/redo |
 | Double-click Meta FX | Enter its chain; Escape or BACK TO FX returns |
+| F2 on one selected card / right-click a card | Edit its display name and color; Enter applies, Escape cancels |
+
+Deleting an added effect asks **Retain links?** **Yes** connects its upstream
+sources to its downstream destinations, including cards in other Gallery
+movements. For example, samples → distortion → compressor becomes samples →
+compressor. **No** disconnects the deleted effect's inputs and outputs; the
+compressor's remaining chain stays connected. Cancel leaves the graph alone.
+Only explicitly selected cables are deleted. Each confirmed operation is one
+undo step. Retained cable gains multiply through the removed effect and add to
+existing parallel links. Unsupported feedback rewrites or gains above the limit
+are rejected atomically; choose No or Cancel instead.
+
+Select an added FX card and use **REPLACE**, beside Remove in its parameter panel,
+to choose another native, Meta or SunVox effect. Its identity, audio connections,
+position, name, color and common mix/gain/bypass settings stay in place. The new
+effect starts with its default type-specific settings. Compressor sidechain
+inputs are removed when the new type has no sidechain; Undo restores them.
+Fixed engine buses/processors are not replaceable cards.
+
+Card properties offer a palette and RGB sliders. An empty name restores the
+original source/type label; Reset restores the original label and automatic
+type color. Names/colors are saved with the project and copied with effects.
+They affect FX Canvas presentation, not sample filenames. Both card-name and
+text-label editors show a blinking insertion cursor.
 
 Delete protects fixed buses and hardware endpoints. Their selection still supports
 positioning, resizing and framing. Cable selection does not select either endpoint.

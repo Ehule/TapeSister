@@ -247,6 +247,8 @@ session_log=1
 ; Profiling adds measurement overhead; use mode 2 for deadline comparisons.
 ; All modes arm on load and start on Mosaic Play; health logs record/export automatically.
 ; Restart with 0 for normal editing. Mode 2 preserves the full effect-history buildup.
+# 1: complete Angelic Noise Gallery stress/transport/idle test (13:12).
+# Open Tree-of-Life-Angelic-Noise.tsr and press Mosaic Play.
 diagnostic_live_test=0
 
 [Mosaic]

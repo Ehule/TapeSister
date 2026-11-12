@@ -18,6 +18,20 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
 {
     MatrixWindow *w=&matrix_window;TsMatrixLayout *l=w->layout;
     if(fx_canvas.label_editing)return fx_label_edit_event(e);
+    if(fx_canvas.properties)return fx_properties_event(e);
+    if(fx_canvas.confirm_delete) {
+        int choice=-1;
+        if(e->type==SDL_KEYDOWN) {
+            if(e->key.keysym.sym==SDLK_ESCAPE)choice=2;
+            else if(e->key.keysym.sym==SDLK_y)choice=1;
+            else if(e->key.keysym.sym==SDLK_n)choice=0;
+        }
+        if(e->type==SDL_MOUSEBUTTONDOWN && e->button.button==SDL_BUTTON_LEFT && y>=448 && y<476) {
+            if(x>=324 && x<514)choice=1;else if(x>=532 && x<722)choice=0;else if(x>=740 && x<930)choice=2;
+        }
+        if(choice==2 || (choice>=0 && fx_delete_effects(choice,device,audio,ui,pages,bank)))fx_canvas.confirm_delete=0;
+        return 1;
+    }
     if(fx_label_drag_event(e,x,y))return 1;
     if(fx_canvas.label_selected>=l->label_count)fx_canvas.label_selected=-1;
     if(e->type==SDL_KEYUP){if(fx_canvas_key(e->key.keysym.sym) || ((e->key.keysym.mod&KMOD_CTRL) && (e->key.keysym.sym==SDLK_a || e->key.keysym.sym==SDLK_n || e->key.keysym.sym==SDLK_c || e->key.keysym.sym==SDLK_v)))return 1;
@@ -78,6 +92,7 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
             }
             if(key==SDLK_ESCAPE){fx_canvas.label_selected=-1;return 1;}
         }
+        if(key==SDLK_F2 && w->selection_count==1){fx_properties_begin(w->selection[0]);return 1;}
         if(key==SDLK_ESCAPE) {
             if(fx_canvas.popup){fx_canvas.popup=0;return 1;}
             if(w->drag){fx_cancel_gesture();return 1;}
@@ -93,7 +108,7 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
             if(!fx_canvas.meta){fx_build(pages,bank);if(key==SDLK_c)fx_copy();else fx_paste(device,audio,ui,pages,bank);}return 1;
         }
         if(key==SDLK_DELETE || key==SDLK_BACKSPACE || key==SDLK_x) {
-            if(!fx_canvas.meta)fx_edit_selection(1,0,device,audio,ui,pages,bank);return 1;
+            if(!fx_canvas.meta){if(fx_selected_effects())fx_delete_request(-1);else fx_edit_selection(1,0,device,audio,ui,pages,bank);}return 1;
         }
         if((mod&KMOD_CTRL) && key==SDLK_a){if(!fx_canvas.meta){fx_clear_wires();fx_clear_selection();fx_build(pages,bank);
             for(int i=0;i<fx_canvas.count;++i)w->selection[w->selection_count++]=fx_canvas.node[i].row;}return 1;}
@@ -196,9 +211,14 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
     fx_canvas.label_selected=-1;
     for(int i=fx_canvas.count-1;i>=0;--i) {
         FxCanvasNode *n=&fx_canvas.node[i];int xx=fx_x(n->x),yy=fx_y(n->y),ww=(int)(fx_node_w(n)*l->canvas_zoom),hh=(int)(fx_node_h(n)*l->canvas_zoom);
+        int mod=SDL_GetModState();
+        if(left && (mod&KMOD_CTRL) && (mod&KMOD_SHIFT) && x>=xx-12 && x<=xx+ww+12 && y>=yy && y<=yy+hh) {
+            fx_connect_selected(n->destination,device,audio,ui,pages,bank);return 1;
+        }
         if(left && n->at>=0 && abs(x-(xx+ww))<12 && abs(y-(yy+hh/2))<12){fx_canvas.source=n->row;fx_canvas.wire=i;fx_canvas.destination=-1;w->drag=FX_DRAG_WIRE;fx_canvas.move_count=0;fx_canvas.mouse_x=x;fx_canvas.mouse_y=y;return 1;}
         if(x<xx || x>xx+ww || y<yy || y>yy+hh)continue;
-        if(!left)return 1;int mod=SDL_GetModState();
+        if(e->button.button==SDL_BUTTON_RIGHT){fx_select(n,0);fx_properties_begin(n->row);return 1;}
+        if(!left)return 1;
         if(mod&KMOD_SHIFT){fx_canvas.source=n->row;fx_canvas.wire=i;fx_canvas.destination=-1;w->drag=FX_DRAG_SHIFT_NODE;fx_canvas.shift_moved=0;
             fx_canvas.pointer_x=fx_canvas.mouse_x=x;fx_canvas.pointer_y=fx_canvas.mouse_y=y;SDL_CaptureMouse(SDL_TRUE);return 1;}
         if(!(mod&KMOD_CTRL))fx_clear_wires();

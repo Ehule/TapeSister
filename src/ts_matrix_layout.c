@@ -42,6 +42,8 @@ int ts_matrix_layout_valid(const TsMatrixLayout *l)
        !isfinite(l->canvas_zoom) || l->canvas_zoom<.001f || l->canvas_zoom>2)return 0;
     for(int i=0;i<l->canvas_count;++i) {
         const TsFxCanvasPosition *p=&l->canvas[i];
+        if(!memchr(p->name,0,sizeof(p->name)) || (p->color && (p->color>>24)!=255))return 0;
+        for(const unsigned char *t=(const unsigned char *)p->name;*t;++t)if(*t<32 || *t>126)return 0;
         if(p->kind<0 || p->kind>5 || !isfinite(p->x) || !isfinite(p->y) ||
            !isfinite(p->scale) || (p->scale!=0 && (p->scale<.25f || p->scale>4.f)) ||
            fabsf(p->x)>1000000 || fabsf(p->y)>1000000 ||
@@ -85,6 +87,11 @@ int ts_matrix_layout_write(FILE *f,const TsMatrixLayout *l)
         if(fprintf(f,"FxCanvas.Node%d=%d,%" PRIu64 ",%.9g,%.9g",i,p->kind,p->id,p->x,p->y)<0)return 0;
         if(p->scale!=0 && fprintf(f,",%.9g",p->scale)<0)return 0;
         if(fputc('\n',f)==EOF)return 0;
+        if(p->color || p->name[0]) {
+            if(fprintf(f,"FxCanvas.Style%d=%u,",i,p->color)<0)return 0;
+            for(const unsigned char *t=(const unsigned char *)p->name;*t;++t)if(fprintf(f,"%02x",*t)<0)return 0;
+            if(fputc('\n',f)==EOF)return 0;
+        }
         if(p->canvas && fprintf(f,"FxCanvas.Scene%d=%" PRIu64 "\n",i,p->canvas)<0)return 0;
     }
     for(int i=0;i<TS_MATRIX_DESTINATIONS;++i)
@@ -136,6 +143,19 @@ int ts_matrix_layout_read(TsMatrixLayout *l,const char *key,const char *value)
         if(sscanf(value,"%f,%f,%f%c",&x,&y,&z,&extra)!=3 || !isfinite(x) || !isfinite(y) ||
            fabsf(x)>1000000 || fabsf(y)>1000000 || !isfinite(z) || z<.001f || z>2)return -1;
         l->canvas_x=x;l->canvas_y=y;l->canvas_zoom=z;l->canvas_view=1;return 1;
+    }
+    if(!strncmp(key,"FxCanvas.Style",14)) {
+        s=key+14;uint64_t color;
+        if(!layout_number(&s,TS_FX_CANVAS_POSITIONS-1,&i) || *s || i>=(uint64_t)l->canvas_count ||
+           !layout_number(&value,UINT32_MAX,&color) || *value++!=',' || (color && color>>24!=255))return -1;
+        size_t len=strlen(value);if(len%2 || len/2>=sizeof(l->canvas[i].name))return -1;
+        char name[48]={0};
+        for(size_t j=0;j<len;j+=2) {
+            if(!isxdigit((unsigned char)value[j]) || !isxdigit((unsigned char)value[j+1]))return -1;
+            char byte[3]={value[j],value[j+1],0};unsigned v=(unsigned)strtoul(byte,NULL,16);
+            if(v<32 || v>126)return -1;name[j/2]=(char)v;
+        }
+        l->canvas[i].color=(uint32_t)color;memcpy(l->canvas[i].name,name,sizeof(name));return 1;
     }
     if(!strncmp(key,"FxCanvas.Scene",14)) {
         s=key+14;

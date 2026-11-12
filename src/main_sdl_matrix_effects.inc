@@ -81,7 +81,8 @@ static void mx_effect_paint(void)
     else if(c->type==TS_MATRIX_FX_SUNVOX)mx_button(410,696,200,"BROWSE SUNVOX",0);
     else if(c->type==TS_MATRIX_FX_FILTER)mx_button(410,696,200,"EDIT FILTER",0);
     else mx_text(418,704,"INDEPENDENT INSTANCE",MX_DIM,1);
-    mx_button(898,696,138,"REMOVE",0);mx_button(1048,696,192,"BACK TO ROUTES",0);
+    mx_button(898,696,138,"REMOVE",0);if(w->canvas){mx_button(1048,696,110,"REPLACE",0);mx_button(1166,696,74,"BACK",0);}
+    else mx_button(1048,696,192,"BACK TO ROUTES",0);
     if(w->effect_progress<1 && c->type!=TS_SISTER_FX_TRANSIENT){mx_rect(630,715,240,3,MX_DIM);mx_rect(630,715,(int)(240*w->effect_progress),3,MX_AMBER);}
     int count=mx_effect_controls(c),width=1204/count;
     for(int i=0;i<count;++i) {
@@ -153,7 +154,7 @@ static void mx_effect_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioSta
 {
     MatrixWindow *w=&matrix_window;int click=e->type==SDL_MOUSEBUTTONDOWN,left=click && e->button.button==SDL_BUTTON_LEFT;
     if(e->type==SDL_MOUSEBUTTONUP){w->drag=0;return;}
-    if(left && y>=696 && y<724 && x>=1048){w->effect_menu=0;w->effect_open=0;w->drag=0;return;}
+    if(left && y>=696 && y<724 && x>=(w->canvas && !w->effect_menu?1166:1048)){w->effect_menu=0;w->effect_open=0;w->drag=0;return;}
     if(!mx_editable())return;
     if(w->effect_menu) {
         if(left && y>=736 && y<798 && (y-736)%34<28 && x>=32 && x<1244){int type=1+(x-32)/172+7*((y-736)/34);if(type<TS_MATRIX_FX_TYPES)mx_effect_add(device,audio,ui,pages,bank,type);}
@@ -201,7 +202,8 @@ static void mx_effect_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioSta
         if(c->type==TS_MATRIX_FX_FILTER && x>=410 && x<610){character_filter_matrix_open(c->id);return;}
         if(x>=272 && x<398){c->enabled=!c->enabled;change=1;}
         if(c->type==TS_MATRIX_FX_COMPRESSOR && x>=410 && x<610){c->compressor.external=!c->compressor.external;if(c->compressor.external)mx_reveal_column(TS_MATRIX_EFFECT_SC_BASE+slot);change=1;}
-        if(x>=898 && x<1036){mx_effect_remove(device,audio,ui,pages,bank,slot);return;}
+        if(w->canvas && x>=1048 && x<1158){fx_replace_request(c->id);return;}
+        if(x>=898 && x<1036){if(w->canvas)fx_delete_request(slot);else mx_effect_remove(device,audio,ui,pages,bank,slot);return;}
     }
     int control=x>=32 && x<1236?(x-32)/width:-1;
     if(control>=0 && control<count && x<32+control*width+width-18 && y>=730 && y<777) {

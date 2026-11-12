@@ -7,6 +7,8 @@ typedef struct { FxCanvasWire *items; int count,capacity; } FxWireList;
 static struct {
     FxCanvasNode node[MATRIX_CAPACITY+TS_MATRIX_DESTINATIONS];
     int label_selected,label_editing,label_target,label_cursor,label_all;
+    Uint32 text_blink;int text_phase,confirm_delete;uint32_t replace_id;
+    int properties;MatrixRow properties_row;char properties_name[48];uint32_t properties_color;int properties_cursor,properties_all;
     char label_text[TS_FX_LABEL_TEXT];
     TsFxCanvasLabel label_origin;
     int count,dest[TS_MATRIX_DESTINATIONS],fit,wire,destination,mouse_x,mouse_y;
@@ -29,7 +31,7 @@ static void fx_divider_cursor(int active)
     fx_canvas.divider_hover=active;
 }
 static void fx_context_reset(void)
-{fx_canvas.label_selected=-1;fx_canvas.label_editing=0;fx_divider_cursor(0);if(fx_canvas.divider_cursor)SDL_FreeCursor(fx_canvas.divider_cursor);fx_canvas.divider_cursor=NULL;svfx_close();fx_canvas.meta=0;fx_canvas.wire=fx_canvas.destination=-1;fx_canvas.fit=fx_canvas.popup=fx_canvas.confirm_clear=0;fx_canvas.inspector_key=0;fx_canvas.movement=0;fx_canvas.movement_popup=0;
+{fx_canvas.label_selected=-1;fx_canvas.label_editing=fx_canvas.properties=fx_canvas.confirm_delete=0;fx_canvas.replace_id=0;fx_divider_cursor(0);if(fx_canvas.divider_cursor)SDL_FreeCursor(fx_canvas.divider_cursor);fx_canvas.divider_cursor=NULL;svfx_close();fx_canvas.meta=0;fx_canvas.wire=fx_canvas.destination=-1;fx_canvas.fit=fx_canvas.popup=fx_canvas.confirm_clear=0;fx_canvas.inspector_key=0;fx_canvas.movement=0;fx_canvas.movement_popup=0;
  free(fx_canvas.wires.items);free(fx_canvas.before_wires.items);fx_canvas.wires=(FxWireList){0};fx_canvas.before_wires=(FxWireList){0};}
 static int fx_source_at(MatrixRow key)
 {
@@ -471,6 +473,8 @@ static void fx_inspector_paint(TsSamplePages *pages,TsInstrument *bank)
 }
 #include "main_sdl_fx_canvas_edit.inc"
 #include "main_sdl_fx_canvas_labels.inc"
+#include "main_sdl_fx_canvas_patch.inc"
+#include "main_sdl_fx_canvas_properties.inc"
 #include "main_sdl_fx_canvas_popup.inc"
 static void fx_paint_cables(TsSamplePages *pages,TsInstrument *bank)
 {
@@ -561,7 +565,9 @@ static void fx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
             else if(n->row.kind==2 && n->row.index==TS_MATRIX_TRACKER)snprintf(compact,sizeof(compact),"TRK BUS");
             else if(n->row.kind==2 && n->row.index==TS_MATRIX_LINK)snprintf(compact,sizeof(compact),"LIVE LINK");
             else snprintf(compact,sizeof(compact),"%s",title);
-            fx_node_rect(x,y,width,height,title,compact,detail,c?(c->enabled?fx_color(c->type):FX_MUTED):fx_color(0),fx_chosen(n->row),n->scale);
+            TsFxCanvasPosition *style=fx_position(n->row,0);
+            if(style && style->name[0]){title=style->name;snprintf(compact,sizeof(compact),"%s",title);}
+            fx_node_rect(x,y,width,height,title,compact,detail,c && !c->enabled?FX_MUTED:style && style->color?style->color:fx_color(c?c->type:0),fx_chosen(n->row),n->scale);
             if(n->destination>=0)fx_rect(x-4,y+height/2-4,9,9,FX_CABLE);
             if(n->at>=0)fx_rect(x+width-4,y+height/2-4,9,9,FX_CABLE);
             int sc=n->destination>=0?ts_matrix_sidechain_for(n->destination):-1;
@@ -585,8 +591,8 @@ static void fx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
         if(w->effect_open)mx_effect_paint();
         else if(w->compressor_open)mx_compressor_paint();
         else {
-            mx_text(24,707,"Double-click empty: add effect / text     T: add text label",FX_TEXT,2);
-            mx_text(24,739,"G: grab   S: resize   Shift-click: select   Ctrl-drag: select wires",FX_TEXT,2);
+            mx_text(24,707,"Double-click empty: add effect / text     T: add text label / F2: name + color",FX_TEXT,2);
+            mx_text(24,739,"G: grab   S: resize   Shift-click: select   Ctrl+Shift-click: connect selection",FX_TEXT,2);
             mx_text(24,771,"Ctrl+C/V: copy/paste   X: delete   Wheel: zoom   Shift+wheel: gain",FX_TEXT,2);
         }
         snprintf(label,sizeof(label),w->controls.enabled?"%d NODES / %.0F%%":"SAVED GRAPH / INACTIVE",fx_canvas.count,w->layout->canvas_zoom*100);mx_text(24,80,label,FX_DIM,2);
@@ -609,6 +615,13 @@ static void fx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
     else mx_text(24,815,"Shift+F9: FX Canvas     F9: Matrix     Esc: back     Ctrl+Z: undo",FX_DIM,2);
     if(fx_canvas.popup)fx_popup_paint();
     if(fx_canvas.label_editing)fx_label_editor_paint();
+    if(fx_canvas.properties)fx_properties_paint();
+    if(fx_canvas.confirm_delete) {
+        mx_rect(300,250,680,260,FX_FOCUS);mx_rect(302,252,676,256,FX_PANEL);
+        fx_panel_text(324,272,620,28,"REMOVE EFFECTS: RETAIN LINKS?",FX_FOCUS,2,1);
+        fx_panel_text(324,315,620,90,"YES connects incoming sources to the next effects. NO disconnects inputs. Downstream effects stay in place. Both choices can be undone.",FX_TEXT,2,4);
+        fx_button(324,448,190,"YES: RETAIN",0);fx_button(532,448,190,"NO: DISCONNECT",0);fx_button(740,448,190,"CANCEL",0);
+    }
     if(fx_canvas.movement_popup && w->gallery) {
         mx_rect(300,102,500,32*(w->gallery->count+1)+4,FX_EDGE);
         for(int c=-1;c<w->gallery->count;++c) {
