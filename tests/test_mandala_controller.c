@@ -423,6 +423,23 @@ static void video_checks(SDL_Window *window)
     editor_key(SDLK_y,KMOD_CTRL);assert(a.sister.mandala.video_filter==100);
     editor_click(170,425,SDL_BUTTON_RIGHT);assert(!a.sister.mandala.video_filter);
     editor_click(390,215,SDL_BUTTON_LEFT);assert(!a.sister.mandala.video_loop);
+    editor_click(170,75,SDL_BUTTON_LEFT);assert(u.browser.mode==TS_BROWSER_LOAD_VISUAL_FOLDER);
+    assert(ts_browser_mode_selects_directory(u.browser.mode) && !ts_browser_mode_selects_config(u.browser.mode));
+    snprintf(u.browser.directory,sizeof(u.browser.directory),"%s",TS_VIDEO_FIXTURE);
+    char *folder_end=strrchr(u.browser.directory,'/');assert(folder_end);*folder_end=0;
+    assert(ts_browser_refresh(&u.browser));
+    for(int i=0;i<u.browser.entry_count;++i)assert(u.browser.entries[i].is_directory);
+    char folder[1024];snprintf(folder,sizeof(folder),"%s",u.browser.directory);
+    TsVisualCue latched={.serial=27};snprintf(latched.path,sizeof(latched.path),"%s",TS_VIDEO_FIXTURE);ts_mandala_video_cue(&latched);
+    PendingFileOperation folder_pending={0};
+    browser_action(0,&a,&u,&bank,NULL,&pages,NULL,0,&folder_pending,0);
+    assert(u.browser.mode==TS_BROWSER_CLOSED && a.sister.mandala.video_enabled && !strcmp(a.sister.mandala.video_path,folder));
+    assert(!host.cue.serial && !host.cue.path[0]);
+    editor_key(SDLK_z,KMOD_CTRL);assert(!a.sister.mandala.video_path[0]);
+    editor_key(SDLK_y,KMOD_CTRL);assert(!strcmp(a.sister.mandala.video_path,folder));
+    /* Cancelling the folder picker does not alter the current selection. */
+    editor_click(170,75,SDL_BUTTON_LEFT);assert(u.browser.mode==TS_BROWSER_LOAD_VISUAL_FOLDER);
+    ts_browser_close(&u.browser);assert(!strcmp(a.sister.mandala.video_path,folder));
     editor_click(40,75,SDL_BUTTON_LEFT);assert(u.browser.mode==TS_BROWSER_LOAD_VIDEO);
     snprintf(u.browser.directory,sizeof(u.browser.directory),"%s",TS_VIDEO_FIXTURE);
     char *slash=strrchr(u.browser.directory,'/');assert(slash);*slash=0;

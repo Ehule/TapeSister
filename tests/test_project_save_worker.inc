@@ -5,7 +5,7 @@ static void SDLCALL save_test_callback(void *data,Uint8 *stream,int length)
 {audio_callback(data,stream,length);SDL_AtomicAdd(&save_test_callbacks,1);}
 static void worker_poll(SDL_AudioDeviceID device)
 {
-    run_pending_file_operation(device,&audio,&ui,&bank,&selection,&importer,&pages,&record,0,&file);
+    run_pending_file_operation(device,&audio,&ui,&bank,&selection,&importer,&pages,&record,0,&file,NULL);
 }
 static void worker_finish(SDL_AudioDeviceID device)
 {

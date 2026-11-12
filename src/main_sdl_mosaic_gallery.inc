@@ -97,12 +97,28 @@ static int mosaic_gallery_event(const SDL_Event *event,SDL_AudioDeviceID device,
         if((key && k==SDLK_ESCAPE) || (left && y>=319 && y<343 && x>=494 && x<598)) {
             ui->mosaic_canvas_import_count=0;snprintf(ui->mosaic_gallery_status,sizeof(ui->mosaic_gallery_status),"CANVAS IMPORT CANCELLED");return 1;
         }
-        if(key && !event->key.repeat && (k==SDLK_UP || k==SDLK_DOWN))*selected=(*selected+(k==SDLK_UP?-1:1)+count)%count;
-        if(left && y>=105 && y<265 && x>=126 && x<610){int index=(x>=370)*8+(y-105)/20;if(index<count)*selected=index;}
+        if(key && !event->key.repeat && (k==SDLK_UP || k==SDLK_DOWN)){*selected=(*selected+(k==SDLK_UP?-1:1)+count)%count;ui->mosaic_canvas_import_confirm=0;}
+        if(left && y>=105 && y<265 && x>=126 && x<610){int index=(x>=370)*8+(y-105)/20;if(index<count){*selected=index;ui->mosaic_canvas_import_confirm=0;}}
+        if(left && y>=273 && y<297 && x>=128 && x<598) {
+            ui->mosaic_canvas_import_replace=x>=282;ui->mosaic_canvas_import_confirm=0;
+        }
         if((key && !event->key.repeat && (k==SDLK_RETURN || k==SDLK_KP_ENTER)) || (left && y>=319 && y<343 && x>=388 && x<482)) {
             if(!mosaic_gallery_busy(a,ui,c)) {
-                if(g->count>=TS_GALLERY_LIMIT || ui->mosaic_gallery_fading)snprintf(ui->mosaic_gallery_status,sizeof(ui->mosaic_gallery_status),"GALLERY FULL OR CROSSFADING / TRY AGAIN AFTER THE FADE");
-                else {ui->mosaic_canvas_import_pending=1;ui->file_busy=1;snprintf(ui->file_busy_label,sizeof(ui->file_busy_label),"IMPORTING CANVAS");}
+                int replacing=ui->mosaic_canvas_import_replace,target=-1;
+                for(int i=0;i<g->count;++i)if(g->canvas[i].id==ui->mosaic_canvas_import_target)target=i;
+                if(ui->mosaic_gallery_fading)snprintf(ui->mosaic_gallery_status,sizeof(ui->mosaic_gallery_status),"WAIT FOR THE CURRENT CROSSFADE");
+                else if(!replacing && g->count>=TS_GALLERY_LIMIT)snprintf(ui->mosaic_gallery_status,sizeof(ui->mosaic_gallery_status),"GALLERY FULL / CHOOSE REPLACE SELECTED");
+                else if(replacing && target<0)snprintf(ui->mosaic_gallery_status,sizeof(ui->mosaic_gallery_status),"DESTINATION CANVAS IS NO LONGER AVAILABLE");
+                else {
+                    TsMosaic *old=replacing?g->canvas[target].scene:NULL;int populated=0;
+                    if(old)for(int i=0;i<TS_MOSAIC_EVENTS;++i)populated|=old->events[i].id!=0;
+                    if(old && target==g->active && (old->playing || old->audition_id || (ts_mosaic_live_count(old) && !old->live_paused)))
+                        snprintf(ui->mosaic_gallery_status,sizeof(ui->mosaic_gallery_status),"STOP PLAYBACK, AUDITION AND LIVE LOOPS BEFORE REPLACING ACTIVE CANVAS");
+                    else if(populated && !ui->mosaic_canvas_import_confirm) {
+                        ui->mosaic_canvas_import_confirm=1;
+                        snprintf(ui->mosaic_gallery_status,sizeof(ui->mosaic_gallery_status),"REPLACE %02d %.47s? CLICK CONFIRM; EXISTING CARDS WILL BE REMOVED",target+1,g->canvas[target].name);
+                    } else {ui->mosaic_canvas_import_pending=1;ui->file_busy=1;snprintf(ui->file_busy_label,sizeof(ui->file_busy_label),"IMPORTING CANVAS");}
+                }
             }
         }
         return event->type==SDL_KEYDOWN || event->type==SDL_KEYUP || event->type==SDL_TEXTINPUT || event->type==SDL_MOUSEWHEEL ||
@@ -131,7 +147,6 @@ static int mosaic_gallery_event(const SDL_Event *event,SDL_AudioDeviceID device,
     if(left && y>=79 && y<103 && x>=430 && x<598) {
         if(mosaic_gallery_busy(a,ui,c))return 1;
         int importing=x<508;
-        if(importing && g->count>=TS_GALLERY_LIMIT){snprintf(ui->mosaic_gallery_status,sizeof(ui->mosaic_gallery_status),"GALLERY LIMIT: 16 CANVASES");return 1;}
         ui->mosaic_gallery_open=0;
         browser_open(ui,importing?TS_BROWSER_IMPORT_CANVAS:TS_BROWSER_EXPORT_CANVAS);
         if(!importing) {
@@ -141,6 +156,18 @@ static int mosaic_gallery_event(const SDL_Event *event,SDL_AudioDeviceID device,
             if(!at)filename[at++]='C';memcpy(filename+at,".tsr",5);ts_browser_set_filename(&ui->browser,filename);
         }
         return 1;
+    }
+    if((key && !event->key.repeat && (mod&KMOD_ALT) && (k==SDLK_UP || k==SDLK_DOWN)) ||
+       (left && y>=350 && y<374 && x>=128 && x<360)) {
+        if(mosaic_gallery_busy(a,ui,c))return 1;
+        int to=selected+(key?(k==SDLK_UP?-1:1):(x<240?-1:1));
+        if(device)SDL_LockAudioDevice(device);
+        int ok=ts_gallery_move(g,selected,to,ui->mosaic_gallery_status,sizeof(ui->mosaic_gallery_status));
+        if(ok)ui->mosaic_gallery_selected=to;
+        mosaic_gallery_snapshot(ui,g);
+        if(device)SDL_UnlockAudioDevice(device);
+        if(ok)snprintf(ui->mosaic_gallery_status,sizeof(ui->mosaic_gallery_status),"MOVED TO POSITION %02d / PLAYBACK UNCHANGED",to+1);
+        ui->mosaic_gallery_delete=0;matrix_window.dirty=1;return 1;
     }
     if(key && !event->key.repeat && (k==SDLK_UP || k==SDLK_DOWN)) {
         selected=(selected+(k==SDLK_UP?-1:1)+g->count)%g->count;

@@ -166,13 +166,19 @@ void ts_matrix_effects_tick(TsMatrixEffects *f)
         if(!n)f->fading&=~(1u<<i);
     }
 }
-static TsStereoFrame node_process(TsMatrixEffectNode *n,TsStereoFrame in,TsStereoFrame key,int connected)
+static TsStereoFrame node_process(TsMatrixEffects *f,int slot,TsMatrixEffectNode *n,TsStereoFrame in,TsStereoFrame key,int connected,int transitioning)
 {
     if(!n)return (TsStereoFrame){0,0};
     if(n->remaining){--n->remaining;n->gate=n->start+(n->target-n->start)*(1-(double)n->remaining/n->total);}
     if(!n->sunvox && !connected && !in.l && !in.r && !key.l && !key.r)return (TsStereoFrame){0,0};
     if(n->sunvox) {
-        float wet[2],dry[2];ts_sunvox_process(n->sunvox,in.l,in.r,wet,dry);
+        float wet[2],dry[2];
+        if(ts_sunvox_stage_frame(n->sunvox,in.l,in.r,wet,dry)) {
+            if(f->batching && f->jobs_count<2*TS_MATRIX_EFFECT_CAPACITY) {
+                unsigned j=f->jobs_count++;
+                f->jobs[j].node=n;f->jobs[j].slot=slot;f->jobs[j].transitioning=transitioning;
+            } else ts_sunvox_render_pending(n->sunvox);
+        }
         n->gain+=(n->gain_target-n->gain)*n->smooth;
         n->mix+=(n->mix_target-n->mix)*n->smooth;
         float amount=n->gate*n->mix;
@@ -194,11 +200,11 @@ static TsStereoFrame node_process(TsMatrixEffectNode *n,TsStereoFrame in,TsStere
 TsStereoFrame ts_matrix_effects_process(TsMatrixEffects *f,int i,TsStereoFrame in,TsStereoFrame key,int connected)
 {
     if(i<0 || i>=TS_MATRIX_EFFECT_CAPACITY)return (TsStereoFrame){0,0};
-    uint64_t started=ts_profile_begin(TS_PROF_MATRIX_FX);
-    TsStereoFrame next=node_process(f->current[i],in,key,connected);
+    uint64_t started=ts_profile_effect_begin(i);
     unsigned remaining=atomic_load_explicit(&f->remaining[i],memory_order_relaxed);
+    TsStereoFrame next=node_process(f,i,f->current[i],in,key,connected,remaining!=0);
     if(remaining) {
-        TsStereoFrame old=node_process(f->previous[i],in,key,connected);
+        TsStereoFrame old=node_process(f,i,f->previous[i],in,key,connected,1);
         float t=fmaxf(0,1-(float)remaining/f->total[i]);
         next=(TsStereoFrame){old.l+(next.l-old.l)*t,old.r+(next.r-old.r)*t};
     }
@@ -208,6 +214,24 @@ TsStereoFrame ts_matrix_effects_process(TsMatrixEffects *f,int i,TsStereoFrame i
         else ts_profile_end(TS_PROF_MATRIX_FX,started);
     }
     return next;
+}
+void ts_matrix_effects_end_frame(TsMatrixEffects *f)
+{
+    for(unsigned j=0;j<f->jobs_count;++j) {
+        int slot=f->jobs[j].slot;
+        uint64_t started=ts_profile_effect_begin(slot);
+        ts_sunvox_render_pending(f->jobs[j].node->sunvox);
+        /* Use the current slot identity even when rendering its retiring
+           engine, matching the inclusive lifecycle timing in process(). */
+        const TsMatrixEffectNode *n=f->current[slot]?f->current[slot]:f->previous[slot];
+        if(started && n)ts_profile_effect_end(slot,&n->profile,started,f->jobs[j].transitioning);
+    }
+    f->jobs_count=0;f->batching=0;
+}
+void ts_matrix_effects_begin_frame(TsMatrixEffects *f)
+{
+    if(f->jobs_count)ts_matrix_effects_end_frame(f);
+    f->batching=1;
 }
 float ts_matrix_effects_reduction(const TsMatrixEffects *f,int i)
 {return i>=0 && i<TS_MATRIX_EFFECT_CAPACITY && f->current[i]?f->current[i]->compressor.reduction_db:0;}

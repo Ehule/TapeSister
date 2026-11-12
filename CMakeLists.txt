@@ -888,6 +888,9 @@ add_test(NAME tapesister_profile_tests COMMAND tapesister_profile_tests)
 add_executable(tapesister_profile_matrix_tests tests/test_profile_matrix.c)
 target_link_libraries(tapesister_profile_matrix_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_profile_matrix_tests COMMAND tapesister_profile_matrix_tests)
+add_executable(tapesister_matrix_blocks_tests tests/test_matrix_blocks.c)
+target_link_libraries(tapesister_matrix_blocks_tests PRIVATE tapesister_core)
+add_test(NAME matrix_blocks_exact COMMAND tapesister_matrix_blocks_tests)
 
 # Several older fixtures put their setup in assert(). Release must exercise
 # those checks too, while the linked production DSP stays fully optimized.

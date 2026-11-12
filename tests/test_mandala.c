@@ -125,6 +125,10 @@ int main(void)
     assert(ts_sister_project_state_save_file(state,path,error,sizeof(error)));
     assert(ts_sister_project_state_load_file(loaded,path,48000,&present,error,sizeof(error)) && present);
     assert(!memcmp(&state->mandala,&loaded->mandala,sizeof(a)));
+    snprintf(state->mandala.video_path,sizeof(state->mandala.video_path),"/show/visuals = photos and clips/");
+    assert(ts_sister_project_state_save_file(state,path,error,sizeof(error)));
+    assert(ts_sister_project_state_load_file(loaded,path,48000,&present,error,sizeof(error)) && present);
+    assert(!memcmp(&state->mandala,&loaded->mandala,sizeof(a))); /* Folder path + hold/stills settings. */
     /* Worst-case path must survive the complete sidecar line reader. */
     memset(state->mandala.video_path,'x',sizeof(state->mandala.video_path)-1);
     state->mandala.video_path[0]='/';state->mandala.video_path[1023]=0;

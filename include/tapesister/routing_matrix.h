@@ -43,6 +43,11 @@ typedef struct {
     TsMatrixControls controls;
     TsSourceRouteVoice voice[TS_MATRIX_ROWS];
     int order[TS_MATRIX_PROCESSORS], ready;
+    /* Prepared on graph edits. Runtime still honors retiring route slews. */
+    uint16_t processors[TS_MATRIX_PROCESSORS];
+    unsigned processor_count, edge_count;
+    struct { uint16_t source,destination; float gain,left,right; }
+        edges[TS_MATRIX_PROCESSORS*TS_MATRIX_INSTANCE_DESTINATIONS];
     uint16_t sources[TS_MATRIX_ROWS];unsigned source_count,input_pairs;
     unsigned position;
     TsStereoFrame history[TS_MATRIX_ROWS][TS_MATRIX_DELAY];

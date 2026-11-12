@@ -7,7 +7,7 @@ static void mosaic_gallery_overlay(TsFramebuffer *fb,const TsUiState *ui)
     uint32_t accent=ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_DATA2,RGB(129,206,200));
     uint32_t dim=ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_DIM,RGB(160,149,172));
     for(int i=0;i<TS_UI_WIDTH*TS_UI_HEIGHT;++i)fb->pixels[i]=mosaic_mix_color(fb->pixels[i],panel,.7f);
-    rect(fb,114,72,512,286,edge);rect(fb,116,74,508,282,panel);
+    rect(fb,114,72,512,322,edge);rect(fb,116,74,508,318,panel);
     char line[128];
     if(ui->mosaic_canvas_import_count)snprintf(line,sizeof(line),"IMPORT CANVAS / %02d FOUND",ui->mosaic_canvas_import_count);
     else if(ui->mosaic_gallery_fading)snprintf(line,sizeof(line),"GALLERY / %02d / FADE %.0f%%",ui->mosaic_gallery_count,ui->mosaic_gallery_progress*100);
@@ -24,10 +24,13 @@ static void mosaic_gallery_overlay(TsFramebuffer *fb,const TsUiState *ui)
         text(fb,x+4,y+5,line,active?accent:ink,1);
     }
     if(ui->mosaic_canvas_import_count) {
-        text(fb,128,279,"AUDIO + PATTERN SNAPSHOTS / ADDS ONE PAGE",accent,1);
-        text(fb,128,296,"USES THIS PROJECT'S SHARED EFFECTS",dim,1);
-        mosaic_button(fb,388,319,94,ui->file_busy?"WAIT":"IMPORT",0,0);mosaic_button(fb,494,319,104,"CANCEL",0,0);
-        snprintf(line,sizeof(line),"%.78s",ui->mosaic_gallery_status);text(fb,128,348,line,dim,1);return;
+        mosaic_button(fb,128,273,147,"ADD TO END",!ui->mosaic_canvas_import_replace,0);
+        int target=ui->mosaic_gallery_selected;
+        snprintf(line,sizeof(line),"REPLACE %02d: %.32s",target+1,target>=0 && target<ui->mosaic_gallery_count?ui->mosaic_gallery_names[target]:"UNAVAILABLE");
+        mosaic_button(fb,282,273,316,line,ui->mosaic_canvas_import_replace,0);
+        text(fb,128,304,"AUDIO + PATTERNS + LINKED FX / KEEPS DESTINATION MASTER",dim,1);
+        mosaic_button(fb,388,319,94,ui->file_busy?"WAIT":ui->mosaic_canvas_import_confirm?"CONFIRM":"IMPORT",ui->mosaic_canvas_import_confirm,0);mosaic_button(fb,494,319,104,"CANCEL",0,0);
+        snprintf(line,sizeof(line),"%.78s",ui->mosaic_gallery_status);text(fb,128,380,line,dim,1);return;
     }
     int selected=ui->mosaic_gallery_selected;
     if(selected<0 || selected>=ui->mosaic_gallery_count)selected=0;
@@ -44,6 +47,10 @@ static void mosaic_gallery_overlay(TsFramebuffer *fb,const TsUiState *ui)
     mosaic_button(fb,300,319,76,ui->mosaic_gallery_delete?"CONFIRM":"DELETE",ui->mosaic_gallery_delete,0);
     mosaic_button(fb,388,319,94,selected==ui->mosaic_gallery_active?"ACTIVE":"ENTER",selected==ui->mosaic_gallery_active,0);
     mosaic_button(fb,494,319,104,"CLOSE",0,0);
+    if(!ui->mosaic_gallery_rename) {
+        mosaic_button(fb,128,350,108,"MOVE EARLIER",0,0);mosaic_button(fb,246,350,114,"MOVE LATER",0,0);
+        text(fb,374,358,"ALT+UP / ALT+DOWN",dim,1);
+    }
     snprintf(line,sizeof(line),"%.78s",ui->mosaic_gallery_rename?"CTRL+A REPLACE / ENTER APPLY / ESC CANCEL":ui->mosaic_gallery_status);
-    text(fb,128,348,line,dim,1);
+    text(fb,128,380,line,dim,1);
 }

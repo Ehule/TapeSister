@@ -5,8 +5,8 @@ editor has **MANDALA ON/OFF** and **COLOR / BLACK & WHITE** controls. See
 [Mosaic video changes](MOSAIC_VIDEO.md) for random positions, scatter, transitions
 and automatic preparation.
 
-Open **F11 → EDIT VISUALIZER → MEDIA → ADD IMAGE / VIDEO**. The existing file
-browser opens in TapeSister's main window. Choose a photo or clip, then **OPEN VISUALIZER**. PNG, JPG/JPEG, BMP and TGA stills are supported alongside the existing video formats and animated GIF.
+Open **F11 → EDIT VISUALIZER → MEDIA → ADD FILE**. The existing file
+browser opens in TapeSister's main window. Choose a photo or clip, then **OPEN VISUALIZER**. Use **ADD FOLDER** to choose an entire media directory: navigate into it, then press **USE FOLDER**. This selects the folder as the visualizer source; it does not require Mosaic cards or importing each image separately. PNG, JPG/JPEG, BMP and TGA stills are supported alongside the existing video formats and animated GIF.
 The footage can move from a recognizable full frame into a reflected radial kaleidoscope, underneath
 the mandala's geometry and inside its trails, haze and echo treatment. The clip's
 movement, seeded crop drift and musical activity evolve independently, so a loop
@@ -25,7 +25,7 @@ need not repeat the same visual composition.
 | Rotation | 50 is still; either side changes direction and speed |
 | Audio Response | Amount of level, stereo and effect-driven deformation |
 | Palette Filter | 0 keeps original colors; 100 maps shading into the current mandala palette; values between blend the two |
-| Image Hold | 1–60 seconds per photo or sampled video frame in a Mosaic folder; 0 leaves changes to Mosaic triggers |
+| Image Hold | 1–60 seconds per photo or sampled video frame, including a directly loaded video; 0 leaves changes to Restart or Mosaic triggers |
 | Video as Stills | Sample a random frame from each selected video and hold it like a photograph; Restart samples another frame |
 | Glitch | 0 is clean; higher values introduce brief horizontal tears and displaced image fragments, with audio level increasing activity |
 | Symmetry | Number of reflected sectors, including continuous odd symmetry |
@@ -74,7 +74,7 @@ VP8/VP9, MPEG-1/2/4, MJPEG, raw video, FFV1, ProRes and GIF. AV1 is not included
 For older performance machines, start with a 640×360 or 960×540 H.264 MP4 at
 24–30 fps. Larger inputs still incur their full decode cost before scaling.
 Frames above 4096×2160 are rejected. Mosaic video cues automatically prepare smaller local playback copies in the
-visual child; a manually selected visualizer-only clip still plays directly. Clips with unusual rotation metadata are displayed in encoded
+visual child; a manually selected single clip still plays directly. Clips with unusual rotation metadata are displayed in encoded
 orientation; prepare a correctly oriented copy if necessary.
 
 Only the visualizer child opens files and decodes video, on one low-priority
@@ -143,9 +143,9 @@ SDL_VIDEODRIVER=dummy SDL_RENDER_DRIVER=software build/tapesister \
 
 ## Image folders and sampled video frames
 
-Right-click Mosaic, choose **Random from folder**, then use **Visualizer / Mandala switch → Media**. With the default **Image Hold: 4 sec**, a folder containing photos advances through a shuffled slideshow. Images and videos can share a folder: photos hold for the chosen interval; videos play to the end before advancing. The next Mosaic trigger always takes over. Video-only folders retain their existing trigger-driven looping until **Video as Stills** is enabled.
+Choose **F11 → EDIT VISUALIZER → MEDIA → ADD FOLDER**, navigate into your media directory, and press **USE FOLDER**. Only supported files directly in that folder are included (up to the browser’s 1,024-entry limit); subfolders and unrelated files are not slides. Alternatively, right-click Mosaic and choose **Random from folder** for a timeline-controlled source. With the default **Image Hold: 4 sec**, a folder containing photos advances through a shuffled slideshow. Images and videos can share a folder: photos hold for the chosen interval; videos play to the end before advancing. The next Mosaic trigger always takes over. A folder selected in the Media tab also advances through video-only folders at each clip’s end. Mosaic video-only folders retain their existing trigger-driven looping until **Video as Stills** is enabled. Selecting Add File or Add Folder replaces the current media source; subsequent Mosaic triggers can take over again.
 
-Enable **Video as Stills** to scrub to a random position in each video, decode one frame and use it as a slide. A folder containing just one video can supply successive frames. Disable it to play clips again. GIF also supplies a still in this mode. **Loop Off** stops after the current shuffled pass. **Image Hold: 0** disables automatic advances. A single photo holds until another trigger; a single manually loaded video can supply a new frame with **Restart**.
+Enable **Video as Stills** to scrub to a random position in each video, decode one frame and use it as a slide. A directly loaded video, or a folder containing just one video, supplies successive random frames at the **Image Hold** interval while **Loop On** is enabled. Disable it to play clips again. GIF also supplies a still in this mode. **Loop Off** stops a folder after the current shuffled pass and holds a single video’s sampled frame. **Image Hold: 0** disables automatic advances. A single photo stays on screen. **Restart** immediately samples a new frame from a single video, or rescans a folder and starts a fresh shuffled pass. An empty folder reports an error; add media and press Restart to scan it again.
 
 **Pause Media**, visual freeze, and a hidden visual window hold the slideshow clock. **Glitch** works in both Mandala and full-frame modes; zero restores the clean picture. Image Hold, Video as Stills, and Glitch are project settings with editor Undo/Redo. Existing projects load with a four-second image hold, clips playing normally, and glitch at zero.
 

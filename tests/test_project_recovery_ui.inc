@@ -11,7 +11,7 @@ static void recovery_controls(void)
         ts_browser_close(&ui.browser);ui.file_busy=0;queue_active_project_save(&ui,&file);assert(file.active);
         ui.exit_after_save=1;ui.exit_for_new=1;
         recovery_choices[0]=choice;recovery_choices[1]=0;recovery_choice_count=choice==3?2:1;recovery_choice_at=0;
-        run_pending_file_operation(0,&audio,&ui,&bank,&selection,&importer,&pages,&record,0,&file);
+        run_pending_file_operation(0,&audio,&ui,&bank,&selection,&importer,&pages,&record,0,&file,NULL);
         assert(!file.active && !ui.file_busy && !ui.exit_after_save && !ui.exit_for_new && recovery_save_button);
         assert(project_hash()==before && ui.saved_state_hash==saved && !strcmp(ui.project_path,original));
         marker=fopen(obstruction,"rb");assert(marker);fclose(marker);
@@ -28,14 +28,14 @@ static void recovery_controls(void)
     }
     ui.file_busy=0;queue_active_project_save(&ui,&file);assert(file.active);
     recovery_choices[0]=-99;recovery_choice_count=1;recovery_choice_at=0;
-    run_pending_file_operation(0,&audio,&ui,&bank,&selection,&importer,&pages,&record,0,&file);
+    run_pending_file_operation(0,&audio,&ui,&bank,&selection,&importer,&pages,&record,0,&file,NULL);
     assert(!file.active && !ui.file_busy && strstr(ui.status,"DIALOG UNAVAILABLE") && project_hash()==before);
     /* Opening a transaction path also offers copying without replacing the
        live session. Save Current As belongs only to an attempted save. */
     file=(PendingFileOperation){.active=1,.mode=TS_BROWSER_LOAD_WAV};
     snprintf(file.path,sizeof(file.path),"%.*s.tapesister-backup/%s",(int)(slash-original),original,path_basename(original));
     recovery_choices[0]=0;recovery_choice_count=1;recovery_choice_at=0;
-    run_pending_file_operation(0,&audio,&ui,&bank,&selection,&importer,&pages,&record,0,&file);
+    run_pending_file_operation(0,&audio,&ui,&bank,&selection,&importer,&pages,&record,0,&file,NULL);
     assert(!file.active && !recovery_save_button && project_hash()==before && !strcmp(ui.project_path,original));
     /* A damaged manifest must not turn Copy All into a project-load attempt.
        Preserve the raw folder even if its advertised project name is invalid. */
@@ -49,7 +49,7 @@ static void recovery_controls(void)
     file=(PendingFileOperation){.active=1,.mode=TS_BROWSER_LOAD_WAV};
     snprintf(file.path,sizeof(file.path),"%s/%s",obstruction,path_basename(original));
     recovery_choices[0]=2;recovery_choice_count=1;recovery_choice_at=0;
-    run_pending_file_operation(0,&audio,&ui,&bank,&selection,&importer,&pages,&record,0,&file);
+    run_pending_file_operation(0,&audio,&ui,&bank,&selection,&importer,&pages,&record,0,&file,NULL);
     assert(!recovery_copy_errors && !file.active && !ui.file_busy && project_hash()==before);
     assert(strstr(ui.browser.directory,".tapesister-recovery-"));
     marker=fopen(manifest,"rb");assert(marker);char header[96];size_t bytes=fread(header,1,sizeof(header),marker);fclose(marker);

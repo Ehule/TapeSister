@@ -106,10 +106,11 @@ static void m_cue_load(Mandala *m,const TsVisualCue *cue)
 {
     char path[1024];
     if(!m_cue_path(m,cue,path)) {
+        m->cue_path[0]=m->cue_original[0]=0;m_video_change(m,"",0,0,0);
         m->video_status.state=TS_VIDEO_ERROR;snprintf(m->video_status.message,sizeof(m->video_status.message),"MEDIA FOLDER EMPTY OR PATH TOO LONG");return;
     }
     snprintf(m->cue_original,sizeof(m->cue_original),"%s",path);m->cue_fraction=cue->random_start?mrand(m):0;
-    if(!m->config.video_stills) {
+    if(!m->config.video_stills && (cue->pool || cue->serial)) {
         if(!m->video_cache)m->video_cache=ts_video_cache_create();
         ts_video_cache_begin(m->video_cache,cue->path,cue->pool);
     }
@@ -117,18 +118,53 @@ static void m_cue_load(Mandala *m,const TsVisualCue *cue)
     snprintf(m->cue_path,sizeof(m->cue_path),"%s",path);
     if(m->config.video_enabled)m_video_change(m,path,m->cue_fraction,cue->transition,cue->fade);
 }
+static TsVisualCue m_config_source(const Mandala *m)
+{
+    TsVisualCue source={0};
+    snprintf(source.path,sizeof(source.path),"%s",m->config.video_path);
+    /* File/directory discovery is done once per selection in the visual child,
+       never in the audio host or on each render frame. Existing projects keep
+       their path format; folders need no new project/IPC version. */
+    source.pool=ts_browser_path_is_directory(source.path);
+    return source;
+}
+static void m_media_select(Mandala *m,const TsVisualCue *source)
+{
+    if(strcmp(m->media_source.path,source->path) || m->media_source.pool!=source->pool) {
+        m->cue_pool_path[0]=0;m->cue_has_images=0;m->cue_bag_count=m->cue_bag_at=0;
+        ts_video_cache_free(m->video_cache);m->video_cache=NULL;
+    }
+    m->media_source=*source;m->image_elapsed=0;
+    if(!source->path[0]) {
+        m->cue_path[0]=m->cue_original[0]=0;m_video_change(m,"",0,0,0);return;
+    }
+    m_cue_load(m,source);
+}
+static void m_media_sync(Mandala *m)
+{
+    if(m->media_initialized && !strcmp(m->media_config_path,m->config.video_path))return;
+    m->media_initialized=1;
+    snprintf(m->media_config_path,sizeof(m->media_config_path),"%s",m->config.video_path);
+    TsVisualCue source=m_config_source(m);m_media_select(m,&source);
+}
 static void m_cue_request(Mandala *m,const TsVisualCue *cue)
 {
-    if(cue->serial==m->cue.serial)return;
-    m->cue=*cue;m->image_elapsed=0;
-    if(!cue->path[0]){m->cue_path[0]=m->cue_original[0]=0;return;}
-    m_cue_load(m,cue);
+    if(cue->serial==m->cue.serial){m_media_sync(m);return;}
+    m->cue=*cue;m->media_initialized=1;
+    snprintf(m->media_config_path,sizeof(m->media_config_path),"%s",m->config.video_path);
+    TsVisualCue source=cue->path[0]?*cue:m_config_source(m);
+    m_media_select(m,&source);
+}
+static int m_slideshow_enabled(const Mandala *m)
+{
+    if(!m->cue_path[0] || !m->config.image_seconds)return 0;
+    if(m->media_source.pool)return m->cue_has_images || m->config.video_stills || !m->media_source.serial;
+    return m->config.video_stills && !ts_visual_image_path(m->media_source.path);
 }
 static void m_slideshow_tick(Mandala *m,double dt)
 {
-    if(m->media_paused || !m->config.video_enabled || !m->cue.pool || !m->cue_path[0] ||
-       (!m->cue_has_images && !m->config.video_stills) || !m->config.image_seconds ||
-       (!m->config.video_loop && m->cue_bag_at>=m->cue_bag_count))return;
+    if(m->media_paused || !m->config.video_enabled || !m_slideshow_enabled(m) ||
+       (!m->config.video_loop && (!m->media_source.pool || m->cue_bag_at>=m->cue_bag_count)))return;
     int failed=m->video_status.state==TS_VIDEO_ERROR;
     if(!failed && (m->cue_fading || !m->video_texture || m->video_status.state==TS_VIDEO_OPENING))return;
     m->image_elapsed+=dt;
@@ -136,5 +172,5 @@ static void m_slideshow_tick(Mandala *m,double dt)
         m->video_status.state==TS_VIDEO_ENDED;
     /* A single still simply holds. Bad files get a bounded retry interval. */
     if(next && (failed || m->cue_bag_count>1 || !m->video_status.is_image ||
-        (m->config.video_stills && !ts_visual_image_path(m->cue_original))))m_cue_load(m,&m->cue);
+        (m->config.video_stills && !ts_visual_image_path(m->cue_original))))m_cue_load(m,&m->media_source);
 }

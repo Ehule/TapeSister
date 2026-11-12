@@ -26,6 +26,9 @@ static atomic_uint epoch;
 static uint64_t (*read_clock)(void), frequency, started, stopped;
 static int available;
 int ts_profile_ui_active, ts_profile_audio_active;
+unsigned ts_profile_audio_phase = 32;
+_Static_assert(TS_PROF_MATRIX_FX - TS_PROF_VOICES < 16, "stage sampling phases overlap effects");
+_Static_assert(TS_MATRIX_EFFECT_CAPACITY <= 16, "effect sampling phases exceed cycle");
 
 int ts_profile_init(uint64_t (*clock)(void), uint64_t hz)
 {
@@ -59,10 +62,12 @@ void ts_profile_lane_begin(int audio)
     }
     int active = ts_profile_enabled();
     if (audio) {
-        /* One sample per group, rotating through every phase in 1024 blocks.
-           A fixed phase can miss every expensive alternating render quantum. */
+        /* Each stage and each effect still samples 1/32 complete callbacks.
+           Stagger their phases instead of concentrating tens of thousands of
+           timer reads in one callback. Rotate to cover periodic render quanta. */
         unsigned block = p->blocks++;
-        ts_profile_audio_active = active && ((block & 31u) == ((block >> 5) & 31u));
+        ts_profile_audio_active = active;
+        ts_profile_audio_phase = active ? (block - (block >> 5)) & 31u : 32u;
         effects.seen = effects.transitioning = 0;
         if (ts_profile_audio_active) memset(effects.ticks, 0, sizeof(effects.ticks));
     }
@@ -190,7 +195,7 @@ void ts_profile_report(char *text, size_t capacity)
     size_t used = (size_t)snprintf(text, capacity,
         "Performance profile: %s; %.1f s\n"
         "Inclusive wall timings; nested rows overlap. Present includes driver/VSync wait.\n"
-        "Audio children sample 1/32 blocks (rotating phase): estimated totals/rates, observed peaks.\n"
+        "Audio children each sample 1/32 blocks (staggered, rotating phases): estimated totals/rates, observed peaks.\n"
         "Subsystem | avg ms | peak ms | calls/s | ms/s | %% parent\n",
         s.enabled ? "ON" : "OFF (enable PROFILE in Audio Health)", s.seconds);
     for (int i = 0; i < TS_PROF_COUNT && used < capacity; ++i) {
@@ -208,7 +213,7 @@ void ts_profile_report(char *text, size_t capacity)
     if (used >= capacity) return;
     int n = snprintf(text + used, capacity - used,
         "\nMatrix effect instances: last measured identity in each slot; replacement restarts that row.\n"
-        "Sampled 1/32 callbacks; block times sum the effect's work across the callback.\n"
+        "Each slot samples 1/32 callbacks on a separate rotating phase; block times sum its work across that callback.\n"
         "Totals/rates are estimates over the whole profile; peaks are observed samples, not worst-case bounds.\n"
         "Crossfades include both engines. Rows are children of Matrix effects DSP; do not add them again.\n"
         "Effect | slot / generation | samples | avg ms/block | peak ms/block | ms/s | %% callback | crossfade samples | last seen s ago\n");

@@ -8,6 +8,10 @@ typedef struct {
     TsMatrixEffectNode *current[TS_MATRIX_EFFECT_CAPACITY],*previous[TS_MATRIX_EFFECT_CAPACITY];
     atomic_uint remaining[TS_MATRIX_EFFECT_CAPACITY];
     unsigned total[TS_MATRIX_EFFECT_CAPACITY],fading,rate;
+    /* At most current + retiring engine per slot. No callback allocation. */
+    struct {TsMatrixEffectNode *node;int slot,transitioning;} jobs[2*TS_MATRIX_EFFECT_CAPACITY];
+    unsigned jobs_count;
+    int batching;
 } TsMatrixEffects;
 typedef struct {TsMatrixEffectNode *node[TS_MATRIX_EFFECT_CAPACITY];unsigned changed;} TsMatrixEffectPlan;
 void ts_matrix_effects_init(TsMatrixEffects *fx);
@@ -23,6 +27,10 @@ void ts_matrix_effects_collect(TsMatrixEffects *fx,TsMatrixEffectPlan *garbage);
 /* Cold project/device setup, with audio stopped/excluded. */
 int ts_matrix_effects_restore(TsMatrixEffects *fx,const TsMatrixControls *c,unsigned rate);
 void ts_matrix_effects_tick(TsMatrixEffects *fx);
+/* Bracket one graph sample. Buffered jobs complete before the next sample;
+   unbuffered processors and all feedback edges retain sample order. */
+void ts_matrix_effects_begin_frame(TsMatrixEffects *fx);
+void ts_matrix_effects_end_frame(TsMatrixEffects *fx);
 TsStereoFrame ts_matrix_effects_process(TsMatrixEffects *fx,int slot,TsStereoFrame input,TsStereoFrame key,int connected);
 float ts_matrix_effects_reduction(const TsMatrixEffects *fx,int slot);
 float ts_matrix_effects_progress(const TsMatrixEffects *fx,int slot);

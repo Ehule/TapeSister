@@ -47,10 +47,10 @@ int ts_sample_pages_load_canvas(const char *project,int index,TsMosaicCanvas *ou
     if(!assets){ts_mosaic_free(scene);pages_error(error,n,"Not enough memory for canvas audio");return 0;}
     int loaded=ts_mosaic_load(scene,path,error,n);ts_audio_assets_end(assets);
     if(!loaded){ts_mosaic_free(scene);return 0;}
-    TsMosaicCanvas canvas={.scene=scene,.entry=catalog.canvas[index].entry,.marker=catalog.canvas[index].marker,.scale=24,.hscale=1};
+    TsMosaicCanvas canvas={.scene=scene,.id=catalog.canvas[index].id,.entry=catalog.canvas[index].entry,.marker=catalog.canvas[index].marker,.scale=24,.hscale=1};
     memcpy(canvas.name,catalog.canvas[index].name,TS_GALLERY_NAME);*out=canvas;return 1;
 }
-int ts_sample_pages_export_canvas(const TsMosaicCanvas *canvas,const char *path,char *error,size_t n)
+int ts_sample_pages_export_canvas_with_state(const TsMosaicCanvas *canvas,const TsSisterProjectState *state,const char *path,char *error,size_t n)
 {
     if(!canvas || !canvas->scene || !path){pages_error(error,n,"Select a canvas to export");return 0;}
     char directory[TS_PROJECT_PATH_MAX];
@@ -68,8 +68,154 @@ int ts_sample_pages_export_canvas(const TsMosaicCanvas *canvas,const char *path,
             memcpy(copy->name,canvas->name,TS_GALLERY_NAME);copy->entry=canvas->entry;copy->marker=canvas->marker;
             /* The bank and tracker are intentionally empty. The scene owns all
                audio, EQ originals and immutable pattern sample assets it uses. */
-            ok=ts_sample_pages_save_project(portable,portable->pages[0],NULL,NULL,path,error,n);
+            TsSisterProjectState *transfer=NULL;
+            if(state) {
+                transfer=malloc(sizeof(*transfer));
+                if(!transfer){pages_error(error,n,"Not enough memory for exported effect routing");ok=0;}
+                else {
+                    ts_sister_project_state_init(transfer,48000);transfer->matrix=state->matrix;
+                    transfer->matrix_layout=state->matrix_layout;int count=0;
+                    for(int i=0;i<transfer->matrix_layout.canvas_count;++i) {
+                        TsFxCanvasPosition p=transfer->matrix_layout.canvas[i];
+                        if(p.kind==3){if(p.canvas && p.canvas!=canvas->id)continue;p.canvas=copy->id;}
+                        transfer->matrix_layout.canvas[count++]=p;
+                    }
+                    transfer->matrix_layout.canvas_count=count;
+                }
+            }
+            if(ok)ok=ts_sample_pages_save_project(portable,portable->pages[0],NULL,transfer,path,error,n);
+            free(transfer);
         }
     }
     ts_sample_pages_free(portable);free(portable);return ok;
+}
+
+int ts_sample_pages_export_canvas(const TsMosaicCanvas *canvas,const char *path,char *error,size_t n)
+{return ts_sample_pages_export_canvas_with_state(canvas,NULL,path,error,n);}
+
+/* A saved effect slot is a project-local address, not an effect identity.
+   Clone only the instance graph reachable from the selected cards, then map
+   both signal and detector destinations. Fixed buses remain destination-owned. */
+static int canvas_effect_destination(int d)
+{
+    if(d>=TS_MATRIX_EFFECT_BASE && d<TS_MATRIX_PROCESSOR_END)return d-TS_MATRIX_EFFECT_BASE;
+    if(d>=TS_MATRIX_EFFECT_SC_BASE && d<TS_MATRIX_INSTANCE_DESTINATIONS)return d-TS_MATRIX_EFFECT_SC_BASE;
+    return -1;
+}
+static unsigned canvas_route_effects(const TsSourceRoute *r)
+{
+    unsigned used=0;if(!r->matrix_enabled)return 0;
+    for(int d=0;d<TS_MATRIX_DESTINATIONS;++d){int slot=canvas_effect_destination(d);if(slot>=0 && r->matrix_gain[d])used|=1u<<slot;}
+    return used;
+}
+static unsigned canvas_effect_closure(unsigned used,const TsMatrixControls *matrix)
+{
+    for(unsigned before=~used;before!=used;) {
+        before=used;
+        for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)if(used&(1u<<i))used|=canvas_route_effects(&matrix->row[TS_MATRIX_EFFECT_BASE+i]);
+    }
+    return used;
+}
+unsigned ts_sample_pages_canvas_exclusive_effects(const TsSamplePages *pages,const TsInstrument *bank,const TsMosaic *target,const TsMatrixControls *matrix)
+{
+    if(!pages || !target || !matrix)return 0;
+    unsigned candidate=0,shared=0;
+    for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(target->events[i].id)candidate|=canvas_route_effects(&target->events[i].output_route);
+    candidate=canvas_effect_closure(candidate,matrix);
+    int count=pages->gallery?pages->gallery->count:1;
+    for(int c=0;c<count;++c) {
+        const TsMosaic *scene=pages->gallery?pages->gallery->canvas[c].scene:pages->mosaic;
+        if(!scene || scene==target)continue;
+        for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(scene->events[i].id)shared|=canvas_route_effects(&scene->events[i].output_route);
+    }
+    for(size_t p=0;p<pages->page_count;++p) {
+        const TsInstrument *page=ts_sample_pages_page(pages,bank,p);if(!page)continue;
+        for(int i=0;i<TS_BANK_SLOT_COUNT;++i)if(page->bank[i].occupied)shared|=canvas_route_effects(&page->bank[i].output_route);
+    }
+    for(int i=0;i<TS_TRACKER_LANES;++i)shared|=canvas_route_effects(&pages->tracker.lanes[i].output_route);
+    for(int row=0;row<TS_MATRIX_ROWS;++row) {
+        int slot=ts_matrix_effect_index(row);
+        if(slot<0 || !(candidate&(1u<<slot)))shared|=canvas_route_effects(&matrix->row[row]);
+    }
+    return candidate&~canvas_effect_closure(shared,matrix);
+}
+static TsSourceRoute canvas_route_remap(TsSourceRoute r,const int *map)
+{
+    TsSourceRoute out=r;
+    for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)if(canvas_effect_destination(d)>=0)out.matrix_gain[d]=0;
+    for(int d=0;d<TS_MATRIX_DESTINATIONS;++d){int slot=canvas_effect_destination(d);
+        if(slot>=0 && r.matrix_gain[d] && map[slot]>=0)out.matrix_gain[(d<TS_MATRIX_PROCESSOR_END?TS_MATRIX_EFFECT_BASE:TS_MATRIX_EFFECT_SC_BASE)+map[slot]]=r.matrix_gain[d];}
+    return out;
+}
+int ts_sample_pages_load_canvas_routed(const char *project,int index,const TsMatrixControls *destination,
+    const TsMatrixLayout *layout,uint64_t identity,uint64_t replaced,TsMosaicCanvas *out,TsCanvasRoutingImport *routing,char *error,size_t n)
+{
+    if(!destination || !layout || !out || !routing || !identity){pages_error(error,n,"Invalid canvas import destination");return 0;}
+    TsMosaicCanvas canvas={0};TsSisterProjectState *source=calloc(1,sizeof(*source));
+    TsCanvasRoutingImport *next=calloc(1,sizeof(*next));int ok=0,present=0;
+    if(!source || !next){pages_error(error,n,"Not enough memory for canvas effects");goto done;}
+    if(!ts_sample_pages_load_canvas(project,index,&canvas,error,n))goto done;
+    if(!ts_sister_project_state_load(source,project,48000,&present,error,n))goto done;
+    unsigned used=0;
+    for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(canvas.scene->events[i].id)used|=canvas_route_effects(&canvas.scene->events[i].output_route);
+    for(unsigned before=~used;before!=used;) {
+        before=used;
+        for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)if(used&(1u<<i)) {
+            if(!present || !source->matrix.effect[i].id){pages_error(error,n,"Source canvas refers to a missing effect; import cancelled");goto done;}
+            used|=canvas_route_effects(&source->matrix.row[TS_MATRIX_EFFECT_BASE+i]);
+        }
+    }
+    if(used && !destination->enabled){pages_error(error,n,"Enable destination Matrix routing before importing linked effects");goto done;}
+    next->matrix=*destination;next->layout=*layout;int map[TS_MATRIX_EFFECT_CAPACITY];
+    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)map[i]=-1;
+    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)if(used&(1u<<i)) {
+        int slot=ts_matrix_effect_add(&next->matrix,source->matrix.effect[i].type);
+        if(slot<0){pages_error(error,n,"Not enough free effect slots for this canvas; nothing imported");goto done;}
+        map[i]=slot;++next->effects;uint32_t id=next->matrix.effect[slot].id;
+        next->matrix.effect[slot]=source->matrix.effect[i];next->matrix.effect[slot].id=id;
+        /* Stale routes to unused destination slots must not start receiving or
+           feeding a newly imported processor. Reject instead of rewriting them. */
+        for(int row=0;row<TS_MATRIX_ROWS;++row)if(destination->row[row].matrix_gain[TS_MATRIX_EFFECT_BASE+slot] || destination->row[row].matrix_gain[TS_MATRIX_EFFECT_SC_BASE+slot]) {
+            pages_error(error,n,"Destination has cables to empty effect slots; clear those cables first");goto done;
+        }
+    }
+    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)if(map[i]>=0) {
+        int from=TS_MATRIX_EFFECT_BASE+i,to=TS_MATRIX_EFFECT_BASE+map[i];
+        next->matrix.row[to]=canvas_route_remap(source->matrix.row[from],map);next->matrix.delayed[to]=0;
+        for(int d=0;d<TS_MATRIX_INSTANCE_DESTINATIONS;++d)if(source->matrix.delayed[from]&ts_matrix_feedback_bit(d)) {
+            int slot=canvas_effect_destination(d),mapped=slot<0?d:(d<TS_MATRIX_PROCESSOR_END?TS_MATRIX_EFFECT_BASE:TS_MATRIX_EFFECT_SC_BASE)+map[slot];
+            next->matrix.delayed[to]|=ts_matrix_feedback_bit(mapped);
+        }
+    }
+    if(!ts_matrix_valid(&next->matrix)){pages_error(error,n,"Imported routing conflicts with destination feedback or graph; nothing imported");goto done;}
+    for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(canvas.scene->events[i].id && canvas.scene->events[i].output_route.matrix_enabled)
+        canvas.scene->events[i].output_route=canvas_route_remap(canvas.scene->events[i].output_route,map);
+    /* Loaded scenes have no undo history; their first edit must capture the
+       remapped routes, never the addresses from the original project. */
+    canvas.scene->history_count=canvas.scene->history_cursor=canvas.scene->history_first=0;
+    ++canvas.scene->revision;
+    int count=0;float bottom=0;
+    for(int i=0;i<next->layout.canvas_count;++i) {
+        TsFxCanvasPosition p=next->layout.canvas[i];if(replaced && p.kind==3 && p.canvas==replaced)continue;
+        next->layout.canvas[count++]=p;if(p.y>bottom)bottom=p.y;
+    }
+    next->layout.canvas_count=count;
+    float top=0;int have_top=0;
+    for(int i=0;i<source->matrix_layout.canvas_count;++i) {
+        TsFxCanvasPosition p=source->matrix_layout.canvas[i];int keep=p.kind==3 && (p.canvas==canvas.id || !p.canvas);
+        if(p.kind==4)for(int j=0;j<TS_MATRIX_EFFECT_CAPACITY;++j)if(map[j]>=0 && p.id==source->matrix.effect[j].id)keep=1;
+        if(keep && (!have_top || p.y<top)){top=p.y;have_top=1;}
+    }
+    for(int i=0;i<source->matrix_layout.canvas_count;++i) {
+        TsFxCanvasPosition p=source->matrix_layout.canvas[i];int keep=0;
+        if(p.kind==3 && (p.canvas==canvas.id || !p.canvas) && ts_mosaic_find(canvas.scene,p.id)){p.canvas=identity;keep=1;}
+        if(p.kind==4)for(int j=0;j<TS_MATRIX_EFFECT_CAPACITY;++j)if(map[j]>=0 && p.id==source->matrix.effect[j].id){p.id=next->matrix.effect[map[j]].id;keep=1;break;}
+        if(!keep)continue;
+        if(next->layout.canvas_count>=TS_FX_CANVAS_POSITIONS){pages_error(error,n,"FX canvas layout is full; nothing imported");goto done;}
+        p.y+=bottom+320-top;next->layout.canvas[next->layout.canvas_count++]=p;
+    }
+    if(!ts_matrix_layout_valid(&next->layout)){pages_error(error,n,"Imported FX layout exceeds the canvas limits");goto done;}
+    canvas.id=identity;*out=canvas;*routing=*next;ok=1;
+done:
+    if(!ok)ts_mosaic_free(canvas.scene);free(source);free(next);return ok;
 }

@@ -172,12 +172,12 @@ static void test_keyboard_sequence_projects(void)
     assert(s->running && power_audio_energy() > .01);
     PendingFileOperation pending = {0}; pending.active = 1; pending.mode = TS_BROWSER_SAVE_RECIPE;
     snprintf(pending.path, sizeof(pending.path), "%s", path);
-    run_pending_file_operation(device, &audio, &ui, &instrument, NULL, NULL, &pages, &record, 0, &pending);
+    run_pending_file_operation(device, &audio, &ui, &instrument, NULL, NULL, &pages, &record, 0, &pending,NULL);
     Uint32 save_deadline=SDL_GetTicks()+15000u;
     while(project_save_worker && !SDL_TICKS_PASSED(SDL_GetTicks(),save_deadline)) {
         assert(s->running);
         SDL_Delay(1);
-        run_pending_file_operation(device,&audio,&ui,&instrument,NULL,NULL,&pages,&record,0,&pending);
+        run_pending_file_operation(device,&audio,&ui,&instrument,NULL,NULL,&pages,&record,0,&pending,NULL);
     }
     assert(!project_save_worker);
     assert(!pending.active && s->running && !strcmp(ui.project_path, path));

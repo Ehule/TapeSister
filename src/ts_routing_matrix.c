@@ -185,6 +185,27 @@ int ts_matrix_set(TsRoutingMatrix *m,const TsMatrixControls *c,unsigned rate)
     m->source_count=0;
     for(int s=TS_MATRIX_NODES;s<TS_MATRIX_ROWS;++s)if(!ts_matrix_is_processor(s) &&
         (m->voice[s].active_count || m->voice[s].remaining))m->sources[m->source_count++]=(uint16_t)s;
+    m->processor_count=m->edge_count=0;
+    for(int i=0;i<TS_MATRIX_PROCESSORS;++i) {
+        int n=m->order[i];
+        if(n<TS_MATRIX_EFFECT_BASE || c->effect[n-TS_MATRIX_EFFECT_BASE].id || m->voice[n].remaining)
+            m->processors[m->processor_count++]=(uint16_t)n;
+    }
+    /* Preserve the old ascending source/destination accumulation order and
+       separate multiplies. Combining gain and pan would change rounding. */
+    for(int k=0;k<TS_MATRIX_PROCESSORS;++k) {
+        int n=ts_matrix_processor(k);
+        if(!c->delayed[n])continue;
+        const TsSourceRoute *r=&c->row[n];
+        for(int d=0;d<TS_MATRIX_INSTANCE_DESTINATIONS;++d)
+            if(c->delayed[n]&(UINT64_C(1)<<d)) {
+                unsigned e=m->edge_count++;
+                m->edges[e].source=(uint16_t)n;m->edges[e].destination=(uint16_t)d;
+                m->edges[e].gain=r->matrix_gain[d]*.001f;
+                m->edges[e].left=r->pan>0?1-r->pan*.01f:1;
+                m->edges[e].right=r->pan<0?1+r->pan*.01f:1;
+            }
+    }
     if(changed)memset(m->history,0,sizeof(m->history));
     m->decay=rate?expf(-1.f/(rate*.15f)):0;m->ready=1;return 1;
 }
@@ -216,20 +237,16 @@ void ts_matrix_process(TsRoutingMatrix *m,TsSourceRouteMix *sums,
         m->output_peak[s]=meter_max(peak(input),m->output_peak[s]*m->decay);
         ts_source_route_frame(&m->voice[s],input,sums);
     }
-    for(int k=0;k<TS_MATRIX_PROCESSORS;++k) {
-        int s=ts_matrix_processor(k);if(!m->controls.delayed[s])continue;
+    for(unsigned e=0;e<m->edge_count;++e) {
+        int s=m->edges[e].source,d=m->edges[e].destination;
         TsStereoFrame old=m->history[s][m->position];
-        const TsSourceRoute *r=&m->controls.row[s];
-        float l=r->pan>0?1-r->pan*.01f:1,rh=r->pan<0?1+r->pan*.01f:1;
-        for(int d=0;d<TS_MATRIX_INSTANCE_DESTINATIONS;++d)if(m->controls.delayed[s]&(UINT64_C(1)<<d)) {
-            float g=r->matrix_gain[d]*.001f;
+        float l=m->edges[e].left,rh=m->edges[e].right,g=m->edges[e].gain;
             sums->graph[d].l+=old.l*g*l;sums->graph[d].r+=old.r*g*rh;
             float activity=meter_max(fabsf(old.l*g*l),fabsf(old.r*g*rh));
             if(activity>m->voice[s].activity_send)m->voice[s].activity_send=activity;
-        }
     }
-    for(int i=0;i<TS_MATRIX_PROCESSORS;++i) {
-        int n=m->order[i];
+    for(unsigned i=0;i<m->processor_count;++i) {
+        int n=m->processors[i];
         if(n>=TS_MATRIX_EFFECT_BASE && !m->controls.effect[n-TS_MATRIX_EFFECT_BASE].id && !m->voice[n].remaining)continue;
         TsStereoFrame input=ts_stereo_frame_sanitize_inline(sums->graph[n]);
         m->input_peak[n]=meter_max(peak(input),m->input_peak[n]*m->decay);

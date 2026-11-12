@@ -288,12 +288,20 @@ void ts_sunvox_free(TsSunVoxEngine *s) {
     if(s){sunvox_engine_close(&s->engine);delete s;}
 }
 void ts_sunvox_set(TsSunVoxEngine *s,const TsSunVoxControls *c) { if(s)s->requested=*c; }
-void ts_sunvox_process(TsSunVoxEngine *s,float l,float r,float wet[2],float dry[2]) {
+int ts_sunvox_stage_frame(TsSunVoxEngine *s,float l,float r,float wet[2],float dry[2]) {
+    // Defensive serial drain for callers that did not finish their prior batch.
+    if(s->cursor==s->quantum)ts_sunvox_render_pending(s);
     unsigned at=s->cursor*2;
     wet[0]=s->output_buffer[at];wet[1]=s->output_buffer[at+1];
     dry[0]=s->dry_buffer[at];dry[1]=s->dry_buffer[at+1];
     s->input_buffer[at]=std::isfinite(l)?l:0;s->input_buffer[at+1]=std::isfinite(r)?r:0;
-    if(++s->cursor<s->quantum)return;
+    return ++s->cursor==s->quantum;
+}
+void ts_sunvox_process(TsSunVoxEngine *s,float l,float r,float wet[2],float dry[2]) {
+    if(ts_sunvox_stage_frame(s,l,r,wet,dry))ts_sunvox_render_pending(s);
+}
+void ts_sunvox_render_pending(TsSunVoxEngine *s) {
+    if(!s || s->cursor!=s->quantum)return;
     s->cursor=0;
     stime_ticks_t t=(stime_ticks_t)(s->frames*stime_ticks_per_second()/s->rate);
     psynth_module *m=psynth_get_module(s->patch,s->engine.net);

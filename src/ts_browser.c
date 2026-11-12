@@ -64,6 +64,7 @@ const char *ts_browser_mode_title(TsBrowserMode mode)
     if (mode == TS_BROWSER_MOSAIC_VIDEO) return "CHOOSE MOSAIC IMAGE OR VIDEO";
     if (mode == TS_BROWSER_MOSAIC_VIDEO_POOL) return "CHOOSE IMAGE / VIDEO FOLDER";
     if (mode == TS_BROWSER_LOAD_VIDEO) return "ADD VISUALIZER IMAGE OR VIDEO";
+    if (mode == TS_BROWSER_LOAD_VISUAL_FOLDER) return "ADD VISUALIZER MEDIA FOLDER";
     if (mode == TS_BROWSER_TRACKER_PALETTE_IMPORT) return "IMPORT TRACKSISTER / TAPEHEAD PALETTE";
     if (mode == TS_BROWSER_TRACKER_PALETTE_EXPORT) return "EXPORT TRACKSISTER / TAPEHEAD PALETTE";
     if (mode == TS_BROWSER_LOAD_WAV) return "LOAD AUDIO, XM / MOD / IT, TSR, OR TSP";
@@ -104,7 +105,7 @@ int ts_browser_mode_selects_config(TsBrowserMode mode)
 
 int ts_browser_mode_selects_directory(TsBrowserMode mode)
 {
-    return mode == TS_BROWSER_IMPORT_AUDIO_FOLDER || mode == TS_BROWSER_MOSAIC_VIDEO_POOL || mode == TS_BROWSER_SELECT_SAMPLE_DIRECTORY ||
+    return mode == TS_BROWSER_IMPORT_AUDIO_FOLDER || mode == TS_BROWSER_MOSAIC_VIDEO_POOL || mode == TS_BROWSER_LOAD_VISUAL_FOLDER || mode == TS_BROWSER_SELECT_SAMPLE_DIRECTORY ||
            mode == TS_BROWSER_SELECT_EXCHANGE_DIRECTORY ||
            mode == TS_BROWSER_SELECT_CDP_BIN_DIRECTORY;
 }
@@ -134,8 +135,9 @@ static int join_path(const char *directory, const char *name, char *path, size_t
     return written >= 0 && (size_t)written < path_size;
 }
 
-static int path_is_directory(const char *path)
+int ts_browser_path_is_directory(const char *path)
 {
+    if(!path || !*path)return 0;
 #ifdef _WIN32
     struct _stat info;
     return _stat(path, &info) == 0 && (info.st_mode & _S_IFDIR) != 0;
@@ -218,7 +220,7 @@ int ts_browser_refresh(TsBrowser *browser)
         if (search == INVALID_HANDLE_VALUE) {
             DWORD error = GetLastError();
             /* An accessible empty directory is a successful navigation. */
-            if (error != ERROR_FILE_NOT_FOUND || !path_is_directory(browser->directory)) {
+            if (error != ERROR_FILE_NOT_FOUND || !ts_browser_path_is_directory(browser->directory)) {
                 snprintf(browser->message, sizeof(browser->message),
                          "COULD NOT OPEN DIRECTORY (WINDOWS %lu)", (unsigned long)error);
                 return 0;
@@ -259,10 +261,10 @@ int ts_browser_refresh(TsBrowser *browser)
             char path[TS_BROWSER_PATH_MAX];
             if (item->d_name[0] == '.') continue;
             if (!join_path(browser->directory, item->d_name, path, sizeof(path))) continue;
-            if (!path_is_directory(path) && !mode_accepts(browser, item->d_name)) continue;
+            if (!ts_browser_path_is_directory(path) && !mode_accepts(browser, item->d_name)) continue;
             entry = &browser->entries[browser->entry_count++];
             snprintf(entry->name, sizeof(entry->name), "%s", item->d_name);
-            entry->is_directory = path_is_directory(path);
+            entry->is_directory = ts_browser_path_is_directory(path);
         }
         closedir(directory);
     }
@@ -466,7 +468,7 @@ int ts_browser_parent(TsBrowser *browser)
     else if (slash == parent) slash[1] = '\0';
     else if (slash == parent + 2 && parent[1] == ':') slash[1] = '\0';
     else *slash = '\0';
-    if (!path_is_directory(parent)) return 0;
+    if (!ts_browser_path_is_directory(parent)) return 0;
     return change_directory(browser, parent);
 }
 

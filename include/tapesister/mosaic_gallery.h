@@ -36,6 +36,12 @@ TsMosaic *ts_gallery_active(const TsMosaicGallery *);
 TsMosaic *ts_gallery_outgoing(const TsMosaicGallery *);
 int ts_gallery_add(TsMosaicGallery *,char *,size_t);
 int ts_gallery_append_prepared(TsMosaicGallery *,TsMosaic *,char *,size_t);
+/* Reorder without restarting transport, including both sides of a fade. */
+int ts_gallery_move(TsMosaicGallery *,int,int,char *,size_t);
+/* Replace in place with a fresh identity. Active playback must be stopped.
+   Publish under exclusion; release retired outside it. The caller-owned root
+   stays owned by the caller even after replacement, like detach. */
+int ts_gallery_replace_prepared(TsMosaicGallery *,int,TsMosaic *,TsMosaic **,char *,size_t);
 int ts_gallery_detach(TsMosaicGallery *,int,TsMosaic **,char *,size_t);
 /* Remove an inactive/non-fading canvas; destruction stays on the control thread. */
 int ts_gallery_remove(TsMosaicGallery *,int,char *,size_t);
