@@ -28,8 +28,8 @@ static void callback_span_parity(void)
                 TsSisterFxControls controls=a->sister.post_fx.controls;
                 controls.enabled=0;ts_sister_post_fx_set_controls(&a->sister.post_fx,&controls);
             }
-            if(block==50)a->engine_stopped=1;
-            if(block==60)a->engine_stopped=0;
+            if(block==50){a->engine_stopped=1;a->mosaic->playing=0;}
+            if(block==60){a->engine_stopped=0;a->mosaic->playing=1;}
             if(block==80) {
                 char error[256];assert(ts_capture_arm_channels(&a->capture,1,777,RATE,2,error,sizeof(error)));
                 assert(ts_capture_set_source(&a->capture,0,error,sizeof(error)));
@@ -46,6 +46,7 @@ static void callback_span_parity(void)
             assert(!memcmp(lanes[0].a->capture.buffer,lanes[1].a->capture.buffer,
                 lanes[0].a->capture.recorded_frames*2*sizeof(float)));
         }
+        if(block>=52 && block<60)for(unsigned j=0;j<n*26;++j)assert(output[0][j]==0 && output[1][j]==0);
         assert(!memcmp(output[0],output[1],n*26*sizeof(float)));
         assert(!memcmp(stereo[0],stereo[1],n*2*sizeof(float)));
         assert(!memcmp(&lanes[0].a->keyboard_dry,&lanes[1].a->keyboard_dry,sizeof(TsStereoFrame)));
