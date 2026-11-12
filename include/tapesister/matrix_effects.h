@@ -33,6 +33,10 @@ void ts_matrix_effects_tick(TsMatrixEffects *fx);
 void ts_matrix_effects_begin_frame(TsMatrixEffects *fx);
 void ts_matrix_effects_end_frame(TsMatrixEffects *fx);
 TsStereoFrame ts_matrix_effects_process(TsMatrixEffects *fx,int slot,TsStereoFrame input,TsStereoFrame key,int connected);
+unsigned ts_matrix_effects_span_limit(const TsMatrixEffects *fx,unsigned frames);
+void ts_matrix_effects_process_span(TsMatrixEffects *fx,int slot,
+    const TsStereoFrame *input,const TsStereoFrame *key,TsStereoFrame *output,
+    unsigned frames,int connected);
 float ts_matrix_effects_reduction(const TsMatrixEffects *fx,int slot);
 float ts_matrix_effects_progress(const TsMatrixEffects *fx,int slot);
 size_t ts_matrix_effects_memory(const TsMatrixEffects *fx);

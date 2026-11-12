@@ -2004,6 +2004,22 @@ TsStereoFrame ts_sister_single_fx_process(TsSisterSingleFx *f,TsStereoFrame inpu
     default:return input;
     }
 }
+void ts_sister_single_fx_process_span(TsSisterSingleFx *f,const TsStereoFrame *input,
+    const float *gate,TsStereoFrame *output,unsigned frames)
+{
+    if(!f){memcpy(output,input,frames*sizeof(*output));return;}
+    switch(f->controls.type) {
+    case TS_SISTER_FX_REVERB:for(unsigned j=0;j<frames;++j){float direct=1;output[j]=reverb_process(&f->timing,&f->state.reverb,&f->controls,input[j],gate[j],&direct,1);}break;
+    case TS_SISTER_FX_DELAY:for(unsigned j=0;j<frames;++j){float direct=1;output[j]=delay_process(&f->timing,&f->state.delay,&f->controls,input[j],gate[j],&direct,1);}break;
+    case TS_SISTER_FX_DISTORTION:for(unsigned j=0;j<frames;++j){float direct=1;output[j]=distortion_process(&f->timing,&f->state.distortion,&f->controls,input[j],gate[j],&direct);}break;
+    case TS_SISTER_FX_GRAIN:for(unsigned j=0;j<frames;++j){float direct=1;output[j]=grain_process(&f->timing,&f->state.grain,&f->controls,input[j],gate[j],&direct,1);}break;
+    case TS_SISTER_FX_DISPERSION:for(unsigned j=0;j<frames;++j){float direct=1;output[j]=ts_dispersion_process(&f->state.dispersion,input[j],f->controls.parameter_a,f->controls.parameter_b,f->controls.parameter_c,f->controls.mix,f->controls.gain_db,gate[j],&direct);}break;
+    case TS_SISTER_FX_RESONATOR:for(unsigned j=0;j<frames;++j){float direct=1;output[j]=ts_resonator_process(&f->state.resonator,input[j],f->controls.parameter_a,f->controls.parameter_b,f->controls.parameter_c,f->controls.mix,f->controls.gain_db,gate[j],&direct);}break;
+    case TS_SISTER_FX_FILTER:for(unsigned j=0;j<frames;++j){output[j]=ts_character_filter_process(&f->state.filter,&f->controls.filter,input[j],f->controls.mix,f->controls.gain_db,gate[j]);}break;
+    case TS_SISTER_FX_TRANSIENT:for(unsigned j=0;j<frames;++j){float direct=1;output[j]=transient_process(&f->timing,&f->state.transient,&f->controls,input[j],gate[j],&direct);}break;
+    default:for(unsigned j=0;j<frames;++j)output[j]=input[j];break;
+    }
+}
 size_t ts_sister_single_fx_memory(const TsSisterSingleFx *f)
 {
     if(!f)return 0;size_t n=sizeof(*f);

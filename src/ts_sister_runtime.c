@@ -1442,6 +1442,7 @@ static void runtime_fallout_feedback(TsSisterRuntime *runtime, TsStereoFrame wet
 
 #include "ts_sister_router.inc"
 #include "ts_sister_matrix.inc"
+#include "ts_sister_matrix_span.inc"
 
 TsSisterRuntimeFrame ts_sister_runtime_process_frame(
     TsSisterRuntime *runtime, const TsSisterSourceFrames *sources)

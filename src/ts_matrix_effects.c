@@ -229,6 +229,52 @@ TsStereoFrame ts_matrix_effects_process(TsMatrixEffects *f,int i,TsStereoFrame i
     }
     return next;
 }
+unsigned ts_matrix_effects_span_limit(const TsMatrixEffects *f,unsigned frames)
+{
+    if(f->fading || f->jobs_count)return 1;
+    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i) {
+        const TsMatrixEffectNode *n=f->current[i];
+        if(n && n->sunvox) {
+            unsigned limit=ts_sunvox_span_limit(n->sunvox);
+            if(limit<frames)frames=limit;
+        }
+    }
+    return frames;
+}
+void ts_matrix_effects_process_span(TsMatrixEffects *f,int i,
+    const TsStereoFrame *in,const TsStereoFrame *key,TsStereoFrame *out,
+    unsigned frames,int connected)
+{
+    /* Lifecycle fades use the chronological path. A SunVox job may become
+       ready only at the last frame; all jobs drain in graph order afterward,
+       preserving SDK-global random state and the existing worker policy. */
+    TsMatrixEffectNode *n=f->current[i];
+    uint64_t started=ts_profile_effect_begin(i);
+    if(n && n->sunvox) {
+        float input[TS_MATRIX_DELAY*2],wet[TS_MATRIX_DELAY*2],dry[TS_MATRIX_DELAY*2];
+        for(unsigned j=0;j<frames;++j){input[j*2]=in[j].l;input[j*2+1]=in[j].r;}
+        if(ts_sunvox_stage_span(n->sunvox,input,wet,dry,frames)) {
+            unsigned job=f->jobs_count++;
+            f->jobs[job].node=n;f->jobs[job].slot=i;f->jobs[job].transitioning=0;
+        }
+        for(unsigned j=0;j<frames;++j) {
+            if(n->remaining){--n->remaining;n->gate=n->start+(n->target-n->start)*(1-(double)n->remaining/n->total);}
+            n->gain+=(n->gain_target-n->gain)*n->smooth;
+            n->mix+=(n->mix_target-n->mix)*n->smooth;float amount=n->gate*n->mix;
+            out[j]=ts_stereo_frame_sanitize_inline((TsStereoFrame){
+                dry[2*j]+(wet[2*j]*n->gain-dry[2*j])*amount,
+                dry[2*j+1]+(wet[2*j+1]*n->gain-dry[2*j+1])*amount});
+        }
+    } else if(n && n->pedal && connected) {
+        float gate[TS_MATRIX_DELAY];
+        for(unsigned j=0;j<frames;++j) {
+            if(n->remaining){--n->remaining;n->gate=n->start+(n->target-n->start)*(1-(double)n->remaining/n->total);}
+            gate[j]=n->gate;
+        }
+        ts_sister_single_fx_process_span(n->pedal,in,gate,out,frames);
+    } else for(unsigned j=0;j<frames;++j)out[j]=node_process(f,i,n,in[j],key[j],connected,0);
+    if(started && n)ts_profile_effect_end(i,&n->profile,started,0);
+}
 void ts_matrix_effects_end_frame(TsMatrixEffects *f)
 {
     if(f->worker && f->jobs_count) {

@@ -102,12 +102,11 @@ static TsStereoFrame runtime_matrix_node(void *context,int node,TsStereoFrame in
     default:return (TsStereoFrame){0,0};
     }
 }
-static TsSisterRuntimeFrame runtime_matrix_frame(TsSisterRuntime *r,
-    const TsSisterSourceFrames *s,TsStereoFrame tiles,TsSisterRuntimeFrame frame)
+static void runtime_matrix_prepare(TsSisterRuntime *r,const TsSisterSourceFrames *s,
+    TsStereoFrame tiles,TsSisterRuntimeFrame frame,TsSourceRouteMix *sums,TsStereoFrame *live)
 {
     unsigned channels=r->insert.duplex?r->insert.duplex_channels:atomic_load_explicit(&r->insert.matrix_channels,memory_order_relaxed);
     r->matrix.input_pairs=(channels+1)/2;
-    TsSourceRouteMix *sums=&r->matrix_sums;
     ts_source_route_mix_reset(sums);
     if(s->matrix_routes)ts_source_route_graph_copy(sums,s->matrix_routes);
     else {
@@ -130,7 +129,6 @@ static TsSisterRuntimeFrame runtime_matrix_frame(TsSisterRuntime *r,
     /* Refresh every row the graph or input meters will read. Unused interface
        capacity needs no per-sample clearing/copying. Include routed inputs
        outside the current device count for dense/offline callers too. */
-    TsStereoFrame *live=r->matrix_live;
     for(unsigned i=0;i<r->matrix.input_pairs && i<TS_MATRIX_INPUTS;++i)
         live[ts_matrix_input_row((int)i)-TS_MATRIX_NODES]=s->matrix_input[i];
     for(unsigned at=0;at<r->matrix.source_count;++at) {
@@ -143,6 +141,13 @@ static TsSisterRuntimeFrame runtime_matrix_frame(TsSisterRuntime *r,
     /* Only the ordinary tracker mix reaches this bus. Explicit track/tile
        routes have already been removed by the voice router and stay direct. */
     live[TS_MATRIX_TRACKER-TS_MATRIX_NODES]=ts_stereo_frame_sanitize_inline(s->tracker);
+}
+static TsSisterRuntimeFrame runtime_matrix_frame(TsSisterRuntime *r,
+    const TsSisterSourceFrames *s,TsStereoFrame tiles,TsSisterRuntimeFrame frame)
+{
+    TsSourceRouteMix *sums=&r->matrix_sums;
+    TsStereoFrame *live=r->matrix_live;
+    runtime_matrix_prepare(r,s,tiles,frame,sums,live);
     RouterFrameContext context={.runtime=r,.frame=&frame,.matrix_program_gain=s->matrix_program_gain};
     /* Matrix controls supersede legacy chain placement and source switches. */
     if(!r->matrix.controls.serial_mask)r->router.wet[TS_ROUTER_SISTER]=r->router.wet[TS_ROUTER_PEDALBOARD]=1;

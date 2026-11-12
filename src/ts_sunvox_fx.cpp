@@ -325,6 +325,18 @@ void ts_sunvox_free(TsSunVoxEngine *s) {
     if(s){sunvox_engine_close(&s->engine);delete s;}
 }
 void ts_sunvox_set(TsSunVoxEngine *s,const TsSunVoxControls *c) { if(s)s->requested=*c; }
+unsigned ts_sunvox_span_limit(const TsSunVoxEngine *s) {
+    return s && s->cursor<s->quantum?s->quantum-s->cursor:1;
+}
+int ts_sunvox_stage_span(TsSunVoxEngine *s,const float *input,float *wet,float *dry,unsigned frames) {
+    if(!s || !frames || frames>s->quantum-s->cursor)return 0;
+    unsigned at=s->cursor*2;
+    memcpy(wet,s->output_buffer+at,frames*2*sizeof(float));
+    memcpy(dry,s->dry_buffer+at,frames*2*sizeof(float));
+    for(unsigned i=0;i<frames*2;++i)s->input_buffer[at+i]=std::isfinite(input[i])?input[i]:0;
+    s->cursor+=frames;
+    return s->cursor==s->quantum;
+}
 int ts_sunvox_stage_frame(TsSunVoxEngine *s,float l,float r,float wet[2],float dry[2]) {
     // Defensive serial drain for callers that did not finish their prior batch.
     if(s->cursor==s->quantum)ts_sunvox_render_pending(s);

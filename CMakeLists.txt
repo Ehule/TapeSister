@@ -934,6 +934,11 @@ add_executable(tapesister_matrix_blocks_tests tests/test_matrix_blocks.c)
 target_link_libraries(tapesister_matrix_blocks_tests PRIVATE tapesister_core)
 add_test(NAME matrix_blocks_exact COMMAND tapesister_matrix_blocks_tests)
 set_tests_properties(matrix_blocks_exact PROPERTIES TIMEOUT 120)
+add_executable(tapesister_matrix_spans_tests tests/test_matrix_spans.c)
+target_link_libraries(tapesister_matrix_spans_tests PRIVATE tapesister_core)
+add_test(NAME matrix_spans_exact COMMAND tapesister_matrix_spans_tests)
+set_tests_properties(matrix_spans_exact PROPERTIES TIMEOUT 120)
+
 
 # Several older fixtures put their setup in assert(). Release must exercise
 # those checks too, while the linked production DSP stays fully optimized.

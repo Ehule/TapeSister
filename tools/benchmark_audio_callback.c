@@ -56,6 +56,9 @@ static int sort_double(const void *a,const void *b)
 {double x=*(const double *)a,y=*(const double *)b;return (x>y)-(x<y);}
 static uint64_t hash_bytes(uint64_t hash,const void *buffer,size_t size)
 {const unsigned char *p=buffer;for(size_t i=0;i<size;++i)hash=(hash^p[i])*UINT64_C(1099511628211);return hash;}
+
+#include "benchmark_ui_frames.inc"
+
 int main(int argc,char **argv)
 {
     if(argc<2 || argc>9){fprintf(stderr,"%s PROJECT [SECONDS [WARMUP [RATE [BLOCK [CHANNELS [PCM_DUMP [SUNVOX_BLOCK]]]]]]]\n",argv[0]);return 2;}
@@ -67,6 +70,7 @@ int main(int argc,char **argv)
     unsigned sunvox_block=argc>8?(unsigned)strtoul(argv[8],NULL,10):0;
     REQUIRE(!sunvox_block || sunvox_block==64 || sunvox_block==256 || sunvox_block==1024);
     REQUIRE(rate>=8000 && rate<=384000 && block>=16 && block<=8192 && channels>=2 && channels<=32);
+    audio.force_chronological=getenv("TS_BENCH_SCALAR")!=NULL;
     SDL_setenv("SDL_VIDEODRIVER","dummy",1);
     ts_sunvox_workers_configure(getenv("TS_BENCH_WORKERS")?1:0);
     REQUIRE(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER));
@@ -140,6 +144,11 @@ int main(int argc,char **argv)
     if(turn_count){REQUIRE(ts_gallery_switch(audio.gallery,turns[0],error,sizeof(error)));audio.mosaic=ts_gallery_active(audio.gallery);}
     double position=getenv("TS_BENCH_POSITION")?strtod(getenv("TS_BENCH_POSITION"),NULL):0;
     REQUIRE(isfinite(position) && position>=0);ts_mosaic_seek(audio.mosaic,position);audio.mosaic->playing=1;
+    if(getenv("TS_BENCH_UI")) {
+        benchmark_ui_frames(window);ts_tapehead_close();ts_sister_runtime_free(&audio.sister);
+        ts_mosaic_free(ts_sample_pages_mosaic_root(&pages));pages.mosaic=NULL;ts_sample_pages_free(&pages);
+        ts_instrument_free(&bank);ts_instrument_free(&record);SDL_DestroyWindow(window);SDL_Quit();return 0;
+    }
     if(getenv("TS_BENCH_PROFILE")){ts_profile_init(SDL_GetPerformanceCounter,SDL_GetPerformanceFrequency());ts_profile_enable(1);}
     double interval=getenv("TS_BENCH_INTERVAL")?strtod(getenv("TS_BENCH_INTERVAL"),NULL):0;
     REQUIRE(isfinite(interval) && interval>=0 && interval<=86400 && (!interval || interval>=1));
@@ -215,6 +224,7 @@ int main(int argc,char **argv)
         (unsigned long long)ts_sunvox_batch_stolen(audio.sister.matrix_effects.worker),sqrt(energy/(frames*2)),peak,hash,hardware_hash);
     if(getenv("TS_BENCH_PROFILE")){char report[16384];ts_profile_report(report,sizeof(report));fprintf(stderr,"%s\n",report);}
     if(dump)REQUIRE(!fclose(dump));
+    fprintf(stderr,"Matrix span frames: %" PRIu64 "; chronological: %" PRIu64 "\n",audio.span_frames,audio.chronological_frames);
     ts_tapehead_close();ts_sister_runtime_free(&audio.sister);
     ts_mosaic_free(ts_sample_pages_mosaic_root(&pages));pages.mosaic=NULL;ts_sample_pages_free(&pages);
     ts_instrument_free(&bank);ts_instrument_free(&record);SDL_DestroyWindow(window);SDL_Quit();

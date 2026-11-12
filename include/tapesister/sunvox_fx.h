@@ -58,6 +58,9 @@ void ts_sunvox_process(TsSunVoxEngine *s,float left,float right,float wet[2],flo
    Render it before staging the next sample. Preserve job order unless the
    scheduler's SDK admission check permits parallel work. Output latency remains
    exactly one existing quantum. */
+unsigned ts_sunvox_span_limit(const TsSunVoxEngine *s);
+/* Interleaved stereo; frames must not exceed the next render boundary. */
+int ts_sunvox_stage_span(TsSunVoxEngine *s,const float *input,float *wet,float *dry,unsigned frames);
 int ts_sunvox_stage_frame(TsSunVoxEngine *s,float left,float right,float wet[2],float dry[2]);
 void ts_sunvox_render_pending(TsSunVoxEngine *s);
 size_t ts_sunvox_memory(const TsSunVoxEngine *s);

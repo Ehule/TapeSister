@@ -309,6 +309,8 @@ void ts_matrix_process(TsRoutingMatrix *m,TsSourceRouteMix *sums,
 void ts_matrix_process_sparse(TsRoutingMatrix *m,TsSourceRouteMix *sums,
     const TsStereoFrame live[TS_MATRIX_ROWS-TS_MATRIX_NODES],TsMatrixProcess fn,void *context)
 {matrix_process(m,sums,live,fn,context,1);}
+#include "ts_matrix_span.inc"
+
 TsSourceRoute ts_matrix_source_route(TsSourceRoute old)
 {
     if(old.matrix_enabled)return old;
