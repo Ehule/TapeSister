@@ -19,7 +19,7 @@ static void offline_text(int x,int y,const char *s,Uint32 color,int scale)
 static void offline_show(TsUiState *ui,AudioState *audio)
 {
     if(!offline_ui.window) {
-        offline_ui.window=SDL_CreateWindow("TapeSister - Offline Render",SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,OFFLINE_W,OFFLINE_H,SDL_WINDOW_ALLOW_HIGHDPI);
+        offline_ui.window=SDL_CreateWindow("TapeSister - Offline Render",SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,OFFLINE_W,OFFLINE_H,TS_WORKSPACE_WINDOW_FLAGS);
         if(offline_ui.window)offline_ui.renderer=SDL_CreateRenderer(offline_ui.window,-1,SDL_RENDERER_SOFTWARE);
         if(!offline_ui.renderer){if(offline_ui.window)SDL_DestroyWindow(offline_ui.window);offline_ui.window=NULL;snprintf(ui->status,sizeof(ui->status),"CANNOT OPEN OFFLINE RENDER");return;}
         offline_ui.id=SDL_GetWindowID(offline_ui.window);SDL_RenderSetLogicalSize(offline_ui.renderer,OFFLINE_W,OFFLINE_H);
@@ -152,8 +152,7 @@ static int offline_event(SDL_Event *e,SDL_Window *main_window,TsUiState *ui)
     }
     if(e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_ESCAPE){offline_hide();return 1;}
     if(e->type==SDL_MOUSEBUTTONDOWN && e->button.button==SDL_BUTTON_LEFT) {
-        int x,y;
-        float fx,fy;SDL_RenderWindowToLogical(offline_ui.renderer,e->button.x,e->button.y,&fx,&fy);x=(int)fx;y=(int)fy;
+        int x,y;ts_window_logical_pointer(offline_ui.renderer,e,&x,&y);
         offline_ui.field=0;SDL_StopTextInput();
         if(y>=349 && y<377) {
             if(x>=318 && x<598)offline_hide();

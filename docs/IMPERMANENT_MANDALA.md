@@ -17,7 +17,7 @@ In the visual window:
 
 | Control | Action |
 | --- | --- |
-| F | Borderless fullscreen on the selected display; press again to restore |
+| F / Alt+Enter / Alt+F11 | Borderless fullscreen on the selected display; press again to restore |
 | D | Select the next connected display (number appears in the revealed controls) |
 | Q | Economy 15, Standard 30, Enhanced 60 FPS target |
 | Space | Freeze / resume visuals |

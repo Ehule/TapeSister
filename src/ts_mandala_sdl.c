@@ -4,6 +4,7 @@
 #include "tapesister/video_cache.h"
 #include "tapesister/ui.h"
 #include <SDL2/SDL.h>
+#include "tapesister/window.h"
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>

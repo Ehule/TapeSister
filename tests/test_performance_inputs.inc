@@ -2,6 +2,8 @@ static void perf_input_click(int x,int y,int button)
 {
     SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=performance_transport.id;
     e.button.x=x;e.button.y=y;e.button.button=button;e.button.clicks=1;
+    SDL_FlushEvent(SDL_MOUSEBUTTONDOWN);assert(SDL_PushEvent(&e)==1);
+    assert(SDL_PeepEvents(&e,1,SDL_GETEVENT,SDL_MOUSEBUTTONDOWN,SDL_MOUSEBUTTONDOWN)==1);
     assert(performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));
     e.type=SDL_MOUSEBUTTONUP;assert(performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));
 }

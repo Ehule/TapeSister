@@ -78,7 +78,7 @@ static int source_route_show(SDL_AudioDeviceID device,AudioState *audio,TsUiStat
     w->model.page=track==-2?3:0;w->drag=0;
     if(!w->window) {
         w->window=SDL_CreateWindow("TapeSister - Source Routing",SDL_WINDOWPOS_CENTERED,
-            SDL_WINDOWPOS_CENTERED,960,600,SDL_WINDOW_RESIZABLE|SDL_WINDOW_ALLOW_HIGHDPI);
+            SDL_WINDOWPOS_CENTERED,960,600,TS_WORKSPACE_WINDOW_FLAGS);
         if(w->window) {
             SDL_SetWindowMinimumSize(w->window,640,400);
             w->renderer=SDL_CreateRenderer(w->window,-1,SDL_RENDERER_ACCELERATED);

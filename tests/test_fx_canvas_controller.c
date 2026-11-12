@@ -25,7 +25,7 @@ static void pointer(Uint32 type,int x,int y,int button,int clicks)
 static void click(int x,int y,int count)
 {pointer(SDL_MOUSEBUTTONDOWN,x,y,SDL_BUTTON_LEFT,count);pointer(SDL_MOUSEBUTTONUP,x,y,SDL_BUTTON_LEFT,count);}
 static void key(SDL_Keycode sym,int mod)
-{SDL_Event e;SDL_zero(e);e.type=SDL_KEYDOWN;e.key.windowID=matrix_window.visible?matrix_window.id:SDL_GetWindowID(main_window);e.key.keysym.sym=sym;e.key.keysym.mod=mod;assert(event(&e));}
+{SDL_Event e;SDL_zero(e);e.type=SDL_KEYDOWN;e.key.windowID=fx_canvas.properties?fx_properties_window.id:matrix_window.visible?matrix_window.id:SDL_GetWindowID(main_window);e.key.keysym.sym=sym;e.key.keysym.mod=mod;assert(event(&e));}
 static FxCanvasNode *node(int row)
 {for(int i=0;i<fx_canvas.count;++i)if(fx_canvas.node[i].row.kind==2 && fx_canvas.node[i].row.index==row)return &fx_canvas.node[i];return NULL;}
 static FxCanvasNode *instance(uint32_t id)

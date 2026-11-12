@@ -170,7 +170,7 @@ static void test_workspace_waveforms(void)
         assert(!sister.model.visible && (SDL_GetWindowFlags(sister.window)&SDL_WINDOW_HIDDEN));
         ui.portal.open=0;ui.fm_open=1;e.key.windowID=SDL_GetWindowID(window);
         assert(workspace_tab_event(&e,window,&sister,&ui));
-        assert(sister.model.visible && sister.screen_filling);
+        assert(sister.model.visible && !sister.screen_filling && !(SDL_GetWindowFlags(sister.window)&SDL_WINDOW_FULLSCREEN));
     }
     e.key.windowID=sister.window_id;e.key.repeat=1;assert(workspace_tab_event(&e,window,&sister,&ui));assert(sister.model.visible);
     e.key.repeat=0;e.key.keysym.mod=KMOD_CTRL;assert(!workspace_tab_event(&e,window,&sister,&ui));

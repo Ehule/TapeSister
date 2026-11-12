@@ -35,6 +35,8 @@ static MatrixWindow matrix_window={.selected=-1,.rename=-1};
 static int mx_destination_available(int d);
 static void matrix_history_clear(void);
 static void fx_context_reset(void);
+static void fx_properties_close(void);
+static void fx_properties_destroy(void);
 static void fx_label_cancel(void);
 static void fx_popup_open(int x,int y);
 static void fx_delete_request(int slot);
@@ -299,12 +301,13 @@ static TsSourceRoute mx_display_route(TsSourceRoute raw)
 static void matrix_hide(void)
 {
     ts_session_log_text("matrix_window","close");
-    fx_cancel_gesture();fx_label_cancel();
+    fx_cancel_gesture();fx_label_cancel();fx_properties_close();
     svfx_close();matrix_window.visible=0;matrix_window.drag=0;matrix_window.rename=-1;
     SDL_StopTextInput();if(matrix_window.window)SDL_HideWindow(matrix_window.window);
 }
 static void matrix_close(void)
 {
+    fx_properties_destroy();
     MatrixWindow *w=&matrix_window;
     if(w->texture)SDL_DestroyTexture(w->texture);
     if(w->renderer)SDL_DestroyRenderer(w->renderer);
@@ -318,7 +321,7 @@ static int matrix_show(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,
     MatrixWindow *w=&matrix_window;
     if(!w->window) {
         w->window=SDL_CreateWindow("TapeSister - Routing Matrix (F9)",SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,
-            MATRIX_W,MATRIX_H,SDL_WINDOW_RESIZABLE|SDL_WINDOW_ALLOW_HIGHDPI);
+            MATRIX_W,MATRIX_H,TS_WORKSPACE_WINDOW_FLAGS);
         if(w->window) {
             SDL_SetWindowMinimumSize(w->window,960,630);
             /* Keep native-pixel drawing, but let the GPU present its texture.
@@ -928,7 +931,7 @@ static int mx_paint_changed(TsSamplePages *pages,TsInstrument *bank)
         TsSourceRoute route=mx_route(w->rows[i],pages,bank);
         changed|=memcmp(&routes[i],&route,sizeof(route))!=0;routes[i]=route;
     }
-    if(w->canvas && (fx_canvas.label_editing || fx_canvas.properties)) {
+    if(w->canvas && fx_canvas.label_editing) {
         int phase=(SDL_GetTicks()-fx_canvas.text_blink)/500%2;
         changed|=phase!=fx_canvas.text_phase;fx_canvas.text_phase=phase;
     }
@@ -937,6 +940,7 @@ static int mx_paint_changed(TsSamplePages *pages,TsInstrument *bank)
 static void matrix_update(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsSamplePages *pages,TsInstrument *bank)
 {
     mx_collect_effects(device,audio);
+    fx_properties_paint();
     if(memcmp(&matrix_window.palette,&ui->palette,sizeof(ui->palette))) {matrix_window.palette=ui->palette;matrix_window.dirty=1;}
     MatrixWindow *w=&matrix_window;(void)ui;Uint32 elapsed=SDL_GetTicks()-w->polled;
     if(!w->visible || !window_drawable(w->window) || elapsed<50)return;
@@ -986,7 +990,7 @@ static int matrix_event_inner(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID de
     }
     if(!w->visible)return 1;
     if(w->canvas && fx_canvas.label_editing)return fx_label_edit_event(e);
-    if(w->canvas && fx_canvas.properties)return fx_properties_event(e);
+    if(w->canvas && fx_canvas.properties)return 1;
     if(sunvox_editor.node)return svfx_event(e,device,audio,ui,pages,bank);
     if(w->canvas && (fx_modal() || fx_canvas.confirm_clear || fx_canvas.confirm_delete || fx_canvas.popup) && (e->type==SDL_KEYDOWN || e->type==SDL_KEYUP))return fx_event(e,main,device,audio,ui,pages,bank,0,0,0);
     if(w->rename>=0) {
@@ -1172,9 +1176,10 @@ static int matrix_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,A
     w->io_config=&ui->config;
     w->layout=&audio->sister.matrix_layout;
     if(fx_divider_event(e))return 1;
-    int own=w->visible && event_window_id(e)==w->id;
+    int properties=fx_properties_owns(e);
+    int own=w->visible && (event_window_id(e)==w->id || properties);
     if(own && e->type!=SDL_MOUSEMOTION)w->dirty=1;
-    int edit=own && ((w->canvas && fx_canvas.confirm_delete && e->type==SDL_KEYDOWN) || (w->canvas && fx_canvas.properties && e->type==SDL_KEYDOWN && (e->key.keysym.sym==SDLK_RETURN || e->key.keysym.sym==SDLK_KP_ENTER)) || (w->canvas && fx_canvas.label_editing && e->type==SDL_KEYDOWN && (e->key.keysym.sym==SDLK_RETURN || e->key.keysym.sym==SDLK_KP_ENTER)) || (w->canvas && fx_canvas.popup && e->type==SDL_KEYDOWN && (e->key.keysym.sym==SDLK_RETURN || e->key.keysym.sym==SDLK_KP_ENTER)) || (sunvox_editor.node && (e->type==SDL_DROPFILE || (e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_RETURN))) || e->type==SDL_MOUSEBUTTONDOWN || e->type==SDL_MOUSEWHEEL ||
+    int edit=properties?fx_properties_apply_event(e):own && ((w->canvas && fx_canvas.confirm_delete && e->type==SDL_KEYDOWN) || (w->canvas && fx_canvas.properties && e->type==SDL_KEYDOWN && (e->key.keysym.sym==SDLK_RETURN || e->key.keysym.sym==SDLK_KP_ENTER)) || (w->canvas && fx_canvas.label_editing && e->type==SDL_KEYDOWN && (e->key.keysym.sym==SDLK_RETURN || e->key.keysym.sym==SDLK_KP_ENTER)) || (w->canvas && fx_canvas.popup && e->type==SDL_KEYDOWN && (e->key.keysym.sym==SDLK_RETURN || e->key.keysym.sym==SDLK_KP_ENTER)) || (sunvox_editor.node && (e->type==SDL_DROPFILE || (e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_RETURN))) || e->type==SDL_MOUSEBUTTONDOWN || e->type==SDL_MOUSEWHEEL ||
         (w->canvas && e->type==SDL_KEYDOWN && (fx_canvas_key(e->key.keysym.sym) || ((e->key.keysym.mod&KMOD_CTRL) && e->key.keysym.sym==SDLK_v))) ||
         (w->rename>=0 && e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_RETURN) ||
         (w->rename<0 && e->type==SDL_KEYDOWN && mx_layout_key(e)));
@@ -1183,7 +1188,7 @@ static int matrix_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,A
     w->history_skip=0;
     if(edit && !w->pending){snprintf(w->status,sizeof(w->status),"EDIT NOT APPLIED: CANNOT ALLOCATE UNDO SNAPSHOT.");return 1;}
     int original=w->original_active;
-    int result=matrix_event_inner(e,main,device,audio,ui,pages,bank);
+    int result=properties?fx_properties_event(e):matrix_event_inner(e,main,device,audio,ui,pages,bank);
     if(w->pending && (!w->drag || (e->type==SDL_MOUSEBUTTONUP && !fx_modal()))) {
         MatrixSnapshot *after=mx_snapshot(device,audio,pages,bank);
         if(!after && !w->history_skip) {

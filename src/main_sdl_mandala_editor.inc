@@ -62,7 +62,7 @@ static void mandala_editor_close(void)
 static void mandala_editor_show(TsUiState *ui,const TsMandalaConfig *c)
 {
     if(!mandala_editor.window) {
-        mandala_editor.window=SDL_CreateWindow("TapeSister - Visualizer Editor",SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,MW_W,MW_H,SDL_WINDOW_ALLOW_HIGHDPI);
+        mandala_editor.window=SDL_CreateWindow("TapeSister - Visualizer Editor",SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,MW_W,MW_H,TS_WORKSPACE_WINDOW_FLAGS);
         if(mandala_editor.window)mandala_editor.renderer=SDL_CreateRenderer(mandala_editor.window,-1,SDL_RENDERER_SOFTWARE);
         if(mandala_editor.renderer)mandala_editor.texture=SDL_CreateTexture(mandala_editor.renderer,SDL_PIXELFORMAT_ARGB8888,SDL_TEXTUREACCESS_STREAMING,MW_W,MW_H);
         if(!mandala_editor.texture){mandala_editor_close();snprintf(ui->status,sizeof(ui->status),"VISUALIZER EDITOR: %.120s",SDL_GetError());return;}

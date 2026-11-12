@@ -39,7 +39,7 @@ static void meta_fx_open(uint32_t id) {
     if (!meta_fx_window.window) {
         meta_fx_window.window =
             SDL_CreateWindow("TapeSister / Meta FX", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1120,
-                             700, SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+                             700, TS_WORKSPACE_WINDOW_FLAGS);
         if (!meta_fx_window.window)
             return;
         meta_fx_window.renderer = SDL_CreateRenderer(meta_fx_window.window, -1, SDL_RENDERER_SOFTWARE);

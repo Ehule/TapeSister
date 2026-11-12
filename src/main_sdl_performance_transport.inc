@@ -151,7 +151,7 @@ static void performance_show(TsUiState *ui,AudioState *audio)
     performance_transport.inputs=audio->performance_inputs;
     performance_palette=ui->palette;
     if(!performance_transport.window) {
-        performance_transport.window=SDL_CreateWindow("TapeSister - Control Center",SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,PERF_W,PERF_H,SDL_WINDOW_ALLOW_HIGHDPI);
+        performance_transport.window=SDL_CreateWindow("TapeSister - Control Center",SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,PERF_W,PERF_H,TS_WORKSPACE_WINDOW_FLAGS);
         if(performance_transport.window)performance_transport.renderer=SDL_CreateRenderer(performance_transport.window,-1,SDL_RENDERER_SOFTWARE);
         if(!performance_transport.renderer){performance_close();snprintf(ui->status,sizeof(ui->status),"CANNOT OPEN PERFORMANCE TRANSPORT");return;}
         performance_transport.pixels=calloc((size_t)PERF_W*PERF_H,sizeof(*performance_transport.pixels));
@@ -202,14 +202,7 @@ static void perf_present(void)
     SDL_RenderCopy(r,performance_transport.image,NULL,&destination);SDL_RenderPresent(r);
 }
 static void perf_pointer(const SDL_Event *e,int *x,int *y)
-{
-    int px,py;
-    if(e->type==SDL_MOUSEWHEEL)wheel_event_mouse(e,&px,&py);
-    else if(e->type==SDL_MOUSEMOTION){px=e->motion.x;py=e->motion.y;}
-    else {px=e->button.x;py=e->button.y;}
-    float lx,ly;SDL_RenderWindowToLogical(performance_transport.renderer,px,py,&lx,&ly);
-    *x=(int)floorf(lx);*y=(int)floorf(ly);
-}
+{ts_window_logical_pointer(performance_transport.renderer,e,x,y);}
 static void perf_button(int x,int y,int width,int height,const char *label,int button,int active,int primary)
 {
     int pressed=performance_transport.pressed==button ||

@@ -18,7 +18,7 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
 {
     MatrixWindow *w=&matrix_window;TsMatrixLayout *l=w->layout;
     if(fx_canvas.label_editing)return fx_label_edit_event(e);
-    if(fx_canvas.properties)return fx_properties_event(e);
+    if(fx_canvas.properties)return 1;
     if(fx_canvas.confirm_delete) {
         int choice=-1;
         if(e->type==SDL_KEYDOWN) {

@@ -17,7 +17,7 @@ static int speakers_show(AudioState *audio,TsUiState *ui)
 {
     SpeakersWindow *w=&speakers_window;
     if(!w->window) {
-        w->window=SDL_CreateWindow("TapeSister - Speaker Setup",SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,960,600,SDL_WINDOW_RESIZABLE|SDL_WINDOW_ALLOW_HIGHDPI);
+        w->window=SDL_CreateWindow("TapeSister - Speaker Setup",SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,960,600,TS_WORKSPACE_WINDOW_FLAGS);
         if(w->window){SDL_SetWindowMinimumSize(w->window,640,400);w->renderer=SDL_CreateRenderer(w->window,-1,SDL_RENDERER_SOFTWARE);}
         if(w->renderer)w->texture=SDL_CreateTexture(w->renderer,SDL_PIXELFORMAT_ARGB8888,SDL_TEXTUREACCESS_STREAMING,640,400);
         w->fb=calloc(1,sizeof(*w->fb));

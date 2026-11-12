@@ -1,3 +1,10 @@
+static void properties_click(int x,int y)
+{
+    int width,height;SDL_GetWindowSize(fx_properties_window.window,&width,&height);
+    SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=fx_properties_window.id;
+    e.button.button=SDL_BUTTON_LEFT;e.button.x=x*width/FX_PROPERTIES_W;e.button.y=y*height/FX_PROPERTIES_H;
+    assert(event(&e));e.type=SDL_MOUSEBUTTONUP;assert(event(&e));
+}
 static void patch_workflow(void)
 {
     MatrixWindow *w=&matrix_window;edit_settle();MatrixSnapshot *saved=mx_snapshot(0,&audio,&pages,&bank);assert(saved);
@@ -26,13 +33,37 @@ static void patch_workflow(void)
     /* F2 properties commit once and survive layout persistence and undo. */
     int split=w->layout->canvas_split;w->layout->canvas_split=TS_FX_CANVAS_SPLIT_MIN;
     key(SDLK_F2,0);assert(fx_canvas.properties);
-    SDL_Event text;SDL_zero(text);text.type=SDL_TEXTINPUT;text.text.windowID=w->id;
+    Uint32 flags=SDL_GetWindowFlags(fx_properties_window.window);
+    assert((flags&SDL_WINDOW_ALWAYS_ON_TOP) && !(flags&(SDL_WINDOW_MAXIMIZED|SDL_WINDOW_FULLSCREEN|SDL_WINDOW_BORDERLESS)));
+    int width,height;SDL_GetWindowSize(fx_properties_window.window,&width,&height);
+    assert(width==FX_PROPERTIES_W && height==FX_PROPERTIES_H);
+    SDL_SetWindowPosition(fx_properties_window.window,42,64);
+    SDL_SetWindowSize(fx_properties_window.window,FX_PROPERTIES_W*2,FX_PROPERTIES_H*2);
+    SDL_Event text;SDL_zero(text);text.type=SDL_TEXTINPUT;text.text.windowID=fx_properties_window.id;
     snprintf(text.text.text,sizeof(text.text.text),"ANGELIC DRIVE");assert(event(&text));
-    click(324+8*39+10,385,1);uint32_t color=fx_canvas.properties_color;assert(color==fx_swatch(8));
-    const char *preview=getenv("TS_FX_PREVIEW");if(preview){char path[1024];snprintf(path,sizeof(path),"%s/card-properties.bmp",preview);screenshot(path);}
+    /* A click in the canvas cannot type into or commit the floating editor. */
+    SDL_Event other=text;other.text.windowID=w->id;snprintf(other.text.text,sizeof(other.text.text),"WRONG WINDOW");
+    assert(event(&other));assert(!strcmp(fx_canvas.properties_name,"ANGELIC DRIVE"));
+    key(SDLK_RETURN,KMOD_ALT);assert(fx_canvas.properties && !fx_position(instance(id)->row,0)->name[0]);
+    properties_click(16+8*33+10,110);uint32_t color=fx_canvas.properties_color;assert(color==fx_swatch(8));
+    const char *preview=getenv("TS_FX_PREVIEW");if(preview){char path[1024];snprintf(path,sizeof(path),"%s/card-properties.bmp",preview);fx_properties_paint();
+        SDL_Surface *image=SDL_CreateRGBSurfaceWithFormatFrom(fx_properties_window.pixels,FX_PROPERTIES_W,FX_PROPERTIES_H,32,FX_PROPERTIES_W*4,SDL_PIXELFORMAT_ARGB8888);
+        assert(image && !SDL_SaveBMP(image,path));SDL_FreeSurface(image);}
     key(SDLK_RETURN,0);w->layout->canvas_split=split;TsFxCanvasPosition *position=fx_position(instance(id)->row,0);assert(position);
     assert(!strcmp(position->name,"ANGELIC DRIVE") && position->color==color);view_codec();
     key(SDLK_z,KMOD_CTRL);assert(!position->name[0] && !position->color);key(SDLK_y,KMOD_CTRL);view_codec();
+    /* Reopening preserves placement; Cancel and the title-bar close do not commit. */
+    key(SDLK_F2,0);int moved_x,moved_y;SDL_GetWindowPosition(fx_properties_window.window,&moved_x,&moved_y);
+    assert(moved_x==42 && moved_y==64);
+    properties_click(440,294);assert(!fx_canvas.properties_name[0] && !fx_canvas.properties_color);
+    properties_click(210,294);assert(!fx_canvas.properties && !strcmp(position->name,"ANGELIC DRIVE"));
+    key(SDLK_F2,0);SDL_Event close;SDL_zero(close);close.type=SDL_WINDOWEVENT;close.window.windowID=fx_properties_window.id;
+    close.window.event=SDL_WINDOWEVENT_CLOSE;assert(event(&close));assert(!fx_canvas.properties && w->visible);
+    key(SDLK_F2,0);properties_click(440,294);properties_click(70,294);
+    assert(!fx_canvas.properties && !position->name[0] && !position->color);
+    key(SDLK_z,KMOD_CTRL);assert(!strcmp(position->name,"ANGELIC DRIVE") && position->color==color);
+    key(SDLK_F2,0);matrix_hide();assert(!fx_canvas.properties && (SDL_GetWindowFlags(fx_properties_window.window)&SDL_WINDOW_HIDDEN));
+    w->visible=1;SDL_ShowWindow(w->window);
     /* Native replacement uses the actual picker and preserves all main cables. */
     w->effect_open=id;click(1095,708,1);assert(fx_canvas.replace_id==id && fx_canvas.popup);
     int x=fx_canvas.popup_x,y=fx_canvas.popup_y;

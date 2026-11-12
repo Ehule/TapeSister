@@ -81,7 +81,7 @@ static void test_workspace_routes(SDL_Window *window)
         assert(ui.fm_open && !sister.model.visible); /* Focus FM, don't close hidden FM. */
     }
     sister_window_fullscreen(&sister,1);
-    assert(sister.screen_filling && !(SDL_GetWindowFlags(sister.window)&SDL_WINDOW_FULLSCREEN));
+    assert(sister.screen_filling && (SDL_GetWindowFlags(sister.window)&SDL_WINDOW_FULLSCREEN));
     SDL_Rect display; assert(SDL_GetDisplayBounds(SDL_GetWindowDisplayIndex(sister.window),&display)==0);
     int width,height;SDL_GetWindowSize(sister.window,&width,&height);
     assert(width==display.w && height==display.h);

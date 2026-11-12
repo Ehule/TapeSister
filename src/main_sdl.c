@@ -40,6 +40,7 @@
 #include "tape_companion.h"
 
 #include <SDL2/SDL.h>
+#include "tapesister/window.h"
 #include "main_sdl_audio_preamble.inc"
 #if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic push
@@ -9438,7 +9439,7 @@ typedef struct {
     TsSisterUiPowerVisual power_visual;
     int rendered_model_valid;
     int minimized;
-    int screen_filling, windowed_x, windowed_y, windowed_w, windowed_h;
+    int screen_filling;
     TsSisterPresetBank presets;
     size_t preset_index;
     TsSisterPresetBank fallout_presets;
@@ -9600,7 +9601,7 @@ static int sister_window_ensure(SisterWindow *sister, const TsConfig *config)
     /* Fill the entire client area; input is mapped explicitly for both
        queued events and polled mouse state, including high-DPI output. */
     sister->window_id = SDL_GetWindowID(sister->window);
-    if (config == NULL || config->sister_window_maximized) sister_window_fullscreen(sister,1);
+    if (config == NULL || config->sister_window_maximized) SDL_MaximizeWindow(sister->window);
     return 1;
 }
 
@@ -9615,50 +9616,32 @@ static void sister_window_hide(SisterWindow *sister)
     if (sister->window != NULL) SDL_HideWindow(sister->window);
 }
 
-/* SDL permits only one fullscreen owner per display and minimizes the other
-   window on handoff. Sister fills the display as a normal borderless window. */
+/* Fullscreen is an explicit choice, independent of native maximization. */
 static void sister_window_fullscreen(SisterWindow *sister, int enabled)
 {
-    if (!sister || !sister->window || sister->screen_filling==!!enabled) return;
-    if (enabled) {
-        SDL_Rect bounds;
-        int display=SDL_GetWindowDisplayIndex(sister->window);
-        if (display<0 || SDL_GetDisplayBounds(display,&bounds)!=0) return;
-        SDL_GetWindowPosition(sister->window,&sister->windowed_x,&sister->windowed_y);
-        SDL_GetWindowSize(sister->window,&sister->windowed_w,&sister->windowed_h);
-        if (SDL_GetWindowFlags(sister->window)&SDL_WINDOW_MAXIMIZED) {
-            SDL_RestoreWindow(sister->window);
-            SDL_GetWindowSize(sister->window,&sister->windowed_w,&sister->windowed_h);
-        }
-        sister->screen_filling=1;
-        SDL_SetWindowBordered(sister->window,SDL_FALSE);
-        SDL_SetWindowPosition(sister->window,bounds.x,bounds.y);
-        SDL_SetWindowSize(sister->window,bounds.w,bounds.h);
-    } else {
-        sister->screen_filling=0;
-        SDL_SetWindowBordered(sister->window,SDL_TRUE);
-        SDL_SetWindowSize(sister->window,sister->windowed_w,sister->windowed_h);
-        SDL_SetWindowPosition(sister->window,sister->windowed_x,sister->windowed_y);
-    }
+    if(!sister || !sister->window)return;
+    if(ts_window_fullscreen(sister->window,enabled)==0)
+        sister->screen_filling=!!enabled;
     sister->rendered_model_valid=0;
 }
 
-/* Global window shortcut: handle it before tracker/modal/modeless controllers.
-   Floating panels target the main workspace, not their small utility window. */
+/* Handle both shortcuts before any editor can treat Enter as Apply. The event's
+   window owns the command; utility windows never toggle the main workspace. */
 static int application_fullscreen_event(const SDL_Event *event,SDL_Window *window,
     SisterWindow *sister,TsUiState *ui)
 {
-    if(event->type!=SDL_KEYDOWN || event->key.keysym.sym!=SDLK_F11 ||
-       !(event->key.keysym.mod&KMOD_ALT) || (event->key.keysym.mod&(KMOD_CTRL|KMOD_SHIFT|KMOD_GUI)))return 0;
+    (void)window;
+    if(!ts_window_fullscreen_shortcut(event))return 0;
     if(event->key.repeat)return 1;
-    if(sister && sister->window && event->key.windowID==sister->window_id)
-        sister_window_fullscreen(sister,!sister->screen_filling);
-    else {
-        int fullscreen=(SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN)!=0;
-        if(SDL_SetWindowFullscreen(window,fullscreen?0u:SDL_WINDOW_FULLSCREEN_DESKTOP)==0)
-            snprintf(ui->status,sizeof(ui->status),"%s - ALT+F11 TO TOGGLE",fullscreen?"WINDOWED":"FULLSCREEN");
-        else snprintf(ui->status,sizeof(ui->status),"FULLSCREEN TOGGLE FAILED: %.119s",SDL_GetError());
-    }
+    SDL_Window *target=SDL_GetWindowFromID(event->key.windowID);
+    if(!target)return 1;
+    int fullscreen=(SDL_GetWindowFlags(target)&SDL_WINDOW_FULLSCREEN)!=0;
+    if(ts_window_fullscreen(target,!fullscreen)==0) {
+        if(sister && target==sister->window) {
+            sister->screen_filling=!fullscreen;sister->rendered_model_valid=0;
+        }
+        snprintf(ui->status,sizeof(ui->status),"%s - ALT+ENTER TO TOGGLE",fullscreen?"WINDOWED":"FULLSCREEN");
+    } else snprintf(ui->status,sizeof(ui->status),"FULLSCREEN TOGGLE FAILED: %.119s",SDL_GetError());
     return 1;
 }
 
@@ -14559,7 +14542,7 @@ int main(int argc, char **argv)
     window = SDL_CreateWindow(TAPESISTER_WINDOW_TITLE,
                               SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                               TS_UI_WIDTH * 2, TS_UI_HEIGHT * 2,
-                              SDL_WINDOW_RESIZABLE | SDL_WINDOW_FULLSCREEN_DESKTOP);
+                              TS_WORKSPACE_WINDOW_FLAGS);
     renderer = window ? SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC) : NULL;
     if (!renderer && window) renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
     texture = renderer ? SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
@@ -14885,6 +14868,10 @@ int main(int argc, char **argv)
             wheel_event_coalesce(&event);
             if (!wheel_event_prepare(&event)) continue;
             uint32_t event_id = event_window_id(&event);
+            if(application_fullscreen_event(&event,window,&sister_window,&ui)) {
+                frame_snapshot_valid=0;continue;
+            }
+            if(fx_properties_owns(&event) && matrix_event(&event,window,device,&audio,&ui,&sample_pages,&instrument))continue;
             if(credits_event(&event,window))continue;
             if(project_save_event(&event,window,device,&audio,&ui))continue;
             if(ts_audio_session_shortcut(&event))continue;
@@ -15012,9 +14999,6 @@ int main(int argc, char **argv)
                     }
                 }
                 continue;
-            }
-            if(application_fullscreen_event(&event,window,&sister_window,&ui)) {
-                frame_snapshot_valid=0;continue;
             }
             if(canvas_eq_event(&event,window,device,&audio,&ui,&sister_window,&instrument))continue;
             if(performance_event(&event,window,device,&audio,&ui,&sample_pages,audio.workspace_bank?audio.workspace_bank:&instrument,&fm_preview,obtained.freq))continue;
@@ -15172,9 +15156,6 @@ int main(int argc, char **argv)
                             event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED)) {
                     sister_window.minimized = 0;
                     sister_window.rendered_model_valid = 0;
-                    if(event.window.event==SDL_WINDOWEVENT_MAXIMIZED &&
-                       (SDL_GetWindowFlags(sister_window.window)&SDL_WINDOW_MAXIMIZED))
-                        sister_window_fullscreen(&sister_window,1);
                 } else if (event.type == SDL_WINDOWEVENT &&
                            event.window.event == SDL_WINDOWEVENT_MOVED) {
                     ui.config.sister_window_x = event.window.data1;
@@ -15620,18 +15601,6 @@ int main(int argc, char **argv)
                              ui.material_macro_wheel_active ?
                              "RELEASE CTRL TO COMMIT MATERIAL - ESC CANCELS" :
                              "RELEASE MOUSE TO COMMIT MATERIAL - ESC CANCELS");
-                } else if ((mod & KMOD_ALT) &&
-                    (key == SDLK_RETURN || key == SDLK_KP_ENTER)) {
-                    Uint32 flags = SDL_GetWindowFlags(window);
-                    int fullscreen = (flags & SDL_WINDOW_FULLSCREEN) != 0;
-                    if (SDL_SetWindowFullscreen(
-                            window, fullscreen ? 0u : SDL_WINDOW_FULLSCREEN_DESKTOP) == 0) {
-                        frame_snapshot_valid = 0;
-                        snprintf(ui.status, sizeof(ui.status), "%s - ALT+ENTER TO TOGGLE",
-                                 fullscreen ? "WINDOWED" : "FULLSCREEN");
-                    } else
-                        snprintf(ui.status, sizeof(ui.status),
-                                 "FULLSCREEN TOGGLE FAILED: %.119s", SDL_GetError());
                 } else if (ui.stretch_gesture.active && key == SDLK_ESCAPE) {
                     end_stretch_gesture(device, &audio, &ui, &instrument, 1);
                 } else if (ui.stretch_gesture.active) {
