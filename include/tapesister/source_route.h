@@ -34,6 +34,19 @@ void ts_source_route_mix_init(TsSourceRouteMix *to,const TsSourceRouteMix *map);
 /* Reuse an initialized mix produced by frame/add/handoff. Unmarked graph
    destinations must be zero. Clears audio and availability, like {0}. */
 void ts_source_route_mix_reset(TsSourceRouteMix *mix);
+/* Audio-owned reuse, retaining map's hardware availability (map may be mix).
+   Same ownership/zero invariant as reset; init is still required for new memory. */
+void ts_source_route_mix_reuse(TsSourceRouteMix *mix,const TsSourceRouteMix *map);
+/* Graph-only copy into an empty, initialized mix. No gain/addition regrouping.
+   Both mixes must obey reset's ownership invariant and must not alias. */
+void ts_source_route_graph_copy(TsSourceRouteMix *to,const TsSourceRouteMix *from);
+void ts_source_route_graph_scale(TsSourceRouteMix *mix,float gain);
+static inline void ts_source_route_graph_mark(TsSourceRouteMix *mix,unsigned d)
+{
+    if(d<64)mix->graph_mask|=UINT64_C(1)<<d;
+    else if(d<128)mix->graph_mask_high|=UINT64_C(1)<<(d-64);
+    else if(d<TS_MATRIX_DESTINATIONS)mix->graph_mask_top|=UINT64_C(1)<<(d-128);
+}
 int ts_source_route_valid(const TsSourceRoute *r, int allow_inherit);
 TsSourceRoute ts_source_route_resolve(TsSourceRoute tile, TsSourceRoute track);
 void ts_source_route_set(TsSourceRouteVoice *v, TsSourceRoute route, unsigned rate);

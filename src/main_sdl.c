@@ -918,6 +918,7 @@ typedef struct {
     uint64_t keyboard_sequence_source_stamp;
     TsPerformanceBank performance;
     TsSourceRouteMix clean;
+    TsSourceRouteMix channel_routes, selected_routes, matrix_routes;
     TsCleanOutput clean_output;
     TsSourceRouteVoice audition_route;
     TsTileId audition_route_tile;
@@ -1240,12 +1241,14 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
     int reserved_pair=matrix||audio->sister.insert.separate_send?0:audio->sister.insert.controls.send_pair;
     unsigned available=ts_clean_output_available(&audio->sister.spatial.controls,device_channels,reserved_pair);
     ts_tapehead_route_outputs(available);
+    /* Scalar buses are overwritten below; input/graph arrays only belong to
+       matrix mode, which is stable for this callback. Initialize once. */
+    TsSisterSourceFrames sister_sources = {0};
     for (int i = 0; i < values; i += 2) {
         audio->sister.insert.send=(TsStereoFrame){0,0};
-        ts_source_route_mix_init(&audio->clean,NULL);audio->clean.available=available;audio->clean.check_outputs=1;
+        ts_source_route_mix_reuse(&audio->clean,NULL);audio->clean.available=available;audio->clean.check_outputs=1;
         audio->sister.clean_output.available=available;audio->sister.clean_output.check_outputs=1;
         TsAudioBuses buses;
-        TsSisterSourceFrames sister_sources = {0};
         TsSisterRuntimeFrame sister_frame;
         TsStereoFrame synth_capture = {0.0f, 0.0f};
         TsStereoFrame output;
@@ -1373,15 +1376,17 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             input_insert->duplex,live_input,input_insert->duplex_channels,(unsigned)audio->output_rate);
         memcpy(sister_sources.send,audio->clean.send,sizeof(sister_sources.send));
         if(matrix) {
-            memcpy(sister_sources.matrix_graph,audio->clean.graph,sizeof(sister_sources.matrix_graph));
-            sister_sources.matrix_graph[TS_MATRIX_MAIN].l+=performance_input.l;
-            sister_sources.matrix_graph[TS_MATRIX_MAIN].r+=performance_input.r;
+            TsSourceRouteMix *routes=&audio->matrix_routes;
+            ts_source_route_mix_reset(routes);
+            ts_source_route_graph_copy(routes,&audio->clean);
+            sister_sources.matrix_routes=routes;
+            routes->graph[TS_MATRIX_MAIN].l+=performance_input.l;
+            routes->graph[TS_MATRIX_MAIN].r+=performance_input.r;
+            ts_source_route_graph_mark(routes,TS_MATRIX_MAIN);
             /* Source level precedes the graph; returns are never attenuated twice. */
             float gain=audio->mixer.program_gain;
             sister_sources.matrix_program_gain=gain;
-            for(int d=0;d<TS_MATRIX_DESTINATIONS;++d) {
-                sister_sources.matrix_graph[d].l*=gain;sister_sources.matrix_graph[d].r*=gain;
-            }
+            ts_source_route_graph_scale(routes,gain);
             sister_sources.tiles.l*=gain;sister_sources.tiles.r*=gain;
             sister_sources.mosaic.l*=gain;sister_sources.mosaic.r*=gain;
             sister_sources.live_tiles.l*=gain;sister_sources.live_tiles.r*=gain;
@@ -1392,15 +1397,17 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             for(int b=0;b<TS_SOURCE_SENDS;++b) {sister_sources.send[b].l*=gain;sister_sources.send[b].r*=gain;}
             /* Legacy direct routes remain audible when opting a project in. */
             TsStereoFrame parallel=audio->sister.router.controls.master_mix?audio->clean.matrix_monitor:(TsStereoFrame){0,0};
-            sister_sources.matrix_graph[TS_MATRIX_MAIN].l+=parallel.l*gain;
-            sister_sources.matrix_graph[TS_MATRIX_MAIN].r+=parallel.r*gain;
+            routes->graph[TS_MATRIX_MAIN].l+=parallel.l*gain;
+            routes->graph[TS_MATRIX_MAIN].r+=parallel.r*gain;
             for(int sp=0;sp<TS_SOURCE_SPEAKERS;++sp) {
                 int ch=audio->sister.spatial.controls.output[sp];
                 if(ch<0 || ch>=TS_MATRIX_OUTPUTS*2)continue;
                 float value=audio->clean.speaker[sp];
                 if(audio->sister.router.controls.master_mix)value-=audio->clean.matrix_speaker[sp];
-                TsStereoFrame *to=&sister_sources.matrix_graph[ts_matrix_output_destination(ch/2)];
+                int destination=ts_matrix_output_destination(ch/2);
+                TsStereoFrame *to=&routes->graph[destination];
                 if(ch&1)to->r+=value*gain;else to->l+=value*gain;
+                ts_source_route_graph_mark(routes,(unsigned)destination);
             }
             ts_insert_matrix_read(&audio->sister.insert,sister_sources.matrix_input);
         }
