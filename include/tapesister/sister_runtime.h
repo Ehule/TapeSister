@@ -86,6 +86,9 @@ typedef struct {
     TsStereoFrame matrix_graph[TS_MATRIX_DESTINATIONS], matrix_input[TS_MATRIX_INPUTS];
     float matrix_program_gain; /* Gain for runtime-owned tile voices; host sums are already trimmed. */
     TsStereoFrame send[TS_SOURCE_SENDS];
+    /* Optional borrowed graph with explicit destination ownership. If NULL,
+       matrix_graph remains the dense compatibility input. Never retained. */
+    const TsSourceRouteMix *matrix_routes;
 } TsSisterSourceFrames;
 
 typedef struct {
@@ -246,6 +249,8 @@ typedef struct {
     TsSisterParameters parameters;
     TsPerformanceBank performance;
     TsSourceRouteMix clean_output;
+    TsSourceRouteMix manual_routes, matrix_sums; /* Audio-owned reusable scratch. */
+    TsStereoFrame matrix_live[TS_MATRIX_ROWS-TS_MATRIX_NODES];
     /* Current sample's aux inputs and independently placed wet-only returns.
        Source sums are prepared by the host, never by running another rack. */
     TsStereoFrame send_input[TS_SOURCE_SENDS];
@@ -421,6 +426,12 @@ TsStereoFrame ts_sister_runtime_file_capture_frame(
     TsStereoFrame final_output);
 void ts_sister_runtime_begin_audio_block(TsSisterRuntime *runtime);
 void ts_sister_runtime_end_audio_block(TsSisterRuntime *runtime);
+/* Matrix spans use caller-owned scratch. A return of one selects the frame
+   renderer for coupled histories, route edits and lifecycle crossfades. */
+unsigned ts_sister_runtime_matrix_span_limit(const TsSisterRuntime *runtime,unsigned frames);
+void ts_sister_runtime_matrix_span(TsSisterRuntime *runtime,
+    const TsSisterSourceFrames *sources,TsSisterRuntimeFrame *output,
+    float *limiter_peaks,TsMatrixSpan *scratch,unsigned frames);
 void ts_sister_runtime_process_block(TsSisterRuntime *runtime,
                                      const TsSisterSourceFrames *sources,
                                      TsSisterRuntimeFrame *output,

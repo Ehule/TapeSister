@@ -242,6 +242,7 @@ typedef struct {
     size_t capacity_frames;
     size_t write_index;
     size_t history_frames;
+    size_t nonzero_samples; /* Exact occupancy; silent grains still advance. */
     TsSisterGrainVoice voice[TS_SISTER_GRAIN_VOICES];
     uint32_t sample_rate;
     uint32_t random_state;
@@ -332,6 +333,8 @@ TsSisterSingleFx *ts_sister_single_fx_new(TsSisterFxType type,unsigned rate,uint
 void ts_sister_single_fx_free(TsSisterSingleFx *fx);
 void ts_sister_single_fx_set(TsSisterSingleFx *fx,const TsSisterFxSlotControls *controls);
 TsStereoFrame ts_sister_single_fx_process(TsSisterSingleFx *fx,TsStereoFrame input,float gate);
+void ts_sister_single_fx_process_span(TsSisterSingleFx *fx,const TsStereoFrame *input,
+    const float *gate,TsStereoFrame *output,unsigned frames);
 size_t ts_sister_single_fx_memory(const TsSisterSingleFx *fx);
 
 typedef struct {

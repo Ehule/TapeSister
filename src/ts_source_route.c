@@ -1,6 +1,7 @@
 #include "tapesister/source_route.h"
 #include <string.h>
 #include <math.h>
+#include <stddef.h>
 
 void ts_source_route_mix_init(TsSourceRouteMix *to,const TsSourceRouteMix *map)
 {
@@ -179,6 +180,69 @@ static unsigned first_destination(uint64_t mask)
     while(!(mask&1)){mask>>=1;++bit;}
     return bit;
 #endif
+}
+void ts_source_route_mix_reset(TsSourceRouteMix *mix)
+{
+    /* Dense compatibility packets and fully patched buses are cheaper to
+       clear in bulk than to walk one destination at a time. */
+    if(mix->graph_mask==UINT64_MAX || mix->graph_mask_high==UINT64_MAX) {
+        memset(mix,0,sizeof(*mix));return;
+    }
+    /* Only graph destinations with ownership can contain accumulated audio.
+       Keep the rest physically zero so dense output readers remain valid. */
+    uint64_t masks[3]={mix->graph_mask,mix->graph_mask_high,mix->graph_mask_top};
+    for(unsigned word=0;word<3;++word) {
+        uint64_t mask=masks[word];
+        while(mask) {
+            unsigned d=word*64+first_destination(mask);mask&=mask-1;
+            if(d<TS_MATRIX_DESTINATIONS)mix->graph[d]=(TsStereoFrame){0,0};
+        }
+    }
+    memset((char *)mix+offsetof(TsSourceRouteMix,graph_mask),0,
+        sizeof(*mix)-offsetof(TsSourceRouteMix,graph_mask));
+}
+void ts_source_route_mix_reuse(TsSourceRouteMix *mix,const TsSourceRouteMix *map)
+{
+    unsigned available=map?map->available:0;
+    int check=map?map->check_outputs:0;
+    ts_source_route_mix_reset(mix);
+    mix->available=available;mix->check_outputs=check;
+}
+void ts_source_route_graph_copy(TsSourceRouteMix *to,const TsSourceRouteMix *from)
+{
+    if(from->graph_mask==UINT64_MAX || from->graph_mask_high==UINT64_MAX)
+        memcpy(to->graph,from->graph,sizeof(to->graph));
+    else {
+        uint64_t masks[3]={from->graph_mask,from->graph_mask_high,from->graph_mask_top};
+        for(unsigned word=0;word<3;++word) {
+            uint64_t mask=masks[word];
+            while(mask) {
+                unsigned d=word*64+first_destination(mask);mask&=mask-1;
+                if(d<TS_MATRIX_DESTINATIONS)to->graph[d]=from->graph[d];
+            }
+        }
+    }
+    to->graph_mask=from->graph_mask;to->graph_mask_high=from->graph_mask_high;
+    to->graph_mask_top=from->graph_mask_top;
+}
+void ts_source_route_graph_scale(TsSourceRouteMix *mix,float gain)
+{
+    if(mix->graph_mask==UINT64_MAX || mix->graph_mask_high==UINT64_MAX) {
+        for(unsigned d=0;d<TS_MATRIX_DESTINATIONS;++d) {
+            mix->graph[d].l*=gain;mix->graph[d].r*=gain;
+        }
+        return;
+    }
+    uint64_t masks[3]={mix->graph_mask,mix->graph_mask_high,mix->graph_mask_top};
+    for(unsigned word=0;word<3;++word) {
+        uint64_t mask=masks[word];
+        while(mask) {
+            unsigned d=word*64+first_destination(mask);mask&=mask-1;
+            if(d<TS_MATRIX_DESTINATIONS) {
+                mix->graph[d].l*=gain;mix->graph[d].r*=gain;
+            }
+        }
+    }
 }
 static void add_graph(TsSourceRouteMix *to,const TsSourceRouteMix *from,
     float gain,uint64_t mask,unsigned offset)

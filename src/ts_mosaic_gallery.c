@@ -162,11 +162,11 @@ TsStereoFrame ts_gallery_read(TsMosaicGallery *g,int rate,TsSourceRouteMix *rout
     /* Constant-sum fade: identical canvases retain their level. Every route,
        send and reference tap receives the same gain; only two engines render. */
     float t=(float)fmax(0,fmin(1,g->fade_position/g->fade_length));
-    TsSourceRouteMix a,b;
-    if(routes){ts_source_route_mix_init(&a,routes);ts_source_route_mix_init(&b,routes);}
-    TsStereoFrame x=ts_mosaic_read_routed(m,rate,routes?&a:NULL);
-    TsStereoFrame y=ts_mosaic_read_routed(old,rate,routes?&b:NULL);
-    if(routes){ts_source_route_add(routes,&a,t);ts_source_route_add(routes,&b,1-t);}
+    /* Weight each completed scene mix once, after its handoff. This avoids
+       two full temporary buses and two unity-gain accumulation passes per
+       frame. Even the zero-gain endpoint still renders/advances both scenes. */
+    TsStereoFrame x=ts_mosaic_read_routed_gain(m,rate,routes,t);
+    TsStereoFrame y=ts_mosaic_read_routed_gain(old,rate,routes,1-t);
     g->fade_position+=1./rate;
     if(g->fade_position+1e-12>=g->fade_length)gallery_park(g);
     return ts_stereo_frame_sanitize((TsStereoFrame){x.l*t+y.l*(1-t),x.r*t+y.r*(1-t)});

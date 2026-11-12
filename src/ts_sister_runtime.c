@@ -1442,12 +1442,14 @@ static void runtime_fallout_feedback(TsSisterRuntime *runtime, TsStereoFrame wet
 
 #include "ts_sister_router.inc"
 #include "ts_sister_matrix.inc"
+#include "ts_sister_matrix_span.inc"
 
 TsSisterRuntimeFrame ts_sister_runtime_process_frame(
     TsSisterRuntime *runtime, const TsSisterSourceFrames *sources)
 {
     TsSisterRuntimeFrame frame = {0};
-    TsSisterSourceFrames source = {0};
+    static const TsSisterSourceFrames silence = {0};
+    if(!sources)sources=&silence;
     TsStereoFrame tile_raw;
     TsStereoFrame tile_bus;
     TsStereoFrame input = {0.0f, 0.0f};
@@ -1457,32 +1459,31 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
     frame.dry_monitor_gain = 1.0f;
     if (runtime == NULL) return frame;
     ts_matrix_effects_tick(&runtime->matrix_effects);
-    if (sources != NULL) source = *sources;
-    source.tiles = ts_stereo_frame_sanitize_inline(source.tiles);
-    source.fm = ts_stereo_frame_sanitize_inline(source.fm);
-    source.external = ts_stereo_frame_sanitize_inline(source.external);
-    source.preview = ts_stereo_frame_sanitize_inline(source.preview);
-    source.tapehead = ts_stereo_frame_sanitize_inline(source.tapehead);
-    source.tracker = ts_stereo_frame_sanitize_inline(source.tracker);
-    source.tracker_tape = ts_stereo_frame_sanitize_inline(source.tracker_tape);
+    TsStereoFrame tiles = ts_stereo_frame_sanitize_inline(sources->tiles);
+    TsStereoFrame fm = ts_stereo_frame_sanitize_inline(sources->fm);
+    TsStereoFrame external = ts_stereo_frame_sanitize_inline(sources->external);
+    TsStereoFrame preview = ts_stereo_frame_sanitize_inline(sources->preview);
+    TsStereoFrame tapehead = ts_stereo_frame_sanitize_inline(sources->tapehead);
+    TsStereoFrame tracker = ts_stereo_frame_sanitize_inline(sources->tracker);
+    TsStereoFrame tracker_tape = ts_stereo_frame_sanitize_inline(sources->tracker_tape);
     /* This is the untrimmed, pre-Sister Live Link stream. It remains available
        as a recorder tap even when Sister processing itself is bypassed. */
-    frame.tap[TS_SISTER_TAP_TAPEHEAD] = source.tapehead;
-    ts_source_route_mix_init(&runtime->clean_output,&runtime->clean_output);
-    ts_source_route_mix_init(&runtime->effect_returns,&runtime->clean_output);
-    TsSourceRouteMix manual;ts_source_route_mix_init(&manual,&runtime->clean_output);
-    tile_bus = ts_performance_read_routed(&runtime->performance, &tile_raw,&manual);
+    frame.tap[TS_SISTER_TAP_TAPEHEAD] = tapehead;
+    ts_source_route_mix_reuse(&runtime->clean_output,&runtime->clean_output);
+    ts_source_route_mix_reuse(&runtime->effect_returns,&runtime->clean_output);
+    TsSourceRouteMix *manual=&runtime->manual_routes;
+    ts_source_route_mix_reuse(manual,&runtime->clean_output);
+    tile_bus = ts_performance_read_routed(&runtime->performance, &tile_raw,manual);
     float live_gain=runtime->performance_gain_current[3];
     tile_bus=frame_scale(tile_bus,live_gain);
-    ts_source_route_add(&runtime->clean_output,&manual,live_gain);
+    ts_source_route_add(&runtime->clean_output,manual,live_gain);
     for(int bus=0;bus<TS_SOURCE_SENDS;++bus)
-        runtime->send_input[bus]=ts_stereo_frame_sanitize_inline(frame_add(source.send[bus],runtime->clean_output.send[bus]));
+        runtime->send_input[bus]=ts_stereo_frame_sanitize_inline(frame_add(sources->send[bus],runtime->clean_output.send[bus]));
     frame.keyboard_dry = tile_bus;
-    tile_bus = frame_add(tile_bus, source.tiles);
+    tile_bus = frame_add(tile_bus, tiles);
     (void)tile_raw;
     if(runtime->matrix.controls.enabled) {
-        source.live_tiles=frame_add(ts_stereo_frame_sanitize_inline(source.live_tiles),frame_scale(frame.keyboard_dry,source.matrix_program_gain));
-        return runtime_matrix_frame(runtime,&source,source.tiles,frame);
+        return runtime_matrix_frame(runtime,sources,tiles,frame);
     }
     if (!runtime->enabled || runtime->callback_failed) {
         runtime->last_frame = frame;
@@ -1508,19 +1509,19 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
     input = frame_add(input, frame_scale(
         tile_bus, source_gain[0] * source_route[0]));
     input = frame_add(input, frame_scale(
-        source.fm, source_gain[1] * source_route[1]));
+        fm, source_gain[1] * source_route[1]));
     input = frame_add(input, frame_scale(
-        source.external, source_gain[2] * source_route[2]));
+        external, source_gain[2] * source_route[2]));
     input = frame_add(input, frame_scale(
-        source.preview, source_gain[3] * source_route[3]));
+        preview, source_gain[3] * source_route[3]));
     input = frame_add(input, frame_scale(
-        source.tapehead, source_gain[4] * source_route[4]));
+        tapehead, source_gain[4] * source_route[4]));
     input = frame_add(input, frame_scale(
-        source.tracker, source_gain[5] * source_route[5]));
+        tracker, source_gain[5] * source_route[5]));
     float normalization=route_energy>1.0f?1.0f/sqrtf(route_energy):1.0f;
     input=frame_scale(input,normalization);
     RouterFrameContext context={.runtime=runtime,.frame=&frame,
-        .tape_input=frame_scale(source.tracker_tape,
+        .tape_input=frame_scale(tracker_tape,
             source_gain[5]*source_route[5]*normalization)};
     runtime_router_begin(&context);
     frame.monitor_return=ts_router_process_with_prepare(&runtime->router,input,runtime_router_stage,runtime_router_prepare_stage,&context);

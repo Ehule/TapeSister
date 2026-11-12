@@ -338,10 +338,15 @@ static float event_fade(const TsMosaicEvent *e,const TsMosaicVoice *v,double ela
 {
     double in=v->fade_in,out=v->fade_out;
     if(in==0 && out==0)return 1;
+    /* Ratios outside their fade edge clamp to one. Evaluate only active
+       edges; gain starts at one and can only decrease, so no final upper
+       clamp is needed. Preserve the original divisions/minimum at overlap. */
+    double remaining=e->duration-elapsed;
+    if(elapsed>=in && (out==0 || remaining>=out))return 1;
     double gain=1;
-    if(in>0)gain=fmin(gain,elapsed/in);
-    if(out>0)gain=fmin(gain,(e->duration-elapsed)/out);
-    return (float)fmax(0,fmin(1,gain));
+    if(in>0 && elapsed<in)gain=elapsed/in;
+    if(out>0 && remaining<out)gain=fmin(gain,remaining/out);
+    return (float)fmax(0,gain);
 }
 /* Derive loop phase from distance travelled. Reverse uses a full sample
    cycle (the legacy helper drops a frame at each reverse wrap). This also
@@ -540,7 +545,9 @@ static TsStereoFrame mosaic_event_read(void *pattern_engine,const TsMosaicEvent 
         if(!e->looping) {
             if(v->position[n]>=e->last)continue;
             f=mosaic_sample_read(e,v,n);
-            float release=(float)fmin(1,(e->last-v->position[n])/(v->step[n]*speed*rate*0.002));
+            double left=e->last-v->position[n],release_span=v->step[n]*speed*rate*0.002;
+            float release=release_span>0 && left>=release_span?1:
+                (float)fmin(1,left/release_span);
             f.l*=release;f.r*=release;
         } else f=mosaic_sample_read(e,v,n);
         if(e->live) {
@@ -674,7 +681,7 @@ static TsStereoFrame mosaic_audition_read(TsMosaic *m,int rate,TsSourceRouteMix 
     if(m->audition_stopping && m->audition_voice.audible_gain<=0)m->audition_id=0;
     return out;
 }
-TsStereoFrame ts_mosaic_read_routed(TsMosaic *m,int rate,TsSourceRouteMix *routes)
+TsStereoFrame ts_mosaic_read_routed_gain(TsMosaic *m,int rate,TsSourceRouteMix *routes,float route_gain)
 {
     if(!m || rate<=0)return (TsStereoFrame){0,0};
     if(m->rate!=rate) {
@@ -693,17 +700,17 @@ TsStereoFrame ts_mosaic_read_routed(TsMosaic *m,int rate,TsSourceRouteMix *route
         m->rate=rate;out.l+=preview.l+live.l;out.r+=preview.r+live.r;return ts_stereo_frame_sanitize(out);
     }
     if(!m->live_reset_remaining && !m->live_pause_routes_valid && !m->live_paused && !m->playing && !m->sequence.running && !m->audition_id && !m->was_playing && !m->transition_remaining && !m->route_handoff.remaining && !m->schedule.live_count && m->schedule.valid)return (TsStereoFrame){0,0};
-    TsSourceRouteMix mix={0};
-    TsStereoFrame out=mosaic_read(m,rate,routes?&mix:NULL);
-    TsStereoFrame preview=mosaic_audition_read(m,rate,&mix);
+    TsSourceRouteMix *mix=&m->route_work;ts_source_route_mix_reset(mix);
+    TsStereoFrame out=mosaic_read(m,rate,mix);
+    TsStereoFrame preview=mosaic_audition_read(m,rate,mix);
     if(!m->schedule.valid)mosaic_schedule_prepare(m);
-    TsStereoFrame live=mosaic_live_read(m,rate,&mix);m->rate=rate;out.l+=preview.l+live.l;out.r+=preview.r+live.r;
-    if(m && routes && rate>0) {
-        ts_source_route_handoff(&m->route_handoff,&mix,m->route_discontinuity,(unsigned)rate/500);
-        m->route_discontinuity=0;ts_source_route_add(routes,&mix,1);
-    }
+    TsStereoFrame live=mosaic_live_read(m,rate,mix);m->rate=rate;out.l+=preview.l+live.l;out.r+=preview.r+live.r;
+    ts_source_route_handoff(&m->route_handoff,mix,m->route_discontinuity,(unsigned)rate/500);
+    m->route_discontinuity=0;ts_source_route_add(routes,mix,route_gain);
     return out;
 }
+TsStereoFrame ts_mosaic_read_routed(TsMosaic *m,int rate,TsSourceRouteMix *routes)
+{return ts_mosaic_read_routed_gain(m,rate,routes,1);}
 TsStereoFrame ts_mosaic_read(TsMosaic *m,int rate)
 {return ts_mosaic_read_routed(m,rate,NULL);}
 uint64_t ts_mosaic_hash(const TsMosaic *m)

@@ -571,6 +571,11 @@ float ts_sister_grain_pitch_semitones(float normalized)
     return -24.0f + 48.0f * clampf(normalized, 0.0f, 1.0f);
 }
 
+/* Ring positions are already bounded. Advancing one frame cannot require
+   division; keep this exact for non-power-of-two capacities as well. */
+static size_t ring_next(size_t at,size_t capacity)
+{return at+1u<capacity?at+1u:0u;}
+
 static float delay_read(const float *data, size_t capacity, size_t write,
                         float delay_frames, size_t channel)
 {
@@ -582,8 +587,8 @@ static float delay_read(const float *data, size_t capacity, size_t write,
     position = (double)write - (double)delay_frames;
     while (position < 0.0) position += (double)capacity;
     while (position >= (double)capacity) position -= (double)capacity;
-    i0 = (size_t)floor(position);
-    i1 = (i0 + 1u) % capacity;
+    i0 = (size_t)position; /* Wrapped position is nonnegative. */
+    i1 = ring_next(i0,capacity);
     fraction = (float)(position - (double)i0);
     return data[i0 * 2u + channel] +
         (data[i1 * 2u + channel] - data[i0 * 2u + channel]) * fraction;
@@ -723,7 +728,7 @@ static float grain_read(const TsSisterGrainState *state, double position,
     while (position >= (double)state->capacity_frames)
         position -= (double)state->capacity_frames;
     i0 = (size_t)position;
-    i1 = (i0 + 1u) % state->capacity_frames;
+    i1 = ring_next(i0,state->capacity_frames);
     fraction = (float)(position - (double)i0);
     return state->data[i0 * 2u + channel] +
         (state->data[i1 * 2u + channel] -
@@ -1117,7 +1122,7 @@ static TsStereoFrame distortion_process(const TsSisterFxTiming *engine,
 static TsStereoFrame grain_process(const TsSisterFxTiming *engine,
                                    TsSisterGrainState *state,
                                    const TsSisterFxSlotControls *control,
-                                   TsStereoFrame input, float gate, float *direct)
+                                   TsStereoFrame input, float gate, float *direct, int fast_silence)
 {
     TsStereoFrame wet = {0.0f, 0.0f};
     float energy = 0.0f;
@@ -1173,6 +1178,22 @@ static TsStereoFrame grain_process(const TsSisterFxTiming *engine,
             (state->mix_current > FLT_EPSILON || control->mix > 0.0f))
             grain_spawn(state);
     }
+    /* All reads precede this frame's write. Exact empty history means every
+       interpolation is zero, even when input resumes on this sample. */
+    int empty=fast_silence && !state->nonzero_samples;
+    if(empty) {
+        /* Advance voice positions/ages exactly; never freeze the schedule. */
+        for(size_t i=0;i<TS_SISTER_GRAIN_VOICES;++i) {
+            TsSisterGrainVoice *voice=&state->voice[i];
+            if(!voice->active)continue;
+            if(voice->age>=voice->total){voice->active=0;continue;}
+            voice->read_position+=voice->read_step;
+            while(voice->read_position>=(double)state->capacity_frames)
+                voice->read_position-=(double)state->capacity_frames;
+            ++voice->age;
+            if(voice->age>=voice->total)voice->active=0;
+        }
+    } else {
     for (size_t i = 0u; i < TS_SISTER_GRAIN_VOICES; ++i) {
         TsSisterGrainVoice *voice = &state->voice[i];
         float phase;
@@ -1201,6 +1222,7 @@ static TsStereoFrame grain_process(const TsSisterFxTiming *engine,
         ++voice->age;
         if (voice->age >= voice->total) voice->active = 0;
     }
+    }
     if (energy > 1.0f) {
         float normalization = 1.0f / sqrtf(energy);
         wet.l *= normalization;
@@ -1210,9 +1232,11 @@ static TsStereoFrame grain_process(const TsSisterFxTiming *engine,
     wet.r = feedback_condition(wet.r * 0.86f);
     wet = ts_stereo_frame_sanitize_inline(wet);
 
+    state->nonzero_samples-=(state->data[state->write_index*2]!=0)+(state->data[state->write_index*2+1]!=0);
     state->data[state->write_index * 2u] = input.l * active;
     state->data[state->write_index * 2u + 1u] = input.r * active;
-    state->write_index = (state->write_index + 1u) % state->capacity_frames;
+    state->nonzero_samples+=(state->data[state->write_index*2]!=0)+(state->data[state->write_index*2+1]!=0);
+    state->write_index = ring_next(state->write_index,state->capacity_frames);
     if (state->history_frames < state->capacity_frames)
         ++state->history_frames;
 
@@ -1344,7 +1368,7 @@ static TsStereoFrame delay_process(const TsSisterFxTiming *engine,
         state->feedback_tone[1] * (state->feedback_current * 1.08f)));
     state->nonzero_samples+=(state->data[state->write_index*2]!=0)+(state->data[state->write_index*2+1]!=0);
 delay_advance:
-    state->write_index = (state->write_index + 1u) % state->capacity_frames;
+    state->write_index = ring_next(state->write_index,state->capacity_frames);
     {
         float wow_sin = state->wow_sin;
         float wow_cos = state->wow_cos;
@@ -1527,7 +1551,7 @@ static TsStereoFrame reverb_process(const TsSisterFxTiming *engine,
     wet.r += mean_r * 1.15f + mean_l * 0.08f;
     for (size_t line = 0u; line < TS_SISTER_REVERB_LINES; ++line) {
         TsSisterReverbLine *delay = &state->line[line];
-        if(empty){delay->write_index=(delay->write_index+1u)%delay->capacity_frames;continue;}
+        if(empty){delay->write_index=ring_next(delay->write_index,delay->capacity_frames);continue;}
         float gain = state->feedback_gain[line];
         float matrix_l = 2.0f * mean_l - read_l[line];
         float matrix_r = 2.0f * mean_r - read_r[line];
@@ -1550,7 +1574,7 @@ static TsStereoFrame reverb_process(const TsSisterFxTiming *engine,
         delay->data[delay->write_index * 2u + 1u] = reverb_saturate(
             inject_r + delay->damping[1] * gain);
         state->nonzero_samples+=(delay->data[delay->write_index*2]!=0)+(delay->data[delay->write_index*2+1]!=0);
-        delay->write_index = (delay->write_index + 1u) % delay->capacity_frames;
+        delay->write_index = ring_next(delay->write_index,delay->capacity_frames);
     }
     wet.l = feedback_condition(wet.l);
     wet.r = feedback_condition(wet.r);
@@ -1640,7 +1664,7 @@ static TsStereoFrame slot_effect_process(TsSisterPostFxEngine *engine,
                                  control, input, gate, direct);
     case TS_SISTER_FX_GRAIN:
         return grain_process(&engine->timing, &engine->grain[slot][location],
-                             control, input, gate, direct);
+                             control, input, gate, direct, 1);
     default:
         return input;
     }
@@ -1972,12 +1996,28 @@ TsStereoFrame ts_sister_single_fx_process(TsSisterSingleFx *f,TsStereoFrame inpu
     case TS_SISTER_FX_REVERB:return reverb_process(&f->timing,&f->state.reverb,&f->controls,input,gate,&direct,1);
     case TS_SISTER_FX_DELAY:return delay_process(&f->timing,&f->state.delay,&f->controls,input,gate,&direct,1);
     case TS_SISTER_FX_DISTORTION:return distortion_process(&f->timing,&f->state.distortion,&f->controls,input,gate,&direct);
-    case TS_SISTER_FX_GRAIN:return grain_process(&f->timing,&f->state.grain,&f->controls,input,gate,&direct);
+    case TS_SISTER_FX_GRAIN:return grain_process(&f->timing,&f->state.grain,&f->controls,input,gate,&direct,1);
     case TS_SISTER_FX_DISPERSION:return ts_dispersion_process(&f->state.dispersion,input,f->controls.parameter_a,f->controls.parameter_b,f->controls.parameter_c,f->controls.mix,f->controls.gain_db,gate,&direct);
     case TS_SISTER_FX_RESONATOR:return ts_resonator_process(&f->state.resonator,input,f->controls.parameter_a,f->controls.parameter_b,f->controls.parameter_c,f->controls.mix,f->controls.gain_db,gate,&direct);
     case TS_SISTER_FX_FILTER:return ts_character_filter_process(&f->state.filter,&f->controls.filter,input,f->controls.mix,f->controls.gain_db,gate);
     case TS_SISTER_FX_TRANSIENT:return transient_process(&f->timing,&f->state.transient,&f->controls,input,gate,&direct);
     default:return input;
+    }
+}
+void ts_sister_single_fx_process_span(TsSisterSingleFx *f,const TsStereoFrame *input,
+    const float *gate,TsStereoFrame *output,unsigned frames)
+{
+    if(!f){memcpy(output,input,frames*sizeof(*output));return;}
+    switch(f->controls.type) {
+    case TS_SISTER_FX_REVERB:for(unsigned j=0;j<frames;++j){float direct=1;output[j]=reverb_process(&f->timing,&f->state.reverb,&f->controls,input[j],gate[j],&direct,1);}break;
+    case TS_SISTER_FX_DELAY:for(unsigned j=0;j<frames;++j){float direct=1;output[j]=delay_process(&f->timing,&f->state.delay,&f->controls,input[j],gate[j],&direct,1);}break;
+    case TS_SISTER_FX_DISTORTION:for(unsigned j=0;j<frames;++j){float direct=1;output[j]=distortion_process(&f->timing,&f->state.distortion,&f->controls,input[j],gate[j],&direct);}break;
+    case TS_SISTER_FX_GRAIN:for(unsigned j=0;j<frames;++j){float direct=1;output[j]=grain_process(&f->timing,&f->state.grain,&f->controls,input[j],gate[j],&direct,1);}break;
+    case TS_SISTER_FX_DISPERSION:for(unsigned j=0;j<frames;++j){float direct=1;output[j]=ts_dispersion_process(&f->state.dispersion,input[j],f->controls.parameter_a,f->controls.parameter_b,f->controls.parameter_c,f->controls.mix,f->controls.gain_db,gate[j],&direct);}break;
+    case TS_SISTER_FX_RESONATOR:for(unsigned j=0;j<frames;++j){float direct=1;output[j]=ts_resonator_process(&f->state.resonator,input[j],f->controls.parameter_a,f->controls.parameter_b,f->controls.parameter_c,f->controls.mix,f->controls.gain_db,gate[j],&direct);}break;
+    case TS_SISTER_FX_FILTER:for(unsigned j=0;j<frames;++j){output[j]=ts_character_filter_process(&f->state.filter,&f->controls.filter,input[j],f->controls.mix,f->controls.gain_db,gate[j]);}break;
+    case TS_SISTER_FX_TRANSIENT:for(unsigned j=0;j<frames;++j){float direct=1;output[j]=transient_process(&f->timing,&f->state.transient,&f->controls,input[j],gate[j],&direct);}break;
+    default:for(unsigned j=0;j<frames;++j)output[j]=input[j];break;
     }
 }
 size_t ts_sister_single_fx_memory(const TsSisterSingleFx *f)

@@ -11,6 +11,7 @@
 
 typedef struct {TsRoutingMatrix graph;TsMatrixEffects bank;} Lane;
 static Lane lanes[2];
+static int workers;
 static TsStereoFrame process(void *p,int node,TsStereoFrame in)
 {
     Lane *l=p;int i=ts_matrix_effect_index(node);
@@ -21,6 +22,7 @@ static TsStereoFrame process(void *p,int node,TsStereoFrame in)
 static void apply(TsMatrixControls *c)
 {
     for(int i=0;i<2;++i) {
+        ts_sunvox_workers_configure(i?workers:0);
         TsMatrixEffectPlan plan;
         ts_matrix_effects_collect(&lanes[i].bank,&plan);ts_matrix_effects_discard(&plan);
         assert(ts_matrix_effects_stage(&lanes[i].bank,c,48000,&plan));
@@ -34,13 +36,17 @@ int main(void)
     FILE *f=fopen("blocks.sunsynth","wb");assert(f);
     assert(fwrite(patch,1,sizeof(patch)-1,f)==sizeof(patch)-1);assert(!fclose(f));
     TsSunVoxControls sv;assert(ts_sunvox_import(&sv,"blocks.sunsynth"));remove("blocks.sunsynth");
+    static const char rv[]="SSYN\0\0\0\0STYP\x07\0\0\0Reverb\0SEND\0\0\0\0";
+    f=fopen("blocks.sunsynth","wb");assert(f);
+    assert(fwrite(rv,1,sizeof(rv)-1,f)==sizeof(rv)-1);assert(!fclose(f));
+    TsSunVoxControls reverb;assert(ts_sunvox_import(&reverb,"blocks.sunsynth"));remove("blocks.sunsynth");
     const int quantum[]={64,256,1024};
-    for(int q=0;q<3;++q) {
+    for(workers=0;workers<2;++workers)for(int q=0;q<3;++q) {
         TsMatrixControls c;ts_matrix_default(&c);c.enabled=1;c.feedback=1;
         for(int n=0;n<TS_MATRIX_ROWS;++n)c.row[n]=(TsSourceRoute){.matrix_enabled=1};
         for(int i=0;i<4;++i) {
             assert(ts_matrix_effect_add(&c,i==3?TS_MATRIX_FX_COMPRESSOR:TS_MATRIX_FX_SUNVOX)==i);
-            if(i<3){c.effect[i].sunvox=sv;c.effect[i].sunvox.quantum=quantum[q];}
+            if(i<3){c.effect[i].sunvox=workers?reverb:sv;c.effect[i].sunvox.quantum=quantum[q];}
         }
         int b=TS_MATRIX_EFFECT_BASE;
         c.row[TS_MATRIX_MOSAIC].matrix_gain[b]=1000;
@@ -74,7 +80,18 @@ int main(void)
             energy+=fabsf(lanes[1].graph.output[0].l);
         }
         assert(energy>10);
-        for(int i=0;i<2;++i)ts_matrix_effects_free(&lanes[i].bank);
+        if(workers && q && lanes[1].bank.worker)assert(ts_sunvox_batch_dispatched(lanes[1].bank.worker)>0);
+        for(int i=0;i<2;++i) {
+            ts_matrix_effects_free(&lanes[i].bank);
+            ts_sunvox_workers_configure(i?workers:0);
+            TsMatrixEffectPlan discarded;
+            assert(ts_matrix_effects_stage(&lanes[i].bank,&c,48000,&discarded));
+            ts_matrix_effects_discard(&discarded);
+            assert(ts_matrix_effects_restore(&lanes[i].bank,&c,48000));
+            assert(ts_matrix_effects_restore(&lanes[i].bank,&c,48000));
+            ts_matrix_effects_free(&lanes[i].bank);
+        }
     }
-    puts("Compiled graph/buffer jobs: exact PCM, feedback, meters, sidechains, tails and lifecycle at all quanta");
+    ts_sunvox_workers_configure(0);
+    puts("Serial/worker graph jobs: exact PCM, feedback, meters, sidechains, tails and lifecycle at all quanta");
 }

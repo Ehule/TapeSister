@@ -56,9 +56,28 @@ typedef struct {
     unsigned main_clip_remaining;
     float hardware_peak[TS_MATRIX_OUTPUTS]; /* After OUT gain and hardware guard. */
     TsStereoFrame output[TS_MATRIX_OUTPUTS], sidechain, spatial_input;
+    uint64_t output_destinations[3]; /* Previous frame's owned physical outputs. */
     float speaker_output[TS_SOURCE_SPEAKERS];
 } TsRoutingMatrix;
 typedef TsStereoFrame (*TsMatrixProcess)(void *,int,TsStereoFrame);
+/* Bounded by the existing feedback delay: every feedback read in a span
+   precedes the corresponding history write. Caller owns all scratch. */
+typedef struct {
+    TsStereoFrame output[TS_MATRIX_OUTPUTS], spatial_input;
+    float speaker_output[TS_SOURCE_SPEAKERS];
+} TsMatrixOutput;
+typedef struct {
+    TsSourceRouteMix sums[TS_MATRIX_DELAY];
+    TsStereoFrame live[TS_MATRIX_DELAY][TS_MATRIX_ROWS-TS_MATRIX_NODES];
+    TsMatrixOutput result[TS_MATRIX_DELAY];
+} TsMatrixSpan;
+typedef void (*TsMatrixProcessSpan)(void *,int,const TsStereoFrame *,
+    const TsStereoFrame *,TsStereoFrame *,unsigned);
+/* Stable topology only; callers split at control/engine boundaries. Unlike
+   the frame API, processors must not depend on other nodes' mutable state. */
+void ts_matrix_process_span(TsRoutingMatrix *m,TsMatrixSpan *span,unsigned frames,
+    TsMatrixProcessSpan fn,void *context);
+unsigned ts_matrix_span_limit(const TsRoutingMatrix *m,unsigned requested);
 /* Only the original processor/sidechain destinations can be feedback edges. */
 static inline uint64_t ts_matrix_feedback_bit(int d)
 { return d>=0 && d<TS_MATRIX_INSTANCE_DESTINATIONS ? UINT64_C(1)<<d : 0; }
@@ -73,6 +92,10 @@ int ts_matrix_set(TsRoutingMatrix *m,const TsMatrixControls *c,unsigned rate);
    still snap through ts_matrix_set(); project recall also resets the fade. */
 int ts_matrix_set_live(TsRoutingMatrix *m,const TsMatrixControls *c,unsigned rate);
 void ts_matrix_process(TsRoutingMatrix *m,TsSourceRouteMix *sums,
+    const TsStereoFrame live[TS_MATRIX_ROWS-TS_MATRIX_NODES],TsMatrixProcess fn,void *context);
+/* Same processing/order, with complete graph ownership metadata in sums.
+   Newly disconnected output pairs are explicitly cleared on their next frame. */
+void ts_matrix_process_sparse(TsRoutingMatrix *m,TsSourceRouteMix *sums,
     const TsStereoFrame live[TS_MATRIX_ROWS-TS_MATRIX_NODES],TsMatrixProcess fn,void *context);
 int ts_matrix_write(FILE *f,const TsMatrixControls *c);
 int ts_matrix_read(TsMatrixControls *c,const char *key,const char *value);

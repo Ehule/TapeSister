@@ -15,6 +15,9 @@ static int tapesister_application_main(int,char **);
 #undef main
 #include <inttypes.h>
 #include <time.h>
+#ifdef TS_SUNVOX_BENCHMARK_SEED
+void ts_sunvox_benchmark_seed(void);
+#endif
 
 static AudioState audio;
 static TsUiState ui;
@@ -36,10 +39,26 @@ static double thread_seconds(void)
     return t.tv_sec+t.tv_nsec*1e-9;
 #endif
 }
+static double process_seconds(void)
+{
+#ifdef _WIN32
+    FILETIME created,exited,kernel,user;
+    REQUIRE(GetProcessTimes(GetCurrentProcess(),&created,&exited,&kernel,&user));
+    ULARGE_INTEGER k,u;k.LowPart=kernel.dwLowDateTime;k.HighPart=kernel.dwHighDateTime;
+    u.LowPart=user.dwLowDateTime;u.HighPart=user.dwHighDateTime;
+    return (k.QuadPart+u.QuadPart)*1e-7;
+#else
+    struct timespec t;REQUIRE(!clock_gettime(CLOCK_PROCESS_CPUTIME_ID,&t));
+    return t.tv_sec+t.tv_nsec*1e-9;
+#endif
+}
 static int sort_double(const void *a,const void *b)
 {double x=*(const double *)a,y=*(const double *)b;return (x>y)-(x<y);}
 static uint64_t hash_bytes(uint64_t hash,const void *buffer,size_t size)
 {const unsigned char *p=buffer;for(size_t i=0;i<size;++i)hash=(hash^p[i])*UINT64_C(1099511628211);return hash;}
+
+#include "benchmark_ui_frames.inc"
+
 int main(int argc,char **argv)
 {
     if(argc<2 || argc>9){fprintf(stderr,"%s PROJECT [SECONDS [WARMUP [RATE [BLOCK [CHANNELS [PCM_DUMP [SUNVOX_BLOCK]]]]]]]\n",argv[0]);return 2;}
@@ -51,8 +70,13 @@ int main(int argc,char **argv)
     unsigned sunvox_block=argc>8?(unsigned)strtoul(argv[8],NULL,10):0;
     REQUIRE(!sunvox_block || sunvox_block==64 || sunvox_block==256 || sunvox_block==1024);
     REQUIRE(rate>=8000 && rate<=384000 && block>=16 && block<=8192 && channels>=2 && channels<=32);
+    audio.force_chronological=getenv("TS_BENCH_SCALAR")!=NULL;
     SDL_setenv("SDL_VIDEODRIVER","dummy",1);
+    ts_sunvox_workers_configure(getenv("TS_BENCH_WORKERS")?1:0);
     REQUIRE(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER));
+#ifdef TS_SUNVOX_BENCHMARK_SEED
+    (void)ts_sunvox_factory_count();ts_sunvox_benchmark_seed();
+#endif
     SDL_Window *window=SDL_CreateWindow("Audio benchmark",0,0,640,400,SDL_WINDOW_HIDDEN);REQUIRE(window);
     ts_ui_init(&ui);ts_instrument_init(&bank);ts_instrument_init(&record);
     ts_note_bank_init(&audio.notes);ts_performance_init(&audio.performance);ts_performance_init(&audio.tile_launchers);
@@ -98,6 +122,17 @@ int main(int argc,char **argv)
     }
     /* Optional deterministic page turns for Gallery audits. These call the same
        allocation-free core switch used by the controller, not its UI refresh. */
+    /* Match the live Keter scenario without rewriting the supplied project. */
+    if(getenv("TS_BENCH_NORMALIZE_TRANSPORT")) {
+        REQUIRE(audio.gallery);
+        for(int p=0;p<audio.gallery->count;++p) {
+            TsMosaic *m=audio.gallery->canvas[p].scene;
+            ts_mosaic_seek(m,0);m->repeat=0;m->playing=0;m->marker_loop=0;
+            ts_mosaic_set_speed(m,1);
+            audio.gallery->canvas[p].entry=TS_GALLERY_RESUME;
+        }
+        audio.gallery->fade_seconds=0;
+    }
     const char *sequence=getenv("TS_BENCH_GALLERY");
     int turns[64],turn_count=0,turn_next=1;
     if(sequence) {char *end;while(*sequence && turn_count<64) {
@@ -109,7 +144,16 @@ int main(int argc,char **argv)
     if(turn_count){REQUIRE(ts_gallery_switch(audio.gallery,turns[0],error,sizeof(error)));audio.mosaic=ts_gallery_active(audio.gallery);}
     double position=getenv("TS_BENCH_POSITION")?strtod(getenv("TS_BENCH_POSITION"),NULL):0;
     REQUIRE(isfinite(position) && position>=0);ts_mosaic_seek(audio.mosaic,position);audio.mosaic->playing=1;
+    if(getenv("TS_BENCH_UI")) {
+        benchmark_ui_frames(window);ts_tapehead_close();ts_sister_runtime_free(&audio.sister);
+        ts_mosaic_free(ts_sample_pages_mosaic_root(&pages));pages.mosaic=NULL;ts_sample_pages_free(&pages);
+        ts_instrument_free(&bank);ts_instrument_free(&record);SDL_DestroyWindow(window);SDL_Quit();return 0;
+    }
     if(getenv("TS_BENCH_PROFILE")){ts_profile_init(SDL_GetPerformanceCounter,SDL_GetPerformanceFrequency());ts_profile_enable(1);}
+    double interval=getenv("TS_BENCH_INTERVAL")?strtod(getenv("TS_BENCH_INTERVAL"),NULL):0;
+    REQUIRE(isfinite(interval) && interval>=0 && interval<=86400 && (!interval || interval>=1));
+    uint64_t interval_frames=(uint64_t)llround(interval*rate),interval_at=0,interval_calls=0;
+    double interval_cpu=0,interval_wall=0;
     uint64_t total=(uint64_t)llround(seconds*rate),skip=(uint64_t)llround(warmup*rate);
     size_t capacity=(size_t)((total+block-1)/block)+64,count=0;
     double *wall=calloc(capacity,sizeof(double));float *out=calloc((size_t)block*channels,sizeof(float));
@@ -117,7 +161,7 @@ int main(int argc,char **argv)
     const char *dump_path=argc>7 && strcmp(argv[7],"-")?argv[7]:NULL;
     FILE *dump=dump_path?fopen(dump_path,"wb"):NULL;if(dump_path)REQUIRE(dump);
     uint64_t frames=0,hash=UINT64_C(14695981039346656037),hardware_hash=hash;
-    double sum_cpu=0,sum_wall=0,energy=0,peak=0,frequency=(double)SDL_GetPerformanceFrequency();
+    double sum_cpu=0,sum_process=0,sum_wall=0,energy=0,peak=0,frequency=(double)SDL_GetPerformanceFrequency();
     for(uint64_t at=0;at<total;) {
         unsigned n=(unsigned)fmin(block,total-at);
         if(turn_next<turn_count) {
@@ -130,9 +174,18 @@ int main(int argc,char **argv)
                 ++turn_next;
             } else if(at<boundary && at+n>boundary)n=(unsigned)(boundary-at);
         }
-        double cpu=thread_seconds();Uint64 start=SDL_GetPerformanceCounter();
+        /* Request at approximately 20 Hz, like FX Canvas. This measures the
+           actual callback publisher; consume only after ownership is returned. */
+        if(getenv("TS_BENCH_METERS") && (at/block)%5==0) {
+            REQUIRE(atomic_load(&audio.matrix_activity.state)==0);
+            atomic_store_explicit(&audio.matrix_activity.state,1,memory_order_release);
+        }
+        double process_cpu=process_seconds(),cpu=thread_seconds();Uint64 start=SDL_GetPerformanceCounter();
         audio_callback(&audio,(Uint8 *)out,(int)(n*channels*sizeof(float)));
         double elapsed=(SDL_GetPerformanceCounter()-start)/frequency,cost=thread_seconds()-cpu;
+        double process_cost=process_seconds()-process_cpu;
+        if(atomic_load_explicit(&audio.matrix_activity.state,memory_order_acquire)==3)
+            atomic_store_explicit(&audio.matrix_activity.state,0,memory_order_release);
         /* Hash the complete render, including startup and warmup. */
         for(unsigned i=0;i<n*channels;++i)REQUIRE(isfinite(out[i]));
         for(unsigned i=0;i<n*2;++i)REQUIRE(isfinite(stereo[i]));
@@ -140,19 +193,38 @@ int main(int argc,char **argv)
         hardware_hash=hash_bytes(hardware_hash,out,n*channels*sizeof(float));
         if(dump)REQUIRE(fwrite(out,channels*sizeof(float),n,dump)==n);
         if(at>=skip) {
-            sum_cpu+=cost;sum_wall+=elapsed;wall[count++]=elapsed*1000;frames+=n;
+            sum_cpu+=cost;sum_process+=process_cost;sum_wall+=elapsed;wall[count++]=elapsed*1000;frames+=n;
             for(unsigned i=0;i<n*2;++i){energy+=(double)stereo[i]*stereo[i];peak=fmax(peak,fabs(stereo[i]));}
         }
         at+=n;
+        if(interval_frames) {
+            interval_cpu+=cost;interval_wall+=elapsed;++interval_calls;
+            if(at-interval_at>=interval_frames || at==total) {
+                fprintf(stderr,"Audio interval %.6f..%.6f s: %llu callbacks; CPU %.6f ms/block; wall %.6f ms/block\n",
+                    interval_at/(double)rate,at/(double)rate,(unsigned long long)interval_calls,
+                    1000*interval_cpu/interval_calls,1000*interval_wall/interval_calls);
+                if(getenv("TS_BENCH_PROFILE")) {
+                    char report[16384];ts_profile_report(report,sizeof(report));fprintf(stderr,"%s\n",report);
+                    ts_profile_reset();
+                }
+                interval_at=at;interval_calls=0;interval_cpu=interval_wall=0;
+            }
+        }
     }
     REQUIRE(count && frames);qsort(wall,count,sizeof(double),sort_double);
     printf("{\"rate\":%u,\"block\":%u,\"channels\":%u,\"sunvox_block_override\":%u,\"audio_seconds\":%.6f,\"warmup_seconds\":%.3f,"
-        "\"thread_cpu_percent\":%.6f,\"mean_callback_cpu_ms\":%.6f,\"mean_callback_wall_ms\":%.6f,\"p95_callback_wall_ms\":%.6f,"
+        "\"thread_cpu_percent\":%.6f,\"process_cpu_percent\":%.6f,\"mean_callback_cpu_ms\":%.6f,\"mean_callback_wall_ms\":%.6f,\"p95_callback_wall_ms\":%.6f,"
+        "\"p99_callback_wall_ms\":%.6f,\"max_callback_wall_ms\":%.6f,\"workers_requested\":%u,"
+        "\"master_jobs_dispatched\":%llu,\"master_jobs_audio_claimed\":%llu,"
         "\"rms\":%.9g,\"peak\":%.9g,\"stereo_hash\":\"%016" PRIx64 "\",\"hardware_hash\":\"%016" PRIx64 "\"}\n",
-        rate,block,channels,sunvox_block,frames/(double)rate,warmup,sum_cpu/(frames/(double)rate)*100,sum_cpu*1000/count,
-        sum_wall*1000/count,wall[(size_t)(count*.95)],sqrt(energy/(frames*2)),peak,hash,hardware_hash);
+        rate,block,channels,sunvox_block,frames/(double)rate,warmup,sum_cpu/(frames/(double)rate)*100,
+        sum_process/(frames/(double)rate)*100,sum_cpu*1000/count,
+        sum_wall*1000/count,wall[(size_t)(count*.95)],wall[(size_t)(count*.99)],wall[count-1],
+        ts_sunvox_workers_configured(),(unsigned long long)ts_sunvox_batch_dispatched(audio.sister.matrix_effects.worker),
+        (unsigned long long)ts_sunvox_batch_stolen(audio.sister.matrix_effects.worker),sqrt(energy/(frames*2)),peak,hash,hardware_hash);
     if(getenv("TS_BENCH_PROFILE")){char report[16384];ts_profile_report(report,sizeof(report));fprintf(stderr,"%s\n",report);}
     if(dump)REQUIRE(!fclose(dump));
+    fprintf(stderr,"Matrix span frames: %" PRIu64 "; chronological: %" PRIu64 "\n",audio.span_frames,audio.chronological_frames);
     ts_tapehead_close();ts_sister_runtime_free(&audio.sister);
     ts_mosaic_free(ts_sample_pages_mosaic_root(&pages));pages.mosaic=NULL;ts_sample_pages_free(&pages);
     ts_instrument_free(&bank);ts_instrument_free(&record);SDL_DestroyWindow(window);SDL_Quit();

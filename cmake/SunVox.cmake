@@ -54,7 +54,7 @@ foreach(name bitmath bitreader cpu crc fixed fixed_intrin_sse2 fixed_intrin_ssse
     format lpc lpc_intrin_sse2 lpc_intrin_sse41 lpc_intrin_neon md5 memory stream_decoder win_utf8_io)
   list(APPEND SV_CODEC "${SV_ROOT}/lib_flac/libFLAC/${name}.c")
 endforeach()
-add_library(tapesister_sunvox STATIC src/ts_sunvox_fx.cpp ${SV_ENGINE} ${SV_SUNDOG} ${SV_CODEC})
+add_library(tapesister_sunvox STATIC src/ts_sunvox_fx.cpp src/ts_sunvox_jobs.cpp ${SV_ENGINE} ${SV_SUNDOG} ${SV_CODEC})
 set_target_properties(tapesister_sunvox PROPERTIES C_EXTENSIONS ON CXX_EXTENSIONS ON)
 target_include_directories(tapesister_sunvox PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include" "${CMAKE_BINARY_DIR}" "${SV_ROOT}/lib_sundog" "${SV_ROOT}/lib_sunvox"
   "${SV_ROOT}/lib_dsp" "${SV_ROOT}/lib_mp3" "${SV_ROOT}/lib_flac/libFLAC"

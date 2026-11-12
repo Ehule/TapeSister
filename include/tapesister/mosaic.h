@@ -193,6 +193,7 @@ typedef struct TsMosaic {
     int was_playing;
     unsigned transition_remaining, transition_total;
     TsSourceRouteHandoff route_handoff;
+    TsSourceRouteMix route_work; /* Audio-owned, initially zero; reused per frame. */
     int route_discontinuity;
     TsMosaicSchedule schedule;
     unsigned block_remaining;
@@ -305,6 +306,10 @@ void ts_mosaic_begin_block(TsMosaic *m, unsigned frames);
 TsStereoFrame ts_mosaic_read(TsMosaic *m, int output_rate);
 /* Returns the Mosaic bus; custom cards go only into routes. NULL ignores routing. */
 TsStereoFrame ts_mosaic_read_routed(TsMosaic *m, int output_rate, TsSourceRouteMix *routes);
+/* Gallery applies its gain after each scene's route handoff. The returned
+   Mosaic bus stays unscaled; all custom routes/taps receive route_gain. */
+TsStereoFrame ts_mosaic_read_routed_gain(TsMosaic *m, int output_rate,
+    TsSourceRouteMix *routes, float route_gain);
 uint64_t ts_mosaic_hash(const TsMosaic *m);
 /* Project-data directory; optional on load for pre-Mosaic projects. */
 int ts_mosaic_save(const TsMosaic *m, const char *directory, char *error, size_t size);

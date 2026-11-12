@@ -10,8 +10,11 @@ on:
       - 'tools/sunvox_benchmark_seed.cpp'
       - 'scripts/compare_sunvox_delay.py'
       - 'tests/test_sunvox_delay.cpp'
+      - 'tests/test_sunvox_echo.cpp'
       - 'tools/prepare_sunvox_realtime.py'
       - 'src/ts_sunvox_fx.cpp'
+      - 'src/ts_sunvox_jobs.cpp'
+      - 'tests/test_sunvox_jobs.c'
       - 'cmake/SunVox.cmake'
 permissions:
   contents: read
@@ -29,6 +32,7 @@ jobs:
           path: |
             audit/results.json
             audit/delay-results.json
+            audit/echo-results.json
   windows:
     runs-on: windows-latest
     timeout-minutes: 20
@@ -53,3 +57,4 @@ jobs:
           path: |
             audit/results.json
             audit/delay-results.json
+            audit/echo-results.json

@@ -203,9 +203,56 @@ static void mosaic_detail_card(TsUiWaveformDetail *d,const TsUiState *ui,
         mosaic_resize_handles(&fades,ui,e,x,y,right,bottom,selected);
     }
 }
+/* Compare drawing inputs, not transport time. Event sources are immutable;
+   the mutable tracker-version/pending flags are included explicitly. Storage
+   belongs to the native surface, so resize/window close release the cache. */
+typedef struct {
+    const TsMosaic *scene;
+    uint64_t epoch,selected,hover;
+    double scroll,xscroll,scale,hscale,interval;
+    int any_solo;
+    TsPalette palette;
+    TsMosaicEvent events[TS_MOSAIC_EVENTS];
+    uint64_t selection[TS_MOSAIC_EVENTS];
+    uint8_t pending[TS_MOSAIC_EVENTS],older[TS_MOSAIC_EVENTS];
+} MosaicRasterState;
+static int mosaic_raster_reuse(TsUiWaveformDetail *d,const TsUiState *ui,int any_solo,double interval)
+{
+    MosaicRasterState *k=d->scene_state;const TsMosaic *m=ui->mosaic;
+    int dynamic=ui->mosaic_ghost_count || ui->mosaic_grab || ui->mosaic_resize_event ||
+        ui->mosaic_card_mix_event || ui->mosaic_card_mix_group || ui->mosaic_recording;
+    for(int i=0;m && i<TS_MOSAIC_EVENTS;++i)if(m->events[i].id && m->events[i].live)dynamic=1;
+    if(dynamic || !m) {d->raster_valid=0;if(k)k->scene=NULL;return 0;}
+    if(!k) {k=calloc(1,sizeof(*k));d->scene_state=k;if(!k)return 0;}
+    uint8_t older[TS_MOSAIC_EVENTS]={0};
+    for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(m->events[i].id && m->events[i].source && m->events[i].source->pattern)
+        older[i]=m->events[i].source->pattern->older!=0;
+    int match=d->raster_valid && d->raster_mode==-1 && k->scene==m && k->epoch==m->epoch &&
+        k->selected==ui->mosaic_selected && k->hover==ui->mosaic_hover_event &&
+        k->scroll==ui->mosaic_scroll && k->xscroll==ui->mosaic_xscroll &&
+        k->scale==ui->mosaic_scale && k->hscale==ui->mosaic_hscale &&
+        k->interval==interval && k->any_solo==any_solo &&
+        !memcmp(&k->palette,&ui->palette,sizeof(k->palette)) &&
+        !memcmp(k->selection,ui->mosaic_selection,sizeof(k->selection)) &&
+        !memcmp(k->pending,ui->mosaic_pattern_pending,sizeof(k->pending)) &&
+        !memcmp(k->older,older,sizeof(older)) &&
+        !memcmp(k->events,m->events,sizeof(k->events));
+    if(!match) {
+        k->scene=m;k->epoch=m->epoch;k->selected=ui->mosaic_selected;k->hover=ui->mosaic_hover_event;
+        k->scroll=ui->mosaic_scroll;k->xscroll=ui->mosaic_xscroll;
+        k->scale=ui->mosaic_scale;k->hscale=ui->mosaic_hscale;k->interval=interval;k->any_solo=any_solo;
+        k->palette=ui->palette;memcpy(k->events,m->events,sizeof(k->events));
+        memcpy(k->selection,ui->mosaic_selection,sizeof(k->selection));
+        memcpy(k->pending,ui->mosaic_pattern_pending,sizeof(k->pending));memcpy(k->older,older,sizeof(older));
+    }
+    return match;
+}
 static int mosaic_detail_cards(TsFramebuffer *fb,const TsUiState *ui,int any_solo,double interval)
 {
     TsUiWaveformDetail *d=detail_region(0,151,66,ts_ui_mosaic_canvas_right(ui)-151,TS_MOSAIC_CANVAS_HEIGHT);if(!d)return 0;
+    int reused=mosaic_raster_reuse(d,ui,any_solo,interval);
+    d->sample_raster=d->scene_raster=1;
+    if(!reused) {
     /* The whole moving scene shares the native raster. Do not enlarge coarse
        card fragments underneath it; later controls/overlays use the compositor. */
     mosaic_detail_rect(d,0,0,d->width,d->height,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_BACKGROUND, RGB(11,13,16)));
@@ -225,6 +272,9 @@ static int mosaic_detail_cards(TsFramebuffer *fb,const TsUiState *ui,int any_sol
     const TsMosaicEvent *primary=ui->mosaic?ts_mosaic_find(ui->mosaic,ui->mosaic_selected):NULL;
     if(primary)mosaic_detail_card(d,ui,primary,1,primary->muted || (any_solo && !primary->solo),0);
     mosaic_recording_card(fb,d,ui);
+    memcpy(d->raster,d->pixels,(size_t)d->width*d->height*sizeof(*d->raster));
+    d->raster_changed=1;d->raster_valid=1;d->raster_mode=-1;++d->raster_count;
+    }
     d->valid=1;detail_capture_slot(fb,0);return 1;
 }
 static int mosaic_detail_screen_x(const TsUiWaveformDetail *d,int x)

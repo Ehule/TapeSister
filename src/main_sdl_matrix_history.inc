@@ -12,6 +12,7 @@ static void mx_refresh_tracker(TsSamplePages *pages,TsInstrument *bank)
 {ts_tapehead_refresh_routes(pages,bank);}
 static MatrixSnapshot *mx_snapshot(SDL_AudioDeviceID device,AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
 {
+    ++mx_activity_epoch;
     size_t count=TS_TRACKER_LANES;
     for(int c=0;c<mx_scene_count();++c) {
         TsMosaic *m=mx_scene_at(c);if(m)for(int i=0;i<TS_MOSAIC_EVENTS;++i)count+=m->events[i].id!=0;
@@ -25,6 +26,7 @@ static MatrixSnapshot *mx_snapshot(SDL_AudioDeviceID device,AudioState *audio,Ts
     if(device)SDL_LockAudioDevice(device);
     s->controls=audio->sister.matrix.controls;s->router=audio->sister.router.controls;s->spatial=audio->sister.spatial.controls;
     s->compressor=audio->sister.compressor.controls;
+    /* Capture committed state without replacing a pending UI edit. */
     mx_processor_read(audio,&s->fixed);matrix_window.fixed=s->fixed;
     s->insert=audio->sister.insert.controls;s->sources=audio->sister.source_switches;
     if(device)SDL_UnlockAudioDevice(device);
@@ -78,6 +80,7 @@ static int mx_apply(const MatrixSnapshot *s,SDL_AudioDeviceID device,AudioState 
 }
 static void matrix_history_clear(void)
 {
+    ++mx_activity_epoch;
     fx_context_reset();
     MatrixWindow *w=&matrix_window;
     for(int i=0;i<w->history_count;++i)free(w->history[i]);

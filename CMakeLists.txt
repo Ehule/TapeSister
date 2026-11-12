@@ -76,6 +76,14 @@ if(TAPESISTER_BUILD_SDL)
   add_executable(tapesister_jack_backend_tests tests/test_jack_backend.c)
   target_link_libraries(tapesister_jack_backend_tests PRIVATE SDL2::SDL2 tapesister_core)
 
+  # Stamp replay logs with the exact checkout used by Actions / local builds.
+  execute_process(COMMAND git describe --always --dirty
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    OUTPUT_VARIABLE TAPESISTER_LIVE_TEST_REVISION OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET)
+  if(NOT TAPESISTER_LIVE_TEST_REVISION)
+    set(TAPESISTER_LIVE_TEST_REVISION "unknown")
+  endif()
   # main_sdl.c is the one canonical callback/application translation unit.
   add_executable(tapesister src/main_sdl.c src/tape_link.c
                             src/tape_companion.c src/ts_startup_diag.c
@@ -90,6 +98,7 @@ if(TAPESISTER_BUILD_SDL)
                    "${CMAKE_CURRENT_BINARY_DIR}/tapesister.rc")
     set_target_properties(tapesister PROPERTIES OUTPUT_NAME "TapeSister")
   endif()
+  target_compile_definitions(tapesister PRIVATE TS_LIVE_TEST_REVISION="${TAPESISTER_LIVE_TEST_REVISION}")
   target_include_directories(tapesister PRIVATE third_party)
   target_link_libraries(tapesister PRIVATE tapesister_core tapesister_tapehead SDL2::SDL2)
 
@@ -107,6 +116,12 @@ if(TAPESISTER_BUILD_SDL)
     src/tape_link.c src/tape_companion.c src/ts_startup_diag.c src/ts_midi_input.c)
   target_include_directories(tapesister_audio_benchmark PRIVATE third_party)
   target_link_libraries(tapesister_audio_benchmark PRIVATE tapesister_core tapesister_tapehead SDL2::SDL2)
+  if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" AND (WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux"))
+    target_sources(tapesister_audio_benchmark PRIVATE tools/sunvox_benchmark_seed.cpp)
+    target_include_directories(tapesister_audio_benchmark PRIVATE $<TARGET_PROPERTY:tapesister_sunvox,INCLUDE_DIRECTORIES>)
+    target_compile_definitions(tapesister_audio_benchmark PRIVATE TS_SUNVOX_BENCHMARK_SEED)
+    target_link_options(tapesister_audio_benchmark PRIVATE "-Wl,--wrap=_Z8stime_nsv")
+  endif()
   if(UNIX AND NOT APPLE)
     target_link_libraries(tapesister_audio_benchmark PRIVATE rt)
   endif()
@@ -337,6 +352,8 @@ add_test(NAME test_live_link COMMAND test_live_link)
 
 find_package(Python3 COMPONENTS Interpreter QUIET)
 if(Python3_Interpreter_FOUND)
+  add_test(NAME test_live_test_logs
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_live_test_logs.py")
   add_test(NAME test_audio_hardening_structure
     COMMAND "${Python3_EXECUTABLE}"
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_audio_hardening_structure.py")
@@ -489,6 +506,19 @@ add_executable(tapesister_sample_pages_tests tests/test_sample_pages.c)
 target_link_libraries(tapesister_sample_pages_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_sample_pages_tests COMMAND tapesister_sample_pages_tests)
 
+add_executable(tapesister_mosaic_envelopes_tests tests/test_mosaic_envelopes.c)
+target_link_libraries(tapesister_mosaic_envelopes_tests PRIVATE tapesister_core)
+add_test(NAME mosaic_envelopes_exact COMMAND tapesister_mosaic_envelopes_tests)
+set_tests_properties(mosaic_envelopes_exact PROPERTIES TIMEOUT 120)
+
+add_executable(tapesister_live_routes_tests tests/test_live_playback_routes.c)
+target_link_libraries(tapesister_live_routes_tests PRIVATE tapesister_core)
+add_test(NAME live_playback_routes_exact COMMAND tapesister_live_routes_tests)
+add_executable(tapesister_live_rings_tests tests/test_live_playback_rings.c)
+target_link_libraries(tapesister_live_rings_tests PRIVATE tapesister_core)
+add_test(NAME live_playback_rings_exact COMMAND tapesister_live_rings_tests)
+set_tests_properties(live_playback_routes_exact live_playback_rings_exact PROPERTIES TIMEOUT 120)
+
 add_executable(tapesister_mosaic_gallery_tests tests/test_mosaic_gallery.c)
 target_link_libraries(tapesister_mosaic_gallery_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_mosaic_gallery_tests COMMAND tapesister_mosaic_gallery_tests)
@@ -598,6 +628,18 @@ if(TAPESISTER_BUILD_SDL)
     target_link_options(tapesister_matrix_spatial_controller_tests PRIVATE "-Wl,--stack,16777216")
   endif()
   add_test(NAME tapesister_matrix_spatial_controller_tests COMMAND tapesister_matrix_spatial_controller_tests)
+  add_executable(tapesister_live_test_tests tests/test_live_test.c
+    src/tape_link.c src/tape_companion.c src/ts_startup_diag.c src/ts_midi_input.c)
+  target_compile_definitions(tapesister_live_test_tests PRIVATE TS_LIVE_TEST_REVISION="${TAPESISTER_LIVE_TEST_REVISION}")
+  target_include_directories(tapesister_live_test_tests PRIVATE third_party)
+  target_link_libraries(tapesister_live_test_tests PRIVATE tapesister_core tapesister_tapehead SDL2::SDL2)
+  if(UNIX AND NOT APPLE)
+    target_link_libraries(tapesister_live_test_tests PRIVATE rt)
+  endif()
+  if(MINGW)
+    target_link_options(tapesister_live_test_tests PRIVATE "-Wl,--stack,16777216")
+  endif()
+  add_test(NAME tapesister_live_test_tests COMMAND tapesister_live_test_tests)
 endif()
 add_executable(tapesister_fm_unison_tests tests/test_fm_unison.c)
 target_link_libraries(tapesister_fm_unison_tests PRIVATE tapesister_core)
@@ -891,6 +933,12 @@ add_test(NAME tapesister_profile_matrix_tests COMMAND tapesister_profile_matrix_
 add_executable(tapesister_matrix_blocks_tests tests/test_matrix_blocks.c)
 target_link_libraries(tapesister_matrix_blocks_tests PRIVATE tapesister_core)
 add_test(NAME matrix_blocks_exact COMMAND tapesister_matrix_blocks_tests)
+set_tests_properties(matrix_blocks_exact PROPERTIES TIMEOUT 120)
+add_executable(tapesister_matrix_spans_tests tests/test_matrix_spans.c)
+target_link_libraries(tapesister_matrix_spans_tests PRIVATE tapesister_core)
+add_test(NAME matrix_spans_exact COMMAND tapesister_matrix_spans_tests)
+set_tests_properties(matrix_spans_exact PROPERTIES TIMEOUT 120)
+
 
 # Several older fixtures put their setup in assert(). Release must exercise
 # those checks too, while the linked production DSP stays fully optimized.
@@ -1127,7 +1175,9 @@ add_executable(tapesister_sunvox_patch_benchmark EXCLUDE_FROM_ALL tools/benchmar
 # searched, so this executable uses the pristine handler and identical host/DSP.
 add_executable(tapesister_sunvox_patch_reference EXCLUDE_FROM_ALL tools/benchmark_sunvox_patch.c
   "${SV_ROOT}/reference/psynths_delay.cpp")
-foreach(probe tapesister_sunvox_patch_benchmark tapesister_sunvox_patch_reference)
+add_executable(tapesister_sunvox_echo_reference EXCLUDE_FROM_ALL tools/benchmark_sunvox_patch.c
+  "${SV_ROOT}/reference/psynths_echo.cpp")
+foreach(probe tapesister_sunvox_patch_benchmark tapesister_sunvox_patch_reference tapesister_sunvox_echo_reference)
   # Match the SDK even when the desktop/MIDI configuration disables extensions.
   set_target_properties(${probe} PROPERTIES CXX_EXTENSIONS ON)
   target_include_directories(${probe} PRIVATE
@@ -1152,6 +1202,14 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang
     "-Wl,--wrap=malloc,--wrap=calloc,--wrap=realloc,--wrap=free")
 endif()
 add_test(NAME sunvox_realtime COMMAND tapesister_sunvox_realtime_tests)
+add_executable(tapesister_sunvox_jobs_tests tests/test_sunvox_jobs.c)
+target_link_libraries(tapesister_sunvox_jobs_tests PRIVATE tapesister_core)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_definitions(tapesister_sunvox_jobs_tests PRIVATE TS_WRAP_ALLOCATIONS)
+  target_link_options(tapesister_sunvox_jobs_tests PRIVATE "-Wl,--wrap=malloc,--wrap=calloc,--wrap=realloc,--wrap=free")
+endif()
+add_test(NAME sunvox_jobs_exact COMMAND tapesister_sunvox_jobs_tests)
+set_tests_properties(sunvox_jobs_exact PROPERTIES TIMEOUT 120)
 add_executable(tapesister_sunvox_delay_tests tests/test_sunvox_delay.cpp)
 set_target_properties(tapesister_sunvox_delay_tests PROPERTIES CXX_EXTENSIONS ON)
 target_link_libraries(tapesister_sunvox_delay_tests PRIVATE tapesister_sunvox)
@@ -1164,6 +1222,14 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 add_test(NAME sunvox_delay_exact COMMAND tapesister_sunvox_delay_tests)
 set_tests_properties(sunvox_delay_exact PROPERTIES TIMEOUT 120)
+add_executable(tapesister_sunvox_echo_tests tests/test_sunvox_echo.cpp)
+set_target_properties(tapesister_sunvox_echo_tests PROPERTIES CXX_EXTENSIONS ON)
+target_link_libraries(tapesister_sunvox_echo_tests PRIVATE tapesister_sunvox)
+target_include_directories(tapesister_sunvox_echo_tests PRIVATE
+  $<TARGET_PROPERTY:tapesister_sunvox,INCLUDE_DIRECTORIES> "${SV_ROOT}" "${SV_ROOT}/lib_sunvox/psynth")
+target_compile_definitions(tapesister_sunvox_echo_tests PRIVATE $<TARGET_PROPERTY:tapesister_sunvox,COMPILE_DEFINITIONS>)
+add_test(NAME sunvox_echo_exact COMMAND tapesister_sunvox_echo_tests)
+set_tests_properties(sunvox_echo_exact PROPERTIES TIMEOUT 120)
 add_executable(tapesister_fx_silence_tests tests/test_fx_silence.c)
 target_link_libraries(tapesister_fx_silence_tests PRIVATE tapesister_core)
 add_test(NAME fx_silence_exact COMMAND tapesister_fx_silence_tests)

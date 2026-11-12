@@ -101,11 +101,22 @@ void ts_matrix_effects_init(TsMatrixEffects *f)
 }
 void ts_matrix_effects_free(TsMatrixEffects *f)
 {
+    ts_sunvox_batch_free(f->worker);
     for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i){node_free(f->current[i]);node_free(f->previous[i]);}
     ts_matrix_effects_init(f);
 }
 void ts_matrix_effects_discard(TsMatrixEffectPlan *p)
-{for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)node_free(p->node[i]);memset(p,0,sizeof(*p));}
+{for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)node_free(p->node[i]);ts_sunvox_batch_free(p->worker);memset(p,0,sizeof(*p));}
+static TsSunVoxBatch *prepare_worker(const TsMatrixEffects *f,const TsMatrixEffectPlan *plan)
+{
+    if(!ts_sunvox_workers_configured())return NULL;
+    unsigned count=0,eligible=0;
+    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i) {
+        const TsMatrixEffectNode *n=plan && (plan->changed&(1u<<i))?plan->node[i]:f->current[i];
+        if(n && n->sunvox){++count;eligible+=ts_sunvox_parallel_cost(n->sunvox)>=16;}
+    }
+    return count>1 && eligible?ts_sunvox_batch_new(1):NULL;
+}
 int ts_matrix_effects_stage(const TsMatrixEffects *f,const TsMatrixControls *c,unsigned rate,TsMatrixEffectPlan *p)
 {
     memset(p,0,sizeof(*p));if(rate<1000 || rate>384000 || !ts_matrix_valid(c))return 0;
@@ -120,10 +131,12 @@ int ts_matrix_effects_stage(const TsMatrixEffects *f,const TsMatrixControls *c,u
         p->changed|=1u<<i;
         if(v->id && !(p->node[i]=node_new(v,rate))){ts_matrix_effects_discard(p);return 0;}
     }
+    if(!f->worker)p->worker=prepare_worker(f,p);
     return 1;
 }
 void ts_matrix_effects_commit(TsMatrixEffects *f,const TsMatrixControls *c,unsigned rate,TsMatrixEffectPlan *p)
 {
+    if(p->worker){f->worker=p->worker;p->worker=NULL;}
     for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i) {
         if(p->changed&(1u<<i)) {
             f->previous[i]=f->current[i];f->current[i]=p->node[i];p->node[i]=NULL;
@@ -153,7 +166,8 @@ int ts_matrix_effects_restore(TsMatrixEffects *f,const TsMatrixControls *c,unsig
     for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)if(c->effect[i].id && !(next.current[i]=node_new(&c->effect[i],rate))) {
         ts_matrix_effects_free(&next);return 0;
     }
-    ts_matrix_effects_free(f);f->rate=rate;
+    next.worker=prepare_worker(&next,NULL);
+    ts_matrix_effects_free(f);f->rate=rate;f->worker=next.worker;
     for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i){f->current[i]=next.current[i];next.current[i]=NULL;}
     return 1;
 }
@@ -215,8 +229,66 @@ TsStereoFrame ts_matrix_effects_process(TsMatrixEffects *f,int i,TsStereoFrame i
     }
     return next;
 }
+unsigned ts_matrix_effects_span_limit(const TsMatrixEffects *f,unsigned frames)
+{
+    if(f->fading || f->jobs_count)return 1;
+    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i) {
+        const TsMatrixEffectNode *n=f->current[i];
+        if(n && n->sunvox) {
+            unsigned limit=ts_sunvox_span_limit(n->sunvox);
+            if(limit<frames)frames=limit;
+        }
+    }
+    return frames;
+}
+void ts_matrix_effects_process_span(TsMatrixEffects *f,int i,
+    const TsStereoFrame *in,const TsStereoFrame *key,TsStereoFrame *out,
+    unsigned frames,int connected)
+{
+    /* Lifecycle fades use the chronological path. A SunVox job may become
+       ready only at the last frame; all jobs drain in graph order afterward,
+       preserving SDK-global random state and the existing worker policy. */
+    TsMatrixEffectNode *n=f->current[i];
+    uint64_t started=ts_profile_effect_begin(i);
+    if(n && n->sunvox) {
+        float input[TS_MATRIX_DELAY*2],wet[TS_MATRIX_DELAY*2],dry[TS_MATRIX_DELAY*2];
+        for(unsigned j=0;j<frames;++j){input[j*2]=in[j].l;input[j*2+1]=in[j].r;}
+        if(ts_sunvox_stage_span(n->sunvox,input,wet,dry,frames)) {
+            unsigned job=f->jobs_count++;
+            f->jobs[job].node=n;f->jobs[job].slot=i;f->jobs[job].transitioning=0;
+        }
+        for(unsigned j=0;j<frames;++j) {
+            if(n->remaining){--n->remaining;n->gate=n->start+(n->target-n->start)*(1-(double)n->remaining/n->total);}
+            n->gain+=(n->gain_target-n->gain)*n->smooth;
+            n->mix+=(n->mix_target-n->mix)*n->smooth;float amount=n->gate*n->mix;
+            out[j]=ts_stereo_frame_sanitize_inline((TsStereoFrame){
+                dry[2*j]+(wet[2*j]*n->gain-dry[2*j])*amount,
+                dry[2*j+1]+(wet[2*j+1]*n->gain-dry[2*j+1])*amount});
+        }
+    } else if(n && n->pedal && connected) {
+        float gate[TS_MATRIX_DELAY];
+        for(unsigned j=0;j<frames;++j) {
+            if(n->remaining){--n->remaining;n->gate=n->start+(n->target-n->start)*(1-(double)n->remaining/n->total);}
+            gate[j]=n->gate;
+        }
+        ts_sister_single_fx_process_span(n->pedal,in,gate,out,frames);
+    } else for(unsigned j=0;j<frames;++j)out[j]=node_process(f,i,n,in[j],key[j],connected,0);
+    if(started && n)ts_profile_effect_end(i,&n->profile,started,0);
+}
 void ts_matrix_effects_end_frame(TsMatrixEffects *f)
 {
+    if(f->worker && f->jobs_count) {
+        TsSunVoxJob jobs[2*TS_MATRIX_EFFECT_CAPACITY];
+        for(unsigned j=0;j<f->jobs_count;++j)
+            jobs[j]=(TsSunVoxJob){.engine=f->jobs[j].node->sunvox,.timed=ts_profile_effect_begin(f->jobs[j].slot)!=0};
+        ts_sunvox_batch_render(f->worker,jobs,f->jobs_count,ts_profile_clock);
+        for(unsigned j=0;j<f->jobs_count;++j)if(jobs[j].timed) {
+            int slot=f->jobs[j].slot;
+            const TsMatrixEffectNode *n=f->current[slot]?f->current[slot]:f->previous[slot];
+            if(n)ts_profile_effect_duration(slot,&n->profile,jobs[j].ticks,ts_profile_clock(),f->jobs[j].transitioning);
+        }
+        f->jobs_count=0;f->batching=0;return;
+    }
     for(unsigned j=0;j<f->jobs_count;++j) {
         int slot=f->jobs[j].slot;
         uint64_t started=ts_profile_effect_begin(slot);
