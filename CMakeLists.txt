@@ -76,6 +76,14 @@ if(TAPESISTER_BUILD_SDL)
   add_executable(tapesister_jack_backend_tests tests/test_jack_backend.c)
   target_link_libraries(tapesister_jack_backend_tests PRIVATE SDL2::SDL2 tapesister_core)
 
+  # Stamp replay logs with the exact checkout used by Actions / local builds.
+  execute_process(COMMAND git describe --always --dirty
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    OUTPUT_VARIABLE TAPESISTER_LIVE_TEST_REVISION OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET)
+  if(NOT TAPESISTER_LIVE_TEST_REVISION)
+    set(TAPESISTER_LIVE_TEST_REVISION "unknown")
+  endif()
   # main_sdl.c is the one canonical callback/application translation unit.
   add_executable(tapesister src/main_sdl.c src/tape_link.c
                             src/tape_companion.c src/ts_startup_diag.c
@@ -90,6 +98,7 @@ if(TAPESISTER_BUILD_SDL)
                    "${CMAKE_CURRENT_BINARY_DIR}/tapesister.rc")
     set_target_properties(tapesister PROPERTIES OUTPUT_NAME "TapeSister")
   endif()
+  target_compile_definitions(tapesister PRIVATE TS_LIVE_TEST_REVISION="${TAPESISTER_LIVE_TEST_REVISION}")
   target_include_directories(tapesister PRIVATE third_party)
   target_link_libraries(tapesister PRIVATE tapesister_core tapesister_tapehead SDL2::SDL2)
 
@@ -343,6 +352,8 @@ add_test(NAME test_live_link COMMAND test_live_link)
 
 find_package(Python3 COMPONENTS Interpreter QUIET)
 if(Python3_Interpreter_FOUND)
+  add_test(NAME test_live_test_logs
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_live_test_logs.py")
   add_test(NAME test_audio_hardening_structure
     COMMAND "${Python3_EXECUTABLE}"
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_audio_hardening_structure.py")
@@ -604,6 +615,18 @@ if(TAPESISTER_BUILD_SDL)
     target_link_options(tapesister_matrix_spatial_controller_tests PRIVATE "-Wl,--stack,16777216")
   endif()
   add_test(NAME tapesister_matrix_spatial_controller_tests COMMAND tapesister_matrix_spatial_controller_tests)
+  add_executable(tapesister_live_test_tests tests/test_live_test.c
+    src/tape_link.c src/tape_companion.c src/ts_startup_diag.c src/ts_midi_input.c)
+  target_compile_definitions(tapesister_live_test_tests PRIVATE TS_LIVE_TEST_REVISION="${TAPESISTER_LIVE_TEST_REVISION}")
+  target_include_directories(tapesister_live_test_tests PRIVATE third_party)
+  target_link_libraries(tapesister_live_test_tests PRIVATE tapesister_core tapesister_tapehead SDL2::SDL2)
+  if(UNIX AND NOT APPLE)
+    target_link_libraries(tapesister_live_test_tests PRIVATE rt)
+  endif()
+  if(MINGW)
+    target_link_options(tapesister_live_test_tests PRIVATE "-Wl,--stack,16777216")
+  endif()
+  add_test(NAME tapesister_live_test_tests COMMAND tapesister_live_test_tests)
 endif()
 add_executable(tapesister_fm_unison_tests tests/test_fm_unison.c)
 target_link_libraries(tapesister_fm_unison_tests PRIVATE tapesister_core)

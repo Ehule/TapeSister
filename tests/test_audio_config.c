@@ -19,6 +19,7 @@ static int test_defaults(void)
     TsConfig config;
     ts_config_init(&config);
     if(!expect(config.audio_fx_workers==0,"FX worker defaults to serial"))return 0;
+    if(!expect(config.diagnostic_live_test==0,"Live diagnostic defaults off"))return 0;
     return expect(config.arp_slot_max_seconds == 240 && !config.arp_slot_min_full_pattern,
                   "ARP slot range and truncation policy defaults") &&
            expect(config.record_input_device[0] == '\0',
@@ -109,6 +110,7 @@ static int test_roundtrip(void)
     saved.record_input_channel = 3;
     saved.audio_buffer_frames = 128;
     saved.audio_fx_workers = 1;
+    saved.diagnostic_live_test = 1;
     saved.fm_output_percent = 37;
     saved.master_output_percent = 63;
     saved.midi_input_channel = 7;
@@ -171,6 +173,7 @@ static int test_roundtrip(void)
     }
 
     ok = expect(loaded.audio_fx_workers==1,"FX worker preference roundtrip") &&
+         expect(loaded.diagnostic_live_test==1,"Live diagnostic preference roundtrip") &&
          expect(strcmp(loaded.record_input_device, "Test Capture Device") == 0,
                 "named input device should roundtrip") &&
          expect(strcmp(loaded.audio_output_device, "Test Playback Device") == 0,
@@ -451,7 +454,7 @@ static int test_ranges(void)
     a.audio_input_range=(TsAudioChannelRange){3,6};a.audio_output_range=(TsAudioChannelRange){3,10};
     if(!expect(ts_audio_config_save(&a,path,error,sizeof(error)) && ts_audio_config_load(&b,path,error,sizeof(error)) &&
         ts_audio_range_equal(a.audio_input_range,b.audio_input_range) && ts_audio_range_equal(a.audio_output_range,b.audio_output_range),"range persistence"))return 0;
-    const char *bad[]={"audio_output_first=0", "audio_input_first=7\naudio_input_last=6", "audio_output_last=256", "audio_input_last=3oops"};
+    const char *bad[]={"audio_output_first=0", "audio_input_first=7\naudio_input_last=6", "audio_output_last=256", "audio_input_last=3oops", "diagnostic_live_test=2", "diagnostic_live_test=yes"};
     for(unsigned i=0;i<sizeof(bad)/sizeof(bad[0]);++i) {
         FILE *f=fopen(path,"wb");if(!f)return 0;fputs(bad[i],f);fclose(f);
         if(!expect(!ts_audio_config_load(&b,path,error,sizeof(error)) && ts_audio_range_equal(b.audio_input_range,a.audio_input_range),"invalid range leaves config intact"))return 0;

@@ -246,3 +246,11 @@ overhead percentage. An isolated Release timing loop, including both clock reads
 and the counter/window updates, measured 0.076–0.085 microseconds per callback
 over five runs of one million calls on this Linux host. This excludes display
 rendering and native backend processing and is not a Windows hardware guarantee.
+
+## Repeatable Tree of Life 04 diagnostic
+
+Set `diagnostic_live_test=1` in the active INI and restart to arm the fixed
+live controller replay when the original Tree of Life 04 project opens.
+Mosaic Play starts it; health recording and log export are automatic. The
+default is off. See [the run instructions](audits/live-test.md) for the
+required project, abort/repeat behavior and interpretation of the logs.
