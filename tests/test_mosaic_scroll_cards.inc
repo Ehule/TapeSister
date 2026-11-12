@@ -28,7 +28,7 @@ static void test_mosaic_scroll_cards(void)
             TsMosaicEvent *c=ts_mosaic_add(view.mosaic,s,3.71,151.73);assert(c);
             c->duration=6.93;c->muted=1;c->note_count=3;c->notes[1]=67;c->notes[2]=72;
             view.mosaic_ghost_count=1;view.mosaic_ghosts[0]=*b;view.mosaic_ghosts[0].x=270.37;
-            if(scene==1){view.mosaic->markers[0]=(TsMosaicMarker){.stored=1,.time=2.137};view.mosaic->markers[1]=(TsMosaicMarker){.stored=1,.time=4.371};}
+            if(scene==1){view.mosaic->markers[0]=(TsMosaicMarker){.stored=1,.time=2.137};view.mosaic->markers[1]=(TsMosaicMarker){.stored=1,.time=4.371};view.mosaic->markers[2]=(TsMosaicMarker){.stored=1,.time=0};}
             ts_sample_free(&sample);
         }
         for(int pass=0;pass<4;++pass) {

@@ -216,12 +216,13 @@ static void mosaic_detail_markers(TsUiWaveformDetail *d,const TsUiState *ui,int 
     for(int i=0;i<TS_MOSAIC_MARKERS;++i)if(ui->mosaic->markers[i].stored) {
         double time=ui->mosaic_marker_drag==i+1?ui->mosaic_marker_preview:ui->mosaic->markers[i].time;
         int64_t y=mosaic_detail_pixel(time*rate)-pan;
-        if(y<0 || y>=d->height)continue;
         if(!ruler) {
+            if(y<0 || y>=d->height)continue;
             for(int x=0;x<d->logical_width;x+=7)
                 mosaic_detail_rect(d,mosaic_detail_pixel(x*sx),y,mosaic_detail_pixel((x+3)*sx),y+line,mosaic_mix_color(ink,bg,.75f));
         } else {
             int64_t top=y-mosaic_detail_pixel(4*sy),bottom=top+mosaic_detail_pixel(10*sy);
+            if(bottom<=0 || top>=d->height)continue;
             int active=ui->mosaic_marker_selected==i+1;
             mosaic_detail_rect(d,mosaic_detail_pixel((113-d->x)*sx),top,d->width,bottom,panel);
             mosaic_detail_rect(d,mosaic_detail_pixel((127-d->x)*sx),top,d->width,bottom,active?ink:panel);
@@ -340,7 +341,16 @@ static void mosaic_detail_ruler(TsUiWaveformDetail *d,const TsUiState *ui,double
         double time=tick*interval;int64_t y=mosaic_detail_pixel(time*rate)-pan;
         if(y>=d->height)break;
         char label[32];mosaic_time_label(label,sizeof(label),time,ui->mosaic_seconds_only);
-        if(mosaic_ruler_label_visible(ui,time))
+        /* Occlusion belongs to world positions too. A marker crossing the
+           viewport edge must not reveal a few pixels of the label under it. */
+        int visible=1;
+        int64_t label_top=y+mosaic_detail_pixel(2*sy),label_bottom=label_top+mosaic_detail_pixel(7*sy);
+        for(int i=0;ui->mosaic && i<TS_MOSAIC_MARKERS;++i)if(ui->mosaic->markers[i].stored) {
+            double mt=ui->mosaic_marker_drag==i+1?ui->mosaic_marker_preview:ui->mosaic->markers[i].time;
+            int64_t top=mosaic_detail_pixel(mt*rate)-pan-mosaic_detail_pixel(4*sy),bottom=top+mosaic_detail_pixel(10*sy);
+            if(label_top<bottom && label_bottom>top){visible=0;break;}
+        }
+        if(visible)
             mosaic_detail_text(d,label_x,y+mosaic_detail_pixel(2*sy),label,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DIM, RGB(133,127,141)),sx*fmin(1.0,36.0/fmax(1,strlen(label)*6)),sy);
         mosaic_detail_rect(d,tick_x,y,d->width,y+line,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(28,30,35)));
     }

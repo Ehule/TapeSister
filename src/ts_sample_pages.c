@@ -1067,7 +1067,6 @@ static int save_project_transaction(const TsSamplePages *pages,
         sample_count += (size_t)ts_instrument_bank_count(record_bank);
     }
     if (sister_state != NULL) {
-        TsSisterProjectState validated_state;
         int state_present = 0;
         if (sister_state->page_count != pages->page_count ||
             sister_state->active_page != pages->active_page) {
@@ -1080,13 +1079,17 @@ static int save_project_transaction(const TsSamplePages *pages,
             pages_error(error, error_size, "Sister project state path is too long");
             goto failed;
         }
-        if (!ts_sister_project_state_save_file(
-                sister_state, state_path, error, error_size) ||
-            !ts_sister_project_state_load_file(
-                &validated_state, state_path, 48000u,
-                &state_present, error, error_size) ||
-            !state_present || validated_state.page_count != pages->page_count ||
-            validated_state.active_page != pages->active_page) {
+        TsSisterProjectState *validated_state=malloc(sizeof(*validated_state));
+        if(!validated_state){pages_error(error,error_size,"Cannot allocate project save validation");goto failed;}
+        int valid=ts_sister_project_state_save_file(
+                sister_state, state_path, error, error_size) &&
+            ts_sister_project_state_load_file(
+                validated_state, state_path, 48000u,
+                &state_present, error, error_size) &&
+            state_present && validated_state->page_count == pages->page_count &&
+            validated_state->active_page == pages->active_page;
+        free(validated_state);
+        if(!valid) {
             if (error != NULL && error_size > 0u && error[0] == '\0')
                 pages_error(error, error_size,
                             "Could not validate Sister project state");
