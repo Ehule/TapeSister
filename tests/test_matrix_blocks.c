@@ -30,6 +30,25 @@ static void apply(TsMatrixControls *c)
         assert(ts_matrix_set(&lanes[i].graph,c,48000));
     }
 }
+static void suspended_history(TsSunVoxControls sv)
+{
+    TsMatrixControls c;ts_matrix_default(&c);c.enabled=1;
+    assert(ts_matrix_effect_add(&c,TS_MATRIX_FX_SUNVOX)==0);c.effect[0].sunvox=sv;c.effect[0].sunvox.quantum=256;
+    TsMatrixEffects a,b;ts_matrix_effects_init(&a);ts_matrix_effects_init(&b);
+    assert(ts_matrix_effects_restore(&a,&c,48000) && ts_matrix_effects_restore(&b,&c,48000));
+    TsStereoFrame in={.17f,-.23f},zero={0},x,y;
+    for(int i=0;i<600;++i){ts_matrix_effects_process(&a,0,in,zero,1);ts_matrix_effects_process(&b,0,in,zero,1);}
+    ts_matrix_effects_suspend(&a,1);
+    while(a.activity[0]>0){ts_matrix_effects_process(&a,0,zero,zero,0);ts_matrix_effects_process(&b,0,zero,zero,0);}
+    assert(ts_matrix_effects_span_limit(&a,64)==64);TsMatrixEffectNode *identity=a.current[0];
+    for(int i=0;i<2000;++i){x=ts_matrix_effects_process(&a,0,in,zero,1);assert(x.l==0 && x.r==0);}
+    TsStereoFrame inputs[64],keys[64]={0},output[64];for(int i=0;i<64;++i)inputs[i]=in;
+    ts_matrix_effects_process_span(&a,0,inputs,keys,output,64,1);
+    for(int i=0;i<64;++i)assert(!output[i].l && !output[i].r);
+    assert(a.current[0]==identity && !a.jobs_count);ts_matrix_effects_suspend(&a,0);
+    for(int i=0;i<2000;++i){x=ts_matrix_effects_process(&a,0,in,zero,1);y=ts_matrix_effects_process(&b,0,in,zero,1);if(a.activity[0]==1)assert(!memcmp(&x,&y,sizeof(x)));}
+    ts_matrix_effects_free(&a);ts_matrix_effects_free(&b);
+}
 int main(void)
 {
     static const char patch[]="SSYN\0\0\0\0STYP\x0a\0\0\0Amplifier\0SEND\0\0\0\0";
@@ -40,6 +59,7 @@ int main(void)
     f=fopen("blocks.sunsynth","wb");assert(f);
     assert(fwrite(rv,1,sizeof(rv)-1,f)==sizeof(rv)-1);assert(!fclose(f));
     TsSunVoxControls reverb;assert(ts_sunvox_import(&reverb,"blocks.sunsynth"));remove("blocks.sunsynth");
+    suspended_history(sv);
     const int quantum[]={64,256,1024};
     for(workers=0;workers<2;++workers)for(int q=0;q<3;++q) {
         TsMatrixControls c;ts_matrix_default(&c);c.enabled=1;c.feedback=1;

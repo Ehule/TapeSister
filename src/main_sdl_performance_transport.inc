@@ -61,7 +61,7 @@ static int performance_command_apply(unsigned selected,int command,unsigned home
     if(!selected && !(command==2 && homes) && !(master && (audio->sister.clock_controls.enabled || live_group))) {
         snprintf(ui->status,sizeof(ui->status),"PERFORMANCE TRANSPORT: SELECT AT LEAST ONE PLAYER.");return 0;
     }
-    if(command<0)command=(performance_running(audio)&selected)?0:1;
+    if(command<0)command=!audio->engine_stopped && (performance_running(audio)&selected)?0:1;
     ts_session_log_event("transport_request","selected_mask=%u command=%d",selected,command);
     /* Preflight before changing any participant. Sample copies and tracker
        binding happen outside the transaction's short exclusion. */
@@ -87,6 +87,7 @@ static int performance_command_apply(unsigned selected,int command,unsigned home
     if(selected&PERF_TRACKER)ok=ts_tapehead_transport_locked(command==2 && !(homes&PERF_TRACKER)?0:command);
     else if(command==2 && (homes&PERF_TRACKER) && ts_tapehead_frame())ok=ts_tapehead_locate_locked(0,0);
     if(ok) {
+        if(command==1){audio->engine_stopped=0;ui->mosaic_engine_stopped=0;}
         if(selected&PERF_ARP) {
             if(command==1){if(!ts_keyboard_sequence_active(&audio->keyboard_sequence))ts_keyboard_sequence_play(&audio->keyboard_sequence);}
             else ts_keyboard_sequence_stop(&audio->keyboard_sequence);

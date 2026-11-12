@@ -18,9 +18,35 @@ static void gallery_browser_visible(TsUiState *u,const char *shot,const char *na
     assert(!main_waveform_detail_allowed(u));
     if(shot){char path[1200];snprintf(path,sizeof(path),"%s-%s-browser.ppm",shot,name);live_controller_screenshot_size(u,path,1280,800);}
 }
+static void test_mosaic_engine_stop(SDL_Window *window,SDL_AudioDeviceID device)
+{
+    AudioState *a=routing_audio(0);TsUiState *u=mosaic_record_ui_fixture(a);
+    ExternalInputState *input=mosaic_record_input_fixture(a);MosaicController *c=calloc(1,sizeof(*c));assert(c);
+    float output[512];audio_callback(a,(Uint8 *)output,sizeof(output));
+    double position=a->mosaic->time;assert(position>0);
+    gallery_key(window,device,a,input,u,c,SDLK_SPACE,KMOD_NONE);
+    assert(!a->mosaic->playing && !a->engine_stopped);
+    uint64_t frames=a->span_frames+a->chronological_frames;
+    audio_callback(a,(Uint8 *)output,sizeof(output));assert(a->mosaic->time==position && a->span_frames+a->chronological_frames>frames);
+    gallery_key(window,device,a,input,u,c,SDLK_ESCAPE,KMOD_NONE);
+    assert(a->engine_stopped && a->mosaic->time==position);
+    frames=a->span_frames+a->chronological_frames;
+    for(int i=0;i<3;++i)audio_callback(a,(Uint8 *)output,sizeof(output));
+    for(int i=0;i<512;++i)assert(output[i]==0);
+    assert(a->span_frames+a->chronological_frames==frames && a->mosaic->time==position);
+    gallery_key(window,device,a,input,u,c,SDLK_ESCAPE,KMOD_NONE);
+    assert(a->engine_stopped && !a->mosaic->time);
+    gallery_key(window,device,a,input,u,c,SDLK_SPACE,KMOD_NONE);
+    audio_callback(a,(Uint8 *)output,sizeof(output));assert(!a->engine_stopped && a->mosaic->time>0);
+    position=a->mosaic->time;gallery_key(window,device,a,input,u,c,SDLK_ESCAPE,KMOD_NONE);
+    c->escape_ms=SDL_GetTicks()-501;
+    gallery_key(window,device,a,input,u,c,SDLK_ESCAPE,KMOD_NONE);assert(a->mosaic->time==position);
+    ts_external_recorder_free(&input->recorder);free(input);free(u);mosaic_controller_free(c);free(c);routing_free(a);
+}
 static void test_mosaic_gallery_controller(SDL_Window *window,SDL_AudioDeviceID device)
 {
     SDL_SetWindowSize(window,640,400);
+    test_mosaic_engine_stop(window,device);
     AudioState *a=routing_audio(0);TsUiState *u=mosaic_record_ui_fixture(a);
     ExternalInputState *s=mosaic_record_input_fixture(a);MosaicController *c=calloc(1,sizeof(*c));assert(c);
     TsSamplePages pages;char error[256];assert(ts_sample_pages_init(&pages,error,sizeof(error)));
@@ -69,13 +95,13 @@ static void test_mosaic_gallery_controller(SDL_Window *window,SDL_AudioDeviceID 
     audio_callback(a,(Uint8 *)output,sizeof(output));++callbacks;
     assert(first->time>.1 && second->time>0 && second->live[0].elapsed>0);
     /* Mosaic and F11 controls reach both audible canvases during a fade. */
-    mosaic_transport(device,u,0);double old_time=first->time,new_time=second->time;
+    mosaic_transport(device,a,u,0);double old_time=first->time,new_time=second->time;
     audio_callback(a,(Uint8 *)output,sizeof(output));++callbacks;
     assert(first->time==old_time && second->time==new_time);
     assert(performance_command_for(PERF_LOOPS,0,window,device,a,u,&pages,&instrument,NULL,48000));
     assert(first->live_paused && second->live_paused);
     assert(performance_command_for(PERF_LOOPS,1,window,device,a,u,&pages,&instrument,NULL,48000));
-    mosaic_transport(device,u,0);assert(first->playing && second->playing);
+    mosaic_transport(device,a,u,0);assert(first->playing && second->playing);
     for(int i=0;i<24;++i){audio_callback(a,(Uint8 *)output,sizeof(output));++callbacks;}
     assert(g->outgoing<0 && first->live_paused && !first->playing);
     double parked=first->time,loop=first->live[bg-first->events].elapsed;

@@ -105,7 +105,8 @@ static int canvas_effect_destination(int d)
 static unsigned canvas_route_effects(const TsSourceRoute *r)
 {
     unsigned used=0;if(!r->matrix_enabled)return 0;
-    for(int d=0;d<TS_MATRIX_DESTINATIONS;++d){int slot=canvas_effect_destination(d);if(slot>=0 && r->matrix_gain[d])used|=1u<<slot;}
+    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)
+        if(r->matrix_gain[TS_MATRIX_EFFECT_BASE+i] || r->matrix_gain[TS_MATRIX_EFFECT_SC_BASE+i])used|=1u<<i;
     return used;
 }
 static unsigned canvas_effect_closure(unsigned used,const TsMatrixControls *matrix)
@@ -115,6 +116,53 @@ static unsigned canvas_effect_closure(unsigned used,const TsMatrixControls *matr
         for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)if(used&(1u<<i))used|=canvas_route_effects(&matrix->row[TS_MATRIX_EFFECT_BASE+i]);
     }
     return used;
+}
+unsigned ts_sample_pages_external_effect_roots(const TsSamplePages *pages,const TsInstrument *bank)
+{
+    unsigned roots=0;if(!pages)return 0;
+    for(size_t p=0;p<pages->page_count;++p) {
+        const TsInstrument *page=ts_sample_pages_page(pages,bank,p);if(!page)continue;
+        for(int i=0;i<TS_BANK_SLOT_COUNT;++i)if(page->bank[i].occupied)roots|=canvas_route_effects(&page->bank[i].output_route);
+    }
+    for(int i=0;i<TS_TRACKER_LANES;++i)roots|=canvas_route_effects(&pages->tracker.lanes[i].output_route);
+    return roots;
+}
+unsigned ts_sample_pages_gallery_suspended_effects(const TsSamplePages *pages,const TsInstrument *bank,
+    const TsMatrixControls *matrix,TsGalleryEffectActivity *cache,unsigned external_roots)
+{
+    return ts_gallery_suspended_effects(pages?pages->gallery:NULL,matrix,cache,
+        external_roots|ts_sample_pages_external_effect_roots(pages,bank));
+}
+unsigned ts_gallery_suspended_effects(const TsMosaicGallery *g,const TsMatrixControls *matrix,
+    TsGalleryEffectActivity *cache,unsigned external_roots)
+{
+    if(!g || !matrix || !matrix->enabled || !cache)return 0;
+    unsigned owned=0,awake=external_roots,edges[TS_MATRIX_EFFECT_CAPACITY];
+    for(int c=0;c<g->count;++c) {
+        const TsMosaic *m=g->canvas[c].scene;if(!m)continue;
+        if(cache->canvas[c].scene!=m || cache->canvas[c].epoch!=m->epoch || cache->canvas[c].revision!=m->revision) {
+            unsigned roots=0;
+            for(int e=0;e<TS_MOSAIC_EVENTS;++e)if(m->events[e].id)roots|=canvas_route_effects(&m->events[e].output_route);
+            cache->canvas[c].scene=m;cache->canvas[c].epoch=m->epoch;
+            cache->canvas[c].revision=m->revision;cache->canvas[c].roots=roots;
+        }
+        unsigned roots=cache->canvas[c].roots;owned|=roots;
+        if(c==g->active || c==g->outgoing)awake|=roots;
+    }
+    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)edges[i]=canvas_route_effects(&matrix->row[TS_MATRIX_EFFECT_BASE+i]);
+    for(unsigned before=~owned;before!=owned;) {
+        before=owned;for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)if(owned&(1u<<i))owned|=edges[i];
+    }
+    /* Configured external owners protect their tails even while silent.
+       Unowned processors and fixed buses are project-wide, never parked. */
+    for(int row=0;row<TS_MATRIX_ROWS;++row) {
+        int slot=ts_matrix_effect_index(row);
+        if(slot<0 || !(owned&(1u<<slot)))awake|=canvas_route_effects(&matrix->row[row]);
+    }
+    for(unsigned before=~awake;before!=awake;) {
+        before=awake;for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)if(awake&(1u<<i))awake|=edges[i];
+    }
+    return owned&~awake;
 }
 unsigned ts_sample_pages_canvas_exclusive_effects(const TsSamplePages *pages,const TsInstrument *bank,const TsMosaic *target,const TsMatrixControls *matrix)
 {

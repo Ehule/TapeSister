@@ -51,6 +51,21 @@ Inherited track-to-tile routing remains inspectable in the Matrix.
 - Undo/Redo and Ctrl+Z/Ctrl+Y are shared with the Matrix. Audition keys pass through
   to the instrument. MOSAIC / CLOSE returns to Mosaic without stopping audio.
 
+## Text labels
+
+Press **T** at the pointer, or choose **TEXT LABEL** from the add menu (double-click
+empty space, right-click, or **+ EFFECT**). Type a label and press Enter to save.
+**Shift+Enter** inserts a new line; Escape cancels. The editor supports arrow keys,
+Home/End, Backspace/Delete, Ctrl+A and Ctrl+V. Labels accept up to 255 printable
+ASCII characters, including line breaks, matching the canvas font.
+
+Click a label to select it. Drag or **G** moves it; **S** resizes it (25–400%).
+Click/Enter places a G/S edit; Escape/right-click cancels. **Double-click or F2**
+edits the text. **X or Delete** removes the selected label. Labels have no audio
+ports and deleting them cannot remove effects or cables. Up to 64 labels, their
+positions and sizes save with the project; edits share the Matrix undo history.
+They remain visible across movement filters so they can describe shared routing.
+
 ## Pane widths
 
 Drag the grip between the graph and inspector to resize the panes. Release to

@@ -375,7 +375,7 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
         ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_BACKGROUND,RGB(12,12,12)));
     text(fb,TS_MOSAIC_LIVE_BUTTON_X+9,TS_MOSAIC_LIVE_BUTTON_Y+3,"LOOPS",live_ink,1);
     mosaic_button(fb,118,39,42,ui->mosaic_playing?"PAUSE":"PLAY",ui->mosaic_playing,1);
-    mosaic_button(fb,164,39,38,"STOP",0,1);
+    mosaic_button(fb,164,39,38,"STOP",ui->mosaic_engine_stopped,1);
     int rec=ui->file_record_state==TS_PERFORMANCE_FILE_RECORDING;
     mosaic_button(fb,206,39,64,rec?"STOP REC":"REC FILE",rec,1);
     mosaic_button(fb,274,39,44,"REPEAT",m && (m->repeat || m->marker_loop),1);

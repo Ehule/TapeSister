@@ -63,13 +63,13 @@ static void fx_validate_wires(TsSamplePages *pages,TsInstrument *bank)
     if(matrix_window.drag!=FX_DRAG_WIRE && matrix_window.drag!=FX_DRAG_SHIFT_NODE)fx_primary_wire();
 }
 static int fx_modal(void)
-{return matrix_window.drag==FX_DRAG_GRAB || matrix_window.drag==FX_DRAG_SCALE;}
+{return matrix_window.drag==FX_DRAG_GRAB || matrix_window.drag==FX_DRAG_SCALE || matrix_window.drag==FX_DRAG_LABEL_GRAB || matrix_window.drag==FX_DRAG_LABEL_SCALE;}
 static void fx_cancel_gesture(void)
 {
     MatrixWindow *w=&matrix_window;
     if(w->drag==FX_DRAG_DIVIDER && w->layout)w->layout->canvas_split=fx_canvas.divider_start;
     fx_divider_cursor(0);
-    if((fx_modal() || w->drag==FX_DRAG_NODE || w->drag==FX_DRAG_PAN) && w->pending && w->layout)
+    if((fx_modal() || w->drag==FX_DRAG_NODE || w->drag==FX_DRAG_PAN || w->drag==FX_DRAG_LABEL) && w->pending && w->layout)
         *w->layout=w->pending->layout;
     if(w->drag==FX_DRAG_BOX || w->drag==FX_DRAG_WIRE_BOX) {
         w->selection_count=fx_canvas.before_count;

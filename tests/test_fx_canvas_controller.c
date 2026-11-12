@@ -104,6 +104,40 @@ static void view_codec(void)
     assert(ts_matrix_layout_read(&read,"FxCanvas.View","0,0,0")==-1);
     assert(ts_matrix_layout_read(&read,"FxCanvas.Node9999","4,1,0,0")==-1);
 }
+static void text_labels(void)
+{
+    MatrixWindow *w=&matrix_window;TsMatrixLayout *l=w->layout;
+    w->effect_open=w->compressor_open=0;fx_canvas.meta=0;fx_clear_selection();fx_clear_wires();
+    l->canvas_zoom=1;l->canvas_x=l->canvas_y=0;l->canvas_snap=0;
+    pointer(SDL_MOUSEMOTION,350,300,0,0);int count=l->label_count;
+    key(SDLK_t,0);assert(fx_canvas.label_editing && l->label_count==count);
+    SDL_Event text;SDL_zero(text);text.type=SDL_TEXTINPUT;text.text.windowID=w->id;
+    snprintf(text.text.text,sizeof(text.text.text),"Binah = spring");assert(event(&text));
+    key(SDLK_RETURN,KMOD_SHIFT);snprintf(text.text.text,sizeof(text.text.text),"Shared return");assert(event(&text));
+    key(SDLK_RETURN,0);assert(!fx_canvas.label_editing && l->label_count==count+1);
+    assert(!strcmp(l->labels[count].text,"Binah = spring\nShared return"));view_codec();
+    TsFxCanvasLabel before=l->labels[count];
+    key(SDLK_z,KMOD_CTRL);assert(l->label_count==count);key(SDLK_y,KMOD_CTRL);assert(l->label_count==count+1);
+    fx_canvas.label_selected=count;key(SDLK_F2,0);assert(fx_canvas.label_editing);
+    snprintf(text.text.text,sizeof(text.text.text),"Cancelled label");assert(event(&text));key(SDLK_ESCAPE,0);
+    assert(!memcmp(&before,&l->labels[count],sizeof(before)));
+    fx_canvas.label_selected=count;key(SDLK_F2,0);key(SDLK_a,KMOD_CTRL);
+    snprintf(text.text.text,sizeof(text.text.text),"KETER TAIL");assert(event(&text));key(SDLK_RETURN,0);
+    assert(!strcmp(l->labels[count].text,"KETER TAIL"));key(SDLK_z,KMOD_CTRL);assert(!memcmp(&before,&l->labels[count],sizeof(before)));
+    fx_canvas.label_selected=count;key(SDLK_g,0);pointer(SDL_MOUSEMOTION,390,330,0,0);key(SDLK_RETURN,0);
+    assert(l->labels[count].x!=before.x);key(SDLK_z,KMOD_CTRL);assert(l->labels[count].x==before.x);
+    fx_canvas.label_selected=count;key(SDLK_s,0);pointer(SDL_MOUSEMOTION,430,330,0,0);key(SDLK_ESCAPE,0);assert(l->labels[count].scale==1);
+    fx_canvas.label_selected=count;key(SDLK_DELETE,0);assert(l->label_count==count);key(SDLK_z,KMOD_CTRL);assert(l->label_count==count+1);
+    SDL_Surface *frame=rendered_frame();assert(frame);const char *dir=getenv("TS_FX_PREVIEW");
+    if(dir){char path[1024];snprintf(path,sizeof(path),"%s/text-labels.bmp",dir);assert(!SDL_SaveBMP(frame,path));}SDL_FreeSurface(frame);
+    view_codec();
+    static TsMatrixLayout invalid;ts_matrix_layout_default(&invalid);
+    assert(ts_matrix_layout_read(&invalid,"FxCanvas.Label0","nan,0,1,4142")==-1);
+    assert(ts_matrix_layout_read(&invalid,"FxCanvas.Label0","0,0,1,00")==-1);
+    assert(ts_matrix_layout_read(&invalid,"FxCanvas.Label0","0,0,1,414")==-1);
+    assert(ts_matrix_layout_read(&invalid,"FxCanvas.Label1","0,0,1,4142")==-1);
+    fx_canvas.label_selected=count;key(SDLK_DELETE,0);assert(l->label_count==count);
+}
 #include "test_fx_canvas_cache.inc"
 #include "test_fx_canvas_divider.inc"
 #include "test_fx_canvas_edit_controls.inc"
@@ -492,7 +526,7 @@ int main(int argc,char **argv)
     e.button.x=(TS_MOSAIC_FX_X+10)*2;e.button.y=(TS_MOSAIC_FX_Y+5)*2;assert(event(&e));assert(matrix_window.visible && matrix_window.canvas);
     SDL_SetWindowSize(matrix_window.window,1001,701);fx_paint(&audio,&pages,&bank);
     inspector_controls(getenv("TS_FX_PREVIEW"));edit_controls();canvas_gestures(c.effect[dist].id);disconnect_main_prism();routing_preferences();sunvox_browser(getenv("TS_FX_PREVIEW"));
-    gallery_view();
+    gallery_view();text_labels();
     matrix_close();meta_fx_close();ts_sister_runtime_free(&audio.sister);ts_sample_pages_free(&pages);ts_instrument_free(&bank);SDL_DestroyWindow(main_window);SDL_Quit();
     puts("FX Canvas controller passed, including single-cable disconnect, alternative path, silent clear, undo and project recall.");return 0;
 }
