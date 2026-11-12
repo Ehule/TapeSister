@@ -11,6 +11,7 @@ static TsUiState ui;
 static TsInstrument bank;
 static TsSamplePages pages;
 static SDL_Window *main_window;
+#include "test_matrix_snapshot.inc"
 static int event(SDL_Event *e)
 {return matrix_event(e,main_window,0,&audio,&ui,&pages,&bank);}
 static void pointer(Uint32 type,int x,int y,int button,int clicks)
@@ -432,6 +433,7 @@ int main(int argc,char **argv)
     assert(fx_canvas.dest[TS_MATRIX_EFFECT_SC_BASE+rev]==-1);
     assert(fx_canvas.dest[TS_MATRIX_EFFECT_SC_BASE+comp]>=0);
     canvas_cache();
+    snapshot_delivery();
     matrix_window.effect_open=c.effect[meta].id;
     for(int i=0;i<fx_canvas.count;++i)if(fx_canvas.node[i].row.kind==4 && fx_canvas.node[i].row.tile==c.effect[meta].id)fx_select(&fx_canvas.node[i],0);
     if(argc>1)screenshot(argv[1]);

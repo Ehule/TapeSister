@@ -851,7 +851,9 @@ static int launch_program(const char *path, char *error, size_t error_size)
     return 1;
 }
 
+#include "main_sdl_matrix_snapshot_types.inc"
 typedef struct {
+    MatrixActivityMailbox matrix_activity;
     const TsSample *sample;
     int canvas_eq_preview;TsMasterEq canvas_eq;
     double position;
@@ -968,6 +970,7 @@ typedef struct {
     uint32_t topology_crossfade_remaining;
     uint32_t topology_crossfade_total;
 } AudioState;
+static void matrix_audio_publish(AudioState *audio);
 
 static void runtime_clear_group(AudioState *audio);
 static int runtime_capture_source_matches(const AudioState *audio,
@@ -1640,6 +1643,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
     ts_mandala_audio(out, (unsigned)frames, device_channels);
     ts_tracker_playback_end_block(&audio->tracker);
     ts_sister_runtime_end_audio_block(&audio->sister);
+    matrix_audio_publish(audio);
     {
         uint16_t mask = ts_performance_tile_mask(&audio->tile_launchers);
         audio->tile_launcher_active = mask != 0u;
