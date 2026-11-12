@@ -1273,6 +1273,9 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
     ts_insert_begin_output_block(&audio->sister.insert, (unsigned)frames);
     ts_performance_inputs_begin(audio->performance_inputs,audio->sister.insert.duplex,
         audio->sister.insert.duplex_channels,(unsigned)audio->output_rate);
+    /* Transport starts can also arrive through MIDI, automation and editors.
+       An explicit engine stop always clears playing under the same exclusion. */
+    if(audio->engine_stopped && audio->mosaic && audio->mosaic->playing)audio->engine_stopped=0;
     if(audio->engine_stopped) {
         if(audio->sister.insert.duplex)audio->sister.insert.duplex_position=(unsigned)frames;
         else {

@@ -41,6 +41,8 @@ static void test_mosaic_engine_stop(SDL_Window *window,SDL_AudioDeviceID device)
     position=a->mosaic->time;gallery_key(window,device,a,input,u,c,SDLK_ESCAPE,KMOD_NONE);
     c->escape_ms=SDL_GetTicks()-501;
     gallery_key(window,device,a,input,u,c,SDLK_ESCAPE,KMOD_NONE);assert(a->mosaic->time==position);
+    a->mosaic->playing=1; /* MIDI/automation transport starts resume the engine too. */
+    audio_callback(a,(Uint8 *)output,sizeof(output));assert(!a->engine_stopped && a->mosaic->time>position);
     ts_external_recorder_free(&input->recorder);free(input);free(u);mosaic_controller_free(c);free(c);routing_free(a);
 }
 static void test_mosaic_gallery_controller(SDL_Window *window,SDL_AudioDeviceID device)
