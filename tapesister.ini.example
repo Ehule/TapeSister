@@ -243,7 +243,9 @@ eq_morph_max_seconds=240
 session_log=1
 ; Tree-of-Life-Live-FX-04 diagnostic: 1 = original 3:36 controller/transition test;
 ; 2 = uninterrupted Keter from start through its ending plus 8 seconds of tails.
-; Both arm on load and start on Mosaic Play; health logs record/export automatically.
+; 3 = same full Keter playback, with automatic 30-second per-effect profiles.
+; Profiling adds measurement overhead; use mode 2 for deadline comparisons.
+; All modes arm on load and start on Mosaic Play; health logs record/export automatically.
 ; Restart with 0 for normal editing. Mode 2 preserves the full effect-history buildup.
 diagnostic_live_test=0
 

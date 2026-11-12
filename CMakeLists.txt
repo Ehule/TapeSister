@@ -506,6 +506,11 @@ add_executable(tapesister_sample_pages_tests tests/test_sample_pages.c)
 target_link_libraries(tapesister_sample_pages_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_sample_pages_tests COMMAND tapesister_sample_pages_tests)
 
+add_executable(tapesister_mosaic_envelopes_tests tests/test_mosaic_envelopes.c)
+target_link_libraries(tapesister_mosaic_envelopes_tests PRIVATE tapesister_core)
+add_test(NAME mosaic_envelopes_exact COMMAND tapesister_mosaic_envelopes_tests)
+set_tests_properties(mosaic_envelopes_exact PROPERTIES TIMEOUT 120)
+
 add_executable(tapesister_live_routes_tests tests/test_live_playback_routes.c)
 target_link_libraries(tapesister_live_routes_tests PRIVATE tapesister_core)
 add_test(NAME live_playback_routes_exact COMMAND tapesister_live_routes_tests)

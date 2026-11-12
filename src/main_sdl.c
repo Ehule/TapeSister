@@ -14626,8 +14626,10 @@ int main(int argc, char **argv)
     /* The integration executable enters this same application loop. Its only
        driver conveniences are pressing Play and exiting after the replay. */
 #ifdef TS_LIVE_TEST_HARNESS
-    if(live_test.state!=LT_ARMED){fprintf(stderr,"Live test did not arm: %s\n",ui.status);running=0;diagnostic_failed=1;}
-    else {SDL_Event play=live_test_key(window,SDLK_SPACE,KMOD_NONE);SDL_PushEvent(&play);}
+    int diagnostic_live_play_pending=1;
+    if(live_test.state!=LT_ARMED && live_test.state!=LT_PREPARING) {
+        fprintf(stderr,"Live test did not arm: %s\n",ui.status);running=0;diagnostic_failed=1;
+    }
 #endif
     while (running) {
         ts_profile_lane_begin(0);
@@ -18896,6 +18898,11 @@ int main(int argc, char **argv)
         }
         live_test_poll(window,device,&audio,&ui,&sample_pages,&instrument,&mosaic,&portal,&sister_window,&transform,SDL_GetPerformanceCounter());
 #ifdef TS_LIVE_TEST_HARNESS
+        if(diagnostic_live_play_pending && live_test.state==LT_ARMED) {
+            SDL_Event play=live_test_key(window,SDLK_SPACE,KMOD_NONE);
+            if(SDL_PushEvent(&play)!=1){running=0;diagnostic_failed=1;}
+            diagnostic_live_play_pending=0;
+        }
         if(live_test.state==LT_DONE || live_test.state==LT_ABORTED){diagnostic_failed=live_test.state!=LT_DONE;running=0;}
 #endif
         palette_window_update(window,&ui,&sister_window);

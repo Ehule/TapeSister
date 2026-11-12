@@ -152,7 +152,7 @@ typedef struct {
     int audio_backend_invalid;
     int audio_buffer_frames;
     int audio_fx_workers; /* Startup preference: 0 serial (default), 1 optional worker. */
-    int diagnostic_live_test; /* 0 off; 1 Tree04 controller replay; 2 uninterrupted full Keter. */
+    int diagnostic_live_test; /* 0 off; 1 Tree04 controller replay; 2 full Keter; 3 full Keter with interval profiles. */
     TsAudioChannelRange audio_input_range, audio_output_range;
     int record_input_channel;
     int midi_input_channel;

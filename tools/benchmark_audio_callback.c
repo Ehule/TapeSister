@@ -130,6 +130,10 @@ int main(int argc,char **argv)
     double position=getenv("TS_BENCH_POSITION")?strtod(getenv("TS_BENCH_POSITION"),NULL):0;
     REQUIRE(isfinite(position) && position>=0);ts_mosaic_seek(audio.mosaic,position);audio.mosaic->playing=1;
     if(getenv("TS_BENCH_PROFILE")){ts_profile_init(SDL_GetPerformanceCounter,SDL_GetPerformanceFrequency());ts_profile_enable(1);}
+    double interval=getenv("TS_BENCH_INTERVAL")?strtod(getenv("TS_BENCH_INTERVAL"),NULL):0;
+    REQUIRE(isfinite(interval) && interval>=0 && interval<=86400 && (!interval || interval>=1));
+    uint64_t interval_frames=(uint64_t)llround(interval*rate),interval_at=0,interval_calls=0;
+    double interval_cpu=0,interval_wall=0;
     uint64_t total=(uint64_t)llround(seconds*rate),skip=(uint64_t)llround(warmup*rate);
     size_t capacity=(size_t)((total+block-1)/block)+64,count=0;
     double *wall=calloc(capacity,sizeof(double));float *out=calloc((size_t)block*channels,sizeof(float));
@@ -173,6 +177,19 @@ int main(int argc,char **argv)
             for(unsigned i=0;i<n*2;++i){energy+=(double)stereo[i]*stereo[i];peak=fmax(peak,fabs(stereo[i]));}
         }
         at+=n;
+        if(interval_frames) {
+            interval_cpu+=cost;interval_wall+=elapsed;++interval_calls;
+            if(at-interval_at>=interval_frames || at==total) {
+                fprintf(stderr,"Audio interval %.6f..%.6f s: %llu callbacks; CPU %.6f ms/block; wall %.6f ms/block\n",
+                    interval_at/(double)rate,at/(double)rate,(unsigned long long)interval_calls,
+                    1000*interval_cpu/interval_calls,1000*interval_wall/interval_calls);
+                if(getenv("TS_BENCH_PROFILE")) {
+                    char report[16384];ts_profile_report(report,sizeof(report));fprintf(stderr,"%s\n",report);
+                    ts_profile_reset();
+                }
+                interval_at=at;interval_calls=0;interval_cpu=interval_wall=0;
+            }
+        }
     }
     REQUIRE(count && frames);qsort(wall,count,sizeof(double),sort_double);
     printf("{\"rate\":%u,\"block\":%u,\"channels\":%u,\"sunvox_block_override\":%u,\"audio_seconds\":%.6f,\"warmup_seconds\":%.3f,"

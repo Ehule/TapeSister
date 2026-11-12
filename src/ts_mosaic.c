@@ -338,10 +338,15 @@ static float event_fade(const TsMosaicEvent *e,const TsMosaicVoice *v,double ela
 {
     double in=v->fade_in,out=v->fade_out;
     if(in==0 && out==0)return 1;
+    /* Ratios outside their fade edge clamp to one. Evaluate only active
+       edges; gain starts at one and can only decrease, so no final upper
+       clamp is needed. Preserve the original divisions/minimum at overlap. */
+    double remaining=e->duration-elapsed;
+    if(elapsed>=in && (out==0 || remaining>=out))return 1;
     double gain=1;
-    if(in>0)gain=fmin(gain,elapsed/in);
-    if(out>0)gain=fmin(gain,(e->duration-elapsed)/out);
-    return (float)fmax(0,fmin(1,gain));
+    if(in>0 && elapsed<in)gain=elapsed/in;
+    if(out>0 && remaining<out)gain=fmin(gain,remaining/out);
+    return (float)fmax(0,gain);
 }
 /* Derive loop phase from distance travelled. Reverse uses a full sample
    cycle (the legacy helper drops a frame at each reverse wrap). This also
@@ -540,7 +545,9 @@ static TsStereoFrame mosaic_event_read(void *pattern_engine,const TsMosaicEvent 
         if(!e->looping) {
             if(v->position[n]>=e->last)continue;
             f=mosaic_sample_read(e,v,n);
-            float release=(float)fmin(1,(e->last-v->position[n])/(v->step[n]*speed*rate*0.002));
+            double left=e->last-v->position[n],release_span=v->step[n]*speed*rate*0.002;
+            float release=release_span>0 && left>=release_span?1:
+                (float)fmin(1,left/release_span);
             f.l*=release;f.r*=release;
         } else f=mosaic_sample_read(e,v,n);
         if(e->live) {
