@@ -390,6 +390,8 @@ typedef struct {
     uint32_t *pixels;
     uint32_t *coarse;
     uint32_t *raster, *background, *presented;
+    void *scene_state; /* UI-owned native-scene raster key, freed with the surface. */
+    int scene_raster;
     int *logical_x;
     TsWaveformColumn *columns;
     int width, height, valid;

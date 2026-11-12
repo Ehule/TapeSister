@@ -8,7 +8,7 @@ void ts_ui_waveform_detail_free(TsUiWaveformDetail *d)
     if (!d) return;
     if (active_waveform_detail == d) active_waveform_detail = NULL;
     free(d->pixels); free(d->coarse); free(d->columns); free(d->logical_x);
-    free(d->raster); free(d->background); free(d->presented);
+    free(d->raster); free(d->background); free(d->presented); free(d->scene_state);
     memset(d, 0, sizeof(*d));
 }
 
@@ -49,14 +49,14 @@ void ts_ui_waveform_details_begin(TsUiWaveformDetail details[2], int width, int 
 {
     active_waveform_detail=details; active_detail_count=2;
     detail_output_width=width; detail_output_height=height;
-    for(int i=0;i<2;++i)details[i].valid=details[i].sample_raster=0;
+    for(int i=0;i<2;++i)details[i].valid=details[i].sample_raster=details[i].scene_raster=0;
 }
 
 void ts_ui_waveform_detail_begin(TsUiWaveformDetail *d)
 {
     active_waveform_detail = d; active_detail_count=1;
     detail_output_width=detail_output_height=0;
-    if (d) d->valid = d->sample_raster = 0;
+    if (d) d->valid = d->sample_raster = d->scene_raster = 0;
 }
 
 static void detail_plot(TsUiWaveformDetail *d, int x, int y, uint32_t color, double alpha)
@@ -242,13 +242,13 @@ static void detail_capture_slot(const TsFramebuffer *fb, int slot)
 
 /* An opaque performance panel must cover even native scene pixels whose
    logical color happens to match its fill. Mark the whole rectangle as later
-   ink instead of inferring occlusion from color equality. Mosaic scene
-   surfaces are freshly rasterized each frame, so this needs no cached state. */
+   ink instead of inferring occlusion from color equality. Cached scene surfaces use the same overlay restoration as waveforms;
+   their logical background is captured again before each overlay. */
 static void detail_opaque_panel(const TsFramebuffer *fb,int x,int y,int w,int h)
 {
     for(int slot=0;active_waveform_detail && slot<active_detail_count;++slot) {
         TsUiWaveformDetail *d=&active_waveform_detail[slot];
-        if(!d->valid || d->sample_raster)continue;
+        if(!d->valid || (d->sample_raster && !d->scene_raster))continue;
         int left=x>d->x?x:d->x,top=y>d->y?y:d->y;
         int right=x+w<d->x+d->logical_width?x+w:d->x+d->logical_width;
         int bottom=y+h<d->y+d->logical_height?y+h:d->y+d->logical_height;
@@ -270,11 +270,14 @@ int ts_ui_waveform_detail_finish(TsUiWaveformDetail *d, const TsFramebuffer *fb)
         for(int ly=0;ly<d->logical_height;++ly) {
             const uint32_t *row=fb->pixels+(d->y+ly)*TS_UI_WIDTH+d->x;
             uint32_t *previous=d->presented+ly*d->logical_width;
-            if(!d->raster_changed && !memcmp(row,previous,d->logical_width*sizeof(uint32_t)))continue;
+            const uint32_t *coarse=d->coarse+ly*d->logical_width;
+            uint32_t *old_coarse=d->background+ly*d->logical_width;
+            if(!d->raster_changed && !memcmp(row,previous,d->logical_width*sizeof(uint32_t)) &&
+               (!d->scene_raster || !memcmp(coarse,old_coarse,d->logical_width*sizeof(uint32_t))))continue;
             int first=(int)((2LL*ly*d->height+d->logical_height-1)/(2LL*d->logical_height));
             int last=(int)((2LL*(ly+1)*d->height+d->logical_height-1)/(2LL*d->logical_height));
             for(int lx=0;lx<d->logical_width;++lx) {
-                if(!d->raster_changed && row[lx]==previous[lx])continue;
+                if(!d->raster_changed && row[lx]==previous[lx] && (!d->scene_raster || coarse[lx]==old_coarse[lx]))continue;
                 int xfirst=(int)((2LL*lx*d->width+d->logical_width-1)/(2LL*d->logical_width));
                 int xlast=(int)((2LL*(lx+1)*d->width+d->logical_width-1)/(2LL*d->logical_width));
                 int overlay=row[lx]!=d->coarse[ly*d->logical_width+lx];
@@ -291,6 +294,7 @@ int ts_ui_waveform_detail_finish(TsUiWaveformDetail *d, const TsFramebuffer *fb)
                 }
             }
             memcpy(previous,row,d->logical_width*sizeof(uint32_t));
+            if(d->scene_raster)memcpy(old_coarse,coarse,d->logical_width*sizeof(uint32_t));
         }
         if(!d->raster_changed) {
             d->dirty_x=left;d->dirty_y=top;

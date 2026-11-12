@@ -92,10 +92,13 @@ static void dispose(Fixture *f)
     ts_mosaic_free(f->a->mosaic);project_audio_free(f->a);ts_instrument_free(f->bank);
     for(int i=0;i<3;++i)ts_sample_free(&f->sample[i]);free(f->sample);free(f->a);free(f->bank);
 }
+#include "test_callback_spans.inc"
+
 int main(int argc,char **argv)
 {
     SDL_SetMainReady();SDL_setenv("SDL_VIDEODRIVER","dummy",1);SDL_setenv("SDL_AUDIODRIVER","dummy",1);
     assert(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER));
+    callback_span_parity();
     const Case cases[]={
         {"quiet_legacy",LEGACY,.2f,.25f,0,0,0,0},{"quiet_matrix",MATRIX,.2f,.25f,0,0,0,0},
         {"hot_legacy",LEGACY,.5f,.25f,0,0,0,0},{"hot_matrix",MATRIX,.5f,.25f,0,0,0,0},

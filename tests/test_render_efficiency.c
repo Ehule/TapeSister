@@ -98,6 +98,9 @@ static void test_native_raster_cache(TsUiState *ui, TsInstrument *instrument)
     ts_ui_waveform_detail_free(&warm);
 }
 
+
+#include "test_mosaic_raster_cache.inc"
+
 int main(void)
 {
     TsInstrument instrument;
@@ -119,6 +122,7 @@ int main(void)
     instrument.view_first = 0u;
     instrument.view_last = instrument.current.frames;
     test_native_raster_cache(&ui,&instrument);
+    test_mosaic_raster_cache(&ui,&instrument);
 
     ts_ui_waveform_cache_reset_counters();
     ts_ui_render(framebuffer, &ui, &instrument);

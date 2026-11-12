@@ -333,6 +333,8 @@ TsSisterSingleFx *ts_sister_single_fx_new(TsSisterFxType type,unsigned rate,uint
 void ts_sister_single_fx_free(TsSisterSingleFx *fx);
 void ts_sister_single_fx_set(TsSisterSingleFx *fx,const TsSisterFxSlotControls *controls);
 TsStereoFrame ts_sister_single_fx_process(TsSisterSingleFx *fx,TsStereoFrame input,float gate);
+void ts_sister_single_fx_process_span(TsSisterSingleFx *fx,const TsStereoFrame *input,
+    const float *gate,TsStereoFrame *output,unsigned frames);
 size_t ts_sister_single_fx_memory(const TsSisterSingleFx *fx);
 
 typedef struct {

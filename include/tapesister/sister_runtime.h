@@ -426,6 +426,12 @@ TsStereoFrame ts_sister_runtime_file_capture_frame(
     TsStereoFrame final_output);
 void ts_sister_runtime_begin_audio_block(TsSisterRuntime *runtime);
 void ts_sister_runtime_end_audio_block(TsSisterRuntime *runtime);
+/* Matrix spans use caller-owned scratch. A return of one selects the frame
+   renderer for coupled histories, route edits and lifecycle crossfades. */
+unsigned ts_sister_runtime_matrix_span_limit(const TsSisterRuntime *runtime,unsigned frames);
+void ts_sister_runtime_matrix_span(TsSisterRuntime *runtime,
+    const TsSisterSourceFrames *sources,TsSisterRuntimeFrame *output,
+    float *limiter_peaks,TsMatrixSpan *scratch,unsigned frames);
 void ts_sister_runtime_process_block(TsSisterRuntime *runtime,
                                      const TsSisterSourceFrames *sources,
                                      TsSisterRuntimeFrame *output,
