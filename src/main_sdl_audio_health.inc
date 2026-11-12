@@ -368,6 +368,14 @@ static void ts_audio_profile_recent(const TsProfileSnapshot *s)
         *previous=*s;ts_health.recent_profile_valid=1;ts_health.recent_profile_ready=0;
         memset(ts_health.effect_cpu,0,sizeof(ts_health.effect_cpu));return;
     }
+    /* A bounded snapshot read can miss a busy audio publication. Keep the
+       previous baseline rather than interpreting an empty lane as a reset. */
+    if(s->value[TS_PROF_AUDIO].calls<previous->value[TS_PROF_AUDIO].calls)return;
+    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i) {
+        const TsProfileEffectValue *v=&s->effect[i],*old=&previous->effect[i];
+        if((!v->identity.generation && old->identity.generation) ||
+           (v->identity.generation==old->identity.generation && v->blocks.ticks<old->blocks.ticks))return;
+    }
     double seconds=s->seconds-previous->seconds;
     for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)
         if(s->effect[i].identity.generation!=previous->effect[i].identity.generation)

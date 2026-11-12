@@ -79,6 +79,8 @@ static void check_cpu_readout(AudioState *a,TsUiState *ui,SDL_Window *window)
     profile.seconds=11;profile.effect[0].blocks.ticks=335;
     ts_audio_profile_recent(&profile);assert(fabs(ts_health.effect_cpu[0]-23.5)<.001);
     profile.seconds=12;ts_audio_profile_recent(&profile);assert(ts_health.effect_cpu[0]==0);
+    TsProfileSnapshot missed=profile;missed.seconds=13;memset(missed.effect,0,sizeof(missed.effect));
+    ts_audio_profile_recent(&missed);assert(ts_health.previous_profile.seconds==12);
     profile.seconds=12.25;profile.effect[0].identity.generation=2;profile.effect[0].blocks.ticks=10;
     ts_audio_profile_recent(&profile);assert(ts_health.effect_cpu[0]<0);
     profile.seconds=13;profile.effect[0].blocks.ticks=120;
