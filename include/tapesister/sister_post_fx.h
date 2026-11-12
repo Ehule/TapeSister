@@ -242,6 +242,7 @@ typedef struct {
     size_t capacity_frames;
     size_t write_index;
     size_t history_frames;
+    size_t nonzero_samples; /* Exact occupancy; silent grains still advance. */
     TsSisterGrainVoice voice[TS_SISTER_GRAIN_VOICES];
     uint32_t sample_rate;
     uint32_t random_state;
