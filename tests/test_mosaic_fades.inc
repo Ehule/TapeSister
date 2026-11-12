@@ -39,7 +39,8 @@ static void test_mosaic_fades(SDL_Window *window)
     assert(a->fade_in==0 && a->fade_out==3);
     fade_handle(a,2,&x,&y);click(window,x,y,2);assert(a->fade_out==0 && !mosaic.active);
     /* Footer edits and legacy overlapping fades share the audible envelope. */
-    ui.mosaic_selection[1]=b->id;click(window,275,390,1);release(window,275,390);
+    const int fade_x=TS_MOSAIC_MIX_X+2*TS_MOSAIC_MIX_STEP+2+(TS_MOSAIC_MIX_W-4)/2;
+    ui.mosaic_selection[1]=b->id;click(window,fade_x,390,1);release(window,fade_x,390);
     assert(a->fade_in>1.9 && a->fade_in<2.1 && b->fade_in==a->fade_in);
     double hx,hy;assert(ts_ui_mosaic_fade_handle(&ui,a,1,&hx,&hy));
     assert(fabs(hy-(90+a->fade_in*24))<1e-9);
