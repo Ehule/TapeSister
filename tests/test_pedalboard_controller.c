@@ -21,7 +21,9 @@ static void click(int x,int y)
     int w,h;SDL_GetWindowSize(sister.window,&w,&h);
     SDL_Event e={0};e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=sister.window_id;
     e.button.button=SDL_BUTTON_LEFT;e.button.x=x*w/640;e.button.y=y*h/400;
-    assert(sister_board_event(&e,0,&audio,&ui,&sister,&pages,&bank));
+    int handled=sister_board_event(&e,0,&audio,&ui,&sister,&pages,&bank);
+    if(!handled)fprintf(stderr,"unhandled click %d,%d: window %d,%d page %d preset %d board %u scroll %d\n",x,y,w,h,sister.model.fx_page,sister.model.preset_manage_open,sister.board_id,sister.model.fx_scroll);
+    assert(handled);
     e.type=SDL_MOUSEBUTTONUP;sister_board_event(&e,0,&audio,&ui,&sister,&pages,&bank);settle();
 }
 int main(int argc,char **argv)
@@ -78,6 +80,64 @@ int main(int argc,char **argv)
     if(argc>1) {
         sister.model.fx_scroll=0;
         ts_sister_ui_render(&sister.framebuffer,sister_board_view(&sister),&ui.palette);
+        SDL_Surface *surface=SDL_CreateRGBSurfaceFrom(sister.framebuffer.pixels,640,400,32,2560,0xff0000,0xff00,0xff,0);
+        assert(surface && !SDL_SaveBMP(surface,argv[1]));SDL_FreeSurface(surface);
+    }
+    /* MIDI uses a saved child ID and continues to address that processor
+       after reordering, tab changes, and project-owned board edits. */
+    sister.model.fx_scroll=0;
+    uint32_t child=audio.sister.matrix.controls.effect[0].board.slot[0].id;
+    char target[80];snprintf(target,sizeof(target),"board.param.%u.%u.0",sister.board_id,child);
+    assert(ts_midi_target_is_continuous(target));
+    matrix_window.controls=audio.sister.matrix.controls;
+    TsSisterFxSlotControls tmp=matrix_window.controls.effect[0].board.slot[0];
+    matrix_window.controls.effect[0].board.slot[0]=matrix_window.controls.effect[0].board.slot[3];matrix_window.controls.effect[0].board.slot[3]=tmp;
+    mx_commit_controls(0,&audio,&ui);settle();click(145,18);
+    assert(sister_board_midi(0,&audio,&ui,&sister,target,.9f));settle();
+    assert(fabsf(audio.sister.matrix.controls.effect[0].board.slot[3].gain_db-9.6f)<1e-5f);
+    assert(audio.sister.matrix.controls.effect[1].board.slot[3].gain_db==0);
+    float pickup;assert(sister_board_midi_value(target,&ui,&sister,&pickup) && fabsf(pickup-.9f)<1e-5f);
+    sister_board_open(c.effect[0].id);sister_board_sync(&audio,&ui,&sister);
+    /* The native picker cycle reaches SunVox, opens the shared editor, and
+       edits only this child. P1 and neighboring boards retain their controls. */
+    matrix_window.controls=audio.sister.matrix.controls;
+    matrix_window.controls.effect[0].board.slot[0].type=TS_SISTER_FX_RESONATOR;
+    mx_commit_controls(0,&audio,&ui);settle();click(100,52);
+    assert(sunvox_editor.child==audio.sister.matrix.controls.effect[0].board.slot[0].id && sunvox_editor.node==c.effect[0].id);
+    assert(svfx_controls() && audio.sister.matrix.controls.effect[0].board.slot[0].type==TS_SISTER_FX_SUNVOX);
+    svfx_controls()->value[0]=12000;svfx_commit(0,&audio,&ui);settle();
+    assert(audio.sister.matrix.controls.effect[0].board.slot[0].sunvox.value[0]==12000);
+    snprintf(target,sizeof(target),"board.param.%u.%u.100",sunvox_editor.node,sunvox_editor.child);
+    assert(sister_board_midi(0,&audio,&ui,&sister,target,.25f));
+    assert(audio.sister.matrix.controls.effect[0].board.slot[0].sunvox.value[0]==8192);
+    assert(!memcmp(&shared,&audio.sister.parameters.fx,sizeof(shared)));svfx_back();sister_board_sync(&audio,&ui,&sister);
+    /* Board preset recall carries nested assets without changing P1, matrix
+       routes, or an adjacent board. Existing row identities remain local. */
+    TsSisterParameters stored=sister_board_view(&sister)->parameters;
+    size_t preset=pedalboard_presets.count;
+    assert(ts_sister_preset_save_new(&pedalboard_presets,"Nested board",&stored,48000,error,sizeof(error)));
+    assert(ts_sister_preset_save(&pedalboard_presets,"board-controller-presets.ini",error,sizeof(error)));
+    assert(ts_sister_preset_load(&pedalboard_presets,"board-controller-presets.ini",48000,error,sizeof(error)));remove("board-controller-presets.ini");
+    matrix_window.controls=audio.sister.matrix.controls;matrix_window.controls.effect[0].board.slot[0].sunvox.value[0]=22000;mx_commit_controls(0,&audio,&ui);settle();
+    assert(sister_board_preset_recall(0,&audio,&ui,&sister,preset));settle();
+    assert(audio.sister.matrix.controls.effect[0].board.slot[0].sunvox.value[0]==8192);
+    assert(!memcmp(&shared,&audio.sister.parameters.fx,sizeof(shared)));
+    /* P1 uses the same child picker, including its stable MIDI target. */
+    sister_board_open(0);sister_board_sync(&audio,&ui,&sister);
+    /* Refreshing shared P1 must retain scrolling and its removal dialog. */
+    sister.model.fx_scroll=3;sister.model.fx_remove_confirmation=1;
+    sister_board_sync(&audio,&ui,&sister);
+    assert(sister.model.fx_scroll==3 && sister.model.fx_remove_confirmation);
+    sister.model.fx_scroll=0;sister.model.fx_remove_confirmation=0;
+    sister.model.parameters.fx.slot[0].type=TS_SISTER_FX_RESONATOR;
+    assert(sister_board_publish(0,&audio,&ui,&sister));click(100,52);
+    assert(!sunvox_editor.node && sunvox_editor.child && svfx_controls());
+    svfx_controls()->value[0]=10000;svfx_commit(0,&audio,&ui);assert(audio.sister.parameters.fx.slot[0].sunvox.value[0]==10000);
+    svfx_back();sister_board_sync(&audio,&ui,&sister);
+    sister.model.parameters.fx=shared;assert(sister_board_publish(0,&audio,&ui,&sister));
+    sister_board_open(c.effect[0].id);sister_board_sync(&audio,&ui,&sister);
+    if(argc>1) {
+        sister.model.fx_scroll=0;ts_sister_ui_render(&sister.framebuffer,sister_board_view(&sister),&ui.palette);
         SDL_Surface *surface=SDL_CreateRGBSurfaceFrom(sister.framebuffer.pixels,640,400,32,2560,0xff0000,0xff00,0xff,0);
         assert(surface && !SDL_SaveBMP(surface,argv[1]));SDL_FreeSurface(surface);
     }

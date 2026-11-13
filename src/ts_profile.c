@@ -21,6 +21,15 @@ static struct {
     unsigned seen, transitioning, dirty;
     PublishedEffect published[TS_MATRIX_EFFECT_CAPACITY];
 } effects; /* Audio writer; published under lanes[1].revision. */
+static struct {
+    TsProfileChildValue value[TS_PROFILE_CHILDREN];
+    uint64_t ticks[TS_PROFILE_CHILDREN];
+    unsigned char seen[TS_PROFILE_CHILDREN],transition[TS_PROFILE_CHILDREN];
+    PublishedEffect published[TS_PROFILE_CHILDREN];
+    atomic_uint board[TS_PROFILE_CHILDREN];
+    int reset;
+} children;
+unsigned ts_profile_child_slot;
 static atomic_int enabled;
 static atomic_uint epoch;
 static uint64_t (*read_clock)(void), frequency, started, stopped;
@@ -58,7 +67,7 @@ void ts_profile_lane_begin(int audio)
     unsigned next = atomic_load_explicit(&epoch, memory_order_acquire);
     if (next != p->epoch) {
         memset(p->value, 0, sizeof(p->value)); p->epoch = next; p->blocks = 0;
-        if (audio) { memset(effects.value, 0, sizeof(effects.value)); effects.dirty = 1; }
+        if (audio) { memset(effects.value, 0, sizeof(effects.value)); effects.dirty = 1; memset(children.value,0,sizeof(children.value));children.reset=1; }
     }
     int active = ts_profile_enabled();
     if (audio) {
@@ -66,6 +75,8 @@ void ts_profile_lane_begin(int audio)
            Stagger their phases instead of concentrating tens of thousands of
            timer reads in one callback. Rotate to cover periodic render quanta. */
         unsigned block = p->blocks++;
+        ts_profile_child_slot=(block/32)%TS_PROFILE_BOARD_SLOTS;
+        memset(children.seen,0,sizeof(children.seen));
         ts_profile_audio_active = active;
         ts_profile_audio_phase = active ? (block - (block >> 5)) & 31u : 32u;
         effects.seen = effects.transitioning = 0;
@@ -109,6 +120,18 @@ void ts_profile_effect_duration(int slot,const TsProfileEffectIdentity *identity
     if (transitioning) effects.transitioning |= 1u << slot;
     effects.ticks[slot] += ticks; v->last = end;
 }
+void ts_profile_child_end(unsigned owner,unsigned row,uint32_t board,const TsProfileEffectIdentity *identity,uint64_t start,int transition)
+{
+    if(!start || !ts_profile_audio_active || owner>=TS_PROFILE_BOARD_OWNERS || row>=TS_PROFILE_BOARD_SLOTS)return;
+    uint64_t end=ts_profile_clock();if(end<start)return;
+    unsigned at=owner*TS_PROFILE_BOARD_SLOTS+row;TsProfileChildValue *c=&children.value[at];
+    TsProfileEffectValue *v=&c->effect;
+    if(c->board!=board || (v->identity.generation!=identity->generation || v->identity.id!=identity->id || v->identity.type!=identity->type || v->identity.patch!=identity->patch || v->identity.quantum!=identity->quantum)) {
+        memset(c,0,sizeof(*c));c->board=board;v->identity=*identity;children.seen[at]=0;
+    }
+    if(!children.seen[at]){children.ticks[at]=0;children.transition[at]=0;}
+    children.seen[at]=1;children.ticks[at]+=end-start;children.transition[at]|=transition!=0;v->last=end;
+}
 void ts_profile_lane_end(int audio)
 {
     if (!ts_profile_enabled()) return;
@@ -135,6 +158,21 @@ void ts_profile_lane_end(int audio)
         PUBLISH(samples, v->samples); PUBLISH(transitions, v->transitions); PUBLISH(last, v->last);
 #undef PUBLISH
     }
+    if(audio)for(int i=0;i<TS_PROFILE_CHILDREN;++i)if(children.reset || children.seen[i]) {
+        TsProfileChildValue *c=&children.value[i];TsProfileEffectValue *v=&c->effect;
+        if(children.seen[i]) {
+            v->blocks.calls+=640;v->blocks.ticks+=children.ticks[i]*640;
+            if(children.ticks[i]>v->blocks.peak)v->blocks.peak=children.ticks[i];
+            ++v->samples;v->transitions+=children.transition[i];
+        }
+        PublishedEffect *p=&children.published[i];
+#define PUBLISH(field,value) atomic_store_explicit(&p->field,value,memory_order_relaxed)
+        PUBLISH(generation,v->identity.generation);PUBLISH(patch,v->identity.patch);PUBLISH(id,v->identity.id);PUBLISH(type,v->identity.type);PUBLISH(quantum,v->identity.quantum);
+        PUBLISH(calls,v->blocks.calls);PUBLISH(ticks,v->blocks.ticks);PUBLISH(peak,v->blocks.peak);PUBLISH(samples,v->samples);PUBLISH(transitions,v->transitions);PUBLISH(last,v->last);
+#undef PUBLISH
+        atomic_store_explicit(&children.board[i],c->board,memory_order_relaxed);
+    }
+    if(audio)children.reset=0;
     if (audio) effects.seen = effects.transitioning = effects.dirty = 0;
     atomic_store_explicit(&p->published_epoch, p->epoch, memory_order_relaxed);
     atomic_store_explicit(&p->revision, rev + 2u, memory_order_release);
@@ -167,13 +205,21 @@ void ts_profile_snapshot(TsProfileSnapshot *s)
                 v->samples = READ(samples); v->transitions = READ(transitions); v->last = READ(last);
 #undef READ
             }
+            if(lane)for(int i=0;i<TS_PROFILE_CHILDREN;++i) {
+                const PublishedEffect *p=&children.published[i];TsProfileEffectValue *v=&s->child[i].effect;
+#define READ(field) atomic_load_explicit(&p->field,memory_order_relaxed)
+                v->identity.generation=READ(generation);v->identity.patch=READ(patch);v->identity.id=(uint32_t)READ(id);v->identity.type=(uint32_t)READ(type);v->identity.quantum=(uint32_t)READ(quantum);
+                v->blocks.calls=READ(calls);v->blocks.ticks=READ(ticks);v->blocks.peak=READ(peak);v->samples=READ(samples);v->transitions=READ(transitions);v->last=READ(last);
+#undef READ
+                s->child[i].board=atomic_load_explicit(&children.board[i],memory_order_relaxed);
+            }
             atomic_thread_fence(memory_order_acquire);
             if (rev == atomic_load_explicit(&p->revision, memory_order_relaxed) &&
                 atomic_load_explicit(&p->published_epoch,memory_order_relaxed) ==
                 atomic_load_explicit(&epoch,memory_order_relaxed)) break;
             for (int i = lane ? TS_PROF_AUDIO : 0; i < (lane ? TS_PROF_COUNT : TS_PROF_AUDIO); ++i)
                 s->value[i] = (TsProfileValue){0};
-            if (lane) memset(s->effect, 0, sizeof(s->effect));
+            if (lane) {memset(s->effect, 0, sizeof(s->effect));memset(s->child,0,sizeof(s->child));}
         }
     }
 }
@@ -184,6 +230,12 @@ void ts_profile_effect_label(const TsProfileEffectIdentity *v, char *text, size_
         snprintf(text, capacity, "#%u SUNVOX %s (%u frames)",
             (unsigned)v->id, ts_sunvox_name(&c), (unsigned)v->quantum);
     } else snprintf(text, capacity, "#%u %s", (unsigned)v->id, ts_matrix_effect_name((int)v->type));
+}
+void ts_profile_child_label(const TsProfileChildValue *c,char *text,size_t capacity)
+{
+    char label[256];ts_profile_effect_label(&c->effect.identity,label,sizeof(label));
+    if(c->board)snprintf(text,capacity,"BOARD #%u / %s",c->board,label);
+    else snprintf(text,capacity,"P1 / %s",label);
 }
 const char *ts_profile_name(TsProfileId id)
 {
@@ -241,5 +293,15 @@ void ts_profile_report(char *text, size_t capacity)
             s.frequency && s.now >= v->last ? (s.now-v->last)/s.frequency : 0);
         if (n < 0) break;
         used += (size_t)n;
+    }
+    if(used<capacity) {
+        n=snprintf(text+used,capacity-used,"\nPedalboard children (stable board/child IDs): each samples 1/640 complete callbacks; inclusive within its parent.\nChild | samples | avg ms/block | peak ms/block | estimated ms/s | last seen s ago\n");
+        if(n>0)used+=(size_t)n;
+    }
+    for(int i=0;i<TS_PROFILE_CHILDREN && used<capacity;++i) {
+        const TsProfileChildValue *c=&s.child[i];const TsProfileEffectValue *v=&c->effect;if(!v->samples)continue;
+        char label[300];ts_profile_child_label(c,label,sizeof(label));double ms=s.frequency?1000.0*v->blocks.ticks/s.frequency:0;
+        n=snprintf(text+used,capacity-used,"%s | %llu | %.6f | %.4f | %.3f | %.3f\n",label,(unsigned long long)v->samples,v->blocks.calls?ms/v->blocks.calls:0,s.frequency?1000.0*v->blocks.peak/s.frequency:0,s.seconds?ms/s.seconds:0,s.frequency && s.now>=v->last?(s.now-v->last)/s.frequency:0);
+        if(n<0)break;used+=(size_t)n;
     }
 }

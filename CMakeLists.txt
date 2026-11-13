@@ -41,7 +41,7 @@ add_library(tapesister_core src/ts_mandala.c src/ts_routing_matrix.c src/ts_matr
              third_party/tapehead/ft2_fasttracks_core.c)
 target_include_directories(tapesister_core PUBLIC include PRIVATE ${miniaudio_SOURCE_DIR} ${CMAKE_BINARY_DIR})
 target_link_libraries(tapesister_core PRIVATE tapesister_sunvox)
-target_sources(tapesister_core PRIVATE src/ts_master_clock.c src/ts_loop_capture.c src/ts_mosaic_gallery.c src/ts_pedalboard.c)
+target_sources(tapesister_core PRIVATE src/ts_master_clock.c src/ts_loop_capture.c src/ts_mosaic_gallery.c src/ts_pedalboard.c src/ts_sister_sunvox.c)
 target_link_libraries(tapesister_core PUBLIC m)
 add_executable(tapesister_matrix_benchmark EXCLUDE_FROM_ALL tools/benchmark_matrix.c)
 target_link_libraries(tapesister_matrix_benchmark PRIVATE tapesister_core)

@@ -691,6 +691,7 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
                     }
                 }
             }
+            if(model->parameters.fx.slot[row].type==TS_SISTER_FX_SUNVOX && contains(x,y,330,top+22,80,18)){hit.action=TS_SISTER_UI_ACTION_SUNVOX_EDIT;hit.index=row;return hit;}
             if(model->parameters.fx.slot[row].type==TS_SISTER_FX_FILTER && contains(x,y,330,top+22,80,18)){hit.action=TS_SISTER_UI_ACTION_FILTER_EDIT;hit.index=row;return hit;}
             if(model->parameters.fx.slot[row].type==TS_SISTER_FX_TRANSIENT && contains(x,y,320,top+22,66,18)) {
                 hit.action=TS_SISTER_UI_ACTION_TRANSIENT_POWER;hit.index=row;return hit;

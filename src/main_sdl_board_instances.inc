@@ -21,6 +21,12 @@ static void sister_board_history_finish(SDL_AudioDeviceID device,AudioState *aud
 }
 static void sister_board_sync(AudioState *audio,TsUiState *ui,SisterWindow *s)
 {
+    if(!pedalboard_presets_loaded) {
+        char path[TS_RUNTIME_PATH_MAX],error[160];ts_sister_preset_bank_init(&pedalboard_presets,48000);
+        if(pedalboard_presets_file_path(path,sizeof(path)))ts_sister_preset_load(&pedalboard_presets,path,48000,error,sizeof(error));
+        pedalboard_presets_loaded=1;s->board_preset_index=SIZE_MAX;
+    }
+    uint32_t previous_board=s->board_id;
     uint64_t epoch=ui->mosaic?ui->mosaic->epoch:0;
     if(s->board_context!=ui->mosaic || s->board_epoch!=epoch) {
         s->board_id=0;s->model.fx_scroll=0;s->model.fx_remove_confirmation=0;
@@ -41,13 +47,15 @@ static void sister_board_sync(AudioState *audio,TsUiState *ui,SisterWindow *s)
         s->model.preset_manage_open=0;character_filter_hide();
     }
     int slot=sister_board_slot(c,s->board_id);
-    if(slot<0 && s->board_id){s->board_id=0;s->model.fx_scroll=0;s->model.fx_remove_confirmation=0;changed=1;}
+    if(s->board_id && slot<0){s->board_id=0;s->model.fx_scroll=0;s->model.fx_remove_confirmation=0;changed=1;}
     s->model.board_selected=0;
     if(s->board_id) {
         for(int i=1;i<count;++i)if(ids[i]==s->board_id)s->model.board_selected=i;
         changed|=memcmp(&s->board_controls,&c->effect[slot],sizeof(s->board_controls))!=0;
         s->board_controls=c->effect[slot];
     }
+    if(s->board_id!=previous_board){s->board_preset_index=SIZE_MAX;s->board_preset_modified=0;}
+    sister_preset_model_sync(s,&audio->sister);
     if(changed) {
         s->model.board_tab_first=(s->model.board_selected/8)*8;
         s->rendered_model_valid=0;
@@ -57,14 +65,30 @@ static void sister_board_sync(AudioState *audio,TsUiState *ui,SisterWindow *s)
 }
 static int sister_board_publish(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,SisterWindow *s)
 {
+    if(!s->board_id) {
+        TsSisterParameters next=audio->sister.parameters;next.fx=s->model.parameters.fx;
+        TsSisterSunVoxPlan plan;
+        if(!sister_stage_fx(device,audio,&next.fx,&plan)) {
+            snprintf(s->model.status,sizeof(s->model.status),"UNCHANGED: CANNOT PREPARE EFFECT");return 0;
+        }
+        if(device)SDL_LockAudioDevice(device);
+        ts_sister_sunvox_commit(&audio->sister.post_fx,&plan);
+        ts_sister_runtime_set_parameters(&audio->sister,&next);
+        ts_sister_runtime_mark_selected_preset_modified(&audio->sister);
+        if(device)SDL_UnlockAudioDevice(device);
+        ts_sister_sunvox_discard(&plan);s->model.parameters=audio->sister.parameters;
+        matrix_window.fixed.parameters=audio->sister.parameters;
+        s->rendered_model_valid=0;ui->project_modified=1;return 1;
+    }
     int slot=sister_board_slot(&audio->sister.matrix.controls,s->board_id);
     if(slot<0)return 0;
     matrix_window.controls=audio->sister.matrix.controls;
     TsMatrixEffectControls *c=&matrix_window.controls.effect[slot];
-    c->board.count=s->model.parameters.fx.slot_count;
+    c->board.count=s->model.parameters.fx.slot_count;c->board.next_id=s->model.parameters.fx.next_slot_id;
     memcpy(c->board.slot,s->model.parameters.fx.slot,sizeof(c->board.slot));
     c->board.transition=s->model.parameters.fx.transition;
     c->enabled=s->model.parameters.fx.enabled;c->transition=s->model.parameters.fx.master_transition;
+    ts_pedalboard_identify(&c->board);
     TsMatrixEffectControls requested=*c;
     mx_commit_controls(device,audio,ui);
     int ok=!memcmp(&requested,&audio->sister.matrix.controls.effect[slot],sizeof(*c));
@@ -72,7 +96,7 @@ static int sister_board_publish(SDL_AudioDeviceID device,AudioState *audio,TsUiS
     /* Commit may roll controls back on failed preparation. Always display the
        committed bank; keep that failure visible without touching P1. */
     s->board_controls=audio->sister.matrix.controls.effect[slot];
-    s->rendered_model_valid=0;if(ok)ui->project_modified=1;
+    s->rendered_model_valid=0;if(ok){ui->project_modified=1;s->board_preset_modified=1;}
     return ok;
 }
 static int sister_board_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioState *audio,
@@ -86,12 +110,12 @@ static int sister_board_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioS
         return 0;
     }
     if(s->model.fx_page!=1 || s->model.preset_manage_open)return 0;
-    if(e->type==SDL_KEYDOWN && (e->key.keysym.mod&KMOD_CTRL) && e->key.keysym.sym==SDLK_z && s->board_id) {
+    if(e->type==SDL_KEYDOWN && (e->key.keysym.mod&KMOD_CTRL) && e->key.keysym.sym==SDLK_z) {
         sister_board_history_finish(device,audio,pages,bank);mx_bind_mosaic(ui,pages);
         mx_undo(device,audio,ui,pages,bank,(e->key.keysym.mod&KMOD_SHIFT)!=0);
         sister_board_sync(audio,ui,s);s->rendered_model_valid=0;return 1;
     }
-    if(e->type==SDL_KEYDOWN && s->board_id && s->model.fx_remove_confirmation) {
+    if(e->type==SDL_KEYDOWN && s->model.fx_remove_confirmation) {
         if(e->key.keysym.sym==SDLK_ESCAPE){s->model.fx_remove_confirmation=0;s->rendered_model_valid=0;return 1;}
         if(!e->key.repeat && (e->key.keysym.sym==SDLK_RETURN || e->key.keysym.sym==SDLK_KP_ENTER)) {
             mx_bind_mosaic(ui,pages);mx_original(device,audio,pages,bank);
@@ -104,17 +128,17 @@ static int sister_board_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioS
                     fx->slot[--fx->slot_count]=ts_sister_fx_empty_slot();
                     sister_board_publish(device,audio,ui,s);
                 }
-                s->model.parameters=shared;s->model.fx_remove_confirmation=0;
+                s->model.parameters=s->board_id?shared:audio->sister.parameters;s->model.fx_remove_confirmation=0;
                 sister_board_history_finish(device,audio,pages,bank);
             }
         }
         return 1;
     }
-    if(e->type==SDL_KEYDOWN && s->board_id &&
+    if(e->type==SDL_KEYDOWN &&
         !(e->key.keysym.mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI)) &&
         (e->key.keysym.sym==SDLK_UP || e->key.keysym.sym==SDLK_DOWN)) {
         s->model.fx_scroll=SDL_clamp(s->model.fx_scroll+(e->key.keysym.sym==SDLK_UP?-1:1),
-            0,s->board_controls.board.count-TS_SISTER_UI_FX_VISIBLE);
+            0,sister_board_view(s)->parameters.fx.slot_count-TS_SISTER_UI_FX_VISIBLE);
         ts_ui_pointer_drag_cancel(&s->parameter_drag);s->rendered_model_valid=0;return 1;
     }
     int down=e->type==SDL_MOUSEBUTTONDOWN,motion=e->type==SDL_MOUSEMOTION,wheel=e->type==SDL_MOUSEWHEEL;
@@ -131,7 +155,7 @@ static int sister_board_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioS
             sister_board_history_finish(device,audio,pages,bank);
             ts_ui_pointer_drag_cancel(&s->parameter_drag);s->grain_time_drag=s->fx_scroll_drag=0;
             if(hit.action==TS_SISTER_UI_ACTION_BOARD_SELECT && hit.index>=0 && hit.index<s->model.board_count) {
-                s->board_id=s->board_ids[hit.index];s->model.board_selected=hit.index;
+                s->board_id=s->board_ids[hit.index];s->board_preset_index=SIZE_MAX;s->board_preset_modified=0;s->model.board_selected=hit.index;
                 s->model.fx_scroll=s->model.fx_remove_confirmation=0;character_filter_hide();
                 snprintf(s->model.status,sizeof(s->model.status),"P%d / %s",hit.index+1,hit.index?"INDEPENDENT CANVAS PEDALBOARD":"SHARED SISTER PEDALBOARD");
                 sister_board_sync(audio,ui,s);
@@ -140,21 +164,37 @@ static int sister_board_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioS
         }
         return 1;
     }
-    if(!s->board_id)return 0;
     if(s->model.fx_remove_confirmation && hit.action!=TS_SISTER_UI_ACTION_FX_REMOVE_CONFIRM &&
         hit.action!=TS_SISTER_UI_ACTION_FX_REMOVE_CANCEL)return 1;
-    /* Header and capture controls remain global. Presets on this first slice
-       are project-owned; never recall a Sister preset into an independent board. */
+    /* Header and capture controls remain global. Added boards use their
+       separate preset bank; P1 retains the Sister preset controls. */
     if(y<36 || hit.action==TS_SISTER_UI_ACTION_RECORD_FILE)return 0;
-    if(y>=370 && x>=230 && x<430) {
-        snprintf(s->model.status,sizeof(s->model.status),"CANVAS PEDALBOARDS SAVE WITH THE PROJECT / CTRL+Z UNDO");return 1;
+    if(s->board_id && down && e->button.button==SDL_BUTTON_LEFT &&
+        (hit.action==TS_SISTER_UI_ACTION_PRESET_PREVIOUS || hit.action==TS_SISTER_UI_ACTION_PRESET_NEXT)) {
+        if(!pedalboard_presets.count)return 1;
+        size_t at=s->board_preset_index;
+        if(at>=pedalboard_presets.count)at=hit.action==TS_SISTER_UI_ACTION_PRESET_NEXT?0:pedalboard_presets.count-1;
+        else at=(at+pedalboard_presets.count+(hit.action==TS_SISTER_UI_ACTION_PRESET_NEXT?1:-1))%pedalboard_presets.count;
+        mx_bind_mosaic(ui,pages);mx_original(device,audio,pages,bank);board_before=mx_snapshot(device,audio,pages,bank);
+        if(board_before)sister_board_preset_recall(device,audio,ui,s,at);
+        sister_board_history_finish(device,audio,pages,bank);return 1;
     }
     if(y>=370)return 0;
-    if(ui->midi_learn_active)return 1;
+    if(ui->midi_learn_active) {
+        if(down && e->button.button==SDL_BUTTON_LEFT) {
+            int offset=hit.action==TS_SISTER_UI_ACTION_PARAMETER?ts_sister_ui_slot_offset(hit.index):-1;
+            int row=offset>=0?offset/5:hit.action==TS_SISTER_UI_ACTION_FX_SLOT_TOGGLE?hit.index:-1;
+            char target[80]={0};
+            if(row>=0 && row<view->parameters.fx.slot_count)
+                snprintf(target,sizeof(target),"board.%s.%u.%u.%d",offset>=0?"param":"toggle",s->board_id,view->parameters.fx.slot[row].id,offset>=0?offset%5:0);
+            if(!target[0] && !s->board_id)ts_sister_ui_midi_target(hit,target,sizeof(target));
+            midi_learn_click(ui,s,target);
+        }return 1;
+    }
     mx_bind_mosaic(ui,pages);
     TsSisterParameters shared=s->model.parameters;
     s->model.parameters=view->parameters;
-    int handled=1,changed=0;
+    int handled=1,changed=0,open_sunvox=-1;
     TsSisterFxControls *fx=&s->model.parameters.fx;
     if(!board_before && (down || wheel)){mx_original(device,audio,pages,bank);board_before=mx_snapshot(device,audio,pages,bank);}
     if(!board_before && (down || wheel)){snprintf(s->model.status,sizeof(s->model.status),"UNCHANGED: CANNOT ALLOCATE UNDO SNAPSHOT");goto finish;}
@@ -183,11 +223,12 @@ static int sister_board_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioS
         ts_sister_ui_fx_scroll_set(&s->model,first);s->rendered_model_valid=0;
     } else if(hit.action==TS_SISTER_UI_ACTION_PARAMETER) {
         int offset=ts_sister_ui_slot_offset(hit.index);
-        if(offset<0 && hit.index!=TS_SISTER_UI_PARAM_FX_TRANSITION && hit.index!=TS_SISTER_UI_PARAM_MASTER_FX_TRANSITION)goto finish;
+        if(offset<0 && hit.index!=TS_SISTER_UI_PARAM_FX_TRANSITION && hit.index!=TS_SISTER_UI_PARAM_MASTER_FX_TRANSITION && (s->board_id || hit.index!=TS_SISTER_UI_PARAM_MASTER_FX_FEEDBACK))goto finish;
         if(offset>=0 && offset>=fx->slot_count*5)goto finish;
-        if(offset>=0 && (fx->slot[offset/5].parameter_locks&(1u<<(offset%5))) && !(down && (SDL_GetModState()&KMOD_SHIFT)))goto finish;
+        if(offset>=0 && ts_sister_ui_parameter_locked(view,hit.index) && !(down && (SDL_GetModState()&KMOD_SHIFT)))goto finish;
         if(down && e->button.button==SDL_BUTTON_LEFT && (SDL_GetModState()&KMOD_SHIFT) && offset>=0) {
-            fx->slot[offset/5].parameter_locks^=1u<<(offset%5);changed=1;
+            if(!s->board_id && offset<25){if(device)SDL_LockAudioDevice(device);sister_toggle_parameter_lock(audio,s,hit.index);if(device)SDL_UnlockAudioDevice(device);}
+            else {fx->slot[offset/5].parameter_locks^=1u<<(offset%5);changed=1;}
         } else if(down || wheel || ts_ui_pointer_drag_accept_motion(&s->parameter_drag,hit.index,e->motion.state)) {
             float v=wheel?sister_parameter_wheel_normalized(&s->model.parameters,hit.index,wheel_event_delta(e,0),(SDL_GetModState()&KMOD_SHIFT)!=0):hit.normalized;
             sister_set_parameter(&s->model.parameters,hit.index,v);changed=1;
@@ -208,7 +249,7 @@ static int sister_board_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioS
             s->model.fx_remove_confirmation=0;break;
         case TS_SISTER_UI_ACTION_FX_REMOVE_CANCEL:s->model.fx_remove_confirmation=0;break;
         case TS_SISTER_UI_ACTION_FX_SLOT_TYPE:
-            if(row>=0 && row<fx->slot_count){sister_fx_slot_select_type(&fx->slot[row],(fx->slot[row].type+1)%TS_SISTER_FX_TYPE_COUNT);character_filter_hide();changed=1;}break;
+            if(row>=0 && row<fx->slot_count){sister_fx_slot_select_type(&fx->slot[row],(fx->slot[row].type+1)%TS_SISTER_FX_TYPE_COUNT);character_filter_hide();changed=1;if(fx->slot[row].type==TS_SISTER_FX_SUNVOX)open_sunvox=row;}break;
         case TS_SISTER_UI_ACTION_FX_SLOT_TOGGLE:
             if(row>=0 && row<fx->slot_count){fx->slot[row].enabled=!fx->slot[row].enabled;changed=1;}break;
         case TS_SISTER_UI_ACTION_FX_TOGGLE:fx->enabled=!fx->enabled;changed=1;break;
@@ -219,15 +260,91 @@ static int sister_board_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioS
                 if(other<s->model.fx_scroll)ts_sister_ui_fx_scroll_set(&s->model,other);
                 if(other>=s->model.fx_scroll+5)ts_sister_ui_fx_scroll_set(&s->model,other-4);
             }break;}
+        case TS_SISTER_UI_ACTION_FX_SLOT_PLACEMENT: {
+            int at=row>>8;uint8_t place=row&255;
+            if(!s->board_id && at>=0 && at<fx->slot_count && (place&TS_SISTER_FX_PLACE_ALL)) {
+                if(place==TS_SISTER_FX_PLACE_PRE || place==TS_SISTER_FX_PLACE_POST)fx->slot[at].placement=place;
+                else {uint8_t heads=(fx->slot[at].placement&TS_SISTER_FX_PLACE_HEADS)^place;fx->slot[at].placement=heads?heads:place;}
+                changed=1;
+            }break;}
+        case TS_SISTER_UI_ACTION_SUNVOX_EDIT:open_sunvox=row;break;
         case TS_SISTER_UI_ACTION_FILTER_EDIT:
-            character_filter_matrix_open(s->board_id);character_filter_window.source=2;character_filter_window.slot=row;break;
+            if(s->board_id){character_filter_matrix_open(s->board_id);character_filter_window.source=2;character_filter_window.slot=row;character_filter_window.child=fx->slot[row].id;}
+            else character_filter_open(s,row);
+            break;
         default:break;
         }
         s->rendered_model_valid=0;
     }
-    if(changed)sister_board_publish(device,audio,ui,s);
+    if(changed && !sister_board_publish(device,audio,ui,s))open_sunvox=-1;
+    if(open_sunvox>=0 && open_sunvox<fx->slot_count) {
+        uint32_t child=fx->slot[open_sunvox].id;
+        sister_board_history_finish(device,audio,pages,bank);
+        matrix_show(device,audio,ui,pages,bank,-1,-1);svfx_open(s->board_id);
+        sunvox_editor.child=child;sunvox_editor.sister=s;
+    }
 finish:
-    s->model.parameters=shared;
+    s->model.parameters=s->board_id?shared:audio->sister.parameters;
     if(!motion && (!down || hit.action!=TS_SISTER_UI_ACTION_PARAMETER))sister_board_history_finish(device,audio,pages,bank);
     return handled;
+}
+
+/* Saved child identities, never display rows or P-tab numbers. Missing targets
+   are inert, including after deletion and reuse of an outer matrix port. */
+static int sister_board_target(const char *target,uint32_t *board,uint32_t *child,int *field,int *toggle)
+{
+    char tail;unsigned b,c;int f;
+    *toggle=sscanf(target,"board.toggle.%u.%u.%d%c",&b,&c,&f,&tail)==3;
+    if(!*toggle && sscanf(target,"board.param.%u.%u.%d%c",&b,&c,&f,&tail)!=3)return 0;
+    if(!c || f<0 || !(f<=4 || (f>=100 && f<100+TS_SUNVOX_CONTROLS) || (f>=300 && f<300+TS_CF_COUNT)))return 0;
+    *board=b;*child=c;*field=f;return 1;
+}
+static int sister_board_child(const TsSisterFxSlotControls *slots,int count,uint32_t id)
+{for(int i=0;i<count;++i)if(slots[i].id==id)return i;return -1;}
+static float sister_board_field_value(const TsSisterFxSlotControls *slot,int field)
+{
+    if(field>=300)return slot->type==TS_SISTER_FX_FILTER?slot->filter.value[field-300]:0;
+    if(field>=100)return slot->type==TS_SISTER_FX_SUNVOX?ts_sunvox_normalized(&slot->sunvox,field-100):0;
+    TsSisterParameters p={0};p.fx.slot[0]=*slot;
+    return sister_parameter_normalized(&p,TS_SISTER_UI_SLOT_PARAMETER(0,field));
+}
+static int sister_board_midi_value(const char *target,const TsUiState *ui,const SisterWindow *s,float *value)
+{
+    uint32_t b,id;int field,toggle;if(!sister_board_target(target,&b,&id,&field,&toggle))return 0;
+    *value=0;const TsSisterFxSlotControls *slots=s->model.parameters.fx.slot;int count=s->model.parameters.fx.slot_count;
+    if(b){int at=sister_board_slot(&ui->config.matrix,b);if(at<0)return 1;slots=ui->config.matrix.effect[at].board.slot;count=ui->config.matrix.effect[at].board.count;}
+    int at=sister_board_child(slots,count,id);if(at>=0)*value=toggle?slots[at].enabled:sister_board_field_value(&slots[at],field);
+    return 1;
+}
+static int sister_board_midi(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,SisterWindow *s,const char *target,float value)
+{
+    uint32_t b,id;int field,toggle;if(!sister_board_target(target,&b,&id,&field,&toggle))return 0;
+    TsSisterParameters next=audio->sister.parameters;int parent=-1;
+    TsSisterFxSlotControls *slots=next.fx.slot;int count=next.fx.slot_count;
+    if(b){parent=sister_board_slot(&audio->sister.matrix.controls,b);if(parent<0)return 1;
+        matrix_window.controls=audio->sister.matrix.controls;slots=matrix_window.controls.effect[parent].board.slot;count=matrix_window.controls.effect[parent].board.count;}
+    int at=sister_board_child(slots,count,id);if(at<0)return 1;TsSisterFxSlotControls *slot=&slots[at];
+    if(toggle)slot->enabled=!slot->enabled;
+    else if(field>=300){if(slot->type!=TS_SISTER_FX_FILTER || (slot->filter.locks&(1u<<(field-300))))return 1;ts_character_filter_set(&slot->filter,field-300,value);}
+    else if(field>=100){if(slot->type!=TS_SISTER_FX_SUNVOX)return 1;slot->sunvox.value[field-100]=(int)lrintf(SDL_clamp(value,0,1)*32768);}
+    else {if((slot->parameter_locks&(1u<<field)) || (!b && ts_sister_ui_parameter_locked(&s->model,TS_SISTER_UI_SLOT_PARAMETER(at,field))))return 1;TsSisterParameters p={0};p.fx.slot[0]=*slot;sister_set_parameter(&p,TS_SISTER_UI_SLOT_PARAMETER(0,field),value);*slot=p.fx.slot[0];}
+    if(b)mx_commit_controls(device,audio,ui);
+    else {
+        if(device)SDL_LockAudioDevice(device);
+        ts_sister_runtime_set_parameters(&audio->sister,&next);ts_sister_runtime_mark_selected_preset_modified(&audio->sister);
+        if(device)SDL_UnlockAudioDevice(device);s->model.parameters=audio->sister.parameters;
+    }
+    ui->project_modified=1;s->rendered_model_valid=0;return 1;
+}
+
+static int sister_board_preset_recall(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,SisterWindow *s,size_t index)
+{
+    if(index>=pedalboard_presets.count || !s->board_id)return 0;
+    TsSisterParameters shared=s->model.parameters;TsSisterFxControls old=sister_board_view(s)->parameters.fx;
+    s->model.parameters.fx=pedalboard_presets.entries[index].parameters.fx;
+    TsSisterFxControls *next=&s->model.parameters.fx;next->next_slot_id=old.next_slot_id;
+    for(int i=0;i<TS_SISTER_FX_SLOT_COUNT;++i){next->slot[i].placement=TS_SISTER_FX_PLACE_POST;next->slot[i].id=i<old.slot_count?old.slot[i].id:0;}
+    int ok=sister_board_publish(device,audio,ui,s);s->model.parameters=shared;
+    if(ok){s->board_preset_index=index;s->board_preset_modified=0;sister_preset_model_sync(s,&audio->sister);}
+    return ok;
 }

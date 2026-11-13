@@ -1,4 +1,8 @@
 #include "tapesister/sister_post_fx.h"
+#include "tapesister/profile.h"
+#include <stdatomic.h>
+static atomic_uint_least64_t profile_generation=1;
+#include "tapesister/matrix_effect_types.h"
 
 #include <float.h>
 #include <math.h>
@@ -239,6 +243,7 @@ const char *ts_sister_fx_type_name(TsSisterFxType type)
     case TS_SISTER_FX_FILTER: return "FILTER";
     case TS_SISTER_FX_DISPERSION: return "DISPERSE";
     case TS_SISTER_FX_RESONATOR: return "RESONATOR";
+    case TS_SISTER_FX_SUNVOX: return "SUNVOX";
     default: return "EMPTY";
     }
 }
@@ -294,6 +299,8 @@ TsSisterFxSlotControls ts_sister_fx_empty_slot(void)
 void ts_sister_fx_controls_migrate_legacy(TsSisterFxControls *controls)
 {
     if (controls == NULL) return;
+    uint32_t ids[TS_SISTER_FX_SLOT_COUNT];
+    for(int i=0;i<TS_SISTER_FX_SLOT_COUNT;++i)ids[i]=controls->slot[i].id;
     controls->slot[0] = slot_controls(TS_SISTER_FX_DISTORTION,
         controls->distortion_enabled,
         legacy_targets_to_placement(controls->distortion_targets),
@@ -317,6 +324,7 @@ void ts_sister_fx_controls_migrate_legacy(TsSisterFxControls *controls)
     controls->slot_count = TS_SISTER_FX_SLOT_MIN;
     for (int i = 4; i < TS_SISTER_FX_SLOT_COUNT; ++i)
         controls->slot[i] = ts_sister_fx_empty_slot();
+    for(int i=0;i<TS_SISTER_FX_SLOT_COUNT;++i)controls->slot[i].id=ids[i];
 }
 
 float ts_sister_reverb_legacy_size(TsSisterReverbType type)
@@ -357,6 +365,7 @@ void ts_sister_fx_controls_default(TsSisterFxControls *controls)
     ts_sister_fx_controls_migrate_legacy(controls);
     controls->slot_count = TS_SISTER_FX_SLOT_DEFAULT;
     ts_sister_fallout_controls_default(&controls->fallout);
+    ts_sister_fx_identify(controls);
 }
 
 void ts_grain_state_capture(TsSisterFxSlotControls *slot,int index)
@@ -436,6 +445,13 @@ int ts_transient_states_read(const char *text,uint8_t *power,TsGrainStates *bank
     *power=(uint8_t)value[0];*bank=next;return 1;
 }
 
+void ts_sister_fx_identify(TsSisterFxControls *c)
+{
+    if(!c->next_slot_id)c->next_slot_id=1;
+    for(int i=0;i<TS_SISTER_FX_SLOT_COUNT;++i)if(c->slot[i].id>=c->next_slot_id && c->slot[i].id<INT32_MAX)c->next_slot_id=c->slot[i].id+1;
+    for(int i=0;i<c->slot_count;++i)if(!c->slot[i].id && c->next_slot_id<INT32_MAX)c->slot[i].id=c->next_slot_id++;
+}
+
 void ts_sister_fx_controls_sanitize(TsSisterFxControls *controls)
 {
     if (controls == NULL) return;
@@ -510,6 +526,7 @@ void ts_sister_fx_controls_sanitize(TsSisterFxControls *controls)
         slot->mix = clampf(slot->mix, 0.0f, 1.0f);
     }
     ts_sister_fallout_controls_sanitize(&controls->fallout);
+    ts_sister_fx_identify(controls);
 }
 
 float ts_sister_fx_transition_ms(float normalized)
@@ -776,6 +793,7 @@ static void grain_spawn(TsSisterGrainState *state)
 void ts_sister_post_fx_free(TsSisterPostFxEngine *engine)
 {
     if (engine == NULL) return;
+    ts_sister_sunvox_free(engine);
     for (size_t slot = 0u; slot < TS_SISTER_FX_SLOT_COUNT; ++slot)
         for (size_t location = 0u;
              location < TS_SISTER_FX_LOCATION_COUNT; ++location) {
@@ -794,6 +812,7 @@ int ts_sister_post_fx_init(TsSisterPostFxEngine *engine,
     if (engine == NULL || sample_rate < 1000u || sample_rate > 384000u)
         return 0;
     memset(&next, 0, sizeof(next));
+    next.profile_generation=atomic_fetch_add(&profile_generation,1);
     next.sample_rate = sample_rate;next.timing.sample_rate=sample_rate;
     next.timing.smooth_12ms = 1.0f - expf(-1.0f / (12.0f * 0.001f * (float)sample_rate));
     next.timing.smooth_18ms = 1.0f - expf(-1.0f / (18.0f * 0.001f * (float)sample_rate));
@@ -808,6 +827,7 @@ int ts_sister_post_fx_init(TsSisterPostFxEngine *engine,
     next.master_engage.current = next.master_engage.target = 1.0f;
     for (size_t slot = 0u; slot < TS_SISTER_FX_SLOT_COUNT; ++slot) {
         next.slot[slot].active = next.controls.slot[slot];
+        next.processor_id[slot]=next.controls.slot[slot].id;
         ramp_reset(&next.slot[slot].engage,
                    next.controls.slot[slot].enabled ? 1.0f : 0.0f);
         ramp_reset(&next.slot[slot].morph, 0.0f);
@@ -847,7 +867,8 @@ static int slot_structure_equal(const TsSisterFxSlotControls *a,
                                 const TsSisterFxSlotControls *b)
 {
     return a != NULL && b != NULL && a->type == b->type &&
-           a->placement == b->placement;
+           a->placement == b->placement && (a->type!=TS_SISTER_FX_SUNVOX ||
+           (a->sunvox.patch==b->sunvox.patch && ts_sunvox_quantum(&a->sunvox)==ts_sunvox_quantum(&b->sunvox)));
 }
 
 static void slot_begin_morph(TsSisterFxSlotState *state,
@@ -857,6 +878,7 @@ static void slot_begin_morph(TsSisterFxSlotState *state,
     if (state == NULL || next == NULL) return;
     state->pending = *next;
     state->has_pending = 1;
+    state->warmup=next->type==TS_SISTER_FX_SUNVOX?ts_sunvox_quantum(&next->sunvox):0;
     ramp_reset(&state->morph, 0.0f);
     ramp_start(&state->morph, 1.0f, frames);
 }
@@ -865,7 +887,7 @@ static void slot_advance(TsSisterFxSlotState *state, uint32_t frames)
 {
     if (state == NULL) return;
     ramp_advance(&state->engage);
-    ramp_advance(&state->morph);
+    if(state->warmup)--state->warmup;else ramp_advance(&state->morph);
     if (state->retiring) {
         ramp_advance(&state->removal);
         if (state->removal.remaining) return;
@@ -901,7 +923,7 @@ int ts_sister_post_fx_reconfigure(TsSisterPostFxEngine *engine,
     controls = engine->controls;
     memset(&next, 0, sizeof(next));
     if (!ts_sister_post_fx_init(&next, sample_rate)) return 0;
-    ts_sister_post_fx_sync_controls(&next, &controls);
+    if(!ts_sister_post_fx_sync_controls(&next,&controls)){ts_sister_post_fx_free(&next);return 0;}
     ts_sister_post_fx_free(engine);
     *engine = next;
     return 1;
@@ -916,6 +938,28 @@ void ts_sister_post_fx_set_controls(TsSisterPostFxEngine *engine,
     /* Slot state is authoritative in the pedalboard schema. Legacy named
        controls are translated explicitly by old preset/project loaders. */
     ts_sister_fx_controls_sanitize(&next);
+    if(!ts_sister_sunvox_ready(engine,&next))return;
+    ts_sister_sunvox_set(engine,&next);
+    if(engine->controls.slot_count==next.slot_count) {
+        int order[TS_SISTER_FX_SLOT_COUNT],permutation=1,moved=0;
+        for(int i=0;i<next.slot_count;++i){order[i]=-1;for(int j=0;j<next.slot_count;++j)if(next.slot[i].id==engine->controls.slot[j].id){order[i]=j;break;}if(order[i]<0)permutation=0;moved|=order[i]!=i;}
+        if(permutation && moved) {
+            TsSisterFxSlotState old[TS_SISTER_FX_SLOT_COUNT];TsSisterFxSlotControls before[TS_SISTER_FX_SLOT_COUNT];
+            memcpy(old,engine->slot,sizeof(old));memcpy(before,engine->controls.slot,sizeof(before));
+            for(int i=0;i<next.slot_count;++i){engine->slot[i]=old[order[i]];engine->controls.slot[i]=before[order[i]];}
+        }
+    }
+    for(int i=0;i<next.slot_count;++i) {
+        int found=0;for(int j=0;j<TS_SISTER_FX_SLOT_COUNT;++j)found|=engine->processor_id[j]==next.slot[i].id;
+        if(found)continue;
+        for(int j=0;j<TS_SISTER_FX_SLOT_COUNT;++j) {
+            int used=0;for(int k=0;k<TS_SISTER_FX_SLOT_COUNT;++k){const TsSisterFxSlotState *v=&engine->slot[k];
+                used|=(k<next.slot_count && next.slot[k].id==engine->processor_id[j]) ||
+                    (v->active.type && v->active.id==engine->processor_id[j]) ||
+                    (v->has_pending && v->pending.type && v->pending.id==engine->processor_id[j]);}
+            if(!used){engine->processor_id[j]=next.slot[i].id;break;}
+        }
+    }
     {
         uint32_t effect_frames = (uint32_t)fmaxf(1.0f,
             ts_sister_fx_transition_ms(next.transition) *
@@ -977,20 +1021,25 @@ void ts_sister_post_fx_set_controls(TsSisterPostFxEngine *engine,
     engine->controls = next;
 }
 
-void ts_sister_post_fx_sync_controls(TsSisterPostFxEngine *engine,
+int ts_sister_post_fx_sync_controls(TsSisterPostFxEngine *engine,
                                      const TsSisterFxControls *controls)
 {
     TsSisterFxControls next;
-    if (engine == NULL || controls == NULL) return;
+    if (engine == NULL || controls == NULL) return 0;
     next = *controls;
     ts_sister_fx_controls_sanitize(&next);
+    TsSisterSunVoxPlan plan;
+    if(!ts_sister_sunvox_stage(engine,&next,&plan))return 0;
+    ts_sister_sunvox_commit(engine,&plan);
     ts_sister_post_fx_set_controls(engine, &next);
+    engine->profile_generation=atomic_fetch_add(&profile_generation,1);
     engine->processing_slots = next.slot_count;
+    for(int i=0;i<TS_SISTER_FX_SLOT_COUNT;++i)engine->processor_id[i]=next.slot[i].id;
     ramp_reset(&engine->master_engage, next.enabled ? 1.0f : 0.0f);
     for (size_t slot = 0u; slot < TS_SISTER_FX_SLOT_COUNT; ++slot) {
         const TsSisterFxSlotControls *control = &next.slot[slot];
         TsSisterFxSlotState *slot_state = &engine->slot[slot];
-        slot_state->active = *control;
+        slot_state->active = *control;slot_state->warmup=0;
         slot_state->has_pending = slot_state->has_queued = slot_state->retiring = 0;
         ramp_reset(&slot_state->morph, 0.0f);
         ramp_reset(&slot_state->engage, control->enabled ? 1.0f : 0.0f);
@@ -1057,6 +1106,8 @@ void ts_sister_post_fx_sync_controls(TsSisterPostFxEngine *engine,
                     .25f*powf(16,control->parameter_c)});
         }
     }
+    ts_sister_sunvox_collect(engine,&plan);ts_sister_sunvox_discard(&plan);
+    return 1;
 }
 
 static TsStereoFrame distortion_process(const TsSisterFxTiming *engine,
@@ -1640,6 +1691,8 @@ static TsStereoFrame slot_effect_process(TsSisterPostFxEngine *engine,
         slot >= TS_SISTER_FX_SLOT_COUNT ||
         location >= TS_SISTER_FX_LOCATION_COUNT)
         return input;
+    if(control->type==TS_SISTER_FX_SUNVOX)return ts_sister_sunvox_process(engine,control,(unsigned)location,input,gate,direct);
+    for(size_t i=0;i<TS_SISTER_FX_SLOT_COUNT;++i)if(control->id && engine->processor_id[i]==control->id){slot=i;break;}
     switch (control->type) {
     case TS_SISTER_FX_REVERB:
         return reverb_process(&engine->timing, &engine->reverb[slot][location],
@@ -1691,10 +1744,11 @@ static TsStereoFrame process_location(TsSisterPostFxEngine *engine,
         return (TsStereoFrame){input.l, input.l};
     }
     placement_bit = (uint8_t)(1u << location);
-    output = input;float direct=1;
+    output = input;TsStereoFrame reference=input;float direct=1;
     for (size_t slot = 0u; slot < (size_t)engine->processing_slots; ++slot) {
         TsSisterFxSlotState *state = &engine->slot[slot];
         if (state->active.type == TS_SISTER_FX_EMPTY && !state->has_pending) continue;
+        uint64_t measured=ts_profile_child_begin(0,(unsigned)slot);
         TsStereoFrame slot_input = output;
         TsStereoFrame active_output = output;
         TsStereoFrame pending_output = output;
@@ -1702,8 +1756,14 @@ static TsStereoFrame process_location(TsSisterPostFxEngine *engine,
         if ((state->active.placement & placement_bit) != 0u)
             active_output = slot_effect_process(engine, slot, location,
                                                 &state->active, output, gate, &active_dry);
+        TsStereoFrame old_reference=ts_sister_sunvox_dry(engine,&state->active,(unsigned)location,reference),next_reference=reference;
+        int same_processor=state->active.id==state->pending.id && state->active.type==state->pending.type &&
+            (state->active.placement&placement_bit) && (state->pending.placement&placement_bit) &&
+            (state->active.type!=TS_SISTER_FX_SUNVOX || (state->active.sunvox.patch==state->pending.sunvox.patch && ts_sunvox_quantum(&state->active.sunvox)==ts_sunvox_quantum(&state->pending.sunvox)));
         if (state->has_pending) {
-            if ((state->pending.placement & placement_bit) != 0u)
+            if(same_processor){pending_output=active_output;pending_dry=active_dry;next_reference=old_reference;}
+            else next_reference=ts_sister_sunvox_dry(engine,&state->pending,(unsigned)location,reference);
+            if (!same_processor && (state->pending.placement & placement_bit) != 0u)
                 pending_output = slot_effect_process(
                     engine, slot, location, &state->pending, output, gate, &pending_dry);
             output = lerp_frame(active_output, pending_output,
@@ -1711,13 +1771,20 @@ static TsStereoFrame process_location(TsSisterPostFxEngine *engine,
         } else {
             output = active_output;
         }
+        TsStereoFrame slot_reference=reference;reference=state->has_pending?lerp_frame(old_reference,next_reference,state->morph.current):old_reference;
         float slot_direct = state->has_pending ? active_dry+(pending_dry-active_dry)*state->morph.current : active_dry;
         if (state->retiring) {
             output = lerp_frame(output, slot_input, state->removal.current);
+            reference=lerp_frame(reference,slot_reference,state->removal.current);
             slot_direct += (1-slot_direct)*state->removal.current;
         }
         direct *= slot_direct;
+        if(measured){const TsSisterFxSlotControls *v=&state->active;
+            TsProfileEffectIdentity id={.generation=engine->profile_generation,.id=v->id,.type=v->type==TS_SISTER_FX_SUNVOX?TS_MATRIX_FX_SUNVOX:v->type>=TS_SISTER_FX_FILTER?v->type+1:v->type,.patch=v->sunvox.patch,.quantum=v->type==TS_SISTER_FX_SUNVOX?ts_sunvox_quantum(&v->sunvox):0};
+            ts_profile_child_end(0,(unsigned)slot,0,&id,measured,state->has_pending);
+        }
     }
+    input=reference;
     master_gain = clampf(engine->master_engage.current, 0.0f, 1.0f);
     /* Master is the final return valve. Keep the exact-zero case explicit so
        no processor state, tail, malformed sample, or individual switch can
@@ -1923,7 +1990,7 @@ size_t ts_sister_post_fx_memory_bytes(const TsSisterPostFxEngine *engine)
                 bytes += engine->reverb[slot][location].line[line].capacity_frames *
                          2u * sizeof(float);
         }
-    return bytes;
+    return bytes+ts_sister_sunvox_memory(engine);
 }
 
 /* Standalone Matrix nodes call the same DSP kernels as pedalboard slots. */

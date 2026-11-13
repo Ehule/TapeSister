@@ -360,8 +360,8 @@ static int meta_fx_event(const SDL_Event *e, SDL_AudioDeviceID device, AudioStat
                 changed = 1;
             } else if ((left || wheel) && x >= 40 && x < 140) {
                 int type = row < c->count ? s->type : 0;
-                type = (type + (wheel ? (int)lrintf(wheel_event_delta(e, 0)) : 1) + TS_SISTER_FX_TYPE_COUNT) %
-                       TS_SISTER_FX_TYPE_COUNT;
+                type = (type + (wheel ? (int)lrintf(wheel_event_delta(e, 0)) : 1) + TS_SISTER_FX_SUNVOX) %
+                       TS_SISTER_FX_SUNVOX;
                 ts_meta_stage_default(s, type);
                 for (int j = c->map_count - 1; j >= 0; --j)
                     if (c->map[j].stage == row &&

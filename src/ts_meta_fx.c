@@ -21,7 +21,7 @@ const char *ts_meta_parameter_name(int type, int field) {
         return "MIX";
     if (field == 4)
         return "OUTPUT";
-    return type >= 0 && type < TS_SISTER_FX_TYPE_COUNT && field >= 0 && field < 3 ? names[type][field]
+    return type >= 0 && type < TS_SISTER_FX_SUNVOX && field >= 0 && field < 3 ? names[type][field]
                                                                                   : "FILTER";
 }
 int ts_meta_target_field(int type, int field) {
@@ -112,7 +112,7 @@ int ts_meta_valid(const TsMetaControls *c) {
     }
     for (int i = 0; i < TS_META_STAGES; ++i) {
         const TsMetaStage *s = &c->stage[i];
-        if (s->type < 0 || s->type >= TS_SISTER_FX_TYPE_COUNT || s->enabled < 0 || s->enabled > 1 ||
+        if (s->type < 0 || s->type >= TS_SISTER_FX_SUNVOX || s->enabled < 0 || s->enabled > 1 ||
             s->power > 3)
             return 0;
         for (int j = 0; j < 5; ++j)
@@ -458,7 +458,7 @@ int ts_meta_read(TsMetaControls *c, const char *key, const char *value) {
         return 1;
     }
     if (sscanf(key, "Stage%d%n", &i, &n) == 1 && !key[n] && i >= 0 && i < 8) {
-        if (!numbers(value, v, 8 + TS_CF_COUNT) || !whole(v[0], 0, TS_SISTER_FX_TYPE_COUNT - 1) ||
+        if (!numbers(value, v, 8 + TS_CF_COUNT) || !whole(v[0], 0, TS_SISTER_FX_SUNVOX - 1) ||
             !whole(v[1], 0, 1) || !whole(v[2], 0, 3))
             return -1;
         for (int j = 3; j < 8 + TS_CF_COUNT; ++j)

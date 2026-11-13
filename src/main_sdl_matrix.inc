@@ -48,7 +48,7 @@ static void fx_replace_request(uint32_t id);
 static void fx_stroke_free(void);
 static void fx_cables_free(void);
 static void fx_cancel_gesture(void);
-static struct { uint32_t node; int scroll,category,page,focus; char filter[96],path[1024],status[192]; } sunvox_editor;
+static struct { uint32_t node,child; SisterWindow *sister; int scroll,category,page,focus; char filter[96],path[1024],status[192]; } sunvox_editor;
 static TsBrowser sunvox_files;
 static void svfx_open(uint32_t id);
 static void svfx_close(void);
@@ -366,16 +366,13 @@ static void mx_collect_effects(SDL_AudioDeviceID device,AudioState *audio)
        countdowns. Do not exclude playback at UI refresh rate when nothing is
        ready to retire, including while the Matrix window is closed. */
     int offline=!device || !ts_audio_output_is_available(),ready=offline;
-    for(int i=0;!ready && i<TS_MATRIX_EFFECT_CAPACITY;++i)
-        ready=audio->sister.matrix_effects.previous[i] &&
-            !atomic_load_explicit(&audio->sister.matrix_effects.remaining[i],memory_order_relaxed);
+    ready|=ts_matrix_effects_collect_ready(&audio->sister.matrix_effects);
     if(!ready)return;
     TsMatrixEffectPlan garbage;
     if(device)SDL_LockAudioDevice(device);
     if(offline) {
         /* Offline editing has no callback to finish a lifecycle fade. */
-        for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)atomic_store_explicit(&audio->sister.matrix_effects.remaining[i],0,memory_order_relaxed);
-        audio->sister.matrix_effects.fading=0;
+        ts_matrix_effects_finish_edits(&audio->sister.matrix_effects);
     }
     ts_matrix_effects_collect(&audio->sister.matrix_effects,&garbage);
     if(device)SDL_UnlockAudioDevice(device);
@@ -911,7 +908,7 @@ static void mx_draw_frame(AudioState *audio,TsSamplePages *pages,TsInstrument *b
 {
     MatrixWindow *w=&matrix_window;
     mx_prepare_surface(w);
-    if(sunvox_editor.node)svfx_paint();
+    if(sunvox_editor.node || sunvox_editor.child)svfx_paint();
     else if(w->canvas)fx_paint(audio,pages,bank);else mx_paint(audio,pages,bank);
     SDL_UpdateTexture(w->texture,NULL,w->pixels,w->pixel_w*4);
     SDL_RenderClear(w->renderer);
@@ -995,7 +992,7 @@ static int matrix_event_inner(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID de
     if(!w->visible)return 1;
     if(w->canvas && fx_canvas.label_editing)return fx_label_edit_event(e);
     if(w->canvas && fx_canvas.properties)return 1;
-    if(sunvox_editor.node)return svfx_event(e,device,audio,ui,pages,bank);
+    if(sunvox_editor.node || sunvox_editor.child)return svfx_event(e,device,audio,ui,pages,bank);
     if(w->canvas && (fx_modal() || fx_canvas.confirm_clear || fx_canvas.confirm_delete || fx_canvas.popup) && (e->type==SDL_KEYDOWN || e->type==SDL_KEYUP))return fx_event(e,main,device,audio,ui,pages,bank,0,0,0);
     if(w->rename>=0) {
         if(e->type==SDL_TEXTINPUT || (e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_BACKSPACE))
@@ -1183,7 +1180,7 @@ static int matrix_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,A
     int properties=fx_properties_owns(e);
     int own=w->visible && (event_window_id(e)==w->id || properties);
     if(own && !properties && e->type!=SDL_MOUSEMOTION)w->dirty=1;
-    int edit=properties?(fx_canvas.properties && fx_properties_apply_event(e)):own && ((w->canvas && fx_canvas.confirm_delete && e->type==SDL_KEYDOWN) || (w->canvas && fx_canvas.label_editing && e->type==SDL_KEYDOWN && (e->key.keysym.sym==SDLK_RETURN || e->key.keysym.sym==SDLK_KP_ENTER)) || (w->canvas && fx_canvas.popup && e->type==SDL_KEYDOWN && (e->key.keysym.sym==SDLK_RETURN || e->key.keysym.sym==SDLK_KP_ENTER)) || (sunvox_editor.node && (e->type==SDL_DROPFILE || (e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_RETURN))) || e->type==SDL_MOUSEBUTTONDOWN || e->type==SDL_MOUSEWHEEL ||
+    int edit=properties?(fx_canvas.properties && fx_properties_apply_event(e)):own && ((w->canvas && fx_canvas.confirm_delete && e->type==SDL_KEYDOWN) || (w->canvas && fx_canvas.label_editing && e->type==SDL_KEYDOWN && (e->key.keysym.sym==SDLK_RETURN || e->key.keysym.sym==SDLK_KP_ENTER)) || (w->canvas && fx_canvas.popup && e->type==SDL_KEYDOWN && (e->key.keysym.sym==SDLK_RETURN || e->key.keysym.sym==SDLK_KP_ENTER)) || ((sunvox_editor.node || sunvox_editor.child) && (e->type==SDL_DROPFILE || (e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_RETURN))) || e->type==SDL_MOUSEBUTTONDOWN || e->type==SDL_MOUSEWHEEL ||
         (w->canvas && e->type==SDL_KEYDOWN && (fx_canvas_key(e->key.keysym.sym) || ((e->key.keysym.mod&KMOD_CTRL) && e->key.keysym.sym==SDLK_v))) ||
         (w->rename>=0 && e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_RETURN) ||
         (w->rename<0 && e->type==SDL_KEYDOWN && mx_layout_key(e)));

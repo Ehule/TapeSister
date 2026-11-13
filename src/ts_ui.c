@@ -5787,7 +5787,13 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                 sister_db_parameter_state(fb, 156, top + 4, field_width,
                     "GAIN", slot->gain_db, color,
                     ts_sister_ui_parameter_locked(model, parameter));
-                if(slot->type==TS_SISTER_FX_FILTER) {
+                if(slot->type==TS_SISTER_FX_SUNVOX) {
+                    for(int k=0;k<3;++k){TsSunVoxParameter p;char label[24];float value=ts_sunvox_normalized(&slot->sunvox,k);
+                        if(ts_sunvox_parameter(&slot->sunvox,k,&p))snprintf(label,sizeof(label),"%.6s %.0F",p.name,value*100);
+                        else snprintf(label,sizeof(label),"--");
+                        sister_value_parameter_state(fb,156+field_step*(k+1),top+4,field_width,label,value,color,ts_sister_ui_parameter_locked(model,parameter+k+1));}
+                    sister_percent_parameter_state(fb,156+field_step*4,top+4,field_width,"MIX",slot->mix,100,color,ts_sister_ui_parameter_locked(model,parameter+4));
+                } else if(slot->type==TS_SISTER_FX_FILTER) {
                     const TsCharacterFilterControls *c=&slot->filter;
                     int focus=c->value[TS_CF_ROUTE]>=.75f && c->value[TS_CF_FOCUS]>=.5f?8:0;
                     const int ids[3]={TS_CF_L_CUT+focus,TS_CF_L_RES+focus,TS_CF_L_DRIVE+focus};
@@ -5871,6 +5877,9 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
             if(slot->type==TS_SISTER_FX_TRANSIENT) {
                 char power[16];snprintf(power,sizeof(power),"PWR %uX",1u+slot->transient_power);
                 button(fb,320,top+26,66,power,slot->transient_power!=0);
+            } else if(slot->type==TS_SISTER_FX_SUNVOX) {
+                sister_compact_button(fb,330,top+26,80,"EDIT SUNVOX",0);
+                char name[30];snprintf(name,sizeof(name),"%.29s",ts_sunvox_name(&slot->sunvox));text(fb,420,top+31,name,PAL_WAVE_RIGHT,1);
             } else if(slot->type==TS_SISTER_FX_FILTER) {
                 sister_compact_button(fb,330,top+26,80,"EDIT FILTER",0);
                 char s[32];ts_character_filter_label(&slot->filter,TS_CF_ROUTE,s,sizeof(s));text(fb,420,top+31,s,PAL_WAVE_RIGHT,1);
@@ -6252,7 +6261,6 @@ sister_footer:
     snprintf(preset_label, sizeof(preset_label), "%.17s%s",
              model->preset_name[0] != '\0' ? model->preset_name : "PRESET",
              model->preset_modified ? "*" : "");
-    if(model->fx_page==1 && model->board_selected)snprintf(preset_label,sizeof(preset_label),"P%d / PROJECT",model->board_selected+1);
     button(fb, 264, 370, 130, preset_label, 0);
     button(fb, 400, 370, 28, ">", 0);
     {

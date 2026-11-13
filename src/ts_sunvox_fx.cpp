@@ -483,3 +483,11 @@ int ts_sunvox_read(TsSunVoxControls *c,const char *key,const char *value) {
     }
     return -1;
 }
+
+float ts_sunvox_normalized(const TsSunVoxControls *c,int index)
+{
+    if(!c || index<0 || index>=TS_SUNVOX_CONTROLS)return 0;
+    if(c->value[index]>=0)return c->value[index]/32768.f;
+    TsSunVoxParameter p;if(!ts_sunvox_parameter(c,index,&p) || p.maximum==p.minimum)return 0;
+    return (p.initial-p.minimum)/(float)(p.maximum-p.minimum);
+}

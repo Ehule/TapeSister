@@ -712,7 +712,7 @@ static void test_interrupted_wheel_handoffs(void)
 
 static void test_master_feedback_causality(void)
 {
-    TsSisterRuntime runtime;
+    static TsSisterRuntime runtime;
     TsSisterParameters parameters;
     TsSisterSourceFrames sources = {0};
     char error[128];

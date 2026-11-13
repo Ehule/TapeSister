@@ -638,16 +638,31 @@ static void ts_audio_session_update(AudioState *audio,TsUiState *ui)
             generation,ts_native_current_driver()?ts_native_current_driver():"none",ts_output_endpoint.active_name,
             ts_audio_connection_state_name(ts_output_endpoint.state),ts_output_endpoint.sample_rate,ts_output_endpoint.buffer_frames,ts_output_endpoint.channels);
     }
-    if(ts_profile_enabled()){char profile[16384];ts_profile_report(profile,sizeof(profile));ts_session_log_text("profile_snapshot",profile);}
+    if(ts_profile_enabled()){char profile[131072];ts_profile_report(profile,sizeof(profile));ts_session_log_text("profile_snapshot",profile);}
 }
 
 static void ts_audio_profile_draw(TsFramebuffer *fb, uint32_t ink, uint32_t dim)
 {
     TsProfileSnapshot s; ts_profile_snapshot(&s); char line[160];
     ts_audio_profile_recent(&s);
-    snprintf(line,sizeof(line),"%.1F S  %s; SAMPLED 1/32 AUDIO BLOCKS",s.seconds,
-        ts_health.profile_effects?"MATRIX FX":"INCLUSIVE WALL TIME");
+    snprintf(line,sizeof(line),"%.1F S  %s; SAMPLED 1/%d AUDIO BLOCKS",s.seconds,
+        ts_health.profile_effects==2?"BOARD CHILDREN":ts_health.profile_effects?"MATRIX FX":"INCLUSIVE WALL TIME",ts_health.profile_effects==2?640:32);
     cfg_text(fb,20,42,line,dim);
+    if(ts_health.profile_effects==2) {
+        cfg_text(fb,20,58,"BOARD / CHILD / EFFECT",ink);cfg_text(fb,310,58,"AVG/BLOCK",ink);cfg_text(fb,400,58,"PEAK/BLOCK",ink);cfg_text(fb,500,58,"MS/S",ink);cfg_text(fb,564,58,"SAMPLES",ink);
+        int total=0;for(int i=0;i<TS_PROFILE_CHILDREN;++i)total+=s.child[i].effect.samples!=0;
+        ts_health.profile_scroll=SDL_clamp(ts_health.profile_scroll,0,SDL_max(0,total-16));int row=0,rank=0;
+        for(int i=0;i<TS_PROFILE_CHILDREN;++i){const TsProfileEffectValue *v=&s.child[i].effect;if(!v->samples)continue;
+            if(rank++<ts_health.profile_scroll || row>=16)continue;int y=77+15*row++;char label[300];ts_profile_child_label(&s.child[i],label,sizeof(label));
+            snprintf(line,sizeof(line),"%.47s",label);cfg_text(fb,20,y,line,ink);double ms=s.frequency?1000.0*v->blocks.ticks/s.frequency:0;
+            snprintf(line,sizeof(line),"%.3F",v->blocks.calls?ms/v->blocks.calls:0);cfg_text(fb,310,y,line,dim);
+            snprintf(line,sizeof(line),"%.3F",s.frequency?1000.0*v->blocks.peak/s.frequency:0);cfg_text(fb,400,y,line,dim);
+            snprintf(line,sizeof(line),"%.2F",s.seconds?ms/s.seconds:0);cfg_text(fb,500,y,line,dim);
+            snprintf(line,sizeof(line),"%llu",(unsigned long long)v->samples);cfg_text(fb,564,y,line,dim);
+        }
+        cfg_text(fb,20,320,"INCLUSIVE CHILD TIMINGS / ESTIMATES; PEAKS ARE OBSERVED SAMPLES.",dim);
+        snprintf(line,sizeof(line),"ROWS %d-%d / %d / WHEEL OR PGUP/PGDN",total?ts_health.profile_scroll+1:0,ts_health.profile_scroll+row,total);cfg_text(fb,20,332,line,dim);return;
+    }
     if(ts_health.profile_effects) {
         cfg_text(fb,20,58,"EFFECT / PRESET",ink);
         cfg_text(fb,276,58,"AVG/BLOCK",ink);cfg_text(fb,350,58,"PEAK/BLOCK",ink);
@@ -755,7 +770,7 @@ static void ts_audio_health_draw(TsFramebuffer *fb, const TsUiState *ui,
     if (ts_profile_enabled()) {
         ts_audio_profile_draw(fb, ink, dim);
         ts_audio_health_button(fb,ui,now,TS_HEALTH_BUTTON_EFFECTS,
-            ts_health.profile_effects?"SUBSYSTEMS":"MATRIX FX",effect);
+            ts_health.profile_effects==2?"SUBSYSTEMS":ts_health.profile_effects?"BOARD FX":"MATRIX FX",effect);
         goto footer;
     }
     cfg_text(fb, 490, 20, state, active ? effect : dim);
@@ -951,13 +966,13 @@ static int ts_audio_health_event(const SDL_Event *event, SDL_Window *main_window
               (event->key.keysym.sym==SDLK_PAGEUP || event->key.keysym.sym==SDLK_PAGEDOWN || event->key.keysym.sym==SDLK_HOME || event->key.keysym.sym==SDLK_END)))) {
         if(event->type==SDL_MOUSEWHEEL)ts_health.profile_scroll-=wheel_event_detents(event,0)*3;
         else if(event->key.keysym.sym==SDLK_HOME)ts_health.profile_scroll=0;
-        else if(event->key.keysym.sym==SDLK_END)ts_health.profile_scroll=TS_MATRIX_EFFECT_CAPACITY;
+        else if(event->key.keysym.sym==SDLK_END)ts_health.profile_scroll=TS_PROFILE_CHILDREN;
         else ts_health.profile_scroll+=event->key.keysym.sym==SDLK_PAGEUP?-16:16;
-        ts_health.profile_scroll=SDL_clamp(ts_health.profile_scroll,0,TS_MATRIX_EFFECT_CAPACITY);ts_health.last_update=0;
+        ts_health.profile_scroll=SDL_clamp(ts_health.profile_scroll,0,TS_PROFILE_CHILDREN);ts_health.last_update=0;
     } else if (event->type == SDL_MOUSEBUTTONDOWN && event->button.button == SDL_BUTTON_LEFT) {
         int x, y; logical_mouse(ts_health.window, event->button.x, event->button.y, &x, &y);
         if(ts_profile_enabled() && ts_audio_health_hit(TS_HEALTH_BUTTON_EFFECTS,x,y)) {
-            ts_health.profile_effects=!ts_health.profile_effects;ts_health.profile_scroll=0;ts_health.last_update=0;return 1;
+            ts_health.profile_effects=(ts_health.profile_effects+1)%3;ts_health.profile_scroll=0;ts_health.last_update=0;return 1;
         }
         if(y>=344 && y<360) {
             if(ts_audio_health_hit(TS_HEALTH_BUTTON_MARK,x,y))ts_audio_session_marker();
@@ -975,7 +990,7 @@ static int ts_audio_health_event(const SDL_Event *event, SDL_Window *main_window
                 ts_audio_health_flash(TS_HEALTH_BUTTON_RESET,0,"RESET DONE");
             }
             else if (ts_audio_health_hit(TS_HEALTH_BUTTON_COPY,x,y)) {
-                char report[32768]; ts_audio_health_report(audio, report, sizeof(report));
+                char report[196608]; ts_audio_health_report(audio, report, sizeof(report));
                 int copied=SDL_SetClipboardText(report)==0;
                 ts_audio_health_flash(TS_HEALTH_BUTTON_COPY,!copied,copied?"COPIED":"COPY FAILED");
                 snprintf(ts_health.message, sizeof(ts_health.message), "%s",

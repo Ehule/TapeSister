@@ -728,8 +728,9 @@ int ts_sister_runtime_enable(TsSisterRuntime *runtime, uint32_t sample_rate,
                       "Could not allocate Sister rolling storage");
         return 0;
     }
-    if (cold_fx)
-        ts_sister_post_fx_sync_controls(&runtime->post_fx, &runtime->parameters.fx);
+    if (cold_fx && !ts_sister_post_fx_sync_controls(&runtime->post_fx, &runtime->parameters.fx)) {
+        ts_sister_machine_free(&machine);runtime_error(error,error_size,"Could not prepare pedalboard effects");return 0;
+    }
     if (cold_fallout) {
         ts_sister_fallout_sync_controls(&runtime->fallout,
                                         &runtime->parameters.fx.fallout);
@@ -898,8 +899,9 @@ int ts_sister_runtime_reconfigure(TsSisterRuntime *runtime,
                               "Could not allocate post-effects storage");
                 return 0;
             }
-            ts_sister_post_fx_sync_controls(&runtime->post_fx,
-                                             &runtime->parameters.fx);
+            if(!ts_sister_post_fx_sync_controls(&runtime->post_fx,&runtime->parameters.fx)) {
+                runtime_error(error,error_size,"Could not prepare pedalboard effects");return 0;
+            }
         }
         if (!runtime->limiter.ready ||
             runtime->limiter.sample_rate != sample_rate) {
@@ -934,7 +936,7 @@ int ts_sister_runtime_reconfigure(TsSisterRuntime *runtime,
     }
     runtime->output_channels = output_channels;
     runtime->parameters = runtime->machine.parameters;
-    ts_sister_post_fx_sync_controls(&runtime->post_fx, &runtime->parameters.fx);
+    if(!ts_sister_post_fx_sync_controls(&runtime->post_fx,&runtime->parameters.fx)){runtime_error(error,error_size,"Could not prepare pedalboard effects");return 0;}
     ts_sister_fallout_sync_controls(&runtime->fallout,
                                     &runtime->parameters.fx.fallout);
     runtime->last_frame = (TsSisterRuntimeFrame){0};

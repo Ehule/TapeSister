@@ -123,7 +123,7 @@ void ts_matrix_effects_free(TsMatrixEffects *f)
     ts_matrix_effects_init(f);
 }
 void ts_matrix_effects_discard(TsMatrixEffectPlan *p)
-{for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)node_free(p->node[i]);ts_sunvox_batch_free(p->worker);memset(p,0,sizeof(*p));}
+{for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i){node_free(p->node[i]);ts_pedalboard_discard(&p->board[i]);}ts_sunvox_batch_free(p->worker);memset(p,0,sizeof(*p));}
 static TsSunVoxBatch *prepare_worker(const TsMatrixEffects *f,const TsMatrixEffectPlan *plan)
 {
     if(!ts_sunvox_workers_configured())return NULL;
@@ -139,6 +139,9 @@ int ts_matrix_effects_stage(const TsMatrixEffects *f,const TsMatrixControls *c,u
     memset(p,0,sizeof(*p));if(rate<1000 || rate>384000 || !ts_matrix_valid(c))return 0;
     for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i) {
         const TsMatrixEffectControls *v=&c->effect[i];const TsMatrixEffectNode *n=f->current[i];
+        if(n && n->board && v->type==TS_MATRIX_FX_PEDALBOARD && n->id==v->id && n->rate==rate) {
+            if(!ts_pedalboard_stage(n->board,&v->board,&p->board[i])){ts_matrix_effects_discard(p);return 0;}continue;
+        }
         if((!v->id && !n) || (v->id && n && n->id==v->id && n->type==v->type && n->rate==rate &&
             (v->type!=TS_MATRIX_FX_META || ts_meta_topology_matches(n->meta,&v->meta)) &&
             (v->type!=TS_MATRIX_FX_PEDALBOARD || ts_pedalboard_topology_matches(n->board,&v->board)) &&
@@ -161,8 +164,12 @@ void ts_matrix_effects_commit(TsMatrixEffects *f,const TsMatrixControls *c,unsig
             f->total[i]=rate*12/1000;if(!f->total[i])f->total[i]=1;
             /* Let a newly buffered processor fill before moving the crossfade.
                Its wet and dry outputs are initially silent for one quantum. */
-            unsigned warmup=f->current[i] && f->current[i]->sunvox?f->current[i]->sunvox_quantum:0;
+            unsigned warmup=f->current[i] && f->current[i]->sunvox?f->current[i]->sunvox_quantum:f->current[i] && f->current[i]->board?ts_pedalboard_latency(f->current[i]->board):0;
             atomic_store_explicit(&f->remaining[i],f->total[i]+warmup,memory_order_relaxed);f->fading|=1u<<i;
+        }
+        if(f->current[i] && f->current[i]->board){
+            ts_pedalboard_profile_owner(f->current[i]->board,i+1,c->effect[i].id);
+            ts_pedalboard_commit(f->current[i]->board,&c->effect[i].board,&p->board[i]);
         }
         node_set(f->current[i],&c->effect[i],0);
     }
@@ -171,9 +178,21 @@ void ts_matrix_effects_commit(TsMatrixEffects *f,const TsMatrixControls *c,unsig
 void ts_matrix_effects_collect(TsMatrixEffects *f,TsMatrixEffectPlan *p)
 {
     memset(p,0,sizeof(*p));
-    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)if(f->previous[i] && !atomic_load_explicit(&f->remaining[i],memory_order_relaxed)) {
+    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i) {
+        if(f->current[i] && f->current[i]->board)ts_pedalboard_collect(f->current[i]->board,&p->board[i],0);
+        if(f->previous[i] && !atomic_load_explicit(&f->remaining[i],memory_order_relaxed)) {
         p->node[i]=f->previous[i];f->previous[i]=NULL;
+        }
     }
+}
+int ts_matrix_effects_collect_ready(const TsMatrixEffects *f)
+{
+    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)if((f->previous[i] && !atomic_load(&f->remaining[i])) ||
+        (f->current[i] && ts_pedalboard_collect_ready(f->current[i]->board)))return 1;return 0;
+}
+void ts_matrix_effects_finish_edits(TsMatrixEffects *f)
+{
+    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i){atomic_store(&f->remaining[i],0);if(f->current[i])ts_pedalboard_finish_edits(f->current[i]->board);}f->fading=0;
 }
 int ts_matrix_effects_restore(TsMatrixEffects *f,const TsMatrixControls *c,unsigned rate)
 {
@@ -186,7 +205,7 @@ int ts_matrix_effects_restore(TsMatrixEffects *f,const TsMatrixControls *c,unsig
     }
     next.worker=prepare_worker(&next,NULL);
     ts_matrix_effects_free(f);f->rate=rate;f->worker=next.worker;
-    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i){f->current[i]=next.current[i];next.current[i]=NULL;}
+    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i){f->current[i]=next.current[i];next.current[i]=NULL;if(f->current[i])ts_pedalboard_profile_owner(f->current[i]->board,i+1,c->effect[i].id);}
     return 1;
 }
 void ts_matrix_effects_tick(TsMatrixEffects *f)
@@ -202,7 +221,7 @@ static TsStereoFrame node_process(TsMatrixEffects *f,int slot,TsMatrixEffectNode
 {
     if(!n)return (TsStereoFrame){0,0};
     if(n->remaining){--n->remaining;n->gate=n->start+(n->target-n->start)*(1-(double)n->remaining/n->total);}
-    if(!n->sunvox && !connected && !in.l && !in.r && !key.l && !key.r)return (TsStereoFrame){0,0};
+    if(!n->sunvox && !n->board && !connected && !in.l && !in.r && !key.l && !key.r)return (TsStereoFrame){0,0};
     if(n->sunvox) {
         float wet[2],dry[2];
         if(ts_sunvox_stage_frame(n->sunvox,in.l,in.r,wet,dry)) {
@@ -220,9 +239,11 @@ static TsStereoFrame node_process(TsMatrixEffects *f,int slot,TsMatrixEffectNode
     }
     if(n->pedal)return ts_sister_single_fx_process(n->pedal,in,n->gate);
     if(n->meta || n->board){
-        TsStereoFrame wet=n->board?ts_pedalboard_process(n->board,in):ts_meta_process(n->meta,in);float k=n->smooth;n->gain+=(n->gain_target-n->gain)*k;
+        TsStereoFrame wet,dry=in;
+        if(n->board)ts_pedalboard_process_aligned(n->board,&in,&wet,&dry,1);else wet=ts_meta_process(n->meta,in);
+        float k=n->smooth;n->gain+=(n->gain_target-n->gain)*k;
         n->mix+=(n->mix_target-n->mix)*k;float amount=n->gate*n->mix;
-        return ts_stereo_frame_sanitize_inline((TsStereoFrame){in.l+(wet.l*n->gain-in.l)*amount,in.r+(wet.r*n->gain-in.r)*amount});
+        return ts_stereo_frame_sanitize_inline((TsStereoFrame){dry.l+(wet.l*n->gain-dry.l)*amount,dry.r+(wet.r*n->gain-dry.r)*amount});
     }
     TsStereoFrame wet=ts_compressor_process(&n->compressor,in,key);
     n->mix+=(n->mix_target-n->mix)*n->compressor.smooth;
@@ -295,8 +316,7 @@ void ts_matrix_effects_process_span(TsMatrixEffects *f,int i,
         }
     } else if(n && n->board && connected) {
         TsStereoFrame dry[TS_MATRIX_DELAY];
-        memcpy(dry,in,frames*sizeof(*in));
-        ts_pedalboard_process_span(n->board,in,out,frames);
+        ts_pedalboard_process_aligned(n->board,in,out,dry,frames);
         for(unsigned j=0;j<frames;++j) {
             if(n->remaining){--n->remaining;n->gate=n->start+(n->target-n->start)*(1-(double)n->remaining/n->total);}
             n->gain+=(n->gain_target-n->gain)*n->smooth;n->mix+=(n->mix_target-n->mix)*n->smooth;
