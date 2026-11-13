@@ -419,7 +419,7 @@ static void test_async_ownership(uint64_t a,uint64_t b,uint64_t original,int sup
 #include "test_canvas_eq_controller.inc"
 
 #include "test_mosaic_video_controller.inc"
-#include "test_mosaic_presentation.inc"
+#include "test_window_scaling.inc"
 int main(int argc,char **argv)
 {
     SDL_SetMainReady();SDL_setenv("SDL_AUDIODRIVER","dummy",1);
@@ -432,14 +432,14 @@ int main(int argc,char **argv)
     ts_sister_runtime_init(&audio.sister);ts_capture_init(&audio.capture);audio.output_rate=48000;audio.bank_slot=-1;
     transform_controller_init(&transform);portal_init(&portal,&ui.portal);portal.mosaic=&mosaic;
     assert(ts_instrument_generate(&instrument,TS_GENERATOR_METALLIC,777,error,sizeof(error)));
+    test_window_scaling();
+    if(argc>1 && !strcmp(argv[1],"--presentation"))goto done;
     if(argc>1 && !strcmp(argv[1],"--quick-capture")) {test_quick_capture(window,device);goto done;}
     if(argc>1 && !strcmp(argv[1],"--fm-directions")) {
         test_fm_preview_updates();test_basic_create_controller();test_create_directions_controller();goto done;
     }
     uint64_t original=ts_sample_hash(&instrument.current);
     ui.mosaic=audio.mosaic=ts_mosaic_create();ui.mosaic_scale=24;ui.mosaic_open=1;
-    test_mosaic_presentation();
-    if(argc>1 && !strcmp(argv[1],"--presentation"))goto done;
     if(argc>1 && !strcmp(argv[1],"--grab")) {test_mosaic_grab(window);goto done;}
     if(argc>1 && !strcmp(argv[1],"--browser")) {test_mosaic_browser(window);goto done;}
     if(argc>1 && !strcmp(argv[1],"--handles")) {test_mosaic_handle_groups(window);test_mosaic_scale_snap(window);goto done;}

@@ -6,7 +6,7 @@ typedef struct {int kind,index,order;TsTileId tile;char name[48];uint64_t canvas
 typedef struct MatrixSnapshot MatrixSnapshot;
 typedef struct {
     SDL_Window *window;SDL_Renderer *renderer;SDL_Texture *texture;uint32_t *pixels;
-    int pixel_w,pixel_h,logical_w,logical_h;
+    int pixel_w,pixel_h;
     Uint32 id,presented,polled;int visible,dirty,scroll,column,filter,selected,destination,drag,canvas;
     MatrixRow rows[MATRIX_CAPACITY],selection[MATRIX_CAPACITY+TS_MATRIX_DESTINATIONS];int count,selection_count,anchor;
     TsMatrixLayout *layout,full_layout;int columns[TS_MATRIX_DESTINATIONS],column_count;unsigned char assigned[TS_MATRIX_DESTINATIONS];int layout_focus; /* 1=row label, 2=column header. */
@@ -31,9 +31,10 @@ typedef struct {
     float activity_program,activity_tracker_gain;
 } MatrixWindow;
 static MatrixWindow matrix_window={.selected=-1,.rename=-1};
-static int mx_responsive(void);
-#define MATRIX_W (mx_responsive() && matrix_window.logical_w?matrix_window.logical_w:MATRIX_BASE_W)
-#define MATRIX_H (mx_responsive() && matrix_window.logical_h?matrix_window.logical_h:MATRIX_BASE_H)
+/* Keep the familiar window-scaled interface. Compact chrome saves graph space
+   without imposing a fixed physical size on text and mouse targets. */
+#define MATRIX_W MATRIX_BASE_W
+#define MATRIX_H MATRIX_BASE_H
 #include "main_sdl_fx_processors.inc"
 static int mx_destination_available(int d);
 static void matrix_history_clear(void);
@@ -893,20 +894,8 @@ static void mx_capture_activity(SDL_AudioDeviceID device,AudioState *audio,TsSam
 }
 #include "main_sdl_fx_canvas.inc"
 #include "main_sdl_sunvox.inc"
-static int mx_responsive(void)
-{return matrix_window.canvas && !sunvox_editor.node && !fx_canvas.meta;}
-static void mx_prepare_layout(MatrixWindow *w)
-{
-    if(!w->window || !w->renderer)return;
-    int width,height;SDL_GetRendererOutputSize(w->renderer,&width,&height);
-    float scale=ts_window_content_scale(w->window,w->renderer);
-    int lw=SDL_max(960,(int)lroundf(width/scale));
-    int lh=SDL_max(480,(int)lroundf(height/scale));
-    if(lw!=w->logical_w || lh!=w->logical_h){w->logical_w=lw;w->logical_h=lh;w->dirty=1;}
-}
 static void mx_prepare_surface(MatrixWindow *w)
 {
-    mx_prepare_layout(w);
     int width=MATRIX_BASE_W,height=MATRIX_BASE_H;
     if(w->canvas && SDL_GetRendererOutputSize(w->renderer,&width,&height)<0)return;
     if(width==w->pixel_w && height==w->pixel_h)return;
@@ -1190,7 +1179,6 @@ static int matrix_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,A
     mx_bind_mosaic(ui,pages);
     w->io_config=&ui->config;
     w->layout=&audio->sister.matrix_layout;
-    mx_prepare_layout(w);
     if(fx_divider_event(e))return 1;
     int properties=fx_properties_owns(e);
     int own=w->visible && (event_window_id(e)==w->id || properties);
