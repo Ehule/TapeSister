@@ -116,6 +116,9 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
         e->key.windowID=SDL_GetWindowID(main);return 0;
     }
     int click=e->type==SDL_MOUSEBUTTONDOWN,left=click && e->button.button==SDL_BUTTON_LEFT;
+    if(left && !fx_canvas.popup && x>=1060 && x<1256 && y>=806 && y<834) {
+        ts_audio_health_show_modules(ui);return 1;
+    }
     if(e->type==SDL_MOUSEMOTION){fx_canvas.mouse_x=x;fx_canvas.mouse_y=y;}
     if(e->type==SDL_MOUSEBUTTONUP) {
         if(w->drag==FX_DRAG_SHIFT_NODE && !fx_canvas.shift_moved) {

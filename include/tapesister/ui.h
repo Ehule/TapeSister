@@ -463,6 +463,8 @@ typedef struct {
     TsUiWheelGuard wheel_guard;
     char performance_tooltip[160], performance_hover[160], performance_hover_status[160];
     uint32_t performance_hover_due;
+    /* UI-only, recent audio callback load; negative means unavailable. */
+    double audio_cpu_percent;
     TsKeyboardMask active_notes;
     TsKeyboardSequenceSettings keyboard_sequence;
     TsKeyboardSequenceSettings keyboard_sequence_clipboard;
@@ -959,7 +961,7 @@ const TsTuning *ts_ui_audition_tuning(const TsUiState *ui,
 const TsTuning *ts_ui_display_tuning(const TsUiState *ui,
                                      const TsInstrument *instrument);
 enum {
-    TS_MOSAIC_MIX_X = 10, TS_MOSAIC_MIX_STEP = 108, TS_MOSAIC_MIX_W = 100,
+    TS_MOSAIC_MIX_X = 104, TS_MOSAIC_MIX_STEP = 84, TS_MOSAIC_MIX_W = 76,
     TS_MOSAIC_CANVAS_RIGHT = 565,
     TS_MOSAIC_SOURCE_PAGE_Y = 342,
     TS_MOSAIC_SOURCE_KEYS_X = 64, TS_MOSAIC_SOURCE_KEYS_Y = 62,
@@ -997,6 +999,8 @@ double ts_ui_mosaic_volume_y(const TsUiState *ui, double time);
 double ts_ui_mosaic_volume_time(const TsUiState *ui, double y);
 void ts_ui_render_mosaic_choice(TsFramebuffer *fb, const TsUiState *ui);
 void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *instrument);
+void ts_ui_cpu_label(char *text, size_t size, double percent);
+int ts_ui_cpu_contains(const TsUiState *ui, int x, int y);
 int ts_ui_foreground_panel_open(const TsUiState *ui);
 int ts_ui_keyboard_sequence_visible(const TsUiState *ui);
 void ts_ui_draw_tile_state_borders(TsFramebuffer *fb, int slot,

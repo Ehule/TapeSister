@@ -17,22 +17,22 @@ static void test_mosaic_live_controls(SDL_Window *window)
     scene->playing=1;for(int i=0;i<1000;++i)ts_mosaic_read(scene,48000);
     uint64_t revision=a->revision,attack=scene->voices[0].attack;
     int history=scene->history_count;
-    click(window,35,390,1);motion(window,59,390);release(window,59,390);
+    click(window,124,390,1);motion(window,142,390);release(window,142,390);
     assert(a->gain>.9f && a->gain<1.1f && b->gain==1 && scene->history_count==history+1);
-    click(window,215,390,1);release(window,215,390);assert(a->pan==1 && b->pan==0);
-    click(window,275,390,1);release(window,275,390);assert(a->fade_in>1.9 && a->fade_in<2.1);
-    click(window,383,390,1);release(window,383,390);assert(a->fade_out>1.9 && a->fade_out<2.1);
+    click(window,262,390,1);release(window,262,390);assert(a->pan==1 && b->pan==0);
+    click(window,310,390,1);release(window,310,390);assert(a->fade_in>1.9 && a->fade_in<2.1);
+    click(window,394,390,1);release(window,394,390);assert(a->fade_out>1.9 && a->fade_out<2.1);
     ts_mosaic_read(scene,48000);assert(a->revision==revision && scene->voices[0].attack==attack+1);
     click(window,627,60,1);release(window,627,60);assert(scene->speed==2);
     for(int i=0;i<1000;++i)ts_mosaic_read(scene,48000);assert(scene->speed_current==2);
     history=scene->history_count;click(window,500,60,1);motion(window,550,60);key(window,SDLK_ESCAPE,KMOD_NONE);
     assert(scene->speed==2 && scene->playing && scene->history_count==history+1);
     click(window,563,60,2);assert(scene->speed==1);
-    SDL_Event reset;SDL_zero(reset);reset.type=SDL_MOUSEBUTTONDOWN;reset.button.windowID=SDL_GetWindowID(window);reset.button.button=SDL_BUTTON_RIGHT;reset.button.x=130;reset.button.y=390;
+    SDL_Event reset;SDL_zero(reset);reset.type=SDL_MOUSEBUTTONDOWN;reset.button.windowID=SDL_GetWindowID(window);reset.button.button=SDL_BUTTON_RIGHT;reset.button.x=200;reset.button.y=390;
     dispatch(&reset,window);assert(a->pan==0);
     /* A group receives one undoable gesture, while audio document identity stays
        stable for a CDP render that might still be working on either member. */
-    ui.mosaic_selection[1]=b->id;click(window,383,390,1);motion(window,395,390);release(window,395,390);
+    ui.mosaic_selection[1]=b->id;click(window,394,390,1);motion(window,403,390);release(window,403,390);
     assert(a->fade_out==b->fade_out && a->revision==revision);
     key(window,SDLK_z,KMOD_CTRL);assert(b->fade_out==0);
     ui.mosaic=audio.mosaic=saved;mosaic_poll(0,&ui,&instrument,&mosaic);ts_mosaic_free(scene);

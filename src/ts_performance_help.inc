@@ -2,6 +2,7 @@
 static const char *performance_help(const TsUiState *ui,int x,int y)
 {
 #define H(X,Y,W,H,T) if(x>=(X) && x<(X)+(W) && y>=(Y) && y<(Y)+(H))return (T)
+    if(ts_ui_cpu_contains(ui,x,y))return "CPU: AUDIO BUFFER TIME USED / CLICK: MODULE USAGE IN AUDIO HEALTH";
     if(ui->router_open)return router_help(ui,x,y);
     if(ui->master_eq_open) {
         static char morph_help[160];

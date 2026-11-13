@@ -59,6 +59,73 @@ static void check_concurrent_profiles(void)
     SDL_WaitThread(thread,NULL);ts_profile_enable(0);
 }
 
+static void check_cpu_readout(AudioState *a,TsUiState *ui,SDL_Window *window)
+{
+    TsRealtimeDiagnosticsSnapshot s={.completed_ticks=1000,.counter_frequency=1000,
+        .recent_callback_count=25,.recent_load_percent=26.5};
+    assert(ts_audio_cpu_load(&s,1100,1,1)==26.5);
+    assert(ts_audio_cpu_load(&s,2000,1,1)<0);
+    assert(ts_audio_cpu_load(&s,1100,0,1)<0);
+    assert(ts_audio_cpu_load(&s,1100,1,0)<0);
+    s.recent_callback_count=0;assert(ts_audio_cpu_load(&s,1100,1,1)<0);
+    char label[24];ts_ui_cpu_label(label,sizeof(label),-1);assert(!strcmp(label,"CPU --"));
+    ts_ui_cpu_label(label,sizeof(label),26.5);assert(!strcmp(label,"CPU 26.5%"));
+    ts_ui_cpu_label(label,sizeof(label),125);assert(!strcmp(label,"CPU 125.0%"));
+    ts_ui_cpu_label(label,sizeof(label),1200);assert(!strcmp(label,"CPU >999%"));
+
+    TsProfileSnapshot profile={.frequency=1000,.seconds=10,.epoch=1};
+    profile.effect[0].identity.generation=1;profile.effect[0].blocks.ticks=100;
+    ts_audio_profile_recent(&profile);assert(!ts_health.recent_profile_ready);
+    profile.seconds=11;profile.effect[0].blocks.ticks=335;
+    ts_audio_profile_recent(&profile);assert(fabs(ts_health.effect_cpu[0]-23.5)<.001);
+    profile.seconds=12;ts_audio_profile_recent(&profile);assert(ts_health.effect_cpu[0]==0);
+    TsProfileSnapshot missed=profile;missed.seconds=13;memset(missed.effect,0,sizeof(missed.effect));
+    ts_audio_profile_recent(&missed);assert(ts_health.previous_profile.seconds==12);
+    profile.seconds=12.25;profile.effect[0].identity.generation=2;profile.effect[0].blocks.ticks=10;
+    ts_audio_profile_recent(&profile);assert(ts_health.effect_cpu[0]<0);
+    profile.seconds=13;profile.effect[0].blocks.ticks=120;
+    ts_audio_profile_recent(&profile);assert(ts_health.effect_cpu[0]==12);
+    ++profile.epoch;profile.seconds=20;ts_audio_profile_recent(&profile);
+    assert(!ts_health.recent_profile_ready); /* Reset even if elapsed time is larger. */
+
+    SDL_Event click;SDL_zero(click);click.type=SDL_MOUSEBUTTONDOWN;
+    click.button.windowID=SDL_GetWindowID(window);click.button.button=SDL_BUTTON_LEFT;
+    click.button.x=40;click.button.y=390;
+    assert(ts_audio_health_event(&click,window,a,ui));
+    assert(ts_health.visible && ts_health.profile_effects && ts_profile_enabled() && ts_health.owns_profile);
+    ts_audio_health_hide();assert(!ts_profile_enabled());
+    SDL_SetWindowSize(window,1280,800);click.button.x=80;click.button.y=780;ui->mosaic_open=1;
+    assert(ts_audio_health_event(&click,window,a,ui));assert(ts_health.profile_effects);
+    ts_audio_health_hide();ui->mosaic_open=0;
+    ui->tracker_open=1;assert(!ts_audio_health_event(&click,window,a,ui));ui->tracker_open=0;
+    ui->config_open=1;assert(!ts_audio_health_event(&click,window,a,ui));ui->config_open=0;
+    ts_profile_enable(1);TsProfileSnapshot before;ts_profile_snapshot(&before);
+    assert(ts_audio_health_event(&click,window,a,ui));assert(!ts_health.owns_profile);
+    TsProfileSnapshot after;ts_profile_snapshot(&after);assert(before.epoch==after.epoch);
+    ts_audio_health_hide();assert(ts_profile_enabled());ts_profile_enable(0);
+    matrix_window.layout=&matrix_window.full_layout;
+    assert(fx_event(&click,window,0,a,ui,NULL,NULL,1100,820,0));
+    matrix_window.layout=NULL;
+    assert(ts_health.visible && ts_health.profile_effects && ts_health.owns_profile);
+    ts_audio_health_close();assert(!ts_profile_enabled());
+    SDL_SetWindowSize(window,640,400);
+    if(SDL_getenv("TAPESISTER_CPU_SCREENSHOTS")) {
+        TsInstrument *bank=calloc(1,sizeof(*bank));TsFramebuffer *fb=calloc(1,sizeof(*fb));
+        assert(bank && fb);ts_instrument_init(bank);ui->audio_cpu_percent=26.5;
+        ts_ui_render(fb,ui,bank);ts_ui_render_file_recording(fb,ui);
+        assert(ts_ui_write_ppm(fb,"cpu-main.ppm"));
+        ui->mosaic=ts_mosaic_create();assert(ui->mosaic);ui->mosaic_open=1;
+        ts_ui_render(fb,ui,bank);ts_ui_render_file_recording(fb,ui);
+        assert(ts_ui_write_ppm(fb,"cpu-mosaic.ppm"));
+        ui->file_record_state=TS_PERFORMANCE_FILE_RECORDING;ui->file_record_rate=48000;
+        ts_ui_render(fb,ui,bank);ts_ui_render_file_recording(fb,ui);
+        assert(ts_ui_write_ppm(fb,"cpu-recording.ppm"));
+        ui->file_record_state=TS_PERFORMANCE_FILE_IDLE;
+        ts_mosaic_free(ui->mosaic);ui->mosaic=NULL;ui->mosaic_open=0;
+        ts_instrument_free(bank);free(bank);free(fb);
+    }
+}
+
 int main(int argc, char **argv)
 {
     SDL_setenv("SDL_VIDEODRIVER", "dummy", 1);
@@ -156,6 +223,7 @@ int main(int argc, char **argv)
     ts_realtime_diagnostics_get(&a->realtime_diagnostics, &s);
     assert(s.control_count == 1 && !strcmp(s.control_worst_site, "named_edit_for_health"));
 
+    check_cpu_readout(a,ui,main_window);
     SDL_Event e;SDL_zero(e); e.type = SDL_KEYDOWN;
     e.key.windowID = SDL_GetWindowID(main_window); e.key.keysym.sym = SDLK_F12;
     int handled = ts_audio_health_event(&e, main_window, a, ui);
