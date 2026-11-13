@@ -182,10 +182,25 @@ jobs:
           archive: false
           if-no-files-found: error
       - name: Download the exact user-facing tar archive
+        id: linux-download
+        # Finalizing an upload can precede its visibility in artifact listings.
+        # Retry that handoff once; all download/package checks still must pass.
+        continue-on-error: true
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           artifact-ids: ${{ steps.linux-artifact.outputs.artifact-id }}
           path: download-check
+          skip-decompress: true
+      - name: Allow the uploaded archive to become visible
+        if: steps.linux-download.outcome == 'failure'
+        run: sleep 10
+      - name: Retry the exact Linux archive download
+        if: steps.linux-download.outcome == 'failure'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          artifact-ids: ${{ steps.linux-artifact.outputs.artifact-id }}
+          path: download-check
+          skip-decompress: true
       - name: Verify direct Linux download and executable permissions
         run: |
           cmp TapeSister-linux-x86_64.tar.gz download-check/TapeSister-linux-x86_64.tar.gz
