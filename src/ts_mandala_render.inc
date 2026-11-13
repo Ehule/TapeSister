@@ -198,7 +198,7 @@ static int m_init(Mandala *m, const TsMandalaConfig *config, int quality)
 {
     memset(m,0,sizeof(*m));m->quality=quality;m->display=0;m->controls=0;
     m->window=SDL_CreateWindow("TapeSister - Impermanent Mandala",SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,1152,720,
-        SDL_WINDOW_RESIZABLE|SDL_WINDOW_ALLOW_HIGHDPI);
+        TS_WORKSPACE_WINDOW_FLAGS);
     if(!m->window)return 0;
     SDL_SetWindowMinimumSize(m->window,480,300);
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY,"linear");
@@ -522,7 +522,7 @@ static void m_window_mode(Mandala *m, VisualShared *s, int topology_changed)
         SDL_SetWindowFullscreen(m->window,0);
         if(full || display!=m->display)SDL_SetWindowPosition(m->window,SDL_WINDOWPOS_CENTERED_DISPLAY(display),SDL_WINDOWPOS_CENTERED_DISPLAY(display));
         if(full) {
-            if(SDL_SetWindowFullscreen(m->window,SDL_WINDOW_FULLSCREEN_DESKTOP)) {full=0;atomic_store(&s->fullscreen,0);}
+            if(ts_window_fullscreen(m->window,1)) {full=0;atomic_store(&s->fullscreen,0);}
         } else if(m->fullscreen && !topology_changed && m->old_w>0) {
             SDL_SetWindowSize(m->window,m->old_w,m->old_h);SDL_SetWindowPosition(m->window,m->old_x,m->old_y);
         }
@@ -552,6 +552,7 @@ static void m_event(Mandala *m,VisualShared *s,const SDL_Event *e)
         }
     }
     if(e->type==SDL_KEYDOWN && !e->key.repeat) {
+        if(ts_window_fullscreen_shortcut(e)){atomic_fetch_xor(&s->fullscreen,1);return;}
         switch(e->key.keysym.sym) {
             case SDLK_ESCAPE: if(m->fullscreen)atomic_store(&s->fullscreen,0);else atomic_store(&s->quit,1);break;
             case SDLK_f: atomic_fetch_xor(&s->fullscreen,1);break;

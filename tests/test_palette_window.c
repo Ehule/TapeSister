@@ -126,6 +126,50 @@ static void navigation(void)
     ts_sample_pages_free(&navigation_pages);ts_sister_runtime_free(&navigation_audio.sister);
     ts_performance_free(&navigation_audio.performance);ts_performance_free(&navigation_audio.tile_launchers);
 }
+static SDL_Event scaled_pointer(SDL_Renderer *renderer,Uint32 id,Uint32 type,int x,int y)
+{
+    SDL_Event e;SDL_zero(e);e.type=type;int px,py;SDL_RenderLogicalToWindow(renderer,(float)x,(float)y,&px,&py);
+    if(type==SDL_MOUSEMOTION){e.motion.windowID=id;e.motion.x=px;e.motion.y=py;}
+    else if(type==SDL_MOUSEWHEEL){e.wheel.windowID=id;e.wheel.y=1;
+#if SDL_VERSION_ATLEAST(2,26,0)
+        e.wheel.mouseX=px;e.wheel.mouseY=py;
+#endif
+    } else {e.button.windowID=id;e.button.x=px;e.button.y=py;e.button.button=SDL_BUTTON_LEFT;}
+    SDL_FlushEvent(type);assert(SDL_PushEvent(&e)==1);
+    assert(SDL_PeepEvents(&e,1,SDL_GETEVENT,type,type)==1);return e;
+}
+static void scaled_windows(void)
+{
+    static AudioState idle;idle.output_rate=48000;
+    palette_window_show(&u);offline_show(&u,&idle);
+    const int sizes[][2]={{1280,720},{1920,1080},{1366,768}};
+    for(unsigned i=0;i<sizeof(sizes)/sizeof(*sizes);++i) {
+        SDL_RestoreWindow(palette_window.window);SDL_SetWindowSize(palette_window.window,sizes[i][0],sizes[i][1]);
+        SDL_RenderSetLogicalSize(palette_window.renderer,PALETTE_W,PALETTE_H);
+        SDL_Event e=scaled_pointer(palette_window.renderer,palette_window.id,SDL_MOUSEBUTTONDOWN,355,410);
+        assert(palette_window_event(&e,host,&u,&sister) && palette_window.hex_focus);
+        for(int kind=0;kind<3;++kind) {
+            e=scaled_pointer(palette_window.renderer,palette_window.id,
+                kind==0?SDL_MOUSEBUTTONDOWN:kind==1?SDL_MOUSEMOTION:SDL_MOUSEWHEEL,200,300);
+            int x,y;ts_window_logical_pointer(palette_window.renderer,&e,&x,&y);
+#if SDL_VERSION_ATLEAST(2,26,0)
+            assert(abs(x-200)<=1 && abs(y-300)<=1);
+#else
+            if(kind!=2)assert(abs(x-200)<=1 && abs(y-300)<=1);
+#endif
+        }
+        SDL_RestoreWindow(offline_ui.window);SDL_SetWindowSize(offline_ui.window,sizes[i][0],sizes[i][1]);
+        SDL_RenderSetLogicalSize(offline_ui.renderer,OFFLINE_W,OFFLINE_H);
+        e=scaled_pointer(offline_ui.renderer,offline_ui.id,SDL_MOUSEBUTTONDOWN,400,150);
+        assert(offline_event(&e,host,&u) && offline_ui.field==2);
+        e=scaled_pointer(offline_ui.renderer,offline_ui.id,SDL_MOUSEBUTTONDOWN,150,150);
+        assert(offline_event(&e,host,&u) && offline_ui.field==1);
+    }
+    assert(ts_audio_health_show(&u));
+    Uint32 flags=SDL_GetWindowFlags(ts_health.window);
+    assert((flags&SDL_WINDOW_ALWAYS_ON_TOP) && !(flags&(SDL_WINDOW_MAXIMIZED|SDL_WINDOW_FULLSCREEN|SDL_WINDOW_BORDERLESS)));
+    ts_audio_health_close();offline_close();palette_window_hide(&u,0);
+}
 static void screenshots(void)
 {
     char path[100],error[160];assert(ts_instrument_generate(&bank,TS_GENERATOR_METALLIC,777,error,sizeof(error)));
@@ -195,6 +239,6 @@ int main(int argc,char **argv)
     size_t background=0;for(int i=290*632;i<632*400;++i)if((pixels[i]&0xffffff)==0x100b19)++background;assert(background>30000);
     if(argc>1){snapshot("palette-tracker-sister.bmp",pixels,632,400);u.tracker_open=0;screenshots();}
     ts_tapehead_theme_apply(&original);tapeheadEmbeddedPaletteCurrent(native_after);assert(!memcmp(native_before,native_after,62));
-    ts_tapehead_close();ts_sample_pages_free(&native_pages);navigation();palette_window_close();SDL_DestroyWindow(host);ts_instrument_free(&bank);SDL_Quit();
+    ts_tapehead_close();ts_sample_pages_free(&native_pages);navigation();scaled_windows();palette_window_close();SDL_DestroyWindow(host);ts_instrument_free(&bank);SDL_Quit();
     puts("Floating palette event ownership, editing, history and native tracker passed");return 0;
 }

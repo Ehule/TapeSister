@@ -31,7 +31,7 @@ static void fx_divider_cursor(int active)
     fx_canvas.divider_hover=active;
 }
 static void fx_context_reset(void)
-{fx_canvas.label_selected=-1;fx_canvas.label_editing=fx_canvas.properties=fx_canvas.confirm_delete=0;fx_canvas.replace_id=0;fx_divider_cursor(0);if(fx_canvas.divider_cursor)SDL_FreeCursor(fx_canvas.divider_cursor);fx_canvas.divider_cursor=NULL;svfx_close();fx_canvas.meta=0;fx_canvas.wire=fx_canvas.destination=-1;fx_canvas.fit=fx_canvas.popup=fx_canvas.confirm_clear=0;fx_canvas.inspector_key=0;fx_canvas.movement=0;fx_canvas.movement_popup=0;
+{fx_properties_close();fx_canvas.label_selected=-1;fx_canvas.label_editing=fx_canvas.properties=fx_canvas.confirm_delete=0;fx_canvas.replace_id=0;fx_divider_cursor(0);if(fx_canvas.divider_cursor)SDL_FreeCursor(fx_canvas.divider_cursor);fx_canvas.divider_cursor=NULL;svfx_close();fx_canvas.meta=0;fx_canvas.wire=fx_canvas.destination=-1;fx_canvas.fit=fx_canvas.popup=fx_canvas.confirm_clear=0;fx_canvas.inspector_key=0;fx_canvas.movement=0;fx_canvas.movement_popup=0;
  free(fx_canvas.wires.items);free(fx_canvas.before_wires.items);fx_canvas.wires=(FxWireList){0};fx_canvas.before_wires=(FxWireList){0};}
 static int fx_source_at(MatrixRow key)
 {
@@ -621,7 +621,6 @@ static void fx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
             ts_audio_cpu_percent>=100?0xffeb777du:ts_audio_cpu_percent>=90?0xffdfbc72u:0xff8addb4u),2);
     if(fx_canvas.popup)fx_popup_paint();
     if(fx_canvas.label_editing)fx_label_editor_paint();
-    if(fx_canvas.properties)fx_properties_paint();
     if(fx_canvas.confirm_delete) {
         mx_rect(300,250,680,260,FX_FOCUS);mx_rect(302,252,676,256,FX_PANEL);
         fx_panel_text(324,272,620,28,"REMOVE EFFECTS: RETAIN LINKS?",FX_FOCUS,2,1);
@@ -648,7 +647,7 @@ static void fx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
 }
 static void fx_view(int canvas,TsSamplePages *pages,TsInstrument *bank)
 {
-    fx_cancel_gesture();svfx_close();fx_clear_wires();MatrixWindow *w=&matrix_window;w->canvas=canvas;w->drag=0;w->effect_menu=0;fx_canvas.popup=fx_canvas.confirm_clear=0;fx_canvas.meta=0;fx_canvas.wire=-1;
+    fx_properties_close();fx_cancel_gesture();svfx_close();fx_clear_wires();MatrixWindow *w=&matrix_window;w->canvas=canvas;w->drag=0;w->effect_menu=0;fx_canvas.popup=fx_canvas.confirm_clear=0;fx_canvas.meta=0;fx_canvas.wire=-1;
     if(canvas){w->filter=0;mx_rows(pages,bank);fx_build(pages,bank);if(!w->layout->canvas_view)fx_canvas.fit=1;}
     SDL_SetWindowTitle(w->window,canvas?"TapeSister - FX Canvas (Shift+F9)":"TapeSister - Routing Matrix (F9)");w->dirty=1;
 }

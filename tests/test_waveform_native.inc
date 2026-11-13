@@ -103,16 +103,24 @@ static void test_native_waveform_and_window(void)
         TsSisterUiHit want=ts_sister_ui_hit_test_model(&sister.model,480,380);
         TsSisterUiHit hit=ts_sister_ui_hit_test_model(&sister.model,x,y);assert(hit.action==want.action);
     }
+    SDL_ShowWindow(sister.window);
     sister_window_fullscreen(&sister,1);
     assert(sister.screen_filling);
     SDL_Rect bounds;assert(!SDL_GetDisplayBounds(SDL_GetWindowDisplayIndex(sister.window),&bounds));
     int filled_w,filled_h;SDL_GetWindowSize(sister.window,&filled_w,&filled_h);
     assert(filled_w==bounds.w && filled_h==bounds.h);
-    assert(!(SDL_GetWindowFlags(sister.window)&SDL_WINDOW_FULLSCREEN_DESKTOP));
+    assert((SDL_GetWindowFlags(sister.window)&SDL_WINDOW_FULLSCREEN_DESKTOP)==SDL_WINDOW_FULLSCREEN_DESKTOP);
     sister_window_fullscreen(&sister,0);
     assert(!sister.screen_filling);
+    assert(!(SDL_GetWindowFlags(sister.window)&SDL_WINDOW_FULLSCREEN));
     SDL_GetWindowSize(sister.window,&filled_w,&filled_h);
-    assert(filled_w==2560 && filled_h==1600);
+    /* SDL < 2.30's dummy video driver does not restore window geometry on
+       fullscreen exit (SDL_UpdateFullscreenMode had no fallback resize).
+       Keep the strict geometry check for current SDL and native backends. */
+    SDL_version linked;SDL_GetVersion(&linked);
+    const char *driver=SDL_GetCurrentVideoDriver();
+    if(SDL_VERSIONNUM(linked.major,linked.minor,linked.patch)>=SDL_VERSIONNUM(2,30,0) ||
+       !driver || strcmp(driver,"dummy"))assert(filled_w==2560 && filled_h==1600);
     SDL_DestroyTexture(sister.texture);SDL_DestroyRenderer(sister.renderer);SDL_DestroyWindow(sister.window);
     memset(&sister,0,sizeof(sister));ts_sample_free(&sample);ts_instrument_free(&instrument);
     puts("Native waveform detail, precise selection and filled Sister window checks passed");

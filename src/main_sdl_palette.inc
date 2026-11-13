@@ -110,7 +110,7 @@ static void palette_window_show(TsUiState *ui)
 {
     PaletteWindow *w=&palette_window;
     if(!w->window) {
-        w->window=SDL_CreateWindow("TapeSister - Palette",SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,PALETTE_W,PALETTE_H,SDL_WINDOW_RESIZABLE|SDL_WINDOW_ALLOW_HIGHDPI);
+        w->window=SDL_CreateWindow("TapeSister - Palette",SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,PALETTE_W,PALETTE_H,TS_WORKSPACE_WINDOW_FLAGS);
         if(w->window)w->renderer=SDL_CreateRenderer(w->window,-1,SDL_RENDERER_SOFTWARE);
         if(w->renderer)w->texture=SDL_CreateTexture(w->renderer,SDL_PIXELFORMAT_ARGB8888,SDL_TEXTUREACCESS_STREAMING,PALETTE_W,PALETTE_H);
         if(!w->texture){palette_window_close();snprintf(ui->status,sizeof(ui->status),"PALETTE WINDOW: %.120s",SDL_GetError());return;}
@@ -245,11 +245,7 @@ static int palette_window_event(const SDL_Event *e,SDL_Window *main,TsUiState *u
         if(e->window.event==SDL_WINDOWEVENT_FOCUS_GAINED&&(w->hex_focus||ts_browser_edits_text(&w->browser)))SDL_StartTextInput();
         w->dirty=1;return 1;
     }
-    int x=0,y=0;float lx,ly;
-    if(e->type==SDL_MOUSEBUTTONDOWN||e->type==SDL_MOUSEBUTTONUP)SDL_RenderWindowToLogical(w->renderer,e->button.x,e->button.y,&lx,&ly);
-    else if(e->type==SDL_MOUSEMOTION)SDL_RenderWindowToLogical(w->renderer,e->motion.x,e->motion.y,&lx,&ly);
-    else {int mx,my;if(e->type==SDL_MOUSEWHEEL)wheel_event_mouse(e,&mx,&my);else SDL_GetMouseState(&mx,&my);SDL_RenderWindowToLogical(w->renderer,mx,my,&lx,&ly);}
-    x=(int)lx;y=(int)ly;
+    int x,y;ts_window_logical_pointer(w->renderer,e,&x,&y);
     if(w->browser.mode!=TS_BROWSER_CLOSED) {
         TsBrowser *b=&w->browser;
         if(e->type==SDL_TEXTINPUT && ts_browser_edits_text(b))ts_browser_append_filename(b,e->text.text);

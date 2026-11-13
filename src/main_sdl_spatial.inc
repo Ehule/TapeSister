@@ -42,7 +42,7 @@ static int spatial_show(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui
 {
     if(!spatial_window.window){
         spatial_window.window=SDL_CreateWindow("TapeSister - Ambisonics",SDL_WINDOWPOS_CENTERED,
-            SDL_WINDOWPOS_CENTERED,960,600,SDL_WINDOW_RESIZABLE|SDL_WINDOW_ALLOW_HIGHDPI);
+            SDL_WINDOWPOS_CENTERED,960,600,TS_WORKSPACE_WINDOW_FLAGS);
         if(spatial_window.window){
             SDL_SetWindowMinimumSize(spatial_window.window,640,400);
             spatial_window.renderer=SDL_CreateRenderer(spatial_window.window,-1,SDL_RENDERER_ACCELERATED);

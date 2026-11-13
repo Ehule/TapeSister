@@ -34,7 +34,17 @@ static void test_performance_transport(const char *directory)
     e.key.repeat=1;assert(application_fullscreen_event(&e,window,NULL,&u));
     assert(((SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN)!=0)!=fullscreen);
     e.key.repeat=0;e.key.windowID=performance_transport.id;assert(application_fullscreen_event(&e,window,NULL,&u));
+    assert(((SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN)!=0)!=fullscreen);
+    assert(SDL_GetWindowFlags(performance_transport.window)&SDL_WINDOW_FULLSCREEN);
+    e.key.keysym.sym=SDLK_RETURN;assert(application_fullscreen_event(&e,window,NULL,&u));
+    assert(!(SDL_GetWindowFlags(performance_transport.window)&SDL_WINDOW_FULLSCREEN));
+    SDL_RestoreWindow(performance_transport.window);
+    SDL_SetWindowSize(performance_transport.window,PERF_W,PERF_H);
+    SDL_RenderSetLogicalSize(performance_transport.renderer,PERF_W,PERF_H);
+    e.key.windowID=SDL_GetWindowID(window);e.key.keysym.sym=SDLK_KP_ENTER;
+    assert(application_fullscreen_event(&e,window,NULL,&u));
     assert(((SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN)!=0)==fullscreen);u.tracker_open=0;
+    e.key.keysym.sym=SDLK_F11;
     e.key.windowID=SDL_GetWindowID(window);e.key.keysym.mod=KMOD_CTRL;
     assert(!application_fullscreen_event(&e,window,NULL,&u));
     assert(!performance_event(&e,window,0,&a,&u,&pages,&bank,NULL,48000));

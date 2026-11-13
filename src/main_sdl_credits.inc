@@ -78,7 +78,7 @@ static int credits_show(SDL_Window *host)
     if (display < 0) display = 0;
     credits_window.window = SDL_CreateWindow("TapeSister Credits - Shift+F12",
         SDL_WINDOWPOS_CENTERED_DISPLAY(display), SDL_WINDOWPOS_CENTERED_DISPLAY(display),
-        900, 720, SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+        900, 720, TS_WORKSPACE_WINDOW_FLAGS);
     if (credits_window.window)
         credits_window.renderer = SDL_CreateRenderer(credits_window.window, -1, SDL_RENDERER_SOFTWARE);
     if (!credits_window.renderer) { credits_close(); return 0; }

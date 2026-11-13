@@ -15,7 +15,7 @@ static void character_filter_hide(void)
 static int character_filter_ensure(void)
 {
  if(character_filter_window.window)return 1;
- character_filter_window.window=SDL_CreateWindow("TapeSister / Filter",SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,960,600,SDL_WINDOW_RESIZABLE|SDL_WINDOW_ALLOW_HIGHDPI);
+ character_filter_window.window=SDL_CreateWindow("TapeSister / Filter",SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,960,600,TS_WORKSPACE_WINDOW_FLAGS);
  if(!character_filter_window.window)return 0;
  character_filter_window.renderer=SDL_CreateRenderer(character_filter_window.window,-1,SDL_RENDERER_SOFTWARE);
  if(!character_filter_window.renderer){SDL_DestroyWindow(character_filter_window.window);character_filter_window.window=NULL;return 0;}

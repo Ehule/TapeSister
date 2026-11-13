@@ -485,8 +485,9 @@ event editor). Switching between FM and Mosaic keeps the parked FM patch availab
 for the next explicit `Shift+grave` on the same unchanged tile. Selecting a different
 tile or changing/deleting its source opens the newly selected sound; an empty
 destination starts a fresh FM patch. Visiting Sister with `Tab` preserves the
-current workspace and edited event. Sister fills the screen using a borderless
-window, avoiding SDL's forced minimization between two fullscreen windows.
+current workspace and edited event. Workspaces open maximized with native window
+controls. Alt+Enter (or Alt+F11) toggles fullscreen in the focused window. Audio
+Health and the FX Canvas F2 name/color editor open as smaller draggable windows.
 
 ### Pages
 

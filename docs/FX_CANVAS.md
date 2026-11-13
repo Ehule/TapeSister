@@ -1,5 +1,11 @@
 # FX Canvas
 
+The canvas opens maximized with a normal title bar. **Alt+Enter** or **Alt+F11**
+toggles fullscreen in the focused window. **F2** opens a compact, draggable
+name/color editor, always on top by default. It initially opens beside the card
+and keeps your chosen position during the session. Apply commits one undoable
+change; Cancel, Escape, or its title-bar close discards the edit.
+
 Open **Mosaic → FX CANVAS** (below the master controls),
 **Routing Matrix → FX CANVAS**, or press
 **Shift+F9** from any workspace. **F9** switches to the routing matrix; Shift+F9

@@ -1,7 +1,8 @@
 # F11 Control Center
 
 Open **CFG → Transport**, **F11**, or **Ctrl+Shift+Space**. **Alt+F11** toggles
-fullscreen. This modeless 960x640 window mixes ARP,
+fullscreen in the focused window; **Alt+Enter** does the same. The window opens
+maximized and can be restored or resized. Its 960x640 interface mixes ARP,
 TrackSister (SisterTracker), and Mosaic while you work elsewhere. A fourth
 **Live Tiles** fader controls your live instrument without transport buttons.
 A separate **Looper** row pauses live loops and their handover sequence.
