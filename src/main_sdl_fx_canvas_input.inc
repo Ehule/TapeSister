@@ -43,6 +43,7 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
                 int row=(y-90)/32;
                 if(row<=w->gallery->count) {
                     fx_canvas.movement=row?w->gallery->canvas[row-1].id:0;
+                    memset(fx_canvas.revealed,0,sizeof(fx_canvas.revealed));
                     fx_clear_selection();fx_clear_wires();w->effect_open=w->compressor_open=0;
                     fx_build(pages,bank);fx_fit();
                     snprintf(w->status,sizeof(w->status),"VIEW FILTER ONLY / PLAYBACK AND ROUTING UNCHANGED");

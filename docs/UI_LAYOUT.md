@@ -48,3 +48,12 @@ With the default inspector and help closed, the logical graph grows from
 the window is enlarged; it does not depend on shrinking controls. Inner
 Meta/SunVox editors retain their existing scaling.
 
+## Movement filter visibility
+
+New and pasted effects are retained as temporary view exceptions until the
+movement filter changes. Selected/inspected effects are also visible. Nodes
+outside the movement say `OUTSIDE MOVEMENT / EDITING`; the creation status
+explains the exception. Creation pans the viewport to the new node, and Z frames
+the selection. Filtered FIT excludes unrelated global text-label extents.
+These exceptions do not assign ownership, create routes or activate playback.
+They are transient and keyed by instance identity, so deleted slot reuse is safe.

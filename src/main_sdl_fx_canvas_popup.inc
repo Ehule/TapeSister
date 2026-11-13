@@ -65,11 +65,15 @@ static void fx_popup_add(int type,int factory,SDL_AudioDeviceID device,AudioStat
     }
     mx_effect_add_patch(device,audio,ui,pages,bank,type,factory>=0?&patch:NULL);
     if(w->controls.next_effect_id==before)return; /* Failed staging leaves the menu and graph intact. */
+    int slot=mx_effect_slot();
+    if(slot>=0)fx_canvas.revealed[slot]=w->effect_open;
     fx_canvas.popup=0;w->filter=0;mx_rows(pages,bank);fx_build(pages,bank);
     for(int i=0;i<fx_canvas.count;++i)if(fx_canvas.node[i].row.kind==4 && fx_canvas.node[i].row.tile==w->effect_open) {
         TsFxCanvasPosition *p=fx_position(fx_canvas.node[i].row,1);
-        if(p){p->x=fx_canvas.place_x;p->y=fx_canvas.place_y;}
-        fx_clear_wires();fx_select(&fx_canvas.node[i],0);break;
+        if(p){p->x=fx_canvas.place_x;p->y=fx_canvas.place_y;fx_canvas.node[i].x=p->x;fx_canvas.node[i].y=p->y;}
+        fx_clear_wires();fx_select(&fx_canvas.node[i],0);fx_ensure_visible(&fx_canvas.node[i]);
+        if(fx_canvas.node[i].outside_filter)snprintf(w->status,sizeof(w->status),"NEW EFFECT SHOWN OUTSIDE MOVEMENT / KEPT VISIBLE UNTIL VIEW FILTER CHANGES / Z: FRAME");
+        break;
     }
 }
 static int fx_popup_event(SDL_Event *e,int x,int y,int wheel,SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsSamplePages *pages,TsInstrument *bank)
