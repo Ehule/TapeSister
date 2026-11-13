@@ -11319,16 +11319,17 @@ static void sister_fx_slot_select_type(TsSisterFxSlotControls *slot,
                                        TsSisterFxType type)
 {
     if (slot == NULL) return;
+    int adding = slot->type == TS_SISTER_FX_EMPTY && type != TS_SISTER_FX_EMPTY;
     slot->type = type;
     switch (type) {
     case TS_SISTER_FX_SUNVOX:
-        ts_sunvox_default(&slot->sunvox);slot->mix=1;break;
+        ts_sunvox_default(&slot->sunvox);break;
     case TS_SISTER_FX_DISPERSION:
-        slot->parameter_a=.5f;slot->parameter_b=.2f;slot->parameter_c=.5f;slot->mix=1;break;
+        slot->parameter_a=.5f;slot->parameter_b=.2f;slot->parameter_c=.5f;break;
     case TS_SISTER_FX_RESONATOR:
-        slot->parameter_a=.25f;slot->parameter_b=.5f;slot->parameter_c=.5f;slot->mix=.5f;break;
+        slot->parameter_a=.25f;slot->parameter_b=.5f;slot->parameter_c=.5f;break;
     case TS_SISTER_FX_FILTER:
-        if(!slot->filter.initialized)ts_character_filter_default(&slot->filter);slot->parameter_a=.98f;slot->parameter_b=.1f;slot->parameter_c=0;slot->mix=1;break;
+        if(!slot->filter.initialized)ts_character_filter_default(&slot->filter);slot->parameter_a=.98f;slot->parameter_b=.1f;slot->parameter_c=0;break;
     case TS_SISTER_FX_TRANSIENT:
         slot->parameter_a = slot->parameter_b = slot->parameter_c = .5f;
         break;
@@ -11355,6 +11356,9 @@ static void sister_fx_slot_select_type(TsSisterFxSlotControls *slot,
     default:
         break;
     }
+    /* Live insertion starts dry. Cycling through types must retain that mix
+       until the performer explicitly turns it up. */
+    if (adding) slot->mix = 0.0f;
 }
 
 static const char *sister_fx_slot_placement_name(uint8_t placement)

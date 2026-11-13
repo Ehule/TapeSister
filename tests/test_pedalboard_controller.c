@@ -26,9 +26,26 @@ static void click(int x,int y)
     assert(handled);
     e.type=SDL_MOUSEBUTTONUP;sister_board_event(&e,0,&audio,&ui,&sister,&pages,&bank);settle();
 }
+static void live_insertion_mix(void)
+{
+    for(int type=TS_SISTER_FX_REVERB;type<TS_SISTER_FX_TYPE_COUNT;++type) {
+        TsSisterFxSlotControls slot=ts_sister_fx_empty_slot();
+        slot.mix=1; /* Existing projects may have empty rows at full mix. */
+        sister_fx_slot_select_type(&slot,(TsSisterFxType)type);assert(slot.mix==0);
+        slot.mix=.37f;
+        for(int next=TS_SISTER_FX_REVERB;next<TS_SISTER_FX_TYPE_COUNT;++next) {
+            sister_fx_slot_select_type(&slot,(TsSisterFxType)next);assert(slot.mix==.37f);
+        }
+        sister_fx_slot_select_type(&slot,TS_SISTER_FX_EMPTY);
+        for(int next=TS_SISTER_FX_REVERB;next<TS_SISTER_FX_TYPE_COUNT;++next) {
+            sister_fx_slot_select_type(&slot,(TsSisterFxType)next);assert(slot.mix==0);
+        }
+    }
+}
 int main(int argc,char **argv)
 {
     SDL_SetMainReady();SDL_setenv("SDL_VIDEODRIVER","dummy",1);assert(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER));
+    live_insertion_mix();
     ts_ui_init(&ui);ts_instrument_init(&bank);char error[256];assert(ts_sample_pages_init(&pages,error,sizeof(error)));
     ts_sister_runtime_init(&audio.sister);audio.output_rate=48000;audio.output_device_channels=2;
     ts_sister_ui_model_init(&sister.model,&ui.config);sister.model.parameters=audio.sister.parameters;
@@ -58,6 +75,7 @@ int main(int argc,char **argv)
     assert(sister_board_view(&sister)->parameters.fx.slot_count==20 && sister.model.fx_scroll==15);
     /* Populate the last slot, require confirmation, then cancel it. */
     click(100,244);assert(audio.sister.matrix.controls.effect[0].board.slot[19].type==TS_SISTER_FX_REVERB);
+    assert(audio.sister.matrix.controls.effect[0].board.slot[19].mix==0);
     click(22,342);assert(sister.model.fx_remove_confirmation);
     click(370,219);assert(!sister.model.fx_remove_confirmation && audio.sister.matrix.controls.effect[0].board.count==20);
     /* Keyboard scrolling uses this board's 20 rows, not P1's ten. Enter must
@@ -124,6 +142,8 @@ int main(int argc,char **argv)
     assert(!memcmp(&shared,&audio.sister.parameters.fx,sizeof(shared)));
     /* P1 uses the same child picker, including its stable MIDI target. */
     sister_board_open(0);sister_board_sync(&audio,&ui,&sister);
+    sister.model.fx_scroll=5;click(100,244);
+    assert(audio.sister.parameters.fx.slot[9].type==TS_SISTER_FX_REVERB && audio.sister.parameters.fx.slot[9].mix==0);
     /* Refreshing shared P1 must retain scrolling and its removal dialog. */
     sister.model.fx_scroll=3;sister.model.fx_remove_confirmation=1;
     sister_board_sync(&audio,&ui,&sister);

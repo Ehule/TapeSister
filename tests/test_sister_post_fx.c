@@ -1213,8 +1213,35 @@ static void test_visual_readout_follows_actual_ramps(void)
     puts("visual readout: actual four-minute engage, topology crossfade and master fade PASS");
 }
 
+static void test_empty_slot_insertion_stays_dry(void)
+{
+    static TsSisterPostFxEngine engine;
+    for(int type=TS_SISTER_FX_REVERB;type<TS_SISTER_FX_SUNVOX;++type) {
+        assert(ts_sister_post_fx_init(&engine,1000));
+        TsSisterFxControls controls;ts_sister_fx_controls_default(&controls);
+        controls.enabled=1;
+        for(int i=0;i<TS_SISTER_FX_SLOT_COUNT;++i)controls.slot[i]=ts_sister_fx_empty_slot();
+        direct_sync_controls(&engine,&controls);controls=engine.controls;
+        /* Empty P1 rows can retain a full-mix smoother from an earlier effect. */
+        engine.reverb[0][4].mix_current=engine.delay[0][4].mix_current=1;
+        engine.distortion[0][4].mix_current=engine.grain[0][4].mix_current=1;
+        engine.transient[0][4].mix_current=engine.filter[0][4].mix=1;
+        engine.dispersion[0][4].mix=engine.resonator[0][4].mix=1;
+        controls.slot[0].type=(TsSisterFxType)type;controls.slot[0].mix=0;
+        controls.slot[0].parameter_a=.8f;controls.slot[0].parameter_b=.7f;
+        direct_set_controls(&engine,&controls);
+        for(int i=0;i<200;++i) {
+            TsStereoFrame in={i&1?.2f:-.1f,.03f};
+            TsStereoFrame out=ts_sister_post_fx_process_matrix(&engine,in,1);
+            assert(fabsf(out.l-in.l)<1e-7f && fabsf(out.r-in.r)<1e-7f);
+        }
+        ts_sister_post_fx_free(&engine);
+    }
+}
+
 int main(void)
 {
+    test_empty_slot_insertion_stays_dry();
     test_visual_readout_follows_actual_ramps();
     test_mix_cache_matches_uncached();
     test_defaults_and_identity();

@@ -29,6 +29,8 @@ An unsuccessful preparation retains the committed board.
 
 ## Editing, saving and control
 
+- Adding an effect to an empty slot starts at 0% mix for live editing. Cycling
+  through effect types, including SunVox, retains the mix you have set.
 - Reordering children retains their processors and histories. Replacing a
   child prepares and fades only that child; unaffected delays/reverbs retain
   their tails. Rapid topology edits wait for the preceding replacement to

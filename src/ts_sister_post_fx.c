@@ -1692,7 +1692,21 @@ static TsStereoFrame slot_effect_process(TsSisterPostFxEngine *engine,
         location >= TS_SISTER_FX_LOCATION_COUNT)
         return input;
     if(control->type==TS_SISTER_FX_SUNVOX)return ts_sister_sunvox_process(engine,control,(unsigned)location,input,gate,direct);
+    int dry_insertion = control->type != TS_SISTER_FX_EMPTY && control->mix == 0 &&
+        engine->slot[slot].active.type == TS_SISTER_FX_EMPTY;
     for(size_t i=0;i<TS_SISTER_FX_SLOT_COUNT;++i)if(control->id && engine->processor_id[i]==control->id){slot=i;break;}
+    if (dry_insertion) {
+        /* Dormant native processors may retain old mix smoothing. A new dry
+           child must not expose that stale wet level during its crossfade. */
+        engine->reverb[slot][location].mix_current = 0;
+        engine->delay[slot][location].mix_current = 0;
+        engine->distortion[slot][location].mix_current = 0;
+        engine->grain[slot][location].mix_current = 0;
+        engine->transient[slot][location].mix_current = 0;
+        engine->filter[slot][location].mix = 0;
+        engine->dispersion[slot][location].mix = 0;
+        engine->resonator[slot][location].mix = 0;
+    }
     switch (control->type) {
     case TS_SISTER_FX_REVERB:
         return reverb_process(&engine->timing, &engine->reverb[slot][location],
