@@ -39,7 +39,9 @@ typedef struct {
     unsigned driver_base, control_base, recovery_base, worker_base;
     unsigned driver_reports, control_skips, control_recoveries, worker_gaps;
     int visible, native_kind;
-    int profile_effects;
+    int profile_effects,profile_scroll;
+    int events_valid,events_ready;Uint32 events_started;double events_seconds;
+    uint64_t events_previous[6],events_pending[6],events_recent[6],events_callbacks;
     int owns_profile, recent_profile_valid, recent_profile_ready;
     TsProfileSnapshot previous_profile;
     double effect_cpu[TS_MATRIX_EFFECT_CAPACITY];
@@ -303,11 +305,31 @@ static void ts_audio_health_native(unsigned *driver, unsigned *control, unsigned
 #endif
 }
 
+/* UI-owned differences between completed observation windows. Totals remain
+   since reset/restart; old incidents never keep a healthy current window red. */
+static void ts_audio_health_recent_events(const uint64_t totals[6],uint64_t callbacks,Uint32 now)
+{
+    int reset=!ts_health.events_valid || callbacks<ts_health.events_callbacks;
+    for(int i=0;i<6;++i)reset|=totals[i]<ts_health.events_previous[i];
+    if(reset) {
+        memset(ts_health.events_pending,0,sizeof(ts_health.events_pending));
+        memset(ts_health.events_recent,0,sizeof(ts_health.events_recent));
+        ts_health.events_started=now;ts_health.events_ready=0;ts_health.events_valid=1;
+    } else for(int i=0;i<6;++i)ts_health.events_pending[i]+=totals[i]-ts_health.events_previous[i];
+    memcpy(ts_health.events_previous,totals,sizeof(ts_health.events_previous));ts_health.events_callbacks=callbacks;
+    Uint32 elapsed=now-ts_health.events_started;
+    if(elapsed>=1000u) {
+        memcpy(ts_health.events_recent,ts_health.events_pending,sizeof(ts_health.events_recent));
+        memset(ts_health.events_pending,0,sizeof(ts_health.events_pending));
+        ts_health.events_seconds=elapsed/1000.;ts_health.events_started=now;ts_health.events_ready=1;
+    }
+}
 static void ts_audio_health_sample(AudioState *audio, Uint32 now)
 {
     unsigned driver, control, recovered, worker;
     ts_audio_health_native(&driver, &control, &recovered, &worker, &ts_health.native_kind);
     if (ts_health.device_generation != audio->audio_health_generation) {
+        ts_health.events_valid=0;
         ts_health.device_generation = audio->audio_health_generation;
         ts_health.driver_base = ts_health.control_base = ts_health.recovery_base = ts_health.worker_base = 0;
     }
@@ -321,7 +343,10 @@ static void ts_audio_health_sample(AudioState *audio, Uint32 now)
     ts_health.control_recoveries = recovered - ts_health.recovery_base;
     ts_health.worker_gaps = worker - ts_health.worker_base;
     ts_realtime_diagnostics_get(&audio->realtime_diagnostics, &ts_health.snapshot);
-    (void)now;
+    const TsRealtimeDiagnosticsSnapshot *s=&ts_health.snapshot;
+    uint64_t totals[]={s->deadline_overruns,s->near_overruns,s->delayed_starts,s->control_long_holds,
+        (uint64_t)ts_health.driver_reports+ts_health.worker_gaps,ts_health.control_skips};
+    ts_audio_health_recent_events(totals,s->callback_count,now);
 }
 
 /* Use the callback's clock, not the moment the UI first notices its count.
@@ -421,7 +446,7 @@ static void ts_audio_health_reset(AudioState *audio)
                           &ts_health.recovery_base, &ts_health.worker_base, &ts_health.native_kind);
     ts_health.device_generation = audio->audio_health_generation;
     ts_profile_reset();
-    ts_health.recent_profile_valid=0;
+    ts_health.recent_profile_valid=0;ts_health.events_valid=0;
     audio->audio_health_started = SDL_GetTicks();
     ts_health.last_update = 0;
     ts_audio_health_sample(audio, SDL_GetTicks());
@@ -481,6 +506,13 @@ static void ts_audio_health_report(AudioState *audio, char *report, size_t size)
         ts_health.driver_reports, ts_health.control_skips, ts_health.control_recoveries, ts_health.worker_gaps,
         s->active_configuration);
     size_t used = strlen(report);
+    if(used+2<size && ts_health.events_ready) {
+        snprintf(report+used,size-used,"New events in last completed %.2f s observation: over budget %llu; near %llu; start gaps %llu; long UI holds %llu; backend reports %llu; lock skips %llu\nTotals above are since reset/device restart; the session log retains earlier history.\n",
+            ts_health.events_seconds,(unsigned long long)ts_health.events_recent[0],(unsigned long long)ts_health.events_recent[1],
+            (unsigned long long)ts_health.events_recent[2],(unsigned long long)ts_health.events_recent[3],
+            (unsigned long long)ts_health.events_recent[4],(unsigned long long)ts_health.events_recent[5]);
+        used=strlen(report);
+    }
     TsSessionLogStatus session;ts_session_log_status(&session);
     if(used+2<size) {
         snprintf(report+used,size-used,"Session recorder: %s; bytes: %llu; lost audio records: %u; lost events: %u\nRecovery file: %s\nSession export: %s; last destination: %s\n",
@@ -627,10 +659,13 @@ static void ts_audio_profile_draw(TsFramebuffer *fb, uint32_t ink, uint32_t dim)
                 int tmp=order[j];order[j]=order[j-1];order[--j]=tmp;
             }
         }
-        int row=0;
+        int total=0;for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)total+=s.effect[i].samples!=0;
+        ts_health.profile_scroll=SDL_clamp(ts_health.profile_scroll,0,SDL_max(0,total-16));
+        int row=0,rank=0;
         for(int at=0;at<TS_MATRIX_EFFECT_CAPACITY;++at) {
             int i=order[at];
             const TsProfileEffectValue *v=&s.effect[i];if(!v->samples)continue;
+            if(rank++<ts_health.profile_scroll || row>=16)continue;
             double ms=s.frequency?1000.0*v->blocks.ticks/s.frequency:0;
             int y=77+15*row++;char label[256];ts_profile_effect_label(&v->identity,label,sizeof(label));
             snprintf(line,sizeof(line),"%.40s",label);cfg_text(fb,20,y,line,ink);
@@ -644,7 +679,8 @@ static void ts_audio_profile_draw(TsFramebuffer *fb, uint32_t ink, uint32_t dim)
         }
         if(!row)cfg_text(fb,20,92,"WAITING FOR SAMPLED MATRIX EFFECT PROCESSING",dim);
         cfg_text(fb,20,320,"CPU%: RECENT ~1S; OTHER COLUMNS: SINCE PROFILE START / RESET.",dim);
-        cfg_text(fb,20,332,"SAMPLED PEAKS. COPY / SAVE INCLUDES NAMES AND CROSSFADE COUNTS.",dim);
+        snprintf(line,sizeof(line),"ROWS %d-%d / %d / WHEEL OR PGUP/PGDN / COPY & SAVE: ALL ROWS",total?ts_health.profile_scroll+1:0,ts_health.profile_scroll+row,total);
+        cfg_text(fb,20,332,line,dim);
         return;
     }
     cfg_text(fb,20,58,"SUBSYSTEM",ink);
@@ -662,10 +698,27 @@ static void ts_audio_profile_draw(TsFramebuffer *fb, uint32_t ink, uint32_t dim)
     }
 }
 
+static TsUiRect ts_audio_health_button_rect(int button)
+{
+    switch(button) {
+    case TS_HEALTH_BUTTON_MARK:return ts_ui_control_rect(20,344,"HEARD A CLICK",1,1);
+    case TS_HEALTH_BUTTON_SAVE:return ts_ui_control_rect(110,344,"SAVE UNAVAILABLE",1,1);
+    case TS_HEALTH_BUTTON_FOLDER:return ts_ui_control_rect(224,344,"FOLDER OPENED",1,1);
+    case TS_HEALTH_BUTTON_RESET:return ts_ui_control_rect(20,368,"RESET DONE",1,1);
+    case TS_HEALTH_BUTTON_COPY:return ts_ui_control_rect(98,368,"COPY FAILED",1,1);
+    case TS_HEALTH_BUTTON_PROFILE:return ts_ui_control_rect(182,368,"PROFILE STARTED",1,1);
+    case TS_HEALTH_BUTTON_CLOSE:return ts_ui_control_rect(578,368,"CLOSE",1,1);
+    case TS_HEALTH_BUTTON_EFFECTS:return ts_ui_control_rect(548,37,"SUBSYSTEMS",1,1);
+    }
+    return (TsUiRect){0};
+}
+static int ts_audio_health_hit(int button,int x,int y)
+{return ts_ui_rect_contains(ts_audio_health_button_rect(button),x,y);}
 static void ts_audio_health_button(TsFramebuffer *fb, const TsUiState *ui, Uint32 now,
-                                  int button, int x, int y, int width, int height,
+                                  int button,
                                   const char *label, uint32_t text)
 {
+    TsUiRect r=ts_audio_health_button_rect(button);int x=r.x,y=r.y,width=r.w,height=r.h;
     int flash=ts_health.flash_button==button && !SDL_TICKS_PASSED(now,ts_health.flash_until);
     int lit=flash || (button==TS_HEALTH_BUTTON_PROFILE && ts_profile_enabled());
     uint32_t panel=ts_theme_color(&ui->palette,TS_THEME_HEALTH,
@@ -685,7 +738,7 @@ static void ts_audio_health_draw(TsFramebuffer *fb, const TsUiState *ui,
 {
     const TsRealtimeDiagnosticsSnapshot *s = &ts_health.snapshot;
     cfg_palette=&ui->palette;cfg_group=TS_THEME_HEALTH;
-    uint32_t ink = ts_theme_legacy(&ui->palette,TS_THEME_HEALTH,TS_COLOR_TEXT,TS_PALETTE_PATTERN_TEXT);
+    uint32_t ink = ts_theme_color(&ui->palette,TS_THEME_HEALTH,TS_COLOR_TEXT,0xffe0d6e9u);
     uint32_t accent = ts_theme_legacy(&ui->palette,TS_THEME_HEALTH,TS_COLOR_FOCUS,TS_PALETTE_MOUSE);
     uint32_t effect = ts_theme_legacy(&ui->palette,TS_THEME_HEALTH,TS_COLOR_ACTIVITY,TS_PALETTE_PATTERN_EFFECT);
     uint32_t dim = ts_theme_color(&ui->palette,TS_THEME_HEALTH,TS_COLOR_DIM,0xffa5a0aeu), edge = ts_theme_color(&ui->palette,TS_THEME_HEALTH,TS_COLOR_EDGE,0xff48434au);
@@ -701,7 +754,7 @@ static void ts_audio_health_draw(TsFramebuffer *fb, const TsUiState *ui,
     cfg_text(fb, 20, 20, ts_profile_enabled() ? "PERFORMANCE PROFILE" : "AUDIO HEALTH", accent);
     if (ts_profile_enabled()) {
         ts_audio_profile_draw(fb, ink, dim);
-        ts_audio_health_button(fb,ui,now,TS_HEALTH_BUTTON_EFFECTS,500,37,120,18,
+        ts_audio_health_button(fb,ui,now,TS_HEALTH_BUTTON_EFFECTS,
             ts_health.profile_effects?"SUBSYSTEMS":"MATRIX FX",effect);
         goto footer;
     }
@@ -710,7 +763,7 @@ static void ts_audio_health_draw(TsFramebuffer *fb, const TsUiState *ui,
     snprintf(line, sizeof(line), "%.16s / %.78s", driver ? driver : "NONE",
              ts_output_endpoint.active_name[0] ? ts_output_endpoint.active_name : "NO ACTIVE DEVICE");
     cfg_text(fb, 20, 40, line, ink);
-    snprintf(line, sizeof(line), "%u HZ   %u FRAMES   %.3F MS PER BUFFER",
+    snprintf(line, sizeof(line), "%u HZ / %u FR / %.3F MS   TOTALS: RESET/RESTART",
              ts_output_endpoint.sample_rate, ts_output_endpoint.buffer_frames,
              ts_output_endpoint.sample_rate ? 1000.0 * ts_output_endpoint.buffer_frames /
                  ts_output_endpoint.sample_rate : 0);
@@ -731,22 +784,27 @@ static void ts_audio_health_draw(TsFramebuffer *fb, const TsUiState *ui,
     snprintf(line, sizeof(line), "RECENT AVG %.3F MS    RECENT PEAK %.3F MS",
              s->recent_average_microseconds / 1000, s->recent_worst_microseconds / 1000);
     cfg_text(fb, 20, 128, line, active ? ink : dim);
-    snprintf(line, sizeof(line), "MAX %.3F MS    OVER BUDGET %u    NEAR %u",
+    snprintf(line, sizeof(line), "TOTAL MAX %.3F MS    OVER BUDGET %u    NEAR %u",
              s->worst_microseconds / 1000, health_count(s->deadline_overruns), health_count(s->near_overruns));
-    cfg_text(fb, 20, 146, line, s->deadline_overruns ? amber : ink);
+    cfg_text(fb, 20, 146, line, ink);
+    if(ts_health.events_ready)snprintf(line,sizeof(line),"NEW / %.1FS: OVER %u / NEAR %u",ts_health.events_seconds,health_count(ts_health.events_recent[0]),health_count(ts_health.events_recent[1]));
+    else snprintf(line,sizeof(line),"NEW: WAITING FOR OBSERVATION WINDOW");
+    cfg_text(fb,20,155,line,ts_health.events_recent[0]?red:ts_health.events_recent[1]?amber:dim);
     cfg_rect(fb, 20, 164, 600, 1, edge);
     cfg_text(fb, 20, 177, "TIMING BETWEEN CALLBACKS", accent);
     snprintf(line, sizeof(line), "LONG START GAPS %u    LONGEST EXTRA GAP %.3F MS",
              health_count(s->delayed_starts), s->start_gap_microseconds / 1000);
     cfg_text(fb, 20, 196, line, ink);
-    cfg_text(fb, 20, 212, "GAPS CAN INCLUDE SCHEDULING AND BACKEND BATCHING.", dim);
+    snprintf(line,sizeof(line),"NEW START GAPS %u / GAPS ALONE DO NOT PROVE DROPOUTS",health_count(ts_health.events_recent[2]));
+    cfg_text(fb,20,212,line,ts_health.events_recent[2]?amber:dim);
     cfg_rect(fb, 20, 230, 600, 1, edge);
     cfg_text(fb, 20, 243, "INTERFACE EDITS", accent);
     snprintf(line, sizeof(line), "MAX HOLD %.3F MS   OVER BUFFER %u   MAX UI WAIT %.3F MS",
              s->control_worst_microseconds / 1000, health_count(s->control_long_holds),
              s->control_wait_worst_microseconds / 1000);
-    cfg_text(fb, 20, 262, line, s->control_long_holds ? amber : ink);
-    cfg_text(fb, 20, 278, "HOLD: PLAYBACK EXCLUDED. WAIT: INTERFACE WAITING FOR AUDIO.", dim);
+    cfg_text(fb, 20, 262, line, ink);
+    snprintf(line,sizeof(line),"NEW LONG HOLDS %u / HOLD EXCLUDES AUDIO; WAIT IS UI WAIT",health_count(ts_health.events_recent[3]));
+    cfg_text(fb,20,278,line,ts_health.events_recent[3]?amber:dim);
     cfg_rect(fb, 20, 296, 600, 1, edge);
     cfg_text(fb, 20, 308, "BACKEND SIGNALS", accent);
     if (ts_health.native_kind == 1)
@@ -757,6 +815,8 @@ static void ts_audio_health_draw(TsFramebuffer *fb, const TsUiState *ui,
         snprintf(line, sizeof(line), "WORKER QUEUE GAPS %u", health_count(ts_health.worker_gaps));
     else snprintf(line, sizeof(line), "DROPOUT COUNTERS NOT EXPOSED BY THIS BACKEND");
     cfg_text(fb, 20, 327, line, ink);
+    snprintf(line,sizeof(line),"NEW REPORTS %u / SKIPS %u",health_count(ts_health.events_recent[4]),health_count(ts_health.events_recent[5]));
+    cfg_text(fb,260,308,line,ts_health.events_recent[5]?red:ts_health.events_recent[4]?amber:dim);
 footer:
     {
         TsSessionLogStatus session;ts_session_log_status(&session);
@@ -768,13 +828,13 @@ footer:
         if(now>=ts_health.message_until && !ts_profile_enabled())cfg_text(fb,490,20,state,active?effect:dim);
         const char *labels[]={"HEARD A CLICK","SAVE SESSION","LOG FOLDER"};
         for(int i=0;i<3;++i)
-            ts_audio_health_button(fb,ui,now,TS_HEALTH_BUTTON_MARK+i,20+i*202,344,196,18,labels[i],effect);
+            ts_audio_health_button(fb,ui,now,TS_HEALTH_BUTTON_MARK+i,labels[i],effect);
     }
-    ts_audio_health_button(fb,ui,now,TS_HEALTH_BUTTON_RESET,20,367,120,19,"RESET",accent);
-    ts_audio_health_button(fb,ui,now,TS_HEALTH_BUTTON_COPY,150,367,150,19,"COPY REPORT",effect);
-    ts_audio_health_button(fb,ui,now,TS_HEALTH_BUTTON_PROFILE,310,367,180,19,
+    ts_audio_health_button(fb,ui,now,TS_HEALTH_BUTTON_RESET,"RESET",accent);
+    ts_audio_health_button(fb,ui,now,TS_HEALTH_BUTTON_COPY,"COPY REPORT",effect);
+    ts_audio_health_button(fb,ui,now,TS_HEALTH_BUTTON_PROFILE,
         ts_profile_enabled()?"STOP PROFILE":"START PROFILE",effect);
-    ts_audio_health_button(fb,ui,now,TS_HEALTH_BUTTON_CLOSE,500,367,120,19,"CLOSE",ink);
+    ts_audio_health_button(fb,ui,now,TS_HEALTH_BUTTON_CLOSE,"CLOSE",ink);
 }
 
 static void ts_audio_health_close(void)
@@ -886,27 +946,35 @@ static int ts_audio_health_event(const SDL_Event *event, SDL_Window *main_window
     if ((event->type == SDL_WINDOWEVENT && event->window.event == SDL_WINDOWEVENT_CLOSE) ||
         (event->type == SDL_KEYDOWN && event->key.keysym.sym == SDLK_ESCAPE)) {
         ts_audio_health_hide();
+    } else if(ts_profile_enabled() && ts_health.profile_effects &&
+              (event->type==SDL_MOUSEWHEEL || (event->type==SDL_KEYDOWN &&
+              (event->key.keysym.sym==SDLK_PAGEUP || event->key.keysym.sym==SDLK_PAGEDOWN || event->key.keysym.sym==SDLK_HOME || event->key.keysym.sym==SDLK_END)))) {
+        if(event->type==SDL_MOUSEWHEEL)ts_health.profile_scroll-=wheel_event_detents(event,0)*3;
+        else if(event->key.keysym.sym==SDLK_HOME)ts_health.profile_scroll=0;
+        else if(event->key.keysym.sym==SDLK_END)ts_health.profile_scroll=TS_MATRIX_EFFECT_CAPACITY;
+        else ts_health.profile_scroll+=event->key.keysym.sym==SDLK_PAGEUP?-16:16;
+        ts_health.profile_scroll=SDL_clamp(ts_health.profile_scroll,0,TS_MATRIX_EFFECT_CAPACITY);ts_health.last_update=0;
     } else if (event->type == SDL_MOUSEBUTTONDOWN && event->button.button == SDL_BUTTON_LEFT) {
         int x, y; logical_mouse(ts_health.window, event->button.x, event->button.y, &x, &y);
-        if(ts_profile_enabled() && x>=500 && x<620 && y>=37 && y<55) {
-            ts_health.profile_effects=!ts_health.profile_effects;ts_health.last_update=0;return 1;
+        if(ts_profile_enabled() && ts_audio_health_hit(TS_HEALTH_BUTTON_EFFECTS,x,y)) {
+            ts_health.profile_effects=!ts_health.profile_effects;ts_health.profile_scroll=0;ts_health.last_update=0;return 1;
         }
-        if(y>=344 && y<362) {
-            if(x>=20 && x<216)ts_audio_session_marker();
-            else if(x>=222 && x<418) {
+        if(y>=344 && y<360) {
+            if(ts_audio_health_hit(TS_HEALTH_BUTTON_MARK,x,y))ts_audio_session_marker();
+            else if(ts_audio_health_hit(TS_HEALTH_BUTTON_SAVE,x,y)) {
                 int queued=ts_session_log_export_project(ui->project_path,1);
                 ts_audio_health_flash(TS_HEALTH_BUTTON_SAVE,!queued,queued?"SAVE QUEUED":"SAVE UNAVAILABLE");
                 snprintf(ts_health.message,sizeof(ts_health.message),"%s",queued?"SAVING SESSION IN BACKGROUND":"SESSION EXPORT UNAVAILABLE");
                 ts_health.message_until=SDL_GetTicks()+2500u;
-            } else if(x>=424 && x<620)ts_audio_session_folder(ui);
+            } else if(ts_audio_health_hit(TS_HEALTH_BUTTON_FOLDER,x,y))ts_audio_session_folder(ui);
             ts_health.last_update=0;return 1;
         }
-        if (y >= 367 && y < 386) {
-            if (x >= 20 && x < 140) {
+        if (y >= 368 && y < 384) {
+            if (ts_audio_health_hit(TS_HEALTH_BUTTON_RESET,x,y)) {
                 ts_audio_health_reset(audio);
                 ts_audio_health_flash(TS_HEALTH_BUTTON_RESET,0,"RESET DONE");
             }
-            else if (x >= 150 && x < 300) {
+            else if (ts_audio_health_hit(TS_HEALTH_BUTTON_COPY,x,y)) {
                 char report[32768]; ts_audio_health_report(audio, report, sizeof(report));
                 int copied=SDL_SetClipboardText(report)==0;
                 ts_audio_health_flash(TS_HEALTH_BUTTON_COPY,!copied,copied?"COPIED":"COPY FAILED");
@@ -914,13 +982,13 @@ static int ts_audio_health_event(const SDL_Event *event, SDL_Window *main_window
                     copied ? "AUDIO REPORT COPIED" : "COULD NOT COPY REPORT");
                 ts_health.message_until = SDL_GetTicks() + 2500u;
                 ts_health.last_update = 0;
-            } else if (x >= 310 && x < 490) {
+            } else if (ts_audio_health_hit(TS_HEALTH_BUTTON_PROFILE,x,y)) {
                 ts_health.owns_profile=0;ts_health.recent_profile_valid=0;
                 ts_profile_enable(!ts_profile_enabled());
                 ts_session_log_event("profile","enabled=%d",ts_profile_enabled());
                 ts_audio_health_flash(TS_HEALTH_BUTTON_PROFILE,0,
                     ts_profile_enabled()?"PROFILE STARTED":"PROFILE STOPPED");
-            } else if (x >= 500 && x < 620) {
+            } else if (ts_audio_health_hit(TS_HEALTH_BUTTON_CLOSE,x,y)) {
                 ts_audio_health_hide();
             }
         }
@@ -939,7 +1007,7 @@ static void ts_audio_health_update(AudioState *audio, const TsUiState *ui)
     ts_audio_health_sample(audio, now);
     ts_audio_health_draw(ts_health.framebuffer, ui, audio, now);
     SDL_UpdateTexture(ts_health.texture, NULL, ts_health.framebuffer->pixels, TS_UI_WIDTH * sizeof(uint32_t));
-    SDL_RenderCopy(ts_health.renderer, ts_health.texture, NULL, NULL);
+    SDL_RenderCopy(ts_health.renderer,ts_health.texture,NULL,NULL);
     SDL_RenderPresent(ts_health.renderer);
     ts_health.last_update = now;
 }

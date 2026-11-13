@@ -71,3 +71,41 @@ familiar layout take precedence over increasing the numerical canvas area.
 The scaling regression checks the presented control size, top/right and
 left/bottom coverage, and inverse pointer mapping at 1280 x 800, 1920 x 1080,
 2560 x 1440 and 1366 x 768.
+
+## Audio Health
+
+Ordinary measurements and retained maxima use neutral text. Red identifies new
+over-budget processing or skipped callbacks; amber identifies new near-budget
+processing, delayed starts, long control holds, or backend reports. Start gaps
+alone are explicitly not described as proven dropouts. Theme severity roles
+remain configurable; the default red tracker text no longer colors normal data.
+
+The NEW rows count increments in the last completed observation window (normally
+one second, with its actual duration shown). TOTALS are since counter reset or
+device restart; Reset preserves the session timeline. Reset/device changes,
+counter regression and tick wrap rebase the observation window. Reports retain
+historical counts and include the recent window separately. Reading and formatting
+reuse existing snapshots on the UI thread; no additional audio callback work.
+
+Health actions use shared 32-high reference metrics with label-based widths and
+real gaps. The small, draggable, always-on-top window retains its normal size.
+When enlarged, its interface and mouse targets scale with the full window,
+using the same proportional mapping for painting and input. Module profile
+rows are limited to 16 visible entries with wheel/Page Up/Page Down/Home/End
+navigation; report and session exports retain every row.
+
+## Regression and hardware checks
+
+Controller tests cover button edges/gaps, growing controls, occupied window
+margins, native clipping and ruler alignment, full-window pointer mapping,
+movement-filter creation/selection/paste/undo, recent-event
+severity/reset/wrap, and profile pagination. Existing exact recorded-output,
+routing, playback and scrolling checks remain enabled. FX cache-hit checks guard
+against rebuilding the graph every idle frame.
+
+Before release, exercise Windows 100/125/150/200% DPI and mixed-monitor moves on
+hardware, plus Linux desktop scaling, including laptop-sized clients. During the
+same heavy project, compare idle/playing callback load and new Health event counts
+with FX/Mosaic closed and open, then while resizing and moving dividers. Listen to
+the captured output for clicks; automated dummy-device tests do not establish
+real ASIO/WASAPI/JACK performance.
