@@ -1,3 +1,8 @@
+static void mosaic_gallery_button(TsFramebuffer *fb,int action,const char *label,int active)
+{
+    TsUiRect r=ts_ui_gallery_action(action);
+    mosaic_button_height(fb,r.x,r.y,r.w,r.h,label,active);
+}
 static void mosaic_gallery_overlay(TsFramebuffer *fb,const TsUiState *ui)
 {
     if(!ui->mosaic_gallery_open)return;
@@ -13,7 +18,7 @@ static void mosaic_gallery_overlay(TsFramebuffer *fb,const TsUiState *ui)
     else if(ui->mosaic_gallery_fading)snprintf(line,sizeof(line),"GALLERY / %02d / FADE %.0f%%",ui->mosaic_gallery_count,ui->mosaic_gallery_progress*100);
     else snprintf(line,sizeof(line),"GALLERY / %02d CANVASES",ui->mosaic_gallery_count);
     text(fb,128,85,line,ink,1);
-    if(!ui->mosaic_canvas_import_count){mosaic_button(fb,430,79,76,"IMPORT",0,0);mosaic_button(fb,514,79,84,"EXPORT",0,0);}
+    if(!ui->mosaic_canvas_import_count){mosaic_gallery_button(fb,TS_GALLERY_IMPORT,"IMPORT",0);mosaic_gallery_button(fb,TS_GALLERY_EXPORT,"EXPORT",0);}
     else text(fb,482,85,"CHOOSE ONE",accent,1);
     int count=ui->mosaic_canvas_import_count?ui->mosaic_canvas_import_count:ui->mosaic_gallery_count;
     for(int i=0;i<count;++i) {
@@ -29,7 +34,7 @@ static void mosaic_gallery_overlay(TsFramebuffer *fb,const TsUiState *ui)
         snprintf(line,sizeof(line),"REPLACE %02d: %.32s",target+1,target>=0 && target<ui->mosaic_gallery_count?ui->mosaic_gallery_names[target]:"UNAVAILABLE");
         mosaic_button(fb,282,273,316,line,ui->mosaic_canvas_import_replace,0);
         text(fb,128,304,"AUDIO + PATTERNS + LINKED FX / KEEPS DESTINATION MASTER",dim,1);
-        mosaic_button(fb,388,319,94,ui->file_busy?"WAIT":ui->mosaic_canvas_import_confirm?"CONFIRM":"IMPORT",ui->mosaic_canvas_import_confirm,0);mosaic_button(fb,494,319,104,"CANCEL",0,0);
+        mosaic_gallery_button(fb,TS_GALLERY_ENTER,ui->file_busy?"WAIT":ui->mosaic_canvas_import_confirm?"CONFIRM":"IMPORT",ui->mosaic_canvas_import_confirm);mosaic_gallery_button(fb,TS_GALLERY_CLOSE,"CANCEL",0);
         snprintf(line,sizeof(line),"%.78s",ui->mosaic_gallery_status);text(fb,128,380,line,dim,1);return;
     }
     int selected=ui->mosaic_gallery_selected;
@@ -43,12 +48,12 @@ static void mosaic_gallery_overlay(TsFramebuffer *fb,const TsUiState *ui)
     if(ui->mosaic_gallery_rename) {
         rect(fb,128,300,470,16,edge);snprintf(line,sizeof(line),"NAME: %.47s%s",ui->mosaic_gallery_name,ui->text_cursor_visible?"_":"");text(fb,132,304,line,accent,1);
     } else text(fb,128,304,"UP/DOWN SELECT / ENTER SWITCH / WHEEL MARKER OR FADE",dim,1);
-    mosaic_button(fb,128,319,72,"NEW",0,0);mosaic_button(fb,212,319,76,"RENAME",ui->mosaic_gallery_rename,0);
-    mosaic_button(fb,300,319,76,ui->mosaic_gallery_delete?"CONFIRM":"DELETE",ui->mosaic_gallery_delete,0);
-    mosaic_button(fb,388,319,94,selected==ui->mosaic_gallery_active?"ACTIVE":"ENTER",selected==ui->mosaic_gallery_active,0);
-    mosaic_button(fb,494,319,104,"CLOSE",0,0);
+    mosaic_gallery_button(fb,TS_GALLERY_NEW,"NEW",0);mosaic_gallery_button(fb,TS_GALLERY_RENAME,"RENAME",ui->mosaic_gallery_rename);
+    mosaic_gallery_button(fb,TS_GALLERY_DELETE,ui->mosaic_gallery_delete?"CONFIRM":"DELETE",ui->mosaic_gallery_delete);
+    mosaic_gallery_button(fb,TS_GALLERY_ENTER,selected==ui->mosaic_gallery_active?"ACTIVE":"ENTER",selected==ui->mosaic_gallery_active);
+    mosaic_gallery_button(fb,TS_GALLERY_CLOSE,"CLOSE",0);
     if(!ui->mosaic_gallery_rename) {
-        mosaic_button(fb,128,350,108,"MOVE EARLIER",0,0);mosaic_button(fb,246,350,114,"MOVE LATER",0,0);
+        mosaic_gallery_button(fb,TS_GALLERY_EARLIER,"MOVE EARLIER",0);mosaic_gallery_button(fb,TS_GALLERY_LATER,"MOVE LATER",0);
         text(fb,374,358,"ALT+UP / ALT+DOWN",dim,1);
     }
     snprintf(line,sizeof(line),"%.78s",ui->mosaic_gallery_rename?"CTRL+A REPLACE / ENTER APPLY / ESC CANCEL":ui->mosaic_gallery_status);

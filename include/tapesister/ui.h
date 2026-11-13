@@ -4,6 +4,7 @@
 const char *ts_ui_glyph(char character);
 
 #include <stdint.h>
+#include "tapesister/ui_metrics.h"
 #include "tapesister/audition.h"
 #include "tapesister/audio_import.h"
 #include "tapesister/browser.h"

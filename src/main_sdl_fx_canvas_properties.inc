@@ -1,5 +1,10 @@
 /* Names and colors are canvas presentation metadata, keyed by stable identity. */
 enum { FX_PROPERTIES_W=560, FX_PROPERTIES_H=326 };
+static TsUiRect fx_properties_action(int action)
+{
+    static const int x[]={16,118,448};
+    return ts_ui_control_rect(x[action],280,"CANCEL",2,1);
+}
 static struct {
     SDL_Window *window;SDL_Renderer *renderer;SDL_Texture *texture;Uint32 id;
     uint32_t pixels[FX_PROPERTIES_W*FX_PROPERTIES_H];int dirty,phase;
@@ -100,7 +105,7 @@ static int fx_properties_apply_event(const SDL_Event *e)
     if(e->type!=SDL_MOUSEBUTTONDOWN || e->button.button!=SDL_BUTTON_LEFT)return 0;
     int width,height;SDL_GetWindowSize(fx_properties_window.window,&width,&height);
     int x=e->button.x*FX_PROPERTIES_W/SDL_max(1,width),y=e->button.y*FX_PROPERTIES_H/SDL_max(1,height);
-    return x>=16 && x<156 && y>=280 && y<310;
+    return ts_ui_rect_contains(fx_properties_action(0),x,y);
 }
 static int fx_properties_event(SDL_Event *e)
 {
@@ -145,10 +150,10 @@ static int fx_properties_event(SDL_Event *e)
         fx_canvas.properties_cursor=SDL_clamp(first+(x-24+6)/12,0,(int)strlen(fx_canvas.properties_name));
         fx_canvas.properties_all=0;fx_canvas.text_blink=SDL_GetTicks();return 1;
     }
-    if(click && y>=280 && y<310) {
-        if(x>=16 && x<156){fx_properties_save();return 1;}
-        if(x>=166 && x<306){fx_properties_close();return 1;}
-        if(x>=404 && x<544){fx_canvas.properties_name[0]=0;fx_canvas.properties_cursor=0;fx_canvas.properties_color=0;return 1;}
+    if(click) {
+        if(ts_ui_rect_contains(fx_properties_action(0),x,y)){fx_properties_save();return 1;}
+        if(ts_ui_rect_contains(fx_properties_action(1),x,y)){fx_properties_close();return 1;}
+        if(ts_ui_rect_contains(fx_properties_action(2),x,y)){fx_canvas.properties_name[0]=0;fx_canvas.properties_cursor=0;fx_canvas.properties_color=0;return 1;}
     }
     if(click && x>=16 && x<544 && y>=98 && y<126)fx_canvas.properties_color=fx_swatch((x-16)/33);
     if((click || drag) && x>=96 && x<=528 && y>=146 && y<242) {
@@ -172,10 +177,11 @@ static void fx_properties_text(int x,int y,const char *text,uint32_t color,int s
             fx_properties_rect(x+c*scale,y+r*scale,scale,scale,color);
     }
 }
-static void fx_properties_button(int x,int width,const char *name)
+static void fx_properties_button(int action,const char *name)
 {
-    fx_properties_rect(x,280,width,30,FX_EDGE);
-    fx_properties_text(x+12,288,name,FX_TEXT,2,12);
+    TsUiRect r=fx_properties_action(action);
+    fx_properties_rect(r.x,r.y,r.w,r.h,FX_EDGE);
+    fx_properties_text(r.x+(r.w-ts_ui_label_width(name,2))/2,r.y+(r.h-14)/2,name,FX_TEXT,2,12);
 }
 static void fx_properties_paint(void)
 {
@@ -198,7 +204,7 @@ static void fx_properties_paint(void)
         fx_properties_rect(96+v*432/255,150+i*32,3,20,color);
     }
     fx_properties_text(16,250,fx_canvas.properties_color?"CUSTOM COLOR":"AUTOMATIC TYPE COLOR",color,2,44);
-    fx_properties_button(16,140,"APPLY");fx_properties_button(166,140,"CANCEL");fx_properties_button(404,140,"RESET");
+    fx_properties_button(0,"APPLY");fx_properties_button(1,"CANCEL");fx_properties_button(2,"RESET");
     SDL_UpdateTexture(fx_properties_window.texture,NULL,fx_properties_window.pixels,FX_PROPERTIES_W*sizeof(uint32_t));
     SDL_RenderCopy(fx_properties_window.renderer,fx_properties_window.texture,NULL,NULL);
     SDL_RenderPresent(fx_properties_window.renderer);
