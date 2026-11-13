@@ -95,7 +95,7 @@ static int mosaic_gallery_event(const SDL_Event *event,SDL_AudioDeviceID device,
     TsMosaicGallery *g=c->pages->gallery;if(!g){ui->mosaic_gallery_open=0;return 1;}
     if(ui->mosaic_canvas_import_count) {
         int *selected=&ui->mosaic_canvas_import_selected,count=ui->mosaic_canvas_import_count;
-        if((key && k==SDLK_ESCAPE) || (left && y>=319 && y<343 && x>=494 && x<598)) {
+        if((key && k==SDLK_ESCAPE) || (left && ts_ui_gallery_hit(TS_GALLERY_CLOSE,x,y))) {
             ui->mosaic_canvas_import_count=0;snprintf(ui->mosaic_gallery_status,sizeof(ui->mosaic_gallery_status),"CANVAS IMPORT CANCELLED");return 1;
         }
         if(key && !event->key.repeat && (k==SDLK_UP || k==SDLK_DOWN)){*selected=(*selected+(k==SDLK_UP?-1:1)+count)%count;ui->mosaic_canvas_import_confirm=0;}
@@ -103,7 +103,7 @@ static int mosaic_gallery_event(const SDL_Event *event,SDL_AudioDeviceID device,
         if(left && y>=273 && y<297 && x>=128 && x<598) {
             ui->mosaic_canvas_import_replace=x>=282;ui->mosaic_canvas_import_confirm=0;
         }
-        if((key && !event->key.repeat && (k==SDLK_RETURN || k==SDLK_KP_ENTER)) || (left && y>=319 && y<343 && x>=388 && x<482)) {
+        if((key && !event->key.repeat && (k==SDLK_RETURN || k==SDLK_KP_ENTER)) || (left && ts_ui_gallery_hit(TS_GALLERY_ENTER,x,y))) {
             if(!mosaic_gallery_busy(a,ui,c)) {
                 int replacing=ui->mosaic_canvas_import_replace,target=-1;
                 for(int i=0;i<g->count;++i)if(g->canvas[i].id==ui->mosaic_canvas_import_target)target=i;
@@ -145,9 +145,9 @@ static int mosaic_gallery_event(const SDL_Event *event,SDL_AudioDeviceID device,
         }
         return 1;
     }
-    if(left && y>=79 && y<103 && x>=430 && x<598) {
+    if(left && (ts_ui_gallery_hit(TS_GALLERY_IMPORT,x,y) || ts_ui_gallery_hit(TS_GALLERY_EXPORT,x,y))) {
         if(mosaic_gallery_busy(a,ui,c))return 1;
-        int importing=x<508;
+        int importing=ts_ui_gallery_hit(TS_GALLERY_IMPORT,x,y);
         ui->mosaic_gallery_open=0;
         browser_open(ui,importing?TS_BROWSER_IMPORT_CANVAS:TS_BROWSER_EXPORT_CANVAS);
         if(!importing) {
@@ -159,9 +159,9 @@ static int mosaic_gallery_event(const SDL_Event *event,SDL_AudioDeviceID device,
         return 1;
     }
     if((key && !event->key.repeat && (mod&KMOD_ALT) && (k==SDLK_UP || k==SDLK_DOWN)) ||
-       (left && y>=350 && y<374 && x>=128 && x<360)) {
+       (left && (ts_ui_gallery_hit(TS_GALLERY_EARLIER,x,y) || ts_ui_gallery_hit(TS_GALLERY_LATER,x,y)))) {
         if(mosaic_gallery_busy(a,ui,c))return 1;
-        int to=selected+(key?(k==SDLK_UP?-1:1):(x<240?-1:1));
+        int to=selected+(key?(k==SDLK_UP?-1:1):(ts_ui_gallery_hit(TS_GALLERY_EARLIER,x,y)?-1:1));
         if(device)SDL_LockAudioDevice(device);
         int ok=ts_gallery_move(g,selected,to,ui->mosaic_gallery_status,sizeof(ui->mosaic_gallery_status));
         if(ok)ui->mosaic_gallery_selected=to;
@@ -178,12 +178,12 @@ static int mosaic_gallery_event(const SDL_Event *event,SDL_AudioDeviceID device,
         int col=x>=370,row=(y-105)/20;int index=col*8+row;
         if(index<g->count){ui->mosaic_gallery_selected=index;ui->mosaic_gallery_delete=0;}
     }
-    if((key && !event->key.repeat && (k==SDLK_RETURN || k==SDLK_KP_ENTER)) || (left && y>=319 && y<343 && x>=388 && x<482)) {
+    if((key && !event->key.repeat && (k==SDLK_RETURN || k==SDLK_KP_ENTER)) || (left && ts_ui_gallery_hit(TS_GALLERY_ENTER,x,y))) {
         if(mosaic_gallery_enter(device,a,ui,bank,c,ui->mosaic_gallery_selected))ui->mosaic_gallery_open=0;
         return 1;
     }
-    if(left && y>=319 && y<343 && x>=494 && x<598){ui->mosaic_gallery_open=0;return 1;}
-    if(left && y>=319 && y<343 && x>=128 && x<200) {
+    if(left && ts_ui_gallery_hit(TS_GALLERY_CLOSE,x,y)){ui->mosaic_gallery_open=0;return 1;}
+    if(left && ts_ui_gallery_hit(TS_GALLERY_NEW,x,y)) {
         if(mosaic_gallery_busy(a,ui,c))return 1;
         TsMosaic *made=ts_mosaic_create();if(!made){snprintf(ui->mosaic_gallery_status,sizeof(ui->mosaic_gallery_status),"NOT ENOUGH MEMORY FOR ANOTHER CANVAS");return 1;}
         if(device)SDL_LockAudioDevice(device);
@@ -193,11 +193,11 @@ static int mosaic_gallery_event(const SDL_Event *event,SDL_AudioDeviceID device,
         if(device)SDL_UnlockAudioDevice(device);
         if(!ok)ts_mosaic_free(made);
     }
-    if(left && y>=319 && y<343 && x>=212 && x<288) {
+    if(left && ts_ui_gallery_hit(TS_GALLERY_RENAME,x,y)) {
         ui->mosaic_gallery_rename=1;
         snprintf(ui->mosaic_gallery_name,48,"%s",g->canvas[selected].name);SDL_StartTextInput();
     }
-    if(left && y>=319 && y<343 && x>=300 && x<376) {
+    if(left && ts_ui_gallery_hit(TS_GALLERY_DELETE,x,y)) {
         if(mosaic_gallery_busy(a,ui,c))return 1;
         if(!ui->mosaic_gallery_delete){ui->mosaic_gallery_delete=1;snprintf(ui->mosaic_gallery_status,sizeof(ui->mosaic_gallery_status),"CLICK DELETE AGAIN TO REMOVE THE SELECTED INACTIVE CANVAS");return 1;}
         TsMosaic *retired=NULL;

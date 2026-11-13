@@ -55,11 +55,12 @@ static void patch_workflow(void)
     /* Reopening preserves placement; Cancel and the title-bar close do not commit. */
     key(SDLK_F2,0);int moved_x,moved_y;SDL_GetWindowPosition(fx_properties_window.window,&moved_x,&moved_y);
     assert(moved_x==42 && moved_y==64);
-    properties_click(440,294);assert(!fx_canvas.properties_name[0] && !fx_canvas.properties_color);
+    properties_click(114,296);assert(fx_canvas.properties && !strcmp(fx_canvas.properties_name,"ANGELIC DRIVE"));
+    properties_click(480,296);assert(!fx_canvas.properties_name[0] && !fx_canvas.properties_color);
     properties_click(210,294);assert(!fx_canvas.properties && !strcmp(position->name,"ANGELIC DRIVE"));
     key(SDLK_F2,0);SDL_Event close;SDL_zero(close);close.type=SDL_WINDOWEVENT;close.window.windowID=fx_properties_window.id;
     close.window.event=SDL_WINDOWEVENT_CLOSE;assert(event(&close));assert(!fx_canvas.properties && w->visible);
-    key(SDLK_F2,0);properties_click(440,294);properties_click(70,294);
+    key(SDLK_F2,0);properties_click(480,296);properties_click(70,294);
     assert(!fx_canvas.properties && !position->name[0] && !position->color);
     key(SDLK_z,KMOD_CTRL);assert(!strcmp(position->name,"ANGELIC DRIVE") && position->color==color);
     key(SDLK_F2,0);matrix_hide();assert(!fx_canvas.properties && (SDL_GetWindowFlags(fx_properties_window.window)&SDL_WINDOW_HIDDEN));

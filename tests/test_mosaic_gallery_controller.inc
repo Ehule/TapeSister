@@ -64,8 +64,10 @@ static void test_mosaic_gallery_controller(SDL_Window *window,SDL_AudioDeviceID 
     gallery_pointer(window,device,a,s,u,c,TS_MOSAIC_SOURCE_KEYS_X+5,TS_MOSAIC_SOURCE_KEYS_Y+5);assert(u->mosaic_source_keys);
     gallery_key(window,device,a,s,u,c,SDLK_z,KMOD_NONE);assert(ts_performance_count(&a->mosaic_source_performance)>0);
     gallery_pointer(window,device,a,s,u,c,184,12);assert(u->mosaic_gallery_open && ts_ui_foreground_panel_open(u));
+    /* The gap beside New is not a stretched, invisible New hit target. */
+    gallery_pointer(window,device,a,s,u,c,184,327);assert(g->count==1 && !u->mosaic_gallery_rename);
     gallery_pointer(window,device,a,s,u,c,156,330);assert(g->count==2 && g->active==0 && u->mosaic_gallery_selected==1);
-    gallery_pointer(window,device,a,s,u,c,245,330);assert(u->mosaic_gallery_rename);
+    gallery_pointer(window,device,a,s,u,c,215,327);assert(u->mosaic_gallery_rename);
     gallery_key(window,device,a,s,u,c,SDLK_a,KMOD_CTRL);
     SDL_Event text;SDL_zero(text);text.type=SDL_TEXTINPUT;snprintf(text.text.text,sizeof(text.text.text),"Blue room");
     assert(live_performance_event(&text,window,device,a,s,u,&instrument,c));
@@ -82,7 +84,7 @@ static void test_mosaic_gallery_controller(SDL_Window *window,SDL_AudioDeviceID 
     ts_ui_mosaic_looper_circle_free(&hidden_circle);
     live_controller_screenshot_size(u,NULL,1637,947);u->mosaic_live_open=0;
     const char *shot=getenv("TS_TEST_GALLERY");if(shot){char path[1200];snprintf(path,sizeof(path),"%s-gallery.ppm",shot);live_controller_screenshot_size(u,path,1280,800);}
-    u->mosaic_recording=1;gallery_pointer(window,device,a,s,u,c,432,330);
+    u->mosaic_recording=1;gallery_pointer(window,device,a,s,u,c,511,327);
     assert(g->active==0 && u->mosaic_gallery_open && strstr(u->mosaic_gallery_status,"TAKE"));u->mosaic_recording=0;
     /* The actual file recorder remains active across the crossfade. */
     SisterWindow *rec=calloc(1,sizeof(*rec));assert(rec);ts_performance_recorder_init(&rec->performance_recorder);
@@ -90,7 +92,7 @@ static void test_mosaic_gallery_controller(SDL_Window *window,SDL_AudioDeviceID 
     char folder[128],recorded[1200];snprintf(folder,sizeof(folder),"gallery-record-%lu",(unsigned long)SDL_GetTicks());SDL_setenv("TAPESISTER_CAPTURES",folder,1);
     assert(begin_file_capture(a,rec,48000,TS_SISTER_TAP_MIX,2));poll_file_capture_ui(u,rec);
     snprintf(recorded,sizeof(recorded),"%s",rec->performance_recorder.path);
-    gallery_pointer(window,device,a,s,u,c,432,330);
+    gallery_pointer(window,device,a,s,u,c,511,327);
     assert(!u->mosaic_gallery_open && g->active==1 && a->mosaic==second && u->mosaic==second && pages.mosaic==second);
     assert(g->outgoing==0 && second->time==0 && !u->mosaic_source_keys && ts_performance_count(&a->mosaic_source_performance)>0);
     float output[512];int callbacks=0;
@@ -114,7 +116,7 @@ static void test_mosaic_gallery_controller(SDL_Window *window,SDL_AudioDeviceID 
     gallery_key(window,device,a,s,u,c,SDLK_g,KMOD_CTRL);assert(u->mosaic_gallery_open);
     gallery_pointer(window,device,a,s,u,c,185,113);gallery_pointer(window,device,a,s,u,c,190,284);
     assert(g->canvas[0].entry==TS_GALLERY_RESUME);
-    gallery_pointer(window,device,a,s,u,c,430,330);
+    gallery_pointer(window,device,a,s,u,c,511,327);
     assert(g->active==0 && first->time==parked && first->live[bg-first->events].elapsed==loop);
     assert(u->mosaic_scroll==3 && u->mosaic_xscroll==22 && u->mosaic_scale==31 && u->mosaic_hscale==1.2);
     for(int i=0;i<24;++i){audio_callback(a,(Uint8 *)output,sizeof(output));++callbacks;}
@@ -126,7 +128,7 @@ static void test_mosaic_gallery_controller(SDL_Window *window,SDL_AudioDeviceID 
     assert(g->outgoing<0);
     /* Deletion confirmation cannot remove the active canvas. */
     gallery_key(window,device,a,s,u,c,SDLK_g,KMOD_CTRL);
-    gallery_pointer(window,device,a,s,u,c,337,330);gallery_pointer(window,device,a,s,u,c,337,330);
+    gallery_pointer(window,device,a,s,u,c,275,327);gallery_pointer(window,device,a,s,u,c,275,327);
     assert(g->count==2 && strstr(u->mosaic_gallery_status,"SWITCH AWAY"));
     mosaic_gallery_snapshot(u,g);
     if(shot){char path[1200];snprintf(path,sizeof(path),"%s-marker-entry.ppm",shot);live_controller_screenshot_size(u,path,1280,800);}
@@ -158,7 +160,7 @@ static void test_mosaic_gallery_controller(SDL_Window *window,SDL_AudioDeviceID 
     run_pending_file_operation(device,a,u,&instrument,NULL,NULL,&pages,NULL,0,&pending,c);
     assert(!u->file_busy && u->mosaic_gallery_open && strstr(u->status,"EXPORTED CANVAS"));
     assert(a->mosaic==second && !strcmp(project_path,u->project_path));
-    gallery_pointer(window,device,a,s,u,c,465,90);assert(u->browser.mode==TS_BROWSER_IMPORT_CANVAS);
+    gallery_pointer(window,device,a,s,u,c,520,87);assert(u->browser.mode==TS_BROWSER_IMPORT_CANVAS);
     ui_sync_dialog_workspaces(u);gallery_browser_visible(u,shot,"import");
     snprintf(u->browser.directory,sizeof(u->browser.directory),"%s/Room",directory);assert(ts_browser_refresh(&u->browser));
     int found=-1;for(int i=0;i<u->browser.entry_count;++i)if(!strcmp(u->browser.entries[i].name,"Room.tsr"))found=i;
@@ -167,7 +169,7 @@ static void test_mosaic_gallery_controller(SDL_Window *window,SDL_AudioDeviceID 
     run_pending_file_operation(device,a,u,&instrument,NULL,NULL,&pages,NULL,0,&pending,c);
     assert(u->mosaic_gallery_open && u->mosaic_canvas_import_count==1 && g->count==2);
     if(shot){char path[1200];snprintf(path,sizeof(path),"%s-import.ppm",shot);live_controller_screenshot_size(u,path,1280,800);}
-    gallery_pointer(window,device,a,s,u,c,430,330);assert(u->mosaic_canvas_import_pending && u->file_busy);
+    gallery_pointer(window,device,a,s,u,c,511,327);assert(u->mosaic_canvas_import_pending && u->file_busy);
     mosaic_canvas_queue_import(u,&pending);assert(pending.active && !pending.presented);
     run_pending_file_operation(device,a,u,&instrument,NULL,NULL,&pages,NULL,0,&pending,c);
     assert(!u->file_busy && !u->mosaic_canvas_import_count && g->count==3 && g->active==1);
@@ -176,7 +178,7 @@ static void test_mosaic_gallery_controller(SDL_Window *window,SDL_AudioDeviceID 
     assert(a->mosaic==second && !strcmp(project_path,u->project_path));
     assert(g->canvas[2].entry==TS_GALLERY_MARKER && g->canvas[2].marker==3);
     gallery_pointer(window,device,a,s,u,c,190,284);assert(g->canvas[2].entry==TS_GALLERY_START && g->canvas[1].entry==TS_GALLERY_MARKER);
-    gallery_pointer(window,device,a,s,u,c,430,330);assert(g->active==2 && !u->mosaic_gallery_open);
+    gallery_pointer(window,device,a,s,u,c,511,327);assert(g->active==2 && !u->mosaic_gallery_open);
     for(int i=0;i<24;++i)audio_callback(a,(Uint8 *)output,sizeof(output));
     assert(g->outgoing<0 && a->mosaic==g->canvas[2].scene && a->mosaic->time>0 && ts_mosaic_live_count(a->mosaic)>0);
     /* Moving the active page preserves its scene, time, identity and view. */
@@ -184,21 +186,21 @@ static void test_mosaic_gallery_controller(SDL_Window *window,SDL_AudioDeviceID 
     TsMosaic *playing=a->mosaic;uint64_t playing_id=g->canvas[2].id;double time=playing->time;
     gallery_key(window,device,a,s,u,c,SDLK_UP,KMOD_ALT);
     assert(g->active==1 && g->canvas[1].id==playing_id && a->mosaic==playing && playing->time==time);
-    gallery_pointer(window,device,a,s,u,c,290,361);
+    gallery_pointer(window,device,a,s,u,c,248,358);
     assert(g->active==2 && g->canvas[2].id==playing_id && playing->time==time);
     /* A full Gallery still opens import, and an empty selected slot can be
        overwritten without appending or disturbing the active transport. */
     while(g->count<TS_GALLERY_LIMIT)assert(ts_gallery_add(g,error,sizeof(error)));
     u->mosaic_gallery_selected=3;mosaic_gallery_snapshot(u,g);
     uint64_t empty_id=g->canvas[3].id;char saved_import[1024];strcpy(saved_import,u->mosaic_canvas_import_path);
-    gallery_pointer(window,device,a,s,u,c,465,90);assert(u->browser.mode==TS_BROWSER_IMPORT_CANVAS);
+    gallery_pointer(window,device,a,s,u,c,520,87);assert(u->browser.mode==TS_BROWSER_IMPORT_CANVAS);
     pending=(PendingFileOperation){.active=1,.mode=TS_BROWSER_IMPORT_CANVAS};strcpy(pending.path,saved_import);
     run_pending_file_operation(device,a,u,&instrument,NULL,NULL,&pages,NULL,0,&pending,c);
     assert(u->mosaic_canvas_import_count==1 && u->mosaic_canvas_import_target==empty_id);
-    gallery_pointer(window,device,a,s,u,c,430,330);
+    gallery_pointer(window,device,a,s,u,c,511,327);
     assert(!u->mosaic_canvas_import_pending && strstr(u->mosaic_gallery_status,"FULL"));
     gallery_pointer(window,device,a,s,u,c,400,284);assert(u->mosaic_canvas_import_replace);
-    gallery_pointer(window,device,a,s,u,c,430,330);assert(u->mosaic_canvas_import_pending);
+    gallery_pointer(window,device,a,s,u,c,511,327);assert(u->mosaic_canvas_import_pending);
     mosaic_canvas_queue_import(u,&pending);run_pending_file_operation(device,a,u,&instrument,NULL,NULL,&pages,NULL,0,&pending,c);
     assert(g->count==16 && g->active==2 && g->canvas[3].id!=empty_id && u->mosaic_gallery_selected==3);
     assert(ts_mosaic_hash(g->canvas[3].scene)==scene_hash && a->mosaic==playing && playing->time==time);
@@ -207,11 +209,11 @@ static void test_mosaic_gallery_controller(SDL_Window *window,SDL_AudioDeviceID 
     u->mosaic_gallery_selected=2;
     pending=(PendingFileOperation){.active=1,.mode=TS_BROWSER_IMPORT_CANVAS};strcpy(pending.path,saved_import);
     run_pending_file_operation(device,a,u,&instrument,NULL,NULL,&pages,NULL,0,&pending,c);
-    gallery_pointer(window,device,a,s,u,c,400,284);gallery_pointer(window,device,a,s,u,c,430,330);
+    gallery_pointer(window,device,a,s,u,c,400,284);gallery_pointer(window,device,a,s,u,c,511,327);
     assert(!u->mosaic_canvas_import_pending && strstr(u->mosaic_gallery_status,"STOP"));
     playing->playing=0;playing->live_paused=1;
-    gallery_pointer(window,device,a,s,u,c,430,330);assert(u->mosaic_canvas_import_confirm && !u->mosaic_canvas_import_pending);
-    gallery_pointer(window,device,a,s,u,c,430,330);assert(u->mosaic_canvas_import_pending);
+    gallery_pointer(window,device,a,s,u,c,511,327);assert(u->mosaic_canvas_import_confirm && !u->mosaic_canvas_import_pending);
+    gallery_pointer(window,device,a,s,u,c,511,327);assert(u->mosaic_canvas_import_pending);
     mosaic_canvas_queue_import(u,&pending);run_pending_file_operation(device,a,u,&instrument,NULL,NULL,&pages,NULL,0,&pending,c);
     assert(g->active==2 && g->count==16 && g->canvas[2].id!=playing_id);
     assert(a->mosaic==g->canvas[2].scene && a->mosaic!=playing && u->mosaic==a->mosaic && pages.mosaic==a->mosaic);
