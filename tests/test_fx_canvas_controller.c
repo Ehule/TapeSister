@@ -159,9 +159,9 @@ static void canvas_gestures(uint32_t id)
     fx_build(&pages,&bank);FxCanvasNode *n=instance(id);assert(n);MatrixRow row=n->row;
     /* Slider release must work even outside its control or graph. */
     fx_select(n,0);w->effect_open=id;int slot=mx_effect_slot();assert(slot>=0);
-    click(180,757,1);assert(w->drag==0);float value=w->controls.effect[slot].a;
+    click(fx_inspector_x()+60,FX_INSPECT_FIRST+20,1);assert(w->drag==0);float value=w->controls.effect[slot].a;
     pointer(SDL_MOUSEMOTION,1200,500,0,0);assert(w->controls.effect[slot].a==value);
-    pointer(SDL_MOUSEBUTTONDOWN,1150,252,SDL_BUTTON_LEFT,1);assert(w->drag==FX_DRAG_CONTROL);
+    pointer(SDL_MOUSEBUTTONDOWN,fx_inspector_x()+100,FX_INSPECT_FIRST+20,SDL_BUTTON_LEFT,1);assert(w->drag==FX_DRAG_CONTROL);
     pointer(SDL_MOUSEBUTTONUP,10,10,SDL_BUTTON_LEFT,1);assert(!w->drag);
     value=w->controls.effect[slot].a;pointer(SDL_MOUSEMOTION,1050,500,0,0);assert(w->controls.effect[slot].a==value);
     key(SDLK_m,0);assert(!w->controls.effect[slot].enabled && !audio.sister.matrix.controls.effect[slot].enabled);
