@@ -39,7 +39,7 @@ uses neutral transient processors and is not a real-time performance claim.
   changes retain processing history; topology edits can shorten other tails.
 - Per-child MIDI identity and profiling. MIDI learning for independent-board
   child controls is intentionally unavailable in this slice.
-- Windows CI and hardware audio validation, including Gallery transitions,
+- Hardware audio validation, including Gallery transitions,
   idle suspension and long-delay/reverb tails under editing.
 
 Boards contain native effects in this slice, not recursive pedalboards. Their
@@ -55,3 +55,16 @@ parity, in-place processing and empty-row topology stability.
 P1/P2/P3 isolation, undo/redo, count changes, removal confirmation by mouse and
 keyboard, keyboard scrolling, tab paging, scaled input and stale identity
 handling. Both tests are included in the PR regression baseline.
+
+## Future Gallery sequencing (deferred)
+
+The planned Gallery sequencer may move between markers in the same canvas or
+between markers in different canvases. It is outside this PR's implementation
+scope; no sequencer UI or playback rules are being added here.
+
+Board and child identities must remain independent of tab numbers, editor
+selection and marker positions. Later sequence actions should target stable
+canvas/marker identities and use the existing transport and Gallery transition
+paths. Preserve the distinction between a same-canvas seek and a cross-canvas
+transition when testing effect history, tails and suspension. Switching an
+editor tab must never become a playback or effect-reset command.
