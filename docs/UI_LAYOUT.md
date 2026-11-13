@@ -33,31 +33,20 @@ metrics. Layout-only operations must not stage DSP processors or take audio lock
 
 ## FX workspace
 
-The outer FX view uses display-density units, independently of window size and
-graph zoom. The existing saved divider value is interpreted as an inspector
-width relative to the original 1280-wide surface; old projects retain their
-preferred width. Drag, double-click reset, Escape cancel and persistence remain.
-Inspector pages adapt to available height, using 52-unit wrapped parameter rows.
+The outer FX view keeps the familiar 1280 x 840 logical surface. Enlarging the
+window enlarges controls, fonts, inspector and graph together. Graph zoom remains
+a separate editing operation. Native cable rasterization remains at drawable
+resolution; display density affects stroke quality without imposing a UI size cap.
 
-Two 28-high toolbar rows replace uneven fixed-width controls. Help is collapsed
-by default. The inspector owns parameter editing; EDITOR opens the existing
-Matrix editor for advanced actions such as transient states, replacement and
-removal. The duplicate bottom parameter editor no longer covers the outer graph.
-Inner Meta/SunVox editors retain their existing layout in this change.
+The existing saved divider, double-click reset and Escape cancel remain.
+Two consistent toolbar rows, collapsed help and removal of the duplicate bottom
+parameter editor recover space within that layout. The inspector owns parameter
+editing and replacement; EDITOR opens advanced Matrix controls.
 
-At 100% display density, with the default inspector and help closed:
-
-| Client size | Previous graph | New graph | Graph area recovered |
-| --- | --- | --- | --- |
-| 1280 x 840 | 980 x 566 | 980 x 696 | 23% |
-| 1366 x 699 | approx. 1046 x 471 | 1066 x 555 | 20% |
-| 1920 x 1080 | approx. 1470 x 728 | 1620 x 936 | 42% |
-
-These are viewport measurements, not a claim that every node is always framed.
-Resize preserves graph zoom; Home/FIT frames the map and Z frames the selection.
-At 150% Windows DPI a 1920-pixel-wide client has 1280 layout units, with controls
-and text enlarged together for readability. Extremely small clients retain a
-960 x 480 minimum logical surface and are downscaled to fit.
+With the default inspector and help closed, the logical graph grows from
+980 x 566 to 980 x 696, about 23% more area. That relative gain persists when
+the window is enlarged; it does not depend on shrinking controls. Inner
+Meta/SunVox editors retain their existing scaling.
 
 ## Movement filter visibility
 

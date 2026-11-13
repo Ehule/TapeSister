@@ -48,7 +48,7 @@ static void divider_controls(const char *dir,uint32_t effect_id)
     assert(l->canvas_split==TS_FX_CANVAS_SPLIT_MAX);
     SDL_Event focus;SDL_zero(focus);focus.type=SDL_WINDOWEVENT;focus.window.windowID=w->id;focus.window.event=SDL_WINDOWEVENT_FOCUS_LOST;
     assert(event(&focus));assert(l->canvas_split==780 && !w->drag);
-    /* Resizing the OS window keeps the same inspector width and readable text. */
+    /* Resizing the OS window scales the inspector and its readable text together. */
     const int sizes[][2]={{960,630},{1366,699},{1920,1080}};
     for(int i=0;i<3;++i) {
         SDL_SetWindowSize(w->window,sizes[i][0],sizes[i][1]);
@@ -76,17 +76,20 @@ static void responsive_workspace(void)
     MatrixWindow *w=&matrix_window;int ow,oh;SDL_GetWindowSize(w->window,&ow,&oh);
     int split=w->layout->canvas_split;w->layout->canvas_split=TS_FX_CANVAS_SPLIT_DEFAULT;
     SDL_SetWindowSize(w->window,1280,840);mx_prepare_surface(w);
-    int inspector=fx_inspector_width(),font=fx_font(2).rows[7];
+    int inspector=mx_px(fx_inspector_width()),font=fx_font(2).rows[7];
+    TsUiRect fit=fx_toolbar_rect(FX_TOOL_FIT);int button_height=mx_py(fit.y+fit.h)-mx_py(fit.y);
     assert((fx_right()-20)*(FX_BOTTOM-FX_TOP)==980*696);
     SDL_SetWindowSize(w->window,1920,1080);mx_prepare_surface(w);
-    assert(fx_inspector_width()==inspector && fx_font(2).rows[7]==font);
-    assert((fx_right()-20)*(FX_BOTTOM-FX_TOP)==1620*936);
+    assert(mx_px(fx_inspector_width())>inspector && fx_font(2).rows[7]>font);
+    assert(mx_py(fit.y+fit.h)-mx_py(fit.y)>button_height);
+    assert(MATRIX_W==1280 && MATRIX_H==840);
+    assert((fx_right()-20)*(FX_BOTTOM-FX_TOP)==980*696);
     for(int i=0;i<FX_TOOL_COUNT;++i) {
         TsUiRect r=fx_toolbar_rect(i);assert(r.h==28 && r.x>=0 && r.x+r.w<=MATRIX_W);
         assert(fx_toolbar_hit(i,r.x,r.y) && !fx_toolbar_hit(i,r.x+r.w,r.y));
     }
     int history=w->history_count;float zoom=w->layout->canvas_zoom;
-    toolbar_click(FX_TOOL_HELP);assert(fx_canvas.help && FX_BOTTOM==936);
+    toolbar_click(FX_TOOL_HELP);assert(fx_canvas.help && FX_BOTTOM==696);
     toolbar_click(FX_TOOL_HELP);assert(!fx_canvas.help && w->history_count==history && w->layout->canvas_zoom==zoom);
     w->layout->canvas_split=split;SDL_SetWindowSize(w->window,ow,oh);mx_prepare_surface(w);
 }

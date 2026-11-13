@@ -16,7 +16,6 @@ static int event(SDL_Event *e)
 {return matrix_event(e,main_window,0,&audio,&ui,&pages,&bank);}
 static void pointer(Uint32 type,int x,int y,int button,int clicks)
 {
-    mx_prepare_layout(&matrix_window);
     int width,height;SDL_GetWindowSize(matrix_window.window,&width,&height);
     SDL_Event e;SDL_zero(e);e.type=type;
     if(type==SDL_MOUSEMOTION){e.motion.windowID=matrix_window.id;e.motion.x=x*width/MATRIX_W;e.motion.y=y*height/MATRIX_H;e.motion.state=SDL_BUTTON_LMASK;}
