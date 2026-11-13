@@ -126,6 +126,9 @@ static void check_cpu_readout(AudioState *a,TsUiState *ui,SDL_Window *window)
     }
 }
 
+
+#include "test_audio_health_layout.inc"
+
 int main(int argc, char **argv)
 {
     SDL_setenv("SDL_VIDEODRIVER", "dummy", 1);
@@ -138,6 +141,7 @@ int main(int argc, char **argv)
     AudioState *a = calloc(1, sizeof(*a));
     TsUiState *ui = calloc(1, sizeof(*ui)); assert(a && ui);
     ts_ui_init(ui);
+    check_health_recent_events(ui,a);
     ts_realtime_diagnostics_init(&a->realtime_diagnostics);
     a->realtime_diagnostics_enabled = 1;
     a->realtime_counter_frequency = SDL_GetPerformanceFrequency();
@@ -235,7 +239,8 @@ int main(int argc, char **argv)
     assert(renderer_info.flags & SDL_RENDERER_SOFTWARE);
     SDL_Event profile_event;SDL_zero(profile_event);profile_event.type=SDL_MOUSEBUTTONDOWN;
     profile_event.button.windowID=ts_health.window_id;profile_event.button.button=SDL_BUTTON_LEFT;
-    profile_event.button.x=500;profile_event.button.y=470;
+    health_button_position(&profile_event,TS_HEALTH_BUTTON_PROFILE);
+    check_health_button_gaps(main_window,a,ui);
     assert(ts_audio_health_event(&profile_event,main_window,a,ui));assert(ts_profile_enabled());
     ts_audio_health_update(a,ui);
     if (SDL_getenv("TAPESISTER_PROFILE_SCREENSHOT")) {
@@ -265,14 +270,15 @@ int main(int argc, char **argv)
         assert(effect_snapshot.effect[i].samples>0);
         assert(effect_snapshot.effect[i].identity.id==(uint32_t)i+1);
     }
-    SDL_Event effects_event=profile_event;effects_event.button.x=700;effects_event.button.y=55;
+    SDL_Event effects_event=profile_event;health_button_position(&effects_event,TS_HEALTH_BUTTON_EFFECTS);
     assert(ts_audio_health_event(&effects_event,main_window,a,ui));assert(ts_health.profile_effects);
     ts_audio_health_update(a,ui);
     if(SDL_getenv("TAPESISTER_MATRIX_PROFILE_SCREENSHOT")) {
         SDL_Surface *surface=SDL_CreateRGBSurfaceFrom(ts_health.framebuffer->pixels,640,400,32,640*4,0x00ff0000u,0x0000ff00u,0x000000ffu,0xff000000u);
         assert(surface);assert(!SDL_SaveBMP(surface,SDL_getenv("TAPESISTER_MATRIX_PROFILE_SCREENSHOT")));SDL_FreeSurface(surface);
     }
-    SDL_Event profile_copy=profile_event;profile_copy.button.x=250;
+    check_health_profile_scroll(main_window,a,ui);
+    SDL_Event profile_copy=profile_event;health_button_position(&profile_copy,TS_HEALTH_BUTTON_COPY);
     assert(ts_audio_health_event(&profile_copy,main_window,a,ui));
     char *profile_report=SDL_GetClipboardText();
     assert(strstr(profile_report,"#16 GRAIN") && strstr(profile_report,"peak ms/block"));SDL_free(profile_report);
@@ -292,7 +298,7 @@ int main(int argc, char **argv)
     assert(strstr(report, "Active setup: awaiting UI snapshot"));
     /* Copy uses the same scaled coordinate mapping as the resizable window. */
     e.type = SDL_MOUSEBUTTONDOWN; e.button.windowID = ts_health.window_id;
-    e.button.button = SDL_BUTTON_LEFT; e.button.x = 250; e.button.y = 470;
+    e.button.button = SDL_BUTTON_LEFT; health_button_position(&e,TS_HEALTH_BUTTON_COPY);
     assert(ts_audio_health_event(&e, main_window, a, ui));
     char *copied = SDL_GetClipboardText(); assert(strstr(copied, "TapeSister Audio Health")); SDL_free(copied);
     ts_audio_health_update(a,ui); /* Include action feedback in the optional screenshot. */
@@ -442,7 +448,7 @@ int main(int argc, char **argv)
     assert(ts_audio_health_event(&e,main_window,a,ui));assert(!ts_health.visible);
     ts_health.visible=1;
     e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=ts_health.window_id;e.button.button=SDL_BUTTON_LEFT;
-    e.button.x=400;e.button.y=440;assert(ts_audio_health_event(&e,main_window,a,ui));
+    health_button_position(&e,TS_HEALTH_BUTTON_SAVE);assert(ts_audio_health_event(&e,main_window,a,ui));
     TsSessionLogStatus session;
     for(int i=0;i<500;++i){ts_audio_session_update(a,ui);ts_session_log_status(&session);if(session.export_result!=1)break;SDL_Delay(10);}
     assert(session.export_result==2);char *saved_path=SDL_GetClipboardText();assert(!strcmp(saved_path,session.export_path));SDL_free(saved_path);

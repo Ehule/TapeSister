@@ -87,3 +87,42 @@ Very small clients fit the original 640 x 400 surface. Source-palette rows
 remain fixed-height, leaving room below them on taller displays; their small
 waveform previews use the existing logical renderer. The main canvas and ruler
 retain native rendering and cached repaint behavior.
+
+
+## Audio Health
+
+Ordinary measurements and retained maxima use neutral text. Red identifies new
+over-budget processing or skipped callbacks; amber identifies new near-budget
+processing, delayed starts, long control holds, or backend reports. Start gaps
+alone are explicitly not described as proven dropouts. Theme severity roles
+remain configurable; the default red tracker text no longer colors normal data.
+
+The NEW rows count increments in the last completed observation window (normally
+one second, with its actual duration shown). TOTALS are since counter reset or
+device restart; Reset preserves the session timeline. Reset/device changes,
+counter regression and tick wrap rebase the observation window. Reports retain
+historical counts and include the recent window separately. Reading and formatting
+reuse existing snapshots on the UI thread; no additional audio callback work.
+
+Health actions use shared 32-high reference metrics with label-based widths and
+real gaps. The small, draggable, always-on-top window retains its normal size.
+When enlarged, its content stops growing at the display-density reference size
+and is centered; painting and pointer input share that transform. Module profile
+rows are limited to 16 visible entries with wheel/Page Up/Page Down/Home/End
+navigation; report and session exports retain every row.
+
+## Regression and hardware checks
+
+Controller tests cover button edges/gaps, responsive canvas geometry, native
+clipping and ruler alignment, window resize zoom invariance, centered Gallery
+and looper overlays, movement-filter creation/selection/paste/undo, recent-event
+severity/reset/wrap, and profile pagination. Existing exact recorded-output,
+routing, playback and scrolling checks remain enabled. FX cache-hit checks guard
+against rebuilding the graph every idle frame.
+
+Before release, exercise Windows 100/125/150/200% DPI and mixed-monitor moves on
+hardware, plus Linux desktop scaling, including laptop-sized clients. During the
+same heavy project, compare idle/playing callback load and new Health event counts
+with FX/Mosaic closed and open, then while resizing and moving dividers. Listen to
+the captured output for clicks; automated dummy-device tests do not establish
+real ASIO/WASAPI/JACK performance.
