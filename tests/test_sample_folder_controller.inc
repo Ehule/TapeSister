@@ -37,7 +37,16 @@ static void test_folder_browser(SDL_Window *window, SDL_AudioDeviceID device,
     assert(FOLDER_EVENT());
     assert(ui.browser.mode == TS_BROWSER_IMPORT_AUDIO_FOLDER && !ui.file_busy);
     /* Directory mode filters files but preserves navigation and the selected folder. */
-    assert(!strcmp(ui.browser.directory, directory) && ui.browser.entry_count == 0);
+#ifdef _WIN32
+    /* Session history normalizes absolute paths, including Windows separators. */
+    char expected_directory[TS_BROWSER_PATH_MAX], actual_directory[TS_BROWSER_PATH_MAX];
+    assert(_fullpath(expected_directory, directory, sizeof(expected_directory)));
+    assert(_fullpath(actual_directory, ui.browser.directory, sizeof(actual_directory)));
+    assert(!_stricmp(actual_directory, expected_directory));
+#else
+    assert(!strcmp(ui.browser.directory, directory));
+#endif
+    assert(ui.browser.entry_count == 0);
     assert(!ts_browser_mode_selects_config(ui.browser.mode));
     static TsFramebuffer fb;
     ts_ui_render(&fb, &ui, &instrument);

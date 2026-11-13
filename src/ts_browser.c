@@ -18,6 +18,9 @@
 #define ts_browser_mkdir(path) mkdir(path, 0775)
 #endif
 
+/* Session-only UI state shared by the host, palette and SunVox browsers. */
+static char recent_directory[TS_BROWSER_PATH_MAX];
+
 static int case_compare(const char *a, const char *b)
 {
     for (;;) {
@@ -193,6 +196,24 @@ static void reveal_selection(TsBrowser *browser)
     ts_browser_set_scroll(browser, browser->scroll);
 }
 
+static void remember_directory(const char *path)
+{
+    char absolute[TS_BROWSER_PATH_MAX];
+#ifdef _WIN32
+    if (!_fullpath(absolute, path, sizeof(absolute))) return;
+#else
+    if (path[0] == '/') {
+        if (strlen(path) >= sizeof(absolute)) return;
+        snprintf(absolute, sizeof(absolute), "%s", path);
+    } else {
+        char cwd[TS_BROWSER_PATH_MAX];
+        if (!getcwd(cwd, sizeof(cwd)) ||
+            !join_path(cwd, path, absolute, sizeof(absolute))) return;
+    }
+#endif
+    snprintf(recent_directory, sizeof(recent_directory), "%s", absolute);
+}
+
 void ts_browser_init(TsBrowser *browser)
 {
     memset(browser, 0, sizeof(*browser));
@@ -200,6 +221,8 @@ void ts_browser_init(TsBrowser *browser)
     browser->action_focus = -1;
     if (getcwd(browser->directory, sizeof(browser->directory)) == NULL)
         snprintf(browser->directory, sizeof(browser->directory), ".");
+    snprintf(browser->visited_directory, sizeof(browser->visited_directory), "%s", browser->directory);
+    if (!recent_directory[0]) remember_directory(browser->directory);
 }
 
 int ts_browser_refresh(TsBrowser *browser)
@@ -281,6 +304,9 @@ int ts_browser_refresh(TsBrowser *browser)
         snprintf(browser->message, sizeof(browser->message), "CURRENT FOLDER");
     else
         snprintf(browser->message, sizeof(browser->message), "%d ITEMS", browser->entry_count);
+    snprintf(browser->visited_directory, sizeof(browser->visited_directory), "%s", browser->directory);
+    if (browser->mode != TS_BROWSER_CLOSED && !ts_browser_mode_selects_config(browser->mode))
+        remember_directory(browser->directory);
     return 1;
 }
 
@@ -298,6 +324,13 @@ static int change_directory(TsBrowser *browser, const char *path)
 
 int ts_browser_open(TsBrowser *browser, TsBrowserMode mode, const char *default_filename)
 {
+    /* A caller-supplied directory (recovery, explicit navigation, fixtures)
+       takes precedence. Otherwise use the latest folder visited in any file
+       browser. Config path pickers retain their configured starting point. */
+    int restore = !ts_browser_mode_selects_config(mode) && recent_directory[0] &&
+        !strcmp(browser->directory, browser->visited_directory);
+    if (restore)
+        snprintf(browser->directory, sizeof(browser->directory), "%s", recent_directory);
     browser->import_as_raw = 0;
     browser->mode = mode;
     browser->filename_focus = ts_browser_mode_edits_filename(mode);
@@ -309,7 +342,20 @@ int ts_browser_open(TsBrowser *browser, TsBrowserMode mode, const char *default_
     snprintf(browser->filename, sizeof(browser->filename), "%s",
              default_filename != NULL ? default_filename : "");
     browser->filename_cursor = strlen(browser->filename);
-    return ts_browser_refresh(browser);
+    if (ts_browser_refresh(browser)) return 1;
+    if (restore) {
+        char cwd[TS_BROWSER_PATH_MAX];
+        if (getcwd(cwd, sizeof(cwd)) && strcmp(cwd, browser->directory)) {
+            snprintf(browser->directory, sizeof(browser->directory), "%s", cwd);
+            browser->entry_count = 0; browser->selected = -1; browser->scroll = 0;
+            if (ts_browser_refresh(browser)) {
+                snprintf(browser->message, sizeof(browser->message),
+                         "LAST FOLDER UNAVAILABLE - USING WORKING DIRECTORY");
+                return 1;
+            }
+        }
+    }
+    return 0;
 }
 
 void ts_browser_close(TsBrowser *browser)

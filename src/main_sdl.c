@@ -7198,9 +7198,7 @@ static void save_config(TsUiState *ui)
         return;
     }
     ui->config_before_edit = ui->config;
-    if (path_is_directory(ui->config.sample_path))
-        snprintf(ui->browser.directory, sizeof(ui->browser.directory), "%s",
-                 ui->config.sample_path);
+    /* Saving settings must not replace this session's browsing location. */
     ui->config_open = 0;
     ui->config_cursor = 0;
     SDL_StopTextInput();

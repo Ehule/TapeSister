@@ -109,3 +109,24 @@ same heavy project, compare idle/playing callback load and new Health event coun
 with FX/Mosaic closed and open, then while resizing and moving dividers. Listen to
 the captured output for clicks; automated dummy-device tests do not establish
 real ASIO/WASAPI/JACK performance.
+
+## File browser location
+
+File browsers share the last successfully visited folder for the current
+application session. Reopening after loading or Cancel, switching between
+Tiles/TrackSister, Gallery, palette import/export and SunVox patches, and
+starting a new project retain that location. The first browser uses its normal
+startup folder: the working directory unless an explicit initial path, such as
+the configured sample folder, was supplied. No location is persisted on exit.
+
+Configuration path pickers retain their configured starting paths and do not
+replace ordinary file-browser history. Explicit navigation for recovery and
+project save destinations also remains available. Saving settings does not
+reset the sample browsing folder. Remembered paths are absolute; if a folder
+is removed or a drive disappears, opening falls back to the working directory.
+Failed navigation does not update the remembered folder or leave a stale list.
+
+The browser regression covers first open, reopen/Cancel, multiple browser
+instances and file types, selected-file retention, explicit path overrides,
+configuration isolation, a changed process working directory, failed navigation
+and a removed remembered directory. All folder bookkeeping stays on the UI thread.

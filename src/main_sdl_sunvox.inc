@@ -21,9 +21,9 @@ static void svfx_open(uint32_t id)
 }
 static void svfx_browse(TsUiState *ui)
 {
+    (void)ui; /* ts_browser_open shares the session folder with other windows. */
     if(!sunvox_files.directory[0]) {
         ts_browser_init(&sunvox_files);
-        if(ui->browser.directory[0])snprintf(sunvox_files.directory,sizeof(sunvox_files.directory),"%s",ui->browser.directory);
     }
     ts_browser_open(&sunvox_files,TS_BROWSER_LOAD_SUNSYNTH,NULL);
     sunvox_editor.focus=0;matrix_window.drag=0;SDL_StopTextInput();

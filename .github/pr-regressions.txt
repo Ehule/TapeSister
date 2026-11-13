@@ -1,4 +1,5 @@
 tapesister_core_tests tapesister_core_tests
+tapesister_browser_tests tapesister_browser_tests
 tapesister_live_test_tests tapesister_live_test_tests
 tapesister_live_test_tests test_live_test_logs
 test_audio_mixer test_audio_mixer
