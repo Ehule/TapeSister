@@ -48,9 +48,8 @@ static void health_button_position(SDL_Event *event,int button)
 {
     TsUiRect r=ts_audio_health_button_rect(button);int w,h;
     SDL_GetWindowSize(ts_health.window,&w,&h);
-    TsUiPresentation p=ts_audio_health_presentation();r=ts_ui_presentation_rect(&p,r);
-    event->button.x=(r.x+r.w/2)*w/p.width;
-    event->button.y=(r.y+r.h/2)*h/p.height;
+    event->button.x=(r.x+r.w/2)*w/640;
+    event->button.y=(r.y+r.h/2)*h/400;
 }
 static void check_health_button_gaps(SDL_Window *window,AudioState *audio,TsUiState *ui)
 {
@@ -74,10 +73,8 @@ static void check_health_button_gaps(SDL_Window *window,AudioState *audio,TsUiSt
         TsUiRect r=ts_audio_health_button_rect(TS_HEALTH_BUTTON_RESET);
         SDL_Event event;SDL_zero(event);event.type=SDL_MOUSEBUTTONDOWN;
         event.button.windowID=ts_health.window_id;event.button.button=SDL_BUTTON_LEFT;
-        TsUiPresentation p=ts_audio_health_presentation();
-        TsUiRect gap=ts_ui_presentation_rect(&p,(TsUiRect){r.x+r.w+3,r.y+r.h/2,1,1});
-        event.button.x=gap.x*widths[i]/p.width;
-        event.button.y=gap.y*heights[i]/p.height;
+        event.button.x=(r.x+r.w+3)*widths[i]/640;
+        event.button.y=(r.y+r.h/2)*heights[i]/400;
         ts_health.flash_button=TS_HEALTH_BUTTON_NONE;
         assert(ts_audio_health_event(&event,window,audio,ui));
         assert(ts_health.flash_button==TS_HEALTH_BUTTON_NONE);
@@ -85,7 +82,8 @@ static void check_health_button_gaps(SDL_Window *window,AudioState *audio,TsUiSt
         assert(ts_audio_health_event(&event,window,audio,ui));
         assert(ts_health.flash_button==TS_HEALTH_BUTTON_COPY);
         if(i==2) {
-            assert(p.target[0].w==1280 && p.target[0].h==800);
+            int x,y;logical_mouse(ts_health.window,1599,999,&x,&y);
+            assert(x==639 && y==399);
             event.button.x=10;event.button.y=10;ts_health.flash_button=TS_HEALTH_BUTTON_NONE;
             assert(ts_audio_health_event(&event,window,audio,ui));assert(!ts_health.flash_button);
         }
