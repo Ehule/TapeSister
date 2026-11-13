@@ -57,3 +57,17 @@ explains the exception. Creation pans the viewport to the new node, and Z frames
 the selection. Filtered FIT excludes unrelated global text-label extents.
 These exceptions do not assign ownership, create routes or activate playback.
 They are transient and keyed by instance identity, so deleted slot reuse is safe.
+## Main-window scaling
+
+Mosaic, Gallery, FM and TrackSister use the full window. Maximizing enlarges
+their interface, lettering and mouse targets. The familiar proportional
+presentation is retained; there are no fixed-density top/left islands and no
+small centered editor surrounded by unused background. Canvas zoom remains
+the user's separate view setting.
+
+A fixed-density reflow was rejected after hands-on testing because it made
+controls smaller and left substantial empty margins. Readability and the
+familiar layout take precedence over increasing the numerical canvas area.
+The scaling regression checks the presented control size, top/right and
+left/bottom coverage, and inverse pointer mapping at 1280 x 800, 1920 x 1080,
+2560 x 1440 and 1366 x 768.

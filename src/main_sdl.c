@@ -9415,6 +9415,10 @@ static void browser_activate_selection(SDL_AudioDeviceID device, AudioState *aud
                    bypass_preview);
 }
 
+/* The full interface grows with the window, as it did before the layout audit.
+   Keep this presentation path shared by every main-window editor. */
+static void main_surface_copy(SDL_Renderer *renderer,SDL_Texture *texture)
+{SDL_RenderCopy(renderer,texture,NULL,NULL);}
 static void logical_mouse(SDL_Window *window, int raw_x, int raw_y, int *x, int *y)
 {
     int ww, wh;
@@ -18968,7 +18972,7 @@ int main(int argc, char **argv)
             for(int i=0;i<2;i++)detail_changed|=waveform_details[i].valid &&
                 (waveform_details[i].raster_changed || waveform_details[i].analysis_count!=presented_detail_analysis[i]);
             if ((upload || circle_changed) && (upload==1 || force_present || detail_changed || circle_changed || animated || main_editing)) {
-                SDL_RenderCopy(renderer, texture, NULL, NULL);
+                main_surface_copy(renderer,texture);
                 native_waveform_copy(renderer,waveform_textures,waveform_details,&framebuffer);
                 native_looper_copy(renderer,&looper_texture,&looper_circle);
                 for(int i=0;i<2;i++)presented_detail_analysis[i]=waveform_details[i].analysis_count;
