@@ -95,6 +95,7 @@ $RequiredLayout = @(
     "assets/tapesister_splash.png",
     "assets/tapesister_credits.png",
     "assets/palette.pal",
+    "assets/tracksister.pal",
     "cdp/bin",
     "licenses/THIRD_PARTY_NOTICES.md",
     "tapesister.ini.example",

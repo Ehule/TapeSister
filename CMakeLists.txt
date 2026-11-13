@@ -310,6 +310,9 @@ if(TAPESISTER_BUILD_SDL)
             "${CMAKE_CURRENT_SOURCE_DIR}/assets/palette.pal"
             "$<TARGET_FILE_DIR:tapesister>/assets/palette.pal"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/assets/tracksister.pal"
+            "$<TARGET_FILE_DIR:tapesister>/assets/tracksister.pal"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_CURRENT_SOURCE_DIR}/tapesister.ini.example"
             "$<TARGET_FILE_DIR:tapesister>/tapesister.ini.example"
     COMMENT "Copying TapeSister runtime artwork and palette")
