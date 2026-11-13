@@ -5746,6 +5746,14 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     }
 
     if (model->fx_page == 1) {
+        rect(fb,0,0,436,36,ts_theme_color(active_palette(),render_group,TS_COLOR_BACKGROUND,RGB(12,12,12)));
+        int boards=model->board_count>0?model->board_count:1;
+        sister_compact_button(fb,10,8,26,"<",model->board_tab_first>0);
+        for(int i=0;i<8 && model->board_tab_first+i<boards;++i){char name[12];
+            int at=model->board_tab_first+i;snprintf(name,sizeof(name),"P%d",at+1);
+            sister_compact_button(fb,40+i*45,8,43,name,at==model->board_selected);
+        }
+        sister_compact_button(fb,404,8,26,">",model->board_tab_first+8<boards);
         char effect_transition_caption[24];
         char master_transition_caption[24];
         int first = ts_sister_ui_fx_scroll(model);
@@ -5847,6 +5855,8 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                         ts_sister_ui_parameter_locked(model, parameter + 4));
                 }
             }
+            if(model->board_selected)text(fb,60,top+31,"SERIAL / CANVAS INPUT",PAL_MOUSE,1);
+            else {
             sister_target_toggle(fb, 60, top + 26, 46, "PRE",
                 slot->placement & TS_SISTER_FX_PLACE_PRE, PAL_WAVE_LEFT);
             sister_target_toggle(fb, 112, top + 26, 46, "H1",
@@ -5857,6 +5867,7 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                 slot->placement & TS_SISTER_FX_PLACE_H3, PAL_TUNING);
             sister_target_toggle(fb, 268, top + 26, 46, "POST",
                 slot->placement & TS_SISTER_FX_PLACE_POST, PAL_WAVE_RIGHT);
+            }
             if(slot->type==TS_SISTER_FX_TRANSIENT) {
                 char power[16];snprintf(power,sizeof(power),"PWR %uX",1u+slot->transient_power);
                 button(fb,320,top+26,66,power,slot->transient_power!=0);
@@ -5926,11 +5937,14 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                 ts_sister_ui_parameter_locked(
                     model, TS_SISTER_UI_PARAM_MASTER_FX_TRANSITION));
         }
+        if(model->board_selected)text(fb,114,337,"PATCH FEEDBACK IN FX CANVAS",PAL_MOUSE,1);
+        else {
         sister_percent_parameter_state(fb, 110, 332, 300, "FX FEEDBACK",
             model->parameters.fx.master_feedback, 100, PAL_TUNING,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_MASTER_FX_FEEDBACK));
         text(fb, 420, 337, "0-135%", PAL_MOUSE, 1);
+        }
         if (model->routing.fx_transition_active) {
             if (model->routing.fx_transition_topology)
                 snprintf(effect_transition_caption,
@@ -6238,6 +6252,7 @@ sister_footer:
     snprintf(preset_label, sizeof(preset_label), "%.17s%s",
              model->preset_name[0] != '\0' ? model->preset_name : "PRESET",
              model->preset_modified ? "*" : "");
+    if(model->fx_page==1 && model->board_selected)snprintf(preset_label,sizeof(preset_label),"P%d / PROJECT",model->board_selected+1);
     button(fb, 264, 370, 130, preset_label, 0);
     button(fb, 400, 370, 28, ">", 0);
     {

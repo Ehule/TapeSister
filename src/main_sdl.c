@@ -9432,7 +9432,11 @@ typedef struct {
     SDL_Texture *waveform_textures[2];
     TsUiWaveformDetail waveform_details[2];
     TsSisterUiModel model;
-    TsSisterUiModel rendered_model;
+    TsSisterUiModel rendered_model, board_view;
+    TsMatrixEffectControls board_controls;
+    uint32_t board_id;
+    uint32_t board_ids[TS_MATRIX_EFFECT_CAPACITY+1];
+    TsMosaic *board_context;uint64_t board_epoch;
     TsFramebuffer framebuffer;
     uint32_t window_id;
     uint32_t last_present_ms;
@@ -9459,6 +9463,26 @@ typedef struct {
     SDL_Thread *performance_writer;
 } SisterWindow;
 static void character_filter_open(SisterWindow *,int);
+static void sister_board_open(uint32_t);
+static int sister_board_publish(SDL_AudioDeviceID,AudioState *,TsUiState *,SisterWindow *);
+static const TsSisterUiModel *sister_board_view(SisterWindow *s)
+{
+    if(!s->board_id || s->model.fx_page!=1)return &s->model;
+    s->board_view=s->model;
+    TsSisterFxControls *fx=&s->board_view.parameters.fx;
+    fx->slot_count=s->board_controls.board.count;
+    memcpy(fx->slot,s->board_controls.board.slot,sizeof(fx->slot));
+    fx->transition=s->board_controls.board.transition;
+    fx->master_transition=s->board_controls.transition;fx->enabled=s->board_controls.enabled;
+    s->board_view.parameter_locks=s->board_view.parameter_locks_high=0;
+    for(int i=0;i<5;++i)for(int field=0;field<5;++field)if(fx->slot[i].parameter_locks&(1u<<field)){
+        int parameter=TS_SISTER_UI_SLOT_PARAMETER(i,field);
+        if(parameter<64)s->board_view.parameter_locks|=UINT64_C(1)<<parameter;
+        else if(parameter<128)s->board_view.parameter_locks_high|=UINT64_C(1)<<(parameter-64);
+    }
+    s->board_view.routing.fx_transition_active=s->board_view.routing.fx_master_transition_active=0;
+    return &s->board_view;
+}
 static void meta_fx_open(uint32_t);
 static void meta_fx_stage_open(uint32_t,int);
 static void character_filter_hide(void);
@@ -9679,7 +9703,7 @@ static void sister_window_show(SisterWindow *sister, const TsPalette *palette)
     sister->rendered_model_valid = 0;
     /* Present a complete backing image before the OS exposes the window. */
     if (sister->renderer && sister->texture && palette) {
-        ts_sister_ui_render(&sister->framebuffer,&sister->model,palette);
+        ts_sister_ui_render(&sister->framebuffer,sister_board_view(sister),palette);
         if (SDL_UpdateTexture(sister->texture,NULL,sister->framebuffer.pixels,
                               TS_SISTER_UI_WIDTH*(int)sizeof(uint32_t))==0) {
             SDL_RenderClear(sister->renderer);
@@ -12244,6 +12268,7 @@ static unsigned ts_audio_range_offered(const TsConfig *,int);
 #include "main_sdl_matrix.inc"
 #include "main_sdl_character_filter.inc"
 #include "main_sdl_meta_fx.inc"
+#include "main_sdl_board_instances.inc"
 
 static int midi_sister_hit_from_target(const char *target, float normalized,
                                        TsSisterUiHit *hit)
@@ -14791,6 +14816,7 @@ int main(int argc, char **argv)
             else { exit_confirmed = 1; running = 0; continue; }
         }
         if(!project_save_worker) {
+        sister_board_sync(&audio,&ui,&sister_window);
         sister_pedalboard_tick(&sister_window, SDL_GetTicks());
         if (ui.new_project_pending) {
             project_session.record = parked_instrument;
@@ -15005,6 +15031,7 @@ int main(int argc, char **argv)
             if(canvas_eq_event(&event,window,device,&audio,&ui,&sister_window,&instrument))continue;
             if(performance_event(&event,window,device,&audio,&ui,&sample_pages,audio.workspace_bank?audio.workspace_bank:&instrument,&fm_preview,obtained.freq))continue;
             if(speakers_event(&event,window,device,&audio,&ui))continue;
+            if(sister_board_event(&event,device,&audio,&ui,&sister_window,&sample_pages,&instrument))continue;
             if(meta_fx_event(&event,device,&audio,&ui,&sister_window,&sample_pages,&instrument))continue;
             if(character_filter_event(&event,device,&audio,&ui,&sister_window,&sample_pages,&instrument))continue;
             if(matrix_event(&event,window,device,&audio,&ui,&sample_pages,&instrument))continue;
@@ -18991,7 +19018,7 @@ int main(int argc, char **argv)
             native_waveform_prepare(sister_window.renderer,sister_window.waveform_details,
                 !sister_window.model.preset_manage_open && !sister_window.model.fallout_lfo_open);
             ts_sister_ui_render(&sister_window.framebuffer,
-                                &sister_window.model, &ui.palette);
+                                sister_board_view(&sister_window), &ui.palette);
             ts_profile_end(TS_PROF_SISTER_UI, profile_sister_ui);
             uint64_t profile_upload = ts_profile_begin(TS_PROF_UPLOAD);
             if (SDL_UpdateTexture(sister_window.texture, NULL,

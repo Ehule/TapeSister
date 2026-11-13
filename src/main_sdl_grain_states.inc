@@ -1,5 +1,6 @@
 static void sister_grain_publish(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,SisterWindow *sister)
 {
+    if(sister->board_id && sister->model.fx_page==1){sister_board_publish(device,audio,ui,sister);return;}
     if(device)SDL_LockAudioDevice(device);
     ts_sister_runtime_set_parameters(&audio->sister,&sister->model.parameters);
     ts_sister_runtime_mark_selected_preset_modified(&audio->sister);

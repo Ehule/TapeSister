@@ -208,6 +208,7 @@ static void fx_inspector_controls_paint(void)
         fx_panel_text(x+62,FX_INSPECT_PAGER+7,width-122,24,label,FX_DIM,1,1);
     }
     if(c && c->type==TS_MATRIX_FX_SUNVOX)fx_button(x,FX_INSPECT_ACTION,SDL_min(width,ts_ui_control_width("BROWSE SUNVOX",2,0)),"BROWSE SUNVOX",0);
+    else if(c && c->type==TS_MATRIX_FX_PEDALBOARD)fx_button(x,FX_INSPECT_ACTION,SDL_min(width,ts_ui_control_width("OPEN BOARD",2,0)),"OPEN BOARD",0);
     else if(c && c->type==TS_MATRIX_FX_META)fx_button(x,FX_INSPECT_ACTION,SDL_min(width,ts_ui_control_width("OPEN CHAIN",2,0)),"OPEN CHAIN",0);
     else fx_panel_text(x,FX_INSPECT_ACTION,width,32,"Wheel: edit / Shift: fine / RMB: reset",FX_DIM,1,2);
 }
@@ -331,7 +332,7 @@ static int fx_inspector_event(SDL_Event *e,int x,int y,int wheel,SDL_AudioDevice
         TsMatrixEffectControls *c=&w->controls.effect[fx_inspector.slot];
         int action_width=SDL_min(width,ts_ui_control_width(c->type==TS_MATRIX_FX_SUNVOX?"BROWSE SUNVOX":"OPEN CHAIN",2,0));
         if(x<left_x || x>=left_x+action_width)return 1;
-        if(c->type==TS_MATRIX_FX_SUNVOX)svfx_open(c->id);else if(c->type==TS_MATRIX_FX_META)fx_canvas.meta=c->id;
+        if(c->type==TS_MATRIX_FX_PEDALBOARD)sister_board_open(c->id);else if(c->type==TS_MATRIX_FX_SUNVOX)svfx_open(c->id);else if(c->type==TS_MATRIX_FX_META)fx_canvas.meta=c->id;
         return 1;
     }
     int row=(y-FX_INSPECT_FIRST)/TS_UI_PARAMETER_WRAPPED_HEIGHT,at=fx_canvas.inspector_page*FX_INSPECT_ROWS+row;

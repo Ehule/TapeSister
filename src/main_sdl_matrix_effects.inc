@@ -8,9 +8,9 @@ static int mx_effect_slot(void)
     return -1;
 }
 static int mx_effect_controls(const TsMatrixEffectControls *c)
-{return c->type==TS_MATRIX_FX_SUNVOX?3:c->type==TS_MATRIX_FX_COMPRESSOR?7:c->type>=TS_SISTER_FX_GRAIN?6:5;}
+{return (c->type==TS_MATRIX_FX_SUNVOX || c->type==TS_MATRIX_FX_PEDALBOARD)?3:c->type==TS_MATRIX_FX_COMPRESSOR?7:c->type>=TS_SISTER_FX_GRAIN?6:5;}
 static int mx_effect_control_id(const TsMatrixEffectControls *c,int position)
-{return c->type==TS_MATRIX_FX_SUNVOX?position+3:c->type!=TS_MATRIX_FX_COMPRESSOR && c->type<TS_SISTER_FX_GRAIN && position>=2?position+1:position;}
+{return (c->type==TS_MATRIX_FX_SUNVOX || c->type==TS_MATRIX_FX_PEDALBOARD)?position+3:c->type!=TS_MATRIX_FX_COMPRESSOR && c->type<TS_SISTER_FX_GRAIN && position>=2?position+1:position;}
 static float mx_effect_value(const TsMatrixEffectControls *c,int position)
 {
     int k=mx_effect_control_id(c,position);
@@ -78,6 +78,7 @@ static void mx_effect_paint(void)
         }
         snprintf(text,sizeof(text),"GLIDE %.1F S",c->transient_states.seconds);mx_button(694,696,190,text,0);
     } else if(c->type==TS_MATRIX_FX_META)mx_button(410,696,200,"EDIT META FX",0);
+    else if(c->type==TS_MATRIX_FX_PEDALBOARD)mx_button(410,696,200,"OPEN PEDALBOARD",0);
     else if(c->type==TS_MATRIX_FX_SUNVOX)mx_button(410,696,200,"BROWSE SUNVOX",0);
     else if(c->type==TS_MATRIX_FX_FILTER)mx_button(410,696,200,"EDIT FILTER",0);
     else mx_text(418,704,"INDEPENDENT INSTANCE",MX_DIM,1);
@@ -197,6 +198,7 @@ static void mx_effect_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioSta
         return;
     }
     if(left && y>=696 && y<724) {
+        if(c->type==TS_MATRIX_FX_PEDALBOARD && x>=410 && x<610){sister_board_open(c->id);return;}
         if(c->type==TS_MATRIX_FX_SUNVOX && x>=410 && x<610){svfx_open(c->id);return;}
         if(c->type==TS_MATRIX_FX_META && x>=410 && x<610){meta_fx_open(c->id);return;}
         if(c->type==TS_MATRIX_FX_FILTER && x>=410 && x<610){character_filter_matrix_open(c->id);return;}

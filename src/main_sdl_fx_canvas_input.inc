@@ -227,8 +227,10 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
         if(mod&KMOD_CTRL)fx_select(n,1);else if(!fx_chosen(n->row))fx_select(n,0);
         w->effect_open=n->row.kind==4?(uint32_t)n->row.tile:0;w->effect_menu=0;
         w->compressor_open=n->row.kind==2 && n->row.index==TS_MATRIX_COMPRESSOR;
+        if(e->button.clicks>=2 && n->row.kind==2 && n->row.index==TS_MATRIX_BOARD){sister_board_open(0);return 1;}
         if(e->button.clicks>=2 && n->row.kind==4) {
             TsMatrixEffectControls *c=&w->controls.effect[ts_matrix_effect_index(n->row.index)];
+            if(c->type==TS_MATRIX_FX_PEDALBOARD){sister_board_open(c->id);return 1;}
             if(c->type==TS_MATRIX_FX_SUNVOX){svfx_open(c->id);return 1;}
             if(c->type==TS_MATRIX_FX_META){fx_canvas.meta=c->id;w->effect_open=0;return 1;}
             if(c->type==TS_MATRIX_FX_FILTER){character_filter_matrix_open(c->id);return 1;}}

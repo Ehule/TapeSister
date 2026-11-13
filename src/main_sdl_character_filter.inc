@@ -45,6 +45,12 @@ static int character_filter_resolve(AudioState *audio,TsUiState *ui,SisterWindow
  if(character_filter_window.source){
   for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i){TsMatrixEffectControls *p=&matrix_window.controls.effect[i];
    if(p->id!=character_filter_window.node)continue;
+   if(character_filter_window.source==2 && p->type==TS_MATRIX_FX_PEDALBOARD) {
+    int at=character_filter_window.slot;
+    if(at<0 || at>=p->board.count || p->board.slot[at].type!=TS_SISTER_FX_FILTER)break;
+    TsSisterFxSlotControls *v=&p->board.slot[at];
+    *c=&v->filter;*gain=&v->gain_db;*mix=&v->mix;*enabled=&v->enabled;return 1;
+   }
    if(p->type!=TS_MATRIX_FX_FILTER)break;
    *c=&p->filter;*gain=&p->gain_db;*mix=&p->mix;*enabled=&p->enabled;return 1;
   }
@@ -110,6 +116,7 @@ static int character_filter_event(const SDL_Event *e,SDL_AudioDeviceID device,Au
  if(!sister_event_mouse(character_filter_window.window,rawx,rawy,&x,&y))return 1;
  float value;int field=ts_character_filter_hit(c,x,y,&value),left=down && e->button.button==SDL_BUTTON_LEFT;
  int id=field>=0 && field<TS_CF_COUNT?TS_CF_MIDI_BASE+character_filter_window.slot*32+field:-1;
+ if(ui->midi_learn_active && character_filter_window.source==2)return 1;
  if(ui->midi_learn_active){if(left && field>=0){char target[80];
    if(character_filter_window.source)snprintf(target,sizeof(target),"matrix.filter.%u.%d",character_filter_window.node,field);
    else if(field<TS_CF_COUNT)snprintf(target,sizeof(target),"sister.param.%d",id);
