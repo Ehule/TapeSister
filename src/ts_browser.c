@@ -222,6 +222,7 @@ void ts_browser_init(TsBrowser *browser)
     if (getcwd(browser->directory, sizeof(browser->directory)) == NULL)
         snprintf(browser->directory, sizeof(browser->directory), ".");
     snprintf(browser->visited_directory, sizeof(browser->visited_directory), "%s", browser->directory);
+    if (!recent_directory[0]) remember_directory(browser->directory);
 }
 
 int ts_browser_refresh(TsBrowser *browser)

@@ -53,6 +53,9 @@ int main(void)
     snprintf(file,sizeof(file),"%s/patch.sunsynth",b);file_at(file);
     TsBrowser *one=calloc(1,sizeof(*one)),*two=calloc(1,sizeof(*two)),*three=calloc(1,sizeof(*three));
     assert(one && two && three);ts_browser_init(one);ts_browser_init(two);
+    /* Even a config picker used before the first load must not seed file history. */
+    snprintf(one->directory,sizeof(one->directory),"%s",config);
+    assert(ts_browser_open(one,TS_BROWSER_SELECT_SAMPLE_DIRECTORY,NULL));ts_browser_close(one);
     assert(ts_browser_open(one,TS_BROWSER_LOAD_WAV,NULL) && same_folder(one->directory,cwd));
     child(one,fixture);child(one,"Samples");ts_browser_close(one);
     assert(ts_browser_open(one,TS_BROWSER_LOAD_WAV,NULL) && same_folder(one->directory,a));
