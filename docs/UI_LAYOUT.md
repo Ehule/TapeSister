@@ -58,3 +58,13 @@ Resize preserves graph zoom; Home/FIT frames the map and Z frames the selection.
 At 150% Windows DPI a 1920-pixel-wide client has 1280 layout units, with controls
 and text enlarged together for readability. Extremely small clients retain a
 960 x 480 minimum logical surface and are downscaled to fit.
+
+## Movement filter visibility
+
+New and pasted effects are retained as temporary view exceptions until the
+movement filter changes. Selected/inspected effects are also visible. Nodes
+outside the movement say `OUTSIDE MOVEMENT / EDITING`; the creation status
+explains the exception. Creation pans the viewport to the new node, and Z frames
+the selection. Filtered FIT excludes unrelated global text-label extents.
+These exceptions do not assign ownership, create routes or activate playback.
+They are transient and keyed by instance identity, so deleted slot reuse is safe.

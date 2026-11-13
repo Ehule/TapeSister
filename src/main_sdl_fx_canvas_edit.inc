@@ -296,10 +296,12 @@ static void fx_paste(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,Ts
         if(fx_clipboard.effect[i].type==TS_MATRIX_FX_COMPRESSOR)mx_append_port(&s->layout,TS_MATRIX_EFFECT_SC_BASE+slots[i]);
     }
     if(mx_apply(s,device,audio,ui,pages,bank)) {
+        for(int j=0;j<fx_clipboard.count;++j)fx_canvas.revealed[slots[j]]=ids[j];
         ++fx_clipboard.pastes;fx_clear_selection();fx_clear_wires();fx_build(pages,bank);
         for(int i=0;i<fx_canvas.count;++i)for(int j=0;j<fx_clipboard.count;++j)
             if(fx_canvas.node[i].row.kind==4 && fx_canvas.node[i].row.tile==ids[j])fx_select(&fx_canvas.node[i],1);
         w->effect_open=ids[0];w->compressor_open=0;
+        if(fx_canvas.movement)fx_fit_selection(1);
         snprintf(w->status,sizeof(w->status),"PASTED %d INDEPENDENT EFFECTS / EXTERNAL PORTS FREE / G: MOVE / CTRL+Z: UNDO",fx_clipboard.count);
     }
     free(s);

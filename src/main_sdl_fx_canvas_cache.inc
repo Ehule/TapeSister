@@ -2,6 +2,8 @@
    external routing edits and undo are, even without a local mouse event. */
 static struct {
     int valid,count;
+    uint32_t revealed[TS_MATRIX_EFFECT_CAPACITY],effect_open;
+    MatrixRow selection[MATRIX_CAPACITY+TS_MATRIX_DESTINATIONS];int selection_count;
     MatrixRow rows[MATRIX_CAPACITY];
     TsSourceRoute routes[MATRIX_CAPACITY];
     TsMatrixControls controls;
@@ -18,6 +20,14 @@ static int fx_graph_changed(TsSamplePages *pages,TsInstrument *bank)
     MatrixWindow *w=&matrix_window;
     int changed=!fx_graph_cache.valid || fx_graph_cache.count!=w->count || fx_graph_cache.movement!=fx_canvas.movement;
     fx_graph_cache.movement=fx_canvas.movement;
+    if(fx_canvas.movement) {
+        changed|=memcmp(fx_graph_cache.revealed,fx_canvas.revealed,sizeof(fx_canvas.revealed))!=0;
+        memcpy(fx_graph_cache.revealed,fx_canvas.revealed,sizeof(fx_canvas.revealed));
+        changed|=fx_graph_cache.effect_open!=w->effect_open || fx_graph_cache.selection_count!=w->selection_count;
+        changed|=memcmp(fx_graph_cache.selection,w->selection,w->selection_count*sizeof(w->selection[0]))!=0;
+        memcpy(fx_graph_cache.selection,w->selection,w->selection_count*sizeof(w->selection[0]));
+        fx_graph_cache.selection_count=w->selection_count;fx_graph_cache.effect_open=w->effect_open;
+    }
 #define FX_KEY(field) do { \
     changed|=memcmp(&fx_graph_cache.field,&w->field,sizeof(w->field))!=0; \
     memcpy(&fx_graph_cache.field,&w->field,sizeof(w->field)); \

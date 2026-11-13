@@ -1,7 +1,7 @@
 /* A spatial view of the Matrix's exact routes. Only the existing Matrix
    transactions may change audio; positions, pan and zoom are view metadata. */
 enum { FX_GRID=32, FX_NODE_W=210, FX_NODE_H=86, FX_RIGHT=1000, FX_DRAG_NODE=100, FX_DRAG_WIRE, FX_DRAG_PAN, FX_DRAG_BOX, FX_DRAG_GRAB, FX_DRAG_SCALE, FX_DRAG_SHIFT_NODE, FX_DRAG_WIRE_BOX, FX_DRAG_DIVIDER, FX_DRAG_CONTROL=120, FX_DRAG_MACRO=140, FX_DRAG_LABEL=151, FX_DRAG_LABEL_GRAB, FX_DRAG_LABEL_SCALE };
-typedef struct { MatrixRow row; int at,destination,rank; float x,y,scale; } FxCanvasNode;
+typedef struct { MatrixRow row; int at,destination,rank,outside_filter; float x,y,scale; } FxCanvasNode;
 typedef struct { MatrixRow source; int destination; uint32_t target_id; } FxCanvasWire;
 typedef struct { FxCanvasWire *items; int count,capacity; } FxWireList;
 static struct {
@@ -22,6 +22,7 @@ static struct {
     FxWireList wires,before_wires;
     SDL_Cursor *divider_cursor;int divider_hover,divider_start,divider_pointer;
     int help;
+    uint32_t revealed[TS_MATRIX_EFFECT_CAPACITY];
     int box_add,shift_moved;float gesture_zoom;uint64_t movement;int movement_popup;
 } fx_canvas={.wire=-1,.destination=-1,.label_selected=-1};
 #define FX_TOP (fx_canvas.meta?116:96)
@@ -54,6 +55,7 @@ static void fx_divider_cursor(int active)
 }
 static void fx_context_reset(void)
 {fx_properties_close();fx_canvas.label_selected=-1;fx_canvas.label_editing=fx_canvas.properties=fx_canvas.confirm_delete=0;fx_canvas.replace_id=0;fx_divider_cursor(0);if(fx_canvas.divider_cursor)SDL_FreeCursor(fx_canvas.divider_cursor);fx_canvas.divider_cursor=NULL;svfx_close();fx_canvas.meta=0;fx_canvas.wire=fx_canvas.destination=-1;fx_canvas.fit=fx_canvas.popup=fx_canvas.confirm_clear=0;fx_canvas.inspector_key=0;fx_canvas.movement=0;fx_canvas.movement_popup=0;
+ memset(fx_canvas.revealed,0,sizeof(fx_canvas.revealed));
  free(fx_canvas.wires.items);free(fx_canvas.before_wires.items);fx_canvas.wires=(FxWireList){0};fx_canvas.before_wires=(FxWireList){0};}
 static int fx_source_at(MatrixRow key)
 {
@@ -251,6 +253,12 @@ static void fx_build(TsSamplePages *pages,TsInstrument *bank)
             FxCanvasNode n=fx_canvas.node[i];
             int visible=n.row.kind==3?n.row.canvas==fx_canvas.movement:
                 n.destination>=0?keep[n.destination]:n.row.kind==2 && n.row.index==TS_MATRIX_MOSAIC && bus;
+            if(!visible && n.row.kind==4) {
+                int slot=ts_matrix_effect_index(n.row.index);
+                visible=(slot>=0 && fx_canvas.revealed[slot]==n.row.tile) || w->effect_open==n.row.tile;
+                for(int j=0;!visible && j<w->selection_count;++j)visible=mx_same(n.row,w->selection[j]);
+                n.outside_filter=visible;
+            }
             if(visible)fx_canvas.node[count++]=n;
         }
         fx_canvas.count=count;
@@ -294,7 +302,7 @@ static void fx_fit_selection(int selected)
     for(int i=0;i<fx_canvas.count;++i){FxCanvasNode *n=&fx_canvas.node[i];
         if(selected && !fx_chosen(n->row))continue;
         left=fminf(left,n->x);top=fminf(top,n->y);right=fmaxf(right,n->x+fx_node_w(n));bottom=fmaxf(bottom,n->y+fx_node_h(n));++count;}
-    if(!selected)for(int i=0;i<matrix_window.layout->label_count;++i) {
+    if(!selected && !fx_canvas.movement)for(int i=0;i<matrix_window.layout->label_count;++i) {
         const TsFxCanvasLabel *p=&matrix_window.layout->labels[i];
         left=fminf(left,p->x);top=fminf(top,p->y);right=fmaxf(right,p->x+320*p->scale);bottom=fmaxf(bottom,p->y+160*p->scale);++count;
     }
@@ -305,6 +313,20 @@ static void fx_fit_selection(int selected)
     l->canvas_y=-top+(height/l->canvas_zoom-(bottom-top))*.5f;l->canvas_view=1;
 }
 static void fx_fit(void){fx_fit_selection(0);}
+/* Reveal is a view edit. Move the viewport only as far as necessary; preserve
+   the user's zoom unless the selected card itself cannot fit. */
+static void fx_ensure_visible(FxCanvasNode *n)
+{
+    TsMatrixLayout *l=matrix_window.layout;float zoom=l->canvas_zoom;
+    float width=fx_right()-20,height=FX_BOTTOM-FX_TOP;
+    if(fx_node_w(n)*zoom>width-48 || fx_node_h(n)*zoom>height-48){fx_fit_selection(1);return;}
+    float x=(n->x+l->canvas_x)*zoom,y=(n->y+l->canvas_y)*zoom;
+    if(x<24)l->canvas_x+=(24-x)/zoom;
+    else if(x+fx_node_w(n)*zoom>width-24)l->canvas_x+=(width-24-x-fx_node_w(n)*zoom)/zoom;
+    if(y<24)l->canvas_y+=(24-y)/zoom;
+    else if(y+fx_node_h(n)*zoom>height-24)l->canvas_y+=(height-24-y-fx_node_h(n)*zoom)/zoom;
+    l->canvas_view=1;
+}
 /* Use Mosaic's palette roles; cables have a dedicated, brighter data color. */
 #define FX_THEME(role,fallback) ts_theme_color(&matrix_window.palette,TS_THEME_MOSAIC,role,fallback)
 #define FX_BG FX_THEME(TS_COLOR_BACKGROUND,0xff0b0d10u)
@@ -581,6 +603,7 @@ static void fx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
             int slot=n->row.kind==4?ts_matrix_effect_index(n->row.index):-1;
             const TsMatrixEffectControls *c=slot>=0?&w->controls.effect[slot]:NULL;
             const char *detail=n->at<0?(mx_destination_available(n->destination)?"OUTPUT / RECEIVER":"N/A / PORT NOT OPEN"):c?(c->enabled?(c->type==TS_MATRIX_FX_META?"DOUBLE-CLICK TO ENTER":"ACTIVE / SELECT TO EDIT"):"BYPASS"):"BUS / PATCH ENDPOINT";
+            if(n->outside_filter)detail="OUTSIDE MOVEMENT / EDITING";
             const char *title=c && c->type==TS_MATRIX_FX_SUNVOX?ts_sunvox_name(&c->sunvox):c && c->type==TS_MATRIX_FX_META?c->meta.name:n->row.name;
             char compact[48];
             if(c)snprintf(compact,sizeof(compact),"%s %u",ts_matrix_effect_short_name(c->type),(unsigned)c->id);
@@ -668,6 +691,8 @@ static void fx_view(int canvas,TsSamplePages *pages,TsInstrument *bank)
 {
     fx_properties_close();fx_cancel_gesture();svfx_close();fx_clear_wires();MatrixWindow *w=&matrix_window;w->canvas=canvas;w->drag=0;w->effect_menu=0;fx_canvas.popup=fx_canvas.confirm_clear=0;fx_canvas.meta=0;fx_canvas.wire=-1;
     if(canvas){w->filter=0;mx_rows(pages,bank);fx_build(pages,bank);if(!w->layout->canvas_view)fx_canvas.fit=1;}
+    if(canvas && fx_canvas.movement && w->effect_open)
+        for(int i=0;i<fx_canvas.count;++i)if(fx_canvas.node[i].row.kind==4 && fx_canvas.node[i].row.tile==w->effect_open){fx_ensure_visible(&fx_canvas.node[i]);break;}
     SDL_SetWindowTitle(w->window,canvas?"TapeSister - FX Canvas (Shift+F9)":"TapeSister - Routing Matrix (F9)");w->dirty=1;
 }
 #include "main_sdl_fx_canvas_input.inc"

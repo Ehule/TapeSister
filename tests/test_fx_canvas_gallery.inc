@@ -67,6 +67,27 @@ static void gallery_view(void)
     assert(node(TS_MATRIX_MAIN) && node(TS_MATRIX_EQ) && node(TS_MATRIX_LIMITER));
     assert(g->active==0 && !g->canvas[0].scene->playing && g->canvas[0].scene->time==0);
     assert(!memcmp(&cards[1]->output_route,&saved,sizeof(saved)) && audio.sister.matrix_effects.current[a]==live);
+    /* New unconnected effects must exist in the filtered graph before add
+       positions/selects them. View exceptions never create audio connections. */
+    MatrixSnapshot *visibility_before=mx_snapshot(0,&audio,&pages,&bank);assert(visibility_before);
+    fx_popup_open(300,220);click(fx_canvas.popup_x+55,fx_canvas.popup_y+40,1);
+    uint32_t added=w->effect_open;FxCanvasNode *created=instance(added);
+    assert(created && created->outside_filter && fx_chosen(created->row) && gallery_cards()==1);
+    assert(fx_x(created->x)>=20 && fx_y(created->y)>=FX_TOP);
+    assert(fx_x(created->x+fx_node_w(created))<=fx_right() && fx_y(created->y+fx_node_h(created))<=FX_BOTTOM);
+    assert(!memcmp(&cards[1]->output_route,&saved,sizeof(saved)) && g->active==0 && !g->canvas[0].scene->playing);
+    fx_clear_selection();w->effect_open=0;fx_build(&pages,&bank);assert(instance(added));
+    uint64_t builds=fx_graph_cache.builds;fx_build(&pages,&bank);assert(fx_graph_cache.builds==builds);
+    key(SDLK_z,KMOD_CTRL);fx_build(&pages,&bank);assert(!instance(added));
+    key(SDLK_y,KMOD_CTRL);fx_build(&pages,&bank);assert(instance(added));
+    toolbar_click(FX_TOOL_MOVEMENT);click(400,90+2*32+12,1);assert(!instance(added));
+    MatrixRow picked={.kind=4,.tile=added};int selected=fx_source_at(picked);assert(selected>=0);
+    mx_select(selected,0);w->effect_open=added;fx_build(&pages,&bank);assert(instance(added)->outside_filter);
+    fx_copy();key(SDLK_v,KMOD_CTRL);fx_build(&pages,&bank);
+    assert(w->effect_open!=added && instance(w->effect_open) && w->selection_count==1);
+    assert(mx_apply(visibility_before,0,&audio,&ui,&pages,&bank));free(visibility_before);
+    memset(fx_canvas.revealed,0,sizeof(fx_canvas.revealed));fx_clear_selection();w->effect_open=0;
+    matrix_history_clear();fx_build(&pages,&bank);
     /* Editing the parked card resolves through its scene, including undo. */
     MatrixSnapshot *before=mx_snapshot(0,&audio,&pages,&bank);assert(before);
     w->selected=fx_source_at(second);TsSourceRoute changed=saved;changed.matrix_gain[TS_MATRIX_EFFECT_BASE+b]=300;
