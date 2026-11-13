@@ -292,6 +292,7 @@ static int mosaic_live_event(const SDL_Event *event,SDL_Window *window,SDL_Audio
     if(ui->mosaic_gallery_open || ui->mosaic_grab)return 0;
     Uint32 window_id=SDL_GetWindowID(window);
     SDL_GetWindowSize(window,&ui->mosaic_live_output_width,&ui->mosaic_live_output_height);
+    if(window==main_presentation_window)main_presentation_prepare();
     if(ui->mosaic_live_drag) {
         int lost=event->type==SDL_WINDOWEVENT && event->window.windowID==window_id &&
             (event->window.event==SDL_WINDOWEVENT_FOCUS_LOST || event->window.event==SDL_WINDOWEVENT_HIDDEN || event->window.event==SDL_WINDOWEVENT_MINIMIZED);

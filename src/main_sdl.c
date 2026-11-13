@@ -9753,7 +9753,8 @@ static void main_presentation_prepare(void)
     TsUiState *ui=main_presentation_ui;
     if(!ui || !main_presentation_window || !main_presentation_renderer)return;
     int width,height;SDL_GetRendererOutputSize(main_presentation_renderer,&width,&height);
-    int mode=ui->mosaic_open?((ts_ui_foreground_panel_open(ui) || ui->mosaic_live_open || !main_waveform_detail_allowed(ui))?2:1):0;
+    int mode=ts_ui_foreground_panel_open(ui) || !main_waveform_detail_allowed(ui)?2:
+        ui->mosaic_open?(ui->mosaic_live_open?2:1):0;
     TsUiPresentation next=ts_ui_presentation(mode,width,height,ts_window_content_scale(main_presentation_window,main_presentation_renderer),ts_ui_mosaic_canvas_right(ui));
     /* Preserve world pixels per second on resize. These are UI zoom fields,
        never event durations, audio state, or project routing. */
@@ -9767,6 +9768,10 @@ static void main_presentation_prepare(void)
     }
     if(next.mode==1)main_workspace_presentation=next;
     main_presentation=next;
+    if(next.mode==2) {
+        ui->mosaic_live_output_width=next.target[0].w;
+        ui->mosaic_live_output_height=next.target[0].h;
+    }
 }
 static void main_presentation_copy(SDL_Renderer *renderer,SDL_Texture *texture,const TsUiState *ui)
 {
@@ -9819,7 +9824,11 @@ static int native_looper_prepare(SDL_Renderer *renderer,TsUiLooperCircle *circle
 {
     int width=0,height=0;
     if(SDL_GetRendererOutputSize(renderer,&width,&height)){circle->valid=0;return 0;}
-    return ts_ui_mosaic_looper_circle(circle,ui,width,height) && circle->changed;
+    int centered=renderer==main_presentation_renderer && main_presentation.mode==2;
+    if(centered){width=main_presentation.target[0].w;height=main_presentation.target[0].h;}
+    int valid=ts_ui_mosaic_looper_circle(circle,ui,width,height);
+    if(valid && centered){circle->x+=main_presentation.target[0].x;circle->y+=main_presentation.target[0].y;}
+    return valid && circle->changed;
 }
 static void native_looper_copy(SDL_Renderer *renderer,SDL_Texture **texture,const TsUiLooperCircle *circle)
 {

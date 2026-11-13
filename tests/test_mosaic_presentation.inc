@@ -41,7 +41,16 @@ static void test_mosaic_presentation(void)
     ui.mosaic_gallery_open=1;main_presentation_prepare();assert(main_presentation.mode==2);
     TsUiRect action=ts_ui_gallery_action(TS_GALLERY_CLOSE),target=ts_ui_presentation_rect(&main_presentation,action);
     int x,y;logical_mouse(w,target.x+target.w/2,target.y+target.h/2,&x,&y);assert(ts_ui_gallery_hit(TS_GALLERY_CLOSE,x,y));
-    assert(target.h==32);ui.mosaic_gallery_open=0;main_presentation_prepare();
+    assert(target.h==32);
+    ui.mosaic_open=0;main_presentation_prepare();assert(main_presentation.mode==2);
+    ui.mosaic_open=1;ui.mosaic_gallery_open=0;ui.mosaic_live_open=1;main_presentation_prepare();
+    TsUiLooperCircle circle={0};assert(native_looper_prepare(r,&circle,&ui));assert(circle.valid);
+    int ox,oy;ts_ui_mosaic_live_origin(&ui,&ox,&oy);
+    logical_mouse(w,circle.x+circle.width/2,circle.y+circle.height/2,&x,&y);
+    assert(abs(x-(ox+83))<=1 && abs(y-(oy+86))<=1);
+    assert(ui.mosaic_live_output_width==1280 && ui.mosaic_live_output_height==800);
+    double sx,sy;ts_ui_mosaic_live_circle_scale(&ui,&sx,&sy);assert(sx==1 && sy==1);
+    ts_ui_mosaic_looper_circle_free(&circle);ui.mosaic_live_open=0;main_presentation_prepare();
     assert(fabs(ui.mosaic_scale*main_presentation.target[4].h/292.0-48)<.00001);
     for(int i=0;i<2;++i){ts_ui_waveform_detail_free(&details[i]);if(textures[i])SDL_DestroyTexture(textures[i]);}
     SDL_DestroyTexture(base);SDL_DestroyRenderer(r);SDL_DestroyWindow(w);
