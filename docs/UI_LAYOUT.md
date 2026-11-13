@@ -30,3 +30,21 @@ Exercise pointer edges and gaps, longer state labels, rename/import confirmation
 keyboard Apply/Cancel, and saved names/colors. Continue testing fractional DPI,
 small laptop windows and mixed-monitor resizing when a surface adopts these
 metrics. Layout-only operations must not stage DSP processors or take audio locks.
+
+## FX workspace
+
+The outer FX view keeps the familiar 1280 x 840 logical surface. Enlarging the
+window enlarges controls, fonts, inspector and graph together. Graph zoom remains
+a separate editing operation. Native cable rasterization remains at drawable
+resolution; display density affects stroke quality without imposing a UI size cap.
+
+The existing saved divider, double-click reset and Escape cancel remain.
+Two consistent toolbar rows, collapsed help and removal of the duplicate bottom
+parameter editor recover space within that layout. The inspector owns parameter
+editing and replacement; EDITOR opens advanced Matrix controls.
+
+With the default inspector and help closed, the logical graph grows from
+980 x 566 to 980 x 696, about 23% more area. That relative gain persists when
+the window is enlarged; it does not depend on shrinking controls. Inner
+Meta/SunVox editors retain their existing scaling.
+

@@ -23,6 +23,9 @@ static int fx_divider_event(SDL_Event *e)
     else if(e->type==SDL_MOUSEWHEEL)wheel_event_mouse(e,&rx,&ry);
     else return 0;
     int x=rx*MATRIX_W/SDL_max(1,width),y=ry*MATRIX_H/SDL_max(1,height);
+    if(!w->drag && e->type==SDL_MOUSEBUTTONDOWN && e->button.button==SDL_BUTTON_LEFT && fx_toolbar_hit(FX_TOOL_HELP,x,y)) {
+        fx_canvas.help=!fx_canvas.help;w->dirty=1;return 1;
+    }
     if(w->drag==FX_DRAG_DIVIDER) {
         if(e->type==SDL_MOUSEMOTION || (e->type==SDL_MOUSEBUTTONUP && e->button.button==SDL_BUTTON_LEFT))
             w->layout->canvas_split=SDL_clamp(fx_canvas.divider_start+x-fx_canvas.divider_pointer,

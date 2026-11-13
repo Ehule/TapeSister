@@ -28,14 +28,7 @@ static int fx_stroke_prepare(void)
     }
     /* Window enlargement is not DPI scaling. Use drawable/window ratio and
        the current display's density, independently of canvas zoom/aspect. */
-    int ww=width,wh=height;float dpi=96;
-    if(matrix_window.window) {
-        SDL_GetWindowSize(matrix_window.window,&ww,&wh);
-        int display=SDL_GetWindowDisplayIndex(matrix_window.window);
-        if(display<0 || SDL_GetDisplayDPI(display,&dpi,NULL,NULL)<0 || !isfinite(dpi))dpi=96;
-    }
-    float density=fmaxf(width/(float)SDL_max(1,ww),height/(float)SDL_max(1,wh));
-    fx_stroke.scale=SDL_clamp(fmaxf(density,dpi/96.f),1.f,4.f);
+    fx_stroke.scale=ts_window_content_scale(matrix_window.window,matrix_window.renderer);
     return 1;
 }
 static float fx_segment_distance(float x,float y,float ax,float ay,float bx,float by)

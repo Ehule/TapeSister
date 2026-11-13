@@ -1,5 +1,5 @@
 /* F9: one modeless patch matrix. No DSP or project export in paint/input. */
-enum { MATRIX_W=1280,MATRIX_H=840,MATRIX_X=264,MATRIX_Y=176,
+enum { MATRIX_BASE_W=1280,MATRIX_BASE_H=840,MATRIX_X=264,MATRIX_Y=176,
        MATRIX_CW=98,MATRIX_RH=28,MATRIX_VISIBLE=17,MATRIX_COLS=10,
        MATRIX_CAPACITY=TS_TRACKER_LANES+TS_SISTER_RUNTIME_PAGE_LIMIT*TS_BANK_SLOT_COUNT+TS_MATRIX_ROWS+TS_GALLERY_LIMIT*TS_MOSAIC_EVENTS };
 typedef struct {int kind,index,order;TsTileId tile;char name[48];uint64_t canvas;} MatrixRow;
@@ -31,6 +31,10 @@ typedef struct {
     float activity_program,activity_tracker_gain;
 } MatrixWindow;
 static MatrixWindow matrix_window={.selected=-1,.rename=-1};
+/* Keep the familiar window-scaled interface. Compact chrome saves graph space
+   without imposing a fixed physical size on text and mouse targets. */
+#define MATRIX_W MATRIX_BASE_W
+#define MATRIX_H MATRIX_BASE_H
 #include "main_sdl_fx_processors.inc"
 static int mx_destination_available(int d);
 static void matrix_history_clear(void);
@@ -892,7 +896,7 @@ static void mx_capture_activity(SDL_AudioDeviceID device,AudioState *audio,TsSam
 #include "main_sdl_sunvox.inc"
 static void mx_prepare_surface(MatrixWindow *w)
 {
-    int width=MATRIX_W,height=MATRIX_H;
+    int width=MATRIX_BASE_W,height=MATRIX_BASE_H;
     if(w->canvas && SDL_GetRendererOutputSize(w->renderer,&width,&height)<0)return;
     if(width==w->pixel_w && height==w->pixel_h)return;
     if(width<1 || height<1 || width>INT_MAX/4 || (size_t)width>SIZE_MAX/sizeof(uint32_t)/(size_t)height)return;
