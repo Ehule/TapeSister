@@ -58,6 +58,8 @@ typedef struct {
 } TsPalette;
 
 void ts_palette_default(TsPalette *palette);
+/* Tracker-only Mosaic default, including native import/export swatches. */
+void ts_palette_tracker_default(TsPalette *palette);
 const char *ts_palette_color_key(TsPaletteColor color);
 const char *ts_palette_color_name(TsPaletteColor color);
 int ts_palette_load(TsPalette *palette, const char *path,

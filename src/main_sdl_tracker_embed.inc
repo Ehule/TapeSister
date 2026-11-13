@@ -1,7 +1,28 @@
 static int ts_audio_health_show(TsUiState *ui);
 /* Embedded tracker workspace: host-level commands only. Upstream owns input. */
-static struct { SDL_Window *window; SDL_Renderer *renderer; SDL_Texture *texture;
+static struct { SDL_Window *window; SDL_Renderer *renderer; SDL_Texture *texture,*logo_texture; unsigned logo_revision;
                 SDL_AudioDeviceID *device; int mouse_x,mouse_y; } embedded_host;
+/* Overlay only the artwork at display resolution. Text, button geometry and
+   mouse coordinates keep the same full-window 640x400 transform. */
+static void embedded_logo_copy(SDL_Renderer *renderer,int allowed) {
+    const uint32_t *pixels;SDL_Rect rect;unsigned revision;
+    if(!allowed || !(revision=ts_tapehead_logo(&pixels,&rect)))return;
+    if(!embedded_host.logo_texture) {
+        embedded_host.logo_texture=SDL_CreateTexture(renderer,SDL_PIXELFORMAT_ARGB8888,SDL_TEXTUREACCESS_STATIC,128,128);
+        if(!embedded_host.logo_texture)return;
+        SDL_SetTextureScaleMode(embedded_host.logo_texture,SDL_ScaleModeLinear);
+        embedded_host.logo_revision=0;
+    }
+    if(embedded_host.logo_revision!=revision) {
+        if(SDL_UpdateTexture(embedded_host.logo_texture,NULL,pixels,128*sizeof(uint32_t)))return;
+        embedded_host.logo_revision=revision;
+    }
+    int w,h;if(SDL_GetRendererOutputSize(renderer,&w,&h))return;
+    rect.x+=4;
+    SDL_Rect dest={rect.x*w/640,rect.y*h/400,0,0};
+    dest.w=(rect.x+rect.w)*w/640-dest.x;dest.h=(rect.y+rect.h)*h/400-dest.y;
+    SDL_RenderCopy(renderer,embedded_host.logo_texture,NULL,&dest);
+}
 static void embedded_lock(void *context) {
     (void)context;if(embedded_host.device && *embedded_host.device)SDL_LockAudioDevice(*embedded_host.device);
 }

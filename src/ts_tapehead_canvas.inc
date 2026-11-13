@@ -1,24 +1,16 @@
 static int instrument_has_tile(const TsSisterTracker *,int,TsTileId);
 /* Compact host canvas. Stable tile identity, not bank position, selects an instrument. */
-#include "ts_sister_portal_mask.inc"
+static int main_panel_visible(void);
+#include "ts_tapehead_logo.inc"
 static int bind_tiles(TsSamplePages *,const TsInstrument *,int *,char *,size_t);
 static void tracker_logo(void) {
-    drawFramework(112,0,154,32,FRAMEWORK_TYPE1);
-    for(int y=0;y<28;++y)for(int x=0;x<42;++x) {
-        size_t bit=(size_t)y*42+x;
-        /* Keep the complete figure, including both hands and the right profile. */
-        if(ts_sister_portal_mask[bit>>3]&(0x80u>>(bit&7)))
-            video.frameBuffer[(y+2)*SCREEN_W+x+116]=video.palette[PAL_MOUSEPT];
-    }
-    const int colors[]={PAL_PATTERN_INSTRUMENT,PAL_PATTERN_NOTE,PAL_PATTERN_EFFECT};
-    for(int lane=0;lane<3;++lane)for(int x=0;x<36;++x) {
-        int y=15+lane*2-(x/6)%2;
-        video.frameBuffer[y*SCREEN_W+119+x]=video.palette[colors[lane]];
-        if(x%6==0)video.frameBuffer[(y-1)*SCREEN_W+119+x]=video.palette[colors[lane]];
-    }
-    textOut(161,5,PAL_FORGRND,"TrackSister");
-    textOutTiny(162,21,fastTracksPOCMasterIsEnabled()?"FASTRACKS ON":"FASTRACKS OFF",video.palette[PAL_FORGRND]);
+    int shift=tracker_logo_pressed();
+    drawFramework(112,0,154,32,shift?FRAMEWORK_TYPE2:FRAMEWORK_TYPE1);
+    tracker_logo_draw_portrait();
+    textOut(161+shift,5+shift,PAL_FORGRND,"TrackSister");
+    textOutTiny(162+shift,21+shift,fastTracksPOCMasterIsEnabled()?"FASTRACKS ON":"FASTRACKS OFF",video.palette[PAL_FORGRND]);
 }
+
 enum { CANVAS_X=425, CANVAS_Y=23, CANVAS_COLUMNS=4, CANVAS_ROWS=6,
        CANVAS_TILES=CANVAS_COLUMNS*CANVAS_ROWS, CANVAS_DX=51, CANVAS_DY=25,
        CANVAS_W=49, CANVAS_H=23 };

@@ -3,11 +3,26 @@
    so returning to Original restores even a project's custom tracker palette. */
 static TsPalette tracker_host_theme;
 static int tracker_host_theme_valid;
+static TsPalette tracker_default_theme;
+static uint8_t tracker_default_bytes[62];
+static int tracker_default_ready;
+extern void tapeheadEmbeddedPaletteGet(uint8_t *bytes);
 void ts_tapehead_theme_colors(uint32_t *colors)
 {
-    if(!tracker_host_theme_valid)return;
-    for(int i=0;i<PAL_NUM;++i)
-        colors[i]=((uint32_t)i<<24)|(ts_theme_tracker_color(&tracker_host_theme,i,colors[i])&0xffffffu);
+    uint8_t current[62];
+    int use_default=0;
+    if(tracker_default_ready && config.cfg_StdPalNum==11) {
+        tapeheadEmbeddedPaletteGet(current);
+        use_default=!memcmp(current,tracker_default_bytes,sizeof(current));
+    }
+    for(int i=0;i<PAL_NUM;++i) {
+        uint32_t c=colors[i];
+        /* Only the unchanged factory palette gets exact 24-bit surfaces.
+           Imported or saved custom palettes retain their own colors. */
+        if(use_default)c=ts_theme_tracker_color(&tracker_default_theme,i,c);
+        if(tracker_host_theme_valid)c=ts_theme_tracker_color(&tracker_host_theme,i,c);
+        colors[i]=((uint32_t)i<<24)|(c&0xffffffu);
+    }
 }
 void ts_tapehead_theme_apply(const TsPalette *p)
 {
@@ -42,14 +57,13 @@ static void palette_apply(const TsPalette *p) {
     tracker_palette=*p;config.cfg_StdPalNum=11;tapeheadEmbeddedPaletteSet(bytes);
 }
 static void palette_default(void) {
-    /* assets/tracksister.pal: compiled in so new projects need no external file. */
-    static const uint32_t colors[20]={0xFF1C00,0x2D0039,0x009EE3,0xFFD265,0x1C1C1C,0x5D555D,
-        0xFFE700,0x18FF00,0xFF1CE7,0x147DFF,0x35FFFF,0x5900FF,0x2D0039,0x41D7FF,
-        0xFFAE20,0xFF3131,0x00CE41,0xFF3131,0xFFAE20,0xD061FF};
-    TsPalette p;ts_palette_default(&p);
-    for(int i=0;i<20;++i)p.colors[tracker_colors[i]]=colors[i];
-    p.colors[TS_PALETTE_ACTIVE_TILE]=0xFFD265;p.desktop_contrast=52;p.buttons_contrast=57;
-    palette_apply(&p);
+    ts_palette_tracker_default(&tracker_default_theme);
+    for(int i=0;i<20;++i)for(int c=0;c<3;++c)
+        tracker_default_bytes[i*3+c]=(((tracker_default_theme.colors[tracker_colors[i]]>>(16-c*8))&255)*63+127)/255;
+    tracker_default_bytes[60]=tracker_default_theme.desktop_contrast;
+    tracker_default_bytes[61]=tracker_default_theme.buttons_contrast;
+    tracker_default_ready=1;
+    palette_apply(&tracker_default_theme);
 }
 int ts_tapehead_palette_import(const char *path,char *error,size_t size) {
     TsPalette p;if(!embed.initialized)return fail(error,size,"Tracker is not open");

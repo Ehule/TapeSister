@@ -130,3 +130,28 @@ The browser regression covers first open, reopen/Cancel, multiple browser
 instances and file types, selected-file retention, explicit path overrides,
 configuration isolation, a changed process working directory, failed navigation
 and a removed remembered directory. All folder bookkeeping stays on the UI thread.
+
+
+## TrackSister Mosaic palette and portrait
+
+New tracker defaults use the approved dark charcoal/plum surfaces, pale text,
+and Mosaic's pastel gold, teal, sage, blue and mauve fields. The Config palette
+Default button restores this appearance. Existing custom tracker preferences
+and project palettes retain their saved colors; the host's theme overrides
+continue to take precedence. assets/tracksister.pal contains the same default
+for explicit import. Other windows and the preset collection are unchanged.
+
+The header portrait is adapted from user-provided artwork in plum tones. The
+embedded 128-pixel luminance/alpha asset is tinted from the current tracker
+background, panel, volume/mauve and text colors. Its raster is cached until
+those colors change. The main renderer draws it at output resolution inside
+the original logo button, with a software fallback in the native framebuffer.
+The title, FASTRACKS toggle, LEN control and input geometry retain their size.
+Config screens, native dialogs and host overlays suppress the extra artwork.
+There are no audio-callback operations, file reads or per-frame allocations.
+
+The tracker appearance regression checks exact default surface/accent colors,
+custom palette save/reload, theme-only raster invalidation, hidden-logo states,
+and the FASTRACKS button. Check the header at 100%, 125%, 150% and 200% display
+scaling and when maximized; open Config and a file browser to confirm the logo
+stays behind foreground UI.
