@@ -909,6 +909,17 @@ static int ts_audio_session_shortcut(const SDL_Event *event)
     return 0;
 }
 
+static TsUiPresentation ts_audio_health_presentation(void)
+{
+    int w,h;SDL_GetRendererOutputSize(ts_health.renderer,&w,&h);
+    return ts_ui_presentation(2,w,h,ts_window_content_scale(ts_health.window,ts_health.renderer),640);
+}
+static void ts_audio_health_pointer(int raw_x,int raw_y,int *x,int *y)
+{
+    TsUiPresentation p=ts_audio_health_presentation();int w,h;
+    SDL_GetWindowSize(ts_health.window,&w,&h);
+    ts_ui_presentation_pointer(&p,raw_x*p.width/SDL_max(1,w),raw_y*p.height/SDL_max(1,h),x,y);
+}
 static int ts_audio_health_event(const SDL_Event *event, SDL_Window *main_window,
                                   AudioState *audio, TsUiState *ui)
 {
@@ -955,7 +966,7 @@ static int ts_audio_health_event(const SDL_Event *event, SDL_Window *main_window
         else ts_health.profile_scroll+=event->key.keysym.sym==SDLK_PAGEUP?-16:16;
         ts_health.profile_scroll=SDL_clamp(ts_health.profile_scroll,0,TS_MATRIX_EFFECT_CAPACITY);ts_health.last_update=0;
     } else if (event->type == SDL_MOUSEBUTTONDOWN && event->button.button == SDL_BUTTON_LEFT) {
-        int x, y; logical_mouse(ts_health.window, event->button.x, event->button.y, &x, &y);
+        int x, y; ts_audio_health_pointer(event->button.x, event->button.y, &x, &y);
         if(ts_profile_enabled() && ts_audio_health_hit(TS_HEALTH_BUTTON_EFFECTS,x,y)) {
             ts_health.profile_effects=!ts_health.profile_effects;ts_health.profile_scroll=0;ts_health.last_update=0;return 1;
         }
@@ -1007,7 +1018,12 @@ static void ts_audio_health_update(AudioState *audio, const TsUiState *ui)
     ts_audio_health_sample(audio, now);
     ts_audio_health_draw(ts_health.framebuffer, ui, audio, now);
     SDL_UpdateTexture(ts_health.texture, NULL, ts_health.framebuffer->pixels, TS_UI_WIDTH * sizeof(uint32_t));
-    SDL_RenderCopy(ts_health.renderer, ts_health.texture, NULL, NULL);
+    TsUiPresentation p=ts_audio_health_presentation();TsUiRect r=p.target[0];
+    SDL_Rect target={r.x,r.y,r.w,r.h};
+    uint32_t color=ts_theme_color(&ui->palette,TS_THEME_HEALTH,TS_COLOR_BACKGROUND,0xff1b191fu);
+    SDL_SetRenderDrawColor(ts_health.renderer,(color>>16)&255,(color>>8)&255,color&255,255);
+    SDL_RenderClear(ts_health.renderer);
+    SDL_RenderCopy(ts_health.renderer,ts_health.texture,NULL,&target);
     SDL_RenderPresent(ts_health.renderer);
     ts_health.last_update = now;
 }
