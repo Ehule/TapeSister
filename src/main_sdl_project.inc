@@ -100,6 +100,7 @@ static int project_new(SDL_Window *window, SDL_AudioDeviceID device,
     memcpy(view->dsp_presets, ui->dsp_presets, sizeof(view->dsp_presets));
     view->portal.library = ui->portal.library;
     snprintf(view->browser.directory, sizeof(view->browser.directory), "%s", ui->browser.directory);
+    snprintf(view->browser.visited_directory, sizeof(view->browser.visited_directory), "%s", ui->browser.visited_directory);
     ts_ui_refresh_cdp_catalog(view);
     view->tracker = &s->pages->tracker;
     view->sample_page_count = 1;

@@ -42,6 +42,9 @@ typedef struct {
 typedef struct {
     TsBrowserMode mode;
     char directory[TS_BROWSER_PATH_MAX];
+    /* Last successfully displayed path; distinguishes explicit caller navigation
+       from a stale browser when another window visited a newer folder. */
+    char visited_directory[TS_BROWSER_PATH_MAX];
     char filename[TS_BROWSER_NAME_MAX + 1];
     TsBrowserEntry entries[TS_BROWSER_MAX_ENTRIES];
     int entry_count;

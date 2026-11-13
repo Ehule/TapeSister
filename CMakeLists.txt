@@ -334,6 +334,10 @@ add_executable(tapesister_core_tests tests/test_core.c)
 target_link_libraries(tapesister_core_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_core_tests COMMAND tapesister_core_tests)
 
+add_executable(tapesister_browser_tests tests/test_browser.c src/ts_browser.c)
+target_include_directories(tapesister_browser_tests PRIVATE include)
+add_test(NAME tapesister_browser_tests COMMAND tapesister_browser_tests)
+
 add_executable(tapesister_audio_frame_tests tests/test_audio_frame.c)
 target_link_libraries(tapesister_audio_frame_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_audio_frame_tests COMMAND tapesister_audio_frame_tests)
