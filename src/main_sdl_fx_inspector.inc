@@ -1,5 +1,10 @@
 /* One paged inspector for added effects and fixed processor controls. */
-enum { FX_INSPECT_ROWS=7, FX_INSPECT_MAX=1024 };
+enum { FX_INSPECT_MAX=1024 };
+/* Keep the drag IDs below the macro gesture range. */
+#define FX_INSPECT_ROWS SDL_clamp((FX_BOTTOM-(FX_TOP+112)-84)/TS_UI_PARAMETER_WRAPPED_HEIGHT,1,16)
+#define FX_INSPECT_FIRST (FX_TOP+112)
+#define FX_INSPECT_PAGER (FX_BOTTOM-76)
+#define FX_INSPECT_ACTION (FX_BOTTOM-38)
 enum { FX_CONTROL_EFFECT, FX_CONTROL_MACRO, FX_CONTROL_SUNVOX, FX_CONTROL_FILTER,
     FX_CONTROL_POWER, FX_CONTROL_EXTERNAL, FX_CONTROL_EQ, FX_CONTROL_EQ_SOLO,
     FX_CONTROL_LIMITER, FX_CONTROL_COMPRESSOR, FX_CONTROL_PARAMETER,
@@ -183,25 +188,25 @@ static void fx_inspector_controls_paint(void)
     const TsMatrixEffectControls *c=slot>=0?&w->controls.effect[slot]:NULL;
     const char *title=c?(c->type==TS_MATRIX_FX_SUNVOX?ts_sunvox_name(&c->sunvox):c->type==TS_MATRIX_FX_META?c->meta.name:ts_matrix_effect_name(c->type)):ts_matrix_node_name(fx_inspector.node);
     uint32_t color=c?fx_color(c->type):FX_CABLE;
-    fx_panel_text(x,125,width+5,47,title,FX_FOCUS,2,2);
+    fx_panel_text(x,FX_TOP+9,width+5,47,title,FX_FOCUS,2,2);
     int enabled=fx_inspector_enabled();
-    if(fx_inspector.node==TS_MATRIX_EQ && w->eq_morph_owned)fx_button(x,178,width,"STOP MORPH",1);
-    else if(enabled>=0)fx_button(x,178,width,enabled?"ACTIVE":"BYPASS",enabled);
-    else fx_panel_text(x,178,width,36,"PARAMETERS",FX_DIM,2,1);
+    if(fx_inspector.node==TS_MATRIX_EQ && w->eq_morph_owned)fx_button(x,FX_TOP+62,width,"STOP MORPH",1);
+    else if(enabled>=0)fx_button(x,FX_TOP+62,ts_ui_control_width("BYPASS",2,0),enabled?"ACTIVE":"BYPASS",enabled);
+    else fx_panel_text(x,FX_TOP+62,width,36,"PARAMETERS",FX_DIM,2,1);
     int start=fx_canvas.inspector_page*FX_INSPECT_ROWS;
     for(int row=0;row<FX_INSPECT_ROWS && start+row<fx_inspector.count;++row) {
-        const FxInspectorControl *p=&fx_inspector.control[start+row];int y=230+row*53;
+        const FxInspectorControl *p=&fx_inspector.control[start+row];int y=FX_INSPECT_FIRST+row*TS_UI_PARAMETER_WRAPPED_HEIGHT;
         fx_panel_text(x,y,width,38,p->label,FX_TEXT,2,2);
         mx_rect(x,y+39,width,7,FX_EDGE);mx_rect(x,y+39,(int)(width*p->value),7,color);mx_rect(x+(int)((width-4)*p->value),y+36,4,13,FX_CABLE);
     }
     if(fx_inspector.count>FX_INSPECT_ROWS) {
-        fx_button(x,610,52,"<",0);fx_button(1184,610,52,">",0);
+        fx_button(x,FX_INSPECT_PAGER,56,"<",0);fx_button(x+width-56,FX_INSPECT_PAGER,56,">",0);
         snprintf(label,sizeof(label),"%d / %d",fx_canvas.inspector_page+1,(fx_inspector.count+FX_INSPECT_ROWS-1)/FX_INSPECT_ROWS);
-        fx_panel_text(x+62,617,width-122,24,label,FX_DIM,1,1);
+        fx_panel_text(x+62,FX_INSPECT_PAGER+7,width-122,24,label,FX_DIM,1,1);
     }
-    if(c && c->type==TS_MATRIX_FX_SUNVOX)fx_button(x,648,width,"BROWSE SUNVOX",0);
-    else if(c && c->type==TS_MATRIX_FX_META)fx_button(x,648,width,"OPEN CHAIN",0);
-    else fx_panel_text(x,648,width,32,"Wheel: edit / Shift: fine / RMB: reset",FX_DIM,1,2);
+    if(c && c->type==TS_MATRIX_FX_SUNVOX)fx_button(x,FX_INSPECT_ACTION,SDL_min(width,ts_ui_control_width("BROWSE SUNVOX",2,0)),"BROWSE SUNVOX",0);
+    else if(c && c->type==TS_MATRIX_FX_META)fx_button(x,FX_INSPECT_ACTION,SDL_min(width,ts_ui_control_width("OPEN CHAIN",2,0)),"OPEN CHAIN",0);
+    else fx_panel_text(x,FX_INSPECT_ACTION,width,32,"Wheel: edit / Shift: fine / RMB: reset",FX_DIM,1,2);
 }
 static void fx_inspector_set(const FxInspectorControl *control,float value,int reset,int wheel,
     SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui)
@@ -309,20 +314,22 @@ static int fx_inspector_event(SDL_Event *e,int x,int y,int wheel,SDL_AudioDevice
             fx_inspector_set(&fx_inspector.control[fx_canvas.inspector_drag],(x-left_x)/(float)width,0,0,device,audio,ui);
         return 1;
     }
-    if(left && y>=178 && y<206 && x>=left_x && x<1236){fx_inspector_toggle(device,audio,ui);return 1;}
-    if(y>=610 && y<638 && count>FX_INSPECT_ROWS) {
+    if(left && y>=FX_TOP+62 && y<FX_TOP+90 && x>=left_x && x<left_x+(fx_inspector.node==TS_MATRIX_EQ && w->eq_morph_owned?width:ts_ui_control_width("BYPASS",2,0))){fx_inspector_toggle(device,audio,ui);return 1;}
+    if(y>=FX_INSPECT_PAGER && y<FX_INSPECT_PAGER+28 && count>FX_INSPECT_ROWS) {
         if(wheel)fx_canvas.inspector_page-=wheel;
-        else if(left && x>=left_x && x<left_x+52)--fx_canvas.inspector_page;
-        else if(left && x>=1184 && x<1236)++fx_canvas.inspector_page;
+        else if(left && x>=left_x && x<left_x+56)--fx_canvas.inspector_page;
+        else if(left && x>=left_x+width-56 && x<left_x+width)++fx_canvas.inspector_page;
         fx_canvas.inspector_page=SDL_clamp(fx_canvas.inspector_page,0,(count-1)/FX_INSPECT_ROWS);return 1;
     }
-    if(left && y>=648 && y<676 && fx_inspector.slot>=0) {
+    if(left && y>=FX_INSPECT_ACTION && y<FX_INSPECT_ACTION+28 && fx_inspector.slot>=0) {
         TsMatrixEffectControls *c=&w->controls.effect[fx_inspector.slot];
+        int action_width=SDL_min(width,ts_ui_control_width(c->type==TS_MATRIX_FX_SUNVOX?"BROWSE SUNVOX":"OPEN CHAIN",2,0));
+        if(x<left_x || x>=left_x+action_width)return 1;
         if(c->type==TS_MATRIX_FX_SUNVOX)svfx_open(c->id);else if(c->type==TS_MATRIX_FX_META)fx_canvas.meta=c->id;
         return 1;
     }
-    int row=(y-230)/53,at=fx_canvas.inspector_page*FX_INSPECT_ROWS+row;
-    if(x>=left_x && x<1236 && y>=230 && row<FX_INSPECT_ROWS && at<count && (y-230)%53<49) {
+    int row=(y-FX_INSPECT_FIRST)/TS_UI_PARAMETER_WRAPPED_HEIGHT,at=fx_canvas.inspector_page*FX_INSPECT_ROWS+row;
+    if(x>=left_x && x<left_x+width && y>=FX_INSPECT_FIRST && row<FX_INSPECT_ROWS && at<count && (y-FX_INSPECT_FIRST)%TS_UI_PARAMETER_WRAPPED_HEIGHT<49) {
         FxInspectorControl c=fx_inspector.control[at];
         if(wheel) {
             float step=c.steps?1.f/c.steps:(SDL_GetModState()&KMOD_SHIFT)?.002f:.02f;

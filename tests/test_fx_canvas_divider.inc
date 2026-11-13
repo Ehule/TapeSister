@@ -2,7 +2,7 @@ static void divider_controls(const char *dir,uint32_t effect_id)
 {
     MatrixWindow *w=&matrix_window;TsMatrixLayout *l=w->layout;
     static TsMatrixLayout saved;saved=*l;
-    int oldw,oldh;SDL_GetWindowSize(w->window,&oldw,&oldh);SDL_SetWindowSize(w->window,MATRIX_W,MATRIX_H);
+    int oldw,oldh;SDL_GetWindowSize(w->window,&oldw,&oldh);SDL_SetWindowSize(w->window,MATRIX_BASE_W,MATRIX_BASE_H);mx_prepare_surface(w);
     fx_build(&pages,&bank);FxCanvasNode *n=instance(effect_id);assert(n);fx_select(n,0);w->effect_open=effect_id;
     TsMatrixEffectNode *engine=audio.sister.matrix_effects.current[mx_effect_slot()];
     int count=w->history_count;MatrixSnapshot *original=w->original;
@@ -30,9 +30,9 @@ static void divider_controls(const char *dir,uint32_t effect_id)
     fx_inspector_build();float value=fx_inspector.control[0].value,zoom=l->canvas_zoom;
     SDL_Event wheel;SDL_zero(wheel);wheel.type=SDL_MOUSEWHEEL;wheel.wheel.windowID=w->id;wheel.wheel.y=value>.5f?-1:1;
 #if SDL_VERSION_ATLEAST(2,26,0)
-    wheel.wheel.mouseX=850;wheel.wheel.mouseY=250;
+    wheel.wheel.mouseX=850;wheel.wheel.mouseY=FX_INSPECT_FIRST+20;
 #else
-    SDL_WarpMouseInWindow(w->window,850,250);
+    SDL_WarpMouseInWindow(w->window,850,FX_INSPECT_FIRST+20);
 #endif
     assert(event(&wheel));fx_inspector_build();
     assert(fx_inspector.control[0].value!=value && l->canvas_zoom==zoom);
@@ -48,16 +48,16 @@ static void divider_controls(const char *dir,uint32_t effect_id)
     assert(l->canvas_split==TS_FX_CANVAS_SPLIT_MAX);
     SDL_Event focus;SDL_zero(focus);focus.type=SDL_WINDOWEVENT;focus.window.windowID=w->id;focus.window.event=SDL_WINDOWEVENT_FOCUS_LOST;
     assert(event(&focus));assert(l->canvas_split==780 && !w->drag);
-    /* Resizing the OS window keeps the same split ratio and readable text. */
+    /* Resizing the OS window keeps the same inspector width and readable text. */
     const int sizes[][2]={{960,630},{1366,699},{1920,1080}};
     for(int i=0;i<3;++i) {
         SDL_SetWindowSize(w->window,sizes[i][0],sizes[i][1]);
         l->canvas_split=i==0?TS_FX_CANVAS_SPLIT_MAX:i==1?TS_FX_CANVAS_SPLIT_MIN:780;
-        SDL_Surface *frame=rendered_frame();check_letter(frame,fx_inspector_x(),125,'E',2,FX_FOCUS);
+        SDL_Surface *frame=rendered_frame();check_letter(frame,fx_inspector_x(),FX_TOP+9,'E',2,FX_FOCUS);
         if(dir){char path[1024];snprintf(path,sizeof(path),"%s/divider-%d.bmp",dir,i);assert(!SDL_SaveBMP(frame,path));}
         SDL_FreeSurface(frame);
     }
-    SDL_SetWindowSize(w->window,MATRIX_W,MATRIX_H);click(784,400,2);
+    SDL_SetWindowSize(w->window,MATRIX_BASE_W,MATRIX_BASE_H);mx_prepare_surface(w);click(784,400,2);
     assert(l->canvas_split==TS_FX_CANVAS_SPLIT_DEFAULT && !w->drag && !w->pending);
     l->canvas_split=TS_FX_CANVAS_SPLIT_MIN;
     /* FIT from the inner Meta view still frames the outer graph for its own pane. */
@@ -69,4 +69,24 @@ static void divider_controls(const char *dir,uint32_t effect_id)
     assert(ts_matrix_layout_read(l,"FxCanvas.Split","800x")==-1);
     assert(ts_matrix_layout_read(l,"FxCanvas.Split","-1")==-1);
     *l=saved;SDL_SetWindowSize(w->window,oldw,oldh);fx_build(&pages,&bank);
+}
+
+static void responsive_workspace(void)
+{
+    MatrixWindow *w=&matrix_window;int ow,oh;SDL_GetWindowSize(w->window,&ow,&oh);
+    int split=w->layout->canvas_split;w->layout->canvas_split=TS_FX_CANVAS_SPLIT_DEFAULT;
+    SDL_SetWindowSize(w->window,1280,840);mx_prepare_surface(w);
+    int inspector=fx_inspector_width(),font=fx_font(2).rows[7];
+    assert((fx_right()-20)*(FX_BOTTOM-FX_TOP)==980*696);
+    SDL_SetWindowSize(w->window,1920,1080);mx_prepare_surface(w);
+    assert(fx_inspector_width()==inspector && fx_font(2).rows[7]==font);
+    assert((fx_right()-20)*(FX_BOTTOM-FX_TOP)==1620*936);
+    for(int i=0;i<FX_TOOL_COUNT;++i) {
+        TsUiRect r=fx_toolbar_rect(i);assert(r.h==28 && r.x>=0 && r.x+r.w<=MATRIX_W);
+        assert(fx_toolbar_hit(i,r.x,r.y) && !fx_toolbar_hit(i,r.x+r.w,r.y));
+    }
+    int history=w->history_count;float zoom=w->layout->canvas_zoom;
+    toolbar_click(FX_TOOL_HELP);assert(fx_canvas.help && FX_BOTTOM==936);
+    toolbar_click(FX_TOOL_HELP);assert(!fx_canvas.help && w->history_count==history && w->layout->canvas_zoom==zoom);
+    w->layout->canvas_split=split;SDL_SetWindowSize(w->window,ow,oh);mx_prepare_surface(w);
 }

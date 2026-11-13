@@ -85,8 +85,8 @@ static void edit_controls(void)
         pointer(SDL_MOUSEMOTION,360,470,0,0);pointer(SDL_MOUSEBUTTONUP,360,470,SDL_BUTTON_LEFT,1);SDL_SetModState(KMOD_NONE);
         assert(!w->selection_count && fx_canvas.wires.count==2);
     }
-    SDL_SetModState(KMOD_SHIFT);click(340,209,1);SDL_SetModState(KMOD_NONE);assert(fx_canvas.wires.count==1);
-    SDL_SetModState(KMOD_SHIFT);click(340,209,1);SDL_SetModState(KMOD_NONE);assert(fx_canvas.wires.count==2);
+    SDL_SetModState(KMOD_SHIFT);click(340,FX_TOP+93,1);SDL_SetModState(KMOD_NONE);assert(fx_canvas.wires.count==1);
+    SDL_SetModState(KMOD_SHIFT);click(340,FX_TOP+93,1);SDL_SetModState(KMOD_NONE);assert(fx_canvas.wires.count==2);
     SDL_SetModState(KMOD_SHIFT);click(80,190,1);SDL_SetModState(KMOD_NONE);assert(w->selection_count==1 && fx_canvas.wires.count==2);
     /* Cancelling a replacement marquee restores the exact mixed selection. */
     SDL_SetModState(KMOD_CTRL);pointer(SDL_MOUSEBUTTONDOWN,800,150,SDL_BUTTON_LEFT,1);pointer(SDL_MOUSEMOTION,900,200,0,0);

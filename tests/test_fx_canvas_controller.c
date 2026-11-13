@@ -16,6 +16,7 @@ static int event(SDL_Event *e)
 {return matrix_event(e,main_window,0,&audio,&ui,&pages,&bank);}
 static void pointer(Uint32 type,int x,int y,int button,int clicks)
 {
+    mx_prepare_layout(&matrix_window);
     int width,height;SDL_GetWindowSize(matrix_window.window,&width,&height);
     SDL_Event e;SDL_zero(e);e.type=type;
     if(type==SDL_MOUSEMOTION){e.motion.windowID=matrix_window.id;e.motion.x=x*width/MATRIX_W;e.motion.y=y*height/MATRIX_H;e.motion.state=SDL_BUTTON_LMASK;}
@@ -24,6 +25,8 @@ static void pointer(Uint32 type,int x,int y,int button,int clicks)
 }
 static void click(int x,int y,int count)
 {pointer(SDL_MOUSEBUTTONDOWN,x,y,SDL_BUTTON_LEFT,count);pointer(SDL_MOUSEBUTTONUP,x,y,SDL_BUTTON_LEFT,count);}
+static void toolbar_click(int tool)
+{TsUiRect r=fx_toolbar_rect(tool);click(r.x+r.w/2,r.y+r.h/2,1);}
 static void key(SDL_Keycode sym,int mod)
 {SDL_Event e;SDL_zero(e);e.type=SDL_KEYDOWN;e.key.windowID=fx_canvas.properties?fx_properties_window.id:matrix_window.visible?matrix_window.id:SDL_GetWindowID(main_window);e.key.keysym.sym=sym;e.key.keysym.mod=mod;assert(event(&e));}
 static FxCanvasNode *node(int row)
@@ -79,12 +82,12 @@ static void laptop_legibility(const char *dir,uint32_t effect_id)
         SDL_FreeSurface(frame);
         w->effect_open=effect_id;fx_select(instance(effect_id),0);
         frame=rendered_frame();
-        check_letter(frame,32,735,'M',1,ts_theme_color(&w->palette,TS_THEME_MOSAIC,TS_COLOR_TEXT,0xffdbe8e3u));
+        check_letter(frame,fx_inspector_x(),FX_TOP+9,'E',2,FX_FOCUS);
         if(dir && !i){snprintf(path,sizeof(path),"%s/effect.bmp",dir);assert(!SDL_SaveBMP(frame,path));}
         SDL_FreeSurface(frame);
         int slot=mx_effect_slot();assert(slot>=0);
         float before=w->controls.effect[slot].meta.macro[3];
-        click(1200,430,1);assert(!w->drag && w->controls.effect[slot].meta.macro[3]>before);
+        click(fx_inspector_x()+fx_inspector_width()-20,FX_INSPECT_FIRST+3*TS_UI_PARAMETER_WRAPPED_HEIGHT+20,1);assert(!w->drag && w->controls.effect[slot].meta.macro[3]>before);
         key(SDLK_z,KMOD_CTRL);assert(w->controls.effect[slot].meta.macro[3]==before);
         fx_view(0,&pages,&bank);frame=rendered_frame();
         assert(w->pixel_w==MATRIX_W && w->pixel_h==MATRIX_H);
@@ -314,7 +317,7 @@ static void disconnect_main_prism(void)
         key(SDLK_z,KMOD_CTRL);
         assert(!memcmp(&patch,&audio.sister.matrix.controls,sizeof(patch)));
     }
-    click(1100,82,1);assert(fx_canvas.confirm_clear);
+    toolbar_click(FX_TOOL_CLEAR);assert(fx_canvas.confirm_clear);
     click(800,458,1);assert(!fx_canvas.confirm_clear);
     for(int i=0;i<TS_MATRIX_ROWS;++i)for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)
         assert(!w->controls.row[i].matrix_gain[d]);
@@ -482,6 +485,7 @@ int main(int argc,char **argv)
     laptop_legibility(getenv("TS_FX_PREVIEW"),c.effect[meta].id);
     cable_drawing(getenv("TS_FX_PREVIEW"));
     divider_controls(getenv("TS_FX_PREVIEW"),c.effect[meta].id);
+    responsive_workspace();
     if(argc>3) {
         static TsFramebuffer fb;ts_ui_render(&fb,&ui,&bank);
         SDL_Surface *s=SDL_CreateRGBSurfaceFrom(fb.pixels,640,400,32,640*4,0xff0000,0xff00,0xff,0);assert(s && !SDL_SaveBMP(s,argv[3]));SDL_FreeSurface(s);

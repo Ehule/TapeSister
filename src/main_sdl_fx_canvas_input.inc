@@ -39,8 +39,8 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
     if(fx_canvas.movement_popup) {
         if(e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_ESCAPE)fx_canvas.movement_popup=0;
         if(e->type==SDL_MOUSEBUTTONDOWN) {
-            if(e->button.button==SDL_BUTTON_LEFT && x>=300 && x<800 && y>=104 && w->gallery) {
-                int row=(y-104)/32;
+            if(e->button.button==SDL_BUTTON_LEFT && x>=20 && x<520 && y>=90 && w->gallery) {
+                int row=(y-90)/32;
                 if(row<=w->gallery->count) {
                     fx_canvas.movement=row?w->gallery->canvas[row-1].id:0;
                     fx_clear_selection();fx_clear_wires();w->effect_open=w->compressor_open=0;
@@ -116,7 +116,7 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
         e->key.windowID=SDL_GetWindowID(main);return 0;
     }
     int click=e->type==SDL_MOUSEBUTTONDOWN,left=click && e->button.button==SDL_BUTTON_LEFT;
-    if(left && !fx_canvas.popup && x>=1060 && x<1256 && y>=806 && y<834) {
+    if(left && !fx_canvas.popup && fx_toolbar_hit(FX_TOOL_CPU,x,y)) {
         ts_audio_health_show_modules(ui);return 1;
     }
     if(e->type==SDL_MOUSEMOTION){fx_canvas.mouse_x=x;fx_canvas.mouse_y=y;}
@@ -162,20 +162,22 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
     if(!fx_canvas.meta && !fx_canvas.popup && x>=20 && x<fx_right() && y>=FX_TOP && y<FX_BOTTOM && wheel && (SDL_GetModState()&KMOD_SHIFT) && fx_canvas.wires.count) {
         fx_edit_selection(0,wheel,device,audio,ui,pages,bank);return 1;
     }
-    if(left && y>=18 && y<46) {
-        if(x>=292 && x<492){if(fx_canvas.meta)fx_canvas.meta=0;else fx_view(0,pages,bank);}
-        else if(x>=502 && x<696)mx_undo(device,audio,ui,pages,bank,x>=604);
-        else if(x>=706 && x<898){fx_canvas.meta=0;w->effect_open=0;fx_popup_open(400,220);}
-        else if(x>=908 && x<1008){fx_build(pages,bank);fx_fit();}
-        else if(x>=1018){ui->mosaic_open=1;matrix_hide();SDL_RaiseWindow(main);}return 1;
-    }
-    if(left && y>=70 && y<98 && !fx_canvas.meta) {
-        if(w->controls.enabled && w->gallery && x>=300 && x<650)fx_canvas.movement_popup=1;
-        else if(!w->controls.enabled && x>=300 && x<584)mx_activate(device,audio,ui,pages,bank);
-        else if(x>=660 && x<856)l->canvas_straight=!l->canvas_straight;
-        else if(x>=866 && x<998){l->canvas_snap=!l->canvas_snap;
-            snprintf(w->status,sizeof(w->status),l->canvas_snap?"GRID SNAP ON / ALT WHILE MOVING: FREE PLACEMENT":"GRID SNAP OFF / FREE PLACEMENT");}
-        else if(x>=1008 && x<1208 && mx_editable())fx_canvas.confirm_clear=1;
+    if(left)for(int tool=0;tool<FX_TOOL_CPU;++tool)if(fx_toolbar_hit(tool,x,y)) {
+        switch(tool) {
+        case FX_TOOL_MATRIX:if(fx_canvas.meta)fx_canvas.meta=0;else fx_view(0,pages,bank);break;
+        case FX_TOOL_UNDO:case FX_TOOL_REDO:mx_undo(device,audio,ui,pages,bank,tool==FX_TOOL_REDO);break;
+        case FX_TOOL_ADD:fx_canvas.meta=0;w->effect_open=0;fx_popup_open(400,220);break;
+        case FX_TOOL_FIT:fx_build(pages,bank);fx_fit();break;
+        case FX_TOOL_CLOSE:ui->mosaic_open=1;matrix_hide();SDL_RaiseWindow(main);break;
+        case FX_TOOL_HELP:fx_canvas.help=!fx_canvas.help;break;
+        case FX_TOOL_EDITOR:fx_view(0,pages,bank);break;
+        case FX_TOOL_MOVEMENT:
+            if(w->controls.enabled && w->gallery)fx_canvas.movement_popup=1;
+            else if(!w->controls.enabled)mx_activate(device,audio,ui,pages,bank);break;
+        case FX_TOOL_CURVES:l->canvas_straight=!l->canvas_straight;break;
+        case FX_TOOL_SNAP:l->canvas_snap=!l->canvas_snap;break;
+        case FX_TOOL_CLEAR:if(mx_editable())fx_canvas.confirm_clear=1;break;
+        }
         return 1;
     }
     TsMatrixEffectControls *meta=fx_meta();
@@ -192,11 +194,7 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
         if(e->type==SDL_MOUSEMOTION && w->drag>=FX_DRAG_MACRO && w->drag<FX_DRAG_MACRO+4 && mx_editable()) {
             int i=w->drag-FX_DRAG_MACRO;ts_meta_macro_set(&meta->meta,i,(x-24-i*310)/286.f);mx_commit_controls(device,audio,ui);}return 1;
     }
-    if(w->effect_open && w->drag>=20 && w->drag<=40){mx_effect_event(e,device,audio,ui,pages,bank,x,y,wheel);return 1;}
-    if(w->compressor_open && w->drag>=10 && w->drag<20){mx_compressor_event(e,device,audio,ui,x,y,wheel);return 1;}
     if(fx_inspector_event(e,x,y,wheel,device,audio,ui))return 1;
-    if(w->effect_open && (y>=692 || (w->drag>=20 && w->drag<=40))){mx_effect_event(e,device,audio,ui,pages,bank,x,y,wheel);return 1;}
-    if(w->compressor_open && (y>=692 || (w->drag>=10 && w->drag<20))){mx_compressor_event(e,device,audio,ui,x,y,wheel);return 1;}
     if(!click)return 1; /* Passive motion needs no graph rebuild or hit test. */
     fx_build(pages,bank);
     if(y<FX_TOP || y>=FX_BOTTOM || x<20 || x>=fx_right())return 1;

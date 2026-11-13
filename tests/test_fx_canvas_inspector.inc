@@ -7,22 +7,22 @@ static void inspector_select(int node_id)
 static void inspector_controls(const char *directory)
 {
     MatrixWindow *w=&matrix_window;MatrixSnapshot *saved=mx_snapshot(0,&audio,&pages,&bank);assert(saved);
-    int ow,oh;SDL_GetWindowSize(w->window,&ow,&oh);SDL_SetWindowSize(w->window,MATRIX_W,MATRIX_H);
+    int ow,oh;SDL_GetWindowSize(w->window,&ow,&oh);SDL_SetWindowSize(w->window,MATRIX_BASE_W,MATRIX_BASE_H);mx_prepare_surface(w);
     /* A cancelled confirmation changes neither routing nor history. */
     int undo=w->history_cursor;static TsMatrixControls routing;routing=w->controls;
-    click(1100,82,1);assert(fx_canvas.confirm_clear);assert(!memcmp(&routing,&w->controls,sizeof(routing)));
+    toolbar_click(FX_TOOL_CLEAR);assert(fx_canvas.confirm_clear);assert(!memcmp(&routing,&w->controls,sizeof(routing)));
     if(directory){char path[1024];snprintf(path,sizeof(path),"%s/clear-confirmation.bmp",directory);screenshot(path);}
     key(SDLK_RETURN,0);assert(!fx_canvas.confirm_clear && w->history_cursor==undo);
-    click(1100,82,1);click(400,458,1);assert(!fx_canvas.confirm_clear && w->history_cursor==undo);
-    click(1100,82,1);key(SDLK_ESCAPE,0);assert(!fx_canvas.confirm_clear && w->history_cursor==undo);
+    toolbar_click(FX_TOOL_CLEAR);click(400,458,1);assert(!fx_canvas.confirm_clear && w->history_cursor==undo);
+    toolbar_click(FX_TOOL_CLEAR);key(SDLK_ESCAPE,0);assert(!fx_canvas.confirm_clear && w->history_cursor==undo);
     /* Inspector wheel must edit the audible EQ, without moving the view. */
     inspector_select(TS_MATRIX_EQ);float zoom=w->layout->canvas_zoom,old=audio.sister.master_eq.controls.band[0].gain_db;
-    edit_wheel(1110,230+3*53+20,1,0);
+    edit_wheel(1110,FX_INSPECT_FIRST+3*TS_UI_PARAMETER_WRAPPED_HEIGHT+20,1,0);
     assert(audio.sister.master_eq.controls.band[0].gain_db>old && w->layout->canvas_zoom==zoom);
     key(SDLK_z,KMOD_CTRL);assert(audio.sister.master_eq.controls.band[0].gain_db==old);
-    fx_inspector_build();click(1200,623,1);assert(fx_canvas.inspector_page==1);
-    old=audio.sister.master_eq.controls.band[1].frequency;edit_wheel(1110,250,1,0);
-    assert(audio.sister.master_eq.controls.band[1].frequency>old);key(SDLK_z,KMOD_CTRL);
+    fx_inspector_build();click(fx_inspector_x()+fx_inspector_width()-20,FX_INSPECT_PAGER+12,1);assert(fx_canvas.inspector_page==1);
+    old=fx_inspector.control[FX_INSPECT_ROWS].value;edit_wheel(1110,FX_INSPECT_FIRST+20,1,0);
+    fx_inspector_build();assert(fx_inspector.control[FX_INSPECT_ROWS].value!=old);key(SDLK_z,KMOD_CTRL);
     /* Display morphing EQ values without adding the audio clock to history.
        Stop adopts the audible curve before manual edits or undo. */
     TsMasterEq *eq=&audio.sister.master_eq;TsMasterEqControls eq_before=eq->controls;TsEqMorph morph_before=eq->morph;
@@ -32,10 +32,10 @@ static void inspector_controls(const char *directory)
     for(int i=0;i<1024;++i)ts_master_eq_process(eq,(TsStereoFrame){.1f,.1f});
     mx_processor_read(&audio,&w->fixed);fx_canvas.inspector_page=0;fx_inspector_build();
     assert(w->eq_morph_owned && w->live_eq.band[0].gain_db!=w->fixed.eq.band[0].gain_db);
-    old=eq->live.band[0].gain_db;undo=w->history_cursor;edit_wheel(1110,230+3*53+20,1,0);
+    old=eq->live.band[0].gain_db;undo=w->history_cursor;edit_wheel(1110,FX_INSPECT_FIRST+3*TS_UI_PARAMETER_WRAPPED_HEIGHT+20,1,0);
     assert(eq->morph_running && eq->live.band[0].gain_db==old && w->history_cursor==undo);
-    click(1110,190,1);assert(!eq->morph_running && eq->controls.band[0].gain_db==old);
-    edit_wheel(1110,230+3*53+20,1,0);assert(eq->controls.band[0].gain_db>old);
+    click(1110,FX_TOP+74,1);assert(!eq->morph_running && eq->controls.band[0].gain_db==old);
+    edit_wheel(1110,FX_INSPECT_FIRST+3*TS_UI_PARAMETER_WRAPPED_HEIGHT+20,1,0);assert(eq->controls.band[0].gain_db>old);
     key(SDLK_z,KMOD_CTRL);assert(eq->controls.band[0].gain_db==old);
     ts_master_eq_morph_set(eq,&morph_before);ts_master_eq_set(eq,&eq_before);matrix_history_clear();
     const int fixed[]={TS_MATRIX_MAIN,TS_MATRIX_SISTER,TS_MATRIX_PRISM,TS_MATRIX_BOARD,TS_MATRIX_FALLOUT,TS_MATRIX_LIMITER,TS_MATRIX_COMPRESSOR};
@@ -44,9 +44,9 @@ static void inspector_controls(const char *directory)
     TsSisterLimiter *limiter=&audio.sister.limiter;assert(ts_sister_limiter_reconfigure(limiter,48000));
     for(int i=0;i<1000;++i)ts_sister_limiter_process(limiter,(TsStereoFrame){.2f,-.1f},NULL,NULL);
     TsStereoFrame *storage=limiter->delay;uint64_t frames=limiter->processed_frames;old=limiter->ceiling_db;
-    edit_wheel(1110,250,-1,0);assert(limiter->ceiling_db<old && limiter->delay==storage && limiter->processed_frames==frames);
+    edit_wheel(1110,FX_INSPECT_FIRST+20,-1,0);assert(limiter->ceiling_db<old && limiter->delay==storage && limiter->processed_frames==frames);
     key(SDLK_z,KMOD_CTRL);assert(limiter->ceiling_db==old && limiter->delay==storage && limiter->processed_frames==frames);
-    edit_wheel(1110,303,1,0);assert(limiter->delay_ramp && limiter->delay==storage && limiter->processed_frames==frames);
+    edit_wheel(1110,FX_INSPECT_FIRST+TS_UI_PARAMETER_WRAPPED_HEIGHT+20,1,0);assert(limiter->delay_ramp && limiter->delay==storage && limiter->processed_frames==frames);
     key(SDLK_z,KMOD_CTRL);
     /* The compact SunVox submenu navigates before committing one creation. */
     fx_popup_open(400,220);click(fx_canvas.popup_x+60,fx_canvas.popup_y+40+(TS_MATRIX_FX_SUNVOX-1)*30,1);
@@ -66,14 +66,14 @@ static void inspector_controls(const char *directory)
     int slot=mx_effect_slot();assert(slot>=0 && w->controls.effect[slot].sunvox.patch==patch.patch);
     uint32_t id=w->effect_open;TsMatrixEffectNode *engine=audio.sister.matrix_effects.current[slot];assert(engine);
     assert(fx_inspector_build()==ts_sunvox_parameter_count(&patch)+3);
-    zoom=w->layout->canvas_zoom;edit_wheel(1110,250,1,0);
+    zoom=w->layout->canvas_zoom;edit_wheel(1110,FX_INSPECT_FIRST+20,1,0);
     assert(w->controls.effect[slot].sunvox.value[0]>=0 && w->layout->canvas_zoom==zoom && engine==audio.sister.matrix_effects.current[slot]);
-    pointer(SDL_MOUSEBUTTONDOWN,1110,250,SDL_BUTTON_RIGHT,1);pointer(SDL_MOUSEBUTTONUP,1110,250,SDL_BUTTON_RIGHT,1);
+    pointer(SDL_MOUSEBUTTONDOWN,1110,FX_INSPECT_FIRST+20,SDL_BUTTON_RIGHT,1);pointer(SDL_MOUSEBUTTONUP,1110,FX_INSPECT_FIRST+20,SDL_BUTTON_RIGHT,1);
     assert(w->controls.effect[slot].sunvox.value[0]==-1);
-    click(1200,623,1);assert(fx_canvas.inspector_page==1);edit_wheel(1110,250,1,0);
-    assert(w->controls.effect[slot].sunvox.value[7]>=0);
+    click(fx_inspector_x()+fx_inspector_width()-20,FX_INSPECT_PAGER+12,1);assert(fx_canvas.inspector_page==1);edit_wheel(1110,FX_INSPECT_FIRST+20,1,0);
+    assert(w->controls.effect[slot].sunvox.value[FX_INSPECT_ROWS]>=0);
     if(directory){char path[1024];snprintf(path,sizeof(path),"%s/sunvox-inspector.bmp",directory);screenshot(path);}
-    click(1100,660,1);assert(sunvox_editor.node==id);key(SDLK_ESCAPE,0);assert(!sunvox_editor.node);
+    click(1100,FX_INSPECT_ACTION+12,1);assert(sunvox_editor.node==id);key(SDLK_ESCAPE,0);assert(!sunvox_editor.node);
     /* World grid snapping keeps group offsets, works after zoom/pan, and has
        an explicit off switch and temporary Alt bypass. */
     fx_build(&pages,&bank);FxCanvasNode *n=instance(id);assert(n);fx_select(n,0);
@@ -86,7 +86,7 @@ static void inspector_controls(const char *directory)
     fx_build(&pages,&bank);fx_canvas.mouse_x=400;fx_canvas.mouse_y=300;key(SDLK_g,0);
     SDL_SetModState(KMOD_ALT);pointer(SDL_MOUSEMOTION,417,319,0,0);key(SDLK_RETURN,0);SDL_SetModState(KMOD_NONE);
     pos=fx_position(n->row,0);assert(pos->x==39 && pos->y==49);
-    click(900,82,1);assert(!w->layout->canvas_snap);view_codec();
+    toolbar_click(FX_TOOL_SNAP);assert(!w->layout->canvas_snap);view_codec();
     assert(mx_apply(saved,0,&audio,&ui,&pages,&bank));free(saved);matrix_history_clear();
     w->layout=&audio.sister.matrix_layout;w->mosaic=ui.mosaic;w->epoch=ui.mosaic?ui.mosaic->epoch:0;
     SDL_SetWindowSize(w->window,ow,oh);fx_build(&pages,&bank);fx_clear_selection();

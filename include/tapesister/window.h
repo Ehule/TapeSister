@@ -1,6 +1,29 @@
 #ifndef TS_WINDOW_H
 #define TS_WINDOW_H
 #include <SDL2/SDL.h>
+#ifdef _WIN32
+#include <SDL2/SDL_syswm.h>
+#endif
+
+/* Density is independent of window dimensions. Windows reports window sizes
+   in pixels, so query its per-window DPI; other SDL backends expose density as
+   drawable/window. Taking the maximum avoids applying HiDPI twice. */
+static inline float ts_window_content_scale(SDL_Window *window,SDL_Renderer *renderer)
+{
+    int ww=0,wh=0,dw=0,dh=0;
+    SDL_GetWindowSize(window,&ww,&wh);SDL_GetRendererOutputSize(renderer,&dw,&dh);
+    float scale=ww>0 && wh>0?SDL_max(dw/(float)ww,dh/(float)wh):1.f;
+#ifdef _WIN32
+    SDL_SysWMinfo info;SDL_VERSION(&info.version);
+    if(SDL_GetWindowWMInfo(window,&info) && info.subsystem==SDL_SYSWM_WINDOWS) {
+        typedef UINT (WINAPI *WindowDpi)(HWND);
+        union { FARPROC generic; WindowDpi dpi; } proc;
+        proc.generic=GetProcAddress(GetModuleHandleW(L"user32.dll"),"GetDpiForWindow");
+        if(proc.dpi)scale=SDL_max(scale,proc.dpi(info.info.win.window)/96.f);
+    }
+#endif
+    return SDL_clamp(scale,1.f,4.f);
+}
 
 /* Workspaces keep the desktop taskbar and native title-bar controls by default.
    Small utility editors deliberately omit MAXIMIZED at their creation sites. */

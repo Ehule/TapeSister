@@ -61,8 +61,8 @@ static void gallery_view(void)
     TsMatrixEffectNode *live=audio.sister.matrix_effects.current[a];
     TsSourceRoute saved=cards[1]->output_route;
     /* Real dropdown events filter the view without switching or editing audio. */
-    click(400,80,1);assert(fx_canvas.movement_popup);
-    click(400,104+2*32+12,1);assert(fx_canvas.movement==second.canvas);
+    toolbar_click(FX_TOOL_MOVEMENT);assert(fx_canvas.movement_popup);
+    click(400,90+2*32+12,1);assert(fx_canvas.movement==second.canvas);
     assert(gallery_cards()==1 && !instance(controls.effect[a].id) && instance(controls.effect[b].id));
     assert(node(TS_MATRIX_MAIN) && node(TS_MATRIX_EQ) && node(TS_MATRIX_LIMITER));
     assert(g->active==0 && !g->canvas[0].scene->playing && g->canvas[0].scene->time==0);
@@ -89,9 +89,9 @@ static void gallery_view(void)
     mx_undo(0,&audio,&ui,&pages,&bank,0);
     assert(cards[0]->output_route.matrix_gain[TS_MATRIX_EFFECT_BASE+a]==1000 && cards[1]->output_route.matrix_gain[TS_MATRIX_EFFECT_BASE+b]==1000);
     /* Return to ALL, then include a card using the implicit Mosaic bus. */
-    click(400,80,1);click(400,116,1);assert(!fx_canvas.movement && gallery_cards()==2);
+    toolbar_click(FX_TOOL_MOVEMENT);click(100,102,1);assert(!fx_canvas.movement && gallery_cards()==2);
     cards[1]->output_route=(TsSourceRoute){0};mx_rows(&pages,&bank);fx_build(&pages,&bank);assert(gallery_cards()==2);
-    click(400,80,1);click(400,104+2*32+12,1);
+    toolbar_click(FX_TOOL_MOVEMENT);click(400,90+2*32+12,1);
     assert(gallery_cards()==1 && node(TS_MATRIX_MOSAIC));
     /* A deleted filtered movement cannot leave the view stuck or redirect IDs. */
     assert(ts_gallery_switch(g,0,error,sizeof(error)));
