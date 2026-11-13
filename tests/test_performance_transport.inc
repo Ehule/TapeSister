@@ -38,6 +38,9 @@ static void test_performance_transport(const char *directory)
     assert(SDL_GetWindowFlags(performance_transport.window)&SDL_WINDOW_FULLSCREEN);
     e.key.keysym.sym=SDLK_RETURN;assert(application_fullscreen_event(&e,window,NULL,&u));
     assert(!(SDL_GetWindowFlags(performance_transport.window)&SDL_WINDOW_FULLSCREEN));
+    SDL_RestoreWindow(performance_transport.window);
+    SDL_SetWindowSize(performance_transport.window,PERF_W,PERF_H);
+    SDL_RenderSetLogicalSize(performance_transport.renderer,PERF_W,PERF_H);
     e.key.windowID=SDL_GetWindowID(window);e.key.keysym.sym=SDLK_KP_ENTER;
     assert(application_fullscreen_event(&e,window,NULL,&u));
     assert(((SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN)!=0)==fullscreen);u.tracker_open=0;

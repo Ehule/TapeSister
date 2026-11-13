@@ -103,12 +103,13 @@ static void test_native_waveform_and_window(void)
         TsSisterUiHit want=ts_sister_ui_hit_test_model(&sister.model,480,380);
         TsSisterUiHit hit=ts_sister_ui_hit_test_model(&sister.model,x,y);assert(hit.action==want.action);
     }
+    SDL_ShowWindow(sister.window);
     sister_window_fullscreen(&sister,1);
     assert(sister.screen_filling);
     SDL_Rect bounds;assert(!SDL_GetDisplayBounds(SDL_GetWindowDisplayIndex(sister.window),&bounds));
     int filled_w,filled_h;SDL_GetWindowSize(sister.window,&filled_w,&filled_h);
     assert(filled_w==bounds.w && filled_h==bounds.h);
-    assert(!(SDL_GetWindowFlags(sister.window)&SDL_WINDOW_FULLSCREEN_DESKTOP));
+    assert((SDL_GetWindowFlags(sister.window)&SDL_WINDOW_FULLSCREEN_DESKTOP)==SDL_WINDOW_FULLSCREEN_DESKTOP);
     sister_window_fullscreen(&sister,0);
     assert(!sister.screen_filling);
     SDL_GetWindowSize(sister.window,&filled_w,&filled_h);

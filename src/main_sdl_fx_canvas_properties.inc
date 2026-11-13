@@ -92,7 +92,7 @@ static void fx_properties_insert(const char *text)
 }
 
 static int fx_properties_owns(const SDL_Event *e)
-{return fx_canvas.properties && fx_properties_window.id && event_window_id(e)==fx_properties_window.id;}
+{return fx_properties_window.id && event_window_id(e)==fx_properties_window.id;}
 static int fx_properties_apply_event(const SDL_Event *e)
 {
     if(e->type==SDL_KEYDOWN)return !ts_window_fullscreen_shortcut(e) &&
@@ -105,6 +105,7 @@ static int fx_properties_apply_event(const SDL_Event *e)
 static int fx_properties_event(SDL_Event *e)
 {
     if(!fx_properties_owns(e))return 0;
+    if(!fx_canvas.properties)return 1; /* Consume releases queued before Apply/Cancel hid the window. */
     fx_properties_window.dirty=1;
     if(e->type==SDL_WINDOWEVENT) {
         if(e->window.event==SDL_WINDOWEVENT_CLOSE)fx_properties_close();
