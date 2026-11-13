@@ -18971,6 +18971,7 @@ int main(int argc, char **argv)
                 (waveform_details[i].raster_changed || waveform_details[i].analysis_count!=presented_detail_analysis[i]);
             if ((upload || circle_changed) && (upload==1 || force_present || detail_changed || circle_changed || animated || main_editing)) {
                 main_surface_copy(renderer,texture);
+                embedded_logo_copy(renderer,ui.tracker_open && ui.tracker_embedded_frame && !ui_dialog_open(&ui));
                 native_waveform_copy(renderer,waveform_textures,waveform_details,&framebuffer);
                 native_looper_copy(renderer,&looper_texture,&looper_circle);
                 for(int i=0;i<2;i++)presented_detail_analysis[i]=waveform_details[i].analysis_count;
@@ -19113,6 +19114,8 @@ int main(int argc, char **argv)
     if (input_device) SDL_CloseAudioDevice(input_device);
     if (device) SDL_PauseAudioDevice(device, 1);
     ts_tapehead_close();
+    if(embedded_host.logo_texture)SDL_DestroyTexture(embedded_host.logo_texture);
+    embedded_host.logo_texture=NULL;embedded_host.logo_revision=0;
     if(embedded_host.texture)SDL_DestroyTexture(embedded_host.texture);
     embedded_host.texture=NULL;
     tapeCompanionClose(&companion_focus);

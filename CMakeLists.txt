@@ -310,6 +310,9 @@ if(TAPESISTER_BUILD_SDL)
             "${CMAKE_CURRENT_SOURCE_DIR}/assets/palette.pal"
             "$<TARGET_FILE_DIR:tapesister>/assets/palette.pal"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/assets/tracksister.pal"
+            "$<TARGET_FILE_DIR:tapesister>/assets/tracksister.pal"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_CURRENT_SOURCE_DIR}/tapesister.ini.example"
             "$<TARGET_FILE_DIR:tapesister>/tapesister.ini.example"
     COMMENT "Copying TapeSister runtime artwork and palette")
@@ -996,6 +999,9 @@ endif()
 add_executable(tapesister_theme_tests tests/test_theme.c)
 target_link_libraries(tapesister_theme_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_theme_tests COMMAND tapesister_theme_tests)
+if(TARGET tapesister_tapehead_embedded_tests)
+  add_test(NAME tapesister_tracker_appearance_tests COMMAND tapesister_tapehead_embedded_tests --appearance)
+endif()
 if(TAPESISTER_BUILD_SDL)
   add_executable(tapesister_palette_window_tests tests/test_palette_window.c
     src/tape_link.c src/tape_companion.c src/ts_startup_diag.c src/ts_midi_input.c)

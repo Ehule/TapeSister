@@ -22,6 +22,32 @@ static const uint32_t schemes[8][11]={
  /* Splash-screen gold, orange and luminous purple on deep plum. */
  {0x100b19,0x20112e,0x4f2a61,0xffedce,0xc7a6d6,0xffb52e,0xff7a25,0x9562ff,0xffdb70,0xff48bd,0xc47aff}
 };
+/* Approved Mosaic accents on dark plum; local to the tracker default. */
+static const uint32_t tracker_original[TS_THEME_ROLE_COUNT]={
+ 0x0b0d10,0x1f1c26,0x2e2733,0xe0d6e9,0xa095ac,0x403646,0x2c2832,
+ 0x322e3b,0xe0d6e9,0x81cec8,0xa2b983,0xf5b85b,0xf47075,
+ 0xd5b37c,0x81cec8,0x8da9cb,0xa2b983,0xba93ba,0x625b70,
+ 0xf5b85b,0x706678,0xf5b85b,0xf47075
+};
+void ts_palette_tracker_default(TsPalette *p) {
+    if(!p)return;
+    ts_palette_default(p);
+    for(int r=0;r<TS_THEME_ROLE_COUNT;++r)
+        p->theme.overrides[TS_THEME_TRACKER][r]=tracker_original[r]|0xff000000u;
+    static const int keys[]={TS_PALETTE_PATTERN_TEXT,TS_PALETTE_BLOCK_MARK,TS_PALETTE_TEXT_ON_BLOCK,
+      TS_PALETTE_MOUSE,TS_PALETTE_DESKTOP,TS_PALETTE_BUTTONS,TS_PALETTE_PATTERN_NOTE,
+      TS_PALETTE_PATTERN_INSTRUMENT,TS_PALETTE_PATTERN_VOLUME,TS_PALETTE_PATTERN_TUNING,
+      TS_PALETTE_PATTERN_EFFECT,TS_PALETTE_PATTERN_EMPTY,TS_PALETTE_WAVE_SELECTION,
+      TS_PALETTE_TRACK_LENGTH_PLAYHEAD,TS_PALETTE_FASTTRACKS_PLAYHEAD,TS_PALETTE_CONTROL_PLAYHEAD,
+      TS_PALETTE_FASTTRACKS_SYNC,TS_PALETTE_FASTTRACKS_PHASE,TS_PALETTE_FASTTRACKS_SONG,
+      TS_PALETTE_FASTTRACKS_LENGTH_PLAYHEAD,TS_PALETTE_ACTIVE_TILE};
+    static const int roles[]={TS_COLOR_TEXT,TS_COLOR_SELECTION,TS_COLOR_SELECTEDTEXT,
+      TS_COLOR_FOCUS,TS_COLOR_PANEL,TS_COLOR_CONTROL,TS_COLOR_DATA1,TS_COLOR_DATA4,
+      TS_COLOR_DATA5,TS_COLOR_DATA3,TS_COLOR_DATA2,TS_COLOR_DATA6,TS_COLOR_SELECTION,
+      TS_COLOR_PLAYHEAD,TS_COLOR_PLAYHEAD,TS_COLOR_RECORD,TS_COLOR_ACTIVITY,TS_COLOR_WARNING,
+      TS_COLOR_PLAYHEAD,TS_COLOR_PLAYHEAD,TS_COLOR_FOCUS};
+    for(unsigned i=0;i<sizeof(keys)/sizeof(keys[0]);++i)p->colors[keys[i]]=tracker_original[roles[i]]|0xff000000u;
+}
 static uint32_t blend(uint32_t a,uint32_t b,int amount) {
     uint32_t c=0xff000000u;if(amount<0)amount=0;if(amount>100)amount=100;
     for(int n=0;n<3;++n){int k=n*8;c|=(uint32_t)((((a>>k)&255)*(100-amount)+((b>>k)&255)*amount)/100)<<k;}return c;
@@ -63,6 +89,7 @@ static uint32_t factory(int preset,int role) {
     }
 }
 uint32_t ts_theme_original(int g,int r) {
+    if(g==TS_THEME_TRACKER && r>=0 && r<TS_THEME_ROLE_COUNT)return tracker_original[r]|0xff000000u;
     if(g==TS_THEME_ROUTER||g==TS_THEME_TRANSPORT) {
       switch(r){case TS_COLOR_BACKGROUND:return 0xff151c20u;case TS_COLOR_PANEL:return 0xff202b30u;case TS_COLOR_TEXT:return 0xffdbe8e3u;case TS_COLOR_DIM:return 0xff94aaa7u;case TS_COLOR_DATA2:return 0xff8addb4u;case TS_COLOR_ACTIVITY:return 0xffffce69u;default:break;}
     }
@@ -139,6 +166,11 @@ uint32_t ts_theme_preview(const TsPalette *p,int g,int r)
       case TS_COLOR_DATA1:key=TS_PALETTE_PATTERN_NOTE;break;case TS_COLOR_DATA2:key=TS_PALETTE_PATTERN_EFFECT;break;
       case TS_COLOR_DATA3:key=TS_PALETTE_PATTERN_TUNING;break;case TS_COLOR_DATA4:key=TS_PALETTE_PATTERN_INSTRUMENT;break;
       case TS_COLOR_DATA5:key=TS_PALETTE_PATTERN_VOLUME;break;case TS_COLOR_DATA6:key=TS_PALETTE_PATTERN_EMPTY;break;default:break;}
+    if(g==TS_THEME_TRACKER) {
+        TsPalette original;ts_palette_default(&original);
+        if(key<0 || p->colors[key]==original.colors[key])
+            return ts_theme_color(p,g,r,ts_theme_original(g,r));
+    }
     if(g==TS_THEME_MOSAIC && r>=TS_COLOR_DATA1&&r<=TS_COLOR_DATA5){const int keys[]={28,27,31,30,29};key=keys[r-TS_COLOR_DATA1];}
     if(g==TS_THEME_PEDALBOARD&&r==TS_COLOR_DATA6)return ts_theme_color(p,g,r,p->colors[TS_PALETTE_STEREO_WAVE_RIGHT]);
     if(g==TS_THEME_ROUTER||g==TS_THEME_TRANSPORT||g==TS_THEME_HEALTH||g==TS_THEME_EQ||g==TS_THEME_SPATIAL)key=-1;

@@ -768,7 +768,7 @@ static void followup_canvas_palette(const char *image,const char *config_image,c
     assert(!test_ui->tracker_open && test_ui->browser.mode==TS_BROWSER_LOAD_WAV);
     ts_browser_close(&test_ui->browser);press(SDLK_F10,SDL_SCANCODE_F10,KMOD_NONE);
     click(390,146);assert(ts_tapehead_config_visible());click(590,136);export_score();
-    assert(prefs()[27]==11 && prefs()[32]==63 && prefs()[33]==7 && prefs()[92]==52 && prefs()[93]==57);
+    assert(prefs()[27]==11 && prefs()[32]==55 && prefs()[33]==53 && prefs()[34]==58 && prefs()[92]==18 && prefs()[93]==18);
     TsPalette p;assert(ts_tapehead_palette_export("followup.pal",test_error,sizeof(test_error)));
     assert(ts_palette_load(&p,"followup.pal",test_error,sizeof(test_error)));
     p.colors[TS_PALETTE_PATTERN_NOTE]=0x336699;p.colors[TS_PALETTE_ACTIVE_TILE]=0x123456;
@@ -914,6 +914,7 @@ static void suspended_tracker_refresh(void) {
 #include "test_tracker_realtime.inc"
 #include "test_mosaic_patterns.inc"
 
+#include "test_tracker_appearance.inc"
 int main(int argc,char **argv) {
     SDL_setenv("SDL_VIDEODRIVER","dummy",1);assert(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER));
     test_window=SDL_CreateWindow("Embedded fixture",0,0,640,400,SDL_WINDOW_HIDDEN);assert(test_window);
@@ -937,6 +938,7 @@ int main(int argc,char **argv) {
     TsTileId tile=test_bank->bank[0].tile_id;
     press(SDLK_F10,SDL_SCANCODE_F10,KMOD_NONE);assert(test_ui->tracker_open&&test_ui->tracker_embedded_frame);
     assert(test_pages->tracker.embedded_size && ts_sister_tracker_validate(&test_pages->tracker,test_error,sizeof(test_error)));
+    if(argc>1 && !strcmp(argv[1],"--appearance")) {test_tracker_appearance(argc>2?argv[2]:NULL);return 0;}
     if(getenv("TS_TEST_TRACKER_REALTIME")) {tracker_realtime();return 0;}
     if(getenv("TS_TEST_MOSAIC_PATTERNS")) {mosaic_patterns();return 0;}
     tile_level_parity();
