@@ -203,6 +203,34 @@ static void mosaic_detail_card(TsUiWaveformDetail *d,const TsUiState *ui,
         mosaic_resize_handles(&fades,ui,e,x,y,right,bottom,selected);
     }
 }
+static void mosaic_detail_markers(TsUiWaveformDetail *d,const TsUiState *ui,int ruler)
+{
+    if(!ui->mosaic)return;
+    double sy=(double)d->height/TS_MOSAIC_CANVAS_HEIGHT;
+    double sx=(double)d->width/d->logical_width,rate=(ui->mosaic_scale>0?ui->mosaic_scale:24)*sy;
+    int64_t pan=mosaic_detail_pixel(ui->mosaic_scroll*rate),line=mosaic_detail_pixel(sy);
+    if(line<1)line=1;
+    uint32_t ink=ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_DATA2,RGB(129,206,200));
+    uint32_t bg=ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_BACKGROUND,RGB(11,13,16));
+    uint32_t panel=ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_PANEL,RGB(26,24,31));
+    for(int i=0;i<TS_MOSAIC_MARKERS;++i)if(ui->mosaic->markers[i].stored) {
+        double time=ui->mosaic_marker_drag==i+1?ui->mosaic_marker_preview:ui->mosaic->markers[i].time;
+        int64_t y=mosaic_detail_pixel(time*rate)-pan;
+        if(!ruler) {
+            if(y<0 || y>=d->height)continue;
+            for(int x=0;x<d->logical_width;x+=7)
+                mosaic_detail_rect(d,mosaic_detail_pixel(x*sx),y,mosaic_detail_pixel((x+3)*sx),y+line,mosaic_mix_color(ink,bg,.75f));
+        } else {
+            int64_t top=y-mosaic_detail_pixel(4*sy),bottom=top+mosaic_detail_pixel(10*sy);
+            if(bottom<=0 || top>=d->height)continue;
+            int active=ui->mosaic_marker_selected==i+1;
+            mosaic_detail_rect(d,mosaic_detail_pixel((113-d->x)*sx),top,d->width,bottom,panel);
+            mosaic_detail_rect(d,mosaic_detail_pixel((127-d->x)*sx),top,d->width,bottom,active?ink:panel);
+            char label[4];snprintf(label,sizeof(label),"%02d",i+1);
+            mosaic_detail_text(d,mosaic_detail_pixel((132-d->x)*sx),top+mosaic_detail_pixel(2*sy),label,active?bg:ink,sx,sy);
+        }
+    }
+}
 /* Compare drawing inputs, not transport time. Event sources are immutable;
    the mutable tracker-version/pending flags are included explicitly. Storage
    belongs to the native surface, so resize/window close release the cache. */
@@ -210,7 +238,9 @@ typedef struct {
     const TsMosaic *scene;
     uint64_t epoch,selected,hover;
     double scroll,xscroll,scale,hscale,interval;
-    int any_solo;
+    int any_solo,marker_selected,marker_drag;
+    double marker_preview;
+    TsMosaicMarker markers[TS_MOSAIC_MARKERS];
     TsPalette palette;
     TsMosaicEvent events[TS_MOSAIC_EVENTS];
     uint64_t selection[TS_MOSAIC_EVENTS];
@@ -232,6 +262,8 @@ static int mosaic_raster_reuse(TsUiWaveformDetail *d,const TsUiState *ui,int any
         k->scroll==ui->mosaic_scroll && k->xscroll==ui->mosaic_xscroll &&
         k->scale==ui->mosaic_scale && k->hscale==ui->mosaic_hscale &&
         k->interval==interval && k->any_solo==any_solo &&
+        k->marker_selected==ui->mosaic_marker_selected && k->marker_drag==ui->mosaic_marker_drag &&
+        k->marker_preview==ui->mosaic_marker_preview && !memcmp(k->markers,m->markers,sizeof(k->markers)) &&
         !memcmp(&k->palette,&ui->palette,sizeof(k->palette)) &&
         !memcmp(k->selection,ui->mosaic_selection,sizeof(k->selection)) &&
         !memcmp(k->pending,ui->mosaic_pattern_pending,sizeof(k->pending)) &&
@@ -241,6 +273,8 @@ static int mosaic_raster_reuse(TsUiWaveformDetail *d,const TsUiState *ui,int any
         k->scene=m;k->epoch=m->epoch;k->selected=ui->mosaic_selected;k->hover=ui->mosaic_hover_event;
         k->scroll=ui->mosaic_scroll;k->xscroll=ui->mosaic_xscroll;
         k->scale=ui->mosaic_scale;k->hscale=ui->mosaic_hscale;k->interval=interval;k->any_solo=any_solo;
+        k->marker_selected=ui->mosaic_marker_selected;k->marker_drag=ui->mosaic_marker_drag;k->marker_preview=ui->mosaic_marker_preview;
+        memcpy(k->markers,m->markers,sizeof(k->markers));
         k->palette=ui->palette;memcpy(k->events,m->events,sizeof(k->events));
         memcpy(k->selection,ui->mosaic_selection,sizeof(k->selection));
         memcpy(k->pending,ui->mosaic_pattern_pending,sizeof(k->pending));memcpy(k->older,older,sizeof(older));
@@ -272,6 +306,7 @@ static int mosaic_detail_cards(TsFramebuffer *fb,const TsUiState *ui,int any_sol
     const TsMosaicEvent *primary=ui->mosaic?ts_mosaic_find(ui->mosaic,ui->mosaic_selected):NULL;
     if(primary)mosaic_detail_card(d,ui,primary,1,primary->muted || (any_solo && !primary->solo),0);
     mosaic_recording_card(fb,d,ui);
+    mosaic_detail_markers(d,ui,0);
     memcpy(d->raster,d->pixels,(size_t)d->width*d->height*sizeof(*d->raster));
     d->raster_changed=1;d->raster_valid=1;d->raster_mode=-1;++d->raster_count;
     }
@@ -306,7 +341,16 @@ static void mosaic_detail_ruler(TsUiWaveformDetail *d,const TsUiState *ui,double
         double time=tick*interval;int64_t y=mosaic_detail_pixel(time*rate)-pan;
         if(y>=d->height)break;
         char label[32];mosaic_time_label(label,sizeof(label),time,ui->mosaic_seconds_only);
-        if(mosaic_ruler_label_visible(ui,time))
+        /* Occlusion belongs to world positions too. A marker crossing the
+           viewport edge must not reveal a few pixels of the label under it. */
+        int visible=1;
+        int64_t label_top=y+mosaic_detail_pixel(2*sy),label_bottom=label_top+mosaic_detail_pixel(7*sy);
+        for(int i=0;ui->mosaic && i<TS_MOSAIC_MARKERS;++i)if(ui->mosaic->markers[i].stored) {
+            double mt=ui->mosaic_marker_drag==i+1?ui->mosaic_marker_preview:ui->mosaic->markers[i].time;
+            int64_t top=mosaic_detail_pixel(mt*rate)-pan-mosaic_detail_pixel(4*sy),bottom=top+mosaic_detail_pixel(10*sy);
+            if(label_top<bottom && label_bottom>top){visible=0;break;}
+        }
+        if(visible)
             mosaic_detail_text(d,label_x,y+mosaic_detail_pixel(2*sy),label,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_DIM, RGB(133,127,141)),sx*fmin(1.0,36.0/fmax(1,strlen(label)*6)),sy);
         mosaic_detail_rect(d,tick_x,y,d->width,y+line,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(28,30,35)));
     }
@@ -359,5 +403,6 @@ static void mosaic_detail_sources(TsFramebuffer *fb,const TsUiState *ui,double i
         }
     }
     mosaic_detail_ruler(d,ui,interval);
+    mosaic_detail_markers(d,ui,1);
     d->valid=1;detail_capture_slot(fb,1);
 }

@@ -1,10 +1,44 @@
-# Tree of Life 04 live diagnostic
+# Tree of Life live diagnostics
 
 This temporary opt-in diagnostic drives the actual application UI/controller
 and audio-device loop. It is separate from the unpaced callback benchmark.
 It does not freeze, render, replace, or simplify the project's effects.
 
-## Run
+## Angelic Noise: option 1
+
+Use the complete **Tree-of-Life-Angelic-Noise-Complete** package, including its
+Gallery project, samples and project-data folders. Close TapeSister, set
+`diagnostic_live_test=1` under `[Audio]` in the active `tapesister.ini`, and restart.
+Open **Gallery/Tree-of-Life-Angelic-Noise/Tree-of-Life-Angelic-Noise.tsr**.
+Wait for **ANGELIC NOISE TEST ARMED**, then press Mosaic Play or Space once.
+
+The test runs for **13 minutes 12 seconds** and visits all ten movements in a
+fixed, nonsequential order. It exercises crossfades, midpoint and late seeks,
+marker jumps, Follow, mute/solo, effect edits, FX Canvas/Matrix, TrackSister and
+Audio Health. Space pauses playback with effect tails; Escape stops the engine;
+a double Escape returns the playhead home. Assertions check frozen playheads,
+restart behavior and completion of each Gallery transition. This is a navigation
+and transport stress test; it does not play all 100 minutes uninterrupted.
+
+Each movement includes quiet measurement intervals with FX Canvas open and
+closed, plus paused-tail and stopped-engine intervals. The exported JSONL records
+transport state, effect suspension, callback timing and interval profiles for
+both audio and UI. `tools/compare_live_test_logs.py` reports callback use grouped
+by state and FX Canvas visibility, excluding boundary windows and two seconds
+of settling. It reports observed use without imposing a hardware-specific CPU
+threshold. Profiler timing overhead is included (`profile=1`).
+
+Health recording/export and save protection are automatic. Leave the application
+alone during the test; a physical Escape aborts it, including while the scripted
+playhead is paused. Logs are saved in the project's `logs` folder. Reload the
+project to repeat. Set the option to `0` and restart before normal editing.
+The previous profiling setting is restored after completion or abort.
+
+Option 1 still recognizes the original Tree of Life 04 project below and runs its
+unchanged 3:36 comparison sequence. Options 2 and 3 retain their original Keter
+full-playback schedules.
+
+## Original Tree of Life 04 replay
 
 1. Keep the complete original **Tree-of-Life-Live-FX-04** project folder,
    including its `samples`, `project-data` and `sister-state.ini`. The loose
@@ -152,8 +186,7 @@ Profiler epoch publication can straddle one callback at an interval boundary.
 The previous profiler on/off state is restored when the run ends or aborts.
 
 Profiling adds timer/publication overhead. Use mode 3 to locate costs, then mode 2
-with profiling off to compare deadline performance. Modes 1 and 2 retain their
-existing schedules. All modes automatically record/export the health log and
+with profiling off to compare deadline performance. The original Tree of Life 04 schedules remain unchanged. All modes automatically record/export the health log and
 protect the loaded project from saving the temporary diagnostic state.
 
 The offline callback probe also accepts `TS_BENCH_INTERVAL=30`, emitting per-

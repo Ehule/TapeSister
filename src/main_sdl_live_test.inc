@@ -1,4 +1,4 @@
-/* Temporary, opt-in controller replay for the unrendered Tree of Life 04.
+/* Opt-in controller replay for the unrendered Tree of Life compositions.
    All state and dispatch belong to the UI thread. Never run from audio.
    The INI switch enables this fixed scenario, not arbitrary project code. */
 #ifndef TS_LIVE_TEST_REVISION
@@ -6,34 +6,34 @@
 #endif
 enum { LT_OFF, LT_ARMED, LT_PENDING, LT_RUNNING, LT_DONE, LT_ABORTED, LT_PREPARING };
 enum { LT_CHECK, LT_FX, LT_MATRIX, LT_CLOSE, LT_MIX, LT_GRAIN, LT_MUTE,
-       LT_SOLO, LT_BYPASS, LT_TRACKER, LT_MOSAIC, LT_HEALTH, LT_GALLERY, LT_END };
+       LT_SOLO, LT_BYPASS, LT_TRACKER, LT_MOSAIC, LT_HEALTH, LT_GALLERY, LT_END, LT_SPACE, LT_ESCAPE, LT_SEEK, LT_FOLLOW, LT_ASSERT };
 typedef struct { unsigned ms; int action,target; float value; } LiveTestStep;
 static struct {
-    int state,touched,count,next,profile,mode,profile_failed;
-    double keter_end,profile_from_ms;
+    int state,touched,count,next,profile,mode,profile_failed,angelic;
+    double keter_end,profile_from_ms,parked_time;
     unsigned duration_ms;
     Uint64 started,frequency;
     uint32_t generation;
-    uint64_t card[3],project_hash;
+    uint64_t card[TS_GALLERY_LIMIT],project_hash;
     float mixes[TS_MATRIX_EFFECT_CAPACITY],grain;
-    LiveTestStep steps[256];
+    LiveTestStep steps[1024];
     unsigned dropped_audio,dropped_events,export_serial;
-    int exporting;
+    int exporting,phase_key;
     char project[TS_BROWSER_PATH_MAX];
 } live_test;
 static const char *live_test_scenario(void)
-{return live_test.mode==3?"tree04-keter-profile-v1":
+{return live_test.angelic?"angelic-noise-live-v1":live_test.mode==3?"tree04-keter-profile-v1":
     live_test.mode>=2?"tree04-keter-full-v1":"tree04-live-v1";}
 static const char *live_test_action_name(int a)
 {
     static const char *names[]={"checkpoint","fx_canvas","routing_matrix","close_matrix",
         "effect_mix","grain_size","mute","solo","bypass","tracker","mosaic",
-        "health_window","gallery","finish"};
-    return a>=0 && a<=LT_END?names[a]:"invalid";
+        "health_window","gallery","finish","space","escape","seek","follow","verify_state"};
+    return a>=0 && a<=LT_ASSERT?names[a]:"invalid";
 }
 static const char *live_test_label(void)
 {
-    return live_test.state==LT_PREPARING?" [PREPARING KETER TEST]":
+    return live_test.state==LT_PREPARING?" [PREPARING DIAGNOSTIC]":
         live_test.state==LT_ARMED?" [LIVE TEST ARMED: MOSAIC PLAY]":
         live_test.state==LT_RUNNING || live_test.state==LT_PENDING?" [LIVE TEST RUNNING: ESC TO ABORT]":
         live_test.state==LT_DONE?" [LIVE TEST COMPLETE: RELOAD TO REPEAT]":
@@ -50,8 +50,10 @@ static void live_test_add(unsigned ms,int action,int target,float value)
     if(live_test.count<(int)(sizeof(live_test.steps)/sizeof(*live_test.steps)))
         live_test.steps[live_test.count++]=(LiveTestStep){ms,action,target,value};
 }
+#include "main_sdl_angelic_test.inc"
 static void live_test_plan(void)
 {
+    if(live_test.angelic){live_test_angelic_plan();return;}
     live_test.count=0;
     live_test_add(0,LT_CHECK,0,0);
     if(live_test.mode>=2) {
@@ -124,10 +126,11 @@ static void live_test_loaded(SDL_AudioDeviceID device,AudioState *a,TsUiState *u
         ts_session_log_text("live_test_abort","reason=project_replaced");
         ts_profile_enable(live_test.profile);
     }
-    live_test.state=LT_OFF;live_test.next=0;live_test.profile_failed=0;
+    live_test.state=LT_OFF;live_test.next=0;live_test.profile_failed=0;live_test.angelic=0;live_test.phase_key=-1;
     if(!ui->config.diagnostic_live_test)return;
-    if(!live_test_matches(&a->sister.matrix.controls,pages,path)) {
-        snprintf(ui->status,sizeof(ui->status),"LIVE TEST: NEED ORIGINAL TREE OF LIFE 04 (53/48/43 CARDS, 14 FX, BINAH SELECTED)");
+    live_test.angelic=ui->config.diagnostic_live_test==1 && live_test_angelic_matches(&a->sister.matrix.controls,pages,path);
+    if(!live_test.angelic && !live_test_matches(&a->sister.matrix.controls,pages,path)) {
+        snprintf(ui->status,sizeof(ui->status),"LIVE TEST: OPEN COMPLETE ANGELIC NOISE GALLERY (OPTION 1), OR ORIGINAL TREE OF LIFE 04");
         ts_session_log_text("live_test_rejected","reason=baseline_mismatch");return;
     }
     if(!a->realtime_diagnostics_enabled || !ts_session_log_enabled()) {
@@ -141,12 +144,12 @@ static void live_test_loaded(SDL_AudioDeviceID device,AudioState *a,TsUiState *u
     live_test.duration_ms=live_test.mode>=2?(unsigned)ceil(live_test.keter_end*1000)+8000:216000;
     live_test.project_hash=ui->saved_state_hash;
     snprintf(live_test.project,sizeof(live_test.project),"%s",path);
-    live_test_plan();live_test.state=live_test.mode>=2?LT_PREPARING:LT_ARMED;live_test.touched=1;
+    live_test_plan();live_test.state=(live_test.angelic || live_test.mode>=2)?LT_PREPARING:LT_ARMED;live_test.touched=1;
     if(device)SDL_LockAudioDevice(device);
-    for(int p=0;p<3;++p) {
+    for(int p=0;p<(live_test.angelic?10:3);++p) {
         TsMosaic *m=pages->gallery->canvas[p].scene;
-        ts_mosaic_seek(m,live_test.mode>=2?0:300);m->repeat=0;m->playing=0;
-        if(live_test.mode>=2){ts_mosaic_set_speed(m,1);m->marker_loop=0;}
+        ts_mosaic_seek(m,(live_test.angelic || live_test.mode>=2)?0:300);m->repeat=0;m->playing=0;
+        if(live_test.angelic || live_test.mode>=2){ts_mosaic_set_speed(m,1);m->marker_loop=0;}
         pages->gallery->canvas[p].entry=TS_GALLERY_RESUME;
     }
     pages->gallery->fade_seconds=live_test.mode>=2?0:8;
@@ -155,18 +158,19 @@ static void live_test_loaded(SDL_AudioDeviceID device,AudioState *a,TsUiState *u
     ui->mosaic_scroll=live_test.mode>=2?0:295;ui->mosaic_scale=4;ui->mosaic_hscale=1;
     ui->project_check_ms=0;
     snprintf(ui->status,sizeof(ui->status),"TREE 04 LIVE TEST ARMED: PRESS MOSAIC PLAY / 3:36 / ESC ABORTS / RELOAD TO REPEAT");
-    if(live_test.mode>=2)snprintf(ui->status,sizeof(ui->status),"PREPARING UNINTERRUPTED KETER TEST / PRESS PLAY WHEN ARMED");
+    if(live_test.angelic)snprintf(ui->status,sizeof(ui->status),"PREPARING ANGELIC NOISE TEST / PRESS PLAY WHEN ARMED");
+    else if(live_test.mode>=2)snprintf(ui->status,sizeof(ui->status),"PREPARING UNINTERRUPTED KETER TEST / PRESS PLAY WHEN ARMED");
     ts_session_log_event("live_test_armed","scenario=%s steps=%d project_hash=%016llx cards=%llu,%llu,%llu start_s=%d fade_s=%d keter_end_s=%.6f duration_ms=%u",
         live_test_scenario(),live_test.count,(unsigned long long)live_test.project_hash,
         (unsigned long long)live_test.card[0],(unsigned long long)live_test.card[1],(unsigned long long)live_test.card[2],
-        live_test.mode>=2?0:300,live_test.mode>=2?0:8,live_test.keter_end,live_test.duration_ms);
+        (live_test.angelic || live_test.mode>=2)?0:300,live_test.mode>=2?0:8,live_test.keter_end,live_test.duration_ms);
 }
 static void live_test_transport(TsUiState *ui,int playing)
 {
     (void)ui;
     if(live_test.state==LT_ARMED && playing) {
-        live_test.profile=ts_profile_enabled();ts_profile_enable(live_test.mode==3);
-        if(live_test.mode==3)ts_profile_reset();
+        live_test.profile=ts_profile_enabled();ts_profile_enable(live_test.angelic || live_test.mode==3);
+        if(live_test.angelic || live_test.mode==3)ts_profile_reset();
         live_test.profile_from_ms=0;
         live_test.started=SDL_GetPerformanceCounter();live_test.frequency=SDL_GetPerformanceFrequency();
         live_test.state=LT_PENDING;
@@ -177,7 +181,7 @@ static void live_test_transport(TsUiState *ui,int playing)
    Epoch publication is asynchronous; a boundary can straddle one callback. */
 static void live_test_profile_interval(int phase,double elapsed_ms)
 {
-    if(live_test.mode!=3 || phase==0)return;
+    if((!live_test.angelic && live_test.mode!=3) || phase==0)return;
     char text[16384];
     int n=snprintf(text,sizeof(text),
         "scenario=%s from_ms=%.3f to_ms=%.3f phase=%d profile=1\n",
@@ -219,10 +223,62 @@ static SDL_Event live_test_key(SDL_Window *window,SDL_Keycode key,SDL_Keymod mod
     SDL_Event e;SDL_zero(e);e.type=SDL_KEYDOWN;e.key.windowID=SDL_GetWindowID(window);
     e.key.keysym.sym=key;e.key.keysym.mod=mod;return e;
 }
+static void live_test_phase(SDL_AudioDeviceID device,AudioState *a,TsUiState *ui,TsSamplePages *pages)
+{
+    if(!live_test.angelic)return;
+    if(device)SDL_LockAudioDevice(device);
+    int phase=a->engine_stopped?3:!ui->mosaic->playing?2:pages->gallery->outgoing>=0?1:0;
+    int movement=pages->gallery->active,canvas=matrix_window.visible && matrix_window.canvas;
+    if(device)SDL_UnlockAudioDevice(device);
+    int key=phase+4*canvas+8*movement;
+    if(key==live_test.phase_key)return;
+    live_test.phase_key=key;
+    static const char *names[]={"playing","transition","paused_tails","stopped"};
+    ts_session_log_event("live_test_phase","mode=%s fx_canvas=%d movement=%d settle_ms=2000",names[phase],canvas,movement);
+}
 static int live_test_action(const LiveTestStep *s,SDL_Window *window,SDL_AudioDeviceID device,
     AudioState *a,TsUiState *ui,TsSamplePages *pages,TsInstrument *bank,MosaicController *mosaic,
     PortalController *portal,SisterWindow *sister,TransformController *transform)
 {
+    if(s->action==LT_SPACE || s->action==LT_ESCAPE) {
+        ui->mosaic_open=1;ui->tracker_open=0;
+        SDL_Event e=live_test_key(window,s->action==LT_SPACE?SDLK_SPACE:SDLK_ESCAPE,KMOD_NONE);
+        if(!mosaic_event(&e,window,device,a,ui,bank,mosaic,portal,sister,transform,a->output_rate))return 0;
+        if(device)SDL_LockAudioDevice(device);
+        live_test.parked_time=ui->mosaic->time;
+        int ok=s->action==LT_SPACE?(!a->engine_stopped && ui->mosaic->playing==s->target):
+            (a->engine_stopped && !ui->mosaic->playing && (!s->target || ui->mosaic->time==0));
+        if(device)SDL_UnlockAudioDevice(device);return ok;
+    }
+    if(s->action==LT_ASSERT) {
+        double positions[TS_GALLERY_LIMIT]={0};int playing[TS_GALLERY_LIMIT]={0};unsigned sleeping;int stopped,outgoing,active,ok=1;
+        if(device)SDL_LockAudioDevice(device);
+        stopped=a->engine_stopped;sleeping=a->sister.matrix_effects.suspended;
+        active=pages->gallery->active;outgoing=pages->gallery->outgoing;
+        for(int c=0;c<pages->gallery->count;++c){positions[c]=pages->gallery->canvas[c].scene->time;playing[c]=pages->gallery->canvas[c].scene->playing;}
+        if(device)SDL_UnlockAudioDevice(device);
+        if(s->target==0 || s->target==4)ok=!stopped && playing[active];
+        else ok=!playing[active] && stopped==(s->target!=1) && fabs(positions[active]-live_test.parked_time)<1e-8;
+        if(s->target==3)ok&=positions[active]==0;
+        if(s->target==4){ok&=outgoing<0;for(int c=0;c<pages->gallery->count;++c)if(c!=active)ok&=!playing[c];}
+        ts_session_log_event("live_test_state","expected=%d success=%d active=%d outgoing=%d engine_stopped=%d suspended_mask=%u position=%.9f fx_canvas=%d",
+            s->target,ok,active,outgoing,stopped,sleeping,positions[active],matrix_window.visible && matrix_window.canvas);
+        live_test_checkpoint(a,100+live_test.next);return ok;
+    }
+    if(s->action==LT_FOLLOW){ui->mosaic_follow=s->target;return 1;}
+    if(s->action==LT_SEEK) {
+        ui->mosaic_open=1;ui->tracker_open=0;
+        double destination=ts_mosaic_end(ui->mosaic)*s->value;
+        if(s->target) {
+            int nearest=-1;double distance=1e30;
+            for(int i=0;i<TS_MOSAIC_MARKERS;++i)if(ui->mosaic->markers[i].stored && fabs(ui->mosaic->markers[i].time-destination)<distance){nearest=i;distance=fabs(ui->mosaic->markers[i].time-destination);}
+            if(nearest<0)return 0;mosaic_marker_jump(device,ui,nearest);return 1;
+        }
+        ui->mosaic_scroll=fmax(0,destination-20/ui->mosaic_scale);
+        SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;e.button.button=SDL_BUTTON_MIDDLE;
+        if(!mosaic_navigation_event(&e,device,ui,mosaic,140,86,KMOD_NONE))return 0;
+        e.type=SDL_MOUSEBUTTONUP;return mosaic_navigation_event(&e,device,ui,mosaic,140,86,KMOD_NONE);
+    }
     if(s->action==LT_CHECK){live_test_checkpoint(a,s->target);return 1;}
     if(s->action==LT_CLOSE){matrix_hide();return !matrix_window.visible;}
     if(s->action==LT_HEALTH){if(s->value)return ts_audio_health_show(ui);ts_audio_health_close();return 1;}
@@ -247,7 +303,7 @@ static int live_test_action(const LiveTestStep *s,SDL_Window *window,SDL_AudioDe
         return pages->gallery->active==s->target && !ui->mosaic_gallery_open;
     }
     if(s->action==LT_MUTE || s->action==LT_SOLO) {
-        int p=pages->gallery->active;if(p<0 || p>2)return 0;
+        int p=pages->gallery->active;if(p<0 || p>=(live_test.angelic?10:3))return 0;
         uint64_t id=live_test.card[p];
         TsMosaicEvent *card=ts_mosaic_find(ui->mosaic,id);if(!card)return 0;
         int wanted=s->value!=0,old=s->action==LT_MUTE?card->muted:card->solo;
@@ -307,7 +363,8 @@ static void live_test_poll(SDL_Window *window,SDL_AudioDeviceID device,AudioStat
         }
         ui->mosaic_scroll=0;ui->mosaic_scale=4;ui->mosaic_hscale=1;
         live_test.state=LT_ARMED;
-        snprintf(ui->status,sizeof(ui->status),"KETER %s TEST ARMED: MOSAIC PLAY / %u:%02u / ESC ABORTS",
+        if(live_test.angelic)snprintf(ui->status,sizeof(ui->status),"ANGELIC NOISE TEST ARMED: MOSAIC PLAY / 13:12 / ESC ABORTS / PROFILE ON");
+        else snprintf(ui->status,sizeof(ui->status),"KETER %s TEST ARMED: MOSAIC PLAY / %u:%02u / ESC ABORTS",
             live_test.mode==3?"PROFILE":"FULL",live_test.duration_ms/60000,(live_test.duration_ms/1000)%60);
         return;
     }
@@ -335,7 +392,7 @@ static void live_test_poll(SDL_Window *window,SDL_AudioDeviceID device,AudioStat
             (unsigned)a->output_rate,initial.device_buffer_frames,(unsigned)a->output_device_channels,
             ts_sunvox_workers_configured(),ts_profile_enabled(),TS_LIVE_TEST_REVISION,__DATE__,__TIME__);
     }
-    if(live_test.mode==3 && !ts_profile_enabled()) {
+    if((live_test.angelic || live_test.mode==3) && !ts_profile_enabled()) {
         live_test_finish(device,a,ui,0,"profile_unavailable");return;
     }
     if(a->audio_health_generation!=live_test.generation || strcmp(ui->project_path,live_test.project)) {
@@ -358,6 +415,7 @@ static void live_test_poll(SDL_Window *window,SDL_AudioDeviceID device,AudioStat
     double duration=1000.0*(SDL_GetPerformanceCounter()-begin)/live_test.frequency;
     ts_session_log_event("live_test_action_end","index=%d success=%d duration_ms=%.3f gallery=%d",
         live_test.next,ok,duration,pages->gallery?pages->gallery->active:-1);
+    if(ok && s->action!=LT_END)live_test_phase(device,a,ui,pages);
     ++live_test.next;
     if(live_test.profile_failed){live_test_finish(device,a,ui,0,"profile_log_unavailable");return;}
     if(!ok){live_test_finish(device,a,ui,0,"action_failed");return;}

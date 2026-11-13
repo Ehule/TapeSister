@@ -722,12 +722,11 @@ static int assign_parameter(TsSisterParameters *p, const char *key,
     return 1;
 }
 
-int ts_sister_project_state_load_file(TsSisterProjectState *state,
+static int state_load_file(TsSisterProjectState *state, TsSisterProjectState *loaded,
                                       const char *path,
                                       uint32_t sample_rate, int *present,
                                       char *error, size_t error_size)
 {
-    TsSisterProjectState loaded;
     char line[4096];
     FILE *file;
     int line_number = 0, header = 0, version = 0, have_pages = 0;
@@ -744,9 +743,9 @@ int ts_sister_project_state_load_file(TsSisterProjectState *state,
         state_error(error, error_size, "Could not open Sister project state");
         return 0;
     }
-    ts_sister_project_state_init(&loaded, sample_rate);
-    loaded.parameters.fx.slot_count = TS_SISTER_FX_SLOT_MIN;
-    memset(loaded.page_masks, 0, sizeof(loaded.page_masks));
+    ts_sister_project_state_init(loaded, sample_rate);
+    loaded->parameters.fx.slot_count = TS_SISTER_FX_SLOT_MIN;
+    memset(loaded->page_masks, 0, sizeof(loaded->page_masks));
     while (fgets(line, sizeof(line), file) != NULL) {
         char *key = trim(line), *value;
         ++line_number;
@@ -765,30 +764,30 @@ int ts_sister_project_state_load_file(TsSisterProjectState *state,
             if (!parse_int_value(value, &parsed) || parsed < 1) goto malformed;
             version = parsed;
         } else if (strcmp(key, "PageCount") == 0) {
-            if (!parse_size_value(value, &loaded.page_count) || loaded.page_count == 0u ||
-                loaded.page_count > TS_SISTER_RUNTIME_PAGE_LIMIT) goto malformed;
+            if (!parse_size_value(value, &loaded->page_count) || loaded->page_count == 0u ||
+                loaded->page_count > TS_SISTER_RUNTIME_PAGE_LIMIT) goto malformed;
             have_pages = 1;
         } else if (strcmp(key, "ActivePage") == 0) {
-            if (!parse_size_value(value, &loaded.active_page)) goto malformed;
+            if (!parse_size_value(value, &loaded->active_page)) goto malformed;
         } else if (strcmp(key, "Routes") == 0) {
             int parsed;
             if (!parse_int_value(value, &parsed) || parsed < 0) goto malformed;
-            loaded.source_switches = (uint8_t)parsed & TS_SISTER_SOURCE_ALL;
+            loaded->source_switches = (uint8_t)parsed & TS_SISTER_SOURCE_ALL;
         } else if (strcmp(key, "SelectedPreset") == 0) {
             if (strlen(value) > TS_SISTER_PROJECT_PRESET_NAME_MAX) goto malformed;
-            snprintf(loaded.selected_preset, sizeof(loaded.selected_preset), "%s", value);
+            snprintf(loaded->selected_preset, sizeof(loaded->selected_preset), "%s", value);
         } else if (strcmp(key, "SelectedPresetModified") == 0) {
-            if (!parse_int_value(value, &loaded.selected_preset_modified) ||
-                (loaded.selected_preset_modified != 0 &&
-                 loaded.selected_preset_modified != 1)) goto malformed;
+            if (!parse_int_value(value, &loaded->selected_preset_modified) ||
+                (loaded->selected_preset_modified != 0 &&
+                 loaded->selected_preset_modified != 1)) goto malformed;
         } else if (strcmp(key, "ParameterLocks") == 0) {
-            if (!parse_u64_hex_value(value, &loaded.parameter_locks))
+            if (!parse_u64_hex_value(value, &loaded->parameter_locks))
                 goto malformed;
         } else if (strcmp(key, "ParameterLocksHigh") == 0) {
-            if (!parse_u64_hex_value(value, &loaded.parameter_locks_high))
+            if (!parse_u64_hex_value(value, &loaded->parameter_locks_high))
                 goto malformed;
         } else if (!strncmp(key,"ProjectView.",12)) {
-            if(!project_view_read(&loaded.view,&view_fields,key,value))goto malformed;
+            if(!project_view_read(&loaded->view,&view_fields,key,value))goto malformed;
         } else if (strncmp(key, "Mask.", 5u) == 0) {
             size_t page;
             char *end;
@@ -796,71 +795,71 @@ int ts_sister_project_state_load_file(TsSisterProjectState *state,
             if (!parse_size_value(key + 5, &page) || page >= TS_SISTER_RUNTIME_PAGE_LIMIT) goto malformed;
             errno = 0; parsed_mask = strtoul(value, &end, 16);
             if (errno != 0 || end == value || *trim(end) != '\0' || parsed_mask > 0xffffu) goto malformed;
-            loaded.page_masks[page] = (uint16_t)parsed_mask;
+            loaded->page_masks[page] = (uint16_t)parsed_mask;
         } else if (!strncmp(key,"Mandala.",8)) {
-            if(ts_mandala_read(&loaded.mandala,key,value)<0)goto malformed;
+            if(ts_mandala_read(&loaded->mandala,key,value)<0)goto malformed;
         } else if (!strcmp(key,"PerformanceTransport")) {
-            int mask;if(!parse_int_value(value,&mask) || mask<0 || mask>7)goto malformed;loaded.performance_transport=(unsigned)mask;
+            int mask;if(!parse_int_value(value,&mask) || mask<0 || mask>7)goto malformed;loaded->performance_transport=(unsigned)mask;
         } else if (!strncmp(key,"Performance.Input",17)) {
             int channel,enabled;float gain;char extra;
             if(!parse_int_value(key+17,&channel) || channel<0 || channel>=TS_PERFORMANCE_INPUTS ||
                sscanf(value,"%d %f %c",&enabled,&gain,&extra)!=2 || (enabled!=0 && enabled!=1) ||
                !isfinite(gain) || gain<0 || gain>2)goto malformed;
-            loaded.performance_mixer.input_enabled[channel]=(uint8_t)enabled;
-            loaded.performance_mixer.input_gain[channel]=gain;
+            loaded->performance_mixer.input_enabled[channel]=(uint8_t)enabled;
+            loaded->performance_mixer.input_gain[channel]=gain;
         } else if (!strncmp(key,"Performance.Gain",16)) {
             int channel;float gain;
             if(!parse_int_value(key+16,&channel) || channel<0 || channel>3 ||
                !parse_float_value(value,&gain) || gain<0 || gain>2)goto malformed;
-            loaded.performance_mixer.gain[channel]=gain;
+            loaded->performance_mixer.gain[channel]=gain;
         } else if (!strcmp(key,"Performance.Restart") || !strcmp(key,"Performance.ArpSync") || !strcmp(key,"Performance.AlwaysOnTop")) {
             int v,clock=!strcmp(key,"Performance.ArpSync");
             if(!parse_int_value(value,&v) || v<0 || v>(clock?3:1))goto malformed;
-            if(clock)loaded.performance_mixer.arp_sync=v;
-            else if(!strcmp(key,"Performance.Restart"))loaded.performance_mixer.restart=v;
-            else loaded.performance_mixer.always_on_top=v;
+            if(clock)loaded->performance_mixer.arp_sync=v;
+            else if(!strcmp(key,"Performance.Restart"))loaded->performance_mixer.restart=v;
+            else loaded->performance_mixer.always_on_top=v;
         } else if (!strcmp(key,"Clock.Cursor")) {
             char extra;
-            if(sscanf(value,"%lf %lf %lf %c",&loaded.clock_seconds,
-                &loaded.clock_beats,&loaded.clock_phase,&extra)!=3)goto malformed;
+            if(sscanf(value,"%lf %lf %lf %c",&loaded->clock_seconds,
+                &loaded->clock_beats,&loaded->clock_phase,&extra)!=3)goto malformed;
         } else if (!strncmp(key,"Clock.",6)) {
-            if(ts_master_clock_read(&loaded.clock_controls,key,value)!=1)goto malformed;
+            if(ts_master_clock_read(&loaded->clock_controls,key,value)!=1)goto malformed;
         } else if (!strncmp(key,"Arp.",4)) {
-            if(ts_keyboard_sequence_bank_read(&loaded.keyboard_sequence,key,value)<0)goto malformed;
+            if(ts_keyboard_sequence_bank_read(&loaded->keyboard_sequence,key,value)<0)goto malformed;
         } else if (!strncmp(key,"Spatial.",8)) {
-            if(ts_spatial_read(&loaded.spatial,key,value)<0)goto malformed;
+            if(ts_spatial_read(&loaded->spatial,key,value)<0)goto malformed;
         } else if (!strncmp(key,"Insert.",7)) {
-            if(ts_insert_read(&loaded.insert,key,value)<0)goto malformed;
+            if(ts_insert_read(&loaded->insert,key,value)<0)goto malformed;
         } else if (!strncmp(key,"RouterPerf.",11)) {
-            if(ts_router_performance_read(&loaded.router_performance,key,value)<0)goto malformed;
+            if(ts_router_performance_read(&loaded->router_performance,key,value)<0)goto malformed;
         } else if ((!strncmp(key,"MatrixLayout.",13) || !strncmp(key,"FxCanvas.",9))) {
-            if(ts_matrix_layout_read(&loaded.matrix_layout,key,value)<0)goto malformed;
+            if(ts_matrix_layout_read(&loaded->matrix_layout,key,value)<0)goto malformed;
         } else if (!strncmp(key,"Matrix.",7)) {
-            if(ts_matrix_read(&loaded.matrix,key,value)<0)goto malformed;
+            if(ts_matrix_read(&loaded->matrix,key,value)<0)goto malformed;
         } else if (!strncmp(key,"Router.",7)) {
-            if(ts_router_read(&loaded.router,key,value)<0)goto malformed;
+            if(ts_router_read(&loaded->router,key,value)<0)goto malformed;
         } else if (!strncmp(key,"Compressor.",11)) {
-            if(ts_compressor_read(&loaded.compressor,key,value)<0)goto malformed;
+            if(ts_compressor_read(&loaded->compressor,key,value)<0)goto malformed;
         } else if (!strncmp(key,"EqMorph.",8)) {
-            if(ts_eq_morph_read(&loaded.eq_morph,key,value)<0)goto malformed;
+            if(ts_eq_morph_read(&loaded->eq_morph,key,value)<0)goto malformed;
         } else if (!strncmp(key,"MasterEq.",9)) {
-            if(ts_master_eq_read(&loaded.master_eq,key,value)<0)goto malformed;
-        } else if (!assign_parameter(&loaded.parameters, key, value)) goto malformed;
+            if(ts_master_eq_read(&loaded->master_eq,key,value)<0)goto malformed;
+        } else if (!assign_parameter(&loaded->parameters, key, value)) goto malformed;
     }
-    if (ferror(file) || !header || !version || !have_pages || !ts_master_clock_valid(&loaded.clock_controls) || !state_clock_position_valid(&loaded) || !ts_matrix_valid(&loaded.matrix) || !ts_matrix_layout_valid(&loaded.matrix_layout) ||
-        loaded.active_page >= loaded.page_count ||
-        (view_fields && (view_fields&31)!=31) || !project_view_valid(&loaded.view)) goto malformed;
+    if (ferror(file) || !header || !version || !have_pages || !ts_master_clock_valid(&loaded->clock_controls) || !state_clock_position_valid(loaded) || !ts_matrix_valid(&loaded->matrix) || !ts_matrix_layout_valid(&loaded->matrix_layout) ||
+        loaded->active_page >= loaded->page_count ||
+        (view_fields && (view_fields&31)!=31) || !project_view_valid(&loaded->view)) goto malformed;
     fclose(file);
     if (version < 12 /* FX slot migration predates Prism */) {
-        ts_sister_fx_controls_migrate_legacy(&loaded.parameters.fx);
+        ts_sister_fx_controls_migrate_legacy(&loaded->parameters.fx);
         ts_sister_ui_migrate_legacy_effect_locks(
-            &loaded.parameter_locks, &loaded.parameter_locks_high);
+            &loaded->parameter_locks, &loaded->parameter_locks_high);
     }
-    ts_sister_parameters_sanitize(&loaded.parameters, sample_rate);
-    ts_keyboard_sequence_bank_sanitize(&loaded.keyboard_sequence);
-    if(version<24)loaded.router.bypass_mask |= 1u<<TS_ROUTER_INSERT;
-    video_reference(&loaded.mandala,path,1);
-    *state = loaded;
+    ts_sister_parameters_sanitize(&loaded->parameters, sample_rate);
+    ts_keyboard_sequence_bank_sanitize(&loaded->keyboard_sequence);
+    if(version<24)loaded->router.bypass_mask |= 1u<<TS_ROUTER_INSERT;
+    video_reference(&loaded->mandala,path,1);
+    *state = *loaded;
     if (present != NULL) *present = 1;
     state_error(error, error_size, "");
     return 1;
@@ -870,6 +869,21 @@ malformed:
         snprintf(error, error_size,
                  "Malformed Sister project state at line %d", line_number);
     return 0;
+}
+
+int ts_sister_project_state_load_file(TsSisterProjectState *state,
+                                      const char *path,
+                                      uint32_t sample_rate, int *present,
+                                      char *error, size_t error_size)
+{
+    /* Canvas presentation metadata can be large. Keep transactional parsing
+       off the caller's stack, including nested validation during project save. */
+    if(present)*present=0;
+    if(!state || !path || !path[0])return 0;
+    TsSisterProjectState *loaded=malloc(sizeof(*loaded));
+    if(!loaded){state_error(error,error_size,"Cannot allocate Sister project state");return 0;}
+    int ok=state_load_file(state,loaded,path,sample_rate,present,error,error_size);
+    free(loaded);return ok;
 }
 
 int ts_sister_project_state_load(TsSisterProjectState *state,

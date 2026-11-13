@@ -15,7 +15,7 @@ enum { TS_FX_CANVAS_SOURCE_POSITIONS=TS_GALLERY_LIMIT*TS_MOSAIC_EVENTS+256,
        TS_FX_CANVAS_POSITIONS=TS_FX_CANVAS_SOURCE_POSITIONS+TS_MATRIX_ROWS+TS_MATRIX_DESTINATIONS };
 enum { TS_FX_CANVAS_SPLIT_MIN=640, TS_FX_CANVAS_SPLIT_DEFAULT=1000, TS_FX_CANVAS_SPLIT_MAX=1040 };
 /* Zero scale is the legacy/default size; saved custom sizes use .25..4. */
-typedef struct { uint64_t id; int kind; float x,y,scale; uint64_t canvas; } TsFxCanvasPosition;
+typedef struct { uint64_t id; int kind; float x,y,scale; uint64_t canvas; uint32_t color; char name[48]; } TsFxCanvasPosition;
 enum { TS_FX_LABEL_LIMIT=64, TS_FX_LABEL_TEXT=256 };
 typedef struct {float x,y,scale;char text[TS_FX_LABEL_TEXT];} TsFxCanvasLabel;
 typedef struct {

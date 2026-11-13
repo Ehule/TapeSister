@@ -16,9 +16,11 @@ static void mosaic_markers_render(TsFramebuffer *fb,const TsUiState *ui)
         int y=ts_ui_mosaic_marker_y(ui,i);if(y<0)continue;
         double time=ui->mosaic_marker_drag==i+1?ui->mosaic_marker_preview:ui->mosaic->markers[i].time;
         int line=66+(int)((time-ui->mosaic_scroll)*(ui->mosaic_scale>0?ui->mosaic_scale:24));
+        if(!active_waveform_detail || !active_waveform_detail[0].valid)
         for(int x=151;x<ts_ui_mosaic_canvas_right(ui);x+=7)rect(fb,x,line,3,1,mosaic_mix_color(ink,background,.75f));
         char label[4];snprintf(label,sizeof(label),"%02d",i+1);
         int active=ui->mosaic_marker_selected==i+1;
+        if(active_waveform_detail && active_detail_count>1 && active_waveform_detail[1].valid)continue;
         rect(fb,113,y,38,10,panel);rect(fb,127,y,24,10,active?ink:panel);
         text(fb,132,y+2,label,active?background:ink,1);
     }
