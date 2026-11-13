@@ -206,7 +206,7 @@ static void canvas_gestures(uint32_t id)
     /* Both visual cable paths share exactly the same hit-test geometry. */
     l->canvas_straight=1;assert(fx_cable(100,200,400,400,0,0,250,300)<.01f);
     assert(fx_cable(100,200,400,400,0,0,250,150)>100);
-    click(700,80,1);assert(!l->canvas_straight);
+    toolbar_click(FX_TOOL_CURVES);assert(!l->canvas_straight);
     assert(fx_cable(100,200,400,400,0,0,250,300)<1);
     /* Every available endpoint plus successive additions must fit below 20%. */
     w->input_ports=64;mx_rows(&pages,&bank);fx_build(&pages,&bank);

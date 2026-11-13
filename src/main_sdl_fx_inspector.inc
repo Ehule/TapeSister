@@ -1,10 +1,12 @@
 /* One paged inspector for added effects and fixed processor controls. */
 enum { FX_INSPECT_MAX=1024 };
 /* Keep the drag IDs below the macro gesture range. */
-#define FX_INSPECT_ROWS SDL_clamp((FX_BOTTOM-(FX_TOP+112)-84)/TS_UI_PARAMETER_WRAPPED_HEIGHT,1,16)
-#define FX_INSPECT_FIRST (FX_TOP+112)
+#define FX_INSPECT_ROWS SDL_clamp((FX_BOTTOM-FX_INSPECT_FIRST-84)/TS_UI_PARAMETER_WRAPPED_HEIGHT,1,16)
+#define FX_INSPECT_FIRST (FX_TOP+112+(mx_effect_slot()>=0 && fx_inspector_width()<202?34:0))
 #define FX_INSPECT_PAGER (FX_BOTTOM-76)
 #define FX_INSPECT_ACTION (FX_BOTTOM-38)
+static TsUiRect fx_inspector_replace_rect(void)
+{return ts_ui_control_rect(fx_inspector_x()+(fx_inspector_width()<202?0:98),FX_TOP+62+(fx_inspector_width()<202?34:0),"REPLACE",2,0);}
 enum { FX_CONTROL_EFFECT, FX_CONTROL_MACRO, FX_CONTROL_SUNVOX, FX_CONTROL_FILTER,
     FX_CONTROL_POWER, FX_CONTROL_EXTERNAL, FX_CONTROL_EQ, FX_CONTROL_EQ_SOLO,
     FX_CONTROL_LIMITER, FX_CONTROL_COMPRESSOR, FX_CONTROL_PARAMETER,
@@ -193,6 +195,7 @@ static void fx_inspector_controls_paint(void)
     if(fx_inspector.node==TS_MATRIX_EQ && w->eq_morph_owned)fx_button(x,FX_TOP+62,width,"STOP MORPH",1);
     else if(enabled>=0)fx_button(x,FX_TOP+62,ts_ui_control_width("BYPASS",2,0),enabled?"ACTIVE":"BYPASS",enabled);
     else fx_panel_text(x,FX_TOP+62,width,36,"PARAMETERS",FX_DIM,2,1);
+    if(c){TsUiRect r=fx_inspector_replace_rect();fx_button(r.x,r.y,r.w,"REPLACE",0);}
     int start=fx_canvas.inspector_page*FX_INSPECT_ROWS;
     for(int row=0;row<FX_INSPECT_ROWS && start+row<fx_inspector.count;++row) {
         const FxInspectorControl *p=&fx_inspector.control[start+row];int y=FX_INSPECT_FIRST+row*TS_UI_PARAMETER_WRAPPED_HEIGHT;
@@ -309,6 +312,9 @@ static int fx_inspector_event(SDL_Event *e,int x,int y,int wheel,SDL_AudioDevice
     if(!dragging && (x<fx_split()+8 || y<FX_TOP || y>=FX_BOTTOM))return 0;
     int count=fx_inspector_build();if(!count)return 1;
     int click=e->type==SDL_MOUSEBUTTONDOWN,left=click && e->button.button==SDL_BUTTON_LEFT;
+    if(left && fx_inspector.slot>=0 && ts_ui_rect_contains(fx_inspector_replace_rect(),x,y)) {
+        fx_replace_request(w->controls.effect[fx_inspector.slot].id);return 1;
+    }
     if(dragging) {
         if(e->type==SDL_MOUSEMOTION && fx_canvas.inspector_drag<count)
             fx_inspector_set(&fx_inspector.control[fx_canvas.inspector_drag],(x-left_x)/(float)width,0,0,device,audio,ui);

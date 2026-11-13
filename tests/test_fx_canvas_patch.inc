@@ -66,7 +66,7 @@ static void patch_workflow(void)
     key(SDLK_F2,0);matrix_hide();assert(!fx_canvas.properties && (SDL_GetWindowFlags(fx_properties_window.window)&SDL_WINDOW_HIDDEN));
     w->visible=1;SDL_ShowWindow(w->window);
     /* Native replacement uses the actual picker and preserves all main cables. */
-    w->effect_open=id;click(1095,708,1);assert(fx_canvas.replace_id==id && fx_canvas.popup);
+    w->effect_open=id;TsUiRect replace=fx_inspector_replace_rect();click(replace.x+20,replace.y+14,1);assert(fx_canvas.replace_id==id && fx_canvas.popup);
     int x=fx_canvas.popup_x,y=fx_canvas.popup_y;
     click(x+40,y+32+(TS_SISTER_FX_DELAY-1)*30+12,1);
     assert(!fx_canvas.popup && edit_slot(id)==dist && w->controls.effect[dist].type==TS_SISTER_FX_DELAY);
@@ -117,7 +117,7 @@ static void patch_twenty_cards(void)
     edit_settle();key(SDLK_z,KMOD_CTRL);edit_settle();
     /* Replacing a compressor drops only its sidechain and Undo restores it. */
     w->controls.row[TS_MATRIX_FM].matrix_gain[TS_MATRIX_EFFECT_SC_BASE+b]=500;mx_commit_controls(0,&audio,&ui);
-    w->effect_open=w->controls.effect[b].id;click(1095,708,1);
+    w->effect_open=w->controls.effect[b].id;TsUiRect replace=fx_inspector_replace_rect();click(replace.x+20,replace.y+14,1);
     click(fx_canvas.popup_x+40,fx_canvas.popup_y+32+(TS_SISTER_FX_DELAY-1)*30+12,1);
     assert(w->controls.effect[b].type==TS_SISTER_FX_DELAY && !w->controls.row[TS_MATRIX_FM].matrix_gain[TS_MATRIX_EFFECT_SC_BASE+b]);
     assert(w->controls.row[da].matrix_gain[db]==1000 && w->controls.row[db].matrix_gain[TS_MATRIX_MAIN]==1000);
