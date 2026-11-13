@@ -9415,10 +9415,22 @@ static void browser_activate_selection(SDL_AudioDeviceID device, AudioState *aud
                    bypass_preview);
 }
 
+static TsUiPresentation main_presentation;
+static TsUiPresentation main_workspace_presentation;
+static SDL_Window *main_presentation_window;
+static SDL_Renderer *main_presentation_renderer;
+static TsUiState *main_presentation_ui;
+static void main_presentation_prepare(void);
 static void logical_mouse(SDL_Window *window, int raw_x, int raw_y, int *x, int *y)
 {
     int ww, wh;
     SDL_GetWindowSize(window, &ww, &wh);
+    if(window==main_presentation_window) {
+        main_presentation_prepare();
+        if(main_presentation.mode) {
+            ts_ui_presentation_pointer(&main_presentation,raw_x*main_presentation.width/SDL_max(1,ww),raw_y*main_presentation.height/SDL_max(1,wh),x,y);return;
+        }
+    }
     *x = raw_x * TS_UI_WIDTH / ww;
     *y = raw_y * TS_UI_HEIGHT / wh;
 }
@@ -9734,6 +9746,38 @@ static int main_waveform_detail_allowed(const TsUiState *ui)
     if(ui->master_eq_open || ui->router_open ||
        (ui->mosaic_open && ui->mosaic_live_open && ui->mosaic_live_advanced))return 0;
     return !ui_blocking_dialog_open_except_fm(ui) && !ui->fm_bank_choice_open && !ui->fm_full_choice_open;
+}
+
+static void main_presentation_prepare(void)
+{
+    TsUiState *ui=main_presentation_ui;
+    if(!ui || !main_presentation_window || !main_presentation_renderer)return;
+    int width,height;SDL_GetRendererOutputSize(main_presentation_renderer,&width,&height);
+    int mode=ui->mosaic_open?((ts_ui_foreground_panel_open(ui) || ui->mosaic_live_open || !main_waveform_detail_allowed(ui))?2:1):0;
+    TsUiPresentation next=ts_ui_presentation(mode,width,height,ts_window_content_scale(main_presentation_window,main_presentation_renderer),ts_ui_mosaic_canvas_right(ui));
+    /* Preserve world pixels per second on resize. These are UI zoom fields,
+       never event durations, audio state, or project routing. */
+    if(next.mode==1 && main_workspace_presentation.mode==1) {
+        TsUiRect old=main_workspace_presentation.target[4],now=next.target[4];
+        double oldx=old.w/(double)(main_workspace_presentation.right-151),newx=now.w/(double)(next.right-151);
+        if(now.w>0 && now.h>0 && old.w>0 && old.h>0) {
+            ui->mosaic_scale=(ui->mosaic_scale>0?ui->mosaic_scale:24)*old.h/(double)now.h;
+            ui->mosaic_hscale=(ui->mosaic_hscale>0?ui->mosaic_hscale:1)*oldx/newx;
+        }
+    }
+    if(next.mode==1)main_workspace_presentation=next;
+    main_presentation=next;
+}
+static void main_presentation_copy(SDL_Renderer *renderer,SDL_Texture *texture,const TsUiState *ui)
+{
+    if(!main_presentation.mode){SDL_RenderCopy(renderer,texture,NULL,NULL);return;}
+    uint32_t color=ts_theme_color(&ui->palette,TS_THEME_MOSAIC,TS_COLOR_BACKGROUND,0xff0b0d10u);
+    SDL_SetRenderDrawColor(renderer,(color>>16)&255,(color>>8)&255,color&255,255);SDL_RenderClear(renderer);
+    for(int i=0;i<main_presentation.count;++i) {
+        TsUiRect a=main_presentation.source[i],b=main_presentation.target[i];
+        SDL_Rect source={a.x,a.y,a.w,a.h},target={b.x,b.y,b.w,b.h};
+        SDL_RenderCopy(renderer,texture,&source,&target);
+    }
 }
 
 static void native_waveform_prepare(SDL_Renderer *renderer, TsUiWaveformDetail details[2], int enabled)
@@ -14545,6 +14589,7 @@ int main(int argc, char **argv)
                               TS_WORKSPACE_WINDOW_FLAGS);
     renderer = window ? SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC) : NULL;
     if (!renderer && window) renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
+    main_presentation_window=window;main_presentation_renderer=renderer;main_presentation_ui=&ui;
     texture = renderer ? SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
                                             TS_UI_WIDTH, TS_UI_HEIGHT) : NULL;
     if (renderer != NULL) {
@@ -18957,7 +19002,9 @@ int main(int argc, char **argv)
             last_main_paint=schedule_now;main_paint_invalid=0;
             uint64_t profile_paint = ts_profile_begin(TS_PROF_RENDER);
             SDL_GetWindowSize(window,&ui.mosaic_live_output_width,&ui.mosaic_live_output_height);
-            native_waveform_prepare(renderer,waveform_details,main_waveform_detail_allowed(&ui));
+            main_presentation_prepare();
+            native_waveform_prepare(renderer,waveform_details,main_presentation.mode!=2 && main_waveform_detail_allowed(&ui));
+            ts_ui_waveform_presentation(&main_presentation);
             ts_ui_render(&framebuffer, &ui, &instrument);
             int circle_changed=native_looper_prepare(renderer,&looper_circle,&ui);
             ts_profile_end(TS_PROF_RENDER, profile_paint);
@@ -18968,7 +19015,7 @@ int main(int argc, char **argv)
             for(int i=0;i<2;i++)detail_changed|=waveform_details[i].valid &&
                 (waveform_details[i].raster_changed || waveform_details[i].analysis_count!=presented_detail_analysis[i]);
             if ((upload || circle_changed) && (upload==1 || force_present || detail_changed || circle_changed || animated || main_editing)) {
-                SDL_RenderCopy(renderer, texture, NULL, NULL);
+                main_presentation_copy(renderer,texture,&ui);
                 native_waveform_copy(renderer,waveform_textures,waveform_details,&framebuffer);
                 native_looper_copy(renderer,&looper_texture,&looper_circle);
                 for(int i=0;i<2;i++)presented_detail_analysis[i]=waveform_details[i].analysis_count;

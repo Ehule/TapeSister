@@ -68,3 +68,22 @@ explains the exception. Creation pans the viewport to the new node, and Z frames
 the selection. Filtered FIT excludes unrelated global text-label extents.
 These exceptions do not assign ownership, create routes or activate playback.
 They are transient and keyed by instance identity, so deleted slot reuse is safe.
+
+## Mosaic and Gallery presentation
+
+Mosaic now reflows its existing framebuffer into fixed-density toolbar, source,
+volume-control and footer regions, plus an expanding canvas and ruler. Native
+waveforms and pointer conversion use the same rectangles. Resize compensates
+view zoom to preserve world pixels per second and card width; event durations,
+audio and routing are unchanged. The existing volume-lane toggle remains.
+
+At 1920 x 1080 and 100% DPI, the default canvas grows from approximately
+1242 x 788 to 1468 x 864 (30% more area). Controls retain their 1280 x 800
+reference size. Gallery and other foreground dialogs use a centered,
+density-sized surface instead of stretching to fill the window. Native card
+text is capped at the control density; the ruler shares graph rounding.
+
+Very small clients fit the original 640 x 400 surface. Source-palette rows
+remain fixed-height, leaving room below them on taller displays; their small
+waveform previews use the existing logical renderer. The main canvas and ruler
+retain native rendering and cached repaint behavior.

@@ -2,6 +2,9 @@
    never enlarge the 600-column envelope to manufacture apparent detail. */
 static TsUiWaveformDetail *active_waveform_detail;
 static int active_detail_count, detail_output_width, detail_output_height;
+static TsUiPresentation detail_presentation;
+void ts_ui_waveform_presentation(const TsUiPresentation *p)
+{detail_presentation=p?*p:(TsUiPresentation){0};}
 
 void ts_ui_waveform_detail_free(TsUiWaveformDetail *d)
 {
@@ -47,6 +50,7 @@ int ts_ui_waveform_detail_resize(TsUiWaveformDetail *d, int width, int height)
 
 void ts_ui_waveform_details_begin(TsUiWaveformDetail details[2], int width, int height)
 {
+    detail_presentation=(TsUiPresentation){0};
     active_waveform_detail=details; active_detail_count=2;
     detail_output_width=width; detail_output_height=height;
     for(int i=0;i<2;++i)details[i].valid=details[i].sample_raster=details[i].scene_raster=0;
@@ -54,6 +58,7 @@ void ts_ui_waveform_details_begin(TsUiWaveformDetail details[2], int width, int 
 
 void ts_ui_waveform_detail_begin(TsUiWaveformDetail *d)
 {
+    detail_presentation=(TsUiPresentation){0};
     active_waveform_detail = d; active_detail_count=1;
     detail_output_width=detail_output_height=0;
     if (d) d->valid = d->sample_raster = d->scene_raster = 0;
@@ -124,6 +129,10 @@ static TsUiWaveformDetail *detail_region(int slot, int x, int y, int width, int 
         int ox=x*detail_output_width/TS_UI_WIDTH, oy=y*detail_output_height/TS_UI_HEIGHT;
         int w=(x+width)*detail_output_width/TS_UI_WIDTH-ox;
         int h=(y+height)*detail_output_height/TS_UI_HEIGHT-oy;
+        if(detail_presentation.mode==1) {
+            TsUiRect r=ts_ui_presentation_rect(&detail_presentation,(TsUiRect){x,y,width,height});
+            ox=r.x;oy=r.y;w=r.w;h=r.h;
+        }
         if(!detail_resize(d,w,h,x,y,width,height))return NULL;
         d->output_x=ox; d->output_y=oy;
     }

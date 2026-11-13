@@ -5,6 +5,7 @@ const char *ts_ui_glyph(char character);
 
 #include <stdint.h>
 #include "tapesister/ui_metrics.h"
+#include "tapesister/ui_presentation.h"
 #include "tapesister/audition.h"
 #include "tapesister/audio_import.h"
 #include "tapesister/browser.h"
@@ -427,6 +428,7 @@ int ts_ui_waveform_detail_resize(TsUiWaveformDetail *detail, int width, int heig
 void ts_ui_waveform_detail_begin(TsUiWaveformDetail *detail);
 /* Up to two independently cached regions in one native window. */
 void ts_ui_waveform_details_begin(TsUiWaveformDetail details[2], int output_width, int output_height);
+void ts_ui_waveform_presentation(const TsUiPresentation *presentation);
 int ts_ui_waveform_detail_finish(TsUiWaveformDetail *detail, const TsFramebuffer *frame);
 void ts_ui_waveform_detail_free(TsUiWaveformDetail *detail);
 

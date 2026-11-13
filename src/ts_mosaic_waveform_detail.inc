@@ -65,6 +65,7 @@ static void mosaic_detail_rect(TsUiWaveformDetail *d,int64_t left,int64_t top,
 static void mosaic_detail_text(TsUiWaveformDetail *d,int64_t x,int64_t y,
                                const char *value,uint32_t color,double sx,double sy)
 {
+    if(detail_presentation.mode==1){sx=fmin(sx,detail_presentation.scale);sy=fmin(sy,detail_presentation.scale);}
     /* Keep the familiar pixel font, but rasterize in the card's local space.
        Clipping happens after translation, including partially visible labels. */
     for(int n=0;value[n];++n) {
@@ -237,7 +238,7 @@ static void mosaic_detail_markers(TsUiWaveformDetail *d,const TsUiState *ui,int 
 typedef struct {
     const TsMosaic *scene;
     uint64_t epoch,selected,hover;
-    double scroll,xscroll,scale,hscale,interval;
+    double scroll,xscroll,scale,hscale,interval,text_scale;
     int any_solo,marker_selected,marker_drag;
     double marker_preview;
     TsMosaicMarker markers[TS_MOSAIC_MARKERS];
@@ -261,7 +262,7 @@ static int mosaic_raster_reuse(TsUiWaveformDetail *d,const TsUiState *ui,int any
         k->selected==ui->mosaic_selected && k->hover==ui->mosaic_hover_event &&
         k->scroll==ui->mosaic_scroll && k->xscroll==ui->mosaic_xscroll &&
         k->scale==ui->mosaic_scale && k->hscale==ui->mosaic_hscale &&
-        k->interval==interval && k->any_solo==any_solo &&
+        k->interval==interval && k->text_scale==detail_presentation.scale && k->any_solo==any_solo &&
         k->marker_selected==ui->mosaic_marker_selected && k->marker_drag==ui->mosaic_marker_drag &&
         k->marker_preview==ui->mosaic_marker_preview && !memcmp(k->markers,m->markers,sizeof(k->markers)) &&
         !memcmp(&k->palette,&ui->palette,sizeof(k->palette)) &&
@@ -273,6 +274,7 @@ static int mosaic_raster_reuse(TsUiWaveformDetail *d,const TsUiState *ui,int any
         k->scene=m;k->epoch=m->epoch;k->selected=ui->mosaic_selected;k->hover=ui->mosaic_hover_event;
         k->scroll=ui->mosaic_scroll;k->xscroll=ui->mosaic_xscroll;
         k->scale=ui->mosaic_scale;k->hscale=ui->mosaic_hscale;k->interval=interval;k->any_solo=any_solo;
+        k->text_scale=detail_presentation.scale;
         k->marker_selected=ui->mosaic_marker_selected;k->marker_drag=ui->mosaic_marker_drag;k->marker_preview=ui->mosaic_marker_preview;
         memcpy(k->markers,m->markers,sizeof(k->markers));
         k->palette=ui->palette;memcpy(k->events,m->events,sizeof(k->events));
@@ -314,11 +316,13 @@ static int mosaic_detail_cards(TsFramebuffer *fb,const TsUiState *ui,int any_sol
 }
 static int mosaic_detail_screen_x(const TsUiWaveformDetail *d,int x)
 {
+    if(detail_presentation.mode==1)return (x-d->x)*d->width/d->logical_width;
     return detail_output_width>0?x*detail_output_width/TS_UI_WIDTH-d->output_x:
         (x-d->x)*d->width/d->logical_width;
 }
 static int mosaic_detail_screen_y(const TsUiWaveformDetail *d,int y)
 {
+    if(detail_presentation.mode==1)return (y-d->y)*d->height/d->logical_height;
     return detail_output_height>0?y*detail_output_height/TS_UI_HEIGHT-d->output_y:
         (y-d->y)*d->height/d->logical_height;
 }
@@ -362,6 +366,13 @@ static void mosaic_detail_ruler(TsUiWaveformDetail *d,const TsUiState *ui,double
 }
 static void mosaic_detail_sources(TsFramebuffer *fb,const TsUiState *ui,double interval)
 {
+    if(detail_presentation.mode==1) {
+        /* The source palette keeps its density-sized rows. The ruler alone
+           expands with the graph, including native rounded marker positions. */
+        TsUiWaveformDetail *d=detail_region(1,113,66,38,TS_MOSAIC_CANVAS_HEIGHT);if(!d)return;
+        detail_background(d,fb);mosaic_detail_ruler(d,ui,interval);mosaic_detail_markers(d,ui,1);
+        d->valid=1;detail_capture_slot(fb,1);return;
+    }
     /* Extend the existing sidebar surface to cover the time ruler. The event
        surface and its raster dimensions stay untouched. */
     TsUiWaveformDetail *d=detail_region(1,10,66,141,TS_MOSAIC_CANVAS_HEIGHT);if(!d)return;
