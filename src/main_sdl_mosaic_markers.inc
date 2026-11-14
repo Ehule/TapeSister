@@ -11,7 +11,7 @@ static void mosaic_marker_commit(SDL_AudioDeviceID device,TsUiState *ui,int inde
     if(device)SDL_LockAudioDevice(device);
     int ok=ts_mosaic_set_marker(ui->mosaic,index,&value);
     if(device)SDL_UnlockAudioDevice(device);
-    if(ok)ui->mosaic_marker_selected=value.stored?index+1:0;
+    if(ok){ui->mosaic_marker_selected=value.stored?index+1:0;ui->mosaic_marker_range_pending=value.stored;}
 }
 static void mosaic_marker_add(SDL_AudioDeviceID device,TsUiState *ui)
 {
@@ -29,7 +29,7 @@ static void mosaic_marker_jump(SDL_AudioDeviceID device,TsUiState *ui,int index)
     if(device)SDL_LockAudioDevice(device);
     ts_mosaic_trigger_marker(ui->mosaic,index);ui->mosaic_time=ui->mosaic->time;
     if(device)SDL_UnlockAudioDevice(device);
-    ui->mosaic_marker_selected=index+1;
+    ui->mosaic_marker_selected=index+1;ui->mosaic_marker_range_pending=1;
     snprintf(ui->status,sizeof(ui->status),"MARKER %02d / %.3FS / %.31s",index+1,v->time,v->name);
 }
 static void mosaic_marker_close(TsUiState *ui)
@@ -127,7 +127,7 @@ static int mosaic_marker_event(const SDL_Event *event,SDL_AudioDeviceID device,
     int slot=-1,flag=0;
     if(x>=TS_MOSAIC_MARKER_X && x<TS_MOSAIC_MARKER_X+TS_MOSAIC_MARKERS*TS_MOSAIC_MARKER_STEP &&
        y>=TS_MOSAIC_MARKER_Y && y<TS_MOSAIC_MARKER_Y+16)slot=(x-TS_MOSAIC_MARKER_X)/TS_MOSAIC_MARKER_STEP;
-    else if(!(mod&KMOD_SHIFT) && x>=127 && x<151 && y>=66 && y<TS_MOSAIC_CANVAS_BOTTOM) {
+    else if(x>=127 && x<151 && y>=66 && y<TS_MOSAIC_CANVAS_BOTTOM) {
         for(int i=TS_MOSAIC_MARKERS-1;i>=0;--i) {
             int top=ts_ui_mosaic_marker_y(ui,i);
             if(top>=0 && y>=top && y<top+10){slot=i;flag=1;break;}
@@ -141,7 +141,14 @@ static int mosaic_marker_event(const SDL_Event *event,SDL_AudioDeviceID device,
     if(down && event->button.button==SDL_BUTTON_RIGHT){mosaic_marker_edit(device,ui,c,slot);return 1;}
     if(left) {
         if(mod&KMOD_SHIFT) {
-            TsMosaicMarker v=ui->mosaic->markers[slot];v.stored=1;v.time=mosaic_marker_playhead(device,ui);mosaic_marker_commit(device,ui,slot,v);
+            TsMosaicMarker v=ui->mosaic->markers[slot];
+            int anchor=ui->mosaic_marker_selected-1;
+            if(v.stored && anchor>=0 && anchor<TS_MOSAIC_MARKERS && ui->mosaic->markers[anchor].stored) {
+                double a=ui->mosaic->markers[anchor].time,b=v.time;
+                if(a!=b)mosaic_loop_commit(device,ui,(TsMosaicRange){fmin(a,b),fmax(a,b)});
+            } else if(!v.stored) {
+                v.stored=1;v.time=mosaic_marker_playhead(device,ui);mosaic_marker_commit(device,ui,slot,v);
+            } else mosaic_marker_jump(device,ui,slot);
         } else if(flag) {
             ui->mosaic_marker_drag=slot+1;ui->mosaic_marker_preview=c->marker_time=ui->mosaic->markers[slot].time;
             c->marker_epoch=ui->mosaic->epoch;c->marker_y=y;c->marker_moved=0;c->marker_scale=ui->mosaic_scale>0?ui->mosaic_scale:24;

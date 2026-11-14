@@ -220,5 +220,35 @@ static void child_profile(void)
     ts_profile_reset();ts_profile_lane_begin(1);ts_profile_lane_end(1);ts_profile_snapshot(&s);assert(!s.child[40].effect.samples);
     ts_profile_enable(0);ts_pedalboard_free(b);
 }
+static void cycle_every_board(void)
+{
+    ts_matrix_default(&controls);ts_matrix_effects_init(&engines);
+    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)assert(ts_matrix_effect_add(&controls,TS_MATRIX_FX_PEDALBOARD)==i);
+    assert(ts_matrix_effects_restore(&engines,&controls,48000));
+    /* Rotate all 16 boards through active, sleeping and unrouted ownership.
+       A callback exists in every case: this must not rely on offline collection. */
+    for(int pass=0;pass<3;++pass)for(int type=1;type<=TS_SISTER_FX_TYPE_COUNT;++type) {
+        unsigned suspended=0;
+        for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i) {
+            TsSisterFxSlotControls *slot=&controls.effect[i].board.slot[0];slot->type=type%TS_SISTER_FX_TYPE_COUNT;
+            if(slot->type==TS_SISTER_FX_SUNVOX)assert(ts_sunvox_select(&slot->sunvox,235));
+            if((i+pass)%3==1)suspended|=1u<<i;
+        }
+        TsMatrixEffectPlan plan;assert(ts_matrix_effects_stage(&engines,&controls,48000,&plan));
+        ts_matrix_effects_commit(&engines,&controls,48000,&plan);ts_matrix_effects_discard(&plan);
+        for(int block=0;block<8;++block) {
+            ts_matrix_effects_suspend(&engines,suspended);
+            for(int frame=0;frame<256;++frame) {
+                for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)if((i+pass)%3!=2) {
+                    TsStereoFrame out=ts_matrix_effects_process(&engines,i,(TsStereoFrame){.1f,.2f},(TsStereoFrame){0},1);
+                    assert(isfinite(out.l) && isfinite(out.r));
+                }
+                ts_matrix_effects_tick(&engines);
+            }
+        }
+        ts_matrix_effects_collect(&engines,&plan);ts_matrix_effects_discard(&plan);
+    }
+    ts_matrix_effects_free(&engines);
+}
 int main(void)
-{codec();capacity_and_sleep();spans_and_instances();matrix_span_aliasing();nested_sunvox();retained_children();child_profile();puts("pedalboard instances: codecs, 320 children, isolation, sleep and span parity passed");return 0;}
+{codec();capacity_and_sleep();cycle_every_board();spans_and_instances();matrix_span_aliasing();nested_sunvox();retained_children();child_profile();puts("pedalboard instances: codecs, 320 children, isolation, sleep and span parity passed");return 0;}

@@ -387,7 +387,7 @@ static void sunvox_browser(const char *dir)
     click(60,110,1);assert(sunvox_editor.focus==1);
     SDL_Event text;SDL_zero(text);text.type=SDL_TEXTINPUT;text.text.windowID=w->id;
     snprintf(text.text.text,sizeof(text.text.text),"NR Stereo Swap");assert(event(&text));
-    int list[235],nc;const char *categories[32];assert(svfx_catalog(list,categories,&nc)==1);
+    int list[512],nc;const char *categories[32];assert(svfx_catalog(list,categories,&nc)==1);
     click(100,192,1);assert(w->controls.effect[slot].sunvox.patch!=original);
     assert(w->controls.effect[slot].id==id && audio.sister.matrix.controls.row[TS_MATRIX_MOSAIC].matrix_gain[TS_MATRIX_EFFECT_BASE+slot]==1000);
     for(int f=0;f<1024;++f){ts_matrix_effects_tick(&audio.sister.matrix_effects);ts_matrix_effects_process(&audio.sister.matrix_effects,slot,(TsStereoFrame){0},(TsStereoFrame){0},0);}

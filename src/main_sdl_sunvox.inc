@@ -48,7 +48,7 @@ static void svfx_open(uint32_t id)
 }
 static void svfx_back(void)
 {
-    if(sunvox_editor.child)sister_board_open(sunvox_editor.node);
+    if(sunvox_editor.child)sister_board_return(sunvox_editor.node);
     svfx_close();
 }
 static void svfx_browse(TsUiState *ui)
@@ -99,7 +99,7 @@ static int svfx_catalog(int *matches,const char **categories,int *category_count
         if(j==nc && nc<32)categories[nc++]=cat;
     }
     sunvox_editor.category=SDL_clamp(sunvox_editor.category,0,nc-1);
-    for(int i=0;i<ts_sunvox_factory_count();++i)
+    for(int i=0;i<ts_sunvox_factory_count() && n<512;++i)
         if((!sunvox_editor.category || !strcmp(ts_sunvox_factory_category(i),categories[sunvox_editor.category])) &&
            (svfx_contains(ts_sunvox_factory_name(i),sunvox_editor.filter) || svfx_contains(ts_sunvox_factory_category(i),sunvox_editor.filter)))matches[n++]=i;
     sunvox_editor.scroll=SDL_clamp(sunvox_editor.scroll,0,SDL_max(0,n-14));
@@ -113,9 +113,9 @@ static float svfx_value(const TsSunVoxControls *c,int at,TsSunVoxParameter *p)
 static void svfx_paint(void)
 {
     const TsSunVoxControls *c=svfx_controls();if(!c){svfx_close();return;}
-    int list[235],nc;const char *categories[32];int n=svfx_catalog(list,categories,&nc);(void)nc;
+    int list[512],nc;const char *categories[32];int n=svfx_catalog(list,categories,&nc);(void)nc;
     char label[240];mx_rect(0,0,MATRIX_W,MATRIX_H,MX_BG);
-    mx_text(24,24,"SUNVOX / 235 FACTORY PATCHES",MX_GREEN,2);
+    mx_text(24,24,"SUNVOX / EFFECTS + FACTORY PATCHES",MX_GREEN,2);
     mx_button(1032,18,224,sunvox_editor.child?"BACK TO BOARD":"BACK TO ROUTES",0);
     mx_rect(16,64,580,648,MX_PANEL);mx_rect(608,64,656,648,MX_PANEL);
     mx_text(28,78,"SEARCH NAME / CATEGORY",MX_DIM,1);
@@ -276,7 +276,7 @@ static int svfx_event(SDL_Event *e,SDL_AudioDeviceID device,AudioState *audio,Ts
         }
         return 1;
     }
-    int list[235],nc;const char *categories[32];int n=svfx_catalog(list,categories,&nc);
+    int list[512],nc;const char *categories[32];int n=svfx_catalog(list,categories,&nc);
     if(x<600) {
         if(wheel && y>=180 && y<706)sunvox_editor.scroll=SDL_clamp(sunvox_editor.scroll-wheel*3,0,SDL_max(0,n-14));
         if(left && y>=140 && y<168){sunvox_editor.category=(sunvox_editor.category+1)%nc;sunvox_editor.scroll=0;}

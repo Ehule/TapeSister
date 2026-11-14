@@ -35,7 +35,9 @@ For explanations and complete workflows, see the [User Manual](USER_MANUAL.md).
 | `Space` | Main: play/stop audition. Mosaic: play/pause arrangement |
 | `Ctrl+Shift+M` | Enter or leave MIDI Learn in either window |
 | `Ctrl+Shift+I` in TrackSister | Note interpolation preview; Enter applies, Escape cancels |
-| `Escape` | Cancel active gesture/dialog first; event editor → Mosaic, Sister → main application, idle Mosaic → engine stop (double Escape: rewind), ordinary main canvas → exit question |
+| `E` | Open/focus FX Canvas when Mosaic KEYS is off |
+| `Backspace` in Mosaic | Stop engine; double Backspace returns to start |
+| `Escape` | Cancel active gesture/dialog first; event editor → Mosaic, Sister → previous workspace, FX Canvas → Mosaic, ordinary main canvas → exit question |
 
 From Sister, Shift+grave and grave bring FM and Mosaic forward even if already open
 behind it. Active dialogs keep focus until resolved. Number-key lower-panel shortcuts
@@ -134,12 +136,12 @@ does not switch the main bank. See the [Mosaic chapter](USER_MANUAL.md#mosaic).
 | Global tape speed | SPEED: 0.5× (−12 st), center 1×, 2× (+12 st) |
 | Fine control / reset | Shift+wheel / right-click or double-click |
 | Copy / paste primary event at playhead | Ctrl+C / Ctrl+V; use Shift-drag for group copies |
-| Delete selection | Delete or Backspace |
+| Delete selection | Delete |
 | Undo / redo arrangement edit | Ctrl+Z / Ctrl+Y or Ctrl+Shift+Z |
 | Cancel move/copy drag | Escape |
 | Play / pause, preserving effect tails | Space or PLAY/PAUSE |
-| Stop the audio engine, retaining position | STOP or Escape when no gesture is active |
-| Stop and return to start | Double-click STOP or double Escape within 500 ms |
+| Stop the audio engine, retaining position | STOP or Backspace when no gesture is active |
+| Stop and return to start | Double-click STOP or double Backspace within 500 ms |
 | Seek | Middle-click canvas or click time ruler |
 | Return to beginning | Home |
 | Scroll time / sideways / zoom | Wheel / Shift+wheel / Ctrl+wheel |
@@ -732,7 +734,7 @@ characters where needed. You can edit the suggested name before saving.
 ## Safety
 
 - Space controls the active audition; in Mosaic it plays/pauses the arrangement.
-- Mosaic STOP or Escape stops the audio engine at the current position. Double Escape within 500 ms returns to the start; Space resumes.
+- Mosaic STOP or Backspace stops the audio engine at the current position. Double Backspace within 500 ms returns to the start; Space resumes.
 - Escape cancels the active gesture or dialog.
 - Keep the limiter on during feedback and Extreme exploration.
 - Lower Sister/FX/Fallout levels before the limiter when GR is excessive.
@@ -805,6 +807,8 @@ not inherit the previous tile's parked FM patch.
 
 ### Mosaic loop range
 
+- **Click a marker, then REPEAT:** select and loop to the next marker in time, or the arrangement end.
+- **Click a marker, then Shift-click another:** select the range between them; REPEAT loops that range.
 - **Shift-drag ruler:** select time; drag either handle to resize.
 - **Shift+L:** set range from selected cards; **L / REPEAT:** toggle looping.
 - **Double-click ruler:** exact start/end seconds; Tab switches, Ctrl+A clears a

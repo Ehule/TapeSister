@@ -2,7 +2,7 @@
    this window never owns DSP histories or an audio device. */
 static struct {
  SDL_Window *window;SDL_Renderer *renderer;SDL_Texture *texture;
- TsFramebuffer fb;Uint32 id,painted;int visible,source,slot,drag,origin_x;
+ TsFramebuffer fb;Uint32 id,painted,return_window_id;int visible,source,slot,drag,origin_x;
  uint32_t node,child;float origin;TsMosaic *context;uint64_t epoch;
  MatrixSnapshot *before;
 } character_filter_window={.drag=-1};
@@ -27,12 +27,16 @@ static void character_filter_open(SisterWindow *sister,int slot)
 {
  if(slot<0 || slot>=sister->model.parameters.fx.slot_count || sister->model.parameters.fx.slot[slot].type!=TS_SISTER_FX_FILTER)return;
  if(!character_filter_ensure())return;
+ SDL_Window *origin=SDL_GetKeyboardFocus();
+ if(origin && origin!=character_filter_window.window)character_filter_window.return_window_id=SDL_GetWindowID(origin);
  character_filter_window.source=0;character_filter_window.child=sister->model.parameters.fx.slot[slot].id;character_filter_window.slot=slot;character_filter_window.visible=1;character_filter_window.context=NULL;character_filter_window.drag=-1;
  SDL_ShowWindow(character_filter_window.window);SDL_RaiseWindow(character_filter_window.window);
 }
 static void character_filter_matrix_open(uint32_t id)
 {
  if(!character_filter_ensure())return;
+ SDL_Window *origin=SDL_GetKeyboardFocus();
+ if(origin && origin!=character_filter_window.window)character_filter_window.return_window_id=SDL_GetWindowID(origin);
  character_filter_window.source=1;character_filter_window.node=id;character_filter_window.visible=1;character_filter_window.context=NULL;character_filter_window.drag=-1;
  SDL_ShowWindow(character_filter_window.window);SDL_RaiseWindow(character_filter_window.window);
 }
@@ -104,7 +108,7 @@ static int character_filter_event(const SDL_Event *e,SDL_AudioDeviceID device,Au
   if(e->window.event==SDL_WINDOWEVENT_CLOSE)character_filter_hide();return 1;
  }
  if(e->type==SDL_KEYDOWN){
-  if(e->key.keysym.sym==SDLK_ESCAPE){character_filter_history_finish(device,audio,ui,pages,bank);character_filter_hide();return 1;}
+  if(e->key.keysym.sym==SDLK_ESCAPE){character_filter_history_finish(device,audio,ui,pages,bank);character_filter_hide();editor_return_window(character_filter_window.return_window_id);return 1;}
   if(e->key.keysym.sym==SDLK_m && (e->key.keysym.mod&KMOD_CTRL) && (e->key.keysym.mod&KMOD_SHIFT)){
    midi_learn_set_active(ui,sister,!ui->midi_learn_active);return 1;}
   return 0;

@@ -5,7 +5,7 @@ static struct {
     SDL_Renderer *renderer;
     SDL_Texture *texture;
     TsFramebuffer fb;
-    Uint32 id, painted;
+    Uint32 id, painted,return_window_id;
     uint32_t node;
     int visible, maps, page, selected, drag, origin_x, edit, first, count;
     float origin;
@@ -36,6 +36,8 @@ static void meta_fx_hide(void) {
         SDL_HideWindow(meta_fx_window.window);
 }
 static void meta_fx_open(uint32_t id) {
+    SDL_Window *origin=SDL_GetKeyboardFocus();
+    if(origin && origin!=meta_fx_window.window)meta_fx_window.return_window_id=SDL_GetWindowID(origin);
     if (!meta_fx_window.window) {
         meta_fx_window.window =
             SDL_CreateWindow("TapeSister / Meta FX", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1120,
@@ -212,7 +214,7 @@ static int meta_fx_event(const SDL_Event *e, SDL_AudioDeviceID device, AudioStat
     }
     if (e->type == SDL_KEYDOWN && e->key.keysym.sym == SDLK_ESCAPE) {
         meta_fx_history_finish(device, audio, pages, bank);
-        meta_fx_hide();
+        meta_fx_hide();editor_return_window(meta_fx_window.return_window_id);
         return 1;
     }
     if (e->type == SDL_TEXTINPUT || (e->type == SDL_KEYDOWN && meta_fx_window.edit)) {

@@ -1225,6 +1225,7 @@ static void audio_engine_stopped_block(AudioState *a,float *out,unsigned frames,
     unsigned ramp=(unsigned)fmax(1,a->output_rate*.005);
     if(!a->engine_was_stopped)a->engine_ramp=ramp;
     a->engine_was_stopped=1;
+    ts_matrix_effects_finish_edits(&a->sister.matrix_effects);
     for(unsigned i=0;i<frames;++i) {
         float gain=a->engine_ramp?(float)--a->engine_ramp/ramp:0;
         for(unsigned ch=0;ch<channels && ch<TS_AUDIO_CHANNEL_CAPACITY;++ch)out[i*channels+ch]=a->engine_last[ch]*gain;
@@ -9465,7 +9466,7 @@ typedef struct {
     uint32_t board_ids[TS_MATRIX_EFFECT_CAPACITY+1];
     TsMosaic *board_context;uint64_t board_epoch;
     TsFramebuffer framebuffer;
-    uint32_t window_id;
+    uint32_t window_id, return_window_id;
     uint32_t last_present_ms;
     uint32_t last_model_sync_ms;
     uint32_t power_visual_started_ms;
@@ -9496,7 +9497,7 @@ static int sister_stage_fx(SDL_AudioDeviceID device,AudioState *audio,TsSisterFx
     ts_sister_fx_controls_sanitize(c);
     TsSisterSunVoxPlan garbage;
     if(device)SDL_LockAudioDevice(device);
-    if(!device || !ts_audio_output_is_available()) {
+    if(!device || !ts_audio_output_is_available() || audio->engine_stopped) {
         TsSisterPostFxEngine *e=&audio->sister.post_fx;
         for(int i=0;i<TS_SISTER_FX_SLOT_COUNT;++i){e->slot[i].active=e->controls.slot[i];e->slot[i].has_pending=e->slot[i].has_queued=e->slot[i].retiring=0;e->slot[i].morph.remaining=0;}
         e->processing_slots=e->controls.slot_count;
@@ -9507,6 +9508,7 @@ static int sister_stage_fx(SDL_AudioDeviceID device,AudioState *audio,TsSisterFx
     return ts_sister_sunvox_stage(&audio->sister.post_fx,c,plan);
 }
 static void sister_board_open(uint32_t);
+static void sister_board_return(uint32_t);
 static int sister_board_preset_recall(SDL_AudioDeviceID,AudioState *,TsUiState *,SisterWindow *,size_t);
 static int sister_board_publish(SDL_AudioDeviceID,AudioState *,TsUiState *,SisterWindow *);
 static const TsSisterUiModel *sister_board_view(SisterWindow *s)
@@ -9743,6 +9745,8 @@ static int sister_window_mouse(SDL_Window *window, SDL_Renderer *renderer,
 static void sister_window_show(SisterWindow *sister, const TsPalette *palette)
 {
     if (sister == NULL || sister->window == NULL) return;
+    SDL_Window *origin=SDL_GetKeyboardFocus();
+    if(origin && origin!=sister->window)sister->return_window_id=SDL_GetWindowID(origin);
     ts_sister_ui_model_show(&sister->model);
     sister->rendered_model_valid = 0;
     /* Present a complete backing image before the OS exposes the window. */
@@ -9774,6 +9778,29 @@ static void application_window_focus(SDL_Window *window, SisterWindow *sister)
     (void)SDL_SetWindowInputFocus(window);
 }
 
+static void editor_return_window(Uint32 id)
+{
+    SDL_Window *window=SDL_GetWindowFromID(id);
+    if(window && !(SDL_GetWindowFlags(window)&SDL_WINDOW_HIDDEN)) {
+        SDL_RaiseWindow(window);SDL_SetWindowInputFocus(window);
+    }
+}
+static void sister_window_return(SDL_Window *main,SisterWindow *sister)
+{
+    SDL_Window *origin=SDL_GetWindowFromID(sister->return_window_id);
+    if(!origin || origin==sister->window || (SDL_GetWindowFlags(origin)&SDL_WINDOW_HIDDEN))origin=main;
+    application_window_focus(origin,sister);
+}
+
+static void sister_escape(SDL_Window *main,SisterWindow *sister)
+{
+    if(sister->model.fallout_lfo_open)sister->model.fallout_lfo_open=0;
+    else if(sister->model.preset_manage_open) {
+        sister->model.preset_manage_open=sister->model.preset_editing=sister->model.preset_confirmation=0;
+        SDL_StopTextInput();
+    } else sister_window_return(main,sister);
+}
+
 /* Prepare the destination before releasing the covering window. */
 static int workspace_tab_event(const SDL_Event *event, SDL_Window *window,
                                 SisterWindow *sister, TsUiState *ui)
@@ -9783,7 +9810,7 @@ static int workspace_tab_event(const SDL_Event *event, SDL_Window *window,
     uint32_t id=event->key.windowID;
     if(sister->window && id==sister->window_id) {
         if(sister->model.preset_manage_open)return 0;
-        if(!event->key.repeat) {application_window_focus(window,sister);}
+        if(!event->key.repeat) {sister_window_return(window,sister);}
         return 1;
     }
     if(id!=SDL_GetWindowID(window) || ui_blocking_dialog_open_except_fm(ui) ||
@@ -14102,6 +14129,7 @@ static void keep_record_bank(SDL_AudioDeviceID output_device,
 #include "main_sdl_mosaic.inc"
 #include "main_sdl_canvas_transfer.inc"
 #include "main_sdl_workspaces.inc"
+#include "main_sdl_fx_navigation.inc"
 
 /* One session-wide release policy. Explicit Shift+click latches and tile
    launches remain independent; disabling sustain preserves physically held keys. */
@@ -15119,6 +15147,7 @@ int main(int argc, char **argv)
             if(canvas_eq_event(&event,window,device,&audio,&ui,&sister_window,&instrument))continue;
             if(performance_event(&event,window,device,&audio,&ui,&sample_pages,audio.workspace_bank?audio.workspace_bank:&instrument,&fm_preview,obtained.freq))continue;
             if(speakers_event(&event,window,device,&audio,&ui))continue;
+            if(fx_navigation_event(&event,window,device,&audio,&ui,&sister_window,&sample_pages,&instrument))continue;
             if(sister_board_event(&event,device,&audio,&ui,&sister_window,&sample_pages,&instrument))continue;
             if(meta_fx_event(&event,device,&audio,&ui,&sister_window,&sample_pages,&instrument))continue;
             if(character_filter_event(&event,device,&audio,&ui,&sister_window,&sample_pages,&instrument))continue;
@@ -15279,16 +15308,7 @@ int main(int argc, char **argv)
                     ui.config.sister_window_y = event.window.data2;
                 } else if (event.type == SDL_KEYDOWN &&
                            event.key.keysym.sym == SDLK_ESCAPE) {
-                    if (sister_window.model.fallout_lfo_open) {
-                        sister_window.model.fallout_lfo_open = 0;
-                    } else if (sister_window.model.preset_manage_open) {
-                        sister_window.model.preset_manage_open = 0;
-                        sister_window.model.preset_editing = 0;
-                        sister_window.model.preset_confirmation = 0;
-                        SDL_StopTextInput();
-                    } else {
-                        application_window_focus(window,&sister_window);
-                    }
+                    sister_escape(window,&sister_window);
                 } else if (event.type == SDL_TEXTINPUT &&
                            sister_window.model.preset_manage_open &&
                            sister_window.model.preset_editing) {

@@ -29,6 +29,11 @@ struct TsSunVoxFactory {
 #include "sunvox_catalog.inc"
 
 namespace {
+constexpr int patch_count=sizeof(factories)/sizeof(factories[0]);
+const char *standard_effects[]={"Amplifier","Compressor","DC Blocker","Delay",
+    "Distortion","Echo","EQ","FFT","Filter","Filter Pro","Flanger","LFO",
+    "Loop","Modulator","Pitch shifter","Reverb","Smooth","Vocal filter","Vibrato","WaveShaper"};
+constexpr int standard_count=sizeof(standard_effects)/sizeof(standard_effects[0]);
 constexpr size_t max_patch=8*1024*1024, max_imports=128*1024*1024;
 struct Resource {
     uint64_t key=0;
@@ -60,6 +65,21 @@ void globals() {
             r->key=hash_bytes(f.data,f.size);r->name=f.name;r->category=f.category;
             r->data=f.data;r->size=f.size;r->complete=true;r->factory=(int)i;
             resources.push_back(std::move(r));
+        }
+        for(int i=0;i<standard_count;++i) {
+            std::unique_ptr<Resource> r(new Resource);
+            r->name=standard_effects[i];r->category="Standard effects";
+            const unsigned char header[]={'S','S','Y','N',0,0,0,0};
+            r->owned.assign(header,header+8);
+            auto block=[&](const char *tag,const char *value) {
+                unsigned n=value?(unsigned)strlen(value)+1:0;
+                r->owned.insert(r->owned.end(),tag,tag+4);
+                for(int b=0;b<4;++b)r->owned.push_back((n>>(8*b))&255);
+                if(n)r->owned.insert(r->owned.end(),value,value+n);
+            };
+            block("STYP",standard_effects[i]);block("SNAM",standard_effects[i]);block("SEND",nullptr);
+            r->data=r->owned.data();r->size=r->owned.size();r->key=hash_bytes(r->data,r->size);
+            r->complete=true;r->factory=patch_count+i;resources.push_back(std::move(r));
         }
     });
 }
@@ -167,12 +187,12 @@ unsigned ts_sunvox_parallel_cost(const TsSunVoxEngine *s)
     return s && s->quantum>=256?s->parallel_cost*(s->quantum/256)/4:0;
 }
 
-int ts_sunvox_factory_count() { return sizeof(factories)/sizeof(factories[0]); }
+int ts_sunvox_factory_count() { return patch_count+standard_count; }
 const char *ts_sunvox_factory_name(int i) {
-    return i>=0 && i<ts_sunvox_factory_count()?factories[i].name:"";
+    return i>=0 && i<patch_count?factories[i].name:i>=patch_count && i<ts_sunvox_factory_count()?standard_effects[i-patch_count]:"";
 }
 const char *ts_sunvox_factory_category(int i) {
-    return i>=0 && i<ts_sunvox_factory_count()?factories[i].category:"";
+    return i>=0 && i<patch_count?factories[i].category:i>=patch_count && i<ts_sunvox_factory_count()?"Standard effects":"";
 }
 int ts_sunvox_select(TsSunVoxControls *c,int i) {
     if(!c || i<0 || i>=ts_sunvox_factory_count())return 0;
@@ -182,7 +202,7 @@ int ts_sunvox_select(TsSunVoxControls *c,int i) {
 void ts_sunvox_default(TsSunVoxControls *c) {
     int at=0;
     for(int i=0;i<ts_sunvox_factory_count();++i)
-        if(!strcmp(factories[i].name,"cube48 ShimmerClassic"))at=i;
+        if(!strcmp(ts_sunvox_factory_name(i),"cube48 ShimmerClassic"))at=i;
     ts_sunvox_select(c,at);
 }
 int ts_sunvox_import(TsSunVoxControls *c,const char *path) {

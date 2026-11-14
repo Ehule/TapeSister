@@ -12,8 +12,9 @@ Deleting the selected board returns the editor to P1.
 
 ## Using SunVox
 
-Cycle a slot's type to SUNVOX to open the existing factory/custom-patch picker.
-EDIT SUNVOX reopens it. The three quick controls show the patch's first three
+Cycle a slot's type to SUNVOX, then click EDIT SUNVOX to choose an effect.
+Cycling never opens the picker automatically. The Standard effects category
+contains SunVox's 20 built-in effects alongside the 235 factory patches. The three quick controls show the patch's first three
 parameters; the full editor exposes all available controls, category/search,
 file browsing, dropping a custom `.sunsynth`, and the 64/256/1024-frame setting.
 P1 retains its PRE/head/POST placements. Canvas board slots are serial; patch
@@ -34,7 +35,8 @@ An unsuccessful preparation retains the committed board.
 - Reordering children retains their processors and histories. Replacing a
   child prepares and fades only that child; unaffected delays/reverbs retain
   their tails. Rapid topology edits wait for the preceding replacement to
-  finish; parameter edits can continue during the transition.
+  finish; parameter edits can continue during the transition. Dormant and
+  unrouted boards retire their pending replacements without advancing DSP.
 - Projects and undo/redo store each board, child identity and SunVox controls.
   Custom patch bytes are embedded, so the source file need not remain present.
   Project state version 51 and preset version 27 continue loading older files.
@@ -62,6 +64,9 @@ native children, independent histories, suspension, scalar/block/in-place
 parity, 20 serial SunVox children at mixed quanta, dry alignment during quantum
 changes, embedded custom assets, P1 SunVox sends, preserved delay tails after
 child replacement/reordering, and child profile publication/reset.
+
+Every P1–P17 tab is cycled through all effect types; the engine regression also
+cycles all independent boards while active, sleeping and unrouted.
 
 The SDL controller regression covers tab paging and scaled input, independent
 edits and undo/redo, mouse/keyboard removal confirmation, stale identities,

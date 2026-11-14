@@ -1,6 +1,6 @@
 # SunVox effects in TapeSister
 
-TapeSister includes the SunVox DSP engine and the complete pinned bank of 235
+TapeSister includes the SunVox DSP engine, its 20 standard effects, and the complete pinned bank of 235
 loadable effects. Installing the SunVox application is unnecessary.
 
 ## Using a patch
@@ -74,10 +74,18 @@ Python 3 to generate the embedded factory bank. See
 [provenance and licenses](../third_party/sunvox/PROVENANCE.md) and the
 [per-patch manifest](../third_party/sunvox/EFFECTS.tsv).
 
-`tapesister_sunvox_tests` checks all 235 patches, stereo input, instance isolation,
+`tapesister_sunvox_tests` checks all 235 patches and 20 standard effects, stereo input, instance isolation,
 controller changes and resets, five sample rates, fixed host delay, Matrix
 routing, bypass, replacement, project recall and truncated custom-patch rejection.
 The separate `sunvox_project_write`/`sunvox_project_read` tests verify recall in a
 fresh process. The FX Canvas controller test covers the browser, search, shared
 Matrix identity, control edits and undo/redo. These are part of the Linux and
 Windows PR baseline.
+
+The **Standard effects** category offers Amplifier, Compressor, DC Blocker, Delay,
+Distortion, Echo, EQ, FFT, Filter, Filter Pro, Flanger, LFO, Loop, Modulator,
+Pitch shifter, Reverb, Smooth, Vocal filter, Vibrato and WaveShaper. These use the
+same per-instance controls, buffering, project recall and MIDI paths as factory
+patches. Synthesizers and miscellaneous note/control modules are not effects in
+this catalog. In a pedalboard, selecting SUNVOX leaves the board visible; click
+**EDIT SUNVOX** to select the module or patch.

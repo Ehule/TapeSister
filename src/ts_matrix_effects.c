@@ -105,7 +105,16 @@ void ts_matrix_effects_init(TsMatrixEffects *f)
     memset(f,0,sizeof(*f));for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i){atomic_init(&f->remaining[i],0);f->activity[i]=1;}
 }
 void ts_matrix_effects_suspend(TsMatrixEffects *f,unsigned mask)
-{f->suspended=mask;}
+{
+    /* A dormant/unrouted board cannot finish its child replacement fade by
+       rendering. Retire only the discarded children; keep current DSP history.
+       The UI detaches/frees retired engines under the usual device exclusion. */
+    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)if(!(f->rendered&(1u<<i))) {
+        if(f->current[i])ts_pedalboard_finish_edits(f->current[i]->board);
+        atomic_store_explicit(&f->remaining[i],0,memory_order_relaxed);f->fading&=~(1u<<i);
+    }
+    f->rendered=0;f->suspended=mask;
+}
 static int effect_asleep(const TsMatrixEffects *f,int i)
 {return (f->suspended&(1u<<i)) && f->activity[i]<=0;}
 static float effect_activity(TsMatrixEffects *f,int i)
@@ -254,6 +263,7 @@ TsStereoFrame ts_matrix_effects_process(TsMatrixEffects *f,int i,TsStereoFrame i
 {
     if(i<0 || i>=TS_MATRIX_EFFECT_CAPACITY)return (TsStereoFrame){0,0};
     if(effect_asleep(f,i))return (TsStereoFrame){0,0};
+    f->rendered|=1u<<i;
     uint64_t started=ts_profile_effect_begin(i);
     unsigned remaining=atomic_load_explicit(&f->remaining[i],memory_order_relaxed);
     TsStereoFrame next=node_process(f,i,f->current[i],in,key,connected,remaining!=0);
@@ -294,6 +304,7 @@ void ts_matrix_effects_process_span(TsMatrixEffects *f,int i,
        preserving SDK-global random state and the existing worker policy. */
     TsMatrixEffectNode *n=f->current[i];
     if(effect_asleep(f,i)){memset(out,0,frames*sizeof(*out));return;}
+    if(frames)f->rendered|=1u<<i;
     if(f->activity[i]<1 || (f->suspended&(1u<<i))) {
         for(unsigned j=0;j<frames;++j)out[j]=ts_matrix_effects_process(f,i,in[j],key[j],connected);
         return;

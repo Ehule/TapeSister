@@ -50,12 +50,12 @@ int main(int argc,char **argv)
     ts_sister_runtime_init(&audio.sister);audio.output_rate=48000;audio.output_device_channels=2;
     ts_sister_ui_model_init(&sister.model,&ui.config);sister.model.parameters=audio.sister.parameters;
     static TsMatrixControls c;c=audio.sister.matrix.controls;c.enabled=1;
-    for(int i=0;i<10;++i){assert(ts_matrix_effect_add(&c,TS_MATRIX_FX_PEDALBOARD)==i);c.effect[i].board.slot[0].type=TS_SISTER_FX_TRANSIENT;}
+    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i){assert(ts_matrix_effect_add(&c,TS_MATRIX_FX_PEDALBOARD)==i);c.effect[i].board.slot[0].type=TS_SISTER_FX_TRANSIENT;}
     assert(ts_matrix_effects_restore(&audio.sister.matrix_effects,&c,48000));assert(ts_matrix_set(&audio.sister.matrix,&c,48000));
     matrix_window.controls=ui.config.matrix=c;matrix_window.layout=&audio.sister.matrix_layout;mx_bind_mosaic(&ui,&pages);
     TsSisterFxControls shared=audio.sister.parameters.fx;
     sister_board_open(c.effect[0].id);sister_board_sync(&audio,&ui,&sister);
-    assert(sister.board_id==c.effect[0].id && sister.model.board_selected==1 && sister.model.board_count==11);
+    assert(sister.board_id==c.effect[0].id && sister.model.board_selected==1 && sister.model.board_count==17);
     click(190,55);
     float edited=audio.sister.matrix.controls.effect[0].board.slot[0].gain_db;
     assert(edited!=0 && audio.sister.matrix.controls.effect[1].board.slot[0].gain_db==0);
@@ -116,11 +116,12 @@ int main(int argc,char **argv)
     assert(audio.sister.matrix.controls.effect[1].board.slot[3].gain_db==0);
     float pickup;assert(sister_board_midi_value(target,&ui,&sister,&pickup) && fabsf(pickup-.9f)<1e-5f);
     sister_board_open(c.effect[0].id);sister_board_sync(&audio,&ui,&sister);
-    /* The native picker cycle reaches SunVox, opens the shared editor, and
+    /* The native picker cycle reaches SunVox without opening the shared editor, and
        edits only this child. P1 and neighboring boards retain their controls. */
     matrix_window.controls=audio.sister.matrix.controls;
     matrix_window.controls.effect[0].board.slot[0].type=TS_SISTER_FX_RESONATOR;
     mx_commit_controls(0,&audio,&ui);settle();click(100,52);
+    assert(!sunvox_editor.node && !sunvox_editor.child);click(360,77);
     assert(sunvox_editor.child==audio.sister.matrix.controls.effect[0].board.slot[0].id && sunvox_editor.node==c.effect[0].id);
     assert(svfx_controls() && audio.sister.matrix.controls.effect[0].board.slot[0].type==TS_SISTER_FX_SUNVOX);
     svfx_controls()->value[0]=12000;svfx_commit(0,&audio,&ui);settle();
@@ -151,6 +152,7 @@ int main(int argc,char **argv)
     sister.model.fx_scroll=0;sister.model.fx_remove_confirmation=0;
     sister.model.parameters.fx.slot[0].type=TS_SISTER_FX_RESONATOR;
     assert(sister_board_publish(0,&audio,&ui,&sister));click(100,52);
+    assert(!sunvox_editor.node && !sunvox_editor.child);click(360,77);
     assert(!sunvox_editor.node && sunvox_editor.child && svfx_controls());
     svfx_controls()->value[0]=10000;svfx_commit(0,&audio,&ui);assert(audio.sister.parameters.fx.slot[0].sunvox.value[0]==10000);
     svfx_back();sister_board_sync(&audio,&ui,&sister);
@@ -168,6 +170,19 @@ int main(int argc,char **argv)
     assert(matrix_window.controls.effect[0].id!=old);mx_commit_controls(0,&audio,&ui);settle();
     assert(sister.board_id==0 && sister.model.board_selected==0);
     assert(!memcmp(&shared,&audio.sister.parameters.fx,sizeof(shared)));
+    /* Exercise the actual click handler on P1 and every independent P tab. */
+    for(int board=0;board<=TS_MATRIX_EFFECT_CAPACITY;++board) {
+        uint32_t id=board?audio.sister.matrix.controls.effect[board-1].id:0;
+        sister_board_open(id);sister_board_sync(&audio,&ui,&sister);sister.model.fx_scroll=0;
+        for(int step=0;step<TS_SISTER_FX_TYPE_COUNT;++step) {
+            int previous=sister_board_view(&sister)->parameters.fx.slot[0].type;
+            click(100,52);
+            const TsSisterFxSlotControls *slot=&sister_board_view(&sister)->parameters.fx.slot[0];
+            assert(slot->type==(previous+1)%TS_SISTER_FX_TYPE_COUNT);
+            if(!previous)assert(slot->mix==0);
+            assert(!sunvox_editor.node && !sunvox_editor.child);
+        }
+    }
     sister_window_hide(&sister);matrix_history_clear();ts_sister_runtime_disable(&audio.sister);
     ts_sample_pages_free(&pages);ts_instrument_free(&bank);SDL_Quit();
     puts("pedalboard tabs: isolation, undo/redo, 20 slots, confirmation, paging, scaling and stale IDs passed");return 0;

@@ -1,10 +1,12 @@
 /* The shared FX page is a view. Only explicit edits publish to a stable board
    ID; selecting P1/P2 never changes the shared Sister parameter bank. */
 static uint32_t board_requested;
-static int board_request_pending;
+static int board_request_pending,board_preserve_origin;
 static MatrixSnapshot *board_before;
 static void sister_board_open(uint32_t id)
-{ board_requested=id;board_request_pending=1; }
+{ board_requested=id;board_request_pending=1;board_preserve_origin=0; }
+static void sister_board_return(uint32_t id)
+{ sister_board_open(id);board_preserve_origin=1; }
 static int sister_board_slot(const TsMatrixControls *c,uint32_t id)
 {
     for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)
@@ -61,7 +63,7 @@ static void sister_board_sync(AudioState *audio,TsUiState *ui,SisterWindow *s)
         s->rendered_model_valid=0;
     }
     s->model.board_tab_first=SDL_clamp(s->model.board_tab_first,0,((count-1)/8)*8);
-    if(show_requested && sister_window_ensure(s,&ui->config))sister_window_show(s,&ui->palette);
+    if(show_requested && sister_window_ensure(s,&ui->config)){Uint32 origin=s->return_window_id;sister_window_show(s,&ui->palette);if(board_preserve_origin)s->return_window_id=origin;}
 }
 static int sister_board_publish(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,SisterWindow *s)
 {
@@ -249,7 +251,7 @@ static int sister_board_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioS
             s->model.fx_remove_confirmation=0;break;
         case TS_SISTER_UI_ACTION_FX_REMOVE_CANCEL:s->model.fx_remove_confirmation=0;break;
         case TS_SISTER_UI_ACTION_FX_SLOT_TYPE:
-            if(row>=0 && row<fx->slot_count){sister_fx_slot_select_type(&fx->slot[row],(fx->slot[row].type+1)%TS_SISTER_FX_TYPE_COUNT);character_filter_hide();changed=1;if(fx->slot[row].type==TS_SISTER_FX_SUNVOX)open_sunvox=row;}break;
+            if(row>=0 && row<fx->slot_count){sister_fx_slot_select_type(&fx->slot[row],(fx->slot[row].type+1)%TS_SISTER_FX_TYPE_COUNT);character_filter_hide();changed=1;}break;
         case TS_SISTER_UI_ACTION_FX_SLOT_TOGGLE:
             if(row>=0 && row<fx->slot_count){fx->slot[row].enabled=!fx->slot[row].enabled;changed=1;}break;
         case TS_SISTER_UI_ACTION_FX_TOGGLE:fx->enabled=!fx->enabled;changed=1;break;

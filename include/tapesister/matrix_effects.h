@@ -8,7 +8,7 @@ typedef struct {
     TsMatrixEffectNode *current[TS_MATRIX_EFFECT_CAPACITY],*previous[TS_MATRIX_EFFECT_CAPACITY];
     atomic_uint remaining[TS_MATRIX_EFFECT_CAPACITY];
     unsigned total[TS_MATRIX_EFFECT_CAPACITY],fading,rate;
-    unsigned suspended;
+    unsigned suspended, rendered;
     float activity[TS_MATRIX_EFFECT_CAPACITY];
     /* At most current + retiring engine per slot. No callback allocation. */
     struct {TsMatrixEffectNode *node;int slot,transitioning;} jobs[2*TS_MATRIX_EFFECT_CAPACITY];
@@ -34,6 +34,8 @@ int ts_matrix_effects_restore(TsMatrixEffects *fx,const TsMatrixControls *c,unsi
 void ts_matrix_effects_tick(TsMatrixEffects *fx);
 /* Runtime ownership, independent of bypass/mix. Five-ms output ramps; settled
    suspended slots retain history without advancing their DSP engines. */
+/* Call once at the beginning of each output block, even with no graph routes.
+   Retires edits on nodes that did not render in the preceding block. */
 void ts_matrix_effects_suspend(TsMatrixEffects *fx,unsigned mask);
 /* Bracket one graph sample. Buffered jobs complete before the next sample;
    unbuffered processors and all feedback edges retain sample order. */
