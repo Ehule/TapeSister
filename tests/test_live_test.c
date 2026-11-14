@@ -2,6 +2,9 @@
 #undef NDEBUG
 #endif
 #define SDL_MAIN_HANDLED
+static void live_log_writer_phase(int phase);
+#define TS_SESSION_LOG_WRITER_PHASE(phase) live_log_writer_phase(phase)
+#include "../src/ts_session_log.c"
 #define TS_LIVE_TEST_HARNESS
 #define main tapesister_application_main
 #include "../src/main_sdl.c"
@@ -16,6 +19,28 @@ static PortalController portal;
 static SisterWindow sister;
 static TransformController transform;
 static TsMosaicSource source;
+/* The controller replays minutes of virtual time in seconds. Park the real
+   writer after each drain so its nonblocking event gate cannot collide with a
+   synthetic burst. The --run integration mode leaves this hook disabled. */
+static SDL_sem *live_log_reached,*live_log_release;
+static atomic_int live_log_controlled;
+static void live_log_writer_phase(int phase)
+{
+    if(phase==2 && atomic_load(&live_log_controlled)) {
+        assert(!SDL_SemPost(live_log_reached));
+        assert(!SDL_SemWaitTimeout(live_log_release,10000));
+    }
+}
+static void live_log_drain(void)
+{
+    assert(!SDL_SemPost(live_log_release));
+    assert(!SDL_SemWaitTimeout(live_log_reached,10000));
+}
+static void poll_at(SDL_Window *window,Uint64 now)
+{
+    live_log_drain();
+    live_test_poll(window,0,&a,&u,&pages,&bank,&mosaic,&portal,&sister,&transform,now);
+}
 int main(int argc,char **argv)
 {
     /* Optional full application integration run, normal device and UI loop.
@@ -63,22 +88,25 @@ int main(int argc,char **argv)
     live_test_loaded(0,&a,&u,&pages,u.project_path);
     assert(live_test.state==LT_OFF && !live_test.touched && u.mosaic->time==0);
     live_test_transport(&u,1);assert(live_test.state==LT_OFF);
-    assert(ts_session_log_start(NULL,0));SDL_Delay(30);
+    live_log_reached=SDL_CreateSemaphore(0);live_log_release=SDL_CreateSemaphore(0);
+    assert(live_log_reached && live_log_release);atomic_store(&live_log_controlled,1);
+    assert(ts_session_log_start(NULL,0));
+    assert(!SDL_SemWaitTimeout(live_log_reached,10000));
     a.sister.matrix.controls=u.config.matrix;
     u.config.diagnostic_live_test=1;live_test_loaded(0,&a,&u,&pages,u.project_path);
     assert(live_test.state==LT_ARMED && live_test_save_blocked() && !u.mosaic->playing && u.mosaic->time==300);
     assert(live_test.count==240 && !strcmp(live_test_scenario(),"tree04-live-v1") && live_test.steps[live_test.count-1].ms==216000);
     for(int i=1;i<live_test.count;++i)assert(live_test.steps[i].ms>live_test.steps[i-1].ms);
-    live_test_poll(window,0,&a,&u,&pages,&bank,&mosaic,&portal,&sister,&transform,SDL_GetPerformanceCounter());
+    poll_at(window,SDL_GetPerformanceCounter());
     assert(live_test.state==LT_ARMED && !live_test.next);
     /* A press of the real transport arms the monotonic schedule. */
     ts_profile_enable(1);
     mosaic_transport(0,&a,&u,0);assert(live_test.state==LT_PENDING && u.mosaic->playing && !ts_profile_enabled());
-    live_test_poll(window,0,&a,&u,&pages,&bank,&mosaic,&portal,&sister,&transform,live_test.started);
+    poll_at(window,live_test.started);
     assert(live_test.state==LT_RUNNING && live_test.next==1);
     Uint64 origin=live_test.started;
     unsigned scheduled=live_test.steps[1].ms;
-    live_test_poll(window,0,&a,&u,&pages,&bank,&mosaic,&portal,&sister,&transform,
+    poll_at(window,
         origin+(Uint64)((scheduled+25)*live_test.frequency/1000));
     assert(live_test.next==2 && live_test.started==origin && live_test.steps[1].ms==scheduled);
     mosaic_sources_refresh(&u,&bank,&mosaic);
@@ -88,6 +116,7 @@ int main(int argc,char **argv)
     mute.value=0;assert(live_test_action(&mute,window,0,&a,&u,&pages,&bank,&mosaic,&portal,&sister,&transform));
     assert(live_test_action(&solo,window,0,&a,&u,&pages,&bank,&mosaic,&portal,&sister,&transform));
     solo.value=0;assert(live_test_action(&solo,window,0,&a,&u,&pages,&bank,&mosaic,&portal,&sister,&transform));
+    live_log_drain();
     SDL_Event escape=live_test_key(window,SDLK_ESCAPE,KMOD_NONE);
     assert(live_test_input(&escape,0,&a,&u) && live_test.state==LT_ABORTED && !u.mosaic->playing && ts_profile_enabled());
     mosaic_transport(0,&a,&u,0);assert(live_test.state==LT_ABORTED);mosaic_transport(0,&a,&u,1);
@@ -96,28 +125,25 @@ int main(int argc,char **argv)
     assert(strstr(error,"temporary"));
     live_test.state=LT_RUNNING;live_test.generation=a.audio_health_generation;
     ++a.audio_health_generation;
-    live_test_poll(window,0,&a,&u,&pages,&bank,&mosaic,&portal,&sister,&transform,SDL_GetPerformanceCounter());
+    poll_at(window,SDL_GetPerformanceCounter());
     assert(live_test.state==LT_ABORTED);
     /* The second mode starts Keter at zero through the real Gallery controller.
        It never edits parameters or windows during the measurement. */
+    live_log_drain();
     u.config.diagnostic_live_test=2;
     live_test_loaded(0,&a,&u,&pages,u.project_path);
     assert(live_test.state==LT_PREPARING && live_test.duration_ms==608000);
     assert(live_test.count==22 && !strcmp(live_test_scenario(),"tree04-keter-full-v1"));
     for(int i=0;i<live_test.count-1;++i)assert(live_test.steps[i].action==LT_CHECK);
     assert(live_test.steps[live_test.count-1].action==LT_END);
-    live_test_poll(window,0,&a,&u,&pages,&bank,&mosaic,&portal,&sister,&transform,SDL_GetPerformanceCounter());
+    poll_at(window,SDL_GetPerformanceCounter());
     assert(live_test.state==LT_ARMED && pages.gallery->active==0 && pages.mosaic==u.mosaic && a.mosaic==u.mosaic);
     assert(u.mosaic->time==0 && !u.mosaic->playing && pages.gallery->outgoing<0);
     mosaic_transport(0,&a,&u,0);assert(live_test.state==LT_PENDING && u.mosaic->playing);
     origin=live_test.started;
     for(int step=0;step<live_test.count;++step) {
         unsigned ms=live_test.steps[step].ms;
-        /* Virtual time jumps 30 seconds, but the real log writer still wakes
-           every 25 ms. Let it drain between steps; do not defeat the production
-           dropped-record abort by flooding its 32-event queue in this test. */
-        SDL_Delay(50);
-        live_test_poll(window,0,&a,&u,&pages,&bank,&mosaic,&portal,&sister,&transform,
+        poll_at(window,
             origin+(Uint64)ceil(ms*live_test.frequency/1000.0));
         if(live_test.next!=step+1) {
             TsSessionLogStatus failed;ts_session_log_status(&failed);
@@ -134,29 +160,27 @@ int main(int argc,char **argv)
     live_test_loaded(0,&a,&u,&pages,u.project_path);
     assert(live_test.state==LT_PREPARING && live_test.count==22);
     assert(!strcmp(live_test_scenario(),"tree04-keter-profile-v1"));
-    live_test_poll(window,0,&a,&u,&pages,&bank,&mosaic,&portal,&sister,&transform,SDL_GetPerformanceCounter());
+    poll_at(window,SDL_GetPerformanceCounter());
     assert(strstr(u.status,"KETER PROFILE TEST ARMED") && u.mosaic->time==0);
     mosaic_transport(0,&a,&u,0);assert(ts_profile_enabled());
-    live_test_poll(window,0,&a,&u,&pages,&bank,&mosaic,&portal,&sister,&transform,live_test.started);
+    poll_at(window,live_test.started);
     ts_profile_lane_begin(1);
     uint64_t timer=ts_profile_begin(TS_PROF_AUDIO);SDL_Delay(1);
     ts_profile_end(TS_PROF_AUDIO,timer);ts_profile_lane_end(1);
-    SDL_Delay(50);
-    live_test_poll(window,0,&a,&u,&pages,&bank,&mosaic,&portal,&sister,&transform,
+    poll_at(window,
         live_test.started+30*live_test.frequency);
     assert(live_test.next==2 && u.mosaic->playing && u.mosaic->time==0);
     for(int step=live_test.next;step<live_test.count;++step) {
-        SDL_Delay(50);
-        live_test_poll(window,0,&a,&u,&pages,&bank,&mosaic,&portal,&sister,&transform,
+        poll_at(window,
             live_test.started+(Uint64)ceil(live_test.steps[step].ms*live_test.frequency/1000.0));
         assert(live_test.next==step+1);
     }
     assert(live_test.state==LT_DONE && !u.mosaic->playing && !ts_profile_enabled());
     pages.gallery->active=2;a.mosaic=u.mosaic=pages.mosaic=ts_gallery_active(pages.gallery);
     live_test_loaded(0,&a,&u,&pages,u.project_path);
-    live_test_poll(window,0,&a,&u,&pages,&bank,&mosaic,&portal,&sister,&transform,SDL_GetPerformanceCounter());
+    poll_at(window,SDL_GetPerformanceCounter());
     mosaic_transport(0,&a,&u,0);assert(ts_profile_enabled());
-    SDL_Delay(50);
+    live_log_drain();
     assert(live_test_input(&escape,0,&a,&u) && live_test.state==LT_ABORTED && !ts_profile_enabled());
     /* The new composition uses option 1, ten canvases, interval profiling,
        and the real Space/Backspace/seek controllers, while legacy schedules stay fixed. */
@@ -182,20 +206,37 @@ int main(int argc,char **argv)
     }
     for(int c=0;c<10;++c)assert(visited[c]);
     assert(actions[LT_BACKSPACE]>=30 && actions[LT_SPACE]>=30 && actions[LT_ASSERT]>=60);
-    live_test_poll(window,0,&a,&u,&pages,&bank,&mosaic,&portal,&sister,&transform,SDL_GetPerformanceCounter());
+    poll_at(window,SDL_GetPerformanceCounter());
     assert(live_test.state==LT_ARMED && pages.gallery->active==0 && u.mosaic->time==0);
     mosaic_transport(0,&a,&u,0);assert(ts_profile_enabled());
     LiveTestStep steps[]={ {0,LT_SPACE,0,0},{0,LT_ASSERT,1,0},{0,LT_BACKSPACE,0,0},{0,LT_ASSERT,2,0},
         {0,LT_BACKSPACE,1,0},{0,LT_ASSERT,3,0},{0,LT_SPACE,1,0},{0,LT_SEEK,0,.5f},{0,LT_SEEK,1,.35f} };
-    for(size_t i=0;i<sizeof(steps)/sizeof(*steps);++i){SDL_Delay(30);assert(live_test_action(&steps[i],window,0,&a,&u,&pages,&bank,&mosaic,&portal,&sister,&transform));}
+    for(size_t i=0;i<sizeof(steps)/sizeof(*steps);++i){live_log_drain();assert(live_test_action(&steps[i],window,0,&a,&u,&pages,&bank,&mosaic,&portal,&sister,&transform));}
     assert(u.mosaic->time==210 && !a.engine_stopped && u.mosaic->playing);
     assert(live_test_input(&escape,0,&a,&u) && live_test.state==LT_ABORTED && !ts_profile_enabled());
+    live_log_drain();
+    TsSessionLogStatus before_loss;ts_session_log_status(&before_loss);
+    assert(!before_loss.dropped_audio && !before_loss.dropped_events);
+    /* A real dropped record must still abort: deliberately overflow the same
+       bounded queue while the writer is parked, then run the next checkpoint. */
+    live_test.state=LT_ARMED;mosaic_transport(0,&a,&u,0);
+    poll_at(window,live_test.started);
+    assert(live_test.state==LT_RUNNING);
+    live_log_drain();
+    for(int i=0;i<EVENT_CAP+1;++i)ts_session_log_event("forced_overflow","index=%d",i);
+    TsSessionLogStatus overflow;ts_session_log_status(&overflow);
+    assert(overflow.dropped_events==1);
+    poll_at(window,live_test.started+(Uint64)ceil(live_test.steps[live_test.next].ms*live_test.frequency/1000.0));
+    assert(live_test.state==LT_ABORTED && !u.mosaic->playing && !ts_profile_enabled());
+    atomic_store(&live_log_controlled,0);assert(!SDL_SemPost(live_log_release));
     ts_session_log_stop();
+    SDL_DestroySemaphore(live_log_reached);SDL_DestroySemaphore(live_log_release);
     TsSessionLogStatus log;ts_session_log_status(&log);
     assert(log.export_result==2 && log.export_serial>=1);
     FILE *saved=fopen(log.export_path,"rb");assert(saved);
-    char line[1024];int found_abort=0,found_start=0,found_keter=0,found_complete=0,found_profile=0,found_interval=0;
+    char line[1024];int found_abort=0,found_start=0,found_keter=0,found_complete=0,found_profile=0,found_interval=0,found_incomplete=0;
     while(fgets(line,sizeof(line),saved)) {
+        found_incomplete|=strstr(line,"reason=incomplete_telemetry")!=NULL;
         found_profile|=strstr(line,"scenario=tree04-keter-profile-v1")!=NULL;
         found_interval|=strstr(line,"\"type\":\"live_test_profile\"")!=NULL;
         found_abort|=strstr(line,"\"type\":\"live_test_abort\"")!=NULL;
@@ -203,7 +244,7 @@ int main(int argc,char **argv)
         found_keter|=strstr(line,"scenario=tree04-keter-full-v1")!=NULL;
         found_complete|=strstr(line,"\"type\":\"live_test_complete\"")!=NULL;
     }
-    fclose(saved);assert(found_abort && found_start && found_keter && found_complete && found_profile && found_interval);
+    fclose(saved);assert(found_abort && found_start && found_keter && found_complete && found_profile && found_interval && found_incomplete);
     TsMosaic *root=ts_sample_pages_mosaic_root(&pages);ts_sample_pages_free(&pages);ts_mosaic_free(root);
     ts_sister_runtime_free(&a.sister);ts_instrument_free(&bank);
     SDL_DestroyWindow(window);SDL_Quit();
