@@ -440,6 +440,15 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
         else if (contains(x,y,332,208,132,22)) hit.action = TS_SISTER_UI_ACTION_FX_REMOVE_CANCEL;
         return hit;
     }
+    if (model && model->fx_page == 1 && contains(x,y,0,0,436,36)) {
+        int count=model->board_count>0?model->board_count:1;
+        if(contains(x,y,10,8,26,22)){hit.action=TS_SISTER_UI_ACTION_BOARD_TABS;hit.index=-8;}
+        else if(contains(x,y,404,8,26,22)){hit.action=TS_SISTER_UI_ACTION_BOARD_TABS;hit.index=8;}
+        else for(int i=0;i<8;++i)if(contains(x,y,40+i*45,8,43,22) && model->board_tab_first+i<count){
+            hit.action=TS_SISTER_UI_ACTION_BOARD_SELECT;hit.index=model->board_tab_first+i;break;
+        }
+        return hit;
+    }
     for (int control = 0; control < 5; ++control) {
         static const int left[5] = {TS_SISTER_UI_POWER_X, 152, 194, 236, 284};
         static const int width[5] = {TS_SISTER_UI_POWER_W, 38, 38, 44, 50};
@@ -682,6 +691,7 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
                     }
                 }
             }
+            if(model->parameters.fx.slot[row].type==TS_SISTER_FX_SUNVOX && contains(x,y,330,top+22,80,18)){hit.action=TS_SISTER_UI_ACTION_SUNVOX_EDIT;hit.index=row;return hit;}
             if(model->parameters.fx.slot[row].type==TS_SISTER_FX_FILTER && contains(x,y,330,top+22,80,18)){hit.action=TS_SISTER_UI_ACTION_FILTER_EDIT;hit.index=row;return hit;}
             if(model->parameters.fx.slot[row].type==TS_SISTER_FX_TRANSIENT && contains(x,y,320,top+22,66,18)) {
                 hit.action=TS_SISTER_UI_ACTION_TRANSIENT_POWER;hit.index=row;return hit;

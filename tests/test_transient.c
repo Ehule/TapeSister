@@ -101,7 +101,7 @@ static void pedalboard(void)
 }
 static void persistence(void)
 {
-    TsSisterProjectState a,b;char error[200];int present;
+    static TsSisterProjectState a,b;char error[200];int present;
     ts_sister_project_state_init(&a,48000);a.parameters.fx=fifth();a.parameters.fx.slot[4].parameter_a=.8f;
     a.matrix.board_insert=1;a.parameter_locks_high=UINT64_C(1)<<(TS_SISTER_UI_PARAM_SLOT5_A-64);
     assert(ts_sister_project_state_save_file(&a,"transient-state.ini",error,sizeof(error)));
@@ -131,7 +131,7 @@ static void persistence(void)
     fclose(f);fclose(old);ts_sister_preset_bank_init(&copy,48000);
     assert(ts_sister_preset_load(&copy,"transient-old-presets.ini",48000,error,sizeof(error)));
     assert(copy.entries[copy.count-1].parameters.fx.slot[4].type==TS_SISTER_FX_EMPTY);
-    TsConfig config,restored;ts_config_init(&config);config.matrix=a.matrix;
+    static TsConfig config,restored;ts_config_init(&config);config.matrix=a.matrix;
     assert(ts_config_save(&config,"transient-config.ini",error,sizeof(error)));
     assert(ts_config_load(&restored,"transient-config.ini",error,sizeof(error)) && restored.matrix.board_insert);
     static TsSisterRuntime r;ts_sister_runtime_init(&r);assert(ts_sister_project_state_apply(&a,&r,NULL));
@@ -261,7 +261,7 @@ static void extreme_states(void)
     assert(loaded.parameters.fx.slot[4].transient_states.seconds==2 && loaded.parameters.fx.slot[4].transient_states.captured==3);
     assert(!loaded.parameters.fx.slot[4].transient_states.recall_serial && !loaded.parameters.fx.slot[4].transient_states.editing);
     assert(loaded.matrix.effect[instance].transient_power==3 && loaded.matrix.effect[instance].transient_states.power[1]==3);
-    TsConfig config,restored;ts_config_init(&config);config.matrix=project.matrix;
+    static TsConfig config,restored;ts_config_init(&config);config.matrix=project.matrix;
     assert(ts_config_save(&config,"transient-extreme-config.ini",error,sizeof(error)));
     assert(ts_config_load(&restored,"transient-extreme-config.ini",error,sizeof(error)));
     assert(restored.matrix.effect[instance].transient_power==3 && restored.matrix.effect[instance].transient_states.power[0]==2);

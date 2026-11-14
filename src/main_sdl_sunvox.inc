@@ -6,18 +6,50 @@ static int svfx_slot(void)
            matrix_window.controls.effect[i].type==TS_MATRIX_FX_SUNVOX)return i;
     return -1;
 }
+static TsSunVoxControls *svfx_controls(void)
+{
+    if(!sunvox_editor.child){int at=svfx_slot();return at<0?NULL:&matrix_window.controls.effect[at].sunvox;}
+    TsSisterFxSlotControls *slots=NULL;int count=0;
+    if(!sunvox_editor.node){slots=matrix_window.fixed.parameters.fx.slot;count=matrix_window.fixed.parameters.fx.slot_count;}
+    else for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i) {
+        TsMatrixEffectControls *c=&matrix_window.controls.effect[i];
+        if(c->id==sunvox_editor.node && c->type==TS_MATRIX_FX_PEDALBOARD){slots=c->board.slot;count=c->board.count;break;}
+    }
+    for(int i=0;i<count;++i)if(slots[i].id==sunvox_editor.child && slots[i].type==TS_SISTER_FX_SUNVOX)return &slots[i].sunvox;
+    return NULL;
+}
+static void svfx_commit(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui)
+{
+    if(!sunvox_editor.child || sunvox_editor.node){mx_commit_controls(device,audio,ui);return;}
+    TsSisterParameters next=audio->sister.parameters;next.fx=matrix_window.fixed.parameters.fx;
+    TsSisterSunVoxPlan plan;
+    if(sister_stage_fx(device,audio,&next.fx,&plan)) {
+        if(device)SDL_LockAudioDevice(device);
+        ts_sister_sunvox_commit(&audio->sister.post_fx,&plan);
+        ts_sister_runtime_set_parameters(&audio->sister,&next);
+        ts_sister_runtime_mark_selected_preset_modified(&audio->sister);
+        if(device)SDL_UnlockAudioDevice(device);
+        ts_sister_sunvox_discard(&plan);ui->project_modified=1;
+    }
+    matrix_window.fixed.parameters=audio->sister.parameters;
+}
 static void svfx_close(void)
 {
     ts_browser_close(&sunvox_files);
-    sunvox_editor.node=0;sunvox_editor.focus=0;matrix_window.drag=0;
+    sunvox_editor.node=sunvox_editor.child=0;sunvox_editor.sister=NULL;sunvox_editor.focus=0;matrix_window.drag=0;
     SDL_StopTextInput();
 }
 static void svfx_open(uint32_t id)
 {
     ts_browser_close(&sunvox_files);
-    sunvox_editor.node=id;sunvox_editor.scroll=0;sunvox_editor.page=0;
+    sunvox_editor.node=id;sunvox_editor.child=0;sunvox_editor.sister=NULL;sunvox_editor.scroll=0;sunvox_editor.page=0;
     sunvox_editor.focus=0;sunvox_editor.status[0]=0;matrix_window.drag=0;
     SDL_StopTextInput();
+}
+static void svfx_back(void)
+{
+    if(sunvox_editor.child)sister_board_return(sunvox_editor.node);
+    svfx_close();
 }
 static void svfx_browse(TsUiState *ui)
 {
@@ -67,7 +99,7 @@ static int svfx_catalog(int *matches,const char **categories,int *category_count
         if(j==nc && nc<32)categories[nc++]=cat;
     }
     sunvox_editor.category=SDL_clamp(sunvox_editor.category,0,nc-1);
-    for(int i=0;i<ts_sunvox_factory_count();++i)
+    for(int i=0;i<ts_sunvox_factory_count() && n<512;++i)
         if((!sunvox_editor.category || !strcmp(ts_sunvox_factory_category(i),categories[sunvox_editor.category])) &&
            (svfx_contains(ts_sunvox_factory_name(i),sunvox_editor.filter) || svfx_contains(ts_sunvox_factory_category(i),sunvox_editor.filter)))matches[n++]=i;
     sunvox_editor.scroll=SDL_clamp(sunvox_editor.scroll,0,SDL_max(0,n-14));
@@ -80,12 +112,11 @@ static float svfx_value(const TsSunVoxControls *c,int at,TsSunVoxParameter *p)
 }
 static void svfx_paint(void)
 {
-    int slot=svfx_slot();if(slot<0){svfx_close();return;}
-    const TsMatrixEffectControls *c=&matrix_window.controls.effect[slot];
-    int list[235],nc;const char *categories[32];int n=svfx_catalog(list,categories,&nc);(void)nc;
+    const TsSunVoxControls *c=svfx_controls();if(!c){svfx_close();return;}
+    int list[512],nc;const char *categories[32];int n=svfx_catalog(list,categories,&nc);(void)nc;
     char label[240];mx_rect(0,0,MATRIX_W,MATRIX_H,MX_BG);
-    mx_text(24,24,"SUNVOX / 235 FACTORY PATCHES",MX_GREEN,2);
-    mx_button(1032,18,224,"BACK TO ROUTES",0);
+    mx_text(24,24,"SUNVOX / EFFECTS + FACTORY PATCHES",MX_GREEN,2);
+    mx_button(1032,18,224,sunvox_editor.child?"BACK TO BOARD":"BACK TO ROUTES",0);
     mx_rect(16,64,580,648,MX_PANEL);mx_rect(608,64,656,648,MX_PANEL);
     mx_text(28,78,"SEARCH NAME / CATEGORY",MX_DIM,1);
     mx_rect(28,100,552,30,sunvox_editor.focus==1?MX_DIM:MX_BG);
@@ -94,24 +125,24 @@ static void svfx_paint(void)
     for(int row=0;row<14 && row+sunvox_editor.scroll<n;++row) {
         int i=list[row+sunvox_editor.scroll],y=180+row*34;
         TsSunVoxControls selected;ts_sunvox_select(&selected,i);
-        if(c->sunvox.patch==selected.patch)mx_rect(24,y-3,564,31,MX_BG);
-        fx_panel_text(30,y,546,28,ts_sunvox_factory_name(i),c->sunvox.patch==selected.patch?MX_GREEN:MX_TEXT,2,1);
+        if(c->patch==selected.patch)mx_rect(24,y-3,564,31,MX_BG);
+        fx_panel_text(30,y,546,28,ts_sunvox_factory_name(i),c->patch==selected.patch?MX_GREEN:MX_TEXT,2,1);
     }
     mx_button(28,672,110,"PREV",0);mx_button(464,672,116,"NEXT",0);
     snprintf(label,sizeof(label),"%d-%d / %d",n?sunvox_editor.scroll+1:0,SDL_min(n,sunvox_editor.scroll+14),n);
     mx_text(164,680,label,MX_DIM,2);
     if(sunvox_files.mode)svfx_files_paint();
-    fx_panel_text(626,78,616,62,ts_sunvox_name(&c->sunvox),MX_GREEN,2,2);
-    snprintf(label,sizeof(label),"%s / INSTANCE #%u",ts_sunvox_category(&c->sunvox),(unsigned)c->id);
+    fx_panel_text(626,78,616,62,ts_sunvox_name(c),MX_GREEN,2,2);
+    snprintf(label,sizeof(label),"%s / INSTANCE #%u",ts_sunvox_category(c),(unsigned)(sunvox_editor.child?sunvox_editor.child:sunvox_editor.node));
     fx_panel_text(626,137,366,28,label,MX_DIM,1,1);
-    snprintf(label,sizeof(label),"BLOCK %u",ts_sunvox_quantum(&c->sunvox));
+    snprintf(label,sizeof(label),"BLOCK %u",ts_sunvox_quantum(c));
     mx_button(1010,137,228,label,0);
-    int count=ts_sunvox_parameter_count(&c->sunvox),last=SDL_max(0,(count-1)/10);
+    int count=ts_sunvox_parameter_count(c),last=SDL_max(0,(count-1)/10);
     sunvox_editor.page=SDL_clamp(sunvox_editor.page,0,last);
     for(int row=0;row<10;++row) {
         int at=sunvox_editor.page*10+row;TsSunVoxParameter p;
-        if(!ts_sunvox_parameter(&c->sunvox,at,&p))break;
-        int y=180+row*48;float value=svfx_value(&c->sunvox,at,&p);
+        if(!ts_sunvox_parameter(c,at,&p))break;
+        int y=180+row*48;float value=svfx_value(c,at,&p);
         int raw=p.minimum+(int)lroundf(value*(p.maximum-p.minimum));
         if(p.discrete && strchr(p.unit,';')) {
             const char *option=p.unit;int at=raw-p.minimum;
@@ -129,22 +160,22 @@ static void svfx_paint(void)
     const char *path=sunvox_editor.path;size_t len=strlen(path);
     fx_panel_text(34,752,784,25,len>88?path+len-88:path,MX_TEXT,2,1);
     mx_button(836,747,150,"BROWSE",0);mx_button(998,747,240,"LOAD PATCH",0);
-    mx_button(28,792,176,c->sunvox.held?"NOTE ON":"NOTE OFF",c->sunvox.held);
+    mx_button(28,792,176,c->held?"NOTE ON":"NOTE OFF",c->held);
     mx_button(214,792,44,"-",0);mx_button(352,792,44,"+",0);
-    snprintf(label,sizeof(label),"NOTE %d",c->sunvox.note);mx_text(272,800,label,MX_TEXT,1);
+    snprintf(label,sizeof(label),"NOTE %d",c->note);mx_text(272,800,label,MX_TEXT,1);
     fx_panel_text(416,791,822,43,*sunvox_editor.status?sunvox_editor.status:
         "Drag / Shift+wheel: adjust. Right-click: reset. Note utilities need a synth inside the patch.",MX_DIM,1,2);
 }
 static void svfx_load(int factory,SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsSamplePages *pages,TsInstrument *bank)
 {
-    int slot=svfx_slot();if(slot<0 || !mx_editable())return;
+    TsSunVoxControls *c=svfx_controls();if(!c || !mx_editable())return;
     TsSunVoxControls patch;
     if(factory<0 && strspn(sunvox_editor.path," \t\r\n")==strlen(sunvox_editor.path)){svfx_browse(ui);return;}
     int ok=factory>=0?ts_sunvox_select(&patch,factory):ts_sunvox_import_ex(&patch,sunvox_editor.path,sunvox_editor.status,sizeof(sunvox_editor.status));
     if(!ok)return;
-    matrix_window.controls.effect[slot].sunvox=patch;
-    mx_commit_controls(device,audio,ui);mx_rows(pages,bank);sunvox_editor.page=0;
-    int loaded=matrix_window.controls.effect[slot].sunvox.patch==patch.patch;
+    *c=patch;
+    svfx_commit(device,audio,ui);mx_rows(pages,bank);sunvox_editor.page=0;
+    c=svfx_controls();int loaded=c && c->patch==patch.patch;
     if(loaded)ts_browser_close(&sunvox_files);
     snprintf(sunvox_editor.status,sizeof(sunvox_editor.status),"%s",loaded?
         "Patch loaded. Existing routes retained.":"Patch could not be staged; previous effect retained.");
@@ -172,8 +203,8 @@ static void svfx_file_selected(SDL_AudioDeviceID device,AudioState *audio,TsUiSt
 }
 static int svfx_event(SDL_Event *e,SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsSamplePages *pages,TsInstrument *bank)
 {
-    int slot=svfx_slot();if(slot<0){svfx_close();return 1;}
-    MatrixWindow *w=&matrix_window;TsSunVoxControls *c=&w->controls.effect[slot].sunvox;
+    TsSunVoxControls *c=svfx_controls();if(!c){svfx_back();return 1;}
+    MatrixWindow *w=&matrix_window;
     char *field=sunvox_editor.focus==1?sunvox_editor.filter:sunvox_editor.path;
     size_t size=sunvox_editor.focus==1?sizeof(sunvox_editor.filter):sizeof(sunvox_editor.path);
     if(e->type==SDL_DROPFILE) {
@@ -189,7 +220,10 @@ static int svfx_event(SDL_Event *e,SDL_AudioDeviceID device,AudioState *audio,Ts
     }
     if(e->type==SDL_KEYDOWN) {
         SDL_Keycode key=e->key.keysym.sym;
-        if(key==SDLK_ESCAPE){if(sunvox_files.mode)ts_browser_close(&sunvox_files);else svfx_close();return 1;}
+        if(sunvox_editor.sister && key==SDLK_m && (e->key.keysym.mod&KMOD_CTRL) && (e->key.keysym.mod&KMOD_SHIFT)) {
+            midi_learn_set_active(ui,sunvox_editor.sister,!ui->midi_learn_active);return 1;
+        }
+        if(key==SDLK_ESCAPE){if(sunvox_files.mode)ts_browser_close(&sunvox_files);else svfx_back();return 1;}
         if(sunvox_files.mode && !sunvox_editor.focus) {
             if(key==SDLK_RETURN)svfx_file_selected(device,audio,ui,pages,bank);
             else if(key==SDLK_BACKSPACE)ts_browser_parent(&sunvox_files);
@@ -223,7 +257,7 @@ static int svfx_event(SDL_Event *e,SDL_AudioDeviceID device,AudioState *audio,Ts
     if(left) {
         sunvox_editor.focus=!sunvox_files.mode && y>=100 && y<130 && x>=28 && x<580?1:y>=747 && y<777 && x>=28 && x<824?2:0;
         if(sunvox_editor.focus){SDL_StartTextInput();return 1;}SDL_StopTextInput();
-        if(x>=1032 && y>=18 && y<46){svfx_close();return 1;}
+        if(x>=1032 && y>=18 && y<46){svfx_back();return 1;}
     }
     if(sunvox_files.mode && x<600 && y>=64 && y<712) {
         if(wheel)ts_browser_scroll(&sunvox_files,-wheel*3);
@@ -242,7 +276,7 @@ static int svfx_event(SDL_Event *e,SDL_AudioDeviceID device,AudioState *audio,Ts
         }
         return 1;
     }
-    int list[235],nc;const char *categories[32];int n=svfx_catalog(list,categories,&nc);
+    int list[512],nc;const char *categories[32];int n=svfx_catalog(list,categories,&nc);
     if(x<600) {
         if(wheel && y>=180 && y<706)sunvox_editor.scroll=SDL_clamp(sunvox_editor.scroll-wheel*3,0,SDL_max(0,n-14));
         if(left && y>=140 && y<168){sunvox_editor.category=(sunvox_editor.category+1)%nc;sunvox_editor.scroll=0;}
@@ -254,6 +288,16 @@ static int svfx_event(SDL_Event *e,SDL_AudioDeviceID device,AudioState *audio,Ts
         else if(x>=998 && x<1238)svfx_load(-1,device,audio,ui,pages,bank);
     }
     if(left && y>=672 && y<700 && x>=626){if(x<736)--sunvox_editor.page;else if(x>=1122)++sunvox_editor.page;}
+    if(ui->midi_learn_active && sunvox_editor.child) {
+        if(left && x>=626 && x<1238 && y>=180 && y<660 && sunvox_editor.sister) {
+            int at=sunvox_editor.page*10+(y-180)/48;char target[80];
+            if(at<ts_sunvox_parameter_count(c)) {
+                snprintf(target,sizeof(target),"board.param.%u.%u.%d",sunvox_editor.node,sunvox_editor.child,100+at);
+                midi_learn_click(ui,sunvox_editor.sister,target);
+                snprintf(sunvox_editor.status,sizeof(sunvox_editor.status),"%.191s",ui->status);
+            }
+        }return 1;
+    }
     if(!mx_editable())return 1;
     int changed=0;
     if(left && x>=1010 && x<1238 && y>=137 && y<165) {
@@ -285,6 +329,6 @@ static int svfx_event(SDL_Event *e,SDL_AudioDeviceID device,AudioState *audio,Ts
         else if(x>=214 && x<258){c->note=SDL_max(0,c->note-1);changed=1;}
         else if(x>=352 && x<396){c->note=SDL_min(119,c->note+1);changed=1;}
     }
-    if(changed)mx_commit_controls(device,audio,ui);
+    if(changed)svfx_commit(device,audio,ui);
     return 1;
 }

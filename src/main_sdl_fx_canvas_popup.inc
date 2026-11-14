@@ -20,7 +20,7 @@ static void fx_popup_open(int x,int y)
 {
     fx_canvas.replace_id=0;fx_canvas.popup=1;fx_canvas.popup_category=fx_canvas.popup_scroll=fx_canvas.popup_selected=0;
     fx_canvas.popup_x=SDL_clamp(x,24,fx_right()-FX_POPUP_W-4);
-    fx_canvas.popup_y=SDL_clamp(y,FX_TOP+4,FX_BOTTOM-FX_POPUP_SUNVOX_H);
+    fx_canvas.popup_y=SDL_clamp(y,FX_TOP+4,FX_BOTTOM-SDL_max(FX_POPUP_SUNVOX_H,40+TS_MATRIX_FX_TYPES*30));
     TsMatrixLayout *l=matrix_window.layout;
     fx_canvas.place_x=(x-20)/l->canvas_zoom-l->canvas_x;
     fx_canvas.place_y=(y-FX_TOP)/l->canvas_zoom-l->canvas_y;

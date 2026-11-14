@@ -48,7 +48,7 @@ static void fx_properties_place(MatrixRow row)
     y=SDL_clamp(y,bounds.y+32,bounds.y+SDL_max(32,bounds.h-FX_PROPERTIES_H-16));
     SDL_SetWindowPosition(fx_properties_window.window,x,y);
 }
-static void fx_properties_begin(MatrixRow row)
+static void fx_properties_begin_targets(MatrixRow row,int cables)
 {
     if(!fx_properties_window.window) {
         fx_properties_window.window=SDL_CreateWindow("TapeSister - Card Name / Color",
@@ -69,24 +69,55 @@ static void fx_properties_begin(MatrixRow row)
         fx_properties_window.id=SDL_GetWindowID(fx_properties_window.window);
         fx_properties_place(row);
     }
-    TsFxCanvasPosition *p=fx_position(row,0);fx_canvas.properties_row=row;
+    fx_canvas.properties_count=0;fx_canvas.properties_wires.count=0;
+    if(cables) {
+        if(!fx_wire_reserve(&fx_canvas.properties_wires,fx_canvas.wires.count))return;
+        memcpy(fx_canvas.properties_wires.items,fx_canvas.wires.items,fx_canvas.wires.count*sizeof(FxCanvasWire));
+        fx_canvas.properties_wires.count=fx_canvas.wires.count;
+    } else if(fx_chosen(row) && matrix_window.selection_count>1) {
+        fx_canvas.properties_count=matrix_window.selection_count;
+        memcpy(fx_canvas.properties_rows,matrix_window.selection,fx_canvas.properties_count*sizeof(MatrixRow));
+    } else {fx_canvas.properties_count=1;fx_canvas.properties_rows[0]=row;}
+    TsFxCanvasPosition *p=cables?NULL:fx_position(row,0);fx_canvas.properties_row=row;
     fx_canvas.properties=1;fx_canvas.properties_all=1;fx_canvas.text_blink=SDL_GetTicks();
     snprintf(fx_canvas.properties_name,sizeof(fx_canvas.properties_name),"%s",p?p->name:"");
     fx_canvas.properties_cursor=(int)strlen(fx_canvas.properties_name);fx_canvas.properties_color=p?p->color:0;
     fx_canvas.popup=0;matrix_window.drag=0;matrix_window.dirty=1;fx_properties_window.dirty=1;
     SDL_ShowWindow(fx_properties_window.window);
     if(SDL_GetWindowFlags(fx_properties_window.window)&SDL_WINDOW_MINIMIZED)SDL_RestoreWindow(fx_properties_window.window);
-    SDL_RaiseWindow(fx_properties_window.window);SDL_StartTextInput();
+    SDL_RaiseWindow(fx_properties_window.window);
+    if(fx_canvas.properties_count==1)SDL_StartTextInput();else SDL_StopTextInput();
+    if(cables && fx_canvas.properties_wires.count) {
+        FxCanvasWire wire=fx_canvas.properties_wires.items[0];
+        fx_canvas.properties_color=fx_wire_color(wire.source,wire.destination);
+    }
 }
+static void fx_properties_begin(MatrixRow row){fx_properties_begin_targets(row,0);}
+static void fx_properties_begin_cables(void){fx_properties_begin_targets(fx_canvas.wires.items[0].source,1);}
 static void fx_properties_save(void)
 {
-    TsFxCanvasPosition *p=fx_position(fx_canvas.properties_row,1);
-    if(!p){snprintf(matrix_window.status,sizeof(matrix_window.status),"CANVAS POSITION STORAGE FULL.");return;}
-    snprintf(p->name,sizeof(p->name),"%s",fx_canvas.properties_name);p->color=fx_canvas.properties_color;
+    TsMatrixLayout *l=matrix_window.layout;
+    int needed=0;
+    for(int i=0;i<fx_canvas.properties_count;++i)needed+=fx_position(fx_canvas.properties_rows[i],0)==NULL;
+    if(l->canvas_count+needed>TS_FX_CANVAS_POSITIONS){snprintf(matrix_window.status,sizeof(matrix_window.status),"CANVAS POSITION STORAGE FULL.");return;}
+    needed=0;
+    for(int i=0;i<fx_canvas.properties_wires.count;++i) {
+        FxCanvasWire wire=fx_canvas.properties_wires.items[i];
+        needed+=fx_wire_style_at(fx_wire_style_key(wire.source,wire.destination))<0;
+    }
+    if(fx_canvas.properties_color && l->cable_count+needed>TS_FX_CABLE_STYLES){snprintf(matrix_window.status,sizeof(matrix_window.status),"CABLE COLOR STORAGE FULL.");return;}
+    for(int i=0;i<fx_canvas.properties_count;++i) {
+        TsFxCanvasPosition *p=fx_position(fx_canvas.properties_rows[i],1);
+        if(!p)continue;
+        if(fx_canvas.properties_count==1)snprintf(p->name,sizeof(p->name),"%s",fx_canvas.properties_name);
+        p->color=fx_canvas.properties_color;
+    }
+    for(int i=0;i<fx_canvas.properties_wires.count;++i)fx_wire_set_color(fx_canvas.properties_wires.items[i],fx_canvas.properties_color);
     fx_properties_close();matrix_window.dirty=1;
 }
 static void fx_properties_insert(const char *text)
 {
+    if(fx_canvas.properties_count!=1)return;
     char *s=fx_canvas.properties_name;
     if(fx_canvas.properties_all){memset(s,0,sizeof(fx_canvas.properties_name));fx_canvas.properties_cursor=0;fx_canvas.properties_all=0;}
     for(;*text;++text) {
@@ -114,7 +145,7 @@ static int fx_properties_event(SDL_Event *e)
     fx_properties_window.dirty=1;
     if(e->type==SDL_WINDOWEVENT) {
         if(e->window.event==SDL_WINDOWEVENT_CLOSE)fx_properties_close();
-        if(e->window.event==SDL_WINDOWEVENT_FOCUS_GAINED)SDL_StartTextInput();
+        if(e->window.event==SDL_WINDOWEVENT_FOCUS_GAINED && fx_canvas.properties_count==1)SDL_StartTextInput();
         return 1;
     }
     /* The global handler normally consumes this first; never Apply on Alt+Enter. */
@@ -125,6 +156,7 @@ static int fx_properties_event(SDL_Event *e)
         char *s=fx_canvas.properties_name;int n=(int)strlen(s),at=fx_canvas.properties_cursor;fx_canvas.text_blink=SDL_GetTicks();
         if(k==SDLK_ESCAPE){fx_properties_close();return 1;}
         if(k==SDLK_RETURN || k==SDLK_KP_ENTER){fx_properties_save();return 1;}
+        if(fx_canvas.properties_count!=1)return 1;
         if((mod&KMOD_CTRL) && k==SDLK_a){fx_canvas.properties_all=1;return 1;}
         if((mod&KMOD_CTRL) && k==SDLK_v){char *t=SDL_GetClipboardText();if(t){fx_properties_insert(t);SDL_free(t);}return 1;}
         if(k==SDLK_BACKSPACE || k==SDLK_DELETE) {
@@ -145,7 +177,7 @@ static int fx_properties_event(SDL_Event *e)
     int x=px*FX_PROPERTIES_W/SDL_max(1,width),y=py*FX_PROPERTIES_H/SDL_max(1,height);
     int click=e->type==SDL_MOUSEBUTTONDOWN && e->button.button==SDL_BUTTON_LEFT;
     int drag=e->type==SDL_MOUSEMOTION && (e->motion.state&SDL_BUTTON_LMASK);
-    if(click && x>=16 && x<544 && y>=46 && y<78) {
+    if(click && fx_canvas.properties_count==1 && x>=16 && x<544 && y>=46 && y<78) {
         int first=SDL_max(0,fx_canvas.properties_cursor-42);
         fx_canvas.properties_cursor=SDL_clamp(first+(x-24+6)/12,0,(int)strlen(fx_canvas.properties_name));
         fx_canvas.properties_all=0;fx_canvas.text_blink=SDL_GetTicks();return 1;
@@ -153,7 +185,7 @@ static int fx_properties_event(SDL_Event *e)
     if(click) {
         if(ts_ui_rect_contains(fx_properties_action(0),x,y)){fx_properties_save();return 1;}
         if(ts_ui_rect_contains(fx_properties_action(1),x,y)){fx_properties_close();return 1;}
-        if(ts_ui_rect_contains(fx_properties_action(2),x,y)){fx_canvas.properties_name[0]=0;fx_canvas.properties_cursor=0;fx_canvas.properties_color=0;return 1;}
+        if(ts_ui_rect_contains(fx_properties_action(2),x,y)){if(fx_canvas.properties_count==1){fx_canvas.properties_name[0]=0;fx_canvas.properties_cursor=0;}fx_canvas.properties_color=0;return 1;}
     }
     if(click && x>=16 && x<544 && y>=98 && y<126)fx_canvas.properties_color=fx_swatch((x-16)/33);
     if((click || drag) && x>=96 && x<=528 && y>=146 && y<242) {
@@ -190,11 +222,12 @@ static void fx_properties_paint(void)
     if(!fx_properties_window.dirty && phase==fx_properties_window.phase)return;
     fx_properties_window.phase=phase;fx_properties_window.dirty=0;
     fx_properties_rect(0,0,FX_PROPERTIES_W,FX_PROPERTIES_H,FX_PANEL);
-    fx_properties_text(16,18,"NAME / EMPTY USES ORIGINAL",FX_DIM,2,44);
-    fx_properties_rect(16,46,528,32,fx_canvas.properties_all?FX_EDGE:FX_BG);
+    int named=fx_canvas.properties_count==1;
+    fx_properties_text(16,18,named?"NAME / EMPTY USES ORIGINAL":fx_canvas.properties_wires.count?"CABLE COLOR / NAME UNAVAILABLE":"GROUP COLOR / NAMES UNCHANGED",FX_DIM,2,44);
+    fx_properties_rect(16,46,528,32,named && fx_canvas.properties_all?FX_EDGE:FX_BG);
     int first=SDL_max(0,fx_canvas.properties_cursor-42);
-    fx_properties_text(24,55,fx_canvas.properties_name+first,FX_TEXT,2,43);
-    if(!phase)fx_properties_rect(24+(fx_canvas.properties_cursor-first)*12,52,2,21,FX_FOCUS);
+    fx_properties_text(24,55,named?fx_canvas.properties_name+first:"NAME UNAVAILABLE",named?FX_TEXT:FX_DIM,2,43);
+    if(named && !phase)fx_properties_rect(24+(fx_canvas.properties_cursor-first)*12,52,2,21,FX_FOCUS);
     for(int i=0;i<16;++i)fx_properties_rect(16+i*33,98,31,28,fx_swatch(i));
     uint32_t color=fx_canvas.properties_color?fx_canvas.properties_color:fx_swatch(6);
     for(int i=0;i<3;++i) {

@@ -300,7 +300,7 @@ int main(int argc,char **argv)
     ts_sample_pages_free(&saved);ts_instrument_free(&saved_bank);ts_instrument_free(&saved_record);
     /* Invalid external project metadata is rejected before touching banks,
        Mosaic transport, tracker editor or Sister runtime state. */
-    TsSisterProjectState mismatched;int present=0;
+    static TsSisterProjectState mismatched;int present=0;
     const char *load_path="new-project-flow/new-project-flow.tsr";
     /* Reopening the active path is a revert, including live Mosaic edits. */
     uint64_t saved_mosaic=ts_mosaic_hash(ui.mosaic);

@@ -23,6 +23,7 @@ typedef struct {
     TsAudioChannelRange input_range,output_range;
     float sends[TS_MATRIX_ROWS],receiving[TS_MATRIX_DESTINATIONS];
     float card_source[TS_MOSAIC_EVENTS],card_send[TS_MOSAIC_EVENTS];
+    MatrixPlayingCards playing[2];
     float row_source[MATRIX_VISIBLE],row_send[MATRIX_VISIBLE];
     MatrixRow activity_rows[MATRIX_VISIBLE];
     TsRouteActivity activity[MATRIX_ACTIVITY_VOICES],tracks[TS_TRACKER_LANES],tiles[TS_TAPEHEAD_ROUTE_ACTIVITY_COUNT];
@@ -39,6 +40,8 @@ static MatrixWindow matrix_window={.selected=-1,.rename=-1};
 static int mx_destination_available(int d);
 static void matrix_history_clear(void);
 static void fx_context_reset(void);
+static void mosaic_select_only(TsUiState *,uint64_t);
+static void mosaic_select_add(TsUiState *,uint64_t);
 static void fx_properties_close(void);
 static void fx_properties_destroy(void);
 static void fx_label_cancel(void);
@@ -48,7 +51,7 @@ static void fx_replace_request(uint32_t id);
 static void fx_stroke_free(void);
 static void fx_cables_free(void);
 static void fx_cancel_gesture(void);
-static struct { uint32_t node; int scroll,category,page,focus; char filter[96],path[1024],status[192]; } sunvox_editor;
+static struct { uint32_t node,child; SisterWindow *sister; int scroll,category,page,focus; char filter[96],path[1024],status[192]; } sunvox_editor;
 static TsBrowser sunvox_files;
 static void svfx_open(uint32_t id);
 static void svfx_close(void);
@@ -366,16 +369,13 @@ static void mx_collect_effects(SDL_AudioDeviceID device,AudioState *audio)
        countdowns. Do not exclude playback at UI refresh rate when nothing is
        ready to retire, including while the Matrix window is closed. */
     int offline=!device || !ts_audio_output_is_available(),ready=offline;
-    for(int i=0;!ready && i<TS_MATRIX_EFFECT_CAPACITY;++i)
-        ready=audio->sister.matrix_effects.previous[i] &&
-            !atomic_load_explicit(&audio->sister.matrix_effects.remaining[i],memory_order_relaxed);
+    ready|=ts_matrix_effects_collect_ready(&audio->sister.matrix_effects);
     if(!ready)return;
     TsMatrixEffectPlan garbage;
     if(device)SDL_LockAudioDevice(device);
     if(offline) {
         /* Offline editing has no callback to finish a lifecycle fade. */
-        for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)atomic_store_explicit(&audio->sister.matrix_effects.remaining[i],0,memory_order_relaxed);
-        audio->sister.matrix_effects.fading=0;
+        ts_matrix_effects_finish_edits(&audio->sister.matrix_effects);
     }
     ts_matrix_effects_collect(&audio->sister.matrix_effects,&garbage);
     if(device)SDL_UnlockAudioDevice(device);
@@ -801,6 +801,19 @@ static void matrix_audio_publish(AudioState *audio)
         w->card_source[i]=v->activity_source*program*audio->sister.performance_gain_current[2];w->card_send[i]=v->activity_send*program*audio->sister.performance_gain_current[2];
         v->activity_source=v->activity_send=0;
     }
+    memset(w->playing,0,sizeof(w->playing));
+    if(!audio->engine_stopped)for(int c=0;c<2;++c) {
+        TsMosaic *m=c?ts_gallery_outgoing(audio->gallery):audio->mosaic;if(!m)continue;
+        MatrixPlayingCards *v=&w->playing[c];v->epoch=m->epoch;
+        if(audio->gallery)for(int j=0;j<audio->gallery->count;++j)
+            if(audio->gallery->canvas[j].scene==m)v->canvas=audio->gallery->canvas[j].id;
+        for(int i=0;i<TS_MOSAIC_EVENTS;++i) {
+            const TsMosaicEvent *card=&m->events[i];const TsMosaicVoice *voice=&m->voices[i];
+            if(card->id && voice->id==card->id && voice->active && voice->audible_gain>0 &&
+               (card->live?!m->live_paused:m->playing))v->card[i]=card->id;
+            if(card->id && m->audition_id==card->id && m->audition_voice.active)v->card[i]=card->id;
+        }
+    }
     w->inputs=audio->sister.insert.duplex?atomic_load(&audio->sister.insert.input_channels):atomic_load(&audio->sister.insert.matrix_channels);
     w->outputs=audio->output_device_channels;
     atomic_store_explicit(&box->state,3,memory_order_release);
@@ -839,7 +852,7 @@ static void mx_capture_activity(SDL_AudioDeviceID device,AudioState *audio,TsSam
         w->processors=v->processors;w->activity_count=v->activity_count;
         w->activity_program=v->program;w->activity_tracker_gain=v->tracker_gain;
 #define MX_COPY(field) memcpy(w->field,v->field,sizeof(w->field))
-        MX_COPY(peaks);MX_COPY(sends);MX_COPY(activity);MX_COPY(tracks);MX_COPY(tiles);
+        MX_COPY(peaks);MX_COPY(sends);MX_COPY(activity);MX_COPY(tracks);MX_COPY(tiles);MX_COPY(playing);
 #undef MX_COPY
         memcpy(destinations,v->destinations,sizeof(destinations));
         for(int i=0;i<TS_MOSAIC_EVENTS;++i) {
@@ -911,7 +924,7 @@ static void mx_draw_frame(AudioState *audio,TsSamplePages *pages,TsInstrument *b
 {
     MatrixWindow *w=&matrix_window;
     mx_prepare_surface(w);
-    if(sunvox_editor.node)svfx_paint();
+    if(sunvox_editor.node || sunvox_editor.child)svfx_paint();
     else if(w->canvas)fx_paint(audio,pages,bank);else mx_paint(audio,pages,bank);
     SDL_UpdateTexture(w->texture,NULL,w->pixels,w->pixel_w*4);
     SDL_RenderClear(w->renderer);
@@ -939,6 +952,10 @@ static int mx_paint_changed(TsSamplePages *pages,TsInstrument *bank)
         int phase=(SDL_GetTicks()-fx_canvas.text_blink)/500%2;
         changed|=phase!=fx_canvas.text_phase;fx_canvas.text_phase=phase;
     }
+    /* Animate only the optional playing view, at the existing 20 Hz UI poll.
+       No graph rebuild, audio lock, or idle animation is required. */
+    if(w->canvas && fx_canvas.active_view)for(int i=0;i<fx_canvas.count;++i)
+        if(fx_row_playing(fx_canvas.node[i].row)){changed=1;break;}
     return changed || w->dirty || w->rename>=0;
 }
 static void matrix_update(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsSamplePages *pages,TsInstrument *bank)
@@ -968,15 +985,18 @@ static int matrix_event_inner(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID de
     MatrixWindow *w=&matrix_window;int own=w->window&&event_window_id(e)==w->id;
     if(e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_F9 && !(e->key.keysym.mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI))) {
         if(!e->key.repeat){int canvas=(e->key.keysym.mod&KMOD_SHIFT)!=0;
-            if(w->visible && w->canvas==canvas)matrix_hide();
-            else if(w->visible || matrix_show(device,audio,ui,pages,bank,-1,-1))fx_view(canvas,pages,bank);}
+            if(w->visible && w->canvas==canvas){if(canvas)fx_return_mosaic(main,ui);else matrix_hide();}
+            else if(w->visible || matrix_show(device,audio,ui,pages,bank,-1,-1)) {
+                fx_view(canvas,pages,bank);
+                if(canvas && event_window_id(e)==SDL_GetWindowID(main) && ui->mosaic_open)fx_selection_from_mosaic(ui,pages,bank);
+            }}
         return 1;
     }
     if(!own && ui->mosaic_open && !ts_ui_foreground_panel_open(ui) && event_window_id(e)==SDL_GetWindowID(main) &&
        e->type==SDL_MOUSEBUTTONDOWN && e->button.button==SDL_BUTTON_LEFT) {
         int x,y;logical_mouse(main,e->button.x,e->button.y,&x,&y);
         if(x>=TS_MOSAIC_FX_X && x<TS_MOSAIC_FX_X+TS_MOSAIC_FX_W && y>=TS_MOSAIC_FX_Y && y<TS_MOSAIC_FX_Y+TS_MOSAIC_FX_H) {
-            if(matrix_show(device,audio,ui,pages,bank,-1,-1))fx_view(1,pages,bank);return 1;
+            if(matrix_show(device,audio,ui,pages,bank,-1,-1)){fx_view(1,pages,bank);fx_selection_from_mosaic(ui,pages,bank);}return 1;
         }
     }
     if(!own && ui->master_eq_open && event_window_id(e)==SDL_GetWindowID(main) &&
@@ -988,14 +1008,14 @@ static int matrix_event_inner(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID de
     }
     if(!own)return 0;
     if(e->type==SDL_WINDOWEVENT) {
-        if(e->window.event==SDL_WINDOWEVENT_CLOSE)matrix_hide();
+        if(e->window.event==SDL_WINDOWEVENT_CLOSE){if(w->canvas)fx_return_mosaic(main,ui);else matrix_hide();}
         if(e->window.event==SDL_WINDOWEVENT_FOCUS_LOST)fx_cancel_gesture();
         w->dirty=1;return 1;
     }
     if(!w->visible)return 1;
     if(w->canvas && fx_canvas.label_editing)return fx_label_edit_event(e);
     if(w->canvas && fx_canvas.properties)return 1;
-    if(sunvox_editor.node)return svfx_event(e,device,audio,ui,pages,bank);
+    if(sunvox_editor.node || sunvox_editor.child)return svfx_event(e,device,audio,ui,pages,bank);
     if(w->canvas && (fx_modal() || fx_canvas.confirm_clear || fx_canvas.confirm_delete || fx_canvas.popup) && (e->type==SDL_KEYDOWN || e->type==SDL_KEYUP))return fx_event(e,main,device,audio,ui,pages,bank,0,0,0);
     if(w->rename>=0) {
         if(e->type==SDL_TEXTINPUT || (e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_BACKSPACE))
@@ -1183,7 +1203,7 @@ static int matrix_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,A
     int properties=fx_properties_owns(e);
     int own=w->visible && (event_window_id(e)==w->id || properties);
     if(own && !properties && e->type!=SDL_MOUSEMOTION)w->dirty=1;
-    int edit=properties?(fx_canvas.properties && fx_properties_apply_event(e)):own && ((w->canvas && fx_canvas.confirm_delete && e->type==SDL_KEYDOWN) || (w->canvas && fx_canvas.label_editing && e->type==SDL_KEYDOWN && (e->key.keysym.sym==SDLK_RETURN || e->key.keysym.sym==SDLK_KP_ENTER)) || (w->canvas && fx_canvas.popup && e->type==SDL_KEYDOWN && (e->key.keysym.sym==SDLK_RETURN || e->key.keysym.sym==SDLK_KP_ENTER)) || (sunvox_editor.node && (e->type==SDL_DROPFILE || (e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_RETURN))) || e->type==SDL_MOUSEBUTTONDOWN || e->type==SDL_MOUSEWHEEL ||
+    int edit=properties?(fx_canvas.properties && fx_properties_apply_event(e)):own && ((w->canvas && fx_canvas.confirm_delete && e->type==SDL_KEYDOWN) || (w->canvas && fx_canvas.label_editing && e->type==SDL_KEYDOWN && (e->key.keysym.sym==SDLK_RETURN || e->key.keysym.sym==SDLK_KP_ENTER)) || (w->canvas && fx_canvas.popup && e->type==SDL_KEYDOWN && (e->key.keysym.sym==SDLK_RETURN || e->key.keysym.sym==SDLK_KP_ENTER)) || ((sunvox_editor.node || sunvox_editor.child) && (e->type==SDL_DROPFILE || (e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_RETURN))) || e->type==SDL_MOUSEBUTTONDOWN || e->type==SDL_MOUSEWHEEL ||
         (w->canvas && e->type==SDL_KEYDOWN && (fx_canvas_key(e->key.keysym.sym) || ((e->key.keysym.mod&KMOD_CTRL) && e->key.keysym.sym==SDLK_v))) ||
         (w->rename>=0 && e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_RETURN) ||
         (w->rename<0 && e->type==SDL_KEYDOWN && mx_layout_key(e)));

@@ -78,6 +78,8 @@ int main(int argc,char **argv)
  TsSisterUiHit midi;int id=TS_CF_MIDI_BASE+2*32+TS_CF_L_CUT;char target[80];snprintf(target,sizeof(target),"sister.param.%d",id);
  assert(midi_sister_hit_from_target(target,.35f,&midi));sister_apply_action(0,&audio,&ui,&bank,&sister,NULL,NULL,midi,48000,2);
  assert(sister.model.parameters.fx.slot[2].filter.value[TS_CF_L_CUT]==.35f);
+ /* Old row-based mappings remain readable; new Learn targets follow the child. */
+ snprintf(target,sizeof(target),"board.param.0.%u.%d",sister.model.parameters.fx.slot[2].id,300+TS_CF_L_CUT);
  midi_learn_set_active(&ui,&sister,1);input(65,148,SDL_BUTTON_LEFT);assert(!strcmp(ui.midi_learn_pending,target));midi_learn_set_active(&ui,&sister,0);
  sister.model.parameters.fx.slot[2].filter.locks=0;
  ts_character_filter_preset(&sister.model.parameters.fx.slot[2].filter,3);character_filter_publish(0,&audio,&ui,&sister);

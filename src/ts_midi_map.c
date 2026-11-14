@@ -120,7 +120,7 @@ int ts_midi_mosaic_marker_slot(const char *target)
 int ts_midi_target_is_continuous(const char *target)
 {
     return target != NULL &&
-           (strncmp(target, "main.spatial.param.", 19u) == 0 ||
+           (strncmp(target, "board.param.",12u) == 0 || strncmp(target, "main.spatial.param.", 19u) == 0 ||
             strncmp(target, "main.eq.band.", 13u) == 0 ||
             strncmp(target, "sister.param.", 13u) == 0 ||
             strncmp(target,"matrix.filter.",14u)==0 ||

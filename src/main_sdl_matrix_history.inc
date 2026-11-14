@@ -52,7 +52,13 @@ static int mx_apply(const MatrixSnapshot *s,SDL_AudioDeviceID device,AudioState 
     if(!s)return 0;MatrixWindow *w=&matrix_window;
     TsMatrixControls controls=s->controls;
     if(controls.next_effect_id<audio->sister.matrix.controls.next_effect_id)controls.next_effect_id=audio->sister.matrix.controls.next_effect_id;
+    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)if(controls.effect[i].type==TS_MATRIX_FX_PEDALBOARD)
+        for(int j=0;j<TS_MATRIX_EFFECT_CAPACITY;++j)if(controls.effect[i].id==audio->sister.matrix.controls.effect[j].id && controls.effect[i].board.next_id<audio->sister.matrix.controls.effect[j].board.next_id)controls.effect[i].board.next_id=audio->sister.matrix.controls.effect[j].board.next_id;
     TsMatrixEffectPlan plan;if(!mx_stage_effects(device,audio,&controls,&plan))return 0;
+    TsSisterFxControls fixed_fx=s->fixed.parameters.fx;
+    if(fixed_fx.next_slot_id<audio->sister.parameters.fx.next_slot_id)fixed_fx.next_slot_id=audio->sister.parameters.fx.next_slot_id;
+    TsSisterSunVoxPlan fixed_plan;
+    if(!sister_stage_fx(device,audio,&fixed_fx,&fixed_plan)){ts_matrix_effects_discard(&plan);return 0;}
     int split=audio->sister.matrix_layout.canvas_split;
     audio->sister.matrix_layout=s->layout;audio->sister.matrix_layout.canvas_split=split;
     if(device)SDL_LockAudioDevice(device);
@@ -67,7 +73,8 @@ static int mx_apply(const MatrixSnapshot *s,SDL_AudioDeviceID device,AudioState 
     ts_matrix_effects_commit(&audio->sister.matrix_effects,&controls,(unsigned)audio->output_rate,&plan);
     ts_matrix_set_live(&audio->sister.matrix,&controls,(unsigned)audio->output_rate);
     ts_compressor_set(&audio->sister.compressor,&s->compressor);
-    mx_processor_apply(audio,ui,&s->fixed);
+    ts_sister_sunvox_commit(&audio->sister.post_fx,&fixed_plan);
+    FxProcessorState fixed=s->fixed;fixed.parameters.fx=fixed_fx;mx_processor_apply(audio,ui,&fixed);
     w->compressor=ui->config.compressor=s->compressor;
     ts_sister_runtime_set_router(&audio->sister,&s->router);
     ts_spatial_recall(&audio->sister.spatial,&s->spatial);
@@ -81,6 +88,7 @@ static int mx_apply(const MatrixSnapshot *s,SDL_AudioDeviceID device,AudioState 
 }
 static void matrix_history_clear(void)
 {
+    svfx_close();
     ++mx_activity_epoch;
     fx_context_reset();
     MatrixWindow *w=&matrix_window;

@@ -7,6 +7,7 @@
 #include "tapesister/character_filter.h"
 #include "tapesister/sister_effects.h"
 #include "tapesister/sister_fallout.h"
+#include "tapesister/sunvox_fx.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -30,6 +31,7 @@ typedef enum {
     TS_SISTER_FX_FILTER,
     TS_SISTER_FX_DISPERSION,
     TS_SISTER_FX_RESONATOR,
+    TS_SISTER_FX_SUNVOX,
     TS_SISTER_FX_TYPE_COUNT
 } TsSisterFxType;
 
@@ -79,6 +81,8 @@ typedef struct {
     uint8_t transient_power; /* Zero preserves the original ATK/SUS ranges. */
     TsGrainStates transient_states;
     TsCharacterFilterControls filter;
+    uint32_t id; /* Saved identity; follows the processor when slots reorder. */
+    TsSunVoxControls sunvox;
 } TsSisterFxSlotControls;
 
 typedef struct {
@@ -120,6 +124,7 @@ typedef struct {
     int slot_count;
     TsSisterFxSlotControls slot[TS_SISTER_FX_SLOT_COUNT];
     TsSisterFalloutControls fallout;
+    uint32_t next_slot_id;
 } TsSisterFxControls;
 
 enum {
@@ -314,6 +319,7 @@ typedef struct {
     TsSisterFxSlotControls pending;
     TsSisterFxSlotControls queued;
     TsSisterFxRamp morph;
+    uint32_t warmup;
     TsSisterFxRamp engage;
     TsSisterFxRamp removal;
     int retiring;
@@ -329,6 +335,15 @@ typedef struct {
 
 /* One chosen processor, one location: no unused delay/reverb/grain buffers. */
 typedef struct TsSisterSingleFx TsSisterSingleFx;
+typedef struct TsSisterSunVoxBank TsSisterSunVoxBank;
+typedef struct TsPedalboardSlot TsPedalboardSlot;
+typedef struct {
+    TsSisterSunVoxBank *created;
+    TsPedalboardSlot *fresh[TS_SISTER_FX_SLOT_COUNT*TS_SISTER_FX_LOCATION_COUNT];
+    uint32_t id[TS_SISTER_FX_SLOT_COUNT*TS_SISTER_FX_LOCATION_COUNT];
+    unsigned location[TS_SISTER_FX_SLOT_COUNT*TS_SISTER_FX_LOCATION_COUNT], count;
+    TsPedalboardSlot *garbage[2*TS_SISTER_FX_SLOT_COUNT*TS_SISTER_FX_LOCATION_COUNT];
+} TsSisterSunVoxPlan;
 TsSisterSingleFx *ts_sister_single_fx_new(TsSisterFxType type,unsigned rate,uint32_t seed);
 void ts_sister_single_fx_free(TsSisterSingleFx *fx);
 void ts_sister_single_fx_set(TsSisterSingleFx *fx,const TsSisterFxSlotControls *controls);
@@ -360,6 +375,9 @@ typedef struct {
     TsSisterFxRamp master_engage;
     uint32_t sample_rate;
     int ready;
+    TsSisterSunVoxBank *sunvox;
+    uint32_t processor_id[TS_SISTER_FX_SLOT_COUNT];
+    uint64_t profile_generation;
 } TsSisterPostFxEngine;
 
 /* Audio-owner readout of the existing processor state, not new DSP analysis.
@@ -385,6 +403,17 @@ void ts_sister_fx_controls_default(TsSisterFxControls *controls);
 int ts_sister_fx_slot_count(int count);
 TsSisterFxSlotControls ts_sister_fx_empty_slot(void);
 void ts_sister_fx_controls_sanitize(TsSisterFxControls *controls);
+void ts_sister_fx_identify(TsSisterFxControls *controls);
+int ts_sister_sunvox_stage(const TsSisterPostFxEngine *,const TsSisterFxControls *,TsSisterSunVoxPlan *);
+void ts_sister_sunvox_commit(TsSisterPostFxEngine *,TsSisterSunVoxPlan *);
+void ts_sister_sunvox_collect(TsSisterPostFxEngine *,TsSisterSunVoxPlan *);
+void ts_sister_sunvox_discard(TsSisterSunVoxPlan *);
+void ts_sister_sunvox_free(TsSisterPostFxEngine *);
+int ts_sister_sunvox_ready(const TsSisterPostFxEngine *,const TsSisterFxControls *);
+void ts_sister_sunvox_set(TsSisterPostFxEngine *,const TsSisterFxControls *);
+TsStereoFrame ts_sister_sunvox_process(TsSisterPostFxEngine *,const TsSisterFxSlotControls *,unsigned,TsStereoFrame,float,float *);
+TsStereoFrame ts_sister_sunvox_dry(TsSisterPostFxEngine *,const TsSisterFxSlotControls *,unsigned,TsStereoFrame);
+size_t ts_sister_sunvox_memory(const TsSisterPostFxEngine *);
 float ts_sister_delay_time_ms(float normalized);
 float ts_sister_reverb_size_scale(float normalized);
 float ts_sister_reverb_decay_seconds(float normalized);
@@ -416,7 +445,7 @@ void ts_sister_post_fx_set_controls(TsSisterPostFxEngine *engine,
                                     const TsSisterFxControls *controls);
 /* Applies a restored/cold-start state without manufacturing engage fades from
    the engine defaults. Live UI edits should continue to use set_controls(). */
-void ts_sister_post_fx_sync_controls(TsSisterPostFxEngine *engine,
+int ts_sister_post_fx_sync_controls(TsSisterPostFxEngine *engine,
                                      const TsSisterFxControls *controls);
 TsStereoFrame ts_sister_post_fx_process_pre(TsSisterPostFxEngine *engine,
                                             TsStereoFrame input,

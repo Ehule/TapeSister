@@ -343,6 +343,7 @@ int ts_matrix_write(FILE *f,const TsMatrixControls *c)
         if(!ts_transient_states_write(f,key,v->transient_power,&v->transient_states))return 0;
         if(v->type==TS_MATRIX_FX_SUNVOX){snprintf(key,sizeof(key),"Matrix.SunVox%d",i);if(!ts_sunvox_write(f,key,&v->sunvox))return 0;}
         if(v->type==TS_MATRIX_FX_META){snprintf(key,sizeof(key),"Matrix.Meta%d",i);if(!ts_meta_write(f,key,&v->meta))return 0;}
+        if(v->type==TS_MATRIX_FX_PEDALBOARD){snprintf(key,sizeof(key),"Matrix.Board%d",i);if(!ts_pedalboard_write(f,key,&v->board))return 0;}
         if(v->type==TS_MATRIX_FX_FILTER){snprintf(key,sizeof(key),"Matrix.Filter%d",i);if(!ts_character_filter_write(f,key,&v->filter))return 0;}
     }
     for(int s=0;s<TS_MATRIX_ROWS;++s) {
@@ -378,6 +379,8 @@ int ts_matrix_read(TsMatrixControls *c,const char *key,const char *v)
         next.next_effect_id=(uint32_t)id;
     } else if(sscanf(key,"SunVox%d.%n",&n,&used)==1 && used>0 && n>=0 && n<TS_MATRIX_EFFECT_CAPACITY) {
         if(ts_sunvox_read(&next.effect[n].sunvox,key+used,v)!=1)return -1;
+    } else if(sscanf(key,"Board%d.%n",&n,&used)==1 && used>0 && n>=0 && n<TS_MATRIX_EFFECT_CAPACITY) {
+        if(ts_pedalboard_read(&next.effect[n].board,key+used,v)!=1)return -1;
     } else if(sscanf(key,"Meta%d.%n",&n,&used)==1 && used>0 && n>=0 && n<TS_MATRIX_EFFECT_CAPACITY) {
         if(ts_meta_read(&next.effect[n].meta,key+used,v)!=1)return -1;
     } else if(sscanf(key,"Filter%d%n",&n,&used)==1 && !key[used] && n>=0 && n<TS_MATRIX_EFFECT_CAPACITY) {
@@ -403,11 +406,14 @@ int ts_matrix_read(TsMatrixControls *c,const char *key,const char *v)
         if(pending_sunvox)ts_sunvox_default(&e.sunvox);
         e.meta=next.effect[n].meta;int pending_meta=e.type==TS_MATRIX_FX_META && !e.meta.initialized;
         if(pending_meta)ts_meta_default(&e.meta);
+        e.board=next.effect[n].board;int pending_board=e.type==TS_MATRIX_FX_PEDALBOARD && !e.board.initialized;
+        if(pending_board)ts_pedalboard_default(&e.board);
         e.filter=next.effect[n].filter;if(!e.filter.initialized)ts_character_filter_default(&e.filter);
         e.transient_power=next.effect[n].transient_power;e.transient_states=next.effect[n].transient_states;
         if(!ts_matrix_effect_valid(&e))return -1;
         if(pending_sunvox)e.sunvox.patch=0;
         if(pending_meta)e.meta.initialized=2; /* Require a complete rack before final graph validation. */
+        if(pending_board)e.board.initialized=2;
         next.effect[n]=e;
     } else if(!strcmp(key,"SerialMask")) {
         const unsigned serial=(1u<<TS_MATRIX_MAIN)|(1u<<TS_MATRIX_PRISM)|(1u<<TS_MATRIX_BOARD)|(1u<<TS_MATRIX_FALLOUT);

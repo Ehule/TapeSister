@@ -63,6 +63,21 @@ static void test_mosaic_markers(SDL_Window *window)
     /* Empty clicks do not seek; Shift-click captures the exact current clock. */
     scene->time=7.123456;click(window,186,366,1);assert(!scene->markers[2].stored && scene->time==7.123456);
     SDL_SetModState(KMOD_SHIFT);click(window,186,366,1);SDL_SetModState(KMOD_NONE);assert(scene->markers[2].time==7.123456);
+    /* Repeat commits a selected cue's interval; Shift-click stores a range
+       without moving either marker or seeking the second endpoint. */
+    scene->repeat=0;click(window,122,366,1);click(window,290,42,1);
+    assert(scene->repeat && scene->loop_range.start==4.35 && scene->loop_range.end==7.123456);
+    /* A new cue replaces an already-running repeat on the first click. */
+    click(window,154,366,1);click(window,290,42,1);
+    assert(scene->repeat && scene->loop_range.start==8.25 && scene->loop_range.end==10);
+    click(window,290,42,1);click(window,122,366,1);
+    SDL_SetModState(KMOD_SHIFT);click(window,154,366,1);SDL_SetModState(KMOD_NONE);
+    assert(scene->time==4.35 && scene->markers[1].time==8.25);
+    assert(scene->loop_range.start==4.35 && scene->loop_range.end==8.25);
+    click(window,290,42,1);assert(scene->repeat && scene->loop_range.end==8.25);
+    ts_mosaic_seek(scene,8.24999);ts_mosaic_read(scene,48000);ts_mosaic_read(scene,48000);
+    assert(scene->time>=4.35 && scene->time<4.36);
+    click(window,290,42,1);mosaic_loop_commit(0,&ui,(TsMosaicRange){0,0});
     /* Drag preview neither edits the model nor seeks; release is one undo. */
     int y=ts_ui_mosaic_marker_y(&ui,0)+5;double time=scene->time;history=scene->history_count;
     mosaic_nav_mouse(window,SDL_MOUSEBUTTONDOWN,SDL_BUTTON_LEFT,135,y);

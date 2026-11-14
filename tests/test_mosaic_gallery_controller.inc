@@ -29,18 +29,22 @@ static void test_mosaic_engine_stop(SDL_Window *window,SDL_AudioDeviceID device)
     uint64_t frames=a->span_frames+a->chronological_frames;
     audio_callback(a,(Uint8 *)output,sizeof(output));assert(a->mosaic->time==position && a->span_frames+a->chronological_frames>frames);
     gallery_key(window,device,a,input,u,c,SDLK_ESCAPE,KMOD_NONE);
+    assert(!a->engine_stopped && a->mosaic->time==position);
+    uint64_t selected=a->mosaic->events[0].id;mosaic_select_only(u,selected);
+    gallery_key(window,device,a,input,u,c,SDLK_BACKSPACE,KMOD_NONE);
+    assert(ts_mosaic_find(a->mosaic,selected));
     assert(a->engine_stopped && a->mosaic->time==position);
     frames=a->span_frames+a->chronological_frames;
     for(int i=0;i<3;++i)audio_callback(a,(Uint8 *)output,sizeof(output));
     for(int i=0;i<512;++i)assert(output[i]==0);
     assert(a->span_frames+a->chronological_frames==frames && a->mosaic->time==position);
-    gallery_key(window,device,a,input,u,c,SDLK_ESCAPE,KMOD_NONE);
+    gallery_key(window,device,a,input,u,c,SDLK_BACKSPACE,KMOD_NONE);
     assert(a->engine_stopped && !a->mosaic->time);
     gallery_key(window,device,a,input,u,c,SDLK_SPACE,KMOD_NONE);
     audio_callback(a,(Uint8 *)output,sizeof(output));assert(!a->engine_stopped && a->mosaic->time>0);
-    position=a->mosaic->time;gallery_key(window,device,a,input,u,c,SDLK_ESCAPE,KMOD_NONE);
-    c->escape_ms=SDL_GetTicks()-501;
-    gallery_key(window,device,a,input,u,c,SDLK_ESCAPE,KMOD_NONE);assert(a->mosaic->time==position);
+    position=a->mosaic->time;gallery_key(window,device,a,input,u,c,SDLK_BACKSPACE,KMOD_NONE);
+    c->stop_ms=SDL_GetTicks()-501;
+    gallery_key(window,device,a,input,u,c,SDLK_BACKSPACE,KMOD_NONE);assert(a->mosaic->time==position);
     a->mosaic->playing=1; /* MIDI/automation transport starts resume the engine too. */
     audio_callback(a,(Uint8 *)output,sizeof(output));assert(!a->engine_stopped && a->mosaic->time>position);
     ts_external_recorder_free(&input->recorder);free(input);free(u);mosaic_controller_free(c);free(c);routing_free(a);

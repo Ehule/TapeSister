@@ -493,7 +493,7 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
     double horizontal=ui->mosaic_hscale>0?ui->mosaic_hscale:1;
     int down=event->type==SDL_MOUSEBUTTONDOWN,up=event->type==SDL_MOUSEBUTTONUP;
     int motion=event->type==SDL_MOUSEMOTION,key=event->type==SDL_KEYDOWN;
-    if(down || (key && event->key.keysym.sym!=SDLK_ESCAPE))c->escape_armed=0;
+    if(down || (key && event->key.keysym.sym!=SDLK_BACKSPACE))c->stop_armed=0;
     int x=0,y=0;
     if(down || up)logical_mouse(window,event->button.x,event->button.y,&x,&y);
     if(motion)logical_mouse(window,event->motion.x,event->motion.y,&x,&y);
@@ -673,13 +673,14 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
         if(k==SDLK_F11 || k==SDLK_TAB || k==SDLK_BACKQUOTE ||
            (k==SDLK_p && (mod&(KMOD_CTRL|KMOD_SHIFT))==(KMOD_CTRL|KMOD_SHIFT)))return 0;
         if(k==SDLK_u && !(mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI))){mosaic_pattern_notices(ui,instrument,c,1);return 1;}
-        if(k!=SDLK_ESCAPE)c->escape_armed=0;
+        if(k!=SDLK_BACKSPACE)c->stop_armed=0;
         if(k==SDLK_SPACE){mosaic_transport(device,audio,ui,0);return 1;}
-        if(k==SDLK_ESCAPE){
-            Uint32 now=SDL_GetTicks();int home=c->escape_armed && now-c->escape_ms<=500;
+        if(k==SDLK_ESCAPE)return 1; /* Navigation/cancel only. */
+        if(k==SDLK_BACKSPACE && !(mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI|KMOD_SHIFT))){
+            Uint32 now=SDL_GetTicks();int home=c->stop_armed && now-c->stop_ms<=500;
             mosaic_transport(device,audio,ui,home?1:2);
-            c->escape_ms=now;c->escape_armed=!home;
-            snprintf(ui->status,sizeof(ui->status),home?"ENGINE STOPPED / PLAYHEAD AT START / SPACE RESUMES":"ENGINE STOPPED / SPACE RESUMES / DOUBLE ESC RETURNS TO START");
+            c->stop_ms=now;c->stop_armed=!home;
+            snprintf(ui->status,sizeof(ui->status),home?"ENGINE STOPPED / PLAYHEAD AT START / SPACE RESUMES":"ENGINE STOPPED / SPACE RESUMES / DOUBLE BACKSPACE RETURNS TO START");
             return 1;
         }
         if(k==SDLK_s && (mod&KMOD_CTRL))return 0; /* Save overlays the current workspace. */
@@ -724,7 +725,7 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
                 uint64_t id=e->id;*e=c->clipboard;e->id=id;e->start=ui->mosaic_time;e->x=ui->mosaic_xscroll;
                 ts_mosaic_space(ui->mosaic,e);mosaic_select_only(ui,e->id);
             }
-        } else if(k==SDLK_DELETE || k==SDLK_BACKSPACE) {
+        } else if(k==SDLK_DELETE) {
             ts_mosaic_checkpoint(ui->mosaic);
             for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(mosaic_chosen(ui,i))ts_mosaic_delete(ui->mosaic,ui->mosaic->events[i].id);
             mosaic_select_only(ui,0);
@@ -783,8 +784,8 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
         }
         /* Source tabs share this vertical band; only transport owns x >= 118. */
         if(x>=118 && y>=39 && y<58) {
-            if(x>=118 && x<160){c->escape_armed=0;mosaic_transport(device,audio,ui,0);}
-            else if(x>=164 && x<202){c->escape_armed=0;mosaic_transport(device,audio,ui,event->button.clicks>=2?1:2);}
+            if(x>=118 && x<160){c->stop_armed=0;mosaic_transport(device,audio,ui,0);}
+            else if(x>=164 && x<202){c->stop_armed=0;mosaic_transport(device,audio,ui,event->button.clicks>=2?1:2);}
             else if(x>=206 && x<270)main_file_capture_toggle(audio,ui,sister,(uint32_t)rate);
             else if(x>=274 && x<318)mosaic_loop_toggle(device,ui);
             else if(x>=TS_MOSAIC_FOLLOW_X && x<TS_MOSAIC_FOLLOW_X+TS_MOSAIC_FOLLOW_W)ui->mosaic_follow=!ui->mosaic_follow;

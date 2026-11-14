@@ -159,7 +159,7 @@ int main(int argc,char **argv)
     SDL_Delay(50);
     assert(live_test_input(&escape,0,&a,&u) && live_test.state==LT_ABORTED && !ts_profile_enabled());
     /* The new composition uses option 1, ten canvases, interval profiling,
-       and the real Space/Escape/seek controllers, while legacy schedules stay fixed. */
+       and the real Space/Backspace/seek controllers, while legacy schedules stay fixed. */
     static const char *angelic_names[]={"KETER","CHOKHMAH","BINAH","CHESED","GEVURAH","TIFERET","NETZACH","HOD","YESOD","MALKHUT"};
     for(int c=0;c<10;++c) {
         TsMosaic *m=pages.gallery->canvas[c].scene;
@@ -181,12 +181,12 @@ int main(int argc,char **argv)
         if(step.action==LT_GALLERY)visited[step.target]=1;
     }
     for(int c=0;c<10;++c)assert(visited[c]);
-    assert(actions[LT_ESCAPE]>=30 && actions[LT_SPACE]>=30 && actions[LT_ASSERT]>=60);
+    assert(actions[LT_BACKSPACE]>=30 && actions[LT_SPACE]>=30 && actions[LT_ASSERT]>=60);
     live_test_poll(window,0,&a,&u,&pages,&bank,&mosaic,&portal,&sister,&transform,SDL_GetPerformanceCounter());
     assert(live_test.state==LT_ARMED && pages.gallery->active==0 && u.mosaic->time==0);
     mosaic_transport(0,&a,&u,0);assert(ts_profile_enabled());
-    LiveTestStep steps[]={ {0,LT_SPACE,0,0},{0,LT_ASSERT,1,0},{0,LT_ESCAPE,0,0},{0,LT_ASSERT,2,0},
-        {0,LT_ESCAPE,1,0},{0,LT_ASSERT,3,0},{0,LT_SPACE,1,0},{0,LT_SEEK,0,.5f},{0,LT_SEEK,1,.35f} };
+    LiveTestStep steps[]={ {0,LT_SPACE,0,0},{0,LT_ASSERT,1,0},{0,LT_BACKSPACE,0,0},{0,LT_ASSERT,2,0},
+        {0,LT_BACKSPACE,1,0},{0,LT_ASSERT,3,0},{0,LT_SPACE,1,0},{0,LT_SEEK,0,.5f},{0,LT_SEEK,1,.35f} };
     for(size_t i=0;i<sizeof(steps)/sizeof(*steps);++i){SDL_Delay(30);assert(live_test_action(&steps[i],window,0,&a,&u,&pages,&bank,&mosaic,&portal,&sister,&transform));}
     assert(u.mosaic->time==210 && !a.engine_stopped && u.mosaic->playing);
     assert(live_test_input(&escape,0,&a,&u) && live_test.state==LT_ABORTED && !ts_profile_enabled());

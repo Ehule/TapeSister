@@ -30,7 +30,11 @@ typedef struct {
     TsProfileValue blocks; /* Estimated processed blocks/ticks; observed block peak. */
     uint64_t samples, transitions, last;
 } TsProfileEffectValue;
+enum { TS_PROFILE_BOARD_SLOTS=20, TS_PROFILE_BOARD_OWNERS=TS_MATRIX_EFFECT_CAPACITY+1,
+       TS_PROFILE_CHILDREN=TS_PROFILE_BOARD_SLOTS*TS_PROFILE_BOARD_OWNERS };
+typedef struct { TsProfileEffectValue effect; uint32_t board; } TsProfileChildValue;
 typedef struct {
+    TsProfileChildValue child[TS_PROFILE_CHILDREN];
     TsProfileValue value[TS_PROF_COUNT];
     TsProfileEffectValue effect[TS_MATRIX_EFFECT_CAPACITY];
     uint64_t now;
@@ -75,6 +79,14 @@ static inline uint64_t ts_profile_effect_begin(int slot)
 }
 static inline void ts_profile_end(TsProfileId id, uint64_t start)
 { if (start) ts_profile_record(id, start); }
+extern unsigned ts_profile_child_slot;
+static inline uint64_t ts_profile_child_begin(unsigned owner,unsigned row)
+{
+    return owner<TS_PROFILE_BOARD_OWNERS && row==ts_profile_child_slot &&
+        ts_profile_audio_phase==(owner?15u+owner:(unsigned)(TS_PROF_PEDALBOARD-TS_PROF_VOICES)) ? ts_profile_clock():0;
+}
+void ts_profile_child_end(unsigned owner,unsigned row,uint32_t board,const TsProfileEffectIdentity *,uint64_t start,int transition);
+void ts_profile_child_label(const TsProfileChildValue *,char *,size_t);
 void ts_profile_snapshot(TsProfileSnapshot *snapshot);
 const char *ts_profile_name(TsProfileId id);
 void ts_profile_report(char *text, size_t capacity);

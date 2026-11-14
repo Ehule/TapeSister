@@ -1,8 +1,8 @@
 /* The main window is a view of one event document. Park the sample bank while
    editing; callback voices always read Mosaic's immutable sources. */
 struct MosaicController {
-    Uint32 escape_ms;
-    int escape_armed;
+    Uint32 stop_ms;
+    int stop_armed;
     TsSamplePages *pages;
     TsInstrument *bank;
     TsInstrument *documents[TS_MOSAIC_EVENTS];
@@ -169,7 +169,7 @@ static void mosaic_sources_refresh(TsUiState *ui,const TsInstrument *instrument,
         c->picked_count=c->scatter_pool_count=c->zoom_saved=0;
         ui->mosaic_source_pick_count=ui->mosaic_scatter_open=ui->mosaic_spacing_confirm=ui->mosaic_align_open=0;
         if(ui->mosaic_loop_open || ui->mosaic_marker_open)SDL_StopTextInput();
-        ui->mosaic_marker_open=ui->mosaic_marker_selected=ui->mosaic_views_open=0;
+        ui->mosaic_marker_open=ui->mosaic_marker_selected=ui->mosaic_views_open=ui->mosaic_marker_range_pending=0;
         ui->mosaic_loop_open=0;
         ui->mosaic_source_selected=-1;
         if(!restored) {

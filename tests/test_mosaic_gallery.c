@@ -327,7 +327,7 @@ static void test_canvas_transfer(void)
     ts_mosaic_free(selected.scene);ts_mosaic_free(portable.scene);ts_mosaic_free(migrated.scene);ts_mosaic_free(legacy.scene);
     ts_sample_pages_free(&pages);ts_mosaic_free(root);ts_instrument_free(&bank);ts_instrument_free(&record);
 }
-static void test_effect_ownership(void)
+static void test_effect_ownership(int boards)
 {
     char error[160];TsSamplePages pages={0};TsInstrument *bank=calloc(1,sizeof(*bank));assert(bank);
     assert(ts_sample_pages_init(&pages,error,sizeof(error)));ts_instrument_init(bank);
@@ -337,7 +337,8 @@ static void test_effect_ownership(void)
     assert(ts_gallery_append_prepared(g,scene(.4f,0,0),error,sizeof(error)));
     TsMatrixControls matrix;ts_matrix_default(&matrix);matrix.enabled=1;
     for(int i=0;i<TS_MATRIX_ROWS;++i)matrix.row[i]=(TsSourceRoute){.matrix_enabled=1};
-    for(int i=0;i<5;++i)assert(ts_matrix_effect_add(&matrix,TS_SISTER_FX_DELAY)==i);
+    for(int i=0;i<5;++i)assert(ts_matrix_effect_add(&matrix,boards?TS_MATRIX_FX_PEDALBOARD:TS_SISTER_FX_DELAY)==i);
+    if(boards)for(int i=0;i<5;++i){matrix.effect[i].board.slot[0].type=TS_SISTER_FX_SUNVOX;ts_sunvox_default(&matrix.effect[i].board.slot[0].sunvox);matrix.effect[i].board.slot[1].type=TS_SISTER_FX_DELAY;}
     for(int i=0;i<3;++i){g->canvas[i].scene->events[0].output_route=(TsSourceRoute){.matrix_enabled=1};g->canvas[i].scene->events[0].output_route.matrix_gain[TS_MATRIX_EFFECT_BASE+i]=1000;}
     matrix.row[TS_MATRIX_EFFECT_BASE].matrix_gain[TS_MATRIX_EFFECT_BASE+4]=1000;
     matrix.row[TS_MATRIX_EFFECT_BASE+1].matrix_gain[TS_MATRIX_EFFECT_BASE+4]=1000;
@@ -367,6 +368,6 @@ int main(void)
     char run[128];int created=0;
     for(int i=0;i<100 && !created;++i){snprintf(run,sizeof(run),"run-%lu-%d",(unsigned long)GALLERY_PID(),i);created=MKDIR(run)==0;}
     assert(created && !GALLERY_CHDIR(run));
-    test_effect_ownership();test_fade();test_loop_resume();test_pages();test_move_replace();test_storage();test_canvas_transfer();test_routed_transfer();
+    test_effect_ownership(0);test_effect_ownership(1);test_fade();test_loop_resume();test_pages();test_move_replace();test_storage();test_canvas_transfer();test_routed_transfer();
     puts("Mosaic Gallery fades, routes, loop resume, entry points, identity and transactional project storage passed");return 0;
 }
