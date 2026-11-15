@@ -535,6 +535,7 @@ static void fx_inspector_paint(TsSamplePages *pages,TsInstrument *bank)
 #include "main_sdl_fx_canvas_labels.inc"
 #include "main_sdl_fx_canvas_patch.inc"
 #include "main_sdl_fx_canvas_style.inc"
+#include "main_sdl_fx_canvas_reroute.inc"
 #include "main_sdl_fx_canvas_properties.inc"
 #include "main_sdl_fx_canvas_popup.inc"
 static void fx_paint_cables(TsSamplePages *pages,TsInstrument *bank)
@@ -659,7 +660,7 @@ static void fx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
         mx_rect(fx_split()+4,FX_TOP,2,FX_BOTTOM-FX_TOP,FX_EDGE);
         for(int y=374;y<418;y+=8)mx_rect(fx_split()+3,y,4,4,grip);
         if(fx_canvas.help) {
-            mx_text(24,FX_BOTTOM+16,"G: grab / S: resize / Shift-click: select / Ctrl+Shift-click: connect",FX_TEXT,2);
+            mx_text(24,FX_BOTTOM+16,"G: grab / S: resize / Ctrl+Shift-click: connect sources / move cables",FX_TEXT,2);
             mx_text(24,FX_BOTTOM+44,"Wheel: zoom / Shift+wheel: cable gain / Z: frame selection / Home: fit",FX_TEXT,2);
             mx_text(24,FX_BOTTOM+72,"Double-click empty: add / F2: name + color / X: delete / Ctrl+C/V: copy",FX_TEXT,2);
         }

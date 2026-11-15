@@ -31,6 +31,13 @@ Inherited track-to-tile routing remains inspectable in the Matrix.
   first gain limit to preserve its balance (subject to integer gain rounding).
   Delayed feedback cables retain their lower safety ceiling. X or Delete removes
   only the explicitly selected cables and added effects.
+- To change existing connections, select cables and **Ctrl+Shift-click the new
+  destination**. Their source endpoints, individual gains, and colors are kept;
+  the cards' other sends and the old destination's downstream chain stay intact.
+  The entire reroute is one undo step. Click the lower purple input to move to a
+  compressor sidechain; clicking the card body uses its main input. With cables
+  selected, this gesture moves those cables even in a mixed card/cable selection.
+  With only source cards selected, it adds connections as before.
 - Select an added effect to reveal the right-hand inspector and its full
   parameter controls below the canvas. All four Meta FX macros are available in
   the inspector. Sliders release on mouse-up, including outside their controls. Filter also opens its complete editor on double-click. Fixed processors
@@ -105,7 +112,7 @@ editing gestures apply to the FX workspace; Z, Shift+Z and M follow Mosaic.
 | G / S | Grab / resize selected modules; click or Enter confirms, Escape cancels |
 | Ctrl+C / Ctrl+V | Copy / paste independent effects with settings and internal wiring |
 | Shift+drag a module onto another | Connect/disconnect that route using Matrix validation |
-| Ctrl+Shift+click destination | Connect every selected source to it; one undo removes the new links and keeps the source selection |
+| Ctrl+Shift+click destination | Move selected cables to its input; with only cards selected, connect every selected source. One undo reverses the whole operation |
 | Drag output port to input port | Connect; the lower purple port receives sidechain audio |
 | Middle-drag / wheel | Pan / zoom around the pointer, regardless of cable selection |
 | Shift+wheel | Adjust all selected cables by the same dB amount within gain limits |
@@ -118,6 +125,15 @@ editing gestures apply to the FX workspace; Z, Shift+Z and M follow Mosaic.
 | Right-click a cable | Edit its color, or the selected cable group; colors save with the project and support Undo/Redo |
 | E (KEYS off) | Open/focus FX Canvas from Mosaic or an effect editor |
 | Escape in FX Canvas | Return to Mosaic; active gestures/dialogs cancel first |
+
+Cable rerouting selects the moved cables at their new endpoints. Select only one
+cable per source when moving to one input: two parallel cables cannot retain
+independent gains/colors at the same endpoint. If a source already connects to
+the new input, or the final graph would introduce a cycle, the entire move is
+refused with an explanation and the existing routing stays intact. Existing
+delayed feedback cables retain their delay and gain when moved between processor
+inputs; bulk rerouting never inserts feedback delays or clamps cable gains.
+Delete continues to disconnect the explicit selection directly.
 
 Deleting an added effect asks **Retain links?** **Yes** connects its upstream
 sources to its downstream destinations, including cards in other Gallery
