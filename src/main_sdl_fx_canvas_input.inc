@@ -140,6 +140,7 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
                 if(sc>=0 && ts_matrix_destination_active(&w->controls,sc) && abs(y-fx_y(n->y+fx_node_h(n)*.8f))<13 && abs(y-fx_y(n->y+fx_node_h(n)*.8f))<abs(y-yy)){yy=fx_y(n->y+fx_node_h(n)*.8f);dest=sc;}
                 int body=body_drag && x>=xx && x<=fx_x(n->x+fx_node_w(n)) && y>=fx_y(n->y) && y<=fx_y(n->y+fx_node_h(n));
                 if(at>=0 && dest>=0 && (body || (abs(x-xx)<18 && abs(y-yy)<18))) {
+                    if(source.kind==4 && modulation_connect((uint32_t)source.tile,dest,device,audio,ui,pages,bank))break;
                     mx_select(at,0);w->destination=dest;
                     if(body)mx_toggle(device,audio,ui,pages,bank);else mx_gain(device,audio,ui,pages,bank,1000);
                     if(mx_display_route(mx_route(source,pages,bank)).matrix_gain[dest])connected=dest;
@@ -243,6 +244,7 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
         if(e->button.clicks>=2 && n->row.kind==4) {
             TsMatrixEffectControls *c=&w->controls.effect[ts_matrix_effect_index(n->row.index)];
             if(c->type==TS_MATRIX_FX_PEDALBOARD){sister_board_open_from(c->id,e->button.windowID);return 1;}
+            if(c->type==TS_MATRIX_FX_MODULATOR){modulation_open(c->id);return 1;}
             if(c->type==TS_MATRIX_FX_SUNVOX){svfx_open(c->id);return 1;}
             if(c->type==TS_MATRIX_FX_META){fx_canvas.meta=c->id;w->effect_open=0;return 1;}
             if(c->type==TS_MATRIX_FX_FILTER){character_filter_matrix_open(c->id);return 1;}}

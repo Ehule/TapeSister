@@ -15,8 +15,10 @@ typedef struct {
     unsigned jobs_count;
     int batching;
     TsSunVoxBatch *worker;
+    unsigned mod_mask,mod_remaining,mod_targets;
+    double mod_quarter;
 } TsMatrixEffects;
-typedef struct {TsMatrixEffectNode *node[TS_MATRIX_EFFECT_CAPACITY];unsigned changed;TsSunVoxBatch *worker;TsPedalboardPlan board[TS_MATRIX_EFFECT_CAPACITY];} TsMatrixEffectPlan;
+typedef struct {TsMatrixEffectNode *node[TS_MATRIX_EFFECT_CAPACITY];struct TsMatrixModulation *modulation[TS_MATRIX_EFFECT_CAPACITY];unsigned changed;TsSunVoxBatch *worker;TsPedalboardPlan board[TS_MATRIX_EFFECT_CAPACITY];} TsMatrixEffectPlan;
 void ts_matrix_effects_init(TsMatrixEffects *fx);
 void ts_matrix_effects_free(TsMatrixEffects *fx);
 /* Prepare on the control thread, before acquiring the device lock. The
@@ -32,6 +34,11 @@ void ts_matrix_effects_finish_edits(TsMatrixEffects *fx);
 /* Cold project/device setup, with audio stopped/excluded. */
 int ts_matrix_effects_restore(TsMatrixEffects *fx,const TsMatrixControls *c,unsigned rate);
 void ts_matrix_effects_tick(TsMatrixEffects *fx);
+/* Bracket a chronological graph span. All controls publish before any audio
+   processor runs, so control links cannot introduce audio graph cycles. */
+void ts_matrix_modulation_begin(TsMatrixEffects *fx);
+void ts_matrix_modulation_end(TsMatrixEffects *fx,unsigned frames);
+double ts_matrix_modulation_phase(const TsMatrixEffects *fx,uint32_t id,unsigned lane);
 /* Runtime ownership, independent of bypass/mix. Five-ms output ramps; settled
    suspended slots retain history without advancing their DSP engines. */
 /* Call once at the beginning of each output block, even with no graph routes.

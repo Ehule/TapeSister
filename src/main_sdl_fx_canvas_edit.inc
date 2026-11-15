@@ -273,6 +273,14 @@ static void fx_paste(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,Ts
     }
     for(int i=0;i<fx_clipboard.count;++i) {
         int row=TS_MATRIX_EFFECT_BASE+slots[i];TsSourceRoute *r=&s->controls.row[row];
+        if(s->controls.effect[slots[i]].type==TS_MATRIX_FX_MODULATOR) {
+            TsModControls *m=&s->controls.effect[slots[i]].modulation;unsigned keep=0;
+            for(unsigned k=0;k<m->map_count;++k)for(int j=0;j<fx_clipboard.count;++j)
+                if(m->map[k].target==fx_clipboard.effect[j].id) {
+                    m->map[keep]=m->map[k];m->map[keep++].target=ids[j];break;
+                }
+            memset(m->map+keep,0,(TS_MOD_MAPS-keep)*sizeof(m->map[0]));m->map_count=keep;m->retrigger=0;
+        }
         *r=fx_clipboard.route[i];memset(r->matrix_gain,0,sizeof(r->matrix_gain));s->controls.delayed[row]=0;
         for(int j=0;j<fx_clipboard.count;++j)for(int side=0;side<2;++side) {
             int old=(side?TS_MATRIX_EFFECT_SC_BASE:TS_MATRIX_EFFECT_BASE)+fx_clipboard.slot[j];

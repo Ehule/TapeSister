@@ -9544,6 +9544,9 @@ static const TsSisterUiModel *sister_board_view(SisterWindow *s)
     return &s->board_view;
 }
 static void meta_fx_open(uint32_t);
+static void modulation_open(uint32_t);
+static void modulation_hide(void);
+static int modulation_connect(uint32_t,int,SDL_AudioDeviceID,AudioState *,TsUiState *,TsSamplePages *,TsInstrument *);
 static void meta_fx_stage_open(uint32_t,int);
 static void character_filter_hide(void);
 static void character_filter_matrix_open(uint32_t);
@@ -12395,6 +12398,7 @@ static unsigned ts_audio_range_offered(const TsConfig *,int);
 #include "main_sdl_matrix.inc"
 #include "main_sdl_character_filter.inc"
 #include "main_sdl_meta_fx.inc"
+#include "main_sdl_modulation.inc"
 #include "main_sdl_board_instances.inc"
 
 static int midi_sister_hit_from_target(const char *target, float normalized,
@@ -15165,6 +15169,7 @@ int main(int argc, char **argv)
             if(fx_navigation_event(&event,window,device,&audio,&ui,&sister_window,&sample_pages,&instrument))continue;
             if(sister_board_event(&event,device,&audio,&ui,&sister_window,&sample_pages,&instrument))continue;
             if(meta_fx_event(&event,device,&audio,&ui,&sister_window,&sample_pages,&instrument))continue;
+            if(modulation_event(&event,device,&audio,&ui,&sample_pages,&instrument))continue;
             if(character_filter_event(&event,device,&audio,&ui,&sister_window,&sample_pages,&instrument))continue;
             if(matrix_event(&event,window,device,&audio,&ui,&sample_pages,&instrument))continue;
             if(source_route_event(&event,window,device,&audio,&ui,&sample_pages,&instrument))continue;
@@ -19185,6 +19190,7 @@ int main(int argc, char **argv)
         canvas_eq_poll(device,&audio,&ui,&instrument);
         character_filter_paint(&audio,&ui,&sister_window);
         meta_fx_paint(&ui);
+        modulation_paint(device,&audio,&ui);
         matrix_update(device,&audio,&ui,&sample_pages,&instrument);performance_update(device,&audio);
         source_route_update(device,&audio,&ui,&sample_pages,&instrument);
         ts_audio_session_update(&audio,&ui);
@@ -19336,6 +19342,7 @@ int main(int argc, char **argv)
     if (sister_window.renderer) SDL_DestroyRenderer(sister_window.renderer);
     character_filter_close();
     meta_fx_close();
+    modulation_close();
     if (sister_window.window) SDL_DestroyWindow(sister_window.window);
     spatial_window_close();speakers_close();
     performance_close();matrix_close();source_route_close();

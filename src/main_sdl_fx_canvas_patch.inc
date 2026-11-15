@@ -64,6 +64,8 @@ static void fx_connect_selected(int destination,SDL_AudioDeviceID device,AudioSt
 {
     MatrixWindow *w=&matrix_window;
     if(destination<0 || !w->selection_count)return;
+    if(w->selection_count==1 && w->selection[0].kind==4 &&
+       modulation_connect((uint32_t)w->selection[0].tile,destination,device,audio,ui,pages,bank))return;
     for(int i=0;i<w->selection_count;++i) {
         MatrixRow r=w->selection[i];
         if(r.kind==5 || ((r.kind==2 || r.kind==4) && r.index==destination)) {

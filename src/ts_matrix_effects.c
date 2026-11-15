@@ -1,9 +1,15 @@
 #include "tapesister/matrix_effects.h"
 #include "tapesister/profile.h"
+#include "tapesister/matrix_modulation.h"
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
 
+typedef struct TsMatrixModulation {
+    TsMatrixEffectControls authored,modulated;
+    TsModState state; double step[TS_MOD_LANES];
+    unsigned running,owned,elapsed;
+} TsMatrixModulation;
 struct TsMatrixEffectNode {
     TsProfileEffectIdentity profile;
     uint32_t id;int type;unsigned rate;
@@ -14,6 +20,7 @@ struct TsMatrixEffectNode {
     TsCompressor compressor;
     float transition,mix_target;
     float gate,target,start,mix;unsigned remaining,total;
+    TsMatrixModulation *mod;
 };
 /* Engine construction happens on control/offline threads, never in process.
    IDs survive project saves; this process-local generation must not. */
@@ -21,10 +28,10 @@ static atomic_uint_least64_t profile_generation;
 static TsSisterFxType pedal_type(int type)
 {return type==TS_MATRIX_FX_FILTER?TS_SISTER_FX_FILTER:type==TS_MATRIX_FX_DISPERSION?TS_SISTER_FX_DISPERSION:type==TS_MATRIX_FX_RESONATOR?TS_SISTER_FX_RESONATOR:(TsSisterFxType)type;}
 const char *ts_matrix_effect_name(int type)
-{return type==TS_MATRIX_FX_PEDALBOARD?"PEDALBOARD":type==TS_MATRIX_FX_SUNVOX?"SUNVOX FX":type==TS_MATRIX_FX_META?"META FX":type==TS_MATRIX_FX_COMPRESSOR?"COMPRESSOR":ts_sister_fx_type_name(pedal_type(type));}
+{return type==TS_MATRIX_FX_MODULATOR?"MODULATOR":type==TS_MATRIX_FX_PEDALBOARD?"PEDALBOARD":type==TS_MATRIX_FX_SUNVOX?"SUNVOX FX":type==TS_MATRIX_FX_META?"META FX":type==TS_MATRIX_FX_COMPRESSOR?"COMPRESSOR":ts_sister_fx_type_name(pedal_type(type));}
 const char *ts_matrix_effect_short_name(int type)
 {
-    static const char *names[]={"EMPTY","REV","DLY","DIST","GRAIN","TRANS","COMP","FILTER","DISP","RESON","META","SUNVOX","BOARD"};
+    static const char *names[]={"EMPTY","REV","DLY","DIST","GRAIN","TRANS","COMP","FILTER","DISP","RESON","META","SUNVOX","BOARD","MOD"};
     return type>=0 && type<TS_MATRIX_FX_TYPES?names[type]:"FX";
 }
 void ts_matrix_effect_default(TsMatrixEffectControls *c,int type,uint32_t id)
@@ -38,6 +45,10 @@ void ts_matrix_effect_default(TsMatrixEffectControls *c,int type,uint32_t id)
     if(type==TS_MATRIX_FX_SUNVOX)ts_sunvox_default(&c->sunvox);
     if(type==TS_MATRIX_FX_META)ts_meta_preset(&c->meta,0);
     if(type==TS_MATRIX_FX_PEDALBOARD)ts_pedalboard_default(&c->board);
+    if(type==TS_MATRIX_FX_MODULATOR) {
+        ts_mod_default(&c->modulation);
+        for(unsigned i=0;i<c->modulation.count;++i)c->modulation.lane[i].seed^=id*UINT32_C(0x85ebca6b);
+    }
     if(type==TS_MATRIX_FX_RESONATOR)c->a=.25f;
     ts_character_filter_default(&c->filter);
     ts_compressor_default(&c->compressor);c->compressor.enabled=1;
@@ -54,10 +65,11 @@ int ts_matrix_effect_valid(const TsMatrixEffectControls *c)
         (c->type!=TS_MATRIX_FX_FILTER || ts_character_filter_valid(&c->filter)) &&
         (c->type!=TS_MATRIX_FX_META || ts_meta_valid(&c->meta)) &&
         (c->type!=TS_MATRIX_FX_PEDALBOARD || ts_pedalboard_valid(&c->board)) &&
+        (c->type!=TS_MATRIX_FX_MODULATOR || ts_mod_valid(&c->modulation)) &&
         (c->type!=TS_MATRIX_FX_SUNVOX || ts_sunvox_valid(&c->sunvox));
 }
 static void node_free(TsMatrixEffectNode *n)
-{if(n){ts_sister_single_fx_free(n->pedal);ts_pedalboard_free(n->board);ts_meta_free(n->meta);ts_sunvox_free(n->sunvox);free(n);}}
+{if(n){ts_sister_single_fx_free(n->pedal);ts_pedalboard_free(n->board);ts_meta_free(n->meta);ts_sunvox_free(n->sunvox);free(n->mod);free(n);}}
 static void node_set(TsMatrixEffectNode *n,const TsMatrixEffectControls *c,int cold)
 {
     if(!n)return;
@@ -67,6 +79,7 @@ static void node_set(TsMatrixEffectNode *n,const TsMatrixEffectControls *c,int c
         n->target=(float)c->enabled;n->remaining=n->total=frames;n->start=n->gate;
     }
     n->transition=c->transition;n->mix_target=c->mix;
+    if(n->type==TS_MATRIX_FX_MODULATOR)return;
     if(n->sunvox){ts_sunvox_set(n->sunvox,&c->sunvox);n->gain_target=powf(10,c->gain_db*.05f);}
     else if(n->board){ts_pedalboard_set(n->board,&c->board);n->gain_target=powf(10,c->gain_db*.05f);}
     else if(n->type==TS_MATRIX_FX_META){ts_meta_set(n->meta,&c->meta);n->gain_target=powf(10,c->gain_db*.05f);}
@@ -83,7 +96,15 @@ static void node_set(TsMatrixEffectNode *n,const TsMatrixEffectControls *c,int c
         ts_sister_single_fx_set(n->pedal,&slot);
     }
 }
-static TsMatrixEffectNode *node_new(const TsMatrixEffectControls *c,unsigned rate)
+static int modulation_needed(const TsMatrixControls *c,int slot)
+{
+    if(!c->effect[slot].id)return 0;
+    if(c->effect[slot].type==TS_MATRIX_FX_MODULATOR)return 1;
+    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)if(c->effect[i].id && c->effect[i].type==TS_MATRIX_FX_MODULATOR)
+        for(unsigned m=0;m<c->effect[i].modulation.map_count;++m)if(c->effect[i].modulation.map[m].target==c->effect[slot].id)return 1;
+    return 0;
+}
+static TsMatrixEffectNode *node_new(const TsMatrixEffectControls *c,unsigned rate,int modulation)
 {
     TsMatrixEffectNode *n=calloc(1,sizeof(*n));if(!n)return NULL;
     n->id=c->id;n->type=c->type;n->rate=rate;n->smooth=1-expf(-1.f/(rate*.02f));
@@ -94,10 +115,14 @@ static TsMatrixEffectNode *node_new(const TsMatrixEffectControls *c,unsigned rat
     else if(c->type==TS_MATRIX_FX_PEDALBOARD){if(!(n->board=ts_pedalboard_new(&c->board,rate,c->id))){free(n);return NULL;}}
     else if(c->type==TS_MATRIX_FX_META){if(!(n->meta=ts_meta_new(&c->meta,rate,c->id))){free(n);return NULL;}}
     else if(c->type==TS_MATRIX_FX_COMPRESSOR){ts_compressor_init(&n->compressor);ts_compressor_prepare(&n->compressor,rate);}
-    else if(!(n->pedal=ts_sister_single_fx_new(pedal_type(c->type),rate,c->id*UINT32_C(0x9e3779b9)))){free(n);return NULL;}
+    else if(c->type!=TS_MATRIX_FX_MODULATOR && !(n->pedal=ts_sister_single_fx_new(pedal_type(c->type),rate,c->id*UINT32_C(0x9e3779b9)))){free(n);return NULL;}
     n->profile = (TsProfileEffectIdentity){
         .generation=atomic_fetch_add_explicit(&profile_generation,1,memory_order_relaxed)+1,
         .patch=n->sunvox_patch,.id=c->id,.type=(uint32_t)c->type,.quantum=n->sunvox_quantum};
+    if(modulation) {
+        n->mod=calloc(1,sizeof(*n->mod));if(!n->mod){node_free(n);return NULL;}
+        n->mod->authored=n->mod->modulated=*c;
+    }
     node_set(n,c,1);return n;
 }
 void ts_matrix_effects_init(TsMatrixEffects *f)
@@ -113,7 +138,7 @@ void ts_matrix_effects_suspend(TsMatrixEffects *f,unsigned mask)
         if(f->current[i])ts_pedalboard_finish_edits(f->current[i]->board);
         atomic_store_explicit(&f->remaining[i],0,memory_order_relaxed);f->fading&=~(1u<<i);
     }
-    f->rendered=0;f->suspended=mask;
+    f->rendered=0;if(f->suspended!=mask)f->mod_remaining=0;f->suspended=mask;
 }
 static int effect_asleep(const TsMatrixEffects *f,int i)
 {return (f->suspended&(1u<<i)) && f->activity[i]<=0;}
@@ -132,7 +157,7 @@ void ts_matrix_effects_free(TsMatrixEffects *f)
     ts_matrix_effects_init(f);
 }
 void ts_matrix_effects_discard(TsMatrixEffectPlan *p)
-{for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i){node_free(p->node[i]);ts_pedalboard_discard(&p->board[i]);}ts_sunvox_batch_free(p->worker);memset(p,0,sizeof(*p));}
+{for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i){node_free(p->node[i]);free(p->modulation[i]);ts_pedalboard_discard(&p->board[i]);}ts_sunvox_batch_free(p->worker);memset(p,0,sizeof(*p));}
 static TsSunVoxBatch *prepare_worker(const TsMatrixEffects *f,const TsMatrixEffectPlan *plan)
 {
     if(!ts_sunvox_workers_configured())return NULL;
@@ -159,7 +184,11 @@ int ts_matrix_effects_stage(const TsMatrixEffects *f,const TsMatrixControls *c,u
         /* A short in-flight lifecycle crossfade cannot be overwritten. */
         if(f->previous[i]){ts_matrix_effects_discard(p);return 0;}
         p->changed|=1u<<i;
-        if(v->id && !(p->node[i]=node_new(v,rate))){ts_matrix_effects_discard(p);return 0;}
+        if(v->id && !(p->node[i]=node_new(v,rate,modulation_needed(c,i)))){ts_matrix_effects_discard(p);return 0;}
+    }
+    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)if(!(p->changed&(1u<<i)) && f->current[i] && !f->current[i]->mod && modulation_needed(c,i)) {
+        p->modulation[i]=calloc(1,sizeof(TsMatrixModulation));
+        if(!p->modulation[i]){ts_matrix_effects_discard(p);return 0;}
     }
     if(!f->worker)p->worker=prepare_worker(f,p);
     return 1;
@@ -167,6 +196,7 @@ int ts_matrix_effects_stage(const TsMatrixEffects *f,const TsMatrixControls *c,u
 void ts_matrix_effects_commit(TsMatrixEffects *f,const TsMatrixControls *c,unsigned rate,TsMatrixEffectPlan *p)
 {
     if(p->worker){f->worker=p->worker;p->worker=NULL;}
+    f->mod_mask=0;f->mod_remaining=0;
     for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i) {
         if(p->changed&(1u<<i)) {
             f->previous[i]=f->current[i];f->current[i]=p->node[i];p->node[i]=NULL;
@@ -181,6 +211,11 @@ void ts_matrix_effects_commit(TsMatrixEffects *f,const TsMatrixControls *c,unsig
             ts_pedalboard_commit(f->current[i]->board,&c->effect[i].board,&p->board[i]);
         }
         node_set(f->current[i],&c->effect[i],0);
+        if(f->current[i]) {
+            if(p->modulation[i]){f->current[i]->mod=p->modulation[i];p->modulation[i]=NULL;}
+            if(f->current[i]->mod)f->current[i]->mod->authored=c->effect[i];
+            if(c->effect[i].type==TS_MATRIX_FX_MODULATOR)f->mod_mask|=1u<<i;
+        }
     }
     p->changed=0;f->rate=rate;
 }
@@ -209,12 +244,12 @@ int ts_matrix_effects_restore(TsMatrixEffects *f,const TsMatrixControls *c,unsig
        the previous project/device bank. Called only while audio is excluded. */
     TsMatrixEffects next;ts_matrix_effects_init(&next);
     if(!ts_matrix_valid(c) || rate<1000 || rate>384000)return 0;
-    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)if(c->effect[i].id && !(next.current[i]=node_new(&c->effect[i],rate))) {
+    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)if(c->effect[i].id && !(next.current[i]=node_new(&c->effect[i],rate,modulation_needed(c,i)))) {
         ts_matrix_effects_free(&next);return 0;
     }
     next.worker=prepare_worker(&next,NULL);
     ts_matrix_effects_free(f);f->rate=rate;f->worker=next.worker;
-    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i){f->current[i]=next.current[i];next.current[i]=NULL;if(f->current[i])ts_pedalboard_profile_owner(f->current[i]->board,i+1,c->effect[i].id);}
+    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i){f->current[i]=next.current[i];next.current[i]=NULL;if(f->current[i])ts_pedalboard_profile_owner(f->current[i]->board,i+1,c->effect[i].id);if(c->effect[i].id && c->effect[i].type==TS_MATRIX_FX_MODULATOR)f->mod_mask|=1u<<i;}
     return 1;
 }
 void ts_matrix_effects_tick(TsMatrixEffects *f)
@@ -228,7 +263,7 @@ void ts_matrix_effects_tick(TsMatrixEffects *f)
 }
 static TsStereoFrame node_process(TsMatrixEffects *f,int slot,TsMatrixEffectNode *n,TsStereoFrame in,TsStereoFrame key,int connected,int transitioning)
 {
-    if(!n)return (TsStereoFrame){0,0};
+    if(!n || n->type==TS_MATRIX_FX_MODULATOR)return (TsStereoFrame){0,0};
     if(n->remaining){--n->remaining;n->gate=n->start+(n->target-n->start)*(1-(double)n->remaining/n->total);}
     if(!n->sunvox && !n->board && !connected && !in.l && !in.r && !key.l && !key.r)return (TsStereoFrame){0,0};
     if(n->sunvox) {
@@ -282,8 +317,13 @@ TsStereoFrame ts_matrix_effects_process(TsMatrixEffects *f,int i,TsStereoFrame i
 }
 unsigned ts_matrix_effects_span_limit(const TsMatrixEffects *f,unsigned frames)
 {
+    if(f->mod_mask) {
+        unsigned limit=f->mod_remaining?f->mod_remaining:(f->rate/150?f->rate/150:1);
+        if(frames>limit)frames=limit;
+    }
     if(f->fading || f->jobs_count)return 1;
     for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i) {
+        if(f->current[i] && f->current[i]->type==TS_MATRIX_FX_MODULATOR && !f->previous[i])continue;
         if(effect_asleep(f,i))continue;
         if(!f->current[i] && !f->previous[i])continue;
         if(f->activity[i]<1 || (f->suspended&(1u<<i)))return 1;
@@ -295,6 +335,7 @@ unsigned ts_matrix_effects_span_limit(const TsMatrixEffects *f,unsigned frames)
     }
     return frames;
 }
+#include "ts_matrix_modulation.inc"
 void ts_matrix_effects_process_span(TsMatrixEffects *f,int i,
     const TsStereoFrame *in,const TsStereoFrame *key,TsStereoFrame *out,
     unsigned frames,int connected)
@@ -386,8 +427,8 @@ size_t ts_matrix_effects_memory(const TsMatrixEffects *f)
 {
     size_t bytes=0;
     for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i) {
-        if(f->current[i])bytes+=sizeof(TsMatrixEffectNode)+ts_sister_single_fx_memory(f->current[i]->pedal)+ts_pedalboard_memory(f->current[i]->board)+ts_meta_memory(f->current[i]->meta)+ts_sunvox_memory(f->current[i]->sunvox);
-        if(f->previous[i])bytes+=sizeof(TsMatrixEffectNode)+ts_sister_single_fx_memory(f->previous[i]->pedal)+ts_pedalboard_memory(f->previous[i]->board)+ts_meta_memory(f->previous[i]->meta)+ts_sunvox_memory(f->previous[i]->sunvox);
+        if(f->current[i])bytes+=sizeof(TsMatrixEffectNode)+(f->current[i]->mod?sizeof(TsMatrixModulation):0)+ts_sister_single_fx_memory(f->current[i]->pedal)+ts_pedalboard_memory(f->current[i]->board)+ts_meta_memory(f->current[i]->meta)+ts_sunvox_memory(f->current[i]->sunvox);
+        if(f->previous[i])bytes+=sizeof(TsMatrixEffectNode)+(f->previous[i]->mod?sizeof(TsMatrixModulation):0)+ts_sister_single_fx_memory(f->previous[i]->pedal)+ts_pedalboard_memory(f->previous[i]->board)+ts_meta_memory(f->previous[i]->meta)+ts_sunvox_memory(f->previous[i]->sunvox);
     }
     return bytes;
 }

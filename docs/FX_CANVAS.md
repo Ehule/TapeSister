@@ -64,6 +64,72 @@ Inherited track-to-tile routing remains inspectable in the Matrix.
 - Undo/Redo and Ctrl+Z/Ctrl+Y are shared with the Matrix. Audition keys pass through
   to the instrument. MOSAIC / CLOSE returns to Mosaic without stopping audio.
 
+## Modulation curves
+
+Choose **+ EFFECT → MODULATOR**, then double-click its card. Four curve lanes
+open initially; **+ ADD LANE** expands the card to sixteen lanes. A lane can
+control several parameters, each with its own low/high range. The card supports
+64 assignments in total. Curve and assignment edits use the shared Matrix undo
+history and save with the project.
+
+![Native modulation editor](screenshots/fx-modulation.png)
+
+| Control | Behavior |
+| --- | --- |
+| **DRAW** | Drag across the graph to draw a curve. |
+| **POINTS** | Drag a point; double-click empty graph space to insert one; right-click an interior point to remove it. |
+| **SINE / TRIANGLE / RANDOMIZE** | Replace the selected curve. Randomize uses the chosen **PTS** count (2–64); click the left/right half of PTS to decrease/increase it. Generated points and the next random seed are saved, so loading never rolls a new shape. |
+| **SMOOTH** | Drag to round the transitions between points without overshooting their values. Shift-drag gives finer adjustment. |
+| **LOOP / ONE SHOT** | Repeat the curve, or run once and hold its final value. Loop endpoints are joined when drawing, moving an endpoint, randomizing, or switching to Loop. |
+| **FREE / TEMPO** | Set cycle duration in seconds (0.05–14,400) or quarter-note beats (1/16–1,024). Drag the value or double-click to type it. Tempo follows F11's master tempo, including the tracker clock when it is the enabled master source. |
+| **RETRIGGER ALL** | Restart this card's lanes from their first point. Tempo timing controls duration; it does not quantize this command or automatically retrigger at markers. |
+| **+ ASSIGN** | Choose an added effect or an individual pedal inside an added Pedalboard, then choose an available continuous parameter. |
+| **LOW / HIGH** | Drag each endpoint independently. Inverting the endpoints reverses that assignment. Cutoff is shown in Hz and output in dB; other ranges use normalized percentages. |
+| Assignment **ON / X** | Bypass or remove that assignment. Click its destination or parameter to change it. |
+| Lane square / top **ON** | Bypass one lane or the entire card. Double-click a lane name to rename it. |
+| **Esc / BACK** | Return to the window that opened the editor; Esc first cancels an open picker or text entry. |
+
+The ordinary audio path goes through the effects. Dashed lilac cables show
+parameter assignments; the Modulator has no audio input. Drag its output to an
+added effect (or select it and Ctrl+Shift-click the effect) to create an assignment
+and open the parameter picker. Edit/remove these control links in the modulation
+editor. Audio cable selection, gain and Clear Cables apply to audio routes.
+
+Supported targets include native pedal controls, continuous Character Filter
+controls, added compressor controls, Meta FX macros, and host Mix/Output for
+SunVox effects. SunVox's internal controllers, the fixed legacy Pedalboard,
+and Fallout's internal modulation are outside this first version. Fallout keeps
+its existing local LFO/envelope behavior. One external assignment owns each
+parameter; already assigned parameters are omitted from the picker.
+
+Assignments use stable effect and child-pedal identities, so moving a pedal
+does not change its target. A deleted or replaced target remains visibly missing
+and inactive until repaired or undone. Copying a selected Modulator together
+with its targets reconnects the copies; copying it alone drops external links.
+The authored parameter value remains intact and returns through the processor's
+smoothing when its assignment is bypassed or removed.
+
+Lanes advance on the audio clock when assigned to an enabled, awake effect.
+Unassigned lanes and targets suspended by Gallery do not advance. A one-shot
+holds its last value until retriggered; engine Stop freezes progression. Pause
+keeps the existing tails/engine behavior. Closing the editor changes neither
+the sound nor the clock. Control targets update at 150 Hz, independently of UI
+redraws, with existing DSP smoothing; modulation does not rebuild the routing
+graph or allocate memory in audio processing.
+
+Validation includes native editor interaction and a captured SDL screenshot,
+random-curve project round trips, stable pedal identities, missing targets,
+bypass restoration, tempo/one-shot/sleep behavior, and sample-for-sample Matrix
+span comparisons with modulation active. For a local DSP cost comparison, run
+`tapesister_modulation_tests benchmark`; its eight neutral pedals/four lanes/eight
+assignments exercise parameter publication and processing, not UI drawing or a
+complete live project. Real cost also depends on the destination DSP.
+
+Manual listening check: route a playing card through an added Pedalboard,
+assign a slow curve to its Filter cutoff, invert a second assignment, and compare
+lane/card bypass. Then save/reload, reorder the pedal, switch Gallery movements,
+and use Pause/Stop and Retrigger while checking F12 and listening for clicks.
+
 ## Text labels
 
 Press **T** at the pointer, or choose **TEXT LABEL** from the add menu (double-click

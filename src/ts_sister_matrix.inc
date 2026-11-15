@@ -154,7 +154,10 @@ static TsSisterRuntimeFrame runtime_matrix_frame(TsSisterRuntime *r,
     else runtime_router_begin(&context);
     uint64_t p=ts_profile_begin(TS_PROF_ROUTER);
     ts_matrix_effects_begin_frame(&r->matrix_effects);
+    r->matrix_effects.mod_quarter=r->clock_controls.enabled && r->clock_controls.source==TS_CLOCK_TRACKER_SOURCE && r->master_clock.quarter_seconds>0?r->master_clock.quarter_seconds:60.0/r->clock_controls.bpm;
+    ts_matrix_modulation_begin(&r->matrix_effects);
     ts_matrix_process_sparse(&r->matrix,sums,live,runtime_matrix_node,&context);
+    ts_matrix_modulation_end(&r->matrix_effects,1);
     ts_matrix_effects_end_frame(&r->matrix_effects);
     if(r->matrix.controls.serial_mask)runtime_router_finish(&context);
     ts_profile_end(TS_PROF_ROUTER,p);

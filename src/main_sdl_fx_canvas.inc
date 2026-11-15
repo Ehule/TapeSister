@@ -362,9 +362,9 @@ static void fx_ensure_visible(FxCanvasNode *n)
 static uint32_t fx_color(int type)
 {
     static const int roles[]={TS_COLOR_DATA4,TS_COLOR_DATA3,TS_COLOR_DATA1,TS_COLOR_DATA1,
-        TS_COLOR_DATA5,TS_COLOR_DATA3,TS_COLOR_DATA4,TS_COLOR_DATA5,TS_COLOR_DATA3,TS_COLOR_DATA4,TS_COLOR_DATA5,TS_COLOR_DATA3,TS_COLOR_DATA5};
+        TS_COLOR_DATA5,TS_COLOR_DATA3,TS_COLOR_DATA4,TS_COLOR_DATA5,TS_COLOR_DATA3,TS_COLOR_DATA4,TS_COLOR_DATA5,TS_COLOR_DATA3,TS_COLOR_DATA5,TS_COLOR_DATA5};
     static const uint32_t colors[]={0xffc9b3d4u,0xff9ed2b2u,0xffe6c17du,0xffe5b36bu,
-        0xffb990c6u,0xff95c6dfu,0xffc294d2u,0xff9fcea7u,0xffb6d38du,0xffd19ebdu,0xffc499c9u,0xff9ed2b2u,0xffc499c9u};
+        0xffb990c6u,0xff95c6dfu,0xffc294d2u,0xff9fcea7u,0xffb6d38du,0xffd19ebdu,0xffc499c9u,0xff9ed2b2u,0xffc499c9u,0xffc9a0e6u};
     type=SDL_clamp(type,0,TS_MATRIX_FX_TYPES-1);
     return FX_THEME(roles[type],colors[type]);
 }
@@ -581,6 +581,22 @@ static void fx_paint_cables(TsSamplePages *pages,TsInstrument *bank)
             }
         }
     }
+    for(int i=0;i<fx_canvas.count;++i) {
+        FxCanvasNode *n=&fx_canvas.node[i];int slot=n->row.kind==4?ts_matrix_effect_index(n->row.index):-1;
+        if(slot<0 || w->controls.effect[slot].type!=TS_MATRIX_FX_MODULATOR)continue;
+        const TsMatrixEffectControls *source=&w->controls.effect[slot];const TsModControls *c=&source->modulation;
+        unsigned drawn=0;
+        for(unsigned m=0;m<c->map_count;++m) {
+            const TsModMap *map=&c->map[m];int target=ts_mod_target(&w->controls,map);
+            if(target<0 || (drawn&(1u<<target)))continue;
+            int node=fx_canvas.dest[TS_MATRIX_EFFECT_BASE+target];if(node<0)continue;
+            drawn|=1u<<target;FxCanvasNode *to=&fx_canvas.node[node];
+            int active=0;
+            for(unsigned k=0;k<c->map_count;++k)if(c->map[k].target==map->target && ts_mod_target(&w->controls,&c->map[k])==target)
+                active|=source->enabled && c->map[k].enabled && c->lane[c->map[k].lane].enabled;
+            fx_cables_add_kind(fx_xf(n->x+fx_node_w(n)),fx_yf(n->y+fx_node_h(n)*.5f),fx_xf(to->x),fx_yf(to->y+fx_node_h(to)*.5f),active?0xffc4a4dcu:FX_DIM,1);
+        }
+    }
     fx_cables_end();
 }
 static void fx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
@@ -606,6 +622,7 @@ static void fx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
             const TsMatrixEffectControls *c=slot>=0?&w->controls.effect[slot]:NULL;
             const char *detail=n->at<0?(mx_destination_available(n->destination)?"OUTPUT / RECEIVER":"N/A / PORT NOT OPEN"):c?(c->enabled?(c->type==TS_MATRIX_FX_META?"DOUBLE-CLICK TO ENTER":"ACTIVE / SELECT TO EDIT"):"BYPASS"):"BUS / PATCH ENDPOINT";
             if(n->outside_filter)detail="OUTSIDE MOVEMENT / EDITING";
+            if(c && c->type==TS_MATRIX_FX_MODULATOR)detail="CONTROL / DOUBLE-CLICK TO EDIT";
             const char *title=c && c->type==TS_MATRIX_FX_SUNVOX?ts_sunvox_name(&c->sunvox):c && c->type==TS_MATRIX_FX_META?c->meta.name:n->row.name;
             char compact[48];
             if(c)snprintf(compact,sizeof(compact),"%s %u",ts_matrix_effect_short_name(c->type),(unsigned)c->id);
@@ -622,7 +639,7 @@ static void fx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
                 color=mixed;detail="PLAYING";
             }
             fx_node_rect(x,y,width,height,title,compact,detail,color,fx_chosen(n->row),n->scale);
-            if(n->destination>=0)fx_rect(x-4,y+height/2-4,9,9,FX_CABLE);
+            if(n->destination>=0 && (!c || c->type!=TS_MATRIX_FX_MODULATOR))fx_rect(x-4,y+height/2-4,9,9,FX_CABLE);
             if(n->at>=0)fx_rect(x+width-4,y+height/2-4,9,9,FX_CABLE);
             int sc=n->destination>=0?ts_matrix_sidechain_for(n->destination):-1;
             if(sc>=0 && ts_matrix_destination_active(&w->controls,sc))fx_rect(x-4,y+(int)(height*.8f)-4,9,9,0xffbc98ccu);
