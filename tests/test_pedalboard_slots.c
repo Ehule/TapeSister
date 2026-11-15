@@ -307,6 +307,7 @@ int main(int argc,char **argv)
 
     hit(80,248); /* Visible fifth row is slot 20, not slot 5. */
     assert(sister.model.parameters.fx.slot[19].type==TS_SISTER_FX_REVERB);
+    assert(sister.model.parameters.fx.slot[19].mix==0);
     TsSisterUiHit h=ts_sister_ui_hit_test_model(&sister.model,252,248);
     assert(h.index==TS_SISTER_UI_SLOT_PARAMETER(19,1));
     char target[80];assert(ts_sister_ui_midi_target(h,target,sizeof(target)));

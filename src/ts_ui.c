@@ -5746,6 +5746,14 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     }
 
     if (model->fx_page == 1) {
+        rect(fb,0,0,436,36,ts_theme_color(active_palette(),render_group,TS_COLOR_BACKGROUND,RGB(12,12,12)));
+        int boards=model->board_count>0?model->board_count:1;
+        sister_compact_button(fb,10,8,26,"<",model->board_tab_first>0);
+        for(int i=0;i<8 && model->board_tab_first+i<boards;++i){char name[12];
+            int at=model->board_tab_first+i;snprintf(name,sizeof(name),"P%d",at+1);
+            sister_compact_button(fb,40+i*45,8,43,name,at==model->board_selected);
+        }
+        sister_compact_button(fb,404,8,26,">",model->board_tab_first+8<boards);
         char effect_transition_caption[24];
         char master_transition_caption[24];
         int first = ts_sister_ui_fx_scroll(model);
@@ -5779,7 +5787,13 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                 sister_db_parameter_state(fb, 156, top + 4, field_width,
                     "GAIN", slot->gain_db, color,
                     ts_sister_ui_parameter_locked(model, parameter));
-                if(slot->type==TS_SISTER_FX_FILTER) {
+                if(slot->type==TS_SISTER_FX_SUNVOX) {
+                    for(int k=0;k<3;++k){TsSunVoxParameter p;char label[24];float value=ts_sunvox_normalized(&slot->sunvox,k);
+                        if(ts_sunvox_parameter(&slot->sunvox,k,&p))snprintf(label,sizeof(label),"%.6s %.0F",p.name,value*100);
+                        else snprintf(label,sizeof(label),"--");
+                        sister_value_parameter_state(fb,156+field_step*(k+1),top+4,field_width,label,value,color,ts_sister_ui_parameter_locked(model,parameter+k+1));}
+                    sister_percent_parameter_state(fb,156+field_step*4,top+4,field_width,"MIX",slot->mix,100,color,ts_sister_ui_parameter_locked(model,parameter+4));
+                } else if(slot->type==TS_SISTER_FX_FILTER) {
                     const TsCharacterFilterControls *c=&slot->filter;
                     int focus=c->value[TS_CF_ROUTE]>=.75f && c->value[TS_CF_FOCUS]>=.5f?8:0;
                     const int ids[3]={TS_CF_L_CUT+focus,TS_CF_L_RES+focus,TS_CF_L_DRIVE+focus};
@@ -5847,6 +5861,8 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                         ts_sister_ui_parameter_locked(model, parameter + 4));
                 }
             }
+            if(model->board_selected)text(fb,60,top+31,"SERIAL / CANVAS INPUT",PAL_MOUSE,1);
+            else {
             sister_target_toggle(fb, 60, top + 26, 46, "PRE",
                 slot->placement & TS_SISTER_FX_PLACE_PRE, PAL_WAVE_LEFT);
             sister_target_toggle(fb, 112, top + 26, 46, "H1",
@@ -5857,9 +5873,13 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                 slot->placement & TS_SISTER_FX_PLACE_H3, PAL_TUNING);
             sister_target_toggle(fb, 268, top + 26, 46, "POST",
                 slot->placement & TS_SISTER_FX_PLACE_POST, PAL_WAVE_RIGHT);
+            }
             if(slot->type==TS_SISTER_FX_TRANSIENT) {
                 char power[16];snprintf(power,sizeof(power),"PWR %uX",1u+slot->transient_power);
                 button(fb,320,top+26,66,power,slot->transient_power!=0);
+            } else if(slot->type==TS_SISTER_FX_SUNVOX) {
+                sister_compact_button(fb,330,top+26,80,"EDIT SUNVOX",0);
+                char name[30];snprintf(name,sizeof(name),"%.29s",ts_sunvox_name(&slot->sunvox));text(fb,420,top+31,name,PAL_WAVE_RIGHT,1);
             } else if(slot->type==TS_SISTER_FX_FILTER) {
                 sister_compact_button(fb,330,top+26,80,"EDIT FILTER",0);
                 char s[32];ts_character_filter_label(&slot->filter,TS_CF_ROUTE,s,sizeof(s));text(fb,420,top+31,s,PAL_WAVE_RIGHT,1);
@@ -5926,11 +5946,14 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                 ts_sister_ui_parameter_locked(
                     model, TS_SISTER_UI_PARAM_MASTER_FX_TRANSITION));
         }
+        if(model->board_selected)text(fb,114,337,"PATCH FEEDBACK IN FX CANVAS",PAL_MOUSE,1);
+        else {
         sister_percent_parameter_state(fb, 110, 332, 300, "FX FEEDBACK",
             model->parameters.fx.master_feedback, 100, PAL_TUNING,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_MASTER_FX_FEEDBACK));
         text(fb, 420, 337, "0-135%", PAL_MOUSE, 1);
+        }
         if (model->routing.fx_transition_active) {
             if (model->routing.fx_transition_topology)
                 snprintf(effect_transition_caption,

@@ -1,7 +1,8 @@
 /* Exact control-thread snapshots. Meters are not graph inputs; project recall,
    external routing edits and undo are, even without a local mouse event. */
 static struct {
-    int valid,count;
+    int valid,count,active_view;
+    unsigned char active_rows[MATRIX_CAPACITY];
     uint32_t revealed[TS_MATRIX_EFFECT_CAPACITY],effect_open;
     MatrixRow selection[MATRIX_CAPACITY+TS_MATRIX_DESTINATIONS];int selection_count;
     MatrixRow rows[MATRIX_CAPACITY];
@@ -20,7 +21,12 @@ static int fx_graph_changed(TsSamplePages *pages,TsInstrument *bank)
     MatrixWindow *w=&matrix_window;
     int changed=!fx_graph_cache.valid || fx_graph_cache.count!=w->count || fx_graph_cache.movement!=fx_canvas.movement;
     fx_graph_cache.movement=fx_canvas.movement;
-    if(fx_canvas.movement) {
+    changed|=fx_graph_cache.active_view!=fx_canvas.active_view;fx_graph_cache.active_view=fx_canvas.active_view;
+    if(fx_canvas.active_view)for(int i=0;i<w->count;++i) {
+        int playing=fx_row_playing(w->rows[i]);changed|=playing!=fx_graph_cache.active_rows[i];
+        fx_graph_cache.active_rows[i]=playing;
+    }
+    if(fx_canvas.movement || fx_canvas.active_view) {
         changed|=memcmp(fx_graph_cache.revealed,fx_canvas.revealed,sizeof(fx_canvas.revealed))!=0;
         memcpy(fx_graph_cache.revealed,fx_canvas.revealed,sizeof(fx_canvas.revealed));
         changed|=fx_graph_cache.effect_open!=w->effect_open || fx_graph_cache.selection_count!=w->selection_count;

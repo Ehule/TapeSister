@@ -621,6 +621,7 @@ typedef struct {
     TsMosaicRecordPreview mosaic_live_preview;
     uint32_t mosaic_live_rate;
     int mosaic_marker_selected, mosaic_marker_open, mosaic_marker_field;
+    int mosaic_marker_range_pending;
     int mosaic_marker_drag, mosaic_views_open;
     double mosaic_marker_preview;
     char mosaic_marker_name[32], mosaic_marker_time[32], mosaic_marker_status[80];

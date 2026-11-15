@@ -161,7 +161,7 @@ int ts_sister_project_state_apply(const TsSisterProjectState *state,
        a saved OFF master inherits the old/default ON level and can fade a
        wet-only route into silence minutes after loading. Live edits continue
        to use set_parameters and their configured transition clocks. */
-    ts_sister_post_fx_sync_controls(&runtime->post_fx,&runtime->parameters.fx);
+    if(!ts_sister_post_fx_sync_controls(&runtime->post_fx,&runtime->parameters.fx))return 0;
     ts_master_eq_set(&runtime->master_eq,&state->master_eq);
     ts_master_eq_morph_set(&runtime->master_eq,&state->eq_morph);
     ts_compressor_set(&runtime->compressor,&state->compressor);
@@ -290,8 +290,11 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         p->fx.fallout.rise_length, p->fx.fallout.rise_intensity,
         (unsigned)p->fx.fallout.rise_targets) < 0) return 0;
     if (fprintf(file, "SlotCount=%d\n", p->fx.slot_count) < 0) return 0;
+    if(fprintf(file,"NextSlotId=%u\n",p->fx.next_slot_id)<0)return 0;
     for (int index = 0; index < p->fx.slot_count; ++index) {
         const TsSisterFxSlotControls *slot = &p->fx.slot[index];
+        if(fprintf(file,"Slot%dId=%u\n",index+1,slot->id)<0)return 0;
+        if(slot->type==TS_SISTER_FX_SUNVOX){char key[48];snprintf(key,sizeof(key),"Slot%dSunVox",index+1);if(!ts_sunvox_write(file,key,&slot->sunvox))return 0;}
         if (fprintf(file,
             "Slot%dType=%d\nSlot%dEnabled=%d\nSlot%dPlacement=%u\n"
             "Slot%dGainDb=%.9g\nSlot%dA=%.9g\nSlot%dB=%.9g\n"
@@ -524,6 +527,7 @@ static int assign_parameter(TsSisterParameters *p, const char *key,
     char slot_field[32];
 #define PF(name, member) if (strcmp(key, name) == 0) return parse_float_value(value, &p->member)
 #define PI(name, member) if (strcmp(key, name) == 0) return parse_int_value(value, &p->member)
+    if(!strcmp(key,"NextSlotId")){if(!parse_int_value(value,&integer) || integer<0)return 0;p->fx.next_slot_id=(uint32_t)integer;return 1;}
     if (strcmp(key, "SlotCount") == 0) {
         if (!parse_int_value(value, &integer) || integer < TS_SISTER_FX_SLOT_MIN || integer > TS_SISTER_FX_SLOT_COUNT) return 0;
         if (integer > p->fx.slot_count) p->fx.slot_count = integer;
@@ -533,6 +537,8 @@ static int assign_parameter(TsSisterParameters *p, const char *key,
         slot_number >= 1 && slot_number <= TS_SISTER_FX_SLOT_COUNT) {
         if (slot_number > p->fx.slot_count) p->fx.slot_count = slot_number;
         TsSisterFxSlotControls *slot = &p->fx.slot[slot_number - 1];
+        if(!strcmp(slot_field,"Id")){if(!parse_int_value(value,&integer) || integer<0)return 0;slot->id=(uint32_t)integer;return 1;}
+        if(!strncmp(slot_field,"SunVox.",7))return ts_sunvox_read(&slot->sunvox,slot_field+7,value)==1;
         if(!strcmp(slot_field,"Filter"))return ts_character_filter_read(&slot->filter,value);
         if(!strcmp(slot_field,"Transient"))return ts_transient_states_read(value,&slot->transient_power,&slot->transient_states);
         if(!strcmp(slot_field,"StateSeconds"))return parse_float_value(value,&slot->grain_states.seconds);
@@ -846,6 +852,7 @@ static int state_load_file(TsSisterProjectState *state, TsSisterProjectState *lo
             if(ts_master_eq_read(&loaded->master_eq,key,value)<0)goto malformed;
         } else if (!assign_parameter(&loaded->parameters, key, value)) goto malformed;
     }
+    for(int i=0;i<loaded->parameters.fx.slot_count;++i)if(loaded->parameters.fx.slot[i].type==TS_SISTER_FX_SUNVOX && !ts_sunvox_valid(&loaded->parameters.fx.slot[i].sunvox))goto malformed;
     if (ferror(file) || !header || !version || !have_pages || !ts_master_clock_valid(&loaded->clock_controls) || !state_clock_position_valid(loaded) || !ts_matrix_valid(&loaded->matrix) || !ts_matrix_layout_valid(&loaded->matrix_layout) ||
         loaded->active_page >= loaded->page_count ||
         (view_fields && (view_fields&31)!=31) || !project_view_valid(&loaded->view)) goto malformed;

@@ -332,8 +332,11 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         p->fx.fallout.rise_length, p->fx.fallout.rise_intensity,
         (unsigned)p->fx.fallout.rise_targets) < 0) return 0;
     if (fprintf(file, "slot_count=%d\n", p->fx.slot_count) < 0) return 0;
+    if(fprintf(file,"next_slot_id=%u\n",p->fx.next_slot_id)<0)return 0;
     for (int index = 0; index < p->fx.slot_count; ++index) {
         const TsSisterFxSlotControls *slot = &p->fx.slot[index];
+        if(fprintf(file,"slot%d_id=%u\n",index+1,slot->id)<0)return 0;
+        if(slot->type==TS_SISTER_FX_SUNVOX){char key[48];snprintf(key,sizeof(key),"slot%d_sunvox",index+1);if(!ts_sunvox_write(file,key,&slot->sunvox))return 0;}
         if (fprintf(file,
             "slot%d_type=%d\nslot%d_enabled=%d\nslot%d_placement=%u\n"
             "slot%d_gain_db=%.9g\nslot%d_a=%.9g\nslot%d_b=%.9g\n"
@@ -445,6 +448,7 @@ static int assign_field(TsSisterParameters *p, const char *key,
     char slot_field[32];
 #define FLOAT_FIELD(name, member) if (strcmp(key, name) == 0) return parse_float(value, &p->member)
 #define INT_FIELD(name, member) if (strcmp(key, name) == 0) return parse_int(value, &p->member)
+    if(!strcmp(key,"next_slot_id")){if(!parse_int(value,&integer) || integer<0)return 0;p->fx.next_slot_id=(uint32_t)integer;return 1;}
     if (strcmp(key, "slot_count") == 0) {
         if (!parse_int(value, &integer) || integer < TS_SISTER_FX_SLOT_MIN || integer > TS_SISTER_FX_SLOT_COUNT) return 0;
         if (integer > p->fx.slot_count) p->fx.slot_count = integer;
@@ -454,6 +458,8 @@ static int assign_field(TsSisterParameters *p, const char *key,
         slot_number >= 1 && slot_number <= TS_SISTER_FX_SLOT_COUNT) {
         if (slot_number > p->fx.slot_count) p->fx.slot_count = slot_number;
         TsSisterFxSlotControls *slot = &p->fx.slot[slot_number - 1];
+        if(!strcmp(slot_field,"id")){if(!parse_int(value,&integer) || integer<0)return 0;slot->id=(uint32_t)integer;return 1;}
+        if(!strncmp(slot_field,"sunvox.",7))return ts_sunvox_read(&slot->sunvox,slot_field+7,value)==1;
         if(!strcmp(slot_field,"filter"))return ts_character_filter_read(&slot->filter,value);
         if(!strcmp(slot_field,"transient"))return ts_transient_states_read(value,&slot->transient_power,&slot->transient_states);
         if(!strcmp(slot_field,"state_seconds"))return parse_float(value,&slot->grain_states.seconds);
@@ -671,7 +677,7 @@ int ts_sister_preset_load(TsSisterPresetBank *bank, const char *path,
                           uint32_t sample_rate,
                           char *error, size_t error_size)
 {
-    TsSisterPresetBank loaded;
+    TsSisterPresetBank *loaded = NULL;
     TsSisterParameters current;
     uint64_t current_locks = 0u;
     uint64_t current_locks_high = 0u;
@@ -694,7 +700,12 @@ int ts_sister_preset_load(TsSisterPresetBank *bank, const char *path,
         set_error(error, error_size, "Could not open Sister preset file");
         return 0;
     }
-    ts_sister_preset_bank_init(&loaded, sample_rate);
+    loaded = malloc(sizeof(*loaded));
+    if (!loaded) {
+        set_error(error, error_size, "Not enough memory to load presets");
+        goto fail;
+    }
+    ts_sister_preset_bank_init(loaded, sample_rate);
     ts_sister_parameters_default(&current, sample_rate);
     current.fx.slot_count = TS_SISTER_FX_SLOT_MIN;
     while (fgets(line, sizeof(line), file) != NULL) {
@@ -714,9 +725,10 @@ int ts_sister_preset_load(TsSisterPresetBank *bank, const char *path,
                     ts_sister_ui_migrate_legacy_effect_locks(
                         &current_locks, &current_locks_high);
                 }
+                for(int i=0;i<current.fx.slot_count;++i)if(current.fx.slot[i].type==TS_SISTER_FX_SUNVOX && !ts_sunvox_valid(&current.fx.slot[i].sunvox))goto malformed;
                 if (!valid_name(current_name) ||
                     !ts_sister_preset_save_new_with_lock_words(
-                        &loaded, current_name, &current, current_locks,
+                        loaded, current_name, &current, current_locks,
                         current_locks_high,
                         sample_rate, error, error_size))
                     goto fail;
@@ -769,15 +781,17 @@ int ts_sister_preset_load(TsSisterPresetBank *bank, const char *path,
             ts_sister_ui_migrate_legacy_effect_locks(
                 &current_locks, &current_locks_high);
         }
+        for(int i=0;i<current.fx.slot_count;++i)if(current.fx.slot[i].type==TS_SISTER_FX_SUNVOX && !ts_sunvox_valid(&current.fx.slot[i].sunvox))goto malformed;
         if (!valid_name(current_name) ||
             !ts_sister_preset_save_new_with_lock_words(
-                &loaded, current_name, &current, current_locks,
+                loaded, current_name, &current, current_locks,
                 current_locks_high,
                 sample_rate, error, error_size))
             goto fail;
     }
     fclose(file);
-    *bank = loaded;
+    *bank = *loaded;
+    free(loaded);
     set_error(error, error_size, "");
     return 1;
 malformed:
@@ -785,6 +799,7 @@ malformed:
         snprintf(error, error_size, "Malformed Sister preset file at line %d",
                  line_number);
 fail:
+    free(loaded);
     fclose(file);
     return 0;
 }

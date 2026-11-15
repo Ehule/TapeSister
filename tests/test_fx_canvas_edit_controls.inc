@@ -49,6 +49,31 @@ static void edit_controls(void)
     assert(!w->controls.row[TS_MATRIX_EFFECT_BASE+1].matrix_gain[TS_MATRIX_EFFECT_BASE+1]);
     SDL_SetModState(KMOD_SHIFT);click(450,190,1);SDL_SetModState(KMOD_NONE);assert(w->selection_count==1);
     SDL_SetModState(KMOD_SHIFT);click(450,190,1);SDL_SetModState(KMOD_NONE);
+    /* Right-click preserves the group and disables only its name field. */
+    snprintf(fx_position(instance(id[0])->row,0)->name,48,"First");
+    snprintf(fx_position(instance(id[1])->row,0)->name,48,"Second");
+    pointer(SDL_MOUSEBUTTONDOWN,80,190,SDL_BUTTON_RIGHT,1);
+    assert(fx_canvas.properties && fx_canvas.properties_count==2 && w->selection_count==2);
+    fx_properties_insert("Must not rename");fx_canvas.properties_color=fx_swatch(3);
+    if(getenv("TS_FX_PREVIEW")) {
+        char path[1024];snprintf(path,sizeof(path),"%s/group-color.bmp",getenv("TS_FX_PREVIEW"));fx_properties_paint();
+        SDL_Surface *image=SDL_CreateRGBSurfaceWithFormatFrom(fx_properties_window.pixels,FX_PROPERTIES_W,FX_PROPERTIES_H,32,FX_PROPERTIES_W*4,SDL_PIXELFORMAT_ARGB8888);
+        assert(image && !SDL_SaveBMP(image,path));SDL_FreeSurface(image);
+    }
+    key(SDLK_RETURN,0);
+    assert(fx_position(instance(id[0])->row,0)->color==fx_swatch(3));
+    assert(fx_position(instance(id[1])->row,0)->color==fx_swatch(3));
+    assert(!strcmp(fx_position(instance(id[0])->row,0)->name,"First"));
+    assert(!strcmp(fx_position(instance(id[1])->row,0)->name,"Second"));
+    key(SDLK_z,KMOD_CTRL);assert(!fx_position(instance(id[0])->row,0)->color && !fx_position(instance(id[1])->row,0)->color);
+    /* Cable context menus use the same undoable/persistent color metadata. */
+    pointer(SDL_MOUSEBUTTONDOWN,340,189,SDL_BUTTON_RIGHT,1);
+    assert(fx_canvas.properties && fx_canvas.properties_wires.count==1 && !fx_canvas.properties_count);
+    fx_canvas.properties_color=fx_swatch(10);key(SDLK_RETURN,0);
+    assert(fx_wire_color(instance(id[0])->row,TS_MATRIX_EFFECT_BASE+1)==fx_swatch(10));view_codec();
+    key(SDLK_z,KMOD_CTRL);assert(!fx_wire_color(instance(id[0])->row,TS_MATRIX_EFFECT_BASE+1));
+    key(SDLK_y,KMOD_CTRL);assert(fx_wire_color(instance(id[0])->row,TS_MATRIX_EFFECT_BASE+1)==fx_swatch(10));
+    key(SDLK_z,KMOD_CTRL);fx_clear_wires();fx_select(instance(id[0]),0);fx_select(instance(id[1]),1);
     int undo=w->history_cursor;pointer(SDL_MOUSEMOTION,450,190,0,0);key(SDLK_g,0);assert(fx_modal());
     pointer(SDL_MOUSEMOTION,510,215,0,0);pointer(SDL_MOUSEBUTTONUP,510,215,SDL_BUTTON_LEFT,1);assert(fx_modal());
     key(SDLK_RETURN,0);assert(!w->drag && w->history_cursor==undo+1);

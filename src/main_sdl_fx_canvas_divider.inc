@@ -4,7 +4,7 @@ static int fx_divider_event(SDL_Event *e)
 {
     MatrixWindow *w=&matrix_window;
     int own=w->visible && event_window_id(e)==w->id;
-    if(!own || !w->canvas || sunvox_editor.node || fx_canvas.meta || fx_canvas.popup || fx_canvas.confirm_clear ||
+    if(!own || !w->canvas || (sunvox_editor.node || sunvox_editor.child) || fx_canvas.meta || fx_canvas.popup || fx_canvas.confirm_clear ||
        fx_canvas.confirm_delete || fx_canvas.properties || fx_canvas.label_editing) {
         fx_divider_cursor(0);return 0;
     }

@@ -66,7 +66,7 @@ static int offline_render_engine(const OfflineOptions *o,const char *job,unsigne
     memcpy(a.sister.performance_gain_current,state.performance_mixer.gain,sizeof(a.sister.performance_gain_current));
     /* A fresh render has empty effect histories. Restored controls start at
        their captured levels, avoiding accidental multi-minute fade-ins. */
-    ts_sister_post_fx_sync_controls(&a.sister.post_fx,&state.parameters.fx);
+    OFFLINE_REQUIRE(ts_sister_post_fx_sync_controls(&a.sister.post_fx,&state.parameters.fx),"Cannot prepare pedalboard effects.");
     if(o->fx_snapshot) {
         memcpy(a.sister.post_fx.slot,o->fx_slot,sizeof(o->fx_slot));
         a.sister.post_fx.master_engage=o->fx_master;

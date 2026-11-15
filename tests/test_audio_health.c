@@ -282,6 +282,8 @@ int main(int argc, char **argv)
     assert(ts_audio_health_event(&profile_copy,main_window,a,ui));
     char *profile_report=SDL_GetClipboardText();
     assert(strstr(profile_report,"#16 GRAIN") && strstr(profile_report,"peak ms/block"));SDL_free(profile_report);
+    assert(ts_audio_health_event(&effects_event,main_window,a,ui));assert(ts_health.profile_effects==2);
+    ts_audio_health_update(a,ui);
     assert(ts_audio_health_event(&effects_event,main_window,a,ui));assert(!ts_health.profile_effects);
     assert(ts_audio_health_event(&profile_event,main_window,a,ui));assert(!ts_profile_enabled());
     for (unsigned i = 0; i < 25; ++i)

@@ -8,7 +8,7 @@ static struct {
     FxCanvasNode node[MATRIX_CAPACITY+TS_MATRIX_DESTINATIONS];
     int label_selected,label_editing,label_target,label_cursor,label_all;
     Uint32 text_blink;int text_phase,confirm_delete;uint32_t replace_id;
-    int properties;MatrixRow properties_row;char properties_name[48];uint32_t properties_color;int properties_cursor,properties_all;
+    int properties,properties_count;MatrixRow properties_rows[MATRIX_CAPACITY+TS_MATRIX_DESTINATIONS];FxWireList properties_wires;MatrixRow properties_row;char properties_name[48];uint32_t properties_color;int properties_cursor,properties_all;
     char label_text[TS_FX_LABEL_TEXT];
     TsFxCanvasLabel label_origin;
     int count,dest[TS_MATRIX_DESTINATIONS],fit,wire,destination,mouse_x,mouse_y;
@@ -23,7 +23,7 @@ static struct {
     SDL_Cursor *divider_cursor;int divider_hover,divider_start,divider_pointer;
     int help;
     uint32_t revealed[TS_MATRIX_EFFECT_CAPACITY];
-    int box_add,shift_moved;float gesture_zoom;uint64_t movement;int movement_popup;
+    int box_add,shift_moved;float gesture_zoom;uint64_t movement;int movement_popup,active_view;
 } fx_canvas={.wire=-1,.destination=-1,.label_selected=-1};
 #define FX_TOP (fx_canvas.meta?116:96)
 #define FX_BOTTOM (fx_canvas.meta?682:MATRIX_H-(fx_canvas.help?144:48))
@@ -54,8 +54,9 @@ static void fx_divider_cursor(int active)
     fx_canvas.divider_hover=active;
 }
 static void fx_context_reset(void)
-{fx_properties_close();fx_canvas.label_selected=-1;fx_canvas.label_editing=fx_canvas.properties=fx_canvas.confirm_delete=0;fx_canvas.replace_id=0;fx_divider_cursor(0);if(fx_canvas.divider_cursor)SDL_FreeCursor(fx_canvas.divider_cursor);fx_canvas.divider_cursor=NULL;svfx_close();fx_canvas.meta=0;fx_canvas.wire=fx_canvas.destination=-1;fx_canvas.fit=fx_canvas.popup=fx_canvas.confirm_clear=0;fx_canvas.inspector_key=0;fx_canvas.movement=0;fx_canvas.movement_popup=0;
+{fx_properties_close();fx_canvas.label_selected=-1;fx_canvas.label_editing=fx_canvas.properties=fx_canvas.confirm_delete=0;fx_canvas.replace_id=0;fx_divider_cursor(0);if(fx_canvas.divider_cursor)SDL_FreeCursor(fx_canvas.divider_cursor);fx_canvas.divider_cursor=NULL;svfx_close();fx_canvas.meta=0;fx_canvas.wire=fx_canvas.destination=-1;fx_canvas.fit=fx_canvas.popup=fx_canvas.confirm_clear=0;fx_canvas.inspector_key=0;fx_canvas.movement=0;fx_canvas.movement_popup=0;fx_canvas.active_view=0;
  memset(fx_canvas.revealed,0,sizeof(fx_canvas.revealed));
+ free(fx_canvas.properties_wires.items);fx_canvas.properties_wires=(FxWireList){0};
  free(fx_canvas.wires.items);free(fx_canvas.before_wires.items);fx_canvas.wires=(FxWireList){0};fx_canvas.before_wires=(FxWireList){0};}
 static int fx_source_at(MatrixRow key)
 {
@@ -119,20 +120,35 @@ static void fx_store_initial_position(TsFxCanvasPosition *position,float x,float
     position->y=y;
 }
 
+static int fx_row_playing(MatrixRow row)
+{
+    MatrixWindow *w=&matrix_window;
+    if(row.kind==3 && row.index>=0 && row.index<TS_MOSAIC_EVENTS) {
+        TsMosaic *m=mx_card_scene(row);
+        for(int i=0;m && i<2;++i)if(w->playing[i].canvas==row.canvas && w->playing[i].epoch==m->epoch && w->playing[i].card[row.index]==row.tile)return 1;
+    }
+    if(row.kind==1)for(int i=0;i<w->activity_count;++i)if(w->activity[i].tile==row.tile && w->activity[i].source>0)return 1;
+    if(row.kind==0 && row.index>=0 && row.index<TS_TRACKER_LANES)return w->tracks[row.index].source>0;
+    return 0;
+}
+static int fx_filter_source(MatrixRow row)
+{return fx_canvas.active_view?fx_row_playing(row):row.kind==3 && row.canvas==fx_canvas.movement;}
 /* This mask is UI-only reachability. Feedback is bounded by the finite set
    of destinations; it never drives DSP activation or transport. */
 static int fx_movement_destinations(TsSamplePages *pages,TsInstrument *bank,unsigned char *keep)
 {
     MatrixWindow *w=&matrix_window;int bus=0;memset(keep,0,TS_MATRIX_DESTINATIONS);
-    for(int i=0;i<w->count;++i)if(w->rows[i].kind==3 && w->rows[i].canvas==fx_canvas.movement) {
+    for(int i=0;i<w->count;++i)if(fx_filter_source(w->rows[i])) {
         TsSourceRoute raw=mx_route(w->rows[i],pages,bank);
-        if(!raw.matrix_enabled){bus=1;continue;}
+        if(!raw.matrix_enabled) {
+            int root=w->rows[i].kind==3?TS_MATRIX_MOSAIC:w->rows[i].kind==0?TS_MATRIX_TRACKER:TS_MATRIX_TILES;
+            bus=1;keep[root]=1;
+            for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)if(w->controls.row[root].matrix_gain[d])keep[d]=1;
+            continue;
+        }
         TsSourceRoute route=mx_display_route(raw);
         for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)if(route.matrix_gain[d])keep[d]=1;
     }
-    /* A legacy card feeds the Mosaic bus before the processors. */
-    if(bus)for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)
-        if(w->controls.row[TS_MATRIX_MOSAIC].matrix_gain[d])keep[d]=1;
     for(int pass=0;pass<TS_MATRIX_PROCESSORS;++pass) {
         int changed=0;
         for(int k=0;k<TS_MATRIX_PROCESSORS;++k) {
@@ -246,13 +262,13 @@ static void fx_build(TsSamplePages *pages,TsInstrument *bank)
         if(p){n->x=p->x;n->y=p->y;n->scale=p->scale?p->scale:1;}
 
     }
-    if(fx_canvas.movement) {
+    if(fx_canvas.movement || fx_canvas.active_view) {
         unsigned char keep[TS_MATRIX_DESTINATIONS];int bus=fx_movement_destinations(pages,bank,keep);
         int count=0;
         for(int i=0;i<fx_canvas.count;++i) {
             FxCanvasNode n=fx_canvas.node[i];
-            int visible=n.row.kind==3?n.row.canvas==fx_canvas.movement:
-                n.destination>=0?keep[n.destination]:n.row.kind==2 && n.row.index==TS_MATRIX_MOSAIC && bus;
+            int visible=n.row.kind==3 || n.row.kind==0 || n.row.kind==1?fx_filter_source(n.row):
+                n.destination>=0?keep[n.destination]:n.row.kind==2 && keep[n.row.index] && bus;
             if(!visible && n.row.kind==4) {
                 int slot=ts_matrix_effect_index(n.row.index);
                 visible=(slot>=0 && fx_canvas.revealed[slot]==n.row.tile) || w->effect_open==n.row.tile;
@@ -340,9 +356,9 @@ static void fx_ensure_visible(FxCanvasNode *n)
 static uint32_t fx_color(int type)
 {
     static const int roles[]={TS_COLOR_DATA4,TS_COLOR_DATA3,TS_COLOR_DATA1,TS_COLOR_DATA1,
-        TS_COLOR_DATA5,TS_COLOR_DATA3,TS_COLOR_DATA4,TS_COLOR_DATA5,TS_COLOR_DATA3,TS_COLOR_DATA4,TS_COLOR_DATA5,TS_COLOR_DATA3};
+        TS_COLOR_DATA5,TS_COLOR_DATA3,TS_COLOR_DATA4,TS_COLOR_DATA5,TS_COLOR_DATA3,TS_COLOR_DATA4,TS_COLOR_DATA5,TS_COLOR_DATA3,TS_COLOR_DATA5};
     static const uint32_t colors[]={0xffc9b3d4u,0xff9ed2b2u,0xffe6c17du,0xffe5b36bu,
-        0xffb990c6u,0xff95c6dfu,0xffc294d2u,0xff9fcea7u,0xffb6d38du,0xffd19ebdu,0xffc499c9u,0xff9ed2b2u};
+        0xffb990c6u,0xff95c6dfu,0xffc294d2u,0xff9fcea7u,0xffb6d38du,0xffd19ebdu,0xffc499c9u,0xff9ed2b2u,0xffc499c9u};
     type=SDL_clamp(type,0,TS_MATRIX_FX_TYPES-1);
     return FX_THEME(roles[type],colors[type]);
 }
@@ -518,6 +534,7 @@ static void fx_inspector_paint(TsSamplePages *pages,TsInstrument *bank)
 #include "main_sdl_fx_canvas_edit.inc"
 #include "main_sdl_fx_canvas_labels.inc"
 #include "main_sdl_fx_canvas_patch.inc"
+#include "main_sdl_fx_canvas_style.inc"
 #include "main_sdl_fx_canvas_properties.inc"
 #include "main_sdl_fx_canvas_popup.inc"
 static void fx_paint_cables(TsSamplePages *pages,TsInstrument *bank)
@@ -549,7 +566,8 @@ static void fx_paint_cables(TsSamplePages *pages,TsInstrument *bank)
                 int related=cable_selected?selected:node_selected &&
                     (mx_same(n->row,w->selection[0]) || mx_same(to->row,w->selection[0]));
                 if(focus && layer!=related)continue;
-                uint32_t color=selected?MX_YELLOW:delayed?MX_AMBER:sc?0xffbc98ccu:FX_CABLE;
+                uint32_t custom=fx_wire_color(n->row,d);
+                uint32_t color=selected?MX_YELLOW:custom?custom:delayed?MX_AMBER:sc?0xffbc98ccu:FX_CABLE;
                 if(focus && !related)color=0xff000000u | (((color&0x00fefefeu)>>1)+((FX_BG&0x00fefefeu)>>1));
                 float x=fx_xf(n->x+fx_node_w(n)),y=fx_yf(n->y+fx_node_h(n)*.5f),xx=fx_xf(to->x),yy=fx_yf(to->y+fx_node_h(to)*(sc?.8f:.5f));
                 fx_cables_add(x,y,xx,yy,color);
@@ -612,7 +630,14 @@ static void fx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
             else snprintf(compact,sizeof(compact),"%s",title);
             TsFxCanvasPosition *style=fx_position(n->row,0);
             if(style && style->name[0]){title=style->name;snprintf(compact,sizeof(compact),"%s",title);}
-            fx_node_rect(x,y,width,height,title,compact,detail,c && !c->enabled?FX_MUTED:style && style->color?style->color:fx_color(c?c->type:0),fx_chosen(n->row),n->scale);
+            uint32_t color=c && !c->enabled?FX_MUTED:style && style->color?style->color:fx_color(c?c->type:0);
+            if(fx_canvas.active_view && fx_row_playing(n->row)) {
+                float pulse=.28f+.10f*sinf(SDL_GetTicks()*.0025f);
+                uint32_t green=0xff68d68b,mixed=0xff000000;
+                for(int shift=0;shift<24;shift+=8)mixed|=(uint32_t)(((color>>shift)&255)*(1-pulse)+((green>>shift)&255)*pulse)<<shift;
+                color=mixed;detail="PLAYING";
+            }
+            fx_node_rect(x,y,width,height,title,compact,detail,color,fx_chosen(n->row),n->scale);
             if(n->destination>=0)fx_rect(x-4,y+height/2-4,9,9,FX_CABLE);
             if(n->at>=0)fx_rect(x+width-4,y+height/2-4,9,9,FX_CABLE);
             int sc=n->destination>=0?ts_matrix_sidechain_for(n->destination):-1;
@@ -645,12 +670,12 @@ static void fx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
         TsUiRect r=fx_toolbar_rect(i);fx_button(r.x,r.y,r.w,names[i],i==FX_TOOL_HELP && fx_canvas.help);
     }
     if(!meta) {
-        const char *name="ALL MOVEMENTS";
+        const char *name=fx_canvas.active_view?"CURRENTLY PLAYING":"ALL MOVEMENTS";
         if(w->gallery)for(int c=0;c<w->gallery->count;++c)if(w->gallery->canvas[c].id==fx_canvas.movement)name=w->gallery->canvas[c].name;
         snprintf(label,sizeof(label),"VIEW: %.17s",name);
         const char *second[]={w->controls.enabled?label:"USE SAVED CHAIN",w->layout->canvas_straight?"STRAIGHT":"SPLINES",w->layout->canvas_snap?"SNAP ON":"SNAP OFF","CLEAR CABLES"};
         for(int i=FX_TOOL_MOVEMENT;i<=FX_TOOL_CLEAR;++i) {
-            TsUiRect r=fx_toolbar_rect(i);fx_button(r.x,r.y,r.w,second[i-FX_TOOL_MOVEMENT],i==FX_TOOL_MOVEMENT?fx_canvas.movement!=0:i==FX_TOOL_SNAP?w->layout->canvas_snap:0);
+            TsUiRect r=fx_toolbar_rect(i);fx_button(r.x,r.y,r.w,second[i-FX_TOOL_MOVEMENT],i==FX_TOOL_MOVEMENT?(fx_canvas.movement!=0 || fx_canvas.active_view):i==FX_TOOL_SNAP?w->layout->canvas_snap:0);
         }
     }
     if(w->status[0])fx_panel_text(24,MATRIX_H-34,MATRIX_W-240,28,w->status,FX_FOCUS,1,1);
@@ -669,14 +694,14 @@ static void fx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
         fx_panel_text(324,315,620,90,"YES connects incoming sources to the next effects. NO disconnects inputs. Downstream effects stay in place. Both choices can be undone.",FX_TEXT,2,4);
         fx_button(324,448,190,"YES: RETAIN",0);fx_button(532,448,190,"NO: DISCONNECT",0);fx_button(740,448,190,"CANCEL",0);
     }
-    if(fx_canvas.movement_popup && w->gallery) {
-        mx_rect(20,88,500,32*(w->gallery->count+1)+4,FX_EDGE);
-        for(int c=-1;c<w->gallery->count;++c) {
-            uint64_t id=c<0?0:w->gallery->canvas[c].id;
-            const char *name=c<0?"ALL MOVEMENTS":w->gallery->canvas[c].name;
-            snprintf(label,sizeof(label),"%s",name);
-            if(c>=0)snprintf(label,sizeof(label),"C%02d / %.35s",c+1,name);
-            fx_button(22,90+(c+1)*32,496,label,fx_canvas.movement==id);
+    if(fx_canvas.movement_popup) {
+        int count=w->gallery?w->gallery->count:0;
+        mx_rect(20,88,500,32*(count+2)+4,FX_EDGE);
+        fx_button(22,90,496,"ALL MOVEMENTS",!fx_canvas.movement && !fx_canvas.active_view);
+        fx_button(22,122,496,"CURRENTLY PLAYING / GREEN PULSE",fx_canvas.active_view);
+        for(int c=0;c<count;++c) {
+            snprintf(label,sizeof(label),"C%02d / %.35s",c+1,w->gallery->canvas[c].name);
+            fx_button(22,154+c*32,496,label,fx_canvas.movement==w->gallery->canvas[c].id);
         }
     }
     if(fx_canvas.confirm_clear) {
@@ -694,5 +719,39 @@ static void fx_view(int canvas,TsSamplePages *pages,TsInstrument *bank)
     if(canvas && fx_canvas.movement && w->effect_open)
         for(int i=0;i<fx_canvas.count;++i)if(fx_canvas.node[i].row.kind==4 && fx_canvas.node[i].row.tile==w->effect_open){fx_ensure_visible(&fx_canvas.node[i]);break;}
     SDL_SetWindowTitle(w->window,canvas?"TapeSister - FX Canvas (Shift+F9)":"TapeSister - Routing Matrix (F9)");w->dirty=1;
+}
+static void fx_selection_from_mosaic(TsUiState *ui,TsSamplePages *pages,TsInstrument *bank)
+{
+    fx_clear_selection();fx_clear_wires();
+    if(!ui->mosaic)return;
+    for(int i=0;i<matrix_window.count;++i) {
+        MatrixRow row=matrix_window.rows[i];
+        if(row.kind!=3 || mx_card_scene(row)!=ui->mosaic)continue;
+        TsMosaicEvent *card=ts_mosaic_find(ui->mosaic,row.tile);if(!card)continue;
+        int slot=(int)(card-ui->mosaic->events);
+        if(ui->mosaic_selected==card->id || ui->mosaic_selection[slot]==card->id) {
+            matrix_window.selection[matrix_window.selection_count++]=row;matrix_window.selected=i;
+        }
+    }
+    /* Imported selections must remain visible even after a movement filter. */
+    if(matrix_window.selection_count){fx_canvas.movement=0;fx_canvas.active_view=0;fx_build(pages,bank);fx_fit_selection(1);}
+    matrix_window.dirty=1;
+}
+static void fx_selection_to_mosaic(TsUiState *ui)
+{
+    if(!ui->mosaic)return;
+    mosaic_select_only(ui,0);
+    for(int i=0;i<matrix_window.selection_count;++i) {
+        MatrixRow row=matrix_window.selection[i];
+        if(row.kind==3 && mx_card_scene(row)!=ui->mosaic)return;
+    }
+    for(int i=0;i<matrix_window.selection_count;++i) {
+        MatrixRow row=matrix_window.selection[i];if(row.kind==3)mosaic_select_add(ui,row.tile);
+    }
+}
+static void fx_return_mosaic(SDL_Window *main,TsUiState *ui)
+{
+    fx_selection_to_mosaic(ui);ui->mosaic_open=1;ui->tracker_open=0;
+    matrix_hide();SDL_ShowWindow(main);SDL_RaiseWindow(main);SDL_SetWindowInputFocus(main);
 }
 #include "main_sdl_fx_canvas_input.inc"

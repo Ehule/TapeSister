@@ -45,6 +45,44 @@ static void gallery_view(void)
     assert(gallery_cards()==2 && !fx_canvas.movement);
     MatrixRow first=gallery_card(g->canvas[0].id,cards[0]->id),second=gallery_card(g->canvas[1].id,cards[1]->id);
     assert(!mx_same(first,second));
+    /* Selection travels only between the active Gallery canvas and FX Canvas. */
+    ui.mosaic_open=1;mosaic_select_only(&ui,cards[0]->id);
+    fx_selection_from_mosaic(&ui,&pages,&bank);assert(w->selection_count==1 && fx_chosen(first) && !fx_chosen(second));
+    fx_selection_to_mosaic(&ui);assert(ui.mosaic_selected==cards[0]->id);
+    w->selection[w->selection_count++]=second;fx_selection_to_mosaic(&ui);assert(!ui.mosaic_selected);
+    fx_clear_selection();w->selection[0]=second;w->selection_count=1;fx_selection_to_mosaic(&ui);assert(!ui.mosaic_selected);
+    fx_clear_selection();w->selection[0]=first;w->selection_count=1;
+    key(SDLK_ESCAPE,0);assert(!w->visible && ui.mosaic_open && ui.mosaic_selected==cards[0]->id && !audio.engine_stopped);
+    static SisterWindow editor;ts_sister_ui_model_init(&editor.model,&ui.config);
+    SDL_Event nav={0};nav.type=SDL_KEYDOWN;nav.key.windowID=SDL_GetWindowID(main_window);nav.key.keysym.sym=SDLK_e;
+    ui.mosaic_source_keys=1;assert(!fx_navigation_event(&nav,main_window,0,&audio,&ui,&editor,&pages,&bank) && !w->visible);
+    ui.mosaic_source_keys=0;assert(fx_navigation_event(&nav,main_window,0,&audio,&ui,&editor,&pages,&bank));
+    assert(w->visible && w->canvas && fx_chosen(first));
+    /* All Sister pages return to the workspace that opened them. Child editors
+       must preserve that return target instead of replacing it with themselves. */
+    assert(sister_window_ensure(&editor,&ui.config));
+    for(int page=0;page<3;++page) {
+        editor.model.fx_page=page;
+        sister_window_show(&editor,&ui.palette);editor.return_window_id=w->id;
+        sister_escape(main_window,&editor);assert(!editor.model.visible && w->visible);
+        sister_window_show(&editor,&ui.palette);editor.return_window_id=SDL_GetWindowID(main_window);
+        sister_escape(main_window,&editor);assert(!editor.model.visible && ui.mosaic_open);
+    }
+    SDL_DestroyTexture(editor.texture);SDL_DestroyRenderer(editor.renderer);SDL_DestroyWindow(editor.window);
+    memset(&editor,0,sizeof(editor));
+    /* Playing snapshots include the outgoing movement during a crossfade. */
+    g->outgoing=1;
+    for(int i=0;i<2;++i){TsMosaic *m=g->canvas[i].scene;m->playing=1;m->voices[0].id=cards[i]->id;m->voices[0].active=1;m->voices[0].audible_gain=1;}
+    mx_capture_activity(0,&audio,&pages,&bank,50);assert(fx_row_playing(first) && fx_row_playing(second));
+    toolbar_click(FX_TOOL_MOVEMENT);click(400,122+12,1);assert(fx_canvas.active_view && gallery_cards()==2);
+    if(getenv("TS_FX_PREVIEW")){char path[1024];snprintf(path,sizeof(path),"%s/playing.bmp",getenv("TS_FX_PREVIEW"));screenshot(path);}
+    g->outgoing=-1;g->canvas[1].scene->playing=0;
+    mx_capture_activity(0,&audio,&pages,&bank,50);fx_build(&pages,&bank);assert(gallery_cards()==1 && fx_row_playing(first) && !fx_row_playing(second));
+    g->canvas[0].scene->playing=0;
+    mx_capture_activity(0,&audio,&pages,&bank,50);fx_build(&pages,&bank);assert(gallery_cards()==0);
+    toolbar_click(FX_TOOL_MOVEMENT);click(400,102,1);assert(!fx_canvas.active_view && gallery_cards()==2);
+    fx_clear_selection();
+
     TsFxCanvasPosition *p=fx_position(first,1),*q=fx_position(second,1);assert(p!=q);
     p->x=-310;p->y=100;q->x=-200;q->y=410;
     view_codec();
@@ -62,7 +100,7 @@ static void gallery_view(void)
     TsSourceRoute saved=cards[1]->output_route;
     /* Real dropdown events filter the view without switching or editing audio. */
     toolbar_click(FX_TOOL_MOVEMENT);assert(fx_canvas.movement_popup);
-    click(400,90+2*32+12,1);assert(fx_canvas.movement==second.canvas);
+    click(400,90+3*32+12,1);assert(fx_canvas.movement==second.canvas);
     assert(gallery_cards()==1 && !instance(controls.effect[a].id) && instance(controls.effect[b].id));
     assert(node(TS_MATRIX_MAIN) && node(TS_MATRIX_EQ) && node(TS_MATRIX_LIMITER));
     assert(g->active==0 && !g->canvas[0].scene->playing && g->canvas[0].scene->time==0);
@@ -80,7 +118,7 @@ static void gallery_view(void)
     uint64_t builds=fx_graph_cache.builds;fx_build(&pages,&bank);assert(fx_graph_cache.builds==builds);
     key(SDLK_z,KMOD_CTRL);fx_build(&pages,&bank);assert(!instance(added));
     key(SDLK_y,KMOD_CTRL);fx_build(&pages,&bank);assert(instance(added));
-    toolbar_click(FX_TOOL_MOVEMENT);click(400,90+2*32+12,1);assert(!instance(added));
+    toolbar_click(FX_TOOL_MOVEMENT);click(400,90+3*32+12,1);assert(!instance(added));
     MatrixRow picked={.kind=4,.tile=added};int selected=fx_source_at(picked);assert(selected>=0);
     mx_select(selected,0);w->effect_open=added;fx_build(&pages,&bank);assert(instance(added)->outside_filter);
     fx_copy();key(SDLK_v,KMOD_CTRL);fx_build(&pages,&bank);
@@ -112,7 +150,7 @@ static void gallery_view(void)
     /* Return to ALL, then include a card using the implicit Mosaic bus. */
     toolbar_click(FX_TOOL_MOVEMENT);click(100,102,1);assert(!fx_canvas.movement && gallery_cards()==2);
     cards[1]->output_route=(TsSourceRoute){0};mx_rows(&pages,&bank);fx_build(&pages,&bank);assert(gallery_cards()==2);
-    toolbar_click(FX_TOOL_MOVEMENT);click(400,90+2*32+12,1);
+    toolbar_click(FX_TOOL_MOVEMENT);click(400,90+3*32+12,1);
     assert(gallery_cards()==1 && node(TS_MATRIX_MOSAIC));
     /* A deleted filtered movement cannot leave the view stuck or redirect IDs. */
     assert(ts_gallery_switch(g,0,error,sizeof(error)));

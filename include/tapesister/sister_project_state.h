@@ -10,7 +10,7 @@
 #include "tapesister/mosaic.h"
 
 enum {
-    TS_SISTER_PROJECT_STATE_VERSION = 50,
+    TS_SISTER_PROJECT_STATE_VERSION = 51,
     TS_SISTER_PROJECT_PRESET_NAME_MAX = 47
 };
 

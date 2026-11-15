@@ -6,7 +6,7 @@
 #endif
 enum { LT_OFF, LT_ARMED, LT_PENDING, LT_RUNNING, LT_DONE, LT_ABORTED, LT_PREPARING };
 enum { LT_CHECK, LT_FX, LT_MATRIX, LT_CLOSE, LT_MIX, LT_GRAIN, LT_MUTE,
-       LT_SOLO, LT_BYPASS, LT_TRACKER, LT_MOSAIC, LT_HEALTH, LT_GALLERY, LT_END, LT_SPACE, LT_ESCAPE, LT_SEEK, LT_FOLLOW, LT_ASSERT };
+       LT_SOLO, LT_BYPASS, LT_TRACKER, LT_MOSAIC, LT_HEALTH, LT_GALLERY, LT_END, LT_SPACE, LT_BACKSPACE, LT_SEEK, LT_FOLLOW, LT_ASSERT };
 typedef struct { unsigned ms; int action,target; float value; } LiveTestStep;
 static struct {
     int state,touched,count,next,profile,mode,profile_failed,angelic;
@@ -28,7 +28,7 @@ static const char *live_test_action_name(int a)
 {
     static const char *names[]={"checkpoint","fx_canvas","routing_matrix","close_matrix",
         "effect_mix","grain_size","mute","solo","bypass","tracker","mosaic",
-        "health_window","gallery","finish","space","escape","seek","follow","verify_state"};
+        "health_window","gallery","finish","space","backspace","seek","follow","verify_state"};
     return a>=0 && a<=LT_ASSERT?names[a]:"invalid";
 }
 static const char *live_test_label(void)
@@ -240,9 +240,9 @@ static int live_test_action(const LiveTestStep *s,SDL_Window *window,SDL_AudioDe
     AudioState *a,TsUiState *ui,TsSamplePages *pages,TsInstrument *bank,MosaicController *mosaic,
     PortalController *portal,SisterWindow *sister,TransformController *transform)
 {
-    if(s->action==LT_SPACE || s->action==LT_ESCAPE) {
+    if(s->action==LT_SPACE || s->action==LT_BACKSPACE) {
         ui->mosaic_open=1;ui->tracker_open=0;
-        SDL_Event e=live_test_key(window,s->action==LT_SPACE?SDLK_SPACE:SDLK_ESCAPE,KMOD_NONE);
+        SDL_Event e=live_test_key(window,s->action==LT_SPACE?SDLK_SPACE:SDLK_BACKSPACE,KMOD_NONE);
         if(!mosaic_event(&e,window,device,a,ui,bank,mosaic,portal,sister,transform,a->output_rate))return 0;
         if(device)SDL_LockAudioDevice(device);
         live_test.parked_time=ui->mosaic->time;
@@ -344,7 +344,7 @@ static int live_test_input(const SDL_Event *e,SDL_AudioDeviceID device,AudioStat
        e->type==SDL_TEXTINPUT || e->type==SDL_DROPFILE || e->type==SDL_QUIT ||
        (midi_wake_event && e->type==midi_wake_event) ||
        (e->type==SDL_WINDOWEVENT && (e->window.event==SDL_WINDOWEVENT_CLOSE || e->window.event==SDL_WINDOWEVENT_MINIMIZED))) {
-        live_test_finish(device,a,ui,0,escape?"escape":"manual_input");
+        live_test_finish(device,a,ui,0,escape?"backspace":"manual_input");
         return escape;
     }
     return 0;

@@ -44,6 +44,7 @@ int ts_sunvox_import_ex(TsSunVoxControls *c,const char *path,char *error,size_t 
 const char *ts_sunvox_name(const TsSunVoxControls *c);
 const char *ts_sunvox_category(const TsSunVoxControls *c);
 int ts_sunvox_valid(const TsSunVoxControls *c);
+float ts_sunvox_normalized(const TsSunVoxControls *,int);
 int ts_sunvox_parameter_count(const TsSunVoxControls *c);
 int ts_sunvox_parameter(const TsSunVoxControls *c,int index,TsSunVoxParameter *out);
 int ts_sunvox_write(FILE *file,const char *prefix,const TsSunVoxControls *c);

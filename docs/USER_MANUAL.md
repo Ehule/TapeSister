@@ -853,15 +853,16 @@ visually at the C4 reference speed, while the chord voices follow their own rate
 | Align starts, ends, or midpoints | Hold Alt during a move or duration resize |
 | Mute / solo the selection | M / Alt+S |
 | Add a timeline marker at the playhead | Alt+M |
-| Jump to a marker / capture a numbered slot | Click bottom number / Shift-click |
+| Jump to a marker / capture an empty numbered slot | Click bottom number / Shift-click an empty number |
+| Select time between markers | Click the first marker, then Shift-click the second |
 | Move / name / delete a marker | Drag ruler flag / right-click flag or number |
 | Copy / paste the primary event at the playhead | Ctrl+C / Ctrl+V |
-| Delete the selection | Delete or Backspace |
+| Delete the selection | Delete |
 | Undo / redo arrangement changes | Ctrl+Z / Ctrl+Y or Ctrl+Shift+Z |
 | Cancel a move or copy drag | Escape |
 | Play / pause with effect tails | Space or PLAY/PAUSE |
-| Stop engine at the current position | STOP or Escape when no gesture is active |
-| Stop and return to the start | Double-click STOP or double Escape within 500 ms |
+| Stop engine at the current position | STOP or Backspace when no gesture is active |
+| Stop and return to the start | Double-click STOP or double Backspace within 500 ms |
 | Seek / return to the beginning | Middle-click canvas or click time ruler / Home |
 | Scroll time / scroll sideways / zoom | Wheel / Shift+wheel / Ctrl+wheel |
 | Keep playhead visible / fit arrangement | F or FOLLOW / Shift+Z or FIT ALL |
@@ -1051,7 +1052,7 @@ describes the full background-render behavior.
 Opening Mosaic or parking FM with the workspace shortcuts preserves playing
 keyboard notes, FM latches, and tile launches. Mosaic Play adds the arrangement to
 those sources. Space pauses the arrangement while effect tails continue. STOP or
-Escape in idle Mosaic suspends the whole audio engine, including other sources,
+Backspace in idle Mosaic suspends the whole audio engine, including other sources,
 without moving the playhead; its STOP button stays highlighted. Space, PLAY, or
 F11 Play resumes processing. Physical key releases still
 reach notes started in the previous view. Opening or closing an event's sample
@@ -1060,8 +1061,8 @@ editor can still stop its audition when the underlying sample document is replac
 Active dialogs retain focus until resolved. Portal uses Tab for source/result A-B
 audition. Workspace navigation leaves the arrangement playing; the MOSAIC toolbar
 button stays highlighted during background playback. Stopping an editor audition
-can report **AUDITION STOPPED - MOSAIC CONTINUES**. Use Mosaic's STOP or Escape in
-the arrangement to stop the engine at its current position. Double Escape within
+can report **AUDITION STOPPED - MOSAIC CONTINUES**. Use Mosaic's STOP or Backspace in
+the arrangement to stop the engine at its current position. Double Backspace within
 500 ms also returns the playhead to the start. Active gestures and dialogs consume
 Escape first. The engine uses a 5 ms output ramp to avoid a sudden cut; after that
 there is no source or DSP advancement. The device remains open, and running output
@@ -2344,7 +2345,7 @@ the current sound becomes the source for the first new stroke.
 ### Immediate safety actions
 
 - Space controls the current audition; in Mosaic it plays or pauses the arrangement.
-- Mosaic's STOP or Escape stops and rewinds the arrangement when no gesture is active.
+- Mosaic's STOP or Backspace stops the engine at its current position. Double Backspace returns to the start. Escape remains navigation/cancel.
 - Escape cancels an active gesture/dialog first. From an event editor it returns to
   Mosaic; from Sister it restores the main application window. The ordinary main
   canvas retains its exit confirmation.

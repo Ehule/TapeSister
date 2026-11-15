@@ -19,9 +19,21 @@ static int key_compare(const void *a,const void *b)
     if(x->kind!=y->kind)return x->kind<y->kind?-1:1;
     return x->id<y->id?-1:x->id>y->id;
 }
+static int cable_valid(const TsFxCableStyle *p)
+{
+    int effect=ts_matrix_effect_index(p->destination)>=0 ||
+        (p->destination>=TS_MATRIX_EFFECT_SC_BASE && p->destination<TS_MATRIX_INSTANCE_DESTINATIONS);
+    return p->kind>=0 && p->kind<=4 && (!p->canvas || p->kind==3) &&
+        (p->kind!=0 || p->source<TS_TRACKER_LANES) && (p->kind!=2 || p->source<TS_MATRIX_ROWS) &&
+        ((p->kind!=1 && p->kind!=3 && p->kind!=4) || p->source) &&
+        p->destination>=0 && p->destination<TS_MATRIX_DESTINATIONS &&
+        (!!p->target==effect) && (p->color>>24)==255;
+}
 int ts_matrix_layout_valid(const TsMatrixLayout *l)
 {
     if(!l || l->row_count<0 || l->row_count>TS_MATRIX_LAYOUT_ROWS)return 0;
+    if(l->cable_count<0 || l->cable_count>TS_FX_CABLE_STYLES)return 0;
+    for(int i=0;i<l->cable_count;++i)if(!cable_valid(&l->cables[i]))return 0;
     if(l->label_count<0 || l->label_count>TS_FX_LABEL_LIMIT)return 0;
     for(int i=0;i<l->label_count;++i) {
         const TsFxCanvasLabel *p=&l->labels[i];
@@ -72,6 +84,10 @@ int ts_matrix_layout_valid(const TsMatrixLayout *l)
 int ts_matrix_layout_write(FILE *f,const TsMatrixLayout *l)
 {
     if(!ts_matrix_layout_valid(l))return 0;
+    for(int i=0;i<l->cable_count;++i) {
+        const TsFxCableStyle *p=&l->cables[i];
+        if(fprintf(f,"FxCanvas.Cable%d=%d,%" PRIu64 ",%" PRIu64 ",%d,%u,%u\n",i,p->kind,p->source,p->canvas,p->destination,p->target,p->color)<0)return 0;
+    }
     if(l->canvas_view && fprintf(f,"FxCanvas.View=%.9g,%.9g,%.9g\n",l->canvas_x,l->canvas_y,l->canvas_zoom)<0)return 0;
     if(fprintf(f,"FxCanvas.Straight=%d\n",l->canvas_straight)<0)return 0;
     if(fprintf(f,"FxCanvas.Snap=%d\n",l->canvas_snap)<0)return 0;
@@ -112,6 +128,15 @@ static int layout_number(const char **cursor,uint64_t maximum,uint64_t *number)
 int ts_matrix_layout_read(TsMatrixLayout *l,const char *key,const char *value)
 {
     uint64_t i,d,kind,id;const char *s;
+    if(!strncmp(key,"FxCanvas.Cable",14)) {
+        s=key+14;uint64_t v[6];
+        if(!layout_number(&s,TS_FX_CABLE_STYLES-1,&i) || *s || i!=(uint64_t)l->cable_count)return -1;
+        for(int j=0;j<6;++j)if(!layout_number(&value,j==1 || j==2?UINT64_MAX:UINT32_MAX,&v[j]) || (j<5?*value++!=',':*value!=0))return -1;
+        if(v[0]>4 || v[3]>=TS_MATRIX_DESTINATIONS)return -1;
+        TsFxCableStyle p={v[1],v[2],(int)v[0],(int)v[3],(uint32_t)v[4],(uint32_t)v[5]};
+        if(!cable_valid(&p))return -1;
+        l->cables[l->cable_count++]=p;return 1;
+    }
     if(!strncmp(key,"FxCanvas.Label",14)) {
         s=key+14;TsFxCanvasLabel p={0};int end=0;
         if(!layout_number(&s,TS_FX_LABEL_LIMIT-1,&i) || *s || i!=(uint64_t)l->label_count ||

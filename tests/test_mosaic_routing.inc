@@ -38,6 +38,8 @@ static void test_workspace_playback(SDL_Window *window)
     }
     assert(scene->time>0 && tile_energy>1 && fm_energy>1);
     key(window,SDLK_ESCAPE,KMOD_NONE);
+    assert(scene->playing && ts_note_bank_count(&audio.notes)==2);
+    key(window,SDLK_BACKSPACE,KMOD_NONE);
     assert(!scene->playing && ts_note_bank_count(&audio.notes)==2);
     /* A key released over the arrangement must reach its original sample/FM voice. */
     SDL_Event up;SDL_zero(up);up.type=SDL_KEYUP;up.key.windowID=SDL_GetWindowID(window);up.key.keysym.sym=SDLK_z;

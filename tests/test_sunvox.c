@@ -103,8 +103,8 @@ static void cache_limit(void) {
     puts("Actual cache exhaustion reports its limit and preserves existing patches.");
 }
 static void catalog(void) {
-    assert(ts_sunvox_factory_count()==235);
-    for(int q=64;q<=1024;q*=4) for(int p=0;p<235;++p) {
+    assert(ts_sunvox_factory_count()==255);
+    for(int q=64;q<=1024;q*=4) for(int p=0;p<ts_sunvox_factory_count();++p) {
         TsSunVoxControls c;assert(ts_sunvox_select(&c,p));c.quantum=q;
         TsSunVoxEngine *s=ts_sunvox_new(&c,48000);assert(s);
         for(int i=0;i<24000;++i) {
@@ -114,7 +114,17 @@ static void catalog(void) {
         }
         ts_sunvox_free(s);
     }
-    puts("All 235 factory patches load and render at 64, 256 and 1024 frames.");
+    for(int p=235;p<ts_sunvox_factory_count();++p) {
+        TsSunVoxControls c,read;assert(ts_sunvox_select(&c,p));c.value[0]=12345;
+        assert(!strcmp(ts_sunvox_factory_category(p),"Standard effects"));
+        FILE *f=tmpfile();assert(f && ts_sunvox_write(f,"Test",&c));rewind(f);
+        char line[1024];while(fgets(line,sizeof(line),f)) {
+            line[strcspn(line,"\r\n")]=0;char *eq=strchr(line,'=');assert(eq);*eq++=0;
+            assert(ts_sunvox_read(&read,line+5,eq)==1);
+        }
+        fclose(f);assert(ts_sunvox_valid(&read) && read.patch==c.patch && read.value[0]==12345);
+    }
+    puts("All 235 patches and 20 standard effects load and render at 64, 256 and 1024 frames.");
 }
 static void quantum_codec(void) {
     TsSunVoxControls c=amplifier();assert(ts_sunvox_quantum(&c)==256);

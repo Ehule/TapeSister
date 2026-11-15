@@ -2,8 +2,8 @@
    this window never owns DSP histories or an audio device. */
 static struct {
  SDL_Window *window;SDL_Renderer *renderer;SDL_Texture *texture;
- TsFramebuffer fb;Uint32 id,painted;int visible,source,slot,drag,origin_x;
- uint32_t node;float origin;TsMosaic *context;uint64_t epoch;
+ TsFramebuffer fb;Uint32 id,painted,return_window_id;int visible,source,slot,drag,origin_x;
+ uint32_t node,child;float origin;TsMosaic *context;uint64_t epoch;
  MatrixSnapshot *before;
 } character_filter_window={.drag=-1};
 static void character_filter_hide(void)
@@ -27,12 +27,16 @@ static void character_filter_open(SisterWindow *sister,int slot)
 {
  if(slot<0 || slot>=sister->model.parameters.fx.slot_count || sister->model.parameters.fx.slot[slot].type!=TS_SISTER_FX_FILTER)return;
  if(!character_filter_ensure())return;
- character_filter_window.source=0;character_filter_window.slot=slot;character_filter_window.visible=1;character_filter_window.context=NULL;character_filter_window.drag=-1;
+ SDL_Window *origin=SDL_GetKeyboardFocus();
+ if(origin && origin!=character_filter_window.window)character_filter_window.return_window_id=SDL_GetWindowID(origin);
+ character_filter_window.source=0;character_filter_window.child=sister->model.parameters.fx.slot[slot].id;character_filter_window.slot=slot;character_filter_window.visible=1;character_filter_window.context=NULL;character_filter_window.drag=-1;
  SDL_ShowWindow(character_filter_window.window);SDL_RaiseWindow(character_filter_window.window);
 }
 static void character_filter_matrix_open(uint32_t id)
 {
  if(!character_filter_ensure())return;
+ SDL_Window *origin=SDL_GetKeyboardFocus();
+ if(origin && origin!=character_filter_window.window)character_filter_window.return_window_id=SDL_GetWindowID(origin);
  character_filter_window.source=1;character_filter_window.node=id;character_filter_window.visible=1;character_filter_window.context=NULL;character_filter_window.drag=-1;
  SDL_ShowWindow(character_filter_window.window);SDL_RaiseWindow(character_filter_window.window);
 }
@@ -45,11 +49,19 @@ static int character_filter_resolve(AudioState *audio,TsUiState *ui,SisterWindow
  if(character_filter_window.source){
   for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i){TsMatrixEffectControls *p=&matrix_window.controls.effect[i];
    if(p->id!=character_filter_window.node)continue;
+   if(character_filter_window.source==2 && p->type==TS_MATRIX_FX_PEDALBOARD) {
+    int at=-1;for(int j=0;j<p->board.count;++j)if(p->board.slot[j].id==character_filter_window.child){at=j;break;}
+    character_filter_window.slot=at;
+    if(at<0 || at>=p->board.count || p->board.slot[at].type!=TS_SISTER_FX_FILTER)break;
+    TsSisterFxSlotControls *v=&p->board.slot[at];
+    *c=&v->filter;*gain=&v->gain_db;*mix=&v->mix;*enabled=&v->enabled;return 1;
+   }
    if(p->type!=TS_MATRIX_FX_FILTER)break;
    *c=&p->filter;*gain=&p->gain_db;*mix=&p->mix;*enabled=&p->enabled;return 1;
   }
  }else{
-  int at=character_filter_window.slot;
+  int at=-1;for(int j=0;j<sister->model.parameters.fx.slot_count;++j)if(sister->model.parameters.fx.slot[j].id==character_filter_window.child){at=j;break;}
+  character_filter_window.slot=at;
   if(at>=0 && at<sister->model.parameters.fx.slot_count){TsSisterFxSlotControls *p=&sister->model.parameters.fx.slot[at];
    if(p->type==TS_SISTER_FX_FILTER){*c=&p->filter;*gain=&p->gain_db;*mix=&p->mix;*enabled=&p->enabled;return 1;}
   }
@@ -96,7 +108,7 @@ static int character_filter_event(const SDL_Event *e,SDL_AudioDeviceID device,Au
   if(e->window.event==SDL_WINDOWEVENT_CLOSE)character_filter_hide();return 1;
  }
  if(e->type==SDL_KEYDOWN){
-  if(e->key.keysym.sym==SDLK_ESCAPE){character_filter_history_finish(device,audio,ui,pages,bank);character_filter_hide();return 1;}
+  if(e->key.keysym.sym==SDLK_ESCAPE){character_filter_history_finish(device,audio,ui,pages,bank);character_filter_hide();editor_return_window(character_filter_window.return_window_id);return 1;}
   if(e->key.keysym.sym==SDLK_m && (e->key.keysym.mod&KMOD_CTRL) && (e->key.keysym.mod&KMOD_SHIFT)){
    midi_learn_set_active(ui,sister,!ui->midi_learn_active);return 1;}
   return 0;
@@ -111,7 +123,9 @@ static int character_filter_event(const SDL_Event *e,SDL_AudioDeviceID device,Au
  float value;int field=ts_character_filter_hit(c,x,y,&value),left=down && e->button.button==SDL_BUTTON_LEFT;
  int id=field>=0 && field<TS_CF_COUNT?TS_CF_MIDI_BASE+character_filter_window.slot*32+field:-1;
  if(ui->midi_learn_active){if(left && field>=0){char target[80];
-   if(character_filter_window.source)snprintf(target,sizeof(target),"matrix.filter.%u.%d",character_filter_window.node,field);
+   if(character_filter_window.source==2 || !character_filter_window.source)
+       snprintf(target,sizeof(target),"board.param.%u.%u.%d",character_filter_window.source==2?character_filter_window.node:0,character_filter_window.child,field<TS_CF_COUNT?300+field:field==100?4:0);
+   else if(character_filter_window.source)snprintf(target,sizeof(target),"matrix.filter.%u.%d",character_filter_window.node,field);
    else if(field<TS_CF_COUNT)snprintf(target,sizeof(target),"sister.param.%d",id);
    else{TsSisterUiHit h={TS_SISTER_UI_ACTION_PARAMETER,TS_SISTER_UI_SLOT_PARAMETER(character_filter_window.slot,field==100?4:0),0};ts_sister_ui_midi_target(h,target,sizeof(target));}
    midi_learn_click(ui,sister,target);}return 1;}

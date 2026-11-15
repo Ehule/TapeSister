@@ -114,7 +114,10 @@ editing gestures apply to the FX workspace; Z, Shift+Z and M follow Mosaic.
 | X / Delete / Backspace | Remove explicitly selected added effects and/or cables; fixed buses and endpoints are protected |
 | Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z | Shared Matrix undo/redo |
 | Double-click Meta FX | Enter its chain; Escape or BACK TO FX returns |
-| F2 on one selected card / right-click a card | Edit its display name and color; Enter applies, Escape cancels |
+| F2 on one selected card / right-click a card | Edit name and color; right-click a selected group applies color to the group with names disabled |
+| Right-click a cable | Edit its color, or the selected cable group; colors save with the project and support Undo/Redo |
+| E (KEYS off) | Open/focus FX Canvas from Mosaic or an effect editor |
+| Escape in FX Canvas | Return to Mosaic; active gestures/dialogs cancel first |
 
 Deleting an added effect asks **Retain links?** **Yes** connects its upstream
 sources to its downstream destinations, including cards in other Gallery
@@ -281,3 +284,23 @@ Very large effect blocks with a much smaller device buffer concentrate work into
 fewer callbacks. If callback peaks worsen, use a smaller effect block or a larger
 device buffer. The initial Keter measurements are recorded in
 [the validation data](validation/keter-live-fx.json).
+
+## Live navigation and active sources
+
+Editors remember their entry workspace: Escape from a pedalboard, Sister Machine,
+Prism or Fallout returns to the window that opened it. A board opened from FX
+Canvas returns there; one opened with Tab from Mosaic returns to Mosaic. E returns
+to FX Canvas when KEYS is off and no text field owns the key. In Mosaic, Backspace
+stops the engine without seeking; double Backspace within 500 ms also returns to
+the start. Escape is navigation/cancel and Space pauses with tails.
+
+VIEW → CURRENTLY PLAYING shows playing source cards and their downstream routing,
+including both movements during a Gallery crossfade. Their colors gently pulse
+green. Positions, routing and transport stay unchanged; returning to ALL MOVEMENTS
+restores the complete map. This view follows audio-published activity rather than
+inferring playback from the visible playhead.
+
+Opening FX Canvas from Mosaic transfers its selected cards. Returning transfers
+selected cards only when all selected card identities belong to the currently
+active Gallery canvas. A selection spanning movements, or belonging to another
+movement, clears the Mosaic selection without switching movements.

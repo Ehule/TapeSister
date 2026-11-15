@@ -378,6 +378,14 @@ static int sister_presets_file_path(char *path, size_t path_size)
            strlen("sister-presets.ini") < path_size;
 }
 
+static TsSisterPresetBank pedalboard_presets;
+static int pedalboard_presets_loaded;
+static int pedalboard_presets_file_path(char *path,size_t capacity)
+{
+    char directory[TS_RUNTIME_PATH_MAX];
+    if(runtime_path_parent(config_file_path(),directory,sizeof(directory)) && runtime_join_path(path,capacity,directory,"pedalboard-presets.ini"))return 1;
+    return snprintf(path,capacity,"pedalboard-presets.ini")>=0 && strlen("pedalboard-presets.ini")<capacity;
+}
 static int fallout_presets_file_path(char *path, size_t path_size)
 {
     char directory[TS_RUNTIME_PATH_MAX];
@@ -1217,6 +1225,7 @@ static void audio_engine_stopped_block(AudioState *a,float *out,unsigned frames,
     unsigned ramp=(unsigned)fmax(1,a->output_rate*.005);
     if(!a->engine_was_stopped)a->engine_ramp=ramp;
     a->engine_was_stopped=1;
+    ts_matrix_effects_finish_edits(&a->sister.matrix_effects);
     for(unsigned i=0;i<frames;++i) {
         float gain=a->engine_ramp?(float)--a->engine_ramp/ramp:0;
         for(unsigned ch=0;ch<channels && ch<TS_AUDIO_CHANNEL_CAPACITY;++ch)out[i*channels+ch]=a->engine_last[ch]*gain;
@@ -4569,7 +4578,7 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     ts_session_log_event("project_load_request","kind=%s path=%s",path_is_tsr(path)?"TSR":path_is_module(path)?"tracker module":"sample/preset",path);
     if(path_is_module(path))return load_module_instrument(device,audio,ui,instrument,sample_pages,record_bank_active,path);
     char error[160];
-    TsSisterProjectState sister_state;
+    TsSisterProjectState *sister_state = NULL;
     TsSampleProjectLoad *prepared_project = NULL;
     TsKeyboardSequenceSource *previous_sequence_source = NULL;
     int sister_state_present = 0;
@@ -4626,12 +4635,20 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
                  "PRESS 1 TO RETURN TO SAMPLE BANK BEFORE OPENING A PROJECT");
         return 0;
     }
+    if (recipe) {
+        sister_state = malloc(sizeof(*sister_state));
+        if (!sister_state) {
+            snprintf(ui->status, sizeof(ui->status), "NOT ENOUGH MEMORY TO OPEN PROJECT");
+            return 0;
+        }
+    }
     if (recipe && !ts_sister_project_state_load(
-            &sister_state, path,
+            sister_state, path,
             audio->output_rate > 0 ? (uint32_t)audio->output_rate : 48000u,
             &sister_state_present, error, sizeof(error))) {
         snprintf(ui->status, sizeof(ui->status),
                  "LOAD FAILED: %.135s", error);
+        free(sister_state);
         return 0;
     }
     if (recipe) {
@@ -4639,20 +4656,22 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
            project can still render. Failed preparation leaves it untouched. */
         if (!sample_pages || !sample_pages->active_live || sample_pages->mosaic_bank) {
             snprintf(ui->status,sizeof(ui->status),"RETURN TO A SAMPLE PAGE BEFORE OPENING A PROJECT");
+            free(sister_state);
             return 0;
         }
         prepared_project = ts_sample_pages_prepare_project(path, sample_pages->mosaic != NULL,
                                                            error, sizeof(error));
         const TsSamplePages *prepared = ts_sample_pages_prepared_pages(prepared_project);
         if (prepared && sister_state_present &&
-            (sister_state.page_count != ts_sample_pages_count(prepared) ||
-             sister_state.active_page != ts_sample_pages_active(prepared))) {
+            (sister_state->page_count != ts_sample_pages_count(prepared) ||
+             sister_state->active_page != ts_sample_pages_active(prepared))) {
             snprintf(error,sizeof(error),"Sister project state does not match the project page manifest");
             ts_sample_pages_dispose_project(prepared_project);prepared_project = NULL;
         }
         if (!prepared_project) {
             snprintf(ui->status,sizeof(ui->status),"LOAD FAILED: %.135s",error);
             ts_session_log_event("project_load_result","success=0 kind=TSR phase=prepare");
+            free(sister_state);
             return 0;
         }
     }
@@ -4682,7 +4701,7 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
             ui->mosaic_canvas_import_count=ui->mosaic_canvas_import_pending=0;
             ui->mosaic_gallery_selected=audio->gallery?audio->gallery->active:0;
             previous_sequence_source = ts_keyboard_sequence_source(&audio->keyboard_sequence, NULL);
-            ts_keyboard_sequence_set_bank(&audio->keyboard_sequence, &sister_state.keyboard_sequence);
+            ts_keyboard_sequence_set_bank(&audio->keyboard_sequence, &sister_state->keyboard_sequence);
             audio->keyboard_sequence_source_stamp = 0;
             ui->keyboard_sequence_drag = 0;
             keyboard_sequence_ui(audio, ui);
@@ -4691,7 +4710,7 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
             (void)ts_sister_runtime_set_page(
                 &audio->sister, ts_sample_pages_active(sample_pages), instrument);
             if (sister_state_present) {
-                if(!ts_sister_project_state_apply(&sister_state,&audio->sister,instrument)) {
+                if(!ts_sister_project_state_apply(sister_state,&audio->sister,instrument)) {
                     ok=0;snprintf(error,sizeof(error),"Could not allocate the project's Matrix effects");
                 }
             } else {
@@ -4727,14 +4746,14 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
         ok = ts_instrument_select_bank(instrument, destination, error, sizeof(error)) &&
              ts_instrument_load_wav(instrument, path, error, sizeof(error));
     }
-    if(ok && recipe && sister_state.view.present && ui->mosaic)
-        ts_mosaic_seek(ui->mosaic,sister_state.view.time);
+    if(ok && recipe && sister_state->view.present && ui->mosaic)
+        ts_mosaic_seek(ui->mosaic,sister_state->view.time);
     unlock_edit(device, audio, ui, instrument);
     ts_sample_pages_dispose_project(prepared_project);
     ts_keyboard_sequence_source_free(previous_sequence_source);
     if (ok) ts_ui_reset_parent_view(ui, instrument->parent.frames);
     if (ok && recipe) {
-        project_view_apply(ui,instrument,&sister_state.view);
+        project_view_apply(ui,instrument,&sister_state->view);
         /* The next tracker refresh must import this host-owned definition,
            including when loading over a running or visible workspace. */
         matrix_history_clear();ts_tapehead_project_replaced();
@@ -4755,6 +4774,7 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     }
     ts_session_log_event("project_load_result","success=%d kind=%s",ok,recipe?"TSR":"sample");
     if(ok && recipe){project_log_state("project_opened",path,ui);live_test_loaded(device,audio,ui,sample_pages,path);}
+    free(sister_state);
     return ok;
 }
 
@@ -9300,16 +9320,24 @@ static void run_pending_file_operation(SDL_AudioDeviceID device,
                audio->capture.state!=TS_CAPTURE_IDLE || audio->sister.capture.state!=TS_CAPTURE_IDLE) {
                 snprintf(error,sizeof(error),"Finish capture / background edit / Mosaic tile edit before saving");
             }else {
-                TsSisterProjectState sister_state;double saved_mosaic_time;
-                if(device)SDL_LockAudioDevice(device);
-                ts_sister_project_state_capture(&sister_state,&audio->sister,ts_sample_pages_count(sample_pages),NULL);
-                sister_state.keyboard_sequence=ts_keyboard_sequence_export(&audio->keyboard_sequence);
-                saved_mosaic_time=ui->mosaic?ui->mosaic->time:0;
-                if(device)SDL_UnlockAudioDevice(device);
-                project_view_capture(&sister_state.view,ui);sister_state.view.time=saved_mosaic_time;
-                if(ts_tapehead_export(&sample_pages->tracker,error,sizeof(error))) {
-                    project_log_state("project_save_request",pending->path,ui);
-                    if(project_save_start(device,audio,ui,sample_pages,active_sample,record_bank,&sister_state,pending->path,error,sizeof(error)))return;
+                TsSisterProjectState *sister_state = malloc(sizeof(*sister_state));
+                double saved_mosaic_time;
+                int started = 0;
+                if (!sister_state) {
+                    snprintf(error,sizeof(error),"Not enough memory to save project");
+                } else {
+                    if(device)SDL_LockAudioDevice(device);
+                    ts_sister_project_state_capture(sister_state,&audio->sister,ts_sample_pages_count(sample_pages),NULL);
+                    sister_state->keyboard_sequence=ts_keyboard_sequence_export(&audio->keyboard_sequence);
+                    saved_mosaic_time=ui->mosaic?ui->mosaic->time:0;
+                    if(device)SDL_UnlockAudioDevice(device);
+                    project_view_capture(&sister_state->view,ui);sister_state->view.time=saved_mosaic_time;
+                    if(ts_tapehead_export(&sample_pages->tracker,error,sizeof(error))) {
+                        project_log_state("project_save_request",pending->path,ui);
+                        started=project_save_start(device,audio,ui,sample_pages,active_sample,record_bank,sister_state,pending->path,error,sizeof(error));
+                    }
+                    free(sister_state);
+                    if (started) return;
                 }
             }
             snprintf(ui->status,sizeof(ui->status),"SAVE FAILED: %.135s",error);
@@ -9432,9 +9460,13 @@ typedef struct {
     SDL_Texture *waveform_textures[2];
     TsUiWaveformDetail waveform_details[2];
     TsSisterUiModel model;
-    TsSisterUiModel rendered_model;
+    TsSisterUiModel rendered_model, board_view;
+    TsMatrixEffectControls board_controls;
+    uint32_t board_id;
+    uint32_t board_ids[TS_MATRIX_EFFECT_CAPACITY+1];
+    TsMosaic *board_context;uint64_t board_epoch;
     TsFramebuffer framebuffer;
-    uint32_t window_id;
+    uint32_t window_id, return_window_id;
     uint32_t last_present_ms;
     uint32_t last_model_sync_ms;
     uint32_t power_visual_started_ms;
@@ -9444,6 +9476,7 @@ typedef struct {
     int screen_filling;
     TsSisterPresetBank presets;
     size_t preset_index;
+    size_t board_preset_index;int board_preset_modified;
     TsSisterPresetBank fallout_presets;
     size_t fallout_preset_index;
     int fallout_preset_modified;
@@ -9459,6 +9492,43 @@ typedef struct {
     SDL_Thread *performance_writer;
 } SisterWindow;
 static void character_filter_open(SisterWindow *,int);
+static int sister_stage_fx(SDL_AudioDeviceID device,AudioState *audio,TsSisterFxControls *c,TsSisterSunVoxPlan *plan)
+{
+    ts_sister_fx_controls_sanitize(c);
+    TsSisterSunVoxPlan garbage;
+    if(device)SDL_LockAudioDevice(device);
+    if(!device || !ts_audio_output_is_available() || audio->engine_stopped) {
+        TsSisterPostFxEngine *e=&audio->sister.post_fx;
+        for(int i=0;i<TS_SISTER_FX_SLOT_COUNT;++i){e->slot[i].active=e->controls.slot[i];e->slot[i].has_pending=e->slot[i].has_queued=e->slot[i].retiring=0;e->slot[i].morph.remaining=0;}
+        e->processing_slots=e->controls.slot_count;
+    }
+    ts_sister_sunvox_collect(&audio->sister.post_fx,&garbage);
+    if(device)SDL_UnlockAudioDevice(device);
+    ts_sister_sunvox_discard(&garbage);
+    return ts_sister_sunvox_stage(&audio->sister.post_fx,c,plan);
+}
+static void sister_board_open(uint32_t);
+static void sister_board_return(uint32_t);
+static int sister_board_preset_recall(SDL_AudioDeviceID,AudioState *,TsUiState *,SisterWindow *,size_t);
+static int sister_board_publish(SDL_AudioDeviceID,AudioState *,TsUiState *,SisterWindow *);
+static const TsSisterUiModel *sister_board_view(SisterWindow *s)
+{
+    if(!s->board_id || s->model.fx_page!=1)return &s->model;
+    s->board_view=s->model;
+    TsSisterFxControls *fx=&s->board_view.parameters.fx;
+    fx->slot_count=s->board_controls.board.count;fx->next_slot_id=s->board_controls.board.next_id;
+    memcpy(fx->slot,s->board_controls.board.slot,sizeof(fx->slot));
+    fx->transition=s->board_controls.board.transition;
+    fx->master_transition=s->board_controls.transition;fx->enabled=s->board_controls.enabled;
+    s->board_view.parameter_locks=s->board_view.parameter_locks_high=0;
+    for(int i=0;i<5;++i)for(int field=0;field<5;++field)if(fx->slot[i].parameter_locks&(1u<<field)){
+        int parameter=TS_SISTER_UI_SLOT_PARAMETER(i,field);
+        if(parameter<64)s->board_view.parameter_locks|=UINT64_C(1)<<parameter;
+        else if(parameter<128)s->board_view.parameter_locks_high|=UINT64_C(1)<<(parameter-64);
+    }
+    s->board_view.routing.fx_transition_active=s->board_view.routing.fx_master_transition_active=0;
+    return &s->board_view;
+}
 static void meta_fx_open(uint32_t);
 static void meta_fx_stage_open(uint32_t,int);
 static void character_filter_hide(void);
@@ -9675,11 +9745,13 @@ static int sister_window_mouse(SDL_Window *window, SDL_Renderer *renderer,
 static void sister_window_show(SisterWindow *sister, const TsPalette *palette)
 {
     if (sister == NULL || sister->window == NULL) return;
+    SDL_Window *origin=SDL_GetKeyboardFocus();
+    if(origin && origin!=sister->window)sister->return_window_id=SDL_GetWindowID(origin);
     ts_sister_ui_model_show(&sister->model);
     sister->rendered_model_valid = 0;
     /* Present a complete backing image before the OS exposes the window. */
     if (sister->renderer && sister->texture && palette) {
-        ts_sister_ui_render(&sister->framebuffer,&sister->model,palette);
+        ts_sister_ui_render(&sister->framebuffer,sister_board_view(sister),palette);
         if (SDL_UpdateTexture(sister->texture,NULL,sister->framebuffer.pixels,
                               TS_SISTER_UI_WIDTH*(int)sizeof(uint32_t))==0) {
             SDL_RenderClear(sister->renderer);
@@ -9706,6 +9778,29 @@ static void application_window_focus(SDL_Window *window, SisterWindow *sister)
     (void)SDL_SetWindowInputFocus(window);
 }
 
+static void editor_return_window(Uint32 id)
+{
+    SDL_Window *window=SDL_GetWindowFromID(id);
+    if(window && !(SDL_GetWindowFlags(window)&SDL_WINDOW_HIDDEN)) {
+        SDL_RaiseWindow(window);SDL_SetWindowInputFocus(window);
+    }
+}
+static void sister_window_return(SDL_Window *main,SisterWindow *sister)
+{
+    SDL_Window *origin=SDL_GetWindowFromID(sister->return_window_id);
+    if(!origin || origin==sister->window || (SDL_GetWindowFlags(origin)&SDL_WINDOW_HIDDEN))origin=main;
+    application_window_focus(origin,sister);
+}
+
+static void sister_escape(SDL_Window *main,SisterWindow *sister)
+{
+    if(sister->model.fallout_lfo_open)sister->model.fallout_lfo_open=0;
+    else if(sister->model.preset_manage_open) {
+        sister->model.preset_manage_open=sister->model.preset_editing=sister->model.preset_confirmation=0;
+        SDL_StopTextInput();
+    } else sister_window_return(main,sister);
+}
+
 /* Prepare the destination before releasing the covering window. */
 static int workspace_tab_event(const SDL_Event *event, SDL_Window *window,
                                 SisterWindow *sister, TsUiState *ui)
@@ -9715,7 +9810,7 @@ static int workspace_tab_event(const SDL_Event *event, SDL_Window *window,
     uint32_t id=event->key.windowID;
     if(sister->window && id==sister->window_id) {
         if(sister->model.preset_manage_open)return 0;
-        if(!event->key.repeat) {application_window_focus(window,sister);}
+        if(!event->key.repeat) {sister_window_return(window,sister);}
         return 1;
     }
     if(id!=SDL_GetWindowID(window) || ui_blocking_dialog_open_except_fm(ui) ||
@@ -9809,6 +9904,8 @@ static void sister_set_parameter(TsSisterParameters *parameters,
     slot_offset = ts_sister_ui_slot_offset(parameter);
     if (slot_offset >= 0 && slot_offset < TS_SISTER_FX_SLOT_COUNT * 5) {
         TsSisterFxSlotControls *slot = &parameters->fx.slot[slot_offset / 5];
+        if(slot->type==TS_SISTER_FX_SUNVOX && slot_offset%5>=1 && slot_offset%5<=3){
+            slot->sunvox.value[slot_offset%5-1]=(int)lrintf(amount*32768);return;}
         if(slot->type==TS_SISTER_FX_FILTER && slot_offset%5>=1 && slot_offset%5<=3){
             int focus=slot->filter.value[TS_CF_ROUTE]>=.75f && slot->filter.value[TS_CF_FOCUS]>=.5f?8:0;
             ts_character_filter_set(&slot->filter,(int[]){TS_CF_L_CUT,TS_CF_L_RES,TS_CF_L_DRIVE}[slot_offset%5-1]+focus,amount);return;}
@@ -9971,6 +10068,8 @@ static float sister_parameter_normalized(const TsSisterParameters *parameters,
     if (slot_offset >= 0 && slot_offset < TS_SISTER_FX_SLOT_COUNT * 5) {
         const TsSisterFxSlotControls *slot =
             &parameters->fx.slot[slot_offset / 5];
+        if(slot->type==TS_SISTER_FX_SUNVOX && slot_offset%5>=1 && slot_offset%5<=3)
+            return ts_sunvox_normalized(&slot->sunvox,slot_offset%5-1);
         if(slot->type==TS_SISTER_FX_FILTER && slot_offset%5>=1 && slot_offset%5<=3){
             int focus=slot->filter.value[TS_CF_ROUTE]>=.75f && slot->filter.value[TS_CF_FOCUS]>=.5f?8:0;
             return slot->filter.value[(int[]){TS_CF_L_CUT,TS_CF_L_RES,TS_CF_L_DRIVE}[slot_offset%5-1]+focus];}
@@ -10406,6 +10505,13 @@ static void sister_preset_model_sync(SisterWindow *sister,
 {
     const char *name = runtime != NULL ? runtime->selected_preset : NULL;
     if (sister == NULL) return;
+    if(sister->board_id && sister->model.fx_page==1) {
+        size_t i=sister->board_preset_index;sister->model.preset_count=pedalboard_presets.count;
+        sister->model.preset_position=i<pedalboard_presets.count?i+1:0;
+        sister->model.preset_factory=i<pedalboard_presets.count?pedalboard_presets.entries[i].factory:0;
+        sister->model.preset_modified=sister->board_preset_modified;
+        snprintf(sister->model.preset_name,sizeof(sister->model.preset_name),"%s",i<pedalboard_presets.count?pedalboard_presets.entries[i].name:"CUSTOM BOARD");return;
+    }
     if (sister->model.fx_page == 2) {
         sister->model.preset_count = sister->fallout_presets.count;
         sister->model.preset_position = 0u;
@@ -10736,7 +10842,7 @@ static int sister_preset_file_save(const SisterWindow *sister,
 {
     char path[TS_RUNTIME_PATH_MAX];
     if (sister == NULL || bank == NULL ||
-        !(fallout ? fallout_presets_file_path(path, sizeof(path)) :
+        !(sister->board_id && sister->model.fx_page==1 ? pedalboard_presets_file_path(path,sizeof(path)) : fallout ? fallout_presets_file_path(path, sizeof(path)) :
                     sister_presets_file_path(path, sizeof(path)))) {
         snprintf(error, error_size, "%s preset path is unavailable",
                  fallout ? "Fallout" : "Sister");
@@ -10762,7 +10868,19 @@ static void sister_recall_preset(SDL_AudioDeviceID device,
     if (!ts_sister_preset_recall_with_lock_words(
             bank, index, &parameters, &parameter_locks,
             &parameter_locks_high)) return;
+    if(!fallout && !machine_only) {
+        /* A preset replaces settings; it must not resurrect another child's
+           MIDI identity from the preset's source board. */
+        const TsSisterFxControls *old=&audio->sister.parameters.fx;
+        parameters.fx.next_slot_id=old->next_slot_id;
+        for(int i=0;i<TS_SISTER_FX_SLOT_COUNT;++i)parameters.fx.slot[i].id=i<old->slot_count?old->slot[i].id:0;
+    }
+    TsSisterSunVoxPlan fx_plan={0};
+    if(!fallout && !machine_only && !sister_stage_fx(device,audio,&parameters.fx,&fx_plan)) {
+        snprintf(sister->model.status,sizeof(sister->model.status),"PRESET UNCHANGED: SUNVOX COULD NOT BE PREPARED");return;
+    }
     if (device) SDL_LockAudioDevice(device);
+    ts_sister_sunvox_commit(&audio->sister.post_fx,&fx_plan);
     if (fallout) {
         ts_sister_runtime_recall_fallout_preset(
             &audio->sister, &parameters.fx.fallout);
@@ -11228,14 +11346,17 @@ static void sister_fx_slot_select_type(TsSisterFxSlotControls *slot,
                                        TsSisterFxType type)
 {
     if (slot == NULL) return;
+    int adding = slot->type == TS_SISTER_FX_EMPTY && type != TS_SISTER_FX_EMPTY;
     slot->type = type;
     switch (type) {
+    case TS_SISTER_FX_SUNVOX:
+        ts_sunvox_default(&slot->sunvox);break;
     case TS_SISTER_FX_DISPERSION:
-        slot->parameter_a=.5f;slot->parameter_b=.2f;slot->parameter_c=.5f;slot->mix=1;break;
+        slot->parameter_a=.5f;slot->parameter_b=.2f;slot->parameter_c=.5f;break;
     case TS_SISTER_FX_RESONATOR:
-        slot->parameter_a=.25f;slot->parameter_b=.5f;slot->parameter_c=.5f;slot->mix=.5f;break;
+        slot->parameter_a=.25f;slot->parameter_b=.5f;slot->parameter_c=.5f;break;
     case TS_SISTER_FX_FILTER:
-        if(!slot->filter.initialized)ts_character_filter_default(&slot->filter);slot->parameter_a=.98f;slot->parameter_b=.1f;slot->parameter_c=0;slot->mix=1;break;
+        if(!slot->filter.initialized)ts_character_filter_default(&slot->filter);slot->parameter_a=.98f;slot->parameter_b=.1f;slot->parameter_c=0;break;
     case TS_SISTER_FX_TRANSIENT:
         slot->parameter_a = slot->parameter_b = slot->parameter_c = .5f;
         break;
@@ -11262,6 +11383,9 @@ static void sister_fx_slot_select_type(TsSisterFxSlotControls *slot,
     default:
         break;
     }
+    /* Live insertion starts dry. Cycling through types must retain that mix
+       until the performer explicitly turns it up. */
+    if (adding) slot->mix = 0.0f;
 }
 
 static const char *sister_fx_slot_placement_name(uint8_t placement)
@@ -11361,10 +11485,11 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         SDL_Event event;SDL_zero(event);event.type=SDL_KEYDOWN;event.key.windowID=SDL_GetWindowID(sister->window);
         event.key.keysym.sym=SDLK_F9;SDL_PushEvent(&event);return;
     }
+    int board_preset_scope=sister->board_id && sister->model.fx_page==1;
     fallout_preset_scope = sister->model.fx_page == 2;
-    preset_bank = fallout_preset_scope ?
+    preset_bank = board_preset_scope?&pedalboard_presets:fallout_preset_scope ?
         &sister->fallout_presets : &sister->presets;
-    preset_index = fallout_preset_scope ?
+    preset_index = board_preset_scope?&sister->board_preset_index:fallout_preset_scope ?
         &sister->fallout_preset_index : &sister->preset_index;
     error[0] = '\0';
     capture_state = atomic_load_explicit(&audio->sister.capture.state,
@@ -11398,7 +11523,8 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         else
             index = *preset_index == 0u ? preset_bank->count - 1u :
                     *preset_index - 1u;
-        sister_recall_preset(device, audio, sister, index);
+        if(board_preset_scope)sister_board_preset_recall(device,audio,ui,sister,index);
+        else sister_recall_preset(device, audio, sister, index);
         return;
     }
     if (hit.action == TS_SISTER_UI_ACTION_PRESET_MANAGE) {
@@ -11471,49 +11597,59 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
             sister->model.preset_confirmation == 2 ?
                 SISTER_PRESET_OPERATION_DELETE :
                 SISTER_PRESET_OPERATION_NONE;
-        int was_modified = fallout_preset_scope ?
+        int was_modified = board_preset_scope?sister->board_preset_modified:fallout_preset_scope ?
             sister->fallout_preset_modified :
             audio->sister.selected_preset_modified;
-        TsSisterPresetBank updated_bank = *preset_bank;
+        TsSisterPresetBank *updated_bank = malloc(sizeof(*updated_bank));
+        if (!updated_bank) {
+            snprintf(sister->model.status,sizeof(sister->model.status),"NOT ENOUGH MEMORY TO SAVE PRESET");
+            return;
+        }
+        *updated_bank = *preset_bank;
         TsSisterParameters stored = audio->sister.parameters;
         if(device)SDL_LockAudioDevice(device);
         ts_prism_matrix_export(&audio->sister.prism,&stored.prism);
         if(device)SDL_UnlockAudioDevice(device);
+        if(board_preset_scope){
+            TsSisterFxControls board=sister_board_view(sister)->parameters.fx;
+            ts_sister_parameters_default(&stored,sample_rate);stored.fx=board;
+        }
         if (fallout_preset_scope) {
             stored.fx.fallout.enabled = 0;
             stored.fx.fallout.rise_retrigger = 0u;
         }
         if (sister->model.preset_editing == 1) {
             ok = ts_sister_preset_save_new_with_lock_words(
-                &updated_bank, sister->model.preset_edit_name,
+                updated_bank, sister->model.preset_edit_name,
                 &stored,
-                fallout_preset_scope ? 0u : audio->sister.parameter_locks,
-                fallout_preset_scope ? 0u : audio->sister.parameter_locks_high,
+                (fallout_preset_scope || board_preset_scope) ? 0u : audio->sister.parameter_locks,
+                (fallout_preset_scope || board_preset_scope) ? 0u : audio->sister.parameter_locks_high,
                 sample_rate, error, sizeof(error));
-            if (ok) index = updated_bank.count - 1u;
+            if (ok) index = updated_bank->count - 1u;
         } else if (sister->model.preset_editing == 2) {
             ok = ts_sister_preset_rename(
-                &updated_bank, index, sister->model.preset_edit_name,
+                updated_bank, index, sister->model.preset_edit_name,
                 error, sizeof(error));
         } else if (sister->model.preset_confirmation == 1) {
             ok = ts_sister_preset_overwrite_with_lock_words(
-                &updated_bank, index, &stored,
-                fallout_preset_scope ? 0u : audio->sister.parameter_locks,
-                fallout_preset_scope ? 0u : audio->sister.parameter_locks_high,
+                updated_bank, index, &stored,
+                (fallout_preset_scope || board_preset_scope) ? 0u : audio->sister.parameter_locks,
+                (fallout_preset_scope || board_preset_scope) ? 0u : audio->sister.parameter_locks_high,
                 sample_rate,
                 error, sizeof(error));
         } else if (sister->model.preset_confirmation == 2) {
             ok = ts_sister_preset_delete(
-                &updated_bank, index, error, sizeof(error));
+                updated_bank, index, error, sizeof(error));
             if (ok) index = SIZE_MAX;
         }
         if (ok) ok = sister_preset_file_save(
-            sister, &updated_bank, fallout_preset_scope,
+            sister, updated_bank, fallout_preset_scope,
             error, sizeof(error));
         if (ok) {
-            *preset_bank = updated_bank;
+            *preset_bank = *updated_bank;
             *preset_index = index;
-            if (fallout_preset_scope) {
+            if(board_preset_scope)sister->board_preset_modified=operation==SISTER_PRESET_OPERATION_RENAME?was_modified:0;
+            else if (fallout_preset_scope) {
                 sister->fallout_preset_modified =
                     operation == SISTER_PRESET_OPERATION_RENAME ?
                         was_modified : 0;
@@ -11536,8 +11672,9 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
             sister->model.preset_manage_open = 0;
             SDL_StopTextInput();
         }
+        free(updated_bank);
         snprintf(sister->model.status, sizeof(sister->model.status), "%s",
-                 ok ? (fallout_preset_scope ? "FALLOUT PRESET BANK SAVED" :
+                 ok ? (board_preset_scope?"PEDALBOARD PRESET BANK SAVED":fallout_preset_scope ? "FALLOUT PRESET BANK SAVED" :
                                                 "SISTER PRESET BANK SAVED") :
                       error);
         return;
@@ -12244,6 +12381,7 @@ static unsigned ts_audio_range_offered(const TsConfig *,int);
 #include "main_sdl_matrix.inc"
 #include "main_sdl_character_filter.inc"
 #include "main_sdl_meta_fx.inc"
+#include "main_sdl_board_instances.inc"
 
 static int midi_sister_hit_from_target(const char *target, float normalized,
                                        TsSisterUiHit *hit)
@@ -12323,6 +12461,7 @@ static float midi_target_current_value(const char *target,
     int parameter;
     char trailing;
     if (target == NULL || ui == NULL || sister == NULL) return 0.0f;
+    float board_value;if(sister_board_midi_value(target,ui,sister,&board_value))return board_value;
     unsigned meta_id;int meta_field;
     if(sscanf(target,"matrix.meta.%u.%d%c",&meta_id,&meta_field,&trailing)==2 && meta_field>=0 && meta_field<=6)
         for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)if(ui->config.matrix.effect[i].id==meta_id && ui->config.matrix.effect[i].type==TS_MATRIX_FX_META)
@@ -12413,6 +12552,7 @@ static int midi_apply_target(SDL_AudioDeviceID device, AudioState *audio,
                  ui->config.tile_fade_ms);
         return 1;
     }
+    if(sister_board_midi(device,audio,ui,sister,target,normalized))return 1;
     if(meta_fx_matrix_midi(device,audio,ui,target,normalized))return 1;
     if(character_filter_matrix_midi(device,audio,ui,target,normalized))return 1;
     if (!midi_sister_hit_from_target(target, normalized, &hit)) return 0;
@@ -13989,6 +14129,7 @@ static void keep_record_bank(SDL_AudioDeviceID output_device,
 #include "main_sdl_mosaic.inc"
 #include "main_sdl_canvas_transfer.inc"
 #include "main_sdl_workspaces.inc"
+#include "main_sdl_fx_navigation.inc"
 
 /* One session-wide release policy. Explicit Shift+click latches and tile
    launches remain independent; disabling sustain preserves physically held keys. */
@@ -14791,6 +14932,7 @@ int main(int argc, char **argv)
             else { exit_confirmed = 1; running = 0; continue; }
         }
         if(!project_save_worker) {
+        sister_board_sync(&audio,&ui,&sister_window);
         sister_pedalboard_tick(&sister_window, SDL_GetTicks());
         if (ui.new_project_pending) {
             project_session.record = parked_instrument;
@@ -15005,6 +15147,8 @@ int main(int argc, char **argv)
             if(canvas_eq_event(&event,window,device,&audio,&ui,&sister_window,&instrument))continue;
             if(performance_event(&event,window,device,&audio,&ui,&sample_pages,audio.workspace_bank?audio.workspace_bank:&instrument,&fm_preview,obtained.freq))continue;
             if(speakers_event(&event,window,device,&audio,&ui))continue;
+            if(fx_navigation_event(&event,window,device,&audio,&ui,&sister_window,&sample_pages,&instrument))continue;
+            if(sister_board_event(&event,device,&audio,&ui,&sister_window,&sample_pages,&instrument))continue;
             if(meta_fx_event(&event,device,&audio,&ui,&sister_window,&sample_pages,&instrument))continue;
             if(character_filter_event(&event,device,&audio,&ui,&sister_window,&sample_pages,&instrument))continue;
             if(matrix_event(&event,window,device,&audio,&ui,&sample_pages,&instrument))continue;
@@ -15164,16 +15308,7 @@ int main(int argc, char **argv)
                     ui.config.sister_window_y = event.window.data2;
                 } else if (event.type == SDL_KEYDOWN &&
                            event.key.keysym.sym == SDLK_ESCAPE) {
-                    if (sister_window.model.fallout_lfo_open) {
-                        sister_window.model.fallout_lfo_open = 0;
-                    } else if (sister_window.model.preset_manage_open) {
-                        sister_window.model.preset_manage_open = 0;
-                        sister_window.model.preset_editing = 0;
-                        sister_window.model.preset_confirmation = 0;
-                        SDL_StopTextInput();
-                    } else {
-                        application_window_focus(window,&sister_window);
-                    }
+                    sister_escape(window,&sister_window);
                 } else if (event.type == SDL_TEXTINPUT &&
                            sister_window.model.preset_manage_open &&
                            sister_window.model.preset_editing) {
@@ -18991,7 +19126,7 @@ int main(int argc, char **argv)
             native_waveform_prepare(sister_window.renderer,sister_window.waveform_details,
                 !sister_window.model.preset_manage_open && !sister_window.model.fallout_lfo_open);
             ts_sister_ui_render(&sister_window.framebuffer,
-                                &sister_window.model, &ui.palette);
+                                sister_board_view(&sister_window), &ui.palette);
             ts_profile_end(TS_PROF_SISTER_UI, profile_sister_ui);
             uint64_t profile_upload = ts_profile_begin(TS_PROF_UPLOAD);
             if (SDL_UpdateTexture(sister_window.texture, NULL,

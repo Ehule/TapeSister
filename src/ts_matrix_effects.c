@@ -8,6 +8,7 @@ struct TsMatrixEffectNode {
     TsProfileEffectIdentity profile;
     uint32_t id;int type;unsigned rate;
     TsSisterSingleFx *pedal;
+    TsPedalboard *board;
     TsSunVoxEngine *sunvox;uint64_t sunvox_patch;unsigned sunvox_quantum;
     TsMetaEngine *meta;float gain,gain_target,smooth;
     TsCompressor compressor;
@@ -20,10 +21,10 @@ static atomic_uint_least64_t profile_generation;
 static TsSisterFxType pedal_type(int type)
 {return type==TS_MATRIX_FX_FILTER?TS_SISTER_FX_FILTER:type==TS_MATRIX_FX_DISPERSION?TS_SISTER_FX_DISPERSION:type==TS_MATRIX_FX_RESONATOR?TS_SISTER_FX_RESONATOR:(TsSisterFxType)type;}
 const char *ts_matrix_effect_name(int type)
-{return type==TS_MATRIX_FX_SUNVOX?"SUNVOX FX":type==TS_MATRIX_FX_META?"META FX":type==TS_MATRIX_FX_COMPRESSOR?"COMPRESSOR":ts_sister_fx_type_name(pedal_type(type));}
+{return type==TS_MATRIX_FX_PEDALBOARD?"PEDALBOARD":type==TS_MATRIX_FX_SUNVOX?"SUNVOX FX":type==TS_MATRIX_FX_META?"META FX":type==TS_MATRIX_FX_COMPRESSOR?"COMPRESSOR":ts_sister_fx_type_name(pedal_type(type));}
 const char *ts_matrix_effect_short_name(int type)
 {
-    static const char *names[]={"EMPTY","REV","DLY","DIST","GRAIN","TRANS","COMP","FILTER","DISP","RESON","META","SUNVOX"};
+    static const char *names[]={"EMPTY","REV","DLY","DIST","GRAIN","TRANS","COMP","FILTER","DISP","RESON","META","SUNVOX","BOARD"};
     return type>=0 && type<TS_MATRIX_FX_TYPES?names[type]:"FX";
 }
 void ts_matrix_effect_default(TsMatrixEffectControls *c,int type,uint32_t id)
@@ -36,6 +37,7 @@ void ts_matrix_effect_default(TsMatrixEffectControls *c,int type,uint32_t id)
     if(type==TS_SISTER_FX_GRAIN){c->a=.46f;c->b=.42f;}
     if(type==TS_MATRIX_FX_SUNVOX)ts_sunvox_default(&c->sunvox);
     if(type==TS_MATRIX_FX_META)ts_meta_preset(&c->meta,0);
+    if(type==TS_MATRIX_FX_PEDALBOARD)ts_pedalboard_default(&c->board);
     if(type==TS_MATRIX_FX_RESONATOR)c->a=.25f;
     ts_character_filter_default(&c->filter);
     ts_compressor_default(&c->compressor);c->compressor.enabled=1;
@@ -51,10 +53,11 @@ int ts_matrix_effect_valid(const TsMatrixEffectControls *c)
         ts_transient_states_valid(c->transient_power,&c->transient_states) &&
         (c->type!=TS_MATRIX_FX_FILTER || ts_character_filter_valid(&c->filter)) &&
         (c->type!=TS_MATRIX_FX_META || ts_meta_valid(&c->meta)) &&
+        (c->type!=TS_MATRIX_FX_PEDALBOARD || ts_pedalboard_valid(&c->board)) &&
         (c->type!=TS_MATRIX_FX_SUNVOX || ts_sunvox_valid(&c->sunvox));
 }
 static void node_free(TsMatrixEffectNode *n)
-{if(n){ts_sister_single_fx_free(n->pedal);ts_meta_free(n->meta);ts_sunvox_free(n->sunvox);free(n);}}
+{if(n){ts_sister_single_fx_free(n->pedal);ts_pedalboard_free(n->board);ts_meta_free(n->meta);ts_sunvox_free(n->sunvox);free(n);}}
 static void node_set(TsMatrixEffectNode *n,const TsMatrixEffectControls *c,int cold)
 {
     if(!n)return;
@@ -65,6 +68,7 @@ static void node_set(TsMatrixEffectNode *n,const TsMatrixEffectControls *c,int c
     }
     n->transition=c->transition;n->mix_target=c->mix;
     if(n->sunvox){ts_sunvox_set(n->sunvox,&c->sunvox);n->gain_target=powf(10,c->gain_db*.05f);}
+    else if(n->board){ts_pedalboard_set(n->board,&c->board);n->gain_target=powf(10,c->gain_db*.05f);}
     else if(n->type==TS_MATRIX_FX_META){ts_meta_set(n->meta,&c->meta);n->gain_target=powf(10,c->gain_db*.05f);}
     else if(n->type==TS_MATRIX_FX_COMPRESSOR) {
         TsCompressorControls comp=c->compressor;comp.enabled=1;ts_compressor_set(&n->compressor,&comp);
@@ -87,6 +91,7 @@ static TsMatrixEffectNode *node_new(const TsMatrixEffectControls *c,unsigned rat
         n->sunvox_patch=c->sunvox.patch;n->sunvox_quantum=ts_sunvox_quantum(&c->sunvox);
         if(!(n->sunvox=ts_sunvox_new(&c->sunvox,rate))){free(n);return NULL;}
     }
+    else if(c->type==TS_MATRIX_FX_PEDALBOARD){if(!(n->board=ts_pedalboard_new(&c->board,rate,c->id))){free(n);return NULL;}}
     else if(c->type==TS_MATRIX_FX_META){if(!(n->meta=ts_meta_new(&c->meta,rate,c->id))){free(n);return NULL;}}
     else if(c->type==TS_MATRIX_FX_COMPRESSOR){ts_compressor_init(&n->compressor);ts_compressor_prepare(&n->compressor,rate);}
     else if(!(n->pedal=ts_sister_single_fx_new(pedal_type(c->type),rate,c->id*UINT32_C(0x9e3779b9)))){free(n);return NULL;}
@@ -100,7 +105,16 @@ void ts_matrix_effects_init(TsMatrixEffects *f)
     memset(f,0,sizeof(*f));for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i){atomic_init(&f->remaining[i],0);f->activity[i]=1;}
 }
 void ts_matrix_effects_suspend(TsMatrixEffects *f,unsigned mask)
-{f->suspended=mask;}
+{
+    /* A dormant/unrouted board cannot finish its child replacement fade by
+       rendering. Retire only the discarded children; keep current DSP history.
+       The UI detaches/frees retired engines under the usual device exclusion. */
+    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)if(!(f->rendered&(1u<<i))) {
+        if(f->current[i])ts_pedalboard_finish_edits(f->current[i]->board);
+        atomic_store_explicit(&f->remaining[i],0,memory_order_relaxed);f->fading&=~(1u<<i);
+    }
+    f->rendered=0;f->suspended=mask;
+}
 static int effect_asleep(const TsMatrixEffects *f,int i)
 {return (f->suspended&(1u<<i)) && f->activity[i]<=0;}
 static float effect_activity(TsMatrixEffects *f,int i)
@@ -118,7 +132,7 @@ void ts_matrix_effects_free(TsMatrixEffects *f)
     ts_matrix_effects_init(f);
 }
 void ts_matrix_effects_discard(TsMatrixEffectPlan *p)
-{for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)node_free(p->node[i]);ts_sunvox_batch_free(p->worker);memset(p,0,sizeof(*p));}
+{for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i){node_free(p->node[i]);ts_pedalboard_discard(&p->board[i]);}ts_sunvox_batch_free(p->worker);memset(p,0,sizeof(*p));}
 static TsSunVoxBatch *prepare_worker(const TsMatrixEffects *f,const TsMatrixEffectPlan *plan)
 {
     if(!ts_sunvox_workers_configured())return NULL;
@@ -134,8 +148,12 @@ int ts_matrix_effects_stage(const TsMatrixEffects *f,const TsMatrixControls *c,u
     memset(p,0,sizeof(*p));if(rate<1000 || rate>384000 || !ts_matrix_valid(c))return 0;
     for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i) {
         const TsMatrixEffectControls *v=&c->effect[i];const TsMatrixEffectNode *n=f->current[i];
+        if(n && n->board && v->type==TS_MATRIX_FX_PEDALBOARD && n->id==v->id && n->rate==rate) {
+            if(!ts_pedalboard_stage(n->board,&v->board,&p->board[i])){ts_matrix_effects_discard(p);return 0;}continue;
+        }
         if((!v->id && !n) || (v->id && n && n->id==v->id && n->type==v->type && n->rate==rate &&
             (v->type!=TS_MATRIX_FX_META || ts_meta_topology_matches(n->meta,&v->meta)) &&
+            (v->type!=TS_MATRIX_FX_PEDALBOARD || ts_pedalboard_topology_matches(n->board,&v->board)) &&
             (v->type!=TS_MATRIX_FX_SUNVOX || (n->sunvox_patch==v->sunvox.patch &&
                 n->sunvox_quantum==ts_sunvox_quantum(&v->sunvox)))))continue;
         /* A short in-flight lifecycle crossfade cannot be overwritten. */
@@ -155,8 +173,12 @@ void ts_matrix_effects_commit(TsMatrixEffects *f,const TsMatrixControls *c,unsig
             f->total[i]=rate*12/1000;if(!f->total[i])f->total[i]=1;
             /* Let a newly buffered processor fill before moving the crossfade.
                Its wet and dry outputs are initially silent for one quantum. */
-            unsigned warmup=f->current[i] && f->current[i]->sunvox?f->current[i]->sunvox_quantum:0;
+            unsigned warmup=f->current[i] && f->current[i]->sunvox?f->current[i]->sunvox_quantum:f->current[i] && f->current[i]->board?ts_pedalboard_latency(f->current[i]->board):0;
             atomic_store_explicit(&f->remaining[i],f->total[i]+warmup,memory_order_relaxed);f->fading|=1u<<i;
+        }
+        if(f->current[i] && f->current[i]->board){
+            ts_pedalboard_profile_owner(f->current[i]->board,i+1,c->effect[i].id);
+            ts_pedalboard_commit(f->current[i]->board,&c->effect[i].board,&p->board[i]);
         }
         node_set(f->current[i],&c->effect[i],0);
     }
@@ -165,9 +187,21 @@ void ts_matrix_effects_commit(TsMatrixEffects *f,const TsMatrixControls *c,unsig
 void ts_matrix_effects_collect(TsMatrixEffects *f,TsMatrixEffectPlan *p)
 {
     memset(p,0,sizeof(*p));
-    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)if(f->previous[i] && !atomic_load_explicit(&f->remaining[i],memory_order_relaxed)) {
+    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i) {
+        if(f->current[i] && f->current[i]->board)ts_pedalboard_collect(f->current[i]->board,&p->board[i],0);
+        if(f->previous[i] && !atomic_load_explicit(&f->remaining[i],memory_order_relaxed)) {
         p->node[i]=f->previous[i];f->previous[i]=NULL;
+        }
     }
+}
+int ts_matrix_effects_collect_ready(const TsMatrixEffects *f)
+{
+    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)if((f->previous[i] && !atomic_load(&f->remaining[i])) ||
+        (f->current[i] && ts_pedalboard_collect_ready(f->current[i]->board)))return 1;return 0;
+}
+void ts_matrix_effects_finish_edits(TsMatrixEffects *f)
+{
+    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i){atomic_store(&f->remaining[i],0);if(f->current[i])ts_pedalboard_finish_edits(f->current[i]->board);}f->fading=0;
 }
 int ts_matrix_effects_restore(TsMatrixEffects *f,const TsMatrixControls *c,unsigned rate)
 {
@@ -180,7 +214,7 @@ int ts_matrix_effects_restore(TsMatrixEffects *f,const TsMatrixControls *c,unsig
     }
     next.worker=prepare_worker(&next,NULL);
     ts_matrix_effects_free(f);f->rate=rate;f->worker=next.worker;
-    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i){f->current[i]=next.current[i];next.current[i]=NULL;}
+    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i){f->current[i]=next.current[i];next.current[i]=NULL;if(f->current[i])ts_pedalboard_profile_owner(f->current[i]->board,i+1,c->effect[i].id);}
     return 1;
 }
 void ts_matrix_effects_tick(TsMatrixEffects *f)
@@ -196,7 +230,7 @@ static TsStereoFrame node_process(TsMatrixEffects *f,int slot,TsMatrixEffectNode
 {
     if(!n)return (TsStereoFrame){0,0};
     if(n->remaining){--n->remaining;n->gate=n->start+(n->target-n->start)*(1-(double)n->remaining/n->total);}
-    if(!n->sunvox && !connected && !in.l && !in.r && !key.l && !key.r)return (TsStereoFrame){0,0};
+    if(!n->sunvox && !n->board && !connected && !in.l && !in.r && !key.l && !key.r)return (TsStereoFrame){0,0};
     if(n->sunvox) {
         float wet[2],dry[2];
         if(ts_sunvox_stage_frame(n->sunvox,in.l,in.r,wet,dry)) {
@@ -213,10 +247,12 @@ static TsStereoFrame node_process(TsMatrixEffects *f,int slot,TsMatrixEffectNode
             dry[1]+(wet[1]*n->gain-dry[1])*amount});
     }
     if(n->pedal)return ts_sister_single_fx_process(n->pedal,in,n->gate);
-    if(n->meta){
-        TsStereoFrame wet=ts_meta_process(n->meta,in);float k=n->smooth;n->gain+=(n->gain_target-n->gain)*k;
+    if(n->meta || n->board){
+        TsStereoFrame wet,dry=in;
+        if(n->board)ts_pedalboard_process_aligned(n->board,&in,&wet,&dry,1);else wet=ts_meta_process(n->meta,in);
+        float k=n->smooth;n->gain+=(n->gain_target-n->gain)*k;
         n->mix+=(n->mix_target-n->mix)*k;float amount=n->gate*n->mix;
-        return ts_stereo_frame_sanitize_inline((TsStereoFrame){in.l+(wet.l*n->gain-in.l)*amount,in.r+(wet.r*n->gain-in.r)*amount});
+        return ts_stereo_frame_sanitize_inline((TsStereoFrame){dry.l+(wet.l*n->gain-dry.l)*amount,dry.r+(wet.r*n->gain-dry.r)*amount});
     }
     TsStereoFrame wet=ts_compressor_process(&n->compressor,in,key);
     n->mix+=(n->mix_target-n->mix)*n->compressor.smooth;
@@ -227,6 +263,7 @@ TsStereoFrame ts_matrix_effects_process(TsMatrixEffects *f,int i,TsStereoFrame i
 {
     if(i<0 || i>=TS_MATRIX_EFFECT_CAPACITY)return (TsStereoFrame){0,0};
     if(effect_asleep(f,i))return (TsStereoFrame){0,0};
+    f->rendered|=1u<<i;
     uint64_t started=ts_profile_effect_begin(i);
     unsigned remaining=atomic_load_explicit(&f->remaining[i],memory_order_relaxed);
     TsStereoFrame next=node_process(f,i,f->current[i],in,key,connected,remaining!=0);
@@ -267,6 +304,7 @@ void ts_matrix_effects_process_span(TsMatrixEffects *f,int i,
        preserving SDK-global random state and the existing worker policy. */
     TsMatrixEffectNode *n=f->current[i];
     if(effect_asleep(f,i)){memset(out,0,frames*sizeof(*out));return;}
+    if(frames)f->rendered|=1u<<i;
     if(f->activity[i]<1 || (f->suspended&(1u<<i))) {
         for(unsigned j=0;j<frames;++j)out[j]=ts_matrix_effects_process(f,i,in[j],key[j],connected);
         return;
@@ -286,6 +324,16 @@ void ts_matrix_effects_process_span(TsMatrixEffects *f,int i,
             out[j]=ts_stereo_frame_sanitize_inline((TsStereoFrame){
                 dry[2*j]+(wet[2*j]*n->gain-dry[2*j])*amount,
                 dry[2*j+1]+(wet[2*j+1]*n->gain-dry[2*j+1])*amount});
+        }
+    } else if(n && n->board && connected) {
+        TsStereoFrame dry[TS_MATRIX_DELAY];
+        ts_pedalboard_process_aligned(n->board,in,out,dry,frames);
+        for(unsigned j=0;j<frames;++j) {
+            if(n->remaining){--n->remaining;n->gate=n->start+(n->target-n->start)*(1-(double)n->remaining/n->total);}
+            n->gain+=(n->gain_target-n->gain)*n->smooth;n->mix+=(n->mix_target-n->mix)*n->smooth;
+            float amount=n->gate*n->mix;
+            out[j]=ts_stereo_frame_sanitize_inline((TsStereoFrame){
+                dry[j].l+(out[j].l*n->gain-dry[j].l)*amount,dry[j].r+(out[j].r*n->gain-dry[j].r)*amount});
         }
     } else if(n && n->pedal && connected) {
         float gate[TS_MATRIX_DELAY];
@@ -338,8 +386,8 @@ size_t ts_matrix_effects_memory(const TsMatrixEffects *f)
 {
     size_t bytes=0;
     for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i) {
-        if(f->current[i])bytes+=sizeof(TsMatrixEffectNode)+ts_sister_single_fx_memory(f->current[i]->pedal)+ts_meta_memory(f->current[i]->meta)+ts_sunvox_memory(f->current[i]->sunvox);
-        if(f->previous[i])bytes+=sizeof(TsMatrixEffectNode)+ts_sister_single_fx_memory(f->previous[i]->pedal)+ts_meta_memory(f->previous[i]->meta)+ts_sunvox_memory(f->previous[i]->sunvox);
+        if(f->current[i])bytes+=sizeof(TsMatrixEffectNode)+ts_sister_single_fx_memory(f->current[i]->pedal)+ts_pedalboard_memory(f->current[i]->board)+ts_meta_memory(f->current[i]->meta)+ts_sunvox_memory(f->current[i]->sunvox);
+        if(f->previous[i])bytes+=sizeof(TsMatrixEffectNode)+ts_sister_single_fx_memory(f->previous[i]->pedal)+ts_pedalboard_memory(f->previous[i]->board)+ts_meta_memory(f->previous[i]->meta)+ts_sunvox_memory(f->previous[i]->sunvox);
     }
     return bytes;
 }
