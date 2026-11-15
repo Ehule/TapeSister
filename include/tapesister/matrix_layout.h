@@ -18,6 +18,9 @@ enum { TS_FX_CANVAS_SPLIT_MIN=640, TS_FX_CANVAS_SPLIT_DEFAULT=1000, TS_FX_CANVAS
 typedef struct { uint64_t id; int kind; float x,y,scale; uint64_t canvas; uint32_t color; char name[48]; } TsFxCanvasPosition;
 enum { TS_FX_LABEL_LIMIT=64, TS_FX_LABEL_TEXT=256 };
 typedef struct {float x,y,scale;char text[TS_FX_LABEL_TEXT];} TsFxCanvasLabel;
+enum { TS_FX_HEADING_LIMIT=TS_GALLERY_LIMIT+1 };
+/* Canvas zero is OTHER SOURCES. Empty text remembers a deleted heading. */
+typedef struct {uint64_t canvas;TsFxCanvasLabel label;} TsFxCanvasHeading;
 enum { TS_FX_CABLE_STYLES=2048 };
 typedef struct {uint64_t source,canvas;int kind,destination;uint32_t target,color;} TsFxCableStyle;
 typedef struct {
@@ -31,6 +34,7 @@ typedef struct {
     TsFxCanvasPosition canvas[TS_FX_CANVAS_POSITIONS];
     int label_count;
     TsFxCanvasLabel labels[TS_FX_LABEL_LIMIT];
+    int heading_count;TsFxCanvasHeading headings[TS_FX_HEADING_LIMIT];
     int cable_count;TsFxCableStyle cables[TS_FX_CABLE_STYLES];
 } TsMatrixLayout;
 

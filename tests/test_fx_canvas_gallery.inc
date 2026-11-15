@@ -75,11 +75,14 @@ static void gallery_view(void)
     for(int i=0;i<2;++i){TsMosaic *m=g->canvas[i].scene;m->playing=1;m->voices[0].id=cards[i]->id;m->voices[0].active=1;m->voices[0].audible_gain=1;}
     mx_capture_activity(0,&audio,&pages,&bank,50);assert(fx_row_playing(first) && fx_row_playing(second));
     toolbar_click(FX_TOOL_MOVEMENT);click(400,122+12,1);assert(fx_canvas.active_view && gallery_cards()==2);
+    assert(fx_label_visible(heading_index(first.canvas)) && fx_label_visible(heading_index(second.canvas)));
     if(getenv("TS_FX_PREVIEW")){char path[1024];snprintf(path,sizeof(path),"%s/playing.bmp",getenv("TS_FX_PREVIEW"));screenshot(path);}
     g->outgoing=-1;g->canvas[1].scene->playing=0;
     mx_capture_activity(0,&audio,&pages,&bank,50);fx_build(&pages,&bank);assert(gallery_cards()==1 && fx_row_playing(first) && !fx_row_playing(second));
+    assert(fx_label_visible(heading_index(first.canvas)) && !fx_label_visible(heading_index(second.canvas)));
     g->canvas[0].scene->playing=0;
     mx_capture_activity(0,&audio,&pages,&bank,50);fx_build(&pages,&bank);assert(gallery_cards()==0);
+    assert(!fx_label_visible(heading_index(first.canvas)) && !fx_label_visible(heading_index(second.canvas)));
     toolbar_click(FX_TOOL_MOVEMENT);click(400,102,1);assert(!fx_canvas.active_view && gallery_cards()==2);
     fx_clear_selection();
 
@@ -89,7 +92,10 @@ static void gallery_view(void)
     /* Overview headers must still paint at the scale needed for all movements. */
     w->layout->canvas_zoom=.2f;w->layout->canvas_x=500;w->layout->canvas_y=100;
     SDL_Surface *frame=rendered_frame();FxFontMetrics font=fx_font_scaled(1,2.f/3);
-    int hx=mx_px(fx_x(p->x)),hy=mx_py(fx_y(p->y)-fx_line_height(font)-1);
+    int heading=-1;
+    for(int i=0;i<w->layout->heading_count;++i)if(w->layout->headings[i].canvas==g->canvas[0].id)heading=TS_FX_LABEL_LIMIT+i;
+    assert(heading>=0);SDL_Rect heading_rect=fx_text_object_rect(heading);
+    int hx=mx_px(heading_rect.x),hy=mx_py(heading_rect.y);
     const char *glyph=ts_ui_glyph(g->canvas[0].name[0]);
     for(int y=0;y<7;++y)for(int x=0;x<5;++x) {
         const uint32_t *pixels=(const uint32_t *)((const char *)frame->pixels+(hy+font.rows[y])*frame->pitch);
