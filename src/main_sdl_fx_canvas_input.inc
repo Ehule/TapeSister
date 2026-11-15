@@ -33,7 +33,7 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
         return 1;
     }
     if(fx_label_drag_event(e,x,y))return 1;
-    if(fx_canvas.label_selected>=l->label_count)fx_canvas.label_selected=-1;
+    if(!fx_label_visible(fx_canvas.label_selected))fx_canvas.label_selected=-1;
     if(e->type==SDL_KEYUP){if(fx_canvas_key(e->key.keysym.sym) || ((e->key.keysym.mod&KMOD_CTRL) && (e->key.keysym.sym==SDLK_a || e->key.keysym.sym==SDLK_n || e->key.keysym.sym==SDLK_c || e->key.keysym.sym==SDLK_v)))return 1;
         e->key.windowID=SDL_GetWindowID(main);return 0;}
     if(fx_canvas.movement_popup) {
@@ -85,8 +85,12 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
             int i=fx_canvas.label_selected;
             if(key==SDLK_F2){fx_label_begin(i);return 1;}
             if(key==SDLK_DELETE || key==SDLK_BACKSPACE || key==SDLK_x) {
-                memmove(l->labels+i,l->labels+i+1,(size_t)(l->label_count-i-1)*sizeof(l->labels[0]));
-                memset(l->labels+--l->label_count,0,sizeof(l->labels[0]));fx_canvas.label_selected=-1;return 1;
+                if(i>=TS_FX_LABEL_LIMIT)memset(fx_label_at(i)->text,0,TS_FX_LABEL_TEXT);
+                else {
+                    memmove(l->labels+i,l->labels+i+1,(size_t)(l->label_count-i-1)*sizeof(l->labels[0]));
+                    memset(l->labels+--l->label_count,0,sizeof(l->labels[0]));
+                }
+                fx_canvas.label_selected=-1;return 1;
             }
             if(!(mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI)) && (key==SDLK_g || key==SDLK_s)) {
                 fx_label_drag(key==SDLK_g?FX_DRAG_LABEL_GRAB:FX_DRAG_LABEL_SCALE,fx_canvas.mouse_x,fx_canvas.mouse_y);return 1;
@@ -202,8 +206,9 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
     if(click && e->button.button==SDL_BUTTON_MIDDLE){w->drag=FX_DRAG_PAN;fx_canvas.origin_x=l->canvas_x;fx_canvas.origin_y=l->canvas_y;fx_canvas.pointer_x=x;fx_canvas.pointer_y=y;return 1;}
     if(wheel)return 1;
     if(!click)return 1;
-    for(int i=l->label_count-1;i>=0;--i) {
-        SDL_Rect r=fx_label_rect(&l->labels[i]);
+    for(int i=fx_label_limit()-1;i>=0;--i) {
+        if(!fx_label_visible(i))continue;
+        SDL_Rect r=fx_text_object_rect(i);
         if(left && x>=r.x && x<r.x+r.w && y>=r.y && y<r.y+r.h) {
             fx_clear_selection();fx_clear_wires();fx_canvas.label_selected=i;w->effect_open=w->compressor_open=0;
             if(e->button.clicks>=2)fx_label_begin(i);else fx_label_drag(FX_DRAG_LABEL,x,y);

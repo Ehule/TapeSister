@@ -29,17 +29,24 @@ static int cable_valid(const TsFxCableStyle *p)
         p->destination>=0 && p->destination<TS_MATRIX_DESTINATIONS &&
         (!!p->target==effect) && (p->color>>24)==255;
 }
+static int label_valid(const TsFxCanvasLabel *p)
+{
+    if(!isfinite(p->x) || !isfinite(p->y) || fabsf(p->x)>1000000 || fabsf(p->y)>1000000 ||
+       !isfinite(p->scale) || p->scale<.25f || p->scale>4 || !memchr(p->text,0,sizeof(p->text)))return 0;
+    for(const unsigned char *s=(const unsigned char *)p->text;*s;++s)if(*s!='\n' && (*s<32 || *s>126))return 0;
+    return 1;
+}
 int ts_matrix_layout_valid(const TsMatrixLayout *l)
 {
     if(!l || l->row_count<0 || l->row_count>TS_MATRIX_LAYOUT_ROWS)return 0;
     if(l->cable_count<0 || l->cable_count>TS_FX_CABLE_STYLES)return 0;
     for(int i=0;i<l->cable_count;++i)if(!cable_valid(&l->cables[i]))return 0;
     if(l->label_count<0 || l->label_count>TS_FX_LABEL_LIMIT)return 0;
-    for(int i=0;i<l->label_count;++i) {
-        const TsFxCanvasLabel *p=&l->labels[i];
-        if(!isfinite(p->x) || !isfinite(p->y) || fabsf(p->x)>1000000 || fabsf(p->y)>1000000 ||
-           !isfinite(p->scale) || p->scale<.25f || p->scale>4 || !memchr(p->text,0,sizeof(p->text)))return 0;
-        for(const unsigned char *s=(const unsigned char *)p->text;*s;++s)if(*s!='\n' && (*s<32 || *s>126))return 0;
+    for(int i=0;i<l->label_count;++i)if(!label_valid(&l->labels[i]))return 0;
+    if(l->heading_count<0 || l->heading_count>TS_FX_HEADING_LIMIT)return 0;
+    for(int i=0;i<l->heading_count;++i) {
+        if(!label_valid(&l->headings[i].label))return 0;
+        for(int j=0;j<i;++j)if(l->headings[j].canvas==l->headings[i].canvas)return 0;
     }
     unsigned char seen[TS_MATRIX_DESTINATIONS]={0};
     for(int i=0;i<TS_MATRIX_DESTINATIONS;++i) {
@@ -98,6 +105,12 @@ int ts_matrix_layout_write(FILE *f,const TsMatrixLayout *l)
         for(const unsigned char *s=(const unsigned char *)p->text;*s;++s)if(fprintf(f,"%02x",*s)<0)return 0;
         if(fputc('\n',f)==EOF)return 0;
     }
+    for(int i=0;i<l->heading_count;++i) {
+        const TsFxCanvasHeading *h=&l->headings[i];const TsFxCanvasLabel *p=&h->label;
+        if(fprintf(f,"FxCanvas.Heading%d=%" PRIu64 ",%.9g,%.9g,%.9g,",i,h->canvas,p->x,p->y,p->scale)<0)return 0;
+        for(const unsigned char *s=(const unsigned char *)p->text;*s;++s)if(fprintf(f,"%02x",*s)<0)return 0;
+        if(fputc('\n',f)==EOF)return 0;
+    }
     for(int i=0;i<l->canvas_count;++i) {
         const TsFxCanvasPosition *p=&l->canvas[i];
         if(fprintf(f,"FxCanvas.Node%d=%d,%" PRIu64 ",%.9g,%.9g",i,p->kind,p->id,p->x,p->y)<0)return 0;
@@ -137,10 +150,16 @@ int ts_matrix_layout_read(TsMatrixLayout *l,const char *key,const char *value)
         if(!cable_valid(&p))return -1;
         l->cables[l->cable_count++]=p;return 1;
     }
-    if(!strncmp(key,"FxCanvas.Label",14)) {
-        s=key+14;TsFxCanvasLabel p={0};int end=0;
-        if(!layout_number(&s,TS_FX_LABEL_LIMIT-1,&i) || *s || i!=(uint64_t)l->label_count ||
-           sscanf(value,"%f,%f,%f,%n",&p.x,&p.y,&p.scale,&end)!=3 || !end ||
+    int heading=!strncmp(key,"FxCanvas.Heading",16);
+    if(heading || !strncmp(key,"FxCanvas.Label",14)) {
+        s=key+(heading?16:14);TsFxCanvasLabel p={0};int end=0;uint64_t canvas=0;
+        if(!layout_number(&s,heading?TS_FX_HEADING_LIMIT-1:TS_FX_LABEL_LIMIT-1,&i) || *s ||
+           i!=(uint64_t)(heading?l->heading_count:l->label_count))return -1;
+        if(heading) {
+            if(!layout_number(&value,UINT64_MAX,&canvas) || *value++!=',')return -1;
+            for(int j=0;j<l->heading_count;++j)if(l->headings[j].canvas==canvas)return -1;
+        }
+        if(sscanf(value,"%f,%f,%f,%n",&p.x,&p.y,&p.scale,&end)!=3 || !end ||
            !isfinite(p.x) || !isfinite(p.y) || fabsf(p.x)>1000000 || fabsf(p.y)>1000000 ||
            !isfinite(p.scale) || p.scale<.25f || p.scale>4)return -1;
         s=value+end;size_t len=strlen(s);if(len%2 || len/2>=sizeof(p.text))return -1;
@@ -149,7 +168,12 @@ int ts_matrix_layout_read(TsMatrixLayout *l,const char *key,const char *value)
             char byte[3]={s[j],s[j+1],0};unsigned v=(unsigned)strtoul(byte,NULL,16);
             if(v!='\n' && (v<32 || v>126))return -1;p.text[j/2]=(char)v;
         }
-        l->labels[l->label_count++]=p;return 1;
+        if(heading) {
+            TsFxCanvasHeading *h=&l->headings[l->heading_count++];
+            h->canvas=canvas;h->label=p;
+        }
+        else l->labels[l->label_count++]=p;
+        return 1;
     }
     if(!strcmp(key,"FxCanvas.Straight")) {
         if(!strcmp(value,"0"))l->canvas_straight=0;else if(!strcmp(value,"1"))l->canvas_straight=1;else return -1;

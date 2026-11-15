@@ -287,6 +287,18 @@ device buffer. The initial Keter measurements are recorded in
 
 ## Live navigation and active sources
 
+Gallery movement headings become editable text objects automatically when an
+older project is first displayed in FX Canvas. Their initial names and positions
+are retained. Double-click a heading or select it and press F2 to edit; drag or G
+moves it, S resizes it, and Delete removes it. These edits support Undo/Redo.
+Save the project to retain the conversion, including deleted headings, on reopen.
+
+Heading edits are independent of Gallery names. Their movement identities keep
+them associated with the correct VIEW filter, including CURRENTLY PLAYING.
+Existing free text is preserved; converted headings have their own storage and
+do not consume the 64 free-text slots. New movements receive a heading when they
+first have source cards in FX Canvas.
+
 Editors remember their entry workspace: Escape from a pedalboard, Sister Machine,
 Prism or Fallout returns to the window that opened it. A board opened from FX
 Canvas returns there; one opened with Tab from Mosaic returns to Mosaic. E returns

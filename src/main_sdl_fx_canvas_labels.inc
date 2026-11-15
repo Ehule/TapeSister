@@ -4,9 +4,10 @@ static void fx_label_cancel(void)
 static void fx_label_begin(int index)
 {
     TsMatrixLayout *l=matrix_window.layout;
+    TsFxCanvasLabel *existing=fx_label_at(index);if(index>=0 && !existing)return;
     if(index<0 && l->label_count==TS_FX_LABEL_LIMIT){snprintf(matrix_window.status,sizeof(matrix_window.status),"TEXT LABEL LIMIT REACHED (64).");return;}
     fx_canvas.text_blink=SDL_GetTicks();fx_canvas.label_target=index;fx_canvas.label_editing=1;fx_canvas.label_all=1;
-    snprintf(fx_canvas.label_text,sizeof(fx_canvas.label_text),"%s",index>=0?l->labels[index].text:"Text label");
+    snprintf(fx_canvas.label_text,sizeof(fx_canvas.label_text),"%s",existing?existing->text:"Text label");
     fx_canvas.label_cursor=(int)strlen(fx_canvas.label_text);
     fx_canvas.popup=0;matrix_window.effect_open=matrix_window.compressor_open=0;
     SDL_StartTextInput();matrix_window.dirty=1;
@@ -37,8 +38,9 @@ static int fx_label_edit_event(SDL_Event *e)
         if(i<0 && l->label_count<TS_FX_LABEL_LIMIT) {
             i=l->label_count++;l->labels[i]=(TsFxCanvasLabel){.x=fx_canvas.place_x,.y=fx_canvas.place_y,.scale=1};
         }
-        if(i>=0 && i<l->label_count) {
-            memset(l->labels[i].text,0,TS_FX_LABEL_TEXT);memcpy(l->labels[i].text,s,(size_t)n);
+        TsFxCanvasLabel *p=fx_label_at(i);
+        if(p) {
+            memset(p->text,0,TS_FX_LABEL_TEXT);memcpy(p->text,s,(size_t)n);
             fx_clear_selection();fx_clear_wires();fx_canvas.label_selected=i;
         }
         fx_label_cancel();return 1;
@@ -62,12 +64,44 @@ static SDL_Rect fx_label_rect(const TsFxCanvasLabel *p)
     float z=matrix_window.layout->canvas_zoom*p->scale;
     return (SDL_Rect){fx_x(p->x),fx_y(p->y),SDL_max(28,(int)(320*z)),SDL_max(18,(int)((16+24*SDL_min(16,lines))*z))};
 }
+static void fx_heading_font(const TsFxCanvasLabel *p,int *scale,float *factor)
+{
+    int compact=!fx_canvas.movement && matrix_window.layout->canvas_zoom<.4f;
+    *scale=compact?1:2;*factor=(compact?2.f/3:1)*p->scale;
+}
+/* Keep the original overview legibility. The saved Y is the bottom anchor,
+   so zooming out never pushes the text down over the first source card. */
+static SDL_Rect fx_text_object_rect(int index)
+{
+    TsFxCanvasLabel *p=fx_label_at(index);if(!p)return (SDL_Rect){0};
+    if(index<TS_FX_LABEL_LIMIT)return fx_label_rect(p);
+    int scale;float factor;fx_heading_font(p,&scale,&factor);
+    FxFontMetrics font=fx_font_scaled(scale,factor);
+    int capacity=SDL_max(1,mx_px(480)/font.advance),lines=0,longest=0;
+    const char *text=p->text;
+    while(*text && lines<16) {
+        char line[128];text=fx_label_line(text,capacity,line);
+        longest=SDL_max(longest,(int)strlen(line));++lines;
+    }
+    int height=SDL_max(1,lines)*fx_line_height(font)+1;
+    int width=(longest*font.advance*MATRIX_W+mx_pixel_w()-1)/mx_pixel_w();
+    return (SDL_Rect){fx_x(p->x),fx_y(p->y)-height,SDL_max(6,width+2),height};
+}
 static void fx_labels_paint(void)
 {
     TsMatrixLayout *l=matrix_window.layout;SDL_Rect clip={20,FX_TOP,fx_right()-20,FX_BOTTOM-FX_TOP};
-    for(int i=0;i<l->label_count;++i) {
-        TsFxCanvasLabel *p=&l->labels[i];SDL_Rect r=fx_label_rect(p),visible;
+    for(int i=0;i<fx_label_limit();++i) {
+        if(!fx_label_visible(i))continue;
+        TsFxCanvasLabel *p=fx_label_at(i);SDL_Rect r=fx_text_object_rect(i),visible;
         if(!SDL_IntersectRect(&r,&clip,&visible))continue;
+        if(i>=TS_FX_LABEL_LIMIT) {
+            int scale;float factor;fx_heading_font(p,&scale,&factor);
+            if(i==fx_canvas.label_selected) {
+                fx_rect(r.x-2,r.y-2,r.w+4,r.h+4,FX_FOCUS);
+                fx_rect(r.x-1,r.y-1,r.w+2,r.h+2,FX_BG);
+            }
+            fx_text_box_scaled(r,clip,p->text,FX_CABLE,scale,16,factor);continue;
+        }
         fx_rect(r.x,r.y,r.w,r.h,i==fx_canvas.label_selected?FX_FOCUS:FX_EDGE);
         fx_rect(r.x+1,r.y+1,r.w-2,r.h-2,FX_PANEL);
         SDL_Rect text={r.x+5,r.y+4,r.w-10,r.h-8};
@@ -107,9 +141,10 @@ static int fx_label_drag_event(SDL_Event *e,int x,int y)
     MatrixWindow *w=&matrix_window;int mode=w->drag;
     if(mode!=FX_DRAG_LABEL && mode!=FX_DRAG_LABEL_GRAB && mode!=FX_DRAG_LABEL_SCALE)return 0;
     int i=fx_canvas.label_selected;
-    if(i<0 || i>=w->layout->label_count){w->drag=0;return 1;}
+    TsFxCanvasLabel *p=fx_label_at(i);
+    if(!p){w->drag=0;return 1;}
     if(e->type==SDL_MOUSEMOTION) {
-        TsFxCanvasLabel *p=&w->layout->labels[i];float z=w->layout->canvas_zoom;
+        float z=w->layout->canvas_zoom;
         if(mode==FX_DRAG_LABEL_SCALE)p->scale=SDL_clamp(fx_canvas.label_origin.scale*expf((x-fx_canvas.pointer_x)*.005f),.25f,4.f);
         else {
             p->x=SDL_clamp(fx_canvas.label_origin.x+(x-fx_canvas.pointer_x)/z,-1000000.f,1000000.f);
@@ -127,6 +162,6 @@ static int fx_label_drag_event(SDL_Event *e,int x,int y)
 }
 static void fx_label_drag(int mode,int x,int y)
 {
-    fx_canvas.label_origin=matrix_window.layout->labels[fx_canvas.label_selected];
+    fx_canvas.label_origin=*fx_label_at(fx_canvas.label_selected);
     fx_canvas.pointer_x=x;fx_canvas.pointer_y=y;matrix_window.drag=mode;SDL_CaptureMouse(SDL_TRUE);
 }

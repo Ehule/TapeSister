@@ -15,11 +15,21 @@ static struct {
     TsAudioChannelRange output_range;
     unsigned outputs;
     uint64_t builds,movement;
+    uint64_t scenes[TS_GALLERY_LIMIT];int scene_count;
 } fx_graph_cache;
 static int fx_graph_changed(TsSamplePages *pages,TsInstrument *bank)
 {
     MatrixWindow *w=&matrix_window;
     int changed=!fx_graph_cache.valid || fx_graph_cache.count!=w->count || fx_graph_cache.movement!=fx_canvas.movement;
+    int scenes=w->gallery?w->gallery->count:0;
+    changed|=fx_graph_cache.scene_count!=scenes;fx_graph_cache.scene_count=scenes;
+    for(int i=0;i<scenes;++i) {
+        changed|=fx_graph_cache.scenes[i]!=w->gallery->canvas[i].id;
+        fx_graph_cache.scenes[i]=w->gallery->canvas[i].id;
+    }
+    changed|=fx_graph_cache.layout.heading_count!=w->layout->heading_count;
+    for(int i=0;i<w->layout->heading_count;++i)
+        changed|=fx_graph_cache.layout.headings[i].canvas!=w->layout->headings[i].canvas;
     fx_graph_cache.movement=fx_canvas.movement;
     changed|=fx_graph_cache.active_view!=fx_canvas.active_view;fx_graph_cache.active_view=fx_canvas.active_view;
     if(fx_canvas.active_view)for(int i=0;i<w->count;++i) {

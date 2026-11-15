@@ -39,7 +39,7 @@ An unsuccessful preparation retains the committed board.
   unrouted boards retire their pending replacements without advancing DSP.
 - Projects and undo/redo store each board, child identity and SunVox controls.
   Custom patch bytes are embedded, so the source file need not remain present.
-  Project state version 51 and preset version 27 continue loading older files.
+  Project state version 52 and preset version 27 continue loading older files.
 - Added boards have a separate `pedalboard-presets.ini` bank through the usual
   preset controls: browse, Save As, rename, overwrite and delete. Recall changes
   only the selected board. P1 keeps its existing Sister preset bank.

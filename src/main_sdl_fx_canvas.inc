@@ -161,6 +161,7 @@ static int fx_movement_destinations(TsSamplePages *pages,TsInstrument *bank,unsi
     }
     return bus;
 }
+#include "main_sdl_fx_canvas_headings.inc"
 #include "main_sdl_fx_canvas_cache.inc"
 static void fx_build(TsSamplePages *pages,TsInstrument *bank)
 {
@@ -262,6 +263,7 @@ static void fx_build(TsSamplePages *pages,TsInstrument *bank)
         if(p){n->x=p->x;n->y=p->y;n->scale=p->scale?p->scale:1;}
 
     }
+    fx_migrate_headings();
     if(fx_canvas.movement || fx_canvas.active_view) {
         unsigned char keep[TS_MATRIX_DESTINATIONS];int bus=fx_movement_destinations(pages,bank,keep);
         int count=0;
@@ -286,6 +288,8 @@ static void fx_build(TsSamplePages *pages,TsInstrument *bank)
     }
     /* Initial placement can create saved positions during this build. */
     memcpy(&fx_graph_cache.layout,w->layout,offsetof(TsMatrixLayout,canvas)+(size_t)w->layout->canvas_count*sizeof(w->layout->canvas[0]));
+    fx_graph_cache.layout.heading_count=w->layout->heading_count;
+    memcpy(fx_graph_cache.layout.headings,w->layout->headings,sizeof(w->layout->headings));
 }
 static int fx_chosen(MatrixRow row)
 {
@@ -318,9 +322,11 @@ static void fx_fit_selection(int selected)
     for(int i=0;i<fx_canvas.count;++i){FxCanvasNode *n=&fx_canvas.node[i];
         if(selected && !fx_chosen(n->row))continue;
         left=fminf(left,n->x);top=fminf(top,n->y);right=fmaxf(right,n->x+fx_node_w(n));bottom=fmaxf(bottom,n->y+fx_node_h(n));++count;}
-    if(!selected && !fx_canvas.movement)for(int i=0;i<matrix_window.layout->label_count;++i) {
-        const TsFxCanvasLabel *p=&matrix_window.layout->labels[i];
-        left=fminf(left,p->x);top=fminf(top,p->y);right=fmaxf(right,p->x+320*p->scale);bottom=fmaxf(bottom,p->y+160*p->scale);++count;
+    if(!selected)for(int i=0;i<fx_label_limit();++i) {
+        if(!fx_label_visible(i) || (i<TS_FX_LABEL_LIMIT && fx_canvas.movement))continue;
+        const TsFxCanvasLabel *p=fx_label_at(i);int heading=i>=TS_FX_LABEL_LIMIT;
+        left=fminf(left,p->x);top=fminf(top,p->y-(heading?40*p->scale:0));
+        right=fmaxf(right,p->x+320*p->scale);bottom=fmaxf(bottom,p->y+(heading?0:160*p->scale));++count;
     }
     fx_canvas.fit=0;if(!count)return;
     TsMatrixLayout *l=matrix_window.layout;float width=fx_split()-20,height=FX_BOTTOM-FX_TOP;
@@ -576,29 +582,6 @@ static void fx_paint_cables(TsSamplePages *pages,TsInstrument *bank)
     }
     fx_cables_end();
 }
-/* Movement labels remain readable when the complete map is fitted. Their
-   anchors follow the source cluster; hand-placed cards and effects stay put. */
-static void fx_paint_movements(void)
-{
-    TsMosaicGallery *g=matrix_window.gallery;if(!g)return;
-    SDL_Rect graph={20,FX_TOP,fx_right()-20,FX_BOTTOM-FX_TOP};
-    for(int c=-1;c<g->count;++c) {
-        float left=1e9f,top=1e9f;int count=0;
-        for(int i=0;i<fx_canvas.count;++i) {
-            FxCanvasNode *n=&fx_canvas.node[i];
-            int member=c<0?(n->row.kind==0 || n->row.kind==1):n->row.kind==3 && n->row.canvas==g->canvas[c].id;
-            if(!member)continue;
-            left=fminf(left,n->x);top=fminf(top,n->y);++count;
-        }
-        if(!count)continue;
-        const char *label=c<0?"OTHER SOURCES":g->canvas[c].name;
-        int compact=!fx_canvas.movement && matrix_window.layout->canvas_zoom<.4f;
-        int scale=compact?1:2;float factor=compact?2.f/3:1;
-        int height=fx_line_height(fx_font_scaled(scale,factor))+1;
-        int x=fx_x(left),y=fx_y(top)-height;
-        fx_text_box_scaled((SDL_Rect){x,y,480,height},graph,label,FX_CABLE,scale,1,factor);
-    }
-}
 static void fx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
 {
     MatrixWindow *w=&matrix_window;mx_rect(0,0,MATRIX_W,MATRIX_H,FX_BG);char label[100];
@@ -615,7 +598,7 @@ static void fx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
     TsMatrixEffectControls *meta=fx_meta();
     if(meta)fx_meta_paint(meta);
     else {
-        fx_paint_movements();fx_paint_cables(pages,bank);
+        fx_paint_cables(pages,bank);
         for(int i=0;i<fx_canvas.count;++i) {
             FxCanvasNode *n=&fx_canvas.node[i];int x=fx_x(n->x),y=fx_y(n->y),width=(int)(fx_node_w(n)*w->layout->canvas_zoom),height=(int)(fx_node_h(n)*w->layout->canvas_zoom);
             int slot=n->row.kind==4?ts_matrix_effect_index(n->row.index):-1;

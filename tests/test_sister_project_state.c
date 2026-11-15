@@ -33,7 +33,19 @@ static void layout_malformed(void)
     assert(!ts_matrix_layout_valid(l));
     ts_matrix_layout_default(l);l->column[0]=1;assert(!ts_matrix_layout_valid(l));
     ts_matrix_layout_default(l);l->row_count=1;l->row_kind[0]=2;l->row_id[0]=TS_MATRIX_ROWS;
-    assert(!ts_matrix_layout_valid(l));free(l);
+    assert(!ts_matrix_layout_valid(l));
+    ts_matrix_layout_default(l);
+    assert(ts_matrix_layout_read(l,"FxCanvas.Heading1","1,0,0,1,4142")==-1);
+    assert(ts_matrix_layout_read(l,"FxCanvas.Heading0","1,nan,0,1,4142")==-1);
+    assert(ts_matrix_layout_read(l,"FxCanvas.Heading0","1,0,0,1,00")==-1);
+    assert(ts_matrix_layout_read(l,"FxCanvas.Heading0","1,0,0,1,414")==-1);
+    assert(ts_matrix_layout_read(l,"FxCanvas.Heading0","-1,0,0,1,4142")==-1);
+    assert(ts_matrix_layout_read(l,"FxCanvas.Heading0","18446744073709551616,0,0,1,4142")==-1);
+    assert(ts_matrix_layout_read(l,"FxCanvas.Heading0","1,0,0,1,4142")==1);
+    assert(ts_matrix_layout_read(l,"FxCanvas.Heading1","1,0,0,1,4142")==-1);
+    assert(ts_matrix_layout_read(l,"FxCanvas.Heading1","0,20,30,2,")==1);
+    assert(ts_matrix_layout_valid(l));
+    l->headings[1].canvas=1;assert(!ts_matrix_layout_valid(l));free(l);
 }
 
 static float restored_mosaic_energy(TsSisterRuntime *r)
@@ -198,6 +210,10 @@ int main(void)
     runtime.matrix_layout.canvas[1]=(TsFxCanvasPosition){TS_MATRIX_NODES,5,1200,320};
     runtime.matrix_layout.canvas[2]=(TsFxCanvasPosition){.kind=3,.id=8,.canvas=1,.x=10,.y=20};
     runtime.matrix_layout.canvas[3]=(TsFxCanvasPosition){.kind=3,.id=8,.canvas=2,.x=10,.y=120};
+    runtime.matrix_layout.heading_count=2;
+    runtime.matrix_layout.headings[0].canvas=UINT64_MAX;
+    runtime.matrix_layout.headings[0].label=(TsFxCanvasLabel){.x=12.5f,.y=-80,.scale=1.5f,.text="KETER\nEdited locally"};
+    runtime.matrix_layout.headings[1].label=(TsFxCanvasLabel){.scale=1}; /* Deleted OTHER SOURCES. */
     assert(ts_matrix_layout_valid(&runtime.matrix_layout));
     runtime.performance_transport = 6u;
     runtime.clock_controls=(TsMasterClockControls){.enabled=1,.bpm=137,.tempo_mask=3,.arp_division=2,.position_custom=1,.home_mask=2};
