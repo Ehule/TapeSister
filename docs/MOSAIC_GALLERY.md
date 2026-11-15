@@ -68,6 +68,8 @@ Sample/Record banks, TrackSister, ARP, effects and output controls remain shared
 
 ## Gallery sequencer
 
+Gallery and Gallery Sequencer open in separate resizable native windows, maximized by default. Drag their native title bars to move them; the toolbar offers **MAXIMIZE / RESTORE**, **FULLSCREEN**, and **ON TOP**. Alt+Enter (or Alt+F11) toggles fullscreen in the focused window. Esc returns from the sequencer to Gallery, then to Mosaic, without stopping playback. Mosaic remains usable while these windows are open. Add, Duplicate, Delete, and reorder remain available while the sequence is running or paused.
+
 Open **GALLERY → SEQUENCER**. The Prism-style grid has 64 available steps,
 shown in four pages of sixteen. Each step references a canvas by stable identity
 and selects an **IN** and **OUT** point. The same canvas may appear more than once

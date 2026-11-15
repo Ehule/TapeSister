@@ -22,6 +22,53 @@ static void drag(int x,int y,int xx,int yy)
 {mouse(SDL_MOUSEBUTTONDOWN,x,y,SDL_BUTTON_LEFT,1);mouse(SDL_MOUSEMOTION,xx,yy,0,0);mouse(SDL_MOUSEBUTTONUP,xx,yy,SDL_BUTTON_LEFT,1);}
 static void key(SDL_Keycode key,int mod)
 {SDL_Event e;SDL_zero(e);e.type=SDL_KEYDOWN;e.key.windowID=modulation_window.id;e.key.keysym.sym=key;e.key.keysym.mod=mod;assert(modulation_event(&e,0,&audio,&ui,&pages,&bank));}
+static void wheel(int x,int y,int change,int flipped)
+{
+    int w,h;SDL_GetWindowSize(modulation_window.window,&w,&h);SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEWHEEL;e.wheel.windowID=modulation_window.id;e.wheel.y=change;
+    e.wheel.direction=flipped?SDL_MOUSEWHEEL_FLIPPED:SDL_MOUSEWHEEL_NORMAL;
+#if SDL_VERSION_ATLEAST(2,26,0)
+    e.wheel.mouseX=x*w/MOD_W;e.wheel.mouseY=y*h/MOD_H;
+#else
+    SDL_WarpMouseInWindow(modulation_window.window,x*w/MOD_W,y*h/MOD_H);
+#endif
+    assert(modulation_event(&e,0,&audio,&ui,&pages,&bank));
+}
+static void type(const char *value)
+{SDL_Event e;SDL_zero(e);e.type=SDL_TEXTINPUT;e.text.windowID=modulation_window.id;snprintf(e.text.text,sizeof(e.text.text),"%s",value);assert(modulation_event(&e,0,&audio,&ui,&pages,&bank));}
+static void curve_controls(TsModControls *m)
+{
+    click(690,474);assert(m->lane[0].count==5 && ts_mod_value(&m->lane[0],.25)==1 && ts_mod_value(&m->lane[0],.75)==0);
+    click(960,474);assert(m->lane[0].count==6);key(SDLK_z,KMOD_CTRL);assert(m->lane[0].count==5);key(SDLK_y,KMOD_CTRL);assert(m->lane[0].count==6);
+    wheel(940,474,-2,0);assert(m->lane[0].count==4);assert(ts_mod_valid(m));
+    click(570,90);mouse(SDL_MOUSEBUTTONDOWN,1110,90,SDL_BUTTON_LEFT,2);mouse(SDL_MOUSEBUTTONUP,1110,90,SDL_BUTTON_LEFT,2);
+    assert(modulation_window.edit==3 && modulation_window.all);type("2");key(SDLK_RETURN,0);assert(m->lane[0].seconds==.5f);
+    mouse(SDL_MOUSEBUTTONDOWN,1110,90,SDL_BUTTON_LEFT,2);mouse(SDL_MOUSEBUTTONUP,1110,90,SDL_BUTTON_LEFT,2);
+    uint32_t on[50],off[50];SDL_Rect caret={404+modulation_window.cursor*18,350,2,25};
+    modulation_window.all=0;modulation_window.blink=SDL_GetTicks();modulation_window.painted=SDL_GetTicks()-40;modulation_paint(0,&audio,&ui);
+    assert(!SDL_RenderReadPixels(modulation_window.renderer,&caret,SDL_PIXELFORMAT_ARGB8888,on,2*sizeof(uint32_t)));
+    modulation_window.blink=SDL_GetTicks()-500;modulation_window.painted=SDL_GetTicks()-40;modulation_paint(0,&audio,&ui);
+    assert(!SDL_RenderReadPixels(modulation_window.renderer,&caret,SDL_PIXELFORMAT_ARGB8888,off,2*sizeof(uint32_t)));assert(memcmp(on,off,sizeof(on)));
+    key(SDLK_HOME,0);type("1");assert(!strcmp(modulation_window.text,"12") && modulation_window.cursor==1);
+    key(SDLK_DELETE,0);assert(!strcmp(modulation_window.text,"1"));key(SDLK_ESCAPE,0);assert(m->lane[0].seconds==.5f);
+    click(310,474);TsModLane before=m->lane[0];
+    mouse(SDL_MOUSEBUTTONDOWN,MOD_GX,MOD_GY+MOD_GH,SDL_BUTTON_LEFT,1);
+    TsModLane published=ui.config.matrix.effect[0].modulation.lane[0];
+    mouse(SDL_MOUSEMOTION,MOD_GX+MOD_GW/2,MOD_GY+MOD_GH/2,0,0);
+    assert(modulation_window.pending && !memcmp(&published,&ui.config.matrix.effect[0].modulation.lane[0],sizeof(published)));
+    /* A release can carry a position not preceded by a motion event. */
+    mouse(SDL_MOUSEBUTTONUP,MOD_GX+MOD_GW,MOD_GY,SDL_BUTTON_LEFT,1);
+    assert(!modulation_window.pending && m->lane[0].point[63].y==1);
+    assert(!memcmp(&m->lane[0],&ui.config.matrix.effect[0].modulation.lane[0],sizeof(before)));
+    key(SDLK_z,KMOD_CTRL);assert(!memcmp(&before,&m->lane[0],sizeof(before)));
+    /* Repeated short strokes must not resample untouched freehand points. */
+    drag(MOD_GX,MOD_GY+180,MOD_GX+MOD_GW,MOD_GY+80);before=m->lane[0];
+    drag(MOD_GX+20,MOD_GY+190,MOD_GX+30,MOD_GY+185);
+    for(unsigned i=4;i<63;++i)assert(!memcmp(&before.point[i],&m->lane[0].point[i],sizeof(TsModPoint)));
+    click(420,474);before=m->lane[0];
+    int px=MOD_GX+(int)(before.point[10].x*MOD_GW),py=MOD_GY+(int)((1-before.point[10].y)*MOD_GH);
+    mouse(SDL_MOUSEBUTTONDOWN,px,py,SDL_BUTTON_RIGHT,1);mouse(SDL_MOUSEBUTTONUP,px,py,SDL_BUTTON_RIGHT,1);
+    assert(m->lane[0].count==before.count-1 && !modulation_window.before);key(SDLK_z,KMOD_CTRL);assert(!memcmp(&before,&m->lane[0],sizeof(before)));
+}
 static void shot(const char *path)
 {
     modulation_window.painted=SDL_GetTicks()-40;modulation_paint(0,&audio,&ui);
@@ -62,8 +109,14 @@ int main(int argc,char **argv)
     click(1130,542);click(500,232);assert(m->map_count==2 && m->map[1].child==c.effect[board].board.slot[1].id);click(500,164);assert(!modulation_window.menu);
     drag(960,642,1230,642);drag(1080,642,840,642);assert(m->map[1].low>m->map[1].high);
     click(1180,612);assert(!m->map[0].enabled);click(1180,612);assert(m->map[0].enabled);
-    click(1110,90);assert(m->retrigger==1);click(90,625);assert(m->count==5 && modulation_window.first==4);key(SDLK_z,KMOD_CTRL);assert(m->count==4);
+    click(890,32);assert(m->retrigger==1);click(90,625);assert(m->count==5 && modulation_window.first==4);key(SDLK_z,KMOD_CTRL);assert(m->count==4);
     modulation_window.lane=modulation_window.first=0;
+    curve_controls(m);
+    float low=m->map[0].low;wheel(960,612,1,0);assert(fabsf(m->map[0].low-low-.01f)<1e-6f);
+    wheel(960,612,1,1);assert(fabsf(m->map[0].low-low)<1e-6f);
+    SDL_SetModState(KMOD_SHIFT);wheel(960,612,1,0);SDL_SetModState(KMOD_NONE);assert(fabsf(m->map[0].low-low-.001f)<1e-6f);
+    drag(978,624,1003,624);assert(fabsf(m->map[0].low-.75f)<1e-6f);key(SDLK_z,KMOD_CTRL);assert(fabsf(m->map[0].low-low-.001f)<1e-6f);
+    drag(1073,624,1068,624);assert(fabsf(m->map[0].high-.2f)<1e-6f);
     assert(ts_matrix_valid(&matrix_window.controls));
     /* Stable identities remain the destination even when the pedal moves. */
     TsPedalboardControls *b=&matrix_window.controls.effect[board].board;
@@ -71,7 +124,7 @@ int main(int argc,char **argv)
     assert(ts_mod_target(&matrix_window.controls,&m->map[0])==board);mx_commit_controls(0,&audio,&ui);
     snprintf(m->lane[0].name,sizeof(m->lane[0].name),"SLOW WEATHER");m->lane[0].timing=TS_MOD_FREE;m->lane[0].seconds=90;m->lane[0].mode=TS_MOD_LOOP;ts_mod_shape(&m->lane[0],2,8);
     mx_commit_controls(0,&audio,&ui);
-    if(argc>1)shot(argv[1]);
+    if(argc>1){m->map[0].low=.2f;m->map[0].high=.7f;mx_commit_controls(0,&audio,&ui);shot(argv[1]);}
     SDL_Event audition;SDL_zero(audition);audition.type=SDL_KEYDOWN;audition.key.windowID=modulation_window.id;audition.key.keysym.sym=SDLK_q;assert(!modulation_event(&audition,0,&audio,&ui,&pages,&bank));
     const int sizes[][2]={{960,600},{1600,1000},{1000,900}};
     for(int i=0;i<3;++i){SDL_SetWindowSize(modulation_window.window,sizes[i][0],sizes[i][1]);click(430,90);assert(m->lane[0].mode==TS_MOD_ONESHOT);click(310,90);assert(!m->lane[0].mode);}

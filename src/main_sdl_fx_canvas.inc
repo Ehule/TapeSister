@@ -10,7 +10,8 @@ static struct {
     Uint32 text_blink;int text_phase,confirm_delete;uint32_t replace_id;
     int properties,properties_count;MatrixRow properties_rows[MATRIX_CAPACITY+TS_MATRIX_DESTINATIONS];FxWireList properties_wires;MatrixRow properties_row;char properties_name[48];uint32_t properties_color;int properties_cursor,properties_all;
     char label_text[TS_FX_LABEL_TEXT];
-    TsFxCanvasLabel label_origin;
+    TsFxCanvasLabel label_origin,label_move[TS_FX_LABEL_LIMIT+TS_FX_HEADING_LIMIT];
+    unsigned char labels[TS_FX_LABEL_LIMIT+TS_FX_HEADING_LIMIT],before_labels[TS_FX_LABEL_LIMIT+TS_FX_HEADING_LIMIT],moving_labels[TS_FX_LABEL_LIMIT+TS_FX_HEADING_LIMIT];
     int count,dest[TS_MATRIX_DESTINATIONS],fit,wire,destination,mouse_x,mouse_y;
     MatrixRow source,moving;
     float origin_x,origin_y,pointer_x,pointer_y;
@@ -54,7 +55,7 @@ static void fx_divider_cursor(int active)
     fx_canvas.divider_hover=active;
 }
 static void fx_context_reset(void)
-{fx_properties_close();fx_canvas.label_selected=-1;fx_canvas.label_editing=fx_canvas.properties=fx_canvas.confirm_delete=0;fx_canvas.replace_id=0;fx_divider_cursor(0);if(fx_canvas.divider_cursor)SDL_FreeCursor(fx_canvas.divider_cursor);fx_canvas.divider_cursor=NULL;svfx_close();fx_canvas.meta=0;fx_canvas.wire=fx_canvas.destination=-1;fx_canvas.fit=fx_canvas.popup=fx_canvas.confirm_clear=0;fx_canvas.inspector_key=0;fx_canvas.movement=0;fx_canvas.movement_popup=0;fx_canvas.active_view=0;
+{fx_properties_close();memset(fx_canvas.labels,0,sizeof(fx_canvas.labels));fx_canvas.label_selected=-1;fx_canvas.label_editing=fx_canvas.properties=fx_canvas.confirm_delete=0;fx_canvas.replace_id=0;fx_divider_cursor(0);if(fx_canvas.divider_cursor)SDL_FreeCursor(fx_canvas.divider_cursor);fx_canvas.divider_cursor=NULL;svfx_close();fx_canvas.meta=0;fx_canvas.wire=fx_canvas.destination=-1;fx_canvas.fit=fx_canvas.popup=fx_canvas.confirm_clear=0;fx_canvas.inspector_key=0;fx_canvas.movement=0;fx_canvas.movement_popup=0;fx_canvas.active_view=0;
  memset(fx_canvas.revealed,0,sizeof(fx_canvas.revealed));
  free(fx_canvas.properties_wires.items);fx_canvas.properties_wires=(FxWireList){0};
  free(fx_canvas.wires.items);free(fx_canvas.before_wires.items);fx_canvas.wires=(FxWireList){0};fx_canvas.before_wires=(FxWireList){0};}
@@ -297,12 +298,20 @@ static int fx_chosen(MatrixRow row)
     for(int i=0;i<w->selection_count;++i)if(mx_same(row,w->selection[i]))return 1;
     return 0;
 }
+static int fx_label_chosen(int i)
+{return i>=0 && i<fx_label_limit() && (fx_canvas.labels[i] || fx_canvas.label_selected==i);}
+static void fx_delete_labels(TsMatrixLayout *l)
+{
+    for(int i=fx_label_limit()-1;i>=0;--i)if(fx_label_chosen(i)) {
+        if(i>=TS_FX_LABEL_LIMIT)memset(l->headings[i-TS_FX_LABEL_LIMIT].label.text,0,TS_FX_LABEL_TEXT);
+        else if(i<l->label_count){memmove(l->labels+i,l->labels+i+1,(size_t)(l->label_count-i-1)*sizeof(l->labels[0]));memset(l->labels+--l->label_count,0,sizeof(l->labels[0]));}
+    }
+}
 static void fx_clear_selection(void)
-{fx_canvas.label_selected=-1;matrix_window.selection_count=0;matrix_window.selected=-1;}
+{memset(fx_canvas.labels,0,sizeof(fx_canvas.labels));fx_canvas.label_selected=-1;matrix_window.selection_count=0;matrix_window.selected=-1;}
 static void fx_select(FxCanvasNode *n,int add)
 {
     MatrixWindow *w=&matrix_window;
-    fx_canvas.label_selected=-1;
     if(!add)fx_clear_selection();
     int i=0;while(i<w->selection_count && !mx_same(n->row,w->selection[i]))++i;
     if(i==w->selection_count)w->selection[w->selection_count++]=n->row;
@@ -322,7 +331,8 @@ static void fx_fit_selection(int selected)
     for(int i=0;i<fx_canvas.count;++i){FxCanvasNode *n=&fx_canvas.node[i];
         if(selected && !fx_chosen(n->row))continue;
         left=fminf(left,n->x);top=fminf(top,n->y);right=fmaxf(right,n->x+fx_node_w(n));bottom=fmaxf(bottom,n->y+fx_node_h(n));++count;}
-    if(!selected)for(int i=0;i<fx_label_limit();++i) {
+    for(int i=0;i<fx_label_limit();++i) {
+        if(selected && !fx_label_chosen(i))continue;
         if(!fx_label_visible(i) || (i<TS_FX_LABEL_LIMIT && fx_canvas.movement))continue;
         const TsFxCanvasLabel *p=fx_label_at(i);int heading=i>=TS_FX_LABEL_LIMIT;
         left=fminf(left,p->x);top=fminf(top,p->y-(heading?40*p->scale:0));
@@ -537,6 +547,7 @@ static void fx_inspector_paint(TsSamplePages *pages,TsInstrument *bank)
         return;
     }
 }
+static SDL_Rect fx_text_object_rect(int index);
 #include "main_sdl_fx_canvas_edit.inc"
 #include "main_sdl_fx_canvas_labels.inc"
 #include "main_sdl_fx_canvas_patch.inc"

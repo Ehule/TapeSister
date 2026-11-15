@@ -38,6 +38,7 @@ static int fx_delete_effects(int retain,SDL_AudioDeviceID device,AudioState *aud
         ts_matrix_effect_remove(&s->controls,slot);++removed;
     }
     if(ok)ok=ts_matrix_valid(&s->controls);
+    if(ok)fx_delete_labels(&s->layout);
     if(ok && removed)ok=mx_apply(s,device,audio,ui,pages,bank);
     free(s);
     if(!ok) {

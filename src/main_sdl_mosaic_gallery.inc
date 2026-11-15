@@ -79,10 +79,17 @@ static int mosaic_gallery_enter(SDL_AudioDeviceID device,AudioState *a,TsUiState
     snprintf(ui->mosaic_gallery_status,sizeof(ui->mosaic_gallery_status),"%s",ui->status);
     return 1;
 }
+static void gallery_window_raise(TsUiState *ui);
 static int mosaic_gallery_event(const SDL_Event *event,SDL_AudioDeviceID device,AudioState *a,TsUiState *ui,
     TsInstrument *bank,MosaicController *c,int x,int y,SDL_Keymod mod)
 {
     if(!ui->mosaic_open || !c->pages)return 0;
+    /* Native Gallery events enter through their shell; Mosaic remains usable. */
+    if(ui->mosaic_gallery_detached) {
+        int open=(event->type==SDL_KEYDOWN && (mod&KMOD_CTRL) && event->key.keysym.sym==SDLK_g) ||
+            (event->type==SDL_MOUSEBUTTONDOWN && event->button.button==SDL_BUTTON_LEFT && x>=164 && x<210 && y>=4 && y<20);
+        if(open){gallery_window_raise(ui);return 1;}return 0;
+    }
     int key=event->type==SDL_KEYDOWN,left=event->type==SDL_MOUSEBUTTONDOWN && event->button.button==SDL_BUTTON_LEFT;
     SDL_Keycode k=key?event->key.keysym.sym:0;
     int shortcut=key && !event->key.repeat && (mod&KMOD_CTRL) && k==SDLK_g;
@@ -246,3 +253,5 @@ static int mosaic_gallery_event(const SDL_Event *event,SDL_AudioDeviceID device,
     return event->type==SDL_KEYDOWN || event->type==SDL_KEYUP || event->type==SDL_TEXTINPUT || event->type==SDL_MOUSEWHEEL ||
         event->type==SDL_MOUSEBUTTONDOWN || event->type==SDL_MOUSEBUTTONUP || event->type==SDL_MOUSEMOTION;
 }
+
+#include "main_sdl_gallery_windows.inc"

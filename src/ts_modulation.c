@@ -14,6 +14,7 @@ void ts_mod_shape(TsModLane *l,int shape,unsigned points)
     unsigned n=points<2?2:points>TS_MOD_POINTS?TS_MOD_POINTS:points;
     if(shape==0)n=17;
     if(shape==1)n=3;
+    if(shape==3)n=5;
     uint32_t seed=l->seed;
     memset(l->point,0,sizeof(l->point));l->count=n;
     for(unsigned i=0;i<n;++i) {
@@ -21,7 +22,30 @@ void ts_mod_shape(TsModLane *l,int shape,unsigned points)
             shape==1?1-fabsf(x*2-1):(random_next(&seed)>>8)*(1.f/16777215.f);
         l->point[i]=(TsModPoint){x,v};
     }
+    /* Near-vertical editable edges preserve the existing curve file format. */
+    if(shape==3){l->point[0]=(TsModPoint){0,1};l->point[1]=(TsModPoint){.49999f,1};
+        l->point[2]=(TsModPoint){.5f,0};l->point[3]=(TsModPoint){.99999f,0};l->point[4]=(TsModPoint){1,l->mode==TS_MOD_LOOP?1:0};}
     if(shape==2){l->seed=seed;if(l->mode==TS_MOD_LOOP)l->point[n-1].y=l->point[0].y;}
+}
+/* Add points along the current shape; simplify by removing the least
+   consequential interior point. Endpoints and sharp corners survive first. */
+void ts_mod_resize(TsModLane *l,unsigned count)
+{
+    if(!l || l->count<2 || l->count>TS_MOD_POINTS)return;
+    count=count<2?2:count>TS_MOD_POINTS?TS_MOD_POINTS:count;
+    while(l->count<count) {
+        unsigned at=1;float span=0;
+        for(unsigned i=1;i<l->count;++i)if(l->point[i].x-l->point[i-1].x>span){span=l->point[i].x-l->point[i-1].x;at=i;}
+        float x=(l->point[at-1].x+l->point[at].x)*.5f,y=ts_mod_value(l,x);
+        memmove(l->point+at+1,l->point+at,(l->count-at)*sizeof(l->point[0]));l->point[at]=(TsModPoint){x,y};++l->count;
+    }
+    while(l->count>count) {
+        unsigned at=1;float error=2;
+        for(unsigned i=1;i+1<l->count;++i){TsModPoint a=l->point[i-1],b=l->point[i],c=l->point[i+1];
+            float e=fabsf(b.y-(a.y+(c.y-a.y)*(b.x-a.x)/(c.x-a.x)))*(c.x-a.x);
+            if(e<error){error=e;at=i;}}
+        memmove(l->point+at,l->point+at+1,(l->count-at-1)*sizeof(l->point[0]));memset(l->point+--l->count,0,sizeof(l->point[0]));
+    }
 }
 void ts_mod_lane_default(TsModLane *l,unsigned i)
 {

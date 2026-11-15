@@ -61,3 +61,9 @@ static void mosaic_gallery_overlay(TsFramebuffer *fb,const TsUiState *ui)
     snprintf(line,sizeof(line),"%.78s",ui->mosaic_gallery_rename?"CTRL+A REPLACE / ENTER APPLY / ESC CANCEL":ui->mosaic_gallery_status);
     text(fb,128,380,line,dim,1);
 }
+
+void ts_ui_render_gallery(TsFramebuffer *fb,const TsUiState *ui)
+{
+    const TsPalette *previous=render_palette;render_palette=&ui->palette;
+    memset(fb->pixels,0,sizeof(fb->pixels));mosaic_gallery_overlay(fb,ui);render_palette=previous;
+}

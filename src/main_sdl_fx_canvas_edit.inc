@@ -76,6 +76,7 @@ static void fx_cancel_gesture(void)
     if((fx_modal() || w->drag==FX_DRAG_NODE || w->drag==FX_DRAG_PAN || w->drag==FX_DRAG_LABEL) && w->pending && w->layout)
         *w->layout=w->pending->layout;
     if(w->drag==FX_DRAG_BOX || w->drag==FX_DRAG_WIRE_BOX) {
+        memcpy(fx_canvas.labels,fx_canvas.before_labels,sizeof(fx_canvas.labels));fx_canvas.label_selected=-1;
         w->selection_count=fx_canvas.before_count;
         memcpy(w->selection,fx_canvas.before,(size_t)w->selection_count*sizeof(*w->selection));
         /* The backup capacity was reserved before starting the gesture. */
@@ -88,7 +89,11 @@ static void fx_cancel_gesture(void)
 static int fx_begin_transform(int mode)
 {
     MatrixWindow *w=&matrix_window;if(!mx_editable() || !w->pending)return 0;
-    fx_canvas.move_count=0;
+    fx_canvas.move_count=0;int labels=0;
+    memset(fx_canvas.moving_labels,0,sizeof(fx_canvas.moving_labels));
+    for(int i=0;i<fx_label_limit();++i)if(fx_label_chosen(i) && fx_label_visible(i)) {
+        fx_canvas.moving_labels[i]=1;fx_canvas.label_move[i]=*fx_label_at(i);++labels;
+    }
     for(int i=0;i<fx_canvas.count;++i) {
         FxCanvasNode *n=&fx_canvas.node[i];if(!fx_chosen(n->row))continue;
         TsFxCanvasPosition *p=fx_position(n->row,1);
@@ -98,7 +103,7 @@ static int fx_begin_transform(int mode)
         }
         p->x=n->x;p->y=n->y;fx_canvas.move[fx_canvas.move_count++]=*p;
     }
-    if(!fx_canvas.move_count){snprintf(w->status,sizeof(w->status),"SELECT MODULES TO %s.",mode==FX_DRAG_SCALE?"RESIZE":"MOVE");return 0;}
+    if(!fx_canvas.move_count && !labels){snprintf(w->status,sizeof(w->status),"SELECT MODULES OR TEXT TO %s.",mode==FX_DRAG_SCALE?"RESIZE":"MOVE");return 0;}
     fx_canvas.pointer_x=fx_canvas.mouse_x;fx_canvas.pointer_y=fx_canvas.mouse_y;
     fx_canvas.gesture_zoom=w->layout->canvas_zoom;w->drag=mode;SDL_CaptureMouse(SDL_TRUE);
     snprintf(w->status,sizeof(w->status),mode==FX_DRAG_SCALE?
@@ -115,6 +120,13 @@ static void fx_transform_motion(int x,int y)
         /* Snap the group anchor; retain spacing between selected modules. */
         move_x=fx_snap(fx_canvas.move[0].x+move_x)-fx_canvas.move[0].x;
         move_y=fx_snap(fx_canvas.move[0].y+move_y)-fx_canvas.move[0].y;
+    }
+    if(!fx_canvas.move_count && matrix_window.layout->canvas_snap && !(SDL_GetModState()&KMOD_ALT))
+        for(int i=0;i<fx_label_limit();++i)if(fx_canvas.moving_labels[i]){move_x=fx_snap(fx_canvas.label_move[i].x+move_x)-fx_canvas.label_move[i].x;move_y=fx_snap(fx_canvas.label_move[i].y+move_y)-fx_canvas.label_move[i].y;break;}
+    for(int i=0;i<fx_label_limit();++i)if(fx_canvas.moving_labels[i]) {
+        TsFxCanvasLabel *p=fx_label_at(i);const TsFxCanvasLabel *from=&fx_canvas.label_move[i];if(!p)continue;
+        if(matrix_window.drag==FX_DRAG_SCALE)p->scale=SDL_clamp(from->scale*factor,.25f,4.f);
+        else {p->x=SDL_clamp(from->x+move_x,-1000000.f,1000000.f);p->y=SDL_clamp(from->y+move_y,-1000000.f,1000000.f);}
     }
     for(int i=0;i<fx_canvas.move_count;++i) {
         const TsFxCanvasPosition *from=&fx_canvas.move[i];
@@ -151,6 +163,7 @@ static int fx_begin_box(int x,int y,int wires,int add)
     fx_canvas.before_wires.count=fx_canvas.wires.count;
     if(fx_canvas.wires.count)memcpy(fx_canvas.before_wires.items,fx_canvas.wires.items,
         (size_t)fx_canvas.wires.count*sizeof(*fx_canvas.wires.items));
+    for(int i=0;i<fx_label_limit();++i)fx_canvas.before_labels[i]=fx_label_chosen(i);
     fx_canvas.box_add=add;
     if(!add){fx_clear_selection();fx_clear_wires();}
     w->effect_open=w->compressor_open=0;
@@ -161,6 +174,11 @@ static void fx_box_update(int x,int y,TsSamplePages *pages,TsInstrument *bank)
 {
     MatrixWindow *w=&matrix_window;int ax=SDL_min((int)fx_canvas.pointer_x,x),ay=SDL_min((int)fx_canvas.pointer_y,y);
     SDL_Rect box={ax,ay,abs(x-(int)fx_canvas.pointer_x)+1,abs(y-(int)fx_canvas.pointer_y)+1};
+    fx_canvas.label_selected=-1;
+    if(fx_canvas.box_add)memcpy(fx_canvas.labels,fx_canvas.before_labels,sizeof(fx_canvas.labels));else memset(fx_canvas.labels,0,sizeof(fx_canvas.labels));
+    if(w->drag==FX_DRAG_BOX)for(int i=0;i<fx_label_limit();++i)if(fx_label_visible(i)) {
+        SDL_Rect r=fx_text_object_rect(i);if(SDL_HasIntersection(&box,&r))fx_canvas.labels[i]=1;
+    }
     w->selection_count=fx_canvas.box_add?fx_canvas.before_count:0;
     memcpy(w->selection,fx_canvas.before,(size_t)w->selection_count*sizeof(*w->selection));
     fx_canvas.wires.count=fx_canvas.box_add?fx_canvas.before_wires.count:0;
@@ -183,6 +201,10 @@ static void fx_box_update(int x,int y,TsSamplePages *pages,TsInstrument *bank)
             }
         }
     }
+    if(!w->selection_count && w->drag==FX_DRAG_BOX) {
+        int single=-1;for(int i=0;i<fx_label_limit();++i)if(fx_canvas.labels[i]){if(single>=0){single=-1;break;}single=i;}
+        fx_canvas.label_selected=single;
+    }
     fx_primary_wire();fx_canvas.mouse_x=x;fx_canvas.mouse_y=y;
 }
 static TsSourceRoute *fx_saved_route(MatrixSnapshot *s,MatrixRow row)
@@ -195,7 +217,8 @@ static TsSourceRoute *fx_saved_route(MatrixSnapshot *s,MatrixRow row)
    removed branch, and the shared event wrapper creates exactly one undo step. */
 static void fx_edit_selection(int remove,int wheel,SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsSamplePages *pages,TsInstrument *bank)
 {
-    MatrixWindow *w=&matrix_window;if(!mx_editable() || !w->controls.enabled)return;
+    MatrixWindow *w=&matrix_window;if(!mx_editable())return;
+    if(!w->controls.enabled){if(remove){fx_delete_labels(w->layout);fx_clear_selection();}return;}
     fx_validate_wires(pages,bank);
     MatrixSnapshot *s=mx_snapshot(device,audio,pages,bank);if(!s)return;
     for(int i=0;i<fx_canvas.wires.count;++i) {
@@ -205,7 +228,9 @@ static void fx_edit_selection(int remove,int wheel,SDL_AudioDeviceID device,Audi
         }
         if(wire.source.kind!=2 && wire.source.kind!=4)*r=mx_display_route(*r);
     }
-    int changed=0;float factor=powf(10.f,SDL_clamp(wheel*.025f,-6.f,6.f)),low=0,high=1e9f;
+    int changed=0;
+    if(remove){fx_delete_labels(&s->layout);changed=memcmp(&s->layout,w->layout,sizeof(s->layout))!=0;}
+    float factor=powf(10.f,SDL_clamp(wheel*.025f,-6.f,6.f)),low=0,high=1e9f;
     if(!remove)for(int i=0;i<fx_canvas.wires.count;++i) {
         FxCanvasWire wire=fx_canvas.wires.items[i];TsSourceRoute *r=fx_saved_route(s,wire.source);if(!r)continue;
         int gain=r->matrix_gain[wire.destination];if(!gain)continue;

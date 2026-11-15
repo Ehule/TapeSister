@@ -554,7 +554,7 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
     mosaic_arrange_overlay(fb,ui);
     mosaic_marker_overlay(fb,ui);
     mosaic_live_overlay(fb,ui,instrument);
-    mosaic_gallery_overlay(fb,ui);
+    if(!ui->mosaic_gallery_detached)mosaic_gallery_overlay(fb,ui);
     mosaic_video_overlay(fb,ui);
 }
 

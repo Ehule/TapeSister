@@ -7515,7 +7515,7 @@ static const char *path_basename(const char *path)
 
 static int ui_blocking_dialog_open_except_workspaces(const TsUiState *ui)
 {
-    return ui->mosaic_video_open || ui->mosaic_gallery_open || ui->mosaic_marker_open || ui->mosaic_views_open || ui->mosaic_align_open || ui->mosaic_loop_open || ui->mosaic_scatter_open || ui->mosaic_spacing_confirm || ui->mosaic_edit_choice || ui->mosaic_pattern_choice || ui->exit_confirm_open || ui->project_overwrite_confirm_open ||
+    return ui->mosaic_video_open || (ui->mosaic_gallery_open && !ui->mosaic_gallery_detached) || ui->mosaic_marker_open || ui->mosaic_views_open || ui->mosaic_align_open || ui->mosaic_loop_open || ui->mosaic_scatter_open || ui->mosaic_spacing_confirm || ui->mosaic_edit_choice || ui->mosaic_pattern_choice || ui->exit_confirm_open || ui->project_overwrite_confirm_open ||
            ui->overdub_confirm_open ||
            ui->file_busy || ui->transform_open || ui->drone_open ||
            ui->import_preview_open || ui->load_selection_choice_open ||
@@ -7541,7 +7541,7 @@ static void ui_sync_dialog_workspaces(TsUiState *ui)
     /* Mosaic owns these dialogs. Hiding it strands the modal: its renderer
        and input handler both require mosaic_open, while other input is blocked. */
     if(ui_dialog_open(ui) && !ui->portal.open &&
-       !ui->mosaic_video_open && !ui->mosaic_gallery_open && !ui->mosaic_marker_open && !ui->mosaic_views_open && !ui->mosaic_scatter_open && !ui->mosaic_spacing_confirm && !ui->mosaic_loop_open && !ui->mosaic_align_open && !ui->mosaic_pattern_choice &&
+       !ui->mosaic_video_open && (!ui->mosaic_gallery_open || ui->mosaic_gallery_detached) && !ui->mosaic_marker_open && !ui->mosaic_views_open && !ui->mosaic_scatter_open && !ui->mosaic_spacing_confirm && !ui->mosaic_loop_open && !ui->mosaic_align_open && !ui->mosaic_pattern_choice &&
        !ui->project_overwrite_confirm_open && ui->browser.mode!=TS_BROWSER_SAVE_RECIPE &&
        ui->browser.mode!=TS_BROWSER_LOAD_VIDEO && ui->browser.mode!=TS_BROWSER_LOAD_VISUAL_FOLDER && ui->browser.mode!=TS_BROWSER_MOSAIC_VIDEO &&
        ui->browser.mode!=TS_BROWSER_MOSAIC_VIDEO_POOL && ui->browser.mode!=TS_BROWSER_SAVE_XM && ui->browser.mode!=TS_BROWSER_IMPORT_CANVAS && ui->browser.mode!=TS_BROWSER_EXPORT_CANVAS &&
@@ -15169,6 +15169,7 @@ int main(int argc, char **argv)
             if(fx_navigation_event(&event,window,device,&audio,&ui,&sister_window,&sample_pages,&instrument))continue;
             if(sister_board_event(&event,device,&audio,&ui,&sister_window,&sample_pages,&instrument))continue;
             if(meta_fx_event(&event,device,&audio,&ui,&sister_window,&sample_pages,&instrument))continue;
+            if(gallery_windows_event(&event,device,&audio,&ui,&instrument,&mosaic))continue;
             if(modulation_event(&event,device,&audio,&ui,&sample_pages,&instrument))continue;
             if(character_filter_event(&event,device,&audio,&ui,&sister_window,&sample_pages,&instrument))continue;
             if(matrix_event(&event,window,device,&audio,&ui,&sample_pages,&instrument))continue;
@@ -19190,6 +19191,7 @@ int main(int argc, char **argv)
         canvas_eq_poll(device,&audio,&ui,&instrument);
         character_filter_paint(&audio,&ui,&sister_window);
         meta_fx_paint(&ui);
+        gallery_windows_paint(&ui);
         modulation_paint(device,&audio,&ui);
         matrix_update(device,&audio,&ui,&sample_pages,&instrument);performance_update(device,&audio);
         source_route_update(device,&audio,&ui,&sample_pages,&instrument);
@@ -19342,6 +19344,7 @@ int main(int argc, char **argv)
     if (sister_window.renderer) SDL_DestroyRenderer(sister_window.renderer);
     character_filter_close();
     meta_fx_close();
+    gallery_windows_close();
     modulation_close();
     if (sister_window.window) SDL_DestroyWindow(sister_window.window);
     spatial_window_close();speakers_close();

@@ -50,6 +50,47 @@ static void test_mosaic_engine_stop(SDL_Window *window,SDL_AudioDeviceID device)
     ts_external_recorder_free(&input->recorder);free(input);free(u);mosaic_controller_free(c);free(c);routing_free(a);
 }
 #include "test_gallery_sequence_controller.inc"
+static void native_gallery_click(int index,int x,int y,SDL_AudioDeviceID device,AudioState *a,TsUiState *u,MosaicController *c)
+{
+    GalleryWindow *w=&gallery_windows[index];SDL_Rect crop=gallery_window_content(index);int width,height;
+    SDL_GetWindowSize(w->window,&width,&height);SDL_Event e;SDL_zero(e);e.type=SDL_MOUSEBUTTONDOWN;
+    e.button.windowID=w->id;e.button.button=SDL_BUTTON_LEFT;e.button.x=x*width/crop.w;e.button.y=y*height/(crop.h+32);
+    assert(gallery_windows_event(&e,device,a,u,&instrument,c));
+}
+static void native_gallery_editor_click(int index,int x,int y,SDL_AudioDeviceID device,AudioState *a,TsUiState *u,MosaicController *c)
+{SDL_Rect crop=gallery_window_content(index);native_gallery_click(index,x-crop.x,y-crop.y+32,device,a,u,c);}
+static void native_gallery_key(int index,SDL_Keycode key,SDL_AudioDeviceID device,AudioState *a,TsUiState *u,MosaicController *c)
+{SDL_Event e;SDL_zero(e);e.type=SDL_KEYDOWN;e.key.windowID=gallery_windows[index].id;e.key.keysym.sym=key;assert(gallery_windows_event(&e,device,a,u,&instrument,c));}
+static void test_native_gallery_windows(SDL_AudioDeviceID device,AudioState *a,TsUiState *u,MosaicController *c)
+{
+    TsMosaicGallery *g=c->pages->gallery;u->mosaic_gallery_open=1;u->gallery_sequence_open=0;mosaic_gallery_snapshot(u,g);
+    gallery_windows_sync(u);assert(gallery_windows[0].visible && u->mosaic_gallery_detached && !ui_dialog_open(u));
+    assert(SDL_GetWindowFlags(gallery_windows[0].window)&SDL_WINDOW_RESIZABLE);
+    SDL_SetWindowSize(gallery_windows[0].window,1024,708);
+    native_gallery_click(0,50,16,device,a,u,c);assert(gallery_windows[0].top);
+    native_gallery_editor_click(0,500,360,device,a,u,c);assert(gallery_windows[1].visible && !gallery_windows[0].visible && u->gallery_sequence_open);
+    const int sizes[][2]={{624,416},{1248,832},{1400,900}};
+    for(int i=0;i<3;++i){SDL_SetWindowSize(gallery_windows[1].window,sizes[i][0],sizes[i][1]);int count=g->sequence.length;
+        native_gallery_editor_click(1,40,326,device,a,u,c);assert(g->sequence.length==count+1);}
+    native_gallery_editor_click(1,40,60,device,a,u,c);assert(g->player.running);
+    int count=g->sequence.length;native_gallery_editor_click(1,40,326,device,a,u,c);assert(g->sequence.length==count+1 && g->player.running);
+    native_gallery_key(1,SDLK_SPACE,device,a,u,c);assert(g->player.paused);
+    native_gallery_editor_click(1,120,326,device,a,u,c);assert(g->sequence.length==count+2 && g->player.paused);
+    native_gallery_click(1,50,16,device,a,u,c);assert(gallery_windows[1].top);
+    native_gallery_click(1,275,16,device,a,u,c);assert(SDL_GetWindowFlags(gallery_windows[1].window)&SDL_WINDOW_FULLSCREEN);
+    SDL_Event full;SDL_zero(full);full.type=SDL_KEYDOWN;full.key.windowID=gallery_windows[1].id;full.key.keysym.sym=SDLK_RETURN;full.key.keysym.mod=KMOD_ALT;
+    assert(application_fullscreen_event(&full,NULL,NULL,u));assert(!(SDL_GetWindowFlags(gallery_windows[1].window)&SDL_WINDOW_FULLSCREEN));
+    gallery_windows[1].painted=SDL_GetTicks()-40;gallery_windows_paint(u);
+    const char *shot=getenv("TS_TEST_GALLERY_NATIVE");if(shot){int w,h;SDL_GetRendererOutputSize(gallery_windows[1].renderer,&w,&h);
+        SDL_Surface *surface=SDL_CreateRGBSurfaceWithFormat(0,w,h,32,SDL_PIXELFORMAT_ARGB8888);assert(surface);
+        assert(!SDL_RenderReadPixels(gallery_windows[1].renderer,NULL,SDL_PIXELFORMAT_ARGB8888,surface->pixels,surface->pitch));assert(!SDL_SaveBMP(surface,shot));SDL_FreeSurface(surface);}
+    native_gallery_key(1,SDLK_ESCAPE,device,a,u,c);assert(gallery_windows[0].visible && !gallery_windows[1].visible && g->player.running);
+    native_gallery_editor_click(0,520,87,device,a,u,c);assert(u->browser.mode==TS_BROWSER_IMPORT_CANVAS && !gallery_windows[0].visible);
+    ts_browser_close(&u->browser);u->mosaic_gallery_open=1;gallery_windows_sync(u);assert(gallery_windows[0].visible);
+    SDL_Event close;SDL_zero(close);close.type=SDL_WINDOWEVENT;close.window.windowID=gallery_windows[0].id;close.window.event=SDL_WINDOWEVENT_CLOSE;
+    assert(gallery_windows_event(&close,device,a,u,&instrument,c));assert(!u->mosaic_gallery_open && !u->mosaic_gallery_detached && g->player.running);
+    ts_gallery_sequence_stop(g);gallery_windows_close();
+}
 static void test_mosaic_gallery_controller(SDL_Window *window,SDL_AudioDeviceID device)
 {
     SDL_SetWindowSize(window,640,400);
@@ -226,6 +267,7 @@ static void test_mosaic_gallery_controller(SDL_Window *window,SDL_AudioDeviceID 
     mosaic_poll(device,u,&instrument,c);audio_callback(a,(Uint8 *)output,sizeof(output));
     if(shot){char path[1200];snprintf(path,sizeof(path),"%s-reordered.ppm",shot);live_controller_screenshot_size(u,path,1280,800);}
     test_gallery_sequence_controls(window,device,a,s,u,c,shot);
+    test_native_gallery_windows(device,a,u,c);
     matrix_history_clear();matrix_window.gallery=NULL;matrix_window.mosaic=NULL;matrix_window.layout=NULL;
     mosaic_controller_free(c);free(c);ts_external_recorder_free(&s->recorder);free(s);free(u);
     a->gallery=NULL;a->mosaic=ts_sample_pages_mosaic_root(&pages);ts_sample_pages_free(&pages);routing_free(a);

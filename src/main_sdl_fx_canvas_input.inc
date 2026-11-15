@@ -84,18 +84,6 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
         if(fx_canvas.label_selected>=0 && !fx_canvas.meta) {
             int i=fx_canvas.label_selected;
             if(key==SDLK_F2){fx_label_begin(i);return 1;}
-            if(key==SDLK_DELETE || key==SDLK_BACKSPACE || key==SDLK_x) {
-                if(i>=TS_FX_LABEL_LIMIT)memset(fx_label_at(i)->text,0,TS_FX_LABEL_TEXT);
-                else {
-                    memmove(l->labels+i,l->labels+i+1,(size_t)(l->label_count-i-1)*sizeof(l->labels[0]));
-                    memset(l->labels+--l->label_count,0,sizeof(l->labels[0]));
-                }
-                fx_canvas.label_selected=-1;return 1;
-            }
-            if(!(mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI)) && (key==SDLK_g || key==SDLK_s)) {
-                fx_label_drag(key==SDLK_g?FX_DRAG_LABEL_GRAB:FX_DRAG_LABEL_SCALE,fx_canvas.mouse_x,fx_canvas.mouse_y);return 1;
-            }
-            if(key==SDLK_ESCAPE){fx_return_mosaic(main,ui);return 1;}
         }
         if(key==SDLK_F2 && w->selection_count==1){fx_properties_begin(w->selection[0]);return 1;}
         if(key==SDLK_ESCAPE) {
@@ -116,7 +104,8 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
             if(!fx_canvas.meta){if(fx_selected_effects())fx_delete_request(-1);else fx_edit_selection(1,0,device,audio,ui,pages,bank);}return 1;
         }
         if((mod&KMOD_CTRL) && key==SDLK_a){if(!fx_canvas.meta){fx_clear_wires();fx_clear_selection();fx_build(pages,bank);
-            for(int i=0;i<fx_canvas.count;++i)w->selection[w->selection_count++]=fx_canvas.node[i].row;}return 1;}
+            for(int i=0;i<fx_canvas.count;++i)w->selection[w->selection_count++]=fx_canvas.node[i].row;
+            for(int i=0;i<fx_label_limit();++i)if(fx_label_visible(i))fx_canvas.labels[i]=1;}return 1;}
         if((mod&KMOD_CTRL) && key==SDLK_n){if(!fx_canvas.meta)fx_popup_open(400,220);return 1;}
         e->key.windowID=SDL_GetWindowID(main);return 0;
     }
@@ -212,12 +201,14 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
         if(!fx_label_visible(i))continue;
         SDL_Rect r=fx_text_object_rect(i);
         if(left && x>=r.x && x<r.x+r.w && y>=r.y && y<r.y+r.h) {
-            fx_clear_selection();fx_clear_wires();fx_canvas.label_selected=i;w->effect_open=w->compressor_open=0;
-            if(e->button.clicks>=2)fx_label_begin(i);else fx_label_drag(FX_DRAG_LABEL,x,y);
+            int add=SDL_GetModState()&KMOD_SHIFT,chosen=fx_label_chosen(i);
+            if(!add && !chosen){fx_clear_selection();fx_clear_wires();}
+            fx_canvas.labels[i]=add?!chosen:1;fx_canvas.label_selected=fx_canvas.labels[i]?i:-1;w->effect_open=w->compressor_open=0;
+            if(e->button.clicks>=2)fx_label_begin(i);
+            else if(!add){fx_canvas.mouse_x=x;fx_canvas.mouse_y=y;fx_begin_transform(FX_DRAG_NODE);}
             snprintf(w->status,sizeof(w->status),"TEXT LABEL / DOUBLE-CLICK OR F2: EDIT / G: MOVE / S: SIZE / DELETE: REMOVE");return 1;
         }
     }
-    fx_canvas.label_selected=-1;
     for(int i=fx_canvas.count-1;i>=0;--i) {
         FxCanvasNode *n=&fx_canvas.node[i];int xx=fx_x(n->x),yy=fx_y(n->y),ww=(int)(fx_node_w(n)*l->canvas_zoom),hh=(int)(fx_node_h(n)*l->canvas_zoom);
         int mod=SDL_GetModState();

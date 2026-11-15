@@ -10,11 +10,24 @@ enum { MOD_W=1280,MOD_H=800,MOD_GX=292,MOD_GY=174,MOD_GW=942,MOD_GH=244,MOD_ROWS
 static struct {
     SDL_Window *window; SDL_Renderer *renderer;
     Uint32 id,return_id,painted; uint32_t node;
-    int visible,lane,first,page,draw,points,drag,point,origin_x,last_x,last_y;
-    int menu,menu_row,menu_first,edit; float origin;
+    int visible,lane,first,page,draw,drag,point,origin_x,last_x,last_y;
+    int menu,menu_row,menu_first,edit,cursor,all,pending; Uint32 blink; float origin;
     char text[40],status[128]; MatrixSnapshot *before;
-} modulation_window={.points=8,.drag=-1};
+} modulation_window={.drag=-1};
 static const uint32_t mod_ink[]={0xffc4a4dcu,0xff91cbd3u,0xffe4bf8bu,0xffa9c7a4u};
+/* Coalesce pointer edits once per UI frame, then flush on release/focus loss.
+   The visible curve follows every event; audio receives complete curves. */
+static void modulation_flush(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui)
+{
+    if(!modulation_window.pending)return;
+    modulation_window.pending=0;mx_commit_controls(device,audio,ui);
+}
+static void mod_edit_begin(int field,const char *text)
+{
+    modulation_window.edit=field;snprintf(modulation_window.text,sizeof(modulation_window.text),"%.23s",text);
+    modulation_window.cursor=(int)strlen(modulation_window.text);modulation_window.all=1;
+    modulation_window.blink=SDL_GetTicks();SDL_StartTextInput();
+}
 static void modulation_history_finish(SDL_AudioDeviceID device,AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
 {
     if(!modulation_window.before)return;
@@ -167,17 +180,20 @@ static int mod_choices(ModChoice *out,int capacity,const TsModControls *c)
 }
 static void modulation_paint(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui)
 {
-    (void)ui;
+    if(SDL_GetTicks()-modulation_window.painted>=33)modulation_flush(device,audio,ui);
     if(!modulation_window.visible || !window_drawable(modulation_window.window) || SDL_GetTicks()-modulation_window.painted<33)return;
     TsMatrixEffectControls *v=modulation_resolve();if(!v)return;
     TsModControls *c=&v->modulation;
     modulation_window.lane=SDL_clamp(modulation_window.lane,0,(int)c->count-1);
+    modulation_window.first=SDL_clamp(modulation_window.first,0,((int)c->count-1)/4*4);
+    modulation_window.page=SDL_clamp(modulation_window.page,0,SDL_max(0,(mod_map_count(c)-1)/MOD_ROWS));
     TsModLane *l=&c->lane[modulation_window.lane];uint32_t color=mod_ink[modulation_window.lane%4];
     int w,h;SDL_GetRendererOutputSize(modulation_window.renderer,&w,&h);
     SDL_RenderSetScale(modulation_window.renderer,w/(float)MOD_W,h/(float)MOD_H);
     mod_rect(0,0,MOD_W,MOD_H,MOD_BG);mod_rect(0,0,MOD_W,65,0xff302736u);
     mod_text(24,20,"MODULATION",mod_ink[0],3);
-    char title[48];mod_effect_label(v,title,sizeof(title));mod_text(270,26,title,MOD_TEXT,2);
+    char title[48];mod_effect_label(v,title,sizeof(title));title[40]=0;mod_text(270,26,title,MOD_TEXT,2);
+    mod_button(800,18,190,"RETRIGGER",0);
     mod_button(1006,18,108,v->enabled?"ON":"BYPASS",v->enabled);
     mod_button(1128,18,128,"< BACK",0);
     mod_text(24,88,"CURVE LANES",MOD_DIM,2);
@@ -204,7 +220,8 @@ static void modulation_paint(SDL_AudioDeviceID device,AudioState *audio,TsUiStat
     mod_button(276,78,90,"LOOP",!l->mode);mod_button(374,78,130,"ONE SHOT",l->mode);
     mod_button(530,78,90,"FREE",!l->timing);mod_button(628,78,100,"TEMPO",l->timing);
     char s[160];snprintf(s,sizeof(s),"%g %s",l->timing?l->beats:l->seconds,l->timing?"BEATS":"SEC");
-    mod_button(744,78,244,s,0);mod_button(1006,78,250,"RETRIGGER ALL",0);
+    mod_button(744,78,244,s,0);
+    if(!l->timing){snprintf(s,sizeof(s),"FREQ %.3g HZ",1.f/l->seconds);mod_button(1006,78,250,s,0);}
     snprintf(s,sizeof(s),"%.23s  /  %s",l->name,l->mode?"ONE SHOT HOLDS LAST VALUE":"LOOPING CURVE");mod_text(278,132,s,color,2);
     mod_rect(MOD_GX-16,MOD_GY-12,MOD_GW+32,MOD_GH+34,0xff1b2026u);
     for(int i=0;i<=4;++i) {
@@ -216,8 +233,8 @@ static void modulation_paint(SDL_AudioDeviceID device,AudioState *audio,TsUiStat
     int cursor=MOD_GX+(int)(phase[modulation_window.lane]*MOD_GW);mod_line(cursor,MOD_GY,cursor,MOD_GY+MOD_GH,0xfff0e9dfu);
     mod_text(MOD_GX,MOD_GY+MOD_GH+12,"START",MOD_DIM,1);mod_text(MOD_GX+MOD_GW-18,MOD_GY+MOD_GH+12,"END",MOD_DIM,1);
     mod_button(276,460,90,"DRAW",modulation_window.draw);mod_button(374,460,100,"POINTS",!modulation_window.draw);
-    mod_button(492,460,88,"SINE",0);mod_button(588,460,126,"TRIANGLE",0);mod_button(722,460,138,"RANDOMIZE",0);
-    snprintf(s,sizeof(s),"PTS %d",modulation_window.points);mod_button(872,460,112,s,0);
+    mod_button(492,460,72,"SINE",0);mod_button(572,460,72,"TRI",0);mod_button(652,460,96,"SQUARE",0);mod_button(756,460,104,"RANDOM",0);
+    mod_text(878,448,"POINT COUNT",MOD_DIM,1);snprintf(s,sizeof(s),"- %u +",l->count);mod_button(872,460,112,s,0);
     snprintf(s,sizeof(s),"SMOOTH %.0f%%",l->smooth*100);mod_button(996,460,260,s,0);
     mod_rect(1006,487,(int)(240*l->smooth),3,color);
     mod_text(278,505,modulation_window.draw?"DRAG TO DRAW. SMOOTHING ROUNDS EACH SEGMENT.":"DRAG POINTS. DOUBLE-CLICK TO ADD. RIGHT-CLICK TO REMOVE.",MOD_DIM,1);
@@ -236,12 +253,18 @@ static void modulation_paint(SDL_AudioDeviceID device,AudioState *audio,TsUiStat
         if(d)ts_mod_parameter_name(d,m->child,m->field,s,sizeof(s));else snprintf(s,sizeof(s),"UNAVAILABLE");mod_text(660,y+7,s,MOD_TEXT,2);
         if(d)ts_mod_parameter_value(d,m->child,m->field,m->low,s,sizeof(s));else snprintf(s,sizeof(s),"%.1f%%",m->low*100);mod_text(932,y+7,s,color,2);
         if(d)ts_mod_parameter_value(d,m->child,m->field,m->high,s,sizeof(s));else snprintf(s,sizeof(s),"%.1f%%",m->high*100);mod_text(1052,y+7,s,color,2);
+        /* Sliders share the normalized parameter range used by the wheel. */
+        for(int high=0;high<2;++high){int sx=high?1048:928;float amount=high?m->high:m->low;
+            mod_rect(sx,y+24,100,2,MOD_DIM);mod_rect(sx,y+24,(int)(100*amount),2,color);
+            mod_rect(sx+(int)(100*amount)-2,y+21,4,6,color);}
         mod_text(1168,y+7,m->enabled?"ON":"--",m->enabled?color:MOD_DIM,2);mod_text(1220,y+7,"X",MOD_DIM,2);
     }
     mod_rect(0,766,1280,34,0xff302736u);mod_text(24,778,modulation_window.status,MOD_TEXT,1);
     if(modulation_window.edit) {
-        mod_rect(380,292,520,140,0xff55435fu);mod_text(404,312,modulation_window.edit==1?"LANE NAME":"VALUE (SECONDS / BEATS)",MOD_TEXT,2);
-        mod_text(404,352,modulation_window.text,mod_ink[0],3);mod_text(404,406,"ENTER: APPLY / ESC: CANCEL",MOD_TEXT,1);
+        mod_rect(380,292,520,140,0xff55435fu);mod_text(404,312,modulation_window.edit==1?"LANE NAME":modulation_window.edit==3?"FREQUENCY (HZ)":l->timing?"DURATION (BEATS)":"DURATION (SECONDS)",MOD_TEXT,2);
+        if(modulation_window.all)mod_rect(402,348,SDL_max(4,(int)strlen(modulation_window.text)*18),29,MOD_PANEL);
+        mod_text(404,352,modulation_window.text,mod_ink[0],3);
+        if((SDL_GetTicks()-modulation_window.blink)/500%2==0)mod_rect(404+modulation_window.cursor*18,350,2,25,MOD_TEXT);mod_text(404,406,"ENTER: APPLY / ESC: CANCEL",MOD_TEXT,1);
     }
     if(modulation_window.menu) {
         ModChoice choices[TS_MATRIX_EFFECT_CAPACITY*(TS_SISTER_FX_SLOT_COUNT+1)];
@@ -259,17 +282,24 @@ static void mod_remove_map(TsModControls *c,int at)
 {memmove(&c->map[at],&c->map[at+1],(c->map_count-at-1)*sizeof(c->map[0]));memset(&c->map[--c->map_count],0,sizeof(c->map[0]));}
 static void mod_draw(TsModLane *l,int x,int y,int first)
 {
-    int to=SDL_clamp((x-MOD_GX)*(TS_MOD_POINTS-1)/MOD_GW,0,TS_MOD_POINTS-1);
-    float value=SDL_clamp(1-(y-MOD_GY)/(float)MOD_GH,0,1);
+    x=SDL_clamp(x,MOD_GX,MOD_GX+MOD_GW);y=SDL_clamp(y,MOD_GY,MOD_GY+MOD_GH);
     if(first) {
-        TsModLane old=*l;l->count=TS_MOD_POINTS;
-        for(unsigned i=0;i<TS_MOD_POINTS;++i)l->point[i]=(TsModPoint){i/(float)(TS_MOD_POINTS-1),ts_mod_value(&old,i/(double)(TS_MOD_POINTS-1))};
-        modulation_window.last_x=to;modulation_window.last_y=y;
+        /* Do not re-smooth already sampled freehand data on each new stroke. */
+        int uniform=l->count==TS_MOD_POINTS;
+        for(unsigned i=0;uniform && i<l->count;++i)uniform=fabsf(l->point[i].x-i/(float)(TS_MOD_POINTS-1))<.000001f;
+        if(!uniform){TsModLane old=*l;l->count=TS_MOD_POINTS;
+            for(unsigned i=0;i<l->count;++i)l->point[i]=(TsModPoint){i/(float)(TS_MOD_POINTS-1),ts_mod_value(&old,i/(double)(TS_MOD_POINTS-1))};}
+        modulation_window.last_x=x;modulation_window.last_y=y;
     }
-    int from=modulation_window.last_x;float start=SDL_clamp(1-(modulation_window.last_y-MOD_GY)/(float)MOD_GH,0,1);
-    for(int i=SDL_min(from,to);i<=SDL_max(from,to);++i)l->point[i].y=from==to?value:start+(value-start)*(i-from)/(float)(to-from);
-    if(!l->mode && (to==0 || to==TS_MOD_POINTS-1))l->point[to?0:TS_MOD_POINTS-1].y=value;
-    modulation_window.last_x=to;modulation_window.last_y=y;
+    float from=(modulation_window.last_x-MOD_GX)/(float)MOD_GW,to=(x-MOD_GX)/(float)MOD_GW;
+    float start=1-(modulation_window.last_y-MOD_GY)/(float)MOD_GH,value=1-(y-MOD_GY)/(float)MOD_GH;
+    int a=(int)lroundf(from*(TS_MOD_POINTS-1)),b=(int)lroundf(to*(TS_MOD_POINTS-1));
+    for(int i=SDL_min(a,b);i<=SDL_max(a,b);++i) {
+        float t=from==to?1:SDL_clamp((l->point[i].x-from)/(to-from),0,1);
+        l->point[i].y=start+(value-start)*t;
+    }
+    if(!l->mode && (b==0 || b==TS_MOD_POINTS-1))l->point[b?0:TS_MOD_POINTS-1].y=l->point[b].y;
+    modulation_window.last_x=x;modulation_window.last_y=y;
 }
 static void mod_point_move(TsModLane *l,int x,int y)
 {
@@ -290,34 +320,55 @@ static int modulation_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioSta
     int w,h,x=0,y=0;SDL_GetWindowSize(modulation_window.window,&w,&h);
     if(e->type==SDL_MOUSEMOTION){x=e->motion.x;y=e->motion.y;}
     else if(e->type==SDL_MOUSEBUTTONDOWN || e->type==SDL_MOUSEBUTTONUP){x=e->button.x;y=e->button.y;}
-    else if(e->type==SDL_MOUSEWHEEL)SDL_GetMouseState(&x,&y);
+    else if(e->type==SDL_MOUSEWHEEL){
+#if SDL_VERSION_ATLEAST(2,26,0)
+        x=e->wheel.mouseX;y=e->wheel.mouseY;
+#else
+        SDL_GetMouseState(&x,&y);
+#endif
+    }
     x=x*MOD_W/SDL_max(1,w);y=y*MOD_H/SDL_max(1,h);
     if(e->type==SDL_WINDOWEVENT && (e->window.event==SDL_WINDOWEVENT_CLOSE || e->window.event==SDL_WINDOWEVENT_FOCUS_LOST)) {
-        modulation_history_finish(device,audio,pages,bank);modulation_window.drag=-1;SDL_CaptureMouse(SDL_FALSE);
+        modulation_flush(device,audio,ui);modulation_history_finish(device,audio,pages,bank);modulation_window.drag=-1;SDL_CaptureMouse(SDL_FALSE);
         if(e->window.event==SDL_WINDOWEVENT_CLOSE){modulation_hide();editor_return_window(modulation_window.return_id);}return 1;
     }
     if(e->type==SDL_MOUSEBUTTONUP) {
-        modulation_history_finish(device,audio,pages,bank);modulation_window.drag=-1;SDL_CaptureMouse(SDL_FALSE);return 1;
+        if(e->button.button==SDL_BUTTON_LEFT && modulation_window.drag==0){mod_draw(l,x,y,0);modulation_window.pending=1;}
+        if(e->button.button==SDL_BUTTON_LEFT && modulation_window.drag==1){mod_point_move(l,x,y);modulation_window.pending=1;}
+        modulation_flush(device,audio,ui);modulation_history_finish(device,audio,pages,bank);modulation_window.drag=-1;SDL_CaptureMouse(SDL_FALSE);return 1;
     }
     if(e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_ESCAPE) {
         if(modulation_window.edit){modulation_window.edit=0;SDL_StopTextInput();return 1;}
         if(modulation_window.menu){modulation_window.menu=0;return 1;}
-        modulation_history_finish(device,audio,pages,bank);modulation_hide();editor_return_window(modulation_window.return_id);return 1;
+        modulation_flush(device,audio,ui);modulation_history_finish(device,audio,pages,bank);modulation_hide();editor_return_window(modulation_window.return_id);return 1;
     }
     if(modulation_window.edit) {
-        if(e->type==SDL_TEXTINPUT)for(const char *p=e->text.text;*p;++p)if(*p>=32 && *p<127 && *p!='=' && strlen(modulation_window.text)<23) {
-            size_t n=strlen(modulation_window.text);modulation_window.text[n]=*p;modulation_window.text[n+1]=0;
+        if(e->type==SDL_TEXTINPUT || e->type==SDL_KEYDOWN)modulation_window.blink=SDL_GetTicks();
+        char *text=modulation_window.text;int at=modulation_window.cursor,n=(int)strlen(text);
+        if(e->type==SDL_TEXTINPUT)for(const char *p=e->text.text;*p;++p)if(*p>=32 && *p<127 && *p!='=') {
+            if(modulation_window.all){text[0]=0;n=at=0;modulation_window.all=0;}
+            if(n>=23)break;memmove(text+at+1,text+at,(size_t)(n-at+1));text[at++]=*p;++n;
+            modulation_window.cursor=at;
         }
         if(e->type==SDL_KEYDOWN) {
             int key=e->key.keysym.sym;
-            if(key==SDLK_a && (e->key.keysym.mod&KMOD_CTRL))*modulation_window.text=0;
-            if(key==SDLK_BACKSPACE && *modulation_window.text)modulation_window.text[strlen(modulation_window.text)-1]=0;
-            if(key==SDLK_RETURN && mx_editable()) {
+            if(key==SDLK_a && (e->key.keysym.mod&KMOD_CTRL))modulation_window.all=1;
+            if(key==SDLK_BACKSPACE || key==SDLK_DELETE) {
+                if(modulation_window.all){text[0]=0;at=0;}
+                else if(key==SDLK_BACKSPACE && at){memmove(text+at-1,text+at,(size_t)(n-at+1));--at;}
+                else if(key==SDLK_DELETE && at<n)memmove(text+at,text+at+1,(size_t)(n-at));
+                modulation_window.cursor=at;modulation_window.all=0;
+            }
+            if(key==SDLK_LEFT || key==SDLK_RIGHT || key==SDLK_HOME || key==SDLK_END) {
+                modulation_window.cursor=key==SDLK_HOME?0:key==SDLK_END?n:SDL_clamp(at+(key==SDLK_LEFT?-1:1),0,n);modulation_window.all=0;
+            }
+            if((key==SDLK_RETURN || key==SDLK_KP_ENTER) && mx_editable()) {
                 modulation_window.before=mx_snapshot(device,audio,pages,bank);
                 if(modulation_window.edit==1)snprintf(l->name,sizeof(l->name),"%.23s",modulation_window.text);
                 else {char *end;float value=strtof(modulation_window.text,&end);
                     if(end!=modulation_window.text && !*end && isfinite(value)) {
-                        if(l->timing)l->beats=SDL_clamp(value,.0625f,1024.f);else l->seconds=SDL_clamp(value,.05f,14400.f);
+                        if(modulation_window.edit==3){if(value>0)l->seconds=1.f/SDL_clamp(value,1.f/14400.f,20.f);}
+                        else if(l->timing)l->beats=SDL_clamp(value,.0625f,1024.f);else l->seconds=SDL_clamp(value,.05f,14400.f);
                     }}
                 modulation_window.edit=0;SDL_StopTextInput();mx_commit_controls(device,audio,ui);ui->project_modified=1;
                 modulation_history_finish(device,audio,pages,bank);
@@ -326,10 +377,10 @@ static int modulation_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioSta
         return 1;
     }
     if(e->type==SDL_KEYDOWN && (e->key.keysym.mod&KMOD_CTRL) && (e->key.keysym.sym==SDLK_z || e->key.keysym.sym==SDLK_y)) {
-        modulation_history_finish(device,audio,pages,bank);modulation_window.menu=0;
+        modulation_flush(device,audio,ui);modulation_history_finish(device,audio,pages,bank);modulation_window.menu=0;modulation_window.drag=-1;SDL_CaptureMouse(SDL_FALSE);
         mx_undo(device,audio,ui,pages,bank,e->key.keysym.sym==SDLK_y || (e->key.keysym.mod&KMOD_SHIFT));return 1;
     }
-    if(e->type==SDL_KEYDOWN || e->type==SDL_KEYUP)return 0; /* Preserve live audition / transport. */
+    if(e->type==SDL_KEYDOWN || e->type==SDL_KEYUP){modulation_flush(device,audio,ui);return 0;} /* Preserve live audition / transport. */
     int click=e->type==SDL_MOUSEBUTTONDOWN,left=click && e->button.button==SDL_BUTTON_LEFT;
     if(modulation_window.menu) {
         if(e->type==SDL_MOUSEWHEEL){modulation_window.menu_first=SDL_max(0,modulation_window.menu_first-e->wheel.y*3);return 1;}
@@ -346,14 +397,14 @@ static int modulation_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioSta
         mx_commit_controls(device,audio,ui);ui->project_modified=1;return 1;
     }
     if(!mx_editable())return 1;
-    if(left && x>=1128 && y>=18 && y<48) {modulation_history_finish(device,audio,pages,bank);modulation_hide();editor_return_window(modulation_window.return_id);return 1;}
+    if(left && x>=1128 && y>=18 && y<48) {modulation_flush(device,audio,ui);modulation_history_finish(device,audio,pages,bank);modulation_hide();editor_return_window(modulation_window.return_id);return 1;}
     if(left && x<260) {
         if(y>=78 && y<108 && x>=178){modulation_window.first=SDL_clamp(modulation_window.first+(x>=218?4:-4),0,((int)c->count-1)/4*4);return 1;}
         int r=(y-126)/117,i=modulation_window.first+r;
         if(y>=126 && r<4 && i<(int)c->count && y<126+r*117+105) {
             modulation_window.lane=i;modulation_window.page=0;l=&c->lane[i];
             if(x<224) {
-                if(e->button.clicks>=2){modulation_window.edit=1;snprintf(modulation_window.text,sizeof(modulation_window.text),"%s",l->name);SDL_StartTextInput();}
+                if(e->button.clicks>=2){mod_edit_begin(1,l->name);}
                 return 1;
             }
         }
@@ -365,13 +416,25 @@ static int modulation_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioSta
     if(left && y>=600 && y<750 && x>=276 && x<916) {
         int at=mod_map_at(c,(y-600)/30);if(at>=0){modulation_window.menu=x<650?1:2;modulation_window.menu_row=at;modulation_window.menu_first=0;}return 1;
     }
-    if(left && x>=744 && x<988 && y>=78 && y<108 && e->button.clicks>=2) {
-        modulation_window.edit=2;snprintf(modulation_window.text,sizeof(modulation_window.text),"%g",l->timing?l->beats:l->seconds);SDL_StartTextInput();return 1;
+    if(left && x>=744 && x<1256 && (x<988 || (!l->timing && x>=1006)) && y>=78 && y<108 && e->button.clicks>=2) {
+        char text[40];int hz=!l->timing && x>=1006;snprintf(text,sizeof(text),"%g",hz?1.f/l->seconds:l->timing?l->beats:l->seconds);mod_edit_begin(hz?3:2,text);return 1;
+    }
+    if(e->type==SDL_MOUSEWHEEL && modulation_window.drag<0) {
+        int change=e->wheel.y*(e->wheel.direction==SDL_MOUSEWHEEL_FLIPPED?-1:1),changed=0;
+        if(!change)return 1;
+        modulation_window.before=mx_snapshot(device,audio,pages,bank);
+        if(y>=600 && y<750 && x>=916 && x<1160) {
+            int at=mod_map_at(c,(y-600)/30);if(at>=0){float *value=x>=1044?&c->map[at].high:&c->map[at].low;
+                *value=SDL_clamp(*value+change*((SDL_GetModState()&KMOD_SHIFT)?.001f:.01f),0,1);changed=1;}
+        } else if(y>=460 && y<490 && x>=872 && x<984){ts_mod_resize(l,SDL_clamp((int)l->count+change,2,TS_MOD_POINTS));changed=1;}
+        if(changed){mx_commit_controls(device,audio,ui);ui->project_modified=1;}
+        modulation_history_finish(device,audio,pages,bank);return 1;
     }
     if(click && !modulation_window.before)modulation_window.before=mx_snapshot(device,audio,pages,bank);
     int changed=0;
     if(left) {
-        if(y>=18 && y<48 && x>=1006 && x<1114){v->enabled=!v->enabled;changed=1;}
+        if(y>=18 && y<48 && x>=800 && x<990){++c->retrigger;changed=1;}
+        else if(y>=18 && y<48 && x>=1006 && x<1114){v->enabled=!v->enabled;changed=1;}
         else if(x<260) {
             int r=(y-126)/117,i=modulation_window.first+r;
             if(y>=126 && r<4 && i<(int)c->count && x>=224 && y<126+r*117+105){c->lane[i].enabled=!c->lane[i].enabled;changed=1;}
@@ -379,19 +442,20 @@ static int modulation_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioSta
         } else if(y>=78 && y<108) {
             if(x<504){l->mode=x>=374;changed=1;if(!l->mode)l->point[l->count-1].y=l->point[0].y;}
             else if(x>=530 && x<728){l->timing=x>=628;changed=1;}
-            else if(x>=744 && x<988){modulation_window.drag=2;modulation_window.origin=l->timing?l->beats:l->seconds;}
-            else if(x>=1006){++c->retrigger;changed=1;}
+            else if(x>=744 && (x<988 || (!l->timing && x>=1006))){int hz=!l->timing && x>=1006;modulation_window.drag=hz?4:2;modulation_window.origin=hz?1.f/l->seconds:l->timing?l->beats:l->seconds;}
         } else if(y>=460 && y<490) {
             if(x<474)modulation_window.draw=x<374;
-            else if(x>=492 && x<860){ts_mod_shape(l,x<588?0:x<722?1:2,modulation_window.points);changed=1;}
-            else if(x>=872 && x<984)modulation_window.points=SDL_clamp(modulation_window.points+(x<928?-1:1),2,TS_MOD_POINTS);
+            else if(x>=492 && x<860){ts_mod_shape(l,x<572?0:x<652?1:x<756?3:2,l->count);changed=1;}
+            else if(x>=872 && x<984){ts_mod_resize(l,SDL_clamp((int)l->count+(x<928?-1:1),2,TS_MOD_POINTS));changed=1;}
             else if(x>=996){modulation_window.drag=3;modulation_window.origin=l->smooth;}
         } else if(y>=600 && y<750 && x>=916) {
             int at=mod_map_at(c,(y-600)/30);
             if(at>=0) {
                 if(x>=1210){mod_remove_map(c,at);changed=1;}
                 else if(x>=1160){c->map[at].enabled=!c->map[at].enabled;changed=1;}
-                else {modulation_window.drag=100+at*2+(x>=1044);modulation_window.origin=x>=1044?c->map[at].high:c->map[at].low;}
+                else {int high=x>=1044,slider=(y-600)%30>=19;
+                    modulation_window.drag=(slider?300:100)+at*2+high;modulation_window.origin=high?c->map[at].high:c->map[at].low;
+                    if(slider){float value=SDL_clamp((x-(high?1048:928))/100.f,0,1);if(high)c->map[at].high=value;else c->map[at].low=value;changed=1;}}
             }
         }
         modulation_window.origin_x=x;
@@ -422,13 +486,16 @@ static int modulation_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioSta
         if(drag==0)mod_draw(l,x,y,0);
         else if(drag==1)mod_point_move(l,x,y);
         else if(drag==2){float value=modulation_window.origin*powf(10,delta*2);if(l->timing)l->beats=SDL_clamp(value,.0625f,1024.f);else l->seconds=SDL_clamp(value,.05f,14400.f);}
+        else if(drag==4)l->seconds=1.f/SDL_clamp(modulation_window.origin*powf(10,delta*2),1.f/14400.f,20.f);
         else if(drag==3)l->smooth=SDL_clamp(modulation_window.origin+delta,0,1);
+        else if(drag>=300){TsModMap *m=&c->map[(drag-300)/2];float value=SDL_clamp((x-((drag&1)?1048:928))/100.f,0,1);if(drag&1)m->high=value;else m->low=value;}
         else if(drag>=100){TsModMap *m=&c->map[(drag-100)/2];float value=SDL_clamp(modulation_window.origin+delta,0,1);if(drag&1)m->high=value;else m->low=value;}
         changed=1;
     }
     if(changed) {
-        mx_commit_controls(device,audio,ui);ui->project_modified=1;
-        snprintf(modulation_window.status,sizeof(modulation_window.status),"CTRL+Z: UNDO / SHIFT-DRAG: FINE / DOUBLE-CLICK TIME: TYPE VALUE / ESC: RETURN");
+        if(e->type==SDL_MOUSEMOTION)modulation_window.pending=1;
+        else mx_commit_controls(device,audio,ui);ui->project_modified=1;
+        snprintf(modulation_window.status,sizeof(modulation_window.status),"CTRL+Z: UNDO / SHIFT-DRAG: FINE / DOUBLE-CLICK TIME / HZ: TYPE VALUE / ESC: RETURN");
     }
     return 1;
 }

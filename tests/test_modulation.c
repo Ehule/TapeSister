@@ -25,6 +25,12 @@ static void curves(void)
     TsModControls a,b;ts_mod_default(&a);assert(ts_mod_valid(&a));b=a;
     ts_mod_shape(&a.lane[0],2,8);ts_mod_shape(&b.lane[0],2,8);
     assert(!memcmp(&a,&b,sizeof(a)));ts_mod_shape(&b.lane[0],2,8);assert(memcmp(&a,&b,sizeof(a)));
+    TsModLane square=a.lane[0];ts_mod_shape(&square,3,8);
+    near(ts_mod_value(&square,.25),1,0);near(ts_mod_value(&square,.75),0,0);near(ts_mod_value(&square,1),1,0);
+    ts_mod_resize(&square,64);assert(square.count==64);
+    near(ts_mod_value(&square,.25),1,0);near(ts_mod_value(&square,.75),0,0);
+    ts_mod_resize(&square,5);assert(square.count==5);near(ts_mod_value(&square,.25),1,0);near(ts_mod_value(&square,.75),0,0);
+    ts_mod_resize(&square,2);assert(square.count==2 && square.point[0].x==0 && square.point[1].x==1);
     TsModLane *l=&a.lane[0];assert(l->point[0].y==l->point[7].y);
     l->count=2;l->point[0]=(TsModPoint){0,0};l->point[1]=(TsModPoint){1,1};l->smooth=0;
     near(ts_mod_value(l,.25),.25,1e-7);l->smooth=1;near(ts_mod_value(l,.25),.15625,1e-7);
@@ -53,6 +59,7 @@ static void codec_and_identity(void)
 {
     setup(1);TsModControls *m=&c.effect[0].modulation;
     ts_mod_shape(&m->lane[0],2,64);m->lane[1].mode=TS_MOD_ONESHOT;m->lane[1].timing=TS_MOD_TEMPO;m->lane[1].beats=7.5f;
+    ts_mod_shape(&m->lane[2],3,5);
     snprintf(m->lane[0].name,sizeof(m->lane[0].name),"SLOW WEATHER");
     FILE *f=tmpfile();assert(f && ts_matrix_write(f,&c));rewind(f);ts_matrix_default(&loaded);
     char line[4096];while(fgets(line,sizeof(line),f)) {line[strcspn(line,"\r\n")]=0;char *eq=strchr(line,'=');assert(eq);*eq++=0;assert(ts_matrix_read(&loaded,line,eq)==1);}

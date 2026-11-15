@@ -66,25 +66,26 @@ Inherited track-to-tile routing remains inspectable in the Matrix.
 
 ## Modulation curves
 
-Choose **+ EFFECT → MODULATOR**, then double-click its card. Four curve lanes
+Choose **+ EFFECT → MODULATOR**, then double-click its card to open it; adding it keeps you on the canvas. Four curve lanes
 open initially; **+ ADD LANE** expands the card to sixteen lanes. A lane can
 control several parameters, each with its own low/high range. The card supports
-64 assignments in total. Curve and assignment edits use the shared Matrix undo
+64 assignments in total. Text entry shows a blinking caret and supports arrows, Home/End, Delete, and Ctrl+A. Curve and assignment edits use the shared Matrix undo
 history and save with the project.
 
 ![Native modulation editor](screenshots/fx-modulation.png)
 
 | Control | Behavior |
 | --- | --- |
-| **DRAW** | Drag across the graph to draw a curve. |
+| **DRAW** | Drag across the graph to draw a curve. Strokes interpolate between pointer events, preserve untouched sampled points, and include the release position. Audio publication is coalesced to UI frames and flushed on release. |
 | **POINTS** | Drag a point; double-click empty graph space to insert one; right-click an interior point to remove it. |
-| **SINE / TRIANGLE / RANDOMIZE** | Replace the selected curve. Randomize uses the chosen **PTS** count (2–64); click the left/right half of PTS to decrease/increase it. Generated points and the next random seed are saved, so loading never rolls a new shape. |
+| **SINE / TRI / SQUARE / RANDOM** | Replace the selected curve. Random uses the current point count. Square has editable, near-vertical edges. Generated points and the next random seed are saved, so loading never rolls a new shape. |
+| **POINT COUNT − / +** | Immediately add or remove points on the current curve (2–64). The wheel also changes the count. Added points follow the shape; removal simplifies the least significant corners first. |
 | **SMOOTH** | Drag to round the transitions between points without overshooting their values. Shift-drag gives finer adjustment. |
 | **LOOP / ONE SHOT** | Repeat the curve, or run once and hold its final value. Loop endpoints are joined when drawing, moving an endpoint, randomizing, or switching to Loop. |
-| **FREE / TEMPO** | Set cycle duration in seconds (0.05–14,400) or quarter-note beats (1/16–1,024). Drag the value or double-click to type it. Tempo follows F11's master tempo, including the tracker clock when it is the enabled master source. |
-| **RETRIGGER ALL** | Restart this card's lanes from their first point. Tempo timing controls duration; it does not quantize this command or automatically retrigger at markers. |
+| **FREE / TEMPO** | Set cycle duration in seconds (0.05–14,400) or quarter-note beats (1/16–1,024). Free timing also exposes **FREQ** in Hz (1/14,400–20); frequency and seconds are reciprocal views of the same duration. Drag either value or double-click to type it. Tempo follows F11's master tempo, including the tracker clock when it is the enabled master source. |
+| **RETRIGGER** | Restart this card's lanes from their first point. Tempo timing controls duration; it does not quantize this command or automatically retrigger at markers. |
 | **+ ASSIGN** | Choose an added effect or an individual pedal inside an added Pedalboard, then choose an available continuous parameter. |
-| **LOW / HIGH** | Drag each endpoint independently. Inverting the endpoints reverses that assignment. Cutoff is shown in Hz and output in dB; other ranges use normalized percentages. |
+| **LOW / HIGH** | Drag the value, use its slider, or scroll over it. Wheel steps are 1%; Shift+wheel uses 0.1%. Each endpoint moves independently. Inverting the endpoints reverses that assignment. Cutoff is shown in Hz and output in dB; other ranges use normalized percentages. |
 | Assignment **ON / X** | Bypass or remove that assignment. Click its destination or parameter to change it. |
 | Lane square / top **ON** | Bypass one lane or the entire card. Double-click a lane name to rename it. |
 | **Esc / BACK** | Return to the window that opened the editor; Esc first cancels an open picker or text entry. |
@@ -131,6 +132,8 @@ lane/card bypass. Then save/reload, reorder the pedal, switch Gallery movements,
 and use Pause/Stop and Retrigger while checking F12 and listening for clicks.
 
 ## Text labels
+
+Ordinary box selection includes visible text labels and movement headings along with cards. Shift adds to the selection; G, S, drag, and Delete operate on the selected objects together. Ctrl-drag remains a cable-only selection. Escape cancels a box or movement; Undo/Redo restores grouped edits.
 
 Press **T** at the pointer, or choose **TEXT LABEL** from the add menu (double-click
 empty space, right-click, or **+ EFFECT**). Type a label and press Enter to save.
