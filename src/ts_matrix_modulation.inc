@@ -12,7 +12,7 @@ void ts_matrix_modulation_begin(TsMatrixEffects *f)
     for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)if(f->current[i] && f->current[i]->mod && f->current[i]->mod->owned) {
         previously|=1u<<i;f->current[i]->mod->modulated=f->current[i]->mod->authored;f->current[i]->mod->owned=0;
     }
-    if(!f->mod_mask && !previously)return;
+    if(!f->mod_mask && !previously){f->mod_targets=0;return;}
     for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)if(f->mod_mask&(1u<<i)) {
         TsMatrixEffectNode *source=f->current[i];if(!source)continue;
         const TsModControls *c=&source->mod->authored.modulation;
@@ -63,7 +63,7 @@ void ts_matrix_modulation_begin(TsMatrixEffects *f)
         } else node_set(n,c,0);
     }
     f->mod_targets=touched;
-    f->mod_remaining=f->rate/150;if(!f->mod_remaining)f->mod_remaining=1;
+    f->mod_remaining=f->mod_mask?(f->rate/150?f->rate/150:1):0;
 }
 void ts_matrix_modulation_end(TsMatrixEffects *f,unsigned frames)
 {

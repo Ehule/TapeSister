@@ -115,6 +115,9 @@ static void late_assignment(void)
     c.effect[0].modulation.map_count=1;c.effect[0].modulation.map[0]=(TsModMap){.target=c.effect[1].id,.type=TS_SISTER_FX_TRANSIENT,.field=TS_MOD_GAIN,.enabled=1,.low=0,.high=0};commit();
     TsStereoFrame v={0};for(int i=0;i<24000;++i)v=sample(&fx,1);near(v.l,.2*pow(10,-12*.05),1e-5);
     ts_matrix_effect_remove(&c,0);commit();for(int i=0;i<24000;++i)v=sample(&fx,1);near(v.l,.2,2e-5);ts_matrix_effects_free(&fx);
+    setup(0);assert(ts_matrix_effects_restore(&fx,&c,48000));sample(&fx,1);
+    ts_matrix_effect_remove(&c,0);ts_matrix_effect_remove(&c,1);commit();
+    ts_matrix_modulation_begin(&fx);assert(!fx.mod_mask && !fx.mod_targets && !fx.mod_remaining);ts_matrix_effects_free(&fx);
 }
 static void benchmark(void)
 {
