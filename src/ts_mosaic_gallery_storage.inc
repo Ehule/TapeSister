@@ -22,7 +22,8 @@ static int gallery_name_decode(char *out,const char *hex)
 int ts_gallery_save(const TsMosaicGallery *g,const char *dir,char *e,size_t n)
 {
     if(!g || !dir || g->count<1 || g->count>TS_GALLERY_LIMIT || g->active<0 || g->active>=g->count ||
-       !g->next_id || g->next_id==UINT64_MAX || !isfinite(g->fade_seconds) || g->fade_seconds<0 || g->fade_seconds>30)
+       !g->next_id || g->next_id==UINT64_MAX || !isfinite(g->fade_seconds) || g->fade_seconds<0 || g->fade_seconds>30 ||
+       !ts_gallery_sequence_valid(&g->sequence))
         return gallery_error(e,n,"Invalid Gallery settings");
     char path[2048];
     for(int i=0;i<g->count;++i) {
@@ -37,12 +38,19 @@ int ts_gallery_save(const TsMosaicGallery *g,const char *dir,char *e,size_t n)
     }
     if(snprintf(path,sizeof(path),"%s/gallery.tsg",dir)<0 || strlen(dir)+13>=sizeof(path))return gallery_error(e,n,"Gallery path is too long");
     FILE *f=fopen(path,"wb");if(!f)return gallery_error(e,n,"Cannot write Gallery manifest");
-    int ok=fprintf(f,"TAPESISTER_GALLERY 1\nCOUNT %d %d %llu %.17g\n",g->count,g->active,(unsigned long long)g->next_id,g->fade_seconds)>0;
+    int ok=fprintf(f,"TAPESISTER_GALLERY 2\nCOUNT %d %d %llu %.17g\n",g->count,g->active,(unsigned long long)g->next_id,g->fade_seconds)>0;
     for(int i=0;i<g->count && ok;++i) {
         const TsMosaicCanvas *c=&g->canvas[i];
         ok=fprintf(f,"CANVAS %llu %d %d ",(unsigned long long)c->id,c->entry,c->marker)>0;
         for(const unsigned char *p=(const unsigned char *)c->name;*p && ok;++p)ok=fprintf(f,"%02x",*p)>0;
         if(ok)ok=fputc('\n',f)!=EOF;
+    }
+    const TsGallerySequence *s=&g->sequence;
+    if(ok)ok=fprintf(f,"SEQUENCE %d %d %d %d\n",s->length,s->loop,s->first,s->last)>0;
+    for(int i=0;i<s->length && ok;++i) {
+        const TsGalleryStep *p=&s->step[i];
+        ok=fprintf(f,"STEP %llu %d %d %.17g %.17g %.17g %d %d\n",(unsigned long long)p->canvas_id,
+            p->in_marker,p->out_marker,p->in_seconds,p->out_seconds,p->fade_seconds,p->repeats,p->curve)>0;
     }
     if(ok)ok=fputs("END\n",f)>=0;
     if(fclose(f))ok=0;if(!ok)return gallery_error(e,n,"Cannot finish Gallery manifest");
@@ -62,10 +70,11 @@ int ts_gallery_catalog(const char *dir,TsMosaicGalleryCatalog *out,char *e,size_
     if(!f) {
         if(errno!=ENOENT)return gallery_error(e,n,"Cannot read Gallery manifest");
         catalog.count=1;catalog.next_id=2;catalog.fade_seconds=2;catalog.canvas[0].id=1;
+        ts_gallery_sequence_default(&catalog.sequence,1);
         snprintf(catalog.canvas[0].name,TS_GALLERY_NAME,"Canvas 1");*out=catalog;return 1;
     }
-    int count,active;unsigned long long next;double fade;
-    if(!gallery_line(f,line,sizeof(line)) || strcmp(line,"TAPESISTER_GALLERY 1") ||
+    int count,active,version;unsigned long long next;double fade;
+    if(!gallery_line(f,line,sizeof(line)) || sscanf(line,"TAPESISTER_GALLERY %d %c",&version,&extra)!=1 || (version!=1 && version!=2) ||
        !gallery_line(f,line,sizeof(line)) || sscanf(line,"COUNT %d %d %llu %lf %c",&count,&active,&next,&fade,&extra)!=4 ||
        count<1 || count>TS_GALLERY_LIMIT || active<0 || active>=count || !next || next==UINT64_MAX || !isfinite(fade) || fade<0 || fade>30)goto invalid;
     for(int i=0;i<count;++i) {
@@ -75,6 +84,19 @@ int ts_gallery_catalog(const char *dir,TsMosaicGalleryCatalog *out,char *e,size_
         for(int j=0;j<i;++j)if(catalog.canvas[j].id==id)goto invalid;
         TsMosaicCanvasInfo *c=&catalog.canvas[i];c->id=id;c->entry=entry;c->marker=marker;
         if(!gallery_name_decode(c->name,name))goto invalid;
+    }
+    ts_gallery_sequence_default(&catalog.sequence,catalog.canvas[0].id);
+    if(version==2) {
+        TsGallerySequence *s=&catalog.sequence;
+        if(!gallery_line(f,line,sizeof(line)) || sscanf(line,"SEQUENCE %d %d %d %d %c",&s->length,&s->loop,&s->first,&s->last,&extra)!=4 ||
+           s->length<1 || s->length>TS_GALLERY_SEQUENCE_STEPS)goto invalid;
+        for(int i=0;i<s->length;++i) {
+            TsGalleryStep *p=&s->step[i];unsigned long long id;
+            if(!gallery_line(f,line,sizeof(line)) || sscanf(line,"STEP %llu %d %d %lf %lf %lf %d %d %c",&id,
+                &p->in_marker,&p->out_marker,&p->in_seconds,&p->out_seconds,&p->fade_seconds,&p->repeats,&p->curve,&extra)!=8)goto invalid;
+            p->canvas_id=id;
+        }
+        if(!ts_gallery_sequence_valid(s))goto invalid;
     }
     if(!gallery_line(f,line,sizeof(line)) || strcmp(line,"END") || fgets(line,sizeof(line),f) || ferror(f))goto invalid;
     fclose(f);catalog.count=count;catalog.active=active;catalog.next_id=next;catalog.fade_seconds=fade;catalog.present=1;*out=catalog;return 1;
@@ -96,5 +118,5 @@ int ts_gallery_load(TsMosaicGallery *g,const char *dir,char *e,size_t n)
         FILE *check=fopen(file,"rb");if(!check)return gallery_error(e,n,"Canvas arrangement is missing or unreadable");fclose(check);
         if(!ts_mosaic_load(c->scene,path,e,n))return 0;
     }
-    g->active=catalog.active;g->next_id=catalog.next_id;g->fade_seconds=catalog.fade_seconds;return 1;
+    g->active=catalog.active;g->next_id=catalog.next_id;g->fade_seconds=catalog.fade_seconds;g->sequence=catalog.sequence;return 1;
 }

@@ -1,3 +1,4 @@
+#include "ts_gallery_sequence_ui.inc"
 static void mosaic_gallery_button(TsFramebuffer *fb,int action,const char *label,int active)
 {
     TsUiRect r=ts_ui_gallery_action(action);
@@ -6,6 +7,7 @@ static void mosaic_gallery_button(TsFramebuffer *fb,int action,const char *label
 static void mosaic_gallery_overlay(TsFramebuffer *fb,const TsUiState *ui)
 {
     if(!ui->mosaic_gallery_open)return;
+    if(ui->gallery_sequence_open){gallery_sequence_overlay(fb,ui);return;}
     uint32_t panel=ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_PANEL,RGB(31,28,38));
     uint32_t edge=ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_EDGE,RGB(64,54,70));
     uint32_t ink=ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_TEXT,RGB(224,214,233));
@@ -54,7 +56,7 @@ static void mosaic_gallery_overlay(TsFramebuffer *fb,const TsUiState *ui)
     mosaic_gallery_button(fb,TS_GALLERY_CLOSE,"CLOSE",0);
     if(!ui->mosaic_gallery_rename) {
         mosaic_gallery_button(fb,TS_GALLERY_EARLIER,"MOVE EARLIER",0);mosaic_gallery_button(fb,TS_GALLERY_LATER,"MOVE LATER",0);
-        text(fb,374,358,"ALT+UP / ALT+DOWN",dim,1);
+        mosaic_button(fb,438,349,160,"SEQUENCER",ui->gallery_player.running,0);
     }
     snprintf(line,sizeof(line),"%.78s",ui->mosaic_gallery_rename?"CTRL+A REPLACE / ENTER APPLY / ESC CANCEL":ui->mosaic_gallery_status);
     text(fb,128,380,line,dim,1);

@@ -12,6 +12,38 @@ static double pattern_difference(const TsStereoFrame *a,const TsStereoFrame *b,i
 }
 
 #include "test_mosaic_pattern_updates.inc"
+static void gallery_pattern_crossfade(void)
+{
+    TsMosaic *m=ts_mosaic_create();assert(m);m->gain=1;
+    TsMosaicSource *source=ts_pattern_source(m,test_pages,test_bank,pat()->id,test_error,sizeof(test_error));assert(source);
+    TsMosaicEvent *card=ts_mosaic_add(m,source,0,0);assert(card);card->duration=1;
+    TsStereoFrame *reference=calloc(9600,sizeof(*reference));assert(reference);
+    pattern_render(m,reference,9600,0);
+    TsMosaicGallery *g=ts_gallery_create(m);assert(g);
+    g->sequence.step[0]=(TsGalleryStep){.canvas_id=1,.in_marker=-1,.out_marker=-1,.out_seconds=.2,.fade_seconds=.05,.repeats=2};
+    assert(ts_gallery_sequence_prepare(g,test_error,sizeof(test_error)));
+    assert(ts_gallery_sequence_play(g,0,test_error,sizeof(test_error)));
+    double energy=0;
+    for(int i=0;i<16800;++i) {
+        if(!(i%256))ts_gallery_begin_block(g,256);
+        TsStereoFrame f=ts_gallery_read(g,48000,NULL),expected;
+        if(i<7200)expected=reference[i];
+        else if(i<9600) {
+            float t=(i-7200)/2400.f;
+            expected=(TsStereoFrame){reference[i].l*(1-t)+reference[i-7200].l*t,
+                                    reference[i].r*(1-t)+reference[i-7200].r*t};
+        } else expected=reference[i-7200];
+        if(fabs(f.l-expected.l)>1e-5 || fabs(f.r-expected.r)>1e-5) {
+            fprintf(stderr,"Gallery pattern fade mismatch frame %d: %.9g / %.9g expected %.9g / %.9g\n",i,f.l,f.r,expected.l,expected.r);assert(0);
+        }
+        assert(!ts_pattern_engine_overflow(m->pattern_engine));
+        if(g->spare_active)assert(!ts_pattern_engine_overflow(g->spare->pattern_engine));
+        energy+=fabs(f.l)+fabs(f.r);
+    }
+    assert(energy>10 && !g->spare_active && source->pins==0);
+    ts_gallery_read(g,48000,NULL);assert(!g->player.running);
+    free(reference);ts_gallery_free(g);ts_mosaic_free(m);
+}
 static void mosaic_patterns(void)
 {
     mosaic_pattern_updates();
@@ -24,6 +56,7 @@ static void mosaic_patterns(void)
     raw[32*4]=(note_t){.note=56,.instr=1,.efx=0x0a,.efxData=1};
     raw[1]=(note_t){.note=61,.instr=1,.efx=0x08,.efxData=208};
     raw[32*8+1]=(note_t){.note=97};export_score();
+    gallery_pattern_crossfade();
     TsMosaic *m=ts_mosaic_create();assert(m && m->pattern_engine);m->gain=1;
     TsMosaicSource *source=ts_pattern_source(m,test_pages,test_bank,pat()->id,test_error,sizeof(test_error));
     assert(source && source->pattern && source->pattern->prepared && source->pattern->asset_count==1);

@@ -144,6 +144,7 @@ typedef struct {
     int route_passthrough;
     uint64_t control_serial;
     unsigned pattern_player[TS_MOSAIC_NOTES]; /* Runtime-only backend index hints. */
+    const void *pattern_owner; /* Retain the backend key in a Gallery playback copy. */
     TsSourceRouteVoice output_route;
 } TsMosaicVoice;
 
@@ -187,6 +188,8 @@ typedef struct TsMosaic {
     double time;
     double speed, speed_current; /* Target and smoothed tape speed, 0.5 .. 2. */
     int playing, repeat, rate;
+    int section_transport; /* Gallery runtime owns the endpoint; never saved. */
+    double section_end;
     int marker_loop, marker_active; /* Performance state; active is a 1-based cue, not saved. */
     float gain;
     TsStereoFrame last_output, transition_from;

@@ -6,12 +6,25 @@ static void mosaic_gallery_snapshot(TsUiState *ui,const TsMosaicGallery *g)
     if(!g)return;
     ui->mosaic_gallery_active=g->active;ui->mosaic_gallery_fading=g->outgoing>=0;
     ui->mosaic_gallery_progress=g->outgoing>=0 && g->fade_length>0?g->fade_position/g->fade_length:1;
+    if(g->sequence_fade && g->player.fade_end>g->player.fade_start)
+        ui->mosaic_gallery_progress=fmax(0,fmin(1,(ts_gallery_outgoing(g)->time-g->player.fade_start)/(g->player.fade_end-g->player.fade_start)));
     ui->mosaic_gallery_fade=g->fade_seconds;
     for(int i=0;i<g->count;++i) {
         snprintf(ui->mosaic_gallery_names[i],48,"%s",g->canvas[i].name);
         ui->mosaic_gallery_entry[i]=g->canvas[i].entry;ui->mosaic_gallery_marker[i]=g->canvas[i].marker;
         ui->mosaic_gallery_marker_valid[i]=g->canvas[i].marker>=0 && g->canvas[i].marker<TS_MOSAIC_MARKERS && g->canvas[i].scene->markers[g->canvas[i].marker].stored;
     }
+    ui->gallery_sequence=g->sequence;ui->gallery_player=g->player;
+    ui->gallery_step_progress=g->player.end>g->player.start?
+        fmax(0,fmin(1,(ts_gallery_active(g)->time-g->player.start)/(g->player.end-g->player.start))):0;
+    if(ui->gallery_sequence_open)for(int i=0;i<g->sequence.length;++i) {
+        int canvas=-1;double in=0,out=0;
+        for(int j=0;j<g->count;++j)if(g->canvas[j].id==g->sequence.step[i].canvas_id)canvas=j;
+        ui->gallery_step_canvas[i]=canvas;
+        ui->gallery_step_valid[i]=ts_gallery_step_bounds(g,&g->sequence.step[i],NULL,&in,&out,NULL,0);
+        ui->gallery_step_start[i]=in;ui->gallery_step_end[i]=out;
+    }
+    if(g->sequence_fade)ui->mosaic_gallery_fade=g->fade_length;
 }
 static int mosaic_gallery_busy(AudioState *a,TsUiState *ui,MosaicController *c)
 {
@@ -21,6 +34,7 @@ static int mosaic_gallery_busy(AudioState *a,TsUiState *ui,MosaicController *c)
     }
     return 0;
 }
+#include "main_sdl_gallery_sequence.inc"
 static int mosaic_gallery_enter(SDL_AudioDeviceID device,AudioState *a,TsUiState *ui,TsInstrument *bank,MosaicController *c,int index)
 {
     TsSamplePages *pages=c->pages;TsMosaicGallery *g=pages?pages->gallery:NULL;
@@ -93,6 +107,7 @@ static int mosaic_gallery_event(const SDL_Event *event,SDL_AudioDeviceID device,
         mosaic_gallery_snapshot(ui,a->gallery);return 1;
     }
     TsMosaicGallery *g=c->pages->gallery;if(!g){ui->mosaic_gallery_open=0;return 1;}
+    if(ui->gallery_sequence_open)return gallery_sequence_event(event,device,a,ui,bank,c,x,y,mod);
     if(ui->mosaic_canvas_import_count) {
         int *selected=&ui->mosaic_canvas_import_selected,count=ui->mosaic_canvas_import_count;
         if((key && k==SDLK_ESCAPE) || (left && ts_ui_gallery_hit(TS_GALLERY_CLOSE,x,y))) {
@@ -128,6 +143,14 @@ static int mosaic_gallery_event(const SDL_Event *event,SDL_AudioDeviceID device,
     if(key && k==SDLK_ESCAPE) {
         if(ui->mosaic_gallery_rename){ui->mosaic_gallery_rename=0;SDL_StopTextInput();}
         else ui->mosaic_gallery_open=0;
+        return 1;
+    }
+    if(left && x>=438 && x<598 && y>=349 && y<373 && !ui->mosaic_gallery_rename) {
+        ui->gallery_sequence_open=1;ui->gallery_sequence_selected=SDL_clamp(ui->gallery_sequence_selected,0,g->sequence.length-1);
+        ui->gallery_sequence_page=ui->gallery_sequence_selected/16;
+        if(device)SDL_LockAudioDevice(device);
+        mosaic_gallery_snapshot(ui,g);
+        if(device)SDL_UnlockAudioDevice(device);
         return 1;
     }
     int selected=ui->mosaic_gallery_selected;

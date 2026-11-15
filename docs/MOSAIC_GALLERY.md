@@ -1,7 +1,7 @@
 # Mosaic Gallery
 
 A project can contain up to 16 named Mosaic canvases: separate paintings sharing
-one sound collection and one effects/output chain. Page changes are manual.
+one sound collection and one effects/output chain. Page changes can be manual or driven by the Gallery sequencer.
 
 Open **GALLERY** at the top of Mosaic, or press **Ctrl+G**. Click **NEW** to add an
 empty canvas. Select a row, choose how it should enter, then click **ENTER** or
@@ -65,6 +65,67 @@ through the whole Gallery performance, including the page changes. Held source
 keyboard notes keep their existing audio until released; the destination's source
 KEYS selection starts cleared so subsequent notes use an explicit new selection.
 Sample/Record banks, TrackSister, ARP, effects and output controls remain shared.
+
+## Gallery sequencer
+
+Open **GALLERY → SEQUENCER**. The Prism-style grid has 64 available steps,
+shown in four pages of sixteen. Each step references a canvas by stable identity
+and selects an **IN** and **OUT** point. The same canvas may appear more than once
+with different sections, and a step may repeat its section before advancing.
+
+![Gallery sequencer in the native application](images/gallery-sequencer.png)
+
+| Control | Behavior |
+| --- | --- |
+| Grid cell | Select a step to edit. Playback continues. |
+| CANVAS | Click/wheel to choose a Gallery canvas. Names follow renaming and reordering. |
+| IN / OUT | Click/wheel through marker slots and time choices; OUT also offers END. Right-click to type seconds or `M:SS`. Zero means START. |
+| REPEAT | Number of visits to this section before advancing, including the first visit. |
+| FADE | Outgoing crossfade duration, in seconds. Click/wheel adjusts it; Shift gives fine adjustment. Right-click types a value. |
+| Curve | LINEAR (constant sum), SMOOTH (constant sum), or EQUAL POWER. |
+| PLAY / PAUSE | Start from the selected step, or pause/resume both audible playheads and their transition. Space does the same in this panel. |
+| STOP | Stop sequence playback at the current position; effects can decay. Mosaic Escape retains its engine-stop behavior outside dialogs. |
+| LOOP, FROM, TO | Repeat the chosen inclusive group of steps. Steps before FROM play once; the loop returns from TO to FROM. |
+| QUEUE / Enter | Choose the step to enter at the current section's next boundary. |
+| NEXT | Advance immediately, using the current step's fade where there is room. |
+| LAUNCH SELECTED | Immediately enter the selected step, or start there when stopped. Wait for an existing fade to finish. |
+| ADD / DUP / DELETE / EARLIER / LATER | Arrange the steps while stopped. Parameter edits can be made while playing and apply on the next visit. |
+| Escape / < GALLERY | Return to Gallery without stopping playback. A further Escape returns to Mosaic. |
+
+For example, step 01 can play Canvas 1 from M03 to M04, and step 02 Canvas 4
+from M05 to M06. Enable LOOP from 01 to 02 to alternate those sections. Set each
+OUT to END to play from its start marker through the end of its canvas instead.
+An explicit time endpoint can include silence beyond the last card.
+
+A fade **finishes at the outgoing OUT point**. The incoming canvas starts at IN
+when that fade begins; its playhead continues through the overlap. A zero-second
+fade switches at OUT. Each step sets its own outgoing curve and duration. To keep
+both section boundaries possible with only two simultaneous renderers, a fade
+fits within half of each participating section's duration. The playing status
+shows the effective duration. Changing tape speed also changes the time needed
+to reach the marker; the fade still ends at that marker.
+
+Same-canvas repeats use a preallocated second playback state, retaining the
+outgoing audio and pattern playheads through the fade. They share the existing
+canvas's effect chain. A transition does not create a second private effects
+chain. Shared effect tails retain the existing Gallery behavior; exclusive
+movement effects follow Gallery's existing suspend/wake policy.
+
+The current section's range, repeats, and fade settings are frozen for its visit.
+Marker or step edits take effect on the next visit. Missing canvases/markers and
+reversed or empty ranges are marked in the editor and prevent Play. If a future
+reference disappears during playback, the sequence stops at the boundary and
+shows the reason; it never substitutes a different canvas or a zero-time marker.
+Canvas repeat and marker-loop settings are retained but the sequencer owns section
+boundaries while running. Automatic turns follow the audio clock, including when
+the Gallery panel is closed. Mosaic follows the playing canvas when no card edit
+or gesture is in progress.
+
+The complete plan and loop range are saved in Gallery manifest version 2.
+Version 1 and pre-Gallery projects still load. Playback does not resume on Open;
+older builds cannot read the new manifest. **REC FILE** records the performed
+sequence. Offline Render remains a selected-canvas render and does not launch the
+sequence automatically.
 
 ## Reordering canvases
 
@@ -151,8 +212,8 @@ use a Gallery-capable build to edit multi-canvas projects.
 
 Offline Render exports the selected canvas from its beginning, alongside the
 other chosen instruments. It does not replay manual page turns. Use REC FILE to
-capture a Gallery performance. Automated page sequences and canvas jump markers
-are reserved for a later version.
+capture a Gallery performance. Use the Gallery sequencer for automated page changes and marker ranges; capture
+that performance with REC FILE.
 
 ## Validation and manual check
 
