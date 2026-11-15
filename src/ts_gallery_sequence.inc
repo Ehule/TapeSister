@@ -1,5 +1,5 @@
-/* Gallery sections are audio-clocked. Control edits are read on the next visit;
-   the sounding range and transition remain frozen. */
+/* Gallery sections are audio-clocked. Parameter edits are read on the next visit;
+   live arrangement edits retain the sounding range and in-flight transition. */
 void ts_gallery_sequence_default(TsGallerySequence *s,uint64_t id)
 {
     memset(s,0,sizeof(*s));s->length=1;
@@ -114,6 +114,7 @@ static int gallery_sequence_following(const TsMosaicGallery *g,int *visit)
     const TsGallerySequencePlayer *p=&g->player;
     *visit=1;
     if(p->queued>=0 && p->queued<g->sequence.length)return p->queued;
+    if(p->step<0)return p->continuation<g->sequence.length?p->continuation:-1;
     if(p->visit<p->current.repeats){*visit=p->visit+1;return p->step;}
     if(g->sequence.loop && p->step==g->sequence.last)return g->sequence.first;
     return p->step+1<g->sequence.length?p->step+1:-1;
@@ -134,6 +135,69 @@ static void gallery_sequence_refresh(TsMosaicGallery *g)
     if(!g->player.running)return;
     g->player.next=gallery_sequence_following(g,&g->player.next_visit);
     g->player.next_fade=gallery_sequence_fade(g,g->player.next);
+}
+int ts_gallery_sequence_insert(TsMosaicGallery *g,int at,const TsGalleryStep *step)
+{
+    if(!g || !step || at<0 || at>g->sequence.length || g->sequence.length>=TS_GALLERY_SEQUENCE_STEPS)return 0;
+    TsGallerySequence *s=&g->sequence;TsGallerySequencePlayer *p=&g->player;
+    TsGalleryStep added=*step; /* The source may itself be shifted by insertion. */
+    memmove(s->step+at+1,s->step+at,(size_t)(s->length-at)*sizeof(*step));s->step[at]=added;
+    if(p->running) {
+        if(p->step>=at)++p->step;
+        if(p->queued>=at)++p->queued;
+        /* Appending after a removed final visit provides a new continuation. */
+        if(p->step<0 && p->continuation>=at && at<s->length)++p->continuation;
+    }
+    if(at<=s->first)++s->first;
+    if(at<=s->last+1)++s->last;
+    ++s->length;gallery_sequence_refresh(g);return 1;
+}
+int ts_gallery_sequence_remove(TsMosaicGallery *g,int at)
+{
+    if(!g || g->sequence.length<=1 || at<0 || at>=g->sequence.length)return 0;
+    TsGallerySequence *s=&g->sequence;TsGallerySequencePlayer *p=&g->player;
+    int first=s->first,last=s->last;
+    if(p->running) {
+        if(p->step==at) {
+            p->step=-1;
+            p->continuation=s->loop && at==last?first:at+1;
+        } else if(p->step>at)--p->step;
+        if(p->queued==at)p->queued=-1;
+        else if(p->queued>at)--p->queued;
+    }
+    memmove(s->step+at,s->step+at+1,(size_t)(s->length-at-1)*sizeof(s->step[0]));--s->length;
+    if(at<s->first)--s->first;
+    if(at<=s->last)--s->last;
+    if(s->first>=s->length)s->first=s->length-1;
+    if(s->last<s->first)s->last=s->first;
+    if(p->running && p->step<0) {
+        if(p->continuation==at && s->loop && at==last)p->continuation=s->first;
+        else if(p->continuation>at)--p->continuation;
+    }
+    gallery_sequence_refresh(g);return 1;
+}
+static int gallery_sequence_moved_index(int index,int from,int to)
+{
+    if(index==from)return to;
+    if(from<to && index>from && index<=to)return index-1;
+    if(to<from && index>=to && index<from)return index+1;
+    return index;
+}
+int ts_gallery_sequence_move(TsMosaicGallery *g,int from,int to)
+{
+    if(!g || from<0 || to<0 || from>=g->sequence.length || to>=g->sequence.length || from==to)return 0;
+    TsGallerySequence *s=&g->sequence;TsGallerySequencePlayer *p=&g->player;TsGalleryStep moved=s->step[from];
+    if(from<to)memmove(s->step+from,s->step+from+1,(size_t)(to-from)*sizeof(moved));
+    else memmove(s->step+to+1,s->step+to,(size_t)(from-to)*sizeof(moved));
+    s->step[to]=moved;
+    if(p->running) {
+        p->step=gallery_sequence_moved_index(p->step,from,to);
+        p->queued=gallery_sequence_moved_index(p->queued,from,to);
+        if(p->step<0)p->continuation=gallery_sequence_moved_index(p->continuation,from,to);
+    }
+    int first=gallery_sequence_moved_index(s->first,from,to),last=gallery_sequence_moved_index(s->last,from,to);
+    s->first=first<last?first:last;s->last=first>last?first:last;
+    gallery_sequence_refresh(g);return 1;
 }
 static void gallery_sequence_enter(TsMosaicGallery *g,int step,int visit,int canvas,double start,double end,double fade)
 {

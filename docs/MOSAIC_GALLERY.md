@@ -89,7 +89,7 @@ with different sections, and a step may repeat its section before advancing.
 | QUEUE / Enter | Choose the step to enter at the current section's next boundary. |
 | NEXT | Advance immediately, using the current step's fade where there is room. |
 | LAUNCH SELECTED | Immediately enter the selected step, or start there when stopped. Wait for an existing fade to finish. |
-| ADD / DUP / DELETE / EARLIER / LATER | Arrange the steps while stopped. Parameter edits can be made while playing and apply on the next visit. |
+| ADD / DUP / DELETE / EARLIER / LATER | Arrange the steps while playing, paused, or stopped. The playing section and any crossfade continue uninterrupted. Parameter edits apply on the next visit. |
 | Escape / < GALLERY | Return to Gallery without stopping playback. A further Escape returns to Mosaic. |
 
 For example, step 01 can play Canvas 1 from M03 to M04, and step 02 Canvas 4
@@ -112,7 +112,13 @@ chain. Shared effect tails retain the existing Gallery behavior; exclusive
 movement effects follow Gallery's existing suspend/wake policy.
 
 The current section's range, repeats, and fade settings are frozen for its visit.
-Marker or step edits take effect on the next visit. Missing canvases/markers and
+Adding or moving steps preserves the playing step and queued destination by identity.
+Loop endpoints follow their steps; adding directly after TO includes the new step.
+Deleting the playing step finishes its current pass, then continues to the next
+surviving step (or returns to FROM when deleting TO in a loop). It does not repeat
+the deleted step. Deleting a queued step clears that queue. At least one step is
+retained. These edits also work during a crossfade and while paused.
+Marker or parameter edits take effect on the next visit. Missing canvases/markers and
 reversed or empty ranges are marked in the editor and prevent Play. If a future
 reference disappears during playback, the sequence stops at the boundary and
 shows the reason; it never substitutes a different canvas or a zero-time marker.

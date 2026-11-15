@@ -240,7 +240,9 @@ static void isolation_and_persistence(void)
     TsInsertControls c={1,0,0,0};ts_insert_set(&insert,&c);
     close_frame(ts_insert_external_frame(&insert,input,4,TS_INPUT_CHANNEL_LEFT),(TsStereoFrame){0,0});
     close_frame(ts_insert_external_frame(&insert,input,4,TS_INPUT_CHANNEL_STEREO),(TsStereoFrame){1,-1});
-    TsConfig config,loaded;ts_config_init(&config);config.insert=(TsInsertControls){4,2,-4.5f,2.25f};
+    /* These four complete project fixtures must not compete with the codec's
+       transaction snapshot for the desktop's 8 MiB stack. */
+    static TsConfig config,loaded;ts_config_init(&config);config.insert=(TsInsertControls){4,2,-4.5f,2.25f};
     snprintf(config.insert_send_device,sizeof(config.insert_send_device),"Out 3-4 (MOTU M Series)");
     snprintf(config.insert_return_device,sizeof(config.insert_return_device),"In 5-6 (MOTU M Series)");
     ts_router_move(&config.router,4,1);config.router.bypass_mask=0;config.router.solo=5;
@@ -249,7 +251,7 @@ static void isolation_and_persistence(void)
     assert(!memcmp(&loaded.insert,&config.insert,sizeof(config.insert)) && !memcmp(&loaded.router,&config.router,sizeof(config.router)));
     assert(!strcmp(loaded.insert_send_device,config.insert_send_device));
     assert(!strcmp(loaded.insert_return_device,config.insert_return_device));
-    TsSisterProjectState state,read;ts_sister_project_state_init(&state,8000);state.insert=config.insert;state.router=config.router;
+    static TsSisterProjectState state,read;ts_sister_project_state_init(&state,8000);state.insert=config.insert;state.router=config.router;
     assert(ts_sister_project_state_save_file(&state,"test-insert-project.ini",error,sizeof(error)));int present;
     assert(ts_sister_project_state_load_file(&read,"test-insert-project.ini",8000,&present,error,sizeof(error)));
     assert(!memcmp(&read.insert,&state.insert,sizeof(state.insert)) && !memcmp(&read.router,&state.router,sizeof(state.router)));

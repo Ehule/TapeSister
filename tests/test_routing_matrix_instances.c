@@ -173,7 +173,9 @@ int main(void)
 {
     ts_matrix_effects_init(&bank);ts_matrix_init(&graph);
     high_ports_and_neutral_stack();independent_keys();lifecycle();persistence_and_runtime();
-    for(int type=1;type<TS_MATRIX_FX_TYPES;++type)stress(type,0);
+    /* Control cards have no audio ports. Their assignment graph is exercised
+       in test_modulation and the exact Matrix span regression. */
+    for(int type=1;type<TS_MATRIX_FX_TYPES;++type)if(type!=TS_MATRIX_FX_MODULATOR)stress(type,0);
     stress(TS_SISTER_FX_REVERB,1);stress(0,0);ts_matrix_effects_free(&bank);
     puts("Matrix instances: routing, independent keys, lifecycle, long fades, persistence, runtime and pathological DSP passed");return 0;
 }

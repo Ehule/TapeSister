@@ -370,6 +370,7 @@ int main(void)
     for(int i=0;i<100 && !created;++i){snprintf(run,sizeof(run),"run-%lu-%d",(unsigned long)GALLERY_PID(),i);created=MKDIR(run)==0;}
     assert(created && !GALLERY_CHDIR(run));
     test_section_clock();test_section_same_canvas();test_section_cuts_and_loop_range();test_section_edits_storage();test_section_audio_routes();
+    test_section_live_arrangement();test_section_edit_during_fade_audio();
     test_effect_ownership(0);test_effect_ownership(1);test_fade();test_loop_resume();test_pages();test_move_replace();test_storage();test_canvas_transfer();test_routed_transfer();
     puts("Mosaic Gallery fades, routes, loop resume, entry points, identity and transactional project storage passed");return 0;
 }
