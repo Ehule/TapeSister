@@ -150,6 +150,7 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
             if(connected>=0)fx_select_wire(source,connected,0);
         }
         if(w->drag==FX_DRAG_BOX || w->drag==FX_DRAG_WIRE_BOX)fx_box_update(x,y,pages,bank);
+        if(w->drag==FX_DRAG_WIRE_BOX)fx_wire_selection_status();
         w->drag=0;fx_primary_wire();SDL_CaptureMouse(SDL_FALSE);return 1;
     }
     if(e->type==SDL_MOUSEMOTION && (w->drag==FX_DRAG_NODE || w->drag==FX_DRAG_PAN || w->drag==FX_DRAG_BOX || w->drag==FX_DRAG_WIRE_BOX || w->drag==FX_DRAG_WIRE || w->drag==FX_DRAG_SHIFT_NODE)) {
@@ -220,7 +221,13 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
         FxCanvasNode *n=&fx_canvas.node[i];int xx=fx_x(n->x),yy=fx_y(n->y),ww=(int)(fx_node_w(n)*l->canvas_zoom),hh=(int)(fx_node_h(n)*l->canvas_zoom);
         int mod=SDL_GetModState();
         if(left && (mod&KMOD_CTRL) && (mod&KMOD_SHIFT) && x>=xx-12 && x<=xx+ww+12 && y>=yy && y<=yy+hh) {
-            fx_connect_selected(n->destination,device,audio,ui,pages,bank);return 1;
+            int destination=n->destination,sc=ts_matrix_sidechain_for(destination);
+            int side_y=fx_y(n->y+fx_node_h(n)*.8f),main_y=fx_y(n->y+fx_node_h(n)*.5f);
+            if(abs(x-xx)<18 && abs(y-side_y)<13 && abs(y-side_y)<abs(y-main_y) &&
+               ts_matrix_destination_active(&w->controls,sc))destination=sc;
+            if(fx_canvas.wires.count)fx_reroute_wires(destination,device,audio,ui,pages,bank);
+            else fx_connect_selected(destination,device,audio,ui,pages,bank);
+            return 1;
         }
         if(left && n->at>=0 && abs(x-(xx+ww))<12 && abs(y-(yy+hh/2))<12){fx_canvas.source=n->row;fx_canvas.wire=i;fx_canvas.destination=-1;w->drag=FX_DRAG_WIRE;fx_canvas.move_count=0;fx_canvas.mouse_x=x;fx_canvas.mouse_y=y;return 1;}
         if(x<xx || x>xx+ww || y<yy || y>yy+hh)continue;
@@ -267,7 +274,7 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
         if(!(modifiers&KMOD_SHIFT)){fx_clear_selection();fx_clear_wires();}
         fx_select_wire(fx_canvas.node[found].row,destination,(modifiers&KMOD_SHIFT)!=0);
         w->effect_open=w->compressor_open=0;
-        snprintf(w->status,sizeof(w->status),"%d CABLES SELECTED / SHIFT+WHEEL: GAIN / WHEEL: ZOOM / X OR DELETE: REMOVE",fx_canvas.wires.count);
+        fx_wire_selection_status();
     } else fx_begin_box(x,y,0,(modifiers&KMOD_SHIFT)!=0);
     return 1;
 }

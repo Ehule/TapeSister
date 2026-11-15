@@ -1,3 +1,4 @@
+#include "test_fx_canvas_reroute.inc"
 static void properties_click(int x,int y)
 {
     int width,height;SDL_GetWindowSize(fx_properties_window.window,&width,&height);
@@ -126,4 +127,5 @@ static void patch_twenty_cards(void)
     for(int i=0;i<10;++i)ts_mosaic_delete(g->canvas[0].scene,cards[i]->id);
     assert(ts_gallery_remove(g,1,error,sizeof(error)));fx_canvas.movement=0;matrix_history_clear();fx_view(1,&pages,&bank);
     puts("Twenty-card patch, selected-source undo, hidden-movement retain links, atomic overflow rejection and sidechain replacement passed.");
+    reroute_cables();
 }

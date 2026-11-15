@@ -35,6 +35,10 @@ static void fx_primary_wire(void)
 }
 static void fx_clear_wires(void)
 {fx_canvas.wires.count=0;fx_primary_wire();}
+static void fx_wire_selection_status(void)
+{
+    snprintf(matrix_window.status,sizeof(matrix_window.status),"%d CABLES SELECTED / CTRL+SHIFT-CLICK INPUT: MOVE / SHIFT+WHEEL: GAIN / DELETE: REMOVE",fx_canvas.wires.count);
+}
 static int fx_select_wire(MatrixRow source,int destination,int toggle)
 {
     int found=fx_wire_selected(source,destination);
