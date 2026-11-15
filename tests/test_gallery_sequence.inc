@@ -101,3 +101,79 @@ static void test_section_audio_routes(void)
         assert(energy>0 && !g->spare_active);free_gallery(g);
     }
 }
+static void test_section_live_arrangement(void)
+{
+    char error[160];TsMosaicGallery *g=sequence_fixture();
+    TsGalleryStep a=g->sequence.step[0],b=g->sequence.step[1];
+    render(g,100);TsMosaic *playing=ts_gallery_active(g);double time=playing->time;
+    /* Appending and inserting retain playback, queue identity, and loop bounds. */
+    g->player.queued=1;
+    assert(ts_gallery_sequence_insert(g,2,&a));
+    assert(ts_gallery_sequence_insert(g,0,&b));
+    assert(g->player.step==1 && g->player.queued==2 && g->sequence.first==1 && g->sequence.last==3);
+    assert(playing->time==time && g->player.start==2 && g->player.end==3);
+    assert(ts_gallery_sequence_move(g,1,2));
+    assert(g->player.step==2 && g->player.queued==1 && g->sequence.first==2 && g->sequence.last==3);
+    assert(ts_gallery_sequence_remove(g,0));
+    assert(g->player.step==1 && g->player.queued==0 && g->sequence.first==1 && g->sequence.last==2);
+    assert(ts_gallery_sequence_next(g,-1,error,sizeof(error)));
+    assert(g->player.step==0 && g->active==1 && g->outgoing==0);
+    /* Delete the incoming step during a fade; neither renderer is restarted. */
+    TsMosaic *outgoing=ts_gallery_outgoing(g);double old=outgoing->time,new_time=ts_gallery_active(g)->time;
+    double fade_start=g->player.fade_start,fade_end=g->player.fade_end;
+    assert(ts_gallery_sequence_remove(g,0));
+    assert(g->player.running && g->player.step==-1 && g->player.continuation==0);
+    assert(outgoing==ts_gallery_outgoing(g) && outgoing->time==old && ts_gallery_active(g)->time==new_time);
+    assert(g->player.fade_start==fade_start && g->player.fade_end==fade_end);
+    render(g,101);assert(g->outgoing<0 && g->player.step==-1);
+    render(g,700);assert(g->player.step==0 && g->active==0);
+    ts_gallery_sequence_pause(g,1);time=ts_gallery_active(g)->time;
+    assert(ts_gallery_sequence_insert(g,0,&b));
+    assert(ts_gallery_sequence_move(g,1,2));
+    assert(g->player.paused && g->player.step==2);
+    render(g,50);assert(ts_gallery_active(g)->time==time && g->player.paused);
+    ts_gallery_sequence_pause(g,0);render(g,10);assert(ts_gallery_active(g)->time>time);
+    free_gallery(g);
+
+    /* A removed step finishes one pass, even if it had more repeats. */
+    g=sequence_fixture();g->player.current.repeats=4;
+    assert(ts_gallery_sequence_remove(g,0));assert(g->player.step==-1);
+    render(g,901);assert(g->player.step==0 && g->player.visit==1 && g->active==1);
+    free_gallery(g);
+
+    /* Deleting TO wraps to FROM; deleting a queued step cancels only the queue. */
+    g=sequence_fixture();assert(ts_gallery_sequence_play(g,1,error,sizeof(error)));
+    assert(ts_gallery_sequence_remove(g,1));
+    assert(g->player.continuation==0 && ts_gallery_sequence_valid(&g->sequence));
+    render(g,801);assert(g->player.step==0 && g->active==0);free_gallery(g);
+    g=sequence_fixture();g->player.queued=1;
+    assert(ts_gallery_sequence_remove(g,1));assert(g->player.queued==-1 && g->player.step==0);
+    assert(!ts_gallery_sequence_remove(g,0));free_gallery(g);
+
+    /* Adding after a removed final visit extends playback, even without LOOP. */
+    g=sequence_fixture();g->sequence.loop=0;assert(ts_gallery_sequence_play(g,1,error,sizeof(error)));
+    assert(ts_gallery_sequence_remove(g,1));assert(g->player.next==-1);
+    assert(ts_gallery_sequence_insert(g,1,&a));assert(g->player.next==1);
+    render(g,801);assert(g->player.running && g->player.step==1 && g->active==0);free_gallery(g);
+}
+static void test_section_edit_during_fade_audio(void)
+{
+    for(int same=0;same<2;++same) {
+        TsMosaicGallery *g=sequence_fixture(),*reference=sequence_fixture();
+        if(same){g->player.current.repeats=2;reference->player.current.repeats=2;}
+        render(g,925);render(reference,925);assert(g->outgoing>=0);
+        TsMosaic *incoming=ts_gallery_active(g),*outgoing=ts_gallery_outgoing(g);
+        double a=incoming->time,b=outgoing->time;
+        /* Shift the playing index, reorder, then remove that incoming visit. */
+        assert(ts_gallery_sequence_insert(g,0,&g->sequence.step[0]));
+        assert(ts_gallery_sequence_move(g,g->player.step,(g->player.step+1)%g->sequence.length));
+        assert(ts_gallery_sequence_remove(g,g->player.step));
+        assert(g->player.step==-1 && incoming->time==a && outgoing->time==b);
+        for(int i=0;i<75;++i) {
+            TsSourceRouteMix x={0},y={0};
+            TsStereoFrame u=ts_gallery_read(g,1000,&x),v=ts_gallery_read(reference,1000,&y);
+            assert(u.l==v.l && u.r==v.r && x.graph[7].l==y.graph[7].l && x.graph[7].r==y.graph[7].r);
+        }
+        assert(g->outgoing<0 && !g->spare_active);free_gallery(g);free_gallery(reference);
+    }
+}

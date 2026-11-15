@@ -147,21 +147,15 @@ static int gallery_sequence_event(const SDL_Event *event,SDL_AudioDeviceID devic
         if(g->player.running)g->player.queued=selected;
     } else if(launch)ts_gallery_sequence_next(g,selected,ui->mosaic_gallery_status,sizeof(ui->mosaic_gallery_status));
     else if(click && y>=316 && y<340 && x>=16 && x<432) {
-        if(g->player.running)snprintf(ui->mosaic_gallery_status,sizeof(ui->mosaic_gallery_status),"STOP TO CHANGE STEP ORDER / VALUES CAN BE EDITED WHILE PLAYING");
-        else if(x<160) {
-            if(s->length<TS_GALLERY_SEQUENCE_STEPS) {
-                TsGalleryStep added=x>=92?*p:(TsGalleryStep){.canvas_id=g->canvas[g->active].id,.in_marker=-1,.out_marker=-2,.fade_seconds=2,.repeats=1};
-                int at=x>=92?selected+1:s->length;
-                memmove(s->step+at+1,s->step+at,(size_t)(s->length-at)*sizeof(*p));s->step[at]=added;
-                if(s->last==s->length-1)++s->last;++s->length;ui->gallery_sequence_selected=at;modified=1;
-            }
+        if(x<160) {
+            TsGalleryStep added=x>=92?*p:(TsGalleryStep){.canvas_id=g->canvas[g->active].id,.in_marker=-1,.out_marker=-2,.fade_seconds=2,.repeats=1};
+            int at=x>=92?selected+1:s->length;
+            if(ts_gallery_sequence_insert(g,at,&added)){ui->gallery_sequence_selected=at;modified=1;}
         } else if(x>=168 && x<236 && s->length>1) {
-            memmove(s->step+selected,s->step+selected+1,(size_t)(s->length-selected-1)*sizeof(*p));--s->length;
-            s->last=SDL_min(s->last,s->length-1);s->first=SDL_min(s->first,s->last);
-            ui->gallery_sequence_selected=SDL_min(selected,s->length-1);modified=1;
+            if(ts_gallery_sequence_remove(g,selected)){ui->gallery_sequence_selected=SDL_min(selected,s->length-1);modified=1;}
         } else if(x>=244) {
             int to=selected+(x<334?-1:1);
-            if(to>=0 && to<s->length){TsGalleryStep swap=s->step[to];s->step[to]=*p;*p=swap;ui->gallery_sequence_selected=to;modified=1;}
+            if(ts_gallery_sequence_move(g,selected,to)){ui->gallery_sequence_selected=to;modified=1;}
         }
         ui->gallery_sequence_page=ui->gallery_sequence_selected/16;
     }

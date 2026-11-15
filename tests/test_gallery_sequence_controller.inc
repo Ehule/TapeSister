@@ -21,6 +21,20 @@ static void test_gallery_sequence_controls(SDL_Window *window,SDL_AudioDeviceID 
     assert(!u->gallery_sequence_edit && g->sequence.step[1].out_marker==-1 && g->sequence.step[1].out_seconds==.3);
     gallery_pointer(window,device,a,input,u,c,30,90);assert(u->gallery_sequence_selected==0);
     gallery_pointer(window,device,a,input,u,c,40,58);assert(g->player.running && g->player.step==0 && !a->engine_stopped);
+    /* Every arrangement button works while playing, preserving the visit. */
+    double initial_time=ts_gallery_active(g)->time;
+    gallery_pointer(window,device,a,input,u,c,40,326);assert(g->sequence.length==3 && u->gallery_sequence_selected==2 && g->player.running);
+    gallery_pointer(window,device,a,input,u,c,185,90);assert(u->gallery_sequence_selected==1);
+    gallery_pointer(window,device,a,input,u,c,490,295);assert(g->player.queued==1);
+    gallery_pointer(window,device,a,input,u,c,30,90);
+    gallery_pointer(window,device,a,input,u,c,120,326);assert(g->sequence.length==4 && g->player.step==0 && g->player.queued==2);
+    gallery_pointer(window,device,a,input,u,c,280,326);assert(g->player.step==1 && u->gallery_sequence_selected==0);
+    gallery_pointer(window,device,a,input,u,c,375,326);assert(g->player.step==0 && u->gallery_sequence_selected==1);
+    gallery_pointer(window,device,a,input,u,c,200,326);assert(g->sequence.length==3 && g->player.queued==1);
+    gallery_pointer(window,device,a,input,u,c,335,90);
+    gallery_pointer(window,device,a,input,u,c,200,326);assert(g->sequence.length==2 && g->player.running && g->player.step==0);
+    assert(ts_gallery_active(g)->time==initial_time && g->player.current.repeats==2);
+    g->player.queued=-1;
     /* Selection is editing, never an implicit launch. */
     gallery_pointer(window,device,a,input,u,c,185,90);assert(u->gallery_sequence_selected==1 && g->player.step==0);
     float output[512*2];
@@ -28,6 +42,8 @@ static void test_gallery_sequence_controls(SDL_Window *window,SDL_AudioDeviceID 
     assert(g->player.visit==2 && g->spare_active);
     gallery_key(window,device,a,input,u,c,SDLK_SPACE,KMOD_NONE);assert(g->player.paused);
     double time=ts_gallery_active(g)->time,old=ts_gallery_outgoing(g)->time;
+    gallery_pointer(window,device,a,input,u,c,120,326);assert(g->sequence.length==3 && g->player.paused);
+    gallery_pointer(window,device,a,input,u,c,200,326);assert(g->sequence.length==2 && g->player.paused && g->spare_active);
     audio_callback(a,(Uint8 *)output,sizeof(output));assert(ts_gallery_active(g)->time==time && ts_gallery_outgoing(g)->time==old);
     gallery_key(window,device,a,input,u,c,SDLK_SPACE,KMOD_NONE);assert(!g->player.paused);
     for(int i=0;i<11;++i)audio_callback(a,(Uint8 *)output,sizeof(output));

@@ -18,6 +18,7 @@ typedef struct {
 } TsGallerySequence;
 typedef struct {
     int running,paused,step,visit,queued,next,next_visit;
+    int continuation; /* When step == -1, finish the removed visit, then enter this slot (length means end). */
     double start,end,fade_start,fade_end,next_fade;
     TsGalleryStep current; /* Frozen until the next visit. */
     char error[128];
@@ -64,6 +65,10 @@ int ts_gallery_sequence_play(TsMosaicGallery *,int,char *,size_t);
 void ts_gallery_sequence_pause(TsMosaicGallery *,int);
 void ts_gallery_sequence_stop(TsMosaicGallery *);
 int ts_gallery_sequence_next(TsMosaicGallery *,int,char *,size_t);
+/* Live arrangement edits preserve the sounding visit and in-flight fade. */
+int ts_gallery_sequence_insert(TsMosaicGallery *,int,const TsGalleryStep *);
+int ts_gallery_sequence_remove(TsMosaicGallery *,int);
+int ts_gallery_sequence_move(TsMosaicGallery *,int,int);
 void ts_gallery_sequence_tick(TsMosaicGallery *,int);
 unsigned ts_gallery_sequence_span(const TsMosaicGallery *,int,unsigned);
 TsMosaicGallery *ts_gallery_create(TsMosaic *first);

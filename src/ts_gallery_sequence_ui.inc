@@ -19,6 +19,7 @@ static void gallery_sequence_overlay(TsFramebuffer *fb,const TsUiState *ui)
     char label[112],in[24],out[24];rect(fb,8,8,624,384,edge);rect(fb,10,10,620,380,bg);
     mosaic_button(fb,16,16,82,"< GALLERY",0,0);text(fb,116,21,"GALLERY SEQUENCER",ink,2);
     snprintf(label,sizeof(label),"%s %02d / %02d",p->running?(p->paused?"PAUSED":"PLAYING"):"STOPPED",p->running?p->step+1:ui->gallery_sequence_selected+1,s->length);
+    if(p->running && p->step<0)snprintf(label,sizeof(label),"%s / REMOVED",p->paused?"PAUSED":"PLAYING");
     text(fb,470,25,label,p->running?teal:dim,1);
     mosaic_button(fb,16,48,58,p->running&&!p->paused?"PAUSE":"PLAY",p->running&&!p->paused,0);
     mosaic_button(fb,80,48,58,"STOP",0,0);mosaic_button(fb,144,48,58,"LOOP",s->loop,0);
@@ -62,6 +63,7 @@ static void gallery_sequence_overlay(TsFramebuffer *fb,const TsUiState *ui)
     mosaic_button(fb,168,316,68,"DELETE",0,0);mosaic_button(fb,244,316,90,"< EARLIER",0,0);
     mosaic_button(fb,342,316,90,"LATER >",0,0);mosaic_button(fb,440,316,178,"LAUNCH SELECTED",0,0);
     if(p->error[0])snprintf(label,sizeof(label),"%.98s",p->error);
+    else if(p->running && p->step<0)snprintf(label,sizeof(label),"REMOVED STEP / FINISHING CURRENT PASS / %s",p->paused?"PAUSED":ui->mosaic_gallery_fading?"CROSSFADING":"PLAYING");
     else if(p->running)snprintf(label,sizeof(label),"STEP %02d / PASS %d OF %d / %s / FADE %.2fS",p->step+1,p->visit,p->current.repeats,
         ui->mosaic_gallery_fading?"CROSSFADING":p->paused?"PAUSED":"PLAYING",ui->mosaic_gallery_fading?ui->mosaic_gallery_fade:p->next_fade);
     else snprintf(label,sizeof(label),"%.98s",ui->mosaic_gallery_status);
