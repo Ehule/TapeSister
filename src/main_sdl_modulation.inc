@@ -14,6 +14,8 @@ static struct {
     int menu,menu_row,menu_first,edit,cursor,all,pending; Uint32 blink; float origin;
     char text[40],status[128]; MatrixSnapshot *before;
 } modulation_window={.drag=-1};
+static int modulation_editing(void)
+{return modulation_window.visible && (modulation_window.drag>=0 || modulation_window.pending || modulation_window.before);}
 static const uint32_t mod_ink[]={0xffc4a4dcu,0xff91cbd3u,0xffe4bf8bu,0xffa9c7a4u};
 /* Coalesce pointer edits once per UI frame, then flush on release/focus loss.
    The visible curve follows every event; audio receives complete curves. */
@@ -192,7 +194,9 @@ static void modulation_paint(SDL_AudioDeviceID device,AudioState *audio,TsUiStat
     SDL_RenderSetScale(modulation_window.renderer,w/(float)MOD_W,h/(float)MOD_H);
     mod_rect(0,0,MOD_W,MOD_H,MOD_BG);mod_rect(0,0,MOD_W,65,0xff302736u);
     mod_text(24,20,"MODULATION",mod_ink[0],3);
-    char title[48];mod_effect_label(v,title,sizeof(title));title[40]=0;mod_text(270,26,title,MOD_TEXT,2);
+    char title[48];mod_effect_label(v,title,sizeof(title));title[27]=0;mod_text(270,26,title,MOD_TEXT,2);
+    int instance=0;for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)if(matrix_window.controls.effect[i].id && matrix_window.controls.effect[i].type==TS_MATRIX_FX_MODULATOR){++instance;if(matrix_window.controls.effect[i].id==v->id)break;}
+    char nav[24];snprintf(nav,sizeof(nav),"< M%d >",instance);mod_button(620,18,164,nav,0);
     mod_button(800,18,190,"RETRIGGER",0);
     mod_button(1006,18,108,v->enabled?"ON":"BYPASS",v->enabled);
     mod_button(1128,18,128,"< BACK",0);
@@ -217,11 +221,13 @@ static void modulation_paint(SDL_AudioDeviceID device,AudioState *audio,TsUiStat
     mod_text(24,660,"DOUBLE-CLICK NAME TO RENAME",MOD_DIM,1);
     mod_text(24,680,"LANES RUN WHEN ASSIGNED",MOD_DIM,1);
     mod_text(24,696,"TO AN ACTIVE EFFECT.",MOD_DIM,1);
+    char influence[32];snprintf(influence,sizeof(influence),"INFLUENCE %.0f%%",v->mix*100);mod_button(24,724,226,influence,0);mod_rect(34,751,(int)(206*v->mix),3,mod_ink[0]);
     mod_button(276,78,90,"LOOP",!l->mode);mod_button(374,78,130,"ONE SHOT",l->mode);
     mod_button(530,78,90,"FREE",!l->timing);mod_button(628,78,100,"TEMPO",l->timing);
     char s[160];snprintf(s,sizeof(s),"%g %s",l->timing?l->beats:l->seconds,l->timing?"BEATS":"SEC");
     mod_button(744,78,244,s,0);
-    if(!l->timing){snprintf(s,sizeof(s),"FREQ %.3g HZ",1.f/l->seconds);mod_button(1006,78,250,s,0);}
+    mod_rect(754,105,(int)(224*logf((l->timing?l->beats:l->seconds)/(l->timing?.0625f:.05f))/logf(l->timing?16384.f:288000.f)),3,mod_ink[0]);
+    if(!l->timing){snprintf(s,sizeof(s),"FREQ %.3g HZ",1.f/l->seconds);mod_button(1006,78,250,s,0);mod_rect(1016,105,(int)(230*logf((1.f/l->seconds)*14400.f)/logf(288000.f)),3,mod_ink[0]);}
     snprintf(s,sizeof(s),"%.23s  /  %s",l->name,l->mode?"ONE SHOT HOLDS LAST VALUE":"LOOPING CURVE");mod_text(278,132,s,color,2);
     mod_rect(MOD_GX-16,MOD_GY-12,MOD_GW+32,MOD_GH+34,0xff1b2026u);
     for(int i=0;i<=4;++i) {
@@ -284,6 +290,7 @@ static void mod_draw(TsModLane *l,int x,int y,int first)
 {
     x=SDL_clamp(x,MOD_GX,MOD_GX+MOD_GW);y=SDL_clamp(y,MOD_GY,MOD_GY+MOD_GH);
     if(first) {
+        ts_mod_curve_changed(l);
         /* Do not re-smooth already sampled freehand data on each new stroke. */
         int uniform=l->count==TS_MOD_POINTS;
         for(unsigned i=0;uniform && i<l->count;++i)uniform=fabsf(l->point[i].x-i/(float)(TS_MOD_POINTS-1))<.000001f;
@@ -304,6 +311,7 @@ static void mod_draw(TsModLane *l,int x,int y,int first)
 static void mod_point_move(TsModLane *l,int x,int y)
 {
     int i=modulation_window.point;if(i<0 || i>=(int)l->count)return;
+    ts_mod_curve_changed(l);
     l->point[i].y=SDL_clamp(1-(y-MOD_GY)/(float)MOD_GH,0,1);
     if(i && i<(int)l->count-1)l->point[i].x=SDL_clamp((x-MOD_GX)/(float)MOD_GW,l->point[i-1].x+.00001f,l->point[i+1].x-.00001f);
     if(!l->mode && (i==0 || i==(int)l->count-1))l->point[i?0:l->count-1].y=l->point[i].y;
@@ -397,6 +405,11 @@ static int modulation_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioSta
         mx_commit_controls(device,audio,ui);ui->project_modified=1;return 1;
     }
     if(!mx_editable())return 1;
+    if(left && x>=620 && x<784 && y>=18 && y<48) {
+        uint32_t ids[TS_MATRIX_EFFECT_CAPACITY];int count=0,at=0;
+        for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)if(matrix_window.controls.effect[i].id && matrix_window.controls.effect[i].type==TS_MATRIX_FX_MODULATOR){if(matrix_window.controls.effect[i].id==v->id)at=count;ids[count++]=matrix_window.controls.effect[i].id;}
+        if(count){modulation_flush(device,audio,ui);modulation_history_finish(device,audio,pages,bank);modulation_open(ids[(at+(x<702?-1:1)+count)%count]);}return 1;
+    }
     if(left && x>=1128 && y>=18 && y<48) {modulation_flush(device,audio,ui);modulation_history_finish(device,audio,pages,bank);modulation_hide();editor_return_window(modulation_window.return_id);return 1;}
     if(left && x<260) {
         if(y>=78 && y<108 && x>=178){modulation_window.first=SDL_clamp(modulation_window.first+(x>=218?4:-4),0,((int)c->count-1)/4*4);return 1;}
@@ -426,6 +439,10 @@ static int modulation_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioSta
         if(y>=600 && y<750 && x>=916 && x<1160) {
             int at=mod_map_at(c,(y-600)/30);if(at>=0){float *value=x>=1044?&c->map[at].high:&c->map[at].low;
                 *value=SDL_clamp(*value+change*((SDL_GetModState()&KMOD_SHIFT)?.001f:.01f),0,1);changed=1;}
+        } else if(y>=78 && y<108 && x>=744 && (x<988 || (!l->timing && x>=1006))) {
+            float factor=powf(2,change*((SDL_GetModState()&KMOD_SHIFT)?.01f:.1f));
+            if(l->timing)l->beats=SDL_clamp(l->beats*factor,.0625f,1024.f);
+            else l->seconds=SDL_clamp(l->seconds*(x>=1006?1/factor:factor),.05f,14400.f);changed=1;
         } else if(y>=460 && y<490 && x>=872 && x<984){ts_mod_resize(l,SDL_clamp((int)l->count+change,2,TS_MOD_POINTS));changed=1;}
         if(changed){mx_commit_controls(device,audio,ui);ui->project_modified=1;}
         modulation_history_finish(device,audio,pages,bank);return 1;
@@ -438,9 +455,10 @@ static int modulation_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioSta
         else if(x<260) {
             int r=(y-126)/117,i=modulation_window.first+r;
             if(y>=126 && r<4 && i<(int)c->count && x>=224 && y<126+r*117+105){c->lane[i].enabled=!c->lane[i].enabled;changed=1;}
+            else if(y>=724 && y<754){modulation_window.drag=5;modulation_window.origin=v->mix;}
             else if(y>=612 && y<642 && c->count<TS_MOD_LANES){ts_mod_lane_default(&c->lane[c->count],c->count);modulation_window.lane=c->count++;modulation_window.first=modulation_window.lane/4*4;modulation_window.page=0;changed=1;}
         } else if(y>=78 && y<108) {
-            if(x<504){l->mode=x>=374;changed=1;if(!l->mode)l->point[l->count-1].y=l->point[0].y;}
+            if(x<504){l->mode=x>=374;changed=1;if(!l->mode){l->point[l->count-1].y=l->point[0].y;if(l->detail_count)l->detail[l->detail_count-1].y=l->detail[0].y;}}
             else if(x>=530 && x<728){l->timing=x>=628;changed=1;}
             else if(x>=744 && (x<988 || (!l->timing && x>=1006))){int hz=!l->timing && x>=1006;modulation_window.drag=hz?4:2;modulation_window.origin=hz?1.f/l->seconds:l->timing?l->beats:l->seconds;}
         } else if(y>=460 && y<490) {
@@ -474,7 +492,7 @@ static int modulation_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioSta
             if(nearest>=0) {
                 if(left){modulation_window.point=nearest;modulation_window.drag=1;mod_point_move(l,x,y);changed=1;}
                 else if(e->button.button==SDL_BUTTON_RIGHT && nearest>0 && nearest<(int)l->count-1) {
-                    memmove(&l->point[nearest],&l->point[nearest+1],(l->count-nearest-1)*sizeof(l->point[0]));memset(&l->point[--l->count],0,sizeof(l->point[0]));changed=1;
+                    ts_mod_curve_changed(l);memmove(&l->point[nearest],&l->point[nearest+1],(l->count-nearest-1)*sizeof(l->point[0]));memset(&l->point[--l->count],0,sizeof(l->point[0]));changed=1;
                 }
             }
         }
@@ -487,6 +505,7 @@ static int modulation_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioSta
         else if(drag==1)mod_point_move(l,x,y);
         else if(drag==2){float value=modulation_window.origin*powf(10,delta*2);if(l->timing)l->beats=SDL_clamp(value,.0625f,1024.f);else l->seconds=SDL_clamp(value,.05f,14400.f);}
         else if(drag==4)l->seconds=1.f/SDL_clamp(modulation_window.origin*powf(10,delta*2),1.f/14400.f,20.f);
+        else if(drag==5)v->mix=SDL_clamp(modulation_window.origin+delta,0,1);
         else if(drag==3)l->smooth=SDL_clamp(modulation_window.origin+delta,0,1);
         else if(drag>=300){TsModMap *m=&c->map[(drag-300)/2];float value=SDL_clamp((x-((drag&1)?1048:928))/100.f,0,1);if(drag&1)m->high=value;else m->low=value;}
         else if(drag>=100){TsModMap *m=&c->map[(drag-100)/2];float value=SDL_clamp(modulation_window.origin+delta,0,1);if(drag&1)m->high=value;else m->low=value;}
@@ -514,15 +533,14 @@ static int modulation_connect(uint32_t id,int destination,SDL_AudioDeviceID devi
     if(slot<0 || !matrix_window.controls.effect[slot].id || !mx_editable()) {
         snprintf(matrix_window.status,sizeof(matrix_window.status),"MODULATION: CONNECT TO AN ADDED EFFECT OR PEDALBOARD.");return 1;
     }
-    modulation_history_finish(device,audio,pages,bank);modulation_open(id);
+    MatrixSnapshot *before=matrix_window.pending?NULL:mx_snapshot(device,audio,pages,bank);
     TsMatrixEffectControls *target=&matrix_window.controls.effect[slot];TsModControls *c=&source->modulation;
     int field=mod_first_field(target,0,-1);
-    if(field<0 || c->map_count>=TS_MOD_MAPS)return 1;
-    modulation_window.before=mx_snapshot(device,audio,pages,bank);
+    if(field<0 || c->map_count>=TS_MOD_MAPS){free(before);return 1;}
     int at=c->map_count++;
     c->map[at]=(TsModMap){.target=target->id,.type=(unsigned)target->type,.field=(unsigned)field,.lane=0,.enabled=1,.low=0,.high=1};
     mx_commit_controls(device,audio,ui);ui->project_modified=1;
-    modulation_history_finish(device,audio,pages,bank);
-    modulation_window.menu=2;modulation_window.menu_row=at;modulation_window.menu_first=0;
+    if(before)mx_push(before);
+    snprintf(matrix_window.status,sizeof(matrix_window.status),"MODULATION CONNECTED / DOUBLE-CLICK MODULATOR TO EDIT ASSIGNMENTS / CTRL+Z: UNDO");
     return 1;
 }

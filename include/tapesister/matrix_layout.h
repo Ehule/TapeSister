@@ -21,7 +21,8 @@ typedef struct {float x,y,scale;char text[TS_FX_LABEL_TEXT];} TsFxCanvasLabel;
 enum { TS_FX_HEADING_LIMIT=TS_GALLERY_LIMIT+1 };
 /* Canvas zero is OTHER SOURCES. Empty text remembers a deleted heading. */
 typedef struct {uint64_t canvas;TsFxCanvasLabel label;} TsFxCanvasHeading;
-enum { TS_FX_CABLE_STYLES=2048 };
+/* Presentation-only endpoint for the inherited Mosaic bus, never an audio port. */
+enum { TS_FX_MOSAIC_BUS=TS_MATRIX_DESTINATIONS, TS_FX_DESTINATIONS, TS_FX_CABLE_STYLES=2048 };
 typedef struct {uint64_t source,canvas;int kind,destination;uint32_t target,color;} TsFxCableStyle;
 typedef struct {
     uint64_t row_id[TS_MATRIX_LAYOUT_ROWS];

@@ -249,11 +249,9 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
     float nearest=64;int found=-1,destination=-1;
     for(int i=0;i<fx_canvas.count;++i) {
         FxCanvasNode *n=&fx_canvas.node[i];if(n->at<0)continue;
-        TsSourceRoute raw=mx_route(n->row,pages,bank);if(n->row.kind==3 && !raw.matrix_enabled)continue;
-        TsSourceRoute r=mx_display_route(raw);
-        for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)if(r.matrix_gain[d] && fx_canvas.dest[d]>=0) {
+        for(int d=0;d<TS_FX_DESTINATIONS;++d)if(fx_visible_gain(n->row,d,pages,bank) && fx_canvas.dest[d]>=0) {
             FxCanvasNode *to=&fx_canvas.node[fx_canvas.dest[d]];
-            float distance=fx_cable(fx_xf(n->x+fx_node_w(n)),fx_yf(n->y+fx_node_h(n)*.5f),fx_xf(to->x),fx_yf(to->y+fx_node_h(to)*(d==to->destination?.5f:.8f)),0,0,x,y);
+            float distance=fx_cable(fx_xf(n->x+fx_node_w(n)),fx_yf(n->y+fx_node_h(n)*.5f),fx_xf(to->x),fx_yf(to->y+fx_node_h(to)*(d==TS_FX_MOSAIC_BUS || d==to->destination?.5f:.8f)),0,0,x,y);
             if(distance<nearest){nearest=distance;found=i;destination=d;}}}
     if(right) {
         if(found>=0) {

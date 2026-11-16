@@ -577,7 +577,7 @@ int main(int argc,char **argv)
     e.button.x=(TS_MOSAIC_FX_X+10)*2;e.button.y=(TS_MOSAIC_FX_Y+5)*2;assert(event(&e));assert(matrix_window.visible && matrix_window.canvas);
     SDL_SetWindowSize(matrix_window.window,1001,701);fx_paint(&audio,&pages,&bank);
     inspector_controls(getenv("TS_FX_PREVIEW"));edit_controls();canvas_gestures(c.effect[dist].id);disconnect_main_prism();routing_preferences();sunvox_browser(getenv("TS_FX_PREVIEW"));
-    gallery_view();text_labels();grouped_text_selection();patch_workflow();patch_twenty_cards();movement_heading_objects();
+    gallery_view();text_labels();grouped_text_selection();patch_workflow();patch_twenty_cards();control_and_bus_wires();movement_heading_objects();
     matrix_close();meta_fx_close();ts_sister_runtime_free(&audio.sister);ts_sample_pages_free(&pages);ts_instrument_free(&bank);SDL_DestroyWindow(main_window);SDL_Quit();
     puts("FX Canvas controller passed, including single-cable disconnect, alternative path, silent clear, undo and project recall.");return 0;
 }

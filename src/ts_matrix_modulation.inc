@@ -45,6 +45,8 @@ void ts_matrix_modulation_begin(TsMatrixEffects *f)
                 }
                 if(!((previously|touched)&(1u<<j)))dest->mod->modulated=dest->mod->authored;
                 float value=map->low+(map->high-map->low)*values[map->lane];
+                float base=ts_mod_parameter_normalized(&dest->mod->authored,map);
+                value=base+(value-base)*source->mod->authored.mix;
                 if(ts_mod_apply(&dest->mod->modulated,map,value)){touched|=1u<<j;dest->mod->owned=1;source->mod->running|=1u<<map->lane;}
                 break;
             }

@@ -8,9 +8,9 @@ static int mx_effect_slot(void)
     return -1;
 }
 static int mx_effect_controls(const TsMatrixEffectControls *c)
-{return c->type==TS_MATRIX_FX_MODULATOR?1:(c->type==TS_MATRIX_FX_SUNVOX || c->type==TS_MATRIX_FX_PEDALBOARD)?3:c->type==TS_MATRIX_FX_COMPRESSOR?7:c->type>=TS_SISTER_FX_GRAIN?6:5;}
+{return c->type==TS_MATRIX_FX_MODULATOR?2:(c->type==TS_MATRIX_FX_SUNVOX || c->type==TS_MATRIX_FX_PEDALBOARD)?3:c->type==TS_MATRIX_FX_COMPRESSOR?7:c->type>=TS_SISTER_FX_GRAIN?6:5;}
 static int mx_effect_control_id(const TsMatrixEffectControls *c,int position)
-{return c->type==TS_MATRIX_FX_MODULATOR?5:(c->type==TS_MATRIX_FX_SUNVOX || c->type==TS_MATRIX_FX_PEDALBOARD)?position+3:c->type!=TS_MATRIX_FX_COMPRESSOR && c->type<TS_SISTER_FX_GRAIN && position>=2?position+1:position;}
+{return c->type==TS_MATRIX_FX_MODULATOR?(position?5:3):(c->type==TS_MATRIX_FX_SUNVOX || c->type==TS_MATRIX_FX_PEDALBOARD)?position+3:c->type!=TS_MATRIX_FX_COMPRESSOR && c->type<TS_SISTER_FX_GRAIN && position>=2?position+1:position;}
 static float mx_effect_value(const TsMatrixEffectControls *c,int position)
 {
     int k=mx_effect_control_id(c,position);
@@ -39,7 +39,7 @@ static void mx_effect_label(char *s,size_t n,const TsMatrixEffectControls *c,int
         if(ms<1000)snprintf(s,n,"BYPASS FADE %.0f MS",ms);
         else if(ms<60000)snprintf(s,n,"BYPASS FADE %.1f S",ms/1000);
         else snprintf(s,n,"BYPASS FADE %.1f MIN",ms/60000);
-    } else if(k==(comp?5:3))snprintf(s,n,"MIX %.0f%%",c->mix*100);
+    } else if(k==(comp?5:3))snprintf(s,n,c->type==TS_MATRIX_FX_MODULATOR?"INFLUENCE %.0f%%":"MIX %.0f%%",c->mix*100);
     else if(comp) {
         const char *cn[]={"THRESHOLD","RATIO","ATTACK","RELEASE","OUTPUT"};
         const float v[]={c->compressor.threshold_db,c->compressor.ratio,c->compressor.attack_ms,c->compressor.release_ms,c->compressor.output_db};

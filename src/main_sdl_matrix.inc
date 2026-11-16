@@ -566,6 +566,7 @@ static int mx_editable(void)
 static void mx_commit_controls(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui)
 {
     if(!mx_editable()){matrix_window.controls=audio->sister.matrix.controls;return;}
+    ++mx_activity_epoch; /* Discard activity snapshots captured before this edit. */
     ts_session_log_text("matrix_edit","commit controls request");
     TsMatrixEffectPlan plan;
     if(!mx_stage_effects(device,audio,&matrix_window.controls,&plan)){matrix_window.controls=audio->sister.matrix.controls;return;}
@@ -841,7 +842,7 @@ static void mx_capture_activity(SDL_AudioDeviceID device,AudioState *audio,TsSam
         const MatrixActivitySnapshot *v=&box->value;
         fresh=w->activity_ready && v->frame!=w->activity_frame;
         w->activity_frame=v->frame;w->activity_ready=1;
-        if(v->epoch==mx_activity_epoch && !w->drag) {
+        if(v->epoch==mx_activity_epoch && !w->drag && !modulation_editing()) {
             w->fixed=v->fixed;w->controls=v->controls;w->legacy=v->legacy;w->array=v->array;
             w->speakers=v->speakers;w->compressor=v->compressor;
         }

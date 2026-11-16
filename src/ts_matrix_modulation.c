@@ -74,6 +74,18 @@ void ts_mod_parameter_value(const TsMatrixEffectControls *c,uint32_t child,unsig
         float hz=ts_character_filter_cutoff(value);if(hz>=1000)snprintf(s,size,"%.2f kHz",hz/1000);else snprintf(s,size,"%.0f Hz",hz);
     } else snprintf(s,size,"%.1f%%",value*100);
 }
+float ts_mod_parameter_normalized(const TsMatrixEffectControls *c,const TsModMap *m)
+{
+    unsigned f=m->field;
+    if(m->child){int at=child_at(c,m->child);if(at<0)return 0;const TsSisterFxSlotControls *s=&c->board.slot[at];
+        if(f==TS_MOD_MIX)return s->mix;if(f==TS_MOD_GAIN)return (s->gain_db+12)/24;
+        if(f>=TS_MOD_FILTER)return s->filter.value[f-TS_MOD_FILTER];return f==0?s->parameter_a:f==1?s->parameter_b:s->parameter_c;}
+    if(f==TS_MOD_MIX)return c->mix;if(f==TS_MOD_GAIN)return (c->gain_db+12)/24;
+    if(f>=TS_MOD_COMP)return ts_compressor_normalized(&c->compressor,f-TS_MOD_COMP);
+    if(f==TS_MOD_MORPH)return c->meta.morph;
+    if(f>=TS_MOD_MACRO){unsigned i=f-TS_MOD_MACRO;return c->meta.scene_mode && c->meta.captured==3?c->meta.scene[0][i]+(c->meta.scene[1][i]-c->meta.scene[0][i])*c->meta.morph:c->meta.macro[i];}
+    if(f>=TS_MOD_FILTER)return c->filter.value[f-TS_MOD_FILTER];return f==0?c->a:f==1?c->b:c->c;
+}
 int ts_mod_apply(TsMatrixEffectControls *c,const TsModMap *m,float value)
 {
     if(c->id!=m->target || ts_mod_target_type(c,m->child)!=m->type || !ts_mod_field_available(c,m->child,m->field))return 0;

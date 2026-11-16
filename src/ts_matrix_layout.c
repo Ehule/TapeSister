@@ -26,7 +26,7 @@ static int cable_valid(const TsFxCableStyle *p)
     return p->kind>=0 && p->kind<=4 && (!p->canvas || p->kind==3) &&
         (p->kind!=0 || p->source<TS_TRACKER_LANES) && (p->kind!=2 || p->source<TS_MATRIX_ROWS) &&
         ((p->kind!=1 && p->kind!=3 && p->kind!=4) || p->source) &&
-        p->destination>=0 && p->destination<TS_MATRIX_DESTINATIONS &&
+        p->destination>=0 && p->destination<TS_FX_DESTINATIONS &&
         (!!p->target==effect) && (p->color>>24)==255;
 }
 static int label_valid(const TsFxCanvasLabel *p)

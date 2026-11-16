@@ -9545,6 +9545,7 @@ static const TsSisterUiModel *sister_board_view(SisterWindow *s)
 }
 static void meta_fx_open(uint32_t);
 static void modulation_open(uint32_t);
+static int modulation_editing(void);
 static void modulation_hide(void);
 static int modulation_connect(uint32_t,int,SDL_AudioDeviceID,AudioState *,TsUiState *,TsSamplePages *,TsInstrument *);
 static void meta_fx_stage_open(uint32_t,int);

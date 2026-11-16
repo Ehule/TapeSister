@@ -55,6 +55,9 @@ static void curve_controls(TsModControls *m)
     TsModLane published=ui.config.matrix.effect[0].modulation.lane[0];
     mouse(SDL_MOUSEMOTION,MOD_GX+MOD_GW/2,MOD_GY+MOD_GH/2,0,0);
     assert(modulation_window.pending && !memcmp(&published,&ui.config.matrix.effect[0].modulation.lane[0],sizeof(published)));
+    TsModLane dirty=m->lane[0];
+    mx_capture_activity(0,&audio,&pages,&bank,50);
+    assert(!memcmp(&dirty,&m->lane[0],sizeof(dirty)));
     /* A release can carry a position not preceded by a motion event. */
     mouse(SDL_MOUSEBUTTONUP,MOD_GX+MOD_GW,MOD_GY,SDL_BUTTON_LEFT,1);
     assert(!modulation_window.pending && m->lane[0].point[63].y==1);
@@ -112,6 +115,10 @@ int main(int argc,char **argv)
     click(890,32);assert(m->retrigger==1);click(90,625);assert(m->count==5 && modulation_window.first==4);key(SDLK_z,KMOD_CTRL);assert(m->count==4);
     modulation_window.lane=modulation_window.first=0;
     curve_controls(m);
+    float seconds=m->lane[0].seconds;wheel(800,90,1,0);assert(m->lane[0].seconds>seconds);
+    wheel(1110,90,1,0);assert(fabsf(m->lane[0].seconds-seconds)<1e-6f);
+    drag(60,736,210,736);assert(matrix_window.controls.effect[mod].mix==1);
+    drag(210,736,60,736);assert(matrix_window.controls.effect[mod].mix==.5f);key(SDLK_z,KMOD_CTRL);
     float low=m->map[0].low;wheel(960,612,1,0);assert(fabsf(m->map[0].low-low-.01f)<1e-6f);
     wheel(960,612,1,1);assert(fabsf(m->map[0].low-low)<1e-6f);
     SDL_SetModState(KMOD_SHIFT);wheel(960,612,1,0);SDL_SetModState(KMOD_NONE);assert(fabsf(m->map[0].low-low-.001f)<1e-6f);
@@ -129,8 +136,7 @@ int main(int argc,char **argv)
     const int sizes[][2]={{960,600},{1600,1000},{1000,900}};
     for(int i=0;i<3;++i){SDL_SetWindowSize(modulation_window.window,sizes[i][0],sizes[i][1]);click(430,90);assert(m->lane[0].mode==TS_MOD_ONESHOT);click(310,90);assert(!m->lane[0].mode);}
     key(SDLK_ESCAPE,0);assert(!modulation_window.visible);
-    assert(modulation_connect(c.effect[mod].id,TS_MATRIX_EFFECT_BASE+board,0,&audio,&ui,&pages,&bank));assert(modulation_window.visible && modulation_window.menu==2 && m->map_count==3);
-    key(SDLK_ESCAPE,0);assert(modulation_window.visible && !modulation_window.menu);key(SDLK_ESCAPE,0);assert(!modulation_window.visible);
+    assert(modulation_connect(c.effect[mod].id,TS_MATRIX_EFFECT_BASE+board,0,&audio,&ui,&pages,&bank));assert(!modulation_window.visible && !modulation_window.menu && m->map_count==3);
     modulation_open(c.effect[mod].id);ts_matrix_effect_remove(&matrix_window.controls,mod);assert(!modulation_resolve() && !modulation_window.visible);
     modulation_close();matrix_history_clear();ts_sister_runtime_disable(&audio.sister);ts_sample_pages_free(&pages);ts_instrument_free(&bank);SDL_Quit();
     puts("Modulation native curve edits, menus, ranges, undo, resizing, stable IDs, connect gesture and Escape passed.");return 0;

@@ -8,9 +8,12 @@
 static int unit(float v){return isfinite(v) && v>=0 && v<=1;}
 static uint32_t random_next(uint32_t *s)
 {uint32_t x=*s?*s:0x6d2b79f5u;x^=x<<13;x^=x>>17;x^=x<<5;return *s=x;}
+void ts_mod_curve_changed(TsModLane *l)
+{l->detail_count=0;memset(l->detail,0,sizeof(l->detail));}
 void ts_mod_shape(TsModLane *l,int shape,unsigned points)
 {
     if(!l)return;
+    ts_mod_curve_changed(l);
     unsigned n=points<2?2:points>TS_MOD_POINTS?TS_MOD_POINTS:points;
     if(shape==0)n=17;
     if(shape==1)n=3;
@@ -33,6 +36,9 @@ void ts_mod_resize(TsModLane *l,unsigned count)
 {
     if(!l || l->count<2 || l->count>TS_MOD_POINTS)return;
     count=count<2?2:count>TS_MOD_POINTS?TS_MOD_POINTS:count;
+    if(count==l->count)return;
+    if(!l->detail_count){l->detail_count=l->count;memcpy(l->detail,l->point,sizeof(l->detail));}
+    l->count=l->detail_count;memcpy(l->point,l->detail,sizeof(l->point));
     while(l->count<count) {
         unsigned at=1;float span=0;
         for(unsigned i=1;i<l->count;++i)if(l->point[i].x-l->point[i-1].x>span){span=l->point[i].x-l->point[i-1].x;at=i;}
@@ -69,6 +75,8 @@ int ts_mod_valid(const TsModControls *c)
            !isfinite(l->beats) || l->beats<.0625f || l->beats>1024 ||
            !memchr(l->name,0,sizeof(l->name)))return 0;
         for(const unsigned char *p=(const unsigned char*)l->name;*p;++p)if(*p<32 || *p>126 || *p=='=')return 0;
+        if(l->detail_count && (l->detail_count<2 || l->detail_count>TS_MOD_POINTS || l->detail[0].x!=0 || l->detail[l->detail_count-1].x!=1))return 0;
+        for(unsigned j=0;j<l->detail_count;++j)if(!unit(l->detail[j].x) || !unit(l->detail[j].y) || (j && l->detail[j].x<=l->detail[j-1].x))return 0;
         if(l->point[0].x!=0 || l->point[l->count-1].x!=1)return 0;
         for(unsigned j=0;j<l->count;++j)if(!unit(l->point[j].x) || !unit(l->point[j].y) ||
             (j && l->point[j].x<=l->point[j-1].x))return 0;
@@ -115,6 +123,8 @@ int ts_mod_write(FILE *f,const char *prefix,const TsModControls *c)
         if(fprintf(f,"%s.Lane%u=%u,%u,%u,%u,%.9g,%.9g,%.9g,%" PRIu32 "\n%s.Name%u=%s\n",
             prefix,i,l->enabled,l->mode,l->timing,l->count,l->seconds,l->beats,l->smooth,l->seed,prefix,i,l->name)<0)return 0;
         for(unsigned j=0;j<l->count;++j)if(fprintf(f,"%s.Point%u.%u=%.9g,%.9g\n",prefix,i,j,l->point[j].x,l->point[j].y)<0)return 0;
+        if(l->detail_count){if(fprintf(f,"%s.Detail%u=%u\n",prefix,i,l->detail_count)<0)return 0;
+            for(unsigned j=0;j<l->detail_count;++j)if(fprintf(f,"%s.DetailPoint%u.%u=%.9g,%.9g\n",prefix,i,j,l->detail[j].x,l->detail[j].y)<0)return 0;}
     }
     for(unsigned i=0;i<c->map_count;++i) {
         const TsModMap *m=&c->map[i];
@@ -137,7 +147,11 @@ int ts_mod_read(TsModControls *c,const char *key,const char *v)
     } else {
         if(n.initialized!=2)return -1;
         if(!strcmp(key,"End")) {n.initialized=1;if(strcmp(v,"1") || !ts_mod_valid(&n))return -1;}
-        else if(sscanf(key,"Lane%u%n",&i,&used)==1 && used && !key[used] && i<n.count) {
+        else if(sscanf(key,"DetailPoint%u.%u%n",&i,&j,&used)==2 && used && !key[used] && i<n.count && j<n.lane[i].detail_count) {
+            if(!numbers(v,x,2) || !unit(x[0]) || !unit(x[1]))return -1;n.lane[i].detail[j]=(TsModPoint){x[0],x[1]};
+        } else if(sscanf(key,"Detail%u%n",&i,&used)==1 && used && !key[used] && i<n.count) {
+            if(!numbers(v,x,1) || !whole(x[0],2,TS_MOD_POINTS))return -1;n.lane[i].detail_count=x[0];
+        } else if(sscanf(key,"Lane%u%n",&i,&used)==1 && used && !key[used] && i<n.count) {
             if(!numbers(v,x,8) || !whole(x[0],0,1) || !whole(x[1],0,1) || !whole(x[2],0,1) || !whole(x[3],2,TS_MOD_POINTS) ||
                x[4]<.05 || x[4]>14400 || x[5]<.0625 || x[5]>1024 || x[6]<0 || x[6]>1 || !whole(x[7],0,UINT32_MAX))return -1;
             TsModLane *l=&n.lane[i];l->enabled=x[0];l->mode=x[1];l->timing=x[2];l->count=x[3];l->seconds=x[4];l->beats=x[5];l->smooth=x[6];l->seed=x[7];

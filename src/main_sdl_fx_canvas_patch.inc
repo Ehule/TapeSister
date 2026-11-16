@@ -18,8 +18,7 @@ static int fx_delete_effects(int retain,SDL_AudioDeviceID device,AudioState *aud
     int removed=0,ok=1;
     fx_validate_wires(pages,bank);
     for(int i=0;i<fx_canvas.wires.count;++i) {
-        FxCanvasWire wire=fx_canvas.wires.items[i];TsSourceRoute *route=fx_saved_route(s,wire.source);
-        if(route){route->matrix_gain[wire.destination]=0;if(wire.source.kind==2 || wire.source.kind==4)s->controls.delayed[wire.source.index]&=~ts_matrix_feedback_bit(wire.destination);}
+        fx_remove_wire(s,fx_canvas.wires.items[i]);
     }
     for(int slot=0;slot<TS_MATRIX_EFFECT_CAPACITY && ok;++slot) {
         uint32_t id=s->controls.effect[slot].id;

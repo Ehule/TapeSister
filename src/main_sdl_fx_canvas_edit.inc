@@ -57,9 +57,9 @@ static void fx_validate_wires(TsSamplePages *pages,TsInstrument *bank)
 {
     for(int i=0;i<fx_canvas.wires.count;) {
         FxCanvasWire *wire=&fx_canvas.wires.items[i];int at=fx_source_at(wire->source),d=wire->destination;
-        if(at<0 || d<0 || d>=TS_MATRIX_DESTINATIONS || fx_canvas.dest[d]<0 ||
+        if(at<0 || d<0 || d>=TS_FX_DESTINATIONS || fx_canvas.dest[d]<0 ||
            wire->target_id!=fx_wire_target_id(d) ||
-           !mx_display_route(mx_route(matrix_window.rows[at],pages,bank)).matrix_gain[d]) {
+           !fx_visible_gain(matrix_window.rows[at],d,pages,bank)) {
             *wire=fx_canvas.wires.items[--fx_canvas.wires.count];continue;
         }
         wire->source=matrix_window.rows[at];++i;
@@ -190,12 +190,10 @@ static void fx_box_update(int x,int y,TsSamplePages *pages,TsInstrument *bank)
             SDL_Rect rect={fx_x(n->x),fx_y(n->y),SDL_max(1,(int)(fx_node_w(n)*w->layout->canvas_zoom)),SDL_max(1,(int)(fx_node_h(n)*w->layout->canvas_zoom))};
             if(SDL_HasIntersection(&box,&rect) && !fx_chosen(n->row))w->selection[w->selection_count++]=n->row;
         } else if(n->at>=0) {
-            TsSourceRoute raw=mx_route(n->row,pages,bank);if(n->row.kind==3 && !raw.matrix_enabled)continue;
-            TsSourceRoute route=mx_display_route(raw);
-            for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)if(route.matrix_gain[d] && fx_canvas.dest[d]>=0) {
+            for(int d=0;d<TS_FX_DESTINATIONS;++d)if(fx_visible_gain(n->row,d,pages,bank) && fx_canvas.dest[d]>=0) {
                 FxCanvasNode *to=&fx_canvas.node[fx_canvas.dest[d]];
                 if(fx_cable_crosses(fx_xf(n->x+fx_node_w(n)),fx_yf(n->y+fx_node_h(n)*.5f),
-                    fx_xf(to->x),fx_yf(to->y+fx_node_h(to)*(d==to->destination?.5f:.8f)),box) && !fx_select_wire(n->row,d,0)) {
+                    fx_xf(to->x),fx_yf(to->y+fx_node_h(to)*(d==TS_FX_MOSAIC_BUS || d==to->destination?.5f:.8f)),box) && !fx_select_wire(n->row,d,0)) {
                     fx_cancel_gesture();return;
                 }
             }
@@ -213,6 +211,17 @@ static TsSourceRoute *fx_saved_route(MatrixSnapshot *s,MatrixRow row)
     for(int i=0;i<s->count;++i)if(mx_same(s->routes[i].row,row))return &s->routes[i].route;
     return NULL;
 }
+static int fx_remove_wire(MatrixSnapshot *s,FxCanvasWire wire)
+{
+    int slot=fx_control_source(wire.source);
+    if(slot>=0){TsModControls *c=&s->controls.effect[slot].modulation;int removed=0;
+        for(unsigned i=c->map_count;i-->0;)if(c->map[i].target==wire.target_id){memmove(c->map+i,c->map+i+1,(c->map_count-i-1)*sizeof(c->map[0]));memset(c->map+--c->map_count,0,sizeof(c->map[0]));removed=1;}return removed;}
+    TsSourceRoute *r=fx_saved_route(s,wire.source);if(!r)return 0;
+    if(wire.destination==TS_FX_MOSAIC_BUS){*r=(TsSourceRoute){.matrix_enabled=1,.pan=r->pan,.width=r->width};return 1;}
+    r->matrix_gain[wire.destination]=0;
+    if(wire.source.kind==2 || wire.source.kind==4)s->controls.delayed[wire.source.index]&=~ts_matrix_feedback_bit(wire.destination);
+    return 1;
+}
 /* Stage the whole edit before publishing it. No per-wire commits or partially
    removed branch, and the shared event wrapper creates exactly one undo step. */
 static void fx_edit_selection(int remove,int wheel,SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsSamplePages *pages,TsInstrument *bank)
@@ -223,6 +232,7 @@ static void fx_edit_selection(int remove,int wheel,SDL_AudioDeviceID device,Audi
     MatrixSnapshot *s=mx_snapshot(device,audio,pages,bank);if(!s)return;
     for(int i=0;i<fx_canvas.wires.count;++i) {
         FxCanvasWire wire=fx_canvas.wires.items[i];TsSourceRoute *r=fx_saved_route(s,wire.source);if(!r)continue;
+        if(wire.destination==TS_FX_MOSAIC_BUS || fx_control_source(wire.source)>=0)continue;
         if(r->mode==TS_SOURCE_INHERIT || mx_legacy_direct(*r)) {
             free(s);snprintf(w->status,sizeof(w->status),"UNCHANGED: CONVERT INHERITED / LEGACY SOURCE ROWS IN THE MATRIX FIRST.");return;
         }
@@ -233,6 +243,7 @@ static void fx_edit_selection(int remove,int wheel,SDL_AudioDeviceID device,Audi
     float factor=powf(10.f,SDL_clamp(wheel*.025f,-6.f,6.f)),low=0,high=1e9f;
     if(!remove)for(int i=0;i<fx_canvas.wires.count;++i) {
         FxCanvasWire wire=fx_canvas.wires.items[i];TsSourceRoute *r=fx_saved_route(s,wire.source);if(!r)continue;
+        if(wire.destination==TS_FX_MOSAIC_BUS || fx_control_source(wire.source)>=0)continue;
         int gain=r->matrix_gain[wire.destination];if(!gain)continue;
         int delayed=(wire.source.kind==2 || wire.source.kind==4) && (s->controls.delayed[wire.source.index]&ts_matrix_feedback_bit(wire.destination));
         low=fmaxf(low,1.f/gain);high=fminf(high,(delayed?500.f:2000.f)/gain);
@@ -240,6 +251,8 @@ static void fx_edit_selection(int remove,int wheel,SDL_AudioDeviceID device,Audi
     factor=SDL_clamp(factor,low,high);
     for(int i=0;i<fx_canvas.wires.count;++i) {
         FxCanvasWire wire=fx_canvas.wires.items[i];TsSourceRoute *r=fx_saved_route(s,wire.source);if(!r)continue;
+        if(remove){changed|=fx_remove_wire(s,wire);continue;}
+        if(wire.destination==TS_FX_MOSAIC_BUS || fx_control_source(wire.source)>=0)continue;
         int old=r->matrix_gain[wire.destination];if(!old)continue;
         int gain=remove?0:SDL_clamp((int)lroundf(old*factor),1,2000);
         if(wire.source.kind==2 || wire.source.kind==4) {

@@ -7,6 +7,7 @@ int ts_mod_field_available(const TsMatrixEffectControls *c,uint32_t child,unsign
 unsigned ts_mod_target_type(const TsMatrixEffectControls *c,uint32_t child);
 void ts_mod_parameter_name(const TsMatrixEffectControls *c,uint32_t child,unsigned field,char *text,size_t size);
 void ts_mod_parameter_value(const TsMatrixEffectControls *c,uint32_t child,unsigned field,float value,char *text,size_t size);
+float ts_mod_parameter_normalized(const TsMatrixEffectControls *c,const TsModMap *map);
 int ts_mod_apply(TsMatrixEffectControls *c,const TsModMap *map,float value);
 int ts_mod_assignments_valid(const TsMatrixControls *c);
 #endif

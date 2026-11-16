@@ -17,6 +17,7 @@ typedef struct {
     float seconds,beats,smooth;
     uint32_t seed;
     TsModPoint point[TS_MOD_POINTS];
+    unsigned detail_count;TsModPoint detail[TS_MOD_POINTS];
 } TsModLane;
 typedef struct {
     uint32_t target,child; /* Stable Matrix and pedal identities, never row indices. */
@@ -31,6 +32,7 @@ typedef struct {
 } TsModControls;
 typedef struct { double phase[TS_MOD_LANES]; uint32_t retrigger; } TsModState;
 void ts_mod_default(TsModControls *c);
+void ts_mod_curve_changed(TsModLane *lane);
 void ts_mod_resize(TsModLane *lane,unsigned points);
 void ts_mod_lane_default(TsModLane *lane,unsigned index);
 int ts_mod_valid(const TsModControls *c);
