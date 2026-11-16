@@ -174,6 +174,8 @@ They remain visible across movement filters so they can describe shared routing.
 ## Rug groups
 
 Select cards and/or text, then **Ctrl+G** to create a lightly shaded rug.
+This shortcut belongs to the focused window: in FX Canvas it groups objects;
+in Mosaic it opens Gallery. If grouping is unavailable, Ctrl+G stays in FX Canvas.
 Drag its title, border, or empty background to move every member, including
 members hidden by a movement filter. Cards and labels remain individually
 editable; their movement and scaling stay within the rug. **Alt+G** dissolves

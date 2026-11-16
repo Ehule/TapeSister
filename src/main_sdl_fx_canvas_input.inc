@@ -77,9 +77,14 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
     if(e->type==SDL_KEYDOWN) {
         SDL_Keycode key=e->key.keysym.sym;int mod=e->key.keysym.mod;
         if(e->key.repeat && (fx_canvas_key(key) || (mod&KMOD_CTRL)))return 1;
-        if(key==SDLK_g && !fx_canvas.meta && mx_editable()){
-            if(mod&KMOD_CTRL){fx_group_create();return 1;}
-            if(mod&KMOD_ALT){fx_group_ungroup();return 1;}}
+        if(key==SDLK_g && (mod&(KMOD_CTRL|KMOD_ALT))){
+            /* Own the chord even when grouping is unavailable. Forwarding it
+               to Mosaic would turn Ctrl+G into its Gallery shortcut. */
+            if(fx_canvas.meta)snprintf(w->status,sizeof(w->status),"RETURN TO FX CANVAS TO GROUP OBJECTS.");
+            else if(mx_editable()){
+                if(mod&KMOD_CTRL)fx_group_create();else fx_group_ungroup();}
+            return 1;
+        }
         if(key==SDLK_F2 && fx_canvas.group_selected){fx_properties_begin_group(fx_canvas.group_selected);return 1;}
         if(key==SDLK_t && !(mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI)) && !fx_canvas.meta) {
             fx_canvas.place_x=(SDL_clamp(fx_canvas.mouse_x,20,fx_right())-20)/l->canvas_zoom-l->canvas_x;
