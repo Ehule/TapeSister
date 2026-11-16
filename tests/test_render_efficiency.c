@@ -104,7 +104,8 @@ static void test_native_raster_cache(TsUiState *ui, TsInstrument *instrument)
 int main(void)
 {
     TsInstrument instrument;
-    TsUiState ui;
+    /* Match the application: UI state is too large for a nested render stack. */
+    static TsUiState ui;
     TsSample preview;
     TsSample drone;
     TsFramebuffer *framebuffer = malloc(sizeof(*framebuffer));
