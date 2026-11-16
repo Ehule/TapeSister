@@ -207,8 +207,10 @@ static void test_project_roundtrip_with_record_bank(void)
     TsInstrument restored_record;
     TsSamplePages pages;
     TsSamplePages restored;
-    TsSisterProjectState state;
-    TsSisterProjectState restored_state;
+    /* Keep large project fixtures off the stack; the application has a
+       separate startup regression with the normal 8 MiB desktop limit. */
+    static TsSisterProjectState state;
+    static TsSisterProjectState restored_state;
     char error[160];
     size_t copied;
     int state_present = 0;

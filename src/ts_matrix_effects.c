@@ -138,6 +138,8 @@ void ts_matrix_effects_suspend(TsMatrixEffects *f,unsigned mask)
         if(f->current[i])ts_pedalboard_finish_edits(f->current[i]->board);
         atomic_store_explicit(&f->remaining[i],0,memory_order_relaxed);f->fading&=~(1u<<i);
     }
+    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)if((mask&~f->suspended)&(1u<<i)){
+        TsMatrixEffectNode *n=f->current[i];if(n && n->type==TS_MATRIX_FX_MODULATOR)n->mod->envelope=0;}
     f->rendered=0;if(f->suspended!=mask)f->mod_remaining=0;f->suspended=mask;
 }
 static int effect_asleep(const TsMatrixEffects *f,int i)

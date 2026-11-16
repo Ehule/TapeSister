@@ -79,10 +79,13 @@ history and save with the project.
 | **DRAW** | Drag across the graph to draw a curve. Strokes interpolate between pointer events, preserve untouched sampled points, and include the release position. Audio publication is coalesced to UI frames and flushed on release. |
 | **POINTS** | Drag a point; double-click empty graph space to insert one; right-click an interior point to remove it. |
 | **SINE / TRI / SQUARE / RANDOM** | Replace the selected curve. Random uses the current point count. Square has editable, near-vertical edges. Generated points and the next random seed are saved, so loading never rolls a new shape. |
-| **POINT COUNT − / +** | Immediately add or remove points on the current curve (2–64). The wheel also changes the count. Added points follow the shape; removal simplifies the least significant corners first. |
+| **POINT COUNT − / +** | Immediately add or remove points on the current curve (2–64). The wheel also changes the count. The last detailed shape is retained: reducing to two points and increasing again recovers it. A new drawing stroke or generated shape becomes the new reference. |
 | **SMOOTH** | Drag to round the transitions between points without overshooting their values. Shift-drag gives finer adjustment. |
 | **LOOP / ONE SHOT** | Repeat the curve, or run once and hold its final value. Loop endpoints are joined when drawing, moving an endpoint, randomizing, or switching to Loop. |
-| **FREE / TEMPO** | Set cycle duration in seconds (0.05–14,400) or quarter-note beats (1/16–1,024). Free timing also exposes **FREQ** in Hz (1/14,400–20); frequency and seconds are reciprocal views of the same duration. Drag either value or double-click to type it. Tempo follows F11's master tempo, including the tracker clock when it is the enabled master source. |
+| **FREE / TEMPO** | Set cycle duration in seconds (0.05–14,400) or quarter-note beats (1/16–1,024). Free timing also exposes **FREQ** in Hz (1/14,400–20); in **LINKED** mode frequency and seconds are reciprocal. **UNLINKED** keeps them independent: duration × frequency sets cycles across the visible window. Drag, wheel, or double-click either value; Shift gives finer adjustment. Shaded levels show their logarithmic position. Tempo follows F11's master tempo, including the tracker clock when it is the enabled master source. |
+| **< M1 >** | Switch among the project’s Modulator instances without leaving this window. |
+| **INFLUENCE** | Blend all assignments from their authored parameter values (0%) to the curve ranges (100%). Available in the FX inspector and as another Modulator’s destination. |
+| **AUDIO KEY / A / R** | Blend an audio envelope into Influence. Connect audio to the lower input port and increase Audio Key; A/R control attack (1–1,000 ms) and release (10–10,000 ms). |
 | **RETRIGGER** | Restart this card's lanes from their first point. Tempo timing controls duration; it does not quantize this command or automatically retrigger at markers. |
 | **+ ASSIGN** | Choose an added effect or an individual pedal inside an added Pedalboard, then choose an available continuous parameter. |
 | **LOW / HIGH** | Drag the value, use its slider, or scroll over it. Wheel steps are 1%; Shift+wheel uses 0.1%. Each endpoint moves independently. Inverting the endpoints reverses that assignment. Cutoff is shown in Hz and output in dB; other ranges use normalized percentages. |
@@ -90,11 +93,30 @@ history and save with the project.
 | Lane square / top **ON** | Bypass one lane or the entire card. Double-click a lane name to rename it. |
 | **Esc / BACK** | Return to the window that opened the editor; Esc first cancels an open picker or text entry. |
 
-The ordinary audio path goes through the effects. Dashed lilac cables show
-parameter assignments; the Modulator has no audio input. Drag its output to an
-added effect (or select it and Ctrl+Shift-click the effect) to create an assignment
-and open the parameter picker. Edit/remove these control links in the modulation
-editor. Audio cable selection, gain and Clear Cables apply to audio routes.
+The ordinary audio path goes through the effects. Dashed lilac cables are
+parameter assignments. Adding or connecting a Modulator never opens its editor;
+double-click its card to edit. Control cables support click/box selection,
+right-click color, and Delete; deleting one removes the assignments represented
+by that cable. Shift+wheel changes audio cable gain, not control assignments.
+
+The Modulator’s lower audio input is a detector only: it produces no audio
+output. Audio Key defaults to 0%, preserving ordinary curve playback. At 100%,
+silence removes the Modulator’s influence and a full-scale peak permits full
+influence; intermediate levels scale it. The source may be another effect’s
+output, including a transient shaper. Influence can also be assigned by another
+Modulator. Control chains run in dependency order and direct/indirect control
+loops are rejected. Audio detector feedback is causal through the envelope and
+next control tick (up to about 6.7 ms at 48 kHz).
+
+In unlinked free timing, generated templates repeat analytically. Editing points
+or drawing captures the displayed window into the existing 64-point budget, so
+individual cycles can differ. Dense generated patterns lose fine detail when
+captured for drawing. Linking again preserves the current window in that same
+point budget. Tempo mode keeps its existing beats-per-window behavior.
+
+Inherited card-to-Mosaic-bus cables are selectable and deletable. Disconnecting
+creates an explicit silent route, matching F9. These operations share the
+same route data and undo history.
 
 Supported targets include native pedal controls, continuous Character Filter
 controls, added compressor controls, Meta FX macros, and host Mix/Output for
