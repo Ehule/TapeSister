@@ -452,7 +452,9 @@ int main(int argc, char **argv)
     e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=ts_health.window_id;e.button.button=SDL_BUTTON_LEFT;
     health_button_position(&e,TS_HEALTH_BUTTON_SAVE);assert(ts_audio_health_event(&e,main_window,a,ui));
     TsSessionLogStatus session;
-    for(int i=0;i<500;++i){ts_audio_session_update(a,ui);ts_session_log_status(&session);if(session.export_result!=1)break;SDL_Delay(10);}
+    /* Observe completion before the UI update that consumes it. The worker
+       may otherwise finish between that update and our status read. */
+    for(int i=0;i<500;++i){ts_session_log_status(&session);ts_audio_session_update(a,ui);if(session.export_result!=1)break;SDL_Delay(10);}
     assert(session.export_result==2);char *saved_path=SDL_GetClipboardText();assert(!strcmp(saved_path,session.export_path));SDL_free(saved_path);
     remove(session.export_path);
     char *project_dir=SDL_GetPrefPath("TapeSisterTests","Health Project");assert(project_dir);
@@ -460,7 +462,7 @@ int main(int argc, char **argv)
     /* A normal project save must not overwrite the user's clipboard. */
     assert(!SDL_SetClipboardText("keep my clipboard"));
     assert(ts_session_log_export_project(ui->project_path,0));
-    for(int i=0;i<500;++i){ts_audio_session_update(a,ui);ts_session_log_status(&session);if(session.export_result!=1)break;SDL_Delay(10);}
+    for(int i=0;i<500;++i){ts_session_log_status(&session);ts_audio_session_update(a,ui);if(session.export_result!=1)break;SDL_Delay(10);}
     assert(session.export_result==2 && strstr(session.export_path,"logs/health-session-"));
     saved_path=SDL_GetClipboardText();assert(!strcmp(saved_path,"keep my clipboard"));SDL_free(saved_path);
     /* SAVE SESSION follows the active project even after a previous export;
