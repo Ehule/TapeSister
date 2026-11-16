@@ -43,7 +43,7 @@ static int fx_label_edit_event(SDL_Event *e)
             memset(p->text,0,TS_FX_LABEL_TEXT);memcpy(p->text,s,(size_t)n);
             fx_clear_selection();fx_clear_wires();fx_canvas.label_selected=i;
         }
-        fx_label_cancel();return 1;
+        fx_groups_clamp();fx_label_cancel();return 1;
     }
     if(k==SDLK_BACKSPACE || k==SDLK_DELETE) {
         if(fx_canvas.label_all){memset(s,0,TS_FX_LABEL_TEXT);fx_canvas.label_cursor=0;}
@@ -151,7 +151,7 @@ static int fx_label_drag_event(SDL_Event *e,int x,int y)
             p->y=SDL_clamp(fx_canvas.label_origin.y+(y-fx_canvas.pointer_y)/z,-1000000.f,1000000.f);
             if(w->layout->canvas_snap && !(SDL_GetModState()&KMOD_ALT)){p->x=fx_snap(p->x);p->y=fx_snap(p->y);}
         }
-        w->dirty=1;
+        fx_groups_clamp();w->dirty=1;
     }
     if((e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_ESCAPE) || (e->type==SDL_MOUSEBUTTONDOWN && e->button.button==SDL_BUTTON_RIGHT))fx_cancel_gesture();
     else if((mode==FX_DRAG_LABEL && e->type==SDL_MOUSEBUTTONUP) || (mode!=FX_DRAG_LABEL &&

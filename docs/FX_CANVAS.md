@@ -115,8 +115,9 @@ captured for drawing. Linking again preserves the current window in that same
 point budget. Tempo mode keeps its existing beats-per-window behavior.
 
 Inherited card-to-Mosaic-bus cables are selectable and deletable. Disconnecting
-creates an explicit silent route, matching F9. These operations share the
-same route data and undo history.
+creates an explicit silent route, matching F9. Select cards and use **TO MOSAIC
+BUS** in the inspector to restore bus routing; equivalent controls are available
+for tracks and tiles. These operations share F9’s route data and undo history.
 
 Supported targets include native pedal controls, continuous Character Filter
 controls, added compressor controls, Meta FX macros, and host Mix/Output for
@@ -169,6 +170,28 @@ edits the text. **X or Delete** removes the selected label. Labels have no audio
 ports and deleting them cannot remove effects or cables. Up to 64 labels, their
 positions and sizes save with the project; edits share the Matrix undo history.
 They remain visible across movement filters so they can describe shared routing.
+
+## Rug groups
+
+Select cards and/or text, then **Ctrl+G** to create a lightly shaded rug.
+Drag its title, border, or empty background to move every member, including
+members hidden by a movement filter. Cards and labels remain individually
+editable; their movement and scaling stay within the rug. **Alt+G** dissolves
+the selected rug (or the rugs of selected members), retaining object positions.
+Escape cancels a drag; Ctrl+Z restores a group edit.
+
+An object belongs to one rug. Regrouping selected objects transfers their
+membership; rugs do not nest. They may overlap visually, with smaller rugs drawn
+last and winning background/title hit tests. Shift-drag still box-selects inside
+a rug, and Ctrl-drag selects cables. Right-click a rug or select it and press F2
+for its name, color, and opacity. Empty rugs can be selected and ungrouped.
+
+Up to 64 rugs and their memberships save with the project. Full project recall
+preserves them. Pasted modules and modules imported from another project start
+ungrouped to avoid adopting unrelated rug identities. Grouping has no effect on
+audio routing, modulation ownership, or DSP processing.
+
+![FX Canvas rug groups](screenshots/fx-canvas-groups.png)
 
 ## Pane widths
 
