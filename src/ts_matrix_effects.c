@@ -8,7 +8,7 @@
 typedef struct TsMatrixModulation {
     TsMatrixEffectControls authored,modulated;
     TsModState state; double step[TS_MOD_LANES];
-    unsigned running,owned,elapsed;
+    unsigned running,owned,elapsed;float envelope,attack,release;
 } TsMatrixModulation;
 struct TsMatrixEffectNode {
     TsProfileEffectIdentity profile;
@@ -46,7 +46,7 @@ void ts_matrix_effect_default(TsMatrixEffectControls *c,int type,uint32_t id)
     if(type==TS_MATRIX_FX_META)ts_meta_preset(&c->meta,0);
     if(type==TS_MATRIX_FX_PEDALBOARD)ts_pedalboard_default(&c->board);
     if(type==TS_MATRIX_FX_MODULATOR) {
-        ts_mod_default(&c->modulation);
+        c->a=.25f;c->b=.4f;c->c=0;ts_mod_default(&c->modulation);
         for(unsigned i=0;i<c->modulation.count;++i)c->modulation.lane[i].seed^=id*UINT32_C(0x85ebca6b);
     }
     if(type==TS_MATRIX_FX_RESONATOR)c->a=.25f;
@@ -79,7 +79,7 @@ static void node_set(TsMatrixEffectNode *n,const TsMatrixEffectControls *c,int c
         n->target=(float)c->enabled;n->remaining=n->total=frames;n->start=n->gate;
     }
     n->transition=c->transition;n->mix_target=c->mix;
-    if(n->type==TS_MATRIX_FX_MODULATOR)return;
+    if(n->type==TS_MATRIX_FX_MODULATOR){if(n->mod){n->mod->attack=1-expf(-1.f/(n->rate*.001f*powf(1000,c->a)));n->mod->release=1-expf(-1.f/(n->rate*.01f*powf(1000,c->b)));}return;}
     if(n->sunvox){ts_sunvox_set(n->sunvox,&c->sunvox);n->gain_target=powf(10,c->gain_db*.05f);}
     else if(n->board){ts_pedalboard_set(n->board,&c->board);n->gain_target=powf(10,c->gain_db*.05f);}
     else if(n->type==TS_MATRIX_FX_META){ts_meta_set(n->meta,&c->meta);n->gain_target=powf(10,c->gain_db*.05f);}
@@ -217,7 +217,7 @@ void ts_matrix_effects_commit(TsMatrixEffects *f,const TsMatrixControls *c,unsig
             if(c->effect[i].type==TS_MATRIX_FX_MODULATOR)f->mod_mask|=1u<<i;
         }
     }
-    p->changed=0;f->rate=rate;
+    f->mod_count=(unsigned)ts_mod_order(c,f->mod_order);p->changed=0;f->rate=rate;
 }
 void ts_matrix_effects_collect(TsMatrixEffects *f,TsMatrixEffectPlan *p)
 {
@@ -250,7 +250,7 @@ int ts_matrix_effects_restore(TsMatrixEffects *f,const TsMatrixControls *c,unsig
     next.worker=prepare_worker(&next,NULL);
     ts_matrix_effects_free(f);f->rate=rate;f->worker=next.worker;
     for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i){f->current[i]=next.current[i];next.current[i]=NULL;if(f->current[i])ts_pedalboard_profile_owner(f->current[i]->board,i+1,c->effect[i].id);if(c->effect[i].id && c->effect[i].type==TS_MATRIX_FX_MODULATOR)f->mod_mask|=1u<<i;}
-    return 1;
+    f->mod_count=(unsigned)ts_mod_order(c,f->mod_order);return 1;
 }
 void ts_matrix_effects_tick(TsMatrixEffects *f)
 {
@@ -263,7 +263,11 @@ void ts_matrix_effects_tick(TsMatrixEffects *f)
 }
 static TsStereoFrame node_process(TsMatrixEffects *f,int slot,TsMatrixEffectNode *n,TsStereoFrame in,TsStereoFrame key,int connected,int transitioning)
 {
-    if(!n || n->type==TS_MATRIX_FX_MODULATOR)return (TsStereoFrame){0,0};
+    if(!n)return (TsStereoFrame){0,0};
+    if(n->type==TS_MATRIX_FX_MODULATOR){TsMatrixModulation *m=n->mod;
+        if(m && m->authored.modulation.audio_amount>0){float peak=fminf(1,fmaxf(fabsf(key.l),fabsf(key.r)));if(!isfinite(peak))peak=0;
+            m->envelope+=(peak-m->envelope)*(peak>m->envelope?m->attack:m->release);if(m->envelope<1e-20f)m->envelope=0;}
+        return (TsStereoFrame){0,0};}
     if(n->remaining){--n->remaining;n->gate=n->start+(n->target-n->start)*(1-(double)n->remaining/n->total);}
     if(!n->sunvox && !n->board && !connected && !in.l && !in.r && !key.l && !key.r)return (TsStereoFrame){0,0};
     if(n->sunvox) {

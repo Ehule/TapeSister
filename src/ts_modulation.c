@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <inttypes.h>
 
+static float curve_value(const TsModLane *l,double phase);
 static int unit(float v){return isfinite(v) && v>=0 && v<=1;}
 static uint32_t random_next(uint32_t *s)
 {uint32_t x=*s?*s:0x6d2b79f5u;x^=x<<13;x^=x>>17;x^=x<<5;return *s=x;}
@@ -13,7 +14,7 @@ void ts_mod_curve_changed(TsModLane *l)
 void ts_mod_shape(TsModLane *l,int shape,unsigned points)
 {
     if(!l)return;
-    ts_mod_curve_changed(l);
+    ts_mod_curve_changed(l);l->cycles=1;
     unsigned n=points<2?2:points>TS_MOD_POINTS?TS_MOD_POINTS:points;
     if(shape==0)n=17;
     if(shape==1)n=3;
@@ -36,13 +37,14 @@ void ts_mod_resize(TsModLane *l,unsigned count)
 {
     if(!l || l->count<2 || l->count>TS_MOD_POINTS)return;
     count=count<2?2:count>TS_MOD_POINTS?TS_MOD_POINTS:count;
+    ts_mod_bake(l);
     if(count==l->count)return;
     if(!l->detail_count){l->detail_count=l->count;memcpy(l->detail,l->point,sizeof(l->detail));}
     l->count=l->detail_count;memcpy(l->point,l->detail,sizeof(l->point));
     while(l->count<count) {
         unsigned at=1;float span=0;
         for(unsigned i=1;i<l->count;++i)if(l->point[i].x-l->point[i-1].x>span){span=l->point[i].x-l->point[i-1].x;at=i;}
-        float x=(l->point[at-1].x+l->point[at].x)*.5f,y=ts_mod_value(l,x);
+        float x=(l->point[at-1].x+l->point[at].x)*.5f,y=curve_value(l,x);
         memmove(l->point+at+1,l->point+at,(l->count-at)*sizeof(l->point[0]));l->point[at]=(TsModPoint){x,y};++l->count;
     }
     while(l->count>count) {
@@ -56,7 +58,7 @@ void ts_mod_resize(TsModLane *l,unsigned count)
 void ts_mod_lane_default(TsModLane *l,unsigned i)
 {
     memset(l,0,sizeof(*l));snprintf(l->name,sizeof(l->name),"LANE %u",i+1);
-    l->enabled=1;l->seconds=90;l->beats=4;l->smooth=.65f;l->seed=0x6d2b79f5u+i*0x9e3779b9u;
+    l->enabled=1;l->seconds=90;l->frequency=1.f/90;l->cycles=1;l->beats=4;l->smooth=.65f;l->seed=0x6d2b79f5u+i*0x9e3779b9u;
     ts_mod_shape(l,0,17);
 }
 void ts_mod_default(TsModControls *c)
@@ -66,11 +68,13 @@ void ts_mod_default(TsModControls *c)
 }
 int ts_mod_valid(const TsModControls *c)
 {
-    if(!c || c->initialized!=1 || !c->count || c->count>TS_MOD_LANES || c->map_count>TS_MOD_MAPS)return 0;
+    if(!c || c->initialized!=1 || !c->count || c->count>TS_MOD_LANES || c->map_count>TS_MOD_MAPS || !unit(c->audio_amount))return 0;
     for(unsigned i=0;i<c->count;++i) {
         const TsModLane *l=&c->lane[i];
         if(l->enabled>1 || l->mode>TS_MOD_ONESHOT || l->timing>TS_MOD_TEMPO ||
            l->count<2 || l->count>TS_MOD_POINTS || !unit(l->smooth) ||
+           l->unlinked>1 || !isfinite(l->frequency) || l->frequency<1.f/14400 || l->frequency>20 ||
+           !isfinite(l->cycles) || l->cycles<.000001f || l->cycles>288000 ||
            !isfinite(l->seconds) || l->seconds<.05f || l->seconds>14400 ||
            !isfinite(l->beats) || l->beats<.0625f || l->beats>1024 ||
            !memchr(l->name,0,sizeof(l->name)))return 0;
@@ -91,7 +95,7 @@ int ts_mod_valid(const TsModControls *c)
     }
     return 1;
 }
-float ts_mod_value(const TsModLane *l,double phase)
+static float curve_value(const TsModLane *l,double phase)
 {
     if(!l || l->count<2 || l->count>TS_MOD_POINTS || !isfinite(phase))return 0;
     if(phase<=0)return l->point[0].y;
@@ -102,6 +106,23 @@ float ts_mod_value(const TsModLane *l,double phase)
     /* Smoothstep is bounded and does not overshoot feedback/level ranges. */
     t+=(t*t*(3-2*t)-t)*l->smooth;
     return l->point[lo].y+(l->point[hi].y-l->point[lo].y)*t;
+}
+/* Generated templates repeat analytically; drawing bakes only the visible
+   window into the editor's bounded point budget, allowing individual cycles. */
+float ts_mod_value(const TsModLane *l,double phase)
+{
+    if(l && l->unlinked && !l->timing && l->cycles>0){
+        double p=fmax(0,fmin(1,phase))*((double)l->seconds*l->frequency/l->cycles);
+        phase=p-floor(p);if(phase<1e-7 && p>0 && phase>=0)phase=1;
+    }
+    return curve_value(l,phase);
+}
+void ts_mod_bake(TsModLane *l)
+{
+    if(!l || !l->unlinked || l->timing || fabs((double)l->seconds*l->frequency/l->cycles-1)<1e-6)return;
+    TsModLane old=*l;ts_mod_curve_changed(l);l->count=TS_MOD_POINTS;
+    for(unsigned i=0;i<l->count;++i){float x=i/(float)(l->count-1);l->point[i]=(TsModPoint){x,ts_mod_value(&old,x)};}
+    l->cycles=l->seconds*l->frequency;
 }
 void ts_mod_advance(TsModState *s,const TsModControls *c,unsigned frames,unsigned rate,double quarter)
 {
@@ -118,10 +139,12 @@ void ts_mod_advance(TsModState *s,const TsModControls *c,unsigned frames,unsigne
 int ts_mod_write(FILE *f,const char *prefix,const TsModControls *c)
 {
     if(!ts_mod_valid(c) || fprintf(f,"%s.Header=1,%u,%u\n",prefix,c->count,c->map_count)<0)return 0;
+    if(fprintf(f,"%s.AudioKey=%.9g\n",prefix,c->audio_amount)<0)return 0;
     for(unsigned i=0;i<c->count;++i) {
         const TsModLane *l=&c->lane[i];
         if(fprintf(f,"%s.Lane%u=%u,%u,%u,%u,%.9g,%.9g,%.9g,%" PRIu32 "\n%s.Name%u=%s\n",
             prefix,i,l->enabled,l->mode,l->timing,l->count,l->seconds,l->beats,l->smooth,l->seed,prefix,i,l->name)<0)return 0;
+        if(fprintf(f,"%s.Timing%u=%u,%.9g,%.9g\n",prefix,i,l->unlinked,l->frequency,l->cycles)<0)return 0;
         for(unsigned j=0;j<l->count;++j)if(fprintf(f,"%s.Point%u.%u=%.9g,%.9g\n",prefix,i,j,l->point[j].x,l->point[j].y)<0)return 0;
         if(l->detail_count){if(fprintf(f,"%s.Detail%u=%u\n",prefix,i,l->detail_count)<0)return 0;
             for(unsigned j=0;j<l->detail_count;++j)if(fprintf(f,"%s.DetailPoint%u.%u=%.9g,%.9g\n",prefix,i,j,l->detail[j].x,l->detail[j].y)<0)return 0;}
@@ -147,14 +170,18 @@ int ts_mod_read(TsModControls *c,const char *key,const char *v)
     } else {
         if(n.initialized!=2)return -1;
         if(!strcmp(key,"End")) {n.initialized=1;if(strcmp(v,"1") || !ts_mod_valid(&n))return -1;}
+        else if(!strcmp(key,"AudioKey")){if(!numbers(v,x,1) || !unit(x[0]))return -1;n.audio_amount=x[0];}
         else if(sscanf(key,"DetailPoint%u.%u%n",&i,&j,&used)==2 && used && !key[used] && i<n.count && j<n.lane[i].detail_count) {
             if(!numbers(v,x,2) || !unit(x[0]) || !unit(x[1]))return -1;n.lane[i].detail[j]=(TsModPoint){x[0],x[1]};
         } else if(sscanf(key,"Detail%u%n",&i,&used)==1 && used && !key[used] && i<n.count) {
             if(!numbers(v,x,1) || !whole(x[0],2,TS_MOD_POINTS))return -1;n.lane[i].detail_count=x[0];
+        } else if(sscanf(key,"Timing%u%n",&i,&used)==1 && used && !key[used] && i<n.count) {
+            if(!numbers(v,x,3) || !whole(x[0],0,1) || x[1]<1./14400 || x[1]>20 || x[2]<.000001 || x[2]>288000)return -1;
+            n.lane[i].unlinked=x[0];n.lane[i].frequency=x[1];n.lane[i].cycles=x[2];
         } else if(sscanf(key,"Lane%u%n",&i,&used)==1 && used && !key[used] && i<n.count) {
             if(!numbers(v,x,8) || !whole(x[0],0,1) || !whole(x[1],0,1) || !whole(x[2],0,1) || !whole(x[3],2,TS_MOD_POINTS) ||
                x[4]<.05 || x[4]>14400 || x[5]<.0625 || x[5]>1024 || x[6]<0 || x[6]>1 || !whole(x[7],0,UINT32_MAX))return -1;
-            TsModLane *l=&n.lane[i];l->enabled=x[0];l->mode=x[1];l->timing=x[2];l->count=x[3];l->seconds=x[4];l->beats=x[5];l->smooth=x[6];l->seed=x[7];
+            TsModLane *l=&n.lane[i];l->enabled=x[0];l->mode=x[1];l->timing=x[2];l->count=x[3];l->seconds=x[4];l->frequency=1.f/l->seconds;l->cycles=1;l->beats=x[5];l->smooth=x[6];l->seed=x[7];
         } else if(sscanf(key,"Name%u%n",&i,&used)==1 && used && !key[used] && i<n.count) {
             if(strlen(v)>=sizeof(n.lane[i].name))return -1;
             for(const unsigned char *p=(const unsigned char*)v;*p;++p)if(*p<32 || *p>126 || *p=='=')return -1;

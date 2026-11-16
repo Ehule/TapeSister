@@ -85,7 +85,7 @@ static int fx_replace_effect(int type,const TsSunVoxControls *patch,SDL_AudioDev
     TsMatrixEffectControls *c=&s->controls.effect[slot];
     c->enabled=old.enabled;c->mix=old.mix;c->gain_db=old.gain_db;c->transition=old.transition;
     if(patch)c->sunvox=*patch;
-    if(type!=TS_MATRIX_FX_COMPRESSOR) {
+    if(type!=TS_MATRIX_FX_COMPRESSOR && type!=TS_MATRIX_FX_MODULATOR) {
         int sc=TS_MATRIX_EFFECT_SC_BASE+slot;
         for(int i=0;i<TS_MATRIX_ROWS;++i){s->controls.row[i].matrix_gain[sc]=0;s->controls.delayed[i]&=~ts_matrix_feedback_bit(sc);}
         for(int i=0;i<s->count;++i)s->routes[i].route.matrix_gain[sc]=0;

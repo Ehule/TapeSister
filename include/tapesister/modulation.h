@@ -15,6 +15,7 @@ typedef struct {
     char name[24];
     unsigned enabled,mode,timing,count;
     float seconds,beats,smooth;
+    unsigned unlinked;float frequency,cycles; /* Authored template cycles; seconds defines the visible window. */
     uint32_t seed;
     TsModPoint point[TS_MOD_POINTS];
     unsigned detail_count;TsModPoint detail[TS_MOD_POINTS];
@@ -25,7 +26,7 @@ typedef struct {
     float low,high;
 } TsModMap;
 typedef struct {
-    unsigned initialized,count,map_count;
+    unsigned initialized,count,map_count;float audio_amount;
     uint32_t retrigger; /* Live command serial; deliberately not serialized. */
     TsModLane lane[TS_MOD_LANES];
     TsModMap map[TS_MOD_MAPS];
@@ -33,6 +34,7 @@ typedef struct {
 typedef struct { double phase[TS_MOD_LANES]; uint32_t retrigger; } TsModState;
 void ts_mod_default(TsModControls *c);
 void ts_mod_curve_changed(TsModLane *lane);
+void ts_mod_bake(TsModLane *lane);
 void ts_mod_resize(TsModLane *lane,unsigned points);
 void ts_mod_lane_default(TsModLane *lane,unsigned index);
 int ts_mod_valid(const TsModControls *c);

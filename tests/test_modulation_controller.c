@@ -119,6 +119,10 @@ int main(int argc,char **argv)
     wheel(1110,90,1,0);assert(fabsf(m->lane[0].seconds-seconds)<1e-6f);
     drag(60,736,210,736);assert(matrix_window.controls.effect[mod].mix==1);
     drag(210,736,60,736);assert(matrix_window.controls.effect[mod].mix==.5f);key(SDLK_z,KMOD_CTRL);
+    click(1150,137);assert(m->lane[0].unlinked);float frequency=m->lane[0].frequency;seconds=m->lane[0].seconds;
+    wheel(800,90,2,0);assert(m->lane[0].seconds>seconds && m->lane[0].frequency==frequency);seconds=m->lane[0].seconds;
+    wheel(1110,90,2,0);assert(m->lane[0].frequency>frequency && m->lane[0].seconds==seconds);
+    click(1150,137);assert(!m->lane[0].unlinked && m->lane[0].count==64);
     float low=m->map[0].low;wheel(960,612,1,0);assert(fabsf(m->map[0].low-low-.01f)<1e-6f);
     wheel(960,612,1,1);assert(fabsf(m->map[0].low-low)<1e-6f);
     SDL_SetModState(KMOD_SHIFT);wheel(960,612,1,0);SDL_SetModState(KMOD_NONE);assert(fabsf(m->map[0].low-low-.001f)<1e-6f);
@@ -137,6 +141,11 @@ int main(int argc,char **argv)
     for(int i=0;i<3;++i){SDL_SetWindowSize(modulation_window.window,sizes[i][0],sizes[i][1]);click(430,90);assert(m->lane[0].mode==TS_MOD_ONESHOT);click(310,90);assert(!m->lane[0].mode);}
     key(SDLK_ESCAPE,0);assert(!modulation_window.visible);
     assert(modulation_connect(c.effect[mod].id,TS_MATRIX_EFFECT_BASE+board,0,&audio,&ui,&pages,&bank));assert(!modulation_window.visible && !modulation_window.menu && m->map_count==3);
+    int other=ts_matrix_effect_add(&matrix_window.controls,TS_MATRIX_FX_MODULATOR);assert(other>=0);uint32_t other_id=matrix_window.controls.effect[other].id;mx_commit_controls(0,&audio,&ui);
+    modulation_open(c.effect[mod].id);click(755,32);assert(modulation_window.node==other_id);click(640,32);assert(modulation_window.node==c.effect[mod].id);
+    drag(50,667,200,667);assert(matrix_window.controls.effect[mod].modulation.audio_amount==.5f);key(SDLK_z,KMOD_CTRL);
+    modulation_hide();assert(modulation_connect(other_id,TS_MATRIX_EFFECT_BASE+mod,0,&audio,&ui,&pages,&bank));assert(!modulation_window.visible && matrix_window.controls.effect[other].modulation.map_count==1);
+    assert(modulation_connect(c.effect[mod].id,TS_MATRIX_EFFECT_BASE+other,0,&audio,&ui,&pages,&bank));assert(matrix_window.controls.effect[mod].modulation.map_count==3 && ts_matrix_valid(&matrix_window.controls));
     modulation_open(c.effect[mod].id);ts_matrix_effect_remove(&matrix_window.controls,mod);assert(!modulation_resolve() && !modulation_window.visible);
     modulation_close();matrix_history_clear();ts_sister_runtime_disable(&audio.sister);ts_sample_pages_free(&pages);ts_instrument_free(&bank);SDL_Quit();
     puts("Modulation native curve edits, menus, ranges, undo, resizing, stable IDs, connect gesture and Escape passed.");return 0;

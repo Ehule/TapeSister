@@ -20,7 +20,8 @@ static int filter_field(unsigned f)
 }
 int ts_mod_field_available(const TsMatrixEffectControls *c,uint32_t child,unsigned field)
 {
-    if(!c || !c->id || c->type==TS_MATRIX_FX_MODULATOR)return 0;
+    if(!c || !c->id)return 0;
+    if(c->type==TS_MATRIX_FX_MODULATOR)return !child && field==TS_MOD_MIX;
     int i=child_at(c,child),type=child?(i<0?0:c->board.slot[i].type):native_type(c->type);
     if(child && (i<0 || !type))return 0;
     if(field==TS_MOD_MIX)return 1;
@@ -39,8 +40,34 @@ int ts_mod_target(const TsMatrixControls *c,const TsModMap *m)
     }
     return -1;
 }
+/* Control links form a DAG, including bypassed assignments. Audio-key
+   feedback is causal through the detector and the next 150 Hz control tick. */
+int ts_mod_order(const TsMatrixControls *c,unsigned char *order)
+{
+    unsigned incoming[TS_MATRIX_EFFECT_CAPACITY]={0},pending=0;int count=0;
+    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)if(c->effect[i].id && c->effect[i].type==TS_MATRIX_FX_MODULATOR){
+        pending|=1u<<i;const TsModControls *m=&c->effect[i].modulation;
+        for(unsigned k=0;k<m->map_count;++k){int j=ts_mod_target(c,&m->map[k]);
+            if(j>=0 && c->effect[j].type==TS_MATRIX_FX_MODULATOR)incoming[j]|=1u<<i;}}
+    while(pending){int i=0;while(i<TS_MATRIX_EFFECT_CAPACITY && (!(pending&(1u<<i)) || (incoming[i]&pending)))++i;
+        if(i==TS_MATRIX_EFFECT_CAPACITY)return -1;if(order)order[count]=(unsigned char)i;++count;pending&=~(1u<<i);}
+    return count;
+}
+int ts_mod_can_connect(const TsMatrixControls *c,uint32_t source,uint32_t target)
+{
+    if(source==target)return 0;
+    unsigned visited=0;uint32_t pending[TS_MATRIX_EFFECT_CAPACITY];int count=0;pending[count++]=target;
+    while(count){uint32_t id=pending[--count];if(id==source)return 0;
+        for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)if(c->effect[i].id==id && c->effect[i].type==TS_MATRIX_FX_MODULATOR && !(visited&(1u<<i))){
+            visited|=1u<<i;const TsModControls *m=&c->effect[i].modulation;
+            for(unsigned k=0;k<m->map_count;++k){int j=ts_mod_target(c,&m->map[k]);if(j<0 || c->effect[j].type!=TS_MATRIX_FX_MODULATOR || (visited&(1u<<j)))continue;
+                int duplicate=0;for(int n=0;n<count;++n)duplicate|=pending[n]==c->effect[j].id;
+                if(!duplicate && count<TS_MATRIX_EFFECT_CAPACITY)pending[count++]=c->effect[j].id;}}}
+    return 1;
+}
 int ts_mod_assignments_valid(const TsMatrixControls *c)
 {
+    if(ts_mod_order(c,NULL)<0)return 0;
     for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)if(c->effect[i].type==TS_MATRIX_FX_MODULATOR && c->effect[i].id) {
         const TsModControls *a=&c->effect[i].modulation;
         for(unsigned m=0;m<a->map_count;++m)for(int j=0;j<i;++j)if(c->effect[j].type==TS_MATRIX_FX_MODULATOR && c->effect[j].id) {
@@ -53,7 +80,7 @@ int ts_mod_assignments_valid(const TsMatrixControls *c)
 }
 void ts_mod_parameter_name(const TsMatrixEffectControls *c,uint32_t child,unsigned field,char *s,size_t size)
 {
-    if(field==TS_MOD_MIX){snprintf(s,size,"MIX");return;}
+    if(field==TS_MOD_MIX){snprintf(s,size,c->type==TS_MATRIX_FX_MODULATOR?"INFLUENCE":"MIX");return;}
     if(field==TS_MOD_GAIN){snprintf(s,size,"OUTPUT");return;}
     int at=child_at(c,child),type=child && at>=0?c->board.slot[at].type:native_type(c->type);
     if(type==TS_SISTER_FX_FILTER && field>=TS_MOD_FILTER && field<TS_MOD_FILTER+TS_CF_COUNT) {

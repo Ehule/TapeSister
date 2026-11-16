@@ -24,7 +24,8 @@ int ts_matrix_destination_active(const TsMatrixControls *c,int d)
     if(d<0 || d>=TS_MATRIX_DESTINATIONS)return 0;
     if(d<TS_MATRIX_SHARED_DESTINATIONS || d>=TS_MATRIX_AMBISONICS)return 1;
     int i=d<TS_MATRIX_EFFECT_SC_BASE?d-TS_MATRIX_EFFECT_BASE:d-TS_MATRIX_EFFECT_SC_BASE;
-    return c->effect[i].id && c->effect[i].type!=TS_MATRIX_FX_MODULATOR && (d<TS_MATRIX_EFFECT_SC_BASE || c->effect[i].type==TS_MATRIX_FX_COMPRESSOR);
+    return c->effect[i].id && (d<TS_MATRIX_EFFECT_SC_BASE?c->effect[i].type!=TS_MATRIX_FX_MODULATOR:
+        c->effect[i].type==TS_MATRIX_FX_COMPRESSOR || c->effect[i].type==TS_MATRIX_FX_MODULATOR);
 }
 int ts_matrix_effect_add(TsMatrixControls *c,int type)
 {
@@ -119,7 +120,7 @@ int ts_matrix_valid(const TsMatrixControls *c)
     for(int s=0;s<TS_MATRIX_ROWS;++s) {
         if(!ts_source_route_valid(&c->row[s],0) || !c->row[s].matrix_enabled)return 0;
         for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)if(c->effect[i].id && c->effect[i].type==TS_MATRIX_FX_MODULATOR) {
-            if(c->row[s].matrix_gain[TS_MATRIX_EFFECT_BASE+i] || c->row[s].matrix_gain[TS_MATRIX_EFFECT_SC_BASE+i])return 0;
+            if(c->row[s].matrix_gain[TS_MATRIX_EFFECT_BASE+i])return 0;
             if(s==TS_MATRIX_EFFECT_BASE+i)for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)if(c->row[s].matrix_gain[d])return 0;
         }
         if(ts_matrix_is_processor(s)) {

@@ -24,6 +24,9 @@ static void modulation_flush(SDL_AudioDeviceID device,AudioState *audio,TsUiStat
     if(!modulation_window.pending)return;
     modulation_window.pending=0;mx_commit_controls(device,audio,ui);
 }
+static float mod_hz(const TsModLane *l){return l->unlinked?l->frequency:1.f/l->seconds;}
+static void mod_set_hz(TsModLane *l,float hz)
+{hz=SDL_clamp(hz,1.f/14400.f,20.f);if(l->unlinked)l->frequency=hz;else l->seconds=1.f/hz;}
 static void mod_edit_begin(int field,const char *text)
 {
     modulation_window.edit=field;snprintf(modulation_window.text,sizeof(modulation_window.text),"%.23s",text);
@@ -170,7 +173,7 @@ static int mod_choices(ModChoice *out,int capacity,const TsModControls *c)
         }
     } else for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i) {
         const TsMatrixEffectControls *v=&matrix_window.controls.effect[i];
-        if(!v->id || v->type==TS_MATRIX_FX_MODULATOR)continue;
+        if(!v->id || !ts_mod_can_connect(&matrix_window.controls,modulation_window.node,v->id))continue;
         for(int k=-1;k<(v->type==TS_MATRIX_FX_PEDALBOARD?v->board.count:0) && n<capacity;++k) {
             uint32_t child=k<0?0:v->board.slot[k].id;int f=mod_first_field(v,child,at);
             if(f<0)continue;
@@ -218,24 +221,25 @@ static void modulation_paint(SDL_AudioDeviceID device,AudioState *audio,TsUiStat
         mod_text(30,y+88,s,MOD_DIM,1);
     }
     mod_button(24,612,226,"+ ADD LANE",0);
-    mod_text(24,660,"DOUBLE-CLICK NAME TO RENAME",MOD_DIM,1);
-    mod_text(24,680,"LANES RUN WHEN ASSIGNED",MOD_DIM,1);
-    mod_text(24,696,"TO AN ACTIVE EFFECT.",MOD_DIM,1);
+    char key_text[40];snprintf(key_text,sizeof(key_text),"AUDIO KEY %.0f%%",v->modulation.audio_amount*100);mod_button(24,654,226,key_text,0);mod_rect(34,681,(int)(206*v->modulation.audio_amount),3,mod_ink[1]);
+    snprintf(key_text,sizeof(key_text),"A %.0fMS",powf(1000,v->a));mod_button(24,690,109,key_text,0);
+    snprintf(key_text,sizeof(key_text),"R %.0fMS",10*powf(1000,v->b));mod_button(141,690,109,key_text,0);
     char influence[32];snprintf(influence,sizeof(influence),"INFLUENCE %.0f%%",v->mix*100);mod_button(24,724,226,influence,0);mod_rect(34,751,(int)(206*v->mix),3,mod_ink[0]);
     mod_button(276,78,90,"LOOP",!l->mode);mod_button(374,78,130,"ONE SHOT",l->mode);
     mod_button(530,78,90,"FREE",!l->timing);mod_button(628,78,100,"TEMPO",l->timing);
     char s[160];snprintf(s,sizeof(s),"%g %s",l->timing?l->beats:l->seconds,l->timing?"BEATS":"SEC");
     mod_button(744,78,244,s,0);
     mod_rect(754,105,(int)(224*logf((l->timing?l->beats:l->seconds)/(l->timing?.0625f:.05f))/logf(l->timing?16384.f:288000.f)),3,mod_ink[0]);
-    if(!l->timing){snprintf(s,sizeof(s),"FREQ %.3g HZ",1.f/l->seconds);mod_button(1006,78,250,s,0);mod_rect(1016,105,(int)(230*logf((1.f/l->seconds)*14400.f)/logf(288000.f)),3,mod_ink[0]);}
+    if(!l->timing){snprintf(s,sizeof(s),"FREQ %.3g HZ",mod_hz(l));mod_button(1006,78,250,s,0);mod_rect(1016,105,(int)(230*logf((mod_hz(l))*14400.f)/logf(288000.f)),3,mod_ink[0]);}
     snprintf(s,sizeof(s),"%.23s  /  %s",l->name,l->mode?"ONE SHOT HOLDS LAST VALUE":"LOOPING CURVE");mod_text(278,132,s,color,2);
+    if(!l->timing){mod_button(1070,122,186,l->unlinked?"UNLINKED":"LINKED",!l->unlinked);snprintf(s,sizeof(s),"%.3g CYCLES",l->unlinked?l->seconds*l->frequency:1.f);mod_text(900,132,s,MOD_DIM,1);}
     mod_rect(MOD_GX-16,MOD_GY-12,MOD_GW+32,MOD_GH+34,0xff1b2026u);
     for(int i=0;i<=4;++i) {
         int yy=MOD_GY+i*MOD_GH/4;mod_line(MOD_GX,yy,MOD_GX+MOD_GW,yy,0xff353c43u);
         int xx=MOD_GX+i*MOD_GW/4;mod_line(xx,MOD_GY,xx,MOD_GY+MOD_GH,0xff353c43u);
     }
     mod_curve(l,MOD_GX,MOD_GY,MOD_GW,MOD_GH,color,1);
-    if(!modulation_window.draw)for(unsigned i=0;i<l->count;++i)mod_rect(MOD_GX+(int)(l->point[i].x*MOD_GW)-3,MOD_GY+MOD_GH-(int)(l->point[i].y*MOD_GH)-3,7,7,MOD_TEXT);
+    if(!modulation_window.draw){TsModLane shown=*l;ts_mod_bake(&shown);for(unsigned i=0;i<shown.count;++i)mod_rect(MOD_GX+(int)(shown.point[i].x*MOD_GW)-3,MOD_GY+MOD_GH-(int)(shown.point[i].y*MOD_GH)-3,7,7,MOD_TEXT);}
     int cursor=MOD_GX+(int)(phase[modulation_window.lane]*MOD_GW);mod_line(cursor,MOD_GY,cursor,MOD_GY+MOD_GH,0xfff0e9dfu);
     mod_text(MOD_GX,MOD_GY+MOD_GH+12,"START",MOD_DIM,1);mod_text(MOD_GX+MOD_GW-18,MOD_GY+MOD_GH+12,"END",MOD_DIM,1);
     mod_button(276,460,90,"DRAW",modulation_window.draw);mod_button(374,460,100,"POINTS",!modulation_window.draw);
@@ -290,7 +294,7 @@ static void mod_draw(TsModLane *l,int x,int y,int first)
 {
     x=SDL_clamp(x,MOD_GX,MOD_GX+MOD_GW);y=SDL_clamp(y,MOD_GY,MOD_GY+MOD_GH);
     if(first) {
-        ts_mod_curve_changed(l);
+        ts_mod_bake(l);ts_mod_curve_changed(l);
         /* Do not re-smooth already sampled freehand data on each new stroke. */
         int uniform=l->count==TS_MOD_POINTS;
         for(unsigned i=0;uniform && i<l->count;++i)uniform=fabsf(l->point[i].x-i/(float)(TS_MOD_POINTS-1))<.000001f;
@@ -375,7 +379,7 @@ static int modulation_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioSta
                 if(modulation_window.edit==1)snprintf(l->name,sizeof(l->name),"%.23s",modulation_window.text);
                 else {char *end;float value=strtof(modulation_window.text,&end);
                     if(end!=modulation_window.text && !*end && isfinite(value)) {
-                        if(modulation_window.edit==3){if(value>0)l->seconds=1.f/SDL_clamp(value,1.f/14400.f,20.f);}
+                        if(modulation_window.edit==3){if(value>0)mod_set_hz(l,value);}
                         else if(l->timing)l->beats=SDL_clamp(value,.0625f,1024.f);else l->seconds=SDL_clamp(value,.05f,14400.f);
                     }}
                 modulation_window.edit=0;SDL_StopTextInput();mx_commit_controls(device,audio,ui);ui->project_modified=1;
@@ -430,7 +434,7 @@ static int modulation_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioSta
         int at=mod_map_at(c,(y-600)/30);if(at>=0){modulation_window.menu=x<650?1:2;modulation_window.menu_row=at;modulation_window.menu_first=0;}return 1;
     }
     if(left && x>=744 && x<1256 && (x<988 || (!l->timing && x>=1006)) && y>=78 && y<108 && e->button.clicks>=2) {
-        char text[40];int hz=!l->timing && x>=1006;snprintf(text,sizeof(text),"%g",hz?1.f/l->seconds:l->timing?l->beats:l->seconds);mod_edit_begin(hz?3:2,text);return 1;
+        char text[40];int hz=!l->timing && x>=1006;snprintf(text,sizeof(text),"%g",hz?mod_hz(l):l->timing?l->beats:l->seconds);mod_edit_begin(hz?3:2,text);return 1;
     }
     if(e->type==SDL_MOUSEWHEEL && modulation_window.drag<0) {
         int change=e->wheel.y*(e->wheel.direction==SDL_MOUSEWHEEL_FLIPPED?-1:1),changed=0;
@@ -442,7 +446,7 @@ static int modulation_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioSta
         } else if(y>=78 && y<108 && x>=744 && (x<988 || (!l->timing && x>=1006))) {
             float factor=powf(2,change*((SDL_GetModState()&KMOD_SHIFT)?.01f:.1f));
             if(l->timing)l->beats=SDL_clamp(l->beats*factor,.0625f,1024.f);
-            else l->seconds=SDL_clamp(l->seconds*(x>=1006?1/factor:factor),.05f,14400.f);changed=1;
+            else if(x>=1006)mod_set_hz(l,mod_hz(l)*factor);else l->seconds=SDL_clamp(l->seconds*factor,.05f,14400.f);changed=1;
         } else if(y>=460 && y<490 && x>=872 && x<984){ts_mod_resize(l,SDL_clamp((int)l->count+change,2,TS_MOD_POINTS));changed=1;}
         if(changed){mx_commit_controls(device,audio,ui);ui->project_modified=1;}
         modulation_history_finish(device,audio,pages,bank);return 1;
@@ -450,19 +454,22 @@ static int modulation_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioSta
     if(click && !modulation_window.before)modulation_window.before=mx_snapshot(device,audio,pages,bank);
     int changed=0;
     if(left) {
-        if(y>=18 && y<48 && x>=800 && x<990){++c->retrigger;changed=1;}
+        if(y>=122 && y<152 && x>=1070 && !l->timing){ts_mod_bake(l);if(!l->unlinked){l->frequency=1.f/l->seconds;l->cycles=1;}l->unlinked=!l->unlinked;changed=1;}
+        else if(y>=18 && y<48 && x>=800 && x<990){++c->retrigger;changed=1;}
         else if(y>=18 && y<48 && x>=1006 && x<1114){v->enabled=!v->enabled;changed=1;}
         else if(x<260) {
             int r=(y-126)/117,i=modulation_window.first+r;
             if(y>=126 && r<4 && i<(int)c->count && x>=224 && y<126+r*117+105){c->lane[i].enabled=!c->lane[i].enabled;changed=1;}
+            else if(y>=654 && y<684){modulation_window.drag=6;modulation_window.origin=v->modulation.audio_amount;}
+            else if(y>=690 && y<720){modulation_window.drag=x<135?7:8;modulation_window.origin=x<135?v->a:v->b;}
             else if(y>=724 && y<754){modulation_window.drag=5;modulation_window.origin=v->mix;}
             else if(y>=612 && y<642 && c->count<TS_MOD_LANES){ts_mod_lane_default(&c->lane[c->count],c->count);modulation_window.lane=c->count++;modulation_window.first=modulation_window.lane/4*4;modulation_window.page=0;changed=1;}
         } else if(y>=78 && y<108) {
             if(x<504){l->mode=x>=374;changed=1;if(!l->mode){l->point[l->count-1].y=l->point[0].y;if(l->detail_count)l->detail[l->detail_count-1].y=l->detail[0].y;}}
             else if(x>=530 && x<728){l->timing=x>=628;changed=1;}
-            else if(x>=744 && (x<988 || (!l->timing && x>=1006))){int hz=!l->timing && x>=1006;modulation_window.drag=hz?4:2;modulation_window.origin=hz?1.f/l->seconds:l->timing?l->beats:l->seconds;}
+            else if(x>=744 && (x<988 || (!l->timing && x>=1006))){int hz=!l->timing && x>=1006;modulation_window.drag=hz?4:2;modulation_window.origin=hz?mod_hz(l):l->timing?l->beats:l->seconds;}
         } else if(y>=460 && y<490) {
-            if(x<474)modulation_window.draw=x<374;
+            if(x<474){modulation_window.draw=x<374;if(!modulation_window.draw){ts_mod_bake(l);changed=1;}}
             else if(x>=492 && x<860){ts_mod_shape(l,x<572?0:x<652?1:x<756?3:2,l->count);changed=1;}
             else if(x>=872 && x<984){ts_mod_resize(l,SDL_clamp((int)l->count+(x<928?-1:1),2,TS_MOD_POINTS));changed=1;}
             else if(x>=996){modulation_window.drag=3;modulation_window.origin=l->smooth;}
@@ -481,6 +488,7 @@ static int modulation_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioSta
     if(click && x>=MOD_GX && x<=MOD_GX+MOD_GW && y>=MOD_GY && y<=MOD_GY+MOD_GH) {
         if(modulation_window.draw && left){modulation_window.drag=0;mod_draw(l,x,y,1);changed=1;}
         else if(!modulation_window.draw) {
+            ts_mod_bake(l);
             int nearest=-1;double dist=144;
             for(unsigned i=0;i<l->count;++i){double dx=MOD_GX+l->point[i].x*MOD_GW-x,dy=MOD_GY+(1-l->point[i].y)*MOD_GH-y,d=dx*dx+dy*dy;if(d<dist){dist=d;nearest=i;}}
             if(left && nearest<0 && e->button.clicks>=2 && l->count<TS_MOD_POINTS) {
@@ -504,7 +512,10 @@ static int modulation_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioSta
         if(drag==0)mod_draw(l,x,y,0);
         else if(drag==1)mod_point_move(l,x,y);
         else if(drag==2){float value=modulation_window.origin*powf(10,delta*2);if(l->timing)l->beats=SDL_clamp(value,.0625f,1024.f);else l->seconds=SDL_clamp(value,.05f,14400.f);}
-        else if(drag==4)l->seconds=1.f/SDL_clamp(modulation_window.origin*powf(10,delta*2),1.f/14400.f,20.f);
+        else if(drag==4)mod_set_hz(l,modulation_window.origin*powf(10,delta*2));
+        else if(drag==6)v->modulation.audio_amount=SDL_clamp(modulation_window.origin+delta,0,1);
+        else if(drag==7)v->a=SDL_clamp(modulation_window.origin+delta,0,1);
+        else if(drag==8)v->b=SDL_clamp(modulation_window.origin+delta,0,1);
         else if(drag==5)v->mix=SDL_clamp(modulation_window.origin+delta,0,1);
         else if(drag==3)l->smooth=SDL_clamp(modulation_window.origin+delta,0,1);
         else if(drag>=300){TsModMap *m=&c->map[(drag-300)/2];float value=SDL_clamp((x-((drag&1)?1048:928))/100.f,0,1);if(drag&1)m->high=value;else m->low=value;}
@@ -535,6 +546,7 @@ static int modulation_connect(uint32_t id,int destination,SDL_AudioDeviceID devi
     }
     MatrixSnapshot *before=matrix_window.pending?NULL:mx_snapshot(device,audio,pages,bank);
     TsMatrixEffectControls *target=&matrix_window.controls.effect[slot];TsModControls *c=&source->modulation;
+    if(!ts_mod_can_connect(&matrix_window.controls,id,target->id)){free(before);snprintf(matrix_window.status,sizeof(matrix_window.status),"CONTROL FEEDBACK IS NOT ALLOWED.");return 1;}
     int field=mod_first_field(target,0,-1);
     if(field<0 || c->map_count>=TS_MOD_MAPS){free(before);return 1;}
     int at=c->map_count++;

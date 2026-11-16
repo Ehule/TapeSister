@@ -13,7 +13,15 @@ void ts_matrix_modulation_begin(TsMatrixEffects *f)
         previously|=1u<<i;f->current[i]->mod->modulated=f->current[i]->mod->authored;f->current[i]->mod->owned=0;
     }
     if(!f->mod_mask && !previously){f->mod_targets=0;return;}
-    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)if(f->mod_mask&(1u<<i)) {
+    unsigned active=0;
+    for(int j=0;j<TS_MATRIX_EFFECT_CAPACITY;++j)if(f->current[j] && f->current[j]->type!=TS_MATRIX_FX_MODULATOR && !(f->suspended&(1u<<j)) && f->current[j]->target)active|=1u<<j;
+    for(unsigned k=f->mod_count;k-->0;){int i=f->mod_order[k];TsMatrixEffectNode *source=f->current[i];if(!source || !source->mod->authored.enabled)continue;
+        const TsModControls *c=&source->mod->authored.modulation;
+        for(unsigned m=0;m<c->map_count;++m)if(c->map[m].enabled && c->lane[c->map[m].lane].enabled)
+            for(int j=0;j<TS_MATRIX_EFFECT_CAPACITY;++j)if((active&(1u<<j)) && f->current[j]->id==c->map[m].target && f->current[j]->mod && ts_mod_target_type(&f->current[j]->mod->authored,c->map[m].child)==c->map[m].type && ts_mod_field_available(&f->current[j]->mod->authored,c->map[m].child,c->map[m].field))active|=1u<<i;
+    }
+    for(unsigned order=0;order<f->mod_count;++order){int i=f->mod_order[order];
+
         TsMatrixEffectNode *source=f->current[i];if(!source)continue;
         const TsModControls *c=&source->mod->authored.modulation;
         /* Integer elapsed frames make scalar and arbitrary block partitioning
@@ -24,14 +32,14 @@ void ts_matrix_modulation_begin(TsMatrixEffects *f)
         if(source->mod->state.retrigger!=c->retrigger) {
             memset(source->mod->state.phase,0,sizeof(source->mod->state.phase));source->mod->state.retrigger=c->retrigger;
         }
-        if(!source->mod->authored.enabled)continue;
+        if(!source->mod->authored.enabled || !(active&(1u<<i)))continue;
         float values[TS_MOD_LANES];unsigned evaluated=0;
         for(unsigned m=0;m<c->map_count;++m) {
             const TsModMap *map=&c->map[m];
             if(!map->enabled || !c->lane[map->lane].enabled)continue;
             for(int j=0;j<TS_MATRIX_EFFECT_CAPACITY;++j) {
                 TsMatrixEffectNode *dest=f->current[j];
-                if(!dest || !dest->mod || dest->id!=map->target || (f->suspended&(1u<<j)) || !dest->mod->authored.enabled ||
+                if(!dest || !dest->mod || dest->id!=map->target || !(active&(1u<<j)) || !dest->mod->authored.enabled ||
                    ts_mod_target_type(&dest->mod->authored,map->child)!=map->type ||
                    !ts_mod_field_available(&dest->mod->authored,map->child,map->field))continue;
                 if(map->child) {
@@ -46,7 +54,10 @@ void ts_matrix_modulation_begin(TsMatrixEffects *f)
                 if(!((previously|touched)&(1u<<j)))dest->mod->modulated=dest->mod->authored;
                 float value=map->low+(map->high-map->low)*values[map->lane];
                 float base=ts_mod_parameter_normalized(&dest->mod->authored,map);
-                value=base+(value-base)*source->mod->authored.mix;
+                const TsMatrixEffectControls *control=source->mod->owned?&source->mod->modulated:&source->mod->authored;
+                float env=(f->suspended&(1u<<i))?0:source->mod->envelope;
+                float influence=control->mix*(1-control->modulation.audio_amount+control->modulation.audio_amount*env);
+                value=base+(value-base)*influence;
                 if(ts_mod_apply(&dest->mod->modulated,map,value)){touched|=1u<<j;dest->mod->owned=1;source->mod->running|=1u<<map->lane;}
                 break;
             }

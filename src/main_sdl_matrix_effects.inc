@@ -8,12 +8,13 @@ static int mx_effect_slot(void)
     return -1;
 }
 static int mx_effect_controls(const TsMatrixEffectControls *c)
-{return c->type==TS_MATRIX_FX_MODULATOR?2:(c->type==TS_MATRIX_FX_SUNVOX || c->type==TS_MATRIX_FX_PEDALBOARD)?3:c->type==TS_MATRIX_FX_COMPRESSOR?7:c->type>=TS_SISTER_FX_GRAIN?6:5;}
+{return c->type==TS_MATRIX_FX_MODULATOR?5:(c->type==TS_MATRIX_FX_SUNVOX || c->type==TS_MATRIX_FX_PEDALBOARD)?3:c->type==TS_MATRIX_FX_COMPRESSOR?7:c->type>=TS_SISTER_FX_GRAIN?6:5;}
 static int mx_effect_control_id(const TsMatrixEffectControls *c,int position)
-{return c->type==TS_MATRIX_FX_MODULATOR?(position?5:3):(c->type==TS_MATRIX_FX_SUNVOX || c->type==TS_MATRIX_FX_PEDALBOARD)?position+3:c->type!=TS_MATRIX_FX_COMPRESSOR && c->type<TS_SISTER_FX_GRAIN && position>=2?position+1:position;}
+{return c->type==TS_MATRIX_FX_MODULATOR?((int[]){3,2,0,1,5})[position]:(c->type==TS_MATRIX_FX_SUNVOX || c->type==TS_MATRIX_FX_PEDALBOARD)?position+3:c->type!=TS_MATRIX_FX_COMPRESSOR && c->type<TS_SISTER_FX_GRAIN && position>=2?position+1:position;}
 static float mx_effect_value(const TsMatrixEffectControls *c,int position)
 {
     int k=mx_effect_control_id(c,position);
+    if(c->type==TS_MATRIX_FX_MODULATOR && k==2)return c->modulation.audio_amount;
     if(c->type==TS_MATRIX_FX_META && k<3)return c->meta.scene_mode && c->meta.captured==3?c->meta.scene[0][k]+(c->meta.scene[1][k]-c->meta.scene[0][k])*c->meta.morph:c->meta.macro[k];
     if(c->type==TS_MATRIX_FX_COMPRESSOR)return k<5?ts_compressor_normalized(&c->compressor,k):k==5?c->mix:c->transition;
     if(c->type==TS_MATRIX_FX_FILTER && k<3){int focus=c->filter.value[TS_CF_ROUTE]>=.75f && c->filter.value[TS_CF_FOCUS]>=.5f?8:0;return c->filter.value[(int[]){TS_CF_L_CUT,TS_CF_L_RES,TS_CF_L_DRIVE}[k]+focus];}
@@ -22,6 +23,7 @@ static float mx_effect_value(const TsMatrixEffectControls *c,int position)
 static void mx_effect_value_set(TsMatrixEffectControls *c,int position,float value)
 {
     float v=SDL_clamp(value,0,1);int k=mx_effect_control_id(c,position);
+    if(c->type==TS_MATRIX_FX_MODULATOR && k==2){c->modulation.audio_amount=v;return;}
     if(c->type==TS_MATRIX_FX_META && k<3){ts_meta_macro_set(&c->meta,k,v);return;}
     if(c->type==TS_MATRIX_FX_FILTER && k<3){int focus=c->filter.value[TS_CF_ROUTE]>=.75f && c->filter.value[TS_CF_FOCUS]>=.5f?8:0;ts_character_filter_set(&c->filter,(int[]){TS_CF_L_CUT,TS_CF_L_RES,TS_CF_L_DRIVE}[k]+focus,v);return;}
     if(c->type==TS_MATRIX_FX_COMPRESSOR) {
@@ -44,7 +46,8 @@ static void mx_effect_label(char *s,size_t n,const TsMatrixEffectControls *c,int
         const char *cn[]={"THRESHOLD","RATIO","ATTACK","RELEASE","OUTPUT"};
         const float v[]={c->compressor.threshold_db,c->compressor.ratio,c->compressor.attack_ms,c->compressor.release_ms,c->compressor.output_db};
         snprintf(s,n,k==1?"%s %.1f:1":k==2 || k==3?"%s %.1f MS":"%s %+.1f DB",cn[k],v[k]);
-    } else if(k==4)snprintf(s,n,"OUTPUT %+.1f DB",c->gain_db);
+    } else if(c->type==TS_MATRIX_FX_MODULATOR && k<3)snprintf(s,n,k==2?"AUDIO KEY %.0f%%":k==0?"KEY ATTACK %.1f MS":"KEY RELEASE %.1f MS",k==2?c->modulation.audio_amount*100:(k==0?1:10)*powf(1000,k==0?c->a:c->b));
+    else if(k==4)snprintf(s,n,"OUTPUT %+.1f DB",c->gain_db);
     else if(c->type==TS_SISTER_FX_TRANSIENT && k<2)snprintf(s,n,"%s %+.1f DB",names[c->type][k],((k?c->b:c->a)-.5f)*(k?48:30)*(1+c->transient_power));
     else if(c->type==TS_SISTER_FX_TRANSIENT && k==2)snprintf(s,n,"RESPONSE %.2fX",.25f*powf(16,c->c));
     else snprintf(s,n,"%s %.0f%%",names[c->type][k],mx_effect_value(c,position)*100);

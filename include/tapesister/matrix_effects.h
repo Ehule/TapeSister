@@ -16,6 +16,7 @@ typedef struct {
     int batching;
     TsSunVoxBatch *worker;
     unsigned mod_mask,mod_remaining,mod_targets;
+    unsigned char mod_order[TS_MATRIX_EFFECT_CAPACITY];unsigned mod_count;
     double mod_quarter;
 } TsMatrixEffects;
 typedef struct {TsMatrixEffectNode *node[TS_MATRIX_EFFECT_CAPACITY];struct TsMatrixModulation *modulation[TS_MATRIX_EFFECT_CAPACITY];unsigned changed;TsSunVoxBatch *worker;TsPedalboardPlan board[TS_MATRIX_EFFECT_CAPACITY];} TsMatrixEffectPlan;

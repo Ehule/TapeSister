@@ -145,7 +145,7 @@ int ts_matrix_layout_read(TsMatrixLayout *l,const char *key,const char *value)
         s=key+14;uint64_t v[6];
         if(!layout_number(&s,TS_FX_CABLE_STYLES-1,&i) || *s || i!=(uint64_t)l->cable_count)return -1;
         for(int j=0;j<6;++j)if(!layout_number(&value,j==1 || j==2?UINT64_MAX:UINT32_MAX,&v[j]) || (j<5?*value++!=',':*value!=0))return -1;
-        if(v[0]>4 || v[3]>=TS_MATRIX_DESTINATIONS)return -1;
+        if(v[0]>4 || v[3]>=TS_FX_DESTINATIONS)return -1;
         TsFxCableStyle p={v[1],v[2],(int)v[0],(int)v[3],(uint32_t)v[4],(uint32_t)v[5]};
         if(!cable_valid(&p))return -1;
         l->cables[l->cable_count++]=p;return 1;

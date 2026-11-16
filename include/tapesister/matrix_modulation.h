@@ -9,5 +9,7 @@ void ts_mod_parameter_name(const TsMatrixEffectControls *c,uint32_t child,unsign
 void ts_mod_parameter_value(const TsMatrixEffectControls *c,uint32_t child,unsigned field,float value,char *text,size_t size);
 float ts_mod_parameter_normalized(const TsMatrixEffectControls *c,const TsModMap *map);
 int ts_mod_apply(TsMatrixEffectControls *c,const TsModMap *map,float value);
+int ts_mod_order(const TsMatrixControls *c,unsigned char *order);
+int ts_mod_can_connect(const TsMatrixControls *c,uint32_t source,uint32_t target);
 int ts_mod_assignments_valid(const TsMatrixControls *c);
 #endif

@@ -60,7 +60,7 @@ static void codec_and_identity(void)
 {
     setup(1);TsModControls *m=&c.effect[0].modulation;
     ts_mod_shape(&m->lane[0],2,64);m->lane[1].mode=TS_MOD_ONESHOT;m->lane[1].timing=TS_MOD_TEMPO;m->lane[1].beats=7.5f;
-    ts_mod_shape(&m->lane[2],3,5);ts_mod_resize(&m->lane[2],2);
+    m->lane[2].unlinked=1;m->lane[2].frequency=.5f;ts_mod_shape(&m->lane[2],3,5);ts_mod_resize(&m->lane[2],2);
     snprintf(m->lane[0].name,sizeof(m->lane[0].name),"SLOW WEATHER");
     FILE *f=tmpfile();assert(f && ts_matrix_write(f,&c));rewind(f);ts_matrix_default(&loaded);
     char line[4096];while(fgets(line,sizeof(line),f)) {line[strcspn(line,"\r\n")]=0;char *eq=strchr(line,'=');assert(eq);*eq++=0;assert(ts_matrix_read(&loaded,line,eq)==1);}
@@ -134,6 +134,46 @@ static void influence(void)
         TsStereoFrame v={0};for(int i=0;i<24000;++i)v=sample(&fx,1);
         near(v.l,.2*pow(10,(-12*n*.5)*.05),2e-5);ts_matrix_effects_free(&fx);}
 }
+static void independent_time(void)
+{
+    TsModControls c;ts_mod_default(&c);TsModLane *l=&c.lane[0];l->seconds=4;l->frequency=1;l->unlinked=1;ts_mod_shape(l,1,3);
+    near(ts_mod_value(l,.125),1,1e-6);near(ts_mod_value(l,.25),0,1e-6);
+    l->seconds=8;near(ts_mod_value(l,.0625),1,1e-6);assert(l->frequency==1);
+    l->frequency=.5f;near(ts_mod_value(l,.125),1,1e-6);assert(l->seconds==8);
+    TsModLane old=*l;ts_mod_bake(l);assert(l->count==64 && l->cycles==4);
+    for(unsigned i=0;i<l->count;++i)near(l->point[i].y,ts_mod_value(&old,l->point[i].x),1e-7);
+    TsModPoint points[64];memcpy(points,l->point,sizeof(points));ts_mod_resize(l,2);ts_mod_resize(l,64);assert(!memcmp(points,l->point,sizeof(points)));
+    assert(ts_mod_valid(&c));
+}
+static void control_chain(void)
+{
+    setup(0);int up=ts_matrix_effect_add(&c,TS_MATRIX_FX_MODULATOR);assert(up==2);
+    TsModControls *m=&c.effect[up].modulation;m->map_count=1;
+    m->map[0]=(TsModMap){.target=c.effect[0].id,.type=TS_MATRIX_FX_MODULATOR,.field=TS_MOD_MIX,.enabled=1,.low=.5,.high=.5};
+    c.effect[0].modulation.map[0].high=0;assert(ts_matrix_valid(&c));
+    assert(ts_mod_can_connect(&c,c.effect[up].id,c.effect[0].id));assert(!ts_mod_can_connect(&c,c.effect[0].id,c.effect[up].id));
+    unsigned char order[TS_MATRIX_EFFECT_CAPACITY];assert(ts_mod_order(&c,order)==2 && order[0]==up && order[1]==0);
+    assert(ts_matrix_effects_restore(&fx,&c,48000));TsStereoFrame v={0};for(int i=0;i<24000;++i)v=sample(&fx,1);near(v.l,.2*pow(10,-6*.05),2e-5);
+    c.effect[up].enabled=0;commit();for(int i=0;i<24000;++i)v=sample(&fx,1);near(v.l,.2*pow(10,-12*.05),2e-5);
+    c.effect[0].modulation.map[c.effect[0].modulation.map_count++]=(TsModMap){.target=c.effect[up].id,.type=TS_MATRIX_FX_MODULATOR,.field=TS_MOD_MIX,.enabled=1};assert(!ts_matrix_valid(&c));
+    ts_matrix_effects_free(&fx);
+}
+static void audio_key(void)
+{
+    setup(0);c.effect[0].modulation.audio_amount=1;c.effect[0].a=c.effect[0].b=0;c.effect[0].modulation.map[0].high=0;
+    assert(ts_matrix_destination_active(&c,TS_MATRIX_EFFECT_SC_BASE));
+    assert(ts_matrix_connect(&c,TS_MATRIX_EFFECT_BASE+1,TS_MATRIX_EFFECT_SC_BASE,1000)==1 && ts_matrix_valid(&c));
+    assert(ts_matrix_effects_restore(&fx,&c,48000));assert(ts_matrix_effects_restore(&span,&c,48000));
+    TsStereoFrame input[256],key[256],out[256],silent[256];TsStereoFrame last={0};
+    for(unsigned total=0;total<48000;){unsigned frames=ts_matrix_effects_span_limit(&span,TS_MATRIX_DELAY);if(total+frames>48000)frames=48000-total;
+        for(unsigned j=0;j<frames;++j){input[j]=(TsStereoFrame){.2,.3};key[j]=(TsStereoFrame){total+j<24000?1:0,0};}
+        realtime=1;ts_matrix_modulation_begin(&span);ts_matrix_effects_process_span(&span,0,input,key,silent,frames,0);ts_matrix_effects_process_span(&span,1,input,NULL,out,frames,1);ts_matrix_modulation_end(&span,frames);
+        for(unsigned j=0;j<frames;++j){ts_matrix_modulation_begin(&fx);TsStereoFrame zero=ts_matrix_effects_process(&fx,0,(TsStereoFrame){0},key[j],0);assert(!zero.l && !zero.r);
+            last=ts_matrix_effects_process(&fx,1,input[j],(TsStereoFrame){0},1);ts_matrix_modulation_end(&fx,1);if(fabs(last.l-out[j].l)>1e-6)fprintf(stderr,"key frame %u span %u j%u\n",total+j,frames,j);near(last.l,out[j].l,1e-6);if(total+j==23999)near(last.l,.2*pow(10,-12*.05),2e-5);}
+        realtime=0;total+=frames;
+    }
+    near(last.l,.2,2e-5);ts_matrix_effects_free(&fx);ts_matrix_effects_free(&span);
+}
 static void benchmark(void)
 {
     setup(1);c.effect[1].board.count=8;c.effect[0].modulation.map_count=8;
@@ -150,6 +190,6 @@ static void benchmark(void)
 }
 int main(int argc,char **argv)
 {
-    (void)argv;curves();codec_and_identity();playback(0);playback(1);late_assignment();influence();if(argc>1)benchmark();
+    (void)argv;curves();codec_and_identity();playback(0);playback(1);late_assignment();influence();independent_time();control_chain();audio_key();if(argc>1)benchmark();
     puts("Curves, random persistence, stable assignments, scalar/span playback, tempo, sleep and baseline restoration passed.");return 0;
 }
