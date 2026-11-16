@@ -181,7 +181,7 @@ static void mosaic_sources_refresh(TsUiState *ui,const TsInstrument *instrument,
         }
         memset(c->bank_data,0,sizeof(c->bank_data));c->ui_epoch=ui->mosaic->epoch;
         c->browser_initialized=restored;c->main_bank=c->pages?(int)ts_sample_pages_active(c->pages):0;
-        ui->mosaic_loaded_view_epoch=0;
+        ui->mosaic_loaded_view_epoch=0;ui->mosaic_grid_open=0;
     }
     int banks=c->pages?(int)ts_sample_pages_count(c->pages):1;if(banks<1)banks=1;
     int active=c->pages?(int)ts_sample_pages_active(c->pages):0;

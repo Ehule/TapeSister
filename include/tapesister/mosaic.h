@@ -159,6 +159,11 @@ typedef struct {
     uint64_t revision;
 } TsMosaicSchedule;
 
+typedef struct { int enabled,unit,division; } TsMosaicGrid; /* unit: second, beat, four beats. */
+int ts_mosaic_grid_valid(TsMosaicGrid grid);
+double ts_mosaic_grid_step(TsMosaicGrid grid,double quarter);
+double ts_mosaic_grid_snap(TsMosaicGrid grid,double quarter,double time);
+
 typedef struct TsMosaic {
     void *pattern_engine;
     TsMosaicEvent events[TS_MOSAIC_EVENTS];
@@ -172,6 +177,7 @@ typedef struct TsMosaic {
     int history_repeat[TS_MOSAIC_HISTORY], history_auto_space[TS_MOSAIC_HISTORY];
     TsMosaicRange loop_range, history_loop_range[TS_MOSAIC_HISTORY];
     int auto_space; /* New arrangements allow free placement; older files retain spacing. */
+    TsMosaicGrid grid; /* Saved editing preference, outside arrangement undo/audio. */
     TsMosaicView views[TS_MOSAIC_VIEWS]; /* Project navigation only; outside audio/arrangement undo. */
     uint64_t audition_id;
     TsMosaicEvent audition_source; /* Transient source preview, outside arrangement/history. */

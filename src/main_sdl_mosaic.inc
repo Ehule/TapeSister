@@ -199,7 +199,8 @@ static void mosaic_plan_group(TsUiState *ui,double *move_x,double *move_t,int sn
         minx=fmin(minx,o->x);mint=fmin(mint,o->start);maxt=fmax(maxt,o->start);
     }
     dx=fmax(dx,-minx);dt=fmin(86400-maxt,fmax(dt,-mint));
-    if(snap) {
+    if(snap && m->grid.enabled)dt=fmin(86400-maxt,fmax(-mint,ts_mosaic_grid_snap(m->grid,ui->mosaic_grid_quarter,mint+dt)-mint));
+    else if(snap) {
         double best=7/ui->mosaic_scale,adjust=0;
         for(int j=0;j<ui->mosaic_ghost_count;++j)for(int k=0;k<3;++k) {
             const TsMosaicEvent *o=&ui->mosaic_ghosts[j];double t=o->start+dt+o->duration*.5*k;
@@ -301,7 +302,7 @@ static void mosaic_resize_group(SDL_AudioDeviceID device,TsUiState *ui,MosaicCon
         if(device)SDL_UnlockAudioDevice(device);
     }
     if(match)snprintf(ui->status,sizeof(ui->status),"RESIZE %d / MATCH LENGTH %.3FS / RELEASE ALT: RELATIVE",count,length);
-    else snprintf(ui->status,sizeof(ui->status),"RESIZE %d / CHANGE %+.3FS / ALT MATCH LENGTH / ESC CANCEL",count,amount);
+    else snprintf(ui->status,sizeof(ui->status),"RESIZE %d / CHANGE %+.3FS / ALT %s / ESC CANCEL",count,amount,ui->mosaic->grid.enabled?"GRID SNAP":"MATCH LENGTH");
 }
 /* Event movement and held-edge scrolling share one undoable group gesture. */
 static void mosaic_drag_motion(SDL_AudioDeviceID device,TsUiState *ui,MosaicController *c,
@@ -314,7 +315,10 @@ static void mosaic_drag_motion(SDL_AudioDeviceID device,TsUiState *ui,MosaicCont
     double dx=(x-c->drag_x)/horizontal+ui->mosaic_xscroll-c->drag_xscroll,dt=delta;
     if(!c->drag_moved && abs(x-c->drag_x)<3 && abs(y-c->drag_y)<3)return;
     if((c->drag==2 || c->drag==6) && ui->mosaic_ghost_count>1) {
-        mosaic_resize_group(device,ui,c,delta,(mod&KMOD_ALT)!=0);return;
+        int snap=(mod&KMOD_ALT)!=0;
+        if(snap && ui->mosaic->grid.enabled){double edge=c->drag_start+(c->drag==2?c->drag_duration:0);
+            delta=ts_mosaic_grid_snap(ui->mosaic->grid,ui->mosaic_grid_quarter,edge+delta)-edge;}
+        mosaic_resize_group(device,ui,c,delta,snap && !ui->mosaic->grid.enabled);return;
     }
     if(c->drag==1)mosaic_plan_group(ui,&dx,&dt,(mod&KMOD_ALT)!=0,c->drag_copy && !c->drag_moved);
     if(ui->mosaic_grab) {
@@ -331,15 +335,15 @@ static void mosaic_drag_motion(SDL_AudioDeviceID device,TsUiState *ui,MosaicCont
     else {
         if(c->drag==2) {
             double end=c->drag_start+c->drag_duration+delta;
-            if(mod&KMOD_ALT)end=ts_mosaic_snap(ui->mosaic,e->id,end,7/ui->mosaic_scale);
+            if(mod&KMOD_ALT)end=ui->mosaic->grid.enabled?ts_mosaic_grid_snap(ui->mosaic->grid,ui->mosaic_grid_quarter,end):ts_mosaic_snap(ui->mosaic,e->id,end,7/ui->mosaic_scale);
             e->duration=fmin(86400,fmax(.005,end-e->start));
             double cycle=ts_mosaic_live_cycle(e);
-            if(e->live && cycle>0 && cycle<=86400 && !(mod&KMOD_SHIFT))
+            if(e->live && cycle>0 && cycle<=86400 && !(mod&KMOD_SHIFT) && !((mod&KMOD_ALT) && ui->mosaic->grid.enabled))
                 e->duration=fmin(86400,fmax(cycle,round(e->duration/cycle)*cycle));
             if(e->live)snprintf(ui->status,sizeof(ui->status),"STEP %.3G BASE CYCLES / SHIFT: FREE LENGTH / RUNNING STEP KEEPS ITS LENGTH",e->duration/fmax(.000001,cycle));
         } else if(c->drag==6) {
             double end=c->drag_start+c->drag_duration,start=c->drag_start+delta;
-            if(mod&KMOD_ALT)start=ts_mosaic_snap(ui->mosaic,e->id,start,7/ui->mosaic_scale);
+            if(mod&KMOD_ALT)start=ui->mosaic->grid.enabled?ts_mosaic_grid_snap(ui->mosaic->grid,ui->mosaic_grid_quarter,start):ts_mosaic_snap(ui->mosaic,e->id,start,7/ui->mosaic_scale);
             e->start=fmax(fmax(0,end-86400),fmin(end-.005,start));e->duration=end-e->start;
         } else e->width=fmin(460,fmax(36,c->drag_width+(x-c->drag_x)/horizontal));
         ts_mosaic_space(ui->mosaic,e);
@@ -465,6 +469,7 @@ static void mosaic_keyboard_select(SDL_AudioDeviceID device,AudioState *a,TsUiSt
     runtime_note_collect_snapshots(device,a);
 }
 
+#include "main_sdl_mosaic_grid.inc"
 #include "main_sdl_mosaic_sources.inc"
 #include "main_sdl_mosaic_arrange.inc"
 #include "main_sdl_mosaic_loop.inc"
@@ -489,6 +494,8 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
         c->hover_valid=0;ui->mosaic_hover_event=0;ui->mosaic_source_hover[0]=0;
     }
     if(!ui->mosaic)return 0;
+    if(audio->sister.clock_controls.source!=TS_CLOCK_TRACKER_SOURCE || ui->mosaic_grid_quarter<=0)
+        ui->mosaic_grid_quarter=audio->sister.clock_controls.bpm>0?60.0/audio->sister.clock_controls.bpm:.5;
     /* Notes started in another workspace still own their key/pointer releases.
        Handle these before Mosaic's panel and edit dialog consume input. */
     if(ui->mosaic_open || ui->mosaic_edit_choice) {
@@ -511,6 +518,7 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
     if(motion)logical_mouse(window,event->motion.x,event->motion.y,&x,&y);
     if(event->type==SDL_MOUSEWHEEL){int mx,my;wheel_event_mouse(event,&mx,&my);logical_mouse(window,mx,my,&x,&y);}
     SDL_Keymod mod=key?(SDL_Keymod)event->key.keysym.mod:SDL_GetModState();
+    if(mosaic_grid_event(event,ui,c,x,y))return 1;
     if(mosaic_grab_event(event,window,device,ui,c,x,y,mod))return 1;
     if(mosaic_video_event(event,device,audio,ui,instrument,c,x,y))return 1;
     if(mosaic_gallery_event(event,device,audio,ui,instrument,c,x,y,mod))return 1;
@@ -622,6 +630,7 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
     if(motion || down || event->type==SDL_MOUSEWHEEL) {
         c->hover_valid=1;c->hover_x=x;c->hover_y=y;mosaic_hover(ui,c);
     }
+    if(mosaic_pitch_wheel(event,device,ui,c,x,y,mod))return 1;
     if(mosaic_volume_visibility_event(event,ui,c,x,y,mod))return 1;
     /* The performance panel gives QWERTY an explicit owner. Use the same
        current/parent instrument, tuning, groups and routes as the Canvas;

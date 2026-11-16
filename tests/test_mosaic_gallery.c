@@ -231,6 +231,7 @@ static void test_storage(void)
     b->live_envelope=1;b->markers[2]=(TsMosaicMarker){.stored=1,.time=2};g->canvas[1].entry=TS_GALLERY_MARKER;g->canvas[1].marker=2;
     TsMosaicSource *video=ts_mosaic_video_source(b,"/external/dog footage",1);assert(video);
     TsMosaicEvent *cue=ts_mosaic_add(b,video,1,240);assert(cue);cue->video_random_start=1;cue->video_transition=2;cue->video_fade=1.25;
+    a->grid=(TsMosaicGrid){1,0,2};b->grid=(TsMosaicGrid){1,2,16};
     g->active=1;g->fade_seconds=1.25;uint64_t hash=ts_gallery_hash(g);
     assert(ts_gallery_save(g,"gallery-storage",error,sizeof(error)));
     /* Text metadata remains portable after Windows CRLF conversion. */

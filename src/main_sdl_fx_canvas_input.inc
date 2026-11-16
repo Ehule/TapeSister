@@ -1,6 +1,6 @@
 /* Canvas gestures use their own drag range; parameter editors already use 10..40. */
 static int fx_canvas_key(SDL_Keycode key)
-{return key==SDLK_t || key==SDLK_F2 || key==SDLK_ESCAPE || key==SDLK_DELETE || key==SDLK_BACKSPACE || key==SDLK_HOME || key==SDLK_z || key==SDLK_m || key==SDLK_g || key==SDLK_s || key==SDLK_x;}
+{return key==SDLK_t || key==SDLK_F2 || key==SDLK_ESCAPE || key==SDLK_BACKQUOTE || key==SDLK_DELETE || key==SDLK_BACKSPACE || key==SDLK_HOME || key==SDLK_z || key==SDLK_m || key==SDLK_g || key==SDLK_s || key==SDLK_x;}
 static void fx_bypass_selection(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui)
 {
     MatrixWindow *w=&matrix_window;int any=0,count=0;
@@ -77,6 +77,9 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
     if(e->type==SDL_KEYDOWN) {
         SDL_Keycode key=e->key.keysym.sym;int mod=e->key.keysym.mod;
         if(e->key.repeat && (fx_canvas_key(key) || (mod&KMOD_CTRL)))return 1;
+        if(key==SDLK_BACKQUOTE && !(mod&(KMOD_CTRL|KMOD_SHIFT|KMOD_ALT|KMOD_GUI))) {
+            fx_return_mosaic(main,ui);return 1;
+        }
         if(key==SDLK_g && (mod&(KMOD_CTRL|KMOD_ALT))){
             /* Own the chord even when grouping is unavailable. Forwarding it
                to Mosaic would turn Ctrl+G into its Gallery shortcut. */

@@ -287,7 +287,7 @@ static void test_storage(void)
 static void test_project_transaction(int live)
 {
     TsMosaic *m=fixture();if(live){m->events[0].live=1;m->events[0].live_finite=1;m->events[0].live_beats=4;m->live_capture.continuous=1;}TsSamplePages pages;char error[160],path[1024];
-    if(live>1){m->events[0].live_order=1;m->events[0].finish_fade=2;}
+    if(live>1){m->events[0].live_order=1;m->events[0].finish_fade=2;m->grid=(TsMosaicGrid){1,2,16};}
     TsInstrument *bank=malloc(sizeof(*bank)),*record=malloc(sizeof(*record));assert(bank && record);
     ts_instrument_init(bank);ts_instrument_init(record);assert(ts_sample_pages_init(&pages,error,sizeof(error)));
     pages.mosaic=m;
@@ -363,6 +363,25 @@ static void test_project_transaction(int live)
     remove("mosaic-project-test/project-data/gallery.tsg");
     RMDIR("mosaic-project-test/project-data");RMDIR("mosaic-project-test");
 }
+static void test_mosaic_grid_storage(void)
+{
+    TsMosaic *m=fixture(),*loaded=ts_mosaic_create();char error[160];assert(loaded);
+    MKDIR("mosaic-grid-storage");uint64_t original=ts_mosaic_hash(m);
+    m->grid=(TsMosaicGrid){1,0,4};assert(ts_mosaic_hash(m)!=original);
+    assert(ts_mosaic_save(m,"mosaic-grid-storage",error,sizeof(error)));
+    storage_portable_load(loaded,"mosaic-grid-storage");assert(ts_mosaic_hash(loaded)==ts_mosaic_hash(m));
+    assert(loaded->grid.enabled && loaded->grid.unit==0 && loaded->grid.division==4);
+    m->grid=(TsMosaicGrid){0,2,16};assert(ts_mosaic_save(m,"mosaic-grid-storage",error,sizeof(error)));
+    storage_portable_load(loaded,"mosaic-grid-storage");assert(ts_mosaic_hash(loaded)==ts_mosaic_hash(m));
+    assert(ts_mosaic_grid_step(m->grid,.5)==.125 && ts_mosaic_grid_snap(m->grid,.5,1.18)==1.125);
+    m->grid.division=0;assert(!ts_mosaic_save(m,"mosaic-grid-storage",error,sizeof(error)));
+    uint64_t before=ts_mosaic_hash(loaded);
+    FILE *f=fopen("mosaic-grid-storage/mosaic.tsm","wb");assert(f);
+    fputs("TAPESISTER_MOSAIC 22\nSETTINGS 0 .7 1\nSPACING 0\nGRID 1 1 0\n",f);fclose(f);
+    assert(!ts_mosaic_load(loaded,"mosaic-grid-storage",error,sizeof(error)) && ts_mosaic_hash(loaded)==before);
+    remove("mosaic-grid-storage/mosaic.tsm");remove("mosaic-grid-storage/mosaic-000.wav");RMDIR("mosaic-grid-storage");
+    ts_mosaic_free(m);ts_mosaic_free(loaded);
+}
 #include "test_mosaic_volume.inc"
 #include "test_mosaic_loop.inc"
 #include "test_mosaic_schedule.inc"
@@ -406,7 +425,7 @@ int main(void)
     test_mosaic_live();test_mosaic_live_storage();test_mosaic_live_mix();
     test_mosaic_sequence();test_mosaic_finish();test_mosaic_sequence_storage();
     test_source_preview_lifetime();
-    test_mosaic_volume();
+    test_mosaic_grid_storage();test_mosaic_volume();
     test_mosaic_read_paths();
     test_mosaic_schedule();test_mosaic_large_storage();
     test_mosaic_loop_audio();test_mosaic_loop_history();

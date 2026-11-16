@@ -579,6 +579,7 @@ int main(int argc,char **argv)
     SDL_SetWindowSize(matrix_window.window,1001,701);fx_paint(&audio,&pages,&bank);
     inspector_controls(getenv("TS_FX_PREVIEW"));edit_controls();canvas_gestures(c.effect[dist].id);disconnect_main_prism();routing_preferences();sunvox_browser(getenv("TS_FX_PREVIEW"));
     gallery_view();text_labels();grouped_text_selection();patch_workflow();patch_twenty_cards();control_and_bus_wires();movement_heading_objects();rug_groups();
+    key(SDLK_BACKQUOTE,KMOD_NONE);assert(!matrix_window.visible && ui.mosaic_open && !ui.tracker_open);
     matrix_close();meta_fx_close();ts_sister_runtime_free(&audio.sister);ts_sample_pages_free(&pages);ts_instrument_free(&bank);SDL_DestroyWindow(main_window);SDL_Quit();
     puts("FX Canvas controller passed, including single-cable disconnect, alternative path, silent clear, undo and project recall.");return 0;
 }

@@ -181,6 +181,9 @@ members hidden by a movement filter. Cards and labels remain individually
 editable; their movement and scaling stay within the rug. **Alt+G** dissolves
 the selected rug (or the rugs of selected members), retaining object positions.
 Escape cancels a drag; Ctrl+Z restores a group edit.
+Selections, deselection, and group color/opacity edits refresh immediately,
+including when the cable geometry stays unchanged. The cable raster cache
+tracks the rug background as well as its cables.
 
 An object belongs to one rug. Regrouping selected objects transfers their
 membership; rugs do not nest. They may overlap visually, with smaller rugs drawn
@@ -240,6 +243,7 @@ editing gestures apply to the FX workspace; Z, Shift+Z and M follow Mosaic.
 | F2 on one selected card / right-click a card | Edit name and color; right-click a selected group applies color to the group with names disabled |
 | Right-click a cable | Edit its color, or the selected cable group; colors save with the project and support Undo/Redo |
 | E (KEYS off) | Open/focus FX Canvas from Mosaic or an effect editor |
+| Grave (backtick) in FX Canvas | Return directly to Mosaic |
 | Escape in FX Canvas | Return to Mosaic; active gestures/dialogs cancel first |
 
 Cable rerouting selects the moved cables at their new endpoints. Select only one

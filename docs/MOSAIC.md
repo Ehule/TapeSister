@@ -7,6 +7,32 @@ Sister Machine and output recorder.
 
 ![Mosaic in the native renderer](images/mosaic.png)
 
+## Fast pitch edits and card grid
+
+With cards selected, **Ctrl+Shift+wheel** over the arrangement transposes every
+note by one semitone per wheel step. A default card starts at C4. Different
+notes and chords keep their intervals; reaching MIDI 0 or 127 limits the whole
+selection together. Video cues are ignored. Ctrl+Z/redo restores the edit.
+
+**GRID** sits beside **SPACE** (the auto-spacing toggle). Left-click enables
+or disables the grid; right-click opens its unit and division settings. Choose
+seconds, beats, or bars of four beats, divided by 1, 2, 3, 4, 6, 8, 12, 16, 24,
+32, 48, or 64. Beat/bar divisions follow the master tempo. Apply saves the choice;
+Escape or Cancel discards the dialog changes.
+
+Hold **Alt** while moving, copying, placing, or resizing cards to snap to the
+enabled grid. Ordinary dragging remains free. With GRID off, Alt retains the
+existing card-to-card snapping (and matching lengths for group edge resizing).
+Group movement snaps the earliest start and preserves all relative offsets.
+G/S previews use the same grid. Grid lines thin out when zoomed out, while
+snapping retains the chosen division.
+
+Grid preferences save separately for each Gallery canvas and do not affect
+audio processing. Old projects open with GRID off. Projects with saved custom
+grid preferences use Mosaic formats 22/23 and require this build or newer.
+
+![Mosaic grid settings in the native renderer](screenshots/mosaic-grid.png)
+
 ## Multiple canvases
 
 **GALLERY / Ctrl+G** opens up to 16 named canvases in one project. Turn pages

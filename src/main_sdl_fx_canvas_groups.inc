@@ -41,6 +41,20 @@ static void fx_groups_paint(void)
         fx_rect(r.x,r.y,r.w,2,ink);fx_rect(r.x,r.y+r.h-2,r.w,2,ink);fx_rect(r.x,r.y,2,r.h,ink);fx_rect(r.x+r.w-2,r.y,2,r.h,ink);
     }
 }
+/* The cable raster includes everything beneath its antialiased strokes.
+   Keep that background's exact inputs in the cache key, even with no cables. */
+static void fx_groups_cache_background(void)
+{
+    static struct { TsFxCanvasGroup groups[TS_FX_GROUP_LIMIT];int count;
+        uint32_t selected,focus;float x,y,zoom; } previous,current;
+    memset(&current,0,sizeof(current));TsMatrixLayout *l=matrix_window.layout;
+    current.selected=fx_canvas.group_selected;current.focus=FX_FOCUS;
+    current.x=l->canvas_x;current.y=l->canvas_y;current.zoom=l->canvas_zoom;
+    for(int i=0;i<l->group_count;++i)if(fx_group_visible(l->groups[i].id))
+        current.groups[current.count++]=l->groups[i];
+    if(memcmp(&current,&previous,sizeof(current)))fx_cable_cache.valid=0;
+    previous=current;
+}
 /* Keep the handle legible when a card from another rug overlaps its title. */
 static void fx_groups_titles(void)
 {

@@ -579,6 +579,7 @@ static void fx_groups_clamp(void);
 #include "main_sdl_fx_canvas_popup.inc"
 static void fx_paint_cables(TsSamplePages *pages,TsInstrument *bank)
 {
+    fx_groups_cache_background();
     fx_cables_begin();
     MatrixWindow *w=&matrix_window;
     fx_validate_wires(pages,bank);

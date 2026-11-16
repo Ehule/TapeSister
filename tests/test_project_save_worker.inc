@@ -19,6 +19,7 @@ static void worker_finish(SDL_AudioDeviceID device)
 }
 static void test_project_save_worker(SDL_Window *window)
 {
+    ui.mosaic->grid=(TsMosaicGrid){1,2,16};
     SDL_setenv("SDL_AUDIODRIVER","dummy",1);assert(!SDL_InitSubSystem(SDL_INIT_AUDIO));
     SDL_AudioSpec want={0},got={0};want.freq=48000;want.channels=2;want.samples=512;
     want.format=AUDIO_F32SYS;want.callback=save_test_callback;want.userdata=&audio;
@@ -32,6 +33,7 @@ static void test_project_save_worker(SDL_Window *window)
     Uint64 save_started=SDL_GetPerformanceCounter();
     SDL_AtomicSet(&save_test_gate,1);worker_poll(device);
     assert(project_save_worker && ui.file_busy && file.active);
+    assert(project_save_worker->pages.mosaic && !memcmp(&project_save_worker->pages.mosaic->grid,&ui.mosaic->grid,sizeof(ui.mosaic->grid)));
     PendingFileOperation repeated=file;queue_active_project_save(&ui,&repeated);
     assert(!memcmp(&repeated,&file,sizeof(file))); /* repeated Save never starts another job */
     int callbacks=SDL_AtomicGet(&save_test_callbacks);double peak=0;

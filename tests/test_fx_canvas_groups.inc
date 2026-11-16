@@ -11,6 +11,15 @@ static int rug_shortcut(Uint32 window,SDL_Keymod mod,int repeat)
        mosaic_event(&e,main_window,0,&audio,&ui,&bank,&mosaic,&portal,&sister,&transform,48000))return 3;
     return 0;
 }
+static void rug_pixels_current(void)
+{
+    /* Reusing the cable raster must match a fresh render of the current rug. */
+    SDL_Surface *cached=rendered_frame();fx_cable_cache.valid=0;
+    SDL_Surface *fresh=rendered_frame();assert(cached->w==fresh->w && cached->h==fresh->h);
+    for(int y=0;y<fresh->h;++y)assert(!memcmp((char *)cached->pixels+y*cached->pitch,
+        (char *)fresh->pixels+y*fresh->pitch,(size_t)fresh->w*4));
+    SDL_FreeSurface(cached);SDL_FreeSurface(fresh);
+}
 static void rug_groups(void)
 {
     MatrixWindow *w=&matrix_window;edit_settle();MatrixSnapshot *saved=mx_snapshot(0,&audio,&pages,&bank);assert(saved);
@@ -38,8 +47,12 @@ static void rug_groups(void)
     ui.mosaic_gallery_open=0;gallery_windows_sync(&ui);gallery_windows_close();
     key(SDLK_z,KMOD_CTRL);assert(!l->group_count && !pa->group);key(SDLK_y,KMOD_CTRL);assert(l->group_count==1 && pa->group==id);
     edit_settle();fx_canvas.group_selected=id;fx_fit_selection(1);fx_build(&pages,&bank);TsFxCanvasGroup original=*fx_group(id);
+    rug_pixels_current();cache_poll();uint64_t frames=mx_present_count;
+    click(fx_right()-8,FX_TOP+8,1);assert(!fx_canvas.group_selected);cache_poll();
+    assert(mx_present_count>frames);rug_pixels_current();
     float oldx=pa->x,oldy=pa->y,oldlabel=l->labels[label].x;SDL_Rect r=fx_group_rect(fx_group(id));
     pointer(SDL_MOUSEBUTTONDOWN,r.x+12,r.y+12,SDL_BUTTON_LEFT,1);assert(w->drag==FX_DRAG_GROUP);
+    rug_pixels_current();
     pointer(SDL_MOUSEMOTION,r.x+72,r.y+42,0,0);pointer(SDL_MOUSEBUTTONUP,r.x+72,r.y+42,SDL_BUTTON_LEFT,1);
     float dx=fx_group(id)->x-original.x,dy=fx_group(id)->y-original.y;
     assert(dx>0 && dy>0 && fabsf(pa->x-oldx-dx)<.01f && fabsf(pa->y-oldy-dy)<.01f && fabsf(l->labels[label].x-oldlabel-dx)<.01f);
@@ -57,6 +70,7 @@ static void rug_groups(void)
     assert(fx_canvas.properties && fx_canvas.properties_group==id);properties_click(16+8*33+10,110);properties_click(334,258);
     SDL_Event text;SDL_zero(text);text.type=SDL_TEXTINPUT;text.text.windowID=fx_properties_window.id;strcpy(text.text.text,"SHARED FINISHING");assert(event(&text));key(SDLK_RETURN,0);
     assert(!strcmp(g->name,"SHARED FINISHING") && g->color==fx_swatch(8) && fabsf(g->opacity-.5f)<.01f);
+    rug_pixels_current();
     assert(ts_matrix_layout_valid(l));FILE *f=tmpfile();assert(f && ts_matrix_layout_write(f,l));rewind(f);static TsMatrixLayout loaded;ts_matrix_layout_default(&loaded);
     char line[2048];while(fgets(line,sizeof(line),f)){line[strcspn(line,"\r\n")]=0;char *eq=strchr(line,'=');assert(eq);*eq++=0;assert(ts_matrix_layout_read(&loaded,line,eq)==1);}fclose(f);
     assert(ts_matrix_layout_valid(&loaded) && loaded.group_count==2 && !memcmp(loaded.groups,l->groups,sizeof(l->groups)));

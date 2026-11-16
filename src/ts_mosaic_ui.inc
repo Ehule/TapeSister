@@ -121,6 +121,7 @@ static void mosaic_envelope(const TsMosaicSource *s,size_t first,size_t last,flo
 #include "ts_mosaic_card_style.inc"
 #include "ts_mosaic_fade_ui.inc"
 #include "ts_mosaic_arrange_ui.inc"
+#include "ts_mosaic_grid_ui.inc"
 
 static void mosaic_card(TsFramebuffer *fb,const TsUiState *ui,const TsMosaicEvent *e,int selected,int dim,int ghost)
 {
@@ -411,7 +412,9 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
     mosaic_button(fb,TS_MOSAIC_ZOOM_IN_X,39,TS_MOSAIC_ZOOM_W,"+",0,1);
     rect(fb,118,57,8,8,RGB(112,105,122));rect(fb,119,58,6,6,RGB(26,26,33));
     if(m && m->auto_space)rect(fb,120,59,4,4,RGB(129,206,200));
-    text(fb,130,58,"AUTO-SPACE",RGB(166,155,178),1);
+    text(fb,130,58,"SPACE",RGB(166,155,178),1);
+    mosaic_button_height(fb,TS_MOSAIC_GRID_X,TS_MOSAIC_GRID_Y,TS_MOSAIC_GRID_W,TS_MOSAIC_GRID_H,
+        "GRID",m && m->grid.enabled);
     static TsWaveformCache source_cache[16];
     (void)instrument;
     for(int i=0;i<16;++i) {
@@ -502,6 +505,7 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
         int a=(int)fmax(66,fmin(TS_MOSAIC_CANVAS_BOTTOM,range_a)),b=(int)fmax(66,fmin(TS_MOSAIC_CANVAS_BOTTOM,range_b));
         rect(fb,113,a,38,b-a,ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_EDGE,RGB(45,65,66)));
     }
+    mosaic_grid_lines(fb,ui,scale);
     double decade=pow(10,floor(log10(40/scale))),step=40/scale/decade;
     double interval=(step<=1?1:step<=2?2:step<=5?5:10)*decade;
     for(double t=ceil(ui->mosaic_scroll/interval)*interval;t<ui->mosaic_scroll+TS_MOSAIC_CANVAS_HEIGHT/scale;t+=interval) {
@@ -556,6 +560,7 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
     mosaic_live_overlay(fb,ui,instrument);
     if(!ui->mosaic_gallery_detached)mosaic_gallery_overlay(fb,ui);
     mosaic_video_overlay(fb,ui);
+    mosaic_grid_overlay(fb,ui);
 }
 
 void ts_ui_render_mosaic_choice(TsFramebuffer *fb,const TsUiState *ui)
