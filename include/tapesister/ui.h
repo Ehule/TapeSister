@@ -591,7 +591,7 @@ typedef struct {
     uint64_t mosaic_selection_order[TS_MOSAIC_EVENTS], mosaic_selection_serial;
     int mosaic_open, mosaic_playing, mosaic_recording, mosaic_engine_stopped;
     struct TsMosaicGallery *mosaic_gallery; /* Non-owning transport registry. */
-    int mosaic_gallery_open,mosaic_gallery_selected,mosaic_gallery_rename,mosaic_gallery_delete;
+    int mosaic_gallery_open,mosaic_gallery_detached,mosaic_gallery_selected,mosaic_gallery_rename,mosaic_gallery_delete;
     int mosaic_gallery_count,mosaic_gallery_active,mosaic_gallery_fading;
     double mosaic_gallery_fade,mosaic_gallery_progress;
     char mosaic_gallery_names[16][48],mosaic_gallery_name[48];
@@ -1008,6 +1008,7 @@ void ts_ui_mosaic_scale_event(const TsMosaicEvent *,TsMosaicEvent *,double delta
 void ts_ui_mosaic_transform_event(const TsUiState *,const TsMosaicEvent *,TsMosaicEvent *);
 double ts_ui_mosaic_volume_y(const TsUiState *ui, double time);
 double ts_ui_mosaic_volume_time(const TsUiState *ui, double y);
+void ts_ui_render_gallery(TsFramebuffer *fb,const TsUiState *ui);
 void ts_ui_render_mosaic_choice(TsFramebuffer *fb, const TsUiState *ui);
 void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *instrument);
 void ts_ui_cpu_label(char *text, size_t size, double percent);

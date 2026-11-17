@@ -187,7 +187,7 @@ static float fx_cable(float x,float y,float xx,float yy,uint32_t color,int draw,
 /* Quiet cables need no continuous rasterization. Compare the exact ordered
    draw commands (not a lossy hash), and cache only the graph background/cables.
    Nodes, meters, drag previews and selection outlines remain live. */
-typedef struct {float x,y,xx,yy;uint32_t color;} FxCableCommand;
+typedef struct {float x,y,xx,yy;uint32_t color,control;} FxCableCommand;
 static struct {
     FxCableCommand *commands;
     size_t count,used,capacity;
@@ -219,10 +219,26 @@ static void fx_cables_begin(void)
         fx_cable_cache.background!=FX_BG || fx_cable_cache.grid!=FX_EDGE;
 }
 static void fx_cables_draw_command(FxCableCommand c)
-{fx_cable(c.x,c.y,c.xx,c.yy,c.color,1,0,0);}
-static void fx_cables_add(float x,float y,float xx,float yy,uint32_t color)
 {
-    FxCableCommand command={x,y,xx,yy,color};
+    if(!c.control){fx_cable(c.x,c.y,c.xx,c.yy,c.color,1,0,0);return;}
+    if(!fx_stroke.coverage)return;
+    FxCablePath path;fx_cable_path(&path,c.x,c.y,c.xx,c.yy);float distance=0,unit=6*fx_stroke.scale;
+    fx_stroke_begin();
+    for(int i=1;i<path.count;++i) {
+        FxPoint a=fx_device_point(path.point[i-1]),b=fx_device_point(path.point[i]);
+        float length=hypotf(b.x-a.x,b.y-a.y),at=0;
+        while(at<length) {
+            float n=fminf(length-at,unit-fmodf(distance,unit));if(n<.001f)n=fminf(length-at,.001f);
+            if(((int)floorf(distance/unit)&1)==0)fx_stroke_segment((FxPoint){a.x+(b.x-a.x)*at/length,a.y+(b.y-a.y)*at/length},
+                (FxPoint){a.x+(b.x-a.x)*(at+n)/length,a.y+(b.y-a.y)*(at+n)/length});
+            at+=n;distance+=n;
+        }
+    }
+    fx_stroke_end(c.color);
+}
+static void fx_cables_add_kind(float x,float y,float xx,float yy,uint32_t color,unsigned control)
+{
+    FxCableCommand command={x,y,xx,yy,color,control};
     if(fx_cable_cache.direct){fx_cables_draw_command(command);return;}
     if(fx_cable_cache.used==fx_cable_cache.capacity) {
         size_t capacity=fx_cable_cache.capacity?fx_cable_cache.capacity*2:64;
@@ -239,6 +255,8 @@ static void fx_cables_add(float x,float y,float xx,float yy,uint32_t color)
     if(i>=fx_cable_cache.count || memcmp(&command,&fx_cable_cache.commands[i],sizeof(command)))fx_cable_cache.changed=1;
     fx_cable_cache.commands[i]=command;
 }
+static void fx_cables_add(float x,float y,float xx,float yy,uint32_t color)
+{fx_cables_add_kind(x,y,xx,yy,color,0);}
 static void fx_cables_end(void)
 {
     if(fx_cable_cache.direct)return;

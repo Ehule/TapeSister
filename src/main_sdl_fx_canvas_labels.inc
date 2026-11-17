@@ -96,13 +96,13 @@ static void fx_labels_paint(void)
         if(!SDL_IntersectRect(&r,&clip,&visible))continue;
         if(i>=TS_FX_LABEL_LIMIT) {
             int scale;float factor;fx_heading_font(p,&scale,&factor);
-            if(i==fx_canvas.label_selected) {
+            if(fx_label_chosen(i)) {
                 fx_rect(r.x-2,r.y-2,r.w+4,r.h+4,FX_FOCUS);
                 fx_rect(r.x-1,r.y-1,r.w+2,r.h+2,FX_BG);
             }
             fx_text_box_scaled(r,clip,p->text,FX_CABLE,scale,16,factor);continue;
         }
-        fx_rect(r.x,r.y,r.w,r.h,i==fx_canvas.label_selected?FX_FOCUS:FX_EDGE);
+        fx_rect(r.x,r.y,r.w,r.h,fx_label_chosen(i)?FX_FOCUS:FX_EDGE);
         fx_rect(r.x+1,r.y+1,r.w-2,r.h-2,FX_PANEL);
         SDL_Rect text={r.x+5,r.y+4,r.w-10,r.h-8};
         fx_text_box_scaled(text,clip,p->text,FX_TEXT,2,16,fmaxf(.4f,l->canvas_zoom*p->scale));

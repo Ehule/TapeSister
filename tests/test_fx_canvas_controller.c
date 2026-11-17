@@ -106,6 +106,45 @@ static void view_codec(void)
     assert(ts_matrix_layout_read(&read,"FxCanvas.View","0,0,0")==-1);
     assert(ts_matrix_layout_read(&read,"FxCanvas.Node9999","4,1,0,0")==-1);
 }
+static void grouped_text_selection(void)
+{
+    TsMatrixLayout *l=matrix_window.layout;static TsMatrixLayout saved;saved=*l;matrix_history_clear();
+    fx_build(&pages,&bank);FxCanvasNode *n=node(TS_MATRIX_TRACKER);assert(n);MatrixRow row=n->row;
+    for(int i=0;i<fx_canvas.count;++i){TsFxCanvasPosition *away=fx_position(fx_canvas.node[i].row,1);assert(away);away->x=-10000;away->y=-10000;}
+    TsFxCanvasPosition *position=fx_position(row,1);assert(position);position->x=100;position->y=100;
+    l->canvas_zoom=1;l->canvas_x=l->canvas_y=0;l->canvas_snap=0;l->label_count=2;
+    l->labels[0]=(TsFxCanvasLabel){.x=100,.y=210,.scale=1,.text="GROUP ONE"};
+    l->labels[1]=(TsFxCanvasLabel){.x=100,.y=270,.scale=1,.text="GROUP TWO"};
+    fx_build(&pages,&bank);fx_clear_selection();fx_clear_wires();
+    for(int i=0;i<l->heading_count;++i)l->headings[i].label.text[0]=0;
+    /* Start on empty canvas and include both text boxes and the tracker bus. */
+    pointer(SDL_MOUSEBUTTONDOWN,fx_x(80),fx_y(90),SDL_BUTTON_LEFT,1);
+    pointer(SDL_MOUSEMOTION,fx_x(430),fx_y(320),0,0);pointer(SDL_MOUSEBUTTONUP,fx_x(430),fx_y(320),SDL_BUTTON_LEFT,1);
+    assert(fx_label_chosen(0) && fx_label_chosen(1) && fx_chosen(row));
+    int mx=fx_canvas.mouse_x,my=fx_canvas.mouse_y;key(SDLK_g,0);pointer(SDL_MOUSEMOTION,mx+40,my+20,0,0);key(SDLK_RETURN,0);
+    assert(l->labels[0].x>130 && l->labels[1].x==l->labels[0].x && fx_position(row,0)->x==l->labels[0].x);
+    key(SDLK_z,KMOD_CTRL);assert(l->labels[0].x==100 && l->labels[1].x==100 && fx_position(row,0)->x==100);
+    fx_clear_selection();fx_canvas.labels[0]=fx_canvas.labels[1]=1;
+    key(SDLK_s,0);pointer(SDL_MOUSEMOTION,fx_canvas.mouse_x+80,fx_canvas.mouse_y,0,0);key(SDLK_ESCAPE,0);
+    assert(l->labels[0].scale==1 && l->labels[1].scale==1);
+    key(SDLK_DELETE,0);assert(l->label_count==0);key(SDLK_z,KMOD_CTRL);assert(l->label_count==2);
+    fx_clear_selection();fx_canvas.labels[0]=1;
+    SDL_SetModState(KMOD_CTRL);pointer(SDL_MOUSEBUTTONDOWN,fx_x(80),fx_y(90),SDL_BUTTON_LEFT,1);SDL_SetModState(KMOD_NONE);
+    pointer(SDL_MOUSEMOTION,fx_x(430),fx_y(320),0,0);assert(!fx_label_chosen(0) && !fx_label_chosen(1));
+    key(SDLK_ESCAPE,0);assert(fx_label_chosen(0) && !fx_label_chosen(1));
+    fx_clear_selection();pointer(SDL_MOUSEBUTTONDOWN,fx_x(90),fx_y(200),SDL_BUTTON_LEFT,1);
+    pointer(SDL_MOUSEMOTION,fx_x(430),fx_y(250),0,0);assert(fx_label_chosen(0) && !fx_label_chosen(1));
+    key(SDLK_ESCAPE,0);assert(matrix_window.visible && !fx_label_chosen(0) && !matrix_window.drag);
+    *l=saved;fx_clear_selection();fx_build(&pages,&bank);matrix_history_clear();
+    /* Adding a Modulator keeps focus on its card; a deliberate double-click opens it. */
+    fx_popup_open(400,250);fx_popup_add(TS_MATRIX_FX_MODULATOR,-1,0,&audio,&ui,&pages,&bank);
+    assert(!modulation_window.visible && !matrix_window.effect_open && matrix_window.selection_count==1);
+    uint32_t id=(uint32_t)matrix_window.selection[0].tile;FxCanvasNode *added=instance(id);assert(added);
+    click(fx_x(added->x)+30,fx_y(added->y)+30,1);assert(!modulation_window.visible);
+    click(fx_x(added->x)+30,fx_y(added->y)+30,2);assert(modulation_window.visible && modulation_window.node==id);
+    modulation_close();mx_effect_remove(0,&audio,&ui,&pages,&bank,ts_matrix_effect_index(added->row.index));
+    *l=saved;fx_clear_selection();fx_build(&pages,&bank);matrix_history_clear();
+}
 static void text_labels(void)
 {
     MatrixWindow *w=&matrix_window;TsMatrixLayout *l=w->layout;
@@ -538,7 +577,7 @@ int main(int argc,char **argv)
     e.button.x=(TS_MOSAIC_FX_X+10)*2;e.button.y=(TS_MOSAIC_FX_Y+5)*2;assert(event(&e));assert(matrix_window.visible && matrix_window.canvas);
     SDL_SetWindowSize(matrix_window.window,1001,701);fx_paint(&audio,&pages,&bank);
     inspector_controls(getenv("TS_FX_PREVIEW"));edit_controls();canvas_gestures(c.effect[dist].id);disconnect_main_prism();routing_preferences();sunvox_browser(getenv("TS_FX_PREVIEW"));
-    gallery_view();text_labels();patch_workflow();patch_twenty_cards();movement_heading_objects();
+    gallery_view();text_labels();grouped_text_selection();patch_workflow();patch_twenty_cards();control_and_bus_wires();movement_heading_objects();
     matrix_close();meta_fx_close();ts_sister_runtime_free(&audio.sister);ts_sample_pages_free(&pages);ts_instrument_free(&bank);SDL_DestroyWindow(main_window);SDL_Quit();
     puts("FX Canvas controller passed, including single-cable disconnect, alternative path, silent clear, undo and project recall.");return 0;
 }

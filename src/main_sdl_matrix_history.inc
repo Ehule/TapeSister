@@ -88,6 +88,7 @@ static int mx_apply(const MatrixSnapshot *s,SDL_AudioDeviceID device,AudioState 
 }
 static void matrix_history_clear(void)
 {
+    modulation_hide();
     svfx_close();
     ++mx_activity_epoch;
     fx_context_reset();

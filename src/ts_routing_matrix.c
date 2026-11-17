@@ -1,4 +1,5 @@
 #include "tapesister/routing_matrix.h"
+#include "tapesister/matrix_modulation.h"
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -23,7 +24,8 @@ int ts_matrix_destination_active(const TsMatrixControls *c,int d)
     if(d<0 || d>=TS_MATRIX_DESTINATIONS)return 0;
     if(d<TS_MATRIX_SHARED_DESTINATIONS || d>=TS_MATRIX_AMBISONICS)return 1;
     int i=d<TS_MATRIX_EFFECT_SC_BASE?d-TS_MATRIX_EFFECT_BASE:d-TS_MATRIX_EFFECT_SC_BASE;
-    return c->effect[i].id && (d<TS_MATRIX_EFFECT_SC_BASE || c->effect[i].type==TS_MATRIX_FX_COMPRESSOR);
+    return c->effect[i].id && (d<TS_MATRIX_EFFECT_SC_BASE?c->effect[i].type!=TS_MATRIX_FX_MODULATOR:
+        c->effect[i].type==TS_MATRIX_FX_COMPRESSOR || c->effect[i].type==TS_MATRIX_FX_MODULATOR);
 }
 int ts_matrix_effect_add(TsMatrixControls *c,int type)
 {
@@ -117,6 +119,10 @@ int ts_matrix_valid(const TsMatrixControls *c)
     }
     for(int s=0;s<TS_MATRIX_ROWS;++s) {
         if(!ts_source_route_valid(&c->row[s],0) || !c->row[s].matrix_enabled)return 0;
+        for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)if(c->effect[i].id && c->effect[i].type==TS_MATRIX_FX_MODULATOR) {
+            if(c->row[s].matrix_gain[TS_MATRIX_EFFECT_BASE+i])return 0;
+            if(s==TS_MATRIX_EFFECT_BASE+i)for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)if(c->row[s].matrix_gain[d])return 0;
+        }
         if(ts_matrix_is_processor(s)) {
             if(c->delayed[s]>>TS_MATRIX_INSTANCE_DESTINATIONS || (!c->feedback && c->delayed[s]))return 0;
             for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)if((c->delayed[s]&ts_matrix_feedback_bit(d)) &&
@@ -125,11 +131,13 @@ int ts_matrix_valid(const TsMatrixControls *c)
     }
     for(int i=0;i<TS_MATRIX_INPUTS;++i)if(!name_valid(c->input_name[i]))return 0;
     for(int i=0;i<TS_MATRIX_OUTPUTS;++i)if(!name_valid(c->output_name[i]))return 0;
-    return order_graph(c,NULL);
+    return ts_mod_assignments_valid(c) && order_graph(c,NULL);
 }
 int ts_matrix_connect(TsMatrixControls *c,int s,int d,int gain)
 {
     if(!c || s<0 || s>=TS_MATRIX_ROWS || d<0 || d>=TS_MATRIX_DESTINATIONS || gain<0 || gain>2000)return -1;
+    int si=ts_matrix_effect_index(s),di=ts_matrix_effect_index(d);
+    if(gain && ((si>=0 && c->effect[si].type==TS_MATRIX_FX_MODULATOR) || (di>=0 && c->effect[di].type==TS_MATRIX_FX_MODULATOR)))return -1;
     TsMatrixControls next=*c;next.row[s].matrix_gain[d]=gain;
     if(ts_matrix_is_processor(s)) {
         if(!gain)next.delayed[s]&=~ts_matrix_feedback_bit(d);
@@ -344,6 +352,7 @@ int ts_matrix_write(FILE *f,const TsMatrixControls *c)
         if(v->type==TS_MATRIX_FX_SUNVOX){snprintf(key,sizeof(key),"Matrix.SunVox%d",i);if(!ts_sunvox_write(f,key,&v->sunvox))return 0;}
         if(v->type==TS_MATRIX_FX_META){snprintf(key,sizeof(key),"Matrix.Meta%d",i);if(!ts_meta_write(f,key,&v->meta))return 0;}
         if(v->type==TS_MATRIX_FX_PEDALBOARD){snprintf(key,sizeof(key),"Matrix.Board%d",i);if(!ts_pedalboard_write(f,key,&v->board))return 0;}
+        if(v->type==TS_MATRIX_FX_MODULATOR){snprintf(key,sizeof(key),"Matrix.Mod%d",i);if(!ts_mod_write(f,key,&v->modulation))return 0;}
         if(v->type==TS_MATRIX_FX_FILTER){snprintf(key,sizeof(key),"Matrix.Filter%d",i);if(!ts_character_filter_write(f,key,&v->filter))return 0;}
     }
     for(int s=0;s<TS_MATRIX_ROWS;++s) {
@@ -381,6 +390,8 @@ int ts_matrix_read(TsMatrixControls *c,const char *key,const char *v)
         if(ts_sunvox_read(&next.effect[n].sunvox,key+used,v)!=1)return -1;
     } else if(sscanf(key,"Board%d.%n",&n,&used)==1 && used>0 && n>=0 && n<TS_MATRIX_EFFECT_CAPACITY) {
         if(ts_pedalboard_read(&next.effect[n].board,key+used,v)!=1)return -1;
+    } else if(sscanf(key,"Mod%d.%n",&n,&used)==1 && used>0 && n>=0 && n<TS_MATRIX_EFFECT_CAPACITY) {
+        if(ts_mod_read(&next.effect[n].modulation,key+used,v)!=1)return -1;
     } else if(sscanf(key,"Meta%d.%n",&n,&used)==1 && used>0 && n>=0 && n<TS_MATRIX_EFFECT_CAPACITY) {
         if(ts_meta_read(&next.effect[n].meta,key+used,v)!=1)return -1;
     } else if(sscanf(key,"Filter%d%n",&n,&used)==1 && !key[used] && n>=0 && n<TS_MATRIX_EFFECT_CAPACITY) {
@@ -408,12 +419,15 @@ int ts_matrix_read(TsMatrixControls *c,const char *key,const char *v)
         if(pending_meta)ts_meta_default(&e.meta);
         e.board=next.effect[n].board;int pending_board=e.type==TS_MATRIX_FX_PEDALBOARD && !e.board.initialized;
         if(pending_board)ts_pedalboard_default(&e.board);
+        e.modulation=next.effect[n].modulation;int pending_mod=e.type==TS_MATRIX_FX_MODULATOR && !e.modulation.initialized;
+        if(pending_mod)ts_mod_default(&e.modulation);
         e.filter=next.effect[n].filter;if(!e.filter.initialized)ts_character_filter_default(&e.filter);
         e.transient_power=next.effect[n].transient_power;e.transient_states=next.effect[n].transient_states;
         if(!ts_matrix_effect_valid(&e))return -1;
         if(pending_sunvox)e.sunvox.patch=0;
         if(pending_meta)e.meta.initialized=2; /* Require a complete rack before final graph validation. */
         if(pending_board)e.board.initialized=2;
+        if(pending_mod)e.modulation.initialized=2;
         next.effect[n]=e;
     } else if(!strcmp(key,"SerialMask")) {
         const unsigned serial=(1u<<TS_MATRIX_MAIN)|(1u<<TS_MATRIX_PRISM)|(1u<<TS_MATRIX_BOARD)|(1u<<TS_MATRIX_FALLOUT);

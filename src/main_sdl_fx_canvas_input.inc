@@ -84,18 +84,6 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
         if(fx_canvas.label_selected>=0 && !fx_canvas.meta) {
             int i=fx_canvas.label_selected;
             if(key==SDLK_F2){fx_label_begin(i);return 1;}
-            if(key==SDLK_DELETE || key==SDLK_BACKSPACE || key==SDLK_x) {
-                if(i>=TS_FX_LABEL_LIMIT)memset(fx_label_at(i)->text,0,TS_FX_LABEL_TEXT);
-                else {
-                    memmove(l->labels+i,l->labels+i+1,(size_t)(l->label_count-i-1)*sizeof(l->labels[0]));
-                    memset(l->labels+--l->label_count,0,sizeof(l->labels[0]));
-                }
-                fx_canvas.label_selected=-1;return 1;
-            }
-            if(!(mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI)) && (key==SDLK_g || key==SDLK_s)) {
-                fx_label_drag(key==SDLK_g?FX_DRAG_LABEL_GRAB:FX_DRAG_LABEL_SCALE,fx_canvas.mouse_x,fx_canvas.mouse_y);return 1;
-            }
-            if(key==SDLK_ESCAPE){fx_return_mosaic(main,ui);return 1;}
         }
         if(key==SDLK_F2 && w->selection_count==1){fx_properties_begin(w->selection[0]);return 1;}
         if(key==SDLK_ESCAPE) {
@@ -116,7 +104,8 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
             if(!fx_canvas.meta){if(fx_selected_effects())fx_delete_request(-1);else fx_edit_selection(1,0,device,audio,ui,pages,bank);}return 1;
         }
         if((mod&KMOD_CTRL) && key==SDLK_a){if(!fx_canvas.meta){fx_clear_wires();fx_clear_selection();fx_build(pages,bank);
-            for(int i=0;i<fx_canvas.count;++i)w->selection[w->selection_count++]=fx_canvas.node[i].row;}return 1;}
+            for(int i=0;i<fx_canvas.count;++i)w->selection[w->selection_count++]=fx_canvas.node[i].row;
+            for(int i=0;i<fx_label_limit();++i)if(fx_label_visible(i))fx_canvas.labels[i]=1;}return 1;}
         if((mod&KMOD_CTRL) && key==SDLK_n){if(!fx_canvas.meta)fx_popup_open(400,220);return 1;}
         e->key.windowID=SDL_GetWindowID(main);return 0;
     }
@@ -140,6 +129,7 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
                 if(sc>=0 && ts_matrix_destination_active(&w->controls,sc) && abs(y-fx_y(n->y+fx_node_h(n)*.8f))<13 && abs(y-fx_y(n->y+fx_node_h(n)*.8f))<abs(y-yy)){yy=fx_y(n->y+fx_node_h(n)*.8f);dest=sc;}
                 int body=body_drag && x>=xx && x<=fx_x(n->x+fx_node_w(n)) && y>=fx_y(n->y) && y<=fx_y(n->y+fx_node_h(n));
                 if(at>=0 && dest>=0 && (body || (abs(x-xx)<18 && abs(y-yy)<18))) {
+                    if(source.kind==4 && modulation_connect((uint32_t)source.tile,dest,device,audio,ui,pages,bank))break;
                     mx_select(at,0);w->destination=dest;
                     if(body)mx_toggle(device,audio,ui,pages,bank);else mx_gain(device,audio,ui,pages,bank,1000);
                     if(mx_display_route(mx_route(source,pages,bank)).matrix_gain[dest])connected=dest;
@@ -211,12 +201,14 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
         if(!fx_label_visible(i))continue;
         SDL_Rect r=fx_text_object_rect(i);
         if(left && x>=r.x && x<r.x+r.w && y>=r.y && y<r.y+r.h) {
-            fx_clear_selection();fx_clear_wires();fx_canvas.label_selected=i;w->effect_open=w->compressor_open=0;
-            if(e->button.clicks>=2)fx_label_begin(i);else fx_label_drag(FX_DRAG_LABEL,x,y);
+            int add=SDL_GetModState()&KMOD_SHIFT,chosen=fx_label_chosen(i);
+            if(!add && !chosen){fx_clear_selection();fx_clear_wires();}
+            fx_canvas.labels[i]=add?!chosen:1;fx_canvas.label_selected=fx_canvas.labels[i]?i:-1;w->effect_open=w->compressor_open=0;
+            if(e->button.clicks>=2)fx_label_begin(i);
+            else if(!add){fx_canvas.mouse_x=x;fx_canvas.mouse_y=y;fx_begin_transform(FX_DRAG_NODE);}
             snprintf(w->status,sizeof(w->status),"TEXT LABEL / DOUBLE-CLICK OR F2: EDIT / G: MOVE / S: SIZE / DELETE: REMOVE");return 1;
         }
     }
-    fx_canvas.label_selected=-1;
     for(int i=fx_canvas.count-1;i>=0;--i) {
         FxCanvasNode *n=&fx_canvas.node[i];int xx=fx_x(n->x),yy=fx_y(n->y),ww=(int)(fx_node_w(n)*l->canvas_zoom),hh=(int)(fx_node_h(n)*l->canvas_zoom);
         int mod=SDL_GetModState();
@@ -243,6 +235,7 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
         if(e->button.clicks>=2 && n->row.kind==4) {
             TsMatrixEffectControls *c=&w->controls.effect[ts_matrix_effect_index(n->row.index)];
             if(c->type==TS_MATRIX_FX_PEDALBOARD){sister_board_open_from(c->id,e->button.windowID);return 1;}
+            if(c->type==TS_MATRIX_FX_MODULATOR){modulation_open(c->id);return 1;}
             if(c->type==TS_MATRIX_FX_SUNVOX){svfx_open(c->id);return 1;}
             if(c->type==TS_MATRIX_FX_META){fx_canvas.meta=c->id;w->effect_open=0;return 1;}
             if(c->type==TS_MATRIX_FX_FILTER){character_filter_matrix_open(c->id);return 1;}}
@@ -256,11 +249,9 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
     float nearest=64;int found=-1,destination=-1;
     for(int i=0;i<fx_canvas.count;++i) {
         FxCanvasNode *n=&fx_canvas.node[i];if(n->at<0)continue;
-        TsSourceRoute raw=mx_route(n->row,pages,bank);if(n->row.kind==3 && !raw.matrix_enabled)continue;
-        TsSourceRoute r=mx_display_route(raw);
-        for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)if(r.matrix_gain[d] && fx_canvas.dest[d]>=0) {
+        for(int d=0;d<TS_FX_DESTINATIONS;++d)if(fx_visible_gain(n->row,d,pages,bank) && fx_canvas.dest[d]>=0) {
             FxCanvasNode *to=&fx_canvas.node[fx_canvas.dest[d]];
-            float distance=fx_cable(fx_xf(n->x+fx_node_w(n)),fx_yf(n->y+fx_node_h(n)*.5f),fx_xf(to->x),fx_yf(to->y+fx_node_h(to)*(d==to->destination?.5f:.8f)),0,0,x,y);
+            float distance=fx_cable(fx_xf(n->x+fx_node_w(n)),fx_yf(n->y+fx_node_h(n)*.5f),fx_xf(to->x),fx_yf(to->y+fx_node_h(to)*(d==TS_FX_MOSAIC_BUS || d==to->destination?.5f:.8f)),0,0,x,y);
             if(distance<nearest){nearest=distance;found=i;destination=d;}}}
     if(right) {
         if(found>=0) {

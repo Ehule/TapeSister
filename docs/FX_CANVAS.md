@@ -64,7 +64,98 @@ Inherited track-to-tile routing remains inspectable in the Matrix.
 - Undo/Redo and Ctrl+Z/Ctrl+Y are shared with the Matrix. Audition keys pass through
   to the instrument. MOSAIC / CLOSE returns to Mosaic without stopping audio.
 
+## Modulation curves
+
+Choose **+ EFFECT → MODULATOR**, then double-click its card to open it; adding it keeps you on the canvas. Four curve lanes
+open initially; **+ ADD LANE** expands the card to sixteen lanes. A lane can
+control several parameters, each with its own low/high range. The card supports
+64 assignments in total. Text entry shows a blinking caret and supports arrows, Home/End, Delete, and Ctrl+A. Curve and assignment edits use the shared Matrix undo
+history and save with the project.
+
+![Native modulation editor](screenshots/fx-modulation.png)
+
+| Control | Behavior |
+| --- | --- |
+| **DRAW** | Drag across the graph to draw a curve. Strokes interpolate between pointer events, preserve untouched sampled points, and include the release position. Audio publication is coalesced to UI frames and flushed on release. |
+| **POINTS** | Drag a point; double-click empty graph space to insert one; right-click an interior point to remove it. |
+| **SINE / TRI / SQUARE / RANDOM** | Replace the selected curve. Random uses the current point count. Square has editable, near-vertical edges. Generated points and the next random seed are saved, so loading never rolls a new shape. |
+| **POINT COUNT − / +** | Immediately add or remove points on the current curve (2–64). The wheel also changes the count. The last detailed shape is retained: reducing to two points and increasing again recovers it. A new drawing stroke or generated shape becomes the new reference. |
+| **SMOOTH** | Drag to round the transitions between points without overshooting their values. Shift-drag gives finer adjustment. |
+| **LOOP / ONE SHOT** | Repeat the curve, or run once and hold its final value. Loop endpoints are joined when drawing, moving an endpoint, randomizing, or switching to Loop. |
+| **FREE / TEMPO** | Set cycle duration in seconds (0.05–14,400) or quarter-note beats (1/16–1,024). Free timing also exposes **FREQ** in Hz (1/14,400–20); in **LINKED** mode frequency and seconds are reciprocal. **UNLINKED** keeps them independent: duration × frequency sets cycles across the visible window. Drag, wheel, or double-click either value; Shift gives finer adjustment. Shaded levels show their logarithmic position. Tempo follows F11's master tempo, including the tracker clock when it is the enabled master source. |
+| **< M1 >** | Switch among the project’s Modulator instances without leaving this window. |
+| **INFLUENCE** | Blend all assignments from their authored parameter values (0%) to the curve ranges (100%). Available in the FX inspector and as another Modulator’s destination. |
+| **AUDIO KEY / A / R** | Blend an audio envelope into Influence. Connect audio to the lower input port and increase Audio Key; A/R control attack (1–1,000 ms) and release (10–10,000 ms). |
+| **RETRIGGER** | Restart this card's lanes from their first point. Tempo timing controls duration; it does not quantize this command or automatically retrigger at markers. |
+| **+ ASSIGN** | Choose an added effect or an individual pedal inside an added Pedalboard, then choose an available continuous parameter. |
+| **LOW / HIGH** | Drag the value, use its slider, or scroll over it. Wheel steps are 1%; Shift+wheel uses 0.1%. Each endpoint moves independently. Inverting the endpoints reverses that assignment. Cutoff is shown in Hz and output in dB; other ranges use normalized percentages. |
+| Assignment **ON / X** | Bypass or remove that assignment. Click its destination or parameter to change it. |
+| Lane square / top **ON** | Bypass one lane or the entire card. Double-click a lane name to rename it. |
+| **Esc / BACK** | Return to the window that opened the editor; Esc first cancels an open picker or text entry. |
+
+The ordinary audio path goes through the effects. Dashed lilac cables are
+parameter assignments. Adding or connecting a Modulator never opens its editor;
+double-click its card to edit. Control cables support click/box selection,
+right-click color, and Delete; deleting one removes the assignments represented
+by that cable. Shift+wheel changes audio cable gain, not control assignments.
+
+The Modulator’s lower audio input is a detector only: it produces no audio
+output. Audio Key defaults to 0%, preserving ordinary curve playback. At 100%,
+silence removes the Modulator’s influence and a full-scale peak permits full
+influence; intermediate levels scale it. The source may be another effect’s
+output, including a transient shaper. Influence can also be assigned by another
+Modulator. Control chains run in dependency order and direct/indirect control
+loops are rejected. Audio detector feedback is causal through the envelope and
+next control tick (up to about 6.7 ms at 48 kHz).
+
+In unlinked free timing, generated templates repeat analytically. Editing points
+or drawing captures the displayed window into the existing 64-point budget, so
+individual cycles can differ. Dense generated patterns lose fine detail when
+captured for drawing. Linking again preserves the current window in that same
+point budget. Tempo mode keeps its existing beats-per-window behavior.
+
+Inherited card-to-Mosaic-bus cables are selectable and deletable. Disconnecting
+creates an explicit silent route, matching F9. These operations share the
+same route data and undo history.
+
+Supported targets include native pedal controls, continuous Character Filter
+controls, added compressor controls, Meta FX macros, and host Mix/Output for
+SunVox effects. SunVox's internal controllers, the fixed legacy Pedalboard,
+and Fallout's internal modulation are outside this first version. Fallout keeps
+its existing local LFO/envelope behavior. One external assignment owns each
+parameter; already assigned parameters are omitted from the picker.
+
+Assignments use stable effect and child-pedal identities, so moving a pedal
+does not change its target. A deleted or replaced target remains visibly missing
+and inactive until repaired or undone. Copying a selected Modulator together
+with its targets reconnects the copies; copying it alone drops external links.
+The authored parameter value remains intact and returns through the processor's
+smoothing when its assignment is bypassed or removed.
+
+Lanes advance on the audio clock when assigned to an enabled, awake effect.
+Unassigned lanes and targets suspended by Gallery do not advance. A one-shot
+holds its last value until retriggered; engine Stop freezes progression. Pause
+keeps the existing tails/engine behavior. Closing the editor changes neither
+the sound nor the clock. Control targets update at 150 Hz, independently of UI
+redraws, with existing DSP smoothing; modulation does not rebuild the routing
+graph or allocate memory in audio processing.
+
+Validation includes native editor interaction and a captured SDL screenshot,
+random-curve project round trips, stable pedal identities, missing targets,
+bypass restoration, tempo/one-shot/sleep behavior, and sample-for-sample Matrix
+span comparisons with modulation active. For a local DSP cost comparison, run
+`tapesister_modulation_tests benchmark`; its eight neutral pedals/four lanes/eight
+assignments exercise parameter publication and processing, not UI drawing or a
+complete live project. Real cost also depends on the destination DSP.
+
+Manual listening check: route a playing card through an added Pedalboard,
+assign a slow curve to its Filter cutoff, invert a second assignment, and compare
+lane/card bypass. Then save/reload, reorder the pedal, switch Gallery movements,
+and use Pause/Stop and Retrigger while checking F12 and listening for clicks.
+
 ## Text labels
+
+Ordinary box selection includes visible text labels and movement headings along with cards. Shift adds to the selection; G, S, drag, and Delete operate on the selected objects together. Ctrl-drag remains a cable-only selection. Escape cancels a box or movement; Undo/Redo restores grouped edits.
 
 Press **T** at the pointer, or choose **TEXT LABEL** from the add menu (double-click
 empty space, right-click, or **+ EFFECT**). Type a label and press Enter to save.

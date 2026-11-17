@@ -10,8 +10,9 @@ static struct {
     Uint32 text_blink;int text_phase,confirm_delete;uint32_t replace_id;
     int properties,properties_count;MatrixRow properties_rows[MATRIX_CAPACITY+TS_MATRIX_DESTINATIONS];FxWireList properties_wires;MatrixRow properties_row;char properties_name[48];uint32_t properties_color;int properties_cursor,properties_all;
     char label_text[TS_FX_LABEL_TEXT];
-    TsFxCanvasLabel label_origin;
-    int count,dest[TS_MATRIX_DESTINATIONS],fit,wire,destination,mouse_x,mouse_y;
+    TsFxCanvasLabel label_origin,label_move[TS_FX_LABEL_LIMIT+TS_FX_HEADING_LIMIT];
+    unsigned char labels[TS_FX_LABEL_LIMIT+TS_FX_HEADING_LIMIT],before_labels[TS_FX_LABEL_LIMIT+TS_FX_HEADING_LIMIT],moving_labels[TS_FX_LABEL_LIMIT+TS_FX_HEADING_LIMIT];
+    int count,dest[TS_FX_DESTINATIONS],fit,wire,destination,mouse_x,mouse_y;
     MatrixRow source,moving;
     float origin_x,origin_y,pointer_x,pointer_y;
     uint32_t meta;
@@ -54,7 +55,7 @@ static void fx_divider_cursor(int active)
     fx_canvas.divider_hover=active;
 }
 static void fx_context_reset(void)
-{fx_properties_close();fx_canvas.label_selected=-1;fx_canvas.label_editing=fx_canvas.properties=fx_canvas.confirm_delete=0;fx_canvas.replace_id=0;fx_divider_cursor(0);if(fx_canvas.divider_cursor)SDL_FreeCursor(fx_canvas.divider_cursor);fx_canvas.divider_cursor=NULL;svfx_close();fx_canvas.meta=0;fx_canvas.wire=fx_canvas.destination=-1;fx_canvas.fit=fx_canvas.popup=fx_canvas.confirm_clear=0;fx_canvas.inspector_key=0;fx_canvas.movement=0;fx_canvas.movement_popup=0;fx_canvas.active_view=0;
+{fx_properties_close();memset(fx_canvas.labels,0,sizeof(fx_canvas.labels));fx_canvas.label_selected=-1;fx_canvas.label_editing=fx_canvas.properties=fx_canvas.confirm_delete=0;fx_canvas.replace_id=0;fx_divider_cursor(0);if(fx_canvas.divider_cursor)SDL_FreeCursor(fx_canvas.divider_cursor);fx_canvas.divider_cursor=NULL;svfx_close();fx_canvas.meta=0;fx_canvas.wire=fx_canvas.destination=-1;fx_canvas.fit=fx_canvas.popup=fx_canvas.confirm_clear=0;fx_canvas.inspector_key=0;fx_canvas.movement=0;fx_canvas.movement_popup=0;fx_canvas.active_view=0;
  memset(fx_canvas.revealed,0,sizeof(fx_canvas.revealed));
  free(fx_canvas.properties_wires.items);fx_canvas.properties_wires=(FxWireList){0};
  free(fx_canvas.wires.items);free(fx_canvas.before_wires.items);fx_canvas.wires=(FxWireList){0};fx_canvas.before_wires=(FxWireList){0};}
@@ -173,7 +174,7 @@ static void fx_build(TsSamplePages *pages,TsInstrument *bank)
     }
     if(!fx_graph_changed(pages,bank))return;
     ++fx_graph_cache.builds;w->dirty=1;
-    fx_canvas.count=0;for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)fx_canvas.dest[d]=-1;
+    fx_canvas.count=0;for(int d=0;d<TS_FX_DESTINATIONS;++d)fx_canvas.dest[d]=-1;
     /* Sources are endpoints, not copies of sample/generator editors. Ordinary
        tile/card/track membership remains represented by its source bus. */
     for(int i=0;i<w->count;++i) {
@@ -280,12 +281,13 @@ static void fx_build(TsSamplePages *pages,TsInstrument *bank)
             if(visible)fx_canvas.node[count++]=n;
         }
         fx_canvas.count=count;
-        for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)fx_canvas.dest[d]=-1;
+        for(int d=0;d<TS_FX_DESTINATIONS;++d)fx_canvas.dest[d]=-1;
         for(int i=0;i<count;++i)if(fx_canvas.node[i].destination>=0) {
             int n=fx_canvas.node[i].destination;fx_canvas.dest[n]=i;
             int sc=ts_matrix_sidechain_for(n);if(sc>=0 && ts_matrix_destination_active(&w->controls,sc))fx_canvas.dest[sc]=i;
         }
     }
+    for(int i=0;i<fx_canvas.count;++i)if(fx_canvas.node[i].row.kind==2 && fx_canvas.node[i].row.index==TS_MATRIX_MOSAIC)fx_canvas.dest[TS_FX_MOSAIC_BUS]=i;
     /* Initial placement can create saved positions during this build. */
     memcpy(&fx_graph_cache.layout,w->layout,offsetof(TsMatrixLayout,canvas)+(size_t)w->layout->canvas_count*sizeof(w->layout->canvas[0]));
     fx_graph_cache.layout.heading_count=w->layout->heading_count;
@@ -297,12 +299,20 @@ static int fx_chosen(MatrixRow row)
     for(int i=0;i<w->selection_count;++i)if(mx_same(row,w->selection[i]))return 1;
     return 0;
 }
+static int fx_label_chosen(int i)
+{return i>=0 && i<fx_label_limit() && (fx_canvas.labels[i] || fx_canvas.label_selected==i);}
+static void fx_delete_labels(TsMatrixLayout *l)
+{
+    for(int i=fx_label_limit()-1;i>=0;--i)if(fx_label_chosen(i)) {
+        if(i>=TS_FX_LABEL_LIMIT)memset(l->headings[i-TS_FX_LABEL_LIMIT].label.text,0,TS_FX_LABEL_TEXT);
+        else if(i<l->label_count){memmove(l->labels+i,l->labels+i+1,(size_t)(l->label_count-i-1)*sizeof(l->labels[0]));memset(l->labels+--l->label_count,0,sizeof(l->labels[0]));}
+    }
+}
 static void fx_clear_selection(void)
-{fx_canvas.label_selected=-1;matrix_window.selection_count=0;matrix_window.selected=-1;}
+{memset(fx_canvas.labels,0,sizeof(fx_canvas.labels));fx_canvas.label_selected=-1;matrix_window.selection_count=0;matrix_window.selected=-1;}
 static void fx_select(FxCanvasNode *n,int add)
 {
     MatrixWindow *w=&matrix_window;
-    fx_canvas.label_selected=-1;
     if(!add)fx_clear_selection();
     int i=0;while(i<w->selection_count && !mx_same(n->row,w->selection[i]))++i;
     if(i==w->selection_count)w->selection[w->selection_count++]=n->row;
@@ -322,7 +332,8 @@ static void fx_fit_selection(int selected)
     for(int i=0;i<fx_canvas.count;++i){FxCanvasNode *n=&fx_canvas.node[i];
         if(selected && !fx_chosen(n->row))continue;
         left=fminf(left,n->x);top=fminf(top,n->y);right=fmaxf(right,n->x+fx_node_w(n));bottom=fmaxf(bottom,n->y+fx_node_h(n));++count;}
-    if(!selected)for(int i=0;i<fx_label_limit();++i) {
+    for(int i=0;i<fx_label_limit();++i) {
+        if(selected && !fx_label_chosen(i))continue;
         if(!fx_label_visible(i) || (i<TS_FX_LABEL_LIMIT && fx_canvas.movement))continue;
         const TsFxCanvasLabel *p=fx_label_at(i);int heading=i>=TS_FX_LABEL_LIMIT;
         left=fminf(left,p->x);top=fminf(top,p->y-(heading?40*p->scale:0));
@@ -362,9 +373,9 @@ static void fx_ensure_visible(FxCanvasNode *n)
 static uint32_t fx_color(int type)
 {
     static const int roles[]={TS_COLOR_DATA4,TS_COLOR_DATA3,TS_COLOR_DATA1,TS_COLOR_DATA1,
-        TS_COLOR_DATA5,TS_COLOR_DATA3,TS_COLOR_DATA4,TS_COLOR_DATA5,TS_COLOR_DATA3,TS_COLOR_DATA4,TS_COLOR_DATA5,TS_COLOR_DATA3,TS_COLOR_DATA5};
+        TS_COLOR_DATA5,TS_COLOR_DATA3,TS_COLOR_DATA4,TS_COLOR_DATA5,TS_COLOR_DATA3,TS_COLOR_DATA4,TS_COLOR_DATA5,TS_COLOR_DATA3,TS_COLOR_DATA5,TS_COLOR_DATA5};
     static const uint32_t colors[]={0xffc9b3d4u,0xff9ed2b2u,0xffe6c17du,0xffe5b36bu,
-        0xffb990c6u,0xff95c6dfu,0xffc294d2u,0xff9fcea7u,0xffb6d38du,0xffd19ebdu,0xffc499c9u,0xff9ed2b2u,0xffc499c9u};
+        0xffb990c6u,0xff95c6dfu,0xffc294d2u,0xff9fcea7u,0xffb6d38du,0xffd19ebdu,0xffc499c9u,0xff9ed2b2u,0xffc499c9u,0xffc9a0e6u};
     type=SDL_clamp(type,0,TS_MATRIX_FX_TYPES-1);
     return FX_THEME(roles[type],colors[type]);
 }
@@ -503,6 +514,17 @@ static void fx_meta_paint(TsMatrixEffectControls *c)
     }
     mx_button(24,784,212,"RACK EDITOR",0);mx_text(260,790,"Drag or scroll to adjust a macro.",FX_TEXT,2);
 }
+static int fx_control_source(MatrixRow row)
+{int slot=row.kind==4?ts_matrix_effect_index(row.index):-1;return slot>=0 && matrix_window.controls.effect[slot].type==TS_MATRIX_FX_MODULATOR?slot:-1;}
+static int fx_visible_gain(MatrixRow row,int destination,TsSamplePages *pages,TsInstrument *bank)
+{
+    int slot=fx_control_source(row);
+    if(slot>=0){const TsModControls *c=&matrix_window.controls.effect[slot].modulation;
+        for(unsigned i=0;i<c->map_count;++i)if(ts_mod_target(&matrix_window.controls,&c->map[i])>=0 && TS_MATRIX_EFFECT_BASE+ts_mod_target(&matrix_window.controls,&c->map[i])==destination)return 1000;return 0;}
+    TsSourceRoute raw=mx_route(row,pages,bank);
+    if(row.kind==3 && !raw.matrix_enabled)return destination==TS_FX_MOSAIC_BUS?1000:0;
+    return destination<TS_MATRIX_DESTINATIONS?mx_display_route(raw).matrix_gain[destination]:0;
+}
 #include "main_sdl_fx_inspector.inc"
 static void fx_inspector_paint(TsSamplePages *pages,TsInstrument *bank)
 {
@@ -517,13 +539,13 @@ static void fx_inspector_paint(TsSamplePages *pages,TsInstrument *bank)
             fx_panel_text(x,221,width+5,65,fx_canvas.source.name,FX_TEXT,2,3);
             mx_text(x,302,"TO",FX_CABLE,2);
             fx_panel_text(x,329,width+5,65,fx_canvas.node[fx_canvas.dest[fx_canvas.destination]].row.name,FX_TEXT,2,3);
-            TsSourceRoute route=mx_display_route(mx_route(fx_canvas.source,pages,bank));
-            int gain=route.matrix_gain[fx_canvas.destination];
+            int control=fx_control_source(fx_canvas.source)>=0,bus=fx_canvas.destination==TS_FX_MOSAIC_BUS;
+            int gain=control || bus?0:fx_visible_gain(fx_canvas.source,fx_canvas.destination,pages,bank);
             if(gain>0) {
                 snprintf(label,sizeof(label),"%+.1f dB",20*log10f(gain/1000.f));
                 mx_text(x,414,label,FX_FOCUS,2);
             }
-            fx_panel_text(x,465,width+5,100,"Shift+wheel: level. Wheel: zoom. X/Delete: disconnect.",FX_TEXT,2,4);
+            fx_panel_text(x,465,width+5,100,control?"Control link. Right-click: color. X/Delete: disconnect assignments.":bus?"Mosaic bus link. X/Delete: disconnect. Ctrl+Shift-click: reroute.":"Shift+wheel: level. Wheel: zoom. X/Delete: disconnect.",FX_TEXT,2,4);
         } else if(w->selection_count) {
             if(w->selection_count==1)snprintf(label,sizeof(label),"%s",w->selection[0].name);
             else snprintf(label,sizeof(label),"%d NODES",w->selection_count);
@@ -537,6 +559,7 @@ static void fx_inspector_paint(TsSamplePages *pages,TsInstrument *bank)
         return;
     }
 }
+static SDL_Rect fx_text_object_rect(int index);
 #include "main_sdl_fx_canvas_edit.inc"
 #include "main_sdl_fx_canvas_labels.inc"
 #include "main_sdl_fx_canvas_patch.inc"
@@ -562,8 +585,8 @@ static void fx_paint_cables(TsSamplePages *pages,TsInstrument *bank)
             FxCanvasNode *n=&fx_canvas.node[i];if(n->at<0)continue;
             TsSourceRoute raw=mx_route(n->row,pages,bank),r=mx_display_route(raw);
             if(n->row.kind==3 && !raw.matrix_enabled) {
-                /* This inherited connection is not a patchable Matrix destination. */
-                if(bus && !layer)fx_cables_add(fx_xf(n->x+fx_node_w(n)),fx_yf(n->y+fx_node_h(n)*.5f),fx_xf(bus->x),fx_yf(bus->y+fx_node_h(bus)*.5f),FX_DIM);
+                int selected=fx_wire_selected(n->row,TS_FX_MOSAIC_BUS)>=0;uint32_t custom=fx_wire_color(n->row,TS_FX_MOSAIC_BUS);
+                if(bus && layer==(focus && selected))fx_cables_add(fx_xf(n->x+fx_node_w(n)),fx_yf(n->y+fx_node_h(n)*.5f),fx_xf(bus->x),fx_yf(bus->y+fx_node_h(bus)*.5f),selected?MX_YELLOW:custom?custom:FX_DIM);
                 continue;
             }
             for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)if(r.matrix_gain[d] && fx_canvas.dest[d]>=0) {
@@ -579,6 +602,23 @@ static void fx_paint_cables(TsSamplePages *pages,TsInstrument *bank)
                 float x=fx_xf(n->x+fx_node_w(n)),y=fx_yf(n->y+fx_node_h(n)*.5f),xx=fx_xf(to->x),yy=fx_yf(to->y+fx_node_h(to)*(sc?.8f:.5f));
                 fx_cables_add(x,y,xx,yy,color);
             }
+        }
+    }
+    for(int i=0;i<fx_canvas.count;++i) {
+        FxCanvasNode *n=&fx_canvas.node[i];int slot=n->row.kind==4?ts_matrix_effect_index(n->row.index):-1;
+        if(slot<0 || w->controls.effect[slot].type!=TS_MATRIX_FX_MODULATOR)continue;
+        const TsMatrixEffectControls *source=&w->controls.effect[slot];const TsModControls *c=&source->modulation;
+        unsigned drawn=0;
+        for(unsigned m=0;m<c->map_count;++m) {
+            const TsModMap *map=&c->map[m];int target=ts_mod_target(&w->controls,map);
+            if(target<0 || (drawn&(1u<<target)))continue;
+            int node=fx_canvas.dest[TS_MATRIX_EFFECT_BASE+target];if(node<0)continue;
+            drawn|=1u<<target;FxCanvasNode *to=&fx_canvas.node[node];
+            int active=0;
+            for(unsigned k=0;k<c->map_count;++k)if(c->map[k].target==map->target && ts_mod_target(&w->controls,&c->map[k])==target)
+                active|=source->enabled && c->map[k].enabled && c->lane[c->map[k].lane].enabled;
+            uint32_t custom=fx_wire_color(n->row,TS_MATRIX_EFFECT_BASE+target);int selected=fx_wire_selected(n->row,TS_MATRIX_EFFECT_BASE+target)>=0;
+            fx_cables_add_kind(fx_xf(n->x+fx_node_w(n)),fx_yf(n->y+fx_node_h(n)*.5f),fx_xf(to->x),fx_yf(to->y+fx_node_h(to)*.5f),selected?MX_YELLOW:custom?custom:active?0xffc4a4dcu:FX_DIM,1);
         }
     }
     fx_cables_end();
@@ -606,6 +646,7 @@ static void fx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
             const TsMatrixEffectControls *c=slot>=0?&w->controls.effect[slot]:NULL;
             const char *detail=n->at<0?(mx_destination_available(n->destination)?"OUTPUT / RECEIVER":"N/A / PORT NOT OPEN"):c?(c->enabled?(c->type==TS_MATRIX_FX_META?"DOUBLE-CLICK TO ENTER":"ACTIVE / SELECT TO EDIT"):"BYPASS"):"BUS / PATCH ENDPOINT";
             if(n->outside_filter)detail="OUTSIDE MOVEMENT / EDITING";
+            if(c && c->type==TS_MATRIX_FX_MODULATOR)detail="CONTROL / DOUBLE-CLICK TO EDIT";
             const char *title=c && c->type==TS_MATRIX_FX_SUNVOX?ts_sunvox_name(&c->sunvox):c && c->type==TS_MATRIX_FX_META?c->meta.name:n->row.name;
             char compact[48];
             if(c)snprintf(compact,sizeof(compact),"%s %u",ts_matrix_effect_short_name(c->type),(unsigned)c->id);
@@ -622,7 +663,7 @@ static void fx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
                 color=mixed;detail="PLAYING";
             }
             fx_node_rect(x,y,width,height,title,compact,detail,color,fx_chosen(n->row),n->scale);
-            if(n->destination>=0)fx_rect(x-4,y+height/2-4,9,9,FX_CABLE);
+            if(n->destination>=0 && (!c || c->type!=TS_MATRIX_FX_MODULATOR))fx_rect(x-4,y+height/2-4,9,9,FX_CABLE);
             if(n->at>=0)fx_rect(x+width-4,y+height/2-4,9,9,FX_CABLE);
             int sc=n->destination>=0?ts_matrix_sidechain_for(n->destination):-1;
             if(sc>=0 && ts_matrix_destination_active(&w->controls,sc))fx_rect(x-4,y+(int)(height*.8f)-4,9,9,0xffbc98ccu);

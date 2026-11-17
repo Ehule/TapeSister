@@ -75,6 +75,7 @@ static void fx_popup_add(int type,int factory,SDL_AudioDeviceID device,AudioStat
         if(fx_canvas.node[i].outside_filter)snprintf(w->status,sizeof(w->status),"NEW EFFECT SHOWN OUTSIDE MOVEMENT / KEPT VISIBLE UNTIL VIEW FILTER CHANGES / Z: FRAME");
         break;
     }
+    if(type==TS_MATRIX_FX_MODULATOR)w->effect_open=0;
 }
 static int fx_popup_event(SDL_Event *e,int x,int y,int wheel,SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsSamplePages *pages,TsInstrument *bank)
 {

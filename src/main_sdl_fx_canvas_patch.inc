@@ -18,8 +18,7 @@ static int fx_delete_effects(int retain,SDL_AudioDeviceID device,AudioState *aud
     int removed=0,ok=1;
     fx_validate_wires(pages,bank);
     for(int i=0;i<fx_canvas.wires.count;++i) {
-        FxCanvasWire wire=fx_canvas.wires.items[i];TsSourceRoute *route=fx_saved_route(s,wire.source);
-        if(route){route->matrix_gain[wire.destination]=0;if(wire.source.kind==2 || wire.source.kind==4)s->controls.delayed[wire.source.index]&=~ts_matrix_feedback_bit(wire.destination);}
+        fx_remove_wire(s,fx_canvas.wires.items[i]);
     }
     for(int slot=0;slot<TS_MATRIX_EFFECT_CAPACITY && ok;++slot) {
         uint32_t id=s->controls.effect[slot].id;
@@ -38,6 +37,7 @@ static int fx_delete_effects(int retain,SDL_AudioDeviceID device,AudioState *aud
         ts_matrix_effect_remove(&s->controls,slot);++removed;
     }
     if(ok)ok=ts_matrix_valid(&s->controls);
+    if(ok)fx_delete_labels(&s->layout);
     if(ok && removed)ok=mx_apply(s,device,audio,ui,pages,bank);
     free(s);
     if(!ok) {
@@ -64,6 +64,8 @@ static void fx_connect_selected(int destination,SDL_AudioDeviceID device,AudioSt
 {
     MatrixWindow *w=&matrix_window;
     if(destination<0 || !w->selection_count)return;
+    if(w->selection_count==1 && w->selection[0].kind==4 &&
+       modulation_connect((uint32_t)w->selection[0].tile,destination,device,audio,ui,pages,bank))return;
     for(int i=0;i<w->selection_count;++i) {
         MatrixRow r=w->selection[i];
         if(r.kind==5 || ((r.kind==2 || r.kind==4) && r.index==destination)) {
@@ -83,7 +85,7 @@ static int fx_replace_effect(int type,const TsSunVoxControls *patch,SDL_AudioDev
     TsMatrixEffectControls *c=&s->controls.effect[slot];
     c->enabled=old.enabled;c->mix=old.mix;c->gain_db=old.gain_db;c->transition=old.transition;
     if(patch)c->sunvox=*patch;
-    if(type!=TS_MATRIX_FX_COMPRESSOR) {
+    if(type!=TS_MATRIX_FX_COMPRESSOR && type!=TS_MATRIX_FX_MODULATOR) {
         int sc=TS_MATRIX_EFFECT_SC_BASE+slot;
         for(int i=0;i<TS_MATRIX_ROWS;++i){s->controls.row[i].matrix_gain[sc]=0;s->controls.delayed[i]&=~ts_matrix_feedback_bit(sc);}
         for(int i=0;i<s->count;++i)s->routes[i].route.matrix_gain[sc]=0;

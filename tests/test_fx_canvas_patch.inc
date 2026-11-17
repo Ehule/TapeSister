@@ -129,3 +129,27 @@ static void patch_twenty_cards(void)
     puts("Twenty-card patch, selected-source undo, hidden-movement retain links, atomic overflow rejection and sidechain replacement passed.");
     reroute_cables();
 }
+static void control_and_bus_wires(void)
+{
+    MatrixWindow *w=&matrix_window;edit_settle();MatrixSnapshot *saved=mx_snapshot(0,&audio,&pages,&bank);assert(saved);
+    char error[256];TsMosaicGallery *g=pages.gallery;TsMosaic *scene=g->canvas[0].scene;
+    float data[16]={.1f};TsSample sample={.data=data,.frames=16,.channels=1,.sample_rate=48000};
+    TsMosaicSource *source=ts_mosaic_source(scene,&sample,error,sizeof(error));assert(source);
+    TsMosaicEvent *card=ts_mosaic_add(scene,source,0,0);assert(card);uint64_t cardid=card->id;
+    w->controls.enabled=1;for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)ts_matrix_effect_remove(&w->controls,i);
+    int mod=ts_matrix_effect_add(&w->controls,TS_MATRIX_FX_MODULATOR),dest=ts_matrix_effect_add(&w->controls,TS_SISTER_FX_DISTORTION);
+    uint32_t id=w->controls.effect[mod].id;mx_commit_controls(0,&audio,&ui);mx_rows(&pages,&bank);fx_build(&pages,&bank);fx_fit();
+    MatrixRow row=gallery_card(g->canvas[0].id,cardid);assert(fx_canvas.dest[TS_FX_MOSAIC_BUS]>=0);
+    assert(fx_visible_gain(row,TS_FX_MOSAIC_BUS,&pages,&bank)==1000);
+    fx_clear_selection();fx_clear_wires();assert(fx_select_wire(row,TS_FX_MOSAIC_BUS,0));fx_validate_wires(&pages,&bank);assert(fx_canvas.wires.count==1);
+    key(SDLK_DELETE,0);assert(card->output_route.matrix_enabled);for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)assert(!card->output_route.matrix_gain[d]);
+    edit_settle();key(SDLK_z,KMOD_CTRL);edit_settle();assert(!card->output_route.matrix_enabled);fx_build(&pages,&bank);
+    assert(modulation_connect(id,TS_MATRIX_EFFECT_BASE+dest,0,&audio,&ui,&pages,&bank));assert(!modulation_window.visible);
+    fx_clear_selection();fx_clear_wires();fx_build(&pages,&bank);assert(fx_select_wire(instance(id)->row,TS_MATRIX_EFFECT_BASE+dest,0));
+    fx_validate_wires(&pages,&bank);assert(fx_canvas.wires.count==1);fx_properties_begin_cables();assert(fx_canvas.properties);
+    properties_click(16+8*33+10,110);uint32_t color=fx_canvas.properties_color;key(SDLK_RETURN,0);
+    assert(fx_wire_color(instance(id)->row,TS_MATRIX_EFFECT_BASE+dest)==color);
+    key(SDLK_DELETE,0);assert(!w->controls.effect[mod].modulation.map_count);edit_settle();key(SDLK_z,KMOD_CTRL);edit_settle();assert(w->controls.effect[mod].modulation.map_count==1);
+    assert(mx_apply(saved,0,&audio,&ui,&pages,&bank));free(saved);edit_settle();ts_mosaic_delete(scene,cardid);matrix_history_clear();fx_view(1,&pages,&bank);
+    puts("Control and inherited Mosaic-bus cable selection, color, disconnect and undo passed.");
+}

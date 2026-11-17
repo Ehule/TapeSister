@@ -2,6 +2,7 @@
 #undef NDEBUG
 #endif
 #include "tapesister/sister_runtime.h"
+#include "tapesister/matrix_modulation.h"
 #include <assert.h>
 #include <math.h>
 #include <stdio.h>
@@ -66,6 +67,12 @@ int main(void)
     c.row[TS_MATRIX_MOSAIC].matrix_gain[TS_MATRIX_SIDECHAIN]=500;
     c.row[TS_MATRIX_COMPRESSOR].matrix_gain[TS_MATRIX_AMBISONICS]=200;
     c.row[TS_MATRIX_EQ].matrix_gain[TS_MATRIX_SPEAKER_BASE+15]=500;
+    int mod=ts_matrix_effect_add(&c,TS_MATRIX_FX_MODULATOR);assert(mod==12);
+    TsModControls *curves=&c.effect[mod].modulation;curves->map_count=4;
+    for(int i=0;i<4;++i) {
+        curves->lane[i].seconds=.09f+i*.07f;ts_mod_shape(&curves->lane[i],2,8);
+        curves->map[i]=(TsModMap){.target=c.effect[i].id,.type=(unsigned)c.effect[i].type,.lane=(unsigned)i,.field=TS_MOD_MIX,.enabled=1,.low=.2f,.high=.9f};
+    }
     assert(ts_matrix_connect(&c,TS_MATRIX_EFFECT_BASE+3,TS_MATRIX_EFFECT_BASE,120)==1);
     atomic_store(&scalar.insert.matrix_channels,255);atomic_store(&span.insert.matrix_channels,255);
     configure(&c);unsigned block_count=0,fallback_count=0;

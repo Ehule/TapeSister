@@ -6,7 +6,7 @@ static void mosaic_hover(TsUiState *ui,const MosaicController *c)
     ui->mosaic_hover_event=0;
     if(!ui->mosaic_open || !c->hover_valid || c->active || c->drag || c->mix_drag || c->volume_drag ||
        c->pan_active || ui->mosaic_grab || ui_dialog_open(ui) || ui->router_open || ui->master_eq_open ||
-       ui->mosaic_marker_open || ui->mosaic_views_open || ui->mosaic_gallery_open || ui->mosaic_live_open ||
+       ui->mosaic_marker_open || ui->mosaic_views_open || (ui->mosaic_gallery_open && !ui->mosaic_gallery_detached) || ui->mosaic_live_open ||
        ui->mosaic_scatter_open || ui->mosaic_loop_open || ui->mosaic_align_open || ui->mosaic_spacing_confirm ||
        c->hover_x<151 || c->hover_x>=ts_ui_mosaic_canvas_right(ui) ||
        c->hover_y<66 || c->hover_y>=TS_MOSAIC_CANVAS_BOTTOM)return;

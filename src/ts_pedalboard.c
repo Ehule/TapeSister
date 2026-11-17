@@ -165,6 +165,15 @@ void ts_pedalboard_set(TsPedalboard *b,const TsPedalboardControls *c)
     }
     b->controls=*c;
 }
+void ts_pedalboard_modulate(TsPedalboard *b,const TsPedalboardControls *c)
+{
+    /* Values only, using prepared topology. Keep authored controls intact so
+       bypass/disconnection can recover them and a move retains its identity. */
+    if(!b || !c)return;
+    for(int i=0;i<b->controls.count;++i)if(b->child[i] &&
+        memcmp(&b->child[i]->controls,&c->slot[i],sizeof(c->slot[i])))
+        ts_pedalboard_slot_set(b->child[i],&c->slot[i]);
+}
 int ts_pedalboard_stage(const TsPedalboard *b,const TsPedalboardControls *c,TsPedalboardPlan *p)
 {
     memset(p,0,sizeof(*p));for(int i=0;i<SLOTS;++i)p->reuse[i]=-1;

@@ -26,6 +26,7 @@ TsPedalboard *ts_pedalboard_new(const TsPedalboardControls *, unsigned, uint32_t
 void ts_pedalboard_free(TsPedalboard *);
 int ts_pedalboard_topology_matches(const TsPedalboard *, const TsPedalboardControls *);
 void ts_pedalboard_set(TsPedalboard *, const TsPedalboardControls *);
+void ts_pedalboard_modulate(TsPedalboard *, const TsPedalboardControls *);
 TsStereoFrame ts_pedalboard_process(TsPedalboard *, TsStereoFrame);
 void ts_pedalboard_process_span(TsPedalboard *, const TsStereoFrame *, TsStereoFrame *, unsigned);
 size_t ts_pedalboard_memory(const TsPedalboard *);
