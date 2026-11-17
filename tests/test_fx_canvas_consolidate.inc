@@ -46,6 +46,26 @@ static void consolidate_and_arrange(void)
     assert(instance(ids[0])->x==64 && instance(ids[0])->y==64);assert(audio.sister.matrix_effects.current[0]==engine);
     key(SDLK_z,KMOD_CTRL);
     fx_clear_wires();fx_select_wire(instance(ids[2])->row,TS_MATRIX_MAIN,0);fx_wire_set_color(fx_canvas.wires.items[0],0xffaa7788);fx_clear_wires();
+    /* Run the global palette handler first, as the application does. */
+    static SisterWindow sister;SDL_Event chord;SDL_zero(chord);chord.type=SDL_KEYDOWN;
+    chord.key.windowID=matrix_window.id;chord.key.keysym.sym=SDLK_p;chord.key.keysym.mod=KMOD_CTRL|KMOD_ALT;
+    int dialogs=consolidate_dialogs,history_before=matrix_window.history_cursor;
+    assert(palette_window_event(&chord,main_window,&ui,&sister) && palette_window.visible);
+    assert(consolidate_dialogs==dialogs && matrix_window.controls.effect[0].type==types[0]);
+    assert(!fx_arrange_or_consolidate_key(SDLK_p,KMOD_CTRL|KMOD_ALT));
+    palette_window_hide(&ui,0);palette_window_close();
+    chord.key.keysym.mod=KMOD_CTRL|KMOD_SHIFT;
+    assert(!palette_window_event(&chord,main_window,&ui,&sister));
+    MatrixSnapshot *before_choice=mx_snapshot(0,&audio,&pages,&bank);assert(before_choice);
+    MatrixRow selected[3];assert(matrix_window.selection_count==3);memcpy(selected,matrix_window.selection,sizeof(selected));
+    for(int cancel=0;cancel>=-1;--cancel) {
+        consolidate_choice=cancel;assert(event(&chord));
+        MatrixSnapshot *after_choice=mx_snapshot(0,&audio,&pages,&bank);assert(after_choice && mx_equal(before_choice,after_choice));free(after_choice);
+        assert(matrix_window.history_cursor==history_before && matrix_window.selection_count==3);
+        assert(!memcmp(selected,matrix_window.selection,sizeof(selected)) && strstr(matrix_window.status,"CANCELLED"));
+    }
+    free(before_choice);assert(consolidate_dialogs==dialogs+2 && consolidate_parent==matrix_window.window);
+    consolidate_choice=1;
     key(SDLK_p,KMOD_CTRL|KMOD_SHIFT);edit_settle();
     assert(matrix_window.controls.effect[0].id==ids[0] && matrix_window.controls.effect[0].type==TS_MATRIX_FX_PEDALBOARD);
     assert(!matrix_window.controls.effect[1].id && !matrix_window.controls.effect[2].id);
@@ -65,7 +85,8 @@ static void consolidate_and_arrange(void)
     key(SDLK_y,KMOD_CTRL);edit_settle();assert(matrix_window.controls.effect[0].type==TS_MATRIX_FX_PEDALBOARD);
     key(SDLK_z,KMOD_CTRL);edit_settle();fx_build(&pages,&bank);
     fx_select(instance(ids[2]),0);fx_select(instance(ids[0]),1);fx_select(instance(ids[1]),1);
-    key(SDLK_p,KMOD_CTRL|KMOD_ALT);edit_settle();assert(matrix_window.controls.effect[0].type==TS_MATRIX_FX_META);
+    consolidate_choice=2;MatrixRow target=instance(ids[1])->row;fx_context_open(400,220,&target);
+    context_action(FX_CONTEXT_CONSOLIDATE);edit_settle();assert(matrix_window.controls.effect[0].type==TS_MATRIX_FX_META);
     assert(matrix_window.controls.effect[0].meta.count==3 && matrix_window.controls.effect[0].meta.stage[1].type==TS_SISTER_FX_DISTORTION);
     key(SDLK_z,KMOD_CTRL);edit_settle();
     /* Fail closed for the user's different-input example and every boundary. */
@@ -85,9 +106,12 @@ static void consolidate_and_arrange(void)
     consolidation_rejected(fixture,slots,3,1,"cannot hold SunVox");
     assert(!fx_consolidate_plan(fixture,slots,3,0));assert(c->effect[0].board.slot[1].type==TS_SISTER_FX_SUNVOX);
     /* A failed UI command gives a reason and creates no undo entry. */
-    fx_clear_selection();int history=matrix_window.history_cursor,notices=notice_count;key(SDLK_p,KMOD_CTRL|KMOD_SHIFT);
+    fx_clear_selection();int history=matrix_window.history_cursor,notices=notice_count;consolidate_choice=1;key(SDLK_p,KMOD_CTRL|KMOD_SHIFT);
     assert(strstr(matrix_window.status,"CONSOLIDATION FAILED") && strstr(matrix_window.status,"at least two"));assert(matrix_window.history_cursor==history);
     assert(notice_count==notices+1 && strstr(notice_text,"at least two"));
+    consolidate_dialog_result=-1;SDL_SetError("Test dialog unavailable");key(SDLK_p,KMOD_CTRL|KMOD_SHIFT);
+    assert(matrix_window.history_cursor==history && notice_count==notices+2 && strstr(notice_text,"Test dialog unavailable"));
+    consolidate_dialog_result=consolidate_choice=0;
     free(fixture);assert(mx_apply(saved,0,&audio,&ui,&pages,&bank));free(saved);edit_settle();matrix_history_clear();fx_view(1,&pages,&bank);
 }
 

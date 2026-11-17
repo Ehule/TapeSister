@@ -6,6 +6,7 @@
 #endif
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
+#include <assert.h>
 /* Record native notifications without opening an interactive Windows dialog
    on the headless regression runner. The production call is unchanged. */
 static int notice_count;
@@ -16,10 +17,27 @@ static int test_fx_notice(Uint32 flags,const char *title,const char *message,SDL
     SDL_strlcpy(notice_text,message,sizeof(notice_text));return 0;
 }
 #define SDL_ShowSimpleMessageBox test_fx_notice
+static int consolidate_choice,consolidate_dialogs,consolidate_dialog_result;
+static SDL_Window *consolidate_parent;
+static int test_fx_choice(const SDL_MessageBoxData *dialog,int *choice)
+{
+    assert(!strcmp(dialog->title,"Consolidate effects") && dialog->numbuttons==3);
+    int cancel=0,board=0,meta=0;
+    for(int i=0;i<dialog->numbuttons;++i) {
+        const SDL_MessageBoxButtonData *button=&dialog->buttons[i];
+        if(button->buttonid==0)cancel=!strcmp(button->text,"Cancel") && (button->flags&SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT);
+        if(button->buttonid==1)board=!strcmp(button->text,"Pedalboard") && (button->flags&SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT);
+        if(button->buttonid==2)meta=!strcmp(button->text,"Meta FX");
+    }
+    assert(cancel && board && meta);++consolidate_dialogs;consolidate_parent=dialog->window;
+    *choice=consolidate_choice;return consolidate_dialog_result;
+}
+#define SDL_ShowMessageBox test_fx_choice
 #define main tapesister_application_main
 #include "../src/main_sdl.c"
 #undef main
 #undef SDL_ShowSimpleMessageBox
+#undef SDL_ShowMessageBox
 #include <assert.h>
 static AudioState audio;
 static TsUiState ui;
@@ -43,6 +61,12 @@ static void toolbar_click(int tool)
 {TsUiRect r=fx_toolbar_rect(tool);click(r.x+r.w/2,r.y+r.h/2,1);}
 static void key(SDL_Keycode sym,int mod)
 {SDL_Event e;SDL_zero(e);e.type=SDL_KEYDOWN;e.key.windowID=fx_canvas.properties?fx_properties_window.id:matrix_window.visible?matrix_window.id:SDL_GetWindowID(main_window);e.key.keysym.sym=sym;e.key.keysym.mod=mod;assert(event(&e));}
+static void context_action(int action)
+{
+    assert(fx_canvas.popup==FX_CONTEXT_MENU);FxContextItem items[16];int count=fx_context_items(items),at=-1;
+    for(int i=0;i<count;++i)if(items[i].action==action){assert(items[i].enabled);at=i;break;}
+    assert(at>=0);click(fx_canvas.popup_x+40,fx_canvas.popup_y+32+at*FX_CONTEXT_ROW+14,1);
+}
 static FxCanvasNode *node(int row)
 {for(int i=0;i<fx_canvas.count;++i)if(fx_canvas.node[i].row.kind==2 && fx_canvas.node[i].row.index==row)return &fx_canvas.node[i];return NULL;}
 static FxCanvasNode *instance(uint32_t id)
@@ -506,6 +530,7 @@ static void sunvox_browser(const char *dir)
  #include "test_fx_canvas_patch.inc"
 #include "test_fx_canvas_groups.inc"
 #include "test_fx_canvas_consolidate.inc"
+#include "test_fx_canvas_context.inc"
 
 int main(int argc,char **argv)
 {
@@ -595,7 +620,7 @@ int main(int argc,char **argv)
     SDL_SetWindowSize(matrix_window.window,1001,701);fx_paint(&audio,&pages,&bank);
     inspector_controls(getenv("TS_FX_PREVIEW"));edit_controls();canvas_gestures(c.effect[dist].id);disconnect_main_prism();routing_preferences();sunvox_browser(getenv("TS_FX_PREVIEW"));
     gallery_view();text_labels();grouped_text_selection();patch_workflow();patch_twenty_cards();control_and_bus_wires();movement_heading_objects();rug_groups();
-    consolidate_and_arrange();save_in_fx_canvas();
+    consolidate_and_arrange();context_actions();save_in_fx_canvas();
     key(SDLK_BACKQUOTE,KMOD_NONE);assert(!matrix_window.visible && ui.mosaic_open && !ui.tracker_open);
     matrix_close();meta_fx_close();ts_sister_runtime_free(&audio.sister);ts_sample_pages_free(&pages);ts_instrument_free(&bank);SDL_DestroyWindow(main_window);SDL_Quit();
     puts("FX Canvas controller passed, including single-cable disconnect, alternative path, silent clear, undo and project recall.");return 0;

@@ -84,7 +84,7 @@ static void fx_group_create(void)
     if(!members){snprintf(w->status,sizeof(w->status),"SELECT CARDS AND/OR TEXT, THEN CTRL+G.");return;}
     TsFxCanvasGroup *g=&l->groups[l->group_count++];*g=(TsFxCanvasGroup){.id=id,.color=0xffb29acdu,.x=left-48,.y=top-64,.w=right-left+96,.h=bottom-top+112,.opacity=.12f};
     snprintf(g->name,sizeof(g->name),"GROUP %u",id);fx_clear_selection();fx_clear_wires();fx_canvas.group_selected=id;w->effect_open=w->compressor_open=0;
-    snprintf(w->status,sizeof(w->status),"GROUPED %d OBJECTS / DRAG RUG: MOVE ALL / ALT+G: UNGROUP / RIGHT-CLICK: NAME, COLOR, OPACITY",members);
+    snprintf(w->status,sizeof(w->status),"GROUPED %d OBJECTS / DRAG RUG: MOVE ALL / ALT+G: UNGROUP / RIGHT-CLICK: ACTIONS / F2: NAME, COLOR, OPACITY",members);
 }
 static void fx_group_ungroup(void)
 {

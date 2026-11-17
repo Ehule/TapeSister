@@ -80,10 +80,10 @@ static const char *fx_consolidate_plan(MatrixSnapshot *s,const int *slots,int co
             error=meta?"Meta FX uses 12 ms stage bypass fades. Use a Pedalboard to retain a different shared fade time.":
                 "The effects have different bypass fade times. A Pedalboard needs one shared fade time.";break;
         }
-        if(meta && type==TS_SISTER_FX_SUNVOX){error="Meta FX cannot hold SunVox effects. Use Ctrl+Shift+P to create a Pedalboard instead.";break;}
+        if(meta && type==TS_SISTER_FX_SUNVOX){error="Meta FX cannot hold SunVox effects. Choose Pedalboard in the consolidate popup instead.";break;}
         if(meta && ((type==TS_SISTER_FX_TRANSIENT && old->transient_states.captured) ||
            (type==TS_SISTER_FX_FILTER && (old->filter.captured || old->filter.locks)))) {
-            error="Meta FX cannot preserve these captured states or filter locks. Use Ctrl+Shift+P for a Pedalboard.";break;
+            error="Meta FX cannot preserve these captured states or filter locks. Choose Pedalboard in the consolidate popup instead.";break;
         }
         if(meta) {
             TsMetaStage *stage=&rack->meta.stage[i];ts_meta_stage_default(stage,type);stage->enabled=old->enabled;
@@ -145,4 +145,23 @@ static void fx_consolidate(int meta,SDL_AudioDeviceID device,AudioState *audio,T
     fx_clear_wires();fx_clear_selection();w->effect_open=id;w->compressor_open=0;
     fx_build(pages,bank);for(int i=0;i<fx_canvas.count;++i)if(fx_canvas.node[i].row.kind==4 && fx_canvas.node[i].row.tile==id){fx_select(&fx_canvas.node[i],0);break;}
     snprintf(w->status,sizeof(w->status),"CONSOLIDATED %d EFFECTS INTO %s / DOUBLE-CLICK: EDIT / CTRL+Z: UNDO",count,meta?"META FX":"PEDALBOARD");
+}
+static void fx_consolidate_choose(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsSamplePages *pages,TsInstrument *bank)
+{
+    const SDL_MessageBoxButtonData buttons[]={
+        {SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT,0,"Cancel"},
+        {0,2,"Meta FX"},
+        {SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT,1,"Pedalboard"}
+    };
+    const SDL_MessageBoxData dialog={.flags=SDL_MESSAGEBOX_INFORMATION,.window=matrix_window.window,
+        .title="Consolidate effects",.message="Choose a container for the selected serial effect chain.\n\n"
+        "Pedalboard: native and SunVox effects, up to 20 stages.\n"
+        "Meta FX: native effects, up to 8 stages.",.numbuttons=3,.buttons=buttons};
+    int choice=0;
+    if(SDL_ShowMessageBox(&dialog,&choice)<0) {
+        char reason[256];snprintf(reason,sizeof(reason),"Could not open the consolidate popup: %.190s",SDL_GetError());
+        fx_consolidate_notice(reason);return;
+    }
+    if(choice==1 || choice==2)fx_consolidate(choice==2,device,audio,ui,pages,bank);
+    else snprintf(matrix_window.status,sizeof(matrix_window.status),"CONSOLIDATION CANCELLED.");
 }

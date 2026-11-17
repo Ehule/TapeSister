@@ -53,6 +53,7 @@ static void edit_controls(void)
     snprintf(fx_position(instance(id[0])->row,0)->name,48,"First");
     snprintf(fx_position(instance(id[1])->row,0)->name,48,"Second");
     pointer(SDL_MOUSEBUTTONDOWN,80,190,SDL_BUTTON_RIGHT,1);
+    context_action(FX_CONTEXT_PROPERTIES);
     assert(fx_canvas.properties && fx_canvas.properties_count==2 && w->selection_count==2);
     fx_properties_insert("Must not rename");fx_canvas.properties_color=fx_swatch(3);
     if(getenv("TS_FX_PREVIEW")) {
@@ -68,6 +69,7 @@ static void edit_controls(void)
     key(SDLK_z,KMOD_CTRL);assert(!fx_position(instance(id[0])->row,0)->color && !fx_position(instance(id[1])->row,0)->color);
     /* Cable context menus use the same undoable/persistent color metadata. */
     pointer(SDL_MOUSEBUTTONDOWN,340,189,SDL_BUTTON_RIGHT,1);
+    context_action(FX_CONTEXT_PROPERTIES);
     assert(fx_canvas.properties && fx_canvas.properties_wires.count==1 && !fx_canvas.properties_count);
     fx_canvas.properties_color=fx_swatch(10);key(SDLK_RETURN,0);
     assert(fx_wire_color(instance(id[0])->row,TS_MATRIX_EFFECT_BASE+1)==fx_swatch(10));view_codec();

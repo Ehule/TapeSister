@@ -19,6 +19,7 @@ static struct {
     TsFxCanvasPosition move[TS_FX_CANVAS_POSITIONS];int move_count;
     MatrixRow before[MATRIX_CAPACITY+TS_MATRIX_DESTINATIONS];int before_count;
     int popup,popup_x,popup_y,popup_category,popup_scroll,popup_selected,confirm_clear;
+    int context_x,context_y,context_has_card;MatrixRow context_card;
     int inspector_page,inspector_drag;uint64_t inspector_key;float place_x,place_y;
     FxWireList wires,before_wires;
     SDL_Cursor *divider_cursor;int divider_hover,divider_start,divider_pointer;
@@ -699,8 +700,8 @@ static void fx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
         for(int y=374;y<418;y+=8)mx_rect(fx_split()+3,y,4,4,grip);
         if(fx_canvas.help) {
             mx_text(24,FX_BOTTOM+16,"G: grab / S: resize / Ctrl+Shift-click: connect sources / move cables",FX_TEXT,2);
-            mx_text(24,FX_BOTTOM+44,"Ctrl+R: arrange names / Ctrl+Shift+R: types / Ctrl+Shift+P: Pedalboard",FX_TEXT,2);
-            mx_text(24,FX_BOTTOM+72,"Ctrl+Alt+P: Meta FX / F2: name + color / Shift+wheel: gain / Z: frame",FX_TEXT,2);
+            mx_text(24,FX_BOTTOM+44,"Ctrl+R: arrange names / Ctrl+Shift+R: types / Ctrl+Shift+P: consolidate",FX_TEXT,2);
+            mx_text(24,FX_BOTTOM+72,"Right-click: actions / F2: name + color / Shift+wheel: gain / Z: frame",FX_TEXT,2);
         }
     }
     mx_text(20,22,"FX CANVAS",FX_CABLE,3);
