@@ -1339,8 +1339,21 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         atomic_load_explicit(&audio->capture.state,memory_order_relaxed)!=TS_CAPTURE_RECORDING &&
         !atomic_load_explicit(&audio->tracker_capture,memory_order_relaxed) &&
         !(audio->loop_capture && atomic_load_explicit(&audio->loop_capture->active,memory_order_acquire));
+    int gallery_last_active=audio->gallery?audio->gallery->active:-1;
+    int gallery_last_outgoing=audio->gallery?audio->gallery->outgoing:-1;
     for (unsigned base=0;base<(unsigned)frames;) {
+        if(audio->gallery) {
+            ts_gallery_sequence_tick(audio->gallery,audio->output_rate);
+            if(audio->gallery->player.running)audio->mosaic=ts_gallery_active(audio->gallery);
+            if(gallery_last_active!=audio->gallery->active || gallery_last_outgoing!=audio->gallery->outgoing) {
+                ts_matrix_effects_suspend(&audio->sister.matrix_effects,
+                    ts_gallery_suspended_effects(audio->gallery,&audio->sister.matrix.controls,
+                        &audio->gallery_effect_activity,audio->gallery_external_roots|audio_external_effect_roots(audio)));
+                gallery_last_active=audio->gallery->active;gallery_last_outgoing=audio->gallery->outgoing;
+            }
+        }
         unsigned count=allow_spans?ts_sister_runtime_matrix_span_limit(&audio->sister,(unsigned)frames-base):1;
+        count=ts_gallery_sequence_span(audio->gallery,audio->output_rate,count);
         if(count>1)audio->span_frames+=count;else ++audio->chronological_frames;
         for(int phase=0;phase<(count>1?2:1);++phase) {
         for(unsigned at=0;at<count;++at) {
@@ -4697,7 +4710,7 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
             memset(&audio->gallery_effect_activity,0,sizeof(audio->gallery_effect_activity));
             audio->gallery=ui->mosaic_gallery=sample_pages->gallery;
             ui->mosaic=audio->mosaic=sample_pages->mosaic;
-            ui->mosaic_gallery_open=ui->mosaic_gallery_rename=0;
+            ui->mosaic_gallery_open=ui->mosaic_gallery_rename=ui->gallery_sequence_open=ui->gallery_sequence_edit=0;
             ui->mosaic_canvas_import_count=ui->mosaic_canvas_import_pending=0;
             ui->mosaic_gallery_selected=audio->gallery?audio->gallery->active:0;
             previous_sequence_source = ts_keyboard_sequence_source(&audio->keyboard_sequence, NULL);
@@ -9508,6 +9521,7 @@ static int sister_stage_fx(SDL_AudioDeviceID device,AudioState *audio,TsSisterFx
     return ts_sister_sunvox_stage(&audio->sister.post_fx,c,plan);
 }
 static void sister_board_open(uint32_t);
+static void sister_board_open_from(uint32_t,Uint32);
 static void sister_board_return(uint32_t);
 static int sister_board_preset_recall(SDL_AudioDeviceID,AudioState *,TsUiState *,SisterWindow *,size_t);
 static int sister_board_publish(SDL_AudioDeviceID,AudioState *,TsUiState *,SisterWindow *);
@@ -14997,6 +15011,7 @@ int main(int argc, char **argv)
         ts_profile_end(TS_PROF_CONTROL, profile_control);
         uint64_t profile_events = ts_profile_begin(TS_PROF_EVENTS);
         while (event_pending ? (event = pending_event, event_pending = 0, 1) : SDL_PollEvent(&event)) {
+            gallery_sequence_follow(device,&audio,&ui,&instrument,&mosaic);
             if (event.type == SDL_KEYDOWN || event.type == SDL_KEYUP ||
                 event.type == SDL_MOUSEBUTTONDOWN || event.type == SDL_MOUSEBUTTONUP ||
                 event.type == SDL_MOUSEWHEEL || event.type == SDL_MOUSEMOTION ||
@@ -18862,6 +18877,7 @@ int main(int argc, char **argv)
         if(device)SDL_LockAudioDevice(device);
         audio.gallery_external_roots=gallery_external;ui.mosaic_engine_stopped=audio.engine_stopped;
         if(device)SDL_UnlockAudioDevice(device);
+        gallery_sequence_follow(device,&audio,&ui,&instrument,&mosaic);
         mosaic_poll(device,&ui,&instrument,&mosaic);
         mosaic_live_keyboard_snapshot(&audio,&ui,&instrument);
         if(mosaic.drag==1 || (mosaic.drag>=7 && mosaic.drag<=9))

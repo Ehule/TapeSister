@@ -43,6 +43,10 @@ static void mosaic_poll(SDL_AudioDeviceID device,TsUiState *ui,
     ui->mosaic_time=ui->mosaic->time;ui->mosaic_playing=ui->mosaic->playing;
     ui->mosaic_gallery=c->pages?c->pages->gallery:NULL;
     mosaic_gallery_snapshot(ui,ui->mosaic_gallery);
+    if(ui->gallery_player.error[0] && strcmp(ui->mosaic_gallery_status,ui->gallery_player.error)) {
+        snprintf(ui->mosaic_gallery_status,sizeof(ui->mosaic_gallery_status),"%s",ui->gallery_player.error);
+        snprintf(ui->status,sizeof(ui->status),"GALLERY: %s",ui->gallery_player.error);
+    }
     if(device)SDL_UnlockAudioDevice(device);
     if(release_preview)ts_mosaic_collect(ui->mosaic);
     if(ui->mosaic_open && !c->active) {
@@ -80,6 +84,14 @@ static void mosaic_poll(SDL_AudioDeviceID device,TsUiState *ui,
 static void mosaic_transport(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,int stop)
 {
     if(device)SDL_LockAudioDevice(device);
+    if(audio->gallery && audio->gallery->player.running) {
+        TsMosaicGallery *g=audio->gallery;
+        if(stop){ts_gallery_sequence_stop(g);if(stop==1)ts_mosaic_seek(ts_gallery_active(g),g->player.start);}
+        else ts_gallery_sequence_pause(g,!g->player.paused);
+        ui->mosaic_engine_stopped=audio->engine_stopped=stop!=0;
+        if(device)SDL_UnlockAudioDevice(device);
+        live_test_transport(ui,!stop && !g->player.paused);return;
+    }
     TsMosaic *scenes[]={ui->mosaic,ui->mosaic_gallery && ts_gallery_active(ui->mosaic_gallery)==ui->mosaic?ts_gallery_outgoing(ui->mosaic_gallery):NULL};
     int playing=audio->engine_stopped || !ui->mosaic->playing;
     ui->mosaic_engine_stopped=audio->engine_stopped=stop!=0;

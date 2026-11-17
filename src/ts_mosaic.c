@@ -537,7 +537,7 @@ static TsStereoFrame mosaic_event_read(void *pattern_engine,const TsMosaicEvent 
     TsStereoFrame card={0,0};
     for(int n=0;n<e->note_count;++n) {
         if(e->source->pattern){
-            TsStereoFrame f=ts_pattern_read_cached(pattern_engine,v->pattern_source->pattern,v,v->generation,fmax(0,time-e->start-v->pattern_origin),rate,speed,e->notes[n],e->looping,&v->pattern_player[n]);
+            TsStereoFrame f=ts_pattern_read_cached(pattern_engine,v->pattern_source->pattern,v->pattern_owner?v->pattern_owner:v,v->generation,fmax(0,time-e->start-v->pattern_origin),rate,speed,e->notes[n],e->looping,&v->pattern_player[n]);
             card.l+=f.l*gain*v->mix_left;card.r+=f.r*gain*v->mix_right;continue;
         }
         TsStereoFrame f;
@@ -602,10 +602,10 @@ static TsStereoFrame mosaic_read(TsMosaic *m,int rate,TsSourceRouteMix *routes)
     double speed=m->speed_current;
     if(!m->schedule.valid || m->schedule.revision!=m->revision || m->time!=m->schedule.expected_time)mosaic_schedule_prepare(m);
     double end=m->schedule.end;int any_solo=m->schedule.any_solo;
-    int cue_repeat=m->marker_loop && m->schedule.marker_range.end>m->schedule.marker_range.start;
+    int cue_repeat=!m->section_transport && m->marker_loop && m->schedule.marker_range.end>m->schedule.marker_range.start;
     TsMosaicRange range=cue_repeat?m->schedule.marker_range:m->loop_range;
     double loop_start=range.start,loop_end=range.end;
-    int range_repeat=cue_repeat || (!m->marker_loop && m->repeat && loop_end>loop_start);
+    int range_repeat=cue_repeat || (!m->section_transport && !m->marker_loop && m->repeat && loop_end>loop_start);
     if(range_repeat && (m->time<loop_start || m->time>=loop_end)) {
         /* Preserve fractional overshoot so repeated passages never drift.
            seek reconstructs crossing cards at their elapsed source phase and
@@ -614,8 +614,8 @@ static TsStereoFrame mosaic_read(TsMosaic *m,int rate,TsSourceRouteMix *routes)
         ts_mosaic_seek(m,starting || m->time<loop_start?loop_start:
             loop_start+fmod(m->time-loop_start,loop_end-loop_start));
         if(cue_repeat)m->marker_active=marker;
-    } else if(!range_repeat && m->time>=end) {
-        if(!m->marker_loop && m->repeat && end>0)ts_mosaic_seek(m,fmod(m->time,end));
+    } else if(!range_repeat && m->time>=(m->section_transport?m->section_end:end)) {
+        if(!m->section_transport && !m->marker_loop && m->repeat && end>0)ts_mosaic_seek(m,fmod(m->time,end));
         else {m->playing=0;m->route_discontinuity=1;return out;}
     }
     if(!m->schedule.valid)mosaic_schedule_prepare(m);

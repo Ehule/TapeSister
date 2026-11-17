@@ -68,6 +68,15 @@ static void gallery_view(void)
         sister_window_show(&editor,&ui.palette);editor.return_window_id=SDL_GetWindowID(main_window);
         sister_escape(main_window,&editor);assert(!editor.model.visible && ui.mosaic_open);
     }
+    /* A board request can be serviced after focus has changed. Capture the
+       double-click origin immediately, and keep it through nested editors. */
+    sister_board_open_from(0,w->id);
+    SDL_SetWindowInputFocus(main_window);
+    sister_board_sync(&audio,&ui,&editor);
+    assert(editor.return_window_id==w->id && editor.model.visible);
+    sister_board_return(0);sister_board_sync(&audio,&ui,&editor);
+    assert(editor.return_window_id==w->id);
+    sister_escape(main_window,&editor);assert(!editor.model.visible && w->visible);
     SDL_DestroyTexture(editor.texture);SDL_DestroyRenderer(editor.renderer);SDL_DestroyWindow(editor.window);
     memset(&editor,0,sizeof(editor));
     /* Playing snapshots include the outgoing movement during a crossfade. */

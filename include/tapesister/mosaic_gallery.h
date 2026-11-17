@@ -4,6 +4,25 @@
 
 enum { TS_GALLERY_LIMIT=16, TS_GALLERY_NAME=48 };
 enum { TS_GALLERY_START, TS_GALLERY_RESUME, TS_GALLERY_MARKER };
+enum { TS_GALLERY_SEQUENCE_STEPS=64, TS_GALLERY_POINT_END=-2, TS_GALLERY_POINT_TIME=-1 };
+enum { TS_GALLERY_FADE_LINEAR, TS_GALLERY_FADE_SMOOTH, TS_GALLERY_FADE_POWER, TS_GALLERY_FADE_CURVES };
+typedef struct {
+    uint64_t canvas_id; /* Stable identity, independent of Gallery order. */
+    int in_marker,out_marker; /* TIME/END or a zero-based marker slot. */
+    double in_seconds,out_seconds,fade_seconds;
+    int repeats,curve;
+} TsGalleryStep;
+typedef struct {
+    TsGalleryStep step[TS_GALLERY_SEQUENCE_STEPS];
+    int length,loop,first,last;
+} TsGallerySequence;
+typedef struct {
+    int running,paused,step,visit,queued,next,next_visit;
+    int continuation; /* When step == -1, finish the removed visit, then enter this slot (length means end). */
+    double start,end,fade_start,fade_end,next_fade;
+    TsGalleryStep current; /* Frozen until the next visit. */
+    char error[128];
+} TsGallerySequencePlayer;
 typedef struct {
     TsMosaic *scene;
     uint64_t id;
@@ -22,6 +41,7 @@ typedef struct TsMosaicGalleryCatalog {
     int count,active,present;
     uint64_t next_id;
     double fade_seconds;
+    TsGallerySequence sequence;
 } TsMosaicGalleryCatalog;
 typedef struct TsMosaicGallery {
     TsMosaicCanvas canvas[TS_GALLERY_LIMIT];
@@ -29,7 +49,28 @@ typedef struct TsMosaicGallery {
     int count,active,outgoing;
     uint64_t next_id;
     double fade_seconds,fade_position,fade_length;
+    TsGallerySequence sequence;
+    TsGallerySequencePlayer player;
+    TsMosaic *spare; /* Preallocated playback-only outgoing copy for same-canvas fades. */
+    int spare_active,sequence_fade,fade_curve;
+    unsigned block_frames;
 } TsMosaicGallery;
+void ts_gallery_sequence_default(TsGallerySequence *,uint64_t);
+int ts_gallery_sequence_valid(const TsGallerySequence *);
+int ts_gallery_step_bounds(const TsMosaicGallery *,const TsGalleryStep *,int *,double *,double *,char *,size_t);
+/* Prepare on the control thread under audio exclusion (like pattern edits).
+   Other commands require the same exclusion. No allocation or I/O in playback. */
+int ts_gallery_sequence_prepare(TsMosaicGallery *,char *,size_t);
+int ts_gallery_sequence_play(TsMosaicGallery *,int,char *,size_t);
+void ts_gallery_sequence_pause(TsMosaicGallery *,int);
+void ts_gallery_sequence_stop(TsMosaicGallery *);
+int ts_gallery_sequence_next(TsMosaicGallery *,int,char *,size_t);
+/* Live arrangement edits preserve the sounding visit and in-flight fade. */
+int ts_gallery_sequence_insert(TsMosaicGallery *,int,const TsGalleryStep *);
+int ts_gallery_sequence_remove(TsMosaicGallery *,int);
+int ts_gallery_sequence_move(TsMosaicGallery *,int,int);
+void ts_gallery_sequence_tick(TsMosaicGallery *,int);
+unsigned ts_gallery_sequence_span(const TsMosaicGallery *,int,unsigned);
 TsMosaicGallery *ts_gallery_create(TsMosaic *first);
 void ts_gallery_free(TsMosaicGallery *);
 TsMosaic *ts_gallery_active(const TsMosaicGallery *);

@@ -5,6 +5,7 @@
 #include <math.h>
 #include <errno.h>
 #include <sys/stat.h>
+#include <stddef.h>
 #ifdef _WIN32
 #include <direct.h>
 #define GALLERY_MKDIR(p) _mkdir(p)
@@ -13,24 +14,28 @@
 #endif
 static int gallery_error(char *e,size_t n,const char *s)
 {if(e && n)snprintf(e,n,"%s",s);return 0;}
+static void gallery_spare_release(TsMosaicGallery *);
+static void gallery_sequence_refresh(TsMosaicGallery *);
 TsMosaicGallery *ts_gallery_create(TsMosaic *first)
 {
     if(!first)return NULL;
     TsMosaicGallery *g=calloc(1,sizeof(*g));if(!g)return NULL;
     g->root=first;g->count=1;g->next_id=2;g->outgoing=-1;g->fade_seconds=2;
     g->canvas[0]=(TsMosaicCanvas){.scene=first,.id=1,.scale=24,.hscale=1};
+    ts_gallery_sequence_default(&g->sequence,1);g->player.queued=-1;
     snprintf(g->canvas[0].name,TS_GALLERY_NAME,"Canvas 1");return g;
 }
 void ts_gallery_free(TsMosaicGallery *g)
 {
     if(!g)return;
+    gallery_spare_release(g);ts_mosaic_free(g->spare);
     for(int i=0;i<g->count;++i)if(g->canvas[i].scene!=g->root)ts_mosaic_free(g->canvas[i].scene);
     free(g);
 }
 TsMosaic *ts_gallery_active(const TsMosaicGallery *g)
 {return g && g->active>=0 && g->active<g->count?g->canvas[g->active].scene:NULL;}
 TsMosaic *ts_gallery_outgoing(const TsMosaicGallery *g)
-{return g && g->outgoing>=0 && g->outgoing<g->count?g->canvas[g->outgoing].scene:NULL;}
+{return g && g->outgoing>=0 && g->outgoing<g->count?(g->spare_active?g->spare:g->canvas[g->outgoing].scene):NULL;}
 int ts_gallery_append_prepared(TsMosaicGallery *g,TsMosaic *m,char *e,size_t n)
 {
     if(!g || !m || g->count>=TS_GALLERY_LIMIT)return gallery_error(e,n,"GALLERY LIMIT: 16 CANVASES");
@@ -50,12 +55,12 @@ int ts_gallery_move(TsMosaicGallery *g,int from,int to,char *e,size_t n)
 {
     if(!g || from<0 || from>=g->count || to<0 || to>=g->count)
         return gallery_error(e,n,"CANVAS POSITION IS NOT AVAILABLE");
-    TsMosaic *active=ts_gallery_active(g),*outgoing=ts_gallery_outgoing(g);
+    TsMosaic *active=ts_gallery_active(g);uint64_t outgoing=g->outgoing>=0?g->canvas[g->outgoing].id:0;
     TsMosaicCanvas moved=g->canvas[from];
     if(from<to)memmove(g->canvas+from,g->canvas+from+1,(size_t)(to-from)*sizeof(moved));
     else if(from>to)memmove(g->canvas+to+1,g->canvas+to,(size_t)(from-to)*sizeof(moved));
     g->canvas[to]=moved;
-    for(int i=0;i<g->count;++i){if(g->canvas[i].scene==active)g->active=i;if(g->canvas[i].scene==outgoing)g->outgoing=i;}
+    for(int i=0;i<g->count;++i){if(g->canvas[i].scene==active)g->active=i;if(g->canvas[i].id==outgoing)g->outgoing=i;}
     return 1;
 }
 int ts_gallery_replace_prepared(TsMosaicGallery *g,int i,TsMosaic *m,TsMosaic **retired,char *e,size_t n)
@@ -64,6 +69,7 @@ int ts_gallery_replace_prepared(TsMosaicGallery *g,int i,TsMosaic *m,TsMosaic **
     if(!g || !m || i<0 || i>=g->count)return gallery_error(e,n,"CANVAS IS NOT AVAILABLE");
     if(g->outgoing>=0)return gallery_error(e,n,"WAIT FOR THE CURRENT CROSSFADE");
     TsMosaic *old=g->canvas[i].scene;
+    if(i==g->active && g->player.running)return gallery_error(e,n,"STOP THE SEQUENCER BEFORE REPLACING ITS ACTIVE CANVAS");
     if(i==g->active && (old->playing || old->audition_id || (ts_mosaic_live_count(old) && !old->live_paused)))
         return gallery_error(e,n,"STOP PLAYBACK, AUDITION AND LIVE LOOPS BEFORE REPLACING THE ACTIVE CANVAS");
     if(!g->next_id || g->next_id>=UINT64_MAX-1)return gallery_error(e,n,"CANVAS IDENTITIES EXHAUSTED");
@@ -112,14 +118,17 @@ static void gallery_restart(TsMosaic *m,double position)
 static void gallery_park(TsMosaicGallery *g)
 {
     TsMosaic *old=ts_gallery_outgoing(g);if(!old)return;
-    old->playing=0;old->live_paused=1;old->live_pause_gain=0;
-    g->canvas[g->outgoing].parked=1;g->outgoing=-1;
+    old->playing=0;old->live_paused=1;old->live_pause_gain=0;old->section_transport=0;
+    if(!g->spare_active)g->canvas[g->outgoing].parked=1;
+    gallery_spare_release(g);g->outgoing=-1;g->sequence_fade=0;
 }
+#include "ts_gallery_sequence.inc"
 int ts_gallery_switch(TsMosaicGallery *g,int i,char *e,size_t n)
 {
     if(!g || i<0 || i>=g->count)return gallery_error(e,n,"CANVAS IS NOT AVAILABLE");
     if(g->outgoing>=0)return gallery_error(e,n,"WAIT FOR THE CURRENT CROSSFADE");
     if(i==g->active)return 1;
+    if(g->player.running)return gallery_error(e,n,"STOP THE SEQUENCER BEFORE MANUAL CANVAS ENTRY");
     TsMosaicCanvas *to=&g->canvas[i],*from=&g->canvas[g->active];
     if(to->entry<TS_GALLERY_START || to->entry>TS_GALLERY_MARKER || !isfinite(g->fade_seconds) || g->fade_seconds<0 || g->fade_seconds>30)
         return gallery_error(e,n,"INVALID ENTRY OR CROSSFADE SETTING");
@@ -146,6 +155,7 @@ int ts_gallery_switch(TsMosaicGallery *g,int i,char *e,size_t n)
 }
 void ts_gallery_begin_block(TsMosaicGallery *g,unsigned frames)
 {
+    if(g){g->block_frames=frames;gallery_sequence_refresh(g);}
     ts_mosaic_begin_block(ts_gallery_active(g),frames);
     ts_mosaic_begin_block(ts_gallery_outgoing(g),frames);
 }
@@ -156,20 +166,27 @@ void ts_gallery_clock(TsMosaicGallery *g,int enabled,int running,double quarter,
 }
 TsStereoFrame ts_gallery_read(TsMosaicGallery *g,int rate,TsSourceRouteMix *routes)
 {
+    ts_gallery_sequence_tick(g,rate);
+    if(g && g->block_frames)--g->block_frames;
     TsMosaic *m=ts_gallery_active(g),*old=ts_gallery_outgoing(g);
     if(!old)return ts_mosaic_read_routed(m,rate,routes);
     if(rate<=0)return (TsStereoFrame){0};
     /* Constant-sum fade: identical canvases retain their level. Every route,
        send and reference tap receives the same gain; only two engines render. */
     float t=(float)fmax(0,fmin(1,g->fade_position/g->fade_length));
+    if(g->sequence_fade && g->player.fade_end>g->player.fade_start)
+        t=(float)fmax(0,fmin(1,(old->time-g->player.fade_start)/(g->player.fade_end-g->player.fade_start)));
+    float incoming=t,outgoing=1-t;
+    if(g->sequence_fade && g->fade_curve==TS_GALLERY_FADE_SMOOTH){incoming=t*t*(3-2*t);outgoing=1-incoming;}
+    if(g->sequence_fade && g->fade_curve==TS_GALLERY_FADE_POWER){incoming=sinf(t*1.57079632679f);outgoing=cosf(t*1.57079632679f);}
     /* Weight each completed scene mix once, after its handoff. This avoids
        two full temporary buses and two unity-gain accumulation passes per
        frame. Even the zero-gain endpoint still renders/advances both scenes. */
-    TsStereoFrame x=ts_mosaic_read_routed_gain(m,rate,routes,t);
-    TsStereoFrame y=ts_mosaic_read_routed_gain(old,rate,routes,1-t);
-    g->fade_position+=1./rate;
-    if(g->fade_position+1e-12>=g->fade_length)gallery_park(g);
-    return ts_stereo_frame_sanitize((TsStereoFrame){x.l*t+y.l*(1-t),x.r*t+y.r*(1-t)});
+    TsStereoFrame x=ts_mosaic_read_routed_gain(m,rate,routes,incoming);
+    TsStereoFrame y=ts_mosaic_read_routed_gain(old,rate,routes,outgoing);
+    if(!g->player.running || !g->player.paused)g->fade_position+=1./rate;
+    if(g->sequence_fade?old->time+1e-10>=g->player.fade_end:g->fade_position+1e-12>=g->fade_length)gallery_park(g);
+    return ts_stereo_frame_sanitize((TsStereoFrame){x.l*incoming+y.l*outgoing,x.r*incoming+y.r*outgoing});
 }
 void ts_gallery_rebind_root(TsMosaicGallery *g,TsMosaic *root)
 {
@@ -185,6 +202,15 @@ uint64_t ts_gallery_hash(const TsMosaicGallery *g)
     uint64_t h=1469598103934665603ull;
     gallery_hash_data(&h,&g->count,sizeof(g->count));gallery_hash_data(&h,&g->active,sizeof(g->active));
     gallery_hash_data(&h,&g->next_id,sizeof(g->next_id));gallery_hash_data(&h,&g->fade_seconds,sizeof(g->fade_seconds));
+    gallery_hash_data(&h,&g->sequence.length,sizeof(int));gallery_hash_data(&h,&g->sequence.loop,sizeof(int));
+    gallery_hash_data(&h,&g->sequence.first,sizeof(int));gallery_hash_data(&h,&g->sequence.last,sizeof(int));
+    for(int i=0;i<g->sequence.length && i<TS_GALLERY_SEQUENCE_STEPS;++i) {
+        const TsGalleryStep *s=&g->sequence.step[i];
+#define HASH_STEP(field) gallery_hash_data(&h,&s->field,sizeof(s->field))
+        HASH_STEP(canvas_id);HASH_STEP(in_marker);HASH_STEP(out_marker);HASH_STEP(in_seconds);HASH_STEP(out_seconds);
+        HASH_STEP(fade_seconds);HASH_STEP(repeats);HASH_STEP(curve);
+#undef HASH_STEP
+    }
     for(int i=0;i<g->count;++i) {
         const TsMosaicCanvas *c=&g->canvas[i];uint64_t scene=ts_mosaic_hash(c->scene);
         gallery_hash_data(&h,&scene,sizeof(scene));gallery_hash_data(&h,&c->id,sizeof(c->id));

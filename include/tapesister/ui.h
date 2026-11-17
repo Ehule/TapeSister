@@ -17,6 +17,7 @@ const char *ts_ui_glyph(char character);
 #include "tapesister/recipe.h"
 #include "tapesister/sample.h"
 #include "tapesister/mosaic.h"
+#include "tapesister/mosaic_gallery.h"
 #include "tapesister/sister_tracker.h"
 #include "tapesister/tracker_edit.h"
 #include "tapesister/transform.h"
@@ -596,6 +597,14 @@ typedef struct {
     char mosaic_gallery_names[16][48],mosaic_gallery_name[48];
     int mosaic_gallery_entry[16],mosaic_gallery_marker[16],mosaic_gallery_marker_valid[16];
     char mosaic_gallery_status[160];
+    int gallery_sequence_open,gallery_sequence_selected,gallery_sequence_page;
+    int gallery_sequence_edit; /* 1 IN time, 2 OUT time, 3 fade seconds. */
+    char gallery_sequence_text[32];
+    TsGallerySequence gallery_sequence;
+    TsGallerySequencePlayer gallery_player;
+    int gallery_step_canvas[TS_GALLERY_SEQUENCE_STEPS],gallery_step_valid[TS_GALLERY_SEQUENCE_STEPS];
+    double gallery_step_start[TS_GALLERY_SEQUENCE_STEPS],gallery_step_end[TS_GALLERY_SEQUENCE_STEPS];
+    double gallery_step_progress;
     int mosaic_canvas_import_count,mosaic_canvas_import_selected,mosaic_canvas_import_pending;
     int mosaic_canvas_import_replace,mosaic_canvas_import_confirm;
     uint64_t mosaic_canvas_import_target;

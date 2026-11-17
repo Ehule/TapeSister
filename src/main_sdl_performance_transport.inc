@@ -97,6 +97,10 @@ static int performance_command_apply(unsigned selected,int command,unsigned home
             ts_keyboard_sequence_home(&audio->keyboard_sequence);
             if(keep_running)ts_keyboard_sequence_play(&audio->keyboard_sequence);
         }
+        if(audio->gallery && audio->gallery->player.running && (selected&PERF_MOSAIC)) {
+            if(command==2)ts_gallery_sequence_stop(audio->gallery);
+            else ts_gallery_sequence_pause(audio->gallery,command!=1);
+        }
         TsMosaic *scenes[]={audio->mosaic,audio->gallery && ts_gallery_active(audio->gallery)==audio->mosaic?ts_gallery_outgoing(audio->gallery):NULL};
         for(int i=0;i<2;++i) {
             TsMosaic *m=scenes[i];if(!m)continue;

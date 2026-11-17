@@ -49,6 +49,7 @@ static void test_mosaic_engine_stop(SDL_Window *window,SDL_AudioDeviceID device)
     audio_callback(a,(Uint8 *)output,sizeof(output));assert(!a->engine_stopped && a->mosaic->time>position);
     ts_external_recorder_free(&input->recorder);free(input);free(u);mosaic_controller_free(c);free(c);routing_free(a);
 }
+#include "test_gallery_sequence_controller.inc"
 static void test_mosaic_gallery_controller(SDL_Window *window,SDL_AudioDeviceID device)
 {
     SDL_SetWindowSize(window,640,400);
@@ -224,6 +225,7 @@ static void test_mosaic_gallery_controller(SDL_Window *window,SDL_AudioDeviceID 
     assert(ts_mosaic_hash(a->mosaic)==scene_hash && !a->mosaic->playing && !c->clipboard_epoch && !u->mosaic_source_keys);
     mosaic_poll(device,u,&instrument,c);audio_callback(a,(Uint8 *)output,sizeof(output));
     if(shot){char path[1200];snprintf(path,sizeof(path),"%s-reordered.ppm",shot);live_controller_screenshot_size(u,path,1280,800);}
+    test_gallery_sequence_controls(window,device,a,s,u,c,shot);
     matrix_history_clear();matrix_window.gallery=NULL;matrix_window.mosaic=NULL;matrix_window.layout=NULL;
     mosaic_controller_free(c);free(c);ts_external_recorder_free(&s->recorder);free(s);free(u);
     a->gallery=NULL;a->mosaic=ts_sample_pages_mosaic_root(&pages);ts_sample_pages_free(&pages);routing_free(a);
