@@ -127,7 +127,7 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
             if(fx_canvas.meta){fx_canvas.meta=0;w->effect_open=0;}else fx_return_mosaic(main,ui);return 1;
         }
         if(fx_canvas.popup)return 1;
-        if(key==SDLK_HOME || key==SDLK_z){if(!fx_canvas.meta){fx_build(pages,bank);fx_fit_selection(key==SDLK_z && !(mod&KMOD_SHIFT));}return 1;}
+        if((key==SDLK_HOME || key==SDLK_z) && !(mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI))){if(!fx_canvas.meta){fx_build(pages,bank);fx_fit_selection(key==SDLK_z && !(mod&KMOD_SHIFT));}return 1;}
         if(key==SDLK_m){if(mx_editable())fx_bypass_selection(device,audio,ui);return 1;}
         if(!fx_canvas.meta && !(mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI)) && (key==SDLK_g || key==SDLK_s)) {
             fx_build(pages,bank);fx_begin_transform(key==SDLK_g?FX_DRAG_GRAB:FX_DRAG_SCALE);return 1;

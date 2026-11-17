@@ -80,6 +80,12 @@ Right-clicking empty space also keeps the selection. Use the mouse or Up/Down
 and Enter; Escape or clicking outside closes the menu without performing an action.
 Middle-drag still pans, and double-clicking empty space still opens the effect picker.
 
+**Ctrl+Z** undoes editing operations; **Ctrl+Y** or **Ctrl+Shift+Z** redoes them.
+Zooming, panning, framing, and resizing the inspector do not enter edit history
+or discard redo. Undo/redo keeps the current zoom and pan while restoring effect
+settings, routing, card positions/sizes, colors, groups, and other edits. Plain
+**Z** frames the selection and **Shift+Z** frames all cards.
+
 On a card, **Select input cards** follows every upstream connection, while
 **Select output cards** follows every downstream connection. Both follow branches,
 sidechains, control links, and implicit Mosaic bus links, selecting each connected

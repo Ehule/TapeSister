@@ -36,7 +36,7 @@ static void consolidate_and_arrange(void)
     assert(instance(ids[1])->x>=64+2*FX_NODE_W && instance(ids[1])->y==64);
     assert(instance(ids[0])->x==64 && instance(ids[0])->y>=64+2*FX_NODE_H);
     assert(audio.sister.matrix_effects.current[0]==engine);view_codec();
-    matrix_window.layout->canvas_x=matrix_window.layout->canvas_y=0;matrix_window.layout->canvas_zoom=.5f;
+    matrix_window.layout->canvas_x=matrix_window.layout->canvas_y=0;matrix_window.layout->canvas_zoom=.5f;matrix_window.layout->canvas_view=1;
     SDL_Surface *ports=rendered_frame();SDL_FreeSurface(ports);a=instance(ids[0]);
     int px=mx_px(fx_x(a->x)),py=mx_py(fx_y(a->y+fx_node_h(a)*.5f));
     assert((matrix_window.pixels[(size_t)py*matrix_window.pixel_w+px]&0xffffff)==0xbc84a9);

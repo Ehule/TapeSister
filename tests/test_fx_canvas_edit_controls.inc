@@ -119,10 +119,12 @@ static void edit_controls(void)
     SDL_SetModState(KMOD_CTRL);pointer(SDL_MOUSEBUTTONDOWN,800,150,SDL_BUTTON_LEFT,1);pointer(SDL_MOUSEMOTION,900,200,0,0);
     key(SDLK_ESCAPE,0);SDL_SetModState(KMOD_NONE);assert(w->selection_count==1 && fx_canvas.wires.count==2);
     fx_clear_selection();w->effect_open=0;
-    float zoom=l->canvas_zoom;edit_wheel(340,210,1,0);assert(l->canvas_zoom>zoom);
+    float zoom=l->canvas_zoom,view_x=l->canvas_x,view_y=l->canvas_y;int navigation_history=w->history_cursor;
+    edit_wheel(340,210,1,0);assert(l->canvas_zoom>zoom && w->history_cursor==navigation_history);
     assert(w->controls.row[TS_MATRIX_EFFECT_BASE].matrix_gain[TS_MATRIX_EFFECT_BASE+1]==1000);
     assert(w->controls.row[TS_MATRIX_EFFECT_BASE].matrix_gain[TS_MATRIX_EFFECT_SC_BASE+2]==500);
-    key(SDLK_z,KMOD_CTRL);assert(l->canvas_zoom==zoom);
+    /* Return this fixed-coordinate fixture to its view without using Undo. */
+    l->canvas_zoom=zoom;l->canvas_x=view_x;l->canvas_y=view_y;
     /* Inspector wheel edits its parameter; cable gain and canvas zoom stay put. */
     static TsMatrixEffectControls before_effect;before_effect=w->controls.effect[0];w->effect_open=id[0];
     edit_wheel(1100,265,1,0);assert(l->canvas_zoom==zoom && memcmp(&before_effect,&w->controls.effect[0],sizeof(before_effect)));
