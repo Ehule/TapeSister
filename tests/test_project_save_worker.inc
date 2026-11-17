@@ -30,6 +30,15 @@ static void test_project_save_worker(SDL_Window *window)
     file=(PendingFileOperation){.active=1,.presented=1,.mode=TS_BROWSER_SAVE_RECIPE};
     char name[96];snprintf(name,sizeof(name),"save-worker-%llu.tsr",(unsigned long long)SDL_GetPerformanceCounter());
     assert(ts_sample_pages_bundle_project_path(name,file.path,sizeof(file.path),error,sizeof(error)));
+    assert(matrix_show(device,&audio,&ui,&pages,&bank,-1,-1));fx_view(1,&pages,&bank);
+    int mosaic_open=ui.mosaic_open;float canvas_zoom=matrix_window.layout->canvas_zoom;
+    snprintf(ui.project_path,sizeof(ui.project_path),"%s",file.path);
+    SDL_Event save;SDL_zero(save);save.type=SDL_KEYDOWN;save.key.windowID=matrix_window.id;
+    save.key.keysym.sym=SDLK_s;save.key.keysym.mod=KMOD_CTRL;
+    assert(matrix_event(&save,window,device,&audio,&ui,&pages,&bank));
+    assert(ui.project_overwrite_confirm_open && ui.project_save_window_id==matrix_window.id);
+    file.active=file.presented=0;
+    queue_active_project_save(&ui,&file);file.presented=1;
     Uint64 save_started=SDL_GetPerformanceCounter();
     SDL_AtomicSet(&save_test_gate,1);worker_poll(device);
     assert(project_save_worker && ui.file_busy && file.active);
@@ -48,6 +57,10 @@ static void test_project_save_worker(SDL_Window *window)
     assert(SDL_AtomicGet(&save_test_callbacks)>callbacks);
     const char *shot=getenv("TS_TEST_SAVE_SCREENSHOT");if(shot)assert(ts_ui_write_ppm(&fb,shot));
     SDL_AtomicSet(&save_test_gate,0);worker_finish(device);
+    project_save_overlay_poll(&ui);
+    assert(!ui.project_save_window_id && matrix_window.visible && matrix_window.canvas);
+    assert(ui.mosaic_open==mosaic_open && matrix_window.layout->canvas_zoom==canvas_zoom);
+    matrix_close();
     printf("actual worker initial save: %.3f seconds\n",(double)(SDL_GetPerformanceCounter()-save_started)/SDL_GetPerformanceFrequency());fflush(stdout);
     assert(project_save_completed());assert(ui.saved_state_hash==project_hash());
     FILE *journal=fopen(file.path,"rb");assert(journal);fclose(journal);

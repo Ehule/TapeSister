@@ -313,7 +313,7 @@ static void tracker_fx(SDL_Window *window)
 static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID device,
     AudioState *audio,TsUiState *ui,TsSamplePages *pages,TsInstrument *instrument,int rate)
 {
-    if(event_window_id(event)!=SDL_GetWindowID(window))return 0;
+    if(!tracker_workspace_event_source(event,window))return 0;
     int key=event->type==SDL_KEYDOWN;SDL_Keymod mod=key?(SDL_Keymod)event->key.keysym.mod:SDL_GetModState();
     if(key && event->key.keysym.sym==SDLK_F10 && !(mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI))) {
         if(event->key.repeat)return 1;
@@ -326,11 +326,12 @@ static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevi
         if(!pages->tracker.pattern_count && !ts_sister_tracker_add_pattern(&pages->tracker,64,
             &pages->tracker.editor_pattern,ui->status,sizeof(ui->status)))return 1;
         tracker_repeat_end(ui);release_mouse_note_before_keyboard_move(device,audio,ui);
-        ui->tracker_open=!ui->tracker_open;ui->mosaic_open=0;ui->tracker_hex_digit=0;
+        if(ui->tracker_open)tracker_workspace_leave(ui);else tracker_workspace_enter(ui,window,event_window_id(event));
+        ui->tracker_hex_digit=0;
         ui->tracker_cursor_epoch=SDL_GetTicks();
         ui->tracker_edit->dragging=0;
         snprintf(ui->status,sizeof(ui->status),ui->tracker_open?
-            "ARROWS EDIT / TAB FX / F9 ROUTER / F10 SAMPLE / EDIT TOOLS BELOW":"SISTERTRACKER CONTINUES IN BACKGROUND");
+            "ARROWS EDIT / TAB FX / F9 ROUTER / F10 RETURN / EDIT TOOLS BELOW":"SISTERTRACKER CONTINUES IN BACKGROUND");
         tracker_refresh(device,audio,ui,pages,instrument,rate);return 1;
     }
     if(!ui->tracker_open || ui_dialog_open(ui))return 0;
@@ -400,7 +401,7 @@ static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevi
         if(sym==SDLK_ESCAPE) {
             if(edit->tools_open)edit->tools_open=0;
             else if(ts_tracker_edit_selected(edit,t))ts_tracker_edit_anchor(edit,t);
-            else ui->tracker_open=0;return 1;
+            else tracker_workspace_leave(ui);return 1;
         }
         if((sym==SDLK_RETURN || sym==SDLK_KP_ENTER) && ui->tracker_hex_digit) {
             unsigned value=(unsigned)ui->tracker_hex_value>>4;ui->tracker_hex_digit=0;

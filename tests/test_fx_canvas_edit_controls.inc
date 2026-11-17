@@ -53,6 +53,7 @@ static void edit_controls(void)
     snprintf(fx_position(instance(id[0])->row,0)->name,48,"First");
     snprintf(fx_position(instance(id[1])->row,0)->name,48,"Second");
     pointer(SDL_MOUSEBUTTONDOWN,80,190,SDL_BUTTON_RIGHT,1);
+    context_action(FX_CONTEXT_PROPERTIES);
     assert(fx_canvas.properties && fx_canvas.properties_count==2 && w->selection_count==2);
     fx_properties_insert("Must not rename");fx_canvas.properties_color=fx_swatch(3);
     if(getenv("TS_FX_PREVIEW")) {
@@ -68,6 +69,7 @@ static void edit_controls(void)
     key(SDLK_z,KMOD_CTRL);assert(!fx_position(instance(id[0])->row,0)->color && !fx_position(instance(id[1])->row,0)->color);
     /* Cable context menus use the same undoable/persistent color metadata. */
     pointer(SDL_MOUSEBUTTONDOWN,340,189,SDL_BUTTON_RIGHT,1);
+    context_action(FX_CONTEXT_PROPERTIES);
     assert(fx_canvas.properties && fx_canvas.properties_wires.count==1 && !fx_canvas.properties_count);
     fx_canvas.properties_color=fx_swatch(10);key(SDLK_RETURN,0);
     assert(fx_wire_color(instance(id[0])->row,TS_MATRIX_EFFECT_BASE+1)==fx_swatch(10));view_codec();
@@ -117,10 +119,12 @@ static void edit_controls(void)
     SDL_SetModState(KMOD_CTRL);pointer(SDL_MOUSEBUTTONDOWN,800,150,SDL_BUTTON_LEFT,1);pointer(SDL_MOUSEMOTION,900,200,0,0);
     key(SDLK_ESCAPE,0);SDL_SetModState(KMOD_NONE);assert(w->selection_count==1 && fx_canvas.wires.count==2);
     fx_clear_selection();w->effect_open=0;
-    float zoom=l->canvas_zoom;edit_wheel(340,210,1,0);assert(l->canvas_zoom>zoom);
+    float zoom=l->canvas_zoom,view_x=l->canvas_x,view_y=l->canvas_y;int navigation_history=w->history_cursor;
+    edit_wheel(340,210,1,0);assert(l->canvas_zoom>zoom && w->history_cursor==navigation_history);
     assert(w->controls.row[TS_MATRIX_EFFECT_BASE].matrix_gain[TS_MATRIX_EFFECT_BASE+1]==1000);
     assert(w->controls.row[TS_MATRIX_EFFECT_BASE].matrix_gain[TS_MATRIX_EFFECT_SC_BASE+2]==500);
-    key(SDLK_z,KMOD_CTRL);assert(l->canvas_zoom==zoom);
+    /* Return this fixed-coordinate fixture to its view without using Undo. */
+    l->canvas_zoom=zoom;l->canvas_x=view_x;l->canvas_y=view_y;
     /* Inspector wheel edits its parameter; cable gain and canvas zoom stay put. */
     static TsMatrixEffectControls before_effect;before_effect=w->controls.effect[0];w->effect_open=id[0];
     edit_wheel(1100,265,1,0);assert(l->canvas_zoom==zoom && memcmp(&before_effect,&w->controls.effect[0],sizeof(before_effect)));

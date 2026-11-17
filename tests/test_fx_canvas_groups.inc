@@ -67,6 +67,7 @@ static void rug_groups(void)
     TsFxCanvasGroup large=*g;large.id=id+1;large.x-=30;large.y-=30;large.w+=60;large.h+=60;l->groups[l->group_count++]=large;
     r=fx_group_rect(g);assert(fx_group_hit(r.x+10,r.y+10,0)==id && fx_group_hit(r.x+10,r.y+10,1)==id);
     pointer(SDL_MOUSEBUTTONDOWN,r.x+10,r.y+10,SDL_BUTTON_RIGHT,1);pointer(SDL_MOUSEBUTTONUP,r.x+10,r.y+10,SDL_BUTTON_RIGHT,1);
+    context_action(FX_CONTEXT_PROPERTIES);
     assert(fx_canvas.properties && fx_canvas.properties_group==id);properties_click(16+8*33+10,110);properties_click(334,258);
     SDL_Event text;SDL_zero(text);text.type=SDL_TEXTINPUT;text.text.windowID=fx_properties_window.id;strcpy(text.text.text,"SHARED FINISHING");assert(event(&text));key(SDLK_RETURN,0);
     assert(!strcmp(g->name,"SHARED FINISHING") && g->color==fx_swatch(8) && fabsf(g->opacity-.5f)<.01f);

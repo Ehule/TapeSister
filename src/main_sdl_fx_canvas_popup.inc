@@ -29,8 +29,10 @@ static void fx_popup_open(int x,int y)
     }
     matrix_window.drag=0;
 }
+#include "main_sdl_fx_canvas_context.inc"
 static void fx_popup_paint(void)
 {
+    if(fx_canvas.popup==FX_CONTEXT_MENU){fx_context_paint();return;}
     int x=fx_canvas.popup_x,y=fx_canvas.popup_y,h=fx_canvas.popup==2?FX_POPUP_SUNVOX_H:40+TS_MATRIX_FX_TYPES*30;
     mx_rect(x,y,FX_POPUP_W,h,FX_CABLE);mx_rect(x+2,y+2,FX_POPUP_W-4,h-4,FX_PANEL);
     fx_panel_text(x+12,y+8,174,24,fx_canvas.popup==2?"SUNVOX FX":fx_canvas.replace_id?"REPLACE EFFECT":"ADD TO CANVAS",FX_TEXT,2,1);
@@ -79,6 +81,7 @@ static void fx_popup_add(int type,int factory,SDL_AudioDeviceID device,AudioStat
 }
 static int fx_popup_event(SDL_Event *e,int x,int y,int wheel,SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsSamplePages *pages,TsInstrument *bank)
 {
+    if(fx_canvas.popup==FX_CONTEXT_MENU)return fx_context_event(e,x,y,device,audio,ui,pages,bank);
     int list[512],nc;const char *categories[32];int n=fx_popup_catalog(list,categories,&nc);
     if(e->type==SDL_KEYDOWN) {
         SDL_Keycode key=e->key.keysym.sym;

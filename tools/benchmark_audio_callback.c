@@ -112,7 +112,7 @@ int main(int argc,char **argv)
             int cards=0,effects=0;
             for(int i=0;i<fx_canvas.count;++i){cards+=fx_canvas.node[i].row.kind==3;effects+=fx_canvas.node[i].row.kind==4;}
             fprintf(stderr,"Canvas view %d: %d cards / %d effects / %d nodes\n",c,cards,effects,fx_canvas.count);
-            mx_draw_frame(&audio,&pages,&bank);
+            mx_draw_frame(&audio,&pages,&bank,&ui);
             int width,height;REQUIRE(!SDL_GetRendererOutputSize(matrix_window.renderer,&width,&height));
             SDL_Surface *frame=SDL_CreateRGBSurfaceWithFormat(0,width,height,32,SDL_PIXELFORMAT_ARGB8888);REQUIRE(frame);
             REQUIRE(!SDL_RenderReadPixels(matrix_window.renderer,NULL,frame->format->format,frame->pixels,frame->pitch));

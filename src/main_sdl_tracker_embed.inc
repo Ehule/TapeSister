@@ -181,7 +181,7 @@ static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevi
 #ifdef TAPESISTER_LEGACY_TRACKER_FIXTURE
     return tracker_native_event(event,window,device,audio,ui,pages,instrument,rate);
 #endif
-    if(event_window_id(event)!=SDL_GetWindowID(window))return 0;
+    if(!tracker_workspace_event_source(event,window))return 0;
     if(event->type==SDL_WINDOWEVENT && event->window.event==SDL_WINDOWEVENT_FOCUS_LOST) {
         ts_tapehead_focus_lost();return 0;
     }
@@ -194,9 +194,9 @@ static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevi
         release_mouse_note_before_keyboard_move(device,audio,ui);
         if(ui->tracker_open){
             if(!ts_tapehead_export(&pages->tracker,ui->status,sizeof(ui->status)))return 1;
-            ts_tapehead_focus_lost();ui->tracker_open=0;
+            ts_tapehead_focus_lost();tracker_workspace_leave(ui);
         }
-        else if(embedded_open(window,device,audio,ui,pages,instrument,rate)) {ui->tracker_open=1;ui->mosaic_open=0;snprintf(ui->status,sizeof(ui->status),"SISTERTRACKER - SELECT TILES ON THE CANVAS");}
+        else if(embedded_open(window,device,audio,ui,pages,instrument,rate)) {tracker_workspace_enter(ui,window,event_window_id(event));snprintf(ui->status,sizeof(ui->status),"TRACKSISTER / F10: RETURN TO PREVIOUS WORKSPACE");}
         return 1;
     }
     if(event->type==SDL_KEYUP && ts_tapehead_frame()) {
@@ -207,7 +207,7 @@ static int tracker_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevi
        ui->router_open || ui->master_eq_open || ui->midi_learn_active)return 0;
     if(key && event->key.keysym.sym==SDLK_ESCAPE && !ts_tapehead_config_visible() && !ts_tapehead_interpolation_active()) {
         if(!ts_tapehead_export(&pages->tracker,ui->status,sizeof(ui->status)))return 1;
-        ts_tapehead_focus_lost();ui->tracker_open=0;return 1;
+        ts_tapehead_focus_lost();tracker_workspace_leave(ui);return 1;
     }
     if(key && event->key.keysym.sym==SDLK_m && (mod&KMOD_CTRL) && (mod&KMOD_SHIFT))return 0;
     if(key && event->key.keysym.sym==SDLK_TAB && (mod&KMOD_CTRL))return 0;

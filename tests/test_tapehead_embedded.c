@@ -915,6 +915,32 @@ static void suspended_tracker_refresh(void) {
 #include "test_mosaic_patterns.inc"
 
 #include "test_tracker_appearance.inc"
+static void tracker_workspace_roundtrips(void)
+{
+    press(SDLK_F10,SDL_SCANCODE_F10,KMOD_NONE);assert(!test_ui->tracker_open);
+    test_ui->mosaic_open=1;
+    for(int i=0;i<3;++i) {
+        press(SDLK_F10,SDL_SCANCODE_F10,KMOD_NONE);assert(test_ui->tracker_open && !test_ui->mosaic_open);
+        press(SDLK_F10,SDL_SCANCODE_F10,KMOD_NONE);assert(!test_ui->tracker_open && test_ui->mosaic_open);
+    }
+    assert(matrix_show(0,test_audio,test_ui,test_pages,test_bank,-1,-1));fx_view(1,test_pages,test_bank);
+    float zoom=matrix_window.layout->canvas_zoom;
+    SDL_Event e;SDL_zero(e);e.type=SDL_KEYDOWN;e.key.windowID=matrix_window.id;e.key.keysym.sym=SDLK_F10;e.key.keysym.scancode=SDL_SCANCODE_F10;
+    assert(!matrix_event(&e,test_window,0,test_audio,test_ui,test_pages,test_bank) && e.key.windowID==matrix_window.id);
+    assert(tracker_event(&e,test_window,0,test_audio,test_ui,test_pages,test_bank,48000));
+    assert(test_ui->tracker_return_window_id==matrix_window.id && test_ui->tracker_open);
+    /* Saving overlays TrackSister without erasing its return location. */
+    test_ui->project_overwrite_confirm_open=1;ui_sync_dialog_workspaces(test_ui);
+    assert(test_ui->tracker_open && test_ui->tracker_return_window_id==matrix_window.id);
+    test_ui->project_overwrite_confirm_open=0;
+    press(SDLK_F10,SDL_SCANCODE_F10,KMOD_NONE);
+    assert(!test_ui->tracker_open && test_ui->mosaic_open && matrix_window.visible && matrix_window.canvas);
+    assert(matrix_window.layout->canvas_zoom==zoom);
+    matrix_hide();test_ui->mosaic_open=0;
+    press(SDLK_F10,SDL_SCANCODE_F10,KMOD_NONE);press(SDLK_ESCAPE,SDL_SCANCODE_ESCAPE,KMOD_NONE);
+    assert(!test_ui->tracker_open && !test_ui->mosaic_open);
+    press(SDLK_F10,SDL_SCANCODE_F10,KMOD_NONE);
+}
 int main(int argc,char **argv) {
     SDL_setenv("SDL_VIDEODRIVER","dummy",1);assert(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER));
     test_window=SDL_CreateWindow("Embedded fixture",0,0,640,400,SDL_WINDOW_HIDDEN);assert(test_window);
@@ -941,6 +967,7 @@ int main(int argc,char **argv) {
     if(argc>1 && !strcmp(argv[1],"--appearance")) {test_tracker_appearance(argc>2?argv[2]:NULL);return 0;}
     if(getenv("TS_TEST_TRACKER_REALTIME")) {tracker_realtime();return 0;}
     if(getenv("TS_TEST_MOSAIC_PATTERNS")) {mosaic_patterns();return 0;}
+    tracker_workspace_roundtrips();
     tile_level_parity();
     press(SDLK_z,SDL_SCANCODE_Z,KMOD_NONE);assert(pat()->cells[0][0].note_kind==TS_TRACKER_NOTE_PITCH);
     assert(pat()->cells[0][0].tile_id==tile);assert(test_pages->tracker.editor_row==1);

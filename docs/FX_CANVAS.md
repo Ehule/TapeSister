@@ -23,7 +23,9 @@ Inherited track-to-tile routing remains inspectable in the Matrix.
 - Drag an output port on the right of a node to an input port on the left.
   Every destination sums its incoming connections. Fan out to multiple effects
   for parallel branches and reconnect their outputs to combine them.
-- Purple ports/cables are compressor sidechains. Existing delayed feedback
+- Input and output squares follow their card's color, including custom colors
+  and bypass dimming. The lower input is the sidechain; its cable is purple.
+  Existing delayed feedback
   edges are amber. The Matrix's cycle validation and feedback policy apply.
 - Click a cable to select it. **Plain wheel always zooms the outer canvas**,
   inside the graph; over an inspector parameter it edits that parameter. It never changes a cable gain. **Shift+wheel**
@@ -34,7 +36,7 @@ Inherited track-to-tile routing remains inspectable in the Matrix.
 - To change existing connections, select cables and **Ctrl+Shift-click the new
   destination**. Their source endpoints, individual gains, and colors are kept;
   the cards' other sends and the old destination's downstream chain stay intact.
-  The entire reroute is one undo step. Click the lower purple input to move to a
+  The entire reroute is one undo step. Click the lower input to move to a
   compressor sidechain; clicking the card body uses its main input. With cables
   selected, this gesture moves those cables even in a mixed card/cable selection.
   With only source cards selected, it adds connections as before.
@@ -63,6 +65,68 @@ Inherited track-to-tile routing remains inspectable in the Matrix.
   ports are available to patch. Closed output ports say N/A.
 - Undo/Redo and Ctrl+Z/Ctrl+Y are shared with the Matrix. Audition keys pass through
   to the instrument. MOSAIC / CLOSE returns to Mosaic without stopping audio.
+- **F10** opens TrackSister and returns to the workspace that opened it on the
+  next press, including FX Canvas. **Ctrl+S** keeps FX Canvas open: the existing
+  save browser, overwrite confirmation and progress appear over the graph.
+
+## Consolidate and arrange
+
+Right-click a card, cable, group rug, or empty canvas to open **Canvas actions**.
+The menu offers consolidation, grouping, arrangement by name or type, name/color
+editing, the palette editor, copy/paste, deletion, framing, undo/redo, and the
+effect picker. Available actions show their shortcuts; unavailable actions are
+dimmed. Right-clicking an already selected card keeps the multi-selection.
+Right-clicking empty space also keeps the selection. Use the mouse or Up/Down
+and Enter; Escape or clicking outside closes the menu without performing an action.
+Middle-drag still pans, and double-clicking empty space still opens the effect picker.
+
+**Ctrl+Z** undoes editing operations; **Ctrl+Y** or **Ctrl+Shift+Z** redoes them.
+Zooming, panning, framing, and resizing the inspector do not enter edit history
+or discard redo. Undo/redo keeps the current zoom and pan while restoring effect
+settings, routing, card positions/sizes, colors, groups, and other edits. Plain
+**Z** frames the selection and **Shift+Z** frames all cards.
+
+On a card, **Select input cards** follows every upstream connection, while
+**Select output cards** follows every downstream connection. Both follow branches,
+sidechains, control links, and implicit Mosaic bus links, selecting each connected
+card once and excluding the starting card. They switch to All Movements so connected
+cards outside the movement filter are included. Feedback loops terminate safely;
+cards in the loop can be both upstream and downstream. Selection changes no routing.
+
+| Shortcut | Selected cards or selected group rug |
+| --- | --- |
+| **Ctrl+Shift+P** | Open the consolidate popup and choose Pedalboard or Meta FX. |
+| **Ctrl+R** | Arrange on a regular grid by name, using natural alphanumeric order (2 before 10). |
+| **Ctrl+Shift+R** | Arrange by card/effect type, then by name. |
+
+The popup offers Pedalboard (native and SunVox effects, up to 20 stages), Meta FX
+(up to eight native effects), and Cancel. Enter chooses Pedalboard; Escape or
+closing the popup cancels without changing the selection or adding an undo step.
+**Ctrl+Alt+P** remains the palette editor shortcut.
+
+Consolidation follows cable order, regardless of selection order or placement.
+All outside inputs must enter the first effect, and all outside outputs must
+leave the last effect. Internal cables must have unity gain and neutral pan and
+width. Multiple sources entering the first effect and multiple outputs leaving
+the last are supported. Inputs and output gains, effect settings, bypass states,
+and boundary cable colors are retained. Double-click the new card to edit it;
+Ctrl+Z restores the original cards and connections. As with replacing an effect,
+the new container constructs fresh DSP history; existing reverb/delay tails are
+not transferred into its children.
+
+A failed consolidation displays a notification explaining the reason and leaves
+the patch unchanged. Separate inputs, parallel branches, intermediate sends,
+feedback, sidechains, external modulation mappings, compressors, and nested racks
+cannot be represented by these serial containers. Meta FX also cannot retain
+SunVox effects, captured transient/filter states or filter locks; use a Pedalboard
+for those native states or SunVox chains. Pedalboard storage holds up to 20 stages.
+Pedalboard stages share a bypass fade time; Meta FX stages use 12 ms fades.
+Selections with incompatible fade times or filter MIDI mappings are rejected
+with an explanation as well.
+
+Arrangement keeps card sizes and routing, anchors at the selection's top left,
+and leaves enough space for the largest selected card. Unselected objects stay
+where they are. Each arrangement is one undo step and saves with the project.
 
 ## Modulation curves
 
@@ -96,7 +160,7 @@ history and save with the project.
 The ordinary audio path goes through the effects. Dashed lilac cables are
 parameter assignments. Adding or connecting a Modulator never opens its editor;
 double-click its card to edit. Control cables support click/box selection,
-right-click color, and Delete; deleting one removes the assignments represented
+right-click **Cable color**, and Delete; deleting one removes the assignments represented
 by that cable. Shift+wheel changes audio cable gain, not control assignments.
 
 The Modulator’s lower audio input is a detector only: it produces no audio
@@ -159,7 +223,7 @@ and use Pause/Stop and Retrigger while checking F12 and listening for clicks.
 Ordinary box selection includes visible text labels and movement headings along with cards. Shift adds to the selection; G, S, drag, and Delete operate on the selected objects together. Ctrl-drag remains a cable-only selection. Escape cancels a box or movement; Undo/Redo restores grouped edits.
 
 Press **T** at the pointer, or choose **TEXT LABEL** from the add menu (double-click
-empty space, right-click, or **+ EFFECT**). Type a label and press Enter to save.
+empty space, right-click then **Add effect**, or **+ EFFECT**). Type a label and press Enter to save.
 **Shift+Enter** inserts a new line; Escape cancels. The editor supports arrow keys,
 Home/End, Backspace/Delete, Ctrl+A and Ctrl+V. Labels accept up to 255 printable
 ASCII characters, including line breaks, matching the canvas font.
@@ -188,7 +252,8 @@ tracks the rug background as well as its cables.
 An object belongs to one rug. Regrouping selected objects transfers their
 membership; rugs do not nest. They may overlap visually, with smaller rugs drawn
 last and winning background/title hit tests. Shift-drag still box-selects inside
-a rug, and Ctrl-drag selects cables. Right-click a rug or select it and press F2
+a rug, and Ctrl-drag selects cables. Right-click a rug and choose **Name / color**,
+or select it and press F2,
 for its name, color, and opacity. Empty rugs can be selected and ungrouped.
 
 Up to 64 rugs and their memberships save with the project. Full project recall
@@ -220,7 +285,8 @@ editing gestures apply to the FX workspace; Z, Shift+Z and M follow Mosaic.
 | Gesture | FX Canvas behavior |
 |---|---|
 | Double-click empty space | Effect picker; choosing a type places it at that world position |
-| Right-click empty space, + EFFECT or Ctrl+N | Open the effect picker; Escape cancels |
+| Right-click a card, cable, rug, or empty space | Open Canvas actions; Escape cancels |
+| + EFFECT or Ctrl+N | Open the effect picker; Escape cancels |
 | Left-drag empty space | Box-select intersecting modules |
 | Shift+click | Add/remove a module or cable; mixed selections are supported |
 | Ctrl+click a module | Also add/remove that module |
@@ -232,7 +298,7 @@ editing gestures apply to the FX workspace; Z, Shift+Z and M follow Mosaic.
 | Ctrl+C / Ctrl+V | Copy / paste independent effects with settings and internal wiring |
 | Shift+drag a module onto another | Connect/disconnect that route using Matrix validation |
 | Ctrl+Shift+click destination | Move selected cables to its input; with only cards selected, connect every selected source. One undo reverses the whole operation |
-| Drag output port to input port | Connect; the lower purple port receives sidechain audio |
+| Drag output port to input port | Connect; the lower input port receives sidechain audio |
 | Middle-drag / wheel | Pan / zoom around the pointer, regardless of cable selection |
 | Shift+wheel | Adjust all selected cables by the same dB amount within gain limits |
 | Z / Shift+Z | Frame selection / frame all |
@@ -240,8 +306,8 @@ editing gestures apply to the FX workspace; Z, Shift+Z and M follow Mosaic.
 | X / Delete / Backspace | Remove explicitly selected added effects and/or cables; fixed buses and endpoints are protected |
 | Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z | Shared Matrix undo/redo |
 | Double-click Meta FX | Enter its chain; Escape or BACK TO FX returns |
-| F2 on one selected card / right-click a card | Edit name and color; right-click a selected group applies color to the group with names disabled |
-| Right-click a cable | Edit its color, or the selected cable group; colors save with the project and support Undo/Redo |
+| F2 / right-click then Name / color | Edit name and color; with multiple selected cards, apply color to the selection with names disabled |
+| F2 on selected cables / right-click then Cable color | Edit cable color, or the selected cable group; colors save with the project and support Undo/Redo |
 | E (KEYS off) | Open/focus FX Canvas from Mosaic or an effect editor |
 | Grave (backtick) in FX Canvas | Return directly to Mosaic |
 | Escape in FX Canvas | Return to Mosaic; active gestures/dialogs cancel first |

@@ -277,6 +277,21 @@ jobs:
           archive: false
           if-no-files-found: error
       - name: Download the exact user-facing ZIP
+        id: windows-download
+        # Finalizing an upload can precede its visibility in artifact listings.
+        # Retry that handoff once; all download/package checks still must pass.
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          artifact-ids: ${{ steps.windows-artifact.outputs.artifact-id }}
+          path: download-check
+          skip-decompress: true
+      - name: Allow the uploaded ZIP to become visible
+        if: steps.windows-download.outcome == 'failure'
+        shell: pwsh
+        run: Start-Sleep -Seconds 10
+      - name: Retry the exact Windows ZIP download
+        if: steps.windows-download.outcome == 'failure'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           artifact-ids: ${{ steps.windows-artifact.outputs.artifact-id }}

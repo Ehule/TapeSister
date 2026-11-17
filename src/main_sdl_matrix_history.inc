@@ -45,7 +45,20 @@ static MatrixSnapshot *mx_snapshot(SDL_AudioDeviceID device,AudioState *audio,Ts
 }
 static int mx_equal(const MatrixSnapshot *a,const MatrixSnapshot *b)
 {
-    return a && b && a->count==b->count && !memcmp(a,b,sizeof(*a)+a->count*sizeof(a->routes[0]));
+    /* Navigation is saved with the project, but must not fill edit history or
+       discard redo. Card positions, sizes, colors and groups remain undoable. */
+    return a && b && a->count==b->count &&
+        !memcmp(a,b,offsetof(MatrixSnapshot,layout)) &&
+        !memcmp(&a->layout,&b->layout,offsetof(TsMatrixLayout,canvas_view)) &&
+        a->layout.canvas_straight==b->layout.canvas_straight &&
+        a->layout.canvas_snap==b->layout.canvas_snap &&
+        !memcmp(a->layout.canvas,b->layout.canvas,sizeof(TsMatrixLayout)-offsetof(TsMatrixLayout,canvas)) &&
+        !memcmp(a->routes,b->routes,(size_t)a->count*sizeof(a->routes[0]));
+}
+static void mx_keep_canvas_view(TsMatrixLayout *layout,const TsMatrixLayout *view)
+{
+    layout->canvas_view=view->canvas_view;layout->canvas_split=view->canvas_split;
+    layout->canvas_x=view->canvas_x;layout->canvas_y=view->canvas_y;layout->canvas_zoom=view->canvas_zoom;
 }
 static int mx_apply(const MatrixSnapshot *s,SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsSamplePages *pages,TsInstrument *bank)
 {
@@ -125,6 +138,7 @@ static void mx_undo(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsS
         if(w->layout_focus==1 && w->selected>=0)w->scroll=SDL_clamp(w->selected-MATRIX_VISIBLE+1,0,SDL_max(0,w->count-MATRIX_VISIBLE));
         w->dirty=1;
     } else if(!mx_apply(saved,device,audio,ui,pages,bank)){free(now);return;}
+    mx_keep_canvas_view(&audio->sister.matrix_layout,&now->layout);
     free(saved);w->history[at]=now;
     w->history_cursor+=redo?1:-1;snprintf(w->status,sizeof(w->status),"%s MATRIX EDIT (%d / %d)",redo?"REDID":"UNDID",w->history_cursor,w->history_count);
 }
