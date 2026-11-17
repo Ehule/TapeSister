@@ -85,8 +85,9 @@ static void consolidate_and_arrange(void)
     consolidation_rejected(fixture,slots,3,1,"cannot hold SunVox");
     assert(!fx_consolidate_plan(fixture,slots,3,0));assert(c->effect[0].board.slot[1].type==TS_SISTER_FX_SUNVOX);
     /* A failed UI command gives a reason and creates no undo entry. */
-    fx_clear_selection();int history=matrix_window.history_cursor;key(SDLK_p,KMOD_CTRL|KMOD_SHIFT);
+    fx_clear_selection();int history=matrix_window.history_cursor,notices=notice_count;key(SDLK_p,KMOD_CTRL|KMOD_SHIFT);
     assert(strstr(matrix_window.status,"CONSOLIDATION FAILED") && strstr(matrix_window.status,"at least two"));assert(matrix_window.history_cursor==history);
+    assert(notice_count==notices+1 && strstr(notice_text,"at least two"));
     free(fixture);assert(mx_apply(saved,0,&audio,&ui,&pages,&bank));free(saved);edit_settle();matrix_history_clear();fx_view(1,&pages,&bank);
 }
 

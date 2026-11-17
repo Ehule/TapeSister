@@ -1,10 +1,25 @@
+#if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
+#define _POSIX_C_SOURCE 200809L
+#endif
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
 #define SDL_MAIN_HANDLED
+#include <SDL.h>
+/* Record native notifications without opening an interactive Windows dialog
+   on the headless regression runner. The production call is unchanged. */
+static int notice_count;
+static char notice_text[256];
+static int test_fx_notice(Uint32 flags,const char *title,const char *message,SDL_Window *window)
+{
+    (void)flags;(void)title;(void)window;++notice_count;
+    SDL_strlcpy(notice_text,message,sizeof(notice_text));return 0;
+}
+#define SDL_ShowSimpleMessageBox test_fx_notice
 #define main tapesister_application_main
 #include "../src/main_sdl.c"
 #undef main
+#undef SDL_ShowSimpleMessageBox
 #include <assert.h>
 static AudioState audio;
 static TsUiState ui;
